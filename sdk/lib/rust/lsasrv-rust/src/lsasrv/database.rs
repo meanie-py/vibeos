@@ -258,7 +258,7 @@ unsafe fn LsapCreateDatabaseObjects() -> NTSTATUS {
     let mut AuditEventsInfo: *mut _LSAP_POLICY_AUDIT_EVENTS_DATA = core::ptr::null_mut();
     let mut QuotaInfo: _POLICY_DEFAULT_QUOTA_INFO = core::mem::zeroed();
     let mut ModificationInfo: _POLICY_MODIFICATION_INFO = core::mem::zeroed();
-    let mut AuditFullInfo: _POLICY_AUDIT_FULL_QUERY_INFO = _POLICY_AUDIT_FULL_QUERY_INFO {
+    let AuditFullInfo: _POLICY_AUDIT_FULL_QUERY_INFO = _POLICY_AUDIT_FULL_QUERY_INFO {
         ShutDownOnFull: 0u8,
         LogIsFull: 0u8,
     };
@@ -437,7 +437,7 @@ unsafe fn LsapGetDomainInfo() -> i32 {
             1,
             SECURITY_BUILTIN_DOMAIN_RID,
             0, 0, 0, 0, 0, 0, 0,
-            &mut BuiltinDomainSid,
+            &raw mut BuiltinDomainSid,
         );
         if !NT_SUCCESS(status) {
             break 'done status;

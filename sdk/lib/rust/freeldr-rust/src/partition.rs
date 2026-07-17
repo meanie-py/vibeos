@@ -82,7 +82,7 @@ unsafe fn DiskGetFirstPartitionEntry(
     MasterBootRecord: PMASTER_BOOT_RECORD,
     PartitionTableEntry: PPARTITION_TABLE_ENTRY
 ) -> BOOLEAN {
-    let mut Index: ULONG;
+    let _Index: ULONG;
 
     for Index in 0..4 {
         if ((*MasterBootRecord).PartitionTable[Index as usize].SystemIndicator != PARTITION_ENTRY_UNUSED) &&

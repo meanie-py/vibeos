@@ -107,8 +107,8 @@ unsafe fn FldrSetIdentifier(
     Component: PCONFIGURATION_COMPONENT,
     IdentifierString: PCSTR,
 ) {
-    let mut IdentifierLength: usize;
-    let mut Identifier: PCHAR;
+    let IdentifierLength: usize;
+    let Identifier: PCHAR;
 
     IdentifierLength = strlen(IdentifierString) + 1;
     Identifier = FrLdrHeapAlloc(IdentifierLength, TAG_HW_NAME) as PCHAR;

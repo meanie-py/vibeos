@@ -12,12 +12,9 @@
 //!   CmpRemoveValueFromValueList, CmpRemoveSubKeyInLeaf, CmpRemoveSubkeyInRoot,
 //!   plus the two leaf-cell removers (CmpRemoveFastIndexKeyCell/CmpRemoveIndexKeyCell)
 //!   they depend on — all `static` in C, so private `unsafe fn` here.
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CM_INDEX, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PHHIVE, HSTORAGE_TYPE_Stable as Stable, _HHIVE, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CM_INDEX, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PHHIVE, HSTORAGE_TYPE_Stable as Stable};
 use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBOOT_TYPE_SELF_HEAL, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE};
-use core::ffi::c_void;
 
 unsafe extern "C" {
     // conditionally compiled in original (#if !defined(CMLIB_HOST) && !defined(_BLDR_)) pub static mut CmpSelfHeal: u8;   // BOOLEAN pub static mut CmpBootType: u32;  // ULONG
@@ -75,8 +72,8 @@ pub unsafe extern "system" fn CmpRepairParentKey(
     ParentKey: HCELL_INDEX,
     FixHive: BOOLEAN,
 ) -> BOOLEAN {
-    let mut KeyIndex: PCM_KEY_INDEX;
-    let mut KeyNode: PCM_KEY_NODE;
+    let KeyIndex: PCM_KEY_INDEX;
+    let KeyNode: PCM_KEY_NODE;
     let mut ParentRepaired: BOOLEAN;
 
     PAGED_CODE();

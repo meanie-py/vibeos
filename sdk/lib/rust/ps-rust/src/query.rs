@@ -345,7 +345,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                     QuotaLimits.TimeLimit.QuadPart = -1i64;
 
-                    if (*process).QuotaBlock == &PspDefaultQuotaBlock as *const _ as *mut _ {
+                    if (*process).QuotaBlock == &raw const PspDefaultQuotaBlock as *const _ as *mut _ {
                         QuotaLimits.PagedPoolLimit = SIZE_T::MAX;
                         QuotaLimits.NonPagedPoolLimit = SIZE_T::MAX;
                         QuotaLimits.PagefileLimit = SIZE_T::MAX;

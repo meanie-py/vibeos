@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // DsSetupInit is internal lsasrv (C: `VOID DsSetupInit(VOID)` — cdecl, NOT
 // WINAPI), defined in dssetup.rs as `extern "C"`. Declaring it extern "system"
@@ -157,7 +156,7 @@ pub unsafe extern "C" fn LsarStartRpcServer() -> NTSTATUS {
 }
 // __RPC_USER (= __stdcall on i386) context-handle rundown routine → extern "system".
 #[no_mangle]
-pub unsafe extern "system" fn LSAPR_HANDLE_rundown(hHandle: LSAPR_HANDLE) {
+pub unsafe extern "system" fn LSAPR_HANDLE_rundown(_hHandle: LSAPR_HANDLE) {
 }
 
 #[no_mangle]
@@ -519,20 +518,20 @@ pub unsafe extern "system" fn LsarSetSecurityObject(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarChangePassword(
-    IDL_handle: handle_t,
-    String1: PRPC_UNICODE_STRING,
-    String2: PRPC_UNICODE_STRING,
-    String3: PRPC_UNICODE_STRING,
-    String4: PRPC_UNICODE_STRING,
-    String5: PRPC_UNICODE_STRING,
+    _IDL_handle: handle_t,
+    _String1: PRPC_UNICODE_STRING,
+    _String2: PRPC_UNICODE_STRING,
+    _String3: PRPC_UNICODE_STRING,
+    _String4: PRPC_UNICODE_STRING,
+    _String5: PRPC_UNICODE_STRING,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarOpenPolicy(
-    SystemName: LPWSTR,
-    ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
+    _SystemName: LPWSTR,
+    _ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
     DesiredAccess: ACCESS_MASK,
     PolicyHandle: *mut LSAPR_HANDLE,
 ) -> NTSTATUS {
@@ -814,7 +813,7 @@ pub unsafe extern "system" fn LsarSetInformationPolicy(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarClearAuditLog(
-    ObjectHandle: LSAPR_HANDLE,
+    _ObjectHandle: LSAPR_HANDLE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -1158,10 +1157,10 @@ pub unsafe extern "system" fn LsarEnumerateAccounts(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarCreateTrustedDomain(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainInformation: PLSAPR_TRUST_INFORMATION,
-    DesiredAccess: ACCESS_MASK,
-    TrustedDomainHandle: *mut LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainInformation: PLSAPR_TRUST_INFORMATION,
+    _DesiredAccess: ACCESS_MASK,
+    _TrustedDomainHandle: *mut LSAPR_HANDLE,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -1172,10 +1171,10 @@ pub unsafe extern "system" fn LsarCreateTrustedDomain(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarEnumerateTrustedDomains(
-    PolicyHandle: LSAPR_HANDLE,
-    EnumerationContext: *mut DWORD,
+    _PolicyHandle: LSAPR_HANDLE,
+    _EnumerationContext: *mut DWORD,
     EnumerationBuffer: PLSAPR_TRUSTED_ENUM_BUFFER,
-    PreferedMaximumLength: DWORD,
+    _PreferedMaximumLength: DWORD,
 ) -> NTSTATUS {
     (*EnumerationBuffer).EntriesRead = 0;
     (*EnumerationBuffer).Information = core::ptr::null_mut();
@@ -1184,7 +1183,7 @@ pub unsafe extern "system" fn LsarEnumerateTrustedDomains(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarLookupNames(
-    PolicyHandle: LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
     Count: DWORD,
     Names: PRPC_UNICODE_STRING,
     ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
@@ -1261,7 +1260,7 @@ pub unsafe extern "system" fn LsarLookupNames(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarLookupSids(
-    PolicyHandle: LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
     SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
     ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
     TranslatedNames: PLSAPR_TRANSLATED_NAMES,
@@ -2011,10 +2010,10 @@ pub unsafe extern "system" fn LsarSetSystemAccessAccount(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarOpenTrustedDomain(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainSid: PRPC_SID,
-    DesiredAccess: ACCESS_MASK,
-    TrustedDomainHandle: *mut LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainSid: PRPC_SID,
+    _DesiredAccess: ACCESS_MASK,
+    _TrustedDomainHandle: *mut LSAPR_HANDLE,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -2025,18 +2024,18 @@ pub unsafe extern "system" fn LsarOpenTrustedDomain(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarQueryInfoTrustedDomain(
-    TrustedDomainHandle: LSAPR_HANDLE,
-    InformationClass: TRUSTED_INFORMATION_CLASS,
-    TrustedDomainInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
+    _TrustedDomainHandle: LSAPR_HANDLE,
+    _InformationClass: TRUSTED_INFORMATION_CLASS,
+    _TrustedDomainInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarSetInformationTrustedDomain(
-    TrustedDomainHandle: LSAPR_HANDLE,
-    InformationClass: TRUSTED_INFORMATION_CLASS,
-    TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
+    _TrustedDomainHandle: LSAPR_HANDLE,
+    _InformationClass: TRUSTED_INFORMATION_CLASS,
+    _TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -2485,7 +2484,7 @@ pub unsafe extern "system" fn LsarEnumerateAccountsWithUserRight(
     let mut SystemAccess: ACCESS_MASK;
     let mut PrivilegeSet: PPRIVILEGE_SET;
     let mut EnumBuffer: PLSAPR_ACCOUNT_INFORMATION = core::ptr::null_mut();
-    let mut ReturnBuffer: PLSAPR_ACCOUNT_INFORMATION;
+    let ReturnBuffer: PLSAPR_ACCOUNT_INFORMATION;
     let mut SubKeyCount: ULONG = 0;
     let mut EnumIndex: ULONG;
     let mut EnumCount: ULONG = 0;
@@ -2904,8 +2903,8 @@ pub unsafe extern "system" fn LsarAddAccountRights(
     let mut i: ULONG;
     let mut j: ULONG;
     let mut PrivilegeSet: PPRIVILEGE_SET = core::ptr::null_mut();
-    let mut PrivilegeSetBufferSize: ULONG;
-    let mut PrivilegeCount: ULONG;
+    let PrivilegeSetBufferSize: ULONG;
+    let PrivilegeCount: ULONG;
     let mut bFound: BOOLEAN;
     let mut pLuid: PLUID;
     let mut Status: NTSTATUS;
@@ -3120,7 +3119,7 @@ pub unsafe extern "system" fn LsarRemoveAccountRights(
     let mut j: ULONG;
     let mut Index: ULONG;
     let mut PrivilegeSet: PPRIVILEGE_SET = core::ptr::null_mut();
-    let mut PrivilegeCount: ULONG;
+    let PrivilegeCount: ULONG;
     let mut pLuid: PLUID;
     let mut Status: NTSTATUS;
 
@@ -3317,10 +3316,10 @@ pub unsafe extern "system" fn LsarRemoveAccountRights(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarQueryTrustedDomainInfo(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainSid: PRPC_SID,
-    InformationClass: TRUSTED_INFORMATION_CLASS,
-    TrustedDomainInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainSid: PRPC_SID,
+    _InformationClass: TRUSTED_INFORMATION_CLASS,
+    _TrustedDomainInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -3331,10 +3330,10 @@ pub unsafe extern "system" fn LsarQueryTrustedDomainInfo(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarSetTrustedDomainInfo(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainSid: PRPC_SID,
-    InformationClass: TRUSTED_INFORMATION_CLASS,
-    TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainSid: PRPC_SID,
+    _InformationClass: TRUSTED_INFORMATION_CLASS,
+    _TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -3345,8 +3344,8 @@ pub unsafe extern "system" fn LsarSetTrustedDomainInfo(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarDeleteTrustedDomain(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainSid: PRPC_SID,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainSid: PRPC_SID,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -3620,9 +3619,9 @@ pub unsafe extern "system" fn LsarOpenPolicy2(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarGetUserName(
-    SystemName: LPWSTR,
-    UserName: *mut PRPC_UNICODE_STRING,
-    DomainName: *mut PRPC_UNICODE_STRING,
+    _SystemName: LPWSTR,
+    _UserName: *mut PRPC_UNICODE_STRING,
+    _DomainName: *mut PRPC_UNICODE_STRING,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -3647,10 +3646,10 @@ pub unsafe extern "system" fn LsarSetInformationPolicy2(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarQueryTrustedDomainInfoByName(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainName: PRPC_UNICODE_STRING,
-    InformationClass: POLICY_INFORMATION_CLASS,
-    PolicyInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainName: PRPC_UNICODE_STRING,
+    _InformationClass: POLICY_INFORMATION_CLASS,
+    _PolicyInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -3661,10 +3660,10 @@ pub unsafe extern "system" fn LsarQueryTrustedDomainInfoByName(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarSetTrustedDomainInfoByName(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainName: PRPC_UNICODE_STRING,
-    InformationClass: POLICY_INFORMATION_CLASS,
-    PolicyInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainName: PRPC_UNICODE_STRING,
+    _InformationClass: POLICY_INFORMATION_CLASS,
+    _PolicyInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -3675,10 +3674,10 @@ pub unsafe extern "system" fn LsarSetTrustedDomainInfoByName(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarEnumerateTrustedDomainsEx(
-    PolicyHandle: LSAPR_HANDLE,
-    EnumerationContext: *mut DWORD,
+    _PolicyHandle: LSAPR_HANDLE,
+    _EnumerationContext: *mut DWORD,
     EnumerationBuffer: PLSAPR_TRUSTED_ENUM_BUFFER_EX,
-    PreferedMaximumLength: DWORD,
+    _PreferedMaximumLength: DWORD,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -3691,11 +3690,11 @@ pub unsafe extern "system" fn LsarEnumerateTrustedDomainsEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarCreateTrustedDomainEx(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
-    AuthentificationInformation: PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION,
-    DesiredAccess: ACCESS_MASK,
-    TrustedDomainHandle: *mut LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+    _AuthentificationInformation: PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION,
+    _DesiredAccess: ACCESS_MASK,
+    _TrustedDomainHandle: *mut LSAPR_HANDLE,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -3706,35 +3705,35 @@ pub unsafe extern "system" fn LsarCreateTrustedDomainEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarSetPolicyReplicationHandle(
-    PolicyHandle: PLSAPR_HANDLE,
+    _PolicyHandle: PLSAPR_HANDLE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarQueryDomainInformationPolicy(
-    PolicyHandle: LSAPR_HANDLE,
-    InformationClass: POLICY_INFORMATION_CLASS,
-    PolicyInformation: *mut PLSAPR_POLICY_DOMAIN_INFORMATION,
+    _PolicyHandle: LSAPR_HANDLE,
+    _InformationClass: POLICY_INFORMATION_CLASS,
+    _PolicyInformation: *mut PLSAPR_POLICY_DOMAIN_INFORMATION,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarSetDomainInformationPolicy(
-    PolicyHandle: LSAPR_HANDLE,
-    InformationClass: POLICY_INFORMATION_CLASS,
-    PolicyInformation: PLSAPR_POLICY_DOMAIN_INFORMATION,
+    _PolicyHandle: LSAPR_HANDLE,
+    _InformationClass: POLICY_INFORMATION_CLASS,
+    _PolicyInformation: PLSAPR_POLICY_DOMAIN_INFORMATION,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarOpenTrustedDomainByName(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainName: PRPC_UNICODE_STRING,
-    DesiredAccess: ACCESS_MASK,
-    TrustedDomainHandle: *mut LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainName: PRPC_UNICODE_STRING,
+    _DesiredAccess: ACCESS_MASK,
+    _TrustedDomainHandle: *mut LSAPR_HANDLE,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -3744,13 +3743,13 @@ pub unsafe extern "system" fn LsarOpenTrustedDomainByName(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn LsarTestCall(hBinding: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn LsarTestCall(_hBinding: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarLookupSids2(
-    PolicyHandle: LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
     SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
     ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
     TranslatedNames: PLSAPR_TRANSLATED_NAMES_EX,
@@ -3792,7 +3791,7 @@ pub unsafe extern "system" fn LsarLookupSids2(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarLookupNames2(
-    PolicyHandle: LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
     Count: DWORD,
     Names: PRPC_UNICODE_STRING,
     ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
@@ -3804,7 +3803,7 @@ pub unsafe extern "system" fn LsarLookupNames2(
 ) -> NTSTATUS {
     let mut TranslatedSidsEx2: LSAPR_TRANSLATED_SIDS_EX2 = core::mem::zeroed();
     let mut i: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     TRACE!(
         b"LsarLookupNames2(%p %lu %p %p %p %d %p %lu %lu)\n\0".as_ptr() as *const i8,
@@ -3873,11 +3872,11 @@ pub unsafe extern "system" fn LsarLookupNames2(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarCreateTrustedDomainEx2(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
-    AuthentificationInformation: PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL,
-    DesiredAccess: ACCESS_MASK,
-    TrustedDomainHandle: *mut LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
+    _AuthentificationInformation: PLSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL,
+    _DesiredAccess: ACCESS_MASK,
+    _TrustedDomainHandle: *mut LSAPR_HANDLE,
 ) -> NTSTATUS {
     if LsapProductType != NtProductLanManNt {
         return STATUS_DIRECTORY_SERVICE_REQUIRED;
@@ -3887,66 +3886,66 @@ pub unsafe extern "system" fn LsarCreateTrustedDomainEx2(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CredrWrite(SystemName: PLSAPR_SERVER_NAME) -> NTSTATUS {
+pub unsafe extern "system" fn CredrWrite(_SystemName: PLSAPR_SERVER_NAME) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CredrRead(SystemName: PLSAPR_SERVER_NAME) -> NTSTATUS {
+pub unsafe extern "system" fn CredrRead(_SystemName: PLSAPR_SERVER_NAME) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CredrEnumerate(
-    SystemName: PLSAPR_SERVER_NAME,
+    _SystemName: PLSAPR_SERVER_NAME,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CredrWriteDomainCredentials(
-    SystemName: PLSAPR_SERVER_NAME,
+    _SystemName: PLSAPR_SERVER_NAME,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CredrReadDomainCredentials(
-    SystemName: PLSAPR_SERVER_NAME,
+    _SystemName: PLSAPR_SERVER_NAME,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CredrDelete(
-    SystemName: PLSAPR_SERVER_NAME,
-    TargetName: LPWSTR,
-    Type: DWORD,
-    Flags: DWORD,
+    _SystemName: PLSAPR_SERVER_NAME,
+    _TargetName: LPWSTR,
+    _Type: DWORD,
+    _Flags: DWORD,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CredrGetTargetInfo(
-    SystemName: PLSAPR_SERVER_NAME,
-    TargetName: LPWSTR,
-    Flags: DWORD,
-    TargetInformation: *mut CREDPR_TARGET_INFORMATION,
+    _SystemName: PLSAPR_SERVER_NAME,
+    _TargetName: LPWSTR,
+    _Flags: DWORD,
+    _TargetInformation: *mut CREDPR_TARGET_INFORMATION,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CredrProfileLoaded(
-    SystemName: PLSAPR_SERVER_NAME,
+    _SystemName: PLSAPR_SERVER_NAME,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarLookupNames3(
-    PolicyHandle: LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
     Count: DWORD,
     Names: PRPC_UNICODE_STRING,
     ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
@@ -3995,62 +3994,62 @@ pub unsafe extern "system" fn LsarLookupNames3(
 
 #[no_mangle]
 pub unsafe extern "system" fn CredrGetSessionTypes(
-    SystemName: PLSAPR_SERVER_NAME,
-    MaximumPersistCount: DWORD,
-    MaximumPersist: *mut DWORD,
+    _SystemName: PLSAPR_SERVER_NAME,
+    _MaximumPersistCount: DWORD,
+    _MaximumPersist: *mut DWORD,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 #[no_mangle]
-pub unsafe extern "system" fn LsarRegisterAuditEvent(hBinding: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn LsarRegisterAuditEvent(_hBinding: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 #[no_mangle]
-pub unsafe extern "system" fn LsarGenAuditEvent(hBinding: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn LsarGenAuditEvent(_hBinding: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn LsarUnregisterAuditEvent(hBinding: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn LsarUnregisterAuditEvent(_hBinding: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarQueryForestTrustInformation(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainName: PLSA_UNICODE_STRING,
-    HighestRecordType: LSA_FOREST_TRUST_RECORD_TYPE,
-    ForestTrustInfo: *mut PLSA_FOREST_TRUST_INFORMATION,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainName: PLSA_UNICODE_STRING,
+    _HighestRecordType: LSA_FOREST_TRUST_RECORD_TYPE,
+    _ForestTrustInfo: *mut PLSA_FOREST_TRUST_INFORMATION,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarSetForestTrustInformation(
-    PolicyHandle: LSAPR_HANDLE,
-    TrustedDomainName: PLSA_UNICODE_STRING,
-    HighestRecordType: LSA_FOREST_TRUST_RECORD_TYPE,
-    ForestTrustInfo: PLSA_FOREST_TRUST_INFORMATION,
-    CheckOnly: BOOLEAN,
-    CollisionInfo: *mut PLSA_FOREST_TRUST_COLLISION_INFORMATION,
+    _PolicyHandle: LSAPR_HANDLE,
+    _TrustedDomainName: PLSA_UNICODE_STRING,
+    _HighestRecordType: LSA_FOREST_TRUST_RECORD_TYPE,
+    _ForestTrustInfo: PLSA_FOREST_TRUST_INFORMATION,
+    _CheckOnly: BOOLEAN,
+    _CollisionInfo: *mut PLSA_FOREST_TRUST_COLLISION_INFORMATION,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CredrRename(
-    SystemName: PLSAPR_SERVER_NAME,
-    OldTargetName: LPWSTR,
-    NewTargetName: LPWSTR,
-    Type: DWORD,
-    Flags: DWORD,
+    _SystemName: PLSAPR_SERVER_NAME,
+    _OldTargetName: LPWSTR,
+    _NewTargetName: LPWSTR,
+    _Type: DWORD,
+    _Flags: DWORD,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarLookupSids3(
-    PolicyHandle: LSAPR_HANDLE,
+    _PolicyHandle: LSAPR_HANDLE,
     SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
     ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
     TranslatedNames: PLSAPR_TRANSLATED_NAMES_EX,
@@ -4092,7 +4091,7 @@ pub unsafe extern "system" fn LsarLookupSids3(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarLookupNames4(
-    RpcHandle: handle_t,
+    _RpcHandle: handle_t,
     Count: DWORD,
     Names: PRPC_UNICODE_STRING,
     ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
@@ -4141,31 +4140,31 @@ pub unsafe extern "system" fn LsarLookupNames4(
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarOpenPolicySce(
-    SystemName: LPWSTR,
-    ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
-    DesiredAccess: ACCESS_MASK,
-    PolicyHandle: *mut LSAPR_HANDLE,
+    _SystemName: LPWSTR,
+    _ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
+    _DesiredAccess: ACCESS_MASK,
+    _PolicyHandle: *mut LSAPR_HANDLE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarAdtRegisterSecurityEventSource(
-    hBinding: handle_t,
+    _hBinding: handle_t,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarAdtUnregisterSecurityEventSource(
-    hBinding: handle_t,
+    _hBinding: handle_t,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsarAdtReportSecurityEvent(
-    hBinding: handle_t,
+    _hBinding: handle_t,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }

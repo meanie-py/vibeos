@@ -805,7 +805,7 @@ pub unsafe extern "system" fn IopCreateDeviceKeyPath(
             continue;
         }
 
-        Length = ((Current as usize - KeyName.Buffer as usize) as USHORT);
+        Length = (Current as usize - KeyName.Buffer as usize) as USHORT ;
         KeyName.MaximumLength = Length;
         KeyName.Length = Length;
 

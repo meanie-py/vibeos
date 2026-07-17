@@ -217,7 +217,7 @@ pub unsafe extern "system" fn IKsAllocator_fnQueryInterface(
     let This: PALLOCATOR = CONTAINING_RECORD!(iface, ALLOCATOR, lpVtbl);
 
     if IsEqualGUIDAligned(refiid, &IID_IUnknown) != 0 ||
-       IsEqualGUIDAligned(refiid, &IID_IKsAllocator) != 0
+       IsEqualGUIDAligned(refiid, &raw const IID_IKsAllocator) != 0
     {
         *Output = &mut (*This).lpVtbl as *mut _ as PVOID;
         InterlockedIncrement(&mut (*This).ref_);
@@ -251,8 +251,7 @@ pub unsafe extern "system" fn IKsAllocator_fnDeviceIoControl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let This: PALLOCATOR = core::mem::transmute(
-        (iface as usize)
+    let This: PALLOCATOR = core::ptr::with_exposed_provenance_mut::<ALLOCATOR>((iface as usize)
             .wrapping_sub(core::mem::offset_of!(ALLOCATOR, lpVtbl))
     );
     let IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -271,7 +270,7 @@ pub unsafe extern "system" fn IKsAllocator_fnDeviceIoControl(
 
     let Property = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as PKSPROPERTY;
 
-    if IsEqualGUIDAligned(&(*Property).Set, &KSPROPSETID_StreamAllocator) != 0 {
+    if IsEqualGUIDAligned(&(*Property).Set, &raw const KSPROPSETID_StreamAllocator) != 0 {
         if (*Property).Id == KSPROPERTY_STREAMALLOCATOR_FUNCTIONTABLE {
             if ((*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize) < core::mem::size_of::<KSSTREAMALLOCATOR_FUNCTIONTABLE>() {
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_BUFFER_TOO_SMALL;
@@ -353,8 +352,7 @@ pub unsafe extern "system" fn IKsAllocator_fnAllocateFrame(
     OutFrame: *mut PVOID,
 ) -> NTSTATUS {
     let mut Frame: PVOID = core::ptr::null_mut();
-    let This: PALLOCATOR = core::mem::transmute(
-        (iface as usize)
+    let This: PALLOCATOR = core::ptr::with_exposed_provenance_mut::<ALLOCATOR>((iface as usize)
             .wrapping_sub(core::mem::size_of::<IKsAllocatorVtbl>()),
     );
 
@@ -488,7 +486,7 @@ pub unsafe extern "C" fn IKsAllocator_DispatchRequest(
 
     Status = (*(*(*Header).Unknown).lpVtbl).QueryInterface.unwrap()(
         (*Header).Unknown,
-        &IID_IKsAllocator as *const GUID,
+        &raw const IID_IKsAllocator as *const GUID,
         &mut Allocator as *mut *mut IKsAllocator as *mut PVOID,
     );
 

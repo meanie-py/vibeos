@@ -321,7 +321,7 @@ pub unsafe extern "system" fn InbvDriverInitialize(
 
     InbvBootDriverInstalled = VidInitialize(ResetMode);
     if InbvBootDriverInstalled != 0 {
-        ResourceCount = min(Count, RTL_NUMBER_OF(&ResourceList) as ULONG - 1);
+        ResourceCount = min(Count, RTL_NUMBER_OF(&*(&raw const ResourceList)) as ULONG - 1);
         i = 1;
         while i <= ResourceCount {
             ResourceList[i as usize] = FindBitmapResource(LoaderBlock, i) as PUCHAR;
@@ -395,7 +395,7 @@ pub unsafe extern "system" fn InbvEnableBootDriver(
 
 #[no_mangle]
 pub unsafe extern "system" fn InbvAcquireDisplayOwnership() {
-    if InbvResetDisplayParameters.is_some() &&
+    if (*(&raw const InbvResetDisplayParameters)).is_some() &&
         InbvDisplayState == INBV_DISPLAY_STATE_LOST {
         (InbvResetDisplayParameters.unwrap())(80, 50);
     }
@@ -433,7 +433,7 @@ pub unsafe extern "system" fn InbvDisplayString(
             return 1u8;
         }
 
-        if InbvDisplayFilter.is_some() {
+        if (*(&raw const InbvDisplayFilter)).is_some() {
             (InbvDisplayFilter.unwrap())(core::ptr::addr_of!(String) as *mut PCSTR);
         }
 

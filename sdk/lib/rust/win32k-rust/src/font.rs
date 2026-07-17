@@ -144,26 +144,26 @@ unsafe fn GreCreateFontIndirectW_impl(lplf: *const LOGFONTW) -> HFONT {
         RtlCopyMemory(
             core::ptr::addr_of_mut!(Logfont.elfEnumLogfontEx.elfLogFont) as PVOID,
             lplf as PVOID,
-            (core::mem::size_of::<LOGFONTW>() as ULONG as _),
+            core::mem::size_of::<LOGFONTW>() as ULONG as _ ,
         );
         RtlZeroMemory(
             core::ptr::addr_of_mut!(Logfont.elfEnumLogfontEx.elfFullName) as PVOID,
-            (core::mem::size_of_val(&Logfont.elfEnumLogfontEx.elfFullName) as ULONG as _),
+            core::mem::size_of_val(&Logfont.elfEnumLogfontEx.elfFullName) as ULONG as _ ,
         );
         RtlZeroMemory(
             core::ptr::addr_of_mut!(Logfont.elfEnumLogfontEx.elfStyle) as PVOID,
-            (core::mem::size_of_val(&Logfont.elfEnumLogfontEx.elfStyle) as ULONG as _),
+            core::mem::size_of_val(&Logfont.elfEnumLogfontEx.elfStyle) as ULONG as _ ,
         );
         RtlZeroMemory(
             core::ptr::addr_of_mut!(Logfont.elfEnumLogfontEx.elfScript) as PVOID,
-            (core::mem::size_of_val(&Logfont.elfEnumLogfontEx.elfScript) as ULONG as _),
+            core::mem::size_of_val(&Logfont.elfEnumLogfontEx.elfScript) as ULONG as _ ,
         );
 
         Logfont.elfDesignVector.dvNumAxes = 0;
 
         RtlZeroMemory(
             core::ptr::addr_of_mut!(Logfont.elfDesignVector) as PVOID,
-            (core::mem::size_of::<DESIGNVECTOR>() as ULONG as _),
+            core::mem::size_of::<DESIGNVECTOR>() as ULONG as _ ,
         );
 
         HfontCreate(&Logfont, 0, 0, 0, core::ptr::null_mut())
@@ -211,7 +211,7 @@ unsafe fn GreGetKerningPairs_impl(
     }
 
     pdcattr = (*dc).pdcattr;
-    TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    TextObj = RealizeFontInit((*pdcattr).hlfntNew as _ );
     DC_UnlockDc(dc);
 
     if TextObj.is_null() {
@@ -279,7 +279,7 @@ unsafe fn FontGetObject_impl(
     let plf: *mut ENUMLOGFONTEXDVW = core::ptr::addr_of_mut!((*plfont).logfont);
 
     if ((*plfont).fl & TEXTOBJECT_INIT) == 0 {
-        let _Status = TextIntRealizeFont(((*plfont).BaseObject.hHmgr as _), plfont);
+        let _Status = TextIntRealizeFont((*plfont).BaseObject.hHmgr as _ , plfont);
     }
 
     if pvBuffer.is_null() {
@@ -357,7 +357,7 @@ unsafe fn IntGetCharDimensions_impl(
 
     pdcattr = (*pdc).pdcattr;
 
-    TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    TextObj = RealizeFontInit((*pdcattr).hlfntNew as _ );
     if TextObj.is_null() {
         DC_UnlockDc(pdc);
         return 0;
@@ -579,7 +579,7 @@ pub unsafe extern "C" fn NtGdiAddFontResourceW(
         SafeFileName.Length + core::mem::size_of::<u16>() as USHORT;
     SafeFileName.Buffer = ExAllocatePoolWithTag(
         PagedPool,
-        (SafeFileName.MaximumLength as SIZE_T as _),
+        SafeFileName.MaximumLength as SIZE_T as _ ,
         TAG_STRING,
     ) as *mut u16;
     if SafeFileName.Buffer.is_null() {
@@ -595,7 +595,7 @@ pub unsafe extern "C" fn NtGdiAddFontResourceW(
     RtlCopyMemory(
         SafeFileName.Buffer as PVOID,
         pwcFiles as PVOID,
-        (SafeFileName.Length as SIZE_T as _),
+        SafeFileName.Length as SIZE_T as _ ,
     );
 
     *SafeFileName
@@ -772,7 +772,7 @@ pub unsafe extern "C" fn NtGdiAddFontMemResourceEx(
         return core::ptr::null_mut();
     }
 
-    Buffer = ExAllocatePoolWithQuotaTag(PagedPool, (cjBuffer as usize as _), TAG_FONT);
+    Buffer = ExAllocatePoolWithQuotaTag(PagedPool, cjBuffer as usize as _ , TAG_FONT);
     RtlCopyMemory(Buffer, pvBuffer as PVOID, cjBuffer as usize);
 
     Ret = IntGdiAddFontMemResource(Buffer, cjBuffer, &mut NumFonts);
@@ -909,7 +909,7 @@ pub unsafe extern "C" fn NtGdiGetFontData(
     }
     pdcattr = (*Dc).pdcattr;
 
-    hFont = ((*pdcattr).hlfntNew as _);
+    hFont = (*pdcattr).hlfntNew as _ ;
     TextObj = RealizeFontInit(hFont);
     DC_UnlockDc(Dc);
 
@@ -1007,7 +1007,7 @@ pub unsafe extern "C" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) ->
 
     pdcattr = (*pDc).pdcattr;
 
-    hFont = ((*pdcattr).hlfntNew as _);
+    hFont = (*pdcattr).hlfntNew as _ ;
     TextObj = RealizeFontInit(hFont);
 
     'exit: {
@@ -1030,7 +1030,7 @@ pub unsafe extern "C" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) ->
             Size = ftGetFontUnicodeRanges(FontGdi, pgsSafe);
 
             if Size != 0 {
-                Status = SafeProbeForWrite(pgs as *mut core::ffi::c_void, (Size as _), 1);
+                Status = SafeProbeForWrite(pgs as *mut core::ffi::c_void, Size as _ , 1);
                 if NT_SUCCESS(Status) {
                     RtlCopyMemory(pgs as *mut core::ffi::c_void, pgsSafe as *mut core::ffi::c_void, Size as usize);
                 }
@@ -1182,7 +1182,7 @@ pub unsafe extern "C" fn NtGdiGetGlyphOutline(
         );
 
         if !pvBuf.is_null() {
-            Status = SafeProbeForWrite(UnsafeBuf, (cjBuf as _), 1);
+            Status = SafeProbeForWrite(UnsafeBuf, cjBuf as _ , 1);
             if NT_SUCCESS(Status) {
                 RtlCopyMemory(UnsafeBuf, pvBuf, cjBuf as usize);
             }
@@ -1193,7 +1193,7 @@ pub unsafe extern "C" fn NtGdiGetGlyphOutline(
         if !pgm.is_null() {
             Status = SafeProbeForWrite(
                 pgm as *mut core::ffi::c_void,
-                (core::mem::size_of::<GLYPHMETRICS>() as u32 as _),
+                core::mem::size_of::<GLYPHMETRICS>() as u32 as _ ,
                 1,
             );
             if NT_SUCCESS(Status) {
@@ -1307,7 +1307,7 @@ pub unsafe extern "C" fn NtGdiGetKerningPairs(
     }
 
     pdcattr = (*dc).pdcattr;
-    TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    TextObj = RealizeFontInit((*pdcattr).hlfntNew as _ );
     DC_UnlockDc(dc);
 
     if TextObj.is_null() {
@@ -1445,7 +1445,7 @@ pub unsafe extern "C" fn NtGdiGetOutlineTextMetricsInternalW(
         return 0;
     }
     pdcattr = (*dc).pdcattr;
-    hFont = ((*pdcattr).hlfntNew as _);
+    hFont = (*pdcattr).hlfntNew as _ ;
     TextObj = RealizeFontInit(hFont);
     DC_UnlockDc(dc);
     if TextObj.is_null() {
@@ -1457,9 +1457,9 @@ pub unsafe extern "C" fn NtGdiGetOutlineTextMetricsInternalW(
         w32r_TEXTOBJ_UnlockText(TextObj);
         return 0;
     }
-    TextIntUpdateSize(dc, TextObj, FontGDI, (1u8 as _));
+    TextIntUpdateSize(dc, TextObj, FontGDI, 1u8 as _ );
     w32r_TEXTOBJ_UnlockText(TextObj);
-    Size = ((IntGetOutlineTextMetrics(FontGDI, 0, core::ptr::null_mut(), 0 as BOOL)) as _);
+    Size = (IntGetOutlineTextMetrics(FontGDI, 0, core::ptr::null_mut(), 0 as BOOL)) as _ ;
     if otm.is_null() {
         return Size;
     }
@@ -1473,7 +1473,7 @@ pub unsafe extern "C" fn NtGdiGetOutlineTextMetricsInternalW(
         return 0;
     }
     RtlZeroMemory(potm as *mut _, Size as usize);
-    IntGetOutlineTextMetrics(FontGDI, Size, potm, (0u8 as _));
+    IntGetOutlineTextMetrics(FontGDI, Size, potm, 0u8 as _ );
 
     Status = SafeProbeForWrite(otm as *mut _, Size as usize, 1);
     if NT_SUCCESS(Status) {
@@ -1744,7 +1744,7 @@ pub unsafe extern "C" fn NtGdiGetRealizationInfo(
         return 0;
     }
     pdcattr = (*pDc).pdcattr;
-    pTextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    pTextObj = RealizeFontInit((*pdcattr).hlfntNew as _ );
     pFontGdi = ObjToGDI!((*pTextObj).Font);
     w32r_TEXTOBJ_UnlockText(pTextObj);
     DC_UnlockDc(pDc);
@@ -1754,14 +1754,14 @@ pub unsafe extern "C" fn NtGdiGetRealizationInfo(
         if !pri.is_null() {
             let Status: NTSTATUS = SafeProbeForWrite(
                 pri as *mut core::ffi::c_void,
-                (core::mem::size_of::<REALIZATION_INFO>() as ULONG as _),
+                core::mem::size_of::<REALIZATION_INFO>() as ULONG as _ ,
                 1,
             );
             if NT_SUCCESS(Status) {
                 RtlCopyMemory(
                     pri as *mut core::ffi::c_void,
                     &mut ri as *mut REALIZATION_INFO as *mut core::ffi::c_void,
-                    (core::mem::size_of::<REALIZATION_INFO>() as ULONG as _),
+                    core::mem::size_of::<REALIZATION_INFO>() as ULONG as _ ,
                 );
             }
 
@@ -1813,9 +1813,9 @@ pub unsafe extern "system" fn HfontCreate(
     RtlCopyMemory(
         core::ptr::addr_of_mut!((*plfont).logfont) as PVOID,
         pelfw as PVOID,
-        (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
+        core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _ ,
     );
-    ExInitializePushLock((core::ptr::addr_of_mut!((*plfont).lock) as _));
+    ExInitializePushLock(core::ptr::addr_of_mut!((*plfont).lock) as _ );
 
     if (*pelfw).elfEnumLogfontEx.elfLogFont.lfEscapement
         != (*pelfw).elfEnumLogfontEx.elfLogFont.lfOrientation
@@ -1904,14 +1904,14 @@ pub unsafe extern "C" fn NtGdiHfontCreate(
 
     Status = SafeProbeForRead(
         pelfw as PVOID,
-        (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
+        core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _ ,
         1,
     );
     if NT_SUCCESS(Status) {
         RtlCopyMemory(
             core::ptr::addr_of_mut!(SafeLogfont) as PVOID,
             pelfw as PVOID,
-            (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
+            core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _ ,
         );
     }
 

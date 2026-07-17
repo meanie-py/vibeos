@@ -114,8 +114,8 @@ unsafe fn MempAddMemoryBlock(
 
     // MAD BasePage/PageCount are PFN_NUMBER (u32 on i386, u64 on amd64);
     // `as _` coerces to the field's per-arch width (identity on i386).
-    (*Mad.add(MadCount as usize)).BasePage = ((BasePage) as _);
-    (*Mad.add(MadCount as usize)).PageCount = ((PageCount) as _);
+    (*Mad.add(MadCount as usize)).BasePage = (BasePage) as _ ;
+    (*Mad.add(MadCount as usize)).PageCount = (PageCount) as _ ;
     (*Mad.add(MadCount as usize)).MemoryType = Type;
 
     WinLdrInsertDescriptor(LoaderBlock, Mad.add(MadCount as usize));
@@ -175,14 +175,14 @@ pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_
     const LoaderFree: u32 = 0;
 
     let mut i: PFN_NUMBER;
-    let PagesCount: PFN_NUMBER;
+    let _PagesCount: PFN_NUMBER;
     let MemoryMapSizeInPages: PFN_NUMBER;
     let mut NoEntries: PFN_NUMBER = 0;
     let mut LastPageIndex: PFN_NUMBER;
     let MemoryMapStartPage: PFN_NUMBER;
     let MemoryMap: *mut PAGE_LOOKUP_TABLE_ITEM;
     let mut LastPageType: u32;
-    let Status: u8;
+    let _Status: u8;
 
     FrLdrHeapCleanupAll();
 

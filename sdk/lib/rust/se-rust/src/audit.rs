@@ -166,8 +166,8 @@ pub unsafe extern "system" fn SeLocateProcessImageName(
 
     image_name = ExAllocatePoolWithTag(
         NonPagedPool,
-        ((*audit_name).Name.MaximumLength as SIZE_T
-            + core::mem::size_of::<_UNICODE_STRING>() as SIZE_T),
+        (*audit_name).Name.MaximumLength as SIZE_T
+            + core::mem::size_of::<_UNICODE_STRING>() as SIZE_T ,
         TAG_SEPA,
     ) as PUNICODE_STRING;
     if image_name.is_null() {
@@ -238,7 +238,7 @@ pub unsafe extern "system" fn SePrivilegedServiceAuditAlarm(
 
     SepAdtPrivilegedServiceAuditAlarm(
         subject_context,
-        &mut SeSubsystemName,
+        &raw mut SeSubsystemName,
         service_name,
         (*subject_context).ClientToken as PTOKEN,
         (*subject_context).PrimaryToken as PTOKEN,
@@ -357,7 +357,7 @@ unsafe fn SepAccessCheckAndAuditAlarm(
 
         safe_granted_access_list = ExAllocatePoolWithTag(
             PagedPool,
-            (2 * result_list_length as SIZE_T * core::mem::size_of::<ULONG>() as SIZE_T),
+            2 * result_list_length as SIZE_T * core::mem::size_of::<ULONG>() as SIZE_T ,
             TAG_SEPA,
         ) as PACCESS_MASK;
         if safe_granted_access_list.is_null() {

@@ -1,24 +1,18 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
-use core::ffi::c_void;
 
 use hid_sys::{
     HIDP_DEVICE_DESC, PHIDP_DEVICE_DESC,
     HIDP_CAPS,
-    HIDP_REPORT_TYPE,
-    HIDP_VALUE_CAPS, PHIDP_VALUE_CAPS,
+    HIDP_REPORT_TYPE, PHIDP_VALUE_CAPS,
     HIDP_BUTTON_CAPS,
     HIDP_DATA, PHIDP_DATA,
     HIDP_KEYBOARD_DIRECTION,
     HIDP_KEYBOARD_MODIFIER_STATE, PHIDP_KEYBOARD_MODIFIER_STATE,
-    PHIDP_INSERT_SCANCODES,
-    HIDP_LINK_COLLECTION_NODE, PHIDP_LINK_COLLECTION_NODE,
-    HIDP_EXTENDED_ATTRIBUTES, PHIDP_EXTENDED_ATTRIBUTES,
-    PHIDP_REPORT_DESCRIPTOR, PHIDP_PREPARSED_DATA, _HIDP_PREPARSED_DATA,
+    PHIDP_INSERT_SCANCODES, PHIDP_LINK_COLLECTION_NODE, PHIDP_EXTENDED_ATTRIBUTES, PHIDP_PREPARSED_DATA, _HIDP_PREPARSED_DATA,
     USAGE,
     HidP_Input, HidP_Output, HidP_Feature,
-    HIDP_STATUS_SUCCESS, HIDP_STATUS_I8042_TRANS_UNKNOWN,
     HIDP_STATUS_INTERNAL_ERROR, HIDP_STATUS_INVALID_REPORT_TYPE,
     HIDP_STATUS_USAGE_NOT_FOUND, HIDP_STATUS_BUFFER_TOO_SMALL,
 };
@@ -246,14 +240,14 @@ pub unsafe extern "system" fn HidP_UsageAndPageListDifference(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_GetScaledUsageValue(
-    mut ReportType: HIDP_REPORT_TYPE,
-    mut UsagePage: USAGE,
-    mut LinkCollection: USHORT,
-    mut Usage: USAGE,
-    mut UsageValue: *mut i32,
-    mut PreparsedData: *mut HIDP_PREPARSED_DATA,
-    mut Report: *mut i8,
-    mut ReportLength: ULONG,
+    ReportType: HIDP_REPORT_TYPE,
+    UsagePage: USAGE,
+    LinkCollection: USHORT,
+    Usage: USAGE,
+    UsageValue: *mut i32,
+    PreparsedData: *mut HIDP_PREPARSED_DATA,
+    Report: *mut i8,
+    ReportLength: ULONG,
 ) -> NTSTATUS {
     if !((ReportType as u32 == HidP_Input as i32 as u32)
         || (ReportType as u32 == HidP_Output as i32 as u32)
@@ -360,13 +354,13 @@ pub unsafe extern "system" fn HidP_GetButtonCaps(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_GetSpecificButtonCaps(
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: u16,
-    LinkCollection: u16,
-    Usage: u16,
-    ButtonCaps: *mut HIDP_BUTTON_CAPS,
-    ButtonCapsLength: *mut u16,
-    PreparsedData: *mut HIDP_PREPARSED_DATA,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: u16,
+    _LinkCollection: u16,
+    _Usage: u16,
+    _ButtonCaps: *mut HIDP_BUTTON_CAPS,
+    _ButtonCapsLength: *mut u16,
+    _PreparsedData: *mut HIDP_PREPARSED_DATA,
 ) -> i32 {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -387,12 +381,12 @@ pub unsafe extern "system" fn HidP_GetSpecificButtonCaps(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_GetData(
-    ReportType: HIDP_REPORT_TYPE,
-    DataList: *mut HIDP_DATA,
-    DataLength: *mut u32,
-    PreparsedData: *mut HIDP_PREPARSED_DATA,
-    Report: *mut core::ffi::c_char,
-    ReportLength: u32,
+    _ReportType: HIDP_REPORT_TYPE,
+    _DataList: *mut HIDP_DATA,
+    _DataLength: *mut u32,
+    _PreparsedData: *mut HIDP_PREPARSED_DATA,
+    _Report: *mut core::ffi::c_char,
+    _ReportLength: u32,
 ) -> NTSTATUS {
 
     DebugFunction(
@@ -414,11 +408,11 @@ pub unsafe extern "system" fn HidP_GetData(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_GetExtendedAttributes(
-    mut ReportType: HIDP_REPORT_TYPE,
-    mut DataIndex: USHORT,
-    mut PreparsedData: PHIDP_PREPARSED_DATA,
-    mut Attributes: PHIDP_EXTENDED_ATTRIBUTES,
-    mut LengthAttributes: PULONG,
+    _ReportType: HIDP_REPORT_TYPE,
+    _DataIndex: USHORT,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
+    _Attributes: PHIDP_EXTENDED_ATTRIBUTES,
+    _LengthAttributes: PULONG,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -439,9 +433,9 @@ pub unsafe extern "system" fn HidP_GetExtendedAttributes(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_GetLinkCollectionNodes(
-    LinkCollectionNodes: PHIDP_LINK_COLLECTION_NODE,
-    LinkCollectionNodesLength: PULONG,
-    PreparsedData: PHIDP_PREPARSED_DATA,
+    _LinkCollectionNodes: PHIDP_LINK_COLLECTION_NODE,
+    _LinkCollectionNodesLength: PULONG,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -461,10 +455,10 @@ pub unsafe extern "system" fn HidP_GetLinkCollectionNodes(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_SysPowerEvent(
-    HidPacket: PCHAR,
-    HidPacketLength: USHORT,
-    Ppd: PHIDP_PREPARSED_DATA,
-    OutputBuffer: PULONG,
+    _HidPacket: PCHAR,
+    _HidPacketLength: USHORT,
+    _Ppd: PHIDP_PREPARSED_DATA,
+    _OutputBuffer: PULONG,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -484,8 +478,8 @@ pub unsafe extern "system" fn HidP_SysPowerEvent(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_SysPowerCaps(
-    mut Ppd: PHIDP_PREPARSED_DATA,
-    mut OutputBuffer: PULONG,
+    _Ppd: PHIDP_PREPARSED_DATA,
+    _OutputBuffer: PULONG,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -506,15 +500,15 @@ pub unsafe extern "system" fn HidP_SysPowerCaps(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_GetUsageValueArray(
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: USAGE,
-    LinkCollection: USHORT,
-    Usage: USAGE,
-    UsageValue: PCHAR,
-    UsageValueByteLength: USHORT,
-    PreparsedData: PHIDP_PREPARSED_DATA,
-    Report: PCHAR,
-    ReportLength: ULONG,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _Usage: USAGE,
+    _UsageValue: PCHAR,
+    _UsageValueByteLength: USHORT,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -535,14 +529,14 @@ pub unsafe extern "system" fn HidP_GetUsageValueArray(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_UnsetUsages(
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: USAGE,
-    LinkCollection: USHORT,
-    UsageList: PUSAGE,
-    UsageLength: PULONG,
-    PreparsedData: PHIDP_PREPARSED_DATA,
-    Report: PCHAR,
-    ReportLength: ULONG,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _UsageList: PUSAGE,
+    _UsageLength: PULONG,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -563,12 +557,12 @@ pub unsafe extern "system" fn HidP_UnsetUsages(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_TranslateUsagesToI8042ScanCodes(
-    ChangedUsageList: PUSAGE,
-    UsageListLength: ULONG,
-    KeyAction: HIDP_KEYBOARD_DIRECTION,
-    ModifierState: PHIDP_KEYBOARD_MODIFIER_STATE,
-    InsertCodesProcedure: PHIDP_INSERT_SCANCODES,
-    InsertCodesContext: PVOID,
+    _ChangedUsageList: PUSAGE,
+    _UsageListLength: ULONG,
+    _KeyAction: HIDP_KEYBOARD_DIRECTION,
+    _ModifierState: PHIDP_KEYBOARD_MODIFIER_STATE,
+    _InsertCodesProcedure: PHIDP_INSERT_SCANCODES,
+    _InsertCodesContext: PVOID,
 ) -> NTSTATUS {
 
     DebugFunction(
@@ -590,14 +584,14 @@ pub unsafe extern "system" fn HidP_TranslateUsagesToI8042ScanCodes(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_SetUsages(
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: USAGE,
-    LinkCollection: USHORT,
-    UsageList: PUSAGE,
-    UsageLength: PULONG,
-    PreparsedData: PHIDP_PREPARSED_DATA,
-    Report: PCHAR,
-    ReportLength: ULONG,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _UsageList: PUSAGE,
+    _UsageLength: PULONG,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
 
     DebugFunction(
@@ -621,15 +615,15 @@ pub unsafe extern "system" fn HidP_SetUsages(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_SetUsageValueArray(
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: USAGE,
-    LinkCollection: USHORT,
-    Usage: USAGE,
-    UsageValue: PCHAR,
-    UsageValueByteLength: USHORT,
-    PreparsedData: PHIDP_PREPARSED_DATA,
-    Report: PCHAR,
-    ReportLength: ULONG,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _Usage: USAGE,
+    _UsageValue: PCHAR,
+    _UsageValueByteLength: USHORT,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -650,14 +644,14 @@ pub unsafe extern "system" fn HidP_SetUsageValueArray(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_SetUsageValue(
-    mut ReportType: HIDP_REPORT_TYPE,
-    mut UsagePage: USAGE,
-    mut LinkCollection: USHORT,
-    mut Usage: USAGE,
-    mut UsageValue: ULONG,
-    mut PreparsedData: PHIDP_PREPARSED_DATA,
-    mut Report: PCHAR,
-    mut ReportLength: ULONG,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _Usage: USAGE,
+    _UsageValue: ULONG,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -678,14 +672,14 @@ pub unsafe extern "system" fn HidP_SetUsageValue(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_SetScaledUsageValue(
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: USAGE,
-    LinkCollection: USHORT,
-    Usage: USAGE,
-    UsageValue: LONG,
-    PreparsedData: PHIDP_PREPARSED_DATA,
-    Report: PCHAR,
-    ReportLength: ULONG,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _Usage: USAGE,
+    _UsageValue: LONG,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -705,12 +699,12 @@ pub unsafe extern "system" fn HidP_SetScaledUsageValue(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_SetData(
-    ReportType: HIDP_REPORT_TYPE,
-    DataList: PHIDP_DATA,
-    DataLength: PULONG,
-    PreparsedData: PHIDP_PREPARSED_DATA,
-    Report: PCHAR,
-    ReportLength: ULONG,
+    _ReportType: HIDP_REPORT_TYPE,
+    _DataList: PHIDP_DATA,
+    _DataLength: PULONG,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -731,8 +725,8 @@ pub unsafe extern "system" fn HidP_SetData(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_MaxDataListLength(
-    ReportType: HIDP_REPORT_TYPE,
-    PreparsedData: PHIDP_PREPARSED_DATA,
+    _ReportType: HIDP_REPORT_TYPE,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
 ) -> ULONG {
     DebugFunction(
         b"%s is UNIMPLEMENTED\n\0".as_ptr() as *const i8,
@@ -753,11 +747,11 @@ pub unsafe extern "system" fn HidP_MaxDataListLength(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidP_InitializeReportForID(
-    ReportType: HIDP_REPORT_TYPE,
-    ReportID: UCHAR,
-    PreparsedData: PHIDP_PREPARSED_DATA,
-    Report: PCHAR,
-    ReportLength: ULONG,
+    _ReportType: HIDP_REPORT_TYPE,
+    _ReportID: UCHAR,
+    _PreparsedData: PHIDP_PREPARSED_DATA,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
 
     DebugFunction(

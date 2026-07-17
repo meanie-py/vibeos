@@ -1,6 +1,5 @@
 use ntkrnl_sys::driver_ddk::*;
 use win32k_sys::win32k::*;
-use ntkrnl_sys::inline::ke::NtCurrentTeb;
 use ntkrnl_sys::ddk::{KeAttachProcess, KeDetachProcess, KeInitializeEvent, MmMapViewOfSection, MmUnmapViewOfSection, ObCloseHandle, ObCreateObject, ObFindHandleForObject, ObOpenObjectByName, ObOpenObjectByPointer, ObReferenceObjectByHandle, PsGetCurrentProcessId, PsGetCurrentProcessSessionId, PsGetCurrentProcessWin32Process, PsGetCurrentThreadId, PsGetCurrentThreadWin32Thread, PsGetProcessWin32Process, RtlAllocateHeap, RtlEqualUnicodeString, RtlGetVersion, RtlInitUnicodeString, RtlQueryRegistryValues, ZwAllocateVirtualMemory, ZwDuplicateObject, ZwFreeVirtualMemory};
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, KeSetEvent, RtlFreeHeap};
 use ntkrnl_sys::ob::{ObDereferenceObject, ObReferenceObject};
@@ -1399,7 +1398,7 @@ unsafe fn IntResolveDesktop_impl(
             (*ObjectName).Buffer,
             (*ObjectName).MaximumLength as usize / core::mem::size_of::<u16>(),
             fmt1_z.as_ptr(),
-            &gustrWindowStationsDir as *const _UNICODE_STRING,
+            &raw const gustrWindowStationsDir as *const _UNICODE_STRING,
             &WinStaName as *const _UNICODE_STRING,
         ));
         if !NT_SUCCESS(Status) {
@@ -1480,7 +1479,7 @@ unsafe fn IntResolveDesktop_impl(
                     (*ObjectName).Buffer,
                     (*ObjectName).MaximumLength as usize / core::mem::size_of::<u16>(),
                     svc_full_fmt.as_ptr(),
-                    &gustrWindowStationsDir as *const _UNICODE_STRING,
+                    &raw const gustrWindowStationsDir as *const _UNICODE_STRING,
                     ProcessLuid.HighPart,
                     ProcessLuid.LowPart,
                 ));
@@ -2623,23 +2622,23 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                 if (sz.cx * (gspv.cyWallpaper as i32)) > (sz.cy * (gspv.cxWallpaper as i32)) {
                     if gspv.WallpaperMode == wmFit {
                         scaleNum = sz.cy;
-                        scaleDen = (gspv.cyWallpaper as i32);
+                        scaleDen = gspv.cyWallpaper as i32 ;
                     } else {
                         scaleNum = sz.cx;
-                        scaleDen = (gspv.cxWallpaper as i32);
+                        scaleDen = gspv.cxWallpaper as i32 ;
                     }
                 } else {
                     if gspv.WallpaperMode == wmFit {
                         scaleNum = sz.cx;
-                        scaleDen = (gspv.cxWallpaper as i32);
+                        scaleDen = gspv.cxWallpaper as i32 ;
                     } else {
                         scaleNum = sz.cy;
-                        scaleDen = (gspv.cyWallpaper as i32);
+                        scaleDen = gspv.cyWallpaper as i32 ;
                     }
                 }
 
-                scaledWidth = EngMulDiv((gspv.cxWallpaper as i32), scaleNum, scaleDen);
-                scaledHeight = EngMulDiv((gspv.cyWallpaper as i32), scaleNum, scaleDen);
+                scaledWidth = EngMulDiv(gspv.cxWallpaper as i32 , scaleNum, scaleDen);
+                scaledHeight = EngMulDiv(gspv.cyWallpaper as i32 , scaleNum, scaleDen);
 
                 if gspv.WallpaperMode == wmFill {
                     wallpaperX = ((scaledWidth - sz.cx) * (gspv.cxWallpaper as i32)) / (2 * scaledWidth);
@@ -2682,7 +2681,7 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                     if Rect.right != 0 && Rect.bottom != 0 {
                         NtGdiStretchBlt(
                             hDC, x, y, sz.cx, sz.cy, hWallpaperDC, 0, 0,
-                            (gspv.cxWallpaper as i32), (gspv.cyWallpaper as i32), SRCCOPY, CLR_INVALID,
+                            gspv.cxWallpaper as i32 , gspv.cyWallpaper as i32 , SRCCOPY, CLR_INVALID,
                         );
                     }
                 } else if gspv.WallpaperMode == wmTile {
@@ -2691,18 +2690,18 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                         x = 0;
                         while x < Rect.right {
                             NtGdiBitBlt(
-                                hDC, x, y, (gspv.cxWallpaper as i32), (gspv.cyWallpaper as i32),
+                                hDC, x, y, gspv.cxWallpaper as i32 , gspv.cyWallpaper as i32 ,
                                 hWallpaperDC, 0, 0, SRCCOPY, CLR_INVALID, 0,
                             );
-                            x += (gspv.cxWallpaper as i32);
+                            x += gspv.cxWallpaper as i32 ;
                         }
-                        y += (gspv.cyWallpaper as i32);
+                        y += gspv.cyWallpaper as i32 ;
                     }
                 } else if gspv.WallpaperMode == wmFit {
                     if Rect.right != 0 && Rect.bottom != 0 {
                         NtGdiStretchBlt(
                             hDC, x, y, scaledWidth, scaledHeight, hWallpaperDC, 0, 0,
-                            (gspv.cxWallpaper as i32), (gspv.cyWallpaper as i32), SRCCOPY, CLR_INVALID,
+                            gspv.cxWallpaper as i32 , gspv.cyWallpaper as i32 , SRCCOPY, CLR_INVALID,
                         );
                     }
                 } else if gspv.WallpaperMode == wmFill {
@@ -2715,7 +2714,7 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                     }
                 } else {
                     NtGdiBitBlt(
-                        hDC, x, y, (gspv.cxWallpaper as i32), (gspv.cyWallpaper as i32),
+                        hDC, x, y, gspv.cxWallpaper as i32 , gspv.cyWallpaper as i32 ,
                         hWallpaperDC, 0, 0, SRCCOPY, CLR_INVALID, 0,
                     );
                 }
@@ -2785,8 +2784,8 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
             RECTL_vOffsetRect(&mut Rect, -Rect.left, -Rect.top);
         }
 
-        hFont1 = GreCreateFontIndirectW(&gspv.ncm.lfCaptionFont);
-        hFont2 = GreCreateFontIndirectW(&gspv.ncm.lfMenuFont);
+        hFont1 = GreCreateFontIndirectW(&raw const gspv.ncm.lfCaptionFont);
+        hFont2 = GreCreateFontIndirectW(&raw const gspv.ncm.lfMenuFont);
 
         if !hFont1.is_null() {
             hOldFont = NtGdiSelectFont(hDC, hFont1);

@@ -219,7 +219,7 @@ unsafe fn SepInitExports() -> BOOLEAN {
     SepExports.SeImpersonatePrivilege = SeImpersonatePrivilege;
     SepExports.SeCreateGlobalPrivilege = SeCreateGlobalPrivilege;
 
-    SeExports = &mut SepExports as PSE_EXPORTS;
+    SeExports = &raw mut SepExports as PSE_EXPORTS;
     1u8
 }
 
@@ -249,7 +249,7 @@ unsafe fn SepInitializationPhase0() -> BOOLEAN {
     }
     _se_trace(b"[SE] after SepInitExports\n");
 
-    ExInitializeResource(&mut SepSubjectContextLock);
+    ExInitializeResource(&raw mut SepSubjectContextLock);
     _se_trace(b"[SE] after ExInitializeResource\n");
 
     SepInitializeTokenImplementation();
@@ -350,7 +350,7 @@ unsafe fn SepInitializationPhase1() -> BOOLEAN {
         b'\\' as u16, b'S' as u16, b'e' as u16, b'c' as u16, b'u' as u16,
         b'r' as u16, b'i' as u16, b't' as u16, b'y' as u16, 0,
     ];
-    RtlInitUnicodeString(&mut name, SECURITY_PATH.as_ptr());
+    RtlInitUnicodeString(&mut name, (*(&raw const SECURITY_PATH)).as_ptr());
     InitializeObjectAttributes(
         &mut object_attributes,
         &mut name,
@@ -376,7 +376,7 @@ unsafe fn SepInitializationPhase1() -> BOOLEAN {
         b'L' as u16, b'I' as u16, b'Z' as u16, b'E' as u16, b'D' as u16,
         0,
     ];
-    RtlInitUnicodeString(&mut name, EVENT_NAME.as_ptr());
+    RtlInitUnicodeString(&mut name, (*(&raw const EVENT_NAME)).as_ptr());
     InitializeObjectAttributes(
         &mut object_attributes,
         &mut name,

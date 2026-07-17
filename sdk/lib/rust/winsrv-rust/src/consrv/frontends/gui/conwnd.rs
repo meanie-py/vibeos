@@ -7,11 +7,10 @@ use super::fullscreen::*;
 use super::text::*;
 use super::graphics::*;
 use super::guisettings::*;
-use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty, ConioCoordToPointer};
+use super::super::super::condrv::text::ConioCoordToPointer;
 use super::super::input::ConioProcessKey;
 use super::super::super::coninput::ConioProcessInputEvent;
-use super::super::super::{wcslen, wcscat, wcschr, wcscpy, wcscmp, wcsncpy, memcmp};
-use core::ffi::c_void;
+use super::super::super::{wcslen, wcscat, wcschr, wcsncpy, memcmp};
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -70,8 +69,6 @@ extern "system" {
 // a macro stub that swallows args.
 macro_rules! DPRINT  { ($($t:tt)*) => { () } }
 macro_rules! DPRINT1 { ($($t:tt)*) => { () } }
-pub(crate) use DPRINT;
-pub(crate) use DPRINT1;
 
 // `max(a, b)`/`min(a, b)` — C `MAX/MIN` macros, polymorphic. Use Rust's
 // generic Ord-based versions so we don't need monomorphic ULONG vs i16
@@ -168,7 +165,7 @@ pub unsafe fn SetConWndConsoleLeaderCID(GuiData: PGUI_CONSOLE_DATA) {
 
 pub unsafe fn RegisterConWndClass(hInstance: HINSTANCE) -> u8 {
     let mut WndClass: WNDCLASSEXW = core::mem::zeroed();
-    let mut WndClassAtom: ATOM;
+    let WndClassAtom: ATOM;
 
     ghDefaultIcon = LoadImageW(
         hInstance,
@@ -277,7 +274,7 @@ unsafe fn AppendMenuItems(hMenu: HMENU, Items: *const GUICONSOLE_MENUITEM) {
 pub unsafe fn CreateSysMenu(hWnd: HWND) {
     let mut mii: MENUITEMINFOW = core::mem::zeroed();
     let hMenu: HMENU;
-    let mut ptrTab: *mut u16;
+    let ptrTab: *mut u16;
     let mut szMenuStringBack: [u16; 255] = [0; 255];
 
     hMenu = GetSystemMenu(hWnd, 0);
@@ -1027,7 +1024,7 @@ unsafe fn IsSystemKey(VirtualKeyCode: WORD) -> BOOL {
 
 unsafe fn OnKey(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam: LPARAM) {
     let Console: PCONSRV_CONSOLE = (*GuiData).Console;
-    let mut ActiveBuffer: PCONSOLE_SCREEN_BUFFER;
+    let ActiveBuffer: PCONSOLE_SCREEN_BUFFER;
 
     if ConDrvValidateConsoleUnsafe(Console as PCONSOLE, CONSOLE_RUNNING, 1) == 0 {
         return;
@@ -1159,7 +1156,7 @@ unsafe fn OnKey(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam: L
 
 unsafe fn OnTimer(GuiData: PGUI_CONSOLE_DATA) {
     let Console = (*GuiData).Console;
-    let mut Buff: PCONSOLE_SCREEN_BUFFER;
+    let Buff: PCONSOLE_SCREEN_BUFFER;
 
     if (*GuiData).IsWindowVisible == 0 {
         return;
@@ -1293,9 +1290,9 @@ unsafe fn OnNcDestroy(hWnd: HWND) -> LRESULT {
 
 unsafe fn OnScroll(GuiData: PGUI_CONSOLE_DATA, nBar: INT, sbCode: WORD) {
     let Console: PCONSRV_CONSOLE = (*GuiData).Console;
-    let mut Buff: PCONSOLE_SCREEN_BUFFER;
+    let Buff: PCONSOLE_SCREEN_BUFFER;
     let mut sInfo: SCROLLINFO = core::mem::zeroed();
-    let mut oldPos: INT;
+    let oldPos: INT;
     let Maximum: INT;
     let pOriginXY: PSHORT;
 
@@ -1856,7 +1853,7 @@ unsafe fn Paste(GuiData: PGUI_CONSOLE_DATA) {
 
 unsafe fn OnGetMinMaxInfo(GuiData: PGUI_CONSOLE_DATA, minMaxInfo: PMINMAXINFO) {
     let Console: PCONSRV_CONSOLE = (*GuiData).Console;
-    let mut ActiveBuffer: PCONSOLE_SCREEN_BUFFER;
+    let ActiveBuffer: PCONSOLE_SCREEN_BUFFER;
     let mut windx: u32;
     let mut windy: u32;
     let mut WidthUnit: u32 = 0;
@@ -1993,7 +1990,7 @@ unsafe fn OnMove(GuiData: PGUI_CONSOLE_DATA) {
 }
 
 unsafe fn OnDropFiles(Console: PCONSRV_CONSOLE, hDrop: HDROP) {
-    let mut pszPath: LPWSTR;
+    let pszPath: LPWSTR;
     let mut szPath: [u16; MAX_PATH as usize + 2] = [0; MAX_PATH as usize + 2];
 
     szPath[0] = b'"' as u16;
@@ -2211,12 +2208,12 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 
             PM_RESIZE_TERMINAL => {
                 let Buff: PCONSOLE_SCREEN_BUFFER = (*GuiData).ActiveBuffer;
-                let mut hDC: HDC;
-                let mut hnew: HBITMAP;
-                let mut hold: *mut core::ffi::c_void;
+                let hDC: HDC;
+                let hnew: HBITMAP;
+                let hold: *mut core::ffi::c_void;
 
-                let mut Width: u32;
-                let mut Height: u32;
+                let Width: u32;
+                let Height: u32;
                 let mut WidthUnit: u32 = 0;
                 let mut HeightUnit: u32 = 0;
 
@@ -2245,7 +2242,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
                 (*GuiData).WindowSizeLock = 0;
             }
 
-            WM_SETCONSOLEINFO => {
+            _WM_SETCONSOLEINFO => {
                 GuiApplyUserSettings(GuiData, wParam as *mut core::ffi::c_void);
             }
 

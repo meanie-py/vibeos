@@ -304,7 +304,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                         GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION) as u32);
                     SrbSetTimeOutValue(srbHeader as PVOID, timeoutValue);
                     SrbAssignSrbFlags(srbHeader as PVOID,
-                        (SRB_FLAGS_NO_DATA_TRANSFER | SRB_FLAGS_DISABLE_AUTOSENSE | SRB_FLAGS_DISABLE_SYNCH_TRANSFER | SRB_FLAGS_NO_QUEUE_FREEZE));
+                        SRB_FLAGS_NO_DATA_TRANSFER | SRB_FLAGS_DISABLE_AUTOSENSE | SRB_FLAGS_DISABLE_SYNCH_TRANSFER | SRB_FLAGS_NO_QUEUE_FREEZE );
                     if (*PowerContext).Options.LockQueue() != 0 {
                         SrbSetSrbFlags(srbHeader as PVOID, SRB_FLAGS_BYPASS_LOCKED_QUEUE);
                     }
@@ -611,12 +611,12 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     SrbSetTimeOutValue(srbHeader as PVOID, (*fdoExtension).TimeOutValue);
                     SrbAssignSrbFlags(
                         srbHeader as PVOID,
-                        (SRB_FLAGS_NO_DATA_TRANSFER
+                        SRB_FLAGS_NO_DATA_TRANSFER
                             | SRB_FLAGS_DISABLE_AUTOSENSE
                             | SRB_FLAGS_DISABLE_SYNCH_TRANSFER
                             | SRB_FLAGS_NO_QUEUE_FREEZE
                             | SRB_FLAGS_BYPASS_LOCKED_QUEUE
-                            | SRB_FLAGS_D3_PROCESSING),
+                            | SRB_FLAGS_D3_PROCESSING ,
                     );
 
                     IoSetCompletionRoutine(
@@ -692,12 +692,12 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     SrbSetTimeOutValue(srbHeader as PVOID, (*fdoExtension).TimeOutValue);
                     SrbAssignSrbFlags(
                         srbHeader as PVOID,
-                        (SRB_FLAGS_NO_DATA_TRANSFER
+                        SRB_FLAGS_NO_DATA_TRANSFER
                             | SRB_FLAGS_DISABLE_AUTOSENSE
                             | SRB_FLAGS_DISABLE_SYNCH_TRANSFER
                             | SRB_FLAGS_NO_QUEUE_FREEZE
                             | SRB_FLAGS_BYPASS_LOCKED_QUEUE
-                            | SRB_FLAGS_D3_PROCESSING),
+                            | SRB_FLAGS_D3_PROCESSING ,
                     );
                     SrbSetCdbLength(srbHeader as PVOID, 10u8);
 
@@ -879,12 +879,12 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     SrbSetTimeOutValue(srbHeader as PVOID, timeoutValue);
                     SrbAssignSrbFlags(
                         srbHeader as PVOID,
-                        (SRB_FLAGS_NO_DATA_TRANSFER
+                        SRB_FLAGS_NO_DATA_TRANSFER
                             | SRB_FLAGS_DISABLE_AUTOSENSE
                             | SRB_FLAGS_DISABLE_SYNCH_TRANSFER
                             | SRB_FLAGS_NO_QUEUE_FREEZE
                             | SRB_FLAGS_BYPASS_LOCKED_QUEUE
-                            | SRB_FLAGS_D3_PROCESSING),
+                            | SRB_FLAGS_D3_PROCESSING ,
                     );
                     SrbSetCdbLength(srbHeader as PVOID, 6u8);
 
@@ -1913,7 +1913,7 @@ pub unsafe extern "system" fn ClasspPowerSettingCallback(
         }
     }
 
-    if IsEqualGUID(SettingGuid, &GUID_DISK_IDLE_TIMEOUT) {
+    if IsEqualGUID(SettingGuid, &raw const GUID_DISK_IDLE_TIMEOUT) {
         if ValueLength as usize != core::mem::size_of::<ULONG>() || Value.is_null() {
             return STATUS_INVALID_PARAMETER;
         }
@@ -1935,7 +1935,7 @@ pub unsafe extern "system" fn ClasspPowerSettingCallback(
             fdoEntry = (*fdoEntry).ListEntry.Flink as PIDLE_POWER_FDO_LIST_ENTRY;
         }
         KeReleaseGuardedMutex((&raw mut IdlePowerFDOListMutex).cast());
-    } else if IsEqualGUID(SettingGuid, &GUID_CONSOLE_DISPLAY_STATE) {
+    } else if IsEqualGUID(SettingGuid, &raw const GUID_CONSOLE_DISPLAY_STATE) {
         if ValueLength as usize == core::mem::size_of::<ULONG>() && !Value.is_null() {
             if *(Value as PULONG) == PowerMonitorOff as ULONG {
                 ClasspScreenOff = TRUE as BOOLEAN;

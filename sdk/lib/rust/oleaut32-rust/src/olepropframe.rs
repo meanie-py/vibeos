@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 extern "system" {
     fn CreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT;
@@ -260,7 +259,7 @@ pub unsafe extern "system" fn OleCreatePropertyFrameIndirect(lpParams: *mut OCPF
     let mut property_sheet_dialog_find: HRSRC = core::ptr::null_mut();
     let mut property_sheet_dialog_load: HGLOBAL = core::ptr::null_mut();
     let mut property_sheet_dialog_data: *mut u16 = core::ptr::null_mut();
-    let mut hdc: HDC;
+    let hdc: HDC;
     let mut font_desc: LOGFONTW = core::mem::zeroed();
     let mut hfont: HFONT;
     let mut font_width: i32 = 4;
@@ -485,8 +484,8 @@ pub unsafe extern "system" fn OleCreatePropertyFrame(
     cPages: ULONG,
     pPageClsID: LPCLSID,
     lcid: LCID,
-    dwReserved: DWORD,
-    pvReserved: LPVOID,
+    _dwReserved: DWORD,
+    _pvReserved: LPVOID,
 ) -> HRESULT {
     let mut ocpf = OCPFIPARAMS {
         cbStructSize: core::mem::size_of::<OCPFIPARAMS>() as ULONG,

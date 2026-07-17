@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 static mut WorldAuthority: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY {
@@ -263,7 +262,7 @@ pub unsafe extern "C" fn SampCreateBuiltinDomainSD(
 
     'done: {
         Status = RtlAllocateAndInitializeSid(
-            &mut WorldAuthority,
+            &raw mut WorldAuthority,
             1,
             SECURITY_WORLD_RID as ULONG,
             0, 0, 0, 0, 0, 0, 0,
@@ -274,7 +273,7 @@ pub unsafe extern "C" fn SampCreateBuiltinDomainSD(
         }
 
         Status = RtlAllocateAndInitializeSid(
-            &mut NtAuthority,
+            &raw mut NtAuthority,
             1,
             SECURITY_ANONYMOUS_LOGON_RID as ULONG,
             0, 0, 0, 0, 0, 0, 0,
@@ -285,7 +284,7 @@ pub unsafe extern "C" fn SampCreateBuiltinDomainSD(
         }
 
         Status = RtlAllocateAndInitializeSid(
-            &mut NtAuthority,
+            &raw mut NtAuthority,
             2,
             SECURITY_BUILTIN_DOMAIN_RID as ULONG,
             DOMAIN_ALIAS_RID_ADMINS as ULONG,
@@ -998,7 +997,7 @@ pub unsafe extern "C" fn SampCreateGroupSD(
 
     'done: loop {
         Status = RtlAllocateAndInitializeSid(
-            &mut WorldAuthority,
+            &raw mut WorldAuthority,
             1,
             SECURITY_WORLD_RID as ULONG,
             0, 0, 0, 0, 0, 0, 0,
@@ -1009,7 +1008,7 @@ pub unsafe extern "C" fn SampCreateGroupSD(
         }
 
         Status = RtlAllocateAndInitializeSid(
-            &mut NtAuthority,
+            &raw mut NtAuthority,
             1,
             SECURITY_ANONYMOUS_LOGON_RID as ULONG,
             0, 0, 0, 0, 0, 0, 0,
@@ -1020,7 +1019,7 @@ pub unsafe extern "C" fn SampCreateGroupSD(
         }
 
         Status = RtlAllocateAndInitializeSid(
-            &mut NtAuthority,
+            &raw mut NtAuthority,
             2,
             SECURITY_BUILTIN_DOMAIN_RID as ULONG,
             DOMAIN_ALIAS_RID_ADMINS as ULONG,
@@ -1032,7 +1031,7 @@ pub unsafe extern "C" fn SampCreateGroupSD(
         }
 
         Status = RtlAllocateAndInitializeSid(
-            &mut NtAuthority,
+            &raw mut NtAuthority,
             2,
             SECURITY_BUILTIN_DOMAIN_RID as ULONG,
             DOMAIN_ALIAS_RID_ACCOUNT_OPS as ULONG,
@@ -1240,7 +1239,7 @@ pub unsafe extern "C" fn SampCreateUserSD(
 
     'done: {
         Status = RtlAllocateAndInitializeSid(
-            &mut WorldAuthority,
+            &raw mut WorldAuthority,
             1,
             SECURITY_WORLD_RID as u32,
             0,
@@ -1257,7 +1256,7 @@ pub unsafe extern "C" fn SampCreateUserSD(
         }
 
         Status = RtlAllocateAndInitializeSid(
-            &mut NtAuthority,
+            &raw mut NtAuthority,
             1,
             SECURITY_ANONYMOUS_LOGON_RID as u32,
             0,
@@ -1274,7 +1273,7 @@ pub unsafe extern "C" fn SampCreateUserSD(
         }
 
         Status = RtlAllocateAndInitializeSid(
-            &mut NtAuthority,
+            &raw mut NtAuthority,
             2,
             SECURITY_BUILTIN_DOMAIN_RID as u32,
             DOMAIN_ALIAS_RID_ADMINS as u32,

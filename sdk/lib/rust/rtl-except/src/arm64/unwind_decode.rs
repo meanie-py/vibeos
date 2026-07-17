@@ -173,12 +173,17 @@ unsafe fn interpret_codes(
     start: usize,
 ) -> bool {
     let mut i = start;
-    // `last_pair_first` tracks the base register of the most recent pair save so
-    // `save_next` can continue the numeric sequence (spec: save_next follows a
-    // register-pair save). `last_pair_fp` selects the register bank.
-    let mut next_int_reg: usize = 0;
-    let mut next_fp_reg: usize = 0;
-    let mut next_is_fp = false;
+    // save_next (0xE6) continuation state. save_next restores the register pair
+    // immediately BELOW the previous save, 16 bytes toward lower offset, and — being
+    // a plain (non-pre-indexed) stp/ldp — contributes ZERO to SP. So it needs the
+    // (lowest register, Sp-relative byte offset, bank) of the MOST RECENT save of ANY
+    // kind, not just pair saves: real code emits save_next right after save_fplr
+    // (KeWaitForSingleObject: x29@128 → x27x28@112 → …) and after a single save_reg
+    // (CRT shims: x23 → x21x22@off-16). Tracking only pair-saves and mutating SP by
+    // +16 per save_next was the §9.69 / KeMutex-SeInheritance wild-SP bug.
+    let mut last_reg: usize = 0;
+    let mut last_off: ULONG64 = 0;
+    let mut last_is_fp = false;
     // Running SP cursor for the *offset-based* saves is just Context.Sp; the
     // pre-indexed / alloc codes mutate Context.Sp as they go.
     let mut guard = 0usize;
@@ -199,19 +204,26 @@ unsafe fn interpret_codes(
                 let z = (b0 & 0x1F) as ULONG64;
                 restore_int_pair(Context, Nv, 19, sp);
                 (*Context).Sp = sp + z * 8;
-                next_int_reg = 21;
-                next_is_fp = false;
+                last_reg = 19;
+                last_off = 0; // pre-indexed frame alloc; save_next never follows it
+                last_is_fp = false;
             }
             // save_fplr: 01zzzzzz — load x29,lr from [sp + z*8]
             0x40..=0x7F => {
                 let z = (b0 & 0x3F) as ULONG64;
                 restore_int_pair(Context, Nv, 29, sp + z * 8);
+                last_reg = 29;
+                last_off = z * 8;
+                last_is_fp = false;
             }
             // save_fplr_x: 10zzzzzz — load x29,lr from [sp]; sp += (z+1)*8
             0x80..=0xBF => {
                 let z = (b0 & 0x3F) as ULONG64;
                 restore_int_pair(Context, Nv, 29, sp);
                 (*Context).Sp = sp + (z + 1) * 8;
+                last_reg = 29;
+                last_off = 0;
+                last_is_fp = false;
             }
             // alloc_m: 11000xxx xxxxxxxx — sp += x*16
             0xC0..=0xC7 => {
@@ -241,6 +253,9 @@ unsafe fn interpret_codes(
                     let z = (b1 & 0x1F) as ULONG64;
                     restore_fp_single(Context, Nv, 8 + x, sp);
                     (*Context).Sp = sp + (z + 1) * 8;
+                    last_reg = 8 + x;
+                    last_off = 0;
+                    last_is_fp = true;
                 } else {
                     if i + 1 >= codes_len {
                         return false;
@@ -252,8 +267,9 @@ unsafe fn interpret_codes(
                             let x = ((((b0 & 0x03) as usize) << 2) | (b1 >> 6) as usize) & 0x0F;
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_int_pair(Context, Nv, 19 + x, sp + z * 8);
-                            next_int_reg = 19 + x + 2;
-                            next_is_fp = false;
+                            last_reg = 19 + x;
+                            last_off = z * 8;
+                            last_is_fp = false;
                         }
                         // save_regp_x: 110011xx xxzzzzzz
                         0xCC | 0xCE => {
@@ -261,21 +277,29 @@ unsafe fn interpret_codes(
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_int_pair(Context, Nv, 19 + x, sp);
                             (*Context).Sp = sp + (z + 1) * 8;
-                            next_int_reg = 19 + x + 2;
-                            next_is_fp = false;
+                            last_reg = 19 + x;
+                            last_off = 0;
+                            last_is_fp = false;
                         }
                         // save_reg: 110100xx xxzzzzzz
                         0xD0 | 0xD2 => {
                             let x = ((((b0 & 0x03) as usize) << 2) | (b1 >> 6) as usize) & 0x0F;
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_int_single(Context, Nv, 19 + x, sp + z * 8);
+                            last_reg = 19 + x;
+                            last_off = z * 8;
+                            last_is_fp = false;
                         }
-                        // save_reg_x: 1101010x xxxzzzzz
+                        // save_reg_x: 1101010x xxxzzzzz  (4-bit reg: 1 bit in b0, 3 in
+                        // b1>>5; 5-bit z. Was (<<2 | >>6) — dropped a reg bit for x>=4.)
                         0xD4 => {
-                            let x = (((b0 & 0x01) << 2) | (b1 >> 6)) as usize;
+                            let x = (((b0 & 0x01) << 3) | (b1 >> 5)) as usize;
                             let z = (b1 & 0x1F) as ULONG64;
                             restore_int_single(Context, Nv, 19 + x, sp);
                             (*Context).Sp = sp + (z + 1) * 8;
+                            last_reg = 19 + x;
+                            last_off = 0;
+                            last_is_fp = false;
                         }
                         // save_lrpair: 1101011x xxzzzzzz
                         0xD6 => {
@@ -283,14 +307,18 @@ unsafe fn interpret_codes(
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_int_single(Context, Nv, 19 + 2 * x, sp + z * 8);
                             restore_int_single(Context, Nv, 30, sp + z * 8 + 8);
+                            last_reg = 19 + 2 * x;
+                            last_off = z * 8;
+                            last_is_fp = false;
                         }
                         // save_fregp: 1101100x xxzzzzzz
                         0xD8 => {
                             let x = (((b0 & 0x01) << 2) | (b1 >> 6)) as usize;
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_fp_pair(Context, Nv, 8 + x, sp + z * 8);
-                            next_fp_reg = 8 + x + 2;
-                            next_is_fp = true;
+                            last_reg = 8 + x;
+                            last_off = z * 8;
+                            last_is_fp = true;
                         }
                         // save_fregp_x: 1101101x xxzzzzzz
                         0xDA => {
@@ -298,14 +326,18 @@ unsafe fn interpret_codes(
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_fp_pair(Context, Nv, 8 + x, sp);
                             (*Context).Sp = sp + (z + 1) * 8;
-                            next_fp_reg = 8 + x + 2;
-                            next_is_fp = true;
+                            last_reg = 8 + x;
+                            last_off = 0;
+                            last_is_fp = true;
                         }
                         // save_freg: 1101110x xxzzzzzz
                         0xDC => {
                             let x = (((b0 & 0x01) << 2) | (b1 >> 6)) as usize;
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_fp_single(Context, Nv, 8 + x, sp + z * 8);
+                            last_reg = 8 + x;
+                            last_off = z * 8;
+                            last_is_fp = true;
                         }
                         _ => {}
                     }
@@ -339,19 +371,21 @@ unsafe fn interpret_codes(
             0xE4 | 0xE5 => {
                 return true;
             }
-            // save_next — continue the previous pair save into the next slot.
-            // The next pair is stored 16 bytes further up (toward higher addr).
+            // save_next (0xE6) — restore the register pair immediately BELOW the
+            // previous save: regs (last_reg-2, last_reg-1) at [sp + (last_off-16)].
+            // It maps to a plain stp/ldp at a fixed offset, so it must NOT change SP
+            // (the old `+= 16` per save_next was the wild-SP root, §9.69/§9.92). The
+            // bank follows the previous save. sp is this frame's (unchanged) SP.
             0xE6 => {
-                // save_next reuses the same relative position; the canonical use
-                // is right after a *_x pre-indexed save, so the slot is [sp].
-                if next_is_fp {
-                    restore_fp_pair(Context, Nv, next_fp_reg, (*Context).Sp);
-                    (*Context).Sp = (*Context).Sp + 16;
-                    next_fp_reg += 2;
-                } else {
-                    restore_int_pair(Context, Nv, next_int_reg, (*Context).Sp);
-                    (*Context).Sp = (*Context).Sp + 16;
-                    next_int_reg += 2;
+                if last_reg >= 2 && last_off >= 16 {
+                    let off = last_off - 16;
+                    if last_is_fp {
+                        restore_fp_pair(Context, Nv, last_reg - 2, sp + off);
+                    } else {
+                        restore_int_pair(Context, Nv, last_reg - 2, sp + off);
+                    }
+                    last_reg -= 2;
+                    last_off = off;
                 }
             }
             // save_any_reg: 3-byte general save — decode enough to restore + SP.
@@ -448,6 +482,7 @@ pub(crate) unsafe fn virtual_unwind_xdata(
     // know whether the prolog set up a frame pointer. Frameless functions keep SP.
     let sp_in = (*Context).Sp;
     let x29_in = *ctx_x(Context).add(29);
+    let lr_in = *ctx_x(Context).add(30);
     *EstablisherFrame = sp_in;
 
     // Optional extension header word when both counts are zero.
@@ -566,7 +601,13 @@ pub(crate) unsafe fn virtual_unwind_xdata(
     // make forward progress rather than looping.
     let ok = interpret_codes(Context, Nv, codes, codes_len, start_index);
     if !ok {
-        // Leaf fallback: return address in LR, SP unchanged.
+        // Malformed / truncated code stream: interpret_codes may have left
+        // Context.Sp and the callee-saved regs HALF-updated (a wild SP is the
+        // §9.69 vector-re-entry wedge). Reset to a clean LEAF unwind — caller SP =
+        // entry SP, return address = entry LR — so the dispatcher makes safe
+        // forward progress instead of transferring control to a garbage SP.
+        (*Context).Sp = sp_in;
+        set_x(Context, 30, lr_in);
     }
 
     // Recovered return address: Pc <- Lr (X[30]).

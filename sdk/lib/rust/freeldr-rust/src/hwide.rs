@@ -734,9 +734,9 @@ unsafe fn AtapDrainDeviceBuffer(
     Registers: PIDE_REGISTERS)
 {
     let mut IdeStatus: UCHAR;
-    let mut i: ULONG;
+    let _i: ULONG;
 
-    for i in 0..(0x10000 / core::mem::size_of::<USHORT>() as ULONG) {
+    for _i in 0..(0x10000 / core::mem::size_of::<USHORT>() as ULONG) {
         IdeStatus = ATA_READ((*Registers).__bindgen_anon_1.Status);
         if (IdeStatus & IDE_STATUS_DRQ) == 0 {
             break;
@@ -751,7 +751,7 @@ unsafe fn AtapPerformSoftwareReset(
 {
 
     let Registers: PIDE_REGISTERS = core::ptr::addr_of_mut!((*DeviceUnit).Registers);
-    let mut IdeStatus: UCHAR;
+    let IdeStatus: UCHAR;
 
     ERR(b"Reset device at %X:%u\n\0".as_ptr() as PCHAR, ((*Registers).Data) as usize, ((*DeviceUnit).DeviceNumber) as usize);
 
@@ -937,11 +937,11 @@ unsafe fn AtapIssuePacketCommand(
     DeviceUnit: PHW_DEVICE_UNIT,
     Request: PATA_DEVICE_REQUEST)
 {
-    let mut ByteCount: USHORT;
+    let ByteCount: USHORT;
 
     (*Request).Flags |= REQUEST_FLAG_AWAIT_CDB;
 
-    ByteCount = min((((*Request).DataTransferLength) as u16), 0xFFFE);
+    ByteCount = min(((*Request).DataTransferLength) as u16 , 0xFFFE);
 
     ATA_WRITE((*DeviceUnit).Registers.lm.ByteCountLow, (ByteCount >> 0) as UCHAR);
     ATA_WRITE((*DeviceUnit).Registers.lh.ByteCountHigh, (ByteCount >> 8) as UCHAR);
@@ -973,7 +973,7 @@ unsafe fn AtapLoadTaskFile(
     ATA_WRITE((*DeviceUnit).Registers.__bindgen_anon_1.Command, (*TaskFile).Command);
 
     if (*Request).Flags & REQUEST_FLAG_READ_WRITE_MULTIPLE != 0 {
-        BlockCount = (((*DeviceUnit).MultiSectorTransfer) as u32);
+        BlockCount = ((*DeviceUnit).MultiSectorTransfer) as u32 ;
     } else {
         BlockCount = 1;
     }
@@ -986,7 +986,7 @@ unsafe fn AtapSendCommand(
 ) -> UCHAR {
 
     let mut IdeStatus: UCHAR;
-    let AtaStatus: UCHAR;
+    let _AtaStatus: UCHAR;
 
     (*DeviceUnit).BytesToTransfer = (*Request).DataTransferLength;
     (*DeviceUnit).DataBuffer = (*Request).DataBuffer as PUCHAR;
@@ -1466,7 +1466,7 @@ unsafe fn AtapAtapiInitDevice(
     let IdentifyPacketData: PIDENTIFY_PACKET_DATA = &mut (*DeviceUnit).u.IdentifyPacketData;
     let mut i: ULONG;
 
-    (*DeviceUnit).CdbSize = ((AtaDevCdbSizeInWords(IdentifyPacketData)) as u8);
+    (*DeviceUnit).CdbSize = (AtaDevCdbSizeInWords(IdentifyPacketData)) as u8 ;
 
     AtapAtapiClearUnitAttention(DeviceUnit);
 
@@ -1534,7 +1534,7 @@ unsafe fn AtapAtaInitDevice(
 {
 
     let IdentifyData: PIDENTIFY_DEVICE_DATA = core::ptr::addr_of_mut!((*DeviceUnit).u.IdentifyDeviceData);
-    let mut TotalSectors: ULONG64;
+    let TotalSectors: ULONG64;
     let mut Cylinders: USHORT = 0;
     let mut Heads: USHORT = 0;
     let mut SectorsPerTrack: USHORT = 0;
@@ -1568,9 +1568,9 @@ unsafe fn AtapAtaInitDevice(
     }
 
     (*DeviceUnit).P.TotalSectors = TotalSectors;
-    (*DeviceUnit).P.Cylinders = ((Cylinders) as u32);
-    (*DeviceUnit).P.Heads = ((Heads) as u32);
-    (*DeviceUnit).P.SectorsPerTrack = ((SectorsPerTrack) as u32);
+    (*DeviceUnit).P.Cylinders = (Cylinders) as u32 ;
+    (*DeviceUnit).P.Heads = (Heads) as u32 ;
+    (*DeviceUnit).P.SectorsPerTrack = (SectorsPerTrack) as u32 ;
     (*DeviceUnit).P.SectorSize = AtaDevBytesPerLogicalSector(IdentifyData as *const core::ffi::c_void);
     (*DeviceUnit).P.SectorSize = max((*DeviceUnit).P.SectorSize, 512);
 

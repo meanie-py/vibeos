@@ -129,7 +129,7 @@ unsafe fn UserHMGetHandle<T>(obj: *mut T) -> HWND {
 // RECTL_bPointInRect / RECTL_vSetRect (rect.h FORCEINLINE).
 #[inline(always)]
 unsafe fn RECTL_bPointInRect(prcl: *const RECTL, x: LONG, y: LONG) -> BOOLEAN {
-    ((x >= (*prcl).left && x < (*prcl).right && y >= (*prcl).top && y < (*prcl).bottom) as BOOLEAN)
+    (x >= (*prcl).left && x < (*prcl).right && y >= (*prcl).top && y < (*prcl).bottom) as BOOLEAN
 }
 #[inline(always)]
 unsafe fn RECTL_vSetRect(prcl: *mut RECTL, left: LONG, top: LONG, right: LONG, bottom: LONG) {

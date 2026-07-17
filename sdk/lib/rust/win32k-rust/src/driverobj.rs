@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 
 // drop_gdiobj_macro_externs: dropped 3 bogus extern decl(s) for GDI-object macro(s): DRIVEROBJ_AllocObjectWithHandle, DRIVEROBJ_UnlockObject, DRIVEROBJ_TryLockObject — these are macros in gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. Inline-expand via GDIOBJ_* primitives per win32k_translation_prompt.md §6.
 // Macro expansions (from win32ss/gdi/eng/driverobj.h:17-25):

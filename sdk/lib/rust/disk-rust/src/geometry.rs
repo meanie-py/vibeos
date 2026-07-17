@@ -79,8 +79,8 @@ pub struct DISK_DETECT_INFO {
 pub type PDISK_DETECT_INFO = *mut DISK_DETECT_INFO;
 
 pub const NUM_PARTITION_TABLE_ENTRIES: u32 = 4;
-pub const PARTITION_TABLE_OFFSET: usize = (0x1be / 2);
-pub const BOOT_SIGNATURE_OFFSET: usize = ((0x200 / 2) - 1);
+pub const PARTITION_TABLE_OFFSET: usize = 0x1be / 2;
+pub const BOOT_SIGNATURE_OFFSET: usize = (0x200 / 2) - 1;
 pub const BOOT_RECORD_SIGNATURE: u16 = 0xaa55;
 
 // geometry.c file-scope globals (BIOS Int13 disk-detection state). `static mut`

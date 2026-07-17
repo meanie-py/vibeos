@@ -180,7 +180,7 @@ pub unsafe extern "system" fn RtlInitOutOfProcessMemoryStream(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlFinalReleaseOutOfProcessMemoryStream(
-    Stream: PRTL_MEMORY_STREAM,
+    _Stream: PRTL_MEMORY_STREAM,
 ) {
 }
 
@@ -426,7 +426,7 @@ pub unsafe extern "system" fn RtlCopyMemoryStreamTo(
 pub unsafe extern "system" fn RtlStatMemoryStream(
     This: *mut IStream,
     Stats: *mut STATSTG,
-    Flags: ULONG,
+    _Flags: ULONG,
 ) -> HRESULT {
     let Stream: PRTL_MEMORY_STREAM = IStream_To_RTL_MEMORY_STREAM(This);
 

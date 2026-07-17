@@ -40,7 +40,7 @@ static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
     }
 };
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
+    &raw const __wine_dbch_msgina as *mut __wine_debug_channel;
 
 // Cross-DLL out-calls unique to gui.rs (the rest come from crate::msgina_externs).
 // WINAPI = stdcall on i386 → extern "system", not extern "C" (cdecl decoration

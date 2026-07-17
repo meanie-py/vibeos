@@ -76,7 +76,7 @@ pub unsafe extern "system" fn ExpInitializeEventPairImplementation() -> BOOLEAN 
         &mut Name,
         &mut ObjectTypeInitializer,
         core::ptr::null_mut(),
-        &mut ExEventPairObjectType,
+        &raw mut ExEventPairObjectType,
     );
     if Status < 0 {
         return 0u8;

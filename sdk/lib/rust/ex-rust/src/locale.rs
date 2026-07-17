@@ -126,7 +126,7 @@ unsafe fn ExpValidateNlsLocaleId(LocaleId: LCID) -> NTSTATUS {
     NlsLocalKeyAttrs = _OBJECT_ATTRIBUTES {
         Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
         RootDirectory: core::ptr::null_mut(),
-        ObjectName: &mut NlsLocaleKeyPath as *mut _UNICODE_STRING,
+        ObjectName: &raw mut NlsLocaleKeyPath as *mut _UNICODE_STRING,
         Attributes: OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
         SecurityDescriptor: core::ptr::null_mut(),
         SecurityQualityOfService: core::ptr::null_mut(),
@@ -135,7 +135,7 @@ unsafe fn ExpValidateNlsLocaleId(LocaleId: LCID) -> NTSTATUS {
     AltSortKeyAttrs = _OBJECT_ATTRIBUTES {
         Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
         RootDirectory: core::ptr::null_mut(),
-        ObjectName: &mut AltSortKeyPath as *mut _UNICODE_STRING,
+        ObjectName: &raw mut AltSortKeyPath as *mut _UNICODE_STRING,
         Attributes: OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
         SecurityDescriptor: core::ptr::null_mut(),
         SecurityQualityOfService: core::ptr::null_mut(),
@@ -144,7 +144,7 @@ unsafe fn ExpValidateNlsLocaleId(LocaleId: LCID) -> NTSTATUS {
     LangGroupKeyAttrs = _OBJECT_ATTRIBUTES {
         Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
         RootDirectory: core::ptr::null_mut(),
-        ObjectName: &mut LangGroupPath as *mut _UNICODE_STRING,
+        ObjectName: &raw mut LangGroupPath as *mut _UNICODE_STRING,
         Attributes: OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
         SecurityDescriptor: core::ptr::null_mut(),
         SecurityQualityOfService: core::ptr::null_mut(),
@@ -274,7 +274,7 @@ unsafe fn ExpGetCurrentUserUILanguage(
     ObjectAttributes = _OBJECT_ATTRIBUTES {
         Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
         RootDirectory: UserKey,
-        ObjectName: &mut KeyName as *mut _UNICODE_STRING,
+        ObjectName: &raw mut KeyName as *mut _UNICODE_STRING,
         Attributes: OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
         SecurityDescriptor: core::ptr::null_mut(),
         SecurityQualityOfService: core::ptr::null_mut(),
@@ -346,7 +346,7 @@ unsafe fn ExpSetCurrentUserUILanguage(
     ObjectAttributes = _OBJECT_ATTRIBUTES {
         Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
         RootDirectory: UserHandle,
-        ObjectName: &mut KeyName as *mut _UNICODE_STRING,
+        ObjectName: &raw mut KeyName as *mut _UNICODE_STRING,
         Attributes: OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
         SecurityDescriptor: core::ptr::null_mut(),
         SecurityQualityOfService: core::ptr::null_mut(),

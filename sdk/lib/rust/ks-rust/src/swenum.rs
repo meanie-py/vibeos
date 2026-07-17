@@ -154,7 +154,7 @@ pub unsafe extern "C" fn KspCreatePDO(
     let mut Status: NTSTATUS;
     let mut DeviceExtension: PCOMMON_DEVICE_EXTENSION;
 
-    CurDeviceId = InterlockedIncrement(&mut KsDeviceCount) as ULONG;
+    CurDeviceId = InterlockedIncrement(&raw mut KsDeviceCount) as ULONG;
 
     swprintf(
         Buffer.as_mut_ptr(),
@@ -247,9 +247,8 @@ pub unsafe extern "C" fn KspRemoveDeviceAssociations(
     Entry = (*DeviceEntry).DeviceInterfaceList.Flink;
 
     while Entry != &mut (*DeviceEntry).DeviceInterfaceList as *mut _ as PLIST_ENTRY {
-        CurEntry = core::mem::transmute::<isize, PBUS_INSTANCE_ENTRY>(
-            (Entry as isize)
-                .wrapping_sub(core::mem::offset_of!(BUS_INSTANCE_ENTRY, Entry) as isize),
+        CurEntry = core::ptr::with_exposed_provenance_mut::<BUS_INSTANCE_ENTRY>((Entry as usize)
+                .wrapping_sub(core::mem::offset_of!(BUS_INSTANCE_ENTRY, Entry) as usize),
         );
 
         if (*CurEntry).SymbolicLink.Buffer.is_null() {

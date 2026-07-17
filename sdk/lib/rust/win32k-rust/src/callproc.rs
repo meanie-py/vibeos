@@ -1,7 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::PsGetCurrentThreadWin32Thread;
 use ntkrnl_sys::interlocked::InterlockedExchangePointer;
-use core::ffi::c_void;
 
 // UserHMGetHandle(obj) = obj->head.h (ntuser.h:230 macro, no symbol). head is the
 // first field and h its first field, so the handle is at object offset 0 — same
@@ -82,6 +81,7 @@ pub unsafe extern "C" fn UserGetCallProcInfo(
 }
 
 #[cfg(target_arch = "x86")]
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe extern "fastcall" fn UserSearchForCallProc(
     mut pcpd: PCALLPROCDATA,
     WndProc: WNDPROC,
@@ -96,6 +96,7 @@ unsafe extern "fastcall" fn UserSearchForCallProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe extern "C" fn UserSearchForCallProc(
     mut pcpd: PCALLPROCDATA,
     WndProc: WNDPROC,

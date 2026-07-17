@@ -226,7 +226,7 @@ unsafe fn LsapRemoveNotification(pRequestMsg: PLSA_API_MSG) -> NTSTATUS {
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsapRegisterNotification(pRequestMsg: PLSA_API_MSG) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     RtlAcquireResourceExclusive(core::ptr::addr_of_mut!(NotificationListLock), 1u8);
     if (*pRequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.PolicyChangeNotify.__bindgen_anon_1.Request.Register != 0 {
         Status = LsapAddNotification(pRequestMsg);

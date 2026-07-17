@@ -753,6 +753,7 @@ pub unsafe extern "C" fn IntGetClassWndProc(Class: PCLS, Ansi: BOOL) -> WNDPROC 
     IntGetClassWndProc_impl(Class, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetClassWndProc_impl(Class: PCLS, Ansi: BOOL) -> WNDPROC {
     let mut i: INT;
     let mut gcpd: WNDPROC = None;
@@ -811,6 +812,7 @@ unsafe extern "C" fn IntSetClassWndProc(Class: PCLS, WndProc: WNDPROC, Ansi: BOO
     IntSetClassWndProc_impl(Class, WndProc, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntSetClassWndProc_impl(mut Class: PCLS, mut WndProc: WNDPROC, Ansi: BOOL) -> WNDPROC {
     let mut i: INT;
     let pcpd: PCALLPROCDATA;
@@ -1183,6 +1185,7 @@ pub unsafe extern "C" fn IntCreateClass(
     IntCreateClass_impl(lpwcx, ClassName, ClassVersion, MenuName, fnID, dwFlags, Desktop, pi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntCreateClass_impl(
     lpwcx: *const WNDCLASSEXW,
     ClassName: PUNICODE_STRING,

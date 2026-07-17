@@ -184,7 +184,7 @@ unsafe fn IsoSearchDirectoryBufferForFile(
         Record = (DirectoryBuffer as ULONG_PTR + Offset as ULONG_PTR) as PDIR_RECORD;
 
         if (*Record).RecordLength == 0 {
-            Offset = ((ROUND_UP(Offset, SECTORSIZE)) as u32);
+            Offset = (ROUND_UP(Offset, SECTORSIZE)) as u32 ;
             Record = (DirectoryBuffer as ULONG_PTR + Offset as ULONG_PTR) as PDIR_RECORD;
         }
 
@@ -239,7 +239,7 @@ unsafe fn IsoBufferDirectory(
         b"IsoBufferDirectory() DirectoryStartSector = %d DirectoryLength = %d\n\0".as_ptr() as PCHAR, (DirectoryStartSector) as usize, (DirectoryLength) as usize,
     );
 
-    SectorCount = ((ROUND_UP(DirectoryLength, SECTORSIZE) / SECTORSIZE) as u32);
+    SectorCount = (ROUND_UP(DirectoryLength, SECTORSIZE) / SECTORSIZE) as u32 ;
     TRACE(
         b"Trying to read (DirectoryCount) %d sectors.\n\0".as_ptr() as PCHAR, (SectorCount) as usize,
     );
@@ -247,7 +247,7 @@ unsafe fn IsoBufferDirectory(
     TRACE(
         b"Trying to allocate (DirectoryLength) %d bytes.\n\0".as_ptr() as PCHAR, (DirectoryLength) as usize,
     );
-    DirectoryBuffer = FrLdrTempAlloc(((DirectoryLength) as usize), TAG_ISO_BUFFER);
+    DirectoryBuffer = FrLdrTempAlloc((DirectoryLength) as usize , TAG_ISO_BUFFER);
     if DirectoryBuffer.is_null() {
         return ENOMEM;
     }
@@ -280,7 +280,7 @@ unsafe fn IsoLookupFile(mut FileName: PCSTR, DeviceId: ULONG, IsoFileInfo: PISO_
     let mut DirectoryBuffer: PVOID = core::ptr::null_mut();
     let NumberOfPathParts: ULONG;
     let mut PathBuffer: [CHAR; 261] = [0; 261];
-    let mut PathPart: PCHAR;
+    let PathPart: PCHAR;
     let mut Status: ARC_STATUS = ESUCCESS;
     let DoFullLookup: BOOLEAN;
     let FileAttributes: UCHAR;
@@ -346,7 +346,7 @@ unsafe fn IsoLookupFile(mut FileName: PCSTR, DeviceId: ULONG, IsoFileInfo: PISO_
                 (*Volume).DirectoryBuffer = DirectoryBuffer;
                 (*Volume).DirectoryLength = DirectoryLength;
 
-                RtlCopyMemory((*Volume).DirectoryPath.as_mut_ptr() as PVOID, FullPath as PVOID, ((DirectoryPathLength) as usize));
+                RtlCopyMemory((*Volume).DirectoryPath.as_mut_ptr() as PVOID, FullPath as PVOID, (DirectoryPathLength) as usize );
             }
         }
 
@@ -371,17 +371,17 @@ unsafe fn IsoLookupFile(mut FileName: PCSTR, DeviceId: ULONG, IsoFileInfo: PISO_
     }
 
     FileAttributes = (*IsoFileInfo).Attributes;
-    (*IsoFileInfo).Attributes = ((ReadOnlyFile) as u8);
+    (*IsoFileInfo).Attributes = (ReadOnlyFile) as u8 ;
     if (FileAttributes & ISO_ATTR_HIDDEN) != 0 {
-        (*IsoFileInfo).Attributes |= ((HiddenFile) as u8);
+        (*IsoFileInfo).Attributes |= (HiddenFile) as u8 ;
     }
     if (FileAttributes & ISO_ATTR_DIRECTORY) != 0 {
-        (*IsoFileInfo).Attributes |= ((DirectoryFile) as u8);
+        (*IsoFileInfo).Attributes |= (DirectoryFile) as u8 ;
     }
 
     (*IsoFileInfo).FileNameLength = strlen(PathPart);
     (*IsoFileInfo).FileNameLength = min((*IsoFileInfo).FileNameLength, (core::mem::size_of_val(&(*IsoFileInfo).FileName) - 1) as ULONG);
-    RtlCopyMemory((*IsoFileInfo).FileName.as_mut_ptr() as PVOID, PathPart as PVOID, (((*IsoFileInfo).FileNameLength) as usize));
+    RtlCopyMemory((*IsoFileInfo).FileName.as_mut_ptr() as PVOID, PathPart as PVOID, ((*IsoFileInfo).FileNameLength) as usize );
 
     ESUCCESS
 }
@@ -547,7 +547,7 @@ unsafe extern "C" fn IsoSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, SeekMo
     match SeekMode {
         SEEKMODE_SeekAbsolute => {},
         SEEKMODE_SeekRelative => {
-            NewPosition.QuadPart += (((*FileHandle).FilePointer as ULONGLONG) as i64);
+            NewPosition.QuadPart += ((*FileHandle).FilePointer as ULONGLONG) as i64 ;
         },
         _ => {
             return EINVAL;
@@ -616,7 +616,7 @@ pub unsafe extern "C" fn IsoMount(DeviceId: u32) -> *const DEVVTBL {
     RtlZeroMemory(Volume as *mut core::ffi::c_void, core::mem::size_of::<ISO_VOLUME_INFO>());
 
     (*Volume).VolumeSizeLBN = (*Pvd).VolumeSpaceSizeL;
-    (*Volume).LogicalBlockSize = (((*Pvd).LogicalBlockSizeL) as u32);
+    (*Volume).LogicalBlockSize = ((*Pvd).LogicalBlockSizeL) as u32 ;
 
     (*Volume).PvdDirectorySector = (*Pvd).RootDirRecord.ExtentLocationL;
     (*Volume).PvdDirectoryLength = (*Pvd).RootDirRecord.DataLengthL;

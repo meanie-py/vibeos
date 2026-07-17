@@ -178,8 +178,8 @@ unsafe fn cbu_ctor_impl(
     This: *mut CBaseUnknownImpl,
     OuterUnknown: *mut IUnknown,
 ) -> *mut CBaseUnknownImpl {
-    (*This).lpVtbl = &mut vt_INonDelegatedUnknownVtbl;
-    (*This).lpVtblIndirectedUnknown = &mut vt_IIndirectedUnknownVtbl;
+    (*This).lpVtbl = &raw mut vt_INonDelegatedUnknownVtbl;
+    (*This).lpVtblIndirectedUnknown = &raw mut vt_IIndirectedUnknownVtbl;
     (*This).m_UsingClassId = 0u8;
     (*This).m_RefCount = 0i32;
     if !OuterUnknown.is_null() {

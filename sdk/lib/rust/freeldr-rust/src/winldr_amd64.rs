@@ -242,9 +242,9 @@ unsafe fn MempMapSinglePage(VirtualAddress: u64, PhysicalAddress: u64) -> u8 {
 }
 
 unsafe fn MempIsPageMapped(VirtualAddress: PVOID) -> BOOLEAN {
-    let mut PpeBase: PHARDWARE_PTE;
-    let mut PdeBase: PHARDWARE_PTE;
-    let mut PteBase: PHARDWARE_PTE;
+    let PpeBase: PHARDWARE_PTE;
+    let PdeBase: PHARDWARE_PTE;
+    let PteBase: PHARDWARE_PTE;
     let mut Index: ULONG;
 
     Index = VAtoPXI(VirtualAddress as u64);
@@ -315,7 +315,7 @@ pub unsafe extern "C" fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: P
     return 1u8;
 }
 
-unsafe fn MempUnmapPage(Page: PFN_NUMBER) {
+unsafe fn MempUnmapPage(_Page: PFN_NUMBER) {
 }
 
 unsafe fn WinLdrpMapApic() {
@@ -412,7 +412,7 @@ unsafe fn Amd64SetupIdt(IdtBase: PVOID)
 
 #[no_mangle]
 pub unsafe extern "C" fn WinLdrSetProcessorContext(
-    OperatingSystemVersion: USHORT)
+    _OperatingSystemVersion: USHORT)
 {
 
     TRACE(b"WinLdrSetProcessorContext\n\0".as_ptr() as *const i8);
@@ -440,7 +440,7 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
     let mut SharedUserDataAddress: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut Tss: usize = 0;
     let mut BlockSize: u32;
-    let mut NumPages: u32;
+    let NumPages: u32;
 
     (*LoaderBlock).u.I386.CommonDataArea = DbgPrint as *mut core::ffi::c_void;
     (*LoaderBlock).u.I386.MachineType = MACHINE_TYPE_ISA;

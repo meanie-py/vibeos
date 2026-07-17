@@ -5,7 +5,6 @@
 // Translated C aliases mutable file-scope globals freely (PEB params, AppCert
 // list, CSR messages); &mut/& to `static mut` is intrinsic to the cohab and safe
 // in this single-threaded init context.
-#![allow(static_mut_refs)]
 #![allow(clippy::all)]
 
 //! kernel32.dll — Rust translation of dll/win32/kernel32 (the Win32 base API DLL).

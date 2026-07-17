@@ -14,7 +14,7 @@
 //! (heap.h gates the prefix on `_M_AMD64`, not `_WIN64`).
 
 use ntkrnl_sys::base::{
-    BOOLEAN, LIST_ENTRY, PLIST_ENTRY, PVOID, SIZE_T, UCHAR, ULONG, ULONGLONG, ULONG_PTR, USHORT,
+    LIST_ENTRY, PLIST_ENTRY, PVOID, SIZE_T, UCHAR, ULONG, ULONG_PTR, USHORT,
     WCHAR,
 };
 use ntkrnl_sys::ddk::{PHEAP_LOCK, PRTL_HEAP_COMMIT_ROUTINE};

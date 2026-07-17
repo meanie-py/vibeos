@@ -1,10 +1,7 @@
-use core::ffi::c_void;
 use explorer_sys::*;
-use explorer_sys::com::*;
 use explorer_sys::externs::*;
 use explorer_sys::globals::*;
 use explorer_sys::types::*;
-use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 

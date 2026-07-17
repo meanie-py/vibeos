@@ -1,20 +1,10 @@
 use winsrv_sys::nt::*;
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::console::*;
-use super::handle::*;
-use super::lineinput::*;
-use super::history::*;
-use super::init::*;
 use winsrv_sys::winsrv::*;
-use winsrv_sys::consts::*;
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvRegisterConsoleVDM(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let RegisterVDMRequest = &mut (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.RegisterVDMRequest;
     let Console = (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.RegisterVDMRequest.ConsoleHandle as PCONSRV_CONSOLE;
@@ -106,40 +96,40 @@ pub unsafe extern "system" fn SrvRegisterConsoleVDM(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvVDMConsoleOperation(
-    ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvRegisterConsoleOS2(
-    ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleOS2OemFormat(
-    ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvRegisterConsoleIME(
-    ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvUnregisterConsoleIME(
-    ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }

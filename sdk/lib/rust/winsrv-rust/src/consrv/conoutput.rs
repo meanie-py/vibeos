@@ -1,16 +1,8 @@
 use winsrv_sys::nt::*;
 use super::condrv::text::*;
 use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::console::*;
-use super::handle::*;
-use super::lineinput::*;
-use super::history::*;
-use super::init::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
-use core::ffi::c_void;
 // Disambiguate winsrv_sys::winsrv:: (bindgen) and re-export globs vs sibling Rust impl.
 use super::{ConsoleAllocHeap, ConsoleFreeHeap, GetType};
 use super::console::ConSrvGetConsole;
@@ -63,15 +55,15 @@ macro_rules! ConSrvReleaseScreenBuffer {
 // and contain no static data, typedefs, enums, or constant definitions at file scope.
 
 pub(crate) unsafe fn WriteConsoleThread(
-    WaitList: PLIST_ENTRY,
+    _WaitList: PLIST_ENTRY,
     WaitThread: PCSR_THREAD,
     WaitApiMessage: PCSR_API_MESSAGE,
-    WaitContext: *mut core::ffi::c_void,
-    WaitArgument1: *mut core::ffi::c_void,
-    WaitArgument2: *mut core::ffi::c_void,
+    _WaitContext: *mut core::ffi::c_void,
+    _WaitArgument1: *mut core::ffi::c_void,
+    _WaitArgument2: *mut core::ffi::c_void,
     WaitFlags: u32,
 ) -> u8 {
-    let mut Status: i32;
+    let Status: i32;
 
     if (WaitFlags & CsrProcessTerminating) != 0 {
         Status = STATUS_THREAD_IS_TERMINATING;
@@ -784,7 +776,7 @@ unsafe fn SrvWriteConsoleOutputImpl(
     let Process: PCSR_PROCESS = (*CsrGetClientThread()).Process;
     let mut Buffer: PTEXTMODE_SCREEN_BUFFER = core::ptr::null_mut();
     let NumCells: ULONG;
-    let mut CharInfo: PCHAR_INFO;
+    let CharInfo: PCHAR_INFO;
 
     NumCells = (ConioRectWidth(core::ptr::addr_of_mut!((*WriteOutputRequest).WriteRegion)) as ULONG)
         .wrapping_mul(ConioRectHeight(core::ptr::addr_of_mut!((*WriteOutputRequest).WriteRegion)) as ULONG);
@@ -891,7 +883,7 @@ unsafe fn SrvWriteConsoleImpl(
     WriteConsoleRequest: *mut CONSOLE_WRITECONSOLE,
     ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     if (*WriteConsoleRequest).UsingStaticBuffer != 0
         && (*WriteConsoleRequest).NumBytes <= core::mem::size_of_val(&(*WriteConsoleRequest).StaticBuffer) as ULONG

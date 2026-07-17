@@ -449,7 +449,7 @@ unsafe fn GetDllList() -> BOOL {
                         if bytesToCopy != 0 {
                             core::ptr::copy(
                                 core::ptr::addr_of_mut!((*kvpInfo).Data) as *const u8,
-                                szAppInit.as_mut_ptr() as *mut u8,
+                                (*(&raw mut szAppInit)).as_mut_ptr() as *mut u8,
                                 bytesToCopy as usize,
                             );
 
@@ -485,7 +485,7 @@ unsafe fn LoadAppInitDlls() {
         let mut i: usize;
 
         core::ptr::copy_nonoverlapping(
-            szAppInit.as_ptr(),
+            (*(&raw const szAppInit)).as_ptr(),
             buffer.as_mut_ptr(),
             KEY_LENGTH as usize,
         );
@@ -519,7 +519,7 @@ unsafe fn UnloadAppInitDlls() {
         let mut i: usize;
 
         core::ptr::copy_nonoverlapping(
-            szAppInit.as_ptr(),
+            (*(&raw const szAppInit)).as_ptr(),
             buffer.as_mut_ptr(),
             1024,
         );
@@ -635,7 +635,7 @@ pub unsafe extern "system" fn Init(UserCon: PUSERCONNECT) -> BOOL {
     RtlInitializeCriticalSection(core::ptr::addr_of_mut!(gcsUserApiHook));
 
     /* Initialize callback table in PEB data */
-    (*NtCurrentPeb()).KernelCallbackTable = apfnDispatch.as_mut_ptr() as *mut core::ffi::c_void;
+    (*NtCurrentPeb()).KernelCallbackTable = (*(&raw mut apfnDispatch)).as_mut_ptr() as *mut core::ffi::c_void;
     (*NtCurrentPeb()).PostProcessInitRoutine = None;
 
     // This is a HACK!! //

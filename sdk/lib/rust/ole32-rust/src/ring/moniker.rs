@@ -1198,7 +1198,7 @@ fn RunningObjectTableImpl_EnumRunning(
     iface: *mut IRunningObjectTable,
     ppenumMoniker: *mut *mut IEnumMoniker,
 ) -> HRESULT {
-    let This = impl_from_IRunningObjectTable(iface);
+    let _This = impl_from_IRunningObjectTable(iface);
     let mut interface_list: *mut InterfaceList = core::ptr::null_mut();
     let mut hr: HRESULT;
 

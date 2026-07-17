@@ -451,6 +451,16 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
     Flags: ULONG,
 ) -> ULONG {
     let Callers = opaque_ptr(Callers);
+    // RtlWalkFrameChain(NULL, ...) writes no frames and must return 0. The C reference
+    // wrapped the whole walk in _SEH2_TRY/_SEH2_EXCEPT{ i = 0 } so the fault from the
+    // NULL output store (`*Callers.add(i) = ...` below) was caught and it returned 0.
+    // That __except is DEAD under USE_DUMMY_PSEH / native SEH, so the NULL store AVs ->
+    // BUGCHECK 0x1E at RtlWalkFrameChain+0x2b0 (the RtlStackKM/RtlStack quarantine).
+    // Replicate the dropped handler explicitly. The walk itself is already bounds-checked
+    // against StackBegin/StackEnd, so the NULL store was the only unguarded write.
+    if Callers.is_null() {
+        return 0;
+    }
     let mut Stack: ULONG_PTR;
     let mut NewStack: ULONG_PTR;
     let mut StackBegin: ULONG_PTR;

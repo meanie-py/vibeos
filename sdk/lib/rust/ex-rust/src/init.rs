@@ -190,7 +190,7 @@ pub static mut CmNtCSDReleaseType: ULONG = 0;
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 #[no_mangle]
 pub static INIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Windows", "CSDVersion",
             core::ptr::addr_of_mut!(CmNtCSDVersion)),
         ntkrnl_sys::cv!("Windows", "CSDReleaseType",
@@ -447,9 +447,9 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
             (ExpNlsTableBase as usize + ExpAnsiCodePageDataOffset as usize) as *mut u16,
             (ExpNlsTableBase as usize + ExpOemCodePageDataOffset as usize) as *mut u16,
             (ExpNlsTableBase as usize + ExpUnicodeCaseTableDataOffset as usize) as *mut u16,
-            &mut ExpNlsTableInfo,
+            &raw mut ExpNlsTableInfo,
         );
-        RtlResetRtlTranslations(&mut ExpNlsTableInfo);
+        RtlResetRtlTranslations(&raw mut ExpNlsTableInfo);
         return;
     }
 
@@ -473,7 +473,7 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         0x000F0001,
         MmSectionObjectType as ntkrnl_sys::ddk::POBJECT_TYPE,
         0i8,
-        &mut ExpNlsSectionPointer,
+        &raw mut ExpNlsSectionPointer,
         core::ptr::null_mut(),
     );
     ObCloseHandle(NlsSection, 0i8);
@@ -506,9 +506,9 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         (ExpNlsTableBase as usize + ExpAnsiCodePageDataOffset as usize) as *mut u16,
         (ExpNlsTableBase as usize + ExpOemCodePageDataOffset as usize) as *mut u16,
         (ExpNlsTableBase as usize + ExpUnicodeCaseTableDataOffset as usize) as *mut u16,
-        &mut ExpNlsTableInfo,
+        &raw mut ExpNlsTableInfo,
     );
-    RtlResetRtlTranslations(&mut ExpNlsTableInfo);
+    RtlResetRtlTranslations(&raw mut ExpNlsTableInfo);
 
     SectionBase = core::ptr::null_mut();
 
@@ -584,7 +584,7 @@ unsafe fn ExpLoadInitialProcess(
 
     RtlCopyUnicodeString(
         &mut (*ProcessParams).CurrentDirectory.DosPath,
-        &NtSystemRoot,
+        &raw const NtSystemRoot,
     );
 
     p = ((*ProcessParams).CurrentDirectory.DosPath.Buffer as usize + (*ProcessParams).CurrentDirectory.DosPath.MaximumLength as usize) as *mut u16;
@@ -601,20 +601,20 @@ unsafe fn ExpLoadInitialProcess(
     if (NtInitialUserProcessBufferType != 1) ||
        ((NtInitialUserProcessBufferLength != 0xFFFFFFFF) &&
         ((NtInitialUserProcessBufferLength < 2) ||
-         (NtInitialUserProcessBufferLength > (core::mem::size_of_val(&NtInitialUserProcessBuffer) - 2) as ULONG)))
+         (NtInitialUserProcessBufferLength > (core::mem::size_of_val(&*(&raw const NtInitialUserProcessBuffer)) - 2) as ULONG)))
     {
-        KeBugCheckEx(0x63, 0xC000000D, NtInitialUserProcessBufferType as ULONG_PTR, NtInitialUserProcessBufferLength as ULONG_PTR, core::mem::size_of_val(&NtInitialUserProcessBuffer));
+        KeBugCheckEx(0x63, 0xC000000D, NtInitialUserProcessBufferType as ULONG_PTR, NtInitialUserProcessBufferLength as ULONG_PTR, core::mem::size_of_val(&*(&raw const NtInitialUserProcessBuffer)));
     }
 
-    p = NtInitialUserProcessBuffer.as_mut_ptr();
+    p = (*(&raw mut NtInitialUserProcessBuffer)).as_mut_ptr();
     while (*p != 0) && (*p != b' ' as u16) {
         p = p.add(1);
     }
 
-    (*ProcessParams).ImagePathName.Length = (p as usize - NtInitialUserProcessBuffer.as_ptr() as usize) as USHORT;
+    (*ProcessParams).ImagePathName.Length = (p as usize - (*(&raw const NtInitialUserProcessBuffer)).as_ptr() as usize) as USHORT;
 
     core::ptr::copy_nonoverlapping(
-        NtInitialUserProcessBuffer.as_ptr(),
+        (*(&raw const NtInitialUserProcessBuffer)).as_ptr(),
         (*ProcessParams).ImagePathName.Buffer,
         (*ProcessParams).ImagePathName.Length as usize / 2,
     );
@@ -625,7 +625,7 @@ unsafe fn ExpLoadInitialProcess(
     (*ProcessParams).CommandLine.Buffer = p;
     (*ProcessParams).CommandLine.MaximumLength = (520 * 2) as USHORT;
 
-    RtlAppendUnicodeToString(&mut (*ProcessParams).CommandLine, NtInitialUserProcessBuffer.as_ptr());
+    RtlAppendUnicodeToString(&mut (*ProcessParams).CommandLine, (*(&raw const NtInitialUserProcessBuffer)).as_ptr());
 
     RtlInitEmptyUnicodeString(
         &mut Environment,
@@ -645,7 +645,7 @@ unsafe fn ExpLoadInitialProcess(
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
     RtlAppendUnicodeToString(&mut Environment, w!("SystemRoot=").as_ptr() as *mut u16);
-    RtlAppendUnicodeStringToString(&mut Environment, &NtSystemRoot);
+    RtlAppendUnicodeStringToString(&mut Environment, &raw const NtSystemRoot);
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
     SmssName = (*ProcessParams).ImagePathName;
@@ -937,9 +937,9 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         (ExpNlsTableBase as usize + ExpAnsiCodePageDataOffset as usize) as *mut u16,
         (ExpNlsTableBase as usize + ExpOemCodePageDataOffset as usize) as *mut u16,
         (ExpNlsTableBase as usize + ExpUnicodeCaseTableDataOffset as usize) as *mut u16,
-        &mut ExpNlsTableInfo,
+        &raw mut ExpNlsTableInfo,
     );
-    RtlResetRtlTranslations(&mut ExpNlsTableInfo);
+    RtlResetRtlTranslations(&raw mut ExpNlsTableInfo);
 
 
     if HalInitSystem(ExpInitializationPhase, LoaderBlock) == 0 {
@@ -984,12 +984,12 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     AnsiPath.Length -= 1;
 
     RtlInitEmptyUnicodeString(
-        &mut NtSystemRoot,
+        &raw mut NtSystemRoot,
         (*SharedUserData).NtSystemRoot.as_mut_ptr(),
         (core::mem::size_of_val(&(*SharedUserData).NtSystemRoot)) as USHORT,
     );
 
-    Status = RtlAnsiStringToUnicodeString(&mut NtSystemRoot, &mut AnsiPath, 0u8);
+    Status = RtlAnsiStringToUnicodeString(&raw mut NtSystemRoot, &mut AnsiPath, 0u8);
     if Status < 0 {
         KeBugCheck(0x64);
     }
@@ -1087,7 +1087,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     }
 
     RtlInitAnsiString(&mut CSDString, Buffer.as_ptr() as *mut i8);
-    Status = RtlAnsiStringToUnicodeString(&mut CmCSDVersionString, &mut CSDString, 1u8);
+    Status = RtlAnsiStringToUnicodeString(&raw mut CmCSDVersionString, &mut CSDString, 1u8);
     if Status < 0 {
         KeBugCheckEx(0x31, Status as ULONG_PTR, 0, 0, 0);
     }
@@ -1101,7 +1101,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         KeBugCheckEx(0x31, Status as ULONG_PTR, 0, 0, 0);
     }
 
-    RtlCreateUnicodeStringFromAsciiz(&mut CmVersionString, VersionBuffer.as_ptr() as *mut i8);
+    RtlCreateUnicodeStringFromAsciiz(&raw mut CmVersionString, VersionBuffer.as_ptr() as *mut i8);
 
     // Initialize Power Subsystem in Phase 0
     if PoInitSystem(0) == 0 {
@@ -1588,7 +1588,12 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     // in the x86_64-kernel target json (without it the image has no .pdata
     // for Rust frames and the walk double-faults — field manual §9.42). See
     // ntoskrnl/seh_poc.c + docs/engineering/dummy-pseh-verdict.md.
-    #[cfg(target_arch = "x86_64")]
+    // arm64: this is the boot-time oracle for KERNEL-mode software raise + native
+    // __try/__except dispatch — the exact shape the kmtest exception-raising cluster
+    // (ExHardError/ExResource/KeMutex/…) exercises. It had never run on arm64 (this
+    // block was x86_64-only), which is why the arm64 kernel-SEH bug (§9.69 / task #10)
+    // only surfaced under conformance. Now it fails loud at boot instead of hiding.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         extern "C" {
             fn SehPocRun();
@@ -1601,7 +1606,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     // on a real HARDWARE page fault being caught (KiPageFault -> MmAccessFault ->
     // KiDispatchException -> __except). Nothing was checking that end-to-end. Prints
     // `[KMSAFECOPY] ... (PASS)`; a FAIL means the copy is silently unprotected.
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         extern "C" {
             fn KmSafeCopySelfTest() -> i32;

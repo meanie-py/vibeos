@@ -73,8 +73,8 @@ unsafe extern "system" fn SmpTerminateForeignSession(
 
 unsafe extern "system" fn SmpExecPgm(
     SmApiMsg: PSM_API_MSG,
-    ClientContext: PSMP_CLIENT_CONTEXT,
-    SmApiPort: HANDLE,
+    _ClientContext: PSMP_CLIENT_CONTEXT,
+    _SmApiPort: HANDLE,
 ) -> NTSTATUS {
     let mut ProcessHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
@@ -176,7 +176,7 @@ unsafe extern "system" fn SmpLoadDeferedSubsystem(
     }
 
     NextEntry = SmpSubSystemsToDefer.Flink;
-    while NextEntry != &SmpSubSystemsToDefer as *const _ as PLIST_ENTRY {
+    while NextEntry != &raw const SmpSubSystemsToDefer as *const _ as PLIST_ENTRY {
         RegEntry = CONTAINING_RECORD(
             NextEntry as PVOID,
             core::ptr::null_mut(),
@@ -199,8 +199,8 @@ unsafe extern "system" fn SmpLoadDeferedSubsystem(
 
 unsafe extern "system" fn SmpStartCsr(
     SmApiMsg: PSM_API_MSG,
-    ClientContext: PSMP_CLIENT_CONTEXT,
-    SmApiPort: HANDLE,
+    _ClientContext: PSMP_CLIENT_CONTEXT,
+    _SmApiPort: HANDLE,
 ) -> NTSTATUS {
     let SmStartCsr: PSM_START_CSR_MSG = &mut (*SmApiMsg).u.StartCsr;
     let mut InitialCommand: _UNICODE_STRING = core::mem::zeroed();
@@ -261,7 +261,7 @@ static mut SmpApiDispatch: [PSM_API_HANDLER; 7] = [
 ];
 
 unsafe extern "system" fn SmpHandleConnectionRequest(
-    SmApiPort: HANDLE,
+    _SmApiPort: HANDLE,
     SbApiMsg: PSB_API_MSG,
 ) -> NTSTATUS {
     let mut Accept: BOOLEAN = 1u8;
@@ -269,13 +269,13 @@ unsafe extern "system" fn SmpHandleConnectionRequest(
     let mut ProcessHandle: HANDLE = core::ptr::null_mut();
     let mut SessionIdLocal: ULONG = 0;
     let mut SubsystemPort: _UNICODE_STRING = core::mem::zeroed();
-    let mut ClientContext: PSMP_CLIENT_CONTEXT;
+    let ClientContext: PSMP_CLIENT_CONTEXT;
     let mut Status: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut PortView: REMOTE_PORT_VIEW = core::mem::zeroed();
     let mut SecurityQos: SECURITY_QUALITY_OF_SERVICE = core::mem::zeroed();
-    let mut CidSubsystem: PSMP_SUBSYSTEM;
-    let mut TypeSubsystem: PSMP_SUBSYSTEM;
+    let CidSubsystem: PSMP_SUBSYSTEM;
+    let TypeSubsystem: PSMP_SUBSYSTEM;
 
     SecurityQos.ImpersonationLevel = SecurityIdentification;
     SecurityQos.ContextTrackingMode = SECURITY_DYNAMIC_TRACKING as u8;
@@ -417,7 +417,7 @@ pub unsafe extern "system" fn SmpApiLoop(Parameter: PVOID) -> ULONG {
     let mut ProcessInformation: PROCESS_BASIC_INFORMATION = core::mem::zeroed();
     let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
 
-    core::sync::atomic::AtomicI32::from_ptr(&SmTotalApiThreads as *const _ as *mut i32)
+    core::sync::atomic::AtomicI32::from_ptr(&raw const SmTotalApiThreads as *const _ as *mut i32)
         .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
 
     RtlSetThreadIsCritical(1u8, core::ptr::null_mut(), 1u8);

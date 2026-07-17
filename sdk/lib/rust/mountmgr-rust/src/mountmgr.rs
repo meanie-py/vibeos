@@ -270,7 +270,7 @@ pub unsafe extern "C" fn CreateNewDriveLetterName(
     }
 
     // Copy prefix
-    RtlCopyUnicodeString(DriveLetter, &DosDevices as *const _UNICODE_STRING);
+    RtlCopyUnicodeString(DriveLetter, &raw const DosDevices as *const _UNICODE_STRING);
 
     // Update string to reflect real contents
     (*DriveLetter).Length = DosDevices.Length + 2 * wchar_size;
@@ -298,10 +298,10 @@ pub unsafe extern "C" fn CreateNewDriveLetterName(
     }
 
     // If caller didn't provide a letter, let's find one for him
-    if RtlPrefixUnicodeString(&DeviceFloppy as *const _UNICODE_STRING, DeviceName, 1u8) != 0 {
+    if RtlPrefixUnicodeString(&raw const DeviceFloppy as *const _UNICODE_STRING, DeviceName, 1u8) != 0 {
         // If the device is a floppy, start with letter A
         Letter = 'A' as u8;
-    } else if RtlPrefixUnicodeString(&DeviceCdRom as *const _UNICODE_STRING, DeviceName, 1u8) != 0 {
+    } else if RtlPrefixUnicodeString(&raw const DeviceCdRom as *const _UNICODE_STRING, DeviceName, 1u8) != 0 {
         // If the device is a CD-ROM, start with letter D
         Letter = 'D' as u8;
     } else {

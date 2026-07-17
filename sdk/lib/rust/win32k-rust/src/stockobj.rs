@@ -1,6 +1,5 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{RtlGetDefaultCodePage};
-use core::ffi::c_void;
 use crate::brushbody::pbrushbody;
 use crate::floatobj::FLOATOBJ_SetLong;
 

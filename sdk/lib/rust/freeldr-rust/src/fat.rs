@@ -370,13 +370,13 @@ unsafe fn FatSwapFatXDirEntry(Obj: PFATX_DIRENTRY) {
 }
 
 unsafe fn FatNumberOfClusters(Volume: PFAT_VOLUME_INFO) -> ULONG {
-    (((*Volume).TotalSectors - (*Volume).DataSectorStart) / (((*Volume).SectorsPerCluster) as u32))
+    ((*Volume).TotalSectors - (*Volume).DataSectorStart) / (((*Volume).SectorsPerCluster) as u32)
 }
 
 unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, PartitionSectorCount: ULONGLONG) -> BOOLEAN {
 
     let mut ErrMsg: [i8; 80] = [0; 80];
-    let mut FatSize: ULONG;
+    let FatSize: ULONG;
     let mut i: ULONG;
     let FatVolumeBootSector: PFAT_BOOTSECTOR = BootSector as PFAT_BOOTSECTOR;
     let Fat32VolumeBootSector: PFAT32_BOOTSECTOR = BootSector as PFAT32_BOOTSECTOR;
@@ -384,10 +384,10 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
 
     TRACE(b"FatOpenVolume() DeviceId = %d\n\0".as_ptr() as PCHAR, ((*Volume).DeviceId) as usize);
 
-    (*Volume).FatType = ((FatDetermineFatType(FatVolumeBootSector, PartitionSectorCount)) as u8);
+    (*Volume).FatType = (FatDetermineFatType(FatVolumeBootSector, PartitionSectorCount)) as u8 ;
 
     TRACE(b"Dumping boot sector:\n\0".as_ptr() as PCHAR);
-    if ISFATX((((*Volume).FatType) as u32)) != 0 {
+    if ISFATX(((*Volume).FatType) as u32 ) != 0 {
         FatSwapFatXBootSector(FatXVolumeBootSector);
         TRACE(b"sizeof(FATX_BOOTSECTOR) = 0x%x.\n\0".as_ptr() as PCHAR, (core::mem::size_of::<FATX_BOOTSECTOR>()) as usize);
 
@@ -457,32 +457,32 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
         TRACE(b"BootSectorMagic: 0x%x\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).BootSectorMagic) as usize);
     }
 
-    if ISFATX((((*Volume).FatType) as u32)) == 0 && (*FatVolumeBootSector).BootSectorMagic != 0xaa55 {
-        sprintf(ErrMsg.as_mut_ptr(), b"Invalid boot sector magic (expected 0xaa55 found 0x%x)\0".as_ptr() as *const i8, ((*FatVolumeBootSector).BootSectorMagic as u32));
+    if ISFATX(((*Volume).FatType) as u32 ) == 0 && (*FatVolumeBootSector).BootSectorMagic != 0xaa55 {
+        sprintf(ErrMsg.as_mut_ptr(), b"Invalid boot sector magic (expected 0xaa55 found 0x%x)\0".as_ptr() as *const i8, (*FatVolumeBootSector).BootSectorMagic as u32 );
         FileSystemError(ErrMsg.as_mut_ptr() as PCHAR);
         return 0u8;
     }
 
-    if (ISFATX((((*Volume).FatType) as u32)) != 0 && 64 * 1024 < (*FatXVolumeBootSector).SectorsPerCluster * 512) ||
-       (ISFATX((((*Volume).FatType) as u32)) == 0 && 64 * 1024 < ((*FatVolumeBootSector).SectorsPerCluster as ULONG) * ((*FatVolumeBootSector).BytesPerSector as ULONG)) {
+    if (ISFATX(((*Volume).FatType) as u32 ) != 0 && 64 * 1024 < (*FatXVolumeBootSector).SectorsPerCluster * 512) ||
+       (ISFATX(((*Volume).FatType) as u32 ) == 0 && 64 * 1024 < ((*FatVolumeBootSector).SectorsPerCluster as ULONG) * ((*FatVolumeBootSector).BytesPerSector as ULONG)) {
         FileSystemError(b"This file system has cluster sizes bigger than 64k.\nFreeLoader does not support this.\0".as_ptr() as PCHAR);
         return 0u8;
     }
 
-    if ISFATX((((*Volume).FatType) as u32)) != 0 {
-        (*Volume).TotalSectors = ((PartitionSectorCount) as u32);
+    if ISFATX(((*Volume).FatType) as u32 ) != 0 {
+        (*Volume).TotalSectors = (PartitionSectorCount) as u32 ;
     } else {
-        (*Volume).TotalSectors = if (*FatVolumeBootSector).TotalSectors != 0 { (((*FatVolumeBootSector).TotalSectors as ULONGLONG) as u32) } else { (((*FatVolumeBootSector).TotalSectorsBig as ULONGLONG) as u32) };
+        (*Volume).TotalSectors = if (*FatVolumeBootSector).TotalSectors != 0 { ((*FatVolumeBootSector).TotalSectors as ULONGLONG) as u32  } else { ((*FatVolumeBootSector).TotalSectorsBig as ULONGLONG) as u32  };
     }
 
-    if ISFATX((((*Volume).FatType) as u32)) != 0 {
-        (*Volume).BytesPerSector = ((SECTOR_SIZE) as u16);
-        (*Volume).SectorsPerCluster = ((SWAPD((*FatXVolumeBootSector).SectorsPerCluster)) as u8);
-        (*Volume).FatSectorStart = ((4096 / (*Volume).BytesPerSector) as u32);
+    if ISFATX(((*Volume).FatType) as u32 ) != 0 {
+        (*Volume).BytesPerSector = (SECTOR_SIZE) as u16 ;
+        (*Volume).SectorsPerCluster = (SWAPD((*FatXVolumeBootSector).SectorsPerCluster)) as u8 ;
+        (*Volume).FatSectorStart = (4096 / (*Volume).BytesPerSector) as u32 ;
         (*Volume).ActiveFatSectorStart = (*Volume).FatSectorStart;
         (*Volume).NumberOfFats = 1;
         FatSize = (PartitionSectorCount / ((*Volume).SectorsPerCluster as ULONGLONG) * if (*Volume).FatType == ((FATX16) as u8) { 2 } else { 4 }) as ULONG;
-        (*Volume).SectorsPerFat = ((ROUND_UP(((FatSize) as usize), 4096) / (((*Volume).BytesPerSector) as usize)) as u32);
+        (*Volume).SectorsPerFat = (ROUND_UP((FatSize) as usize , 4096) / (((*Volume).BytesPerSector) as usize)) as u32 ;
 
         (*Volume).RootDirSectorStart = (*Volume).FatSectorStart + ((*Volume).NumberOfFats as ULONG) * (*Volume).SectorsPerFat;
         (*Volume).RootDirSectors = (*FatXVolumeBootSector).SectorsPerCluster;
@@ -490,10 +490,10 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
         (*Volume).DataSectorStart = (*Volume).RootDirSectorStart + (*Volume).RootDirSectors;
     } else if (*Volume).FatType != ((FAT32) as u8) {
         (*Volume).BytesPerSector = (*FatVolumeBootSector).BytesPerSector;
-        (*Volume).SectorsPerCluster = (((*FatVolumeBootSector).SectorsPerCluster as ULONG) as u8);
+        (*Volume).SectorsPerCluster = ((*FatVolumeBootSector).SectorsPerCluster as ULONG) as u8 ;
         (*Volume).FatSectorStart = (*FatVolumeBootSector).ReservedSectors as ULONG;
         (*Volume).ActiveFatSectorStart = (*Volume).FatSectorStart;
-        (*Volume).NumberOfFats = (((*FatVolumeBootSector).NumberOfFats as ULONG) as u8);
+        (*Volume).NumberOfFats = ((*FatVolumeBootSector).NumberOfFats as ULONG) as u8 ;
         (*Volume).SectorsPerFat = (*FatVolumeBootSector).SectorsPerFat as ULONG;
 
         (*Volume).RootDirSectorStart = (*Volume).FatSectorStart + ((*Volume).NumberOfFats as ULONG) * (*Volume).SectorsPerFat;
@@ -502,10 +502,10 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
         (*Volume).DataSectorStart = (*Volume).RootDirSectorStart + (*Volume).RootDirSectors;
     } else {
         (*Volume).BytesPerSector = (*Fat32VolumeBootSector).BytesPerSector;
-        (*Volume).SectorsPerCluster = (((*Fat32VolumeBootSector).SectorsPerCluster as ULONG) as u8);
+        (*Volume).SectorsPerCluster = ((*Fat32VolumeBootSector).SectorsPerCluster as ULONG) as u8 ;
         (*Volume).FatSectorStart = (*Fat32VolumeBootSector).ReservedSectors as ULONG;
-        (*Volume).ActiveFatSectorStart = (*Volume).FatSectorStart + (if (*Fat32VolumeBootSector).ExtendedFlags & 0x80 != 0 { (((*Fat32VolumeBootSector).ExtendedFlags & 0x0f) as ULONG * (*Fat32VolumeBootSector).SectorsPerFatBig) } else { 0 });
-        (*Volume).NumberOfFats = (((*Fat32VolumeBootSector).NumberOfFats as ULONG) as u8);
+        (*Volume).ActiveFatSectorStart = (*Volume).FatSectorStart + (if (*Fat32VolumeBootSector).ExtendedFlags & 0x80 != 0 { ((*Fat32VolumeBootSector).ExtendedFlags & 0x0f) as ULONG * (*Fat32VolumeBootSector).SectorsPerFatBig  } else { 0 });
+        (*Volume).NumberOfFats = ((*Fat32VolumeBootSector).NumberOfFats as ULONG) as u8 ;
         (*Volume).SectorsPerFat = (*Fat32VolumeBootSector).SectorsPerFatBig;
 
         (*Volume).RootDirStartCluster = (*Fat32VolumeBootSector).RootDirStartCluster;
@@ -550,11 +550,11 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
 }
 
 unsafe fn FatDetermineFatType(FatBootSector: PFAT_BOOTSECTOR, PartitionSectorCount: ULONGLONG) -> ULONG {
-    let mut RootDirSectors: ULONG;
-    let mut DataSectorCount: ULONG;
-    let mut SectorsPerFat: ULONG;
-    let mut TotalSectors: ULONG;
-    let mut CountOfClusters: ULONG;
+    let RootDirSectors: ULONG;
+    let DataSectorCount: ULONG;
+    let SectorsPerFat: ULONG;
+    let TotalSectors: ULONG;
+    let CountOfClusters: ULONG;
     let Fat32BootSector: PFAT32_BOOTSECTOR = FatBootSector as PFAT32_BOOTSECTOR;
     let FatXBootSector: PFATX_BOOTSECTOR = FatBootSector as PFATX_BOOTSECTOR;
 
@@ -696,7 +696,7 @@ unsafe fn FatBufferDirectory(
 }
 
 unsafe fn FatSearchDirectoryBufferForFile(
-    Volume: PFAT_VOLUME_INFO,
+    _Volume: PFAT_VOLUME_INFO,
     mut DirectoryBuffer: PVOID,
     DirectorySize: ULONG,
     FileName: PCHAR,
@@ -705,7 +705,7 @@ unsafe fn FatSearchDirectoryBufferForFile(
 
     let mut LfnNameBuffer: [CHAR; 265] = [0; 265];
     let mut ShortNameBuffer: [CHAR; 20] = [0; 20];
-    let mut StartCluster: ULONG;
+    let StartCluster: ULONG;
     let mut OurDirEntry: DIRENTRY = core::mem::zeroed();
     let mut OurLfnDirEntry: LFN_DIRENTRY = core::mem::zeroed();
     let DirEntry: PDIRENTRY = &mut OurDirEntry;
@@ -882,7 +882,7 @@ unsafe fn FatSearchDirectoryBufferForFile(
 }
 
 unsafe fn FatXSearchDirectoryBufferForFile(
-    Volume: PFAT_VOLUME_INFO,
+    _Volume: PFAT_VOLUME_INFO,
     mut DirectoryBuffer: PVOID,
     DirectorySize: ULONG,
     FileName: PCHAR,
@@ -965,7 +965,7 @@ pub unsafe extern "C" fn FatLookupFile(
     let NumberOfPathParts: ULONG;
     let mut i: ULONG;
     let mut PathPart: [CHAR; 261] = [0; 261];
-    let DirectoryBuffer: PVOID;
+    let _DirectoryBuffer: PVOID;
     let mut DirectoryStartCluster: ULONG = 0;
     let mut DirectorySize: ULONG = 0;
     let mut FatFileInfo: FAT_FILE_INFO = core::mem::zeroed();
@@ -1001,7 +1001,7 @@ pub unsafe extern "C" fn FatLookupFile(
             return ENOMEM;
         }
 
-        if ISFATX((((*Volume).FatType) as u32)) != 0 {
+        if ISFATX(((*Volume).FatType) as u32 ) != 0 {
             if FatXSearchDirectoryBufferForFile(
                 Volume,
                 DirectoryBuffer,
@@ -1043,19 +1043,19 @@ pub unsafe extern "C" fn FatLookupFile(
 
     (*FatFileInfoPointer).Attributes = 0;
     if (FatFileInfo.Attributes & FAT_ATTR_READONLY) != 0 {
-        (*FatFileInfoPointer).Attributes |= ((ReadOnlyFile) as u8);
+        (*FatFileInfoPointer).Attributes |= (ReadOnlyFile) as u8 ;
     }
     if (FatFileInfo.Attributes & FAT_ATTR_HIDDEN) != 0 {
-        (*FatFileInfoPointer).Attributes |= ((HiddenFile) as u8);
+        (*FatFileInfoPointer).Attributes |= (HiddenFile) as u8 ;
     }
     if (FatFileInfo.Attributes & FAT_ATTR_SYSTEM) != 0 {
-        (*FatFileInfoPointer).Attributes |= ((SystemFile) as u8);
+        (*FatFileInfoPointer).Attributes |= (SystemFile) as u8 ;
     }
     if (FatFileInfo.Attributes & FAT_ATTR_ARCHIVE) != 0 {
-        (*FatFileInfoPointer).Attributes |= ((ArchiveFile) as u8);
+        (*FatFileInfoPointer).Attributes |= (ArchiveFile) as u8 ;
     }
     if (FatFileInfo.Attributes & FAT_ATTR_DIRECTORY) != 0 {
-        (*FatFileInfoPointer).Attributes |= ((DirectoryFile) as u8);
+        (*FatFileInfoPointer).Attributes |= (DirectoryFile) as u8 ;
     }
 
     (*FatFileInfoPointer).FileNameLength = strlen(PathPart.as_ptr()) as ULONG;
@@ -1092,7 +1092,7 @@ unsafe fn FatParseShortFileName(Buffer: PCHAR, DirEntry: PDIRENTRY) {
     }
 
     if (*DirEntry).FileName[8] != ((b' ') as i8) {
-        *Buffer.offset(Idx as isize) = ((b'.') as i8);
+        *Buffer.offset(Idx as isize) = (b'.') as i8 ;
         Idx += 1;
         *Buffer.offset(Idx as isize) = if (*DirEntry).FileName[8] == ((b' ') as i8) { 0 } else { (*DirEntry).FileName[8] };
         Idx += 1;
@@ -1323,7 +1323,7 @@ unsafe fn FatReadPartialCluster(
     Buffer: PVOID,
 ) -> BOOLEAN {
     let ClusterStartSector: ULONG;
-    let mut SectorOffset: ULONG;
+    let SectorOffset: ULONG;
     let ReadSize: ULONG;
     let SectorCount: ULONG;
     let ReadBuffer: PUCHAR;
@@ -1333,13 +1333,13 @@ unsafe fn FatReadPartialCluster(
     ClusterStartSector = ((ClusterNumber - 2) * (((*Volume).SectorsPerCluster) as u32)) + (*Volume).DataSectorStart;
 
     SectorOffset = StartingOffset / (((*Volume).BytesPerSector) as u32);
-    StartingOffset %= (((*Volume).BytesPerSector) as u32);
+    StartingOffset %= ((*Volume).BytesPerSector) as u32 ;
 
     SectorCount = (StartingOffset + Length + (((*Volume).BytesPerSector) as u32) - 1) / (((*Volume).BytesPerSector) as u32);
 
     ReadSize = SectorCount * (((*Volume).BytesPerSector) as u32);
 
-    ReadBuffer = FrLdrTempAlloc(((ReadSize) as usize), TAG_FAT_BUFFER) as PUCHAR;
+    ReadBuffer = FrLdrTempAlloc((ReadSize) as usize , TAG_FAT_BUFFER) as PUCHAR;
     if ReadBuffer.is_null() {
         return 0u8;
     }
@@ -1449,7 +1449,7 @@ unsafe fn FatReadVolumeSectors(
     let mut Count: ULONG = 0;
     let mut Status: ARC_STATUS = ESUCCESS;
 
-    Position.QuadPart = (((SectorNumber as ULONGLONG) * ((*Volume).BytesPerSector as ULONGLONG)) as i64);
+    Position.QuadPart = ((SectorNumber as ULONGLONG) * ((*Volume).BytesPerSector as ULONGLONG)) as i64 ;
     Status = ArcSeek((*Volume).DeviceId, &mut Position, SeekAbsolute);
     if Status != ESUCCESS {
         TRACE(b"FatReadVolumeSectors() Failed to seek\n\0".as_ptr() as PCHAR);
@@ -1491,7 +1491,7 @@ pub unsafe extern "C" fn FatGetFileInformation(FileId: u32, Information: *mut FI
 
     (*Information).Attributes = (*FileHandle).Attributes;
 
-    (*Information).FileNameLength = min((*FileHandle).FileNameLength, ((core::mem::size_of_val(&(*Information).FileName) - 1) as u32));
+    (*Information).FileNameLength = min((*FileHandle).FileNameLength, (core::mem::size_of_val(&(*Information).FileName) - 1) as u32 );
     core::ptr::copy_nonoverlapping(
         (*FileHandle).FileName.as_ptr(),
         (*Information).FileName.as_mut_ptr(),
@@ -1571,7 +1571,7 @@ pub unsafe extern "C" fn FatSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, Se
     match SeekMode {
         _SEEKMODE_SeekAbsolute => {},
         _SEEKMODE_SeekRelative => {
-            NewPosition.QuadPart += (((*FileHandle).FilePointer as ULONGLONG) as i64);
+            NewPosition.QuadPart += ((*FileHandle).FilePointer as ULONGLONG) as i64 ;
         },
         _ => {
             return EINVAL;
@@ -1673,7 +1673,7 @@ pub unsafe extern "C" fn FatMount(DeviceId: ULONG) -> *const DEVVTBL {
     }
 
     let mut SectorCount: ULARGE_INTEGER = core::mem::zeroed();
-    SectorCount.QuadPart = ((FileInformation.EndingAddress.QuadPart - FileInformation.StartingAddress.QuadPart) as u64);
+    SectorCount.QuadPart = (FileInformation.EndingAddress.QuadPart - FileInformation.StartingAddress.QuadPart) as u64 ;
     SectorCount.QuadPart /= 512;
 
     (*Volume).DeviceId = DeviceId;
@@ -1686,7 +1686,7 @@ pub unsafe extern "C" fn FatMount(DeviceId: ULONG) -> *const DEVVTBL {
     FatVolumes[DeviceId as usize] = Volume;
 
     TRACE(b"FatMount(%lu) success\n\0".as_ptr() as PCHAR, (DeviceId) as usize);
-    if ISFATX((((*Volume).FatType) as u32)) != 0u8 {
+    if ISFATX(((*Volume).FatType) as u32 ) != 0u8 {
         &FatXFuncTable
     } else {
         &FatFuncTable

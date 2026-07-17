@@ -6,7 +6,6 @@
 //! returns `int`, getters return a raw `*mut list`). The container-of
 //! pattern (`LIST_ENTRY`) is provided by the [`list_entry!`] macro.
 
-use ntkrnl_sys::base::*;
 
 #[repr(C)]
 #[derive(Clone, Copy)]

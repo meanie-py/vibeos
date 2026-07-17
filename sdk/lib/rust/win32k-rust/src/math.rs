@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]

@@ -430,15 +430,15 @@ unsafe extern "C" fn PcGetExtendedBIOSData(ExtendedBIOSDataArea: PULONG, Extende
 }
 
 unsafe fn PcGetHarddiskConfigurationData(DriveNumber: UCHAR, pSize: *mut ULONG) -> PCM_PARTIAL_RESOURCE_LIST {
-    let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
-    let mut DiskGeometry: PCM_DISK_GEOMETRY_DEVICE_DATA;
+    let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
+    let DiskGeometry: PCM_DISK_GEOMETRY_DEVICE_DATA;
     let mut Geometry: GEOMETRY = core::mem::zeroed();
     let Size: ULONG;
 
     *pSize = 0;
 
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) + core::mem::size_of::<CM_DISK_GEOMETRY_DEVICE_DATA>() as ULONG;
-    PartialResourceList = FrLdrHeapAlloc(((Size) as usize), TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
+    PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
         ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
         return core::ptr::null_mut();
@@ -471,37 +471,37 @@ unsafe fn PcGetHarddiskConfigurationData(DriveNumber: UCHAR, pSize: *mut ULONG) 
 unsafe fn DetectDockingStation(
     BusKey: PCONFIGURATION_COMPONENT_DATA)
 {
-    let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
-    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
+    let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
+    let PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
     let mut PeripheralKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
-    let mut DockingState: PDOCKING_STATE_INFORMATION;
-    let mut DockInfo: PPNP_DOCK_INFO;
-    let mut Size: ULONG;
+    let DockingState: PDOCKING_STATE_INFORMATION;
+    let DockInfo: PPNP_DOCK_INFO;
+    let Size: ULONG;
     let Result: ULONG;
 
     Result = PnpBiosGetDockStationInformation(DiskReadBuffer as *mut UCHAR);
 
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) + core::mem::size_of::<DOCKING_STATE_INFORMATION>() as ULONG;
-    PartialResourceList = FrLdrHeapAlloc(((Size) as usize), TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
+    PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList == core::ptr::null_mut()
     {
         ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
         return;
     }
 
-    RtlZeroMemory(PartialResourceList as *mut core::ffi::c_void, ((Size) as usize));
+    RtlZeroMemory(PartialResourceList as *mut core::ffi::c_void, (Size) as usize );
     (*PartialResourceList).Version = 0;
     (*PartialResourceList).Revision = 0;
     (*PartialResourceList).Count = 1;
 
     PartialDescriptor = core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]);
     (*PartialDescriptor).Type = CmResourceTypeDeviceSpecific;
-    (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+    (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
     (*PartialDescriptor).Flags = 0;
     (*PartialDescriptor).u.DeviceSpecificData.DataSize = core::mem::size_of::<DOCKING_STATE_INFORMATION>() as ULONG;
 
     DockingState = PartialDescriptor.add(1) as PDOCKING_STATE_INFORMATION;
-    (*DockingState).ReturnCode = ((Result) as u16);
+    (*DockingState).ReturnCode = (Result) as u16 ;
     if Result == 0
     {
         DockInfo = DiskReadBuffer as PPNP_DOCK_INFO;
@@ -527,9 +527,9 @@ unsafe fn DetectDockingStation(
 }
 
 unsafe fn DetectPnpBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mut ULONG) {
-    let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
+    let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
     let mut DeviceNode: PCM_PNP_BIOS_DEVICE_NODE;
-    let mut InstData: PCM_PNP_BIOS_INSTALLATION_CHECK;
+    let InstData: PCM_PNP_BIOS_INSTALLATION_CHECK;
     let mut BusKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let mut x: ULONG;
     let mut NodeSize: ULONG = 0;
@@ -538,7 +538,7 @@ unsafe fn DetectPnpBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mu
     let mut FoundNodeCount: ULONG;
     let mut i: i32;
     let mut PnpBufferSize: ULONG;
-    let mut PnpBufferSizeLimit: ULONG;
+    let PnpBufferSizeLimit: ULONG;
     let mut Size: ULONG;
     let mut Ptr: *mut u8;
 
@@ -567,18 +567,18 @@ unsafe fn DetectPnpBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mu
 
     PnpBufferSizeLimit = core::mem::size_of::<CM_PNP_BIOS_INSTALLATION_CHECK>() as ULONG + (NodeSize * NodeCount);
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) + PnpBufferSizeLimit;
-    PartialResourceList = FrLdrHeapAlloc(((Size) as usize), TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
+    PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList == core::ptr::null_mut() {
         ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
         return;
     }
 
-    RtlZeroMemory(PartialResourceList as *mut VOID, ((Size) as usize));
+    RtlZeroMemory(PartialResourceList as *mut VOID, (Size) as usize );
     (*PartialResourceList).Version = 1;
     (*PartialResourceList).Revision = 1;
     (*PartialResourceList).Count = 1;
     (*PartialResourceList).PartialDescriptors[0].Type = CmResourceTypeDeviceSpecific;
-    (*PartialResourceList).PartialDescriptors[0].ShareDisposition = ((CmResourceShareUndetermined) as u8);
+    (*PartialResourceList).PartialDescriptors[0].ShareDisposition = (CmResourceShareUndetermined) as u8 ;
 
     Ptr = (*PartialResourceList).PartialDescriptors.as_ptr().add(1) as *mut u8;
     RtlCopyMemory(Ptr as *mut VOID, InstData as *const VOID, core::mem::size_of::<CM_PNP_BIOS_INSTALLATION_CHECK>());
@@ -604,7 +604,7 @@ unsafe fn DetectPnpBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mu
             RtlCopyMemory(Ptr as *mut VOID, DeviceNode as *const VOID, (*DeviceNode).Size as usize);
 
             Ptr = Ptr.add((*DeviceNode).Size as usize);
-            PnpBufferSize += (((*DeviceNode).Size) as u32);
+            PnpBufferSize += ((*DeviceNode).Size) as u32 ;
 
             FoundNodeCount += 1;
             if FoundNodeCount >= NodeCount {
@@ -662,7 +662,7 @@ unsafe fn DetectSerialMouse(Port: PUCHAR) -> ULONG {
     while (READ_PORT_UCHAR(Port.offset(5)) & 0x01) != 0 {
         TimeOut -= 1;
         if TimeOut == 0 {
-            return ((MOUSE_TYPE_NONE) as u32);
+            return (MOUSE_TYPE_NONE) as u32 ;
         }
         READ_PORT_UCHAR(Port);
     }
@@ -678,7 +678,7 @@ unsafe fn DetectSerialMouse(Port: PUCHAR) -> ULONG {
             StallExecutionProcessor(100);
             TimeOut -= 1;
             if TimeOut == 0 {
-                return ((MOUSE_TYPE_NONE) as u32);
+                return (MOUSE_TYPE_NONE) as u32 ;
             }
         }
         Buffer[i as usize] = READ_PORT_UCHAR(Port) as CHAR;
@@ -692,31 +692,31 @@ unsafe fn DetectSerialMouse(Port: PUCHAR) -> ULONG {
     i = 0;
     while i < 4 {
         if Buffer[i as usize] == b'B' as CHAR {
-            return ((MOUSE_TYPE_NONE) as u32);
+            return (MOUSE_TYPE_NONE) as u32 ;
         } else if Buffer[i as usize] == b'M' as CHAR {
             if i == 3 {
-                return ((MOUSE_TYPE_NONE) as u32);
+                return (MOUSE_TYPE_NONE) as u32 ;
             }
 
             match Buffer[(i + 1) as usize] {
                 0x33 => {
                     TRACE(b"Microsoft Mouse with 3-buttons detected\n\0".as_ptr() as PCHAR);
-                    return ((MOUSE_TYPE_LOGITECH) as u32);
+                    return (MOUSE_TYPE_LOGITECH) as u32 ;
                 }
                 0x5a => {
                     TRACE(b"Microsoft Wheel Mouse detected\n\0".as_ptr() as PCHAR);
-                    return ((MOUSE_TYPE_WHEELZ) as u32);
+                    return (MOUSE_TYPE_WHEELZ) as u32 ;
                 }
                 _ => {
                     TRACE(b"Microsoft Mouse with 2-buttons detected\n\0".as_ptr() as PCHAR);
-                    return ((MOUSE_TYPE_MICROSOFT) as u32);
+                    return (MOUSE_TYPE_MICROSOFT) as u32 ;
                 }
             }
         }
         i += 1;
     }
 
-    ((MOUSE_TYPE_NONE) as u32)
+    (MOUSE_TYPE_NONE) as u32
 }
 
 unsafe fn GetSerialMousePnpId(Port: PUCHAR, Buffer: *mut i8) -> ULONG {
@@ -724,7 +724,7 @@ unsafe fn GetSerialMousePnpId(Port: PUCHAR, Buffer: *mut i8) -> ULONG {
     let mut TimeOut: ULONG;
     let mut i: ULONG = 0;
     let mut c: i8;
-    let mut x: i8;
+    let x: i8;
 
     WRITE_PORT_UCHAR(Port.offset(4), 0x09);
 
@@ -782,13 +782,13 @@ unsafe fn DetectSerialPointerPeripheral(
     Base: PUCHAR,
 ) {
 
-    let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
+    let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
     let mut Buffer: [i8; 256] = [0; 256];
     let mut Identifier: [CHAR; 256] = [0; 256];
     let mut PeripheralKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
-    let mut MouseType: ULONG;
-    let mut Size: ULONG;
-    let mut Length: ULONG;
+    let MouseType: ULONG;
+    let Size: ULONG;
+    let Length: ULONG;
     let mut i: ULONG;
     let mut j: ULONG;
     let mut k: ULONG;
@@ -976,7 +976,7 @@ unsafe fn GetSerialMouseDetectionBitmap(
     c = Option;
     i = 0;
     while i < OptionLength {
-        let PortNumber: u8 = (((*c) - ((b'0') as i8)) as u8);
+        let PortNumber: u8 = ((*c) - ((b'0') as i8)) as u8 ;
 
         if PortNumber > 0 && PortNumber <= 9 {
             PortBitmap |= 1 << (PortNumber - 1);
@@ -1006,7 +1006,7 @@ unsafe fn DetectSerialPorts(
     let mut ControllerKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let mut i: ULONG;
     let mut Size: ULONG;
-    let mut PortBitmap: ULONG;
+    let PortBitmap: ULONG;
 
     TRACE(b"DetectSerialPorts()\n\0".as_ptr() as PCHAR);
 
@@ -1045,7 +1045,7 @@ unsafe fn DetectSerialPorts(
 
         PartialDescriptor = core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]);
         (*PartialDescriptor).Type = CmResourceTypePort;
-        (*PartialDescriptor).ShareDisposition = ((CmResourceShareDeviceExclusive) as u8);
+        (*PartialDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8 ;
         (*PartialDescriptor).Flags = CM_RESOURCE_PORT_IO;
         (*PartialDescriptor).u.Port.Start.u.LowPart = Base;
         (*PartialDescriptor).u.Port.Start.u.HighPart = 0x0;
@@ -1053,7 +1053,7 @@ unsafe fn DetectSerialPorts(
 
         PartialDescriptor = (core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors) as *mut _CM_PARTIAL_RESOURCE_DESCRIPTOR).add(1);
         (*PartialDescriptor).Type = CmResourceTypeInterrupt;
-        (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+        (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
         (*PartialDescriptor).Flags = CM_RESOURCE_INTERRUPT_LATCHED;
         (*PartialDescriptor).u.Interrupt.Level = Irq;
         (*PartialDescriptor).u.Interrupt.Vector = Irq;
@@ -1061,7 +1061,7 @@ unsafe fn DetectSerialPorts(
 
         PartialDescriptor = (core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors) as *mut _CM_PARTIAL_RESOURCE_DESCRIPTOR).add(2);
         (*PartialDescriptor).Type = CmResourceTypeDeviceSpecific;
-        (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+        (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
         (*PartialDescriptor).Flags = 0;
         (*PartialDescriptor).u.DeviceSpecificData.DataSize = core::mem::size_of::<CM_SERIAL_DEVICE_DATA>() as ULONG;
 
@@ -1072,7 +1072,7 @@ unsafe fn DetectSerialPorts(
             BusKey,
             ControllerClass,
             SerialController,
-            ((Output | ((Input) as i32) | ((ConsoleIn) as i32) | ((ConsoleOut) as i32)) as u32),
+            (Output | ((Input) as i32) | ((ConsoleIn) as i32) | ((ConsoleOut) as i32)) as u32 ,
             ControllerNumber,
             0xFFFFFFFF,
             Identifier.as_mut_ptr(),
@@ -1093,7 +1093,7 @@ unsafe fn DetectSerialPorts(
 unsafe fn DetectParallelPorts(BusKey: PCONFIGURATION_COMPONENT_DATA) {
     let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
     let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
-    let mut Irq: [u32; 3] = [7, 5, 0xFFFFFFFF];
+    let Irq: [u32; 3] = [7, 5, 0xFFFFFFFF];
     let mut Identifier: [i8; 80] = [0; 80];
     let mut ControllerKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let mut BasePtr: *mut u16;
@@ -1150,7 +1150,7 @@ unsafe fn DetectParallelPorts(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
         PartialDescriptor = core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]);
         (*PartialDescriptor).Type = 1;
-        (*PartialDescriptor).ShareDisposition = ((CmResourceShareDeviceExclusive) as u8);
+        (*PartialDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8 ;
         (*PartialDescriptor).Flags = 0x100;
         (*PartialDescriptor).u.Port.Start.u.LowPart = Base;
         (*PartialDescriptor).u.Port.Start.u.HighPart = 0;
@@ -1159,7 +1159,7 @@ unsafe fn DetectParallelPorts(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         if Irq[i as usize] != 0xFFFFFFFF {
             PartialDescriptor = (core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors) as *mut _CM_PARTIAL_RESOURCE_DESCRIPTOR).add(1);
             (*PartialDescriptor).Type = 2;
-            (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+            (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
             (*PartialDescriptor).Flags = 0x1;
             (*PartialDescriptor).u.Interrupt.Level = Irq[i as usize];
             (*PartialDescriptor).u.Interrupt.Vector = Irq[i as usize];
@@ -1170,7 +1170,7 @@ unsafe fn DetectParallelPorts(BusKey: PCONFIGURATION_COMPONENT_DATA) {
             BusKey,
             ControllerClass,
             ParallelController,
-            ((Output) as u32),
+            (Output) as u32 ,
             ControllerNumber,
             0xFFFFFFFF,
             Identifier.as_ptr(),
@@ -1243,16 +1243,16 @@ unsafe fn DetectKeyboardDevice() -> u8 {
 }
 
 unsafe fn DetectKeyboardPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DATA) {
-    let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
-    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
-    let mut KeyboardData: PCM_KEYBOARD_DEVICE_DATA;
+    let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
+    let PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
+    let KeyboardData: PCM_KEYBOARD_DEVICE_DATA;
     let mut PeripheralKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
-    let mut Size: u32;
+    let Size: u32;
     let mut Regs: REGS = core::mem::zeroed();
 
     {
         Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) as u32 + core::mem::size_of::<CM_KEYBOARD_DEVICE_DATA>() as u32;
-        PartialResourceList = FrLdrHeapAlloc(((Size) as usize), TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
+        PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList.is_null() {
             ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
             return;
@@ -1265,7 +1265,7 @@ unsafe fn DetectKeyboardPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DATA)
 
         PartialDescriptor = &mut (*PartialResourceList).PartialDescriptors[0] as *mut _;
         (*PartialDescriptor).Type = CmResourceTypeDeviceSpecific;
-        (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+        (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
         (*PartialDescriptor).u.DeviceSpecificData.DataSize = core::mem::size_of::<CM_KEYBOARD_DEVICE_DATA>() as u32;
 
         Regs.b.ah = 0x02;
@@ -1276,7 +1276,7 @@ unsafe fn DetectKeyboardPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DATA)
         (*KeyboardData).Revision = 1;
         (*KeyboardData).Type = 4;
         (*KeyboardData).Subtype = 0;
-        (*KeyboardData).KeyboardFlags = ((Regs.b.al) as u16);
+        (*KeyboardData).KeyboardFlags = (Regs.b.al) as u16 ;
 
         FldrCreateComponentKey(
             ControllerKey,
@@ -1294,13 +1294,13 @@ unsafe fn DetectKeyboardPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DATA)
 }
 
 unsafe fn DetectKeyboardController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
-    let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
+    let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
     let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
     let mut ControllerKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
-    let mut Size: u32;
+    let Size: u32;
 
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[3]) as u32;
-    PartialResourceList = FrLdrHeapAlloc(((Size) as usize), TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
+    PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
         ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
         return;
@@ -1313,7 +1313,7 @@ unsafe fn DetectKeyboardController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
     PartialDescriptor = core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]);
     (*PartialDescriptor).Type = CmResourceTypeInterrupt;
-    (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+    (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
     (*PartialDescriptor).Flags = CM_RESOURCE_INTERRUPT_LATCHED;
     (*PartialDescriptor).u.Interrupt.Level = 1;
     (*PartialDescriptor).u.Interrupt.Vector = 1;
@@ -1321,7 +1321,7 @@ unsafe fn DetectKeyboardController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
     PartialDescriptor = (core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors) as *mut _CM_PARTIAL_RESOURCE_DESCRIPTOR).add(1);
     (*PartialDescriptor).Type = CmResourceTypePort;
-    (*PartialDescriptor).ShareDisposition = ((CmResourceShareDeviceExclusive) as u8);
+    (*PartialDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8 ;
     (*PartialDescriptor).Flags = CM_RESOURCE_PORT_IO;
     (*PartialDescriptor).u.Port.Start.u.LowPart = 0x60;
     (*PartialDescriptor).u.Port.Start.u.HighPart = 0x0;
@@ -1329,7 +1329,7 @@ unsafe fn DetectKeyboardController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
     PartialDescriptor = (core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors) as *mut _CM_PARTIAL_RESOURCE_DESCRIPTOR).add(2);
     (*PartialDescriptor).Type = CmResourceTypePort;
-    (*PartialDescriptor).ShareDisposition = ((CmResourceShareDeviceExclusive) as u8);
+    (*PartialDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8 ;
     (*PartialDescriptor).Flags = CM_RESOURCE_PORT_IO;
     (*PartialDescriptor).u.Port.Start.u.LowPart = 0x64;
     (*PartialDescriptor).u.Port.Start.u.HighPart = 0x0;
@@ -1448,7 +1448,7 @@ unsafe fn DetectPS2Mouse(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         (*PartialResourceList).Count = 1;
 
         (*PartialResourceList).PartialDescriptors[0].Type = 2u8;
-        (*PartialResourceList).PartialDescriptors[0].ShareDisposition = ((CmResourceShareUndetermined) as u8);
+        (*PartialResourceList).PartialDescriptors[0].ShareDisposition = (CmResourceShareUndetermined) as u8 ;
         (*PartialResourceList).PartialDescriptors[0].Flags = 1u16;
         (*PartialResourceList).PartialDescriptors[0].u.Interrupt.Level = 12;
         (*PartialResourceList).PartialDescriptors[0].u.Interrupt.Vector = 12;
@@ -1537,7 +1537,7 @@ unsafe fn CreateBusMousePeripheralKey(
 
     PartialDescriptor = core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]);
     (*PartialDescriptor).Type = CmResourceTypePort;
-    (*PartialDescriptor).ShareDisposition = ((CmResourceShareDeviceExclusive) as u8);
+    (*PartialDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8 ;
     (*PartialDescriptor).Flags = CM_RESOURCE_PORT_IO;
     (*PartialDescriptor).u.Port.Start.u.LowPart = IoBase;
     (*PartialDescriptor).u.Port.Start.u.HighPart = 0;
@@ -1545,7 +1545,7 @@ unsafe fn CreateBusMousePeripheralKey(
 
     PartialDescriptor = (core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors) as *mut _CM_PARTIAL_RESOURCE_DESCRIPTOR).add(1);
     (*PartialDescriptor).Type = CmResourceTypeInterrupt;
-    (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+    (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
     (*PartialDescriptor).Flags = CM_RESOURCE_INTERRUPT_LATCHED;
     (*PartialDescriptor).u.Interrupt.Level = Irq;
     (*PartialDescriptor).u.Interrupt.Vector = Irq;
@@ -1736,7 +1736,7 @@ unsafe fn DetectBusMouse(
 }
 
 unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
-    let mut Identifier: PCSTR;
+    let Identifier: PCSTR;
     let mut ControllerKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let VesaVersion: u16;
 
@@ -1759,7 +1759,7 @@ unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         BusKey,
         ControllerClass,
         DisplayController,
-        ((Output | ((ConsoleOut) as i32)) as u32),
+        (Output | ((ConsoleOut) as i32)) as u32 ,
         0,
         0xFFFFFFFF,
         Identifier,
@@ -1785,7 +1785,7 @@ unsafe fn DetectIsaBios(
 )
 {
 
-    let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
+    let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
     let mut BusKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let Size: ULONG;
 
@@ -1881,7 +1881,7 @@ pub unsafe extern "C" fn ChainLoadBiosBootSectorCode(
     let mut Regs: REGS = core::mem::zeroed();
 
     Regs.b.dl = if BootDrive != 0 { BootDrive } else { FrldrBootDrive };
-    Regs.b.dh = if BootPartition != 0 { BootPartition as UCHAR } else { ((FrldrBootPartition) as u8) };
+    Regs.b.dh = if BootPartition != 0 { BootPartition as UCHAR } else { (FrldrBootPartition) as u8  };
 
     Relocator16Boot(
         &mut Regs,
@@ -1906,7 +1906,7 @@ unsafe fn _vga_dbg(slot: u32, c: u8) {
 
 #[cfg(not(feature = "uefi"))]
 #[no_mangle]
-pub unsafe extern "C" fn MachInit(CmdLine: *const i8) {
+pub unsafe extern "C" fn MachInit(_CmdLine: *const i8) {
     _vga_dbg(0, b'A');
     RtlZeroMemory(&mut MachVtbl as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&MachVtbl));
     _vga_dbg(1, b'B');

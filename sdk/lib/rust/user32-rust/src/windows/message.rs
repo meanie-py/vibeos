@@ -2123,6 +2123,7 @@ unsafe fn IntCallWindowProcA_impl(
     Result
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe extern "system" fn IntCallMessageProc(
     Wnd: PWND,
     hWnd: HWND,
@@ -3229,6 +3230,7 @@ unsafe fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG {
         .swap(value, core::sync::atomic::Ordering::SeqCst)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn RegisterMessagePumpHook(Hook: MESSAGEPUMPHOOKPROC) -> BOOL {
     EnterCriticalSection(core::ptr::addr_of_mut!(gcsMPH));

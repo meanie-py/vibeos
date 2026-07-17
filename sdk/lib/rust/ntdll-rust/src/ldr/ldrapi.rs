@@ -3,7 +3,6 @@
 #![allow(static_mut_refs)]
 
 use ntdll_sys::nt::*;
-use core::ffi::c_void;
 
 // ===========================================================================
 // Prelude — ntdllp.h / ntstatus.h / intrin surface absent from the ntdll-sys
@@ -177,26 +176,26 @@ pub static mut AlternateResourceModuleCount: ULONG = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn LdrFindCreateProcessManifest(
-    Flags: ULONG,
-    Image: PVOID,
-    IdPath: PVOID,
-    IdPathLength: ULONG,
-    OutDataEntry: PVOID,
+    _Flags: ULONG,
+    _Image: PVOID,
+    _IdPath: PVOID,
+    _IdPathLength: ULONG,
+    _OutDataEntry: PVOID,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn LdrDestroyOutOfProcessImage(Image: PVOID) -> NTSTATUS {
+pub unsafe extern "system" fn LdrDestroyOutOfProcessImage(_Image: PVOID) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LdrCreateOutOfProcessImage(
-    Flags: ULONG,
-    ProcessHandle: HANDLE,
-    DllHandle: HANDLE,
-    Unknown3: PVOID,
+    _Flags: ULONG,
+    _ProcessHandle: HANDLE,
+    _DllHandle: HANDLE,
+    _Unknown3: PVOID,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -349,7 +348,7 @@ pub unsafe extern "system" fn LdrLoadDll(
     let mut Status: NTSTATUS;
     let mut Cookie: ULONG_PTR = 0;
     let OldTldDll: PUNICODE_STRING;
-    let Teb: PTEB = NtCurrentTeb();
+    let _Teb: PTEB = NtCurrentTeb();
     let mut DllName = DllName;
 
     RtlInitEmptyUnicodeString(
@@ -434,7 +433,7 @@ pub unsafe extern "system" fn LdrFindEntryForAddress(
     Address: PVOID,
     Module: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> NTSTATUS {
-    let mut ListHead: PLIST_ENTRY;
+    let ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut LdrEntry: PLDR_DATA_TABLE_ENTRY;
     let mut NtHeader: PIMAGE_NT_HEADERS;
@@ -494,7 +493,7 @@ pub unsafe extern "system" fn LdrFindEntryForAddress(
 pub unsafe extern "system" fn LdrGetDllHandleEx(
     Flags: ULONG,
     DllPath: PWSTR,
-    DllCharacteristics: PULONG,
+    _DllCharacteristics: PULONG,
     DllName: PUNICODE_STRING,
     DllHandle: *mut PVOID,
 ) -> NTSTATUS {
@@ -504,7 +503,7 @@ pub unsafe extern "system" fn LdrGetDllHandleEx(
     let mut DynamicString: _UNICODE_STRING = core::mem::zeroed();
     let mut RawDllName: _UNICODE_STRING = core::mem::zeroed();
     let mut pRedirectName: PUNICODE_STRING;
-    let mut CompareName: PUNICODE_STRING;
+    let CompareName: PUNICODE_STRING;
     let mut p1: PWCHAR;
     let mut p2: PWCHAR;
     let p3: PWCHAR;
@@ -512,7 +511,7 @@ pub unsafe extern "system" fn LdrGetDllHandleEx(
     let mut RedirectedDll: BOOLEAN;
     let mut Cookie: ULONG_PTR;
     let LoadFlag: ULONG;
-    let Length: ULONG;
+    let _Length: ULONG;
 
     RtlInitEmptyUnicodeString(core::ptr::addr_of_mut!(DynamicString), core::ptr::null_mut(), 0);
     RtlInitEmptyUnicodeString(core::ptr::addr_of_mut!(RawDllName), core::ptr::null_mut(), 0);
@@ -708,11 +707,11 @@ pub unsafe extern "system" fn LdrVerifyImageMatchesChecksum(
     let mut ImportData: PIMAGE_IMPORT_DESCRIPTOR;
     let mut LastSection: PIMAGE_SECTION_HEADER = core::ptr::null_mut();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut NtHeader: PIMAGE_NT_HEADERS;
+    let NtHeader: PIMAGE_NT_HEADERS;
     let mut SectionHandle: HANDLE = core::ptr::null_mut();
     let mut ViewSize: SIZE_T;
     let mut ViewBase: PVOID;
-    let mut Result: BOOLEAN;
+    let Result: BOOLEAN;
     let NoActualCheck: BOOLEAN;
     let mut Status: NTSTATUS;
     let mut ImportName: PVOID;
@@ -818,14 +817,14 @@ pub unsafe extern "system" fn LdrVerifyImageMatchesChecksum(
 
 #[no_mangle]
 pub unsafe extern "system" fn LdrQueryProcessModuleInformationEx(
-    ProcessId: u32,
-    Reserved: u32,
+    _ProcessId: u32,
+    _Reserved: u32,
     ModuleInformation: PRTL_PROCESS_MODULES,
     Size: u32,
     ReturnedSize: *mut u32,
 ) -> i32 {
 
-    let mut ModuleListHead: PLIST_ENTRY;
+    let ModuleListHead: PLIST_ENTRY;
     let mut InitListHead: PLIST_ENTRY;
     let mut Entry: PLIST_ENTRY;
     let mut InitEntry: PLIST_ENTRY;
@@ -1338,7 +1337,7 @@ pub unsafe extern "system" fn LdrProcessRelocationBlock(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn LdrLoadAlternateResourceModule(Module: PVOID, Buffer: PWSTR) -> NTSTATUS {
+pub unsafe extern "system" fn LdrLoadAlternateResourceModule(_Module: PVOID, _Buffer: PWSTR) -> NTSTATUS {
     if LdrAlternateResourcesEnabled() == 0 {
         return STATUS_SUCCESS;
     }
@@ -1346,7 +1345,7 @@ pub unsafe extern "system" fn LdrLoadAlternateResourceModule(Module: PVOID, Buff
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn LdrUnloadAlternateResourceModule(BaseAddress: PVOID) -> BOOLEAN {
+pub unsafe extern "system" fn LdrUnloadAlternateResourceModule(_BaseAddress: PVOID) -> BOOLEAN {
     let mut Cookie: ULONG_PTR = 0;
 
     LdrLockLoaderLock(

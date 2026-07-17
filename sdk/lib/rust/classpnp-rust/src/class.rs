@@ -260,31 +260,31 @@ pub unsafe extern "system" fn ClassInitialize(
         return STATUS_REVISION_MISMATCH;
     }
 
-    if ((*InitializationData).FdoData.ClassDeviceControl.is_none() ||
+    if (*InitializationData).FdoData.ClassDeviceControl.is_none() ||
         ((*InitializationData).FdoData.ClassReadWriteVerification.is_none() &&
          (*InitializationData).ClassStartIo.is_none()) ||
         (*InitializationData).ClassAddDevice.is_none() ||
-        (*InitializationData).FdoData.ClassStartDevice.is_none())
+        (*InitializationData).FdoData.ClassStartDevice.is_none()
     {
         TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
             b"ClassInitialize: Class device-specific driver missing required FDO entry\n\0".as_ptr() as *const i8);
         return STATUS_REVISION_MISMATCH;
     }
 
-    if (!(*InitializationData).ClassEnumerateDevice.is_none() &&
+    if !(*InitializationData).ClassEnumerateDevice.is_none() &&
         ((*InitializationData).PdoData.ClassDeviceControl.is_none() ||
          (*InitializationData).PdoData.ClassStartDevice.is_none() ||
          ((*InitializationData).PdoData.ClassReadWriteVerification.is_none() &&
-          (*InitializationData).ClassStartIo.is_none())))
+          (*InitializationData).ClassStartIo.is_none()))
     {
         TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
             b"ClassInitialize: Class device-specific missing required PDO entry\n\0".as_ptr() as *const i8);
         return STATUS_REVISION_MISMATCH;
     }
 
-    if ((*InitializationData).FdoData.ClassStopDevice.is_none() ||
+    if (*InitializationData).FdoData.ClassStopDevice.is_none() ||
         (!(*InitializationData).ClassEnumerateDevice.is_none() &&
-         (*InitializationData).PdoData.ClassStopDevice.is_none()))
+         (*InitializationData).PdoData.ClassStopDevice.is_none())
     {
         TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
             b"ClassInitialize: Class device-specific missing required PDO entry\n\0".as_ptr() as *const i8);
@@ -1591,7 +1591,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
         if ScreenStateNotificationHandle == core::ptr::null_mut() {
             PoRegisterPowerSettingCallback(
                 device_object,
-                &GUID_CONSOLE_DISPLAY_STATE,
+                &raw const GUID_CONSOLE_DISPLAY_STATE,
                 abi_cast!(ClasspPowerSettingCallback),
                 core::ptr::null_mut(),
                 &raw mut ScreenStateNotificationHandle,

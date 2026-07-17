@@ -896,7 +896,7 @@ pub unsafe extern "C" fn BuildUSBAudioFilterTopology(
                             let AutomationTable = AllocFunction(core::mem::size_of::<KSAUTOMATION_TABLE>() as ULONG) as PKSAUTOMATION_TABLE;
                             (*NodeDescriptors.offset((*FilterDescriptor).NodeDescriptorsCount as isize)).AutomationTable = AutomationTable;
                             if !AutomationTable.is_null() {
-                                (*AutomationTable).PropertySets = &mut FilterAudioMutePropertySetArray as *mut KSPROPERTY_SET;
+                                (*AutomationTable).PropertySets = &raw mut FilterAudioMutePropertySetArray as *mut KSPROPERTY_SET;
                                 (*AutomationTable).PropertySetsCount = 1;
                                 (*AutomationTable).PropertyItemSize = core::mem::size_of::<KSPROPERTY_ITEM>() as ULONG;
                             }
@@ -911,7 +911,7 @@ pub unsafe extern "C" fn BuildUSBAudioFilterTopology(
                             let AutomationTable = AllocFunction(core::mem::size_of::<KSAUTOMATION_TABLE>() as ULONG) as PKSAUTOMATION_TABLE;
                             (*NodeDescriptors.offset((*FilterDescriptor).NodeDescriptorsCount as isize)).AutomationTable = AutomationTable;
                             if !AutomationTable.is_null() {
-                                (*AutomationTable).PropertySets = &mut FilterAudioVolumePropertySetArray as *mut KSPROPERTY_SET;
+                                (*AutomationTable).PropertySets = &raw mut FilterAudioVolumePropertySetArray as *mut KSPROPERTY_SET;
                                 (*AutomationTable).PropertySetsCount = 1;
                                 (*AutomationTable).PropertyItemSize = core::mem::size_of::<KSPROPERTY_ITEM>() as ULONG;
                             }
@@ -1378,40 +1378,40 @@ pub unsafe extern "C" fn UsbAudioGetPinCategoryFromTerminalDescriptor(
     TerminalDescriptor: PUSB_AUDIO_CONTROL_INPUT_TERMINAL_DESCRIPTOR,
 ) -> LPGUID {
     if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_MICROPHONE_TERMINAL_TYPE {
-        return &mut NodeTypeMicrophone;
+        return &raw mut NodeTypeMicrophone;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_DESKTOP_MICROPHONE_TERMINAL_TYPE {
-        return &mut NodeTypeDesktopMicrophone;
+        return &raw mut NodeTypeDesktopMicrophone;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_PERSONAL_MICROPHONE_TERMINAL_TYPE {
-        return &mut NodeTypePersonalMicrophone;
+        return &raw mut NodeTypePersonalMicrophone;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_OMMNI_MICROPHONE_TERMINAL_TYPE {
-        return &mut NodeTypeOmmniMicrophone;
+        return &raw mut NodeTypeOmmniMicrophone;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_ARRAY_MICROPHONE_TERMINAL_TYPE {
-        return &mut NodeTypeArrayMicrophone;
+        return &raw mut NodeTypeArrayMicrophone;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_ARRAY_PROCESSING_MICROPHONE_TERMINAL_TYPE {
-        return &mut NodeTypeProcessingArrayMicrophone;
+        return &raw mut NodeTypeProcessingArrayMicrophone;
     }
 
     if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_SPEAKER_TERMINAL_TYPE {
-        return &mut NodeTypeSpeaker;
+        return &raw mut NodeTypeSpeaker;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_HEADPHONES_SPEAKER_TERMINAL_TYPE {
-        return &mut NodeTypeHeadphonesSpeaker;
+        return &raw mut NodeTypeHeadphonesSpeaker;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_HMDA_TERMINAL_TYPE {
-        return &mut NodeTypeHMDA;
+        return &raw mut NodeTypeHMDA;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_DESKTOP_SPEAKER_TERMINAL_TYPE {
-        return &mut NodeTypeDesktopSpeaker;
+        return &raw mut NodeTypeDesktopSpeaker;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_ROOM_SPEAKER_TERMINAL_TYPE {
-        return &mut NodeTypeRoomSpeaker;
+        return &raw mut NodeTypeRoomSpeaker;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_COMMUNICATION_SPEAKER_TERMINAL_TYPE {
-        return &mut NodeTypeCommunicationSpeaker;
+        return &raw mut NodeTypeCommunicationSpeaker;
     } else if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_SUBWOOFER_TERMINAL_TYPE {
-        return &mut NodeTypeSubwoofer;
+        return &raw mut NodeTypeSubwoofer;
     }
 
     if (*TerminalDescriptor).wTerminalType as u32 == USB_AUDIO_STREAMING_TERMINAL_TYPE {
         if (*TerminalDescriptor).bDescriptorSubtype as u32 == USB_AUDIO_OUTPUT_TERMINAL {
-            return &mut NodeTypeCapture;
+            return &raw mut NodeTypeCapture;
         } else if (*TerminalDescriptor).bDescriptorSubtype as u32 == USB_AUDIO_INPUT_TERMINAL {
-            return &mut NodeTypePlayback;
+            return &raw mut NodeTypePlayback;
         }
     }
 
@@ -1796,11 +1796,11 @@ pub unsafe extern "C" fn USBAudioPinBuildDescriptors(
                 Index,
             );
 
-            (*Pins.offset(Index as isize)).Dispatch = &mut UsbAudioPinDispatch;
+            (*Pins.offset(Index as isize)).Dispatch = &raw mut UsbAudioPinDispatch;
             (*Pins.offset(Index as isize)).PinDescriptor.InterfacesCount = 1;
-            (*Pins.offset(Index as isize)).PinDescriptor.Interfaces = &mut StandardPinInterface;
+            (*Pins.offset(Index as isize)).PinDescriptor.Interfaces = &raw mut StandardPinInterface;
             (*Pins.offset(Index as isize)).PinDescriptor.MediumsCount = 1;
-            (*Pins.offset(Index as isize)).PinDescriptor.Mediums = &mut StandardPinMedium;
+            (*Pins.offset(Index as isize)).PinDescriptor.Mediums = &raw mut StandardPinMedium;
             (*Pins.offset(Index as isize)).PinDescriptor.Category =
                 UsbAudioGetPinCategoryFromTerminalDescriptor(TerminalDescriptor);
             UsbAudioGetDataRanges(
@@ -1833,10 +1833,10 @@ pub unsafe extern "C" fn USBAudioPinBuildDescriptors(
             );
 
             (*Pins.offset(Index as isize)).PinDescriptor.InterfacesCount = 1;
-            (*Pins.offset(Index as isize)).PinDescriptor.Interfaces = &mut StandardPinInterface;
+            (*Pins.offset(Index as isize)).PinDescriptor.Interfaces = &raw mut StandardPinInterface;
             (*Pins.offset(Index as isize)).PinDescriptor.MediumsCount = 1;
-            (*Pins.offset(Index as isize)).PinDescriptor.Mediums = &mut StandardPinMedium;
-            (*Pins.offset(Index as isize)).PinDescriptor.DataRanges = &mut BridgePinAudioFormats as *mut _ as *mut PKSDATARANGE;
+            (*Pins.offset(Index as isize)).PinDescriptor.Mediums = &raw mut StandardPinMedium;
+            (*Pins.offset(Index as isize)).PinDescriptor.DataRanges = &raw mut BridgePinAudioFormats as *mut _ as *mut PKSDATARANGE;
             (*Pins.offset(Index as isize)).PinDescriptor.DataRangesCount = 1;
             (*Pins.offset(Index as isize)).PinDescriptor.Communication = KSPIN_COMMUNICATION_BRIDGE;
             (*Pins.offset(Index as isize)).PinDescriptor.Category =
@@ -2060,9 +2060,9 @@ pub unsafe extern "system" fn USBAudioCreateFilterContext(
     (*FilterDescriptor).Version = KSFILTER_DESCRIPTOR_VERSION;
     (*FilterDescriptor).Flags = 0;
     (*FilterDescriptor).ReferenceGuid = &KSNAME_Filter;
-    (*FilterDescriptor).Dispatch = &mut USBAudioFilterDispatch;
+    (*FilterDescriptor).Dispatch = &raw mut USBAudioFilterDispatch;
     (*FilterDescriptor).CategoriesCount = 1;
-    (*FilterDescriptor).Categories = &mut GUID_KSCATEGORY_AUDIO;
+    (*FilterDescriptor).Categories = &raw mut GUID_KSCATEGORY_AUDIO;
 
     let ComponentId: PKSCOMPONENTID =
         AllocFunction(core::mem::size_of::<KSCOMPONENTID>() as ULONG) as PKSCOMPONENTID;

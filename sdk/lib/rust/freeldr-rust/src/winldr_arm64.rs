@@ -119,8 +119,8 @@ unsafe fn MempAllocatePageTables() -> u8 {
 }
 
 unsafe fn MempGetOrCreatePageDir(ParentTable: PARM64_PTE, Index: ULONG) -> PARM64_PTE {
-    let mut SubDir: PARM64_PTE;
-    let mut Entry: ARM64_PTE;
+    let SubDir: PARM64_PTE;
+    let Entry: ARM64_PTE;
 
     if ParentTable.is_null() {
         return core::ptr::null_mut();
@@ -145,9 +145,9 @@ unsafe fn MempGetOrCreatePageDir(ParentTable: PARM64_PTE, Index: ULONG) -> PARM6
 }
 
 unsafe fn MempMapSinglePage(VirtualAddress: ULONG64, PhysicalAddress: ULONG64) -> BOOLEAN {
-    let mut Pud: PARM64_PTE;
-    let mut Pmd: PARM64_PTE;
-    let mut Pte: PARM64_PTE;
+    let Pud: PARM64_PTE;
+    let Pmd: PARM64_PTE;
+    let Pte: PARM64_PTE;
     let Index: ULONG;
 
     Pud = MempGetOrCreatePageDir(Arm64Pgd, ARM64_PGD_INDEX(VirtualAddress));
@@ -208,9 +208,9 @@ unsafe fn MempMapDevicePage(PhysicalAddress: ULONG64) -> BOOLEAN {
 }
 
 unsafe fn MempIsPageMapped(VirtualAddress: PVOID) -> BOOLEAN {
-    let mut Pud: PARM64_PTE;
-    let mut Pmd: PARM64_PTE;
-    let mut Pte: PARM64_PTE;
+    let Pud: PARM64_PTE;
+    let Pmd: PARM64_PTE;
+    let Pte: PARM64_PTE;
     let Va: ULONG64 = VirtualAddress as ULONG64;
 
     if (*Arm64Pgd.offset(ARM64_PGD_INDEX(Va) as isize) & ARM64_PTE_VALID) == 0 {
@@ -284,10 +284,10 @@ unsafe fn MempUnmapPage(Page: PFN_NUMBER) {
 
 #[no_mangle]
 pub unsafe extern "C" fn WinLdrSetProcessorContext(
-    OperatingSystemVersion: USHORT)
+    _OperatingSystemVersion: USHORT)
 {
-    let mut tcr: ULONG64;
-    let mut mair: ULONG64;
+    let tcr: ULONG64;
+    let mair: ULONG64;
     let ttbr_val: ULONG64 = Arm64Pgd as ULONG64;
 
     ERR(b">>> WinLdrSetProcessorContext for ARM64\n\0".as_ptr() as *const i8);
@@ -327,8 +327,8 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
 }
 
 unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
-    let mut Pud: PARM64_PTE;
-    let mut Pmd: PARM64_PTE;
+    let Pud: PARM64_PTE;
+    let Pmd: PARM64_PTE;
 
     if MempMapSinglePage(KI_USER_SHARED_DATA as ULONG64, SharedUserDataPfn as ULONG64 * PAGE_SIZE) == 0 {
         ERR(b"Could not map KI_USER_SHARED_DATA\n\0".as_ptr() as PCHAR);

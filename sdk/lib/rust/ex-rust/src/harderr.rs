@@ -470,7 +470,7 @@ pub unsafe extern "system" fn NtSetDefaultHardErrorPort(PortHandle: HANDLE) -> N
             0,
             LpcPortObjectType as POBJECT_TYPE,
             PreviousMode,
-            &mut ExpDefaultErrorPort,
+            &raw mut ExpDefaultErrorPort,
             core::ptr::null_mut(),
         );
         if Status >= 0 {

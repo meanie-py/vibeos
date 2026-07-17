@@ -1,10 +1,9 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ExAcquireFastMutex, ExReleaseFastMutex, _KWAIT_REASON_Executive, FAST_MUTEX, KEVENT, KDPC, KeInitializeDpc, KeInitializeEvent, KeInsertQueueDpc, KeWaitForSingleObject, KPRIORITY, _EVENT_TYPE_NotificationEvent, UINT16, UINT32, UINT8};
+use ntkrnl_sys::ddk::{ExAcquireFastMutex, ExReleaseFastMutex, _KWAIT_REASON_Executive, FAST_MUTEX, KEVENT, KDPC, KeInitializeDpc, KeInitializeEvent, KeInsertQueueDpc, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, UINT32, UINT8};
 // KeInitializeSpinLock + ExInitializeFastMutex are FORCEINLINE in the DDK (no
 // exported symbol) — use the ntkrnl-sys inline impls, not a ddk extern, or the
 // cohab link fails with undefined _KeInitializeSpinLock/_ExInitializeFastMutex.
@@ -285,9 +284,9 @@ pub type acpi_bus_walk_callback = Option<unsafe extern "C" fn(*mut acpi_device, 
 
 unsafe fn acpi_device_register(
     device: *mut acpi_device,
-    parent: *mut acpi_device,
+    _parent: *mut acpi_device,
 ) -> i32 {
-    let mut result: i32 = 0;
+    let result: i32 = 0;
 
     if device.is_null() {
         return (0x1 | 0x1000) as i32;
@@ -304,8 +303,8 @@ unsafe fn acpi_device_unregister(device: *mut acpi_device) -> i32 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn acpi_bus_data_handler(
-    handle: ACPI_HANDLE,
-    context: *mut core::ffi::c_void,
+    _handle: ACPI_HANDLE,
+    _context: *mut core::ffi::c_void,
 ) {
     // DPRINT removed
 }
@@ -388,8 +387,8 @@ pub unsafe extern "C" fn acpi_bus_get_status(device: *mut acpi_device) -> i32 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn acpi_bus_private_data_handler(
-    handle: ACPI_HANDLE,
-    context: *mut core::ffi::c_void,
+    _handle: ACPI_HANDLE,
+    _context: *mut core::ffi::c_void,
 ) {
     return;
 }
@@ -731,8 +730,8 @@ pub unsafe extern "C" fn acpi_bus_generate_event_dpc(
 
 #[inline(always)]
 unsafe fn acpi_bus_generate_event_dpc_impl(
-    Dpc: *mut ntkrnl_sys::ddk::_KDPC,
-    DeferredContext: PVOID,
+    _Dpc: *mut ntkrnl_sys::ddk::_KDPC,
+    _DeferredContext: PVOID,
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
@@ -763,11 +762,11 @@ unsafe fn acpi_bus_generate_event_dpc_impl(
     (*event).type_ = ((TypeData & 0xFF000000) >> 24) as UINT32;
     (*event).data = (TypeData & 0x00FFFFFF) as UINT32;
 
-    KeAcquireSpinLock(&mut acpi_bus_event_lock, &mut OldIrql);
-    list_add_tail(&mut (*event).node, &mut acpi_bus_event_list);
-    KeReleaseSpinLock(&mut acpi_bus_event_lock, OldIrql);
+    KeAcquireSpinLock(&raw mut acpi_bus_event_lock, &mut OldIrql);
+    list_add_tail(&mut (*event).node, &raw mut acpi_bus_event_list);
+    KeReleaseSpinLock(&raw mut acpi_bus_event_lock, OldIrql);
 
-    KeSetEvent(&mut AcpiEventQueue as *mut _ as *mut core::ffi::c_void, IO_NO_INCREMENT as i32, FALSE as BOOLEAN);
+    KeSetEvent(&raw mut AcpiEventQueue as *mut _ as *mut core::ffi::c_void, IO_NO_INCREMENT as i32, FALSE as BOOLEAN);
 }
 #[no_mangle]
 pub unsafe extern "C" fn acpi_bus_generate_event(
@@ -788,7 +787,7 @@ pub unsafe extern "C" fn acpi_bus_generate_event(
     TypeData = data as usize;
     TypeData |= (type_ as usize) << 24;
 
-    KeInsertQueueDpc(&mut event_dpc, device as *mut _, TypeData as *mut _);
+    KeInsertQueueDpc(&raw mut event_dpc, device as *mut _, TypeData as *mut _);
 
     0
 }
@@ -805,25 +804,25 @@ pub unsafe extern "C" fn acpi_bus_receive_event(
 
     event_is_open += 1;
     KeWaitForSingleObject(
-        &mut AcpiEventQueue as *mut _ as *mut core::ffi::c_void,
+        &raw mut AcpiEventQueue as *mut _ as *mut core::ffi::c_void,
         _KWAIT_REASON_Executive,
         0i8,
         0u8,
         core::ptr::null_mut(),
     );
     event_is_open -= 1;
-    KeClearEvent(&mut AcpiEventQueue as *mut _ as *mut core::ffi::c_void);
+    KeClearEvent(&raw mut AcpiEventQueue as *mut _ as *mut core::ffi::c_void);
 
-    if list_empty(&mut acpi_bus_event_list) != 0 {
+    if list_empty(&raw mut acpi_bus_event_list) != 0 {
         return AE_NOT_FOUND as i32;
     }
 
-    KeAcquireSpinLock(&mut acpi_bus_event_lock, &mut old_irql);
+    KeAcquireSpinLock(&raw mut acpi_bus_event_lock, &mut old_irql);
     entry = list_entry!(acpi_bus_event_list.next, acpi_bus_event, node);
     if !entry.is_null() {
         list_del(&mut (*entry).node);
     }
-    KeReleaseSpinLock(&mut acpi_bus_event_lock, old_irql);
+    KeReleaseSpinLock(&raw mut acpi_bus_event_lock, old_irql);
 
     if entry.is_null() {
         return AE_NOT_FOUND as i32;
@@ -845,7 +844,7 @@ unsafe fn acpi_bus_walk(
     direction: i32,
     data: *mut core::ffi::c_void,
 ) -> i32 {
-    let mut result: i32 = 0;
+    let result: i32 = 0;
     let mut level: i32 = 0;
     let mut device: *mut acpi_device = core::ptr::null_mut();
 
@@ -946,10 +945,10 @@ unsafe fn acpi_bus_check_scope(handle: ACPI_HANDLE) {
 unsafe extern "C" fn acpi_bus_notify(
     handle: ACPI_HANDLE,
     type_: UINT32,
-    data: *mut core::ffi::c_void,
+    _data: *mut core::ffi::c_void,
 ) {
     let mut device: *mut acpi_device = core::ptr::null_mut();
-    let mut driver: *mut acpi_driver;
+    let driver: *mut acpi_driver;
 
     // DPRINT removed
 
@@ -1078,7 +1077,7 @@ unsafe fn acpi_bus_driver_init(
 
 unsafe extern "C" fn acpi_bus_attach(
     device: *mut acpi_device,
-    level: c_int,
+    _level: c_int,
     data: *mut c_void,
 ) -> c_int {
     let mut result: c_int = 0;
@@ -1117,7 +1116,7 @@ unsafe extern "C" fn acpi_bus_attach(
 
 unsafe extern "C" fn acpi_bus_unattach(
     device: *mut acpi_device,
-    level: i32,
+    _level: i32,
     data: *mut core::ffi::c_void,
 ) -> i32 {
     let mut result: i32 = 0;
@@ -1146,9 +1145,9 @@ unsafe extern "C" fn acpi_bus_unattach(
     (*device).driver = core::ptr::null_mut();
     (*device).driver_data = core::ptr::null_mut();
 
-    ExAcquireFastMutex(&mut acpi_bus_drivers_lock);
+    ExAcquireFastMutex(&raw mut acpi_bus_drivers_lock);
     (*driver).references -= 1;
-    ExReleaseFastMutex(&mut acpi_bus_drivers_lock);
+    ExReleaseFastMutex(&raw mut acpi_bus_drivers_lock);
 
     0
 }
@@ -1191,9 +1190,9 @@ pub unsafe extern "C" fn acpi_bus_register_driver(
         return (0x1 | 0x1000) as i32;
     }
 
-    ExAcquireFastMutex(&mut acpi_bus_drivers_lock);
-    list_add_tail(&mut (*driver).node, &mut acpi_bus_drivers);
-    ExReleaseFastMutex(&mut acpi_bus_drivers_lock);
+    ExAcquireFastMutex(&raw mut acpi_bus_drivers_lock);
+    list_add_tail(&mut (*driver).node, &raw mut acpi_bus_drivers);
+    ExReleaseFastMutex(&raw mut acpi_bus_drivers_lock);
 
     acpi_bus_walk(
         acpi_root,
@@ -1333,7 +1332,7 @@ pub unsafe extern "C" fn acpi_bus_add(
     device = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<acpi_device>(),
-        (0x44706341u32 as ULONG) /* 'DpcA' */,
+        0x44706341u32 as ULONG  /* 'DpcA' */,
     ) as *mut acpi_device;
 
     if device.is_null() {
@@ -1442,7 +1441,7 @@ pub unsafe extern "C" fn acpi_bus_add(
                 (*device).pnp.cid_list = ExAllocatePoolWithTag(
                     NonPagedPool,
                     (*cid_list).ListSize as SIZE_T,
-                    (0x44706341u32 as ULONG) /* 'DpcA' */,
+                    0x44706341u32 as ULONG  /* 'DpcA' */,
                 ) as *mut ACPI_PNP_DEVICE_ID_LIST;
 
                 if !(*device).pnp.cid_list.is_null() {
@@ -1590,7 +1589,7 @@ pub unsafe extern "C" fn acpi_bus_add(
         (*device).pnp.hardware_id = ExAllocatePoolWithTag(
             NonPagedPool,
             (strlen(hid) + 1) as SIZE_T,
-            (0x44706341u32 as ULONG) /* 'DpcA' */,
+            0x44706341u32 as ULONG  /* 'DpcA' */,
         ) as acpi_hardware_id;
 
         if !(*device).pnp.hardware_id.is_null() {
@@ -1671,12 +1670,12 @@ pub unsafe extern "C" fn acpi_bus_add(
 
     if result != 0 {
         if !(*device).pnp.cid_list.is_null() {
-            ExFreePoolWithTag((*device).pnp.cid_list as PVOID, (0x44706341u32 as ULONG) /* 'DpcA' */);
+            ExFreePoolWithTag((*device).pnp.cid_list as PVOID, 0x44706341u32 as ULONG  /* 'DpcA' */);
         }
         if !(*device).pnp.hardware_id.is_null() {
-            ExFreePoolWithTag((*device).pnp.hardware_id as PVOID, (0x44706341u32 as ULONG) /* 'DpcA' */);
+            ExFreePoolWithTag((*device).pnp.hardware_id as PVOID, 0x44706341u32 as ULONG  /* 'DpcA' */);
         }
-        ExFreePoolWithTag(device as PVOID, (0x44706341u32 as ULONG) /* 'DpcA' */);
+        ExFreePoolWithTag(device as PVOID, 0x44706341u32 as ULONG  /* 'DpcA' */);
         return result;
     }
 
@@ -1686,7 +1685,7 @@ pub unsafe extern "C" fn acpi_bus_add(
 
 unsafe fn acpi_bus_remove(
     device: *mut acpi_device,
-    type_: i32,
+    _type_: i32,
 ) -> i32 {
     if device.is_null() {
         return 0x5 | 0x0;
@@ -1816,7 +1815,7 @@ pub unsafe extern "C" fn acpi_bus_init() -> c_int {
     let mut result: c_int = 0;
     let mut status: ACPI_STATUS = AE_OK;
 
-    KeInitializeDpc(&mut event_dpc, Some(acpi_bus_generate_event_dpc), core::ptr::null_mut());
+    KeInitializeDpc(&raw mut event_dpc, Some(acpi_bus_generate_event_dpc), core::ptr::null_mut());
 
     status = AcpiEnableSubsystem(ACPI_FULL_INITIALIZATION);
     if ACPI_FAILURE(status) {
@@ -1842,7 +1841,7 @@ pub unsafe extern "C" fn acpi_bus_init() -> c_int {
         return result;
     }
 
-    result = acpi_bus_add(&mut acpi_root, core::ptr::null_mut(), ACPI_ROOT_OBJECT, ACPI_BUS_TYPE_SYSTEM as c_int);
+    result = acpi_bus_add(&raw mut acpi_root, core::ptr::null_mut(), ACPI_ROOT_OBJECT, ACPI_BUS_TYPE_SYSTEM as c_int);
     if result != 0 {
         AcpiRemoveNotifyHandler(ACPI_ROOT_OBJECT, ACPI_SYSTEM_NOTIFY, Some(acpi_bus_notify));
         AcpiTerminate();
@@ -1897,9 +1896,9 @@ pub unsafe extern "C" fn acpi_init() -> c_int {
 
     // ke::KSPIN_LOCK (usize) vs ddk::KeInitializeSpinLock's ULONG_PTR pointer —
     // same width per arch, distinct nominal type → cast the pointer.
-    KeInitializeSpinLock(&mut acpi_bus_event_lock as *mut _ as *mut _);
-    KeInitializeEvent(&mut AcpiEventQueue, _EVENT_TYPE_NotificationEvent, 0u8);
-    ExInitializeFastMutex(&mut acpi_bus_drivers_lock);
+    KeInitializeSpinLock(&raw mut acpi_bus_event_lock as *mut _ as *mut _);
+    KeInitializeEvent(&raw mut AcpiEventQueue, _EVENT_TYPE_NotificationEvent, 0u8);
+    ExInitializeFastMutex(&raw mut acpi_bus_drivers_lock);
 
     result = acpi_bus_init();
 

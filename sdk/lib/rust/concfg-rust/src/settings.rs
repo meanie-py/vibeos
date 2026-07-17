@@ -1,4 +1,3 @@
-use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 
 use core::ptr;
@@ -620,7 +619,7 @@ pub unsafe extern "C" fn ConCfgWriteUserSettings(
 
     static SCREENBUFFERSIZE: [u16; 17] = [b'S' as u16, b'c' as u16, b'r' as u16, b'e' as u16, b'e' as u16, b'n' as u16, b'B' as u16, b'u' as u16, b'f' as u16, b'f' as u16, b'e' as u16, b'r' as u16, b'S' as u16, b'i' as u16, b'z' as u16, b'e' as u16, 0];
     Storage = (((*ConsoleInfo).ScreenBufferSize.X as u32) & 0xFFFF) | ((((*ConsoleInfo).ScreenBufferSize.Y as u32) & 0xFFFF) << 16);
-    let default_screen_buffer = ((80u32 & 0xFFFF) | ((300u32 & 0xFFFF) << 16));
+    let default_screen_buffer = (80u32 & 0xFFFF) | ((300u32 & 0xFFFF) << 16) ;
     if DefaultSettings != 0 || Storage != default_screen_buffer {
         RegSetValueExW(hKey, SCREENBUFFERSIZE.as_ptr(), 0, REG_DWORD, core::ptr::addr_of!(Storage) as PBYTE, 4);
     } else {
@@ -645,7 +644,7 @@ pub unsafe extern "C" fn ConCfgWriteUserSettings(
 
     static WINDOWSIZE: [u16; 11] = [b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b'S' as u16, b'i' as u16, b'z' as u16, b'e' as u16, 0];
     Storage = (((*ConsoleInfo).WindowSize.X as u32) & 0xFFFF) | ((((*ConsoleInfo).WindowSize.Y as u32) & 0xFFFF) << 16);
-    let default_window_size = ((80u32 & 0xFFFF) | ((25u32 & 0xFFFF) << 16));
+    let default_window_size = (80u32 & 0xFFFF) | ((25u32 & 0xFFFF) << 16) ;
     if DefaultSettings != 0 || Storage != default_window_size {
         RegSetValueExW(hKey, WINDOWSIZE.as_ptr(), 0, REG_DWORD, core::ptr::addr_of!(Storage) as PBYTE, 4);
     } else {

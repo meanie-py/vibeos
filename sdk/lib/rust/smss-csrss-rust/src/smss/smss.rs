@@ -377,7 +377,7 @@ pub unsafe extern "system" fn SmpExecuteInitialCommand(
     let mut Flags: ULONG = 0;
 
     if SmApiPort.is_null() {
-        let mut Status = SmConnectToSm(
+        let Status = SmConnectToSm(
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             0,

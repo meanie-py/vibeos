@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 
 
@@ -14,9 +13,9 @@ pub unsafe extern "system" fn OleMetafilePictFromIconAndLabel(
     iIconIndex: UINT,
 ) -> HGLOBAL {
     let mut mfp: METAFILEPICT = core::mem::zeroed();
-    let mut hdc: HDC;
+    let hdc: HDC;
     let mut hmem: HGLOBAL = core::ptr::null_mut();
-    let mut mfdata: LPVOID;
+    let mfdata: LPVOID;
     let szIconOnly: &[u8] = b"IconOnly\0";
     let mut text_size: SIZE = core::mem::zeroed();
     let width: INT;
@@ -186,9 +185,9 @@ pub unsafe extern "system" fn OleMetafilePictFromIconAndLabel(
 
 #[no_mangle]
 pub unsafe extern "system" fn CoGetActivationState(
-    guid: GUID,
-    unknown: u32,
-    unknown2: *mut u32,
+    _guid: GUID,
+    _unknown: u32,
+    _unknown2: *mut u32,
 ) -> HRESULT {
     FIXME!(
         b"%s, %x, %p\n\0".as_ptr(),
@@ -200,7 +199,7 @@ pub unsafe extern "system" fn CoGetActivationState(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CoGetCallState(unknown: i32, unknown2: *mut u32) -> HRESULT {
+pub unsafe extern "system" fn CoGetCallState(_unknown: i32, _unknown2: *mut u32) -> HRESULT {
     FIXME!(b"%d, %p\n\0".as_ptr() as *const i8, unknown, unknown2);
     0x80004001u32 as HRESULT
 }

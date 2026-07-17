@@ -1,8 +1,8 @@
 use win32k_sys::win32k::*;
 use crate::framebuf::*;
-use crate::screen::{IntInitScreenInfo, DrvGetModes};
+use crate::screen::DrvGetModes;
 use crate::surface::{DrvEnableSurface, DrvDisableSurface, DrvAssertMode};
-use crate::palette::{IntInitDefaultPalette, DrvSetPalette};
+use crate::palette::DrvSetPalette;
 use crate::pointer::{DrvSetPointerShape, DrvMovePointer};
 
 /// Reinterpret a DDI function as the engine's generic `PFN` slot. This is the
@@ -35,7 +35,7 @@ static mut DrvFunctionTable: [DRVFN; 12] = [
 
 #[no_mangle]
 pub unsafe extern "system" fn DrvEnableDirectDraw(
-    dhpdev: DHPDEV,
+    _dhpdev: DHPDEV,
     pCallbacks: *mut DD_CALLBACKS,
     pSurfaceCallbacks: *mut DD_SURFACECALLBACKS,
     pPaletteCallbacks: *mut DD_PALETTECALLBACKS,
@@ -61,11 +61,11 @@ pub unsafe extern "system" fn DrvEnableDirectDraw(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn DrvDisableDirectDraw(dhpdev: DHPDEV) {}
+pub unsafe extern "system" fn DrvDisableDirectDraw(_dhpdev: DHPDEV) {}
 
 #[no_mangle]
 pub unsafe extern "system" fn DrvEnableDriver(
-    iEngineVersion: u32,
+    _iEngineVersion: u32,
     cj: u32,
     pded: PDRVENABLEDATA,
 ) -> u32 {
@@ -82,15 +82,15 @@ pub unsafe extern "system" fn DrvEnableDriver(
 #[no_mangle]
 pub unsafe extern "system" fn DrvEnablePDEV(
     pdm: *mut DEVMODEW,
-    pwszLogAddress: LPWSTR,
-    cPat: u32,
-    phsurfPatterns: *mut HSURF,
+    _pwszLogAddress: LPWSTR,
+    _cPat: u32,
+    _phsurfPatterns: *mut HSURF,
     cjCaps: u32,
     pdevcaps: *mut u32,
     cjDevInfo: u32,
     pdi: *mut DEVINFO,
-    hdev: HDEV,
-    pwszDeviceName: LPWSTR,
+    _hdev: HDEV,
+    _pwszDeviceName: LPWSTR,
     hDriver: *mut core::ffi::c_void,
 ) -> DHPDEV {
     let mut GdiInfo: GDIINFO = core::mem::zeroed();

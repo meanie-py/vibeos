@@ -122,7 +122,7 @@ pub unsafe extern "system" fn KdpGetStateChange(
         }
 
         for i in 0..(KeNumberProcessors as usize) {
-            let prcb = *KiProcessorBlock.as_ptr().add(i);
+            let prcb = *(*(&raw const KiProcessorBlock)).as_ptr().add(i);
             if !prcb.is_null() {
                 (*prcb).ProcessorState.SpecialRegisters.KernelDr7 = control.Dr7;
                 (*prcb).ProcessorState.SpecialRegisters.KernelDr6 = 0;
@@ -208,7 +208,7 @@ pub unsafe extern "system" fn KdpSysReadControlSpace(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
-    let prcb = *KiProcessorBlock.as_ptr().add(Processor as usize);
+    let prcb = *(*(&raw const KiProcessorBlock)).as_ptr().add(Processor as usize);
     // CONTAINING_RECORD(Prcb, KIPCR, Prcb): subtract offset of KIPCR.Prcb to recover the KIPCR pointer.
     let pcr_offset = core::mem::offset_of!(_KIPCR, Prcb);
     let pcr = ((prcb as usize).wrapping_sub(pcr_offset)) as *mut _KIPCR;
@@ -259,7 +259,7 @@ pub unsafe extern "system" fn KdpSysWriteControlSpace(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
-    let prcb = *KiProcessorBlock.as_ptr().add(Processor as usize);
+    let prcb = *(*(&raw const KiProcessorBlock)).as_ptr().add(Processor as usize);
 
     let control_start: PVOID;
     let copy_len: ULONG;
@@ -361,7 +361,7 @@ pub unsafe extern "system" fn KdpSysCheckLowMemory(_Flags: ULONG) -> NTSTATUS {
 #[no_mangle]
 pub unsafe extern "system" fn KdpAllowDisable() -> NTSTATUS {
     for i in 0..(KeNumberProcessors as usize) {
-        let prcb = *KiProcessorBlock.as_ptr().add(i);
+        let prcb = *(*(&raw const KiProcessorBlock)).as_ptr().add(i);
         if !prcb.is_null() {
             let dr7 = (*prcb).ProcessorState.SpecialRegisters.KernelDr7;
             if (dr7 & 0xFF) != 0 {

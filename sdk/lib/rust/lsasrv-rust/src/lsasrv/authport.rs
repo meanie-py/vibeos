@@ -134,7 +134,7 @@ unsafe fn LsapCheckLogonProcess(
     };
     let mut ProcessHandle: HANDLE = core::ptr::null_mut();
     let mut Context: PLSAP_LOGON_CONTEXT = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     TRACE!(
         b"LsapCheckLogonProcess(%p)\n\0".as_ptr() as *const i8,
@@ -215,7 +215,7 @@ unsafe fn LsapCheckLogonProcess(
 unsafe fn LsapHandlePortConnection(RequestMsg: *mut _LSA_API_MSG) -> NTSTATUS {
     let mut LogonContext: *mut _LSAP_LOGON_CONTEXT = core::ptr::null_mut();
     let mut ConnectionHandle: HANDLE = core::ptr::null_mut();
-    let mut Accept: BOOLEAN;
+    let Accept: BOOLEAN;
     let mut RemotePortView: REMOTE_PORT_VIEW = core::mem::zeroed();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
@@ -261,7 +261,7 @@ unsafe fn LsapHandlePortConnection(RequestMsg: *mut _LSA_API_MSG) -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AuthPortThreadRoutine(Param: *mut core::ffi::c_void) -> DWORD {
+pub unsafe extern "system" fn AuthPortThreadRoutine(_Param: *mut core::ffi::c_void) -> DWORD {
     let mut LogonContext: PLSAP_LOGON_CONTEXT = core::ptr::null_mut::<_LSAP_LOGON_CONTEXT>();
     let mut ReplyMsg: PLSA_API_MSG = core::ptr::null_mut::<_LSA_API_MSG>();
     // C initializes RequestMsg to {0}; zeroed() is exactly equivalent and avoids

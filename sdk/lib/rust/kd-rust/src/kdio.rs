@@ -1009,7 +1009,7 @@ unsafe extern "C" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
                 KdpScreenLineBufferPos = KdpScreenLineLength;
 
                 HalDisplayString(b"\r\0".as_ptr() as PCHAR);
-                HalDisplayString(KdpScreenLineBuffer.as_mut_ptr());
+                HalDisplayString((*(&raw mut KdpScreenLineBuffer)).as_mut_ptr());
             }
         } else {
             KdpScreenLineBuffer[KdpScreenLineLength as usize] = *pch;
@@ -1020,7 +1020,7 @@ unsafe extern "C" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
         if *pch == b'\n' as CHAR || KdpScreenLineLength == KdpScreenLineLengthDefault {
             if KdpScreenLineBufferPos != KdpScreenLineLength {
                 HalDisplayString(
-                    KdpScreenLineBuffer.as_mut_ptr().add(KdpScreenLineBufferPos as usize),
+                    (*(&raw mut KdpScreenLineBuffer)).as_mut_ptr().add(KdpScreenLineBufferPos as usize),
                 );
             }
 
@@ -1034,7 +1034,7 @@ unsafe extern "C" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
 
     if KdpScreenLineBufferPos != KdpScreenLineLength {
         HalDisplayString(
-            KdpScreenLineBuffer.as_mut_ptr().add(KdpScreenLineBufferPos as usize),
+            (*(&raw mut KdpScreenLineBuffer)).as_mut_ptr().add(KdpScreenLineBufferPos as usize),
         );
         KdpScreenLineBufferPos = KdpScreenLineLength;
     }
@@ -1053,7 +1053,7 @@ unsafe extern "stdcall" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
                 KdpScreenLineBufferPos = KdpScreenLineLength;
 
                 HalDisplayString(b"\r\0".as_ptr() as PCHAR);
-                HalDisplayString(KdpScreenLineBuffer.as_mut_ptr());
+                HalDisplayString((*(&raw mut KdpScreenLineBuffer)).as_mut_ptr());
             }
         } else {
             KdpScreenLineBuffer[KdpScreenLineLength as usize] = *pch;
@@ -1064,7 +1064,7 @@ unsafe extern "stdcall" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
         if *pch == b'\n' as CHAR || KdpScreenLineLength == KdpScreenLineLengthDefault {
             if KdpScreenLineBufferPos != KdpScreenLineLength {
                 HalDisplayString(
-                    KdpScreenLineBuffer.as_mut_ptr().add(KdpScreenLineBufferPos as usize),
+                    (*(&raw mut KdpScreenLineBuffer)).as_mut_ptr().add(KdpScreenLineBufferPos as usize),
                 );
             }
 
@@ -1078,7 +1078,7 @@ unsafe extern "stdcall" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
 
     if KdpScreenLineBufferPos != KdpScreenLineLength {
         HalDisplayString(
-            KdpScreenLineBuffer.as_mut_ptr().add(KdpScreenLineBufferPos as usize),
+            (*(&raw mut KdpScreenLineBuffer)).as_mut_ptr().add(KdpScreenLineBufferPos as usize),
         );
         KdpScreenLineBufferPos = KdpScreenLineLength;
     }

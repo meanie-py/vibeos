@@ -1,7 +1,6 @@
 use crate::misc::{ForwardIrpAndForget, DuplicateUnicodeString};
 use crate::kbdclass_h::*;
 // Glob the hand-written modules (mutually disjoint) + driver_ddk (deduped vs constants).
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
@@ -19,8 +18,7 @@ use ntkrnl_sys::inline::tier1::{
 // ddk-ONLY names (pointer aliases, bindgen `_`-structs, Io/Zw/Rtl funcs, enum variants).
 use ntkrnl_sys::ddk::{
     CCHAR, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PUNICODE_STRING, PFILE_OBJECT,
-    PIO_STACK_LOCATION, _UNICODE_STRING, _OBJECT_ATTRIBUTES, _IO_STATUS_BLOCK,
-    IO_STATUS_BLOCK, KEVENT, OBJECT_ATTRIBUTES, KEYBOARD_INPUT_DATA,
+    PIO_STACK_LOCATION, _UNICODE_STRING, _OBJECT_ATTRIBUTES, _IO_STATUS_BLOCK, KEVENT, KEYBOARD_INPUT_DATA,
     KEY_VALUE_BASIC_INFORMATION, PKEYBOARD_INPUT_DATA, PKEY_VALUE_BASIC_INFORMATION,
     RTL_QUERY_REGISTRY_TABLE,
     IoAcquireCancelSpinLock, IoAllocateDriverObjectExtension,
@@ -373,7 +371,7 @@ unsafe fn CreateClassDeviceObject(
     let DeviceIdW: PWSTR;
     let mut Fdo: PDEVICE_OBJECT = core::ptr::null_mut();
     let DeviceExtension: PCLASS_DEVICE_EXTENSION;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     DriverExtension = IoGetDriverObjectExtension(DriverObject, DriverObject as *mut _) as PCLASS_DRIVER_EXTENSION;
     DeviceNameU.Length = 0;
@@ -583,7 +581,7 @@ unsafe fn ConnectPortDriver(
 	let Irp: PIRP;
 	let mut IoStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
 	let mut ConnectData: CONNECT_DATA = core::mem::zeroed();
-	let mut Status: NTSTATUS;
+	let Status: NTSTATUS;
 
 	KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0u8);
 
@@ -834,10 +832,10 @@ unsafe extern "system" fn ClassCancelRoutine(
 unsafe fn HandleReadIrp(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
-    IsInStartIo: BOOLEAN,
+    _IsInStartIo: BOOLEAN,
 ) -> NTSTATUS {
     let DeviceExtension = (*DeviceObject).DeviceExtension as PCLASS_DEVICE_EXTENSION;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let mut OldIrql: KIRQL = 0;
 
     if (*DeviceExtension).InputCount > 0 {

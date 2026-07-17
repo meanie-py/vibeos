@@ -493,7 +493,7 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
     ObjectAttributes = _OBJECT_ATTRIBUTES {
         Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32,
         RootDirectory: core::ptr::null_mut(),
-        ObjectName: &mut AeDebugKey,
+        ObjectName: &raw mut AeDebugKey,
         Attributes: 0x40u32,
         SecurityDescriptor: core::ptr::null_mut(),
         SecurityQualityOfService: core::ptr::null_mut(),
@@ -831,7 +831,7 @@ pub unsafe extern "system" fn SetUnhandledExceptionFilter(
         ),
     );
     EncodedOldPointer = InterlockedExchangePointer(
-        &mut GlobalTopLevelExceptionFilter as *mut _ as *mut *mut core::ffi::c_void,
+        &raw mut GlobalTopLevelExceptionFilter as *mut _ as *mut *mut core::ffi::c_void,
         EncodedPointer,
     );
     return core::mem::transmute::<*mut core::ffi::c_void, LPTOP_LEVEL_EXCEPTION_FILTER>(

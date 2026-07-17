@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 
 // ---- FASTCALL callees: C declares these `FASTCALL` (win32ss/gdi/ntgdi/text.h).
 // On i386 that is `@Name@N` decoration; on amd64/arm64 it lowers to cdecl. ----

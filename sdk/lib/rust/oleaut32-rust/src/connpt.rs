@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -70,7 +69,7 @@ fn ConnectionPointImpl_QueryInterface(
     riid: *const IID,
     ppvObject: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
-    let This: *mut ConnectionPointImpl = impl_from_IConnectionPoint(iface);
+    let _This: *mut ConnectionPointImpl = impl_from_IConnectionPoint(iface);
     TRACE!(b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8, This, debugstr_guid(riid), ppvObject);
 
     if ppvObject.is_null() {
@@ -254,7 +253,7 @@ fn ConnectionPointImpl_EnumConnections(
     ppEnum: *mut LPENUMCONNECTIONS,
 ) -> HRESULT {
     let This: *mut ConnectionPointImpl = impl_from_IConnectionPoint(iface);
-    let mut pCD: *mut CONNECTDATA;
+    let pCD: *mut CONNECTDATA;
     let mut i: DWORD;
     let mut nextslot: DWORD;
     let EnumObj: *mut EnumConnectionsImpl;
@@ -355,7 +354,7 @@ fn EnumConnectionsImpl_QueryInterface(
     riid: *const IID,
     ppvObject: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
-    let This: *mut ConnectionPointImpl = iface as *mut ConnectionPointImpl;
+    let _This: *mut ConnectionPointImpl = iface as *mut ConnectionPointImpl;
     TRACE!(
         b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8,
         This,

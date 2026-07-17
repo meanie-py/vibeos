@@ -53,7 +53,7 @@ unsafe fn DbgDumpMemoryMap(
 
 #[no_mangle]
 pub unsafe extern "C" fn MmGetSystemMemoryMapTypeString(
-    Type: TYPE_OF_MEMORY,
+    _Type: TYPE_OF_MEMORY,
 ) -> PCSTR {
     b"-\0".as_ptr() as PCSTR
 }

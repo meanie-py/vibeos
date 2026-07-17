@@ -107,7 +107,7 @@ pub unsafe extern "system" fn ExpInitializeKeyedEventImplementation() -> BOOLEAN
         &mut TypeName,
         &mut ObjectTypeInitializer,
         core::ptr::null_mut(),
-        &mut ExKeyedEventObjectType,
+        &raw mut ExKeyedEventObjectType,
     );
     if Status < 0 {
         return 0u8;
@@ -132,7 +132,7 @@ pub unsafe extern "system" fn ExpInitializeKeyedEventImplementation() -> BOOLEAN
             KEYEDEVENT_ALL_ACCESS,
             ExKeyedEventObjectType,
             0i8,
-            &mut ExpCritSecOutOfMemoryEvent as *mut _ as *mut PVOID,
+            &raw mut ExpCritSecOutOfMemoryEvent as *mut _ as *mut PVOID,
             core::ptr::null_mut(),
         );
         ZwClose(EventHandle);

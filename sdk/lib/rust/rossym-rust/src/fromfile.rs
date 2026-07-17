@@ -35,11 +35,7 @@
 //!   if so, the ABI annotations (i64/usize types) must still be corrected.
 
 use crate::types::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER, PIMAGE_SECTION_HEADER};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER};
 
 extern "C" {
     fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
@@ -97,7 +93,7 @@ pub unsafe extern "C" fn RosSymCreateFromFile(FileContext: *mut core::ffi::c_voi
 
     let mut dos_header: IMAGE_DOS_HEADER = core::mem::zeroed();
     let mut nt_headers: IMAGE_NT_HEADERS = core::mem::zeroed();
-    let mut section_headers: *mut IMAGE_SECTION_HEADER;
+    let section_headers: *mut IMAGE_SECTION_HEADER;
     let mut section_header: *mut IMAGE_SECTION_HEADER;
     let mut section_index: u32;
     let mut section_name: [i8; IMAGE_SIZEOF_SHORT_NAME] = [0; IMAGE_SIZEOF_SHORT_NAME];

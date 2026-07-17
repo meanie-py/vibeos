@@ -3243,7 +3243,7 @@ impl Disassembler {
                         if !name.is_empty() {
                             unsafe { KdbPuts(name.as_ptr() as PCSTR); }
                         } else {
-                            unsafe { crate::kdb_printf!(b".byte 0x%x\0", self.the_buffer[0] as u32); }
+                            { crate::kdb_printf!(b".byte 0x%x\0", self.the_buffer[0] as u32); }
                         }
                     }
                     return 1;
@@ -3369,7 +3369,7 @@ impl Disassembler {
             }
             if self.rex & !self.rex_used != 0 {
                 let name = self.prefix_name(self.rex | 0x40).unwrap_or("<internal disassembler error>");
-                unsafe { crate::kdb_printf!(b"%s \0", name.as_ptr() as PCSTR); }
+                { crate::kdb_printf!(b"%s \0", name.as_ptr() as PCSTR); }
             }
 
             // Output padding

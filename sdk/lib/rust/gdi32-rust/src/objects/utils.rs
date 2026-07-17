@@ -517,7 +517,7 @@ pub unsafe extern "system" fn LoadLPK(LpkFunctionID: INT) -> BOOL {
             LPK_INIT => TRUE,
 
             LPK_ETO => {
-                if LpkExtTextOut.is_none() {
+                if (*(&raw const LpkExtTextOut)).is_none() {
                     // Check if the function is already loaded
                     LpkExtTextOut = core::mem::transmute::<FARPROC, LPKETO>(GetProcAddress(
                         hLpk,
@@ -525,7 +525,7 @@ pub unsafe extern "system" fn LoadLPK(LpkFunctionID: INT) -> BOOL {
                     ));
                 }
 
-                if LpkExtTextOut.is_none() {
+                if (*(&raw const LpkExtTextOut)).is_none() {
                     FreeLibrary(hLpk);
                     return FALSE;
                 }
@@ -534,14 +534,14 @@ pub unsafe extern "system" fn LoadLPK(LpkFunctionID: INT) -> BOOL {
             }
 
             LPK_GCP => {
-                if LpkGetCharacterPlacement.is_none() {
+                if (*(&raw const LpkGetCharacterPlacement)).is_none() {
                     // Check if the function is already loaded
                     LpkGetCharacterPlacement = core::mem::transmute::<FARPROC, LPKGCP>(
                         GetProcAddress(hLpk, b"LpkGetCharacterPlacement\0".as_ptr() as LPCSTR),
                     );
                 }
 
-                if LpkGetCharacterPlacement.is_none() {
+                if (*(&raw const LpkGetCharacterPlacement)).is_none() {
                     FreeLibrary(hLpk);
                     return FALSE;
                 }
@@ -550,14 +550,14 @@ pub unsafe extern "system" fn LoadLPK(LpkFunctionID: INT) -> BOOL {
             }
 
             LPK_GTEP => {
-                if LpkGetTextExtentExPoint.is_none() {
+                if (*(&raw const LpkGetTextExtentExPoint)).is_none() {
                     // Check if the function is already loaded
                     LpkGetTextExtentExPoint = core::mem::transmute::<FARPROC, LPKGTEP>(
                         GetProcAddress(hLpk, b"LpkGetTextExtentExPoint\0".as_ptr() as LPCSTR),
                     );
                 }
 
-                if LpkGetTextExtentExPoint.is_none() {
+                if (*(&raw const LpkGetTextExtentExPoint)).is_none() {
                     FreeLibrary(hLpk);
                     return FALSE;
                 }

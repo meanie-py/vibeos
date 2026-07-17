@@ -1,6 +1,4 @@
-use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{KeQueryPerformanceCounter};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // (empty preamble — perfcnt.c has no file-scope declarations)

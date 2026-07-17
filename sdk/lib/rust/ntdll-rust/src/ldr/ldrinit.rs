@@ -554,7 +554,7 @@ pub unsafe extern "system" fn LdrQueryImageFileKeyOption(
     let mut KeyInfo: [ULONG; 256] = [0; 256];
     let mut ValueNameString: _UNICODE_STRING = core::mem::zeroed();
     let mut IntegerString: _UNICODE_STRING = core::mem::zeroed();
-    let mut KeyInfoSize: ULONG;
+    let KeyInfoSize: ULONG;
     let mut ResultSize: ULONG = 0;
     let mut KeyValueInformation: PKEY_VALUE_PARTIAL_INFORMATION =
         KeyInfo.as_mut_ptr() as PKEY_VALUE_PARTIAL_INFORMATION;
@@ -760,14 +760,14 @@ pub unsafe extern "system" fn LdrpFetchAddressOfSecurityCookie(BaseAddress: PVOI
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn LdrpInitializeThread(Context: PCONTEXT) {
+pub unsafe extern "system" fn LdrpInitializeThread(_Context: PCONTEXT) {
     let Peb: PPEB = (*NtCurrentTeb()).ProcessEnvironmentBlock;
     let mut LdrEntry: PLDR_DATA_TABLE_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let ListHead: PLIST_ENTRY;
     let mut ActCtx: RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED =
         core::mem::zeroed();
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let mut EntryPoint: PVOID;
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock));
@@ -1298,7 +1298,7 @@ pub unsafe extern "system" fn LdrShutdownThread() -> NTSTATUS {
 #[no_mangle]
 pub unsafe extern "system" fn LdrpInitializeTls() -> NTSTATUS {
     let mut NextEntry: PLIST_ENTRY;
-    let ListHead: PLIST_ENTRY;
+    let _ListHead: PLIST_ENTRY;
     let mut LdrEntry: PLDR_DATA_TABLE_ENTRY;
     let mut TlsDirectory: PIMAGE_TLS_DIRECTORY;
     let mut TlsData: *mut LDRP_TLS_DATA;
@@ -1552,7 +1552,7 @@ pub unsafe extern "system" fn LdrpInitializeExecutionOptions(
     STATUS_SUCCESS
 }
 #[no_mangle]
-pub unsafe extern "system" fn LdrpValidateImageForMp(LdrDataTableEntry: PLDR_DATA_TABLE_ENTRY) {
+pub unsafe extern "system" fn LdrpValidateImageForMp(_LdrDataTableEntry: PLDR_DATA_TABLE_ENTRY) {
 }
 #[no_mangle]
 pub unsafe extern "system" fn LdrpDisableProcessCompatGuidDetection() -> u8 {
@@ -1800,7 +1800,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     let Peb: PPEB = (*NtCurrentTeb()).ProcessEnvironmentBlock;
     let mut IsDotNetImage: BOOLEAN = 0u8;
     let mut FreeCurDir: BOOLEAN = 0u8;
-    let mut ProcessParameters: PRTL_USER_PROCESS_PARAMETERS;
+    let ProcessParameters: PRTL_USER_PROCESS_PARAMETERS;
     let mut ConfigSize: ULONG = 0;
     let mut CurrentDirectory: _UNICODE_STRING = core::mem::zeroed();
     let mut OptionsKey: HANDLE = core::ptr::null_mut();
@@ -1812,7 +1812,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     let mut NlsTable: NLSTABLEINFO = core::mem::zeroed();
     let LoadConfig: PIMAGE_LOAD_CONFIG_DIRECTORY;
     let Teb: PTEB = NtCurrentTeb();
-    let mut ListHead: PLIST_ENTRY;
+    let ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut i: ULONG;
     let mut ImagePath: PWSTR;
@@ -1820,7 +1820,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     let mut NtLdrEntry: PLDR_DATA_TABLE_ENTRY;
     let mut Current: PWCHAR;
     let mut ExecuteOptions: ULONG = 0;
-    let mut ViewBase: PVOID;
+    let ViewBase: PVOID;
 
     /* Set a NULL SEH Filter */
     RtlSetUnhandledExceptionFilter(None);
@@ -2298,10 +2298,10 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         if NtDllName.is_null() {
             (*LdrpImageEntry).BaseDllName = (*LdrpImageEntry).FullDllName;
         } else {
-            (*LdrpImageEntry).BaseDllName.Length = ((ImageFileName.Buffer as ULONG_PTR
+            (*LdrpImageEntry).BaseDllName.Length = (ImageFileName.Buffer as ULONG_PTR
                 + ImageFileName.Length as ULONG_PTR
                 - NtDllName as ULONG_PTR)
-                as USHORT);
+                as USHORT;
             (*LdrpImageEntry).BaseDllName.MaximumLength =
                 (*LdrpImageEntry).BaseDllName.Length + core::mem::size_of::<WCHAR>() as USHORT;
             (*LdrpImageEntry).BaseDllName.Buffer = ((ImageFileName.Buffer as ULONG_PTR)
@@ -2700,7 +2700,7 @@ pub unsafe extern "system" fn LdrpInit(
 ) {
     let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
     let Teb: PTEB = NtCurrentTeb();
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let mut LoaderStatus: NTSTATUS = STATUS_SUCCESS;
     let mut MemoryBasicInfo: MEMORY_BASIC_INFORMATION = core::mem::zeroed();
     let Peb: PPEB = (*NtCurrentTeb()).ProcessEnvironmentBlock;

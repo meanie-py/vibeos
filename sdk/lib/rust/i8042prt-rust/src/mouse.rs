@@ -1,4 +1,3 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -42,6 +41,7 @@ extern "C" {
 // them as `static = None` which both (a) collides with the real fn names and
 // (b) nulls the routines. Removed; the real functions follow.
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe extern "system" fn i8042MouIsrWritePort(
 	Context: PVOID,
 	Value: UCHAR)
@@ -528,7 +528,7 @@ unsafe fn i8042MouCallIsrHook(
 	mut Input: UCHAR,
 	ToReturn: PBOOLEAN,
 ) -> BOOLEAN {
-	let mut HookReturn: BOOLEAN;
+	let HookReturn: BOOLEAN;
 	let mut HookContinue: BOOLEAN = 0u8;
 
 	if let Some(IsrRoutine) = (*DeviceExtension).MouseHook.IsrRoutine {

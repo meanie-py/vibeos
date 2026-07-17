@@ -27515,8 +27515,8 @@ unsafe fn map_to_halfwidth(
     dstlen: i32,
 ) -> i32 {
     let mut pos: i32 = 0;
-    let count1 = full2half_table.len() as i32;
-    let table1 = full2half_table.as_ptr();
+    let count1 = (*(&raw const full2half_table)).len() as i32;
+    let table1 = (*(&raw const full2half_table)).as_ptr();
 
     while srclen > 0 {
         let mut ch = *src;
@@ -27589,8 +27589,8 @@ unsafe fn map_to_fullwidth(mut src: *const WCHAR, mut srclen: i32, dst: *mut WCH
     let mut i: i32;
     let table1: *const FULL2HALF_ENTRY = core::ptr::addr_of!(full2half_table) as *const FULL2HALF_ENTRY;
     let table2: *const DAKUTEN_ENTRY = core::ptr::addr_of!(dakuten_table) as *const DAKUTEN_ENTRY;
-    let count1: i32 = ARRAY_SIZE!(full2half_table) as i32;
-    let count2: i32 = ARRAY_SIZE!(dakuten_table) as i32;
+    let count1: i32 = ARRAY_SIZE!((*(&raw const full2half_table))) as i32;
+    let count2: i32 = ARRAY_SIZE!((*(&raw const dakuten_table))) as i32;
 
     pos = 0;
     while srclen != 0 {
@@ -27764,7 +27764,7 @@ unsafe fn map_to_simplified_chinese(
         if pos < dstlen {
             *dst.offset(pos as isize) = find_wchar_pair(
                 core::ptr::addr_of!(s_tra2sim) as *const WCHAR_PAIR,
-                core::mem::size_of_val(&s_tra2sim) / core::mem::size_of::<WCHAR_PAIR>(),
+                core::mem::size_of_val(&*(&raw const s_tra2sim)) / core::mem::size_of::<WCHAR_PAIR>(),
                 wch,
             );
         }
@@ -27789,8 +27789,8 @@ unsafe fn map_to_traditional_chinese(
         let wch: WCHAR = *src;
         if pos < dstlen {
             *dst.offset(pos as isize) = find_wchar_pair(
-                s_sim2tra.as_ptr(),
-                s_sim2tra.len(),
+                (*(&raw const s_sim2tra)).as_ptr(),
+                (*(&raw const s_sim2tra)).len(),
                 wch,
             );
         }
@@ -28689,7 +28689,7 @@ unsafe fn NLS_EnumSystemLanguageGroups(lpProcs: *mut ENUMLANGUAGEGROUP_CALLBACKS
         }
     }
 
-    hKey = NLS_RegOpenKey(core::ptr::null_mut(), szLangGroupsKeyName.as_ptr());
+    hKey = NLS_RegOpenKey(core::ptr::null_mut(), (*(&raw const szLangGroupsKeyName)).as_ptr());
 
     if hKey.is_null() {
         FIXME(b"NLS registry key not found. Please apply the default registry file 'wine.inf'\n\0".as_ptr() as PCSTR);
@@ -28852,7 +28852,7 @@ pub unsafe extern "system" fn IsValidLanguageGroup(lgrpid: LGRPID, dwFlags: DWOR
 
     match dwFlags {
         LGRPID_INSTALLED | LGRPID_SUPPORTED => {
-            hKey = NLS_RegOpenKey(core::ptr::null_mut(), szLangGroupsKeyName.as_ptr());
+            hKey = NLS_RegOpenKey(core::ptr::null_mut(), (*(&raw const szLangGroupsKeyName)).as_ptr());
 
             sprintfW(szValueName.as_mut_ptr(), szFormat.as_ptr(), lgrpid);
 
@@ -28904,7 +28904,7 @@ unsafe fn NLS_EnumLanguageGroupLocales(lpProcs: *mut ENUMLANGUAGEGROUPLOCALE_CAL
         return 0;
     }
 
-    hKey = NLS_RegOpenKey(core::ptr::null_mut(), szLocaleKeyName.as_ptr());
+    hKey = NLS_RegOpenKey(core::ptr::null_mut(), (*(&raw const szLocaleKeyName)).as_ptr());
 
     if hKey.is_null() {
         WARN(b"NLS registry key not found. Please apply the default registry file 'wine.inf'\n\0".as_ptr() as PCSTR);
@@ -29090,7 +29090,7 @@ pub unsafe extern "system" fn GetUserGeoID(GeoClass: GEOCLASS) -> GEOID {
     };
     let info: *const KEY_VALUE_PARTIAL_INFORMATION = bufferW.as_mut_ptr() as *const KEY_VALUE_PARTIAL_INFORMATION;
     
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(keyW), nationW.as_ptr());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(keyW), (*(&raw const nationW)).as_ptr());
     count = core::mem::size_of::<[WCHAR; 40]>() as DWORD;
 
     hkey = create_registry_key();
@@ -29100,7 +29100,7 @@ pub unsafe extern "system" fn GetUserGeoID(GeoClass: GEOCLASS) -> GEOID {
 
     match GeoClass {
         GEOCLASS_NATION => {
-            hSubkey = NLS_RegOpenKey(hkey, geoW.as_ptr());
+            hSubkey = NLS_RegOpenKey(hkey, (*(&raw const geoW)).as_ptr());
             if !hSubkey.is_null() {
                 if NtQueryValueKey(
                     hSubkey,
@@ -29511,7 +29511,7 @@ unsafe fn get_geoinfo_dataptr(geoid: GEOID) -> *const geoinfo_t {
 
     while min <= max {
         let n: i32 = (min + max) / 2;
-        let ptr: *const geoinfo_t = geoinfodata.as_ptr().offset(n as isize);
+        let ptr: *const geoinfo_t = (*(&raw const geoinfodata)).as_ptr().offset(n as isize);
 
         if geoid == (*ptr).id {
             return if (*ptr).iso2W[0] != 0 {
@@ -29705,7 +29705,7 @@ pub unsafe extern "system" fn EnumSystemGeoID(
     }
 
     i = 0;
-    while (i as usize) < core::mem::size_of_val(&geoinfodata) / core::mem::size_of::<geoinfo_t>() {
+    while (i as usize) < core::mem::size_of_val(&*(&raw const geoinfodata)) / core::mem::size_of::<geoinfo_t>() {
         let ptr: *const geoinfo_t = &geoinfodata[i as usize];
 
         if geoclass == GEOCLASS_NATION && (*ptr).kind == LOCATION_REGION {

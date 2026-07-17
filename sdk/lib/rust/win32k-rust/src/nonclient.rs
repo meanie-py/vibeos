@@ -623,7 +623,7 @@ unsafe fn DefWndDoSizeMove_impl(pwnd: PWND, wParam: WORD) {
     ExStyle = (*pwnd).ExStyle;
     iconic = if (Style & WS_MINIMIZE as ULONG) != 0 { 1 } else { 0 };
 
-    if (((Style & WS_MAXIMIZE as ULONG) != 0 && syscommand != SC_MOVE as WPARAM) || IntIsWindowVisible(pwnd) == 0) {
+    if ((Style & WS_MAXIMIZE as ULONG) != 0 && syscommand != SC_MOVE as WPARAM) || IntIsWindowVisible(pwnd) == 0 {
         return;
     }
     if (Style & (WS_MAXIMIZE as ULONG | WS_CHILD as ULONG)) == WS_MAXIMIZE as ULONG {

@@ -8,8 +8,7 @@ use winsrv_sys::consts::{
     EnterCriticalSection, InitializeCriticalSection, LeaveCriticalSection, RtlZeroMemory,
 };
 use winsrv_sys::nt::{
-    InitializeListHead, InsertHeadList, InsertTailList, RemoveEntryList, RemoveHeadList,
-    RemoveTailList, INVALID_HANDLE_VALUE, STATUS_SUCCESS,
+    InitializeListHead, InsertTailList, RemoveEntryList, INVALID_HANDLE_VALUE, STATUS_SUCCESS,
 };
 use crate::types::*;
 use crate::wstr;
@@ -360,7 +359,7 @@ unsafe fn ScmCreateNewControlPipe(
 
 unsafe fn ScmGetServiceImageByImagePath(lpImagePath: LPWSTR) -> PSERVICE_IMAGE {
     let mut ImageEntry: PLIST_ENTRY;
-    let mut CurrentImage: PSERVICE_IMAGE;
+    let _CurrentImage: PSERVICE_IMAGE;
 
     ImageEntry = ImageListHead.Flink;
     while ImageEntry != core::ptr::addr_of_mut!(ImageListHead) {
@@ -576,7 +575,7 @@ unsafe fn ScmLogonService(
     let mut pszUserName: PWSTR = core::ptr::null_mut();
     let mut pszDomainName: PWSTR = core::ptr::null_mut();
     let mut pszPassword: PWSTR = core::ptr::null_mut();
-    let mut ptr: *mut u16;
+    let ptr: *mut u16;
     let mut dwError: DWORD = ERROR_SUCCESS;
 
     if ScmIsLocalSystemAccount((*pImage).pszAccountName) != 0
@@ -1068,7 +1067,7 @@ unsafe fn CreateServiceListEntry(
     let dwServiceType: DWORD;
     let dwStartType: DWORD;
     let dwErrorControl: DWORD;
-    let mut dwTagId: DWORD;
+    let dwTagId: DWORD;
 
     let mut dwServiceType_v: DWORD = 0;
     let mut dwStartType_v: DWORD = 0;
@@ -1321,7 +1320,7 @@ pub unsafe extern "C" fn ScmCreateServiceDatabase() -> DWORD {
 
     RtlInitializeResource(core::ptr::addr_of_mut!(DatabaseLock));
 
-    let mut szServices: [u16; 38] = [
+    let szServices: [u16; 38] = [
         0x53, 0x79, 0x73, 0x74, 0x65, 0x6D, 0x5C, 0x43, 0x75, 0x72, 0x72, 0x65,
         0x6E, 0x74, 0x43, 0x6F, 0x6E, 0x74, 0x72, 0x6F, 0x6C, 0x53, 0x65, 0x74,
         0x5C, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x73, 0x00, 0, 0, 0, 0,
@@ -1473,7 +1472,7 @@ unsafe fn ScmCheckDriver(Service: PSERVICE) -> NTSTATUS {
 #[no_mangle]
 pub unsafe extern "C" fn ScmGetBootAndSystemDriverState() {
     let mut ServiceEntry: PLIST_ENTRY;
-    let CurrentService: PSERVICE;
+    let _CurrentService: PSERVICE;
 
     ServiceEntry = ServiceListHead.Flink;
     while ServiceEntry != core::ptr::addr_of_mut!(ServiceListHead) {
@@ -1493,8 +1492,8 @@ pub unsafe extern "C" fn ScmGetBootAndSystemDriverState() {
 #[no_mangle]
 pub unsafe extern "C" fn ScmSendControlPacket(
     hControlPipe: HANDLE,
-    pServiceName: PCWSTR,
-    dwControl: DWORD,
+    _pServiceName: PCWSTR,
+    _dwControl: DWORD,
     dwControlPacketSize: DWORD,
     pControlPacket: PVOID,
 ) -> DWORD {
@@ -1564,7 +1563,7 @@ pub unsafe extern "C" fn ScmControlServiceEx(
     argv: *const PCWSTR,
 ) -> DWORD {
 
-    let mut dwError: DWORD;
+    let dwError: DWORD;
     let ControlPacket: PSCM_CONTROL_PACKET;
     let mut PacketSize: DWORD;
     let mut i: DWORD;

@@ -1538,7 +1538,7 @@ unsafe fn DefaultHandler_IPersistStorage_IsDirty(
 
 } // stdmethod!
 
-unsafe fn load_ole_stream(This: *mut DefaultHandler, storage: *mut IStorage) -> HRESULT {
+unsafe fn load_ole_stream(_This: *mut DefaultHandler, storage: *mut IStorage) -> HRESULT {
     let mut stream: *mut IStream = core::ptr::null_mut();
     let mut hr: HRESULT;
 

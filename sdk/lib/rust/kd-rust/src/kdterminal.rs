@@ -189,8 +189,8 @@ pub unsafe extern "C" fn KdpUpdateTerminalSize(
                         Buffer[i] = ANSI_NULL;
                         i += 1;
 
-                        NumberOfRows = strtoul(Buffer.as_ptr().add(2), core::ptr::null_mut(), 0) as LONG;
-                        NumberOfCols = strtoul(Buffer.as_ptr().add(i), core::ptr::null_mut(), 0) as LONG;
+                        NumberOfRows = strtoul((*(&raw const Buffer)).as_ptr().add(2), core::ptr::null_mut(), 0) as LONG;
+                        NumberOfCols = strtoul((*(&raw const Buffer)).as_ptr().add(i), core::ptr::null_mut(), 0) as LONG;
                         KdTermReportsSize = TRUE;
                     }
                 }

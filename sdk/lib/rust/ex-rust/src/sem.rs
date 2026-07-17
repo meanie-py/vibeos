@@ -108,7 +108,7 @@ pub unsafe extern "system" fn ExpInitializeSemaphoreImplementation() -> BOOLEAN 
         &mut Name,
         &mut ObjectTypeInitializer,
         core::ptr::null_mut(),
-        &mut ExSemaphoreObjectType,
+        &raw mut ExSemaphoreObjectType,
     );
 
     if Status < 0 {

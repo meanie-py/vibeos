@@ -7,17 +7,14 @@
 // stored/cleared via IoSetCancelRoutine (PDRIVER_CANCEL = same Option), with a
 // transmute bridge for our extern "system" IopCsqCancelRoutine. The per-IRP queue
 // linkage lives in Irp->Tail.Overlay.DriverContext[3] (deep bindgen anon path).
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ddk::{
     IoMarkIrpPending, IoReleaseCancelSpinLock, IoSetCancelRoutine,
-    PDEVICE_OBJECT, PIRP, _IRP, PIO_CSQ, _IO_CSQ, PIO_CSQ_IRP_CONTEXT,
+    PDEVICE_OBJECT, PIRP, PIO_CSQ, PIO_CSQ_IRP_CONTEXT,
     PIO_CSQ_INSERT_IRP, PIO_CSQ_INSERT_IRP_EX, PIO_CSQ_REMOVE_IRP, PIO_CSQ_PEEK_NEXT_IRP,
     PIO_CSQ_ACQUIRE_LOCK, PIO_CSQ_RELEASE_LOCK, PIO_CSQ_COMPLETE_CANCELED_IRP, PDRIVER_CANCEL,
 };
-use core::ffi::c_void;
 
 // csq.h: IO_TYPE_CSQ_IRP_CONTEXT=1, IO_TYPE_CSQ=2, IO_TYPE_CSQ_EX=3.
 const IO_TYPE_CSQ_IRP_CONTEXT: u32 = 1;
@@ -215,7 +212,7 @@ pub unsafe extern "system" fn IoCsqRemoveIrp(
 pub unsafe extern "system" fn IoCsqRemoveNextIrp(Csq: PIO_CSQ, PeekContext: PVOID) -> PIRP {
     let mut Irql: KIRQL = 0;
     let mut Irp: PIRP = core::ptr::null_mut();
-    let mut Context: PIO_CSQ_IRP_CONTEXT;
+    let Context: PIO_CSQ_IRP_CONTEXT;
 
     ((*Csq).CsqAcquireLock).unwrap()(Csq, core::ptr::addr_of_mut!(Irql));
 

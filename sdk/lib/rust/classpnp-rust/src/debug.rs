@@ -373,9 +373,9 @@ pub unsafe extern "C" fn DbgLogSendPacket(Pkt: *mut TRANSFER_PACKET) {
     let mut oldIrql: KIRQL = 0;
 
     if !(*Pkt).OriginalIrp.is_null() {
-        (*Pkt).DbgOriginalIrpCopy = (*(*Pkt).OriginalIrp);
+        (*Pkt).DbgOriginalIrpCopy = *(*Pkt).OriginalIrp ;
         if !(*(*Pkt).OriginalIrp).MdlAddress.is_null() {
-            (*Pkt).DbgMdlCopy = (*(*(*Pkt).OriginalIrp).MdlAddress);
+            (*Pkt).DbgMdlCopy = *(*(*Pkt).OriginalIrp).MdlAddress ;
         }
     }
 

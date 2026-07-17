@@ -1,16 +1,7 @@
 use winsrv_sys::nt::*;
 use super::super::super::{_stricmp, strchr};
 use super::super::super::condrv::text::*;
-use super::super::super::condrv::conoutput::*;
-use super::super::super::condrv::coninput::*;
-use super::super::super::condrv::console::*;
-use super::super::super::console::*;
-use super::super::super::handle::*;
-use super::super::super::lineinput::*;
-use super::super::super::history::*;
-use super::super::super::init::*;
-use super::super::super::{GetType, GetConsoleInputBufferMode, wcslen};
-use super::super::super::term::*;
+use super::super::super::{GetType, wcslen};
 use super::super::terminal::ConioDrawConsole;
 use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
@@ -19,7 +10,6 @@ use winsrv_sys::consts::*;
 use super::super::super::init::ConSrvDllInstance;
 use super::super::super::condrv::console::ConDrvValidateConsoleUnsafe;
 
-use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -317,8 +307,8 @@ pub(crate) unsafe fn TuiSwapConsole(Next: i32) -> u8 {
     static mut SwapConsole: *mut _TUI_CONSOLE_DATA = core::ptr::null_mut();
     let mut BytesReturned: u32 = 0;
     let mut Title: ANSI_STRING = core::mem::zeroed();
-    let mut Buffer: *mut core::ffi::c_void;
-    let mut pos: PCOORD;
+    let Buffer: *mut core::ffi::c_void;
+    let pos: PCOORD;
 
     if 0 != Next {
         EnterCriticalSection(core::ptr::addr_of_mut!(ActiveVirtConsLock));
@@ -387,8 +377,8 @@ pub(crate) unsafe fn TuiSwapConsole(Next: i32) -> u8 {
 }
 
 pub(crate) unsafe fn TuiCopyRect(mut Dest: PCHAR, Buff: PTEXTMODE_SCREEN_BUFFER, Region: *mut SMALL_RECT) {
-    let mut SrcDelta: u32;
-    let mut DestDelta: u32;
+    let SrcDelta: u32;
+    let DestDelta: u32;
     let mut i: i32;
     let mut Src: PCHAR_INFO;
     let SrcEnd: PCHAR_INFO;
@@ -466,7 +456,7 @@ pub(crate) unsafe fn TuiConsoleWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPa
 unsafe extern "system" fn TuiConsoleThread(Param: PVOID) -> DWORD {
     let TuiData = Param as PTUI_CONSOLE_DATA;
     let Console = (*TuiData).Console;
-    let mut NewWindow: HWND;
+    let NewWindow: HWND;
     let mut msg: MSG = core::mem::zeroed();
 
     NewWindow = CreateWindowW(
@@ -525,7 +515,7 @@ pub(crate) unsafe fn TuiSetConsoleOutputCP(
     let mut FileSectionHandle: HANDLE = core::ptr::null_mut();
     let mut FileBuffer: PUCHAR = core::ptr::null_mut();
     let mut FileSize: SIZE_T = 0;
-    let mut CabFileHeader: PCFHEADER;
+    let CabFileHeader: PCFHEADER;
     let mut Data: _DataUnion = core::mem::zeroed();
     let mut FoundFile: PCFFILE = core::ptr::null_mut();
     let mut FileName: PSTR;
@@ -785,7 +775,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     let mut BytesReturned: u32 = 0;
     let mut wc: WNDCLASSEXW = core::mem::zeroed();
     let ConsoleClassAtom: ATOM;
-    let mut TextAttribute: u16 = FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED;
+    let TextAttribute: u16 = FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED;
 
     const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
     const FILE_ALL_ACCESS: u32 = 0x1F01FF;
@@ -846,8 +836,8 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     }
 
     ActiveConsole = core::ptr::null_mut();
-    InitializeListHead(&mut VirtConsList);
-    InitializeCriticalSection(&mut ActiveVirtConsLock);
+    InitializeListHead(&raw mut VirtConsList);
+    InitializeCriticalSection(&raw mut ActiveVirtConsLock);
 
     if DeviceIoControl(
         ConsoleDeviceHandle,
@@ -863,7 +853,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
         Success = 0;
         'Quit: loop {
             if Success == 0 {
-                DeleteCriticalSection(&mut ActiveVirtConsLock);
+                DeleteCriticalSection(&raw mut ActiveVirtConsLock);
                 CloseHandle(ConsoleDeviceHandle);
             }
 
@@ -888,7 +878,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     }
 
     if Success == 0 {
-        DeleteCriticalSection(&mut ActiveVirtConsLock);
+        DeleteCriticalSection(&raw mut ActiveVirtConsLock);
         CloseHandle(ConsoleDeviceHandle);
     }
 
@@ -900,7 +890,7 @@ pub(crate) unsafe extern "system" fn TuiInitFrontEnd(
     This: PFRONTEND,
     Console: PCONSRV_CONSOLE,
 ) -> NTSTATUS {
-    let mut TuiData: PTUI_CONSOLE_DATA;
+    let TuiData: PTUI_CONSOLE_DATA;
     let ThreadHandle: HANDLE;
 
     if This.is_null() || Console.is_null() {
@@ -976,7 +966,7 @@ pub(crate) unsafe extern "system" fn TuiDeinitFrontEnd(This: PFRONTEND) {
 unsafe extern "system" fn TuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT) {
     let TuiData = (*This).Context as PTUI_CONSOLE_DATA;
     let Buff = (*(*TuiData).Console).ActiveBuffer;
-    let mut ConsoleDraw: PCONSOLE_DRAW;
+    let ConsoleDraw: PCONSOLE_DRAW;
     let mut BytesReturned: u32 = 0;
     let ConsoleDrawSize: u32;
 
@@ -1000,7 +990,7 @@ unsafe extern "system" fn TuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT
     (*ConsoleDraw).CursorX = (*Buff).CursorPosition.X as u16;
     (*ConsoleDraw).CursorY = (*Buff).CursorPosition.Y as u16;
 
-    TuiCopyRect((ConsoleDraw.offset(1) as *mut i8), Buff as PTEXTMODE_SCREEN_BUFFER, Region);
+    TuiCopyRect(ConsoleDraw.offset(1) as *mut i8 , Buff as PTEXTMODE_SCREEN_BUFFER, Region);
 
     if DeviceIoControl(ConsoleDeviceHandle, IOCTL_CONSOLE_DRAW,
                        core::ptr::null_mut(), 0, ConsoleDraw as *mut core::ffi::c_void, ConsoleDrawSize, &mut BytesReturned, core::ptr::null_mut()) == 0 {
@@ -1013,17 +1003,17 @@ unsafe extern "system" fn TuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT
 
 pub(crate) unsafe extern "system" fn TuiWriteStream(
     This: PFRONTEND,
-    Region: *mut SMALL_RECT,
-    CursorStartX: i16,
-    CursorStartY: i16,
-    ScrolledLines: u32,
+    _Region: *mut SMALL_RECT,
+    _CursorStartX: i16,
+    _CursorStartY: i16,
+    _ScrolledLines: u32,
     Buffer: *mut u16,
     Length: u32,
 ) {
     let TuiData = (*This).Context as *mut TUI_CONSOLE_DATA;
     let Buff = (*(*TuiData).Console).ActiveBuffer;
-    let mut NewBuffer: *mut i8;
-    let mut NewLength: u32;
+    let NewBuffer: *mut i8;
+    let NewLength: u32;
     let mut BytesWritten: u32 = 0;
 
     if TuiData != ActiveConsole {
@@ -1076,7 +1066,7 @@ pub(crate) unsafe extern "system" fn TuiWriteStream(
     RtlFreeHeap(RtlGetProcessHeap(), 0, NewBuffer as *mut core::ffi::c_void);
 }
 
-pub(crate) unsafe extern "system" fn TuiRingBell(This: PFRONTEND) {
+pub(crate) unsafe extern "system" fn TuiRingBell(_This: PFRONTEND) {
     Beep(800, 200);
 }
 
@@ -1123,8 +1113,8 @@ pub(crate) unsafe extern "system" fn TuiSetCursorInfo(
 pub(crate) unsafe extern "system" fn TuiSetScreenInfo(
     This: PFRONTEND,
     Buff: PCONSOLE_SCREEN_BUFFER,
-    OldCursorX: SHORT,
-    OldCursorY: SHORT,
+    _OldCursorX: SHORT,
+    _OldCursorY: SHORT,
 ) -> BOOL {
     let TuiData = (*This).Context as PTUI_CONSOLE_DATA;
     let mut Info: CONSOLE_SCREEN_BUFFER_INFO = core::mem::zeroed();
@@ -1160,32 +1150,32 @@ pub(crate) unsafe extern "system" fn TuiSetScreenInfo(
     1
 }
 
-pub(crate) unsafe extern "system" fn TuiResizeTerminal(This: PFRONTEND) {
+pub(crate) unsafe extern "system" fn TuiResizeTerminal(_This: PFRONTEND) {
 }
 
-unsafe extern "system" fn TuiSetActiveScreenBuffer(This: PFRONTEND) {
+unsafe extern "system" fn TuiSetActiveScreenBuffer(_This: PFRONTEND) {
 }
 
 unsafe extern "system" fn TuiReleaseScreenBuffer(
-    This: PFRONTEND,
-    ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
+    _This: PFRONTEND,
+    _ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
 ) {
 }
 
-unsafe extern "system" fn TuiRefreshInternalInfo(This: PFRONTEND) {
+unsafe extern "system" fn TuiRefreshInternalInfo(_This: PFRONTEND) {
 }
 
-pub(crate) unsafe extern "system" fn TuiChangeTitle(This: PFRONTEND) {
+pub(crate) unsafe extern "system" fn TuiChangeTitle(_This: PFRONTEND) {
 }
 
 pub(crate) unsafe extern "system" fn TuiChangeIcon(
-    This: PFRONTEND,
-    IconHandle: HICON,
+    _This: PFRONTEND,
+    _IconHandle: HICON,
 ) -> BOOL {
     1
 }
 
-unsafe extern "system" fn TuiGetThreadConsoleDesktop(This: PFRONTEND) -> HDESK {
+unsafe extern "system" fn TuiGetThreadConsoleDesktop(_This: PFRONTEND) -> HDESK {
     core::ptr::null_mut()
 }
 
@@ -1195,7 +1185,7 @@ pub(crate) unsafe extern "system" fn TuiGetConsoleWindowHandle(This: PFRONTEND) 
 }
 
 pub(crate) unsafe extern "system" fn TuiGetLargestConsoleWindowSize(
-    This: PFRONTEND,
+    _This: PFRONTEND,
     pSize: PCOORD,
 ) {
     if pSize.is_null() {
@@ -1205,22 +1195,22 @@ pub(crate) unsafe extern "system" fn TuiGetLargestConsoleWindowSize(
 }
 
 pub(crate) unsafe extern "system" fn TuiGetSelectionInfo(
-    This: PFRONTEND,
-    pSelectionInfo: PCONSOLE_SELECTION_INFO,
+    _This: PFRONTEND,
+    _pSelectionInfo: PCONSOLE_SELECTION_INFO,
 ) -> BOOL {
     1
 }
 
 pub(crate) unsafe extern "system" fn TuiSetPalette(
-    This: PFRONTEND,
-    PaletteHandle: HPALETTE,
-    PaletteUsage: u32,
+    _This: PFRONTEND,
+    _PaletteHandle: HPALETTE,
+    _PaletteUsage: u32,
 ) -> u8 {
     1u8
 }
 
 unsafe extern "system" fn TuiSetCodePage(
-    This: PFRONTEND,
+    _This: PFRONTEND,
     CodePage: UINT,
 ) -> BOOL {
     if TuiSetConsoleOutputCP(ConsoleDeviceHandle, CodePage) == 0 {
@@ -1230,42 +1220,42 @@ unsafe extern "system" fn TuiSetCodePage(
     return 1;
 }
 
-unsafe extern "system" fn TuiGetDisplayMode(This: PFRONTEND) -> ULONG {
+unsafe extern "system" fn TuiGetDisplayMode(_This: PFRONTEND) -> ULONG {
     CONSOLE_FULLSCREEN_HARDWARE
 }
 
 pub(crate) unsafe extern "system" fn TuiSetDisplayMode(
-    This: PFRONTEND,
-    NewMode: ULONG,
+    _This: PFRONTEND,
+    _NewMode: ULONG,
 ) -> BOOL {
     1
 }
 
 pub(crate) unsafe extern "system" fn TuiShowMouseCursor(
-    This: PFRONTEND,
-    Show: BOOL,
+    _This: PFRONTEND,
+    _Show: BOOL,
 ) -> INT {
     return 0;
 }
 
 pub(crate) unsafe extern "system" fn TuiSetMouseCursor(
-    This: PFRONTEND,
-    CursorHandle: HCURSOR,
+    _This: PFRONTEND,
+    _CursorHandle: HCURSOR,
 ) -> BOOL {
     1
 }
 
 unsafe extern "system" fn TuiMenuControl(
-    This: PFRONTEND,
-    CmdIdLow: UINT,
-    CmdIdHigh: UINT,
+    _This: PFRONTEND,
+    _CmdIdLow: UINT,
+    _CmdIdHigh: UINT,
 ) -> HMENU {
     core::ptr::null_mut()
 }
 
 pub(crate) unsafe extern "system" fn TuiSetMenuClose(
-    This: PFRONTEND,
-    Enable: BOOL,
+    _This: PFRONTEND,
+    _Enable: BOOL,
 ) -> BOOL {
     1
 }
@@ -1278,8 +1268,8 @@ pub(crate) unsafe fn IsConsoleMode() -> BOOLEAN {
 pub unsafe extern "system" fn TuiLoadFrontEnd(
     FrontEnd: PFRONTEND,
     ConsoleInfo: PCONSOLE_STATE_INFO,
-    ConsoleInitInfo: PCONSOLE_INIT_INFO,
-    ConsoleLeaderProcessHandle: HANDLE,
+    _ConsoleInitInfo: PCONSOLE_INIT_INFO,
+    _ConsoleLeaderProcessHandle: HANDLE,
 ) -> NTSTATUS {
     if FrontEnd.is_null() || ConsoleInfo.is_null() {
         return STATUS_INVALID_PARAMETER;

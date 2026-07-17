@@ -1,4 +1,3 @@
-use core::ffi::c_void;
 use ntdll_sys::nt::*;
 
 extern "C" {
@@ -945,7 +944,7 @@ pub unsafe extern "system" fn SmpCreateVolumeDescriptors() -> NTSTATUS {
 
             /* All done, add this volume to our descriptor list */
             InsertTailList(
-                &mut SmpVolumeDescriptorList,
+                &raw mut SmpVolumeDescriptorList,
                 core::ptr::addr_of_mut!((*Volume).Entry),
             );
             (*Volume).Flags |= SMP_VOLUME_INSERTED as u16;
@@ -958,7 +957,7 @@ pub unsafe extern "system" fn SmpCreateVolumeDescriptors() -> NTSTATUS {
 
     let _ = BootVolumeFound;
 
-    if !IsListEmpty(&mut SmpVolumeDescriptorList) {
+    if !IsListEmpty(&raw mut SmpVolumeDescriptorList) {
         return STATUS_SUCCESS;
     }
 

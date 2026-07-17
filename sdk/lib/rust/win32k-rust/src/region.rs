@@ -126,7 +126,6 @@ pub type POINTBLOCK = _POINTBLOCK;
 
 #[inline(always)]
 
-#[inline]
 
 unsafe fn REGION_bGrowBufferSize(
     prgn: PREGION,
@@ -1946,10 +1945,10 @@ unsafe extern "C" fn REGION_bXformRgn(
         if ((*pmx).flAccel & XFORM_UNITY) != 0 {
             return REGION_bOffsetRgn(prgn, ((*pmx).fxDx + 8) / 16, ((*pmx).fxDy + 8) / 16) as BOOL;
         } else {
-            XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), pmx);
+            XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ , pmx);
 
             if EXFORMOBJ_bApplyXform(
-                (core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
+                core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ ,
                 XF_LTOL,
                 2,
                 core::ptr::addr_of_mut!((*prgn).rdh.rcBound) as *mut core::ffi::c_void,
@@ -1960,7 +1959,7 @@ unsafe extern "C" fn REGION_bXformRgn(
             }
 
             if EXFORMOBJ_bApplyXform(
-                (core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
+                core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ ,
                 XF_LTOL,
                 (*prgn).rdh.nCount * 2,
                 (*prgn).Buffer as *mut core::ffi::c_void,
@@ -2018,10 +2017,10 @@ unsafe extern "C" fn REGION_bXformRgn(
             i += 1;
         }
 
-        XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), pmx);
+        XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ , pmx);
 
         if EXFORMOBJ_bApplyXform(
-            (core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
+            core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ ,
             XF_LTOL,
             (*prgn).rdh.nCount * 2,
             ppt as *mut core::ffi::c_void,
@@ -3714,7 +3713,7 @@ unsafe extern "C" fn REGION_SetPolyPolygonRgn(
         return 0;
     }
 
-    if ((cPolygons == 1) && (((*pcPoints.offset(0) == 4) ||
+    if (cPolygons == 1) && (((*pcPoints.offset(0) == 4) ||
          (((*pcPoints.offset(0) == 5) && ((*ppt.offset(4)).x == (*ppt.offset(0)).x) && ((*ppt.offset(4)).y == (*ppt.offset(0)).y)))) &&
         ((((*ppt.offset(0)).y == (*ppt.offset(1)).y) &&
           ((*ppt.offset(1)).x == (*ppt.offset(2)).x) &&
@@ -3723,7 +3722,7 @@ unsafe extern "C" fn REGION_SetPolyPolygonRgn(
          (((*ppt.offset(0)).x == (*ppt.offset(1)).x) &&
           ((*ppt.offset(1)).y == (*ppt.offset(2)).y) &&
           ((*ppt.offset(2)).x == (*ppt.offset(3)).x) &&
-          ((*ppt.offset(3)).y == (*ppt.offset(0)).y)))))
+          ((*ppt.offset(3)).y == (*ppt.offset(0)).y))))
     {
         REGION_SetRectRgn(prgn,
                           core::cmp::min((*ppt.offset(0)).x, (*ppt.offset(2)).x),
@@ -4760,11 +4759,11 @@ pub unsafe extern "C" fn NtGdiExtCreateRegion(
             let ret: u32;
 
             Status = ERROR_INVALID_PARAMETER as i32;
-            XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), core::ptr::addr_of_mut!(matrix));
-            ret = EXFORMOBJ_iSetXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), Xform as *mut XFORML);
+            XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ , core::ptr::addr_of_mut!(matrix));
+            ret = EXFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ , Xform as *mut XFORML);
 
             if ret != DDI_ERROR {
-                if EXFORMOBJ_bApplyXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
+                if EXFORMOBJ_bApplyXform(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ ,
                                         XF_LTOL,
                                         (*Region).rdh.nCount * 2,
                                         (*Region).Buffer as *mut core::ffi::c_void,

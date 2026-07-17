@@ -575,19 +575,19 @@ pub unsafe extern "system" fn BaseComputeProcessDllPath(
     let mut CurrentDirPlacement: BASE_CURRENT_DIR_PLACEMENT = BaseCurrentDirPlacementDefault;
     let mut OldCurrentDirPlacement: BASE_CURRENT_DIR_PLACEMENT = BaseCurrentDirPlacementDefault;
 
-    RtlEnterCriticalSection(&mut BaseDllDirectoryLock);
+    RtlEnterCriticalSection(&raw mut BaseDllDirectoryLock);
 
     if !BaseDllDirectory.Buffer.is_null() {
         DllPath = BasepComputeProcessPath(
-            &mut BaseDllOrderNoCurrent as *mut _ as PBASE_SEARCH_PATH_TYPE,
+            &raw mut BaseDllOrderNoCurrent as *mut _ as PBASE_SEARCH_PATH_TYPE,
             FullPath,
             Environment,
         );
-        RtlLeaveCriticalSection(&mut BaseDllDirectoryLock);
+        RtlLeaveCriticalSection(&raw mut BaseDllDirectoryLock);
         return DllPath;
     }
 
-    RtlLeaveCriticalSection(&mut BaseDllDirectoryLock);
+    RtlLeaveCriticalSection(&raw mut BaseDllDirectoryLock);
 
     CurrentDirPlacement = BasepDllCurrentDirPlacement;
     if CurrentDirPlacement as i32 == BaseCurrentDirPlacementInvalid as i32 {
@@ -927,7 +927,7 @@ pub unsafe extern "system" fn BasepIsCurDirAllowedForPlainExeNames() -> BOOL {
     );
     Status = RtlQueryEnvironmentVariable_U(
         core::ptr::null_mut(),
-        &NoDefaultCurrentDirectoryInExePath,
+        &raw const NoDefaultCurrentDirectoryInExePath,
         &mut EmptyString,
     );
     return (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) as BOOL;
@@ -959,12 +959,12 @@ pub unsafe extern "system" fn SetDllDirectoryW(lpPathName: LPCWSTR) -> BOOL {
         RtlInitUnicodeString(&mut DllDirectory, core::ptr::null());
     }
 
-    RtlEnterCriticalSection(&mut BaseDllDirectoryLock);
+    RtlEnterCriticalSection(&raw mut BaseDllDirectoryLock);
 
     OldDirectory = BaseDllDirectory;
     BaseDllDirectory = DllDirectory;
 
-    RtlLeaveCriticalSection(&mut BaseDllDirectoryLock);
+    RtlLeaveCriticalSection(&raw mut BaseDllDirectoryLock);
 
     RtlFreeUnicodeString(&mut OldDirectory);
     return 1;
@@ -1000,12 +1000,12 @@ pub unsafe extern "system" fn SetDllDirectoryA(lpPathName: LPCSTR) -> BOOL {
         RtlInitUnicodeString(&mut DllDirectory, core::ptr::null());
     }
 
-    RtlEnterCriticalSection(&mut BaseDllDirectoryLock);
+    RtlEnterCriticalSection(&raw mut BaseDllDirectoryLock);
 
     OldDirectory = BaseDllDirectory;
     BaseDllDirectory = DllDirectory;
 
-    RtlLeaveCriticalSection(&mut BaseDllDirectoryLock);
+    RtlLeaveCriticalSection(&raw mut BaseDllDirectoryLock);
 
     RtlFreeUnicodeString(&mut OldDirectory);
     return 1;
@@ -1059,9 +1059,9 @@ pub unsafe extern "system" fn GetDllDirectoryA(
         nBufferLength as USHORT,
     );
 
-    RtlEnterCriticalSection(&mut BaseDllDirectoryLock);
+    RtlEnterCriticalSection(&raw mut BaseDllDirectoryLock);
 
-    Length = BasepUnicodeStringTo8BitSize(&BaseDllDirectory);
+    Length = BasepUnicodeStringTo8BitSize(&raw const BaseDllDirectory);
     if Length > nBufferLength {
         Status = STATUS_SUCCESS;
         if !lpBuffer.is_null() {
@@ -1071,12 +1071,12 @@ pub unsafe extern "system" fn GetDllDirectoryA(
         Length = Length.wrapping_sub(1);
         Status = BasepUnicodeStringTo8BitString(
             &mut AnsiDllDirectory,
-            &BaseDllDirectory,
+            &raw const BaseDllDirectory,
             0, // FALSE
         );
     }
 
-    RtlLeaveCriticalSection(&mut BaseDllDirectoryLock);
+    RtlLeaveCriticalSection(&raw mut BaseDllDirectoryLock);
 
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
@@ -2742,7 +2742,7 @@ pub unsafe extern "system" fn GetSystemDirectoryA(
 
     Status = BasepUnicodeStringTo8BitString(
         &mut AnsiString,
-        &BaseWindowsSystemDirectory,
+        &raw const BaseWindowsSystemDirectory,
         0, // FALSE
     );
     if !NT_SUCCESS(Status) {
@@ -2837,7 +2837,7 @@ pub unsafe extern "system" fn GetSystemWindowsDirectoryA(
 
     Status = BasepUnicodeStringTo8BitString(
         &mut AnsiString,
-        &BaseWindowsDirectory,
+        &raw const BaseWindowsDirectory,
         0, // FALSE
     );
     if !NT_SUCCESS(Status) {

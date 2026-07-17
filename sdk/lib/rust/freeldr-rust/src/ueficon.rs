@@ -81,7 +81,7 @@ pub unsafe extern "C" fn UefiConsPutChar(c: i32) {
 
     NeedScroll = if CurrentCursorY >= Height { 1u8 } else { 0u8 };
     if NeedScroll != 0 {
-        FbConsScrollUp(((CurrentAttr) as u32));
+        FbConsScrollUp((CurrentAttr) as u32 );
         CurrentCursorY -= 1;
     }
     if c == b'\r' as i32 {
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn UefiConsPutChar(c: i32) {
     } else if c == b'\t' as i32 {
         CurrentCursorX = (CurrentCursorX + 8) & !7;
     } else {
-        UefiVideoPutChar(c, ((CurrentAttr) as u32), CurrentCursorX, CurrentCursorY);
+        UefiVideoPutChar(c, (CurrentAttr) as u32 , CurrentCursorX, CurrentCursorY);
         CurrentCursorX += 1;
     }
     if CurrentCursorX >= Width {
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn UefiConsGetCh() -> i32 {
         KeyOutput = Key.UnicodeChar as UCHAR;
     } else {
         ExtendedKey = 1u8;
-        ExtendedScanCode = ((ConvertToBiosExtValue(Key.ScanCode as UCHAR)) as i8);
+        ExtendedScanCode = (ConvertToBiosExtValue(Key.ScanCode as UCHAR)) as i8 ;
         KeyOutput = KEY_EXTENDED;
     }
 

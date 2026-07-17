@@ -18,7 +18,7 @@ pub unsafe extern "C" fn MmAllocateMemoryWithType(
     MemorySize: usize,
     MemoryType: TYPE_OF_MEMORY,
 ) -> PVOID {
-    let mut PagesNeeded: PFN_NUMBER;
+    let PagesNeeded: PFN_NUMBER;
     let FirstFreePageFromEnd: PFN_NUMBER;
     let MemPointer: PVOID;
     let mut MemorySize = MemorySize;
@@ -65,9 +65,9 @@ pub unsafe extern "C" fn MmAllocateMemoryWithType(
 
 #[no_mangle]
 pub unsafe extern "C" fn MmAllocateMemoryAtAddress(MemorySize: usize, DesiredAddress: *mut core::ffi::c_void, MemoryType: u32) -> *mut core::ffi::c_void {
-    let mut PagesNeeded: PFN_NUMBER;
-    let mut StartPageNumber: PFN_NUMBER;
-    let mut MemPointer: *mut core::ffi::c_void;
+    let PagesNeeded: PFN_NUMBER;
+    let StartPageNumber: PFN_NUMBER;
+    let MemPointer: *mut core::ffi::c_void;
 
     if MemorySize == 0 {
         WARN(b"MmAllocateMemoryAtAddress() called for 0 bytes. Returning NULL.\n\0".as_ptr() as *const i8);
@@ -101,8 +101,8 @@ pub unsafe extern "C" fn MmAllocateMemoryAtAddress(MemorySize: usize, DesiredAdd
     TRACE(b"Allocated %d bytes (%d pages) of memory starting at page %d.\n\0".as_ptr() as *const i8, MemorySize, PagesNeeded, StartPageNumber);
     TRACE(b"Memory allocation pointer: 0x%x\n\0".as_ptr() as *const i8, MemPointer);
 
-    if (((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) > LoaderPagesSpanned) {
-        LoaderPagesSpanned = ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT);
+    if ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) > LoaderPagesSpanned  {
+        LoaderPagesSpanned = (MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT ;
     }
 
     MemPointer
@@ -126,8 +126,8 @@ pub unsafe extern "C" fn MmAllocateHighestMemoryBelowAddress(
     DesiredAddress: PVOID,
     MemoryType: TYPE_OF_MEMORY,
 ) -> PVOID {
-    let mut PagesNeeded: PFN_NUMBER;
-    let mut FirstFreePageFromEnd: PFN_NUMBER;
+    let PagesNeeded: PFN_NUMBER;
+    let FirstFreePageFromEnd: PFN_NUMBER;
     let DesiredAddressPageNumber: PFN_NUMBER;
     let MemPointer: PVOID;
 
@@ -164,14 +164,14 @@ pub unsafe extern "C" fn MmAllocateHighestMemoryBelowAddress(
     TRACE(b"Memory allocation pointer: 0x%x\n\0".as_ptr() as PCHAR, MemPointer);
 
     if (((MemPointer as ULONG_PTR) + MemorySize) >> PAGE_SHIFT) > LoaderPagesSpanned {
-        LoaderPagesSpanned = (((MemPointer as ULONG_PTR) + MemorySize) >> PAGE_SHIFT);
+        LoaderPagesSpanned = ((MemPointer as ULONG_PTR) + MemorySize) >> PAGE_SHIFT ;
     }
 
     MemPointer
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn MmFreeMemory(MemoryPointer: PVOID) {
+pub unsafe extern "C" fn MmFreeMemory(_MemoryPointer: PVOID) {
 }
 
 unsafe fn DumpMemoryAllocMap() {

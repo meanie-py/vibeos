@@ -1,7 +1,4 @@
 use win32k_sys::win32k::*;
-use crate::framebuf::*;
-use core::ffi::c_void;
-use core::ptr;
 
 #[cfg(not(feature = "experimental_mouse_cursor_support"))]
 #[no_mangle]

@@ -352,7 +352,7 @@ fn directwriterlock_Release(iface: *mut IDirectWriterLock) -> ULONG {
 
 stdmethod! {
 fn directwriterlock_WaitForWriteAccess(iface: *mut IDirectWriterLock, timeout: DWORD) -> HRESULT {
-    let This = impl_from_IDirectWriterLock(iface);
+    let _This = impl_from_IDirectWriterLock(iface);
     FIXME(b"(%p)->(%d): stub\n\0".as_ptr() as LPCSTR);
     E_NOTIMPL
 }
@@ -360,7 +360,7 @@ fn directwriterlock_WaitForWriteAccess(iface: *mut IDirectWriterLock, timeout: D
 
 stdmethod! {
 fn directwriterlock_ReleaseWriteAccess(iface: *mut IDirectWriterLock) -> HRESULT {
-    let This = impl_from_IDirectWriterLock(iface);
+    let _This = impl_from_IDirectWriterLock(iface);
     FIXME(b"(%p): stub\n\0".as_ptr() as PCHAR);
     E_NOTIMPL
 }
@@ -368,7 +368,7 @@ fn directwriterlock_ReleaseWriteAccess(iface: *mut IDirectWriterLock) -> HRESULT
 
 stdmethod! {
 fn directwriterlock_HaveWriteAccess(iface: *mut IDirectWriterLock) -> HRESULT {
-    let This = impl_from_IDirectWriterLock(iface);
+    let _This = impl_from_IDirectWriterLock(iface);
     FIXME(b"(%p): stub\n\0".as_ptr() as PCHAR);
     E_NOTIMPL
 }
@@ -1684,7 +1684,7 @@ pub unsafe extern "system" fn SetConvertStg(storage: *mut IStorage, convert: BOO
 
     if (header[1] ^ flags) & 0x00000004 != 0 {
         let mut pos: LARGE_INTEGER = core::mem::zeroed();
-        let mut updated_flags: DWORD;
+        let updated_flags: DWORD;
 
         if header[1] & 0x00000004 != 0 {
             updated_flags = header[1] & !0x00000004;
@@ -1804,7 +1804,7 @@ pub unsafe extern "C" fn OLECONVERT_CreateCompObjStream(
     
 
     let mut pStream: *mut IStream = core::ptr::null_mut();
-    let mut hStorageRes: HRESULT;
+    let hStorageRes: HRESULT;
     let mut hRes: HRESULT = 0; // S_OK
     let mut IStorageCompObj: OLECONVERT_ISTORAGE_COMPOBJ = core::mem::zeroed();
     static wstrStreamName: [u16; 9] = [1, 'C' as u16, 'o' as u16, 'm' as u16, 'p' as u16, 'O' as u16, 'b' as u16, 'j' as u16, 0];
@@ -2116,7 +2116,7 @@ fn StorageBaseImpl_OpenStream(
     ppstm: *mut *mut IStream,
 ) -> HRESULT {
     let This = impl_from_IStorage(iface);
-    let mut newStream: *mut StgStreamImpl;
+    let newStream: *mut StgStreamImpl;
     let mut currentEntry: DirEntry = core::mem::zeroed();
     let streamEntryRef: DirRef;
     let mut res: HRESULT = STG_E_UNKNOWN;
@@ -2278,7 +2278,7 @@ fn StorageBaseImpl_CreateStream(
     ppstm: *mut *mut IStream,
 ) -> HRESULT {
     let This = impl_from_IStorage(iface);
-    let mut newStream: *mut StgStreamImpl;
+    let newStream: *mut StgStreamImpl;
     let mut currentEntry: DirEntry = core::mem::zeroed();
     let mut newStreamEntry: DirEntry = core::mem::zeroed();
     let currentEntryRef: DirRef;
@@ -2793,7 +2793,7 @@ unsafe fn Storage32Impl_GetExtDepotBlock(This: *mut StorageImpl, depotIndex: ULO
     let mut blockIndex: ULONG = BLOCK_UNUSED;
     let extBlockIndex: ULONG;
     let mut depotBuffer: [BYTE; MAX_BIG_BLOCK_SIZE as usize] = [0; MAX_BIG_BLOCK_SIZE as usize];
-    let index: i32;
+    let _index: i32;
     let num_blocks: i32;
 
     assert(depotIndex >= COUNT_BBDEPOTINHEADER as ULONG);
@@ -2940,7 +2940,7 @@ unsafe fn Storage32Impl_SetExtDepotBlock(This: *mut StorageImpl, depotIndex: ULO
     let numExtBlocks = depotIndex - COUNT_BBDEPOTINHEADER as ULONG;
     let extBlockCount = numExtBlocks / depotBlocksPerExtBlock;
     let extBlockOffset = numExtBlocks % depotBlocksPerExtBlock;
-    let mut extBlockIndex: ULONG;
+    let extBlockIndex: ULONG;
 
     
     assert((depotIndex >= COUNT_BBDEPOTINHEADER as ULONG) as i32);
@@ -3435,7 +3435,7 @@ pub unsafe extern "system" fn WriteFmtUserTypeStg(
     let mut szwClipName: [u16; 0x40] = [0; 0x40];
     let mut clsid: CLSID;
     let mut wstrProgID: LPWSTR = core::ptr::null_mut();
-    let mut n: u32;
+    let n: u32;
 
     
 
@@ -3929,7 +3929,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_WriteDirEntry(
         if (*data).size.QuadPart == 0
             && (*(*This).entries.offset(index as isize)).transactedParentEntry != DIRENTRY_NULL
         {
-            let mut delete_ref: DirRef;
+            let delete_ref: DirRef;
             delete_ref = TransactedSnapshotImpl_CreateStubEntry(
                 This,
                 (*(*This).entries.offset(index as isize)).transactedParentEntry,
@@ -4066,7 +4066,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_StreamSetSize(
 
     if newsize.QuadPart == 0 {
         if (*(*This).entries.offset(index as isize)).stream_dirty != 0 {
-            let mut zero = ULARGE_INTEGER { QuadPart: 0 };
+            let zero = ULARGE_INTEGER { QuadPart: 0 };
             StorageBaseImpl_StreamSetSize(
                 (*This).scratch,
                 (*(*This).entries.offset(index as isize)).stream_entry,
@@ -4534,9 +4534,9 @@ fn TransactedSnapshotImpl_Commit(
     grfCommitFlags: DWORD,
 ) -> HRESULT {
     let This = impl_from_IStorage(iface) as *mut TransactedSnapshotImpl;
-    let mut root_entry: *mut TransactedDirEntry;
+    let root_entry: *mut TransactedDirEntry;
     let mut i: DirRef;
-    let mut dir_root_ref: DirRef;
+    let dir_root_ref: DirRef;
     let mut data: DirEntry = core::mem::zeroed();
     let mut zero: ULARGE_INTEGER = core::mem::zeroed();
     let mut hr: HRESULT;
@@ -4921,7 +4921,7 @@ fn StorageBaseImpl_OpenStorage(
     ppstg: *mut *mut IStorage,
 ) -> HRESULT {
     let This = impl_from_IStorage(iface);
-    let mut newStorage: *mut StorageInternalImpl;
+    let newStorage: *mut StorageInternalImpl;
     let mut newTransactedStorage: *mut StorageBaseImpl = core::ptr::null_mut();
     let mut currentEntry: DirEntry = core::mem::zeroed();
     let storageEntryRef: DirRef;
@@ -5213,7 +5213,7 @@ unsafe extern "C" fn StorageImpl_CreateDirEntry(
         let mut newSize: ULARGE_INTEGER = core::mem::zeroed();
         let mut entryIndex: ULONG;
         let lastEntry: ULONG;
-        let mut blockCount: ULONG;
+        let blockCount: ULONG;
 
         blockCount = BlockChainStream_GetCount((*storage).rootBlockChain) + 1;
 
@@ -6017,7 +6017,7 @@ unsafe fn StorageImpl_Construct(
     pwcsName: LPCOLESTR,
     pLkbyt: *mut ILockBytes,
     openFlags: DWORD,
-    fileBased: BOOL,
+    _fileBased: BOOL,
     create: BOOL,
     sector_size: ULONG,
     result: *mut *mut StorageImpl,
@@ -6390,7 +6390,7 @@ unsafe fn BlockChainStream_UpdateIndexCache(This: *mut BlockChainStream) -> HRES
                 }
                 (*This).indexCacheSize = 16;
             } else if (*This).indexCacheSize == (*This).indexCacheLen {
-                let mut new_cache: *mut BlockChainRun;
+                let new_cache: *mut BlockChainRun;
                 let new_size: ULONG;
 
                 new_size = (*This).indexCacheSize * 2;
@@ -6473,7 +6473,7 @@ unsafe fn BlockChainStream_Construct(
 }
 
 unsafe fn BlockChainStream_Shrink(This: *mut BlockChainStream, newSize: ULARGE_INTEGER) -> BOOL {
-    let mut blockIndex: ULONG;
+    let blockIndex: ULONG;
     let mut numBlocks: ULONG;
     let mut i: i32;
 
@@ -6794,7 +6794,7 @@ unsafe fn BlockChainStream_ReadAt(
     0
 }
 
-pub unsafe fn StorageBaseImpl_RemoveStream(stg: *mut StorageBaseImpl, strm: *mut StgStreamImpl) {
+pub unsafe fn StorageBaseImpl_RemoveStream(_stg: *mut StorageBaseImpl, strm: *mut StgStreamImpl) {
     TRACE(b"Stream removed (stg=%p strm=%p)\n\0".as_ptr() as PCHAR);
     list_remove(core::ptr::addr_of_mut!((*strm).StrmListEntry));
 }
@@ -6870,7 +6870,7 @@ unsafe fn SmallBlockChainStream_GetNextFreeBlock(
     let smallBlocksPerBigBlock: ULONG;
     let mut rootEntry: DirEntry = core::mem::zeroed();
     let blocksRequired: ULONG;
-    let mut old_size: ULARGE_INTEGER;
+    let old_size: ULARGE_INTEGER;
     let mut size_required: ULARGE_INTEGER = core::mem::zeroed();
 
     offsetOfBlockInDepot.u.HighPart = 0;
@@ -6972,7 +6972,7 @@ unsafe fn SmallBlockChainStream_ReadAt(
     let mut offsetInBlock: ULONG = offset.u.LowPart % (*(*This).parentStorage).smallBlockSize;
     let mut bytesToReadInBuffer: ULONG;
     let mut blockIndex: ULONG;
-    let bytesReadFromBigBlockFile: ULONG = 0;
+    let _bytesReadFromBigBlockFile: ULONG = 0;
     let mut bufferWalker: *mut BYTE;
     let stream_size: ULARGE_INTEGER;
     let mut size = size;
@@ -7395,7 +7395,7 @@ unsafe fn StorageBaseImpl_CopyStream(
 unsafe fn create_storagefile(
     pwcsName: LPCOLESTR,
     grfMode: DWORD,
-    grfAttrs: DWORD,
+    _grfAttrs: DWORD,
     pStgOptions: *mut STGOPTIONS,
     riid: REFIID,
     ppstgOpen: *mut *mut core::ffi::c_void,
@@ -7403,10 +7403,10 @@ unsafe fn create_storagefile(
     let mut newStorage: *mut StorageBaseImpl = core::ptr::null_mut();
     let mut hFile: HANDLE = INVALID_HANDLE_VALUE;
     let mut hr: HRESULT = STG_E_INVALIDFLAG;
-    let mut shareMode: DWORD;
-    let mut accessMode: DWORD;
-    let mut creationMode: DWORD;
-    let mut fileAttributes: DWORD;
+    let shareMode: DWORD;
+    let accessMode: DWORD;
+    let creationMode: DWORD;
+    let fileAttributes: DWORD;
     let mut tempFileName: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
     if ppstgOpen == core::ptr::null_mut() {
@@ -7575,7 +7575,7 @@ pub unsafe extern "system" fn StgCreateStorageEx(
     stgfmt: DWORD,
     grfAttrs: DWORD,
     pStgOptions: *mut STGOPTIONS,
-    reserved: *mut core::ffi::c_void,
+    _reserved: *mut core::ffi::c_void,
     riid: REFIID,
     ppObjectOpen: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
@@ -7625,9 +7625,9 @@ pub unsafe extern "system" fn StgOpenStorageEx(
     grfMode: u32,
     stgfmt: u32,
     grfAttrs: u32,
-    pStgOptions: *mut STGOPTIONS,
-    reserved: *mut core::ffi::c_void,
-    riid: *const IID,
+    _pStgOptions: *mut STGOPTIONS,
+    _reserved: *mut core::ffi::c_void,
+    _riid: *const IID,
     ppObjectOpen: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
     
@@ -7679,15 +7679,15 @@ pub unsafe extern "system" fn StgOpenStorage(
     pwcsName: *const OLECHAR,
     pstgPriority: *mut IStorage,
     grfMode: DWORD,
-    snbExclude: SNB,
+    _snbExclude: SNB,
     reserved: DWORD,
     ppstgOpen: *mut *mut IStorage,
 ) -> HRESULT {
     let mut newStorage: *mut StorageBaseImpl = core::ptr::null_mut();
     let mut hr: HRESULT = S_OK;
     let mut hFile: HANDLE = core::ptr::null_mut();
-    let mut shareMode: DWORD;
-    let mut accessMode: DWORD;
+    let shareMode: DWORD;
+    let accessMode: DWORD;
     let mut temp_name: LPWSTR = core::ptr::null_mut();
 
     TRACE(b"(%s, %p, %x, %p, %d, %p)\n\0".as_ptr() as PCHAR);
@@ -7899,7 +7899,7 @@ pub unsafe extern "system" fn StgOpenStorage(
 pub unsafe extern "system" fn StgCreateDocfileOnILockBytes(
     plkbyt: *mut ILockBytes,
     grfMode: DWORD,
-    reserved: DWORD,
+    _reserved: DWORD,
     ppstgOpen: *mut *mut IStorage,
 ) -> HRESULT {
     let mut newStorage: *mut StorageBaseImpl = core::ptr::null_mut();
@@ -7932,10 +7932,10 @@ pub unsafe extern "system" fn StgCreateDocfileOnILockBytes(
 #[no_mangle]
 pub unsafe extern "system" fn StgOpenStorageOnILockBytes(
     plkbyt: *mut ILockBytes,
-    pstgPriority: *mut IStorage,
+    _pstgPriority: *mut IStorage,
     grfMode: DWORD,
-    snbExclude: SNB,
-    reserved: DWORD,
+    _snbExclude: SNB,
+    _reserved: DWORD,
     ppstgOpen: *mut *mut IStorage,
 ) -> HRESULT {
     let mut newStorage: *mut StorageBaseImpl = core::ptr::null_mut();
@@ -8001,7 +8001,7 @@ pub unsafe extern "system" fn StgSetTimes(
 
 unsafe fn OLECONVERT_GetOLE20FromOLE10(pDestStorage: *mut IStorage, pBuffer: *const BYTE, nBufferLength: DWORD) {
     let mut hRes: HRESULT;
-    let mut hFile: HANDLE;
+    let hFile: HANDLE;
     let mut pTempStorage: *mut IStorage = core::ptr::null_mut();
     let mut dwNumOfBytesWritten: DWORD = 0;
     let mut wstrTempDir: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
@@ -8028,8 +8028,8 @@ unsafe fn OLECONVERT_GetOLE20FromOLE10(pDestStorage: *mut IStorage, pBuffer: *co
 }
 
 unsafe fn OLECONVERT_WriteOLE20ToBuffer(pStorage: *mut IStorage, pData: *mut *mut BYTE) -> DWORD {
-    let mut hFile: HANDLE;
-    let mut hRes: HRESULT;
+    let hFile: HANDLE;
+    let hRes: HRESULT;
     let mut nDataLength: DWORD = 0;
     let mut pTempStorage: *mut IStorage = core::ptr::null_mut();
     let mut wstrTempDir: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
@@ -8114,7 +8114,7 @@ unsafe fn StorageBaseImpl_DeleteStorageTree(
 unsafe fn OLECONVERT_GetOle20PresData(pStorage: *mut IStorage, pOleStreamData: *mut OLECONVERT_OLESTREAM_DATA) {
     
 
-    let mut hRes: HRESULT;
+    let hRes: HRESULT;
     let mut pStream: *mut IStream = core::ptr::null_mut();
     let mut olePress: OLECONVERT_ISTORAGE_OLEPRES = core::mem::zeroed();
     static wstrStreamName: [u16; 12] = [2, b'O' as u16, b'l' as u16, b'e' as u16, b'P' as u16, b'r' as u16, b'e' as u16, b's' as u16, b'0' as u16, b'0' as u16, b'0' as u16, 0];
@@ -8498,27 +8498,27 @@ unsafe extern "C" fn StorageInternalImpl_StreamLink(
 }
 
 unsafe extern "C" fn StorageInternalImpl_GetTransactionSig(
-    base: *mut StorageBaseImpl,
-    result: *mut ULONG,
-    refresh: BOOL,
+    _base: *mut StorageBaseImpl,
+    _result: *mut ULONG,
+    _refresh: BOOL,
 ) -> HRESULT {
     E_NOTIMPL
 }
 
 unsafe extern "C" fn StorageInternalImpl_SetTransactionSig(
-    base: *mut StorageBaseImpl,
-    value: ULONG,
+    _base: *mut StorageBaseImpl,
+    _value: ULONG,
 ) -> HRESULT {
     E_NOTIMPL
 }
 
-unsafe extern "C" fn StorageInternalImpl_LockTransaction(base: *mut StorageBaseImpl, write: BOOL) -> HRESULT {
+unsafe extern "C" fn StorageInternalImpl_LockTransaction(_base: *mut StorageBaseImpl, _write: BOOL) -> HRESULT {
     E_NOTIMPL
 }
 
 unsafe extern "C" fn StorageInternalImpl_UnlockTransaction(
-    base: *mut StorageBaseImpl,
-    write: BOOL,
+    _base: *mut StorageBaseImpl,
+    _write: BOOL,
 ) -> HRESULT {
     E_NOTIMPL
 }
@@ -8663,7 +8663,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_Destroy(iface: *mut StorageBaseImpl)
     HeapFree(GetProcessHeap(), 0, This as LPVOID);
 }
 
-unsafe extern "C" fn TransactedSnapshotImpl_Flush(iface: *mut StorageBaseImpl) -> HRESULT {
+unsafe extern "C" fn TransactedSnapshotImpl_Flush(_iface: *mut StorageBaseImpl) -> HRESULT {
     S_OK
 }
 
@@ -8734,29 +8734,29 @@ unsafe extern "C" fn TransactedSnapshotImpl_StreamReadAt(
 }
 
 unsafe extern "C" fn TransactedSnapshotImpl_GetTransactionSig(
-    base: *mut StorageBaseImpl,
-    result: *mut ULONG,
-    refresh: BOOL,
+    _base: *mut StorageBaseImpl,
+    _result: *mut ULONG,
+    _refresh: BOOL,
 ) -> HRESULT {
     E_NOTIMPL
 }
 
 unsafe extern "C" fn TransactedSnapshotImpl_SetTransactionSig(
-    base: *mut StorageBaseImpl,
-    value: ULONG,
+    _base: *mut StorageBaseImpl,
+    _value: ULONG,
 ) -> HRESULT {
     E_NOTIMPL
 }
 
-unsafe extern "C" fn TransactedSnapshotImpl_LockTransaction(base: *mut StorageBaseImpl, write: BOOL) -> HRESULT {
+unsafe extern "C" fn TransactedSnapshotImpl_LockTransaction(_base: *mut StorageBaseImpl, _write: BOOL) -> HRESULT {
     E_NOTIMPL
 }
 
-unsafe extern "C" fn TransactedSnapshotImpl_UnlockTransaction(base: *mut StorageBaseImpl, write: BOOL) -> HRESULT {
+unsafe extern "C" fn TransactedSnapshotImpl_UnlockTransaction(_base: *mut StorageBaseImpl, _write: BOOL) -> HRESULT {
     E_NOTIMPL
 }
 
-unsafe extern "C" fn TransactedSharedImpl_Flush(iface: *mut StorageBaseImpl) -> HRESULT {
+unsafe extern "C" fn TransactedSharedImpl_Flush(_iface: *mut StorageBaseImpl) -> HRESULT {
     S_OK
 }
 
@@ -8884,27 +8884,27 @@ unsafe extern "C" fn TransactedSharedImpl_StreamLink(
 }
 
 unsafe extern "C" fn TransactedSharedImpl_GetTransactionSig(
-    base: *mut StorageBaseImpl,
-    result: *mut ULONG,
-    refresh: BOOL,
+    _base: *mut StorageBaseImpl,
+    _result: *mut ULONG,
+    _refresh: BOOL,
 ) -> HRESULT {
     0x80004001u32 as HRESULT
 }
 
 unsafe extern "C" fn TransactedSharedImpl_SetTransactionSig(
-    base: *mut StorageBaseImpl,
-    value: ULONG,
+    _base: *mut StorageBaseImpl,
+    _value: ULONG,
 ) -> HRESULT {
     E_NOTIMPL
 }
 
-unsafe extern "C" fn TransactedSharedImpl_LockTransaction(base: *mut StorageBaseImpl, write: BOOL) -> HRESULT {
+unsafe extern "C" fn TransactedSharedImpl_LockTransaction(_base: *mut StorageBaseImpl, _write: BOOL) -> HRESULT {
     E_NOTIMPL
 }
 
 unsafe extern "C" fn TransactedSharedImpl_UnlockTransaction(
-    base: *mut StorageBaseImpl,
-    write: BOOL,
+    _base: *mut StorageBaseImpl,
+    _write: BOOL,
 ) -> HRESULT {
     E_NOTIMPL
 }
@@ -9286,8 +9286,8 @@ unsafe fn STREAM_WriteString(stm: *mut IStream, string: LPCWSTR) -> HRESULT {
 unsafe fn STREAM_ReadString(stm: *mut IStream, string: *mut LPWSTR) -> HRESULT {
     let mut len: DWORD = 0;
     let mut count: DWORD = 0;
-    let mut str: LPSTR;
-    let mut wstr: LPWSTR;
+    let str: LPSTR;
+    let wstr: LPWSTR;
 
     let mut r = IStream_Read(stm, &mut len as *mut _ as LPVOID, core::mem::size_of::<DWORD>() as ULONG, &mut count);
     if FAILED(r) {
@@ -9331,7 +9331,7 @@ unsafe fn STREAM_ReadString(stm: *mut IStream, string: *mut LPWSTR) -> HRESULT {
 
 #[no_mangle]
 pub unsafe extern "system" fn StgIsStorageFile(fn_: LPCOLESTR) -> HRESULT {
-    let mut hf: *mut core::ffi::c_void;
+    let hf: *mut core::ffi::c_void;
     let mut magic: [u8; 8] = [0; 8];
     let mut bytes_read: u32 = 0;
 
@@ -9401,7 +9401,7 @@ pub unsafe extern "system" fn WriteClassStm(pStm: *mut IStream, rclsid: *const C
 #[no_mangle]
 pub unsafe extern "system" fn ReadClassStm(pStm: *mut IStream, pclsid: *mut CLSID) -> HRESULT {
     let mut nbByte: ULONG = 0;
-    let mut res: HRESULT;
+    let res: HRESULT;
 
     
 
@@ -9727,7 +9727,7 @@ unsafe fn OLECONVERT_CreateOlePresStream(
     );
 
     if hRes == 0 {
-        let mut nHeaderSize: DWORD;
+        let nHeaderSize: DWORD;
         let mut OlePres: OLECONVERT_ISTORAGE_OLEPRES = core::mem::zeroed();
 
         memset(&mut OlePres as *mut _ as *mut core::ffi::c_void, 0, core::mem::size_of::<OLECONVERT_ISTORAGE_OLEPRES>());

@@ -174,7 +174,7 @@ pub unsafe extern "system" fn LpcpFreeConMsg(
     let mut section_to_map: PVOID;
     let reply_message: PLPCP_MESSAGE;
 
-    KeAcquireGuardedMutex(&mut LpcpLock);
+    KeAcquireGuardedMutex(&raw mut LpcpLock);
 
     if !IsListEmpty(core::ptr::addr_of_mut!((*current_thread).__bindgen_anon_1.LpcReplyChain)) {
         RemoveEntryList(core::ptr::addr_of_mut!((*current_thread).__bindgen_anon_1.LpcReplyChain));
@@ -201,7 +201,7 @@ pub unsafe extern "system" fn LpcpFreeConMsg(
         section_to_map = core::ptr::null_mut();
     }
 
-    KeReleaseGuardedMutex(&mut LpcpLock);
+    KeReleaseGuardedMutex(&raw mut LpcpLock);
     section_to_map
 }
 
@@ -540,7 +540,7 @@ pub unsafe extern "system" fn NtSecureConnectPort(
 
     status = STATUS_SUCCESS;
 
-    KeAcquireGuardedMutex(&mut LpcpLock);
+    KeAcquireGuardedMutex(&raw mut LpcpLock);
 
     if lpcp_check_name_deleted(port) {
         status = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -572,7 +572,7 @@ pub unsafe extern "system" fn NtSecureConnectPort(
 
     ObReferenceObject(port as PVOID);
 
-    KeReleaseGuardedMutex(&mut LpcpLock);
+    KeReleaseGuardedMutex(&raw mut LpcpLock);
 
     if status >= 0 {
         if (core::ptr::read_volatile(&(*port).Flags as *const ULONG) & LPCP_WAITABLE_PORT) != 0 {
@@ -677,7 +677,7 @@ pub unsafe extern "system" fn NtSecureConnectPort(
                 ObDereferenceObject(section_to_map);
             }
 
-            KeAcquireGuardedMutex(&mut LpcpLock);
+            KeAcquireGuardedMutex(&raw mut LpcpLock);
 
             if (*client_port).ConnectionPort.is_null() || lpcp_check_name_deleted(port)
             {
@@ -686,7 +686,7 @@ pub unsafe extern "system" fn NtSecureConnectPort(
                 status = STATUS_PORT_CONNECTION_REFUSED;
             }
 
-            KeReleaseGuardedMutex(&mut LpcpLock);
+            KeReleaseGuardedMutex(&raw mut LpcpLock);
 
             ObDereferenceObject(client_port as PVOID);
         }

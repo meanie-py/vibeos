@@ -1,14 +1,8 @@
 use winsrv_sys::nt::*;
 use super::{wcslen, wcsrchr, wcsncpy, _wcsicmp, PrivateExtractIconsW};
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
 use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::handle::*;
 use super::term::*;
-use super::lineinput::*;
 use super::history::*;
-use super::init::*;
 use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -86,7 +80,7 @@ extern "system" {
     pub fn IPersistFile_Load(ppf: LPVOID, pszFileName: *const WCHAR, dwMode: DWORD) -> HRESULT;
     pub fn IPersistFile_Release(ppf: LPVOID) -> ULONG;
 }
-extern {
+extern "C" {
     pub static CLSID_ShellLink: GUID;
     pub static IID_IShellLinkW: GUID;
     pub static IID_IPersistFile: GUID;
@@ -164,7 +158,7 @@ pub(crate) unsafe fn InsertConsole(
 
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut i: ULONG = 0;
-    let mut Block: *mut PCONSRV_CONSOLE;
+    let Block: *mut PCONSRV_CONSOLE;
 
     ConSrvLockConsoleListExclusive();
 
@@ -210,7 +204,7 @@ pub(crate) unsafe fn InsertConsole(
 
 pub(crate) unsafe fn RemoveConsoleByHandle(Handle: HANDLE) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut Console: PCONSRV_CONSOLE;
+    let Console: PCONSRV_CONSOLE;
 
     let ValidHandle: u8 = if (HandleToULong(Handle) & 0x3) == 0x3 { 1 } else { 0 };
     let Index: ULONG = HandleToULong(Handle) >> 2;
@@ -433,7 +427,7 @@ pub unsafe extern "system" fn ConSrvInitConsole(
     let ConsoleInfo: PCONSOLE_STATE_INFO = ConsoleInfoBuffer.as_mut_ptr() as PCONSOLE_STATE_INFO;
     let mut DrvConsoleInfo: CONSOLE_INFO = core::mem::zeroed();
 
-    let mut Length: usize;
+    let Length: usize;
 
     let mut Terminal: TERMINAL = core::mem::zeroed();
 

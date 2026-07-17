@@ -16,11 +16,11 @@ extern "C" {
 // global fast-mutex; inline them (a C shim can't reach g_FreeTypeLock once the C is gone).
 #[inline(always)]
 unsafe fn IntLockFreeType() {
-    ntkrnl_sys::ddk::ExEnterCriticalRegionAndAcquireFastMutexUnsafe((g_FreeTypeLock as _));
+    ntkrnl_sys::ddk::ExEnterCriticalRegionAndAcquireFastMutexUnsafe(g_FreeTypeLock as _ );
 }
 #[inline(always)]
 unsafe fn IntUnLockFreeType() {
-    ntkrnl_sys::ddk::ExReleaseFastMutexUnsafeAndLeaveCriticalRegion((g_FreeTypeLock as _));
+    ntkrnl_sys::ddk::ExReleaseFastMutexUnsafeAndLeaveCriticalRegion(g_FreeTypeLock as _ );
 }
 
 // ---- integration preamble (consts/macros/globals the translation needs) ----
@@ -556,7 +556,7 @@ unsafe fn FontLink_LoadSettings() -> NTSTATUS {
         s_chFontLinkDefaultChar = dwValue;
     }
 
-    ZwClose((hKey as _));
+    ZwClose(hKey as _ );
     STATUS_SUCCESS
 }
 
@@ -613,7 +613,7 @@ unsafe fn FontLink_LoadDefaultFonts() -> NTSTATUS {
         );
     }
 
-    ZwClose((hKey as _));
+    ZwClose(hKey as _ );
     STATUS_SUCCESS
 }
 
@@ -722,7 +722,7 @@ unsafe fn FontLink_Chain_Finish(pChain: PFONTLINK_CHAIN) {
         return;
     }
 
-    pCache = ExAllocatePoolWithTag(PagedPool, (core::mem::size_of::<FONTLINK_CACHE>() as SIZE_T as _), TAG_FONT) as PFONTLINK_CACHE;
+    pCache = ExAllocatePoolWithTag(PagedPool, core::mem::size_of::<FONTLINK_CACHE>() as SIZE_T as _ , TAG_FONT) as PFONTLINK_CACHE;
     if pCache.is_null() {
         return;
     }
@@ -827,12 +827,12 @@ unsafe fn SharedMem_AddRef(Ptr: PSHARED_MEM) {
 
 unsafe fn SharedFaceCache_Init(Cache: PSHARED_FACE_CACHE) {
     (*Cache).OutlineRequiredSize = 0;
-    RtlInitUnicodeString((core::ptr::addr_of_mut!((*Cache).FontFamily) as _), core::ptr::null_mut());
-    RtlInitUnicodeString((core::ptr::addr_of_mut!((*Cache).FullName) as _), core::ptr::null_mut());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!((*Cache).FontFamily) as _ , core::ptr::null_mut());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!((*Cache).FullName) as _ , core::ptr::null_mut());
 }
 
 unsafe fn SharedFace_Create(Face: FT_Face, Memory: PSHARED_MEM) -> PSHARED_FACE {
-    let Ptr: PSHARED_FACE = ExAllocatePoolWithTag(PagedPool, (core::mem::size_of::<SHARED_FACE>() as u64 as _), TAG_FONT) as PSHARED_FACE;
+    let Ptr: PSHARED_FACE = ExAllocatePoolWithTag(PagedPool, core::mem::size_of::<SHARED_FACE>() as u64 as _ , TAG_FONT) as PSHARED_FACE;
     if !Ptr.is_null() {
         (*Ptr).Face = Face;
         (*Ptr).RefCount = 1;
@@ -846,9 +846,9 @@ unsafe fn SharedFace_Create(Face: FT_Face, Memory: PSHARED_MEM) -> PSHARED_FACE 
 }
 
 unsafe fn SharedMem_Create(Buffer: PBYTE, BufferSize: ULONG, IsMapping: BOOL) -> PSHARED_MEM {
-    let Ptr: PSHARED_MEM = ExAllocatePoolWithTag(PagedPool, (core::mem::size_of::<SHARED_MEM>() as SIZE_T as _), TAG_FONT) as PSHARED_MEM;
+    let Ptr: PSHARED_MEM = ExAllocatePoolWithTag(PagedPool, core::mem::size_of::<SHARED_MEM>() as SIZE_T as _ , TAG_FONT) as PSHARED_MEM;
     if !Ptr.is_null() {
-        (*Ptr).Buffer = (Buffer as _);
+        (*Ptr).Buffer = Buffer as _ ;
         (*Ptr).BufferSize = BufferSize;
         (*Ptr).RefCount = 1;
         (*Ptr).IsMapping = IsMapping;
@@ -902,8 +902,8 @@ unsafe fn SharedMem_Release(Ptr: PSHARED_MEM) {
 }
 
 unsafe fn SharedFaceCache_Release(Cache: PSHARED_FACE_CACHE) {
-    RtlFreeUnicodeString((core::ptr::addr_of_mut!((*Cache).FontFamily) as _));
-    RtlFreeUnicodeString((core::ptr::addr_of_mut!((*Cache).FullName) as _));
+    RtlFreeUnicodeString(core::ptr::addr_of_mut!((*Cache).FontFamily) as _ );
+    RtlFreeUnicodeString(core::ptr::addr_of_mut!((*Cache).FullName) as _ );
 }
 
 unsafe fn SharedFace_Release(Ptr: PSHARED_FACE, bDoLock: BOOL) {
@@ -1067,26 +1067,26 @@ unsafe fn DumpPrivateFontList(bDoLock: BOOL) {
 
     if bDoLock != 0 {
         IntLockFreeType();
-        IntLockProcessPrivateFonts((Win32Process as _));
+        IntLockProcessPrivateFonts(Win32Process as _ );
     }
 
     DumpFontList(core::ptr::addr_of_mut!((*Win32Process).PrivateFontListHead));
 
     if bDoLock != 0 {
-        IntUnLockProcessPrivateFonts((Win32Process as _));
+        IntUnLockProcessPrivateFonts(Win32Process as _ );
         IntUnLockFreeType();
     }
 }
 
 unsafe fn DumpGlobalFontList(bDoLock: BOOL) {
     if bDoLock != 0 {
-        ExEnterCriticalRegionAndAcquireFastMutexUnsafe((g_FreeTypeLock as _));
+        ExEnterCriticalRegionAndAcquireFastMutexUnsafe(g_FreeTypeLock as _ );
     }
 
     DumpFontList(core::ptr::addr_of_mut!(g_FontListHead));
 
     if bDoLock != 0 {
-        ExReleaseFastMutexUnsafeAndLeaveCriticalRegion((g_FreeTypeLock as _));
+        ExReleaseFastMutexUnsafeAndLeaveCriticalRegion(g_FreeTypeLock as _ );
     }
 }
 
@@ -1138,7 +1138,7 @@ unsafe fn IntLoadFontSubstList_impl(pHead: PLIST_ENTRY) -> BOOL {
     Status = ZwOpenKey(
         &mut KeyHandle,
         KEY_READ,
-        (core::ptr::addr_of_mut!(ObjectAttributes) as _),
+        core::ptr::addr_of_mut!(ObjectAttributes) as _ ,
     );
     if !NT_SUCCESS(Status) {
         return 0u8 as BOOL;
@@ -1173,14 +1173,14 @@ unsafe fn IntLoadFontSubstList_impl(pHead: PLIST_ENTRY) -> BOOL {
         pInfo = InfoBuffer.as_mut_ptr() as PKEY_VALUE_FULL_INFORMATION;
         Length = (*pInfo).NameLength / core::mem::size_of::<u16>() as ULONG;
         *(*pInfo).Name.as_mut_ptr().add(Length as usize) = 0;
-        if RtlCreateUnicodeString((core::ptr::addr_of_mut!(FromW) as _), (*pInfo).Name.as_ptr()) == 0 {
+        if RtlCreateUnicodeString(core::ptr::addr_of_mut!(FromW) as _ , (*pInfo).Name.as_ptr()) == 0 {
             Status = STATUS_INSUFFICIENT_RESOURCES;
             break;
         }
 
         Status = ZwQueryValueKey(
             KeyHandle,
-            (core::ptr::addr_of_mut!(FromW) as _),
+            core::ptr::addr_of_mut!(FromW) as _ ,
             KeyValueFullInformation,
             InfoBuffer.as_mut_ptr() as *mut core::ffi::c_void,
             core::mem::size_of_val(&InfoBuffer) as ULONG,
@@ -1188,16 +1188,16 @@ unsafe fn IntLoadFontSubstList_impl(pHead: PLIST_ENTRY) -> BOOL {
         );
         pInfo = InfoBuffer.as_mut_ptr() as PKEY_VALUE_FULL_INFORMATION;
         if !NT_SUCCESS(Status) || (*pInfo).DataLength == 0 {
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(FromW) as _));
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(FromW) as _ );
             break;
         }
 
         pch = ((pInfo as *mut u8).add((*pInfo).DataOffset as usize)) as LPWSTR;
         Length = (*pInfo).DataLength / core::mem::size_of::<u16>() as ULONG;
         *pch.add(Length as usize) = 0;
-        if RtlCreateUnicodeString((core::ptr::addr_of_mut!(ToW) as _), pch) == 0 {
+        if RtlCreateUnicodeString(core::ptr::addr_of_mut!(ToW) as _ , pch) == 0 {
             Status = STATUS_INSUFFICIENT_RESOURCES;
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(FromW) as _));
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(FromW) as _ );
             break;
         }
 
@@ -1220,8 +1220,8 @@ unsafe fn IntLoadFontSubstList_impl(pHead: PLIST_ENTRY) -> BOOL {
         if RtlEqualUnicodeString(&FromW, &ToW, 1u8) != 0
             && CharSets[FONTSUBST_FROM as usize] == CharSets[FONTSUBST_TO as usize]
         {
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(FromW) as _));
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(ToW) as _));
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(FromW) as _ );
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(ToW) as _ );
             i += 1;
             continue;
         }
@@ -1232,8 +1232,8 @@ unsafe fn IntLoadFontSubstList_impl(pHead: PLIST_ENTRY) -> BOOL {
             TAG_FONT,
         ) as *mut FONTSUBST_ENTRY;
         if pEntry.is_null() {
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(FromW) as _));
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(ToW) as _));
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(FromW) as _ );
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(ToW) as _ );
             break;
         }
 
@@ -1321,15 +1321,15 @@ unsafe fn InitFontSupport_impl() -> BOOL {
 
     g_FreeTypeLock = ExAllocatePoolWithTag(
         NonPagedPool,
-        (core::mem::size_of::<FAST_MUTEX>() as SIZE_T as _),
+        core::mem::size_of::<FAST_MUTEX>() as SIZE_T as _ ,
         TAG_INTERNAL_SYNC,
     ) as PFAST_MUTEX;
     if g_FreeTypeLock.is_null() {
         return 0;
     }
-    ExInitializeFastMutex((g_FreeTypeLock as _));
+    ExInitializeFastMutex(g_FreeTypeLock as _ );
 
-    ulError = FT_Init_FreeType(&mut g_FreeTypeLibrary) as ULONG;
+    ulError = FT_Init_FreeType(&raw mut g_FreeTypeLibrary) as ULONG;
     if ulError != 0 {
         return 0;
     }
@@ -1552,7 +1552,7 @@ unsafe fn SubstituteFontRecurse(pLogFont: PLOGFONTW) -> BOOL {
         return FALSE as BOOL;
     }
 
-    RtlInitUnicodeString((core::ptr::addr_of_mut!(InputNameW) as _), (*pLogFont).lfFaceName.as_ptr());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(InputNameW) as _ , (*pLogFont).lfFaceName.as_ptr());
 
     while {
         let old = RecurseCount;
@@ -1575,7 +1575,7 @@ unsafe fn SubstituteFontRecurse(pLogFont: PLOGFONTW) -> BOOL {
             core::mem::size_of_val(&(*pLogFont).lfFaceName),
             &mut OutputNameW,
         );
-        RtlInitUnicodeString((core::ptr::addr_of_mut!(InputNameW) as _), (*pLogFont).lfFaceName.as_ptr());
+        RtlInitUnicodeString(core::ptr::addr_of_mut!(InputNameW) as _ , (*pLogFont).lfFaceName.as_ptr());
 
         if CharSetMap[FONTSUBST_FROM as usize] == DEFAULT_CHARSET as BYTE
             || CharSetMap[FONTSUBST_FROM as usize] == (*pLogFont).lfCharSet
@@ -1642,9 +1642,9 @@ unsafe fn FontLink_Chain_LoadReg(
     if Status == STATUS_BUFFER_OVERFLOW || Status == STATUS_BUFFER_TOO_SMALL {
         if cbData as usize >= 2 * core::mem::size_of::<WCHAR>() {
             FontLinkSize = cbData as SIZE_T;
-            pszzFontLink = ExAllocatePoolWithTag(PagedPool, (FontLinkSize as _), TAG_FONT) as PZZWSTR;
+            pszzFontLink = ExAllocatePoolWithTag(PagedPool, FontLinkSize as _ , TAG_FONT) as PZZWSTR;
             if pszzFontLink.is_null() {
-                ZwClose((hKey as _));
+                ZwClose(hKey as _ );
                 return STATUS_NO_MEMORY;
             }
             Status = RegQueryValue(
@@ -1661,7 +1661,7 @@ unsafe fn FontLink_Chain_LoadReg(
         }
     }
 
-    ZwClose((hKey as _));
+    ZwClose(hKey as _ );
 
     if !NT_SUCCESS(Status) {
         if (*pLF).lfPitchAndFamily as u32 & FIXED_PITCH == 0 {
@@ -1688,15 +1688,15 @@ unsafe fn FontLink_Chain_LoadReg(
         szzFontLink[count - 1] = UNICODE_NULL as u16;
         szzFontLink[count - 2] = UNICODE_NULL as u16;
 
-        FontLinkSize = (SZZ_GetSize(szzFontLink.as_ptr()) as _);
-        pszzFontLink = ExAllocatePoolWithTag(PagedPool, (FontLinkSize as _), TAG_FONT) as PZZWSTR;
+        FontLinkSize = SZZ_GetSize(szzFontLink.as_ptr()) as _ ;
+        pszzFontLink = ExAllocatePoolWithTag(PagedPool, FontLinkSize as _ , TAG_FONT) as PZZWSTR;
         if pszzFontLink.is_null() {
             return STATUS_NO_MEMORY;
         }
         RtlCopyMemory(
             pszzFontLink as *mut core::ffi::c_void,
             szzFontLink.as_ptr() as *const core::ffi::c_void,
-            (FontLinkSize as _),
+            FontLinkSize as _ ,
         );
     }
     (*pChain).pszzFontLink = pszzFontLink;
@@ -1766,7 +1766,7 @@ unsafe fn FontLink_Create(
 
     let pLink: PFONTLINK = ExAllocatePoolZero(
         PagedPool,
-        (core::mem::size_of::<FONTLINK>() as _),
+        core::mem::size_of::<FONTLINK>() as _ ,
         TAG_FONT,
     ) as PFONTLINK;
     if pLink.is_null() {
@@ -2116,20 +2116,20 @@ unsafe fn IntGdiLoadFontsFromMemory_impl(
     }
     IntUnLockFreeType();
 
-    RtlInitAnsiString((core::ptr::addr_of_mut!(AnsiString) as _), (*Face).family_name);
+    RtlInitAnsiString(core::ptr::addr_of_mut!(AnsiString) as _ , (*Face).family_name);
     Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!((*Entry).FaceName), &mut AnsiString, 1u8);
     if NT_SUCCESS(Status) {
         if !(*Face).style_name.is_null()
             && *(*Face).style_name != 0
             && strcmp((*Face).style_name, b"Regular\0".as_ptr() as PCHAR) != 0
         {
-            RtlInitAnsiString((core::ptr::addr_of_mut!(AnsiString) as _), (*Face).style_name);
+            RtlInitAnsiString(core::ptr::addr_of_mut!(AnsiString) as _ , (*Face).style_name);
             Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!((*Entry).StyleName), &mut AnsiString, 1u8);
             if !NT_SUCCESS(Status) {
-                RtlFreeUnicodeString((core::ptr::addr_of_mut!((*Entry).FaceName) as _));
+                RtlFreeUnicodeString(core::ptr::addr_of_mut!((*Entry).FaceName) as _ );
             }
         } else {
-            RtlInitUnicodeString((core::ptr::addr_of_mut!((*Entry).StyleName) as _), core::ptr::null_mut());
+            RtlInitUnicodeString(core::ptr::addr_of_mut!((*Entry).StyleName) as _ , core::ptr::null_mut());
         }
     }
     if !NT_SUCCESS(Status) {
@@ -2199,13 +2199,13 @@ unsafe fn IntGdiLoadFontsFromMemory_impl(
 
     IntLockFreeType();
     if (Characteristics & FR_PRIVATE) != 0 {
-        let Win32Process: PPROCESSINFO = (PsGetCurrentProcessWin32Process() as _);
-        IntLockProcessPrivateFonts((Win32Process as _));
+        let Win32Process: PPROCESSINFO = PsGetCurrentProcessWin32Process() as _ ;
+        IntLockProcessPrivateFonts(Win32Process as _ );
         InsertTailList(
             core::ptr::addr_of_mut!((*Win32Process).PrivateFontListHead),
             core::ptr::addr_of_mut!((*Entry).ListEntry),
         );
-        IntUnLockProcessPrivateFonts((Win32Process as _));
+        IntUnLockProcessPrivateFonts(Win32Process as _ );
     } else {
         InsertTailList(
             core::ptr::addr_of_mut!(g_FontListHead),
@@ -2237,14 +2237,14 @@ unsafe fn IntGdiLoadFontsFromMemory_impl(
             *NewString.Buffer = 0;
 
             RtlAppendUnicodeStringToString(&mut NewString, pValueName);
-            RtlAppendUnicodeToString((core::ptr::addr_of_mut!(NewString) as _), w_str_amp());
+            RtlAppendUnicodeToString(core::ptr::addr_of_mut!(NewString) as _ , w_str_amp());
             RtlAppendUnicodeStringToString(&mut NewString, core::ptr::addr_of_mut!((*Entry).FaceName));
 
-            RtlFreeUnicodeString((pValueName as _));
+            RtlFreeUnicodeString(pValueName as _ );
             *pValueName = NewString;
         }
         if (*Entry).StyleName.Length != 0 {
-            RtlAppendUnicodeToString((pValueName as _), w_str_space());
+            RtlAppendUnicodeToString(pValueName as _ , w_str_space());
             RtlAppendUnicodeStringToString(pValueName, core::ptr::addr_of_mut!((*Entry).StyleName));
         }
 
@@ -2291,7 +2291,7 @@ unsafe fn IntGdiLoadFontByIndexFromMemory_impl(
 
     Error = FT_New_Memory_Face(
         g_FreeTypeLibrary,
-        ((*(*pLoadFont).Memory).Buffer as _),
+        (*(*pLoadFont).Memory).Buffer as _ ,
         (*(*pLoadFont).Memory).BufferSize as FT_Long,
         if FontIndex == -1 { 0 } else { FontIndex },
         core::ptr::addr_of_mut!(Face),
@@ -2374,16 +2374,16 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
         Length = (DosPathPrefix.Length as SIZE_T)
             + ((*FileName).Length as SIZE_T)
             + core::mem::size_of::<u16>() as SIZE_T;
-        pszBuffer = ExAllocatePoolWithTag(PagedPool, (Length as _), TAG_USTR) as LPWSTR;
+        pszBuffer = ExAllocatePoolWithTag(PagedPool, Length as _ , TAG_USTR) as LPWSTR;
         if pszBuffer.is_null() {
             return 0;
         }
 
         RtlInitEmptyUnicodeString(&mut PathName, pszBuffer, Length as USHORT);
-        RtlAppendUnicodeStringToString(&mut PathName, &DosPathPrefix);
+        RtlAppendUnicodeStringToString(&mut PathName, &raw const DosPathPrefix);
         RtlAppendUnicodeStringToString(&mut PathName, FileName);
     } else {
-        Status = IntDuplicateUnicodeString((FileName as _), &mut PathName);
+        Status = IntDuplicateUnicodeString(FileName as _ , &mut PathName);
         if !NT_SUCCESS(Status) {
             return 0;
         }
@@ -2406,7 +2406,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
         FILE_SYNCHRONOUS_IO_NONALERT,
     );
     if !NT_SUCCESS(Status) {
-        RtlFreeUnicodeString((core::ptr::addr_of_mut!(PathName) as _));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(PathName) as _ );
         return 0;
     }
 
@@ -2420,7 +2420,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
     );
     if !NT_SUCCESS(Status) {
         ZwClose(FileHandle);
-        RtlFreeUnicodeString((core::ptr::addr_of_mut!(PathName) as _));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(PathName) as _ );
         return 0;
     }
 
@@ -2438,7 +2438,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
     if !NT_SUCCESS(Status) {
         ZwClose(FileHandle);
         ObDereferenceObject(FileObject as PVOID);
-        RtlFreeUnicodeString((core::ptr::addr_of_mut!(PathName) as _));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(PathName) as _ );
         return 0;
     }
     ZwClose(FileHandle);
@@ -2447,7 +2447,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
     if !NT_SUCCESS(Status) {
         ObDereferenceObject(SectionObject);
         ObDereferenceObject(FileObject as PVOID);
-        RtlFreeUnicodeString((core::ptr::addr_of_mut!(PathName) as _));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(PathName) as _ );
         return 0;
     }
 
@@ -2458,7 +2458,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
     LoadFont.pFileName = &mut PathName;
     LoadFont.Memory = SharedMem_Create(Buffer as PBYTE, ViewSize as ULONG, 1);
     LoadFont.Characteristics = Characteristics;
-    RtlInitUnicodeString((core::ptr::addr_of_mut!(LoadFont.RegValueName) as _), core::ptr::null_mut());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(LoadFont.RegValueName) as _ , core::ptr::null_mut());
     LoadFont.CharSet = DEFAULT_CHARSET as u8;
     FontCount = IntGdiLoadFontByIndexFromMemory(&mut LoadFont, -1);
 
@@ -2482,13 +2482,13 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
             let Length2 = (LoadFont.RegValueName.Length as SIZE_T)
                 + (TrueTypePostfix.Length as SIZE_T)
                 + core::mem::size_of::<u16>() as SIZE_T;
-            let pszBuffer2 = ExAllocatePoolWithTag(PagedPool, (Length2 as _), TAG_USTR) as PWCHAR;
+            let pszBuffer2 = ExAllocatePoolWithTag(PagedPool, Length2 as _ , TAG_USTR) as PWCHAR;
             if !pszBuffer2.is_null() {
                 RtlInitEmptyUnicodeString(&mut NewString, pszBuffer2, Length2 as USHORT);
                 *NewString.Buffer.offset(0) = 0;
                 RtlAppendUnicodeStringToString(&mut NewString, &LoadFont.RegValueName);
                 RtlAppendUnicodeStringToString(&mut NewString, &TrueTypePostfix);
-                RtlFreeUnicodeString((core::ptr::addr_of_mut!(LoadFont.RegValueName) as _));
+                RtlFreeUnicodeString(core::ptr::addr_of_mut!(LoadFont.RegValueName) as _ );
                 LoadFont.RegValueName = NewString;
             }
         } else if LoadFont.CharSet != DEFAULT_CHARSET as u8 {
@@ -2498,18 +2498,18 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
                 + ((wcslen(CharSetName) + 3) * core::mem::size_of::<u16>()) as SIZE_T
                 + core::mem::size_of::<u16>() as SIZE_T;
 
-            pszBuffer = ExAllocatePoolWithTag(PagedPool, (Length as _), TAG_USTR) as PWCHAR;
+            pszBuffer = ExAllocatePoolWithTag(PagedPool, Length as _ , TAG_USTR) as PWCHAR;
             if !pszBuffer.is_null() {
                 RtlInitEmptyUnicodeString(&mut NewString, pszBuffer, Length as USHORT);
                 *NewString.Buffer.offset(0) = 0;
                 RtlAppendUnicodeStringToString(&mut NewString, &LoadFont.RegValueName);
                 RtlAppendUnicodeToString(
-                    (core::ptr::addr_of_mut!(NewString) as _),
+                    core::ptr::addr_of_mut!(NewString) as _ ,
                     w!(" (").as_ptr() as PCWSTR,
                 );
-                RtlAppendUnicodeToString((core::ptr::addr_of_mut!(NewString) as _), CharSetName);
-                RtlAppendUnicodeToString((core::ptr::addr_of_mut!(NewString) as _), w!(")").as_ptr() as PCWSTR);
-                RtlFreeUnicodeString((core::ptr::addr_of_mut!(LoadFont.RegValueName) as _));
+                RtlAppendUnicodeToString(core::ptr::addr_of_mut!(NewString) as _ , CharSetName);
+                RtlAppendUnicodeToString(core::ptr::addr_of_mut!(NewString) as _ , w!(")").as_ptr() as PCWSTR);
+                RtlFreeUnicodeString(core::ptr::addr_of_mut!(LoadFont.RegValueName) as _ );
                 LoadFont.RegValueName = NewString;
             }
         }
@@ -2517,11 +2517,11 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
         ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
         ObjectAttributes.RootDirectory = core::ptr::null_mut();
         ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
-        ObjectAttributes.ObjectName = &mut g_FontRegPath;
+        ObjectAttributes.ObjectName = &raw mut g_FontRegPath;
         ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-        Status = ZwOpenKey(&mut KeyHandle, KEY_WRITE, (core::ptr::addr_of_mut!(ObjectAttributes) as _));
+        Status = ZwOpenKey(&mut KeyHandle, KEY_WRITE, core::ptr::addr_of_mut!(ObjectAttributes) as _ );
         if NT_SUCCESS(Status) {
             let DataSize: SIZE_T;
             let mut pFileName: LPWSTR;
@@ -2529,7 +2529,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
             if (dwFlags & AFRX_ALTERNATIVE_PATH) != 0 {
                 pFileName = PathName.Buffer;
             } else {
-                pFileName = wcsrchr(PathName.Buffer, ('\\' as u16 as i32 as _));
+                pFileName = wcsrchr(PathName.Buffer, '\\' as u16 as i32 as _ );
             }
 
             if !pFileName.is_null() {
@@ -2539,7 +2539,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
                 DataSize = ((wcslen(pFileName) + 1) * core::mem::size_of::<u16>()) as SIZE_T;
                 ZwSetValueKey(
                     KeyHandle,
-                    (core::ptr::addr_of_mut!(LoadFont.RegValueName) as _),
+                    core::ptr::addr_of_mut!(LoadFont.RegValueName) as _ ,
                     0,
                     REG_SZ,
                     pFileName as PVOID,
@@ -2549,9 +2549,9 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
             ZwClose(KeyHandle);
         }
     }
-    RtlFreeUnicodeString((core::ptr::addr_of_mut!(LoadFont.RegValueName) as _));
+    RtlFreeUnicodeString(core::ptr::addr_of_mut!(LoadFont.RegValueName) as _ );
 
-    RtlFreeUnicodeString((core::ptr::addr_of_mut!(PathName) as _));
+    RtlFreeUnicodeString(core::ptr::addr_of_mut!(PathName) as _ );
     FontCount
 }
 
@@ -2590,7 +2590,7 @@ unsafe fn IntGdiAddFontResourceEx_impl(
     while cFiles != 0 {
         cFiles -= 1;
 
-        cchFile = (wcslen(pchFile) as _);
+        cchFile = wcslen(pchFile) as _ ;
 
         let mut ustrPathName: _UNICODE_STRING = core::mem::zeroed();
         ustrPathName.Length = ((cchFile as usize) * core::mem::size_of::<WCHAR>()) as USHORT;
@@ -2633,7 +2633,7 @@ unsafe fn IntDeleteRegFontEntries(pszFileName: PCWSTR, dwFlags: DWORD) {
         NameLength = RTL_NUMBER_OF!(szName) as ULONG;
         ValueSize = core::mem::size_of_val(&szValue) as ULONG;
         Status = RegEnumValueW(
-            (hKey as _),
+            hKey as _ ,
             dwIndex,
             szName.as_mut_ptr(),
             &mut NameLength,
@@ -2650,7 +2650,7 @@ unsafe fn IntDeleteRegFontEntries(pszFileName: PCWSTR, dwFlags: DWORD) {
             continue;
         }
 
-        Status = RegDeleteValueW((hKey as _), szName.as_ptr());
+        Status = RegDeleteValueW(hKey as _ , szName.as_ptr());
         if !NT_SUCCESS(Status) {
             break;
         }
@@ -2696,16 +2696,16 @@ unsafe fn IntGdiRemoveFontResourceSingle_impl(
         Length = (DosPathPrefix.Length as SIZE_T)
             + ((*FileName).Length as SIZE_T)
             + core::mem::size_of::<u16>() as SIZE_T;
-        pszBuffer = ExAllocatePoolWithTag(PagedPool, (Length as _), TAG_USTR) as PWSTR;
+        pszBuffer = ExAllocatePoolWithTag(PagedPool, Length as _ , TAG_USTR) as PWSTR;
         if pszBuffer.is_null() {
             return 0;
         }
 
         RtlInitEmptyUnicodeString(&mut PathName, pszBuffer, Length as USHORT);
-        RtlAppendUnicodeStringToString(&mut PathName, &DosPathPrefix);
+        RtlAppendUnicodeStringToString(&mut PathName, &raw const DosPathPrefix);
         RtlAppendUnicodeStringToString(&mut PathName, FileName);
     } else {
-        Status = IntDuplicateUnicodeString((FileName as _), &mut PathName);
+        Status = IntDuplicateUnicodeString(FileName as _ , &mut PathName);
         if !NT_SUCCESS(Status) {
             return 0;
         }
@@ -2717,7 +2717,7 @@ unsafe fn IntGdiRemoveFontResourceSingle_impl(
     }
 
     if pszFileTitle.is_null() || *pszFileTitle == 0 {
-        RtlFreeUnicodeString((core::ptr::addr_of_mut!(PathName) as _));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(PathName) as _ );
         return 0;
     }
 
@@ -2745,7 +2745,7 @@ unsafe fn IntGdiRemoveFontResourceSingle_impl(
     }
     IntUnLockFreeType();
 
-    RtlFreeUnicodeString((core::ptr::addr_of_mut!(PathName) as _));
+    RtlFreeUnicodeString(core::ptr::addr_of_mut!(PathName) as _ );
     ret
 }
 
@@ -2839,7 +2839,7 @@ unsafe fn IntLoadFontsInRegistry_impl() -> BOOL {
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    Status = ZwOpenKey(&mut KeyHandle, KEY_READ, (core::ptr::addr_of_mut!(ObjectAttributes) as _));
+    Status = ZwOpenKey(&mut KeyHandle, KEY_READ, core::ptr::addr_of_mut!(ObjectAttributes) as _ );
     if !NT_SUCCESS(Status) {
         return 0;
     }
@@ -2857,7 +2857,7 @@ unsafe fn IntLoadFontsInRegistry_impl() -> BOOL {
     }
 
     InfoSize = ((MAX_PATH + 256) as usize * core::mem::size_of::<WCHAR>()) as SIZE_T;
-    InfoBuffer = ExAllocatePoolWithTag(PagedPool, (InfoSize as _), TAG_FONT) as LPBYTE;
+    InfoBuffer = ExAllocatePoolWithTag(PagedPool, InfoSize as _ , TAG_FONT) as LPBYTE;
     if InfoBuffer.is_null() {
         ZwClose(KeyHandle);
         return 0;
@@ -2876,7 +2876,7 @@ unsafe fn IntLoadFontsInRegistry_impl() -> BOOL {
         if Status == STATUS_BUFFER_OVERFLOW || Status == STATUS_BUFFER_TOO_SMALL {
             ExFreePoolWithTag(InfoBuffer as *mut _, TAG_FONT);
             InfoSize *= 2;
-            InfoBuffer = ExAllocatePoolWithTag(PagedPool, (InfoSize as _), TAG_FONT) as LPBYTE;
+            InfoBuffer = ExAllocatePoolWithTag(PagedPool, InfoSize as _ , TAG_FONT) as LPBYTE;
             if InfoBuffer.is_null() {
                 break;
             }
@@ -2896,7 +2896,7 @@ unsafe fn IntLoadFontsInRegistry_impl() -> BOOL {
         pInfo = InfoBuffer as PKEY_VALUE_FULL_INFORMATION;
         Length = (*pInfo).NameLength / core::mem::size_of::<WCHAR>() as ULONG;
         *(*pInfo).Name.as_mut_ptr().add(Length as usize) = 0;
-        if RtlCreateUnicodeString((core::ptr::addr_of_mut!(FontTitleW) as _), (*pInfo).Name.as_ptr()) == 0 {
+        if RtlCreateUnicodeString(core::ptr::addr_of_mut!(FontTitleW) as _ , (*pInfo).Name.as_ptr()) == 0 {
             Status = STATUS_INSUFFICIENT_RESOURCES;
             let _ = Status;
             break;
@@ -2904,7 +2904,7 @@ unsafe fn IntLoadFontsInRegistry_impl() -> BOOL {
 
         Status = ZwQueryValueKey(
             KeyHandle,
-            (core::ptr::addr_of_mut!(FontTitleW) as _),
+            core::ptr::addr_of_mut!(FontTitleW) as _ ,
             KeyValueFullInformation,
             InfoBuffer as *mut _,
             InfoSize as ULONG,
@@ -2913,13 +2913,13 @@ unsafe fn IntLoadFontsInRegistry_impl() -> BOOL {
         if Status == STATUS_BUFFER_OVERFLOW || Status == STATUS_BUFFER_TOO_SMALL {
             ExFreePoolWithTag(InfoBuffer as *mut _, TAG_FONT);
             InfoSize *= 2;
-            InfoBuffer = ExAllocatePoolWithTag(PagedPool, (InfoSize as _), TAG_FONT) as LPBYTE;
+            InfoBuffer = ExAllocatePoolWithTag(PagedPool, InfoSize as _ , TAG_FONT) as LPBYTE;
             if InfoBuffer.is_null() {
                 break;
             }
             Status = ZwQueryValueKey(
                 KeyHandle,
-                (core::ptr::addr_of_mut!(FontTitleW) as _),
+                core::ptr::addr_of_mut!(FontTitleW) as _ ,
                 KeyValueFullInformation,
                 InfoBuffer as *mut _,
                 InfoSize as ULONG,
@@ -2928,7 +2928,7 @@ unsafe fn IntLoadFontsInRegistry_impl() -> BOOL {
         }
         pInfo = InfoBuffer as PKEY_VALUE_FULL_INFORMATION;
         if !NT_SUCCESS(Status) || (*pInfo).DataLength == 0 {
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(FontTitleW) as _));
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(FontTitleW) as _ );
             break;
         }
 
@@ -2954,12 +2954,12 @@ unsafe fn IntLoadFontsInRegistry_impl() -> BOOL {
         }
 
         if NT_SUCCESS(Status) {
-            RtlCreateUnicodeString((core::ptr::addr_of_mut!(FileNameW) as _), szPath.as_ptr());
+            RtlCreateUnicodeString(core::ptr::addr_of_mut!(FileNameW) as _ , szPath.as_ptr());
             nFontCount += IntGdiAddFontResourceEx(&FileNameW, 1, 0, dwFlags);
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(FileNameW) as _));
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(FileNameW) as _ );
         }
 
-        RtlFreeUnicodeString((core::ptr::addr_of_mut!(FontTitleW) as _));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(FontTitleW) as _ );
 
         i += 1;
     }
@@ -3007,26 +3007,26 @@ unsafe fn IntGdiAddFontMemResource_impl(
     let EntryCollection: PFONT_ENTRY_COLL_MEM;
     let FaceCount: INT;
 
-    let BufferCopy: PVOID = ExAllocatePoolWithTag(PagedPool, (dwSize as SIZE_T as _), TAG_FONT);
+    let BufferCopy: PVOID = ExAllocatePoolWithTag(PagedPool, dwSize as SIZE_T as _ , TAG_FONT);
     if BufferCopy.is_null() {
         *pNumAdded = 0;
         return core::ptr::null_mut();
     }
-    RtlCopyMemory(BufferCopy, Buffer, (dwSize as SIZE_T as _));
+    RtlCopyMemory(BufferCopy, Buffer, dwSize as SIZE_T as _ );
 
     RtlZeroMemory(
         core::ptr::addr_of_mut!(LoadFont) as PVOID,
-        (core::mem::size_of::<GDI_LOAD_FONT>() as SIZE_T as _),
+        core::mem::size_of::<GDI_LOAD_FONT>() as SIZE_T as _ ,
     );
     LoadFont.Memory = SharedMem_Create(BufferCopy as PBYTE, dwSize, 0);
     LoadFont.Characteristics = FR_PRIVATE | FR_NOT_ENUM;
     RtlInitUnicodeString(
-        (core::ptr::addr_of_mut!(LoadFont.RegValueName) as _),
+        core::ptr::addr_of_mut!(LoadFont.RegValueName) as _ ,
         core::ptr::null_mut(),
     );
     FaceCount = IntGdiLoadFontByIndexFromMemory(core::ptr::addr_of_mut!(LoadFont), -1);
 
-    RtlFreeUnicodeString((core::ptr::addr_of_mut!(LoadFont.RegValueName) as _));
+    RtlFreeUnicodeString(core::ptr::addr_of_mut!(LoadFont.RegValueName) as _ );
 
     IntLockFreeType();
     SharedMem_Release(LoadFont.Memory);
@@ -3035,21 +3035,21 @@ unsafe fn IntGdiAddFontMemResource_impl(
     if FaceCount > 0 {
         EntryCollection = ExAllocatePoolWithTag(
             PagedPool,
-            (core::mem::size_of::<FONT_ENTRY_COLL_MEM>() as SIZE_T as _),
+            core::mem::size_of::<FONT_ENTRY_COLL_MEM>() as SIZE_T as _ ,
             TAG_FONT,
         ) as PFONT_ENTRY_COLL_MEM;
         if !EntryCollection.is_null() {
-            let Win32Process: PPROCESSINFO = (PsGetCurrentProcessWin32Process() as _);
+            let Win32Process: PPROCESSINFO = PsGetCurrentProcessWin32Process() as _ ;
             (*EntryCollection).Entry = LoadFont.PrivateEntry;
             IntLockFreeType();
-            IntLockProcessPrivateFonts((Win32Process as _));
+            IntLockProcessPrivateFonts(Win32Process as _ );
             (*Win32Process).PrivateMemFontHandleCount += 1;
             (*EntryCollection).Handle = ULongToHandle((*Win32Process).PrivateMemFontHandleCount);
             InsertTailList(
                 core::ptr::addr_of_mut!((*Win32Process).PrivateMemFontListHead),
                 core::ptr::addr_of_mut!((*EntryCollection).ListEntry),
             );
-            IntUnLockProcessPrivateFonts((Win32Process as _));
+            IntUnLockProcessPrivateFonts(Win32Process as _ );
             IntUnLockFreeType();
             Ret = (*EntryCollection).Handle;
         }
@@ -3140,10 +3140,10 @@ unsafe fn IntGdiRemoveFontMemResourceImpl(hMMFont: HANDLE) -> BOOL {
     let mut Entry: PLIST_ENTRY;
     let mut CurrentEntry: PFONT_ENTRY_COLL_MEM;
     let mut EntryCollection: PFONT_ENTRY_COLL_MEM = core::ptr::null_mut();
-    let Win32Process: PPROCESSINFO = (PsGetCurrentProcessWin32Process() as _);
+    let Win32Process: PPROCESSINFO = PsGetCurrentProcessWin32Process() as _ ;
 
     IntLockFreeType();
-    IntLockProcessPrivateFonts((Win32Process as _));
+    IntLockProcessPrivateFonts(Win32Process as _ );
 
     Entry = (*Win32Process).PrivateMemFontListHead.Flink;
     while Entry != core::ptr::addr_of_mut!((*Win32Process).PrivateMemFontListHead) {
@@ -3160,7 +3160,7 @@ unsafe fn IntGdiRemoveFontMemResourceImpl(hMMFont: HANDLE) -> BOOL {
         Entry = (*Entry).Flink;
     }
 
-    IntUnLockProcessPrivateFonts((Win32Process as _));
+    IntUnLockProcessPrivateFonts(Win32Process as _ );
     IntUnLockFreeType();
 
     if !EntryCollection.is_null() {
@@ -3185,7 +3185,7 @@ pub unsafe extern "C" fn IntGdiCleanupPrivateFontsForProcess() {
 }
 
 unsafe fn IntGdiCleanupPrivateFontsForProcessImpl() {
-    let Win32Process: PPROCESSINFO = (PsGetCurrentProcessWin32Process() as _);
+    let Win32Process: PPROCESSINFO = PsGetCurrentProcessWin32Process() as _ ;
     let mut Entry: PLIST_ENTRY;
     let mut EntryCollection: PFONT_ENTRY_COLL_MEM;
 
@@ -3198,7 +3198,7 @@ unsafe fn IntGdiCleanupPrivateFontsForProcessImpl() {
         EntryCollection = core::ptr::null_mut();
 
         IntLockFreeType();
-        IntLockProcessPrivateFonts((Win32Process as _));
+        IntLockProcessPrivateFonts(Win32Process as _ );
         if IsListEmpty(core::ptr::addr_of_mut!((*Win32Process).PrivateMemFontListHead)) == 0 {
             Entry = (*Win32Process).PrivateMemFontListHead.Flink;
             EntryCollection = (Entry as *mut u8)
@@ -3206,7 +3206,7 @@ unsafe fn IntGdiCleanupPrivateFontsForProcessImpl() {
                 as PFONT_ENTRY_COLL_MEM;
             UnlinkFontMemCollection(EntryCollection);
         }
-        IntUnLockProcessPrivateFonts((Win32Process as _));
+        IntUnLockProcessPrivateFonts(Win32Process as _ );
         IntUnLockFreeType();
 
         if !EntryCollection.is_null() {
@@ -3215,11 +3215,11 @@ unsafe fn IntGdiCleanupPrivateFontsForProcessImpl() {
         } else {
             Entry = core::ptr::null_mut();
             IntLockFreeType();
-            IntLockProcessPrivateFonts((Win32Process as _));
+            IntLockProcessPrivateFonts(Win32Process as _ );
             if IsListEmpty(core::ptr::addr_of_mut!((*Win32Process).PrivateFontListHead)) == 0 {
                 Entry = RemoveHeadList(core::ptr::addr_of_mut!((*Win32Process).PrivateFontListHead));
             }
-            IntUnLockProcessPrivateFonts((Win32Process as _));
+            IntUnLockProcessPrivateFonts(Win32Process as _ );
             IntUnLockFreeType();
 
             if !Entry.is_null() {
@@ -3307,7 +3307,7 @@ unsafe fn TextIntCreateFontIndirect_impl(lf: LPLOGFONTW, NewFont: *mut HFONT) ->
         return STATUS_NO_MEMORY;
     }
 
-    ExInitializePushLock((core::ptr::addr_of_mut!((*plfont).lock) as _));
+    ExInitializePushLock(core::ptr::addr_of_mut!((*plfont).lock) as _ );
     *NewFont = (*plfont).BaseObject.hHmgr as HFONT;
     let plf: *mut LOGFONTW = core::ptr::addr_of_mut!((*plfont).logfont.elfEnumLogfontEx.elfLogFont);
     RtlCopyMemory(plf as *mut _, lf as *const _, core::mem::size_of::<LOGFONTW>() as _);
@@ -3353,7 +3353,7 @@ unsafe fn IntTranslateCharsetInfo(Src: PDWORD, Cs: LPCHARSETINFO, Flags: DWORD) 
     RtlCopyMemory(
         Cs as *mut core::ffi::c_void,
         core::ptr::addr_of!(g_FontTci[Index as usize]) as *const core::ffi::c_void,
-        (core::mem::size_of::<CHARSETINFO>() as u64 as _),
+        core::mem::size_of::<CHARSETINFO>() as u64 as _ ,
     );
 
     1u8
@@ -3610,10 +3610,10 @@ pub unsafe extern "C" fn IntInitFontNames(Names: *mut FONT_NAMES, SharedFace: PS
 unsafe fn IntInitFontNames_impl(Names: *mut FONT_NAMES, SharedFace: PSHARED_FACE) {
     let OtmSize: ULONG;
 
-    RtlInitUnicodeString((core::ptr::addr_of_mut!((*Names).FamilyNameW) as _), core::ptr::null_mut());
-    RtlInitUnicodeString((core::ptr::addr_of_mut!((*Names).FaceNameW) as _), core::ptr::null_mut());
-    RtlInitUnicodeString((core::ptr::addr_of_mut!((*Names).StyleNameW) as _), core::ptr::null_mut());
-    RtlInitUnicodeString((core::ptr::addr_of_mut!((*Names).FullNameW) as _), core::ptr::null_mut());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!((*Names).FamilyNameW) as _ , core::ptr::null_mut());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!((*Names).FaceNameW) as _ , core::ptr::null_mut());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!((*Names).StyleNameW) as _ , core::ptr::null_mut());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!((*Names).FullNameW) as _ , core::ptr::null_mut());
 
     IntGetFontLocalizedName(core::ptr::addr_of_mut!((*Names).FamilyNameW), SharedFace, TT_NAME_ID_FONT_FAMILY as FT_UShort, gusLanguageID);
     IntGetFontLocalizedName(core::ptr::addr_of_mut!((*Names).FaceNameW), SharedFace, TT_NAME_ID_FULL_NAME as FT_UShort, gusLanguageID);
@@ -3744,7 +3744,7 @@ unsafe fn IntGetOutlineTextMetrics_impl(
     let Cache: PSHARED_FACE_CACHE;
     let Face: FT_Face = (*SharedFace).Face;
 
-    if PRIMARYLANGID((gusLanguageID as _)) as i32 == LANG_ENGLISH as i32 {
+    if PRIMARYLANGID(gusLanguageID as _ ) as i32 == LANG_ENGLISH as i32 {
         Cache = core::ptr::addr_of_mut!((*SharedFace).EnglishUS);
     } else {
         Cache = core::ptr::addr_of_mut!((*SharedFace).UserLanguage);
@@ -3892,10 +3892,10 @@ unsafe fn IntGetFontLocalizedName(
     let Cache: PSHARED_FACE_CACHE;
     let Face: FT_Face = (*SharedFace).Face;
 
-    RtlFreeUnicodeString((pNameW as _));
+    RtlFreeUnicodeString(pNameW as _ );
 
     /* select cache */
-    if PRIMARYLANGID((LangID as _)) == LANG_ENGLISH as FT_UShort {
+    if PRIMARYLANGID(LangID as _ ) == LANG_ENGLISH as FT_UShort {
         Cache = core::ptr::addr_of_mut!((*SharedFace).EnglishUS);
     } else {
         Cache = core::ptr::addr_of_mut!((*SharedFace).UserLanguage);
@@ -3946,9 +3946,9 @@ unsafe fn IntGetFontLocalizedName(
             Score = 30;
             BestIndex = i;
             break;
-        } else if PRIMARYLANGID((Name.language_id as _)) == PRIMARYLANGID((LangID as _)) {
+        } else if PRIMARYLANGID(Name.language_id as _ ) == PRIMARYLANGID(LangID as _ ) {
             Score = 20;
-        } else if PRIMARYLANGID((Name.language_id as _)) == LANG_ENGLISH as FT_UShort {
+        } else if PRIMARYLANGID(Name.language_id as _ ) == LANG_ENGLISH as FT_UShort {
             Score = 10;
         } else {
             Score = 0;
@@ -3986,7 +3986,7 @@ unsafe fn IntGetFontLocalizedName(
             if !(*pNameW).Buffer.is_null() {
                 Status = RtlAppendUnicodeStringToString(pNameW, &mut Tmp);
                 if Status == STATUS_SUCCESS {
-                    IntSwapEndian((*pNameW).Buffer as *mut core::ffi::c_void, ((*pNameW).Length as usize as _));
+                    IntSwapEndian((*pNameW).Buffer as *mut core::ffi::c_void, (*pNameW).Length as usize as _ );
                 }
             } else {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3996,10 +3996,10 @@ unsafe fn IntGetFontLocalizedName(
 
     if !NT_SUCCESS(Status) {
         if NameID == TT_NAME_ID_FONT_SUBFAMILY as FT_UShort {
-            RtlInitAnsiString((core::ptr::addr_of_mut!(AnsiName) as _), (*Face).style_name);
+            RtlInitAnsiString(core::ptr::addr_of_mut!(AnsiName) as _ , (*Face).style_name);
             Status = RtlAnsiStringToUnicodeString(pNameW, &mut AnsiName, 1u8);
         } else {
-            RtlInitAnsiString((core::ptr::addr_of_mut!(AnsiName) as _), (*Face).family_name);
+            RtlInitAnsiString(core::ptr::addr_of_mut!(AnsiName) as _ , (*Face).family_name);
             Status = RtlAnsiStringToUnicodeString(pNameW, &mut AnsiName, 1u8);
         }
     }
@@ -4045,7 +4045,7 @@ pub unsafe fn FontFamilyFillInfo(
     let Face: FT_Face = (*SharedFace).Face;
     let mut NameW: _UNICODE_STRING = core::mem::zeroed();
 
-    RtlInitUnicodeString((core::ptr::addr_of_mut!(NameW) as _), core::ptr::null_mut());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(NameW) as _ , core::ptr::null_mut());
     RtlZeroMemory(Info as *mut _, core::mem::size_of::<FONTFAMILYINFO>() as _);
 
     Size = IntGetOutlineTextMetrics(FontGDI, 0, core::ptr::null_mut(), 1) as u32;
@@ -4138,7 +4138,7 @@ pub unsafe fn FontFamilyFillInfo(
         FullName,
     );
 
-    RtlInitAnsiString((core::ptr::addr_of_mut!(StyleA) as _), (*Face).style_name);
+    RtlInitAnsiString(core::ptr::addr_of_mut!(StyleA) as _ , (*Face).style_name);
     StyleW.Buffer = (*Info).EnumLogFontEx.elfStyle.as_mut_ptr();
     StyleW.MaximumLength = core::mem::size_of_val(&(*Info).EnumLogFontEx.elfStyle) as u16;
     status = RtlAnsiStringToUnicodeString(&mut StyleW, &mut StyleA, 0);
@@ -4323,7 +4323,7 @@ unsafe fn GetFontFamilyInfoForSubstitutes_impl(
     let pFromW: PUNICODE_STRING;
     let pToW: PUNICODE_STRING;
     let mut lf: LOGFONTW = *LogFont;
-    let Win32Process: PPROCESSINFO = (PsGetCurrentProcessWin32Process() as _);
+    let Win32Process: PPROCESSINFO = PsGetCurrentProcessWin32Process() as _ ;
 
     pEntry = (*pHead).Flink;
     while pEntry != pHead {
@@ -4377,7 +4377,7 @@ unsafe fn GetFontFamilyInfoForSubstitutes_impl(
         );
 
         /* search in private fonts */
-        IntLockProcessPrivateFonts((Win32Process as _));
+        IntLockProcessPrivateFonts(Win32Process as _ );
         GetFontFamilyInfoForList(
             &lf,
             Info,
@@ -4386,7 +4386,7 @@ unsafe fn GetFontFamilyInfoForSubstitutes_impl(
             MaxCount,
             core::ptr::addr_of_mut!((*Win32Process).PrivateFontListHead),
         );
-        IntUnLockProcessPrivateFonts((Win32Process as _));
+        IntUnLockProcessPrivateFonts(Win32Process as _ );
         IntUnLockFreeType();
 
         if (*LogFont).lfFaceName[0] != UNICODE_NULL as u16 {
@@ -4418,7 +4418,7 @@ pub unsafe extern "C" fn ftGdiGetRasterizerCaps(lprs: LPRASTERIZER_STATUS) -> u8
 
 unsafe fn ftGdiGetRasterizerCaps_impl(lprs: LPRASTERIZER_STATUS) -> u8 {
     if !lprs.is_null() {
-        (*lprs).nSize = (core::mem::size_of::<RASTERIZER_STATUS>() as u32 as _);
+        (*lprs).nSize = core::mem::size_of::<RASTERIZER_STATUS>() as u32 as _ ;
         (*lprs).wFlags = (TT_AVAILABLE | TT_ENABLED) as i16;
         (*lprs).nLanguageID = gusLanguageID as i16;
         return 1u8;
@@ -4809,7 +4809,7 @@ unsafe fn IntRequestFontSize(dc: PDC, FontGDI: PFONTGDI, mut lfWidth: LONG, mut 
         (*FontGDI).tmAscent = WinFNT.ascent as LONG;
         (*FontGDI).tmDescent = (*FontGDI).tmHeight - (*FontGDI).tmAscent;
         (*FontGDI).tmInternalLeading = WinFNT.internal_leading as LONG;
-        (*FontGDI).Magic = (FONTGDI_MAGIC as _);
+        (*FontGDI).Magic = FONTGDI_MAGIC as _ ;
         (*FontGDI).lfHeight = lfHeight;
         (*FontGDI).lfWidth = lfWidth;
         return 0;
@@ -4854,7 +4854,7 @@ unsafe fn IntRequestFontSize(dc: PDC, FontGDI: PFONTGDI, mut lfWidth: LONG, mut 
         (*FontGDI).tmInternalLeading = (*FontGDI).tmHeight + lfHeight;
     }
 
-    (*FontGDI).Magic = (FONTGDI_MAGIC as _);
+    (*FontGDI).Magic = FONTGDI_MAGIC as _ ;
     (*FontGDI).lfHeight = lfHeight;
     (*FontGDI).lfWidth = lfWidth;
 
@@ -5188,7 +5188,7 @@ unsafe fn ftGdiGetGlyphOutline_impl(
     w32r_XFORMOBJ_iGetXform(&mut xo, &mut xform);
     w32r_FLOATOBJ_SetFloat(&mut eM11, xform.eM11);
 
-    hFont = ((*pdcattr).hlfntNew as _);
+    hFont = (*pdcattr).hlfntNew as _ ;
     TextObj = RealizeFontInit(hFont);
 
     if TextObj.is_null() {
@@ -5203,7 +5203,7 @@ unsafe fn ftGdiGetGlyphOutline_impl(
     orientation = if FT_IS_SCALABLE(ft_face) != 0 { (*plf).lfOrientation } else { 0 };
 
     ASSERT_FREETYPE_LOCK_NOT_HELD();
-    Size = (IntGetOutlineTextMetrics(FontGDI, 0, core::ptr::null_mut(), 0) as _);
+    Size = IntGetOutlineTextMetrics(FontGDI, 0, core::ptr::null_mut(), 0) as _ ;
     if Size == 0 {
         w32r_TEXTOBJ_UnlockText(TextObj);
         EngSetLastError(ERROR_GEN_FAILURE);
@@ -5216,7 +5216,7 @@ unsafe fn ftGdiGetGlyphOutline_impl(
         return GDI_ERROR;
     }
     ASSERT_FREETYPE_LOCK_NOT_HELD();
-    Size = (IntGetOutlineTextMetrics(FontGDI, Size, potm, 0) as _);
+    Size = IntGetOutlineTextMetrics(FontGDI, Size, potm, 0) as _ ;
     if Size == 0 {
         ExFreePoolWithTag(potm as PVOID, GDITAG_TEXT);
         w32r_TEXTOBJ_UnlockText(TextObj);
@@ -5611,7 +5611,7 @@ unsafe fn IntGetRealGlyph(Cache: PFONT_CACHE_ENTRY) -> FT_BitmapGlyph {
 
     error = FT_Load_Glyph(
         (*Cache).Hashed.Face,
-        ((*Cache).Hashed.GlyphIndex as _),
+        (*Cache).Hashed.GlyphIndex as _ ,
         FT_LOAD_DEFAULT as FT_Int32,
     );
     if error != 0 {
@@ -5703,16 +5703,16 @@ unsafe fn TextIntGetTextExtentPoint_impl(
     plf = core::ptr::addr_of_mut!((*TextObj).logfont.elfEnumLogfontEx.elfLogFont);
     Cache.Hashed.lfHeight = (*plf).lfHeight;
     Cache.Hashed.lfWidth = (*plf).lfWidth;
-    Cache.Hashed.__bindgen_anon_1.Aspect.__bindgen_anon_1.Emu.Bold = (EMUBOLD_NEEDED((*FontGDI).OriginalWeight, (*plf).lfWeight) as BYTE);
-    Cache.Hashed.__bindgen_anon_1.Aspect.__bindgen_anon_1.Emu.Italic = ((((*plf).lfItalic != 0) && ((*FontGDI).OriginalItalic == 0)) as BYTE);
+    Cache.Hashed.__bindgen_anon_1.Aspect.__bindgen_anon_1.Emu.Bold = EMUBOLD_NEEDED((*FontGDI).OriginalWeight, (*plf).lfWeight) as BYTE ;
+    Cache.Hashed.__bindgen_anon_1.Aspect.__bindgen_anon_1.Emu.Italic = (((*plf).lfItalic != 0) && ((*FontGDI).OriginalItalic == 0)) as BYTE ;
 
     nTenthsOfDegrees = IntNormalizeAngle((*plf).lfEscapement - (*plf).lfOrientation);
     bVerticalWriting = (nTenthsOfDegrees == 90 * 10) || (nTenthsOfDegrees == 270 * 10);
 
     if IntIsFontRenderingEnabled() != 0 {
-        Cache.Hashed.__bindgen_anon_1.Aspect.RenderMode = (IntGetFontRenderMode(plf) as BYTE as _);
+        Cache.Hashed.__bindgen_anon_1.Aspect.RenderMode = IntGetFontRenderMode(plf) as BYTE as _ ;
     } else {
-        Cache.Hashed.__bindgen_anon_1.Aspect.RenderMode = (FT_RENDER_MODE_MONO as BYTE as _);
+        Cache.Hashed.__bindgen_anon_1.Aspect.RenderMode = FT_RENDER_MODE_MONO as BYTE as _ ;
     }
 
     IntLockFreeType();
@@ -5834,7 +5834,7 @@ unsafe fn ftGdiGetTextCharsetInfo_impl(
     let mut usOEM: USHORT = 0;
 
     pdcattr = (*Dc).pdcattr;
-    hFont = ((*pdcattr).hlfntNew as _);
+    hFont = (*pdcattr).hlfntNew as _ ;
     TextObj = RealizeFontInit(hFont);
 
     if TextObj.is_null() {
@@ -5891,7 +5891,7 @@ unsafe fn ftGdiGetTextCharsetInfo_impl(
         RtlCopyMemory(
             lpSig as *mut core::ffi::c_void,
             core::ptr::addr_of!(fs) as *const core::ffi::c_void,
-            (core::mem::size_of::<FONTSIGNATURE>() as SIZE_T as _),
+            core::mem::size_of::<FONTSIGNATURE>() as SIZE_T as _ ,
         );
     }
 
@@ -6022,7 +6022,7 @@ unsafe fn ftGdiGetTextMetricsW_impl(hDC: HDC, ptmwi: PTMW_INTERNAL) -> BOOL {
         EngSetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
-    RtlZeroMemory(ptmwi as *mut _, (core::mem::size_of::<TMW_INTERNAL>() as ULONG as _));
+    RtlZeroMemory(ptmwi as *mut _, core::mem::size_of::<TMW_INTERNAL>() as ULONG as _ );
 
     dc = DC_LockDc(hDC);
     if dc.is_null() {
@@ -6030,7 +6030,7 @@ unsafe fn ftGdiGetTextMetricsW_impl(hDC: HDC, ptmwi: PTMW_INTERNAL) -> BOOL {
         return 0;
     }
     pdcattr = (*dc).pdcattr;
-    TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    TextObj = RealizeFontInit((*pdcattr).hlfntNew as _ );
     if !TextObj.is_null() {
         plf = core::ptr::addr_of_mut!((*TextObj).logfont.elfEnumLogfontEx.elfLogFont);
         FontGDI = ObjToGDI!((*TextObj).Font);
@@ -6431,25 +6431,25 @@ pub unsafe extern "C" fn IntFontType(Font: PFONTGDI) {
     let Face: FT_Face = (*(*Font).SharedFace).Face;
 
     if FT_HAS_MULTIPLE_MASTERS(Face) != 0 {
-        (*Font).FontObj.flFontType |= (FO_MULTIPLEMASTER as FLONG);
+        (*Font).FontObj.flFontType |= FO_MULTIPLEMASTER as FLONG ;
     }
     if FT_HAS_VERTICAL(Face) != 0 {
-        (*Font).FontObj.flFontType |= (FO_VERT_FACE as FLONG);
+        (*Font).FontObj.flFontType |= FO_VERT_FACE as FLONG ;
     }
     if FT_IS_SCALABLE(Face) == 0 {
-        (*Font).FontObj.flFontType |= (FO_TYPE_RASTER as FLONG);
+        (*Font).FontObj.flFontType |= FO_TYPE_RASTER as FLONG ;
     }
     if FT_IS_SFNT(Face) != 0 {
-        (*Font).FontObj.flFontType |= (FO_TYPE_TRUETYPE as FLONG);
+        (*Font).FontObj.flFontType |= FO_TYPE_TRUETYPE as FLONG ;
         if !FT_Get_Sfnt_Table(Face, ft_sfnt_post).is_null() {
-            (*Font).FontObj.flFontType |= (FO_POSTSCRIPT as FLONG);
+            (*Font).FontObj.flFontType |= FO_POSTSCRIPT as FLONG ;
         }
     }
     if FT_Get_PS_Font_Info(Face, &mut psfInfo) == 0 {
-        (*Font).FontObj.flFontType |= (FO_POSTSCRIPT as FLONG);
+        (*Font).FontObj.flFontType |= FO_POSTSCRIPT as FLONG ;
     }
     if FT_Load_Sfnt_Table(Face, TTAG_CFF, 0, core::ptr::null_mut(), &mut tmp_size) == 0 {
-        (*Font).FontObj.flFontType |= ((FO_CFF | FO_POSTSCRIPT) as FLONG);
+        (*Font).FontObj.flFontType |= (FO_CFF | FO_POSTSCRIPT) as FLONG ;
     }
 }
 
@@ -6461,16 +6461,16 @@ unsafe fn MatchFontName(
 ) -> BOOL {
     let mut Name2: _UNICODE_STRING = core::mem::zeroed();
 
-    RtlInitUnicodeString((core::ptr::addr_of_mut!(Name2) as _), core::ptr::null_mut());
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name2) as _ , core::ptr::null_mut());
     let Status = IntGetFontLocalizedName(&mut Name2, SharedFace, NameID, LangID);
 
     if NT_SUCCESS(Status) {
         if RtlCompareUnicodeString(Name1, &mut Name2, 1u8) == 0 {
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(Name2) as _));
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(Name2) as _ );
             return 1;
         }
 
-        RtlFreeUnicodeString((core::ptr::addr_of_mut!(Name2) as _));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(Name2) as _ );
     }
 
     0
@@ -6483,7 +6483,7 @@ unsafe fn MatchFontNames(SharedFace: PSHARED_FACE, lfFaceName: LPCWSTR) -> BOOL 
         return 0;
     }
 
-    RtlInitUnicodeString((core::ptr::addr_of_mut!(Name1) as _), lfFaceName);
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name1) as _ , lfFaceName);
 
     if MatchFontName(SharedFace, &mut Name1, TT_NAME_ID_FONT_FAMILY as FT_UShort, LANG_ENGLISH as FT_UShort) != 0
         || MatchFontName(SharedFace, &mut Name1, TT_NAME_ID_FULL_NAME as FT_UShort, LANG_ENGLISH as FT_UShort) != 0
@@ -6491,7 +6491,7 @@ unsafe fn MatchFontNames(SharedFace: PSHARED_FACE, lfFaceName: LPCWSTR) -> BOOL 
         return 1;
     }
 
-    if PRIMARYLANGID((gusLanguageID as _)) as u32 != LANG_ENGLISH as u32 {
+    if PRIMARYLANGID(gusLanguageID as _ ) as u32 != LANG_ENGLISH as u32 {
         if MatchFontName(SharedFace, &mut Name1, TT_NAME_ID_FONT_FAMILY as FT_UShort, gusLanguageID) != 0
             || MatchFontName(SharedFace, &mut Name1, TT_NAME_ID_FULL_NAME as FT_UShort, gusLanguageID) != 0
         {
@@ -6521,7 +6521,7 @@ unsafe fn IntPopulateTextObj(
         );
     } else {
         let mut Name: _UNICODE_STRING = core::mem::zeroed();
-        RtlInitUnicodeString((core::ptr::addr_of_mut!(Name) as _), core::ptr::null_mut());
+        RtlInitUnicodeString(core::ptr::addr_of_mut!(Name) as _ , core::ptr::null_mut());
         let Status: NTSTATUS = IntGetFontLocalizedName(
             &mut Name,
             SharedFace,
@@ -6534,7 +6534,7 @@ unsafe fn IntPopulateTextObj(
                 core::mem::size_of_val(&(*TextObj).TextFace),
                 &mut Name,
             );
-            RtlFreeUnicodeString((core::ptr::addr_of_mut!(Name) as _));
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(Name) as _ );
         }
     }
 
@@ -6595,7 +6595,7 @@ unsafe fn FontLookUp_Add(LogFont: *const LOGFONTW, SharedFace: PSHARED_FACE, pFo
 
     let pEntry = ExAllocatePoolWithTag(
         PagedPool,
-        (core::mem::size_of::<_FONT_LOOKUP_CACHE>() as SIZE_T as _),
+        core::mem::size_of::<_FONT_LOOKUP_CACHE>() as SIZE_T as _ ,
         TAG_FONT,
     ) as PFONT_LOOKUP_CACHE;
     if !pEntry.is_null() {
@@ -6637,16 +6637,16 @@ unsafe fn IntRealizeFont(mut pLogFont: *const LOGFONTW, TextObj: PTEXTOBJ) -> PS
         pFontObj = (*pLookUp).pFontObj;
     } else {
         let mut MatchPenalty: ULONG = 0xFFFFFFFF;
-        let Win32Process: PPROCESSINFO = (PsGetCurrentProcessWin32Process() as _);
+        let Win32Process: PPROCESSINFO = PsGetCurrentProcessWin32Process() as _ ;
 
-        IntLockProcessPrivateFonts((Win32Process as _));
+        IntLockProcessPrivateFonts(Win32Process as _ );
         FindBestFontFromList(
             &mut pFontObj,
             &mut MatchPenalty,
             &SubstitutedLogFont,
             core::ptr::addr_of_mut!((*Win32Process).PrivateFontListHead),
         );
-        IntUnLockProcessPrivateFonts((Win32Process as _));
+        IntUnLockProcessPrivateFonts(Win32Process as _ );
 
         FindBestFontFromList(
             &mut pFontObj,
@@ -6923,7 +6923,7 @@ unsafe fn IntGdiGetFontResourceInfoImpl(
         }
 
         RtlInitUnicodeString(
-            (core::ptr::addr_of_mut!(EntryFileName) as _),
+            core::ptr::addr_of_mut!(EntryFileName) as _ ,
             (*(*FontEntry).Font).Filename,
         );
         if IntGetFullFileName(NameInfo2, NAMEINFO_SIZE, core::ptr::addr_of_mut!(EntryFileName)) == 0 {
@@ -7270,8 +7270,8 @@ unsafe fn IntGetFontFamilyInfo_impl(
         return -1;
     }
 
-    Win32Process = (PsGetCurrentProcessWin32Process() as _);
-    IntLockProcessPrivateFonts((Win32Process as _));
+    Win32Process = PsGetCurrentProcessWin32Process() as _ ;
+    IntLockProcessPrivateFonts(Win32Process as _ );
     if GetFontFamilyInfoForList(
         SafeLogFont,
         SafeInfo,
@@ -7281,11 +7281,11 @@ unsafe fn IntGetFontFamilyInfo_impl(
         core::ptr::addr_of_mut!((*Win32Process).PrivateFontListHead),
     ) == 0
     {
-        IntUnLockProcessPrivateFonts((Win32Process as _));
+        IntUnLockProcessPrivateFonts(Win32Process as _ );
         IntUnLockFreeType();
         return -1;
     }
-    IntUnLockProcessPrivateFonts((Win32Process as _));
+    IntUnLockProcessPrivateFonts(Win32Process as _ );
     IntUnLockFreeType();
 
     if GetFontFamilyInfoForSubstitutes(SafeLogFont, SafeInfo, &mut AvailCount, InfoCount) == 0 {
@@ -7670,7 +7670,7 @@ pub unsafe extern "system" fn IntExtTextOutW(
     }
 
     if PATH_IsPathOpen(core::ptr::addr_of_mut!((*dc).dclevel)) {
-        return PATH_ExtTextOut(dc, XStart, YStart, fuOptions, lprc, String, (Count as _), Dx);
+        return PATH_ExtTextOut(dc, XStart, YStart, fuOptions, lprc, String, Count as _ , Dx);
     }
 
     DC_vPrepareDCsForBlit(dc, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
@@ -7732,7 +7732,7 @@ pub unsafe extern "system" fn IntExtTextOutW(
             fuOptions |= ETO_OPAQUE;
         }
 
-        TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+        TextObj = RealizeFontInit((*pdcattr).hlfntNew as _ );
         if TextObj.is_null() {
             bResult = 0;
             break 'cleanup;
@@ -7748,13 +7748,13 @@ pub unsafe extern "system" fn IntExtTextOutW(
         plf = core::ptr::addr_of_mut!((*TextObj).logfont.elfEnumLogfontEx.elfLogFont);
         Cache.Hashed.lfHeight = (*plf).lfHeight;
         Cache.Hashed.lfWidth = (*plf).lfWidth;
-        Cache.Hashed.__bindgen_anon_1.Aspect.__bindgen_anon_1.Emu.Bold = (EMUBOLD_NEEDED((*FontGDI).OriginalWeight, (*plf).lfWeight) as BYTE);
-        Cache.Hashed.__bindgen_anon_1.Aspect.__bindgen_anon_1.Emu.Italic = ((((*plf).lfItalic != 0) && ((*FontGDI).OriginalItalic == 0)) as BYTE);
+        Cache.Hashed.__bindgen_anon_1.Aspect.__bindgen_anon_1.Emu.Bold = EMUBOLD_NEEDED((*FontGDI).OriginalWeight, (*plf).lfWeight) as BYTE ;
+        Cache.Hashed.__bindgen_anon_1.Aspect.__bindgen_anon_1.Emu.Italic = (((*plf).lfItalic != 0) && ((*FontGDI).OriginalItalic == 0)) as BYTE ;
 
         if IntIsFontRenderingEnabled() != 0 {
-            Cache.Hashed.__bindgen_anon_1.Aspect.RenderMode = (IntGetFontRenderMode(plf) as BYTE as _);
+            Cache.Hashed.__bindgen_anon_1.Aspect.RenderMode = IntGetFontRenderMode(plf) as BYTE as _ ;
         } else {
-            Cache.Hashed.__bindgen_anon_1.Aspect.RenderMode = (FT_RENDER_MODE_MONO as BYTE as _);
+            Cache.Hashed.__bindgen_anon_1.Aspect.RenderMode = FT_RENDER_MODE_MONO as BYTE as _ ;
         }
 
         if TextIntUpdateSize(dc, TextObj, FontGDI, 0) == 0 {
@@ -7844,13 +7844,13 @@ pub unsafe extern "system" fn IntExtTextOutW(
                         POINT { x: X1 + DX, y: Y1 + DY },
                         POINT { x: X1, y: Y1 },
                     ];
-                    IntEngFillPolygon(dc, (Points.as_mut_ptr() as _), 4, core::ptr::addr_of_mut!((*dc).eboBackground.BrushObject));
+                    IntEngFillPolygon(dc, Points.as_mut_ptr() as _ , 4, core::ptr::addr_of_mut!((*dc).eboBackground.BrushObject));
                 }
             }
         }
 
-        EXLATEOBJ_vInitialize(&mut exloRGB2Dst, &mut gpalRGB, (*psurf).ppal, 0, 0, 0);
-        EXLATEOBJ_vInitialize(&mut exloDst2RGB, (*psurf).ppal, &mut gpalRGB, 0, 0, 0);
+        EXLATEOBJ_vInitialize(&mut exloRGB2Dst, &raw mut gpalRGB, (*psurf).ppal, 0, 0, 0);
+        EXLATEOBJ_vInitialize(&mut exloDst2RGB, (*psurf).ppal, &raw mut gpalRGB, 0, 0, 0);
 
         if (*pdcattr).ulDirty_ & DIRTY_TEXT != 0 {
             DC_vUpdateTextBrush(dc);
@@ -7964,7 +7964,7 @@ pub unsafe extern "system" fn IntExtTextOutW(
                     &mut DestRect,
                     core::ptr::addr_of_mut!(MaskRect) as PPOINTL,
                     core::ptr::addr_of_mut!((*dc).eboText.BrushObject),
-                    &mut g_PointZero,
+                    &raw mut g_PointZero,
                 );
 
                 EngUnlockSurface(psoGlyph);
@@ -8049,7 +8049,7 @@ pub unsafe extern "system" fn IntExtTextOutW(
                         POINT { x: X1 + DX, y: Y1 + DY },
                         POINT { x: X1, y: Y1 },
                     ];
-                    IntEngFillPolygon(dc, (Points.as_mut_ptr() as _), 4, core::ptr::addr_of_mut!((*dc).eboText.BrushObject));
+                    IntEngFillPolygon(dc, Points.as_mut_ptr() as _ , 4, core::ptr::addr_of_mut!((*dc).eboText.BrushObject));
                 }
             }
 
@@ -8076,7 +8076,7 @@ pub unsafe extern "system" fn IntExtTextOutW(
                         POINT { x: X1 + DX, y: Y1 + DY },
                         POINT { x: X1, y: Y1 },
                     ];
-                    IntEngFillPolygon(dc, (Points.as_mut_ptr() as _), 4, core::ptr::addr_of_mut!((*dc).eboText.BrushObject));
+                    IntEngFillPolygon(dc, Points.as_mut_ptr() as _ , 4, core::ptr::addr_of_mut!((*dc).eboText.BrushObject));
                 }
             }
         }
@@ -8352,7 +8352,7 @@ pub unsafe extern "C" fn NtGdiGetCharWidthW(
             EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return 0;
         }
-        Status = SafeProbeForRead((UnSafepwc as *const core::ffi::c_void as _), pwcSize as usize, 1);
+        Status = SafeProbeForRead(UnSafepwc as *const core::ffi::c_void as _ , pwcSize as usize, 1);
         if NT_SUCCESS(Status) {
             RtlCopyMemory(Safepwc as *mut core::ffi::c_void, UnSafepwc as *const core::ffi::c_void, pwcSize as usize);
         }
@@ -8386,7 +8386,7 @@ pub unsafe extern "C" fn NtGdiGetCharWidthW(
         return 0;
     }
     pdcattr = (*dc).pdcattr;
-    hFont = ((*pdcattr).hlfntNew as _);
+    hFont = (*pdcattr).hlfntNew as _ ;
     TextObj = RealizeFontInit(hFont);
     DC_UnlockDc(dc);
 
@@ -8451,7 +8451,7 @@ pub unsafe extern "C" fn NtGdiGetCharWidthW(
     }
     IntUnLockFreeType();
     w32r_TEXTOBJ_UnlockText(TextObj);
-    MmCopyToCaller(Buffer, SafeBuff as *const core::ffi::c_void, (BufferSize as usize as _));
+    MmCopyToCaller(Buffer, SafeBuff as *const core::ffi::c_void, BufferSize as usize as _ );
 
     if !Safepwc.is_null() {
         ExFreePoolWithTag(Safepwc as *mut core::ffi::c_void, GDITAG_TEXT);
@@ -8679,7 +8679,7 @@ pub unsafe extern "C" fn NtGdiGetGlyphIndicesW(
         return GDI_ERROR;
     }
     pdcattr = (*dc).pdcattr;
-    hFont = ((*pdcattr).hlfntNew as _);
+    hFont = (*pdcattr).hlfntNew as _ ;
     TextObj = RealizeFontInit(hFont);
     DC_UnlockDc(dc);
     if TextObj.is_null() {
@@ -8710,7 +8710,7 @@ pub unsafe extern "C" fn NtGdiGetGlyphIndicesW(
 
     Buffer = ExAllocatePoolWithTag(
         PagedPool,
-        ((cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _),
+        (cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _ ,
         GDITAG_TEXT,
     ) as PWSTR;
     if Buffer.is_null() {
@@ -8738,7 +8738,7 @@ pub unsafe extern "C" fn NtGdiGetGlyphIndicesW(
                     Status = STATUS_UNSUCCESSFUL;
                     break 'ErrorRet;
                 }
-                let potm_alloc = ExAllocatePoolWithTag(PagedPool, (Size as SIZE_T as _), GDITAG_TEXT)
+                let potm_alloc = ExAllocatePoolWithTag(PagedPool, Size as SIZE_T as _ , GDITAG_TEXT)
                     as *mut OUTLINETEXTMETRICW;
                 if potm_alloc.is_null() {
                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -8755,7 +8755,7 @@ pub unsafe extern "C" fn NtGdiGetGlyphIndicesW(
         }
 
         pwcSize = (cwc as usize * core::mem::size_of::<WCHAR>()) as ULONG;
-        Safepwc = ExAllocatePoolWithTag(PagedPool, (pwcSize as SIZE_T as _), GDITAG_TEXT) as PWSTR;
+        Safepwc = ExAllocatePoolWithTag(PagedPool, pwcSize as SIZE_T as _ , GDITAG_TEXT) as PWSTR;
         if Safepwc.is_null() {
             Status = STATUS_NO_MEMORY;
             break 'ErrorRet;
@@ -8763,7 +8763,7 @@ pub unsafe extern "C" fn NtGdiGetGlyphIndicesW(
 
         Status = SafeProbeForRead(UnSafepwc as *mut c_void, pwcSize as usize, 1);
         if NT_SUCCESS(Status) {
-            RtlCopyMemory(Safepwc as *mut _, UnSafepwc as *const _, (pwcSize as SIZE_T as _));
+            RtlCopyMemory(Safepwc as *mut _, UnSafepwc as *const _, pwcSize as SIZE_T as _ );
         }
 
         if !NT_SUCCESS(Status) {
@@ -8785,14 +8785,14 @@ pub unsafe extern "C" fn NtGdiGetGlyphIndicesW(
 
         Status = SafeProbeForWrite(
             UnSafepgi as *mut _,
-            ((cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _),
+            (cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _ ,
             1,
         );
         if NT_SUCCESS(Status) {
             RtlCopyMemory(
                 UnSafepgi as *mut _,
                 Buffer as *const _,
-                ((cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _),
+                (cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _ ,
             );
         }
     }
@@ -9089,7 +9089,7 @@ unsafe fn ntgdi_get_char_abc_widths_w_impl(
         return 0;
     }
     pdcattr = (*dc).pdcattr;
-    hFont = ((*pdcattr).hlfntNew as _);
+    hFont = (*pdcattr).hlfntNew as _ ;
     TextObj = RealizeFontInit(hFont);
     DC_UnlockDc(dc);
 

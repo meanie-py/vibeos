@@ -10,13 +10,11 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
-#![allow(unused_unsafe)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 // Debug-print macro hoisted to the dbgprint-rust leaf. Re-export at this crate's
 // root so fstub's `crate::swprintf!(…)` call sites (17× in disksup.rs) resolve

@@ -1,12 +1,11 @@
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 use crate::dnslib::types::*;
-use crate::dnslib::addr::{AF_INET, AF_INET6, AF_ATM};
 use crate::dnslib::dnsaddr::{
     DnsAddrArray_Create, DnsAddrArray_Free, DnsAddrArray_AddIp4,
     DnsAddrArray_AddAddr, DnsAddr_BuildFromDnsRecord,
 };
-use crate::dnslib::string::{UnicodeString, AnsiString};
+use crate::dnslib::string::UnicodeString;
 use crate::dnslib::memory::{Dns_Free, Dns_AllocZero};
 use crate::dnslib::flatbuf::FlatBuf_Arg_Reserve;
 use crate::dnslib::hostent::{Hostent_Init, Hostent_ConvertToOffsets};
@@ -161,9 +160,9 @@ pub unsafe extern "system" fn SaBlob_CreateHostent(
     let mut AddressFamily: u16 = 0; // AF_UNSPEC = 0 (matches C: WORD AddressFamily = AF_UNSPEC)
     let mut AddressCount: u32 = 0;
     let mut AddressSize: u32 = 0;
-    let mut TotalSize: u32;
-    let mut NamePointerSize: u32;
-    let mut AliasPointerSize: u32;
+    let TotalSize: u32;
+    let NamePointerSize: u32;
+    let AliasPointerSize: u32;
     let mut FamilyInfo: *mut DNS_FAMILY_INFO = core::ptr::null_mut();
     let mut StringLength: u32 = 0;
     let mut i: u32;

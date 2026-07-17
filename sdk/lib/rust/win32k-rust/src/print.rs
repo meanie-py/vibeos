@@ -2,7 +2,6 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::{STATUS_SUCCESS, NT_SUCCESS};
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
-use core::ffi::c_void;
 
 // ExAllocatePoolZero is a FORCEINLINE (xdk/exfuncs.h) — alloc then zero, no symbol.
 #[inline(always)]

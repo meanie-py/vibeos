@@ -478,12 +478,12 @@ pub unsafe extern "system" fn FatCommonCreate(
     let CreateDisposition = (Options >> 24) & 0xFF;
     let IsPagingFile = FlagOn(((*IrpSp).Flags) as u32, SL_OPEN_PAGING_FILE) != 0;
     let OpenTargetDirectory = FlagOn(((*IrpSp).Flags) as u32, SL_OPEN_TARGET_DIRECTORY) != 0;
-    let CreateDirectory = (DirectoryFile &&
+    let CreateDirectory = DirectoryFile &&
                            ((CreateDisposition == FILE_CREATE) ||
-                            (CreateDisposition == FILE_OPEN_IF)));
-    let OpenDirectory = (DirectoryFile &&
+                            (CreateDisposition == FILE_OPEN_IF)) ;
+    let OpenDirectory = DirectoryFile &&
                          ((CreateDisposition == FILE_OPEN) ||
-                          (CreateDisposition == FILE_OPEN_IF)));
+                          (CreateDisposition == FILE_OPEN_IF)) ;
 
     if (*Irp).Overlay.AllocationSize.__bindgen_anon_1.HighPart != 0 ||
         (DirectoryFile && NonDirectoryFile) {
@@ -674,8 +674,8 @@ pub unsafe extern "system" fn FatCommonCreate(
                 let mut NextFcb: *mut FCB;
                 FsRtlDissectName(RemainingPart, &mut FinalName, &mut NextRemainingPart);
 
-                if ((NextRemainingPart.Length != 0 && *(NextRemainingPart.Buffer.offset(0)) == '\\' as u16) ||
-                    FinalName.Length > 255 * core::mem::size_of::<u16>() as u16) {
+                if (NextRemainingPart.Length != 0 && *(NextRemainingPart.Buffer.offset(0)) == '\\' as u16) ||
+                    FinalName.Length > 255 * core::mem::size_of::<u16>() as u16  {
                     Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_INVALID;
                     break 'main_try;
                 }
@@ -732,7 +732,7 @@ pub unsafe extern "system" fn FatCommonCreate(
 
             if (*Fcb).FcbCondition == FcbGood as u32 {
                 if IsPagingFile && FirstLoop && NodeType(Fcb as *const c_void) == (FAT_NTC_FCB) as u32 &&
-                    (!IsListEmpty(&FatData.AsyncCloseList as *const _) || !IsListEmpty(&FatData.DelayedCloseList as *const _)) {
+                    (!IsListEmpty(&raw const FatData.AsyncCloseList as *const _) || !IsListEmpty(&raw const FatData.DelayedCloseList as *const _)) {
                     FatFspClose(Vcb);
                     FirstLoop = false;
                     continue;
@@ -840,8 +840,8 @@ pub unsafe extern "system" fn FatCommonCreate(
                 DebugTrace(0, 0, b"Dissecting the name %wZ\n\0".as_ptr() as *const i8, &RemainingPart);
                 FsRtlDissectName(RemainingPart, &mut FinalName, &mut RemainingPart);
 
-                if ((RemainingPart.Length != 0 && *(RemainingPart.Buffer.offset(0)) == '\\' as u16) ||
-                    FinalName.Length > 255 * core::mem::size_of::<u16>() as u16) {
+                if (RemainingPart.Length != 0 && *(RemainingPart.Buffer.offset(0)) == '\\' as u16) ||
+                    FinalName.Length > 255 * core::mem::size_of::<u16>() as u16  {
                     Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_INVALID;
                     break 'main_try;
                 }
@@ -1690,7 +1690,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
             } else if CreateDisposition == FILE_SUPERSEDE {
                 SetFlag(
                     &mut AddedAccess,
-                    (0x00010000 /* DELETE */ & !(*DesiredAccess)),
+                    0x00010000 /* DELETE */ & !(*DesiredAccess) ,
                 );
                 *DesiredAccess |= 0x00010000;
             } else if CreateDisposition == FILE_OVERWRITE || CreateDisposition == FILE_OVERWRITE_IF {
@@ -3636,7 +3636,7 @@ pub unsafe extern "system" fn FatCallSelfCompletionRoutine(
     let _ = Irp;
 
     // STATUS_MORE_PROCESSING_REQUIRED
-    (0xC0000016u32 as i32)
+    0xC0000016u32 as i32
 }
 
 

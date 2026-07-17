@@ -108,7 +108,7 @@ unsafe fn WinLdrLoadSystemHive(
 
     *Reason = BAD_HIVE_REASON::GoodHive;
 
-    RtlStringCbCopyA((FullHiveName.as_mut_ptr() as *mut i8), core::mem::size_of_val(&FullHiveName), DirectoryPath);
+    RtlStringCbCopyA(FullHiveName.as_mut_ptr() as *mut i8 , core::mem::size_of_val(&FullHiveName), DirectoryPath);
     RtlStringCbCatA(FullHiveName.as_mut_ptr(), core::mem::size_of_val(&FullHiveName), HiveName);
 
     NtLdrOutputLoadMsg(FullHiveName.as_ptr() as PCSTR, core::ptr::null());
@@ -167,68 +167,68 @@ pub unsafe extern "C" fn WinLdrInitSystemHive(
 ) -> BOOLEAN {
 
     let mut SearchPath: [u8; 1024] = [0; 1024];
-    let mut ChunkBase: *mut core::ffi::c_void;
+    let ChunkBase: *mut core::ffi::c_void;
     let mut HiveName: PCSTR;
     let mut Success: BOOLEAN;
     let mut Reason: BAD_HIVE_REASON = BAD_HIVE_REASON::GoodHive;
 
     if Setup != 0 {
-        RtlStringCbCopyA((SearchPath.as_mut_ptr() as *mut i8), 1024, SystemRoot);
+        RtlStringCbCopyA(SearchPath.as_mut_ptr() as *mut i8 , 1024, SystemRoot);
         HiveName = b"SETUPREG.HIV\0".as_ptr() as PCSTR;
     } else {
-        RtlStringCbCopyA((SearchPath.as_mut_ptr() as *mut i8), 1024, SystemRoot);
-        RtlStringCbCatA(SearchPath.as_mut_ptr(), 1024, (b"system32\\config\\\0".as_ptr() as *const i8));
+        RtlStringCbCopyA(SearchPath.as_mut_ptr() as *mut i8 , 1024, SystemRoot);
+        RtlStringCbCatA(SearchPath.as_mut_ptr(), 1024, b"system32\\config\\\0".as_ptr() as *const i8 );
         HiveName = b"SYSTEM\0".as_ptr() as PCSTR;
     }
 
-    TRACE((b"WinLdrInitSystemHive: loading hive %s%s\n\0".as_ptr() as *const i8), (SearchPath.as_ptr()) as usize, (HiveName) as usize);
-    Success = WinLdrLoadSystemHive(LoaderBlock, (SearchPath.as_ptr() as *const i8), HiveName, &mut Reason);
+    TRACE(b"WinLdrInitSystemHive: loading hive %s%s\n\0".as_ptr() as *const i8 , (SearchPath.as_ptr()) as usize, (HiveName) as usize);
+    Success = WinLdrLoadSystemHive(LoaderBlock, SearchPath.as_ptr() as *const i8 , HiveName, &mut Reason);
     if Success == 0 {
         if Reason == BAD_HIVE_REASON::CorruptHive || Reason == BAD_HIVE_REASON::NoHive {
             HiveName = b"SYSTEM.ALT\0".as_ptr() as PCSTR;
-            Success = WinLdrLoadSystemHive(LoaderBlock, (SearchPath.as_ptr() as *const i8), HiveName, &mut Reason);
+            Success = WinLdrLoadSystemHive(LoaderBlock, SearchPath.as_ptr() as *const i8 , HiveName, &mut Reason);
             if Success == 0 {
-                UiMessageBox((b"Could not load %s hive!\0".as_ptr() as *const i8), HiveName);
+                UiMessageBox(b"Could not load %s hive!\0".as_ptr() as *const i8 , HiveName);
                 return 0u8;
             }
 
-            Success = RegImportBinaryHive(VaToPa((*LoaderBlock).RegistryBase), (*LoaderBlock).RegistryLength, (SearchPath.as_ptr() as *const i8), 1u8);
+            Success = RegImportBinaryHive(VaToPa((*LoaderBlock).RegistryBase), (*LoaderBlock).RegistryLength, SearchPath.as_ptr() as *const i8 , 1u8);
             if Success == 0 {
-                UiMessageBox((b"Importing binary hive failed!\0".as_ptr() as *const i8));
+                UiMessageBox(b"Importing binary hive failed!\0".as_ptr() as *const i8 );
                 return 0u8;
             }
 
-            WARN((b"SYSTEM hive does not exist or is corrupt and SYSTEM.ALT has been loaded!\n\0".as_ptr() as *const i8));
+            WARN(b"SYSTEM hive does not exist or is corrupt and SYSTEM.ALT has been loaded!\n\0".as_ptr() as *const i8 );
             ChunkBase = VaToPa((*LoaderBlock).RegistryBase);
             (*(ChunkBase as PHBASE_BLOCK)).BootRecover = 0x2u32;
         } else {
-            UiMessageBox((b"Could not load %s hive!\0".as_ptr() as *const i8), HiveName);
+            UiMessageBox(b"Could not load %s hive!\0".as_ptr() as *const i8 , HiveName);
             return 0u8;
         }
     } else {
-        Success = RegImportBinaryHive(VaToPa((*LoaderBlock).RegistryBase), (*LoaderBlock).RegistryLength, (SearchPath.as_ptr() as *const i8), 0u8);
+        Success = RegImportBinaryHive(VaToPa((*LoaderBlock).RegistryBase), (*LoaderBlock).RegistryLength, SearchPath.as_ptr() as *const i8 , 0u8);
         if Success == 0 {
             HiveName = b"SYSTEM.ALT\0".as_ptr() as PCSTR;
-            Success = WinLdrLoadSystemHive(LoaderBlock, (SearchPath.as_ptr() as *const i8), HiveName, &mut Reason);
+            Success = WinLdrLoadSystemHive(LoaderBlock, SearchPath.as_ptr() as *const i8 , HiveName, &mut Reason);
             if Success == 0 {
-                UiMessageBox((b"Could not load %s hive!\0".as_ptr() as *const i8), HiveName);
+                UiMessageBox(b"Could not load %s hive!\0".as_ptr() as *const i8 , HiveName);
                 return 0u8;
             }
 
-            Success = RegImportBinaryHive(VaToPa((*LoaderBlock).RegistryBase), (*LoaderBlock).RegistryLength, (SearchPath.as_ptr() as *const i8), 1u8);
+            Success = RegImportBinaryHive(VaToPa((*LoaderBlock).RegistryBase), (*LoaderBlock).RegistryLength, SearchPath.as_ptr() as *const i8 , 1u8);
             if Success == 0 {
-                UiMessageBox((b"Importing binary hive failed!\0".as_ptr() as *const i8));
+                UiMessageBox(b"Importing binary hive failed!\0".as_ptr() as *const i8 );
                 return 0u8;
             }
 
-            WARN((b"SYSTEM hive does not exist or is corrupt and SYSTEM.ALT has been loaded!\n\0".as_ptr() as *const i8));
+            WARN(b"SYSTEM hive does not exist or is corrupt and SYSTEM.ALT has been loaded!\n\0".as_ptr() as *const i8 );
             ChunkBase = VaToPa((*LoaderBlock).RegistryBase);
             (*(ChunkBase as PHBASE_BLOCK)).BootRecover = 0x2u32;
         }
     }
 
     if RegInitCurrentControlSet(0u8) == 0 {
-        UiMessageBox((b"Initializing CurrentControlSet link failed!\0".as_ptr() as *const i8));
+        UiMessageBox(b"Initializing CurrentControlSet link failed!\0".as_ptr() as *const i8 );
         return 0u8;
     }
 
@@ -293,7 +293,7 @@ pub unsafe extern "C" fn WinLdrScanSystemHive(
     );
 
     RtlStringCbCopyA(
-        (SearchPath.as_mut_ptr() as *mut i8),
+        SearchPath.as_mut_ptr() as *mut i8 ,
         core::mem::size_of_val(&SearchPath),
         SystemRoot,
     );
@@ -417,19 +417,19 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
     AnsiFileName: PCUNICODE_STRING,
     OemFileName: PCUNICODE_STRING,
     LangFileName: PCUNICODE_STRING,
-    OemHalFileName: PCUNICODE_STRING,
+    _OemHalFileName: PCUNICODE_STRING,
 ) -> u8 {
     let mut Status: ARC_STATUS;
     let mut FileInfo: FILEINFORMATION = core::mem::zeroed();
     let mut AnsiFileId: u32 = u32::MAX;
     let mut OemFileId: u32 = u32::MAX;
     let mut LangFileId: u32 = u32::MAX;
-    let mut AnsiFileSize: u32;
-    let mut OemFileSize: u32;
-    let mut LangFileSize: u32;
-    let mut TotalSize: u32;
+    let AnsiFileSize: u32;
+    let OemFileSize: u32;
+    let LangFileSize: u32;
+    let TotalSize: u32;
     let mut BytesRead: u32 = 0;
-    let mut NlsVirtual: *mut core::ffi::c_void;
+    let NlsVirtual: *mut core::ffi::c_void;
     let mut AnsiEqualsOem: u8 = 0u8;
     let mut FileName: [i8; MAX_PATH] = [0; MAX_PATH];
 
@@ -868,8 +868,8 @@ pub unsafe extern "C" fn WinLdrAddDriverToList(
     Tag: u32,
 ) -> u8 {
     let mut DriverNode: PBOOT_DRIVER_NODE = core::ptr::null_mut();
-    let mut DriverEntry: PBOOT_DRIVER_LIST_ENTRY;
-    let mut AlreadyInserted: u8;
+    let DriverEntry: PBOOT_DRIVER_LIST_ENTRY;
+    let AlreadyInserted: u8;
     let mut PathLength: u16;
     let mut DriverNameU: _UNICODE_STRING = core::mem::zeroed();
     let mut RegistryPath: _UNICODE_STRING = core::mem::zeroed();

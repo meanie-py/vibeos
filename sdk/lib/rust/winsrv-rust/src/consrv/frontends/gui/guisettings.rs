@@ -20,21 +20,21 @@ extern "C" {
 
 #[no_mangle]
 pub unsafe extern "system" fn GuiConsoleReadUserSettings(
-    TermInfo: *mut GUI_CONSOLE_INFO,
+    _TermInfo: *mut GUI_CONSOLE_INFO,
 ) -> BOOLEAN {
     1u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn GuiConsoleWriteUserSettings(
-    TermInfo: *mut GUI_CONSOLE_INFO,
+    _TermInfo: *mut GUI_CONSOLE_INFO,
 ) -> BOOLEAN {
     1u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn GuiConsoleGetDefaultSettings(
-    TermInfo: *mut GUI_CONSOLE_INFO,
+    _TermInfo: *mut GUI_CONSOLE_INFO,
 ) {
 }
 
@@ -177,7 +177,7 @@ pub unsafe extern "system" fn GuiConsoleShowConsoleProperties(
     }
 
     let mut exception_code: i32 = 0;
-    let thread_result = {
+    let _thread_result = {
         let mut Thread: HANDLE = core::ptr::null_mut();
         Thread = CreateRemoteThread(
             (*(*ProcessData).Process).ProcessHandle,
@@ -255,7 +255,7 @@ pub unsafe extern "system" fn GuiApplyUserSettings(
         return;
     }
 
-    let inner_result = 'seh: {
+    let _inner_result = 'seh: {
         if (ViewSize as usize) < core::mem::size_of::<CONSOLE_STATE_INFO>() ||
            ((*pConInfo).cbSize as usize) < core::mem::size_of::<CONSOLE_STATE_INFO>()
         {

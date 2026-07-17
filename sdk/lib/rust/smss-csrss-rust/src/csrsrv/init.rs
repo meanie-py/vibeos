@@ -509,7 +509,7 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
     Status = NtCreateDirectoryObject(
-        &mut BNOLinksDirectory,
+        &raw mut BNOLinksDirectory,
         DIRECTORY_ALL_ACCESS,
         &mut ObjectAttributes,
     );
@@ -601,7 +601,7 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
     Status = NtCreateDirectoryObject(
-        &mut SessionObjectDirectory,
+        &raw mut SessionObjectDirectory,
         DIRECTORY_ALL_ACCESS,
         &mut ObjectAttributes,
     );
@@ -624,7 +624,7 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
     Status = NtCreateDirectoryObject(
-        &mut DosDevicesDirectory,
+        &raw mut DosDevicesDirectory,
         DIRECTORY_ALL_ACCESS,
         &mut ObjectAttributes,
     );
@@ -702,7 +702,7 @@ unsafe extern "system" fn CsrParseServerCommandLine(
             }
 
             RtlInitAnsiString(&mut AnsiString, ParameterValue);
-            Status = RtlAnsiStringToUnicodeString(&mut CsrDirectoryName, &mut AnsiString, 1);
+            Status = RtlAnsiStringToUnicodeString(&raw mut CsrDirectoryName, &mut AnsiString, 1);
             if Status < 0 {
                 return Status;
             }
@@ -714,13 +714,13 @@ unsafe extern "system" fn CsrParseServerCommandLine(
             );
             ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
             ObjectAttributes.RootDirectory = core::ptr::null_mut();
-            ObjectAttributes.ObjectName = &mut CsrDirectoryName;
+            ObjectAttributes.ObjectName = &raw mut CsrDirectoryName;
             ObjectAttributes.Attributes = OBJ_OPENIF | OBJ_CASE_INSENSITIVE | OBJ_PERMANENT;
             ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
             ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
             Status = NtCreateDirectoryObject(
-                &mut CsrObjectDirectory,
+                &raw mut CsrObjectDirectory,
                 DIRECTORY_ALL_ACCESS,
                 &mut ObjectAttributes,
             );
@@ -748,11 +748,11 @@ unsafe extern "system" fn CsrParseServerCommandLine(
                 } else if stricmp(ParameterValue, b"native\0".as_ptr() as PCHAR) == 0 {
                     CsrSubSystemType = IMAGE_SUBSYSTEM_NATIVE;
                 } else {
-                    Status = RtlCharToInteger(ParameterValue, 0, &mut CsrSubSystemType);
+                    Status = RtlCharToInteger(ParameterValue, 0, &raw mut CsrSubSystemType);
                 }
             }
         } else if stricmp(ParameterName, b"MaxRequestThreads\0".as_ptr() as PCHAR) == 0 {
-            Status = RtlCharToInteger(ParameterValue, 0, &mut CsrMaxApiRequestThreads);
+            Status = RtlCharToInteger(ParameterValue, 0, &raw mut CsrMaxApiRequestThreads);
         } else if stricmp(ParameterName, b"RequestThreads\0".as_ptr() as PCHAR) == 0 {
             Status = STATUS_SUCCESS;
         } else if stricmp(ParameterName, b"ProfileControl\0".as_ptr() as PCHAR) == 0 {
@@ -988,18 +988,18 @@ pub unsafe extern "system" fn CsrSbApiPortInitialize() -> NTSTATUS {
     CsrSbApiPortName.Length = 0;
     CsrSbApiPortName.MaximumLength = Size as u16;
 
-    RtlAppendUnicodeStringToString(&mut CsrSbApiPortName, &CsrDirectoryName);
+    RtlAppendUnicodeStringToString(&raw mut CsrSbApiPortName, &raw const CsrDirectoryName);
     static SEP: [u16; 2] = [b'\\' as u16, 0];
     let mut sep_str: _UNICODE_STRING = core::mem::zeroed();
     sep_str.Buffer = SEP.as_ptr() as *mut u16;
     sep_str.Length = 2;
     sep_str.MaximumLength = 2;
-    RtlAppendUnicodeStringToString(&mut CsrSbApiPortName, &sep_str);
+    RtlAppendUnicodeStringToString(&raw mut CsrSbApiPortName, &sep_str);
     let mut sb_name: _UNICODE_STRING = core::mem::zeroed();
     sb_name.Buffer = SB_PORT_NAME.as_ptr() as *mut u16;
     sb_name.Length = 18;
     sb_name.MaximumLength = 20;
-    RtlAppendUnicodeStringToString(&mut CsrSbApiPortName, &sb_name);
+    RtlAppendUnicodeStringToString(&raw mut CsrSbApiPortName, &sb_name);
 
     if CsrDebug & 2 != 0 {}
 
@@ -1015,13 +1015,13 @@ pub unsafe extern "system" fn CsrSbApiPortInitialize() -> NTSTATUS {
     );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
-    ObjectAttributes.ObjectName = &mut CsrSbApiPortName;
+    ObjectAttributes.ObjectName = &raw mut CsrSbApiPortName;
     ObjectAttributes.Attributes = 0;
     ObjectAttributes.SecurityDescriptor = PortSd;
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
     Status = NtCreatePort(
-        &mut CsrSbApiPort,
+        &raw mut CsrSbApiPort,
         &mut ObjectAttributes,
         core::mem::size_of::<SB_CONNECTION_INFO>() as ULONG,
         core::mem::size_of::<SB_API_MSG>() as ULONG,
@@ -1063,7 +1063,7 @@ pub unsafe extern "system" fn CsrServerInitialization(
     crate::dbg_print!(b"[CSI] 1 pre-NtQuerySystemInformation\n\0");
     Status = NtQuerySystemInformation(
         SystemBasicInformation,
-        &mut CsrNtSysInfo as *mut _ as PVOID,
+        &raw mut CsrNtSysInfo as *mut _ as PVOID,
         core::mem::size_of::<SYSTEM_BASIC_INFORMATION>() as ULONG,
         core::ptr::null_mut(),
     );
@@ -1121,10 +1121,10 @@ pub unsafe extern "system" fn CsrServerInitialization(
                 }
 
                 Status = SmConnectToSm(
-                    &mut CsrSbApiPortName,
+                    &raw mut CsrSbApiPortName,
                     CsrSbApiPort,
                     CsrSubSystemType,
-                    &mut CsrSmApiPort,
+                    &raw mut CsrSmApiPort,
                 );
                 if Status < 0 {
                     return Status;
@@ -1139,10 +1139,10 @@ pub unsafe extern "system" fn CsrServerInitialization(
             }
 
             Status = SmConnectToSm(
-                &mut CsrSbApiPortName,
+                &raw mut CsrSbApiPortName,
                 CsrSbApiPort,
                 IMAGE_SUBSYSTEM_WINDOWS_GUI,
-                &mut CsrSmApiPort,
+                &raw mut CsrSmApiPort,
             );
             if Status < 0 {
                 return Status;

@@ -336,7 +336,7 @@ pub unsafe extern "system" fn VarTokenizeFormatString(
     cbTok: i32,
     nFirstDay: i32,
     nFirstWeek: i32,
-    lcid: LCID,
+    _lcid: LCID,
     pcbActual: *mut i32,
 ) -> HRESULT {
     static szTTTTT: [u16; 5] = [b't' as u16, b't' as u16, b't' as u16, b't' as u16, b't' as u16];
@@ -409,7 +409,7 @@ pub unsafe extern "system" fn VarTokenizeFormatString(
 
                 (*header).starts[fmt_number as usize] = pOut.offset_from(rgbTok) as u8;
                 let str_header = pOut as *mut FMT_STRING_HEADER;
-                let num_header = pOut as *mut FMT_NUMBER_HEADER;
+                let _num_header = pOut as *mut FMT_NUMBER_HEADER;
                 core::ptr::write_bytes(str_header, 0, 1);
                 pOut = pOut.add(core::mem::size_of::<FMT_STRING_HEADER>());
                 fmt_state = 0;
@@ -806,7 +806,7 @@ unsafe extern "C" fn VARIANT_FormatNumber(
     pVarIn: *mut VARIANT,
     lpszFormat: LPOLESTR,
     rgbTok: LPBYTE,
-    dwFlags: ULONG,
+    _dwFlags: ULONG,
     pbstrOut: *mut BSTR,
     lcid: LCID,
 ) -> HRESULT {
@@ -816,7 +816,7 @@ unsafe extern "C" fn VARIANT_FormatNumber(
     let mut have_int: i32;
     let mut need_int: i32 = 0;
     let mut have_frac: i32;
-    let mut need_frac: i32;
+    let need_frac: i32;
     let mut exponent: i32 = 0;
     let mut pad: i32 = 0;
     let mut buff: [WCHAR; 256] = [0; 256];
@@ -826,7 +826,7 @@ unsafe extern "C" fn VARIANT_FormatNumber(
     let mut vBool: VARIANT = core::mem::zeroed();
     let mut dwState: DWORD = 0;
     let header: *mut FMT_HEADER = rgbTok as *mut FMT_HEADER;
-    let mut numHeader: *mut FMT_NUMBER_HEADER;
+    let numHeader: *mut FMT_NUMBER_HEADER;
     let mut pToken: *const BYTE = core::ptr::null();
     let mut hRes: HRESULT = S_OK;
 
@@ -1474,7 +1474,7 @@ unsafe extern "C" fn VARIANT_FormatDate(
     let mut vDate: VARIANT = core::mem::zeroed();
     let mut udate: UDATE = core::mem::zeroed();
     let header = rgbTok as *const FMT_HEADER;
-    let mut dateHeader: *const FMT_DATE_HEADER;
+    let dateHeader: *const FMT_DATE_HEADER;
     let mut pToken: *const BYTE;
     let mut hRes: HRESULT;
 
@@ -1872,7 +1872,7 @@ unsafe extern "C" fn VARIANT_FormatString(
     pVarIn: *mut VARIANT,
     lpszFormat: LPWSTR,
     rgbTok: LPBYTE,
-    dwFlags: ULONG,
+    _dwFlags: ULONG,
     pbstrOut: *mut BSTR,
     lcid: LCID,
 ) -> HRESULT {
@@ -1881,7 +1881,7 @@ unsafe extern "C" fn VARIANT_FormatString(
     let mut pBuff = buff.as_mut_ptr();
     let mut pSrc: LPWSTR;
     let header = rgbTok as *mut FMT_HEADER;
-    let mut strHeader: *mut FMT_STRING_HEADER;
+    let strHeader: *mut FMT_STRING_HEADER;
     let mut pToken: *const BYTE = core::ptr::null();
     let mut vStr: VARIANT = core::mem::zeroed();
     let mut blanks_first: i32;
@@ -2222,7 +2222,7 @@ pub unsafe extern "system" fn VarFormatNumber(
     nLeading: INT,
     nParens: INT,
     nGrouping: INT,
-    dwFlags: ULONG,
+    _dwFlags: ULONG,
     pbstrOut: *mut BSTR,
 ) -> HRESULT {
     TRACE!(
@@ -2425,7 +2425,7 @@ pub unsafe extern "system" fn VarFormatCurrency(
     nLeading: INT,
     nParens: INT,
     nGrouping: INT,
-    dwFlags: ULONG,
+    _dwFlags: ULONG,
     pbstrOut: *mut BSTR,
 ) -> HRESULT {
 

@@ -10,7 +10,7 @@
 #ifndef KJK_INTRIN_ARM64_H_
 #define KJK_INTRIN_ARM64_H_
 
-#ifndef __GNUC__
+#if !defined(__GNUC__) && !defined(__clang__)
 #error Unsupported compiler
 #endif
 

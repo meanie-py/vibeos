@@ -1,11 +1,9 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::constants::*; // imports STATUS_SUCCESS, etc. use ntkrnl_sys::driver_ddk::*; // imports IRP_MJ_* // Local variables, matching the C let mut thread_context: THREAD_CONTEXT = core::mem::zeroed();
+ // imports STATUS_SUCCESS, etc. use ntkrnl_sys::driver_ddk::*; // imports IRP_MJ_* // Local variables, matching the C let mut thread_context: THREAD_CONTEXT = core::mem::zeroed();
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PIO_STACK_LOCATION, PIRP};
-use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{IRP_CONTEXT, THREAD_CONTEXT, VOLUME_DEVICE_OBJECT};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -125,9 +123,9 @@ pub unsafe extern "system" fn CdFspDispatch(
 
                 IRP_MJ_SET_INFORMATION => CdCommonSetInfo(irp_context, irp),
 
-                IRP_MJ_QUERY_VOLUME_INFORMATION => CdCommonQueryVolInfo(irp_context, irp),
+                _IRP_MJ_QUERY_VOLUME_INFORMATION => CdCommonQueryVolInfo(irp_context, irp),
 
-                IRP_MJ_DIRECTORY_CONTROL => CdCommonDirControl(irp_context, irp),
+                _IRP_MJ_DIRECTORY_CONTROL => CdCommonDirControl(irp_context, irp),
 
                 IRP_MJ_FILE_SYSTEM_CONTROL => CdCommonFsControl(irp_context, irp),
 

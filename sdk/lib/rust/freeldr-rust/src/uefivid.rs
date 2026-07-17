@@ -172,8 +172,8 @@ pub unsafe extern "C" fn UefiVideoGetDisplaySize(Width: PULONG, Height: PULONG, 
 
 #[cfg_attr(feature = "uefi", no_mangle)]
 pub unsafe extern "C" fn UefiVideoSetDisplayMode(
-    DisplayMode: PCSTR,
-    Init: BOOLEAN,
+    _DisplayMode: PCSTR,
+    _Init: BOOLEAN,
 ) -> VIDEODISPLAYMODE {
     VideoTextMode
 }
@@ -189,12 +189,12 @@ pub unsafe extern "C" fn UefiVideoCopyOffScreenBufferToVRAM(Buffer: PVOID) {
 }
 
 #[cfg_attr(feature = "uefi", no_mangle)]
-pub unsafe extern "C" fn UefiVideoSetTextCursorPosition(X: UCHAR, Y: UCHAR) {
+pub unsafe extern "C" fn UefiVideoSetTextCursorPosition(_X: UCHAR, _Y: UCHAR) {
     /* We don't have a cursor yet */
 }
 
 #[cfg_attr(feature = "uefi", no_mangle)]
-pub unsafe extern "C" fn UefiVideoHideShowTextCursor(Show: BOOLEAN) {
+pub unsafe extern "C" fn UefiVideoHideShowTextCursor(_Show: BOOLEAN) {
 }
 
 #[cfg_attr(feature = "uefi", no_mangle)]
@@ -203,11 +203,11 @@ pub unsafe extern "C" fn UefiVideoIsPaletteFixed() -> u8 {
 }
 
 #[cfg_attr(feature = "uefi", no_mangle)]
-pub unsafe extern "C" fn UefiVideoSetPaletteColor(Color: UCHAR, Red: UCHAR, Green: UCHAR, Blue: UCHAR) {
+pub unsafe extern "C" fn UefiVideoSetPaletteColor(_Color: UCHAR, _Red: UCHAR, _Green: UCHAR, _Blue: UCHAR) {
 }
 
 #[cfg_attr(feature = "uefi", no_mangle)]
-pub unsafe extern "C" fn UefiVideoGetPaletteColor(Color: u8, Red: *mut u8, Green: *mut u8, Blue: *mut u8) {
+pub unsafe extern "C" fn UefiVideoGetPaletteColor(_Color: u8, _Red: *mut u8, _Green: *mut u8, _Blue: *mut u8) {
 }
 
 

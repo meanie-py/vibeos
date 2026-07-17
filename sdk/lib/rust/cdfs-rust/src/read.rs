@@ -314,7 +314,7 @@ pub unsafe extern "C" fn CdCommonRead(
                         (*Fcb).__bindgen_anon_1.Header.as_mut().AllocationSize
                     ) as PCC_FILE_SIZES,
                     0, // FALSE
-                    &mut CdData.CacheManagerCallbacks as *mut _,
+                    &raw mut CdData.CacheManagerCallbacks as *mut _,
                     Fcb as *mut c_void,
                 );
                 CcSetReadAheadGranularity(

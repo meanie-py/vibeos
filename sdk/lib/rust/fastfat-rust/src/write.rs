@@ -491,7 +491,7 @@ pub unsafe extern "system" fn FatCommonWrite(
 
         // Check FsRtlCacheTopLevelIrp
         let top_irp = IoGetTopLevelIrp();
-        if ((top_irp as isize) != FSRTL_CACHE_TOP_LEVEL_IRP as isize) {
+        if (top_irp as isize) != FSRTL_CACHE_TOP_LEVEL_IRP as isize  {
             (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WRITE_THROUGH;
         }
 

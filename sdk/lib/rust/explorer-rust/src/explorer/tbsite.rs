@@ -30,7 +30,6 @@ use explorer_sys::com::*;
 use explorer_sys::externs::*;
 use explorer_sys::globals::*;
 use explorer_sys::server::{interlocked_decrement, interlocked_increment};
-use winsrv_sys::consts::*;
 use winsrv_sys::winsrv::*;
 // IStream exists in BOTH explorer_sys::com and winsrv bindgen — the explicit
 // import disambiguates the two globs in favour of our hand-rolled COM one.

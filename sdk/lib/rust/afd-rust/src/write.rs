@@ -1,14 +1,12 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{PIO_COMPLETION_ROUTINE, IRP, KPROCESSOR_MODE, MmMapLockedPages, MmUnmapLockedPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{IRP, KPROCESSOR_MODE, MmMapLockedPages, MmUnmapLockedPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};
-use core::ffi::c_void;
 
 extern "C" {
     fn GetLockedData(irp: PIRP, stack: PIO_STACK_LOCATION) -> PAFD_SEND_INFO;
@@ -265,7 +263,7 @@ unsafe fn send_complete_impl(
     }
 
     if (*FCB).Send.BytesUsed != 0 {
-        let Status = TdiSend(
+        let _Status = TdiSend(
             core::ptr::addr_of_mut!((*FCB).SendIrp.InFlightRequest),
             (*FCB).Connection.Object,
             0,
@@ -376,7 +374,7 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut SendReq: PAFD_SEND_INFO;
+    let SendReq: PAFD_SEND_INFO;
     let mut TotalBytesCopied: u32 = 0;
     let mut i: u32;
     let mut SpaceAvail: u32 = 0;
@@ -396,7 +394,7 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
     (*FCB).EventSelectDisabled &= !AFD_EVENT_SEND;
 
     if ((*FCB).Flags & AFD_ENDPOINT_CONNECTIONLESS) != 0 {
-        let mut SendReq: PAFD_SEND_INFO_UDP;
+        let SendReq: PAFD_SEND_INFO_UDP;
         let mut TargetAddress: PTDI_CONNECTION_INFORMATION = core::ptr::null_mut();
 
         if (*FCB).SharedData.State != SOCKET_STATE_BOUND || (*FCB).RemoteAddress.is_null() {
@@ -633,7 +631,7 @@ pub unsafe extern "system" fn AfdPacketSocketWriteData(
     let mut TargetAddress: PTDI_CONNECTION_INFORMATION = core::ptr::null_mut();
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut SendReq: PAFD_SEND_INFO_UDP;
+    let SendReq: PAFD_SEND_INFO_UDP;
     let mut LockMode: KPROCESSOR_MODE = 0;
 
     UNREFERENCED_PARAMETER(DeviceObject as PVOID);

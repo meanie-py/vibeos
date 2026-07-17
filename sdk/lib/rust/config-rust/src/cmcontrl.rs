@@ -122,7 +122,7 @@ pub unsafe extern "system" fn CmGetSystemControlValues(
     const CM_KEY_VALUE_SMALL: u32 = 0x4;
     const REG_SZ: u32 = 1;
     
-    let SystemHive: PHHIVE = CmControlHive.as_mut_ptr() as PHHIVE;
+    let SystemHive: PHHIVE = (*(&raw mut CmControlHive)).as_mut_ptr() as PHHIVE;
     let mut Status: u32;
     let mut RootCell: HCELL_INDEX;
     let mut BaseCell: HCELL_INDEX;
@@ -228,7 +228,7 @@ pub unsafe extern "system" fn CmGetSystemControlValues(
     
     if CmDefaultLanguageIdType == REG_SZ {
         PsDefaultSystemLocaleId = CmpConvertLangId(
-            CmDefaultLanguageId.as_mut_ptr(),
+            (*(&raw mut CmDefaultLanguageId)).as_mut_ptr(),
             CmDefaultLanguageIdLength,
         ) as LCID;
     } else {
@@ -237,7 +237,7 @@ pub unsafe extern "system" fn CmGetSystemControlValues(
     
     if CmInstallUILanguageIdType == REG_SZ {
         PsInstallUILanguageId = CmpConvertLangId(
-            CmInstallUILanguageId.as_mut_ptr(),
+            (*(&raw mut CmInstallUILanguageId)).as_mut_ptr(),
             CmInstallUILanguageIdLength,
         );
     } else {

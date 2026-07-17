@@ -1,11 +1,8 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ACCESS_MASK, ExAllocatePool, ExFreePool, IoOpenDeviceRegistryKey, KEY_VALUE_PARTIAL_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PKEY_VALUE_PARTIAL_INFORMATION, PUNICODE_STRING, SIZE_T, ULONG_PTR, USHORT, ZwClose, ZwQueryValueKey, _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as KeyValuePartialInformation, _UNICODE_STRING};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{ACCESS_MASK, ExAllocatePool, ExFreePool, IoOpenDeviceRegistryKey, KEY_VALUE_PARTIAL_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PKEY_VALUE_PARTIAL_INFORMATION, PUNICODE_STRING, SIZE_T, USHORT, ZwClose, ZwQueryValueKey, _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as KeyValuePartialInformation, _UNICODE_STRING};
 use usb_sys::{PUSB_CONFIGURATION_DESCRIPTOR, PUSBD_INTERFACE_INFORMATION, PUSBD_INTERFACE_LIST_ENTRY, URB, USB_CONFIGURATION_DESCRIPTOR, USB_INTERFACE_DESCRIPTOR, USBD_INTERFACE_INFORMATION, USBD_PIPE_INFORMATION, USBD_VERSION_INFORMATION, USBDI_VERSION, URB_FUNCTION_SELECT_CONFIGURATION, _URB, _URB_SELECT_CONFIGURATION, _USB_COMMON_DESCRIPTOR};
 type PURB = *mut _URB;
 
@@ -28,14 +25,14 @@ const USB_INTERFACE_DESCRIPTOR_TYPE: i32 = 4;
 
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(
-    DriverObject: PDRIVER_OBJECT,
-    RegistryPath: PUNICODE_STRING,
+    _DriverObject: PDRIVER_OBJECT,
+    _RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
     return STATUS_SUCCESS;
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn DllInitialize(Unknown: ULONG) -> ULONG {
+pub unsafe extern "system" fn DllInitialize(_Unknown: ULONG) -> ULONG {
     return 0 as ULONG;
 }
 
@@ -46,7 +43,7 @@ pub unsafe extern "system" fn DllUnload() -> u32 {
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_Debug_GetHeap(
-    Unknown1: ULONG,
+    _Unknown1: ULONG,
     PoolType: POOL_TYPE,
     NumberOfBytes: ULONG,
     Tag: ULONG,
@@ -57,23 +54,23 @@ pub unsafe extern "system" fn USBD_Debug_GetHeap(
 #[no_mangle]
 pub unsafe extern "system" fn USBD_Debug_RetHeap(
     Heap: PVOID,
-    Unknown2: ULONG,
-    Unknown3: ULONG,
+    _Unknown2: ULONG,
+    _Unknown3: ULONG,
 ) {
     ExFreePool(Heap);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_Debug_LogEntry(
-    Name: *mut i8,
-    Info1: usize,
-    Info2: usize,
-    Info3: usize,
+    _Name: *mut i8,
+    _Info1: usize,
+    _Info2: usize,
+    _Info3: usize,
 ) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn USBD_AllocateDeviceName(Unknown: u32) -> *mut core::ffi::c_void {
+pub unsafe extern "system" fn USBD_AllocateDeviceName(_Unknown: u32) -> *mut core::ffi::c_void {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
         b"USBD_AllocateDeviceName\0".as_ptr() as *const core::ffi::c_char,
@@ -90,7 +87,7 @@ pub unsafe extern "system" fn USBD_CalculateUsbBandwidth(
     EndpointType: u8,
     LowSpeed: u8,
 ) -> u32 {
-    let mut OverheadTable: [u32; 4] = [0x00, 0x09, 0x00, 0x0d];
+    let OverheadTable: [u32; 4] = [0x00, 0x09, 0x00, 0x0d];
     let Result: u32;
     if OverheadTable[EndpointType as usize] != 0 {
         Result = MaxPacketSize
@@ -108,10 +105,10 @@ pub unsafe extern "system" fn USBD_CalculateUsbBandwidth(
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_Dispatch(
-    Unknown1: u32,
-    Unknown2: u32,
-    Unknown3: u32,
-    Unknown4: u32,
+    _Unknown1: u32,
+    _Unknown2: u32,
+    _Unknown3: u32,
+    _Unknown4: u32,
 ) -> u32 {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
@@ -123,7 +120,7 @@ pub unsafe extern "system" fn USBD_Dispatch(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn USBD_FreeDeviceMutex(Unknown: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn USBD_FreeDeviceMutex(_Unknown: *mut core::ffi::c_void) {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const core::ffi::c_char,
         b"USBD_FreeDeviceMutex\0" as *const u8 as *const core::ffi::c_char,
@@ -133,7 +130,7 @@ pub unsafe extern "system" fn USBD_FreeDeviceMutex(Unknown: *mut core::ffi::c_vo
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn USBD_FreeDeviceName(Unknown: PVOID) {
+pub unsafe extern "system" fn USBD_FreeDeviceName(_Unknown: PVOID) {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const ::core::ffi::c_char,
         b"USBD_FreeDeviceName\0".as_ptr() as *const ::core::ffi::c_char,
@@ -144,7 +141,7 @@ pub unsafe extern "system" fn USBD_FreeDeviceName(Unknown: PVOID) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn USBD_WaitDeviceMutex(Unknown: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn USBD_WaitDeviceMutex(_Unknown: *mut core::ffi::c_void) {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"USBD_WaitDeviceMutex\0".as_ptr() as *const i8,
@@ -154,7 +151,7 @@ pub unsafe extern "system" fn USBD_WaitDeviceMutex(Unknown: *mut core::ffi::c_vo
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn USBD_GetSuspendPowerState(Unknown1: ULONG) -> ULONG {
+pub unsafe extern "system" fn USBD_GetSuspendPowerState(_Unknown1: ULONG) -> ULONG {
     DbgPrint(
         c"WARNING:  %s at %s:%d is unimplemented!()\n".as_ptr(),
         c"USBD_GetSuspendPowerState".as_ptr(),
@@ -165,12 +162,12 @@ pub unsafe extern "system" fn USBD_GetSuspendPowerState(Unknown1: ULONG) -> ULON
 }
 #[no_mangle]
 pub unsafe extern "system" fn USBD_InitializeDevice(
-    Unknown1: u32,
-    Unknown2: u32,
-    Unknown3: u32,
-    Unknown4: u32,
-    Unknown5: u32,
-    Unknown6: u32,
+    _Unknown1: u32,
+    _Unknown2: u32,
+    _Unknown3: u32,
+    _Unknown4: u32,
+    _Unknown5: u32,
+    _Unknown6: u32,
 ) -> i32 {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -183,16 +180,16 @@ pub unsafe extern "system" fn USBD_InitializeDevice(
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_RegisterHostController(
-    Unknown1: u32,
-    Unknown2: u32,
-    Unknown3: u32,
-    Unknown4: u32,
-    Unknown5: u32,
-    Unknown6: u32,
-    Unknown7: u32,
-    Unknown8: u32,
-    Unknown9: u32,
-    Unknown10: u32,
+    _Unknown1: u32,
+    _Unknown2: u32,
+    _Unknown3: u32,
+    _Unknown4: u32,
+    _Unknown5: u32,
+    _Unknown6: u32,
+    _Unknown7: u32,
+    _Unknown8: u32,
+    _Unknown9: u32,
+    _Unknown10: u32,
 ) -> i32 {
 
     DbgPrint(
@@ -207,9 +204,9 @@ pub unsafe extern "system" fn USBD_RegisterHostController(
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_GetDeviceInformation(
-    Unknown1: u32,
-    Unknown2: u32,
-    Unknown3: u32,
+    _Unknown1: u32,
+    _Unknown2: u32,
+    _Unknown3: u32,
 ) -> i32 {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -221,11 +218,11 @@ pub unsafe extern "system" fn USBD_GetDeviceInformation(
 }
 #[no_mangle]
 pub unsafe extern "system" fn USBD_CreateDevice(
-    Unknown1: ULONG,
-    Unknown2: ULONG,
-    Unknown3: ULONG,
-    Unknown4: ULONG,
-    Unknown5: ULONG,
+    _Unknown1: ULONG,
+    _Unknown2: ULONG,
+    _Unknown3: ULONG,
+    _Unknown4: ULONG,
+    _Unknown5: ULONG,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -238,9 +235,9 @@ pub unsafe extern "system" fn USBD_CreateDevice(
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_RemoveDevice(
-    Unknown1: u32,
-    Unknown2: u32,
-    Unknown3: u32,
+    _Unknown1: u32,
+    _Unknown2: u32,
+    _Unknown3: u32,
 ) -> i32 {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -252,7 +249,7 @@ pub unsafe extern "system" fn USBD_RemoveDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn USBD_CompleteRequest(Unknown1: ULONG, Unknown2: ULONG) {
+pub unsafe extern "system" fn USBD_CompleteRequest(_Unknown1: ULONG, _Unknown2: ULONG) {
 
     unsafe {
         DbgPrint(
@@ -266,8 +263,8 @@ pub unsafe extern "system" fn USBD_CompleteRequest(Unknown1: ULONG, Unknown2: UL
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_RegisterHcFilter(
-    DeviceObject: PDEVICE_OBJECT,
-    FilterDeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
+    _FilterDeviceObject: PDEVICE_OBJECT,
 ) {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
@@ -279,7 +276,7 @@ pub unsafe extern "system" fn USBD_RegisterHcFilter(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn USBD_SetSuspendPowerState(Unknown1: ULONG, Unknown2: ULONG) {
+pub unsafe extern "system" fn USBD_SetSuspendPowerState(_Unknown1: ULONG, _Unknown2: ULONG) {
     let format_str = b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8;
     let func_name = b"USBD_SetSuspendPowerState\0".as_ptr() as *const i8;
     let file_name = b"drivers/usb/usbd/usbd.c\0".as_ptr() as *const i8;
@@ -287,7 +284,7 @@ pub unsafe extern "system" fn USBD_SetSuspendPowerState(Unknown1: ULONG, Unknown
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn USBD_MakePdoName(Unknown1: u32, Unknown2: u32) -> i32 {
+pub unsafe extern "system" fn USBD_MakePdoName(_Unknown1: u32, _Unknown2: u32) -> i32 {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
         b"USBD_MakePdoName\0".as_ptr() as *const i8,
@@ -299,8 +296,8 @@ pub unsafe extern "system" fn USBD_MakePdoName(Unknown1: u32, Unknown2: u32) -> 
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_QueryBusTime(
-    RootHubPdo: PDEVICE_OBJECT,
-    CurrentFrame: PULONG,
+    _RootHubPdo: PDEVICE_OBJECT,
+    _CurrentFrame: PULONG,
 ) -> NTSTATUS {
 
     let fmt = b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8;
@@ -325,9 +322,9 @@ pub unsafe extern "system" fn USBD_GetUSBDIVersion(
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_RestoreDevice(
-    Unknown1: u32,
-    Unknown2: u32,
-    Unknown3: u32,
+    _Unknown1: u32,
+    _Unknown2: u32,
+    _Unknown3: u32,
 ) -> i32 {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -340,9 +337,9 @@ pub unsafe extern "system" fn USBD_RestoreDevice(
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_RegisterHcDeviceCapabilities(
-    Unknown1: u32,
-    Unknown2: u32,
-    Unknown3: u32,
+    _Unknown1: u32,
+    _Unknown2: u32,
+    _Unknown3: u32,
 ) {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -363,8 +360,8 @@ pub unsafe extern "system" fn USBD_CreateConfigurationRequestEx(
         let mut UrbSize: ULONG = 0;
         let mut InterfaceCount: ULONG = 0;
         let mut PipeCount: ULONG = 0;
-        let mut InterfaceNumber: ULONG;
-        let mut EndPointNumber: ULONG;
+        let _InterfaceNumber: ULONG;
+        let _EndPointNumber: ULONG;
         let mut InterfaceInfo: PUSBD_INTERFACE_INFORMATION;
 
         while !(*InterfaceList.offset(InterfaceCount as isize)).InterfaceDescriptor.is_null() {
@@ -452,8 +449,8 @@ pub unsafe extern "system" fn USBD_CreateConfigurationRequestEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn USBD_CreateConfigurationRequest(
-    ConfigurationDescriptor: *mut USB_CONFIGURATION_DESCRIPTOR,
-    Size: *mut u16,
+    _ConfigurationDescriptor: *mut USB_CONFIGURATION_DESCRIPTOR,
+    _Size: *mut u16,
 ) -> *mut URB {
     core::ptr::null_mut()
 }

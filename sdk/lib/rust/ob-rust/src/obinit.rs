@@ -125,7 +125,7 @@ pub static mut ObpProtectionMode: ULONG = 0;
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 #[no_mangle]
 pub static OBINIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Session Manager", "ProtectionMode",
             core::ptr::addr_of_mut!(ObpProtectionMode)),
         ntkrnl_sys::cv!("Session Manager", "ObjectSecurityMode",

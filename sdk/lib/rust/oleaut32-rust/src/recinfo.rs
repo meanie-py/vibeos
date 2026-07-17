@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 extern "C" {
     fn wcscmp(s1: *const u16, s2: *const u16) -> i32;
@@ -267,7 +266,7 @@ unsafe extern "C" fn copy_from_variant(
     vt: VARENUM,
 ) -> HRESULT {
     let mut var: VARIANT = core::mem::zeroed();
-    let mut hres: HRESULT;
+    let hres: HRESULT;
 
     TRACE!(
         b"(%p(%d) %p %d)\n\0".as_ptr() as *const i8,
@@ -1030,7 +1029,7 @@ fn IRecordInfoImpl_IsMatchingType(
 stdmethod! {
 fn IRecordInfoImpl_RecordCreate(iface: *mut IRecordInfo) -> PVOID {
     let This: *mut IRecordInfoImpl = impl_from_IRecordInfo(iface);
-    let mut record: *mut core::ffi::c_void;
+    let record: *mut core::ffi::c_void;
 
     TRACE!(b"(%p)\n\0".as_ptr() as *const i8, This);
 
@@ -1046,7 +1045,7 @@ fn IRecordInfoImpl_RecordCreateCopy(
     pvSource: PVOID,
     ppvDest: *mut PVOID,
 ) -> HRESULT {
-    let This: *mut IRecordInfoImpl = impl_from_IRecordInfo(iface);
+    let _This: *mut IRecordInfoImpl = impl_from_IRecordInfo(iface);
 
     TRACE!(b"(%p)->(%p %p)\n\0".as_ptr() as *const i8, This, pvSource, ppvDest);
 
@@ -1063,8 +1062,8 @@ fn IRecordInfoImpl_RecordDestroy(
     iface: *mut IRecordInfo,
     pvRecord: PVOID,
 ) -> HRESULT {
-    let This: *mut IRecordInfoImpl = impl_from_IRecordInfo(iface);
-    let mut hres: HRESULT;
+    let _This: *mut IRecordInfoImpl = impl_from_IRecordInfo(iface);
+    let hres: HRESULT;
 
     TRACE!(
         b"(%p)->(%p)\n\0".as_ptr() as *const ::core::ffi::c_char,
@@ -1145,13 +1144,13 @@ pub unsafe extern "system" fn GetRecordInfoFromTypeInfo(
 ) -> HRESULT {
     let mut hres: HRESULT;
     let mut typeattr: *mut TYPEATTR = core::ptr::null_mut();
-    let mut ret: *mut IRecordInfoImpl;
+    let ret: *mut IRecordInfoImpl;
     // C leaves this uninitialized; it is filled either by the GetRefTypeInfo out-param
     // (alias path) or by `pTypeInfo = pTI` (else path). rustc does not treat a write
     // through `&raw mut` as an initialization, so seed it — same as `typeattr` above.
     let mut pTypeInfo: *mut ITypeInfo = core::ptr::null_mut();
     let mut i: ::core::ffi::c_int;
-    let mut guid: GUID;
+    let guid: GUID;
 
     TRACE!(b"(%p %p)\n\0".as_ptr() as *const ::core::ffi::c_char, pTI, ppRecInfo);
 

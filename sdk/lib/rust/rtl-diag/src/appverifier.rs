@@ -1,11 +1,8 @@
 use crate::shim::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{PCSTR, PTEB};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // No translatable file-scope declarations.

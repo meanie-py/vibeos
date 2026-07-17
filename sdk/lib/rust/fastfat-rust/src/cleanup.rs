@@ -605,7 +605,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                 }
 
                 if (*Fcb).FcbCondition == FcbBad {
-                    TruncateSize = &FatLargeZero as *const LARGE_INTEGER; // assume FatLargeZero global
+                    TruncateSize = &raw const FatLargeZero as *const LARGE_INTEGER; // assume FatLargeZero global
                 }
 
                 CcUninitializeCacheMap(FileObject, TruncateSize, ptr::null_mut());

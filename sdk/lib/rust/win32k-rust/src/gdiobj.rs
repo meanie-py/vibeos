@@ -515,7 +515,7 @@ pub unsafe extern "system" fn InitGdiHandleTable() -> NTSTATUS {
 
     liSize.QuadPart = core::mem::size_of::<GDI_HANDLE_TABLE>() as i64;
     let status = MmCreateSection(
-        &mut gpvGdiHdlTblSection,
+        &raw mut gpvGdiHdlTblSection,
         SECTION_ALL_ACCESS,
         core::ptr::null_mut(),
         &mut liSize,
@@ -530,7 +530,7 @@ pub unsafe extern "system" fn InitGdiHandleTable() -> NTSTATUS {
 
     let status = MmMapViewInSessionSpace(
         gpvGdiHdlTblSection,
-        &mut gpentHmgr as *mut _ as *mut PVOID,
+        &raw mut gpentHmgr as *mut _ as *mut PVOID,
         &mut cjViewSize,
     );
     if !NT_SUCCESS(status) {

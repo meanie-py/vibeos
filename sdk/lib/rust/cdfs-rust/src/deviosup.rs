@@ -1,4 +1,3 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -6,7 +5,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ERESOURCE_THREAD, ExReleaseResourceForThreadLite, ExSetResourceOwnerPointer, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoAllocateMdl, IoBuildDeviceIoControlRequest, IoBuildPartialMdl, IoBuildSynchronousFsdRequest, IoFreeIrp, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMakeAssociatedIrp, IoMarkIrpPending, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, MmUnlockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, _LOCK_OPERATION_IoReadAccess as IoReadAccess, _LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
+use ntkrnl_sys::ddk::{ERESOURCE_THREAD, ExReleaseResourceForThreadLite, ExSetResourceOwnerPointer, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoAllocateMdl, IoBuildDeviceIoControlRequest, IoBuildPartialMdl, IoBuildSynchronousFsdRequest, IoFreeIrp, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMakeAssociatedIrp, IoMarkIrpPending, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, MmUnlockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PMDL, _LOCK_OPERATION_IoReadAccess as IoReadAccess, _LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{AUDIO_PLAY_HEADER, CD_IO_CONTEXT, CD_SECTOR_CACHE_CHUNK, FCB, IRP_CONTEXT, PFCB, PIRP_CONTEXT, RIFF_HEADER, TRACK_DATA, VCB};
@@ -338,7 +337,7 @@ pub unsafe extern "C" fn CdNonCachedRead(
                     CdSingleAsync(IrpContext, &mut IoRuns[0] as *mut IO_RUN, Fcb);
                     CleanupRunCount = 0;
 
-                    if (((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0) {
+                    if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0  {
                         CdWaitSync(IrpContext);
                         Status = (*(*IrpContext).Irp).IoStatus.__bindgen_anon_1.Status;
                     } else {
@@ -359,8 +358,8 @@ pub unsafe extern "C" fn CdNonCachedRead(
                         break 'try_block; // try_return
                     }
 
-                    if (Unaligned != 0
-                        && CdFinishBuffers(IrpContext, IoRuns.as_mut_ptr(), RunCount, 0, 0) != 0)
+                    if Unaligned != 0
+                        && CdFinishBuffers(IrpContext, IoRuns.as_mut_ptr(), RunCount, 0, 0) != 0
                     {
                         FlushIoBuffers = 1;
                     }
@@ -402,10 +401,10 @@ pub unsafe extern "C" fn CdNonCachedRead(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdNonCachedXARead(
-    mut irp_context: *mut IRP_CONTEXT,
-    mut fcb: *mut FCB,
-    mut starting_offset: i64,
-    mut byte_count: u32,
+    irp_context: *mut IRP_CONTEXT,
+    fcb: *mut FCB,
+    starting_offset: i64,
+    byte_count: u32,
 ) -> i32 {
     const FCB_STATE_DA_FILE: u32 = 0x00000010; // cdstruc.h
     const FCB_STATE_MODE2_FILE: u32 = 0x00000008; // cdstruc.h
@@ -416,7 +415,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
 
     let mut status: i32 = ntkrnl_sys::base::STATUS_SUCCESS;
     let mut local_riff_header: RIFF_HEADER = core::mem::zeroed();
-    let mut riff_header: *mut RIFF_HEADER;
+    let riff_header: *mut RIFF_HEADER;
     let mut raw_reads: [RAW_READ_INFO; MAX_PARALLEL_IOS] = core::mem::zeroed();
     let mut io_runs: [IO_RUN; MAX_PARALLEL_IOS] = core::mem::zeroed();
     let mut run_count: u32 = 0;
@@ -489,7 +488,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                     ntkrnl_sys::rtl::RtlCopyMemory(
                         user_buffer,
                         (audio_play_header as *mut u8)
-                            .add((core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize))
+                            .add(core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize )
                             as *const core::ffi::c_void,
                         this_byte_count as usize,
                     );
@@ -510,7 +509,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                     ntkrnl_sys::rtl::RtlCopyMemory(
                         user_buffer,
                         (riff_header as *mut u8)
-                            .add((core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize))
+                            .add(core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize )
                             as *const core::ffi::c_void,
                         this_byte_count as usize,
                     );
@@ -536,7 +535,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
                 ntkrnl_sys::rtl::RtlCopyMemory(
                     user_buffer,
                     (riff_header as *mut u8)
-                        .add((core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize))
+                        .add(core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize )
                         as *const core::ffi::c_void,
                     this_byte_count as usize,
                 );
@@ -633,7 +632,7 @@ pub unsafe extern "C" fn CdVolumeDasdWrite(
 ) -> NTSTATUS {
     // PAGED_CODE();
 
-    let mut status: NTSTATUS;
+    let status: NTSTATUS;
 
     // RtlZeroMemory( &IoRun, sizeof( IoRun ) )
     let mut io_run: IO_RUN = core::mem::zeroed();
@@ -675,7 +674,7 @@ pub unsafe extern "C" fn CdReadSectors(
     // PAGED_CODE();
 
     let mut event: KEVENT = core::mem::zeroed();
-    let mut irp: *mut IRP;
+    let irp: *mut IRP;
 
     KeInitializeEvent(&mut event as *mut _, _EVENT_TYPE_NotificationEvent, 0);
 
@@ -731,7 +730,7 @@ pub unsafe extern "C" fn CdCreateUserMdl(
     Operation: LOCK_OPERATION,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_INSUFFICIENT_RESOURCES;
-    let mut Mdl: PMDL;
+    let Mdl: PMDL;
 
     // PAGED_CODE(); // omitted – Rust cannot convey pageability
 
@@ -1372,7 +1371,7 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
     IrpContext: *mut IRP_CONTEXT,
     Run: *mut IO_RUN,
 ) -> u8 {
-    let mut Vcb: *mut VCB = (*IrpContext).Vcb;
+    let Vcb: *mut VCB = (*IrpContext).Vcb;
     let mut Lbn: u32 = SectorsFromLlBytes((*Run).DiskOffset);
     let mut Remaining: u32 = SectorsFromBytes((*Run).DiskByteCount);
     let mut UserBuffer: *mut u8 = (*Run).TransferBuffer as *mut u8;
@@ -1389,7 +1388,7 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
 
     let mut TrackData: *mut TRACK_DATA;
 
-    let mut Index: u32;
+    let _Index: u32;
     let mut Buffer: *mut CD_SECTOR_CACHE_CHUNK;
     let mut Result: u8 = 0;
 
@@ -1572,21 +1571,21 @@ pub unsafe extern "C" fn CdMultipleAsync(
     let mut Mdl: *mut MDL;
     let mut Irp: *mut IRP;
     let MasterIrp: *mut IRP;
-    let UnwindRunCount: u32;
+    let _UnwindRunCount: u32;
     let mut UseSectorCache: BOOLEAN;
 
     CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdMultiSyncCompletionRoutine as usize);
 
-    if (FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0) {
+    if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0  {
         CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdMultiAsyncCompletionRoutine as usize);
     }
 
-    if ((SafeNodeType(Fcb) == CDFS_NTC_FCB_INDEX) &&
+    if (SafeNodeType(Fcb) == CDFS_NTC_FCB_INDEX) &&
         ((*Fcb).Vcb as *mut u8).is_null() == false && // Assuming SectorCacheBuffer is at offset? Need to correct.
         // Actually: (NULL != Fcb->Vcb->SectorCacheBuffer)
         // Will implement as:
         !((*(*Fcb).Vcb).SectorCacheBuffer.is_null()) &&
-        ((*(*IrpContext).Vcb).VcbCondition == VcbMounted))
+        ((*(*IrpContext).Vcb).VcbCondition == VcbMounted)
     {
         UseSectorCache = 1;
     } else {
@@ -1724,7 +1723,7 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
     let mut Mdl: PMDL;
     let mut Irp: PIRP;
     let MasterIrp: PIRP;
-    let mut UnwindRunCount: u32;
+    let _UnwindRunCount: u32;
     let mut RawByteCount: u32;
 
     let mut ThisIoRun = IoRuns;
@@ -1737,7 +1736,7 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
     MasterIrp = (*IrpContext).Irp;
 
     // Iterate through the runs, set up associated IRPs
-    for UnwindRunCount in 0..RunCount {
+    for _UnwindRunCount in 0..RunCount {
         // Create an associated IRP
         let stack_size = (*(*(*IrpContext).Vcb).TargetDeviceObject).StackSize;
         let stack_count = stack_size.wrapping_add(1) as i8;
@@ -1847,7 +1846,7 @@ pub unsafe extern "C" fn CdSingleAsync(
             if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0 {
                 (*(*IrpContext).Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                 KeSetEvent(
-                    ((*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void),
+                    (*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void ,
                     0,
                     0,
                 );
@@ -1856,7 +1855,7 @@ pub unsafe extern "C" fn CdSingleAsync(
         }
     }
 
-    let mut CompletionRoutine: PIO_COMPLETION_ROUTINE;
+    let CompletionRoutine: PIO_COMPLETION_ROUTINE;
 
     if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0 {
         CompletionRoutine = core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSingleSyncCompletionRoutine as usize);
@@ -1903,14 +1902,14 @@ pub unsafe extern "C" fn CdSingleAsync(
 pub unsafe extern "C" fn CdWaitSync(IrpContext: *mut IRP_CONTEXT) {
     // PAGED_CODE();  // placeholder for pageable code check
     KeWaitForSingleObject(
-        ((*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void),
+        (*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void ,
         _KWAIT_REASON_Executive,
         0i8,
         0, // FALSE
         core::ptr::null_mut() // NULL timeout
     );
     KeClearEvent(
-        ((*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void)
+        (*(*IrpContext).__bindgen_anon_1.IoContext).__bindgen_anon_1.SyncEvent.as_mut() as *mut KEVENT as *mut c_void
     );
 }
 #[no_mangle]
@@ -2054,7 +2053,7 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
     ByteCount: ULONG,
     SystemBuffer: *mut c_void,
 ) {
-    let mut RawPath: *mut RAW_PATH_ISO;
+    let RawPath: *mut RAW_PATH_ISO;
     let mut RawDirent: *mut RAW_DIRENT;
     let mut CurrentTrack: u32;
     let mut SectorOffset: u32;

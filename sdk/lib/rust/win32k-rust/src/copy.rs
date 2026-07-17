@@ -1,7 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::base::NT_SUCCESS;
 use ntkrnl_sys::rtl::RtlCopyMemory;
-use core::ffi::c_void;
 
 // SafeProbeForRead/Write: NTAPI (extern "system"), Length = SIZE_T (canonical — icm.rs).
 extern "system" {

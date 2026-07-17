@@ -392,7 +392,7 @@ unsafe fn KdpInitDriver() -> NTSTATUS {
             .map(|f| f as *mut core::ffi::c_void)
             .unwrap_or(core::ptr::null_mut()),
     );
-    if HalDispatchTable.HalInitPnpDriver.is_some() {
+    if (*(&raw const HalDispatchTable)).HalInitPnpDriver.is_some() {
         HalDispatchTable.HalInitPnpDriver.unwrap()()
     } else {
         STATUS_SUCCESS

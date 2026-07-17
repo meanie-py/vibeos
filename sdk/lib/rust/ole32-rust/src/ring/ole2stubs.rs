@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 
 
@@ -9,13 +8,13 @@ use core::ffi::c_void;
 
 #[no_mangle]
 pub unsafe extern "system" fn OleCreateLinkToFile(
-    lpszFileName: LPCOLESTR,
-    riid: REFIID,
-    renderopt: DWORD,
-    lpFormatEtc: LPFORMATETC,
-    pClientSite: LPOLECLIENTSITE,
-    pStg: LPSTORAGE,
-    ppvObj: *mut LPVOID,
+    _lpszFileName: LPCOLESTR,
+    _riid: REFIID,
+    _renderopt: DWORD,
+    _lpFormatEtc: LPFORMATETC,
+    _pClientSite: LPOLECLIENTSITE,
+    _pStg: LPSTORAGE,
+    _ppvObj: *mut LPVOID,
 ) -> HRESULT {
     FIXME!(
         b"(%p,%p,%i,%p,%p,%p,%p), stub!\n\0".as_ptr() as *const i8,
@@ -32,13 +31,13 @@ pub unsafe extern "system" fn OleCreateLinkToFile(
 
 #[no_mangle]
 pub unsafe extern "system" fn OleCreateLink(
-    pmkLinkSrc: LPMONIKER,
-    riid: REFIID,
-    renderopt: DWORD,
-    lpFormatEtc: LPFORMATETC,
-    pClientSite: LPOLECLIENTSITE,
-    pStg: LPSTORAGE,
-    ppvObj: *mut LPVOID,
+    _pmkLinkSrc: LPMONIKER,
+    _riid: REFIID,
+    _renderopt: DWORD,
+    _lpFormatEtc: LPFORMATETC,
+    _pClientSite: LPOLECLIENTSITE,
+    _pStg: LPSTORAGE,
+    _ppvObj: *mut LPVOID,
 ) -> HRESULT {
     FIXME!(b"(not shown), stub!\n\0".as_ptr() as *const i8);
     E_NOTIMPL
@@ -46,9 +45,9 @@ pub unsafe extern "system" fn OleCreateLink(
 
 #[no_mangle]
 pub unsafe extern "system" fn OleGetIconOfClass(
-    rclsid: *const CLSID,
-    lpszLabel: LPOLESTR,
-    fUseTypeAsLabel: BOOL,
+    _rclsid: *const CLSID,
+    _lpszLabel: LPOLESTR,
+    _fUseTypeAsLabel: BOOL,
 ) -> HGLOBAL {
     FIXME!(
         b"(%p,%p,%x), stub!\n\0".as_ptr(),
@@ -61,8 +60,8 @@ pub unsafe extern "system" fn OleGetIconOfClass(
 
 #[no_mangle]
 pub unsafe extern "system" fn OleGetIconOfFile(
-    path: LPOLESTR,
-    use_file_as_label: BOOL,
+    _path: LPOLESTR,
+    _use_file_as_label: BOOL,
 ) -> HGLOBAL {
     FIXME!(
         b"(%s, %d), stub!\n\0".as_ptr() as *const i8,
@@ -74,9 +73,9 @@ pub unsafe extern "system" fn OleGetIconOfFile(
 
 #[no_mangle]
 pub unsafe extern "system" fn OleRegEnumFormatEtc(
-    clsid: *const GUID,
-    dwDirection: DWORD,
-    ppenumFormatetc: *mut LPENUMFORMATETC,
+    _clsid: *const GUID,
+    _dwDirection: DWORD,
+    _ppenumFormatetc: *mut LPENUMFORMATETC,
 ) -> HRESULT {
     FIXME!(
         b"(%p, %d, %p), stub!\n\0".as_ptr() as *const i8,
@@ -89,7 +88,7 @@ pub unsafe extern "system" fn OleRegEnumFormatEtc(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CoGetCallerTID(lpdwTID: LPDWORD) -> HRESULT {
+pub unsafe extern "system" fn CoGetCallerTID(_lpdwTID: LPDWORD) -> HRESULT {
     FIXME!(b"stub!\n\0".as_ptr());
     E_NOTIMPL
 }

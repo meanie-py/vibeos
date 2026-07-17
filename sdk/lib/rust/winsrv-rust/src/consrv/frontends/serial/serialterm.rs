@@ -1,15 +1,6 @@
 use winsrv_sys::nt::*;
 use super::super::super::{VkKeyScanW};
-use super::super::super::condrv::text::*;
-use super::super::super::condrv::conoutput::*;
-use super::super::super::condrv::coninput::*;
 use super::super::super::coninput::ConioProcessInputEvent;
-use super::super::super::condrv::console::*;
-use super::super::super::console::*;
-use super::super::super::handle::*;
-use super::super::super::lineinput::*;
-use super::super::super::history::*;
-use super::super::super::init::*;
 use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -32,8 +23,8 @@ extern "system" {
     pub fn Sleep(dwMilliseconds: u32);
 }
 
-const IOCTL_ARM64INPUT_INJECT_BYTE: u32 = ((0x0000000B << 16) | (0x800 << 2) | (0 << 14) | (0));
-const IOCTL_ARM64INPUT_INJECT_MOUSE: u32 = ((0x0000000F << 16) | (0x800 << 2) | (0 << 14) | (0));
+const IOCTL_ARM64INPUT_INJECT_BYTE: u32 = (0x0000000B << 16) | (0x800 << 2) | (0 << 14) | (0) ;
+const IOCTL_ARM64INPUT_INJECT_MOUSE: u32 = (0x0000000F << 16) | (0x800 << 2) | (0 << 14) | (0) ;
 
 const MOUSE_LEFT_BUTTON_DOWN: u32 = 0x0001;
 const MOUSE_LEFT_BUTTON_UP: u32 = 0x0002;

@@ -1,16 +1,13 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
-use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, DEVICE_CAPABILITIES, DEVICE_RELATIONS, _KWAIT_REASON_Executive, IO_RESOURCE_DESCRIPTOR, IO_RESOURCE_REQUIREMENTS_LIST, IO_STACK_LOCATION, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, KAFFINITY, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_RESOURCE_DESCRIPTOR, PIO_RESOURCE_REQUIREMENTS_LIST, PIO_STACK_LOCATION, PIRP, PNP_BUS_INFORMATION, PPNP_BUS_INFORMATION};
+use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, DEVICE_CAPABILITIES, DEVICE_RELATIONS, _KWAIT_REASON_Executive, IO_RESOURCE_DESCRIPTOR, IO_RESOURCE_REQUIREMENTS_LIST, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, KAFFINITY, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_RESOURCE_DESCRIPTOR, PIO_RESOURCE_REQUIREMENTS_LIST, PIO_STACK_LOCATION, PIRP, PNP_BUS_INFORMATION, PPNP_BUS_INFORMATION};
 // IoGet{Current,Next}IrpStackLocation are FORCEINLINE in the DDK (no exported
 // symbol) — use the ntkrnl-sys inline impls or the cohab link fails.
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation};
-use core::ffi::c_void;
 
 // ---- Enum-variant constants: bindgen prefixes them (`_<ENUM>_<Name>`), so the
 // unprefixed spellings the C glue uses don't resolve from ddk. Re-alias here
@@ -515,14 +512,14 @@ pub unsafe fn RESTORE_PREVIOUS_PNP_STATE(data: *mut COMMON_DEVICE_DATA) {
     (*data).DevicePnPState = (*data).PreviousPnPState;
 }
 
-pub fn DbgDeviceRelationString(type_: ULONG) -> *const u8 {
+pub fn DbgDeviceRelationString(_type_: ULONG) -> *const u8 {
     b"Unknown\0".as_ptr()
 }
 
-pub fn ASSERTMSG(msg: *const u8, expr: bool) {
+pub fn ASSERTMSG(_msg: *const u8, _expr: bool) {
 }
 
-pub fn ASSERT(expr: bool) {
+pub fn ASSERT(_expr: bool) {
 }
 
 pub fn PAGED_CODE() {
@@ -569,7 +566,7 @@ extern "C" {
 use ntkrnl_sys::base::UNICODE_STRING as _UNICODE_STRING;
 #[no_mangle]
 pub unsafe extern "C" fn Bus_PDO_PnP(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     IrpStack: PIO_STACK_LOCATION,
     DeviceData: PPDO_DEVICE_DATA,
@@ -596,7 +593,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 if device.is_null() {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_SYS_BUTTON,
+                        &raw const GUID_DEVICE_SYS_BUTTON,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
@@ -609,7 +606,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_THERMAL_ZONE,
+                        &raw const GUID_DEVICE_THERMAL_ZONE,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
@@ -622,7 +619,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_FAN,
+                        &raw const GUID_DEVICE_FAN,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
@@ -635,7 +632,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_LID,
+                        &raw const GUID_DEVICE_LID,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
@@ -648,7 +645,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_PROCESSOR,
+                        &raw const GUID_DEVICE_PROCESSOR,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
@@ -1637,8 +1634,8 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
     };
     let mut resource: *mut ACPI_RESOURCE;
     let mut i: ULONG;
-    let mut RequirementsListSize: ULONG;
-    let mut RequirementsList: PIO_RESOURCE_REQUIREMENTS_LIST;
+    let RequirementsListSize: ULONG;
+    let RequirementsList: PIO_RESOURCE_REQUIREMENTS_LIST;
     let mut RequirementDescriptor: PIO_RESOURCE_DESCRIPTOR;
     let mut CurrentRes: BOOLEAN = 0;
     let mut SeenStartDependent: BOOLEAN;
@@ -2078,7 +2075,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceRelations(
     Irp: PIRP,
 ) -> NTSTATUS {
     let stack: PIO_STACK_LOCATION;
-    let deviceRelations: PDEVICE_RELATIONS;
+    let _deviceRelations: PDEVICE_RELATIONS;
     let status: NTSTATUS;
 
     stack = IoGetCurrentIrpStackLocation(Irp);
@@ -2118,7 +2115,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceRelations(
 }
 #[no_mangle]
 pub unsafe extern "C" fn Bus_PDO_QueryBusInformation(
-    DeviceData: PPDO_DEVICE_DATA,
+    _DeviceData: PPDO_DEVICE_DATA,
     Irp: PIRP,
 ) -> NTSTATUS {
     let busInfo = ExAllocatePoolWithTag(

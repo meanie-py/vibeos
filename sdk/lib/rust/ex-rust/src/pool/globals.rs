@@ -133,7 +133,7 @@ pub static mut MiPagedPoolSListMaximum: ULONG = 8;
 // docs/engineering/cmdata-chopping-plan.md.
 #[no_mangle]
 pub static POOL_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Session Manager\\Memory Management", "PoolUsageMaximum",
             core::ptr::addr_of_mut!(MmConsumedPoolPercentage)),
     ] });

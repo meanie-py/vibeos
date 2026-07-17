@@ -404,24 +404,24 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
     OwnerSize = match DetermineSIDSize(DescriptorCopy.Owner as PISID, &mut OwnerSAC, CurrentMode) {
         Ok(v) => v, Err(s) => return s,
     };
-    DescriptorSize += ((OwnerSize + 3) & !3);
+    DescriptorSize += (OwnerSize + 3) & !3 ;
     GroupSize = match DetermineSIDSize(DescriptorCopy.Group as PISID, &mut GroupSAC, CurrentMode) {
         Ok(v) => v, Err(s) => return s,
     };
-    DescriptorSize += ((GroupSize + 3) & !3);
+    DescriptorSize += (GroupSize + 3) & !3 ;
 
     if DescriptorCopy.Control & SE_SACL_PRESENT != 0 {
         SaclSize = match DetermineACLSize(DescriptorCopy.Sacl, CurrentMode) {
             Ok(v) => v, Err(s) => return s,
         };
-        DescriptorSize += ((SaclSize + 3) & !3);
+        DescriptorSize += (SaclSize + 3) & !3 ;
     }
 
     if DescriptorCopy.Control & SE_DACL_PRESENT != 0 {
         DaclSize = match DetermineACLSize(DescriptorCopy.Dacl, CurrentMode) {
             Ok(v) => v, Err(s) => return s,
         };
-        DescriptorSize += ((DaclSize + 3) & !3);
+        DescriptorSize += (DaclSize + 3) & !3 ;
     }
 
     NewDescriptor = ExAllocatePoolWithTag(PoolType, DescriptorSize as SIZE_T, TAG_SD) as PISECURITY_DESCRIPTOR_RELATIVE;
@@ -448,7 +448,7 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
             (NewDescriptor as *mut u8).add(Offset as usize),
             OwnerSize as usize,
         );
-        Offset += ((OwnerSize + 3) & !3);
+        Offset += (OwnerSize + 3) & !3 ;
     }
 
     if !DescriptorCopy.Group.is_null() {
@@ -461,7 +461,7 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
             (NewDescriptor as *mut u8).add(Offset as usize),
             GroupSize as usize,
         );
-        Offset += ((GroupSize + 3) & !3);
+        Offset += (GroupSize + 3) & !3 ;
     }
 
     if !DescriptorCopy.Sacl.is_null() {
@@ -474,7 +474,7 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
             (NewDescriptor as *mut u8).add(Offset as usize),
             SaclSize as usize,
         );
-        Offset += ((SaclSize + 3) & !3);
+        Offset += (SaclSize + 3) & !3 ;
     }
 
     if !DescriptorCopy.Dacl.is_null() {
@@ -487,7 +487,7 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
             (NewDescriptor as *mut u8).add(Offset as usize),
             DaclSize as usize,
         );
-        Offset += ((DaclSize + 3) & !3);
+        Offset += (DaclSize + 3) & !3 ;
     }
 
     *CapturedSecurityDescriptor = NewDescriptor as PSECURITY_DESCRIPTOR;
@@ -538,7 +538,7 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
     if *SecurityInformation & OWNER_SECURITY_INFORMATION != 0 {
         Owner = SepGetOwnerFromDescriptor(ObjectSd);
         if !Owner.is_null() {
-            OwnerLength = ((RtlLengthSid(Owner) + 3) & !3);
+            OwnerLength = (RtlLengthSid(Owner) + 3) & !3 ;
             Control |= (*ObjectSd).Control & SE_OWNER_DEFAULTED;
         }
     }
@@ -546,7 +546,7 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
     if *SecurityInformation & GROUP_SECURITY_INFORMATION != 0 {
         Group = SepGetGroupFromDescriptor(ObjectSd);
         if !Group.is_null() {
-            GroupLength = ((RtlLengthSid(Group) + 3) & !3);
+            GroupLength = (RtlLengthSid(Group) + 3) & !3 ;
             Control |= (*ObjectSd).Control & SE_GROUP_DEFAULTED;
         }
     }
@@ -556,7 +556,7 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
     {
         Dacl = SepGetDaclFromDescriptor(ObjectSd);
         if !Dacl.is_null() {
-            DaclLength = (((*Dacl).AclSize as ULONG + 3) & !3);
+            DaclLength = ((*Dacl).AclSize as ULONG + 3) & !3 ;
         }
 
         Control |= (*ObjectSd).Control & (SE_DACL_DEFAULTED | SE_DACL_PRESENT);
@@ -567,7 +567,7 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
     {
         Sacl = SepGetSaclFromDescriptor(ObjectSd);
         if !Sacl.is_null() {
-            SaclLength = (((*Sacl).AclSize as ULONG + 3) & !3);
+            SaclLength = ((*Sacl).AclSize as ULONG + 3) & !3 ;
         }
 
         Control |= (*ObjectSd).Control & (SE_SACL_DEFAULTED | SE_SACL_PRESENT);
@@ -716,7 +716,7 @@ pub unsafe extern "system" fn SeSetSecurityDescriptorInfoEx(
         Dacl = SepGetDaclFromDescriptor(ObjectSd as PISECURITY_DESCRIPTOR);
         Control |= (*ObjectSd).Control & (SE_DACL_DEFAULTED | SE_DACL_PRESENT);
     }
-    DaclLength = if !Dacl.is_null() { (((*Dacl).AclSize as ULONG + 3) & !3) } else { 0 };
+    DaclLength = if !Dacl.is_null() { ((*Dacl).AclSize as ULONG + 3) & !3  } else { 0 };
 
     if SecurityInformation & SACL_SECURITY_INFORMATION != 0 {
         Sacl = SepGetSaclFromDescriptor(SecurityDescriptor);
@@ -725,7 +725,7 @@ pub unsafe extern "system" fn SeSetSecurityDescriptorInfoEx(
         Sacl = SepGetSaclFromDescriptor(ObjectSd as PISECURITY_DESCRIPTOR);
         Control |= (*ObjectSd).Control & (SE_SACL_DEFAULTED | SE_SACL_PRESENT);
     }
-    SaclLength = if !Sacl.is_null() { (((*Sacl).AclSize as ULONG + 3) & !3) } else { 0 };
+    SaclLength = if !Sacl.is_null() { ((*Sacl).AclSize as ULONG + 3) & !3  } else { 0 };
 
     NewSd = ExAllocatePoolWithTag(
         PoolType,
@@ -830,7 +830,7 @@ pub unsafe extern "system" fn SeValidSecurityDescriptor(
         return 0u8;
     }
 
-    SdLength += (core::mem::size_of::<_SID>() as ULONG + ((*Sid).SubAuthorityCount as ULONG - 1) * core::mem::size_of::<ULONG>() as ULONG);
+    SdLength += core::mem::size_of::<_SID>() as ULONG + ((*Sid).SubAuthorityCount as ULONG - 1) * core::mem::size_of::<ULONG>() as ULONG ;
     if Length < SdLength {
         return 0u8;
     }
@@ -851,7 +851,7 @@ pub unsafe extern "system" fn SeValidSecurityDescriptor(
             return 0u8;
         }
 
-        SdLength += (core::mem::size_of::<_SID>() as ULONG + ((*Sid).SubAuthorityCount as ULONG - 1) * core::mem::size_of::<ULONG>() as ULONG);
+        SdLength += core::mem::size_of::<_SID>() as ULONG + ((*Sid).SubAuthorityCount as ULONG - 1) * core::mem::size_of::<ULONG>() as ULONG ;
         if Length < SdLength {
             return 0u8;
         }
@@ -1216,11 +1216,11 @@ pub unsafe extern "system" fn SeComputeQuotaInformationSize(
     Dacl = SepGetDaclFromDescriptor(SecurityDescriptor as PISECURITY_DESCRIPTOR);
 
     if !Group.is_null() {
-        *QuotaInfoSize = ((RtlLengthSid(Group) + 3) & !3);
+        *QuotaInfoSize = (RtlLengthSid(Group) + 3) & !3 ;
     }
 
     if !Dacl.is_null() {
-        *QuotaInfoSize += (((*Dacl).AclSize as ULONG + 3) & !3);
+        *QuotaInfoSize += ((*Dacl).AclSize as ULONG + 3) & !3 ;
     }
 
     STATUS_SUCCESS

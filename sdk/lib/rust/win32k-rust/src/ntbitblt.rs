@@ -263,7 +263,7 @@ pub unsafe extern "C" fn NtGdiAlphaBlend(
         2,
         ahDC.as_mut_ptr() as *mut HGDIOBJ,
         apObj.as_mut_ptr(),
-        (GDIObjType_DC_TYPE as _),
+        GDIObjType_DC_TYPE as _ ,
     ) == 0
     {
         EngSetLastError(ERROR_INVALID_HANDLE);
@@ -610,7 +610,7 @@ pub unsafe extern "C" fn NtGdiTransparentBlt(
 
     ahDC[0] = hdcDst;
     ahDC[1] = hdcSrc;
-    if GDIOBJ_bLockMultipleObjects(2, ahDC.as_mut_ptr() as *mut HGDIOBJ, apObj.as_mut_ptr(), (GDIObjType_DC_TYPE as _)) == 0 {
+    if GDIOBJ_bLockMultipleObjects(2, ahDC.as_mut_ptr() as *mut HGDIOBJ, apObj.as_mut_ptr(), GDIObjType_DC_TYPE as _ ) == 0 {
         EngSetLastError(ERROR_INVALID_HANDLE);
         return 0u8 as BOOL;
     }
@@ -966,7 +966,7 @@ pub unsafe extern "C" fn NtGdiMaskBlt(
     }
 
     if ROP4_USES_MASK(rop4) != 0 && !hbmMask.is_null() {
-        psurfMask = SURFACE_ShareLockSurface((hbmMask as _));
+        psurfMask = SURFACE_ShareLockSurface(hbmMask as _ );
         if psurfMask.is_null() {
             EngSetLastError(ERROR_INVALID_HANDLE);
             return 0;
@@ -990,7 +990,7 @@ pub unsafe extern "C" fn NtGdiMaskBlt(
 
     ahDC[0] = hdcDest;
     ahDC[1] = if UsesSource != 0 { hdcSrc } else { core::ptr::null_mut() };
-    if GDIOBJ_bLockMultipleObjects(2, ahDC.as_mut_ptr() as *mut HGDIOBJ, apObj.as_mut_ptr(), (GDIObjType_DC_TYPE as _)) == 0 {
+    if GDIOBJ_bLockMultipleObjects(2, ahDC.as_mut_ptr() as *mut HGDIOBJ, apObj.as_mut_ptr(), GDIObjType_DC_TYPE as _ ) == 0 {
         if !psurfMask.is_null() {
             SURFACE_ShareUnlockSurface(psurfMask);
         }
@@ -1232,7 +1232,7 @@ pub unsafe extern "system" fn GreStretchBltMask(
         3,
         ahDC.as_mut_ptr() as *mut HGDIOBJ,
         apObj.as_mut_ptr(),
-        (GDIObjType_DC_TYPE as _),
+        GDIObjType_DC_TYPE as _ ,
     ) == 0
     {
         EngSetLastError(ERROR_INVALID_HANDLE as _);
@@ -1244,21 +1244,21 @@ pub unsafe extern "system" fn GreStretchBltMask(
 
     if (*DCDest).dctype == DCTYPE_INFO as _ {
         if !DCSrc.is_null() {
-            GDIOBJ_vUnlockObject((core::ptr::addr_of_mut!((*DCSrc).BaseObject) as PGDIOBJ as _));
+            GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*DCSrc).BaseObject) as PGDIOBJ as _ );
         }
         if !DCMask.is_null() {
-            GDIOBJ_vUnlockObject((core::ptr::addr_of_mut!((*DCMask).BaseObject) as PGDIOBJ as _));
+            GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*DCMask).BaseObject) as PGDIOBJ as _ );
         }
-        GDIOBJ_vUnlockObject((core::ptr::addr_of_mut!((*DCDest).BaseObject) as PGDIOBJ as _));
+        GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*DCDest).BaseObject) as PGDIOBJ as _ );
         return 1;
     }
 
     if UsesSource != 0 {
         if (*DCSrc).dctype == DCTYPE_INFO as _ {
-            GDIOBJ_vUnlockObject((core::ptr::addr_of_mut!((*DCDest).BaseObject) as PGDIOBJ as _));
-            GDIOBJ_vUnlockObject((core::ptr::addr_of_mut!((*DCSrc).BaseObject) as PGDIOBJ as _));
+            GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*DCDest).BaseObject) as PGDIOBJ as _ );
+            GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*DCSrc).BaseObject) as PGDIOBJ as _ );
             if !DCMask.is_null() {
-                GDIOBJ_vUnlockObject((core::ptr::addr_of_mut!((*DCMask).BaseObject) as PGDIOBJ as _));
+                GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*DCMask).BaseObject) as PGDIOBJ as _ );
             }
             return 1;
         }
@@ -1358,7 +1358,7 @@ pub unsafe extern "system" fn GreStretchBltMask(
             }
             MaskPoint.x = XOriginMask;
             MaskPoint.y = YOriginMask;
-            w32r_IntLPtoDP(DCMask, (core::ptr::addr_of_mut!(MaskPoint) as _), 1);
+            w32r_IntLPtoDP(DCMask, core::ptr::addr_of_mut!(MaskPoint) as _ , 1);
             MaskPoint.x += (*DCMask).ptlDCOrig.x;
             MaskPoint.y += (*DCMask).ptlDCOrig.y;
         }
@@ -1638,10 +1638,10 @@ unsafe fn IntGdiPolyPatBlt_impl(
 
     i = 0;
     while i < cRects {
-        pbrush = BRUSH_ShareLockBrush(((*pRects).hBrush as _));
+        pbrush = BRUSH_ShareLockBrush((*pRects).hBrush as _ );
 
         if !pbrush.is_null() {
-            EBRUSHOBJ_vInitFromDC(core::ptr::addr_of_mut!(eboFill), pbrush, (pdc as _));
+            EBRUSHOBJ_vInitFromDC(core::ptr::addr_of_mut!(eboFill), pbrush, pdc as _ );
 
             IntPatBlt(
                 pdc,
@@ -2015,7 +2015,7 @@ pub unsafe extern "C" fn IntGdiFillRgn(
         &mut (*prgnClip).rdh.rcBound,
     );
 
-    rop2Fg = FIXUP_ROP2(((*(*pdc).pdcattr).jROP2 as _));
+    rop2Fg = FIXUP_ROP2((*(*pdc).pdcattr).jROP2 as _ );
     mix = rop2Fg
         | ((if (*(*pdc).pdcattr).jBkMode == OPAQUE as _ {
             rop2Fg
@@ -2034,7 +2034,7 @@ pub unsafe extern "C" fn IntGdiFillRgn(
         EBRUSHOBJ_vInit(
             &mut eboFill,
             pbrFill,
-            ((*pdc).dclevel.pSurface as _),
+            (*pdc).dclevel.pSurface as _ ,
             0x00FFFFFF,
             0,
             core::ptr::null_mut(),
@@ -2145,7 +2145,7 @@ pub unsafe extern "C" fn NtGdiFillRgn(
         return 0;
     }
 
-    pbrFill = BRUSH_ShareLockBrush((hbrush as _));
+    pbrFill = BRUSH_ShareLockBrush(hbrush as _ );
     if pbrFill.is_null() {
         REGION_UnlockRgn(prgn);
         DC_UnlockDc(pdc);
@@ -2540,7 +2540,7 @@ pub unsafe extern "stdcall" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORR
             EXLATEOBJ_vInitialize(
                 &mut exlo,
                 (*psurfSrc).ppal,
-                &mut gpalRGB,
+                &raw mut gpalRGB,
                 CLR_INVALID,
                 CLR_INVALID,
                 CLR_INVALID,
@@ -2603,7 +2603,7 @@ pub unsafe extern "C" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORREF {
         ptlSrc.y = y;
 
         /* Translate coordinates to device coordinates */
-        w32r_IntLPtoDP(pdc, (core::ptr::addr_of_mut!(ptlSrc) as _), 1);
+        w32r_IntLPtoDP(pdc, core::ptr::addr_of_mut!(ptlSrc) as _ , 1);
         ptlSrc.x += (*pdc).ptlDCOrig.x;
         ptlSrc.y += (*pdc).ptlDCOrig.y;
 
@@ -2613,7 +2613,7 @@ pub unsafe extern "C" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORREF {
         rcDest.bottom = y + 1;
 
         /* Prepare DC for blit */
-        DC_vPrepareDCsForBlit(pdc, (core::ptr::addr_of_mut!(rcDest) as _), core::ptr::null_mut(), core::ptr::null_mut());
+        DC_vPrepareDCsForBlit(pdc, core::ptr::addr_of_mut!(rcDest) as _ , core::ptr::null_mut(), core::ptr::null_mut());
 
         /* Check if the pixel is outside the surface */
         psurfSrc = (*pdc).dclevel.pSurface;
@@ -2627,7 +2627,7 @@ pub unsafe extern "C" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORREF {
 
         /* Allocate a surface */
         psurfDest = SURFACE_AllocSurface(
-            (STYPE_BITMAP as _),
+            STYPE_BITMAP as _ ,
             1,
             1,
             BMF_32BPP,
@@ -2644,7 +2644,7 @@ pub unsafe extern "C" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORREF {
             EXLATEOBJ_vInitialize(
                 &mut exlo,
                 (*psurfSrc).ppal,
-                &mut gpalRGB,
+                &raw mut gpalRGB,
                 CLR_INVALID,
                 CLR_INVALID,
                 CLR_INVALID,

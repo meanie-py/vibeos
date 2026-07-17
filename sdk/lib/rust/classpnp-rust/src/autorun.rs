@@ -212,7 +212,7 @@ pub unsafe extern "C" fn ClassSendEjectionNotification(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
 ) {
     TracePrint((4i32) as u32, TRACE_FLAG_MCN, b"ClassSendEjectionNotification: media EJECT_REQUEST\0".as_ptr() as PCCHAR);
-    ClassSendNotification(FdoExtension, &GUID_IO_MEDIA_EJECT_REQUEST, 0u32, core::ptr::null_mut());
+    ClassSendNotification(FdoExtension, &raw const GUID_IO_MEDIA_EJECT_REQUEST, 0u32, core::ptr::null_mut());
 }
 #[no_mangle]
 pub unsafe extern "system" fn ClassSendNotification(
@@ -357,7 +357,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                 &raw mut (*Header).ClassEventData as *mut UCHAR as PNOTIFICATION_OPERATIONAL_STATUS;
             if (*opChangeInfo).OperationalEvent() != (NOTIFICATION_OPERATIONAL_EVENT_CHANGE_REQUESTED) as u8 {
                 let event: ULONG =
-                    (((((*opChangeInfo).Operation[0] as i32) << 8) | (((*opChangeInfo).Operation[1] as i32) & 0xff)) as u32);
+                    ((((*opChangeInfo).Operation[0] as i32) << 8) | (((*opChangeInfo).Operation[1] as i32) & 0xff)) as u32 ;
                 if (*info).MediaChangeRetryCount >= 4 {
                     const OP_CHANGE_MASK: UCHAR = 0x02u8;
                     TracePrint(
@@ -513,7 +513,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                         | (((*externalInfo).Request[1] as i32) & 0xff)) as USHORT;
                 // KeQuerySystemTime expanded: assign SharedSystemTime
                 (*(&raw mut externalData.SystemTime as *mut ULONG64)) =
-                    (*(&raw const SharedSystemTime as *const LARGE_INTEGER as *const ULONG64));
+                    *(&raw const SharedSystemTime as *const LARGE_INTEGER as *const ULONG64) ;
                 externalData.SystemTime.QuadPart *= KeQueryTimeIncrement() as LONGLONG;
                 TracePrint(
                     (4i32) as u32,
@@ -523,7 +523,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                 );
                 ClassSendNotification(
                     FdoExtension,
-                    &GUID_IO_DEVICE_EXTERNAL_REQUEST,
+                    &raw const GUID_IO_DEVICE_EXTERNAL_REQUEST,
                     core::mem::size_of::<DEVICE_EVENT_EXTERNAL_REQUEST>() as ULONG,
                     &raw mut externalData as *mut core::ffi::c_void,
                 );
@@ -613,7 +613,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                 );
                 ClassSendNotification(
                     FdoExtension,
-                    &GUID_IO_DEVICE_BECOMING_READY,
+                    &raw const GUID_IO_DEVICE_BECOMING_READY,
                     core::mem::size_of::<DEVICE_EVENT_BECOMING_READY>() as ULONG,
                     &raw mut busyData as *mut core::ffi::c_void,
                 );
@@ -698,7 +698,7 @@ pub unsafe extern "C" fn ClasspInternalSetMediaChangeState(
         TracePrint(4, TRACE_FLAG_MCN, b"ClasspInternalSetMediaChangeState: media ARRIVAL\0".as_ptr() as PCCHAR);
         ClassSendNotification(
             FdoExtension,
-            &GUID_IO_MEDIA_ARRIVAL as *const GUID,
+            &raw const GUID_IO_MEDIA_ARRIVAL as *const GUID,
             core::mem::size_of::<CLASS_MEDIA_CHANGE_CONTEXT>() as ULONG,
             &raw mut mcnContext as PVOID,
         );
@@ -706,7 +706,7 @@ pub unsafe extern "C" fn ClasspInternalSetMediaChangeState(
         TracePrint(4, TRACE_FLAG_MCN, b"ClasspInternalSetMediaChangeState: media REMOVAL\0".as_ptr() as PCCHAR);
         ClassSendNotification(
             FdoExtension,
-            &GUID_IO_MEDIA_REMOVAL as *const GUID,
+            &raw const GUID_IO_MEDIA_REMOVAL as *const GUID,
             core::mem::size_of::<CLASS_MEDIA_CHANGE_CONTEXT>() as ULONG,
             &raw mut mcnContext as PVOID,
         );
@@ -1557,7 +1557,7 @@ pub unsafe extern "C" fn ClasspInitializePolling(
         };
         PoRegisterPowerSettingCallback(
             fdo,
-            &GUID_CONSOLE_DISPLAY_STATE,
+            &raw const GUID_CONSOLE_DISPLAY_STATE,
             Some(_cb),
             core::ptr::null_mut(),
             &raw mut ScreenStateNotificationHandle,

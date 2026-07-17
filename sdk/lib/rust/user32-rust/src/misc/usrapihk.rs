@@ -380,13 +380,14 @@ pub unsafe extern "system" fn ClearUserApiHook(mut hInstance: HINSTANCE) -> BOOL
     (!hInstance.is_null()) as BOOL
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn InitUserApiHook(hInstance: HINSTANCE, pfn: USERAPIHOOKPROC) -> BOOL {
     let mut uah: USERAPIHOOK = core::mem::zeroed();
 
     ResetUserApiHook(&mut uah);
 
-    RtlEnterCriticalSection(&mut gcsUserApiHook);
+    RtlEnterCriticalSection(&raw mut gcsUserApiHook);
 
     let pfn_fn = pfn.unwrap();
 
@@ -394,13 +395,13 @@ pub unsafe extern "system" fn InitUserApiHook(hInstance: HINSTANCE, pfn: USERAPI
         || uah.ForceResetUserApiHook != Some(ForceResetUserApiHook)
         || uah.size <= 0
     {
-        RtlLeaveCriticalSection(&mut gcsUserApiHook);
+        RtlLeaveCriticalSection(&raw mut gcsUserApiHook);
         return 0;
     }
 
     if !ghmodUserApiHook.is_null() {
         if ghmodUserApiHook != hInstance {
-            RtlLeaveCriticalSection(&mut gcsUserApiHook);
+            RtlLeaveCriticalSection(&raw mut gcsUserApiHook);
             pfn_fn(uahStop, core::ptr::null_mut());
             return 0;
         }
@@ -408,7 +409,7 @@ pub unsafe extern "system" fn InitUserApiHook(hInstance: HINSTANCE, pfn: USERAPI
     } else {
         ghmodUserApiHook = hInstance;
         RtlCopyMemory(
-            &mut guah as *mut _ as *mut core::ffi::c_void,
+            &raw mut guah as *mut _ as *mut core::ffi::c_void,
             &uah as *const _ as *const core::ffi::c_void,
             (core::mem::size_of::<USERAPIHOOK>() - core::mem::size_of::<LONG>()) as usize,
         );
@@ -419,25 +420,25 @@ pub unsafe extern "system" fn InitUserApiHook(hInstance: HINSTANCE, pfn: USERAPI
         CopyMsgMask(
             core::ptr::addr_of_mut!(guah.DefWndProcArray),
             core::ptr::addr_of_mut!(uah.DefWndProcArray),
-            grgbDwpLiteHookMsg.as_mut_ptr() as *mut core::ffi::c_void,
-            core::mem::size_of_val(&grgbDwpLiteHookMsg) as u32,
+            (*(&raw mut grgbDwpLiteHookMsg)).as_mut_ptr() as *mut core::ffi::c_void,
+            core::mem::size_of_val(&*(&raw const grgbDwpLiteHookMsg)) as u32,
         );
 
         CopyMsgMask(
             core::ptr::addr_of_mut!(guah.WndProcArray),
             core::ptr::addr_of_mut!(uah.WndProcArray),
-            grgbWndLiteHookMsg.as_mut_ptr() as *mut core::ffi::c_void,
-            core::mem::size_of_val(&grgbWndLiteHookMsg) as u32,
+            (*(&raw mut grgbWndLiteHookMsg)).as_mut_ptr() as *mut core::ffi::c_void,
+            core::mem::size_of_val(&*(&raw const grgbWndLiteHookMsg)) as u32,
         );
 
         CopyMsgMask(
             core::ptr::addr_of_mut!(guah.DlgProcArray),
             core::ptr::addr_of_mut!(uah.DlgProcArray),
-            grgbDlgLiteHookMsg.as_mut_ptr() as *mut core::ffi::c_void,
-            core::mem::size_of_val(&grgbDlgLiteHookMsg) as u32,
+            (*(&raw mut grgbDlgLiteHookMsg)).as_mut_ptr() as *mut core::ffi::c_void,
+            core::mem::size_of_val(&*(&raw const grgbDlgLiteHookMsg)) as u32,
         );
     }
-    RtlLeaveCriticalSection(&mut gcsUserApiHook);
+    RtlLeaveCriticalSection(&raw mut gcsUserApiHook);
     1
 }
 

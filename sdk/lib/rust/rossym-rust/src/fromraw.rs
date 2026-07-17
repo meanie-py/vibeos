@@ -29,7 +29,6 @@
 //! Unverified: Whether a cmake-level C shim will define `RosSymAllocMem` as a real function.
 
 use crate::types::*;
-use core::ffi::c_void;
 
 // RosSymAllocMem is a function-like macro in rossympriv.h over the global RosSymCallbacks,
 // not an exported symbol — translated as a local wrapper (the original "extern" decl was a

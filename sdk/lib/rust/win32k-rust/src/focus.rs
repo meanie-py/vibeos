@@ -5,7 +5,6 @@ use ntkrnl_sys::ddk::{PsGetCurrentProcessWin32Process, PsGetCurrentThreadWin32Th
 use ntkrnl_sys::ddk::ExFreePoolWithTag;
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement};
-use core::ffi::c_void;
 
 // Debug-channel macros — no kernel symbol, no-op.
 macro_rules! ERR   { ($($t:tt)*) => {{}}; }
@@ -937,7 +936,7 @@ unsafe fn co_IntSendActivateMessages_impl(WindowPrev: PWND, Window: PWND, MouseA
                           WM_ACTIVATE as u32,
                           MAKEWPARAM(if MouseActivate != 0 { WA_CLICKACTIVE as u32 } else { WA_ACTIVE as u32 },
                                      ((*Window).style & WS_MINIMIZE as u32 != 0) as u32),
-                          (if !WindowPrev.is_null() { UserHMGetHandle(WindowPrev) as LPARAM } else { 0 }));
+                          if !WindowPrev.is_null() { UserHMGetHandle(WindowPrev) as LPARAM } else { 0 });
 
         if (*Window).style & WS_VISIBLE as u32 != 0 {
             UpdateShellHook(Window);

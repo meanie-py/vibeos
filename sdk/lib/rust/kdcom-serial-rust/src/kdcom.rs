@@ -130,12 +130,12 @@ pub unsafe extern "system" fn KdD3Transition() -> NTSTATUS {
 }
 
 #[cfg_attr(not(feature = "embedded"), no_mangle)]
-pub unsafe extern "system" fn KdSave(SleepTransition: BOOLEAN) -> NTSTATUS {
+pub unsafe extern "system" fn KdSave(_SleepTransition: BOOLEAN) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
 #[cfg_attr(not(feature = "embedded"), no_mangle)]
-pub unsafe extern "system" fn KdRestore(SleepTransition: u8) -> i32 {
+pub unsafe extern "system" fn KdRestore(_SleepTransition: u8) -> i32 {
     STATUS_SUCCESS
 }
 
@@ -147,7 +147,7 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
     let mut ComPortNumber: ULONG = DEFAULT_DEBUG_PORT;
     let mut ComPortBaudRate: ULONG = DEFAULT_DEBUG_BAUD_RATE;
 
-    let mut CommandLine: PCHAR;
+    let CommandLine: PCHAR;
     let mut PortString: PCHAR;
     let mut BaudString: PCHAR;
     let mut IrqString: PCHAR;
@@ -257,7 +257,7 @@ pub unsafe extern "system" fn KdpPortInitialize(
 
 #[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdDebuggerInitialize1(
-    LoaderBlock: PLOADER_PARAMETER_BLOCK,
+    _LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }
@@ -268,7 +268,7 @@ pub unsafe extern "system" fn KdpSendByte(Byte: UCHAR) {
 }
 #[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpPollByte(OutByte: PUCHAR) -> KDP_STATUS {
-    let mut Status: USHORT;
+    let Status: USHORT;
 
     Status = CpGetByte(core::ptr::addr_of_mut!(KdComPort), OutByte, 0u8, 0u8);
     match Status {
@@ -279,7 +279,7 @@ pub unsafe extern "system" fn KdpPollByte(OutByte: PUCHAR) -> KDP_STATUS {
 }
 #[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpReceiveByte(OutByte: PUCHAR) -> KDP_STATUS {
-    let mut Status: USHORT;
+    let Status: USHORT;
 
     Status = CpGetByte(core::ptr::addr_of_mut!(KdComPort), OutByte, 1u8, 0u8);
     match Status {

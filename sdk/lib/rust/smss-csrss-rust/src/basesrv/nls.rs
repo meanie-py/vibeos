@@ -299,7 +299,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
     let mut FileHandle: HANDLE = core::ptr::null_mut();
     let LocaleId: ULONG;
     let mut NlsSectionName: _UNICODE_STRING = core::mem::zeroed();
-    let mut NlsFileName: *const WCHAR;
+    let NlsFileName: *const WCHAR;
     let mut SecurityDescriptor: [u8; NLS_SECTION_SECURITY_DESCRIPTOR_SIZE] =
         [0; NLS_SECTION_SECURITY_DESCRIPTOR_SIZE];
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -844,7 +844,7 @@ pub unsafe extern "system" fn BaseSrvNlsGetUserInfo(
     ApiMessage: *mut BASE_API_MESSAGE,
     _ReplyCode: *mut ULONG,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let NlsMsg: *mut BASE_NLS_GET_USER_INFO =
         core::ptr::addr_of_mut!((*ApiMessage).Data.NlsGetUserInfo)
             as *mut core::mem::ManuallyDrop<BASE_NLS_GET_USER_INFO>

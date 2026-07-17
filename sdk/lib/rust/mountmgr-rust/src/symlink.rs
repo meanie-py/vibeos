@@ -587,7 +587,7 @@ pub unsafe extern "C" fn CreateNewVolumeName(
         ((0x14u32 + 0x4cu32) as usize + core::mem::size_of::<u16>()) as u16;
     (*VolumeName).Buffer = ExAllocatePoolWithTag(
         PagedPool,
-        ((0x14u32 + 0x4cu32) as usize + core::mem::size_of::<u16>()),
+        (0x14u32 + 0x4cu32) as usize + core::mem::size_of::<u16>() ,
         1098149453i32 as u32,
     ) as *mut u16;
     if (*VolumeName).Buffer.is_null() {

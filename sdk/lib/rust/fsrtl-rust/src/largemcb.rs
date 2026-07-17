@@ -762,7 +762,7 @@ pub unsafe extern "system" fn FsRtlTruncateLargeMcb(Mcb: PLARGE_MCB, Vbn: LONGLO
 pub unsafe extern "system" fn FsRtlUninitializeBaseMcb(Mcb: PBASE_MCB) {
     FsRtlResetBaseMcb(Mcb);
 
-    if ((*Mcb).PoolType as u32 == PagedPool) {
+    if (*Mcb).PoolType as u32 == PagedPool  {
         ExFreeToPagedLookasideList(
             core::ptr::addr_of_mut!(FsRtlFirstMappingLookasideList),
             (*Mcb).Mapping as PVOID,

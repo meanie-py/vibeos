@@ -352,7 +352,7 @@ pub unsafe extern "C" fn IntInitScreenInfo(
 #[no_mangle]
 pub unsafe extern "system" fn DrvGetModes(
     hDriver: HANDLE,
-    cjSize: ULONG,
+    _cjSize: ULONG,
     pdm: *mut DEVMODEW,
 ) -> ULONG {
     let mut ModeCount: ULONG;

@@ -206,9 +206,9 @@ pub unsafe extern "C" fn TuiDrawCenteredText(
             X = RealLeft + LastIndex as u32;
             Y = RealTop;
             LastIndex += 1;
-            Temp[0] = ((*TextString.offset(Index as isize)) as u8);
+            Temp[0] = (*TextString.offset(Index as isize)) as u8 ;
             Temp[1] = 0;
-            TuiDrawText(X, Y, ((Temp.as_ptr()) as *const i8), Attr);
+            TuiDrawText(X, Y, (Temp.as_ptr()) as *const i8 , Attr);
         }
         Index += 1;
     }
@@ -250,13 +250,13 @@ pub unsafe extern "C" fn TuiInitialize() -> BOOLEAN {
     RtlStringCbCopyA(
         UiTitleBoxTitleText.as_mut_ptr(),
         core::mem::size_of_val(&UiTitleBoxTitleText),
-        ((b"Boot Menu\0".as_ptr()) as *const i8),
+        (b"Boot Menu\0".as_ptr()) as *const i8 ,
     );
 
     RtlStringCbCopyA(
         UiTimeText.as_mut_ptr(),
         core::mem::size_of_val(&UiTimeText),
-        ((b"[Time Remaining: %d]\0".as_ptr()) as *const i8),
+        (b"[Time Remaining: %d]\0".as_ptr()) as *const i8 ,
     );
 
     1u8
@@ -290,7 +290,7 @@ pub unsafe extern "C" fn TuiDrawBackdrop(DrawHeight: ULONG) {
         TUI_TITLE_BOX_CHAR_HEIGHT,
         UiScreenWidth - 1,
         DrawHeight - 2,
-        ((UiBackdropFillStyle) as i8),
+        (UiBackdropFillStyle) as i8 ,
         ATTR(UiBackdropFgColor, UiBackdropBgColor),
     );
 
@@ -347,7 +347,7 @@ pub unsafe extern "C" fn TuiDrawBackdrop(DrawHeight: ULONG) {
 
 #[no_mangle]
 pub unsafe extern "C" fn TuiFillArea(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG, FillChar: CHAR, Attr: UCHAR) {
-    let mut ScreenMemory = TextVideoBuffer as PUCHAR;
+    let ScreenMemory = TextVideoBuffer as PUCHAR;
     let mut i: ULONG;
     let mut j: ULONG;
     let mut Right = Right;
@@ -556,8 +556,8 @@ pub unsafe extern "C" fn TuiDrawStatusText(StatusText: PCSTR) {
 
 #[no_mangle]
 pub unsafe extern "C" fn TuiUpdateDateTime() {
-    let mut TimeInfo: *mut TIMEINFO;
-    let mut DayPostfix: PCSTR;
+    let TimeInfo: *mut TIMEINFO;
+    let DayPostfix: PCSTR;
     let mut PMHour: u8 = 0u8;
     let mut Buffer: [i8; 40] = [0; 40];
 
@@ -635,7 +635,7 @@ unsafe extern "C" fn TuiSaveScreen() -> PUCHAR {
     let mut i: ULONG;
 
     Buffer = FrLdrTempAlloc(
-        ((UiScreenWidth * UiScreenHeight * 2) as usize),
+        (UiScreenWidth * UiScreenHeight * 2) as usize ,
         TAG_TUI_SCREENBUFFER,
     ) as *mut u8;
     if Buffer.is_null() {
@@ -719,11 +719,11 @@ unsafe extern "C" fn TuiDrawMsgBoxCommon(
     width += 4;
     height += 5;
 
-    x1 = (((UiScreenWidth - ((min(width, ((UiScreenWidth) as i32))) as u32)) / 2) as i32);
+    x1 = ((UiScreenWidth - ((min(width, (UiScreenWidth) as i32 )) as u32)) / 2) as i32 ;
     if UiCenterMenu != 0 && height <= ((UiScreenHeight - TUI_TITLE_BOX_CHAR_HEIGHT - 1) as i32) {
-        y1 = (((UiScreenHeight + TUI_TITLE_BOX_CHAR_HEIGHT - 1 - ((height) as u32)) / 2) as i32);
+        y1 = ((UiScreenHeight + TUI_TITLE_BOX_CHAR_HEIGHT - 1 - ((height) as u32)) / 2) as i32 ;
     } else {
-        y1 = (((UiScreenHeight - ((min(height, ((UiScreenHeight) as i32))) as u32)) / 2) as i32);
+        y1 = ((UiScreenHeight - ((min(height, (UiScreenHeight) as i32 )) as u32)) / 2) as i32 ;
     }
     x2 = x1 + width - 1;
     y2 = y1 + height - 1;
@@ -773,7 +773,7 @@ pub unsafe extern "C" fn TuiMessageBox(
 
     let ScreenBuffer: PVOID;
 
-    ScreenBuffer = ((TuiSaveScreen()) as *mut c_void);
+    ScreenBuffer = (TuiSaveScreen()) as *mut c_void ;
 
     TuiMessageBoxCritical(MessageText);
 
@@ -790,7 +790,7 @@ pub unsafe extern "C" fn TuiMessageBoxCritical(
 
     TuiDrawMsgBoxCommon(MessageText, &mut BoxRect);
 
-    UiDrawText((((BoxRect.Left + BoxRect.Right) / 2 - 3) as u32),
+    UiDrawText(((BoxRect.Left + BoxRect.Right) / 2 - 3) as u32 ,
                (BoxRect.Bottom - 2) as u32,
                b"   OK   \0".as_ptr() as PCSTR,
                ATTR(0, 7));
@@ -840,8 +840,8 @@ unsafe extern "C" fn TuiSetProgressBarText(
 }
 
 unsafe extern "C" fn TuiTickProgressBar(SubPercentTimes100: ULONG) {
-    let mut ProgressBarWidth: ULONG;
-    let mut FillCount: ULONG;
+    let ProgressBarWidth: ULONG;
+    let FillCount: ULONG;
 
     ProgressBarWidth = UiProgressBar.Right.wrapping_sub(UiProgressBar.Left).wrapping_add(1);
 
@@ -1057,7 +1057,7 @@ pub unsafe extern "C" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCHAR, L
     let mut BoxRect: SMALL_RECT = core::mem::zeroed();
     let ScreenBuffer: PVOID;
 
-    ScreenBuffer = ((TuiSaveScreen()) as *mut c_void);
+    ScreenBuffer = (TuiSaveScreen()) as *mut c_void ;
 
     TuiDrawMsgBoxCommon(MessageText, &mut BoxRect);
 
@@ -1068,8 +1068,8 @@ pub unsafe extern "C" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCHAR, L
     EditBoxStartX = BoxRect.Left as ULONG + 3;
     EditBoxEndX = BoxRect.Right as ULONG - 3;
 
-    UiFillArea(EditBoxStartX as i32, EditBoxLine, EditBoxEndX as i32, EditBoxLine, b' ' as i8, ((ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32));
-    UiDrawText2(EditBoxStartX as i32, EditBoxLine, (EditBoxEndX - EditBoxStartX + 1) as i32, EditTextBuffer, ((ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32));
+    UiFillArea(EditBoxStartX as i32, EditBoxLine, EditBoxEndX as i32, EditBoxLine, b' ' as i8, (ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32 );
+    UiDrawText2(EditBoxStartX as i32, EditBoxLine, (EditBoxEndX - EditBoxStartX + 1) as i32, EditTextBuffer, (ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32 );
 
     EditBoxCursorX = EditBoxStartX as i32;
     MachVideoSetTextCursorPosition(EditBoxCursorX as u32, EditBoxLine as u32);
@@ -1157,7 +1157,7 @@ pub unsafe extern "C" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCHAR, L
             }
         }
 
-        UiFillArea(EditBoxStartX as i32, EditBoxLine, EditBoxEndX as i32, EditBoxLine, b' ' as i8, ((ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32));
+        UiFillArea(EditBoxStartX as i32, EditBoxLine, EditBoxEndX as i32, EditBoxLine, b' ' as i8, (ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32 );
 
         if EditBoxTextPosition > (EditBoxEndX - EditBoxStartX) {
             EditBoxTextDisplayIndex = (EditBoxTextPosition - (EditBoxEndX - EditBoxStartX)) as i32;
@@ -1166,7 +1166,7 @@ pub unsafe extern "C" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCHAR, L
             EditBoxTextDisplayIndex = 0;
             EditBoxCursorX = EditBoxStartX as i32 + EditBoxTextPosition as i32;
         }
-        UiDrawText2(EditBoxStartX as i32, EditBoxLine, (EditBoxEndX - EditBoxStartX + 1) as i32, EditTextBuffer.offset(EditBoxTextDisplayIndex as isize), ((ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32));
+        UiDrawText2(EditBoxStartX as i32, EditBoxLine, (EditBoxEndX - EditBoxStartX + 1) as i32, EditTextBuffer.offset(EditBoxTextDisplayIndex as isize), (ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32 );
 
         MachVideoSetTextCursorPosition(EditBoxCursorX as u32, EditBoxLine as u32);
 
@@ -1179,7 +1179,7 @@ pub unsafe extern "C" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCHAR, L
 
     MachVideoHideShowTextCursor(0u8);
 
-    TuiRestoreScreen(((ScreenBuffer) as *mut u8));
+    TuiRestoreScreen((ScreenBuffer) as *mut u8 );
 
     ReturnCode
 }

@@ -1136,7 +1136,7 @@ pub unsafe extern "system" fn CreateItemMoniker(
 
 #[no_mangle]
 pub unsafe extern "system" fn ItemMoniker_CreateInstance(
-    iface: *mut IClassFactory,
+    _iface: *mut IClassFactory,
     pUnk: *mut IUnknown,
     riid: REFIID,
     ppv: *mut LPVOID,
