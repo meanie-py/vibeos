@@ -917,6 +917,15 @@ This also unblocks i386 TLB-shootdown-to-AP (same 0xE1 packet path — `KeFlushE
 `KiFlushTargetEntireTb` packets now execute on the AP; single-VA remote flush remains the
 M-wave-2 parity item shared with amd64).
 
+**Phase C VALIDATION (2026-07-17, landed `b19871654ed`):** i386 `-smp 2` 19/19 boots to
+desktop (~40 s, up to 4 parallel) + `-smp 1` green; amd64 `-smp 2` 2/2 + net; arm64
+`-smp 2` 2/2 (reaper spin is cross-arch); full ×3 gate green.  **§9.88 Bug 2 closure
+evidence:** `conformance --arch amd64 --smp 2` sweep ran to completion — 86/87 tests,
+**MmMdl pass=575 fail=0, zero 0x1E** (was: boots died ~33–50% under this exact load).
+NEW SMP-vs-UP-baseline deltas from that sweep (wave-2 ledger, not boot-affecting):
+KeGuardedMutex TIMEOUT, KeSpinLock fail 2→31, KeIrql fail 0→3 — real MP semantic gaps
+to burn down when the SMP conformance baseline lane opens.
+
 GDB recipe that cracked Bug D (banked for Phase C): **`hbreak`** the suspect fn
 (a plain `break` at `--gdb-wait` reset is clobbered when freeldr copies the kernel
 over the `0xCC`), `add-symbol-file build-i386/ntoskrnl/ntkrnlmp/ntkrnlmp.exe
