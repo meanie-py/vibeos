@@ -177,6 +177,12 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   clashing_extern bucket that looked mechanical (same-crate-redecl AND CONV-i386) is not — the
   loose FFI typing that co-occurs with the flagged difference is load-bearing.**
 
+- **2026-07-17 — FNPTR-CMP follow-up CLOSED (no code change; see Owed-follow-ups entry).**
+  Peel-and-census of all 34 audited allows showed every one of the 63 fn-ptr comparisons is an
+  `Option<fn>` compare (bindgen renders Windows fn-ptr typedefs as `Option<extern fn>`), so
+  `fn_addr_eq` (needs bare `FnPtr`) applies to **zero** sites. The only lint-removal available is a
+  behavior-identical `.map(|f| f as usize)` rewrite that buys no correctness and churns boot-path
+  crates; user chose to keep the audited per-item allows (already the sanctioned end-state). Docs-only.
 - **2026-07-17 — allow-peel batch 2: 22 more cold crates driven to ZERO static_mut_refs.**
   Peeled `#![allow(static_mut_refs)]` from the remaining 22 unfenced suppressing crates
   (config/crt-startup/dbgk/fsrtl/fstub/gdi32/inbv/iomgr/kd64/kdbg/kernel32/kernel32-vista/
@@ -289,13 +295,28 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
 
 ## Owed follow-ups
 
-- **FNPTR-CMP re-architecture (user-requested).** The 34 `#[allow(unpredictable_function_pointer_comparisons)]`
-  suppressions are the interim treatment. The idiomatic endpoint is
-  `core::ptr::fn_addr_eq` (stable 1.85), which removes the lint *without* suppression.
-  It doesn't fit the Option-wrapped / sentinel-value (`SIG_IGN`=`1 as fn`) / transmute
-  forms ergonomically today. A future pass: `grep -rn 'FNPTR-CMP'` finds all 34 sites;
-  convert the clean `fn == fn` ones to `fn_addr_eq`, keep scoped allows only for the
-  sentinel/transmute oddballs.
+- **FNPTR-CMP re-architecture — CLOSED 2026-07-17 (audited allows are the correct end-state;
+  `fn_addr_eq` is inapplicable).** Investigated all 34 `#[allow(unpredictable_function_pointer_comparisons)]`
+  functions → 63 actual comparison sites (peel the allows, `--keep-going` census ×3, primary span
+  = exactly the `A == B` expr). **Finding that closes the follow-up: NOT ONE site is a bare
+  `fn == fn`.** Every fn-ptr typedef in these crates is `Option<fn>` — `WNDPROC`, `PHANDLER_ROUTINE`,
+  `PFNCALLBACK`, `FARPROC`, `PDRIVER_FS_NOTIFICATION`, `PSE_LOGON_SESSION_TERMINATED_ROUTINE`, … are
+  all `::core::option::Option<unsafe extern fn(..)>` (how bindgen renders a nullable Windows fn
+  pointer). `core::ptr::fn_addr_eq` requires a bare `FnPtr` operand and rejects `Option<fn>`, so the
+  "convert the clean `fn == fn` ones" plan has **zero applicable sites**. The three shapes present —
+  `Option<fn> == Option<fn>` (~48), `Option<fn> == Some(fn)`/sentinel `old == sig_ign()` (~12),
+  `X == transmute(fn)` (ps psnotify, 3) — could only be de-linted via an inline Option-aware
+  `a.map(|f| f as usize) == b.map(|f| f as usize)` rewrite, which is **behavior-identical** (same
+  address compare, same "addresses vary across CGUs" caveat the lint warns of) and buys **no
+  correctness** — it just trades a documented per-item allow for `.map()` boilerplate on every
+  comparison and churns four boot-path crates (ob/ps/se/win32k). **Disposition (user decision
+  2026-07-17): keep the audited per-item allows.** They are already the lane's *sanctioned* end-state
+  for a genuine intentional-identity compare (`#[allow]` per-item WITH a documented reason — the
+  `// FNPTR-CMP(audited)` tag records intent + the C-source mirror), not a stopgap. A generic
+  `fn_opt_addr_eq` helper is also impossible on stable — `core::marker::FnPtr` (the bound
+  `fn_addr_eq` needs) is perma-unstable and unnameable. Re-open only if a future need makes the
+  `.map(|f| f as usize)` conversion worth its cost; the census tooling is in scratchpad
+  (`fnptr_convert.py`).
 - **Upstream ReactOS-C bugs faithfully preserved by translation** (found during
   unused_assignments triage, NOT translation-introduced — tracked here, not fixed in
   this lane): `pcix-rust/enumr.rs:1575`, `pcix-rust/init.rs:367`, `pcix-rust/utils.rs:714`
