@@ -103,7 +103,7 @@ from .prompt_builder import (
 )
 from .resolver import print_resolve_result, resolve
 from .resolver import resolve as file_resolve
-from .response_cache import PREAMBLE_KEY, ExactBodyTranslationMemory, ResponseCache
+from .response_cache import PREAMBLE_KEY, RESPONSES_DIR, ExactBodyTranslationMemory, ResponseCache
 from .scanner import print_scan_result, scan_file
 from .seh_classifier import classify_directory, classify_file, print_classification, to_json
 from .shim_generator import check_shims, generate_shims
@@ -363,6 +363,24 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str):
     scan.local_names.update(header_scan.local_names)
     scan.unextracted.extend(item for item in header_scan.unextracted if class_name in item)
     return scan
+
+
+def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
+    """Apply the deterministic shell32 worker boundary to a model response."""
+    signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
+    rust = normalize_worker_body(rust, signature)
+    try:
+        calls = call_seals.get(dep.name)
+        if calls is not None:
+            rust = unseal_calls(rust, calls)
+        facts = fact_seals.get(dep.name)
+        if facts is not None:
+            rust = canonicalize_hresult_predicates(rust)
+            rust = unseal_facts(rust, facts)
+    except (CallSealError, FactSealError) as error:
+        raise CppComError(f"{dep.name}: {error}") from error
+    rust = normalize_worker_body(rust, signature)
+    return normalize_worker_semantics(dep.body_text, rust)
 
 
 def cmd_candidate_check(args):
@@ -1528,54 +1546,42 @@ def cmd_translate(args):
             else {}
         )
 
-        def _model_dep(dep, model_sources=model_sources, call_seals=call_seals):
+        model_deps = {}
+        for dep in sorted_deps:
             sealed_calls = call_seals.get(dep.name)
             body_text = sealed_calls.text if sealed_calls is not None else model_sources[dep.name]
             debug_macros = {"TRACE", "FIXME", "WARN", "ERR", "MESSAGE"}
             callees = dep.callees - debug_macros
-            return (
+            model_deps[dep.name] = (
                 replace(dep, body_text=body_text, callees=callees)
                 if body_text != dep.body_text or callees != dep.callees
                 else dep
             )
 
-        def _deterministic_contract(dep, fact_seals=fact_seals, call_seals=call_seals) -> str:
-            facts = fact_seals.get(dep.name)
-            calls = call_seals.get(dep.name)
-            return (fact_contract(facts) if facts is not None else "") + (
-                call_contract(calls) if calls is not None else ""
-            )
-
-        def _unseal_result(dep, rust: str, fact_seals=fact_seals, call_seals=call_seals) -> str:
-            try:
-                calls = call_seals.get(dep.name)
-                if calls is not None:
-                    rust = unseal_calls(rust, calls)
-                facts = fact_seals.get(dep.name)
-                if facts is not None:
-                    rust = canonicalize_hresult_predicates(rust)
-                    rust = unseal_facts(rust, facts)
-                return rust
-            except (CallSealError, FactSealError) as error:
-                raise CppComError(f"{dep.name}: {error}") from error
-
-        def _normalize_unseal_result(dep, rust: str) -> str:
-            """Discard model-owned declarations before enforcing executable seals."""
-            signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
-            rust = normalize_worker_body(rust, signature)
-            rust = _unseal_result(dep, rust)
-            rust = normalize_worker_body(rust, signature)
-            return normalize_worker_semantics(dep.body_text, rust)
+        deterministic_contracts = {
+            dep.name: (fact_contract(fact_seals[dep.name]) if dep.name in fact_seals else "")
+            + (call_contract(call_seals[dep.name]) if dep.name in call_seals else "")
+            for dep in sorted_deps
+        }
 
         # `--fn` selects the paid/output unit, not its dependency knowledge.
         # Preserve the complete prepared closure for local-worker signatures.
         context_deps = list(sorted_deps)
 
-        # Filter to single function if requested
+        # Filter to one or a comma-separated bounded worker set. Keeping this
+        # in one invocation lets the normal concurrency/cache/ledger machinery
+        # run representative giant-class experiments without racing multiple
+        # processes against the same response manifest.
         if args.fn:
-            sorted_deps = [d for d in sorted_deps if d.name == args.fn]
-            if not sorted_deps:
-                print(f"  Error: function '{args.fn}' not found in {c_file.name}", file=sys.stderr)
+            requested = {name.strip() for name in args.fn.split(",") if name.strip()}
+            selected = [d for d in sorted_deps if d.name in requested]
+            missing = requested - {d.name for d in selected}
+            sorted_deps = selected
+            if missing:
+                print(
+                    f"  Error: function(s) {', '.join(sorted(missing))} not found in {c_file.name}",
+                    file=sys.stderr,
+                )
                 func_names = [d.name for d in deps]
                 print(f"  Available: {', '.join(func_names)}", file=sys.stderr)
                 continue
@@ -1627,7 +1633,7 @@ def cmd_translate(args):
             if sorted_deps:
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
-                    _model_dep(sorted_deps[0]),
+                    model_deps[sorted_deps[0].name],
                     func_res,
                     {},
                     all_deps,
@@ -1635,7 +1641,7 @@ def cmd_translate(args):
                     catalog_fn_names,
                     file_res.exports,
                     target=rustconv_target,
-                    deterministic_contract=_deterministic_contract(sorted_deps[0]),
+                    deterministic_contract=deterministic_contracts[sorted_deps[0].name],
                 )
                 if not use_claude:
                     prompt = system_prompt + "\n\n---\n\n" + prompt if system_prompt else prompt
@@ -1646,7 +1652,7 @@ def cmd_translate(args):
                 # Print full prompt for first function
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
-                    _model_dep(sorted_deps[0]),
+                    model_deps[sorted_deps[0].name],
                     func_res,
                     {},
                     all_deps,
@@ -1655,7 +1661,7 @@ def cmd_translate(args):
                     file_res.exports,
                     target=rustconv_target,
                     c2rust_anchor=c2rust_anchors.get(sorted_deps[0].name),
-                    deterministic_contract=_deterministic_contract(sorted_deps[0]),
+                    deterministic_contract=deterministic_contracts[sorted_deps[0].name],
                 )
                 full = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
                 print(full)
@@ -1705,6 +1711,55 @@ def cmd_translate(args):
         if call_seal_enabled:
             cache_suffix += "__callseal_v1"
         cache = ResponseCache(f"{subsystem}__{c_file.stem}{cache_suffix}")
+
+        # A completed model stream can fail a deterministic audit and remain as
+        # ``.partial``. When the harness improves, replay those already-paid bytes
+        # through the current seals/normalizers before buying another response.
+        # Every acceptance check is identical to a live response; incompatible,
+        # truncated, or genuinely bad historical streams remain rejected.
+        partial_replayed: set[str] = set()
+        if rustconv_target.name == "shell32" and not no_resume:
+            run_dirs = sorted(RESPONSES_DIR.glob(f"*-{c_file.name}"), reverse=True)
+            for dep in sorted_deps:
+                if (
+                    dep.name in deterministic_workers
+                    or cache.get(dep.name, dep.body_text) is not None
+                ):
+                    continue
+                pattern = re.compile(rf"^[0-9]+_{re.escape(dep.name)}\.partial$")
+                recovered = None
+                for run_dir in run_dirs:
+                    candidate = next(
+                        (path for path in run_dir.iterdir() if pattern.fullmatch(path.name)), None
+                    )
+                    if candidate is None:
+                        continue
+                    try:
+                        raw = candidate.read_text(encoding="utf-8")
+                        if not raw.strip():
+                            continue
+                        normalized = _normalize_unseal_cpp_worker(dep, raw, fact_seals, call_seals)
+                        findings = audit_worker_body(
+                            dep.body_text,
+                            normalized,
+                            f"{dep.name}_body",
+                            worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
+                        )
+                    except (CppComError, OSError):
+                        continue
+                    if not findings:
+                        recovered = normalized
+                        break
+                if recovered is not None:
+                    cache.put(dep.name, dep.body_text, recovered)
+                    partial_replayed.add(dep.name)
+                    _record_outcome(dep, "partial_replay", route="current_deterministic_audit")
+            if partial_replayed:
+                print(
+                    f"  [cpp-com] recovered {len(partial_replayed)} paid partial(s) "
+                    "under the current deterministic audit ($0)",
+                    file=sys.stderr,
+                )
         translation_memory = None
         memory_seeded: set[str] = set()
         memory_identity: Callable[..., dict[str, object]] | None = None
@@ -1798,7 +1853,7 @@ def cmd_translate(args):
         if archive is not None and pending_paid_deps:
             _fr0 = resolve_function(pending_paid_deps[0], catalog, file_res.exports, scan.defines)
             _p0 = build_function_prompt(
-                _model_dep(pending_paid_deps[0]),
+                model_deps[pending_paid_deps[0].name],
                 _fr0,
                 {},
                 all_deps_for_context,
@@ -1806,7 +1861,7 @@ def cmd_translate(args):
                 catalog_fn_names,
                 file_res.exports,
                 target=rustconv_target,
-                deterministic_contract=_deterministic_contract(pending_paid_deps[0]),
+                deterministic_contract=deterministic_contracts[pending_paid_deps[0].name],
             )
             _est_in = (estimate_tokens(_p0) + estimate_tokens(system_prompt)) * len(
                 pending_paid_deps
@@ -1876,13 +1931,15 @@ def cmd_translate(args):
                 all_deps_for_context=all_deps_for_context,
                 c2rust_anchors=c2rust_anchors,
                 file_context=file_context,
+                model_deps=model_deps,
+                deterministic_contracts=deterministic_contracts,
             ):
                 fi, dp = item
                 if stop.is_set():
                     return (fi, dp, None, 0)
                 fres = resolve_function(dp, catalog, file_res.exports, scan.defines)
                 up = build_function_prompt(
-                    _model_dep(dp),
+                    model_deps[dp.name],
                     fres,
                     ctx,
                     all_deps_for_context,
@@ -1892,7 +1949,7 @@ def cmd_translate(args):
                     target=rustconv_target,
                     include_shared=False,
                     c2rust_anchor=c2rust_anchors.get(dp.name),
-                    deterministic_contract=_deterministic_contract(dp),
+                    deterministic_contract=deterministic_contracts[dp.name],
                 )
                 sk = ResponseSink(archive.stream_path(fi, dp.name)) if archive is not None else None
                 started = time.monotonic()
@@ -1927,7 +1984,9 @@ def cmd_translate(args):
                     if r.success:
                         try:
                             if rustconv_target.name == "shell32":
-                                r.rust_code = _normalize_unseal_result(dp, r.rust_code)
+                                r.rust_code = _normalize_unseal_cpp_worker(
+                                    dp, r.rust_code, fact_seals, call_seals
+                                )
                                 findings = audit_worker_body(
                                     dp.body_text,
                                     r.rust_code,
@@ -2062,7 +2121,7 @@ def cmd_translate(args):
             # (file_context), so include_shared=False keeps it out of the
             # full-price per-function user message.
             user_prompt = build_function_prompt(
-                _model_dep(dep),
+                model_deps[dep.name],
                 func_res,
                 translated,
                 all_deps_for_context,
@@ -2072,7 +2131,7 @@ def cmd_translate(args):
                 target=rustconv_target,
                 include_shared=False,
                 c2rust_anchor=c2rust_anchors.get(dep.name),
-                deterministic_contract=_deterministic_contract(dep),
+                deterministic_contract=deterministic_contracts[dep.name],
             )
 
             # Stream this function's output straight to the durable archive.
@@ -2101,7 +2160,9 @@ def cmd_translate(args):
             if result.success:
                 try:
                     if rustconv_target.name == "shell32":
-                        result.rust_code = _normalize_unseal_result(dep, result.rust_code)
+                        result.rust_code = _normalize_unseal_cpp_worker(
+                            dep, result.rust_code, fact_seals, call_seals
+                        )
                         findings = audit_worker_body(
                             dep.body_text,
                             result.rust_code,
@@ -3039,7 +3100,11 @@ def main():
         "--sdk-header",
         help="WIDL-generated C header used as COM vtable ground truth",
     )
-    p.add_argument("--fn", dest="fn", help="Translate only this function")
+    p.add_argument(
+        "--fn",
+        dest="fn",
+        help="Translate only this function, or a comma-separated bounded worker set",
+    )
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
     p.add_argument(
         "--prompt", action="store_true", help="Print prompt for first function (implies --dry-run)"

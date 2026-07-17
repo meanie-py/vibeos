@@ -339,3 +339,32 @@ The router separated the three outcomes without discarding artifacts:
 This is the first batch where the useful result is deliberately heterogeneous: one accepted
 class, one reusable substrate backlog, and one deterministic-decomposition reject. Bulk
 throughput should count all three outcomes rather than treating non-integration as lost work.
+
+## Monster-class checkpoint (2026-07-16)
+
+`CShellLink.cpp` is the first giant-class stress case: 3,323 source lines, 13 COM
+interfaces, 219 generated vtable slots, and a 91-worker prepared closure. rustconv now
+extracts inline `STDMETHOD` bodies, derives packed embedded POD state, binds overloaded
+interface methods to deterministic `_vN` workers, and routes every vtable slot without
+asking a model to reproduce ABI. The complete closure is accepted: four proven stubs at
+$0, 84 DeepSeek workers, and three Sonnet residuals. The outcome ledger records $0.72259518
+for all 98 attempted calls including 12 audit rejects; accepted output alone is $0.5662.
+
+The routing result is more useful than a raw acceptance percentage. Sonnet repaired
+`SetAdvertiseInfo`, ANSI `GetPath`, and `GetIconLocation`, but independently repeated the
+source-local `sized_chunk` declaration in `Stream_ReadChunk` and damaged the 26-call cleanup
+envelope in `CreateShortcutIcon`. The first was an auditor false reject; the second remained
+a true whole-worker reject. rustconv now permits only exact source-declared local POD field
+shapes, removes model shadows of source-named SDK types, and replays already-paid `.partial`
+streams through newer deterministic audits before making another call. That replay recovered
+the earlier complete DeepSeek `CreateShortcutIcon` output for $0 and closed 91/91.
+
+The full cached module is durable at
+`~/vibeos-rust-staging/shell32-com/monsters-v1/CShellLink-full.rs`. It is not integration-ready:
+the full-module oracle at
+`.responses/candidate-oracles/20260716-212005-236836/report.json` reports 743 diagnostics per
+architecture (674 unresolved substrate symbols, 48 type mismatches, 21 other). This is the
+next substrate tranche, not permission to wire the class. `CDefaultContextMenu.cpp` is the
+contrasting deterministic reject: aggregation/internal activation and two
+`CAtlList<...>` owners fail preflight before any model call. Add an explicit C++ list/factory
+bridge before spending on that class; never reinterpret those owners as Rust `Vec`.

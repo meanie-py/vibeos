@@ -388,6 +388,24 @@ def test_inline_static_method_and_trailing_comment_are_not_object_state():
     cls.require_supported()
 
 
+def test_shell_link_monster_preflight_owns_packed_pods_and_fixed_arrays():
+    source = SHELL32 / "CShellLink.cpp"
+    cls = analyze_class(source, "CShellLink", object_map_source=SHELL32 / "shell32.cpp")
+    cls.require_supported()
+    assert len(cls.com_map) == 13
+    assert cls.object_map_clsid == "CLSID_ShellLink"
+    pods = {item.name: item for item in cls.pod_state_types}
+    assert set(pods) == {"SHELL_LINK_HEADER", "volume_info"}
+    assert all(item.packed for item in pods.values())
+    volume_fields = {field.name: field.rust_type for field in pods["volume_info"].fields}
+    assert volume_fields == {"type": "DWORD", "serial": "DWORD", "label": "[WCHAR; 12]"}
+    state = {field.name: field.rust_type for field in cls.plain_state_fields()}
+    assert state["m_Header"] == "SHELL_LINK_HEADER"
+    assert state["volume"] == "volume_info"
+    assert state["m_site"] == "*mut IUnknown"
+    assert state["m_DropTarget"] == "*mut IDropTarget"
+
+
 def test_helper_closure_binds_overloads_and_excludes_unrelated_functions():
     scan = scan_file(SHELL32 / "folders" / "CControlPanelFolder.cpp")
     plan = prepare_helper_closure(extract_call_graph(scan), "COpenControlPanel")
@@ -577,6 +595,35 @@ def test_cpp_scanner_recovers_unadorned_out_of_line_method(tmp_path: Path):
     method = scan.functions[0]
     assert (method.cpp_class, method.name, method.return_type) == ("CThing", "Method", "BOOL")
     assert method.params == [("DWORD", "flags"), ("void *", "context")]
+
+
+def test_cpp_scanner_expands_inline_atl_stDMETHOD_definition(tmp_path: Path):
+    source = tmp_path / "inline.cpp"
+    source.write_text(
+        """
+class CInline
+{
+    STDMETHOD(QueryService)(REFGUID svc, REFIID riid, void **ppv) override
+    {
+        return Forward(svc, riid, ppv);
+    }
+};
+"""
+    )
+    scan = scan_file(source)
+    assert scan.unextracted == []
+    assert len(scan.functions) == 1
+    method = scan.functions[0]
+    assert (method.cpp_class, method.name, method.return_type) == (
+        "CInline",
+        "QueryService",
+        "HRESULT",
+    )
+    assert method.params == [
+        ("REFGUID", "svc"),
+        ("REFIID", "riid"),
+        ("void * *", "ppv"),
+    ]
 
 
 def test_internal_com_object_fails_until_construction_is_mapped():
@@ -823,10 +870,98 @@ def test_worker_audit_rejects_body_local_abi_types():
     assert any("ABI type declaration" in item for item in findings)
 
 
+def test_worker_audit_allows_exact_source_local_pod_layout():
+    source = """HRESULT f() {
+        struct sized_chunk { DWORD size; unsigned char data[1]; } *chunk;
+        return Call(chunk);
+    }"""
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        #[repr(C)] struct sized_chunk { size: DWORD, data: [u8; 1] }
+        Call(core::ptr::null_mut::<sized_chunk>())
+    }"""
+    assert audit_worker_body(source, rust, "C_f_body") == []
+
+
+def test_worker_audit_rejects_changed_source_local_pod_layout():
+    source = """HRESULT f() {
+        struct sized_chunk { DWORD size; unsigned char data[1]; } *chunk;
+        return Call(chunk);
+    }"""
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        #[repr(C)] struct sized_chunk { size: DWORD, invented: DWORD }
+        Call(core::ptr::null_mut::<sized_chunk>())
+    }"""
+    findings = audit_worker_body(source, rust, "C_f_body")
+    assert any("ABI type declaration" in item for item in findings)
+
+
+def test_worker_semantics_discards_model_shadow_of_source_named_sdk_type():
+    source = "HRESULT f() { RECT rc = { 0, 0, 1, 1 }; return Call(&rc); }"
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        #[repr(C)] struct RECT { left: i32, top: i32, right: i32, bottom: i32 }
+        let rc = RECT { left: 0, top: 0, right: 1, bottom: 1 };
+        Call(&rc)
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "struct RECT" not in normalized
+    assert "let rc = RECT" in normalized
+    assert audit_worker_body(source, normalized, "C_f_body") == []
+
+
+def test_worker_semantics_keeps_source_local_pod_for_layout_audit():
+    source = "HRESULT f() { struct local { DWORD size; } value; return Call(&value); }"
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        #[repr(C)] struct local { size: DWORD }
+        let value: local = core::mem::zeroed();
+        Call(&value)
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "struct local" in normalized
+    assert audit_worker_body(source, normalized, "C_f_body") == []
+
+
+def test_worker_semantics_raw_escapes_cpp_final_local_only_in_code():
+    source = 'HRESULT f() { LPWSTR final = NULL; TRACE("final"); return Use(final); }'
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        let mut final: LPWSTR = core::ptr::null_mut();
+        TRACE!("final");
+        Use(final)
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "let mut r#final" in normalized
+    assert "Use(r#final)" in normalized
+    assert 'TRACE!("final")' in normalized
+
+
+def test_worker_semantics_lowers_balanced_countof_member_forms():
+    source = "HRESULT f(INFO *p) { return Use(_countof(p->data)); }"
+    rust = """pub unsafe fn C_f_body(p: *mut INFO) -> HRESULT {
+        Use(_countof((*p).data) as UINT)
+            + Use(_countof!((*p).other))
+            + Use(_countof(&(*p).third))
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "_countof" not in normalized
+    assert "((*p).data).len() as UINT" in normalized
+    assert "((*p).other).len()" in normalized
+    assert "((*p).third).len()" in normalized
+
+
 def test_worker_audit_ignores_abi_words_in_comments():
     source = "{ return S_OK; }"
     rust = "pub unsafe fn C_f_body() -> HRESULT { // define struct elsewhere\n S_OK }"
     assert audit_worker_body(source, rust, "C_f_body") == []
+
+
+def test_worker_normalizer_discards_all_model_owned_module_surface():
+    signature = "pub unsafe fn C_f_body(this: *mut C) -> HRESULT"
+    rust = """#![allow(dead_code)]
+use crate::invented::*;
+#[repr(C)] struct RECT { left: i32 }
+pub unsafe fn C_f_body(this: *mut C) -> HRESULT { Call(this) }
+fn trailing_helper() {}
+"""
+    assert normalize_worker_body(rust, signature) == signature + " { Call(this) }"
 
 
 def test_proven_unimplemented_stub_is_lowered_without_a_model():

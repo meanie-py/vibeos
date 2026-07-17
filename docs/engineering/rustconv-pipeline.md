@@ -401,3 +401,19 @@ substrate backlog. The 231-line, 94-call `CQueryAssociations::GetString` worker 
 72-token call envelope with DeepSeek, while a prior isolated Sonnet artifact had already
 failed the same envelope. Route that shape to deterministic CFG decomposition; do not spend
 on repeated whole-worker retries merely because a stronger model exists.
+
+The first giant-class run (`CShellLink`, 91 workers / 219 vtable slots) added a second
+zero-call recovery layer. A response that streamed completely but failed the then-current
+deterministic audit remains a `.partial` paid artifact. Before submitting a missing sealed
+shell32 worker, rustconv now tries matching historical partials through the current exact
+signature, fact/call unsealing, semantic normalizers, and body audit. Only a result that
+passes the same gates as a live response enters the cache; truncated, differently sealed,
+or genuinely bad streams remain rejected. This recovered a prior `CreateShortcutIcon`
+response after deterministic SDK-shadow stripping improved, avoiding another paid call.
+
+Worker normalization now retains exactly the contracted function and discards all model-
+owned module prefix/trailing surface. Body-local `#[repr(C)]` structs are accepted only when
+the C worker declares the same named field sequence; otherwise type declarations remain a
+hard ABI reject. Conversely, a model-local definition of an SDK type explicitly used (but
+not declared) by the C snippet is removed so the generated/shared substrate stays the sole
+layout authority. These are audit-boundary changes, not compiler repair heuristics.

@@ -76,6 +76,15 @@ class PlainStateField:
         return f"cpp_com_assign_{self.name}"
 
 
+@dataclass(frozen=True)
+class PodStateType:
+    """A source-proven C POD embedded by value in the COM owner."""
+
+    name: str
+    fields: tuple[PlainStateField, ...]
+    packed: bool = False
+
+
 @dataclass
 class CppComClass:
     name: str
@@ -89,10 +98,18 @@ class CppComClass:
     method_names: list[str] = field(default_factory=list)
     base_classes: list[str] = field(default_factory=list)
     state_fields: list[str] = field(default_factory=list)
+    pod_state_types: list[PodStateType] = field(default_factory=list)
+    array_constants: dict[str, int] = field(default_factory=dict)
     unsupported: list[str] = field(default_factory=list)
 
     def plain_state_fields(self) -> list[PlainStateField]:
-        return [_parse_plain_state_field(item) for item in self.state_fields]
+        pod_names = {item.name for item in self.pod_state_types}
+        return [
+            _parse_plain_state_field(
+                item, allowed_pod_types=pod_names, array_constants=self.array_constants
+            )
+            for item in self.state_fields
+        ]
 
     def require_supported(self) -> None:
         problems = list(self.unsupported)
@@ -108,7 +125,11 @@ class CppComClass:
             )
         for declaration in self.state_fields:
             try:
-                _parse_plain_state_field(declaration)
+                _parse_plain_state_field(
+                    declaration,
+                    allowed_pod_types={item.name for item in self.pod_state_types},
+                    array_constants=self.array_constants,
+                )
             except CppComError as exc:
                 problems.append(str(exc))
         if problems:
@@ -247,6 +268,7 @@ def _state_fields(body: str) -> list[str]:
     # Comments are not syntax.  Leaving them in previously made trailing prose such
     # as ``// CControlPanelFolder does it for us`` look like an object field.
     stripped = re.sub(r"/\*.*?\*/|//[^\n]*", " ", body, flags=re.S)
+    stripped = re.sub(r"^\s*#\s*include[^\n]*$", "", stripped, flags=re.M)
     stripped = re.sub(r"BEGIN_COM_MAP\b.*?END_COM_MAP\s*\(\s*\)", "", stripped, flags=re.S)
 
     # Remove in-class method definitions before splitting declarations at ';'.
@@ -263,6 +285,20 @@ def _state_fields(body: str) -> list[str]:
         open_brace = match.end() - 1
         _, close_brace = _balanced_block(stripped, open_brace)
         stripped = stripped[: match.start()] + ";" + stripped[close_brace + 1 :]
+
+    # Nested POD declarations define a type; their members are not additional
+    # fields of the outer COM object.  Keep the actual ``volume_info volume;``
+    # declaration while removing the nested type block before semicolon
+    # splitting.  The type block is independently captured by
+    # ``_discover_pod_state_types`` from the unmodified class text.
+    nested_type = re.compile(r"\b(?:struct|union|enum)\s+[A-Za-z_]\w*\s*\{")
+    while match := nested_type.search(stripped):
+        open_brace = stripped.find("{", match.start())
+        _, close_brace = _balanced_block(stripped, open_brace)
+        semicolon = stripped.find(";", close_brace)
+        if semicolon < 0:
+            break
+        stripped = stripped[: match.start()] + stripped[semicolon + 1 :]
 
     stripped = _METHOD_DECL.sub("", stripped)
     stripped = re.sub(r"\b(?:public|private|protected)\s*:\s*", "", stripped)
@@ -283,7 +319,55 @@ def _state_fields(body: str) -> list[str]:
     return fields
 
 
-def _parse_plain_state_field(declaration: str) -> PlainStateField:
+_POD_LEAF_TYPES = frozenset({"CLSID", "FILETIME", "GUID", "IID", "LARGE_INTEGER", "ULARGE_INTEGER"})
+_RUST_KEYWORDS = frozenset(
+    {
+        "as",
+        "break",
+        "const",
+        "continue",
+        "crate",
+        "else",
+        "enum",
+        "extern",
+        "false",
+        "final",
+        "fn",
+        "for",
+        "if",
+        "impl",
+        "in",
+        "let",
+        "loop",
+        "match",
+        "mod",
+        "move",
+        "mut",
+        "pub",
+        "ref",
+        "return",
+        "self",
+        "Self",
+        "static",
+        "struct",
+        "super",
+        "trait",
+        "true",
+        "type",
+        "unsafe",
+        "use",
+        "where",
+        "while",
+    }
+)
+
+
+def _parse_plain_state_field(
+    declaration: str,
+    *,
+    allowed_pod_types: set[str] | frozenset[str] = frozenset(),
+    array_constants: dict[str, int] | None = None,
+) -> PlainStateField:
     """Parse the deliberately small C-layout state subset.
 
     A Rust-owned COM allocation does not contain ATL base-class state, so plain C
@@ -304,7 +388,7 @@ def _parse_plain_state_field(declaration: str) -> PlainStateField:
         )
     fixed_array = re.fullmatch(
         r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s+"
-        r"(?P<name>[A-Za-z_]\w*)\s*\[\s*(?P<count>\d+)\s*\]",
+        r"(?P<name>[A-Za-z_]\w*)\s*\[\s*(?P<count>[A-Za-z_]\w*|\d+)\s*\]",
         text,
     )
     if fixed_array is not None:
@@ -333,13 +417,24 @@ def _parse_plain_state_field(declaration: str) -> PlainStateField:
             "WCHAR",
             "WORD",
         }
-        if base not in scalar_types:
+        pointer_typedef = bool(re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base))
+        if base not in scalar_types and not pointer_typedef and base not in allowed_pod_types:
             raise CppComError(f"state field array element type is not proven scalar: {declaration}")
+        count_text = fixed_array.group("count")
+        if count_text.isdigit():
+            count = int(count_text)
+        else:
+            constants = array_constants or {}
+            if count_text not in constants:
+                raise CppComError(
+                    f"state field array bound is not a proven numeric macro: {declaration}"
+                )
+            count = constants[count_text]
         return PlainStateField(
             declaration=text,
             c_type=c_type,
             name=fixed_array.group("name"),
-            array_len=int(fixed_array.group("count")),
+            array_len=count,
         )
     if any(token in text for token in ("<", ">", "&", "[", "]", "{", "}", "=", ",", ":")):
         raise CppComError(
@@ -378,9 +473,128 @@ def _parse_plain_state_field(declaration: str) -> PlainStateField:
         "WORD": "",
     }
     pointer_typedef = bool(re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base))
-    if "*" not in c_type and base not in scalar_types and not pointer_typedef:
+    if (
+        "*" not in c_type
+        and base not in scalar_types
+        and base not in allowed_pod_types
+        and base not in _POD_LEAF_TYPES
+        and not pointer_typedef
+    ):
         raise CppComError(f"state field type is not proven C scalar/pointer state: {declaration}")
     return PlainStateField(declaration=text, c_type=c_type, name=name)
+
+
+def _numeric_array_constants(source: Path, declarations: list[str]) -> dict[str, int]:
+    """Resolve symbolic fixed-array bounds from compiler-facing headers.
+
+    Every discovered spelling must agree.  This intentionally accepts only a
+    single decimal literal, not expressions or architecture-dependent macros.
+    """
+    names = {
+        match.group(1)
+        for declaration in declarations
+        if (match := re.search(r"\[\s*([A-Za-z_]\w*)\s*\]", declaration))
+    }
+    if not names:
+        return {}
+    repo_root = next(
+        (parent for parent in source.parents if (parent / "sdk" / "include").is_dir()), None
+    )
+    if repo_root is None:
+        return {}
+    values: dict[str, int] = {}
+    for name in names:
+        found: set[int] = set()
+        pattern = re.compile(rf"^\s*#\s*define\s+{re.escape(name)}\s+(\d+)\b", re.M)
+        for header in (repo_root / "sdk" / "include").rglob("*.[hi]"):
+            text = header.read_text(encoding="utf-8", errors="replace")
+            found.update(int(item) for item in pattern.findall(text))
+        if len(found) == 1:
+            values[name] = found.pop()
+    return values
+
+
+def _pod_definition(text: str, name: str) -> tuple[str, bool] | None:
+    patterns = (
+        re.compile(
+            rf"typedef\s+struct(?:\s+[A-Za-z_]\w*)?\s*\{{(?P<body>[^{{}}]*)\}}\s*"
+            rf"(?P<aliases>[^;]*\b{re.escape(name)}\b[^;]*)\s*;",
+            re.S,
+        ),
+        re.compile(rf"\bstruct\s+{re.escape(name)}\s*\{{(?P<body>[^{{}}]*)\}}\s*;", re.S),
+    )
+    for pattern in patterns:
+        match = pattern.search(text)
+        if match is None:
+            continue
+        prefix = text[: match.start()]
+        packed = prefix.rfind("pshpack1.h") > prefix.rfind("poppack.h")
+        return match.group("body"), packed
+    return None
+
+
+def _discover_pod_state_types(
+    source: Path, header: Path, declarations: list[str]
+) -> list[PodStateType]:
+    """Find and prove simple embedded C structs used directly by class state."""
+    candidates = []
+    for declaration in declarations:
+        match = re.fullmatch(r"\s*(?P<type>[A-Za-z_]\w*)\s+[A-Za-z_]\w*\s*", declaration)
+        if match:
+            c_type = match.group("type")
+            pointer_typedef = bool(re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", c_type))
+            if (
+                c_type not in _RUST_SCALARS
+                and c_type not in _POD_LEAF_TYPES
+                and not pointer_typedef
+            ):
+                candidates.append(c_type)
+    if not candidates:
+        return []
+    local_texts = [
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in dict.fromkeys((source, header))
+    ]
+    repo_root = next(
+        (parent for parent in source.parents if (parent / "sdk" / "include").is_dir()), None
+    )
+    specs = []
+    for name in dict.fromkeys(candidates):
+        definition = next(
+            (found for text in local_texts if (found := _pod_definition(text, name)) is not None),
+            None,
+        )
+        if definition is None and repo_root is not None:
+            for candidate in (repo_root / "sdk" / "include").rglob("*.[hi]"):
+                text = candidate.read_text(encoding="utf-8", errors="replace")
+                if not re.search(rf"\b{re.escape(name)}\b", text):
+                    continue
+                definition = _pod_definition(text, name)
+                if definition is not None:
+                    break
+        if definition is None:
+            continue
+        body, packed = definition
+        body = re.sub(r"/\*.*?\*/|//[^\n]*|#\s*include[^\n]*", " ", body, flags=re.S)
+        fields = []
+        valid = True
+        for raw in body.split(";"):
+            declaration = " ".join(raw.split())
+            if not declaration:
+                continue
+            try:
+                fields.append(
+                    _parse_plain_state_field(
+                        declaration,
+                        allowed_pod_types=_POD_LEAF_TYPES,
+                    )
+                )
+            except CppComError:
+                valid = False
+                break
+        if valid and fields:
+            specs.append(PodStateType(name=name, fields=tuple(fields), packed=packed))
+    return specs
 
 
 def analyze_class(
@@ -393,6 +607,9 @@ def analyze_class(
     source = source.resolve()
     header = find_class_header(source, class_name)
     body = _find_class_text(header, class_name)
+    state_fields = _state_fields(body)
+    pod_state_types = _discover_pod_state_types(source, header, state_fields)
+    array_constants = _numeric_array_constants(source, state_fields)
     entries, unsupported = _parse_com_map(body, class_name)
     bases = _class_bases(header, class_name)
     interfaces = {entry.interface for entry in entries}
@@ -440,7 +657,9 @@ def analyze_class(
         final_construct=final_construct,
         method_names=method_names or [],
         base_classes=bases,
-        state_fields=_state_fields(body),
+        state_fields=state_fields,
+        pod_state_types=pod_state_types,
+        array_constants=array_constants,
         unsupported=unsupported,
     )
 
@@ -564,6 +783,9 @@ def c_type_to_rust(c_type: str) -> str:
         text = text[:-1].rstrip()
     stars = text.count("*")
     base = " ".join(text.replace("*", " ").split())
+    # C++ nested PODs are emitted as module-level Rust structs by the
+    # deterministic scaffold (``CShellLink::volume_info`` -> ``volume_info``).
+    base = re.sub(r"\b[A-Za-z_]\w*::", "", base)
     rust = _RUST_SCALARS.get(base, base)
     for depth in range(stars):
         qualifier = "const" if is_const and depth == 0 else "mut"
@@ -729,26 +951,38 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
         for name in expected_params:
             rust = re.sub(rf"\b_{re.escape(name)}\b", name, rust)
         expected_name_match = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", expected_signature)
-        if expected_name_match is not None:
-            expected_name = expected_name_match.group(1)
-            actual = re.search(
-                rf"\b(?:pub\s+)?(?:unsafe\s+)?fn\s+{re.escape(expected_name)}\s*\(",
-                rust,
-            )
-            if actual is not None:
-                opening = rust.find("(", actual.start())
-                closing = _matching_paren(rust, opening)
-                brace = rust.find("{", closing + 1)
-                actual_params = [
-                    match.group(1)
-                    for item in _split_args(rust[opening + 1 : closing])
-                    if (match := re.match(r"\s*([A-Za-z_]\w*)\s*:", item))
-                ]
-                # The model owns no part of the worker surface. If its parameter
-                # list still names the generated slots in order, replace all of
-                # its type/return/qualifier spellings with the exact authority.
-                if brace >= 0 and actual_params == expected_params:
-                    rust = rust[: actual.start()] + expected_signature + " " + rust[brace:]
+        if expected_name_match is None:
+            raise CppComError(f"invalid deterministic worker signature: {expected_signature}")
+        expected_name = expected_name_match.group(1)
+        actual = re.search(
+            rf"\b(?:pub\s+)?(?:unsafe\s+)?fn\s+{re.escape(expected_name)}\s*\(",
+            rust,
+        )
+        if actual is not None:
+            opening = rust.find("(", actual.start())
+            closing = _matching_paren(rust, opening)
+            brace = rust.find("{", closing + 1)
+            actual_params = [
+                match.group(1)
+                for item in _split_args(rust[opening + 1 : closing])
+                if (match := re.match(r"\s*([A-Za-z_]\w*)\s*:", item))
+            ]
+            # The model owns no part of the worker surface. If its parameter
+            # list still names the generated slots in order, replace all of
+            # its type/return/qualifier spellings with the exact authority.
+            if brace >= 0 and actual_params == expected_params:
+                rust = rust[: actual.start()] + expected_signature + " " + rust[brace:]
+        # The model is contracted for exactly one body worker. Deterministically
+        # discard crate attributes, imports, shadow types, and trailing helpers
+        # outside that function before any response can enter the cache/module.
+        exact = re.search(rf"\bpub\s+unsafe\s+fn\s+{re.escape(expected_name)}\s*\(", rust)
+        if exact is not None:
+            opening = rust.find("(", exact.start())
+            closing = _matching_paren(rust, opening)
+            brace = rust.find("{", closing + 1)
+            if brace >= 0:
+                _, body_end = _balanced_block(_masked_cpp(rust), brace)
+                rust = rust[exact.start() : body_end + 1]
     return rust
 
 
@@ -759,6 +993,37 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     deliberately downstream of the response cache: improving a deterministic
     lowering must never require buying the same model response again.
     """
+    # A worker may use an SDK type named by the C source, but it may not shadow
+    # that deterministic module-level authority with a guessed local layout.
+    # Remove only repr(C) declarations whose names occur in the source and are
+    # not themselves declared by that source worker. Source-local PODs remain
+    # intact and are layout-checked by ``audit_worker_body``.
+    source_local_types = _source_local_pod_fields(source)
+    shadow_heads = list(
+        re.finditer(
+            r"#\s*\[\s*repr\s*\(\s*C\s*\)\s*\]\s*struct\s+([A-Za-z_]\w*)\s*\{",
+            rust,
+        )
+    )
+    for shadow in reversed(shadow_heads):
+        type_name = shadow.group(1)
+        if type_name in source_local_types or not re.search(rf"\b{re.escape(type_name)}\b", source):
+            continue
+        open_brace = rust.find("{", shadow.start())
+        try:
+            _, close_brace = _balanced_block(rust, open_brace)
+        except CppComError:
+            continue
+        rust = rust[: shadow.start()] + rust[close_brace + 1 :]
+
+    # Rust reserves ``final`` for future use, while C/C++ permits it as an
+    # ordinary local name. Raw identifiers preserve that source spelling.
+    if re.search(r"\bfinal\s*(?:=|;|\[)", _masked_cpp(source)):
+        masked_rust = _masked_cpp(rust)
+        matches = list(re.finditer(r"(?<![#\w])final\b", masked_rust))
+        for match in reversed(matches):
+            rust = rust[: match.start()] + "r#final" + rust[match.end() :]
+
     # no_std shell modules never own a `std` dependency.
     rust = rust.replace("std::", "core::")
     sfv_create = re.search(
@@ -1030,6 +1295,55 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         )
     # Fixed C arrays retain their extent in generated Rust object state.
     rust = re.sub(r"\b_countof\s*\(([^()]+|\(\*this\)\.[A-Za-z_]\w*)\)", r"\1.len()", rust)
+    rust = re.sub(r"&mut\s+([A-Za-z_]\w*)\s+as\s+\*mut\s+_\.len\(\)", r"\1.len()", rust)
+    # Finish arbitrary member/parenthesized forms with a balanced transform;
+    # regex-only lowering cannot see `_countof((*p).field)` correctly.
+    while True:
+        masked = _masked_cpp(rust)
+        calls = list(re.finditer(r"\b_countof!?\s*\(", masked))
+        if not calls:
+            break
+        call = calls[-1]
+        opening = masked.find("(", call.start())
+        closing = _matching_paren(masked, opening)
+        expression = rust[opening + 1 : closing].strip()
+        if expression.startswith("&"):
+            expression = expression[1:].strip()
+        replacement = expression if expression.endswith(".len()") else f"({expression}).len()"
+        rust = rust[: call.start()] + replacement + rust[closing + 1 :]
+    # A model sometimes heapifies a fixed C stack buffer. Restore the exact
+    # source-derived extent; shell32 workers are no_std and this also preserves
+    # the original allocation/failure behavior.
+    for fixed in re.finditer(
+        r"\b(?P<type>WCHAR|CHAR|BYTE)\s+(?P<name>[A-Za-z_]\w*)\s*"
+        r"\[\s*(?P<count>[A-Za-z_]\w*|\d+)\s*\]",
+        source,
+    ):
+        c_type, name, count = fixed.group("type", "name", "count")
+        rust = re.sub(
+            rf"(?:const\s+[A-Za-z_]\w*\s*:\s*usize\s*=\s*{re.escape(count)}(?:\s+as\s+usize)?\s*;\s*)?"
+            rf"let\s+mut\s+{re.escape(name)}\s*:\s*Vec<[^>]+>\s*=\s*"
+            rf"vec!\[\s*0(?:u\d+)?\s*;\s*[A-Za-z_]\w*\s*\]\s*;",
+            f"let mut {name}: [{c_type}; {count} as usize] = [0; {count} as usize];",
+            rust,
+        )
+    # C field spellings can be Rust keywords. Raw identifiers preserve layout
+    # and keep source-derived member access mechanical.
+    rust = re.sub(r"\.type\b", ".r#type", rust)
+    rust = re.sub(r"(\b[A-Za-z_]\w*_body\(this,)\s+", r"\1 ", rust)
+    rust = re.sub(
+        r"let\s+([A-Za-z_]\w*)\s*:\s*BOOL\s*=\s*if\s+([^{};]+)\s*"
+        r"\{\s*1\s*\}\s*else\s*\{\s*0\s*\}\s*;",
+        r"let \1: BOOL = (\2) as BOOL;",
+        rust,
+    )
+    rust = re.sub(r"\bCShellLink::volume_info\b", "volume_info", rust)
+    rust = re.sub(
+        r"\bHeapFree\s*\(\s*GetProcessHeap\(\)\s*,\s*0\s*,\s*"
+        r"(\(\*this\)\.[A-Za-z_]\w*)\s*,?\s*\)",
+        r"HeapFree(GetProcessHeap(), 0, \1.cast())",
+        rust,
+    )
     rust = re.sub(
         r"\bStringCchCopyW\s*\(\s*(\(\*this\)\.[A-Za-z_]\w*)\s*,",
         r"StringCchCopyW(\1.as_mut_ptr(),",
@@ -1206,6 +1520,7 @@ _CPP_SUPPORT_CONSTANTS = {
     "CSIDL_PERSONAL": ("INT", "0x0005"),
     "EVCCBF_LASTNOTIFICATION": ("DWORD", "0x0001"),
     "EVCF_HASSETTINGS": ("DWORD", "0x0001"),
+    "MAX_PATH": ("usize", "260"),
     "SEE_MASK_IDLIST": ("ULONG", "0x0000_0004"),
     "SHERB_NOCONFIRMATION": ("DWORD", "0x0000_0001"),
     "SHERB_NOPROGRESSUI": ("DWORD", "0x0000_0002"),
@@ -1658,17 +1973,12 @@ def prepare_helper_closure(
             binding[key] = dep
 
     helper_names = set(by_source)
-    method_targets = {}
+    method_targets: dict[str, list[FunctionDep]] = {}
     for dep in class_deps:
         method = dep.cpp_method
         if method in (None, class_name, f"~{class_name}"):
             continue
-        if method in method_targets:
-            raise CppComError(
-                f"{class_name}: overloaded sibling method {method} needs explicit "
-                "deterministic call binding"
-            )
-        method_targets[method] = dep
+        method_targets.setdefault(method, []).append(dep)
     method_names = set(method_targets)
     selected: dict[str, FunctionDep] = {}
     queue = list(class_deps)
@@ -1711,11 +2021,30 @@ def prepare_helper_closure(
                 # Calls through another COM object are not implicit sibling
                 # calls merely because their method spelling collides.
                 continue
-            target = method_targets[source_name]
             # Keep this worker's C++ definition declarator recognizable; only
             # sibling calls become deterministic Rust worker calls.
-            if target.name == dep.name and start < definition_brace:
+            if source_name == dep.cpp_method and start < definition_brace:
                 continue
+            all_candidates = method_targets[source_name]
+            candidates = [
+                candidate for candidate in all_candidates if len(candidate.params) == _arity
+            ]
+            # IID_PPV_ARG and similar source macros expand one apparent C++
+            # argument into multiple ABI arguments later in normalization.
+            # A non-overloaded method remains unambiguous despite the lexical
+            # arity mismatch.
+            if not candidates and len(all_candidates) == 1:
+                candidates = all_candidates
+            target = _bind_sibling_overload(
+                body,
+                start,
+                end,
+                candidates,
+                dep,
+                state_fields or [],
+                class_name,
+                source_name,
+            )
             body = body[:start] + f"{target.name}_body" + body[end:]
             if target.name != dep.name:
                 local_targets.add(f"{target.name}_body")
@@ -1727,6 +2056,134 @@ def prepare_helper_closure(
         )
 
     return topological_sort(rewritten)
+
+
+def _bind_sibling_overload(
+    body: str,
+    start: int,
+    end: int,
+    candidates: list[FunctionDep],
+    caller: FunctionDep,
+    state_fields: list[PlainStateField],
+    class_name: str,
+    source_name: str,
+) -> FunctionDep:
+    """Bind an implicit ``this`` call using source-visible argument types."""
+    if len(candidates) == 1:
+        return candidates[0]
+    opening = body.find("(", end)
+    closing = _matching_paren(_masked_cpp(body), opening)
+    arguments = _split_args(body[opening + 1 : closing])
+    symbols = {name.lstrip("&*"): c_type for c_type, name in caller.params if name}
+    symbols.update({field.name: field.c_type for field in state_fields})
+    prefix = body[:start]
+    for declaration in re.finditer(
+        r"\b(?P<type>[A-Za-z_]\w*(?:\s*\*)?)\s+(?P<name>[A-Za-z_]\w*)\s*"
+        r"(?P<array>\[[^]]+\])?\s*(?:=|;)",
+        prefix,
+    ):
+        c_type = " ".join(declaration.group("type").split())
+        if declaration.group("array"):
+            if c_type == "WCHAR":
+                c_type = "LPWSTR"
+            elif c_type == "CHAR":
+                c_type = "LPSTR"
+        symbols.setdefault(declaration.group("name"), c_type)
+    for com_ptr in re.finditer(
+        r"\bCComPtr\s*<\s*(?P<interface>I[A-Za-z0-9_]*)\s*>\s+"
+        r"(?P<name>[A-Za-z_]\w*)\b",
+        prefix,
+    ):
+        symbols[com_ptr.group("name")] = f"{com_ptr.group('interface')} *"
+    for argument in arguments:
+        identifier = re.fullmatch(r"(?:this\s*->\s*)?([A-Za-z_]\w*)", argument.strip())
+        if identifier is None or identifier.group(1) in symbols:
+            continue
+        name = identifier.group(1)
+        com_ptr = re.search(
+            rf"\bCComPtr\s*<\s*(?P<interface>I[A-Za-z0-9_]*)\s*>\s+"
+            rf"{re.escape(name)}\b",
+            prefix,
+        )
+        if com_ptr is not None:
+            symbols[name] = f"{com_ptr.group('interface')} *"
+            continue
+        declaration = re.search(
+            rf"\b(?P<type>[A-Za-z_]\w*(?:\s*\*)?)\s+{re.escape(name)}\s*"
+            rf"(?P<array>\[[^]]+\])?\s*(?:=|;)",
+            prefix,
+        )
+        if declaration is not None:
+            c_type = " ".join(declaration.group("type").split())
+            if declaration.group("array"):
+                if c_type == "WCHAR":
+                    c_type = "LPWSTR"
+                elif c_type == "CHAR":
+                    c_type = "LPSTR"
+            symbols[name] = c_type
+
+    scores: list[tuple[int, FunctionDep]] = []
+    for candidate in candidates:
+        score = 0
+        for argument, (expected, _name) in zip(arguments, candidate.params, strict=True):
+            actual = _argument_c_type(argument, symbols)
+            if actual is None:
+                continue
+            if _abi_types_compatible(actual, expected):
+                score += 1
+        scores.append((score, candidate))
+    if scores:
+        best = max(score for score, _ in scores)
+        winners = [candidate for score, candidate in scores if score == best]
+        if best > 0 and len(winners) == 1:
+            return winners[0]
+    choices = ", ".join(
+        f"{candidate.name}({', '.join(c_type for c_type, _ in candidate.params)})"
+        for candidate in candidates
+    )
+    raise CppComError(
+        f"{class_name}: cannot bind overloaded sibling call {source_name}"
+        f"({', '.join(argument.strip() for argument in arguments)}) in {caller.name}; "
+        f"candidates: {choices or '<none>'}"
+    )
+
+
+def _argument_c_type(argument: str, symbols: dict[str, str]) -> str | None:
+    text = argument.strip()
+    text = re.sub(r"^\([^()]+\)\s*", "", text)
+    conditional = re.fullmatch(r"[A-Za-z_]\w*\s*\?\s*([A-Za-z_]\w*)\s*:\s*(.+)", text, flags=re.S)
+    if conditional is not None:
+        true_type = symbols.get(conditional.group(1))
+        false_text = conditional.group(2).strip()
+        false_type = (
+            "LPCWSTR"
+            if re.fullmatch(r"CPP_COM_WSTR_[A-F0-9_]+\.as_ptr\(\)", false_text)
+            else _argument_c_type(false_text, symbols)
+        )
+        if true_type is not None and (
+            false_type is None or _abi_types_compatible(true_type, false_type)
+        ):
+            return true_type
+    if re.fullmatch(r'L"(?:\\.|[^"\\])*"', text):
+        return "LPCWSTR"
+    if re.fullmatch(r'"(?:\\.|[^"\\])*"', text):
+        return "LPCSTR"
+    identifier = re.fullmatch(r"(?:this\s*->\s*)?([A-Za-z_]\w*)", text)
+    if identifier is None:
+        return None
+    c_type = symbols.get(identifier.group(1))
+    if c_type == "CStringW":
+        return "LPCWSTR"
+    if c_type == "CStringA":
+        return "LPCSTR"
+    return c_type
+
+
+def _abi_types_compatible(actual: str, expected: str) -> bool:
+    left, right = _abi_c_type_key(actual), _abi_c_type_key(expected)
+    if left == right:
+        return True
+    return {left, right} in ({"LPWSTR", "LPCWSTR"}, {"LPSTR", "LPCSTR"})
 
 
 def require_supported_worker_raii(deps: list) -> None:
@@ -1752,31 +2209,47 @@ def apply_interface_method_signatures(
     scanner types must never win for interface methods. Source parameter names
     are retained because the C++ body refers to them.
     """
-    methods: dict[str, InterfaceMethod] = {}
+    methods: dict[str, list[InterfaceMethod]] = {}
     for interface in interfaces:
         for method in interface.methods:
             if method.name in ("QueryInterface", "AddRef", "Release"):
                 continue
-            prior = methods.get(method.name)
-            # An inherited method is repeated in flattened child vtables with
-            # only its receiver type changed (IPersist* vs IPersistFile*).
-            # Workers receive the owning class pointer, so compare the ABI
-            # shape after removing that deterministic interface receiver.
-            shape = (method.return_type, method.params[1:])
-            prior_shape = None if prior is None else (prior.return_type, prior.params[1:])
-            if prior is not None and prior_shape != shape:
-                raise CppComError(
-                    f"{class_name}: interface method {method.name} has conflicting vtable "
-                    "signatures across COM-map interfaces"
-                )
-            methods[method.name] = method
+            variants = methods.setdefault(method.name, [])
+            shape = _interface_method_shape(method)
+            if all(_interface_method_shape(prior) != shape for prior in variants):
+                variants.append(method)
 
     out = []
     for dep in deps:
-        method = methods.get(dep.cpp_method or "") if dep.cpp_class == class_name else None
-        if method is None:
+        variants = methods.get(dep.cpp_method or "") if dep.cpp_class == class_name else None
+        if not variants:
             out.append(dep)
             continue
+        source_shape = tuple(_abi_c_type_key(c_type) for c_type, _ in dep.params)
+        matching = [
+            (index, method)
+            for index, method in enumerate(variants)
+            if tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:]) == source_shape
+        ]
+        if len(matching) != 1:
+            same_arity = [
+                (index, method)
+                for index, method in enumerate(variants)
+                if len(method.params) - 1 == len(dep.params)
+            ]
+            if len(same_arity) == 1:
+                matching = same_arity
+        if len(matching) != 1:
+            choices = ", ".join(
+                "(" + ", ".join(c_type for c_type, _ in method.params[1:]) + ")"
+                for method in variants
+            )
+            raise CppComError(
+                f"{class_name}::{dep.cpp_method}: cannot bind scanner signature "
+                f"({', '.join(c_type for c_type, _ in dep.params)}) to vtable variants: "
+                f"{choices}"
+            )
+        variant_index, method = matching[0]
         vtable_params = list(method.params[1:])
         if len(vtable_params) != len(dep.params):
             raise CppComError(
@@ -1789,8 +2262,64 @@ def apply_interface_method_signatures(
                 vtable_params, dep.params, strict=True
             )
         ]
-        out.append(replace(dep, return_type=method.return_type, params=params))
+        target_name = f"{class_name}_{dep.cpp_method}"
+        if len(variants) > 1:
+            target_name += f"_v{variant_index + 1}"
+        out.append(replace(dep, name=target_name, return_type=method.return_type, params=params))
     return out
+
+
+def _interface_method_shape(method: InterfaceMethod) -> tuple[str, tuple[str, ...]]:
+    """Canonical ABI shape excluding the per-interface receiver pointer."""
+    return (
+        _abi_c_type_key(method.return_type),
+        tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:]),
+    )
+
+
+def _abi_c_type_key(c_type: str) -> str:
+    """Collapse spelling-only Win32 aliases for overload binding, not codegen."""
+    text = " ".join(c_type.replace("CONST", "const").split())
+    aliases = {
+        "int": "INT",
+        "unsigned int": "UINT",
+        "PSTR": "LPSTR",
+        "PWSTR": "LPWSTR",
+        "PCSTR": "LPCSTR",
+        "PCWSTR": "LPCWSTR",
+        "LPCOLESTR": "LPCWSTR",
+        "LPOLESTR": "LPWSTR",
+    }
+    for spelling, canonical in aliases.items():
+        text = re.sub(rf"\b{re.escape(spelling)}\b", canonical, text)
+    return text
+
+
+def _interface_method_target(
+    class_name: str, method: InterfaceMethod, interfaces: list[InterfaceSpec]
+) -> str:
+    variants: list[InterfaceMethod] = []
+    for interface in interfaces:
+        for candidate in interface.methods:
+            if candidate.name != method.name or candidate.name in (
+                "QueryInterface",
+                "AddRef",
+                "Release",
+            ):
+                continue
+            if all(
+                _interface_method_shape(prior) != _interface_method_shape(candidate)
+                for prior in variants
+            ):
+                variants.append(candidate)
+    target = f"{class_name}_{method.name}"
+    if len(variants) > 1:
+        shape = _interface_method_shape(method)
+        variant = next(
+            i for i, item in enumerate(variants, 1) if _interface_method_shape(item) == shape
+        )
+        target += f"_v{variant}"
+    return target
 
 
 def lower_trivial_worker(c_body: str, expected_signature: str) -> str | None:
@@ -1849,6 +2378,58 @@ def _canonical_signature(signature: str) -> str:
     return re.sub(r"\s*->\s*\(\)\s*$", "", signature)
 
 
+def _source_local_pod_fields(c_body: str) -> dict[str, tuple[str, ...]]:
+    """Return the field names of POD layouts declared inside one C worker.
+
+    A body-local helper such as ``Stream_ReadChunk::sized_chunk`` is not COM or
+    public ABI owned by the model: its authoritative definition is part of the
+    snippet being translated.  Keep this deliberately narrow.  Anonymous types,
+    unions, enums, nested declarations, bitfields, and multi-declarators remain
+    outside the accepted worker contract.
+    """
+    result: dict[str, tuple[str, ...]] = {}
+    for match in re.finditer(r"\bstruct\s+([A-Za-z_]\w*)\s*\{", c_body):
+        name = match.group(1)
+        open_brace = c_body.find("{", match.start())
+        try:
+            inner, _ = _balanced_block(c_body, open_brace)
+        except CppComError:
+            continue
+        fields: list[str] = []
+        valid = True
+        for declaration in inner.split(";"):
+            declaration = " ".join(declaration.split())
+            if not declaration:
+                continue
+            field = re.search(r"([A-Za-z_]\w*)\s*(?:\[[^]]+\])?\s*$", declaration)
+            if field is None or any(token in declaration for token in (",", ":", "{")):
+                valid = False
+                break
+            fields.append(field.group(1))
+        if valid and fields:
+            result[name] = tuple(fields)
+    return result
+
+
+def _rust_local_pod_fields(rust: str) -> dict[str, tuple[str, ...]]:
+    result: dict[str, tuple[str, ...]] = {}
+    for match in re.finditer(
+        r"#\s*\[\s*repr\s*\(\s*C\s*\)\s*\]\s*struct\s+([A-Za-z_]\w*)\s*\{", rust
+    ):
+        name = match.group(1)
+        open_brace = rust.find("{", match.start())
+        try:
+            inner, _ = _balanced_block(rust, open_brace)
+        except CppComError:
+            continue
+        fields = tuple(
+            field.group(1)
+            for field in re.finditer(r"(?:^|,)\s*(?:pub\s+)?(?:r#)?([A-Za-z_]\w*)\s*:", inner)
+        )
+        result[name] = fields
+    return result
+
+
 def audit_worker_body(
     c_body: str, rust: str, expected_name: str, expected_signature: str | None = None
 ) -> list[str]:
@@ -1904,8 +2485,19 @@ def audit_worker_body(
         executable_rust,
     ):
         findings.append("worker emitted forbidden vtable definition")
-    if re.search(r"\b(?:struct|union|enum)\s+[A-Za-z_]\w*\b", executable_rust):
-        findings.append("worker emitted forbidden ABI type declaration")
+    declared_types = re.findall(r"\b(?:struct|union|enum)\s+([A-Za-z_]\w*)\b", executable_rust)
+    if declared_types:
+        source_local = _source_local_pod_fields(c_body)
+        rust_local = _rust_local_pod_fields(executable_rust)
+        invalid_types = [
+            name
+            for name in declared_types
+            if name not in source_local or rust_local.get(name) != source_local[name]
+        ]
+        if invalid_types:
+            findings.append(
+                "worker emitted forbidden ABI type declaration: " + ", ".join(invalid_types)
+            )
 
     # Strings and comments contain printf formats and prose, not program constants.
     open_brace, close_brace = c_body.find("{"), c_body.rfind("}")
@@ -1997,24 +2589,36 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
     if missing:
         raise CppComError(f"{cls.name}: missing interface specs: {', '.join(missing)}")
 
-    lines = [
-        f"// Deterministic COM scaffold for {cls.name}; method bodies are generated separately.",
-        'extern "system" {',
-        "    fn GetProcessHeap() -> HANDLE;",
-        "    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;",
-        "    fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;",
-        "    fn Shell32RustObjectLock();",
-        "    fn Shell32RustObjectUnlock();",
-        "}",
-        *(
-            []
-            if any(entry.interface == "IUnknown" for entry in cls.com_map)
-            else ['extern "C" {', "    pub static IID_IUnknown: IID;", "}"]
-        ),
-        "",
-        "#[repr(C)]",
-        f"pub struct {cls.name} {{",
-    ]
+    lines = []
+    for pod in cls.pod_state_types:
+        representation = "#[repr(C, packed)]" if pod.packed else "#[repr(C)]"
+        lines.extend([representation, f"pub struct {pod.name} {{"])
+        for state in pod.fields:
+            field_name = f"r#{state.name}" if state.name in _RUST_KEYWORDS else state.name
+            lines.append(f"    pub {field_name}: {state.rust_type},")
+        lines.extend(["}", ""])
+
+    lines.extend(
+        [
+            f"// Deterministic COM scaffold for {cls.name}; "
+            "method bodies are generated separately.",
+            'extern "system" {',
+            "    fn GetProcessHeap() -> HANDLE;",
+            "    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;",
+            "    fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;",
+            "    fn Shell32RustObjectLock();",
+            "    fn Shell32RustObjectUnlock();",
+            "}",
+            *(
+                []
+                if any(interface.name == "IUnknown" for interface in interfaces)
+                else ['extern "C" {', "    pub static IID_IUnknown: IID;", "}"]
+            ),
+            "",
+            "#[repr(C)]",
+            f"pub struct {cls.name} {{",
+        ]
+    )
     for entry in cls.com_map:
         lines.append(f"    pub {entry.interface}_iface: {entry.interface},")
     lines.append("    pub ref_count: core::sync::atomic::AtomicI32,")
@@ -2071,7 +2675,7 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             if method.name in ("QueryInterface", "AddRef", "Release"):
                 target = f"{cls.name}_{method.name}"
             else:
-                target = f"{cls.name}_{method.name}_body"
+                target = f"{_interface_method_target(cls.name, method, interfaces)}_body"
             call = f"{target}(this{', ' if rest else ''}{rest})"
             lines.append(f"    {call}")
             lines.append("}")

@@ -202,6 +202,43 @@ RE_EMPTY_MEMMODEL = re.compile(r"\b(?:FAR|NEAR)\b")
 # without. Only the .spec export audit caught it. Normalise to the lowercase keyword.
 RE_UPPER_CONST = re.compile(r"\bCONST\b")
 
+# ATL spells in-class COM method definitions as macro declarators:
+#
+#     STDMETHOD(QueryService)(REFGUID svc, REFIID riid, void **ppv) override
+#     {
+#         ...
+#     }
+#
+# The compiler expands this to an ordinary HRESULT method, but tree-sitter-cpp
+# sees a function_definition whose declarator is just ``STDMETHOD`` and records
+# the real method as an unextractable body.  Normalize only the definition shape
+# (a balanced-looking parameter list followed by an optional ``override`` and
+# ``{``); declarations ending in ``;`` are deliberately untouched.
+RE_INLINE_STDMETHOD = re.compile(
+    r"\bSTDMETHOD\s*\(\s*(?P<name>[A-Za-z_]\w*)\s*\)\s*"
+    r"\((?P<params>[^;{}]*)\)\s*(?:override\s*)?(?=\{)",
+    re.S,
+)
+RE_INLINE_STDMETHOD_TYPED = re.compile(
+    r"\bSTDMETHOD_\s*\(\s*(?P<ret>[^,()]+?)\s*,\s*"
+    r"(?P<name>[A-Za-z_]\w*)\s*\)\s*"
+    r"\((?P<params>[^;{}]*)\)\s*(?:override\s*)?(?=\{)",
+    re.S,
+)
+
+
+def _expand_inline_stdmethod(text: str) -> str:
+    """Expose ATL inline COM definitions to the C++ structural scanner."""
+    text = RE_INLINE_STDMETHOD_TYPED.sub(
+        lambda match: (
+            f"{match.group('ret').strip()} {match.group('name')}({match.group('params')}) "
+        ),
+        text,
+    )
+    return RE_INLINE_STDMETHOD.sub(
+        lambda match: f"HRESULT {match.group('name')}({match.group('params')}) ", text
+    )
+
 
 def _blank_memmodel(text: str) -> str:
     """Blank the empty `FAR`/`NEAR` decorations and normalise `CONST` so tree-sitter can
@@ -937,6 +974,7 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
         # Resolve preprocessor conditionals so #ifdef-spanning constructs don't
         # break tree-sitter function extraction (uniata etc.). Macros preserved.
         raw = _resolve_pp_conditionals(path, raw)
+        raw = _expand_inline_stdmethod(raw)
     source_text = _normalize_callbacks(
         _blank_memmodel(
             _strip_sal(_expand_csr_api(_resolve_known_preproc(_strip_known_off_ifdefs(raw))))
