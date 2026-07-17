@@ -103,12 +103,14 @@ pub mod sysinfo;
 pub mod timer;
 #[cfg(hal_apic)]
 pub mod tsc;
-// SMP AP-start + real-IPI backend (smp-bringup-quest.md M2). amd64-only —
-// i386 runs the PIC HAL (no LAPIC/MADT); its SMP story is M5. The colliding
-// UP stubs in up.rs/processor.rs are cfg'd out under this same condition.
-#[cfg(all(feature = "smp", target_arch = "x86_64", not(feature = "minihal")))]
+// SMP AP-start + real-IPI backend (smp-bringup-quest.md M2/M5). Keyed on the
+// APIC flavor, not the arch: amd64 is always hal_apic, and i386 gets it on the
+// (now default) APIC HAL — SMP requires the LAPIC/IOAPIC/MADT the PIC flavor
+// lacks, so hal_pic stays UP. The colliding UP stubs in up.rs/processor.rs are
+// cfg'd out under this same condition (their stub gate flips to hal_pic).
+#[cfg(all(feature = "smp", hal_apic, not(feature = "minihal")))]
 pub mod smp_processor;
-#[cfg(all(feature = "smp", target_arch = "x86_64", not(feature = "minihal")))]
+#[cfg(all(feature = "smp", hal_apic, not(feature = "minihal")))]
 pub(crate) mod trampoline;
 pub mod up;
 pub mod usage;

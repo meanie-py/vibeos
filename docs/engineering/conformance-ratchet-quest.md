@@ -980,3 +980,98 @@ user-APC path. **Next step toward the arm64 baseline:** quarantine `ExFastMutex`
 `tools/payloads/kmtest/kmtest-tests-arm64.txt`, re-sweep to unmask the ~77 cascade victims' real
 results, iterate on any further wedgers, then `conformance --arch arm64 --write-baseline`. The
 user-APC fix lands on its own (a real, correct kernel fix; unblocks the whole sweep).
+
+### 2026-07-16 (baseline grind, in progress) — arm64 quarantine sweeps after the user-APC fix
+
+With the sweep running end-to-end (user-APC fix §9.90), the arm64-specific wedgers surface
+one per boot (the amd64/i386 M3 pattern). The arm64 list started as a copy of amd64's, so
+it already carries all amd64 quarantines; these are the NEW arm64-only ones:
+- **Sweep 1 — `ExFastMutex` TIMEOUT (in-kernel hang).** `kmtest_drv.c:454 KeWaitForSingleObject
+  timed out!` — the usermode-callback worker's `AWAIT_REQ` returns `STATUS_TIMEOUT` because the
+  kernel test never posts a callback (it's hung); `support.c:52 BytesReturned` assert is
+  collateral. Passes on amd64+i386 → arm64-specific. The `Exi*FastMutex NOT FOUND` spam is
+  benign (i386-only fastcall variants; the test `skip()`s them on 64-bit). Quarantined.
+- **Sweep 2 — `ExHardError` BUGCHECK 0x1E (0xC0000005) at kbase+0x1c9cf8.** Faults IMMEDIATELY
+  at kernel-test start (3 log lines after "Starting test"). Same structural class as i386 (an
+  i386-quarantined crasher). NOT the user-APC fix — reproduces on i386 (never runs arm64 code)
+  and faults at test-start, not on an APC return. Quarantined (a BUGCHECK kills the guest, so
+  it must be quarantined to sweep past it).
+
+Both quarantined in `kmtest-tests-arm64.txt` with negative results recorded; triage owed (both
+are pre-existing arm64 structural bugs, distinct from the fixed user-APC path).
+
+**Harness note — the netstack-TDI flake makes the grind expensive.** Sweep 3 hit the known
+pre-existing arm64 **netstack-TDI self-test** silent-wedge flake (~1/6 boots, upstream of
+services): the boot reached `shell ready` + `ScmAutoStartServices completed` but
+`SC_AutoStartComplete` never fired, so the sweep launched 0 tests and the conformance verb
+drained its full `--timeout` (~90 min at the 6000s default) waiting for output that never came.
+Mitigation for the grind: run `conformance --arch arm64 --timeout 1800` so a boot-flake caps at
+~30 min instead of 90 (a real sweep resolves in minutes — a wedger either BUGCHECKs fast or
+times-out-then-cascades; only a launched=0 boot-flake drains the whole budget). A proper fix is
+the `vm.py MAX_VM_LIFETIME`/early-abort-on-boot-gate-miss harness gap already noted above.
+Getting a clean arm64 baseline = keep re-sweeping past the flake, quarantining each wedger, then
+`--write-baseline`. NOT yet landed (no baseline file); the 2 quarantines are committed as
+progress.
+
+### 2026-07-16 (baseline grind cont.) — sweep 3: the arm64 crasher cluster is the KERNEL-SEH bug (§9.69 / task #10)
+
+Sweep 3 (clean boot, `--timeout 1800`): with ExFastMutex + ExHardError quarantined, the sweep got
+2 more OK (ExInterlocked 180/0, ExPools 14/4 → `launched=6 ok=5`) then **ExResource BUGCHECK 0x1E**.
+Symbolicated (calibrating off the boot log's `KiIdleLoop@0xfffff800421a9410` vs the PE index):
+**the crash PC `0xfffff800421c9cf8` = `RtlRaiseStatus+0x44` (rtl-diag/exception.rs) — the IDENTICAL
+PC as ExHardError.** Two exception-raising tests, one instruction ⇒ ONE root cause (like the amd64
+memcpy+0x40 cluster).
+
+**Root: the arm64 kernel-mode exception-dispatch bug (§9.69 / task #10).** Both ExHardError and
+ExResource deliberately raise a kernel-mode exception expecting their driver's native `__try/__except`
+to catch it. On **amd64** native SEH catches it and both PASS (they're NOT amd64-quarantined). On
+**arm64** the kernel-mode exception dispatch is broken (`RtlDispatchException`/`RtlVirtualUnwind` for
+kernel frames — the same machinery §9.69 found wedging on hardware faults), so the raise goes
+unhandled → 0x1E at `RtlRaiseStatus+0x44` (exception code 0xC0000005, single `[RAISE]` print, not
+recursion). So the arm64 kernel-SEH gap blocks the **whole exception-raising kmtest class** — at
+least ExHardError, ExResource, and very likely RtlExceptionKM/RtlStackKM et al. **Fixing task #10
+(arm64 kernel-mode native-SEH dispatch) clears these together** — much higher leverage than
+one-by-one quarantining.
+
+**State:** ExResource quarantined (shared-root note). The arm64 baseline is now blocked primarily on
+the arm64 kernel-SEH lane (task #10), NOT on the user-APC fix (landed) or the SCM (up). Remaining
+options: (a) take on the arm64 kernel-mode SEH-dispatch bug — big, but clears task #10 + a class of
+conformance quarantines at once; (b) keep quarantining the exception-raising tests one per boot to
+reach a (heavily-quarantined) first baseline; (c) stop here with the user-APC fix as the win. The 3
+arm64 quarantines so far (ExFastMutex timeout + the RtlRaiseStatus cluster ExHardError/ExResource)
+are committed as progress; no baseline seeded yet.
+
+### 2026-07-16 (M3 arm64 baseline SEEDED) — first arm64 kmtest baseline: 68 OK
+
+The arm64 baseline grind is complete for a v1: `tools/conformance-baseline/arm64/kmtest.txt`
+= **68 OK + 3 harness-NO-END, sweep=done, zero crashes**. Started from the amd64 list; the
+NEW arm64-only quarantines (all committed with negative results):
+- **ExFastMutex** — in-kernel TIMEOUT (arm64-specific; NOT the SEH cluster).
+- **The arm64 kernel-SEH cluster (§9.69 / task #10):** ExHardError, ExResource, KeDpc, KeMutex,
+  MmSection, RtlIsValidOemCharacter, SeInheritance, ZwAllocateVirtualMemory — each BUGCHECK 0x1E
+  (mostly at the SAME PC `RtlRaiseStatus+0x44`; SeInheritance surfaces one frame later in
+  `KeWaitForSingleObject`). All raise a kernel exception the native `__try/__except` can't catch
+  on arm64; all pass on amd64. **Task #10 clears this whole set at once.**
+- **ZwMapViewOfSection** — BUGCHECK 0x23 (fastfat `STUB_BUGCHECK` 0xdead0000): a distinct
+  untranslated-fastfat-fn root (maps a file-backed section → fastfat), arm64-only because arm64
+  boots the FAT32 ramdisk. Fix = translate the specific fastfat fn (separate lane).
+
+The 3 baselined NO-END (HalPortIo, RtlCaptureContextKM, RtlCaptureContextUM) are all the same
+harness limitation `support.c:105 error 0x7b` (INVALID_NAME — a helper binary not found by name),
+matching the i386 baseline's RtlCaptureContext entries. Not kernel bugs.
+
+**Parser hardened for baseline stability (`parse_kmtest_serial.py`).** The arm64 sweep exposed two
+re-run artifacts that made the raw parse nondeterministic (a random 1-2 tests recorded
+None/INCOMPLETE per run despite passing): (1) the sweep exe **re-autostarts** after finishing while
+the guest keeps draining → a partial second run clobbered early tests — fixed by **breaking at the
+first `done total=`** (the first complete sweep is authoritative; a mid-run BUGCHECK has no DONE so
+CRASH handling is unaffected); (2) a **within-run transient re-launch** (e.g. the netstack-TDI
+self-test perturbing timing) left an incomplete attempt beside a clean pass — fixed by a **dedup
+that keeps the most-complete result per test name**. Both are general (no-ops for single-run x86).
+With these, the baseline is stable and the ratchet self-compares green.
+
+**Owed:** the design's ≥3-run stability validation (+ a `flaky.txt` for any residual flapper); the
+netstack-TDI flake still costs ~1/6 boots as a launched=0 retry; and the two arm64 roots behind the
+quarantines — task #10 (kernel-SEH, clears 8) and the fastfat stub (clears ZwMapViewOfSection) —
+are the real fixes that ratchet these back in. Baseline is report-only (not gating) per the M4
+design. The conformance verb build is unchanged; the kernel is identical to the landed user-APC fix.

@@ -753,3 +753,37 @@ and stronger: there is no design-reviewed C fallback in the build at all.
     (MP-build-detected sub-test expectations). Neither is a kernel change.
   - **0xF4 boot-phase (2/20 soak) — pre-existing §9.56-class, still OPEN.** Separate from
     MmMdl; not chased this pass.
+
+## i386 M5 (Phase B) — AP-start bringup (2026-07-16, in progress)
+
+Unblocked by the i386 APIC HAL landing as the default (Phase A). Working
+`build --arch i386 --smp-kernel` + `smoke --smp N`. Progress this pass — three
+root-caused i386 SMP bugs FIXED + LANDED (commit on `smp-bringup`; full writeup
+field-manual **§9.91**):
+
+1. **HAL SMP gating** keyed on `hal_apic`/`hal_pic` (not `target_arch`) so
+   i386-on-APIC gets the real `smp_processor`/`trampoline` symbols + a new i386
+   (2-level non-PAE) `identity_map_stub`. amd64 provably no-op.
+2. **0x79 MISMATCHED_HAL** — swapped i386 `PRCB_BUILD_UNIPROCESSOR/DEBUG` consts
+   (masked on UP, unmasked SMP). Fixed to canonical DEBUG=1/UNIPROCESSOR=2.
+3. **KeStartAllProcessors GDT + loader-block corruption** — `KDESCRIPTOR` missing
+   `Pad` (→ `sgdt` base misaligned → 0x1E in memcpy) + AP-handshake `offset(0/1/2)`
+   clobbering `LoadOrderListHead`/`MemoryDescriptorListHead` (→ 0x50 + a masking
+   module-list-walk cascade). Now named-field writes + `addr_of_mut!` matching
+   `ke/amd64/mproc.rs`.
+
+**Boot state after these fixes:** i386 `-smp 1` (SMP kernel, 0 APs started)
+reaches deep MM init on the Phase1 thread; the APIC HAL banner + ACPI come up.
+
+**NEXT (open, blocks -smp 1):** a 4th bug — `0x50` with a **corrupted
+trap-return control transfer** on the Phase1Initialization thread (saved `Eip` =
+stack VA `0xf7bbbdb3`; wild write `0x8ef7bbbd` = that VA misaligned by 1 byte;
+frames under it are `KiCommonExit`/`KiEoiHelper`). SMP-kernel-specific (UP boots
+the same APIC media). Deterministic, kbase-stable at `0x804c3000`. Triage recipe:
+GDB `ntkrnlmp.exe` @ `0x804c4000`, break the FIRST fault on the Phase1 thread,
+compare the trap frame's `Eip` field offset vs. what `KiCommonExit` iret's to —
+suspect another packed/offset layout bug in the i386 SMP trap-frame/trap-exit
+path (same family as §9.91 B/C). After this: `-smp 2` AP start (BSP currently
+spins on `KeLoaderBlock->Prcb` post INIT-SIPI-SIPI), then the i386 idle-loop
+NextThread lock + `ctxswitch.S` SwapBusy (land together per the M5 discipline
+note above).
