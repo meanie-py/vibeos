@@ -108,7 +108,9 @@ def _lint_stage(
         # strict (the gate) must have the coverage it claims → fail; a casual
         # local `check` warns, so it stays usable without every tool installed.
         st = "fail" if strict else "warn"
-        return run.add(Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)"))
+        return run.add(
+            Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)")
+        )
     cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
     if by_exit_code:
         text = _rel((cp.stdout or "") + "\n" + (cp.stderr or ""), repo)

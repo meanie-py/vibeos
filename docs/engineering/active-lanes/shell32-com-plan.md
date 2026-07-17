@@ -108,9 +108,10 @@ Note (from the CMakeLists comment): shell32's cohab links **without**
 `--allow-multiple-definition` because the Rust symbols replace commented-out `.c` functions.
 Keep that property — if you need the flag, the swap is wrong.
 
-**A C++ class is all-or-nothing.** Unlike the `.c` files, you cannot half-translate a class:
-the vtable must come from exactly one language. Swap a class only when every method is
-translated.
+**Activation ownership is all-or-nothing.** One language must own the class factory and
+every published vtable. A source file may remain compiled for source-local companion classes
+or explicit `extern "C"` bridges while Rust owns the activated class; document every bridge
+and prove its decoration with the i386 link.
 
 ## Wave plan — leaf-first, smallest-complete-class first
 
@@ -240,6 +241,33 @@ and signed C pointer offsets. Replaying the durable DeepSeek candidates made no 
 and compiles **20/20 x3**, so the DeepSeek model tier is 10/10 after repair on this sample.
 The successful report is
 `.responses/candidate-oracles/20260716-004449-286078/report.json`.
+
+## Monster-class integration checkpoint (2026-07-17)
+
+The first production batch validated the class-level path rather than isolated workers:
+
+- `CNewMenu` and `CSendToMenu` are fully Rust-owned, with their C++ translation units removed
+  from shell32 and activation routed through generated Rust factories.
+- `CPrinterFolder` is Rust-owned at activation/vtable level. Its C++ translation unit remains
+  compiled only for the source-local `CPrintersEnum` companion and three explicit bridges
+  (enum construction, extract-icon construction, and the source-local CompareDetails helper).
+  The full candidate passed the synthetic compiler on i386, amd64, and arm64 in
+  `candidate-oracles/20260717-005929-192066`, then passed a real i386 shell32 link in
+  `/tmp/vibeos-cli/20260717-010231-build-i386/full.log`.
+- Full paid artifacts for `COpenWithMenu`, `CDrivesFolder`, `CNetFolder`, and `CMenuBand` are
+  preserved in `~/vibeos-rust-staging/shell32-com/monsters-v2/`. Their rejections are substrate
+  boundaries, not discarded translations: each closes over additional source-local companion
+  classes or tables, so the next unit of work is that closure rather than model escalation.
+  `CMenuBand` assembled 76 methods (49 cached, 27 deterministic) after $0.02 of fresh DeepSeek
+  work; oracle `candidate-oracles/20260717-012346-448391` cleanly reaches the companion
+  `CMenuToolbarBase`/`CMenuSFToolbar` boundary on all three targets.
+
+The reusable additions include legacy `DECLARE_INTERFACE` discovery, deterministic SDK POD
+closure, source-local numeric/table generation, overload/default-argument resolution,
+scaffold-owned ATL RAII guards, explicit bridge generation, and idempotent cached-worker
+normalization. Function-parameter array decay and multiple-IID aliases sharing one physical
+COM interface slot are also scaffold facts. Cheap-model output is now treated as durable
+behavior input to a generated class module, never as authority for ABI or ownership.
 
 Model-emitted local ABI types are explicitly rejected. The next routing experiment should
 expand beyond the three classes and, importantly, test generated scaffold/substrate
@@ -377,3 +405,21 @@ authority backlog; it is still not permission to wire the class. Follow
 contrasting deterministic reject: aggregation/internal activation and two
 `CAtlList<...>` owners fail preflight before any model call. Add an explicit C++ list/factory
 bridge before spending on that class; never reinterpret those owners as Rust `Vec`.
+
+## Second monster checkpoint: complete substrate closure (2026-07-16)
+
+`CNewMenu.cpp` is the first giant class whose newly assembled module is compile-clean in the
+synthetic oracle: three interfaces, 141 generated vtable slots, 23 prepared workers, and
+2,206 lines of stitched Rust. Twenty-one bodies came from the durable DeepSeek cache and one
+proven stub was generated for $0; replay after each harness improvement made no new model
+calls. The full-module oracle at
+`.responses/candidate-oracles/20260716-233727-653342/report.json` reports zero diagnostics on
+i386, amd64, and arm64.
+
+The closure work was reusable rather than class-shaped patching: nested source POD/enums,
+transitive WIDL interface inheritance checked across all generated architectures, header-
+owned UTF-16 statics, pointer/size wrappers, ATL `CStringW` operations, qualified C++ pointer
+returns, repeated pure `wcslen`, and a call-nesting audit that rejects argument/receiver
+reversal while allowing valid hoisting. The candidate was subsequently integrated as recorded
+in the 2026-07-17 checkpoint above; the final three-architecture image gate remains the
+landing authority.

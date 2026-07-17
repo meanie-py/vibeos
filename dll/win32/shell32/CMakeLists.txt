@@ -51,6 +51,8 @@ list(APPEND SOURCE
     folders/CFSFolder.cpp
     folders/CDrivesFolder.cpp
     # folders/CMyDocsFolder.cpp — replaced by Rust (shell32-rust/src/my_docs_folder.rs); cohab via libshell32_rust.a
+    # Hybrid cohab: CPrinterFolder activation/methods are Rust-owned; this file
+    # retains CPrintersEnum and three explicit source-local Rust bridge helpers.
     folders/CPrinterFolder.cpp
     # folders/CAdminToolsFolder.cpp — replaced by Rust (shell32-rust/src/admin_tools_folder.rs); cohab via libshell32_rust.a
     folders/CNetFolder.cpp
@@ -76,8 +78,8 @@ list(APPEND SOURCE
     CUserNotification.cpp
     CDefaultContextMenu.cpp
     COpenWithMenu.cpp
-    CNewMenu.cpp
-    CSendToMenu.cpp
+    # CNewMenu.cpp — replaced by Rust (shell32-rust/src/new_menu.rs); cohab via libshell32_rust.a
+    # CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a
     CCopyMoveToMenu.cpp
     # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
     CShellDispatch.cpp

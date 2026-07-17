@@ -401,6 +401,11 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                 calling_convention = text
             elif return_type == "":
                 return_type = text
+        elif child.type == "qualified_identifier" and return_type == "":
+            # A nested C++ return type is a top-level type node, distinct from
+            # the qualified method name inside the function declarator:
+            # `CNewMenu::ITEM *CNewMenu::LoadItem(...)`.
+            return_type = text
         elif child.type == "function_declarator":
             declarator = child
         elif child.type == "pointer_declarator":
@@ -408,6 +413,10 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
             for sub in child.children:
                 if sub.type == "function_declarator":
                     declarator = sub
+                    pointer_prefix = re.match(r"\s*(\*+)", text)
+                    stars = len(pointer_prefix.group(1)) if pointer_prefix else 0
+                    if stars:
+                        return_type = (return_type + " " + "*" * stars).strip()
 
     cpp_class = None
     is_ctor = False
@@ -519,12 +528,29 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
             return None  # operators stay unextracted (no C ABI shape)
         elif child.type == "parameter_list":
             for param_node in child.children:
-                if param_node.type == "parameter_declaration":
+                if param_node.type in (
+                    "parameter_declaration",
+                    "optional_parameter_declaration",
+                ):
                     param_text = _extract_text(param_node, source)
+                    if param_node.type == "optional_parameter_declaration":
+                        param_text = param_text.split("=", 1)[0].strip()
+                    if cpp_class is not None and param_text == "THIS":
+                        # Legacy DECLARE_INTERFACE methods sometimes retain the
+                        # C spelling in an out-of-line C++ definition. In C++
+                        # this macro expands to void; the receiver is implicit.
+                        continue
                     # Crude but effective: split into type and name
                     parts = param_text.rsplit(None, 1)
                     if len(parts) == 2:
                         ptype, pname = parts
+                        array = re.fullmatch(r"([A-Za-z_]\w*)\s*\[[^]]*\]", pname)
+                        if array:
+                            # C/C++ adjusts function-parameter arrays to
+                            # pointers; retain that ABI fact, not declarator
+                            # punctuation that is invalid in Rust.
+                            ptype += " *"
+                            pname = array.group(1)
                         # Remove pointer markers from name
                         while pname.startswith("*"):
                             ptype += " *"

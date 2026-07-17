@@ -287,7 +287,7 @@ pub union PIDLDATA_u {
 }
 #[repr(C, packed)]
 pub struct PIDLDATA {
-    pub r#type: PIDLTYPE,
+    pub type_: PIDLTYPE,
     pub u: PIDLDATA_u,
 }
 pub type LPPIDLDATA = *mut PIDLDATA;
@@ -387,7 +387,12 @@ pub struct IShellFolderVtbl {
         *mut LPITEMIDLIST,
         *mut DWORD,
     ) -> HRESULT,
-    pub EnumObjects: usize,
+    pub EnumObjects: unsafe extern "system" fn(
+        *mut IShellFolder,
+        HWND,
+        DWORD,
+        *mut *mut IEnumIDList,
+    ) -> HRESULT,
     pub BindToObject: unsafe extern "system" fn(
         *mut IShellFolder,
         LPCITEMIDLIST,
@@ -395,7 +400,13 @@ pub struct IShellFolderVtbl {
         REFIID,
         *mut *mut c_void,
     ) -> HRESULT,
-    pub BindToStorage: usize,
+    pub BindToStorage: unsafe extern "system" fn(
+        *mut IShellFolder,
+        LPCITEMIDLIST,
+        *mut IBindCtx,
+        REFIID,
+        *mut *mut c_void,
+    ) -> HRESULT,
     pub CompareIDs:
         unsafe extern "system" fn(*mut IShellFolder, LPARAM, LPCITEMIDLIST, LPCITEMIDLIST) -> HRESULT,
     pub CreateViewObject:

@@ -161,8 +161,7 @@ def analyze_report(
     project_authority = _rust_authorities(symbols, [project_root])
     sdk_authority = _sdk_authorities(symbols, repo_root / "sdk/include")
     source_authority = {
-        name: _source_authorities(symbols, source)
-        for name, source in candidate_sources.items()
+        name: _source_authorities(symbols, source) for name, source in candidate_sources.items()
     }
 
     roots = []

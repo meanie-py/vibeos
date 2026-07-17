@@ -550,6 +550,9 @@ sites. Full-module manifest entries should include `"source"` so source-local de
 routed correctly. Reuse/promote canonical Rust first, then project bindings, SDK/header
 generation, explicit local/bridge generation, and scope repair. Constants, SDK layouts, WIDL
 interfaces, vtables, ABI, and imports never go through the LLM. Ambiguous layouts stay red;
+same-arity local overloads and trailing C++ default arguments are likewise resolved and
+expanded deterministically before payment. If preflight cannot prove one binding, extend the
+harness or leave the class red; never ask the model to guess C++ compiler semantics.
 Sonnet is considered only after substrate closure leaves a genuine semantic/structural
 residual. The complete protocol and stop rules are in
 `docs/engineering/rustconv-substrate-closure-protocol.md`.

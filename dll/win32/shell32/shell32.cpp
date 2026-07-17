@@ -423,6 +423,57 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CNewMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CNewMenuRustEntry : public CNewMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CNewMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CSendToMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CSendToMenuRustEntry : public CSendToMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CSendToMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CPrinterFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CPrinterFolderRustEntry : public CPrinterFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CPrinterFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
@@ -440,13 +491,13 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_MyDocuments, CMyDocsFolderRustEntry)
     OBJECT_ENTRY(CLSID_NetworkPlaces, CNetFolder)
     OBJECT_ENTRY(CLSID_FontsFolderShortcut, CFontsFolderRustEntry)
-    OBJECT_ENTRY(CLSID_Printers, CPrinterFolder)
+    OBJECT_ENTRY(CLSID_Printers, CPrinterFolderRustEntry)
     OBJECT_ENTRY(CLSID_AdminFolderShortcut, CAdminToolsFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellFldSetExt, CFolderOptions)
     OBJECT_ENTRY(CLSID_RecycleBin, CRecycleBin)
     OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenu)
-    OBJECT_ENTRY(CLSID_NewMenu, CNewMenu)
-    OBJECT_ENTRY(CLSID_SendToMenu, CSendToMenu)
+    OBJECT_ENTRY(CLSID_NewMenu, CNewMenuRustEntry)
+    OBJECT_ENTRY(CLSID_SendToMenu, CSendToMenuRustEntry)
     OBJECT_ENTRY(CLSID_CopyAsPathMenu, CCopyAsPathMenuRustEntry)
     OBJECT_ENTRY(CLSID_CopyToMenu, CCopyToMenu)
     OBJECT_ENTRY(CLSID_MoveToMenu, CMoveToMenu)

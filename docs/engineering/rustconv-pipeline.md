@@ -334,6 +334,13 @@ hits as well as fresh responses: expanding deterministic knowledge must not forc
 regeneration. Shared COM interfaces remain in `shellcom.rs`; extend that canonical ABI from
 WIDL rather than generating per-file duplicates.
 
+The prepared helper closure is a C++ semantic boundary too. rustconv binds same-name,
+same-arity local overloads using source-declared parameter, local, nested-call return, and
+pointer-family types; expands trailing default arguments into explicit calls; then rewrites
+the selected helpers to collision-free Rust worker names. Ambiguous calls fail in preflight.
+Overload resolution and defaults are compiler facts, not translation judgment, so neither
+belongs in an LLM prompt or post-hoc review.
+
 Parallel DeepSeek translation drains every submitted future even when one worker fails API,
 seal, or body audit. Accepted workers are committed immediately to the per-function resume
 cache; rustconv raises a combined error only after the pool is drained. Declaration-only

@@ -86,6 +86,14 @@ class PodStateType:
     packed: bool = False
 
 
+@dataclass(frozen=True)
+class EnumStateType:
+    """A source-proven nested C/C++ enum used by object-owned state."""
+
+    name: str
+    variants: tuple[tuple[str, int], ...]
+
+
 @dataclass
 class CppComClass:
     name: str
@@ -100,6 +108,7 @@ class CppComClass:
     base_classes: list[str] = field(default_factory=list)
     state_fields: list[str] = field(default_factory=list)
     pod_state_types: list[PodStateType] = field(default_factory=list)
+    enum_state_types: list[EnumStateType] = field(default_factory=list)
     array_constants: dict[str, int] = field(default_factory=dict)
     unsupported: list[str] = field(default_factory=list)
 
@@ -316,7 +325,22 @@ def _state_fields(body: str) -> list[str]:
             continue
         # Access labels and macro debris contain no plausible declarator.
         if re.search(r"\b[A-Za-z_]\w*\s*(?:\[[^]]+\])?$", statement):
-            fields.append(statement)
+            # C permits ``UINT first, second``. There is one base type and two
+            # independent scalar fields; expand that proven shape before the
+            # single-declarator layout parser. Pointer stars, initializers,
+            # bitfields, and per-declarator arrays remain loud.
+            multiple = re.fullmatch(
+                r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s+"
+                r"(?P<names>[A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)+)",
+                statement,
+            )
+            if multiple is not None:
+                fields.extend(
+                    f"{multiple.group('type')} {name.strip()}"
+                    for name in multiple.group("names").split(",")
+                )
+            else:
+                fields.append(statement)
     return fields
 
 
@@ -459,6 +483,7 @@ def _parse_plain_state_field(
         "DWORD64": "",
         "HRESULT": "",
         "INT": "",
+        "INT8": "",
         "INT_PTR": "",
         "LONG": "",
         "LONG_PTR": "",
@@ -536,11 +561,15 @@ def _pod_definition(text: str, name: str) -> tuple[str, bool] | None:
 
 def _discover_pod_state_types(
     source: Path, header: Path, declarations: list[str]
-) -> list[PodStateType]:
-    """Find and prove simple embedded C structs used directly by class state."""
+) -> tuple[list[PodStateType], list[EnumStateType]]:
+    """Find simple structs/enums reachable from class-owned state.
+
+    Pointer-owned records matter too: translated workers dereference them even
+    though they do not contribute inline bytes to the COM owner.
+    """
     candidates = []
     for declaration in declarations:
-        match = re.fullmatch(r"\s*(?P<type>[A-Za-z_]\w*)\s+[A-Za-z_]\w*\s*", declaration)
+        match = re.fullmatch(r"\s*(?P<type>[A-Za-z_]\w*)\s*(?:\*+\s*)?[A-Za-z_]\w*\s*", declaration)
         if match:
             c_type = match.group("type")
             pointer_typedef = bool(re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", c_type))
@@ -551,7 +580,7 @@ def _discover_pod_state_types(
             ):
                 candidates.append(c_type)
     if not candidates:
-        return []
+        return [], []
     local_texts = [
         path.read_text(encoding="utf-8", errors="replace")
         for path in dict.fromkeys((source, header))
@@ -559,7 +588,7 @@ def _discover_pod_state_types(
     repo_root = next(
         (parent for parent in source.parents if (parent / "sdk" / "include").is_dir()), None
     )
-    specs = []
+    definitions: dict[str, tuple[str, bool]] = {}
     for name in dict.fromkeys(candidates):
         definition = next(
             (found for text in local_texts if (found := _pod_definition(text, name)) is not None),
@@ -575,7 +604,44 @@ def _discover_pod_state_types(
                     break
         if definition is None:
             continue
-        body, packed = definition
+        definitions[name] = definition
+
+    enum_names: set[str] = set()
+    for body, _ in definitions.values():
+        for raw in body.split(";"):
+            declaration = " ".join(raw.split())
+            field = re.match(r"(?:const\s+)?([A-Za-z_]\w*)\b", declaration)
+            if field:
+                enum_names.add(field.group(1))
+    enums: list[EnumStateType] = []
+    all_local_text = "\n".join(local_texts)
+    for name in sorted(enum_names):
+        match = re.search(
+            rf"\benum\s+{re.escape(name)}\s*\{{(?P<body>[^{{}}]*)\}}\s*;",
+            all_local_text,
+            re.S,
+        )
+        if match is None:
+            continue
+        value = -1
+        variants: list[tuple[str, int]] = []
+        valid = True
+        for raw in _split_args(match.group("body")):
+            item = re.fullmatch(
+                r"([A-Za-z_]\w*)(?:\s*=\s*(-?(?:0[xX][0-9A-Fa-f]+|\d+)))?",
+                raw.strip(),
+            )
+            if item is None:
+                valid = False
+                break
+            value = int(item.group(2), 0) if item.group(2) is not None else value + 1
+            variants.append((item.group(1), value))
+        if valid and variants:
+            enums.append(EnumStateType(name, tuple(variants)))
+
+    specs = []
+    allowed_local = set(definitions) | {item.name for item in enums}
+    for name, (body, packed) in definitions.items():
         body = re.sub(r"/\*.*?\*/|//[^\n]*|#\s*include[^\n]*", " ", body, flags=re.S)
         fields = []
         valid = True
@@ -587,7 +653,7 @@ def _discover_pod_state_types(
                 fields.append(
                     _parse_plain_state_field(
                         declaration,
-                        allowed_pod_types=_POD_LEAF_TYPES,
+                        allowed_pod_types=_POD_LEAF_TYPES | allowed_local,
                     )
                 )
             except CppComError:
@@ -595,7 +661,7 @@ def _discover_pod_state_types(
                 break
         if valid and fields:
             specs.append(PodStateType(name=name, fields=tuple(fields), packed=packed))
-    return specs
+    return specs, enums
 
 
 def analyze_class(
@@ -609,7 +675,7 @@ def analyze_class(
     header = find_class_header(source, class_name)
     body = _find_class_text(header, class_name)
     state_fields = _state_fields(body)
-    pod_state_types = _discover_pod_state_types(source, header, state_fields)
+    pod_state_types, enum_state_types = _discover_pod_state_types(source, header, state_fields)
     array_constants = _numeric_array_constants(source, state_fields)
     entries, unsupported = _parse_com_map(body, class_name)
     bases = _class_bases(header, class_name)
@@ -630,7 +696,7 @@ def analyze_class(
     if re.search(r"\bFinalRelease\s*\(", body):
         unsupported.append("custom ATL lifecycle method FinalRelease needs deterministic wiring")
     resource = re.search(r"\bDECLARE_REGISTRY_RESOURCEID\s*\(\s*([^)\s]+)\s*\)", body)
-    not_agg = bool(re.search(r"\bDECLARE_NOT_AGGREGATABLE\s*\(", body))
+    not_agg = bool(re.search(r"\bDECLARE_(?:CENTRAL_INSTANCE_)?NOT_AGGREGATABLE\s*\(", body))
     clsid = None
     activation_sources = [source]
     if header != source:
@@ -660,6 +726,7 @@ def analyze_class(
         base_classes=bases,
         state_fields=state_fields,
         pod_state_types=pod_state_types,
+        enum_state_types=enum_state_types,
         array_constants=array_constants,
         unsupported=unsupported,
     )
@@ -688,6 +755,14 @@ def _parse_param(text: str, index: int) -> tuple[str, str]:
     text = " ".join(text.replace("CONST", "const").split())
     if text in ("", "void"):
         return "", ""
+    array = re.match(
+        r"(?P<type>.*?)(?P<name>[A-Za-z_]\w*)\s*\[[^]]*\]$",
+        text,
+    )
+    if array:
+        # Function-parameter arrays are adjusted to pointers by C/C++ before
+        # ABI lowering. The bound, when present, is not part of the vtable type.
+        return f"{array.group('type').strip()} *", array.group("name")
     match = re.match(r"(?P<type>.*?)(?P<name>[A-Za-z_]\w*)$", text)
     if not match:
         return text, f"arg{index}"
@@ -777,8 +852,12 @@ _RUST_SCALARS = {
 def c_type_to_rust(c_type: str) -> str:
     """Mechanical C declarator mapping for generated WIDL method signatures."""
     text = " ".join(c_type.replace("CONST", "const").split())
-    is_const = text.startswith("const ")
-    text = re.sub(r"^const\s+", "", text)
+    # Headers use both ``const T *`` and ``T const *``.  A qualifier left in
+    # the base spelling becomes invalid Rust (``*mut T const``), so normalize
+    # either C spelling before building the pointer declarator.
+    is_const = re.search(r"\bconst\b", text) is not None
+    text = re.sub(r"\bconst\b", "", text)
+    text = " ".join(text.split())
     is_reference = text.endswith("&")
     if is_reference:
         text = text[:-1].rstrip()
@@ -796,7 +875,7 @@ def c_type_to_rust(c_type: str) -> str:
     return rust
 
 
-_CPP_COM_DEBUG_MACROS = {"ERR", "FIXME", "MESSAGE", "TRACE", "WARN"}
+_CPP_COM_DEBUG_MACROS = {"ERR", "FIXME", "MESSAGE", "TRACE", "WARN", "pdump"}
 _CPP_COM_LITERAL_WORDS = {"FALSE", "NULL", "TRUE"}
 _CPP_COM_TYPE_WORDS = {
     "BOOL",
@@ -923,6 +1002,7 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
         flags=re.S,
     )
     rust = re.sub(r"\bcrate::(?:types|shellcom)::", "", rust)
+    rust = re.sub(r"\bcrate::driver_ddk::([A-Z][A-Z0-9_]*)\b", r"\1", rust)
     # HRESULT is a C/Rust scalar alias, not a tuple struct constructor.
     rust = re.sub(r"\bHRESULT\s*\(\s*([A-Z][A-Z0-9_]*)\s*\)", r"\1", rust)
     # A model may name a constant array bound with `let`, which parses but does
@@ -947,7 +1027,7 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
         expected_params = [
             match.group(1)
             for item in _split_args(expected_signature[expected_opening + 1 : expected_closing])
-            if (match := re.match(r"\s*([A-Za-z_]\w*)\s*:", item))
+            if (match := re.match(r"\s*(?:mut\s+)?([A-Za-z_]\w*)\s*:", item))
         ]
         for name in expected_params:
             rust = re.sub(rf"\b_{re.escape(name)}\b", name, rust)
@@ -963,16 +1043,33 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
             opening = rust.find("(", actual.start())
             closing = _matching_paren(rust, opening)
             brace = rust.find("{", closing + 1)
+            actual_param_text = re.sub(
+                r"/\*.*?\*/|//[^\n]*", " ", rust[opening + 1 : closing], flags=re.S
+            )
+            actual_items = _split_args(actual_param_text)
             actual_params = [
                 match.group(1)
-                for item in _split_args(rust[opening + 1 : closing])
-                if (match := re.match(r"\s*([A-Za-z_]\w*)\s*:", item))
+                for item in actual_items
+                if (match := re.match(r"\s*(?:mut\s+)?([A-Za-z_]\w*)\s*:", item))
             ]
+            mutable_params = {
+                match.group(1)
+                for item in actual_items
+                if (match := re.match(r"\s*mut\s+([A-Za-z_]\w*)\s*:", item))
+            }
             # The model owns no part of the worker surface. If its parameter
             # list still names the generated slots in order, replace all of
             # its type/return/qualifier spellings with the exact authority.
             if brace >= 0 and actual_params == expected_params:
-                rust = rust[: actual.start()] + expected_signature + " " + rust[brace:]
+                authoritative = expected_signature
+                for name in mutable_params:
+                    authoritative = re.sub(
+                        rf"(?<=[(,])\s*{re.escape(name)}\s*:",
+                        lambda match, param=name: match.group(0).replace(param, f"mut {param}"),
+                        authoritative,
+                        count=1,
+                    )
+                rust = rust[: actual.start()] + authoritative + " " + rust[brace:]
         # The model is contracted for exactly one body worker. Deterministically
         # discard crate attributes, imports, shadow types, and trailing helpers
         # outside that function before any response can enter the cache/module.
@@ -994,6 +1091,70 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     deliberately downstream of the response cache: improving a deterministic
     lowering must never require buying the same model response again.
     """
+    rust = strip_debug_statements(rust, {"pdump"})
+    rust = re.sub(r"\bcrate::driver_ddk::([A-Z][A-Z0-9_]*)\b", r"\1", rust)
+    rust = re.sub(
+        r"&mut\s+(\(\*[A-Za-z_]\w*\)\.u\.[A-Za-z_]\w*)\s+as\s+\*mut\s+"
+        r"([A-Za-z_]\w*)",
+        r"core::ptr::addr_of_mut!(\1).cast::<\2>()",
+        rust,
+    )
+    self_guards = set()
+    for owner, name in re.findall(
+        r"\bCComPtr\s*<\s*([A-Za-z_]\w*)\s*>\s+([A-Za-z_]\w*)\s*=\s*this\s*;",
+        source,
+    ):
+        self_guards.add(name)
+        if re.search(
+            rf"let\s+mut\s+{re.escape(name)}\s*:\s*\*mut\s+IUnknown\s*=\s*this\.cast\(\)",
+            rust,
+        ):
+            continue
+        model_guard = re.compile(
+            r"(?s)\s*let\s+[A-Za-z_]\w*\s*=\s*this\s+as\s+\*mut\s+IUnknown\s*;"
+            r".*?let\s+_[A-Za-z_]\w*\s*=\s*[A-Za-z_]\w*\s*\([^;]+\)\s*;"
+        )
+        replacement = (
+            f"\n    let mut {name}: *mut IUnknown = this.cast();\n"
+            f"    ((*(*{name}).lpVtbl).AddRef)({name});\n"
+            f"    let _{name}_cpp_com_guard = CppComPtrGuard::new("
+            f"core::ptr::addr_of_mut!({name}));"
+        )
+        rust, replaced = model_guard.subn(replacement, rust, count=1)
+        if replaced != 1:
+            raise CppComError(f"CComPtr self guard {owner} {name}: model guard not recognized")
+    rust = re.sub(
+        r"\*([A-Za-z_]\w*(?:pidl|Pidl)[A-Za-z_]*)\s*=\s*0\s*;",
+        r"*\1 = core::ptr::null_mut();",
+        rust,
+    )
+    rust = re.sub(r"\bIsEqualIID\s*\(", "cpp_com_iid_equal(", rust)
+    rust = re.sub(
+        r"\bSHELL32_CompareDetails\s*\(\s*this\s*,",
+        "SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface),",
+        rust,
+    )
+    rust = re.sub(
+        r"(pshf:\s*)this\b",
+        r"\1core::ptr::addr_of_mut!((*this).IShellFolder_iface)",
+        rust,
+    )
+    rust = re.sub(
+        r"(\*pcsFlags\s*=\s*[A-Za-z_]\w*\[[^]]+\]\.colstate)(\s*;)",
+        r"\1 as SHCOLSTATEF\2",
+        rust,
+    )
+    rust = re.sub(
+        r"((?:\(\*[A-Za-z_]\w*\)|[A-Za-z_]\w*)\.(?:fmt|cxChar)\s*=\s*"
+        r"[A-Za-z_]\w*\[[^]]+\]\.(?:fmt|cxChar))(\s*;)",
+        r"\1 as INT\2",
+        rust,
+    )
+    rust = re.sub(
+        r"cpp_com_iid_equal\(([^()]*(?:\([^()]*\)[^()]*)*)\)\s*!=\s*0",
+        r"cpp_com_iid_equal(\1)",
+        rust,
+    )
     # A worker may use an SDK type named by the C source, but it may not shadow
     # that deterministic module-level authority with a guessed local layout.
     # Remove only repr(C) declarations whose names occur in the source and are
@@ -1057,6 +1218,15 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             count=1,
         )
         if replacements != 1:
+            rust, replacements = re.subn(
+                rf"(?s)let\s+(?:mut\s+)?{re.escape(local_name)}\s*:\s*SFV_CREATE\s*=\s*"
+                rf"core::mem::zeroed\(\)\s*;\s*{re.escape(local_name)}\.cbSize\s*=.*?;\s*"
+                rf"{re.escape(local_name)}\.pshf\s*=.*?;",
+                initializer,
+                rust,
+                count=1,
+            )
+        if replacements != 1:
             raise CppComError(f"SFV_CREATE local {local_name}: worker initializer not found")
     # CComPtr locals have scope-exit semantics on every C++ return path.  Keep
     # the model's raw pointer spelling (which makes vtable calls simple), but
@@ -1066,10 +1236,89 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         r"\bCComPtr\s*<\s*([A-Za-z_]\w*)\s*>\s+([A-Za-z_]\w*)\s*[;=]",
         source,
     )
+    com_drop = re.search(r"\bstruct\s+ComDrop\s*<[^>]+>\s*\{", rust)
+    if com_drop is not None:
+        first_open = rust.find("{", com_drop.start())
+        _inner, first_end = _balanced_block(rust, first_open)
+        drop_impl = re.search(
+            r"impl\s*<[^>]+>\s+Drop\s+for\s+ComDrop\s*<[^>]+>\s*\{",
+            rust[first_end + 1 :],
+        )
+        if drop_impl is None:
+            raise CppComError("model ComDrop helper has no matching Drop implementation")
+        impl_start = first_end + 1 + drop_impl.start()
+        impl_open = rust.find("{", impl_start)
+        _inner, impl_end = _balanced_block(rust, impl_open)
+        rust = rust[: com_drop.start()] + rust[impl_end + 1 :]
     for interface, name in com_ptr_locals:
+        if name in self_guards:
+            continue
+        if len(re.findall(rf"\b{re.escape(name)}\b", source)) == 1 and not re.search(
+            rf"\b{re.escape(name)}\b", rust
+        ):
+            # An unused ATL local has no observable construction/destruction;
+            # omitting it is the exact deterministic lowering.
+            continue
+        # The model sometimes reproduces ATL's wrapper syntax even though the
+        # worker contract exposes CComPtr storage as a scaffold-owned raw slot.
+        # Lower only the exact null/default construction shape; Attach/Detach,
+        # non-null construction, or any other ownership API remains a failure.
+        rust = re.sub(
+            rf"let\s+mut\s+{re.escape(name)}\s*:\s*CComPtr\s*<\s*"
+            rf"{re.escape(interface)}\s*>\s*=\s*CComPtr::new\(\)\s*;",
+            f"let mut {name}: *mut {interface} = core::ptr::null_mut();",
+            rust,
+            count=1,
+        )
+        rust = re.sub(
+            rf"let\s+mut\s+{re.escape(name)}\s*=\s*ComDrop\s*::\s*<\s*"
+            rf"{re.escape(interface)}\s*>\s*\{{\s*ptr:\s*core::ptr::null_mut\(\)\s*,?\s*\}}\s*;",
+            f"let mut {name}: *mut {interface} = core::ptr::null_mut();",
+            rust,
+            count=1,
+        )
+        rust = re.sub(rf"\b{re.escape(name)}\.ptr\b", name, rust)
+        copied_value = re.search(
+            rf"\bCComPtr\s*<\s*{re.escape(interface)}\s*>\s+{re.escape(name)}\s*=\s*"
+            r"(?P<this>this->)?(?P<value>[A-Za-z_]\w*)\s*;",
+            source,
+        )
+        if copied_value is not None:
+            value = copied_value.group("value")
+            member_value = f"(*this).{value}"
+            rust_value = (
+                member_value
+                if copied_value.group("this")
+                or re.search(
+                    rf"let\s+(?:mut\s+)?{re.escape(name)}(?:\s*:[^=]+)?\s*=\s*"
+                    rf"{re.escape(member_value)}\s*;",
+                    rust,
+                )
+                else value
+            )
+            rust = re.sub(
+                rf"let\s+(?:mut\s+)?{re.escape(name)}(?:\s*:\s*\*mut\s+"
+                rf"{re.escape(interface)})?\s*=\s*{re.escape(rust_value)}\s*;",
+                f"let mut {name}: *mut {interface} = {rust_value};",
+                rust,
+                count=1,
+            )
+            # ATL's copy constructor owns one AddRef.  Normalize a model-spelled
+            # inherited-IUnknown cast to the concrete vtable signature, or add
+            # the call deterministically when the model omitted it.
+            add_ref = re.compile(
+                rf"\(\(\*\(\*{re.escape(name)}\)\.lpVtbl\)\.AddRef\)"
+                rf"\({re.escape(name)}(?:\s+as\s+\*mut\s+IUnknown)?\)"
+            )
+            add_refs = list(add_ref.finditer(rust))
+            if len(add_refs) > 1:
+                raise CppComError(f"CComPtr local {name}: multiple copy AddRef calls")
+            rust = add_ref.sub(f"((*(*{name}).lpVtbl).AddRef)({name})", rust, count=1)
+        rust = re.sub(rf"\b{re.escape(name)}\.0\b", name, rust)
         declaration = re.compile(
             rf"(?P<indent>^[ \t]*)let\s+mut\s+{re.escape(name)}\s*:\s*"
-            rf"\*mut\s+{re.escape(interface)}\s*=\s*core::ptr::null_mut\(\)\s*;",
+            rf"\*mut\s+{re.escape(interface)}\s*=\s*(?:core::ptr::null_mut\(\)|"
+            rf"\(\*this\)\.[A-Za-z_]\w*|[A-Za-z_]\w*)\s*;",
             re.M,
         )
         matches = list(declaration.finditer(rust))
@@ -1083,6 +1332,12 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             match.group(0)
             + "\n"
             + match.group("indent")
+            + (
+                f"if !{name}.is_null() {{ ((*(*{name}).lpVtbl).AddRef)({name}); }}\n"
+                + match.group("indent")
+                if copied_value is not None and not add_refs
+                else ""
+            )
             + f"let _{name}_cpp_com_guard = CppComPtrGuard::new("
             + f"core::ptr::addr_of_mut!({name}));"
         )
@@ -1093,7 +1348,7 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         # idempotent while retaining the exact point at which C++ destroyed it.
         release = re.compile(
             rf"(?P<indent>^[ \t]*)\(\(\*\(\*{re.escape(name)}\)\.lpVtbl\)\.Release\)"
-            rf"\({re.escape(name)}\);",
+            rf"\({re.escape(name)}(?:\s+as\s+\*mut\s+IUnknown)?\);",
             re.M,
         )
         rust = release.sub(
@@ -1105,7 +1360,32 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             ),
             rust,
         )
+    # CComPtr object state is likewise represented by a raw pointer in the
+    # generated owner. `.0` is a model artifact from an imagined Rust wrapper.
+    rust = re.sub(r"(\(\*this\)\.[A-Za-z_]\w*)\.0\b", r"\1", rust)
     # IID_PPV_ARG(T, &out) is a header macro, not a callable ABI symbol.
+    rust = re.sub(
+        r"let\s+([A-Za-z_]\w*)\s*=\s*IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*;\s*"
+        r"let\s+([A-Za-z_]\w*)\s*=\s*&mut\s+(\(\*this\)\.[A-Za-z_]\w*|"
+        r"[A-Za-z_]\w*)\s*\)\s*;",
+        r"let \1 = core::ptr::addr_of!(IID_\2); "
+        r"let \3 = core::ptr::addr_of_mut!(\4).cast();",
+        rust,
+    )
+    iid_pair = re.search(
+        r"let\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)\s*=\s*"
+        r"IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*&mut\s+([A-Za-z_]\w*)\s*\)\s*;",
+        rust,
+    )
+    if iid_pair is not None:
+        iid_name, output_name, interface, output = iid_pair.groups()
+        rust = rust[: iid_pair.start()] + rust[iid_pair.end() :]
+        rust = re.sub(
+            rf"\b{re.escape(iid_name)}\s*,\s*{re.escape(output_name)}\b",
+            f"core::ptr::addr_of!(IID_{interface}), core::ptr::addr_of_mut!({output}).cast()",
+            rust,
+            count=1,
+        )
     rust = re.sub(
         r"\bIID_PPV_ARG\s*\(\s*(?:&IID_)?([A-Za-z_]\w*)\s*,\s*"
         r"&mut\s+([A-Za-z_]\w*)(?:\s+as\s+[^,)]+(?:<[^>]+>)?)?\s*,?\s*\)",
@@ -1132,6 +1412,15 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             r"\bfn\s+[A-Za-z_]\w*_body\s*\(\s*this\s*:\s*\*mut\s+([A-Za-z_]\w*)",
             rust,
         )
+    if owner is not None:
+        class_name = owner.group(1)
+        for nested in set(re.findall(rf"\b{re.escape(class_name)}::([A-Za-z_]\w*)\b", source)):
+            rust = re.sub(
+                rf"\b(?:{re.escape(class_name)}_|{re.escape(class_name)}::)"
+                rf"{re.escape(nested)}\b",
+                nested,
+                rust,
+            )
     sibling_calls = (
         set(re.findall(rf"\b({re.escape(owner.group(1))}_[A-Za-z_]\w*_body)\s*\(", source))
         if owner is not None
@@ -1389,10 +1678,353 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         rust,
     )
     rust = re.sub(r"\bcmd_id\s*==\s*(IDC_[A-Za-z_]\w*)", r"cmd_id == \1 as INT", rust)
+    # C null/unsigned initializer semantics are source-authoritative; cheap
+    # models often spell them as integer operations that Rust rejects.
+    for field in re.findall(r"\b(m_[A-Za-z_]\w*)\s*\(\s*NULL\s*\)", source):
+        rust = re.sub(
+            rf"(\(\*this\)\.{re.escape(field)}\s*=\s*)0\s*;",
+            r"\1core::ptr::null_mut();",
+            rust,
+        )
+    for field in re.findall(r"\b(m_[A-Za-z_]\w*)\s*\(\s*-1\s*\)", source):
+        rust = re.sub(
+            rf"(\(\*this\)\.{re.escape(field)}\s*=\s*)-1\s*;",
+            r"\1UINT::MAX;",
+            rust,
+        )
+    for field in re.findall(r"\bDestroyIcon\s*\(\s*(m_[A-Za-z_]\w*)\s*\)", source):
+        rust = re.sub(
+            rf"\(\*this\)\.{re.escape(field)}\s*!=\s*0",
+            f"!(*this).{field}.is_null()",
+            rust,
+        )
+    bool_fields = set(re.findall(r"\bBOOL\s+([A-Za-z_]\w*)\s*;", source))
+    for field in bool_fields:
+        rust = re.sub(rf"\b{re.escape(field)}\s*:\s*false\b", f"{field}: FALSE", rust)
+        rust = re.sub(rf"\b{re.escape(field)}\s*:\s*true\b", f"{field}: TRUE", rust)
+    rust = re.sub(
+        r"(StringCbPrintfW\(\s*[^,]+,\s*core::mem::size_of_val\([^)]*\))\s+as\s+u32",
+        r"\1 as usize",
+        rust,
+    )
+    rust = re.sub(r"\bStringCbPrintfW\s*\(", "StringCbPrintfW!(", rust)
+    for alias, target in _CPP_SUPPORT_GUID_ALIASES.items():
+        rust = re.sub(rf"\b{re.escape(alias)}\b", target, rust)
+    owner = re.search(r"\b([A-Za-z_]\w*)::[~A-Za-z_]\w*\s*\(", source)
+    if owner is not None:
+        class_name = owner.group(1)
+        explicit_receivers: dict[str, set[str]] = defaultdict(set)
+        for match in re.finditer(r"\b([A-Za-z_]\w*)\s*(?:->|\.)\s*([A-Za-z_]\w*)\s*\(", source):
+            explicit_receivers[match.group(2)].add(match.group(1))
+
+        def insert_receiver(match: re.Match) -> str:
+            target = match.group("target")
+            first = match.group("first") or ""
+            if re.search(r"\bfn\s*$", rust[max(0, match.start() - 8) : match.start()]):
+                return match.group(0)
+            method = target.removeprefix(f"{class_name}_").removesuffix("_body")
+            if first == "this" or first in explicit_receivers.get(method, set()):
+                return match.group(0)
+            return f"{target}(this, " + first
+
+        rust = re.sub(
+            rf"\b(?P<target>{re.escape(class_name)}_[A-Za-z_]\w*_body)\s*\(\s*"
+            r"(?P<first>[A-Za-z_]\w*)?",
+            insert_receiver,
+            rust,
+        )
+    rust = re.sub(
+        r"let\s+(?P<name>[A-Za-z_]\w*)\s*=\s*"
+        r"(?P<iid>core::ptr::addr_of!\(IID_[A-Za-z_]\w*\))\s*,\s*"
+        r"core::ptr::addr_of_mut!\([^;]+?\)\.cast\(\)\s*;",
+        r"let \g<name> = \g<iid>;",
+        rust,
+    )
+    rust = re.sub(r"\(\(([^()]+)\)\s*<\s*0\)\s*(?:!=|<)\s*0", r"((\1) < 0)", rust)
+    rust = re.sub(r"\bCComHeapPtr::new\(\s*\)", "CComHeapPtr::empty()", rust)
+    rust = re.sub(
+        r"alloc::boxed::Box::from_raw\(\s*([A-Za-z_]\w*)\s*\)\s*;",
+        r"SENDTO_ITEM_delete(\1);",
+        rust,
+    )
+    rust = re.sub(r"\bSENDTO_ITEM\s*\(", "SENDTO_ITEM_new(", rust)
+    heap_ptr_names = set(re.findall(r"\bCComHeapPtr\s*<[^;=]+>\s+([A-Za-z_]\w*)", source)) & set(
+        re.findall(r"\b([A-Za-z_]\w*)\s*:\s*CComHeapPtr\s*<", rust)
+    )
+    for name in heap_ptr_names:
+        rust = re.sub(rf"&(?:raw\s+)?mut\s+{re.escape(name)}\b", f"{name}.as_mut_slot()", rust)
+    com_ptr_names = set(re.findall(r"\bCComPtr\s*<[^;=]+>\s+([A-Za-z_]\w*)", source))
+    for name in com_ptr_names:
+        rust = re.sub(rf"\b{re.escape(name)}\.as_raw\(\)", name, rust)
+    for field in re.findall(r"\bCComPtr\s*<[^;=]+>\s+(m_[A-Za-z_]\w*)", source):
+        rust = re.sub(rf"(\(\*this\)\.{re.escape(field)})\.as_raw\(\)", r"\1", rust)
+        rust = re.sub(
+            rf"\(\*this\)\.{re.escape(field)}\.Release\(\)\s*;",
+            f"if !(*this).{field}.is_null() {{\n"
+            f"        let value = (*this).{field} as *mut IUnknown;\n"
+            f"        ((*(*value).lpVtbl).Release)(value);\n"
+            f"        (*this).{field} = core::ptr::null_mut();\n"
+            "    }",
+            rust,
+        )
+    rust = re.sub(r"(\(\*this\)\.m_[A-Za-z_]\w*)\.as_raw\(\)", r"\1", rust)
+    state_releases = set(re.findall(r"\(\*this\)\.(m_[A-Za-z_]\w*)\.Release\(\)", rust))
+    for field in state_releases:
+        rust = re.sub(
+            rf"\(\*this\)\.{re.escape(field)}\.Release\(\)\s*;",
+            f"if !(*this).{field}.is_null() {{\n"
+            f"        let value = (*this).{field} as *mut IUnknown;\n"
+            f"        ((*(*value).lpVtbl).Release)(value);\n"
+            f"        (*this).{field} = core::ptr::null_mut();\n"
+            "    }",
+            rust,
+        )
+    rust = re.sub(r"GetAsyncKeyState\((VK_[A-Za-z_]\w*)\)", r"GetAsyncKeyState(\1 as INT)", rust)
+    rust = re.sub(r"\bCSIDL_SENDTO\b(?!\s+as\s+INT)", "CSIDL_SENDTO as INT", rust)
+    if re.search(
+        r"GetSpecialFolder(?:_body)?\s*\(\s*NULL\s*,[^;]+CSIDL_SENDTO\s*\)\s*;",
+        source,
+    ):
+        rust = re.sub(
+            r"(CSIDL_SENDTO\s+as\s+INT\s*,?\s*)\)",
+            r"\1core::ptr::null_mut())",
+            rust,
+            count=1,
+        )
+    rust = re.sub(
+        r"((?:InsertMenuW|AppendMenuW)\([^;]*?)\bidCmd\s*,",
+        r"\1idCmd as UINT_PTR,",
+        rust,
+        flags=re.S,
+    )
+    rust = re.sub(r"let\s+(idCmd)\s*:\s*WORD\s*=\s*LOWORD!", r"let \1: UINT = LOWORD!", rust)
+    rust = re.sub(
+        r"&\(\*([A-Za-z_]\w*)\)\.pidlChild\s+as\s+\*const\s+PITEMID_CHILD",
+        r"core::ptr::addr_of!((*\1).pidlChild).cast::<PCUITEMID_CHILD>()",
+        rust,
+    )
+    rust = re.sub(r"(itemWidth\s*[<=]\s*)(cxMenuCheck)\b", r"\1\2 as UINT", rust)
+    rust = re.sub(r"(itemWidth\s*=\s*)(cxMenuCheck)\b", r"\1\2 as UINT", rust)
+    rust = re.sub(r"(itemHeight\s*[<=]\s*)(cySmall)\b", r"\1\2 as UINT", rust)
+    rust = re.sub(r"(itemHeight\s*=\s*)(cySmall)\b", r"\1\2 as UINT", rust)
+    rust = re.sub(r"\b_wcsdup\(([A-Za-z_]\w*\.[A-Za-z_]\w*)\)", r"_wcsdup(\1.as_ptr())", rust)
+    rust = re.sub(r"\bLOWORD\s*\(", "LOWORD!(", rust)
+    if re.search(r"\*\s*plResult\s*=\s*TRUE", source):
+        rust = re.sub(r"\*plResult\s*=\s*TRUE", "*plResult = TRUE as LRESULT", rust)
+    rust = re.sub(
+        r"&mut\s+(wsz[A-Za-z_]\w*)\s+as\s+\*mut\s+_",
+        r"\1.as_mut_ptr().cast()",
+        rust,
+    )
+    rust = re.sub(r"(?m)^(\s*)pData,(\s*)$", r"\1pData.cast(),\2", rust)
+    rust = re.sub(r"\b(fi\.hIcon)\s*!=\s*0", r"!\1.is_null()", rust)
+    rust = re.sub(
+        r"(RegEnumKeyW\([^;]*?),\s*MAX_PATH(\s*\))",
+        r"\1, MAX_PATH as DWORD\2",
+        rust,
+        flags=re.S,
+    )
+    rust = re.sub(
+        r"(RegEnumKeyW\([^;]*?),\s*MAX_PATH(\s*,\s*\))",
+        r"\1, MAX_PATH as DWORD\2",
+        rust,
+        flags=re.S,
+    )
+    rust = re.sub(
+        r"(ExpandEnvironmentStringsW\([^;]*?),\s*MAX_PATH(\s*\))",
+        r"\1, MAX_PATH as DWORD\2",
+        rust,
+        flags=re.S,
+    )
+    rust = re.sub(
+        r"if\s+!([A-Za-z_]\w*_body\([^;{}]*\))",
+        r"if \1 == FALSE",
+        rust,
+    )
+    rust = re.sub(
+        r"(LoadStringW\([^;]*?,\s*)([A-Za-z_]\w*\.len\(\))(\s*,?\s*\))",
+        r"\1\2 as INT\3",
+        rust,
+        flags=re.S,
+    )
+    rust = re.sub(
+        r"(\bmii\.cch\s*=\s*wcslen\([^;]+\))\s*;",
+        r"\1 as UINT;",
+        rust,
+    )
+    rust = re.sub(
+        r"(CNewMenu_SelectNewItem_body\(\s*this\s*,\s*)(SHCNE_[A-Za-z_]\w*)",
+        r"\1\2 as LONG",
+        rust,
+    )
+    rust = re.sub(
+        r"(CNewMenu_NewItemByNonCommand_body\([^;]*?wszName\.as_mut_ptr\(\),\s*)"
+        r"wszName\.len\(\)",
+        r"\1wszName.len() as DWORD",
+        rust,
+        flags=re.S,
+    )
+    rust = re.sub(
+        r"\blet\s+mut\s+([A-Za-z_]\w*)\s*:\s*HKEY\s*;",
+        r"let mut \1: HKEY = core::ptr::null_mut();",
+        rust,
+    )
+    rust = re.sub(r"\blet\s+(wszName)\s*:\s*\*mut", r"let mut \1: *mut", rust)
+    if "CreateProcessW" in source:
+        rust = rust.replace("core::ptr::null::<u16>()", "core::ptr::null()")
+    rust = re.sub(
+        r"MessageBoxW\(\s*0\s*,",
+        "MessageBoxW(core::ptr::null_mut(),",
+        rust,
+    )
+    if "switch" in source:
+        match_start = rust.find("match ")
+        if match_start >= 0:
+            opening = rust.find("{", match_start)
+            try:
+                _inner, closing = _balanced_block(rust, opening)
+            except CppComError:
+                closing = -1
+            if closing >= 0 and "_ =>" not in rust[opening:closing]:
+                rust = rust[:closing] + "    _ => {}\n" + rust[closing:]
+    rust = re.sub(
+        r"(pshf:\s*)this\b",
+        r"\1core::ptr::addr_of_mut!((*this).IShellFolder_iface)",
+        rust,
+    )
+    rust = rust.replace("(*psd).str", "(*psd).str_")
+    rust = rust.replace("(*psd).str_.cStr", "(*psd).str_.u.cStr")
+    rust = re.sub(r"(\.cStr\[[^]]+\]\s*=\s*)0(?:u16)?\b", r"\g<1>0i8", rust)
+    rust = re.sub(
+        r"SHSetStrRet\(\s*&raw\s+mut\s+([^,]+),\s*"
+        r"([A-Za-z_]\w*\[[^]]+\]\.colnameid)\s*\)",
+        r"cpp_com_SHSetStrRetResource(&raw mut \1, \2 as DWORD)",
+        rust,
+    )
+    rust = re.sub(
+        r"SHSetStrRet\(\s*([A-Za-z_]\w*)\s*,\s*"
+        r"\(\*([A-Za-z_]\w*)\)\.([A-Za-z_]\w*)\s*\)",
+        r"cpp_com_SHSetStrRetW(\1, core::ptr::addr_of!((*\2).\3).cast::<WCHAR>())",
+        rust,
+    )
     return rust
 
 
 _CPP_SUPPORT_EXTERNS = {
+    "CloseHandle": "    fn CloseHandle(handle: HANDLE) -> BOOL;",
+    "CopyFileW": "    fn CopyFileW(existing: LPCWSTR, new: LPCWSTR, fail_if_exists: BOOL) -> BOOL;",
+    "CreateFileW": (
+        "    fn CreateFileW(name: LPCWSTR, access: DWORD, share: DWORD, security: LPVOID, "
+        "creation: DWORD, flags: DWORD, template: HANDLE) -> HANDLE;"
+    ),
+    "CreateMenu": "    fn CreateMenu() -> HMENU;",
+    "DestroyMenu": "    fn DestroyMenu(menu: HMENU) -> BOOL;",
+    "GetAsyncKeyState": "    fn GetAsyncKeyState(key: INT) -> i16;",
+    "InsertMenuW": (
+        "    fn InsertMenuW(menu: HMENU, position: UINT, flags: UINT, id: UINT_PTR, "
+        "text: LPCWSTR) -> BOOL;"
+    ),
+    "AppendMenuW": (
+        "    fn AppendMenuW(menu: HMENU, flags: UINT, id: UINT_PTR, text: LPCWSTR) -> BOOL;"
+    ),
+    "SetMenuItemInfoW": (
+        "    fn SetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, "
+        "info: *const MENUITEMINFOW) -> BOOL;"
+    ),
+    "CreateProcessW": (
+        "    fn CreateProcessW(app: LPCWSTR, command: LPWSTR, process_attrs: LPCVOID, "
+        "thread_attrs: LPCVOID, inherit: BOOL, flags: DWORD, environment: LPCVOID, "
+        "directory: LPCWSTR, startup: *const STARTUPINFOW, info: *mut PROCESS_INFORMATION) -> BOOL;"
+    ),
+    "DestroyIcon": "    fn DestroyIcon(icon: HICON) -> BOOL;",
+    "DrawIconEx": (
+        "    fn DrawIconEx(dc: HDC, x: INT, y: INT, icon: HICON, width: INT, height: INT, "
+        "step: UINT, brush: HANDLE, flags: UINT) -> BOOL;"
+    ),
+    "ExpandEnvironmentStringsW": (
+        "    fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;"
+    ),
+    "ExtractIconExW": (
+        "    fn ExtractIconExW(file: LPCWSTR, index: INT, large: *mut HICON, small: *mut HICON, "
+        "icons: UINT) -> UINT;"
+    ),
+    "GetMenuItemInfoW": (
+        "    fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, "
+        "info: *mut MENUITEMINFOW) -> BOOL;"
+    ),
+    "GetSystemMetrics": "    fn GetSystemMetrics(index: UINT) -> INT;",
+    "IUnknown_QueryService": (
+        "    fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, "
+        "out: *mut *mut core::ffi::c_void) -> HRESULT;"
+    ),
+    "LoadImage": (
+        '    #[link_name = "LoadImageW"]\n'
+        "    fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, "
+        "height: INT, flags: UINT) -> HANDLE;"
+    ),
+    "MessageBoxW": (
+        "    fn MessageBoxW(owner: HWND, text: LPCWSTR, caption: LPCWSTR, kind: UINT) -> INT;"
+    ),
+    "PathYetAnotherMakeUniqueName": (
+        "    fn PathYetAnotherMakeUniqueName(buffer: LPWSTR, path: LPCWSTR, short: LPCWSTR, "
+        "long: LPCWSTR) -> BOOL;"
+    ),
+    "RegCloseKey": "    fn RegCloseKey(key: HKEY) -> LONG;",
+    "RegCreateKeyEx": (
+        '    #[link_name = "RegCreateKeyExW"]\n'
+        "    fn RegCreateKeyEx(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, "
+        "options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, "
+        "disposition: LPDWORD) -> LONG;"
+    ),
+    "RegEnumKeyW": (
+        "    fn RegEnumKeyW(key: HKEY, index: DWORD, name: LPWSTR, capacity: DWORD) -> LONG;"
+    ),
+    "RegGetValueW": (
+        "    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, "
+        "kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;"
+    ),
+    "RegOpenKeyExW": (
+        "    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, "
+        "result: PHKEY) -> LONG;"
+    ),
+    "RegQueryValueExW": (
+        "    fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, "
+        "data: PBYTE, bytes: LPDWORD) -> LONG;"
+    ),
+    "RegSetValueExW": (
+        "    fn RegSetValueExW(key: HKEY, value: LPCWSTR, reserved: DWORD, kind: DWORD, "
+        "data: *const BYTE, bytes: DWORD) -> LONG;"
+    ),
+    "SHChangeNotify": (
+        "    fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);"
+    ),
+    "SHCreateDirectory": "    fn SHCreateDirectory(owner: HWND, path: LPCWSTR) -> INT;",
+    "SHGetFileInfoW": (
+        "    fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, "
+        "bytes: UINT, flags: UINT) -> DWORD_PTR;"
+    ),
+    "SHGetPathFromIDListW": (
+        "    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;"
+    ),
+    "SHILCreateFromPathW": (
+        "    fn SHILCreateFromPathW(path: LPCWSTR, pidl: *mut LPITEMIDLIST, "
+        "attributes: LPDWORD) -> HRESULT;"
+    ),
+    "StrRetToStrW": (
+        "    fn StrRetToStrW(value: *mut STRRET, pidl: PCUITEMID_CHILD, out: *mut LPWSTR) "
+        "-> HRESULT;"
+    ),
+    "ILCombine": (
+        "    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;"
+    ),
+    "WideCharToMultiByte": (
+        "    fn WideCharToMultiByte(page: UINT, flags: DWORD, wide: LPCWSTR, wide_len: INT, "
+        "multi: LPSTR, multi_len: INT, default_char: LPCSTR, used_default: *mut BOOL) -> INT;"
+    ),
+    "WriteFile": (
+        "    fn WriteFile(file: HANDLE, buffer: LPCVOID, bytes: DWORD, written: LPDWORD, "
+        "overlapped: LPVOID) -> BOOL;"
+    ),
     "GlobalAlloc": "    fn GlobalAlloc(flags: UINT, bytes: SIZE_T) -> HGLOBAL;",
     "GlobalLock": "    fn GlobalLock(memory: HGLOBAL) -> LPVOID;",
     "GlobalUnlock": "    fn GlobalUnlock(memory: HGLOBAL) -> BOOL;",
@@ -1403,6 +2035,19 @@ _CPP_SUPPORT_EXTERNS = {
     "CloseClipboard": "    fn CloseClipboard() -> BOOL;",
     "GetLastError": "    fn GetLastError() -> DWORD;",
     "lstrlenW": "    fn lstrlenW(text: LPCWSTR) -> INT;",
+    "CoTaskMemAlloc": "    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;",
+    "LoadStringW": (
+        "    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;"
+    ),
+    "CPrintersExtractIconW_CreateInstane": (
+        '    #[link_name = "CPrintersExtractIconW_RustBridge"]\n'
+        "    fn CPrintersExtractIconW_CreateInstane(pidl: LPCITEMIDLIST, riid: REFIID, "
+        "out: *mut LPVOID) -> HRESULT;"
+    ),
+    "CPrintersEnum_CreateInstance": (
+        "    fn CPrintersEnum_CreateInstance(owner: HWND, flags: DWORD, "
+        "out: *mut *mut IEnumIDList) -> HRESULT;"
+    ),
     "StrChrW": "    fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;",
     "CoTaskMemFree": "    fn CoTaskMemFree(memory: LPVOID);",
     "SHStrDupW": "    fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;",
@@ -1423,7 +2068,6 @@ _CPP_SUPPORT_EXTERNS = {
         "    fn SHCreateShellFolderView(create: *const SFV_CREATE, "
         "view: *mut *mut IShellView) -> HRESULT;"
     ),
-    "SHFree": "    fn SHFree(memory: LPVOID);",
     "SHQueryRecycleBinW": (
         "    fn SHQueryRecycleBinW(root: LPCWSTR, info: *mut SHQUERYRBINFO) -> HRESULT;"
     ),
@@ -1462,13 +2106,32 @@ _CPP_SUPPORT_EXTERNS = {
 }
 
 _CPP_SUPPORT_C_EXTERNS = {
+    "SHELL_GetUIObjectOfAbsoluteItem": (
+        "    fn SHELL_GetUIObjectOfAbsoluteItem(owner: HWND, pidl: PCIDLIST_ABSOLUTE, "
+        "riid: REFIID, out: *mut LPVOID) -> HRESULT;"
+    ),
+    "HLM_GetIconW": (
+        "    fn HLM_GetIconW(index: UINT, destination: LPWSTR, length: DWORD, "
+        "icon_index: *mut INT) -> BOOL;"
+    ),
     "_ILIsDesktop": "    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;",
     "_ILIsSpecialFolder": "    fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;",
+    "_ILGetDataPointer": "    fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;",
+    "SHELL32_CompareDetails": (
+        '    #[link_name = "CPrinterFolder_CompareDetails_RustBridge"]\n'
+        "    fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, "
+        "left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;"
+    ),
     "_ILCreateMyDocuments": "    fn _ILCreateMyDocuments() -> LPITEMIDLIST;",
     "memcpy": (
-        "    fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, "
+        '    #[link_name = "memcpy"]\n'
+        "    fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, "
         "bytes: usize) -> *mut core::ffi::c_void;"
     ),
+    "malloc": "    fn malloc(bytes: usize) -> *mut ();",
+    "wcsstr": "    fn wcsstr(haystack: LPCWSTR, needle: LPCWSTR) -> LPWSTR;",
+    "_wcsdup": "    fn _wcsdup(text: LPCWSTR) -> LPWSTR;",
+    "_wcsicmp": "    fn _wcsicmp(left: LPCWSTR, right: LPCWSTR) -> INT;",
 }
 
 _CPP_SUPPORT_GUIDS = {
@@ -1485,6 +2148,7 @@ _CPP_SUPPORT_GUIDS = {
     "IID_IShellFolder",
     "IID_IShellFolder2",
 }
+_CPP_SUPPORT_GUID_ALIASES = {"SID_SFolderView": "IID_IFolderView"}
 
 
 def _render_cmverbmap(source: str) -> str:
@@ -1516,10 +2180,50 @@ def _render_cmverbmap(source: str) -> str:
     )
 
 
+def _render_shvheader_tables(source: str, used_words: set[str]) -> str:
+    """Render shell folder column tables from their file-scope C authority."""
+    chunks = []
+    table = re.compile(
+        r"static\s+(?:const\s+)?shvheader\s+([A-Za-z_]\w*)\s*\[\s*\]\s*=\s*"
+        r"\{(?P<body>.*?)\}\s*;",
+        re.S,
+    )
+    for match in table.finditer(source):
+        name = match.group(1)
+        if name not in used_words:
+            continue
+        entries = []
+        for item in re.finditer(r"\{([^{}]+)\}", match.group("body")):
+            fields = [part.strip() for part in item.group(1).split(",")]
+            if len(fields) != 4 or any(not field for field in fields):
+                raise CppComError(f"{name}: shvheader entry is not a four-field aggregate")
+            entries.append(
+                "    shvheader { colnameid: "
+                + f"({fields[0]}) as WORD, colstate: ({fields[1]}) as WORD, "
+                + f"fmt: ({fields[2]}) as WORD, cxChar: ({fields[3]}) as WORD }},"
+            )
+        if not entries:
+            raise CppComError(f"{name}: shvheader table has no parsed entries")
+        chunks.extend(
+            [
+                "#[repr(C)]",
+                "pub struct shvheader {",
+                "    pub colnameid: WORD, pub colstate: WORD,",
+                "    pub fmt: WORD, pub cxChar: WORD,",
+                "}",
+                f"pub static {name}: [shvheader; {len(entries)}] = [",
+                *entries,
+                "];",
+            ]
+        )
+    return "\n".join(chunks)
+
+
 _CPP_SUPPORT_CONSTANTS = {
     "CSIDL_BITBUCKET": ("INT", "0x000a"),
     "CSIDL_PERSONAL": ("INT", "0x0005"),
     "EVCCBF_LASTNOTIFICATION": ("DWORD", "0x0001"),
+    "E_UNEXPECTED": ("HRESULT", "0x8000_FFFFu32 as HRESULT"),
     "EVCF_HASSETTINGS": ("DWORD", "0x0001"),
     "MAX_PATH": ("usize", "260"),
     "SEE_MASK_IDLIST": ("ULONG", "0x0000_0004"),
@@ -1528,6 +2232,7 @@ _CPP_SUPPORT_CONSTANTS = {
     "SHERB_NOSOUND": ("DWORD", "0x0000_0004"),
     "SW_SHOWNORMAL": ("INT", "1"),
     "SFGAO_CANCOPY": ("SFGAOF", "0x0000_0001"),
+    "SFGAO_CANLINK": ("SFGAOF", "0x0000_0004"),
     "SFGAO_CANRENAME": ("SFGAOF", "0x0000_0010"),
     "SFGAO_CANDELETE": ("SFGAOF", "0x0000_0020"),
     "SFGAO_HASPROPSHEET": ("SFGAOF", "0x0000_0040"),
@@ -1550,8 +2255,20 @@ def _sdk_numeric_definitions(source_path: Path, used_words: set[str]) -> dict[st
         r"^\s*#\s*define\s+[A-Za-z_]\w*\s+(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*\b"
         r"|^\s*[A-Za-z_]\w*\s*=\s*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*\s*,"
     )
+    search_roots = [repo_root / "sdk/include"] + [
+        repo_root / f"build-{arch}" / "sdk" / "include" / "psdk"
+        for arch in ("i386", "amd64", "arm64")
+    ]
     process = subprocess.run(
-        ["rg", "-n", "--no-heading", "--glob", "*.h", pattern, str(repo_root / "sdk/include")],
+        [
+            "rg",
+            "-n",
+            "--no-heading",
+            "--glob",
+            "*.h",
+            pattern,
+            *(str(root) for root in search_roots if root.is_dir()),
+        ],
         capture_output=True,
         text=True,
     )
@@ -1567,7 +2284,11 @@ def _sdk_numeric_definitions(source_path: Path, used_words: set[str]) -> dict[st
         if len(parts) != 3:
             continue
         match = definition.match(parts[2])
-        if match is not None and match.group("name") in used_words:
+        if (
+            match is not None
+            and match.group("name") in used_words
+            and match.group("name") not in {"false", "true"}
+        ):
             values[match.group("name")].add(match.group("value"))
     return {name: next(iter(found)) for name, found in values.items() if len(found) == 1}
 
@@ -1587,6 +2308,22 @@ def _shared_substrate_type_names(repo_root: Path) -> set[str]:
     return names
 
 
+def _shared_substrate_value_names(repo_root: Path) -> set[str]:
+    names = set()
+    for path in (
+        repo_root / "sdk/lib/rust/shell32-rust/src/types.rs",
+        repo_root / "sdk/lib/rust/shell32-rust/src/shellcom.rs",
+    ):
+        if path.is_file():
+            names.update(
+                re.findall(
+                    r"\bpub\s+(?:const|static(?:\s+mut)?)\s+([A-Za-z_]\w*)",
+                    path.read_text(encoding="utf-8", errors="replace"),
+                )
+            )
+    return names
+
+
 def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
     """Generate the simple referenced SDK POD closure from header authority."""
     repo_root = next(
@@ -1601,7 +2338,12 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
         r"(?P<aliases>[^;]+);",
         re.S,
     )
-    for header in sorted((repo_root / "sdk/include").rglob("*.h")):
+    header_roots = [repo_root / "sdk/include"] + [
+        repo_root / f"build-{arch}" / "sdk" / "include" / "psdk"
+        for arch in ("i386", "amd64", "arm64")
+    ]
+    headers = sorted(path for root in header_roots if root.is_dir() for path in root.rglob("*.h"))
+    for header in headers:
         text = header.read_text(encoding="utf-8", errors="replace")
         for match in typedef.finditer(text):
             aliases = []
@@ -1635,6 +2377,11 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
         for name in used_words - shared
         if name in alias_to_base and alias_to_base[name] not in shared
     }
+    # This SDK record contains optional interface pointers whose pointee types
+    # are not consistently exposed as compiler-facing vtables.  Its layout is
+    # stable and owned by the explicit support block below, which represents
+    # those ABI-equivalent optional pointers as c_void.
+    selected.discard("SFV_CREATE")
     # Embedded SDK records are part of the same deterministic layout closure.
     changed = True
     while changed:
@@ -1680,9 +2427,7 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
         lines = [representation, f"pub struct {base} {{"]
         for state_field in fields:
             field_name = (
-                f"r#{state_field.name}"
-                if state_field.name in _RUST_KEYWORDS
-                else state_field.name
+                f"r#{state_field.name}" if state_field.name in _RUST_KEYWORDS else state_field.name
             )
             lines.append(f"    pub {field_name}: {state_field.rust_type},")
         lines.append("}")
@@ -1692,6 +2437,81 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
                 lines.append(f"pub type {alias} = {target};")
         chunks.append("\n".join(lines))
     return "\n\n".join(chunks)
+
+
+def _sdk_interface_support(
+    source_path: Path, used_words: set[str], declared_types: set[str]
+) -> tuple[str, set[str], set[str]]:
+    """Render the flattened SDK interface closure referenced by worker bodies.
+
+    Slot order and signatures come only from compiler-facing WIDL headers. All
+    available architecture headers must agree before one shared Rust vtable is
+    emitted.
+    """
+    repo_root = next(
+        (parent for parent in source_path.parents if (parent / "sdk/include").is_dir()), None
+    )
+    if repo_root is None:
+        return "", set(), set()
+    indexes: dict[str, dict[str, Path]] = {}
+    shared_found: dict[str, list[Path]] = defaultdict(list)
+    shared_root = repo_root / "sdk" / "include" / "reactos"
+    if shared_root.is_dir():
+        for header in sorted(shared_root.glob("*.h")):
+            text = header.read_text(encoding="utf-8", errors="replace")
+            names = set(re.findall(r"typedef\s+struct\s+([A-Za-z_]\w*)Vtbl\b", text))
+            names.update(re.findall(r"DECLARE_INTERFACE_\s*\(\s*([A-Za-z_]\w*)\s*,", text))
+            for name in names:
+                shared_found[name].append(header)
+    shared_index = {name: paths[0] for name, paths in shared_found.items() if len(paths) == 1}
+    for arch in ("i386", "amd64", "arm64"):
+        root = repo_root / f"build-{arch}" / "sdk" / "include" / "psdk"
+        if not root.is_dir():
+            continue
+        found: dict[str, list[Path]] = defaultdict(list)
+        for header in sorted(root.glob("*.h")):
+            text = header.read_text(encoding="utf-8", errors="replace")
+            names = set(re.findall(r"typedef\s+struct\s+([A-Za-z_]\w*)Vtbl\b", text))
+            names.update(re.findall(r"DECLARE_INTERFACE_\s*\(\s*([A-Za-z_]\w*)\s*,", text))
+            for name in names:
+                found[name].append(header)
+        index = {name: paths[0] for name, paths in found.items() if len(paths) == 1}
+        for name, header in shared_index.items():
+            index.setdefault(name, header)
+        indexes[arch] = index
+    if not indexes:
+        return "", set(), set()
+    reference_arch = "amd64" if "amd64" in indexes else next(iter(indexes))
+    reference = indexes[reference_arch]
+    queue = sorted((used_words & reference.keys()) - declared_types)
+    specs: dict[str, InterfaceSpec] = {}
+    while queue:
+        name = queue.pop(0)
+        if name in specs or name in declared_types:
+            continue
+        spec = parse_widl_interface(reference[name], name)
+        for arch, index in indexes.items():
+            if arch == reference_arch or name not in index:
+                continue
+            other = parse_widl_interface(index[name], name)
+            if other.methods != spec.methods:
+                raise CppComError(
+                    f"{name}: compiler-facing WIDL vtable differs on {reference_arch}/{arch}"
+                )
+        specs[name] = spec
+        # Include return and parameter interface pointees recursively.
+        dependencies: set[str] = set()
+        for method in spec.methods:
+            dependencies.update(
+                token
+                for c_type, _param in method.params
+                for token in re.findall(r"\bI[A-Z][A-Za-z0-9_]*\b", c_type)
+            )
+            dependencies.update(re.findall(r"\bI[A-Z][A-Za-z0-9_]*\b", method.return_type))
+        queue.extend(sorted((dependencies & reference.keys()) - specs.keys() - declared_types))
+    rendered = "\n\n".join(render_interface(specs[name]) for name in sorted(specs))
+    interface_words = set(re.findall(r"\b[A-Za-z_]\w*\b", rendered))
+    return rendered, {f"IID_{name}" for name in specs}, interface_words
 
 
 def render_cpp_support(
@@ -1706,24 +2526,53 @@ def render_cpp_support(
 
     # Local numeric macros and shell32 resource IDs are compiler-facing facts.
     definitions = dict(
-        re.findall(r"^\s*#define\s+([A-Za-z_]\w*)\s+([0-9]+|0[xX][0-9A-Fa-f]+)\s*$", source, re.M)
+        re.findall(
+            r"^\s*#define\s+([A-Za-z_]\w*)\s+\(?\s*"
+            r"([0-9]+|0[xX][0-9A-Fa-f]+)\s*\)?\s*$",
+            source,
+            re.M,
+        )
     )
-    resource_header = source_path.parent / "shresdef.h"
-    if resource_header.is_file():
+    resource_header = next(
+        (
+            parent / "shresdef.h"
+            for parent in source_path.parents
+            if (parent / "shresdef.h").is_file()
+        ),
+        None,
+    )
+    if resource_header is not None:
         resource_text = resource_header.read_text(encoding="utf-8", errors="replace")
         definitions.update(
             re.findall(
-                r"^\s*#define\s+([A-Za-z_]\w*)\s+([0-9]+|0[xX][0-9A-Fa-f]+)\s*$",
+                r"^\s*#define\s+([A-Za-z_]\w*)\s+\(?\s*"
+                r"([0-9]+|0[xX][0-9A-Fa-f]+)\s*\)?\s*$",
                 resource_text,
                 re.M,
             )
         )
     selection_source = source + "\n" + additional_source
-    used_words = set(re.findall(r"\b[A-Za-z_]\w*\b", selection_source))
+    used_words = set(re.findall(r"\b[A-Za-z_]\w*\b", _masked_cpp(selection_source)))
+    if re.search(r"\bshell32_hInstance\b", selection_source):
+        used_words.add("shell32_hInstance")
     used_words.update(
         f"IID_{interface}"
         for interface in re.findall(r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)", source)
     )
+    if "ShellObjectCreatorInit<CPrintersEnum>" in source:
+        used_words.add("CPrintersEnum_CreateInstance")
+    declared_types = set(
+        re.findall(
+            r"\bpub\s+(?:struct|union|enum|type)\s+(?:r#)?([A-Za-z_]\w*)",
+            additional_source,
+        )
+    )
+    repo_root = next(
+        (parent for parent in source_path.parents if (parent / "sdk/include").is_dir()), None
+    )
+    if repo_root is not None:
+        declared_types.update(_shared_substrate_type_names(repo_root))
+    shared_values = _shared_substrate_value_names(repo_root) if repo_root is not None else set()
     # File-scope PODs are source authority, not model work. This is shared by C
     # and C++ inputs; only simple, fully parsed layouts are emitted.
     source_pod_names = set(re.findall(r"\bstruct\s+([A-Za-z_]\w*)\s*\{", source))
@@ -1756,25 +2605,58 @@ def render_cpp_support(
         lines = [representation, f"pub struct {name} {{"]
         for state_field in fields:
             field_name = (
-                f"r#{state_field.name}"
-                if state_field.name in _RUST_KEYWORDS
-                else state_field.name
+                f"r#{state_field.name}" if state_field.name in _RUST_KEYWORDS else state_field.name
             )
             lines.append(f"    pub {field_name}: {state_field.rust_type},")
         lines.append("}")
         chunks.append("\n".join(lines))
-    for name in sorted(used_words & definitions.keys()):
+    for name in sorted((used_words & definitions.keys()) - shared_values):
         chunks.append(f"pub const {name}: UINT = {definitions[name]};")
-    for name in sorted(used_words & _CPP_SUPPORT_CONSTANTS.keys()):
+    for name in sorted((used_words & _CPP_SUPPORT_CONSTANTS.keys()) - shared_values):
         rust_type, value = _CPP_SUPPORT_CONSTANTS[name]
         chunks.append(f"pub const {name}: {rust_type} = {value};")
-    owned_constants = definitions.keys() | _CPP_SUPPORT_CONSTANTS.keys()
+    owned_constants = definitions.keys() | _CPP_SUPPORT_CONSTANTS.keys() | shared_values
     for name, value in sorted(_sdk_numeric_definitions(source_path, used_words).items()):
         if name not in owned_constants:
             chunks.append(f"pub const {name}: DWORD = {value};")
     sdk_pods = _sdk_pod_support(source_path, used_words)
     if sdk_pods:
         chunks.append(sdk_pods)
+        # SDK POD fields can introduce interface/type dependencies that did not
+        # occur in the selected workers themselves (SFV_CREATE's callback is a
+        # representative shell32 case).  Feed those deterministic dependencies
+        # back into interface discovery rather than leaving a dangling type.
+        used_words.update(re.findall(r"\b[A-Za-z_]\w*\b", sdk_pods))
+
+    # Header-owned constant UTF-16 arrays are source facts just like literals
+    # inside method bodies. Emit only referenced, fully literal definitions.
+    for match in re.finditer(
+        r"\b(?:static\s+)?const\s+WCHAR\s+([A-Za-z_]\w*)\s*\[\s*\]\s*=\s*"
+        r"(L\"(?:\\.|[^\"\\])*\")\s*;",
+        selection_source,
+    ):
+        name, token = match.groups()
+        if name not in used_words:
+            continue
+        units = _wide_literal_units(token)
+        values = ", ".join(f"0x{unit:04X}" for unit in units)
+        chunks.append(
+            f"pub static {name}_WIDE: [WCHAR; {len(units)}] = [{values}];\n"
+            f"pub const {name}: LPCWSTR = {name}_WIDE.as_ptr();"
+        )
+
+    interface_support, interface_iids, interface_words = _sdk_interface_support(
+        source_path, used_words, declared_types
+    )
+    if interface_support:
+        chunks.append(interface_support)
+        used_words.update(interface_words)
+        interface_pods = _sdk_pod_support(source_path, interface_words)
+        if interface_pods:
+            chunks.append(interface_pods)
+        for name, value in sorted(_sdk_numeric_definitions(source_path, interface_words).items()):
+            if name not in owned_constants:
+                chunks.append(f"pub const {name}: DWORD = {value};")
 
     if "INVALID_FILETITLE_CHARACTERSW" in used_words:
         chunks.append(
@@ -1782,7 +2664,7 @@ def render_cpp_support(
             "[0x005c, 0x002f, 0x003a, 0x002a, 0x003f, 0x0022, 0x003c, 0x003e, 0x007c, 0];"
         )
 
-    if "SFV_CREATE" in used_words:
+    if "SFV_CREATE" in used_words and not re.search(r"\bstruct\s+SFV_CREATE\b", "\n".join(chunks)):
         chunks.append(
             "#[repr(C)]\n"
             "pub struct SFV_CREATE {\n"
@@ -1795,11 +2677,24 @@ def render_cpp_support(
 
     if "DWORDLONG" in used_words:
         chunks.append("pub type DWORDLONG = u64;")
+    if "SVSIF" in used_words:
+        chunks.append("pub type SVSIF = UINT;")
+    if "LPTBBUTTONSB" in used_words:
+        chunks.append("pub type LPTBBUTTONSB = *mut core::ffi::c_void;")
+    if "LOWORD" in used_words:
+        chunks.append(
+            "macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }"
+        )
+    if "MAKEINTRESOURCE" in used_words:
+        chunks.append(
+            "#[inline]\nconst fn MAKEINTRESOURCE(value: UINT) -> LPCWSTR {\n"
+            "    value as usize as LPCWSTR\n}"
+        )
     if "EXPPS" in used_words:
         chunks.append("pub type EXPPS = UINT;")
     if "LPFNSVADDPROPSHEETPAGE" in used_words:
         chunks.append(
-            "pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern \"system\" fn("
+            'pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn('
             "HPROPSHEETPAGE, LPARAM) -> BOOL>;"
         )
     if "SHQUERYRBINFO" in used_words:
@@ -1826,18 +2721,126 @@ def render_cpp_support(
     table = _render_cmverbmap(source)
     if table:
         chunks.append(table)
+    column_tables = _render_shvheader_tables(source, used_words)
+    if column_tables:
+        chunks.append(column_tables)
 
     if "CComHeapPtr" in used_words:
         used_words.add("CoTaskMemFree")
+    if "SENDTO_ITEM" in used_words:
+        used_words.update(("CoTaskMemFree", "DestroyIcon"))
     if "CStringW" in used_words:
+        used_words.update(("lstrlenW", "memcpy", "StringCbPrintfW"))
+    if "StringCchCopyW" in used_words:
         used_words.update(("lstrlenW", "memcpy"))
+    if "SHSetStrRet" in used_words:
+        used_words.update(
+            (
+                "CoTaskMemAlloc",
+                "LoadStringW",
+                "lstrlenW",
+                "memcpy",
+                "MAX_PATH",
+                "shell32_hInstance",
+            )
+        )
+    if "CopyMemory" in used_words or "ZeroMemory" in used_words:
+        used_words.add("memcpy")
+    if "ITEMIDLIST_ABSOLUTE" in used_words:
+        chunks.append("pub type ITEMIDLIST_ABSOLUTE = ITEMIDLIST;")
+    if "ITEMID_CHILD" in used_words:
+        chunks.append("pub type ITEMID_CHILD = ITEMIDLIST;")
+    drop_effects = {
+        "DROPEFFECT_NONE": 0,
+        "DROPEFFECT_COPY": 1,
+        "DROPEFFECT_MOVE": 2,
+        "DROPEFFECT_LINK": 4,
+    }
+    selected_effects = [
+        f"pub const {name}: DWORD = {value};"
+        for name, value in drop_effects.items()
+        if name in used_words
+    ]
+    if selected_effects:
+        chunks.append("\n".join(selected_effects))
     selected = [decl for name, decl in _CPP_SUPPORT_EXTERNS.items() if name in used_words]
     if selected:
         chunks.append('extern "system" {\n' + "\n".join(selected) + "\n}")
     selected_c = [decl for name, decl in _CPP_SUPPORT_C_EXTERNS.items() if name in used_words]
     if selected_c:
         chunks.append('extern "C" {\n' + "\n".join(selected_c) + "\n}")
-    selected_guids = sorted((used_words & _CPP_SUPPORT_GUIDS) - (exclude_guids or set()))
+    if "StringCbPrintfW" in used_words:
+        chunks.append(
+            "unsafe fn cpp_com_string_cb_printf_w(\n"
+            "    dest: LPWSTR, bytes: usize, format: LPCWSTR, args: &[LPCWSTR],\n"
+            ") -> HRESULT {\n"
+            "    let capacity = bytes / core::mem::size_of::<WCHAR>();\n"
+            "    if dest.is_null() || format.is_null() || capacity == 0 { return E_FAIL; }\n"
+            "    let (mut out, mut input, mut arg_index) = (0usize, 0usize, 0usize);\n"
+            "    while *format.add(input) != 0 {\n"
+            "        let unit = *format.add(input);\n"
+            "        if unit == b'%' as WCHAR && *format.add(input + 1) == b's' as WCHAR {\n"
+            "            if arg_index >= args.len() { return E_FAIL; }\n"
+            "            let arg = args[arg_index]; arg_index += 1; input += 2;\n"
+            "            if arg.is_null() { continue; }\n"
+            "            let mut index = 0usize;\n"
+            "            while *arg.add(index) != 0 {\n"
+            "                if out + 1 >= capacity { *dest.add(capacity - 1) = 0; "
+            "return 0x8007007Au32 as HRESULT; }\n"
+            "                *dest.add(out) = *arg.add(index); out += 1; index += 1;\n"
+            "            }\n"
+            "            continue;\n"
+            "        }\n"
+            "        if out + 1 >= capacity { *dest.add(capacity - 1) = 0; "
+            "return 0x8007007Au32 as HRESULT; }\n"
+            "        *dest.add(out) = unit; out += 1; input += 1;\n"
+            "    }\n"
+            "    *dest.add(out) = 0; S_OK\n"
+            "}\n"
+            "macro_rules! StringCbPrintfW {\n"
+            "    ($dest:expr, $bytes:expr, $format:expr, $arg1:expr $(,)?) => {\n"
+            "        cpp_com_string_cb_printf_w($dest, $bytes, $format, &[$arg1])\n"
+            "    };\n"
+            "    ($dest:expr, $bytes:expr, $format:expr, $arg1:expr, $arg2:expr $(,)?) => {\n"
+            "        cpp_com_string_cb_printf_w($dest, $bytes, $format, &[$arg1, $arg2])\n"
+            "    };\n"
+            "}"
+        )
+    if "memcpy" in used_words:
+        chunks.append(
+            "#[inline]\nunsafe fn memcpy<D, S, N: CppComSize>("
+            "dst: *mut D, src: *const S, bytes: N) -> *mut core::ffi::c_void {\n"
+            "    cpp_com_memcpy(dst.cast(), src.cast(), bytes.cpp_com_size())\n}"
+        )
+    if "SHFree" in used_words:
+        chunks.append(
+            'extern "system" {\n    #[link_name = "SHFree"]\n'
+            "    fn cpp_com_SHFree(memory: LPVOID);\n}\n"
+            "#[inline]\nunsafe fn SHFree<T>(memory: *mut T) { cpp_com_SHFree(memory.cast()); }"
+        )
+    if "free" in used_words:
+        chunks.append(
+            'extern "C" {\n    #[link_name = "free"]\n'
+            "    fn cpp_com_free(memory: *mut core::ffi::c_void);\n}\n"
+            "#[inline]\nunsafe fn free<T>(memory: *mut T) { cpp_com_free(memory.cast()); }"
+        )
+    if "CComHeapPtr" in used_words:
+        chunks.append(_CPP_COM_HEAP_PTR_SUPPORT)
+    if "SENDTO_ITEM" in used_words:
+        chunks.append(_CPP_SENDTO_ITEM_SUPPORT)
+    guid_words = {
+        word
+        for word in used_words
+        if word != "IID_PPV_ARG" and re.fullmatch(r"(?:IID|SID|CLSID)_[A-Za-z_]\w*", word)
+    }
+    for alias, target in _CPP_SUPPORT_GUID_ALIASES.items():
+        if alias in used_words:
+            used_words.add(target)
+            guid_words.discard(alias)
+            guid_words.add(target)
+    selected_guids = sorted(
+        ((used_words & _CPP_SUPPORT_GUIDS) | guid_words) - (exclude_guids or set()) - interface_iids
+    )
     if selected_guids:
         chunks.append(
             'extern "C" {\n'
@@ -1848,15 +2851,14 @@ def render_cpp_support(
     if "CopyMemory" in used_words or "ZeroMemory" in used_words:
         chunks.append(
             'extern "C" {\n'
-            "    fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void,\n"
-            "        bytes: usize) -> *mut core::ffi::c_void;\n"
             "    fn memset(dst: *mut core::ffi::c_void, value: INT,\n"
             "        bytes: usize) -> *mut core::ffi::c_void;\n"
             "}\n"
-            "#[inline]\nunsafe fn CopyMemory(dst: LPVOID, src: LPCVOID, bytes: usize) {\n"
+            "#[inline]\nunsafe fn CopyMemory<D, S, N: CppComSize>(\n"
+            "    dst: *mut D, src: *const S, bytes: N) {\n"
             "    let _ = memcpy(dst, src, bytes);\n}\n"
-            "#[inline]\nunsafe fn ZeroMemory(dst: LPVOID, bytes: usize) {\n"
-            "    let _ = memset(dst, 0, bytes);\n}"
+            "#[inline]\nunsafe fn ZeroMemory<T, N: CppComSize>(dst: *mut T, bytes: N) {\n"
+            "    let _ = memset(dst.cast(), 0, bytes.cpp_com_size());\n}"
         )
 
     if "StringCchCopyW" in used_words:
@@ -1871,10 +2873,29 @@ def render_cpp_support(
             "    S_OK\n"
             "}"
         )
+    if "SHSetStrRet" in used_words:
+        chunks.append(
+            "unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {\n"
+            "    let len = lstrlenW(value) as usize;\n"
+            "    let bytes = (len + 1) * core::mem::size_of::<WCHAR>();\n"
+            "    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;\n"
+            "    if buffer.is_null() { return E_OUTOFMEMORY; }\n"
+            "    let _ = memcpy(buffer, value, bytes);\n"
+            "    (*out).uType = STRRET_WSTR; (*out).u.pOleStr = buffer; S_OK\n"
+            "}\n"
+            "unsafe fn cpp_com_SHSetStrRetResource(out: *mut STRRET, id: DWORD) -> HRESULT {\n"
+            "    let mut buffer = [0u16; MAX_PATH];\n"
+            "    if LoadStringW(shell32_hInstance, id, buffer.as_mut_ptr(), MAX_PATH as INT) == 0 "
+            "{ return E_FAIL; }\n"
+            "    cpp_com_SHSetStrRetW(out, buffer.as_ptr())\n"
+            "}"
+        )
     if "CStringW" in used_words:
         chunks.append(_CPP_CSTRINGW_SUPPORT)
     if "CComPtr" in used_words:
         chunks.append(_CPP_COMPTR_GUARD_SUPPORT)
+    if "shell32_hInstance" in used_words:
+        chunks.append('extern "C" {\n    static mut shell32_hInstance: HINSTANCE;\n}')
     return "\n\n".join(chunks)
 
 
@@ -1896,6 +2917,57 @@ impl<T> Drop for CppComPtrGuard<T> {
 }"""
 
 
+_CPP_COM_HEAP_PTR_SUPPORT = r"""#[repr(transparent)]
+pub struct CComHeapPtr<T> { ptr: *mut T }
+impl<T> CComHeapPtr<T> {
+    pub const fn empty() -> Self { Self { ptr: core::ptr::null_mut() } }
+    pub const fn new(ptr: *mut T) -> Self { Self { ptr } }
+    pub const fn as_raw(&self) -> *mut T { self.ptr }
+    pub fn as_mut_slot(&mut self) -> *mut *mut T { core::ptr::addr_of_mut!(self.ptr) }
+    pub unsafe fn Attach(&mut self, ptr: *mut T) {
+        if !self.ptr.is_null() { CoTaskMemFree(self.ptr.cast()); }
+        self.ptr = ptr;
+    }
+    pub fn Detach(&mut self) -> *mut T {
+        let ptr = self.ptr; self.ptr = core::ptr::null_mut(); ptr
+    }
+}
+impl<T> Drop for CComHeapPtr<T> {
+    fn drop(&mut self) {
+        unsafe { if !self.ptr.is_null() { CoTaskMemFree(self.ptr.cast()); } }
+    }
+}"""
+
+
+_CPP_SENDTO_ITEM_SUPPORT = r"""#[repr(C)]
+pub struct SENDTO_ITEM {
+    pub pNext: *mut SENDTO_ITEM,
+    pub pidlChild: PITEMID_CHILD,
+    pub pszText: LPWSTR,
+    pub hIcon: HICON,
+}
+unsafe fn SENDTO_ITEM_new(
+    child: PITEMID_CHILD, text: LPWSTR, icon: HICON,
+) -> *mut SENDTO_ITEM {
+    let item = HeapAlloc(
+        GetProcessHeap(), 0, core::mem::size_of::<SENDTO_ITEM>(),
+    ) as *mut SENDTO_ITEM;
+    if !item.is_null() {
+        item.write(SENDTO_ITEM {
+            pNext: core::ptr::null_mut(), pidlChild: child, pszText: text, hIcon: icon,
+        });
+    }
+    item
+}
+unsafe fn SENDTO_ITEM_delete(item: *mut SENDTO_ITEM) {
+    if item.is_null() { return; }
+    CoTaskMemFree((*item).pidlChild.cast());
+    CoTaskMemFree((*item).pszText.cast());
+    if !(*item).hIcon.is_null() { DestroyIcon((*item).hIcon); }
+    HeapFree(GetProcessHeap(), 0, item.cast::<core::ffi::c_void>());
+}"""
+
+
 _CPP_CSTRINGW_SUPPORT = r"""extern "system" {
     fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
     fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
@@ -1913,6 +2985,10 @@ impl CStringW {
         );
         if count > 0 { value.append_ptr_len(stack.as_ptr(), count as usize); }
         value
+    }
+    pub unsafe fn new_from_lpcwstr(text: LPCWSTR) -> Self {
+        if (text as usize) <= 0xffff { return Self::from_resource(text as usize as UINT); }
+        let mut value = Self::new(); value.append_ptr(text); value
     }
     pub fn as_ptr(&self) -> LPCWSTR {
         if self.buffer.is_null() { CPP_COM_EMPTY_WSTR.as_ptr() } else { self.buffer }
@@ -1933,7 +3009,7 @@ impl CStringW {
     unsafe fn append_ptr_len(&mut self, text: LPCWSTR, count: usize) {
         if text.is_null() || !self.reserve(self.len + count + 1) { return; }
         let _ = memcpy(
-            self.buffer.add(self.len).cast(), text.cast(),
+            self.buffer.add(self.len), text,
             count * core::mem::size_of::<WCHAR>(),
         );
         self.len += count; *self.buffer.add(self.len) = 0;
@@ -1942,6 +3018,27 @@ impl CStringW {
         if !text.is_null() { self.append_ptr_len(text, lstrlenW(text) as usize); }
     }
     unsafe fn append_char(&mut self, ch: WCHAR) { self.append_ptr_len(core::ptr::addr_of!(ch), 1); }
+    pub unsafe fn concat(&mut self, text: LPCWSTR) { self.append_ptr(text); }
+    pub unsafe fn format(&mut self, format: LPCWSTR, arg: LPCWSTR) {
+        let mut resource = [0u16; 256];
+        let format = if (format as usize) <= 0xffff {
+            LoadStringW(GetModuleHandleW(core::ptr::null()), format as usize as UINT,
+                resource.as_mut_ptr(), resource.len() as INT);
+            resource.as_ptr()
+        } else { format };
+        self.len = 0;
+        if self.reserve(512) {
+            let _ = StringCbPrintfW!(self.buffer, self.capacity * 2, format, arg);
+            self.len = lstrlenW(self.buffer) as usize;
+        }
+    }
+    pub unsafe fn format_message(&mut self, arg: LPCWSTR) {
+        let mut format = [0u16; 512];
+        let count = lstrlenW(self.as_ptr()).max(0) as usize;
+        let count = count.min(format.len() - 1);
+        let _ = memcpy(format.as_mut_ptr(), self.as_ptr(), count * 2);
+        self.format(format.as_ptr(), arg);
+    }
 }
 impl core::ops::AddAssign<LPCWSTR> for CStringW {
     fn add_assign(&mut self, rhs: LPCWSTR) { unsafe { self.append_ptr(rhs) } }
@@ -1952,7 +3049,7 @@ impl core::ops::AddAssign<WCHAR> for CStringW {
 impl Drop for CStringW {
     fn drop(&mut self) {
         unsafe {
-            if !self.buffer.is_null() { HeapFree(GetProcessHeap(), 0, self.buffer.cast()); }
+            if !self.buffer.is_null() { HeapFree(GetProcessHeap(), 0, self.buffer); }
         }
     }
 }
@@ -2034,11 +3131,12 @@ def _matching_paren(text: str, opening: int) -> int:
     raise CppComError("unbalanced helper call argument list")
 
 
-def strip_debug_statements(text: str) -> str:
+def strip_debug_statements(text: str, names: set[str] | None = None) -> str:
     """Remove complete shell32 debug-macro statements from a model-only view."""
     masked = _masked_cpp(text)
     spans = []
-    for match in re.finditer(r"\b(?:TRACE|FIXME|WARN|ERR|MESSAGE)\s*\(", masked):
+    debug_names = "|".join(re.escape(name) for name in sorted(names or _CPP_COM_DEBUG_MACROS))
+    for match in re.finditer(rf"\b(?:{debug_names})\s*!?\s*\(", masked):
         before = masked[: match.start()].rstrip()
         if before and before[-1] not in "{;}":
             continue
@@ -2099,6 +3197,52 @@ def _named_call_spans(text: str, names: set[str]) -> list[tuple[int, int, str, i
     return spans
 
 
+def _expand_default_helper_arguments(
+    deps: list[FunctionDep], by_source: dict[str, list[FunctionDep]]
+) -> list[FunctionDep]:
+    """Materialize trailing C++ helper defaults before overload binding/prompting."""
+    defaults: dict[str, tuple[int, tuple[str, ...]]] = {}
+    for source_name, candidates in by_source.items():
+        if len(candidates) != 1:
+            continue
+        dep = candidates[0]
+        masked = _masked_cpp(dep.body_text)
+        name_match = re.search(rf"\b{re.escape(source_name)}\s*\(", masked)
+        if name_match is None:
+            continue
+        opening = masked.find("(", name_match.start())
+        closing = _matching_paren(masked, opening)
+        pieces = _split_args(dep.body_text[opening + 1 : closing])
+        trailing: list[str] = []
+        for piece in reversed(pieces):
+            if "=" not in piece:
+                break
+            trailing.append(piece.split("=", 1)[1].strip())
+        if trailing:
+            trailing.reverse()
+            defaults[source_name] = (len(pieces) - len(trailing), tuple(trailing))
+
+    rewritten = []
+    for dep in deps:
+        body = dep.body_text
+        definition_brace = body.find("{")
+        for start, end, source_name, arity in reversed(_named_call_spans(body, set(defaults))):
+            candidates = by_source[source_name]
+            if dep in candidates and start < definition_brace:
+                continue
+            required, default_values = defaults[source_name]
+            full_arity = required + len(default_values)
+            if not required <= arity < full_arity:
+                continue
+            opening = body.find("(", end)
+            closing = _matching_paren(_masked_cpp(body), opening)
+            missing = default_values[arity - required :]
+            insertion = (", " if arity else "") + ", ".join(missing)
+            body = body[:closing] + insertion + body[closing:]
+        rewritten.append(replace(dep, body_text=body))
+    return rewritten
+
+
 def _rewrite_com_ptr_state(
     body: str, class_name: str, state_fields: list[PlainStateField]
 ) -> tuple[str, set[str]]:
@@ -2129,11 +3273,11 @@ def prepare_helper_closure(
 ) -> list[FunctionDep]:
     """Select and bind the exact same-file helper closure for one COM class.
 
-    C++ overload resolution is deliberately not reimplemented. The accepted
-    subset is stronger and easy to audit: local overloads must have distinct
-    arities. Every helper signature comes from the scanner, and every selected
-    call is rewritten to its collision-free ``<target>_body`` Rust name before
-    the model sees it. Same-name/same-arity overloads hard-fail before payment.
+    C++ overload resolution is deliberately not reimplemented. Calls are bound
+    from scanner-owned parameter/local types and must have one uniquely best
+    candidate. Every selected call is rewritten to its collision-free
+    ``<target>_body`` Rust name before the model sees it. Ambiguity hard-fails
+    before payment.
     """
     from .callgraph import FunctionDep, topological_sort
 
@@ -2174,18 +3318,33 @@ def prepare_helper_closure(
         source_name = match.group(1) if match else dep.name
         by_source.setdefault(source_name, []).append(dep)
 
-    binding: dict[tuple[str, int], FunctionDep] = {}
+    expanded = _expand_default_helper_arguments(class_deps + free_deps, by_source)
+    class_deps = [dep for dep in expanded if dep.cpp_class == class_name]
+    free_deps = [dep for dep in expanded if dep.cpp_class is None]
+    by_source = {}
+    for dep in free_deps:
+        match = re.search(r"\b([A-Za-z_]\w*)\s*\(", _masked_cpp(dep.body_text))
+        source_name = match.group(1) if match else dep.name
+        by_source.setdefault(source_name, []).append(dep)
+
+    helper_returns: dict[str, str] = {}
+    for source_name, candidates in by_source.items():
+        return_types = {
+            _abi_c_type_key(candidate.return_type)
+            for candidate in candidates
+            if candidate.return_type
+        }
+        if len(return_types) == 1:
+            helper_returns[source_name] = candidates[0].return_type
+        for candidate in candidates:
+            if candidate.return_type:
+                helper_returns[f"{candidate.name}_body"] = candidate.return_type
+
+    binding: dict[tuple[str, int], list[FunctionDep]] = {}
     for source_name, candidates in by_source.items():
         for dep in candidates:
             key = (source_name, len(dep.params))
-            if key in binding:
-                other = binding[key]
-                raise CppComError(
-                    f"{class_name}: local overload {source_name}/{len(dep.params)} is "
-                    f"ambiguous between {other.name} and {dep.name}; deterministic helper "
-                    "binding currently requires distinct arities"
-                )
-            binding[key] = dep
+            binding.setdefault(key, []).append(dep)
 
     helper_names = set(by_source)
     method_targets: dict[str, list[FunctionDep]] = {}
@@ -2199,14 +3358,30 @@ def prepare_helper_closure(
     queue = list(class_deps)
     while queue:
         caller = queue.pop(0)
-        for _, _, source_name, arity in _named_call_spans(caller.body_text, helper_names):
-            target = binding.get((source_name, arity))
-            if target is None:
-                available = sorted(n for name, n in binding if name == source_name)
+        definition_brace = caller.body_text.find("{")
+        for start, end, source_name, arity in _named_call_spans(caller.body_text, helper_names):
+            candidates = binding.get((source_name, arity), [])
+            if not candidates:
+                available = sorted({n for name, n in binding if name == source_name})
                 raise CppComError(
                     f"{class_name}: cannot bind local helper call {source_name}/{arity}; "
                     f"available arities: {available}"
                 )
+            target = (
+                caller
+                if caller in candidates and start < definition_brace
+                else _bind_sibling_overload(
+                    caller.body_text,
+                    start,
+                    end,
+                    candidates,
+                    caller,
+                    state_fields or [],
+                    class_name,
+                    source_name,
+                    helper_returns,
+                )
+            )
             if target.name not in selected:
                 selected[target.name] = target
                 queue.append(target)
@@ -2218,10 +3393,26 @@ def prepare_helper_closure(
         body, state_callees = _rewrite_com_ptr_state(body, class_name, state_fields or [])
         local_targets: set[str] = set()
         spans = _named_call_spans(body, helper_names)
+        definition_brace = body.find("{")
         for start, end, source_name, arity in reversed(spans):
-            target = binding.get((source_name, arity))
-            if target is None:
+            candidates = binding.get((source_name, arity), [])
+            if not candidates:
                 continue
+            target = (
+                dep
+                if dep in candidates and start < definition_brace
+                else _bind_sibling_overload(
+                    body,
+                    start,
+                    end,
+                    candidates,
+                    dep,
+                    state_fields or [],
+                    class_name,
+                    source_name,
+                    helper_returns,
+                )
+            )
             body = body[:start] + f"{target.name}_body" + body[end:]
             # The helper definition's own declarator is not a callee. Removing
             # self is harmless for genuine recursion; _format_callee_context
@@ -2259,6 +3450,7 @@ def prepare_helper_closure(
                 state_fields or [],
                 class_name,
                 source_name,
+                helper_returns,
             )
             body = body[:start] + f"{target.name}_body" + body[end:]
             if target.name != dep.name:
@@ -2282,6 +3474,7 @@ def _bind_sibling_overload(
     state_fields: list[PlainStateField],
     class_name: str,
     source_name: str,
+    call_returns: dict[str, str] | None = None,
 ) -> FunctionDep:
     """Bind an implicit ``this`` call using source-visible argument types."""
     if len(candidates) == 1:
@@ -2294,7 +3487,7 @@ def _bind_sibling_overload(
     prefix = body[:start]
     for declaration in re.finditer(
         r"\b(?P<type>[A-Za-z_]\w*(?:\s*\*)?)\s+(?P<name>[A-Za-z_]\w*)\s*"
-        r"(?P<array>\[[^]]+\])?\s*(?:=|;)",
+        r"(?P<array>\[[^]]*\])?\s*(?:=|;)",
         prefix,
     ):
         c_type = " ".join(declaration.group("type").split())
@@ -2325,7 +3518,7 @@ def _bind_sibling_overload(
             continue
         declaration = re.search(
             rf"\b(?P<type>[A-Za-z_]\w*(?:\s*\*)?)\s+{re.escape(name)}\s*"
-            rf"(?P<array>\[[^]]+\])?\s*(?:=|;)",
+            rf"(?P<array>\[[^]]*\])?\s*(?:=|;)",
             prefix,
         )
         if declaration is not None:
@@ -2341,7 +3534,7 @@ def _bind_sibling_overload(
     for candidate in candidates:
         score = 0
         for argument, (expected, _name) in zip(arguments, candidate.params, strict=True):
-            actual = _argument_c_type(argument, symbols)
+            actual = _argument_c_type(argument, symbols, call_returns)
             if actual is None:
                 continue
             if _abi_types_compatible(actual, expected):
@@ -2363,8 +3556,18 @@ def _bind_sibling_overload(
     )
 
 
-def _argument_c_type(argument: str, symbols: dict[str, str]) -> str | None:
+def _argument_c_type(
+    argument: str, symbols: dict[str, str], call_returns: dict[str, str] | None = None
+) -> str | None:
     text = argument.strip()
+    explicit_cast = re.search(r"\(\s*(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*\s*\*+)\s*\)", text)
+    if explicit_cast is not None:
+        return " ".join(explicit_cast.group("type").split())
+    call = re.match(r"(?P<name>[A-Za-z_]\w*)\s*\(", text)
+    if call is not None and call_returns is not None:
+        return_type = call_returns.get(call.group("name"))
+        if return_type is not None:
+            return return_type
     text = re.sub(r"^\([^()]+\)\s*", "", text)
     conditional = re.fullmatch(r"[A-Za-z_]\w*\s*\?\s*([A-Za-z_]\w*)\s*:\s*(.+)", text, flags=re.S)
     if conditional is not None:
@@ -2373,7 +3576,7 @@ def _argument_c_type(argument: str, symbols: dict[str, str]) -> str | None:
         false_type = (
             "LPCWSTR"
             if re.fullmatch(r"CPP_COM_WSTR_[A-F0-9_]+\.as_ptr\(\)", false_text)
-            else _argument_c_type(false_text, symbols)
+            else _argument_c_type(false_text, symbols, call_returns)
         )
         if true_type is not None and (
             false_type is None or _abi_types_compatible(true_type, false_type)
@@ -2397,6 +3600,8 @@ def _argument_c_type(argument: str, symbols: dict[str, str]) -> str | None:
 def _abi_types_compatible(actual: str, expected: str) -> bool:
     left, right = _abi_c_type_key(actual), _abi_c_type_key(expected)
     if left == right:
+        return True
+    if all("PIDL" in item or "ITEMID" in item for item in (left, right)):
         return True
     return {left, right} in ({"LPWSTR", "LPCWSTR"}, {"LPSTR", "LPCSTR"})
 
@@ -2504,10 +3709,12 @@ def _abi_c_type_key(c_type: str) -> str:
         "PCWSTR": "LPCWSTR",
         "LPCOLESTR": "LPCWSTR",
         "LPOLESTR": "LPWSTR",
+        "LPVOID": "void *",
+        "PVOID": "void *",
     }
     for spelling, canonical in aliases.items():
         text = re.sub(rf"\b{re.escape(spelling)}\b", canonical, text)
-    return text
+    return re.sub(r"\s*\*\s*", "*", text)
 
 
 def _interface_method_target(
@@ -2569,6 +3776,17 @@ def lower_trivial_worker(c_body: str, expected_signature: str) -> str | None:
     body = " ".join(body.split())
     if not body:
         return expected_signature + " {}"
+    printer_enum = re.fullmatch(
+        r"return\s+ShellObjectCreatorInit\s*<\s*CPrintersEnum\s*>\s*\(\s*"
+        r"([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*,\s*"
+        r"IID_PPV_ARG\s*\(\s*IEnumIDList\s*,\s*([A-Za-z_]\w*)\s*\)\s*\)\s*;",
+        body,
+    )
+    if printer_enum is not None:
+        owner, flags, output = printer_enum.groups()
+        return (
+            expected_signature + f" {{ CPrintersEnum_CreateInstance({owner}, {flags}, {output}) }}"
+        )
     returned = re.fullmatch(r"return\s+([A-Z][A-Z0-9_]*)\s*;", body)
     if returned and returned.group(1) not in _CPP_COM_LITERAL_WORDS:
         return f"{expected_signature} {{ {returned.group(1)} }}"
@@ -2585,6 +3803,7 @@ def lower_trivial_worker(c_body: str, expected_signature: str) -> str | None:
 
 def _canonical_signature(signature: str) -> str:
     signature = re.sub(r"\bcrate::(?:types|shellcom)::", "", signature)
+    signature = re.sub(r"(?<=[(,])\s*mut\s+", " ", signature)
     signature = re.sub(r"\s+", " ", signature).strip()
     signature = re.sub(r"\(\s+", "(", signature)
     signature = re.sub(r",\s*\)", ")", signature)
@@ -2626,6 +3845,36 @@ def _source_local_pod_fields(c_body: str) -> dict[str, tuple[str, ...]]:
     return result
 
 
+def _source_anonymous_pod_fields(c_body: str) -> set[tuple[str, ...]]:
+    """Return field sequences for simple body-local anonymous C records.
+
+    C commonly spells a one-use lookup-table row as ``struct { ... } Rows[]``.
+    Rust must name that local type, but the chosen name has no ABI or source
+    semantics. Its field sequence is still source authority and is audited just
+    like a named local POD.
+    """
+    result = set()
+    for match in re.finditer(
+        r"\bstruct\s*\{(?P<body>[^{}]*)\}\s*[A-Za-z_]\w*\s*(?:\[[^]]*\])?\s*=",
+        c_body,
+        flags=re.S,
+    ):
+        fields = []
+        valid = True
+        for declaration in match.group("body").split(";"):
+            declaration = " ".join(declaration.split())
+            if not declaration:
+                continue
+            field = re.search(r"([A-Za-z_]\w*)\s*(?:\[[^]]+\])?\s*$", declaration)
+            if field is None or any(token in declaration for token in (",", ":", "{")):
+                valid = False
+                break
+            fields.append(field.group(1))
+        if valid and fields:
+            result.add(tuple(fields))
+    return result
+
+
 def _rust_local_pod_fields(rust: str) -> dict[str, tuple[str, ...]]:
     result: dict[str, tuple[str, ...]] = {}
     for match in re.finditer(
@@ -2642,6 +3891,28 @@ def _rust_local_pod_fields(rust: str) -> dict[str, tuple[str, ...]]:
             for field in re.finditer(r"(?:^|,)\s*(?:pub\s+)?(?:r#)?([A-Za-z_]\w*)\s*:", inner)
         )
         result[name] = fields
+    return result
+
+
+def _rust_local_struct_fields(rust: str) -> dict[str, tuple[str, ...]]:
+    """Return fields of any simple Rust local struct, irrespective of repr.
+
+    This is used only for a source-anonymous, local-only record whose Rust name
+    and layout representation are unobservable. Named C PODs continue to require
+    the stricter `repr(C)` map above.
+    """
+    result = {}
+    for match in re.finditer(r"\bstruct\s+([A-Za-z_]\w*)\s*\{", rust):
+        name = match.group(1)
+        open_brace = rust.find("{", match.start())
+        try:
+            inner, _ = _balanced_block(rust, open_brace)
+        except CppComError:
+            continue
+        result[name] = tuple(
+            field.group(1)
+            for field in re.finditer(r"(?:^|,)\s*(?:pub\s+)?(?:r#)?([A-Za-z_]\w*)\s*:", inner)
+        )
     return result
 
 
@@ -2674,6 +3945,59 @@ def audit_worker_body(
             )
 
     executable_rust = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", rust, flags=re.S)
+
+    # The opaque call tokens are occurrence-specific. Reject a reversed nesting
+    # relation after unsealing, so a cheap model cannot turn
+    # `HeapFree(GetProcessHeap(), ...)` into `GetProcessHeap(HeapFree(), ...)`
+    # while still satisfying the closed call-count set. Benign hoisting such as
+    # `let heap = GetProcessHeap(); HeapAlloc(heap, ...)` remains allowed.
+    from .call_seal import _EXCLUDED as call_excluded
+
+    def nested_calls(text: str) -> set[tuple[str, str]]:
+        open_brace, close_brace = text.find("{"), text.rfind("}")
+        body = text[open_brace + 1 : close_brace] if 0 <= open_brace < close_brace else text
+        masked = _masked_cpp(body)
+        excluded = (
+            call_excluded
+            | _CPP_COM_TYPE_WORDS
+            | {
+                "if",
+                "for",
+                "return",
+                "switch",
+                "while",
+            }
+        )
+        calls = []
+        for match in re.finditer(r"\b([A-Za-z_]\w*)\s*\(", masked):
+            name = match.group(1)
+            if name in excluded:
+                continue
+            opening = masked.find("(", match.end(1))
+            try:
+                closing = _matching_paren(masked, opening)
+            except CppComError:
+                continue
+            calls.append((name, opening, closing))
+        return {
+            (outer_name, inner_name)
+            for outer_name, outer_open, outer_close in calls
+            for inner_name, inner_open, inner_close in calls
+            if outer_open < inner_open and inner_close < outer_close
+        }
+
+    source_nesting = nested_calls(strip_debug_statements(c_body))
+    rust_nesting = nested_calls(executable_rust)
+    reversed_pairs = sorted(
+        (outer, inner)
+        for outer, inner in source_nesting
+        if outer != inner and (inner, outer) in rust_nesting
+    )
+    if reversed_pairs:
+        findings.append(
+            "runtime call nesting reversed from deterministic envelope: "
+            + ", ".join(f"{outer}({inner}(...))" for outer, inner in reversed_pairs)
+        )
     forbidden = {
         "#[no_mangle]": "export attribute",
         ".unwrap()": "Option/panic ABI guess",
@@ -2703,11 +4027,16 @@ def audit_worker_body(
     declared_types = re.findall(r"\b(?:struct|union|enum)\s+([A-Za-z_]\w*)\b", executable_rust)
     if declared_types:
         source_local = _source_local_pod_fields(c_body)
+        anonymous_local = _source_anonymous_pod_fields(c_body)
         rust_local = _rust_local_pod_fields(executable_rust)
+        rust_any_local = _rust_local_struct_fields(executable_rust)
         invalid_types = [
             name
             for name in declared_types
-            if name not in source_local or rust_local.get(name) != source_local[name]
+            if (
+                (name not in source_local or rust_local.get(name) != source_local[name])
+                and rust_any_local.get(name) not in anonymous_local
+            )
         ]
         if invalid_types:
             findings.append(
@@ -2715,11 +4044,12 @@ def audit_worker_body(
             )
 
     # Strings and comments contain printf formats and prose, not program constants.
-    open_brace, close_brace = c_body.find("{"), c_body.rfind("}")
+    audited_c_body = strip_debug_statements(c_body)
+    open_brace, close_brace = audited_c_body.find("{"), audited_c_body.rfind("}")
     source_body = (
-        c_body[open_brace + 1 : close_brace]
+        audited_c_body[open_brace + 1 : close_brace]
         if open_brace >= 0 and close_brace > open_brace
-        else c_body
+        else audited_c_body
     )
     source = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", source_body, flags=re.S)
     symbolic = set()
@@ -2738,7 +4068,7 @@ def audit_worker_body(
             and (start == 1 or not (source[start - 2].isalnum() or source[start - 2] == "_"))
             and bool(re.match(r"\s*\**\s*\)", tail))
         )
-        declaration_type = bool(re.match(r"\s+\**\s*[A-Za-z_]\w*", tail))
+        declaration_type = bool(re.match(r"(?:\s+|\s*\*+\s*)[A-Za-z_]\w*", tail))
         if (
             word not in ignored_words
             and not callable_token
@@ -2752,7 +4082,7 @@ def audit_worker_body(
     redefined = sorted(
         word
         for word in symbolic
-        if re.search(rf"\b(?:pub\s+)?const\s+{re.escape(word)}\s*[:=]", rust)
+        if re.search(rf"(?<!\*)\b(?:pub\s+)?const\s+{re.escape(word)}\s*[:=]", rust)
     )
     if redefined:
         findings.append(
@@ -2762,6 +4092,12 @@ def audit_worker_body(
 
     source_integers = _integer_values(source)
     rust_integers = _integer_values(rust)
+    for pointer in re.findall(r"\*\s*([A-Za-z_]\w*)\s*=\s*0\s*;", source):
+        if (
+            re.search(rf"\*\s*{re.escape(pointer)}\s*=\s*core::ptr::null_mut\(\)\s*;", rust)
+            and source_integers[0] > 0
+        ):
+            source_integers[0] -= 1
     missing_integers = source_integers - rust_integers
     if missing_integers:
         rendered = []
@@ -2803,8 +4139,19 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
     missing = [entry.interface for entry in cls.com_map if entry.interface not in by_name]
     if missing:
         raise CppComError(f"{cls.name}: missing interface specs: {', '.join(missing)}")
+    # COM maps may expose several IIDs through one inherited interface slot
+    # (for example IID_IOleWindow and IID_IDeskBand). They are QI aliases, not
+    # duplicate object-layout fields or duplicate vtables.
+    layout_entries = [
+        next(entry for entry in cls.com_map if entry.interface == name)
+        for name in dict.fromkeys(entry.interface for entry in cls.com_map)
+    ]
 
     lines = []
+    for enum in cls.enum_state_types:
+        lines.append(f"pub type {enum.name} = INT;")
+        lines.extend(f"pub const {name}: {enum.name} = {value};" for name, value in enum.variants)
+        lines.append("")
     for pod in cls.pod_state_types:
         representation = "#[repr(C, packed)]" if pod.packed else "#[repr(C)]"
         lines.extend([representation, f"pub struct {pod.name} {{"])
@@ -2819,10 +4166,26 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             "method bodies are generated separately.",
             'extern "system" {',
             "    fn GetProcessHeap() -> HANDLE;",
-            "    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;",
-            "    fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;",
+            '    #[link_name = "HeapAlloc"]',
+            "    fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) "
+            "-> *mut core::ffi::c_void;",
+            '    #[link_name = "HeapFree"]',
+            "    fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, "
+            "memory: *mut core::ffi::c_void) -> BOOL;",
             "    fn Shell32RustObjectLock();",
             "    fn Shell32RustObjectUnlock();",
+            "}",
+            "trait CppComSize { fn cpp_com_size(self) -> usize; }",
+            "impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }",
+            "impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }",
+            "#[inline]",
+            "unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) "
+            "-> *mut core::ffi::c_void {",
+            "    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())",
+            "}",
+            "#[inline]",
+            "unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {",
+            "    cpp_com_HeapFree(heap, flags, memory.cast())",
             "}",
             *(
                 []
@@ -2834,7 +4197,7 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             f"pub struct {cls.name} {{",
         ]
     )
-    for entry in cls.com_map:
+    for entry in layout_entries:
         lines.append(f"    pub {entry.interface}_iface: {entry.interface},")
     lines.append("    pub ref_count: core::sync::atomic::AtomicI32,")
     for state in cls.plain_state_fields():
@@ -2869,7 +4232,7 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             ]
         )
 
-    for entry in cls.com_map:
+    for entry in layout_entries:
         iface = by_name[entry.interface]
         field_name = f"{entry.interface}_iface"
         prefix = f"{cls.name}_{entry.interface}"
@@ -2989,7 +4352,7 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             f"    core::ptr::write(this, {cls.name} {{",
         ]
     )
-    for entry in cls.com_map:
+    for entry in layout_entries:
         prefix = f"{cls.name}_{entry.interface}".upper()
         lines.append(
             f"        {entry.interface}_iface: {entry.interface} {{ "
@@ -3117,6 +4480,7 @@ def discover_widl_header(
             repo_root / f"build-{arch}" / "sdk" / "include" / "psdk",
             repo_root / f"build-{arch}-cross" / "sdk" / "include" / "psdk",
             repo_root / "sdk" / "include" / "psdk",
+            repo_root / "sdk" / "include" / "reactos",
         ]
         hits = []
         for root in roots:

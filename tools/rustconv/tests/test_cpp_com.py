@@ -154,6 +154,26 @@ def test_widl_vtable_is_flattened_ground_truth(tmp_path: Path):
     )
 
 
+def test_widl_function_array_parameter_decays_to_pointer(tmp_path: Path):
+    header = tmp_path / "array-param.h"
+    header.write_text(
+        """typedef struct IArrayVtbl {
+        HRESULT (STDMETHODCALLTYPE *Query)(
+            IArray *This, ULONG count, OLECMD commands[]);
+        } IArrayVtbl;"""
+    )
+    spec = parse_widl_interface(header, "IArray")
+    assert spec.methods[0].params[-1] == ("OLECMD *", "commands")
+    assert "commands: *mut OLECMD" in render_interface(spec)
+
+
+def test_cpp_scanner_function_array_parameter_decays_to_pointer(tmp_path: Path):
+    source = tmp_path / "array-param.cpp"
+    source.write_text("HRESULT C::Query(ULONG count, OLECMD commands[]) { return S_OK; }")
+    method = scan_file(source).functions[0]
+    assert method.params == [("ULONG", "count"), ("OLECMD *", "commands")]
+
+
 def test_widl_header_discovery_is_per_interface(tmp_path: Path):
     psdk = tmp_path / "build-i386" / "sdk" / "include" / "psdk"
     psdk.mkdir(parents=True)
@@ -218,6 +238,26 @@ def test_class_scaffold_owns_offsets_and_vtable_order(tmp_path: Path):
     assert "HEAP_ZERO_MEMORY" in rust
 
 
+def test_class_scaffold_uses_one_slot_for_com_map_iid_aliases(tmp_path: Path):
+    menu = analyze_class(
+        SHELL32 / "shellmenu" / "CMenuBand.cpp",
+        "CMenuBand",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    desk = parse_widl_interface(
+        discover_widl_header(REACTOS_ROOT, "i386", interface="IDeskBand"),
+        "IDeskBand",
+    )
+    # Exercise the alias entries in isolation; unrelated CMenuBand interfaces
+    # need not be rendered for this layout invariant.
+    menu.com_map = [entry for entry in menu.com_map if entry.interface == "IDeskBand"]
+    rust = render_class_scaffold(menu, [desk])
+    assert rust.count("pub IDeskBand_iface: IDeskBand,") == 1
+    assert rust.count("pub static CMENUBAND_IDESKBAND_VTBL") == 1
+    assert "IID_IOleWindow" in rust
+    assert "IID_IDeskBand" in rust
+
+
 def test_object_map_adapter_redirects_atl_creation():
     cls = analyze_class(
         SHELL32 / "CDropTargetHelper.cpp",
@@ -237,6 +277,7 @@ def test_object_map_adapter_redirects_atl_creation():
     [
         ("void **", "*mut *mut core::ffi::c_void"),
         ("const IID *", "*const IID"),
+        ("QCMINFO_IDMAP const *", "*const QCMINFO_IDMAP"),
         ("IDataObject *", "*mut IDataObject"),
         ("CStringW &", "&mut CStringW"),
         ("const CStringW &", "&CStringW"),
@@ -513,6 +554,29 @@ def test_interface_vtable_repairs_scanner_lost_cpp_return_types():
     ]
 
 
+def test_legacy_reactos_declared_interface_is_compiler_authority():
+    header = discover_widl_header(REACTOS_ROOT, "amd64", interface="IShellMenu2")
+    interface = parse_widl_interface(header, "IShellMenu2")
+    assert header.name == "shlobj_undoc.h"
+    assert [method.name for method in interface.methods[-5:]] == [
+        "GetSubMenu",
+        "SetToolbar",
+        "SetMinWidth",
+        "SetNoBorder",
+        "SetTheme",
+    ]
+
+
+def test_scanner_treats_cpp_this_macro_as_void_parameter_list():
+    scan = scan_file(SHELL32 / "shellmenu" / "CMenuBand.cpp")
+    method = next(
+        function
+        for function in scan.functions
+        if function.cpp_class == "CMenuBand" and function.name == "GetSubMenu"
+    )
+    assert method.params == []
+
+
 def test_inherited_interface_method_ignores_receiver_spelling_conflict():
     dep = FunctionDep(
         name="C_GetClassID",
@@ -545,13 +609,47 @@ def test_inherited_interface_method_ignores_receiver_spelling_conflict():
     assert repaired[0].params == [("CLSID *", "pClassID")]
 
 
-def test_same_arity_helper_overload_fails_before_payment():
+def test_interface_binding_treats_lpvoid_pointer_as_void_double_pointer():
+    dep = FunctionDep(
+        name="C_BindToObject",
+        cpp_class="C",
+        cpp_method="BindToObject",
+        params=[
+            ("PCUIDLIST_RELATIVE", "pidl"),
+            ("LPBC", "pbc"),
+            ("REFIID", "riid"),
+            ("LPVOID *", "ppvOut"),
+        ],
+    )
+    interface = InterfaceSpec(
+        "IShellFolder",
+        (
+            InterfaceMethod(
+                "BindToObject",
+                "HRESULT",
+                (
+                    ("IShellFolder *", "This"),
+                    ("PCUIDLIST_RELATIVE", "pidl"),
+                    ("LPBC", "pbc"),
+                    ("REFIID", "riid"),
+                    ("void **", "ppvOut"),
+                ),
+            ),
+        ),
+        "fixture.h",
+    )
+    repaired = apply_interface_method_signatures([dep], "C", [interface])
+    assert repaired[0].params[-1] == ("void **", "ppvOut")
+
+
+def test_same_arity_helper_overload_binds_from_declared_argument_type():
     roots = [
         FunctionDep(
             name="C_f",
             cpp_class="C",
             cpp_method="f",
-            body_text="HRESULT C::f() { return H(1); }",
+            params=[("long", "value")],
+            body_text="HRESULT C::f(long value) { return H(value); }",
         ),
         FunctionDep(
             name="H", params=[("int", "x")], body_text="int H(int x) { return x; }", is_static=True
@@ -563,8 +661,97 @@ def test_same_arity_helper_overload_fails_before_payment():
             is_static=True,
         ),
     ]
-    with pytest.raises(CppComError, match="local overload H/1 is ambiguous"):
+    plan = prepare_helper_closure(roots, "C")
+    method = next(dep for dep in plan if dep.name == "C_f")
+    assert "H_2_body(value)" in method.body_text
+    assert "H_body" not in method.body_text
+
+
+def test_same_arity_helper_overload_ambiguity_fails_before_payment():
+    roots = [
+        FunctionDep(
+            name="C_f",
+            cpp_class="C",
+            cpp_method="f",
+            body_text="HRESULT C::f() { return H(UnknownExpression()); }",
+        ),
+        FunctionDep(
+            name="H", params=[("int", "x")], body_text="int H(int x) { return x; }", is_static=True
+        ),
+        FunctionDep(
+            name="H_2",
+            params=[("long", "x")],
+            body_text="int H(long x) { return x + 1; }",
+            is_static=True,
+        ),
+    ]
+    with pytest.raises(CppComError, match="cannot bind overloaded sibling call H"):
         prepare_helper_closure(roots, "C")
+
+
+def test_same_arity_helper_overload_binds_from_nested_helper_return_type():
+    roots = [
+        FunctionDep(
+            name="C_f",
+            cpp_class="C",
+            cpp_method="f",
+            params=[("PCWSTR", "path")],
+            body_text="UINT C::f(PCWSTR path) { return Kind(Number(path)); }",
+        ),
+        FunctionDep(
+            name="Number",
+            return_type="INT8",
+            params=[("PCWSTR", "path")],
+            body_text="INT8 Number(PCWSTR path) { return 0; }",
+            is_static=True,
+        ),
+        FunctionDep(
+            name="Kind",
+            return_type="UINT",
+            params=[("INT8", "number")],
+            body_text="UINT Kind(INT8 number) { return number; }",
+            is_static=True,
+        ),
+        FunctionDep(
+            name="Kind_2",
+            return_type="UINT",
+            params=[("PCWSTR", "path")],
+            body_text="UINT Kind(PCWSTR path) { return 1; }",
+            is_static=True,
+        ),
+    ]
+    plan = prepare_helper_closure(roots, "C")
+    method = next(dep for dep in plan if dep.name == "C_f")
+    assert "Kind_body(Number_body(path))" in method.body_text
+
+
+def test_local_helper_default_argument_is_materialized_before_prompting():
+    roots = [
+        FunctionDep(
+            name="C_f",
+            cpp_class="C",
+            cpp_method="f",
+            body_text="BOOL C::f() { return Helper(7); }",
+        ),
+        FunctionDep(
+            name="Helper",
+            return_type="BOOL",
+            params=[("INT", "value"), ("BOOL", "enabled")],
+            body_text=("BOOL Helper(INT value, BOOL enabled = FALSE) { return enabled && value; }"),
+            is_static=True,
+        ),
+    ]
+    plan = prepare_helper_closure(roots, "C")
+    method = next(dep for dep in plan if dep.name == "C_f")
+    assert "Helper_body(7, FALSE)" in method.body_text
+
+
+def test_scanner_keeps_cpp_optional_parameter_in_worker_signature():
+    scan = scan_file(SHELL32 / "folders" / "CDrivesFolder.cpp")
+    helper = next(
+        function for function in scan.functions if function.name == "SHELL_GetAutoRunInfPath"
+    )
+    assert helper.params[-1] == ("BOOL", "ForInvoke")
 
 
 def test_helper_arity_treats_comparison_as_expression_not_template_depth():
@@ -595,6 +782,62 @@ def test_cpp_scanner_recovers_unadorned_out_of_line_method(tmp_path: Path):
     method = scan.functions[0]
     assert (method.cpp_class, method.name, method.return_type) == ("CThing", "Method", "BOOL")
     assert method.params == [("DWORD", "flags"), ("void *", "context")]
+
+
+def test_cpp_scanner_preserves_qualified_pointer_return_type(tmp_path: Path):
+    source = tmp_path / "nested_return.cpp"
+    source.write_text("CThing::ITEM *CThing::Find(DWORD id) { return nullptr; }\n")
+    method = scan_file(source).functions[0]
+    assert (method.cpp_class, method.name, method.return_type) == (
+        "CThing",
+        "Find",
+        "CThing::ITEM *",
+    )
+
+
+def test_nested_pointer_pod_and_enum_are_deterministic_source_types(tmp_path: Path):
+    source = tmp_path / "nested.cpp"
+    source.write_text(
+        """
+class CThing : public CComCoClass<CThing>,
+               public CComObjectRootEx<CComMultiThreadModelNoCS>, public IFoo {
+  enum KIND { KIND_BAD = -1, KIND_ONE = 1, KIND_TWO };
+  struct ITEM { KIND kind; DWORD size; ITEM *next; };
+  ITEM *items;
+  DECLARE_NOT_AGGREGATABLE(CThing)
+  BEGIN_COM_MAP(CThing) COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo) END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_Thing, CThing)\n")
+    cls = analyze_class(source, "CThing", object_map_source=object_map)
+    cls.require_supported()
+    assert cls.enum_state_types[0].variants == (
+        ("KIND_BAD", -1),
+        ("KIND_ONE", 1),
+        ("KIND_TWO", 2),
+    )
+    assert [pod.name for pod in cls.pod_state_types] == ["ITEM"]
+    rendered = render_class_scaffold(cls, [InterfaceSpec("IFoo", (), "test.h")])
+    assert "pub type KIND = INT;" in rendered
+    assert "pub struct ITEM" in rendered
+
+
+def test_worker_audit_rejects_reordered_nested_calls():
+    source = "void C::f() { HeapFree(GetProcessHeap(), 0, p); }"
+    rust = "pub unsafe fn C_f_body(this: *mut C) { GetProcessHeap(HeapFree(), 0, p); }"
+    findings = audit_worker_body(source, rust, "C_f_body", "pub unsafe fn C_f_body(this: *mut C)")
+    assert any("runtime call nesting reversed" in finding for finding in findings)
+
+
+def test_worker_audit_allows_pure_nested_call_hoisting():
+    source = "void C::f() { HeapAlloc(GetProcessHeap(), 0, size); }"
+    rust = (
+        "pub unsafe fn C_f_body(this: *mut C) { "
+        "let heap = GetProcessHeap(); HeapAlloc(heap, 0, size); }"
+    )
+    assert audit_worker_body(source, rust, "C_f_body", "pub unsafe fn C_f_body(this: *mut C)") == []
 
 
 def test_cpp_scanner_expands_inline_atl_stDMETHOD_definition(tmp_path: Path):
@@ -795,6 +1038,27 @@ def test_worker_semantics_restores_cpp_com_ptr_scope_exit_ownership():
     assert "folder = core::ptr::null_mut();" in normalized
 
 
+def test_worker_semantics_lowers_model_atl_com_ptr_wrapper_and_iid_pair():
+    source = """HRESULT C::f() {
+        CComPtr<IShellView> view;
+        return IUnknown_QueryService(m_pSite, SID_SFolderView,
+                                     IID_PPV_ARG(IShellView, &view));
+    }"""
+    rust = """pub unsafe fn C_f_body(this: *mut C) -> HRESULT {
+        let mut view: CComPtr<IShellView> = CComPtr::new();
+        if (*this).m_pSite.0.is_null() { return S_OK; }
+        let (iid, ppv) = IID_PPV_ARG(IShellView, &mut view);
+        IUnknown_QueryService((*this).m_pSite.0, &SID_SFolderView, iid, ppv)
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "CComPtr<IShellView>" not in normalized
+    assert "let mut view: *mut IShellView = core::ptr::null_mut();" in normalized
+    assert "let _view_cpp_com_guard = CppComPtrGuard::new(" in normalized
+    assert "(*this).m_pSite.0" not in normalized
+    assert "core::ptr::addr_of!(IID_IShellView)" in normalized
+    assert "core::ptr::addr_of_mut!(view).cast()" in normalized
+
+
 def test_sibling_receiver_insertion_preserves_explicit_other_object_receiver():
     source = """HRESULT C::f(ARG a) {
         C_g_body(a);
@@ -851,6 +1115,30 @@ def test_worker_semantics_rejects_unanchored_cpp_com_ptr_local():
     rust = "pub unsafe fn C_f_body() -> HRESULT { use_folder() }"
     with pytest.raises(CppComError, match="CComPtr local folder"):
         normalize_worker_semantics(source, rust)
+
+
+def test_worker_semantics_owns_ccom_ptr_parameter_copy():
+    source = "CComPtr<IContextMenu> ctxMenu = contextMenu; return use(ctxMenu);"
+    rust = """pub unsafe fn C_f_body(contextMenu: *mut IContextMenu) -> HRESULT {
+        let ctxMenu = contextMenu;
+        use(ctxMenu)
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "let mut ctxMenu: *mut IContextMenu = contextMenu;" in normalized
+    assert "((*(*ctxMenu).lpVtbl).AddRef)(ctxMenu)" in normalized
+    assert "CppComPtrGuard::new(core::ptr::addr_of_mut!(ctxMenu))" in normalized
+
+
+def test_worker_semantics_repairs_split_iid_ppv_arg_binding():
+    source = "return object->QueryInterface(IID_PPV_ARG(IMenuPopup, &m_child));"
+    rust = """pub unsafe fn C_f_body(this: *mut C, object: *mut IUnknown) -> HRESULT {
+        let riid = IID_PPV_ARG(IMenuPopup; let ppv = &mut (*this).m_child);
+        ((*(*object).lpVtbl).QueryInterface)(object, riid, ppv)
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "IID_PPV_ARG" not in normalized
+    assert "let riid = core::ptr::addr_of!(IID_IMenuPopup);" in normalized
+    assert "let ppv = core::ptr::addr_of_mut!((*this).m_child).cast();" in normalized
 
 
 def test_worker_audit_rejects_model_owned_scope_guards():
@@ -964,6 +1252,39 @@ def test_cpp_support_generates_used_source_local_pods_and_honors_exclusion(tmp_p
     assert "struct LOCAL_INFO" not in render_cpp_support(source, exclude_types={"LOCAL_INFO"})
 
 
+def test_class_state_expands_plain_multi_declarators(tmp_path: Path):
+    source = tmp_path / "CMulti.cpp"
+    source.write_text(
+        "class CMulti : public CComCoClass<CMulti, &CLSID_Multi>, "
+        "public CComObjectRootEx<CComMultiThreadModelNoCS>, public IUnknown {\n"
+        "UINT first, second;\nHICON icon, fallback;\n"
+        "DECLARE_NOT_AGGREGATABLE(CMulti)\n"
+        "BEGIN_COM_MAP(CMulti) COM_INTERFACE_ENTRY(IUnknown) END_COM_MAP()\n};\n"
+        "OBJECT_ENTRY_AUTO(CLSID_Multi, CMulti)\n"
+    )
+    cls = analyze_class(source, "CMulti")
+    assert cls.state_fields == ["UINT first", "UINT second", "HICON icon", "HICON fallback"]
+    assert [field.name for field in cls.plain_state_fields()] == [
+        "first",
+        "second",
+        "icon",
+        "fallback",
+    ]
+
+
+def test_central_instance_macro_is_proven_non_aggregatable(tmp_path: Path):
+    source = tmp_path / "CCentral.cpp"
+    source.write_text(
+        "class CCentral : public CComCoClass<CCentral, &CLSID_Central>, "
+        "public CComObjectRootEx<CComMultiThreadModelNoCS>, public IUnknown {\n"
+        "DECLARE_CENTRAL_INSTANCE_NOT_AGGREGATABLE(CCentral)\n"
+        "BEGIN_COM_MAP(CCentral) COM_INTERFACE_ENTRY(IUnknown) END_COM_MAP()\n};\n"
+        "OBJECT_ENTRY_AUTO(CLSID_Central, CCentral)\n"
+    )
+    cls = analyze_class(source, "CCentral")
+    assert cls.not_aggregatable
+
+
 def test_cpp_support_derives_unique_numeric_sdk_facts(tmp_path: Path):
     repo = tmp_path / "repo"
     source = repo / "dll/win32/example/worker.cpp"
@@ -1016,12 +1337,8 @@ def test_cpp_support_rejects_conflicting_sdk_pod_layouts(tmp_path: Path):
     source.parent.mkdir(parents=True)
     include.mkdir(parents=True)
     source.write_text("HRESULT f(LPCONFLICT value);")
-    (include / "first.h").write_text(
-        "typedef struct { DWORD first; } CONFLICT, *LPCONFLICT;\n"
-    )
-    (include / "second.h").write_text(
-        "typedef struct { DWORD second; } CONFLICT, *LPCONFLICT;\n"
-    )
+    (include / "first.h").write_text("typedef struct { DWORD first; } CONFLICT, *LPCONFLICT;\n")
+    (include / "second.h").write_text("typedef struct { DWORD second; } CONFLICT, *LPCONFLICT;\n")
     support = render_cpp_support(source)
     assert "pub struct CONFLICT" not in support
     assert "pub type LPCONFLICT" not in support
@@ -1184,6 +1501,20 @@ def test_cpp_support_closure_is_source_selected_and_recovers_file_scope_table():
     assert 'link_name = "Shell32RustMapContextMenuVerbToCmdId"' in rust
 
 
+def test_string_cb_printf_support_is_rust_fixed_arity_not_variadic_block(tmp_path):
+    source = tmp_path / "format.cpp"
+    source.write_text('void f() { StringCbPrintfW(out, bytes, L"%s", value); }')
+    support = render_cpp_support(source)
+    assert "unsafe fn cpp_com_string_cb_printf_w" in support
+    assert "macro_rules! StringCbPrintfW" in support
+    assert "fn StringCbPrintfW(" not in support
+    normalized = normalize_worker_semantics(
+        source.read_text(),
+        "unsafe fn f() { StringCbPrintfW(out, bytes, format, value); }",
+    )
+    assert "StringCbPrintfW!(out, bytes, format, value)" in normalized
+
+
 def test_copy_as_path_adapter_bridges_internal_cpp_linkage():
     cls = analyze_class(
         SHELL32 / "CCopyAsPathMenu.cpp",
@@ -1325,6 +1656,56 @@ def test_invalid_filename_static_is_passed_as_a_pointer():
     assert "core::ptr::addr_of_mut!((*this).m_pisfInner).cast()" in lowered
 
 
+def test_worker_normalizes_resolver_constant_qualification():
+    normalized = normalize_worker_semantics(
+        "HRESULT C::f() { return S_OK; }",
+        "pub unsafe fn C_f_body() -> HRESULT { let x = [0u16; crate::driver_ddk::MAX_PATH]; S_OK }",
+    )
+    assert "[0u16; MAX_PATH]" in normalized
+
+
+def test_worker_normalizes_packed_pidl_union_cast_and_debug_dump():
+    source = "{ pdump(pidl); return (PIDLPrinterStruct *)&pdata->u.cfont; }"
+    rust = """pub unsafe fn f(pidl: LPCITEMIDLIST, pdata: *mut PIDLDATA) {
+        pdump(pidl);
+        if (*pdata).type_ == 0 { let p = &mut (*pdata).u.cfont as *mut PIDLPrinterStruct; }
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "pdump" not in normalized
+    assert "(*pdata).type_" in normalized
+    assert "core::ptr::addr_of_mut!((*pdata).u.cfont).cast::<PIDLPrinterStruct>()" in normalized
+
+
+def test_worker_normalizes_shell_folder_cpp_implicit_conversions():
+    source = "{ *ppidl = 0; return SHELL32_CompareDetails(this, l, a, b); }"
+    rust = """pub unsafe fn f(this: *mut CPrinterFolder, ppidl: *mut LPITEMIDLIST) {
+        *ppidl = 0;
+        if IsEqualIID(riid, &IID_IShellView) { }
+        let x = SFV_CREATE { pshf: this, psvOuter: core::ptr::null_mut(),
+            psfvcb: core::ptr::null_mut(), cbSize: 0 };
+        *pcsFlags = PrinterSFHeader[i].colstate;
+        (*psd).fmt = PrinterSFHeader[i].fmt;
+        SHSetStrRet(&raw mut (*psd).str, PrinterSFHeader[i].colnameid);
+        SHSetStrRet(strRet, (*printer).szName);
+        (*psd).str.cStr[0] = 0;
+        SHELL32_CompareDetails(this, l, a, b);
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "*ppidl = core::ptr::null_mut();" in normalized
+    assert "cpp_com_iid_equal(riid" in normalized
+    assert "pshf: core::ptr::addr_of_mut!((*this).IShellFolder_iface)" in normalized
+    assert ".colstate as SHCOLSTATEF" in normalized
+    assert ".fmt as INT" in normalized
+    assert "cpp_com_SHSetStrRetResource(&raw mut (*psd).str_" in normalized
+    assert "cpp_com_SHSetStrRetW(strRet" in normalized
+    assert "(*psd).str_.u.cStr" in normalized
+    assert "(*psd).str_.u.cStr[0] = 0i8" in normalized
+    assert (
+        "SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface)" in normalized
+    )
+    assert audit_worker_body(source, normalized, "f") == []
+
+
 def test_folder_options_support_owns_full_sdk_sfv_create_layout():
     source = SHELL32 / "CFolderOptions.cpp"
     support = render_cpp_support(source)
@@ -1333,6 +1714,41 @@ def test_folder_options_support_owns_full_sdk_sfv_create_layout():
     assert "pub psvOuter: *mut core::ffi::c_void" in support
     assert "pub psfvcb: *mut core::ffi::c_void" in support
     assert "fn SHCreateShellFolderView(create: *const SFV_CREATE" in support
+
+
+def test_printer_support_closes_sdk_pod_interface_dependencies_without_duplicates():
+    source = SHELL32 / "folders" / "CPrinterFolder.cpp"
+    support = render_cpp_support(source, {"IID_IUnknown"})
+    assert support.count("pub struct SFV_CREATE") == 1
+    assert "pub psfvcb: *mut core::ffi::c_void" in support
+    assert "static IID_IUnknown" not in support
+    assert "pub static PrinterSFHeader: [shvheader; 6]" in support
+    assert "colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD" in support
+    assert "pub const PrinterSHELLVIEWCOLUMNS: UINT = 6;" in support
+    assert "pub const IDS_SHV_COLUMN_NAME: UINT" in support
+
+
+def test_net_folder_support_closes_string_copy_and_shell_attribute_dependencies():
+    support = render_cpp_support(SHELL32 / "folders" / "CNetFolder.cpp")
+    assert "fn lstrlenW(text: LPCWSTR) -> INT" in support
+    assert 'link_name = "memcpy"' in support
+    assert "pub const E_UNEXPECTED: HRESULT" in support
+    assert "pub const SFGAO_CANLINK: SFGAOF" in support
+
+
+def test_drives_support_does_not_redefine_cpp_boolean_literals():
+    support = render_cpp_support(SHELL32 / "folders" / "CDrivesFolder.cpp")
+    assert "pub const false" not in support
+    assert "pub const true" not in support
+
+
+def test_printer_support_owns_inline_strret_overloads_and_cpp_icon_bridge():
+    support = render_cpp_support(SHELL32 / "folders" / "CPrinterFolder.cpp")
+    assert "unsafe fn cpp_com_SHSetStrRetW" in support
+    assert "unsafe fn cpp_com_SHSetStrRetResource" in support
+    assert 'link_name = "CPrintersExtractIconW_RustBridge"' in support
+    assert 'link_name = "CPrinterFolder_CompareDetails_RustBridge"' in support
+    assert "static mut shell32_hInstance" in support
 
 
 def test_sfv_create_model_shadow_is_replaced_from_source_authority():
@@ -1355,6 +1771,62 @@ def test_sfv_create_model_shadow_is_replaced_from_source_authority():
     assert "psfvcb: core::ptr::null_mut()" in normalized
 
 
+def test_ccomptr_member_copy_gets_scope_guard_and_explicit_release_is_idempotent():
+    source = """HRESULT C::SetClient() {
+        CComPtr<IMenuPopup> child = m_subMenuChild;
+        if (child) child.Release();
+        return S_OK;
+    }"""
+    rust = """pub unsafe fn C_SetClient_body(this: *mut C) -> HRESULT {
+        let child: *mut IMenuPopup = (*this).m_subMenuChild;
+        if !child.is_null() {
+            ((*(*child).lpVtbl).Release)(child as *mut IUnknown);
+        }
+        S_OK
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "let mut child: *mut IMenuPopup = (*this).m_subMenuChild;" in normalized
+    assert "((*(*child).lpVtbl).AddRef)(child)" in normalized
+    assert "let _child_cpp_com_guard = CppComPtrGuard::new" in normalized
+    assert "child = core::ptr::null_mut();" in normalized
+
+
+def test_ccomptr_self_copy_uses_deterministic_iunknown_lifetime_guard():
+    source = "{ CComPtr<CMenuBand> safeThis = this; return S_OK; }"
+    rust = """pub unsafe fn CMenuBand_f_body(this: *mut CMenuBand) -> HRESULT {
+        let unknown_ptr = this as *mut IUnknown;
+        ((*(*unknown_ptr).lpVtbl).AddRef)(unknown_ptr);
+        struct SafeThisGuard(*mut IUnknown);
+        impl Drop for SafeThisGuard { fn drop(&mut self) { unsafe {
+            ((*(*self.0).lpVtbl).Release)(self.0); } } }
+        let _guard = SafeThisGuard(unknown_ptr);
+        S_OK
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "struct SafeThisGuard" not in normalized
+    assert "let mut safeThis: *mut IUnknown = this.cast();" in normalized
+    assert "let _safeThis_cpp_com_guard = CppComPtrGuard::new" in normalized
+    assert audit_worker_body(source, normalized, "CMenuBand_f_body") == []
+    assert normalize_worker_semantics(source, normalized) == normalized
+
+
+def test_model_comdrop_wrapper_is_lowered_to_scaffold_owned_guards():
+    source = "{ CComPtr<IBandSite> pBandSite; return S_OK; }"
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        struct ComDrop<T> { ptr: *mut T }
+        impl<T> Drop for ComDrop<T> { fn drop(&mut self) { unsafe {
+            if !self.ptr.is_null() { Release(self.ptr); }
+        } } }
+        let mut pBandSite = ComDrop::<IBandSite> { ptr: core::ptr::null_mut() };
+        Use(&mut pBandSite.ptr); S_OK
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "struct ComDrop" not in normalized
+    assert "let mut pBandSite: *mut IBandSite = core::ptr::null_mut();" in normalized
+    assert "let _pBandSite_cpp_com_guard = CppComPtrGuard::new" in normalized
+    assert "Use(&mut pBandSite)" in normalized
+
+
 def test_worker_audit_does_not_treat_macros_or_cast_types_as_constants():
     c_body = (
         "{ if (FAILED(hr)) return (HRESULT)(UINT)(SIZE_T)value; "
@@ -1366,6 +1838,34 @@ def test_worker_audit_does_not_treat_macros_or_cast_types_as_constants():
     )
     assert audit_worker_body(c_body, rust, "C_f_body") == []
 
+    c_body = "{ if (const CLSID* pClsid = IsRegItem(pidl)) return S_OK; return S_FALSE; }"
+    rust = (
+        "pub unsafe fn C_f_body() -> HRESULT { "
+        "if !IsRegItem(pidl).is_null() { S_OK } else { S_FALSE } }"
+    )
+    assert audit_worker_body(c_body, rust, "C_f_body") == []
+
+
+def test_worker_audit_ignores_constants_used_only_by_debug_macros():
+    c_body = '{ TRACE("%d", value == STRRET_CSTR); return S_OK; }'
+    rust = "pub unsafe fn C_f_body() -> HRESULT { S_OK }"
+    assert audit_worker_body(c_body, rust, "C_f_body") == []
+
+
+def test_printer_enum_template_is_lowered_to_explicit_cpp_bridge():
+    source = """HRESULT CPrinterFolder::EnumObjects(
+        HWND hwndOwner, DWORD dwFlags, IEnumIDList **ppEnumIDList) {
+        return ShellObjectCreatorInit<CPrintersEnum>(
+            hwndOwner, dwFlags, IID_PPV_ARG(IEnumIDList, ppEnumIDList));
+    }"""
+    signature = (
+        "pub unsafe fn CPrinterFolder_EnumObjects_body(this: *mut CPrinterFolder, "
+        "hwndOwner: HWND, dwFlags: DWORD, ppEnumIDList: *mut *mut IEnumIDList) -> HRESULT"
+    )
+    lowered = lower_trivial_worker(source, signature)
+    assert lowered is not None
+    assert "CPrintersEnum_CreateInstance(hwndOwner, dwFlags, ppEnumIDList)" in lowered
+
 
 def test_worker_audit_rejects_model_owned_symbolic_constant_values():
     c_body = "{ return HRESULT_FROM_WIN32(ERROR_NOT_FOUND); }"
@@ -1375,6 +1875,47 @@ def test_worker_audit_rejects_model_owned_symbolic_constant_values():
     )
     findings = audit_worker_body(c_body, rust, "C_f_body")
     assert any("redefined source symbolic constant" in finding for finding in findings)
+
+
+def test_worker_audit_does_not_treat_const_pointer_type_as_constant_definition():
+    source = "HRESULT f() { CHAR *value = GetValue(); return value ? S_OK : E_FAIL; }"
+    rust = (
+        "pub unsafe fn C_f_body() -> HRESULT { let value: *const CHAR = GetValue(); "
+        "if value.is_null() { E_FAIL } else { S_OK } }"
+    )
+    findings = audit_worker_body(source, rust, "C_f_body")
+    assert not any("redefined source symbolic constant" in finding for finding in findings)
+
+
+def test_worker_audit_accepts_named_rust_form_of_source_anonymous_local_pod():
+    source = """HRESULT f() {
+        struct { LPCWSTR name; DWORD flags; BOOL enabled; } Rows[] = {
+            { L"one", 1, TRUE }, { NULL, 0, FALSE }
+        };
+        return Use(Rows);
+    }"""
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        struct Row { name: LPCWSTR, flags: DWORD, enabled: BOOL }
+        let Rows = [
+            Row { name: ONE.as_ptr(), flags: 1, enabled: TRUE },
+            Row { name: core::ptr::null(), flags: 0, enabled: FALSE },
+        ];
+        Use(Rows)
+    }"""
+    assert audit_worker_body(source, rust, "C_f_body") == []
+
+
+def test_worker_audit_rejects_wrong_named_form_of_source_anonymous_local_pod():
+    source = """HRESULT f() {
+        struct { LPCWSTR name; DWORD flags; BOOL enabled; } Rows[] = {};
+        return Use(Rows);
+    }"""
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        #[repr(C)] struct Row { name: LPCWSTR, enabled: BOOL }
+        Use(core::ptr::null_mut())
+    }"""
+    findings = audit_worker_body(source, rust, "C_f_body")
+    assert any("forbidden ABI type declaration: Row" in finding for finding in findings)
 
 
 def test_worker_audit_checks_the_deterministic_signature():
@@ -1390,6 +1931,14 @@ def test_worker_audit_checks_the_deterministic_signature():
         for finding in audit_worker_body("{ return E_NOTIMPL; }", bad, "C_f_body", expected)
     )
 
+    mutable = (
+        "pub unsafe fn C_f_body(this: *mut C, ppt: *mut POINT, mut effect: DWORD) "
+        "-> HRESULT { effect += 1; E_NOTIMPL }"
+    )
+    normalized = normalize_worker_body(mutable, expected)
+    assert "mut effect: DWORD" in normalized
+    assert audit_worker_body("{ return E_NOTIMPL; }", normalized, "C_f_body", expected) == []
+
 
 def test_worker_normalizer_does_not_parse_rust_path_colons_as_parameters():
     expected = (
@@ -1401,3 +1950,15 @@ def test_worker_normalizer_does_not_parse_rust_path_colons_as_parameters():
         "size: *mut u32) -> i32 { S_OK }"
     )
     assert normalize_worker_body(model, expected).startswith(expected + " {")
+
+
+def test_worker_normalizer_discards_model_comments_inside_generated_signature():
+    expected = "pub unsafe fn C_f_body(this: *mut C, value: DWORD, flags: DWORD) -> HRESULT"
+    model = """pub unsafe fn C_f_body(
+        this: *mut C,
+        value: DWORD, // retained for ABI
+        flags: DWORD, /* generated slot */
+    ) -> HRESULT { S_OK }"""
+    normalized = normalize_worker_body(model, expected)
+    assert normalized.startswith(expected + " {")
+    assert "retained for ABI" not in normalized

@@ -43,6 +43,25 @@ clustering and authority routing; the C++ frontend additionally owns ATL/COM dis
 7. Integration acceptance is still the real module build/link and the required three-arch
    smoke gate. A green synthetic crate is necessary evidence, not permission to cut over.
 
+## Integration boundary rules
+
+- Synthetic compilation proves generated Rust consistency, not PE/COFF linkage. Inline-only
+  C++ helpers, mangled source-local symbols, and calling-convention decoration become visible
+  only in the real shell32 link. Export a narrow explicit `extern "C"`/`WINAPI` bridge where
+  the source definition is the sole authority, and use i386 as the decoration canary.
+- Hybrid translation-unit cohab is valid when Rust alone owns activation and published
+  vtables, while the retained C++ file owns a companion class or bridge. Never publish two
+  implementations of the same class factory/vtable.
+- Cached workers are normalized on every assembly. Every deterministic normalization must
+  therefore be idempotent; replay tests must cover both raw model spelling and already-fixed
+  spelling.
+- `CComPtr` copy construction owns an `AddRef`, including copies from parameters and members.
+  The generated guard owns scope-exit `Release`; model-written guards and ambiguous
+  `Attach`/`Detach` ownership remain hard failures.
+- Source-local numeric tables may be generated only from parsed initializer/header facts.
+  Preserve row order, sentinel rows, and expression values; otherwise use a bridge or leave
+  the authority red.
+
 ## Candidate manifest
 
 The optional `source` field lets the authority index distinguish source-local definitions
@@ -71,6 +90,9 @@ from SDK/project gaps. Always include it for full-module runs.
   bitfields, expressions, conflicts, conditional layouts, and unparsed annotations stay red.
 - Do not route an unresolved-symbol cascade to Sonnet. Stronger models are for residual
   semantic/structural judgment after the deterministic substrate is complete.
+- Stop class integration when the remaining roots form another substantial companion class.
+  Preserve the paid module and translate that closure as its own bounded unit; do not grow a
+  guessed synthetic substrate until the first class happens to compile.
 - Do not accept from AST similarity. `skeleton-check` is a veto for dropped/invented control
   flow; fact/call seals, body audit, x3 compilation, link, and smoke remain mandatory.
 

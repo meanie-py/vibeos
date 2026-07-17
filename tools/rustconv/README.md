@@ -27,3 +27,8 @@ python -m rustconv substrate-plan \
 Translation calls cost money. Preview with `--prompt`/`--dry-run`, preserve `.responses/`
 and staging artifacts, replay cache hits after deterministic improvements, and use
 `--no-resume` only when an approved model upgrade really must bypass an existing cache hit.
+
+For `--cpp-com`, rustconv owns the complete class/interface/vtable scaffold and a
+source-selected support closure. It also binds same-arity local overloads from declared
+types and materializes trailing C++ default arguments before prompting. Ambiguity fails
+before payment: never ask a model to guess compiler semantics, ABI, constants, or layout.

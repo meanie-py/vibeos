@@ -8,8 +8,9 @@ use core::ffi::c_void;
 // Canonical per-architecture SDK layouts. Keep ABI-heavy COM/Win32 records in
 // com-sys rather than growing a second hand-maintained shell32 copy.
 pub use com_sys::{
-    BIND_OPTS, FORMATETC, HDC, HICON, POINTL, STATDATA, STATSTG, STGMEDIUM, SYSTEMTIME,
-    ULARGE_INTEGER, WPARAM,
+    BIND_OPTS, FORMATETC, HDC, HICON, HOLEMENU, INT8, LPOLEMENUGROUPWIDTHS, LRESULT, MSG,
+    PBYTE, POINTL, RECT, STATDATA, STATSTG, STGMEDIUM, SYSTEMTIME, ULARGE_INTEGER, ULONGLONG,
+    WPARAM,
 };
 
 pub type BOOL = i32;
@@ -76,6 +77,35 @@ pub const HEAP_ZERO_MEMORY: DWORD = 8;
 pub const CP_ACP: UINT = 0;
 pub const UNICODE_NULL: WCHAR = 0;
 pub const MAX_PATH: usize = 260;
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const INVALID_HANDLE_VALUE: HANDLE = usize::MAX as HANDLE;
+pub const RRF_RT_REG_SZ: DWORD = 0x0000_0002;
+pub const RRF_RT_ANY: DWORD = 0x0000_FFFF;
+pub const HBMMENU_CALLBACK: HBITMAP = -1isize as HBITMAP;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct FOLDERSETTINGS {
+    pub ViewMode: UINT,
+    pub fFlags: UINT,
+}
+pub type LPFOLDERSETTINGS = *mut FOLDERSETTINGS;
+pub type LPCFOLDERSETTINGS = *const FOLDERSETTINGS;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct DRAWITEMSTRUCT {
+    pub CtlType: UINT,
+    pub CtlID: UINT,
+    pub itemID: UINT,
+    pub itemAction: UINT,
+    pub itemState: UINT,
+    pub hwndItem: HWND,
+    pub hDC: HDC,
+    pub rcItem: RECT,
+    pub itemData: ULONG_PTR,
+}
 
 pub const CF_UNICODETEXT: UINT = 13;
 pub const GMEM_MOVEABLE: UINT = 2;

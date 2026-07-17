@@ -32,7 +32,13 @@ from . import (
 from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
-from .call_seal import CallSealError, call_contract, seal_calls, unseal_calls
+from .call_seal import (
+    CallSealError,
+    call_contract,
+    scrub_comment_token_echoes,
+    seal_calls,
+    unseal_calls,
+)
 from .callgraph import extract_call_graph, topological_sort
 from .catalog import build_catalog, print_catalog_stats
 from .checker import check_all_targets, print_check_report
@@ -370,6 +376,7 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
     """Apply the deterministic shell32 worker boundary to a model response."""
     signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
     rust = normalize_worker_body(rust, signature)
+    rust = scrub_comment_token_echoes(rust)
     try:
         calls = call_seals.get(dep.name)
         if calls is not None:
@@ -459,14 +466,17 @@ def cmd_cpp_com(args):
 
     if args.sdk_header:
         sdk_header = Path(args.sdk_header).resolve()
-        interfaces = [parse_widl_interface(sdk_header, entry.interface) for entry in cls.com_map]
+        interfaces = [
+            parse_widl_interface(sdk_header, name)
+            for name in dict.fromkeys(entry.interface for entry in cls.com_map)
+        ]
     else:
         interfaces = [
             parse_widl_interface(
-                discover_widl_header(REACTOS_ROOT, args.arch, interface=entry.interface),
-                entry.interface,
+                discover_widl_header(REACTOS_ROOT, args.arch, interface=name),
+                name,
             )
-            for entry in cls.com_map
+            for name in dict.fromkeys(entry.interface for entry in cls.com_map)
         ]
 
     implemented = {f.name for f in class_methods if not f.is_ctor and not f.is_dtor}
@@ -1312,15 +1322,16 @@ def cmd_translate(args):
         if getattr(args, "sdk_header", None):
             sdk_header = Path(args.sdk_header).resolve()
             cpp_com_interfaces = [
-                parse_widl_interface(sdk_header, entry.interface) for entry in cpp_com_cls.com_map
+                parse_widl_interface(sdk_header, name)
+                for name in dict.fromkeys(entry.interface for entry in cpp_com_cls.com_map)
             ]
         else:
             cpp_com_interfaces = [
                 parse_widl_interface(
-                    discover_widl_header(REACTOS_ROOT, args.arch, interface=entry.interface),
-                    entry.interface,
+                    discover_widl_header(REACTOS_ROOT, args.arch, interface=name),
+                    name,
                 )
-                for entry in cpp_com_cls.com_map
+                for name in dict.fromkeys(entry.interface for entry in cpp_com_cls.com_map)
             ]
         # Parameter interfaces are ABI too.  Expand the WIDL closure
         # recursively so callback/service vtables referenced by a COM-map
@@ -2419,7 +2430,8 @@ def cmd_translate(args):
             deterministic.append(
                 render_cpp_support(
                     c_file,
-                    {f"IID_{interface.name}" for interface in cpp_com_interfaces},
+                    {"IID_IUnknown"}
+                    | {f"IID_{interface.name}" for interface in cpp_com_interfaces},
                     support_selection,
                     {pod.name for pod in cpp_com_cls.pod_state_types},
                 )
