@@ -143,6 +143,7 @@ extern "C" {
     static mut KdpTimeSlipTimer: KTIMER;
     static mut KdpTimeSlipDpc: KDPC;
     static mut KdpTimeSlipWorkItem: WORK_QUEUE_ITEM;
+    static mut KdpDebuggerStructuresInitialized: BOOLEAN;
     static mut KdComponentTableSize: ULONG;
     static mut KdComponentTable: [PULONG; 0];
     static mut Kd_WIN2000_Mask: ULONG;
@@ -1752,14 +1753,24 @@ pub unsafe extern "system" fn KdExitDebugger(enable: BOOLEAN) {
         KdTimerStart = KeQueryPerformanceCounter(core::ptr::null_mut());
     }
 
-    let time_slip = InterlockedIncrement(core::ptr::addr_of_mut!(KdpTimeSlipPending));
-    if time_slip == 1 {
-        InterlockedIncrement(core::ptr::addr_of_mut!(KdpTimeSlipPending));
-        KeInsertQueueDpc(
-            core::ptr::addr_of_mut!(KdpTimeSlipDpc) as PKDPC,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-        );
+    // KdpTimeSlipDpc/Timer/WorkItem are only KeInitializeDpc'd on the enable_kd
+    // path (kdinit.rs). The vibeos "KD forced off" config (the COM2 gate) disables
+    // KD WITHOUT setting KdPitchDebugger, so KdRefreshDebuggerNotPresent (which only
+    // early-outs on KdPitchDebugger) still reaches here with a zeroed, NULL-routine
+    // KdpTimeSlipDpc. Queueing it makes KiRetireDpcList jump through the NULL routine
+    // (C ke/dpc.c:633 / the Rust DeferredRoutine.unwrap() panic — the kmtest
+    // KdSystemDebugControl quarantine). Only arm the time slip when the structures
+    // exist; upstream relies on KdPitchDebugger to gate the same path.
+    if KdpDebuggerStructuresInitialized != 0 {
+        let time_slip = InterlockedIncrement(core::ptr::addr_of_mut!(KdpTimeSlipPending));
+        if time_slip == 1 {
+            InterlockedIncrement(core::ptr::addr_of_mut!(KdpTimeSlipPending));
+            KeInsertQueueDpc(
+                core::ptr::addr_of_mut!(KdpTimeSlipDpc) as PKDPC,
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+            );
+        }
     }
 }
 

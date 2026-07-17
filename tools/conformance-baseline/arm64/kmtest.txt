@@ -24,6 +24,7 @@ IoInterrupt OK pass=937 fail=158 skip=0 exit=0
 IoIrp OK pass=22 fail=0 skip=0 exit=0
 IoMdl OK pass=11 fail=0 skip=0 exit=0
 IoVolume OK pass=1 fail=0 skip=0 exit=0
+KdSystemDebugControl OK pass=40 fail=2 skip=0 exit=0
 KeApc OK pass=200 fail=0 skip=0 exit=0
 KeDeviceQueue OK pass=44 fail=1 skip=0 exit=0
 KeDpc OK pass=316 fail=0 skip=0 exit=0
