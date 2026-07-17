@@ -1,0 +1,45 @@
+#!/bin/bash
+# Echo the auto-allocated gdbstub TCP port for a run (from its manifest).
+#
+# WHY THIS EXISTS: the gdb port is NOT a fixed 12001 — start.sh allocates a free
+# port in 12000..12999 per run, so across restarts it drifts. Hardcoding a port
+# silently connects gdb to a *stale* QEMU from an earlier run that still holds it,
+# and your breakpoints never fire (this footgun cost real debug time — 2026-07-16,
+# the i386 SMP -smp 1 hunt). Always resolve the port from here.
+#
+# Usage:
+#   qemu/gdb-port <run-id>              # -> just the port, e.g. 12000
+#   qemu/gdb-port <run-id> --remote     # -> host:port, e.g. 127.0.0.1:12000
+#   qemu/gdb-port --latest [--remote]   # newest run under qemu/runs/
+#
+# Pairs with start.sh's "gdb:" hint line. Symbolication note: the manifest kernel
+# is the UP image; if the media boots the SMP kernel (built --smp-kernel),
+# add-symbol-file ntkrnlmp.exe instead (same base VA). See smp-bringup-quest.md.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/lib/common.sh"
+. "$SCRIPT_DIR/lib/manifest.sh"
+
+RUN_ID=""
+REMOTE=0
+for arg in "$@"; do
+    case "$arg" in
+        --remote) REMOTE=1 ;;
+        --latest) RUN_ID="$(ls -dt "$SCRIPT_DIR"/runs/*/ 2>/dev/null | head -1 | xargs -r basename)" ;;
+        -*) die "unknown argument: $arg" ;;
+        *) RUN_ID="$arg" ;;
+    esac
+done
+
+[ -n "$RUN_ID" ] || die "usage: gdb-port <run-id>|--latest [--remote]"
+
+PORT="$(manifest_get "$RUN_ID" gdb_port)"
+[ -n "$PORT" ] || die "run '$RUN_ID' has no gdb_port (started without --gdb/--gdb-wait?)"
+
+if [ "$REMOTE" = 1 ]; then
+    echo "127.0.0.1:$PORT"
+else
+    echo "$PORT"
+fi

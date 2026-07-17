@@ -772,18 +772,36 @@ field-manual **§9.91**):
    module-list-walk cascade). Now named-field writes + `addr_of_mut!` matching
    `ke/amd64/mproc.rs`.
 
-**Boot state after these fixes:** i386 `-smp 1` (SMP kernel, 0 APs started)
-reaches deep MM init on the Phase1 thread; the APIC HAL banner + ACPI come up.
+4. **Bug D (2026-07-16) — the M3 KeIpiGenericCall self-test worker was cdecl,
+   not NTAPI.** `ex-rust/src/init.rs`'s `gc_selftest_worker` + the local
+   `KeIpiGenericCall` `Function` param were `extern "C"`; `PKIPI_BROADCAST_WORKER`
+   is `NTAPI` (stdcall on i386), so the stdcall call site left ESP 4 bytes low →
+   rendezvous frame skew → `ret` onto the stack → deterministic `0x50` (EIP =
+   stack VA `0xf7bbbba0`). NOT a `KeStartAllProcessors` bug (that returns clean —
+   a GDB `watch` on its saved-return slot proved the frame intact). Invisible on
+   amd64/arm64 (`extern "C"==extern "system"`). Fix = both → `extern "system"`.
+   Full writeup: field-manual **§9.91 Bug D**.
 
-**NEXT (open, blocks -smp 1):** a 4th bug — `0x50` with a **corrupted
-trap-return control transfer** on the Phase1Initialization thread (saved `Eip` =
-stack VA `0xf7bbbdb3`; wild write `0x8ef7bbbd` = that VA misaligned by 1 byte;
-frames under it are `KiCommonExit`/`KiEoiHelper`). SMP-kernel-specific (UP boots
-the same APIC media). Deterministic, kbase-stable at `0x804c3000`. Triage recipe:
-GDB `ntkrnlmp.exe` @ `0x804c4000`, break the FIRST fault on the Phase1 thread,
-compare the trap frame's `Eip` field offset vs. what `KiCommonExit` iret's to —
-suspect another packed/offset layout bug in the i386 SMP trap-frame/trap-exit
-path (same family as §9.91 B/C). After this: `-smp 2` AP start (BSP currently
-spins on `KeLoaderBlock->Prcb` post INIT-SIPI-SIPI), then the i386 idle-loop
-NextThread lock + `ctxswitch.S` SwapBusy (land together per the M5 discipline
-note above).
+**Boot state after ALL FOUR fixes (2026-07-16): i386 SMP kernel boots to a
+fully-rendered desktop at BOTH `-smp 1` and `-smp 2`** — `_tWinMain entered` +
+`shell ready`, 0 bugchecks in 3385 serial lines. At `-smp 2` the BSP starts CPU 1
+(`HalStartNextProcessor` INIT-SIPI-SIPI on the first call) and the AP completes
+the `KeLoaderBlock->Prcb` handshake in `KiSystemStartup` (the BSP has no timeout
+on that spin, so boot-to-desktop *proves* the AP ran). The KeIpiGenericCall
+self-test now prints `worker ran on 0x1 == active set OK`. **This is i386 M5
+Phase B DONE — boot parity with amd64's M0–M3.**
+
+**NEXT (i386 M5 Phase C — AP schedules):** at `-smp 2` the AP is started + handshaked
+but its `KeActiveProcessors` bit is still 0 (self-test's active set = `0x1`), i.e.
+CPU 1 hasn't reached idle-loop scheduling yet. Bring the i386 AP to full
+schedule-participation: idle-loop `NextThread` lock + `ctxswitch.S` `SwapBusy`
+handshake (mirror the amd64 M3 work; land together per the M5 discipline note
+above), then prove it with the M3 CPU1-visibility counter and a `-smp 2` soak.
+GDB recipe that cracked Bug D (banked for Phase C): **`hbreak`** the suspect fn
+(a plain `break` at `--gdb-wait` reset is clobbered when freeldr copies the kernel
+over the `0xCC`), `add-symbol-file build-i386/ntoskrnl/ntkrnlmp/ntkrnlmp.exe
+0x804c4000` (kbase-stable `0x804c3000`; symbolicate ntkrnlmp, NOT ntoskrnl — the
+toolkit's `find-kbase`/`addr2sym` default to the UP binary), and **read the gdb
+port from `qemu/runs/<run-id>/manifest.json` (`gdb_port`), never hardcode 12001**
+— auto-alloc drifts across runs and a stale QEMU on the assumed port silently
+eats your breakpoints.

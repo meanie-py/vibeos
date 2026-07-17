@@ -7776,17 +7776,35 @@ offset 0x20). Fix = named-field writes + `addr_of_mut!`, matching
 the real bindgen field. The `scan_magic_offsets` TYPED_PTR_HEX_ARITH shape is the
 tripwire; a `ptr as *mut ULONG_PTR).offset(k)` on a rich struct is the same class.
 
-**STILL OPEN — a 4th bug (the one that stops i386 `-smp 1` today).** Post A/B/C,
-i386 `-smp 1` reaches deep MM init on the **Phase1Initialization** system thread
-(`KiThreadStartup → PspSystemThreadStartup → Phase1Initialization`, which is where
-`KeStartAllProcessors` runs), then takes a `0x50` whose trap frame's saved `Eip`
-is a **stack VA `0xf7bbbdb3`** (executing stack garbage) with the wild data write
-at `0x8ef7bbbd` = that same stack VA read one byte misaligned (`>>8 | 0x8e<<24`).
-The frames just under it are `KiCommonExit`/`KiEoiHelper` (the trap-return path),
-so this is a **corrupted trap-return control transfer**, SMP-kernel-specific
-(UP boots this exact APIC media to desktop). Deterministic; kbase-stable. Next
-step: break the *first* fault on the Phase1 thread (KiTrap0E with CR2 in the
-`0x8Exxxxxx` band) and read the trap frame's `Eip` field offset vs. what
-`KiCommonExit` iret's to — suspect another packed/offset layout bug in the i386
-SMP trap-frame or trap-exit path (same family as B/C). Evidence + kbase in the
-`smp-bringup-quest.md` continuation note.
+**Bug D — ROOT-CAUSED + FIXED (2026-07-16): a cdecl worker handed to an NTAPI
+callback taker — `KeIpiGenericCall`.** The `0x50` that stopped i386 `-smp 1` post
+A/B/C was NOT in `KeStartAllProcessors` at all — that returns cleanly (a GDB
+`watch` on its saved return slot showed the slot only ever *reused* by the next
+call, frame intact, correct return into `Phase1InitializationDiscard`). The crash
+is the very next thing: the **M3 KeIpiGenericCall self-test** in
+`ex-rust/src/init.rs`. It declared both `gc_selftest_worker` **and** the
+`KeIpiGenericCall` `Function` parameter as `extern "C"` (cdecl). But
+`PKIPI_BROADCAST_WORKER` is `NTAPI` (`= stdcall on i386`), and both
+`KeIpiGenericCall` (direct, the `-smp 1` path) and `KiIpiGenericCallTarget` (the
+`-smp 2` cross-CPU path) invoke the worker through a `PKIPI_BROADCAST_WORKER`
+(`extern "system"`) pointer — i.e. a **stdcall call site, callee cleans the 4-byte
+arg**. A cdecl worker does a plain `ret` (no cleanup) → ESP left 4 bytes low →
+the rendezvous frame skews → a later `ret` pops a *stack* value → EIP executes on
+the kernel stack → deterministic `0x50 (0x8ef7bbbd, .., 0xf7bbbba0, ..)` where the
+faulting EIP `0xf7bbbba0` is itself a `~0xf7bbXXXX` stack VA. **Invisible on
+amd64/arm64** (there `extern "C" == extern "system"`, so the mismatch is a no-op —
+which is exactly why amd64 SMP booted and only i386 died), and reached even at
+`-smp 1` because `KeIpiGenericCall` always runs the worker on the *calling* CPU.
+Fix = both → `extern "system"` (one-line, `init.rs:1279/1285`); i386 `-smp 1` AND
+`-smp 2` then boot to desktop, self-test prints `worker ran on 0x1 == active OK`,
+0 bugchecks in 3385 serial lines. *Reusable (the §9.91 ABI family's sharpest
+edge): any function pointer you hand to a kernel API whose typedef is `NTAPI` must
+be `extern "system"`, never `extern "C"` — a DPC/APC/IPI-worker/callback declared
+cdecl links silently on all arches and detonates ONLY on i386, as a stack-execute
+`0x50`/`0x8E`, arbitrarily far from the wrong declaration. The i386 `KeIpiGenericCall`
+workers in `ke/i386/kiinit.rs` already had this right (their comment literally says
+"stdcall … on i386"); the self-test was the lone offender.* GDB method that nailed
+it: `hbreak` (NOT `break` — a software BP written at `--gdb-wait` reset gets
+clobbered when freeldr copies the kernel image over it) the suspected fn, then
+`watch *(int*)($ebp+4)` on the saved-return slot; the "corruption" was benign slot
+reuse, which *exonerated* the function and pointed one frame up the call chain.

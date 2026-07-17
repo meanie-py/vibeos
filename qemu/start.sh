@@ -347,4 +347,16 @@ for _ in 1 2 3 4 5; do
 done
 
 log_info "QEMU running: pid=$QEMU_PID gdb_port=${GDB_PORT:-none}"
+if [ -n "$GDB_PORT" ]; then
+    # FOOTGUN GUARD: the gdb port is auto-allocated per run (12000..12999) — it is
+    # NOT a fixed 12001. Hardcoding a port silently connects you to a *stale* QEMU
+    # from an earlier run that still holds it, and your breakpoints never fire.
+    # Always take the port from here / `qemu/gdb-port <run-id>` / the manifest.
+    # NOTE re symbols: the manifest kernel is the UP image; if this media boots the
+    # SMP kernel (built --smp-kernel) symbolicate ntkrnlmp.exe instead (its base is
+    # the same VA). See smp-bringup-quest.md "GDB recipe".
+    log_info "gdb: gdb-multiarch -ex 'target remote 127.0.0.1:$GDB_PORT' \\"
+    log_info "       -ex 'add-symbol-file $KERNEL_IMAGE <kbase+0x1000>' -ex 'set language c'"
+    log_info "     (port also: qemu/gdb-port $RUN_ID)"
+fi
 echo "$RUN_ID"
