@@ -7,7 +7,7 @@ yet landed-and-closed. When a lane closes, its doc moves **out** of here: to
 closing lane go to `docs/product/vibeos-roadmap.md` (Check-back ledger / Known-bugs
 registry), never left to rot in an archived doc.
 
-**Open lanes as of 2026-07-12** (`git worktree list` is the live source of truth):
+**Open lanes as of 2026-07-16** (`git worktree list` is the live source of truth):
 
 | Lane (worktree/branch) | Doc |
 |---|---|
@@ -15,5 +15,12 @@ registry), never left to rot in an archived doc.
 | `conformance-ratchet` | conformance-ratchet-quest.md *(lives on the branch until it lands)* |
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
 | `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
-| `stable-toolchain` | [stable-toolchain-plan.md](stable-toolchain-plan.md) |
-| `i386-apic-hal` | [i386-apic-hal-plan.md](i386-apic-hal-plan.md) *(Phase A **LANDED** 2026-07-16 — APIC is now the i386 default HAL, legacy PIC behind `--hal-pic`; Phase B returns to `smp-bringup`)* |
+| `shell32-com` | [shell32-com-plan.md](shell32-com-plan.md) *(translation driven by Codex, not rustconv)* |
+
+*Recently landed & closed:*
+- `i386-apic-hal` (Phase A landed 2026-07-16 — APIC is now the i386 default HAL, legacy
+  PIC behind `--hal-pic`; doc graduated to [../i386-apic-hal-plan.md](../i386-apic-hal-plan.md);
+  Phase B lives on in [smp-bringup-quest.md](smp-bringup-quest.md)).
+- `stable-toolchain` (program landed 2026-07-12 — tree is on pinned stable; the one
+  sanctioned nightly cell is the i386 kernel's `-Z build-std` softfloat, which retires with
+  the wow64 lane. Doc graduated to [../stable-toolchain-plan.md](../stable-toolchain-plan.md)).
