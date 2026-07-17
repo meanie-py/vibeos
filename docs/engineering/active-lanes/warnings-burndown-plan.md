@@ -100,7 +100,39 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   with a greppable `FNPTR-CMP(audited)` tag (all verified intentional NT callback/sentinel
   identity compares mirroring the C). T1: central `cargo fix` over ~80 cold crates, 3
   targets (~5k noise warnings). Also fixed a real swallowed-error bug found by triage
-  (lsasrv `LsapLogonUser`, see below).
+  (lsasrv `LsapLogonUser`, see below). Landed `eda1e0e9bc8` after a full gate-build
+  recovery (see the "gate-build-is-the-oracle" lane rule for the cfg-blind botch recipe).
+- **2026-07-17 — Tier-1 noise sweep batches 2-4 (the un-swept cold crates).** Same
+  `cargo fix` + central-integration process, now with the full trap-handling recipe
+  (3-arch **clean** build as oracle, committed_drift ×3, per-arch baseline reconcile).
+  - **Batch 2** (`79256ccfb10`): win32k-rust 73 files (644 warnings) + samsrv + rtl-*.
+    Over-removal reverted: rtl-diag/exception.rs (arm64 `ZwContinue`).
+  - **Batch 3** (`87e41e59a4e`): fastfat/cmlib/afd + drivers, 71 files (~500). Two
+    over-removals: cmlib/hiveinit.rs (i386/arm64 hive-recovery types) + smss-csrss/csrss.rs
+    (`let mut Status` — a WARM-build-masked i386-cfg-mut regression the gate's clean build
+    caught; hence the clean-build rule).
+  - **Batch 4** (`b8185deb011`): winsrv-rust console, 30 files (~440). The deferred
+    cfg-fragile crate — swept cleanly by running `cargo fix` on the **i386 target** (keeps
+    the `winsrv_sys::nt::*` glob i386 needs for `SetWindowLongPtrW`); 0 over-removals.
+  Real bug also fixed in batch 1: disk-rust 6 wrong STATUS_* constants (verify_constants).
+
+## Remaining work (2026-07-17, prioritized) — the plain-buildable cold-crate noise is DONE
+
+The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
+- **`static_mut_refs` (~640)** — real UB-risk lint, but `cargo fix` SKIPS it (its `&raw const`
+  suggestion is `MaybeIncorrect`: ref→ptr can change semantics). Needs a targeted transform
+  (`&STATIC`→`&raw const STATIC`, `&mut STATIC`→`&raw mut STATIC`) with per-site build
+  validation — the sites used as a `&T`/`&mut T` reference (not a pointer) break and must be
+  left alone. NOT a blind sweep. Task #6.
+- **`clashing_extern_declarations` (~1457)** — Tier-2 SIGNAL, manual audit (ABI-mismatch
+  class, `verify_ffi`'s domain). Each is a potential silent miscall on amd64/arm64. Task #4.
+- **`unused_assignments` (~1436)** — triaged in batch-1 as verified-safe noise; `cargo fix`
+  has no autofix for it. Low priority (deferred). Task #8 done as triage; suppression owed.
+- **Non-plain-buildable crate noise** (freeldr/netstack/cdfs/config/kdbg) — these need the
+  reactos-link/cmake build env, so plain `cargo fix` can't reach them; a cmake-env fix path
+  or manual sweep is owed.
+- **`-sys` crate bindgen noise** — mostly under crate-root `#![allow]` already (low-value).
+- **Blanket-`#![allow]` peel** (task #9) — the durability endgame; still owed.
 
 ## Owed follow-ups
 
