@@ -18,7 +18,7 @@ static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
+    &raw const __wine_dbch_msgina as *mut __wine_debug_channel;
 #[no_mangle]
 pub unsafe extern "system" fn WlxIsLockOk(pWlxContext: PVOID) -> BOOL {
     if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_FIXME) != 0 {

@@ -26,7 +26,7 @@ static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
+    &raw const __wine_dbch_msgina as *mut __wine_debug_channel;
 
 static mut User32TokenSourceName: [CHAR; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [CHAR; 9]>(*b"User32  \0") };

@@ -177,6 +177,26 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   clashing_extern bucket that looked mechanical (same-crate-redecl AND CONV-i386) is not — the
   loose FFI typing that co-occurs with the flagged difference is load-bearing.**
 
+- **2026-07-17 — allow-peel: `unused_unsafe` — 24 crates peeled, all own sites → ZERO.**
+  Peeled `#![allow(unused_unsafe)]` from 24 crates (ntoskrnl-rust fenced). **Key scoping finding:
+  the class is tiny in hand-written code and huge in generated bindgen** — a `-p <crate>` census
+  shows most `unused_unsafe` coming from the `ntkrnl-sys` bindgen dependency (66 in `bindgen_amd64.rs`
+  alone; those are generated + suppressed elsewhere, never hand-edit), while the crates' OWN sites
+  total just **29** (msgina 8, config/ps/kd64/ex 4 each, ob 3, kdbg 2). **17 of the 24 allows were
+  DEAD** (0 own sites — suppressing nothing, pure removal). All 29 own sites were the translation
+  pattern `unsafe { <safe array/ptr literal> }` (`SubVector(unsafe {[..]})`, `= unsafe {
+  addr_of_mut!(..)}`) — redundant in *any* edition (2024 requires `unsafe` around unsafe *ops*, not
+  safe array/ptr construction, so **no edition-migration hostility** despite 3 sitting inside an
+  `unsafe fn`). Removed the 29 `unsafe` keywords (byte-span from the ×3 census); that surfaced **9
+  `unused_braces`** (single-line `= { expr };` initializers), debraced to `= expr;`. Final ×3:
+  **0 unused_unsafe, 0 unused_braces, 0 errors**; full own-crate warning histogram delta is `unused_unsafe
+  29→0` and **every other class +0** (no new warnings). Multi-line `= { [..] }` initializers keep
+  their (non-warning) braces — `unused_braces`' multi-line heuristic doesn't flag them, goal is 0
+  warnings not 0 braces. Removes 24 blanket suppressions (durability). **Side finding (follow-up, NOT
+  this batch): `win32k-rust` leaks 118 `static_mut_refs` UNSUPPRESSED** — it never carried the
+  `static_mut_refs` allow so it was never in the peel campaign; needs the `&raw`/wrap treatment (it's
+  a boot-path crate, so careful + gated). Does not affect the "30/35 allow-carrying crates → zero"
+  claim (win32k was never allow-carrying).
 - **2026-07-17 — FNPTR-CMP follow-up CLOSED (no code change; see Owed-follow-ups entry).**
   Peel-and-census of all 34 audited allows showed every one of the 63 fn-ptr comparisons is an
   `Option<fn>` compare (bindgen renders Windows fn-ptr typedefs as `Option<extern fn>`), so

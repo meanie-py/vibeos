@@ -99,7 +99,7 @@ static CALLBACK_NAME_POWER_STATE: [u16; 21] = [
     b'r' as u16, b'S' as u16, b't' as u16, b'a' as u16, b't' as u16, b'e' as u16, 0u16,
 ]; // L"\\Callback\\PowerState"
 
-static mut ExpInitializeCallback: [SYSTEM_CALLBACKS; 4] = unsafe {
+static mut ExpInitializeCallback: [SYSTEM_CALLBACKS; 4] = {
     [
         SYSTEM_CALLBACKS {
             CallbackObject: core::ptr::addr_of_mut!(SetSystemTimeCallback),

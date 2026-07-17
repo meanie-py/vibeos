@@ -88,7 +88,7 @@ pub static mut ObpUnsecureGlobalNamesLength: ULONG = 256;
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 #[no_mangle]
 pub static OBNAME_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Session Manager\\Kernel", "ObUnsecureGlobalNames",
             core::ptr::addr_of_mut!(ObpUnsecureGlobalNamesBuffer),
             core::ptr::addr_of_mut!(ObpUnsecureGlobalNamesLength)),

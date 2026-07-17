@@ -190,7 +190,7 @@ pub static mut CmNtCSDReleaseType: ULONG = 0;
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 #[no_mangle]
 pub static INIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Windows", "CSDVersion",
             core::ptr::addr_of_mut!(CmNtCSDVersion)),
         ntkrnl_sys::cv!("Windows", "CSDReleaseType",

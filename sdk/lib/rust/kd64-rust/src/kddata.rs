@@ -374,13 +374,13 @@ pub static mut KdpPathBuffer: [i8; KDP_MSG_BUFFER_SIZE] = [0; KDP_MSG_BUFFER_SIZ
 pub static mut KdPrintDefaultCircularBuffer: [i8; KD_DEFAULT_LOG_BUFFER_SIZE] = [0; KD_DEFAULT_LOG_BUFFER_SIZE];
 
 #[no_mangle]
-pub static mut KdPrintWritePointer: *mut i8 = unsafe { core::ptr::addr_of_mut!(KdPrintDefaultCircularBuffer) as *mut i8 };
+pub static mut KdPrintWritePointer: *mut i8 = core::ptr::addr_of_mut!(KdPrintDefaultCircularBuffer) as *mut i8;
 
 #[no_mangle]
 pub static mut KdPrintRolloverCount: ULONG = 0;
 
 #[no_mangle]
-pub static mut KdPrintCircularBuffer: *mut i8 = unsafe { core::ptr::addr_of_mut!(KdPrintDefaultCircularBuffer) as *mut i8 };
+pub static mut KdPrintCircularBuffer: *mut i8 = core::ptr::addr_of_mut!(KdPrintDefaultCircularBuffer) as *mut i8;
 
 #[no_mangle]
 pub static mut KdPrintBufferSize: ULONG = KD_DEFAULT_LOG_BUFFER_SIZE as ULONG;
@@ -886,7 +886,7 @@ macro_rules! kd_filter {
 
 #[no_mangle]
 pub static KD_FILTER_CONTROL_VECTOR: ntkrnl_sys::SubVector<156> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
     kd_filter!("WIN2000", Kd_WIN2000_Mask),
     kd_filter!("SYSTEM", Kd_SYSTEM_Mask),
     kd_filter!("SMSS", Kd_SMSS_Mask),
@@ -1046,7 +1046,7 @@ pub static KD_FILTER_CONTROL_VECTOR: ntkrnl_sys::SubVector<156> =
 ] });
 
 #[no_mangle]
-pub static mut KdComponentTable: [*mut ULONG; MAX_KD_COMPONENT_TABLE_ENTRIES] = unsafe {
+pub static mut KdComponentTable: [*mut ULONG; MAX_KD_COMPONENT_TABLE_ENTRIES] = {
     [
         core::ptr::addr_of_mut!(Kd_SYSTEM_Mask),
         core::ptr::addr_of_mut!(Kd_SMSS_Mask),

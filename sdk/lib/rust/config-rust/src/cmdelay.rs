@@ -26,7 +26,7 @@ use ntkrnl_sys::opaque_ptr;
 // Registry-controlled values owned by config/cmdelay. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 pub static CMDELAY_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Session Manager\\Configuration Manager", "DelayCloseSize",
             core::ptr::addr_of_mut!(CmpDelayedCloseSize)),
     ] });
