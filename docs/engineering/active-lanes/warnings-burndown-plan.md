@@ -131,6 +131,25 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   refactor). All 3 arches build clean (0 real breakage). No generated files, no line-shift
   → **no baseline reconciliation needed** (every edit is a same-line in-place rewrite).
   Fenced (untouched): ntoskrnl-rust 53, oleaut32-rust 19, hal-rust, etc.
+- **2026-07-17 — leftover-noise re-sweep ABANDONED (negative result, worth recording).**
+  A `--keep-going` amd64 workspace census (past the freeldr/netstack plain-build bail that
+  stops `cargo fix --workspace`) showed ~265 standard-fixable warnings still present in
+  editable crates. Ran `cargo fix` per-crate over 33 of them → it yielded only 9 files and,
+  critically, **re-introduced the exact cfg-blind over-removals already fixed in batches 1/3/4**
+  (cmlib/hiveinit `#[cfg(not(bldr))]` imports, crt-startup/excpt x86_64 re-export, smss-csrss
+  `let mut Status`, winsrv `use winsrv_sys::nt::*` glob). Stashed + dropped. **Lesson: the
+  cargo-fix noise sweep IS complete.** What survives is the cfg-fragile tail that cargo fix
+  *cannot* fix correctly (that's *why* it survived) — do not re-run `cargo fix` hoping for more;
+  it will only re-botch the known-fragile files. The true remaining noise (unused_unsafe 219,
+  unused_labels 156 cfg-gated, unused_macros 71 = intentional debug shims) needs per-site hand
+  work or `#[allow]`, not autofix.
+- **2026-07-17 — clashing_extern ARGCOUNT-6 investigated.** 5 unique syms: DrawStateW +
+  FsRtlNotifyFullChangeDirectory are classifier false-positives (nested-callback commas
+  miscounted; actually same arg-count, `Option<fn>` vs `*mut c_void` = ABI-identical); TracePrint
+  is variadic-vs-fixed (benign on Windows x64 ABI); the two genuine ones — cdrom
+  `DeviceErrorHandlerForMmc` (0 vs 4) + `DevicePowerSettingCallback` (3 vs 4) — are the
+  same-crate-redecl pattern (fixable by `use`, address-of only so no live miscall). This is what
+  surfaced the 520-symbol fix vector documented below. No live bug found; all latent.
 
 ## Remaining work (2026-07-17, prioritized) — the plain-buildable cold-crate noise is DONE
 
@@ -159,9 +178,29 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
     width), ret void↔value 181 (benign, void side ignores), ABI-identical 681 (pure
     pointer-name/const-mut noise). These ~1157 are reconcile-for-tidiness, not bug-hunts.
   Distribution: fastfat 390, win32k 185, cdrom 135, cdfs 118, user32 73, classpnp 66, disk 46.
-  Most are driver crates' own local `extern "system" {}` re-declarations disagreeing with the
-  canonical `rtl-strings/cabi` / `ntkrnl-sys` decls. NOT a safe unsupervised bulk edit — it's
-  a per-symbol audit (verify_ffi's domain). Do the 6 ARGCOUNT + a CONV pass next. Task #4.
+  - **THE big safe fix vector — same-crate-redecl: 520 of 828 clashing syms (2026-07-17).**
+    The dominant shape is NOT cross-crate: it's a driver crate **forward-declaring, in its own
+    `extern "C" {}`/`extern "system" {}` block, a function that the SAME crate defines** as
+    `pub (unsafe) extern fn`. The translator emitted a cross-module forward-decl with a
+    *different* (often wrong) signature — e.g. cdrom `init.rs:79` `fn DeviceErrorHandlerForMmc();`
+    (0-arg) vs the real 4-arg `pub unsafe extern "C" fn DeviceErrorHandlerForMmc(..)` in
+    `sense.rs:253`; the forward-decl is used only for `SYM as *const c_void` (address-of, so no
+    live miscall today — but a latent footgun if ever *called* through the wrong decl).
+    Per-crate hit rate: cdrom 83/85, cdfs 63/65, fastfat 62/142, win32k 36/51, usbhub 25/28,
+    user32 26/44, mountmgr 15/17, … (full table via the census one-liner in the progress note).
+    **Fix = delete the clashing `fn SYM(..);` line from the extern block, add
+    `use crate::<module>::SYM;`** (module resolved by grepping the crate for `pub .. fn SYM(`).
+    Behaviorally this can only *fix or be neutral* (replacing a wrong decl with the correct fn
+    reference); the only failure mode is a wrong `use` path = a COMPILE error the clean-build ×3
+    oracle catches. **Why it's still deferred, not done unsupervised tonight:** the transform is
+    per-symbol extern-block *line-surgery* + module-path resolution across 40+ crates, and smoke
+    only exercises the boot path — a mechanical automation slip in a non-boot driver
+    (cdrom/cdfs/usb) could compile + boot + gate-green while being subtly wrong. Do it as a
+    **controlled per-crate POC** (start cdrom: self-contained, fns all in-crate, well-understood),
+    validate build ×3, then fan out. This is the highest-value next batch. Task #4.
+  - The rest (CONV, ARGCOUNT, scalar/void/noise buckets) as above. NOT a safe unsupervised bulk
+    edit — a per-symbol audit (verify_ffi's domain). Do the same-crate-redecl POC + 6 ARGCOUNT
+    + a CONV pass next. Task #4.
 - **`unused_assignments` (~1436)** — triaged in batch-1 as verified-safe noise; `cargo fix`
   has no autofix for it. Low priority (deferred). Task #8 done as triage; suppression owed.
 - **Non-plain-buildable crate noise** (freeldr/netstack/cdfs/config/kdbg) — these need the
