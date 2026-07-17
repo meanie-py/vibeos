@@ -21,11 +21,8 @@
 //!     null *mut u32 respectively, matching C's NULL, NULL. Correct.
 //! Unverified: Whether `_FILE_INFORMATION_CLASS_FilePositionInformation` resolves to the
 //!   correct enum discriminant (value 14) from ntkrnl_sys::ddk at compile time.
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{FILE_POSITION_INFORMATION, _FILE_INFORMATION_CLASS_FilePositionInformation, _IO_STATUS_BLOCK, _LARGE_INTEGER, HANDLE, ZwReadFile, ZwSetInformationFile};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{FILE_POSITION_INFORMATION, _FILE_INFORMATION_CLASS_FilePositionInformation, _IO_STATUS_BLOCK, _LARGE_INTEGER, HANDLE, ZwSetInformationFile};
 #[no_mangle]
 pub unsafe extern "C" fn RosSymZwReadFile(
     file_context: *mut core::ffi::c_void,

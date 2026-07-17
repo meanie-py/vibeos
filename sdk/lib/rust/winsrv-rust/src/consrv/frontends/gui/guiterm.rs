@@ -4,13 +4,6 @@ use winsrv_sys::consts::*;
 use super::helpers::*;
 use super::conwnd::*;
 use super::fullscreen::*;
-use super::guisettings::*;
-use super::text::*;
-use super::graphics::*;
-use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty, ConioCoordToPointer};
-use super::super::input::ConioProcessKey;
-use super::super::super::coninput::ConioProcessInputEvent;
-use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -358,7 +351,7 @@ pub unsafe fn GuiInit(
     let mut DesktopPath: _UNICODE_STRING = core::mem::zeroed();
     let mut DesktopConsoleThreadInfo: DESKTOP_CONSOLE_THREAD = core::mem::zeroed();
     let mut hWinSta: HWINSTA = core::ptr::null_mut();
-    let mut hDesk: HDESK;
+    let hDesk: HDESK;
 
     let mut Status: NTSTATUS;
     let mut hInputThread: HANDLE = core::ptr::null_mut();
@@ -652,13 +645,13 @@ pub unsafe extern "system" fn GuiWriteStream(
     CursorStartX: i16,
     CursorStartY: i16,
     ScrolledLines: u32,
-    Buffer: *mut u16,
-    Length: u32,
+    _Buffer: *mut u16,
+    _Length: u32,
 ) {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
-    let mut CursorEndX: i16;
-    let mut CursorEndY: i16;
-    let mut ScrollRect: RECT;
+    let CursorEndX: i16;
+    let CursorEndY: i16;
+    let ScrollRect: RECT;
 
     if GuiData.is_null() || (*GuiData).hWindow.is_null() {
         return;
@@ -964,7 +957,7 @@ pub unsafe fn GuiSetPalette(
 ) -> BOOL {
 
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
-    let mut OldPalette: HPALETTE;
+    let OldPalette: HPALETTE;
 
     if PaletteHandle.is_null() {
         return 0;

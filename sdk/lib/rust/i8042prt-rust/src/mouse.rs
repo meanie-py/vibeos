@@ -1,4 +1,3 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -529,7 +528,7 @@ unsafe fn i8042MouCallIsrHook(
 	mut Input: UCHAR,
 	ToReturn: PBOOLEAN,
 ) -> BOOLEAN {
-	let mut HookReturn: BOOLEAN;
+	let HookReturn: BOOLEAN;
 	let mut HookContinue: BOOLEAN = 0u8;
 
 	if let Some(IsrRoutine) = (*DeviceExtension).MouseHook.IsrRoutine {

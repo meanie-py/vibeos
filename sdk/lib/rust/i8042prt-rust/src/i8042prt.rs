@@ -1,24 +1,21 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{PDRIVER_DISPATCH as DRIVER_DISPATCH, PDRIVER_INITIALIZE as DRIVER_INITIALIZE, PDRIVER_STARTIO as DRIVER_STARTIO, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoAllocateDriverObjectExtension, IoAttachDeviceToDeviceStackSafe, IoBuildDeviceIoControlRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetDriverObjectExtension, KEVENT, KeAcquireInterruptSpinLock, KeInitializeEvent, KeReleaseInterruptSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PUNICODE_STRING};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoAllocateDriverObjectExtension, IoAttachDeviceToDeviceStackSafe, IoBuildDeviceIoControlRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetDriverObjectExtension, KEVENT, KeAcquireInterruptSpinLock, KeInitializeEvent, KeReleaseInterruptSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PUNICODE_STRING};
 // FORCEINLINE accessors (no exported symbol — must use the Rust inline impls).
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation};
 use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
-use core::ffi::c_void;
 use crate::i8042prt_h::*;
 
 // pub(crate) siblings (importable by path)
 use crate::misc::DuplicateUnicodeString;
 use crate::registry::ReadRegistryEntries;
-use crate::readwrite::{i8042Flush, i8042Write};
+use crate::readwrite::i8042Write;
 // i8042PacketDpc lives in keyboard.rs; i8042StartPacket/i8042PacketIsr are
 // defined locally in this module.
-use crate::keyboard::i8042PacketDpc;
 
 // #[no_mangle] siblings: not importable by module path (they live at crate root
 // for codegen), so link them by symbol via extern blocks.

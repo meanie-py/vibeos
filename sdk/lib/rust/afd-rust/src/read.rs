@@ -1,6 +1,5 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -322,7 +321,7 @@ pub unsafe extern "C" fn ReceiveComplete(
 }
 
 unsafe fn receive_complete_impl(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
@@ -499,10 +498,10 @@ pub unsafe extern "system" fn AfdConnectedSocketReadData(
     let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut RecvReq: PAFD_RECV_INFO;
+    let RecvReq: PAFD_RECV_INFO;
     let mut TotalBytesCopied: UINT = 0;
-    let mut DatagramRecv: PAFD_STORED_DATAGRAM;
-    let mut ListEntry: PLIST_ENTRY;
+    let DatagramRecv: PAFD_STORED_DATAGRAM;
+    let ListEntry: PLIST_ENTRY;
     let mut LockMode: KPROCESSOR_MODE = 0;
 
     UNREFERENCED_PARAMETER(DeviceObject as PVOID);
@@ -835,16 +834,16 @@ unsafe fn packet_socket_recv_complete_impl(
 }
 #[no_mangle]
 pub unsafe extern "system" fn AfdPacketSocketReadData(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut RecvReq: PAFD_RECV_INFO_UDP;
-    let mut ListEntry: PLIST_ENTRY;
-    let mut DatagramRecv: PAFD_STORED_DATAGRAM;
+    let RecvReq: PAFD_RECV_INFO_UDP;
+    let ListEntry: PLIST_ENTRY;
+    let DatagramRecv: PAFD_STORED_DATAGRAM;
     let mut LockMode: KPROCESSOR_MODE = 0;
 
     AFD_DbgPrint!(

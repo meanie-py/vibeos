@@ -1099,10 +1099,10 @@ pub unsafe extern "system" fn FatOplockRequest(
         }
 
         // Check DELETE_ON_CLOSE
-        if ((FsControlCode == FSCTL_REQUEST_FILTER_OPLOCK)
+        if (FsControlCode == FSCTL_REQUEST_FILTER_OPLOCK)
             || (FsControlCode == FSCTL_REQUEST_BATCH_OPLOCK)
             || ((FsControlCode == FSCTL_REQUEST_OPLOCK)
-                && FlagOn((*InputBuffer).RequestedOplockLevel, OPLOCK_LEVEL_CACHE_HANDLE) != 0))
+                && FlagOn((*InputBuffer).RequestedOplockLevel, OPLOCK_LEVEL_CACHE_HANDLE) != 0)
         {
             if FlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) != 0 {
                 Status = STATUS_DELETE_PENDING;

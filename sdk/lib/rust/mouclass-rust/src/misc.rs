@@ -1,13 +1,11 @@
 use crate::mouclass_h::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, PCUNICODE_STRING, PDEVICE_OBJECT, PIRP, PUNICODE_STRING, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, PCUNICODE_STRING, PDEVICE_OBJECT, PIRP, _UNICODE_STRING};
 use ntkrnl_sys::inline::tier1::IoSkipCurrentIrpStackLocation;
-use core::ffi::c_void;
 
 #[no_mangle]
 pub unsafe extern "system" fn ForwardIrpAndForget(

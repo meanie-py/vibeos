@@ -707,7 +707,7 @@ pub unsafe extern "system" fn FatCheckDirtyBit(
         Vcb,
         0,
         core::mem::size_of::<PACKED_BOOT_SECTOR>() as u32,
-        (&mut BootSectorBcb as *mut PBCB as *mut *mut BCB),
+        &mut BootSectorBcb as *mut PBCB as *mut *mut BCB ,
         (&mut BootSector as *mut *mut PACKED_BOOT_SECTOR as *mut *mut u8).cast(),
     );
 
@@ -901,7 +901,7 @@ pub unsafe extern "system" fn FatPerformVerify(
         Device,
     );
 
-    IrpSp = (IoGetCurrentIrpStackLocation((Irp).cast()).cast());
+    IrpSp = IoGetCurrentIrpStackLocation((Irp).cast()).cast() ;
 
     // Vcb = &CONTAINING_RECORD( IrpSp->DeviceObject, VOLUME_DEVICE_OBJECT, DeviceObject )->Vcb;
     {
@@ -932,7 +932,7 @@ pub unsafe extern "system" fn FatPerformVerify(
                 Status = STATUS_WRONG_VOLUME;
             }
 
-            if ((VcbGood != (*Vcb).VcbCondition) && (0 == (*Vcb).OpenFileCount)) {
+            if (VcbGood != (*Vcb).VcbCondition) && (0 == (*Vcb).OpenFileCount)  {
                 FatReleaseVcb(*IrpContext, Vcb);
 
                 FatAcquireExclusiveGlobal(*IrpContext);

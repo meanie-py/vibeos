@@ -1,6 +1,5 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -9,7 +8,6 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IRP, KPROCESSOR_MODE, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};
-use core::ffi::c_void;
 
 extern "C" {
     fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut KPROCESSOR_MODE) -> *mut core::ffi::c_void;
@@ -108,7 +106,7 @@ pub unsafe extern "system" fn AfdSetConnectOptions(
 
 #[no_mangle]
 pub unsafe extern "system" fn AfdSetConnectOptionsSize(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> i32 {
@@ -153,7 +151,7 @@ pub unsafe extern "system" fn AfdSetConnectOptionsSize(
 
 #[no_mangle]
 pub unsafe extern "system" fn AfdGetConnectData(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
@@ -394,7 +392,7 @@ unsafe extern "C" fn StreamSocketConnectSendComplete(
 }
 
 unsafe fn stream_socket_connect_send_complete_impl(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
@@ -854,7 +852,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
     let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut ConnectReq: PAFD_SUPER_CONNECT_INFO;
+    let ConnectReq: PAFD_SUPER_CONNECT_INFO;
     let mut LockMode: KPROCESSOR_MODE = 0;
     let BufferSize: u32 = (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength;
 

@@ -92,8 +92,8 @@ unsafe fn GetContextSendHandler(
 unsafe fn GetContextManipulateHandler(
     State: *mut DBGKD_MANIPULATE_STATE64,
     MessageData: PSTRING,
-    MessageLength: *mut u32,
-    KdContext: PKD_CONTEXT
+    _MessageLength: *mut u32,
+    _KdContext: PKD_CONTEXT
 ) -> KDSTATUS {
     (*State).ApiNumber = DbgKdGetContextApi;
     (*State).Processor = CurrentStateChange.Processor;
@@ -109,7 +109,7 @@ unsafe fn GetContextManipulateHandler(
 unsafe fn SetContextSendHandler(
     PacketType: ULONG,
     MessageHeader: PSTRING,
-    MessageData: PSTRING
+    _MessageData: PSTRING
 ) -> BOOLEAN {
     let State = (*MessageHeader).Buffer as *mut DBGKD_MANIPULATE_STATE64;
 
@@ -129,8 +129,8 @@ unsafe fn SetContextSendHandler(
 pub unsafe fn SetContextManipulateHandler(
     State: *mut DBGKD_MANIPULATE_STATE64,
     MessageData: PSTRING,
-    MessageLength: *mut u32,
-    KdContext: PKD_CONTEXT
+    _MessageLength: *mut u32,
+    _KdContext: PKD_CONTEXT
 ) -> KDSTATUS {
     (*State).ApiNumber = DbgKdSetContextApi;
     (*State).Processor = CurrentStateChange.Processor;
@@ -209,7 +209,7 @@ unsafe fn send_kd_debug_io(
 }
 unsafe fn send_kd_state_manipulate(
     State: *mut DBGKD_MANIPULATE_STATE64,
-    MessageData: PSTRING) {
+    _MessageData: PSTRING) {
     match (*State).ApiNumber {
         _ => {
             KDDBGPRINT!(b"Unknown ApiNumber %u.\n\0".as_ptr() as *const i8, (*State).ApiNumber);
@@ -223,7 +223,7 @@ pub unsafe fn ContinueManipulateStateHandler(
     State: *mut DBGKD_MANIPULATE_STATE64,
     MessageData: PSTRING,
     MessageLength: *mut u32,
-    KdContext: PKD_CONTEXT
+    _KdContext: PKD_CONTEXT
 ) -> KDSTATUS {
     (*State).ApiNumber = DbgKdContinueApi;
     (*State).ReturnStatus = STATUS_SUCCESS;
@@ -245,7 +245,7 @@ pub unsafe fn ContinueManipulateStateHandler(
 unsafe fn GetVersionSendHandler(
     PacketType: u32,
     MessageHeader: PSTRING,
-    MessageData: PSTRING,
+    _MessageData: PSTRING,
 ) -> u8 {
     let State = (*MessageHeader).Buffer as *mut DBGKD_MANIPULATE_STATE64;
     let DebuggerDataList: PLIST_ENTRY;
@@ -277,9 +277,9 @@ unsafe fn GetVersionSendHandler(
 
 unsafe fn GetVersionManipulateStateHandler(
     State: *mut DBGKD_MANIPULATE_STATE64,
-    MessageData: PSTRING,
-    MessageLength: *mut u32,
-    KdContext: PKD_CONTEXT,
+    _MessageData: PSTRING,
+    _MessageLength: *mut u32,
+    _KdContext: PKD_CONTEXT,
 ) -> KDSTATUS {
     (*State).ApiNumber = DbgKdGetVersionApi;
     (*State).Processor = CurrentStateChange.Processor;
@@ -294,7 +294,7 @@ unsafe fn GetVersionManipulateStateHandler(
 unsafe fn FirstSendHandler(
     PacketType: u32,
     MessageHeader: PSTRING,
-    MessageData: PSTRING,
+    _MessageData: PSTRING,
 ) -> u8 {
 
     let StateChange = (*MessageHeader).Buffer as *mut DBGKD_ANY_WAIT_STATE_CHANGE;
@@ -386,7 +386,7 @@ pub unsafe extern "system" fn KdSendPacket(
     PacketType: ULONG,
     MessageHeader: PSTRING,
     MessageData: PSTRING,
-    KdContext: PKD_CONTEXT) {
+    _KdContext: PKD_CONTEXT) {
     if PacketType == PACKET_TYPE_KD_DEBUG_IO {
         send_kd_debug_io((*MessageHeader).Buffer as *mut DBGKD_DEBUG_IO, MessageData);
         return;

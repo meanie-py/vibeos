@@ -1,4 +1,3 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -6,7 +5,6 @@ use ntkrnl_sys::ddk::{CCHAR, GUID, IoCreateDevice, IoDeleteDevice, PCSTR, PDEVIC
 // IoGetCurrentIrpStackLocation / IoSkipCurrentIrpStackLocation are INLINE DDK
 // helpers (not ntoskrnl exports) — use the ntkrnl-sys inline impls (as beep does).
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation};
-use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(format: *const i8, ...) -> i32;
@@ -248,7 +246,7 @@ pub unsafe extern "system" fn SwDispatchSystemControl(
 
 #[no_mangle]
 pub unsafe extern "system" fn SwDispatchDeviceControl(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
     unsafe {
@@ -393,8 +391,8 @@ pub unsafe extern "system" fn SwDispatchCreate(
 
 #[no_mangle]
 pub unsafe extern "system" fn SwDispatchClose(
-    mut DeviceObject: PDEVICE_OBJECT,
-    mut Irp: PIRP,
+    _DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
 ) -> NTSTATUS {
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
@@ -465,12 +463,12 @@ pub unsafe extern "system" fn SwAddDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SwUnload(DriverObject: PDRIVER_OBJECT) {}
+pub unsafe extern "system" fn SwUnload(_DriverObject: PDRIVER_OBJECT) {}
 
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
-    RegistryPathName: PUNICODE_STRING,
+    _RegistryPathName: PUNICODE_STRING,
 ) -> NTSTATUS {
     const IRP_MJ_CREATE: u32 = 0x00;
     const IRP_MJ_CLOSE: u32 = 0x02;

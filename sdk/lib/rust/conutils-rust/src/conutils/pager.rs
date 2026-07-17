@@ -199,7 +199,7 @@ unsafe fn ConPagerWorker(
     let mut i_column: u32 = (*pager).iColumn;
 
     let n_code_page: u32 = GetConsoleOutputCP();
-    let is_cjk: i32 = if (n_code_page == CP_SHIFTJIS || n_code_page == CP_HANGUL || n_code_page == CP_BIG5 || n_code_page == CP_GB2312) { 1 } else { 0 };
+    let is_cjk: i32 = if n_code_page == CP_SHIFTJIS || n_code_page == CP_HANGUL || n_code_page == CP_BIG5 || n_code_page == CP_GB2312  { 1 } else { 0 };
     let mut n_width_of_char: u32 = 1;
     let mut is_double_width_char_trailing: i32 = 0;
 

@@ -136,9 +136,9 @@ pub unsafe extern "system" fn SendOnlineNotificationWorker(Parameter: *mut core:
     }
     if !IsListEmpty(&raw mut (*DeviceExtension).OnlineNotificationListHead) {
         Head = RemoveHeadList(&raw mut (*DeviceExtension).OnlineNotificationListHead);
-        NewWorkItem = ((Head as usize).wrapping_sub(
+        NewWorkItem = (Head as usize).wrapping_sub(
             core::mem::offset_of!(ONLINE_NOTIFICATION_WORK_ITEM, WorkItem.List),
-        ) as *mut ONLINE_NOTIFICATION_WORK_ITEM);
+        ) as *mut ONLINE_NOTIFICATION_WORK_ITEM ;
         KeReleaseSpinLock(&raw mut (*DeviceExtension).WorkerLock as *mut _, OldIrql);
         (*NewWorkItem).WorkItem.List.Blink = core::ptr::null_mut();
         (*NewWorkItem).WorkItem.List.Flink = core::ptr::null_mut();

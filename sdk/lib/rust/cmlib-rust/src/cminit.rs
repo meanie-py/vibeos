@@ -17,8 +17,8 @@ pub unsafe extern "system" fn CmCreateRootNode(
     Name: PCWSTR,
 ) -> u8 {
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
-    let mut KeyCell: PCM_KEY_NODE;
-    let mut RootCellIndex: HCELL_INDEX;
+    let KeyCell: PCM_KEY_NODE;
+    let RootCellIndex: HCELL_INDEX;
 
     const CM_KEY_NODE_SIGNATURE: u16 = 0x6B6E;
     const KEY_HIVE_ENTRY: u16 = 0x0004;

@@ -2380,7 +2380,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
 
         FatVerifyIndexIsValid(IrpContext, Vcb, FatIndex);
 
-        if ((*Vcb).AllocationSupport.FatIndexBitSize == 12) {
+        if (*Vcb).AllocationSupport.FatIndexBitSize == 12  {
             if (*Context).Bcb.is_null() {
                 FatReadVolumeFile(
                     IrpContext,
@@ -2393,7 +2393,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
             }
 
             FatLookup12BitEntry((*Context).PinnedPage as *mut u8, FatIndex, FatEntry);
-        } else if ((*Vcb).AllocationSupport.FatIndexBitSize == 32) {
+        } else if (*Vcb).AllocationSupport.FatIndexBitSize == 32  {
             let OffsetIntoVolumeFile: u32;
             let PageEntryOffset: u32;
 

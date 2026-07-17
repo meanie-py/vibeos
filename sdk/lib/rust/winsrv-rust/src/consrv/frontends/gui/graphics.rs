@@ -1,17 +1,16 @@
-use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 use super::helpers::*;
-use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty};
+use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight};
 
 pub unsafe extern "C" fn GuiCopyFromGraphicsBuffer(
     Buffer: PGRAPHICS_SCREEN_BUFFER,
     GuiData: PGUI_CONSOLE_DATA,
 ) {
-    let mut hMemDC: HDC;
-    let mut hBitmapTarget: HBITMAP;
+    let hMemDC: HDC;
+    let hBitmapTarget: HBITMAP;
     let hBitmapOld: HBITMAP;
-    let mut hPalette: HPALETTE;
+    let hPalette: HPALETTE;
     let hPaletteOld: HPALETTE;
     let selWidth: ULONG;
     let selHeight: ULONG;
@@ -79,8 +78,8 @@ pub unsafe extern "C" fn GuiCopyFromGraphicsBuffer(
 }
 
 pub unsafe extern "C" fn GuiPasteToGraphicsBuffer(
-    Buffer: PGRAPHICS_SCREEN_BUFFER,
-    GuiData: PGUI_CONSOLE_DATA,
+    _Buffer: PGRAPHICS_SCREEN_BUFFER,
+    _GuiData: PGUI_CONSOLE_DATA,
 ) {
 }
 

@@ -264,14 +264,14 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
 
         // PAGED_CODE();  -- left as comment, expands to nothing in release
         const Dbg: u32 = 0; // DEBUG_TRACE_EA
-        DebugTrace(1, Dbg, (b"FatGetNeedEaCount ...\n\0".as_ptr() as *const i8), 0i32);
+        DebugTrace(1, Dbg, b"FatGetNeedEaCount ...\n\0".as_ptr() as *const i8 , 0i32);
 
         if (*Dirent).__bindgen_anon_1.bindgen_union_field == 0 {
             *NeedEaCount = 0;
             DebugTrace(
                 -1,
                 Dbg,
-                (b"FatGetNeedEaCount -> %08lx\n\0".as_ptr() as *const i8),
+                b"FatGetNeedEaCount -> %08lx\n\0".as_ptr() as *const i8 ,
                 1i32, // TRUE
             );
             return;
@@ -304,7 +304,7 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
                 DebugTrace(
                     0,
                     Dbg,
-                    (b"FatGetNeedEaCount:  Ea file doesn't exist\n\0".as_ptr() as *const i8),
+                    b"FatGetNeedEaCount:  Ea file doesn't exist\n\0".as_ptr() as *const i8 ,
                     0i32,
                 );
                 FatRaiseStatus(IrpContext as *mut IRP_CONTEXT, STATUS_NO_EAS_ON_FILE);
@@ -345,7 +345,7 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
         DebugTrace(
             -1,
             Dbg,
-            (b"FatGetNeedEaCount:  NeedEaCount -> %08lx\n\0".as_ptr() as *const i8),
+            b"FatGetNeedEaCount:  NeedEaCount -> %08lx\n\0".as_ptr() as *const i8 ,
             *NeedEaCount,
         );
     }
@@ -1136,7 +1136,7 @@ pub unsafe extern "system" fn FatReadEaSet(
         cb_list = GetcbList(ea_set) as u32;
 
         if ReturnEntireSet != 0 && cb_list > bytes_per_cluster {
-            cb_list = ((cb_list + 0x1a /* EA_CBLIST_OFFSET */ + bytes_per_cluster - 1) & !(bytes_per_cluster - 1));
+            cb_list = (cb_list + 0x1a /* EA_CBLIST_OFFSET */ + bytes_per_cluster - 1) & !(bytes_per_cluster - 1) ;
 
             FatUnpinEaRange(IrpContext, (EaSetRange).cast());
 
@@ -1911,7 +1911,7 @@ pub unsafe extern "system" fn FatAddEaSet(
         FatMarkEaRangeDirty(IrpContext, VirtualEaFile, EaSetRange);
 
         Count = MAX_EA_BASE_INDEX as u32 - EaHeaderIndex as u32 - 1;
-        NextEaOffset = &mut (*EaHeader).EaBaseTable[(EaHeaderIndex as usize + 1)] as *mut u16;
+        NextEaOffset = &mut (*EaHeader).EaBaseTable[EaHeaderIndex as usize + 1 ] as *mut u16;
         while Count > 0 {
             Count = Count.wrapping_sub(1);
             *NextEaOffset = (*NextEaOffset).wrapping_add((EaSetClusterCount as u32) as u16);

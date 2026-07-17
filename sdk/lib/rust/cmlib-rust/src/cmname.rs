@@ -1,7 +1,4 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{HCELL_INDEX, PCELL_DATA, PCHILD_LIST, PCM_KEY_VALUE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, RtlCompareUnicodeString, RtlUpcaseUnicodeChar, _UNICODE_STRING};
 use crate::glue::{HvGetCell, HvReleaseCell}; // cdecl Hv* used by CmpFindNameInList
 
@@ -88,7 +85,7 @@ pub unsafe extern "system" fn CmpNameSize(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpCompressedNameSize(
-    Name: PWCHAR,
+    _Name: PWCHAR,
     Length: ULONG,
 ) -> USHORT {
     (Length * core::mem::size_of::<WCHAR>() as ULONG) as USHORT
@@ -105,7 +102,7 @@ pub unsafe extern "system" fn CmpCompareCompressedName(
     let mut chr1: u16;
     let mut chr2: u16;
     let mut SearchLength: u16;
-    let Result: i32;
+    let _Result: i32;
 
     p = (*SearchName).Buffer;
     pp = CompressedName as *mut u8;

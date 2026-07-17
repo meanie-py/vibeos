@@ -9,7 +9,6 @@
 //! at the IR level the call site is the same per arch.
 
 use winsrv_sys::winsrv::*;
-use winsrv_sys::nt::*;
 
 #[inline(always)]
 pub unsafe fn TermReadStream(

@@ -132,12 +132,12 @@ pub unsafe extern "system" fn KdD3Transition() -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdSave(SleepTransition: BOOLEAN) -> NTSTATUS {
+pub unsafe extern "system" fn KdSave(_SleepTransition: BOOLEAN) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdRestore(SleepTransition: u8) -> i32 {
+pub unsafe extern "system" fn KdRestore(_SleepTransition: u8) -> i32 {
     STATUS_SUCCESS
 }
 
@@ -166,7 +166,7 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
     let mut ComPortNumber: ULONG = 2;
     let mut ComPortBaudRate: ULONG = 115200;
 
-    let mut CommandLine: PCHAR;
+    let CommandLine: PCHAR;
     let mut PortString: PCHAR;
     let mut BaudString: PCHAR;
     let mut IrqString: PCHAR;
@@ -252,7 +252,7 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
 
 #[no_mangle]
 pub unsafe extern "system" fn KdDebuggerInitialize1(
-    LoaderBlock: PLOADER_PARAMETER_BLOCK,
+    _LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }

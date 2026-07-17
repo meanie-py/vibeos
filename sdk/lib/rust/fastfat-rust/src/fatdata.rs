@@ -310,9 +310,9 @@ pub unsafe extern "system" fn FatProcessException(
     FatResetExceptionState(IrpContext);
 
     // If this is an Mdl write request, then take care of the Mdl here.
-    if ((*IrpContext).MajorFunction as u32 == IRP_MJ_WRITE &&
+    if (*IrpContext).MajorFunction as u32 == IRP_MJ_WRITE &&
         FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_COMPLETE_MDL) == (IRP_MN_COMPLETE_MDL) as i32 &&
-        !(*Irp).MdlAddress.is_null())
+        !(*Irp).MdlAddress.is_null()
     {
         let LocalIrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
         CcMdlWriteAbort((*LocalIrpSp).FileObject, (*Irp).MdlAddress);

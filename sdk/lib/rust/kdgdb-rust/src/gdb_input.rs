@@ -191,8 +191,8 @@ unsafe fn handle_gdb_set_thread() -> KDSTATUS {
 }
 
 unsafe fn handle_gdb_thread_alive() -> KDSTATUS {
-    let mut Pid: ULONG_PTR;
-    let mut Tid: ULONG_PTR;
+    let Pid: ULONG_PTR;
+    let Tid: ULONG_PTR;
     let Thread: PETHREAD;
     let Status: KDSTATUS;
 
@@ -469,7 +469,7 @@ unsafe fn handle_gdb_read_mem(
     State: *mut DBGKD_MANIPULATE_STATE64,
     MessageData: PSTRING,
     MessageLength: *mut u32,
-    KdContext: PKD_CONTEXT,
+    _KdContext: PKD_CONTEXT,
 ) -> KDSTATUS {
 
     (*State).ApiNumber = DbgKdReadVirtualMemoryApi;
@@ -522,7 +522,7 @@ unsafe fn handle_gdb_read_mem(
 unsafe fn WriteMemorySendHandler(
     PacketType: ULONG,
     MessageHeader: PSTRING,
-    MessageData: PSTRING) -> BOOLEAN {
+    _MessageData: PSTRING) -> BOOLEAN {
     let State = (*MessageHeader).Buffer as *mut DBGKD_MANIPULATE_STATE64;
 
     if PacketType != PACKET_TYPE_KD_STATE_MANIPULATE
@@ -574,8 +574,8 @@ unsafe fn WriteMemorySendHandler(
 unsafe fn handle_gdb_write_mem(
     State: *mut DBGKD_MANIPULATE_STATE64,
     MessageData: PSTRING,
-    MessageLength: *mut u32,
-    KdContext: PKD_CONTEXT,
+    _MessageLength: *mut u32,
+    _KdContext: PKD_CONTEXT,
 ) -> KDSTATUS {
     static mut OutBuffer: [u8; 0x800] = [0; 0x800];
     let mut BufferLength: u32;
@@ -658,7 +658,7 @@ unsafe fn handle_gdb_write_mem(
 unsafe fn WriteBreakPointSendHandler(
     PacketType: u32,
     MessageHeader: PSTRING,
-    MessageData: PSTRING
+    _MessageData: PSTRING
 ) -> u8 {
     let State = (*MessageHeader).Buffer as *mut DBGKD_MANIPULATE_STATE64;
 
@@ -696,7 +696,7 @@ unsafe fn handle_gdb_insert_breakpoint(
     State: *mut DBGKD_MANIPULATE_STATE64,
     MessageData: PSTRING,
     MessageLength: *mut u32,
-    KdContext: PKD_CONTEXT,
+    _KdContext: PKD_CONTEXT,
 ) -> KDSTATUS {
     (*State).ReturnStatus = STATUS_SUCCESS;
     (*State).Processor = CurrentStateChange.Processor;
@@ -749,7 +749,7 @@ unsafe fn handle_gdb_insert_breakpoint(
 unsafe fn RestoreBreakPointSendHandler(
     PacketType: ULONG,
     MessageHeader: PSTRING,
-    MessageData: PSTRING,
+    _MessageData: PSTRING,
 ) -> BOOLEAN {
 
     let State = (*MessageHeader).Buffer as *mut DBGKD_MANIPULATE_STATE64;
@@ -789,7 +789,7 @@ unsafe fn handle_gdb_remove_breakpoint(
     State: *mut DBGKD_MANIPULATE_STATE64,
     MessageData: PSTRING,
     MessageLength: *mut u32,
-    KdContext: PKD_CONTEXT,
+    _KdContext: PKD_CONTEXT,
 ) -> KDSTATUS {
     (*State).ReturnStatus = STATUS_SUCCESS;
     (*State).Processor = CurrentStateChange.Processor;
