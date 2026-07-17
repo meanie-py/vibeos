@@ -143,8 +143,25 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
   so it's a separate semantic pass, not mechanical. **(b)** fenced hot-lane sites (ntoskrnl
   53, oleaut32 19, hal) — do when those lanes are quiet. **(c)** freeldr/netstack sites (don't
   plain-build). The transform driver is reusable: `smr_apply_json.py` + `smr_revert_broken.py`.
-- **`clashing_extern_declarations` (~1457)** — Tier-2 SIGNAL, manual audit (ABI-mismatch
-  class, `verify_ffi`'s domain). Each is a potential silent miscall on amd64/arm64. Task #4.
+- **`clashing_extern_declarations` (1457) — TRIAGED 2026-07-17 (classifier: `clash_classify.py`).**
+  Parses the two `expected/found` fn-signature notes and buckets each clash by ABI impact:
+  - **CONV `C`↔`system` — 277 sites / 207 syms — the priority, i386-REAL.** On i386
+    `"system"`=stdcall (callee cleans stack), `"C"`=cdecl (caller cleans) → calling one
+    through the other's decl is a stack-cleanup mismatch = corruption. On amd64/arm64 the two
+    conventions are identical, so it's *invisible there* and the ×3 gate stays green — a
+    latent i386-only footgun on less-exercised paths. Fix = make each local re-decl's `extern`
+    string match the true export (NTAPI → `"system"`; genuine cdecl helpers → `"C"`); build
+    oracle catches wrong guesses.
+  - **ARGCOUNT differs — 6 sites — the highest-value needles.** A different *arg count* is
+    almost always a real bug (a caller passing the wrong number of args) or a macro-shim
+    artifact. Investigate these 6 first — cheap, potentially real.
+  - scalar size/class 295 (BOOLEAN `u8` vs BOOL `i32` etc. — mostly benign return-register
+    width), ret void↔value 181 (benign, void side ignores), ABI-identical 681 (pure
+    pointer-name/const-mut noise). These ~1157 are reconcile-for-tidiness, not bug-hunts.
+  Distribution: fastfat 390, win32k 185, cdrom 135, cdfs 118, user32 73, classpnp 66, disk 46.
+  Most are driver crates' own local `extern "system" {}` re-declarations disagreeing with the
+  canonical `rtl-strings/cabi` / `ntkrnl-sys` decls. NOT a safe unsupervised bulk edit — it's
+  a per-symbol audit (verify_ffi's domain). Do the 6 ARGCOUNT + a CONV pass next. Task #4.
 - **`unused_assignments` (~1436)** — triaged in batch-1 as verified-safe noise; `cargo fix`
   has no autofix for it. Low priority (deferred). Task #8 done as triage; suppression owed.
 - **Non-plain-buildable crate noise** (freeldr/netstack/cdfs/config/kdbg) — these need the
