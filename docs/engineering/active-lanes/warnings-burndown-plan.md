@@ -190,14 +190,20 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
     user32 26/44, mountmgr 15/17, … (full table via the census one-liner in the progress note).
     **Fix = delete the clashing `fn SYM(..);` line from the extern block, add
     `use crate::<module>::SYM;`** (module resolved by grepping the crate for `pub .. fn SYM(`).
-    Behaviorally this can only *fix or be neutral* (replacing a wrong decl with the correct fn
-    reference); the only failure mode is a wrong `use` path = a COMPILE error the clean-build ×3
-    oracle catches. **Why it's still deferred, not done unsupervised tonight:** the transform is
-    per-symbol extern-block *line-surgery* + module-path resolution across 40+ crates, and smoke
-    only exercises the boot path — a mechanical automation slip in a non-boot driver
-    (cdrom/cdfs/usb) could compile + boot + gate-green while being subtly wrong. Do it as a
-    **controlled per-crate POC** (start cdrom: self-contained, fns all in-crate, well-understood),
-    validate build ×3, then fan out. This is the highest-value next batch. Task #4.
+    **POC RESULT 2026-07-17: NOT mechanically fixable — the loose forward-decl sigs are
+    load-bearing.** Ran the full transform on cdrom (83 decls → `use crate::<mod>::SYM`, clean
+    tool run, `clashing_extern` dropped 83→0). Build ×3 = **80 × E0308 mismatched-types.** The
+    forward-decls are NOT used only for address-of as first assumed — they're used for **calls**,
+    and the call sites were written to the forward-decl's *deliberately-loose* signature
+    (`*mut c_void`, generic WDF types) while the real fn takes specific struct pointers. The clash
+    is ABI-compatible (pointer=pointer, so runtime-correct *today*), but re-pointing the name at
+    the real typed fn makes every call site fail Rust type-checking. So the "fix" is not
+    remove-decl-+-`use`; it's **per-call-site** (cast each arg to the real type, or loosen the
+    real fn — both real work). Reverted (stashed+dropped). **Lesson: clashing_extern is a genuine
+    per-symbol AND per-call-site audit; there is no mechanical decl-replacement sweep.** The tool
+    (`clash_fix_crate.py`) + this result are the starting point for a *supervised* audit that also
+    fixes call sites. Do the true-signal buckets (CONV i386, the handful of real ARGCOUNT) by hand
+    first; the ABI-benign majority is low-value churn that needs call-site work per symbol. Task #4.
   - The rest (CONV, ARGCOUNT, scalar/void/noise buckets) as above. NOT a safe unsupervised bulk
     edit — a per-symbol audit (verify_ffi's domain). Do the same-crate-redecl POC + 6 ARGCOUNT
     + a CONV pass next. Task #4.
