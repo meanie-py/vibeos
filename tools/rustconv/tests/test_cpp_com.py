@@ -167,9 +167,12 @@ def test_widl_function_array_parameter_decays_to_pointer(tmp_path: Path):
     assert "commands: *mut OLECMD" in render_interface(spec)
 
 
-def test_cpp_scanner_function_array_parameter_decays_to_pointer(tmp_path: Path):
+@pytest.mark.parametrize("declarator", ["commands[]", "commands []"])
+def test_cpp_scanner_function_array_parameter_decays_to_pointer(
+    tmp_path: Path, declarator: str
+):
     source = tmp_path / "array-param.cpp"
-    source.write_text("HRESULT C::Query(ULONG count, OLECMD commands[]) { return S_OK; }")
+    source.write_text(f"HRESULT C::Query(ULONG count, OLECMD {declarator}) {{ return S_OK; }}")
     method = scan_file(source).functions[0]
     assert method.params == [("ULONG", "count"), ("OLECMD *", "commands")]
 

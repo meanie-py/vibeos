@@ -55,6 +55,8 @@ list(APPEND SOURCE
     # retains CPrintersEnum and three explicit source-local Rust bridge helpers.
     folders/CPrinterFolder.cpp
     # folders/CAdminToolsFolder.cpp — replaced by Rust (shell32-rust/src/admin_tools_folder.rs); cohab via libshell32_rust.a
+    # Hybrid cohab: CNetFolder activation/methods are Rust-owned; this file
+    # retains network enumeration, context-menu callbacks, and explicit bridges.
     folders/CNetFolder.cpp
     # folders/CFontsFolder.cpp — replaced by Rust (shell32-rust/src/fonts_folder.rs); cohab via libshell32_rust.a
     folders/CControlPanelFolder.cpp

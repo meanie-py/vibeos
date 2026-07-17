@@ -34,3 +34,5 @@ types and materializes trailing C++ default arguments before prompting. Ambiguit
 before payment: never ask a model to guess compiler semantics, ABI, constants, or layout.
 WIDL-declared interface inheritance also owns physical slot aliasing, so a COM map exposing
 both `IContextMenu2` and `IContextMenu` produces one derived slot and deterministic QI routes.
+C/C++ function-parameter arrays decay to pointers for both `name[]` and `name []` spellings;
+declarator whitespace must never leak into a model prompt or generated Rust signature.

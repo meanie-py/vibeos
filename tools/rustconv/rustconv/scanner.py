@@ -540,6 +540,22 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                         # C spelling in an out-of-line C++ definition. In C++
                         # this macro expands to void; the receiver is implicit.
                         continue
+                    spaced_array = re.fullmatch(
+                        r"(?P<type>.+?)\s+(?P<name>[A-Za-z_]\w*)\s*\[[^]]*\]",
+                        param_text,
+                    )
+                    if spaced_array:
+                        # A space between the identifier and brackets makes
+                        # rsplit() see "[]" as the name. Function-parameter
+                        # arrays still decay to pointers regardless of that
+                        # harmless C/C++ spelling difference.
+                        params.append(
+                            (
+                                f"{spaced_array.group('type').strip()} *",
+                                spaced_array.group("name"),
+                            )
+                        )
+                        continue
                     # Crude but effective: split into type and name
                     parts = param_text.rsplit(None, 1)
                     if len(parts) == 2:

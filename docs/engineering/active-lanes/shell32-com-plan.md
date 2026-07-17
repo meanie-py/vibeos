@@ -270,6 +270,14 @@ compiled synthetically on all three targets in
 closed a scaffold ABI gap: WIDL-declared derived/base interfaces now share one physical slot,
 as required for `IContextMenu2`/`IContextMenu`, without guessing from vtable similarity.
 
+`CNetFolder` followed through the same hybrid rule: Rust owns activation, vtables, and the
+22 class methods, while the retained C++ unit owns recursive network enumeration and its
+context-menu callbacks behind explicit bridges. The current replay is zero-root and x3
+synthetic-green in `candidate-oracles/20260717-101620-834612`, and the real i386 shell32
+link passes. During the adjacent `CMenuBand` replay, the scanner also learned the legal C++
+array spelling `OLECMD name []`; both attached and whitespace-separated parameter brackets
+now decay deterministically to pointers before stitching.
+
 The reusable additions include legacy `DECLARE_INTERFACE` discovery, deterministic SDK POD
 closure, source-local numeric/table generation, overload/default-argument resolution,
 scaffold-owned ATL RAII guards, explicit bridge generation, and idempotent cached-worker
