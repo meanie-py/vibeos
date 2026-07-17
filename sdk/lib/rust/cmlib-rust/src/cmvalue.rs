@@ -12,14 +12,11 @@
 //! Unverified: HvMarkCellDirty local redecl uses Write:i32 vs glue.rs u8 — harmless on all 3 arches.
 //!   CmpFindValueByName CellIndex init=0 (not HCELL_NIL) only matters if CmpFindNameInList skips the
 //!   out-param write entirely on failure; functionally fine since caller checks HCELL_NIL on success path.
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CHILD_LIST, CM_KEY_NODE, CM_KEY_VALUE, CmpFindNameInList, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCELL_DATA, PCHILD_LIST, PCM_KEY_NODE, PCM_KEY_VALUE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, _HHIVE, _UNICODE_STRING};
-use crate::glue::{round_up, HvGetCell, HvGetCellSize, HvReleaseCell, HBLOCK_SIZE, HCELL_NIL, TAG_CM};
+use ntkrnl_sys::ddk::{CELL_DATA, CHILD_LIST, CM_KEY_VALUE, CmpFindNameInList, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCELL_DATA, PCM_KEY_NODE, PCM_KEY_VALUE, PCUNICODE_STRING, PHHIVE, _HHIVE};
+use crate::glue::{round_up, HvGetCell, HvGetCellSize, HvReleaseCell, HBLOCK_SIZE, HCELL_NIL};
 
 // cmdata.h value constants.
 const CM_KEY_VALUE_SIGNATURE: u16 = 0x6B76; // "vk"
@@ -175,7 +172,7 @@ pub unsafe extern "system" fn CmpSetValueDataNew(
     data: *const core::ffi::c_void,
     data_size: u32,
     storage_type: HSTORAGE_TYPE,
-    value_cell: HCELL_INDEX,
+    _value_cell: HCELL_INDEX,
     data_cell: *mut HCELL_INDEX,
 ) -> NTSTATUS {
     PAGED_CODE();
@@ -487,7 +484,7 @@ pub unsafe extern "system" fn CmpCopyValue(
     StorageType: HSTORAGE_TYPE,
 ) -> HCELL_INDEX {
     let Value: PCM_KEY_VALUE;
-    let mut NewValue: PCM_KEY_VALUE;
+    let NewValue: PCM_KEY_VALUE;
     let mut NewValueCell: HCELL_INDEX;
     let NewDataCell: HCELL_INDEX;
     let CellData: PCELL_DATA;

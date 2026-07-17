@@ -1,9 +1,7 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ddk::{PDEVICE_OBJECT, PIRP};
-use core::ffi::c_void;
 
 #[no_mangle]
 pub unsafe extern "system" fn i8042Create(

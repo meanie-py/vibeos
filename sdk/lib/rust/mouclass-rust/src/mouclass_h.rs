@@ -12,7 +12,7 @@
 
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{
-    PDEVICE_OBJECT, PFILE_OBJECT, PIRP, HANDLE, KSPIN_LOCK, LPCWSTR, _UNICODE_STRING,
+    PDEVICE_OBJECT, PIRP, HANDLE, LPCWSTR, _UNICODE_STRING,
 };
 use ntkrnl_sys::driver_ddk::{
     ctl_code, FILE_DEVICE_MOUSE, FILE_ANY_ACCESS, METHOD_BUFFERED, METHOD_NEITHER,

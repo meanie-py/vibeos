@@ -1,6 +1,5 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -8,10 +7,8 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
-use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{KeCancelTimer, KeInitializeDpc, KeInitializeTimerEx, KeSetTimer, _TIMER_TYPE_NotificationTimer, ObReferenceObjectByHandle, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PRKDPC};
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
-use core::ffi::c_void;
 
 extern "C" {
     fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut u32) -> *mut core::ffi::c_void;
@@ -135,10 +132,10 @@ pub unsafe extern "C" fn SignalSocket(
     AFD_DbgPrint!(MID_TRACE, b"Done\n\0".as_ptr() as PCHAR);
 }
 unsafe extern "system" fn SelectTimeout(
-    Dpc: PKDPC,
+    _Dpc: PKDPC,
     DeferredContext: PVOID,
-    SystemArgument1: PVOID,
-    SystemArgument2: PVOID,
+    _SystemArgument1: PVOID,
+    _SystemArgument2: PVOID,
 ) {
     let Poll: PAFD_ACTIVE_POLL = DeferredContext as PAFD_ACTIVE_POLL;
     let PollReq: PAFD_POLL_INFO;
@@ -152,9 +149,9 @@ unsafe extern "system" fn SelectTimeout(
 
     ZeroEvents((*PollReq).Handles.as_mut_ptr(), (*PollReq).HandleCount);
 
-    KeAcquireSpinLock((core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize), &mut OldIrql);
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize , &mut OldIrql);
     SignalSocket(Poll, core::ptr::null_mut(), PollReq, STATUS_TIMEOUT);
-    KeReleaseSpinLock((core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize), OldIrql);
+    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize , OldIrql);
 }
 #[no_mangle]
 pub unsafe extern "C" fn KillSelectsForFCB(
@@ -172,7 +169,7 @@ pub unsafe extern "C" fn KillSelectsForFCB(
 
     AFD_DbgPrint!(MID_TRACE, b"Killing selects that refer to %p\n\0".as_ptr() as PCHAR, FileObject);
 
-    KeAcquireSpinLock((core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize), core::ptr::addr_of_mut!(OldIrql));
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize , core::ptr::addr_of_mut!(OldIrql));
 
     ListEntry = (*DeviceExt).Polls.Flink;
     while ListEntry != core::ptr::addr_of_mut!((*DeviceExt).Polls) {
@@ -194,7 +191,7 @@ pub unsafe extern "C" fn KillSelectsForFCB(
         }
     }
 
-    KeReleaseSpinLock((core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize), OldIrql);
+    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExt).Lock) as *mut usize , OldIrql);
 
     AFD_DbgPrint!(MID_TRACE, b"Done\n\0".as_ptr() as PCHAR);
 }
@@ -203,7 +200,7 @@ pub unsafe extern "C" fn KillSelectsForFCB(
 pub unsafe extern "system" fn AfdSelect(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
-    IrpSp: PIO_STACK_LOCATION,
+    _IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_NO_MEMORY;
     let mut FCB: PAFD_FCB;
@@ -424,7 +421,7 @@ pub unsafe extern "system" fn AfdEnumEvents(
     let EnumReq = LockRequest(Irp, IrpSp, 1u8, core::ptr::null_mut()) as PAFD_ENUM_NETWORK_EVENTS_INFO;
     let FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut UserEvent: PKEVENT = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
 
@@ -468,7 +465,7 @@ pub unsafe extern "system" fn AfdEnumEvents(
     UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, 0)
 }
 
-unsafe fn UpdatePollWithFCB(Poll: PAFD_ACTIVE_POLL, FileObject: PFILE_OBJECT) -> BOOLEAN {
+unsafe fn UpdatePollWithFCB(Poll: PAFD_ACTIVE_POLL, _FileObject: PFILE_OBJECT) -> BOOLEAN {
     let mut i: UINT;
     let mut FCB: PAFD_FCB;
     let mut Signalled: UINT = 0;

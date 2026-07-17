@@ -23,7 +23,6 @@
 // point, not dead weight.
 //
 pub mod i8042prt_h;
-pub(crate) use i8042prt_h::*;
 
 pub mod i8042prt;
 pub mod createclose;

@@ -547,7 +547,7 @@ pub unsafe extern "system" fn QueryUniqueIdQueryRoutine(
         return 0;
     }
 
-    let IntUniqueId = AllocatePool((core::mem::size_of::<*mut MOUNTDEV_UNIQUE_ID>() as u32 + ValueLength)) as *mut MOUNTDEV_UNIQUE_ID;
+    let IntUniqueId = AllocatePool(core::mem::size_of::<*mut MOUNTDEV_UNIQUE_ID>() as u32 + ValueLength ) as *mut MOUNTDEV_UNIQUE_ID;
     if !IntUniqueId.is_null() {
         (*IntUniqueId).UniqueIdLength = ValueLength as u16;
         core::ptr::copy_nonoverlapping(

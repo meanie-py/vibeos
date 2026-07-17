@@ -32,7 +32,7 @@ pub unsafe extern "C" fn find_process(Pid: ULONG_PTR) -> PEPROCESS {
 }
 #[no_mangle]
 pub unsafe extern "C" fn find_thread(
-    Pid: ULONG_PTR,
+    _Pid: ULONG_PTR,
     Tid: ULONG_PTR
 ) -> PETHREAD {
     let ThreadId = gdb_tid_to_handle(Tid);

@@ -160,6 +160,18 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   stubs, `cflags/*.flags`, `*.rc.res`, `bugcodes.h`, `ks*.inc`) must NEVER be hand- or
   cargo-fix-edited; revert any the sweep touched to `HEAD~1`. Detector: `python3
   tools/check_committed_drift.py --arch <a>` (13-14 artifacts, byte-compare vs cmake regen).
+- **Validate cargo-fix batches with a CLEAN per-arch build, not a warm `-k0` (2026-07-17).**
+  A warm/incremental `ninja -k0` recompiles the files you edited but may reuse a cached
+  artifact for a crate it deems unchanged — so it can MISS an i386-cfg-`mut` or import
+  regression the gate's clean build then catches. Batch 3 shipped a green warm i386 build
+  but the gate's clean build failed: cargo-fix-amd64 stripped `mut` off
+  `smss-csrss-rust/csrss.rs`'s `let mut Status` (i386 reassigns it in the
+  `#[cfg(target_arch="x86")]` IOPL block; amd64 assigns once — the SAME csrss.rs case as
+  batch 1). Restore from `HEAD~1` and re-validate with `vibeos-cli build --arch i386
+  --clean` (full lint suite + stamp). Do the clean build BEFORE the gate so you don't burn
+  a ~12-min gate cycle. This `mut`-strip class is the most common cargo-fix cfg hazard
+  after import-removal — grep the batch for `^-.*let mut ` and spot-check any binding
+  reassigned under an arch cfg.
 - **Never suppress to green.** Removing a real warning by fixing it ✅; re-adding a blanket
   `#![allow]` to silence it ❌. If a warning is a genuine false-positive, `#[allow(...)]` it
   **per-item with a `// reason`**, never crate-root.

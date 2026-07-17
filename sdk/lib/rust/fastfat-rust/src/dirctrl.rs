@@ -644,8 +644,8 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             (*DirInfo).EndOfFile.QuadPart = (*Dirent).FileSize as i64;
                             if FlagOn((*Dirent).Attributes as u32, FAT_DIRENT_ATTR_DIRECTORY) == 0 {
                                 (*DirInfo).AllocationSize.QuadPart =
-                                    ((((*Dirent).FileSize as i64 + DiskAllocSize as i64 - 1) / DiskAllocSize as i64)
-                                        * DiskAllocSize as i64);
+                                    (((*Dirent).FileSize as i64 + DiskAllocSize as i64 - 1) / DiskAllocSize as i64)
+                                        * DiskAllocSize as i64 ;
                             }
                             if (*Dirent).Attributes != 0 {
                                 (*DirInfo).FileAttributes = (*Dirent).Attributes as u32;
@@ -759,8 +759,8 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             (*DirInfo).EndOfFile.QuadPart = (*Dirent).FileSize as i64;
                             if FlagOn((*Dirent).Attributes as u32, FAT_DIRENT_ATTR_DIRECTORY) == 0 {
                                 (*DirInfo).AllocationSize.QuadPart =
-                                    ((((*Dirent).FileSize as i64 + DiskAllocSize as i64 - 1) / DiskAllocSize as i64)
-                                        * DiskAllocSize as i64);
+                                    (((*Dirent).FileSize as i64 + DiskAllocSize as i64 - 1) / DiskAllocSize as i64)
+                                        * DiskAllocSize as i64 ;
                             }
                             if (*Dirent).Attributes != 0 {
                                 (*DirInfo).FileAttributes = (*Dirent).Attributes as u32;
@@ -938,9 +938,9 @@ pub unsafe extern "system" fn FatGetDirTimes(
             (*DirInfo).LastAccessTime.QuadPart =
                 (*DirInfo).LastWriteTime.QuadPart
                     - (UInt32x32To64(
-                        ((write_time.DoubleSeconds() as u32) * 2
+                        (write_time.DoubleSeconds() as u32) * 2
                             + (write_time.Minute() as u32) * 60
-                            + (write_time.Hour() as u32) * 60 * 60),
+                            + (write_time.Hour() as u32) * 60 * 60 ,
                         (1000 * 1000 * 10) as u32,
                     )) as i64;
         } else {

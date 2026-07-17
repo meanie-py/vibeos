@@ -312,13 +312,13 @@ pub unsafe extern "C" fn MountMgrCreatePoint(
 
     Point = (*Irp).AssociatedIrp.SystemBuffer as PMOUNTMGR_CREATE_POINT_INPUT;
 
-    MaxLength = (if (*Point).DeviceNameOffset as i32 + (*Point).DeviceNameLength as i32
+    MaxLength = if (*Point).DeviceNameOffset as i32 + (*Point).DeviceNameLength as i32
         > (*Point).SymbolicLinkNameLength as i32 + (*Point).SymbolicLinkNameOffset as i32
     {
         ((*Point).DeviceNameOffset as i32 + (*Point).DeviceNameLength as i32) as ULONG
     } else {
         ((*Point).SymbolicLinkNameLength as i32 + (*Point).SymbolicLinkNameOffset as i32) as ULONG
-    });
+    } ;
 
     if MaxLength > (*Stack).Parameters.DeviceIoControl.InputBufferLength {
         return STATUS_INVALID_PARAMETER;

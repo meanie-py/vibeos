@@ -13,7 +13,6 @@
 //!   by name. If so, `#[no_mangle]` would be needed. Current codebase evidence: no such
 //!   external reference found.
 use crate::types::*;
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub static mut RosSymCallbacks: ROSSYM_CALLBACKS = unsafe { core::mem::zeroed() };

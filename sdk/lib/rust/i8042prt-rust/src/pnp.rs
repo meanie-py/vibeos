@@ -1,4 +1,3 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -37,7 +36,7 @@ unsafe fn i8042ChangeMode(
     FlagsToEnable: UCHAR,
 ) -> BOOLEAN {
     let mut Value: UCHAR = 0;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     if i8042Write(DeviceExtension, (*DeviceExtension).ControlPort, KBD_READ_MODE as UCHAR) == 0 {
         return 0u8;
@@ -415,7 +414,7 @@ unsafe fn i8042PnpStartDevice(
     let mut FoundControlPort: BOOLEAN = 0u8;
     let mut FoundIrq: BOOLEAN = 0u8;
     let mut i: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     DeviceExtension = (*DeviceObject).DeviceExtension as PFDO_DEVICE_EXTENSION;
     PortDeviceExtension = (*DeviceExtension).PortDeviceExtension;

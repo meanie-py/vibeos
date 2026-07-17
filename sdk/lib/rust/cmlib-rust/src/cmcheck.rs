@@ -39,11 +39,9 @@
 //! Unverified: CmpValidateRegistryInternal, CmpValidateLexicalOrder, CmpValidateKey body logic
 //!   (all dead code; C bodies win at link time). HvValidateHive (extern C, not translated here).
 
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_CHECK_REGISTRY_STATUS, CM_KEY_FAST_INDEX, CM_KEY_NODE, CM_KEY_VALUE, CmpAllocate, CmpFindSubKeyByNumber, CmpFree, CmpRepairClassOfNodeKey, CmpRepairKeyNodeSignature, CmpRepairParentKey, CmpRepairParentNode, CmpRepairSubKeyCounts, CmpRepairSubKeyList, CmpRepairValueList, CmpRepairValueListCount, HBIN, HCELL, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCMHIVE, CMHIVE, PHBIN, PHCELL, PHHIVE, RtlCompareUnicodeString, SIZE_T, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, CmpIsKeyValueSmall, HCELL_NIL, HBLOCK_SIZE, TAG_CM, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, INVALID_INDEX, HV_HHIVE_SIGNATURE, HV_HBIN_SIGNATURE};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_CHECK_REGISTRY_STATUS, CM_KEY_NODE, CM_KEY_VALUE, CmpAllocate, CmpFindSubKeyByNumber, CmpFree, CmpRepairClassOfNodeKey, CmpRepairKeyNodeSignature, CmpRepairParentKey, CmpRepairParentNode, CmpRepairSubKeyCounts, CmpRepairSubKeyList, CmpRepairValueList, CmpRepairValueListCount, HBIN, HCELL, HCELL_INDEX, HHIVE, PCM_KEY_INDEX, CMHIVE, PHBIN, PHCELL, RtlCompareUnicodeString, SIZE_T, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HvGetCell, HvGetCellType, CmpIsKeyValueSmall, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE, HV_HHIVE_SIGNATURE, HV_HBIN_SIGNATURE};
 use core::ffi::c_void;
 
 unsafe extern "C" {
@@ -176,8 +174,8 @@ unsafe fn CmpValidateLexicalOrder(
     let mut Result: i32;
     let mut ChildString: _UNICODE_STRING = core::mem::zeroed();
     let mut SiblingString: _UNICODE_STRING = core::mem::zeroed();
-    let mut ChildNode: *mut CM_KEY_NODE;
-    let mut SiblingNode: *mut CM_KEY_NODE;
+    let ChildNode: *mut CM_KEY_NODE;
+    let SiblingNode: *mut CM_KEY_NODE;
 
     // PAGED_CODE();
 
@@ -764,11 +762,11 @@ unsafe fn CmpValidateKey(
     FixHive: u8,
 ) -> CM_CHECK_REGISTRY_STATUS {
     let mut cm_status_code: CM_CHECK_REGISTRY_STATUS = 0;
-    let mut cell_data: *mut CELL_DATA;
-    let mut cell_size: u32;
+    let cell_data: *mut CELL_DATA;
+    let cell_size: u32;
     let mut do_subkeys_repair: u8 = 0u8;
-    let mut total_key_name_length: u32;
-    let mut name_length: u32;
+    let total_key_name_length: u32;
+    let name_length: u32;
 
     PAGED_CODE();
 

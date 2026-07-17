@@ -20,11 +20,6 @@
 //! Unverified: ASSERT(LineNumber || FileName || FunctionName) is commented out (matching C NDEBUG
 //!   behaviour since #define NDEBUG is set). No functional issue.
 use crate::types::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{PCSTR};
-use core::ffi::c_void;
 
 extern "C" {
     fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;

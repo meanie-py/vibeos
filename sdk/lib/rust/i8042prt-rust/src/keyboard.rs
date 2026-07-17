@@ -1,4 +1,3 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -294,10 +293,10 @@ unsafe fn HandlePowerKeys(DeviceExtension: PI8042_KEYBOARD_EXTENSION) -> BOOLEAN
 }
 
 unsafe extern "system" fn i8042KbdDpcRoutine(
-    Dpc: PKDPC,
+    _Dpc: PKDPC,
     DeferredContext: PVOID,
-    SystemArgument1: PVOID,
-    SystemArgument2: PVOID,
+    _SystemArgument1: PVOID,
+    _SystemArgument2: PVOID,
 ) {
     let DeviceExtension: PI8042_KEYBOARD_EXTENSION;
     let PortDeviceExtension: PPORT_DEVICE_EXTENSION;
@@ -467,7 +466,7 @@ pub unsafe extern "system" fn i8042KbdInternalDeviceControl(
 ) -> NTSTATUS {
     let Stack: PIO_STACK_LOCATION;
     let DeviceExtension: PI8042_KEYBOARD_EXTENSION;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     Stack = IoGetCurrentIrpStackLocation(Irp);
     (*Irp).IoStatus.Information = 0;
@@ -692,7 +691,7 @@ unsafe fn i8042KbdCallIsrHook(
     Input: UCHAR,
     ToReturn: PBOOLEAN,
 ) -> BOOLEAN {
-    let mut HookReturn: BOOLEAN;
+    let HookReturn: BOOLEAN;
     let mut HookContinue: BOOLEAN = 0u8;
     let mut Input = Input;
 

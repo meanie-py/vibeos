@@ -127,7 +127,7 @@ pub const FUJITSU_FMR_NAME_W: [::core::ffi::c_ushort; 13] = unsafe {
     )
 };
 
-pub const KEY_WORK_AREA: usize = (core::mem::size_of::<KEY_VALUE_FULL_INFORMATION>() + 4 + 64);
+pub const KEY_WORK_AREA: usize = core::mem::size_of::<KEY_VALUE_FULL_INFORMATION>() + 4 + 64 ;
 
 
 

@@ -184,8 +184,8 @@ pub unsafe extern "system" fn FatCreateNewDirent(
 
     // PAGED_CODE();  // macro, ignored
 
-    DebugTrace(1, (Dbg as u32), b"FatCreateNewDirent\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, (Dbg as u32), b"  ParentDirectory = %p\n\0".as_ptr() as *const i8, ParentDirectory);
+    DebugTrace(1, Dbg as u32 , b"FatCreateNewDirent\n\0".as_ptr() as *const i8, 0);
+    DebugTrace(0, Dbg as u32 , b"  ParentDirectory = %p\n\0".as_ptr() as *const i8, ParentDirectory);
 
     UnusedVbo = (*ParentDirectory).Specific.Dcb.as_ref().UnusedDirentVbo;
     DeletedHint = (*ParentDirectory).Specific.Dcb.as_ref().DeletedDirentHint;
@@ -197,15 +197,15 @@ pub unsafe extern "system" fn FatCreateNewDirent(
         DeletedHint = (*ParentDirectory).Specific.Dcb.as_ref().DeletedDirentHint;
     }
 
-    DebugTrace(0, (Dbg as u32), b"  UnusedVbo   = %08lx\n\0".as_ptr() as *const i8, UnusedVbo);
-    DebugTrace(0, (Dbg as u32), b"  DeletedHint = %08lx\n\0".as_ptr() as *const i8, DeletedHint);
+    DebugTrace(0, Dbg as u32 , b"  UnusedVbo   = %08lx\n\0".as_ptr() as *const i8, UnusedVbo);
+    DebugTrace(0, Dbg as u32 , b"  DeletedHint = %08lx\n\0".as_ptr() as *const i8, DeletedHint);
 
     if RescanDir == 0
         && (UnusedVbo.wrapping_add(DirentsNeeded.wrapping_mul(core::mem::size_of::<DIRENT>() as u32))
             <= (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart)
     {
         // Easy case: there is a never-used entry
-        DebugTrace(0, (Dbg as u32), b"There is a never used entry.\n\0".as_ptr() as *const i8, 0);
+        DebugTrace(0, Dbg as u32 , b"There is a never used entry.\n\0".as_ptr() as *const i8, 0);
         ByteOffset = UnusedVbo;
         UnusedVbo = UnusedVbo.wrapping_add(DirentsNeeded.wrapping_mul(core::mem::size_of::<DIRENT>() as u32));
     } else {
@@ -237,7 +237,7 @@ pub unsafe extern "system" fn FatCreateNewDirent(
             }
         } else {
             // Must allocate another cluster
-            DebugTrace(0, (Dbg as u32), b"We have to allocate another cluster.\n\0".as_ptr() as *const i8, 0);
+            DebugTrace(0, Dbg as u32 , b"We have to allocate another cluster.\n\0".as_ptr() as *const i8, 0);
 
             // Check size limits and read-only root
             if (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart >= (64u32 * 1024u32 * core::mem::size_of::<DIRENT>() as u32)
@@ -246,7 +246,7 @@ pub unsafe extern "system" fn FatCreateNewDirent(
             {
                 DebugTrace(
                     0,
-                    (Dbg as u32),
+                    Dbg as u32 ,
                     b"Full root directory or too big on FAT32.  Raise Status.\n\0".as_ptr() as *const i8,
                     0,
                 );
@@ -691,7 +691,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                 if ((*ByteOffset).QuadPart as u32) >= (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart {
                     Status = STATUS_END_OF_FILE;
                     FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
-                } else if ((((*ByteOffset).QuadPart as u32) % PAGE_SIZE == 0) || (*Bcb).is_null()) {
+                } else if (((*ByteOffset).QuadPart as u32) % PAGE_SIZE == 0) || (*Bcb).is_null()  {
                     FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
                     FatReadDirectoryFile(
                         IrpContext,

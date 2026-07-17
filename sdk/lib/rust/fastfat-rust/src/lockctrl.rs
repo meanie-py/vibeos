@@ -390,7 +390,7 @@ pub unsafe extern "system" fn FatCommonLockControl(
         {
             let lock_quad_part = (*IrpSp).Parameters.LockControl.ByteOffset.QuadPart as u64;
             let alloc_quad_part = (*Fcb).Header.AllocationSize.QuadPart as u64;
-            let is_lock = (IRP_MN_LOCK == (*IrpSp).MinorFunction as u32);
+            let is_lock = IRP_MN_LOCK == (*IrpSp).MinorFunction as u32 ;
             let is_lock_within_size = is_lock && (lock_quad_part < alloc_quad_part);
             let has_waiting_locks = !is_lock && FsRtlAreThereWaitingFileLocks(
                 &raw mut (*Fcb).Specific.Fcb.as_mut().FileLock

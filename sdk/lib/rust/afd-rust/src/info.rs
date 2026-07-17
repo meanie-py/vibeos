@@ -1,13 +1,11 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IoAllocateMdl, IoFreeMdl, MmProbeAndLockPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PMDL};
-use core::ffi::c_void;
 
 #[no_mangle]
 pub unsafe extern "system" fn AfdGetInfo(
@@ -120,7 +118,7 @@ pub unsafe extern "system" fn AfdSetInfo(
     let InfoReq: PAFD_INFO = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_INFO;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut NewBuffer: PCHAR;
+    let NewBuffer: PCHAR;
 
     let _ = DeviceObject;
 
@@ -246,7 +244,7 @@ pub unsafe extern "system" fn AfdSetInfo(
 
 #[no_mangle]
 pub unsafe extern "system" fn AfdGetSockName(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
@@ -298,7 +296,7 @@ pub unsafe extern "system" fn AfdGetSockName(
 
 #[no_mangle]
 pub unsafe extern "system" fn AfdGetPeerName(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {

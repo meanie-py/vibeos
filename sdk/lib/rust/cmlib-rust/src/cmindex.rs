@@ -41,11 +41,9 @@
 //!    CmpMaxIndexPerHblock in glue.rs — layout-derived const expression matches C macro exactly.
 //!    Constants (INVALID_INDEX, HCELL_NIL, CM_KEY_*) — all correct vs cmdata.h/hivedata.h.
 
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, LPWSTR, PCELL_DATA, PCM_INDEX, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, RtlCompareUnicodeString, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, ASSERT, PAGED_CODE, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, HCELL_TYPE_MASK, CmpMaxIndexPerHblock, TAG_CM, KEY_COMP_NAME};
+use ntkrnl_sys::ddk::{CM_KEY_NODE, CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, RtlCompareUnicodeString, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, ASSERT, PAGED_CODE, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, CmpMaxIndexPerHblock, TAG_CM, KEY_COMP_NAME};
 use core::ffi::c_void;
 
 extern "system" {
@@ -1202,7 +1200,7 @@ pub unsafe extern "system" fn CmpFindSubKeyByName(
     parent: *mut CM_KEY_NODE,
     search_name: *const _UNICODE_STRING,
 ) -> HCELL_INDEX {
-    let mut i: u32;
+    let _i: u32;
     let mut index_root: *mut CM_KEY_INDEX;
     let mut sub_key: HCELL_INDEX = 0;
     let mut cell_to_release: HCELL_INDEX;

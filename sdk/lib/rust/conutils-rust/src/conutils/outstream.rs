@@ -1,6 +1,6 @@
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
-use crate::conutils::stream::{CON_STREAM, CON_STREAM_MODE, CON_WRITE_FUNC};
+use crate::conutils::stream::{CON_STREAM, CON_STREAM_MODE};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -98,7 +98,7 @@ extern "C" {
 }
 
 unsafe fn write_console(Stream: *mut CON_STREAM, szStr: *const u16, len: u32) -> i32 {
-    let mut TotalLen: u32 = len;
+    let TotalLen: u32 = len;
     let mut dwNumBytes: u32 = 0;
 
     if szStr.is_null() || len == 0 {
@@ -174,7 +174,7 @@ unsafe fn write_console(Stream: *mut CON_STREAM, szStr: *const u16, len: u32) ->
             cstr = p;
         }
     } else if (*Stream).Mode == CON_STREAM_MODE::UTF8Text || (*Stream).Mode == CON_STREAM_MODE::AnsiText {
-        let CP_THREAD_ACP: u32 = 3;
+        let _CP_THREAD_ACP: u32 = 3;
         let INVALID_CP: u32 = 0xFFFFFFFF;
         let MB_LEN_MAX: usize = 5;
 
@@ -277,7 +277,7 @@ pub unsafe extern "C" fn ConStreamWrite(
     szStr: *const u16,
     len: u32,
 ) -> i32 {
-    let mut result_len: i32;
+    let result_len: i32;
 
     EnterCriticalSection(core::ptr::addr_of_mut!((*Stream).Lock));
 
