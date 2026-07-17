@@ -115,6 +115,8 @@ Current translations are direct C transliterations (`unsafe` everywhere, raw poi
 - Replace raw pointer arithmetic with typed wrapper structs
 - This is a LATER concern — correctness first, idioms second
 
+> **Concrete design → [`../engineering/idiomatic-rust-idiomization-design.md`](../engineering/idiomatic-rust-idiomization-design.md)** (2026-07-16). The executable plan: a **two-phase** program — (1) a *mechanical* trampoline breakout (`rustconv breakout`, an AST transform, free + behavior-preserving, splits every `#[no_mangle] extern fn` into a thin ABI trampoline + a `_rs()` impl, lands gate-once across ~20–24K exports); (2) *incremental* idiomization of `_rs` to `Result<(T,NTSTATUS),NTSTATUS>` + references. Includes the **reachability ceiling** (public DDK ABI stays raw — `DeviceExtension` 15.6K, `IoStatus`, stack-locations; private plumbing idiomizes now — MMVAD/MMPFN/KWAIT_BLOCK/handle-table), the **IRP façade/DTO experiment** (idiomatic interior + `#[repr(C)]` mailbox, reconcile at owned API seams; soundness test = *async observation must be API-gated*), the **compile-collapse design rule** (hot-path primitives generic/`#[inline]` to cross the `lto=false`/`cgu=256` firewall; `#[no_mangle]` only at the ABI wall), and the **arm64/x86 asymmetry** (shared driver source shackles arm64 to x86's WDM ABI; the internal/external split is what lets it diverge). Sequencing: (a) finish translating → (b) idiomize *ABI-preserving* [this] → (c) driver-model XP→Win10 [§7-adjacent, separate later project, the only ABI-moving one].
+
 ### 2d. Cross-Model Review Integration — Size: S
 
 Already proven with Codex. Formalize into the pipeline:
@@ -142,9 +144,13 @@ Already designed, partially implemented. Transform `_SEH2_TRY`/`_SEH2_EXCEPT` pa
 
 **Size: L** — The infrastructure exists but applying it across all subsystems and handling the edge cases (nested SEH, cross-function exception flow) is significant work.
 
+> **Note:** the `_rs()` output shape and the two-phase mechanical-breakout-then-idiomize structure are unified with §2c in [`../engineering/idiomatic-rust-idiomization-design.md`](../engineering/idiomatic-rust-idiomization-design.md). Stage 3 (SEH/Result/RAII) and §2c (raw-ptr → idiomatic) are the same `_rs` de-transliteration seen from two angles.
+
 ---
 
 ## 4. Testing Infrastructure Modernization
+
+> **Inline-asm safety — design → [`../engineering/asm-safety-design.md`](../engineering/asm-safety-design.md)** (2026-07-16, Size: M). ~850 asm blocks split into two regimes: **pure** (barriers/atomics/portio — already Kani/loom-tested in `slist`) and **privileged** (CR/MSR/cli-sti/context-switch — `#GP` in ring 3, untestable in userspace). Three moves: (1) an **asm-constraint linter** (the `verify_ffi` of asm — cross-check instructions vs declared `options`/clobbers; catches the CMPXCHG16B-`rbx` under-declared-clobber class that cost a multi-hour 0x50); (2) **one-wrapper-per-instruction** consolidation (~850 sites → ~40 primitives) + prefer `core::arch` intrinsics; (3) test the privileged half by **shrinking the asm to its irreducible instruction** (test the pure logic, the trampoline lever) + the existing **QEMU ring-0 harness** (`test_kernel.py`) + extending the **`verify_sacred_primitives` "survived optimization"** gate.
 
 Current testing: QEMU smoke tests (boot to desktop) + Rust host tests (unit + Kani + Loom). This is necessary but insufficient.
 
