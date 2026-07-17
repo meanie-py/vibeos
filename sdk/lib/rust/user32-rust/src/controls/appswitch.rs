@@ -309,9 +309,9 @@ unsafe fn CompleteSwitch(doSwitch: BOOL) {
         {
             let hwnd = windowList[selectedWindow as usize];
 
-            GetWindowTextW(hwnd, windowText.as_mut_ptr(), (windowText.len()) as i32);
+            GetWindowTextW(hwnd, (*(&raw mut windowText)).as_mut_ptr(), ((*(&raw const windowText)).len()) as i32);
 
-            TRACE!(b"[ATbot] CompleteSwitch Switching to 0x%08x (%ls)\n\0".as_ptr(), hwnd, windowText.as_ptr());
+            TRACE!(b"[ATbot] CompleteSwitch Switching to 0x%08x (%ls)\n\0".as_ptr(), hwnd, (*(&raw const windowText)).as_ptr());
 
             SwitchToThisWindow(hwnd, 1);
         }
@@ -573,14 +573,14 @@ unsafe fn OnPaint(hWnd: HWND) {
                      DFCS_BUTTONPUSH | DFCS_PUSHED);
 
     // get text
-    CharCount = GetWindowTextW(windowList[selectedWindow as usize], windowText.as_mut_ptr(),
-                               (windowText.len()) as i32);
+    CharCount = GetWindowTextW(windowList[selectedWindow as usize], (*(&raw mut windowText)).as_mut_ptr(),
+                               ((*(&raw const windowText)).len()) as i32);
 
     // draw text
     dcFont = SelectObject(dialogDC, dialogFont as _) as HFONT;
     SetTextColor(dialogDC, GetSysColor(COLOR_BTNTEXT as i32));
     SetBkMode(dialogDC, TRANSPARENT as i32);
-    DrawTextW(dialogDC, windowText.as_ptr(), CharCount, core::ptr::addr_of_mut!(textRC),
+    DrawTextW(dialogDC, (*(&raw const windowText)).as_ptr(), CharCount, core::ptr::addr_of_mut!(textRC),
               DT_CENTER | DT_VCENTER | DT_END_ELLIPSIS | DT_SINGLELINE);
     SelectObject(dialogDC, dcFont as _);
 

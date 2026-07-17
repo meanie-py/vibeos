@@ -195,7 +195,7 @@ pub const NDEBUG: u32 = 0;
 unsafe fn COMM_ParseStart(mut ptr: LPCWSTR) -> LPCWSTR {
     static mut comW: [WCHAR; 4] = ['C' as WCHAR, 'O' as WCHAR, 'M' as WCHAR, 0 as WCHAR];
 
-    if strncmpiW(ptr, comW.as_ptr(), 3) == 0 {
+    if strncmpiW(ptr, (*(&raw const comW)).as_ptr(), 3) == 0 {
         ptr = ptr.offset(3);
 
         if (*ptr as i32) < ('1' as i32) || (*ptr as i32) > ('9' as i32) {
@@ -307,10 +307,10 @@ unsafe fn COMM_ParseOnOff(mut ptr: LPCWSTR, mut lponoff: LPDWORD) -> LPCWSTR {
     static mut onW: [WCHAR; 3] = ['o' as WCHAR, 'n' as WCHAR, 0 as WCHAR];
     static mut offW: [WCHAR; 4] = ['o' as WCHAR, 'f' as WCHAR, 'f' as WCHAR, 0 as WCHAR];
 
-    if strncmpiW(onW.as_ptr(), ptr, 2) == 0 {
+    if strncmpiW((*(&raw const onW)).as_ptr(), ptr, 2) == 0 {
         ptr = ptr.offset(2);
         *lponoff = 1;
-    } else if strncmpiW(offW.as_ptr(), ptr, 3) == 0 {
+    } else if strncmpiW((*(&raw const offW)).as_ptr(), ptr, 3) == 0 {
         ptr = ptr.offset(3);
         *lponoff = 0;
     } else {
@@ -480,7 +480,7 @@ unsafe fn COMM_BuildNewCommDCB(
         }
 
         if strncmpiW(
-            baudW.as_ptr() as LPCWSTR,
+            (*(&raw const baudW)).as_ptr() as LPCWSTR,
             device,
             5,
         ) == 0
@@ -494,7 +494,7 @@ unsafe fn COMM_BuildNewCommDCB(
                 return FALSE;
             }
         } else if strncmpiW(
-            parityW.as_ptr() as LPCWSTR,
+            (*(&raw const parityW)).as_ptr() as LPCWSTR,
             device,
             7,
         ) == 0
@@ -507,7 +507,7 @@ unsafe fn COMM_BuildNewCommDCB(
                 return FALSE;
             }
         } else if strncmpiW(
-            dataW.as_ptr() as LPCWSTR,
+            (*(&raw const dataW)).as_ptr() as LPCWSTR,
             device,
             5,
         ) == 0
@@ -520,7 +520,7 @@ unsafe fn COMM_BuildNewCommDCB(
                 return FALSE;
             }
         } else if strncmpiW(
-            stopW.as_ptr() as LPCWSTR,
+            (*(&raw const stopW)).as_ptr() as LPCWSTR,
             device,
             5,
         ) == 0
@@ -534,7 +534,7 @@ unsafe fn COMM_BuildNewCommDCB(
                 return FALSE;
             }
         } else if strncmpiW(
-            toW.as_ptr() as LPCWSTR,
+            (*(&raw const toW)).as_ptr() as LPCWSTR,
             device,
             3,
         ) == 0
@@ -552,7 +552,7 @@ unsafe fn COMM_BuildNewCommDCB(
             (*lptimeouts).WriteTotalTimeoutMultiplier = 0;
             (*lptimeouts).WriteTotalTimeoutConstant = if temp != 0 { 60000 } else { 0 };
         } else if strncmpiW(
-            xonW.as_ptr() as LPCWSTR,
+            (*(&raw const xonW)).as_ptr() as LPCWSTR,
             device,
             4,
         ) == 0
@@ -567,7 +567,7 @@ unsafe fn COMM_BuildNewCommDCB(
             (*lpdcb).set_fOutX((temp) as DWORD);
             (*lpdcb).set_fInX((temp) as DWORD);
         } else if strncmpiW(
-            odsrW.as_ptr() as LPCWSTR,
+            (*(&raw const odsrW)).as_ptr() as LPCWSTR,
             device,
             5,
         ) == 0
@@ -581,7 +581,7 @@ unsafe fn COMM_BuildNewCommDCB(
             }
             (*lpdcb).set_fOutxDsrFlow((temp) as DWORD);
         } else if strncmpiW(
-            octsW.as_ptr() as LPCWSTR,
+            (*(&raw const octsW)).as_ptr() as LPCWSTR,
             device,
             5,
         ) == 0
@@ -595,7 +595,7 @@ unsafe fn COMM_BuildNewCommDCB(
             }
             (*lpdcb).set_fOutxCtsFlow((temp) as DWORD);
         } else if strncmpiW(
-            dtrW.as_ptr() as LPCWSTR,
+            (*(&raw const dtrW)).as_ptr() as LPCWSTR,
             device,
             4,
         ) == 0
@@ -609,7 +609,7 @@ unsafe fn COMM_BuildNewCommDCB(
             }
             (*lpdcb).set_fDtrControl((temp) as DWORD);
         } else if strncmpiW(
-            rtsW.as_ptr() as LPCWSTR,
+            (*(&raw const rtsW)).as_ptr() as LPCWSTR,
             device,
             4,
         ) == 0
@@ -623,7 +623,7 @@ unsafe fn COMM_BuildNewCommDCB(
             }
             (*lpdcb).set_fRtsControl((temp) as DWORD);
         } else if strncmpiW(
-            idsrW.as_ptr() as LPCWSTR,
+            (*(&raw const idsrW)).as_ptr() as LPCWSTR,
             device,
             5,
         ) == 0
@@ -1536,7 +1536,7 @@ pub unsafe extern "system" fn CommConfigDialogW(
         hWnd,
         lpCommConfig,
     );
-    hConfigModule = LoadLibraryW(lpszSerialUI.as_ptr());
+    hConfigModule = LoadLibraryW((*(&raw const lpszSerialUI)).as_ptr());
     if !hConfigModule.is_null() {
         pCommConfigDialog = core::mem::transmute::<FARPROC, Option<unsafe extern "system" fn(LPCWSTR, HWND, LPCOMMCONFIG) -> DWORD>>(
             GetProcAddress(hConfigModule, b"drvCommConfigDialogW\0".as_ptr() as LPCSTR),
@@ -1616,7 +1616,7 @@ pub unsafe extern "system" fn SetDefaultCommConfigW(
         dwSize,
     );
 
-    hConfigModule = LoadLibraryW(lpszSerialUI.as_ptr() as LPCWSTR);
+    hConfigModule = LoadLibraryW((*(&raw const lpszSerialUI)).as_ptr() as LPCWSTR);
     if hConfigModule.is_null() {
         return r;
     }
@@ -1708,7 +1708,7 @@ pub unsafe extern "system" fn GetDefaultCommConfigW(
         if !lpdwSize.is_null() { *lpdwSize } else { 0 },
     );
 
-    hConfigModule = LoadLibraryW(lpszSerialUI.as_ptr() as LPCWSTR);
+    hConfigModule = LoadLibraryW((*(&raw const lpszSerialUI)).as_ptr() as LPCWSTR);
 
     if !hConfigModule.is_null() {
         pGetDefaultCommConfig = core::mem::transmute::<

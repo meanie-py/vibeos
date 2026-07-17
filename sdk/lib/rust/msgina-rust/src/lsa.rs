@@ -296,7 +296,7 @@ pub unsafe extern "C" fn MyLogonUser(
 
     RtlCopyMemory!(
         TokenSourceVar.SourceName.as_mut_ptr() as *mut u8,
-        User32TokenSourceName.as_ptr() as *const i8,
+        (*(&raw const User32TokenSourceName)).as_ptr() as *const i8,
         size_of::<[i8; 8]>(),
     );
     AllocateLocallyUniqueId(&mut TokenSourceVar.SourceIdentifier);

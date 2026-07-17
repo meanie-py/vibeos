@@ -14,7 +14,6 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 /// Cast an `extern "system"` fn to a target callback ABI (i386 stdcall vs
 /// amd64/arm64 C — identical machine code, distinct Rust types). Copied from

@@ -420,7 +420,7 @@ unsafe fn KdpQueryMemory(state: PDBGKD_MANIPULATE_STATE64, _context: PCONTEXT) {
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpSearchMemory(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
@@ -435,7 +435,7 @@ unsafe fn KdpSearchMemory(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _con
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpFillMemory(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
@@ -450,7 +450,7 @@ unsafe fn KdpFillMemory(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _conte
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpWriteBreakpoint(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -471,7 +471,7 @@ unsafe fn KdpWriteBreakpoint(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _c
         (*state).ReturnStatus = STATUS_SUCCESS;
     }
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpRestoreBreakpoint(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -491,7 +491,7 @@ unsafe fn KdpRestoreBreakpoint(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, 
         (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpWriteBreakPointEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) -> NTSTATUS {
@@ -506,7 +506,7 @@ unsafe fn KdpWriteBreakPointEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, 
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &raw mut KdpContext);
     STATUS_UNSUCCESSFUL
 }
 
@@ -522,7 +522,7 @@ unsafe fn KdpRestoreBreakPointEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &raw mut KdpContext);
 }
 
 unsafe fn KdpWriteCustomBreakpoint(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
@@ -537,7 +537,7 @@ unsafe fn KdpWriteCustomBreakpoint(state: PDBGKD_MANIPULATE_STATE64, _data: PSTR
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn DumpTraceData(trace_data: PSTRING) {
@@ -601,7 +601,7 @@ unsafe fn KdpSetCommonState(
 unsafe fn KdpSysGetVersion(version: PDBGKD_GET_VERSION64) {
     KdpMoveMemory(
         version as PVOID,
-        &KdVersionBlock as *const DBGKD_GET_VERSION64 as PVOID,
+        &raw const KdVersionBlock as *const DBGKD_GET_VERSION64 as PVOID,
         core::mem::size_of::<DBGKD_GET_VERSION64>(),
     );
 }
@@ -621,7 +621,7 @@ unsafe fn KdpGetVersion(state: PDBGKD_MANIPULATE_STATE64) {
     (*state).ApiNumber = DbgKdGetVersionApi;
     (*state).ReturnStatus = STATUS_SUCCESS;
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpReadVirtualMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -652,7 +652,7 @@ unsafe fn KdpReadVirtualMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, 
     (*read_memory).ActualBytesRead = length;
     (*data).Length = length as u16;
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &raw mut KdpContext);
 }
 
 unsafe fn KdpWriteVirtualMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -675,7 +675,7 @@ unsafe fn KdpWriteVirtualMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING,
         &mut (*write_memory).ActualBytesWritten,
     );
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpReadPhysicalMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -717,7 +717,7 @@ unsafe fn KdpReadPhysicalMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING,
     (*read_memory).ActualBytesRead = length;
     (*data).Length = length as u16;
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &raw mut KdpContext);
 }
 
 unsafe fn KdpWritePhysicalMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -751,7 +751,7 @@ unsafe fn KdpWritePhysicalMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING
         &mut (*write_memory).ActualBytesWritten,
     );
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpReadControlSpace(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -781,7 +781,7 @@ unsafe fn KdpReadControlSpace(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _
     (*read_memory).ActualBytesRead = length;
     (*data).Length = length as u16;
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &raw mut KdpContext);
 }
 
 unsafe fn KdpWriteControlSpace(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -803,7 +803,7 @@ unsafe fn KdpWriteControlSpace(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, 
         &mut (*write_memory).ActualBytesWritten,
     );
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &raw mut KdpContext);
 }
 
 unsafe fn KdpGetContext(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context: PCONTEXT) {
@@ -834,7 +834,7 @@ unsafe fn KdpGetContext(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context
         (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &raw mut KdpContext);
 }
 
 unsafe fn KdpSetContext(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context: PCONTEXT) {
@@ -862,7 +862,7 @@ unsafe fn KdpSetContext(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context
         (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpGetContextEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context: PCONTEXT) {
@@ -903,7 +903,7 @@ unsafe fn KdpGetContextEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, conte
         (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &raw mut KdpContext);
 }
 
 unsafe fn KdpSetContextEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context: PCONTEXT) {
@@ -942,7 +942,7 @@ unsafe fn KdpSetContextEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, conte
         (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpCauseBugCheck(_state: PDBGKD_MANIPULATE_STATE64) {
@@ -966,7 +966,7 @@ unsafe fn KdpReadMachineSpecificRegister(state: PDBGKD_MANIPULATE_STATE64, _data
     (*read_msr).DataValueLow = msr_value.u.LowPart;
     (*read_msr).DataValueHigh = msr_value.u.HighPart;
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpWriteMachineSpecificRegister(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
@@ -985,7 +985,7 @@ unsafe fn KdpWriteMachineSpecificRegister(state: PDBGKD_MANIPULATE_STATE64, _dat
     msr_value.u.HighPart = (*write_msr).DataValueHigh;
     (*state).ReturnStatus = KdpSysWriteMsr((*write_msr).Msr, core::ptr::addr_of_mut!(msr_value.QuadPart));
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpGetBusData(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -1017,7 +1017,7 @@ unsafe fn KdpGetBusData(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _contex
     (*get_bus_data).Length = length;
     (*data).Length = length as u16;
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &raw mut KdpContext);
 }
 
 unsafe fn KdpSetBusData(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
@@ -1041,7 +1041,7 @@ unsafe fn KdpSetBusData(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _contex
         &mut (*set_bus_data).Length,
     );
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpReadIoSpace(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
@@ -1067,7 +1067,7 @@ unsafe fn KdpReadIoSpace(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _cont
         &mut (*read_io).DataSize,
     );
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpWriteIoSpace(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
@@ -1091,7 +1091,7 @@ unsafe fn KdpWriteIoSpace(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _con
         &mut (*write_io).DataSize,
     );
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpReadIoSpaceExtended(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
@@ -1117,7 +1117,7 @@ unsafe fn KdpReadIoSpaceExtended(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRIN
         &mut (*read_io_extended).DataSize,
     );
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpWriteIoSpaceExtended(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
@@ -1141,7 +1141,7 @@ unsafe fn KdpWriteIoSpaceExtended(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRI
         &mut (*write_io_extended).DataSize,
     );
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpCheckLowMemory(state: PDBGKD_MANIPULATE_STATE64) {
@@ -1156,7 +1156,7 @@ unsafe fn KdpCheckLowMemory(state: PDBGKD_MANIPULATE_STATE64) {
 
     (*state).ReturnStatus = KdpSysCheckLowMemory(MMDBG_COPY_UNSAFE);
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpNotSupported(state: PDBGKD_MANIPULATE_STATE64) {
@@ -1171,7 +1171,7 @@ unsafe fn KdpNotSupported(state: PDBGKD_MANIPULATE_STATE64) {
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
 
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &raw mut KdpContext);
 }
 
 unsafe fn KdpSwitchProcessor(processor_index: USHORT) -> ULONG {
@@ -1219,7 +1219,7 @@ unsafe fn KdpSendWaitContinue(
     // timed out ["Unable to read head of debugger data list, error 0n56"]; once
     // it stopped acking, exception-typed sends retried forever = boot wedge.)
     'send_packet: loop {
-        KdSendPacket(packet_type, send_header, send_data, &mut KdpContext);
+        KdSendPacket(packet_type, send_header, send_data, &raw mut KdpContext);
 
         if KdDebuggerNotPresent != 0 {
             return ContinueSuccess;
@@ -1235,7 +1235,7 @@ unsafe fn KdpSendWaitContinue(
                 &mut header,
                 &mut data,
                 &mut length,
-                &mut KdpContext,
+                &raw mut KdpContext,
             );
 
             if recv_code == KdPacketNeedsResend {
@@ -1384,7 +1384,7 @@ unsafe fn KdpSendWaitContinue(
                 data.Length = 0;
                 manipulate_state.ReturnStatus = STATUS_UNSUCCESSFUL;
 
-                KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, &mut data, &mut KdpContext);
+                KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, &mut data, &raw mut KdpContext);
             }
         }
         } // main processing loop

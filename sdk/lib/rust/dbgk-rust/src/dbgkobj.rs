@@ -226,7 +226,7 @@ pub unsafe extern "system" fn DbgkpQueueMessage(
         debug_event = &mut local_debug_event;
         (*debug_event).Flags = flags;
 
-        ExAcquireFastMutex(&mut DbgkpProcessDebugPortMutex);
+        ExAcquireFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
         debug_object = (*(process as *mut _EPROCESS)).DebugPort as PDEBUG_OBJECT;
 
@@ -283,7 +283,7 @@ pub unsafe extern "system" fn DbgkpQueueMessage(
     }
 
     if new_event == 0 {
-        ExReleaseFastMutex(&mut DbgkpProcessDebugPortMutex);
+        ExReleaseFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
         if status >= 0 {
             KeWaitForSingleObject(
@@ -398,7 +398,7 @@ pub unsafe extern "system" fn DbgkCopyProcessDebugPort(
         return;
     }
 
-    ExAcquireFastMutex(&mut DbgkpProcessDebugPortMutex);
+    ExAcquireFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
     debug_object = (*(parent as *mut _EPROCESS)).DebugPort as PDEBUG_OBJECT;
     if !debug_object.is_null() && (*(process as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.NoDebugInherit() == 0 {
@@ -412,7 +412,7 @@ pub unsafe extern "system" fn DbgkCopyProcessDebugPort(
         ExReleaseFastMutex(core::ptr::addr_of_mut!((*debug_object).Mutex));
     }
 
-    ExReleaseFastMutex(&mut DbgkpProcessDebugPortMutex);
+    ExReleaseFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 }
 
 #[no_mangle]
@@ -938,7 +938,7 @@ pub unsafe extern "system" fn DbgkpMarkProcessPeb(process: PEPROCESS) {
             &mut apc_state,
         );
 
-        ExAcquireFastMutex(&mut DbgkpProcessDebugPortMutex);
+        ExAcquireFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
         (*((*(process as *mut _EPROCESS)).Peb as *mut _PEB)).BeingDebugged =
             if (*(process as *mut _EPROCESS)).DebugPort.is_null() {
@@ -947,7 +947,7 @@ pub unsafe extern "system" fn DbgkpMarkProcessPeb(process: PEPROCESS) {
                 1u8
             };
 
-        ExReleaseFastMutex(&mut DbgkpProcessDebugPortMutex);
+        ExReleaseFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
         KeUnstackDetachProcess(&mut apc_state);
     }
@@ -1099,7 +1099,7 @@ pub unsafe extern "system" fn DbgkpCloseObject(
         }
 
         if (*(process as *mut _EPROCESS)).DebugPort == debug_object as PVOID {
-            ExAcquireFastMutex(&mut DbgkpProcessDebugPortMutex);
+            ExAcquireFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
             debug_port_cleared = 0u8;
             if (*(process as *mut _EPROCESS)).DebugPort == debug_object as PVOID {
@@ -1107,7 +1107,7 @@ pub unsafe extern "system" fn DbgkpCloseObject(
                 debug_port_cleared = 1u8;
             }
 
-            ExReleaseFastMutex(&mut DbgkpProcessDebugPortMutex);
+            ExReleaseFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
             if debug_port_cleared != 0 {
                 DbgkpMarkProcessPeb(process);
@@ -1167,7 +1167,7 @@ pub unsafe extern "system" fn DbgkpSetProcessDebugObject(
     if status >= 0 {
         'thread_scan: loop {
             global_held = 1u8;
-            ExAcquireFastMutex(&mut DbgkpProcessDebugPortMutex);
+            ExAcquireFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
             if !(*(process as *mut _EPROCESS)).DebugPort.is_null() {
                 status = STATUS_PORT_ALREADY_SET;
@@ -1178,7 +1178,7 @@ pub unsafe extern "system" fn DbgkpSetProcessDebugObject(
                 this_thread = PsGetNextProcessThread(process, last_thread_local);
                 if !this_thread.is_null() {
                     (*(process as *mut _EPROCESS)).DebugPort = core::ptr::null_mut();
-                    ExReleaseFastMutex(&mut DbgkpProcessDebugPortMutex);
+                    ExReleaseFastMutex(&raw mut DbgkpProcessDebugPortMutex);
                     global_held = 0u8;
 
                     ObDereferenceObject(last_thread_local as PVOID);
@@ -1280,7 +1280,7 @@ pub unsafe extern "system" fn DbgkpSetProcessDebugObject(
     ExReleaseFastMutex(core::ptr::addr_of_mut!((*debug_object).Mutex));
 
     if global_held != 0 {
-        ExReleaseFastMutex(&mut DbgkpProcessDebugPortMutex);
+        ExReleaseFastMutex(&raw mut DbgkpProcessDebugPortMutex);
     }
 
     if !last_thread_local.is_null() {
@@ -1315,7 +1315,7 @@ pub unsafe extern "system" fn DbgkClearProcessDebugObject(
     let mut temp_list: LIST_ENTRY = core::mem::zeroed();
     let mut next_entry: PLIST_ENTRY;
 
-    ExAcquireFastMutex(&mut DbgkpProcessDebugPortMutex);
+    ExAcquireFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
     debug_object = (*(process as *mut _EPROCESS)).DebugPort as PDEBUG_OBJECT;
 
@@ -1324,10 +1324,10 @@ pub unsafe extern "system" fn DbgkClearProcessDebugObject(
     {
         (*(process as *mut _EPROCESS)).DebugPort = core::ptr::null_mut();
 
-        ExReleaseFastMutex(&mut DbgkpProcessDebugPortMutex);
+        ExReleaseFastMutex(&raw mut DbgkpProcessDebugPortMutex);
         DbgkpMarkProcessPeb(process);
     } else {
-        ExReleaseFastMutex(&mut DbgkpProcessDebugPortMutex);
+        ExReleaseFastMutex(&raw mut DbgkpProcessDebugPortMutex);
         return STATUS_PORT_NOT_SET;
     }
 
@@ -1377,7 +1377,7 @@ pub unsafe extern "system" fn DbgkInitialize() {
     let mut object_type_initializer: _OBJECT_TYPE_INITIALIZER = core::mem::zeroed();
     let mut name: _UNICODE_STRING = core::mem::zeroed();
 
-    ExInitializeFastMutex(&mut DbgkpProcessDebugPortMutex);
+    ExInitializeFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
     RtlZeroMemory(
         &mut object_type_initializer as *mut _ as PVOID,
@@ -1401,7 +1401,7 @@ pub unsafe extern "system" fn DbgkInitialize() {
         &mut name,
         &mut object_type_initializer,
         core::ptr::null_mut(),
-        &mut DbgkDebugObjectType,
+        &raw mut DbgkDebugObjectType,
     );
 }
 
@@ -1420,14 +1420,14 @@ pub unsafe extern "system" fn DbgkOpenProcessDebugPort(
         return STATUS_PORT_NOT_SET;
     }
 
-    ExAcquireFastMutex(&mut DbgkpProcessDebugPortMutex);
+    ExAcquireFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
     debug_object = (*(process as *mut _EPROCESS)).DebugPort as PDEBUG_OBJECT;
     if !debug_object.is_null() {
         ObReferenceObject(debug_object as PVOID);
     }
 
-    ExReleaseFastMutex(&mut DbgkpProcessDebugPortMutex);
+    ExReleaseFastMutex(&raw mut DbgkpProcessDebugPortMutex);
 
     if debug_object.is_null() {
         return STATUS_PORT_NOT_SET;

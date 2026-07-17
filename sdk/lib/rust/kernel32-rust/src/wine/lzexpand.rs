@@ -177,7 +177,7 @@ unsafe fn read_header(fd: HFILE, head: *mut lzfileheader) -> INT {
 
     if memcmp(
         (*head).magic.as_ptr() as *const core::ffi::c_void,
-        LZMagic.as_ptr() as *const core::ffi::c_void,
+        (*(&raw const LZMagic)).as_ptr() as *const core::ffi::c_void,
         LZ_MAGIC_LEN,
     ) != 0
     {

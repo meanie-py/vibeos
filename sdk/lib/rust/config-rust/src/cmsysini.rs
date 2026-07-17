@@ -633,7 +633,7 @@ pub unsafe extern "system" fn CmpLinkKeyToHive(
     RtlInitUnicodeString(&mut KeyName, TargetKeyName);
     Status = ZwSetValueKey(
         LinkKeyHandle,
-        &mut CmSymbolicLinkValueName,
+        &raw mut CmSymbolicLinkValueName,
         0,
         REG_LINK,
         KeyName.Buffer as PVOID,
@@ -1215,7 +1215,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
 
     RtlInitUnicodeString(&mut KeyName, UnicodeBuffer.as_ptr());
 
-    Status = NtSetValueKey(KeyHandle, &mut CmSymbolicLinkValueName, 0, REG_LINK, KeyName.Buffer as *mut core::ffi::c_void, KeyName.Length as ULONG);
+    Status = NtSetValueKey(KeyHandle, &raw mut CmSymbolicLinkValueName, 0, REG_LINK, KeyName.Buffer as *mut core::ffi::c_void, KeyName.Length as ULONG);
     if !NT_SUCCESS(Status) {
         'Cleanup: loop {
             if !SelectHandle.is_null() { NtClose(SelectHandle); }
@@ -1336,7 +1336,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         );
         RtlInitUnicodeString(&mut KeyName, UnicodeBuffer.as_ptr());
 
-        Status = NtSetValueKey(KeyHandle, &mut CmSymbolicLinkValueName, 0, REG_LINK, KeyName.Buffer as *mut core::ffi::c_void, KeyName.Length as ULONG);
+        Status = NtSetValueKey(KeyHandle, &raw mut CmSymbolicLinkValueName, 0, REG_LINK, KeyName.Buffer as *mut core::ffi::c_void, KeyName.Length as ULONG);
     }
 
     Status = STATUS_SUCCESS;
@@ -1553,7 +1553,7 @@ pub unsafe extern "system" fn CmpInitializeSystemHive(
         return 0u8;
     }
 
-    (*CmpMachineHiveList.as_mut_ptr().offset(3)).CmHive = SystemHive;
+    (*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().offset(3)).CmHive = SystemHive;
 
     1u8
 }
@@ -1588,7 +1588,7 @@ pub unsafe extern "system" fn CmpCreateObjectTypes() -> NTSTATUS {
     ObjectTypeInitializer.SecurityRequired = 1u8;
     ObjectTypeInitializer.InvalidAttributes = OBJ_EXCLUSIVE | OBJ_PERMANENT;
 
-    ObCreateObjectType(&mut Name, &mut ObjectTypeInitializer, core::ptr::null_mut(), &mut CmpKeyObjectType)
+    ObCreateObjectType(&mut Name, &mut ObjectTypeInitializer, core::ptr::null_mut(), &raw mut CmpKeyObjectType)
 }
 
 #[no_mangle]
@@ -1731,7 +1731,7 @@ pub unsafe extern "system" fn CmpCreateRegistryRoot() -> u8 {
         KEY_ALL_ACCESS,
         0,
         core::ptr::null_mut(),
-        &mut CmpRegistryRootHandle,
+        &raw mut CmpRegistryRootHandle,
     );
     if !NT_SUCCESS(Status) {
         return 0u8;
@@ -1832,7 +1832,7 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
 
     i = PtrToUlong(StartContext);
 
-    (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).ThreadStarted = 1u8;
+    (*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().add(i as usize)).ThreadStarted = 1u8;
 
     RtlInitEmptyUnicodeString(&mut FileName, FileBuffer.as_mut_ptr(), core::mem::size_of_val(&FileBuffer) as u16);
     RtlInitEmptyUnicodeString(&mut RegName, RegBuffer.as_mut_ptr(), core::mem::size_of_val(&RegBuffer) as u16);
@@ -1845,26 +1845,26 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
     RtlInitUnicodeString(&mut TempName, w!("\\REGISTRY\\").as_ptr());
     RtlAppendUnicodeStringToString(&mut RegName, &mut TempName);
 
-    RtlInitUnicodeString(&mut TempName, (*CmpMachineHiveList.as_ptr().add(i as usize)).BaseName);
+    RtlInitUnicodeString(&mut TempName, (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).BaseName);
     RtlAppendUnicodeStringToString(&mut RegName, &mut TempName);
 
     if *RegName.Buffer.offset((RegName.Length / core::mem::size_of::<u16>() as u16 - 1) as isize) == 0x005C {
-        RtlInitUnicodeString(&mut TempName, (*CmpMachineHiveList.as_ptr().add(i as usize)).Name);
+        RtlInitUnicodeString(&mut TempName, (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).Name);
         RtlAppendUnicodeStringToString(&mut RegName, &mut TempName);
     }
 
-    RtlInitUnicodeString(&mut TempName, (*CmpMachineHiveList.as_ptr().add(i as usize)).Name);
+    RtlInitUnicodeString(&mut TempName, (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).Name);
     FileName.Length = FileStart;
     RtlAppendUnicodeStringToString(&mut FileName, &mut TempName);
     
-    if (*CmpMachineHiveList.as_ptr().add(i as usize)).CmHive.is_null() {
-        (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).Allocate = 1u8;
+    if (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).CmHive.is_null() {
+        (*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().add(i as usize)).Allocate = 1u8;
 
         Status = CmpInitHiveFromFile(
             &FileName,
-            (*CmpMachineHiveList.as_ptr().add(i as usize)).HHiveFlags,
+            (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).HHiveFlags,
             &mut CmHive,
-            core::ptr::addr_of_mut!((*CmpMachineHiveList.as_mut_ptr().add(i as usize)).Allocate),
+            core::ptr::addr_of_mut!((*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().add(i as usize)).Allocate),
             CM_CHECK_REGISTRY_PURGE_VOLATILES
         );
         
@@ -1881,10 +1881,10 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
             );
         }
 
-        (*CmHive).Flags = (*CmpMachineHiveList.as_ptr().add(i as usize)).CmHiveFlags;
-        (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).CmHive2 = CmHive;
+        (*CmHive).Flags = (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).CmHiveFlags;
+        (*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().add(i as usize)).CmHive2 = CmHive;
     } else {
-        CmHive = (*CmpMachineHiveList.as_ptr().add(i as usize)).CmHive;
+        CmHive = (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).CmHive;
         if ((*CmHive).Hive.HiveFlags & 0x00000001) == 0 {
             Status = CmpOpenHiveFiles(
                 &FileName,
@@ -1946,15 +1946,15 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
                 }
             }
 
-            (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).CmHive2 = CmHive;
+            (*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().add(i as usize)).CmHive2 = CmHive;
         }
     }
 
-    (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).ThreadFinished = 1u8;
+    (*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().add(i as usize)).ThreadFinished = 1u8;
 
-    WorkerCount = InterlockedIncrement(&mut CmpLoadWorkerIncrement as *mut i32) as u32;
+    WorkerCount = InterlockedIncrement(&raw mut CmpLoadWorkerIncrement as *mut i32) as u32;
     if WorkerCount == CM_NUMBER_OF_MACHINE_HIVES as u32 {
-        KeSetEvent(&mut CmpLoadWorkerEvent as *mut _ as *mut core::ffi::c_void, 0, 0u8);
+        KeSetEvent(&raw mut CmpLoadWorkerEvent as *mut _ as *mut core::ffi::c_void, 0, 0u8);
     }
 
     PsTerminateSystemThread(Status);
@@ -2005,7 +2005,7 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
     RtlAppendUnicodeStringToString(&mut RegName, &mut TempName);
     RegStart = RegName.Length;
 
-    KeInitializeEvent(&mut CmpLoadWorkerEvent, _EVENT_TYPE_SynchronizationEvent, 0u8);
+    KeInitializeEvent(&raw mut CmpLoadWorkerEvent, _EVENT_TYPE_SynchronizationEvent, 0u8);
 
     CmpSpecialBootCondition = 1u8;
 
@@ -2018,7 +2018,7 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
         // load threads, so MININT hives were never marked volatile and CmpLoadHiveThread
         // spent ~5.5s failing to write CD-backed hives; perf doc "hive-flush stall")
         if CmpShareSystemHives != 0 {
-            (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).HHiveFlags |= HIVE_VOLATILE;
+            (*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().add(i as usize)).HHiveFlags |= HIVE_VOLATILE;
         }
 
         let status = PsCreateSystemThread(
@@ -2040,7 +2040,7 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
     }
 
     KeWaitForSingleObject(
-        &mut CmpLoadWorkerEvent as *mut _ as PVOID,
+        &raw mut CmpLoadWorkerEvent as *mut _ as PVOID,
         _KWAIT_REASON_Executive,
         _MODE_KernelMode as i8,
         0u8,
@@ -2051,18 +2051,18 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
 
     i = 0;
     while i < CM_NUMBER_OF_MACHINE_HIVES as u32 {
-        if (*CmpMachineHiveList.as_ptr().add(i as usize)).CmHive == core::ptr::null_mut() {
+        if (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).CmHive == core::ptr::null_mut() {
             RegName.Length = RegStart;
             RtlInitUnicodeString(
                 &mut TempName,
-                (*CmpMachineHiveList.as_ptr().add(i as usize)).BaseName,
+                (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).BaseName,
             );
             RtlAppendUnicodeStringToString(&mut RegName, &mut TempName);
 
             if *RegName.Buffer.add((RegName.Length / core::mem::size_of::<u16>() as u16 - 1) as usize) == 0x005C {
                 RtlInitUnicodeString(
                     &mut TempName,
-                    (*CmpMachineHiveList.as_ptr().add(i as usize)).Name,
+                    (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).Name,
                 );
                 RtlAppendUnicodeStringToString(&mut RegName, &mut TempName);
             }
@@ -2070,20 +2070,20 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
             let status = CmpLinkHiveToMaster(
                 &mut RegName,
                 core::ptr::null_mut(),
-                (*CmpMachineHiveList.as_ptr().add(i as usize)).CmHive2,
-                (*CmpMachineHiveList.as_ptr().add(i as usize)).Allocate,
+                (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).CmHive2,
+                (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).Allocate,
                 SecurityDescriptor,
             );
             if status != STATUS_SUCCESS {
                 KeBugCheckEx(0x73, 11, status as ULONG_PTR, i as ULONG_PTR, &mut RegName as *mut _ as ULONG_PTR);
             }
 
-            if (*CmpMachineHiveList.as_ptr().add(i as usize)).Allocate != 0 {
+            if (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).Allocate != 0 {
             }
         }
 
-        if (*CmpMachineHiveList.as_ptr().add(i as usize)).CmHive2 != core::ptr::null_mut() {
-            CmpAddToHiveFileList((*CmpMachineHiveList.as_ptr().add(i as usize)).CmHive2);
+        if (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).CmHive2 != core::ptr::null_mut() {
+            CmpAddToHiveFileList((*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).CmHive2);
         }
 
         i += 1;
@@ -2122,11 +2122,11 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
         CmpShareSystemHives = 1u8;
     }
 
-    InitializeListHead(&mut CmpHiveListHead as *mut _ as *mut LIST_ENTRY);
-    ExInitializePushLock(&mut CmpHiveListHeadLock as *mut _ as *mut _);
-    ExInitializePushLock(&mut CmpLoadHiveLock as *mut _ as *mut _);
+    InitializeListHead(&raw mut CmpHiveListHead as *mut _ as *mut LIST_ENTRY);
+    ExInitializePushLock(&raw mut CmpHiveListHeadLock as *mut _ as *mut _);
+    ExInitializePushLock(&raw mut CmpLoadHiveLock as *mut _ as *mut _);
 
-    ExInitializeResourceLite(&mut CmpRegistryLock);
+    ExInitializeResourceLite(&raw mut CmpRegistryLock);
 
     CmpInitializeCache();
 
@@ -2136,8 +2136,8 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
 
     CmpInitCallback();
 
-    KeInitializeGuardedMutex(&mut CmpSelfHealQueueLock as *mut _ as *mut _);
-    InitializeListHead(&mut CmpSelfHealQueueListHead as *mut _ as *mut LIST_ENTRY);
+    KeInitializeGuardedMutex(&raw mut CmpSelfHealQueueLock as *mut _ as *mut _);
+    InitializeListHead(&raw mut CmpSelfHealQueueListHead as *mut _ as *mut LIST_ENTRY);
 
     CmpSystemProcess = PsGetCurrentProcess();
 
@@ -2149,7 +2149,7 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
 
     ARM64_UART_TRACE(b"[CM] CmpInitializeHive (master)\r\n\0".as_ptr());
     Status = CmpInitializeHive(
-        &mut CmiVolatileHive,
+        &raw mut CmiVolatileHive,
         HINIT_CREATE,
         HIVE_VOLATILE,
         HFILE_TYPE_PRIMARY,
@@ -2249,7 +2249,7 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
         KeBugCheckEx(CONFIG_INITIALIZATION_FAILED, 1, 11, Status as ULONG_PTR, 0);
     }
 
-    (*CmpMachineHiveList.as_mut_ptr().add(0)).CmHive = HardwareHive;
+    (*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().add(0)).CmHive = HardwareHive;
 
     RtlInitUnicodeString(&mut KeyName, w!("\\Registry\\Machine\\HARDWARE").as_ptr());
     Status = CmpLinkHiveToMaster(

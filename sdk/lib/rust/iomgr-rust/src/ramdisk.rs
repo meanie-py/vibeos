@@ -368,7 +368,7 @@ pub unsafe extern "system" fn IopStartRamdisk(
         let mut DriveLetter: _UNICODE_STRING = _UNICODE_STRING {
             Length: 12,
             MaximumLength: 14,
-            Buffer: DRIVE_LETTER_BUF.as_mut_ptr(),
+            Buffer: (*(&raw mut DRIVE_LETTER_BUF)).as_mut_ptr(),
         };
 
         // sprintf(Buffer, "X:%s", LoaderBlock->NtBootPathName)

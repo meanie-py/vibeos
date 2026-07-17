@@ -194,7 +194,7 @@ unsafe fn PROFILE_WriteMarker(hFile: HANDLE, encoding: ENCODING) {
         2 => {
             WriteFile(
                 hFile,
-                bom_utf8.as_ptr() as LPCVOID,
+                (*(&raw const bom_utf8)).as_ptr() as LPCVOID,
                 core::mem::size_of::<[u8; 3]>() as DWORD,
                 &mut dwBytesWritten as *mut DWORD,
                 core::ptr::null_mut(),
@@ -437,7 +437,7 @@ unsafe fn PROFILE_DetectTextEncoding(
     if *len as usize >= core::mem::size_of::<[::core::ffi::c_char; 3]>()
         && memcmp(
             buffer,
-            &bom_utf8 as *const [::core::ffi::c_char; 3] as *const ::core::ffi::c_void,
+            &raw const bom_utf8 as *const [::core::ffi::c_char; 3] as *const ::core::ffi::c_void,
             core::mem::size_of::<[::core::ffi::c_char; 3]>(),
         ) == 0
     {
@@ -1067,7 +1067,7 @@ unsafe fn PROFILE_Open(
     }
 
     if filename.is_null() {
-        filename = &wininiW as *const WCHAR as LPCWSTR;
+        filename = &raw const wininiW as *const WCHAR as LPCWSTR;
     }
 
     if (RtlDetermineDosPathNameType_U(filename as PCWSTR) as i32 == RtlPathTypeRelative as i32)
@@ -1078,7 +1078,7 @@ unsafe fn PROFILE_Open(
         let mut windirW: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
         GetWindowsDirectoryW(windirW.as_mut_ptr(), MAX_PATH);
         strcpyW(buffer.as_mut_ptr(), windirW.as_mut_ptr());
-        strcatW(buffer.as_mut_ptr(), wszSeparator.as_mut_ptr());
+        strcatW(buffer.as_mut_ptr(), (*(&raw mut wszSeparator)).as_mut_ptr());
         strcatW(buffer.as_mut_ptr(), filename);
     } else {
         let mut dummy: LPWSTR = core::ptr::null_mut();
@@ -1485,7 +1485,7 @@ pub unsafe extern "system" fn GetProfileIntW(
     entry: LPCWSTR,
     def_val: INT,
 ) -> UINT {
-    return GetPrivateProfileIntW(section, entry, def_val, wininiW.as_ptr());
+    return GetPrivateProfileIntW(section, entry, def_val, (*(&raw const wininiW)).as_ptr());
 }
 
 #[no_mangle]
@@ -1503,7 +1503,7 @@ pub unsafe extern "system" fn WriteProfileStringW(
     entry: LPCWSTR,
     string: LPCWSTR,
 ) -> BOOL {
-    return WritePrivateProfileStringW(section, entry, string, wininiW.as_ptr());
+    return WritePrivateProfileStringW(section, entry, string, (*(&raw const wininiW)).as_ptr());
 }
 
 #[no_mangle]
@@ -1524,7 +1524,7 @@ pub unsafe extern "system" fn GetPrivateProfileIntW(
     if GetPrivateProfileStringW(
         section,
         entry,
-        &emptystringW as *const WCHAR as LPCWSTR,
+        &raw const emptystringW as *const WCHAR as LPCWSTR,
         &mut buffer as *mut [WCHAR; 30] as LPWSTR,
         (core::mem::size_of::<[WCHAR; 30]>() as usize)
             .wrapping_div(core::mem::size_of::<WCHAR>() as usize) as DWORD,
@@ -1721,7 +1721,7 @@ pub unsafe extern "system" fn GetProfileSectionW(
     buffer: LPWSTR,
     len: DWORD,
 ) -> DWORD {
-    GetPrivateProfileSectionW(section, buffer, len, wininiW.as_ptr())
+    GetPrivateProfileSectionW(section, buffer, len, (*(&raw const wininiW)).as_ptr())
 }
 
 // ============================================================================
@@ -1848,7 +1848,7 @@ pub unsafe extern "system" fn GetProfileStringW(
     buffer: LPWSTR,
     len: DWORD,
 ) -> DWORD {
-    GetPrivateProfileStringW(section, entry, def_val, buffer, len, wininiW.as_ptr())
+    GetPrivateProfileStringW(section, entry, def_val, buffer, len, (*(&raw const wininiW)).as_ptr())
 }
 
 /// GetProfileStringA (KERNEL32.@) — profile.c

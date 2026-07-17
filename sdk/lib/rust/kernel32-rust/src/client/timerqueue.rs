@@ -11,7 +11,7 @@ pub static mut BasepDefaultTimerQueue: HANDLE = NULL;
 pub unsafe extern "system" fn BasepCreateDefaultTimerQueue() -> BOOL {
     let mut Status: NTSTATUS;
 
-    Status = RtlCreateTimerQueue(&mut BasepDefaultTimerQueue);
+    Status = RtlCreateTimerQueue(&raw mut BasepDefaultTimerQueue);
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
         // DPRINT removed

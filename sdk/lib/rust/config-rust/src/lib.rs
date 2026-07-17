@@ -13,7 +13,6 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 /// ASSERT macro — maps to debug_assert! (no-op in release). A crate-local convenience
 /// (ntoskrnl-rust defines its own identical copy; it isn't exported). Defined before

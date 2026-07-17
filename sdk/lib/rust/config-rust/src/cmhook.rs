@@ -50,8 +50,8 @@ pub unsafe extern "system" fn CmpInitCallback() {
         i += 1;
     }
 
-    InitializeListHead(&mut CmiCallbackHead);
-    ExInitializeFastMutex(&mut CmiCallbackLock);
+    InitializeListHead(&raw mut CmiCallbackHead);
+    ExInitializeFastMutex(&raw mut CmiCallbackLock);
 }
 
 // C source has no NTAPI — function is cdecl. Match with extern "C".

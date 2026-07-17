@@ -240,7 +240,7 @@ pub unsafe extern "system" fn FsRtlDeregisterUncProvider(Handle: HANDLE) {
     }
 
     KeWaitForSingleObject(
-        &mut FsRtlpUncSemaphore as *mut KSEMAPHORE as PVOID,
+        &raw mut FsRtlpUncSemaphore as *mut KSEMAPHORE as PVOID,
         0,
         0,
         0,
@@ -267,7 +267,7 @@ pub unsafe extern "system" fn FsRtlDeregisterUncProvider(Handle: HANDLE) {
         FsRtlpSetSymbolicLink(core::ptr::null());
     }
 
-    KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+    KeReleaseSemaphore(&raw mut FsRtlpUncSemaphore, 0, 1, 0);
 }
 
 #[no_mangle]
@@ -282,7 +282,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
     let mut mup_string: _UNICODE_STRING = core::mem::zeroed();
 
     KeWaitForSingleObject(
-        &mut FsRtlpUncSemaphore as *mut KSEMAPHORE as PVOID,
+        &raw mut FsRtlpUncSemaphore as *mut KSEMAPHORE as PVOID,
         0,
         0,
         0,
@@ -291,7 +291,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
 
     if FsRtlpRedirs == 0 {
         if FsRtlpIsDfsEnabled() != 0 {
-            core::ptr::write_bytes(&mut FsRtlpDRD as *mut DRDData as *mut u8, 0, core::mem::size_of::<DRDData>());
+            core::ptr::write_bytes(&raw mut FsRtlpDRD as *mut DRDData as *mut u8, 0, core::mem::size_of::<DRDData>());
             FsRtlpRedirs = 1;
         }
     }
@@ -313,7 +313,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
                 *Handle = INVALID_HANDLE_VALUE_PTR;
             }
 
-            KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+            KeReleaseSemaphore(&raw mut FsRtlpUncSemaphore, 0, 1, 0);
             return status;
         }
 
@@ -338,7 +338,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
                 *Handle = INVALID_HANDLE_VALUE_PTR;
             }
 
-            KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+            KeReleaseSemaphore(&raw mut FsRtlpUncSemaphore, 0, 1, 0);
             return status;
         }
 
@@ -379,7 +379,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
                     *Handle = INVALID_HANDLE_VALUE_PTR;
                 }
 
-                KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+                KeReleaseSemaphore(&raw mut FsRtlpUncSemaphore, 0, 1, 0);
                 return status;
             }
         }
@@ -387,7 +387,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
         if !FsRtlpDRD.RedirectorDeviceName.Buffer.is_null() {
             status = FsRtlpRegisterProviderWithMUP(
                 device_handle,
-                &FsRtlpDRD.RedirectorDeviceName,
+                &raw const FsRtlpDRD.RedirectorDeviceName,
                 FsRtlpDRD.MailslotsSupported,
             );
             if status < 0 {
@@ -405,7 +405,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
                     *Handle = INVALID_HANDLE_VALUE_PTR;
                 }
 
-                KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+                KeReleaseSemaphore(&raw mut FsRtlpUncSemaphore, 0, 1, 0);
                 return status;
             }
 
@@ -430,7 +430,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
                     *Handle = INVALID_HANDLE_VALUE_PTR;
                 }
 
-                KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+                KeReleaseSemaphore(&raw mut FsRtlpUncSemaphore, 0, 1, 0);
                 return status;
             }
         }
@@ -452,7 +452,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
         *Handle = INVALID_HANDLE_VALUE_PTR;
     }
 
-    KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+    KeReleaseSemaphore(&raw mut FsRtlpUncSemaphore, 0, 1, 0);
     status
 }
 

@@ -1132,7 +1132,7 @@ pub unsafe extern "system" fn LoadModule(
         }
 
         /* Wait up to 30 seconds for the process to become idle */
-        if UserWaitForInputIdleRoutine.is_some() {
+        if (*(&raw const UserWaitForInputIdleRoutine)).is_some() {
             (UserWaitForInputIdleRoutine.unwrap())(ProcessInformation.hProcess, 30000);
         }
 

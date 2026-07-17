@@ -146,9 +146,9 @@ unsafe fn IopBuildSymbolicLink(
     }
 
     let prefix = if UserModePrefixFormat != 0 {
-        &USER_MODE_PREFIX
+        &raw const USER_MODE_PREFIX
     } else {
-        &KERNEL_MODE_PREFIX
+        &raw const KERNEL_MODE_PREFIX
     };
 
     let Status = RtlUnicodeStringPrintf_4wZ(
@@ -181,8 +181,8 @@ unsafe fn IopSeparateSymbolicLink(
     ReferenceStringPresent: PBOOLEAN,
     InterfaceClassGuid: LPGUID,
 ) -> NTSTATUS {
-    if RtlPrefixUnicodeString(&KERNEL_MODE_PREFIX, SymbolicLinkName, 0u8) == 0 &&
-       RtlPrefixUnicodeString(&USER_MODE_PREFIX, SymbolicLinkName, 0u8) == 0 {
+    if RtlPrefixUnicodeString(&raw const KERNEL_MODE_PREFIX, SymbolicLinkName, 0u8) == 0 &&
+       RtlPrefixUnicodeString(&raw const USER_MODE_PREFIX, SymbolicLinkName, 0u8) == 0 {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -694,7 +694,7 @@ pub unsafe extern "system" fn IoGetDeviceInterfaceAlias(
         return Status;
     }
 
-    let UserModePrefixFormat = RtlPrefixUnicodeString(&USER_MODE_PREFIX, SymbolicLinkName, 0u8);
+    let UserModePrefixFormat = RtlPrefixUnicodeString(&raw const USER_MODE_PREFIX, SymbolicLinkName, 0u8);
 
     Status = IopBuildSymbolicLink(
         &DeviceString,

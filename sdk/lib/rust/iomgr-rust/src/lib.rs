@@ -14,7 +14,6 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 // Debug-print macros hoisted to the dbgprint-rust leaf. Re-export at this crate's
 // root so iomgr's `crate::dbg_print!(…)` / `crate::wstr!(…)` / `crate::swprintf!(…)`

@@ -16,7 +16,6 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 // Debug-print macro hoisted to the dbgprint-rust leaf. Re-export at this crate's
 // root so fstub's `crate::swprintf!(…)` call sites (17× in disksup.rs) resolve

@@ -177,6 +177,27 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   clashing_extern bucket that looked mechanical (same-crate-redecl AND CONV-i386) is not — the
   loose FFI typing that co-occurs with the flagged difference is load-bearing.**
 
+- **2026-07-17 — allow-peel batch 2: 22 more cold crates driven to ZERO static_mut_refs.**
+  Peeled `#![allow(static_mut_refs)]` from the remaining 22 unfenced suppressing crates
+  (config/crt-startup/dbgk/fsrtl/fstub/gdi32/inbv/iomgr/kd64/kdbg/kernel32/kernel32-vista/
+  msgina/pnpmgr/random/rtl-actctx/rtl-diag/rtlk/user32/vdm/vf/wmi — **shell32-rust stays
+  fenced** for the shell32-com lane). Surfaced **518 hidden sites** (amd64/i386; 441 arm64)
+  and eliminated all: **310 via the pure `&raw` prefix** (`smr_apply_json.py`), **258 via the
+  raw-deref wrap** (`smr_wrap_residual.py`: method/field-autoref → `(*(&raw const/mut X)).rest`),
+  **23 ref-needed sites** (`size_of_val`/`discriminant`/`RTL_NUMBER_OF` args wanting `&T`) fixed
+  with the **shared-ref-through-raw-deref idiom** `&*(&raw const X)` / `&mut *(&raw mut X)` — a
+  reference to a *deref expression*, not the static path, so it satisfies the lint while keeping
+  the reference the call site needs. Two manual sites: kd64 `kddata.rs` had ONE `let d = &mut
+  Static` binding used as a struct place 109× (`d.field=…`) — plain `&raw` cascaded to 109 E0609
+  "no field on raw ptr"; fixed at the binding with `&mut *(&raw mut …)` (1 line, all 109 uses
+  unchanged). And user32 `appswitch.rs` `windowText.len()` on a `static mut [WCHAR;1024]` (array
+  `.len()` autoref) → `(*(&raw const windowText)).len()`. **Oracle-guarded ×3:** the transform
+  can only fail by *not compiling* (E0308/E0609), never silently — final = 0 static_mut_refs,
+  **0 dangerous_implicit_autorefs**, 0 errors on all 3 arches; `unused_unsafe` count unchanged
+  (164→164) proving the wrap didn't perturb other lints. Removes 22 blanket suppressions.
+  **Running total: 30/35 static_mut_refs-suppressing crates peeled to zero.** Remaining 5:
+  shell32-rust (fenced) + the hot-lane fenced set (ntoskrnl/hal/ole32/oleaut32 sites live under
+  *their* crate allows — do when those lanes are quiet).
 - **2026-07-17 — allow-peel started: 8 kernel crates driven to ZERO static_mut_refs.**
   `#![allow(static_mut_refs)]` at crate level (35 crates carry it; only shell32 is fenced) was
   HIDING real static_mut_refs from the census. Peeled the allow from the 8 census-reachable,

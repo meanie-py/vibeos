@@ -181,7 +181,7 @@ mod win64 {
             e += 1;
         }
         if e != 0 {
-            RtlAddFunctionTable(EMU_PDATA.as_mut_ptr(), e as DWORD, image_base as u64);
+            RtlAddFunctionTable((*(&raw mut EMU_PDATA)).as_mut_ptr(), e as DWORD, image_base as u64);
         }
         1
     }

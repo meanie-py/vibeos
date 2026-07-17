@@ -15,7 +15,6 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 #[cfg(target_arch = "x86")]
 pub mod global_barrier;

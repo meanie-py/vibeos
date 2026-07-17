@@ -491,7 +491,7 @@ pub unsafe extern "system" fn GetStartupInfoA(lpStartupInfo: LPSTARTUPINFOA) {
 
                         /* We finished with the ANSI version, try to cache it */
                         if InterlockedCompareExchangePointer(
-                            &mut BaseAnsiStartupInfo as *mut _ as *mut PVOID,
+                            &raw mut BaseAnsiStartupInfo as *mut _ as *mut PVOID,
                             StartupInfo as PVOID,
                             core::ptr::null_mut(),
                         )

@@ -1391,7 +1391,7 @@ pub static mut KdDebuggerDataBlock: KDDEBUGGER_DATA64_FULL = unsafe { core::mem:
 /// Must be called before KdRegisterDebuggerDataBlock in KdInitSystem.
 #[no_mangle]
 pub unsafe extern "system" fn KdpInitDebuggerDataBlock() {
-    let d = &mut KdDebuggerDataBlock;
+    let d = &mut *(&raw mut KdDebuggerDataBlock);
     d.BreakpointWithStatus = RtlpBreakWithStatusInstruction as u64;
     d.ThCallbackStack = core::mem::offset_of!(KTHREAD, CallbackStack) as u16;
     #[cfg(not(any(target_arch = "arm", target_arch = "x86_64", target_arch = "aarch64")))]

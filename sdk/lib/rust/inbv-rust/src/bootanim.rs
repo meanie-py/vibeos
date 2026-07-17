@@ -339,7 +339,7 @@ pub unsafe extern "system" fn InbvRotationThread_impl(_context: PVOID) {
     let mut delay = LARGE_INTEGER { QuadPart: 0 };
 
     InbvAcquireLock();
-    if core::mem::discriminant(&RotBarSelection) == core::mem::discriminant(&ROT_BAR_TYPE::RB_SQUARE_CELLS) {
+    if core::mem::discriminant(&*(&raw const RotBarSelection)) == core::mem::discriminant(&ROT_BAR_TYPE::RB_SQUARE_CELLS) {
         index = 0;
     } else {
         index = 32;
@@ -353,12 +353,12 @@ pub unsafe extern "system" fn InbvRotationThread_impl(_context: PVOID) {
 
         InbvAcquireLock();
 
-        if core::mem::discriminant(&PltRotBarStatus) == core::mem::discriminant(&ROT_BAR_STATUS::RBS_STOP_ANIMATE) {
+        if core::mem::discriminant(&*(&raw const PltRotBarStatus)) == core::mem::discriminant(&ROT_BAR_STATUS::RBS_STOP_ANIMATE) {
             InbvReleaseLock();
             break;
         }
 
-        if core::mem::discriminant(&RotBarSelection) == core::mem::discriminant(&ROT_BAR_TYPE::RB_SQUARE_CELLS) {
+        if core::mem::discriminant(&*(&raw const RotBarSelection)) == core::mem::discriminant(&ROT_BAR_TYPE::RB_SQUARE_CELLS) {
             delay.QuadPart = -800000i64;
             total = 18;
             index %= total;
@@ -375,7 +375,7 @@ pub unsafe extern "system" fn InbvRotationThread_impl(_context: PVOID) {
             if index < total - 1 {
                 if index < 2 {
                     VidBufferToScreenBlt(
-                        RotBarBuffer.as_mut_ptr().add(8 * (2 - index as usize) / 2),
+                        (*(&raw mut RotBarBuffer)).as_mut_ptr().add(8 * (2 - index as usize) / 2),
                         x,
                         y,
                         22 - 8 * (2 - index),
@@ -384,7 +384,7 @@ pub unsafe extern "system" fn InbvRotationThread_impl(_context: PVOID) {
                     );
                 } else if index >= total - 3 {
                     VidBufferToScreenBlt(
-                        RotBarBuffer.as_mut_ptr(),
+                        (*(&raw mut RotBarBuffer)).as_mut_ptr(),
                         x + ((index - 2) * 8),
                         y,
                         22 - 8 * (4 - (total - index)),
@@ -392,17 +392,17 @@ pub unsafe extern "system" fn InbvRotationThread_impl(_context: PVOID) {
                         24,
                     );
                 } else {
-                    VidBufferToScreenBlt(RotBarBuffer.as_mut_ptr(), x + ((index - 2) * 8), y, 22, 9, 24);
+                    VidBufferToScreenBlt((*(&raw mut RotBarBuffer)).as_mut_ptr(), x + ((index - 2) * 8), y, 22, 9, 24);
                 }
             }
             index += 1;
-        } else if core::mem::discriminant(&RotBarSelection) == core::mem::discriminant(&ROT_BAR_TYPE::RB_PROGRESS_BAR) {
+        } else if core::mem::discriminant(&*(&raw const RotBarSelection)) == core::mem::discriminant(&ROT_BAR_TYPE::RB_PROGRESS_BAR) {
             delay.QuadPart = -600000i64;
             total = SCREEN_WIDTH;
             index %= total;
 
             VidBufferToScreenBlt(
-                RotLineBuffer.as_mut_ptr().add(index as usize),
+                (*(&raw mut RotLineBuffer)).as_mut_ptr().add(index as usize),
                 index,
                 SCREEN_HEIGHT - 6,
                 SCREEN_WIDTH - index,
@@ -411,7 +411,7 @@ pub unsafe extern "system" fn InbvRotationThread_impl(_context: PVOID) {
             );
             if index > 0 {
                 VidBufferToScreenBlt(
-                    RotLineBuffer.as_mut_ptr().add(((SCREEN_WIDTH - index) / 2) as usize),
+                    (*(&raw mut RotLineBuffer)).as_mut_ptr().add(((SCREEN_WIDTH - index) / 2) as usize),
                     0,
                     SCREEN_HEIGHT - 6,
                     index - 2,
@@ -576,7 +576,7 @@ pub unsafe extern "system" fn DisplayBootBitmap(text_mode: BOOLEAN) {
             let palette = (boot_logo as *mut u8).add((*bitmap_info_header).biSize as usize) as *mut RGBQUAD;
             core::ptr::copy_nonoverlapping(
                 palette as *const u8,
-                MainPalette.as_mut_ptr() as *mut u8,
+                (*(&raw mut MainPalette)).as_mut_ptr() as *mut u8,
                 core::mem::size_of::<[RGBQUAD; 16]>(),
             );
 
@@ -623,7 +623,7 @@ pub unsafe extern "system" fn DisplayBootBitmap(text_mode: BOOLEAN) {
         if core::mem::discriminant(&temp_rot_bar_selection) == core::mem::discriminant(&ROT_BAR_TYPE::RB_SQUARE_CELLS) && !bar.is_null() {
             VidScreenToBufferBlt(buffer.as_mut_ptr(), 0, 0, 22, 9, 24);
             BitBltPalette(bar, 1u8, 0, 0);
-            VidScreenToBufferBlt(RotBarBuffer.as_mut_ptr(), 0, 0, 22, 9, 24);
+            VidScreenToBufferBlt((*(&raw mut RotBarBuffer)).as_mut_ptr(), 0, 0, 22, 9, 24);
             VidBufferToScreenBlt(buffer.as_mut_ptr(), 0, 0, 22, 9, 24);
         }
 
@@ -632,7 +632,7 @@ pub unsafe extern "system" fn DisplayBootBitmap(text_mode: BOOLEAN) {
             if !line_bmp.is_null() {
                 BitBltPalette(line_bmp, 1u8, 0, SCREEN_HEIGHT - 6);
                 VidScreenToBufferBlt(
-                    RotLineBuffer.as_mut_ptr(),
+                    (*(&raw mut RotLineBuffer)).as_mut_ptr(),
                     0,
                     SCREEN_HEIGHT - 6,
                     SCREEN_WIDTH,

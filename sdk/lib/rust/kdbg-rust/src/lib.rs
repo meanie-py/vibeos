@@ -22,7 +22,6 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 // Debug-print macros + the `dbgprint` runtime module were hoisted to the
 // dbgprint-rust leaf crate (crate-split Phase 1b). Re-export them at this crate's

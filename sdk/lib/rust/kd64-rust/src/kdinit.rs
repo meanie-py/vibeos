@@ -240,7 +240,7 @@ pub unsafe extern "system" fn KdInitSystem(
         KdRegisterDebuggerDataBlock(
             KDBG_TAG,
             core::ptr::addr_of_mut!(KdDebuggerDataBlock) as PDBGKD_DEBUG_DATA_HEADER64,
-            core::mem::size_of_val(&KdDebuggerDataBlock) as ULONG
+            core::mem::size_of_val(&*(&raw const KdDebuggerDataBlock)) as ULONG
         );
 
         KdVersionBlock.MajorVersion = ((DBGKD_MAJOR_NT as u32) << 8 | (NtBuildNumber >> 28)) as USHORT;
@@ -396,7 +396,7 @@ pub unsafe extern "system" fn KdInitSystem(
             core::ptr::write_bytes(
                 core::ptr::addr_of_mut!(KdpBreakpointTable) as *mut u8,
                 0,
-                core::mem::size_of_val(&KdpBreakpointTable),
+                core::mem::size_of_val(&*(&raw const KdpBreakpointTable)),
             );
 
             KeInitializeDpc(

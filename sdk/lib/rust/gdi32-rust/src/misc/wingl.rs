@@ -150,7 +150,7 @@ unsafe fn OpenGLEnable() -> BOOL {
  */
 #[no_mangle]
 pub unsafe extern "system" fn ChoosePixelFormat(hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR) -> INT {
-    if glChoosePixelFormat.is_none() && OpenGLEnable() == FALSE {
+    if (*(&raw const glChoosePixelFormat)).is_none() && OpenGLEnable() == FALSE {
         return 0;
     }
 
@@ -167,7 +167,7 @@ pub unsafe extern "system" fn DescribePixelFormat(
     nBytes: UINT,
     ppfd: LPPIXELFORMATDESCRIPTOR,
 ) -> INT {
-    if glDescribePixelFormat.is_none() && OpenGLEnable() == FALSE {
+    if (*(&raw const glDescribePixelFormat)).is_none() && OpenGLEnable() == FALSE {
         return 0;
     }
 
@@ -179,7 +179,7 @@ pub unsafe extern "system" fn DescribePixelFormat(
  */
 #[no_mangle]
 pub unsafe extern "system" fn GetPixelFormat(hdc: HDC) -> INT {
-    if glGetPixelFormat.is_none() && OpenGLEnable() == FALSE {
+    if (*(&raw const glGetPixelFormat)).is_none() && OpenGLEnable() == FALSE {
         return 0;
     }
 
@@ -201,7 +201,7 @@ pub unsafe extern "system" fn SetPixelFormat(
         return (current == iPixelFormat) as BOOL;
     }
 
-    if glSetPixelFormat.is_none() && OpenGLEnable() == FALSE {
+    if (*(&raw const glSetPixelFormat)).is_none() && OpenGLEnable() == FALSE {
         return 0;
     }
 
@@ -213,7 +213,7 @@ pub unsafe extern "system" fn SetPixelFormat(
  */
 #[no_mangle]
 pub unsafe extern "system" fn SwapBuffers(hdc: HDC) -> BOOL {
-    if glSwapBuffers.is_none() && OpenGLEnable() == FALSE {
+    if (*(&raw const glSwapBuffers)).is_none() && OpenGLEnable() == FALSE {
         return 0;
     }
 
