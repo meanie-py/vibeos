@@ -7715,3 +7715,78 @@ the sweep runs to completion end-to-end for the first time. (The remaining `ok=3
 doesn't deliver user APCs** — check that the arch's syscall/trap exit actually calls
 `KiDeliverApc(UserMode, …)`, don't assume it does just because the amd64 sibling does. New arch ports
 are the usual offenders.
+
+---
+
+### 9.91 — i386 SMP (M5 Phase B) bringup: three offset/layout translation bugs, each masked in UP and unmasked by KeStartAllProcessors
+
+Turning on the i386 `ntkrnlmp` cell (now that the APIC HAL is the i386 default —
+§the i386-apic-hal-plan) unleashed a stack of latent bugs. All three below are
+the **same family**: a struct/loader-block layout or constant that is *masked* on
+the UP build and detonates only when `KeStartAllProcessors` runs (which it does
+even at `-smp 1` — the loop body executes once before `HalStartNextProcessor`
+returns FALSE). Triage was via the native GDB toolkit driving `gdb-multiarch`
+against **`ntkrnlmp.exe`** (NOT `ntoskrnl.exe` — the SMP media runs a *different*
+binary; the toolkit + `addr2sym` symbolicate the UP kernel and give garbage, so
+`add-symbol-file build-i386/ntoskrnl/ntkrnlmp/ntkrnlmp.exe <kbase+0x1000>` and
+symbolicate by hand). kbase was a stable `0x804c3000` (reloc `0x800c3000`).
+
+**Bug A — BUGCHECK 0x79 MISMATCHED_HAL(2,2,1): swapped `PRCB_BUILD_*` constants.**
+`hal-rust/x86/halinit.rs` bugchecks when `Prcb->BuildType != HalpBuildType`. The
+i386 kernel (`ke/i386/kiinit.rs`) defined `PRCB_BUILD_UNIPROCESSOR=1 /
+PRCB_BUILD_DEBUG=2` — **swapped** vs the canonical Windows values (`DEBUG=1 /
+UNIPROCESSOR=2`) that the HAL, the ntkrnl-sys bindgen headers, and the amd64
+kernel all use. Masked on UP because both bits are set → `BuildType==3` either
+way (and the UP HAL's `HalpBuildType` is also 3). SMP sets DEBUG-only, so the
+kernel published `2` while the SMP HAL published `1`. Fix = canonical values.
+*Detector shape:* any per-arch bit constant that only agrees under OR — check it
+against the value the FFI peer actually uses, not the sibling arch.
+
+**Bug B — BUGCHECK 0x1E in `memcpy`: `KDESCRIPTOR` missing its `Pad` field.**
+`KeStartAllProcessors` does `__sgdt(&bspGdt.Limit)` then `RtlCopyMemory(&APInfo->
+Gdt, (PVOID)bspGdt.Base, bspGdt.Limit+1)`. `sgdt`/`sidt` write a **packed 6-byte**
+pseudo-descriptor (`[2 limit][4 base]`) at `&self.Limit`. The local `KDESCRIPTOR`
+was `{ Limit: u16, Base: u32 }` — missing the canonical leading `Pad: u16` — so
+with `#[repr(C)]` the u32 `Base` sits at offset 4 with a 2-byte alignment hole at
+offset 2. `sgdt` wrote the base into bytes 2..6 while the struct read `Base` from
+bytes 4..8 → `Base = (real_base>>16) | (stack_garbage<<16)` ≈ `0xf7bbXXXX`, and
+the GDT copy read `Limit+1` bytes from that wild stack pointer, running off the
+mapped kernel stack (fault inside `_memcpy`'s `movzbl (%edx,%esi,1)`). Fix = add
+`Pad: USHORT` so `Limit`@2 / `Base`@4 match the packed descriptor (canonical
+`KDESCRIPTOR`; see `trampoline.rs:135`). *Reusable:* any struct that receives a
+`sgdt`/`sidt`/`fxsave`-style **packed hardware layout** must match that layout
+exactly — a "cleaned-up" field list silently misaligns pointer reads.
+
+**Bug C — BUGCHECK 0x50 + a masking 0x1E cascade: loader-block written by raw
+`offset(0/1/2)` instead of named fields.** The AP handshake C is
+`KeLoaderBlock->KernelStack=…; ->Prcb=&APInfo->Pcr.Prcb; ->Thread=&…->IdleThread;`
+The translation wrote `*(KeLoaderBlock as *mut ULONG_PTR).offset(0/1/2)` — i.e.
+bytes 0/4/8 — but `KernelStack`/`Prcb`/`Thread` live **after**
+`LoadOrderListHead` + `MemoryDescriptorListHead` in `LOADER_PARAMETER_BLOCK`. So
+it clobbered the two list heads: the memory-descriptor Flink corruption produced
+a 0x50 wild deref, and the `LoadOrderListHead` corruption made `KeBugCheckEx`'s
+`PsLoadedModuleList` walk fault (`mov (%edx),%ebx` with DllBase@+0x18,
+SizeOfImage@+0x20) → a **nested bugcheck cascade that recorded the reporter's PC,
+masking the real 0x50** (same masking pattern as arm64 §9.54). It also stored the
+pointer *values* rather than the field *addresses* the i386 `KiSystemStartup`
+`CONTAINING_RECORD(LoaderBlock->Prcb, KIPCR, Prcb)` contract needs (`KPCR_PRCB`
+offset 0x20). Fix = named-field writes + `addr_of_mut!`, matching
+`ke/amd64/mproc.rs`. Also fixed the spin-wait to read `(*KeLoaderBlock).Prcb`.
+*Reusable:* NEVER translate `block->NamedField = x` into `ptr.offset(N)` — resolve
+the real bindgen field. The `scan_magic_offsets` TYPED_PTR_HEX_ARITH shape is the
+tripwire; a `ptr as *mut ULONG_PTR).offset(k)` on a rich struct is the same class.
+
+**STILL OPEN — a 4th bug (the one that stops i386 `-smp 1` today).** Post A/B/C,
+i386 `-smp 1` reaches deep MM init on the **Phase1Initialization** system thread
+(`KiThreadStartup → PspSystemThreadStartup → Phase1Initialization`, which is where
+`KeStartAllProcessors` runs), then takes a `0x50` whose trap frame's saved `Eip`
+is a **stack VA `0xf7bbbdb3`** (executing stack garbage) with the wild data write
+at `0x8ef7bbbd` = that same stack VA read one byte misaligned (`>>8 | 0x8e<<24`).
+The frames just under it are `KiCommonExit`/`KiEoiHelper` (the trap-return path),
+so this is a **corrupted trap-return control transfer**, SMP-kernel-specific
+(UP boots this exact APIC media to desktop). Deterministic; kbase-stable. Next
+step: break the *first* fault on the Phase1 thread (KiTrap0E with CR2 in the
+`0x8Exxxxxx` band) and read the trap frame's `Eip` field offset vs. what
+`KiCommonExit` iret's to — suspect another packed/offset layout bug in the i386
+SMP trap-frame or trap-exit path (same family as B/C). Evidence + kbase in the
+`smp-bringup-quest.md` continuation note.
