@@ -7,8 +7,23 @@
 CmSecurity
 ExCallback
 ExDoubleList
-ExFastMutex
-ExHardError
+# QUARANTINED 2026-07-16 (arm64 sweep 1, first end-to-end run after the user-APC fix §9.90):
+# TIMEOUT at 180s — wedges IN-KERNEL (kmtest_drv.c:454 KeWaitForSingleObject timed out! — the
+# usermode-callback worker's AWAIT_REQ returns STATUS_TIMEOUT because the kernel test never posts
+# a callback; support.c:52 BytesReturned assert is collateral). Passes on amd64+i386, so arm64-
+# specific. NOT the user-APC path (that's fixed). The `ExiAcquire/Release/TryToAcquireFastMutex
+# NOT FOUND` spam is benign — those fastcall variants are i386-only and the test skip()s them on
+# 64-bit. Like SeTokenFiltering/TcpIpConnect the kernel-stuck process is unreapable and poisons
+# the rest of the run, so it must stay quarantined until the hang is triaged. Triage owed.
+#ExFastMutex
+# QUARANTINED 2026-07-16 (arm64 sweep 2): BUGCHECK 0x1E (0xC0000005) at kbase+0x1c9cf8,
+# IMMEDIATELY at kernel-test start (3 log lines after "Starting test ExHardError"). Same
+# structural class as i386 (ExHardError is an i386-quarantined crasher, "+0x675D") — the
+# hard-error raise path (NtRaiseHardError/ExpRaiseHardError). NOT the user-APC fix: it
+# reproduces on i386 which never runs the arm64 code, and faults at kernel test-start, not
+# on an APC return. A BUGCHECK kills the whole guest, so it MUST be quarantined to sweep on.
+# Triage owed (shared arm64+i386 hard-error path).
+#ExHardError
 ExInterlocked
 ExPools
 ExResource

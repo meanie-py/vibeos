@@ -980,3 +980,35 @@ user-APC path. **Next step toward the arm64 baseline:** quarantine `ExFastMutex`
 `tools/payloads/kmtest/kmtest-tests-arm64.txt`, re-sweep to unmask the ~77 cascade victims' real
 results, iterate on any further wedgers, then `conformance --arch arm64 --write-baseline`. The
 user-APC fix lands on its own (a real, correct kernel fix; unblocks the whole sweep).
+
+### 2026-07-16 (baseline grind, in progress) — arm64 quarantine sweeps after the user-APC fix
+
+With the sweep running end-to-end (user-APC fix §9.90), the arm64-specific wedgers surface
+one per boot (the amd64/i386 M3 pattern). The arm64 list started as a copy of amd64's, so
+it already carries all amd64 quarantines; these are the NEW arm64-only ones:
+- **Sweep 1 — `ExFastMutex` TIMEOUT (in-kernel hang).** `kmtest_drv.c:454 KeWaitForSingleObject
+  timed out!` — the usermode-callback worker's `AWAIT_REQ` returns `STATUS_TIMEOUT` because the
+  kernel test never posts a callback (it's hung); `support.c:52 BytesReturned` assert is
+  collateral. Passes on amd64+i386 → arm64-specific. The `Exi*FastMutex NOT FOUND` spam is
+  benign (i386-only fastcall variants; the test `skip()`s them on 64-bit). Quarantined.
+- **Sweep 2 — `ExHardError` BUGCHECK 0x1E (0xC0000005) at kbase+0x1c9cf8.** Faults IMMEDIATELY
+  at kernel-test start (3 log lines after "Starting test"). Same structural class as i386 (an
+  i386-quarantined crasher). NOT the user-APC fix — reproduces on i386 (never runs arm64 code)
+  and faults at test-start, not on an APC return. Quarantined (a BUGCHECK kills the guest, so
+  it must be quarantined to sweep past it).
+
+Both quarantined in `kmtest-tests-arm64.txt` with negative results recorded; triage owed (both
+are pre-existing arm64 structural bugs, distinct from the fixed user-APC path).
+
+**Harness note — the netstack-TDI flake makes the grind expensive.** Sweep 3 hit the known
+pre-existing arm64 **netstack-TDI self-test** silent-wedge flake (~1/6 boots, upstream of
+services): the boot reached `shell ready` + `ScmAutoStartServices completed` but
+`SC_AutoStartComplete` never fired, so the sweep launched 0 tests and the conformance verb
+drained its full `--timeout` (~90 min at the 6000s default) waiting for output that never came.
+Mitigation for the grind: run `conformance --arch arm64 --timeout 1800` so a boot-flake caps at
+~30 min instead of 90 (a real sweep resolves in minutes — a wedger either BUGCHECKs fast or
+times-out-then-cascades; only a launched=0 boot-flake drains the whole budget). A proper fix is
+the `vm.py MAX_VM_LIFETIME`/early-abort-on-boot-gate-miss harness gap already noted above.
+Getting a clean arm64 baseline = keep re-sweeping past the flake, quarantining each wedger, then
+`--write-baseline`. NOT yet landed (no baseline file); the 2 quarantines are committed as
+progress.
