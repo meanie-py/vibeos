@@ -36,10 +36,11 @@ IoInterrupt
 IoIrp
 IoMdl
 IoVolume
-# QUARANTINED 2026-07-10 (amd64 sweep 3): RUST PANIC ke/dpc.rs:577 —
-# KiRetireDpcList DeferredRoutine.unwrap() on None: a NULL-routine DPC got queued
-# (uninit Kd DPC candidate, debugger-disabled path). Triage owed; quest doc has details.
-#KdSystemDebugControl
+# UN-QUARANTINED 2026-07-17: fixed. The vibeos "KD forced off" config disables KD WITHOUT setting
+# KdPitchDebugger, so KdRefreshDebuggerNotPresent (only early-outs on KdPitchDebugger) → KdExitDebugger
+# queued the never-KeInitializeDpc'd (NULL-routine) KdpTimeSlipDpc → KiRetireDpcList unwrap panic.
+# Fix: guard the time-slip queue on KdpDebuggerStructuresInitialized in kd64-rust KdExitDebugger (arch-uniform).
+KdSystemDebugControl
 KeApc
 KeDeviceQueue
 KeDpc
