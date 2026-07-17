@@ -65,16 +65,11 @@ KeEvent
 KeFloatPointState
 KeGuardedMutex
 KeIrql
-# QUARANTINED 2026-07-16 (re-triaged after the task #10 SEH-RESUME fix cleared ExResource+KeDpc):
-# NOT cleared. KeMutex over-recurses a mutant to SignalState==MINLONG; the next
-# KeWaitForSingleObject correctly ExRaiseStatus(STATUS_MUTANT_LIMIT_EXCEEDED=0xC0000191), which
-# the driver's native __try must catch. amd64 catches it; arm64 escapes -> BUGCHECK 0x1E
-# P1=0xC0000191 at RtlRaiseStatus+0x44. The RESUME fix (RtlpRestoreContextInternal) cleared the
-# SHALLOW raises (ExResource/KeDpc) but NOT this one, because the raise here originates INSIDE the
-# large KeWaitForSingleObject frame: RtlDispatchException's RtlVirtualUnwind mis-walks that frame's
-# .xdata and never reaches the driver __except (the residual half of §9.69 — the arm64 unwinder
-# xdata-decoder, distinct from the resume path). Shared with i386 KeMutex (same 0xC0000191).
-#KeMutex
+# UN-QUARANTINED 2026-07-17: fixed by the arm64 xdata-decoder fix (task #10 / §9.69). The raise
+# originates inside the large KeWaitForSingleObject frame, whose .xdata uses save_next (0xE6); the
+# decoder was mutating SP +16 per save_next (should be 0) -> wild caller SP -> dispatch never reached
+# the driver __except. Fixed save_next (unwind_decode.rs) to track (reg,offset) and leave SP unchanged.
+KeMutex
 KeSpinLock
 KeTimer
 MmMdl
@@ -132,13 +127,9 @@ RtlSplayTreeKM
 RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
-# QUARANTINED 2026-07-16 (re-triaged after the task #10 SEH-RESUME fix): NOT cleared — same
-# KeWaitForSingleObject-frame unwind cluster as KeMutex (the quest doc already noted SeInheritance
-# "surfaces one frame later in KeWaitForSingleObject"). The raise originates inside the wait frame,
-# so RtlVirtualUnwind mis-walks its .xdata and the driver __except is never reached (residual half
-# of §9.69: the arm64 unwinder xdata-decoder, NOT the resume path the fix addressed). Re-open
-# together with KeMutex when the decoder is fixed.
-#SeInheritance
+# UN-QUARANTINED 2026-07-17: fixed by the arm64 xdata-decoder fix (task #10 / §9.69), same
+# KeWaitForSingleObject-frame save_next mis-decode as KeMutex.
+SeInheritance
 SeLogonSession
 SeQueryInfoToken
 # QUARANTINED 2026-07-11 (amd64 sweep 9): TIMEOUT at 180s — process wedges IN-KERNEL

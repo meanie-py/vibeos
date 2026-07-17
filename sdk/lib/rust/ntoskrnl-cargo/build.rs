@@ -144,7 +144,14 @@ fn main() {
         // fault-tolerant copy (kmsafecopy.c) stays OFF here until task #10's
         // RtlVirtualUnwind FrameSize decode is fixed (§9.69 — it wedges on a real
         // hardware fault, seh_poc's software raise does not).
-        "aarch64" => c_shims.push("ntoskrnl/seh_poc.c"),
+        "aarch64" => {
+            c_shims.push("ntoskrnl/seh_poc.c");
+            // kmsafecopy.c: fault-tolerant-copy self-test. Now that the arm64 xdata
+            // save_next decoder is fixed (task #10 / §9.69), the hardware-fault unwind
+            // through the memcpy/CRT-shim chain should work; KmSafeCopySelfTest
+            // (ex-rust/init.rs) is the boot oracle — [KMSAFECOPY] PASS validates it.
+            c_shims.push("ntoskrnl/kmsafecopy.c");
+        }
         _ => {}
     }
     // WS1 cmake-off printf batch (2026-06-21): the C-variadic printf shells (Rust

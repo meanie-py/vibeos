@@ -1598,7 +1598,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     // on a real HARDWARE page fault being caught (KiPageFault -> MmAccessFault ->
     // KiDispatchException -> __except). Nothing was checking that end-to-end. Prints
     // `[KMSAFECOPY] ... (PASS)`; a FAIL means the copy is silently unprotected.
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         extern "C" {
             fn KmSafeCopySelfTest() -> i32;
