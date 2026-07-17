@@ -57,7 +57,7 @@ unsafe fn LsapGetLogonSession(logon_id: PLUID) -> PLSAP_LOGON_SESSION {
 
     session_entry = (*list_head).Flink;
     while session_entry != list_head {
-        let entry_offset = core::ptr::addr_of_mut!((*core::ptr::null_mut::<LSAP_LOGON_SESSION>()).Entry) as usize;
+        let entry_offset = core::mem::offset_of!(LSAP_LOGON_SESSION, Entry);
         current_session = ((session_entry as usize).wrapping_sub(entry_offset)) as PLSAP_LOGON_SESSION;
         if (*current_session).LogonId.HighPart == (*logon_id).HighPart
             && (*current_session).LogonId.LowPart == (*logon_id).LowPart
@@ -348,7 +348,7 @@ pub unsafe extern "C" fn LsapEnumLogonSessions(RequestMsg: PLSA_API_MSG) -> NTST
     SessionEntry = SessionListHead.Flink;
     while SessionEntry != core::ptr::addr_of_mut!(SessionListHead) {
         CurrentSession = (SessionEntry as ULONG_PTR).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<LSAP_LOGON_SESSION>()).Entry as ULONG_PTR,
+            core::mem::offset_of!(LSAP_LOGON_SESSION, Entry) as ULONG_PTR,
         ) as PLSAP_LOGON_SESSION;
         RtlCopyLuid(
             SessionList.offset(i as isize) as PLUID,

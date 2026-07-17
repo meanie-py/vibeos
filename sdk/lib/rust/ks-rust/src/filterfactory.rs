@@ -123,7 +123,7 @@ pub unsafe extern "system" fn IKsFilterFactory_Create(
     }
 
     Factory = ((*CreateItem).Context as usize).wrapping_sub(
-        &raw mut (*core::ptr::null_mut::<IKsFilterFactoryImpl>()).FilterFactory as usize,
+        core::mem::offset_of!(IKsFilterFactoryImpl, FilterFactory),
     ) as *mut IKsFilterFactoryImpl;
 
     iface = &raw mut (*Factory).Header.OuterUnknown as *mut IKsFilterFactory;
@@ -223,8 +223,7 @@ pub unsafe extern "system" fn IKsFilterFactory_fnSetDeviceClassesState(
 ) -> i32 {
     let This = ((iface as usize)
         .wrapping_sub(
-            core::ptr::addr_of!((*core::ptr::null_mut::<IKsFilterFactoryImpl>()).Header.OuterUnknown)
-                as usize,
+            core::mem::offset_of!(IKsFilterFactoryImpl, Header.OuterUnknown),
         )) as *mut IKsFilterFactoryImpl;
     return KspSetDeviceInterfacesState(
         core::ptr::addr_of_mut!((*This).SymbolicLinkList),

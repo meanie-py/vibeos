@@ -56,8 +56,7 @@ unsafe extern "C" fn impl_from_IPropertyPageSite(
     iface: *mut IPropertyPageSite,
 ) -> *mut PropertyPageSite {
     return (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<PropertyPageSite>()).IPropertyPageSite_iface)
-            as ULONG_PTR,
+        core::mem::offset_of!(PropertyPageSite, IPropertyPageSite_iface) as ULONG_PTR,
     ) as *mut PropertyPageSite;
 }
 stdmethod! {

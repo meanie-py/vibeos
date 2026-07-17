@@ -80,7 +80,7 @@ pub unsafe extern "system" fn INonDelegatedUnknown_fnAddRef(
     iface: *mut INonDelegatedUnknown,
 ) -> ULONG {
     let This = (iface as usize)
-        .wrapping_sub(core::ptr::addr_of!((*core::ptr::null_mut::<CBaseUnknownImpl>()).lpVtbl) as usize)
+        .wrapping_sub(core::mem::offset_of!(CBaseUnknownImpl, lpVtbl))
         as *mut CBaseUnknownImpl;
     InterlockedIncrement(&mut (*This).m_RefCount) as ULONG
 }

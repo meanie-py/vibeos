@@ -739,7 +739,7 @@ pub unsafe extern "system" fn WsAsyncThread(ThreadContext: PVOID) -> DWORD {
         while !IsListEmpty(ListHead) {
             Entry = RemoveHeadList(ListHead);
             AsyncBlock = ((Entry as ULONG_PTR).wrapping_sub(
-                core::ptr::addr_of_mut!((*core::ptr::null_mut::<WSASYNCBLOCK>()).AsyncQueue) as ULONG_PTR
+                core::mem::offset_of!(WSASYNCBLOCK, AsyncQueue) as ULONG_PTR
             )) as PWSASYNCBLOCK;
 
             WsAsyncCurrentTaskHandle = (*AsyncBlock).TaskHandle;
@@ -796,7 +796,7 @@ pub unsafe extern "system" fn WsAsyncThread(ThreadContext: PVOID) -> DWORD {
                     while !IsListEmpty(ListHead) {
                         Entry = RemoveHeadList(ListHead);
                         AsyncBlock = ((Entry as ULONG_PTR).wrapping_sub(
-                            core::ptr::addr_of_mut!((*core::ptr::null_mut::<WSASYNCBLOCK>()).AsyncQueue) as ULONG_PTR
+                            core::mem::offset_of!(WSASYNCBLOCK, AsyncQueue) as ULONG_PTR
                         )) as PWSASYNCBLOCK;
                         WsAsyncFreeBlock(AsyncBlock);
                     }
@@ -929,7 +929,7 @@ pub unsafe extern "system" fn WsAsyncCancelRequest(TaskHandle: HANDLE) -> INT {
     Entry = (*WsAsyncQueue).Flink;
     while Entry != WsAsyncQueue {
         AsyncBlock = (Entry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<WSASYNCBLOCK>()).AsyncQueue) as usize
+            core::mem::offset_of!(WSASYNCBLOCK, AsyncQueue)
         ) as PWSASYNCBLOCK;
 
         if TaskHandle == (*AsyncBlock).TaskHandle {

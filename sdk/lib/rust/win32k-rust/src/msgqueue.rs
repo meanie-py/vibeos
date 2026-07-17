@@ -1425,7 +1425,7 @@ unsafe fn co_MsqDispatchOneSentMessage_impl(pti: PTHREADINFO) -> BOOLEAN {
 
     Entry = RemoveHeadList(core::ptr::addr_of_mut!((*pti).SentMessagesListHead));
     Message = (Entry as *mut u8).sub(
-        &(*(core::ptr::null::<USER_SENT_MESSAGE>())).ListEntry as *const _ as usize,
+        core::mem::offset_of!(USER_SENT_MESSAGE, ListEntry),
     ) as PUSER_SENT_MESSAGE;
 
     (*Message).flags |= (SMF_RECEIVERBUSY | SMF_RECEIVEDMESSAGE) as u32;

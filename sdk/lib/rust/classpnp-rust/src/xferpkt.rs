@@ -840,7 +840,7 @@ pub unsafe extern "C" fn DequeueFreeTransferPacketEx(
         (*slistEntry).Next = core::ptr::null_mut::<SLIST_ENTRY>();
         pkt = (slistEntry as ULONG_PTR)
             .wrapping_sub(
-                core::ptr::addr_of_mut!((*core::ptr::null_mut::<TRANSFER_PACKET>()).SlistEntry) as ULONG_PTR,
+                core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as ULONG_PTR,
             ) as PTRANSFER_PACKET;
         InterlockedDecrement(
             core::ptr::addr_of_mut!(
@@ -1818,7 +1818,7 @@ pub unsafe extern "C" fn CleanupTransferPacketToWorkingSetSize(
     slistEntry = SimplePopSlist(&raw mut pktList) as PSINGLE_LIST_ENTRY;
     while !slistEntry.is_null() {
         pktToDelete = ((slistEntry as ULONG_PTR).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<TRANSFER_PACKET>()).SlistEntry as ULONG_PTR,
+            core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as ULONG_PTR,
         )) as PTRANSFER_PACKET;
         DestroyTransferPacket(pktToDelete);
         slistEntry = SimplePopSlist(&raw mut pktList) as PSINGLE_LIST_ENTRY;

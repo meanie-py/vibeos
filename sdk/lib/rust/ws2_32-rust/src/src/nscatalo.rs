@@ -399,9 +399,7 @@ pub unsafe extern "system" fn WsNcRefreshFromRegistry(
         while !IsListEmpty(core::ptr::addr_of_mut!(LocalList)) {
             Entry = RemoveHeadList(core::ptr::addr_of_mut!(LocalList));
             CatalogEntry = ((Entry as ULONG_PTR).wrapping_sub(
-                core::ptr::addr_of_mut!(
-                    (*core::ptr::null_mut::<NSCATALOG_ENTRY>()).CatalogLink
-                ) as ULONG_PTR,
+                core::mem::offset_of!(NSCATALOG_ENTRY, CatalogLink) as ULONG_PTR,
             )) as PNSCATALOG_ENTRY;
             WsNcEntryDereference(CatalogEntry);
         }
@@ -509,13 +507,13 @@ pub unsafe extern "system" fn WsNcUpdateNamespaceList(
     while !IsListEmpty(List) {
         Entry = RemoveHeadList(List);
         CatalogEntry = (Entry as usize)
-            .wrapping_sub(core::ptr::addr_of_mut!((*core::ptr::null_mut::<NSCATALOG_ENTRY>()).CatalogLink) as usize)
+            .wrapping_sub(core::mem::offset_of!(NSCATALOG_ENTRY, CatalogLink))
             as PNSCATALOG_ENTRY;
 
         Entry = TempList.Flink;
         while Entry != core::ptr::addr_of_mut!(TempList) {
             OldCatalogEntry = (Entry as usize)
-                .wrapping_sub(core::ptr::addr_of_mut!((*core::ptr::null_mut::<NSCATALOG_ENTRY>()).CatalogLink) as usize)
+                .wrapping_sub(core::mem::offset_of!(NSCATALOG_ENTRY, CatalogLink))
                 as PNSCATALOG_ENTRY;
             Entry = (*Entry).Flink;
 
@@ -542,7 +540,7 @@ pub unsafe extern "system" fn WsNcUpdateNamespaceList(
     while !IsListEmpty(core::ptr::addr_of_mut!(TempList)) {
         Entry = RemoveHeadList(core::ptr::addr_of_mut!(TempList));
         CatalogEntry = (Entry as usize)
-            .wrapping_sub(core::ptr::addr_of_mut!((*core::ptr::null_mut::<NSCATALOG_ENTRY>()).CatalogLink) as usize)
+            .wrapping_sub(core::mem::offset_of!(NSCATALOG_ENTRY, CatalogLink))
             as PNSCATALOG_ENTRY;
 
         (*Catalog).ItemCount = (*Catalog).ItemCount.wrapping_sub(1);

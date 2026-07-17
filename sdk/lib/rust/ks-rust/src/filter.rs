@@ -1350,7 +1350,7 @@ pub unsafe extern "system" fn IKsFilter_DispatchDeviceIoControl(
 
     This = core::mem::transmute(
         (Filter as usize).wrapping_sub(
-            &raw const (*core::ptr::null_mut::<IKsFilterImpl>()).Header.OuterUnknown as usize,
+            core::mem::offset_of!(IKsFilterImpl, Header.OuterUnknown),
         ),
     );
 
@@ -2021,7 +2021,7 @@ pub unsafe extern "system" fn KsFilterReleaseProcessingMutex(
     let This: *mut IKsFilterImpl = core::mem::transmute(
         (Filter as usize)
             .wrapping_sub(
-                &raw mut (*core::ptr::null_mut::<IKsFilterImpl>()).Filter as usize,
+                core::mem::offset_of!(IKsFilterImpl, Filter),
             ),
     );
     KeReleaseMutex(&raw mut (*This).ProcessingMutex, 0u8);
@@ -2195,7 +2195,7 @@ pub unsafe extern "system" fn KsFilterGetFirstChildPin(
     PinId: ULONG,
 ) -> PKSPIN {
     let This = (Filter as usize)
-        .wrapping_sub(&raw const (*core::ptr::null_mut::<IKsFilterImpl>()).Filter as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsFilterImpl, Filter))
         as *mut IKsFilterImpl;
 
     if PinId >= (*((*This).Filter.Descriptor)).PinDescriptorsCount {

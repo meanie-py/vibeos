@@ -752,7 +752,7 @@ unsafe fn FdoHandleDeviceRelations(
             let mut lunEntry: *mut LIST_ENTRY = (*bus).LunsListHead.Flink;
             while lunEntry != core::ptr::addr_of_mut!((*bus).LunsListHead) {
                 let lunExt: *mut SCSI_PORT_LUN_EXTENSION = (lunEntry as usize).wrapping_sub(
-                    core::ptr::addr_of_mut!((*core::ptr::null_mut::<SCSI_PORT_LUN_EXTENSION>()).LunEntry) as usize,
+                    core::mem::offset_of!(SCSI_PORT_LUN_EXTENSION, LunEntry),
                 ) as *mut SCSI_PORT_LUN_EXTENSION;
                 let idx = (*deviceRelations).Count;
                 (*deviceRelations).Count = (*deviceRelations).Count.wrapping_add(1);

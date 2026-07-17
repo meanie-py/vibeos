@@ -154,9 +154,7 @@ pub unsafe extern "system" fn FltEnumerateVolumes(
         while ListEntry != core::ptr::addr_of_mut!((*Frame).AttachedVolumes.rList) {
             /* Get the volume */
             Volume = (ListEntry as *mut u8).wrapping_sub(
-                core::ptr::addr_of_mut!(
-                    (*(::core::ptr::null_mut::<FLT_VOLUME>())).Base.PrimaryLink
-                ) as usize,
+                core::mem::offset_of!(FLT_VOLUME, Base.PrimaryLink),
             ) as *mut FLT_VOLUME as PFLT_VOLUME;
 
             /* If there's still room in the output buffer */

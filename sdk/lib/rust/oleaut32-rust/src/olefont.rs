@@ -162,7 +162,7 @@ unsafe extern "C" fn find_hfontitem(hfont: HFONT) -> *mut HFONTItem {
     let mut item: *mut HFONTItem;
     
     item = (OLEFontImpl_hFontList.next as *mut u8).offset(
-        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<HFONTItem>()).entry) as isize)
+        -(core::mem::offset_of!(HFONTItem, entry) as isize)
     ) as *mut HFONTItem;
     
     while core::ptr::addr_of_mut!((*item).entry) != core::ptr::addr_of_mut!(OLEFontImpl_hFontList) {
@@ -170,7 +170,7 @@ unsafe extern "C" fn find_hfontitem(hfont: HFONT) -> *mut HFONTItem {
             return item;
         }
         item = ((*item).entry.next as *mut u8).offset(
-            -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<HFONTItem>()).entry) as isize)
+            -(core::mem::offset_of!(HFONTItem, entry) as isize)
         ) as *mut HFONTItem;
     }
     
@@ -275,31 +275,30 @@ unsafe extern "C" fn strdupW(str: *const WCHAR) -> *mut WCHAR {
 }
 unsafe extern "C" fn impl_from_IFont(iface: *mut IFont) -> *mut OLEFontImpl {
     (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEFontImpl>()).IFont_iface) as ULONG_PTR
+        core::mem::offset_of!(OLEFontImpl, IFont_iface) as ULONG_PTR
     ) as *mut OLEFontImpl
 }
 unsafe extern "C" fn impl_from_IDispatch(iface: *mut IDispatch) -> *mut OLEFontImpl {
     (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEFontImpl>()).IDispatch_iface) as ULONG_PTR
+        core::mem::offset_of!(OLEFontImpl, IDispatch_iface) as ULONG_PTR
     ) as *mut OLEFontImpl
 }
 unsafe extern "C" fn impl_from_IPersistStream(iface: *mut IPersistStream) -> *mut OLEFontImpl {
     (iface as DWORD_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEFontImpl>()).IPersistStream_iface) as DWORD_PTR
+        core::mem::offset_of!(OLEFontImpl, IPersistStream_iface) as DWORD_PTR
     ) as *mut OLEFontImpl
 }
 unsafe extern "C" fn impl_from_IConnectionPointContainer(
     iface: *mut IConnectionPointContainer,
 ) -> *mut OLEFontImpl {
     (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEFontImpl>()).IConnectionPointContainer_iface)
-            as ULONG_PTR,
+        core::mem::offset_of!(OLEFontImpl, IConnectionPointContainer_iface) as ULONG_PTR,
     ) as *mut OLEFontImpl
 }
 unsafe extern "C" fn impl_from_IPersistPropertyBag(
     iface: *mut IPersistPropertyBag,
 ) -> *mut OLEFontImpl {
-    let offset = core::ptr::addr_of!((*core::ptr::null::<OLEFontImpl>()).IPersistPropertyBag_iface) as usize;
+    let offset = core::mem::offset_of!(OLEFontImpl, IPersistPropertyBag_iface);
     (iface as *mut u8).sub(offset) as *mut OLEFontImpl
 }
 unsafe extern "C" fn impl_from_IPersistStreamInit(
@@ -608,17 +607,17 @@ fn OLEFontImpl_Release(iface: *mut IFont) -> ULONG {
             EnterCriticalSection(&mut OLEFontImpl_csHFONTLIST);
             
             item = (OLEFontImpl_hFontList.next as *mut u8).offset(
-                -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<HFONTItem>()).entry) as isize)
+                -(core::mem::offset_of!(HFONTItem, entry) as isize)
             ) as *mut HFONTItem;
             cursor2 = ((*item).entry.next as *mut u8).offset(
-                -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<HFONTItem>()).entry) as isize)
+                -(core::mem::offset_of!(HFONTItem, entry) as isize)
             ) as *mut HFONTItem;
             
             while core::ptr::addr_of_mut!((*item).entry) != core::ptr::addr_of_mut!(OLEFontImpl_hFontList) {
                 HFONTItem_Delete(item as PHFONTItem);
                 item = cursor2;
                 cursor2 = ((*item).entry.next as *mut u8).offset(
-                    -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<HFONTItem>()).entry) as isize)
+                    -(core::mem::offset_of!(HFONTItem, entry) as isize)
                 ) as *mut HFONTItem;
             }
             
@@ -2919,7 +2918,7 @@ unsafe extern "C" fn impl_from_IClassFactory(
     iface: *mut IClassFactory,
 ) -> *mut IClassFactoryImpl {
     (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<IClassFactoryImpl>()).IClassFactory_iface) as ULONG_PTR,
+        core::mem::offset_of!(IClassFactoryImpl, IClassFactory_iface) as ULONG_PTR,
     ) as *mut IClassFactoryImpl
 }
 stdmethod! {

@@ -440,7 +440,7 @@ pub unsafe extern "system" fn WsTcRefreshFromRegistry(
             Entry = RemoveHeadList(core::ptr::addr_of_mut!(LocalList));
             CatalogEntry = (Entry as usize)
                 .wrapping_sub(
-                    core::ptr::addr_of!((*core::ptr::null::<TCATALOG_ENTRY>()).CatalogLink) as usize
+                    core::mem::offset_of!(TCATALOG_ENTRY, CatalogLink)
                 ) as PTCATALOG_ENTRY;
             WsTcEntryDereference(CatalogEntry);
         }
@@ -555,7 +555,7 @@ pub unsafe extern "system" fn WsTcGetEntryFromTriplet(
     if StartId != 0 {
         while NextEntry != core::ptr::addr_of_mut!((*Catalog).ProtocolList) {
             Entry = (NextEntry as usize).wrapping_sub(
-                core::ptr::addr_of_mut!((*core::ptr::null_mut::<TCATALOG_ENTRY>()).CatalogLink) as usize
+                core::mem::offset_of!(TCATALOG_ENTRY, CatalogLink)
             ) as PTCATALOG_ENTRY;
             NextEntry = (*NextEntry).Flink;
 
@@ -567,7 +567,7 @@ pub unsafe extern "system" fn WsTcGetEntryFromTriplet(
 
     while NextEntry != core::ptr::addr_of_mut!((*Catalog).ProtocolList) {
         Entry = (NextEntry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<TCATALOG_ENTRY>()).CatalogLink) as usize
+            core::mem::offset_of!(TCATALOG_ENTRY, CatalogLink)
         ) as PTCATALOG_ENTRY;
         NextEntry = (*NextEntry).Flink;
 
@@ -695,13 +695,13 @@ pub unsafe extern "system" fn WsTcUpdateProtocolList(
     while !IsListEmpty(List as *const LIST_ENTRY) {
         Entry = RemoveHeadList(List);
         CatalogEntry = (Entry as usize)
-            .wrapping_sub(core::ptr::addr_of_mut!((*core::ptr::null_mut::<TCATALOG_ENTRY>()).CatalogLink) as usize)
+            .wrapping_sub(core::mem::offset_of!(TCATALOG_ENTRY, CatalogLink))
             as PTCATALOG_ENTRY;
 
         Entry = TempList.Flink;
         while Entry != core::ptr::addr_of_mut!(TempList) {
             OldCatalogEntry = (Entry as usize)
-                .wrapping_sub(core::ptr::addr_of_mut!((*core::ptr::null_mut::<TCATALOG_ENTRY>()).CatalogLink) as usize)
+                .wrapping_sub(core::mem::offset_of!(TCATALOG_ENTRY, CatalogLink))
                 as PTCATALOG_ENTRY;
             Entry = (*Entry).Flink;
 
@@ -726,7 +726,7 @@ pub unsafe extern "system" fn WsTcUpdateProtocolList(
     while !IsListEmpty(core::ptr::addr_of_mut!(TempList) as *const LIST_ENTRY) {
         Entry = RemoveHeadList(core::ptr::addr_of_mut!(TempList));
         CatalogEntry = (Entry as usize)
-            .wrapping_sub(core::ptr::addr_of_mut!((*core::ptr::null_mut::<TCATALOG_ENTRY>()).CatalogLink) as usize)
+            .wrapping_sub(core::mem::offset_of!(TCATALOG_ENTRY, CatalogLink))
             as PTCATALOG_ENTRY;
 
         (*Catalog).ItemCount = (*Catalog).ItemCount.wrapping_sub(1);
@@ -749,7 +749,7 @@ pub unsafe extern "system" fn WsTcEnumerateCatalogItems(
     Entry = (*Catalog).ProtocolList.Flink;
     while GoOn != 0 && Entry != core::ptr::addr_of_mut!((*Catalog).ProtocolList) {
         CatalogEntry = (Entry as usize -
-            core::ptr::addr_of!((*core::ptr::null::<TCATALOG_ENTRY>()).CatalogLink) as usize)
+            core::mem::offset_of!(TCATALOG_ENTRY, CatalogLink))
             as PTCATALOG_ENTRY;
 
         Entry = (*Entry).Flink;

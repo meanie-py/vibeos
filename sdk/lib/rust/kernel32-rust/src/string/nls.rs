@@ -540,7 +540,7 @@ pub unsafe extern "fastcall" fn NlsUninit() {
     let mut Current: PCODEPAGE_ENTRY = core::ptr::null_mut();
     while !IsListEmpty(&mut CodePageListHead as *mut _) {
         Current = (CodePageListHead.Flink as usize)
-            .wrapping_sub(&mut (*core::ptr::null_mut::<CODEPAGE_ENTRY>()).Entry as *mut _ as usize)
+            .wrapping_sub(core::mem::offset_of!(CODEPAGE_ENTRY, Entry))
             as *mut CODEPAGE_ENTRY as PCODEPAGE_ENTRY;
         if !(*Current).SectionHandle.is_null() {
             UnmapViewOfFile((*Current).SectionMapping as LPCVOID);
@@ -557,7 +557,7 @@ pub unsafe extern "C" fn NlsUninit() {
     let mut Current: PCODEPAGE_ENTRY = core::ptr::null_mut();
     while !IsListEmpty(&mut CodePageListHead as *mut _) {
         Current = (CodePageListHead.Flink as usize)
-            .wrapping_sub(&mut (*core::ptr::null_mut::<CODEPAGE_ENTRY>()).Entry as *mut _ as usize)
+            .wrapping_sub(core::mem::offset_of!(CODEPAGE_ENTRY, Entry))
             as *mut CODEPAGE_ENTRY as PCODEPAGE_ENTRY;
         if !(*Current).SectionHandle.is_null() {
             UnmapViewOfFile((*Current).SectionMapping as LPCVOID);

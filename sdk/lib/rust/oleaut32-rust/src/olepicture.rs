@@ -2923,20 +2923,19 @@ unsafe extern "C" fn impl_from_IPicture(iface: *mut IPicture) -> *mut OLEPicture
 }
 unsafe extern "C" fn impl_from_IDispatch(iface: *mut IDispatch) -> *mut OLEPictureImpl {
     (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEPictureImpl>()).IDispatch_iface) as ULONG_PTR
+        core::mem::offset_of!(OLEPictureImpl, IDispatch_iface) as ULONG_PTR
     ) as *mut OLEPictureImpl
 }
 unsafe extern "C" fn impl_from_IPersistStream(iface: *mut IPersistStream) -> *mut OLEPictureImpl {
     (iface as usize).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEPictureImpl>()).IPersistStream_iface) as usize
+        core::mem::offset_of!(OLEPictureImpl, IPersistStream_iface)
     ) as *mut OLEPictureImpl
 }
 unsafe extern "C" fn impl_from_IConnectionPointContainer(
     iface: *mut IConnectionPointContainer,
 ) -> *mut OLEPictureImpl {
     return (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEPictureImpl>()).IConnectionPointContainer_iface)
-            as ULONG_PTR,
+        core::mem::offset_of!(OLEPictureImpl, IConnectionPointContainer_iface) as ULONG_PTR,
     ) as *mut OLEPictureImpl;
 }
 unsafe extern "C" fn xpixels_to_himetric(pixels: INT, hdc: HDC) -> OLE_XSIZE_HIMETRIC {
@@ -5901,7 +5900,7 @@ unsafe extern "C" fn impl_from_IClassFactory(
     iface: *mut IClassFactory,
 ) -> *mut IClassFactoryImpl {
     return (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<IClassFactoryImpl>()).IClassFactory_iface) as ULONG_PTR,
+        core::mem::offset_of!(IClassFactoryImpl, IClassFactory_iface) as ULONG_PTR,
     ) as *mut IClassFactoryImpl;
 }
 stdmethod! {

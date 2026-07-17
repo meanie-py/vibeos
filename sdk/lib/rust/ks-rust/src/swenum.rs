@@ -442,7 +442,7 @@ pub unsafe extern "system" fn KspCreateDeviceReference(
     Entry = (*BusDeviceExtension).Common.Entry.Flink;
     while Entry != &mut (*BusDeviceExtension).Common.Entry as *mut _ as PLIST_ENTRY {
         DeviceEntry = (Entry as usize).wrapping_sub(
-            &mut (*(core::ptr::null_mut::<BUS_DEVICE_ENTRY>())).Entry as *mut _ as usize,
+            core::mem::offset_of!(BUS_DEVICE_ENTRY, Entry),
         ) as *mut BUS_DEVICE_ENTRY as PBUS_DEVICE_ENTRY;
 
         if _wcsicmp((*DeviceEntry).DeviceName, DeviceName) == 0 {
@@ -736,8 +736,7 @@ pub unsafe extern "C" fn KspCompletePendingIrps(
         Entry = RemoveHeadList(&mut (*DeviceEntry).IrpPendingList);
 
         Irp = (Entry as usize).wrapping_sub(
-            &mut (*core::ptr::null_mut::<IRP>())
-                .Tail.Overlay.__bindgen_anon_2.ListEntry as *mut _ as usize,
+            core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry),
         ) as *mut IRP as PIRP;
 
         if ResultCode == STATUS_REPARSE {
