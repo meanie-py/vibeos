@@ -770,24 +770,24 @@ pub unsafe extern "system" fn CliImmInitializeHotKeys(dwAction: DWORD, hKL: HKL)
 
     if (bFlags as u32 & FE_JAPANESE) != 0 {
         CliSetDefaultImeHotKeys(
-            DefaultHotKeyTableJ.as_mut_ptr(),
-            DefaultHotKeyTableJ.len() as UINT,
+            (*(&raw mut DefaultHotKeyTableJ)).as_mut_ptr(),
+            (*(&raw const DefaultHotKeyTableJ)).len() as UINT,
             bCheck,
         );
     }
 
     if (bFlags as u32 & FE_CHINESE_TRADITIONAL) != 0 {
         CliSetDefaultImeHotKeys(
-            DefaultHotKeyTableT.as_mut_ptr(),
-            DefaultHotKeyTableT.len() as UINT,
+            (*(&raw mut DefaultHotKeyTableT)).as_mut_ptr(),
+            (*(&raw const DefaultHotKeyTableT)).len() as UINT,
             bCheck,
         );
     }
 
     if (bFlags as u32 & FE_CHINESE_SIMPLIFIED) != 0 {
         CliSetDefaultImeHotKeys(
-            DefaultHotKeyTableC.as_mut_ptr(),
-            DefaultHotKeyTableC.len() as UINT,
+            (*(&raw mut DefaultHotKeyTableC)).as_mut_ptr(),
+            (*(&raw const DefaultHotKeyTableC)).len() as UINT,
             bCheck,
         );
     }

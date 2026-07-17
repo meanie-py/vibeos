@@ -249,9 +249,9 @@ pub unsafe extern "system" fn FsRtlInitializeTunnels() {
         TunnelMaxEntries = 1024;
     }
 
-    FsRtlGetTunnelParameterValue(&mut MaximumTunnelEntries, &mut TunnelMaxEntries);
+    FsRtlGetTunnelParameterValue(&mut MaximumTunnelEntries, &raw mut TunnelMaxEntries);
 
-    FsRtlGetTunnelParameterValue(&mut MaximumTunnelEntryAgeInSeconds, &mut TunnelMaxAge);
+    FsRtlGetTunnelParameterValue(&mut MaximumTunnelEntryAgeInSeconds, &raw mut TunnelMaxAge);
 
     if TunnelMaxAge == 0 {
         TunnelMaxEntries = 0;

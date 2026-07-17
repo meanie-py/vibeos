@@ -388,8 +388,8 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 
     KeInitializeSpinLock(core::ptr::addr_of_mut!(IopDeviceTreeLock) as *mut _);
     KeInitializeSpinLock(core::ptr::addr_of_mut!(IopDeviceActionLock) as *mut _);
-    InitializeListHead(&mut IopDeviceActionRequestList);
-    KeInitializeEvent(&mut PiEnumerationFinished, _EVENT_TYPE_NotificationEvent, 1u8);
+    InitializeListHead(&raw mut IopDeviceActionRequestList);
+    KeInitializeEvent(&raw mut PiEnumerationFinished, _EVENT_TYPE_NotificationEvent, 1u8);
 
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();
 

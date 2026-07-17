@@ -211,7 +211,7 @@ pub unsafe extern "system" fn BasepIsProcessAllowed(ApplicationName: LPWSTR) -> 
         Buffer = core::ptr::null_mut();
 
         /* Acquire the lock while initializing and see if we lost a race */
-        RtlEnterCriticalSection(&mut gcsAppCert);
+        RtlEnterCriticalSection(&raw mut gcsAppCert);
         if g_AppCertInitialized != 0 {
             break;
         }
@@ -263,7 +263,7 @@ pub unsafe extern "system" fn BasepIsProcessAllowed(ApplicationName: LPWSTR) -> 
                 }
 
                 /* If we didn't get this far, set a failure code */
-                if fEmbeddedCertFunc.is_none() {
+                if (*(&raw const fEmbeddedCertFunc)).is_none() {
                     Status = STATUS_UNSUCCESSFUL;
                 }
             }
@@ -298,7 +298,7 @@ pub unsafe extern "system" fn BasepIsProcessAllowed(ApplicationName: LPWSTR) -> 
                 BasepAppCertTable[0].Flags = 1;
                 BasepAppCertTable[0].Name = appcert_name.as_ptr();
                 BasepAppCertTable[0].EntryContext =
-                    &mut BasepAppCertDllsList as *mut LIST_ENTRY as PVOID;
+                    &raw mut BasepAppCertDllsList as *mut LIST_ENTRY as PVOID;
 
                 let sess_mgr: [u16; 16] = [
                     b'S' as u16, b'e' as u16, b's' as u16, b's' as u16, b'i' as u16,
@@ -327,7 +327,7 @@ pub unsafe extern "system" fn BasepIsProcessAllowed(ApplicationName: LPWSTR) -> 
 
         /* Check for errors, or a missing embedded/custom certification DLL */
         if !NT_SUCCESS(Status)
-            || (fEmbeddedCertFunc.is_none() && IsListEmpty(&mut BasepAppCertDllsList))
+            || ((*(&raw const fEmbeddedCertFunc)).is_none() && IsListEmpty(&raw mut BasepAppCertDllsList))
         {
             /* The subsystem is not active on this machine, so give up */
             g_HaveAppCerts = FALSE as BOOLEAN;
@@ -339,7 +339,7 @@ pub unsafe extern "system" fn BasepIsProcessAllowed(ApplicationName: LPWSTR) -> 
 
         /* We are done the initialization phase, release the lock */
         g_AppCertInitialized = TRUE as BOOLEAN;
-        RtlLeaveCriticalSection(&mut gcsAppCert);
+        RtlLeaveCriticalSection(&raw mut gcsAppCert);
     }
 
     /* If there's no certification DLLs present, return the failure code */
@@ -348,7 +348,7 @@ pub unsafe extern "system" fn BasepIsProcessAllowed(ApplicationName: LPWSTR) -> 
     }
 
     /* Otherwise, assume success and make sure we have *something* */
-    debug_assert!(fEmbeddedCertFunc.is_some() || !IsListEmpty(&mut BasepAppCertDllsList));
+    debug_assert!((*(&raw const fEmbeddedCertFunc)).is_some() || !IsListEmpty(&raw mut BasepAppCertDllsList));
     Status = STATUS_SUCCESS;
 
     /* If the something is an embedded certification DLL, call it and return */
@@ -359,7 +359,7 @@ pub unsafe extern "system" fn BasepIsProcessAllowed(ApplicationName: LPWSTR) -> 
     /* Otherwise we have custom certification DLLs, parse them */
     NextEntry = BasepAppCertDllsList.Flink;
     CertFlag = 2;
-    while NextEntry != &mut BasepAppCertDllsList as *mut LIST_ENTRY {
+    while NextEntry != &raw mut BasepAppCertDllsList as *mut LIST_ENTRY {
         /* Make sure the entry has a callback */
         Entry = (NextEntry as usize
             - core::mem::offset_of!(BASEP_APPCERT_ENTRY, Entry))
@@ -378,7 +378,7 @@ pub unsafe extern "system" fn BasepIsProcessAllowed(ApplicationName: LPWSTR) -> 
 
     /* Now loop them again */
     NextEntry = BasepAppCertDllsList.Flink;
-    while NextEntry != &mut BasepAppCertDllsList as *mut LIST_ENTRY {
+    while NextEntry != &raw mut BasepAppCertDllsList as *mut LIST_ENTRY {
         /* Make sure the entry has a callback */
         Entry = (NextEntry as usize
             - core::mem::offset_of!(BASEP_APPCERT_ENTRY, Entry))
@@ -413,7 +413,7 @@ pub unsafe extern "system" fn BasepReplaceProcessThreadTokens(
     SaferiReplaceProcessThreadTokens.MaximumLength = (name.len() + 1) as USHORT;
 
     /* Enter the application certification lock */
-    RtlEnterCriticalSection(&mut gcsAppCert);
+    RtlEnterCriticalSection(&raw mut gcsAppCert);
 
     /* Check if we already know the function */
     if let Some(f) = g_SaferReplaceProcessThreadTokens {
@@ -437,7 +437,7 @@ pub unsafe extern "system" fn BasepReplaceProcessThreadTokens(
                 gSaferHandle as PVOID,
                 &mut SaferiReplaceProcessThreadTokens,
                 0,
-                &mut g_SaferReplaceProcessThreadTokens as *mut PSAFER_REPLACE_PROCESS_THREAD_TOKENS
+                &raw mut g_SaferReplaceProcessThreadTokens as *mut PSAFER_REPLACE_PROCESS_THREAD_TOKENS
                     as *mut PVOID,
             );
             if NT_SUCCESS(Status) {
@@ -458,7 +458,7 @@ pub unsafe extern "system" fn BasepReplaceProcessThreadTokens(
     }
 
     /* Release the lock and return the result */
-    RtlLeaveCriticalSection(&mut gcsAppCert);
+    RtlLeaveCriticalSection(&raw mut gcsAppCert);
     Status
 }
 
@@ -529,11 +529,11 @@ pub unsafe extern "system" fn InitCommandLines() {
 
     /* Convert to ANSI_STRING for the *A callers */
     let Status = RtlUnicodeStringToAnsiString(
-        &mut BaseAnsiCommandLine,
-        &mut BaseUnicodeCommandLine,
+        &raw mut BaseAnsiCommandLine,
+        &raw mut BaseUnicodeCommandLine,
         TRUE as BOOLEAN,
     );
     if !NT_SUCCESS(Status) {
-        RtlInitEmptyAnsiString(&mut BaseAnsiCommandLine, core::ptr::null_mut(), 0);
+        RtlInitEmptyAnsiString(&raw mut BaseAnsiCommandLine, core::ptr::null_mut(), 0);
     }
 }

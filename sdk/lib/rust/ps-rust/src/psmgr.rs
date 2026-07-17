@@ -170,7 +170,7 @@ unsafe fn PspLookupKernelUserEntryPoints() -> NTSTATUS {
 
     status = PspLookupSystemDllEntryPoint(
         b"KiUserApcDispatcher\0".as_ptr() as PCSTR,
-        &mut KeUserApcDispatcher,
+        &raw mut KeUserApcDispatcher,
     );
     if status < 0 {
         return status;
@@ -178,7 +178,7 @@ unsafe fn PspLookupKernelUserEntryPoints() -> NTSTATUS {
 
     status = PspLookupSystemDllEntryPoint(
         b"KiUserExceptionDispatcher\0".as_ptr() as PCSTR,
-        &mut KeUserExceptionDispatcher,
+        &raw mut KeUserExceptionDispatcher,
     );
     if status < 0 {
         return status;
@@ -186,7 +186,7 @@ unsafe fn PspLookupKernelUserEntryPoints() -> NTSTATUS {
 
     status = PspLookupSystemDllEntryPoint(
         b"KiUserCallbackDispatcher\0".as_ptr() as PCSTR,
-        &mut KeUserCallbackDispatcher,
+        &raw mut KeUserCallbackDispatcher,
     );
     if status < 0 {
         return status;
@@ -194,7 +194,7 @@ unsafe fn PspLookupKernelUserEntryPoints() -> NTSTATUS {
 
     status = PspLookupSystemDllEntryPoint(
         b"KiRaiseUserExceptionDispatcher\0".as_ptr() as PCSTR,
-        &mut KeRaiseUserExceptionDispatcher,
+        &raw mut KeRaiseUserExceptionDispatcher,
     );
     if status < 0 {
         return status;
@@ -202,7 +202,7 @@ unsafe fn PspLookupKernelUserEntryPoints() -> NTSTATUS {
 
     status = PspLookupSystemDllEntryPoint(
         b"ExpInterlockedPopEntrySListEnd\0".as_ptr() as PCSTR,
-        &mut KeUserPopEntrySListEnd,
+        &raw mut KeUserPopEntrySListEnd,
     );
     if status < 0 {
         return status;
@@ -210,7 +210,7 @@ unsafe fn PspLookupKernelUserEntryPoints() -> NTSTATUS {
 
     status = PspLookupSystemDllEntryPoint(
         b"ExpInterlockedPopEntrySListFault\0".as_ptr() as PCSTR,
-        &mut KeUserPopEntrySListFault,
+        &raw mut KeUserPopEntrySListFault,
     );
     if status < 0 {
         return status;
@@ -218,7 +218,7 @@ unsafe fn PspLookupKernelUserEntryPoints() -> NTSTATUS {
 
     status = PspLookupSystemDllEntryPoint(
         b"ExpInterlockedPopEntrySListResume\0".as_ptr() as PCSTR,
-        &mut KeUserPopEntrySListResume,
+        &raw mut KeUserPopEntrySListResume,
     );
     if status < 0 {
         return status;
@@ -298,7 +298,7 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
     let mut object_attributes = _OBJECT_ATTRIBUTES {
         Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
         RootDirectory: core::ptr::null_mut(),
-        ObjectName: &mut PsNtDllPathName as *mut _UNICODE_STRING,
+        ObjectName: &raw mut PsNtDllPathName as *mut _UNICODE_STRING,
         Attributes: OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
         SecurityDescriptor: core::ptr::null_mut(),
         SecurityQualityOfService: core::ptr::null_mut(),
@@ -331,7 +331,7 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
 
     status = MmCheckSystemImage(file_handle);
     if status == STATUS_IMAGE_CHECKSUM_MISMATCH || status == STATUS_INVALID_IMAGE_PROTECT {
-        hard_error_parameters = &mut PsNtDllPathName as *mut _UNICODE_STRING as ULONG_PTR;
+        hard_error_parameters = &raw mut PsNtDllPathName as *mut _UNICODE_STRING as ULONG_PTR;
         NtRaiseHardError(
             status,
             1,
@@ -369,7 +369,7 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
         SECTION_ALL_ACCESS,
         MmSectionObjectType,
         KernelMode as i8,
-        &mut PspSystemDllSection,
+        &raw mut PspSystemDllSection,
         core::ptr::null_mut(),
     );
     ZwClose(section_handle);
@@ -384,7 +384,7 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
         }
     }
 
-    status = PspMapSystemDll(PsGetCurrentProcess() as PEPROCESS, &mut PspSystemDllBase, 0u8);
+    status = PspMapSystemDll(PsGetCurrentProcess() as PEPROCESS, &raw mut PspSystemDllBase, 0u8);
     if status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
@@ -404,7 +404,7 @@ unsafe fn PspInitializeSystemDll() -> NTSTATUS {
 
     status = PspLookupSystemDllEntryPoint(
         b"LdrInitializeThunk\0".as_ptr() as PCSTR,
-        &mut PspSystemDllEntryPoint,
+        &raw mut PspSystemDllEntryPoint,
     );
     if status < 0 {
         #[cfg(target_arch = "aarch64")]
@@ -500,8 +500,8 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
         PspDefaultPagefileLimit <<= 20;
     }
 
-    InitializeListHead(&mut PsActiveProcessHead);
-    KeInitializeGuardedMutex(&mut PspActiveProcessMutex);
+    InitializeListHead(&raw mut PsActiveProcessHead);
+    KeInitializeGuardedMutex(&raw mut PspActiveProcessMutex);
     ARM64_UART_TRACE_HEX(
         b"[PS] PspActiveProcessMutex addr=\0".as_ptr() as PCSTR,
         core::ptr::addr_of_mut!(PspActiveProcessMutex) as ULONG_PTR,
@@ -529,7 +529,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.GenericMapping = PspProcessMapping;
     object_type_initializer.ValidAccessMask = PROCESS_ALL_ACCESS;
     object_type_initializer.DeleteProcedure = Some(PspDeleteProcess);
-    ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &mut PsProcessType);
+    ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsProcessType);
 
     RtlInitUnicodeString(&mut name, w!("Thread").as_ptr() as *const u16);
     object_type_initializer.Length = core::mem::size_of::<_OBJECT_TYPE_INITIALIZER>() as USHORT;
@@ -537,7 +537,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.GenericMapping = PspThreadMapping;
     object_type_initializer.ValidAccessMask = THREAD_ALL_ACCESS;
     object_type_initializer.DeleteProcedure = Some(PspDeleteThread);
-    ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &mut PsThreadType);
+    ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsThreadType);
 
     RtlInitUnicodeString(&mut name, w!("Job").as_ptr() as *const u16);
     object_type_initializer.Length = core::mem::size_of::<_OBJECT_TYPE_INITIALIZER>() as USHORT;
@@ -546,12 +546,12 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.InvalidAttributes = 0;
     object_type_initializer.ValidAccessMask = JOB_OBJECT_ALL_ACCESS;
     object_type_initializer.DeleteProcedure = Some(PspDeleteJob);
-    ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &mut PsJobType);
+    ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsJobType);
 
     PspInitializeJobStructures();
 
-    InitializeListHead(&mut PspWorkingSetChangeHead.List);
-    KeInitializeGuardedMutex(&mut PspWorkingSetChangeHead.Lock);
+    InitializeListHead(&raw mut PspWorkingSetChangeHead.List);
+    KeInitializeGuardedMutex(&raw mut PspWorkingSetChangeHead.Lock);
 
     PspCidTable = ExCreateHandleTable(core::ptr::null_mut());
     if PspCidTable.is_null() {
@@ -577,7 +577,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     ARM64_UART_TRACE(b"[PS] Creating initial system process\r\n\0".as_ptr() as PCSTR);
 
     status = PspCreateProcess(
-        &mut PspInitialSystemProcessHandle,
+        &raw mut PspInitialSystemProcessHandle,
         PROCESS_ALL_ACCESS,
         &mut object_attributes,
         core::ptr::null_mut(),
@@ -597,7 +597,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
         0,
         PsProcessType,
         KernelMode as i8,
-        &mut PsInitialSystemProcess as *mut PEPROCESS as *mut PVOID,
+        &raw mut PsInitialSystemProcess as *mut PEPROCESS as *mut PVOID,
         core::ptr::null_mut(),
     );
 

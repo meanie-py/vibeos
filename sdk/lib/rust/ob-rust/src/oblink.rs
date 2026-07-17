@@ -140,7 +140,7 @@ unsafe fn ObpProcessDosDeviceSymbolicLink(
                     if (*DeviceMap).DosDevicesDirectory != core::ptr::null_mut() {
                         if LocalTarget.Length >= ObpDosDevicesShortName.Length
                             && (*(LocalTarget.Buffer as *const ULONGLONG)
-                                == *(&ObpDosDevicesShortNamePrefix as *const _UNICODE_STRING as *const u64))
+                                == *(&raw const ObpDosDevicesShortNamePrefix as *const _UNICODE_STRING as *const u64))
                         {
                             DirectoryObject = (*DeviceMap).DosDevicesDirectory;
 

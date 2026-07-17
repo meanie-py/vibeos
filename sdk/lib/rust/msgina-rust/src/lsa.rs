@@ -26,7 +26,7 @@ static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
+    &raw const __wine_dbch_msgina as *mut __wine_debug_channel;
 
 static mut User32TokenSourceName: [CHAR; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [CHAR; 9]>(*b"User32  \0") };
@@ -296,7 +296,7 @@ pub unsafe extern "C" fn MyLogonUser(
 
     RtlCopyMemory!(
         TokenSourceVar.SourceName.as_mut_ptr() as *mut u8,
-        User32TokenSourceName.as_ptr() as *const i8,
+        (*(&raw const User32TokenSourceName)).as_ptr() as *const i8,
         size_of::<[i8; 8]>(),
     );
     AllocateLocallyUniqueId(&mut TokenSourceVar.SourceIdentifier);

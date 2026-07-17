@@ -309,10 +309,10 @@ static mut IopPnpNotifyEvent: KEVENT = unsafe { core::mem::zeroed() };
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "C" fn IopInitPlugPlayEvents() -> NTSTATUS {
-    InitializeListHead(&mut IopPnpEventQueueHead);
+    InitializeListHead(&raw mut IopPnpEventQueueHead);
 
     KeInitializeEvent(
-        &mut IopPnpNotifyEvent,
+        &raw mut IopPnpNotifyEvent,
         _EVENT_TYPE_SynchronizationEvent as u32,
         0u8,
     );
@@ -368,7 +368,7 @@ pub unsafe extern "C" fn IopQueueDeviceChangeEvent(
     *sym_link_ptr.add(((*SymbolicLinkName).Length / core::mem::size_of::<u16>() as u16) as usize) = 0;
 
     InsertHeadList(
-        &mut IopPnpEventQueueHead,
+        &raw mut IopPnpEventQueueHead,
         core::ptr::addr_of_mut!((*EventEntry).ListEntry),
     );
     
@@ -419,7 +419,7 @@ pub unsafe extern "C" fn IopQueueDeviceInstallEvent(
     *device_id_ptr.add(((*DeviceId).Length / core::mem::size_of::<u16>() as u16) as usize) = 0;
 
     InsertHeadList(
-        &mut IopPnpEventQueueHead,
+        &raw mut IopPnpEventQueueHead,
         core::ptr::addr_of_mut!((*EventEntry).ListEntry),
     );
 
@@ -467,7 +467,7 @@ pub unsafe extern "C" fn IopQueueTargetDeviceEvent(
     }
 
     InsertHeadList(
-        &mut IopPnpEventQueueHead,
+        &raw mut IopPnpEventQueueHead,
         core::ptr::addr_of_mut!((*EventEntry).ListEntry),
     );
     
@@ -690,13 +690,13 @@ unsafe fn PiControlInitializeDevice(
 unsafe fn IopRemovePlugPlayEvent(
     ResponseData: PPLUGPLAY_CONTROL_USER_RESPONSE_DATA,
 ) -> NTSTATUS {
-    if !IsListEmpty(&mut IopPnpEventQueueHead) {
-        let entry = RemoveTailList(&mut IopPnpEventQueueHead);
+    if !IsListEmpty(&raw mut IopPnpEventQueueHead) {
+        let entry = RemoveTailList(&raw mut IopPnpEventQueueHead);
         let event_entry = (entry as usize - core::mem::offset_of!(PNP_EVENT_ENTRY, ListEntry)) as PPNP_EVENT_ENTRY;
         ExFreePool(event_entry as PVOID);
     }
 
-    if !IsListEmpty(&mut IopPnpEventQueueHead) {
+    if !IsListEmpty(&raw mut IopPnpEventQueueHead) {
         KeSetEvent(core::ptr::addr_of_mut!(IopPnpNotifyEvent) as PVOID, 0i32, 0u8);
     }
 
@@ -1653,7 +1653,7 @@ pub unsafe extern "system" fn NtGetPlugPlayEvent(
     }
 
     Status = KeWaitForSingleObject(
-        &mut IopPnpNotifyEvent as *mut _ as PVOID,
+        &raw mut IopPnpNotifyEvent as *mut _ as PVOID,
         _KWAIT_REASON_UserRequest,
         1i8,
         0u8,

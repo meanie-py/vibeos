@@ -52,7 +52,7 @@ extern "C" {
 // Registry-controlled values owned by config/cmlazy. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 pub static CMLAZY_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Session Manager\\Configuration Manager", "RegistryLazyFlushInterval",
             core::ptr::addr_of_mut!(CmpLazyFlushIntervalInSeconds)),
         ntkrnl_sys::cv!("Session Manager\\Configuration Manager", "RegistryLazyFlushHiveCount",

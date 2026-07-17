@@ -16,13 +16,11 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
-#![allow(unused_unsafe)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 // Debug-print macros + the `dbgprint` runtime module were hoisted to the
 // dbgprint-rust leaf crate (crate-split Phase 1b). Re-export them at this crate's

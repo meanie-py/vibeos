@@ -370,7 +370,7 @@ unsafe fn IopEnumerateDetectedDevices(
 
         Status = ZwQueryValueKey(
             hDeviceKey,
-            &mut ConfigurationDataU,
+            &raw mut ConfigurationDataU,
             1,
             pValueInformation as PVOID,
             ValueInfoLength,
@@ -391,7 +391,7 @@ unsafe fn IopEnumerateDetectedDevices(
 
             Status = ZwQueryValueKey(
                 hDeviceKey,
-                &mut ConfigurationDataU,
+                &raw mut ConfigurationDataU,
                 1,
                 pValueInformation as PVOID,
                 ValueInfoLength,
@@ -492,7 +492,7 @@ unsafe fn IopEnumerateDetectedDevices(
 
         Status = ZwQueryValueKey(
             hDeviceKey,
-            &mut IdentifierU,
+            &raw mut IdentifierU,
             1,
             pValueInformation as PVOID,
             ValueInfoLength,
@@ -519,7 +519,7 @@ unsafe fn IopEnumerateDetectedDevices(
 
             Status = ZwQueryValueKey(
                 hDeviceKey,
-                &mut IdentifierU,
+                &raw mut IdentifierU,
                 1,
                 pValueInformation as PVOID,
                 ValueInfoLength,
@@ -631,7 +631,7 @@ unsafe fn IopEnumerateDetectedDevices(
             continue;
         }
 
-        Status = ZwSetValueKey(hLevel2Key, &mut HardwareIDU, 0, REG_MULTI_SZ, HardwareIdKey.Buffer as PVOID, HardwareIdKey.MaximumLength as ULONG);
+        Status = ZwSetValueKey(hLevel2Key, &raw mut HardwareIDU, 0, REG_MULTI_SZ, HardwareIdKey.Buffer as PVOID, HardwareIdKey.MaximumLength as ULONG);
 
         if Status < 0 {
             ZwDeleteKey(hLevel2Key);
@@ -644,7 +644,7 @@ unsafe fn IopEnumerateDetectedDevices(
             continue;
         }
 
-        InitializeObjectAttributes(&mut ObjectAttributes, &mut LogConfU, OBJ_KERNEL_HANDLE, hLevel2Key, core::ptr::null_mut());
+        InitializeObjectAttributes(&mut ObjectAttributes, &raw mut LogConfU, OBJ_KERNEL_HANDLE, hLevel2Key, core::ptr::null_mut());
 
         Status = ZwCreateKey(
             &mut hLogConf,
@@ -698,7 +698,7 @@ unsafe fn IopEnumerateDetectedDevices(
 
             Status = ZwSetValueKey(
                 hLogConf,
-                &mut BootConfigU,
+                &raw mut BootConfigU,
                 0,
                 REG_RESOURCE_LIST,
                 CmResourceList as PVOID,

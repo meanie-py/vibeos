@@ -239,7 +239,7 @@ pub unsafe extern "system" fn BaseIsDosApplication(
     String.Buffer = (*PathName).Buffer.offset(
         (((*PathName).Length as i32 - String.Length as i32) / core::mem::size_of::<WCHAR>() as i32) as isize,
     );
-    if RtlEqualUnicodeString(&String, &BaseDotComSuffixName, 1) != 0 {
+    if RtlEqualUnicodeString(&String, &raw const BaseDotComSuffixName, 1) != 0 {
         return BINARY_TYPE_COM;
     }
 
@@ -248,7 +248,7 @@ pub unsafe extern "system" fn BaseIsDosApplication(
     String.Buffer = (*PathName).Buffer.offset(
         (((*PathName).Length as i32 - String.Length as i32) / core::mem::size_of::<WCHAR>() as i32) as isize,
     );
-    if RtlEqualUnicodeString(&String, &BaseDotPifSuffixName, 1) != 0 {
+    if RtlEqualUnicodeString(&String, &raw const BaseDotPifSuffixName, 1) != 0 {
         return BINARY_TYPE_PIF;
     }
 
@@ -257,7 +257,7 @@ pub unsafe extern "system" fn BaseIsDosApplication(
     String.Buffer = (*PathName).Buffer.offset(
         (((*PathName).Length as i32 - String.Length as i32) / core::mem::size_of::<WCHAR>() as i32) as isize,
     );
-    if RtlEqualUnicodeString(&String, &BaseDotExeSuffixName, 1) != 0 {
+    if RtlEqualUnicodeString(&String, &raw const BaseDotExeSuffixName, 1) != 0 {
         return BINARY_TYPE_EXE;
     }
 
@@ -441,7 +441,7 @@ pub unsafe extern "system" fn BaseGetEnvNameType_U(
     NameType = EnvNameNotAPath;
 
     i = 0;
-    while i < ARRAYSIZE!(BasepEnvNameType) {
+    while i < ARRAYSIZE!((*(&raw const BasepEnvNameType))) {
         EnvInfo = &BasepEnvNameType[i as usize] as *const _ as PENV_INFO;
 
         if (*EnvInfo).NameLength == NameLength && _wcsnicmp((*EnvInfo).Name, Name, NameLength as usize) == 0

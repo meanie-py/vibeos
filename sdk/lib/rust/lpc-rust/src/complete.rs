@@ -166,13 +166,13 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
         return status;
     }
 
-    KeAcquireGuardedMutex(&mut LpcpLock);
+    KeAcquireGuardedMutex(&raw mut LpcpLock);
 
     if LpcpGetMessageFromThread(client_thread).is_null()
         || captured_reply_message.MessageId == 0
         || (*client_thread).LpcReplyMessageId != captured_reply_message.MessageId
     {
-        KeReleaseGuardedMutex(&mut LpcpLock);
+        KeReleaseGuardedMutex(&raw mut LpcpLock);
         ObDereferenceObject(client_process as PVOID);
         ObDereferenceObject(client_thread as PVOID);
         return STATUS_REPLY_MESSAGE_MISMATCH;
@@ -184,7 +184,7 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
     connection_port = (*client_port).ConnectionPort;
 
     if (*connection_port).__bindgen_anon_1.ServerProcess != PsGetCurrentProcess() {
-        KeReleaseGuardedMutex(&mut LpcpLock);
+        KeReleaseGuardedMutex(&raw mut LpcpLock);
         ObDereferenceObject(client_process as PVOID);
         ObDereferenceObject(client_thread as PVOID);
         return STATUS_REPLY_MESSAGE_MISMATCH;
@@ -193,7 +193,7 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
     (*client_thread).__bindgen_anon_5.LpcReplyMessage = core::ptr::null_mut();
     (*client_thread).LpcReplyMessageId = 0;
     (*connect_message).ClientPort = core::ptr::null_mut();
-    KeReleaseGuardedMutex(&mut LpcpLock);
+    KeReleaseGuardedMutex(&raw mut LpcpLock);
 
     if connection_info_length > (*connection_port).MaxConnectionInfoLength as ULONG {
         connection_info_length = (*connection_port).MaxConnectionInfoLength as ULONG;
@@ -221,10 +221,10 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
             ObDereferenceObject(client_section_to_map);
         }
         if !client_thread.is_null() {
-            KeAcquireGuardedMutex(&mut LpcpLock);
+            KeAcquireGuardedMutex(&raw mut LpcpLock);
             (*client_thread).__bindgen_anon_5.LpcReplyMessage = message as PVOID;
             LpcpPrepareToWakeClient(client_thread);
-            KeReleaseGuardedMutex(&mut LpcpLock);
+            KeReleaseGuardedMutex(&raw mut LpcpLock);
             LpcpCompleteWait(core::ptr::addr_of_mut!((*client_thread).__bindgen_anon_4.LpcReplySemaphore) as PVOID);
             ObDereferenceObject(client_thread as PVOID);
         }
@@ -251,10 +251,10 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
             ObDereferenceObject(client_section_to_map);
         }
         if !client_thread.is_null() {
-            KeAcquireGuardedMutex(&mut LpcpLock);
+            KeAcquireGuardedMutex(&raw mut LpcpLock);
             (*client_thread).__bindgen_anon_5.LpcReplyMessage = message as PVOID;
             LpcpPrepareToWakeClient(client_thread);
-            KeReleaseGuardedMutex(&mut LpcpLock);
+            KeReleaseGuardedMutex(&raw mut LpcpLock);
             LpcpCompleteWait(core::ptr::addr_of_mut!((*client_thread).__bindgen_anon_4.LpcReplySemaphore) as PVOID);
             ObDereferenceObject(client_thread as PVOID);
         }
@@ -278,10 +278,10 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
     (*server_port).Creator = (*PsGetCurrentThread()).Cid;
     (*client_port).Creator = (*message).Request.__bindgen_anon_1.ClientId;
 
-    KeAcquireGuardedMutex(&mut LpcpLock);
+    KeAcquireGuardedMutex(&raw mut LpcpLock);
     client_section_to_map = (*connect_message).SectionToMap;
     (*connect_message).SectionToMap = core::ptr::null_mut();
-    KeReleaseGuardedMutex(&mut LpcpLock);
+    KeReleaseGuardedMutex(&raw mut LpcpLock);
 
     if !client_section_to_map.is_null() {
         section_offset.QuadPart = (*connect_message).ClientView.SectionOffset as i64;
@@ -308,10 +308,10 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
                 ObDereferenceObject(client_section_to_map);
             }
             if !client_thread.is_null() {
-                KeAcquireGuardedMutex(&mut LpcpLock);
+                KeAcquireGuardedMutex(&raw mut LpcpLock);
                 (*client_thread).__bindgen_anon_5.LpcReplyMessage = message as PVOID;
                 LpcpPrepareToWakeClient(client_thread);
-                KeReleaseGuardedMutex(&mut LpcpLock);
+                KeReleaseGuardedMutex(&raw mut LpcpLock);
                 LpcpCompleteWait(core::ptr::addr_of_mut!((*client_thread).__bindgen_anon_4.LpcReplySemaphore) as PVOID);
                 ObDereferenceObject(client_thread as PVOID);
             }
@@ -338,10 +338,10 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
             ObDereferenceObject(client_section_to_map);
         }
         if !client_thread.is_null() {
-            KeAcquireGuardedMutex(&mut LpcpLock);
+            KeAcquireGuardedMutex(&raw mut LpcpLock);
             (*client_thread).__bindgen_anon_5.LpcReplyMessage = message as PVOID;
             LpcpPrepareToWakeClient(client_thread);
-            KeReleaseGuardedMutex(&mut LpcpLock);
+            KeReleaseGuardedMutex(&raw mut LpcpLock);
             LpcpCompleteWait(core::ptr::addr_of_mut!((*client_thread).__bindgen_anon_4.LpcReplySemaphore) as PVOID);
             ObDereferenceObject(client_thread as PVOID);
         }
@@ -363,9 +363,9 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
     }
     (*server_port).ClientThread = client_thread;
 
-    KeAcquireGuardedMutex(&mut LpcpLock);
+    KeAcquireGuardedMutex(&raw mut LpcpLock);
     (*client_thread).__bindgen_anon_5.LpcReplyMessage = message as PVOID;
-    KeReleaseGuardedMutex(&mut LpcpLock);
+    KeReleaseGuardedMutex(&raw mut LpcpLock);
     client_thread = core::ptr::null_mut();
     ObDereferenceObject(server_port as PVOID);
 
@@ -374,10 +374,10 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
         ObDereferenceObject(client_section_to_map);
     }
     if !client_thread.is_null() {
-        KeAcquireGuardedMutex(&mut LpcpLock);
+        KeAcquireGuardedMutex(&raw mut LpcpLock);
         (*client_thread).__bindgen_anon_5.LpcReplyMessage = message as PVOID;
         LpcpPrepareToWakeClient(client_thread);
-        KeReleaseGuardedMutex(&mut LpcpLock);
+        KeReleaseGuardedMutex(&raw mut LpcpLock);
         LpcpCompleteWait(core::ptr::addr_of_mut!((*client_thread).__bindgen_anon_4.LpcReplySemaphore) as PVOID);
         ObDereferenceObject(client_thread as PVOID);
     }
@@ -412,10 +412,10 @@ pub unsafe extern "system" fn NtCompleteConnectPort(port_handle: HANDLE) -> NTST
         return STATUS_INVALID_PORT_HANDLE;
     }
 
-    KeAcquireGuardedMutex(&mut LpcpLock);
+    KeAcquireGuardedMutex(&raw mut LpcpLock);
 
     if (*port).ClientThread.is_null() {
-        KeReleaseGuardedMutex(&mut LpcpLock);
+        KeReleaseGuardedMutex(&raw mut LpcpLock);
         ObDereferenceObject(port as PVOID);
         return STATUS_INVALID_PARAMETER;
     }
@@ -423,14 +423,14 @@ pub unsafe extern "system" fn NtCompleteConnectPort(port_handle: HANDLE) -> NTST
     thread = (*port).ClientThread;
 
     if LpcpGetMessageFromThread(thread).is_null() {
-        KeReleaseGuardedMutex(&mut LpcpLock);
+        KeReleaseGuardedMutex(&raw mut LpcpLock);
         ObDereferenceObject(port as PVOID);
         return STATUS_SUCCESS;
     }
 
     (*port).ClientThread = core::ptr::null_mut();
     LpcpPrepareToWakeClient(thread);
-    KeReleaseGuardedMutex(&mut LpcpLock);
+    KeReleaseGuardedMutex(&raw mut LpcpLock);
     LpcpCompleteWait(core::ptr::addr_of_mut!((*thread).__bindgen_anon_4.LpcReplySemaphore) as PVOID);
     ObDereferenceObject(port as PVOID);
     ObDereferenceObject(thread as PVOID);

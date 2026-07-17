@@ -172,7 +172,7 @@ pub unsafe extern "system" fn KdpGetStateChange(
         }
 
         for i in 0..(KeNumberProcessors as usize) {
-            let prcb = *KiProcessorBlock.as_ptr().add(i);
+            let prcb = *(*(&raw const KiProcessorBlock)).as_ptr().add(i);
             if !prcb.is_null() {
                 (*prcb).ProcessorState.SpecialRegisters.KernelDr7 = control.Dr7;
                 (*prcb).ProcessorState.SpecialRegisters.KernelDr6 = 0;
@@ -265,7 +265,7 @@ pub unsafe extern "system" fn KdpSysReadControlSpace(
         let real_length = (proc_state_size - BaseAddress) as ULONG;
         let length = if real_length < Length { real_length } else { Length };
 
-        let prcb = *KiProcessorBlock.as_ptr().add(Processor as usize);
+        let prcb = *(*(&raw const KiProcessorBlock)).as_ptr().add(Processor as usize);
         let control_start = (BaseAddress as usize
             + core::ptr::addr_of_mut!((*prcb).ProcessorState) as usize) as PVOID;
 
@@ -295,7 +295,7 @@ pub unsafe extern "system" fn KdpSysWriteControlSpace(
     if (BaseAddress + Length as ULONG64) <= proc_state_size
         && Processor < (KeNumberProcessors as ULONG)
     {
-        let prcb = *KiProcessorBlock.as_ptr().add(Processor as usize);
+        let prcb = *(*(&raw const KiProcessorBlock)).as_ptr().add(Processor as usize);
         let control_start = (BaseAddress as usize
             + core::ptr::addr_of_mut!((*prcb).ProcessorState) as usize) as PVOID;
 
@@ -416,7 +416,7 @@ pub unsafe extern "system" fn KdpSysCheckLowMemory(_Flags: ULONG) -> NTSTATUS {
 #[no_mangle]
 pub unsafe extern "system" fn KdpAllowDisable() -> NTSTATUS {
     for i in 0..(KeNumberProcessors as usize) {
-        let prcb = *KiProcessorBlock.as_ptr().add(i);
+        let prcb = *(*(&raw const KiProcessorBlock)).as_ptr().add(i);
         if !prcb.is_null() {
             let dr7 = (*prcb).ProcessorState.SpecialRegisters.KernelDr7;
             if (dr7 & 0xFF) != 0 {

@@ -116,7 +116,7 @@ pub unsafe extern "system" fn KdLogDbgPrint(String: PSTRING) {
         return;
     }
 
-    let old_irql = KdpAcquireLock(&mut KdpPrintSpinLock as PKSPIN_LOCK);
+    let old_irql = KdpAcquireLock(&raw mut KdpPrintSpinLock as PKSPIN_LOCK);
 
     let mut length = min((*String).Length as usize, KdPrintBufferSize as usize);
     let remaining = (KdPrintCircularBuffer as usize + KdPrintBufferSize as usize - KdPrintWritePointer as usize) as usize;
@@ -143,7 +143,7 @@ pub unsafe extern "system" fn KdLogDbgPrint(String: PSTRING) {
         }
     }
 
-    KdpReleaseLock(&mut KdpPrintSpinLock as PKSPIN_LOCK, old_irql);
+    KdpReleaseLock(&raw mut KdpPrintSpinLock as PKSPIN_LOCK, old_irql);
 }
 
 #[no_mangle]
@@ -154,7 +154,7 @@ pub unsafe extern "system" fn KdpPrintString(Output: PSTRING) -> BOOLEAN {
     let mut length: USHORT;
 
     KdpMoveMemory(
-        KdpMessageBuffer.as_mut_ptr() as PVOID,
+        (*(&raw mut KdpMessageBuffer)).as_mut_ptr() as PVOID,
         (*Output).Buffer as PVOID,
         (*Output).Length as usize,
     );
@@ -172,13 +172,13 @@ pub unsafe extern "system" fn KdpPrintString(Output: PSTRING) -> BOOLEAN {
     header.Buffer = &mut debug_io as *mut DBGKD_DEBUG_IO as PCHAR;
 
     data.Length = length;
-    data.Buffer = KdpMessageBuffer.as_mut_ptr();
+    data.Buffer = (*(&raw mut KdpMessageBuffer)).as_mut_ptr();
 
     KdSendPacket(
         PACKET_TYPE_KD_DEBUG_IO,
         &mut header as PSTRING,
         &mut data as PSTRING,
-        &mut KdpContext as *mut KD_CONTEXT,
+        &raw mut KdpContext as *mut KD_CONTEXT,
     );
 
     KdpPollBreakInWithPortLock()
@@ -196,7 +196,7 @@ pub unsafe extern "system" fn KdpPromptString(
     let mut status: KDSTATUS;
 
     KdpMoveMemory(
-        KdpMessageBuffer.as_mut_ptr() as PVOID,
+        (*(&raw mut KdpMessageBuffer)).as_mut_ptr() as PVOID,
         (*PromptString).Buffer as PVOID,
         (*PromptString).Length as usize,
     );
@@ -215,17 +215,17 @@ pub unsafe extern "system" fn KdpPromptString(
     header.Buffer = &mut debug_io as *mut DBGKD_DEBUG_IO as PCHAR;
 
     data.Length = length as USHORT;
-    data.Buffer = KdpMessageBuffer.as_mut_ptr();
+    data.Buffer = (*(&raw mut KdpMessageBuffer)).as_mut_ptr();
 
     KdSendPacket(
         PACKET_TYPE_KD_DEBUG_IO,
         &mut header as PSTRING,
         &mut data as PSTRING,
-        &mut KdpContext as *mut KD_CONTEXT,
+        &raw mut KdpContext as *mut KD_CONTEXT,
     );
 
     header.MaximumLength = core::mem::size_of::<DBGKD_DEBUG_IO>() as USHORT;
-    data.MaximumLength = KdpMessageBuffer.len() as USHORT;
+    data.MaximumLength = (*(&raw const KdpMessageBuffer)).len() as USHORT;
 
     loop {
         status = KdReceivePacket(
@@ -233,7 +233,7 @@ pub unsafe extern "system" fn KdpPromptString(
             &mut header as PSTRING,
             &mut data as PSTRING,
             &mut length as *mut ULONG,
-            &mut KdpContext as *mut KD_CONTEXT,
+            &raw mut KdpContext as *mut KD_CONTEXT,
         );
 
         if status == KdPacketNeedsResend {
@@ -249,7 +249,7 @@ pub unsafe extern "system" fn KdpPromptString(
 
     KdpMoveMemory(
         (*ResponseString).Buffer as PVOID,
-        KdpMessageBuffer.as_mut_ptr() as PVOID,
+        (*(&raw mut KdpMessageBuffer)).as_mut_ptr() as PVOID,
         length as usize,
     );
     (*ResponseString).Length = length as USHORT;

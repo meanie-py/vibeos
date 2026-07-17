@@ -1307,7 +1307,7 @@ unsafe extern "system" fn User32GetPenMenuData(
     pnID: PUINT,
     pdwMenuData: PDWORD_PTR,
 ) -> BOOL {
-    if s_pGetPenMenuData.is_none() {
+    if (*(&raw const s_pGetPenMenuData)).is_none() {
         let mut szPath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
         let mut hIndicDll = GetModuleHandleW(
             w!("indicdll.dll").as_ptr() as PCWSTR,

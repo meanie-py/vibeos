@@ -44,7 +44,7 @@ unsafe fn ExpGetGlobalAtomTable() -> PRTL_ATOM_TABLE {
         return GlobalAtomTable;
     }
 
-    let Status = RtlCreateAtomTable(37, &mut GlobalAtomTable);
+    let Status = RtlCreateAtomTable(37, &raw mut GlobalAtomTable);
 
     if Status < 0 {
         return core::ptr::null_mut();

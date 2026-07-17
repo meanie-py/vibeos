@@ -127,7 +127,7 @@ unsafe fn CreateFrameBrushes() {
 #[allow(dead_code)]
 #[no_mangle]
 pub unsafe extern "C" fn DeleteFrameBrushes() {
-    let count = FrameBrushes.len(); // sizeof(FrameBrushes)/sizeof(HBRUSH) == 13
+    let count = (*(&raw const FrameBrushes)).len(); // sizeof(FrameBrushes)/sizeof(HBRUSH) == 13
     for Brush in 0..count {
         if !FrameBrushes[Brush].is_null() {
             DeleteObject(FrameBrushes[Brush] as HGDIOBJ);

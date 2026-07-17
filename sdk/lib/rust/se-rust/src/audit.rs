@@ -238,7 +238,7 @@ pub unsafe extern "system" fn SePrivilegedServiceAuditAlarm(
 
     SepAdtPrivilegedServiceAuditAlarm(
         subject_context,
-        &mut SeSubsystemName,
+        &raw mut SeSubsystemName,
         service_name,
         (*subject_context).ClientToken as PTOKEN,
         (*subject_context).PrimaryToken as PTOKEN,

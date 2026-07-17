@@ -193,9 +193,9 @@ pub unsafe extern "system" fn FindFirstChangeNotificationW(
         core::ptr::null_mut(),
         None,
         core::ptr::null_mut(),
-        &mut staticIoStatusBlock,
-        staticchangebuff.as_mut_ptr() as *mut core::ffi::c_void,
-        core::mem::size_of_val(&staticchangebuff) as u32,
+        &raw mut staticIoStatusBlock,
+        (*(&raw mut staticchangebuff)).as_mut_ptr() as *mut core::ffi::c_void,
+        core::mem::size_of_val(&*(&raw const staticchangebuff)) as u32,
         dwNotifyFilter,
         bWatchSubtree as u8,
     );

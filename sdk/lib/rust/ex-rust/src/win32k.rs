@@ -326,7 +326,7 @@ pub unsafe extern "system" fn ExpWin32kInit() -> BOOLEAN {
         &mut Name as *mut _UNICODE_STRING,
         &mut ObjectTypeInitializer as *mut OBJECT_TYPE_INITIALIZER,
         core::ptr::null_mut(),
-        &mut ExWindowStationObjectType as *mut POBJECT_TYPE,
+        &raw mut ExWindowStationObjectType as *mut POBJECT_TYPE,
     );
     if Status < 0 {
         return 0u8;
@@ -343,7 +343,7 @@ pub unsafe extern "system" fn ExpWin32kInit() -> BOOLEAN {
         &mut Name as *mut _UNICODE_STRING,
         &mut ObjectTypeInitializer as *mut OBJECT_TYPE_INITIALIZER,
         core::ptr::null_mut(),
-        &mut ExDesktopObjectType as *mut POBJECT_TYPE,
+        &raw mut ExDesktopObjectType as *mut POBJECT_TYPE,
     );
     if Status < 0 {
         return 0u8;

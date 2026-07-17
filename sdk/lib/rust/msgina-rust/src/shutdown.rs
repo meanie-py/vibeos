@@ -41,7 +41,7 @@ static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
     }
 };
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
+    &raw const __wine_dbch_msgina as *mut __wine_debug_channel;
 
 // ---- file-scope preamble (translated) ----
 pub const FONT_POINT_SIZE: i32 = 13;

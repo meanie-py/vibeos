@@ -3138,7 +3138,7 @@ pub unsafe extern "system" fn GetCalendarInfoW(
                     let ret = snprintfW(
                         buffer.as_mut_ptr(),
                         10,
-                        fmtW.as_ptr(),
+                        (*(&raw const fmtW)).as_ptr(),
                         CAL_JAPAN,
                     ) + 1;
                     if lpCalData.is_null() {
@@ -3188,7 +3188,7 @@ pub unsafe extern "system" fn GetCalendarInfoW(
                         let ret = snprintfW(
                             buffer.as_mut_ptr(),
                             10,
-                            fmtW.as_ptr(),
+                            (*(&raw const fmtW)).as_ptr(),
                             (*pEra).wYear as i32,
                         ) + 1;
                         if lpCalData.is_null() {
@@ -3248,7 +3248,7 @@ pub unsafe extern "system" fn GetCalendarInfoW(
                     let ret = snprintfW(
                         buffer.as_mut_ptr(),
                         10,
-                        fmtW.as_ptr(),
+                        (*(&raw const fmtW)).as_ptr(),
                         JAPANESE_MAX_TWODIGITYEAR,
                     ) + 1;
                     if lpCalData.is_null() {
@@ -3271,7 +3271,7 @@ pub unsafe extern "system" fn GetCalendarInfoW(
                 let ret = snprintfW(
                     buffer.as_mut_ptr(),
                     10,
-                    fmtW.as_ptr(),
+                    (*(&raw const fmtW)).as_ptr(),
                     CALINFO_MAX_YEAR,
                 ) + 1;
                 if lpCalData.is_null() {

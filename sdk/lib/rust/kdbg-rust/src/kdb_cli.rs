@@ -424,7 +424,7 @@ unsafe fn KdbpEvaluateExpression(
         buf
     };
     let mut ExpressionErrOffset: LONG = -1;
-    let mut ErrMsg: PCHAR = ErrMsgBuffer.as_mut_ptr();
+    let mut ErrMsg: PCHAR = (*(&raw mut ErrMsgBuffer)).as_mut_ptr();
     let IsOk: BOOLEAN;
 
     IsOk = KdbpRpnEvaluateExpression(
@@ -432,7 +432,7 @@ unsafe fn KdbpEvaluateExpression(
         KdbCurrentTrapFrame,
         Result,
         &mut ExpressionErrOffset,
-        ErrMsgBuffer.as_mut_ptr().offset(2) as *mut u8,
+        (*(&raw mut ErrMsgBuffer)).as_mut_ptr().offset(2) as *mut u8,
     );
     if IsOk == 0 {
         if ExpressionErrOffset >= 0 {
@@ -770,7 +770,7 @@ unsafe fn KdbpGetComponentId(
 ) -> u8 {
 
     let mut i: u32 = 0;
-    while (i as usize) < ComponentTable.len() {
+    while (i as usize) < (*(&raw const ComponentTable)).len() {
         if _stricmp(ComponentName as *const i8, ComponentTable[i as usize].Name as *const i8) == 0 {
             *ComponentId = ComponentTable[i as usize].Id;
             return 1u8;
@@ -817,7 +817,7 @@ pub unsafe extern "C" fn KdbpCmdFilter(
         crate::kdbp_print!(b"    Component Name         Component ID\n  ==================     ================\n\0",
         );
         i = 0;
-        while (i as usize) < ComponentTable.len() {
+        while (i as usize) < (*(&raw const ComponentTable)).len() {
             crate::kdbp_print!(b"%20s        0x%08lx\n\0",
                 ComponentTable[i as usize].Name,
                 ComponentTable[i as usize].Id,
@@ -2957,7 +2957,7 @@ pub unsafe extern "C" fn KdbpCmdHelp(
 
     crate::kdbp_print!(b"Kernel debugger commands:\n\0");
     i = 0;
-    while (i as usize) < KdbDebuggerCommands.len() {
+    while (i as usize) < (*(&raw const KdbDebuggerCommands)).len() {
         if KdbDebuggerCommands[i as usize].Syntax.is_null() {
             if i > 0 {
                 crate::kdbp_print!(b"\n\0");
@@ -3256,7 +3256,7 @@ pub unsafe extern "system" fn KdbRegisterCliCallback(
     let mut i: ULONG;
 
     i = 0;
-    while i < (core::mem::size_of_val(&KdbCliCallbacks) / core::mem::size_of::<PVOID>()) as ULONG {
+    while i < (core::mem::size_of_val(&*(&raw const KdbCliCallbacks)) / core::mem::size_of::<PVOID>()) as ULONG {
         if Deregister != 0 {
             if KdbCliCallbacks[i as usize] == Callback {
                 KdbCliCallbacks[i as usize] = core::ptr::null_mut();
@@ -3283,7 +3283,7 @@ unsafe fn KdbpInvokeCliCallbacks(
 
     type KdbCliCallback = unsafe extern "C" fn(PCHAR, ULONG, *mut PCHAR) -> BOOLEAN;
     i = 0;
-    while i < (core::mem::size_of_val(&KdbCliCallbacks) / core::mem::size_of::<PVOID>()) as ULONG {
+    while i < (core::mem::size_of_val(&*(&raw const KdbCliCallbacks)) / core::mem::size_of::<PVOID>()) as ULONG {
         let cb_ptr = KdbCliCallbacks[i as usize];
         if !cb_ptr.is_null() {
             let callback: KdbCliCallback = core::mem::transmute(cb_ptr);
@@ -3308,7 +3308,7 @@ unsafe fn KdbpDoCommand(
     static mut Argv: [PCHAR; 256] = [core::ptr::null_mut(); 256];
     static mut OrigCommand: [CHAR; 1024] = [0; 1024];
 
-    RtlStringCbCopyA(OrigCommand.as_mut_ptr() as PSTR, core::mem::size_of_val(&OrigCommand), Command as PCSTR);
+    RtlStringCbCopyA((*(&raw mut OrigCommand)).as_mut_ptr() as PSTR, core::mem::size_of_val(&*(&raw const OrigCommand)), Command as PCSTR);
 
     Argc = 0;
     p = Command;
@@ -3343,26 +3343,26 @@ unsafe fn KdbpDoCommand(
     KdbOutputAborted = 0u8;
 
     i = 0;
-    while i < KdbDebuggerCommands.len() {
+    while i < (*(&raw const KdbDebuggerCommands)).len() {
         if KdbDebuggerCommands[i].Name.is_null() {
             i += 1;
             continue;
         }
 
         if strcmp(KdbDebuggerCommands[i].Name as *const i8, Argv[0] as *const i8) == 0 {
-            Continue = (KdbDebuggerCommands[i].Fn.unwrap())(Argc, Argv.as_mut_ptr());
+            Continue = (KdbDebuggerCommands[i].Fn.unwrap())(Argc, (*(&raw mut Argv)).as_mut_ptr());
             KdbOutputAborted = 0u8;
             return Continue;
         }
         i += 1;
     }
 
-    if KdbpInvokeCliCallbacks(Command, Argc, Argv.as_mut_ptr()) != 0 {
+    if KdbpInvokeCliCallbacks(Command, Argc, (*(&raw mut Argv)).as_mut_ptr()) != 0 {
         KdbOutputAborted = 0u8;
         return Continue;
     }
 
-    crate::kdb_printf!(b"Command '%s' is unknown.\n\0", OrigCommand.as_ptr());
+    crate::kdb_printf!(b"Command '%s' is unknown.\n\0", (*(&raw const OrigCommand)).as_ptr());
 
     KdbOutputAborted = 0u8;
     return Continue;
@@ -3401,29 +3401,29 @@ pub unsafe extern "C" fn KdbpCliMainLoop(
     while Continue != 0 {
         let CmdLen: usize = KdbPrompt(
             b"\0".as_ptr() as PCSTR,
-            Command.as_mut_ptr(),
-            core::mem::size_of_val(&Command),
+            (*(&raw mut Command)).as_mut_ptr(),
+            core::mem::size_of_val(&*(&raw const Command)),
         );
         if CmdLen == 0 {
             continue;
         } else if CmdLen > 1 {
             KdbRepeatLastCommand = 1u8;
             RtlStringCbCopyA(
-                LastCommand.as_mut_ptr() as PSTR,
-                core::mem::size_of_val(&LastCommand),
-                Command.as_ptr() as PCSTR,
+                (*(&raw mut LastCommand)).as_mut_ptr() as PSTR,
+                core::mem::size_of_val(&*(&raw const LastCommand)),
+                (*(&raw const Command)).as_ptr() as PCSTR,
             );
 
-            KdbpCommandHistoryAppend(Command.as_ptr() as PCSTR);
+            KdbpCommandHistoryAppend((*(&raw const Command)).as_ptr() as PCSTR);
         } else if KdbRepeatLastCommand != 0 {
             RtlStringCbCopyA(
-                Command.as_mut_ptr() as PSTR,
-                core::mem::size_of_val(&Command),
-                LastCommand.as_ptr() as PCSTR,
+                (*(&raw mut Command)).as_mut_ptr() as PSTR,
+                core::mem::size_of_val(&*(&raw const Command)),
+                (*(&raw const LastCommand)).as_ptr() as PCSTR,
             );
         }
 
-        Continue = KdbpDoCommand(Command.as_mut_ptr());
+        Continue = KdbpDoCommand((*(&raw mut Command)).as_mut_ptr());
     }
 }
 
@@ -3532,9 +3532,9 @@ pub unsafe extern "system" fn KdbpCliInit() -> NTSTATUS {
     FileSize = if FileSize < Iosb.Information as u32 { FileSize } else { Iosb.Information as u32 };
     *FileBuffer.add(FileSize as usize) = 0;
 
-    InterlockedExchangePointer(&mut KdbInitFileBuffer as *mut _ as *mut *mut core::ffi::c_void, FileBuffer as *mut core::ffi::c_void);
+    InterlockedExchangePointer(&raw mut KdbInitFileBuffer as *mut _ as *mut *mut core::ffi::c_void, FileBuffer as *mut core::ffi::c_void);
     DbgBreakPointWithStatus(DBG_STATUS_CONTROL_C);
-    InterlockedExchangePointer(&mut KdbInitFileBuffer as *mut _ as *mut *mut core::ffi::c_void, core::ptr::null_mut());
+    InterlockedExchangePointer(&raw mut KdbInitFileBuffer as *mut _ as *mut *mut core::ffi::c_void, core::ptr::null_mut());
 
     ExFreePool(FileBuffer as *mut core::ffi::c_void);
 
@@ -3593,7 +3593,7 @@ pub unsafe extern "system" fn KdbInitialize(
         }
 
         (*DispatchTable).KdpInitRoutine = Some(KdbInitialize);
-        InsertTailList(&mut KdProviders, &mut (*DispatchTable).KdProvidersList);
+        InsertTailList(&raw mut KdProviders, &mut (*DispatchTable).KdProvidersList);
     } else if BootPhase == 1 {
         (*DispatchTable).KdpInitRoutine = Some(KdbInitialize);
 

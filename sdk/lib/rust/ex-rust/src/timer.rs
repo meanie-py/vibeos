@@ -298,7 +298,7 @@ pub unsafe extern "system" fn ExpInitializeTimerImplementation() -> BOOLEAN {
     ObjectTypeInitializer.PoolType = NonPagedPool as u32;
     ObjectTypeInitializer.ValidAccessMask = TIMER_ALL_ACCESS;
     ObjectTypeInitializer.DeleteProcedure = Some(ExpDeleteTimer);
-    Status = ObCreateObjectType(&mut Name, &mut ObjectTypeInitializer, core::ptr::null_mut(), &mut ExTimerType);
+    Status = ObCreateObjectType(&mut Name, &mut ObjectTypeInitializer, core::ptr::null_mut(), &raw mut ExTimerType);
     if Status < 0 {
         return 0;
     }

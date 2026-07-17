@@ -150,6 +150,99 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   `DeviceErrorHandlerForMmc` (0 vs 4) + `DevicePowerSettingCallback` (3 vs 4) — are the
   same-crate-redecl pattern (fixable by `use`, address-of only so no live miscall). This is what
   surfaced the 520-symbol fix vector documented below. No live bug found; all latent.
+- **2026-07-17 — clashing_extern CONV bucket POC: real i386 bug CONFIRMED, but NOT a burndown
+  win — reverted.** Isolated the *hard* CONV signal (`clash_hardsignal.py`): of the i686 CONV
+  clashes, 36 are the clean shape — a driver crate's local `extern "C" {}` forward-decl of a fn
+  the same crate **defines** `pub unsafe extern "system" fn`. On i386 `"system"`=stdcall
+  (callee-clean), `"C"`=cdecl (caller-clean), and grep confirmed these are used for **real calls**
+  (`return ForwardIrpAndForget(DeviceObject, Irp)`, `USBH_Wait(10)`, `PciReadDeviceConfig(..)`,
+  `PortFdoScsi(..)`, …), not address-of → a genuine **double-cleanup + `_Name@N`-decoration
+  mismatch** latent in serial/usbhub/pcix/storport/usbstor/usbccgp/classpnp. Applied the fix
+  (`clash_conv_apply.py`: relocate each clashing decl out of its `extern "C"` block — which also
+  holds genuinely-cdecl variadics like `DbgPrint` that must stay `C` — into a new
+  `extern "system"` block). Keep-going census ×3: i686 CONV **42→6** (the 6 = the def-is-C or
+  external-USBD skips), **0 compile errors in edited crates**, amd64/arm64 a codegen no-op
+  (`system`==`C` there; the ±28 total wobble is keep-going build non-determinism, not the change).
+  **BUT edited-file clash count 72→72 — ZERO net burndown.** The CONV clashes don't *clear*, they
+  **reclassify to pointer-type-diffs**: the local decls also carry loose `PVOID`/`*mut c_void`
+  typing vs the canonical typed decl (same benign clash the redecl POC hit). So flipping the ABI
+  is a strict i386 *correctness* improvement but reduces the warning count by nothing. Reverted:
+  it's real driver-ABI work, but **(a)** zero burndown (the lane's goal), and **(b)**
+  **unvalidatable here** — these drivers load on no smoke path, so the fix can't be demonstrated;
+  landing a 14-file driver-ABI change on reasoning alone is exactly the smoke-can't-reach-it churn
+  to avoid. **Disposition: the CONV-i386 bucket is a real latent-bug find for a proper, *validated*
+  driver-ABI lane (align call decls to def convention AND boot an i386 config that loads the
+  driver), NOT a warnings-lane drive-by.** Tools kept in scratchpad (`clash_hardsignal.py`,
+  `clash_conv_apply.py`, `conv_fixable.json`). Net conclusion across both POCs: **every
+  clashing_extern bucket that looked mechanical (same-crate-redecl AND CONV-i386) is not — the
+  loose FFI typing that co-occurs with the flagged difference is load-bearing.**
+
+- **2026-07-17 — allow-peel: `unused_unsafe` — 24 crates peeled, all own sites → ZERO.**
+  Peeled `#![allow(unused_unsafe)]` from 24 crates (ntoskrnl-rust fenced). **Key scoping finding:
+  the class is tiny in hand-written code and huge in generated bindgen** — a `-p <crate>` census
+  shows most `unused_unsafe` coming from the `ntkrnl-sys` bindgen dependency (66 in `bindgen_amd64.rs`
+  alone; those are generated + suppressed elsewhere, never hand-edit), while the crates' OWN sites
+  total just **29** (msgina 8, config/ps/kd64/ex 4 each, ob 3, kdbg 2). **17 of the 24 allows were
+  DEAD** (0 own sites — suppressing nothing, pure removal). All 29 own sites were the translation
+  pattern `unsafe { <safe array/ptr literal> }` (`SubVector(unsafe {[..]})`, `= unsafe {
+  addr_of_mut!(..)}`) — redundant in *any* edition (2024 requires `unsafe` around unsafe *ops*, not
+  safe array/ptr construction, so **no edition-migration hostility** despite 3 sitting inside an
+  `unsafe fn`). Removed the 29 `unsafe` keywords (byte-span from the ×3 census); that surfaced **9
+  `unused_braces`** (single-line `= { expr };` initializers), debraced to `= expr;`. Final ×3:
+  **0 unused_unsafe, 0 unused_braces, 0 errors**; full own-crate warning histogram delta is `unused_unsafe
+  29→0` and **every other class +0** (no new warnings). Multi-line `= { [..] }` initializers keep
+  their (non-warning) braces — `unused_braces`' multi-line heuristic doesn't flag them, goal is 0
+  warnings not 0 braces. Removes 24 blanket suppressions (durability). **Side finding (follow-up, NOT
+  this batch): `win32k-rust` leaks 118 `static_mut_refs` UNSUPPRESSED** — it never carried the
+  `static_mut_refs` allow so it was never in the peel campaign; needs the `&raw`/wrap treatment (it's
+  a boot-path crate, so careful + gated). Does not affect the "30/35 allow-carrying crates → zero"
+  claim (win32k was never allow-carrying).
+- **2026-07-17 — FNPTR-CMP follow-up CLOSED (no code change; see Owed-follow-ups entry).**
+  Peel-and-census of all 34 audited allows showed every one of the 63 fn-ptr comparisons is an
+  `Option<fn>` compare (bindgen renders Windows fn-ptr typedefs as `Option<extern fn>`), so
+  `fn_addr_eq` (needs bare `FnPtr`) applies to **zero** sites. The only lint-removal available is a
+  behavior-identical `.map(|f| f as usize)` rewrite that buys no correctness and churns boot-path
+  crates; user chose to keep the audited per-item allows (already the sanctioned end-state). Docs-only.
+- **2026-07-17 — allow-peel batch 2: 22 more cold crates driven to ZERO static_mut_refs.**
+  Peeled `#![allow(static_mut_refs)]` from the remaining 22 unfenced suppressing crates
+  (config/crt-startup/dbgk/fsrtl/fstub/gdi32/inbv/iomgr/kd64/kdbg/kernel32/kernel32-vista/
+  msgina/pnpmgr/random/rtl-actctx/rtl-diag/rtlk/user32/vdm/vf/wmi — **shell32-rust stays
+  fenced** for the shell32-com lane). Surfaced **518 hidden sites** (amd64/i386; 441 arm64)
+  and eliminated all: **310 via the pure `&raw` prefix** (`smr_apply_json.py`), **258 via the
+  raw-deref wrap** (`smr_wrap_residual.py`: method/field-autoref → `(*(&raw const/mut X)).rest`),
+  **23 ref-needed sites** (`size_of_val`/`discriminant`/`RTL_NUMBER_OF` args wanting `&T`) fixed
+  with the **shared-ref-through-raw-deref idiom** `&*(&raw const X)` / `&mut *(&raw mut X)` — a
+  reference to a *deref expression*, not the static path, so it satisfies the lint while keeping
+  the reference the call site needs. Two manual sites: kd64 `kddata.rs` had ONE `let d = &mut
+  Static` binding used as a struct place 109× (`d.field=…`) — plain `&raw` cascaded to 109 E0609
+  "no field on raw ptr"; fixed at the binding with `&mut *(&raw mut …)` (1 line, all 109 uses
+  unchanged). And user32 `appswitch.rs` `windowText.len()` on a `static mut [WCHAR;1024]` (array
+  `.len()` autoref) → `(*(&raw const windowText)).len()`. **Oracle-guarded ×3:** the transform
+  can only fail by *not compiling* (E0308/E0609), never silently — final = 0 static_mut_refs,
+  **0 dangerous_implicit_autorefs**, 0 errors on all 3 arches; `unused_unsafe` count unchanged
+  (164→164) proving the wrap didn't perturb other lints. Removes 22 blanket suppressions.
+  **Running total: 30/35 static_mut_refs-suppressing crates peeled to zero.** Remaining 5:
+  shell32-rust (fenced) + the hot-lane fenced set (ntoskrnl/hal/ole32/oleaut32 sites live under
+  *their* crate allows — do when those lanes are quiet).
+- **2026-07-17 — allow-peel started: 8 kernel crates driven to ZERO static_mut_refs.**
+  `#![allow(static_mut_refs)]` at crate level (35 crates carry it; only shell32 is fenced) was
+  HIDING real static_mut_refs from the census. Peeled the allow from the 8 census-reachable,
+  unfenced kernel-subsystem crates (cc/ex/ob/po/se/lpc/kd/ps-rust) — surfaced **185** hidden
+  sites — and eliminated all of them: 152 via the proven `&raw` transform (`smr_apply_json.py`),
+  33 via a raw-ptr-deref wrap for the method/field-autoref sub-pattern (`X.as_ptr()`,
+  `X.get_unchecked(i)`, `size_of_val(&X)`, `X.is_some()` → `(*(&raw const/mut X)).rest`, tool
+  `smr_wrap_residual.py`). The wrap is behavior-preserving (same memory place via raw deref) and,
+  verified across ×3 arches, introduces **no** `dangerous_implicit_autorefs` (the feared lint-trade
+  didn't happen on 1.92). Oracle-guarded throughout: 3 ref-needed sites that broke plain `&raw`
+  (E0308) were fixed by the wrap form; final = 0 errors, 0 static_mut_refs, 0 new lints. Removes 8
+  blanket suppressions (durability). **Key process finding: the `vibeos-cli check` gate tracks the
+  custom `scan_*`/`verify_*` scanners, NOT rustc lint counts** — so rustc warnings like
+  static_mut_refs have no hard gate, and peeling an allow (exposing hidden warnings) has no gate
+  consequence; the constraint is purely code-quality. **Remaining allow-peel targets:** the other
+  ~26 static_mut_refs-suppressing crates show 0 in the plain census (don't plain-build or fully
+  suppressed) — they need per-crate `cargo build -p X` cycles (some, e.g. advapi32/kernel32/user32
+  big usermode DLLs, may plain-build; config/fstub/kdbg need the reactos-link env). Same two tools
+  apply. This is the model for the rest of task #9.
 
 ## Remaining work (2026-07-17, prioritized) — the plain-buildable cold-crate noise is DONE
 
@@ -170,7 +263,12 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
     conventions are identical, so it's *invisible there* and the ×3 gate stays green — a
     latent i386-only footgun on less-exercised paths. Fix = make each local re-decl's `extern`
     string match the true export (NTAPI → `"system"`; genuine cdecl helpers → `"C"`); build
-    oracle catches wrong guesses.
+    oracle catches wrong guesses. **POC 2026-07-17 (see progress log): flipping the `extern`
+    string alone is a real i386 correctness fix but does NOT clear the warning** — the same local
+    decls also carry loose `PVOID`/`*mut c_void` typing, so the clash reclassifies to a benign
+    pointer-type-diff (edited-file count 72→72, zero burndown). And it's *unvalidatable* in this
+    lane (drivers load on no smoke path). Treat the CONV-i386 bucket as a latent-bug find for a
+    proper validated driver-ABI lane, not a burndown item.
   - **ARGCOUNT differs — 6 sites — the highest-value needles.** A different *arg count* is
     almost always a real bug (a caller passing the wrong number of args) or a macro-shim
     artifact. Investigate these 6 first — cheap, potentially real.
@@ -217,13 +315,28 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
 
 ## Owed follow-ups
 
-- **FNPTR-CMP re-architecture (user-requested).** The 34 `#[allow(unpredictable_function_pointer_comparisons)]`
-  suppressions are the interim treatment. The idiomatic endpoint is
-  `core::ptr::fn_addr_eq` (stable 1.85), which removes the lint *without* suppression.
-  It doesn't fit the Option-wrapped / sentinel-value (`SIG_IGN`=`1 as fn`) / transmute
-  forms ergonomically today. A future pass: `grep -rn 'FNPTR-CMP'` finds all 34 sites;
-  convert the clean `fn == fn` ones to `fn_addr_eq`, keep scoped allows only for the
-  sentinel/transmute oddballs.
+- **FNPTR-CMP re-architecture — CLOSED 2026-07-17 (audited allows are the correct end-state;
+  `fn_addr_eq` is inapplicable).** Investigated all 34 `#[allow(unpredictable_function_pointer_comparisons)]`
+  functions → 63 actual comparison sites (peel the allows, `--keep-going` census ×3, primary span
+  = exactly the `A == B` expr). **Finding that closes the follow-up: NOT ONE site is a bare
+  `fn == fn`.** Every fn-ptr typedef in these crates is `Option<fn>` — `WNDPROC`, `PHANDLER_ROUTINE`,
+  `PFNCALLBACK`, `FARPROC`, `PDRIVER_FS_NOTIFICATION`, `PSE_LOGON_SESSION_TERMINATED_ROUTINE`, … are
+  all `::core::option::Option<unsafe extern fn(..)>` (how bindgen renders a nullable Windows fn
+  pointer). `core::ptr::fn_addr_eq` requires a bare `FnPtr` operand and rejects `Option<fn>`, so the
+  "convert the clean `fn == fn` ones" plan has **zero applicable sites**. The three shapes present —
+  `Option<fn> == Option<fn>` (~48), `Option<fn> == Some(fn)`/sentinel `old == sig_ign()` (~12),
+  `X == transmute(fn)` (ps psnotify, 3) — could only be de-linted via an inline Option-aware
+  `a.map(|f| f as usize) == b.map(|f| f as usize)` rewrite, which is **behavior-identical** (same
+  address compare, same "addresses vary across CGUs" caveat the lint warns of) and buys **no
+  correctness** — it just trades a documented per-item allow for `.map()` boilerplate on every
+  comparison and churns four boot-path crates (ob/ps/se/win32k). **Disposition (user decision
+  2026-07-17): keep the audited per-item allows.** They are already the lane's *sanctioned* end-state
+  for a genuine intentional-identity compare (`#[allow]` per-item WITH a documented reason — the
+  `// FNPTR-CMP(audited)` tag records intent + the C-source mirror), not a stopgap. A generic
+  `fn_opt_addr_eq` helper is also impossible on stable — `core::marker::FnPtr` (the bound
+  `fn_addr_eq` needs) is perma-unstable and unnameable. Re-open only if a future need makes the
+  `.map(|f| f as usize)` conversion worth its cost; the census tooling is in scratchpad
+  (`fnptr_convert.py`).
 - **Upstream ReactOS-C bugs faithfully preserved by translation** (found during
   unused_assignments triage, NOT translation-introduced — tracked here, not fixed in
   this lane): `pcix-rust/enumr.rs:1575`, `pcix-rust/init.rs:367`, `pcix-rust/utils.rs:714`

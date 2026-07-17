@@ -1351,7 +1351,7 @@ pub unsafe extern "system" fn SepCreateSystemProcessToken() -> PTOKEN {
         &mut object_attributes,
         TokenPrimary,
         SecurityAnonymous,
-        &SeSystemAuthenticationId as *const LUID,
+        &raw const SeSystemAuthenticationId as *const LUID,
         &expiration as *const _LARGE_INTEGER as *const LARGE_INTEGER,
         &user_sid as *const _SID_AND_ATTRIBUTES,
         4,
@@ -1362,7 +1362,7 @@ pub unsafe extern "system" fn SepCreateSystemProcessToken() -> PTOKEN {
         owner,
         primary_group,
         SeSystemDefaultDacl,
-        &SeSystemTokenSource as *const _TOKEN_SOURCE,
+        &raw const SeSystemTokenSource as *const _TOKEN_SOURCE,
         1u8,
     );
 
@@ -1400,7 +1400,7 @@ pub unsafe extern "system" fn SepCreateSystemAnonymousLogonToken() -> PTOKEN {
         &mut object_attributes,
         TokenPrimary,
         SecurityAnonymous,
-        &SeAnonymousAuthenticationId as *const LUID,
+        &raw const SeAnonymousAuthenticationId as *const LUID,
         &expiration as *const _LARGE_INTEGER as *const LARGE_INTEGER,
         &user_sid as *const _SID_AND_ATTRIBUTES,
         1,
@@ -1411,7 +1411,7 @@ pub unsafe extern "system" fn SepCreateSystemAnonymousLogonToken() -> PTOKEN {
         core::ptr::null_mut(),
         primary_group,
         SeSystemAnonymousLogonDacl,
-        &SeSystemTokenSource as *const _TOKEN_SOURCE,
+        &raw const SeSystemTokenSource as *const _TOKEN_SOURCE,
         1u8,
     );
 
@@ -1442,7 +1442,7 @@ pub unsafe extern "system" fn SepCreateSystemAnonymousLogonTokenNoEveryone() -> 
         &mut object_attributes,
         TokenPrimary,
         SecurityAnonymous,
-        &SeAnonymousAuthenticationId as *const LUID,
+        &raw const SeAnonymousAuthenticationId as *const LUID,
         &expiration as *const _LARGE_INTEGER as *const LARGE_INTEGER,
         &user_sid as *const _SID_AND_ATTRIBUTES,
         0,
@@ -1453,7 +1453,7 @@ pub unsafe extern "system" fn SepCreateSystemAnonymousLogonTokenNoEveryone() -> 
         core::ptr::null_mut(),
         primary_group,
         SeSystemAnonymousLogonDacl,
-        &SeSystemTokenSource as *const _TOKEN_SOURCE,
+        &raw const SeSystemTokenSource as *const _TOKEN_SOURCE,
         1u8,
     );
 
@@ -1526,7 +1526,7 @@ pub unsafe extern "system" fn SeTokenCanImpersonate(
 
     if RtlEqualLuid(
         &(*token_to_impersonate).AuthenticationId as *const LUID,
-        &SeAnonymousAuthenticationId as *const LUID,
+        &raw const SeAnonymousAuthenticationId as *const LUID,
     ) != 0
     {
         SepReleaseTokenLock(token_to_impersonate);

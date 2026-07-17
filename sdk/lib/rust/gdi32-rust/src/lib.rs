@@ -2,7 +2,6 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(unused_assignments)]
-#![allow(static_mut_refs)]
 #![allow(clippy::all)]
 
 //! gdi32.dll — Rust translation of win32ss/gdi/gdi32 (the usermode GDI client API DLL).

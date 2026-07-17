@@ -434,7 +434,7 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
                     MiInitializePfnForOtherProcess(
                         page_frame_number,
                         pointer_pde as PMMPTE,
-                        *MmSystemPageDirectory.as_ptr().add(spd_index),
+                        *(*(&raw const MmSystemPageDirectory)).as_ptr().add(spd_index),
                     );
                 }
 

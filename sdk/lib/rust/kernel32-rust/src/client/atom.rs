@@ -41,7 +41,7 @@ pub static mut BaseLocalAtomTable: PRTL_ATOM_TABLE =
 #[no_mangle]
 pub unsafe extern "system" fn InternalInitAtomTable() -> *mut core::ffi::c_void {
     if BaseLocalAtomTable.is_null() {
-        RtlCreateAtomTable(0, &mut BaseLocalAtomTable);
+        RtlCreateAtomTable(0, &raw mut BaseLocalAtomTable);
     }
     return BaseLocalAtomTable as *mut core::ffi::c_void;
 }
@@ -456,7 +456,7 @@ pub unsafe extern "system" fn InitAtomTable(mut nSize: DWORD) -> BOOL {
     if nSize < 4 || nSize > 511 {
         nSize = 37;
     }
-    return NT_SUCCESS(RtlCreateAtomTable(nSize, &mut BaseLocalAtomTable)) as BOOL;
+    return NT_SUCCESS(RtlCreateAtomTable(nSize, &raw mut BaseLocalAtomTable)) as BOOL;
 }
 
 #[no_mangle]

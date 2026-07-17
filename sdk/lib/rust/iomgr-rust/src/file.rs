@@ -758,7 +758,7 @@ pub unsafe extern "system" fn IopParseDevice(
             && ((*OpenPacket).Override == 0)
         {
             KeEnterCriticalRegion();
-            ExAcquireResourceSharedLite(&mut IopSecurityResource, 1);
+            ExAcquireResourceSharedLite(&raw mut IopSecurityResource, 1);
 
             if (*RemainingName).Length == 0 {
                 SeLockSubjectContext(&mut (*AccessState).SubjectSecurityContext);
@@ -852,7 +852,7 @@ pub unsafe extern "system" fn IopParseDevice(
                 }
             }
 
-            ExReleaseResourceLite(&mut IopSecurityResource);
+            ExReleaseResourceLite(&raw mut IopSecurityResource);
             KeLeaveCriticalRegion();
 
             if LockHeld != 0 {
@@ -943,7 +943,7 @@ pub unsafe extern "system" fn IopParseDevice(
             GrantedAccess = 0;
 
             KeEnterCriticalRegion();
-            ExAcquireResourceSharedLite(&mut IopSecurityResource, 1);
+            ExAcquireResourceSharedLite(&raw mut IopSecurityResource, 1);
 
             SeLockSubjectContext(&mut (*AccessState).SubjectSecurityContext);
 
@@ -994,7 +994,7 @@ pub unsafe extern "system" fn IopParseDevice(
 
             SeUnlockSubjectContext(&mut (*AccessState).SubjectSecurityContext);
 
-            ExReleaseResourceLite(&mut IopSecurityResource);
+            ExReleaseResourceLite(&raw mut IopSecurityResource);
             KeLeaveCriticalRegion();
 
             if AccessGranted == 0 {
@@ -1540,14 +1540,14 @@ unsafe fn IopSetDeviceSecurityDescriptor(
 ) -> NTSTATUS {
     loop {
         KeEnterCriticalRegion();
-        ExAcquireResourceSharedLite(&mut IopSecurityResource, 1);
+        ExAcquireResourceSharedLite(&raw mut IopSecurityResource, 1);
 
         let OldSecurityDescriptor = (*DeviceObject).SecurityDescriptor;
         if !OldSecurityDescriptor.is_null() {
             ObReferenceSecurityDescriptor(OldSecurityDescriptor, 1);
         }
 
-        ExReleaseResourceLite(&mut IopSecurityResource);
+        ExReleaseResourceLite(&raw mut IopSecurityResource);
         KeLeaveCriticalRegion();
 
         let mut NewSecurityDescriptor = OldSecurityDescriptor;
@@ -1576,15 +1576,15 @@ unsafe fn IopSetDeviceSecurityDescriptor(
         }
 
         KeEnterCriticalRegion();
-        ExAcquireResourceExclusiveLite(&mut IopSecurityResource, 1);
+        ExAcquireResourceExclusiveLite(&raw mut IopSecurityResource, 1);
         if (*DeviceObject).SecurityDescriptor == OldSecurityDescriptor {
             (*DeviceObject).SecurityDescriptor = CachedSecurityDescriptor;
-            ExReleaseResourceLite(&mut IopSecurityResource);
+            ExReleaseResourceLite(&raw mut IopSecurityResource);
             KeLeaveCriticalRegion();
             ObDereferenceSecurityDescriptor(OldSecurityDescriptor, 2);
             return Status;
         }
-        ExReleaseResourceLite(&mut IopSecurityResource);
+        ExReleaseResourceLite(&raw mut IopSecurityResource);
         KeLeaveCriticalRegion();
 
         ObDereferenceSecurityDescriptor(OldSecurityDescriptor, 1);
@@ -1682,9 +1682,9 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
                 Status = ObLogSecurityDescriptor(SecurityDescriptor, &mut CachedSecurityDescriptor, 1);
                 if Status >= 0 {
                     KeEnterCriticalRegion();
-                    ExAcquireResourceExclusiveLite(&mut IopSecurityResource, 1);
+                    ExAcquireResourceExclusiveLite(&raw mut IopSecurityResource, 1);
                     (*DeviceObject).SecurityDescriptor = CachedSecurityDescriptor;
-                    ExReleaseResourceLite(&mut IopSecurityResource);
+                    ExReleaseResourceLite(&raw mut IopSecurityResource);
                     KeLeaveCriticalRegion();
                 }
             }
@@ -2790,7 +2790,7 @@ pub unsafe extern "system" fn IoCreateStreamFileObjectLite(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetFileObjectGenericMapping() -> PGENERIC_MAPPING {
-    &IopFileMapping as *const _ as PGENERIC_MAPPING
+    &raw const IopFileMapping as *const _ as PGENERIC_MAPPING
 }
 
 #[no_mangle]

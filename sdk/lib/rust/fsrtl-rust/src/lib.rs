@@ -8,13 +8,11 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
-#![allow(unused_unsafe)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 /// Cast an `extern "system"` fn to a target callback ABI (i386 stdcall vs
 /// amd64/arm64 C — identical machine code, distinct Rust types). Copied from
