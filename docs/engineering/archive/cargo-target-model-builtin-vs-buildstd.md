@@ -8,7 +8,7 @@
 > deleted. So the "Current matrix" and "Fixing arm64" sections below are HISTORY — do not follow
 > their recipe. Live state: `build-system.md` §"Cargo target model"; the migration, its measured
 > `.text` deltas, and the self-recursive-`memcpy` bug it uncovered (field manual §9.65):
-> `../active-lanes/stable-toolchain-plan.md`.
+> `../stable-toolchain-plan.md`.
 >
 > The doc's core call was right, and its warning about build-std's arm64 `compiler_builtins`
 > outline-atomics miscompile was the strongest argument for the migration.
