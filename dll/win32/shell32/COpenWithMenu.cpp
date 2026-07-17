@@ -142,6 +142,12 @@ HRESULT SH32_InvokeOpenWith(_In_ PCWSTR pszPath, _In_ LPCMINVOKECOMMANDINFO pici
     return hr;
 }
 
+extern "C" HRESULT WINAPI Shell32RustInvokeOpenWith(
+    PCWSTR pszPath, LPCMINVOKECOMMANDINFO pici, HANDLE *phProcess)
+{
+    return SH32_InvokeOpenWith(pszPath, pici, phProcess);
+}
+
 class COpenWithList
 {
     public:
@@ -206,6 +212,96 @@ class COpenWithList
             pApp->bRecommended = TRUE;
         }
 };
+
+/*
+ * COpenWithMenu is Rust-owned at activation/vtable level. Keep the substantial
+ * source-local COpenWithList and dialog implementation in this translation unit
+ * and expose only opaque operations; Rust must not reproduce the private C++
+ * object or SApp layouts.
+ */
+extern "C" COpenWithList *WINAPI COpenWithList_Create_RustBridge()
+{
+    return new COpenWithList;
+}
+
+extern "C" VOID WINAPI COpenWithList_Destroy_RustBridge(COpenWithList *pList)
+{
+    delete pList;
+}
+
+extern "C" BOOL WINAPI COpenWithList_Load_RustBridge(COpenWithList *pList)
+{
+    return pList->Load();
+}
+
+extern "C" BOOL WINAPI COpenWithList_LoadRecommended_RustBridge(
+    COpenWithList *pList, LPCWSTR pszPath)
+{
+    return pList->LoadRecommended(pszPath);
+}
+
+extern "C" UINT WINAPI COpenWithList_GetRecommendedCount_RustBridge(
+    COpenWithList *pList)
+{
+    return pList->GetRecommendedCount();
+}
+
+extern "C" UINT WINAPI COpenWithList_GetCount_RustBridge(COpenWithList *pList)
+{
+    return pList->GetCount();
+}
+
+extern "C" PVOID WINAPI COpenWithList_GetAt_RustBridge(
+    COpenWithList *pList, UINT Index)
+{
+    return Index < pList->GetCount() ? pList->GetList() + Index : NULL;
+}
+
+extern "C" BOOL WINAPI COpenWithList_IsRecommended_RustBridge(PVOID pApp)
+{
+    return pApp && static_cast<COpenWithList::SApp *>(pApp)->bRecommended;
+}
+
+extern "C" LPCWSTR WINAPI COpenWithList_GetName_RustBridge(PVOID pApp)
+{
+    return COpenWithList::GetName(static_cast<COpenWithList::SApp *>(pApp));
+}
+
+extern "C" HICON WINAPI COpenWithList_GetIcon_RustBridge(PVOID pApp)
+{
+    return COpenWithList::GetIcon(static_cast<COpenWithList::SApp *>(pApp));
+}
+
+extern "C" BOOL WINAPI COpenWithList_Execute_RustBridge(
+    PVOID pApp, LPCWSTR pszPath)
+{
+    return COpenWithList::Execute(
+        static_cast<COpenWithList::SApp *>(pApp), pszPath);
+}
+
+extern "C" HRESULT WINAPI COpenWithMenu_ExtractPath_RustBridge(
+    IDataObject *pDataObject, LPWSTR pszPath, UINT cchPath)
+{
+    if (!pDataObject || !pszPath || cchPath < MAX_PATH)
+        return E_INVALIDARG;
+
+    CDataObjectHIDA pida(pDataObject);
+    if (FAILED(pida.hr()))
+        return pida.hr();
+    if (pida->cidl < 1)
+        return E_FAIL;
+
+    LPCITEMIDLIST pidlFolder = HIDA_GetPIDLFolder(pida);
+    LPCITEMIDLIST pidlChild = HIDA_GetPIDLItem(pida, 0);
+    if (!_ILIsValue(pidlChild))
+        return E_FAIL;
+
+    CComHeapPtr<ITEMIDLIST> pidl(ILCombine(pidlFolder, pidlChild));
+    if (!pidl)
+        return E_OUTOFMEMORY;
+
+    return SHGetPathFromIDListW(pidl, pszPath) ? S_OK : E_FAIL;
+}
 
 COpenWithList::COpenWithList():
     m_pApp(NULL), m_cApp(0), m_cRecommended(0), m_bNoOpen(FALSE) {}

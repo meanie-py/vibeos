@@ -474,6 +474,23 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI COpenWithMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class COpenWithMenuRustEntry : public COpenWithMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return COpenWithMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
@@ -495,7 +512,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_AdminFolderShortcut, CAdminToolsFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellFldSetExt, CFolderOptions)
     OBJECT_ENTRY(CLSID_RecycleBin, CRecycleBin)
-    OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenu)
+    OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenuRustEntry)
     OBJECT_ENTRY(CLSID_NewMenu, CNewMenuRustEntry)
     OBJECT_ENTRY(CLSID_SendToMenu, CSendToMenuRustEntry)
     OBJECT_ENTRY(CLSID_CopyAsPathMenu, CCopyAsPathMenuRustEntry)

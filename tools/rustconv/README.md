@@ -32,3 +32,5 @@ For `--cpp-com`, rustconv owns the complete class/interface/vtable scaffold and 
 source-selected support closure. It also binds same-arity local overloads from declared
 types and materializes trailing C++ default arguments before prompting. Ambiguity fails
 before payment: never ask a model to guess compiler semantics, ABI, constants, or layout.
+WIDL-declared interface inheritance also owns physical slot aliasing, so a COM map exposing
+both `IContextMenu2` and `IContextMenu` produces one derived slot and deterministic QI routes.

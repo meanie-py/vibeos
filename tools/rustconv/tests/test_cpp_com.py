@@ -258,6 +258,29 @@ def test_class_scaffold_uses_one_slot_for_com_map_iid_aliases(tmp_path: Path):
     assert "IID_IDeskBand" in rust
 
 
+def test_class_scaffold_uses_derived_slot_for_mapped_base_interface():
+    menu = analyze_class(
+        SHELL32 / "COpenWithMenu.cpp",
+        "COpenWithMenu",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    interfaces = [
+        parse_widl_interface(
+            discover_widl_header(REACTOS_ROOT, "i386", interface=entry.interface),
+            entry.interface,
+        )
+        for entry in menu.com_map
+    ]
+    context_menu_2 = next(item for item in interfaces if item.name == "IContextMenu2")
+    assert context_menu_2.base == "IContextMenu"
+
+    rust = render_class_scaffold(menu, interfaces)
+    assert "pub IContextMenu2_iface: IContextMenu2," in rust
+    assert "pub IContextMenu_iface: IContextMenu," not in rust
+    assert "pub static COPENWITHMENU_ICONTEXTMENU_VTBL" not in rust
+    assert rust.count("(*this).IContextMenu2_iface") >= 2
+
+
 def test_object_map_adapter_redirects_atl_creation():
     cls = analyze_class(
         SHELL32 / "CDropTargetHelper.cpp",

@@ -52,6 +52,9 @@ clustering and authority routing; the C++ frontend additionally owns ATL/COM dis
 - Hybrid translation-unit cohab is valid when Rust alone owns activation and published
   vtables, while the retained C++ file owns a companion class or bridge. Never publish two
   implementations of the same class factory/vtable.
+- A COM map that publishes both a derived interface and its base uses one physical interface
+  slot when WIDL declares that inheritance. Generate the derived vtable and route both IIDs to
+  it; never infer aliasing from a coincidental IUnknown-shaped vtable prefix.
 - Cached workers are normalized on every assembly. Every deterministic normalization must
   therefore be idempotent; replay tests must cover both raw model spelling and already-fixed
   spelling.

@@ -51,6 +51,7 @@ class InterfaceSpec:
     name: str
     methods: tuple[InterfaceMethod, ...]
     source: str
+    base: str | None = None
 
 
 @dataclass(frozen=True)
@@ -832,8 +833,18 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
             )
     if not methods:
         raise CppComError(f"{interface}: no vtable methods parsed from {header}")
+    # The C++ half of WIDL's generated header is also compiler-facing authority
+    # for interface inheritance.  Preserve it so a COM map that exposes both a
+    # derived interface and one of its bases uses the single physical base
+    # subobject that C++ actually lays out (for example IContextMenu2 and
+    # IContextMenu).
+    inheritance = re.search(
+        rf"\b{re.escape(interface)}\s*:\s*public\s+([A-Za-z_]\w*)",
+        text,
+    )
+    base = inheritance.group(1) if inheritance is not None else None
     # Keep generated output byte-identical across worktrees/build roots.
-    return InterfaceSpec(interface, tuple(methods), header.name)
+    return InterfaceSpec(interface, tuple(methods), header.name, base)
 
 
 _RUST_SCALARS = {
@@ -4139,12 +4150,38 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
     missing = [entry.interface for entry in cls.com_map if entry.interface not in by_name]
     if missing:
         raise CppComError(f"{cls.name}: missing interface specs: {', '.join(missing)}")
-    # COM maps may expose several IIDs through one inherited interface slot
-    # (for example IID_IOleWindow and IID_IDeskBand). They are QI aliases, not
-    # duplicate object-layout fields or duplicate vtables.
+    # COM maps may expose several IIDs through one inherited interface slot.
+    # Same-interface aliases are direct (for example IID_IOleWindow routed to
+    # IDeskBand), while a derived interface and its named base also share one
+    # physical C++ base subobject (IContextMenu2/IContextMenu).  WIDL's declared
+    # inheritance is the authority; never infer this merely from vtable-prefix
+    # similarity because unrelated interfaces all share IUnknown's prefix.
+    mapped_interfaces = {entry.interface for entry in cls.com_map}
+
+    def physical_interface(name: str) -> str:
+        candidates = []
+        for candidate in sorted(mapped_interfaces):
+            current = by_name[candidate]
+            while current.base is not None and current.base in by_name:
+                if current.base == name:
+                    candidates.append(candidate)
+                    break
+                current = by_name[current.base]
+        if not candidates:
+            return name
+        longest = max(len(by_name[item].methods) for item in candidates)
+        owners = [item for item in candidates if len(by_name[item].methods) == longest]
+        if len(owners) != 1:
+            raise CppComError(
+                f"{cls.name}: IID for {name} has ambiguous mapped derived slots: "
+                + ", ".join(owners)
+            )
+        return owners[0]
+
+    physical_by_interface = {name: physical_interface(name) for name in mapped_interfaces}
     layout_entries = [
         next(entry for entry in cls.com_map if entry.interface == name)
-        for name in dict.fromkeys(entry.interface for entry in cls.com_map)
+        for name in dict.fromkeys(physical_by_interface[entry.interface] for entry in cls.com_map)
     ]
 
     lines = []
@@ -4269,6 +4306,7 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
         lines.extend(["};", ""])
 
     first = cls.com_map[0]
+    first_physical = physical_by_interface[first.interface]
     lines.extend(
         [
             f"unsafe fn {cls.name}_QueryInterface(",
@@ -4278,16 +4316,17 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             "    *ppv = core::ptr::null_mut();",
             f"    if cpp_com_iid_equal(riid, core::ptr::addr_of!(IID_IUnknown)) || "
             f"cpp_com_iid_equal(riid, core::ptr::addr_of!({first.iid})) {{",
-            f"        *ppv = core::ptr::addr_of_mut!((*this).{first.interface}_iface) "
+            f"        *ppv = core::ptr::addr_of_mut!((*this).{first_physical}_iface) "
             "as *mut core::ffi::c_void;",
             "    }",
         ]
     )
     for entry in cls.com_map[1:]:
+        physical = physical_by_interface[entry.interface]
         lines.extend(
             [
                 f"    else if cpp_com_iid_equal(riid, core::ptr::addr_of!({entry.iid})) {{",
-                f"        *ppv = core::ptr::addr_of_mut!((*this).{entry.interface}_iface) "
+                f"        *ppv = core::ptr::addr_of_mut!((*this).{physical}_iface) "
                 "as *mut core::ffi::c_void;",
                 "    }",
             ]

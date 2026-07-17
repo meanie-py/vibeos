@@ -77,6 +77,8 @@ list(APPEND SOURCE
     systray.cpp
     CUserNotification.cpp
     CDefaultContextMenu.cpp
+    # Hybrid cohab: COpenWithMenu activation/methods are Rust-owned; this file
+    # retains COpenWithList, COpenWithDialog, exported helpers, and opaque bridges.
     COpenWithMenu.cpp
     # CNewMenu.cpp — replaced by Rust (shell32-rust/src/new_menu.rs); cohab via libshell32_rust.a
     # CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a

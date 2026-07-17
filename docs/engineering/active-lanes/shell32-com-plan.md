@@ -262,6 +262,14 @@ The first production batch validated the class-level path rather than isolated w
   work; oracle `candidate-oracles/20260717-012346-448391` cleanly reaches the companion
   `CMenuToolbarBase`/`CMenuSFToolbar` boundary on all three targets.
 
+The next monster, `COpenWithMenu`, is now Rust-owned at activation/vtable level while its
+translation unit retains the substantial source-local `COpenWithList`/dialog implementation
+behind opaque bridges. The paid candidate replayed for $0, reached zero substrate roots, and
+compiled synthetically on all three targets in
+`candidate-oracles/20260717-094206-576609`; the real i386 shell32 link then passed. This also
+closed a scaffold ABI gap: WIDL-declared derived/base interfaces now share one physical slot,
+as required for `IContextMenu2`/`IContextMenu`, without guessing from vtable similarity.
+
 The reusable additions include legacy `DECLARE_INTERFACE` discovery, deterministic SDK POD
 closure, source-local numeric/table generation, overload/default-argument resolution,
 scaffold-owned ATL RAII guards, explicit bridge generation, and idempotent cached-worker

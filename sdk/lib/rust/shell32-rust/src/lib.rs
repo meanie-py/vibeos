@@ -54,6 +54,7 @@ pub mod fonts_folder;
 pub mod my_docs_folder;
 pub mod new_menu;
 pub mod open_control_panel;
+pub mod open_with_menu;
 pub mod printer_folder;
 pub mod recycle_bin_cleaner;
 pub mod send_to_menu;
