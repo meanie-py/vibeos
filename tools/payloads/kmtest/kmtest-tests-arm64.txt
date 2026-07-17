@@ -16,25 +16,17 @@ ExDoubleList
 # 64-bit. Like SeTokenFiltering/TcpIpConnect the kernel-stuck process is unreapable and poisons
 # the rest of the run, so it must stay quarantined until the hang is triaged. Triage owed.
 #ExFastMutex
-# QUARANTINED 2026-07-16 (arm64 sweep 2): BUGCHECK 0x1E (0xC0000005) at kbase+0x1c9cf8,
-# IMMEDIATELY at kernel-test start (3 log lines after "Starting test ExHardError"). Same
-# structural class as i386 (ExHardError is an i386-quarantined crasher, "+0x675D") — the
-# hard-error raise path (NtRaiseHardError/ExpRaiseHardError). NOT the user-APC fix: it
-# reproduces on i386 which never runs the arm64 code, and faults at kernel test-start, not
-# on an APC return. A BUGCHECK kills the whole guest, so it MUST be quarantined to sweep on.
-# Triage owed (shared arm64+i386 hard-error path).
+# QUARANTINED 2026-07-16 (re-triaged after the task #10 SEH-resume fix): NOT the SEH cluster.
+# BUGCHECK 0x1E P1=0xC000001D (STATUS_ILLEGAL_INSTRUCTION), PC=0xfffffa0006176c60 — a NONPAGED-
+# POOL address, executing garbage, with NO [RAISE] preceding it. So ExRaiseHardError branches
+# through a bad function pointer into pool BEFORE any software raise — a distinct arm64 hard-
+# error-path bug, unrelated to RtlRestoreContext. The old "RtlRaiseStatus+0x44 cluster" label
+# was a masked face (§9.54). Separate triage owed (arm64 ExRaiseHardError/ExpRaiseHardError).
 #ExHardError
 ExInterlocked
 ExPools
-# QUARANTINED 2026-07-16 (arm64 sweep 3): BUGCHECK 0x1E (0xC0000005) at the SAME PC as
-# ExHardError — RtlRaiseStatus+0x44 (rtl-diag/exception.rs). Both tests raise a kernel-mode
-# exception expecting their driver's __try/__except to catch it; on amd64 native SEH catches it
-# and they PASS, but arm64 kernel-mode exception dispatch is broken (§9.69 / task #10:
-# RtlDispatchException/RtlVirtualUnwind for kernel frames), so the raise is unhandled -> 0x1E.
-# Single [RAISE] print (not recursion). This is the arm64-kernel-SEH cluster: ONE root
-# (arm64 kernel-mode native-SEH dispatch) blocks the whole exception-raising kmtest class
-# (ExHardError, ExResource, likely RtlExceptionKM et al.). Fixing task #10 clears them together.
-#ExResource
+# UN-QUARANTINED 2026-07-16: fixed by task #10 (arm64 kernel-mode SEH resume, §9.69).
+ExResource
 ExSequencedList
 ExSingleList
 ExUuid
@@ -66,28 +58,32 @@ IoVolume
 #KdSystemDebugControl
 KeApc
 KeDeviceQueue
-# QUARANTINED 2026-07-16 (arm64 sweep 4): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same
-# arm64 kernel-SEH cluster as ExHardError/ExResource (§9.69 / task #10). KeDpc raises a
-# kernel exception expecting native __try/__except to catch it (passes on amd64; also an
-# i386 crasher). Cleared when task #10 lands.
-#KeDpc
+# UN-QUARANTINED 2026-07-16: fixed by task #10 (arm64 kernel-mode SEH resume, §9.69).
+KeDpc
 KeEvent
 KeFloatPointState
 KeGuardedMutex
 KeIrql
-# QUARANTINED 2026-07-16 (arm64 sweep 5): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same
-# arm64 kernel-SEH cluster (§9.69 / task #10), raised status 0xC0000191
-# (STATUS_MUTANT_LIMIT_EXCEEDED, the mutant-limit test) instead of 0xC0000005 — proving
-# the constant crash site is the arm64 exception-DISPATCH, not any single raised code.
-# Matches the i386 crasher exactly (KeMutex exc 0xC0000191). Cleared when task #10 lands.
+# QUARANTINED 2026-07-16 (re-triaged after the task #10 SEH-RESUME fix cleared ExResource+KeDpc):
+# NOT cleared. KeMutex over-recurses a mutant to SignalState==MINLONG; the next
+# KeWaitForSingleObject correctly ExRaiseStatus(STATUS_MUTANT_LIMIT_EXCEEDED=0xC0000191), which
+# the driver's native __try must catch. amd64 catches it; arm64 escapes -> BUGCHECK 0x1E
+# P1=0xC0000191 at RtlRaiseStatus+0x44. The RESUME fix (RtlpRestoreContextInternal) cleared the
+# SHALLOW raises (ExResource/KeDpc) but NOT this one, because the raise here originates INSIDE the
+# large KeWaitForSingleObject frame: RtlDispatchException's RtlVirtualUnwind mis-walks that frame's
+# .xdata and never reaches the driver __except (the residual half of §9.69 — the arm64 unwinder
+# xdata-decoder, distinct from the resume path). Shared with i386 KeMutex (same 0xC0000191).
 #KeMutex
 KeSpinLock
 KeTimer
 MmMdl
-# QUARANTINED 2026-07-16 (arm64 sweep 7): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same
-# arm64 kernel-SEH cluster (§9.69 / task #10). MmSection raises a kernel exception the
-# native __try/__except can't catch on arm64 (passes on amd64; also an i386 crasher).
-# Cleared when task #10 lands.
+# QUARANTINED 2026-07-16 (re-triaged after the SEH-RESUME fix): NOT the SEH cluster and NOT
+# cleared. The fix stopped the old crash, but MmSection now WEDGES IN-KERNEL (no exit code; the
+# sweep drains to the launch_drain_secs budget; launches twice across re-autostart, never returns).
+# Passes on amd64, so arm64-specific — a hang in the Mm section-object test path (candidate: an
+# arm64 section-map/teardown wait that never completes). Like ExFastMutex it poisons the rest of
+# the run and must stay quarantined until the hang is triaged (GDB: break the wedge on the MmSection
+# create/map path; no faulting PC — it's a hang, not a crash).
 #MmSection
 # QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode
 # 0x101, P3=tag 'KmRM' — MmAllocateMappingAddress/MmFreeMappingAddress reserved-mapping
@@ -120,26 +116,27 @@ RtlAvlTreeKM
 # Expected-fail until async-exceptions story exists; not an OS bug.
 #RtlExceptionKM
 RtlIntSafeKM
-# QUARANTINED 2026-07-16 (arm64 sweep 8): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same
-# arm64 kernel-SEH cluster (§9.69 / task #10); also an i386 crasher. Cleared when task #10 lands.
+# QUARANTINED 2026-07-16 (still owed): UNVALIDATED after the SEH-RESUME fix — never launched in the
+# validating sweep because the MmSection wedge (above) poisoned the run before reaching it. May well
+# pass now (shallow Rtl raise, like ExResource/KeDpc); re-test once MmSection's hang is quarantined.
 #RtlIsValidOemCharacter
 RtlMemoryKM
 RtlRangeList
 RtlRegistryKM
 RtlSplayTreeKM
-# QUARANTINED 2026-07-10 (amd64 sweep 8): BUGCHECK 0x1E — AV in RtlWalkFrameChain+0x2b0.
-# DUMMY_PSEH-structural candidate: the C walk bounds itself with __try (dead in-kernel);
-# needs explicit bounds validation instead of SEH. Triage owed (kernel-side fix possible).
-#RtlStackKM
+# UN-QUARANTINED 2026-07-17: fixed. RtlWalkFrameChain(NULL,5,0) expected the C's _SEH2_EXCEPT{i=0}
+# to catch the NULL output-store fault and return 0; the Rust port dropped that dead __try, so the
+# NULL store AV'd (RtlWalkFrameChain+0x2b0). Fix = replicate the dropped __except with an explicit
+# `if Callers.is_null() { return 0; }` before the store (rtlk-rust libsupp.rs, arm64/i386 kernel).
+RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
-# QUARANTINED 2026-07-16 (arm64 sweep 9): BUGCHECK 0x1E (0xC0000005) at a DIFFERENT PC than
-# the raise cluster — KeWaitForSingleObject+0x2ac (wait.rs), P3=0xffff80000452e830. Almost
-# certainly the SAME arm64 kernel-SEH root (§9.69 / task #10) surfacing one frame later:
-# SeInheritance is an i386 crasher (it raises a kernel exception mid-test), amd64 handles the
-# raise and PASSES (704433/14) with the identical user-APC-on-return behavior, so the arm64
-# user-APC fix is NOT the cause; the botched arm64 raise leaves thread/wait state bad and the
-# next wait derefs garbage. Triage owed (confirm vs task #10). Cleared when task #10 lands.
+# QUARANTINED 2026-07-16 (re-triaged after the task #10 SEH-RESUME fix): NOT cleared — same
+# KeWaitForSingleObject-frame unwind cluster as KeMutex (the quest doc already noted SeInheritance
+# "surfaces one frame later in KeWaitForSingleObject"). The raise originates inside the wait frame,
+# so RtlVirtualUnwind mis-walks its .xdata and the driver __except is never reached (residual half
+# of §9.69: the arm64 unwinder xdata-decoder, NOT the resume path the fix addressed). Re-open
+# together with KeMutex when the decoder is fixed.
 #SeInheritance
 SeLogonSession
 SeQueryInfoToken
@@ -148,8 +145,8 @@ SeQueryInfoToken
 # subsequent test in the boot fails SET_RESULTBUFFER with 0x5. One wedge poisons the
 # whole rest of the run — must stay quarantined until the hang is triaged.
 #SeTokenFiltering
-# QUARANTINED 2026-07-16 (arm64 sweep 10): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same arm64
-# kernel-SEH cluster (§9.69 / task #10); also an i386 crasher. Cleared when task #10 lands.
+# QUARANTINED 2026-07-16 (still owed): UNVALIDATED after the SEH-RESUME fix — never launched
+# (MmSection wedge poisoned the run first). Re-test once MmSection is quarantined.
 #ZwAllocateVirtualMemory
 ZwCreateSection
 # QUARANTINED 2026-07-16 (arm64 sweep 12): BUGCHECK 0x23 FAT_FILE_SYSTEM P1=0xdead0000 — a
