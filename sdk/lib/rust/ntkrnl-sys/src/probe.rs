@@ -288,10 +288,13 @@ pub unsafe fn probe_write_size_t(
 // Safe copy to/from user-mode
 // ============================================================================
 
-// amd64: the fault-tolerant copy is a native-SEH C shim (ntoskrnl/kmsafecopy.c),
-// the validated table-based-SEH path (seh_poc.c PASS + __C_specific_handler in
-// the amd64 link). Returns 1 on success, 0 if the copy faulted.
-#[cfg(target_arch = "x86_64")]
+// amd64 + arm64: the fault-tolerant copy is a native-SEH C shim
+// (ntoskrnl/kmsafecopy.c), the validated table-based-SEH path (seh_poc.c PASS +
+// __C_specific_handler in the link). Returns 1 on success, 0 if the copy faulted.
+// arm64 added 2026-07-17: the arm64 kernel-mode HARDWARE-fault SEH path was
+// validated end-to-end (KmSafeCopySelfTest PASS after the .xdata save_next decoder
+// fix, §9.69/§9.93) — a real page fault in a callee now unwinds into the __except.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 extern "C" {
     fn KmProtectedCopyMemory(
         dst: *mut core::ffi::c_void,
@@ -315,17 +318,22 @@ extern "C" {
 /// the `__except`. Validated 2026-07-12: ObSymbolicLink + ZwWaitForMultipleObjects
 /// went CRASH -> OK.
 ///
-/// **i386 / arm64: NO PROTECTION — this is a plain copy (status quo).** Stated
+/// **arm64: PROTECTED (2026-07-17)** — routes through `KmProtectedCopyMemory` like
+/// amd64. The arm64 kernel-mode hardware-fault SEH path was validated end-to-end
+/// after the `.xdata` save_next decoder fix (§9.69/§9.93): `KmSafeCopySelfTest`
+/// now catches a genuine page fault at an unmapped VA (`invalid_caught=1`), where
+/// before it wedged the boot. Same MmAccessFault-first semantics as amd64.
+///
+/// **i386: NO PROTECTION — this is a plain copy (status quo).** Stated
 /// plainly rather than faked, per the fail-loud rule. The obvious stand-in,
 /// an `MmIsAddressValid` per-page pre-check, is NOT a valid substitute: it cannot
 /// distinguish "invalid" from "valid but paged out", so on a hot path (e.g. the
 /// IRP completion copy-back) it would spuriously fail legitimate I/O with
 /// STATUS_ACCESS_VIOLATION under memory pressure — a subtly-wrong degradation far
-/// worse than the crash it papers over. Closing the gap properly needs either
-/// (a) validating clang's frame-based i386 / aarch64 kernel SEH the way seh_poc.c
-/// validated amd64's, or (b) a Linux-extable-style fault-fixup copy primitive the
-/// page-fault handler consults. OWED — tracked in the conformance-ratchet quest;
-/// the i386 equivalents of these crashers stay quarantined until then.
+/// worse than the crash it papers over. Closing the i386 gap needs either
+/// (a) validating clang's frame-based i386 kernel SEH the way seh_poc.c validated
+/// amd64/arm64, or (b) a Linux-extable-style fault-fixup copy primitive the
+/// page-fault handler consults. OWED; the i386 equivalents stay quarantined.
 ///
 /// `length` must be > 0 (callers early-return on 0).
 #[inline]
@@ -334,14 +342,14 @@ unsafe fn fault_tolerant_copy(
     src: *const core::ffi::c_void,
     length: usize,
 ) -> Result<(), NTSTATUS> {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         if KmProtectedCopyMemory(dst, src, length) == 0 {
             return Err(STATUS_ACCESS_VIOLATION);
         }
         Ok(())
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
         core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, length);
         Ok(())

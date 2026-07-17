@@ -7911,3 +7911,66 @@ code path the fix didn't cover (the sync-op vs timeout-op completion path), not 
 source. (d) `RtlWalkFrameChain(NULL)` returning 0 is load-bearing test semantics that lived entirely
 in a now-dead `__except` — grep translated Rtl/Io/Ob for dropped `_SEH2_EXCEPT { <mutate output> }`
 whose only job was to swallow a hostile-pointer store.
+
+### 9.93 (ROOT-CAUSED + FIXED 2026-07-17) The "arm64 kernel-SEH residual" was a broken self-test oracle + a return-address-past-function-end lookup bug — NOT a decoder residual
+
+§9.92 (task #10) left the arm64 `.xdata` save_next decoder fix on a WIP branch with a "handler-dispatch
+residual OPEN": `KmSafeCopySelfTest` reported `invalid_caught=0` and KeMutex/SeInheritance still
+BUGCHECK'd 0x1E, so it looked like dispatch *through* save_next frames still failed. Both symptoms were
+misread. Three findings:
+
+**1. The KmSafeCopy self-test was a BROKEN ORACLE on arm64 (false FAIL).** The self-test probes a "bad"
+source address expecting a fault. It used `0x1` — but the low page is MAPPED at early boot on arm64
+(the file's own comment warned this), so the copy from `0x1` *never faults*: `bad=1`, `invalid_caught=0`.
+No fault → no dispatch → the "residual" never existed for KmSafeCopy. Switching the arm64 probe to
+`0x0000700000000000` (genuinely unmapped, still below MmUserProbeAddress) makes it fault → **caught** →
+`invalid_caught=1 (PASS)`. Lesson: a bad-pointer test that never actually faults proves nothing — this
+was documented in the file, the probe address just hadn't kept up with arm64's early-boot low mapping.
+
+**2. The save_next decoder fix (§9.69/WIP) IS correct — proven, and it graduated to master here.** A
+temporary boot self-test (a synthetic software raise through a frame forced to save x19..x28 as
+save_regp + save_next — the KeWaitForSingleObject shape) was `caught`, and KmSafeCopy's hardware-fault
+path `PASS`. So `__C_specific_handler` + the handler search + save_next unwinding all work. (That
+synthetic self-test was a debug vehicle and was removed once the conformance suite — KeMutex, ExResource,
+which raise through the real KeWaitForSingleObject — covers the path.)
+
+**3. The REAL bug behind KeMutex/SeInheritance: a return address ONE PAST the function end.** KeMutex
+over-recurses a mutant; `KeWaitForSingleObject` raises `STATUS_MUTANT_LIMIT_EXCEEDED` via the Rust
+`ExRaiseStatus(-> !)` (noreturn). Disassembly of the arm64 kernel:
+
+    45b6dc:  bl 0x4391f0 <RtlRaiseStatus>   ; the LAST instruction of KeWaitForSingleObject
+    45b6e0:  <KiExitDispatcher>             ; the next function starts here
+
+KeWaitForSingleObject ends at 0x45b6e0 (start 0x45b228 + len 0x4b8). Because `ExRaiseStatus` is
+**noreturn**, LLVM places the `bl` at the very end with no trailing instruction, so the return address =
+`0x45b6e0` = **one past the function = KiExitDispatcher's entry**. When `RtlDispatchException` unwinds
+`RtlRaiseStatus` and recovers that return address, `RtlLookupFunctionEntry(0x45b6e0)` attributes the
+frame to **KiExitDispatcher** (not KeWaitForSingleObject), decodes it from offset 0 (prolog not yet run →
+reads unsaved slots → next return address = 0), and the walk dies → unhandled → BUGCHECK 0x1E. (Traced
+live with a temporary `[XT]` per-frame instrumentation gated on a debug flag.) amd64 doesn't hit this:
+MSVC/clang emit an `int3` after a noreturn `call` and x64 pads between functions, so the return address
+stays in-function.
+
+**Fix (arch-standard):** in the arm64 `RtlDispatchException` and `RtlUnwindEx` frame walks, look up
+NON-first frames with `ControlPc - 1` (a return address "belongs to" the previous instruction). The
+first frame keeps its exact PC (it's the real fault/raise site, not a return address). Same convention
+Windows/Wine/libunwind use. `sdk/lib/rust/rtl-except/src/arm64/except.rs`. This is a GENERAL
+unwinder-correctness fix: ANY exception whose stack includes a function ending in a noreturn call
+(ExRaiseStatus / KeBugCheck / Rust panic) was mis-walked before — KeMutex was just the first conformance
+test to exercise it.
+
+**Conformance result (arm64):** clears **KeMutex** (software raise) + the memcpy+0x40 capture cluster
+**ObSymbolicLink / ZwWaitForMultipleObjects / IoReadWrite** — the latter three because arm64
+`fault_tolerant_copy` now routes through `KmProtectedCopyMemory` like amd64 (`ntkrnl-sys/src/probe.rs`),
+the validated HW-fault SEH path. Sweep `launched=79 ok=76 sweep=done`. **SeInheritance**'s 0x1E is fixed
+too, but with the SEH escape gone it progresses further and hits a SEPARATE **BUGCHECK 0xC2
+(BAD_POOL_CALLER)** in the token-inheritance path — a real pool-misuse bug unmasked by the SEH fix,
+re-quarantined + owed. i386 stays unprotected (frame-based SEH is MSVC-env-only). NtCreateSection (0x50,
+kernel-addr fault) + MmMapLockedPagesSpecifyCache (0x1000 PFN) are DIFFERENT roots (task #7), still
+quarantined.
+
+**Reusable:** (a) an arm64 exception that BUGCHECKs 0x1E "escaping" a handler, where the frame walk dies
+at a function *entry* address, is the noreturn-return-address-past-end bug — the lookup needs `PC-1`.
+(b) A "self-test FAIL" is only meaningful if the test's precondition actually held; verify the "bad"
+input truly faults on THIS arch before trusting `invalid_caught=0`. (c) When a SEH fix makes a test
+BUGCHECK with a *different* stop code, that's forward progress uncovering the next bug, not a regression.

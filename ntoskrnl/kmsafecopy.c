@@ -142,6 +142,17 @@ int KmProtectedCopyMemory(void *Dst, const void *Src, KMSIZE Len)
  */
 extern unsigned long DbgPrint(const char *Format, ...);
 
+/* The hostile source address for the "bad copy" assertion. amd64 uses 0x1 (a
+ * canonical low VA that page-faults). On arm64 the low page is MAPPED at early
+ * boot, so 0x1 never faults there (a false FAIL that masked the real result);
+ * use 0x0000700000000000 instead — genuinely unmapped on arm64, still below
+ * MmUserProbeAddress so it's the same range-passes hostile-pointer shape. */
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define KMSAFECOPY_BAD_SRC ((const void *)0x0000700000000000ULL)
+#else
+#define KMSAFECOPY_BAD_SRC ((const void *)0x1)
+#endif
+
 int KmSafeCopySelfTest(void)
 {
     volatile char dst[8];
@@ -149,7 +160,7 @@ int KmSafeCopySelfTest(void)
     int good, bad, ok;
 
     good = KmProtectedCopyMemory((void *)dst, src, sizeof(src));
-    bad  = KmProtectedCopyMemory((void *)dst, (const void *)0x1, sizeof(src));
+    bad  = KmProtectedCopyMemory((void *)dst, KMSAFECOPY_BAD_SRC, sizeof(src));
 
     ok = (good == 1 && bad == 0);
 

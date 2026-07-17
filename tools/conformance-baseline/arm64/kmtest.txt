@@ -4,7 +4,7 @@ CmSecurity OK pass=300 fail=89 skip=2 exit=0
 ExCallback OK pass=12 fail=1 skip=1 exit=0
 ExDoubleList OK pass=110 fail=36 skip=0 exit=0
 ExInterlocked OK pass=180 fail=0 skip=0 exit=0
-ExPools OK pass=13 fail=5 skip=0 exit=0
+ExPools OK pass=14 fail=4 skip=0 exit=0
 ExResource OK pass=399 fail=2 skip=0 exit=0
 ExSequencedList OK pass=0 fail=0 skip=0 exit=0
 ExSingleList OK pass=201 fail=51 skip=0 exit=0
@@ -32,6 +32,7 @@ KeEvent OK pass=42601 fail=0 skip=0 exit=0
 KeFloatPointState OK pass=6 fail=0 skip=0 exit=0
 KeGuardedMutex OK pass=1566 fail=87 skip=0 exit=0
 KeIrql OK pass=125 fail=3 skip=0 exit=0
+KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=278 fail=45 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
 MmMdl OK pass=575 fail=0 skip=0 exit=0
@@ -43,6 +44,7 @@ ObHandle OK pass=351 fail=0 skip=0 exit=0
 ObQuery OK pass=19 fail=0 skip=0 exit=0
 ObReference OK pass=2205 fail=0 skip=0 exit=0
 ObSecurity OK pass=694 fail=15 skip=0 exit=0
+ObSymbolicLink OK pass=154 fail=0 skip=0 exit=0
 ObType OK pass=96 fail=0 skip=0 exit=0
 ObTypes OK pass=765 fail=17 skip=4 exit=0
 PsNotify OK pass=24 fail=0 skip=0 exit=0
@@ -59,11 +61,13 @@ RtlUnicodeStringKM OK pass=16 fail=0 skip=0 exit=0
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
 ZwCreateSection OK pass=8 fail=2 skip=1 exit=0
+ZwWaitForMultipleObjects OK pass=3 fail=1 skip=0 exit=0
 RtlCaptureContextKM NO-END pass=0 fail=0 skip=0 exit=1 errors=1
 FileAttributes OK pass=84 fail=0 skip=0 exit=0
 FindFile OK pass=251 fail=2 skip=0 exit=0
 HidPDescription OK pass=28 fail=9 skip=3 exit=0
-IoDeviceObject OK pass=183 fail=6 skip=0 exit=0
+IoDeviceObject OK pass=180 fail=9 skip=0 exit=0
+IoReadWrite OK pass=16192 fail=151 skip=0 exit=0
 NtSystemDebugControl OK pass=36 fail=6 skip=0 exit=0
 PoIrp OK pass=57 fail=0 skip=0 exit=0
 RtlAvlTree OK pass=139 fail=0 skip=0 exit=0
