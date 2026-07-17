@@ -88,4 +88,54 @@ RtlGetCallersAddress:
     str xzr, [x1]
     ret
 
+/*
+ * VOID RtlpRestoreContextInternal(PCONTEXT ContextRecord)
+ *
+ * Same-mode register-reload + branch — the arm64 analogue of the amd64
+ * RtlpRestoreContextInternal (sdk/lib/rtl/amd64/except_asm.S). It resumes
+ * execution at ContextRecord->Pc with the recorded SP and integer registers,
+ * WITHOUT a syscall / EL transition. This is what RtlRestoreContext (and thus
+ * RtlUnwindEx -> __except landing) needs to work in KERNEL mode: the old arm64
+ * RtlRestoreContext resumed via NtContinue, which is a user-return path and
+ * cannot correctly resume a kernel context mid-callstack (task #10 / §9.69 —
+ * every kernel-mode __try/__except silently failed to catch).
+ *
+ * CONTEXT layout mirrors RtlCaptureContext above:
+ *   +0x04 Cpsr (NZCV)   +0x08 X0 .. +0xF8 X30   +0x100 Sp   +0x108 Pc
+ * x16/x17 are the ABI intra-procedure scratch regs; we use them to stage Pc/Sp
+ * and do not restore them (they never carry live values across a call, matching
+ * the real ntdll implementation).
+ */
+.globl RtlpRestoreContextInternal
+RtlpRestoreContextInternal:
+    /* Restore condition flags (NZCV). */
+    ldr w1, [x0, #0x04]
+    msr nzcv, x1
+
+    /* Stage Pc and Sp in the scratch registers. */
+    ldr x16, [x0, #0x108]   /* Pc -> branch target */
+    ldr x17, [x0, #0x100]   /* Sp */
+
+    /* Restore x2..x15, x18..x30 (skip x16/x17 scratch), then x1, x0 last. */
+    ldp x2,  x3,  [x0, #0x18]
+    ldp x4,  x5,  [x0, #0x28]
+    ldp x6,  x7,  [x0, #0x38]
+    ldp x8,  x9,  [x0, #0x48]
+    ldp x10, x11, [x0, #0x58]
+    ldp x12, x13, [x0, #0x68]
+    ldp x14, x15, [x0, #0x78]
+    ldp x18, x19, [x0, #0x98]
+    ldp x20, x21, [x0, #0xA8]
+    ldp x22, x23, [x0, #0xB8]
+    ldp x24, x25, [x0, #0xC8]
+    ldp x26, x27, [x0, #0xD8]
+    ldp x28, x29, [x0, #0xE8]
+    ldr x30,      [x0, #0xF8]
+    ldr x1,       [x0, #0x10]
+    ldr x0,       [x0, #0x08]
+
+    /* Install the target SP and branch to the target PC. */
+    mov sp, x17
+    br  x16
+
 /* EOF */
