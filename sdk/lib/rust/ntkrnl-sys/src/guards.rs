@@ -20,7 +20,7 @@
 use core::marker::PhantomData;
 
 use crate::base::*;
-use crate::ke::{KSPIN_LOCK, PKSPIN_LOCK};
+use crate::ke::PKSPIN_LOCK;
 
 /// `!Send + !Sync` marker: execution-context capabilities must not leave the
 /// context that minted them (raw-pointer PhantomData opts out of both).
