@@ -177,6 +177,26 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   clashing_extern bucket that looked mechanical (same-crate-redecl AND CONV-i386) is not — the
   loose FFI typing that co-occurs with the flagged difference is load-bearing.**
 
+- **2026-07-17 — allow-peel started: 8 kernel crates driven to ZERO static_mut_refs.**
+  `#![allow(static_mut_refs)]` at crate level (35 crates carry it; only shell32 is fenced) was
+  HIDING real static_mut_refs from the census. Peeled the allow from the 8 census-reachable,
+  unfenced kernel-subsystem crates (cc/ex/ob/po/se/lpc/kd/ps-rust) — surfaced **185** hidden
+  sites — and eliminated all of them: 152 via the proven `&raw` transform (`smr_apply_json.py`),
+  33 via a raw-ptr-deref wrap for the method/field-autoref sub-pattern (`X.as_ptr()`,
+  `X.get_unchecked(i)`, `size_of_val(&X)`, `X.is_some()` → `(*(&raw const/mut X)).rest`, tool
+  `smr_wrap_residual.py`). The wrap is behavior-preserving (same memory place via raw deref) and,
+  verified across ×3 arches, introduces **no** `dangerous_implicit_autorefs` (the feared lint-trade
+  didn't happen on 1.92). Oracle-guarded throughout: 3 ref-needed sites that broke plain `&raw`
+  (E0308) were fixed by the wrap form; final = 0 errors, 0 static_mut_refs, 0 new lints. Removes 8
+  blanket suppressions (durability). **Key process finding: the `vibeos-cli check` gate tracks the
+  custom `scan_*`/`verify_*` scanners, NOT rustc lint counts** — so rustc warnings like
+  static_mut_refs have no hard gate, and peeling an allow (exposing hidden warnings) has no gate
+  consequence; the constraint is purely code-quality. **Remaining allow-peel targets:** the other
+  ~26 static_mut_refs-suppressing crates show 0 in the plain census (don't plain-build or fully
+  suppressed) — they need per-crate `cargo build -p X` cycles (some, e.g. advapi32/kernel32/user32
+  big usermode DLLs, may plain-build; config/fstub/kdbg need the reactos-link env). Same two tools
+  apply. This is the model for the rest of task #9.
+
 ## Remaining work (2026-07-17, prioritized) — the plain-buildable cold-crate noise is DONE
 
 The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
