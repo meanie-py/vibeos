@@ -16,6 +16,7 @@ registry), never left to rot in an archived doc.
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
 | `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `shell32-com` | [shell32-com-plan.md](shell32-com-plan.md) *(translation driven by Codex, not rustconv)* |
+| `warnings-burndown` | [warnings-burndown-plan.md](warnings-burndown-plan.md) *(follow-on from the closed `rust-warnings` lane)* |
 
 *Recently landed & closed:*
 - `i386-apic-hal` (Phase A landed 2026-07-16 — APIC is now the i386 default HAL, legacy
