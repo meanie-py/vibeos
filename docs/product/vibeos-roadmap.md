@@ -448,7 +448,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   overnight cswitch/lockdep farm soak — run `vibeos-cli farm ... ` when the host is quiet and
   read the new `farm-report` "tripwire hits" section (clusters green-boot violations).
 - [x] **Stable-everything toolchain program** — **DONE 2026-07-12** (lane `stable-toolchain`;
-  writeup `../engineering/active-lanes/stable-toolchain-plan.md`). All 4 nightly deps killed:
+  writeup `../engineering/stable-toolchain-plan.md`). All 4 nightly deps killed:
   (1) `link_llvm_intrinsics` → `code_addr!()`. (2) `-Z build-std` + the custom JSON targets →
   amd64/arm64 now build the **builtin triples on pinned stable**; 80 target JSONs deleted;
   `abi-return-struct-as-int` audit discharged (proven inert off 32-bit x86); ntoskrnl `.text`
