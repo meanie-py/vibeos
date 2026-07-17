@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 
 // FORCEINLINE in rect.h (no symbol) + min/max macros — inline them.
 #[inline(always)]

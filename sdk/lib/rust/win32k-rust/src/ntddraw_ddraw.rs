@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 use ntkrnl_sys::base::NT_SUCCESS;
 use ntkrnl_sys::constants::STATUS_PROCEDURE_NOT_FOUND;
 use crate::ntddraw_dxeng::{gaEngFuncs, gcEngFuncs};
@@ -55,7 +54,7 @@ pub unsafe extern "system" fn DxDdStartupDxGraphics(
 
         if gpfnStartupDxGraphics.is_some() && gpfnCleanupDxGraphics.is_some() {
             DxEngDrv.iDriverVersion = DDI_DRIVER_VERSION_NT5_01 as _;
-            DxEngDrv.pdrvfn = (core::ptr::addr_of!(gaEngFuncs) as *mut DRVFN);
+            DxEngDrv.pdrvfn = core::ptr::addr_of!(gaEngFuncs) as *mut DRVFN ;
             DxEngDrv.c = gcEngFuncs;
 
             Status = (gpfnStartupDxGraphics.unwrap())(

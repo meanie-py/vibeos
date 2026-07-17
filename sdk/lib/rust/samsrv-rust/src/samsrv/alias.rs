@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -310,7 +309,7 @@ pub unsafe extern "C" fn SampRemoveAllMembersFromAlias(
     let mut MemberArray: PSAMPR_SID_INFORMATION = core::ptr::null_mut();
     let mut MemberCount: ULONG = 0;
     let mut Index: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     TRACE!(b"(%p)\n\0".as_ptr() as *const i8, AliasObject);
 

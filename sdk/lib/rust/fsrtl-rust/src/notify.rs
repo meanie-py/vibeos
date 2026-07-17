@@ -339,7 +339,7 @@ unsafe fn FsRtlNotifyCompleteIrpList(notify_change: PNOTIFY_CHANGE, status: NTST
 
     data_length = (*notify_change).DataLength;
 
-    (*notify_change).Flags &= (NOTIFY_IMMEDIATELY as u16 | WatchTree);
+    (*notify_change).Flags &= NOTIFY_IMMEDIATELY as u16 | WatchTree ;
     (*notify_change).DataLength = 0;
     (*notify_change).LastEntry = 0;
 

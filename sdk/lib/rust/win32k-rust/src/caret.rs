@@ -4,7 +4,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentThread, PsGetCurrentThreadWin32Thread};
 use ntkrnl_sys::base::NT_SUCCESS;
-use core::ffi::c_void;
 
 // MmCopyToCaller(x,y,z) macro -> _MmCopyToCaller cdecl (i386 decorates to __MmCopyToCaller).
 extern "C" {

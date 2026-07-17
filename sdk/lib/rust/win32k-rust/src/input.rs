@@ -746,7 +746,7 @@ unsafe fn UserAttachThreadInput_impl(
                 (*(*ptiTo).MessageQueue).spwndFocus = (*(*ptiFrom).MessageQueue).spwndFocus;
                 (*(*ptiTo).MessageQueue).spwndCapture = (*(*ptiFrom).MessageQueue).spwndCapture;
                 (*(*ptiTo).MessageQueue).QF_flags ^=
-                    (((*(*ptiTo).MessageQueue).QF_flags ^ (*(*ptiFrom).MessageQueue).QF_flags) & QF_CAPTURELOCKED);
+                    ((*(*ptiTo).MessageQueue).QF_flags ^ (*(*ptiFrom).MessageQueue).QF_flags) & QF_CAPTURELOCKED;
                 RtlCopyMemory(
                     core::ptr::addr_of_mut!((*(*ptiTo).MessageQueue).CaretInfo) as *mut _,
                     core::ptr::addr_of_mut!((*(*ptiFrom).MessageQueue).CaretInfo) as *const _,

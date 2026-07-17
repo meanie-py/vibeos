@@ -1,7 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{KeInitializeEvent, PsGetProcessWin32Process};
 use ntkrnl_sys::base::{STATUS_SUCCESS, InitializeListHead};
-use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(format: *const u8, ...) -> u32;

@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 
 extern "C" {
     // memset is a real CRT symbol (libcntpr); keep it.

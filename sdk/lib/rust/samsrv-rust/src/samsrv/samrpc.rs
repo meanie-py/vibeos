@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -1143,7 +1142,7 @@ unsafe fn SampQueryDomainLogoff(
     let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -1398,7 +1397,7 @@ unsafe fn SampQueryDomainState(
     let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -1569,7 +1568,7 @@ unsafe fn SampQueryDomainLockout(
     let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -1616,7 +1615,7 @@ unsafe fn SampQueryDomainModified2(
     let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -2318,7 +2317,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
     let mut GroupMembership: GROUP_MEMBERSHIP = core::mem::zeroed();
     let mut LogonHours: [UCHAR; 23] = [0; 23];
     let mut ulSize: ULONG;
-    let mut ulRid: ULONG;
+    let ulRid: ULONG;
     let mut szRid: [WCHAR; 9] = [0; 9];
     let mut Sd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
     let mut SdSize: ULONG = 0;
@@ -2664,7 +2663,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
 pub unsafe extern "system" fn SamrEnumerateUsersInDomain(
     DomainHandle: SAMPR_HANDLE,
     EnumerationContext: *mut core::ffi::c_ulong,
-    UserAccountControl: core::ffi::c_ulong,
+    _UserAccountControl: core::ffi::c_ulong,
     Buffer: *mut PSAMPR_ENUMERATION_BUFFER,
     PreferedMaximumLength: core::ffi::c_ulong,
     CountReturned: *mut core::ffi::c_ulong,
@@ -5212,7 +5211,7 @@ pub unsafe extern "system" fn SamrGetMembersInAlias(
     let mut AliasObject: PSAM_DB_OBJECT = core::ptr::null_mut();
     let mut MemberArray: PSAMPR_SID_INFORMATION = core::ptr::null_mut();
     let mut MemberCount: ULONG = 0;
-    let Index: ULONG;
+    let _Index: ULONG;
     let mut Status: NTSTATUS;
 
     TRACE!(
@@ -5983,7 +5982,7 @@ unsafe fn SampQueryUserAccountName(
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -6151,7 +6150,7 @@ unsafe fn SampQueryUserScript(
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -6261,7 +6260,7 @@ unsafe fn SampQueryUserWorkStations(
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -6335,7 +6334,7 @@ unsafe fn SampQueryUserExpires(
     let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -6481,7 +6480,7 @@ unsafe fn SampQueryUserInternal2(
     let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -8207,12 +8206,12 @@ pub unsafe extern "system" fn SamrGetDisplayEnumerationIndex(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SamrTestPrivateFunctionsDomain(DomainHandle: SAMPR_HANDLE) -> NTSTATUS {
+pub unsafe extern "system" fn SamrTestPrivateFunctionsDomain(_DomainHandle: SAMPR_HANDLE) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SamrTestPrivateFunctionsUser(UserHandle: SAMPR_HANDLE) -> NTSTATUS {
+pub unsafe extern "system" fn SamrTestPrivateFunctionsUser(_UserHandle: SAMPR_HANDLE) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -8638,10 +8637,10 @@ pub unsafe extern "system" fn SamrQueryDisplayInformation2(
 
 #[no_mangle]
 pub unsafe extern "system" fn SamrGetDisplayEnumerationIndex2(
-    DomainHandle: SAMPR_HANDLE,
-    DisplayInformationClass: DOMAIN_DISPLAY_INFORMATION,
-    Prefix: PRPC_UNICODE_STRING,
-    Index: *mut core::ffi::c_ulong,
+    _DomainHandle: SAMPR_HANDLE,
+    _DisplayInformationClass: DOMAIN_DISPLAY_INFORMATION,
+    _Prefix: PRPC_UNICODE_STRING,
+    _Index: *mut core::ffi::c_ulong,
 ) -> NTSTATUS {
     TRACE!(
         b"SamrGetDisplayEnumerationIndex2(%p %lu %p %p)\n\0".as_ptr() as *const i8,
@@ -8671,7 +8670,7 @@ pub unsafe extern "system" fn SamrCreateUser2InDomain(
     let mut GroupMembership: GROUP_MEMBERSHIP = core::mem::zeroed();
     let mut LogonHours: [UCHAR; 23] = [0; 23];
     let mut ulSize: ULONG;
-    let mut ulRid: ULONG;
+    let ulRid: ULONG;
     let mut szRid: [WCHAR; 9] = [0; 9];
     let mut Sd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
     let mut SdSize: ULONG = 0;
@@ -8978,12 +8977,12 @@ pub unsafe extern "system" fn SamrCreateUser2InDomain(
 pub unsafe extern "system" fn SamrQueryDisplayInformation3(
     DomainHandle: SAMPR_HANDLE,
     DisplayInformationClass: DOMAIN_DISPLAY_INFORMATION,
-    Index: ::core::ffi::c_ulong,
-    EntryCount: ::core::ffi::c_ulong,
-    PreferredMaximumLength: ::core::ffi::c_ulong,
-    TotalAvailable: *mut ::core::ffi::c_ulong,
-    TotalReturned: *mut ::core::ffi::c_ulong,
-    Buffer: PSAMPR_DISPLAY_INFO_BUFFER,
+    _Index: ::core::ffi::c_ulong,
+    _EntryCount: ::core::ffi::c_ulong,
+    _PreferredMaximumLength: ::core::ffi::c_ulong,
+    _TotalAvailable: *mut ::core::ffi::c_ulong,
+    _TotalReturned: *mut ::core::ffi::c_ulong,
+    _Buffer: PSAMPR_DISPLAY_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut DomainObject: PSAM_DB_OBJECT = core::ptr::null_mut();
     let mut Status: NTSTATUS;
@@ -9084,33 +9083,33 @@ pub unsafe extern "system" fn SamrRemoveMultipleMembersFromAlias(
 
 #[no_mangle]
 pub unsafe extern "system" fn SamrOemChangePasswordUser2(
-    BindingHandle: handle_t,
-    ServerName: PRPC_STRING,
-    UserName: PRPC_STRING,
-    NewPasswordEncryptedWithOldLm: PSAMPR_ENCRYPTED_USER_PASSWORD,
-    OldLmOwfPasswordEncryptedWithNewLm: PENCRYPTED_LM_OWF_PASSWORD,
+    _BindingHandle: handle_t,
+    _ServerName: PRPC_STRING,
+    _UserName: PRPC_STRING,
+    _NewPasswordEncryptedWithOldLm: PSAMPR_ENCRYPTED_USER_PASSWORD,
+    _OldLmOwfPasswordEncryptedWithNewLm: PENCRYPTED_LM_OWF_PASSWORD,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SamrUnicodeChangePasswordUser2(
-    BindingHandle: handle_t,
-    ServerName: PRPC_UNICODE_STRING,
-    UserName: PRPC_UNICODE_STRING,
-    NewPasswordEncryptedWithOldNt: PSAMPR_ENCRYPTED_USER_PASSWORD,
-    OldNtOwfPasswordEncryptedWithNewNt: PENCRYPTED_NT_OWF_PASSWORD,
-    LmPresent: ::core::ffi::c_uchar,
-    NewPasswordEncryptedWithOldLm: PSAMPR_ENCRYPTED_USER_PASSWORD,
-    OldLmOwfPasswordEncryptedWithNewNt: PENCRYPTED_LM_OWF_PASSWORD,
+    _BindingHandle: handle_t,
+    _ServerName: PRPC_UNICODE_STRING,
+    _UserName: PRPC_UNICODE_STRING,
+    _NewPasswordEncryptedWithOldNt: PSAMPR_ENCRYPTED_USER_PASSWORD,
+    _OldNtOwfPasswordEncryptedWithNewNt: PENCRYPTED_NT_OWF_PASSWORD,
+    _LmPresent: ::core::ffi::c_uchar,
+    _NewPasswordEncryptedWithOldLm: PSAMPR_ENCRYPTED_USER_PASSWORD,
+    _OldLmOwfPasswordEncryptedWithNewNt: PENCRYPTED_LM_OWF_PASSWORD,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SamrGetDomainPasswordInformation(
-    BindingHandle: handle_t,
-    Unused: PRPC_UNICODE_STRING,
+    _BindingHandle: handle_t,
+    _Unused: PRPC_UNICODE_STRING,
     PasswordInformation: PUSER_DOMAIN_PASSWORD_INFORMATION,
 ) -> NTSTATUS {
     let mut ServerHandle: SAMPR_HANDLE = core::ptr::null_mut();
@@ -9384,11 +9383,11 @@ pub unsafe extern "system" fn SamrSetBootKeyInformation(_BindingHandle: handle_t
     STATUS_NOT_IMPLEMENTED
 }
 #[no_mangle]
-pub unsafe extern "system" fn SamrGetBootKeyInformation(BindingHandle: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn SamrGetBootKeyInformation(_BindingHandle: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 #[no_mangle]
-pub unsafe extern "system" fn SamrConnect3(BindingHandle: handle_t) -> NTSTATUS {
+pub unsafe extern "system" fn SamrConnect3(_BindingHandle: handle_t) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -9396,7 +9395,7 @@ pub unsafe extern "system" fn SamrConnect3(BindingHandle: handle_t) -> NTSTATUS 
 pub unsafe extern "system" fn SamrConnect4(
     ServerName: PSAMPR_SERVER_NAME,
     ServerHandle: *mut SAMPR_HANDLE,
-    ClientRevision: core::ffi::c_ulong,
+    _ClientRevision: core::ffi::c_ulong,
     DesiredAccess: ACCESS_MASK,
 ) -> NTSTATUS {
     let mut InRevisionInfo: SAMPR_REVISION_INFO = core::mem::zeroed();
@@ -9431,10 +9430,10 @@ pub unsafe extern "system" fn SamrUnicodeChangePasswordUser3(_BindingHandle: han
 
 #[no_mangle]
 pub unsafe extern "system" fn SamrConnect5(
-    ServerName: PSAMPR_SERVER_NAME,
+    _ServerName: PSAMPR_SERVER_NAME,
     mut DesiredAccess: ACCESS_MASK,
     InVersion: core::ffi::c_ulong,
-    InRevisionInfo: *mut SAMPR_REVISION_INFO,
+    _InRevisionInfo: *mut SAMPR_REVISION_INFO,
     OutVersion: *mut core::ffi::c_ulong,
     OutRevisionInfo: *mut SAMPR_REVISION_INFO,
     ServerHandle: *mut SAMPR_HANDLE,
@@ -9494,29 +9493,29 @@ pub unsafe extern "system" fn SamrConnect5(
 
 #[no_mangle]
 pub unsafe extern "system" fn SamrRidToSid(
-    ObjectHandle: SAMPR_HANDLE,
-    Rid: ::core::ffi::c_ulong,
-    Sid: *mut PRPC_SID,
+    _ObjectHandle: SAMPR_HANDLE,
+    _Rid: ::core::ffi::c_ulong,
+    _Sid: *mut PRPC_SID,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SamrSetDSRMPassword(
-    BindingHandle: handle_t,
-    Unused: PRPC_UNICODE_STRING,
-    UserId: core::ffi::c_ulong,
-    EncryptedNtOwfPassword: PENCRYPTED_NT_OWF_PASSWORD,
+    _BindingHandle: handle_t,
+    _Unused: PRPC_UNICODE_STRING,
+    _UserId: core::ffi::c_ulong,
+    _EncryptedNtOwfPassword: PENCRYPTED_NT_OWF_PASSWORD,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SamrValidatePassword(
-    Handle: handle_t,
-    ValidationType: PASSWORD_POLICY_VALIDATION_TYPE,
-    InputArg: PSAM_VALIDATE_INPUT_ARG,
-    OutputArg: *mut PSAM_VALIDATE_OUTPUT_ARG,
+    _Handle: handle_t,
+    _ValidationType: PASSWORD_POLICY_VALIDATION_TYPE,
+    _InputArg: PSAM_VALIDATE_INPUT_ARG,
+    _OutputArg: *mut PSAM_VALIDATE_OUTPUT_ARG,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }

@@ -1,7 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentThreadWin32Thread, RtlUnicodeToMultiByteSize};
 use ntkrnl_sys::base::NT_SUCCESS;
-use core::ffi::c_void;
 
 // TRACE/WARN/ERR/FIXME — DbgPrint-style no-ops (no kernel symbol in non-DBG build).
 macro_rules! TRACE { ($($t:tt)*) => {{}}; }

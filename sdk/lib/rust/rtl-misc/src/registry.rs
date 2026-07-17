@@ -1,4 +1,4 @@
-use crate::shared::{RtlGetProcessHeap, GetProcessHeap};
+use crate::shared::RtlGetProcessHeap;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -160,7 +160,7 @@ pub unsafe extern "system" fn RtlpCallQueryRegistryRoutine(
     let mut SpareData: PCHAR;
     let DataEnd: PCHAR;
     let mut Type: ULONG;
-    let mut Name: PWCHAR;
+    let Name: PWCHAR;
     let mut p: PWCHAR;
     let ValueEnd: PWCHAR;
     let mut Data: PVOID;
@@ -411,7 +411,7 @@ pub unsafe extern "system" fn RtlpCallQueryRegistryRoutine(
 pub unsafe extern "system" fn RtlpAllocDeallocQueryBuffer(
     BufferSize: PSIZE_T,
     OldBuffer: PVOID,
-    OldBufferSize: SIZE_T,
+    _OldBufferSize: SIZE_T,
     Status: PNTSTATUS,
 ) -> PVOID {
     let mut Buffer: PVOID = core::ptr::null_mut();
@@ -770,8 +770,8 @@ pub unsafe extern "system" fn RtlpNtCreateKey(
     KeyHandle: HANDLE,
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
-    TitleIndex: ULONG,
-    Class: PUNICODE_STRING,
+    _TitleIndex: ULONG,
+    _Class: PUNICODE_STRING,
     Disposition: PULONG,
 ) -> NTSTATUS {
     if !ObjectAttributes.is_null() {
@@ -794,7 +794,7 @@ pub unsafe extern "system" fn RtlpNtEnumerateSubKey(
     KeyHandle: HANDLE,
     SubKeyName: PUNICODE_STRING,
     Index: ULONG,
-    Unused: ULONG,
+    _Unused: ULONG,
 ) -> NTSTATUS {
     let mut KeyInfo: PKEY_BASIC_INFORMATION = core::ptr::null_mut();
     let mut BufferLength: ULONG = 0;
@@ -850,7 +850,7 @@ pub unsafe extern "system" fn RtlpNtOpenKey(
     KeyHandle: HANDLE,
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
-    Unused: ULONG,
+    _Unused: ULONG,
 ) -> NTSTATUS {
     if !ObjectAttributes.is_null() {
         (*ObjectAttributes).Attributes &= !(OBJ_PERMANENT | OBJ_EXCLUSIVE);
@@ -865,7 +865,7 @@ pub unsafe extern "system" fn RtlpNtQueryValueKey(
     Type: PULONG,
     Data: PVOID,
     DataLength: PULONG,
-    Unused: ULONG,
+    _Unused: ULONG,
 ) -> NTSTATUS {
     let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
     let mut BufferLength: ULONG = 0;

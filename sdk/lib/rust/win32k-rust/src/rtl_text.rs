@@ -2,7 +2,6 @@ use ntkrnl_sys::driver_ddk::*;
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{KeUserModeCallback, ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::NT_SUCCESS;
-use core::ffi::c_void;
 
 extern "C" {
     // strlenW is `#define strlenW(s) wcslen(s)` (wine/unicode.h) — not a real symbol.

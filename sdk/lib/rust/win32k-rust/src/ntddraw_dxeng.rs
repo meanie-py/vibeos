@@ -1,7 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExReleaseResourceLite, KeEnterCriticalRegion, KeLeaveCriticalRegion, PsGetCurrentThread};
 use ntkrnl_sys::interlocked::InterlockedIncrement;
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub static mut ghsemShareDevLock: HSEMAPHORE = core::ptr::null_mut();

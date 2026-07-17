@@ -1,4 +1,3 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
@@ -15,12 +14,11 @@ use ntkrnl_sys::ddk::{
     _MEMORY_INFORMATION_CLASS_MemoryBasicInformation as MemoryBasicInformation,
     _SYSTEM_INFORMATION_CLASS_SystemBasicInformation as SystemBasicInformation,
 };
-use core::ffi::c_void;
 // The heap.h type family (HEAP / HEAP_ENTRY / HEAP_SEGMENT / … + the
 // HEAP_* constants) — byte-exact local substrate, not in ntkrnl-sys.
 use crate::types::*;
 // NtCurrentProcess()/NtCurrentThread() pseudo-handles.
-use ntkrnl_sys::macros::{NtCurrentProcess, NtCurrentThread};
+use ntkrnl_sys::macros::NtCurrentProcess;
 
 extern "C" {
     // heap.h global, defined in rtl-heappage (heappage.rs, #[no_mangle]). i386: `_RtlpPageHeapEnabled`.
@@ -395,7 +393,7 @@ pub unsafe extern "system" fn RtlpInsertFreeBlockHelper(
     }
 
     if BlockSize > (*Heap).DeCommitFreeBlockThreshold as SIZE_T {
-        let mut ListEntry: PLIST_ENTRY = (*free_hint_slot(Heap, 0));
+        let mut ListEntry: PLIST_ENTRY = *free_hint_slot(Heap, 0) ;
 
         if ListEntry.is_null() {
             (*free_hint_slot(Heap, 0)) = core::ptr::addr_of_mut!((*FreeEntry).FreeList);
@@ -431,7 +429,7 @@ pub unsafe extern "system" fn RtlpInsertFreeBlockHelper(
 
     if !(*free_hint_slot(Heap, HintIndex as usize)).is_null() {
         InsertHeadList(
-            (*free_hint_slot(Heap, HintIndex as usize)),
+            *free_hint_slot(Heap, HintIndex as usize) ,
             core::ptr::addr_of_mut!((*FreeEntry).FreeList),
         );
 
@@ -451,7 +449,7 @@ pub unsafe extern "system" fn RtlpInsertFreeBlockHelper(
     NextHintIndex = RtlFindSetBits(core::ptr::addr_of_mut!((*Heap).FreeHintBitmap), 1, HintIndex);
     if (NextHintIndex == 0) || (NextHintIndex > HintIndex) {
         InsertTailList(
-            (*free_hint_slot(Heap, NextHintIndex as usize)),
+            *free_hint_slot(Heap, NextHintIndex as usize) ,
             core::ptr::addr_of_mut!((*FreeEntry).FreeList),
         );
     } else {
@@ -755,7 +753,7 @@ unsafe fn RtlpFindAndCommitPages(
     AddressRequested: PVOID,
 ) -> PHEAP_FREE_ENTRY {
     let mut Current: PLIST_ENTRY;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     Current = (*Segment).UCRSegmentList.Flink;
     while Current != core::ptr::addr_of_mut!((*Segment).UCRSegmentList) {
@@ -837,16 +835,16 @@ unsafe fn RtlpFindAndCommitPages(
     core::ptr::null_mut()
 }
 
-unsafe fn RtlpDeCommitFreeBlock(Heap: PHEAP, mut FreeEntry: PHEAP_FREE_ENTRY, Size: SIZE_T) {
+unsafe fn RtlpDeCommitFreeBlock(Heap: PHEAP, FreeEntry: PHEAP_FREE_ENTRY, Size: SIZE_T) {
     let Segment: PHEAP_SEGMENT;
-    let mut NextEntry: PHEAP_ENTRY;
-    let mut GuardEntry: PHEAP_ENTRY;
-    let UcrDescriptor: PHEAP_UCR_DESCRIPTOR;
+    let NextEntry: PHEAP_ENTRY;
+    let _GuardEntry: PHEAP_ENTRY;
+    let _UcrDescriptor: PHEAP_UCR_DESCRIPTOR;
     let mut PrecedingSize: SIZE_T;
-    let mut DecommitSize: SIZE_T;
+    let _DecommitSize: SIZE_T;
     let mut DecommitBase: ULONG_PTR;
     let DecommitEnd: ULONG_PTR;
-    let Status: NTSTATUS;
+    let _Status: NTSTATUS;
 
     /* We can't decommit if there is a commit routine! */
     if (*Heap).CommitRoutine.is_some() {
@@ -1137,7 +1135,7 @@ pub unsafe extern "system" fn RtlpDestroyHeapSegment(Segment: PHEAP_SEGMENT) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlpCoalesceHeap(Heap: PHEAP) -> PHEAP_FREE_ENTRY {
+pub unsafe extern "system" fn RtlpCoalesceHeap(_Heap: PHEAP) -> PHEAP_FREE_ENTRY {
     core::ptr::null_mut()
 }
 #[no_mangle]
@@ -1147,7 +1145,7 @@ pub unsafe extern "system" fn RtlpCoalesceFreeBlocks(
     FreeSize: PSIZE_T,
     mut Remove: BOOLEAN,
 ) -> PHEAP_FREE_ENTRY {
-    let mut CurrentEntry: PHEAP_FREE_ENTRY;
+    let CurrentEntry: PHEAP_FREE_ENTRY;
     let NextEntry: PHEAP_FREE_ENTRY;
     let mut SegmentOffset: UCHAR;
 
@@ -2513,7 +2511,7 @@ pub unsafe extern "system" fn RtlReAllocateHeap(
     let NewExtra: PHEAP_ENTRY_EXTRA;
     let mut AllocationSize: SIZE_T;
     let mut FreeSize: SIZE_T;
-    let DecommitSize: SIZE_T;
+    let _DecommitSize: SIZE_T;
     let mut HeapLocked: BOOLEAN = 0u8;
     let NewBaseAddress: PVOID;
     let SplitBlock: PHEAP_FREE_ENTRY;
@@ -2830,7 +2828,7 @@ pub unsafe extern "system" fn RtlReAllocateHeap(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlCompactHeap(Heap: HANDLE, Flags: ULONG) -> ULONG {
+pub unsafe extern "system" fn RtlCompactHeap(_Heap: HANDLE, _Flags: ULONG) -> ULONG {
     0
 }
 
@@ -2947,8 +2945,8 @@ pub unsafe extern "system" fn RtlpCheckInUsePattern(HeapEntry: PHEAP_ENTRY) -> B
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpValidateHeapHeaders(
-    Heap: PHEAP,
-    Recalculate: BOOLEAN,
+    _Heap: PHEAP,
+    _Recalculate: BOOLEAN,
 ) -> BOOLEAN {
     1u8
 }
@@ -3032,7 +3030,7 @@ pub unsafe extern "system" fn RtlpValidateHeapSegment(
     FreeEntriesCount: PULONG,
     TotalFreeSize: PSIZE_T,
     TagEntries: PSIZE_T,
-    PseudoTagEntries: PSIZE_T,
+    _PseudoTagEntries: PSIZE_T,
 ) -> BOOLEAN {
     let mut UcrDescriptor: PHEAP_UCR_DESCRIPTOR;
     let mut UcrEntry: PLIST_ENTRY;
@@ -3372,8 +3370,8 @@ pub unsafe extern "system" fn RtlValidateHeap(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlEnumProcessHeaps(
-    HeapEnumerationRoutine: PHEAP_ENUMERATION_ROUTINE,
-    lParam: PVOID,
+    _HeapEnumerationRoutine: PHEAP_ENUMERATION_ROUTINE,
+    _lParam: PVOID,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -3385,8 +3383,8 @@ pub unsafe extern "system" fn RtlValidateProcessHeaps() -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlZeroHeap(
-    HeapHandle: PVOID,
-    Flags: ULONG,
+    _HeapHandle: PVOID,
+    _Flags: ULONG,
 ) -> BOOLEAN {
     0u8
 }
@@ -3559,57 +3557,57 @@ pub unsafe extern "system" fn RtlGetUserInfoHeap(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlUsageHeap(
-    Heap: HANDLE,
-    Flags: ULONG,
-    Usage: PRTL_HEAP_USAGE,
+    _Heap: HANDLE,
+    _Flags: ULONG,
+    _Usage: PRTL_HEAP_USAGE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlQueryTagHeap(
-    HeapHandle: PVOID,
-    Flags: ULONG,
-    TagIndex: USHORT,
-    ResetCounters: BOOLEAN,
-    HeapTagInfo: PRTL_HEAP_TAG_INFO,
+    _HeapHandle: PVOID,
+    _Flags: ULONG,
+    _TagIndex: USHORT,
+    _ResetCounters: BOOLEAN,
+    _HeapTagInfo: PRTL_HEAP_TAG_INFO,
 ) -> PWSTR {
     core::ptr::null_mut()
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlExtendHeap(
-    Heap: HANDLE,
-    Flags: ULONG,
-    P: PVOID,
-    Size: SIZE_T,
+    _Heap: HANDLE,
+    _Flags: ULONG,
+    _P: PVOID,
+    _Size: SIZE_T,
 ) -> ULONG {
     0
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlCreateTagHeap(
-    HeapHandle: HANDLE,
-    Flags: ULONG,
-    TagName: PWSTR,
-    TagSubName: PWSTR,
+    _HeapHandle: HANDLE,
+    _Flags: ULONG,
+    _TagName: PWSTR,
+    _TagSubName: PWSTR,
 ) -> ULONG {
     0
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlWalkHeap(HeapHandle: HANDLE, HeapEntry: PVOID) -> NTSTATUS {
+pub unsafe extern "system" fn RtlWalkHeap(_HeapHandle: HANDLE, _HeapEntry: PVOID) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlProtectHeap(HeapHandle: PVOID, ReadOnly: BOOLEAN) -> PVOID {
+pub unsafe extern "system" fn RtlProtectHeap(_HeapHandle: PVOID, _ReadOnly: BOOLEAN) -> PVOID {
     core::ptr::null_mut()
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlSetHeapInformation(
-    HeapHandle: HANDLE,
+    _HeapHandle: HANDLE,
     HeapInformationClass: HEAP_INFORMATION_CLASS,
     HeapInformation: PVOID,
     HeapInformationLength: SIZE_T,
@@ -3717,7 +3715,7 @@ pub unsafe extern "system" fn RtlMultipleFreeHeap(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlQueryProcessHeapInformation(
-    DebugBuffer: *mut _DEBUG_BUFFER,
+    _DebugBuffer: *mut _DEBUG_BUFFER,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }

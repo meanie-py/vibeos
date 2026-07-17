@@ -45,11 +45,9 @@ unsafe fn IntDPtoLP(pdc: *mut DC, ppt: LPPOINT, count: i32) -> BOOL {
 #[cfg(not(target_arch = "x86"))] extern "C" { fn CLIPPING_UpdateGCRegion(pdc: PDC); }
 
 // ── DC-lifecycle shared preamble (hand-added; macros/consts rustconv can't see) ──
-use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::STATUS_SUCCESS;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
 // GDITAG_HMGR_LOOKASIDE_DC_TYPE = '1alG' (big-endian multichar)
-use crate::dib_helpers::BitsPerFormat;
 // EXLATEOBJ_* real ENGAPI (xlateobj.rs) — declare extern, same-ABI (mirror fillshap).
 extern "system" {
     fn EXLATEOBJ_vInitialize(pexlo: PEXLATEOBJ, ppalSrc: *mut PALETTE, ppalDst: *mut PALETTE, c1: COLORREF, c2: COLORREF, c3: COLORREF);
@@ -742,7 +740,7 @@ pub unsafe extern "C" fn DCU_SetDcUndeletable(hDC: HDC) {
         return;
     }
 
-    (*dc).fs |= (DC_PERMANANT as i32);
+    (*dc).fs |= DC_PERMANANT as i32 ;
     DC_UnlockDc(dc);
     return;
 }
@@ -919,7 +917,7 @@ pub unsafe extern "C" fn IntGdiSetHookFlags(hDC: HDC, Flags: u16) -> u16 {
     wRet = ((*dc).fs & (DC_DIRTY_RAO as i32)) as u16;
 
     if (Flags & DCHF_INVALIDATEVISRGN as u16) != 0 {
-        (*dc).fs |= (DC_DIRTY_RAO as i32);
+        (*dc).fs |= DC_DIRTY_RAO as i32 ;
     } else if (Flags & DCHF_VALIDATEVISRGN as u16) != 0 || Flags == 0 {
         //(*dc).fs &= !(DC_DIRTY_RAO as i32);
     }
@@ -1675,9 +1673,9 @@ pub unsafe extern "C" fn NtGdiSetBoundsRect(
 
     if (flags & DCB_ENABLE) != 0 {
         if (flags & DCB_WINDOWMGR) == 0 {
-            (*pdc).fs |= (DC_ACCUM_APP as i32);
+            (*pdc).fs |= DC_ACCUM_APP as i32 ;
         } else {
-            (*pdc).fs |= (DC_ACCUM_WMGR as i32);
+            (*pdc).fs |= DC_ACCUM_WMGR as i32 ;
         }
     }
     if (flags & DCB_DISABLE) != 0 {

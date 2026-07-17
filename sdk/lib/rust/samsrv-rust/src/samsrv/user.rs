@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -142,7 +141,7 @@ pub unsafe extern "C" fn SampRemoveGroupMembershipFromUser(
     GroupId: ULONG,
 ) -> NTSTATUS {
     let mut GroupsBuffer: PGROUP_MEMBERSHIP = core::ptr::null_mut();
-    let mut GroupsCount: ULONG;
+    let GroupsCount: ULONG;
     let mut Length: ULONG = 0;
     let mut i: ULONG;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -462,7 +461,7 @@ pub unsafe extern "C" fn SampRemoveUserFromAllGroups(UserObject: PSAM_DB_OBJECT)
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn SampRemoveUserFromAllAliases(UserObject: PSAM_DB_OBJECT) -> NTSTATUS {
+pub unsafe extern "C" fn SampRemoveUserFromAllAliases(_UserObject: PSAM_DB_OBJECT) -> NTSTATUS {
     FIXME!(b"(%p)\n\0".as_ptr() as PCHAR, UserObject);
     STATUS_SUCCESS
 }
@@ -713,7 +712,7 @@ pub unsafe extern "C" fn SampGetLogonHoursAttribute(
 ) -> NTSTATUS {
     let mut RawBuffer: PUCHAR = core::ptr::null_mut();
     let mut Length: ULONG = 0;
-    let mut BufferLength: ULONG;
+    let BufferLength: ULONG;
     let mut Status: NTSTATUS;
 
     Status = SampGetObjectAttribute(
@@ -783,7 +782,7 @@ pub unsafe extern "C" fn SampSetLogonHoursAttribute(
     LogonHours: PSAMPR_LOGON_HOURS,
 ) -> NTSTATUS {
     let mut RawBuffer: PUCHAR = core::ptr::null_mut();
-    let mut BufferLength: ULONG;
+    let BufferLength: ULONG;
     let mut Length: ULONG = 0;
     let Status: NTSTATUS;
 

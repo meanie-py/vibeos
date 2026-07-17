@@ -8586,7 +8586,7 @@ mod path_wave {
     use super::{
         rtl_alloc, rtl_free, wcslen, RtlAppendUnicodeStringToString, RtlCopyUnicodeString,
         RtlDetermineDosPathNameType_U, RtlDetermineDosPathNameType_Ustr, RtlEqualUnicodeString,
-        RtlFindCharInUnicodeString, RtlFreeUnicodeString, RtlInitUnicodeString,
+        RtlFindCharInUnicodeString, RtlFreeUnicodeString,
         RtlInitUnicodeStringEx, RtlIsDosDeviceName_Ustr, RtlPrefixUnicodeString,
         RtlQueryEnvironmentVariable_U, RtlUpcaseUnicodeChar, RTL_BUFFER, UNICODE_STRING,
     };
@@ -10931,7 +10931,7 @@ mod path_wave {
         PathType: *mut RTL_PATH_TYPE,
         LengthNeeded: PSIZE_T,
     ) -> NTSTATUS {
-        let mut Status: NTSTATUS;
+        let Status: NTSTATUS;
         let mut StaticBuffer: PWCHAR;
         let mut ShortName: PCWCH = core::ptr::null_mut();
         let mut Length: ULONG;

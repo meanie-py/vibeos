@@ -3,7 +3,6 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{IMAGE_BASE_RELOCATION, IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, PCSTR, PIMAGE_BASE_RELOCATION, PIMAGE_DATA_DIRECTORY, PIMAGE_DOS_HEADER, PIMAGE_NT_HEADERS, PIMAGE_OPTIONAL_HEADER32, PIMAGE_OPTIONAL_HEADER64, PIMAGE_SECTION_HEADER, PUINT64, PULONGLONG, RtlImageNtHeaderEx};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // No translatable file-scope declarations.

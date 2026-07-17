@@ -1,9 +1,6 @@
 use crate::shim::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{EXCEPTION_POINTERS, LIST_ENTRY, PCONTEXT, PEXCEPTION_RECORD, PVECTORED_EXCEPTION_HANDLER, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlEnterCriticalSection, RtlFreeHeap, RtlInitializeCriticalSection, RtlLeaveCriticalSection};
-use core::ffi::c_void;
 
 
 // ---- file-scope preamble (translated) ----
