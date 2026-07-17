@@ -1,6 +1,5 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentProcessWin32Process};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub const GDIDCATTRFREE: usize = 8;

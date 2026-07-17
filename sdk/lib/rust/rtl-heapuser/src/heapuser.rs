@@ -1,5 +1,3 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{HANDLE, PPEB, RTL_CRITICAL_SECTION, RtlEnterCriticalSection, RtlGetCurrentPeb, RtlInitializeCriticalSection, RtlLeaveCriticalSection};
 

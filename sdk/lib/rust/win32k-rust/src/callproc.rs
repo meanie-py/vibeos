@@ -1,7 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::PsGetCurrentThreadWin32Thread;
 use ntkrnl_sys::interlocked::InterlockedExchangePointer;
-use core::ffi::c_void;
 
 // UserHMGetHandle(obj) = obj->head.h (ntuser.h:230 macro, no symbol). head is the
 // first field and h its first field, so the handle is at object offset 0 — same

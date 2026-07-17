@@ -1036,7 +1036,7 @@ unsafe fn IntMsgCreateStructW_impl(
 
     if (*WindowName).Length != 0 {
         let mut Name: _UNICODE_STRING = core::mem::zeroed();
-        Name.Buffer = ((*WindowName).Buffer as _);
+        Name.Buffer = (*WindowName).Buffer as _ ;
         Name.Length = core::cmp::min((*WindowName).Length, MAXUSHORT as _) as u16;
         Name.MaximumLength = core::cmp::min((*WindowName).MaximumLength(), MAXUSHORT as _) as u16;
 
@@ -1212,7 +1212,7 @@ unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam:
             if winpos.is_null() {
                 return 0;
             }
-            lRes = ((co_WinPosSetWindowPos(
+            lRes = (co_WinPosSetWindowPos(
                 pWnd,
                 (*winpos).hwndInsertAfter,
                 (*winpos).x,
@@ -1220,7 +1220,7 @@ unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam:
                 (*winpos).cx,
                 (*winpos).cy,
                 (*winpos).flags,
-            ) as LRESULT));
+            ) as LRESULT) ;
             ExFreePoolWithTag(winpos as *mut core::ffi::c_void, USERTAG_SWP);
             return lRes;
         }
@@ -1234,7 +1234,7 @@ unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam:
                     1u8,
                 );
             } else {
-                co_UserDestroyWindow((pWnd as _));
+                co_UserDestroyWindow(pWnd as _ );
             }
         }
         _ => {}
@@ -1296,7 +1296,7 @@ unsafe fn IntDispatchMessage_impl(pMsg: PMSG) -> LRESULT {
     if ((*pMsg).message == WM_SYSTIMER || (*pMsg).message == WM_TIMER) && (*pMsg).lParam != 0 {
         if (*pMsg).message == WM_TIMER {
             if ValidateTimerCallback(pti, (*pMsg).lParam) != 0 {
-                Time = ((EngGetTickCount32() as i32));
+                Time = (EngGetTickCount32() as i32) ;
                 retval = co_IntCallWindowProc(
                     core::mem::transmute::<LPARAM, WNDPROC>((*pMsg).lParam),
                     1,
@@ -1311,7 +1311,7 @@ unsafe fn IntDispatchMessage_impl(pMsg: PMSG) -> LRESULT {
         } else {
             let pTimer: PTIMER = FindSystemTimer(pMsg);
             if !pTimer.is_null() && (*pTimer).pfn.is_some() {
-                Time = ((EngGetTickCount32() as i32));
+                Time = (EngGetTickCount32() as i32) ;
                 ((*pTimer).pfn.unwrap())(
                     (*pMsg).hwnd,
                     WM_SYSTIMER,
@@ -1579,7 +1579,7 @@ unsafe fn co_IntWaitMessage(
     let mut Msg: MSG = core::mem::zeroed();
     let mut ExtraInfo: LONG_PTR = 0;
 
-    pti = (PsGetCurrentThreadWin32Thread() as _);
+    pti = PsGetCurrentThreadWin32Thread() as _ ;
 
     loop {
         if co_IntPeekMessage(
@@ -1970,7 +1970,7 @@ unsafe fn UserPostMessage(
         let Window: PWND = UserGetWindowObject(Wnd);
         if Window.is_null() {
             ERR!(b"UserPostMessage: Invalid handle 0x%p Msg 0x%x!\n\0".as_ptr() as *const i8, Wnd, Msg);
-            return ((FALSE as i32));
+            return (FALSE as i32) ;
         }
 
         pti = head_pti(Window);
@@ -2386,7 +2386,7 @@ unsafe fn co_IntSendMessageWithCallBack(
             break 'cleanup;
         }
 
-        Win32Thread = (PsGetCurrentThreadWin32Thread() as _);
+        Win32Thread = PsGetCurrentThreadWin32Thread() as _ ;
 
         if Win32Thread.is_null() || (*Win32Thread).TIF_flags & TIF_INCLEANUP != 0 {
             break 'cleanup;
@@ -2501,7 +2501,7 @@ unsafe fn co_IntSendMessageWithCallBack(
         (*Message).ptiCallBackSender = Win32Thread;
         (*Message).CompletionCallback = CompletionCallback;
         (*Message).CompletionCallbackContext = CompletionCallbackContext;
-        (*Message).HookMessage = ((MSQ_NORMAL as UINT as i32));
+        (*Message).HookMessage = (MSQ_NORMAL as UINT as i32) ;
         (*Message).HasPackedLParam = (lParamBufferSize > 0) as BOOL;
         (*Message).QS_Flags = QS_SENDMESSAGE;
         (*Message).flags = SMF_RECEIVERFREE;
@@ -2657,7 +2657,7 @@ unsafe extern "system" fn IntGetQueueStatus(mut Changes: DWORD) -> DWORD {
     Result = ((((*(*pti).pcti).fsWakeBits & ((Changes as u16))) as u16 as u32) << 16)
         | ((((*(*pti).pcti).fsChangeBits & ((Changes as u16))) as u16) as u32);
 
-    (*(*pti).pcti).fsChangeBits &= ((!Changes as u16));
+    (*(*pti).pcti).fsChangeBits &= (!Changes as u16) ;
 
     Result
 }
@@ -2861,7 +2861,7 @@ pub unsafe extern "C" fn NtUserDragDetect(hWnd: HWND, pt: POINT) -> BOOL {
                 if msg.message == WM_MOUSEMOVE {
                     let tmp_x = LOWORD(msg.lParam as DWORD) as i16 as LONG;
                     let tmp_y = HIWORD(msg.lParam as DWORD) as i16 as LONG;
-                    if RECTL_bPointInRect((&mut rect as *mut _ as _), tmp_x, tmp_y) == 0 {
+                    if RECTL_bPointInRect(&mut rect as *mut _ as _ , tmp_x, tmp_y) == 0 {
                         co_UserSetCapture(core::ptr::null_mut());
                         Ret = 1;
                         break 'exit;

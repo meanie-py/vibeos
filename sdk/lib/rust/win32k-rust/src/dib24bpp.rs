@@ -1,6 +1,5 @@
 use win32k_sys::win32k::*;
 
-use core::ffi::c_void;
 use crate::dib_helpers::*;
 
 extern "C" {
@@ -675,7 +674,7 @@ pub unsafe extern "C" fn DIB_24BPP_AlphaBlend(
             }
 
             DstPixel.col.red = Clamp8((*Dst as ULONG * (255 - Alpha as ULONG)) / 255 + SrcPixel.col.red as ULONG);
-            DstPixel.col.green = Clamp8((*Dst.offset(1) as ULONG * (255 - Alpha as ULONG) / 255 + SrcPixel.col.green as ULONG));
+            DstPixel.col.green = Clamp8(*Dst.offset(1) as ULONG * (255 - Alpha as ULONG) / 255 + SrcPixel.col.green as ULONG );
             DstPixel.col.blue = Clamp8((*Dst.offset(2) as ULONG * (255 - Alpha as ULONG)) / 255 + SrcPixel.col.blue as ULONG);
             *Dst = DstPixel.col.red;
             Dst = Dst.offset(1);

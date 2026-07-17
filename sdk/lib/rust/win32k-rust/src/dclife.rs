@@ -8,7 +8,6 @@ use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::STATUS_SUCCESS;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
 // GDITAG_HMGR_LOOKASIDE_DC_TYPE = '1alG' (big-endian multichar)
-use crate::dib_helpers::BitsPerFormat;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -489,7 +488,7 @@ pub unsafe extern "C" fn DC_vInitDc(
     (*pdc).hsem = (*ppdev).hsemDevLock as _;
     (*pdc).flGraphicsCaps = (*ppdev).devinfo.flGraphicsCaps;
     (*pdc).flGraphicsCaps2 = (*ppdev).devinfo.flGraphicsCaps2;
-    (*pdc).fs = (DC_DIRTY_RAO as i32);
+    (*pdc).fs = DC_DIRTY_RAO as i32 ;
 
     (*pdc).pdcattr = core::ptr::addr_of_mut!((*pdc).dcattr);
     (*pdc).dcattr.pvLDC = core::ptr::null_mut();
@@ -860,7 +859,7 @@ unsafe fn DC_vUpdateDC(pdc: PDC) {
     (*pdc).flGraphicsCaps = (*ppdev).devinfo.flGraphicsCaps;
     (*pdc).flGraphicsCaps2 = (*ppdev).devinfo.flGraphicsCaps2;
 
-    (*(*pdc).pdcattr).ulDirty_ |= (0x00010000 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020);
+    (*(*pdc).pdcattr).ulDirty_ |= 0x00010000 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020 ;
 }
 
 #[cfg(target_arch = "x86")]
@@ -1612,7 +1611,7 @@ pub unsafe extern "C" fn MakeInfoDC(pdc: PDC, bSet: BOOL) -> BOOL {
         }
 
         pSurface = (*pdc).dclevel.pSurface;
-        (*pdc).fs |= (DC_TEMPINFODC as i32);
+        (*pdc).fs |= DC_TEMPINFODC as i32 ;
         (*pdc).pSurfInfo = pSurface as _;
         (*pdc).dctype = DCTYPE_INFO;
         (*pdc).dclevel.pSurface = core::ptr::null_mut();

@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 
 // LFONT_ShareUnlockFont is a macro (text.h): GDIOBJ_vDereferenceObject((POBJ)plfnt)
 #[inline(always)] unsafe fn LFONT_ShareUnlockFont(plfnt: PLFONT) { GDIOBJ_vDereferenceObject(plfnt as POBJ); }

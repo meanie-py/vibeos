@@ -1,10 +1,7 @@
 use crate::shim::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{PIMAGE_NT_HEADERS, PLDR_DATA_TABLE_ENTRY, PRTL_TRACE_BLOCK, PRTL_TRACE_DATABASE, PRTL_TRACE_ENUMERATE, PRTL_UNLOAD_EVENT_TRACE, RTL_TRACE_HASH_FUNCTION, RTL_UNLOAD_EVENT_TRACE, RtlImageNtHeader};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub static mut RtlpUnloadEventTrace: [RTL_UNLOAD_EVENT_TRACE; RTL_UNLOAD_EVENT_TRACE_NUMBER as usize] =

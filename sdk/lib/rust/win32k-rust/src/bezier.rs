@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 use ntkrnl_sys::ddk::ExAllocatePoolWithTag;
 
 // ---- file-scope preamble (translated) ----
@@ -98,12 +97,12 @@ unsafe fn GDI_InternalBezier(
 
     if level == 0 || BezierCheck(level, Points) != 0 {
         if *nPtsOut == 0 {
-            (**PtsOut.offset(0)).x = (((*Points.offset(0)).x + (1 << (4 - 1))) >> 4);
-            (**PtsOut.offset(0)).y = (((*Points.offset(0)).y + (1 << (4 - 1))) >> 4);
+            (**PtsOut.offset(0)).x = ((*Points.offset(0)).x + (1 << (4 - 1))) >> 4 ;
+            (**PtsOut.offset(0)).y = ((*Points.offset(0)).y + (1 << (4 - 1))) >> 4 ;
             *nPtsOut = 1;
         }
-        (**PtsOut.offset(*nPtsOut as isize)).x = (((*Points.offset(3)).x + (1 << (4 - 1))) >> 4);
-        (**PtsOut.offset(*nPtsOut as isize)).y = (((*Points.offset(3)).y + (1 << (4 - 1))) >> 4);
+        (**PtsOut.offset(*nPtsOut as isize)).x = ((*Points.offset(3)).x + (1 << (4 - 1))) >> 4 ;
+        (**PtsOut.offset(*nPtsOut as isize)).y = ((*Points.offset(3)).y + (1 << (4 - 1))) >> 4 ;
         *nPtsOut += 1;
     } else {
         let mut Points2: [POINT; 4] = core::mem::zeroed();

@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 
 // Per-format renderer entrypoints + generic stretch/alpha (DIB_XXBPP_*),
 // referenced by DibFunctionsForBitmapFormat. The DIB_NBPP_* live in the

@@ -1,7 +1,6 @@
 #![allow(non_snake_case, non_upper_case_globals, unused_unsafe)]
 use win32k_sys::win32k::*;
 use ntkrnl_sys::rtl::{RtlZeroMemory, RtlCopyMemory};
-use core::ffi::c_void;
 
 // Debug-channel macros — no kernel symbol, no-op.
 macro_rules! ERR   { ($($t:tt)*) => {{}}; }

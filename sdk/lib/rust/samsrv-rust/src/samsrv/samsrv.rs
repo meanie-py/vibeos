@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -65,7 +64,7 @@ unsafe fn SampInitHashes() -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn SamIConnect(
-    ServerName: PSAMPR_SERVER_NAME,
+    _ServerName: PSAMPR_SERVER_NAME,
     ServerHandle: *mut SAMPR_HANDLE,
     mut DesiredAccess: ACCESS_MASK,
     Trusted: BOOLEAN,

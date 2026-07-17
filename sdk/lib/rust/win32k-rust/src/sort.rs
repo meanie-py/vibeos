@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 
 extern "C" {
     fn qsort( base: *mut core::ffi::c_void, num: usize, size: usize, compar: SORTCOMP, );

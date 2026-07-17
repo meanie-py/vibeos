@@ -1,10 +1,7 @@
 use crate::shim::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{EXCEPTION_RECORD, KD_SYMBOLS_INFO, NtQueryDebugFilterState, NtSetDebugFilterState, PCCH, PCH, PIMAGE_NT_HEADERS, PSTRING, PTEB_ACTIVE_FRAME, RtlImageNtHeader, STRING, va_list};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{KD_SYMBOLS_INFO, NtQueryDebugFilterState, NtSetDebugFilterState, PCCH, PCH, PSTRING, PTEB_ACTIVE_FRAME, RtlImageNtHeader, STRING, va_list};
 
 extern "C" {
     fn strlen(s: PCCH) -> usize;

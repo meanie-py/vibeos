@@ -12,7 +12,7 @@
 use win32k_sys::win32k::*;
 extern "C" { fn w32r_KeSaveFloatingPointState(p: *mut core::ffi::c_void) -> NTSTATUS; fn w32r_KeRestoreFloatingPointState(p: *mut core::ffi::c_void); }
 use ntkrnl_sys::base::NT_SUCCESS;
-use core::ffi::{c_void, c_char, c_uint};
+use core::ffi::{c_void, c_uint};
 use core::cmp::min;
 
 // usize-accepting wrappers over the ddk/rtl primitives (arch SIZE_T = u32 on i386);
@@ -182,11 +182,11 @@ pub unsafe extern "C" fn PATH_CreatePath(mut count: core::ffi::c_int) -> PPATH {
 
     (*pPath).numEntriesAllocated = count;
 
-    (*pPath).pPoints = (ExAllocatePoolWithTag(
+    (*pPath).pPoints = ExAllocatePoolWithTag(
         PagedPool,
         (count as usize) * core::mem::size_of::<POINT>(),
         TAG_PATH,
-    ) as *mut POINT as _);
+    ) as *mut POINT as _;
     RtlZeroMemory(
         (*pPath).pPoints as *mut core::ffi::c_void,
         (count as usize) * core::mem::size_of::<POINT>(),
@@ -202,7 +202,7 @@ pub unsafe extern "C" fn PATH_CreatePath(mut count: core::ffi::c_int) -> PPATH {
     );
 
     (*pPath).numEntriesUsed = 0;
-    (*pPath).newStroke = (1u8 as _);
+    (*pPath).newStroke = 1u8 as _;
     (*pPath).state = PATH_Open;
     (*pPath).pos.x = 0;
     (*pPath).pos.y = 0;
@@ -251,15 +251,15 @@ unsafe extern "fastcall" fn PATH_Delete(hPath: HPATH) -> BOOL {
 unsafe extern "C" fn PATH_Delete(hPath: HPATH) -> BOOL {
     let pPath: PPATH;
     if hPath.is_null() {
-        return (FALSE as _);
+        return FALSE as _;
     }
     pPath = PATH_LockPath(hPath);
     if pPath.is_null() {
-        return (FALSE as _);
+        return FALSE as _;
     }
     PATH_DestroyGdiPath(pPath);
     GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*pPath).BaseObject));
-    (TRUE as _)
+    TRUE as _
 }
 
 #[cfg(target_arch = "x86")]
@@ -274,7 +274,7 @@ pub unsafe extern "fastcall" fn IntGdiCloseFigure(pPath: PPATH) {
 pub unsafe extern "C" fn IntGdiCloseFigure(pPath: PPATH) {
     if (*pPath).numEntriesUsed != 0 {
         *(*pPath).pFlags.add(((*pPath).numEntriesUsed - 1) as usize) |= PT_CLOSEFIGURE as u8;
-        (*pPath).newStroke = (1u8 as _);
+        (*pPath).newStroke = 1u8 as _;
     }
 }
 
@@ -538,7 +538,7 @@ unsafe fn PATH_ReserveEntries_impl(pPath: PPATH, numEntries: INT) -> BOOL {
             ExFreePoolWithTag((*pPath).pFlags as *mut core::ffi::c_void, TAG_PATH);
         }
 
-        (*pPath).pPoints = (pPointsNew as _);
+        (*pPath).pPoints = pPointsNew as _;
         (*pPath).pFlags = pFlagsNew;
         (*pPath).numEntriesAllocated = numEntriesToAllocate;
     }
@@ -645,10 +645,10 @@ unsafe fn add_log_points(dc: *mut DC, path: PPATH, points: *const POINT, count: 
     ret = core::ptr::addr_of_mut!(*(*path).pFlags.offset((*path).numEntriesUsed as isize));
     core::ptr::copy_nonoverlapping(
         points,
-        ((*path).pPoints.offset((*path).numEntriesUsed as isize) as _),
+        (*path).pPoints.offset((*path).numEntriesUsed as isize) as _,
         count as usize,
     );
-    w32r_IntLPtoDP(dc, ((*path).pPoints.offset((*path).numEntriesUsed as isize) as _), count as INT);
+    w32r_IntLPtoDP(dc, (*path).pPoints.offset((*path).numEntriesUsed as isize) as _, count as INT);
     core::ptr::write_bytes(ret, type_, count as usize);
     (*path).numEntriesUsed += count as INT;
     ret
@@ -662,7 +662,7 @@ unsafe fn add_points(path: PPATH, points: *const POINT, count: DWORD, type_: BYT
     let ret = core::ptr::addr_of_mut!(*(*path).pFlags.offset((*path).numEntriesUsed as isize));
     core::ptr::copy_nonoverlapping(
         points,
-        ((*path).pPoints.offset((*path).numEntriesUsed as isize) as _),
+        (*path).pPoints.offset((*path).numEntriesUsed as isize) as _,
         count as usize,
     );
     core::ptr::write_bytes(ret, type_, count as usize);
@@ -691,7 +691,7 @@ unsafe fn start_new_stroke(path: PPATH) -> BOOL {
     }
 
     (*path).newStroke = 0;
-    (add_points(path, (core::ptr::addr_of_mut!((*path).pos) as _), 1, PT_MOVETO as BYTE) != core::ptr::null_mut()) as BOOL
+    (add_points(path, core::ptr::addr_of_mut!((*path).pos) as _, 1, PT_MOVETO as BYTE) != core::ptr::null_mut()) as BOOL
 }
 
 unsafe fn update_current_pos(path: PPATH) {
@@ -738,7 +738,7 @@ unsafe fn PATH_MoveTo_impl(dc: PDC, pPath: PPATH) -> BOOL {
         DbgPrint(b"MoveTo has changed\n\0".as_ptr() as *const i8);
         (*pPath).newStroke = 1;
         IntGetCurrentPositionEx(dc, core::ptr::addr_of_mut!((*pPath).pos));
-        w32r_IntLPtoDP(dc, (core::ptr::addr_of_mut!((*pPath).pos) as _), 1);
+        w32r_IntLPtoDP(dc, core::ptr::addr_of_mut!((*pPath).pos) as _, 1);
         return 1;
     }
 
@@ -775,7 +775,7 @@ unsafe fn PATH_LineTo_impl(dc: PDC, x: INT, y: INT) -> BOOL {
         if (*pPath).newStroke != 0 {
             DbgPrint(b"Line To : New Stroke\n\0".as_ptr() as *const i8);
             (*pPath).newStroke = 0;
-            IntGetCurrentPositionEx(dc, (core::ptr::addr_of_mut!(pointCurPos) as _));
+            IntGetCurrentPositionEx(dc, core::ptr::addr_of_mut!(pointCurPos) as _);
             w32r_CoordLPtoDP(dc, &mut pointCurPos);
             if PATH_AddEntry(pPath, &pointCurPos, PT_MOVETO as BYTE) == 0 {
                 PATH_UnlockPath(pPath);
@@ -844,10 +844,10 @@ unsafe fn PATH_Rectangle_impl(
     points[3].y = rect.bottom;
 
     if (*dc).dclevel.flPath & DCPATH_CLOCKWISE != 0 {
-        reverse_points((points.as_mut_ptr() as _), 4);
+        reverse_points(points.as_mut_ptr() as _, 4);
     }
 
-    type_ = add_points(pPath, (points.as_ptr() as _), 4, PT_LINETO as BYTE);
+    type_ = add_points(pPath, points.as_ptr() as _, 4, PT_LINETO as BYTE);
     if type_.is_null() {
         PATH_UnlockPath(pPath);
         return 0;
@@ -1275,7 +1275,7 @@ unsafe fn PATH_Arc_impl(
 
         if lines == GdiTypeArcTo as INT && (*pPath).newStroke != 0 {
             (*pPath).newStroke = 0;
-            IntGetCurrentPositionEx(dc, (core::ptr::addr_of_mut!(pointCurPos) as _));
+            IntGetCurrentPositionEx(dc, core::ptr::addr_of_mut!(pointCurPos) as _);
             w32r_CoordLPtoDP(dc, &mut pointCurPos);
             if PATH_AddEntry(pPath, &pointCurPos, PT_MOVETO as BYTE) == 0 {
                 Ret = 0;
@@ -1471,7 +1471,7 @@ unsafe fn PATH_PolyDraw_impl(
     }
     orig_pos = core::mem::transmute((*pPath).pos);
 
-    IntGetCurrentPositionEx(dc, (core::ptr::addr_of_mut!(cur_pos) as _));
+    IntGetCurrentPositionEx(dc, core::ptr::addr_of_mut!(cur_pos) as _);
 
     DbgPrint(
         b"PPD : Current pos X %d Y %d\n\0".as_ptr() as *const i8,
@@ -1489,10 +1489,10 @@ unsafe fn PATH_PolyDraw_impl(
     while i < cbPoints {
         let ty = *types.add(i as usize);
         if ty == PT_MOVETO as u8 {
-            (*pPath).newStroke = (1u8 as _);
+            (*pPath).newStroke = 1u8 as _;
             (*pPath).pos = core::mem::transmute(*pts.add(i as usize));
-            w32r_IntLPtoDP(dc, (core::ptr::addr_of_mut!((*pPath).pos) as _), 1);
-            lastmove = ((*pPath).numEntriesUsed as _);
+            w32r_IntLPtoDP(dc, core::ptr::addr_of_mut!((*pPath).pos) as _, 1);
+            lastmove = (*pPath).numEntriesUsed as _;
         } else if ty == PT_LINETO as u8 || ty == (PT_LINETO as u8 | PT_CLOSEFIGURE as u8) {
             if add_log_points_new_stroke(dc, pPath, pts.add(i as usize), 1, PT_LINETO as u8) == 0 {
                 PATH_UnlockPath(pPath);
@@ -1790,7 +1790,7 @@ unsafe fn PATH_FlattenPath_impl(pPath: PPATH) -> PPATH {
             x if x == PT_MOVETO as core::ffi::c_int || x == PT_LINETO as core::ffi::c_int => {
                 if PATH_AddEntry(
                     newPath,
-                    ((*pPath).pPoints.offset(srcpt as isize) as _),
+                    (*pPath).pPoints.offset(srcpt as isize) as _,
                     *(*pPath).pFlags.offset(srcpt as isize),
                 ) == 0
                 {
@@ -1802,7 +1802,7 @@ unsafe fn PATH_FlattenPath_impl(pPath: PPATH) -> PPATH {
             x if x == PT_BEZIERTO as core::ffi::c_int => {
                 if PATH_AddFlatBezier(
                     newPath,
-                    ((*pPath).pPoints.offset((srcpt - 1) as isize) as _),
+                    (*pPath).pPoints.offset((srcpt - 1) as isize) as _,
                     (*(*pPath).pFlags.offset((srcpt + 2) as isize) & (PT_CLOSEFIGURE as u8))
                         as core::ffi::c_int,
                 ) == 0
@@ -1889,7 +1889,7 @@ unsafe fn PATH_PathToRegion_impl(
         Rgn,
         (*pPath).pPoints,
         counts,
-        (polygons as _),
+        polygons as _,
         Mode,
     );
 
@@ -1952,7 +1952,7 @@ unsafe fn PATH_FillPathEx_impl(
         return 0;
     }
 
-    if PATH_PathToRegion(pPath, ((*pdcattr).jFillMode as _), Rgn) == 0 {
+    if PATH_PathToRegion(pPath, (*pdcattr).jFillMode as _, Rgn) == 0 {
         REGION_Delete(Rgn);
         return 0;
     }
@@ -2011,7 +2011,7 @@ pub unsafe extern "C" fn PATH_StrokePath(dc: *mut DC, pPath: PPATH) -> BOOL {
 }
 
 unsafe fn PATH_StrokePath_impl(dc: *mut DC, pPath: PPATH) -> BOOL {
-    let mut ret: BOOL = (FALSE as _);
+    let mut ret: BOOL = FALSE as _;
     let mut nLinePts: INT = 0;
     let mut nAlloc: INT;
     let jOldFillMode: INT;
@@ -2032,13 +2032,13 @@ unsafe fn PATH_StrokePath_impl(dc: *mut DC, pPath: PPATH) -> BOOL {
     if w32r_IntIsEffectiveWidePen(pbrLine) != 0 {
         pNewPath = PATH_WidenPathEx(dc, pPath);
         if !pNewPath.is_null() {
-            jOldFillMode = ((*pdcattr).jFillMode as _);
+            jOldFillMode = (*pdcattr).jFillMode as _;
             (*pdcattr).jFillMode = WINDING as _;
             PATH_FillPathEx(dc, pNewPath, pbrLine);
-            (*pdcattr).jFillMode = (jOldFillMode as _);
+            (*pdcattr).jFillMode = jOldFillMode as _;
 
             PATH_Delete((*pNewPath).BaseObject.hHmgr);
-            return (TRUE as _);
+            return TRUE as _;
         }
     }
 
@@ -2049,7 +2049,7 @@ unsafe fn PATH_StrokePath_impl(dc: *mut DC, pPath: PPATH) -> BOOL {
     szWindowExt = (*(*dc).pdcattr).szlWindowExt;
     ptWindowOrg = core::mem::transmute((*(*dc).pdcattr).ptlWindowOrg);
 
-    w32r_MatrixS2XForm((core::ptr::addr_of_mut!(xform) as _), core::ptr::addr_of_mut!((*(*dc).pdcattr).mxWorldToPage));
+    w32r_MatrixS2XForm(core::ptr::addr_of_mut!(xform) as _, core::ptr::addr_of_mut!((*(*dc).pdcattr).mxWorldToPage));
 
     (*pdcattr).iMapMode = MM_TEXT as _;
     (*pdcattr).ptlViewportOrg.x = 0;
@@ -2085,7 +2085,7 @@ unsafe fn PATH_StrokePath_impl(dc: *mut DC, pPath: PPATH) -> BOOL {
             let flag = *(*pPath).pFlags.offset(i as isize);
             if flag == PT_MOVETO as u8 {
                 if nLinePts >= 2 {
-                    IntGdiPolyline(dc, (pLinePts as _), nLinePts);
+                    IntGdiPolyline(dc, pLinePts as _, nLinePts);
                 }
                 nLinePts = 0;
                 *pLinePts.offset(nLinePts as isize) = core::mem::transmute(*(*pPath).pPoints.offset(i as isize));
@@ -2100,13 +2100,13 @@ unsafe fn PATH_StrokePath_impl(dc: *mut DC, pPath: PPATH) -> BOOL {
                     || ((*(*pPath).pFlags.offset((i + 2) as isize)) & !(PT_CLOSEFIGURE as u8))
                         != PT_BEZIERTO as u8
                 {
-                    ret = (FALSE as _);
+                    ret = FALSE as _;
                     break 'end;
                 } else {
                     let mut nBzrPts: INT = 0;
                     let nMinAlloc: INT;
                     let pBzrPts: *mut POINT =
-                        GDI_Bezier(((*pPath).pPoints.offset((i - 1) as isize) as _), 4, &mut nBzrPts);
+                        GDI_Bezier((*pPath).pPoints.offset((i - 1) as isize) as _, 4, &mut nBzrPts);
                     nMinAlloc =
                         nLinePts + ((*pPath).numEntriesUsed as INT - i) + nBzrPts;
                     if nAlloc < nMinAlloc {
@@ -2153,10 +2153,10 @@ unsafe fn PATH_StrokePath_impl(dc: *mut DC, pPath: PPATH) -> BOOL {
             i += 1;
         }
         if nLinePts >= 2 {
-            IntGdiPolyline(dc, (pLinePts as _), nLinePts);
+            IntGdiPolyline(dc, pLinePts as _, nLinePts);
         }
 
-        ret = (TRUE as _);
+        ret = TRUE as _;
     }
 
     if !pLinePts.is_null() {
@@ -2174,12 +2174,12 @@ unsafe fn PATH_StrokePath_impl(dc: *mut DC, pPath: PPATH) -> BOOL {
     (*pdcattr).ptlViewportOrg.x = ptViewportOrg.x;
     (*pdcattr).ptlViewportOrg.y = ptViewportOrg.y;
 
-    XForm2MatrixS(core::ptr::addr_of_mut!((*(*dc).pdcattr).mxWorldToPage), (core::ptr::addr_of_mut!(xform) as _));
+    XForm2MatrixS(core::ptr::addr_of_mut!((*(*dc).pdcattr).mxWorldToPage), core::ptr::addr_of_mut!(xform) as _);
 
     if i > 0 {
         let mut pt: POINT = core::mem::zeroed();
-        IntGetCurrentPositionEx(dc, (core::ptr::addr_of_mut!(pt) as _));
-        w32r_IntDPtoLP(dc, (core::ptr::addr_of_mut!(pt) as _), 1);
+        IntGetCurrentPositionEx(dc, core::ptr::addr_of_mut!(pt) as _);
+        w32r_IntDPtoLP(dc, core::ptr::addr_of_mut!(pt) as _, 1);
         IntGdiMoveToEx(dc, pt.x, pt.y, core::ptr::null_mut());
     }
     ret
@@ -2335,7 +2335,7 @@ unsafe fn IntGdiWidenPath_impl(
             break 'exit;
         }
 
-        w32r_KeSaveFloatingPointState((core::ptr::addr_of_mut!(fpsave) as _));
+        w32r_KeSaveFloatingPointState(core::ptr::addr_of_mut!(fpsave) as _);
 
         i = 0;
         while i < numStrokes {
@@ -2558,15 +2558,15 @@ unsafe fn IntGdiWidenPath_impl(
 
             type_ = add_points(
                 pNewPath,
-                ((*pUpPath).pPoints as _),
+                (*pUpPath).pPoints as _,
                 (*pUpPath).numEntriesUsed as DWORD,
                 PT_LINETO as BYTE,
             );
             *type_.offset(0) = PT_MOVETO as BYTE;
-            reverse_points(((*pDownPath).pPoints as _), (*pDownPath).numEntriesUsed as UINT);
+            reverse_points((*pDownPath).pPoints as _, (*pDownPath).numEntriesUsed as UINT);
             type_ = add_points(
                 pNewPath,
-                ((*pDownPath).pPoints as _),
+                (*pDownPath).pPoints as _,
                 (*pDownPath).numEntriesUsed as DWORD,
                 PT_LINETO as BYTE,
             );
@@ -2590,7 +2590,7 @@ unsafe fn IntGdiWidenPath_impl(
         (*pNewPath).state = PATH_Closed;
         PATH_UnlockPath(pNewPath);
 
-        w32r_KeRestoreFloatingPointState((core::ptr::addr_of_mut!(fpsave) as _));
+        w32r_KeRestoreFloatingPointState(core::ptr::addr_of_mut!(fpsave) as _);
     }
 
     if !pStrokes.is_null() {
@@ -2684,7 +2684,7 @@ unsafe fn PATH_WidenPathEx_impl(dc: *mut DC, pPath: PPATH) -> PPATH {
         return core::ptr::null_mut();
     }
 
-    IntGdiWidenPath(pPath, penWidth, penStyle, ((*dc).dclevel.laPath.eMiterLimit as _))
+    IntGdiWidenPath(pPath, penWidth, penStyle, (*dc).dclevel.laPath.eMiterLimit as _)
 }
 
 unsafe fn int_from_fixed(f: FIXED) -> INT {
@@ -3013,24 +3013,24 @@ pub unsafe extern "C" fn NtGdiAbortPath(hDC: HDC) -> BOOL {
     let dc: PDC = DC_LockDc(hDC);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE as u32);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     if (*dc).dclevel.hPath.is_null() {
         DC_UnlockDc(dc);
-        return (TRUE as _);
+        return TRUE as _;
     }
 
     if PATH_Delete((*dc).dclevel.hPath) == (FALSE as _) {
         DC_UnlockDc(dc);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     (*dc).dclevel.hPath = core::ptr::null_mut();
     (*dc).dclevel.flPath &= !DCPATH_ACTIVE;
 
     DC_UnlockDc(dc);
-    (TRUE as _)
+    TRUE as _
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -3086,21 +3086,21 @@ pub unsafe extern "C" fn NtGdiBeginPath(hDC: HDC) -> BOOL {
     dc = DC_LockDc(hDC);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     if ((*dc).dclevel.flPath & DCPATH_ACTIVE as u32) != 0
         && ((*dc).dclevel.flPath & DCPATH_SAVE as u32) == 0
     {
         DC_UnlockDc(dc);
-        return (TRUE as _);
+        return TRUE as _;
     }
 
     if !(*dc).dclevel.hPath.is_null() {
         if ((*dc).dclevel.flPath & DCPATH_SAVE as u32) == 0 {
             if PATH_Delete((*dc).dclevel.hPath) == 0 {
                 DC_UnlockDc(dc);
-                return (FALSE as _);
+                return FALSE as _;
             }
         } else {
             (*dc).dclevel.flPath &= !(DCPATH_SAVE as u32 | DCPATH_ACTIVE as u32);
@@ -3112,14 +3112,14 @@ pub unsafe extern "C" fn NtGdiBeginPath(hDC: HDC) -> BOOL {
     (*dc).dclevel.flPath |= DCPATH_ACTIVE as u32;
     (*dc).dclevel.hPath = (*pPath).BaseObject.hHmgr;
     IntGetCurrentPositionEx(dc, core::ptr::addr_of_mut!((*pPath).pos));
-    w32r_IntLPtoDP(dc, (core::ptr::addr_of_mut!((*pPath).pos) as _), 1);
+    w32r_IntLPtoDP(dc, core::ptr::addr_of_mut!((*pPath).pos) as _, 1);
     PATH_UnlockPath(pPath);
     DC_UnlockDc(dc);
 
     if pPath.is_null() {
-        return (FALSE as _);
+        return FALSE as _;
     }
-    (TRUE as _)
+    TRUE as _
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -3304,7 +3304,7 @@ pub unsafe extern "stdcall" fn NtGdiFillPath(hDC: HDC) -> BOOL {
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn NtGdiFillPath(hDC: HDC) -> BOOL {
-    let mut ret: BOOL = (FALSE as _);
+    let mut ret: BOOL = FALSE as _;
     let pPath: PPATH;
     let pNewPath: PPATH;
     let pdcattr: PDC_ATTR;
@@ -3313,13 +3313,13 @@ pub unsafe extern "C" fn NtGdiFillPath(hDC: HDC) -> BOOL {
     dc = DC_LockDc(hDC);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_PARAMETER);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     pPath = PATH_LockPath((*dc).dclevel.hPath);
     if pPath.is_null() {
         DC_UnlockDc(dc);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     DC_vPrepareDCsForBlit(dc, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
@@ -3341,7 +3341,7 @@ pub unsafe extern "C" fn NtGdiFillPath(hDC: HDC) -> BOOL {
     } else if (*pNewPath).numEntriesUsed != 0 {
         ret = PATH_FillPath(dc, pNewPath);
     } else {
-        ret = (TRUE as _);
+        ret = TRUE as _;
     }
 
     PATH_UnlockPath(pNewPath);
@@ -3397,7 +3397,7 @@ pub unsafe extern "stdcall" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
-    let mut Ret: BOOL = (FALSE as _);
+    let mut Ret: BOOL = FALSE as _;
     let pDc: *mut DC;
     let pPath: PPATH;
     let mut pNewPath: PPATH = core::ptr::null_mut();
@@ -3405,14 +3405,14 @@ pub unsafe extern "C" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
     pDc = DC_LockDc(hDC);
     if pDc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     pPath = PATH_LockPath((*pDc).dclevel.hPath);
     if pPath.is_null() {
         EngSetLastError(ERROR_CAN_NOT_COMPLETE);
         DC_UnlockDc(pDc);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     if (*pPath).state == PATH_Closed {
@@ -3425,7 +3425,7 @@ pub unsafe extern "C" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
         PATH_Delete((*pDc).dclevel.hPath);
         (*pDc).dclevel.hPath = (*pNewPath).BaseObject.hHmgr;
         PATH_UnlockPath(pNewPath);
-        Ret = (TRUE as _);
+        Ret = TRUE as _;
     }
 
     DC_UnlockDc(pDc);
@@ -3587,7 +3587,7 @@ pub unsafe extern "C" fn NtGdiGetPath(
         core::mem::size_of::<ULONG>() as _,
     );
     if NT_SUCCESS(Status) {
-        Status = w32r_SafeProbeForWrite(Types as *mut core::ffi::c_void, (nSize as usize as _), 1);
+        Status = w32r_SafeProbeForWrite(Types as *mut core::ffi::c_void, nSize as usize as _, 1);
     }
     if !NT_SUCCESS(Status) {
         SetLastNtError(Status);
@@ -3922,17 +3922,17 @@ pub unsafe extern "C" fn NtGdiStrokeAndFillPath(hDC: HDC) -> BOOL {
     let pdcattr: PDC_ATTR;
     let pPath: PPATH;
     let pNewPath: PPATH;
-    let mut bRet: BOOL = (FALSE as _);
+    let mut bRet: BOOL = FALSE as _;
 
     pDc = DC_LockDc(hDC);
     if pDc.is_null() {
         EngSetLastError(ERROR_INVALID_PARAMETER);
-        return (FALSE as _);
+        return FALSE as _;
     }
     pPath = PATH_LockPath((*pDc).dclevel.hPath);
     if pPath.is_null() {
         DC_UnlockDc(pDc);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     DC_vPrepareDCsForBlit(pDc, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
@@ -3957,7 +3957,7 @@ pub unsafe extern "C" fn NtGdiStrokeAndFillPath(hDC: HDC) -> BOOL {
             bRet = PATH_StrokePath(pDc, pNewPath);
         }
     } else {
-        bRet = (TRUE as _);
+        bRet = TRUE as _;
     }
 
     PATH_UnlockPath(pNewPath);
@@ -4030,18 +4030,18 @@ pub unsafe extern "C" fn NtGdiStrokePath(hDC: HDC) -> BOOL {
     let pdcattr: PDC_ATTR;
     let pPath: PPATH;
     let pNewPath: PPATH;
-    let mut bRet: BOOL = (FALSE as _);
+    let mut bRet: BOOL = FALSE as _;
 
     pDc = DC_LockDc(hDC);
     if pDc.is_null() {
         EngSetLastError(ERROR_INVALID_PARAMETER);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     pPath = PATH_LockPath((*pDc).dclevel.hPath);
     if pPath.is_null() {
         DC_UnlockDc(pDc);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     DC_vPrepareDCsForBlit(pDc, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
@@ -4098,18 +4098,18 @@ pub unsafe extern "stdcall" fn NtGdiWidenPath(hDC: HDC) -> BOOL {
 #[no_mangle]
 pub unsafe extern "C" fn NtGdiWidenPath(hDC: HDC) -> BOOL {
     let pPath: PPATH;
-    let mut Ret: BOOL = (FALSE as _);
+    let mut Ret: BOOL = FALSE as _;
     let pdc: PDC = DC_LockDc(hDC);
     if pdc.is_null() {
         EngSetLastError(ERROR_INVALID_PARAMETER);
-        return (FALSE as _);
+        return FALSE as _;
     }
 
     pPath = PATH_WidenPath(pdc);
     if !pPath.is_null() {
         PATH_Delete((*pdc).dclevel.hPath);
         (*pdc).dclevel.hPath = (*pPath).BaseObject.hHmgr;
-        Ret = (TRUE as _);
+        Ret = TRUE as _;
     }
     DC_UnlockDc(pdc);
     Ret

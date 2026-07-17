@@ -1,12 +1,9 @@
 use crate::shim::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ddk::{LPCSTR, PCCH, RtlAllocateHeap, RtlFreeHeap, va_list};
 use ntkrnl_sys::driver_ddk::wcslen;
 use crate::debug::vDbgPrintExWithPrefix;
-use core::ffi::c_void;
 
 extern "C" {
     fn _vsnprintf(buffer: *mut core::ffi::c_char, count: usize, format: *const core::ffi::c_char, valist: va_list) -> core::ffi::c_int;

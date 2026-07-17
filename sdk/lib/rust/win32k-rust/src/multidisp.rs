@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // (empty preamble — multidisp.c has no file-scope declarations)

@@ -1,6 +1,5 @@
 use win32k_sys::win32k::*;
 use crate::ntddraw_ddraw::gpDxFuncs; // real [DRVFN; 92], shadows bindgen [DRVFN; 0]
-use core::ffi::c_void;
 
 const DDERR_UNSUPPORTED: u32 = 0x80004001u32;
 

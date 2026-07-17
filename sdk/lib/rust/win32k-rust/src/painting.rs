@@ -4,7 +4,6 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use ntkrnl_sys::ddk::{ExFreePoolWithTag};
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 use ntkrnl_sys::base::IsListEmpty;
-use core::ffi::c_void;
 
 // Debug-channel sinks (no kernel symbol in non-DBG build; inert no-op macros).
 macro_rules! ERR { ($($t:tt)*) => {{}}; }
@@ -468,21 +467,21 @@ unsafe fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HRGN {
 
         hRgnWindow = IntCalcWindowRgn(Window, 1);
         if hRgnWindow == core::ptr::null_mut() {
-            GreDeleteObject((hRgnNonClient as _));
+            GreDeleteObject(hRgnNonClient as _ );
             return HRGN_WINDOW;
         }
 
-        NcType = IntGdiGetRgnBox(hRgnNonClient, (&mut update as *mut _ as _)) as u32;
+        NcType = IntGdiGetRgnBox(hRgnNonClient, &mut update as *mut _ as _ ) as u32;
 
         RgnType = NtGdiCombineRgn(hRgnNonClient, hRgnNonClient, hRgnWindow, RGN_DIFF as i32) as u32;
 
         if RgnType == ERROR {
-            GreDeleteObject((hRgnWindow as _));
-            GreDeleteObject((hRgnNonClient as _));
+            GreDeleteObject(hRgnWindow as _ );
+            GreDeleteObject(hRgnNonClient as _ );
             return HRGN_WINDOW;
         } else if RgnType == NULLREGION {
-            GreDeleteObject((hRgnWindow as _));
-            GreDeleteObject((hRgnNonClient as _));
+            GreDeleteObject(hRgnWindow as _ );
+            GreDeleteObject(hRgnNonClient as _ );
             (*Window).state &= !WNDS_UPDATEDIRTY;
             return core::ptr::null_mut();
         }
@@ -490,7 +489,7 @@ unsafe fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HRGN {
         if Validate != 0 {
             if NtGdiCombineRgn((*Window).hrgnUpdate, (*Window).hrgnUpdate, hRgnWindow, RGN_AND as i32) as u32 == NULLREGION {
                 IntGdiSetRegionOwner((*Window).hrgnUpdate, GDI_OBJ_HMGR_POWNED);
-                GreDeleteObject(((*Window).hrgnUpdate as _));
+                GreDeleteObject((*Window).hrgnUpdate as _ );
                 (*Window).state &= !WNDS_UPDATEDIRTY;
                 (*Window).hrgnUpdate = core::ptr::null_mut();
                 if (*Window).state & WNDS_INTERNALPAINT == 0 {
@@ -501,16 +500,16 @@ unsafe fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HRGN {
 
         if NcType == SIMPLEREGION {
             let mut window: RECT = core::mem::zeroed();
-            IntGetWindowRect(Window, (&mut window as *mut _ as _));
+            IntGetWindowRect(Window, &mut window as *mut _ as _ );
 
             if IntEqualRect(&mut window as *mut _ as _, &mut update as *mut _ as _) != 0 {
-                GreDeleteObject((hRgnNonClient as _));
-                GreDeleteObject((hRgnWindow as _));
+                GreDeleteObject(hRgnNonClient as _ );
+                GreDeleteObject(hRgnWindow as _ );
                 return HRGN_WINDOW;
             }
         }
 
-        GreDeleteObject((hRgnWindow as _));
+        GreDeleteObject(hRgnWindow as _ );
 
         return hRgnNonClient;
     } else {
@@ -596,8 +595,8 @@ unsafe fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recurse: i32) {
                     TempRegion = IntGetNCUpdateRgn(Wnd, 1);
                     IntSendNCPaint(Wnd, TempRegion);
 
-                    if TempRegion > HRGN_WINDOW && GreIsHandleValid((TempRegion as _)) != 0 {
-                        GreDeleteObject((TempRegion as _));
+                    if TempRegion > HRGN_WINDOW && GreIsHandleValid(TempRegion as _ ) != 0 {
+                        GreDeleteObject(TempRegion as _ );
                     }
                 }
 
@@ -606,7 +605,7 @@ unsafe fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recurse: i32) {
                     if !(*Wnd).hrgnUpdate.is_null() {
                         hDC = UserGetDCEx(
                             Wnd,
-                            ((*Wnd).hrgnUpdate as _),
+                            (*Wnd).hrgnUpdate as _ ,
                             DCX_CACHE | DCX_USESTYLE | DCX_INTERSECTRGN | DCX_KEEPCLIPRGN,
                         );
 
@@ -899,7 +898,7 @@ unsafe fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Flags: ULONG) {
                         REGION_UnlockRgn(RgnUpdate);
                         if RgnType == NULLREGION as INT {
                             IntGdiSetRegionOwner((*Wnd).hrgnUpdate, GDI_OBJ_HMGR_POWNED);
-                            GreDeleteObject(((*Wnd).hrgnUpdate as _));
+                            GreDeleteObject((*Wnd).hrgnUpdate as _ );
                             (*Wnd).hrgnUpdate = core::ptr::null_mut();
                         }
                     }
@@ -941,7 +940,7 @@ unsafe fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Flags: ULONG) {
 
                     if RgnType == NULLREGION as INT {
                         IntGdiSetRegionOwner((*Wnd).hrgnUpdate, GDI_OBJ_HMGR_POWNED);
-                        GreDeleteObject(((*Wnd).hrgnUpdate as _));
+                        GreDeleteObject((*Wnd).hrgnUpdate as _ );
                         (*Wnd).hrgnUpdate = core::ptr::null_mut();
                     }
                 }
@@ -1225,12 +1224,12 @@ unsafe fn PaintSuspendedWindow_impl(pwnd: PWND, hrgnOrig: HRGN) {
             return;
         }
 
-        hDC = UserGetDCEx(pwnd, (hrgnTemp as _), DCX_WINDOW | DCX_INTERSECTRGN | DCX_USESTYLE | DCX_KEEPCLIPRGN);
+        hDC = UserGetDCEx(pwnd, hrgnTemp as _ , DCX_WINDOW | DCX_INTERSECTRGN | DCX_USESTYLE | DCX_KEEPCLIPRGN);
 
         Rect = core::mem::transmute((*pwnd).rcWindow);
         RECTL_vOffsetRect(core::ptr::addr_of_mut!(Rect), -(*pwnd).rcWindow.left, -(*pwnd).rcWindow.top);
 
-        FillRect(hDC, core::ptr::addr_of_mut!(Rect), (IntGetSysColorBrush(COLOR_WINDOW as i32) as _));
+        FillRect(hDC, core::ptr::addr_of_mut!(Rect), IntGetSysColorBrush(COLOR_WINDOW as i32) as _ );
 
         NC_DoNCPaint(pwnd, hDC, Flags);
 
@@ -1662,9 +1661,9 @@ unsafe fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC {
             (*Window).state &= !WNDS_UPDATEDIRTY;
             hRgn = IntGetNCUpdateRgn(Window, 0);
             IntSendNCPaint(Window, hRgn);
-            if hRgn as usize > HRGN_WINDOW as usize && GreIsHandleValid((hRgn as _)) != 0 {
+            if hRgn as usize > HRGN_WINDOW as usize && GreIsHandleValid(hRgn as _ ) != 0 {
                 /* NOTE: The region can already be deleted! */
-                GreDeleteObject((hRgn as _));
+                GreDeleteObject(hRgn as _ );
             }
             if (*Window).state & WNDS_UPDATEDIRTY == 0 {
                 break;
@@ -1682,7 +1681,7 @@ unsafe fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC {
 
     (*Ps).hdc = UserGetDCEx(
         Window,
-        ((*Window).hrgnUpdate as _),
+        (*Window).hrgnUpdate as _ ,
         DCX_INTERSECTRGN | DCX_USESTYLE,
     );
     if (*Ps).hdc.is_null() {
@@ -1828,9 +1827,9 @@ unsafe fn IntFillWindow_impl(
         pWndParent = pWnd;
     }
 
-    type_ = GdiGetClipBox(hDC, (&mut Rect as *mut _ as _));
+    type_ = GdiGetClipBox(hDC, &mut Rect as *mut _ as _ );
 
-    IntGetClientRect(pWnd, (&mut Rect1 as *mut _ as _));
+    IntGetClientRect(pWnd, &mut Rect1 as *mut _ as _ );
 
     if type_ != NULLREGION as INT
         && ((*(*pWnd).pcls).style & CS_PARENTDC as ULONG == 0
@@ -1845,7 +1844,7 @@ unsafe fn IntFillWindow_impl(
             y = (*pWndParent).rcClient.top - (*pWnd).rcClient.top;
         }
 
-        GreSetBrushOrg(hDC, x, y, (&mut ppt as *mut _ as _));
+        GreSetBrushOrg(hDC, x, y, &mut ppt as *mut _ as _ );
 
         if (hBrush as usize) < CTLCOLOR_MAX as usize {
             hBrush = GetControlColor(
@@ -2245,7 +2244,7 @@ unsafe fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase: i32) -> i32 {
 
         if UserIsDesktopWindow(Window) == 0 {
             RECTL_vOffsetRect(
-                (&mut Rect as *mut _ as _),
+                &mut Rect as *mut _ as _ ,
                 -(*Window).rcClient.left,
                 -(*Window).rcClient.top,
             );
@@ -2258,7 +2257,7 @@ unsafe fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase: i32) -> i32 {
 
         if RegionType == ERROR as i32 || RegionType == NULLREGION as i32 {
             if !hrgnTemp.is_null() {
-                GreDeleteObject((hrgnTemp as _));
+                GreDeleteObject(hrgnTemp as _ );
             }
             NtGdiSetRectRgn(hRgn, 0, 0, 0, 0);
             return RegionType;
@@ -2268,7 +2267,7 @@ unsafe fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase: i32) -> i32 {
             NtGdiOffsetRgn(hRgn, -(*Window).rcClient.left, -(*Window).rcClient.top);
         }
         if !hrgnTemp.is_null() {
-            GreDeleteObject((hrgnTemp as _));
+            GreDeleteObject(hrgnTemp as _ );
         }
     }
     RegionType
@@ -2302,7 +2301,7 @@ unsafe fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bErase: i32) -> i32 {
             *pRect = core::mem::transmute((*Window).rcClient);
             ERR!(b"GURt: Caller is retrieving Window Region 1\n\0".as_ptr() as *const i8);
         } else {
-            RegionType = IntGdiGetRgnBox((*Window).hrgnUpdate, (pRect as _));
+            RegionType = IntGdiGetRgnBox((*Window).hrgnUpdate, pRect as _ );
 
             if RegionType != ERROR as INT && RegionType != NULLREGION as INT {
                 RECTL_bIntersectRect(pRect as *mut _ as _, pRect as *mut _ as _, core::ptr::addr_of_mut!((*Window).rcClient));
@@ -2316,7 +2315,7 @@ unsafe fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bErase: i32) -> i32 {
             if (*(*Window).pcls).style & CS_OWNDC as u32 != 0 {
                 let hdc: HDC;
                 hdc = UserGetDCEx(Window, core::ptr::null_mut(), DCX_USESTYLE);
-                GreDPtoLP(hdc, (pRect as LPPOINT as _), 2);
+                GreDPtoLP(hdc, pRect as LPPOINT as _ , 2);
                 UserReleaseDC(Window, hdc, 0);
             }
         } else {
@@ -2699,7 +2698,7 @@ unsafe extern "system" fn UserDrawCaptionText(
             hDc,
             (*Text).Buffer,
             ((*Text).Length / core::mem::size_of::<u16>() as u16) as i32,
-            (core::ptr::addr_of_mut!(r) as _),
+            core::ptr::addr_of_mut!(r) as _ ,
             DT_END_ELLIPSIS | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_LEFT,
         );
     }
@@ -2711,7 +2710,7 @@ unsafe extern "system" fn UserDrawCaptionText(
     }
 
     if bDeleteFont != 0 {
-        GreDeleteObject((hFont as _));
+        GreDeleteObject(hFont as _ );
     }
 
     Ret
@@ -2792,11 +2791,11 @@ unsafe extern "C" fn UserDrawCaption(
             }
         } else {
             if (uFlags & DC_INBUTTON) != 0 {
-                hBgBrush = (IntGetSysColorBrush(COLOR_3DFACE.try_into().unwrap()) as _);
+                hBgBrush = IntGetSysColorBrush(COLOR_3DFACE.try_into().unwrap()) as _ ;
             } else if (uFlags & DC_ACTIVE) != 0 {
-                hBgBrush = (IntGetSysColorBrush(COLOR_ACTIVECAPTION.try_into().unwrap()) as _);
+                hBgBrush = IntGetSysColorBrush(COLOR_ACTIVECAPTION.try_into().unwrap()) as _ ;
             } else {
-                hBgBrush = (IntGetSysColorBrush(COLOR_INACTIVECAPTION.try_into().unwrap()) as _);
+                hBgBrush = IntGetSysColorBrush(COLOR_INACTIVECAPTION.try_into().unwrap()) as _ ;
             }
 
             hOldBrush = NtGdiSelectBrush(hDc, hBgBrush);
@@ -3163,7 +3162,7 @@ unsafe fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> INT {
             let mut ret: INT = ERROR.try_into().unwrap();
             let hrgn = NtGdiCreateRectRgn(0, 0, 0, 0);
 
-            if !hrgn.is_null() && GreGetDCPoint(hDC, GdiGetDCOrg, (&mut pt as *mut _ as _)) != 0 {
+            if !hrgn.is_null() && GreGetDCPoint(hDC, GdiGetDCOrg, &mut pt as *mut _ as _ ) != 0 {
                 if NtGdiGetRandomRgn(hDC, hrgn, CLIPRGN as INT) == NULLREGION as INT {
                     NtGdiOffsetRgn(hrgn, pt.x, pt.y);
                 } else {
@@ -3173,7 +3172,7 @@ unsafe fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> INT {
 
                     NtGdiCombineRgn(hrgn, hrgnScreen, core::ptr::null_mut(), RGN_COPY as INT);
 
-                    GreDeleteObject((hrgnScreen as _));
+                    GreDeleteObject(hrgnScreen as _ );
                 }
 
                 NtGdiCombineRgn(hrgn, hrgn, (*Window).hrgnUpdate, RGN_DIFF as INT);
@@ -3182,12 +3181,12 @@ unsafe fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> INT {
 
                 ret = NtGdiExtSelectClipRgn(hDC, hrgn, RGN_COPY as INT);
 
-                GreDeleteObject((hrgn as _));
+                GreDeleteObject(hrgn as _ );
             }
             return ret;
         }
     } else {
-        return GdiGetClipBox(hDC, (&mut rc as *mut _ as _));
+        return GdiGetClipBox(hDC, &mut rc as *mut _ as _ );
     }
 }
 }

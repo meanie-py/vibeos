@@ -1,9 +1,6 @@
 use crate::shim::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{LDR_RESOURCE_INFO, LdrAccessResource, LdrFindResource_U, PIMAGE_RESOURCE_DATA_ENTRY, PMESSAGE_RESOURCE_DATA, PMESSAGE_RESOURCE_ENTRY, va_list};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // No translatable file-scope declarations.

@@ -2750,7 +2750,7 @@ unsafe fn IntCreateWindow(
 
         pWnd = UserCreateObject(
             gHandleTable,
-            (if !pdeskCreated.is_null() { pdeskCreated } else { (*pti).rpdesk }),
+            if !pdeskCreated.is_null() { pdeskCreated } else { (*pti).rpdesk } ,
             pti,
             core::ptr::addr_of_mut!(hWnd) as PHANDLE,
             TYPE_WINDOW,
@@ -2812,22 +2812,22 @@ unsafe fn IntCreateWindow(
             if ((*(*Class).spicn).CURSORF_flags & (CURSORF_LRSHARED | CURSORF_FROMRESOURCE))
                 == (CURSORF_LRSHARED | CURSORF_FROMRESOURCE)
             {
-                IconSmHandle = (co_IntCopyImage(
+                IconSmHandle = co_IntCopyImage(
                     UserHMGetHandle((*Class).spicn as PVOID) as HANDLE,
                     IMAGE_ICON,
                     UserGetSystemMetrics(SM_CXSMICON as u32),
                     UserGetSystemMetrics(SM_CYSMICON as u32),
                     LR_COPYFROMRESOURCE,
-                ) as HICON);
+                ) as HICON ;
             }
             if IconSmHandle.is_null() {
-                IconSmHandle = (co_IntCopyImage(
+                IconSmHandle = co_IntCopyImage(
                     UserHMGetHandle((*Class).spicn as PVOID) as HANDLE,
                     IMAGE_ICON,
                     UserGetSystemMetrics(SM_CXSMICON as u32),
                     UserGetSystemMetrics(SM_CYSMICON as u32),
                     0,
-                ) as HICON);
+                ) as HICON ;
             }
 
             if !IconSmHandle.is_null() {
@@ -6309,7 +6309,7 @@ unsafe extern "system" fn DefSetText(Wnd: PWND, WindowText: PCWSTR) -> BOOL {
 
                 (*Wnd).strName.Buffer = DesktopHeapAlloc(
                     (*Wnd).head.rpdesk,
-                    ((UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32) as usize),
+                    (UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32) as usize ,
                 ) as *mut u16;
                 if !(*Wnd).strName.Buffer.is_null() {
                     *(*Wnd).strName.Buffer.add(
@@ -6517,7 +6517,7 @@ pub unsafe extern "C" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING)
 
                 (*Wnd).strName.Buffer = DesktopHeapAlloc(
                     (*Wnd).head.rpdesk,
-                    ((UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32) as usize),
+                    (UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32) as usize ,
                 ) as *mut u16;
                 if !(*Wnd).strName.Buffer.is_null() {
                     *(*Wnd)
