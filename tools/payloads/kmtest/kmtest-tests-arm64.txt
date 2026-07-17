@@ -121,7 +121,7 @@ RtlIntSafeKM
 # QUARANTINED 2026-07-16 (still owed): UNVALIDATED after the SEH-RESUME fix — never launched in the
 # validating sweep because the MmSection wedge (above) poisoned the run before reaching it. May well
 # pass now (shallow Rtl raise, like ExResource/KeDpc); re-test once MmSection's hang is quarantined.
-#RtlIsValidOemCharacter
+RtlIsValidOemCharacter
 RtlMemoryKM
 RtlRangeList
 RtlRegistryKM
@@ -147,8 +147,17 @@ SeQueryInfoToken
 # subsequent test in the boot fails SET_RESULTBUFFER with 0x5. One wedge poisons the
 # whole rest of the run — must stay quarantined until the hang is triaged.
 #SeTokenFiltering
-# QUARANTINED 2026-07-16 (still owed): UNVALIDATED after the SEH-RESUME fix — never launched
-# (MmSection wedge poisoned the run first). Re-test once MmSection is quarantined.
+# QUARANTINED 2026-07-17 (VALIDATED + LOCALIZED — was UNVALIDATED "may pass"): re-tested with
+# MmSection quarantined; does NOT pass — BUGCHECK 0x4E (PFN_LIST_CORRUPT), poisons the rest of
+# the run. GDB-triaged: params 0x4E (0xAD, 0x40006, 0x0, 0x4259b). Subcode 0xAD is raised in
+# MiInsertStandbyListAtFront (ARM3/pfnlist.rs:630): PFN 0x40006 has ref_count=0 (P3, correct)
+# but fails the standby-front insert guard `must_be_cached || ref!=0 || !prototype_pte || rom_pte`
+# — a page pushed to the standby-list FRONT that is NOT a valid prototype page (trigger is
+# must_be_cached / !prototype_pte / rom_pte; entire_frame=0x4259b). Distinct from task #7's
+# 0x1000 MDL "valid-PTE" site but same PFN family. Passes on amd64 (1256/11) → arm64-specific.
+# NEXT: find the caller of MiInsertStandbyListAtFront in the ZwAllocateVirtualMemory free/teardown
+# path + why the PFN's prototype/cache state is wrong; diff MiInsertStandbyListAtFront + caller
+# vs ReactOS C (mm/ARM3/pfnlist.c). Owed (task #7 family).
 #ZwAllocateVirtualMemory
 ZwCreateSection
 # QUARANTINED 2026-07-16 (arm64 sweep 12): BUGCHECK 0x23 FAT_FILE_SYSTEM P1=0xdead0000 — a
