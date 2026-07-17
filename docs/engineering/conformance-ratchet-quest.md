@@ -1012,3 +1012,31 @@ the `vm.py MAX_VM_LIFETIME`/early-abort-on-boot-gate-miss harness gap already no
 Getting a clean arm64 baseline = keep re-sweeping past the flake, quarantining each wedger, then
 `--write-baseline`. NOT yet landed (no baseline file); the 2 quarantines are committed as
 progress.
+
+### 2026-07-16 (baseline grind cont.) — sweep 3: the arm64 crasher cluster is the KERNEL-SEH bug (§9.69 / task #10)
+
+Sweep 3 (clean boot, `--timeout 1800`): with ExFastMutex + ExHardError quarantined, the sweep got
+2 more OK (ExInterlocked 180/0, ExPools 14/4 → `launched=6 ok=5`) then **ExResource BUGCHECK 0x1E**.
+Symbolicated (calibrating off the boot log's `KiIdleLoop@0xfffff800421a9410` vs the PE index):
+**the crash PC `0xfffff800421c9cf8` = `RtlRaiseStatus+0x44` (rtl-diag/exception.rs) — the IDENTICAL
+PC as ExHardError.** Two exception-raising tests, one instruction ⇒ ONE root cause (like the amd64
+memcpy+0x40 cluster).
+
+**Root: the arm64 kernel-mode exception-dispatch bug (§9.69 / task #10).** Both ExHardError and
+ExResource deliberately raise a kernel-mode exception expecting their driver's native `__try/__except`
+to catch it. On **amd64** native SEH catches it and both PASS (they're NOT amd64-quarantined). On
+**arm64** the kernel-mode exception dispatch is broken (`RtlDispatchException`/`RtlVirtualUnwind` for
+kernel frames — the same machinery §9.69 found wedging on hardware faults), so the raise goes
+unhandled → 0x1E at `RtlRaiseStatus+0x44` (exception code 0xC0000005, single `[RAISE]` print, not
+recursion). So the arm64 kernel-SEH gap blocks the **whole exception-raising kmtest class** — at
+least ExHardError, ExResource, and very likely RtlExceptionKM/RtlStackKM et al. **Fixing task #10
+(arm64 kernel-mode native-SEH dispatch) clears these together** — much higher leverage than
+one-by-one quarantining.
+
+**State:** ExResource quarantined (shared-root note). The arm64 baseline is now blocked primarily on
+the arm64 kernel-SEH lane (task #10), NOT on the user-APC fix (landed) or the SCM (up). Remaining
+options: (a) take on the arm64 kernel-mode SEH-dispatch bug — big, but clears task #10 + a class of
+conformance quarantines at once; (b) keep quarantining the exception-raising tests one per boot to
+reach a (heavily-quarantined) first baseline; (c) stop here with the user-APC fix as the win. The 3
+arm64 quarantines so far (ExFastMutex timeout + the RtlRaiseStatus cluster ExHardError/ExResource)
+are committed as progress; no baseline seeded yet.

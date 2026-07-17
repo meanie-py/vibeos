@@ -26,7 +26,15 @@ ExDoubleList
 #ExHardError
 ExInterlocked
 ExPools
-ExResource
+# QUARANTINED 2026-07-16 (arm64 sweep 3): BUGCHECK 0x1E (0xC0000005) at the SAME PC as
+# ExHardError — RtlRaiseStatus+0x44 (rtl-diag/exception.rs). Both tests raise a kernel-mode
+# exception expecting their driver's __try/__except to catch it; on amd64 native SEH catches it
+# and they PASS, but arm64 kernel-mode exception dispatch is broken (§9.69 / task #10:
+# RtlDispatchException/RtlVirtualUnwind for kernel frames), so the raise is unhandled -> 0x1E.
+# Single [RAISE] print (not recursion). This is the arm64-kernel-SEH cluster: ONE root
+# (arm64 kernel-mode native-SEH dispatch) blocks the whole exception-raising kmtest class
+# (ExHardError, ExResource, likely RtlExceptionKM et al.). Fixing task #10 clears them together.
+#ExResource
 ExSequencedList
 ExSingleList
 ExUuid
