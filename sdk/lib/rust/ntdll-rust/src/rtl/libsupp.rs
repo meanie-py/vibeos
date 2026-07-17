@@ -409,6 +409,14 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
     Count: ULONG,
     Flags: ULONG,
 ) -> ULONG {
+    // RtlWalkFrameChain(NULL, ...) must return 0. The C reference caught the NULL
+    // output-store fault with _SEH2_EXCEPT{ i = 0 }; that __except is dead here, so a NULL
+    // Callers would AV on the `*Callers.offset(i) = ...` store below. In user mode native
+    // SEH works, but this fn is called WITHOUT a caller __try (kmtest RtlStack.c:32), so the
+    // AV self-crashes the process (exit 128, the RtlStack UM quarantine). Guard it explicitly.
+    if Callers.is_null() {
+        return 0;
+    }
     let mut Stack: ULONG_PTR;
     let mut NewStack: ULONG_PTR;
     let mut StackBegin: ULONG_PTR;

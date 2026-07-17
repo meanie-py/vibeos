@@ -1580,7 +1580,12 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     // in the x86_64-kernel target json (without it the image has no .pdata
     // for Rust frames and the walk double-faults — field manual §9.42). See
     // ntoskrnl/seh_poc.c + docs/engineering/dummy-pseh-verdict.md.
-    #[cfg(target_arch = "x86_64")]
+    // arm64: this is the boot-time oracle for KERNEL-mode software raise + native
+    // __try/__except dispatch — the exact shape the kmtest exception-raising cluster
+    // (ExHardError/ExResource/KeMutex/…) exercises. It had never run on arm64 (this
+    // block was x86_64-only), which is why the arm64 kernel-SEH bug (§9.69 / task #10)
+    // only surfaced under conformance. Now it fails loud at boot instead of hiding.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         extern "C" {
             fn SehPocRun();

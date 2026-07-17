@@ -88,10 +88,10 @@ RtlMemoryKM
 RtlRangeList
 RtlRegistryKM
 RtlSplayTreeKM
-# QUARANTINED 2026-07-10 (amd64 sweep 8): BUGCHECK 0x1E — AV in RtlWalkFrameChain+0x2b0.
-# DUMMY_PSEH-structural candidate: the C walk bounds itself with __try (dead in-kernel);
-# needs explicit bounds validation instead of SEH. Triage owed (kernel-side fix possible).
-#RtlStackKM
+# UN-QUARANTINED 2026-07-17: fixed. RtlWalkFrameChain(NULL,5,0) must return 0; the dropped C
+# _SEH2_EXCEPT{i=0} left the NULL output-store unguarded -> AV at +0x2b0. Fixed with an explicit
+# `if Callers.is_null() { return 0; }` (amd64 rtl-except unwind.rs; the walk is already bounds-checked).
+RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
 SeInheritance
@@ -159,11 +159,10 @@ RtlIntSafe
 RtlMemory
 RtlRegistry
 RtlSplayTree
-# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): NO-END exit=128 — the USER-MODE
-# twin of the quarantined RtlStackKM (RtlWalkFrameChain bounds via dead SEH). UM self-
-# crash (exit 128), no kernel BUGCHECK, sweep continues. Expected-fail (same class as
-# RtlStackKM); not an OS bug.
-#RtlStack
+# UN-QUARANTINED 2026-07-17: fixed (same RtlWalkFrameChain(NULL) NULL-store as RtlStackKM, in
+# user-mode ntdll — the test calls it without a catch, so the AV self-crashed the process, exit 128).
+# Fixed by the `if Callers.is_null() { return 0; }` guard in rtl-except amd64 unwind.rs (shared UM).
+RtlStack
 RtlStrSafe
 RtlUnicodeString
 TcpIpTdi

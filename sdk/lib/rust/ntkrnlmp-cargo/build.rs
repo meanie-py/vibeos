@@ -137,6 +137,10 @@ fn main() {
             // the memcpy+0x40 crasher-cluster fix. See ntoskrnl/kmsafecopy.c.
             "ntoskrnl/kmsafecopy.c",
         ]),
+        // arm64: kernel-mode software-raise SEH oracle (see ntoskrnl-cargo/build.rs).
+        // ex-rust calls SehPocRun() on aarch64 now, so the SMP kernel link needs the
+        // symbol too. kmsafecopy.c stays OFF until task #10 (§9.69).
+        "aarch64" => c_shims.push("ntoskrnl/seh_poc.c"),
         _ => {}
     }
     // WS1 cmake-off printf batch (2026-06-21): the C-variadic printf shells (Rust

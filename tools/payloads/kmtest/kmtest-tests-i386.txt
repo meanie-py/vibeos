@@ -111,9 +111,13 @@ RtlRegistryKM
 # crate — REAL-BUG candidate (i386-specific splay corruption), not DUMMY_PSEH.
 # Repro: SPECIALPOOL=* to catch the corrupting store. Triage owed.
 #RtlSplayTreeKM
-# QUARANTINED 2026-07-10 (amd64 sweep 8): BUGCHECK 0x1E — AV in RtlWalkFrameChain+0x2b0.
-# DUMMY_PSEH-structural candidate: the C walk bounds itself with __try (dead in-kernel);
-# needs explicit bounds validation instead of SEH. Triage owed (kernel-side fix possible).
+# QUARANTINED 2026-07-17: the RtlWalkFrameChain(NULL) NULL-store guard (rtlk-rust libsupp.rs) DID
+# clear the first fault — but on i386 a SECOND, previously-masked fault remains: BUGCHECK 0x1E
+# (0xc0000005 at ntoskrnl.exe 0x8058dc75, fault addr 0xf7190894 — a bad frame-walk deref, NOT NULL).
+# So the REAL-frame walk (call #2/#3, RtlWalkFrameChain(Frames,5,0)) over-walks its ebp chain on i386
+# and derefs an unmapped high address that the StackBegin/StackEnd bounds check let through. Fixed +
+# passing on arm64+amd64 (they use RtlVirtualUnwind, not ebp-chaining); i386-specific ebp-walk bound
+# gap owed (GDB: break RtlWalkFrameChain on i386, dump Stack/StackBegin/StackEnd at the faulting read).
 #RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
@@ -165,10 +169,10 @@ RtlIntSafe
 RtlMemory
 RtlRegistry
 RtlSplayTree
-# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): NO-END exit=128 — the USER-MODE
-# twin of the quarantined RtlStackKM (RtlWalkFrameChain bounds via dead SEH). UM self-
-# crash (exit 128), no kernel BUGCHECK, sweep continues. Expected-fail (same class as
-# RtlStackKM); not an OS bug.
+# QUARANTINED 2026-07-17: UNVALIDATED on i386 — the kernel RtlStackKM BUGCHECK (above) aborted the
+# i386 sweep before this UM twin ran. The ntdll NULL guard is in place, but i386 likely shares the
+# same real-frame ebp-walk bound gap as RtlStackKM, so hold it quarantined here until that's fixed.
+# (RtlStack passes on arm64+amd64 — RtlVirtualUnwind-based, not ebp-chaining.)
 #RtlStack
 RtlStrSafe
 RtlUnicodeString

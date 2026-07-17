@@ -7808,3 +7808,106 @@ it: `hbreak` (NOT `break` — a software BP written at `--gdb-wait` reset gets
 clobbered when freeldr copies the kernel image over it) the suspected fn, then
 `watch *(int*)($ebp+4)` on the saved-return slot; the "corruption" was benign slot
 reuse, which *exonerated* the function and pointed one frame up the call chain.
+
+---
+
+### 9.92 (2026-07-17) Conformance burndown — three independent roots behind the "arm64 kernel-SEH cluster", plus the netstack 0x109 residual closed and a cross-arch RtlWalkFrameChain(NULL) AV
+
+Continuing the kmtest conformance ratchet (§9.90 landed the user-APC path). The arm64 baseline
+had 8 tests parked as one "kernel-SEH cluster" (quest doc + §9.69) on the theory that a single
+arm64 kernel-mode SEH-dispatch bug blocked them all. **That was three separate bugs wearing one
+mask.** Un-masking them (and fixing what was fixable) added ExResource, KeDpc, RtlStackKM to the
+arm64 baseline and RtlStackKM/RtlStack to amd64+i386, and killed the arm64-boot 0x109 flake.
+
+**1. The kernel-mode SEH *resume* path used NtContinue (FIXED — clears the shallow raise tests).**
+On arm64, `RtlRestoreContext` (the tail of `RtlUnwindEx` → `__except` landing) resumed via
+`NtContinue(ContextRecord, 0)`. `NtContinue` is a *user-return* path — it cannot resume a KERNEL
+context mid-callstack — so every kernel-mode `__try/__except` that actually reached its handler
+failed to land on the `__except` block. amd64 had the right primitive (`RtlpRestoreContextInternal`,
+a same-mode register-reload + `br`, NO syscall/EL transition); arm64 never got one. Fix: a new
+`RtlpRestoreContextInternal` in `sdk/lib/rtl/arm64/debug_asm.S` (reload NZCV + x0..x30 + SP from the
+CONTEXT, stage Pc/Sp in x16/x17, `br x16`), and switch `rtl-except/src/arm64/except.rs`
+`RtlRestoreContext` to call it instead of `NtContinue`. Validated by *enabling the kernel `seh_poc`
+on arm64* (it was x86_64-only — the gap that let this hide: no boot-time oracle exercised kernel
+`RtlRestoreContext` on arm64) → `[SEH-POC] ... (PASS)`, and by the sweep: **ExResource + KeDpc now
+pass** (they raise-and-catch from a shallow frame). *Enabling the oracle is the durable regression
+guard* — a `cfg(any(x86_64, aarch64))` in `ex-rust/init.rs` + the `seh_poc.c` c-shim in BOTH
+`ntoskrnl-cargo` and `ntkrnlmp-cargo` build.rs (ex-rust links into UP *and* SMP kernels — miss the
+SMP one and you get `SehPocRun: undefined` on the ntkrnlmp link).
+
+**2. KeMutex + SeInheritance still escape — the raise originates INSIDE `KeWaitForSingleObject`
+(OPEN, = the §9.69 xdata-decoder root).** These over-recurse a mutant to `SignalState==MINLONG`;
+the next `KeWaitForSingleObject` correctly `ExRaiseStatus(STATUS_MUTANT_LIMIT_EXCEEDED=0xC0000191)`,
+which the driver `__try` must catch. amd64 catches; arm64 escapes → BUGCHECK 0x1E P1=0xC0000191 at
+`RtlRaiseStatus+0x44`. The resume fix (#1) did NOT clear these because the raise starts deep inside
+the large `KeWaitForSingleObject` frame: `RtlDispatchException`'s `RtlVirtualUnwind` mis-walks THAT
+frame's `.xdata` and never reaches the driver `__except` (dispatch fails at the frame-walk, before
+any resume). **This is the same `RtlVirtualUnwind`/`unwind_decode::virtual_unwind_xdata` mis-decode
+as the §9.69 hardware-fault kmsafecopy wedge** (which mis-walks the memcpy/CRT-shim frames) — one
+decoder bug, two faces (KeMutex/SeInheritance conformance + kmsafecopy/task #5). Fixing the arm64
+xdata decoder is the high-leverage next target; repro via GDB break at `RtlVirtualUnwind`, dump
+`ControlPc`+resulting `Context.Sp` per call, find the frame where SP jumps wild, decode that fn's
+`.pdata`/`.xdata` and diff against the interpreter. Shared with i386 KeMutex (same 0xC0000191).
+
+**3. ExHardError is NOT the cluster — a distinct pool illegal-instruction (OPEN).** BUGCHECK 0x1E
+P1=0xC000001D (STATUS_ILLEGAL_INSTRUCTION), PC in NONPAGED POOL, **no `[RAISE]` before it** — so
+`ExRaiseHardError` branches through a bad function pointer into pool BEFORE any software raise. The
+old "RtlRaiseStatus+0x44 cluster" label was a §9.54 masked face. Separate arm64 triage owed.
+
+**Also: MmSection is an arm64 in-kernel WEDGE, not a raise-escape (OPEN).** Post-resume-fix it no
+longer crashes but hangs (no exit code; drains the sweep budget; passes on amd64). Quarantined like
+ExFastMutex; triage the Mm section-object create/map wait that never completes.
+
+**4. The netstack TDI self-test 0x109 residual — CLOSED (the §9.36 addendum's "~2 hits/2 days").**
+The arm64 conformance boot flaked ~1/2 on BUGCHECK 0x109 `[WAITDEP] VIOLATION owner=0xffff…ffff` —
+the ALL-ONES dead-wait-block face. Backtrace: `IoBuildDeviceIoControlRequest` (next self-test IRP) →
+`KiCheckForKernelApcDelivery` → `KiDeliverApc` → `IopCompleteRequest` → `KeSetEvent` →
+`KiUnwaitThread` → `waitdep`. Root: `tditest.rs tdi_wait_finish` freed its NonPagedPool wait-block
+after a **synchronous** TDI op (`SET_EVENT_HANDLER`/`ASSOCIATE` call `complete_now` inline and return
+`STATUS_SUCCESS`, so `run_tdi` takes the `st != STATUS_PENDING` branch and never waits) — but
+`IofCompleteRequestInner` still queued a special kernel APC to THIS thread to
+`KeSetEvent(UserEvent)+write UserIosb` (IoBuildDeviceIoControlRequest IRPs carry no
+`IRP_DEFER_IO_COMPLETION` → `irp.rs:1441` always queues it). On arm64 that APC is NOT delivered
+before `run_tdi` returns, so it fires during the *next* `run_tdi`'s `IoBuildDeviceIoControlRequest`,
+on the freed/reused block → dead wait-list → 0x109. The 2026-07-08 §9.36 fix only leaked on the
+*timeout* path; the *synchronous-success* path was the residual. Fix: leak `wb` on the synchronous
+path too (bounded, self-test only; the late APC then lands on valid, waiter-less pool). Result:
+arm64 conformance boot went from `launched=0 BUGCHECK=0x109` to a clean **`launched=74 sweep=done`
+in 66s**. **Deeper owed root:** arm64 does not promptly deliver a self-targeted special kernel APC
+queued at PASSIVE_LEVEL — real NT delivers it before `IofCallDriver` returns, which is what makes
+the classic `if (status==PENDING) KeWaitForSingleObject` sync-IRP idiom safe with a stack event.
+This same latency is *why* #2's KeMutex APC/dispatch behaves oddly; likely a shared arm64
+APC-delivery-timing story worth a dedicated look.
+
+**5. RtlWalkFrameChain(NULL, …) — a cross-arch NULL-store AV (FIXED, clears RtlStackKM + RtlStack).**
+`kmtest RtlStack.c:32` calls `RtlWalkFrameChain(NULL, 5, 0)` expecting `0`. The C reference wrapped
+the whole walk in `_SEH2_TRY/_SEH2_EXCEPT { i = 0 }`: with `Callers==NULL` the output store
+`Callers[0]=…` faults on iteration 0, the `__except` catches it, returns 0. The Rust translation
+dropped that dead `__try` (DUMMY_PSEH), so the NULL store is a raw AV → BUGCHECK 0x1E at
+`RtlWalkFrameChain+0x2b0` (kernel: RtlStackKM) / exit=128 process self-crash (user ntdll: RtlStack).
+The walk *itself* was already bounds-checked against the stack limits — **the NULL output store was
+the only unguarded write.** Minimal faithful fix = replicate the dropped `__except` with an explicit
+`if Callers.is_null() { return 0; }` at each live impl: amd64 kernel+user `rtl-except/amd64/unwind.rs`,
+i386/arm64 kernel `rtlk-rust/libsupp.rs`, i386/arm64 user `ntdll-rust/rtl/libsupp.rs`. **Result:
+RtlStackKM + RtlStack now PASS on arm64 (74/sweep=done) and amd64 (86/86 sweep=done)** — added to
+both baselines. **i386 is NOT cleared:** the NULL guard fixes the first fault, but a SECOND,
+previously-masked i386 fault remains — BUGCHECK 0x1E (0xc0000005 at ntoskrnl 0x8058dc75, fault addr
+`0xf7190894`, NOT NULL). i386 (and only i386) walks the **ebp frame-pointer chain** for the *real*
+frames (arm64/amd64 use `RtlVirtualUnwind`), and its `StackBegin/StackEnd` bound check lets an
+over-walk deref an unmapped high address. So RtlStackKM/RtlStack stay quarantined on i386 with the
+second fault documented; the ebp-walk bound gap is owed (i386 GDB: break RtlWalkFrameChain, dump
+`Stack`/`StackBegin`/`StackEnd` at the faulting read). **⚠ Process trap:** `conformance
+--write-baseline` writes whatever the run produced — on a mid-sweep BUGCHECK ("DID NOT FINISH") that
+is a TRUNCATED baseline (the crasher recorded `CRASH` + every test after it dropped). It corrupted
+the i386 baseline here; `git restore tools/conformance-baseline/i386/kmtest.txt` undid it. Only
+`--write-baseline` a run that reports `sweep=done`.
+
+**Reusable lessons.** (a) A "one root, N tests" cluster label is a *hypothesis* — un-mask each test
+and confirm the face; here 8 → {2 fixed by resume, 2 xdata-decoder, 1 pool-illegal-instr, 1 hang, 2
+cross-arch NULL-store}. (b) A boot-time oracle that never ran on an arch (kernel `seh_poc` on arm64)
+is exactly where a whole capability silently rots — enable it as the fix's regression guard. (c) A
+"residual flake" that a prior fix "reduced but didn't eliminate" is often the SAME bug on a sibling
+code path the fix didn't cover (the sync-op vs timeout-op completion path), not a mysterious second
+source. (d) `RtlWalkFrameChain(NULL)` returning 0 is load-bearing test semantics that lived entirely
+in a now-dead `__except` — grep translated Rtl/Io/Ob for dropped `_SEH2_EXCEPT { <mutate output> }`
+whose only job was to swallow a hostile-pointer store.

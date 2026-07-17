@@ -733,8 +733,17 @@ pub unsafe extern "system" fn RtlRestoreContext(
         (*ContextRecord).Pc = Consolidate(ExceptionRecord) as ULONG64;
     }
 
-    /* Use NtContinue to restore the context */
-    NtContinue(ContextRecord, 0 /* FALSE */);
+    /* Same-mode register reload + branch (mirrors amd64 unwind.rs). The old
+     * path used NtContinue, which is a user-return path: it works for user-mode
+     * resume (the [SEH-POC-U] self-test) but cannot resume a KERNEL context
+     * mid-callstack, so every kernel-mode __try/__except silently failed to
+     * catch on arm64 (task #10 / §9.69). RtlpRestoreContextInternal restores the
+     * integer context + SP + NZCV and branches to Pc without an EL transition. */
+    RtlpRestoreContextInternal(ContextRecord);
+}
+
+extern "C" {
+    fn RtlpRestoreContextInternal(ContextRecord: PCONTEXT);
 }
 
 /* Dynamic function table support lives in `super::dynfntbl` (real impl,
