@@ -94,7 +94,13 @@ def parse(log_text):
         m = DONE.search(line)
         if m:
             done_line = m.group(1)
-            continue
+            # The first complete sweep is authoritative. On arm64 the sweep exe
+            # can re-autostart after finishing (the guest keeps draining), and a
+            # second, partial re-run would otherwise clobber the early tests'
+            # clean results with INCOMPLETE/None. A mid-run BUGCHECK emits no DONE,
+            # so CRASH handling above is unaffected; single-run x86 has nothing
+            # after DONE, so this is a no-op there.
+            break
         m = BUGCHECK.search(line)
         if m and bugcheck is None:
             bugcheck = m.group(1)
@@ -103,6 +109,26 @@ def parse(log_text):
                 current = None
     if current and current["status"] is None:
         current["status"] = "INCOMPLETE"  # log truncated mid-test, no bugcheck seen
+
+    # Collapse duplicate test names into one entry each. A test can be launched
+    # more than once within a sweep when a transient (e.g. the netstack-TDI
+    # self-test) makes an early attempt not complete and the runner re-reaches
+    # it; the incomplete first attempt (None/INCOMPLETE) must not mask the clean
+    # later pass. Keep the most-complete result per name, preserving first-seen
+    # order. A genuinely flaky test (real CRASH on some runs) is caught later by
+    # the design's >=3-run stability check + flaky.txt, not hidden here.
+    RANK = {"OK": 6, "FAIL-EXIT": 5, "NO-END": 4, "TIMEOUT": 3, "CRASH": 3,
+            "FAILSTART": 2, "INCOMPLETE": 1, None: 0}
+    best, order = {}, []
+    for r in results:
+        n = r["name"]
+        if n not in best:
+            best[n] = r
+            order.append(n)
+        elif RANK.get(r["status"], 0) > RANK.get(best[n]["status"], 0):
+            best[n] = r
+    results = [best[n] for n in order]
+
     return results, done_line, bugcheck
 
 

@@ -1040,3 +1040,38 @@ conformance quarantines at once; (b) keep quarantining the exception-raising tes
 reach a (heavily-quarantined) first baseline; (c) stop here with the user-APC fix as the win. The 3
 arm64 quarantines so far (ExFastMutex timeout + the RtlRaiseStatus cluster ExHardError/ExResource)
 are committed as progress; no baseline seeded yet.
+
+### 2026-07-16 (M3 arm64 baseline SEEDED) — first arm64 kmtest baseline: 68 OK
+
+The arm64 baseline grind is complete for a v1: `tools/conformance-baseline/arm64/kmtest.txt`
+= **68 OK + 3 harness-NO-END, sweep=done, zero crashes**. Started from the amd64 list; the
+NEW arm64-only quarantines (all committed with negative results):
+- **ExFastMutex** — in-kernel TIMEOUT (arm64-specific; NOT the SEH cluster).
+- **The arm64 kernel-SEH cluster (§9.69 / task #10):** ExHardError, ExResource, KeDpc, KeMutex,
+  MmSection, RtlIsValidOemCharacter, SeInheritance, ZwAllocateVirtualMemory — each BUGCHECK 0x1E
+  (mostly at the SAME PC `RtlRaiseStatus+0x44`; SeInheritance surfaces one frame later in
+  `KeWaitForSingleObject`). All raise a kernel exception the native `__try/__except` can't catch
+  on arm64; all pass on amd64. **Task #10 clears this whole set at once.**
+- **ZwMapViewOfSection** — BUGCHECK 0x23 (fastfat `STUB_BUGCHECK` 0xdead0000): a distinct
+  untranslated-fastfat-fn root (maps a file-backed section → fastfat), arm64-only because arm64
+  boots the FAT32 ramdisk. Fix = translate the specific fastfat fn (separate lane).
+
+The 3 baselined NO-END (HalPortIo, RtlCaptureContextKM, RtlCaptureContextUM) are all the same
+harness limitation `support.c:105 error 0x7b` (INVALID_NAME — a helper binary not found by name),
+matching the i386 baseline's RtlCaptureContext entries. Not kernel bugs.
+
+**Parser hardened for baseline stability (`parse_kmtest_serial.py`).** The arm64 sweep exposed two
+re-run artifacts that made the raw parse nondeterministic (a random 1-2 tests recorded
+None/INCOMPLETE per run despite passing): (1) the sweep exe **re-autostarts** after finishing while
+the guest keeps draining → a partial second run clobbered early tests — fixed by **breaking at the
+first `done total=`** (the first complete sweep is authoritative; a mid-run BUGCHECK has no DONE so
+CRASH handling is unaffected); (2) a **within-run transient re-launch** (e.g. the netstack-TDI
+self-test perturbing timing) left an incomplete attempt beside a clean pass — fixed by a **dedup
+that keeps the most-complete result per test name**. Both are general (no-ops for single-run x86).
+With these, the baseline is stable and the ratchet self-compares green.
+
+**Owed:** the design's ≥3-run stability validation (+ a `flaky.txt` for any residual flapper); the
+netstack-TDI flake still costs ~1/6 boots as a launched=0 retry; and the two arm64 roots behind the
+quarantines — task #10 (kernel-SEH, clears 8) and the fastfat stub (clears ZwMapViewOfSection) —
+are the real fixes that ratchet these back in. Baseline is report-only (not gating) per the M4
+design. The conformance verb build is unchanged; the kernel is identical to the landed user-APC fix.

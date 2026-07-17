@@ -66,16 +66,29 @@ IoVolume
 #KdSystemDebugControl
 KeApc
 KeDeviceQueue
-KeDpc
+# QUARANTINED 2026-07-16 (arm64 sweep 4): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same
+# arm64 kernel-SEH cluster as ExHardError/ExResource (§9.69 / task #10). KeDpc raises a
+# kernel exception expecting native __try/__except to catch it (passes on amd64; also an
+# i386 crasher). Cleared when task #10 lands.
+#KeDpc
 KeEvent
 KeFloatPointState
 KeGuardedMutex
 KeIrql
-KeMutex
+# QUARANTINED 2026-07-16 (arm64 sweep 5): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same
+# arm64 kernel-SEH cluster (§9.69 / task #10), raised status 0xC0000191
+# (STATUS_MUTANT_LIMIT_EXCEEDED, the mutant-limit test) instead of 0xC0000005 — proving
+# the constant crash site is the arm64 exception-DISPATCH, not any single raised code.
+# Matches the i386 crasher exactly (KeMutex exc 0xC0000191). Cleared when task #10 lands.
+#KeMutex
 KeSpinLock
 KeTimer
 MmMdl
-MmSection
+# QUARANTINED 2026-07-16 (arm64 sweep 7): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same
+# arm64 kernel-SEH cluster (§9.69 / task #10). MmSection raises a kernel exception the
+# native __try/__except can't catch on arm64 (passes on amd64; also an i386 crasher).
+# Cleared when task #10 lands.
+#MmSection
 # QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode
 # 0x101, P3=tag 'KmRM' — MmAllocateMappingAddress/MmFreeMappingAddress reserved-mapping
 # path (Rust mdlsup.rs). Triage owed; quest doc has details.
@@ -107,7 +120,9 @@ RtlAvlTreeKM
 # Expected-fail until async-exceptions story exists; not an OS bug.
 #RtlExceptionKM
 RtlIntSafeKM
-RtlIsValidOemCharacter
+# QUARANTINED 2026-07-16 (arm64 sweep 8): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same
+# arm64 kernel-SEH cluster (§9.69 / task #10); also an i386 crasher. Cleared when task #10 lands.
+#RtlIsValidOemCharacter
 RtlMemoryKM
 RtlRangeList
 RtlRegistryKM
@@ -118,7 +133,14 @@ RtlSplayTreeKM
 #RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
-SeInheritance
+# QUARANTINED 2026-07-16 (arm64 sweep 9): BUGCHECK 0x1E (0xC0000005) at a DIFFERENT PC than
+# the raise cluster — KeWaitForSingleObject+0x2ac (wait.rs), P3=0xffff80000452e830. Almost
+# certainly the SAME arm64 kernel-SEH root (§9.69 / task #10) surfacing one frame later:
+# SeInheritance is an i386 crasher (it raises a kernel exception mid-test), amd64 handles the
+# raise and PASSES (704433/14) with the identical user-APC-on-return behavior, so the arm64
+# user-APC fix is NOT the cause; the botched arm64 raise leaves thread/wait state bad and the
+# next wait derefs garbage. Triage owed (confirm vs task #10). Cleared when task #10 lands.
+#SeInheritance
 SeLogonSession
 SeQueryInfoToken
 # QUARANTINED 2026-07-11 (amd64 sweep 9): TIMEOUT at 180s — process wedges IN-KERNEL
@@ -126,9 +148,17 @@ SeQueryInfoToken
 # subsequent test in the boot fails SET_RESULTBUFFER with 0x5. One wedge poisons the
 # whole rest of the run — must stay quarantined until the hang is triaged.
 #SeTokenFiltering
-ZwAllocateVirtualMemory
+# QUARANTINED 2026-07-16 (arm64 sweep 10): BUGCHECK 0x1E at RtlRaiseStatus+0x44 — same arm64
+# kernel-SEH cluster (§9.69 / task #10); also an i386 crasher. Cleared when task #10 lands.
+#ZwAllocateVirtualMemory
 ZwCreateSection
-ZwMapViewOfSection
+# QUARANTINED 2026-07-16 (arm64 sweep 12): BUGCHECK 0x23 FAT_FILE_SYSTEM P1=0xdead0000 — a
+# DIFFERENT root from the SEH cluster: 0xdead0000 is the fastfat STUB_BUGCHECK marker
+# (rust_cohab_stub.c), i.e. an untranslated fastfat function (one of the ~25 dropped-at-translate
+# stubs, same class as the fixed FatSetEndOfFileInfo). ZwMapViewOfSection maps a file-backed
+# section → fastfat path → untranslated stub. arm64-only because arm64 boots the FAT32 ramdisk
+# (x86 boot FS differs). Fix = translate the specific fastfat fn (rustconv single-fn), not task #10.
+#ZwMapViewOfSection
 # QUARANTINED 2026-07-11 (amd64 sweep 10): BUGCHECK 0x1E — AV in memcpy+0x40 (same PC
 # as ObSymbolicLink's crash): NtWaitForMultipleObjects handle-array capture with hostile
 # params — the C capture relies on SEH probing (dead under DUMMY_PSEH). Triage owed.
