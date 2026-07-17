@@ -862,23 +862,60 @@ fixes, each moving the AP strictly further:
 `KeIpiGenericCall` self-test). This is the core Phase-C achievement — the AP-init path
 works end-to-end.
 
-**REMAINING BLOCKER (next session) — wire the i386 kernel IPI receive (vector 0xE1).**
-`-smp 2` now HANGS (not faults) at P0's M3 `KeIpiGenericCall` self-test
-(`ex-rust/init.rs:1321`): P0 broadcasts the generic-call IPI (0xE1) to the active AP, but
-**i386 IDT[0xE1] is `KiUnexpectedInterrupt225` on BOTH CPUs — the kernel IPI vector was
-never wired to a receive ISR** (amd64 wires 0xE1→`KiIpiInterrupt` in `ke/amd64/except.c`;
-i386 only ever had the SEND side + a P0-LOCAL self-test, so the receive side is untested
-greenfield). `KiIpiServiceRoutine@8` (the receive body, `ke/ipi.rs:511`) EXISTS but is
-unreachable. Fix = add an i386 interrupt trap stub for 0xE1 (clone the
-`HalpClockIpi`/`HalpClockIpiHandler` pair — asm stub builds the trap frame, fastcall Rust
-handler does `KiEnterInterruptTrap` → `KiSendEOI` → `KiIpiServiceRoutine(NULL,NULL)` →
-`KiEoiHelper`) and wire it with `register_interrupt_handler(APIC_IPI_VECTOR, stub)` in
-`hal-rust/x86/apic.rs` alongside the existing `register_interrupt_handler(CLOCK_IPI_VECTOR,
-HalpClockIpi)`. This ALSO unblocks i386 TLB-shootdown-to-AP (same 0xE1 path). Once wired,
-P0's self-test completes → boot proceeds → the scheduler distributes to CPU1 (dispatch IPI
-0x41 is already wired) → expect `[SMP] CPU1 scheduling live`. NOTE: `-smp 2` is WIP-hanging
-on this branch (opt-in SMP kernel only; the default UP kernel + `-smp 1` are unaffected —
-all Phase-C changes are `Cpu != 0`-gated); NOT pushed to master.
+**Bugs 6–8 (2026-07-17): the 0xE1 wiring + two latent MP bugs it uncovered — i386
+`-smp 2` NOW BOOTS TO DESKTOP** (`[SMP] KeIpiGenericCall self-test: worker ran on 0x3` +
+`[SMP] CPU1 scheduling live` + shell ready, ~38 s).
+
+6. **Kernel IPI receive (0xE1) wired — the blocker.** i386 IDT[0xE1] was
+   `KiUnexpectedInterrupt225` on both CPUs (amd64 wires 0xE1→`KiIpiInterrupt` in the
+   KERNEL; i386 only ever had the send side). Fix exactly as planned: apictrap.S
+   `TRAP_ENTRY HalpIpiInterrupt` (i386 half only!) → fastcall
+   `HalpIpiInterruptHandler` (rtctimer.rs: `KiEnterInterruptTrap` →
+   `HalBeginSystemInterrupt(IPI_LEVEL=29, 0xE1)` → `KiIpiServiceRoutine(TrapFrame,
+   NULL)` → `KiEndInterrupt` + `KiEoiHelper`), wired in apic.rs
+   `HalpInitializePICs` i386 block (`HalpVectorToIndex[0xE1]=RESERVED` +
+   `register_interrupt_handler`). The AP inherits it via the mproc.rs live-IDT copy.
+   **amd64 must NOT wire this** — its kernel owns IDT[0xE1] (descriptor transport in
+   `ke/amd64/ipi.rs`); the HAL stub would clobber it. `KiIpiServiceRoutine` is an
+   ntoskrnl.spec stdcall export (i386/arm/arm64), so the HAL links it directly.
+7. **i386 `HalpClockIpiHandler` dropped `KiEndInterrupt`** (latent until an AP existed —
+   only APs receive the clock IPI). The C (rtctimer.c:226) closes the non-spurious path
+   with `KiEndInterrupt(Irql, TrapFrame)` = cli + `HalEndSystemInterrupt` (LAPIC EOI +
+   IRQL restore) + `KiEoiHelper`; the Rust closed with bare `KiEoiHelper`, so the AP's
+   FIRST clock IPI would leave soft-IRQL at CLOCK_LEVEL + an un-EOI'd ISR bit forever,
+   blocking every class≤0xD vector (clock/DPC/APC) on that AP.
+8. **i386 SwapBusy protocol was INVERTED — the post-wiring `-smp 2` 0x1E.** First run
+   past the self-test bugchecked 0x1E (`STATUS_IN_PAGE_ERROR`) at
+   `KiSwapContextExit+0x20` with OldThread = a STACK VA (0xf7a29c40): CPU1 resumed a
+   migrating thread while CPU0 was still executing on its stack, CPU1's frame pushes
+   scribbled CPU0's live locals (the affinity-bouncing SMP self-test thread made the
+   migration window hot — `[RQAFF]` prints of the same thread flipping setmember 1↔2
+   immediately precede the crash). Root: NT's MP protocol (2k3 i386 `SwapContext`) is
+   (a) SPIN until `NewThread->SwapBusy == 0` before adopting its stack, (b) clear
+   `OldThread->SwapBusy` only AFTER ESP leaves the old stack; our i386
+   `KiSwapContextEntry` had NO spin and cleared the NEW thread's flag (a lazy self-heal
+   that destroyed the guard). Fix: Acquire spin in `KiSwapContextEntry` (before
+   `KiSwitchThreads`, interrupts enabled so IPIs stay serviceable), Release clear of
+   `OldThread->SwapBusy` in `KiSwapContextExit` (after the DPC-active check, mirroring
+   amd64 thrdini.rs:271), plus `KiSetThreadSwapBusy(OldThread)` in i386
+   `KiDispatchInterrupt` before `KxQueueReadyThread` (NT does; without it the flag is
+   never raised on the preempt path). **Cross-arch bonus: amd64
+   `KiDpcInterruptHandler` had the SAME missing set-busy** (traphandler.rs — its
+   ctxswitch.S spin existed but the flag was never raised on this path), a prime
+   suspect for the open amd64 "kernel-stack teardown race" 0x1E (task-ledger Bug2).
+   Fixed identically. Audit of every other queue-current site came back covered
+   (wait paths, `KiQuantumEnd`, `NtYieldExecution` all call `KiSetThreadSwapBusy`;
+   arm64 has the full protocol in ctxswitch.S:159 + thrdini.rs:225 and has no
+   queue-current dispatch-interrupt path). The same audit closed §9.88 Bug 2
+   (amd64 kernel-stack teardown race, task #10): `PspReapRoutine`/`PspDeleteThread`
+   freed the dying thread's stack with NO wait for its final context swap —
+   `KeTerminateThread` queues the reaper entry while still running on that stack.
+   Fix: Acquire spin on `Tcb.SwapBusy` before `MmDeleteKernelStack` (all arches;
+   field manual §9.94).
+
+This also unblocks i386 TLB-shootdown-to-AP (same 0xE1 packet path — `KeFlushEntireTb`'s
+`KiFlushTargetEntireTb` packets now execute on the AP; single-VA remote flush remains the
+M-wave-2 parity item shared with amd64).
 
 GDB recipe that cracked Bug D (banked for Phase C): **`hbreak`** the suspect fn
 (a plain `break` at `--gdb-wait` reset is clobbered when freeldr copies the kernel

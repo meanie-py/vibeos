@@ -881,24 +881,30 @@ pub unsafe extern "fastcall" fn KiGetMachineBootPointers(
     let Fs: u16;
     core::arch::asm!("mov {:x}, fs", out(reg) Fs, options(nomem, nostack));
 
-    *Gdt = gdt_base as PKGDTENTRY;
-    *Idt = idt_base as PKIDTENTRY;
+    core::ptr::write_volatile(Gdt, gdt_base as PKGDTENTRY);
+    core::ptr::write_volatile(Idt, idt_base as PKIDTENTRY);
 
     PcrSelector = *((gdt_base as ULONG_PTR + (Fs & !RPL_MASK) as ULONG_PTR)
         as *const _KGDTENTRY);
 
-    *Pcr = (PcrSelector.BaseLow as ULONG_PTR
-        | ((PcrSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
-        | ((PcrSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
-        as PKIPCR;
+    core::ptr::write_volatile(
+        Pcr,
+        (PcrSelector.BaseLow as ULONG_PTR
+            | ((PcrSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
+            | ((PcrSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
+            as PKIPCR,
+    );
 
     TssSelector = *((gdt_base as ULONG_PTR + (Tr & !RPL_MASK) as ULONG_PTR)
         as *const _KGDTENTRY);
 
-    *Tss = (TssSelector.BaseLow as ULONG_PTR
-        | ((TssSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
-        | ((TssSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
-        as PKTSS;
+    core::ptr::write_volatile(
+        Tss,
+        (TssSelector.BaseLow as ULONG_PTR
+            | ((TssSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
+            | ((TssSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
+            as PKTSS,
+    );
 }
 
 // CODE_SEG("INIT")

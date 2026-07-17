@@ -435,7 +435,14 @@ pub unsafe extern "C" fn HalpClockIpiHandler(TrapFrame: PKTRAP_FRAME) {
 }
 
 // i386 (C-faithful, rtctimer.c:199-227): FASTCALL; KeUpdateRunTime returns on
-// x86 (unlike KeUpdateSystemTime), so the trap is closed via KiEoiHelper.
+// x86 (unlike KeUpdateSystemTime), so the trap is closed here.  The
+// non-spurious path MUST end via KiEndInterrupt (cli + HalEndSystemInterrupt:
+// LAPIC EOI + IRQL restore) before KiEoiHelper — the i386 KiEndInterrupt
+// (internal/i386/ke.h:961) is exactly that pair.  An earlier translation
+// closed with bare KiEoiHelper: invisible on UP (only APs receive the clock
+// IPI), but on -smp the AP's first clock IPI left CLOCK_LEVEL soft-IRQL +
+// an un-EOI'd LAPIC ISR bit forever, wedging all class<=0xD vectors
+// (clock/DPC/APC) on that AP.
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn HalpClockIpiHandler(TrapFrame: PKTRAP_FRAME) {
@@ -443,10 +450,58 @@ pub unsafe extern "fastcall" fn HalpClockIpiHandler(TrapFrame: PKTRAP_FRAME) {
 
     KiEnterInterruptTrap(TrapFrame);
 
-    if HalBeginSystemInterrupt(CLOCK_LEVEL as KIRQL, CLOCK_IPI_VECTOR, &raw mut Irql) != 0 {
-        KeUpdateRunTime(TrapFrame, Irql);
+    if HalBeginSystemInterrupt(CLOCK_LEVEL as KIRQL, CLOCK_IPI_VECTOR, &raw mut Irql) == 0 {
+        // Spurious: lazy-IRQL path already EOI'd + re-queued; just exit.
+        KiEoiHelper(TrapFrame);
     }
 
+    KeUpdateRunTime(TrapFrame, Irql);
+
+    KiEndInterrupt(Irql, TrapFrame);
+    KiEoiHelper(TrapFrame);
+}
+
+// ----------------------------------------------------------------------------
+// Kernel-IPI (vector 0xE1) receive handler — i386 only.
+// ----------------------------------------------------------------------------
+// GREENFIELD: the ReactOS apic HAL is UP-only and never had a kernel-IPI
+// receive path; the ancestral model is halmps's HalpIpiHandler (build trap
+// frame → begin interrupt at IPI_LEVEL → KiIpiServiceRoutine → end).  The
+// send side is smp_processor.rs::HalRequestIpi (ICR fixed IPI, vector 0xE1);
+// the kernel receiver KiIpiServiceRoutine (ke/ipi.rs, ntoskrnl.spec stdcall
+// export) drains the Prcb IpiFrozen request bits (APC/DPC/packet).  amd64
+// receives 0xE1 in the KERNEL (ke/amd64/except.c:46 KiIpiInterrupt → the
+// descriptor transport in ke/amd64/ipi.rs), so this handler must never be
+// wired there.  Trap stub: apictrap.S `TRAP_ENTRY HalpIpiInterrupt`.
+#[cfg(target_arch = "x86")]
+const APIC_IPI_VECTOR: ULONG = 0xE1;
+#[cfg(target_arch = "x86")]
+const IPI_LEVEL: KIRQL = 29;
+
+#[cfg(target_arch = "x86")]
+unsafe extern "system" {
+    // `_KiIpiServiceRoutine@8` — ntoskrnl.spec:738 (i386/arm/arm64 only).
+    fn KiIpiServiceRoutine(
+        TrapFrame: PKTRAP_FRAME,
+        ExceptionFrame: *mut core::ffi::c_void,
+    ) -> u8;
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn HalpIpiInterruptHandler(TrapFrame: PKTRAP_FRAME) {
+    let mut Irql: KIRQL = 0;
+
+    KiEnterInterruptTrap(TrapFrame);
+
+    if HalBeginSystemInterrupt(IPI_LEVEL, APIC_IPI_VECTOR, &raw mut Irql) == 0 {
+        // Spurious: lazy-IRQL path already EOI'd + re-queued; just exit.
+        KiEoiHelper(TrapFrame);
+    }
+
+    KiIpiServiceRoutine(TrapFrame, core::ptr::null_mut());
+
+    KiEndInterrupt(Irql, TrapFrame);
     KiEoiHelper(TrapFrame);
 }
 

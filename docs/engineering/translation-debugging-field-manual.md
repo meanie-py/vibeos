@@ -7573,7 +7573,7 @@ declining, produce this. If you start a farm, expect to be the reason another la
 1. **Never trust a piped/`&&`-chained `ninja` "Finished" as proof your file compiled.** grep for `error[` AND `FAILED` explicitly, and read the *per-crate* `Compiling <crate>` / error lines — a `Finished` can come from another unit in the same invocation.
 2. **After a Rust probe that MUST appear on serial, verify the literal is in the binary before booting:** `strings <module> | grep -c '<my unique print literal>'`. Zero = it never compiled in; stop and fix the build, don't waste a boot.
 3. **A cargo compile error leaves the prior rlib; the link can silently succeed against stale objects.** "Other edits in the crate shipped" does NOT prove *your* file did — cargo is per-file incremental and one file's error doesn't fail-fast the others' cached outputs at link time here.
-### 9.88 (2026-07-16) The kmtest MmMdl `-smp 2` 0x1E is TWO bugs — a system-PTE leak (FIXED) masking a kernel-stack teardown race (OPEN)
+### 9.88 (2026-07-16) The kmtest MmMdl `-smp 2` 0x1E is TWO bugs — a system-PTE leak (FIXED) masking a kernel-stack teardown race (→ FIXED in §9.94: the reaper freed the stack without the SwapBusy "off all CPUs" spin)
 
 Hunting the amd64 `-smp 2` kmtest **MmMdl** 0x1E (task #10, ~10%/sweep in the 20-sweep
 guest-load soak). Amplifier: a temporary MmMdl-dense sweep list (warmup + MmMdl ×25/boot,
@@ -7974,3 +7974,53 @@ at a function *entry* address, is the noreturn-return-address-past-end bug — t
 (b) A "self-test FAIL" is only meaningful if the test's precondition actually held; verify the "bad"
 input truly faults on THIS arch before trusting `invalid_caught=0`. (c) When a SEH fix makes a test
 BUGCHECK with a *different* stop code, that's forward progress uncovering the next bug, not a regression.
+
+### 9.94 (ROOT-CAUSED + FIXED 2026-07-17) i386 SMP context-switch corruption + the kernel-stack teardown race — the SwapBusy protocol was inverted/unenforced
+
+i386 M5 Phase C's first `-smp 2` boot past the IPI self-test bugchecked
+`0x1E (0xC0000006 STATUS_IN_PAGE_ERROR)` at `KiSwapContextExit+0x20` with the `OldThread`
+*argument* holding a **kernel-stack VA** (0xf7a29c40) instead of a KTHREAD — i.e. the
+switching CPU's own spilled locals had been overwritten mid-switch. Immediately preceding:
+`[RQAFF]` prints of the same thread with `setmember` flipping 1↔2 (the affinity-bouncing SMP
+self-test thread — a migration-heavy workload).
+
+**Root: NT's context-swap-busy protocol (2k3 `SwapContext`, MP-only) was missing/inverted.**
+The invariant: `Thread->SwapBusy` is the *"some CPU is still executing on this thread's
+stack"* flag. (a) Every path that makes a running thread visible-ready before switching away
+must SET it (`KiSetThreadSwapBusy`); (b) a CPU switching TO a thread must **SPIN until it
+clears** before adopting the stack; (c) the switching CPU clears the OLD thread's flag only
+**after ESP has left the old stack**. Our amd64 had (b) (ctxswitch.S:179) and (c)
+(thrdini.rs:271); i386 had **neither** — worse, `KiSwapContextEntry` cleared the **NEW**
+thread's flag (a lazy self-heal that made the flag permanently meaningless), so every
+migration was a data race on the old stack: the resuming CPU pushes frames DOWNWARD from the
+published `KernelStack` directly over the still-switching CPU's live locals.
+
+Four fixes (all landed together):
+1. **i386 `KiSwapContextEntry`**: deleted the NewThread clear; added the Acquire spin on
+   `NewThread->SwapBusy` right before `KiSwitchThreads` (interrupts enabled, so IPIs stay
+   serviceable while spinning).
+2. **i386 `KiSwapContextExit`**: Release-clear `OldThread->SwapBusy` after the DPC-active
+   check — the last OldThread access (after this store the thread may run/exit/be freed).
+3. **`KiDispatchInterrupt` (BOTH x86 arches)**: `KiSetThreadSwapBusy(OldThread)` before
+   `KxQueueReadyThread` — NT does this; without it the flag is never raised on the
+   preempt-requeue path, so amd64's existing spin guarded nothing there. All other
+   queue-current sites were audited covered (wait paths, `KiQuantumEnd`,
+   `NtYieldExecution`; arm64 has the full protocol and no queue-current preempt path).
+4. **`PspReapRoutine` / `PspDeleteThread` (all arches): spin on the dying thread's
+   `SwapBusy` before `MmDeleteKernelStack`.** `KeTerminateThread` queues the reaper entry
+   (and sets SwapBusy) while the dying thread is STILL RUNNING on that stack; the final
+   SwapContext clears it only once its CPU is off. Freeing earlier = the dying CPU executes
+   on released system PTEs → **exactly §9.88 Bug 2's face** (`0xC0000006` on a `ret [rsp]`
+   in the kernel-stack region under process-churn load). The spin is the missing
+   "thread is off all CPUs" synchronization §9.88 predicted. (Safe on UP: the flag is
+   never set, load returns 0; terminal state after the final swap is 0, so no deadlock.)
+
+Validated: i386 `-smp 2` went BUGCHECK → **5/5 boots to desktop** (~40 s each, 4 in
+parallel). **Reusable:** (a) a corrupt *argument* (not target) at a context-switch PC — a
+stack VA where a KTHREAD belongs — means the OLD stack was adopted by another CPU mid-switch;
+suspect the swap-busy handshake before suspecting the scheduler. (b) A protocol flag that a
+translation clears on the WRONG side doesn't fail loudly — it self-heals into "always
+passes" and silently disables the guard; when porting MP protocols, diff every set/clear/spin
+site against the reference asm, not just the ones that exist. (c) UP-invisible inversions
+unmask ONLY under migration load — an affinity-bouncing self-test thread is a cheap,
+deterministic-ish amplifier worth keeping in the boot.

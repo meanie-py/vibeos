@@ -351,7 +351,7 @@ pub unsafe extern "system" fn CcMapData(
         let status = CcRosGetVacb(shared_cache_map, (*file_offset).QuadPart, &mut vacb);
         if status < 0 {
             // DUMMY_PSEH: ExRaiseStatus would be caught by caller's SEH — return FALSE instead
-            *p_bcb = core::ptr::null_mut();
+            core::ptr::write_volatile(p_bcb, core::ptr::null_mut());
             *p_buffer = core::ptr::null_mut();
             return 0u8;
         }
@@ -359,7 +359,7 @@ pub unsafe extern "system" fn CcMapData(
         i_bcb = CcpGetAppropriateBcb(shared_cache_map, vacb, file_offset, length, 0, 0u8) as PINTERNAL_BCB;
         if i_bcb.is_null() {
             CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
-            *p_bcb = core::ptr::null_mut();
+            core::ptr::write_volatile(p_bcb, core::ptr::null_mut());
             *p_buffer = core::ptr::null_mut();
             return 0u8;
         }
@@ -381,10 +381,10 @@ pub unsafe extern "system" fn CcMapData(
 
     if result == 0 {
         CcpDereferenceBcb(shared_cache_map, i_bcb);
-        *p_bcb = core::ptr::null_mut();
+        core::ptr::write_volatile(p_bcb, core::ptr::null_mut());
         *p_buffer = core::ptr::null_mut();
     } else {
-        *p_bcb = core::ptr::addr_of_mut!((*i_bcb).PFCB) as PVOID;
+        core::ptr::write_volatile(p_bcb, core::ptr::addr_of_mut!((*i_bcb).PFCB) as PVOID);
         let base_addr = (*(*i_bcb).Vacb).BaseAddress;
         *p_buffer = (base_addr as usize + vacb_offset as usize) as PVOID;
     }

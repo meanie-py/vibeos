@@ -452,6 +452,10 @@ unsafe extern "C" {
     fn HalpApcInterrupt();
     #[cfg(target_arch = "x86")]
     fn HalpDispatchInterrupt();
+    // i386 kernel-IPI (0xE1) trap stub (apictrap.S; handler in rtctimer.rs).
+    // amd64 must NOT wire this: its kernel owns IDT[0xE1] (KiIpiInterrupt).
+    #[cfg(target_arch = "x86")]
+    fn HalpIpiInterrupt();
     // Serial flavor banner (i386): variadic cdecl, resolved via the ntoskrnl
     // import lib — proves in every boot log that the APIC HAL is live.
     #[cfg(target_arch = "x86")]
@@ -973,6 +977,13 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
     {
         register_interrupt_handler(APC_VECTOR, HalpApcInterrupt as _);
         register_interrupt_handler(DISPATCH_VECTOR, HalpDispatchInterrupt as _);
+        // Kernel IPI receive (0xE1 -> KiIpiServiceRoutine): i386-only — the
+        // amd64 kernel wires IDT[0xE1] itself (KiIpiInterrupt, ke/amd64).
+        // Harmless on UP (nothing ever sends 0xE1); the AP inherits this via
+        // the live-IDT copy in KeStartAllProcessors (ke/i386/mproc.rs).
+        const APIC_IPI_VECTOR: ULONG = 0xE1;
+        HalpVectorToIndex[APIC_IPI_VECTOR as usize] = APIC_RESERVED_VECTOR;
+        register_interrupt_handler(APIC_IPI_VECTOR, HalpIpiInterrupt as _);
     }
 
     HalpRegisterVector(IDT_INTERNAL, 0, APC_VECTOR, 1 /* APC_LEVEL */);
