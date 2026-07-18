@@ -91,7 +91,7 @@ pub const CLOCK2_LEVEL: KIRQL   = 28;
 pub const IPI_LEVEL: KIRQL      = 29;
 pub const POWER_LEVEL: KIRQL    = 30;
 pub const PROFILE_LEVEL: KIRQL  = 27;
-pub const SYNCH_LEVEL: KIRQL    = DISPATCH_LEVEL;
+pub use crate::x86::buildtype::SYNCH_LEVEL; // 2 on the UP HAL, 27 on the SMP HAL (i386)
 pub const HIGH_LEVEL: KIRQL     = 31;
 
 // EFLAGS bits.

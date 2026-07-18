@@ -12,7 +12,7 @@ ExUuid OK pass=2000 fail=1000 skip=0 exit=0
 Example OK pass=31 fail=15 skip=0 exit=0
 FsRtlDissect OK pass=288 fail=0 skip=0 exit=0
 FsRtlExpression OK pass=258 fail=8 skip=0 exit=0
-FsRtlLegal OK pass=2504 fail=24 skip=0 exit=0
+FsRtlLegal OK pass=2496 fail=32 skip=0 exit=0
 FsRtlMcb OK pass=36213 fail=0 skip=0 exit=0
 FsRtlRemoveDotsFromPath OK pass=7 fail=0 skip=0 exit=0
 FsRtlTunnel OK pass=108 fail=0 skip=0 exit=0
@@ -60,7 +60,7 @@ RtlCaptureContextKM NO-END pass=0 fail=0 skip=0 exit=1 errors=1
 FileAttributes OK pass=84 fail=0 skip=0 exit=0
 FindFile OK pass=251 fail=2 skip=0 exit=0
 HidPDescription OK pass=3 fail=10 skip=2 exit=0
-IoDeviceObject OK pass=185 fail=4 skip=0 exit=0
+IoDeviceObject OK pass=184 fail=5 skip=0 exit=0
 NtSystemDebugControl OK pass=27 fail=15 skip=0 exit=0
 PoIrp OK pass=57 fail=0 skip=0 exit=0
 RtlAvlTree OK pass=139 fail=0 skip=0 exit=0

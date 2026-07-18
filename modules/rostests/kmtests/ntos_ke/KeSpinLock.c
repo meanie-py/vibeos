@@ -84,8 +84,15 @@ struct _CHECK_DATA
     {
         KLOCK_QUEUE_HANDLE QueueHandle;
         PKSPIN_LOCK_QUEUE Queue;
-        KIRQL Irql;
     } DUMMYUNIONNAME;
+    /* Deliberately NOT in the union above: the queued-lock wrappers store the
+     * returned IRQL here while CheckSpinLockQueue reads Queue. Overlapping the
+     * two garbles Queue's low byte — latent on UP kernels (the whole
+     * Prcb->LockQueue region is zeros, so even a garbled pointer reads NULLs)
+     * but exposed on MP kernels, where the reads land on neighboring
+     * initialized queue entries at misaligned offsets. */
+    KIRQL Irql;
+    PVOID InitialQueueLock;
     PVOID UntouchedValue;
 };
 
@@ -190,8 +197,15 @@ BOOLEAN TryNoRaise(PKSPIN_LOCK SpinLock, PCHECK_DATA CheckData) {
 
 #define CheckSpinLockQueue(SpinLock, CheckData, Value) do                           \
 {                                                                                   \
+    /* Prcb->LockQueue[n].Lock is boot-initialized to point at the global lock      \
+     * (KiInitSystem does this on UP AND MP kernels alike); only the low            \
+     * LQ_WAIT/LQ_OWN flag bits vary while held/contended, and Next is NULL while   \
+     * nobody queues behind us. Compare against the value captured at row init.     \
+     * (The old unconditional NULL expectation only ever "passed" through the       \
+     * CHECK_DATA union bug garbling the Queue pointer toward zeroed memory.) */    \
     ok_eq_pointer((CheckData)->Queue->Next, NULL);                                  \
-    ok_eq_pointer((CheckData)->Queue->Lock, NULL);                                  \
+    ok_eq_pointer((PVOID)((ULONG_PTR)(CheckData)->Queue->Lock & ~(ULONG_PTR)7),     \
+                  (CheckData)->InitialQueueLock);                                   \
     ok_eq_uint((CheckData)->Irql, (CheckData)->OriginalIrql);                       \
 } while (0)
 
@@ -462,6 +476,8 @@ START_TEST(KeSpinLock)
         if (TestData[i].Check == CheckQueue)
         {
             TestData[i].Queue = &Prcb->LockQueue[TestData[i].QueueNumber];
+            TestData[i].InitialQueueLock =
+                (PVOID)((ULONG_PTR)TestData[i].Queue->Lock & ~(ULONG_PTR)7);
             TestData[i].UntouchedValue = NULL;
         }
         else

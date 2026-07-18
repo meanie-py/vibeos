@@ -50,7 +50,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg
+from . import archcfg, hostlock
 from .artifacts import Run, Stage
 
 # A failure with one of these classifications is a *documented* flake or an
@@ -61,6 +61,12 @@ from .artifacts import Run, Stage
 #   - NET_FLAKE: boots green + net suite failed under concurrent-smoke load (the
 #     documented amd64 timing flake, see smoke.py _net_stage) — a real netstack
 #     regression fails the retry too, so it still ends red.
+#   - HOST_STARVED: the net lane never booted — it spent its whole budget queued
+#     on the hostlock lease broker (field manual §9.84: another lane's farm/builds
+#     own the host). Retryable because the gate's retry phase runs after its own
+#     parallel lanes released their leases, so self-inflicted contention clears;
+#     an external holder keeps the retry starved and the final red then SAYS
+#     HOST_STARVED instead of masquerading as a netstack flake.
 #
 # HANG_TIMEOUT is deliberately NOT a blanket member: "HANG_TIMEOUT ≈ host
 # contention" dates from the native-KVM era, but on the default windows-host TCG
@@ -69,7 +75,7 @@ from .artifacts import Run, Stage
 # ~87% of the time. It is retryable ONLY when smoke characterized it as
 # slow/contended (serial still flowing at the deadline) AND the kernel didn't
 # self-report stuck threads — see _retryable().
-RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "LAUNCH_FAIL", "NET_FLAKE"}
+RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "LAUNCH_FAIL", "NET_FLAKE", "HOST_STARVED"}
 
 
 def _retryable(classification: str, summary: dict) -> bool:
@@ -193,8 +199,9 @@ def _net_once(repo: Path, root: Path) -> dict:
             "salient": "tests/qemu/test_net.py hung > 1200s",
         }
     dt = time.monotonic() - t0
+    out_all = (proc.stdout or "") + "\n" + (proc.stderr or "")
     try:
-        (root / "pytest.out").write_text((proc.stdout or "") + "\n" + (proc.stderr or ""))
+        (root / "pytest.out").write_text(out_all)
     except OSError:
         pass
     tail = (proc.stdout or "").strip().splitlines()
@@ -203,15 +210,26 @@ def _net_once(repo: Path, root: Path) -> dict:
         tail[-1] if tail else "",
     )
     ok = proc.returncode == 0
+    # §9.84: hostlock announced the queue but never the acquisition → the suite's flat
+    # timeouts mean it NEVER BOOTED. Name the real cause instead of "NET_FLAKE" so a red
+    # gate doesn't send anyone chasing a netstack bug that is actually a busy host.
+    starved = (not ok) and hostlock.looks_starved(out_all)
     return {
         "arch": "net",
         "verdict": "OK" if ok else "FAIL",
-        "classification": "" if ok else "NET_FLAKE",
+        "classification": "" if ok else ("HOST_STARVED" if starved else "NET_FLAKE"),
         "ok": ok,
         "retryable": not ok,
         "seconds": dt,
         "run_dir": str(root),
-        "salient": "" if ok else summary.strip("= "),
+        "salient": ""
+        if ok
+        else (
+            "net lane never booted — queued on host CPU leases the whole run (§9.84); "
+            "`vibeos-cli ps` names the holder"
+            if starved
+            else summary.strip("= ")
+        ),
     }
 
 

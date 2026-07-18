@@ -266,6 +266,13 @@ pub const SYNCH_LEVEL: u8 = 14 - 2; // 12
 #[cfg(all(feature = "smp", target_arch = "aarch64"))]
 pub const SYNCH_LEVEL: u8 = 2;
 
+// Exported for ke_rust_shims.c's amd64 KeRaiseIrqlToSynchLevel CR8 shim (the
+// only out-of-line provider of that export on amd64) so the C side raises to
+// the kernel-flavor level without needing CONFIG_SMP at its compile.
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub static KiSynchIrql: u8 = SYNCH_LEVEL;
+
 // Bugcheck codes
 pub const IRQL_NOT_GREATER_OR_EQUAL: u32 = 0x0000_0009;
 pub const SPIN_LOCK_ALREADY_OWNED: u32 = 0x0000_000F;

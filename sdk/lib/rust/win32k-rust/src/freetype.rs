@@ -590,8 +590,8 @@ unsafe fn FontLink_LoadDefaultFonts() -> NTSTATUS {
     if NT_SUCCESS(Status) {
         szValue[szValue.len() - 1] = 0;
         w32r_RtlStringCchCopyW(
-            s_szDefFontLinkFileName.as_mut_ptr(),
-            s_szDefFontLinkFileName.len(),
+            (*(&raw mut s_szDefFontLinkFileName)).as_mut_ptr(),
+            (*(&raw const s_szDefFontLinkFileName)).len(),
             szValue.as_ptr(),
         );
     }
@@ -607,8 +607,8 @@ unsafe fn FontLink_LoadDefaultFonts() -> NTSTATUS {
     if NT_SUCCESS(Status) {
         szValue[szValue.len() - 1] = 0;
         w32r_RtlStringCchCopyW(
-            s_szDefFontLinkFontName.as_mut_ptr(),
-            s_szDefFontLinkFontName.len(),
+            (*(&raw mut s_szDefFontLinkFontName)).as_mut_ptr(),
+            (*(&raw const s_szDefFontLinkFontName)).len(),
             szValue.as_ptr(),
         );
     }
@@ -1853,7 +1853,7 @@ unsafe fn FontLink_Chain_Populate(pChain: PFONTLINK_CHAIN) -> NTSTATUS {
         w32r_RtlStringCchCopyW(
             szEntry.as_mut_ptr(),
             _countof!(szEntry),
-            s_szDefFontLinkFileName.as_ptr(),
+            (*(&raw const s_szDefFontLinkFileName)).as_ptr(),
         );
         w32r_RtlStringCchCatW(
             szEntry.as_mut_ptr(),
@@ -1863,7 +1863,7 @@ unsafe fn FontLink_Chain_Populate(pChain: PFONTLINK_CHAIN) -> NTSTATUS {
         w32r_RtlStringCchCatW(
             szEntry.as_mut_ptr(),
             _countof!(szEntry),
-            s_szDefFontLinkFontName.as_ptr(),
+            (*(&raw const s_szDefFontLinkFontName)).as_ptr(),
         );
         pLink = FontLink_Create(pChain, &lfBase, szEntry.as_ptr());
         if !pLink.is_null() {
