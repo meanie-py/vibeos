@@ -1303,6 +1303,10 @@
 # SharedUserData->SystemCall path. Under WoW64 the host wow64.dll patches the
 # guest ntdll32's slot to the CPU layer's BOP bridge (Win10-parity export).
 @ extern -arch=i386 Wow64Transition
+# E5: the KiUserExceptionDispatcher hook slot (dispatch.S). wow64.dll writes its
+# guest-SEH dispatch handler here so hardware faults in 32-bit guest code reach
+# the guest's own exception dispatcher. Data export; amd64 native WoW64 only.
+@ extern -arch=x86_64 Wow64PrepareForException
 # Real RtlWow64Get/SetThreadContext/SuspendThread for x86_64 live with the
 # arm64 lines above (wow64shim.rs, Phase E) — the old -stub duplicates are gone.
 @ stdcall -stub -version=0x600+ -arch=x86_64 RtlWow64LogMessageInEventLogger(long long long)

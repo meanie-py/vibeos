@@ -171,6 +171,10 @@ LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
 LONG (WINAPI *Wow64pBTCpuGetContext)(HANDLE, HANDLE, PVOID, PVOID);
 VOID (WINAPI *Wow64pBTCpuSimulate)(VOID);
 PVOID Wow64pKiUserCallbackDispatcher32;
+/* E5: guest ntdll32's KiUserExceptionDispatcher — entry point for dispatching
+ * exceptions INTO the guest's own 32-bit SEH (hardware faults via the VEH
+ * redirect below; software raises via the NtRaiseException marshaller). */
+PVOID Wow64pKiUserExceptionDispatcher32;
 void Wow64pInstallUserCallbackTable(void);
 /* The BOP bridge address (BTCpuGetBopCode), kept for map-time Wow64Transition
  * patching of guest DLLs that carry their own slot (gdi32/user32 embed the
@@ -220,6 +224,124 @@ static void Wow64pDumpGuestHeap(void)
                      *(ULONG *)(ULONG_PTR)(C->Ebp + 0x0c));
     }
 }
+
+/* E5 — the i386 EXCEPTION_RECORD (0x50 bytes; every pointer field is 32-bit). */
+typedef struct _WOW64_EXCEPTION_RECORD32 {
+    ULONG ExceptionCode;
+    ULONG ExceptionFlags;
+    ULONG ExceptionRecord;          /* guest EXCEPTION_RECORD32* (chain) */
+    ULONG ExceptionAddress;         /* guest PVOID */
+    ULONG NumberParameters;
+    ULONG ExceptionInformation[15];
+} WOW64_EXCEPTION_RECORD32;
+
+/*
+ * E5 — build an i386 KiUserExceptionDispatcher frame on the guest stack:
+ *   [Esp+0] = EXCEPTION_RECORD32*   [Esp+4] = CONTEXT32*
+ * with both structs copied immediately above, everything below `Below`.
+ * Shared by the VEH hardware-fault redirect (amd64) and the NtRaiseException
+ * marshaller (both arches). Returns the new guest Esp, 0 on a bogus stack.
+ */
+ULONG Wow64pBuildGuestExceptionFrame(const WOW64_EXCEPTION_RECORD32 *Rec32,
+                                     const WOW64_CONTEXT *Ctx32, ULONG Below)
+{
+    ULONG CtxA, RecA, Esp, i;
+
+    Below &= ~15u;
+    if (Below < 0x10000 || Below >= 0x80000000u)
+        return 0;
+    CtxA = Below - ((sizeof(WOW64_CONTEXT) + 15) & ~15u);
+    RecA = CtxA - sizeof(WOW64_EXCEPTION_RECORD32);
+    Esp  = RecA - 8;
+    if (Esp < 0x10000)
+        return 0;
+    for (i = 0; i < sizeof(WOW64_CONTEXT); i++)
+        *(PBYTE)(ULONG_PTR)(CtxA + i) = ((const BYTE *)Ctx32)[i];
+    for (i = 0; i < sizeof(WOW64_EXCEPTION_RECORD32); i++)
+        *(PBYTE)(ULONG_PTR)(RecA + i) = ((const BYTE *)Rec32)[i];
+    *(ULONG *)(ULONG_PTR)(Esp + 0) = RecA;
+    *(ULONG *)(ULONG_PTR)(Esp + 4) = CtxA;
+    return Esp;
+}
+
+#ifndef _M_ARM64
+extern LONG WINAPI NtContinue(CONTEXT *Context, BOOLEAN TestAlert);
+
+/*
+ * E5 — the KiUserExceptionDispatcher hook (amd64 heaven's gate). This is the
+ * real-Windows dispatch point: ntdll's 64-bit KiUserExceptionDispatcher calls
+ * through the `Wow64PrepareForException` slot (which we install below) with
+ * (ExceptionRecord, Context) BEFORE RtlDispatchException — and unlike VEH it
+ * runs regardless of this build's _NTOSKRNL_ RtlDispatchException eliding the
+ * vectored-handler block.
+ *
+ * `Ctx` is the CAPTURED faulting context: for a compat-mode guest fault its
+ * SegCs is 0x23 and its low-32 Rip/Rsp/GPRs are the guest registers (the actual
+ * dispatcher runs in 64-bit mode at CS 0x33 — that's TrapFrame, not this
+ * captured copy). We flush the live guest state into the CPU area
+ * (BTCpuResetToConsistentState), convert the record 64->32, build the i386
+ * KiUserExceptionDispatcher frame on the GUEST stack (below the guest's own
+ * faulting Esp), redirect the context there, and NtContinue — which never
+ * returns: the kernel's context sanitizer keeps CS 0x23 (any non-0x33 user CS
+ * -> CMCODE|3) and resumes the guest's 32-bit dispatcher, so
+ * RtlDispatchException never runs on this host frame. The guest's own
+ * RtlDispatchException then walks its real fs:[0] SEH chain. If no handler is
+ * found the guest dispatcher second-chances via NtRaiseException(...,FALSE) —
+ * the manual marshaller terminates there.
+ */
+static VOID WINAPI Wow64pPrepareForExceptionHook(EXCEPTION_RECORD *R, CONTEXT *Ctx)
+{
+    PBYTE CpuArea;
+    WOW64_CONTEXT *C;
+    WOW64_EXCEPTION_RECORD32 Rec32;
+    EXCEPTION_POINTERS Info;
+    ULONG Esp, i, N;
+
+    if (Ctx->SegCs != 0x23 || !Wow64pKiUserExceptionDispatcher32)
+        return; /* not a compat-mode guest fault — let the host path handle it */
+
+    Info.ExceptionRecord = R;
+    Info.ContextRecord = Ctx;
+    if (Wow64pBTCpuResetToConsistentState)
+        Wow64pBTCpuResetToConsistentState(&Info); /* flush live guest -> CPU area */
+
+    CpuArea = (PBYTE)Wow64pTlsSlots()[WOW64_TLS_CPURESERVED];
+    C = (WOW64_CONTEXT *)(CpuArea + 16);
+
+    /* DBG_PRINTEXCEPTION(_WIDE)_C from a guest OutputDebugString: consume it
+     * like the kernel's KD does (guest kernel32 __except is DUMMY_PSEH), print
+     * and let the host dispatcher's DUMMY_PSEH swallow-and-continue path resume
+     * at the faulting Eip — do NOT redirect into guest SEH. */
+    if ((ULONG)R->ExceptionCode == 0x40010006 || (ULONG)R->ExceptionCode == 0x4001000A)
+        return;
+
+    Rec32.ExceptionCode    = (ULONG)R->ExceptionCode;
+    Rec32.ExceptionFlags   = R->ExceptionFlags;
+    Rec32.ExceptionRecord  = 0; /* no chain conversion */
+    Rec32.ExceptionAddress = C->Eip;
+    N = R->NumberParameters > 15 ? 15 : R->NumberParameters;
+    Rec32.NumberParameters = N;
+    for (i = 0; i < 15; i++)
+        Rec32.ExceptionInformation[i] =
+            i < N ? (ULONG)R->ExceptionInformation[i] : 0;
+
+    /* Frame goes on the GUEST stack, below the guest's faulting Esp. */
+    Esp = Wow64pBuildGuestExceptionFrame(&Rec32, C, C->Esp - 0x10);
+    if (!Esp)
+    {
+        DbgPrint("[FEX-WOW64C] guest fault %08lx eip=%08lx: guest-stack frame build FAILED (esp=%08lx) — host death path\n",
+                 Rec32.ExceptionCode, C->Eip, C->Esp);
+        return;
+    }
+
+    DbgPrint("[FEX-WOW64C] guest fault %08lx eip=%08lx -> 32-bit SEH dispatch (esp=%08lx)\n",
+             Rec32.ExceptionCode, C->Eip, Esp);
+    Ctx->Rip = (ULONG_PTR)Wow64pKiUserExceptionDispatcher32;
+    Ctx->Rsp = Esp;
+    Ctx->EFlags &= ~0x400u; /* cld — fault may have been mid-rep-movs */
+    NtContinue(Ctx, FALSE); /* resume in the guest dispatcher; never returns */
+}
+#endif /* !_M_ARM64 */
 
 static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
 {
@@ -942,6 +1064,37 @@ Wow64LdrpInitialize(PVOID Context)
      * callback dispatcher; the 64-bit PEB table points at our bridge. */
     Wow64pKiUserCallbackDispatcher32 =
         Wow64pFindExport32(Ntdll32, "KiUserCallbackDispatcher");
+    /* E5: guest SEH entry — non-fatal if absent (redirect stays disabled and
+     * guest faults fall back to the loud host-side diagnostics + death). */
+    Wow64pKiUserExceptionDispatcher32 =
+        Wow64pFindExport32(Ntdll32, "KiUserExceptionDispatcher");
+    if (!Wow64pKiUserExceptionDispatcher32)
+        DbgPrint("[FEX-WOW64C] WARN: ntdll32 has no KiUserExceptionDispatcher export — guest SEH dispatch disabled\n");
+#ifndef _M_ARM64
+    /* E5: install the KiUserExceptionDispatcher hook in the HOST ntdll so
+     * hardware faults in 32-bit guest code dispatch into the guest's own SEH.
+     * The slot is a ntdll data export (dispatch.S / ntdll.spec). */
+    {
+        WOW64_UNICODE_STRING NtdllName;
+        PVOID Ntdll64 = NULL;
+        PVOID *Slot = NULL;
+        RtlInitUnicodeString(&NtdllName, L"ntdll.dll");
+        LdrGetDllHandle(NULL, NULL, &NtdllName, &Ntdll64);
+        RtlInitAnsiString(&ProcName, "Wow64PrepareForException");
+        if (Ntdll64 &&
+            LdrGetProcedureAddress(Ntdll64, &ProcName, 0, (PVOID *)&Slot) >= 0 &&
+            Slot)
+        {
+            *Slot = (PVOID)Wow64pPrepareForExceptionHook;
+            DbgPrint("[FEX-WOW64C] Wow64PrepareForException hook installed @ %p (slot %p)\n",
+                     (PVOID)Wow64pPrepareForExceptionHook, (PVOID)Slot);
+        }
+        else
+        {
+            DbgPrint("[FEX-WOW64C] WARN: Wow64PrepareForException slot unresolved — guest SEH dispatch disabled\n");
+        }
+    }
+#endif
     Wow64pInstallUserCallbackTable();
     if (!KiUserApcDispatcher32 || !LdrInitThunk32)
     {
@@ -997,6 +1150,15 @@ Wow64LdrpInitialize(PVOID Context)
     GuestEsp = (ULONG)(ULONG_PTR)GuestStack + 0x10000 - 64;
     GuestEsp -= 4;
     *(ULONG *)(ULONG_PTR)GuestEsp = (ULONG)(ULONG_PTR)ExitStub; /* ret addr */
+
+    /* E5: TEB32 NtTib stack bounds (i386 NT_TIB: StackBase +0x04, StackLimit
+     * +0x08). i386 RtlDispatchException validates every fs:[0] SEH record
+     * against these — the kernel's MmCreateTeb leaves them 0 for a WoW64 TEB
+     * ("set by wow64.dll at thread init"), so without this every guest SEH
+     * handler is rejected and faults silently second-chance. The guest image
+     * entry runs on GuestStack. */
+    *(ULONG *)(Teb32 + 0x04) = (ULONG)(ULONG_PTR)GuestStack + 0x10000; /* StackBase (high) */
+    *(ULONG *)(Teb32 + 0x08) = (ULONG)(ULONG_PTR)GuestStack;           /* StackLimit (low) */
 
     /* -- Inner "run" CONTEXT32: what the guest executes AFTER the loader
      *    finishes (LdrInitializeThunk ends by NtContinue-ing to this). It is
