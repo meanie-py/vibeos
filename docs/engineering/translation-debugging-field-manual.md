@@ -8412,10 +8412,23 @@ section/PFN layer that manages image pages (NOT the ARM3 MMPFN path — image/se
 / `MmDeleteVirtualMapping` / `MmDeleteRmap` during process teardown that frees a page another mapping still
 holds; or the image-section physical pages being cached across launches with a wrong cross-process refcount.
 Same PFN family as the quarantined `ZwAllocateVirtualMemory` 0x4E (`MiInsertStandbyListAtFront`) and
-`MmMapLockedPagesSpecifyCache` 0x1000 (task #7) — likely one shared root. **Next step: a "free-while-mapped"
-tripwire — at the RosMM page-free site (`MmReleasePageMemoryConsumer`/free-list insert), assert the frame has
-no live rmap entry (`MmGetRmapListHeadPage(pfn) == NULL`); a hit names the premature free with the culprit
-stack.** That converts a rare victim-side AV into a loud fault AT the erroneous free.
+`MmMapLockedPagesSpecifyCache` 0x1000 (task #7) — likely one shared root.
+
+**Tripwire #1 result (2026-07-18) — NEGATIVE, and it narrows the hunt.** Placed the "free-while-mapped"
+tripwire in `MmDereferencePage` (freelist.rs — the RosMM `MmReleasePageMemoryConsumer` sink) right where
+refcount hits 0 before `MiInsertPageInFreeList`: if `(*pfn1).rmap_list_head()` is a non-null, pointer-aligned
+kernel VA, dump the surviving entry's `Process`/`Address`/`Caller`. A sweep that DID corrupt (2 kills) fired
+the tripwire **zero** times. So the premature free is NOT "a ROS page still holding an rmap entry at the
+`MmDereferencePage` free." That rules out the cleanest model and leaves two: (1) the page frees via the **ARM3**
+sink (`MiInsertPageInFreeList` called from `MiDecrementShareCount`/`MiDecrementReferenceCount`, which
+`MmDereferencePage` never reaches — this is the *private*-heap face's expected path), or (2) a **refcount
+imbalance** — an over-decrement drops the frame to 0 and frees it while a PTE still maps it, so the rmap was
+already correctly deleted (empty) yet the mapping's PTE was never torn down. **Next step: move the tripwire to
+the common choke point `MiInsertPageInFreeList` itself** (both sinks funnel there) and, since rmap may be
+legitimately empty under model (2), ALSO validate against the *PTE* side — e.g. cross-check the frame's
+`PteAddress`/`OriginalPte` or add a poison-on-free + check-on-map pass to catch the frame handed out while a
+live PTE still points at it. (An arm64-only `& 0xFFF` alignment guard in the *C* `MmGetRmapListHeadPage` was
+noticed and ruled out — it's cohab-dead; the live Rust accessor (freelist.rs:333) already dropped that hack.)
 
 **Reusable method (the payoff — how to hunt a rare corruption flake UNATTENDED, no GDB babysitting):**
 (a) **Self-reporting kernel tripwires beat GDB-attach-at-the-instant for a ~40%/sweep, 77-launches-deep flake.**
