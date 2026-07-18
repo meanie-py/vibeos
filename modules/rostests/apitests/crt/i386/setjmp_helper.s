@@ -26,14 +26,18 @@ PUBLIC __setjmp1
 __setjmp1:
     jmp __setjmp
 
+// clang's integrated assembler (GAS Intel syntax) can't emit the relocation
+// for `push offset sym` — materialize through eax (scratch here) instead.
 PUBLIC _call_setjmp
 _call_setjmp:
-    push offset __setjmp
+    lea eax, [__setjmp]
+    push eax
     jmp _call_setjmp_common
 
 PUBLIC _call_setjmp3
 _call_setjmp3:
-    push offset __setjmp3
+    lea eax, [__setjmp3]
+    push eax
     jmp _call_setjmp_common
 
 

@@ -207,6 +207,17 @@ pub unsafe extern "fastcall" fn KiIpiSend(
 ) {
     #[cfg(feature = "smp")]
     {
+        // IPI_FREEZE is NOT a request bit: the freeze protocol (i386/freeze.rs
+        // KxFreezeExecution) stages Prcb->IpiFrozen = IPI_FROZEN_STATE_TARGET_
+        // FREEZE (5) on every target BEFORE this call, and KiIpiServiceRoutine
+        // dispatches on that exact STATE. OR-ing bit 4 here turned the staged
+        // 5 into 0x15, the handler's exact-state compare rejected its own
+        // freeze, and the owner spun forever — the KdSystemDebugControl
+        // -smp 2 wedge (2026-07-18). Just ring the targets.
+        if IpiRequest == IPI_FREEZE {
+            HalRequestIpi(TargetProcessors);
+            return;
+        }
         let mut Current: KAFFINITY = 1;
         for i in 0..(KeNumberProcessors as usize) {
             if TargetProcessors & Current != 0 {
@@ -233,6 +244,13 @@ pub unsafe extern "C" fn KiIpiSend(
 ) {
     #[cfg(feature = "smp")]
     {
+        // Same freeze-is-a-state-not-a-bit rule as the x86 arm above. arm64's
+        // freeze handler isn't wired into its IPI receive path yet, but do not
+        // corrupt the staged state either way.
+        if IpiRequest == IPI_FREEZE {
+            HalRequestIpi(TargetProcessors);
+            return;
+        }
         let mut Current: KAFFINITY = 1;
         for i in 0..(KeNumberProcessors as usize) {
             if TargetProcessors & Current != 0 {
@@ -515,6 +533,27 @@ pub unsafe extern "system" fn KiIpiServiceRoutine(
     #[cfg(feature = "smp")]
     {
         let Prcb = KeGetCurrentPrcb();
+
+        // Freeze dispatch — STATE-based, not a request bit (see KiIpiSend's
+        // IPI_FREEZE special case). amd64 delivers freeze via NMI; i386 rides
+        // this same 0xE1 vector, so check the staged state here, FIRST (the
+        // owner is spinning in KxFreezeExecution until we flip to FROZEN).
+        // Needs the real TrapFrame for KiSaveProcessorState — the packet
+        // self-service path (KiIpiSendPacket self-target) passes NULL and a
+        // freeze never self-targets, so skipping there loses nothing: the
+        // interrupt stays pending in the LAPIC and the real ISR delivers it.
+        // Known gap vs NT (accepted until i386 gets an NMI path): a CPU
+        // parked at IPI_LEVEL (e.g. inside a generic-call worker) can't take
+        // 0xE1 and freezes only after it returns below IPI_LEVEL.
+        #[cfg(target_arch = "x86")]
+        {
+            if !TrapFrame.is_null()
+                && core::ptr::read_volatile(core::ptr::addr_of!((*Prcb).IpiFrozen))
+                    == IPI_FROZEN_STATE_TARGET_FREEZE as _
+            {
+                crate::ke::i386::freeze::KiProcessorFreezeHandler(TrapFrame, ExceptionFrame);
+            }
+        }
 
         if core::sync::atomic::AtomicI32::from_ptr(
             core::ptr::addr_of_mut!((*Prcb).IpiFrozen) as *mut i32
