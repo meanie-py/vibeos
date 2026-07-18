@@ -1353,6 +1353,80 @@ unsafe fn TryStartWow64TestGui() {
     CloseHandle(Pi.hProcess);
 }
 
+/* E6 — generic STOCK i386 applet launcher for the amd64 robustness ladder.
+ * Same inverted verdict as winmine: still running after the wait = PASS (CRT
+ * started, imports bound, window up, message pump alive); an early exit means
+ * it died (exit code names the failure). Silent no-op unless the named exe is
+ * staged in syswow64. The cmdline is the bare exe name in a writable buffer
+ * (CreateProcessW mutates it in place). */
+#[cfg(target_arch = "x86_64")]
+unsafe fn TryStartWow64StockApp(Name: *const u16, Label: *const i8, TimeoutMs: DWORD) {
+    if !Wow64SupportStaged() {
+        return; // CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\").as_ptr());
+    wcscat(Path.as_mut_ptr(), Name);
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    wcscat(Line.as_mut_ptr(), Name);
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    if CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    ) == 0
+    {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(%s) FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            Label,
+            GetLastError(),
+        );
+        return;
+    }
+    DbgPrint(
+        b"[WINLOGON] %s (STOCK i386 app) created (PID %lu) - watching\n\0".as_ptr() as *const i8,
+        Label,
+        Pi.dwProcessId,
+    );
+    const WAIT_TIMEOUT_: DWORD = 0x102;
+    if WaitForSingleObject(Pi.hProcess, TimeoutMs) == WAIT_TIMEOUT_ {
+        DbgPrint(
+            b"[WINLOGON] %s still running = PASS (window up, pump alive) - leaving it up\n\0"
+                .as_ptr() as *const i8,
+            Label,
+        );
+    } else {
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] %s EXITED = 0x%lx (a stock GUI app should still be pumping)\n\0".as_ptr()
+                as *const i8,
+            Label,
+            ExitCode,
+        );
+    }
+    CloseHandle(Pi.hThread);
+    CloseHandle(Pi.hProcess);
+}
+
 /* E4c robustness: winmine.exe — a STOCK i386 OS applet (menus, WM_TIMER,
  * dialog/menu resources, GetSystemMetrics-driven layout) that nobody wrote
  * for the WoW64 harness. Same inverted verdict as testgui: still running
@@ -2206,6 +2280,23 @@ pub unsafe extern "system" fn WinMain(
          * menus, timers, dialog resources. Launched BEFORE doom so doom's
          * window (created last) stays the demo on top. */
         TryStartWow64WinMine();
+        /* E6 robustness ladder: more stock i386 applets (common controls,
+         * shell32/comctl32 closure). Each is a silent no-op unless staged. */
+        TryStartWow64StockApp(
+            wstr!("calc.exe").as_ptr(),
+            b"calc.exe\0".as_ptr() as *const i8,
+            10_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("notepad.exe").as_ptr(),
+            b"notepad.exe\0".as_ptr() as *const i8,
+            10_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("sol.exe").as_ptr(),
+            b"sol.exe\0".as_ptr() as *const i8,
+            10_000,
+        );
         /* E4b: same mutual-occlusion rule as the arm64 ladder — when doom is
          * staged it IS the demo GUI guest; testgui would materialise on top
          * of its window. */
