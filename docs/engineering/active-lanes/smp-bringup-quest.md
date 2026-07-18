@@ -934,3 +934,21 @@ toolkit's `find-kbase`/`addr2sym` default to the UP binary), and **read the gdb
 port from `qemu/runs/<run-id>/manifest.json` (`gdb_port`), never hardcode 12001**
 — auto-alloc drifts across runs and a stale QEMU on the assumed port silently
 eats your breakpoints.
+
+**Wave-2 burn-down 1/3 (2026-07-17): KeGuardedMutex TIMEOUT ROOT-CAUSED + FIXED —
+translation-dropped `#ifdef CONFIG_SMP` deferred-ready drain in `KiRetireDpcList`**
+(field manual §9.95). An idle CPU re-entered `hlt` with runnable threads parked on its
+own `DeferredReadyListHead` — the idle loops check that list but rely on the retire
+loop's drain (the dropped block) to empty it; timer-driven wakes on an idle CPU
+stranded ~60s each until an unrelated cross-CPU wake drained them as a side effect.
+The census watchdog cracked it (owner `state=7` persisting across scans) + a live GDB
+catch (CPU1 halted, `DeferredHead` loaded, ReadySummary=0). Fix: restore the C block
+in `KiRetireDpcList_body` + the same drain in arm64's `KiDispatchSoftwareIntArm64`
+(both `cfg(smp)`; UP untouched). Validated: amd64 `-smp 2` conformance **87/87 ok,
+0 timeouts** (was 86/1), **IoDeviceObject delta also recovered**, sweep wall-clock
+**679s→348s** (the strands taxed every test's wakeups); i386 `-smp 2` smoke 3/3;
+arm64 `-smp 2` smoke 2/2. REMAINING wave-2 conformance deltas (real MP semantic
+gaps, next up): KeSpinLock pass 321→292/fail 2→31 (queued-lock handle `Lock`/`Next`
+not cleared MP-style — residues are a global lock pointer at byte-shifted offsets —
+plus `KmtIsMultiProcessorBuild` try-acquire semantics), KeIrql 131→128/fail 3,
+KeEvent pass dip 42733→42601.

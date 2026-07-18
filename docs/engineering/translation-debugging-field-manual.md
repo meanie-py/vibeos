@@ -8024,3 +8024,74 @@ passes" and silently disables the guard; when porting MP protocols, diff every s
 site against the reference asm, not just the ones that exist. (c) UP-invisible inversions
 unmask ONLY under migration load — an affinity-bouncing self-test thread is a cheap,
 deterministic-ish amplifier worth keeping in the boot.
+
+### 9.95 (ROOT-CAUSED + FIXED 2026-07-17) `-smp 2` KeGuardedMutex kmtest TIMEOUT — translation dropped `KiRetireDpcList`'s `#ifdef CONFIG_SMP` deferred-ready drain, so an idle CPU re-HLTs with runnable threads parked on its own deferred list
+
+**Symptom.** amd64 `conformance --smp 2` ratchet: `KeGuardedMutex OK→TIMEOUT (pass=0
+fail=0)` plus fuzzier drops (`KeSpinLock fail 2→31`, `KeIrql fail 0→3`, KeEvent/
+IoDeviceObject pass-count dips). Boot and desktop unaffected. The kmtest wedges are
+pure LIVENESS: when the strand resolves, the suite produces baseline-identical
+results (pass=1566 fail=87).
+
+**The census cracked it before GDB did.** `ke/census.rs` (10s sync watchdog) printed,
+for a gate-parked waiter, the guarded-mutex owner as `state=7` (**DeferredReady**) for
+5–6 consecutive scans (~60s) — repeatedly, with the roles ROTATING (each newly-woken
+owner stranded in turn). A thread stays DeferredReady for a minute = the wake half
+worked (unwait ran, state was set, node was pushed) but nothing ever drained it.
+Key inference from the rotation + the census thread itself waking every 10s: the
+drain sites on the BUSY cpu all work — the strand had to be a list nobody was looking
+at. GDB (live catch at the census trigger) confirmed in one shot:
+
+```
+PRCB1: Current==IdleThread  Next=0  ReadySummary=0  DeferredHead=fffffa8001256c68
+         node thread=fffffa8001256bd0  State=7  DeferProc=1
+CPU1: HALTED (hlt, idle loop)
+```
+
+**CPU 1 asleep in `hlt` with a runnable thread on its own DeferredReadyListHead.**
+
+**Root cause.** C `KiRetireDpcList` (ntoskrnl/ke/dpc.c) ends each pass with an
+`#ifdef CONFIG_SMP` block: if `Prcb->DeferredReadyListHead.Next`, then `_enable()` +
+raise-to-SYNCH + `KiProcessDeferredReadyList(Prcb)` + lower + `_disable()`. The Rust
+translation (`ke/dpc.rs KiRetireDpcList_body`) dropped the whole block — it was
+UP-dead code when translated. But the block is the OTHER HALF of a contract:
+`KiTimerExpiration` (and DPC bodies on some paths) unwait threads onto the CURRENT
+cpu's deferred list and deliberately do NOT drain on every exit — the C design defers
+the drain to the retire loop. Every idle loop (amd64 stubs.rs, i386 thrdini.rs, arm64
+thrdini.rs) checks `DeferredReadyListHead` in its should-I-work condition and then
+calls `KiRetireDpcList` — which, minus the block, retires DPCs and LEAVES THE LIST
+LOADED. The idle CPU then re-enters `hlt`; clock ticks wake the ISR, which EOIs and
+returns to `hlt`, never re-running the scheduler. The strand persists until an
+unrelated cross-CPU event (a wake targeted at that CPU via the preempt-idle IPI path)
+runs a `KiCheckDeferredReadyList` there as a side effect — empirically ~60s in the
+quiet kmtest workload. Timer-driven wakes (50ms timeout waits, exactly what
+KeGuardedMutex's concurrent section and the KeSpinLock/KeIrql suites do in bulk) are
+the main inserter on an idle CPU, since the timer expiry runs ON that cpu's tick.
+
+**Fix (two edits, `ke/dpc.rs`).** (1) Restore the C block verbatim at the end of the
+`KiRetireDpcList_body` pass loop under `#[cfg(feature = "smp")]`. (2) arm64's split
+DISPATCH-softint body `KiDispatchSoftwareIntArm64` — the stand-in for x86's
+retire-in-KiDispatchInterrupt — gets the same drain after its device-DPC retire
+(thread context; the IRQ-exception-exit `KiRetireDeviceDpcs` intentionally does NOT
+drain — §9.19 exception-context wake hazard — its inserts are picked up here or at
+the idle retire). Validated: single-test repro 0 strands, 0 census STUCK lines,
+pass=1566/fail=87 == UP baseline (was: ~60s strands within seconds of start, TIMEOUT).
+
+**Reusable lessons.**
+- **A dropped `#ifdef CONFIG_SMP` block is a TIME BOMB, not dead code.** Sweep
+  candidates: `grep -n "ifdef CONFIG_SMP" ntoskrnl/ke/*.c` vs the Rust twins —
+  anything guarding a drain/IPI/lock in C that has no `cfg(feature = "smp")` twin.
+- **`state=7 (DeferredReady) persisting across census scans` is a signature**: the
+  wake committed but no drain ran. Check the IDLE cpus' `DeferredReadyListHead`
+  first (`PRCB+3464` on amd64-bindgen), not the busy cpu's paths.
+- **The insert/drain contract is asymmetric by design**: `KiInsertDeferredReadyList`
+  is same-CPU-only, and NOT every inserter drains — `KiExitDispatcher`,
+  `KiSwapThread`-commit, and the retire loop are the drains. When porting, map ALL
+  inserters to their expected drain before declaring a path complete.
+- **Live-catch recipe** (banked in scratchpad `catch2.sh` shape): tail serial for the
+  census trigger line, extract the pointer, freeze via gdbstub, read raw offsets.
+  Offsets straight from the source of truth:
+  `clang -Xclang -fdump-record-layouts --target=<arch> <bindgen include set>` on a
+  `sizeof(KTHREAD)` stub — no DWARF wrestling (split-DWARF `.dwo` are canonical-path
+  + often unloadable), no hand-derived offsets. gdb data symbols need manual reloc:
+  `llvm-nm <exe> | grep <sym>` → RVA + runtime kbase (add-symbol-file only maps .text).
