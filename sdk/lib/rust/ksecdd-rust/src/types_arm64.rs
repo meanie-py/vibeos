@@ -70,18 +70,18 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn KsecDdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsecGatherEntropyData(EntropyData: PKSEC_ENTROPY_DATA) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsecGenRandom(Buffer: PVOID, Length: SIZE_T) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsecInitializeEncryptionSupport();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsecEncryptMemory(Buffer: PVOID, Length: ULONG, OptionFlags: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsecDecryptMemory(Buffer: PVOID, Length: ULONG, OptionFlags: ULONG) -> NTSTATUS;
 }

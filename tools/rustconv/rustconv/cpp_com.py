@@ -119,6 +119,18 @@ class CppComClass:
     enum_state_types: list[EnumStateType] = field(default_factory=list)
     array_constants: dict[str, int] = field(default_factory=dict)
     unsupported: list[str] = field(default_factory=list)
+    # Base interfaces the class implements but does NOT QI-expose (absent from the
+    # COM map), e.g. IContextMenuCB on CFSFolder. They contribute a vtable subobject
+    # in the object layout that the class hands out via static_cast, but they are
+    # never returned by QueryInterface.
+    layout_bases: list[str] = field(default_factory=list)
+
+    def interface_names(self) -> list[str]:
+        """Ordered, de-duplicated interfaces to materialize: QI'd (com_map) then
+        layout-only bases. Both need a vtable subobject; only the former is QI'd."""
+        return list(
+            dict.fromkeys([*(entry.interface for entry in self.com_map), *self.layout_bases])
+        )
 
     def plain_state_fields(self) -> list[PlainStateField]:
         pod_names = {item.name for item in self.pod_state_types}
@@ -427,6 +439,33 @@ def _parse_plain_state_field(
             name=cstring.group(1),
             owned_cstring=True,
         )
+    ptr_array = re.fullmatch(
+        r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s*\*\s*"
+        r"(?P<name>[A-Za-z_]\w*)\s*\[\s*(?P<count>[A-Za-z_]\w*|\d+)\s*\]",
+        text,
+    )
+    if ptr_array is not None:
+        # Fixed array of raw pointers, e.g. `IShellFolder *m_cache[N]`. A pointer is
+        # a valid C scalar whatever the pointee, so the layout is `[*mut T; N]`,
+        # zero-initialized to nulls. Any per-element ownership (AddRef/Release) lives
+        # in the class's explicit, translated ctor/dtor — the scaffold imposes no
+        # auto-release here (that is reserved for CComPtr `com_ptr_interface` fields).
+        count_text = ptr_array.group("count")
+        if count_text.isdigit():
+            count = int(count_text)
+        else:
+            constants = array_constants or {}
+            if count_text not in constants:
+                raise CppComError(
+                    f"state field array bound is not a proven numeric macro: {declaration}"
+                )
+            count = constants[count_text]
+        return PlainStateField(
+            declaration=text,
+            c_type=f"{ptr_array.group('type')} *",
+            name=ptr_array.group("name"),
+            array_len=count,
+        )
     fixed_array = re.fullmatch(
         r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s+"
         r"(?P<name>[A-Za-z_]\w*)\s*\[\s*(?P<count>[A-Za-z_]\w*|\d+)\s*\]",
@@ -438,6 +477,7 @@ def _parse_plain_state_field(
         scalar_types = set(_RUST_SCALARS) | {
             "BOOL",
             "BOOLEAN",
+            "bool",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
             "BYTE",
             "CHAR",
             "DWORD",
@@ -493,6 +533,7 @@ def _parse_plain_state_field(
     scalar_types = _RUST_SCALARS | {
         "BOOL": "",
         "BOOLEAN": "",
+        "bool": "",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
         "BYTE": "",
         "CHAR": "",
         "DWORD": "",
@@ -526,11 +567,72 @@ def _parse_plain_state_field(
     return PlainStateField(declaration=text, c_type=c_type, name=name)
 
 
+def _eval_c_int_constexpr(text: str) -> int | None:
+    """Evaluate an arch-independent integer constant expression (array bounds).
+
+    Accepts integer literals, character literals, parentheses, and the integer
+    operators ``+ - * << >> | & ^ ~`` (and unary +/-). Returns None for anything
+    outside that whitelist — names, calls, floats, division — so the caller fails
+    loud instead of guessing a bound. Char literals become their code point, so a
+    portable bound like ``('Z' - 'A' + 1)`` resolves to 26 without depending on
+    any architecture.
+    """
+
+    def _char_ord(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        try:
+            decoded = inner.encode("utf-8").decode("unicode_escape")
+        except (UnicodeDecodeError, ValueError):
+            return match.group(0)
+        return str(ord(decoded)) if len(decoded) == 1 else match.group(0)
+
+    expr = re.sub(r"'((?:\\.|[^'\\])+)'", _char_ord, text)
+    expr = re.sub(r"\b(0[xX][0-9A-Fa-f]+|\d+)[uUlL]+\b", r"\1", expr)  # drop int suffixes
+    try:
+        tree = ast.parse(expr.strip(), mode="eval")
+    except (SyntaxError, ValueError):
+        return None
+    allowed = (
+        ast.Expression,
+        ast.BinOp,
+        ast.UnaryOp,
+        ast.Constant,
+        ast.Load,
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.LShift,
+        ast.RShift,
+        ast.BitOr,
+        ast.BitAnd,
+        ast.BitXor,
+        ast.UAdd,
+        ast.USub,
+        ast.Invert,
+    )
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed):
+            return None
+        if isinstance(node, ast.Constant) and not (
+            isinstance(node.value, int) and not isinstance(node.value, bool)
+        ):
+            return None
+    try:
+        result = eval(compile(tree, "<c-constexpr>", "eval"), {"__builtins__": {}}, {})
+    except (ValueError, TypeError, ZeroDivisionError):
+        return None
+    return result if isinstance(result, int) else None
+
+
 def _numeric_array_constants(source: Path, declarations: list[str]) -> dict[str, int]:
     """Resolve symbolic fixed-array bounds from compiler-facing headers.
 
-    Every discovered spelling must agree.  This intentionally accepts only a
-    single decimal literal, not expressions or architecture-dependent macros.
+    Every discovered spelling must agree. Bounds may be a decimal literal or an
+    arch-independent integer constant expression (see `_eval_c_int_constexpr`);
+    anything that fails to evaluate is dropped, so an unproven bound stays a loud
+    preflight failure rather than a guess. Searches `sdk/include` plus the class's
+    own DLL-module subtree (module-private headers like `shellrecyclebin/` hold
+    some shell32 bounds).
     """
     names = {
         match.group(1)
@@ -544,13 +646,31 @@ def _numeric_array_constants(source: Path, declarations: list[str]) -> dict[str,
     )
     if repo_root is None:
         return {}
+    search_roots = [repo_root / "sdk" / "include"]
+    module_root = next(
+        (
+            p
+            for p in source.parents
+            if p.parent is not None and p.parent.name in {"win32", "win32ss"}
+        ),
+        None,
+    )
+    if module_root is not None and module_root.is_dir():
+        search_roots.append(module_root)
     values: dict[str, int] = {}
     for name in names:
         found: set[int] = set()
-        pattern = re.compile(rf"^\s*#\s*define\s+{re.escape(name)}\s+(\d+)\b", re.M)
-        for header in (repo_root / "sdk" / "include").rglob("*.[hi]"):
-            text = header.read_text(encoding="utf-8", errors="replace")
-            found.update(int(item) for item in pattern.findall(text))
+        pattern = re.compile(
+            rf"^[ \t]*#[ \t]*define[ \t]+{re.escape(name)}[ \t]+(.+?)[ \t]*$", re.M
+        )
+        for root in search_roots:
+            for header in root.rglob("*.[hi]"):
+                text = header.read_text(encoding="utf-8", errors="replace")
+                for replacement in pattern.findall(text):
+                    replacement = re.sub(r"//.*$|/\*.*?\*/", "", replacement).strip()
+                    value = _eval_c_int_constexpr(replacement)
+                    if value is not None:
+                        found.add(value)
         if len(found) == 1:
             values[name] = found.pop()
     return values
@@ -680,6 +800,30 @@ def _discover_pod_state_types(
     return specs, enums
 
 
+def _base_is_widl_interface(source: Path, base: str) -> bool:
+    """True if `base` is a real COM interface with a flattened WIDL vtable.
+
+    Used to tell a non-QI'd interface base (materialize its vtable subobject in the
+    layout, e.g. IContextMenuCB) from genuine custom/stateful C++ inheritance (a
+    loud failure). Restricted to interface-shaped names and confirmed against the
+    generated SDK headers so a non-interface base is never silently accepted.
+    """
+    if not re.fullmatch(r"I[A-Z]\w*", base):
+        return False
+    repo_root = next(
+        (parent for parent in source.parents if (parent / "sdk" / "include").is_dir()), None
+    )
+    if repo_root is None:
+        return False
+    for arch in ("amd64", "i386", "arm64"):
+        try:
+            discover_widl_header(repo_root, arch, interface=base)
+            return True
+        except CppComError:
+            continue
+    return False
+
+
 def analyze_class(
     source: Path,
     class_name: str,
@@ -696,6 +840,7 @@ def analyze_class(
     entries, unsupported = _parse_com_map(body, class_name)
     bases = _class_bases(header, class_name)
     interfaces = {entry.interface for entry in entries}
+    layout_bases: list[str] = []
     for raw_base in bases:
         base = re.sub(r"\b(?:public|private|protected|virtual)\b", "", raw_base)
         base = " ".join(base.split())
@@ -704,6 +849,13 @@ def analyze_class(
             or base.startswith("CComObjectRootEx<")
             or base in interfaces
         ):
+            continue
+        # A real COM interface base that the class implements but does not QI-expose
+        # (absent from the COM map) is materialized in the layout, not QueryInterface.
+        # Anything that is not a resolvable WIDL interface is genuine custom/stateful
+        # inheritance and stays a loud failure.
+        if base not in layout_bases and _base_is_widl_interface(source, base):
+            layout_bases.append(base)
             continue
         unsupported.append(
             f"custom/inherited base class {base} needs deterministic inherited layout mapping"
@@ -745,6 +897,7 @@ def analyze_class(
         enum_state_types=enum_state_types,
         array_constants=array_constants,
         unsupported=unsupported,
+        layout_bases=layout_bases,
     )
 
 
@@ -3854,7 +4007,15 @@ def apply_interface_method_signatures(
 
     out = []
     for dep in deps:
-        variants = methods.get(dep.cpp_method or "") if dep.cpp_class == class_name else None
+        # A `static` class method (e.g. a `static inline GetClassID()` helper) has
+        # no `this` and can never occupy a vtable slot, even when it shares a name
+        # with a virtual method. It is a plain class-scoped helper bound by the
+        # sibling/arity machinery, not against the WIDL vtable shape.
+        variants = (
+            methods.get(dep.cpp_method or "")
+            if dep.cpp_class == class_name and not dep.is_static
+            else None
+        )
         if not variants:
             out.append(dep)
             continue
@@ -4389,6 +4550,15 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
     layout_entries = [
         next(entry for entry in cls.com_map if entry.interface == name)
         for name in dict.fromkeys(physical_by_interface[entry.interface] for entry in cls.com_map)
+    ]
+    # Non-QI'd interface bases get their own standalone vtable subobject in the
+    # object layout (struct field + vtable + ctor init) but are absent from the QI
+    # switch above, which iterates only cls.com_map. Field order is irrelevant here:
+    # the object is Rust-allocated and every interface pointer recovers `this` via
+    # offset_of!, so the C++ multiple-inheritance layout need not be reproduced.
+    layout_entries = layout_entries + [
+        ComMapEntry(iid=f"IID_{name}", interface=name, macro="COM_INTERFACE_ENTRY_LAYOUT")
+        for name in cls.layout_bases
     ]
 
     lines = []

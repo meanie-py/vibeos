@@ -9,15 +9,15 @@ use ntkrnl_sys::ddk::{IRP, KPROCESSOR_MODE, MmMapLockedPages, MmUnmapLockedPages
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};
 
 extern "C" {
-    fn GetLockedData(irp: PIRP, stack: PIO_STACK_LOCATION) -> PAFD_SEND_INFO;
-    fn PollReeval(device_ext: PVOID, file_object: PFILE_OBJECT);
+    pub fn GetLockedData(Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> PVOID;
+    pub fn PollReeval(DeviceObject: PAFD_DEVICE_EXTENSION, FileObject: PFILE_OBJECT);
     fn SocketAcquireStateLock(fcb: PAFD_FCB) -> BOOLEAN;
     fn SocketStateUnlock(fcb: PAFD_FCB);
     fn UnlockBuffers(buffer_array: PAFD_WSABUF, buffer_count: u32, write: BOOLEAN);
     fn UnlockRequest(irp: PIRP, stack: PIO_STACK_LOCATION);
     fn LeaveIrpUntilLater(fcb: PAFD_FCB, irp: PIRP, function: u32) -> NTSTATUS;
-    fn LockBuffers( array: PAFD_WSABUF, count: u32, p1: *mut u32, p2: *mut u32, b1: u8, b2: u8, mode: KPROCESSOR_MODE, ) -> PAFD_WSABUF;
-    fn LockRequest(irp: PIRP, sp: PIO_STACK_LOCATION, b: u8, mode: *mut KPROCESSOR_MODE) -> PAFD_SEND_INFO;
+    pub fn LockBuffers( Buf: PAFD_WSABUF, Count: UINT, AddressBuf: PVOID, AddressLen: PINT, Write: BOOLEAN, LockAddress: BOOLEAN, LockMode: KPROCESSOR_MODE, ) -> PAFD_WSABUF;
+    pub fn LockRequest( Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Output: BOOLEAN, LockMode: *mut KPROCESSOR_MODE, ) -> PVOID;
     fn LostSocket(irp: PIRP) -> NTSTATUS;
     fn QueueUserModeIrp(fcb: PAFD_FCB, irp: PIRP, function: u32) -> NTSTATUS;
     fn TdiBuildConnectionInfo(out: *mut PTDI_CONNECTION_INFORMATION, addr: PTRANSPORT_ADDRESS) -> NTSTATUS;
@@ -83,7 +83,7 @@ unsafe fn send_complete_impl(
             NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize]));
             NextIrp = (NextIrpEntry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
             NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
-            SendReq = GetLockedData(NextIrp, NextIrpSp);
+            SendReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
             (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
             UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
@@ -105,7 +105,7 @@ unsafe fn send_complete_impl(
             NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize]));
             NextIrp = (NextIrpEntry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
             NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
-            SendReq = GetLockedData(NextIrp, NextIrpSp);
+            SendReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
 
             UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
 
@@ -139,7 +139,7 @@ unsafe fn send_complete_impl(
         NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize]));
         NextIrp = (NextIrpEntry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
         NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
-        SendReq = GetLockedData(NextIrp, NextIrpSp);
+        SendReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
         Map = ((*SendReq).BufferArray as usize + (*SendReq).BufferCount as usize * core::mem::size_of::<AFD_WSABUF>()) as PAFD_MAPBUF;
 
         TotalBytesCopied = (*NextIrp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] as SIZE_T;
@@ -186,7 +186,7 @@ unsafe fn send_complete_impl(
         NextIrpEntry = (*FCB).PendingIrpList[FUNCTION_SEND as usize].Flink;
         NextIrp = (NextIrpEntry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
         NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
-        SendReq = GetLockedData(NextIrp, NextIrpSp);
+        SendReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
         Map = ((*SendReq).BufferArray as usize + (*SendReq).BufferCount as usize * core::mem::size_of::<AFD_WSABUF>()) as PAFD_MAPBUF;
 
         AFD_DbgPrint!(MID_TRACE, b"SendReq @ %p\n\0".as_ptr() as PCHAR, SendReq);
@@ -257,7 +257,7 @@ unsafe fn send_complete_impl(
     {
         (*FCB).PollState |= AFD_EVENT_SEND;
         (*FCB).PollStatus[FD_WRITE_BIT as usize] = STATUS_SUCCESS;
-        PollReeval((*FCB).DeviceExt as PVOID, (*FCB).FileObject);
+        PollReeval(((*FCB).DeviceExt as PVOID) as _, (*FCB).FileObject);
     } else {
         (*FCB).PollState &= !AFD_EVENT_SEND;
     }
@@ -327,7 +327,7 @@ unsafe fn packet_socket_send_complete_impl(
         while !IsListEmpty(&mut (*FCB).PendingIrpList[FUNCTION_SEND as usize]) {
             NextIrpEntry = RemoveHeadList(&mut (*FCB).PendingIrpList[FUNCTION_SEND as usize]);
             NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
-            SendReq = GetLockedData(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
+            SendReq = (GetLockedData(NextIrp, IoGetCurrentIrpStackLocation(NextIrp))) as _;
             (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
             IoSetCancelRoutine(NextIrp, None);
@@ -342,7 +342,7 @@ unsafe fn packet_socket_send_complete_impl(
     NextIrpEntry = RemoveHeadList(&mut (*FCB).PendingIrpList[FUNCTION_SEND as usize]);
     NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
 
-    SendReq = GetLockedData(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
+    SendReq = (GetLockedData(NextIrp, IoGetCurrentIrpStackLocation(NextIrp))) as _;
 
     (*NextIrp).IoStatus.__bindgen_anon_1.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
     (*NextIrp).IoStatus.Information = (*Irp).IoStatus.Information;
@@ -357,7 +357,7 @@ unsafe fn packet_socket_send_complete_impl(
 
     (*FCB).PollState |= AFD_EVENT_SEND;
     (*FCB).PollStatus[FD_WRITE_BIT as usize] = STATUS_SUCCESS;
-    PollReeval((*FCB).DeviceExt as PVOID, (*FCB).FileObject);
+    PollReeval(((*FCB).DeviceExt as PVOID) as _, (*FCB).FileObject);
 
     SocketStateUnlock(FCB);
 
@@ -488,7 +488,7 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
         return UnlockAndMaybeComplete(FCB, STATUS_FILE_CLOSED, Irp, 0);
     }
 
-    SendReq = LockRequest(Irp, IrpSp, 0u8, &mut LockMode);
+    SendReq = (LockRequest(Irp, IrpSp, 0u8, &mut LockMode)) as _;
     if SendReq.is_null() {
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
     }
@@ -597,7 +597,7 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
     if SpaceAvail != 0 {
         (*FCB).PollState |= AFD_EVENT_SEND;
         (*FCB).PollStatus[FD_WRITE_BIT as usize] = STATUS_SUCCESS;
-        PollReeval((*FCB).DeviceExt as PVOID, (*FCB).FileObject);
+        PollReeval(((*FCB).DeviceExt as PVOID) as _, (*FCB).FileObject);
     } else {
         (*FCB).PollState &= !AFD_EVENT_SEND;
     }

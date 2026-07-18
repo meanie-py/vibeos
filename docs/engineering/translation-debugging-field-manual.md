@@ -8281,7 +8281,9 @@ heavy tests can expose *downstream* latent bugs**: with the section tests active
 *later* kmtest_.exe launch with garbage instruction bytes inside the same image page (`0xC000001D` at
 `0x140007xxx`, or a `0xC0000005` at exit) — a shared image-section page corrupted under heavy map/unmap
 traffic, same latent family as the quarantined `ZwAllocateVirtualMemory` 0x4E PFN_LIST_CORRUPT. Registered as
-a known flake; hunt owed (task #7 family).
+a known flake; hunt owed (task #7 family). **See §9.98 for the deep characterization** — the 07-18 hunt proved
+this is a physical-page-reuse (free-while-mapped) corruption, not the section-view path itself.
+
 
 ### 9.97 (ROOT-CAUSED + FIXED 2026-07-17) `-smp 2` KeIrql/KeSpinLock kmtest deltas — SYNCH_LEVEL's flavor-variance was frozen at the UP value in FIVE independent translation sites (+ a latent kmtest union-aliasing bug that fabricated "byte-shifted pointer" corruption)
 
@@ -8372,3 +8374,224 @@ SYNCH=IPI-2 expectations), seeded via `--smp N --write-baseline`.
   Our SMP kernel publishes DEBUG-only (kiinit drops UNIPROCESSOR under
   `feature="smp"`) — so kmtest runs MP expectations. When triaging kmtest deltas,
   derive both flags FIRST; they gate nearly every branch.
+
+### 9.98 (CHARACTERIZED, root-cause hunt OWED 2026-07-18) The arm64 kmtest-sweep "late-run user-process corruption" (§9.96(i)) is a PHYSICAL-PAGE-REUSE bug — a frame backing a still-mapped user page is freed and re-handed-out, corrupting whichever mapping loses the race — with TWO faces from ONE root
+
+**Why this entry exists.** §9.96(i) registered the flake with a plausible-but-unproven label ("shared
+image-section page corrupted under map/unmap"). An overnight hunt (self-reporting kernel tripwires, no GDB
+babysitting — see method below) upgraded that guess to a proven characterization and killed two wrong sub-hypotheses.
+It is a genuinely deep MM bug; this is the head-start, not a fix.
+
+**The two faces are ONE bug (proven).** ~40% of arm64 kmtest sweeps kill a *later* kmtest_.exe launch (77+
+launches deep, various tests — IoReadWrite/NtSystemDebugControl/RtlRegistry — so NOT test-specific and NOT the
+first process). Two serial faces, both `[UEXC-KILL] Proc=kmtest_.exe`:
+- **`0xC000001D` (illegal instruction) at a kmtest_.exe *image* PC** (e.g. `0x140006004`). The page is
+  *present* (no not-present fault) but its bytes are WRONG: `[UEXC-KILL] Instr=0x00B000B0` at two different
+  offsets (`0x6004`,`0x60A4`) while the on-disk `.text` there is `0xf81f0ff3`/`0xd10283ff`. Same garbage word at
+  both offsets ⇒ the frame was overwritten with a repeating pointer-like pattern (`0x00B000B0` ≈ a user-heap
+  free-block Flink). ⇒ **the image code frame was reused as another allocation's heap page while still mapped.**
+- **`0xC0000005` at `ntdll+0x3D020` = `RemoveEntryList` (inlined in `RtlpCoalesceFreeBlocks`), via
+  `RtlpExtendHeap → RtlCreateActivationContext(actctx_init) → LdrpInitializeProcess`** at process startup. FAR
+  is always a *page-aligned* low VA (`0x132000`,`0x134000`), ESR `0x92000007` (DFSC 0x07 translation-fault L3,
+  read). The heap walks a free block whose next-link lands on an *uncommitted/unmapped* page. ⇒ **the heap
+  frame was freed/unmapped out from under the mapping.** Same root, opposite timing (remapped-and-written vs
+  freed).
+
+**Disproven along the way (don't re-chase).** (1) *Not* an `rtl_heap` translation bug: `RtlpCoalesceFreeBlocks`
+and `RtlpFindAndCommitPages` (sdk/lib/rust/rtl-heap/src/heap.rs) are faithful to `sdk/lib/rtl/heap.c` — the
+heap is the victim, not the culprit. (2) *Not* the §9.96 section-view fault path returning wrong status: a
+kernel `[MAF-FAIL]` tripwire on `MmAccessFault` DECLINING a user fault showed the image-face frame is *present*
+(never enters MmAccessFault) and the only `0x4E0000`-family declines are the §9.96 fix working **correctly**
+(a NOACCESS view touch now returns `STATUS_ACCESS_VIOLATION`, as designed). (3) *Not* a demand-zero/VAD
+misroute for the heap face specifically — that was the leading theory but the dominant captured face is the
+present-but-corrupted image page, which no fault path even sees.
+
+**Where the bug is (the owed hunt).** A physical frame that still backs a mapped user page (image section page
+AND/OR private committed page) is being inserted onto a free list and re-handed-out. Candidates, in the RosMM
+section/PFN layer that manages image pages (NOT the ARM3 MMPFN path — image/section pages use SSE share-counts
++ rmap + `MmReleasePageMemoryConsumer`): a share/unshare count imbalance in `MmUnsharePageEntrySectionSegment`
+/ `MmDeleteVirtualMapping` / `MmDeleteRmap` during process teardown that frees a page another mapping still
+holds; or the image-section physical pages being cached across launches with a wrong cross-process refcount.
+Same PFN family as the quarantined `ZwAllocateVirtualMemory` 0x4E (`MiInsertStandbyListAtFront`) and
+`MmMapLockedPagesSpecifyCache` 0x1000 (task #7) — likely one shared root.
+
+**Tripwire #1 result (2026-07-18) — NEGATIVE, and it narrows the hunt.** Placed the "free-while-mapped"
+tripwire in `MmDereferencePage` (freelist.rs — the RosMM `MmReleasePageMemoryConsumer` sink) right where
+refcount hits 0 before `MiInsertPageInFreeList`: if `(*pfn1).rmap_list_head()` is a non-null, pointer-aligned
+kernel VA, dump the surviving entry's `Process`/`Address`/`Caller`. A sweep that DID corrupt (2 kills) fired
+the tripwire **zero** times. So the premature free is NOT "a ROS page still holding an rmap entry at the
+`MmDereferencePage` free." That rules out the cleanest model and leaves two: (1) the page frees via the **ARM3**
+sink (`MiInsertPageInFreeList` called from `MiDecrementShareCount`/`MiDecrementReferenceCount`, which
+`MmDereferencePage` never reaches — this is the *private*-heap face's expected path), or (2) a **refcount
+imbalance** — an over-decrement drops the frame to 0 and frees it while a PTE still maps it, so the rmap was
+already correctly deleted (empty) yet the mapping's PTE was never torn down. **Next step: move the tripwire to
+the common choke point `MiInsertPageInFreeList` itself** (both sinks funnel there) and, since rmap may be
+legitimately empty under model (2), ALSO validate against the *PTE* side — e.g. cross-check the frame's
+`PteAddress`/`OriginalPte` or add a poison-on-free + check-on-map pass to catch the frame handed out while a
+live PTE still points at it. (An arm64-only `& 0xFFF` alignment guard in the *C* `MmGetRmapListHeadPage` was
+noticed and ruled out — it's cohab-dead; the live Rust accessor (freelist.rs:333) already dropped that hack.)
+
+**Reusable method (the payoff — how to hunt a rare corruption flake UNATTENDED, no GDB babysitting):**
+(a) **Self-reporting kernel tripwires beat GDB-attach-at-the-instant for a ~40%/sweep, 77-launches-deep flake.**
+A conditional GDB breakpoint on the abnormal event needs the right process live at the right moment and
+contends for host CPU leases; a `DbgPrint`/UART dump in the kill path fires every time and a shell loop harvests
+the serial. (b) **`addr2line` the faulting user PC against the on-disk DLL to name the code** — `KiUserApcDispatcher
+→ LdrpInitializeProcess → actctx_init → RtlCreateActivationContext → RtlpExtendHeap → RtlpCoalesceFreeBlocks →
+RemoveEntryList` was decoded entirely from LR-chain offsets + `.build-tools/llvm-mingw/bin/aarch64-w64-mingw32-addr2line
+-f -e ntdll.dll <ImageBase+RVA>`. (c) **Diff the FAULTING BYTES against the on-disk image** to separate
+"page-content corruption" (bytes differ) from "bad jump to valid code" (bytes match) — a 20-line Python PE
+section-walk (`e_lfanew → sections → file offset`) reads the disk word at any RVA. The mismatch here is what
+proved reuse. (d) **A page-aligned FAR on a translation fault = a commit/mapping boundary**, not a random wild
+pointer — it says "the mapping ends exactly here," pointing at frame lifetime, not link corruption.
+
+### 9.99 (CLASS FIXED 2026-07-18) The i386 driver-fleet ud2-bomb class — same-module CC-mismatch folds that PASS the linker (scan_ud2 was ntoskrnl-only)
+
+**Symptom:** i386 boot BUGCHECKs (0x1E/0xc000001d illegal instruction) inside a
+driver's init path, at a PC that disassembles to `ud2` in a NAMED driver
+function; OR silently-broken cold paths (the fn's tail after some call is just
+`ud2`). The build links clean; `vibeos-cli check`/scan_ud2 are green.
+
+**Mechanism:** any same-LLVM-module CC disagreement about one symbol — decl-vs-def
+or decl-vs-decl — makes calls through the "wrong" one UB; instcombine replaces
+the call with `unreachable` (→ ud2) and **deletes the symbol reference**, so the
+link goes green precisely BECAUSE the code is broken. Whole-block deletion: any
+side-effect ops on the doomed path (stores before the call!) are removed too.
+With `lto=false`, folds need def+decl (or 2 decls) inside ONE crate — cross-crate
+is safe. Variants of "same module, different CC" we shipped:
+
+1. **link_name redirects** — decl `fn X` + `#[link_name="X_shim"]` must match
+   the SHIM's ABI, not X's (iomgr `IoGetDevObjExtension_shim`, ud2 in
+   `IopMountVolume` → BUGCHECK 0x1E at boot-volume mount).
+2. **local shim def vs bindgen decl class** — for symbols with an in-crate
+   `#[no_mangle]` shim def (wdm FORCEINLINEs: `KeInitializeSpinLock`,
+   `IoGetNextIrpStackLocation`, …), the CC authority is the **ntkrnl-sys
+   bindgen_i386 DECL class** (what callers import) — NOT the platform import-lib
+   decoration (nm) and NOT the .spec. nm truth applies only to externally
+   resolved symbols. Getting this backwards (Phase-2's def-flips) armed bombs in
+   7 driver crates at once.
+3. **`#[no_mangle]` WITHOUT `extern "…"`** — exports the raw symbol but keeps
+   the unstable Rust CC; every extern decl of it is a mismatch (fastfat
+   `FatSetDirtyBcb`, win32k pre-`fastcall_fn!` era). Grep pattern:
+   `#[no_mangle]` followed by plain `fn` — 79 in-tree, most benign (no extern
+   callers) but each is a landmine.
+4. **fastcall decls vs cdecl defs** — kernel exports Interlocked* FASTCALL on
+   i386 (`@InterlockedExchange@8`); a crate-local cdecl twin def collides with
+   x86-gated fastcall decls (mountmgr). Fix: gate the local def `not(x86)`, let
+   i386 use the kernel export.
+5. **variadic decls vs non-variadic def** — "callers are variadic, we define
+   fixed-arity and ignore extra args" is machine-ABI-fine but **LLVM-UB**
+   (classpnp/disk `TracePrint`/`StorDebugPrint`). Durable fix: put the def in
+   its OWN crate (`drvtrace-shim`) — `lto=false` makes cross-crate modules
+   mutually invisible, so the pattern is fold-proof. Do NOT move such shims
+   back in-crate, do NOT enable LTO over them.
+
+**Detection (the gap that let all this land):** `scan_ud2` only scans
+ntoskrnl.exe. Driver sweep one-liner until it's extended:
+`llvm-objdump -d <sys> | awk '/^[0-9a-f]+ </{fn=$2} /\tud2/{print fn}'` filtered
+for named non-intrinsic fns (skip `__ZN`/compiler_builtins/`___*`/panic/D0Ev
+deleting-dtors); ud2 directly after a call to a NORETURN fn (FatBugCheck, panic)
+is expected codegen, not a bomb. Autopsy: the callee named by the last surviving
+call before the ud2 is the *predecessor* — the poisoned call is what follows it
+in SOURCE (it was deleted). See scratchpad tools ced_linkname_audit.py /
+ced_bindgen_oracle.py / ced_ccreport.py / ud2_autopsy.py (session 57d7315b).
+Scanner gotcha that hid two of these: `#[no_mangle] pub unsafe extern "system"
+fn X` ON ONE LINE — any regex keyed on line-starts-with-`#[` skips the def.
+
+### 9.100 (FIXED 2026-07-18) cdrom sense-buffer 32-vs-18 pool overrun — deterministic BAD_POOL_HEADER 0x19/5 at i386 driver init, TCG-only timing
+
+**Symptom:** deterministic i386 BUGCHECK 0x19 (0x5, next, line, entry) shortly
+after cdrom's WDFKEY traces during boot; entry/next differ by 0x20; next header
+all-zeros. TCG-only in practice (KVM boot timing never hit the poll window
+before shell-ready).
+
+**Root:** `cdrom-rust/src/autorun.rs` media-change SRB setup used literal `32`
+(commented `// SENSE_BUFFER_SIZE`!) for BOTH `RtlZeroMemory(senseBuffer, 32)`
+and `SenseInfoBufferLength`, but the buffer is allocated `SENSE_BUFFER_SIZE`
+= 18 → 24-usable pool block; the zeroing wiped the next 8-byte pool header on
+every poll setup. Fix: both sites → `SENSE_BUFFER_SIZE`.
+
+**Tools that worked:** the 0x19 params encode `line!()` as param3 → maps the
+raise; ex-rust `exp_dump_pool_page` (added, permanent) prints the page walk +
+recent-free ring on the corruption path — the corrupted block's tag (`ScCa` =
+CDROM_TAG_MEDIA_CHANGE_DETECTION) named the owner immediately. NOTE: the
+`--tripwire SPECIALPOOL` channel did NOT reach the kernel on the windows-host
+backend (no `-fw_cfg` in the qemu cmdline, no `[TRIPWIRE]` ack) — harness gap,
+owed fix; don't assume an armed tripwire without the ack line.
+### 9.101 (FOUND+FIXED 2026-07-18, validation in flight) The i386 IPI-packet protocol trio — an EMPTY "wait for completion" block, a freeze request that corrupted its own state machine, and a scheduler-oracle mark with one uncovered promote site
+
+All three surfaced in one session, the first time the i386 `-smp 2` kernel ran a
+kmtest conformance sweep (which is also why none had bitten before: boot alone
+barely exercises these paths). Context: porting the amd64 single-VA TLB shootdown
+to i386 over the classic NT `KiIpiSendPacket` path (`KiTbShootdownSingle`/
+`KiTbShootdownBroadcast` in `ke/i386/cpu.rs`, dispatched from the
+`KeInvalidateTlbEntry`/`KeFlushProcessTb` inlines in `ntkrnl-sys/src/inline/mm.rs`).
+
+1. **The empty-wait-comment class.** `KeFlushEntireTb`'s SMP tail read
+   `if TargetAffinity != 0 { // Wait for IPI completion }` — a comment, an if, and
+   NO CODE. It scans as complete (the shape is there, the intent is named) but the
+   sender returned with its packet slots (`Prcb->WorkerRoutine`/`CurrentPacket`/
+   `TargetSet`) still live; the NEXT `KiIpiSendPacket` from that CPU could clobber
+   a packet an unserviced target hadn't read yet — the target then runs the NEW
+   worker with the NEW arguments (worker/VA swap-under-read), and a stale ack
+   corrupts the new packet's `TargetSet` bookkeeping. Fix: a real drain,
+   `KiIpiStallOnPacketTargets` (spin `Prcb->TargetSet != 0`, 0x101-subcoded loud
+   guard), used by `KeFlushEntireTb` and both new shootdown senders. **Grep for
+   the class:** `grep -rn "^\s*}\?\s*$" -B1` is useless — instead grep comments
+   that PROMISE synchronization (`[Ww]ait for`) and check the enclosing block has
+   any statements. A translated TODO that names its intent is the most
+   convincing-looking dead code there is.
+
+2. **IPI_FREEZE is a STATE, not a request bit** (the `KdSystemDebugControl -smp 2`
+   instant wedge: `[KMTEST:BEGIN KdSystemDebugControl]` then eternal silence, test
+   green on i386 UP and amd64 `-smp 2`). The freeze protocol
+   (`i386/freeze.rs::KxFreezeExecution`, ported from amd64) stages
+   `TargetPrcb->IpiFrozen = IPI_FROZEN_STATE_TARGET_FREEZE` (5) and then calls
+   `KiIpiSend(targets, IPI_FREEZE)`. But the i386/arm64 generic `KiIpiSend`
+   treated every request as a bit position and OR'd `1 << IPI_FREEZE` (0x10) into
+   `IpiFrozen` — turning the staged 5 into 0x15 — and `KiIpiServiceRoutine` had no
+   freeze branch at all (only APC/DPC/SYNCH bit tests), so the target never called
+   `KiProcessorFreezeHandler` and the owner spun forever on `!= FROZEN`. Root
+   difference vs amd64: there, freeze rides an NMI and never touches the request
+   field; on i386 both mechanisms share `Prcb->IpiFrozen` (ReactOS collapsed NT's
+   separate `RequestSummary` into it, and its i386 SMP was never finished so the
+   aliasing was never caught). Fix: `KiIpiSend` special-cases `IPI_FREEZE`
+   (ring targets, touch nothing), and `KiIpiServiceRoutine` dispatches
+   `KiProcessorFreezeHandler(TrapFrame, ExceptionFrame)` FIRST when
+   `IpiFrozen == IPI_FROZEN_STATE_TARGET_FREEZE` (guarded on a real TrapFrame —
+   the packet self-service path passes NULL and freeze never self-targets).
+   Residual accepted gaps, documented in-code: request-bit ops on `IpiFrozen`
+   can still alias freeze states in a kd-freeze window (real fix = separate
+   RequestSummary field), and a CPU parked at IPI_LEVEL can't take 0xE1 freeze
+   until it drops below (amd64 avoids via NMI; i386 has no NMI path yet).
+
+3. **An oracle is only as good as its unmark coverage** (the `[RQDEFER2]
+   DOUBLE-DEFER … caller_line=718 stale_by=718` serial spam saturating every i386
+   `-smp 2` boot). The §9.56 double-defer oracle marks a thread at
+   `KiInsertDeferredReadyList` and unmarks at promotion-to-Running. i386's
+   `KiDispatchInterrupt` standby promote (`Prcb->NextThread` pickup,
+   `thrdini.rs`) sets `State = Running` WITHOUT the unmark — the one site missed
+   (its amd64 twin in `ke/amd64/stubs.rs` has it). Every thread promoted there
+   kept its mark forever, so each later legitimate wake reported DOUBLE-DEFER
+   with a constant `stale_by`. **The tell that it's a stuck mark, not a real
+   double-defer:** same thread + same `caller_line` + same `stale_by` repeating
+   for the whole boot, `waitstatus=0x102` (a periodic timer waiter re-waking).
+   A real §9.56 event is one-shot and names two different wakers. **Rule: when
+   adding a lifecycle oracle, enumerate promote sites by grepping the state
+   ASSIGNMENT (`State = Running`), not by porting the site list from another
+   arch** — each arch has its own dispatch-interrupt/idle promote shape. Cost of
+   the miss: DbgPrint-per-wake serial overhead on every SMP run (a material part
+   of a 77-minute kmtest sweep) plus a dead oracle signal.
+
+Bonus, same session (first i386 rostests build ever attempted): clang's
+integrated assembler rejects `push offset sym` in GAS-Intel i386 asm
+("unsupported relocation type") — materialize via `lea eax, [sym]` + `push eax`
+(scratch reg), or patch the value into a placeholder stack slot after the
+register file is saved when NO register is free (`NtContinue.S`);
+`add_delay_importlibs` on the no-delayload fallback linked the regular importlib
+but not `delayimp`, so `__pfnDli*Hook2` variable references went undefined (fix:
+link `delayimp` unconditionally — static-lib pull-in makes it free); a raw
+`target_link_libraries(... -lgcc)` fails on llvm-mingw — use the toolchain-aware
+`libgcc` target (gcc.cmake maps it to compiler-rt); and the kmtest conformance
+flow needs only `ENABLE_ROSTESTS_KMTESTS=ON` — full `ENABLE_ROSTESTS=ON` drags
+the entire never-ported apitest/winetest estate into the livecd graph (the
+conformance verb's error message now says so).

@@ -98,11 +98,8 @@ const SRB_FLAGS_PORT_DRIVER_ALLOCSENSE: u32 = 0x00200000;
 const SRB_FLAGS_FREE_SENSE_BUFFER: u32 = 0x0400;
 
 extern "C" {
-    fn KeQueryHighestNodeNumber() -> u32;
-    fn KeGetCurrentNodeNumber() -> u32;
     fn RtlULongAdd(augend: u32, addend: u32, result: *mut u32) -> NTSTATUS;
     fn StorDebugPrint(debug_print_level: i32, debug_print_flags: u32, debug_message: PCCHAR, ...);
-    fn IoQueueWorkItemEx(io_work_item: PIO_WORKITEM, worker_routine: *const c_void, queue_type: u32, context: PVOID);
     fn Int64ShrlMod32(value: u64, shift: u32) -> u64;
     fn ClasspSrbSetOriginalIrp(srb: PSTORAGE_REQUEST_BLOCK_HEADER, irp: PIRP);
     fn ClasspIsIdleRequest(irp: PIRP) -> BOOLEAN;
@@ -119,6 +116,11 @@ extern "C" {
     fn SimplePopSlist(header: *mut SINGLE_LIST_ENTRY) -> PSINGLE_LIST_ENTRY;
     
     static SharedSystemTime: LARGE_INTEGER;
+}
+unsafe extern "system" {
+    fn KeQueryHighestNodeNumber() -> u32;
+    fn KeGetCurrentNodeNumber() -> u32;
+    fn IoQueueWorkItemEx(io_work_item: PIO_WORKITEM, worker_routine: *const c_void, queue_type: u32, context: PVOID);
 }
 #[no_mangle]
 pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTATUS {

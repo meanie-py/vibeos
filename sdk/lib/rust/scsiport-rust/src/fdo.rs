@@ -27,7 +27,7 @@ extern "C" {
     fn SpiGetNextRequestFromLun( DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION, LunExtension: *mut SCSI_PORT_LUN_EXTENSION, Irql: *mut KIRQL, );
     fn DbgPrint(format: *const u8, ...) -> i32;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
-    fn RegistryInitAdapterKey(PortExtension: PSCSI_PORT_DEVICE_EXTENSION);
+    pub fn RegistryInitAdapterKey(DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION) -> NTSTATUS;
     fn GetLunByPath( PortExtension: *mut SCSI_PORT_DEVICE_EXTENSION, PathId: u8, TargetId: u8, Lun: u8, ) -> *mut SCSI_PORT_LUN_EXTENSION;
     fn PdoCreateLunDevice( PortExtension: *mut SCSI_PORT_DEVICE_EXTENSION, ) -> *mut DEVICE_OBJECT;
 }

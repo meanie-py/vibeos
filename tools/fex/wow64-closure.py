@@ -54,16 +54,17 @@ def find_objdump(project_dir: Path) -> str:
     return found
 
 
-def index_build(build_dir: Path) -> dict:
+def index_build(build_dir: Path, no_strip: bool = False) -> dict:
     """Map lowercase module name -> path, preferring the stripped variant.
 
     The build tree carries both a fat debug copy and a stripped copy
     (boot/stripped/<hash>-<name>). The stripped set is what the livecd ships and
     is ~2x smaller in aggregate; the ramdisk has finite room, so prefer it.
+    With no_strip, keep the fat paths (stable across rebuilds).
     """
     stripped = {}
     stripped_dir = build_dir / "boot/stripped"
-    if stripped_dir.is_dir():
+    if not no_strip and stripped_dir.is_dir():
         for p in stripped_dir.iterdir():
             if p.suffix.lower() in PE_SUFFIXES and "-" in p.name:
                 stripped[p.name.split("-", 1)[1].lower()] = p
@@ -103,6 +104,13 @@ def main() -> int:
         action="store_true",
         help="also emit ntdll/kernel32/user32/gdi32 (normally staged by name)",
     )
+    ap.add_argument(
+        "--no-strip",
+        action="store_true",
+        help="emit the fat build paths instead of boot/stripped/<hash>- copies "
+        "(for consumers with their own strip step, e.g. the amd64 livecd flow, "
+        "where the hashed names would go stale across i386 rebuilds)",
+    )
     args = ap.parse_args()
 
     project_dir = Path(__file__).resolve().parent.parent.parent
@@ -113,7 +121,7 @@ def main() -> int:
         sys.exit(f"wow64-closure: no such build dir: {build_dir}")
 
     objdump = find_objdump(project_dir)
-    index = index_build(build_dir)
+    index = index_build(build_dir, no_strip=args.no_strip)
 
     seen, missing = set(), {}
     out = {}

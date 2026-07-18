@@ -55,12 +55,9 @@ NTSTATUS_C RtlStringCbPrintfW(
     return status;
 }
 
-/* RtlStringCchPrintfW — i386 resolves this from the import lib (ntoskrnl/usbd export it
- * there), so usbstor-rust's Rust twin is `#[cfg(not(target_arch = "x86"))]`. Mirror that
- * cfg here EXACTLY: on i386 there is no `_v` twin to call and defining the entry point
- * would duplicate the imported one. */
-#if !defined(_M_IX86) && !defined(__i386__)
-
+/* RtlStringCchPrintfW — no import lib exports this on ANY arch (nm over build-i386
+ * confirms; the old "i386 resolves it from the import lib" note was wrong), so the
+ * trampoline + Rust `_v` twin exist everywhere. */
 extern NTSTATUS_C RtlStringCchPrintfW_v(
     WCHAR_C *Dst, size_t CchDst, const WCHAR_C *Format, void *ap);
 
@@ -73,6 +70,4 @@ NTSTATUS_C RtlStringCchPrintfW(
     status = RtlStringCchPrintfW_v(Dst, CchDst, Format, (void *)&ap);
     va_end(ap);
     return status;
-}
-
-#endif /* !i386 */
+} /* !i386 */

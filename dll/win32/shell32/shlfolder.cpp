@@ -682,3 +682,11 @@ SHELL_CreateSHDESCRIPTIONID_RustBridge(VARIANT *pVar, DWORD Id, const CLSID *pCL
 {
     return SHELL_CreateSHDESCRIPTIONID(pVar, Id, pCLSID);
 }
+
+extern "C" HRESULT WINAPI
+CRecycleBin_CoCreateInitSF_RustBridge(
+    LPCITEMIDLIST pidlRoot, PERSIST_FOLDER_TARGET_INFO *ppfti, LPCITEMIDLIST pidlChild,
+    const GUID *clsid, REFIID riid, LPVOID *ppvOut)
+{
+    return SHELL32_CoCreateInitSF(pidlRoot, ppfti, pidlChild, clsid, riid, ppvOut);
+}

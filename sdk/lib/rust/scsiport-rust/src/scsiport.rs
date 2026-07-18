@@ -44,10 +44,10 @@ extern "C" {
     fn _strnicmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
-    fn FdoCallHWInitialize(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION);
+    pub fn FdoCallHWInitialize(DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION) -> NTSTATUS;
     fn FdoStartAdapter(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION) -> NTSTATUS;
     fn FdoScanAdapter(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION);
-    fn FdoRemoveAdapter(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION);
+    pub fn FdoRemoveAdapter(DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION) -> NTSTATUS;
     fn SpiInitOpenKeys(ConfigInfo: *mut CONFIGURATION_INFO, DriverExtension: *mut SCSI_PORT_DRIVER_EXTENSION);
 }
 // NTAPI = stdcall on i386 — extern "system" resolves per-arch.

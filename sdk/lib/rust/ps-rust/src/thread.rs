@@ -35,6 +35,8 @@ extern "C" {
     fn PspSetCrossThreadFlag(Thread: PETHREAD, Flag: ULONG);
     fn KeGetExceptionFrame(Thread: *mut _KTHREAD) -> PKEXCEPTION_FRAME;
     fn KeGetTrapFrame(Thread: *mut _KTHREAD) -> PKTRAP_FRAME;
+}
+unsafe extern "system" {
     fn KeLowerIrql(NewIrql: KIRQL);
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
 }

@@ -156,7 +156,7 @@ extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn MiResolveImageReferences(ImageBase: PVOID, ImageFileDirectory: PUNICODE_STRING, NamePrefix: PUNICODE_STRING, MissingApi: *mut PCHAR, MissingDriver: *mut PWCHAR, LoadImports: *mut PVOID) -> NTSTATUS;
 }
-extern "C" {
+extern "system" {
     fn KeLowerIrql(NewIrql: KIRQL);
 }
 #[cfg(target_arch = "x86")]

@@ -38858,7 +38858,7 @@ unsafe extern "C" {
     pub fn USBSTOR_HandleInternalDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP)
         -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBSTOR_HandleDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "stdcall" {

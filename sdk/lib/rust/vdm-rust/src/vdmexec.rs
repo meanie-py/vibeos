@@ -13,6 +13,8 @@ extern "system" {
     fn Ki386AdjustEsp0(TrapFrame: PKTRAP_FRAME);
 }
 extern "C" {
+}
+unsafe extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }

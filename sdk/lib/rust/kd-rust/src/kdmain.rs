@@ -100,7 +100,7 @@ extern "C" {
     fn _strnicmp(s1: PCSTR, s2: PCSTR, n: usize) -> i32;
     fn strchr(s: PCSTR, c: i32) -> PCSTR;
     fn atol(s: PCSTR) -> i32;
-    fn strtoul(s: PCSTR, endptr: *mut PCSTR, base: i32) -> ULONG;
+    fn strtoul(s: *const CHAR, endptr: *mut *mut CHAR, base: i32) -> ULONG;
     fn _strupr(s: PCHAR) -> PCHAR;
     fn strstr(s1: PCSTR, s2: PCSTR) -> PCSTR;
 }

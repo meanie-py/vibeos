@@ -77,7 +77,7 @@ extern "system" {
     fn AllocFunction(Size: ULONG) -> PVOID;
     fn FreeFunction(Memory: PVOID);
     fn ZeroFunction( Destination: PVOID, Length: ULONG, );
-    fn RtlAssert( message: *const core::ffi::c_void, file: *const core::ffi::c_void, line: u32, comment: *mut core::ffi::c_void, );
+    fn RtlAssert( FailedAssertion: *const core::ffi::c_void, FileName: *const core::ffi::c_void, LineNumber: ULONG, Message: *mut core::ffi::c_void, );
 }
 extern "C" {
     fn DebugFunction(Format: LPCSTR, ...);

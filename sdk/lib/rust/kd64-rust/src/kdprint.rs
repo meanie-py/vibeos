@@ -47,6 +47,8 @@ extern "system" {
 }
 
 extern "C" {
+}
+unsafe extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }

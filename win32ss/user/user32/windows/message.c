@@ -894,6 +894,8 @@ MsgiUnicodeToAnsiMessage(HWND hwnd, LPMSG AnsiMsg, LPMSG UnicodeMsg)
           NameSize = RtlUnicodeStringToAnsiSize(&UnicodeString);
           if (NameSize == 0)
             {
+              ERR("U2A (NC)CREATE: NameSize 0 (name=%p len=%u)\n",
+                  CsW->lpszName, UnicodeString.Length);
               return FALSE;
             }
           ClassSize = 0;
@@ -903,6 +905,8 @@ MsgiUnicodeToAnsiMessage(HWND hwnd, LPMSG AnsiMsg, LPMSG UnicodeMsg)
               ClassSize = RtlUnicodeStringToAnsiSize(&UnicodeString);
               if (ClassSize == 0)
                 {
+                  ERR("U2A (NC)CREATE: ClassSize 0 (class=%p len=%u)\n",
+                      CsW->lpszClass, UnicodeString.Length);
                   return FALSE;
                 }
             }
@@ -910,6 +914,8 @@ MsgiUnicodeToAnsiMessage(HWND hwnd, LPMSG AnsiMsg, LPMSG UnicodeMsg)
           CsA = RtlAllocateHeap(GetProcessHeap(), 0, sizeof(CREATESTRUCTA) + sizeof(MDICREATESTRUCTA) + NameSize + ClassSize);
           if (NULL == CsA)
             {
+              ERR("U2A (NC)CREATE: HeapAlloc %lu failed\n",
+                  (ULONG)(sizeof(CREATESTRUCTA) + sizeof(MDICREATESTRUCTA) + NameSize + ClassSize));
               return FALSE;
             }
           memcpy(CsA, CsW, sizeof(CREATESTRUCTW));
@@ -922,6 +928,7 @@ MsgiUnicodeToAnsiMessage(HWND hwnd, LPMSG AnsiMsg, LPMSG UnicodeMsg)
           Status = RtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
           if (! NT_SUCCESS(Status))
             {
+              ERR("U2A (NC)CREATE: name W->A failed 0x%lx\n", Status);
               RtlFreeHeap(GetProcessHeap(), 0, CsA);
               return FALSE;
             }
@@ -933,6 +940,7 @@ MsgiUnicodeToAnsiMessage(HWND hwnd, LPMSG AnsiMsg, LPMSG UnicodeMsg)
               Status = RtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
               if (! NT_SUCCESS(Status))
                 {
+                  ERR("U2A (NC)CREATE: class W->A failed 0x%lx\n", Status);
                   RtlFreeHeap(GetProcessHeap(), 0, CsA);
                   return FALSE;
                 }

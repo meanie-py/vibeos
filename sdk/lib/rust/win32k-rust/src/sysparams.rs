@@ -105,7 +105,7 @@ extern "C" {
 
 // NTAPI (`_Name@N` stdcall on i386) win32k/ntoskrnl exports.
 extern "system" {
-    fn RegReadUserSetting(pwszKeyName: PCWSTR, pwszValueName: PCWSTR, ulType: ULONG, pvData: *mut core::ffi::c_void, cbDataSize: ULONG) -> u32;
+    fn RegReadUserSetting(pwszKeyName: PCWSTR, pwszValueName: PCWSTR, ulType: ULONG, pvData: *mut core::ffi::c_void, cbDataSize: ULONG) -> NTSTATUS;
     fn InitMetrics() -> BOOL;
     fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: usize, Alignment: u32) -> NTSTATUS;
     fn SafeProbeForRead(Address: *const core::ffi::c_void, Length: usize, Alignment: u32) -> NTSTATUS;

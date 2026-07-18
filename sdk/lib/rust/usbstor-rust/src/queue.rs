@@ -11,7 +11,9 @@ use core::ffi::c_void;
 extern "system" {
     fn KeGetCurrentIrql() -> KIRQL;
     fn BooleanFlagOn(Flags: ULONG, SingleFlag: ULONG) -> BOOLEAN;
-    fn USBSTOR_HandleExecuteSCSI(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
+}
+unsafe extern "C" {
+    pub fn USBSTOR_HandleExecuteSCSI(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 
 // ASSERT_IRQL_EQUAL(x) == ASSERT(KeGetCurrentIrql() == (x)) per ReactOS <ntddk.h>.

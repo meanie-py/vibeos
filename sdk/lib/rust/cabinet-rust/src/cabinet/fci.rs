@@ -466,6 +466,8 @@ unsafe fn close_temp_file(fci: *mut FCI_Int, file: *mut temp_file) -> i32 {
 
 unsafe fn add_file(fci: *mut FCI_Int, filename: *const i8) -> *mut file {
     extern "system" {
+    }
+    unsafe extern "C" {
         fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;
         fn strlen(s: *const i8) -> usize;
     }

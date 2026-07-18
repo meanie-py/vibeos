@@ -43223,7 +43223,7 @@ pub type PBusLogic_WmiExtendedSetupInformation_T = *mut BusLogic_WmiExtendedSetu
 unsafe extern "stdcall" {
     pub fn DriverEntry(DriverObject: PVOID, Argument2: PVOID) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "C" {
     pub fn BT958HwFindAdapter(
         HwDeviceExtension: PVOID,
         Context: PVOID,
@@ -43233,19 +43233,19 @@ unsafe extern "stdcall" {
         Again: PBOOLEAN,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "C" {
     pub fn BT958HwInitialize(HwDeviceExtension: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "C" {
     pub fn BT958HwStartIO(HwDeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "C" {
     pub fn BT958HwInterrupt(HwDeviceExtension: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "C" {
     pub fn BT958HwResetBus(HwDeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "C" {
     pub fn BT958HwAdapterControl(
         HwDeviceExtension: PVOID,
         ControlType: SCSI_ADAPTER_CONTROL_TYPE,

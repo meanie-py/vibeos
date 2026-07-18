@@ -112,8 +112,10 @@ use crate::types::{SCSI_PASS_THROUGH32};
 
 extern "C" {
     fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: PCSTR, ...) -> NTSTATUS;
-    fn PoUnregisterPowerSettingCallback(Handle: PVOID) -> NTSTATUS;
     
+}
+unsafe extern "system" {
+    fn PoUnregisterPowerSettingCallback(Handle: PVOID) -> NTSTATUS;
 }
 
 // gap-function constants (from classpnp C headers)

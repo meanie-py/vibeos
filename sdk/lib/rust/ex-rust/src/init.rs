@@ -1148,7 +1148,10 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
     #[cfg(target_arch = "x86_64")]
     {
-        (*SharedUserData).ImageNumberLow = 0x8664;
+        // WoW64 (Phase E): admit i386 images — kernel32's CreateProcessInternalW
+        // gates on ImageNumberLow <= Machine <= ImageNumberHigh. Real amd64
+        // Windows uses the same [I386, AMD64] range.
+        (*SharedUserData).ImageNumberLow = 0x014c;
         (*SharedUserData).ImageNumberHigh = 0x8664;
     }
     #[cfg(target_arch = "x86")]
@@ -1407,7 +1410,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     #[cfg(target_arch = "aarch64")]
     {
         use ntkrnl_sys::ddk::MmMapIoSpace;
-        extern "C" {
+        extern "system" {
             fn HalInitializeClockArm64(GicDistVa: PVOID, GicCpuVa: PVOID);
         }
         let mut Phys: LARGE_INTEGER = core::mem::zeroed();

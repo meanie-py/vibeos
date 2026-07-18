@@ -10,12 +10,14 @@ use winsrv_sys::winsrv::*;
 
 extern "C" {
     fn DPA_GetPtrCount(hdpa: HDPA) -> i32;
-    fn DPA_GetPtr(hdpa: HDPA, i: i32) -> *mut core::ffi::c_void;
-    fn DPA_Destroy(hdpa: HDPA) -> i32;
     fn TRACE(fmt: *const i8, ...);
     fn AppBar_LockOutput(pData: *mut APPBAR_COMMAND) -> *mut APPBARDATAINTEROP;
     fn AppBar_UnLockOutput(pOutput: *mut APPBARDATAINTEROP);
     fn ERR(fmt: *const i8, ...);
+}
+unsafe extern "system" {
+    fn DPA_GetPtr(hdpa: HDPA, i: i32) -> *mut core::ffi::c_void;
+    fn DPA_Destroy(hdpa: HDPA) -> i32;
 }
 extern "system" {
     fn DPA_DeletePtr(hdpa: HDPA, i: i32) -> *mut core::ffi::c_void;

@@ -44,7 +44,7 @@ extern "system" {
     fn SeTokenIsRestricted(token: PTOKEN) -> BOOLEAN;
     fn SeTokenIsInert(token: PTOKEN) -> u8;
     fn SeSinglePrivilegeCheck(privilege_value: LUID, previous_mode: KPROCESSOR_MODE) -> BOOLEAN;
-    fn SepRmRemoveLogonSessionFromToken(token: PTOKEN);
+    fn SepRmRemoveLogonSessionFromToken(token: PTOKEN) -> NTSTATUS;
     
     static mut SeTokenObjectType: *mut _OBJECT_TYPE;
     static mut SeTcbPrivilege: LUID;

@@ -28,14 +28,16 @@ extern "system" {
     fn USBPORT_FreeCommonBuffer( FdoDevice: PDEVICE_OBJECT, HeaderBuffer: PUSBPORT_COMMON_BUFFER_HEADER, );
     fn USBPORT_GetRegistryKeyValueFullInfo( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, UseHardwareKey: BOOLEAN, KeyNameString: PWSTR, KeyNameStringLength: ULONG, Data: PVOID, DataLength: ULONG, ) -> NTSTATUS;
     fn USBPORT_MiniportInterrupts(FdoDevice: PDEVICE_OBJECT, IsEnable: BOOLEAN);
-    fn USBPORT_StartTimer(FdoDevice: PVOID, TimerValue: ULONG) -> BOOLEAN;
+    pub fn USBPORT_StartTimer(FdoDevice: PDEVICE_OBJECT, Time: ULONG) -> BOOLEAN;
     fn USBPORT_StopWorkerThread(FdoDevice: PDEVICE_OBJECT);
-    fn RtlStringCbCopyW(pszDest: PWSTR, cbDest: usize, pszSrc: *const u16) -> NTSTATUS;
     fn USBPORT_PdoQueryInterface( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, Irp: PIRP, ) -> NTSTATUS;
     fn USBPORT_RootHubCreateDevice( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, ) -> NTSTATUS;
     fn USBPORT_AddUSB1Fdo(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn USBPORT_AddUSB2Fdo(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn USBPORT_InvalidateControllerHandler( FdoDevice: PDEVICE_OBJECT, Type: ULONG, ) -> ();
+}
+unsafe extern "C" {
+    fn RtlStringCbCopyW(pszDest: PWSTR, cbDest: usize, pszSrc: *const u16) -> NTSTATUS;
 }
 extern "C" {
     fn RtlStringCbPrintfW(pszDest: PWSTR, cbDest: usize, pszFormat: PWSTR, ...) -> NTSTATUS;
@@ -993,7 +995,7 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     }
 
     (*FdoExtension).TimerValue = 500;
-    USBPORT_StartTimer(FdoDevice as PVOID, 500);
+    USBPORT_StartTimer((FdoDevice as PVOID) as _, 500);
 
     Status = USBPORT_RegisterDeviceInterface(
         (*FdoExtension).CommonExtension.LowerPdoDevice,

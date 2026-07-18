@@ -413,7 +413,7 @@ unsafe extern "C" {
         FileObject: PFILE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MountMgrCancel(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
 }
 unsafe extern "C" {
@@ -523,10 +523,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DeleteRemoteDatabaseEntry(Database: HANDLE, StartingOffset: LONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReconcileThisDatabaseWithMasterWorker(Parameter: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MountMgrDeviceControl(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
 unsafe extern "C" {

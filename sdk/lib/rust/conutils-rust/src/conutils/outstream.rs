@@ -55,9 +55,11 @@ extern "system" {
     fn EnterCriticalSection(CriticalSection: *mut RTL_CRITICAL_SECTION);
     fn LeaveCriticalSection(CriticalSection: *mut RTL_CRITICAL_SECTION);
     fn K32LoadStringExW(hInstance: HINSTANCE, uID: UINT, LanguageId: LANGID, lpBuffer: PWSTR, cchBufferMax: i32) -> i32;
-    fn FormatMessageW(dwFlags: u32, lpSource: *const c_void, dwMessageId: u32, dwLanguageId: u32, lpBuffer: *mut u16, nSize: u32, Arguments: *mut c_void) -> u32;
+    fn FormatMessageW(dwFlags: u32, lpSource: *const c_void, dwMessageId: u32, dwLanguageId: u32, lpBuffer: *mut u16, nSize: u32, Arguments: *const va_list) -> u32;
     fn LocalFree(hMem: *mut c_void) -> *mut c_void;
     fn FormatMessageSafeW(dwFlags: u32, lpSource: *const c_void, dwMessageId: u32, dwLanguageId: u32, lpBuffer: *mut u16, nSize: u32, Arguments: *mut va_list) -> u32;
+}
+unsafe extern "C" {
     fn ConStreamGetOSHandle(Stream: *mut CON_STREAM) -> *mut c_void;
     fn IsConsoleHandle(hOutput: *mut c_void) -> i32;
     fn IsTTYHandle(hOutput: *mut c_void) -> i32;

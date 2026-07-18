@@ -47,8 +47,10 @@ pub const STATUS_INVALID_BUFFER_SIZE: NTSTATUS = 0xC0000206u32 as NTSTATUS;
 extern "C" {
     pub fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
     pub fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
-    pub fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: u32, lpInBuffer: *const core::ffi::c_void, nInBufferSize: u32, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: u32, lpBytesReturned: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
     pub fn RtlStringCbPrintfA(pszDest: *mut i8, cbDest: usize, pszFormat: *const i8, ...) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: u32, lpInBuffer: *const core::ffi::c_void, nInBufferSize: u32, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: u32, lpBytesReturned: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
 }
 extern "system" {
     pub fn Beep(dwFreq: u32, dwDuration: u32) -> BOOL;
@@ -61,7 +63,7 @@ extern "system" {
     pub fn ConioProcessKey(Console: PCONSRV_CONSOLE, msg: *mut tagMSG);
     pub fn ConioEffectiveCursorSize(Console: PCONSRV_CONSOLE, n: u32) -> u32;
     pub fn ConsoleOutputUnicodeToAnsiChar(Console: PCONSRV_CONSOLE, dChar: *mut i8, sWChar: *mut u16) -> u8;
-    pub fn RtlUnicodeStringToAnsiSize(Str: PUNICODE_STRING) -> u32;
+    pub fn RtlUnicodeStringToAnsiSize(SourceString: *const _UNICODE_STRING) -> u32;
 }
 
 // Win32 user32 helpers tuiterm.c relies on.

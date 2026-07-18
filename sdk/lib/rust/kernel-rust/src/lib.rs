@@ -417,6 +417,8 @@ mod _force_ke_macros_symbols {
 // now an early-return inside the rlib's `RtlpInsertAvlTreeNode` body.
 mod _force_mm_avl_symbols {
     extern "C" {
+    }
+    unsafe extern "system" {
         fn RtlRightChildAvl();
         fn RtlLeftChildAvl();
         fn RtlParentAvl();
@@ -427,7 +429,7 @@ mod _force_mm_avl_symbols {
         fn RtlpDeleteAvlTreeNode();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 8] = [
+    static REFS: [unsafe extern "system" fn(); 8] = [
         RtlRightChildAvl,
         RtlLeftChildAvl,
         RtlParentAvl,
@@ -474,32 +476,37 @@ mod _force_mm_macros_symbols {
 // via `#[link_name = "X_shim"]`.
 mod _force_io_inlines_symbols {
     extern "C" {
+        fn IoCopyCurrentIrpStackLocationToNext_shim();
+        fn HalInitPnpDriver_shim();
+        fn CmiGetNextResourceDescriptor();
+    }
+    unsafe extern "system" {
         fn IopValidateOpenPacket_shim();
         fn IoGetDevObjExtension_shim();
-        fn IoCopyCurrentIrpStackLocationToNext_shim();
         fn IopQueueIrpToThread_shim();
         fn IopUnQueueIrpFromThread_shim();
         fn IopLockFileObject_shim();
         fn IopUnlockFileObject_shim();
         fn IopUpdateOperationCount_shim();
         fn IopUpdateTransferCount_shim();
-        fn HalInitPnpDriver_shim();
         fn IopIsValidPhysicalDeviceObject();
-        fn CmiGetNextResourceDescriptor();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 12] = [
+    static REFS: [unsafe extern "system" fn(); 9] = [
         IopValidateOpenPacket_shim,
         IoGetDevObjExtension_shim,
-        IoCopyCurrentIrpStackLocationToNext_shim,
         IopQueueIrpToThread_shim,
         IopUnQueueIrpFromThread_shim,
         IopLockFileObject_shim,
         IopUnlockFileObject_shim,
         IopUpdateOperationCount_shim,
         IopUpdateTransferCount_shim,
-        HalInitPnpDriver_shim,
         IopIsValidPhysicalDeviceObject,
+    ];
+    #[used]
+    static REFS_C: [unsafe extern "C" fn(); 3] = [
+        IoCopyCurrentIrpStackLocationToNext_shim,
+        HalInitPnpDriver_shim,
         CmiGetNextResourceDescriptor,
     ];
 }
@@ -609,7 +616,6 @@ mod _force_ps_inlines_symbols {
 // ntoskrnl-rust::shim_exports — sibling rlib pattern).
 mod _force_se_inlines_symbols {
     extern "C" {
-        fn SeDeleteClientSecurity();
         fn SeLengthSid();
         fn SeQuerySubjectContextToken();
         fn SepAcquireTokenLockExclusive();
@@ -620,9 +626,15 @@ mod _force_se_inlines_symbols {
         fn SepGetSaclFromDescriptor();
         fn SepReleaseTokenLock();
     }
+    unsafe extern "system" {
+        fn SeDeleteClientSecurity();
+    }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 10] = [
+    static REFS: [unsafe extern "system" fn(); 1] = [
         SeDeleteClientSecurity,
+    ];
+    #[used]
+    static REFS_C: [unsafe extern "C" fn(); 9] = [
         SeLengthSid,
         SeQuerySubjectContextToken,
         SepAcquireTokenLockExclusive,
@@ -649,7 +661,6 @@ mod _force_common_inlines_symbols {
         fn FsRtlEnterFileSystem();
         fn FsRtlExitFileSystem();
         fn InitializeObjectAttributes();
-        fn InsertTailList();
         fn InterlockedCompareExchangePointer();
         fn InterlockedDecrementUL();
         fn InterlockedExchangeAdd64();
@@ -662,8 +673,6 @@ mod _force_common_inlines_symbols {
         fn ProbeForWriteHandle();
         fn ProbeForWriteLangId();
         fn ProbeForWritePointer();
-        fn ProbeForWriteUlong();
-        fn PsGetCurrentThread();
         fn PspClearCrossThreadFlag();
         fn ReleaseCapturedUnicodeString();
         fn RtlInitEmptyAnsiString();
@@ -676,8 +685,13 @@ mod _force_common_inlines_symbols {
         fn RtlParent();
         fn RtlStringCbCopyA();
     }
+    unsafe extern "system" {
+        fn InsertTailList();
+        fn ProbeForWriteUlong();
+        fn PsGetCurrentThread();
+    }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 34] = [
+    static REFS: [unsafe extern "C" fn(); 31] = [
         CcBugCheck,
         DefaultQueryInfoBufferCheck,
         DefaultSetInfoBufferCheck,
@@ -686,7 +700,6 @@ mod _force_common_inlines_symbols {
         FsRtlEnterFileSystem,
         FsRtlExitFileSystem,
         InitializeObjectAttributes,
-        InsertTailList,
         InterlockedCompareExchangePointer,
         InterlockedDecrementUL,
         InterlockedExchangeAdd64,
@@ -699,8 +712,6 @@ mod _force_common_inlines_symbols {
         ProbeForWriteHandle,
         ProbeForWriteLangId,
         ProbeForWritePointer,
-        ProbeForWriteUlong,
-        PsGetCurrentThread,
         PspClearCrossThreadFlag,
         ReleaseCapturedUnicodeString,
         RtlInitEmptyAnsiString,
@@ -712,6 +723,12 @@ mod _force_common_inlines_symbols {
         RtlLongLongAdd,
         RtlParent,
         RtlStringCbCopyA,
+    ];
+    #[used]
+    static REFS_SYS: [unsafe extern "system" fn(); 3] = [
+        InsertTailList,
+        ProbeForWriteUlong,
+        PsGetCurrentThread,
     ];
 }
 
@@ -763,16 +780,21 @@ mod _force_mm_util_inlines_symbols {
         fn _rs_ProbeForWriteSize_t();
         fn _rs_ProbeForWriteIoStatusBlock();
         fn _rs_ExAllocatePoolZero();
+    }
+    unsafe extern "system" {
         fn ExAllocatePoolZero();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 7] = [
+    static REFS: [unsafe extern "C" fn(); 6] = [
         _rs_InterlockedIncrementUL,
         _rs_InterlockedExchangeAddUL,
         _rs_MmSetDirtyPage,
         _rs_ProbeForWriteSize_t,
         _rs_ProbeForWriteIoStatusBlock,
         _rs_ExAllocatePoolZero,
+    ];
+    #[used]
+    static REFS_SYS: [unsafe extern "system" fn(); 1] = [
         ExAllocatePoolZero,
     ];
 }
@@ -955,11 +977,9 @@ mod _force_shim_symbols {
         fn ExAcquirePushLockExclusive();
         fn ExAcquirePushLockShared();
         fn ExAllocateFromNPagedLookasideList();
-        fn ExAllocateFromPagedLookasideList();
         fn ExCompareSwapFastReference();
         fn ExConvertPushLockSharedToExclusive();
         fn ExFreeToNPagedLookasideList();
-        fn ExFreeToPagedLookasideList();
         fn ExGetCountFastReference();
         fn ExGetObjectFastReference();
         fn ExGetRunRefForGivenProcessor();
@@ -979,10 +999,8 @@ mod _force_shim_symbols {
         fn FsRtlExitFileSystem();
         fn HalEndOfBoot();
         fn HalSetWakeEnable();
-        fn IoGetCurrentProcess();
         fn IS_SWAP_FROM_SSE();
         fn InitializeObjectAttributes();
-        fn InsertTailList();
         fn InterlockedBitTestAndReset();
         fn InterlockedBitTestAndSet();
         fn InterlockedCompareExchangePointer();
@@ -1009,7 +1027,6 @@ mod _force_shim_symbols {
         fn KeGetExceptionFrame();
         fn KeGetTrapFrame();
         fn KeGetTrapFrameInterruptState();
-        fn KeInitializeSpinLock();
         fn KeInvalidateTlbEntry();
         fn KeLeaveGuardedRegionThread();
         fn KeRestoreInterrupts();
@@ -1075,14 +1092,10 @@ mod _force_shim_symbols {
         fn KxUnwaitThread();
         fn KxUnwaitThreadForEvent();
         fn KxUnwaitThread_impl();
-        fn LpcpAllocateFromPortZone();
-        fn LpcpCompleteWait();
-        fn LpcpConnectWait();
         fn LpcpGetDataInfoFromMessage();
         fn LpcpGetMessageFromThread();
         fn LpcpGetPortFromThread();
         fn LpcpReceiveWait();
-        fn LpcpReplyWait();
         fn LpcpSetPortToThread();
         fn MI_MAKE_HARDWARE_PTE();
         fn MI_MAKE_HARDWARE_PTE_KERNEL();
@@ -1160,8 +1173,6 @@ mod _force_shim_symbols {
         fn ProbeForWriteLangId();
         fn ProbeForWritePointer();
         fn ProbeForWriteSize_t();
-        fn ProbeForWriteUlong();
-        fn PsGetCurrentProcess();
         fn PspClearCrossThreadFlag();
         // Other Psp* wrappers extracted into the ps-inlines rlib (see
         // _force_ps_inlines_symbols above).
@@ -1180,9 +1191,7 @@ mod _force_shim_symbols {
         fn RtlReleaseSRWLockExclusive();
         fn RtlReleaseSRWLockShared();
         fn RtlStringCbCopyA();
-        fn RtlUnicodeStringToOemSize();
         fn SWAPENTRY_FROM_SSE();
-        fn SeDeleteClientSecurity();
         fn SeLengthSid();
         fn SeQuerySubjectContextToken();
         fn SepAcquireTokenLockExclusive();
@@ -1202,98 +1211,278 @@ mod _force_shim_symbols {
         fn _ExReleaseFastMutexUnsafeAndLeaveCriticalRegion();
         fn _ExTryToAcquireFastMutex();
     }
+    unsafe extern "system" {
+        fn ExAllocateFromPagedLookasideList();
+        fn ExFreeToPagedLookasideList();
+        fn IoGetCurrentProcess();
+        fn InsertTailList();
+        fn KeInitializeSpinLock();
+        fn LpcpAllocateFromPortZone();
+        fn LpcpCompleteWait();
+        fn LpcpConnectWait();
+        fn LpcpReplyWait();
+        fn ProbeForWriteUlong();
+        fn PsGetCurrentProcess();
+        fn RtlUnicodeStringToOemSize();
+        fn SeDeleteClientSecurity();
+    }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 252] = [
-        ARM64_UART_TRACE, ARM64_UART_TRACE_HEX,
-        CONTAINING_RECORD, CcBugCheck, DefaultQueryInfoBufferCheck,
-        DefaultSetInfoBufferCheck, ExAcquireFastReference, ExAcquirePushLockExclusive,
-        ExAcquirePushLockShared, ExAllocateFromNPagedLookasideList,
-        ExAllocateFromPagedLookasideList, ExCompareSwapFastReference,
-        ExConvertPushLockSharedToExclusive, ExFreeToNPagedLookasideList,
-        ExFreeToPagedLookasideList, ExGetCountFastReference, ExGetObjectFastReference,
-        ExGetRunRefForGivenProcessor, ExInitializeFastMutex, ExInitializeFastReference,
-        ExInitializeResource, ExInitializeWorkItem,
-        ExInsertFastReference, ExReleaseFastReference, ExReleasePushLock,
-        ExReleasePushLockExclusive, ExReleasePushLockShared, ExSwapFastReference,
-        ExWaitOnPushLock, ExceptionRecord32To64, FsRtlEnterFileSystem,
-        FsRtlExitFileSystem, HalEndOfBoot, HalSetWakeEnable,
-        IS_SWAP_FROM_SSE, InitializeObjectAttributes, InsertTailList,
-        InterlockedBitTestAndReset, InterlockedBitTestAndSet,
-        InterlockedCompareExchangePointer, InterlockedDecrementUL,
-        InterlockedExchangeAdd64, InterlockedExchangeAddUL, InterlockedIncrementUL,
-        IoGetCurrentIrpStackLocation, IoGetDevObjExtension, IoGetNextIrpStackLocation,
-        IoMarkIrpPending, IoSetCancelRoutine, IoSetCompletionRoutine,
-        IoGetCurrentProcess,
-        IoSetNextIrpStackLocation, IoSkipCurrentIrpStackLocation, KeDisableInterrupts,
+    static REFS: [unsafe extern "C" fn(); 239] = [
+        ARM64_UART_TRACE,
+        ARM64_UART_TRACE_HEX,
+        CONTAINING_RECORD,
+        CcBugCheck,
+        DefaultQueryInfoBufferCheck,
+        DefaultSetInfoBufferCheck,
+        ExAcquireFastReference,
+        ExAcquirePushLockExclusive,
+        ExAcquirePushLockShared,
+        ExAllocateFromNPagedLookasideList,
+        ExCompareSwapFastReference,
+        ExConvertPushLockSharedToExclusive,
+        ExFreeToNPagedLookasideList,
+        ExGetCountFastReference,
+        ExGetObjectFastReference,
+        ExGetRunRefForGivenProcessor,
+        ExInitializeFastMutex,
+        ExInitializeFastReference,
+        ExInitializeResource,
+        ExInitializeWorkItem,
+        ExInsertFastReference,
+        ExReleaseFastReference,
+        ExReleasePushLock,
+        ExReleasePushLockExclusive,
+        ExReleasePushLockShared,
+        ExSwapFastReference,
+        ExWaitOnPushLock,
+        ExceptionRecord32To64,
+        FsRtlEnterFileSystem,
+        FsRtlExitFileSystem,
+        HalEndOfBoot,
+        HalSetWakeEnable,
+        IS_SWAP_FROM_SSE,
+        InitializeObjectAttributes,
+        InterlockedBitTestAndReset,
+        InterlockedBitTestAndSet,
+        InterlockedCompareExchangePointer,
+        InterlockedDecrementUL,
+        InterlockedExchangeAdd64,
+        InterlockedExchangeAddUL,
+        InterlockedIncrementUL,
+        IoGetCurrentIrpStackLocation,
+        IoGetDevObjExtension,
+        IoGetNextIrpStackLocation,
+        IoMarkIrpPending,
+        IoSetCancelRoutine,
+        IoSetCompletionRoutine,
+        IoSetNextIrpStackLocation,
+        IoSkipCurrentIrpStackLocation,
+        KeDisableInterrupts,
         KeEnterGuardedRegionThread,
-        KeFlushProcessTb, KeGetContextPc, KeGetContextReturnRegister,
-        KeGetContextSwitches, KeGetCurrentPrcb, KeGetCurrentProcessorNumber,
-        KeGetExceptionFrame, KeGetTrapFrame, KeGetTrapFrameInterruptState,
-        KeInitializeSpinLock, KeInvalidateTlbEntry,
+        KeFlushProcessTb,
+        KeGetContextPc,
+        KeGetContextReturnRegister,
+        KeGetContextSwitches,
+        KeGetCurrentPrcb,
+        KeGetCurrentProcessorNumber,
+        KeGetExceptionFrame,
+        KeGetTrapFrame,
+        KeGetTrapFrameInterruptState,
+        KeInvalidateTlbEntry,
         KeLeaveGuardedRegionThread,
-        KeRestoreInterrupts, KeSetContextPc, KeSetContextReturnRegister, KeSweepICache,
-        Ki386PerfEnd, KiAcquireApcLockAtSynchLevel, KiAcquireApcLockRaiseToDpc,
-        KiAcquireApcLockRaiseToSynch, KiAcquireDeviceQueueLock,
-        KiAcquireDispatcherLock, KiAcquireDispatcherLockAtSynchLevel,
-        KiAcquireDispatcherObject, KiAcquireNmiListLock, KiAcquirePrcbLock,
-        KiAcquireProcessLockRaiseToSynch, KiAcquireThreadLock, KiAcquireTimerLock,
-        KiAddThreadToWaitList, KiCheckAlertability, KiCheckDeferredReadyList,
-        KiCheckThreadStackSwap, KiComputeDueTime, KiComputeNewPriority,
-        KiComputeTimerTableIndex, KiGetLinkedTrapFrame, KiGetUserModeStackAddress,
-        KiInsertDeferredReadyList, KiRecalculateDueTime, KiReleaseApcLock,
-        KiReleaseApcLockFromSynchLevel, KiReleaseDeviceQueueLock,
-        KiReleaseDispatcherLock, KiReleaseDispatcherLockFromSynchLevel,
-        KiReleaseDispatcherObject, KiReleaseNmiListLock, KiReleasePrcbLock,
-        KiReleaseProcessLock, KiReleaseProcessLockFromSynchLevel, KiReleaseThreadLock,
-        KiReleaseTimerLock, KiRemoveEntryTimer, KiRequestApcInterrupt,
-        KiRescheduleThread, KiRundownThread, KiSatisfyMutantWait,
-        KiSatisfyNonMutantWait, KiSatisfyObjectWait, KiSelectReadyThread,
-        KiSetThreadSwapBusy, KiTryThreadLock, KxAcquireSpinLock, KxDelayThreadWait,
-        KxInsertTimer, KxMultiThreadWait, KxQueueReadyThread, KxQueueThreadWait,
-        KxReleaseSpinLock, KxRemoveTreeTimer, KxSetTimerForThreadWait,
-        KxSingleThreadWait, KxUnwaitThread, KxUnwaitThreadForEvent, KxUnwaitThread_impl,
-        LpcpAllocateFromPortZone, LpcpCompleteWait, LpcpConnectWait,
-        LpcpGetDataInfoFromMessage, LpcpGetMessageFromThread, LpcpGetPortFromThread,
-        LpcpReceiveWait, LpcpReplyWait, LpcpSetPortToThread, MI_MAKE_HARDWARE_PTE,
-        MI_MAKE_HARDWARE_PTE_KERNEL, MI_MAKE_HARDWARE_PTE_USER, MI_UPDATE_VALID_PTE,
-        MM_ANY_WS_LOCK_HELD, MM_IS_WAIT_PTE, MiAcquireExpansionLock,
-        MiConvertSharedWorkingSetLockToExclusive, MiDetermineUserGlobalPteMask,
-        MiDropLockCount, MiIncrementPageTableReferences,
-        MiInterlockedCompareExchangePte, MiInterlockedExchangePte, MiIsMappedPte,
-        MiIsMemoryTypeFree, MiIsMemoryTypeInvisible, MiIsPageDirty, MiIsPageWriteable,
-        MiIsRosSectionObject, MiIsUserPde, MiIsUserPte, MiLockProcessWorkingSet,
-        MiLockProcessWorkingSetForFault, MiLockProcessWorkingSetShared,
-        MiLockProcessWorkingSetUnsafe, MiLockWorkingSet, MiLockWorkingSetShared,
-        MiMakeAccessedPage, MiMakeCleanPage, MiMakeDirtyPage, MiMakeOwnerPage,
-        MiMakeWritePage, MiPageDisableCache, MiPageWriteCombined, MiPageWriteThrough,
-        MiReferenceProbedPageAndBumpLockCount, MiReferenceUnusedPageAndBumpLockCount,
-        MiReferenceUsedPageAndBumpLockCount, MiReleaseExpansionLock,
-        MiRemoveZeroPageSafe, MiUnlockProcessWorkingSet,
-        MiUnlockProcessWorkingSetForFault, MiUnlockProcessWorkingSetShared,
-        MiUnlockProcessWorkingSetUnsafe, MiUnlockWorkingSet, MiUnlockWorkingSetShared,
-        MmDereferenceSegment, MmGetAddressSpaceOwner, MmGetCurrentAddressSpace,
-        MmGetKernelAddressSpace, MmGetMdlPfnArray, MmGetSystemAddressForMdl,
-        MmGetSystemAddressForMdlSafe, MmInitializeMdl, MmLockAddressSpace,
-        MmSetDirtyPage, MmUnlockAddressSpace, NtCurrentProcess, NtCurrentTeb,
-        ObReferenceObject, ObpGetHandleObject, PAGE_ROUND_DOWN, PFN_FROM_SSE,
-        PopEntryList, ProbeAndCaptureUnicodeString, ProbeForReadLargeInteger,
-        ProbeForReadUchar, ProbeForReadUshort, ProbeForWriteBoolean,
-        ProbeForWriteHandle, ProbeForWriteIoStatusBlock, ProbeForWriteLangId,
-        ProbeForWritePointer, ProbeForWriteSize_t, ProbeForWriteUlong,
-        PsGetCurrentProcess, PspClearCrossThreadFlag,
-        RMAP_IS_SEGMENT, ReleaseCapturedUnicodeString,
-        RtlAcquireSRWLockExclusive, RtlAcquireSRWLockShared, RtlInitEmptyAnsiString,
-        RtlInitEmptyUnicodeString, RtlInitializeSplayLinks, RtlInsertAsLeftChild,
-        RtlInsertAsRightChild, RtlIsLeftChild, RtlLongLongAdd, RtlParent,
-        RtlReleaseSRWLockExclusive, RtlReleaseSRWLockShared, RtlStringCbCopyA,
-        RtlUnicodeStringToOemSize, SWAPENTRY_FROM_SSE, SeDeleteClientSecurity,
-        SeLengthSid, SeQuerySubjectContextToken, SepAcquireTokenLockExclusive,
-        SepAcquireTokenLockShared, SepGetDaclFromDescriptor, SepGetGroupFromDescriptor,
-        SepGetOwnerFromDescriptor, SepGetSaclFromDescriptor, SepReleaseTokenLock,
-        UpdateTotalCommittedPages, YieldProcessor, _ExAcquireFastMutex,
-        _ExAcquireFastMutexUnsafe, _ExEnterCriticalRegionAndAcquireFastMutexUnsafe,
-        _ExReleaseFastMutex, _ExReleaseFastMutexUnsafe,
-        _ExReleaseFastMutexUnsafeAndLeaveCriticalRegion, _ExTryToAcquireFastMutex,
+        KeRestoreInterrupts,
+        KeSetContextPc,
+        KeSetContextReturnRegister,
+        KeSweepICache,
+        Ki386PerfEnd,
+        KiAcquireApcLockAtSynchLevel,
+        KiAcquireApcLockRaiseToDpc,
+        KiAcquireApcLockRaiseToSynch,
+        KiAcquireDeviceQueueLock,
+        KiAcquireDispatcherLock,
+        KiAcquireDispatcherLockAtSynchLevel,
+        KiAcquireDispatcherObject,
+        KiAcquireNmiListLock,
+        KiAcquirePrcbLock,
+        KiAcquireProcessLockRaiseToSynch,
+        KiAcquireThreadLock,
+        KiAcquireTimerLock,
+        KiAddThreadToWaitList,
+        KiCheckAlertability,
+        KiCheckDeferredReadyList,
+        KiCheckThreadStackSwap,
+        KiComputeDueTime,
+        KiComputeNewPriority,
+        KiComputeTimerTableIndex,
+        KiGetLinkedTrapFrame,
+        KiGetUserModeStackAddress,
+        KiInsertDeferredReadyList,
+        KiRecalculateDueTime,
+        KiReleaseApcLock,
+        KiReleaseApcLockFromSynchLevel,
+        KiReleaseDeviceQueueLock,
+        KiReleaseDispatcherLock,
+        KiReleaseDispatcherLockFromSynchLevel,
+        KiReleaseDispatcherObject,
+        KiReleaseNmiListLock,
+        KiReleasePrcbLock,
+        KiReleaseProcessLock,
+        KiReleaseProcessLockFromSynchLevel,
+        KiReleaseThreadLock,
+        KiReleaseTimerLock,
+        KiRemoveEntryTimer,
+        KiRequestApcInterrupt,
+        KiRescheduleThread,
+        KiRundownThread,
+        KiSatisfyMutantWait,
+        KiSatisfyNonMutantWait,
+        KiSatisfyObjectWait,
+        KiSelectReadyThread,
+        KiSetThreadSwapBusy,
+        KiTryThreadLock,
+        KxAcquireSpinLock,
+        KxDelayThreadWait,
+        KxInsertTimer,
+        KxMultiThreadWait,
+        KxQueueReadyThread,
+        KxQueueThreadWait,
+        KxReleaseSpinLock,
+        KxRemoveTreeTimer,
+        KxSetTimerForThreadWait,
+        KxSingleThreadWait,
+        KxUnwaitThread,
+        KxUnwaitThreadForEvent,
+        KxUnwaitThread_impl,
+        LpcpGetDataInfoFromMessage,
+        LpcpGetMessageFromThread,
+        LpcpGetPortFromThread,
+        LpcpReceiveWait,
+        LpcpSetPortToThread,
+        MI_MAKE_HARDWARE_PTE,
+        MI_MAKE_HARDWARE_PTE_KERNEL,
+        MI_MAKE_HARDWARE_PTE_USER,
+        MI_UPDATE_VALID_PTE,
+        MM_ANY_WS_LOCK_HELD,
+        MM_IS_WAIT_PTE,
+        MiAcquireExpansionLock,
+        MiConvertSharedWorkingSetLockToExclusive,
+        MiDetermineUserGlobalPteMask,
+        MiDropLockCount,
+        MiIncrementPageTableReferences,
+        MiInterlockedCompareExchangePte,
+        MiInterlockedExchangePte,
+        MiIsMappedPte,
+        MiIsMemoryTypeFree,
+        MiIsMemoryTypeInvisible,
+        MiIsPageDirty,
+        MiIsPageWriteable,
+        MiIsRosSectionObject,
+        MiIsUserPde,
+        MiIsUserPte,
+        MiLockProcessWorkingSet,
+        MiLockProcessWorkingSetForFault,
+        MiLockProcessWorkingSetShared,
+        MiLockProcessWorkingSetUnsafe,
+        MiLockWorkingSet,
+        MiLockWorkingSetShared,
+        MiMakeAccessedPage,
+        MiMakeCleanPage,
+        MiMakeDirtyPage,
+        MiMakeOwnerPage,
+        MiMakeWritePage,
+        MiPageDisableCache,
+        MiPageWriteCombined,
+        MiPageWriteThrough,
+        MiReferenceProbedPageAndBumpLockCount,
+        MiReferenceUnusedPageAndBumpLockCount,
+        MiReferenceUsedPageAndBumpLockCount,
+        MiReleaseExpansionLock,
+        MiRemoveZeroPageSafe,
+        MiUnlockProcessWorkingSet,
+        MiUnlockProcessWorkingSetForFault,
+        MiUnlockProcessWorkingSetShared,
+        MiUnlockProcessWorkingSetUnsafe,
+        MiUnlockWorkingSet,
+        MiUnlockWorkingSetShared,
+        MmDereferenceSegment,
+        MmGetAddressSpaceOwner,
+        MmGetCurrentAddressSpace,
+        MmGetKernelAddressSpace,
+        MmGetMdlPfnArray,
+        MmGetSystemAddressForMdl,
+        MmGetSystemAddressForMdlSafe,
+        MmInitializeMdl,
+        MmLockAddressSpace,
+        MmSetDirtyPage,
+        MmUnlockAddressSpace,
+        NtCurrentProcess,
+        NtCurrentTeb,
+        ObReferenceObject,
+        ObpGetHandleObject,
+        PAGE_ROUND_DOWN,
+        PFN_FROM_SSE,
+        PopEntryList,
+        ProbeAndCaptureUnicodeString,
+        ProbeForReadLargeInteger,
+        ProbeForReadUchar,
+        ProbeForReadUshort,
+        ProbeForWriteBoolean,
+        ProbeForWriteHandle,
+        ProbeForWriteIoStatusBlock,
+        ProbeForWriteLangId,
+        ProbeForWritePointer,
+        ProbeForWriteSize_t,
+        PspClearCrossThreadFlag,
+        RMAP_IS_SEGMENT,
+        ReleaseCapturedUnicodeString,
+        RtlAcquireSRWLockExclusive,
+        RtlAcquireSRWLockShared,
+        RtlInitEmptyAnsiString,
+        RtlInitEmptyUnicodeString,
+        RtlInitializeSplayLinks,
+        RtlInsertAsLeftChild,
+        RtlInsertAsRightChild,
+        RtlIsLeftChild,
+        RtlLongLongAdd,
+        RtlParent,
+        RtlReleaseSRWLockExclusive,
+        RtlReleaseSRWLockShared,
+        RtlStringCbCopyA,
+        SWAPENTRY_FROM_SSE,
+        SeLengthSid,
+        SeQuerySubjectContextToken,
+        SepAcquireTokenLockExclusive,
+        SepAcquireTokenLockShared,
+        SepGetDaclFromDescriptor,
+        SepGetGroupFromDescriptor,
+        SepGetOwnerFromDescriptor,
+        SepGetSaclFromDescriptor,
+        SepReleaseTokenLock,
+        UpdateTotalCommittedPages,
+        YieldProcessor,
+        _ExAcquireFastMutex,
+        _ExAcquireFastMutexUnsafe,
+        _ExEnterCriticalRegionAndAcquireFastMutexUnsafe,
+        _ExReleaseFastMutex,
+        _ExReleaseFastMutexUnsafe,
+        _ExReleaseFastMutexUnsafeAndLeaveCriticalRegion,
+        _ExTryToAcquireFastMutex,
+    ];
+    #[used]
+    static REFS_SYS: [unsafe extern "system" fn(); 13] = [
+        ExAllocateFromPagedLookasideList,
+        ExFreeToPagedLookasideList,
+        InsertTailList,
+        IoGetCurrentProcess,
+        KeInitializeSpinLock,
+        LpcpAllocateFromPortZone,
+        LpcpCompleteWait,
+        LpcpConnectWait,
+        LpcpReplyWait,
+        ProbeForWriteUlong,
+        PsGetCurrentProcess,
+        RtlUnicodeStringToOemSize,
+        SeDeleteClientSecurity,
     ];
 
     #[cfg(not(target_arch = "x86"))]
@@ -1305,7 +1494,6 @@ mod _force_shim_symbols {
             fn ExRundownCompleted();
             fn ExWaitForRundownProtectionRelease();
             fn KeQueryInterruptTime();
-            fn KeQuerySystemTime();
             fn MiIsPdeForAddressValid();
             // devaction.rs PnP functions called from C shims
             fn IopCancelRemoveChildDevices();
@@ -1316,60 +1504,78 @@ mod _force_shim_symbols {
             fn IopSendRemoveChildDevices();
             fn IopSendRemoveDeviceRelations();
         }
+        unsafe extern "system" {
+            fn KeQuerySystemTime();
+        }
         extern "system" {
             fn IopSendEject();
             fn PipDeviceActionWorker();
             fn IopStartRamdisk();
         }
         #[used]
-        static REFS_CDECL: [unsafe extern "C" fn(); 15] = [
-            ExAcquireRundownProtection, ExInitializeRundownProtection,
-            ExReleaseRundownProtection, ExRundownCompleted,
-            ExWaitForRundownProtectionRelease, KeQueryInterruptTime,
-            KeQuerySystemTime, MiIsPdeForAddressValid,
-            IopCancelRemoveChildDevices, IopCancelRemoveDeviceRelations,
-            IopPrepareDeviceForRemoval, IopQueryRemoveChildDevices,
-            IopQueryRemoveDeviceRelations, IopSendRemoveChildDevices,
+        static REFS_CDECL: [unsafe extern "C" fn(); 14] = [
+            ExAcquireRundownProtection,
+            ExInitializeRundownProtection,
+            ExReleaseRundownProtection,
+            ExRundownCompleted,
+            ExWaitForRundownProtectionRelease,
+            KeQueryInterruptTime,
+            MiIsPdeForAddressValid,
+            IopCancelRemoveChildDevices,
+            IopCancelRemoveDeviceRelations,
+            IopPrepareDeviceForRemoval,
+            IopQueryRemoveChildDevices,
+            IopQueryRemoveDeviceRelations,
+            IopSendRemoveChildDevices,
             IopSendRemoveDeviceRelations,
         ];
         #[used]
+        static REFS_CDECL_SYS: [unsafe extern "system" fn(); 1] = [
+            KeQuerySystemTime,
+        ];
+        #[used]
         static REFS_STDCALL: [unsafe extern "system" fn(); 3] = [
-            IopSendEject, PipDeviceActionWorker, IopStartRamdisk,
+            IopSendEject,
+            PipDeviceActionWorker,
+            IopStartRamdisk,
         ];
     }
 
     #[cfg(target_arch = "x86")]
     mod x86 {
         extern "C" {
-            fn KeLowerIrql();
             fn KeMemoryBarrier();
-            fn KeRaiseIrql();
             fn KiGetGdtEntry();
             fn KiSetGdtDescriptorBase();
             fn MiSynchronizeSystemPde();
             fn RtlFillMemoryUlong();
         }
+        unsafe extern "system" {
+            fn KeLowerIrql();
+            fn KeRaiseIrql();
+        }
         #[used]
-        static REFS: [unsafe extern "C" fn(); 7] = [
-            KeLowerIrql, KeMemoryBarrier, KeRaiseIrql,
-            KiGetGdtEntry, KiSetGdtDescriptorBase,
-            MiSynchronizeSystemPde, RtlFillMemoryUlong,
+        static REFS: [unsafe extern "system" fn(); 2] = [
+            KeLowerIrql,
+            KeRaiseIrql,
+        ];
+        #[used]
+        static REFS_C: [unsafe extern "C" fn(); 5] = [
+            KeMemoryBarrier,
+            KiGetGdtEntry,
+            KiSetGdtDescriptorBase,
+            MiSynchronizeSystemPde,
+            RtlFillMemoryUlong,
         ];
     }
 
     #[cfg(target_arch = "x86_64")]
     mod x64 {
         extern "C" {
-            fn KeGetCurrentIrql();
             fn KeGetPcr();
-            fn KeLowerIrql();
             fn KeMemoryBarrier();
             fn KeQueryInterruptHandler();
-            fn KeRaiseIrql();
-            fn KeRaiseIrqlToDpcLevel();
             fn KeRegisterInterruptHandler();
-            fn KfLowerIrql();
-            fn KfRaiseIrql();
             fn KiGetGdtDescriptorBase();
             fn KiGetGdtEntry();
             fn KiInitGdtEntry();
@@ -1401,17 +1607,59 @@ mod _force_shim_symbols {
             fn __writedr();
             fn __writemsr();
         }
+        unsafe extern "system" {
+            fn KeGetCurrentIrql();
+            fn KeLowerIrql();
+            fn KeRaiseIrql();
+            fn KeRaiseIrqlToDpcLevel();
+            fn KfLowerIrql();
+            fn KfRaiseIrql();
+        }
         #[used]
-        static REFS: [unsafe extern "C" fn(); 40] = [
-            KeGetCurrentIrql, KeGetPcr, KeLowerIrql, KeMemoryBarrier,
-            KeQueryInterruptHandler, KeRaiseIrql, KeRaiseIrqlToDpcLevel,
-            KeRegisterInterruptHandler, KfLowerIrql, KfRaiseIrql,
-            KiGetGdtDescriptorBase, KiGetGdtEntry, KiInitGdtEntry, KiRestoreXState,
-            KiSaveXState, KiSendEOI, KiSetGdtDescriptorBase, KiSetGdtDescriptorLimit,
-            RtlFillMemoryUlong, __lgdt, __lidt, __readcr0, __readcr2, __readcr3,
-            __readcr4, __readcr8, __readdr, __readmsr, __sgdt, __sidt, __sldt, __str,
-            __swapgs, __wbinvd, __writecr0, __writecr3, __writecr4, __writecr8,
-            __writedr, __writemsr,
+        static REFS: [unsafe extern "system" fn(); 6] = [
+            KeGetCurrentIrql,
+            KeLowerIrql,
+            KeRaiseIrql,
+            KeRaiseIrqlToDpcLevel,
+            KfLowerIrql,
+            KfRaiseIrql,
+        ];
+        #[used]
+        static REFS_C: [unsafe extern "C" fn(); 34] = [
+            KeGetPcr,
+            KeMemoryBarrier,
+            KeQueryInterruptHandler,
+            KeRegisterInterruptHandler,
+            KiGetGdtDescriptorBase,
+            KiGetGdtEntry,
+            KiInitGdtEntry,
+            KiRestoreXState,
+            KiSaveXState,
+            KiSendEOI,
+            KiSetGdtDescriptorBase,
+            KiSetGdtDescriptorLimit,
+            RtlFillMemoryUlong,
+            __lgdt,
+            __lidt,
+            __readcr0,
+            __readcr2,
+            __readcr3,
+            __readcr4,
+            __readcr8,
+            __readdr,
+            __readmsr,
+            __sgdt,
+            __sidt,
+            __sldt,
+            __str,
+            __swapgs,
+            __wbinvd,
+            __writecr0,
+            __writecr3,
+            __writecr4,
+            __writecr8,
+            __writedr,
+            __writemsr,
         ];
     }
 }

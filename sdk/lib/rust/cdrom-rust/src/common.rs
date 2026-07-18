@@ -105,23 +105,35 @@ extern "C" {
     fn PORT_ALLOCATED_SENSE(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> BOOLEAN;
 }
 extern "system" {
-    fn UNREFERENCED_PARAMETER(x: usize);
-    fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
     fn NT_ASSERT(expr: i32);
     fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> u8;
-    fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, TransferSize: u32, Retry: u8, Cdb: *mut CDB, CdbLength: u8, ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn UNREFERENCED_PARAMETER(x: usize);
+}
+unsafe extern "C" {
+    fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
+}
+unsafe extern "system" {
+    fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
 }
 extern "system" {
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
-    fn RtlULongAdd(ul1: u32, ul2: u32, pulRes: *mut u32) -> NTSTATUS;
-    fn InterlockedIncrement(p: *mut i32) -> i32;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
-    fn WHICH_BIT(bps: u32, shift: *mut u8);
-    fn DvdSendKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, KeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
     fn KeGetCurrentIrql() -> KIRQL;
     static GUID_DEVINTERFACE_CDROM: GUID;
     static MOUNTDEV_MOUNTED_DEVICE_GUID: GUID;
+}
+unsafe extern "C" {
+    fn RtlULongAdd(ul1: u32, ul2: u32, pulRes: *mut u32) -> NTSTATUS;
+    fn InterlockedIncrement(p: *mut i32) -> i32;
+    fn WHICH_BIT(bps: u32, shift: *mut u8);
+}
+unsafe extern "C" {
+    fn DvdSendKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, KeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
+}
+unsafe extern "C" {
     fn DeviceRetrieveDescriptor( Device: WDFDEVICE, PropertyId: *mut STORAGE_PROPERTY_ID, Descriptor: *mut PSTORAGE_DESCRIPTOR_HEADER, ) -> NTSTATUS;
 }
 // C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
@@ -131,24 +143,36 @@ extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
-    fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
     fn WDF_REQUEST_SEND_OPTIONS_INIT(Options: *mut WDF_REQUEST_SEND_OPTIONS, Flags: u32);
     fn RtlInitUnicodeString(DestinationString: *mut UNICODE_STRING, SourceString: *const u16);
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> i32;
-    fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
-    fn DeviceSetMediaChangeStateEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, newState: i32, previousState: *mut i32);
-    fn IsVolumeMounted(DeviceObject: *mut DEVICE_OBJECT) -> u8;
-    fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
-    fn RequestSetupMcnSyncIrp(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     static GUID_IO_CDROM_EXCLUSIVE_UNLOCK: GUID;
     static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void);
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: i32);
     fn PagedCode();
     fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32;
-    fn REVERSE_BYTES_SHORT(dest: *mut u16, src: *const u32);
     fn FileObjectGetContext(FileObject: WDFFILEOBJECT) -> *mut FILE_OBJECT_CONTEXT;
+}
+unsafe extern "C" {
+    fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
+    fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
+    fn REVERSE_BYTES_SHORT(dest: *mut u16, src: *const u32);
+}
+unsafe extern "C" {
+    fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> i32;
+}
+unsafe extern "C" {
+    fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
+}
+unsafe extern "C" {
+    fn DeviceSetMediaChangeStateEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, newState: i32, previousState: *mut i32);
+}
+unsafe extern "C" {
+    fn IsVolumeMounted(DeviceObject: *mut DEVICE_OBJECT) -> u8;
+}
+unsafe extern "C" {
+    fn RequestSetupMcnSyncIrp(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
 }
 extern "C" {
     fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, param3: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, InKeyLength: usize, OutCopyProtectKey: *mut DVD_COPY_PROTECT_KEY, OutKeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;

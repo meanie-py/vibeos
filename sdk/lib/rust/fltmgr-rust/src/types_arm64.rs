@@ -2349,7 +2349,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn FltpExReleaseRundownProtection(RundownRef: PEX_RUNDOWN_REF) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltpObjectRundownWait(RundownRef: PEX_RUNDOWN_REF) -> NTSTATUS;
 }
 unsafe extern "C" {

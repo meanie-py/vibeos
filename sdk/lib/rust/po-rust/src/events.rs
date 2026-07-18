@@ -33,6 +33,8 @@ extern "C" {
     static mut PopCapabilities: POP_SYSTEM_POWER_CAPABILITIES;
     static GUID_DEVICE_INTERFACE_ARRIVAL: GUID;
     static GUID_DEVICE_INTERFACE_REMOVAL: GUID;
+}
+unsafe extern "system" {
     fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL);
     fn KeLowerIrql(irql: KIRQL);
 }

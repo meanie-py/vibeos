@@ -27,7 +27,7 @@ extern "C" {
     fn DbgPrint(format: *const i8, ...) -> i32;
     fn GetIRPMinorFunctionString(minor: u8) -> *const i8;
     fn DbgGetDeviceIDString(IdType: u32) -> *const i8;
-    fn RegistryInitLunKey(lunExt: PSCSI_PORT_LUN_EXTENSION);
+    pub fn RegistryInitLunKey(LunExtension: PSCSI_PORT_LUN_EXTENSION) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----

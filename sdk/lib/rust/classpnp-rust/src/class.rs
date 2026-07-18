@@ -116,14 +116,9 @@ fn CLASS_DRIVER_EXTENSION_KEY() -> *mut core::ffi::c_void {
 
 extern "C" {
     fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: *const i8, ...);
-    fn PoUnregisterPowerSettingCallback(Handle: PVOID);
-    fn EtwRegister(ProviderId: *const GUID, EnableCallback: *mut c_void, CallbackContext: *mut c_void, RegHandle: *mut u64) -> NTSTATUS;
-    fn EtwUnregister(RegHandle: u64) -> NTSTATUS;
     fn WPP_INIT_TRACING(DriverObject: PDRIVER_OBJECT, RegistryPath: *mut _UNICODE_STRING);
     fn WPP_CLEANUP(DriverObject: PDRIVER_OBJECT);
-    fn IsEqualGUID(Guid1: *const GUID, Guid2: *const GUID) -> BOOLEAN;
     fn IoAdjustPagingPathCount(Count: *mut i32, Increment: BOOLEAN);
-    fn PoRegisterPowerSettingCallback(DeviceObject: PDEVICE_OBJECT, SettingGuid: *const GUID, Callback: unsafe extern "system" fn(*const GUID, PVOID, ULONG, PVOID) -> NTSTATUS, Context: PVOID, Handle: *mut PVOID) -> NTSTATUS;
     fn SET_FLAG(Flags: *mut ULONG, Flag: ULONG);
     fn LongToPtr(l: LONG) -> PVOID;
     fn RtlEqualMemory(Source1: *const c_void, Source2: *const c_void, Length: usize) -> BOOLEAN;
@@ -140,6 +135,13 @@ extern "C" {
     fn ClasspGetCurrentTime() -> LARGE_INTEGER;
     fn DBGLOGFLUSHINFO(FdoData: *mut _CLASS_PRIVATE_FDO_DATA, IsFlush: BOOLEAN, IsSync: BOOLEAN, IsComplete: BOOLEAN);
     fn NT_ASSERTMSG(Msg: *const i8, Expr: BOOLEAN);
+}
+unsafe extern "system" {
+    fn PoUnregisterPowerSettingCallback(Handle: PVOID);
+    fn EtwRegister(ProviderId: *const GUID, EnableCallback: *mut c_void, CallbackContext: *mut c_void, RegHandle: *mut u64) -> NTSTATUS;
+    fn EtwUnregister(RegHandle: u64) -> NTSTATUS;
+    fn IsEqualGUID(Guid1: *const GUID, Guid2: *const GUID) -> BOOLEAN;
+    fn PoRegisterPowerSettingCallback(DeviceObject: PDEVICE_OBJECT, SettingGuid: *const GUID, Callback: unsafe extern "system" fn(*const GUID, PVOID, ULONG, PVOID) -> NTSTATUS, Context: PVOID, Handle: *mut PVOID) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -2655,10 +2657,12 @@ extern "system" {
 extern "C" {
     
     
-    pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     
-    pub fn KeLowerIrql(OldIrql: KIRQL);
 
+}
+unsafe extern "system" {
+    pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    pub fn KeLowerIrql(OldIrql: KIRQL);
 }
 // Interlocked* are FASTCALL on i386 per ntoskrnl.spec; plain C elsewhere
 #[cfg(target_arch = "x86")]

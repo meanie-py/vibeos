@@ -5,7 +5,7 @@ use win32k_sys::win32k::*;
 // to match the C signatures from sdk/include/psdk/winddi.h + win32ss/gdi/ntgdi/rect.h.
 extern "system" {
     fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: BOOL, iType: ULONG, iDirection: ULONG, cLimit: ULONG) -> ULONG;
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pul: *mut ULONG) -> u8;
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> u8;
 }
 #[cfg(target_arch = "x86")]
 extern "fastcall" {

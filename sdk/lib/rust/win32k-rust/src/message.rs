@@ -100,7 +100,7 @@ unsafe fn ppi_input_idle_event(ppi: PPROCESSINFO) -> PKEVENT {
 }
 
 extern "C" {
-    fn wcslen(s: PWSTR) -> usize;
+    fn wcslen(s: LPWSTR) -> usize;
     fn wcscpy(dst: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
     fn wcsncmp(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> i32;
     fn _wcsicmp(s1: *const WCHAR, s2: *const WCHAR) -> i32;

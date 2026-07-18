@@ -75,7 +75,7 @@ pub static mut PnpStateTransitionArray: [NTSTATUS; 36] = [
 pub const NDEBUG: bool = true;
 
 extern "system" {
-    fn RtlAssert( FailedAssertion: *mut core::ffi::c_void, FileName: *mut core::ffi::c_void, LineNumber: u32, Message: *mut i8, );
+    fn RtlAssert(pvFailedAssertion: PVOID, pvFileName: PVOID, ulLineNumber: ULONG, pszMessage: *mut ::core::ffi::c_char);
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciInitializeState(DeviceExtension: *mut _PCI_FDO_EXTENSION) {

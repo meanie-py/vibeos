@@ -2079,7 +2079,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(DeviceObject: PDEVICE_OBJECT) -> 
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
-extern "C" {
+extern "system" {
     fn PoRegisterPowerSettingCallback(
         DeviceObject: PDEVICE_OBJECT,
         SettingGuid: LPCGUID,

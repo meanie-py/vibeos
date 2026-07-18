@@ -993,3 +993,40 @@ flicker (184/5 vs 185/4), baselined. i386 `-smp 2` smoke 3/3 with the SYNCH=27
 context-switch raise. arm64 untouched behaviorally (halstubs still DISPATCH — its
 SYNCH alignment is OWED for when arm64 -smp conformance opens; ndk arm64 defines no
 MP SYNCH variant, real NT arm64 uses IPI-2=12).
+
+**Wave-2 TLB item CLOSED + i386 SMP conformance lane OPENED (2026-07-18, overnight):
+i386 single-VA remote flush landed over the packet path — and the first-ever i386
+`-smp 2` kmtest sweep flushed out three protocol bugs (field manual §9.98).**
+The owed "targeted single-VA remote flush + packet mailbox (i386+amd64)" item: amd64
+half had landed 2026-07-11 (descriptor transport); the i386 half is now in —
+same-named remote-only `KiTbShootdownSingle`/`KiTbShootdownBroadcast` in
+`ke/i386/cpu.rs` riding the validated `KiIpiSendPacket` 0xE1 path (raise-to-SYNCH →
+send → `KiIpiStallOnPacketTargets` drain → lower), dispatched from the
+`KeInvalidateTlbEntry`/`KeFlushProcessTb` inlines (mm.rs cfg widened
+amd64-only → any(x86); arm64 stays hardware-broadcast TLBI by design). The "packet
+mailbox" wording resolves to the amd64 per-CPU-mailbox upgrade that was deliberately
+NOT integrated (staged reference in ~/vibeos-rust-staging/smp/ipi-recv/) — the
+descriptor protocol covers it; item retired.
+Found + fixed en route (§9.101 for the full stories): (1) `KeFlushEntireTb`'s
+"wait for IPI completion" block was EMPTY — sender packet-slot reuse race, now a
+real drain; (2) `IPI_FREEZE` corrupted the `IpiFrozen` state machine (bit-OR over a
+staged state) and `KiIpiServiceRoutine` had no freeze branch — the
+KdSystemDebugControl `-smp 2` instant wedge; now state-dispatched to
+`KiProcessorFreezeHandler` (kd freeze/thaw WORKS on i386 SMP); (3) the §9.56
+double-defer oracle's unmark was missing at i386 `KiDispatchInterrupt`'s standby
+promote — eternal `[RQDEFER2]` spam on every i386 SMP boot, a material slowdown
+(the pre-fix sweep attempt: 25 tests/77 min, wedged; post-fix: **72 launched /
+68 ok / done in 99s**, within 15% of the UP control's 86s — so NO lazy-idle port
+needed on i386 for now). Also cleared four pre-existing landmines on the
+first-ever i386 rostests build + pointed the conformance error at the
+`ENABLE_ROSTESTS_KMTESTS=ON` scalpel (full ROSTESTS drags the unported apitest
+estate in).
+**Validation:** i386 `-smp 2` boots 5/5; i386 smp2 sweep 99s done, KdSystemDebugControl
+40/2 = exact UP parity, `kmtest-smp2.txt` baseline SEEDED — MP is at-or-better than
+UP everywhere (ExUuid 3000/0 vs 2000/1000, IoInterrupt 2145/0 vs 1839/306,
+FsRtlLegal 2504/24 vs 2496/32; KeEvent 42601 = the same legitimate MP-skip as
+amd64; KeSpinLock 697/88 and IoDeviceObject ±1 = known classes). i386 UP control
+sweep: ratchet holds, no regressions. amd64 post-change: `-smp 2` 2/2, `-smp 4`
+2/2. Separately: the 2026-07-14 `-smp 4` 0x4C c0000139 residual NO LONGER
+REPRODUCES (6/6 desktop) — killed by the intervening corruption fixes; task #14
+closed.

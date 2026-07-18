@@ -36,6 +36,13 @@ NtQueryInformationProcess(_In_ HANDLE ProcessHandle,
  * kernel32 through us — Win10 keeps it out of wow64 processes too). */
 #define WOW64_CURRENT_PROCESS ((HANDLE)(LONG_PTR)-1)
 
+/* Host program counter in the native CONTEXT (diagnostics only). */
+#ifdef _M_ARM64
+#define WOW64_HOST_PC(Ctx) ((PVOID)(Ctx)->Pc)
+#else /* _M_AMD64 */
+#define WOW64_HOST_PC(Ctx) ((PVOID)(Ctx)->Rip)
+#endif
+
 /* ---- ntdll surface we use (this DLL links ntdll only) ------------------- */
 
 typedef struct _WOW64_UNICODE_STRING {
@@ -98,6 +105,8 @@ LONG WINAPI NtQueryInformationProcess(HANDLE, ULONG, PVOID, ULONG, PULONG);
 LONG WINAPI NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID *BaseAddress,
                                    SIZE_T *RegionSize, ULONG NewProtect,
                                    PULONG OldProtect);
+LONG WINAPI NtFlushInstructionCache(HANDLE ProcessHandle, PVOID BaseAddress,
+                                    SIZE_T Length);
 
 /* wow64_thunks.c — the wow64gen-generated 32->64 syscall thunk table. */
 LONG Wow64DispatchSystemService(ULONG ServiceNumber, PULONG Arguments);
@@ -112,6 +121,19 @@ LONG Wow64DispatchSystemService(ULONG ServiceNumber, PULONG Arguments);
 #define WOW64_TEB_WOWTEBOFFSET     0x180c  /* raw Win10 slot (see MmCreateTeb) */
 #define WOW64_MACHINE_I386         0x014C
 #define WOW64_MACHINE_ARM64        0xAA64
+#define WOW64_MACHINE_AMD64        0x8664
+
+/* The CPU layer differs by host arch — a JIT on arm64 (FEX), a native
+ * heaven's-gate mode switch on amd64 (wow64cpu) — but both export the identical
+ * BTCpu* contract this file resolves by name, so only the DLL name and the
+ * WOW64INFO NativeMachineType change. */
+#ifdef _M_ARM64
+#define WOW64_CPU_DLL          L"libwow64fex.dll"
+#define WOW64_NATIVE_MACHINE   WOW64_MACHINE_ARM64
+#else /* _M_AMD64 */
+#define WOW64_CPU_DLL          L"wow64cpu.dll"
+#define WOW64_NATIVE_MACHINE   WOW64_MACHINE_AMD64
+#endif
 
 /* FEX winternl.h WOW64INFO — TlsSlots[10] points here; BTCpuProcessInit
  * writes CpuFlags. */
@@ -220,7 +242,7 @@ static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
     DbgPrint("[FEX-WOW64C] VEH: unhandled code=%08lx addr=%p pc=%p\n",
              Info->ExceptionRecord->ExceptionCode,
              Info->ExceptionRecord->ExceptionAddress,
-             (PVOID)Info->ContextRecord->Pc);
+             WOW64_HOST_PC(Info->ContextRecord));
     Wow64pDumpGuestHeap();
     return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -359,6 +381,54 @@ VOID Wow64pPatchTransitionSlot(PVOID Base, SIZE_T Size)
         DbgPrint("[FEX-WOW64C] Wow64Transition slot %p (module %p) patched -> BOP %p\n",
                  Slot, Base, Wow64pBopCode);
     }
+
+#ifdef _M_AMD64
+    /* The win32k client stubs in gdi32/user32 (the ZwGdi/NtUser stub families)
+     * do NOT use an exported Wow64Transition slot — they dispatch through a
+     * per-module _KiIndirectSystemCall:
+     *     BA 00 03 FE 7F   mov edx, 0x7FFE0300   ; &SharedUserData->SystemCall
+     *     FF 22            jmp dword ptr [edx]
+     * On arm64/FEX the guest's syscall instruction at [SystemCall] is caught by
+     * the JIT no matter what that pointer is; on amd64 the guest LITERALLY jumps
+     * to [0x7FFE0300], which is 0 (KUSER_SHARED_DATA is a single global page and
+     * cannot carry the per-process below-2GB BOP) -> the guest jumps to NULL
+     * (rip=0, the gui32/gdi32-DllMain fault). Rewrite the dispatcher in place to
+     * jump straight to this process's heaven's-gate BOP:
+     *     BA <bop32>       mov edx, BOP
+     *     FF E2            jmp edx
+     * eax (the win32k service number, 0x1000+) is preserved and the stub's
+     * `call [_KiSlot]` return address is still parked on the guest stack for the
+     * normal dispatch fixup. One 7-byte patch per module covers every win32k
+     * stub. amd64-only: the arm64 path is FEX-intercepted and must stay as-is. */
+    if (Wow64pBopCode)
+    {
+        static const UCHAR Pat[7] = {0xBA,0x00,0x03,0xFE,0x7F,0xFF,0x22};
+        SIZE_T Scan = (Size > 0x400000) ? 0x400000 : Size;
+        PBYTE End = B + Scan - sizeof(Pat);
+        PBYTE P;
+        for (P = B; P <= End; P++)
+        {
+            ULONG k = 0;
+            while (k < sizeof(Pat) && P[k] == Pat[k]) k++;
+            if (k != sizeof(Pat))
+                continue;
+            {
+                PVOID Pg = P;
+                SIZE_T Sz = sizeof(Pat);
+                ULONG Old = 0;
+                NtProtectVirtualMemory(WOW64_CURRENT_PROCESS, &Pg, &Sz,
+                                       PAGE_EXECUTE_READWRITE, &Old);
+                *(ULONG *)(P + 1) = (ULONG)(ULONG_PTR)Wow64pBopCode; /* mov edx, BOP */
+                P[5] = 0xFF; P[6] = 0xE2;                            /* jmp edx      */
+                NtProtectVirtualMemory(WOW64_CURRENT_PROCESS, &Pg, &Sz, Old, &Old);
+                NtFlushInstructionCache(WOW64_CURRENT_PROCESS, P, sizeof(Pat));
+                DbgPrint("[FEX-WOW64C] win32k KiIndirectSystemCall @ %p (module %p) -> BOP %p\n",
+                         P, Base, Wow64pBopCode);
+            }
+            break; /* one dispatcher per module */
+        }
+    }
+#endif
 }
 
 /* ---- 32-bit process-parameters down-conversion (M3b) -------------------- *
@@ -745,7 +815,7 @@ Wow64LdrpInitialize(PVOID Context)
      *    getenv("LOCALAPPDATA") unchecked; default it before the CPU dll's
      *    mini-CRT snapshots the PEB environment) --------------------------- */
     Wow64Info.NativeSystemPageSize = 0x1000;
-    Wow64Info.NativeMachineType = WOW64_MACHINE_ARM64;
+    Wow64Info.NativeMachineType = WOW64_NATIVE_MACHINE;
     Wow64Info.EmulatedMachineType = WOW64_MACHINE_I386;
     Wow64pTlsSlots()[WOW64_TLS_WOW64INFO] = &Wow64Info;
 
@@ -757,13 +827,13 @@ Wow64LdrpInitialize(PVOID Context)
     }
 
     /* -- Load the CPU layer ------------------------------------------------ */
-    DbgPrint("[FEX-WOW64C] InitBlock.ntdll_handle set; loading libwow64fex.dll...\n");
-    RtlInitUnicodeString(&DllName, L"libwow64fex.dll");
+    DbgPrint("[FEX-WOW64C] InitBlock.ntdll_handle set; loading CPU layer...\n");
+    RtlInitUnicodeString(&DllName, WOW64_CPU_DLL);
     Fex = NULL;
     Status = LdrLoadDll(NULL, NULL, &DllName, &Fex);
     if (Status < 0 || !Fex)
     {
-        DbgPrint("[FEX-WOW64C] FAIL: libwow64fex.dll load %08lx\n", Status);
+        DbgPrint("[FEX-WOW64C] FAIL: CPU-layer DLL load %08lx\n", Status);
         NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
     }
 
@@ -806,7 +876,8 @@ Wow64LdrpInitialize(PVOID Context)
     }
 #undef WOW64_RESOLVE
 
-    DbgPrint("[FEX-WOW64C] libwow64fex.dll loaded @ %p; calling BTCpuProcessInit...\n", Fex);
+    DbgPrint("[FEX-WOW64C] CPU layer %ws loaded @ %p; calling BTCpuProcessInit...\n",
+             WOW64_CPU_DLL, Fex);
     /* FEX discovers the process address-space layout during ProcessInit.
      * Allocate every raw guest page first; pages created afterward are not
      * visible until the full memory-notification contract is wired. */

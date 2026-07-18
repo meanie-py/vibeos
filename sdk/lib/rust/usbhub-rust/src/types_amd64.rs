@@ -6413,19 +6413,19 @@ pub struct _USBHUB_RESET_PORT_CONTEXT {
 }
 pub type USBHUB_RESET_PORT_CONTEXT = _USBHUB_RESET_PORT_CONTEXT;
 pub type PUSBHUB_RESET_PORT_CONTEXT = *mut _USBHUB_RESET_PORT_CONTEXT;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBHUB_DumpingDeviceDescriptor(DeviceDescriptor: PUSB_DEVICE_DESCRIPTOR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBHUB_DumpingConfiguration(ConfigDescriptor: PUSB_CONFIGURATION_DESCRIPTOR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBHUB_DumpingIDs(Id: PVOID);
 }
 unsafe extern "C" {
     pub fn USBH_DeviceControl(HubExtension: PUSBHUB_FDO_EXTENSION, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_PdoInternalControl(
         PortExtension: PUSBHUB_PORT_PDO_EXTENSION,
         Irp: PIRP,
@@ -6440,7 +6440,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn USBH_FdoPnP(HubExtension: PUSBHUB_FDO_EXTENSION, Irp: PIRP, Minor: UCHAR) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_PdoPnP(
         PortExtension: PUSBHUB_PORT_PDO_EXTENSION,
         Irp: PIRP,
@@ -6455,23 +6455,23 @@ unsafe extern "C" {
         NtStatus: NTSTATUS,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_HubSetD0(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_HubStartESDRecovery(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn USBH_FdoPower(HubExtension: PUSBHUB_FDO_EXTENSION, Irp: PIRP, Minor: UCHAR) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_PdoPower(
         PortExtension: PUSBHUB_PORT_PDO_EXTENSION,
         Irp: PIRP,
         Minor: UCHAR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_HubCompletePortWakeIrps(HubExtension: PUSBHUB_FDO_EXTENSION, NtStatus: NTSTATUS);
 }
 unsafe extern "C" {
@@ -6480,19 +6480,19 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn USBH_IdleCancelPowerHubWorker(HubExtension: PUSBHUB_FDO_EXTENSION, Context: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_Wait(Milliseconds: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_CompleteIrp(Irp: PIRP, CompleteStatus: NTSTATUS);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_PassIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PdoExt(DeviceObject: PDEVICE_OBJECT) -> PUSBHUB_PORT_PDO_EXTENSION;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_WriteFailReasonID(DeviceObject: PDEVICE_OBJECT, Data: ULONG) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -6508,51 +6508,51 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn USBH_SyncSubmitUrb(DeviceObject: PDEVICE_OBJECT, Urb: PURB) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_FdoSyncSubmitUrb(FdoDevice: PDEVICE_OBJECT, Urb: PURB) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncResetPort(HubExtension: PUSBHUB_FDO_EXTENSION, Port: USHORT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_GetDeviceType(
         HubExtension: PUSBHUB_FDO_EXTENSION,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         OutDeviceType: *mut USB_DEVICE_TYPE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_GetRootHubExtension(HubExtension: PUSBHUB_FDO_EXTENSION) -> PUSBHUB_FDO_EXTENSION;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncGetRootHubPdo(
         DeviceObject: PDEVICE_OBJECT,
         OutPdo1: *mut PDEVICE_OBJECT,
         OutPdo2: *mut PDEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncGetHubCount(DeviceObject: PDEVICE_OBJECT, OutHubCount: PULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncGetDeviceHandle(DeviceObject: PDEVICE_OBJECT) -> PUSB_DEVICE_HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_GetDeviceDescriptor(
         DeviceObject: PDEVICE_OBJECT,
         HubDeviceDescriptor: PUSB_DEVICE_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_GetConfigurationDescriptor(
         DeviceObject: PDEVICE_OBJECT,
         pConfigurationDescriptor: *mut PUSB_CONFIGURATION_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncGetHubDescriptor(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncGetStringDescriptor(
         DeviceObject: PDEVICE_OBJECT,
         Index: UCHAR,
@@ -6563,7 +6563,7 @@ unsafe extern "C" {
         IsValidateLength: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncGetPortStatus(
         HubExtension: PUSBHUB_FDO_EXTENSION,
         Port: USHORT,
@@ -6571,26 +6571,26 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncClearPortStatus(
         HubExtension: PUSBHUB_FDO_EXTENSION,
         Port: USHORT,
         RequestValue: USHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncPowerOnPorts(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SyncDisablePort(HubExtension: PUSBHUB_FDO_EXTENSION, Port: USHORT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_HubIsBusPowered(
         DeviceObject: PDEVICE_OBJECT,
         HubConfigDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_SubmitStatusChangeTransfer(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -6601,7 +6601,7 @@ unsafe extern "C" {
         Port: USHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_RemoveDeviceEx(
         HubExtension: PUSBHUB_FDO_EXTENSION,
         DeviceHandle: PUSB_DEVICE_HANDLE,
@@ -6663,13 +6663,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn USBH_FreeWorkItem(HubIoWorkItem: PUSBHUB_IO_WORK_ITEM);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_RegisterRootHubCallBack(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_UnRegisterRootHubCallBack(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_HubCancelIdleIrp(HubExtension: PUSBHUB_FDO_EXTENSION, IdleIrp: PIRP);
 }
 unsafe extern "C" {
@@ -6685,10 +6685,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn USBH_CheckIdleDeferred(HubExtension: PUSBHUB_FDO_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_CheckDeviceLanguage(DeviceObject: PDEVICE_OBJECT, LanguageId: USHORT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_CreateDevice(
         HubExtension: PUSBHUB_FDO_EXTENSION,
         Port: USHORT,
@@ -6696,7 +6696,7 @@ unsafe extern "C" {
         IsWait: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBH_ResetDevice(
         HubExtension: PUSBHUB_FDO_EXTENSION,
         Port: USHORT,

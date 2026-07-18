@@ -84,6 +84,9 @@ pub unsafe extern "C" fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP) {
 pub unsafe extern "C" fn IoSizeOfIrp(StackSize: i8) -> u16 {
     (core::mem::size_of::<IRP>() + (StackSize as usize) * core::mem::size_of::<IO_STACK_LOCATION>()) as u16
 }
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[no_mangle]
 pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) {
     *SpinLock = 0;

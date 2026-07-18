@@ -98,7 +98,7 @@ extern "C" {
     fn CdCreateIrpContext(Irp: ntkrnl_sys::ddk::PIRP, Wait: u8) -> crate::types::PIRP_CONTEXT;
 }
 extern "C" {
-    fn SafeNodeType(Ptr: *mut core::ffi::c_void) -> u32;
+    fn SafeNodeType(Node: *mut IRP_CONTEXT) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----

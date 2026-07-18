@@ -12,11 +12,11 @@ use core::ffi::c_void;
 
 extern "C" {
     fn CheckUnlockExtraBuffers(FCB: PAFD_FCB, IrpSp: PIO_STACK_LOCATION) -> BOOLEAN;
-    fn GetLockedData(Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> PAFD_RECV_INFO;
-    fn PollReeval(DeviceExt: PVOID, FileObject: PFILE_OBJECT);
+    pub fn GetLockedData(Irp: PIRP, IrpSp: PIO_STACK_LOCATION) -> PVOID;
+    pub fn PollReeval(DeviceObject: PAFD_DEVICE_EXTENSION, FileObject: PFILE_OBJECT);
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
     fn SocketStateUnlock(FCB: PAFD_FCB);
-    fn TaCopyTransportAddress(Address: PVOID) -> PVOID;
+    pub fn TaCopyTransportAddress(OtherAddress: PTRANSPORT_ADDRESS) -> PTRANSPORT_ADDRESS;
     fn UnlockBuffers(BufferArray: PVOID, BufferCount: ULONG, UnlockExtra: BOOLEAN);
     fn UnlockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION);
 }
@@ -195,7 +195,7 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
             NextIrp = (NextIrpEntry as *mut u8)
                 .offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
             NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
-            RecvReq = GetLockedData(NextIrp, NextIrpSp);
+            RecvReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
 
             AFD_DbgPrint!(
                 MID_TRACE,
@@ -231,7 +231,7 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
             NextIrp = (NextIrpEntry as *mut u8)
                 .offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
             NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
-            RecvReq = GetLockedData(NextIrp, NextIrpSp);
+            RecvReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
 
             AFD_DbgPrint!(MID_TRACE, b"RecvReq @ %p\n\0".as_ptr() as PCHAR, RecvReq);
 
@@ -275,7 +275,7 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
     {
         (*FCB).PollState |= AFD_EVENT_RECEIVE;
         (*FCB).PollStatus[FD_READ_BIT as usize] = STATUS_SUCCESS;
-        PollReeval((*FCB).DeviceExt as PVOID, (*FCB).FileObject);
+        PollReeval(((*FCB).DeviceExt as PVOID) as _, (*FCB).FileObject);
     } else {
         (*FCB).PollState &= !AFD_EVENT_RECEIVE;
     }
@@ -287,7 +287,7 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
             (*FCB).PollState |= AFD_EVENT_CLOSE;
         }
         (*FCB).PollStatus[FD_CLOSE_BIT as usize] = (*FCB).LastReceiveStatus;
-        PollReeval((*FCB).DeviceExt as PVOID, (*FCB).FileObject);
+        PollReeval(((*FCB).DeviceExt as PVOID) as _, (*FCB).FileObject);
     }
 
     AFD_DbgPrint!(
@@ -345,7 +345,7 @@ unsafe fn receive_complete_impl(
             NextIrp = (NextIrpEntry as *mut u8)
                 .offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
             NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
-            RecvReq = GetLockedData(NextIrp, NextIrpSp);
+            RecvReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
             (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
             UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, 0u8);
@@ -380,7 +380,7 @@ unsafe fn SatisfyPacketRecvRequest(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
-    let RecvReq: PAFD_RECV_INFO = GetLockedData(Irp, IrpSp);
+    let RecvReq: PAFD_RECV_INFO = (GetLockedData(Irp, IrpSp)) as _;
     let mut BytesToCopy: UINT = 0;
     let BytesAvailable: UINT = (*DatagramRecv).Len;
     let mut AddrLen: UINT = 0;
@@ -572,7 +572,7 @@ pub unsafe extern "system" fn AfdConnectedSocketReadData(
             if !IsListEmpty(&mut (*FCB).DatagramList) {
                 (*FCB).PollState |= AFD_EVENT_RECEIVE;
                 (*FCB).PollStatus[FD_READ_BIT as usize] = STATUS_SUCCESS;
-                PollReeval((*FCB).DeviceExt as PVOID, (*FCB).FileObject);
+                PollReeval(((*FCB).DeviceExt as PVOID) as _, (*FCB).FileObject);
             } else {
                 (*FCB).PollState &= !AFD_EVENT_RECEIVE;
             }
@@ -686,7 +686,7 @@ unsafe fn packet_socket_recv_complete_impl(
             NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_RECV as usize]));
             NextIrp = (NextIrpEntry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
             NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
-            RecvReq = GetLockedData(NextIrp, NextIrpSp);
+            RecvReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
             (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
             UnlockBuffers((*RecvReq).BufferArray as PVOID, (*RecvReq).BufferCount, CheckUnlockExtraBuffers(FCB, NextIrpSp));
@@ -736,7 +736,7 @@ unsafe fn packet_socket_recv_complete_impl(
             b"Received (A %p)\n\0".as_ptr() as *const i8,
             (*(*FCB).AddressFrom).RemoteAddress,
         );
-        (*DatagramRecv).Address = TaCopyTransportAddress((*(*FCB).AddressFrom).RemoteAddress) as PTRANSPORT_ADDRESS;
+        (*DatagramRecv).Address = TaCopyTransportAddress(((*(*FCB).AddressFrom).RemoteAddress) as _) as PTRANSPORT_ADDRESS;
 
         if (*DatagramRecv).Address == core::ptr::null_mut() {
             Status = STATUS_NO_MEMORY;
@@ -769,7 +769,7 @@ unsafe fn packet_socket_recv_complete_impl(
         ListEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_RECV as usize]));
         NextIrp = (ListEntry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
         NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
-        RecvReq = GetLockedData(NextIrp, NextIrpSp);
+        RecvReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
 
         AFD_DbgPrint!(
             MID_TRACE,
@@ -810,7 +810,7 @@ unsafe fn packet_socket_recv_complete_impl(
         AFD_DbgPrint!(MID_TRACE, b"Signalling\n\0".as_ptr() as *const i8);
         (*FCB).PollState |= AFD_EVENT_RECEIVE;
         (*FCB).PollStatus[FD_READ_BIT as usize] = STATUS_SUCCESS;
-        PollReeval((*FCB).DeviceExt as PVOID, (*FCB).FileObject);
+        PollReeval(((*FCB).DeviceExt as PVOID) as _, (*FCB).FileObject);
     } else {
         (*FCB).PollState &= !AFD_EVENT_RECEIVE;
     }
@@ -921,7 +921,7 @@ pub unsafe extern "system" fn AfdPacketSocketReadData(
         if !IsListEmpty(core::ptr::addr_of_mut!((*FCB).DatagramList)) {
             (*FCB).PollState |= AFD_EVENT_RECEIVE;
             (*FCB).PollStatus[FD_READ_BIT as usize] = STATUS_SUCCESS;
-            PollReeval((*FCB).DeviceExt as PVOID, (*FCB).FileObject);
+            PollReeval(((*FCB).DeviceExt as PVOID) as _, (*FCB).FileObject);
         } else {
             (*FCB).PollState &= !AFD_EVENT_RECEIVE;
         }

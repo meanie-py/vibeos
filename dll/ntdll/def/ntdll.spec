@@ -152,8 +152,8 @@
 @ stdcall -stub LdrFindResourceEx_U(ptr ptr ptr ptr ptr) ; 5.1 and higher
 @ stdcall LdrFindResource_U(ptr ptr long ptr)
 @ stdcall LdrFlushAlternateResourceModules()
-@ stdcall -arch=arm64 LdrGetDllFullName(ptr ptr)
-@ extern -arch=arm64 LdrSystemDllInitBlock
+@ stdcall -arch=arm64,x86_64 LdrGetDllFullName(ptr ptr)
+@ extern -arch=arm64,x86_64 LdrSystemDllInitBlock
 @ stdcall LdrGetDllHandle(wstr ptr ptr ptr)
 @ stdcall LdrGetDllHandleEx(long wstr ptr ptr ptr)
 @ stdcall -stub -version=0x600+ LdrGetFailureData()
@@ -226,7 +226,7 @@
 @ stdcall NtAllocateUserPhysicalPages(ptr ptr ptr)
 @ stdcall NtAllocateUuids(ptr ptr ptr ptr)
 @ stdcall NtAllocateVirtualMemory(long ptr ptr ptr long long)
-@ stdcall -arch=arm64 NtAllocateVirtualMemoryEx(long ptr ptr long long ptr long)
+@ stdcall -arch=arm64,x86_64 NtAllocateVirtualMemoryEx(long ptr ptr long long ptr long)
 @ stdcall -stub -version=0x600+ NtAlpcAcceptConnectPort(long long long long long long long long long)
 @ stdcall -stub -version=0x600+ NtAlpcCancelMessage(long long long)
 @ stdcall -stub -version=0x600+ NtAlpcConnectPort(long long long long long long long long long long long)
@@ -388,7 +388,7 @@
 @ stdcall NtOpenIoCompletion(ptr long ptr)
 @ stdcall NtOpenJobObject(ptr long ptr)
 @ stdcall NtOpenKey(ptr long ptr)
-@ stdcall -arch=arm64 NtOpenKeyEx(ptr long ptr long)
+@ stdcall -arch=arm64,x86_64 NtOpenKeyEx(ptr long ptr long)
 @ stdcall -stub -version=0x600+ NtOpenKeyTransacted(ptr long ptr ptr)
 @ stdcall NtOpenKeyedEvent(ptr long ptr)
 @ stdcall NtOpenMutant(ptr long ptr)
@@ -1283,12 +1283,12 @@
 @ stdcall RtlWalkHeap(long ptr)
 @ stdcall -stub -version=0x600+ RtlWerpReportException(long long ptr long long ptr)
 @ stdcall -stub -version=0x600+ RtlWow64CallFunction64()
-@ stdcall -arch=arm64 RtlQueryPerformanceCounter(ptr)
-@ stdcall -arch=arm64 RtlQueryPerformanceFrequency(ptr)
-@ stdcall -arch=arm64 RtlWow64GetCurrentCpuArea(ptr ptr ptr)
-@ stdcall -arch=arm64 RtlWow64GetThreadContext(ptr ptr)
-@ stdcall -arch=arm64 RtlWow64SetThreadContext(ptr ptr)
-@ stdcall -arch=arm64 RtlWow64SuspendThread(ptr ptr)
+@ stdcall -arch=arm64,x86_64 RtlQueryPerformanceCounter(ptr)
+@ stdcall -arch=arm64,x86_64 RtlQueryPerformanceFrequency(ptr)
+@ stdcall -arch=arm64,x86_64 RtlWow64GetCurrentCpuArea(ptr ptr ptr)
+@ stdcall -arch=arm64,x86_64 RtlWow64GetThreadContext(ptr ptr)
+@ stdcall -arch=arm64,x86_64 RtlWow64SetThreadContext(ptr ptr)
+@ stdcall -arch=arm64,x86_64 RtlWow64SuspendThread(ptr ptr)
 # Wine/Win10 ntdll exports these CRT helpers; libwow64fex's mini-CRT imports
 # them (wow64-plan Phase B — our loader poison-snaps missing imports to
 # 0xffbadd11, so absence means a PC-alignment crash on first errno write, not
@@ -1303,10 +1303,9 @@
 # SharedUserData->SystemCall path. Under WoW64 the host wow64.dll patches the
 # guest ntdll32's slot to the CPU layer's BOP bridge (Win10-parity export).
 @ extern -arch=i386 Wow64Transition
-@ stdcall -stub -version=0x600+ -arch=x86_64 RtlWow64GetThreadContext(ptr ptr)
+# Real RtlWow64Get/SetThreadContext/SuspendThread for x86_64 live with the
+# arm64 lines above (wow64shim.rs, Phase E) — the old -stub duplicates are gone.
 @ stdcall -stub -version=0x600+ -arch=x86_64 RtlWow64LogMessageInEventLogger(long long long)
-@ stdcall -stub -version=0x600+ -arch=x86_64 RtlWow64SetThreadContext(long long)
-@ stdcall -stub -version=0x600+ -arch=x86_64 RtlWow64SuspendThread(long long)
 @ stdcall RtlWriteMemoryStream(ptr ptr long ptr)
 @ stdcall RtlWriteRegistryValue(long ptr ptr long ptr long)
 @ stdcall RtlZeroHeap(ptr long)

@@ -14,7 +14,7 @@ use crate::glue::*;
 // export. FltpReallocateUnicodeString is crate-internal cdecl (def in Lib.rs).
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
-    fn FltpReallocateUnicodeString( String: PUNICODE_STRING, NewLength: SIZE_T, CopyExisting: BOOLEAN, ) -> NTSTATUS;
+    pub fn FltpReallocateUnicodeString( String: PUNICODE_STRING, NewLength: SIZE_T, CopyExisting: BOOLEAN, ) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----

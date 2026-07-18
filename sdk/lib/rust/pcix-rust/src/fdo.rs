@@ -25,10 +25,12 @@ use ntkrnl_sys::ddk::{ACCESS_MASK, DEVICE_POWER_STATE, PCSTR, _SINGLE_LIST_ENTRY
 
 extern "system" {
     fn DbgBreakPoint();
-    fn RtlAssert( failedAssertion: PVOID, fileName: PVOID, lineNumber: ULONG, message: PCHAR, );
+    fn RtlAssert(pvFailedAssertion: PVOID, pvFileName: PVOID, ulLineNumber: ULONG, pszMessage: *mut ::core::ffi::c_char);
 }
 extern "C" {
     fn DbgPrint(format: *const u8, ...) -> ULONG;
+}
+unsafe extern "system" {
     fn PciSendIoctl( DeviceObject: PDEVICE_OBJECT, Ioctl: ULONG, InputBuffer: PVOID, InputBufferLength: ULONG, OutputBuffer: PVOID, OutputBufferLength: ULONG, ) -> NTSTATUS;
 }
 

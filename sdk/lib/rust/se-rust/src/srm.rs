@@ -28,7 +28,7 @@ macro_rules! w {
 
 
 extern "system" {
-    fn RtlEqualLuid(l1: PLUID, l2: PLUID) -> BOOLEAN;
+    fn RtlEqualLuid(luid1: *const LUID, luid2: *const LUID) -> BOOLEAN;
     static mut PsInitialSystemProcess: PVOID;
 }
 extern "C" {

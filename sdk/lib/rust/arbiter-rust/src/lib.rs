@@ -32,9 +32,12 @@ pub extern "C" fn rust_eh_personality() {}
 // inlined), so only this def links. It stays in the ratchet baseline as an
 // accepted source-level entry. Deleting it breaks the amd64 link (KeGetCurrentIrql
 // undefined). arm64 resolves via the kernel's exported helper, so no shim needed.
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 {
+pub unsafe extern "system" fn KeGetCurrentIrql() -> u8 {
     let irql: u64;
     core::arch::asm!("mov {}, cr8", out(reg) irql, options(nomem, nostack, preserves_flags));
     irql as u8

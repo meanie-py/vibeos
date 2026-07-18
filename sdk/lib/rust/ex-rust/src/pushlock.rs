@@ -54,6 +54,8 @@ const EX_PUSH_LOCK_FLAGS_WAIT_V: u32 = 1;
 const EX_PUSH_LOCK_FLAGS_WAIT: i32 = 2;
 
 extern "C" {
+}
+unsafe extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }

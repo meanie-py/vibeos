@@ -697,9 +697,155 @@ the `NtCreate*`/`NtOpen*` object family) for a real app with DLL imports — the
 are independent + mechanical and are the ideal **subagent fan-out** target. This
 is where the Rust story pays for wow64win.dll (win32k) too.
 
-**Phase E — amd64 classic wow64cpu.** Same phases A–D infrastructure, CPU
-layer swapped: `wow64cpu.dll` doing the far-jmp 0x33 CS switch + 32↔64 stack
-shuffle. No emulator. (x86-on-x64 "for free" once C+D exist.)
+**Phase E — amd64 classic wow64cpu (native x86-on-x64).** Same phases A–D
+infrastructure, CPU layer swapped: a native `wow64cpu.dll` heaven's-gate mode
+switch (no emulator — the silicon runs the 32-bit code in compatibility mode).
+The thesis "x86-on-x64 for free once C+D exist" held: the arch-shared OS layer
+(process bootstrap, the 296-syscall thunk table, wow64win) dropped onto amd64 by
+un-gating, and only the CPU layer + one kernel context-switch line were new.
+Rungs (branch `wow64-amd64`):
+
+*E0 — ungate the shared layer + kernel i386 admission for amd64. DONE
+(2026-07-17, commit 6816923480e).* Flipped the `#[cfg(target_arch="aarch64")]` /
+`-arch=arm64` WoW64 gates to include `x86_64`: ldrinit.rs (WoW64 detect / IAT-
+skip / reloc-skip / wow64.dll handoff), rtl/mod.rs (`wow64shim`), procsup.rs
+(MmCreatePeb PEB32 + MmCreateTeb TEB32 + below-2GB NLS; `ARM64_UART_TRACE_HEX`
+→ portable `MiWow64TraceHex`), ex-rust init.rs (`ImageNumberLow/High=[0x014c,
+0x8664]` so CreateProcessInternalW admits i386), ntdll.spec (10 exports widened;
+dead `-stub -arch=x86_64 RtlWow64*` duplicates removed), wow64.dll CMake/spec +
+wow64gen amd64→x86_64 spec-arch alias, `WOW64_HOST_PC` portability. All 3 arches
+build; amd64 native smoke boot+net green; arm64 FEX path byte-unchanged.
+
+*E1 — wow64cpu.dll, the native heaven's-gate CPU layer. DONE (2026-07-17, commit
+6816923480e).* `dll/win32/wow64cpu/` (amd64-only) exports the SAME `BTCpu*`
+contract wow64.dll resolves by name (so wow64.c only `#ifdef`-selects the DLL
+name + `WOW64INFO.NativeMachineType`). `wow64cpu.S`:
+  - **EnterGuest** builds an `iretq` frame from the CPU-area WOW64_CONTEXT and
+    drops into compat mode (CS 0x23, SS/DS/ES 0x2B, FS 0x53); gs is left
+    untouched so its base stays TEB64 for the dispatcher.
+  - **BTCpuProcessInit** emits a 22-byte heaven's-gate sequence into a below-2GB
+    page: `EA <off32> 0033` (32-bit `jmp far 0x23→0x33`) → `mov r10d,eax;
+    movabs rax,Wow64CpuSyscall64; jmp rax`. `BTCpuGetBopCode` hands its 32-bit
+    entry to wow64.c's `Wow64Transition` patch.
+  - **Wow64CpuSyscall64** (the 64-bit landing) saves guest GPRs into the context,
+    switches to the dispatcher stack, calls the C `Wow64CpuDispatch` (→
+    `Wow64SystemServiceEx(eax, esp+8)`, i386-stdcall stack shape), then
+    re-enters via EnterGuest. **r15 pins the CPU-area context across guest
+    execution** — compat-mode code can't touch r15, so no gs/TEB re-derivation
+    is needed after the mode switch. `BTCpuNotifyMapViewOfSection` is a no-op
+    (native, no JIT cache). Builds on amd64; trampolines disassemble byte-exact.
+
+*E2 — amd64 per-thread CMTEB base (32-bit guest fs). DONE (2026-07-17, commit
+a0c900d2a37).* The amd64 boot GDT (freeldr `Amd64SetupGdt`) already populates
+CMCODE(0x23)/CMTEB(0x53)/R3-data/64-bit-code descriptors with correct type
+flags, and context.rs/except.rs/usercall.rs already special-case compat-mode CS —
+so E2 was tiny: `KiSwapContextResume` (ke/amd64/thrdini.rs) now rewrites the
+CMTEB descriptor **base** = TEB32 (TEB64+0x2000) on switch-in to any
+`Wow64Process` thread (Flags1/Flags2 preserved). Native threads untouched; amd64
+smoke boot+net green.
+
+*E3 — hello32.exe 0x600D on amd64. DONE (2026-07-18, commit 0811e1c2ab0).* The
+first 32-bit binary the amd64 build ever ran: the real i386 ntdll32 loader
+(LdrInitializeThunk, ~200 syscalls, kernel32 DllMain PROCESS_ATTACH) executed in
+hardware compatibility mode through the E1 heaven's-gate, handed off to the image
+entry, and exited through wow64.c's verdict service with **0x600D**. Staging:
+`add_cd_file FILE` in `wow64cpu/CMakeLists.txt` injects the i386 syswow64 set
+from the sibling `build-i386`/`build-fex-hello` trees onto `livecd.iso` (the
+amd64 mirror of mkramdisk's VIBEOS_FEX staging; all-or-nothing, loud skip).
+Launch: winlogon `TryStartWow64Hello` widened to x86_64. One code fix from first
+boot to pass: **wow64cpu `BTCpuSetContext`** (the guest NtContinue at loader end)
+copies CONTEXT32 into the CPU-area WOW64_CONTEXT and sets a CPU-area+4 "resume
+replaced" flag so `Wow64CpuDispatch` resumes the new state instead of the
+return-to-stub fixup. As predicted, none of the arm64 JIT/TSO/RCpc pitfalls
+applied.
+
+*E4 — gui32 (win32k GDI) 0x600e on amd64. DONE (2026-07-18, commit f64d06e236e).*
+A 32-bit x86 app draws through the 64-bit win32k: gui32 opens a DISPLAY DC,
+creates a pattern brush, PatBlts a magenta rectangle (real NtGdi* handles),
+exits 0x600e (draw OK, GetPixel readback soft-mismatch, same verdict as arm64).
+The one native-only root cause: gdi32/user32's win32k client stubs do NOT use an
+exported `Wow64Transition` slot (unlike ntdll32) — they dispatch through a
+per-module `_KiIndirectSystemCall` (`mov edx,0x7FFE0300; jmp [edx]` =
+`&SharedUserData->SystemCall`). On arm64/FEX the JIT intercepts the syscall
+regardless of that pointer; on amd64 the guest literally `jmp`s to `[0x7FFE0300]`
+== 0 (KUSER_SHARED_DATA is one global page, can't hold the per-process BOP) →
+rip=0 in gdi32 DllMain. `Wow64pPatchTransitionSlot` (amd64-only) now scans each
+mapped guest module for that 7-byte dispatcher and rewrites it in place to jump
+straight to the process BOP. Also landed on the way: the M8 callback bridge's
+x86-64 setjmp/longjmp (`wow64_callback.c` was aarch64-only) + `BTCpuGetContext`.
+E0–E4 are on branch `wow64-amd64`; amd64 smoke green (hello32 0x600D + gui32
+0x600e run in every smoke as coverage).
+
+*E4b — testgui/doom (window creation + kernel→user callbacks) on amd64.
+**DONE 2026-07-18** — x86 DOOM renders E1M1 in a window on the amd64 desktop
+(3,000+ `NtGdiStretchDIBitsInternal` frame blits and climbing, message pump
+alive); testgui PASSes its 20s still-running check. Four distinct fixes, in
+debug order:*
+
+1. **Stale-`Esp` callback stack smash (the deep one — `wow64cpu.S`).**
+   `Wow64CpuSyscall64` saved only the guest GPRs into the CPU-area context at
+   BOP entry; `Esp`/`Eip` were written only by the *return* fixup. So while a
+   win32k service was in flight the context held the PREVIOUS syscall's
+   `Esp`, and a kernel→user callback fired mid-service built the guest-side
+   dispatcher frame at that stale address — smashing everything the guest had
+   pushed since (doom died in `RtlInitUnicodeString` reading a clobbered
+   string pointer during the WM_NCCREATE W→A conversion). FEX tracks live
+   guest state internally, which is why only amd64 needed the fix: save the
+   live `Esp` + `[esp]` return address at BOP entry.
+2. **`NtUserGetClassInfo` manual marshaller** (`wow64_manual.c` + gen list).
+   The auto-thunk fed win32k an 8-byte `UNICODE_STRING32` read as 16 bytes
+   (garbage `Buffer` → probe-raise → BUGCHECK 0x1E under DUMMY_PSEH) and let
+   the kernel write an 80-byte `WNDCLASSEXW` over the guest's 48-byte struct.
+   arm64 only ever survived this by stack-garbage luck — the marshaller fixes
+   both arches.
+3. **Callback 8 (CLIENTLOADLIBRARY) 64→32 marshaller** (`wow64_callback.c`).
+   `CLIENT_LOAD_LIBRARY_ARGUMENTS` 40→24 header squeeze (both UNICODE_STRING
+   Buffers are self-relative offsets; shift by the 16-byte shrink, blob
+   verbatim) + 4→8-byte result widen on the return. First exercised by
+   win32k's `LoadUserApiHook(uxtheme.dll)` during doom's first window op;
+   uxtheme isn't in the closure so the guest returns FALSE gracefully (theme
+   api hooks stay off — fine, arm64 never even ran this callback before).
+4. **Stale guest binaries (the embarrassing one).** After fixes 1–3 doom's
+   WM_NCCREATE *completed* but the guest returned Result=0: the staged
+   `build-i386` DLLs predated the last master merge. The syswow64 set on the
+   amd64 livecd is snapshotted from `build-i386` at `ninja livecd` time —
+   **always rebuild i386 before re-mastering the amd64 livecd when
+   guest-visible shared source changed.** (Cross-build staging has no
+   staleness gate — the smoke staleness check covers only same-arch media.)
+
+Bonus hardening on the way: failure-branch `ERR()` prints in user32's
+`MsgiUnicodeToAnsiMessage` (NC)CREATE conversion (fail-loud), completion-path
+result tracing behind `Wow64TraceSyscalls`, and `MmCreatePeb`/`MmCreateTeb`
+out-pointer writes converted to `write_volatile` (lint_kernel clean).
+
+*E4c — full probe-ladder parity + stock-binary robustness. **DONE
+2026-07-18.*** The amd64 ladder now runs every arm64 probe guest —
+hello32/gui32/win32/file32/async32/marshal32 all exit 0x600D — plus a NEW
+robustness rung: **winmine.exe, a stock i386 OS applet, runs alongside doom**
+(menus, WM_TIMER, LED counters all render; "still running after 10s" PASS).
+What it flushed out:
+
+* **`NtUserThunkedMenuItemInfo` marshaller** (winmine's menu bar): the
+  auto-thunk handed win32k the guest's 8-byte UNICODE_STRING32 caption; the
+  align-8 ProbeForRead raised STATUS_DATATYPE_MISALIGNMENT → BUGCHECK 0x1E
+  under DUMMY_PSEH. MENUITEMINFOW 48→80 + caption widen fixes it (this is the
+  exact "4-aligned WoW64 buffer into an align-8 probe" class the
+  `wow64_win32k.c` on-entry trace was built to catch — it named the syscall
+  on serial).
+* **file32/async32 hardcoded `C:\ReactOS\...`** — the amd64 livecd's system
+  volume is X: (arm64's ramdisk is C:), so both guests failed their open
+  rung. They now derive paths from `GetWindowsDirectory` at runtime, and
+  file32's write/round-trip rung SKIPs loudly on a read-only volume (the
+  livecd is a CD; the arm64 ramdisk still exercises the write path).
+
+*E4c owed (non-blocking):* guest 32-bit `GetWindowsDirectoryA` returns
+`\reactos` with NO drive letter on amd64 (rooted path still resolves, but the
+CSR/static-server-data marshalling that should carry `X:` is incomplete);
+uxtheme.dll not in closure (theme api hooks disabled); guest hardware-fault
+context flush (the CPU-area is fresh at syscall boundaries now, but a fault at
+an arbitrary guest instruction still reads stale values — the "[GUEST32]
+int-2d forwarding silent on amd64" gap); doom input on amd64 unverified (arm64
+M14 did the input work; paths are arch-shared).
 
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored

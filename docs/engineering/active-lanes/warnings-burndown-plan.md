@@ -89,6 +89,68 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
 
 ## Progress log
 
+- **2026-07-18 — clashing_extern Phase 2: the ORACLE pass — full mechanical CC canon, no agents (~570 decl
+  sites + 20 shim-def bugs; the latent-link-bomb class defused wholesale).** The Phase-1 gate FAILED
+  overnight (build:i386 LINK_FAIL + lint NEW): each incremental i386 build surfaced ANOTHER wrong-ABI decl
+  as CGU reshuffling pulled previously-dead objects into the link (lsasrv `ConvertSidToStringSidW`/`LocalFree`
+  declared cdecl → `_Name` undefined, import lib has `_Name@8`; next build: usbhub `USBD_ParseConfigurationDescriptorEx`).
+  These are **consistently-declared-but-wrong externs — zero warnings, pure link bombs**; the clash lint
+  never sees them. Killed the whole class at once with two new oracles (tools in scratchpad, recipe here):
+  1. **nm-decoration oracle** (`ced_nm_oracle.py`): `llvm-nm --defined-only` over every `.a` in build-i386
+     → symbol → `_N@x`(stdcall)/`_N`(cdecl). 30.5K platform symbols, 27 ambiguous. The linker contract,
+     free, zero judgment. Split platform-vs-rust archives (rust side stale-risk, low priority).
+  2. **`ced_canon3.py`** (supersedes v2): audits EVERY extern decl (not just clash-warned) in non-fenced
+     crates. Truth: in-crate def > workspace def > platform-nm > rust-nm > majority(dead-safe). Def-FLIPS
+     restricted to driver shim files (`ddk_shims|glue|stubs`) where the .sys link context makes platform
+     truth authoritative — 20 real shim bugs fixed (cdrom/ks `KeQueryTickCount` cdecl shims shadowing the
+     stdcall kernel export = the verify_ffi findings, disk/mountmgr `_InterlockedExchange`, usb* `KeInitializeSpinLock`…).
+  **THE key semantic rule learned (cost 3 iterations):** flips are only meaningful where CDECL-vs-STDCALL
+  is ABI-real = **x86-visible code**. Per-arch mirror files (`types_amd64.rs`/`types_arm64.rs`) and
+  `#[cfg(not(x86))]` blocks deliberately use `"C"` strings for TYPE-identity with per-arch bindgen
+  (`bindgen_i386` slots = `"stdcall"`, `bindgen_amd64` = `"C"`; see the po-rust power.rs:152 NOTE and
+  serial.rs DriverUnload transmute idiom). Flipping them is cosmetic ABI-wise but breaks fn-ptr type
+  matching → 144 E0308s. canon3 now skips non-x86-visible blocks (7355 skipped). Other traps fixed in-tool:
+  edit-collision at insertion==next-block-flip line (sort tie-break), `#[inline] fn` on one line matching
+  the attr-carry regex (pure-attr regex), kernel-rust `#[used]` force-arrays re-partitioned per element
+  decl ABI (REFS/REFS_C split). Final: **0 NEW errors ×3 targets**; clashing 1335→1327/1445→1431/1331→1323
+  (the lint barely moves because its remaining population is different — see next). Remaining map:
+  **CC 359** = mostly per-arch-mirror string pairs (CORRECT code the lint hates; root fix = normalize
+  bindgen fn-ptr ABI strings to `"system"` via the i386-twin projection — a systemic ntkrnl-sys/postprocess
+  move, needs user green-light); **TYPE 1038 + ARITY 437 + SIGN 131** = decl-signature drift (Pass C:
+  unify decls to canonical sig + compiler-driven cast repair at E0308 sites); **iaps 42** = duplicate
+  type defs (dedup via `pub use`). All mechanical, no agent fan-out needed.
+  **usbstor-rust EXCLUDED from this batch** (restored to HEAD): its i386 rust archive is
+  link-lottery-fragile — glue shims (`IoCopyCurrentIrpStackLocationToNext`,
+  `ExAllocatePoolUninitialized`, `RtlStringCchPrintfW`) are gated `#[cfg(not(x86))]` with
+  NO i386 provider anywhere (the varargs-shim comment "i386 resolves from the import lib"
+  is STALE LORE — nm proves no archive exports them), so usbstor.sys-i386 links only while
+  the referencing CGUs stay unpulled; any glue.o symbol change (e.g. a def-flip creating
+  interposition) reshuffles member selection and detonates the dead refs. Owed: complete
+  the i386 shim set (drop the not(x86) gates; RtlStringCchPrintfW needs the `_v` varargs
+  trampoline mirrored for i386), THEN re-run the ABI canon on it.
+- **2026-07-17 — `clashing_extern_declarations` Phase 1: the safe ABI-class canon (−122 amd64/arm64, −66 i386).**
+  The prior POC (below) proved the *type* re-point (`use crate::mod::SYM`) hits an 80× E0308 wall —
+  call sites were written to the loose forward-decl sigs. This batch takes the **narrower, safe cut
+  the POC missed: flip only the ABI, never the types.** Structure (via `ced_cluster.py`): all 2299
+  clashes are **INTRA-crate** (0 cross-crate); the bug-bearing subset is **798 calling-convention
+  clashes** (`extern "C"`/cdecl vs `"system"`/`"stdcall"`/stdcall — real i386 stack-corruption, harmless
+  on amd64/arm64 where the conventions coincide). Truth = the in-crate **definition** (`extern "X" fn
+  NAME(){`); the lint fires decl-vs-decl but the linker uses the def, so canonicalizing each
+  declaration's ABI to the def's clears the lint AND fixes the ABI. Tool `ced_canon2.py` (cfg-aware +
+  ABI-class-aware): flips single-fn extern blocks / extracts from multi-fn blocks, but **only** for
+  (a) real cross-CLASS clashes (CDECL vs STDCALL — `system`↔`stdcall` is the same convention, never
+  touched), (b) symbols with a single in-crate def class, (c) **ungated** blocks — it SKIPS every
+  `#[cfg]`-gated block (422 of them; win32k alone has 257). **v1 was cfg-BLIND** and extracted fns out
+  of `#[cfg(target_arch="x86")]` blocks, dropping the gate → cross-arch duplicate-decl E0428 (fastfat,
+  win32k); reverted, rebuilt cfg-aware. Final: **17 crates edited (64 files; 58 non-fenced processed),
+  0 new build errors ×3**; clashing
+  1457→1335 / 1511→1445 / 1453→1331. **Real bug surfaced (the goal):** flipping exposed 4 E0308 sites
+  in serial/afd — `SerialSendByte` (DPC), `SerialAddDevice`/`ForwardIrpAndForget`/`SerialCreate`
+  (dispatch), `AfdCancelHandler` (cancel) are **defined `extern "C"` (cdecl) but registered as kernel
+  callbacks the kernel invokes stdcall on i386** — a latent i386 stack-corruption bug a papering local
+  `extern "system"` decl was hiding. Reverted those 2 crates from this mechanical batch (they need a
+  *definition*-ABI fix + call-site check = Phase 2). See Owed-follow-ups for the Phase-2 tail
+  (no-def externals ~half of CC, cfg-gated decls, the benign type/arity majority, serial/afd def-audit).
 - **2026-07-17 — `win32k-rust` 118 unsuppressed `static_mut_refs` → ZERO (the boot-path side-finding, closed).**
   win32k-rust never carried the `static_mut_refs` allow, so its 118 sites leaked raw as
   warnings (nobody gates rustc warning *counts*, so they sat unfixed). Census ×3: 118 per
@@ -331,6 +393,27 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
 
 ## Owed follow-ups
 
+- **`clashing_extern_declarations` Phase 2 (task #4) — the audit-heavy tail after the safe ABI-class
+  canon landed.** Phase 1 fixed the mechanical, def-known, ungated cross-class CC clashes (−122/−66/−122).
+  What remains (clashing still ~1335 amd64):
+  - **No-def external CC clashes (~half of the 798 CC).** atapi/buslogic/storahci/iomgr/... have their
+    clashing symbols declared (not defined) in-crate — two decls of an *external* framework callback
+    (scsiport/storport/NT) that disagree. Truth = the external binding's ABI (the `-sys` crate /
+    ntkrnl-sys / NT convention = `system`), not an in-crate def. Needs an external-ABI lookup per symbol
+    (bounded per-crate subagents fit here: 3-5 at a time, sonnet, NO recursion, one crate each).
+  - **cfg-gated decls (422 blocks skipped, win32k 257).** Per-arch `#[cfg]` extern blocks (x86 `stdcall`
+    vs non-x86 `system` — often already correct, just clash cosmetically across the arch union). Need a
+    cfg-aware, per-arch canon (flip carrying the gate); the v1 cfg-blind extraction is the anti-pattern.
+  - **The benign type/arity majority (SIGN i32/u32, pointer-target, `*mut`/`*const`, missing-return).**
+    Mostly cosmetic, BUT the *missing-return* ones are real dropped-NTSTATUS bugs (e.g. cdrom
+    `init.rs:69` `fn DeviceSetParameter(...);` drops the `-> NTSTATUS` the def returns). Reconciling
+    types is the 80×-E0308 wall from the POC below — per-call-site work, supervised.
+  - **serial/afd callback def-ABI bug (found this batch, reverted).** `SerialSendByte`/`SerialAddDevice`/
+    `ForwardIrpAndForget`/`SerialCreate`/`AfdCancelHandler` defined cdecl but registered as stdcall
+    callbacks → latent i386 stack bug. Fix = change the *definitions* to `extern "system"` + verify no
+    direct-call site depends on cdecl. Real bug, not noise.
+  - Tooling in scratchpad: `ced_cluster.py` (categorize CC vs type/arity, intra/inter), `ced_canon2.py`
+    (cfg+class-aware ABI canon, reads HEAD → idempotent, `--skip SYM` for oracle-flagged fn-ptr sites).
 - **FNPTR-CMP re-architecture — CLOSED 2026-07-17 (audited allows are the correct end-state;
   `fn_addr_eq` is inapplicable).** Investigated all 34 `#[allow(unpredictable_function_pointer_comparisons)]`
   functions → 63 actual comparison sites (peel the allows, `--keep-going` census ×3, primary span
@@ -423,3 +506,54 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
 - **Consider a gate at the end** — once a crate is clean, a lint that keeps it clean (deny the
   fixed classes for that crate, or a workspace `-D` for the ones fully eliminated) is what
   makes the burndown *stay* burned down. Design it so it can't be defeated by a new blanket allow.
+
+
+## 2026-07-18 — the ud2-bomb detour (Phase 2 landing fallout) + boot green again
+
+Landing Phase 2 surfaced a CLASS: same-module CC-mismatch calls fold to ud2 AND
+drop their symbol ref (link passes BECAUSE the code is broken); scan_ud2 never
+looked at drivers. Field manual **§9.99** (6 root patterns + detection recipe) and
+**§9.100** (the cdrom 32-vs-18 sense-buffer pool overrun, found via the new
+ex-rust `[POOL]` page-walk forensics). Truth-model addendum for the CC canon:
+**bindgen_i386 decl class outranks nm/import-lib decoration for any symbol with
+an in-crate shim def** (Phase 2 had this backwards for KeInitializeSpinLock ×7
+crates). New crate `drvtrace-shim` = the fold-proof home for variadic-called
+non-variadic debug shims (lto=false module isolation).
+
+Owed from the detour: extend scan_ud2 to drivers (+KNOWN_DRIVER_UD2 baseline:
+win32k UserRedrawDesktop/NtGdiGetRealizationInfo/co_IntSendActivateMessages,
+cdfs CdPerformVerify, usbehci EHCI_OpenInterruptEndpoint, winsrv
+ConDrvInitConsole — cold-branch residuals to root-cause); kernel-island
+def-vs-bindgen mismatches (iomgr bootlog SD/CD, se SepDump* SD/CD, byteswap
+FC/CD, config CmpAssignSecurityDescriptor — all link+boot today, audit before
+touching); SPECIALPOOL tripwire never reaches the kernel on the windows-host
+backend (no -fw_cfg on the qemu cmdline — harness gap).
+
+Pass C (TYPE/SIGN unification) is built + dry-run-validated (362 syms / 517
+rewrites / 49 crates, signal bucket 311 syms preserved): scratchpad ced_passc.py
++ ced_passc_repair.py; applies next.
+
+
+## 2026-07-18 (late) — Pass C landed; T2a campaign state
+
+Pass C (992af657162): 40 crates' in-crate decl signatures unified + 3 manual
+ARITY fixes, all-arch clean, i386 boots. amd64 clashing 1363→1303. The
+surviving ~1300 decomposes into exactly THREE root classes, none reachable by
+text-level tooling:
+1. **Import-scope resolution drift** (the bulk): identical decl TEXT resolving
+   to different types per module (each module's `use` set differs). Needs
+   resolution-aware rewriting (rust-analyzer/HIR) — a fully-qualified-path
+   rewriter would also collapse most of class 2.
+2. **Per-arch mirror pairs / CC strings**: root fix = bindgen fn-ptr ABI-string
+   normalization to `"system"` via the i386-twin projection (ntkrnl-sys,
+   NEEDS USER GREEN-LIGHT).
+3. **Real-signal residue**: BOOLEAN-size crossings, fn-ptr-vs-ptr params,
+   9 reverted usermode crates (advapi32/classpnp/cmlib/kernel32/lsasrv/msafd/
+   samsrv/secur32/user32 — their unification bounced off compile errors),
+   fastfat FsRtlNotifyFullChangeDirectory 7-variant knot. Reviewable set,
+   ~passc-signal.json (session 57d7315b scratchpad).
+
+Also owed from tonight: scan_ud2 driver extension (§9.99 has the recipe +
+KNOWN_DRIVER_UD2 candidates); SPECIALPOOL tripwire not plumbed on windows-host
+backend; kernel-island def-vs-bindgen audit (iomgr bootlog, se SepDump*,
+byteswap fastcall, config CmpAssignSecurityDescriptor).

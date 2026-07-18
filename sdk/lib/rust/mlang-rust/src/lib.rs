@@ -11,6 +11,7 @@
 
 #[path = "mlang/mlang.rs"]
 mod mlang;
+mod debug_shims;
 
 // no_std staticlib needs its own panic handler + EH personality.
 #[panic_handler]

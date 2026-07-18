@@ -1804,6 +1804,106 @@ unsafe extern "stdcall" fn KiFlushTargetEntireTb(
     KeFlushCurrentTb();
 }
 
+// Single-VA twin (NT KiFlushTargetSingleTb). The VA arrives as the packet's
+// Context, which KiIpiServiceRoutine hands us as Parameter2 — it reads every
+// packet field from the sender's Prcb BEFORE invoking us, so ack-first is
+// slot-safe. Ack precedes the invlpg like the entire-TB worker: we are in the
+// 0xE1 ISR, and the interrupted code cannot touch the stale mapping again
+// until the ISR returns, by which point the entry is gone.
+#[cfg(feature = "smp")]
+unsafe extern "stdcall" fn KiFlushTargetSingleTb(
+    PacketContext: PKIPI_CONTEXT,
+    _Ignored1: PVOID,
+    Virtual: PVOID,
+    _Ignored3: PVOID,
+) {
+    KiIpiSignalPacketDone(PacketContext);
+    core::arch::asm!("invlpg [{}]", in(reg) Virtual, options(nostack, preserves_flags));
+}
+
+// Sender-side packet-completion drain (NT KiIpiStallOnPacketTargets): spin
+// until every target has read + acked our packet (our Prcb->TargetSet -> 0).
+// Until then the sender packet slots (WorkerRoutine/CurrentPacket/TargetSet)
+// are live and must not be reused — returning without draining lets the NEXT
+// KiIpiSendPacket from this CPU clobber a packet an unserviced target hasn't
+// read yet (it would run the new worker with the new arguments, and a stale
+// ack could corrupt the new packet's TargetSet bookkeeping).
+// Contract: SYNCH_LEVEL with interrupts enabled — a concurrent sender
+// targeting US is serviced by the 0xE1 ISR (IPI_LEVEL > SYNCH_LEVEL) while
+// we spin, which is what makes cross-sends deadlock-free. Guarded loud,
+// matching the amd64 transport's 0x101 sub-coded bugchecks.
+#[cfg(feature = "smp")]
+unsafe fn KiIpiStallOnPacketTargets(Prcb: ntkrnl_sys::ddk::PKPRCB, Subcode: ULONG_PTR) {
+    use core::sync::atomic::Ordering;
+    let target_set = core::sync::atomic::AtomicUsize::from_ptr(
+        core::ptr::addr_of_mut!((*Prcb).TargetSet) as *mut usize,
+    );
+    let mut guard: u64 = 0;
+    while target_set.load(Ordering::SeqCst) != 0 {
+        core::hint::spin_loop();
+        guard += 1;
+        if guard > 4_000_000_000 {
+            // nolint: silent-failure (loud unresponsive-processor bugcheck)
+            KeBugCheckEx(
+                0x101,
+                Subcode,
+                target_set.load(Ordering::SeqCst) as ULONG_PTR,
+                0,
+                0,
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Remote-only TLB shootdown entry points — same names and contracts as the
+// amd64 descriptor-transport versions (ke/amd64/ipi.rs), so the arch dispatch
+// in ntkrnl-sys inline::mm (KeInvalidateTlbEntry / KeFlushProcessTb) is one
+// shared extern for both x86 flavors. i386 rides the classic NT packet path
+// (KiIpiSendPacket over 0xE1) that KeFlushEntireTb already validated on this
+// arch instead of a bespoke descriptor protocol. The LOCAL invlpg/cr3-reload
+// is the caller's job; these only make the remote TLBs coherent.
+// Contract: IRQL <= SYNCH_LEVEL, interrupts enabled (see the drain above).
+// Callable before APs start: with no other active processor they no-op.
+// ---------------------------------------------------------------------------
+#[cfg(feature = "smp")]
+#[no_mangle]
+pub unsafe extern "C" fn KiTbShootdownSingle(Address: u64) {
+    let OldIrql = KeRaiseIrqlToSynchLevel();
+    let Prcb = KeGetCurrentPrcb();
+    let TargetAffinity = KeActiveProcessors & !(*Prcb).SetMember;
+    if TargetAffinity != 0 {
+        crate::ke::ipi::KiIpiSendPacket(
+            TargetAffinity,
+            Some(KiFlushTargetSingleTb),
+            None,
+            Address as ULONG_PTR,
+            core::ptr::null_mut(),
+        );
+        KiIpiStallOnPacketTargets(Prcb, 7);
+    }
+    KeLowerIrql(OldIrql);
+}
+
+#[cfg(feature = "smp")]
+#[no_mangle]
+pub unsafe extern "C" fn KiTbShootdownBroadcast() {
+    let OldIrql = KeRaiseIrqlToSynchLevel();
+    let Prcb = KeGetCurrentPrcb();
+    let TargetAffinity = KeActiveProcessors & !(*Prcb).SetMember;
+    if TargetAffinity != 0 {
+        crate::ke::ipi::KiIpiSendPacket(
+            TargetAffinity,
+            Some(KiFlushTargetEntireTb),
+            None,
+            0,
+            core::ptr::null_mut(),
+        );
+        KiIpiStallOnPacketTargets(Prcb, 8);
+    }
+    KeLowerIrql(OldIrql);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KeFlushEntireTb(
     _Invalid: BOOLEAN,
@@ -1840,11 +1940,12 @@ pub unsafe extern "system" fn KeFlushEntireTb(
 
     #[cfg(feature = "smp")]
     {
-        let Prcb = KeGetCurrentPrcb();
-        let TargetAffinity = KeActiveProcessors & !(*Prcb).SetMember;
-        if TargetAffinity != 0 {
-            // Wait for IPI completion
-        }
+        // Drain our packet before the slots can be reused. This block used to
+        // be an EMPTY "// Wait for IPI completion" — without the drain, the
+        // next KiIpiSendPacket from this CPU could clobber a packet an
+        // unserviced target hadn't read yet (see KiIpiStallOnPacketTargets).
+        // No-sent-packet case: TargetSet is already 0 and this returns at once.
+        KiIpiStallOnPacketTargets(KeGetCurrentPrcb(), 9);
     }
 
     InterlockedExchangeAdd(core::ptr::addr_of_mut!(KiTbFlushTimeStamp), 1);

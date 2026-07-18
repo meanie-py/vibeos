@@ -142,6 +142,36 @@ unsafe fn exp_insert_pool_head_list(list_head: PLIST_ENTRY, entry: PLIST_ENTRY) 
 // Pool header validation
 // ============================================================================
 
+
+// DIAG: page walk + recent-free ring on any header-corruption raise — names the
+// corrupted/corruptor tags on serial before the 0x19 (TCG-only cdrom-era hunt).
+unsafe fn exp_dump_pool_page(around: PPOOL_HEADER) {
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        c"[POOL] header-corruption near %p — page walk:\n".as_ptr(), around);
+    let mut e = PAGE_ALIGN(around as usize) as PPOOL_HEADER;
+    let mut guard = 0;
+    while guard < 64 {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            c"[POOL]   hdr=%p prev=%x bs=%x type=%x tag=%08lx\n".as_ptr(),
+            e, (*e).PreviousSize() as u32, (*e).BlockSize() as u32,
+            (*e).PoolType() as u32, (*e).PoolTag);
+        if (*e).BlockSize() == 0 { break; }
+        e = pool_next_block(e);
+        if PAGE_ALIGN(e as usize) == e as usize { break; }
+        guard += 1;
+    }
+    let idx = EXP_FREE_RING_IDX.load(core::sync::atomic::Ordering::Relaxed);
+    for k in 0..16usize {
+        let i = (idx.wrapping_sub(1).wrapping_sub(k)) & 15;
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            c"[POOL]   free[-%u] ptr=%p tag=%08lx\n".as_ptr(),
+            k as u32,
+            EXP_FREE_RING[i].0.load(core::sync::atomic::Ordering::Relaxed),
+            EXP_FREE_RING[i].1.load(core::sync::atomic::Ordering::Relaxed),
+        );
+    }
+}
+
 unsafe fn exp_check_pool_header(entry: PPOOL_HEADER) {
     if (*entry).PreviousSize() != 0 {
         let prev = pool_prev_block(entry);
@@ -155,6 +185,7 @@ unsafe fn exp_check_pool_header(entry: PPOOL_HEADER) {
             );
         }
         if (*prev).BlockSize() != (*entry).PreviousSize() {
+            exp_dump_pool_page(entry);
             KeBugCheckEx(
                 BAD_POOL_HEADER,
                 POOL_SIZE_OR_INDEX_MISMATCH as ULONG_PTR,
@@ -195,6 +226,7 @@ unsafe fn exp_check_pool_header(entry: PPOOL_HEADER) {
             );
         }
         if (*next).PreviousSize() != (*entry).BlockSize() {
+            exp_dump_pool_page(entry);
             KeBugCheckEx(
                 BAD_POOL_HEADER,
                 POOL_SIZE_OR_INDEX_MISMATCH as ULONG_PTR,

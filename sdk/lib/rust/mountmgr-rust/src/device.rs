@@ -33,10 +33,12 @@ extern "system" {
     fn RtlWriteRegistryValue( RelativeTo: u32, Path: *const u16, ValueName: *const u16, ValueType: u32, ValueData: *mut core::ffi::c_void, ValueLength: u32, ) -> NTSTATUS;
     fn RtlCompareMemory(Source1: *const core::ffi::c_void, Source2: *const core::ffi::c_void, Length: usize) -> usize;
     fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: usize, Tag: u32) -> *mut ::core::ffi::c_void;
-    fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn MOUNTMGR_IS_DRIVE_LETTER(name: *const _UNICODE_STRING) -> BOOLEAN;
     fn RtlEqualUnicodeString( String1: *mut _UNICODE_STRING, String2: *mut _UNICODE_STRING, CaseInSensitive: BOOLEAN, ) -> BOOLEAN;
     fn ReconcileThisDatabaseWithMasterWorker(Context: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
 }
 
 // ---- file-scope preamble (translated) ----

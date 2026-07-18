@@ -176,6 +176,9 @@ pub unsafe extern "C" fn IoSetCompletionRoutine(
         Irp, CompletionRoutine, Context, InvokeOnSuccess, InvokeOnError, InvokeOnCancel,
     )
 }
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[no_mangle]
 pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) {
     *SpinLock = 0;
@@ -189,7 +192,7 @@ pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) {
 // KUSER_SHARED_DATA.TickCount. Provide the non-x86 definition (cdrom-rust precedent).
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn KeQueryTickCount(Count: *mut ntkrnl_sys::ddk::LARGE_INTEGER) {
+pub unsafe extern "system" fn KeQueryTickCount(Count: *mut ntkrnl_sys::ddk::LARGE_INTEGER) {
     const TICK: usize = 0xFFFFF78000000000 + 0x320; // KUSER_SHARED_DATA.TickCount
     loop {
         let high1 = core::ptr::read_volatile((TICK + 4) as *const i32);

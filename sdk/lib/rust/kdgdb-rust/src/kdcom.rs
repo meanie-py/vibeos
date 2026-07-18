@@ -31,8 +31,8 @@ extern "C" {
     fn _strupr(s: PCHAR) -> PCHAR;
     fn atol(s: PCHAR) -> i32;
     fn strlen(s: PCHAR) -> usize;
-    fn strncmp(s1: PCHAR, s2: PCHAR, n: usize) -> i32;
-    fn strstr(haystack: PCHAR, needle: PCHAR) -> PCHAR;
+    fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
+    fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8;
 }
 // cportlib — NTAPI = stdcall on i386 (_CpPutByte@8 / _CpGetByte@16). Link
 // from libcportlib / cport-rust at final link.
