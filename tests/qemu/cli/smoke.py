@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from ..vm import QemuVM, get_arch_config
-from . import archcfg, provenance, triage
+from . import archcfg, hostlock, provenance, triage
 from . import config as cli_config
 from .artifacts import Run, Stage
 
@@ -289,6 +289,10 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
     if proc.returncode == 0:
         run.add(Stage("net", status="ok", detail=summary.strip("= ")))
     else:
+        # §9.84: the suite queued on the hostlock broker its whole budget and never
+        # booted — a busy host, not a netstack failure. Classified apart from
+        # NET_FLAKE so the red names the real cause.
+        starved = hostlock.looks_starved((proc.stdout or "") + "\n" + (proc.stderr or ""))
         # DOCUMENTED FLAKE (2026-07-04, T1.4): when the boot runs themselves are
         # green, a net-suite failure under gate load is a known timing flake —
         # observed twice as "2 failed, 13 passed" while 3 arch smokes ran
@@ -300,7 +304,9 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         # boot stage is "boot" for a single boot, "runN" under --repeat
         runs = [s for s in run.stages if s.name == "boot" or s.name.startswith("run")]
         boots_green = bool(runs) and all(s.status == "ok" for s in runs)
-        if boots_green and not run.classification:
+        if starved and not run.classification:
+            run.classification = "HOST_STARVED"
+        elif boots_green and not run.classification:
             run.classification = "NET_FLAKE"
         run.add(
             Stage(
@@ -308,7 +314,10 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
                 status="fail",
                 detail="net suite FAILED",
                 salient=[
-                    summary.strip("= "),
+                    "net lane never booted — queued on host CPU leases (§9.84); "
+                    "`vibeos-cli ps` names the holder"
+                    if starved
+                    else summary.strip("= "),
                     "repro: pytest tests/qemu/test_net.py --arch amd64-uefi-net",
                 ],
             )
