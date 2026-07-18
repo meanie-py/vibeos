@@ -2189,3 +2189,26 @@ SHELL32_AliasTranslatePidl(
 {
     return SHELL32_ReparentAsAliasPidl(NULL, NULL, pidl, ppidlNew, dwFlags) ? S_OK : E_FAIL;
 }
+
+/**************************************************************************
+ * Rust bridges — C ABI shims over C++-linkage/inline utility helpers for
+ * the Rust-owned shell32 modules (shell32-rust).
+ */
+
+extern "C" DWORD WINAPI
+BindCtx_GetMode_RustBridge(IBindCtx *pbc, DWORD dwDefault)
+{
+    return BindCtx_GetMode(pbc, dwDefault);
+}
+
+extern "C" HRESULT WINAPI
+SHIsFileSysBindCtx_RustBridge(IBindCtx *pBindCtx, WIN32_FIND_DATAW *pFindData)
+{
+    return SHIsFileSysBindCtx(pBindCtx, pFindData);
+}
+
+extern "C" UINT WINAPI
+SHELL_ErrorBox_RustBridge(HWND hwndOwner, UINT Error)
+{
+    return SHELL_ErrorBoxHelper(hwndOwner, Error);
+}

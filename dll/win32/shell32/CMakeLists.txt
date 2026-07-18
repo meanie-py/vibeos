@@ -49,6 +49,10 @@ list(APPEND SOURCE
     CFolderOptions.cpp
     folders/CDesktopFolder.cpp
     folders/CFSFolder.cpp
+    # Hybrid cohab: CDrivesFolder activation/methods are Rust-owned
+    # (shell32-rust/src/drives_folder.rs); this file retains CDrivesFolderEnum,
+    # the drives context menu/eject/format cluster, CDrivesExtractIcon + icon
+    # helpers, and the explicit *_RustBridge shims.
     folders/CDrivesFolder.cpp
     # folders/CMyDocsFolder.cpp — replaced by Rust (shell32-rust/src/my_docs_folder.rs); cohab via libshell32_rust.a
     # Hybrid cohab: CPrinterFolder activation/methods are Rust-owned; this file
