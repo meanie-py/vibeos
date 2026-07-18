@@ -19,29 +19,9 @@
  */
 #pragma once
 
-interface IAugmentedShellFolder : public IShellFolder
-{
-    STDMETHOD(AddNameSpace)(LPGUID, IShellFolder *, LPCITEMIDLIST, ULONG) PURE;
-    STDMETHOD(GetNameSpaceID)(LPCITEMIDLIST, LPGUID) PURE;
-    STDMETHOD(QueryNameSpace)(ULONG, LPGUID, IShellFolder **) PURE;
-    STDMETHOD(EnumNameSpace)(ULONG, PULONG) PURE;
-};
-
-interface IAugmentedShellFolder2 : public IAugmentedShellFolder
-{
-    STDMETHOD(UnWrapIDList)(LPCITEMIDLIST, LONG, IShellFolder **, LPITEMIDLIST *, LPITEMIDLIST *, LONG *) PURE;
-};
-
-/* No idea what QUERYNAMESPACEINFO struct contains, yet */
-struct QUERYNAMESPACEINFO
-{
-    BYTE unknown[1];
-};
-
-interface IAugmentedShellFolder3 : public IAugmentedShellFolder2
-{
-    STDMETHOD(QueryNameSpace2)(ULONG, QUERYNAMESPACEINFO *) PURE;
-};
+/* IAugmentedShellFolder{,2,3} + QUERYNAMESPACEINFO moved to IDL so WIDL owns
+ * the vtable ABI (flattened C vtable available for tooling). */
+#include <shobjidl_undoc.h>
 
 class CEnumMergedFolder;
 

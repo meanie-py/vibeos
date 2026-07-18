@@ -39,6 +39,7 @@ pub mod types;
 pub mod shellcom;
 
 pub mod menu_band;
+pub mod merged_folder;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

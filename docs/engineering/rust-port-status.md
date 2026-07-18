@@ -184,16 +184,23 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
   security.c` + generated RPC.
-- **shell32 COM classes (81 `.cpp`, ~64K LOC) — 24 of 33 activatable classes Rust-owned.**
+- **shell32 COM classes (81 `.cpp`, ~64K LOC) — 26 of 33 activatable classes Rust-owned.**
   Rust-owned activated classes now span `CDropTargetHelper`, `CActiveDesktop`,
   `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`, `CFontsFolder`,
   `CAdminToolsFolder`, `CMyDocsFolder`, `CNewMenu`, `CSendToMenu`, `CPrinterFolder`,
   `COpenWithMenu`, `CNetFolder`, `CMenuBand`, `CFolderOptions`, `CDrivesFolder`,
   `CQueryAssociations`, `CShellLink`, `CUserNotification`, `CControlPanelFolder`, `CRecycleBin`,
-  and — the folder-cohort anchor pair (2026-07-18) — **`CFSFolder`** (the file-system folder)
-  and **`CDesktopFolder`** (the desktop root). Per-class history + the reusable integration
-  playbook live in `docs/engineering/active-lanes/shell32-com-plan.md`. `CMenuBand` is
-  shared-infrastructure (its own `menuband-rust` staticlib linked by both shell32 and rshell).
+  the folder-cohort anchor pair (2026-07-18) — **`CFSFolder`** (the file-system folder)
+  and **`CDesktopFolder`** (the desktop root) — and the capability-unlocked pair (2026-07-18 PM):
+  **`CDrvDefExt`** (drive-properties sheet; first `--local-raii` hand-verified RAII lowering) and
+  **`CMergedFolder`** (second menuband-rust shared-staticlib class; `IAugmentedShellFolder`
+  promoted to `sdk/include/reactos/shobjidl_undoc.idl` so WIDL owns its vtable ABI). Per-class
+  history + the reusable integration playbook live in
+  `docs/engineering/active-lanes/shell32-com-plan.md`. `CMenuBand` + `CMergedFolder` are
+  shared-infrastructure (the `menuband-rust` staticlib linked by both shell32 and rshell).
+  The remaining 7 are capability-gated: CMoveToMenu/CCopyToMenu on the concrete-local-base
+  inherited-layout mapper, CFileDefExt (+embedded C++ member), CMenuSite/CMenuDeskBar
+  (CWindowImpl window machinery), CShellDispatch (typelib).
   `CCopyAsPathMenu` was the first out-of-sample cheap-model
   class: two deterministic workers plus eight unchanged cached DeepSeek workers went from
   62 diagnostics per architecture to zero after deterministic support closure, then passed
