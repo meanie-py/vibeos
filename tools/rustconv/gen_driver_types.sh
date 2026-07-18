@@ -819,6 +819,39 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 -DUNICODE -D_UNICODE -DNTOS_MODE_USER )
     ;;
+  iphlpapi)
+    # USERMODE IP Helper API DLL (dll/win32/iphlpapi) — PARTIAL flip: only iphlpapi_main.c → Rust
+    # (74 fns: Add/DeleteIPAddress, Get{IpAddr,IpForward,IpNet,If,Tcp,Udp}Table, GetNetworkParams,
+    # GetAdaptersInfo/AddressesV2, GetPerAdapterInfo, ICMP/route/net-entry CRUD, the qsort *Sorter
+    # comparators). The ~10 sibling *_reactos.c/icmp.c/media.c/registry.c/address.c STAY C —
+    # iphlpapi_main.c calls into them via the local ifenum.h/ipstats.h/route.h/resinfo.h/dhcp.h
+    # prototypes, so those headers must be in the parse (extern imports the Rust re-declares).
+    #
+    # Type surface: iphlpapi.h + iphlpapi_undoc.h (IP_ADDR_STRING/IP_PER_ADAPTER_INFO/FIXED_INFO/
+    # IP_ADAPTER_INFO/MIB_*TABLE/MIB_*ROW/MIB_ICMP/MIB_IPSTATS), tdiinfo.h/tcpioctl.h (TDIEntityID/
+    # TCP_REQUEST_QUERY_INFORMATION), tdilib.h, the local iphlpapi private headers. USERMODE=1:
+    # blocklist ntdll-sys, re-export the NT base types so they keep ONE identity with the module.
+    # BLOCKLIST_FUNCS=1: iphlpapi.h declares the AddIPAddress/GetIpAddrTable/... prototypes the
+    # translation #[no_mangle]-defines. wine/debug.h stays in the parse but is NOT allowlisted
+    # (the __wine_debug_channel/__WINE_DBCL_*/ros_dbg_log shim is in the crate prelude — the
+    # lsasrv/netapi32 pattern).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/iphlpapi"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winnls.h>\n#include <ws2tcpip.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <iphlpapi.h>\n#include <iphlpapi_undoc.h>\n#include <tdiinfo.h>\n#include <tcpioctl.h>\n#include <tdilib.h>\n#include <wine/debug.h>\n#include "resinfo.h"\n#include "dhcp.h"\n#include "ifenum.h"\n#include "ipstats.h"\n#include "route.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]iphlpapi\.h' --allowlist-file '.*[/\\]iphlpapi_undoc\.h'
+                  --allowlist-file '.*[/\\]iprtrmib\.h' --allowlist-file '.*[/\\]ipexport\.h'
+                  --allowlist-file '.*[/\\]iptypes\.h' --allowlist-file '.*[/\\]ipmib\.h'
+                  --allowlist-file '.*[/\\]tcpmib\.h' --allowlist-file '.*[/\\]udpmib\.h'
+                  --allowlist-file '.*[/\\]tdiinfo\.h' --allowlist-file '.*[/\\]tcpioctl\.h'
+                  --allowlist-file '.*[/\\]tdilib\.h' --allowlist-file '.*iphlpapi[/\\].*\.h'
+                  --allowlist-file '.*[/\\]ws2def\.h' --allowlist-file '.*[/\\]ws2ipdef\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/iphlpapi" -I"${SRC}/dll/win32/dhcpcsvc/include"
+                -I"${SRC}/sdk/lib/tdilib" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_UNICODE -DNTOS_MODE_USER
+               -DGetAdaptersAddressesV2 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
     # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,

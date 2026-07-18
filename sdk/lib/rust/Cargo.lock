@@ -778,6 +778,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "iphlpapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "kbdclass-cargo"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,27 @@
+# iphlpapi-rust — Rust translation of dll/win32/iphlpapi (the IP Helper API DLL).
+# staticlib → libiphlpapi_rust.a, cohab-linked into the cmake-built iphlpapi.dll with the
+# translated iphlpapi_main.c commented out (per-file flip, like the winsock-family crates).
+#
+# PARTIAL flip: only iphlpapi_main.c (74 fns: Add/DeleteIPAddress, Get{IpAddr,IpForward,IpNet,
+# If,Tcp,Udp}Table, GetNetworkParams, GetAdaptersInfo/AddressesV2, GetPerAdapterInfo, ICMP/route/
+# net-entry CRUD, the qsort *Sorter comparators) → Rust. The ~10 sibling *_reactos.c/icmp.c/
+# media.c/registry.c/address.c STAY C — iphlpapi_main.c calls into them via the local
+# ifenum.h/ipstats.h/route.h/resinfo.h/dhcp.h prototypes (declared extern in the translation).
+#
+# The IP_* / MIB_* / TDI struct layouts are bindgen-GENERATED per arch into `types` by
+# tools/rustconv/gen_driver_types.sh (profile: iphlpapi), not hand-transcribed.
+# Translated with DeepSeek-V4-pro + c2rust anchors.
+[package]
+name = "iphlpapi-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "iphlpapi_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }

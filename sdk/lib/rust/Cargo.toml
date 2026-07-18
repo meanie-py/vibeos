@@ -45,6 +45,7 @@ members = [
     "ws2help-rust",
     "userenv-rust",
     "netapi32-rust",
+    "iphlpapi-rust",
     "access",
     "avltable",
     "bitmap",
