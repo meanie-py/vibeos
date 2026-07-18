@@ -39,6 +39,7 @@ members = [
     "afd-rust",
     "msafd-rust",
     "ws2_32-rust",
+    "wshtcpip-rust",
     "access",
     "avltable",
     "bitmap",
