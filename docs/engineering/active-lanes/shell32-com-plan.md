@@ -823,6 +823,32 @@ CObjectWithSiteBase) still fail loud — this mapper is same-header-concrete ONL
   `ResponseCache` entries now record a hash of the worker's deterministic contract; a changed
   contract is a MISS. Pre-stamping entries still hit (banked paid work keeps its value).
 
-Remaining 5 (all still capability-gated): **CFileDefExt** (CObjectWithSiteBase base — NOT same-header
-(precomp.h?), + embedded `CFileVersionInfo` member), **CMenuSite / CMenuDeskBar** (CWindowImpl window
-machinery), **CShellDispatch** (IDispatchImpl/typelib), and note CMergedFolder's old slot is done.
+Remaining 5 (all still capability-gated): **CFileDefExt**, **CMenuSite / CMenuDeskBar** (CWindowImpl
+window machinery), **CShellDispatch** (IDispatchImpl/typelib), and note CMergedFolder's old slot is
+done.
+
+### CFileDefExt — sharpened path (scoped 2026-07-18 eve; 4 bounded mapper extensions, next session)
+Much closer than the survey suggested. Ground truth checked:
+- `CObjectWithSiteBase` (shellutils.h:625) is a tiny CONCRETE base: one field (`IUnknown *m_pUnkSite`),
+  zero-init-equivalent ctor (`: m_pUnkSite(NULL) {}`), inline SetSite/GetSite, dtor `{ SetSite(NULL); }`.
+- `CFileVersionInfo m_VerInfo` is **POD-layout** (`PVOID + WORD + WORD + WCHAR[64]`) with its 4 methods
+  (Load/GetString/GetFixedInfo/GetLangName) defined in the SAME TU, inline ctor = zero-init, dtor =
+  conditional HeapFree.
+Sub-capabilities needed (in order):
+1. **Out-of-header concrete base**: `_local_concrete_base` falls back to `find_class_header(source,
+   base)` when the base isn't in the derived's header; `_extend_cpp_class_scan` merges inlines from
+   EACH base's own header (today it scans only the derived's).
+2. **Zero-init-equivalent ctor triviality**: an init list whose every initializer is NULL/0/FALSE +
+   empty body == trivial (lets the base ctor yield without sequencing).
+3. **Base-dtor sequencing**: both dtors are non-trivial (derived frees pidls; base releases the site).
+   Plan: scan-extend renames the base dtor dep to a plain worker (`{Base}_base_dtor`, is_dtor=False,
+   re-owned) and `analyze_class` records it so the scaffold's Release emits `{cls}_dtor_body(this)`
+   THEN the base-dtor worker (C++ destruction order). SetSite inside the base dtor binds to the
+   base's own SetSite (C++ dynamic type during destruction = base) — the closure's unique SetSite.
+4. **Member-class method workers** (the genuinely new piece): `m_VerInfo`'s POD fields can materialize
+   via the existing `pod_state_types` machinery (needs the discoverer to accept a `class` with
+   methods/private when its FIELDS are POD), but its 4 same-TU methods must become closure workers
+   typed `this: *mut CFileVersionInfo` — a SECOND this-type in one translation, which the worker
+   naming/signature machinery doesn't model yet. Member dtor (HeapFree if m_pInfo) must run in
+   generated Release.
+Everything else about the class is standard (1643 LOC, property-sheet dialog procs like CDrvDefExt).
