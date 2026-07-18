@@ -525,11 +525,12 @@ shell32 and rshell link. This is the first "shared shell-infrastructure" class i
 the shell32-private RustEntry pattern doesn't cover it. The stitched module itself is green
 ×3 in its oracle — only the link topology is unsolved.
 
-Also owed: fix the `libshell32_rust.a` build race `vibeos-cli` hits when the staticlib is
-rebuilt in the same pass as the shell32/rshell link (cargo rewrites the archive in place while
-lld reads it → transient undefined-symbol link failures; a settled-lib relink succeeds). A
-temp-write + atomic-rename in the `add_custom_command`, or an explicit order-only barrier,
-would remove it.
+Diagnosis note (correcting an earlier mis-read): the `undefined symbol: CMenuBand_*_RustExport`
+link failures were ALWAYS `base/shell/rshell/rshell.dll`, NEVER shell32.dll — verified across
+three build logs (`FAILED: base/shell/rshell/rshell.dll` every time). shell32.dll links fine
+(it has `libshell32_rust.a`). There is NO cargo-rewrite-in-place build race; the single root
+cause is the shared-DLL topology above. Do not add a temp-write/atomic-rename "fix" to the
+staticlib custom command — there is nothing to fix there.
 
 ## rustconv enhancement backlog (from the 2026-07-17 4-class session)
 
@@ -565,7 +566,7 @@ risk). Priority-ordered:
    declared in the header and defined in the .cpp trips a duplicate-body detector. Unblocks a
    small (366-line) shared shellmenu class.
 
-Not a rustconv bug but adjacent (see build-race note in the CMenuBand section above): the
-`libshell32_rust.a` rebuild races the shell32/rshell link under `vibeos-cli`. Fix belongs in
-`dll/win32/shell32/CMakeLists.txt` (temp-write + atomic-rename in the staticlib custom
-command), not in rustconv — safe to do from this lane.
+(Superseded — see the diagnosis note in the CMenuBand section: the apparent "build race" was
+a mis-read; the failures were all rshell.dll from the shared-DLL topology, not a cargo
+in-place-rewrite. No CMakeLists staticlib fix is warranted. Item #1 (link-topology preflight)
+is the real lesson.)
