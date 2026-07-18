@@ -522,6 +522,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack
   `_EX_PUSH_LOCK_WAIT_BLOCK.WakeGate`, not session pool); not reproducing, likely closed by the
   §9.13 WS-pushlock fixes. Re-open only on a live recurrence → GDB watchpoint on the WakeGate byte.
+- **arm64 BUGCHECK 0x3 (INVALID_AFFINITY_SET) — rare non-deterministic** (long-standing;
+  latest hit 2026-07-18 during an arm64 smoke, mid service-autostart, no WoW64 involvement:
+  `0x3 (0xfffffa0006343870, 0xfffffa0006221c00, 0, 3)`). `KeSetSystemAffinityThread` carries
+  an `[AFFPROBE]` caller-LR probe (ke/thrdobj.rs, "task#10") hunting the root caller that
+  passes a mask excluding all active CPUs; the probe did NOT fire on the 07-18 hit, so the
+  bad mask reaches the scheduler by another route. Not in the gate's auto-retry flake list —
+  consider adding once the signature is pinned.
 - **KD continuation** (windbg handoff) — amd64 same-CPL `int 2Dh` resumed-context corruption;
   attach itself works. Low priority; also in the Check-back ledger.
 
