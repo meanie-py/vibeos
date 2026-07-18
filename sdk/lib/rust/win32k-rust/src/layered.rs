@@ -19,13 +19,13 @@ extern "system" {
 extern "fastcall" {
     fn RECTL_bIntersectRect(dst: *mut RECT, src1: *mut RECT, src2: *mut RECT) -> u32;
     fn co_WinPosSetWindowPos(wnd: PWND, insertAfter: PWND, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> u32;
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn RECTL_bIntersectRect(dst: *mut RECT, src1: *mut RECT, src2: *mut RECT) -> u32;
     fn co_WinPosSetWindowPos(wnd: PWND, insertAfter: PWND, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> u32;
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
 }
 
 // RECTL_vOffsetRect is a FORCEINLINE in win32ss/gdi/ntgdi/rect.h (no exported

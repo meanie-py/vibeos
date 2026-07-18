@@ -2484,6 +2484,13 @@ HRESULT SHELL_SingleFileOperation(HWND hWnd, UINT Op, PCWSTR Src, PCWSTR Dest, U
     return hr;
 }
 
+/* Rust bridge — C ABI shim for the Rust-owned CFSFolder (shell32-rust). */
+extern "C" HRESULT WINAPI
+SHELL_SingleFileOperation_RustBridge(HWND hWnd, UINT Op, PCWSTR Src, PCWSTR Dest, UINT Flags, PWSTR *ppNewName)
+{
+    return SHELL_SingleFileOperation(hWnd, Op, Src, Dest, Flags, ppNewName);
+}
+
 
 /*
  * The two following background operations were modified from filedefext.cpp

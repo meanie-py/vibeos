@@ -559,6 +559,40 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CFSFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CFSFolderRustEntry : public CFSFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CFSFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CDesktopFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CDesktopFolderRustEntry : public CDesktopFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CDesktopFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 extern "C" HRESULT WINAPI CDrivesFolder_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
@@ -655,9 +689,9 @@ public:
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
-    OBJECT_ENTRY(CLSID_ShellFSFolder, CFSFolder)
+    OBJECT_ENTRY(CLSID_ShellFSFolder, CFSFolderRustEntry)
     OBJECT_ENTRY(CLSID_MyComputer, CDrivesFolderRustEntry)
-    OBJECT_ENTRY(CLSID_ShellDesktop, CDesktopFolder)
+    OBJECT_ENTRY(CLSID_ShellDesktop, CDesktopFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellFileDefExt, CFileDefExt)
     OBJECT_ENTRY(CLSID_ShellDrvDefExt, CDrvDefExt)
     OBJECT_ENTRY(CLSID_ShellItem, CShellItemRustEntry)

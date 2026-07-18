@@ -18,13 +18,13 @@ extern "system" {
     fn USBPORT_USBDStatusToNtStatus(Urb: PURB, USBDStatus: USBD_STATUS) -> NTSTATUS;
     fn USBPORT_ClosePipe( DeviceHandle: PUSBPORT_DEVICE_HANDLE, FdoDevice: PDEVICE_OBJECT, PipeHandle: PUSBPORT_PIPE_HANDLE, );
     fn USBPORT_EndpointHasQueuedTransfers( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, CompletedCount: *mut ULONG, ) -> BOOLEAN;
-    fn USB2_InitTT(Usb2Extension: PUSB2_HC_EXTENSION, Tt: PUSB2_TT) -> BOOLEAN;
+    fn USB2_InitTT(HcExtension: PUSB2_HC_EXTENSION, Tt: PUSB2_TT,);
     fn USBPORT_UpdateAllocatedBwTt(TtExtension: PUSB2_TT_EXTENSION);
     fn USBPORT_OpenPipe( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, Irp: PIRP, ) -> NTSTATUS;
     fn USBPORT_ReopenPipe(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT) -> NTSTATUS;
-    fn USBPORT_Wait(FdoDevice: PDEVICE_OBJECT, Milliseconds: ULONG);
+    fn USBPORT_Wait(MiniPortExtension: PVOID, Milliseconds: ULONG,) -> NTSTATUS;
     fn MiniportCloseEndpoint(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT);
-    fn MiniportOpenEndpoint(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT);
+    fn MiniportOpenEndpoint(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT,) -> MPSTATUS;
     fn USBD_ERROR(Status: USBD_STATUS) -> BOOLEAN;
     fn USBPORT_AddPipeHandle( DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, );
     fn USBPORT_RemovePipeHandle( DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, );
@@ -1454,7 +1454,7 @@ pub unsafe extern "system" fn USBPORT_InitializeDevice(
             break 'exit_error;
         }
 
-        USBPORT_Wait(FdoDevice, 10);
+        USBPORT_Wait((FdoDevice) as _, 10);
 
         RtlZeroMemory(
             core::ptr::addr_of_mut!(CtrlSetup) as PVOID,
@@ -1725,7 +1725,7 @@ pub unsafe extern "system" fn USBPORT_RemoveDevice(
 
     while InterlockedDecrement(core::ptr::addr_of_mut!((*DeviceHandle).DeviceHandleLock)) >= 0 {
         InterlockedIncrement(core::ptr::addr_of_mut!((*DeviceHandle).DeviceHandleLock));
-        USBPORT_Wait(FdoDevice, 100);
+        USBPORT_Wait((FdoDevice) as _, 100);
     }
 
     if !(*DeviceHandle).ConfigHandle.is_null() {
@@ -1857,7 +1857,7 @@ pub unsafe extern "system" fn USBPORT_RestoreDevice(
 
     while InterlockedDecrement(core::ptr::addr_of_mut!((*OldDeviceHandle).DeviceHandleLock)) >= 0 {
         InterlockedIncrement(core::ptr::addr_of_mut!((*OldDeviceHandle).DeviceHandleLock));
-        USBPORT_Wait(FdoDevice, 100);
+        USBPORT_Wait((FdoDevice) as _, 100);
     }
 
     let _devdesc_cmp = RtlCompareMemory(
@@ -4299,6 +4299,6 @@ pub unsafe extern "system" fn USBPORT_AbortTransfers(
         if Result == 0 {
             break;
         }
-        USBPORT_Wait(FdoDevice, 100);
+        USBPORT_Wait((FdoDevice) as _, 100);
     }
 }

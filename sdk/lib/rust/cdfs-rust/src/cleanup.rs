@@ -31,7 +31,7 @@ extern "C" {
     fn CdPurgeVolume(IrpContext: PIRP_CONTEXT, Vcb: PVCB, DismountUnderway: BOOLEAN) -> NTSTATUS;
 }
 extern "C" {
-    fn CdAcquireFcbExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Flag: BOOLEAN);
+    fn CdAcquireFcbExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Flag: BOOLEAN) -> u32;
 }
 extern "C" {
     fn CdAcquireFileExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -40,7 +40,7 @@ extern "C" {
     fn CdBugCheck(Arg1: u32, Arg2: u32, Arg3: u32);
 }
 extern "C" {
-    fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Arg: BOOLEAN);
+    fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Arg: u32) -> u32;
 }
 extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
@@ -52,7 +52,7 @@ extern "C" {
     fn CdGetFcbOplock(Fcb: PFCB) -> POPLOCK;
 }
 extern "C" {
-    fn CdHijackIrpAndFlushDevice(IrpContext: PIRP_CONTEXT, Irp: PIRP, TargetDeviceObject: PDEVICE_OBJECT);
+    fn CdHijackIrpAndFlushDevice(IrpContext: PIRP_CONTEXT, Irp: PIRP, TargetDeviceObject: PDEVICE_OBJECT) -> u32;
 }
 extern "C" {
     fn CdIsFastIoPossible(Fcb: PFCB) -> BOOLEAN;
@@ -64,7 +64,7 @@ extern "C" {
     fn CdLockVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
 }
 extern "C" {
-    fn CdMarkDevForVerifyIfVcbMounted(Vcb: PVCB);
+    fn CdMarkDevForVerifyIfVcbMounted(Vcb: PVCB) -> u32;
 }
 extern "C" {
     fn CdReleaseCdData(IrpContext: PIRP_CONTEXT);
@@ -85,7 +85,7 @@ extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN;
 }
 extern "C" {
-    fn NT_ASSERT(condition: BOOLEAN);
+    fn NT_ASSERT(condition: u32);
 }
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
@@ -303,7 +303,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
         //
 
         if FileObject == (*Vcb).VolumeLockFileObject {
-            NT_ASSERT(FlagOn((*Vcb).VcbState, VCB_STATE_LOCKED));
+            NT_ASSERT((FlagOn((*Vcb).VcbState, VCB_STATE_LOCKED)) as _);
 
             IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(SavedIrql));
 

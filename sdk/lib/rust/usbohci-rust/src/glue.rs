@@ -56,8 +56,7 @@ pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEG
 }
 
 // DPRINT_OHCI — NDEBUG-disabled DbgPrint wrapper (dbg_ohci.h); cdecl no-op link symbol.
-#[no_mangle]
-unsafe extern "C" fn DPRINT_OHCI(_fmt: *const ::core::ffi::c_char) {}
+// DPRINT_OHCI def relocated to drvtrace-shim (§9.99 fold-proofing)
 
 // KeQueryTickCount — ntoskrnl export (PLARGE_INTEGER out). Body passes *mut i64 (== PLARGE_INTEGER).
 #[cfg(target_arch = "x86")]

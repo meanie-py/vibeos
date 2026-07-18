@@ -16,7 +16,7 @@ extern "system" {
     } extern "C" { fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...); } extern "system" {
     fn FatIsIrpTopLevel(Irp: *mut IRP) -> BOOLEAN;
     fn CanFsdWait(Irp: *mut IRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: *mut IRP, CanWait: BOOLEAN) -> PIRP_CONTEXT;
+    fn FatCreateIrpContext(Irp: *mut IRP, CanWait: u32) -> PIRP_CONTEXT;
     fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut EXCEPTION_POINTERS) -> BOOLEAN;
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: *mut IRP, ExceptionCode: u32) -> NTSTATUS;
     fn _SEH2_TRY() -> i32;
@@ -429,7 +429,7 @@ pub unsafe extern "system" fn FatFsdSetEa(
     {
         let __seh_frame: i32 = _SEH2_TRY();
         if __seh_frame == 0 {
-            IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+            IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
             Status = FatCommonSetEa(IrpContext, (Irp).cast());
             _SEH2_END();
         } else {
@@ -805,7 +805,7 @@ pub unsafe extern "system" fn FatFsdQueryEa(
     FsRtlEnterFileSystem();
     TopLevel = FatIsIrpTopLevel(Irp);
     {
-        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
         Status = FatCommonQueryEa(IrpContext, Irp);
     }
     if TopLevel != 0 { IoSetTopLevelIrp(core::ptr::null_mut()); }

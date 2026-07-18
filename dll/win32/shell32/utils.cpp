@@ -2228,3 +2228,43 @@ SHELL_CreateShell32DefaultExtractIcon_RustBridge(INT iconIndex, REFIID riid, LPV
 {
     return SHELL_CreateShell32DefaultExtractIcon(iconIndex, riid, ppvOut);
 }
+
+extern "C" HRESULT WINAPI
+SHILAppend_RustBridge(LPITEMIDLIST pidl, LPITEMIDLIST *ppidl)
+{
+    return SHILAppend(pidl, ppidl);
+}
+
+/* PathIsDosDevice is a shell32-internal (precomp.h:312), C++ linkage; WINAPI shim. */
+extern "C" BOOL WINAPI
+PathIsDosDevice_RustBridge(LPCWSTR pszName)
+{
+    return PathIsDosDevice(pszName);
+}
+
+/* Rust bridges for the Rust-owned CDesktopFolder (shell32-rust desktop_folder):
+ * these utils.cpp helpers are C++ linkage, so the Rust module reaches them through
+ * WINAPI shims. */
+extern "C" BOOL WINAPI
+BindCtx_ContainsObject_RustBridge(IBindCtx *pbc, LPCWSTR pszName)
+{
+    return BindCtx_ContainsObject(pbc, pszName);
+}
+
+extern "C" BOOL WINAPI
+SHSkipJunctionBinding_RustBridge(IBindCtx *pbc, CLSID *pclsid)
+{
+    return SHSkipJunctionBinding(pbc, pclsid);
+}
+
+extern "C" BOOL WINAPI
+Shell_FailForceReturn_RustBridge(HRESULT hr)
+{
+    return Shell_FailForceReturn(hr);
+}
+
+extern "C" HRESULT WINAPI
+SHGetNameAndFlagsW_RustBridge(LPCITEMIDLIST pidl, DWORD dwFlags, LPWSTR pszText, UINT cchBuf, DWORD *pdwAttributes)
+{
+    return SHGetNameAndFlagsW(pidl, dwFlags, pszText, cchBuf, pdwAttributes);
+}

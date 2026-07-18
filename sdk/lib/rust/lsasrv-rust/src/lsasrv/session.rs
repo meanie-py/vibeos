@@ -3,7 +3,7 @@ use crate::prelude::*;
 extern "C" {
     fn LsapRmCreateLogonSession(LogonId: PLUID) -> NTSTATUS;
     fn LsapRmDeleteLogonSession(LogonId: PLUID) -> NTSTATUS;
-    fn LsapTerminateLogon(LogonId: PLUID) -> NTSTATUS;
+    fn LsapTerminateLogon(LogonId: PLUID);
 }
 
 // ---- file-scope preamble (translated) ----

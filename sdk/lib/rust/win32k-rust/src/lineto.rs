@@ -1,13 +1,7 @@
 use win32k_sys::win32k::*;
 
 extern "system" {
-    fn CLIPOBJ_cEnumStart(
-        pco: *mut CLIPOBJ,
-        bAll: BOOL,
-        iType: ULONG,
-        iDirection: ULONG,
-        cLimit: ULONG,
-    );
+    fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
     fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut core::ffi::c_void) -> u8;
 }
 

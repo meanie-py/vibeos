@@ -32,7 +32,7 @@ extern "C" {
     fn CdReleaseVcb(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB);
 }
 extern "C" {
-    fn CdAcquireVcbExclusive(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, flag: u8);
+    fn CdAcquireVcbExclusive(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, flag: u8) -> u32;
 }
 extern "C" {
     fn CdFspClose(vcb: *mut VCB);
@@ -56,13 +56,13 @@ extern "C" {
     fn ClearFlag(Flags: *mut ULONG, Flag: ULONG);
 }
 extern "C" {
-    fn CdAcquireFcbExclusive(IrpContext: *mut IrpContext, Fcb: *mut Fcb, Wait: BOOLEAN);
+    fn CdAcquireFcbExclusive(IrpContext: *mut IrpContext, Fcb: *mut Fcb, Wait: BOOLEAN) -> u32;
 }
 extern "C" {
-    fn CdAcquireFcbShared(IrpContext: *mut IrpContext, Fcb: *mut Fcb, Wait: BOOLEAN);
+    fn CdAcquireFcbShared(IrpContext: *mut IrpContext, Fcb: *mut Fcb, Wait: BOOLEAN) -> u8;
 }
 extern "C" {
-    fn CdVerifyFcbOperation(IrpContext: *mut IrpContext, Fcb: *mut Fcb);
+    fn CdVerifyFcbOperation(IrpContext: *mut IrpContext, Fcb: *mut Fcb) -> u32;
 }
 extern "C" {
     fn CdGetFcbOplock(Fcb: *mut Fcb) -> POPLOCK;
@@ -770,7 +770,7 @@ pub unsafe extern "C" fn CdVerifyVolume(
 
         if (*Vcb).VcbCleanup == 0 {
             if NT_SUCCESS(CdPurgeVolume(IrpContext, Vcb, 0u8)) {
-                ReleaseVcb = CdCheckForDismount(IrpContext, Vcb, 0u8);
+                ReleaseVcb = (CdCheckForDismount(IrpContext, Vcb, (0u8) as _)) as _;
             }
         }
     }
@@ -2144,7 +2144,7 @@ pub unsafe extern "C" fn CdInvalidateVolumes(
 
             CdPurgeVolume(IrpContext, Vcb, 0u8); // FALSE
 
-            UnlockVcb = CdCheckForDismount(IrpContext, Vcb, 0u8); // FALSE
+            UnlockVcb = (CdCheckForDismount(IrpContext, Vcb, (0u8) as _)) as _; // FALSE
 
             // __analysis_assert( UnlockVcb == TRUE );
 

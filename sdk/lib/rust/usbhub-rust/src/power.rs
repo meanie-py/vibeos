@@ -26,7 +26,7 @@ unsafe extern "system" {
     fn USBH_GetRootHubExtension(HubExtension: PUSBHUB_FDO_EXTENSION) -> PUSBHUB_FDO_EXTENSION;
 }
 unsafe extern "system" {
-    fn USBH_Wait(MilliSeconds: ULONG);
+    fn USBH_Wait(Milliseconds: ULONG) -> NTSTATUS;
 }
 unsafe extern "system" {
     fn USBH_SubmitStatusChangeTransfer(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;

@@ -53,7 +53,7 @@ extern "system" {
 extern "system" {
     fn FatBugCheck(a: u32, b: u32, c: u32) -> !;
     fn FatLookupMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, vbo: u32, next_lbo: *mut u64, next_byte_count: *mut u32, first_index: *mut u32) -> u8;
-    fn FatGetNextMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, current_index: u32, next_vbo: *mut u32, next_lbo: *mut u64, next_byte_count: *mut u32);
+    fn FatGetNextMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, current_index: u32, next_vbo: *mut u32, next_lbo: *mut u64, next_byte_count: *mut u32) -> u8;
     fn FatUpdateIOCountersPCW(is_write: u32, count: u64);
     fn SetFlag(flags: *mut u32, bit: u32);
     fn PsUpdateDiskCounters(process: *mut core::ffi::c_void, bytes_read: u64, bytes_written: u64, read_ops: u32, write_ops: u32, flags: u32);
@@ -68,7 +68,7 @@ extern "system" {
     fn FsRtlIsTotalDeviceFailure(NtStatus: NTSTATUS) -> BOOLEAN;
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatCreateIrpContext(Irp: PIRP, RecursiveCall: i32) -> *mut IRP_CONTEXT;
-    fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
+    fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP) -> u32;
     fn FatExceptionFilter(p1: *mut core::ffi::c_void, p2: *mut core::ffi::c_void) -> i32;
     fn _Analysis_assume_(expr: bool);
     fn DbgBreakPoint();

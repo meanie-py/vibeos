@@ -4,7 +4,7 @@ use win32k_sys::win32k::*;
 // and FASTCALL helpers from win32ss/gdi/{eng,ntgdi}. Not bindgen'd — declared here
 // to match the C signatures from sdk/include/psdk/winddi.h + win32ss/gdi/ntgdi/rect.h.
 extern "system" {
-    fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: BOOL, iType: ULONG, iDirection: ULONG, cLimit: ULONG) -> ULONG;
+    fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
     fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> u8;
 }
 #[cfg(target_arch = "x86")]

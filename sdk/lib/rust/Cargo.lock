@@ -962,6 +962,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winetrace-shim",
  "winsrv-sys",
 ]
 
@@ -1943,6 +1944,7 @@ version = "0.1.0"
 name = "serial-rust"
 version = "0.1.0"
 dependencies = [
+ "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
 ]
@@ -2270,6 +2272,7 @@ dependencies = [
 name = "usbehci-rust"
 version = "0.1.0"
 dependencies = [
+ "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
 ]
@@ -2278,6 +2281,7 @@ dependencies = [
 name = "usbhub-rust"
 version = "0.1.0"
 dependencies = [
+ "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
  "varargs-rust",
@@ -2287,6 +2291,7 @@ dependencies = [
 name = "usbohci-rust"
 version = "0.1.0"
 dependencies = [
+ "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
 ]
@@ -2295,6 +2300,7 @@ dependencies = [
 name = "usbport-rust"
 version = "0.1.0"
 dependencies = [
+ "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
  "varargs-rust",
@@ -2313,6 +2319,7 @@ dependencies = [
 name = "usbuhci-rust"
 version = "0.1.0"
 dependencies = [
+ "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
 ]
@@ -2457,6 +2464,10 @@ checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
 ]
+
+[[package]]
+name = "winetrace-shim"
+version = "0.1.0"
 
 [[package]]
 name = "winlogon-cargo"

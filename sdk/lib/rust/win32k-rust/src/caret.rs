@@ -11,9 +11,9 @@ extern "C" {
 }
 // SetLastNtError is FASTCALL.
 #[cfg(target_arch = "x86")]
-extern "fastcall" { fn SetLastNtError(status: NTSTATUS); }
+extern "fastcall" { fn SetLastNtError(Status: NTSTATUS); }
 #[cfg(not(target_arch = "x86"))]
-extern "C" { fn SetLastNtError(status: NTSTATUS); }
+extern "C" { fn SetLastNtError(Status: NTSTATUS); }
 
 // dtCaretBlink lives in the opaque PERUSERSERVERINFO tail of tagSERVERINFO.
 #[inline]
@@ -28,13 +28,13 @@ unsafe fn pusi(p: PSERVERINFO) -> *mut _PERUSERSERVERINFO {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID);
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn ValidateHwndNoErr(hwnd: HWND) -> PWND;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID);
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn ValidateHwndNoErr(hwnd: HWND) -> PWND;
 }
 

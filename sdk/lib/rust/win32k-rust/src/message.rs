@@ -221,12 +221,12 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 #[inline(always)]
 unsafe fn UserRefObjectCo(obj: PWND, pRefEntry: *mut USER_REFERENCE_ENTRY) {
@@ -4945,10 +4945,10 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn MsqPostMessage( pti: PTHREADINFO, Msg: PMSG, HardwareMessage: BOOLEAN, QS_Flags: DWORD, dwQEvent: DWORD, ExtraInfo: LPARAM, );
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn MsqPostMessage( pti: PTHREADINFO, Msg: PMSG, HardwareMessage: BOOLEAN, QS_Flags: DWORD, dwQEvent: DWORD, ExtraInfo: LPARAM, );
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
 }

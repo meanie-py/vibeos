@@ -24,7 +24,7 @@ extern "system" {
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn SetFlag(flags: *mut u32, flag: u32);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn FatGetDirentFromFcbOrDcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, flag: BOOLEAN, dirent: *mut PDIRENT, dirent_bcb: *mut PBCB, );
+    fn FatGetDirentFromFcbOrDcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, flag: u32, dirent: *mut PDIRENT, dirent_bcb: *mut PBCB);
     fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Dcb: *mut DCB, ) -> *mut FCB;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
@@ -40,14 +40,14 @@ extern "system" {
     fn FatReservedBytes(bpb: *const core::ffi::c_void) -> u32;
     fn FatBytesPerFat(bpb: *const core::ffi::c_void) -> u32;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, status: i32);
-    fn FatMarkFcbCondition(IrpContext: PIRP_CONTEXT, Fcb: PFCB, condition: u32, recursive: u8);
+    fn FatMarkFcbCondition(IrpContext: PIRP_CONTEXT, Fcb: PFCB, condition: u32, recursive: u32);
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatDecodeFileObject(FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
     fn FatUpdateDirentFromFcb(IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, Fcb: PFCB, Ccb: PCCB);
     fn FatFsdPostRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatMarkVolume(IrpContext: PIRP_CONTEXT, Vcb: PVCB, state: VOLUME_CONDITION);
-    fn FatToggleMediaEjectDisable(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Disable: BOOLEAN);
+    fn FatMarkVolume(IrpContext: PIRP_CONTEXT, Vcb: PVCB, state: u32);
+    fn FatToggleMediaEjectDisable(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Disable: BOOLEAN) -> u32;
     fn FatBugCheck(p1: u32, p2: u32, p3: u32) -> !;
     fn DebugUnwind(name: *const i8);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
@@ -63,7 +63,7 @@ extern "system" {
     fn KeRemoveQueueDpc(Dpc: *mut ntkrnl_sys::ddk::KDPC) -> BOOLEAN;
     fn FsRtlIsNtstatusExpected(NtStatus: NTSTATUS) -> BOOLEAN;
     fn CanFsdWait(Irp: ntkrnl_sys::ddk::PIRP) -> u8;
-    fn FatCreateIrpContext( Irp: ntkrnl_sys::ddk::PIRP, CanBlock: u8, ) -> *mut IRP_CONTEXT;
+    fn FatCreateIrpContext(Irp: ntkrnl_sys::ddk::PIRP, CanBlock: u32) -> *mut IRP_CONTEXT;
     fn FatExceptionFilter( IrpContext: *mut IRP_CONTEXT, ExceptionInfo: *mut EXCEPTION_POINTERS, ) -> i32;
     fn FatProcessException( IrpContext: *mut IRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP, ExceptionCode: i32, ) -> i32;
     fn FatIsIrpTopLevel(Irp: ntkrnl_sys::ddk::PIRP) -> u8;
@@ -172,7 +172,7 @@ pub unsafe extern "system" fn FatFsdFlushBuffers(
     // DUMMY_PSEH: _SEH2_EXCEPT handler is dead code (FatExceptionFilter/FatProcessException
     // never reached); the try body runs directly. See AGENTS.md "DUMMY_PSEH".
     {
-        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
         Status = FatCommonFlushBuffers(IrpContext, Irp);
     }
 
@@ -328,7 +328,7 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
                         KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc));
 
                         if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
-                            FatMarkVolume(IrpContext, Vcb, (VolumeClean as u32) as i32);
+                            FatMarkVolume(IrpContext, Vcb, ((VolumeClean as u32) as i32) as _);
                             ClearFlag(core::ptr::addr_of_mut!((*Vcb).VcbState), VCB_STATE_FLAG_VOLUME_DIRTY);
                         }
 
@@ -356,7 +356,7 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
                     KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc));
 
                     if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
-                        FatMarkVolume(IrpContext, Vcb, (VolumeClean as u32) as i32);
+                        FatMarkVolume(IrpContext, Vcb, ((VolumeClean as u32) as i32) as _);
                         ClearFlag(core::ptr::addr_of_mut!((*Vcb).VcbState), VCB_STATE_FLAG_VOLUME_DIRTY);
                     }
 

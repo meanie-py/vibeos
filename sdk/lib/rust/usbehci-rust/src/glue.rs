@@ -20,10 +20,8 @@ pub unsafe fn SharedSystemTimePtr() -> *mut ntkrnl_sys::ddk::ULONG64 {
 // DPRINT_EHCI / DPRINT_RH — NDEBUG-disabled DbgPrint wrappers (dbg_ehci.h); no symbol in
 // retail. cdecl no-ops providing the link symbol (fixed arity is safe: cdecl caller cleans
 // the varargs). Mirrors usbhub's DPRINT_PNP/DPRINT_SCE shims.
-#[no_mangle]
-unsafe extern "C" fn DPRINT_EHCI(_fmt: *const ::core::ffi::c_char) {}
-#[no_mangle]
-unsafe extern "C" fn DPRINT_RH(_fmt: *const ::core::ffi::c_char) {}
+// DPRINT_EHCI def relocated to drvtrace-shim (§9.99 fold-proofing)
+// DPRINT_RH def relocated to drvtrace-shim (§9.99 fold-proofing)
 
 // ---- kernel type aliases the modules name bare but don't import from ddk ----
 pub use ntkrnl_sys::ddk::{PCSTR, ULONG64};

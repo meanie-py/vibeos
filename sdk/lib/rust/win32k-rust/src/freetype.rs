@@ -270,15 +270,15 @@ macro_rules! wide_str {
 
 // IntEngFillBox = FASTCALL (@IntEngFillBox@24); IntEngFillPolygon = STDCALL.
 #[cfg(target_arch = "x86")]
-extern "fastcall" { fn IntEngFillBox(dc: PDC, x: INT, y: INT, w: INT, h: INT, pbo: *mut BRUSHOBJ) -> BOOL; }
+extern "fastcall" { fn IntEngFillBox(dc: PDC, x: INT, y: INT, w: INT, h: INT, pbo: *mut BRUSHOBJ); }
 #[cfg(not(target_arch = "x86"))]
-extern "C" { fn IntEngFillBox(dc: PDC, x: INT, y: INT, w: INT, h: INT, pbo: *mut BRUSHOBJ) -> BOOL; }
+extern "C" { fn IntEngFillBox(dc: PDC, x: INT, y: INT, w: INT, h: INT, pbo: *mut BRUSHOBJ); }
 extern "system" {
-    fn IntEngFillPolygon(dc: PDC, points: *mut POINTL, count: INT, pbo: *mut BRUSHOBJ) -> BOOL;
+    fn IntEngFillPolygon(dc: PDC, points: *mut POINTL, count: INT, pbo: *mut BRUSHOBJ);
 }
 extern "C" {
     fn IntDuplicateUnicodeString(src: PUNICODE_STRING, dst: PUNICODE_STRING) -> NTSTATUS;
-    fn IntUnicodeStringToBuffer(buf: *mut u16, cb: usize, src: PUNICODE_STRING) -> NTSTATUS;
+    fn IntUnicodeStringToBuffer(buf: *mut u16, cb: usize, src: PUNICODE_STRING);
     #[link_name = "_MmCopyToCaller"] fn MmCopyToCaller(dest: *mut c_void, src: *const c_void, size: ULONG) -> NTSTATUS;
 }
 // RealizeFontInit is FASTCALL, defined in font.rs.
@@ -308,11 +308,11 @@ macro_rules! GDIToObj { ($obj:expr, $ty:ident) => { ($obj) as *mut FONTOBJ }; }
 
 #[cfg(target_arch = "x86")] extern "fastcall" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn IntNameFromCharSet(CharSet: INT) -> *const u16;
+    fn IntNameFromCharSet(CharSet: u8) -> *const u16;
 }
 #[cfg(not(target_arch = "x86"))] extern "C" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn IntNameFromCharSet(CharSet: INT) -> *const u16;
+    fn IntNameFromCharSet(CharSet: u8) -> *const u16;
 }
 extern "system" {
     fn SafeProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG) -> NTSTATUS;
@@ -2493,7 +2493,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
             }
         } else if LoadFont.CharSet != DEFAULT_CHARSET as u8 {
             /* Append " (CharSetName)" */
-            CharSetName = IntNameFromCharSet(LoadFont.CharSet as INT);
+            CharSetName = IntNameFromCharSet((LoadFont.CharSet as INT) as _);
             Length = (LoadFont.RegValueName.Length as SIZE_T)
                 + ((wcslen(CharSetName) + 3) * core::mem::size_of::<u16>()) as SIZE_T
                 + core::mem::size_of::<u16>() as SIZE_T;

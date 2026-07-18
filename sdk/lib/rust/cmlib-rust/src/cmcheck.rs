@@ -54,7 +54,7 @@ unsafe extern "C" {
 // (LLD's fuzzy `_foo`↔`_foo@N` match hides it at link time; invisible on
 // amd64/arm64 where "system"==cdecl.) These MUST be `extern "system"`.
 unsafe extern "system" {
-    fn CmpCompareCompressedName( String: *const _UNICODE_STRING, Name: *const u16, NameLength: u16, ) -> i32;
+    fn CmpCompareCompressedName(String: *const _UNICODE_STRING, Name: *const u16, NameLength: u32) -> i32;
     fn HvMarkCellDirty(Hive: *mut HHIVE, Cell: u32, Unk: u8) -> u8;
     fn HvIsCellAllocated(Hive: *mut HHIVE, Cell: u32) -> u8;
     fn HvGetCellSize(Hive: *mut _HHIVE, Cell: *mut c_void) -> u32;
@@ -62,7 +62,7 @@ unsafe extern "system" {
 unsafe extern "C" {
     fn PAGED_CODE();
     fn DPRINT1(format: *const i8, ...);
-    fn ASSERT(condition: BOOLEAN);
+    fn ASSERT(condition: u32);
     fn DPRINT(format: *const u8, ...);
     #[cfg(not(feature = "bldr"))]
     static mut CmiVolatileHive: *mut CMHIVE;
@@ -240,7 +240,7 @@ unsafe fn CmpValidateLexicalOrder(
             Result = CmpCompareCompressedName(
                 core::ptr::addr_of!(SiblingString),
                 core::ptr::addr_of!((*ChildNode).Name) as *const u16,
-                core::ptr::addr_of!((*ChildNode).NameLength).read_unaligned(),
+                (core::ptr::addr_of!((*ChildNode).NameLength).read_unaligned()) as _,
             );
             if Result >= 0 {
                 // DPRINT1!("The sibling node name is greater or equal to that of the compressed child\n");
@@ -258,7 +258,7 @@ unsafe fn CmpValidateLexicalOrder(
             Result = CmpCompareCompressedName(
                 core::ptr::addr_of!(ChildString),
                 core::ptr::addr_of!((*SiblingNode).Name) as *const u16,
-                core::ptr::addr_of!((*SiblingNode).NameLength).read_unaligned(),
+                (core::ptr::addr_of!((*SiblingNode).NameLength).read_unaligned()) as _,
             );
             if Result <= 0 {
                 // DPRINT1!("The compressed sibling node name is lesser or equal to that of the child\n");
@@ -282,8 +282,8 @@ unsafe fn CmpValidateClass(
 ) -> CM_CHECK_REGISTRY_STATUS {
     PAGED_CODE();
 
-    ASSERT((CurrentCell != HCELL_NIL) as BOOLEAN);
-    ASSERT((!CellData.is_null()) as BOOLEAN);
+    ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
+    ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
 
     /* Cache the class cell and validate it (if any). CM_KEY_NODE is packed. */
     let class_cell: HCELL_INDEX =
@@ -321,8 +321,8 @@ unsafe fn CmpValidateValueListByCount(
 ) -> CM_CHECK_REGISTRY_STATUS {
     PAGED_CODE();
 
-    ASSERT((!ValueListData.is_null()) as BOOLEAN);
-    ASSERT((ListCount != 0) as BOOLEAN);
+    ASSERT(((!ValueListData.is_null()) as BOOLEAN) as _);
+    ASSERT(((ListCount != 0) as BOOLEAN) as _);
 
     /* Assume we haven't removed any value counts for now */
     *ValuesRemoved = 0;
@@ -493,8 +493,8 @@ unsafe fn CmpValidateValueList(
 ) -> CM_CHECK_REGISTRY_STATUS {
     PAGED_CODE();
 
-    ASSERT((CurrentCell != HCELL_NIL) as BOOLEAN);
-    ASSERT((!CellData.is_null()) as BOOLEAN);
+    ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
+    ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
 
     /* Cache the value list and validate it (CM_KEY_NODE is packed) */
     let value_list_cell: HCELL_INDEX = core::ptr::addr_of!(
@@ -560,8 +560,8 @@ unsafe fn CmpValidateSubKeyList(
 ) -> CM_CHECK_REGISTRY_STATUS {
     PAGED_CODE();
 
-    ASSERT((CurrentCell != HCELL_NIL) as BOOLEAN);
-    ASSERT((!CellData.is_null()) as BOOLEAN);
+    ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
+    ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
 
     let mut total_leaf_count: u32 = 0;
 
@@ -714,7 +714,7 @@ unsafe fn CmpPurgeVolatiles(
 ) {
     PAGED_CODE();
 
-    ASSERT((!CellData.is_null()) as BOOLEAN);
+    ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
 
     /* Did the caller ask to purge volatiles, and are there any? */
     let volatile_subkey_counts: u32 = core::ptr::addr_of!(
@@ -770,7 +770,7 @@ unsafe fn CmpValidateKey(
 
     PAGED_CODE();
 
-    ASSERT((CurrentCell != HCELL_NIL) as BOOLEAN);
+    ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
 
     UNREFERENCED_PARAMETER(SecurityDefaulted);
 
@@ -902,7 +902,7 @@ unsafe fn CmpValidateRegistryInternal(
 
     PAGED_CODE();
 
-    ASSERT((!Hive.is_null()) as BOOLEAN);
+    ASSERT(((!Hive.is_null()) as BOOLEAN) as _);
 
     /*
      * Allocate some memory blocks for the stack state structure so we can
@@ -1088,7 +1088,7 @@ pub unsafe extern "system" fn HvValidateHive(Hive: *mut HHIVE) -> CM_CHECK_REGIS
 
     PAGED_CODE();
 
-    ASSERT((!Hive.is_null()) as BOOLEAN);
+    ASSERT(((!Hive.is_null()) as BOOLEAN) as _);
 
     /* Is the hive signature valid? */
     if (*Hive).Signature != HV_HHIVE_SIGNATURE {

@@ -32,11 +32,11 @@ extern "C" {
 // co_MsqInsertMouseMessage — FASTCALL (`@co_MsqInsertMouseMessage@16`) on i386.
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn co_MsqInsertMouseMessage(Msg: *mut MSG, flags: DWORD, dwExtraInfo: ULONG_PTR, Hook: BOOL);
+    fn co_MsqInsertMouseMessage(Msg: *mut MSG, flags: DWORD, dwExtraInfo: ULONG_PTR, Hook: BOOL,);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn co_MsqInsertMouseMessage(Msg: *mut MSG, flags: DWORD, dwExtraInfo: ULONG_PTR, Hook: BOOL);
+    fn co_MsqInsertMouseMessage(Msg: *mut MSG, flags: DWORD, dwExtraInfo: ULONG_PTR, Hook: BOOL,);
 }
 
 // RtlInitEmptyUnicodeString (ntdef.h FORCEINLINE) — no exported symbol.

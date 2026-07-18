@@ -25,10 +25,10 @@ extern "system" {
     fn NT_ASSERT(cond: u32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     fn KeWaitForSingleObject(Object: *mut KEVENT, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *mut i64) -> NTSTATUS;
-    fn IoSetCompletionRoutine(Irp: *mut IRP, Routine: ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8) -> NTSTATUS;
+    fn IoSetCompletionRoutine(Irp: *mut IRP, Routine: ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8); // body returns VOID (wdm) — NTSTATUS ret was decl drift
     fn PAGED_CODE();
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: PIRP, CanWait: BOOLEAN) -> PIRP_CONTEXT;
+    fn FatCreateIrpContext(Irp: PIRP, CanWait: u32) -> PIRP_CONTEXT;
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
     fn IoSetTopLevelIrp(Irp: PIRP);
     fn FsRtlEnterFileSystem();
@@ -168,7 +168,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     }
 
     unsafe { _SEH2_TRY(); }
-    IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+    IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
     Status = FatCommonDeviceControl(IrpContext, Irp);
     unsafe { _SEH2_END(); }
 

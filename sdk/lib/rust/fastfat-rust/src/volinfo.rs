@@ -45,7 +45,7 @@ extern "system" {
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn DebugUnwind(name: *const i8);
     fn FatConstructLabelDirent( IrpContext: *mut PIRP_CONTEXT, Dirent: *mut DIRENT, OemLabel: *mut OEM_STRING, );
-    fn FatCreateNewDirent( IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut DCB, /* placeholder */ flag: i32, flag2: BOOLEAN, ) -> ULONG;
+    fn FatCreateNewDirent(IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut DCB, /* placeholder */ flag: i32, flag2: u32) -> ULONG;
     fn FatLocateVolumeLabel( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, ByteOffset: *mut ULONG, );
     fn FatPrepareWriteDirectoryFile( IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut DCB, ByteOffset: ULONG, size: ULONG, DirentBcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, flag1: BOOLEAN, flag2: BOOLEAN, Status: *mut NTSTATUS, );
     fn FatSetDirtyBcb( IrpContext: *mut PIRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut PVCB, dirty: BOOLEAN, );
@@ -66,7 +66,7 @@ extern "system" {
     fn FatAcquireSharedVcb(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB) -> i32;
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: PIRP, canWait: BOOLEAN) -> *mut PIRP_CONTEXT;
+    fn FatCreateIrpContext(Irp: PIRP, canWait: u32) -> *mut PIRP_CONTEXT;
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
     fn FatProcessException(IrpContext: *mut PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32) -> NTSTATUS;
     fn FatExceptionFilter(IrpContext: *mut PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> i32;
@@ -346,12 +346,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
             Dirent: *mut DIRENT,
             OemLabel: *mut OEM_STRING,
         );
-        fn FatCreateNewDirent(
-            IrpContext: *mut IRP_CONTEXT,
-            RootDcb: *mut DCB,
-            flag: i32,
-            flag2: u8,
-        ) -> u32;
+        fn FatCreateNewDirent(IrpContext: *mut IRP_CONTEXT, RootDcb: *mut DCB, flag: i32, flag2: u32) -> u32;
         fn FatLocateVolumeLabel(
             IrpContext: *mut IRP_CONTEXT,
             Vcb: *mut VCB,
@@ -531,7 +526,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
                         *IrpContext,
                         (**Vcb).RootDcb as *mut DCB,
                         1,
-                        FALSE as u8,
+                        (FALSE as u8) as _,
                     );
 
                     FatPrepareWriteDirectoryFile(
@@ -694,7 +689,7 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
 
     // _SEH2_TRY
     {
-        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
         Status = FatCommonSetVolumeInfo((IrpContext).cast(), Irp);
     }
 
@@ -2321,7 +2316,7 @@ pub unsafe extern "system" fn FatFsdQueryVolumeInformation(
     FsRtlEnterFileSystem();
     TopLevel = FatIsIrpTopLevel(Irp);
     {
-        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
         Status = FatCommonQueryVolumeInfo(IrpContext.cast(), Irp);
     }
     if TopLevel != 0 { IoSetTopLevelIrp(core::ptr::null_mut()); }

@@ -66,9 +66,9 @@ extern "fastcall" {
     fn UserPostMessage(Wnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
     fn MsqCreateMessageQueue(pti: PTHREADINFO) -> PUSER_MESSAGE_QUEUE;
     fn MsqDestroyMessageQueue(pti: PTHREADINFO);
-    fn co_MsqInsertMouseMessage(Msg: *mut MSG, flags: DWORD, dwExtraInfo: ULONG_PTR, Hook: BOOL);
+    fn co_MsqInsertMouseMessage(Msg: *mut MSG, flags: DWORD, dwExtraInfo: ULONG_PTR, Hook: BOOL,);
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn UserObjectInDestroy(h: HANDLE) -> BOOL;
     fn IntSetFocusMessageQueue(NewQueue: PUSER_MESSAGE_QUEUE);
     fn IntGetFocusMessageQueue() -> PUSER_MESSAGE_QUEUE;
@@ -85,9 +85,9 @@ extern "C" {
     fn UserPostMessage(Wnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
     fn MsqCreateMessageQueue(pti: PTHREADINFO) -> PUSER_MESSAGE_QUEUE;
     fn MsqDestroyMessageQueue(pti: PTHREADINFO);
-    fn co_MsqInsertMouseMessage(Msg: *mut MSG, flags: DWORD, dwExtraInfo: ULONG_PTR, Hook: BOOL);
+    fn co_MsqInsertMouseMessage(Msg: *mut MSG, flags: DWORD, dwExtraInfo: ULONG_PTR, Hook: BOOL,);
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn UserObjectInDestroy(h: HANDLE) -> BOOL;
     fn IntSetFocusMessageQueue(NewQueue: PUSER_MESSAGE_QUEUE);
     fn IntGetFocusMessageQueue() -> PUSER_MESSAGE_QUEUE;

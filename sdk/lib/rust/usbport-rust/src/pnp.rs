@@ -16,7 +16,7 @@ use ntkrnl_sys::ddk::{BUS_INTERFACE_STANDARD, DEVICE_CAPABILITIES, DEVICE_DESCRI
 use core::ffi::c_void;
 
 extern "system" {
-    fn USBPORT_SetRegistryKeyValue( DeviceObject: PDEVICE_OBJECT, UseDeviceParameter: BOOLEAN, Type: u32, ValueName: PWSTR, Data: *mut core::ffi::c_void, DataSize: u32, ) -> NTSTATUS;
+    fn USBPORT_SetRegistryKeyValue(DeviceObject: PDEVICE_OBJECT, UseDeviceParameter: u32, Type: u32, ValueName: PWSTR, Data: *mut core::ffi::c_void, DataSize: u32) -> NTSTATUS;
     fn RtlFreeUnicodeString(UnicodeString: *mut _UNICODE_STRING);
     fn RtlQueryRegistryValues( RelativeTo: u32, Path: PWSTR, QueryTable: *mut RTL_QUERY_REGISTRY_TABLE, Context: *mut core::ffi::c_void, Environment: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn USBPORT_DumpingCapabilities(Capabilities: PDEVICE_CAPABILITIES);
@@ -26,14 +26,14 @@ extern "system" {
     fn USBPORT_AllocateCommonBuffer( FdoDevice: PDEVICE_OBJECT, BufferLength: ULONG, ) -> PUSBPORT_COMMON_BUFFER_HEADER;
     fn USBPORT_CreateWorkerThread(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn USBPORT_FreeCommonBuffer( FdoDevice: PDEVICE_OBJECT, HeaderBuffer: PUSBPORT_COMMON_BUFFER_HEADER, );
-    fn USBPORT_GetRegistryKeyValueFullInfo( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, UseHardwareKey: BOOLEAN, KeyNameString: PWSTR, KeyNameStringLength: ULONG, Data: PVOID, DataLength: ULONG, ) -> NTSTATUS;
+    fn USBPORT_GetRegistryKeyValueFullInfo(FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, UseHardwareKey: u32, KeyNameString: PWSTR, KeyNameStringLength: ULONG, Data: PVOID, DataLength: ULONG) -> NTSTATUS;
     fn USBPORT_MiniportInterrupts(FdoDevice: PDEVICE_OBJECT, IsEnable: BOOLEAN);
     pub fn USBPORT_StartTimer(FdoDevice: PDEVICE_OBJECT, Time: ULONG) -> BOOLEAN;
     fn USBPORT_StopWorkerThread(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_PdoQueryInterface( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, Irp: PIRP, ) -> NTSTATUS;
     fn USBPORT_RootHubCreateDevice( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, ) -> NTSTATUS;
-    fn USBPORT_AddUSB1Fdo(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
-    fn USBPORT_AddUSB2Fdo(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
+    fn USBPORT_AddUSB1Fdo(FdoDevice: PDEVICE_OBJECT);
+    fn USBPORT_AddUSB2Fdo(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_InvalidateControllerHandler( FdoDevice: PDEVICE_OBJECT, Type: ULONG, ) -> ();
 }
 unsafe extern "C" {

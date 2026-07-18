@@ -7247,10 +7247,10 @@ pub unsafe extern "C" fn NtGdiWidenPath(hDC: HDC) -> BOOL {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn RECTL_vMakeWellOrdered(prcl: *mut RECTL);
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn RECTL_vMakeWellOrdered(prcl: *mut RECTL);
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
 }

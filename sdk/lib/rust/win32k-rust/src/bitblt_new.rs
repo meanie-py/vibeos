@@ -5,7 +5,7 @@ extern "system" {
     fn BRUSHOBJ_psoMask(pbo: *mut BRUSHOBJ) -> *mut SURFOBJ;
     fn BRUSHOBJ_psoPattern(pbo: *mut BRUSHOBJ) -> *mut SURFOBJ;
     fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> u8;
-    fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: BOOL, iType: ULONG, iDirection: ULONG, cLimit: ULONG);
+    fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
     fn NT_ASSERT(expr: BOOL);
     fn ROP4_BKGND(rop4: ROP4) -> ULONG;
     fn ROP4_FGND(rop4: ROP4) -> ULONG;

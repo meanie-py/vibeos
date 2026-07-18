@@ -564,11 +564,5 @@ pub unsafe extern "C" fn IntEngCopyBits(
 // definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
 extern "system" {
     fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: PVOID) -> u8;
-    fn CLIPOBJ_cEnumStart(
-    pco: *mut CLIPOBJ,
-    bAll: BOOL,
-    iType: ULONG,
-    iDirection: ULONG,
-    cLimit: ULONG,
-    );
+    fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
 }

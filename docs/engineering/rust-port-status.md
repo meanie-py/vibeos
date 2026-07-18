@@ -184,10 +184,17 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
   security.c` + generated RPC.
-- **shell32 COM classes (81 `.cpp`, ~64K LOC) — pilot in flight.** `CDropTargetHelper`,
-  `CActiveDesktop`, `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`,
-  `CFontsFolder`, `CAdminToolsFolder`, and `CMyDocsFolder` are Rust-owned activated classes.
-  `CCopyAsPathMenu` is the first out-of-sample cheap-model
+- **shell32 COM classes (81 `.cpp`, ~64K LOC) — 24 of 33 activatable classes Rust-owned.**
+  Rust-owned activated classes now span `CDropTargetHelper`, `CActiveDesktop`,
+  `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`, `CFontsFolder`,
+  `CAdminToolsFolder`, `CMyDocsFolder`, `CNewMenu`, `CSendToMenu`, `CPrinterFolder`,
+  `COpenWithMenu`, `CNetFolder`, `CMenuBand`, `CFolderOptions`, `CDrivesFolder`,
+  `CQueryAssociations`, `CShellLink`, `CUserNotification`, `CControlPanelFolder`, `CRecycleBin`,
+  and — the folder-cohort anchor pair (2026-07-18) — **`CFSFolder`** (the file-system folder)
+  and **`CDesktopFolder`** (the desktop root). Per-class history + the reusable integration
+  playbook live in `docs/engineering/active-lanes/shell32-com-plan.md`. `CMenuBand` is
+  shared-infrastructure (its own `menuband-rust` staticlib linked by both shell32 and rshell).
+  `CCopyAsPathMenu` was the first out-of-sample cheap-model
   class: two deterministic workers plus eight unchanged cached DeepSeek workers went from
   62 diagnostics per architecture to zero after deterministic support closure, then passed
   the full integrated three-architecture gate. rustconv now
@@ -206,9 +213,15 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   scalar-state pilot, `CCopyAsPathMenu` is the first object-field RAII-state pilot, and
   `CMyDocsFolder` is the first six-interface class with a deterministic `FinalConstruct`
   activation/failure-cleanup path.
-  C++/RAII state, aggregatable classes, custom/inherited base
-  layouts, same-arity overloads, and internal COM objects without an `OBJECT_ENTRY` remain loud
-  preflight failures until their layout/lifetime/construction mappings are implemented.
+  The 9 remaining activatable classes are all capability-gated (no quick pipeline wins):
+  `CDrvDefExt` (preflight passes; translate blocks on a body-local custom-RAII struct — the most
+  tractable next class); `CFileDefExt`/`CShellDispatch`/`CMenuDeskBar`/`CMoveToMenu`/`CCopyToMenu`
+  (inherited-layout mapping for CObjectWithSiteBase/IDispatchImpl/CWindowImpl/shared bases — each
+  with a SECONDARY hard blocker: embedded C++ object member, typelib, window machinery, or a
+  `WNDPROC`); and `CMenuSite`/`CMergedFolder` (shared-`shellmenu` staticlib + a scanner FP / a WIDL
+  flattened-vtable gap). Custom/inherited base layouts, aggregatable classes, and body-local
+  custom-RAII remain loud preflight failures until their mappings are implemented — see the
+  lane doc's "Remaining activatable shell32 classes" table.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

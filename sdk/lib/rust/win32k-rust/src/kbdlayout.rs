@@ -159,13 +159,13 @@ extern "system" {
 extern "fastcall" {
     fn co_IntSendMessage(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn co_IntSendMessage(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 // UserRefObjectCo / UserDerefObjectCo (object.h static __inline; mirrors focus.rs).
 #[inline(always)]

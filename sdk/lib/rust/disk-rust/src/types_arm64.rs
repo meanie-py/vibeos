@@ -47864,19 +47864,10 @@ unsafe extern "C" {
     ) -> NTSTATUS;
 }
 unsafe extern "C" {
-    pub fn DiskDetectFailurePrediction(
-        FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
-        FailurePredictCapability: PFAILURE_PREDICTION_METHOD,
-        ScsiAddressAvailable: BOOLEAN,
-    ) -> NTSTATUS;
+    pub fn DiskDetectFailurePrediction(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, FailurePredictCapability: PFAILURE_PREDICTION_METHOD, ScsiAddressAvailable: u32) -> NTSTATUS;
 }
 unsafe extern "C" {
-    pub fn DiskCreateFdo(
-        DriverObject: PDRIVER_OBJECT,
-        LowerDeviceObject: PDEVICE_OBJECT,
-        DeviceCount: PULONG,
-        DasdAccessOnly: BOOLEAN,
-    ) -> NTSTATUS;
+    pub fn DiskCreateFdo(DriverObject: PDRIVER_OBJECT, LowerDeviceObject: PDEVICE_OBJECT, DeviceCount: PULONG, DasdAccessOnly: u32) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn DiskSetSpecialHacks(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, Data: ULONG_PTR);

@@ -14,7 +14,7 @@ use core::ffi::c_void;
 
 extern "system" {
     fn USBPORT_FlushController(FdoDevice: PDEVICE_OBJECT);
-    fn USBPORT_Wait(MiniPortExtension: PVOID, MillisecondsTimeout: ULONG) -> NTSTATUS;
+    fn USBPORT_Wait(MiniPortExtension: PVOID, Milliseconds: ULONG,) -> NTSTATUS;
     fn USBPORT_MiniportInterrupts(FdoDevice: PDEVICE_OBJECT, Enable: BOOLEAN);
     fn USBPORT_NukeAllEndpoints(FdoDevice: PDEVICE_OBJECT);
 }

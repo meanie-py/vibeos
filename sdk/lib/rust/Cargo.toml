@@ -2,6 +2,7 @@
 members = [
     "varargs-rust",
     "drvtrace-shim",
+    "winetrace-shim",
     "classpnp-rust",
     "disk-rust",
     "mountmgr-rust",

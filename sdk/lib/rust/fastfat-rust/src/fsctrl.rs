@@ -20,6 +20,7 @@ use core::ptr;
 use crate::ddk_shims::{FsRtlNotifyVolumeEvent, IoIs32bitProcess, MOVE_FILE_DATA32, PMOVE_FILE_DATA32, PMARK_HANDLE_INFO32, FsRtlAddLargeMcbEntry, FsRtlGetNextLargeMcbEntry, FsRtlInitializeLargeMcb, FsRtlLookupLargeMcbEntry, FsRtlNumberOfRunsInLargeMcb, FsRtlRemoveLargeMcbEntry, FsRtlUninitializeLargeMcb};
 use crate::types::{BIOS_PARAMETER_BLOCK, CCB, DCB, DIRENT, FAT_BUG_CHECK_FSCTRL, FAT_DATA, FAT_ENTRY, FCB, FCB_CONDITION, FCB_STATE_DELETE_ON_CLOSE, IRP_CONTEXT, PACKED_BIOS_PARAMETER_BLOCK, PACKED_BOOT_SECTOR, PACKED_BOOT_SECTOR_EX, PBCB, PCCB, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VCB_CONDITION, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
 // Additional imports needed by FatMountVolume (translated from fsctrl.c)
+use ntkrnl_sys::ddk::ExReleaseResourceLite;
 use crate::types::{PPACKED_BOOT_SECTOR, PPACKED_BOOT_SECTOR_EX, PVBO, PVOLUME_DEVICE_OBJECT, FatMaxLarge,
     FCB_STATE_SYSTEM_FILE, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE, VCB_STATE_FLAG_REMOVABLE_MEDIA,
     VCB_STATE_FLAG_VPB_MUST_BE_FREED, VCB_STATE_FLAG_WRITE_PROTECTED, VCB_STATE_VPB_NOT_ON_DEVICE,
@@ -29,12 +30,12 @@ extern "system" {
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FatUnpackBios(bpb: *mut BIOS_PARAMETER_BLOCK, packed_bpb: *const core::ffi::c_void);
     static mut FatData: FAT_DATA;
-    fn FatCloseEaFile(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, f: i32);
-    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FlushType: FAT_FLUSH_TYPE) -> i32;
+    fn FatCloseEaFile(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, f: u8);
+    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FlushType: u32) -> i32;
     fn FatHijackIrpAndFlushDevice(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, TargetDeviceObject: *mut DEVICE_OBJECT) -> i32;
-    fn FatPurgeReferencedFileObjects(IrpContext: *mut IRP_CONTEXT, RootDcb: *mut DCB, FlushType: FAT_FLUSH_TYPE) -> i32;
+    fn FatPurgeReferencedFileObjects(IrpContext: *mut IRP_CONTEXT, RootDcb: *mut DCB, FlushType: u32);
     fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, VolumeState: i32);
-    fn FatToggleMediaEjectDisable(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Disable: i32);
+    fn FatToggleMediaEjectDisable(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Disable: u8) -> u32;
     fn CcPurgeCacheSection(SectionObjectPointers: *mut SECTION_OBJECT_POINTERS, FileOffset: *const LARGE_INTEGER, Length: u32, UninitializeCache: i32) -> u8;
     fn KeCancelTimer(Timer: *mut KEVENT) -> u8;
     fn KeRemoveQueueDpc(Dpc: *mut KDPC) -> u8;
@@ -46,22 +47,22 @@ extern "system" {
     fn FatCheckForDismount( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Ignore: BOOLEAN, ) -> BOOLEAN;
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
     fn ExAcquireResourceExclusiveLite( Resource: *mut ERESOURCE, Wait: BOOLEAN, ) -> BOOLEAN;
-    fn ExReleaseResourceLite(Resource: *mut ERESOURCE);
+    // ExReleaseResourceLite via ntkrnl_sys::ddk (kernel FASTCALL export — §9.99)
     fn FatDecodeFileObject( FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, FcbOrDcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatOpenDirectoryFile(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
-    fn FatAllocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, HintCluster: u32, ByteCount: *mut u32, AllocationHint: i32, /* BOOLEAN */ Mcb: *mut LARGE_MCB, );
+    fn FatAllocateDiskSpace(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, HintCluster: u32, ByteCount: *mut u32, AllocationHint: u8, /* BOOLEAN */ Mcb: *mut LARGE_MCB);
     fn FatGetIndexFromLbo(Vcb: *mut VCB, Lbo: LBO) -> u32;
     fn FatGetLboFromIndex(Vcb: *mut VCB, Index: u32) -> i64; // LBO = LONGLONG (fat.h:34)
     fn FatFlushFatEntries(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Cluster: u32, Count: u32);
     fn FatSetFatEntry( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, SourceCluster: u32, TargetCluster: FAT_ENTRY, );
-    fn FatDeallocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Wait: i32, /* BOOLEAN */ );
+    fn FatDeallocateDiskSpace(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Wait: u8);
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
     fn FatFlushDirentForFile(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
-    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut PBCB, Vcb: *mut VCB, Wait: i32);
+    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut PBCB, Vcb: *mut VCB, Wait: u8);
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut PBCB);
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
@@ -78,14 +79,14 @@ extern "system" {
     fn FatLookupFileAllocationSize(IrpContext: PIRP_CONTEXT, FcbOrDcb: PFCB);
     fn FatIsFat32(Vcb: PVCB) -> u8;
     fn FatLookupFileAllocation( IrpContext: PIRP_CONTEXT, FcbOrDcb: PFCB, FileOffset: u32, RunLbo: *mut i64, RunByteCount: *mut u32, RunAllocated: *mut u8, RunEndOnMax: *mut u8, RunIndex: *mut u32, );
-    fn FatAcquireSharedVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+    fn FatAcquireSharedVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u32;
     fn FatQuickVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, length: u32) -> u8;
     fn FatVerifyIndexIsValid(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32);
     fn FatReservedBytes(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatPerformVerifyDiskRead( IrpContext: PIRP_CONTEXT, Vcb: *mut VCB, Buffer: *mut core::ffi::c_void, Lbo: LBO, NumberOfBytesToRead: u32, ReturnOnError: i32, ) -> i32;
-    fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+    fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FsRtlLookupLastLargeMcbEntryAndIndex(Mcb: *mut LARGE_MCB, LargeVbn: *mut LONGLONG, LargeLbn: *mut LONGLONG, Index: *mut ULONG) -> u8;
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
     fn FatIsFastIoPossible(Fcb: *mut FCB) -> BOOLEAN;
@@ -104,7 +105,7 @@ extern "system" {
     fn FatFlushFat(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> NTSTATUS;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatInterpretClusterType(Vcb: *mut VCB, Cluster: u32) -> FAT_CLUSTER_TYPE;
-    fn FatMarkFcbCondition(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Condition: FCB_CONDITION, Recursive: bool);
+    fn FatMarkFcbCondition(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Condition: u32, Recursive: u32);
     fn FatPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, TargetDeviceObject: *mut DEVICE_OBJECT, InputBuffer: *mut c_void, InputBufferLength: u32, OutputBuffer: *mut c_void, OutputBufferLength: u32, b1: bool, b2: bool, Iosb: *mut _IO_STATUS_BLOCK, ) -> NTSTATUS;
     fn FatReleaseVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatRootDirectoryLbo(bpb: *const BIOS_PARAMETER_BLOCK) -> LARGE_INTEGER;
@@ -2163,10 +2164,10 @@ pub unsafe extern "system" fn FatFlushAndCleanVolume(
     // There is no fail, flush everything.
     if FlushType != NoFlush {
         // (VOID) FatFlushVolume(...)
-        let _ = FatFlushVolume(IrpContext, Vcb, FlushType);
+        let _ = FatFlushVolume(IrpContext, Vcb, (FlushType) as _);
     }
 
-    FatCloseEaFile(IrpContext, Vcb, FALSE);
+    FatCloseEaFile(IrpContext, Vcb, (FALSE) as _);
 
     // Now, tell the device to flush its buffers.
     if FlushType != NoFlush {
@@ -2184,7 +2185,7 @@ pub unsafe extern "system" fn FatFlushAndCleanVolume(
         );
 
         // (VOID) FatPurgeReferencedFileObjects(...)
-        let _ = FatPurgeReferencedFileObjects(IrpContext, (*Vcb).RootDcb, NoFlush);
+        let _ = FatPurgeReferencedFileObjects(IrpContext, (*Vcb).RootDcb, (NoFlush) as _);
     }
 
     // If the volume was dirty and we were allowed to flush...
@@ -2206,7 +2207,7 @@ pub unsafe extern "system" fn FatFlushAndCleanVolume(
             if ((*Vcb).VcbState & VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0
                 && ((*Vcb).VcbState & VCB_STATE_FLAG_BOOT_OR_PAGING_FILE) == 0
             {
-                FatToggleMediaEjectDisable(IrpContext, Vcb, FALSE);
+                FatToggleMediaEjectDisable(IrpContext, Vcb, (FALSE) as _);
             }
         }
     }
@@ -10769,7 +10770,7 @@ use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 extern "system" {
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: PIRP, CanWait: BOOLEAN) -> PIRP_CONTEXT;
+    fn FatCreateIrpContext(Irp: PIRP, CanWait: u32) -> PIRP_CONTEXT;
 }
 
 // Cross-module functions referenced by FatMountVolume (resolve at link to sibling #[no_mangle]).
@@ -11334,7 +11335,7 @@ pub unsafe extern "system" fn FatFsdFileSystemControl(
         } else {
             CanFsdWait(Irp)
         };
-        IrpContext = FatCreateIrpContext(Irp, Wait);
+        IrpContext = FatCreateIrpContext(Irp, (Wait) as _);
         Status = FatCommonFileSystemControl(IrpContext, Irp);
     }
     if TopLevel != 0 { IoSetTopLevelIrp(core::ptr::null_mut()); }

@@ -9,13 +9,13 @@ use ntkrnl_sys::ddk::PsGetCurrentThreadWin32Thread;
 extern "fastcall" {
     fn VerifyWnd(w: PWND) -> PWND;
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID);
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn VerifyWnd(w: PWND) -> PWND;
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID);
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 
 // IntSysCreateRectpRgnIndirect(prc) is a region.h macro:

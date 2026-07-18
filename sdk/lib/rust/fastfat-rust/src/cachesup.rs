@@ -31,7 +31,7 @@ extern "system" {
     fn NodeType(Dcb: *mut DCB) -> u32;
     fn CcSetDirtyPinnedData(Bcb: *mut core::ffi::c_void, Lba: *mut core::ffi::c_void);
     fn FatIsFat12(Vcb: *mut VCB) -> u8;
-    fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, DirtyState: u32) -> NTSTATUS;
+    fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, DirtyState: u32);
     fn FatToggleMediaEjectDisable(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Enable: u8) -> NTSTATUS;
     fn KeQuerySystemTime(Time: *mut LARGE_INTEGER);
     fn KeAcquireSpinLock(SpinLock: *mut KSPIN_LOCK, OldIrql: *mut u8);
@@ -47,7 +47,6 @@ extern "system" {
     fn FlagOn(flags: u32, mask: u32) -> i32;
     fn DbgDoit(pin: u32);
     fn PagedCode();
-    fn IoGetCurrentIrpStackLocation(irp: *mut IRP) -> *mut IO_STACK_LOCATION;
     fn ExIsResourceAcquiredSharedLite(resource: *const ERESOURCE) -> u8;
     fn ExIsResourceAcquiredExclusiveLite(resource: *const ERESOURCE) -> u8;
     fn FatDecodeFileObject( file_object: *mut FILE_OBJECT, vcb: *mut *mut VCB, fcb: *mut *mut FCB, ccb: *mut *mut CCB, ) -> u32;
@@ -63,6 +62,11 @@ extern "system" {
     fn FatTruncateFileAllocation(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, InitialAllocation: u32);
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatIsFat32(Vcb: PVCB) -> u8;
+}
+extern "C" {
+    // wdm FORCEINLINE helper: cdecl body (`_IoGetCurrentIrpStackLocation`),
+    // matches the ntkrnl-sys bindgen class — "system" decl was a §9.99 fold.
+    fn IoGetCurrentIrpStackLocation(irp: *mut IRP) -> *mut IO_STACK_LOCATION;
 }
 
 // ---- file-scope preamble (translated) ----

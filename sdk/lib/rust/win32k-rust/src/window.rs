@@ -292,7 +292,7 @@ extern "fastcall" {
     fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn DceFreeWindowDCE(Window: PWND);
     fn DceAllocDCE(Window: PWND, Type: DCE_TYPE) -> PDCE;
-    fn DestroyTimersForWindow(pti: PTHREADINFO, Window: PWND);
+    fn DestroyTimersForWindow(pti: PTHREADINFO, Window: PWND) -> BOOL;
     fn UnregisterWindowHotKeys(pWnd: PWND);
     fn MsqDecPaintCountQueue(pti: PTHREADINFO);
     fn MsqIsHung(pti: PTHREADINFO, TimeOut: DWORD) -> BOOL;
@@ -314,7 +314,7 @@ extern "C" {
     fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn DceFreeWindowDCE(Window: PWND);
     fn DceAllocDCE(Window: PWND, Type: DCE_TYPE) -> PDCE;
-    fn DestroyTimersForWindow(pti: PTHREADINFO, Window: PWND);
+    fn DestroyTimersForWindow(pti: PTHREADINFO, Window: PWND) -> BOOL;
     fn UnregisterWindowHotKeys(pWnd: PWND);
     fn MsqDecPaintCountQueue(pti: PTHREADINFO);
     fn MsqIsHung(pti: PTHREADINFO, TimeOut: DWORD) -> BOOL;

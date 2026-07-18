@@ -55,7 +55,7 @@ extern "C" {
     fn CdAcquireFileShared(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
+    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> u32;
 }
 extern "C" {
     fn CdLockFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -94,7 +94,7 @@ extern "C" {
     fn CdLookupPathEntry( IrpContext: *mut IRP_CONTEXT, Offset: ULONG, Ordinal: ULONG, SomeFlag: BOOLEAN, Entry: *mut COMPOUND_PATH_ENTRY, );
 }
 extern "C" {
-    fn CdUpdatePathEntryName(IrpContext: *mut IRP_CONTEXT, PathEntry: *mut PATH_ENTRY, Flag: BOOLEAN);
+    fn CdUpdatePathEntryName(IrpContext: *mut IRP_CONTEXT, PathEntry: *mut PATH_ENTRY, Flag: u32);
 }
 extern "C" {
     fn CdFindDirectory( IrpContext: *mut IRP_CONTEXT, ParentFcb: *mut FCB, Name: *mut CD_NAME, Flag: BOOLEAN, FileContext: *mut FILE_ENUM_CONTEXT, ) -> BOOLEAN;
@@ -115,7 +115,7 @@ extern "C" {
     fn CdUpdateDirentFromRawDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Context: *mut DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT, );
 }
 extern "C" {
-    fn CdUpdateDirentName(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, Flag: BOOLEAN);
+    fn CdUpdateDirentName(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, Flag: u32);
 }
 extern "C" {
     fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: _UNICODE_STRING) -> BOOLEAN;

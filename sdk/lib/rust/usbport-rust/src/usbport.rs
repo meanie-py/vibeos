@@ -55,7 +55,7 @@ extern "system" {
     fn USBPORT_FlushClosedEndpointList(FdoDevice: PDEVICE_OBJECT);
     fn USB2_InitController(Usb2Extension: PUSB2_HC_EXTENSION);
     fn USBPORT_RootHubPowerAndChirpAllCcPorts(FdoDevice: PDEVICE_OBJECT);
-    fn USBPORT_RemoveActiveTransferIrp(FdoDevice: PDEVICE_OBJECT, Irp: PIRP);
+    fn USBPORT_RemoveActiveTransferIrp(FdoDevice: PDEVICE_OBJECT, Irp: PIRP,) -> PIRP;
     fn USBPORT_DoSetPowerD0(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_DoneSplitTransfer(Transfer: PUSBPORT_TRANSFER);
     fn USBPORT_EndpointHasQueuedTransfers( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, TransferCount: *mut ULONG, ) -> BOOLEAN;

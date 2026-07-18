@@ -17,13 +17,13 @@ extern "C" {
 // BOOL FASTCALL (rect.c → rect.rs). Dual-cfg: fastcall on x86, cdecl elsewhere.
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn SetLastNtError(status: NTSTATUS);
+    fn SetLastNtError(Status: NTSTATUS);
     fn RECTL_bUnionRect(dst: *mut RECTL, src1: *const RECTL, src2: *const RECTL) -> BOOL;
     fn RECTL_bIntersectRect(dst: *mut RECTL, src1: *const RECTL, src2: *const RECTL) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn SetLastNtError(status: NTSTATUS);
+    fn SetLastNtError(Status: NTSTATUS);
     fn RECTL_bUnionRect(dst: *mut RECTL, src1: *const RECTL, src2: *const RECTL) -> BOOL;
     fn RECTL_bIntersectRect(dst: *mut RECTL, src1: *const RECTL, src2: *const RECTL) -> BOOL;
 }

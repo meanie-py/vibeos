@@ -89,7 +89,7 @@ extern "C" {
         default_owner_index: PULONG,
     ) -> NTSTATUS;
     fn SepRebuildDynamicPartOfToken(token: PTOKEN, new_dynamic_length: ULONG) -> NTSTATUS;
-    fn SepRmDereferenceLogonSession(logon_id: *const LUID);
+    fn SepRmDereferenceLogonSession(logon_id: *const LUID) -> u32;
 }
 
 const TAG_SE: ULONG = 0x20206553;

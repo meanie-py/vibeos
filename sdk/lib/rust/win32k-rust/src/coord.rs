@@ -49,11 +49,11 @@ use crate::xformobj::{EXFORMOBJ_iSetXform, EXFORMOBJ_iCombine, EXFORMOBJ_iInvers
 #[inline(always)] unsafe fn XFORMOBJ_iInverse(pxo: *mut EXFORMOBJ, pxo1: *mut EXFORMOBJ) -> ULONG { EXFORMOBJ_iInverse(pxo as *mut XFORMOBJ, pxo1 as *mut XFORMOBJ) }
 // SetLastNtError + MX_Set0 are FASTCALL (@Name@N on i386), cdecl elsewhere.
 #[cfg(target_arch = "x86")] extern "fastcall" {
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
     fn MX_Set0(pmx: PMATRIX);
 }
 #[cfg(not(target_arch = "x86"))] extern "C" {
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
     fn MX_Set0(pmx: PMATRIX);
 }
 

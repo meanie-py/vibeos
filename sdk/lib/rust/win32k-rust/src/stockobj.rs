@@ -16,11 +16,11 @@ extern "system" {
 // TextIntCreateFontIndirect is FASTCALL (text.h).
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn TextIntCreateFontIndirect(lplf: *mut LOGFONTW, hFont: *mut HFONT);
+    fn TextIntCreateFontIndirect(lf: LPLOGFONTW, NewFont: *mut HFONT) -> NTSTATUS;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn TextIntCreateFontIndirect(lplf: *mut LOGFONTW, hFont: *mut HFONT);
+    fn TextIntCreateFontIndirect(lf: LPLOGFONTW, NewFont: *mut HFONT) -> NTSTATUS;
 }
 
 // RGB / PEN_UnlockPen are macros (wingdi.h / pen.h) — inline them.

@@ -131,11 +131,11 @@ extern "C" {
     fn ScmCreateDefaultServiceSD(ppSecurityDescriptor: *mut PSECURITY_DESCRIPTOR) -> DWORD;
     fn ScmCreateNewServiceRecord(lpServiceName: LPCWSTR, lppService: *mut PSERVICE, dwServiceType: DWORD, dwStartType: DWORD) -> DWORD;
     fn ScmCreateServiceKey(lpServiceName: LPCWSTR, samDesired: u32, phKey: *mut HKEY) -> DWORD;
-    fn ScmGenerateServiceTag(lpServiceRecord: PSERVICE);
-    fn ScmReferenceService(lpService: PSERVICE);
+    fn ScmGenerateServiceTag(lpServiceRecord: PSERVICE) -> u32;
+    fn ScmReferenceService(lpService: PSERVICE) -> u32;
     fn ScmControlService(hControlPipe: *mut c_void, lpServiceName: LPCWSTR, dwControl: DWORD, hServiceStatus: *mut c_void) -> DWORD;
-    fn ScmRemoveServiceImage(pServiceImage: *mut c_void) -> DWORD;
-    fn ScmLogEvent(dwEventId: DWORD, wType: u16, wStrings: u16, lpStrings: *mut LPCWSTR) -> DWORD;
+    fn ScmRemoveServiceImage(pServiceImage: *mut c_void);
+    fn ScmLogEvent(dwEventId: DWORD, wType: u16, wStrings: u16, lpStrings: *mut LPCWSTR);
     fn ScmDereferenceService(lpService: *mut c_void) -> DWORD;
 }
 

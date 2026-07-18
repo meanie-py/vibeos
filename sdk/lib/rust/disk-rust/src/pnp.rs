@@ -42,7 +42,7 @@ macro_rules! w {
 // moved from extern "system": types_i386 declares these cdecl (no NTAPI in disk.h);
 // the defs are extern "C" — CC must agree or LLVM folds callers to ud2.
 extern "C" {
-    fn DiskCreateFdo( DriverObject: PDRIVER_OBJECT, Pdo: PDEVICE_OBJECT, Count: *mut ULONG, SuppressMount: BOOLEAN, ) -> NTSTATUS;
+    fn DiskCreateFdo(DriverObject: PDRIVER_OBJECT, Pdo: PDEVICE_OBJECT, Count: *mut ULONG, SuppressMount: u32) -> NTSTATUS;
     pub fn DiskReadSignature(Fdo: PDEVICE_OBJECT) -> NTSTATUS;
     pub fn DiskReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTSTATUS;
     fn DiskIsNT4Geometry(Ext: PFUNCTIONAL_DEVICE_EXTENSION) -> BOOLEAN;
@@ -62,7 +62,7 @@ extern "C" {
 }
 extern "system" {
     fn DiskGetCacheInformation(fdo: PFUNCTIONAL_DEVICE_EXTENSION, info: *mut DISK_CACHE_INFORMATION) -> NTSTATUS;
-    fn DiskSetCacheInformation(fdo: PFUNCTIONAL_DEVICE_EXTENSION, info: *mut DISK_CACHE_INFORMATION);
+    fn DiskSetCacheInformation(fdo: PFUNCTIONAL_DEVICE_EXTENSION, info: *mut DISK_CACHE_INFORMATION) -> u32;
     fn ClassGetDeviceParameter(fdo: PFUNCTIONAL_DEVICE_EXTENSION, subkey: *mut u16, value: *mut u16, out: *mut ULONG);
     fn ClassInitializeSrbLookasideList(Ext: PCOMMON_DEVICE_EXTENSION, ListSize: ULONG);
     fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTSTATUS;
@@ -316,7 +316,7 @@ pub unsafe extern "system" fn DiskAddDevice(
         DriverObject,
         PhysicalDeviceObject,
         &raw mut diskCount,
-        (rootPartitionMountable == 0) as BOOLEAN,
+        ((rootPartitionMountable == 0) as BOOLEAN) as _,
     );
 
     configurationInformation = IoGetConfigurationInformation();
@@ -522,7 +522,7 @@ pub unsafe extern "system" fn DiskInitFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
         DiskDetectFailurePrediction(
             fdo_extension,
             (&raw mut (*disk_data).FailurePredictionCapability).cast(),
-            (status >= 0) as BOOLEAN,
+            ((status >= 0) as BOOLEAN) as _,
         );
         if (*disk_data).FailurePredictionCapability != 0 {
             (*disk_data).AllowFPPerfHit = TRUE;
