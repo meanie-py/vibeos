@@ -24,6 +24,11 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL (shell);
 
+/* CShellLink is Rust-owned (shell32-rust shell_link); every construction must go
+ * through the Rust factory so no C++ CShellLink can coexist with the Rust one. */
+extern "C" HRESULT WINAPI CShellLink_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
 #define D_NONE DROPEFFECT_NONE
 #define D_COPY DROPEFFECT_COPY
 #define D_MOVE DROPEFFECT_MOVE
@@ -694,7 +699,7 @@ HRESULT CFSDropTarget::_DoDrop(IDataObject *pDataObject,
                 else
                 {
                     CComPtr<IShellLinkW> pLink;
-                    hr = CShellLink::_CreatorClass::CreateInstance(NULL, IID_PPV_ARG(IShellLinkW, &pLink));
+                    hr = CShellLink_CreateInstance(NULL, IID_PPV_ARG(IShellLinkW, &pLink));
                     if (!FAILED_UNEXPECTEDLY(hr))
                     {
                         hr = pLink->SetIDList(pidlFull);

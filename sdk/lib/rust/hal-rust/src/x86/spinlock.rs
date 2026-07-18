@@ -108,7 +108,7 @@ mod i386 {
         fn KfLowerIrql(NewIrql: KIRQL);
     }
 
-    const SYNCH_LEVEL: KIRQL = 2; // = DISPATCH_LEVEL on i386 (sdk/include/ndk/i386/ke.h)
+    use crate::x86::buildtype::SYNCH_LEVEL; // 2 on the UP HAL, 27 on the SMP HAL (i386)
     const DISPATCH_LEVEL: KIRQL = 2;
 
     /// `KeAcquireSpinLockRaiseToSynch` — raise to SYNCH, acquire, return old IRQL.

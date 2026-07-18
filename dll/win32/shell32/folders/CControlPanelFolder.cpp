@@ -951,3 +951,39 @@ HRESULT WINAPI COpenControlPanel::GetCurrentView(CPVIEW *pView)
     *pView = CPVIEW_CLASSIC;
     return S_OK;
 }
+
+/**************************************************************************
+ * Rust bridges — CControlPanelFolder is Rust-owned (shell32-rust
+ * control_panel_folder); the companions below (CControlPanelEnum, CCPLItemMenu,
+ * CCPLExtractIcon) and the CRegFolder aggregation stay C++ and are reached
+ * through these C ABI shims. Mirrors the CDrivesFolder bridge set.
+ */
+
+extern "C" HRESULT WINAPI
+CControlPanelFolder_CreateRegFolder_RustBridge(
+    IShellFolder *psfOuter, LPCITEMIDLIST pidlRoot, REFIID riid, void **ppv)
+{
+    REGFOLDERINITDATA RegInit = { psfOuter, &g_RegFolderInfo };
+    return CRegFolder_CreateInstance(&RegInit, pidlRoot, riid, ppv);
+}
+
+extern "C" HRESULT WINAPI
+CControlPanelEnum_CreateInstance_RustBridge(
+    DWORD dwFlags, IEnumIDList *pRegEnumerator, REFIID riid, void **ppv)
+{
+    return ShellObjectCreatorInit<CControlPanelEnum>(dwFlags, pRegEnumerator, riid, ppv);
+}
+
+extern "C" HRESULT WINAPI
+CCPLItemMenu_CreateInstance_RustBridge(
+    UINT cidl, PCUITEMID_CHILD_ARRAY apidl, REFIID riid, void **ppv)
+{
+    return ShellObjectCreatorInit<CCPLItemMenu>(cidl, apidl, riid, ppv);
+}
+
+extern "C" HRESULT WINAPI
+CCPLExtractIcon_CreateInstance_RustBridge(
+    IShellFolder *psf, LPCITEMIDLIST pidl, REFIID riid, LPVOID *ppvOut)
+{
+    return CCPLExtractIcon_CreateInstance(psf, pidl, riid, ppvOut);
+}

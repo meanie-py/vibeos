@@ -118,10 +118,12 @@ VOID FASTCALL KeAcquireInStackQueuedSpinLock(IN PKSPIN_LOCK SpinLock, IN PKLOCK_
  * i386: NTHALAPI dllimport — call directly through the HAL IAT. Trampoline /
  *   function pointer / local definition all collide with the dllimport in
  *   the same TU, so the inline asm is the only way that resolves.
- * amd64: FORCEINLINE over CR8 in `xdk/amd64/ke.h`. We don't include that
- *   header any more, so no `#undef` needed; we just provide our own
- *   out-of-line CR8 implementation. Without CONFIG_SMP, SYNCH_LEVEL ==
- *   DISPATCH_LEVEL == 2.
+ * amd64: out-of-line CR8 implementation, and since the xdk header's
+ *   FORCEINLINE was retired (drivers import this export now — real NT amd64
+ *   ntoskrnl exports it), this IS the amd64 export. The target level comes
+ *   from the Rust kernel's KiSynchIrql (ke_defs.rs): DISPATCH_LEVEL == 2 on
+ *   the UP kernel, IPI_LEVEL-2 == 12 on the SMP kernel — one binary per
+ *   flavor, each raising to its own SYNCH_LEVEL.
  * ============================================================ */
 #if defined(_M_IX86)
 KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID)
@@ -135,12 +137,13 @@ KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID)
     return result;
 }
 #elif defined(_M_AMD64)
+extern const KIRQL KiSynchIrql; /* ke_defs.rs: 2 on UP, 12 on the SMP kernel */
 KIRQL KeRaiseIrqlToSynchLevel(VOID)
 {
     unsigned long long cr8;
     __asm__ __volatile__("mov %%cr8, %0" : "=r"(cr8));
     {
-        unsigned long long new_irql = DISPATCH_LEVEL;
+        unsigned long long new_irql = KiSynchIrql;
         __asm__ __volatile__("mov %0, %%cr8" : : "r"(new_irql));
     }
     return (KIRQL)cr8;

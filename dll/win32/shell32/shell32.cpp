@@ -269,44 +269,452 @@ public:
     }
 };
 
+/* Registration remains ATL-owned for translated classes, but activation is Rust-owned. */
+extern "C" HRESULT WINAPI CActiveDesktop_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CActiveDesktopRustEntry : public CActiveDesktop
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CActiveDesktop_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CDropTargetHelper_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CDropTargetHelperRustEntry : public CDropTargetHelper
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CDropTargetHelper_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI COpenControlPanel_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class COpenControlPanelRustEntry : public COpenControlPanel
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return COpenControlPanel_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CExeDropHandler_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CExeDropHandlerRustEntry : public CExeDropHandler
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CExeDropHandler_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CCopyAsPathMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CCopyAsPathMenuRustEntry : public CCopyAsPathMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CCopyAsPathMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CShellItem_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CShellItemRustEntry : public CShellItem
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CShellItem_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CFontsFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CFontsFolderRustEntry : public CFontsFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CFontsFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CAdminToolsFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CAdminToolsFolderRustEntry : public CAdminToolsFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CAdminToolsFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CMyDocsFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CMyDocsFolderRustEntry : public CMyDocsFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CMyDocsFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CNewMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CNewMenuRustEntry : public CNewMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CNewMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CSendToMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CSendToMenuRustEntry : public CSendToMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CSendToMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CPrinterFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CPrinterFolderRustEntry : public CPrinterFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CPrinterFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI COpenWithMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class COpenWithMenuRustEntry : public COpenWithMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return COpenWithMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CNetFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CNetFolderRustEntry : public CNetFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CNetFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CFolderOptions_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CFolderOptionsRustEntry : public CFolderOptions
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CFolderOptions_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CControlPanelFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CControlPanelFolderRustEntry : public CControlPanelFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CControlPanelFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CDrivesFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CDrivesFolderRustEntry : public CDrivesFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CDrivesFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CQueryAssociations_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CQueryAssociationsRustEntry : public CQueryAssociations
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CQueryAssociations_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CUserNotification_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CUserNotificationRustEntry : public CUserNotification
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CUserNotification_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CShellLink_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CShellLinkRustEntry : public CShellLink
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CShellLink_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+/* shellmenu/shellmenu.h (via precomp.h) macro-renames the 2-arg internal creator
+ * CMenuBand_CreateInstance(riid, ppv) to RSHELL_CMenuBand_CreateInstance. The Rust factory
+ * export (menuband-rust) owns the plain 3-arg name, so drop the macro in this TU before
+ * declaring it. (menuband-rust also exports RSHELL_CMenuBand_CreateInstance for the in-tree
+ * shellmenu callers.) */
+#ifdef CMenuBand_CreateInstance
+#undef CMenuBand_CreateInstance
+#endif
+extern "C" HRESULT WINAPI CMenuBand_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CMenuBandRustEntry : public CMenuBand
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CMenuBand_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
-    OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktop)
+    OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
     OBJECT_ENTRY(CLSID_ShellFSFolder, CFSFolder)
-    OBJECT_ENTRY(CLSID_MyComputer, CDrivesFolder)
+    OBJECT_ENTRY(CLSID_MyComputer, CDrivesFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellDesktop, CDesktopFolder)
     OBJECT_ENTRY(CLSID_ShellFileDefExt, CFileDefExt)
     OBJECT_ENTRY(CLSID_ShellDrvDefExt, CDrvDefExt)
-    OBJECT_ENTRY(CLSID_ShellItem, CShellItem)
-    OBJECT_ENTRY(CLSID_ShellLink, CShellLink)
+    OBJECT_ENTRY(CLSID_ShellItem, CShellItemRustEntry)
+    OBJECT_ENTRY(CLSID_ShellLink, CShellLinkRustEntry)
     OBJECT_ENTRY(CLSID_Shell, CShellDispatch)
-    OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelper)
-    OBJECT_ENTRY(CLSID_ControlPanel, CControlPanelFolder)
-    OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanel)
-    OBJECT_ENTRY(CLSID_MyDocuments, CMyDocsFolder)
-    OBJECT_ENTRY(CLSID_NetworkPlaces, CNetFolder)
-    OBJECT_ENTRY(CLSID_FontsFolderShortcut, CFontsFolder)
-    OBJECT_ENTRY(CLSID_Printers, CPrinterFolder)
-    OBJECT_ENTRY(CLSID_AdminFolderShortcut, CAdminToolsFolder)
-    OBJECT_ENTRY(CLSID_ShellFldSetExt, CFolderOptions)
+    OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)
+    OBJECT_ENTRY(CLSID_ControlPanel, CControlPanelFolderRustEntry)
+    OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanelRustEntry)
+    OBJECT_ENTRY(CLSID_MyDocuments, CMyDocsFolderRustEntry)
+    OBJECT_ENTRY(CLSID_NetworkPlaces, CNetFolderRustEntry)
+    OBJECT_ENTRY(CLSID_FontsFolderShortcut, CFontsFolderRustEntry)
+    OBJECT_ENTRY(CLSID_Printers, CPrinterFolderRustEntry)
+    OBJECT_ENTRY(CLSID_AdminFolderShortcut, CAdminToolsFolderRustEntry)
+    OBJECT_ENTRY(CLSID_ShellFldSetExt, CFolderOptionsRustEntry)
     OBJECT_ENTRY(CLSID_RecycleBin, CRecycleBin)
-    OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenu)
-    OBJECT_ENTRY(CLSID_NewMenu, CNewMenu)
-    OBJECT_ENTRY(CLSID_SendToMenu, CSendToMenu)
-    OBJECT_ENTRY(CLSID_CopyAsPathMenu, CCopyAsPathMenu)
+    OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenuRustEntry)
+    OBJECT_ENTRY(CLSID_NewMenu, CNewMenuRustEntry)
+    OBJECT_ENTRY(CLSID_SendToMenu, CSendToMenuRustEntry)
+    OBJECT_ENTRY(CLSID_CopyAsPathMenu, CCopyAsPathMenuRustEntry)
     OBJECT_ENTRY(CLSID_CopyToMenu, CCopyToMenu)
     OBJECT_ENTRY(CLSID_MoveToMenu, CMoveToMenu)
     OBJECT_ENTRY(CLSID_StartMenu, CStartMenuDummy)
     OBJECT_ENTRY(CLSID_MenuBandSite, CMenuSite)
-    OBJECT_ENTRY(CLSID_MenuBand, CMenuBand)
+    OBJECT_ENTRY(CLSID_MenuBand, CMenuBandRustEntry)
     OBJECT_ENTRY(CLSID_MenuDeskBar, CMenuDeskBar)
     OBJECT_ENTRY(CLSID_MergedFolder, CMergedFolder)
-    OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandler)
-    OBJECT_ENTRY(CLSID_QueryAssociations, CQueryAssociations)
-    OBJECT_ENTRY(CLSID_UserNotification, CUserNotification)
+    OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandlerRustEntry)
+    OBJECT_ENTRY(CLSID_QueryAssociations, CQueryAssociationsRustEntry)
+    OBJECT_ENTRY(CLSID_UserNotification, CUserNotificationRustEntry)
 END_OBJECT_MAP()
 
 CShell32Module  gModule;
+
+extern "C" void WINAPI Shell32RustObjectLock()
+{
+    gModule.Lock();
+}
+
+extern "C" void WINAPI Shell32RustObjectUnlock()
+{
+    gModule.Unlock();
+}
+
+/* menuband-rust (libmenuband_rust.a) is linked into both shell32.dll and rshell.dll and
+ * locks its host DLL's COM module around each CMenuBand instance. shell32's copy forwards
+ * to gModule; rshell provides its own in base/shell/rshell/misc.cpp. */
+extern "C" void WINAPI MenuBandRustModuleLock()
+{
+    gModule.Lock();
+}
+
+extern "C" void WINAPI MenuBandRustModuleUnlock()
+{
+    gModule.Unlock();
+}
+
+extern "C" HRESULT WINAPI Shell32RustCoCreateInitSF(
+    LPCITEMIDLIST pidlRoot, const GUID *clsid, INT csidl,
+    REFIID riid, LPVOID *ppvOut)
+{
+    return SHELL32_CoCreateInitSF(pidlRoot, clsid, csidl, riid, ppvOut);
+}
+
+extern "C" INT WINAPI Shell32RustMapContextMenuVerbToCmdId(
+    LPCMINVOKECOMMANDINFO pInfo, const CMVERBMAP *pMap)
+{
+    return SHELL_MapContextMenuVerbToCmdId(pInfo, pMap);
+}
+
+extern "C" HRESULT WINAPI Shell32RustGetCommandStringImpl(
+    SIZE_T CmdId, UINT uFlags, LPSTR Buf, UINT cchBuf, const CMVERBMAP *pMap)
+{
+    return SHELL_GetCommandStringImpl(CmdId, uFlags, Buf, cchBuf, pMap);
+}
 
 
 /***********************************************************************

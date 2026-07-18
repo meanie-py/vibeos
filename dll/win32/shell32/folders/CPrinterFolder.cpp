@@ -63,6 +63,12 @@ HRESULT WINAPI CPrintersExtractIconW_CreateInstane(LPCITEMIDLIST pidl, REFIID ri
     return initIcon->QueryInterface(riid,ppv);
 }
 
+extern "C" HRESULT WINAPI CPrintersExtractIconW_RustBridge(
+    LPCITEMIDLIST pidl, REFIID riid, LPVOID *ppv)
+{
+    return CPrintersExtractIconW_CreateInstane(pidl, riid, ppv);
+}
+
 /***********************************************************************
  *     Printers folder implementation
  */
@@ -187,6 +193,20 @@ BOOL CPrintersEnum::CreatePrintersEnumList(DWORD dwFlags)
         HeapFree(GetProcessHeap(), 0, pi);
     }
     return ret;
+}
+
+extern "C" HRESULT WINAPI CPrintersEnum_CreateInstance(
+    HWND hwndOwner, DWORD dwFlags, IEnumIDList **ppEnumIDList)
+{
+    return ShellObjectCreatorInit<CPrintersEnum>(
+        hwndOwner, dwFlags, IID_PPV_ARG(IEnumIDList, ppEnumIDList));
+}
+
+extern "C" HRESULT CPrinterFolder_CompareDetails_RustBridge(
+    IShellFolder2 *folder, LPARAM lParam,
+    PCUIDLIST_RELATIVE pidl1, PCUIDLIST_RELATIVE pidl2)
+{
+    return SHELL32_CompareDetails(folder, lParam, pidl1, pidl2);
 }
 
 CPrinterFolder::CPrinterFolder()

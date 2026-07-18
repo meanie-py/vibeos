@@ -356,7 +356,7 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
             _enable();
 
             #[cfg(feature = "smp")]
-            KfRaiseIrql(0x0Cu8); // SYNCH_LEVEL (preserve existing i386 value)
+            KfRaiseIrql(crate::ke::ke_defs::SYNCH_LEVEL); // C: KfRaiseIrql(SYNCH_LEVEL) — swap at SYNCH (27 on i386 SMP)
 
             KiSwapContext(APC_LEVEL, OldThread);
 

@@ -1,0 +1,26 @@
+# menuband-rust — Rust translation of the CMenuBand shell menu-band class.
+#
+# Unlike the shell32-private COM classes (which live in shell32-rust and cohab into
+# shell32.dll only), CMenuBand.cpp lived in the SHARED `shellmenu` object library and was
+# compiled into BOTH shell32.dll AND base/shell/rshell/rshell.dll. So its Rust replacement
+# must be a standalone staticlib linked by both DLLs — hence this crate rather than a module
+# in shell32-rust. Its only host-provided symbol is MenuBandRustModuleLock/Unlock (the
+# per-DLL COM module lock); each linking DLL defines it. Everything else it calls is a
+# kernel32/user32/shlwapi/uuid import or a symbol from the shared shellmenu objects, both of
+# which shell32 and rshell already have.
+#
+# types.rs / shellcom.rs are path-included from shell32-rust/src (pure #[repr(C)] type
+# definitions, layout-identical) so this crate carries its own copy without depending on the
+# shell32-rust staticlib.
+
+[package]
+name = "menuband-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+com-sys = { path = "../com-sys" }
+panic-common = { path = "../panic-common", features = ["user"] }

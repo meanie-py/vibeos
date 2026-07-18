@@ -249,7 +249,10 @@ fi
 # existing dirs are expected on --refresh of an existing image.
 echo "[*] Staging profile tree..."
 while IFS= read -r d; do
-    mmd -i "$RAMDISK_IMG" "$d" 2>/dev/null || true
+    # `mmd` prompts when the directory already exists and stdout is a tty.
+    # Refresh runs under vibeos-cli's PTY, so probe first just like Fonts below.
+    mdir -i "$RAMDISK_IMG" "$d" >/dev/null 2>&1 \
+        || mmd -i "$RAMDISK_IMG" "$d"
 done <<'PROFILES'
 ::/Profiles
 ::/Profiles/All Users

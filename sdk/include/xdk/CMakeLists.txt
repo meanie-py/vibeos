@@ -1,5 +1,8 @@
 
-file(GLOB xdk_headers "*.h")
+# GLOB_RECURSE, not GLOB: the templates pull fragments from the per-arch
+# subdirectories (amd64/ke.h etc.) — a plain GLOB misses them, so editing an
+# arch fragment silently never retriggered header generation (stale wdm.h).
+file(GLOB_RECURSE xdk_headers "*.h")
 
 function(add_xdk_header _template _out)
     get_filename_component(_out_filename ${_out} NAME)

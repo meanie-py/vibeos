@@ -265,3 +265,204 @@ tree-sitter's C grammar is **lenient, not a preprocessor** — real files parse 
 ## DeepSeek mechanical-mode failure modes (detector/auto-fix backlog)
 
 DeepSeek (`--mode mechanical`) is the cheap gruntwork tier but markedly weaker than Claude. Recurring failure modes found grinding driver crates — each a candidate auto-fix/detector: (1) **leaves raw C `goto`/labels** in complex fns → wrap body in a `'cleanup: { ... }` block, forward `goto Exit`→`break 'cleanup`; detector: grep live `goto |^\s*\w+:\s*$`. (2) **`expr as usize < size_of::<T>()` without parens** → rustc mis-parses `<` as generics; `cargo fix --broken-code --allow-dirty` auto-applies the paren suggestion (run *before* grinding). (3) **adds `use ...::*` globs** → E0659 cascades (+700 phantom errors in one turn); rail: NEVER glob, use explicit `use ntkrnl_sys::ddk::{Name};`. (4) **stubs hard functions to no-ops** (`{ let _ = a; }`) — flag in review. (5) **wrong module path for driver-private structs** (`ntkrnl_sys::ddk::FDE` when it's `crate::types`) — bulk-sed. (6) **strips *correct* `as i32` casts** on C-shaped shims → E0308 flood; feed callee signatures into the prompt. (7) **drops bit-masking helper calls** (`SRB_STATUS(x)==S` → `x==S`) — compiler can't catch; detector: call-superset (every `NAME(` in input reappears in output). (8) **emits C ternary `?:` and stream-of-consciousness `//` comments** — reject output containing `?...:`. **General:** the grinder's self-reported error counts are routinely exaggerated — trust your own `cargo check`. Re-running repair on already-regressed code does NOT self-heal a prior semantic drop — run deterministic passes first, repair on a **clean** baseline.
+
+## shell32 cheap-model evidence path
+
+The shell32 C++/COM lane has stricter body-worker experiments that never delegate ABI,
+constants, or the runtime call set to the model:
+
+```bash
+# Preview is guaranteed inspection-only; --prompt forces --dry-run.
+python -m rustconv --arch amd64 translate path/to/Class.cpp \
+  --target shell32 --cpp-com --class CClass --fn CClass_Method \
+  --mode mechanical --model deepseek --seal-facts --seal-calls --prompt
+
+# Batch N candidate/base replacements, one cargo invocation per architecture.
+python -m rustconv candidate-check candidates.json
+python -m rustconv candidate-check candidates.json --repair
+python -m rustconv substrate-plan .responses/candidate-oracles/<run>/report.json
+
+# Compile a whole newly generated module with no accepted function base.
+# Manifest candidate entry: {"name":"pilot", "candidate":"pilot.rs",
+#   "source":"path/to/Class.cpp", "full_module":true}
+python -m rustconv candidate-check module-candidates.json
+
+# Compare ordered cross-language branch/loop/return shape (veto, not acceptance).
+python -m rustconv skeleton-check candidates.json
+
+# Read-only opportunity census; alpha matches are never reused automatically.
+python -m rustconv dup-census dll/win32/shell32 --top 20
+```
+
+`--seal-facts` owns HRESULT predicates and constant occurrences. `--seal-calls` owns each
+known runtime callee occurrence with a unique exactly-once executable token. Either envelope
+fails loud before the normal body audit. Each mode has a separate response-cache suffix.
+
+`candidate-check` generates a durable synthetic `no_std` crate under
+`.responses/candidate-oracles/`, replaces exactly one worker per isolated module backed by
+an accepted shell32 base, and checks i386/amd64/arm64. `--repair` is deliberately bounded:
+generated signatures and constant contexts; accepted-base argument casts, initializers,
+and ABI struct fields; lexically proven mutable reassignment; and closed C-idiom lowerings
+for known wide strings, shell allocation, byte-preserving memcpy, COM out pointers/unions,
+and the two exact sealed strsafe append formats. It does not apply rustc suggestions blindly
+or call an LLM. Every repair is named in `report.json`; a red candidate makes the command
+nonzero.
+
+For out-of-sample class pilots, a candidate entry with `"full_module": true` compiles the
+assembled module directly and does not require or consult an accepted base function. This
+mode is the honest oracle for generated scaffold/substrate completeness; do not manufacture
+a base merely to make the replacement-mode harness run.
+
+Every candidate oracle report now contains `substrate_analysis`: unresolved diagnostics are
+collapsed into distinct roots across architectures, indexed against candidate definitions,
+shell32 shared/module Rust, project Rust, SDK headers/IDL, and the optional manifest `source`,
+then routed to deterministic ownership buckets. `rustconv substrate-plan REPORT.json` prints
+that plan; `--refresh` recomputes it after analyzer changes. Follow
+`rustconv-substrate-closure-protocol.md` rather than repairing a rustc cascade site by site.
+This analysis is frontend-neutral and is intended for ordinary C modules too.
+
+The shell32 C++ stitcher also emits a source-selected deterministic support closure after
+the class/vtable scaffold. Selection includes the implementation, defining class header,
+prepared workers, and generated interface/scaffold surface so types used only by WIDL or an
+inline declaration are not missed. It currently owns numeric local/resource/unique-SDK
+literal facts, simple source and SDK `typedef struct` POD closures (including embedded PODs,
+SAL-stripped fields, proven fixed arrays, and pointer aliases), simple
+`CMVERBMAP` aggregate tables, known Win32 FFI signatures, compiler/header macro lowerings
+such as `IID_PPV_ARG`, implicit C scalar/pointer conversions, and the proven `CStringW`
+operations used by the pilot. Post-response semantic lowerings deliberately run on cache
+hits as well as fresh responses: expanding deterministic knowledge must not force a paid
+regeneration. Shared COM interfaces remain in `shellcom.rs`; extend that canonical ABI from
+WIDL rather than generating per-file duplicates.
+
+The prepared helper closure is a C++ semantic boundary too. rustconv binds same-name,
+same-arity local overloads using source-declared parameter, local, nested-call return, and
+pointer-family types; expands trailing default arguments into explicit calls; then rewrites
+the selected helpers to collision-free Rust worker names. Ambiguous calls fail in preflight.
+Overload resolution and defaults are compiler facts, not translation judgment, so neither
+belongs in an LLM prompt or post-hoc review.
+
+Parallel DeepSeek translation drains every submitted future even when one worker fails API,
+seal, or body audit. Accepted workers are committed immediately to the per-function resume
+cache; rustconv raises a combined error only after the pool is drained. Declaration-only
+extern blocks are deterministically discarded before executable fact/call closure, so a
+cheap model cannot make a token fail merely by redundantly declaring a scaffold-owned call.
+This ordering does not weaken the call proof: after normalization each required token must
+still occur exactly once as executable code.
+
+Every non-dry `translate` appends JSONL to `.responses/outcomes.jsonl`: model, target, arch,
+mode, seal flags, source hashes, cheap routing features, outcome, token/cost/latency, and
+artifact/cache identity. This ledger is the input to a future measured difficulty router;
+do not invent thresholds before the representative corpus exists.
+
+Sealed mechanical shell32 COM runs also consult an exact prepared-body translation memory
+before making an API call. Its key includes the method/signature, deterministic interface
+and state shape, and sealing namespace; only the owning class identifier may be substituted.
+Every hit still passes the normal semantic normalization and worker audit before promotion
+to the per-file response cache. Alpha-normalized census matches are never executable reuse.
+
+Body-local `CComPtr<T>` ownership is deterministic. The source declaration must correspond
+to exactly one null-initialized raw Rust pointer slot; rustconv injects a `CppComPtrGuard<T>`
+watching that slot so every return path releases it. Any explicit translated release nulls
+the slot and is therefore idempotent with the guard. A missing/renamed slot hard-fails
+normalization rather than trusting the model to reproduce C++ scope-exit cleanup.
+
+`skeleton-check` parses the C/C++ worker and Rust candidate with their native tree-sitter
+grammars, then compares a deliberately small semantic skeleton: ordered conditionals,
+loops, switches/matches, breaks/continues, and returns. It reports exact normalized shape
+plus a fuzzy sequence score. Use it to reject obvious dropped or invented control flow.
+Never accept on a similarity score: it cannot prove expressions, FFI types, pointer
+semantics, ownership, or call arguments, and the compiler remains mandatory.
+
+The first 20-worker shell32 corpus measured templates at 10/10 x3 compile for $0 and sealed
+DeepSeek at 3/10 raw, 7/10 after bounded repair. All 20 had exact normalized control
+skeletons. Retrying the three residuals with Sonnet produced 0/3 compile-green because the
+dominant failures were missing Rust substrate/API adaptations, not model capacity. Route
+unresolved-symbol and duplicate-ABI-type failures back into deterministic context/repair
+work before paying for a stronger model.
+
+After those substrate adaptations landed, a zero-call replay of the same cached DeepSeek
+workers reached 10/10 model-tier and 20/20 overall on all three architectures. This is an
+in-sample substrate result, not yet a production acceptance-rate estimate: broaden the
+corpus across classes, and keep fact/call closure, body audit, skeleton compatibility, and
+x3 compilation mandatory.
+
+The first class with no accepted Rust base, `CCopyAsPathMenu`, initially produced the same
+62 full-module diagnostics on every architecture. After the deterministic support closure
+landed, the unchanged eight cached DeepSeek workers replayed for $0 and the module reached
+zero diagnostics on i386/amd64/arm64. This validates substrate repair as the correct route
+for unresolved ABI/header surface. Deterministic C-linkage bridges then exposed its two
+internal C++ `SHELL_*` helpers, the generated ATL adapter took over the object-map entry, and
+the C++ owner was disabled. The integrated image built and passed the complete three-arch
+gate. The full pipeline result is therefore: two template workers plus eight cached
+DeepSeek workers, no retry or stronger model, 62-to-zero x3 diagnostics, and class-atomic
+link/smoke acceptance.
+
+A later paired test retried three heterogeneous DeepSeek rejects once with Sonnet under the
+same sealed mechanical contract. Final acceptance was 0/3 for $0.127848: one refactored
+shared cleanup beyond occurrence-level call certification, one added a second model-owned
+`scopeguard` cleanup layer, and one invented helpers for an unsupported `CDrop` owner after
+reintroducing `SUCCEEDED`. Treat custom C++ RAII and shared-cleanup CFGs as deterministic
+substrate/decomposition work, not automatic Sonnet routes. Static difficulty may nominate a
+stronger model only after the substrate classifier is clear.
+
+The subsequent hard-five stitched-worker comparison measured repair distance against accepted
+full modules rather than demanding raw envelope acceptance. After identical bounded repairs,
+Sonnet was x3-compile-green on 3/5 versus DeepSeek 2/5, left 2 versus 24 diagnostics per
+architecture, and was closer to the accepted worker on four of five cases (496 versus 683
+normalized edit tokens). Sonnet cost 2.55x for this set. Route substrate-clean high-band
+compile failures to Sonnet when agent repair time matters; keep low/medium and deterministic
+shapes on the cheaper lane.
+
+The next production-shaped three-class batch confirmed that routing must retain a
+decomposition tier above model selection. `CRecycleBinCleaner` used seven fresh sealed
+DeepSeek workers (~$0.02), then replayed unchanged from 24 unique full-module diagnostics to
+zero x3 after deterministic WIDL callback, ATL resource-string, array, SDK-struct/FFI, and
+implicit-receiver support landed. `CFolderOptions` later closed through a hybrid substrate:
+Rust owns activation, public vtables, refcount, and site state, while narrow C++ bridges own
+the retained property-page callbacks and private `IBrowserService2` operation. The dialog
+keeps only an opaque published-interface pointer and calls Rust ABI helpers, never the retired
+C++ layout. The 231-line, 94-call `CQueryAssociations::GetString` worker broke its
+72-token call envelope with DeepSeek, while a prior isolated Sonnet artifact had already
+failed the same envelope. Route that shape to deterministic CFG decomposition; do not spend
+on repeated whole-worker retries merely because a stronger model exists.
+
+The first giant-class run (`CShellLink`, 91 workers / 219 vtable slots) added a second
+zero-call recovery layer. A response that streamed completely but failed the then-current
+deterministic audit remains a `.partial` paid artifact. Before submitting a missing sealed
+shell32 worker, rustconv now tries matching historical partials through the current exact
+signature, fact/call unsealing, semantic normalizers, and body audit. Only a result that
+passes the same gates as a live response enters the cache; truncated, differently sealed,
+or genuinely bad streams remain rejected. This recovered a prior `CreateShortcutIcon`
+response after deterministic SDK-shadow stripping improved, avoiding another paid call.
+
+Worker normalization now retains exactly the contracted function and discards all model-
+owned module prefix/trailing surface. Body-local `#[repr(C)]` structs are accepted only when
+the C worker declares the same named field sequence; otherwise type declarations remain a
+hard ABI reject. Conversely, a model-local definition of an SDK type explicitly used (but
+not declared) by the C snippet is removed so the generated/shared substrate stays the sole
+layout authority. These are audit-boundary changes, not compiler repair heuristics.
+
+By-value ATL `CStringW` class fields are also deterministic state, not opaque C++ owners.
+The scaffold initializes them with `CStringW::new`, routes source assignment through an
+owned helper, and calls `drop_in_place` before freeing the raw COM allocation. Static
+worker-window callbacks are generated adapters: they recover the Rust object pointer from
+window extra storage and invoke the translated body. Their `WNDPROC`, message records,
+notification-icon SDK layout, and FFI surface remain outside the model response. The FFI
+authority maps pointer-width header aliases to real symbols (notably the 32-bit
+`GetWindowLongW`/`SetWindowLongW` exports).
+
+The worker audit examines ABI declarations before declaration-only normalization can erase
+them. It permits `unsafe extern "system" fn(...)` as a function-pointer type, but rejects
+model-owned `extern` blocks and exported ABI functions. This keeps callback expressions
+legal without allowing a body worker to compete with deterministic module scaffolding.
+
+Cached-worker normalization is required to be exactly replay-idempotent. In particular,
+`CComPtr` guards and the nulling paired with an explicit `Release` are inserted at most once;
+an unused immutable raw-null placeholder emitted for a source-unused ATL local is removed
+with its invented defensive release. Replaying an already-normalized worker must produce
+byte-identical normalized output.
+
+The C++ scanner also recovers a return type/calling-convention prefix when tree-sitter starts
+an out-of-line qualified method node mid-line after `HRESULT WINAPI`. Without this recovery,
+factory hooks such as `FinalConstruct` can silently acquire `()` in their generated contract.
+The recovered prefix is source syntax, never a model inference.

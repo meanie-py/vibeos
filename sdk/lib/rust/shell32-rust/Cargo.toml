@@ -26,4 +26,5 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+com-sys = { path = "../com-sys" }
 panic-common = { path = "../panic-common", features = ["user"] }
