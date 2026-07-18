@@ -51,7 +51,6 @@ extern "system" {
     fn FatIsFat12(Vcb: *mut VCB) -> u8;
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn NT_ASSERT(condition: i32);
-    fn IoSetCompletionRoutine( Irp: *mut IRP, Routine: extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8, );
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     fn CcPinRead( FileObject: *mut FILE_OBJECT, FileOffset: *const LARGE_INTEGER, Length: u32, Wait: u8, Bcb: *mut *mut c_void, Buffer: *mut *mut c_void, ) -> u8;
     fn IoBuildAsynchronousFsdRequest( MajorFunction: u32, DeviceObject: *mut DEVICE_OBJECT, Buffer: *mut c_void, Length: u32, StartingOffset: *const LARGE_INTEGER, IoStatusBlock: *mut _IO_STATUS_BLOCK, ) -> *mut IRP;
@@ -60,17 +59,22 @@ extern "system" {
     fn MmUnlockPages(Mdl: *mut MDL);
     fn IoFreeMdl(Mdl: *mut MDL);
     fn IoFreeIrp(Irp: *mut IRP);
-    fn IoGetNextIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
     fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Buffer: *mut *mut core::ffi::c_void, ); // VBO = u32 (was i64: i386 stdcall stack imbalance)
     // IsBpbFat32 defined below in Rust (was a C stub reading the WRONG offset)
-    } extern "C" { fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const u8, ...); } extern "system" {
+    } extern "C" {
+    fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const u8, ...);
+    // wdm FORCEINLINE helpers: cdecl bodies (`_IoSetCompletionRoutine`), bindgen
+    // class — the "system" decls here were §9.99 folds.
+    fn IoSetCompletionRoutine( Irp: *mut IRP, Routine: extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8, );
+    fn IoGetNextIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
+    } extern "system" {
     fn paged_code();
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn NodeType(Fcb: PFCB) -> u32;
     fn UNREFERENCED_PARAMETER(x: *mut core::ffi::c_void);
     fn FatAcquireExclusiveGlobal(IrpContext: PIRP_CONTEXT);
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
-    fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+    fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> u32;
     fn FatCheckForDismount( IrpContext: PIRP_CONTEXT, Vcb: PVCB, Force: BOOLEAN, ) -> BOOLEAN;
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn FatExceptionFilter( IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut EXCEPTION_POINTERS, ) -> LONG;
@@ -82,7 +86,7 @@ extern "system" {
     fn DebugDump(Message: *const i8, Component: u32, Object: *mut core::ffi::c_void);
     fn FatBugCheck(ExitCode: u32, Param1: u32, Param2: u32) -> !;
     fn FatAcquireSharedGlobal(irp_context: *mut IRP_CONTEXT);
-    fn FatToggleMediaEjectDisable(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, enable: i32);
+    fn FatToggleMediaEjectDisable(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, enable: u8) -> u32;
     fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT);
     fn IoSetTopLevelIrp(irp: *mut core::ffi::c_void);
     fn ExFreePool(pool: *mut core::ffi::c_void);
@@ -92,8 +96,8 @@ extern "system" {
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
     fn FatIsFastIoPossible(Fcb: *mut FCB) -> u8;
     fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, OriginalFcb: *mut FCB, ) -> *mut FCB;
-    fn FatGetDirentFromFcbOrDcb( irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u8, dirent: *mut *mut DIRENT, direntBcb: *mut *mut BCB, );
-    fn Fat8dot3ToString( irpctx: *mut IRP_CONTEXT, dirent: *mut DIRENT, arg3: u8, name: *mut OEM_STRING, );
+    fn FatGetDirentFromFcbOrDcb(irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u32, dirent: *mut *mut DIRENT, direntBcb: *mut *mut BCB);
+    fn Fat8dot3ToString(irpctx: *mut IRP_CONTEXT, dirent: *mut DIRENT, arg3: u32, name: *mut OEM_STRING);
     // IsFileDeleted defined below in Rust (was an always-FALSE C stub)
     fn KeGetCurrentThread() -> *mut c_void;
 }
@@ -213,7 +217,7 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
     FatGetDirentFromFcbOrDcb(
         IrpContext,
         Fcb,
-        1u8, /* TRUE */
+        (1u8) as _, /* TRUE */
         &mut Dirent,
         &mut DirentBcb,
     );
@@ -242,7 +246,7 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
         Fat8dot3ToString(
             IrpContext,
             Dirent,
-            0u8, /* FALSE */
+            (0u8) as _, /* FALSE */
             &mut Name,
         );
 
@@ -352,7 +356,7 @@ pub unsafe extern "system" fn FatDeferredCleanVolume(
                 if ((*vcb).VcbState & VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0
                     && ((*vcb).VcbState & VCB_STATE_FLAG_BOOT_OR_PAGING_FILE) == 0
                 {
-                    FatToggleMediaEjectDisable(&raw mut irp_context, vcb, (0u8) as i32);
+                    FatToggleMediaEjectDisable(&raw mut irp_context, vcb, ((0u8) as i32) as _);
                 }
             }
         }

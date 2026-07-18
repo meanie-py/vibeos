@@ -17,13 +17,13 @@ extern "C" {
     fn CdAcquireCdData(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {
-    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Boolean: i32);
+    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, IgnoreWait: BOOLEAN,) -> u32;
 }
 extern "C" {
-    fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Boolean: i32);
+    fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, DismountUnderway: BOOLEAN,) -> NTSTATUS;
 }
 extern "C" {
-    fn CdCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Boolean: i32) -> i32;
+    fn CdCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Force: i32,) -> i32;
 }
 extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);

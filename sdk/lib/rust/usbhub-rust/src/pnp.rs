@@ -131,7 +131,7 @@ unsafe extern "system" {
     fn USBH_CreateDevice( HubExtension: PUSBHUB_FDO_EXTENSION, Port: USHORT, UsbPortStatus: USB_PORT_STATUS, ix: ULONG, ) -> NTSTATUS;
 }
 unsafe extern "system" {
-    fn USBH_Wait(Milliseconds: ULONG);
+    fn USBH_Wait(Milliseconds: ULONG) -> NTSTATUS;
 }
 unsafe extern "system" {
     fn USBH_CompleteIrp(Irp: PIRP, Status: NTSTATUS);
@@ -140,7 +140,7 @@ unsafe extern "system" {
     fn USBH_PassIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "system" {
-    fn USBD_RemoveDeviceEx(HubExtension: PUSBHUB_FDO_EXTENSION, DeviceHandle: PVOID, Flags: ULONG);
+    fn USBD_RemoveDeviceEx(HubExtension: PUSBHUB_FDO_EXTENSION, DeviceHandle: PUSB_DEVICE_HANDLE, Flags: ULONG,) -> NTSTATUS;
 }
 unsafe extern "system" {
     fn PdoExt(PdoDevice: PDEVICE_OBJECT) -> PUSBHUB_PORT_PDO_EXTENSION;
@@ -169,8 +169,8 @@ extern "system" {
     fn USBH_SyncGetHubDescriptor(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
     fn USBH_SyncGetRootHubPdo( DeviceObject: PDEVICE_OBJECT, RootHubPdo: *mut PDEVICE_OBJECT, RootHubPdo2: *mut PDEVICE_OBJECT, ) -> NTSTATUS;
     fn USBH_SyncPowerOnPorts(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
-    fn USBH_WriteFailReasonID(PhysicalDeviceObject: PDEVICE_OBJECT, FailReason: ULONG);
-    fn USBD_UnRegisterRootHubCallBack(HubExtension: PUSBHUB_FDO_EXTENSION);
+    fn USBH_WriteFailReasonID(DeviceObject: PDEVICE_OBJECT, FailReason: ULONG,) -> NTSTATUS;
+    fn USBD_UnRegisterRootHubCallBack(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
     fn USBH_HubCompletePortWakeIrps(HubExtension: PUSBHUB_FDO_EXTENSION, Status: NTSTATUS);
     fn USBH_HubCancelIdleIrp(HubExtension: PUSBHUB_FDO_EXTENSION, IdleIrp: PIRP);
 }

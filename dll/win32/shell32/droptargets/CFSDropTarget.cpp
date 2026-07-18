@@ -812,3 +812,10 @@ HRESULT CFSDropTarget_CreateInstance(LPWSTR sPathTarget, REFIID riid, LPVOID * p
 {
     return ShellObjectCreatorInit<CFSDropTarget>(sPathTarget, riid, ppvOut);
 }
+
+/* Rust bridge — C ABI shim for the Rust-owned CFSFolder (shell32-rust). */
+extern "C" HRESULT WINAPI
+CFSDropTarget_CreateInstance_RustBridge(LPWSTR sPathTarget, REFIID riid, LPVOID *ppvOut)
+{
+    return CFSDropTarget_CreateInstance(sPathTarget, riid, ppvOut);
+}

@@ -39,7 +39,7 @@ extern "system" {
     fn FsRtlGetSectorSizeInformation( RealDevice: *mut core::ffi::c_void, Buffer: PFILE_FS_SECTOR_SIZE_INFORMATION, ) -> i32;
 }
 extern "C" {
-    fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Flag: u8);
+    fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Flag: u8) -> u8;
 }
 extern "C" {
     fn CdReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);

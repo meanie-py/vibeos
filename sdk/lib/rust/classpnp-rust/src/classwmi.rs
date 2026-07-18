@@ -201,7 +201,7 @@ pub unsafe extern "system" fn ClassSystemControl(
     if isRemoved != 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
         return STATUS_DEVICE_DOES_NOT_EXIST;
     }
 
@@ -272,7 +272,7 @@ pub unsafe extern "system" fn ClassSystemControl(
         if !NT_SUCCESS(status) {
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
             return status;
         }
     }
@@ -498,7 +498,7 @@ pub unsafe extern "system" fn ClassSystemControl(
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
             (*Irp).IoStatus.Information = (((retSize as ULONG_PTR) as u32) as u64) as _;
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
             return status;
         }
         IRP_MN_QUERY_ALL_DATA => {
@@ -853,7 +853,7 @@ pub unsafe extern "system" fn ClassWmiCompleteRequest(
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
     (*Irp).IoStatus.Information = (((retSize as ULONG_PTR) as u32) as u64) as _;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, PriorityBoost);
+    ClassCompleteRequest(DeviceObject, Irp, (PriorityBoost) as _);
     Status
 }
 #[no_mangle]

@@ -17,7 +17,7 @@ use crate::types::{LUNEX_REQUEST_PENDING, PCDB, PSCSI_PORT_DEVICE_EXTENSION, PSC
 // resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
-    fn SpiGetSrbData( DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION, LunExtension: PSCSI_PORT_LUN_EXTENSION, QueueTag: UCHAR, ) -> PSCSI_REQUEST_BLOCK_INFO;
+    fn SpiGetSrbData(DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION, LunExtension: PSCSI_PORT_LUN_EXTENSION, QueueTag: u8,) -> PSCSI_REQUEST_BLOCK_INFO;
 }
 extern "C" {
     fn ScsiPortNotification(NotificationType: u32, HwDeviceExtension: *mut core::ffi::c_void, ...);

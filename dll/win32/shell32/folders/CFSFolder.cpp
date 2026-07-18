@@ -2213,6 +2213,39 @@ SHELL_FS_ProcessDisplayFilename_RustBridge(LPWSTR szPath, DWORD dwFlags)
     SHELL_FS_ProcessDisplayFilename(szPath, dwFlags);
 }
 
+extern "C" HRESULT WINAPI
+SHELL32_GetFSItemAttributes_RustBridge(IShellFolder *psf, LPCITEMIDLIST pidl, LPDWORD pdwAttributes)
+{
+    return SHELL32_GetFSItemAttributes(psf, pidl, pdwAttributes);
+}
+
+/* GetCLSIDForFileType is a C++-linkage helper local to this TU; cdecl shim (no @N). */
+extern "C" HRESULT
+GetCLSIDForFileType_RustBridge(PCUIDLIST_RELATIVE pidl, LPCWSTR KeyName, CLSID *pclsid)
+{
+    return GetCLSIDForFileType(pidl, KeyName, pclsid);
+}
+
+/* SHELL_FS_HideExtension is a C++-linkage helper local to this TU; cdecl shim (no @N). */
+extern "C" BOOL
+SHELL_FS_HideExtension_RustBridge(LPCWSTR pwszPath)
+{
+    return SHELL_FS_HideExtension(pwszPath);
+}
+
+/* GetItemCLSID is a C++-linkage helper local to this TU; cdecl shim (no @N). */
+extern "C" HRESULT
+GetItemCLSID_RustBridge(PCUIDLIST_RELATIVE pidl, CLSID *pclsid)
+{
+    return GetItemCLSID(pidl, pclsid);
+}
+
+extern "C" HRESULT WINAPI
+CFSExtractIcon_CreateInstance_RustBridge(IShellFolder *psf, LPCITEMIDLIST pidl, REFIID iid, LPVOID *ppvOut)
+{
+    return CFSExtractIcon_CreateInstance(psf, pidl, iid, ppvOut);
+}
+
 // SHELL32_CreateSimpleIDListFromPath is itself Rust-owned now (shell32-rust
 // wine/pidl.rs); wine/pidl.c is cohab-flipped out of the build. The shim lives
 // here (a live TU) rather than in the dead C file. Declared in wine/pidl.h.
@@ -2220,4 +2253,16 @@ extern "C" LPITEMIDLIST WINAPI
 SHELL32_CreateSimpleIDListFromPath_RustBridge(LPCWSTR pszPath, DWORD dwAttributes)
 {
     return SHELL32_CreateSimpleIDListFromPath(pszPath, dwAttributes);
+}
+
+// CFSFolder is now Rust-owned (shell32-rust/src/cfs_folder.rs); the retained C++
+// TU keeps the source-local CFileSysEnum enumerator. CFSFolder_EnumObjects (Rust)
+// reaches it through this bridge, mirroring the original
+// `ShellObjectCreatorInit<CFileSysEnum>(m_sPathTarget, dwFlags, IID_PPV_ARG(...))`.
+extern "C" HRESULT WINAPI
+CFileSysEnum_CreateInstance_RustBridge(LPWSTR pszPath, DWORD dwFlags, REFIID riid, void **ppv)
+{
+    // CFileSysEnum::Initialize takes LPWSTR (matching the original m_sPathTarget);
+    // the Rust caller's LPCWSTR decl is ABI-identical (const is a C++-only check).
+    return ShellObjectCreatorInit<CFileSysEnum>(pszPath, dwFlags, riid, ppv);
 }

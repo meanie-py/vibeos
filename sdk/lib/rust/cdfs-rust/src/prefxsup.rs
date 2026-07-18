@@ -32,7 +32,7 @@ extern "C" {
     fn CdReleaseFcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB);
 }
 extern "C" {
-    fn CdAcquireFcbExclusive(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, wait: i32) -> i32; // returns BOOL
+    fn CdAcquireFcbExclusive(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, wait: u8) -> i32; // returns BOOL
     // SHARED NEED: cdfs-local static, not yet translated.
     //   FSRTL_COMPARISON_RESULT CdFullCompareNames(PIRP_CONTEXT, PUNICODE_STRING, PUNICODE_STRING);
 }

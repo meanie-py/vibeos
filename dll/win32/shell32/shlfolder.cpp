@@ -684,6 +684,37 @@ SHELL_CreateSHDESCRIPTIONID_RustBridge(VARIANT *pVar, DWORD Id, const CLSID *pCL
 }
 
 extern "C" HRESULT WINAPI
+SHELL_GetDetailsOfAsStringVariant_RustBridge(
+    IShellFolder2 *pSF, PCUITEMID_CHILD pidl, UINT Column, VARIANT *pVar)
+{
+    return SHELL_GetDetailsOfAsStringVariant(pSF, pidl, Column, pVar);
+}
+
+extern "C" HRESULT WINAPI
+SHELL_CreateVariantBuffer_RustBridge(VARIANT *pVar, UINT cb)
+{
+    return SHELL_CreateVariantBuffer(pVar, cb);
+}
+
+extern "C" HRESULT WINAPI
+Shell_NextElement_RustBridge(LPWSTR *ppch, LPWSTR pszOut, INT cchOut, BOOL bValidate)
+{
+    return Shell_NextElement(ppch, pszOut, cchOut, bValidate);
+}
+
+extern "C" void WINAPI
+AddFSClassKeysToArray_RustBridge(UINT cidl, PCUITEMID_CHILD_ARRAY apidl, HKEY *array, UINT *cKeys)
+{
+    AddFSClassKeysToArray(cidl, apidl, array, cKeys);
+}
+
+extern "C" LSTATUS WINAPI
+AddClassKeyToArray_RustBridge(const WCHAR *szClass, HKEY *array, UINT *cKeys)
+{
+    return AddClassKeyToArray(szClass, array, cKeys);
+}
+
+extern "C" HRESULT WINAPI
 CRecycleBin_CoCreateInitSF_RustBridge(
     LPCITEMIDLIST pidlRoot, PERSIST_FOLDER_TARGET_INFO *ppfti, LPCITEMIDLIST pidlChild,
     const GUID *clsid, REFIID riid, LPVOID *ppvOut)

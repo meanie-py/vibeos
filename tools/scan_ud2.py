@@ -118,7 +118,205 @@ EXPECTED_SPIN = {
     "KeBugCheck",  # bugcheck family
     "xHalHaltSystem",  # HAL halt
     "HvValidateHive",  # fatal hive-corruption terminal path
+    # kernel32 process-termination tails: C's `for(;;);` after
+    # NtTerminateProcess — the process is gone, the spin is unreachable
+    # belt-and-suspenders and matches upstream. Deliberate, not a regression.
+    "ExitProcess",
+    "FatalAppExit",
+    "FatalExit",
 }
+
+
+# ---------------------------------------------------------------------------
+# Driver-fleet sweep (field manual §9.99). scan_ud2 was ntoskrnl-only for two
+# years while an entire class of CC/signature-mismatch folds (`ud2` bombs that
+# make the LINK pass precisely because the code is broken) landed silently in
+# driver/DLL binaries. The sweep scans every Rust-containing .sys/.dll/.exe in
+# the build dir (cheap llvm-nm `rust_begin_unwind` filter first, so ~1000
+# binaries reduce to ~100).
+#
+# Scope note: only UNMANGLED named functions are judged. ud2 inside mangled
+# Rust internals is dominated by legitimate panic/unreachable machinery; the
+# same-module mismatches that poison internal fns are gated at source level by
+# tools/scan_ir_mismatch.py instead.
+
+# Substring-skip for symbols that legitimately contain ud2 in driver binaries:
+# compiler-builtins soft-float/bigint intrinsics (guarded shift/unimplemented
+# tails), libm pulls, C++ deleting dtors, LLVM-cloned locals.
+DRIVER_INTRINSIC_SKIP = {
+    "compiler_builtins",
+    "__add",
+    "__sub",
+    "__mul",
+    "__div",
+    "__mod",
+    "__udiv",
+    "__umod",
+    "__divmod",
+    "__udivmod",
+    "__fix",
+    "__float",
+    "__trunc",
+    "__extend",
+    "fmodf",
+    "lgamma",
+    "D0Ev",
+    "D1Ev",
+    "D2Ev",
+    ".llvm.",
+}
+
+# ud2 immediately after a call to one of these is the unreachable-after-noreturn
+# terminator — expected codegen, not a bomb.
+NORETURN_CALLEES = {
+    "panic",
+    "KeBugCheck",
+    "FatBugCheck",
+    "RtlAssert",
+    "abort",
+    "_assert",
+    "ExRaiseStatus",
+    "RaiseStatus",
+    "ExRaiseAccessViolation",
+    "KiBugCheck",
+    "HalHaltSystem",
+    "rust_begin_unwind",
+    "Terminate",
+    "unreachable",
+}
+
+# Known, root-caused residual ud2 sites in driver binaries: basename ->
+# fn-name substrings. Keep SHORT and only with a written justification; a NEW
+# finding fails --check. (Populated 2026-07-18 after the §9.99 fix campaign.)
+KNOWN_DRIVER_UD2: dict[str, set[str]] = {
+    # LoadAndBootWindowsCommon tail-calls the kernel entry point through a fn
+    # pointer that never returns (OS handoff); the post-call ud2 is the
+    # unreachable-after-noreturn terminator, unnameable by the indirect-call
+    # heuristic. Boots green daily.
+    "rosload.exe": {"LoadAndBootWindowsCommon"},
+    "freeldr.exe": {"LoadAndBootWindowsCommon"},
+    # --- First-ever amd64/arm64 sweeps (2026-07-18): pre-existing latents,
+    # --- root-cause OWED (warnings-burndown plan doc). Cold paths; both
+    # --- arches boot green daily. Do NOT add new entries without a writeup.
+    # user32 SwitchWndProc_common: two error-path folds right after
+    # SetLastError(ERROR_INVALID_WINDOW_HANDLE) — §9.99/§9.102 shape in the
+    # reverted-9 usermode crate set.
+    "user32.dll": {"SwitchWndProc_common"},
+    # kernel32 arm64 spins in time/locale fns — suspected non-volatile
+    # KUSER_SHARED_DATA tick-capture retry loops folded to `b .` (would hang
+    # IF that subpath runs; clock works today, so the folded path is cold).
+    # JapaneseEra_Find likewise a folded table-scan loop.
+    "kernel32.dll": {
+        "FileTimeToLocalFileTime",
+        "GetLocalTime",
+        "GetSystemTimeAsFileTime",
+        "LocalFileTimeToFileTime",
+        "SetLocalTime",
+        "GetTimeZoneInformation",
+        "JapaneseEra_Find",
+    },
+    # win32k arm64: EngInitializeSafeSemaphore spin — suspected same
+    # non-volatile interlocked-retry shape.
+    "win32k.sys": {"EngInitializeSafeSemaphore"},
+}
+# the SMP kernel image shares ntoskrnl's known-CGU baselines
+KNOWN_DRIVER_UD2["ntkrnlmp.exe"] = set(KNOWN_CGU_UD2)
+
+
+def _is_mangled(fn: str) -> bool:
+    base = fn.lstrip("_@")
+    return base.startswith("ZN") or (base.startswith("R") and not base.startswith("Rtl"))
+
+
+def find_rust_binaries(build_dir: Path, nm: str) -> list[Path]:
+    """Every .sys/.dll/.exe under the build dir that links Rust code.
+
+    Excludes staging copies (livecd/bootcd/boot/stripped), host tooling, and
+    ntoskrnl.exe (scanned separately with its own kernel baselines). The
+    llvm-nm `rust_begin_unwind` probe keeps this fast (~6s over ~1000 files).
+    """
+    exclude = ("boot/stripped", "livecd", "bootcd", "CMakeFiles", "host-tools")
+    out: list[Path] = []
+    for p in build_dir.rglob("*"):
+        if p.suffix.lower() not in (".sys", ".dll", ".exe"):
+            continue
+        rel = str(p.relative_to(build_dir))
+        if any(e in rel for e in exclude) or p.name == "ntoskrnl.exe":
+            continue
+        try:
+            r = subprocess.run([nm, str(p)], capture_output=True, text=True, timeout=60)
+            if "rust_begin_unwind" in r.stdout:
+                out.append(p)
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+    return sorted(out)
+
+
+def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
+    """ud2 (x86) / branch-to-self (arm64) in named, unmangled functions of one
+    driver/DLL binary, with the noreturn-tail heuristic applied."""
+    result = subprocess.run([objdump, "-d", str(path)], capture_output=True, text=True, timeout=300)
+    findings = []
+    current_function = None
+    prev_call_target = None
+    known = KNOWN_DRIVER_UD2.get(path.name, set())
+    for line in result.stdout.splitlines():
+        func_match = re.match(r"^([0-9a-f]+)\s+<(.+)>:", line)
+        if func_match:
+            current_function = func_match.group(2)
+            prev_call_target = None
+            continue
+        if not current_function:
+            continue
+        if arch == "arm64":
+            m = re.search(r"^\s*([0-9a-f]+):\s+[0-9a-f]{8}\s+b\s+0x([0-9a-f]+)\b", line)
+            hit = bool(m and m.group(1) == m.group(2))
+            addr = m.group(1) if m else ""
+        else:
+            m = re.search(r"^\s*([0-9a-f]+):\s+0f 0b\s+ud2", line)
+            hit = bool(m)
+            addr = m.group(1) if m else ""
+        if not hit:
+            cm = re.search(r"\b(?:call\w*|bl)\s+.*<(.+?)>", line)
+            if cm:
+                prev_call_target = cm.group(1)
+            elif line.strip() and not re.search(r"\baddl?\s+\$0x[0-9a-f]+, %esp", line):
+                # any other instruction breaks call-adjacency EXCEPT pure
+                # stack-cleanup (addl $N, %esp) and nop padding
+                prev_call_target = prev_call_target if "nop" in line else None
+            continue
+        fn = current_function
+        expected = (
+            any(e in fn for e in EXPECTED_UD2)
+            or (arch == "arm64" and any(e in fn for e in EXPECTED_SPIN))
+            or any(e in fn for e in DRIVER_INTRINSIC_SKIP)
+            or _is_mangled(fn)
+            or (prev_call_target and any(n in prev_call_target for n in NORETURN_CALLEES))
+        )
+        known_hit = any(k in fn for k in known)
+        findings.append(
+            {
+                "address": addr,
+                "function": fn,
+                "binary": path.name,
+                "expected": expected,
+                "known_cgu": known_hit,
+            }
+        )
+    return findings
+
+
+def scan_drivers(build_dir: Path, objdump: str, nm: str, arch: str) -> tuple[int, list[dict]]:
+    """Sweep all Rust-containing driver/DLL binaries; returns (n_binaries,
+    unexpected+known findings) — expected ones are dropped here (volume)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    binaries = find_rust_binaries(build_dir, nm)
+    keep: list[dict] = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for findings in pool.map(lambda p: scan_driver_binary(p, objdump, arch), binaries):
+            keep.extend(f for f in findings if not f["expected"])
+    return len(binaries), keep
 
 
 def find_objdump(arch: str) -> str | None:
@@ -143,6 +341,23 @@ def find_objdump(arch: str) -> str | None:
     candidates = list(names) + [str(bundled / n) for n in names]
 
     for c in candidates:
+        try:
+            subprocess.run([c, "--version"], capture_output=True, check=True)
+            return c
+        except (FileNotFoundError, subprocess.CalledProcessError, PermissionError):
+            continue
+    return None
+
+
+def find_nm(arch: str) -> str | None:
+    """Find a working llvm-nm / mingw nm (same search order as find_objdump)."""
+    names = {
+        "arm64": ["aarch64-w64-mingw32-nm", "llvm-nm"],
+        "amd64": ["x86_64-w64-mingw32-nm", "llvm-nm"],
+        "i386": ["i686-w64-mingw32-nm", "llvm-nm"],
+    }.get(arch, ["llvm-nm"])
+    bundled = Path(__file__).resolve().parent.parent / ".build-tools" / "llvm-mingw" / "bin"
+    for c in list(names) + [str(bundled / n) for n in names]:
         try:
             subprocess.run([c, "--version"], capture_output=True, check=True)
             return c
@@ -283,11 +498,36 @@ def main():
         f"{len(known_cgu)} known CGU, {len(unexpected)} unexpected)"
     )
 
-    if check_mode and unexpected:
+    # ---- driver-fleet sweep (§9.99) ----
+    driver_bad: list[dict] = []
+    if "--skip-drivers" not in sys.argv:
+        nm = find_nm(arch)
+        if not nm:
+            print("\nWARNING: no nm found — driver sweep SKIPPED (unverified!)")
+        else:
+            n_bins, flagged = scan_drivers(build_dir, objdump, nm, arch)
+            known = [f for f in flagged if f["known_cgu"]]
+            driver_bad = [f for f in flagged if not f["known_cgu"]]
+            noun = "spins" if arch == "arm64" else "ud2"
+            print(f"\nDriver sweep: {n_bins} Rust-containing binaries scanned")
+            if known:
+                print(f"  Known residuals ({len(known)}):")
+                for f in known:
+                    print(f"    {f['binary']}: 0x{f['address']}: {f['function']}  (known)")
+            if driver_bad:
+                print(
+                    f"  UNEXPECTED driver {noun} ({len(driver_bad)} — §9.99 CC/sig-mismatch fold):"
+                )
+                for f in driver_bad:
+                    print(f"    {f['binary']}: 0x{f['address']}: {f['function']}  *** BUG ***")
+            if not flagged:
+                print(f"  No unexpected driver {noun}.")
+
+    if check_mode and (unexpected or driver_bad):
         noun = "branch-to-self spin" if arch == "arm64" else "ud2"
         print(f"\nFAILED: Unexpected {noun} found — {bug_hint}!")
         sys.exit(1)
-    elif not unexpected:
+    elif not unexpected and not driver_bad:
         print("\nPASSED: All findings are in expected or known-CGU locations.")
 
 

@@ -13,7 +13,7 @@ extern "C" {
     pub fn PollReeval(DeviceObject: PAFD_DEVICE_EXTENSION, FileObject: PFILE_OBJECT);
     fn SocketAcquireStateLock(fcb: PAFD_FCB) -> BOOLEAN;
     fn SocketStateUnlock(fcb: PAFD_FCB);
-    fn UnlockBuffers(buffer_array: PAFD_WSABUF, buffer_count: u32, write: BOOLEAN);
+    fn UnlockBuffers(buffer_array: PAFD_WSABUF, buffer_count: u32, write: u32);
     fn UnlockRequest(irp: PIRP, stack: PIO_STACK_LOCATION);
     fn LeaveIrpUntilLater(fcb: PAFD_FCB, irp: PIRP, function: u32) -> NTSTATUS;
     pub fn LockBuffers( Buf: PAFD_WSABUF, Count: UINT, AddressBuf: PVOID, AddressLen: PINT, Write: BOOLEAN, LockAddress: BOOLEAN, LockMode: KPROCESSOR_MODE, ) -> PAFD_WSABUF;
@@ -86,7 +86,7 @@ unsafe fn send_complete_impl(
             SendReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
             (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
-            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
             if !(*NextIrp).MdlAddress.is_null() {
                 UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
             }
@@ -107,7 +107,7 @@ unsafe fn send_complete_impl(
             NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
             SendReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
 
-            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
 
             (*NextIrp).IoStatus.__bindgen_anon_1.Status = Status;
             (*NextIrp).IoStatus.Information = 0;
@@ -171,7 +171,7 @@ unsafe fn send_complete_impl(
 
         IoSetCancelRoutine(NextIrp, None);
 
-        UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+        UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
 
         if !(*NextIrp).MdlAddress.is_null() {
             UnlockRequest(NextIrp, NextIrpSp);
@@ -331,7 +331,7 @@ unsafe fn packet_socket_send_complete_impl(
             (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_FILE_CLOSED;
             (*NextIrp).IoStatus.Information = 0;
             IoSetCancelRoutine(NextIrp, None);
-            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
             UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
             IoCompleteRequest(NextIrp, IO_NETWORK_INCREMENT);
         }
@@ -349,7 +349,7 @@ unsafe fn packet_socket_send_complete_impl(
 
     IoSetCancelRoutine(NextIrp, None);
 
-    UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+    UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
 
     UnlockRequest(NextIrp, IoGetCurrentIrpStackLocation(NextIrp));
 
@@ -456,7 +456,7 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
                         0
                     };
                     IoSetCancelRoutine(Irp, None);
-                    UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+                    UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
                     UnlockRequest(Irp, IoGetCurrentIrpStackLocation(Irp));
                     IoCompleteRequest(Irp, IO_NETWORK_INCREMENT as i8);
                 }
@@ -468,7 +468,7 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
 
             return STATUS_PENDING;
         } else {
-            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+            UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
             return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
         }
     }
@@ -515,7 +515,7 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
 
     if (*FCB).SharedData.State != SOCKET_STATE_CONNECTED {
         AFD_DbgPrint!(MIN_TRACE, b"Socket not connected\n\0".as_ptr() as PCHAR);
-        UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+        UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_CONNECTION, Irp, 0);
     }
 
@@ -552,7 +552,7 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
             (*FCB).PollState &= !AFD_EVENT_SEND;
 
             if ((*SendReq).AfdFlags & AFD_OVERLAPPED) == 0 {
-                UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+                UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
                 return UnlockAndMaybeComplete(FCB, STATUS_CANT_WAIT, Irp, 0);
             } else {
                 return LeaveIrpUntilLater(FCB, Irp, FUNCTION_SEND);
@@ -590,7 +590,7 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
 
     if TotalBytesCopied == 0 {
         AFD_DbgPrint!(MIN_TRACE, b"Empty send\n\0".as_ptr() as PCHAR);
-        UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, 0u8);
+        UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, (0u8) as _);
         return UnlockAndMaybeComplete(FCB, STATUS_SUCCESS, Irp, TotalBytesCopied);
     }
 

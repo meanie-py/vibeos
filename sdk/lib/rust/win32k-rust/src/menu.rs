@@ -199,12 +199,12 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 
 // ── header-inline / macro helpers (no exported symbol; reimplemented locally) ──
@@ -8741,7 +8741,7 @@ extern "system" {
 }
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn SetLastNtError(Status: NTSTATUS) -> u32;
+    fn SetLastNtError(Status: NTSTATUS);
     fn RECTL_vInflateRect(rect: *mut RECT, dx: core::ffi::c_int, dy: core::ffi::c_int);
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: UINT, hWnd: HWND) -> HWND;
     fn co_UserHideCaret(Wnd: HWND) -> u8;
@@ -8750,7 +8750,7 @@ extern "fastcall" {
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn SetLastNtError(Status: NTSTATUS) -> u32;
+    fn SetLastNtError(Status: NTSTATUS);
     fn RECTL_vInflateRect(rect: *mut RECT, dx: core::ffi::c_int, dy: core::ffi::c_int);
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: UINT, hWnd: HWND) -> HWND;
     fn co_UserHideCaret(Wnd: HWND) -> u8;

@@ -117,13 +117,13 @@ extern "system" {
 extern "fastcall" {
     fn SetLastNtError(Status: NTSTATUS);
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn SetLastNtError(Status: NTSTATUS);
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 
 // UserRefObjectCo / UserDerefObjectCo (object.h static __inline, no symbol).
@@ -2678,7 +2678,7 @@ pub unsafe extern "C" fn NtUserSystemParametersInfo(
 // ABI-corrected extern decls — i386 calling-convention must match the
 // definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
 extern "system" {
-    fn RegWriteUserSetting( pwszKey: PCWSTR, pwszValue: PCWSTR, Type: u32, pData: *const core::ffi::c_void, cbData: u32, );
+    fn RegWriteUserSetting(pwszKeyName: PCWSTR, pwszValueName: PCWSTR, ulType: u32, pvData: *const core::ffi::c_void, cbDataSize: u32,) -> i32;
     fn W32kDosPathNameToNtPathName(pwszPath: PCWSTR, pustrNt: *mut _UNICODE_STRING) -> BOOL;
 }
 #[cfg(target_arch = "x86")]

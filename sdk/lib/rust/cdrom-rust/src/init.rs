@@ -55,7 +55,7 @@ extern "system" {
 extern "C" {
     fn RtlStringCchPrintfW( pszDest: NTSTRSAFE_PWSTR, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
     fn DeviceInitializeZPODD(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION);
+    fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> u32;
     fn MediaReadCapacity(Device: WDFDEVICE) -> NTSTATUS;
     fn IoSetDeviceInterfacePropertyData( symbolic_link_name: *const ntkrnl_sys::ddk::UNICODE_STRING, property_key: *const DEVPROPKEY, lcid: i32, flags: u32, property_type: u32, property_size: u32, property_data: *const core::ffi::c_void, ) -> NTSTATUS;
 }
@@ -66,16 +66,16 @@ extern "system" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
     fn DeviceGetParameter( DeviceExtension: *mut core::ffi::c_void, SubKeyName: *const i8, ValueName: *const i8, Value: *mut u32, ) -> ();
     fn TEST_FLAG(Flags: u32, Flag: u32) -> u32;
-    fn DeviceSetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const u16, ValueName: *const u16, Value: u32, );
+    fn DeviceSetParameter(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const u16, ValueName: *const u16, Value: u32) -> u32;
     fn DevicePickDvdRegion(Device: WDFDEVICE);
     fn IoGetDevicePropertyData( DeviceObject: *mut core::ffi::c_void, PropertyKey: *const DEVPROPKEY, Lcid: u32, Flags: u32, Size: u32, Data: *mut core::ffi::c_void, RequiredSize: *mut u32, Type: *mut u32, ) -> NTSTATUS;
     fn SET_FLAG(flags: *mut u32, flag: u32);
 }
 unsafe extern "C" {
-    fn DeviceGetConfiguration( Device: *mut core::ffi::c_void, Buffer: *mut core::ffi::c_void, Size: u32, Usable: *mut u32, Feature: u32, RequestType: u32, ) -> i32; // NTSTATUS
+    fn DeviceGetConfiguration(Device: *mut core::ffi::c_void, Buffer: *mut core::ffi::c_void, Size: u32, Usable: *mut u32, Feature: u16, RequestType: u32) -> i32; // NTSTATUS
     fn REVERSE_BYTES(dest: *mut u32, src: *const u8);
     fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> i32;
-    fn DeviceUpdateMmcWriteCapability(buffer: *const u8, size: u32, check: i32, is_writer: *mut u8, validation_schema: *mut u32, blocking_factor: *mut u32);
+    fn DeviceUpdateMmcWriteCapability(buffer: *const u8, size: u32, check: u8, is_writer: *mut u8, validation_schema: *mut u32, blocking_factor: *mut u32);
 }
 unsafe extern "C" {
     fn StringsAreMatched(a: *const i8, b: *const i8) -> i32;
@@ -5025,7 +5025,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
             &mut local_header as *mut _ as *mut core::ffi::c_void,
             core::mem::size_of::<GET_CONFIGURATION_HEADER>() as u32,
             &mut usable,
-            FeatureProfileList,
+            (FeatureProfileList) as _,
             SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL,
         );
 
@@ -5173,7 +5173,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
             config_buffer as *mut core::ffi::c_void,
             feature_size as u32,
             &mut usable,
-            FeatureProfileList,
+            (FeatureProfileList) as _,
             SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE,
         );
 

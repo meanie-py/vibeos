@@ -676,7 +676,7 @@ pub unsafe extern "C" fn ClasspGetInquiryVpdSupportInfo(
 
     SrbSetTimeOutValue((srbHeader).cast(), (*FdoExtension).TimeOutValue);
     SrbSetRequestTag((srbHeader).cast(), SP_UNTAGGED);
-    SrbSetRequestAttribute((srbHeader).cast(), SRB_SIMPLE_TAG_REQUEST);
+    SrbSetRequestAttribute((srbHeader).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
     SrbAssignSrbFlags((srbHeader).cast(), (*FdoExtension).SrbFlags);
     SrbSetCdbLength((srbHeader).cast(), 6);
 
@@ -952,7 +952,7 @@ pub unsafe extern "system" fn ClasspStartIo(
         ClassAcquireRemoveLock(DeviceObject, ClasspStartIo as PIRP);
 
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_DISK_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_DISK_INCREMENT) as _);
         IoStartNextPacket(DeviceObject, 1u8);
 
         ClassReleaseRemoveLock(DeviceObject, ClasspStartIo as PIRP);
@@ -1092,7 +1092,7 @@ pub unsafe extern "system" fn ClassDeviceControlDispatch(
         ClassReleaseRemoveLock(DeviceObject, Irp);
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as i8);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as i8) as _);
         return STATUS_DEVICE_DOES_NOT_EXIST;
     }
 
@@ -1162,12 +1162,12 @@ pub unsafe extern "C" fn ClasspBuildRequestEx(
         (*currentIrpStack).Parameters.Read.Length
     );
 
-    SrbSetRequestAttribute((srbHeader).cast(), SRB_SIMPLE_TAG_REQUEST);
+    SrbSetRequestAttribute((srbHeader).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
 
     SrbSetQueueSortKey((srbHeader).cast(), logicalBlockAddress);
 
     SrbSetSenseInfoBuffer(srbHeader as *mut core::ffi::c_void, (*FdoExtension).SenseData as *mut core::ffi::c_void);
-    SrbSetSenseInfoBufferLength((srbHeader).cast(), (GET_FDO_EXTENSON_SENSE_DATA_LENGTH((FdoExtension).cast())) as u32);
+    SrbSetSenseInfoBufferLength((srbHeader).cast(), ((GET_FDO_EXTENSON_SENSE_DATA_LENGTH((FdoExtension).cast())) as u32) as _);
 
     SrbSetTimeOutValue(
         (srbHeader).cast(),

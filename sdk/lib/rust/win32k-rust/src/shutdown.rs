@@ -11,11 +11,11 @@ extern "C" {
 // DestroyTimersForWindow (`@DestroyTimersForWindow@8`) is FASTCALL.
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn DestroyTimersForWindow(pti: PTHREADINFO, Window: PWND);
+    fn DestroyTimersForWindow(pti: PTHREADINFO, Window: PWND) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn DestroyTimersForWindow(pti: PTHREADINFO, Window: PWND);
+    fn DestroyTimersForWindow(pti: PTHREADINFO, Window: PWND) -> BOOL;
 }
 
 // UserHMGetHandle(obj) = ((obj)->head.h); head at object offset 0 (ntuser.h:230).

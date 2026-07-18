@@ -149,8 +149,8 @@ pub unsafe fn midl_user_free(ptr: *mut core::ffi::c_void) {
 // advapi32-internal cdecl helpers in not-yet-flipped C TUs (plain C = cdecl).
 extern "C" {
     // wine/crypt.c (Wave 3)
-    pub fn CRYPT_DEShash(dst: *mut u8, key: *const u8, src: *const u8) -> *mut u8;
-    pub fn CRYPT_DESunhash(dst: *mut u8, key: *const u8, src: *const u8) -> *mut u8;
+    pub fn CRYPT_DEShash(dst: *mut core::ffi::c_uchar, key: *const core::ffi::c_uchar, src: *const core::ffi::c_uchar) -> *mut core::ffi::c_uchar;
+    pub fn CRYPT_DESunhash(dst: *mut core::ffi::c_uchar, key: *const core::ffi::c_uchar, src: *const core::ffi::c_uchar) -> *mut core::ffi::c_uchar;
     // sec/misc.c (Wave 3)
     pub fn UnloadNtMarta();
     // reg/reg.c (Wave 4)

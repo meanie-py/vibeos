@@ -55,10 +55,8 @@ pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEG
 }
 
 // DPRINT_IMPL / DPRINT_UHCI — NDEBUG-disabled DbgPrint wrappers (dbg_uhci.h); cdecl no-op symbols.
-#[no_mangle]
-unsafe extern "C" fn DPRINT_IMPL(_fmt: *const ::core::ffi::c_char) {}
-#[no_mangle]
-unsafe extern "C" fn DPRINT_UHCI(_fmt: *const ::core::ffi::c_char) {}
+// DPRINT_IMPL def relocated to drvtrace-shim (§9.99 fold-proofing)
+// DPRINT_UHCI def relocated to drvtrace-shim (§9.99 fold-proofing)
 
 // ---- uhci-specific shims ----
 pub const MAXUSHORT: ::core::ffi::c_int = 0xFFFF;

@@ -10,6 +10,8 @@
 //! The miniport substrate ehci/ohci/uhci register WITH; owns URB queue, endpoint/transfer
 //! state, PnP FDO/PDO, roothub PDO, USB2 bandwidth scheduler. Exports USBPORT_GetHciMn /
 //! USBPORT_RegisterUSBPortDriver (usbport.spec). NOT boot-loaded in smoke -> link-clean x3 bar.
+// Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
+extern crate drvtrace_shim;
 
 // Coerce an `extern "system"` fn item to a bindgen NTAPI callback slot
 // (`Option<unsafe extern "stdcall" fn ...>` on i386; `Option<unsafe extern "C" fn ...>`

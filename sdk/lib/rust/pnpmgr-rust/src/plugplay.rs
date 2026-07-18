@@ -112,7 +112,7 @@ extern "C" {
     fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS;
     fn PnpRootCreateDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS;
     fn PipAllocateDeviceNode(PhysicalDeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
-    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: ULONG);
+    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: ULONG) -> u32;
     fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
     fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, ParentNode: PDEVICE_NODE);
     fn PiPerformSyncDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG) -> NTSTATUS;

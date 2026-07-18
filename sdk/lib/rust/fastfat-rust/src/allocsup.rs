@@ -57,13 +57,13 @@ extern "system" {
     fn CcUnpinData(Bcb: *mut BCB);
     fn CcUnpinRepinnedBcb(Bcb: *mut BCB, WriteThrough: i32, IoStatus: *mut _IO_STATUS_BLOCK);
     fn FatGetLboFromIndex(Vcb: *mut VCB, Index: u32) -> i64; // LBO = LONGLONG (fat.h:34); was u32
-    fn FatPrefetchPages( IrpContext: *mut IRP_CONTEXT, VirtualVolumeFile: *mut FILE_OBJECT, Page: u32, PrefetchPages: u32, );
+    fn FatPrefetchPages(IrpContext: *mut IRP_CONTEXT, VirtualVolumeFile: *mut FILE_OBJECT, Page: u32, PrefetchPages: u32) -> u32;
     fn FatLookupMcbEntry( Vcb: PVCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: PLBO, ByteCount: *mut u32, Index: *mut u32, ) -> BOOLEAN;
     fn FatLookupLastMcbEntry( Vcb: PVCB, Mcb: *mut LARGE_MCB, CurrentVbo: *mut u32, CurrentLbo: *mut i64, Runs: *mut u32, ) -> BOOLEAN;
     fn FatGetIndexFromLbo(Vcb: PVCB, Lbo: i64) -> u32;
     fn UInt32x32To64(a: u32, b: u32) -> u64;
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
-    fn FatGetNextMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, McbIndex: u32, Vbo: *mut u64, Lbo: *mut u64, ByteCount: *mut u32);
+    fn FatGetNextMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, McbIndex: u32, Vbo: *mut u64, Lbo: *mut u64, ByteCount: *mut u32) -> u8;
     fn FatBuildZeroMdl(IrpContext: *mut IRP_CONTEXT, ByteCount: u32) -> *mut MDL;
     fn KeClearEvent(Event: *mut KEVENT);
     fn RtlCheckBit(BitMap: *const RTL_BITMAP, Bit: u32) -> u8;
@@ -79,15 +79,9 @@ extern "system" {
     fn FatNumberOfClusters(Bpb: *const core::ffi::c_void) -> u32;
     fn FatIndexBitSize(Bpb: *const core::ffi::c_void) -> u32;
     fn FatBytesPerCluster(Bpb: *const core::ffi::c_void) -> u32;
-    fn FatInitializeCacheMap( FileObject: PFILE_OBJECT, FileSizes: *const CC_FILE_SIZES, Flag: i32, Callbacks: *const core::ffi::c_void, Vcb: *mut VCB );
-    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, dirty: i32);
-fn FatGetDirentFromFcbOrDcb(
-    irpctx: *mut IRP_CONTEXT,
-    fcb: *mut FCB,
-    arg2: u8,
-    dirent: *mut *mut DIRENT,
-    direntBcb: *mut *mut BCB,
-);
+    fn FatInitializeCacheMap(FileObject: PFILE_OBJECT, FileSizes: *const CC_FILE_SIZES, Flag: u8, Callbacks: *const core::ffi::c_void, Vcb: *mut VCB);
+    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, dirty: u8);
+fn FatGetDirentFromFcbOrDcb(irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u32, dirent: *mut *mut DIRENT, direntBcb: *mut *mut BCB);
     fn CcIsFileCached(FileObject: *mut FILE_OBJECT) -> u8;
     fn CcSetFileSizes(FileObject: *mut FILE_OBJECT, Sizes: *mut CC_FILE_SIZES);
 }
@@ -932,12 +926,12 @@ pub unsafe extern "system" fn FatAddFileAllocation(
             FatGetDirentFromFcbOrDcb(
                 IrpContext,
                 FcbOrDcb,
-                0u8,
+                (0u8) as _,
                 &mut dirent,
                 &mut bcb,
             );
 
-            FatSetDirtyBcb(IrpContext, bcb, vcb, (1u8) as i32);
+            FatSetDirtyBcb(IrpContext, bcb, vcb, ((1u8) as i32) as _);
 
             let mut desired = DesiredAllocationSize;
             FatAllocateDiskSpace(
@@ -1184,7 +1178,7 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
             FatGetDirentFromFcbOrDcb(
                 IrpContext,
                 FcbOrDcb,
-                0u8,
+                (0u8) as _,
                 &mut Dirent as *mut PDIRENT,
                 (&mut Bcb as *mut PBCB).cast::<*mut BCB>(),
             );

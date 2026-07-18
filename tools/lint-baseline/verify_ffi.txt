@@ -30,19 +30,19 @@
   [C_MACRO] sdk/lib/rust/ex-rust/src/timer.rs:85: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/cachesup.rs:37: KeAcquireSpinLock: KeAcquireSpinLock is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/cachesup.rs:38: KeReleaseSpinLock: KeReleaseSpinLock is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/cachesup.rs:50: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:116: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:146: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/fastfat-rust/src/cachesup.rs:69: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:117: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:165: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/devctrl.rs:28: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/dirctrl.rs:42: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/fastfat-rust/src/dirctrl.rs:75: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/fileinfo.rs:177: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/flush.rs:54: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/flush.rs:55: IoCopyCurrentIrpStackLocationToNext: IoCopyCurrentIrpStackLocationToNext is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/flush.rs:56: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/strucsup.rs:106: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/strucsup.rs:107: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/verfysup.rs:54: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/verfysup.rs:63: IoGetNextIrpStackLocation: IoGetNextIrpStackLocation is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/fastfat-rust/src/verfysup.rs:68: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/fastfat-rust/src/verfysup.rs:69: IoGetNextIrpStackLocation: IoGetNextIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fsrtl-rust/src/filelock.rs:46: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fsrtl-rust/src/stackovf.rs:20: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fsrtl-rust/src/tunnel.rs:45: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust

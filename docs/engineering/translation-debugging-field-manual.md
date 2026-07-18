@@ -8485,8 +8485,17 @@ is safe. Variants of "same module, different CC" we shipped:
    mutually invisible, so the pattern is fold-proof. Do NOT move such shims
    back in-crate, do NOT enable LTO over them.
 
-**Detection (the gap that let all this land):** `scan_ud2` only scans
-ntoskrnl.exe. Driver sweep one-liner until it's extended:
+**Detection (gap CLOSED 2026-07-18):** `scan_ud2` now sweeps every
+Rust-containing `.sys`/`.dll`/`.exe` in the build dir (llvm-nm
+`rust_begin_unwind` filter → parallel objdump; unmangled named fns only;
+noreturn-tail heuristic; `KNOWN_DRIVER_UD2` baseline — a NEW finding fails
+`--check`, which the lint gate runs). Two scanner gotchas baked in: (a)
+high-image-base DLLs (winsrv.dll at 0x788xxxxx) print instruction addresses at
+column 0 — an address regex anchored `^\s+` silently skips the whole binary;
+(b) fastcall-decorated mangled names (`@_ZN...@16`) dodge `_ZN`-prefix mangling
+checks — strip `_` AND `@` before testing. Source-level twin:
+`tools/scan_ir_mismatch.py` (§9.103) catches the whole class pre-fold with
+exact symbol names. Historical one-liner:
 `llvm-objdump -d <sys> | awk '/^[0-9a-f]+ </{fn=$2} /\tud2/{print fn}'` filtered
 for named non-intrinsic fns (skip `__ZN`/compiler_builtins/`___*`/panic/D0Ev
 deleting-dtors); ud2 directly after a call to a NORETURN fn (FatBugCheck, panic)
@@ -8595,3 +8604,95 @@ link `delayimp` unconditionally — static-lib pull-in makes it free); a raw
 flow needs only `ENABLE_ROSTESTS_KMTESTS=ON` — full `ENABLE_ROSTESTS=ON` drags
 the entire never-ported apitest/winetest estate into the livecd graph (the
 conformance verb's error message now says so).
+
+### 9.102 (TOOLED 2026-07-18) scan_ir_mismatch.py — the §9.99 class caught pre-fold, and the refined fold-truth model
+
+**The tool:** `tools/scan_ir_mismatch.py <deps>/*.ll [--check|--all]`. Emit dev
+IR (`RUSTFLAGS="--emit=llvm-ir" cargo build --workspace --target <triple>`, or
+`cargo rustc -p <crate> --target <triple> -- --emit=llvm-ir`), then scan. In
+UNOPTIMIZED IR both sides of every same-module disagreement are still visible
+(nothing has folded yet), so it names the exact symbol + call-site line —
+no binary autopsy needed. The 2026-07-18 sweep found **346 findings across 44
+crates** (i386), incl. the root causes of every named driver ud2 of §9.99.
+
+**Refined fold-truth model** (what actually folds, verified against LLVM
+instcombine semantics + the campaign's binaries):
+- **CC mismatch: folds on BOTH defs and DECLARATIONS.** LLVM trusts a
+  declare's CC; a call with a different CC is UB even though the def is
+  external. (fastfat had `ExReleaseResourceLite` fastcall-decl + 13 stdcall
+  calls, `IoGetCurrentIrpStackLocation` ccc-decl + 18 stdcall calls — all live
+  folds.)
+- **SIG mismatch (arity/int-width/ret void-vs-value): folds ONLY against an
+  in-module DEFINE.** Against a mere declare LLVM cannot prove the true
+  signature, so decl-vs-decl SIG drift does not fold. It is even a deliberate
+  sanctioned pattern: ke-macros' per-shape `#[link_name = "DbgPrint"]` fixed
+  aliases of a variadic external. The tool therefore reports def-authority SIG
+  only (pass `--all` for hygiene sweeps).
+- **VAR (variadic calls vs fixed-arity in-module def): folds.** The
+  TracePrint class; fix by relocating the def to a shim crate (drvtrace-shim,
+  winetrace-shim) — `lto=false` makes cross-crate modules mutually invisible.
+
+**Fix recipe that survived contact (Batch A → A2 lesson):** aligning decls by
+transplanting the def's SOURCE signature text dies wholesale on import-scope
+drift (the def's type names don't resolve in the decl's module — the same
+force that spawned the drift). The robust move is aligning to the def's
+**IR shape** using only always-resolving tokens: swap mismatched int widths to
+bare primitives (`u8`/`u16`/`u32`), int↔ptr to `*mut core::ffi::c_void`, fix
+arity/ret — never move named types between modules. Then a compiler-driven
+repair loop (`cargo check --workspace --message-format=json`; E0308 both-int
+(any width — the decl is def-truth, narrowing is correct-by-construction) or
+both-raw-ptr → `(expr) as _`; anything else → revert that file) and a
+crate-level revert pass to converge. TWO hard-won splice rules: (1) rustc span
+offsets are BYTES — splice `bytes`, never a decoded str (one `§`/`—` in a
+comment above the site shifts every char offset and the splice lands
+mid-identifier; this silently corrupted 3 classpnp files before the guard
+existed); (2) verify the span's own reported text against the file bytes at
+(byte_start, byte_end) before splicing — never splice blind. Scripts: scratchpad `ced_batchA2*.py`
+(session 57d7315b).
+
+**KNOWN_CGU_UD2 suspicion (owed):** the ntoskrnl-rust sweep found def-authority
+mismatches on `MmDeleteVirtualMapping` (CC), `MmDeletePageFileMapping`,
+`MmGetPageFileMapping`, `MmInsertRmap` (ret drift) — all callees of
+`MmPageOutPhysicalAddress`, whose whole-body ud2 has been parked in
+scan_ud2's KNOWN_CGU_UD2 as a "rustc CGU partitioning bug" since the i386
+bring-up. That lore is now suspect: several "CGU bug" entries are plausibly
+§9.99 folds fed by these mismatches. ntoskrnl-rust/hal-rust fixes are owed as
+a reviewed-individually batch (hot-crate fence).
+
+### 9.103 (FIXED 2026-07-18) The OTHER ud2 class — provable-null-deref folds: DUMMY_PSEH eager filter evaluation + unguarded C null-blindness
+
+**Symptom:** a named-fn `ud2` that SURVIVES every §9.99/§9.102 CC/signature fix
+— IR sweep clean, decls unified, and the trap is still there after rebuild.
+
+**Mechanism:** not a mismatch at all. In release builds, same-crate callees
+inline; when LLVM can PROVE a pointer is null on some path and that path
+dereferences it, the whole path folds to `unreachable` → ud2. Two shapes we
+shipped (both found closing out the 2026-07-18 driver sweep):
+
+1. **DUMMY_PSEH eager filter evaluation** (cdfs `CdPerformVerify`, BOTH its
+   ud2s): the grind translated `_SEH2_EXCEPT(CdExceptionFilter(IrpContext,
+   _SEH2_GetExceptionInformation()))` as a normal call — but C evaluates a
+   filter expression only while an exception is live. Here
+   `_SEH2_GetExceptionInformation()` is the DUMMY_PSEH stub returning NULL and
+   `CdExceptionFilter` derefs `(*ExceptionPointer).ExceptionRecord`
+   unconditionally → provable null-deref at a point EVERY try-body path flows
+   into → every path's tail folds (two predecessors = two ud2s from ONE source
+   line). Fix: never evaluate the filter eagerly — `_SEH2_EXCEPT(0);` + keep
+   the filter call inside `if false {}` so the symbols stay referenced.
+   Grep for the pattern: `_SEH2_EXCEPT(\w+ExceptionFilter` — each hit is the
+   same bomb if the filter derefs its exception-pointer arg.
+2. **Unguarded C null-blindness** (win32k `UserRedrawDesktop` ×2,
+   `NtGdiGetRealizationInfo`): translated C that derefs a callee result the
+   inlined callee provably returns null for on its error path
+   (`UserGetDesktopWindow()` pre-desktop, `RealizeFontInit()` on failure).
+   The C original had the same latent bug; C just crashed if it ever hit.
+   LLVM instead deletes the error branch and plants ud2. Note the deref can be
+   SCHEDULED AWAY from its source line (`(*pTextObj).Font` sank below the
+   UnlockText call), so the binary autopsy's "poisoned callee" heuristic
+   (§9.99) points one call EARLIER than the actual bug. Fix: null-guard like
+   the kernel code it is.
+
+**Triage order for any named-fn ud2:** (1) scan_ir_mismatch on the crate — CC/
+sig/VAR class (§9.99/§9.102); (2) if IR-clean, read the fold neighborhood for
+a provably-null deref: eager SEH filters, unguarded lock/lookup results, and
+remember sunk loads mask the true site (this section).

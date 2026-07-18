@@ -169,7 +169,7 @@ unsafe fn SepDumpSidsOfToken(sids: PSID_AND_ATTRIBUTES, sid_count: ULONG) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepDumpSdDebugInfo(security_descriptor: PISECURITY_DESCRIPTOR) {
+pub unsafe extern "C" fn SepDumpSdDebugInfo(security_descriptor: PISECURITY_DESCRIPTOR) {
     if security_descriptor.is_null() {
         return;
     }
@@ -212,7 +212,7 @@ pub unsafe extern "system" fn SepDumpSdDebugInfo(security_descriptor: PISECURITY
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepDumpTokenDebugInfo(token: PTOKEN) {
+pub unsafe extern "C" fn SepDumpTokenDebugInfo(token: PTOKEN) {
     let token = opaque_ptr(token);
     if token.is_null() {
         return;
@@ -248,7 +248,7 @@ pub unsafe extern "system" fn SepDumpTokenDebugInfo(token: PTOKEN) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepDumpAccessRightsStats(access_rights: PACCESS_CHECK_RIGHTS) {
+pub unsafe extern "C" fn SepDumpAccessRightsStats(access_rights: PACCESS_CHECK_RIGHTS) {
     if (*access_rights).RemainingAccessRights == 0 {
         return;
     }
@@ -263,7 +263,7 @@ pub unsafe extern "system" fn SepDumpAccessRightsStats(access_rights: PACCESS_CH
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepDumpAccessAndStatusList(
+pub unsafe extern "C" fn SepDumpAccessAndStatusList(
     granted_access_list: PACCESS_MASK,
     access_status_list: PNTSTATUS,
     is_result_list: BOOLEAN,

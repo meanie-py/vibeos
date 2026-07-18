@@ -5,6 +5,8 @@
 #![allow(clippy::all)]
 
 //! serial.sys — faithful C→Rust cohab (rustconv opus + c2rust anchor).
+// Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
+extern crate drvtrace_shim;
 
 pub mod types;
 pub mod glue;
@@ -33,8 +35,7 @@ pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
 // self-contained.  cdecl caller-cleans-up: a 2-arg body is safe even when
 // callers supply extra variadic args — the caller pops them off the stack.
 // ---------------------------------------------------------------------------
-#[no_mangle]
-pub unsafe extern "C" fn TRACE_(_component: u32, _fmt: *const core::ffi::c_char) {}
+// TRACE_ def relocated to drvtrace-shim (§9.99 fold-proofing)
 #[no_mangle]
 pub unsafe extern "C" fn WARN_(_component: u32, _fmt: *const core::ffi::c_char) {}
 #[no_mangle]

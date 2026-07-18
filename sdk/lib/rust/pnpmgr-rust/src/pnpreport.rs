@@ -36,7 +36,7 @@ extern "C" {
     fn PnpRootCreateDevice(ServiceName: *mut _UNICODE_STRING, Pdo: *mut PDEVICE_OBJECT, InstancePath: *mut _UNICODE_STRING) -> NTSTATUS;
     fn PipAllocateDeviceNode(Pdo: PDEVICE_OBJECT) -> PDEVICE_NODE;
     fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, Parent: PDEVICE_NODE);
-    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: u32);
+    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: u32) -> u32;
     fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
     fn PiQueueDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: u32, Request: PVOID, Callback: PVOID);
     fn ExInitializeWorkItem(WorkItem: PWORK_QUEUE_ITEM, Routine: unsafe extern "system" fn(PVOID), Context: PVOID);

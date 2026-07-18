@@ -10,7 +10,7 @@ use crate::KDDBGPRINT;
 extern "system" {
     fn KdpPollByte(byte: *mut UCHAR) -> KDSTATUS;
     fn KdpReceiveByte(byte: *mut UCHAR) -> KDSTATUS;
-    fn KdpSendByte(byte: UCHAR) -> KDSTATUS;
+    fn KdpSendByte(Byte: UCHAR);
 }
 
 // ---- file-scope preamble (translated) ----

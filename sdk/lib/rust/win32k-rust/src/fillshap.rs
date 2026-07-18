@@ -22,11 +22,11 @@ extern "system" {
 // SetLastNtError: VOID FASTCALL (misc.h). PEN_ShareLockPen: FASTCALL (pen.h).
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn SetLastNtError(status: NTSTATUS);
+    fn SetLastNtError(Status: NTSTATUS);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn SetLastNtError(status: NTSTATUS);
+    fn SetLastNtError(Status: NTSTATUS);
     fn PEN_ShareLockPen(hpen: HPEN) -> PBRUSH;
 }
 

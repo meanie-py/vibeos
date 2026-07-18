@@ -12,7 +12,7 @@ extern "system" {
     fn SmSessionComplete(ApiPort: HANDLE, SessionId: ULONG, ExitStatus: NTSTATUS) -> NTSTATUS;
     // CsrAcquire/Release{NtSession,Process}Lock are api.h macros —
     // provided by srv_inlines (above), not extern symbols.
-    fn ProtectHandle(Handle: HANDLE);
+    fn ProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN;
 }
 
 #[no_mangle]

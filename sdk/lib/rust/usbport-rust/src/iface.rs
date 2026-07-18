@@ -18,9 +18,9 @@ extern "system" {
     fn USBPORT_DumpingDeviceDescriptor(Descriptor: PUSB_DEVICE_DESCRIPTOR);
     fn USBPORT_RemoveDevice( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, Flags: ULONG, ) -> NTSTATUS;
     fn USBPORT_RestoreDevice( FdoDevice: PDEVICE_OBJECT, OldUsbdDeviceHandle: PUSBPORT_DEVICE_HANDLE, NewUsbdDeviceHandle: PUSBPORT_DEVICE_HANDLE, ) -> NTSTATUS;
-    fn USBPORT_SetRegistryKeyValue( DeviceObject: PDEVICE_OBJECT, UseDriverKey: BOOLEAN, Type: ULONG, ValueName: PCWSTR, Data: PVOID, DataSize: ULONG, ) -> NTSTATUS;
+    fn USBPORT_SetRegistryKeyValue(DeviceObject: PDEVICE_OBJECT, UseDriverKey: u32, Type: ULONG, ValueName: PCWSTR, Data: PVOID, DataSize: ULONG) -> NTSTATUS;
     fn USBPORT_FindUSB2Controller(FdoDevice: PDEVICE_OBJECT) -> PDEVICE_OBJECT;
-    fn USBPORT_GetRegistryKeyValueFullInfo( FdoDevice: PDEVICE_OBJECT, LowerPdoDevice: PDEVICE_OBJECT, UseDefault: BOOLEAN, KeyNameString: PCWSTR, KeyNameStringLength: ULONG, Data: PVOID, DataLength: ULONG, ) -> NTSTATUS;
+    fn USBPORT_GetRegistryKeyValueFullInfo(FdoDevice: PDEVICE_OBJECT, LowerPdoDevice: PDEVICE_OBJECT, UseDefault: u32, KeyNameString: PCWSTR, KeyNameStringLength: ULONG, Data: PVOID, DataLength: ULONG) -> NTSTATUS;
     fn USBPORT_GetSymbolicName( PdoDevice: PDEVICE_OBJECT, HubName: PUNICODE_STRING, ) -> NTSTATUS;
     fn USBPORT_Initialize20Hub( FdoDevice: PDEVICE_OBJECT, UsbdHubDeviceHandle: PUSBPORT_DEVICE_HANDLE, TtCount: ULONG, ) -> NTSTATUS;
     fn IsEqualGUIDAligned(Guid1: *const GUID, Guid2: *const GUID) -> BOOLEAN;

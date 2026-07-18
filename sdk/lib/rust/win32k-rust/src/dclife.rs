@@ -72,7 +72,7 @@ const TAG_DC: u32 = 0x31616c47;
 #[inline(always)] unsafe fn RTL_CONSTANT_STRING(s: *const u16) -> _UNICODE_STRING { let mut n = 0usize; while core::ptr::read_unaligned(s.add(n)) != 0 { n += 1; } _UNICODE_STRING { Length: (n * 2) as USHORT, MaximumLength: ((n + 1) * 2) as USHORT, Buffer: s as *mut u16 } }
 #[cfg(target_arch = "x86")] extern "fastcall" { fn CLIPPING_UpdateGCRegion(pdc: PDC); }
 #[cfg(not(target_arch = "x86"))] extern "C" { fn CLIPPING_UpdateGCRegion(pdc: PDC); }
-extern "system" { fn MouseSafetyOnDrawEnd(ppdev: *mut core::ffi::c_void); }
+extern "system" { fn MouseSafetyOnDrawEnd(ppdev: *mut core::ffi::c_void) -> u32; }
 #[inline(always)] fn RGB(r: u32, g: u32, b: u32) -> COLORREF { (r & 0xff) | ((g & 0xff) << 8) | ((b & 0xff) << 16) }
 #[cfg(target_arch = "x86")] extern "fastcall" { fn UpdateVisRgn(pdc: PDC); }
 #[cfg(not(target_arch = "x86"))] extern "C" { fn UpdateVisRgn(pdc: PDC); }
@@ -109,7 +109,7 @@ extern "system" { fn MouseSafetyOnDrawEnd(ppdev: *mut core::ffi::c_void); }
 // stdcall definition → crate-wide CC collision folds callers to ud2. (feedback_dup_abi_name_collision)
 extern "system" {
     fn EBRUSHOBJ_vCleanup(pebo: *mut EBRUSHOBJ);
-    fn MouseSafetyOnDrawStart( ppdev: *mut core::ffi::c_void, left: i32, top: i32, right: i32, bottom: i32);
+    fn MouseSafetyOnDrawStart(ppdev: *mut core::ffi::c_void, left: i32, top: i32, right: i32, bottom: i32) -> u32;
 }
 // drop_gdiobj_macro_externs: dropped 2 bogus extern decl(s) for GDI-object macro(s): LFONT_ShareUnlockFont, SURFACE_ShareUnlockSurface — these are macros in gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. Inline-expand via GDIOBJ_* primitives per win32k_translation_prompt.md §6.
 // ABI: EBRUSHOBJ_vInitFromDC=stdcall, EngpGetPDEV=NTAPI(system) — both ≡ system on i386.

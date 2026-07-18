@@ -18,13 +18,13 @@ macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 extern "fastcall" {
     fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
     fn ValidateHwndNoErr(hwnd: HWND) -> PWND;
-    fn SetLastNtError(status: NTSTATUS);
+    fn SetLastNtError(Status: NTSTATUS);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
     fn ValidateHwndNoErr(hwnd: HWND) -> PWND;
-    fn SetLastNtError(status: NTSTATUS);
+    fn SetLastNtError(Status: NTSTATUS);
 }
 
 // SafeProbeForRead/Write: NTAPI (extern "system" = stdcall i386 / cdecl else).

@@ -15,7 +15,7 @@ extern "system" {
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatUnlockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Something: *mut core::ffi::c_void) -> i32;
     fn FatFlushAndCleanVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Vcb: *mut VCB, Flags: i32);
-    fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg: BOOLEAN) -> BOOLEAN;
+    fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Force: BOOLEAN,) -> BOOLEAN;
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: i32);
@@ -30,7 +30,7 @@ extern "system" {
     fn FsRtlEnterFileSystem();
     fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
     fn CanFsdWait(Irp: PIRP) -> i32;
-    fn FatCreateIrpContext(Irp: PIRP, Wait: i32) -> PIRP_CONTEXT;
+    fn FatCreateIrpContext(irp: *mut IRP, wait: i32,) -> *mut IRP_CONTEXT;
 }
 
 // ---- file-scope preamble (translated) ----

@@ -18,7 +18,7 @@ extern "C" {
     fn PAGED_CODE();
 }
 extern "C" {
-    fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Exclusive: BOOLEAN);
+    fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Exclusive: BOOLEAN) -> u8;
 }
 extern "C" {
     fn CdVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
@@ -57,7 +57,7 @@ extern "C" {
     fn CdInitializeFileContext(IrpContext: PIRP_CONTEXT, FileContext: PFILE_ENUM_CONTEXT);
 }
 extern "C" {
-    fn CdUpdateDirentName(IrpContext: PIRP_CONTEXT, Dirent: *mut DIRENT, IgnoreCase: BOOLEAN);
+    fn CdUpdateDirentName(IrpContext: PIRP_CONTEXT, Dirent: *mut DIRENT, IgnoreCase: u32);
 }
 extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -90,13 +90,13 @@ extern "C" {
     fn RtlEqualMemory( Buffer1: *const core::ffi::c_void, Buffer2: *const core::ffi::c_void, Length: usize, ) -> i32;
 }
 extern "C" {
-    fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, UserBuffer: *mut *mut u8) -> NTSTATUS;
+    fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, UserBuffer: *mut *mut u8);
 }
 extern "C" {
     fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+    fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u32;
 }
 extern "C" {
     fn CdConvertCdTimeToNtTime(IrpContext: *mut IRP_CONTEXT, CdTime: *mut i8, NtTime: *mut LARGE_INTEGER);
@@ -827,7 +827,7 @@ pub unsafe extern "C" fn CdInitializeEnumeration(
         CdUpdateDirentName(
             IrpContext,
             core::ptr::addr_of_mut!((*(*FileContext).InitialDirent).Dirent),
-            (((*Ccb).Flags & CCB_FLAG_IGNORE_CASE) != 0) as BOOLEAN,
+            ((((*Ccb).Flags & CCB_FLAG_IGNORE_CASE) != 0) as BOOLEAN) as _,
         );
     }
 
@@ -872,7 +872,7 @@ pub unsafe extern "C" fn CdEnumerateIndex(
             CdUpdateDirentName(
                 IrpContext,
                 ThisDirent,
-                FlagOn((*Ccb).Flags, CCB_FLAG_IGNORE_CASE) as BOOLEAN,
+                (FlagOn((*Ccb).Flags, CCB_FLAG_IGNORE_CASE) as BOOLEAN) as _,
             );
         } else {
             return_next = 1;

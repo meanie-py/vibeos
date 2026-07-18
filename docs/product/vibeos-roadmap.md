@@ -45,13 +45,13 @@ Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 fro
 
 | Batch | Top targets (native LOC) |
 |---|---|
-| **Winsock / net client** | ws2_32 (14K) ✅, **wshtcpip ✅** (2026-07-17, first satellite — recipe in its commit); dhcpcsvc (6.4K); dnsapi (3.2K, +adns/RPC), mswsock, ws2help (dual-role static lib) — all **translated & banked** (`tools/rustconv/.responses/`), integration owed |
+| **Winsock / net client** | ws2_32 (14K) ✅, wshtcpip ✅, ws2help ✅, mswsock ✅, wshirda ✅ — all **cohab-flipped to Rust** (2026-07-17/18, recipe in the wshtcpip commit); netapi32 ✅ *partial* (14/21 TUs flipped; 7 RPC-stub files owe a pure-LLM pass), iphlpapi ✅ *partial* (`iphlpapi_main.c` flipped; the ~10 `*_reactos.c` stay C). **Still C (owe translation — NOT banked):** dhcpcsvc (6.4K), dnsapi (3.2K, +adns/RPC — only superseded fragments in `.responses/`) |
 | **Setup / PnP / device** | devmgr (10K), netcfgx (9K), syssetup (9K), umpnpmgr (7K), newdev, msports |
 | **Control panels (`dll/cpl`)** | desk (11.5K), sysdm (7.9K), intl (5.2K), mmsys (3.8K), timedate, access, main, usrmgr, powercfg, input — ~15 CPLs, uniform shape, very batchable |
 | **Services (`base/services`)** | eventlog (3.5K), netshell (4.5K), svchost, wkssvc, dnsrslvr, audiosrv, wlansvc |
 | **Security / auth** | msv1_0 (3.3K), samlib (2.4K), ntmarta (1.8K), aclui (5.7K), authz — completes the LSA/SAM chain already in flight |
 | **Shell exts / apps / audio** | zipfldr, shimgvw, fontext, ntobjshex, stobject; console (3K), diskpart (9.3K); wdmaud.drv, mmdrv, the `*.acm` codecs |
-| **misc system DLLs** | userenv (6.5K), psapi (1.7K), framedyn, hhctrl.ocx (5.2K), fmifs |
+| **misc system DLLs** | userenv (6.5K) ✅ (cohab-flipped 2026-07-18), psapi (1.7K), framedyn, hhctrl.ocx (5.2K), fmifs |
 
 **Wine-derived userland — ~154 DLLs, ~1.05M LOC (lower priority than Tier 2).** kernelbase (41K, `kernelbase/wine/`), comctl32, comdlg32, ole32, oleaut32, gdiplus, riched20, urlmon, wininet, mshtml, jscript/vbscript, msxml*, windowscodecs, crypt32, wldap32, rpcrt4, the whole `dll/directx/wine/` stack. Re-implementing these from *current* Wine via an LLM pipeline (§7b) beats translating the frozen fork — that's why they sit below the native queue.
 

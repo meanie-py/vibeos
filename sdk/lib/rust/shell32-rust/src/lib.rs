@@ -47,6 +47,7 @@ pub mod types;
 pub mod shellcom;
 pub mod active_desktop;
 pub mod admin_tools_folder;
+pub mod cfs_folder;
 pub mod control_panel_folder;
 pub mod copy_as_path_menu;
 pub mod drives_folder;

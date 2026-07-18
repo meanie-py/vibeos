@@ -48,7 +48,7 @@ extern "C" {
     fn IsDescriptorSenseDataFormat(buf: PVOID) -> BOOLEAN;
     fn ScsiGetSenseDescriptor(buf: PVOID, buf_len: UCHAR, desc_buf: *mut PVOID, desc_len: *mut UCHAR) -> BOOLEAN;
     fn ScsiGetNextSenseDescriptorByType(start: PVOID, start_len: UCHAR, types: *mut UCHAR, type_count: ULONG, out_type: *mut UCHAR, out_buf: *mut PVOID, out_len: *mut UCHAR) -> BOOLEAN;
-    fn ScsiValidateInformationSenseDescriptor(buf: PVOID, buf_len: UCHAR) -> BOOLEAN;
+    fn ScsiValidateInformationSenseDescriptor(buf: PVOID, buf_len: u32) -> BOOLEAN;
 }
 
 // Inline helpers replacing C FORCEINLINE/macro functions.
@@ -98,7 +98,7 @@ unsafe fn free_port_allocated_sense_buffer_ex(fdo_extension: PFUNCTIONAL_DEVICE_
     } else {
         18u32 // SENSE_BUFFER_SIZE
     };
-    SrbSetSenseInfoBufferLength(srb, sense_len);
+    SrbSetSenseInfoBufferLength(srb, (sense_len) as _);
     SrbClearSrbFlags(srb, SRB_FLAGS_FREE_SENSE_BUFFER);
 }
 
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
         debug_assert!(!senseInfoBuffer.is_null());
         validSense = ScsiGetSenseKeyAndCodes(
             senseInfoBuffer,
-            senseInfoBufferLength,
+            (senseInfoBufferLength) as _,
             SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED,
             &mut senseKey,
             &mut additionalSenseCode,
@@ -356,7 +356,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                                     if outType as i32 == (SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION) as i32 {
                                         if ScsiValidateInformationSenseDescriptor(
                                             outBuffer,
-                                            outBufferLength,
+                                            (outBufferLength) as _,
                                         ) != 0
                                         {
                                             reverse_bytes_quad(
@@ -546,7 +546,7 @@ pub unsafe extern "system" fn TransferPacketRetryTimerDpc(
         );
         SrbSetSenseInfoBufferLength(
             (*pkt).Srb as PVOID,
-            (core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32,
+            ((core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32) as _,
         );
     } else {
         NT_ASSERT(
@@ -690,8 +690,8 @@ extern "system" {
     fn SrbSetDataBuffer(srb: PVOID, buf: PVOID);
     fn SrbSetDataTransferLength(srb: PVOID, len: ULONG);
     fn SrbSetSenseInfoBuffer(srb: PVOID, buf: PVOID);
-    fn SrbSetSenseInfoBufferLength(srb: PVOID, len: u32);
-    fn ScsiGetSenseKeyAndCodes(buf: PVOID, buf_len: UCHAR, opts: u32, key: *mut UCHAR, asc: *mut UCHAR, ascq: *mut UCHAR) -> BOOLEAN;
+    fn SrbSetSenseInfoBufferLength(srb: PVOID, len: u8);
+    fn ScsiGetSenseKeyAndCodes(buf: PVOID, buf_len: u32, opts: u32, key: *mut UCHAR, asc: *mut UCHAR, ascq: *mut UCHAR) -> BOOLEAN;
 }
 
 

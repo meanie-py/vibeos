@@ -342,18 +342,18 @@ extern "system" {
 extern "C" {
     fn PipAllocateDeviceNode(PhysicalDeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
     fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, ParentNode: PDEVICE_NODE);
-    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: _PNP_DEVNODE_STATE);
+    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: u32) -> u32;
     fn PiSetDevNodeProblem(DeviceNode: PDEVICE_NODE, Problem: ULONG);
 }
 // pnpirp.rs functions — these are also cdecl (no NTAPI in C)
 extern "C" {
-    fn PiIrpStartDevice(DeviceNode: PDEVICE_NODE);
-    fn PiIrpStopDevice(DeviceNode: PDEVICE_NODE);
-    fn PiIrpQueryStopDevice(DeviceNode: PDEVICE_NODE);
-    fn PiIrpCancelStopDevice(DeviceNode: PDEVICE_NODE);
+    fn PiIrpStartDevice(DeviceNode: PDEVICE_NODE) -> u32;
+    fn PiIrpStopDevice(DeviceNode: PDEVICE_NODE) -> u32;
+    fn PiIrpQueryStopDevice(DeviceNode: PDEVICE_NODE) -> u32;
+    fn PiIrpCancelStopDevice(DeviceNode: PDEVICE_NODE) -> u32;
     fn PiIrpQueryDeviceRelations(DeviceNode: PDEVICE_NODE, Type: _DEVICE_RELATION_TYPE) -> NTSTATUS;
-    fn PiIrpQueryResources(DeviceNode: PDEVICE_NODE, BootResources: *mut PCM_RESOURCE_LIST);
-    fn PiIrpQueryResourceRequirements(DeviceNode: PDEVICE_NODE, ResourceReqs: *mut PIO_RESOURCE_REQUIREMENTS_LIST);
+    fn PiIrpQueryResources(DeviceNode: PDEVICE_NODE, BootResources: *mut PCM_RESOURCE_LIST) -> u32;
+    fn PiIrpQueryResourceRequirements(DeviceNode: PDEVICE_NODE, ResourceReqs: *mut PIO_RESOURCE_REQUIREMENTS_LIST) -> u32;
     fn PiIrpQueryDeviceText(DeviceNode: PDEVICE_NODE, LocaleId: LCID, TextType: _DEVICE_TEXT_TYPE, Text: *mut PWSTR) -> NTSTATUS;
     fn PiIrpQueryPnPDeviceState(DeviceNode: PDEVICE_NODE, PnPFlags: *mut PNP_DEVICE_STATE) -> NTSTATUS;
 }

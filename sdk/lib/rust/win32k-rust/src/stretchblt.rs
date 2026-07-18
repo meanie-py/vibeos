@@ -56,7 +56,7 @@ extern "C" {
 extern "system" {
     fn EBRUSHOBJ_psoPattern(pebo: *mut EBRUSHOBJ) -> *mut SURFOBJ;
     fn CLIPOBJ_bEnum(ClipRegion: *mut CLIPOBJ, size: u32, RectEnum: *mut core::ffi::c_void) -> u8;
-    fn CLIPOBJ_cEnumStart(ClipRegion: *mut CLIPOBJ, bAll: u8, iType: u32, iDirection: u32, cLimit: u32);
+    fn CLIPOBJ_cEnumStart(ClipRegion: *mut CLIPOBJ, bAll: u32, iType: u32, iDirection: u32, cLimit: u32) -> u32;
     fn SafeProbeForRead(Address: *const core::ffi::c_void, Length: usize, Alignment: u32) -> i32;
 }
 
@@ -380,7 +380,7 @@ pub unsafe extern "stdcall" fn EngStretchBltROP(
             } else {
                 Direction = CD_ANY;
             }
-            CLIPOBJ_cEnumStart(ClipRegion, 0u8, CT_RECTANGLES, Direction, 0);
+            CLIPOBJ_cEnumStart(ClipRegion, (0u8) as _, CT_RECTANGLES, Direction, 0);
             loop {
                 EnumMore = CLIPOBJ_bEnum(
                     ClipRegion,
@@ -690,7 +690,7 @@ pub unsafe extern "C" fn EngStretchBltROP(
             } else {
                 Direction = CD_ANY;
             }
-            CLIPOBJ_cEnumStart(ClipRegion, 0u8, CT_RECTANGLES, Direction, 0);
+            CLIPOBJ_cEnumStart(ClipRegion, (0u8) as _, CT_RECTANGLES, Direction, 0);
             loop {
                 EnumMore = CLIPOBJ_bEnum(
                     ClipRegion,

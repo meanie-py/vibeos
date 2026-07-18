@@ -38,22 +38,22 @@ extern "system" {
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatAllocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Hint: u32, AllocationSize: *mut u32, IsDirectory: u8, Mcb: *mut LARGE_MCB, );
-    fn FatConstructDirent( IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, FileName: *mut OEM_STRING, IsDirectory: u8, IsExtended: u8, Lbo: *mut LARGE_INTEGER, Attributes: u32, Initialize: u8, EaHandle: *mut u16, );
-    fn FatCreateNewDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, DirentIndex: u32, IsExtended: u8, ) -> u32;
+    fn FatConstructDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, FileName: *mut OEM_STRING, IsDirectory: u8, IsExtended: u8, Lbo: *mut LARGE_INTEGER, Attributes: u16, Initialize: u8, EaHandle: *mut u16);
+    fn FatCreateNewDirent(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, DirentIndex: u32, IsExtended: u32) -> u32;
     fn FatDeallocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, IsDirectory: u8, );
-    fn FatDeleteDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, EaHandle: *mut u16, DeleteFile: u8, );
-    fn FatGetDirentFromFcbOrDcb( IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB, Unpin: u8, EaDirent: *mut *mut DIRENT, EaBcb: *mut *mut BCB, );
+    fn FatDeleteDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, EaHandle: *mut u16, DeleteFile: u32);
+    fn FatGetDirentFromFcbOrDcb(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB, Unpin: u32, EaDirent: *mut *mut DIRENT, EaBcb: *mut *mut BCB);
     fn FatGetIndexFromLbo(Vcb: *mut VCB, Lbo: i64) -> u16;
     fn FatLocateSimpleOemDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, FileName: *mut OEM_STRING, EaDirent: *mut *mut DIRENT, EaBcb: *mut *mut BCB, ByteOffset: *mut u32, );
     fn FatLookupFileAllocationSize(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn FatLookupMcbEntry( Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: *mut i64, Offset: *mut u32, Length: *mut u32, );
+    fn FatLookupMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: *mut i64, Offset: *mut u32, Length: *mut u32) -> u8;
     fn FatOpenEaFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> *mut FILE_OBJECT;
     fn FatPinMappedData( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, );
     fn FatPrepareWriteDirectoryFile( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, UpdateSize: u8, Initialize: u8, Status: *mut i32, );
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn _SEH2_AbnormalTermination() -> u8;
     fn GetcbList(ea_set: *mut EA_SET_HEADER) -> u8;
-    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, Dirty: i32);
+    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, Dirty: u8);
     fn FatSplitAllocation(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, NewMcb: *mut LARGE_MCB);
     fn FatMergeAllocation(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, TargetMcb: *mut LARGE_MCB, SourceMcb: *mut LARGE_MCB);
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
@@ -898,10 +898,10 @@ pub unsafe extern "system" fn FatGetEaFile(
                         0,
                         0,
                         core::ptr::null_mut(),
-                        FAT_DIRENT_ATTR_READ_ONLY
+                        (FAT_DIRENT_ATTR_READ_ONLY
                             | FAT_DIRENT_ATTR_HIDDEN
                             | FAT_DIRENT_ATTR_SYSTEM
-                            | FAT_DIRENT_ATTR_ARCHIVE,
+                            | FAT_DIRENT_ATTR_ARCHIVE) as _,
                         1,
                         core::ptr::null_mut(),
                     );

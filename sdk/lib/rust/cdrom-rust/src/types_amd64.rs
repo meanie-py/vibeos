@@ -50144,14 +50144,7 @@ unsafe extern "C" {
     pub fn ScanForSpecialHandler(DeviceExtension: PCDROM_DEVICE_EXTENSION, HackFlags: ULONG_PTR);
 }
 unsafe extern "system" {
-    pub fn DeviceSendSrbSynchronously(
-        Device: WDFDEVICE,
-        Srb: PSCSI_REQUEST_BLOCK,
-        BufferAddress: PVOID,
-        BufferLength: ULONG,
-        WriteToDevice: BOOLEAN,
-        OriginalRequest: WDFREQUEST,
-    ) -> NTSTATUS;
+    pub fn DeviceSendSrbSynchronously(Device: *mut core::ffi::c_void, Srb: PSCSI_REQUEST_BLOCK, BufferAddress: PVOID, BufferLength: ULONG, WriteToDevice: BOOLEAN, OriginalRequest: *mut core::ffi::c_void) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn RequestSenseInfoInterpret(
@@ -50375,11 +50368,7 @@ unsafe extern "C" {
     pub fn DeviceIsMmcUpdateRequired(Device: WDFDEVICE) -> BOOLEAN;
 }
 unsafe extern "C" {
-    pub fn DeviceEnableMediaChangeDetection(
-        DeviceExtension: PCDROM_DEVICE_EXTENSION,
-        FileObjectContext: PFILE_OBJECT_CONTEXT,
-        IgnorePreviousMediaChanges: BOOLEAN,
-    );
+    pub fn DeviceEnableMediaChangeDetection(DeviceExtension: PCDROM_DEVICE_EXTENSION, FileObjectContext: PFILE_OBJECT_CONTEXT, IgnorePreviousMediaChanges: u32);
 }
 unsafe extern "C" {
     pub fn DeviceDisableMediaChangeDetection(
@@ -50419,20 +50408,10 @@ unsafe extern "C" {
     ) -> ULONG;
 }
 unsafe extern "C" {
-    pub fn ModeSenseFindSpecificPage(
-        ModeSenseBuffer: PCHAR,
-        Length: usize,
-        PageMode: UCHAR,
-        Use6Byte: BOOLEAN,
-    ) -> PVOID;
+    pub fn ModeSenseFindSpecificPage(ModeSenseBuffer: PCHAR, Length: usize, PageMode: UCHAR, Use6Byte: u32) -> PVOID;
 }
 unsafe extern "C" {
-    pub fn PerformEjectionControl(
-        DeviceExtension: PCDROM_DEVICE_EXTENSION,
-        Request: WDFREQUEST,
-        LockType: MEDIA_LOCK_TYPE,
-        Lock: BOOLEAN,
-    ) -> NTSTATUS;
+    pub fn PerformEjectionControl(DeviceExtension: PCDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, LockType: u32, Lock: BOOLEAN) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn DeviceDisableMainTimer(DeviceExtension: PCDROM_DEVICE_EXTENSION);

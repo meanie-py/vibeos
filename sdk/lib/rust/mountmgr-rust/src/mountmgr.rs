@@ -3764,7 +3764,7 @@ unsafe extern "C" {
     fn IsDriveLetter(name: PUNICODE_STRING) -> u8;
     fn GlobalCreateSymbolicLink(SymbolicLinkName: *mut _UNICODE_STRING, DeviceName: *const _UNICODE_STRING) -> NTSTATUS;
     fn CreateNoDriveLetterEntry(UniqueId: *mut MOUNTDEV_UNIQUE_ID);
-    fn GlobalDeleteSymbolicLink(Name: *mut _UNICODE_STRING);
+    fn GlobalDeleteSymbolicLink(DosName: *mut _UNICODE_STRING) -> i32;
     fn QuerySuggestedLinkName( SymbolicName: PUNICODE_STRING, SuggestedLinkName: PUNICODE_STRING, UseOnlyIfThereAreNoOtherLinks: *mut BOOLEAN, ) -> NTSTATUS;
     fn RemoveSavedLinks( DeviceExtension: PDEVICE_EXTENSION, UniqueId: PMOUNTDEV_UNIQUE_ID, ) -> PSAVED_LINK_INFORMATION;
     fn RedirectSavedLink( SavedLinkInformation: PSAVED_LINK_INFORMATION, SymLinkName: PUNICODE_STRING, TargetDeviceName: PUNICODE_STRING, ) -> BOOLEAN;

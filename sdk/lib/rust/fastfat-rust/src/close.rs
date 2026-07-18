@@ -33,7 +33,7 @@ extern "system" {
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
-    fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg: BOOLEAN) -> BOOLEAN;
+    fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Force: BOOLEAN,) -> BOOLEAN;
     fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut *mut FCB);
     fn FatDeleteCcb(IrpContext: *mut IRP_CONTEXT, Ccb: *mut *mut CCB);
     fn DebugUnwind(name: *const i8);

@@ -51,13 +51,7 @@ extern "C" {
 // amd64/arm64 — matches the spec ABI.
 extern "system" {
     fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> u8;
-    fn CLIPOBJ_cEnumStart(
-        pco: *mut CLIPOBJ,
-        bAll: BOOL,
-        iType: ULONG,
-        iDirection: ULONG,
-        cLimit: ULONG,
-    ) -> ULONG;
+    fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----

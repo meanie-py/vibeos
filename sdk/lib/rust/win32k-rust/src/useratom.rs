@@ -14,11 +14,11 @@ extern "system" {
 // SetLastNtError is FASTCALL on i386, cdecl elsewhere.
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
 }
 
 #[inline]

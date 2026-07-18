@@ -2,6 +2,7 @@
 members = [
     "varargs-rust",
     "drvtrace-shim",
+    "winetrace-shim",
     "classpnp-rust",
     "disk-rust",
     "mountmgr-rust",
@@ -41,6 +42,7 @@ members = [
     "msafd-rust",
     "ws2_32-rust",
     "wshtcpip-rust",
+    "wshirda-rust",
     "mswsock-rust",
     "ws2help-rust",
     "userenv-rust",

@@ -57470,7 +57470,9 @@ unsafe extern "stdcall" {
 unsafe extern "stdcall" {
     pub fn ConDrvDeinitInputBuffer(Console: PCONSOLE);
 }
-unsafe extern "C" {
+unsafe extern "stdcall" {
+    // CC drift vs the Rust def (winsrv-rust conoutput.rs, extern "system"):
+    // the "C" class armed a §9.99 ud2 fold in ConDrvInitConsole.
     pub fn ConDrvCreateScreenBuffer(
         Buffer: *mut PCONSOLE_SCREEN_BUFFER,
         Console: PCONSOLE,

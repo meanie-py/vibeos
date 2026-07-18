@@ -1215,7 +1215,7 @@ pub unsafe extern "C" fn ClasspDuidQueryProperty(
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
 
     status
 }
@@ -1277,7 +1277,7 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
 
         SrbSetTimeOutValue((Srb).cast(), (*fdoExtension).TimeOutValue * 4);
         SrbSetRequestTag((Srb).cast(), SP_UNTAGGED);
-        SrbSetRequestAttribute((Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+        SrbSetRequestAttribute((Srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
         SrbAssignSrbFlags((Srb).cast(), (*fdoExtension).SrbFlags);
 
         SrbSetCdbLength((Srb).cast(), 10);
@@ -1419,7 +1419,7 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
     (*Irp).IoStatus.Information = ((information) as u64) as _;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     status
 }
 #[no_mangle]
@@ -1566,7 +1566,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
     if NT_SUCCESS(status) {
         SrbSetTimeOutValue((Srb).cast(), (*FdoExtension).TimeOutValue);
         SrbSetRequestTag((Srb).cast(), SP_UNTAGGED);
-        SrbSetRequestAttribute((Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+        SrbSetRequestAttribute((Srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
         SrbAssignSrbFlags((Srb).cast(), (*FdoExtension).SrbFlags);
         SrbSetCdbLength((Srb).cast(), 16);
         let cdb: PCDB = SrbGetCdb((Srb).cast());
@@ -1623,7 +1623,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
         (*Irp).IoStatus.Information = ((information) as u64) as _;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         return status;
     }
 
@@ -1647,14 +1647,14 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
         (*Irp).IoStatus.Information = ((information) as u64) as _;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         return status;
     } else if query_type != _STORAGE_PROPERTY_ID_PropertyStandardQuery {
         status = STATUS_NOT_SUPPORTED;
         (*Irp).IoStatus.Information = ((information) as u64) as _;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         return status;
     }
 
@@ -1665,7 +1665,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
         (*Irp).IoStatus.Information = ((information) as u64) as _;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         return status;
     }
 
@@ -1681,14 +1681,14 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
             (*Irp).IoStatus.Information = ((information) as u64) as _;
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
             return status;
         }
         status = STATUS_BUFFER_TOO_SMALL;
         (*Irp).IoStatus.Information = ((information) as u64) as _;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         return status;
     }
 
@@ -1755,7 +1755,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
     (*Irp).IoStatus.Information = ((information) as u64) as _;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     status
 }
 
@@ -1870,7 +1870,7 @@ pub unsafe extern "C" fn ClasspDeviceMediaTypeProperty(
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
 
     TracePrint(
         TRACE_LEVEL_VERBOSE,
@@ -1920,7 +1920,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(
 
         SrbSetTimeOutValue((srb).cast(), (*fdo_extension).TimeOutValue);
         SrbSetRequestTag((srb).cast(), SP_UNTAGGED);
-        SrbSetRequestAttribute((srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+        SrbSetRequestAttribute((srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
         SrbAssignSrbFlags((srb).cast(), (*fdo_extension).SrbFlags);
         SrbSetCdbLength((srb).cast(), 6u8);
 
@@ -2068,7 +2068,7 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
     (*Irp).IoStatus.Information = (((information) as u32) as u64) as _;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     status
 }
 #[no_mangle]
@@ -2146,7 +2146,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
             if NT_SUCCESS(status) {
                 SrbSetTimeOutValue((Srb).cast(), fdo_extension.TimeOutValue);
                 SrbSetRequestTag((Srb).cast(), SP_UNTAGGED);
-                SrbSetRequestAttribute((Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+                SrbSetRequestAttribute((Srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
                 SrbAssignSrbFlags((Srb).cast(), fdo_extension.SrbFlags);
                 SrbSetCdbLength((Srb).cast(), 6);
 
@@ -2331,7 +2331,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
             if NT_SUCCESS(status) {
                 SrbSetTimeOutValue((srb).cast(), (*fdo_extension).TimeOutValue);
                 SrbSetRequestTag((srb).cast(), SP_UNTAGGED);
-                SrbSetRequestAttribute((srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+                SrbSetRequestAttribute((srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
                 SrbAssignSrbFlags((srb).cast(), (*fdo_extension).SrbFlags);
                 SrbSetCdbLength((srb).cast(), 6);
 
@@ -2567,7 +2567,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
     (*Irp).IoStatus.Information = (((information as ULONG_PTR) as u32) as u64) as _;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     status
 }
 #[no_mangle]
@@ -2676,7 +2676,7 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
     (*Irp).IoStatus.Information = (((information as usize) as u32) as u64) as _;
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
 
     status
 }
@@ -2940,7 +2940,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
 
                 SrbSetTimeOutValue((Srb).cast(), (*FdoExtension).TimeOutValue);
                 SrbSetRequestTag((Srb).cast(), SP_UNTAGGED);
-                SrbSetRequestAttribute((Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+                SrbSetRequestAttribute((Srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
 
                 SrbAssignSrbFlags((Srb).cast(), (*FdoExtension).SrbFlags);
                 SrbClearSrbFlags((Srb).cast(), SRB_FLAGS_DATA_IN);
@@ -3017,7 +3017,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
             (*Irp).IoStatus.Information = 0;
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
             return status;
         }
     }
@@ -3033,7 +3033,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
             (*Irp).IoStatus.Information = 0;
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
             return status;
         }
     }
@@ -3188,7 +3188,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
     (*Irp).IoStatus.Information = 0;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     status
 }
 #[no_mangle]
@@ -3208,7 +3208,7 @@ pub unsafe extern "C" fn GetLBAStatus(
 
     SrbSetTimeOutValue((Srb).cast(), (*FdoExtension).TimeOutValue);
     SrbSetRequestTag((Srb).cast(), SP_UNTAGGED);
-    SrbSetRequestAttribute((Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+    SrbSetRequestAttribute((Srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
     SrbAssignSrbFlags((Srb).cast(), (*FdoExtension).SrbFlags);
     SrbSetCdbLength((Srb).cast(), core::mem::size_of::<_CDB__GET_LBA_STATUS>() as u8);
 
@@ -3406,7 +3406,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatus(
     (*Irp).IoStatus.Information = (((information) as u32) as u64) as _;
     (*Irp).IoStatus.__bindgen_anon_1.Status = final_status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     final_status
 }
 #[no_mangle]
@@ -3854,7 +3854,7 @@ pub unsafe extern "C" fn ClassGetLBProvisioningLogPage(
 
     SrbSetTimeOutValue((Srb).cast(), (*fdo_extension).TimeOutValue);
     SrbSetRequestTag((Srb).cast(), SP_UNTAGGED);
-    SrbSetRequestAttribute((Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+    SrbSetRequestAttribute((Srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
     SrbAssignSrbFlags((Srb).cast(), (*fdo_extension).SrbFlags);
     SrbSetCdbLength((Srb).cast(), core::mem::size_of::<CDB>() as u8); // matches sizeof(cdb->LOGSENSE) as CDB union defines it
 
@@ -4127,7 +4127,7 @@ pub unsafe extern "C" fn ClassDeviceGetLBProvisioningResources(
     }
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     status
 }
 #[no_mangle]
@@ -4672,7 +4672,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
         (*Irp).IoStatus.Information = 0;
         FREE_POOL((Srb).cast());
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         return status;
     }
 
@@ -4682,7 +4682,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
         (*Irp).IoStatus.Information = 0;
         FREE_POOL((Srb).cast());
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         return status;
     }
 
@@ -4715,7 +4715,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
             (*Irp).IoStatus.Information = 0;
             FREE_POOL((Srb).cast());
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
             return status;
         }
         let cdb_pri = (*cdb).PERSISTENT_RESERVE_IN.as_mut();
@@ -4757,7 +4757,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
             (*Irp).IoStatus.Information = 0;
             FREE_POOL((Srb).cast());
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
             return status;
         }
         let pr_out = (*prCommand).__bindgen_anon_1.PR_OUT.as_ref();
@@ -4777,7 +4777,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
     }
 
     SrbSetTimeOutValue((Srb).cast(), (*fdoExtension).TimeOutValue);
-    SrbSetRequestAttribute((Srb).cast(), SRB_HEAD_OF_QUEUE_TAG_REQUEST);
+    SrbSetRequestAttribute((Srb).cast(), (SRB_HEAD_OF_QUEUE_TAG_REQUEST) as _);
     SrbSetSrbFlags((Srb).cast(), SRB_FLAGS_NO_QUEUE_FREEZE | SRB_FLAGS_QUEUE_ACTION_ENABLE);
 
     status = ClassSendSrbAsynchronous(
@@ -4857,7 +4857,7 @@ pub unsafe extern "C" fn ClasspPriorityHint(DeviceObject: PDEVICE_OBJECT, Irp: P
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     status
 }
 #[no_mangle]
@@ -5581,7 +5581,7 @@ pub unsafe extern "C" fn ClasspStorageEventNotification(
     (*Irp).IoStatus.Information = 0;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
 
     status
 }
@@ -6484,5 +6484,5 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(Srb: PSCSI_REQUEST_BLOCK)
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
 extern "system" {
     fn ClassReleaseRemoveLock(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP);
-    fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: CCHAR);
+    fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: u8);
 }

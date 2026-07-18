@@ -100,14 +100,14 @@ extern "C" {
     fn PAGED_CODE();
     fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, RetryAttempt: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LARGE_INTEGER, ) -> BOOLEAN;
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
-    fn DeviceMarkActive(deviceExtension: *mut CDROM_DEVICE_EXTENSION, arg1: BOOLEAN, arg2: BOOLEAN);
+    fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, IsActive: BOOLEAN, SetIdleTimeout: BOOLEAN,);
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
     fn PORT_ALLOCATED_SENSE(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> BOOLEAN;
 }
 extern "system" {
     fn NT_ASSERT(expr: i32);
     fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> u8;
-    fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, TransferSize: u32, Retry: u8, Cdb: *mut CDB, CdbLength: u8, ) -> NTSTATUS;
+    fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: PCDB, OprationLength: u8) -> NTSTATUS;
 }
 unsafe extern "C" {
     fn UNREFERENCED_PARAMETER(x: usize);

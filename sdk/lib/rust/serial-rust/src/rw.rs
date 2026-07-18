@@ -15,7 +15,7 @@ use core::ffi::c_void;
 extern "C" {
     fn DbgPrintEx( ComponentId: ULONG, Level: ULONG, Format: PCSTR, ... ) -> ULONG;
     fn IsCircularBufferEmpty(CircularBuffer: PVOID) -> u8;
-    fn PopCircularBufferEntry(CircularBuffer: PVOID, Byte: *mut UCHAR);
+    fn PopCircularBufferEntry(CircularBuffer: PVOID, Byte: *mut UCHAR) -> u32;
     fn PushCircularBufferEntry(Buffer: PVOID, Entry: UCHAR) -> NTSTATUS;
 }
 unsafe extern "system" {
