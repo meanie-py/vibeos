@@ -930,6 +930,56 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
     return code
 
 
+# spec convention -> the single Rust `extern` spelling for a uniform-per-arch export.
+# fastcall is intentionally ABSENT: it needs the per-arch dual cfg that
+# `fix_fastcall_exports` emits, so this pass must not collapse it to one ABI. `extern`
+# (a pure .spec forwarder) and `stub` have no Rust body to touch.
+_SPEC_EXPORT_ABI = {
+    "stdcall": "system",
+    "thiscall": "system",
+    "cdecl": "C",
+    "varargs": "C",
+}
+
+
+def enforce_export_abi_from_spec(code: str, exports: dict[str, SpecEntry]) -> str:
+    """Force every spec-EXPORTED fn's `extern "..."` to the convention its own DLL's .spec
+    declares — the authoritative source, immune to per-DLL macro aliasing.
+
+    WHY (the #1 i386 crash cause, closed for exports). `enforce_abi_from_c` derives the
+    convention by reading the C *source* for a known macro (WINAPI/NTAPI/WSPAPI/…). A DLL
+    that hides the convention behind a LOCAL alias defeats that entirely: `wshtcpip.c`
+    defines every export as `EXPORT\\nWSHOpenSocket(...)` with `#define EXPORT WINAPI`
+    (wshtcpip.h:25). `EXPORT` is not a known keyword, so `_derive_convention` FALLS BACK to
+    cdecl and emits `extern "C"` for a `__stdcall` export — which on i386 makes the .def
+    demand `_Name@N`, so the DLL will not link (or the caller walks the stack). And you
+    cannot just teach the C reader `EXPORT`: a DDK header spells the same token
+    `#define EXPORT __cdecl`. The .spec (`@ stdcall WSHOpenSocket`) is unambiguous ground
+    truth, so it — not the C macro — decides an export's convention.
+
+    This is `enforce_win32k_abi`'s philosophy (spec is ground truth, taken out of the LLM's
+    hands) generalized to any DLL with a .spec. It runs AFTER `enforce_abi_from_c` so the
+    spec has the final word on exported names; internal/static fns (never in `exports`) keep
+    the C-source-derived convention. Idempotent: only rewrites when the current ABI differs.
+    """
+    for name, entry in exports.items():
+        target = _SPEC_EXPORT_ABI.get(getattr(entry, "convention", ""))
+        if target is None:  # fastcall (dual-cfg elsewhere) / extern / stub — leave alone
+            continue
+        # Rewrite the definition-site ABI: `pub [unsafe] extern "<X>" fn <name>(` only.
+        # Import decls (`fn <name>(` inside an `extern "X" { … }` block) lack the
+        # `pub … extern "…" fn` prefix, so they are never matched.
+        pat = re.compile(
+            rf'(pub\s+(?:unsafe\s+)?extern\s+")([^"]+)("\s+fn\s+{re.escape(name)}\s*\()'
+        )
+
+        def _sub(m: re.Match[str], _t: str = target) -> str:
+            return m.group(0) if m.group(2) == _t else m.group(1) + _t + m.group(3)
+
+        code = pat.sub(_sub, code)
+    return code
+
+
 def fix_win32k_crate_path(code: str) -> str:
     """Rewrite `ntkrnl_sys::win32k` → `win32k_sys::win32k`.
 
@@ -2265,6 +2315,13 @@ def postprocess(
         # ABI — clean links on amd64/arm64, a corrupted stack on i386 at the first
         # call. Fail loud (AGENTS.md) and let the caller decide.
         code = enforce_abi_from_c(code, c_source_path, com_method_macro=com_method_macro)
+    # The .spec is ground truth for EXPORTS, so it overrides the C-source-derived
+    # convention for any spec-exported name — a DLL-local `#define EXPORT WINAPI` defeats
+    # the C-macro read (falls back to cdecl → `extern "C"` on a stdcall export → i386 link
+    # break), but `@ stdcall` in the .spec does not. Runs LAST among the ABI passes so the
+    # spec wins; win32k keeps its own bindgen/spec-fused enforcer above.
+    if exports and target_name != "win32k":
+        code = enforce_export_abi_from_spec(code, exports)
     code = fix_self_imports(code)
     code = fix_extern_vs_local_dups(code)
     code = fix_extern_vs_local_static_dups(code)
