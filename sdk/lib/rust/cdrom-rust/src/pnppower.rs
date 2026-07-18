@@ -13,18 +13,22 @@ use ntkrnl_sys::ddk::_MONITOR_DISPLAY_STATE_PowerMonitorOff as PowerMonitorOff;
 use core::ffi::c_void;
 
 extern "system" {
-    fn KeQueryTickCount(TickCount: *mut ntkrnl_sys::ddk::LARGE_INTEGER);
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, buffer: *mut core::ffi::c_void, transferSize: u32, isRequest: i32, cdb: *mut CDB, cdbLength: u8, timeout: u32, ) -> i32;
     fn TimeOutValueGetCapValue(timeOutValue: u32, value: u32) -> u32;
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: PCDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, TransferSize: u32, param4: u8, Cdb: *mut CDB, CdbLength: u8, ) -> i32;
     fn NT_ASSERT(condition: i32);
-    fn RequestClearSendTime(PowerRequest: *mut core::ffi::c_void);
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn _Analysis_assume_(cond: i32);
     // DeviceSendPowerDownProcessRequest resolves from crate::types (canonical
     // signature: (PCDROM_DEVICE_EXTENSION, PFN_WDF_REQUEST_COMPLETION_ROUTINE, WDFCONTEXT) -> NTSTATUS).
+}
+unsafe extern "C" {
+    fn KeQueryTickCount(TickCount: *mut ntkrnl_sys::ddk::LARGE_INTEGER);
+}
+unsafe extern "C" {
+    fn RequestClearSendTime(PowerRequest: *mut core::ffi::c_void);
 }
 extern "C" {
     fn ScratchBuffer_SetupSrb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut core::ffi::c_void, TransferSize: u32, Direct: i32, );

@@ -13,11 +13,17 @@ use core::ffi::c_void;
 extern "system" {
     fn NT_ASSERT(condition: i32);
     fn RequestGetContext(scratch_request: *mut core::ffi::c_void) -> *mut CDROM_REQUEST_CONTEXT;
-    fn PAGED_CODE();
-    fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
     fn KeDelayExecutionThread( WaitMode: i32, Alertable: u8, Interval: *mut LARGE_INTEGER, ) -> i32;
-    fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
     fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
+}
+unsafe extern "C" {
+    fn PAGED_CODE();
+}
+unsafe extern "C" {
+    fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
+}
+unsafe extern "C" {
+    fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
 }
 extern "C" {
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
@@ -56,9 +62,11 @@ extern "C" {
 }
 extern "system" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT( params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS, );
-    fn RequestCompletion(DeviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Status: i32, TransferedBytes: u32);
     fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION);
     fn SET_FLAG(flags: *mut u32, flag: u32);
+}
+unsafe extern "C" {
+    fn RequestCompletion(DeviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Status: i32, TransferedBytes: u32);
 }
 // C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.

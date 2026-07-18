@@ -15,6 +15,8 @@ extern "system" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn DeviceSendSrbSynchronously( Device: WDFDEVICE, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, BufferSize: u32, ForcePIO: i32, Unknown: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn NT_ASSERT(condition: i32);
+}
+unsafe extern "C" {
     fn PAGED_CODE();
 }
 
@@ -38,8 +40,10 @@ extern "system" {
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, unknown: *mut core::ffi::c_void, transferSize: u32, flag: i32, cdb: *const CDB, cdbLength: u32, ) -> NTSTATUS;
     fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Param1: *mut core::ffi::c_void, TransferSize: u32, Flag: u8, /* BOOLEAN TRUE -> 1 */ Cdb: *const CDB, CdbLength: u32, Timeout: u32, ) -> i32; // NTSTATUS
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *const core::ffi::c_void, );
-    fn DeviceFindFeaturePage( Buffer: *mut GET_CONFIGURATION_HEADER, Length: u32, Feature: FEATURE_NUMBER, ) -> *mut FEATURE_HEADER;
     fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comperand: i32, ) -> i32;
+}
+unsafe extern "C" {
+    fn DeviceFindFeaturePage( Buffer: *mut GET_CONFIGURATION_HEADER, Length: u32, Feature: FEATURE_NUMBER, ) -> *mut FEATURE_HEADER;
 }
 
 const TRACE_LEVEL_WARNING: u32 = 4;

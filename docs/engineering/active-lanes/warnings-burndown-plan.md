@@ -89,6 +89,29 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
 
 ## Progress log
 
+- **2026-07-17 — `clashing_extern_declarations` Phase 1: the safe ABI-class canon (−122 amd64/arm64, −66 i386).**
+  The prior POC (below) proved the *type* re-point (`use crate::mod::SYM`) hits an 80× E0308 wall —
+  call sites were written to the loose forward-decl sigs. This batch takes the **narrower, safe cut
+  the POC missed: flip only the ABI, never the types.** Structure (via `ced_cluster.py`): all 2299
+  clashes are **INTRA-crate** (0 cross-crate); the bug-bearing subset is **798 calling-convention
+  clashes** (`extern "C"`/cdecl vs `"system"`/`"stdcall"`/stdcall — real i386 stack-corruption, harmless
+  on amd64/arm64 where the conventions coincide). Truth = the in-crate **definition** (`extern "X" fn
+  NAME(){`); the lint fires decl-vs-decl but the linker uses the def, so canonicalizing each
+  declaration's ABI to the def's clears the lint AND fixes the ABI. Tool `ced_canon2.py` (cfg-aware +
+  ABI-class-aware): flips single-fn extern blocks / extracts from multi-fn blocks, but **only** for
+  (a) real cross-CLASS clashes (CDECL vs STDCALL — `system`↔`stdcall` is the same convention, never
+  touched), (b) symbols with a single in-crate def class, (c) **ungated** blocks — it SKIPS every
+  `#[cfg]`-gated block (422 of them; win32k alone has 257). **v1 was cfg-BLIND** and extracted fns out
+  of `#[cfg(target_arch="x86")]` blocks, dropping the gate → cross-arch duplicate-decl E0428 (fastfat,
+  win32k); reverted, rebuilt cfg-aware. Final: **17 crates edited (64 files; 58 non-fenced processed),
+  0 new build errors ×3**; clashing
+  1457→1335 / 1511→1445 / 1453→1331. **Real bug surfaced (the goal):** flipping exposed 4 E0308 sites
+  in serial/afd — `SerialSendByte` (DPC), `SerialAddDevice`/`ForwardIrpAndForget`/`SerialCreate`
+  (dispatch), `AfdCancelHandler` (cancel) are **defined `extern "C"` (cdecl) but registered as kernel
+  callbacks the kernel invokes stdcall on i386** — a latent i386 stack-corruption bug a papering local
+  `extern "system"` decl was hiding. Reverted those 2 crates from this mechanical batch (they need a
+  *definition*-ABI fix + call-site check = Phase 2). See Owed-follow-ups for the Phase-2 tail
+  (no-def externals ~half of CC, cfg-gated decls, the benign type/arity majority, serial/afd def-audit).
 - **2026-07-17 — `win32k-rust` 118 unsuppressed `static_mut_refs` → ZERO (the boot-path side-finding, closed).**
   win32k-rust never carried the `static_mut_refs` allow, so its 118 sites leaked raw as
   warnings (nobody gates rustc warning *counts*, so they sat unfixed). Census ×3: 118 per
@@ -331,6 +354,27 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
 
 ## Owed follow-ups
 
+- **`clashing_extern_declarations` Phase 2 (task #4) — the audit-heavy tail after the safe ABI-class
+  canon landed.** Phase 1 fixed the mechanical, def-known, ungated cross-class CC clashes (−122/−66/−122).
+  What remains (clashing still ~1335 amd64):
+  - **No-def external CC clashes (~half of the 798 CC).** atapi/buslogic/storahci/iomgr/... have their
+    clashing symbols declared (not defined) in-crate — two decls of an *external* framework callback
+    (scsiport/storport/NT) that disagree. Truth = the external binding's ABI (the `-sys` crate /
+    ntkrnl-sys / NT convention = `system`), not an in-crate def. Needs an external-ABI lookup per symbol
+    (bounded per-crate subagents fit here: 3-5 at a time, sonnet, NO recursion, one crate each).
+  - **cfg-gated decls (422 blocks skipped, win32k 257).** Per-arch `#[cfg]` extern blocks (x86 `stdcall`
+    vs non-x86 `system` — often already correct, just clash cosmetically across the arch union). Need a
+    cfg-aware, per-arch canon (flip carrying the gate); the v1 cfg-blind extraction is the anti-pattern.
+  - **The benign type/arity majority (SIGN i32/u32, pointer-target, `*mut`/`*const`, missing-return).**
+    Mostly cosmetic, BUT the *missing-return* ones are real dropped-NTSTATUS bugs (e.g. cdrom
+    `init.rs:69` `fn DeviceSetParameter(...);` drops the `-> NTSTATUS` the def returns). Reconciling
+    types is the 80×-E0308 wall from the POC below — per-call-site work, supervised.
+  - **serial/afd callback def-ABI bug (found this batch, reverted).** `SerialSendByte`/`SerialAddDevice`/
+    `ForwardIrpAndForget`/`SerialCreate`/`AfdCancelHandler` defined cdecl but registered as stdcall
+    callbacks → latent i386 stack bug. Fix = change the *definitions* to `extern "system"` + verify no
+    direct-call site depends on cdecl. Real bug, not noise.
+  - Tooling in scratchpad: `ced_cluster.py` (categorize CC vs type/arity, intra/inter), `ced_canon2.py`
+    (cfg+class-aware ABI canon, reads HEAD → idempotent, `--skip SYM` for oracle-flagged fn-ptr sites).
 - **FNPTR-CMP re-architecture — CLOSED 2026-07-17 (audited allows are the correct end-state;
   `fn_addr_eq` is inapplicable).** Investigated all 34 `#[allow(unpredictable_function_pointer_comparisons)]`
   functions → 63 actual comparison sites (peel the allows, `--keep-going` census ×3, primary span

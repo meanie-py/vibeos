@@ -10,7 +10,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{LARGE_INTEGER, PCI_COMMON_HEADER, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PHYSICAL_ADDRESS, PIO_RESOURCE_DESCRIPTOR, PPCI_COMMON_CONFIG, PPCI_COMMON_HEADER};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn PciIsSlotPresentInParentMethod(PdoExtension: *mut core::ffi::c_void, Method: u32) -> u8;
 }
 

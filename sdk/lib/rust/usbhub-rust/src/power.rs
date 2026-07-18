@@ -20,10 +20,16 @@ use ntkrnl_sys::ddk::DEVICE_POWER_STATE;
 use core::ffi::c_void;
 
 extern "C" {
-    fn USBH_GetRootHubExtension(HubExtension: PUSBHUB_FDO_EXTENSION) -> PUSBHUB_FDO_EXTENSION;
-    fn USBH_Wait(MilliSeconds: ULONG);
-    fn USBH_SubmitStatusChangeTransfer(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
     fn DbgPrint(Format: *const i8, ...) -> u32;
+}
+unsafe extern "system" {
+    fn USBH_GetRootHubExtension(HubExtension: PUSBHUB_FDO_EXTENSION) -> PUSBHUB_FDO_EXTENSION;
+}
+unsafe extern "system" {
+    fn USBH_Wait(MilliSeconds: ULONG);
+}
+unsafe extern "system" {
+    fn USBH_SubmitStatusChangeTransfer(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
 }
 
 extern "system" {

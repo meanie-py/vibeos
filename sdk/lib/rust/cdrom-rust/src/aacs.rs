@@ -15,6 +15,8 @@ extern "system" {
     fn ScratchBuffer_ResetItems(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ClearStatus: u8);
     fn NT_ASSERT(cond: i32);
     fn REVERSE_SHORT(p: *mut u16);
+}
+unsafe extern "C" {
     fn PAGED_CODE();
 }
 

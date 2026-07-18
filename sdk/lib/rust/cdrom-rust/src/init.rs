@@ -36,13 +36,15 @@ extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *mut WDF_OBJECT_CONTEXT_TYPE_INFO);
     static DEVPKEY_Device_InLocalMachineContainer: DEVPROPKEY;
-    fn PAGED_CODE();
     static mut CdromHackItems: CDROM_SCAN_FOR_SPECIAL_INFO;
     fn DeviceErrorHandlerForHitachiGD2000( DeviceExtension: PCDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK, Status: *mut NTSTATUS, Retry: *mut u8, ) -> NTSTATUS;
     fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataBufferLength: u32, Write: u8, SrbStatus: *mut u8, ) -> NTSTATUS;
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
     fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    fn PAGED_CODE();
 }
 extern "system" {
     // WDF completion callback: NTAPI/stdcall on i386, C on amd64/arm64.
@@ -62,22 +64,36 @@ extern "system" {
     fn NT_ASSERT( condition: i32, );
     static WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
-    fn StringsAreMatched(a: *const i8, b: *const i8) -> i32;
     fn DeviceGetParameter( DeviceExtension: *mut core::ffi::c_void, SubKeyName: *const i8, ValueName: *const i8, Value: *mut u32, ) -> ();
     fn TEST_FLAG(Flags: u32, Flag: u32) -> u32;
-    fn FREE_POOL(Ptr: *mut core::ffi::c_void);
     fn DeviceSetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const u16, ValueName: *const u16, Value: u32, );
     fn DeviceGetConfiguration( Device: *mut core::ffi::c_void, Buffer: *mut core::ffi::c_void, Size: u32, Usable: *mut u32, Feature: u32, RequestType: u32, ) -> i32; // NTSTATUS
     fn REVERSE_BYTES(dest: *mut u32, src: *const u8);
-    fn DeviceFindFeaturePage(buffer: *mut u8, size: u32, feature: u32) -> *mut FEATURE_DATA_CD_READ;
     fn DevicePickDvdRegion(Device: WDFDEVICE);
     fn IoGetDevicePropertyData( DeviceObject: *mut core::ffi::c_void, PropertyKey: *const DEVPROPKEY, Lcid: u32, Flags: u32, Size: u32, Data: *mut core::ffi::c_void, RequiredSize: *mut u32, Type: *mut u32, ) -> NTSTATUS;
     fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> i32;
-    fn DevicePrintAllFeaturePages(buffer: *const u8, size: u32);
     fn DeviceUpdateMmcWriteCapability(buffer: *const u8, size: u32, check: i32, is_writer: *mut u8, validation_schema: *mut u32, blocking_factor: *mut u32);
     fn SET_FLAG(flags: *mut u32, flag: u32);
+}
+unsafe extern "C" {
+    fn StringsAreMatched(a: *const i8, b: *const i8) -> i32;
+}
+unsafe extern "C" {
+    fn FREE_POOL(Ptr: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    fn DeviceFindFeaturePage(buffer: *mut u8, size: u32, feature: u32) -> *mut FEATURE_DATA_CD_READ;
+}
+unsafe extern "C" {
+    fn DevicePrintAllFeaturePages(buffer: *const u8, size: u32);
+}
+unsafe extern "C" {
     fn DeviceErrorHandlerForMmc();
+}
+unsafe extern "C" {
     fn DeviceInitializeMediaChangeDetection(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
+}
+unsafe extern "C" {
     fn DeviceSetMediaChangeStateEx( deviceExtension: *mut CDROM_DEVICE_EXTENSION, new_state: u32, old_state: *mut u32, );
 }
 extern "C" {

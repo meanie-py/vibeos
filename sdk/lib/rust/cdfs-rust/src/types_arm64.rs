@@ -3471,10 +3471,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn CdFsdPostRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CdPrePostIrp(IrpContext: PIRP_CONTEXT, Irp: PIRP);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CdOplockComplete(IrpContext: PIRP_CONTEXT, Irp: PIRP);
 }
 #[repr(C)]

@@ -40,17 +40,29 @@ use core::ffi::c_void;
 extern "C" {
     fn IoSizeOfIrp(StackSize: i8) -> u16;
     fn DPRINT_SCE(format: *const i8, ...);
-    fn USBH_PdoInternalControl(PortExtension: PUSBHUB_PORT_PDO_EXTENSION, Irp: PIRP) -> NTSTATUS;
-    fn USBH_PdoPower(PortExtension: PUSBHUB_PORT_PDO_EXTENSION, Irp: PIRP, MinorFunction: UCHAR) -> NTSTATUS;
     fn DbgPrint(Format: *const i8, ...) -> u32;
     fn DPRINT(fmt: *const i8, ...);
     fn DPRINT_PNP(fmt: *const i8, ...);
-    fn USBH_HubSetD0(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
     fn USBD_ParseConfigurationDescriptorEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, StartPosition: *mut core::ffi::c_void, InterfaceNumber: i32, AlternateSetting: i32, InterfaceClass: i32, InterfaceSubClass: i32, InterfaceProtocol: i32, ) -> PUSB_INTERFACE_DESCRIPTOR;
-    fn USBHUB_DumpingDeviceDescriptor(DeviceDescriptor: *mut USB_DEVICE_DESCRIPTOR);
-    fn USBHUB_DumpingConfiguration(ConfigDescriptor: PUSB_CONFIGURATION_DESCRIPTOR);
-    fn USBH_HubStartESDRecovery(HubExtension: PUSBHUB_FDO_EXTENSION);
     fn RtlStringCbPrintfW(pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ...) -> NTSTATUS;
+}
+unsafe extern "system" {
+    fn USBH_PdoInternalControl(PortExtension: PUSBHUB_PORT_PDO_EXTENSION, Irp: PIRP) -> NTSTATUS;
+}
+unsafe extern "system" {
+    fn USBH_PdoPower(PortExtension: PUSBHUB_PORT_PDO_EXTENSION, Irp: PIRP, MinorFunction: UCHAR) -> NTSTATUS;
+}
+unsafe extern "system" {
+    fn USBH_HubSetD0(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
+}
+unsafe extern "system" {
+    fn USBHUB_DumpingDeviceDescriptor(DeviceDescriptor: *mut USB_DEVICE_DESCRIPTOR);
+}
+unsafe extern "system" {
+    fn USBHUB_DumpingConfiguration(ConfigDescriptor: PUSB_CONFIGURATION_DESCRIPTOR);
+}
+unsafe extern "system" {
+    fn USBH_HubStartESDRecovery(HubExtension: PUSBHUB_FDO_EXTENSION);
 }
 
 // NTAPI (stdcall on i386) kernel exports — MUST be extern "system" so the `_Name@N` decoration

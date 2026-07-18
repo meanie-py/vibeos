@@ -19,8 +19,14 @@ const IRP_MJ_SCSI: u8 = 0x0f;
 
 extern "system" {
     fn USBSTOR_HandleDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+unsafe extern "C" {
     fn USBSTOR_HandleInternalDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+unsafe extern "C" {
     fn USBSTOR_FdoHandlePnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+unsafe extern "C" {
     fn USBSTOR_PdoHandlePnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 

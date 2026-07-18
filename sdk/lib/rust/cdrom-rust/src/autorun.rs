@@ -23,7 +23,11 @@ extern "C" {
     fn TEST_FLAG(flags: u32, flag: u32) -> i32;
     fn PORT_ALLOCATED_SENSE(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> u8;
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
+}
+unsafe extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
+}
+unsafe extern "system" {
     fn WDF_WORKITEM_CONFIG_INIT(config: *mut WDF_WORKITEM_CONFIG, routine: unsafe extern "C" fn(WDFWORKITEM));
 }
 extern "system" {
@@ -39,7 +43,6 @@ extern "system" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
     fn DeviceGetExtension(device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
     fn DeviceSetParameter( deviceExtension: PCDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Value: u32, ) -> i32;
-    fn UNREFERENCED_PARAMETER(param: NTSTATUS);
     fn RtlInitUnicodeString( DestinationString: *mut ntkrnl_sys::ddk::_UNICODE_STRING, SourceString: *const u16 );
     fn KeWaitForMutexObject( Mutex: *mut core::ffi::c_void, WaitReason: i32, WaitMode: i32, Alertable: i32, Timeout: *const core::ffi::c_void, ) -> i32;
     static GUID_IO_DEVICE_EXTERNAL_REQUEST: GUID;
@@ -48,6 +51,9 @@ extern "system" {
     fn DeviceGetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Data: *mut u32, ); // PULONG
     fn PoRegisterPowerSettingCallback( DeviceObject: *mut core::ffi::c_void, SettingGuid: *const core::ffi::c_void, Callback: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, Handle: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attr: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void, );
+}
+unsafe extern "C" {
+    fn UNREFERENCED_PARAMETER(param: NTSTATUS);
 }
 
 // These two are cdecl, NOT stdcall — they were mis-declared in the `extern "system"` block

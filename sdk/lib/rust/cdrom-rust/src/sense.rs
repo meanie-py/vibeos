@@ -16,11 +16,13 @@ use core::ptr;
 extern "C" {
 }
 extern "system" {
-    fn KeQueryTickCount(CurrentCount: *mut i64);
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn TEST_FLAG(flags: u32, flag: u32) -> i32;
     fn IS_SCSIOP_READWRITE(opCode: u8) -> i32;
     fn SECONDS_TO_100NS_UNITS(seconds: i32) -> i64;
+}
+unsafe extern "C" {
+    fn KeQueryTickCount(CurrentCount: *mut i64);
 }
 // C max() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
@@ -28,12 +30,18 @@ extern "system" {
 extern "system" {
     fn SRB_STATUS(status: u32) -> u32;
     fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
-    fn PAGED_CODE();
-    fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32;
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
     static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
-    fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Guid: *const GUID, DataSize: u32, Data: *const core::ffi::c_void, ) -> NTSTATUS;
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
+}
+unsafe extern "C" {
+    fn PAGED_CODE();
+}
+unsafe extern "C" {
+    fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32;
+}
+unsafe extern "C" {
+    fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Guid: *const GUID, DataSize: u32, Data: *const core::ffi::c_void, ) -> NTSTATUS;
 }
 extern "C" {
     fn DeviceSendStartUnit(device: *mut DEVICE_OBJECT);
@@ -67,12 +75,16 @@ pub type PERROR_LOG_CONTEXT = *mut ERROR_LOG_CONTEXT;
 
 // Forward declarations for external symbols used in this file.
 extern "C" {
+    fn DeviceRestoreDefaultSpeed(work_item: WDFWORKITEM);
+}
+unsafe extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
+}
+unsafe extern "system" {
     fn WDF_WORKITEM_CONFIG_INIT(
         config: *mut WDF_WORKITEM_CONFIG,
         func: Option<unsafe extern "C" fn(WDFWORKITEM)>,
     );
-    fn DeviceRestoreDefaultSpeed(work_item: WDFWORKITEM);
 }
 
 // -------- Constants used in the bodies (single definitions) --------

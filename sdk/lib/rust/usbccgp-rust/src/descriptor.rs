@@ -10,14 +10,22 @@ use ntkrnl_sys::ddk::{ExFreePool, LANGID, PDEVICE_OBJECT};
 use core::ffi::c_void;
 
 extern "system" {
-    fn AllocateItem(PoolType: u32, ItemSize: ULONG) -> PVOID;
-    fn FreeItem(Item: PVOID);
-    fn USBCCGP_SyncUrbRequest(DeviceObject: PDEVICE_OBJECT, Urb: PURB) -> NTSTATUS;
     fn UsbBuildGetDescriptorRequest( Urb: PURB, Length: USHORT, DescriptorType: UCHAR, DescriptorIndex: UCHAR, LanguageId: USHORT, TransferBuffer: PVOID, TransferBufferMDL: PVOID, TransferBufferLength: ULONG, Link: PURB, );
     fn USBD_ParseConfigurationDescriptorEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, StartPosition: PVOID, InterfaceNumber: LONG, AlternateSetting: LONG, InterfaceClass: LONG, InterfaceSubClass: LONG, InterfaceProtocol: LONG, ) -> PUSB_INTERFACE_DESCRIPTOR;
-    fn UsbBuildSelectInterfaceRequest( Urb: PURB, TotalLength: USHORT, ConfigurationHandle: USBD_CONFIGURATION_HANDLE, InterfaceNumber: UCHAR, AlternateSetting: UCHAR, );
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
     fn USBD_CreateConfigurationRequestEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, InterfaceList: PUSBD_INTERFACE_LIST_ENTRY, ) -> PURB;
+}
+unsafe extern "C" {
+    fn AllocateItem(PoolType: u32, ItemSize: ULONG) -> PVOID;
+}
+unsafe extern "C" {
+    fn FreeItem(Item: PVOID);
+}
+unsafe extern "C" {
+    fn USBCCGP_SyncUrbRequest(DeviceObject: PDEVICE_OBJECT, Urb: PURB) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn UsbBuildSelectInterfaceRequest( Urb: PURB, TotalLength: USHORT, ConfigurationHandle: USBD_CONFIGURATION_HANDLE, InterfaceNumber: UCHAR, AlternateSetting: UCHAR, );
 }
 
 // ---- file-scope preamble (translated) ----

@@ -47727,13 +47727,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DiskShutdownFlush(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DiskGetCacheInformation(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         CacheInfo: PDISK_CACHE_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DiskSetCacheInformation(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         CacheInfo: PDISK_CACHE_INFORMATION,

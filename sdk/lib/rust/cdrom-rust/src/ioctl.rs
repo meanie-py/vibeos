@@ -103,15 +103,11 @@ extern "C" {
 }
 extern "system" {
     fn REVERSE_BYTES(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
-    fn PAGED_CODE();
-    fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
     static CLASSP_REG_SUBKEY_NAME: u16;
     static CLASSP_REG_REMOVAL_POLICY_VALUE_NAME: u16;
-    fn RequestCompletion( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, info: ULONG, );
     fn RequestGetContext(request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
     fn ScratchBuffer_BeginUse(device_extension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_PerformNextReadWrite( device_extension: *mut CDROM_DEVICE_EXTENSION, first: BOOLEAN, ) -> NTSTATUS;
-    fn UNREFERENCED_PARAMETER(param: usize);
     fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: WDFREQUEST, transferByteCount: u32, flag: i32, cdb: *mut CDB, cdbLen: u8) -> NTSTATUS;
     fn PLAY_ACTIVE(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> *mut i32;
@@ -125,48 +121,98 @@ extern "system" {
     fn MmGetMdlByteCount(Mdl: PMDL) -> u32;
     fn MSF_TO_LBA(m: u8, s: u8, f: u8) -> u32;
 }
+unsafe extern "C" {
+    fn PAGED_CODE();
+}
+unsafe extern "C" {
+    fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn RequestCompletion( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, info: ULONG, );
+}
+unsafe extern "C" {
+    fn UNREFERENCED_PARAMETER(param: usize);
+}
 extern "system" {
-    fn RequestSend( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, ioTarget: WDFIOTARGET, sendOptionsFlags: ULONG, requestSent: *mut BOOLEAN, ) -> NTSTATUS;
     fn RequestDummyCompletionRoutine( Request: WDFREQUEST, ioTarget: WDFIOTARGET, CompletionParams: *mut WDF_REQUEST_COMPLETION_PARAMS, CompletionContext: WDFCONTEXT, );
     fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataTransferLength: u32, AutoSense: u8, Request: WDFREQUEST, ) -> i32;
-    fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> u8;
-    fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
-    fn DeviceSendNotification(deviceExtension: PCDROM_DEVICE_EXTENSION, guid: *const GUID, param1: u32, param2: *mut core::ffi::c_void) -> NTSTATUS;
     fn ValidChar(c: u8) -> i32;
-    fn IsVolumeMounted(DeviceObject: *mut core::ffi::c_void) -> u8;
     fn IoWriteErrorLogEntry(ElEntry: *mut IO_ERROR_LOG_PACKET);
     fn IoAllocateErrorLogEntry(IoObject: *mut core::ffi::c_void, EntrySize: u32) -> *mut IO_ERROR_LOG_PACKET;
-    fn DeviceUnlockExclusive( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObject: WDFFILEOBJECT, NoMediaNotifications: i32, ) -> NTSTATUS;
     fn WDF_REQUEST_PARAMETERS_INIT(Parameters: *mut WDF_REQUEST_PARAMETERS);
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
-    fn RequestDuidGetDeviceIdProperty( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, requestParameters: WDF_REQUEST_PARAMETERS, outLength: *mut usize, ) -> i32;
-    fn RequestDuidGetDeviceProperty( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, requestParameters: WDF_REQUEST_PARAMETERS, outLength: *mut usize, ) -> i32;
     fn CompareStorageDuids( Duid1: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER, Duid2: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER, ) -> i32;
-    fn DeviceRetrieveModeSenseUsingScratch( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut i8, BufferLength: usize, Page: u32, PageControl: u32, ) -> usize;
     fn TimeOutValueGetCapValue(timeout: u32, multiplier: u32) -> u32;
-    fn ModeSenseFindSpecificPage( Data: *mut i8, DataLength: usize, PageCode: u32, ReadWrite: i32, ) -> *mut MODE_CACHING_PAGE;
     fn KeGetCurrentIrql() -> u8;
     fn ExFreePool(Pool: *mut core::ffi::c_void);
-    fn FREE_POOL(Pool: *mut core::ffi::c_void);
     fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, transferSize: u32, bFlag: u8, Cdb: *const CDB, CdbLength: u32, TimeoutValue: u32, ) -> NTSTATUS;
     fn DeviceSetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubkeyName: *const u16, ValueName: *const u16, Value: u32, ) -> NTSTATUS;
-    fn RequestSetupMcnSyncIrp(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
     fn FileObjectGetContext(FileObject: WDFFILEOBJECT) -> PFILE_OBJECT_CONTEXT;
     fn TEST_FLAG(flags: u32, bit: u32) -> bool;
     fn REVERSE_BYTES_SHORT(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
     fn RequestSetupMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, supported: i32, ) -> i32;
-    fn RequestSendMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ) -> u8;
-    fn RequestPostWorkMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ) -> u8;
-    fn DeviceSendDelayedMediaChangeNotifications( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, );
     fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> u8;
-    fn RequestSenseInfoInterpretForScratchBuffer( device_extension: *mut CDROM_DEVICE_EXTENSION, times_already_retried: u32, status: *mut i32, retry_in_100ns_units: *mut i64, ) -> i32;
-    fn ScratchBuffer_SetupSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, transfer_byte_count: u32, use_scratch: i32, ) -> i32;
-    fn ScratchBuffer_SendSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, wait: i32, unused: *mut core::ffi::c_void, ) -> i32;
     fn ScratchBuffer_ResetItems( device_extension: *mut CDROM_DEVICE_EXTENSION, free_mdl: i32, ) -> i32;
-    fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, b1: i32, b2: i32);
     fn Int64ShrlMod32(value: i64, shift: u32) -> i64;
     fn DevicePickDvdRegion(Device: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    fn RequestSend( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, ioTarget: WDFIOTARGET, sendOptionsFlags: ULONG, requestSent: *mut BOOLEAN, ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> u8;
+}
+unsafe extern "C" {
+    fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
+}
+unsafe extern "C" {
+    fn DeviceSendNotification(deviceExtension: PCDROM_DEVICE_EXTENSION, guid: *const GUID, param1: u32, param2: *mut core::ffi::c_void) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn IsVolumeMounted(DeviceObject: *mut core::ffi::c_void) -> u8;
+}
+unsafe extern "C" {
+    fn DeviceUnlockExclusive( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObject: WDFFILEOBJECT, NoMediaNotifications: i32, ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn RequestDuidGetDeviceIdProperty( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, requestParameters: WDF_REQUEST_PARAMETERS, outLength: *mut usize, ) -> i32;
+}
+unsafe extern "C" {
+    fn RequestDuidGetDeviceProperty( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, requestParameters: WDF_REQUEST_PARAMETERS, outLength: *mut usize, ) -> i32;
+}
+unsafe extern "C" {
+    fn DeviceRetrieveModeSenseUsingScratch( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut i8, BufferLength: usize, Page: u32, PageControl: u32, ) -> usize;
+}
+unsafe extern "C" {
+    fn ModeSenseFindSpecificPage( Data: *mut i8, DataLength: usize, PageCode: u32, ReadWrite: i32, ) -> *mut MODE_CACHING_PAGE;
+}
+unsafe extern "C" {
+    fn FREE_POOL(Pool: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    fn RequestSetupMcnSyncIrp(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
+}
+unsafe extern "C" {
+    fn RequestSendMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ) -> u8;
+}
+unsafe extern "C" {
+    fn RequestPostWorkMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ) -> u8;
+}
+unsafe extern "C" {
+    fn DeviceSendDelayedMediaChangeNotifications( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, );
+}
+unsafe extern "C" {
+    fn RequestSenseInfoInterpretForScratchBuffer( device_extension: *mut CDROM_DEVICE_EXTENSION, times_already_retried: u32, status: *mut i32, retry_in_100ns_units: *mut i64, ) -> i32;
+}
+unsafe extern "C" {
+    fn ScratchBuffer_SetupSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, transfer_byte_count: u32, use_scratch: i32, ) -> i32;
+}
+unsafe extern "C" {
+    fn ScratchBuffer_SendSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, wait: i32, unused: *mut core::ffi::c_void, ) -> i32;
+}
+unsafe extern "C" {
+    fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, b1: i32, b2: i32);
 }
 
 // ---- file-scope preamble (translated) ----
