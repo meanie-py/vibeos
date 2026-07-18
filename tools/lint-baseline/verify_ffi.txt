@@ -54,9 +54,9 @@
   [C_MACRO] sdk/lib/rust/iomgr-rust/src/deviface.rs:40: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/iomgr-rust/src/driver.rs:181: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/iomgr-rust/src/driver.rs:182: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/iomgr-rust/src/file.rs:194: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/iomgr-rust/src/file.rs:195: ExRaiseStatus: ExRaiseStatus is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/iomgr-rust/src/file.rs:202: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/iomgr-rust/src/file.rs:196: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/iomgr-rust/src/file.rs:197: ExRaiseStatus: ExRaiseStatus is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/iomgr-rust/src/file.rs:204: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/iomgr-rust/src/iofunc.rs:102: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/iomgr-rust/src/iofunc.rs:76: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/iomgr-rust/src/iofunc.rs:78: ExRaiseStatus: ExRaiseStatus is a C macro, not a real function — should be inlined in Rust
