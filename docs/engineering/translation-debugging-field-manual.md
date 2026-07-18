@@ -8572,7 +8572,7 @@ high-image-base DLLs (winsrv.dll at 0x788xxxxx) print instruction addresses at
 column 0 — an address regex anchored `^\s+` silently skips the whole binary;
 (b) fastcall-decorated mangled names (`@_ZN...@16`) dodge `_ZN`-prefix mangling
 checks — strip `_` AND `@` before testing. Source-level twin:
-`tools/scan_ir_mismatch.py` (§9.103) catches the whole class pre-fold with
+`tools/scan_ir_mismatch.py` (§9.102) catches the whole class pre-fold with
 exact symbol names. Historical one-liner:
 `llvm-objdump -d <sys> | awk '/^[0-9a-f]+ </{fn=$2} /\tud2/{print fn}'` filtered
 for named non-intrinsic fns (skip `__ZN`/compiler_builtins/`___*`/panic/D0Ev
@@ -8847,8 +8847,134 @@ through. **Owed sweep:** every flat-typed OUT handle/pointer *array* has this
 shape (`NtUserBuildNameList`/`BuildPropList`, `NtGdi*` handle arrays,
 `NtQueryDirectoryObject`, …) — silently fine until a guest passes a non-empty
 buffer. Add each with an array-narrowing marshaller as coverage reaches it.
+### 9.106 (FIXED 2026-07-18) Non-volatile seqlock loops on KUSER_SHARED_DATA — the arm64 `b .` spin class (kernel32 time fns, EngInitializeSafeSemaphore) + the writer side
 
-### 9.106 (SOLVED 2026-07-18) The "netapi32 MIDL dragon" was never an interface-vs-interface conflict — it was the `<lm.h>` MASTER header fighting the WIDL stubs, and the C build already showed the answer
+**Symptom:** scan_ud2's arm64 driver sweep flags named exported functions whose
+body is (or contains) a branch-to-self spin: kernel32.dll
+`GetSystemTimeAsFileTime`/`GetLocalTime`/`GetSystemTime`/`FileTimeToLocalFileTime`/
+`LocalFileTimeToFileTime`/`SetLocalTime`/`GetTimeZoneInformation`/`JapaneseEra_Find`,
+win32k.sys `EngInitializeSafeSemaphore`. On x86 the same bug compiles to a
+`jmp self` — invisible to the ud2 scan, so the arm64 sweep is the only scanner
+that catches it. Boots green daily because the spin only arms on a cold subpath.
+
+**Root cause:** the KSYSTEM_TIME seqlock capture loop translated with PLAIN
+loads:
+
+```rust
+loop {
+    hi = (*SharedUserData).SystemTime.High1Time;   // plain load
+    lo = (*SharedUserData).SystemTime.LowPart;     // plain load
+    if hi == (*SharedUserData).SystemTime.High2Time { break; }  // plain load
+}
+```
+
+The C original reads C-`volatile` fields. In Rust these are ordinary loads of
+memory LLVM can prove the loop never writes -> LICM hoists all three out of the
+loop -> the condition becomes loop-invariant -> if the function is entered
+mid-update (High1 != High2 transiently), the residual loop is `b .` forever.
+Same shape with a different flavor: `while (*p).field.is_null() {}` waiting for
+ANOTHER THREAD's store (EngInitializeSafeSemaphore) — hoisted identically.
+`core::hint::spin_loop()` / an inlinable YieldProcessor shim is a CPU hint, NOT
+a compiler memory barrier — it does not save the loop. An out-of-line extern
+YieldProcessor call DOES accidentally save it (opaque call clobbers memory),
+which is why ntoskrnl's clock.rs loops never fired — luck, not semantics.
+
+**The runtime bug is real, not theoretical:** a user process calling
+GetSystemTimeAsFileTime at the wrong instant wedges forever — the classic
+unattributable once-a-week hang.
+
+**Writer side is the same class:** the seqlock write protocol (High1, Low,
+High2 in documented order — KiWriteSystemTime even carried a comment saying
+"Write order must be") was implemented with plain stores to DISJOINT fields,
+which LLVM may freely reorder/merge, silently breaking every reader's
+torn-read guard. An ordering requirement expressed with plain stores is the
+definition of what `write_volatile` is for.
+
+**Fix (2026-07-18, all sites):** `read_volatile`/`write_volatile` on every
+KUSER_SHARED_DATA / KeTickCount seqlock access: kernel32 time.rs (shared
+`read_ksystem_time()` helper, 7 loops), kernel32-vista GetTickCount64,
+ke-inlines' KeQuerySystemTime/KeQueryInterruptTime inlines, ntdll ldrinit
+cookie wait, ntoskrnl clock.rs readers (KeQuerySystemTime/KeQueryInterruptTime/
+KeQueryTickCount-i386) + KeSetSystemTime writer, ke/time.rs KiWriteSystemTime
+(both width paths), win32k EngInitializeSafeSemaphore wait loop. Verified by
+arm64 rebuild + re-sweep: all 8 kernel32 named spins gone (only Exit*/Fatal*
+terminal spins remain, which are classified EXPECTED_SPIN). The whole
+per-binary KNOWN_DRIVER_UD2 writeup set for kernel32 was deleted the same day.
+
+**Grep for recurrence:** any `High1Time`/`High2Time` or SharedUserData field
+access in a loop without `read_volatile`; any wait-on-another-thread's-store
+loop without volatile/atomic. When in doubt: SharedUserData is a
+concurrently-mutated MMIO-like page — treat every access as volatile.
+
+### 9.107 (FIXED 2026-07-18) A §9.99/§9.102 fix in the WRONG DIRECTION — `MmDeleteVirtualMapping` is stdcall on i386, and the no-NTAPI header LIES
+
+**The trap, in one line:** resolving a scan_ir_mismatch "def X vs decl system"
+disagreement by making everything match the C *header* (no-NTAPI ⇒ cdecl) —
+instead of the *def's real ABI + the actual call sites* — flipped a stdcall
+symbol to cdecl and detonated the i386 boot. The header is not the ground truth
+when the def and every live caller are stdcall.
+
+**Symptom:** i386 (only — amd64/arm64 green) BUGCHECK `0x1E (0xc0000005,
+0x00000000, <trapframe>, 0x00000000)` deterministically (3/3) during
+`IopInitializeSystemDrivers → PiEnumerateDevice`. `dump-trapframe` at P3:
+`Eip=0x00000000`, `Eax=0`, `DbgArgMark=0xbadb0d00` (pool poison), and a return
+address = `MmFreeMemoryArea@16 + 408` on the faulting stack. This is the classic
+i386 ESP-desync recipe (the "EIP = a small constant / stack-data value with
+`[esp]` not a return address ⇒ i386 stdcall/cdecl ABI mismatch" rule, §9 crash-
+hunting): **EIP=0/small-constant + pool poison ⇒ i386 stdcall/cdecl ESP desync**,
+hidden by LLD fuzzy `_foo`↔`_foo@N` linking (link stays green, crash at runtime).
+i386-ONLY is the tell: it's the only arch where cdecl≠stdcall.
+
+**Root cause:** `MmDeleteVirtualMapping` is declared in `internal/mm.h` WITHOUT
+`NTAPI` (looks cdecl) — but its real i386 ABI is **stdcall (`@16`)**: the Rust
+def, and the hot caller `MmFreeMemoryArea` (marea.rs), which reaches it through
+a `type VirtFn = unsafe extern "system" fn(..)` transmute and calls it as
+stdcall. The #15 batch trusted the header + bindgen (`bindgen_i386` emits
+`extern "C"`) and flipped the def + marea/section decls `"system"→"C"`. Now the
+`VirtFn` (stdcall) call invokes a cdecl callee: the 16 arg-bytes are cleaned by
+neither side (stdcall caller expects callee `ret 16`; cdecl callee does `ret 0`)
+→ ESP 16 bytes low → a later `ret` pops a data word → jump to 0. `marea.rs`
+already CARRIED THE WARNING three lines up: *"correct calling convention (NTAPI
+= extern "system") … bindgen declares some as extern "C", producing wrong i386
+symbol names (_Foo instead of _Foo@N)."* The fix ignored it.
+
+**Second-order:** the SAME symbol was the source of the one live `KNOWN_CGU_UD2`
+entry (`MmPageOutPhysicalAddress`, i386+ntkrnlmp). `mm/rmap.rs` (where
+MmPageOutPhysicalAddress lives) IMPORTED `MmDeleteVirtualMapping` from the
+bindgen `ddk` module (`extern "C"`) while the def is stdcall → an intra-crate
+cdecl-vs-stdcall disagreement that folds MmPageOutPhysicalAddress to a ud2
+(§9.99). Cold path (balance-manager only), so it never fired at boot → it sat in
+the allow-set as a tolerated latent. The cdecl flip *incidentally* silenced it
+(removed the disagreement) — which is how a boot-breaking change masqueraded as
+a ud2 cleanup.
+
+**Fix (the RIGHT direction — align to the def's ABI, not the header):**
+1. Revert `MmDeleteVirtualMapping` to `extern "system"` (stdcall) at all 4 sites
+   (i386/page.rs + arm64/page.rs defs, marea.rs + section.rs decl blocks).
+2. Kill the ud2 at ROOT without touching the ABI: give `rmap.rs` a LOCAL
+   `extern "system"` decl (matching marea/section) instead of the bindgen `ddk`
+   `extern "C"` import — the intra-crate CC now agrees, the fold is gone, and
+   `KNOWN_CGU_UD2` stays retired. Validated: i386 build ✓ scan_ud2 (ud2 gone),
+   i386 smoke ×3 green.
+
+**Rules banked:**
+- A missing `NTAPI` in a header is NOT proof of cdecl. On i386, verify against
+  (a) the def's `extern`, (b) every `type XxxFn = extern "…" fn` transmute call
+  site, and (c) the .spec (`@ stdcall …`). If they say stdcall, the header is the
+  liar — the fold-truth is stdcall (bindgen's `extern "C"` for it is WRONG; do
+  not chase it).
+- When scan_ir_mismatch flags "def system vs decl C", the fix is almost always
+  to make the DECL match the def (stdcall), NOT the def match the header. Flipping
+  the def is a boot-breaker on i386.
+- A ud2 that vanishes when you change an ABI is a RED FLAG, not a win: you likely
+  moved the fold, not fixed it. Root-cause the *disagreement* (usually a bindgen
+  `ddk` `extern "C"` import shadowed by a hand-written `extern "system"` decl in
+  the same crate) and fix it with a local `"system"` decl.
+- `extern "system"` transmute call sites (`VirtFn`/`PhysFn`-style) are invisible
+  to a decl-only ABI audit — grep `extern "system" fn(` transmutes when auditing
+  a symbol's real calling convention.
+
+### 9.108 (SOLVED 2026-07-18) The "netapi32 MIDL dragon" was never an interface-vs-interface conflict — it was the `<lm.h>` MASTER header fighting the WIDL stubs, and the C build already showed the answer
 
 **Symptom.** The 7 RPC-stub `.c` in `dll/win32/netapi32` (browser, dssetup, misc, netlogon,
 schedule, srvsvc, wksta_new) were translated and banked, but integration was DEFERRED across
@@ -8929,7 +9055,7 @@ resolution. Two traps when computing that conflict list:
 3. **When a DLL's TUs genuinely disagree, give them separate islands** rather than forcing one
    pass. The island count that mirrors the C is the correct one — here 2, not 1 and not 7.
 
-### 9.107 (2026-07-18) Four usermode-DLL integration bugs that a green `cargo check` cannot see — the assembler glob, the checker regex, the silent LLM skip, and MIDL symbol case
+### 9.109 (2026-07-18) Four usermode-DLL integration bugs that a green `cargo check` cannot see — the assembler glob, the checker regex, the silent LLM skip, and MIDL symbol case
 
 Collected while integrating the winsock/net satellite DLLs (dnsapi full flip, dhcpcsvc,
 netapi32 tail). Each is invisible to `cargo check` and surfaces only at LINK or at the GATE —

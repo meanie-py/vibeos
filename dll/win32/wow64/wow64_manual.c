@@ -2267,6 +2267,30 @@ static WOW64_UNICODE_STRING64_M *Wow64pUS32to64(ULONG Guest32,
     return Out;
 }
 
+/* ---- E8: NtUserUnregisterClass ------------------------------------------- *
+ * regedit/comctl32 class teardown. NtUserUnregisterClass(PUNICODE_STRING
+ * ClassNameOrAtom, HINSTANCE, PCLSMENUNAME) is typed flat (ptr ptr ptr) in
+ * win32u.spec, so wow64gen emits a silent-wrong FLAT thunk: 64-bit win32k reads
+ * the guest's 8-byte UNICODE_STRING32 as a 16-byte UNICODE_STRING64, picks up
+ * Buffer from the wrong offset (garbage), and ProbeAndCaptureUnicodeStringOrAtom
+ * copies the "string" from that wild address -> C0000005 in win32k's raw_move
+ * -> BUGCHECK 0x1E under DUMMY_PSEH (regedit killed the box on the amd64 E8
+ * ladder). The class name marshals exactly like GetClassName/GetAtomName; the
+ * atom form (Buffer < 0x10000, Length=0) survives the zero-extend + the kernel's
+ * IS_ATOM check (Wow64pUS32to64 handles both). hInstance flat-passes.
+ * pClassMenuName is IGNORED by the kernel (NtUserUnregisterClass passes NULL to
+ * UserUnregisterClass — class.rs), so its guest pointer passes through untouched
+ * (nothing is ever written back through it). */
+static NTSTATUS Wow64Manual_NtUserUnregisterClass(ULONG *a)
+{
+    extern LONG NtUserUnregisterClass(PVOID ClassNameOrAtom, PVOID hInstance,
+                                      PVOID pClassMenuName);
+    WOW64_UNICODE_STRING64_M Name64;
+    return (NTSTATUS)NtUserUnregisterClass(Wow64pUS32to64(a[0], &Name64),
+                                           (PVOID)(ULONG_PTR)a[1],
+                                           (PVOID)(ULONG_PTR)a[2]);
+}
+
 /* NtUserFindExistingCursorIcon(pustrModule, pustrRsrc, param):
  * two UNICODE_STRINGs widen; param (FINDEXISTINGCURICONPARAM = 3 LONGs) is flat
  * and identical 32/64, so its guest pointer passes straight through. */
@@ -3057,6 +3081,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserRegisterWindowMessage(Arguments);
     if (WOW64_IS("NtUserGetKeyboardLayoutName"))
         return Wow64Manual_NtUserGetKeyboardLayoutName(Arguments);
+    if (WOW64_IS("NtUserUnregisterClass"))
+        return Wow64Manual_NtUserUnregisterClass(Arguments);
     if (WOW64_IS("NtUserBuildHwndList"))
         return Wow64Manual_NtUserBuildHwndList(Arguments);
     if (WOW64_IS("NtUserThunkedMenuItemInfo"))

@@ -23,7 +23,7 @@ add_rpc_files(client
 # AT_INFO/CONNECTION_INFO_*/SERVER_INFO_*/WKSTA_INFO_* — 377 names overlap). netapi32.h itself
 # never includes <lm.h>, only the narrow lmaccess/lmapibuf/lmerr trio, letting each *_c.h supply
 # its own; the islands mirror that. See gen_driver_types.sh netapi32-rpc / netapi32-browser and
-# field manual §9.106.
+# field manual §9.108.
 #
 # STILL C (correctly): the WIDL-generated MIDL client stubs (*_c.c, built by add_rpc_files above)
 # and netapi32_stubs.c. The Rust declares those prototypes as imports (src/rpc_stubs.rs,

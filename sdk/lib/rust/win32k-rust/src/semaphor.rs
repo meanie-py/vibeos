@@ -209,7 +209,12 @@ pub unsafe extern "stdcall" fn EngInitializeSafeSemaphore(
             hSem as *mut core::ffi::c_void,
         );
     } else {
-        while (*Semaphore).hsem.is_null() {}
+        // Volatile wait: a plain load is hoisted out of the loop by LLVM,
+        // leaving an unconditional spin (`b .` on arm64) if the creator
+        // thread hasn't published hsem yet.
+        while core::ptr::read_volatile(core::ptr::addr_of!((*Semaphore).hsem)).is_null() {
+            core::hint::spin_loop();
+        }
     }
 
     1
@@ -231,7 +236,12 @@ pub unsafe extern "C" fn EngInitializeSafeSemaphore(
             hSem as *mut core::ffi::c_void,
         );
     } else {
-        while (*Semaphore).hsem.is_null() {}
+        // Volatile wait: a plain load is hoisted out of the loop by LLVM,
+        // leaving an unconditional spin (`b .` on arm64) if the creator
+        // thread hasn't published hsem yet.
+        while core::ptr::read_volatile(core::ptr::addr_of!((*Semaphore).hsem)).is_null() {
+            core::hint::spin_loop();
+        }
     }
 
     1

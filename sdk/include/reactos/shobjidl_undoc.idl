@@ -1,0 +1,76 @@
+/*
+ * PROJECT:     ReactOS header
+ * LICENSE:     LGPL-2.1-or-later (https://spdx.org/licenses/LGPL-2.1-or-later)
+ * PURPOSE:     Undocumented shell object interfaces (IAugmentedShellFolder family)
+ *
+ * Previously declared C++-only in dll/win32/shell32/shellmenu/CMergedFolder.h.
+ * Promoted to IDL so WIDL owns the vtable ABI: the generated header carries both
+ * the C++ interface and the flattened C vtable, which downstream tooling (the
+ * rustconv COM preflight) uses as slot-order ground truth. IIDs match
+ * sdk/include/reactos/shlguid_undoc.h.
+ */
+
+import "objidl.idl";
+import "shtypes.idl";
+import "shobjidl.idl";
+
+[
+    object,
+    uuid(91EA3F8C-C99B-11D0-9815-00C04FD91972),
+    pointer_default(unique),
+    local
+]
+interface IAugmentedShellFolder : IShellFolder
+{
+    HRESULT AddNameSpace(
+        [in, unique] LPGUID lpGuid,
+        [in] IShellFolder *psf,
+        [in] LPCITEMIDLIST pcidl,
+        [in] ULONG dwUnknown);
+    HRESULT GetNameSpaceID(
+        [in] LPCITEMIDLIST pcidl,
+        [out] LPGUID lpGuid);
+    HRESULT QueryNameSpace(
+        [in] ULONG dwUnknown,
+        [out] LPGUID lpGuid,
+        [out] IShellFolder **ppsf);
+    HRESULT EnumNameSpace(
+        [in] ULONG dwUnknown,
+        [out] ULONG *lpUnknown);
+};
+
+[
+    object,
+    uuid(8DB3B3F4-6CFE-11D1-8AE9-00C04FD918D0),
+    pointer_default(unique),
+    local
+]
+interface IAugmentedShellFolder2 : IAugmentedShellFolder
+{
+    HRESULT UnWrapIDList(
+        [in] LPCITEMIDLIST pcidl,
+        [in] LONG lUnknown,
+        [out] IShellFolder **ppsf,
+        [out] LPITEMIDLIST *ppidl1,
+        [out] LPITEMIDLIST *ppidl2,
+        [out] LONG *plUnknown);
+};
+
+/* No idea what QUERYNAMESPACEINFO struct contains, yet */
+typedef struct QUERYNAMESPACEINFO
+{
+    BYTE unknown[1];
+} QUERYNAMESPACEINFO;
+
+[
+    object,
+    uuid(4F755EA8-247D-479B-9181-227D09C2E001),
+    pointer_default(unique),
+    local
+]
+interface IAugmentedShellFolder3 : IAugmentedShellFolder2
+{
+    HRESULT QueryNameSpace2(
+        [in] ULONG dwUnknown,
+        [in, out] QUERYNAMESPACEINFO *pInfo);
+};

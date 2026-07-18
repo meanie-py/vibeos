@@ -146,13 +146,13 @@ extern "system" {
     fn MmGetPageEntrySectionSegmentDdk(Segment: PVOID, Offset: *const u64) -> ULONG_PTR;
     fn MmBuildMdlFromPages(Mdl: *mut MDL, Pages: *const PFN_NUMBER);
     fn MmUnmapLockedPages(MappedSystemVa: PVOID, Mdl: *mut MDL);
-    fn MmReleasePageMemoryConsumer(Type: ULONG, Page: ULONG_PTR);
+    fn MmReleasePageMemoryConsumer(Type: ULONG, Page: ULONG_PTR) -> NTSTATUS;
     fn MmGetSavedSwapEntryPage(Page: ULONG_PTR) -> ULONG_PTR;
     fn MmSetSavedSwapEntryPage(Page: ULONG_PTR, SwapEntry: ULONG_PTR);
     fn MmFreeSwapPage(SwapEntry: ULONG_PTR);
 }
 extern "C" {
-    fn ObReferenceObject(Object: PVOID);
+    fn ObReferenceObject(Object: PVOID) -> isize;
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }
@@ -740,7 +740,7 @@ unsafe fn MmpFreePageFileSegment(Segment: PMM_SECTION_SEGMENT) {
     fn MmFreeSwapPage(SwapEntry: ULONG_PTR);
     fn MmGetSavedSwapEntryPage(Page: ULONG_PTR) -> ULONG_PTR;
     fn MmSetSavedSwapEntryPage(Page: ULONG_PTR, SwapEntry: ULONG_PTR);
-    fn MmReleasePageMemoryConsumer(Type: ULONG, Page: ULONG_PTR);
+    fn MmReleasePageMemoryConsumer(Type: ULONG, Page: ULONG_PTR) -> NTSTATUS;
 }
 
     MmLockSectionSegment(Segment as PVOID);
@@ -2048,17 +2048,17 @@ extern "C" {
 }
 
 extern "system" {
-    fn MmGetPageFileMapping(Process: PEPROCESS, Address: PVOID, SwapEntry: *mut SWAPENTRY) -> NTSTATUS;
+    fn MmGetPageFileMapping(Process: PEPROCESS, Address: PVOID, SwapEntry: *mut SWAPENTRY);
     fn MmIsPagePresent(Process: PEPROCESS, Address: PVOID) -> BOOLEAN;
     fn MmIsDisabledPage(Process: PEPROCESS, Address: PVOID) -> BOOLEAN;
     fn MmIsPageSwapEntry(Process: PEPROCESS, Address: PVOID) -> BOOLEAN;
-    fn MmDeletePageFileMapping(Process: PEPROCESS, Address: PVOID, SwapEntry: *mut SWAPENTRY) -> NTSTATUS;
+    fn MmDeletePageFileMapping(Process: PEPROCESS, Address: PVOID, SwapEntry: *mut SWAPENTRY);
     fn MmCreatePageFileMapping(Process: PEPROCESS, Address: PVOID, SwapEntry: SWAPENTRY) -> NTSTATUS;
     fn MmRequestPageMemoryConsumer(Type: ULONG, CanWait: BOOLEAN, Page: *mut PFN_NUMBER) -> NTSTATUS;
     fn MmReadFromSwapPage(SwapEntry: ULONG_PTR, Page: PFN_NUMBER) -> NTSTATUS;
     fn MmCreateVirtualMapping(Process: PEPROCESS, Address: PVOID, Protect: ULONG, Page: PFN_NUMBER) -> NTSTATUS;
     fn MmCreatePhysicalMapping(Process: PEPROCESS, Address: PVOID, Protect: ULONG, Page: PFN_NUMBER) -> NTSTATUS;
-    fn MmInsertRmap(Page: PFN_NUMBER, Process: PEPROCESS, Address: PVOID) -> NTSTATUS;
+    fn MmInsertRmap(Page: PFN_NUMBER, Process: PEPROCESS, Address: PVOID);
     fn MmFindRegion(BaseAddress: PVOID, RegionListHead: *mut LIST_ENTRY, Address: PVOID, RegionBaseAddress: *mut PVOID) -> PMM_REGION;
     fn MmAlterRegion(AddressSpace: PVOID, BaseAddress: PVOID, RegionListHead: *mut LIST_ENTRY, Address: PVOID, Length: usize, Type: ULONG, Protect: ULONG, AlterFunc: *const core::ffi::c_void) -> NTSTATUS;
     fn MmGetPageProtect(Process: PEPROCESS, Address: PVOID) -> ULONG;
@@ -2073,7 +2073,9 @@ extern "system" {
     fn ProbeForWrite(Address: PVOID, Length: ULONG, Alignment: ULONG);
 }
 
-// MmDeleteVirtualMapping is cdecl (no NTAPI qualifier) in page.c
+// MmDeleteVirtualMapping is NTAPI/stdcall on i386 (extern "system"), NOT cdecl — the no-NTAPI
+// decl in internal/mm.h is misleading; the working ABI is stdcall (@16), matching the def and
+// the VirtFn transmute-call in marea.rs. extern "C" here desyncs ESP → exec-at-0 (field manual §9.99).
 extern "system" {
     fn MmDeleteVirtualMapping(Process: PEPROCESS, Address: PVOID, WasDirty: *mut BOOLEAN, Page: *mut PFN_NUMBER) -> BOOLEAN;
 }

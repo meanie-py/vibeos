@@ -44,7 +44,7 @@ extern "C" {
     fn KiReleasePrcbLock(Prcb: PKPRCB);
     fn KiAcquireThreadLock(Thread: PKTHREAD);
     fn KiReleaseThreadLock(Thread: PKTHREAD);
-    fn KiComputeNewPriority(Thread: PKTHREAD, Decrement: ULONG) -> LONG;
+    fn KiComputeNewPriority(Thread: PKTHREAD, Adjustment: i8) -> i8;
     fn KiSelectReadyThread(Priority: LONG, Prcb: PKPRCB) -> PKTHREAD;
     fn KiSetThreadSwapBusy(Thread: PKTHREAD);
     #[cfg(not(feature = "smp"))]

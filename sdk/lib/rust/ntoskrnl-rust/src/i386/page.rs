@@ -119,7 +119,7 @@ pub static MmProtectToValue: [ULONG; 32] = [
 ];
 
 extern "system" {
-    fn MiFillSystemPageDirectory(Base: PVOID, NumberOfBytes: SIZE_T) -> NTSTATUS;
+    fn MiFillSystemPageDirectory(Base: PVOID, NumberOfBytes: SIZE_T);
 }
 
 // Helper: cast hand-written MMPTE pointer to DDK _MMPTE pointer for DDK function calls.
@@ -362,6 +362,8 @@ unsafe fn MmDeleteVirtualMappingEx(
     (OldPte.Long != 0) as BOOLEAN
 }
 
+// NTAPI/stdcall (@16) — the no-NTAPI decl in internal/mm.h is misleading. The callers reach
+// this through `VirtFn = extern "system" fn(..)` (marea.rs); cdecl here desyncs ESP (§9.99).
 #[no_mangle]
 pub unsafe extern "system" fn MmDeleteVirtualMapping(
     Process: PEPROCESS,

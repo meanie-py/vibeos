@@ -947,21 +947,27 @@ pub unsafe extern "system" fn SwitchWndProc_common(
             if wParam != 0 {
                 PrepareWindow();
                 let ati = GetWindowLongPtrW(hWnd, 0) as PALTTABINFO;
-                (*ati).cbSize = core::mem::size_of::<ALTTABINFO>() as u32;
-                (*ati).cItems = nItems;
-                (*ati).cColumns = nCols;
-                (*ati).cRows = nRows;
-                if nCols != 0 {
-                    (*ati).iColFocus = (selectedWindow - nShift) % nCols;
-                    (*ati).iRowFocus = (selectedWindow - nShift) / nCols;
-                } else {
-                    (*ati).iColFocus = 0;
-                    (*ati).iRowFocus = 0;
+                // Null-guard: the inlined GetWindowLongPtrW error paths return
+                // 0, and unguarded derefs of a provably-null pointer fold the
+                // whole path to ud2 (Â§9.103) â which is ALSO a real crash if
+                // the window data was never set.
+                if !ati.is_null() {
+                    (*ati).cbSize = core::mem::size_of::<ALTTABINFO>() as u32;
+                    (*ati).cItems = nItems;
+                    (*ati).cColumns = nCols;
+                    (*ati).cRows = nRows;
+                    if nCols != 0 {
+                        (*ati).iColFocus = (selectedWindow - nShift) % nCols;
+                        (*ati).iRowFocus = (selectedWindow - nShift) / nCols;
+                    } else {
+                        (*ati).iColFocus = 0;
+                        (*ati).iRowFocus = 0;
+                    }
+                    (*ati).cxItem = CX_ICON + 2 * ICON_MARGIN + 2 * ITEM_MARGIN;
+                    (*ati).cyItem = CY_ICON + 2 * ICON_MARGIN + 2 * ITEM_MARGIN;
+                    (*ati).ptStart.x = ptStart.x;
+                    (*ati).ptStart.y = ptStart.y;
                 }
-                (*ati).cxItem = CX_ICON + 2 * ICON_MARGIN + 2 * ITEM_MARGIN;
-                (*ati).cyItem = CY_ICON + 2 * ICON_MARGIN + 2 * ITEM_MARGIN;
-                (*ati).ptStart.x = ptStart.x;
-                (*ati).ptStart.y = ptStart.y;
             }
             return 0;
         }

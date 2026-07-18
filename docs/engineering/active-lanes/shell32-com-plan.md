@@ -744,3 +744,58 @@ proven pipeline can run — ordered by tractability:
 - **CMenuSite / CMergedFolder** — shared `shellmenu` (need the `menuband-rust` shared-staticlib pattern)
   + a scanner ctor-in-header-and-impl false positive (CMenuSite) / a WIDL `IAugmentedShellFolder`
   flattened-vtable gap (CMergedFolder).
+
+## CDrvDefExt + CMergedFolder LANDED (2026-07-18 PM) — 24→26/33; two new capabilities
+
+Both "capability-gated" classes from the survey above landed the same day by building the capability
+instead of waiting on it:
+
+**CDrvDefExt** (`CLSID_ShellDrvDefExt`, drive-properties sheet) via **`--local-raii`** (new rustconv
+capability): a hand-verified Rust lowering of the file-local RAII struct is supplied at
+`tools/rustconv/provided_raii/CDrop.rs`; `translate --cpp-com --local-raii CDrop=<path>` (a) lifts the
+pre-payment reject, (b) seals the exact Rust API into every affected worker prompt
+(`provided_raii_contract`, cpp_com.py), and (c) splices the definition verbatim into the assembled
+module. The model maps usage onto a fixed API instead of inventing drop semantics. GOTCHAS hit:
+resume-cache replays PRE-capability worker outputs (cache key is (unit, body) — the sealed contract
+isn't in the key), so re-run affected workers with `--fn <a,b> --no-resume`; the postprocessor slaps
+`#[no_mangle] extern "C"` onto inherent methods of the spliced struct (strip it by hand). Closure
+subagent caught 5 real divergences: `M_PI` generated as `DWORD = 3`, Rust bitwise-`!` inverting the
+C++ logical-not on `EM_SETREADONLY`, a `%c` formatter dropped by the generated StringCbPrintfW
+helper, a missed PropSheetPageLifetimeCallback leak-guard AddRef, and Release through a nonexistent
+lpVtbl. New bridges: SH_FormatByteSize / ChkDskDlg (dialogs/drvdefext.cpp),
+CDrivesFolder_SetDriveLabel (folders/CDrivesFolder.cpp); reused IsDriveFloppyW + SHGetNameAndFlagsW.
+Module at `shell32-rust/src/dialogs/drvdefext.rs`, wired as `#[path]` mod `drv_def_ext`.
+
+**CMergedFolder** (`CLSID_MergedFolder`, shellmenu shared-staticlib) via **IDL promotion**: the
+C++-only `IAugmentedShellFolder{,2,3}` + `QUERYNAMESPACEINFO` decls moved from CMergedFolder.h to
+`sdk/include/reactos/shobjidl_undoc.idl` (built by the existing `add_idl_headers(reactos_idls ...)`;
+CMergedFolder.h now includes the generated `<shobjidl_undoc.h>`), giving WIDL ownership of the vtable
+ABI and the preflight its flattened-vtable ground truth (`discover_widl_header` gained the
+`build-<arch>/sdk/include/reactos` root). widl gotcha: `PULONG` isn't an IDL type — spell `ULONG *`.
+Integration mirrors CMenuBand: module lives in **menuband-rust** (`merged_folder.rs`, linked into BOTH
+shell32.dll and rshell.dll), uses the dual-host `MenuBandRustModuleLock/Unlock` pair (NOT
+`Shell32RustObjectLock` — that exists only in shell32.dll), C++ `RSHELL_CMergedFolder_CreateInstance`
+now forwards to the Rust 3-arg factory (covers the rshell/browseui GetProcAddress path + spec export),
+object-map swap to `CMergedFolderRustEntry` (`#undef CMergedFolder_CreateInstance` first — shellmenu.h
+macro-owns the 2-arg spelling). The retained C++ companion `CEnumMergedFolder` is reached via 6
+bridges (CreateInstance/SetSources/Begin/FindByName/FindPidlInList/QueryInterface) — its methods are
+plain non-virtual C++, NEVER vtable slots (the model wrongly invented `lpVtbl` calls for them; every
+one was rewritten to a bridge). Its object pointer doubles as IUnknown* because IEnumIDList is the
+Itanium primary base (CComObjectRootEx is non-polymorphic) — the CreateInstance bridge asserts that
+layout at runtime. Upstream quirks mirrored faithfully (do NOT "fix"): ParseDisplayName assigns the
+`GetAttributesOf` HRESULT into `*pdwAttributes`; GetCurFolder hands out the raw `m_shellPidl`.
+
+**Prover widened for the next cohort** (no class landed by these alone): `CComHeapPtr<T>` state
+fields (owned raw pointer + CoTaskMemFree in generated Release), `WNDPROC`-style fn-pointer typedefs
+(`_KNOWN_POINTER_TYPEDEFS`), and zero-valued C++11 default member initializers (`= NULL/nullptr/0/
+FALSE` — exactly the scaffold's zero-init) all prove now. Fresh blocker map after all of today:
+- **CMoveToMenu + CCopyToMenu** — ONLY the `CCopyMoveToMenu` concrete-local-base mapper remains
+  (task: flatten base state+methods into the derived scaffold, devirtualize the tiny
+  `GetFileOp()`-style virtuals). WARNING for the mapper: CCopyToMenu SHADOWS three base fields
+  (`m_pidlFolder`/`m_fnOldWndProc`/`m_bIgnoreTextBoxChange`) — base methods touch the base copies,
+  derived the derived copies; a deterministic mapper must reject shadowing loudly (CMoveToMenu is
+  clean).
+- **CFileDefExt** — base `CObjectWithSiteBase` + embedded C++ object member (`CFileVersionInfo`).
+- **CMenuSite** (scanner FP fixed today — dtor was mis-flagged is_ctor after `~`-strip, 2 scanner
+  sites + dedup key) **/ CMenuDeskBar** — both now purely `CWindowImpl` window-machinery-gated.
+- **CShellDispatch** — IDispatchImpl/typelib.

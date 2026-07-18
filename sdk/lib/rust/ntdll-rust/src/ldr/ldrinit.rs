@@ -440,7 +440,9 @@ pub unsafe extern "system" fn LdrpInitSecurityCookie(LdrEntry: PLDR_DATA_TABLE_E
             NewCookie ^= (*NtCurrentTeb()).ClientId.UniqueProcess as ULONG_PTR;
             NewCookie ^= (*NtCurrentTeb()).ClientId.UniqueThread as ULONG_PTR;
 
-            while (*SharedUserData).SystemTime.High1Time != (*SharedUserData).SystemTime.High2Time {
+            while core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).SystemTime.High1Time))
+                != core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).SystemTime.High2Time))
+            {
                 YieldProcessor();
             }
 

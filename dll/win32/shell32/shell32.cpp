@@ -686,6 +686,45 @@ public:
     };
 };
 
+/* Same macro-rename dance as CMenuBand above: shellmenu.h owns the 2-arg spelling. The
+ * 3-arg name is the Rust factory export (menuband-rust merged_folder.rs). */
+#ifdef CMergedFolder_CreateInstance
+#undef CMergedFolder_CreateInstance
+#endif
+extern "C" HRESULT WINAPI CMergedFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, void **ppv);
+
+class CMergedFolderRustEntry : public CMergedFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CMergedFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, (void**)ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CDrvDefExt_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CDrvDefExtRustEntry : public CDrvDefExt
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CDrvDefExt_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
@@ -693,7 +732,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_MyComputer, CDrivesFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellDesktop, CDesktopFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellFileDefExt, CFileDefExt)
-    OBJECT_ENTRY(CLSID_ShellDrvDefExt, CDrvDefExt)
+    OBJECT_ENTRY(CLSID_ShellDrvDefExt, CDrvDefExtRustEntry)
     OBJECT_ENTRY(CLSID_ShellItem, CShellItemRustEntry)
     OBJECT_ENTRY(CLSID_ShellLink, CShellLinkRustEntry)
     OBJECT_ENTRY(CLSID_Shell, CShellDispatch)
@@ -717,7 +756,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_MenuBandSite, CMenuSite)
     OBJECT_ENTRY(CLSID_MenuBand, CMenuBandRustEntry)
     OBJECT_ENTRY(CLSID_MenuDeskBar, CMenuDeskBar)
-    OBJECT_ENTRY(CLSID_MergedFolder, CMergedFolder)
+    OBJECT_ENTRY(CLSID_MergedFolder, CMergedFolderRustEntry)
     OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandlerRustEntry)
     OBJECT_ENTRY(CLSID_QueryAssociations, CQueryAssociationsRustEntry)
     OBJECT_ENTRY(CLSID_UserNotification, CUserNotificationRustEntry)

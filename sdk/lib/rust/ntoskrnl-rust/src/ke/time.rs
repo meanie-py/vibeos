@@ -49,18 +49,20 @@ unsafe fn KiUserTrap(TrapFrame: PKTRAP_FRAME) -> bool {
 
 #[inline(always)]
 unsafe fn KiWriteSystemTime(SystemTime: *mut KSYSTEM_TIME, NewTime: ULARGE_INTEGER) {
+    // Volatile stores: the write ORDER is the readers' torn-read guard, and
+    // plain stores to disjoint fields are reorderable by LLVM.
     #[cfg(target_pointer_width = "64")]
     {
-        *(SystemTime as *mut u64) = NewTime.QuadPart;
-        (*SystemTime).High2Time = NewTime.__bindgen_anon_1.HighPart as i32;
+        core::ptr::write_volatile(SystemTime as *mut u64, NewTime.QuadPart);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*SystemTime).High2Time), NewTime.__bindgen_anon_1.HighPart as i32);
     }
     #[cfg(target_pointer_width = "32")]
     {
         // Write order must be: High1Time, LowPart, High2Time (matching C code)
         // This allows readers to detect torn reads by comparing High1Time == High2Time
-        (*SystemTime).High1Time = NewTime.__bindgen_anon_1.HighPart as i32;
-        (*SystemTime).LowPart = NewTime.__bindgen_anon_1.LowPart;
-        (*SystemTime).High2Time = NewTime.__bindgen_anon_1.HighPart as i32;
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*SystemTime).High1Time), NewTime.__bindgen_anon_1.HighPart as i32);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*SystemTime).LowPart), NewTime.__bindgen_anon_1.LowPart);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*SystemTime).High2Time), NewTime.__bindgen_anon_1.HighPart as i32);
     }
 }
 
