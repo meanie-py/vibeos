@@ -788,14 +788,41 @@ layout at runtime. Upstream quirks mirrored faithfully (do NOT "fix"): ParseDisp
 **Prover widened for the next cohort** (no class landed by these alone): `CComHeapPtr<T>` state
 fields (owned raw pointer + CoTaskMemFree in generated Release), `WNDPROC`-style fn-pointer typedefs
 (`_KNOWN_POINTER_TYPEDEFS`), and zero-valued C++11 default member initializers (`= NULL/nullptr/0/
-FALSE` — exactly the scaffold's zero-init) all prove now. Fresh blocker map after all of today:
-- **CMoveToMenu + CCopyToMenu** — ONLY the `CCopyMoveToMenu` concrete-local-base mapper remains
-  (task: flatten base state+methods into the derived scaffold, devirtualize the tiny
-  `GetFileOp()`-style virtuals). WARNING for the mapper: CCopyToMenu SHADOWS three base fields
-  (`m_pidlFolder`/`m_fnOldWndProc`/`m_bIgnoreTextBoxChange`) — base methods touch the base copies,
-  derived the derived copies; a deterministic mapper must reject shadowing loudly (CMoveToMenu is
-  clean).
-- **CFileDefExt** — base `CObjectWithSiteBase` + embedded C++ object member (`CFileVersionInfo`).
-- **CMenuSite** (scanner FP fixed today — dtor was mis-flagged is_ctor after `~`-strip, 2 scanner
-  sites + dedup key) **/ CMenuDeskBar** — both now purely `CWindowImpl` window-machinery-gated.
-- **CShellDispatch** — IDispatchImpl/typelib.
+FALSE` — exactly the scaffold's zero-init) all prove now.
+
+## CMoveToMenu + CCopyToMenu LANDED (2026-07-18 eve) — 26→28/33 via the inherited-layout mapper
+
+The **concrete-local-base mapper** is built (same-day capability→classes again): when a base is a
+concrete non-template class defined in the SAME header (`CCopyMoveToMenu`), `analyze_class` flattens
+it — base state fields precede the derived's (shadowing = loud preflight failure), the base's own
+bases run through the same skip/interface/reject loop, FinalConstruct/Release scanned in both — and
+`_extend_cpp_class_scan` merges + RE-OWNS base method bodies as derived-class methods, so vtable
+binding, worker naming, and `this` typing all see one flat class. Devirtualization of the tiny
+`GetFileOp()`-style pure-virtual calls falls out of the ordinary same-file arity binder (the derived
+inline overrides are in the closure via the header-inline extraction fix). Special members: C++ runs
+base-then-derived ctors — a trivially-empty derived ctor/dtor yields to the base's; two non-trivial
+bodies fail loud (no sequencing generated). ATL template bases (CWindowImpl/IDispatchImpl/
+CObjectWithSiteBase) still fail loud — this mapper is same-header-concrete ONLY.
+
+- CCopyToMenu's 3 shadowed base fields (`m_pidlFolder`/`m_fnOldWndProc`/`m_bIgnoreTextBoxChange`)
+  were verified DEAD (its only method forwards to the base impl) and deleted upstream in
+  CCopyMoveToMenu.h — the mapper's shadowing reject pointed straight at them.
+- Twin translation economics: CCopyToMenu reused 9/12 of CMoveToMenu's accepted workers via the
+  exact-body translation memory ($0); whole pair ≈ $0.15 including two Sonnet envelope cleanups.
+  When a worker rejects for one twin but passed for the other, just RE-RUN the rejecting twin with
+  resume on — the memory seeds the accepted sibling body at $0 (worked for DoRealFileOp).
+- Closure agent caught + fixed 4 real divergences: Initialize had the SHILClone/ILRemoveLastID
+  branches SWAPPED (would mutate the caller's const pidl in-place and never clone); the two
+  file-static callbacks (`BrowseCallbackProc`, `WindowProc`) were missing entirely (scanner gap —
+  hand-translated); CStringW resource loads used the process EXE instead of `shell32_hInstance`;
+  `GetVerb` returned a `*const u8` for LPCSTR. First HIDA consumer in Rust: `CDataObjectHIDA`
+  rebuilt as a module-local RAII struct over 2 new bridges (+`SHELL_CIDA_ILCloneFull`, all in
+  shldataobject.cpp) — its Drop calls DestroyCIDA UNCONDITIONALLY like the C++ dtor (even with a
+  null CIDA the medium is released).
+- **Resume-cache contract stamping** (root-cause fix for the --local-raii stale-replay gotcha):
+  `ResponseCache` entries now record a hash of the worker's deterministic contract; a changed
+  contract is a MISS. Pre-stamping entries still hit (banked paid work keeps its value).
+
+Remaining 5 (all still capability-gated): **CFileDefExt** (CObjectWithSiteBase base — NOT same-header
+(precomp.h?), + embedded `CFileVersionInfo` member), **CMenuSite / CMenuDeskBar** (CWindowImpl window
+machinery), **CShellDispatch** (IDispatchImpl/typelib), and note CMergedFolder's old slot is done.

@@ -134,6 +134,12 @@ class CppComClass:
     # in the object layout that the class hands out via static_cast, but they are
     # never returned by QueryInterface.
     layout_bases: list[str] = field(default_factory=list)
+    # Concrete non-template base classes defined in the same header as this class
+    # (e.g. CCopyMoveToMenu under CMoveToMenu), flattened into this translation:
+    # their state fields precede ours, their methods become methods of this class
+    # (renamed at scan-extend time), and their virtual calls devirtualize onto our
+    # overrides through the ordinary same-file arity binder.
+    local_base_classes: list[str] = field(default_factory=list)
 
     def interface_names(self) -> list[str]:
         """Ordered, de-duplicated interfaces to materialize: QI'd (com_map) then
@@ -217,6 +223,28 @@ def _find_class_text(header: Path, class_name: str) -> str:
             body, _ = _balanced_block(text, match.end() - 1)
             return body
     raise CppComError(f"{class_name}: class definition not found in {header}")
+
+
+def _local_concrete_base(header: Path, base: str) -> tuple[str, list[str]] | None:
+    """Body + base list for a concrete non-template base defined in the SAME header.
+
+    This is the flattenable inherited-layout case (CCopyMoveToMenu). ATL templates
+    and out-of-header bases return None and stay a loud preflight failure.
+    """
+    if "<" in base:
+        return None
+    try:
+        return _find_class_text(header, base), _class_bases(header, base)
+    except CppComError:
+        return None
+
+
+def _state_field_name(declaration: str) -> str:
+    """The declared identifier of one raw state-field declaration string."""
+    text = " ".join(declaration.split())
+    text = re.sub(r"\s*=\s*[^=]+$", "", text)
+    match = re.search(r"([A-Za-z_]\w*)\s*(?:\[[^\]]*\])?\s*$", text)
+    return match.group(1) if match else text
 
 
 def _class_bases(header: Path, class_name: str) -> list[str]:
@@ -864,13 +892,17 @@ def analyze_class(
     header = find_class_header(source, class_name)
     body = _find_class_text(header, class_name)
     state_fields = _state_fields(body)
-    pod_state_types, enum_state_types = _discover_pod_state_types(source, header, state_fields)
-    array_constants = _numeric_array_constants(source, state_fields)
     entries, unsupported = _parse_com_map(body, class_name)
     bases = _class_bases(header, class_name)
     interfaces = {entry.interface for entry in entries}
+    final_construct = bool(re.search(r"\bFinalConstruct\s*\(", body))
+    if re.search(r"\bFinalRelease\s*\(", body):
+        unsupported.append("custom ATL lifecycle method FinalRelease needs deterministic wiring")
     layout_bases: list[str] = []
-    for raw_base in bases:
+    local_base_classes: list[str] = []
+    base_worklist = list(bases)
+    while base_worklist:
+        raw_base = base_worklist.pop(0)
         base = re.sub(r"\b(?:public|private|protected|virtual)\b", "", raw_base)
         base = " ".join(base.split())
         if (
@@ -881,17 +913,46 @@ def analyze_class(
             continue
         # A real COM interface base that the class implements but does not QI-expose
         # (absent from the COM map) is materialized in the layout, not QueryInterface.
-        # Anything that is not a resolvable WIDL interface is genuine custom/stateful
-        # inheritance and stays a loud failure.
         if base not in layout_bases and _base_is_widl_interface(source, base):
             layout_bases.append(base)
             continue
+        # Concrete same-header base (CCopyMoveToMenu): flatten it into this
+        # translation — its state precedes ours, its methods become ours (renamed at
+        # scan-extend), and its OWN bases join the worklist for the same treatment.
+        local = _local_concrete_base(header, base)
+        if local is not None:
+            if base in local_base_classes:
+                continue
+            base_body, base_bases = local
+            local_base_classes.append(base)
+            base_fields = _state_fields(base_body)
+            derived_names = {_state_field_name(decl) for decl in state_fields}
+            for decl in base_fields:
+                if _state_field_name(decl) in derived_names:
+                    # Base methods touch the base copy, derived methods the derived
+                    # copy — two same-named objects. Not mechanically flattenable;
+                    # resolve the C++ (usually dead copy-paste dupes) first.
+                    unsupported.append(
+                        f"derived class shadows inherited state field `{decl}` of "
+                        f"{base} — resolve the C++ shadowing before translation"
+                    )
+            state_fields = base_fields + state_fields
+            base_worklist.extend(base_bases)
+            final_construct = final_construct or bool(
+                re.search(r"\bFinalConstruct\s*\(", base_body)
+            )
+            if re.search(r"\bFinalRelease\s*\(", base_body):
+                unsupported.append(
+                    "custom ATL lifecycle method FinalRelease needs deterministic wiring"
+                )
+            continue
+        # Anything else (ATL templates, out-of-header bases) is genuine
+        # custom/stateful inheritance and stays a loud failure.
         unsupported.append(
             f"custom/inherited base class {base} needs deterministic inherited layout mapping"
         )
-    final_construct = bool(re.search(r"\bFinalConstruct\s*\(", body))
-    if re.search(r"\bFinalRelease\s*\(", body):
-        unsupported.append("custom ATL lifecycle method FinalRelease needs deterministic wiring")
+    pod_state_types, enum_state_types = _discover_pod_state_types(source, header, state_fields)
+    array_constants = _numeric_array_constants(source, state_fields)
     resource = re.search(r"\bDECLARE_REGISTRY_RESOURCEID\s*\(\s*([^)\s]+)\s*\)", body)
     not_agg = bool(re.search(r"\bDECLARE_(?:CENTRAL_INSTANCE_)?NOT_AGGREGATABLE\s*\(", body))
     clsid = None
@@ -927,6 +988,7 @@ def analyze_class(
         array_constants=array_constants,
         unsupported=unsupported,
         layout_bases=layout_bases,
+        local_base_classes=local_base_classes,
     )
 
 

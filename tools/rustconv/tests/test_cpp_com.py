@@ -11,6 +11,7 @@ from rustconv.cpp_com import (
     CppComError,
     InterfaceMethod,
     InterfaceSpec,
+    _state_field_name,
     analyze_class,
     apply_interface_method_signatures,
     audit_worker_body,
@@ -938,14 +939,27 @@ def test_struct_class_object_entry_auto_and_fixed_scalar_array_are_supported():
     assert (state.name, state.rust_type) == ("m_wszVolume", "[WCHAR; 4]")
 
 
-def test_custom_base_class_fails_before_inherited_state_is_lost():
+def test_concrete_local_base_is_flattened_with_inherited_state():
+    # CMoveToMenu : CCopyMoveToMenu — the concrete same-header base is flattened
+    # into the translation: its state precedes the derived class's own, and the
+    # base is recorded so scan-extend re-owns its method bodies.
     cls = analyze_class(
         SHELL32 / "CCopyMoveToMenu.cpp",
         "CMoveToMenu",
         object_map_source=SHELL32 / "shell32.cpp",
     )
-    with pytest.raises(CppComError, match="custom/inherited base class CCopyMoveToMenu"):
-        cls.require_supported()
+    cls.require_supported()
+    assert cls.local_base_classes == ["CCopyMoveToMenu"]
+    names = [_state_field_name(decl) for decl in cls.state_fields]
+    assert "m_pidlFolder" in names and "m_fnOldWndProc" in names
+    # ATL template bases still fail loud — flattening is same-header concrete only.
+    dispatch = analyze_class(
+        SHELL32 / "CShellDispatch.cpp",
+        "CShellDispatch",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    with pytest.raises(CppComError, match="custom/inherited base class IDispatchImpl"):
+        dispatch.require_supported()
 
 
 def test_final_construct_is_wired_before_query_interface():

@@ -345,7 +345,15 @@ def cmd_dup_census(args):
     dup_census.print_census(report, as_json=args.json)
 
 
-def _extend_cpp_class_scan(scan, source: Path, class_name: str):
+def _trivial_cpp_body(body_text: str) -> bool:
+    """True when a method definition has an empty body AND no member-init list."""
+    match = re.search(r"\{(.*)\}\s*$", body_text, flags=re.S)
+    if match is None or match.group(1).strip():
+        return False
+    return ":" not in body_text[: match.start()].split(")")[-1]
+
+
+def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tuple = ()):
     """Merge source-owned in-class method definitions from the defining header.
 
     C++ permits method bodies in the class header.  They are part of the same
@@ -353,39 +361,99 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str):
     file contains most out-of-line methods.  Force the C++ grammar for `.h` and
     merge only this class's definitions; unrelated header helpers stay outside
     the paid closure.
+
+    ``local_bases`` are concrete same-header base classes being flattened into
+    this translation (CppComClass.local_base_classes): their method bodies are
+    merged too, then re-owned by the derived class so the vtable binder, worker
+    naming, and `this` typing all see one flat class.
     """
+    wanted = {class_name, *local_bases}
     header = find_class_header(source, class_name)
-    if header == source:
-        return scan
-    header_scan = scan_file(header, force_cpp=True)
-    inline = [item for item in header_scan.functions if item.cpp_class == class_name]
-    # A method is uniquely identified by (name, arity): C++ overloads that differ
-    # in parameter count are distinct methods, not duplicate bodies (e.g. a static
-    # inline `GetClassID()` helper in the header alongside the virtual
-    # `GetClassID(CLSID*)` defined out-of-line). Only a genuine same-name AND
-    # same-arity body present in BOTH header and impl is a real double-definition
-    # conflict; true overloads are resolved downstream by the arity-based binder.
-    # A stripped destructor shares (name, arity) with a 0-arg constructor —
-    # ctor-vs-dtor is never a double definition, so the kind flags join the key.
-    existing = {
-        (item.name, len(item.params), item.is_ctor, item.is_dtor)
-        for item in scan.functions
-        if item.cpp_class == class_name
-    }
-    duplicate = sorted(
-        item.name
-        for item in inline
-        if (item.name, len(item.params), item.is_ctor, item.is_dtor) in existing
-    )
-    if duplicate:
-        raise CppComError(
-            f"{class_name}: method body defined in both implementation and header: "
-            + ", ".join(duplicate)
+    if header != source:
+        header_scan = scan_file(header, force_cpp=True)
+        inline = [item for item in header_scan.functions if item.cpp_class in wanted]
+        # A method is uniquely identified by (name, arity): C++ overloads that differ
+        # in parameter count are distinct methods, not duplicate bodies (e.g. a static
+        # inline `GetClassID()` helper in the header alongside the virtual
+        # `GetClassID(CLSID*)` defined out-of-line). Only a genuine same-name AND
+        # same-arity body present in BOTH header and impl is a real double-definition
+        # conflict; true overloads are resolved downstream by the arity-based binder.
+        # A stripped destructor shares (name, arity) with a 0-arg constructor —
+        # ctor-vs-dtor is never a double definition, so the kind flags join the key.
+        existing = {
+            (item.cpp_class, item.name, len(item.params), item.is_ctor, item.is_dtor)
+            for item in scan.functions
+            if item.cpp_class in wanted
+        }
+        duplicate = sorted(
+            item.name
+            for item in inline
+            if (item.cpp_class, item.name, len(item.params), item.is_ctor, item.is_dtor) in existing
         )
-    scan.functions.extend(inline)
-    scan.identifiers.update(header_scan.identifiers)
-    scan.local_names.update(header_scan.local_names)
-    scan.unextracted.extend(item for item in header_scan.unextracted if class_name in item)
+        if duplicate:
+            raise CppComError(
+                f"{class_name}: method body defined in both implementation and header: "
+                + ", ".join(duplicate)
+            )
+        scan.functions.extend(inline)
+        scan.identifiers.update(header_scan.identifiers)
+        scan.local_names.update(header_scan.local_names)
+        scan.unextracted.extend(
+            item for item in header_scan.unextracted if any(name in item for name in wanted)
+        )
+    if local_bases:
+        # C++ construction order is base-then-derived. One flattened worker per
+        # special member: a trivially-empty derived ctor/dtor yields to the base's;
+        # two non-trivial bodies would need sequencing we don't generate — fail loud.
+        for is_dtor_kind in (False, True):
+            kind = "dtor" if is_dtor_kind else "ctor"
+            derived_special = [
+                item
+                for item in scan.functions
+                if item.cpp_class == class_name and (item.is_dtor if is_dtor_kind else item.is_ctor)
+            ]
+            base_special = [
+                item
+                for item in scan.functions
+                if item.cpp_class in local_bases
+                and (item.is_dtor if is_dtor_kind else item.is_ctor)
+            ]
+            if derived_special and base_special:
+                trivial = [
+                    item
+                    for item in derived_special + base_special
+                    if _trivial_cpp_body(item.body_text)
+                ]
+                keep_pool = derived_special + base_special
+                survivors = [item for item in keep_pool if item not in trivial]
+                if len(survivors) > 1:
+                    raise CppComError(
+                        f"{class_name}: both derived and base define a non-trivial {kind}; "
+                        "flattening cannot sequence them — translate by hand or simplify the C++"
+                    )
+                for item in trivial if survivors else trivial[1:]:
+                    scan.functions.remove(item)
+        # Collision guard: a derived method body hiding a base body of the same
+        # (name, arity, kind) cannot be flattened into one class.
+        derived_keys = {
+            (item.name, len(item.params), item.is_ctor, item.is_dtor)
+            for item in scan.functions
+            if item.cpp_class == class_name
+        }
+        clash = sorted(
+            item.name
+            for item in scan.functions
+            if item.cpp_class in local_bases
+            and not (item.is_ctor or item.is_dtor)
+            and (item.name, len(item.params), item.is_ctor, item.is_dtor) in derived_keys
+        )
+        if clash:
+            raise CppComError(
+                f"{class_name}: derived method body hides same-arity base body: " + ", ".join(clash)
+            )
+        for item in scan.functions:
+            if item.cpp_class in local_bases:
+                item.cpp_class = class_name
     return scan
 
 
@@ -1320,17 +1388,26 @@ def cmd_translate(args):
                 "c2rust does not provide a C++/ATL behavior anchor. Refusing --cpp-com "
                 "--c2rust rather than silently running unanchored."
             )
-        scan = _extend_cpp_class_scan(scan_file(target_path), target_path, args.class_name)
+        # Analyze first: scan-extend needs the flattened local-base list to merge and
+        # re-own base method bodies (concrete-local-base inherited-layout mapping).
+        cpp_com_cls = analyze_class(
+            target_path,
+            args.class_name,
+            object_map_source=rustconv_target.source_dir / "shell32.cpp",
+        )
+        scan = _extend_cpp_class_scan(
+            scan_file(target_path),
+            target_path,
+            args.class_name,
+            local_bases=tuple(cpp_com_cls.local_base_classes),
+        )
         if scan.unextracted:
             raise CppComError(
                 f"{target_path.name}: {len(scan.unextracted)} body/bodies remain unextractable; "
                 "fix scanner coverage before any paid class translation"
             )
-        cpp_com_cls = analyze_class(
-            target_path,
-            args.class_name,
-            object_map_source=rustconv_target.source_dir / "shell32.cpp",
-            method_names=[f.name for f in scan.functions if f.cpp_class == args.class_name],
+        cpp_com_cls.method_names.extend(
+            f.name for f in scan.functions if f.cpp_class == args.class_name
         )
         cpp_com_cls.require_supported()
         if getattr(args, "sdk_header", None):
@@ -1501,7 +1578,12 @@ def cmd_translate(args):
         capped = False  # set if --cost-cap is hit mid-file
         scan = scan_file(c_file)
         if rustconv_target.name == "shell32":
-            scan = _extend_cpp_class_scan(scan, c_file, args.class_name)
+            scan = _extend_cpp_class_scan(
+                scan,
+                c_file,
+                args.class_name,
+                local_bases=tuple(cpp_com_cls.local_base_classes) if cpp_com_cls else (),
+            )
         try:
             source_file_label = str(c_file.relative_to(REACTOS_ROOT))
         except ValueError:
@@ -1785,7 +1867,8 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if (
                     dep.name in deterministic_workers
-                    or cache.get(dep.name, dep.body_text) is not None
+                    or cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                    is not None
                 ):
                     continue
                 pattern = re.compile(rf"^[0-9]+_{re.escape(dep.name)}\.partial$")
@@ -1813,7 +1896,12 @@ def cmd_translate(args):
                         recovered = normalized
                         break
                 if recovered is not None:
-                    cache.put(dep.name, dep.body_text, recovered)
+                    cache.put(
+                        dep.name,
+                        dep.body_text,
+                        recovered,
+                        deterministic_contracts.get(dep.name, ""),
+                    )
                     partial_replayed.add(dep.name)
                     _record_outcome(dep, "partial_replay", route="current_deterministic_audit")
             if partial_replayed:
@@ -1875,7 +1963,10 @@ def cmd_translate(args):
             for dep in paid_deps:
                 if dep.cpp_class is None:
                     continue
-                if cache.get(dep.name, dep.body_text) is not None:
+                if (
+                    cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                    is not None
+                ):
                     continue
                 assert memory_identity is not None
                 hit = translation_memory.get(**memory_identity(dep))
@@ -1887,11 +1978,15 @@ def cmd_translate(args):
                 findings = audit_worker_body(dep.body_text, hit, f"{dep.name}_body", signature)
                 if findings:
                     continue
-                cache.put(dep.name, dep.body_text, hit)
+                cache.put(dep.name, dep.body_text, hit, deterministic_contracts.get(dep.name, ""))
                 memory_seeded.add(dep.name)
         pending_paid_deps = []
         for dep in paid_deps:
-            hit = None if no_resume else cache.get(dep.name, dep.body_text)
+            hit = (
+                None
+                if no_resume
+                else cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+            )
             if hit is not None and rustconv_target.name == "shell32":
                 hit = normalize_worker_body(
                     hit, worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
@@ -1943,7 +2038,9 @@ def cmd_translate(args):
                 if dep.name in deterministic_workers:
                     continue
                 if not no_resume:
-                    hit = cache.get(dep.name, dep.body_text)
+                    hit = cache.get(
+                        dep.name, dep.body_text, deterministic_contracts.get(dep.name, "")
+                    )
                     if hit is not None and rustconv_target.name == "shell32":
                         hit = normalize_worker_body(
                             hit,
@@ -2077,7 +2174,12 @@ def cmd_translate(args):
                             print(f"  [{fi}] {dp.name} AUDIT REJECT: {error}", file=sys.stderr)
                             continue
                         translated[dp.name] = r.rust_code
-                        cache.put(dp.name, dp.body_text, r.rust_code)
+                        cache.put(
+                            dp.name,
+                            dp.body_text,
+                            r.rust_code,
+                            deterministic_contracts.get(dp.name, ""),
+                        )
                         if translation_memory is not None and dp.cpp_class is not None:
                             assert memory_identity is not None
                             translation_memory.put(r.rust_code, **memory_identity(dp))
@@ -2150,7 +2252,7 @@ def cmd_translate(args):
             # Resume: reuse a prior unchanged-body translation for free. It still
             # feeds `translated` (callee context for later functions).
             if not no_resume:
-                hit = cache.get(dep.name, dep.body_text)
+                hit = cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
                 if hit is not None and rustconv_target.name == "shell32":
                     hit = normalize_worker_body(
                         hit,
@@ -2264,7 +2366,12 @@ def cmd_translate(args):
                     continue
                 translated[dep.name] = result.rust_code
                 # Persist for cross-run resume the instant it returns.
-                cache.put(dep.name, dep.body_text, result.rust_code)
+                cache.put(
+                    dep.name,
+                    dep.body_text,
+                    result.rust_code,
+                    deterministic_contracts.get(dep.name, ""),
+                )
                 if translation_memory is not None and dep.cpp_class is not None:
                     assert memory_identity is not None
                     translation_memory.put(result.rust_code, **memory_identity(dep))

@@ -50,6 +50,7 @@ pub mod admin_tools_folder;
 pub mod cfs_folder;
 pub mod control_panel_folder;
 pub mod copy_as_path_menu;
+pub mod copy_to_menu;
 pub mod desktop_folder;
 pub mod drives_folder;
 // Assembled at the C tree's path (dialogs/) by rustconv; keep that path stable for re-runs.
@@ -59,6 +60,7 @@ pub mod drop_target_helper;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
 pub mod folder_options;
+pub mod move_to_menu;
 pub mod my_docs_folder;
 pub mod net_folder;
 pub mod new_menu;
