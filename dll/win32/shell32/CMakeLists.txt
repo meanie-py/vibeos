@@ -49,12 +49,20 @@ list(APPEND SOURCE
     CFolderOptions.cpp
     folders/CDesktopFolder.cpp
     folders/CFSFolder.cpp
+    # Hybrid cohab: CDrivesFolder activation/methods are Rust-owned
+    # (shell32-rust/src/drives_folder.rs); this file retains CDrivesFolderEnum,
+    # the drives context menu/eject/format cluster, CDrivesExtractIcon + icon
+    # helpers, and the explicit *_RustBridge shims.
     folders/CDrivesFolder.cpp
-    folders/CMyDocsFolder.cpp
+    # folders/CMyDocsFolder.cpp — replaced by Rust (shell32-rust/src/my_docs_folder.rs); cohab via libshell32_rust.a
+    # Hybrid cohab: CPrinterFolder activation/methods are Rust-owned; this file
+    # retains CPrintersEnum and three explicit source-local Rust bridge helpers.
     folders/CPrinterFolder.cpp
-    folders/CAdminToolsFolder.cpp
+    # folders/CAdminToolsFolder.cpp — replaced by Rust (shell32-rust/src/admin_tools_folder.rs); cohab via libshell32_rust.a
+    # Hybrid cohab: CNetFolder activation/methods are Rust-owned; this file
+    # retains network enumeration, context-menu callbacks, and explicit bridges.
     folders/CNetFolder.cpp
-    folders/CFontsFolder.cpp
+    # folders/CFontsFolder.cpp — replaced by Rust (shell32-rust/src/fonts_folder.rs); cohab via libshell32_rust.a
     folders/CControlPanelFolder.cpp
     folders/CRecycleBin.cpp
     folders/CRecycleBinFolderViewCB.cpp
@@ -73,13 +81,15 @@ list(APPEND SOURCE
     CDefViewBckgrndMenu.cpp
     stubs.cpp
     systray.cpp
-    CUserNotification.cpp
+    # CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
     CDefaultContextMenu.cpp
+    # Hybrid cohab: COpenWithMenu activation/methods are Rust-owned; this file
+    # retains COpenWithList, COpenWithDialog, exported helpers, and opaque bridges.
     COpenWithMenu.cpp
-    CNewMenu.cpp
-    CSendToMenu.cpp
+    # CNewMenu.cpp — replaced by Rust (shell32-rust/src/new_menu.rs); cohab via libshell32_rust.a
+    # CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a
     CCopyMoveToMenu.cpp
-    CCopyAsPathMenu.cpp
+    # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
     CShellDispatch.cpp
     CFolder.cpp
     CFolderItems.cpp

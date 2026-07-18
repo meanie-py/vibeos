@@ -526,6 +526,8 @@ python -m rustconv batch ntoskrnl/ob/ -m sonnet        # Batch entire subsystem 
 python -m rustconv probe-migrate se/sqos.rs            # Stage 2: ProbeForRead/Write → Result<T>
 python -m rustconv trace-catalog                        # Generate debugcon trace catalog from inline asm
 python -m rustconv check                                # cargo check ×3 targets
+python -m rustconv candidate-check candidates.json --repair  # Batched x3 candidate oracle
+python -m rustconv substrate-plan path/to/report.json   # Cluster compiler roots by authority
 ```
 
 > **⚠️ `translate`/`submit` SPEND REAL MONEY — read this before running them.** Multiple agents have wasted >$100 by killing translations mid-run and losing the output. The rules:
@@ -539,6 +541,21 @@ Model shortcuts: `sonnet`, `haiku`, `opus`, `gemini-pro`, `gemini-flash`, `deeps
 `rustconv translate` accepts HAL paths and is HAL-aware (separate `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is ~70% useful for HAL — review before integrating.
 
 The pipeline has multiple stages: Stage 1 (C → Rust, `submit`/`batch`), Stage 2 (probe migration, `probe-migrate` — `ProbeForRead`/`Write` → `Result<T>`; SE+OB done), Stage 3 (Result+Drop-RAII idiomation, planned). See `docs/engineering/rustconv-pipeline.md` for the per-stage design.
+
+### Deterministic substrate closure
+
+After assembling a candidate, run `candidate-check --repair`, then use the embedded report or
+`substrate-plan` to fix distinct compiler roots by authority—not hundreds of individual rustc
+sites. Full-module manifest entries should include `"source"` so source-local definitions are
+routed correctly. Reuse/promote canonical Rust first, then project bindings, SDK/header
+generation, explicit local/bridge generation, and scope repair. Constants, SDK layouts, WIDL
+interfaces, vtables, ABI, and imports never go through the LLM. Ambiguous layouts stay red;
+same-arity local overloads and trailing C++ default arguments are likewise resolved and
+expanded deterministically before payment. If preflight cannot prove one binding, extend the
+harness or leave the class red; never ask the model to guess C++ compiler semantics.
+Sonnet is considered only after substrate closure leaves a genuine semantic/structural
+residual. The complete protocol and stop rules are in
+`docs/engineering/rustconv-substrate-closure-protocol.md`.
 
 ### Cost (Sonnet **Batch** API — the cheapest path, NOT what you pay synchronously)
 

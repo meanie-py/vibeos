@@ -26,6 +26,8 @@ import json
 import re
 from pathlib import Path
 
+from .outcome_ledger import lexical_fingerprint
+
 # tools/rustconv/.responses/  (parent.parent = the rustconv package's parent dir)
 RESPONSES_DIR = Path(__file__).resolve().parent.parent / ".responses"
 
@@ -99,3 +101,83 @@ class ResponseCache:
 
     def count(self) -> int:
         return len(self._manifest)
+
+
+class ExactBodyTranslationMemory:
+    """Reuse an accepted C++ worker for an exact behavior clone.
+
+    This is intentionally narrower than the alpha-normalized duplication census.
+    The key includes the method/signature, deterministic class shape, sealing
+    namespace, and the prepared behavior after the declarator.  Reuse only
+    substitutes the proven owning-class identifier; normal body audit still runs
+    before the caller promotes the result into its ordinary response cache.
+    """
+
+    def __init__(self, root: Path | None = None):
+        self.dir = root or (RESPONSES_DIR / "translation-memory-exact-v1")
+        self.manifest_path = self.dir / "manifest.json"
+        try:
+            self._manifest = json.loads(self.manifest_path.read_text())
+        except (OSError, ValueError):
+            self._manifest = {}
+
+    @staticmethod
+    def _identity(
+        *,
+        body_text: str,
+        class_name: str,
+        method: str,
+        return_type: str,
+        params: list[tuple[str, str]],
+        class_shape: str,
+        namespace: str,
+    ) -> str:
+        brace = body_text.find("{")
+        behavior = body_text[brace:] if brace >= 0 else body_text
+        behavior = behavior.replace(f"{class_name}_", "__RUSTCONV_CLASS___")
+        behavior = re.sub(rf"\b{re.escape(class_name)}\b", "__RUSTCONV_CLASS__", behavior)
+        canonical_method = (
+            "__ctor__"
+            if method == class_name
+            else "__dtor__"
+            if method == f"~{class_name}"
+            else method
+        )
+        payload = {
+            "behavior": lexical_fingerprint(behavior),
+            "method": canonical_method,
+            "return": return_type.replace(class_name, "__RUSTCONV_CLASS__"),
+            "params": [c_type.replace(class_name, "__RUSTCONV_CLASS__") for c_type, _ in params],
+            "class_shape": class_shape,
+            "namespace": namespace,
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+    def get(self, **identity) -> str | None:
+        key = self._identity(**identity)
+        entry = self._manifest.get(key)
+        if not entry:
+            return None
+        path = self.dir / entry.get("file", "")
+        try:
+            rust = path.read_text()
+        except OSError:
+            return None
+        origin = entry.get("class")
+        target = identity["class_name"]
+        if not origin or not rust.strip():
+            return None
+        rust = rust.replace(f"{origin}_", f"{target}_")
+        return re.sub(rf"\b{re.escape(origin)}\b", target, rust)
+
+    def put(self, rust: str, **identity) -> None:
+        if not rust.strip():
+            raise ValueError("refusing to remember empty translation")
+        key = self._identity(**identity)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{key}.rs"
+        (self.dir / filename).write_text(rust)
+        self._manifest[key] = {"file": filename, "class": identity["class_name"]}
+        tmp = self.manifest_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(self._manifest, indent=1, sort_keys=True))
+        tmp.replace(self.manifest_path)
