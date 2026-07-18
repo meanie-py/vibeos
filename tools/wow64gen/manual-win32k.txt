@@ -57,6 +57,26 @@ NtUserGetKeyboardLayoutName
 # BUGCHECK 0x1E. Widen arg0 US32<->US64 (atom form survives); pClassMenuName is
 # ignored kernel-side. Same class as GetClassName/GetAtomName above.
 NtUserUnregisterClass
+# E9: the flat-typed PUNICODE_STRING NtUser* sweep. A spec-vs-prototype scan
+# found the whole class typed flat (ptr) in win32u.spec while the real prototype
+# takes 1-2 PUNICODE_STRINGs -> the auto-thunk US32-as-US64 garbage-Buffer ->
+# raw_move C0000005 -> BUGCHECK 0x1E (osk.exe hit NtUserFindWindowEx). Each is a
+# pure US32<->US64 widen (Wow64pUS32to64) with non-US args flat; see wow64_manual.c.
+NtUserFindWindowEx
+NtUserGetWOWClass
+NtUserSetWindowsHookEx
+NtUserSetWinEventHook
+NtUserRegisterUserApiHook
+NtUserDrawCaptionTemp
+NtUserLoadKeyboardLayoutEx
+NtUserEnumDisplaySettings
+NtUserEnumDisplayDevices
+# These two ALSO carry a divergent struct (CreateDesktop: OBJECT_ATTRIBUTES;
+# GetIconInfo: ICONINFO HBITMAP widen), so they have NO dispatch entry yet and
+# hit the loud WOW64_MANUAL_UNIMPL stub (clean error, not a bugcheck) instead of
+# the silent-wrong flat thunk. Add a marshaller when a guest reaches them.
+NtUserCreateDesktop
+NtUserGetIconInfo
 # E7: Enum{,Child,Thread}Windows -> NtUserBuildHwndList fills a caller HWND[] and
 # returns the count. The flat (ptr) auto-thunk let 64-bit win32k write 8-byte
 # HWNDs into the guest's sizeof(HWND)=4-byte-per-entry buffer -> 2x heap OVERRUN
