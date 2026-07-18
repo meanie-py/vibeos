@@ -414,6 +414,11 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                     for (i = 0; i < Blob; i++)
                         Buf[sizeof(*A32) + 48 + i] = ((const BYTE *)Arg)[sizeof(*A64) + 80 + i];
                     A32->lParamBufferSize = 48 + Blob;
+                    if (Wow64TraceSyscalls)
+                        DbgPrint("[WOW64CB] (NC)CREATE cs64 name=%08lx%08lx cls=%08lx%08lx blob=%lu -> cs32 name=%08lx cls=%08lx\n",
+                                 (ULONG)(C64[7] >> 32), (ULONG)C64[7],
+                                 (ULONG)(C64[8] >> 32), (ULONG)C64[8],
+                                 Blob, C32[9], C32[10]);
                     Wow64pEnterGuestCallback(&Frame, Index, Buf,
                                              sizeof(*A32) + 48 + Blob);
                     break;
@@ -512,6 +517,54 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
             case 7: /* CLIENTTHREADSTARTUP — no argument payload */
                 Wow64pEnterGuestCallback(&Frame, Index, NULL, 0);
                 break;
+
+            case 8: /* CLIENTLOADLIBRARY: CLIENT_LOAD_LIBRARY_ARGUMENTS 40->24
+                     * + trailing string blob. Both UNICODE_STRING Buffers are
+                     * SELF-RELATIVE offsets from the struct base (win32k
+                     * builds them that way; guest user32 re-bases them at
+                     * +Argument), so the squeeze is: narrow both strings,
+                     * shift the offsets by the 16-byte header shrink, copy
+                     * the blob verbatim. */
+            {
+                typedef struct { USHORT Len; USHORT Max; ULONG _pad;
+                                 ULONGLONG Buf; } WOW64_CLL_US64;
+                typedef struct { USHORT Len; USHORT Max; ULONG Buf; } WOW64_CLL_US32;
+                typedef struct { WOW64_CLL_US64 Lib, Init;
+                                 ULONG Unload, ApiHook; } WOW64_CLL64; /* 40 */
+                typedef struct { WOW64_CLL_US32 Lib, Init;
+                                 ULONG Unload, ApiHook; } WOW64_CLL32; /* 24 */
+                const WOW64_CLL64 *A64 = (const WOW64_CLL64 *)Arg;
+                UCHAR *Buf = Frame.Buf64;
+                WOW64_CLL32 *A32 = (WOW64_CLL32 *)Buf;
+                const ULONG Shrink = sizeof(*A64) - sizeof(*A32);
+                ULONG Blob, i;
+
+                if (!Arg || Len < sizeof(*A64) ||
+                    Len - Shrink > sizeof(Frame.Buf64))
+                {
+                    DbgPrint("[WOW64CB] CLIENTLOADLIBRARY arg=%p len=%lu unusable\n",
+                             Arg, Len);
+                    break;
+                }
+                Blob = Len - sizeof(*A64);
+                A32->Lib.Len = A64->Lib.Len;
+                A32->Lib.Max = A64->Lib.Max;
+                A32->Lib.Buf = A64->Lib.Buf ? (ULONG)A64->Lib.Buf - Shrink : 0;
+                A32->Init.Len = A64->Init.Len;
+                A32->Init.Max = A64->Init.Max;
+                A32->Init.Buf = A64->Init.Buf ? (ULONG)A64->Init.Buf - Shrink : 0;
+                A32->Unload = A64->Unload;
+                A32->ApiHook = A64->ApiHook;
+                for (i = 0; i < Blob; i++)
+                    Buf[sizeof(*A32) + i] = ((const UCHAR *)Arg)[sizeof(*A64) + i];
+                if (Wow64TraceSyscalls)
+                    DbgPrint("[WOW64CB] CLIENTLOADLIBRARY lib=%.*S unload=%lu apihook=%lu\n",
+                             A32->Lib.Buf ? (int)(A32->Lib.Len / sizeof(WCHAR)) : 0,
+                             A32->Lib.Buf ? (PCWSTR)(Buf + A32->Lib.Buf) : L"",
+                             A32->Unload, A32->ApiHook);
+                Wow64pEnterGuestCallback(&Frame, Index, Buf, sizeof(*A32) + Blob);
+                break;
+            }
 
             case 3:  /* LOADDEFAULTCURSORS: arg = BOOL* (flat 4 bytes ok) */
             case 11: /* SETWNDICONS: no meaningful payload divergence */
@@ -706,8 +759,30 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                     }
                 }
 
+                if (Wow64TraceSyscalls)
+                    DbgPrint("[WOW64CB] <- WINDOWPROC msg 0x%lx result=%08lx%08lx retlen=%lu "
+                             "(guest ret32: proc=%08lx ansi=%lu wnd=%08lx msg=%04lx lpbs=%ld len32=%lu)\n",
+                             (unsigned long)Frame->Msg,
+                             (ULONG)(A64->Result >> 32), (ULONG)A64->Result, N,
+                             A32->Proc, A32->IsAnsiProc, A32->Wnd, A32->Msg,
+                             (long)A32->lParamBufferSize, Len32);
                 Frame->RetBuf = A64;
                 Frame->RetLen = N;
+                break;
+            }
+
+            case 8: /* CLIENTLOADLIBRARY: guest user32 returns 4 bytes
+                     * (BOOL bResult declared sizeof(HINSTANCE)); win32k reads
+                     * ResultPointer as an 8-byte HMODULE — widen zero-extended
+                     * so the high half is never stale scratch. */
+            {
+                ULONGLONG R = (Len32 >= sizeof(ULONG))
+                                  ? *(const ULONG *)(ULONG_PTR)Result32 : 0;
+                ULONG i;
+                for (i = 0; i < sizeof(R); i++)
+                    Frame->Buf64[i] = ((const BYTE *)&R)[i];
+                Frame->RetBuf = Frame->Buf64;
+                Frame->RetLen = sizeof(R);
                 break;
             }
 

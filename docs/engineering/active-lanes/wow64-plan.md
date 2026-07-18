@@ -776,18 +776,54 @@ x86-64 setjmp/longjmp (`wow64_callback.c` was aarch64-only) + `BTCpuGetContext`.
 E0–E4 are on branch `wow64-amd64`; amd64 smoke green (hello32 0x600D + gui32
 0x600e run in every smoke as coverage).
 
-*E4b — testgui/doom (window creation + kernel→user callbacks) on amd64. NEXT
-(owed).* The window-creation path bugchecks win32k (0x1E) today, so testgui/doom
-are staged-as-closure but NOT launched (smoke stays green). Two roots seen on
-the doom boot: (1) **callback index 8 is unmarshalled** ("NEEDS 64->32
-MARSHALLER (len 98) — failing loud" in `wow64_callback.c`) — needs its 64→32
-argument marshaller; (2) **a 32-bit `NtUserGetClassInfo(0x1182)` faults win32k**
-(`win32k.sys+0x258EC`, AV) — a 32/64 marshaller gap that lets a bad guest
-pointer reach win32k (which, separately, should validate rather than bugcheck).
-These are the amd64 analogues of the arm64 M8/M9 USER-struct + callback rungs;
-the wow64win marshallers are arch-shared, so the fix is likely a small amd64
-delta (compat-mode arg shape) rather than new marshallers. Re-enable the
-testgui/doom `add_cd_file` + winlogon launch once green.
+*E4b — testgui/doom (window creation + kernel→user callbacks) on amd64.
+**DONE 2026-07-18** — x86 DOOM renders E1M1 in a window on the amd64 desktop
+(3,000+ `NtGdiStretchDIBitsInternal` frame blits and climbing, message pump
+alive); testgui PASSes its 20s still-running check. Four distinct fixes, in
+debug order:*
+
+1. **Stale-`Esp` callback stack smash (the deep one — `wow64cpu.S`).**
+   `Wow64CpuSyscall64` saved only the guest GPRs into the CPU-area context at
+   BOP entry; `Esp`/`Eip` were written only by the *return* fixup. So while a
+   win32k service was in flight the context held the PREVIOUS syscall's
+   `Esp`, and a kernel→user callback fired mid-service built the guest-side
+   dispatcher frame at that stale address — smashing everything the guest had
+   pushed since (doom died in `RtlInitUnicodeString` reading a clobbered
+   string pointer during the WM_NCCREATE W→A conversion). FEX tracks live
+   guest state internally, which is why only amd64 needed the fix: save the
+   live `Esp` + `[esp]` return address at BOP entry.
+2. **`NtUserGetClassInfo` manual marshaller** (`wow64_manual.c` + gen list).
+   The auto-thunk fed win32k an 8-byte `UNICODE_STRING32` read as 16 bytes
+   (garbage `Buffer` → probe-raise → BUGCHECK 0x1E under DUMMY_PSEH) and let
+   the kernel write an 80-byte `WNDCLASSEXW` over the guest's 48-byte struct.
+   arm64 only ever survived this by stack-garbage luck — the marshaller fixes
+   both arches.
+3. **Callback 8 (CLIENTLOADLIBRARY) 64→32 marshaller** (`wow64_callback.c`).
+   `CLIENT_LOAD_LIBRARY_ARGUMENTS` 40→24 header squeeze (both UNICODE_STRING
+   Buffers are self-relative offsets; shift by the 16-byte shrink, blob
+   verbatim) + 4→8-byte result widen on the return. First exercised by
+   win32k's `LoadUserApiHook(uxtheme.dll)` during doom's first window op;
+   uxtheme isn't in the closure so the guest returns FALSE gracefully (theme
+   api hooks stay off — fine, arm64 never even ran this callback before).
+4. **Stale guest binaries (the embarrassing one).** After fixes 1–3 doom's
+   WM_NCCREATE *completed* but the guest returned Result=0: the staged
+   `build-i386` DLLs predated the last master merge. The syswow64 set on the
+   amd64 livecd is snapshotted from `build-i386` at `ninja livecd` time —
+   **always rebuild i386 before re-mastering the amd64 livecd when
+   guest-visible shared source changed.** (Cross-build staging has no
+   staleness gate — the smoke staleness check covers only same-arch media.)
+
+Bonus hardening on the way: failure-branch `ERR()` prints in user32's
+`MsgiUnicodeToAnsiMessage` (NC)CREATE conversion (fail-loud), completion-path
+result tracing behind `Wow64TraceSyscalls`, and `MmCreatePeb`/`MmCreateTeb`
+out-pointer writes converted to `write_volatile` (lint_kernel clean).
+
+*E4c owed (non-blocking):* uxtheme.dll not in closure (theme api hooks
+disabled); guest hardware-fault context flush (the CPU-area is fresh at
+syscall boundaries now, but a fault at an arbitrary guest instruction still
+reads stale values — the "[GUEST32] int-2d forwarding silent on amd64" gap);
+doom input on amd64 unverified (arm64 M14 did the input work; paths are
+arch-shared).
 
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored

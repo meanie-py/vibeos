@@ -31,6 +31,10 @@ NtUserProcessConnect
 # M8 window-creation path: pointer-bearing structs (WNDCLASSEX/CLSMENUNAME,
 # LARGE_STRING, PAINTSTRUCT) + the message pump family above.
 NtUserRegisterClassExWOW
+# E4b: GetClassInfoExW/A — UNICODE_STRING32 name IN + 48-byte WNDCLASSEXW32 OUT
+# (the auto-thunk's 80-byte kernel write corrupted 32 bytes of guest stack, and
+# its garbage UNICODE_STRING Buffer bugchecked amd64 0x1E)
+NtUserGetClassInfo
 NtUserCreateWindowEx
 NtUserTranslateMessage
 NtUserBeginPaint

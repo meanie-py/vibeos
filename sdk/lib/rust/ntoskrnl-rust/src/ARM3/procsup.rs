@@ -415,7 +415,7 @@ pub unsafe extern "system" fn MmCreatePeb(
     let mut Status: NTSTATUS;
     let Characteristics: USHORT;
     SectionOffset.QuadPart = (0u64 as ULONGLONG) as i64;
-    *BasePeb = core::ptr::null_mut();
+    core::ptr::write_volatile(BasePeb, core::ptr::null_mut());
 
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
 
@@ -615,7 +615,7 @@ pub unsafe extern "system" fn MmCreatePeb(
     }
 
     KeDetachProcess();
-    *BasePeb = Peb;
+    core::ptr::write_volatile(BasePeb, Peb);
     STATUS_SUCCESS
 }
 
@@ -631,7 +631,7 @@ pub unsafe extern "system" fn MmCreateTeb(
     let BaseTeb = opaque_ptr(BaseTeb);
     let mut Teb: PTEB = core::ptr::null_mut();
     let mut Status = STATUS_SUCCESS;
-    *BaseTeb = core::ptr::null_mut();
+    core::ptr::write_volatile(BaseTeb, core::ptr::null_mut());
 
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
 
@@ -732,7 +732,7 @@ pub unsafe extern "system" fn MmCreateTeb(
     }
 
     KeDetachProcess();
-    *BaseTeb = Teb;
+    core::ptr::write_volatile(BaseTeb, Teb);
     Status
 }
 
@@ -2045,7 +2045,7 @@ pub unsafe extern "system" fn NtFreeUserPhysicalPages(
 //     //
 //     ARM64_UART_TRACE("[MM] MmCreatePeb: KeDetachProcess\r\n");
 //     KeDetachProcess();
-//     *BasePeb = Peb;
+//     core::ptr::write_volatile(BasePeb, Peb);
 //     return STATUS_SUCCESS;
 // }
 //
@@ -2152,7 +2152,7 @@ pub unsafe extern "system" fn NtFreeUserPhysicalPages(
 //     //
 //     ARM64_UART_TRACE("[MM] MmCreateTeb: KeDetachProcess\r\n");
 //     KeDetachProcess();
-//     *BaseTeb = Teb;
+//     core::ptr::write_volatile(BaseTeb, Teb);
 //     return Status;
 // }
 //

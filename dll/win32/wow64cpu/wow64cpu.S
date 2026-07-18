@@ -130,6 +130,18 @@ PUBLIC Wow64CpuSyscall64
     mov [r15 + WCTX_Ebp], ebp
     mov [r15 + WCTX_Eax], r10d          /* guest EAX (syscall number) */
 
+    /* Save the LIVE Esp/Eip too. The fixup only writes these when the
+     * dispatch RETURNS — so while a service is in flight the context held
+     * the PREVIOUS syscall's values, and a kernel->user callback fired from
+     * inside win32k derived the guest-side dispatcher stack from that stale
+     * Esp: the nested frame landed ON TOP of everything the guest pushed
+     * since, smashing live locals (doom died in RtlInitUnicodeString on a
+     * clobbered string pointer exactly this way). FEX tracks the live guest
+     * state internally on arm64, which is why only amd64 needed this. */
+    mov [r15 + WCTX_Esp], r11d          /* true guest ESP (ret-addr slot) */
+    mov eax, [r11]                      /* return address the stub pushed */
+    mov [r15 + WCTX_Eip], eax           /* = where the guest will resume */
+
     /* Switch to the 64-bit dispatcher stack (BTCpuSimulate stashed it at
      * CpuArea+8; ctx == CpuArea+16, so that slot is r15-8). */
     mov rsp, [r15 - 8]
