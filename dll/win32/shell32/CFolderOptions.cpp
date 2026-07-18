@@ -41,43 +41,47 @@ INT_PTR CALLBACK FolderOptionsGeneralDlg(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 INT_PTR CALLBACK FolderOptionsViewDlg(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK FolderOptionsFileTypesDlg(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-HRESULT STDMETHODCALLTYPE CFolderOptions::AddPages(LPFNSVADDPROPSHEETPAGE pfnAddPage, LPARAM lParam)
+static UINT CALLBACK
+FolderOptionsRustLifetimeCallback(HWND hWnd, UINT uMsg, PROPSHEETPAGEW *pPSP)
+{
+    if (uMsg == PSPCB_RELEASE)
+        ((IUnknown *)pPSP->lParam)->Release();
+    return TRUE;
+}
+
+extern "C" HRESULT WINAPI
+CFolderOptions_AddPages_CppBridge(IUnknown *pObject,
+                                  LPFNSVADDPROPSHEETPAGE pfnAddPage,
+                                  LPARAM lParam)
 {
     HPROPSHEETPAGE hPage;
-    LPARAM sheetparam = (LPARAM)static_cast<CFolderOptions*>(this);
+    LPARAM sheetparam = (LPARAM)pObject;
 
     hPage = SH_CreatePropertySheetPageEx(IDD_FOLDER_OPTIONS_GENERAL, FolderOptionsGeneralDlg,
-                                         sheetparam, NULL, &PropSheetPageLifetimeCallback<CFolderOptions>);
+                                         sheetparam, NULL, FolderOptionsRustLifetimeCallback);
     HRESULT hr = AddPropSheetPage(hPage, pfnAddPage, lParam);
     if (FAILED_UNEXPECTEDLY(hr))
-    {
-        ERR("Failed to create property sheet page FolderOptionsGeneral\n");
         return hr;
-    }
-    else
-    {
-        AddRef(); // For PropSheetPageLifetimeCallback
-    }
 
-    hPage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_VIEW, FolderOptionsViewDlg, sheetparam, NULL);
-    if (hPage == NULL)
-    {
-        ERR("Failed to create property sheet page FolderOptionsView\n");
-        return E_FAIL;
-    }
-    if (!pfnAddPage(hPage, lParam))
+    pObject->AddRef(); // For FolderOptionsRustLifetimeCallback
+
+    hPage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_VIEW, FolderOptionsViewDlg,
+                                       sheetparam, NULL);
+    if (hPage == NULL || !pfnAddPage(hPage, lParam))
         return E_FAIL;
 
-    hPage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_FILETYPES, FolderOptionsFileTypesDlg, sheetparam, NULL);
-    if (hPage == NULL)
-    {
-        ERR("Failed to create property sheet page FolderOptionsFileTypes\n");
-        return E_FAIL;
-    }
-    if (!pfnAddPage(hPage, lParam))
+    hPage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_FILETYPES,
+                                       FolderOptionsFileTypesDlg, sheetparam, NULL);
+    if (hPage == NULL || !pfnAddPage(hPage, lParam))
         return E_FAIL;
 
     return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE CFolderOptions::AddPages(LPFNSVADDPROPSHEETPAGE pfnAddPage, LPARAM lParam)
+{
+    return CFolderOptions_AddPages_CppBridge(
+        static_cast<IShellPropSheetExt *>(this), pfnAddPage, lParam);
 }
 
 HRESULT STDMETHODCALLTYPE CFolderOptions::ReplacePage(EXPPS uPageID, LPFNSVADDPROPSHEETPAGE pfnReplaceWith, LPARAM lParam)
@@ -181,4 +185,33 @@ HRESULT CFolderOptions::HandleDefFolderSettings(int Action)
     }
 
     return hr;
+}
+
+extern "C" HRESULT WINAPI
+CFolderOptions_HandleDefFolderSettings_CppBridge(IUnknown *pSite, int Action)
+{
+    const int ResetAction = 0;
+    const int ApplyAction = 1;
+    IBrowserService2 *bs2;
+    HRESULT hr = IUnknown_QueryService(pSite, SID_SShellBrowser,
+                                       IID_PPV_ARG(IBrowserService2, &bs2));
+    if (SUCCEEDED(hr))
+    {
+        if (Action == ApplyAction)
+            hr = bs2->SetAsDefFolderSettings();
+        else if (Action == ResetAction)
+            ExecResetDefViewFolderSettings(bs2);
+        bs2->Release();
+    }
+
+    if (Action == ResetAction)
+        hr = CFolderOptions::ResetGlobalAndDefViewFolderSettings();
+
+    return hr;
+}
+
+extern "C" HRESULT WINAPI
+CFolderOptions_ResetGlobalAndDefViewFolderSettings_CppBridge()
+{
+    return CFolderOptions::ResetGlobalAndDefViewFolderSettings();
 }

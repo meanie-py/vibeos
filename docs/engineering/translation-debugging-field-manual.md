@@ -7113,7 +7113,76 @@ itself. Compare **pointer depth**, not pointer-vs-scalar: a mutation test proved
 of that checker structurally blind to `HANDLE`-vs-`LPHANDLE` — the bug that motivated it — because
 *both* are pointers.
 
+### 9.78a (2026-07-14) C++ COM translation: the model owns bodies, never interfaces, vtables, offsets, lifetime, or activation
 
+**Failure class:** asking an LLM to translate an ATL class as one blob lets it invent the most
+dangerous parts of the result: inherited slot order, `this` adjustment for secondary interfaces,
+calling convention, IID routing, refcount lifetime, and class-factory registration. Those errors
+can compile on 64-bit and corrupt the i386 stack or return the wrong interface pointer at runtime.
+
+**Pipeline rule:** `rustconv cpp-com` derives the class COM map from the defining C++ header and
+the flattened vtable signatures from compiler-facing SDK headers (WIDL `*Vtbl` structs or legacy
+`DECLARE_INTERFACE_` blocks). It emits the Rust interface types/vtables, `offset_of!` wrappers,
+QueryInterface/AddRef/Release, allocation/factory, and an ATL
+object-map adapter deterministically. Paid calls receive only a flat
+`Class_Method_body(this, ...)` worker contract. Unsupported COM-map macros, scanner gaps, missing
+WIDL headers, unmapped class fields, aggregation, or internal construction without an
+`OBJECT_ENTRY` hard-fail before a paid call.
+
+Two adjacent boundaries are equally strict. A custom C++ base class is inherited object layout
+and behavior, even when the derived class declares no fields; it must not be mislabeled
+"stateless." A selected class method that calls a same-file helper is class-atomic only when the
+complete transitive helper closure is selected. rustconv now does that deterministically and binds
+overloads by arity to collision-free `<helper>[_N]_body` names before prompting. Same-name,
+same-arity overloads still hard-fail: implementing general C++ overload resolution would be a
+guess. Only `static`/internal-linkage free functions enter that closure: a same-file exported
+function such as `SHCreateShellItem` remains a module ABI call instead of silently changing
+ownership and export semantics. The C++ scanner has a narrow textual recovery for tree-sitter's
+`RET Class::Method(...)` misparse so this gate sees unadorned out-of-line methods rather than
+silently losing them.
+
+Plain C object fields are also deterministic now: a simple scalar/pointer declaration is emitted
+directly in the Rust-owned `#[repr(C)]` object and zero-initialized before the translated
+constructor runs. This admits `CShellItem`'s `LPITEMIDLIST m_pidl` without asking the model to
+invent layout. Templates/RAII wrappers (`CComPtr`, `CComHeapPtr`), references, arrays, bitfields,
+initializers, and multi-declarator fields still hard-fail because their hidden layout and lifetime
+semantics need an explicit mapping rather than a plausible-looking Rust field.
+
+The first stateful pilot, `CExeDropHandler`, added two adjacent guards. Flattened parent/child
+interfaces repeat inherited methods with a different receiver spelling (`IPersist *` versus
+`IPersistFile *`); compare the return type and non-receiver parameters before declaring a
+conflict. Also, an empty constructor body can still have a non-empty initializer list: only
+proven zero initializers may lower to the factory's already-zeroed state. Non-zero initializers
+remain real worker behavior. C wide character literals are normalized to exact UTF-16 code-unit
+integers before prompting, and worker audits allow calls through `lpVtbl` while rejecting
+`Option`/`unwrap` guesses or model-defined vtable surfaces.
+
+`COpenControlPanel` exposed two more surfaces that must stay deterministic. First, tree-sitter
+found its out-of-line `HRESULT WINAPI Class::Method` bodies but lost the return types; the
+flattened WIDL vtable now overwrites scanner method types (while retaining source parameter names)
+before worker signatures are built. Second, even Sonnet invented
+`const ERROR_NOT_FOUND: DWORD = 2` (the SDK value is 1168) and replaced `CSIDL_CONTROLS` with
+`0x0007` (the SDK value is 3). The symbolic audit caught both, and now also rejects a worker that
+defines any source symbolic constant locally. C++ `L"..."` literals are replaced before prompting
+with content-hashed `CPP_COM_WSTR_*` references and emitted as exact UTF-16 statics, so neither
+cheap nor premium models transcribe string data. Declaration-only local `extern` blocks are
+removed; module-level FFI remains engineer/compiler-owned.
+
+**Cheap-model result:** the first `CDropTargetHelper` DeepSeek pilot preserved symbolic
+`E_NOTIMPL`, but on trivial bodies it also invented variadic debug externs, emitted Markdown,
+overqualified types, and produced `HRESULT(E_NOTIMPL)` as though the scalar alias were a tuple
+struct. Deterministic normalization handles syntax-only debug-macro forms; body audits reject ABI
+surface, signature drift, and dropped symbolic or numeric constants before caching. DeepSeek is
+therefore a screened draft option, not the unattended default for COM ownership/control flow; use
+Sonnet for real bodies until a broader corpus proves otherwise.
+
+Before paying, exact whole-body stubs are lowered mechanically: a body consisting only of
+`UNIMPLEMENTED;` and an optional symbolic HRESULT return becomes its flat Rust worker at $0. This
+translated all 23 `CActiveDesktop` bodies without invoking the selected Sonnet backend; any extra
+statement makes the recognizer decline and leaves the body on the normal audited model path. The
+same deterministic pass now handles an exact `*out = SYMBOL; return SYMBOL;` body and synthesizes
+empty implicit constructors/destructors, which kept `COpenControlPanel::GetCurrentView` and its
+lifetime workers off the paid path.
 ### 9.79 (2026-07-14) Porting msvcrt's bignum float parser: a verbatim upstream bug that is provably INERT, a signed-char/WEOF trap that is load-bearing, an i386 x87 float-ABI I first read BACKWARDS, and a harness that could not see errno being *cleared*
 
 **Context.** Wave 13 of the msvcrt-from-pieces lane ported msvcrt's own base-10 **bignum** float
@@ -8211,10 +8280,101 @@ heavy tests can expose *downstream* latent bugs**: with the section tests active
 *later* kmtest_.exe launch with garbage instruction bytes inside the same image page (`0xC000001D` at
 `0x140007xxx`, or a `0xC0000005` at exit) — a shared image-section page corrupted under heavy map/unmap
 traffic, same latent family as the quarantined `ZwAllocateVirtualMemory` 0x4E PFN_LIST_CORRUPT. Registered as
-a known flake; hunt owed (task #7 family). **See §9.97 for the deep characterization** — the 07-18 hunt proved
+a known flake; hunt owed (task #7 family). **See §9.98 for the deep characterization** — the 07-18 hunt proved
 this is a physical-page-reuse (free-while-mapped) corruption, not the section-view path itself.
 
-### 9.97 (CHARACTERIZED, root-cause hunt OWED 2026-07-18) The arm64 kmtest-sweep "late-run user-process corruption" (§9.96(i)) is a PHYSICAL-PAGE-REUSE bug — a frame backing a still-mapped user page is freed and re-handed-out, corrupting whichever mapping loses the race — with TWO faces from ONE root
+
+### 9.97 (ROOT-CAUSED + FIXED 2026-07-17) `-smp 2` KeIrql/KeSpinLock kmtest deltas — SYNCH_LEVEL's flavor-variance was frozen at the UP value in FIVE independent translation sites (+ a latent kmtest union-aliasing bug that fabricated "byte-shifted pointer" corruption)
+
+**Symptom.** amd64 `-smp 2` kmtest ratchet: `KeIrql fail 0→3` (deterministic),
+`KeSpinLock fail 2→31` (WILDLY run-dependent: 31 in one boot, 1 in the next, same
+binaries), `KeEvent pass 42733→42601 fail 0` (deterministic dip). KeSpinLock failure
+text showed pointer values that looked like `&MmPfnLock` byte-shifted (`>>8`, `>>16`,
+low-bytes-at-top) — pattern-matching to wild-write corruption.
+
+**KeIrql root cause — SYNCH_LEVEL frozen at the UP value across the translation.**
+C encodes "2 on UP, IPI_LEVEL-2 on MP" either via `#ifdef CONFIG_SMP` (ndk headers) or
+via a runtime variable (`halp.h`: `#define SYNCH_LEVEL HalpIrqlSynchLevel`, set
+per-flavor in `buildtype.c`). Five translated sites each froze their own copy:
+1. `ntoskrnl/ke/ke_rust_shims.c` amd64 `KeRaiseIrqlToSynchLevel` — hardcoded
+   `DISPATCH_LEVEL` into CR8 (this is the amd64 provider of the export; the kmtest
+   fail's direct cause together with #5).
+2. `hal-rust/src/x86/apic.rs` + `pic_pic.rs` — `const SYNCH_LEVEL = DISPATCH_LEVEL`
+   feeding the i386 hal exports.
+3. `hal-rust/src/x86/spinlock.rs` — `const SYNCH_LEVEL = 2` feeding the whole i386
+   `*RaiseToSynch` spinlock-export family.
+4. `ke/i386/irqobj.rs` `= 28` (the pre-WS03 `IPI_LEVEL-1` value) and
+   `ke/i386/thrdini.rs` `KfRaiseIrql(0x0C)` (0x0C=12 is the **amd64** SYNCH — wrong
+   arch's constant, live at the SMP context-switch raise).
+5. `sdk/include/xdk/amd64/ke.h` `KeRaiseIrqlToSynchLevel` was FORCEINLINE over CR8 —
+   so the constant is compiled into **every driver binary** (kmtest raised to its own
+   baked-in 2 and no kernel change could alter that).
+
+**Fixes.** Single source of truth per crate + runtime-reachable for drivers:
+kernel exports `KiSynchIrql` (`ke_defs.rs`, per-flavor via `feature="smp"`) and the C
+shim reads it; hal-rust sites all take `x86::buildtype::SYNCH_LEVEL` (cfg'd beside
+`HalpBuildType` — the hal `smp` feature already pairs hal.dll with the kernel flavor,
+proven by the MISMATCHED_HAL check passing); xdk amd64 header switched
+FORCEINLINE→`NTKERNELAPI` import + `@ cdecl -arch=x86_64 KeRaiseIrqlToSynchLevel()`
+added to ntoskrnl.spec (real NT amd64 exports it; UP kernel exports 2, SMP kernel 12,
+so one driver binary is correct against both flavors).
+
+**KeSpinLock root cause — the TEST, not the kernel.** kmtest `CHECK_DATA` held
+`union { KLOCK_QUEUE_HANDLE QueueHandle; PKSPIN_LOCK_QUEUE Queue; KIRQL Irql; }` —
+and the CheckQueue rows use **both** `Queue` and `Irql`: every queued-acquire wrapper
+stores the returned IRQL into `Irql`, stomping the LOW BYTE of the `Queue` pointer;
+`CheckSpinLockQueue` then dereferences the garbled pointer. And the twist found in
+validation: `LockQueue[n].Lock` is boot-initialized **on UP kernels too**
+(`KiInitSystem`, faithful to C and to real NT — the queued-lock exports exist on UP)
+— the test's unconditional NULL-expectation has therefore NEVER been checkable; it
+only ever "passed" because the garbled pointer happened to land on zeroed memory. A
+first fix attempt that kept NULL/NULL on a `!KmtIsMultiProcessorBuild` branch
+regressed the UP guard run 321/2 → 303/20 by de-garbling the read — proof by
+validation. The "byte-shifted `&MmPfnLock`" values were misaligned reads of
+neighboring initialized queue entries — **test-local aliasing, not kernel corruption**.
+Fix: `Irql` moved out of the union + `CheckSpinLockQueue` made a universal
+captured-compare, no flavor branch (capture `InitialQueueLock = Lock & ~7` at row
+init; expect `Next==NULL`, `Lock&~7 == initial` — correct against real-NT MP
+LQ_WAIT/LQ_OWN flag toggling, our ReactOS-HACK impl, AND any kernel that leaves the
+array zeroed; same check count as before so baseline totals are comparable).
+
+**KeEvent dip — legitimate.** The test skips a "spinlock acquired and never
+released" section on MP builds by design (would wedge an MP kernel). Handled at the
+harness: `vibeos-cli conformance --smp N` now ratchets against
+`tools/conformance-baseline/<arch>/kmtest-smp<N>.txt` (MP kernels legitimately
+diverge from UP: `KmtIsMultiProcessorBuild` branches, skipped MP-fatal sections,
+SYNCH=IPI-2 expectations), seeded via `--smp N --write-baseline`.
+
+**Reusable lessons.**
+- **Flavor-variant C constants are a translation drop-class of their own** (sibling
+  of §9.95's dropped `#ifdef CONFIG_SMP` blocks): a C macro/variable that changes
+  value per kernel flavor becomes a frozen UP constant in translation — and every
+  crate/module that froze its own copy diverges independently (we had 2, 12, 27, 28
+  live simultaneously for the same concept). Sweep:
+  `grep -rn "SYNCH_LEVEL\s*[:=]" sdk/lib/rust/` and compare every hit against the
+  cfg'd source of truth (`ke_defs.rs` kernel-side, `buildtype.rs` hal-side).
+- **A FORCEINLINE in a DDK header bakes the constant into every driver** — no kernel
+  fix can reach it. If the value is kernel-flavor-dependent, it must be an export
+  (check real NT: it usually already is).
+- **"Byte-shifted pointer" values in TEST failure output ≠ kernel corruption.**
+  Shifted-looking reads (`P>>8`, `P>>16`, `P<<48`) mean a *misaligned read through a
+  garbled pointer* — on little-endian, reading 8 bytes at `A±k` of a pointer stored
+  at `A` shifts it by 8k bits. Before hunting a kernel wild-write, check the test for
+  union aliasing / low-byte stomps of the pointer it's dereferencing. The tell here:
+  fail count varied 31↔1 across boots of identical binaries (kernel state is not that
+  nondeterministic; a stomped pointer's target contents are).
+- **Count-math triage from two summary lines, zero boots:** SMP run had
+  pass+fail == UP baseline's pass+fail exactly ⇒ identical branch structure ⇒ the
+  runtime flags (`KmtIsCheckedBuild`, `pSpinLock` NULLing, IRQL-loop trims) resolved
+  identically ⇒ the deltas are expectation-value flips, not new/removed checks.
+  Fifteen minutes of reading beats a repro boot.
+- **kmtest self-reports the kernel flavor**: `KmtIsMultiProcessorBuild =
+  !(Prcb->BuildType & PRCB_BUILD_UNIPROCESSOR)`, `KmtIsCheckedBuild = BuildType & 1`.
+  Our SMP kernel publishes DEBUG-only (kiinit drops UNIPROCESSOR under
+  `feature="smp"`) — so kmtest runs MP expectations. When triaging kmtest deltas,
+  derive both flags FIRST; they gate nearly every branch.
+
+### 9.98 (CHARACTERIZED, root-cause hunt OWED 2026-07-18) The arm64 kmtest-sweep "late-run user-process corruption" (§9.96(i)) is a PHYSICAL-PAGE-REUSE bug — a frame backing a still-mapped user page is freed and re-handed-out, corrupting whichever mapping loses the race — with TWO faces from ONE root
 
 **Why this entry exists.** §9.96(i) registered the flake with a plausible-but-unproven label ("shared
 image-section page corrupted under map/unmap"). An overnight hunt (self-reporting kernel tripwires, no GDB

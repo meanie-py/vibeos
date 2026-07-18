@@ -18,7 +18,13 @@ target_link_libraries(rshell
     uuid
     wine
     cpprt
-    atl_classes)
+    atl_classes
+    ${MENUBAND_RUST_LIB})
+
+# CMenuBand is Rust-owned (menuband-rust, built in dll/win32/shell32/shellmenu). rshell
+# links the shared libmenuband_rust.a and provides its own MenuBandRustModuleLock/Unlock
+# (misc.cpp) over rshell's COM module.
+add_dependencies(rshell rust_menuband)
 
 add_importlibs(rshell
     browseui

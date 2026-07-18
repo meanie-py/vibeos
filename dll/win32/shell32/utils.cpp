@@ -523,6 +523,16 @@ SHGetNameAndFlagsW(
     return hr;
 }
 
+/* Rust bridge — CShellLink is Rust-owned (shell32-rust shell_link); its property-sheet
+ * dialog needs SHGetNameAndFlagsW, which is C++-mangled here (no EXTERN_C on the decl),
+ * so expose a C-ABI wrapper the Rust module can name portably across the three targets. */
+EXTERN_C HRESULT WINAPI
+CShellLink_SHGetNameAndFlagsW_RustBridge(
+    LPCITEMIDLIST pidl, DWORD dwFlags, LPWSTR pszText, UINT cchBuf, DWORD *pdwAttributes)
+{
+    return SHGetNameAndFlagsW(pidl, dwFlags, pszText, cchBuf, pdwAttributes);
+}
+
 EXTERN_C HWND
 BindCtx_GetUIWindow(_In_ IBindCtx *pBindCtx)
 {
@@ -2188,4 +2198,27 @@ SHELL32_AliasTranslatePidl(
     _In_ DWORD dwFlags)
 {
     return SHELL32_ReparentAsAliasPidl(NULL, NULL, pidl, ppidlNew, dwFlags) ? S_OK : E_FAIL;
+}
+
+/**************************************************************************
+ * Rust bridges — C ABI shims over C++-linkage/inline utility helpers for
+ * the Rust-owned shell32 modules (shell32-rust).
+ */
+
+extern "C" DWORD WINAPI
+BindCtx_GetMode_RustBridge(IBindCtx *pbc, DWORD dwDefault)
+{
+    return BindCtx_GetMode(pbc, dwDefault);
+}
+
+extern "C" HRESULT WINAPI
+SHIsFileSysBindCtx_RustBridge(IBindCtx *pBindCtx, WIN32_FIND_DATAW *pFindData)
+{
+    return SHIsFileSysBindCtx(pBindCtx, pFindData);
+}
+
+extern "C" UINT WINAPI
+SHELL_ErrorBox_RustBridge(HWND hwndOwner, UINT Error)
+{
+    return SHELL_ErrorBoxHelper(hwndOwner, Error);
 }

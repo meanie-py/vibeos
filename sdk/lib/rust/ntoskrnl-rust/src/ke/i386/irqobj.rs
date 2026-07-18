@@ -60,7 +60,7 @@ const MAXULONG: ULONG = 0xFFFFFFFF;
 #[cfg(not(feature = "smp"))]
 const SYNCH_LEVEL: KIRQL = 2; // UP kernel: SYNCH_LEVEL == DISPATCH_LEVEL
 #[cfg(feature = "smp")]
-const SYNCH_LEVEL: KIRQL = 28;
+const SYNCH_LEVEL: KIRQL = 27; // IPI_LEVEL - 2 (WS03+ NDK) — keep equal to ke_defs::SYNCH_LEVEL
 
 unsafe fn KiGetVectorDispatch(Vector: ULONG, Dispatch: PDISPATCH_INFO) {
     let mut Handler: PKINTERRUPT_ROUTINE;
