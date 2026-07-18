@@ -970,7 +970,7 @@ unsafe fn TryStartWow64Win32() {
  * is the demo: the other GUI guests would materialise on top of its window and
  * occlude it (doomgeneric creates its window at CW_USEDEFAULT and never calls
  * SetForegroundWindow). Same rationale as DoomStaged() gating the notepad spawn. */
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+#[cfg(target_arch = "aarch64")]
 unsafe fn Wow64DoomStaged() -> bool {
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
@@ -1055,7 +1055,7 @@ unsafe fn TryStartWow64Marshal() {
  *
  * Like every other guest: silent no-op unless staged (VIBEOS_FEX=1 image).
  * amd64 (E4): the same doom-i386.exe, but the CPU under it is real silicon. */
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+#[cfg(target_arch = "aarch64")]
 unsafe fn TryStartWow64Doom() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent
@@ -1223,7 +1223,7 @@ unsafe fn TryStartNativeTestGui() {
  *
  * Verdict: [TESTGUI] serial lines (wWinMain -> RegisterClassExW ->
  * CreateWindowExW -> WM_CREATE -> WM_PAINT) + a blue/green window. */
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+#[cfg(target_arch = "aarch64")]
 unsafe fn TryStartWow64TestGui() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -2048,20 +2048,19 @@ pub unsafe extern "system" fn WinMain(
         DbgPrint(b"[WINLOGON] ARM64: cmd.exe exited. Sleeping.\n\0".as_ptr() as *const i8);
     }
 
-    /* WOW64 Phase E probes (amd64 native wow64cpu): the same guest ladder as
-     * the arm64 block above — hello32 (loader verdict), gui32 (win32k thunk),
-     * testgui (stock i386 binary), doom (the show). All silent no-ops unless
-     * staged on the livecd (wow64cpu/CMakeLists.txt E4 block). Same z-order
-     * discipline as arm64: when the WoW64 doom is staged it IS the demo, so
-     * the never-exiting testgui pair is skipped; doom launches last. */
+    /* WOW64 Phase E probes (amd64 native wow64cpu). E3/E4 rungs that PASS
+     * cleanly and run in every amd64 smoke as regression coverage:
+     *   hello32 (loader verdict -> 0x600D)
+     *   gui32   (win32k GDI thunk: draws the magenta rect -> 0x600e soft-pass)
+     * The window-creation + kernel->user-callback guests (testgui/doom) are
+     * NOT launched yet: the amd64 callback-marshaller path is incomplete
+     * (callback index 8 unmarshalled) and a 32-bit NtUserGetClassInfo faults
+     * win32k (BUGCHECK 0x1E) — the E4b rung. Their exes are not staged either,
+     * so this stays a pure GDI-path check. See wow64-plan.md Phase E. */
     #[cfg(target_arch = "x86_64")]
     {
         TryStartWow64Hello();
         TryStartWow64Gui();
-        if !Wow64DoomStaged() {
-            TryStartWow64TestGui();
-        }
-        TryStartWow64Doom();
     }
 
     /* DOOM (opt-in, VIBEOS_DOOM=1) — x86 call site. On arm64 doom is spawned

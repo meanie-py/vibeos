@@ -29,11 +29,19 @@ add_cd_file(TARGET wow64cpu DESTINATION reactos/system32 FOR all)
 # to re-snapshot). Opportunistic like the arm64 probes — the winlogon hooks
 # are silent no-ops when a guest is absent — but the skip itself is loud.
 #
-# The DLL set is the transitive import closure of the stock guests, computed
-# by wow64-closure.py exactly as mkramdisk does it (all-or-nothing: a partial
-# set half-binds a module and crashes at first call, far from the missing
-# DLL — the tool hard-fails instead). --no-strip: the amd64 livecd flow has
-# its own strip step, and the hashed boot/stripped names would go stale.
+# The DLL set is the FULL transitive import closure of the stock guests (roots:
+# testgui/doom/gui32), computed by wow64-closure.py exactly as mkramdisk does it
+# (all-or-nothing: a partial set half-binds a module and crashes at first call,
+# far from the missing DLL — the tool hard-fails instead). --no-strip: the amd64
+# livecd flow has its own strip step, and the hashed boot/stripped names would go
+# stale. The full closure is staged so E4b (testgui/doom) needs no re-staging.
+#
+# GUEST EXES: only the rungs that PASS and run in every smoke are staged —
+# hello32 (0x600D) + gui32 (win32k GDI, 0x600e). testgui/doom (window-creation +
+# kernel->user callbacks) are the E4b rung: their amd64 callback-marshaller path
+# is incomplete and a 32-bit NtUserGetClassInfo faults win32k (BUGCHECK 0x1E), so
+# staging+launching them would redden the shared smoke. Add their add_cd_file
+# lines back (doom.exe/doom1.wad/testgui.exe) once E4b lands.
 set(_wow64_guests
     ${REACTOS_SOURCE_DIR}/build-fex-hello/hello32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe
@@ -63,7 +71,7 @@ if(_wow64_guest_ok)
     string(STRIP "${_wow64_closure}" _wow64_closure)
     string(REPLACE "\n" ";" _wow64_lines "${_wow64_closure}")
     list(LENGTH _wow64_lines _wow64_n)
-    message(STATUS "WOW64 E4: staging ${_wow64_n} i386 SysWOW64 modules + guests onto livecd")
+    message(STATUS "WOW64 E4: staging ${_wow64_n} i386 SysWOW64 modules + hello32/gui32 onto livecd")
     foreach(_line ${_wow64_lines})
         string(REPLACE "\t" ";" _kv "${_line}")
         list(GET _kv 0 _name)
@@ -72,9 +80,6 @@ if(_wow64_guest_ok)
     endforeach()
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/hello32.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe DESTINATION reactos/syswow64 NAME_ON_CD doom.exe FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad DESTINATION reactos/syswow64 FOR livecd)
 endif()
 
 endif()

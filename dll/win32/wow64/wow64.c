@@ -105,6 +105,8 @@ LONG WINAPI NtQueryInformationProcess(HANDLE, ULONG, PVOID, ULONG, PULONG);
 LONG WINAPI NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID *BaseAddress,
                                    SIZE_T *RegionSize, ULONG NewProtect,
                                    PULONG OldProtect);
+LONG WINAPI NtFlushInstructionCache(HANDLE ProcessHandle, PVOID BaseAddress,
+                                    SIZE_T Length);
 
 /* wow64_thunks.c — the wow64gen-generated 32->64 syscall thunk table. */
 LONG Wow64DispatchSystemService(ULONG ServiceNumber, PULONG Arguments);
@@ -379,6 +381,54 @@ VOID Wow64pPatchTransitionSlot(PVOID Base, SIZE_T Size)
         DbgPrint("[FEX-WOW64C] Wow64Transition slot %p (module %p) patched -> BOP %p\n",
                  Slot, Base, Wow64pBopCode);
     }
+
+#ifdef _M_AMD64
+    /* The win32k client stubs in gdi32/user32 (the ZwGdi/NtUser stub families)
+     * do NOT use an exported Wow64Transition slot — they dispatch through a
+     * per-module _KiIndirectSystemCall:
+     *     BA 00 03 FE 7F   mov edx, 0x7FFE0300   ; &SharedUserData->SystemCall
+     *     FF 22            jmp dword ptr [edx]
+     * On arm64/FEX the guest's syscall instruction at [SystemCall] is caught by
+     * the JIT no matter what that pointer is; on amd64 the guest LITERALLY jumps
+     * to [0x7FFE0300], which is 0 (KUSER_SHARED_DATA is a single global page and
+     * cannot carry the per-process below-2GB BOP) -> the guest jumps to NULL
+     * (rip=0, the gui32/gdi32-DllMain fault). Rewrite the dispatcher in place to
+     * jump straight to this process's heaven's-gate BOP:
+     *     BA <bop32>       mov edx, BOP
+     *     FF E2            jmp edx
+     * eax (the win32k service number, 0x1000+) is preserved and the stub's
+     * `call [_KiSlot]` return address is still parked on the guest stack for the
+     * normal dispatch fixup. One 7-byte patch per module covers every win32k
+     * stub. amd64-only: the arm64 path is FEX-intercepted and must stay as-is. */
+    if (Wow64pBopCode)
+    {
+        static const UCHAR Pat[7] = {0xBA,0x00,0x03,0xFE,0x7F,0xFF,0x22};
+        SIZE_T Scan = (Size > 0x400000) ? 0x400000 : Size;
+        PBYTE End = B + Scan - sizeof(Pat);
+        PBYTE P;
+        for (P = B; P <= End; P++)
+        {
+            ULONG k = 0;
+            while (k < sizeof(Pat) && P[k] == Pat[k]) k++;
+            if (k != sizeof(Pat))
+                continue;
+            {
+                PVOID Pg = P;
+                SIZE_T Sz = sizeof(Pat);
+                ULONG Old = 0;
+                NtProtectVirtualMemory(WOW64_CURRENT_PROCESS, &Pg, &Sz,
+                                       PAGE_EXECUTE_READWRITE, &Old);
+                *(ULONG *)(P + 1) = (ULONG)(ULONG_PTR)Wow64pBopCode; /* mov edx, BOP */
+                P[5] = 0xFF; P[6] = 0xE2;                            /* jmp edx      */
+                NtProtectVirtualMemory(WOW64_CURRENT_PROCESS, &Pg, &Sz, Old, &Old);
+                NtFlushInstructionCache(WOW64_CURRENT_PROCESS, P, sizeof(Pat));
+                DbgPrint("[FEX-WOW64C] win32k KiIndirectSystemCall @ %p (module %p) -> BOP %p\n",
+                         P, Base, Wow64pBopCode);
+            }
+            break; /* one dispatcher per module */
+        }
+    }
+#endif
 }
 
 /* ---- 32-bit process-parameters down-conversion (M3b) -------------------- *
