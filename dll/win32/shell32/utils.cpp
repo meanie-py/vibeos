@@ -2228,3 +2228,16 @@ SHELL_CreateShell32DefaultExtractIcon_RustBridge(INT iconIndex, REFIID riid, LPV
 {
     return SHELL_CreateShell32DefaultExtractIcon(iconIndex, riid, ppvOut);
 }
+
+extern "C" HRESULT WINAPI
+SHILAppend_RustBridge(LPITEMIDLIST pidl, LPITEMIDLIST *ppidl)
+{
+    return SHILAppend(pidl, ppidl);
+}
+
+/* PathIsDosDevice is a shell32-internal (precomp.h:312), C++ linkage; WINAPI shim. */
+extern "C" BOOL WINAPI
+PathIsDosDevice_RustBridge(LPCWSTR pszName)
+{
+    return PathIsDosDevice(pszName);
+}
