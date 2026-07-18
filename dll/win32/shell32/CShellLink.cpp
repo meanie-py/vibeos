@@ -144,6 +144,23 @@
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
 /*
+ * Hybrid cohab: the CShellLink COM CLASS is Rust-owned (shell32-rust
+ * shell_link.rs) — activation (CShellLink_CreateInstance), all 13 published
+ * interfaces / ~219 vtable slots, and the file-scope companions it needed
+ * (Stream_* load/save, the property-sheet dialog procs, and the two C-linkage
+ * constructors IShellLink_ConstructFromPath/FromFile, which are now
+ * `#[no_mangle]` Rust exports — their C++ bodies below are `#if 0`'d to avoid
+ * duplicate C symbols; see the bottom of this file).
+ *
+ * The C++ class METHOD BODIES in this file are retained *compiled* but DEAD:
+ * they are C++-mangled (no collision with the Rust C-named exports) and no
+ * remaining code path constructs a C++ CShellLink — the object map uses
+ * CShellLinkRustEntry (shell32.cpp) and CFSDropTarget goes through the Rust
+ * factory. This mirrors the CDrivesFolder/CNetFolder/COpenWithMenu cutovers
+ * (class code inert, companion/free code retained).
+ */
+
+/*
  * Allows to define whether or not Windows-compatible behaviour
  * should be adopted when setting and retrieving icon location paths.
  * See CShellLink::SetIconLocation(LPCWSTR pszIconPath, INT iIcon)
@@ -3228,6 +3245,11 @@ HRESULT STDMETHODCALLTYPE CShellLink::Drop(IDataObject *pDataObject,
 /**************************************************************************
  *      IShellLink_ConstructFromFile
  */
+#if 0 // Rust-owned (shell32-rust shell_link.rs): these two are C-linkage symbols
+      // (declared in the wine/shell32_main.h extern "C" block), so the Rust
+      // #[no_mangle] exports would collide with these bodies at link time. The
+      // Rust versions route construction through CShellLink_CreateInstance,
+      // guaranteeing no C++ CShellLink can ever be built.
 HRESULT WINAPI IShellLink_ConstructFromPath(WCHAR *path, REFIID riid, LPVOID *ppv)
 {
     CComPtr<IPersistFile> ppf;
@@ -3250,6 +3272,7 @@ HRESULT WINAPI IShellLink_ConstructFromFile(IShellFolder * psf, LPCITEMIDLIST pi
 
     return IShellLink_ConstructFromPath(path, riid, ppv);
 }
+#endif // Rust-owned IShellLink_ConstructFromPath/FromFile
 
 HICON CShellLink::CreateShortcutIcon(LPCWSTR wszIconPath, INT IconIndex)
 {

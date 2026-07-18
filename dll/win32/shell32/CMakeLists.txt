@@ -45,6 +45,12 @@ list(APPEND SOURCE
     shell32.cpp
     utils.cpp
     CShellItem.cpp
+    # Hybrid cohab: the CShellLink COM class is Rust-owned (shell32-rust/src/
+    # shell_link.rs) — activation, all interfaces, and the C-linkage
+    # IShellLink_ConstructFromPath/FromFile (the C++ bodies are #if 0'd). This
+    # file stays compiled: its C++ class method bodies are dead (mangled, never
+    # constructed — object map uses CShellLinkRustEntry) and it retains the
+    # free helpers PathFullyUnExpandEnvStringsW/ExtendedShortcutProc + statics.
     CShellLink.cpp
     CFolderOptions.cpp
     folders/CDesktopFolder.cpp

@@ -523,6 +523,16 @@ SHGetNameAndFlagsW(
     return hr;
 }
 
+/* Rust bridge — CShellLink is Rust-owned (shell32-rust shell_link); its property-sheet
+ * dialog needs SHGetNameAndFlagsW, which is C++-mangled here (no EXTERN_C on the decl),
+ * so expose a C-ABI wrapper the Rust module can name portably across the three targets. */
+EXTERN_C HRESULT WINAPI
+CShellLink_SHGetNameAndFlagsW_RustBridge(
+    LPCITEMIDLIST pidl, DWORD dwFlags, LPWSTR pszText, UINT cchBuf, DWORD *pdwAttributes)
+{
+    return SHGetNameAndFlagsW(pidl, dwFlags, pszText, cchBuf, pdwAttributes);
+}
+
 EXTERN_C HWND
 BindCtx_GetUIWindow(_In_ IBindCtx *pBindCtx)
 {
