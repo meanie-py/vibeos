@@ -8847,3 +8847,123 @@ through. **Owed sweep:** every flat-typed OUT handle/pointer *array* has this
 shape (`NtUserBuildNameList`/`BuildPropList`, `NtGdi*` handle arrays,
 `NtQueryDirectoryObject`, …) — silently fine until a guest passes a non-empty
 buffer. Add each with an array-narrowing marshaller as coverage reaches it.
+
+### 9.106 (SOLVED 2026-07-18) The "netapi32 MIDL dragon" was never an interface-vs-interface conflict — it was the `<lm.h>` MASTER header fighting the WIDL stubs, and the C build already showed the answer
+
+**Symptom.** The 7 RPC-stub `.c` in `dll/win32/netapi32` (browser, dssetup, misc, netlogon,
+schedule, srvsvc, wksta_new) were translated and banked, but integration was DEFERRED across
+two sessions because their bindgen types island refused to generate. One wrapper `#include`-ing
+all 7 WIDL client headers produced a wall of C redefinition errors:
+
+```
+netlogon_c.h:343 typedef redefinition with different types ('ULONG' vs 'LONG')
+srvsvc_c.h:655  redefinition of '_SERVER_INFO_100'   (also declared in browser_c.h)
+```
+
+The recorded diagnosis was "the 6 MIDL interfaces mutually redefine each other's wire types;
+needs a gen_driver_types *MIDL-client mode* — a per-interface pass plus a shared base-type
+blocklist." **That diagnosis was wrong**, and it is instructive *how* it was wrong: the
+conclusion ("they conflict with each other") was inferred from a single all-in-one failure
+without ever testing an interface on its own. Testing each one standalone took ~5 minutes and
+falsified it immediately — the conflicts were not between the stubs at all.
+
+**Root cause.** `<lm.h>` is the LAN Manager MASTER header: it pulls `lmat.h`/`lmshare.h`/
+`lmserver.h`/`lmwksta.h`, which declare `AT_INFO`/`CONNECTION_INFO_*`/`SERVER_INFO_*`/
+`WKSTA_INFO_*` — the very structs each `*_c.h` re-declares for the wire. The `netapi32`
+gen_driver_types profile included `<lm.h>` (correct for the 14 c2rust-anchored modules), so
+every MIDL header collided with it. Interface-vs-interface collisions exist but are RARE:
+of the 6 headers exactly ONE pair actually conflicts (`browser_c.h` vs `srvsvc_c.h`, both
+declaring `_SERVER_INFO_100`).
+
+**The oracle was sitting in the C the whole time.** `netapi32.h` — the master private header
+every one of these files includes — pointedly does NOT include `<lm.h>`. It includes only the
+narrow trio:
+
+```c
+#include <lmaccess.h>   /* netapi32.h — and NOT <lm.h> */
+#include <lmapibuf.h>
+#include <lmerr.h>
+```
+
+…and then each `.c` includes exactly ONE stub header (`misc.c` is the lone two-header TU:
+srvsvc + wkssvc). The C build never asks the compiler to accept the combination that was
+failing. **If a `.c` compiles, its include set is bindgen-able** — so the include set of a
+real translation unit is a GUARANTEED-legal island, and no amount of blocklist engineering is
+needed to find one.
+
+**Fix (what landed).** Mirror the C's include discipline instead of fighting the redefinitions:
+- `TYPES_STEM` env var in `tools/rustconv/gen_driver_types.sh` — a crate can now emit MORE THAN
+  ONE types island (`<stem>_<arch>.rs` + a `<stem>.rs` per-arch dispatcher). Reusable for any
+  DLL whose TUs have mutually incompatible include sets.
+- Two profiles: `netapi32-rpc` (srvsvc + wkssvc + atsvc + dssetup + netlogon → 225 structs,
+  serves 6 of the 7 modules) and `netapi32-browser` (browser_c.h + lmbrowsr/lmserver → 13).
+  Both use the narrow-lm base. `dsrole.h` is dropped from the rpc island — `dssetup_c.h`
+  re-declares `DSROLE_*`, and although `netlogon.c` includes `dsrole.h` it never references
+  those types.
+- Prelude split so the two universes stay separate without duplicating the non-type surface:
+  `prelude_common.rs` (wine-debug channel, CRT/winsock externs, transcribed consts, enum
+  bare-name aliases) + three thin per-island preludes globbing `prelude_common` plus their own
+  island. 377 type names overlap between `types` and `types_rpc`, so they must NEVER share a
+  glob scope.
+
+**Fallout to expect when you split an existing prelude (cost me two extra cycles).** Items that
+were LOCAL `pub const` definitions in the old prelude silently shadowed the types glob. Moving
+them into `prelude_common` turns that into glob-vs-glob → **E0659 ambiguous name** at every use
+site (229 of them here) in modules that were previously clean. An EXPLICIT `pub use` outranks
+any glob, so re-export the conflicting names in each per-island prelude to restore the old
+resolution. Two traps when computing that conflict list:
+- Scanning only `types_<arch>.rs` MISSES names the island re-exports transitively — `TRUE`/
+  `FALSE` arrive via `ntdll_sys::nt::*` and do not appear in the island file at all.
+- `cargo check --message-format short | grep 'src/.*\.rs'` counts WARNING lines too; a module
+  showing "1 error" may be entirely clean (here: `unnecessary unsafe block`). Filter on
+  `error\[E` before concluding a previously-green module regressed.
+
+**Transferable rules.**
+1. **A multi-header redefinition wall is a claim about the WRAPPER, not about the headers.**
+   Test each header standalone before theorizing about mutual conflict. One 5-minute matrix
+   beats a session of blocklist design — and beats a wrong entry in the notes that outlives
+   the session and defers the work again.
+2. **Take the include set from the real TU.** Do not hand-assemble a "reasonable-looking"
+   wrapper from master headers; open the `.c` and copy what it actually includes. A master
+   header (`lm.h`, `windows.h`, `ntddk.h`) is exactly the thing a MIDL/IDL-consuming TU avoids.
+3. **When a DLL's TUs genuinely disagree, give them separate islands** rather than forcing one
+   pass. The island count that mirrors the C is the correct one — here 2, not 1 and not 7.
+
+### 9.107 (2026-07-18) Four usermode-DLL integration bugs that a green `cargo check` cannot see — the assembler glob, the checker regex, the silent LLM skip, and MIDL symbol case
+
+Collected while integrating the winsock/net satellite DLLs (dnsapi full flip, dhcpcsvc,
+netapi32 tail). Each is invisible to `cargo check` and surfaces only at LINK or at the GATE —
+i.e. after you already believe the crate is done. Check all four before declaring a flip green.
+
+**1. The `.responses` assembly glob silently DROPS 3-digit files.** `rustconv translate` writes
+one `NN_FnName.rs` per function. A shell glob of `[0-9][0-9]_*.rs` matches 2-digit prefixes
+ONLY, so a file with ≥100 functions loses everything from `100_` on — with no error anywhere.
+This dropped 5 dnsapi stubs (101–105); the crate compiled fine and failed at link with 5
+undefined exports. Also note `ls | sort` is lexicographic (`10_` sorts before `9_`).
+Use a numeric sort over an unbounded glob: `ls "$d"/[0-9]*_*.rs | sort -t_ -k1.1 -n`.
+**Always assert the assembled function count equals the `.responses` file count.**
+
+**2. `verify_lost_exports` cannot see a ONE-LINE `#[no_mangle]`.** Its regex is
+`#\[no_mangle\]\s*\npub unsafe extern "[^"]+" fn (\w+)` — it REQUIRES a newline after the
+attribute. A subagent (or rustfmt on a short signature) collapsing it to
+`#[no_mangle] pub unsafe extern "system" fn Foo()` makes the export invisible to the checker,
+which then reports it as a NEW LOST export and fails `vibeos-cli check` — a false positive that
+looks exactly like a real dropped export. Keep `#[no_mangle]` on its own line. (Fixing the
+regex to tolerate both is owed; the one-line form is legal Rust and will recur.)
+
+**3. A translation model can silently SKIP a function entirely.** DeepSeek emitted no file at
+all for `DnsWinsRecordFlagForString` — no error, no stub, no partial. Nothing in the pipeline
+noticed; `cargo check` was green because nothing in-crate referenced it. It surfaced only as an
+undefined symbol at link (and would have been caught at the gate by `verify_lost_exports`).
+**Diff the `.spec` export list against the assembled `#[no_mangle]` set before building** — do
+not assume per-function fan-out produced one file per function.
+
+**4. MIDL `*_c.c` stubs reference UPPERCASE `MIDL_user_allocate`/`MIDL_user_free`.** The
+translated Rust defines the lowercase `midl_user_allocate`/`midl_user_free` that the rest of
+the DLL uses. On i386 the stubs want `_MIDL_user_allocate@4`/`_MIDL_user_free@4`. Add explicit
+uppercase `#[no_mangle] extern "system"` forwarders that call through to the lowercase pair.
+
+**And the arch-independent one that outranks all four:** when appending a hand-written export to
+match a `.spec`, **the `.spec` is ground truth for the i386 stdcall `@N` decoration**, not the C
+prototype — a `long` parameter contributes 4 bytes even where the C header declares `WORD`.
+Getting `@N` wrong links clean on amd64/arm64 and fails ONLY on i386.

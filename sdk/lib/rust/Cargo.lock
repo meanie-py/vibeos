@@ -456,6 +456,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dhcpcsvc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "disk-rust"
 version = "0.1.0"
 dependencies = [

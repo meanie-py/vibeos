@@ -49,6 +49,7 @@ members = [
     "netapi32-rust",
     "iphlpapi-rust",
     "dnsapi-rust",
+    "dhcpcsvc-rust",
     "access",
     "avltable",
     "bitmap",
