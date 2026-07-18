@@ -7573,7 +7573,7 @@ declining, produce this. If you start a farm, expect to be the reason another la
 1. **Never trust a piped/`&&`-chained `ninja` "Finished" as proof your file compiled.** grep for `error[` AND `FAILED` explicitly, and read the *per-crate* `Compiling <crate>` / error lines — a `Finished` can come from another unit in the same invocation.
 2. **After a Rust probe that MUST appear on serial, verify the literal is in the binary before booting:** `strings <module> | grep -c '<my unique print literal>'`. Zero = it never compiled in; stop and fix the build, don't waste a boot.
 3. **A cargo compile error leaves the prior rlib; the link can silently succeed against stale objects.** "Other edits in the crate shipped" does NOT prove *your* file did — cargo is per-file incremental and one file's error doesn't fail-fast the others' cached outputs at link time here.
-### 9.88 (2026-07-16) The kmtest MmMdl `-smp 2` 0x1E is TWO bugs — a system-PTE leak (FIXED) masking a kernel-stack teardown race (OPEN)
+### 9.88 (2026-07-16) The kmtest MmMdl `-smp 2` 0x1E is TWO bugs — a system-PTE leak (FIXED) masking a kernel-stack teardown race (→ FIXED in §9.94: the reaper freed the stack without the SwapBusy "off all CPUs" spin)
 
 Hunting the amd64 `-smp 2` kmtest **MmMdl** 0x1E (task #10, ~10%/sweep in the 20-sweep
 guest-load soak). Amplifier: a temporary MmMdl-dense sweep list (warmup + MmMdl ×25/boot,
@@ -7975,7 +7975,128 @@ at a function *entry* address, is the noreturn-return-address-past-end bug — t
 input truly faults on THIS arch before trusting `invalid_caught=0`. (c) When a SEH fix makes a test
 BUGCHECK with a *different* stop code, that's forward progress uncovering the next bug, not a regression.
 
-### 9.94 (ROOT-CAUSED, fix OWED 2026-07-17) An arm64 kmtest quarantine mislabeled "fastfat stub bugcheck" was actually a translation-fault STORM — `MmAccessFault` returns SUCCESS but leaves the section-view leaf PTE invalid, so a kernel `RtlCompareMemory` re-faults forever (HANG, no bugcheck)
+### 9.94 (ROOT-CAUSED + FIXED 2026-07-17) i386 SMP context-switch corruption + the kernel-stack teardown race — the SwapBusy protocol was inverted/unenforced
+
+i386 M5 Phase C's first `-smp 2` boot past the IPI self-test bugchecked
+`0x1E (0xC0000006 STATUS_IN_PAGE_ERROR)` at `KiSwapContextExit+0x20` with the `OldThread`
+*argument* holding a **kernel-stack VA** (0xf7a29c40) instead of a KTHREAD — i.e. the
+switching CPU's own spilled locals had been overwritten mid-switch. Immediately preceding:
+`[RQAFF]` prints of the same thread with `setmember` flipping 1↔2 (the affinity-bouncing SMP
+self-test thread — a migration-heavy workload).
+
+**Root: NT's context-swap-busy protocol (2k3 `SwapContext`, MP-only) was missing/inverted.**
+The invariant: `Thread->SwapBusy` is the *"some CPU is still executing on this thread's
+stack"* flag. (a) Every path that makes a running thread visible-ready before switching away
+must SET it (`KiSetThreadSwapBusy`); (b) a CPU switching TO a thread must **SPIN until it
+clears** before adopting the stack; (c) the switching CPU clears the OLD thread's flag only
+**after ESP has left the old stack**. Our amd64 had (b) (ctxswitch.S:179) and (c)
+(thrdini.rs:271); i386 had **neither** — worse, `KiSwapContextEntry` cleared the **NEW**
+thread's flag (a lazy self-heal that made the flag permanently meaningless), so every
+migration was a data race on the old stack: the resuming CPU pushes frames DOWNWARD from the
+published `KernelStack` directly over the still-switching CPU's live locals.
+
+Four fixes (all landed together):
+1. **i386 `KiSwapContextEntry`**: deleted the NewThread clear; added the Acquire spin on
+   `NewThread->SwapBusy` right before `KiSwitchThreads` (interrupts enabled, so IPIs stay
+   serviceable while spinning).
+2. **i386 `KiSwapContextExit`**: Release-clear `OldThread->SwapBusy` after the DPC-active
+   check — the last OldThread access (after this store the thread may run/exit/be freed).
+3. **`KiDispatchInterrupt` (BOTH x86 arches)**: `KiSetThreadSwapBusy(OldThread)` before
+   `KxQueueReadyThread` — NT does this; without it the flag is never raised on the
+   preempt-requeue path, so amd64's existing spin guarded nothing there. All other
+   queue-current sites were audited covered (wait paths, `KiQuantumEnd`,
+   `NtYieldExecution`; arm64 has the full protocol and no queue-current preempt path).
+4. **`PspReapRoutine` / `PspDeleteThread` (all arches): spin on the dying thread's
+   `SwapBusy` before `MmDeleteKernelStack`.** `KeTerminateThread` queues the reaper entry
+   (and sets SwapBusy) while the dying thread is STILL RUNNING on that stack; the final
+   SwapContext clears it only once its CPU is off. Freeing earlier = the dying CPU executes
+   on released system PTEs → **exactly §9.88 Bug 2's face** (`0xC0000006` on a `ret [rsp]`
+   in the kernel-stack region under process-churn load). The spin is the missing
+   "thread is off all CPUs" synchronization §9.88 predicted. (Safe on UP: the flag is
+   never set, load returns 0; terminal state after the final swap is 0, so no deadlock.)
+
+Validated: i386 `-smp 2` went BUGCHECK → **5/5 boots to desktop** (~40 s each, 4 in
+parallel). **Reusable:** (a) a corrupt *argument* (not target) at a context-switch PC — a
+stack VA where a KTHREAD belongs — means the OLD stack was adopted by another CPU mid-switch;
+suspect the swap-busy handshake before suspecting the scheduler. (b) A protocol flag that a
+translation clears on the WRONG side doesn't fail loudly — it self-heals into "always
+passes" and silently disables the guard; when porting MP protocols, diff every set/clear/spin
+site against the reference asm, not just the ones that exist. (c) UP-invisible inversions
+unmask ONLY under migration load — an affinity-bouncing self-test thread is a cheap,
+deterministic-ish amplifier worth keeping in the boot.
+
+### 9.95 (ROOT-CAUSED + FIXED 2026-07-17) `-smp 2` KeGuardedMutex kmtest TIMEOUT — translation dropped `KiRetireDpcList`'s `#ifdef CONFIG_SMP` deferred-ready drain, so an idle CPU re-HLTs with runnable threads parked on its own deferred list
+
+**Symptom.** amd64 `conformance --smp 2` ratchet: `KeGuardedMutex OK→TIMEOUT (pass=0
+fail=0)` plus fuzzier drops (`KeSpinLock fail 2→31`, `KeIrql fail 0→3`, KeEvent/
+IoDeviceObject pass-count dips). Boot and desktop unaffected. The kmtest wedges are
+pure LIVENESS: when the strand resolves, the suite produces baseline-identical
+results (pass=1566 fail=87).
+
+**The census cracked it before GDB did.** `ke/census.rs` (10s sync watchdog) printed,
+for a gate-parked waiter, the guarded-mutex owner as `state=7` (**DeferredReady**) for
+5–6 consecutive scans (~60s) — repeatedly, with the roles ROTATING (each newly-woken
+owner stranded in turn). A thread stays DeferredReady for a minute = the wake half
+worked (unwait ran, state was set, node was pushed) but nothing ever drained it.
+Key inference from the rotation + the census thread itself waking every 10s: the
+drain sites on the BUSY cpu all work — the strand had to be a list nobody was looking
+at. GDB (live catch at the census trigger) confirmed in one shot:
+
+```
+PRCB1: Current==IdleThread  Next=0  ReadySummary=0  DeferredHead=fffffa8001256c68
+         node thread=fffffa8001256bd0  State=7  DeferProc=1
+CPU1: HALTED (hlt, idle loop)
+```
+
+**CPU 1 asleep in `hlt` with a runnable thread on its own DeferredReadyListHead.**
+
+**Root cause.** C `KiRetireDpcList` (ntoskrnl/ke/dpc.c) ends each pass with an
+`#ifdef CONFIG_SMP` block: if `Prcb->DeferredReadyListHead.Next`, then `_enable()` +
+raise-to-SYNCH + `KiProcessDeferredReadyList(Prcb)` + lower + `_disable()`. The Rust
+translation (`ke/dpc.rs KiRetireDpcList_body`) dropped the whole block — it was
+UP-dead code when translated. But the block is the OTHER HALF of a contract:
+`KiTimerExpiration` (and DPC bodies on some paths) unwait threads onto the CURRENT
+cpu's deferred list and deliberately do NOT drain on every exit — the C design defers
+the drain to the retire loop. Every idle loop (amd64 stubs.rs, i386 thrdini.rs, arm64
+thrdini.rs) checks `DeferredReadyListHead` in its should-I-work condition and then
+calls `KiRetireDpcList` — which, minus the block, retires DPCs and LEAVES THE LIST
+LOADED. The idle CPU then re-enters `hlt`; clock ticks wake the ISR, which EOIs and
+returns to `hlt`, never re-running the scheduler. The strand persists until an
+unrelated cross-CPU event (a wake targeted at that CPU via the preempt-idle IPI path)
+runs a `KiCheckDeferredReadyList` there as a side effect — empirically ~60s in the
+quiet kmtest workload. Timer-driven wakes (50ms timeout waits, exactly what
+KeGuardedMutex's concurrent section and the KeSpinLock/KeIrql suites do in bulk) are
+the main inserter on an idle CPU, since the timer expiry runs ON that cpu's tick.
+
+**Fix (two edits, `ke/dpc.rs`).** (1) Restore the C block verbatim at the end of the
+`KiRetireDpcList_body` pass loop under `#[cfg(feature = "smp")]`. (2) arm64's split
+DISPATCH-softint body `KiDispatchSoftwareIntArm64` — the stand-in for x86's
+retire-in-KiDispatchInterrupt — gets the same drain after its device-DPC retire
+(thread context; the IRQ-exception-exit `KiRetireDeviceDpcs` intentionally does NOT
+drain — §9.19 exception-context wake hazard — its inserts are picked up here or at
+the idle retire). Validated: single-test repro 0 strands, 0 census STUCK lines,
+pass=1566/fail=87 == UP baseline (was: ~60s strands within seconds of start, TIMEOUT).
+
+**Reusable lessons.**
+- **A dropped `#ifdef CONFIG_SMP` block is a TIME BOMB, not dead code.** Sweep
+  candidates: `grep -n "ifdef CONFIG_SMP" ntoskrnl/ke/*.c` vs the Rust twins —
+  anything guarding a drain/IPI/lock in C that has no `cfg(feature = "smp")` twin.
+- **`state=7 (DeferredReady) persisting across census scans` is a signature**: the
+  wake committed but no drain ran. Check the IDLE cpus' `DeferredReadyListHead`
+  first (`PRCB+3464` on amd64-bindgen), not the busy cpu's paths.
+- **The insert/drain contract is asymmetric by design**: `KiInsertDeferredReadyList`
+  is same-CPU-only, and NOT every inserter drains — `KiExitDispatcher`,
+  `KiSwapThread`-commit, and the retire loop are the drains. When porting, map ALL
+  inserters to their expected drain before declaring a path complete.
+- **Live-catch recipe** (banked in scratchpad `catch2.sh` shape): tail serial for the
+  census trigger line, extract the pointer, freeze via gdbstub, read raw offsets.
+  Offsets straight from the source of truth:
+  `clang -Xclang -fdump-record-layouts --target=<arch> <bindgen include set>` on a
+  `sizeof(KTHREAD)` stub — no DWARF wrestling (split-DWARF `.dwo` are canonical-path
+  + often unloadable), no hand-derived offsets. gdb data symbols need manual reloc:
+  `llvm-nm <exe> | grep <sym>` → RVA + runtime kbase (add-symbol-file only maps .text).
+
+### 9.96 (ROOT-CAUSED, fix OWED 2026-07-17) An arm64 kmtest quarantine mislabeled "fastfat stub bugcheck" was actually a translation-fault STORM — `MmAccessFault` returns SUCCESS but leaves the section-view leaf PTE invalid, so a kernel `RtlCompareMemory` re-faults forever (HANG, no bugcheck)
 
 **Symptom.** arm64 `ZwMapViewOfSection` kmtest quarantined 2026-07-16 as "BUGCHECK 0x23 FAT_FILE_SYSTEM
 P1=0xdead0000 = fastfat STUB_BUGCHECK → translate the untranslated fastfat fn." That label was **wrong**.

@@ -237,8 +237,19 @@ pub unsafe extern "system" fn KeStartAllProcessors() {
         // cast to `u32` explicitly.
         (*KeLoaderBlock).KernelStack = KernelStack as u32;
         (*KeLoaderBlock).Prcb = core::ptr::addr_of_mut!((*APInfo).Pcr.Prcb) as u32;
-        (*KeLoaderBlock).Thread =
-            core::ptr::addr_of_mut!((*(*APInfo).Pcr.Prcb).IdleThread) as u32;
+        // i386 M5 Phase C: point Thread at the AP's actual idle-thread KTHREAD
+        // (`APInfo->Thread`, the SAME storage handed to KiInitializePcr above at
+        // the `IdleThread` arg), NOT `&Prcb->IdleThread` — that is the address of
+        // the IdleThread *pointer field* inside the PRCB. KiSystemStartupBootStack
+        // reads LoaderBlock->Thread DIRECTLY as `InitThread` (no CONTAINING_RECORD,
+        // unlike Prcb) and hands it to KiInitializeKernel→KeInitializeThread, which
+        // would then initialize a whole KTHREAD *on top of the PRCB* and set
+        // CurrentThread to that in-PRCB junk → KiSystemStartupBootStack's
+        // `(*Thread).Priority = 0` faults on garbage → double-fault (0x7F/8). The
+        // ReactOS C set `&Prcb->IdleThread` here, but its i386 AP path was an
+        // unimplemented FIXME stub that never consumed it. P0 does the analogous
+        // `LoaderBlock->Thread = &KiInitialThread` (a real KTHREAD) — match that.
+        (*KeLoaderBlock).Thread = core::ptr::addr_of_mut!((*APInfo).Thread) as u32;
 
         if HalStartNextProcessor(KeLoaderBlock as *mut _, ProcessorState) == 0 {
             break;

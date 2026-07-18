@@ -13,7 +13,7 @@ use ntkrnl_sys::ddk::{
     PKSYSTEM_ROUTINE, PKSTART_ROUTINE, PULONGLONG,
     HalClearSoftwareInterrupt, HalRequestSoftwareInterrupt,
     KeContextToTrapFrame, KeSetGdtSelector,
-    KiAcquirePrcbLock, KiQuantumEnd, KiRetireDpcList, KiSwapContext, KeBugCheck,
+    KiAcquirePrcbLock, KiReleasePrcbLock, KiQuantumEnd, KiRetireDpcList, KiSwapContext, KeBugCheck,
     _KWAIT_REASON_WrDispatchInt,
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
@@ -300,7 +300,27 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
         }
 
         if !(*Prcb).NextThread.is_null() {
+            // UP keeps the C shape: sti before the (lock-free) consume.
+            // SMP MUST NOT (§9.56 — mirror amd64 stubs.rs KiIdleLoop): consume
+            // NextThread UNDER THE PRCB LOCK, WITH INTERRUPTS DISABLED, re-check,
+            // promote, rq_inflight_unmark, release, THEN sti. The idle thread is
+            // never queued ready here (no KxQueueReadyThread — that's what
+            // releases the lock in the KiDispatchInterrupt path below), so the
+            // lock MUST be released explicitly before the swap. A lock-free
+            // consume let KiDeferredReadyThread's standby-DISPLACEMENT (which
+            // runs under this lock and re-defers a NextThread it reads) race the
+            // idle promote → a RUNNING thread set DeferredReady → double-link
+            // tear. This path was inert until i386 Phase C (AP now schedules).
+            #[cfg(not(feature = "smp"))]
             _enable();
+
+            #[cfg(feature = "smp")]
+            KiAcquirePrcbLock(Prcb);
+            #[cfg(feature = "smp")]
+            if (*Prcb).NextThread.is_null() {
+                KiReleasePrcbLock(Prcb);
+                continue;
+            }
 
             OldThread = (*Prcb).CurrentThread;
             NewThread = (*Prcb).NextThread;
@@ -310,15 +330,47 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
 
             (*NewThread).State = Running;
 
+            // i386 Phase C visibility: one-shot per-CPU "scheduling live" marker,
+            // fired when a non-boot CPU promotes its first real thread off idle.
             #[cfg(feature = "smp")]
-            KfRaiseIrql(0x0Cu8);
+            {
+                use core::sync::atomic::{AtomicBool, Ordering};
+                static CPU_SCHED_LIVE: [AtomicBool; 32] = {
+                    const F: AtomicBool = AtomicBool::new(false);
+                    [F; 32]
+                };
+                let n = (*Prcb).Number as usize;
+                if n != 0 && n < 32 && !CPU_SCHED_LIVE[n].swap(true, Ordering::Relaxed) {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"[SMP] CPU%u scheduling live\n\0".as_ptr() as *const i8,
+                        n as u32,
+                    );
+                }
+            }
+
+            #[cfg(feature = "smp")]
+            ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread as *mut _KTHREAD);
+            #[cfg(feature = "smp")]
+            KiReleasePrcbLock(Prcb);
+            #[cfg(feature = "smp")]
+            _enable();
+
+            #[cfg(feature = "smp")]
+            KfRaiseIrql(0x0Cu8); // SYNCH_LEVEL (preserve existing i386 value)
 
             KiSwapContext(APC_LEVEL, OldThread);
 
             #[cfg(feature = "smp")]
             KeLowerIrql(DISPATCH_LEVEL);
         } else {
-            ((*Prcb).PowerState.IdleFunction.unwrap())(core::ptr::addr_of_mut!((*Prcb).PowerState));
+            // NOTE: no KiTbLazyIdleEnter/Exit on i386 — lazy-TLB idle coherence
+            // is the separate i386 TLB-shootdown parity item, not required for
+            // "AP schedules". Remote shootdowns are not yet deferred on i386.
+            // None (never in practice — PoInitializePrcb always sets it) falls
+            // through to re-poll the queues rather than panicking in the idle loop.
+            if let Some(idle) = (*Prcb).PowerState.IdleFunction {
+                idle(core::ptr::addr_of_mut!((*Prcb).PowerState));
+            }
         }
     }
 }
@@ -395,6 +447,13 @@ pub unsafe extern "fastcall" fn KiSwapContextExit(
         );
     }
 
+    // We're on the NEW stack with the old context fully saved: release the
+    // old thread for other CPUs (pairs with the Acquire spin in
+    // KiSwapContextEntry).  Last OldThread access in this function — after
+    // this store the thread may run, exit, and be freed on another CPU.
+    core::sync::atomic::AtomicU8::from_ptr(core::ptr::addr_of_mut!((*OldThread).SwapBusy))
+        .store(0, core::sync::atomic::Ordering::Release);
+
     if (*NewThread).__bindgen_anon_1.ApcState.KernelApcPending != 0 {
         if (*NewThread).__bindgen_anon_4.__bindgen_anon_1.SpecialApcDisable == 0 {
             if (*SwitchFrame).ApcBypassDisable != 0 {
@@ -433,7 +492,17 @@ pub unsafe extern "fastcall" fn KiSwapContextEntry(
 
     (*OldThread).KernelStack = SwitchFrame as PVOID;
 
-    (*NewThread).SwapBusy = 0u8;
+    // NB: an earlier translation cleared (*NewThread).SwapBusy here — the
+    // INVERSE of the NT MP protocol (2k3 i386 SwapContext): the switching CPU
+    // must (a) SPIN until the new thread's SwapBusy clears before adopting its
+    // stack (see the spin below), and (b) clear the OLD thread's SwapBusy only
+    // after ESP has left the old stack (KiSwapContextExit).  Clearing the new
+    // thread's flag here both destroyed the guard for OldThread (never cleared
+    // → lazily self-healed here) and let another CPU adopt a still-in-use
+    // stack.  That was the -smp 2 0x1E @ KiSwapContextExit+0x20: CPU1 resumed
+    // the migrating thread while CPU0 still ran on its stack, CPU1's pushes
+    // scribbled CPU0's live locals, and CPU0's spilled OldThread became a
+    // stack VA (0xf7a29c40) → IN_PAGE_ERROR on OldThread->ApcState.Process.
 
     _disable();
 
@@ -446,6 +515,22 @@ pub unsafe extern "fastcall" fn KiSwapContextEntry(
     }
 
     _enable();
+
+    // NT MP protocol (2k3 i386 SwapContext / our amd64 ctxswitch.S:179): spin
+    // until the new thread's context is FULLY saved by whichever CPU last ran
+    // it, before adopting its stack.  Acquire pairs with the Release clear in
+    // KiSwapContextExit; KernelStack is read only after the spin completes.
+    // Interrupts are enabled here so IPIs (TLB shootdown) stay serviceable.
+    #[cfg(feature = "smp")]
+    {
+        let busy = core::sync::atomic::AtomicU8::from_ptr(
+            core::ptr::addr_of_mut!((*NewThread).SwapBusy),
+        );
+        while busy.load(core::sync::atomic::Ordering::Acquire) != 0 {
+            core::hint::spin_loop();
+        }
+    }
+
     KiSwitchThreads(OldThread, (*NewThread).KernelStack as PKTHREAD);
 }
 
@@ -492,6 +577,12 @@ pub unsafe extern "system" fn KiDispatchInterrupt() {
 
         (*NewThread).State = Running;
         (*OldThread).WaitReason = _KWAIT_REASON_WrDispatchInt as UCHAR;
+
+        // NT MP (2k3 KiDispatchInterrupt): mark the outgoing thread
+        // context-swap-busy BEFORE it becomes visible in a ready queue —
+        // another CPU that picks it must spin in KiSwapContextEntry until our
+        // KiSwapContextExit clears it (we're still on its stack until then).
+        ntkrnl_sys::inline::ke::KiSetThreadSwapBusy(OldThread as *mut _KTHREAD);
 
         KxQueueReadyThread(OldThread, Prcb);
 

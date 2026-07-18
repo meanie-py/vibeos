@@ -61,7 +61,9 @@ _SUMMARY_LINE = re.compile(
     r"|^\s*[A-Z_]+: \d+$"  # per-category counters ('C_MACRO: 94')
     r"|catalog: \d+"  # 'Spec/Bindgen catalog: N …'
     r"|^\s*-> .*: *\d+$"  # verify_tables tallies
-    r"|^\s*matched to a C array\s*: *\d+$)"
+    r"|^\s*matched to a C array\s*: *\d+$"
+    r"|^\s*Found \d+ unprotected"  # lint_kernel header tally
+    r"|^\s*Total: \d+ violations)"  # lint_kernel footer tally (mixed-case)
 )
 
 
@@ -108,7 +110,9 @@ def _lint_stage(
         # strict (the gate) must have the coverage it claims → fail; a casual
         # local `check` warns, so it stays usable without every tool installed.
         st = "fail" if strict else "warn"
-        return run.add(Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)"))
+        return run.add(
+            Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)")
+        )
     cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
     if by_exit_code:
         text = _rel((cp.stdout or "") + "\n" + (cp.stderr or ""), repo)

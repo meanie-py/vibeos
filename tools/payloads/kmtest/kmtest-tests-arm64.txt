@@ -160,7 +160,7 @@ SeQueryInfoToken
 # vs ReactOS C (mm/ARM3/pfnlist.c). Owed (task #7 family).
 #ZwAllocateVirtualMemory
 ZwCreateSection
-# QUARANTINED — RE-TRIAGED 2026-07-17 (GDB, §9.94): the 2026-07-16 "0x23/0xdead0000 fastfat
+# QUARANTINED — RE-TRIAGED 2026-07-17 (GDB, §9.96): the 2026-07-16 "0x23/0xdead0000 fastfat
 # STUB_BUGCHECK" label is STALE/WRONG. Not a stub bugcheck — it's an IN-KERNEL HANG (sweep
 # INCOMPLETE, summary.json bugcheck=null). GDB bt-all-cpus/sample-pc: the CPU is stuck in a
 # translation-fault STORM — ELR_EL1=RtlCompareMemory's first `ldrb [source1]` (mem/lib.rs:24),
