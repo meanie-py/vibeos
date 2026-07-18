@@ -8095,3 +8095,49 @@ pass=1566/fail=87 == UP baseline (was: ~60s strands within seconds of start, TIM
   `sizeof(KTHREAD)` stub — no DWARF wrestling (split-DWARF `.dwo` are canonical-path
   + often unloadable), no hand-derived offsets. gdb data symbols need manual reloc:
   `llvm-nm <exe> | grep <sym>` → RVA + runtime kbase (add-symbol-file only maps .text).
+
+### 9.96 (ROOT-CAUSED, fix OWED 2026-07-17) An arm64 kmtest quarantine mislabeled "fastfat stub bugcheck" was actually a translation-fault STORM — `MmAccessFault` returns SUCCESS but leaves the section-view leaf PTE invalid, so a kernel `RtlCompareMemory` re-faults forever (HANG, no bugcheck)
+
+**Symptom.** arm64 `ZwMapViewOfSection` kmtest quarantined 2026-07-16 as "BUGCHECK 0x23 FAT_FILE_SYSTEM
+P1=0xdead0000 = fastfat STUB_BUGCHECK → translate the untranslated fastfat fn." That label was **wrong**.
+Fresh sweep: `ZwMapViewOfSection INCOMPLETE`, `summary.json bugcheck=null` — i.e. an **in-kernel HANG**, not
+a bugcheck. No `FASTFAT_STUB_HIT` anywhere in the serial. The two-run A/B (before/after an unrelated fastfat
+fix) was identical: the test starts, one `FatAllocateDiskSpace` runs, then silence.
+
+**Triage recipe (hang with no faulting PC — the payoff pattern).** Boot the *already-staged* conformance
+media under GDB (`qemu/start.sh arm64 --gdb`; a conformance build leaves the sweep payload in the ramdisk,
+so it auto-runs), `wait-for.sh` the test's start line, then:
+- `inspect.sh $RUN --command bt-all-cpus` + `--command sample-pc` ×4. **A byte-for-byte identical PC across
+  every sample = a stuck CPU** (here `0xfffff800421e175c`, in `mem::compare_memory` / `RtlCompareMemory`).
+- `info registers` caught PC oscillating to `KiArm64VectorTable+0x200` (current-EL **sync** vector) — so it's
+  not a compute spin, it's a **fault storm**: fault → handler → ERET → same fault.
+- Decode the fault: `p/x $FAR_EL1` (=`0x4e0000`, a low USER-VA), `p/x $ESR_EL1` (=`0x96000007` → EC `0x25`
+  data-abort-current-EL, DFSC `0x07` **translation fault L3 = leaf PTE invalid**, WnR=0 read), `p/x $ELR_EL1`
+  (=the faulting `ldrb`). `RtlCompareMemory` is a leaf, so **`x30` still holds the caller's return addr** — no
+  frame-pointer walk needed (the `bt` past frame #1 was garbage: `#3 0x12`).
+
+**Root cause (by elimination — no page-walk needed to characterize).** arm64 **never caches faulting
+translations**, so a *persistent* DFSC-0x07 storm means the L3 PTE is genuinely still invalid on each retry.
+The trap handler (`ntoskrnl/ke/arm64/trap.c:305` data-abort case) calls `MmAccessFault` for DFSC 0x04/08/0c
+and has exactly two outcomes: `NT_SUCCESS` → `return` (ERET/resume), else `KiDispatchException(ACCESS_VIOLATION)`.
+A kernel-mode AV would **bugcheck** — but there's no bugcheck. Therefore `MmAccessFault(0x4e0000)` returns
+**STATUS_SUCCESS while leaving the leaf PTE invalid** → ERET → re-fault → **hang**. `0x4e0000` is a mapped
+`SEC_COMMIT` section view; `MmAccessFault` (`mm/mmfault.rs:190`) takes the user-address branch, `MiLocateVad`
+finds the view's (RosMM) VAD, and routes to the section demand-fault pager (`MmNotPresentFault` / ARM3 proto).
+That path writes/reads the **wrong leaf-PTE slot** — the same **§9.16 arm64 self-map / `MiAddressToPte`
+off-by-one-self-map-level class**, residual in the section-view path. **Almost certainly the same root as the
+`MmSection` in-kernel hang** (same section-view fault path). Fix is OWED under the arm64 MM PFN/section family
+(task #7); **pin the exact wrong slot first** with a GDB page-walk `TTBR0_EL1 → L0[0]→L1[0]→L2[2]→L3[0xE0]`
+for `0x4e0000` (confirm the real slot is invalid and find where the "valid" PTE actually landed) before
+touching the fault path — it's shared infra, every arm64 fault runs through it.
+
+**Reusable:** (a) A conformance quarantine note is a *hypothesis*, not ground truth — re-triage from a fresh
+repro before acting on an old label; "0xdead0000 stub bugcheck" here was a stale guess and the real bug was a
+hang. (b) **Persistent same-DFSC translation-fault storm + no bugcheck ⟹ the fault resolver returned SUCCESS
+without validating the PTE** (arm64 doesn't cache faults, so a real re-fault means a still-invalid descriptor).
+(c) For a leaf-function fault, `x30`/`ELR` beat `bt` (which unwinds into garbage without frame pointers).
+(d) A separate latent keeper found while chasing this: `FatOpenExistingFcb` (create.rs) called the snake_case
+`rust_cohab_stub.c` STUB_BUGCHECK stubs `fat_supersede_or_overwrite_file` + `fat_check_system_security_access`
+while its sibling `FatOpenExistingFile` already called the **real in-file** `FatSupersedeOrOverwriteFile` /
+`FatCheckSystemSecurityAccess` (identical sigs) — re-pointed (free, no re-translation). Any supersede/overwrite
+of an *existing* FAT file through that path would have 0x23/0xdead0000'd; not the ZwMapViewOfSection hang.

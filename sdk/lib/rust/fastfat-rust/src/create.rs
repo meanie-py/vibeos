@@ -1878,11 +1878,17 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                 let OldStatus: i32;
                 DebugTrace(0, (Dbg) as i32, b"Doing supersede/overwrite operation\n\0".as_ptr() as *const i8);
                 OldStatus = Iosb.__bindgen_anon_1.Status;
-                Iosb.__bindgen_anon_1.Status = fat_check_system_security_access(IrpContext);
+                Iosb.__bindgen_anon_1.Status = FatCheckSystemSecurityAccess(IrpContext);
                 if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) == 0 {
                     break 'try_scope_body;
                 }
-                Iosb = fat_supersede_or_overwrite_file(
+                // Re-point from the rust_cohab_stub.c STUB_BUGCHECK stubs to the real Rust
+                // translations already present in this file (FatSupersedeOrOverwriteFile @ ~3213,
+                // FatCheckSystemSecurityAccess @ ~3569). FatOpenExistingFcb was translated calling
+                // the snake_case stubs while its sibling FatOpenExistingFile got the real fns; any
+                // supersede/overwrite of an existing FAT file through FatOpenExistingFcb bugchecked
+                // 0x23 0xdead0000. Signatures are identical (BOOLEAN = u8).
+                Iosb = FatSupersedeOrOverwriteFile(
                     IrpContext,
                     FileObject,
                     Fcb,
