@@ -358,8 +358,16 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str):
         return scan
     header_scan = scan_file(header, force_cpp=True)
     inline = [item for item in header_scan.functions if item.cpp_class == class_name]
-    existing = {item.name for item in scan.functions if item.cpp_class == class_name}
-    duplicate = sorted(item.name for item in inline if item.name in existing)
+    # A method is uniquely identified by (name, arity): C++ overloads that differ
+    # in parameter count are distinct methods, not duplicate bodies (e.g. a static
+    # inline `GetClassID()` helper in the header alongside the virtual
+    # `GetClassID(CLSID*)` defined out-of-line). Only a genuine same-name AND
+    # same-arity body present in BOTH header and impl is a real double-definition
+    # conflict; true overloads are resolved downstream by the arity-based binder.
+    existing = {
+        (item.name, len(item.params)) for item in scan.functions if item.cpp_class == class_name
+    }
+    duplicate = sorted(item.name for item in inline if (item.name, len(item.params)) in existing)
     if duplicate:
         raise CppComError(
             f"{class_name}: method body defined in both implementation and header: "
@@ -466,17 +474,14 @@ def cmd_cpp_com(args):
 
     if args.sdk_header:
         sdk_header = Path(args.sdk_header).resolve()
-        interfaces = [
-            parse_widl_interface(sdk_header, name)
-            for name in dict.fromkeys(entry.interface for entry in cls.com_map)
-        ]
+        interfaces = [parse_widl_interface(sdk_header, name) for name in cls.interface_names()]
     else:
         interfaces = [
             parse_widl_interface(
                 discover_widl_header(REACTOS_ROOT, args.arch, interface=name),
                 name,
             )
-            for name in dict.fromkeys(entry.interface for entry in cls.com_map)
+            for name in cls.interface_names()
         ]
 
     implemented = {f.name for f in class_methods if not f.is_ctor and not f.is_dtor}
@@ -1322,8 +1327,7 @@ def cmd_translate(args):
         if getattr(args, "sdk_header", None):
             sdk_header = Path(args.sdk_header).resolve()
             cpp_com_interfaces = [
-                parse_widl_interface(sdk_header, name)
-                for name in dict.fromkeys(entry.interface for entry in cpp_com_cls.com_map)
+                parse_widl_interface(sdk_header, name) for name in cpp_com_cls.interface_names()
             ]
         else:
             cpp_com_interfaces = [
@@ -1331,13 +1335,13 @@ def cmd_translate(args):
                     discover_widl_header(REACTOS_ROOT, args.arch, interface=name),
                     name,
                 )
-                for name in dict.fromkeys(entry.interface for entry in cpp_com_cls.com_map)
+                for name in cpp_com_cls.interface_names()
             ]
         # Parameter interfaces are ABI too.  Expand the WIDL closure
         # recursively so callback/service vtables referenced by a COM-map
         # method are generated from SDK authority instead of guessed by the
         # body model (for example IEmptyVolumeCacheCallBack).
-        class_interface_names = {entry.interface for entry in cpp_com_cls.com_map}
+        class_interface_names = set(cpp_com_cls.interface_names())
         known_interfaces = {item.name for item in cpp_com_interfaces}
         queue = list(cpp_com_interfaces)
         while queue:

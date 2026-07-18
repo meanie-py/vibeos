@@ -1007,7 +1007,7 @@ amd64-only → any(x86); arm64 stays hardware-broadcast TLBI by design). The "pa
 mailbox" wording resolves to the amd64 per-CPU-mailbox upgrade that was deliberately
 NOT integrated (staged reference in ~/vibeos-rust-staging/smp/ipi-recv/) — the
 descriptor protocol covers it; item retired.
-Found + fixed en route (§9.98 for the full stories): (1) `KeFlushEntireTb`'s
+Found + fixed en route (§9.99 for the full stories): (1) `KeFlushEntireTb`'s
 "wait for IPI completion" block was EMPTY — sender packet-slot reuse race, now a
 real drain; (2) `IPI_FREEZE` corrupted the `IpiFrozen` state machine (bit-OR over a
 staged state) and `KiIpiServiceRoutine` had no freeze branch — the

@@ -227,3 +227,11 @@ SHMultiFileProperties(IDataObject *pDataObject, DWORD dwFlags)
 
     return ShellPropSheetDialog().ShowAsync(&CLSID_ShellFileDefExt, pDataObject, NULL, NULL);
 }
+
+// Rust bridge — shim over SHELL_ShowItemIDListProperties for the Rust-owned
+// CRecycleBin (shell32-rust recycle_bin).
+extern "C" HRESULT WINAPI
+SHELL_ShowItemIDListProperties_RustBridge(LPCITEMIDLIST pidl)
+{
+    return SHELL_ShowItemIDListProperties(pidl);
+}
