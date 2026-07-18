@@ -8442,3 +8442,77 @@ RemoveEntryList` was decoded entirely from LR-chain offsets + `.build-tools/llvm
 section-walk (`e_lfanew → sections → file offset`) reads the disk word at any RVA. The mismatch here is what
 proved reuse. (d) **A page-aligned FAR on a translation fault = a commit/mapping boundary**, not a random wild
 pointer — it says "the mapping ends exactly here," pointing at frame lifetime, not link corruption.
+
+### 9.99 (CLASS FIXED 2026-07-18) The i386 driver-fleet ud2-bomb class — same-module CC-mismatch folds that PASS the linker (scan_ud2 was ntoskrnl-only)
+
+**Symptom:** i386 boot BUGCHECKs (0x1E/0xc000001d illegal instruction) inside a
+driver's init path, at a PC that disassembles to `ud2` in a NAMED driver
+function; OR silently-broken cold paths (the fn's tail after some call is just
+`ud2`). The build links clean; `vibeos-cli check`/scan_ud2 are green.
+
+**Mechanism:** any same-LLVM-module CC disagreement about one symbol — decl-vs-def
+or decl-vs-decl — makes calls through the "wrong" one UB; instcombine replaces
+the call with `unreachable` (→ ud2) and **deletes the symbol reference**, so the
+link goes green precisely BECAUSE the code is broken. Whole-block deletion: any
+side-effect ops on the doomed path (stores before the call!) are removed too.
+With `lto=false`, folds need def+decl (or 2 decls) inside ONE crate — cross-crate
+is safe. Variants of "same module, different CC" we shipped:
+
+1. **link_name redirects** — decl `fn X` + `#[link_name="X_shim"]` must match
+   the SHIM's ABI, not X's (iomgr `IoGetDevObjExtension_shim`, ud2 in
+   `IopMountVolume` → BUGCHECK 0x1E at boot-volume mount).
+2. **local shim def vs bindgen decl class** — for symbols with an in-crate
+   `#[no_mangle]` shim def (wdm FORCEINLINEs: `KeInitializeSpinLock`,
+   `IoGetNextIrpStackLocation`, …), the CC authority is the **ntkrnl-sys
+   bindgen_i386 DECL class** (what callers import) — NOT the platform import-lib
+   decoration (nm) and NOT the .spec. nm truth applies only to externally
+   resolved symbols. Getting this backwards (Phase-2's def-flips) armed bombs in
+   7 driver crates at once.
+3. **`#[no_mangle]` WITHOUT `extern "…"`** — exports the raw symbol but keeps
+   the unstable Rust CC; every extern decl of it is a mismatch (fastfat
+   `FatSetDirtyBcb`, win32k pre-`fastcall_fn!` era). Grep pattern:
+   `#[no_mangle]` followed by plain `fn` — 79 in-tree, most benign (no extern
+   callers) but each is a landmine.
+4. **fastcall decls vs cdecl defs** — kernel exports Interlocked* FASTCALL on
+   i386 (`@InterlockedExchange@8`); a crate-local cdecl twin def collides with
+   x86-gated fastcall decls (mountmgr). Fix: gate the local def `not(x86)`, let
+   i386 use the kernel export.
+5. **variadic decls vs non-variadic def** — "callers are variadic, we define
+   fixed-arity and ignore extra args" is machine-ABI-fine but **LLVM-UB**
+   (classpnp/disk `TracePrint`/`StorDebugPrint`). Durable fix: put the def in
+   its OWN crate (`drvtrace-shim`) — `lto=false` makes cross-crate modules
+   mutually invisible, so the pattern is fold-proof. Do NOT move such shims
+   back in-crate, do NOT enable LTO over them.
+
+**Detection (the gap that let all this land):** `scan_ud2` only scans
+ntoskrnl.exe. Driver sweep one-liner until it's extended:
+`llvm-objdump -d <sys> | awk '/^[0-9a-f]+ </{fn=$2} /\tud2/{print fn}'` filtered
+for named non-intrinsic fns (skip `__ZN`/compiler_builtins/`___*`/panic/D0Ev
+deleting-dtors); ud2 directly after a call to a NORETURN fn (FatBugCheck, panic)
+is expected codegen, not a bomb. Autopsy: the callee named by the last surviving
+call before the ud2 is the *predecessor* — the poisoned call is what follows it
+in SOURCE (it was deleted). See scratchpad tools ced_linkname_audit.py /
+ced_bindgen_oracle.py / ced_ccreport.py / ud2_autopsy.py (session 57d7315b).
+Scanner gotcha that hid two of these: `#[no_mangle] pub unsafe extern "system"
+fn X` ON ONE LINE — any regex keyed on line-starts-with-`#[` skips the def.
+
+### 9.100 (FIXED 2026-07-18) cdrom sense-buffer 32-vs-18 pool overrun — deterministic BAD_POOL_HEADER 0x19/5 at i386 driver init, TCG-only timing
+
+**Symptom:** deterministic i386 BUGCHECK 0x19 (0x5, next, line, entry) shortly
+after cdrom's WDFKEY traces during boot; entry/next differ by 0x20; next header
+all-zeros. TCG-only in practice (KVM boot timing never hit the poll window
+before shell-ready).
+
+**Root:** `cdrom-rust/src/autorun.rs` media-change SRB setup used literal `32`
+(commented `// SENSE_BUFFER_SIZE`!) for BOTH `RtlZeroMemory(senseBuffer, 32)`
+and `SenseInfoBufferLength`, but the buffer is allocated `SENSE_BUFFER_SIZE`
+= 18 → 24-usable pool block; the zeroing wiped the next 8-byte pool header on
+every poll setup. Fix: both sites → `SENSE_BUFFER_SIZE`.
+
+**Tools that worked:** the 0x19 params encode `line!()` as param3 → maps the
+raise; ex-rust `exp_dump_pool_page` (added, permanent) prints the page walk +
+recent-free ring on the corruption path — the corrupted block's tag (`ScCa` =
+CDROM_TAG_MEDIA_CHANGE_DETECTION) named the owner immediately. NOTE: the
+`--tripwire SPECIALPOOL` channel did NOT reach the kernel on the windows-host
+backend (no `-fw_cfg` in the qemu cmdline, no `[TRIPWIRE]` ack) — harness gap,
+owed fix; don't assume an armed tripwire without the ack line.

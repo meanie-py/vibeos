@@ -506,3 +506,29 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
 - **Consider a gate at the end** — once a crate is clean, a lint that keeps it clean (deny the
   fixed classes for that crate, or a workspace `-D` for the ones fully eliminated) is what
   makes the burndown *stay* burned down. Design it so it can't be defeated by a new blanket allow.
+
+
+## 2026-07-18 — the ud2-bomb detour (Phase 2 landing fallout) + boot green again
+
+Landing Phase 2 surfaced a CLASS: same-module CC-mismatch calls fold to ud2 AND
+drop their symbol ref (link passes BECAUSE the code is broken); scan_ud2 never
+looked at drivers. Field manual **§9.99** (6 root patterns + detection recipe) and
+**§9.100** (the cdrom 32-vs-18 sense-buffer pool overrun, found via the new
+ex-rust `[POOL]` page-walk forensics). Truth-model addendum for the CC canon:
+**bindgen_i386 decl class outranks nm/import-lib decoration for any symbol with
+an in-crate shim def** (Phase 2 had this backwards for KeInitializeSpinLock ×7
+crates). New crate `drvtrace-shim` = the fold-proof home for variadic-called
+non-variadic debug shims (lto=false module isolation).
+
+Owed from the detour: extend scan_ud2 to drivers (+KNOWN_DRIVER_UD2 baseline:
+win32k UserRedrawDesktop/NtGdiGetRealizationInfo/co_IntSendActivateMessages,
+cdfs CdPerformVerify, usbehci EHCI_OpenInterruptEndpoint, winsrv
+ConDrvInitConsole — cold-branch residuals to root-cause); kernel-island
+def-vs-bindgen mismatches (iomgr bootlog SD/CD, se SepDump* SD/CD, byteswap
+FC/CD, config CmpAssignSecurityDescriptor — all link+boot today, audit before
+touching); SPECIALPOOL tripwire never reaches the kernel on the windows-host
+backend (no -fw_cfg on the qemu cmdline — harness gap).
+
+Pass C (TYPE/SIGN unification) is built + dry-run-validated (362 syms / 517
+rewrites / 49 crates, signal bucket 311 syms preserved): scratchpad ced_passc.py
++ ced_passc_repair.py; applies next.

@@ -64,7 +64,7 @@
   [C_MACRO] sdk/lib/rust/kdbg-rust/src/kdb_symbols.rs:55: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/kdbg-rust/src/kdb_symbols.rs:56: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ke-inlines/src/lib.rs:171: KeReleaseSpinLock: KeReleaseSpinLock is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ks-rust/src/glue.rs:207: ExRaiseStatus: ExRaiseStatus is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/ks-rust/src/glue.rs:210: ExRaiseStatus: ExRaiseStatus is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/lpc-rust/src/connect.rs:113: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/lpc-rust/src/connect.rs:119: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/lpc-rust/src/reply.rs:58: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
