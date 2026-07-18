@@ -183,9 +183,31 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
   security.c` + generated RPC.
-- **shell32 COM classes (81 `.cpp`, ~64K LOC) — not started.** ATL/COM vtable impls
-  (CDefView / CShellLink / folders / droptargets) — a heavy C++→Rust effort separate from
-  the C→Rust pipeline that finished shell32's 14 wine-derived `.c` files.
+- **shell32 COM classes (81 `.cpp`, ~64K LOC) — pilot in flight.** `CDropTargetHelper`,
+  `CActiveDesktop`, `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`,
+  `CFontsFolder`, `CAdminToolsFolder`, and `CMyDocsFolder` are Rust-owned activated classes.
+  `CCopyAsPathMenu` is the first out-of-sample cheap-model
+  class: two deterministic workers plus eight unchanged cached DeepSeek workers went from
+  62 diagnostics per architecture to zero after deterministic support closure, then passed
+  the full integrated three-architecture gate. rustconv now
+  parses ATL COM maps, reads
+  flattened interface slots/signatures from WIDL-generated or legacy `DECLARE_INTERFACE_` SDK
+  headers, and generates interface structs,
+  vtables, pointer recovery, QueryInterface/refcounting, the Rust factory, and ATL activation
+  glue deterministically; the model sees method bodies only. Same-file free-helper closures are
+  limited to internal linkage, selected transitively, overload-bound by proven-distinct arity,
+  and renamed before prompting; wide literals are emitted as deterministic UTF-16 statics. Plain
+  C scalar/pointer object state and `CComPtr<T>` ownership are now laid out and initialized
+  deterministically; source-selected bridges expose required internal C++ helpers without
+  asking the model to invent linkage. Exact prepared-body translation memory reused 19/22
+  workers between the Fonts/Admin pair, while source-derived scope guards now restore
+  body-local `CComPtr<T>` cleanup on every exit path. `CExeDropHandler` is the first
+  scalar-state pilot, `CCopyAsPathMenu` is the first object-field RAII-state pilot, and
+  `CMyDocsFolder` is the first six-interface class with a deterministic `FinalConstruct`
+  activation/failure-cleanup path.
+  C++/RAII state, aggregatable classes, custom/inherited base
+  layouts, same-arity overloads, and internal COM objects without an `OBJECT_ENTRY` remain loud
+  preflight failures until their layout/lifetime/construction mappings are implemented.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

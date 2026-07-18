@@ -5,6 +5,14 @@
 
 use core::ffi::c_void;
 
+// Canonical per-architecture SDK layouts. Keep ABI-heavy COM/Win32 records in
+// com-sys rather than growing a second hand-maintained shell32 copy.
+pub use com_sys::{
+    BIND_OPTS, FORMATETC, HDC, HICON, HOLEMENU, INT8, LPOLEMENUGROUPWIDTHS, LRESULT, MSG,
+    PBYTE, POINTL, RECT, STATDATA, STATSTG, STGMEDIUM, SYSTEMTIME, ULARGE_INTEGER, ULONGLONG,
+    WPARAM,
+};
+
 pub type BOOL = i32;
 pub type BOOLEAN = u8;
 pub type DWORD = u32;
@@ -27,6 +35,11 @@ pub type HKEY = HANDLE;
 pub type PHKEY = *mut HKEY;
 pub type HINSTANCE = HANDLE;
 pub type HWND = HANDLE;
+pub type HMENU = HANDLE;
+pub type HGLOBAL = HANDLE;
+pub type HBITMAP = HANDLE;
+pub type HPROPSHEETPAGE = HANDLE;
+pub type COLORREF = DWORD;
 
 pub type LPVOID = *mut c_void;
 pub type LPCVOID = *const c_void;
@@ -37,6 +50,8 @@ pub type LPSTR = *mut CHAR;
 pub type LPCSTR = *const CHAR;
 pub type LPWSTR = *mut WCHAR;
 pub type LPCWSTR = *const WCHAR;
+pub type PCWSTR = *const WCHAR;
+pub type LPCOLESTR = *const WCHAR;
 
 pub const FALSE: BOOL = 0;
 pub const TRUE: BOOL = 1;
@@ -48,7 +63,158 @@ pub type HRESULT = LONG;
 pub type REGSAM = DWORD;
 
 pub const S_OK: HRESULT = 0;
+pub const S_FALSE: HRESULT = 1;
+pub const E_NOTIMPL: HRESULT = 0x80004001u32 as HRESULT;
+pub const E_NOINTERFACE: HRESULT = 0x80004002u32 as HRESULT;
+pub const E_POINTER: HRESULT = 0x80004003u32 as HRESULT;
+pub const CLASS_E_NOAGGREGATION: HRESULT = 0x80040110u32 as HRESULT;
+pub const E_OUTOFMEMORY: HRESULT = 0x8007000Eu32 as HRESULT;
+pub const E_FAIL: HRESULT = 0x80004005u32 as HRESULT;
+pub const E_INVALIDARG: HRESULT = 0x80070057u32 as HRESULT;
+pub const MK_E_NOOBJECT: HRESULT = 0x800401E5u32 as HRESULT;
 pub const ERROR_SUCCESS: LONG = 0;
+pub const HEAP_ZERO_MEMORY: DWORD = 8;
+pub const CP_ACP: UINT = 0;
+pub const UNICODE_NULL: WCHAR = 0;
+pub const MAX_PATH: usize = 260;
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const INVALID_HANDLE_VALUE: HANDLE = usize::MAX as HANDLE;
+pub const RRF_RT_REG_SZ: DWORD = 0x0000_0002;
+pub const RRF_RT_ANY: DWORD = 0x0000_FFFF;
+pub const HBMMENU_CALLBACK: HBITMAP = -1isize as HBITMAP;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct FOLDERSETTINGS {
+    pub ViewMode: UINT,
+    pub fFlags: UINT,
+}
+pub type LPFOLDERSETTINGS = *mut FOLDERSETTINGS;
+pub type LPCFOLDERSETTINGS = *const FOLDERSETTINGS;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct DRAWITEMSTRUCT {
+    pub CtlType: UINT,
+    pub CtlID: UINT,
+    pub itemID: UINT,
+    pub itemAction: UINT,
+    pub itemState: UINT,
+    pub hwndItem: HWND,
+    pub hDC: HDC,
+    pub rcItem: RECT,
+    pub itemData: ULONG_PTR,
+}
+
+pub const CF_UNICODETEXT: UINT = 13;
+pub const GMEM_MOVEABLE: UINT = 2;
+pub const GMEM_SHARE: UINT = 8192;
+pub const ERROR_BUFFER_OVERFLOW: DWORD = 111;
+pub const CMF_NOVERBS: UINT = 0x0000_0008;
+pub const CMF_EXTENDEDVERBS: UINT = 0x0000_0100;
+pub const MIIM_ID: UINT = 0x0000_0002;
+pub const MIIM_TYPE: UINT = 0x0000_0010;
+pub const MFT_STRING: UINT = 0;
+pub const SEVERITY_SUCCESS: DWORD = 0;
+
+#[inline]
+pub const fn MAKE_HRESULT(severity: DWORD, facility: DWORD, code: DWORD) -> HRESULT {
+    ((severity << 31) | (facility << 16) | code) as HRESULT
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct CMINVOKECOMMANDINFO {
+    pub cbSize: DWORD,
+    pub fMask: DWORD,
+    pub hwnd: HWND,
+    pub lpVerb: LPCSTR,
+    pub lpParameters: LPCSTR,
+    pub lpDirectory: LPCSTR,
+    pub nShow: INT,
+    pub dwHotKey: DWORD,
+    pub hIcon: HANDLE,
+}
+pub type LPCMINVOKECOMMANDINFO = *mut CMINVOKECOMMANDINFO;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct MENUITEMINFOW {
+    pub cbSize: UINT,
+    pub fMask: UINT,
+    pub fType: UINT,
+    pub fState: UINT,
+    pub wID: UINT,
+    pub hSubMenu: HMENU,
+    pub hbmpChecked: HBITMAP,
+    pub hbmpUnchecked: HBITMAP,
+    pub dwItemData: ULONG_PTR,
+    pub dwTypeData: LPWSTR,
+    pub cch: UINT,
+    pub hbmpItem: HBITMAP,
+}
+
+/// SIZE and POINT from wtypes.h.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct SIZE {
+    pub cx: LONG,
+    pub cy: LONG,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct POINT {
+    pub x: LONG,
+    pub y: LONG,
+}
+
+/// winuser.h notification header. `idFrom` is pointer-sized on Win64.
+#[repr(C)]
+pub struct NMHDR {
+    pub hwndFrom: HWND,
+    pub idFrom: UINT_PTR,
+    pub code: UINT,
+}
+
+pub type LPNMHDR = *mut NMHDR;
+
+#[repr(C)]
+pub struct PSHNOTIFY {
+    pub hdr: NMHDR,
+    pub lParam: LONG_PTR,
+}
+
+/// Canonical shellapi.h file-information records shared by C and C++ ports.
+#[repr(C)]
+pub struct SHFILEINFOA {
+    pub hIcon: HICON,
+    pub iIcon: INT,
+    pub dwAttributes: DWORD,
+    pub szDisplayName: [CHAR; MAX_PATH],
+    pub szTypeName: [CHAR; 80],
+}
+
+#[repr(C)]
+pub struct SHFILEINFOW {
+    pub hIcon: HICON,
+    pub iIcon: INT,
+    pub dwAttributes: DWORD,
+    pub szDisplayName: [WCHAR; MAX_PATH],
+    pub szTypeName: [WCHAR; 80],
+}
+
+extern "system" {
+    pub fn lstrcpynW(dst: LPWSTR, src: LPCWSTR, capacity: INT) -> LPWSTR;
+}
+
+extern "C" {
+    pub fn wcscpy(dst: LPWSTR, src: LPCWSTR) -> LPWSTR;
+    pub fn wcschr(text: LPCWSTR, character: WCHAR) -> LPWSTR;
+    pub fn wcscmp(left: LPCWSTR, right: LPCWSTR) -> INT;
+    pub fn wcslen(text: LPCWSTR) -> usize;
+}
 
 /// `HRESULT_FROM_WIN32` (winerror.h): positive Win32 error → 0x8007xxxx; pass-through
 /// otherwise. Faithful port of `__HRESULT_FROM_WIN32`.

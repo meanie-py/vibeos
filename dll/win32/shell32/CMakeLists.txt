@@ -45,16 +45,30 @@ list(APPEND SOURCE
     shell32.cpp
     utils.cpp
     CShellItem.cpp
+    # Hybrid cohab: the CShellLink COM class is Rust-owned (shell32-rust/src/
+    # shell_link.rs) — activation, all interfaces, and the C-linkage
+    # IShellLink_ConstructFromPath/FromFile (the C++ bodies are #if 0'd). This
+    # file stays compiled: its C++ class method bodies are dead (mangled, never
+    # constructed — object map uses CShellLinkRustEntry) and it retains the
+    # free helpers PathFullyUnExpandEnvStringsW/ExtendedShortcutProc + statics.
     CShellLink.cpp
     CFolderOptions.cpp
     folders/CDesktopFolder.cpp
     folders/CFSFolder.cpp
+    # Hybrid cohab: CDrivesFolder activation/methods are Rust-owned
+    # (shell32-rust/src/drives_folder.rs); this file retains CDrivesFolderEnum,
+    # the drives context menu/eject/format cluster, CDrivesExtractIcon + icon
+    # helpers, and the explicit *_RustBridge shims.
     folders/CDrivesFolder.cpp
-    folders/CMyDocsFolder.cpp
+    # folders/CMyDocsFolder.cpp — replaced by Rust (shell32-rust/src/my_docs_folder.rs); cohab via libshell32_rust.a
+    # Hybrid cohab: CPrinterFolder activation/methods are Rust-owned; this file
+    # retains CPrintersEnum and three explicit source-local Rust bridge helpers.
     folders/CPrinterFolder.cpp
-    folders/CAdminToolsFolder.cpp
+    # folders/CAdminToolsFolder.cpp — replaced by Rust (shell32-rust/src/admin_tools_folder.rs); cohab via libshell32_rust.a
+    # Hybrid cohab: CNetFolder activation/methods are Rust-owned; this file
+    # retains network enumeration, context-menu callbacks, and explicit bridges.
     folders/CNetFolder.cpp
-    folders/CFontsFolder.cpp
+    # folders/CFontsFolder.cpp — replaced by Rust (shell32-rust/src/fonts_folder.rs); cohab via libshell32_rust.a
     folders/CControlPanelFolder.cpp
     folders/CRecycleBin.cpp
     folders/CRecycleBinFolderViewCB.cpp
@@ -73,13 +87,15 @@ list(APPEND SOURCE
     CDefViewBckgrndMenu.cpp
     stubs.cpp
     systray.cpp
-    CUserNotification.cpp
+    # CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
     CDefaultContextMenu.cpp
+    # Hybrid cohab: COpenWithMenu activation/methods are Rust-owned; this file
+    # retains COpenWithList, COpenWithDialog, exported helpers, and opaque bridges.
     COpenWithMenu.cpp
-    CNewMenu.cpp
-    CSendToMenu.cpp
+    # CNewMenu.cpp — replaced by Rust (shell32-rust/src/new_menu.rs); cohab via libshell32_rust.a
+    # CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a
     CCopyMoveToMenu.cpp
-    CCopyAsPathMenu.cpp
+    # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
     CShellDispatch.cpp
     CFolder.cpp
     CFolderItems.cpp
@@ -167,7 +183,8 @@ add_typelib(shell32_shldisp.idl)
 set_source_files_properties(shell32.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shell32_shldisp.tlb)
 
 set_module_type(shell32 win32dll UNICODE)
-target_link_libraries(shell32 shellmenu shelldesktop wine uuid recyclebin cpprt atl_classes oldnames ${SHELL32_RUST_LIB})
+target_link_libraries(shell32 shellmenu shelldesktop wine uuid recyclebin cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB})
+add_dependencies(shell32 rust_menuband)
 add_delay_importlibs(shell32 powrprof shdocvw devmgr winspool.drv winmm mpr uxtheme ole32 oleaut32 userenv browseui version fmifs netapi32 secur32)
 add_importlibs(shell32 advapi32 gdi32 user32 comctl32 comdlg32 shlwapi msvcrt kernel32 ntdll)
 add_dependencies(shell32 stdole2 rust_shell32) # shell32_shldisp.tlb needs stdole2.tlb; rust_shell32 = cohab staticlib

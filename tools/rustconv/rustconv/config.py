@@ -262,6 +262,17 @@ USERINIT_DIR = REACTOS_ROOT / "base" / "system" / "userinit"
 # (leaf-procedural first, COM monsters last).
 SHELL_EXPLORER_DIR = REACTOS_ROOT / "base" / "shell" / "explorer"
 
+# shell32.dll C++/ATL COM classes.  Unlike the generic user-DLL fallback this
+# target has a crate-local COM substrate and a dedicated body-only prompt; COM
+# interfaces/vtables/factories are generated deterministically by cpp_com.py.
+SHELL32_DIR = REACTOS_ROOT / "dll" / "win32" / "shell32"
+SHELL32_RUST_SRC = RUST_DIR / "shell32-rust" / "src"
+SHELL32_COM_FILES = {
+    "arm64": SHELL32_RUST_SRC / "shellcom.rs",
+    "amd64": SHELL32_RUST_SRC / "shellcom.rs",
+    "i386": SHELL32_RUST_SRC / "shellcom.rs",
+}
+
 # winlogon.exe — the logon manager (winlogon → userinit → explorer). GINA-
 # independent LEAF files only (setup/environment/shutdown/screensaver/security);
 # the GINA core (wlx.c), SAS state machine (sas.c), main (winlogon.c) and RPC
@@ -1440,6 +1451,23 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    "shell32": Target(
+        name="shell32",
+        source_dir=SHELL32_DIR,
+        output_crate=RUST_DIR / "shell32-rust",
+        bindgen_files={},
+        hal_bindgen_files={},
+        spec_file=SHELL32_DIR / "shell32.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt_shell32_com.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        crate_bindgen_files=SHELL32_COM_FILES,
+        crate_module="shellcom",
+        sys_crate="crate",
+        sys_umbrella=None,
+    ),
     # winlogon.exe — logon manager, GINA-independent leaf files. Self-contained
     # winlogon-sys substrate (WLSESSION/GINA layout size-asserted ×3). Generic
     # user-mode prompt addendum. Output to its own winlogon-rust crate.
@@ -1501,6 +1529,10 @@ def detect_target(c_path: Path) -> Target:
     # substrate. Last boot-path component still fully C++.
     if "/base/shell/explorer" in posix:
         return TARGETS["explorer"]
+    # shell32's C++/ATL classes use a dedicated body-only COM pipeline. Keep
+    # this before the generic dll/win32 fallback, which is intentionally C-only.
+    if "/dll/win32/shell32/" in posix and p.suffix.lower() in (".cpp", ".cc", ".cxx"):
+        return TARGETS["shell32"]
     # ntdll.dll body (loader/dispatch/rtl-glue). Its own ntdll-rust crate
     # on the same user-mode substrate. Note: the shared rtl algorithms it
     # links (sdk/lib/rtl/*) are NOT routed here — those are the rtl-rust /

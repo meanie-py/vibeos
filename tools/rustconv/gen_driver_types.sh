@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -643,6 +643,46 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 -DLE )
+    ;;
+  wshtcpip)
+    # USERMODE Winsock TCP/IP helper DLL (dll/win32/wshtcpip) — the transport-specific
+    # WSH provider ws2_32/msafd load to resolve the TCP/IP address family: it maps winsock
+    # protocol/socket params to TDI and answers WSHOpenSocket/WSHGetSocketInformation/
+    # WSHIoctl. Same USERMODE=1 treatment as msafd/ws2_32: blocklist against ntdll-sys and
+    # re-export `pub use ntdll_sys::nt::*;` so the NT base types keep ONE identity with the
+    # translated modules (`use ntdll_sys::nt::*`). Only the WSH/TDI/winsock structs go local.
+    #
+    # Wrapper = wshtcpip.h (it pulls windef/winbase/wsahelp/tdiinfo/tcpioctl/tdilib/
+    # ws2tcpip/rtlfuncs — the whole type surface). iflist.c additionally pulls iptypes.h
+    # (IP_ADAPTER_INFO for the interface enumeration), so allowlist it too. The private
+    # structs the translation touches: WSH_HANDLE/WSH_*_INFO + WINSOCK_MAPPING (wsahelp.h),
+    # TDIEntityID/TDIObjectID/TDI_ADDRESS_* (tdiinfo.h), TCP_REQUEST_QUERY_INFORMATION_EX
+    # (tcpioctl.h), SOCKADDR/SOCKADDR_IN/SOCKADDR_IN6/WSAPROTOCOL_INFOW (ws2tcpip →
+    # winsock2/ws2def/ws2ipdef), IP_ADAPTER_INFO/IP_ADDR_STRING (iptypes.h). A hand-invented
+    # sockaddr_in6 or TDIObjectID is a silent wire-format/IOCTL bug — the scan_magic_offsets
+    # class — so GENERATE them.
+    #
+    # BLOCKLIST_FUNCS=1: wsahelp.h/tdilib.h declare WSH*/tdi-helper prototypes the translated
+    # modules define/call as their own externs — emitting them here collides under the flat
+    # `use crate::types::*` glob. CALLBACK_SYSTEM=1: WSH provider entry points are stdcall on
+    # i386, and a cdecl fn-ptr in a provider slot is a silent stack imbalance (the ws2_32/
+    # ole32 CALLBACK class). Version macros track the global usermode build (0x502).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    CALLBACK_SYSTEM=1
+    DRIVER_DIR="${SRC}/dll/win32/wshtcpip"
+    WRAPPER_INC=$'#include "wshtcpip.h"\n#include <iptypes.h>'
+    ALLOW_FILES=( --allowlist-file '.*wshtcpip[/\\]wshtcpip\.h'
+                  --allowlist-file '.*[/\\]wsahelp\.h' --allowlist-file '.*[/\\]tdiinfo\.h'
+                  --allowlist-file '.*[/\\]tcpioctl\.h' --allowlist-file '.*[/\\]tdilib\.h'
+                  --allowlist-file '.*[/\\]tdi\.h' --allowlist-file '.*[/\\]ws2tcpip\.h'
+                  --allowlist-file '.*[/\\]winsock2\.h' --allowlist-file '.*[/\\]winsock\.h'
+                  --allowlist-file '.*[/\\]ws2def\.h' --allowlist-file '.*[/\\]ws2ipdef\.h'
+                  --allowlist-file '.*[/\\]iptypes\.h' )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/tdilib" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
     ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined

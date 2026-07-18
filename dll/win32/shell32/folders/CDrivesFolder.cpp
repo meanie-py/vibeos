@@ -1453,3 +1453,52 @@ HRESULT WINAPI CDrivesFolder::CallBack(IShellFolder *psf, HWND hwndOwner, IDataO
     }
     return SHELL32_DefaultContextMenuCallBack(psf, pdtobj, uMsg);
 }
+
+/**************************************************************************
+ * Rust bridges — CDrivesFolder is Rust-owned (shell32-rust drives_folder);
+ * the companions below stay C++ and are reached through these C ABI shims.
+ */
+
+extern "C" HRESULT WINAPI
+CDrivesFolder_CreateRegFolder_RustBridge(
+    IShellFolder *psfOuter, LPCITEMIDLIST pidlRoot, REFIID riid, void **ppv)
+{
+    REGFOLDERINITDATA RegInit = { psfOuter, &g_RegFolderInfo };
+    return CRegFolder_CreateInstance(&RegInit, pidlRoot, riid, ppv);
+}
+
+extern "C" HRESULT WINAPI
+CDrivesFolderEnum_CreateInstance_RustBridge(
+    HWND hwndOwner, DWORD dwFlags, IEnumIDList *pRegEnumerator, REFIID riid, void **ppv)
+{
+    return ShellObjectCreatorInit<CDrivesFolderEnum>(hwndOwner, dwFlags, pRegEnumerator, riid, ppv);
+}
+
+extern "C" HRESULT WINAPI
+CDrivesContextMenu_CreateInstance_RustBridge(
+    PCIDLIST_ABSOLUTE pidlFolder, HWND hwnd, UINT cidl, PCUITEMID_CHILD_ARRAY apidl,
+    IShellFolder *psf, IContextMenu **ppcm)
+{
+    return CDrivesContextMenu_CreateInstance(pidlFolder, hwnd, cidl, apidl, psf, ppcm);
+}
+
+extern "C" HRESULT WINAPI
+CDrivesExtractIcon_CreateInstance_RustBridge(
+    IShellFolder *psf, LPCITEMIDLIST pidl, REFIID riid, LPVOID *ppvOut)
+{
+    return CDrivesExtractIcon_CreateInstance(psf, pidl, riid, ppvOut);
+}
+
+extern "C" BOOL WINAPI
+SHELL32_IsShellFolderNamespaceItemHidden_RustBridge(LPCWSTR SubKey, const CLSID *pClsid)
+{
+    return SHELL32_IsShellFolderNamespaceItemHidden(SubKey, *pClsid);
+}
+
+extern BOOL IsDriveFloppyW(LPCWSTR pszDriveRoot); // C++ linkage (dialogs/drvdefext.cpp)
+
+extern "C" BOOL WINAPI
+IsDriveFloppyW_RustBridge(LPCWSTR pszDriveRoot)
+{
+    return IsDriveFloppyW(pszDriveRoot);
+}

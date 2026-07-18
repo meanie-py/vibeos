@@ -20,8 +20,54 @@ pub type LPARAM = LONG_PTR; // windef.h
 pub type SFGAOF = DWORD; // shobjidl (ULONG attribute mask)
 pub type SHGDNF = DWORD; // shobjidl (SHGDN flags)
 pub type SIGDN = u32; // shobjidl (v1_enum)
+pub const SIGDN_DESKTOPABSOLUTEPARSING: SIGDN = 0x8002_8000;
+pub type SICHINTF = DWORD;
+pub type GETPROPERTYSTOREFLAGS = DWORD;
+pub type SIATTRIBFLAGS = DWORD;
 pub type PWSTR = LPWSTR; // winnt.h
 pub type VARTYPE = u16; // wtypes.h
+pub type SHCONTF = DWORD;
+pub type SHCOLSTATEF = DWORD;
+
+/// SHDRAGIMAGE from shobjidl.h, used by IDragSourceHelper.
+#[repr(C)]
+pub struct SHDRAGIMAGE {
+    pub sizeDragImage: SIZE,
+    pub ptOffset: POINT,
+    pub hbmpDragImage: HBITMAP,
+    pub crColorKey: COLORREF,
+}
+pub type LPSHDRAGIMAGE = *mut SHDRAGIMAGE;
+
+// Active Desktop's current implementation is a pure E_NOTIMPL stub. These SDK
+// records cross its COM ABI only by pointer, so opaque repr(C) pointees are exact
+// for this class; promote their fields from shlobj.h before any body dereferences
+// them.
+#[repr(C)]
+pub struct WALLPAPEROPT {
+    _opaque: [u8; 0],
+}
+pub type LPWALLPAPEROPT = *mut WALLPAPEROPT;
+pub type LPCWALLPAPEROPT = *const WALLPAPEROPT;
+
+#[repr(C)]
+pub struct COMPONENTSOPT {
+    _opaque: [u8; 0],
+}
+pub type LPCOMPONENTSOPT = *mut COMPONENTSOPT;
+pub type LPCCOMPONENTSOPT = *const COMPONENTSOPT;
+
+#[repr(C)]
+pub struct COMPONENT {
+    _opaque: [u8; 0],
+}
+pub type LPCOMPONENT = *mut COMPONENT;
+pub type LPCCOMPONENT = *const COMPONENT;
+
+#[repr(C)]
+pub struct IErrorLog {
+    pub lpVtbl: *mut core::ffi::c_void,
+}
 
 // ── GUID family (guiddef.h) ─────────────────────────────────────────────────────────────
 /// GUID/CLSID/IID/FMTID — { Data1: u32; Data2: u16; Data3: u16; Data4: [u8;8] }.
@@ -55,7 +101,39 @@ pub struct ITEMIDLIST {
 }
 pub type LPITEMIDLIST = *mut ITEMIDLIST;
 pub type LPCITEMIDLIST = *const ITEMIDLIST;
+pub type PIDLIST_ABSOLUTE = LPITEMIDLIST;
+pub type PCIDLIST_ABSOLUTE = LPCITEMIDLIST;
+pub type PIDLIST_RELATIVE = LPITEMIDLIST;
+pub type PCUIDLIST_RELATIVE = LPCITEMIDLIST;
+pub type PCUITEMID_CHILD = LPCITEMIDLIST;
+pub type PCUITEMID_CHILD_ARRAY = *const PCUITEMID_CHILD;
+pub type PITEMID_CHILD = LPITEMIDLIST;
+pub type LPOLESTR = LPWSTR;
 pub type LPCSHITEMID = *const SHITEMID;
+
+pub const SHGDN_NORMAL: SHGDNF = 0;
+pub const SHGDN_FORPARSING: SHGDNF = 0x8000;
+pub const SFGAO_STORAGE: SFGAOF = 0x0000_0008;
+pub const SFGAO_STORAGEANCESTOR: SFGAOF = 0x0080_0000;
+pub const SFGAO_VALIDATE: SFGAOF = 0x0100_0000;
+pub const SFGAO_FILESYSANCESTOR: SFGAOF = 0x1000_0000;
+pub const SFGAO_FOLDER: SFGAOF = 0x2000_0000;
+pub const SFGAO_FILESYSTEM: SFGAOF = 0x4000_0000;
+pub const SFGAO_HASSUBFOLDER: SFGAOF = 0x8000_0000;
+pub const CSIDL_FONTS: INT = 0x0014;
+pub const CSIDL_COMMON_ADMINTOOLS: INT = 0x002f;
+
+#[repr(C)]
+pub struct IEnumExtraSearch {
+    _opaque: [u8; 0],
+}
+
+#[repr(C)]
+pub struct SHELLDETAILS {
+    pub fmt: INT,
+    pub cxChar: INT,
+    pub str_: STRRET,
+}
 
 /// PIDLTYPE (pidl.h) — first byte of PIDLDATA, one of the PT_* tags below.
 pub type PIDLTYPE = BYTE;
@@ -209,7 +287,7 @@ pub union PIDLDATA_u {
 }
 #[repr(C, packed)]
 pub struct PIDLDATA {
-    pub r#type: PIDLTYPE,
+    pub type_: PIDLTYPE,
     pub u: PIDLDATA_u,
 }
 pub type LPPIDLDATA = *mut PIDLDATA;
@@ -286,8 +364,8 @@ pub struct IUnknown {
 #[repr(C)]
 pub struct IUnknownVtbl {
     pub QueryInterface: unsafe extern "system" fn(*mut IUnknown, REFIID, *mut *mut c_void) -> HRESULT,
-    pub AddRef: usize,
-    pub Release: usize,
+    pub AddRef: unsafe extern "system" fn(*mut IUnknown) -> ULONG,
+    pub Release: unsafe extern "system" fn(*mut IUnknown) -> ULONG,
 }
 
 #[repr(C)]
@@ -298,7 +376,7 @@ pub struct IShellFolder {
 pub struct IShellFolderVtbl {
     pub QueryInterface:
         unsafe extern "system" fn(*mut IShellFolder, REFIID, *mut *mut c_void) -> HRESULT,
-    pub AddRef: usize,
+    pub AddRef: unsafe extern "system" fn(*mut IShellFolder) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IShellFolder) -> ULONG,
     pub ParseDisplayName: unsafe extern "system" fn(
         *mut IShellFolder,
@@ -309,7 +387,12 @@ pub struct IShellFolderVtbl {
         *mut LPITEMIDLIST,
         *mut DWORD,
     ) -> HRESULT,
-    pub EnumObjects: usize,
+    pub EnumObjects: unsafe extern "system" fn(
+        *mut IShellFolder,
+        HWND,
+        DWORD,
+        *mut *mut IEnumIDList,
+    ) -> HRESULT,
     pub BindToObject: unsafe extern "system" fn(
         *mut IShellFolder,
         LPCITEMIDLIST,
@@ -317,13 +400,28 @@ pub struct IShellFolderVtbl {
         REFIID,
         *mut *mut c_void,
     ) -> HRESULT,
-    pub BindToStorage: usize,
+    pub BindToStorage: unsafe extern "system" fn(
+        *mut IShellFolder,
+        LPCITEMIDLIST,
+        *mut IBindCtx,
+        REFIID,
+        *mut *mut c_void,
+    ) -> HRESULT,
     pub CompareIDs:
         unsafe extern "system" fn(*mut IShellFolder, LPARAM, LPCITEMIDLIST, LPCITEMIDLIST) -> HRESULT,
-    pub CreateViewObject: usize,
+    pub CreateViewObject:
+        unsafe extern "system" fn(*mut IShellFolder, HWND, REFIID, *mut *mut c_void) -> HRESULT,
     pub GetAttributesOf:
-        unsafe extern "system" fn(*mut IShellFolder, UINT, *mut LPCITEMIDLIST, *mut DWORD) -> HRESULT,
-    pub GetUIObjectOf: usize,
+        unsafe extern "system" fn(*mut IShellFolder, UINT, *const LPCITEMIDLIST, *mut DWORD) -> HRESULT,
+    pub GetUIObjectOf: unsafe extern "system" fn(
+        *mut IShellFolder,
+        HWND,
+        UINT,
+        *const LPCITEMIDLIST,
+        REFIID,
+        *mut UINT,
+        *mut *mut c_void,
+    ) -> HRESULT,
     pub GetDisplayNameOf:
         unsafe extern "system" fn(*mut IShellFolder, LPCITEMIDLIST, DWORD, *mut STRRET) -> HRESULT,
     pub SetNameOf: usize,
@@ -412,7 +510,7 @@ pub struct IDataObjectVtbl {
     pub QueryInterface: usize,
     pub AddRef: usize,
     pub Release: unsafe extern "system" fn(*mut IDataObject) -> ULONG,
-    pub GetData: usize,
+    pub GetData: unsafe extern "system" fn(*mut IDataObject, *mut c_void, *mut c_void) -> HRESULT,
     pub GetDataHere: usize,
     pub QueryGetData: usize,
     pub GetCanonicalFormatEtc: usize,
@@ -472,9 +570,49 @@ pub struct IShellItem {
 }
 #[repr(C)]
 pub struct IShellItemVtbl {
-    pub QueryInterface: usize,
-    pub AddRef: usize,
+    pub QueryInterface: unsafe extern "system" fn(*mut IShellItem, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IShellItem) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IShellItem) -> ULONG,
+    pub BindToHandler: unsafe extern "system" fn(*mut IShellItem, *mut IBindCtx, REFGUID, REFIID, *mut *mut c_void) -> HRESULT,
+    pub GetParent: unsafe extern "system" fn(*mut IShellItem, *mut *mut IShellItem) -> HRESULT,
+    pub GetDisplayName: unsafe extern "system" fn(*mut IShellItem, SIGDN, *mut LPWSTR) -> HRESULT,
+    pub GetAttributes: unsafe extern "system" fn(*mut IShellItem, SFGAOF, *mut SFGAOF) -> HRESULT,
+    pub Compare: unsafe extern "system" fn(*mut IShellItem, *mut IShellItem, SICHINTF, *mut INT) -> HRESULT,
+}
+
+#[repr(C)]
+pub struct PROPERTYKEY {
+    pub fmtid: GUID,
+    pub pid: DWORD,
+}
+pub type REFPROPERTYKEY = *const PROPERTYKEY;
+
+#[repr(C)]
+pub struct IEnumShellItems {
+    pub lpVtbl: *const c_void,
+}
+
+#[repr(C)]
+pub struct IShellItemArray {
+    pub lpVtbl: *const IShellItemArrayVtbl,
+}
+#[repr(C)]
+pub struct IShellItemArrayVtbl {
+    pub QueryInterface: unsafe extern "system" fn(*mut IShellItemArray, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IShellItemArray) -> ULONG,
+    pub Release: unsafe extern "system" fn(*mut IShellItemArray) -> ULONG,
+    pub BindToHandler: unsafe extern "system" fn(*mut IShellItemArray, *mut IBindCtx, REFGUID, REFIID, *mut *mut c_void) -> HRESULT,
+    pub GetPropertyStore: unsafe extern "system" fn(*mut IShellItemArray, GETPROPERTYSTOREFLAGS, REFIID, *mut *mut c_void) -> HRESULT,
+    pub GetPropertyDescriptionList: unsafe extern "system" fn(*mut IShellItemArray, REFPROPERTYKEY, REFIID, *mut *mut c_void) -> HRESULT,
+    pub GetAttributes: unsafe extern "system" fn(*mut IShellItemArray, SIATTRIBFLAGS, SFGAOF, *mut SFGAOF) -> HRESULT,
+    pub GetCount: unsafe extern "system" fn(*mut IShellItemArray, *mut DWORD) -> HRESULT,
+    pub GetItemAt: unsafe extern "system" fn(*mut IShellItemArray, DWORD, *mut *mut IShellItem) -> HRESULT,
+    pub EnumItems: unsafe extern "system" fn(*mut IShellItemArray, *mut *mut IEnumShellItems) -> HRESULT,
+}
+
+extern "C" {
+    pub static IID_IShellItem: IID;
+    pub static IID_IShellItemArray: IID;
 }
 
 #[repr(C)]

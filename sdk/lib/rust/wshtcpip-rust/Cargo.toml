@@ -1,0 +1,30 @@
+# wshtcpip-rust — Rust translation of dll/win32/wshtcpip (the TCP/IP WinSock Helper DLL).
+# staticlib → libwshtcpip_rust.a, cohab-linked into the cmake-built wshtcpip.dll with the
+# translated .c files commented out (per-file flip, like ws2_32-rust/msafd-rust).
+#
+# wshtcpip is the transport-specific WSH provider that ws2_32/msafd load to resolve the
+# TCP/IP (AF_INET/AF_INET6) address family: it maps winsock protocol/socket parameters to
+# TDI and answers WSHOpenSocket / WSHGetSocketInformation / WSHIoctl / WSHStringToAddress.
+# One rung to the side of the netstack→winsock vertical (a helper the catalog consults),
+# not in the socket hot path itself, so its runtime coverage is thinner than ws2_32's — the
+# deterministic auditors (export_audit vs the .spec, audit_abi) carry the ABI surface.
+#
+# The winsock/WSH/TDI struct layouts (SOCKADDR/SOCKADDR_IN6, WINSOCK_MAPPING, WSH_* ,
+# TDIEntityID/TDIObjectID, IP_ADAPTER_INFO) are bindgen-GENERATED per arch into `types`
+# by tools/rustconv/gen_driver_types.sh — not hand-transcribed, since a mis-transcribed
+# sockaddr_in6/TDIObjectID offset is a silent wire-format/IOCTL break (scan_magic_offsets).
+[package]
+name = "wshtcpip-rust"
+version = "0.1.0"
+edition = "2021"
+# staticlib cohab crate only — stop Cargo auto-discovering any src/main.rs.
+autobins = false
+
+[lib]
+name = "wshtcpip_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }

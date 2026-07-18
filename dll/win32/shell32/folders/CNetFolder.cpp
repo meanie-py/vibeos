@@ -41,6 +41,12 @@ LPITEMIDLIST ILCreateFromNetworkPlaceW(LPCWSTR lpNetworkPlace)
 
     return pidl;
 }
+
+extern "C" LPITEMIDLIST WINAPI CNetFolder_ILCreateFromNetworkPlaceW_RustBridge(
+    LPCWSTR lpNetworkPlace)
+{
+    return ILCreateFromNetworkPlaceW(lpNetworkPlace);
+}
 #endif
 
 /***********************************************************************
@@ -57,6 +63,12 @@ HRESULT CNetFolderExtractIcon_CreateInstance(LPCITEMIDLIST pidl, REFIID riid, LP
     initIcon->SetNormalIcon(swShell32Name, -IDI_SHELL_NETWORK_FOLDER);
 
     return initIcon->QueryInterface(riid, ppvOut);
+}
+
+extern "C" HRESULT WINAPI CNetFolderExtractIcon_RustBridge(
+    LPCITEMIDLIST pidl, REFIID riid, LPVOID *ppvOut)
+{
+    return CNetFolderExtractIcon_CreateInstance(pidl, riid, ppvOut);
 }
 
 HRESULT CALLBACK NetFolderMenuCallback(IShellFolder *psf,
@@ -207,6 +219,13 @@ BOOL CNetFolderEnum::CreateMyCompEnumList(DWORD dwFlags)
     return bRet;
 }
 
+extern "C" HRESULT WINAPI CNetFolderEnum_CreateInstance_RustBridge(
+    HWND hwndOwner, DWORD dwFlags, IEnumIDList **ppEnumIDList)
+{
+    return ShellObjectCreatorInit<CNetFolderEnum>(
+        hwndOwner, dwFlags, IID_PPV_ARG(IEnumIDList, ppEnumIDList));
+}
+
 /**************************************************************************
  * CNetFolder background context menu
  */
@@ -228,6 +247,43 @@ static HRESULT CALLBACK CNetFolderBackgroundMenuCB(IShellFolder *psf, HWND hwnd,
         return S_OK;
     }
     return SHELL32_DefaultContextMenuCallBack(psf, pdtobj, uMsg);
+}
+
+extern "C" HRESULT WINAPI CNetFolder_CreateBackgroundMenu_RustBridge(
+    LPCITEMIDLIST pidlRoot, HWND hwndOwner, IShellFolder *psf,
+    IContextMenu **ppContextMenu)
+{
+    return CDefFolderMenu_Create2(
+        pidlRoot, hwndOwner, 0, NULL, psf, CNetFolderBackgroundMenuCB,
+        0, NULL, ppContextMenu);
+}
+
+extern "C" HRESULT WINAPI CNetFolder_CreateItemMenu_RustBridge(
+    LPCITEMIDLIST pidlRoot, HWND hwndOwner, UINT cidl,
+    PCUITEMID_CHILD_ARRAY apidl, IShellFolder *psf,
+    IContextMenu **ppContextMenu)
+{
+    CRegKeyHandleArray keys;
+    AddClassKeyToArray(L"Folder", keys, keys);
+    return CDefFolderMenu_Create2(
+        pidlRoot, hwndOwner, cidl, apidl, psf, NetFolderMenuCallback,
+        keys, keys, ppContextMenu);
+}
+
+extern "C" HRESULT WINAPI CNetFolder_BindToSF_RustBridge(
+    LPCITEMIDLIST pidlRoot, PERSIST_FOLDER_TARGET_INFO *ppfti,
+    LPCITEMIDLIST pidl, const CLSID *pclsid, REFIID riid, LPVOID *ppvOut)
+{
+    return SHELL32_BindToSF(pidlRoot, ppfti, pidl, pclsid, riid, ppvOut);
+}
+
+extern "C" HRESULT WINAPI CNetFolder_IDataObjectConstructor_RustBridge(
+    HWND hwndOwner, PCIDLIST_ABSOLUTE pidlRoot,
+    PCUIDLIST_RELATIVE_ARRAY apidl, UINT cidl, BOOL bExtended,
+    IDataObject **ppDataObject)
+{
+    return IDataObject_Constructor(
+        hwndOwner, pidlRoot, apidl, cidl, bExtended, ppDataObject);
 }
 
 /**************************************************************************

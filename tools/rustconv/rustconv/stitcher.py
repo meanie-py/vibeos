@@ -352,6 +352,14 @@ def _generate_imports_from_resolve(
     """
     if target is None:
         target = TARGETS["ntoskrnl"]
+    if target.name == "shell32":
+        # The C++ COM path uses the crate's hand-maintained Win32 substrate and
+        # deterministic COM declarations. Never route it through ntkrnl_sys.
+        return [
+            "use crate::shellcom::*;",
+            "use crate::types::*;",
+            "use core::ffi::c_void;",
+        ]
     is_hal = target.name == "hal"
 
     # Build a merged view: module → set of names
