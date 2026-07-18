@@ -114,15 +114,35 @@ extern "C" {
     fn RtlStringCbPrintfExW( pszDest: *mut u16, cbDest: usize, ppszDestEnd: *mut *mut u16, pcbRemaining: *mut usize, dwFlags: u32, pszFormat: *const u16, ... ) -> NTSTATUS;
 }
 extern "C" {
+}
+unsafe extern "system" {
     fn USBH_FdoSyncSubmitUrb(DeviceObject: PDEVICE_OBJECT, Urb: PURB) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn USBH_SyncGetPortStatus( HubExtension: PUSBHUB_FDO_EXTENSION, Port: USHORT, PortStatus: PVOID, Length: ULONG, ) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn USBH_SyncResetPort(HubExtension: PUSBHUB_FDO_EXTENSION, Port: USHORT) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn USBH_SyncDisablePort(HubExtension: PUSBHUB_FDO_EXTENSION, Port: USHORT) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn USBH_CreateDevice( HubExtension: PUSBHUB_FDO_EXTENSION, Port: USHORT, UsbPortStatus: USB_PORT_STATUS, ix: ULONG, ) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn USBH_Wait(Milliseconds: ULONG);
+}
+unsafe extern "system" {
     fn USBH_CompleteIrp(Irp: PIRP, Status: NTSTATUS);
+}
+unsafe extern "system" {
     fn USBH_PassIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn USBD_RemoveDeviceEx(HubExtension: PUSBHUB_FDO_EXTENSION, DeviceHandle: PVOID, Flags: ULONG);
+}
+unsafe extern "system" {
     fn PdoExt(PdoDevice: PDEVICE_OBJECT) -> PUSBHUB_PORT_PDO_EXTENSION;
 }
 extern "system" {

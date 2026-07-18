@@ -45,25 +45,12 @@ extern "C" {
     static SharedSystemTime: LARGE_INTEGER;
 }
 extern "C" {
-    fn KeSetCoalescableTimer( Timer: *mut KTIMER, DueTime: LARGE_INTEGER, Period: ULONG, TolerableDelay: ULONG, Dpc: PKDPC, );
     fn TracePrint(Level: ULONG, Flags: ULONG, Format: PCCHAR, ...);
     fn StorDebugPrint(Level: ULONG, Flags: ULONG, Format: PCCHAR, ...);
     
     fn CountOfSetBitsUChar(val: UCHAR) -> UCHAR;
     fn RtlULongAdd(augend: ULONG, addend: ULONG, result: *mut ULONG) -> NTSTATUS;
     fn strlen(s: *const i8) -> usize;
-    fn PoRegisterPowerSettingCallback(
-        DeviceObject: PDEVICE_OBJECT,
-        SettingGuid: *const GUID,
-        Callback: ::core::option::Option<unsafe extern "system" fn(
-            SettingGuid: *const GUID,
-            Value: PVOID,
-            ValueLength: ULONG,
-            Context: PVOID,
-        ) -> NTSTATUS>,
-        Context: PVOID,
-        Handle: *mut PVOID,
-    ) -> NTSTATUS;
     // ExTimer APIs
     fn ExSetTimer(Timer: PVOID, DueTime: i64, Period: i64, Parameters: PVOID) -> BOOLEAN;
     fn ExDeleteTimer(Timer: PVOID, Cancel: BOOLEAN, Wait: BOOLEAN, Parameters: PVOID) -> BOOLEAN;
@@ -72,7 +59,6 @@ extern "C" {
     fn ExAllocateTimer(Callback: PVOID, CallbackContext: PVOID, Attributes: ULONG) -> PVOID;
     // Etw APIs
     fn EventDescCreate(EventDescriptor: PVOID, Id: u16, Version: u8, Channel: u8, Level: u8, Task: u16, Opcode: u8, Keyword: u64);
-    fn EtwWrite(RegHandle: u64, EventDescriptor: PCEVENT_DESCRIPTOR, ActivityId: *const GUID, UserDataCount: ULONG, UserData: PVOID);
     // Debug string functions (debug-only no-ops in practice)
     fn DBGGETSRBSTATUSSTR(Srb: PVOID) -> PCCHAR;
     fn DBGGETSENSECODESTR(Srb: PVOID) -> PCCHAR;
@@ -91,6 +77,22 @@ extern "C" {
         fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         Srb: PSTORAGE_REQUEST_BLOCK_HEADER,
     );
+}
+unsafe extern "system" {
+    fn KeSetCoalescableTimer( Timer: *mut KTIMER, DueTime: LARGE_INTEGER, Period: ULONG, TolerableDelay: ULONG, Dpc: PKDPC, );
+    fn PoRegisterPowerSettingCallback(
+        DeviceObject: PDEVICE_OBJECT,
+        SettingGuid: *const GUID,
+        Callback: ::core::option::Option<unsafe extern "system" fn(
+            SettingGuid: *const GUID,
+            Value: PVOID,
+            ValueLength: ULONG,
+            Context: PVOID,
+        ) -> NTSTATUS>,
+        Context: PVOID,
+        Handle: *mut PVOID,
+    ) -> NTSTATUS;
+    fn EtwWrite(RegHandle: u64, EventDescriptor: PCEVENT_DESCRIPTOR, ActivityId: *const GUID, UserDataCount: ULONG, UserData: PVOID);
 }
 
 // classpnp.h FILE_OBJECT_EXTENSION (different from ntkrnl-sys version)

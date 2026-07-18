@@ -17,6 +17,8 @@ extern "C" {
     fn IsCircularBufferEmpty(CircularBuffer: PVOID) -> u8;
     fn PopCircularBufferEntry(CircularBuffer: PVOID, Byte: *mut UCHAR);
     fn PushCircularBufferEntry(Buffer: PVOID, Entry: UCHAR) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn SerialSendByte(Dpc: PVOID, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
 }
 

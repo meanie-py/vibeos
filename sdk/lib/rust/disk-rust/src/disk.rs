@@ -54,7 +54,6 @@ extern "C" {
     fn RtlStringCchPrintfW( pszDest: *mut u16, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
     fn strlen(s: *const i8) -> usize;
     fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
-    fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32;
     fn PAGED_CODE();
     fn CHECK_IRQL();
     fn max(a: usize, b: usize) -> usize;
@@ -63,6 +62,9 @@ extern "C" {
     fn RemoveHeadList(ListHead: *mut LIST_ENTRY) -> *mut LIST_ENTRY;
     fn GetSrbScsiData( srb: *mut STORAGE_REQUEST_BLOCK, data_out: *mut u8, data_length: *mut u32, scsi_status: *mut u8, sense_buffer: *mut *mut core::ffi::c_void, sense_buffer_length: *mut u8, ) -> *mut CDB;
     fn ScsiGetSenseKeyAndCodes( sense_buffer: *const core::ffi::c_void, sense_buffer_length: u8, options: u8, sense_key: *mut u8, asc: *mut u8, ascq: *mut u8, ) -> u8;
+}
+unsafe extern "system" {
+    fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32;
 }
 extern "system" {
     fn ClassInitialize( DriverObject: PVOID, RegistryPath: PVOID, InitializationData: *mut CLASS_INIT_DATA, ) -> NTSTATUS;

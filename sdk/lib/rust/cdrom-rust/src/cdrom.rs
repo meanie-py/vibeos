@@ -99,14 +99,8 @@ extern "C" {
 extern "system" {
     fn CdromSequentialQueueEvtIoReadWrite(queue: WDFQUEUE, request: WDFREQUEST, length: usize);
     fn WPP_CLEANUP(DriverObject: PDRIVER_OBJECT);
-    fn PAGED_CODE();
     fn DriverGetExtension(Driver: WDFDRIVER) -> *mut CDROM_DRIVER_EXTENSION;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
-    fn DeviceCreateWellKnownName(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn DeviceGetTimeOutValueFromRegistry() -> u32;
-    fn DeviceInitPowerContext(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn DeviceInitReleaseQueueContext(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn DeviceRegisterInterface(ext: *mut CDROM_DEVICE_EXTENSION, InterfaceType: i32) -> NTSTATUS;
     fn IoGetDevicePropertyData( PDO: *mut DEVICE_OBJECT, propertyKey: *const c_void, lcid: u32, flags: u32, size: u32, data: *mut c_void, requiredSize: *mut u32, dataType: *mut u32, ) -> NTSTATUS;
     fn RtlInitUnicodeString(s: *mut _UNICODE_STRING, src: *const u16);
     fn WDF_FILEOBJECT_CONFIG_INIT( cfg: *mut WDF_FILEOBJECT_CONFIG, evtFileCreate: Option<unsafe extern "system" fn(WDFDEVICE, WDFFILEOBJECT) -> ()>, evtFileClose: Option<unsafe extern "system" fn(WDFFILEOBJECT) -> ()>, evtFileCleanup: Option<unsafe extern "system" fn(WDFFILEOBJECT) -> ()>, );
@@ -121,25 +115,32 @@ extern "system" {
     fn DeviceEvtSelfManagedIoInit(Dev: WDFDEVICE) -> NTSTATUS;
     fn RequestProcessSetPower(Dev: WDFDEVICE, Irp: PIRP) -> NTSTATUS;
     fn RequestProcessShutdownFlush(Dev: WDFDEVICE, Irp: PIRP) -> NTSTATUS;
-    fn UNREFERENCED_PARAMETER(param: i32);
-    fn DeviceDeallocateMmcResources(Device: *mut core::ffi::c_void);
-    fn ScratchBuffer_Deallocate(devExt: *mut CDROM_DEVICE_EXTENSION);
-    fn FREE_POOL(ptr: *mut core::ffi::c_void);
-    fn DeviceReleaseMcnResources(devExt: *mut CDROM_DEVICE_EXTENSION);
-    fn DeviceReleaseZPODDResources(devExt: *mut CDROM_DEVICE_EXTENSION);
-    fn DeviceZPODDGetPowerupReason( DeviceExtension: PCDROM_DEVICE_EXTENSION, PowerupReason: *mut STORAGE_IDLE_POWERUP_REASON, ) -> NTSTATUS;
-    fn DeviceSendIoctlAsynchronously( DeviceExtension: PCDROM_DEVICE_EXTENSION, IoctlCode: u32, DeviceObject: PDEVICE_OBJECT, );
-    fn DeviceDisableMainTimer(extension: *mut CDROM_DEVICE_EXTENSION);
-    fn DeviceSendPowerDownProcessRequest(extension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, param3: *mut core::ffi::c_void) -> i32;
     fn PoQueryWatchdogTime(LowerPdo: *mut core::ffi::c_void, secondsRemaining: *mut u32) -> u8;
-    fn PowerContextBeginUse(extension: *mut CDROM_DEVICE_EXTENSION) -> i32;
-    fn PowerContextEndUse(extension: *mut CDROM_DEVICE_EXTENSION);
     fn SET_FLAG(p: *mut u32, flag: u32);
     fn TEST_FLAG(flags: u32, mask: u32) -> i32;
     fn PagedCode();
     fn FileObjectGetContext(fileObject: WDFFILEOBJECT) -> *mut FILE_OBJECT_CONTEXT;
     fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, Length: u32, WriteToDevice: i32, BytesReturned: *mut u32, ) -> NTSTATUS;
-    fn DeviceEnableMediaChangeDetection( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObjectContext: *mut FILE_OBJECT_CONTEXT, Enable: i32, ) -> i32;
+    fn RequestHandleEventNotification( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: *const WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
+    fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> UCHAR;
+    fn IoInvalidateDeviceRelations( Pdo: *mut core::ffi::c_void, Relations: u32, );
+    fn RequestDummyCompletionRoutine( request: WDFREQUEST, target: WDFIOTARGET, params: *mut core::ffi::c_void, context: *mut core::ffi::c_void, );
+    fn RequestGetContext(Request: *mut c_void) -> PCDROM_REQUEST_CONTEXT;
+    fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
+    fn NT_ASSERT(condition: i32);
+    fn WPP_INIT_TRACING(DriverObject: ntkrnl_sys::ddk::PDRIVER_OBJECT, RegistryPath: ntkrnl_sys::ddk::PUNICODE_STRING);
+    fn WDF_DRIVER_CONFIG_INIT( Config: *mut WDF_DRIVER_CONFIG, EvtDeviceAdd: PFN_WDF_DRIVER_DEVICE_ADD, );
+    fn KeGetCurrentIrql() -> u8;
+    fn RequestHandleVolumeOnline( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
+    fn PsGetCurrentThread() -> PETHREAD;
+    fn RequestValidateExclusiveAccess( Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, DataLength: *mut usize, ) -> NTSTATUS;
+    fn RequestSetContextFields(Request: WDFREQUEST, Handler: PSYNC_HANDLER) -> NTSTATUS;
+    fn RequestHandleUnknownIoctl(Device: WDFDEVICE, Request: WDFREQUEST) -> NTSTATUS;
+    fn RequestHandleQueryPropertyRetrieveCachedData( Extension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Params: *const WDF_REQUEST_PARAMETERS, DataLength: *mut usize, ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn DeviceDeallocateMmcResources(Device: *mut core::ffi::c_void);
+    fn ScratchBuffer_Deallocate(devExt: *mut CDROM_DEVICE_EXTENSION);
     fn RequestHandleGetInquiryData( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestHandleMountQueryUniqueId( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestHandleMountQueryDeviceName( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
@@ -147,9 +148,6 @@ extern "system" {
     fn RequestHandleGetDeviceNumber( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestHandleGetHotPlugInfo( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestHandleSetHotPlugInfo( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
-    fn RequestHandleEventNotification( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: *const WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
-    fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> UCHAR;
-    fn IoInvalidateDeviceRelations( Pdo: *mut core::ffi::c_void, Relations: u32, );
     fn RequestValidateAacsBindingNonce( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestValidateAacsEndSession( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestValidateAacsGetCertificate( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
@@ -176,17 +174,6 @@ extern "system" {
     fn RequestValidateReadTocEx( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestValidateSendOpcInformation( Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestValidateSetSpeed( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
-    fn RequestDummyCompletionRoutine( request: WDFREQUEST, target: WDFIOTARGET, params: *mut core::ffi::c_void, context: *mut core::ffi::c_void, );
-    fn RequestSend( device_ext: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, target: WDFIOTARGET, flags: u32, request_sent: *mut u8, ) -> NTSTATUS;
-    fn RequestGetContext(Request: *mut c_void) -> PCDROM_REQUEST_CONTEXT;
-    fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
-    fn NT_ASSERT(condition: i32);
-    fn WPP_INIT_TRACING(DriverObject: ntkrnl_sys::ddk::PDRIVER_OBJECT, RegistryPath: ntkrnl_sys::ddk::PUNICODE_STRING);
-    fn WDF_DRIVER_CONFIG_INIT( Config: *mut WDF_DRIVER_CONFIG, EvtDeviceAdd: PFN_WDF_DRIVER_DEVICE_ADD, );
-    fn KeGetCurrentIrql() -> u8;
-    fn DeviceUnlockExclusive(deviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObject: WDFFILEOBJECT, Flag: BOOL) -> NTSTATUS;
-    fn EXCLUSIVE_MODE(cdData: *const CDROM_DATA) -> BOOL;
-    fn EXCLUSIVE_OWNER(cdData: *const CDROM_DATA, FileObject: WDFFILEOBJECT) -> u8;
     fn RequestHandleReadTOC( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleReadTocEx( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleGetDriveGeometry( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
@@ -223,14 +210,73 @@ extern "system" {
     fn RequestHandleSendOpcInformation( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, info: *mut usize, ) -> i32;
     fn RequestHandleMcnSyncFakeIoctl( dev: *mut CDROM_DEVICE_EXTENSION, info: *mut usize, ) -> i32;
     fn RequestHandleAreVolumesReady( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
-    fn RequestHandleVolumeOnline( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
-    fn PsGetCurrentThread() -> PETHREAD;
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
-    fn RequestValidateExclusiveAccess( Request: WDFREQUEST, RequestParameters: WDF_REQUEST_PARAMETERS, DataLength: *mut usize, ) -> NTSTATUS;
-    fn RequestSetContextFields(Request: WDFREQUEST, Handler: PSYNC_HANDLER) -> NTSTATUS;
     fn DEVICE_TYPE_FROM_CTL_CODE(io_control_code: u32) -> u32;
-    fn RequestHandleUnknownIoctl(Device: WDFDEVICE, Request: WDFREQUEST) -> NTSTATUS;
-    fn RequestHandleQueryPropertyRetrieveCachedData( Extension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Params: *const WDF_REQUEST_PARAMETERS, DataLength: *mut usize, ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn PAGED_CODE();
+}
+unsafe extern "C" {
+    fn DeviceCreateWellKnownName(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn DeviceGetTimeOutValueFromRegistry() -> u32;
+}
+unsafe extern "C" {
+    fn DeviceInitPowerContext(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn DeviceInitReleaseQueueContext(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn DeviceRegisterInterface(ext: *mut CDROM_DEVICE_EXTENSION, InterfaceType: i32) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn UNREFERENCED_PARAMETER(param: i32);
+}
+unsafe extern "C" {
+    fn FREE_POOL(ptr: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    fn DeviceReleaseMcnResources(devExt: *mut CDROM_DEVICE_EXTENSION);
+}
+unsafe extern "C" {
+    fn DeviceReleaseZPODDResources(devExt: *mut CDROM_DEVICE_EXTENSION);
+}
+unsafe extern "C" {
+    fn DeviceZPODDGetPowerupReason( DeviceExtension: PCDROM_DEVICE_EXTENSION, PowerupReason: *mut STORAGE_IDLE_POWERUP_REASON, ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn DeviceSendIoctlAsynchronously( DeviceExtension: PCDROM_DEVICE_EXTENSION, IoctlCode: u32, DeviceObject: PDEVICE_OBJECT, );
+}
+unsafe extern "C" {
+    fn DeviceDisableMainTimer(extension: *mut CDROM_DEVICE_EXTENSION);
+}
+unsafe extern "C" {
+    fn DeviceSendPowerDownProcessRequest(extension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, param3: *mut core::ffi::c_void) -> i32;
+}
+unsafe extern "C" {
+    fn PowerContextBeginUse(extension: *mut CDROM_DEVICE_EXTENSION) -> i32;
+}
+unsafe extern "C" {
+    fn PowerContextEndUse(extension: *mut CDROM_DEVICE_EXTENSION);
+}
+unsafe extern "C" {
+    fn DeviceEnableMediaChangeDetection( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObjectContext: *mut FILE_OBJECT_CONTEXT, Enable: i32, ) -> i32;
+}
+unsafe extern "C" {
+    fn RequestSend( device_ext: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, target: WDFIOTARGET, flags: u32, request_sent: *mut u8, ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn DeviceUnlockExclusive(deviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObject: WDFFILEOBJECT, Flag: BOOL) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn EXCLUSIVE_MODE(cdData: *const CDROM_DATA) -> BOOL;
+}
+unsafe extern "C" {
+    fn EXCLUSIVE_OWNER(cdData: *const CDROM_DATA, FileObject: WDFFILEOBJECT) -> u8;
+}
+unsafe extern "C" {
     fn RequestSetReceivedTime(Request: *mut core::ffi::c_void);
 }
 extern "C" {

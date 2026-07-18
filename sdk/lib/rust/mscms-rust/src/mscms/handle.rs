@@ -2,6 +2,11 @@ use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
 extern "C" {
+    fn cmsCloseProfile(hProfile: *mut core::ffi::c_void);
+    fn ERR(format: *const i8, ...);
+    fn cmsDeleteTransform(htransform: *mut core::ffi::c_void);
+}
+unsafe extern "system" {
     fn GetProcessHeap() -> *mut core::ffi::c_void;
     fn HeapFree( hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void, ) -> i32;
     fn DeleteCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
@@ -12,9 +17,6 @@ extern "C" {
     fn SetFilePointer(hFile: HANDLE, lDistanceToMove: i32, lpDistanceToMoveHigh: *mut i32, dwMoveMethod: u32) -> u32;
     fn WriteFile(hFile: HANDLE, lpBuffer: *const core::ffi::c_void, nNumberOfBytesToWrite: u32, lpNumberOfBytesWritten: *mut u32, lpOverlapped: *mut core::ffi::c_void) -> i32;
     fn CloseHandle(hObject: HANDLE) -> i32;
-    fn cmsCloseProfile(hProfile: *mut core::ffi::c_void);
-    fn ERR(format: *const i8, ...);
-    fn cmsDeleteTransform(htransform: *mut core::ffi::c_void);
 }
 
 // ---- file-scope preamble (translated) ----

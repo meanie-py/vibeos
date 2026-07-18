@@ -100,12 +100,14 @@ extern "system" {
 // These are defined as extern "C" in shim_exports.rs — must match.
 extern "C" {
     fn ObReferenceObject(Object: PVOID);
-    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn KeLowerIrql(NewIrql: KIRQL);
     fn ProbeForWriteIoStatusBlock(Ptr: PIO_STATUS_BLOCK);
     fn ProbeForWriteHandle(Ptr: *mut HANDLE);
     fn ProbeForReadLargeInteger(Ptr: *const LARGE_INTEGER) -> LARGE_INTEGER;
     fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchange: PVOID, Comparand: PVOID) -> PVOID;
+}
+unsafe extern "system" {
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    fn KeLowerIrql(NewIrql: KIRQL);
 }
 
 // InterlockedExchange is fastcall on i386, cdecl on others

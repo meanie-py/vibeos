@@ -18,10 +18,16 @@ use ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation;
 use core::ffi::c_void;
 
 extern "system" {
-    fn USBSTOR_QueueAddIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> BOOLEAN;
-    fn USBSTOR_QueueRelease(DeviceObject: PDEVICE_OBJECT);
-    fn USBSTOR_QueueWaitForPendingRequests(DeviceObject: PDEVICE_OBJECT);
     fn USBSTOR_CancelIo(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
+}
+unsafe extern "C" {
+    fn USBSTOR_QueueAddIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> BOOLEAN;
+}
+unsafe extern "C" {
+    fn USBSTOR_QueueRelease(DeviceObject: PDEVICE_OBJECT);
+}
+unsafe extern "C" {
+    fn USBSTOR_QueueWaitForPendingRequests(DeviceObject: PDEVICE_OBJECT);
 }
 // wcslen (CRT) and SptiHandleScsiPassthru (sptilib) are both cdecl C (`_wcslen` / no `@16`),
 // NOT NTAPI/stdcall — they must NOT live in the extern "system" block above (that would emit

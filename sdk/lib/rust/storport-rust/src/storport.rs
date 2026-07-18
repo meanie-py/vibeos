@@ -25,7 +25,11 @@ extern "system" {
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
+}
+unsafe extern "system" {
     fn PortFdoScsi(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn PortPdoScsi(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 extern "system" {

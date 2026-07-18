@@ -29,6 +29,8 @@ extern "system" {
     fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HINSTANCE;
     // StringCchCatW (strsafe inline) is reimplemented in crate::preamble.
     // IsLiveCD / RunLiveCD are #[no_mangle] in livecd.rs (cross-TU, as in C).
+}
+unsafe extern "C" {
     fn IsLiveCD() -> BOOL;
     fn RunLiveCD(State: *mut STATE);
 }

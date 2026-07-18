@@ -656,7 +656,7 @@ pub type PFDO_DEVICE_DATA = *mut _FDO_DEVICE_DATA;
 unsafe extern "C" {
     pub fn ACPIEnumerateDevices(DeviceExtension: PFDO_DEVICE_DATA) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Bus_PDO_EvalMethod(DeviceData: PPDO_DEVICE_DATA, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -671,7 +671,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn Bus_SendIrpSynchronously(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Bus_PnP(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -713,7 +713,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn Bus_PDO_Power(PdoData: PPDO_DEVICE_DATA, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Bus_Power(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {

@@ -174,7 +174,7 @@ use core::ffi::c_void;
 #[no_mangle] pub unsafe extern "C" fn RtlEqualMemory(a: PVOID, b: PVOID, n: usize) -> u8 {
     (core::slice::from_raw_parts(a as *const u8, n) == core::slice::from_raw_parts(b as *const u8, n)) as u8
 }
-#[no_mangle] pub unsafe extern "C" fn IsEqualGUID(a: *const GUID, b: *const GUID) -> u8 {
+#[no_mangle] pub unsafe extern "system" fn IsEqualGUID(a: *const GUID, b: *const GUID) -> u8 {
     (core::slice::from_raw_parts(a as *const u8, 16) == core::slice::from_raw_parts(b as *const u8, 16)) as u8
 }
 // _Analysis_assume_ (→ i386 `__Analysis_assume_`) lives in rust_cohab_stub.c — the i386
@@ -186,18 +186,10 @@ use core::ffi::c_void;
 #[no_mangle] pub unsafe extern "system" fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdo: PVOID) -> u8 { 18 }
 
 // ============================ tracing / WPP / ETW (no-ops) ============================
-// TracePrint: error/warning levels forward the (raw) format string to the debug
-// serial so classpnp failure paths are not silent. Callsites are C-variadic; we
-// declare non-variadic and ignore the args (safe: extra args are caller-cleaned
-// on all our ABIs), so %-specifiers print literally — enough to identify the site.
-#[no_mangle] pub unsafe extern "C" fn TracePrint(lvl: u32, _flags: u32, fmt: *const i8) {
-    const TRACE_LEVEL_WARNING: u32 = 3; // ETW: 1=critical 2=error 3=warning
-    if lvl <= TRACE_LEVEL_WARNING && !fmt.is_null() {
-        unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
-        DbgPrint(c"[CLASSPNP] %s".as_ptr(), fmt);
-    }
-}
-#[no_mangle] pub unsafe extern "C" fn StorDebugPrint(_lvl: u32, _fmt: *const i8) {}
+// TracePrint / StorDebugPrint MOVED to the drvtrace-shim crate: the variadic
+// call sites + non-variadic defs are UB to LLVM inside one module (instcombine
+// folds the calls to ud2 — the 2026-07-18 classpnp bomb set); a separate crate
+// under lto=false is a separate LLVM module, which makes the pattern fold-proof.
 #[no_mangle] pub unsafe extern "C" fn WPP_INIT_TRACING(_drv: PVOID, _reg: PVOID) {}
 #[no_mangle] pub unsafe extern "C" fn WPP_CLEANUP(_drv: PVOID) {}
 const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
@@ -215,9 +207,9 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn DBGGETSRBSTATUSSTR(_s: PVOID) -> *const i8 { EMPTY }
 
 // ============================ ETW (no-op) ============================
-#[no_mangle] pub unsafe extern "C" fn EtwRegister(a: PVOID, b: PVOID, c: PVOID, h: *mut u64) -> NTSTATUS { if !h.is_null() {*h=0;} 0 }
-#[no_mangle] pub unsafe extern "C" fn EtwUnregister(h: u64) -> NTSTATUS { 0 }
-#[no_mangle] pub unsafe extern "C" fn EtwWrite(h: u64, d: PVOID, a: PVOID, n: u32, dd: PVOID) -> NTSTATUS { 0 }
+#[no_mangle] pub unsafe extern "system" fn EtwRegister(a: PVOID, b: PVOID, c: PVOID, h: *mut u64) -> NTSTATUS { if !h.is_null() {*h=0;} 0 }
+#[no_mangle] pub unsafe extern "system" fn EtwUnregister(h: u64) -> NTSTATUS { 0 }
+#[no_mangle] pub unsafe extern "system" fn EtwWrite(h: u64, d: PVOID, a: PVOID, n: u32, dd: PVOID) -> NTSTATUS { 0 }
 #[no_mangle] pub unsafe extern "C" fn EventDescCreate() {}
 
 // ============================ Ex timer / lookaside (stubs) ============================
@@ -228,8 +220,8 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn ExInitializeDeleteTimerParameters(p: PVOID) {}
 
 // ============================ Po power-setting (stubs) ============================
-#[no_mangle] pub unsafe extern "C" fn PoRegisterPowerSettingCallback(devobj: PVOID, guid: PVOID, cb: PVOID, ctx: PVOID, h: *mut PVOID) -> NTSTATUS { if !h.is_null() {*h=core::ptr::null_mut();} 0 }
-#[no_mangle] pub unsafe extern "C" fn PoUnregisterPowerSettingCallback(h: PVOID) -> NTSTATUS { 0 }
+#[no_mangle] pub unsafe extern "system" fn PoRegisterPowerSettingCallback(devobj: PVOID, guid: PVOID, cb: PVOID, ctx: PVOID, h: *mut PVOID) -> NTSTATUS { if !h.is_null() {*h=core::ptr::null_mut();} 0 }
+#[no_mangle] pub unsafe extern "system" fn PoUnregisterPowerSettingCallback(h: PVOID) -> NTSTATUS { 0 }
 
 // ============================ Simple SLIST ============================
 #[no_mangle] pub unsafe extern "C" fn SimpleInitSlistHdr(h: *mut PVOID) { *h = core::ptr::null_mut(); }
@@ -305,9 +297,9 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
     ((*Mdl).StartVa as *mut u8).add((*Mdl).ByteOffset as usize) as PVOID
 }
 #[no_mangle] pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {}
-#[no_mangle] pub unsafe extern "C" fn KeGetCurrentNodeNumber() -> u16 { 0 }
-#[no_mangle] pub unsafe extern "C" fn KeQueryHighestNodeNumber() -> u32 { 0 }
-#[no_mangle] pub unsafe extern "C" fn KeSetCoalescableTimer(t: PVOID, due: LARGE_INTEGER, period: u32, tol: u32, dpc: PVOID) -> u8 { 0 }
+#[no_mangle] pub unsafe extern "system" fn KeGetCurrentNodeNumber() -> u16 { 0 }
+#[no_mangle] pub unsafe extern "system" fn KeQueryHighestNodeNumber() -> u32 { 0 }
+#[no_mangle] pub unsafe extern "system" fn KeSetCoalescableTimer(t: PVOID, due: LARGE_INTEGER, period: u32, tol: u32, dpc: PVOID) -> u8 { 0 }
 
 // ============================ classp.h FORCEINLINE helpers ============================
 // These are header inlines the C calls as functions; cohab needs the crate to provide
@@ -385,6 +377,9 @@ use core::sync::atomic::{AtomicI32, Ordering};
     (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
 }
 // KeInitializeSpinLock(lock) => *lock = 0
+// CC = ntkrnl-sys bindgen_i386 decl class ("C") — callers import that decl; a
+// mismatched shim def in the same crate folds every call to ud2 (this one took
+// out ClasspInitializeIdleTimer & friends, 2026-07-18 i386 bomb set).
 #[no_mangle] pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
 
 // ============================ real-export cdecl wrappers ============================
@@ -393,13 +388,13 @@ use core::sync::atomic::{AtomicI32, Ordering};
 // (resolved via the ntoskrnl/hal importlibs on the cohab link line).
 // KeRaiseIrql/KeLowerIrql are inline on i386 (no kernel export — it's KfRaiseIrql fastcall);
 // the ntkrnl_sys tier1 inlines do the correct per-arch thing.
-#[no_mangle] pub unsafe extern "C" fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8) {
+#[no_mangle] pub unsafe extern "system" fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8) {
     #[cfg(target_arch = "x86")]
     { ntkrnl_sys::inline::tier1::KeRaiseIrql(NewIrql, OldIrql); }
     #[cfg(not(target_arch = "x86"))]
     { extern "system" { fn KeRaiseIrql(n: u8, o: *mut u8); } KeRaiseIrql(NewIrql, OldIrql); }
 }
-#[no_mangle] pub unsafe extern "C" fn KeLowerIrql(NewIrql: u8) {
+#[no_mangle] pub unsafe extern "system" fn KeLowerIrql(NewIrql: u8) {
     #[cfg(target_arch = "x86")]
     { ntkrnl_sys::inline::tier1::KeLowerIrql(NewIrql); }
     #[cfg(not(target_arch = "x86"))]
@@ -434,7 +429,7 @@ unsafe extern "system" fn IoQueueWorkItemExTrampoline(
     routine(DeviceObject as PVOID, context, work_item);
 }
 
-#[no_mangle] pub unsafe extern "C" fn IoQueueWorkItemEx(
+#[no_mangle] pub unsafe extern "system" fn IoQueueWorkItemEx(
     IoWorkItem: ntkrnl_sys::ddk::PIO_WORKITEM,
     WorkerRoutine: *const core::ffi::c_void,
     QueueType: u32,
@@ -475,7 +470,7 @@ unsafe extern "system" fn IoQueueWorkItemExTrampoline(
 // KeGetCurrentIrql / KeQueryTickCount are real exports on i386 (and KeQueryTickCount on arm) but
 // are inlines on amd64 — provide them there. cr8 holds the current IRQL on amd64.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle] pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 {
+#[no_mangle] pub unsafe extern "system" fn KeGetCurrentIrql() -> u8 {
     let irql: u64;
     core::arch::asm!("mov {}, cr8", out(reg) irql, options(nomem, nostack, preserves_flags));
     irql as u8
@@ -489,7 +484,7 @@ unsafe extern "system" fn IoQueueWorkItemExTrampoline(
 // KeQueryTickCount: exported on i386/ARM32 but an inline on amd64/arm64. KI_USER_SHARED_DATA is at
 // the SAME VA (0xFFFFF78000000000) on both; TickCount (KSYSTEM_TIME) at +0x320. Lockless read.
 #[cfg(not(target_arch = "x86"))]
-#[no_mangle] pub unsafe extern "C" fn KeQueryTickCount(Count: *mut LARGE_INTEGER) {
+#[no_mangle] pub unsafe extern "system" fn KeQueryTickCount(Count: *mut LARGE_INTEGER) {
     // (ULONG LowPart @0x320, LONG High1Time @0x324, LONG High2Time @0x328). Lockless read.
     const LOW: usize = 0xFFFFF78000000000 + 0x320;
     loop {

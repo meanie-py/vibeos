@@ -58,10 +58,16 @@ macro_rules! UNIMPLEMENTED { () => {{}}; }
 extern "C" {
 }
 extern "C" {
-    fn PciWriteDeviceConfig( PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER, Offset: u32, Length: u32, );
-    fn PciDecodeEnable( PdoExtension: PPCI_PDO_EXTENSION, Enable: BOOLEAN, CommandEnables: *mut u16, );
-    fn PciReadDeviceConfig( pdo: PPCI_PDO_EXTENSION, buffer: *mut core::ffi::c_void, offset: u32, length: u32, );
     fn DbgPrint( format: *const i8, ... );
+}
+unsafe extern "system" {
+    fn PciWriteDeviceConfig( PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER, Offset: u32, Length: u32, );
+}
+unsafe extern "system" {
+    fn PciDecodeEnable( PdoExtension: PPCI_PDO_EXTENSION, Enable: BOOLEAN, CommandEnables: *mut u16, );
+}
+unsafe extern "system" {
+    fn PciReadDeviceConfig( pdo: PPCI_PDO_EXTENSION, buffer: *mut core::ffi::c_void, offset: u32, length: u32, );
 }
 
 extern "system" {

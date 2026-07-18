@@ -13,26 +13,13 @@ extern "C" {
     fn debugstr_a(s: *const i8) -> *const i8;
 }
 extern "C" {
-    fn lstrlenW(lpString: *const u16) -> i32;
-    fn lstrcpyW(lpString1: *mut u16, lpString2: *const u16) -> *mut u16;
-    fn MultiByteToWideChar(CodePage: u32, dwFlags: u32, lpMultiByteStr: LPCSTR, cbMultiByte: i32, lpWideCharStr: LPWSTR, cchWideChar: i32) -> i32;
-    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
-    fn GetProcessHeap() -> *mut core::ffi::c_void;
-    fn GetSystemDirectoryW(lpBuffer: PWSTR, uSize: u32) -> u32;
-    fn lstrcatW(lpString1: PWSTR, lpString2: PCWSTR) -> PWSTR;
-    fn SetLastError(dwErrCode: u32);
     fn get_tag_data(profile: *mut profile, type_: TAGTYPE, offset: DWORD, buffer: PVOID, size: PDWORD) -> BOOL;
     fn cmsTagLinkedTo(profile: cmsHPROFILE, type_: TAGTYPE) -> i32;
     fn cmsIsTag(hProfile: *mut core::ffi::c_void, tag: u32) -> i32;
     fn set_profile_header(profile: *mut profile, header: PPROFILEHEADER);
-    fn DeleteFileW(lpFileName: PCWSTR) -> i32;
     fn close_profile(profile: HPROFILE) -> BOOL;
     fn FIXME(format: *const i8, ...);
-    fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
-    fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut u8, cbMultiByte: i32, lpDefaultChar: *const u8, lpUsedDefaultChar: *mut i32, ) -> i32;
     #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn GetColorDirectoryW(machine: *const u16, buffer: *mut u16, size: *mut u32) -> i32;
-    fn CopyFileW(lpExistingFileName: PCWSTR, lpNewFileName: PCWSTR, bFailIfExists: i32) -> i32;
-    fn lstrcmpW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> i32;
     unsafe fn basename(path: PCWSTR, base: LPWSTR) ;
     #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn GetStandardColorSpaceProfileW(machine: *const u16, id: u32, profile: *mut u16, size: *mut u32) -> i32;
     #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn InstallColorProfileW(machine: *const u16, profile: *const u16) -> i32;
@@ -41,14 +28,29 @@ extern "C" {
     fn WARN(format: *const i8, ...);
     unsafe fn profile_AtoW(profile: *const PROFILE, out: *mut PROFILE) -> BOOL;
     unsafe fn set_profile_device_key(profile: *const u16, data: *const u8, size: u32) -> i32;
-    fn FindClose(hFind: *mut core::ffi::c_void) -> i32;
-    fn FindFirstFileW( lpFileName: *const u16, lpFindFileData: *mut WIN32_FIND_DATAW, ) -> *mut core::ffi::c_void;
-    fn FindNextFileW( hFind: *mut core::ffi::c_void, lpFindFileData: *mut WIN32_FIND_DATAW, ) -> i32;
-    fn HeapReAlloc( hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void, dwBytes: usize, ) -> *mut core::ffi::c_void;
     // Assume these forward declarations exist elsewhere #[no_mangle]
     // Assume these forward declarations exist elsewhere #[no_mangle]
     // Assume these forward declarations exist elsewhere pub unsafe extern "system" fn WcsOpenColorProfileW( cdm: *mut PROFILE, camp: *mut PROFILE, gmmp: *mut PROFILE, access: u32, sharing: u32, creation: u32, flags: u32, ) -> *mut core::ffi::c_void;
     #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn DisassociateColorProfileFromDeviceW(machine: *const u16, profile: *const u16, device: *const u16) -> i32;
+}
+unsafe extern "system" {
+    fn lstrlenW(lpString: *const u16) -> i32;
+    fn lstrcpyW(lpString1: *mut u16, lpString2: *const u16) -> *mut u16;
+    fn MultiByteToWideChar(CodePage: u32, dwFlags: u32, lpMultiByteStr: LPCSTR, cbMultiByte: i32, lpWideCharStr: LPWSTR, cchWideChar: i32) -> i32;
+    fn HeapAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
+    fn GetProcessHeap() -> *mut core::ffi::c_void;
+    fn GetSystemDirectoryW(lpBuffer: PWSTR, uSize: u32) -> u32;
+    fn lstrcatW(lpString1: PWSTR, lpString2: PCWSTR) -> PWSTR;
+    fn SetLastError(dwErrCode: u32);
+    fn DeleteFileW(lpFileName: PCWSTR) -> i32;
+    fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
+    fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut u8, cbMultiByte: i32, lpDefaultChar: *const u8, lpUsedDefaultChar: *mut i32, ) -> i32;
+    fn CopyFileW(lpExistingFileName: PCWSTR, lpNewFileName: PCWSTR, bFailIfExists: i32) -> i32;
+    fn lstrcmpW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> i32;
+    fn FindClose(hFind: *mut core::ffi::c_void) -> i32;
+    fn FindFirstFileW( lpFileName: *const u16, lpFindFileData: *mut WIN32_FIND_DATAW, ) -> *mut core::ffi::c_void;
+    fn FindNextFileW( hFind: *mut core::ffi::c_void, lpFindFileData: *mut WIN32_FIND_DATAW, ) -> i32;
+    fn HeapReAlloc( hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void, dwBytes: usize, ) -> *mut core::ffi::c_void;
 }
 
 const CP_ACP: u32 = 0;

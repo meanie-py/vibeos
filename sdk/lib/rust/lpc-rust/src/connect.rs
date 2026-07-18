@@ -114,12 +114,14 @@ extern "C" {
 }
 extern "system" {
     fn PsGetCurrentProcess() -> PEPROCESS;
-    fn ProbeForWriteHandle(Address: PHANDLE);
     fn ProbeForWriteUlong(Address: *mut ULONG);
     fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
     fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
     fn LpcpCompleteWait(Semaphore: PVOID);
     fn LpcpConnectWait(Semaphore: PVOID, PreviousMode: KPROCESSOR_MODE);
+}
+unsafe extern "C" {
+    fn ProbeForWriteHandle(Address: PHANDLE);
 }
 extern "system" {
     fn KeEnterCriticalRegion();

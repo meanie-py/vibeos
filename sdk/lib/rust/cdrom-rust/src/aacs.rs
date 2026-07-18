@@ -14,7 +14,11 @@ extern "system" {
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, TransferSize: u32, Retry: u8, Cdb: *const core::ffi::c_void, CdbLength: u32, ) -> i32;
     fn ScratchBuffer_ResetItems(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ClearStatus: u8);
     fn NT_ASSERT(cond: i32);
+}
+unsafe extern "C" {
     fn REVERSE_SHORT(p: *mut u16);
+}
+unsafe extern "C" {
     fn PAGED_CODE();
 }
 

@@ -49,7 +49,7 @@ extern "system" {
     fn ClassFindModePage( DataBuffer: *mut i8, DataBufferLength: u32, PageMode: u8, Reposition: i32, ) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
-extern "system" {
+extern "C" {
     // Real stdcall NTAPI (resolves to the ntoskrnl export; called at line ~854).
     fn KeFlushIoBuffers(Mdl: *mut core::ffi::c_void, ReadOperation: i32, DmaOperation: i32) -> i32;
 }

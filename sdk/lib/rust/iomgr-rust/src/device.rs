@@ -84,6 +84,8 @@ extern "system" {
 extern "C" {
     fn CONTAINING_RECORD(ptr: PVOID, ty: usize, field_offset: usize) -> PVOID;
     fn IoGetDevObjExtension(DeviceObject: PDEVICE_OBJECT) -> *mut _EXTENDED_DEVOBJ_EXTENSION;
+}
+unsafe extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }

@@ -12,3 +12,4 @@ crate-type = ["staticlib"]
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
+drvtrace-shim = { path = "../drvtrace-shim" }

@@ -4,6 +4,10 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 #![allow(unused_imports, unused_variables, unused_assignments, unused_mut)]
 
+
+// Fold-proof trace shims (TracePrint/StorDebugPrint) — see drvtrace-shim/src/lib.rs.
+extern crate drvtrace_shim;
+
 // crate-type = staticlib (cohab) → this PE module needs its own panic handler /
 // eh personality (each .sys links independently of ntoskrnl). Matches classpnp-rust.
 #[cfg(not(test))]

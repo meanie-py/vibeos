@@ -11,6 +11,8 @@ use core::ffi::c_void;
 extern "system" {
     fn KeGetCurrentIrql() -> KIRQL;
     fn BooleanFlagOn(Flags: ULONG, SingleFlag: ULONG) -> BOOLEAN;
+}
+unsafe extern "C" {
     fn USBSTOR_HandleExecuteSCSI(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
 }
 

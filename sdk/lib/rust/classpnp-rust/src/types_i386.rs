@@ -42204,7 +42204,7 @@ unsafe extern "stdcall" {
 unsafe extern "stdcall" {
     pub fn ClassAddDevice(arg1: *mut _DRIVER_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "C" {
     pub fn ClasspSendSynchronousCompletion(
         arg1: *mut _DEVICE_OBJECT,
         arg2: *mut _IRP,
@@ -42365,7 +42365,7 @@ unsafe extern "C" {
         AcquireLock: BOOLEAN,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassRemoveChild(
         Parent: PFUNCTIONAL_DEVICE_EXTENSION,
         Child: PPHYSICAL_DEVICE_EXTENSION,

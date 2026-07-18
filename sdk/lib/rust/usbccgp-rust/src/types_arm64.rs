@@ -5373,7 +5373,7 @@ unsafe extern "C" {
         DeviceExtension: PFDO_DEVICE_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBCCGP_GetDescriptor(
         DeviceObject: PDEVICE_OBJECT,
         DescriptorType: UCHAR,
@@ -5383,7 +5383,7 @@ unsafe extern "C" {
         OutDescriptor: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBCCGP_GetStringDescriptor(
         DeviceObject: PDEVICE_OBJECT,
         DescriptorLength: ULONG,

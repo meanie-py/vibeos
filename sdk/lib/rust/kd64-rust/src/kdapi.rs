@@ -188,6 +188,8 @@ extern "system" {
 extern "C" {
     fn ExceptionRecord32To64(ex32: *mut PVOID, ex64: *mut EXCEPTION_RECORD64);
     fn KeGetTrapFrameInterruptState(trap_frame: *mut PVOID) -> BOOLEAN;
+}
+unsafe extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }

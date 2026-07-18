@@ -15,6 +15,8 @@ extern "system" {
     fn KdReceivePacket( packet_type: ULONG, message_header: PVOID, message_data: PVOID, data_length: *mut ULONG, context: PVOID, ) -> ULONG;
 }
 extern "C" {
+}
+unsafe extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }

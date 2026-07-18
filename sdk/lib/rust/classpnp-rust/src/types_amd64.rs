@@ -41180,7 +41180,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClassReadDriveCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassReleaseQueue(DeviceObject: PDEVICE_OBJECT);
 }
 unsafe extern "C" {
@@ -41311,13 +41311,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClassGetDriverExtension(DriverObject: PDRIVER_OBJECT) -> PCLASS_DRIVER_EXTENSION;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassCompleteRequest(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, PriorityBoost: CCHAR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassReleaseRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PIRP);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassAcquireRemoveLockEx(
         DeviceObject: PDEVICE_OBJECT,
         Tag: PVOID,
@@ -41395,10 +41395,10 @@ unsafe extern "C" {
         Lun: UCHAR,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassAcquireChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassReleaseChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
 unsafe extern "C" {
@@ -41411,7 +41411,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClassSendStartUnit(DeviceObject: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassRemoveDevice(DeviceObject: PDEVICE_OBJECT, RemoveType: UCHAR) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -42431,7 +42431,7 @@ unsafe extern "C" {
         AcquireLock: BOOLEAN,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassRemoveChild(
         Parent: PFUNCTIONAL_DEVICE_EXTENSION,
         Child: PPHYSICAL_DEVICE_EXTENSION,

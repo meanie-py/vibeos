@@ -18,6 +18,8 @@ extern "C" {
     fn InitializeCircularBuffer(Buffer: *mut CIRCULAR_BUFFER, BufferSize: u32) -> NTSTATUS;
     fn FreeCircularBuffer(Buffer: *mut CIRCULAR_BUFFER) -> NTSTATUS;
     fn SerialDetectUartType(ComPortBase: PUCHAR) -> UART_TYPE;
+}
+unsafe extern "system" {
     fn SerialSetBaudRate( DeviceExtension: PSERIAL_DEVICE_EXTENSION, BaudRate: ULONG, ) -> NTSTATUS;
     fn SerialSetLineControl( DeviceExtension: PSERIAL_DEVICE_EXTENSION, LineControl: *mut SERIAL_LINE_CONTROL, ) -> NTSTATUS;
     fn ForwardIrpAndForget(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;

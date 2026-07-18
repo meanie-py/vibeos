@@ -18797,7 +18797,7 @@ pub struct _PDO_DEVICE_EXTENSION {
 }
 pub type PDO_DEVICE_EXTENSION = _PDO_DEVICE_EXTENSION;
 pub type PPDO_DEVICE_EXTENSION = *mut _PDO_DEVICE_EXTENSION;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PortFdoScsi(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -18822,7 +18822,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn MiniportStartIo(Miniport: PMINIPORT, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ForwardIrpAndForget(LowerDevice: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -18841,7 +18841,7 @@ unsafe extern "C" {
         InterfaceSpecificData: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TranslateResourceListAddress(
         DeviceExtension: PFDO_DEVICE_EXTENSION,
         BusType: INTERFACE_TYPE,
@@ -18862,7 +18862,7 @@ unsafe extern "C" {
         Affinity: PKAFFINITY,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AllocateAddressMapping(
         MappedAddressList: *mut PMAPPED_ADDRESS,
         IoAddress: STOR_PHYSICAL_ADDRESS,
@@ -18883,7 +18883,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn PortDeletePdo(PdoExtension: PPDO_DEVICE_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PortPdoScsi(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {

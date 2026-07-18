@@ -41,6 +41,8 @@ extern "C" {
     fn FreeItem(Item: PVOID);
     fn USBCCGP_SyncUrbRequest(DeviceObject: PDEVICE_OBJECT, UrbRequest: PURB) -> NTSTATUS;
     fn UsbBuildSelectInterfaceRequest( Urb: PURB, Length: USHORT, ConfigurationHandle: USBD_CONFIGURATION_HANDLE, InterfaceNumber: UCHAR, AlternateSetting: UCHAR, );
+}
+unsafe extern "system" {
     fn USBCCGP_GetDescriptor( DeviceObject: PDEVICE_OBJECT, DescriptorType: UCHAR, DescriptorLength: ULONG, DescriptorIndex: UCHAR, LanguageId: LANGID, OutDescriptor: *mut PVOID, ) -> NTSTATUS;
 }
 
