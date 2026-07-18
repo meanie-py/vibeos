@@ -875,3 +875,21 @@ CDrvDefExt::GetSite(REFIID iid, void **ppvSite)
     UNIMPLEMENTED;
     return E_NOTIMPL;
 }
+
+/* ---- Rust cohab: CDrvDefExt is Rust-owned (shell32-rust dialogs/drvdefext.rs). ----
+ * The C++ class body above stays compiled but is dead; activation routes to the Rust
+ * factory (CDrvDefExt_CreateInstance, adapter in shell32.cpp). These bridges expose
+ * C++-linkage/file-static helpers the Rust translation still calls. */
+extern "C" {
+
+UINT WINAPI SH_FormatByteSize_RustBridge(LONGLONG cbSize, LPWSTR pwszResult, UINT cchResultMax)
+{
+    return SH_FormatByteSize(cbSize, pwszResult, cchResultMax);
+}
+
+INT_PTR CALLBACK ChkDskDlg_RustBridge(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+    return ChkDskDlg(hwndDlg, uMsg, wParam, lParam);
+}
+
+} /* extern "C" */

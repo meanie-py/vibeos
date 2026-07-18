@@ -1502,3 +1502,9 @@ IsDriveFloppyW_RustBridge(LPCWSTR pszDriveRoot)
 {
     return IsDriveFloppyW(pszDriveRoot);
 }
+
+extern "C" HRESULT WINAPI
+CDrivesFolder_SetDriveLabel_RustBridge(HWND hwndOwner, PCWSTR DrivePath, PCWSTR Label)
+{
+    return CDrivesFolder::SetDriveLabel(hwndOwner, DrivePath, Label);
+}

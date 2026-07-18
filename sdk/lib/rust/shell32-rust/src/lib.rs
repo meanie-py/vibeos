@@ -52,6 +52,9 @@ pub mod control_panel_folder;
 pub mod copy_as_path_menu;
 pub mod desktop_folder;
 pub mod drives_folder;
+// Assembled at the C tree's path (dialogs/) by rustconv; keep that path stable for re-runs.
+#[path = "dialogs/drvdefext.rs"]
+pub mod drv_def_ext;
 pub mod drop_target_helper;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
