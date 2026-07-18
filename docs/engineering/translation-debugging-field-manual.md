@@ -9093,3 +9093,57 @@ uppercase `#[no_mangle] extern "system"` forwarders that call through to the low
 match a `.spec`, **the `.spec` is ground truth for the i386 stdcall `@N` decoration**, not the C
 prototype — a `long` parameter contributes 4 bytes even where the C header declares `WORD`.
 Getting `@N` wrong links clean on amd64/arm64 and fails ONLY on i386.
+
+### 9.110 (2026-07-18) Four C-fidelity bug classes that survive a green `cargo check` AND a manual review — found only at link and by `vibeos-cli check`
+
+From the dhcpcsvc/netapi32 flips. Both crates were reported cargo-clean on all three targets by
+the agents that ground them — truthfully. Compilation says nothing about whether the Rust means
+what the C meant. Nine real bugs survived that green; the three below survived a hand review on
+top of it and were caught only by the lint gate. Check for all four before calling a flip done.
+
+**1. A vestigial `extern` in a header → the translation invents a global the C never had.**
+`dhcpd.h:398` declares `extern time_t cur_time;`. No TU in dhcpcsvc.dll DEFINES it — all EIGHT
+users declare their own `time_t cur_time;` LOCAL, which shadows it in C. The translation "helpfully"
+made them all reference the global, with a comment asserting `no local shadow`. That aliases eight
+independent stack values into one, corrupting the dispatch loop's lease timing.
+
+There is a nasty second-order effect that *pushes* a translation into this bug: bindgen emits the
+dead decl, and **Rust forbids a `let` binding that shadows an in-scope static (E0530)** — so the
+faithful translation is a compile error and "make it a global" is the path of least resistance.
+The fix is at the source: `--blocklist-item` the symbol (gen_driver_types `EXTRA_BL_ITEMS`) so
+nothing can bind to a global that does not exist. **Before trusting any `extern` a header
+declares, grep for its DEFINITION.** Undefined + referenced = link error (loud, fine); undefined +
+*locals of the same name* = silent semantic change.
+
+**2. `write_bytes`' count is in ELEMENTS; `memset`'s is in BYTES.**
+`core::ptr::write_bytes(p: *mut T, val, count)` writes `count * size_of::<T>()` bytes. So
+`write_bytes(arr.as_mut_ptr(), 0, size_of::<[T; N]>())` — the literal transcription of
+`memset(arr, 0, sizeof(arr))` — writes `sizeof(array) * sizeof(T)` bytes. In dhcpcsvc's
+`make_discover` that was a large stack overrun past two 256-entry arrays. **Always route a
+memset transcription through `as *mut u8`**, so the element count and the byte count coincide.
+`scan_silent_failures` flags this as `WRITE_BYTES_SIZEOF`.
+
+**3. A C debug macro that does NOT block, translated as `loop {}`.**
+`UNIMPLEMENTED` (reactos/debug.h) expands to `__NOTICE(WARNING, ...)` — a DbgPrint. The C falls
+straight through to the next statement. `DhcpNotifyConfigChange` was rendered as
+`DbgPrint(...); loop {}`, which hangs the calling thread forever instead of returning
+ERROR_SUCCESS. Related to §9.65 (never translate a C debug macro into an out-of-line no-op fn):
+**read what the macro expands to before translating it**, and never assume a name like
+UNIMPLEMENTED/FIXME/UNREACHABLE implies a trap. `scan_silent_failures` flags bare `loop {}` as
+`SILENT_LOOP`.
+
+**4. A C file-scope global defined in Rust without `#[no_mangle]`.**
+After a cohab flip, the `.c` that DEFINED a global is gone, so the Rust definition must emit the
+UNMANGLED C symbol — bindgen still DECLARES the global (from the header) and every cross-module
+reference binds to that decl. A plain `pub static mut` emits a mangled symbol and the decl goes
+unresolved. dhcpcsvc had 11 of these; only 4 failed the link (the referenced ones), the other 7
+were latent and would have broken on the next cross-module use. **Fix the class, not the four
+the linker happened to name:** intersect the island's `pub static mut` decls with the crate's
+own definitions and `#[no_mangle]` every match.
+
+**And the meta-lesson.** Each verification layer caught what the previous could not: `cargo check`
+(nothing on this list), the i386 LINK (classes 1 and 4 — decoration/undefined-symbol bugs are
+i386-first, since amd64/arm64 hide `@N` and case mismatches), hand review (the shadow structs and
+the `goto`-as-no-op paths), and `vibeos-cli check` (classes 2 and 3, plus a wrong error-code
+literal). **Run all four before declaring a flip green**, and treat a subagent's "0 errors on all
+targets" as a statement about compilation only.
