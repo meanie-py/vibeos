@@ -183,7 +183,9 @@ extern "system" {
     static mut SeDefaultObjectMethod: *const core::ffi::c_void;
     static mut PsInitialSystemProcess: PVOID;
 }
-unsafe extern "C" {
+// The link_name target IoGetDevObjExtension_shim is defined extern "system" in
+// inlines.rs — the decl MUST match the shim's ABI, not IoGetDevObjExtension's.
+unsafe extern "system" {
     #[link_name = "IoGetDevObjExtension_shim"]
     fn IoGetDevObjExtension(DeviceObject: PDEVICE_OBJECT) -> *mut ntkrnl_sys::ddk::_DEVOBJ_EXTENSION;
 }
