@@ -622,3 +622,54 @@ maps the `rg -n --no-heading --glob '*.h' <pat> <roots>` shape onto `grep -rnP -
 Re-run `translate` with the shim on PATH — all functions replay from cache for $0 and the
 assembly completes. (A single `grep -P` shim is enough; the invocation only uses `-n`,
 `--no-heading`, `--glob`.)
+
+## Substrate-unblock session (2026-07-18, autonomous) — CRecycleBin landed + 4 substrate capabilities + folder-cohort preflight unblocked
+
+The "every remaining class needs substrate" tarpit was attacked directly (rustconv back in
+this lane). Four general, tested cpp-com substrate capabilities were added (each check-tooling
+green, regression-checked against the landed folders):
+
+1. **Overload-aware header/impl method merge** — a method is `(name, arity)`; a static inline
+   `GetClassID()` no longer collides with the virtual `GetClassID(CLSID*)`. (commit a35f5f8d2ca)
+2. **C++ `bool` state fields** + **raw-pointer-array state** (`IShellFolder *m_cache[N]` →
+   `[*mut T; N]`, lifetime in the translated ctor/dtor) + **constant-expression array bounds**
+   (`('Z'-'A'+1)` via a whitelisted AST evaluator, searching the class's own DLL-module tree). (a35f5f8d2ca)
+3. **Static class methods never bind to a vtable slot** — emitted as sibling helpers. (4b9d693956d)
+4. **Non-QI'd interface bases are materialized layout-only** — a base that is a real WIDL
+   interface but absent from the COM map (e.g. `IContextMenuCB` on CFSFolder/CDesktopFolder)
+   gets its own vtable subobject (struct field + VTBL + offset_of! thunks + ctor init) but is
+   NOT in QueryInterface. Field order is irrelevant (Rust-allocated; every iface pointer
+   recovers `this` via offset_of!). (commit 4daf21f41be)
+
+**CRecycleBin** (`CLSID_RecycleBin`) landed — hybrid cohab, 15 `*_RustBridge` shims (5 companion
+create/init in CRecycleBin.cpp; 6 CFSFolder-static reuse + relocated `SHELL32_CreateSimpleIDListFromPath`
+in CFSFolder.cpp; 1 each in shlfolder.cpp/utils.cpp/item_prop.cpp/recycler_prop.cpp). No CRegFolder
+composition (unlike the other folders — CRecycleBin::Initialize only ILClones). Translated with a
+mixed model (deepseek bulk + sonnet cleanup of 5 rejected fns — deepseek damaged CComPtr/fact
+envelopes on the hard functions), stitched 151→0 errors ×3. Note: `GetRecycleBinPathFromDriveNumber`
+is `EXTERN_C` **cdecl** (no WINAPI) — declare it `extern "C"` in Rust, not `extern "system"`, or i386
+gets a stdcall-decoration mismatch.
+
+### Folder cohort (CFSFolder / CDesktopFolder): preflight UNBLOCKED, translate BLOCKED (owed)
+
+The IContextMenuCB layout-only fix (#4) makes **CFSFolder preflight PASS** (the file-system folder —
+the highest-value remaining class). But the translate is blocked by a shared root cause worth a
+focused fix:
+- **Header-inline `STDMETHODIMP … override { }` accessors** (IItemNameLimits `GetMaxLength`/
+  `GetValidCharacters`; the `static inline CompareUiStrings(…, LPARAM lParam = 0)`): sonnet
+  *systematically* mistranslates these short functions — drops `S_OK` / drops a sealed fact token —
+  and CDesktopFolder's scanner doesn't even extract the `STDMETHODIMP` header inlines ("COM map
+  requires method bodies the scanner did not extract: GetMaxLength, GetValidCharacters"). Likely a
+  header-inline extraction/prompting issue affecting both folders.
+- **The sonnet (sequential) translate path ABORTS on the first audit-reject**, unlike the DeepSeek
+  parallel path which collects rejects + continues (preserving all accepted work). `--concurrency`
+  is DeepSeek-only (`__main__.py:1438`); the sequential audit handler (`__main__.py:2215-2223`)
+  `raise`s instead of collect+continue. Mirroring the parallel path's collect behavior there would
+  let a sonnet class translate its good functions in one run and surface all rejects at once —
+  worth doing (general robustness, not just CFSFolder). Partial CFSFolder paid work is preserved in
+  `tools/rustconv/.responses/folders__CFSFolder__*`.
+
+Next-session order for the folder cohort: (a) fix the header-inline STDMETHODIMP extraction +
+sequential collect-not-abort, (b) re-translate CFSFolder (sonnet), hand-fix the 2-3 stubborn
+accessors, (c) stitch + integrate (large: CFileSysEnum + CFSDropTarget companions, many CFSFolder-
+static bridges already exist from CRecycleBin).

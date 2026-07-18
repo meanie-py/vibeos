@@ -1555,3 +1555,53 @@ HRESULT CRecycleBin::ParseRecycleBinPath(
 
     return E_FAIL;
 }
+
+/**************************************************************************
+ * Rust bridges — CRecycleBin is Rust-owned (shell32-rust recycle_bin); the
+ * companion classes below (CRecycleBinEnum, CRecycleBinItemContextMenu,
+ * CRecyclerDropTarget, CRecycleBinFolderViewCB) stay C++ and are reached
+ * through these C ABI shims. Mirrors the CDrivesFolder/CControlPanelFolder set.
+ */
+
+extern "C" HRESULT WINAPI
+CRecycleBinEnum_CreateInstance_RustBridge(DWORD dwFlags, REFIID riid, void **ppv)
+{
+    return ShellObjectCreatorInit<CRecycleBinEnum>(dwFlags, riid, ppv);
+}
+
+extern "C" HRESULT WINAPI
+CRecycleBinItemContextMenu_CreateInstance_RustBridge(
+    UINT cidl, PCUITEMID_CHILD_ARRAY apidl, REFIID riid, void **ppv)
+{
+    return ShellObjectCreatorInit<CRecycleBinItemContextMenu>(cidl, apidl, riid, ppv);
+}
+
+extern "C" HRESULT WINAPI
+CRecyclerDropTarget_CreateInstance_RustBridge(REFIID riid, LPVOID *ppvOut)
+{
+    return CRecyclerDropTarget_CreateInstance(riid, ppvOut);
+}
+
+extern "C" HRESULT WINAPI
+CRecycleBinFolderViewCB_CreateInstance_RustBridge(
+    IShellFolder2 *psf, IShellFolderViewCB **ppvcb)
+{
+    UNREFERENCED_PARAMETER(psf);
+    CComPtr<CRecycleBinFolderViewCB> sfviewcb;
+    HRESULT hr = ShellObjectCreator(sfviewcb);
+    if (FAILED(hr))
+        return hr;
+    // Transfer the (AddRef'd) reference to the caller; Rust releases it.
+    *ppvcb = static_cast<IShellFolderViewCB *>(sfviewcb.Detach());
+    return S_OK;
+}
+
+extern "C" HRESULT WINAPI
+CRecycleBinFolderViewCB_Initialize_RustBridge(
+    IShellFolderViewCB *pvcb, IShellFolder2 *psf, IShellView *psv, LPCITEMIDLIST pidl)
+{
+    CRecycleBinFolderViewCB *pViewCB = static_cast<CRecycleBinFolderViewCB *>(pvcb);
+    CRecycleBin *pRecycleBin = static_cast<CRecycleBin *>(psf);
+    pViewCB->Initialize(pRecycleBin, psv, pidl);
+    return S_OK;
+}
