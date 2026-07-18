@@ -938,6 +938,119 @@ Exit 0x600D; 0xBAF1..5 name the failing rung. Gotcha for future guests: the
 fs:[0] registration record MUST live on the thread stack —
 RtlDispatchException validates against the TEB stack limits.
 
+**Phase E6 — stock-binary robustness ladder on amd64 (2026-07-18).** Beyond the
+authored probe guests and winmine, the amd64 winlogon ladder now launches more
+unmodified stock i386 applets via a generic `TryStartWow64StockApp` helper
+(same inverted "still running after Ns = PASS" verdict). Results:
+
+* **notepad.exe — PASS.** Real window with a *working EDIT control* (the §9.67
+  GlobalLock/LocalLock fix carries through WoW64 — the M11-era "dies in
+  EDIT_LockBuffer" note is obsolete). Comdlg32/comctl32 in the closure.
+* **sol.exe (Solitaire) — PASS.** cardlib is a *static* C++ lib (not a runtime
+  cards.dll), so its import closure is already complete; heavy GDI + window.
+* **calc.exe — was RESIDUAL, ROOT-CAUSED + FIXED in E7 (below).** The
+  `ntdll32+0x2c5bb` first-chance AV was `RtlpRemoveFreeBlock` unlinking a
+  guest-heap block with a NULL free-list `Blink` — guest-heap corruption from a
+  WoW64 marshaller (`NtUserBuildHwndList`), not a shared native bug. See E7.
+
+**The UNICODE_STRING NtUser* marshaller class (E6).** calc flushed out a whole
+class the earlier guests never hit: `NtUser*` syscalls taking a
+`PUNICODE_STRING` that win32u.spec types *flat* (`ptr`), so the generated flat
+thunk hands 64-bit win32k the guest's 8-byte `UNICODE_STRING32` read as a
+16-byte `UNICODE_STRING64` — a garbage `Buffer` (kernel reads/writes through
+it) or an align-8 `ProbeForWrite` on the 4-aligned guest struct. Two bugchecked
+calc directly before the fix (`NtUserGetAtomName` → 0x1E via garbage Buffer;
+`NtUserGetClassName` → 0x80000002 DATATYPE_MISALIGNMENT → 0x1E), and two more
+(`NtUserRegisterWindowMessage`, `NtUserGetKeyboardLayoutName`) were added
+proactively — every GUI app hits them. All four are single-`UNICODE_STRING`
+in/out marshallers (widen US32→US64, Buffer zero-extended as a guest <4GB
+pointer, narrow Length back) in wow64_manual.c + manual-win32k.txt. This is the
+exact M17 "flat-typed divergent payload" trap; the remaining un-marshalled
+`PUNICODE_STRING` takers (FindWindowEx, EnumDisplayDevices, CreateDesktop,
+SetWindowsHookEx, …) are owed as apps reach them.
+
+**Phase E7 — calc guest-heap corruption root-caused + fixed: the OUT
+handle-array narrowing gap (2026-07-18).** The E6 calc residual was a genuine
+*guest-heap* corruption, not the contained-cascade curiosity it looked like.
+Chased it by enriching the E5 guest-fault hook to dump the AV address + guest
+GPRs, then a one-shot guest-memory window around the faulting block (guest
+low-4GB is directly host-readable from wow64.dll):
+
+* The `ntdll32+0x2c5bb` fault is `rtl_heap::heap::RtlpRemoveFreeBlock` on the
+  `RemoveEntryList(&FreeEntry->FreeList)` unlink — `Blink->Flink = Flink` with a
+  **NULL Blink** (`ecx=0`, AV write to addr 0). `FreeEntry`'s `FreeList.Flink`
+  read back an **HWND** (`0x00020414`), not a heap pointer — i.e. a *busy*
+  allocation holding `{HWND, 0}` was mis-coalesced as free.
+* The memory dump was dispositive: a contiguous array of **`{HWND:4, 0:4}`
+  8-byte entries** running *past* its heap block's end (`Size=0x11`=136 B, 16
+  entries) into the adjacent block. That's **64-bit HWNDs written into a
+  32-bit-per-entry buffer** — a 2× overrun.
+* Root: **`NtUserBuildHwndList`** (behind `Enum{,Child,Thread}Windows`) fills a
+  caller `HWND[]` and had **no WoW64 marshaller**. win32u.spec types the array
+  slot flat (`ptr`), so the auto-thunk handed 64-bit win32k the guest buffer
+  verbatim; the kernel wrote 8-byte HWNDs while the guest (user32
+  `BuildHwndList`) sized it at `sizeof(HWND)=4`·count. calc's button enumeration
+  overran the adjacent block; the damage surfaced minutes later as the NULL
+  free-list link. **Native i386 is unaffected** (kernel writes 4-byte handles),
+  so this is strictly a WoW64 marshalling gap — no A/B needed once the `{HWND,0}`
+  8-byte stride was visible.
+* **Fix:** `Wow64Manual_NtUserBuildHwndList` (wow64_manual.c + manual-win32k.txt)
+  gives the kernel a host 64-bit scratch array (`cHwnd`·8 B), then narrows each
+  handle's low 32 bits into the guest's 4-byte-per-entry buffer; the count slot
+  (`pcHwndNeeded`, a `ULONG`) is width-identical and flat-passes; the count-query
+  call (`phwndList==NULL`) passes straight through. The enriched one-line guest
+  AV register dump stays in the E5 hook as fail-loud hygiene; the memory-window
+  dump was removed.
+* **General lesson (owed sweep):** any win32k/ntdll syscall that fills a caller
+  **array of handles/pointers** typed flat in the .spec has this same 2×-overrun
+  shape under WoW64 (`NtUserBuildNameList`, `NtUserBuildPropList`,
+  `NtGdiGetXXX` handle arrays, `NtQueryDirectoryObject`, …). They're silently
+  fine until a guest passes a non-empty buffer, then corrupt the guest heap far
+  from the write. Add each to manual-win32k.txt with an array-narrowing
+  marshaller as coverage reaches it.
+
+**Phase E8 — new-surface stock-applet ladder + NtUserUnregisterClass (2026-07-18).**
+Extended the amd64 winlogon ladder with four unmodified stock i386 applets chosen
+to exercise win32k surface a prior guest never reached — **charmap** (font
+enumeration + EnumFontFamilies callback), **mspaint** (heavy GDI regions/DIBs +
+comdlg32 dialogs), **regedit** (treeview/listview common controls + registry-enum
+arrays), **winver** (shell32 ShellAbout modal). Staged via the same
+`wow64cpu/CMakeLists.txt` closure roots + `add_cd_file` mechanism (closure
+recomputed complete: 59 modules, no new DLL), launched through the generic
+`TryStartWow64StockApp` with the inverted "still running = PASS" verdict.
+
+*Result:* charmap/mspaint/winver PASS on the first boot; **regedit BUGCHECKed
+0x1E** and its fix is the E8 payload:
+
+* **`NtUserUnregisterClass` was a silent-wrong flat thunk** (the M17 trap). The
+  spec types it `(ptr ptr ptr)`; the real prototype is
+  `NtUserUnregisterClass(PUNICODE_STRING ClassNameOrAtom, HINSTANCE, PCLSMENUNAME)`.
+  The flat auto-thunk fed 64-bit win32k the guest's 8-byte `UNICODE_STRING32` read
+  as a 16-byte `UNICODE_STRING64`; `ProbeAndCaptureUnicodeStringOrAtom` picked up
+  `Buffer` from the wrong offset (garbage) and copied the "class name" from that
+  wild address → C0000005 in win32k's `raw_move` → BUGCHECK 0x1E under DUMMY_PSEH.
+  Symbolicated cleanly: fault at `win32k+0x258EC` (`cnt_rust::cabi::raw_move`),
+  caller `NtUserUnregisterClass+0x117`. regedit/comctl32 hit it during class
+  teardown.
+* **Fix:** `Wow64Manual_NtUserUnregisterClass` (wow64_manual.c + manual-win32k.txt)
+  widens arg0 US32→US64 via `Wow64pUS32to64` (the atom form — `Buffer` < 0x10000,
+  `Length`=0 — survives the zero-extend + the kernel's `IS_ATOM` check). `hInstance`
+  flat-passes; `pClassMenuName` is **ignored kernel-side** (`NtUserUnregisterClass`
+  passes NULL to `UserUnregisterClass` — class.rs), so it needs no OUT marshalling.
+  Post-fix: `NtUserUnregisterClass(0x123a) [manual] => 00000001` ×2, **regedit PASS**,
+  all seven stock apps + all six probe guests green on one boot, zero faults.
+
+* **Systematic insight (owed E9):** `marshalgen report` classifies only syscalls
+  already in the NEEDS_MANUAL list — a **spec-flat-typed** divergent-payload
+  syscall (typed `ptr`/`long`, so wow64gen emits a flat thunk and never stubs it)
+  is **invisible** to the report. So the report cannot find the very class most
+  likely to be silently wrong. The remaining spec-flat `PUNICODE_STRING` NtUser*
+  takers from the E6 note (`FindWindowEx`, `EnumDisplayDevices`, `CreateDesktop`,
+  `SetWindowsHookEx`, …) share this shape and are owed. The durable fix is a
+  spec-vs-prototype audit tool (scan win32u.spec `Nt*` `ptr` args against the real
+  ntuser.h/ntgdi.h prototype; flag any pointing at a divergent payload not on the
+  manual list) — that would mechanically surface them all *before* a guest crashes.
+
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored
   contributions upstream; we consume its binary contract only).

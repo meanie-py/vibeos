@@ -363,6 +363,82 @@ def _collect_local_decls(node, source: bytes, names: set[str]) -> None:
         _collect_local_decls(child, source, names)
 
 
+def _matching_brace_byte(source: bytes, open_byte: int) -> int | None:
+    """Byte offset of the ``}`` that closes the ``{`` at ``open_byte`` (or None).
+
+    A small brace matcher that skips ``//`` and ``/* */`` comments and string /
+    char literals so their braces don't perturb the count.  Used to bound an ATL
+    class body that tree-sitter only recovered as a flat ERROR node — that node
+    keeps the ``{`` child token but not the matching ``}`` (see
+    ``_error_node_class_owner``).
+    """
+    depth = 0
+    i = open_byte
+    n = len(source)
+    while i < n:
+        ch = source[i]
+        if ch == 0x2F and i + 1 < n and source[i + 1] == 0x2F:  # //
+            nl = source.find(b"\n", i)
+            i = n if nl < 0 else nl + 1
+            continue
+        if ch == 0x2F and i + 1 < n and source[i + 1] == 0x2A:  # /* ... */
+            end = source.find(b"*/", i + 2)
+            i = n if end < 0 else end + 2
+            continue
+        if ch in (0x22, 0x27):  # " or ' literal
+            i += 1
+            while i < n:
+                if source[i] == 0x5C:  # escape
+                    i += 2
+                    continue
+                if source[i] == ch:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch == 0x7B:  # {
+            depth += 1
+        elif ch == 0x7D:  # }
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
+
+
+def _error_node_class_owner(err_node, method_node, source: bytes) -> str | None:
+    """Owning class name for a method definition flattened into an ERROR node.
+
+    Macro-heavy multi-class ATL headers can defeat tree-sitter's class parse,
+    leaving every ``class NAME : ... {`` header and in-class method as flat
+    children of one ERROR node.  The class keyword, its name, and its opening
+    brace survive as tokens (the matching ``}`` does not), so recover the owner
+    by brace-balanced containment: the class whose ``{`` .. ``}`` body encloses
+    ``method_node``.  Taking the innermost such class means a helper defined
+    *after* a class's closing brace is left unowned rather than mis-attributed
+    (the reason the earlier, cruder recovery deliberately handled only `struct`).
+    """
+    target = method_node.start_byte
+    kids = list(err_node.children)
+    owner: str | None = None
+    for i, child in enumerate(kids):
+        if child.type not in ("class", "struct"):
+            continue
+        name_tok = next((k for k in kids[i + 1 :] if k.type == "type_identifier"), None)
+        if name_tok is None:
+            continue
+        brace = next(
+            (k for k in kids[i + 1 :] if k.type == "{" and k.start_byte > name_tok.start_byte),
+            None,
+        )
+        if brace is None or brace.start_byte >= target:
+            continue
+        close = _matching_brace_byte(source, brace.start_byte)
+        if close is not None and brace.start_byte < target < close:
+            owner = _extract_text(name_tok, source)
+    return owner
+
+
 def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
     """Parse a function_definition node into CFunction."""
     name = None
@@ -457,7 +533,7 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                 name = recovered.group("name")
                 is_dtor = name.startswith("~")
                 name = name.lstrip("~")
-                is_ctor = name == cpp_class.rpartition("::")[2]
+                is_ctor = not is_dtor and name == cpp_class.rpartition("::")[2]
 
                 raw_params = recovered.group("params").strip()
                 if raw_params and raw_params != "VOID":
@@ -597,23 +673,24 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                         cpp_class = _extract_text(c, source)
                         break
                 break
-            # Macro-heavy ATL classes can make tree-sitter wrap the otherwise
-            # intact class/struct body in one ERROR node.  Recover only when
-            # that node begins with an actual class-key followed by its type
-            # identifier; the owning syntax is still compiler-unambiguous.
+            # Macro-heavy ATL classes — especially a header holding several such
+            # classes — can make tree-sitter wrap the whole region in one flat
+            # ERROR node, dropping the class_specifier structure.  The
+            # `class NAME : ... {` headers are still tokenized inside it, so
+            # recover the owning class by brace-balanced containment: attribute
+            # this definition to the class whose body actually encloses it.  A
+            # free helper past a class's closing brace is therefore never
+            # mis-attributed — the concern that previously limited this recovery
+            # to the `struct` shape.
             if anc.type == "ERROR":
-                children = list(anc.children)
-                # The observed recovery case is `struct Name : ATL...`.
-                # Do not extend this to a malformed `class` ERROR: in large
-                # headers tree-sitter may absorb later free helpers into that
-                # node, falsely turning them into class methods.
-                if children and children[0].type == "struct":
-                    owner = next((c for c in children[1:] if c.type == "type_identifier"), None)
-                    if owner is not None:
-                        cpp_class = _extract_text(owner, source)
-                        break
+                owner = _error_node_class_owner(anc, node, source)
+                if owner is not None:
+                    cpp_class = owner
+                    break
             anc = anc.parent
-        if cpp_class and name == cpp_class:
+        # A destructor_name declarator already stripped its `~` — the name now
+        # equals the class name, but it is NOT the constructor (CMenuSite FP).
+        if cpp_class and name == cpp_class and not is_dtor:
             is_ctor = True
 
     if return_type == "" and cpp_class is not None and not (is_ctor or is_dtor):

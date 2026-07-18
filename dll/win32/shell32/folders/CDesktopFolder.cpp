@@ -1120,3 +1120,48 @@ HRESULT WINAPI SHGetDesktopFolder(IShellFolder **psf)
     TRACE("-- %p->(%p)\n",psf, *psf);
     return hres;
 }
+
+/**************************************************************************
+ * Rust bridges — CDesktopFolder is Rust-owned (shell32-rust desktop_folder);
+ * the source-local companions below (CRegFolder composition, CDesktopFolderEnum,
+ * CDesktopFolderViewCB) stay C++ and are reached through these C ABI shims.
+ */
+
+/* Mirrors FinalConstruct's REGFOLDERINITDATA{ this, &g_RegFolderInfo } +
+ * CRegFolder_CreateInstance; the desktop's g_RegFolderInfo stays C++-side. */
+extern "C" HRESULT WINAPI
+CDesktopFolder_CreateRegFolder_RustBridge(
+    IShellFolder *psfOuter, LPCITEMIDLIST pidlRoot, REFIID riid, void **ppv)
+{
+    REGFOLDERINITDATA RegInit = { psfOuter, &g_RegFolderInfo };
+    return CRegFolder_CreateInstance(&RegInit, pidlRoot, riid, ppv);
+}
+
+/* Mirrors EnumObjects' ShellObjectCreatorInit<CDesktopFolderEnum>(...); the
+ * enumerator's Initialize upcasts pRegFolder (IShellFolder2*) to IShellFolder*. */
+extern "C" HRESULT WINAPI
+CDesktopFolderEnum_CreateInstance_RustBridge(
+    IShellFolder2 *pRegFolder, DWORD dwFlags, IEnumIDList *pRegEnum,
+    IEnumIDList *pDesktopEnum, IEnumIDList *pCommonEnum, REFIID riid, void **ppv)
+{
+    return ShellObjectCreatorInit<CDesktopFolderEnum>(
+        pRegFolder, dwFlags, pRegEnum, pDesktopEnum, pCommonEnum, riid, ppv);
+}
+
+/* Mirrors CreateViewObject's IID_IShellView arm: create CDesktopFolderViewCB,
+ * SFV_CREATE{ sizeof, psf, NULL, sfviewcb }, SHCreateShellFolderView, then
+ * sfviewcb->Initialize(*ppvOut). psf replaces the original `this`. */
+extern "C" HRESULT WINAPI
+CDesktopFolder_CreateShellFolderView_RustBridge(IShellFolder *psf, void **ppvOut)
+{
+    CComPtr<CDesktopFolderViewCB> sfviewcb;
+    HRESULT hr = ShellObjectCreator(sfviewcb);
+    if (SUCCEEDED(hr))
+    {
+        SFV_CREATE create = { sizeof(create), psf, NULL, sfviewcb };
+        hr = SHCreateShellFolderView(&create, (IShellView**)ppvOut);
+        if (SUCCEEDED(hr))
+            sfviewcb->Initialize((IShellView*)*ppvOut);
+    }
+    return hr;
+}

@@ -122,6 +122,13 @@ PIDLIST_ABSOLUTE SHELL_DataObject_ILCloneFullItem(_In_ IDataObject *pDO, _In_ UI
     return SUCCEEDED(cida.hr()) ? SHELL_CIDA_ILCloneFull(cida, Index) : NULL;
 }
 
+/* Rust bridge for the Rust-owned CDesktopFolder (shell32-rust desktop_folder). */
+extern "C" PIDLIST_ABSOLUTE WINAPI
+SHELL_DataObject_ILCloneFullItem_RustBridge(IDataObject *pDO, UINT Index)
+{
+    return SHELL_DataObject_ILCloneFullItem(pDO, Index);
+}
+
 HRESULT SHELL_CloneDataObject(_In_ IDataObject *pDO, _Out_ IDataObject **ppDO)
 {
     *ppDO = NULL;

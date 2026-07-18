@@ -609,7 +609,7 @@ JapaneseEra_Find, win32k EngInitializeSafeSemaphore.
 ret-drift / arg-width findings fixed individually (ntoskrnl-rust + hal-rust,
 plus a bonus thrdschd CONTAINING_RECORD) — scan_ir_mismatch clean.
 
-**CAUGHT BY THE GATE — a §9.99 fix in the WRONG DIRECTION (field manual §9.105).**
+**CAUGHT BY THE GATE — a §9.99 fix in the WRONG DIRECTION (field manual §9.107).**
 The batch first "fixed" MmDeleteVirtualMapping by flipping it to cdecl "C"
 (trusting the no-NTAPI decl in internal/mm.h + bindgen). That is a boot-breaker:
 its real i386 ABI is stdcall (@16) — the def and the hot caller MmFreeMemoryArea
@@ -632,7 +632,7 @@ scan_ir_mismatch flags "def system vs decl C", make the DECL match the def
 change an ABI is a red flag (you moved the fold), not a win.
 
 The kernel32 arm64 time-fn spins were root-caused as
-the non-volatile KUSER_SHARED_DATA seqlock class (field manual §9.104) —
+the non-volatile KUSER_SHARED_DATA seqlock class (field manual §9.106) —
 read_volatile/write_volatile applied across kernel32/kernel32-vista/ke-inlines/
 ntdll/ntoskrnl clock+time, all 8 kernel32 spins verified dead by arm64
 re-sweep, KNOWN_DRIVER_UD2 kernel32 entry deleted. win32k

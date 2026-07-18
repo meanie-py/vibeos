@@ -38,6 +38,32 @@ NtUserGetClassInfo
 # E4c: winmine's menu bar — MENUITEMINFOW 48->80 + caption UNICODE_STRING
 # (auto-thunk's 8-byte US32 hit an align-8 ProbeForRead -> 0x80000002 -> 0x1E)
 NtUserThunkedMenuItemInfo
+# E6: calc's class-atom lookup — NtUserGetAtomName(ATOM, PUNICODE_STRING). The
+# win32u.spec (long ptr) flat thunk fed win32k a US32 as US64 (garbage Buffer,
+# kernel writes atom name through it) -> 0x1E. In/out US32<->US64 marshal.
+NtUserGetAtomName
+# E6: calc's class-name query — NtUserGetClassName(HWND, BOOL, PUNICODE_STRING).
+# Same US32<->US64 gap; 4-aligned US32 vs align-8 ProbeForWrite -> 0x80000002.
+NtUserGetClassName
+# E6: the single-PUNICODE_STRING NtUser* class, all flat-typed in win32u.spec
+# (same US32<->US64 gap any GUI app hits). RegisterWindowMessage (IN),
+# GetKeyboardLayoutName (in/out).
+NtUserRegisterWindowMessage
+NtUserGetKeyboardLayoutName
+# E8: regedit/comctl32 class teardown. NtUserUnregisterClass(PUNICODE_STRING
+# ClassNameOrAtom, HINSTANCE, PCLSMENUNAME) is typed flat (ptr ptr ptr), so the
+# auto-thunk fed 64-bit win32k the guest's 8-byte US32 as a 16-byte US64 ->
+# garbage Buffer -> ProbeAndCaptureUnicodeStringOrAtom raw_move C0000005 ->
+# BUGCHECK 0x1E. Widen arg0 US32<->US64 (atom form survives); pClassMenuName is
+# ignored kernel-side. Same class as GetClassName/GetAtomName above.
+NtUserUnregisterClass
+# E7: Enum{,Child,Thread}Windows -> NtUserBuildHwndList fills a caller HWND[] and
+# returns the count. The flat (ptr) auto-thunk let 64-bit win32k write 8-byte
+# HWNDs into the guest's sizeof(HWND)=4-byte-per-entry buffer -> 2x heap OVERRUN
+# that clobbered the adjacent block (calc's button-enum corrupted the guest heap;
+# surfaced as a NULL free-list Blink in RtlpRemoveFreeBlock minutes later). The
+# marshaller fills a host 64-bit scratch array, then narrows each handle back.
+NtUserBuildHwndList
 NtUserCreateWindowEx
 NtUserTranslateMessage
 NtUserBeginPaint

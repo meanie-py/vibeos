@@ -8431,6 +8431,60 @@ legitimately empty under model (2), ALSO validate against the *PTE* side — e.g
 live PTE still points at it. (An arm64-only `& 0xFFF` alignment guard in the *C* `MmGetRmapListHeadPage` was
 noticed and ruled out — it's cohab-dead; the live Rust accessor (freelist.rs:333) already dropped that hack.)
 
+**Tripwire #2 result (2026-07-18) — FALSE POSITIVE, and it REFUTES the whole free-side model.** Built the PTE-side
+tripwire the "Next step" asked for: at the `MiInsertPageInFreeList` choke point, read the freeing frame's
+`pte_address`, and if it still holds a VALID hardware **user** leaf PTE (self-map range `[PTE_BASE,
+MiAddressToPte(MmSystemRangeStart))`, deref gated fault-safe on `MmIsAddressValid`) mapping THIS frame, bugcheck
+red-handed. Fires **deterministically on EVERY normal boot** — same frame (`0x43c1b`), same user VA (`0x131000`),
+same PTE (`0x…43c1b443`, valid) every time — long before any kmtest sweep. GDB-bt at the halt (boot under
+`start.sh --gdb`, `wait-for.sh` the `*** BUGCHECK …f19` serial line so KeBugCheckEx has already halted the CPU,
+then `inspect.sh --command bt` — sidesteps the run-until breakpoint/timeout race) named the culprit path exactly:
+`NtFreeVirtualMemory → MiDecommitPages → MiProcessValidPteList → MiInsertPageInFreeList`. **But diffing
+`MiProcessValidPteList` (virtual.rs:1444) against ReactOS C (mm/ARM3/virtual.c:2571) shows the Rust is FAITHFUL and
+the pattern is INTENTIONAL:** under the PFN lock, for each valid PTE the C does `MiDecrementShareCount(page)` —
+which frees it — *and only THEN* `MI_WRITE_INVALID_PTE(pte, MmDecommittedPte)`, with `ASSERT(TempPte.u.Hard.Valid
+== 1)` explicitly expecting the PTE to still be valid at the free. It's safe because it all happens **inside the
+PFN-lock critical section**: the freed frame can't be re-handed-out (`MiRemoveAnyPage` needs the same lock) until
+after the batch's trailing `KeFlushCurrentTb()` + `MiReleasePfnLock()`. And arm64 `KeFlushCurrentTb`
+(ke/arm64/stubs.rs:1277) is correct — `tlbi vmalle1` nukes the whole EL1 TLB — so no stale-TLB alias survives the
+release. So **"a valid PTE at MiInsertPageInFreeList" is NORMAL, expected, ReactOS-sanctioned behavior**, not the
+bug; the free-side detection strategy is exhausted. The corrupting reuse is therefore NOT a free-side event — it is
+on the **alloc/reuse side** (a frame handed OUT of the free list while a valid user PTE still aliases it), OR a
+path that invalidates the in-memory PTE (so this tripwire stays silent) but skips/misscopes its TLB flush, leaving
+a stale-TLB alias that corrupts the reused frame. **Next step: move detection to the REMOVE side** — in
+`MiRemoveAnyPage`/`MiRemovePageByColor`, when a frame is handed out, check whether any valid user PTE still maps it
+(the frame's `pte_address` still valid post-alloc) — that cleanly distinguishes the legit lock-protected decommit
+(PTE invalidated before release → silent) from the real reuse-while-mapped (→ fire). Also audit user-PTE
+invalidation paths OTHER than MiDeletePte/MiProcessValidPteList for a missing/misscoped `KeFlushCurrentTb`, and the
+cross-process ASID/context-switch TLB story (the kmtest faces are a FRESH process's image/heap — a reused frame
+from an EXITED process aliased via a stale ASID TLB entry fits).
+
+**Tripwire #3 result (2026-07-18) — alloc-side is SILENT, and the flake is DORMANT in-tree; the bug (if live) is
+TLB-level.** Built the alloc/reuse-side tripwire the "Next step" asked for: at the hand-out choke point
+`MiRemovePageByColor` (pfnlist.rs:377 — both `MiRemoveAnyPage` and `MiRemoveZeroPage` funnel through it), fire if a
+frame being handed OUT still has a valid USER hardware PTE mapping it (same fault-safe `MmIsAddressValid` gate +
+user leaf-PTE range). Unlike tripwire #2, this is **SILENT on a normal boot** — the exact discriminator wanted:
+tripwire #2 fired always (legit lock-protected decommit), tripwire #3 stays quiet because that decommit invalidates
+the PTE before releasing the PFN lock, so no frame is ever handed out with a live in-memory user PTE. Then ran the
+kmtest sweep **10×** with the tripwire armed: **zero** `0xF1A` fires AND **zero** §9.98 corruption cascades — every
+sweep held `ok=78-79` (the only fails were the known deterministic flappers: RtlCaptureContextKM/HalPortIo NO-END
+every run, IoReadWrite/IoDeviceObject/PoIrp isolated `0xC0000005` debt — none cascade, so none is the §9.98 root).
+Two hard conclusions: (1) the private-page free/alloc PFN lifecycle is CLEAN — no reuse-while-mapped happens via an
+in-memory user PTE, on any of free-side or alloc-side (both refuted). (2) The §9.98 corruption is **not reproducing
+in the current tree** (at the lore'd ~40%/sweep, 10 clean is ~0.6% — so either that rate was overstated from a tiny
+sample, or one of the many origin lanes merged since the §9.96 session quietly changed MM timing/behavior enough to
+suppress it). Net: the catch-it-red-handed strategy is **walled by dormancy** — you cannot trip a tripwire on a bug
+that isn't firing. AND because BOTH in-memory-PTE tripwires are silent, if the bug is still latent it is **not** an
+in-memory PTE/refcount error at all — it is a **stale-TLB / ASID** alias (PTE correctly invalidated in memory, only
+the TLB entry survives), which neither free-side nor alloc-side in-memory-PTE checks can ever see. So the ONLY
+reproduction-independent avenue left is the **static TLB-coverage audit**: enumerate every user-PTE invalidation
+site (`MI_WRITE_INVALID_PTE`/`MI_ERASE_PTE`) and prove each has a `KeFlushCurrentTb` (correct scope) before the
+frame can be re-handed-out; plus the cross-process ASID/context-switch flush. The alloc-side tripwire
+(MiRemovePageByColor, sentinel `0xF1A`) is documented here to **re-arm instantly if the flake resurfaces** — it is
+the right net for a live private-page reuse. Since the flake is dormant and the §9.96 un-quarantines (MmSection,
+ZwMapViewOfSection) held 10/10 green, task #19 is not currently blocking the ratchet; the deterministic arm64
+quarantines (ExHardError 0x1E, NtCreateSection 0x50, ZwAllocateVirtualMemory 0x4E) are the live burndown targets.
+
 **Reusable method (the payoff — how to hunt a rare corruption flake UNATTENDED, no GDB babysitting):**
 (a) **Self-reporting kernel tripwires beat GDB-attach-at-the-instant for a ~40%/sweep, 77-launches-deep flake.**
 A conditional GDB breakpoint on the abnormal event needs the right process live at the right moment and
@@ -8443,6 +8497,30 @@ RemoveEntryList` was decoded entirely from LR-chain offsets + `.build-tools/llvm
 section-walk (`e_lfanew → sections → file offset`) reads the disk word at any RVA. The mismatch here is what
 proved reuse. (d) **A page-aligned FAR on a translation fault = a commit/mapping boundary**, not a random wild
 pointer — it says "the mapping ends exactly here," pointing at frame lifetime, not link corruption.
+
+**Static-diff verification (2026-07-18) — the sibling quarantines are the SAME root, and it is NOT a dropped
+guard in the faulting function.** The arm64 corruption cluster surfaces as several distinct BUGCHECKs whose
+*faulting* function is a named Rust port, so the obvious first move is the §9.96 play: diff that function vs its
+ReactOS C and look for a dropped early-return. Did that for all of them; **every faulting/detecting function is
+faithful**, which is itself the finding — it moves the root strictly upstream:
+- **`ZwAllocateVirtualMemory` 0x4E** (PFN_LIST_CORRUPT subcode 0xAD): the trip is `MiInsertStandbyListAtFront`'s
+  guard `must_be_cached || ref!=0 || !prototype_pte || rom_pte` (pfnlist.rs:625). That guard is a **correct
+  detector** — the C only ever routes *prototype* (section-backed) pages here — so a non-prototype page arriving
+  is upstream corruption, not a guard bug. Verified faithful up the whole chain: `MiInsertStandbyListAtFrontImpl`,
+  its sole caller `MiDecrementShareCount` (pfnlist.rs:~1000, C pfnlist.c:1263 — routing deleted→free /
+  modified→modified-list / else→standby is line-for-line, modulo dropped **debug-only** `ASSERT`s incl.
+  `RemovalRequested==0` and `PageLocation!=ActiveAndValid`), and the `MI_IS_PFN_DELETED` macro that picks the
+  free-vs-standby branch (`(ULONG_PTR)PteAddress & 1`, mm.rs:1410 == miarm.h:250). So the page's `prototype_pte`
+  flag (or its deleted-ness) is **already wrong** by the time it reaches `MiDecrementShareCount` — a frame whose
+  PFN state was clobbered, i.e. the same free-while-mapped reuse.
+- **`IoFilesystem` 0x1E** (AV in `MiFindEmptyAddressRangeInTree+0x173`, vadnode.rs:370): the function is a
+  faithful port of vadnode.c:496 — the AV is a garbage VAD-node pointer tripping an innocent tree walk
+  (`(*node).StartingVpn`/`MiGetNextNode`), i.e. a **corruption victim**, not a range-search bug.
+Takeaway: stop static-diffing the faulting functions — the visible symptom is always an innocent victim of a
+reused/clobbered frame. The remaining leverage is the *dynamic* poison-on-free + PTE-cross-check experiment (the
+"Next step" above), which catches the frame at the moment it is handed out while a live PTE/structure still owns
+it. This same root very likely subsumes `ZwAllocateVirtualMemory`, `IoFilesystem`, `MmMapLockedPagesSpecifyCache`
+0x1000, and `NtCreateSection` 0x50 (all PFN/VAD-lifetime faults) — one fix, several quarantines.
 
 ### 9.99 (CLASS FIXED 2026-07-18) The i386 driver-fleet ud2-bomb class — same-module CC-mismatch folds that PASS the linker (scan_ud2 was ntoskrnl-only)
 
@@ -8697,7 +8775,79 @@ sig/VAR class (§9.99/§9.102); (2) if IR-clean, read the fold neighborhood for
 a provably-null deref: eager SEH filters, unguarded lock/lookup results, and
 remember sunk loads mask the true site (this section).
 
-### 9.104 (FIXED 2026-07-18) Non-volatile seqlock loops on KUSER_SHARED_DATA — the arm64 `b .` spin class (kernel32 time fns, EngInitializeSafeSemaphore) + the writer side
+### 9.104 (LAYER-1 FIXED, LAYER-2 = task #18 class, 2026-07-18) NtCreateSection 0x50 is a dropped ProbeForRead sitting on the arm64 exception-dispatch recursion — NOT a deep-MM bug
+
+**Symptom:** kmtest `NtCreateSection` BUGCHECK 0x50 (PAGE_FAULT_IN_NONPAGED_AREA,
+read). Quarantined 2026-07-11 (amd64 sweep 13); task #7 filed it as a "deep MM
+bug (param-capture path)." It is not.
+
+**Layer 1 — a dropped probe (FIXED, kept).** ReactOS C `NtCreateSection`
+(section.c:3177) captures the user `MaximumSize` via `ProbeForReadLargeInteger`
+inside `_SEH2_TRY` — validate range + ULONG alignment, *then* read. The Rust port
+(ARM3/section.rs:2132) had dropped the probe and did a raw `safe_maximum_size =
+*maximum_size`. The test deliberately passes a **bad kernel** `MaximumSize`
+pointer; the raw deref hits it → 0x50 at exactly that address. Fix = restore
+`ProbeForRead(maximum_size, size_of::<LARGE_INTEGER>(), size_of::<ULONG>())`
+before the deref (arch-neutral, shared file). This is the classic §9.96 "dropped
+guard" pattern; find it by diffing the faulting fn's user-param capture vs C.
+
+**Layer 2 — the deep root, unmasked by Layer 1 (task #18 class).** With the probe
+in, a bad pointer now RAISES `ExRaiseAccessViolation` (exintrin.rs:166) exactly as
+the C intends — but a GDB-bt at the resulting bugcheck shows a **recursive
+`KiSynchronousExceptionEntry` cascade** (dozens of nested frames,
+KiSynchronousExceptionHandler re-entering itself) ending in the 0x50. I.e. a
+software raise in the **syscall** path on arm64 is not cleanly caught — the
+dispatch fault-in-fault-handler recurses. This is the **same structural root as
+task #18 / the async-SEH quarantine cluster** (IoCreateFile, RtlExceptionKM):
+arm64 exception dispatch from a KiSvcDispatch frame doesn't catch a raise. So
+retire the "deep MM" framing for NtCreateSection — it is arm64-exception-dispatch,
+and **one dispatch fix clears NtCreateSection + the async-SEH cluster** together.
+
+**Method note:** the dropped probe MASKED the deeper bug — the raw deref 0x50 hid
+the fact that even the *correct* (probe-raising) path fails on arm64. Fixing a
+dropped guard often just advances the symptom to the real root; keep the correct
+fix and re-triage the new fault, don't assume the guard *was* the bug. GDB-bt at
+the halt (wait-for the `*** BUGCHECK` serial line so KeBugCheckEx has halted the
+CPU, then `inspect.sh --command bt`) is what exposed the recursion vs a flat 0x50.
+
+### 9.105 (FIXED 2026-07-18) WoW64 OUT handle/pointer-array not narrowed → 2× guest-heap overrun far from the write
+
+**Symptom:** a 32-bit guest under WoW64 (amd64/arm64 host) takes a first-chance
+AV *inside its own 32-bit ntdll* in `rtl_heap::heap::RtlpRemoveFreeBlock` — the
+`RemoveEntryList(&FreeEntry->FreeList)` unlink, `Blink->Flink = Flink`, with a
+**NULL (or garbage) `Blink`**. The crash is minutes of guest activity *after* the
+real corruption; the faulting "free block" is actually a *busy* allocation whose
+payload got misread as free-list links (its `FreeList.Flink` reads back as an
+HWND/pointer, not a heap address). Under DUMMY_PSEH this surfaces as an
+unhandled guest AV (E5 dispatch → SEH cascade → guest-stack overflow → exit
+0x80). Only *some* GUI apps hit it (calc did; notepad/sol/winmine didn't) —
+whoever enumerates windows/objects into a non-empty buffer.
+
+**Root:** a win32k/ntdll syscall that *fills a caller array of handles or
+pointers* is typed **flat (`ptr`)** in the .spec, so the wow64gen auto-thunk
+hands 64-bit win32k the guest buffer verbatim. The kernel writes **8-byte**
+entries; the guest (its user32/ntdll) sized the buffer at `sizeof(HANDLE)=4`·N.
+Result: an **exactly-2× overrun** that clobbers the adjacent heap block. First
+instance: **`NtUserBuildHwndList`** (behind `Enum{,Child,Thread}Windows`);
+calc's button enumeration corrupted the guest heap. **Native i386 is unaffected**
+(4-byte handles) — this is strictly a WoW64 marshalling gap.
+
+**The dispositive signature in a memory dump:** an array of `{VALUE:4, 0:4}`
+8-byte entries (little-endian: low dword = the real 32-bit handle, high dword =
+0) running *past* its heap block's end. That `{x, 0}` 8-byte stride = 64-bit
+values written into a 32-bit-per-entry buffer. (To read guest memory from the
+host wow64.dll, just deref the guest <4GB address directly — the low-4GB view is
+shared; the E5 fault hook can dump GPRs + a window around the faulting block.)
+
+**Fix:** a manual marshaller (manual-win32k.txt + wow64_manual.c) that gives the
+kernel a host 64-bit scratch array (N·8 B), then narrows each entry's low 32
+bits into the guest's 4-byte-per-entry buffer; a `ULONG` count slot is
+width-identical and flat-passes; the count-query call (`array==NULL`) passes
+through. **Owed sweep:** every flat-typed OUT handle/pointer *array* has this
+shape (`NtUserBuildNameList`/`BuildPropList`, `NtGdi*` handle arrays,
+`NtQueryDirectoryObject`, …) — silently fine until a guest passes a non-empty
+buffer. Add each with an array-narrowing marshaller as coverage reaches it.
+### 9.106 (FIXED 2026-07-18) Non-volatile seqlock loops on KUSER_SHARED_DATA — the arm64 `b .` spin class (kernel32 time fns, EngInitializeSafeSemaphore) + the writer side
 
 **Symptom:** scan_ud2's arm64 driver sweep flags named exported functions whose
 body is (or contains) a branch-to-self spin: kernel32.dll
@@ -8756,7 +8906,7 @@ access in a loop without `read_volatile`; any wait-on-another-thread's-store
 loop without volatile/atomic. When in doubt: SharedUserData is a
 concurrently-mutated MMIO-like page — treat every access as volatile.
 
-### 9.105 (FIXED 2026-07-18) A §9.99/§9.102 fix in the WRONG DIRECTION — `MmDeleteVirtualMapping` is stdcall on i386, and the no-NTAPI header LIES
+### 9.107 (FIXED 2026-07-18) A §9.99/§9.102 fix in the WRONG DIRECTION — `MmDeleteVirtualMapping` is stdcall on i386, and the no-NTAPI header LIES
 
 **The trap, in one line:** resolving a scan_ir_mismatch "def X vs decl system"
 disagreement by making everything match the C *header* (no-NTAPI ⇒ cdecl) —
@@ -8769,9 +8919,11 @@ when the def and every live caller are stdcall.
 `IopInitializeSystemDrivers → PiEnumerateDevice`. `dump-trapframe` at P3:
 `Eip=0x00000000`, `Eax=0`, `DbgArgMark=0xbadb0d00` (pool poison), and a return
 address = `MmFreeMemoryArea@16 + 408` on the faulting stack. This is the classic
-§9.1312-recipe shape: **EIP=0/small-constant + pool poison ⇒ i386 stdcall/cdecl
-ESP desync**, hidden by LLD fuzzy `_foo`↔`_foo@N` linking (link stays green,
-crash at runtime). i386-ONLY is the tell: it's the only arch where cdecl≠stdcall.
+i386 ESP-desync recipe (the "EIP = a small constant / stack-data value with
+`[esp]` not a return address ⇒ i386 stdcall/cdecl ABI mismatch" rule, §9 crash-
+hunting): **EIP=0/small-constant + pool poison ⇒ i386 stdcall/cdecl ESP desync**,
+hidden by LLD fuzzy `_foo`↔`_foo@N` linking (link stays green, crash at runtime).
+i386-ONLY is the tell: it's the only arch where cdecl≠stdcall.
 
 **Root cause:** `MmDeleteVirtualMapping` is declared in `internal/mm.h` WITHOUT
 `NTAPI` (looks cdecl) — but its real i386 ABI is **stdcall (`@16`)**: the Rust

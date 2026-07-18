@@ -54,6 +54,13 @@ class InterfaceSpec:
     base: str | None = None
 
 
+# Win32 pointer typedefs whose spelling doesn't match the L?P/H prefix convention
+# (function-pointer callback types are still plain C pointer state).
+_KNOWN_POINTER_TYPEDEFS = frozenset(
+    {"WNDPROC", "DLGPROC", "FARPROC", "PROC", "TIMERPROC", "HOOKPROC"}
+)
+
+
 @dataclass(frozen=True)
 class PlainStateField:
     """One C-layout object field safe to spell directly in the Rust owner."""
@@ -63,6 +70,9 @@ class PlainStateField:
     name: str
     com_ptr_interface: str | None = None
     owned_cstring: bool = False
+    # CComHeapPtr<T> member: raw *mut T in the Rust owner, CoTaskMemFree'd by the
+    # generated Release when still non-null (the C++ member dtor's implicit free).
+    owned_heap_ptr: bool = False
     array_len: int | None = None
 
     @property
@@ -422,6 +432,12 @@ def _parse_plain_state_field(
     semantics and must remain a loud preflight failure.
     """
     text = " ".join(declaration.split())
+    # A C++11 zero-valued default member initializer is exactly the scaffold's
+    # zero-init (HeapAlloc(HEAP_ZERO_MEMORY) + zeroed ctor write); strip it.
+    # Any non-zero default stays inside the declaration and fails loud below.
+    zero_default = re.fullmatch(r"(?P<decl>.+?)\s*=\s*(?:NULL|nullptr|0|FALSE|false)", text)
+    if zero_default is not None:
+        text = zero_default.group("decl")
     com_ptr = re.fullmatch(r"CComPtr\s*<\s*([A-Za-z_]\w*)\s*>\s+([A-Za-z_]\w*)", text)
     if com_ptr is not None:
         interface, name = com_ptr.groups()
@@ -430,6 +446,15 @@ def _parse_plain_state_field(
             c_type=f"{interface} *",
             name=name,
             com_ptr_interface=interface,
+        )
+    heap_ptr = re.fullmatch(r"CComHeapPtr\s*<\s*([A-Za-z_]\w*)\s*>\s+([A-Za-z_]\w*)", text)
+    if heap_ptr is not None:
+        pointee, name = heap_ptr.groups()
+        return PlainStateField(
+            declaration=text,
+            c_type=f"{pointee} *",
+            name=name,
+            owned_heap_ptr=True,
         )
     cstring = re.fullmatch(r"CStringW\s+([A-Za-z_]\w*)", text)
     if cstring is not None:
@@ -498,7 +523,9 @@ def _parse_plain_state_field(
             "WCHAR",
             "WORD",
         }
-        pointer_typedef = bool(re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base))
+        pointer_typedef = base in _KNOWN_POINTER_TYPEDEFS or bool(
+            re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base)
+        )
         if base not in scalar_types and not pointer_typedef and base not in allowed_pod_types:
             raise CppComError(f"state field array element type is not proven scalar: {declaration}")
         count_text = fixed_array.group("count")
@@ -555,7 +582,9 @@ def _parse_plain_state_field(
         "WCHAR": "",
         "WORD": "",
     }
-    pointer_typedef = bool(re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base))
+    pointer_typedef = base in _KNOWN_POINTER_TYPEDEFS or bool(
+        re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base)
+    )
     if (
         "*" not in c_type
         and base not in scalar_types
@@ -3972,17 +4001,53 @@ def _abi_types_compatible(actual: str, expected: str) -> bool:
     return {left, right} in ({"LPWSTR", "LPCWSTR"}, {"LPSTR", "LPCSTR"})
 
 
-def require_supported_worker_raii(deps: list) -> None:
-    """Reject body-local C++ owners whose lifetime is not deterministic yet."""
+# File-local C++ RAII structs known to appear as body locals in shell32 sources.
+# Each is a hard pre-payment reject unless the invocation supplies a hand-verified
+# Rust lowering via --local-raii NAME=path.rs (see provided_raii_contract).
+_LOCAL_RAII_TYPES = frozenset({"CDrop"})
+
+
+def require_supported_worker_raii(deps: list, provided: frozenset | set = frozenset()) -> None:
+    """Reject body-local C++ owners whose lifetime is not deterministic yet.
+
+    A type in ``provided`` has a hand-verified Rust lowering supplied by the
+    caller (--local-raii); its usage is then governed by the sealed contract
+    from :func:`provided_raii_contract` instead of being rejected.
+    """
     unsupported = []
     for dep in deps:
-        if re.search(r"\bCDrop\s+[A-Za-z_]\w*\s*\(", dep.body_text):
-            unsupported.append(f"{dep.name}: CDrop local")
+        for raii_type in sorted(_LOCAL_RAII_TYPES - set(provided)):
+            if re.search(rf"\b{raii_type}\s+[A-Za-z_]\w*\s*\(", dep.body_text):
+                unsupported.append(f"{dep.name}: {raii_type} local")
     if unsupported:
         raise CppComError(
             "unsupported body-local C++ RAII requires deterministic lowering before payment: "
             + ", ".join(unsupported)
+            + " (supply a hand-verified Rust lowering via --local-raii NAME=path.rs)"
         )
+
+
+def provided_raii_contract(name: str, rust_text: str) -> str:
+    """Deterministic-contract block for one hand-provided local RAII lowering.
+
+    The Rust definition is authored and verified by a human, spliced verbatim
+    into the assembled module, and handed to every worker whose C++ body uses
+    the type — so the model maps usage onto a fixed API instead of inventing
+    drop semantics.
+    """
+    return (
+        f"\n## Provided local RAII type: {name} (deterministic — already lowered)\n"
+        f"The C++ file-local RAII struct `{name}` has a hand-verified Rust lowering that "
+        "WILL be present in this module. Use it exactly as declared below. Do NOT "
+        "re-implement, redefine, modify, or inline its logic.\n"
+        f"```rust\n{rust_text.rstrip()}\n```\n"
+        "Usage mapping (mandatory):\n"
+        f"- C++ `{name} var(args...);` → Rust `let mut var = {name}::new(args...);`\n"
+        "- The C++ destructor is `impl Drop`: it runs automatically at scope exit on "
+        "every path (including each early `return`). Do NOT call cleanup manually and "
+        "do NOT call `core::mem::drop` unless the C++ scope ends there.\n"
+        "- Field reads/writes and method calls map 1:1 with the same spelling.\n"
+    )
 
 
 def apply_interface_method_signatures(
@@ -4746,6 +4811,12 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             )
         if state.owned_cstring:
             lines.append(f"        core::ptr::drop_in_place(&mut (*this).{state.name});")
+        if state.owned_heap_ptr:
+            # The C++ CComHeapPtr member dtor's implicit CoTaskMemFree.
+            lines.append(
+                f"        if !(*this).{state.name}.is_null() "
+                f"{{ CoTaskMemFree((*this).{state.name}.cast()); }}"
+            )
     lines.extend(
         [
             "        Shell32RustObjectUnlock();",
@@ -4911,6 +4982,8 @@ def discover_widl_header(
         roots = [
             repo_root / f"build-{arch}" / "sdk" / "include" / "psdk",
             repo_root / f"build-{arch}-cross" / "sdk" / "include" / "psdk",
+            # reactos-private IDLs (e.g. shobjidl_undoc.idl) generate here.
+            repo_root / f"build-{arch}" / "sdk" / "include" / "reactos",
             repo_root / "sdk" / "include" / "psdk",
             repo_root / "sdk" / "include" / "reactos",
         ]

@@ -1807,6 +1807,165 @@ static NTSTATUS Wow64Manual_NtUserRegisterClassExWOW(ULONG *a)
                                               (PVOID)(ULONG_PTR)a[6]);
 }
 
+/* ---- E6: NtUserGetAtomName ----------------------------------------------- *
+ * user32 GetClassInfo path (class.c) calls NtUserGetAtomName(atom,
+ * PUNICODE_STRING) to resolve a class atom to its name. win32u.spec types it
+ * flat as (long ptr), so the auto-thunk hands 64-bit win32k the guest's 8-byte
+ * UNICODE_STRING32 read as a 16-byte UNICODE_STRING64 — Buffer is picked up
+ * from the wrong offset (garbage), and the kernel writes the atom name through
+ * it -> C0000005 -> BUGCHECK 0x1E under DUMMY_PSEH (calc's class-name lookup
+ * killed the box). In/out marshal: widen US32->US64 (Buffer is a guest <4GB
+ * pointer, zero-extended — the kernel writes the wide name straight into the
+ * guest's own buffer), call, then narrow the updated Length back to the guest
+ * US32.  NtUserGetAtomName(ATOM atom, PUNICODE_STRING pustrName) -> ULONG len */
+static NTSTATUS Wow64Manual_NtUserGetAtomName(ULONG *a)
+{
+    extern ULONG NtUserGetAtomName(ULONG_PTR Atom, PVOID PUstrName);
+    WOW64_UNICODE_STRING32_M *N32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[1];
+    WOW64_UNICODE_STRING64_M N64;
+    ULONG Ret;
+
+    if (!N32)
+        return 0;
+    N64.Length = N32->Length;
+    N64.MaximumLength = N32->MaximumLength;
+    N64.__pad = 0;
+    N64.Buffer = (ULONGLONG)(ULONG_PTR)N32->Buffer; /* guest buffer, kernel writes here */
+    Ret = NtUserGetAtomName(a[0], &N64);
+    N32->Length = N64.Length; /* kernel updated the byte count written */
+    return Ret;
+}
+
+/* ---- E6: NtUserGetClassName ---------------------------------------------- *
+ * user32 GetClassNameW/RealGetWindowClass — same UNICODE_STRING32<->64 gap as
+ * GetAtomName (win32u.spec types it flat as (ptr long ptr)). The guest's
+ * 4-byte-aligned US32 hit win32k's align-8 ProbeForWrite of a 16-byte US64 ->
+ * STATUS_DATATYPE_MISALIGNMENT (0x80000002) -> BUGCHECK 0x1E (calc's window
+ * class-name query). Widen IN, kernel writes the name into the guest Buffer,
+ * narrow Length OUT.  NtUserGetClassName(HWND, BOOL Real, PUNICODE_STRING) */
+static NTSTATUS Wow64Manual_NtUserGetClassName(ULONG *a)
+{
+    extern ULONG NtUserGetClassName(PVOID HWnd, ULONG Real, PVOID PClassName);
+    WOW64_UNICODE_STRING32_M *N32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[2];
+    WOW64_UNICODE_STRING64_M N64;
+    ULONG Ret;
+
+    if (!N32)
+        return 0;
+    N64.Length = N32->Length;
+    N64.MaximumLength = N32->MaximumLength;
+    N64.__pad = 0;
+    N64.Buffer = (ULONGLONG)(ULONG_PTR)N32->Buffer; /* guest buffer, kernel writes here */
+    Ret = NtUserGetClassName((PVOID)(ULONG_PTR)a[0], a[1], &N64);
+    N32->Length = N64.Length;
+    return Ret;
+}
+
+/* ---- E6: NtUserRegisterWindowMessage ------------------------------------- *
+ * user32 RegisterWindowMessageW — every app that defines a private message
+ * (comctl32, shell hooks, DDE) calls it. win32u.spec types it flat (ptr), so
+ * the guest US32 message-name would be read as a US64 (garbage Buffer). IN
+ * only (returns the message atom).  NtUserRegisterWindowMessage(PUNICODE_STRING) */
+static NTSTATUS Wow64Manual_NtUserRegisterWindowMessage(ULONG *a)
+{
+    extern ULONG NtUserRegisterWindowMessage(PVOID PMessageName);
+    WOW64_UNICODE_STRING32_M *N32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[0];
+    WOW64_UNICODE_STRING64_M N64;
+
+    if (!N32)
+        return 0;
+    N64.Length = N32->Length;
+    N64.MaximumLength = N32->MaximumLength;
+    N64.__pad = 0;
+    N64.Buffer = (ULONGLONG)(ULONG_PTR)N32->Buffer; /* guest name buffer (read) */
+    return NtUserRegisterWindowMessage(&N64);
+}
+
+/* ---- E6: NtUserGetKeyboardLayoutName ------------------------------------- *
+ * user32 GetKeyboardLayoutNameW — same single-US in/out shape as GetAtomName;
+ * the kernel writes the KLID (a 9-char string) into the guest Buffer.
+ *   NtUserGetKeyboardLayoutName(_Inout_ PUNICODE_STRING) */
+static NTSTATUS Wow64Manual_NtUserGetKeyboardLayoutName(ULONG *a)
+{
+    extern ULONG NtUserGetKeyboardLayoutName(PVOID PName);
+    WOW64_UNICODE_STRING32_M *N32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[0];
+    WOW64_UNICODE_STRING64_M N64;
+    ULONG Ret;
+
+    if (!N32)
+        return 0;
+    N64.Length = N32->Length;
+    N64.MaximumLength = N32->MaximumLength;
+    N64.__pad = 0;
+    N64.Buffer = (ULONGLONG)(ULONG_PTR)N32->Buffer; /* guest buffer, kernel writes here */
+    Ret = NtUserGetKeyboardLayoutName(&N64);
+    N32->Length = N64.Length;
+    return Ret;
+}
+
+/* ---- E7: NtUserBuildHwndList --------------------------------------------- *
+ * EnumWindows/EnumChildWindows/EnumThreadWindows -> user32 -> this syscall,
+ * which fills a caller HWND[] and returns the count. win32u.spec types the
+ * array slot flat (ptr), so the auto-thunk hands 64-bit win32k the guest's
+ * buffer verbatim — and the kernel writes 8-byte HWNDs into it. The guest
+ * (user32 BuildHwndList) sized that buffer at sizeof(HWND)*count = 4 bytes
+ * per entry, so the kernel's 8-bytes-per-entry write is a 2x OVERRUN that
+ * clobbers the adjacent heap block; the damage surfaces minutes later as a
+ * bad free-list link in RtlpRemoveFreeBlock (calc's button-enum killed the
+ * guest heap this way — a NULL Blink -> BUGCHECK-shaped guest AV -> SEH
+ * cascade). Marshal it: give the kernel a host 64-bit scratch array, then
+ * narrow each handle's low 32 bits back into the guest's 4-byte-per-entry
+ * buffer. The count slot (pcHwndNeeded) is a ULONG — same width 32/64 — so it
+ * flat-passes. Signature:
+ *   NtUserBuildHwndList(HDESK, HWND parent, BOOLEAN children, ULONG tid,
+ *                       ULONG cHwnd, HWND *phwndList, ULONG *pcHwndNeeded) */
+static NTSTATUS Wow64Manual_NtUserBuildHwndList(ULONG *a)
+{
+    extern NTSTATUS NtUserBuildHwndList(HANDLE hDesktop, HANDLE hwndParent,
+                                        BOOLEAN bChildren, ULONG dwThreadId,
+                                        ULONG cHwnd, PVOID phwndList,
+                                        PULONG pcHwndNeeded);
+    HANDLE hDesktop = (HANDLE)(ULONG_PTR)a[0];
+    HANDLE hParent  = (HANDLE)(ULONG_PTR)a[1];
+    BOOLEAN bChild  = (BOOLEAN)a[2];
+    ULONG   dwTid   = a[3];
+    ULONG   cHwnd   = a[4];
+    ULONG  *pList32 = (ULONG *)(ULONG_PTR)a[5];       /* guest OUT array, 4B/entry */
+    PULONG  pNeeded = (PULONG)(ULONG_PTR)a[6];        /* IN/OUT count, 4B both sides */
+    PVOID   Tmp     = NULL;
+    SIZE_T  Size;
+    NTSTATUS St;
+    ULONG   n, i;
+
+    /* No array write (query-count call or empty buffer): flat-pass the guest
+     * pointer — the kernel only touches pNeeded, which is width-identical. */
+    if (!pList32 || cHwnd == 0)
+        return NtUserBuildHwndList(hDesktop, hParent, bChild, dwTid, cHwnd,
+                                   (PVOID)(ULONG_PTR)a[5], pNeeded);
+
+    Size = (SIZE_T)cHwnd * sizeof(PVOID);             /* host: 8 bytes per HWND */
+    St = NtAllocateVirtualMemory((HANDLE)(LONG_PTR)-1, &Tmp, 0, &Size,
+                                 MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (St < 0)
+        return St;
+
+    St = NtUserBuildHwndList(hDesktop, hParent, bChild, dwTid, cHwnd, Tmp, pNeeded);
+    if (St >= 0)
+    {
+        n = pNeeded ? *pNeeded : 0;                   /* count kernel actually wrote */
+        if (n > cHwnd)
+            n = cHwnd;
+        for (i = 0; i < n; i++)
+            pList32[i] = (ULONG)((const ULONGLONG *)Tmp)[i]; /* narrow 64 -> 32 */
+    }
+
+    {
+        SIZE_T Free = 0;
+        NtFreeVirtualMemory((HANDLE)(LONG_PTR)-1, &Tmp, &Free, MEM_RELEASE);
+    }
+    return St;
+}
+
 /* ---- E4b: NtUserGetClassInfo --------------------------------------------- *
  * user32 GetClassInfoExW/A — hit by the stock create-window path (doom/testgui
  * probe their class before registering). The raw auto-thunk fed win32k the
@@ -2106,6 +2265,30 @@ static WOW64_UNICODE_STRING64_M *Wow64pUS32to64(ULONG Guest32,
     Out->__pad = 0;
     Out->Buffer = (ULONGLONG)(ULONG_PTR)S32->Buffer;
     return Out;
+}
+
+/* ---- E8: NtUserUnregisterClass ------------------------------------------- *
+ * regedit/comctl32 class teardown. NtUserUnregisterClass(PUNICODE_STRING
+ * ClassNameOrAtom, HINSTANCE, PCLSMENUNAME) is typed flat (ptr ptr ptr) in
+ * win32u.spec, so wow64gen emits a silent-wrong FLAT thunk: 64-bit win32k reads
+ * the guest's 8-byte UNICODE_STRING32 as a 16-byte UNICODE_STRING64, picks up
+ * Buffer from the wrong offset (garbage), and ProbeAndCaptureUnicodeStringOrAtom
+ * copies the "string" from that wild address -> C0000005 in win32k's raw_move
+ * -> BUGCHECK 0x1E under DUMMY_PSEH (regedit killed the box on the amd64 E8
+ * ladder). The class name marshals exactly like GetClassName/GetAtomName; the
+ * atom form (Buffer < 0x10000, Length=0) survives the zero-extend + the kernel's
+ * IS_ATOM check (Wow64pUS32to64 handles both). hInstance flat-passes.
+ * pClassMenuName is IGNORED by the kernel (NtUserUnregisterClass passes NULL to
+ * UserUnregisterClass — class.rs), so its guest pointer passes through untouched
+ * (nothing is ever written back through it). */
+static NTSTATUS Wow64Manual_NtUserUnregisterClass(ULONG *a)
+{
+    extern LONG NtUserUnregisterClass(PVOID ClassNameOrAtom, PVOID hInstance,
+                                      PVOID pClassMenuName);
+    WOW64_UNICODE_STRING64_M Name64;
+    return (NTSTATUS)NtUserUnregisterClass(Wow64pUS32to64(a[0], &Name64),
+                                           (PVOID)(ULONG_PTR)a[1],
+                                           (PVOID)(ULONG_PTR)a[2]);
 }
 
 /* NtUserFindExistingCursorIcon(pustrModule, pustrRsrc, param):
@@ -2890,6 +3073,18 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserRegisterClassExWOW(Arguments);
     if (WOW64_IS("NtUserGetClassInfo"))
         return Wow64Manual_NtUserGetClassInfo(Arguments);
+    if (WOW64_IS("NtUserGetAtomName"))
+        return Wow64Manual_NtUserGetAtomName(Arguments);
+    if (WOW64_IS("NtUserGetClassName"))
+        return Wow64Manual_NtUserGetClassName(Arguments);
+    if (WOW64_IS("NtUserRegisterWindowMessage"))
+        return Wow64Manual_NtUserRegisterWindowMessage(Arguments);
+    if (WOW64_IS("NtUserGetKeyboardLayoutName"))
+        return Wow64Manual_NtUserGetKeyboardLayoutName(Arguments);
+    if (WOW64_IS("NtUserUnregisterClass"))
+        return Wow64Manual_NtUserUnregisterClass(Arguments);
+    if (WOW64_IS("NtUserBuildHwndList"))
+        return Wow64Manual_NtUserBuildHwndList(Arguments);
     if (WOW64_IS("NtUserThunkedMenuItemInfo"))
         return Wow64Manual_NtUserThunkedMenuItemInfo(Arguments);
     if (WOW64_IS("NtUserCreateWindowEx"))

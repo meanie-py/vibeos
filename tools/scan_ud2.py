@@ -91,16 +91,16 @@ EXPECTED_UD2 = {
 # §9.99 same-crate CC fold: mm/rmap.rs (where MmPageOutPhysicalAddress lives)
 # IMPORTED MmDeleteVirtualMapping from the bindgen ddk module (extern "C" = cdecl
 # on i386) while the def + every hot caller are extern "system" (stdcall @16 —
-# the REAL ABI; the no-NTAPI decl in internal/mm.h is misleading, §9.105). That
+# the REAL ABI; the no-NTAPI decl in internal/mm.h is misleading, §9.107). That
 # intra-crate cdecl-vs-stdcall disagreement folds MmPageOutPhysicalAddress to a
 # ud2 (cold balance-manager path → tolerated latent). Fixed by giving rmap.rs a
 # LOCAL extern "system" decl (matching marea.rs/section.rs), NOT by flipping the
 # ABI to cdecl — cdecl desyncs ESP at the marea.rs VirtFn stdcall call and
-# exec-at-0s during i386 driver init (§9.105). The other nine were already 0-hit
+# exec-at-0s during i386 driver init (§9.107). The other nine were already 0-hit
 # on every kernel (i386/amd64/arm64 UP + amd64 ntkrnlmp SMP, verified by direct
 # sweep). There was never a CGU partitioning bug — these were fold-class
 # landmines all along. Any future hit here must be root-caused with
-# tools/scan_ir_mismatch.py (field manual §9.99/§9.102/§9.105), NOT re-baselined.
+# tools/scan_ir_mismatch.py (field manual §9.99/§9.102/§9.107), NOT re-baselined.
 KNOWN_CGU_UD2: set[str] = set()
 
 # arm64: named functions whose body is legitimately a branch-to-self `b .` spin
@@ -194,14 +194,14 @@ KNOWN_DRIVER_UD2: dict[str, set[str]] = {
     "freeldr.exe": {"LoadAndBootWindowsCommon"},
     # Do NOT add new entries without a written root-cause attempt; every
     # 2026-07-18 first-sweep latent (user32 SwitchWndProc_common §9.103
-    # null-blind deref, kernel32 seqlock spins §9.104, win32k
+    # null-blind deref, kernel32 seqlock spins §9.106, win32k
     # EngInitializeSafeSemaphore wait-loop) was root-caused and FIXED the
     # same day — the baseline is for justified terminal shapes only.
     # (kernel32 time/locale spins RESOLVED 2026-07-18: they were non-volatile
     # KUSER_SHARED_DATA seqlock capture loops — LLVM hoisted the plain loads,
     # leaving an unconditional `b .` if entered mid-update. Fixed with
     # read_volatile capture across kernel32/vista/ke-inlines/ntdll/clock.rs,
-    # plus write_volatile on the kernel writer side. Field manual §9.104.)
+    # plus write_volatile on the kernel writer side. Field manual §9.106.)
 }
 # the SMP kernel image shares ntoskrnl's known-CGU baselines
 

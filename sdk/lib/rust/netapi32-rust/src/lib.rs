@@ -37,6 +37,11 @@ pub mod netapi32 {
     pub mod user; // NetUser* (accounts) — the biggest unit
     pub mod utils; // Netp*/wprint_* internal helpers
     pub mod wksta; // NetWksta*/NetWkstaTransportEnum
+    // NOTE: the 7 RPC-stub tail files (browser/dssetup/misc/netlogon/schedule/srvsvc/wksta_new)
+    // are translated+banked (tools/rustconv/.responses/, assembled copies in
+    // ~/vibeos-rust-staging/netapi32-tail-assembled/) but NOT yet integrated: they call
+    // self-contained MIDL client interfaces (*_c.h) whose mutually-conflicting wire types need a
+    // gen_driver_types "MIDL client mode" first. Tracked in the roadmap. C stays active meanwhile.
 }
 
 // staticlib (libnetapi32_rust.a) needs a panic handler + eh personality (no_std cohab),

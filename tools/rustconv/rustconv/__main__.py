@@ -68,6 +68,7 @@ from .cpp_com import (
     normalize_worker_semantics,
     parse_widl_interface,
     prepare_helper_closure,
+    provided_raii_contract,
     render_class_scaffold,
     render_cpp_support,
     render_interface,
@@ -364,10 +365,18 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str):
     # `GetClassID(CLSID*)` defined out-of-line). Only a genuine same-name AND
     # same-arity body present in BOTH header and impl is a real double-definition
     # conflict; true overloads are resolved downstream by the arity-based binder.
+    # A stripped destructor shares (name, arity) with a 0-arg constructor —
+    # ctor-vs-dtor is never a double definition, so the kind flags join the key.
     existing = {
-        (item.name, len(item.params)) for item in scan.functions if item.cpp_class == class_name
+        (item.name, len(item.params), item.is_ctor, item.is_dtor)
+        for item in scan.functions
+        if item.cpp_class == class_name
     }
-    duplicate = sorted(item.name for item in inline if (item.name, len(item.params)) in existing)
+    duplicate = sorted(
+        item.name
+        for item in inline
+        if (item.name, len(item.params), item.is_ctor, item.is_dtor) in existing
+    )
     if duplicate:
         raise CppComError(
             f"{class_name}: method body defined in both implementation and header: "
@@ -1450,6 +1459,21 @@ def cmd_translate(args):
     # crosses this. None = no cap. Prevents a runaway bill.
     cost_cap = getattr(args, "cost_cap", None)
     no_resume = getattr(args, "no_resume", False)
+
+    # --local-raii NAME=PATH: hand-verified Rust lowerings for file-local C++ RAII
+    # structs. Parsed and read up front so a bad path fails before any paid call.
+    local_raii_impls: dict[str, str] = {}
+    for spec_arg in getattr(args, "local_raii", []) or []:
+        if "=" not in spec_arg:
+            raise CppComError(f"--local-raii expects NAME=PATH, got: {spec_arg}")
+        raii_name, _, raii_path = spec_arg.partition("=")
+        raii_name = raii_name.strip()
+        raii_file = Path(raii_path.strip()).expanduser()
+        if not (rustconv_target.name == "shell32" and getattr(args, "cpp_com", False)):
+            raise CppComError("--local-raii currently requires shell32 --cpp-com")
+        if not raii_file.is_file():
+            raise CppComError(f"--local-raii {raii_name}: no such file: {raii_file}")
+        local_raii_impls[raii_name] = raii_file.read_text()
     if not args.dry_run:
         warn_if_tmp_output(getattr(args, "output", None))
         archive = RunArchive(label=target_path.name, model=model, target=rustconv_target.name)
@@ -1546,7 +1570,7 @@ def cmd_translate(args):
             sorted_deps = prepare_helper_closure(
                 deps, args.class_name, cpp_com_cls.plain_state_fields()
             )
-            require_supported_worker_raii(sorted_deps)
+            require_supported_worker_raii(sorted_deps, provided=set(local_raii_impls))
             cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
 
         fact_seal_enabled = bool(
@@ -1596,6 +1620,11 @@ def cmd_translate(args):
             + (call_contract(call_seals[dep.name]) if dep.name in call_seals else "")
             for dep in sorted_deps
         }
+        for raii_name, raii_rust in local_raii_impls.items():
+            raii_block = provided_raii_contract(raii_name, raii_rust)
+            for dep in sorted_deps:
+                if re.search(rf"\b{raii_name}\b", dep.body_text):
+                    deterministic_contracts[dep.name] += raii_block
 
         # `--fn` selects the paid/output unit, not its dependency knowledge.
         # Preserve the complete prepared closure for local-worker signatures.
@@ -2097,6 +2126,13 @@ def cmd_translate(args):
                     + "\n  - ".join(parallel_errors)
                 )
 
+        # Sequential-path reject collector — mirrors the parallel path's
+        # `parallel_errors`: a per-worker audit reject is recorded and the run
+        # CONTINUES (all other accepted paid artifacts stream to cache), then a
+        # single CppComError surfaces every reject at once after the loop. The
+        # old behavior `raise`d on the first reject, abandoning the rest of an
+        # already-paid sonnet run (sonnet is sequential — conc is ignored).
+        sequential_errors: list[str] = []
         for func_idx, dep in enumerate(sorted_deps, 1):
             if conc > 1:
                 break  # already handled by the parallel path above
@@ -2220,7 +2256,12 @@ def cmd_translate(args):
                         error=str(error),
                         **_result_fields(result, elapsed_ms),
                     )
-                    raise
+                    sequential_errors.append(str(error))
+                    print(
+                        f"  [{func_idx}] {dep.name} AUDIT REJECT: {error}",
+                        file=sys.stderr,
+                    )
+                    continue
                 translated[dep.name] = result.rust_code
                 # Persist for cross-run resume the instant it returns.
                 cache.put(dep.name, dep.body_text, result.rust_code)
@@ -2275,6 +2316,13 @@ def cmd_translate(args):
                 )
                 capped = True
                 break
+
+        if sequential_errors:
+            raise CppComError(
+                "sequential translation completed with rejected/failed worker(s); "
+                "all other accepted paid artifacts were preserved in the resume cache:\n  - "
+                + "\n  - ".join(sequential_errors)
+            )
 
         if not translated:
             print(f"  No functions translated for {c_file.name}", file=sys.stderr)
@@ -2442,6 +2490,11 @@ def cmd_translate(args):
             )
             if cpp_com_wide_statics:
                 deterministic.append(cpp_com_wide_statics)
+            for raii_name, raii_rust in local_raii_impls.items():
+                deterministic.append(
+                    f"// --local-raii {raii_name}: hand-verified lowering (spliced verbatim; "
+                    "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
+                )
             stitched = "\n\n".join(deterministic) + "\n\n" + stitched
 
         # COM vtbl tables, GENERATED — never asked of the model. `translate` is
@@ -3154,6 +3207,17 @@ def main():
     p.add_argument(
         "--sdk-header",
         help="WIDL-generated C header used as COM vtable ground truth",
+    )
+    p.add_argument(
+        "--local-raii",
+        dest="local_raii",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="shell32 COM mode: hand-verified Rust lowering for a file-local C++ RAII "
+        "struct (e.g. CDrop=tools/rustconv/provided_raii/CDrop.rs). Lifts the "
+        "pre-payment reject for NAME and seals its Rust API into each affected "
+        "worker prompt. Repeatable.",
     )
     p.add_argument(
         "--fn",

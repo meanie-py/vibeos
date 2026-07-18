@@ -50,7 +50,7 @@ Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib
 | **ole32.dll** (COM runtime) | `ole32-rust`: **the entire DLL is Rust — all 29 TUs.** The COM core (compobj + marshal/stubmanager/rpc/ftmarshal/git); the mechanical ring (task allocator + streams + lockbytes, the Running Object Table + all 6 monikers, `bindctx`/`errorinfo`/`enumx`/`dictionary`, `ole2`/`ole2impl`/`ole32_main`, `clipboard`, `comcat`, `oleproxy`, the NDR `usrmarshal`); and the storage/embedding cluster (`storage32` — the compound-file implementation, `stg_stream`, `stg_prop`, `datacache`, `defaulthandler`, `oleobj`). The C `SOURCE` list in the CMakeLists is EMPTY. Boots ×3. `guid.c` stays C permanently (an `initguid.h` TU whose job is emitting the moniker CLSIDs as data) | **done** |
 | **oleaut32.dll** (OLE automation) | `oleaut32-rust`: **the entire DLL is Rust — all 14 TUs.** The automation core: BSTR (`oleaut`), VARIANT (`variant`), the VarXxxFromYyy coercion matrix (`vartype`), SAFEARRAY (`safearray`), the typelib reader/writer + ITypeInfo/ITypeLib (`typelib` + submodules), IDispatch (`dispatch`), user-marshal (`usrmarshal`), `hash`. Plus the OLE-control cluster (2026-07-13): `olefont` (IFont/IFontDisp), `olepicture` (IPicture + OleLoadPicture*), `varformat` (the VarFormat engine), `connpt` (connection points), `recinfo` (IRecordInfo), `olepropframe`. The C `SOURCE` list in the CMakeLists is EMPTY. Boots ×3. `export_audit` clean: all 398 spec exports have a `#[no_mangle]` Rust definition with the spec's convention | **done** |
 | **ws2_32.dll** (winsock client) | `ws2_32-rust`: **the entire DLL is Rust — all 34 compiled TUs.** The socket API (`socklife`/`sockctrl`/`send`/`recv`/`select`/`ioctl`/`event`/`qos`/`dupsock`), the transport + namespace catalogs (`dcatalog`/`dcatitem`/`nscatalo`/`nscatent`/`nspinstl`/`spinstal`), the object model (`dprocess`/`dprovide`/`dsocket`/`dthread`/`nsprovid`/`nsquery`), the WSP upcall table (`sputil`), async getXbyY (`async`/`getxbyxx`/`getproto`), name resolution (`rnr`/`qshelpr`/`addrinfo`/`addrconv`/`enumprot`/`rasdial`), and startup/dllmain/wsautil/bhook. The C `SOURCE` list in the CMakeLists is EMPTY. Boots ×3, and `test_usermode_winsock_roundtrip` (the M5 capstone) passes ON the Rust: TCP echo + UDP DNS + a **real HTTP request to the public internet**, all via ws2_32→msafd→AFD→netstack→smoltcp. `verify_lost_exports` + `verify_c_signatures` clean | **done** |
-| **winsock/net satellite DLLs** | Cohab-flipped to Rust alongside ws2_32 (2026-07-17/18): **wshtcpip** (`wshtcpip-rust`, both TUs — the TCP/IP WSH provider), **ws2help** (`ws2help-rust`, dual-role static lib), **mswsock** (`mswsock-rust`), **wshirda** (`wshirda-rust` — the IrDA WSH provider, all-stub), **userenv** (`userenv-rust`). **Partial flips:** **netapi32** (`netapi32-rust`, 14/21 TUs; 7 RPC-stub files still C, owe a pure-LLM pass), **iphlpapi** (`iphlpapi-rust`, `iphlpapi_main.c` only; the ~10 `*_reactos.c`/`icmp.c`/`media.c`/`registry.c`/`address.c` stay C). Still fully C (not yet translated): **dhcpcsvc**, **dnsapi** | **partial** |
+| **winsock/net satellite DLLs** | Cohab-flipped to Rust alongside ws2_32 (2026-07-17/18): **wshtcpip** (`wshtcpip-rust`, both TUs — the TCP/IP WSH provider), **ws2help** (`ws2help-rust`, dual-role static lib), **mswsock** (`mswsock-rust`), **wshirda** (`wshirda-rust` — the IrDA WSH provider, all-stub), **userenv** (`userenv-rust`). **Partial flips:** **netapi32** (`netapi32-rust`, 14/21 TUs; 7 RPC-stub files still C, owe a pure-LLM pass), **iphlpapi** (`iphlpapi-rust`, `iphlpapi_main.c` only; the ~10 `*_reactos.c`/`icmp.c`/`media.c`/`registry.c`/`address.c` stay C), **dnsapi** (`dnsapi-rust`, all 8 TUs — FULL flip, 2026-07-18; the single `dnsrslvr_c.h` MIDL interface + the `adns` staticlib stay C). Still C: **dhcpcsvc** (translated + banked, integration in progress); netapi32's 7 RPC-stub tail owed (6 conflicting MIDL interfaces need a gen_driver_types MIDL-client mode) | **partial** |
 | **hal** (x86 + arm64 stub) | 42+ cohab markers; `.S` NT-ABI + setjmp glue *(not re-verified this pass)*. **i386 default flavor is now APIC** (LAPIC/IOAPIC/TPR, lazy-IRQL, RTC clock — i386-apic-hal lane, 2026-07-16); the legacy 8259 PIC HAL is preserved in-tree, gated off, behind `vibeos-cli build --hal-pic` (`VIBEOS_PIC_HAL`). amd64 was already APIC | **~97%** |
 | **rtl** static lib | 80/82 `.c` flipped; `dbgprint_variadic.c` + asm floor | **~100%** |
 | Cohab helper libs (cmlib, rossym, evtlib, inflib, …) | real `.c` flipped for kernel/cross consumers | **~100%** |
@@ -184,10 +184,24 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
   security.c` + generated RPC.
-- **shell32 COM classes (81 `.cpp`, ~64K LOC) — pilot in flight.** `CDropTargetHelper`,
-  `CActiveDesktop`, `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`,
-  `CFontsFolder`, `CAdminToolsFolder`, and `CMyDocsFolder` are Rust-owned activated classes.
-  `CCopyAsPathMenu` is the first out-of-sample cheap-model
+- **shell32 COM classes (81 `.cpp`, ~64K LOC) — 26 of 33 activatable classes Rust-owned.**
+  Rust-owned activated classes now span `CDropTargetHelper`, `CActiveDesktop`,
+  `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`, `CFontsFolder`,
+  `CAdminToolsFolder`, `CMyDocsFolder`, `CNewMenu`, `CSendToMenu`, `CPrinterFolder`,
+  `COpenWithMenu`, `CNetFolder`, `CMenuBand`, `CFolderOptions`, `CDrivesFolder`,
+  `CQueryAssociations`, `CShellLink`, `CUserNotification`, `CControlPanelFolder`, `CRecycleBin`,
+  the folder-cohort anchor pair (2026-07-18) — **`CFSFolder`** (the file-system folder)
+  and **`CDesktopFolder`** (the desktop root) — and the capability-unlocked pair (2026-07-18 PM):
+  **`CDrvDefExt`** (drive-properties sheet; first `--local-raii` hand-verified RAII lowering) and
+  **`CMergedFolder`** (second menuband-rust shared-staticlib class; `IAugmentedShellFolder`
+  promoted to `sdk/include/reactos/shobjidl_undoc.idl` so WIDL owns its vtable ABI). Per-class
+  history + the reusable integration playbook live in
+  `docs/engineering/active-lanes/shell32-com-plan.md`. `CMenuBand` + `CMergedFolder` are
+  shared-infrastructure (the `menuband-rust` staticlib linked by both shell32 and rshell).
+  The remaining 7 are capability-gated: CMoveToMenu/CCopyToMenu on the concrete-local-base
+  inherited-layout mapper, CFileDefExt (+embedded C++ member), CMenuSite/CMenuDeskBar
+  (CWindowImpl window machinery), CShellDispatch (typelib).
+  `CCopyAsPathMenu` was the first out-of-sample cheap-model
   class: two deterministic workers plus eight unchanged cached DeepSeek workers went from
   62 diagnostics per architecture to zero after deterministic support closure, then passed
   the full integrated three-architecture gate. rustconv now
@@ -206,9 +220,15 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   scalar-state pilot, `CCopyAsPathMenu` is the first object-field RAII-state pilot, and
   `CMyDocsFolder` is the first six-interface class with a deterministic `FinalConstruct`
   activation/failure-cleanup path.
-  C++/RAII state, aggregatable classes, custom/inherited base
-  layouts, same-arity overloads, and internal COM objects without an `OBJECT_ENTRY` remain loud
-  preflight failures until their layout/lifetime/construction mappings are implemented.
+  The 9 remaining activatable classes are all capability-gated (no quick pipeline wins):
+  `CDrvDefExt` (preflight passes; translate blocks on a body-local custom-RAII struct — the most
+  tractable next class); `CFileDefExt`/`CShellDispatch`/`CMenuDeskBar`/`CMoveToMenu`/`CCopyToMenu`
+  (inherited-layout mapping for CObjectWithSiteBase/IDispatchImpl/CWindowImpl/shared bases — each
+  with a SECONDARY hard blocker: embedded C++ object member, typelib, window machinery, or a
+  `WNDPROC`); and `CMenuSite`/`CMergedFolder` (shared-`shellmenu` staticlib + a scanner FP / a WIDL
+  flattened-vtable gap). Custom/inherited base layouts, aggregatable classes, and body-local
+  custom-RAII remain loud preflight failures until their mappings are implemented — see the
+  lane doc's "Remaining activatable shell32 classes" table.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions
