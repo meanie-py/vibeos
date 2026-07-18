@@ -126,7 +126,7 @@ extern "C" {
     fn CdUpdateDirentFromRawDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, DirContext: *const DIRENT_ENUM_CONTEXT, Dirent: *mut DIRENT, );
 }
 extern "C" {
-    fn CdUpdateDirentName( IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, IgnoreCase: BOOLEAN, );
+    fn CdUpdateDirentName(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, IgnoreCase: u32);
 }
 extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;

@@ -119,14 +119,14 @@ extern "system" {
     fn IopArbIrqInitialize() -> NTSTATUS;
     fn IopArbBusNumberInitialize() -> NTSTATUS;
     fn PnpRegMultiSzToUnicodeStrings( KeyValueInformation: PKEY_VALUE_FULL_INFORMATION, GroupTable: *mut PUNICODE_STRING, Count: *mut ULONG, ) -> NTSTATUS;
-    fn PnpRegSzToString(Buffer: PVOID, DataLength: ULONG, Length: *mut USHORT);
+    fn PnpRegSzToString(Buffer: PVOID, DataLength: ULONG, Length: *mut USHORT) -> u8;
 }
 
 // cdecl functions (no NTAPI in C declarations)
 extern "C" {
     fn PipAllocateDeviceNode(Pdo: PDEVICE_OBJECT) -> PDEVICE_NODE;
     fn PnpRootInitializeDevExtension();
-    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: u32);
+    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: u32) -> u32;
     fn PiQueueDeviceAction( DeviceObject: PDEVICE_OBJECT, Action: u32, Callback: PVOID, Context: PVOID, );
 }
 

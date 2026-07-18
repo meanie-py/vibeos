@@ -261,7 +261,7 @@ pub unsafe extern "system" fn CmpSetSecurityDescriptor(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CmpAssignSecurityDescriptor(
+pub unsafe extern "C" fn CmpAssignSecurityDescriptor(
     Kcb: PCM_KEY_CONTROL_BLOCK,
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {

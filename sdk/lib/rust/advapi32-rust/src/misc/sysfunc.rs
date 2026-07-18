@@ -2,8 +2,8 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn CRYPT_DEShash(dst: LPBYTE, key: *const BYTE, src: *const BYTE);
-    fn CRYPT_DESunhash(dst: LPBYTE, key: *const BYTE, src: *const BYTE);
+    fn CRYPT_DEShash(dst: *mut core::ffi::c_uchar, key: *const core::ffi::c_uchar, src: *const core::ffi::c_uchar) -> *mut core::ffi::c_uchar;
+    fn CRYPT_DESunhash(dst: *mut core::ffi::c_uchar, key: *const core::ffi::c_uchar, src: *const core::ffi::c_uchar) -> *mut core::ffi::c_uchar;
     fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
 }
 extern "system" {

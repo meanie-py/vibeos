@@ -37,8 +37,8 @@ const STATUS_NAME_TOO_LONG: NTSTATUS = 0xC0000106_u32 as i32;
 // cdecl (`_Name` / `__Name`):
 extern "C" {
     fn EngpUpdateGraphicsDeviceList() -> NTSTATUS;
-    fn MenuInit();
-    fn InitCursorImpl();
+    fn MenuInit() -> u32;
+    fn InitCursorImpl() -> u32;
     fn GetW32ProcessInfo() -> PPROCESSINFO;
     fn GetProcessLuid(Thread: *mut core::ffi::c_void, Process: PEPROCESS, Luid: *mut LUID) -> NTSTATUS;
     // MmCopyToCaller(x,y,z) is a macro for `_MmCopyToCaller((PCHAR)x,(PCHAR)y,(UINT)z)`
@@ -57,7 +57,7 @@ extern "C" {
 
 // stdcall (`_Name@N`) — extern "system" = stdcall on i386, cdecl elsewhere:
 extern "system" {
-    fn co_IntLoadDefaultCursors();
+    fn co_IntLoadDefaultCursors() -> u32;
     fn EngpFindGraphicsDevice(arg1: PUNICODE_STRING, arg2: ULONG) -> PGRAPHICS_DEVICE;
     fn InitMetrics() -> BOOL;
 }
@@ -66,14 +66,14 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn co_IntSetWndIcons();
-    fn co_IntShowDesktop(pdesk: PDESKTOP, cx: LONG, cy: LONG, fShow: BOOLEAN);
+    fn co_IntSetWndIcons() -> u32;
+    fn co_IntShowDesktop(pdesk: PDESKTOP, cx: LONG, cy: LONG, fShow: u32) -> u32;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn co_IntSetWndIcons();
-    fn co_IntShowDesktop(pdesk: PDESKTOP, cx: LONG, cy: LONG, fShow: BOOLEAN);
+    fn co_IntSetWndIcons() -> u32;
+    fn co_IntShowDesktop(pdesk: PDESKTOP, cx: LONG, cy: LONG, fShow: u32) -> u32;
 }
 
 // MmCopyToCaller(x,y,z) macro wrapper — forwards to the cdecl `_MmCopyToCaller`.
@@ -770,7 +770,7 @@ unsafe fn co_IntInitializeDesktopGraphics_impl() -> BOOL {
             pdesk,
             (*gpsi_pusi(gpsi)).aiSysMet[SM_CXSCREEN as usize],
             (*gpsi_pusi(gpsi)).aiSysMet[SM_CYSCREEN as usize],
-            1u8,
+            (1u8) as _,
         );
     }
 

@@ -5,7 +5,7 @@ use winsrv_sys::consts::*;
 use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 
 extern "system" {
-    pub fn CONTAINING_RECORD(address: PVOID, struct_type: PVOID, field_offset: usize) -> PVOID;
+    pub fn CONTAINING_RECORD(addr: *const u8, _type: usize, field_off: usize,) -> *mut u8;
     pub fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PVOID, a: ULONG, r: PVOID, s: PVOID, );
     pub fn _InterlockedIncrement(addend: *mut LONG) -> LONG;
     pub fn _InterlockedDecrement(addend: *mut LONG) -> LONG;
@@ -36,15 +36,15 @@ pub(crate) unsafe fn AddInputEvents(
         if AppendToEnd != 0 {
             let offset = core::mem::offset_of!(ConsoleInput, ListEntry);
             ConInRec = CONTAINING_RECORD(
-                (*Console).InputBuffer.InputEvents.Blink as PVOID,
-                core::ptr::null_mut(),
+                ((*Console).InputBuffer.InputEvents.Blink as PVOID) as _,
+                0,
                 offset,
             ) as *mut ConsoleInput;
         } else {
             let offset = core::mem::offset_of!(ConsoleInput, ListEntry);
             ConInRec = CONTAINING_RECORD(
-                (*Console).InputBuffer.InputEvents.Flink as PVOID,
-                core::ptr::null_mut(),
+                ((*Console).InputBuffer.InputEvents.Flink as PVOID) as _,
+                0,
                 offset,
             ) as *mut ConsoleInput;
         }
@@ -157,7 +157,7 @@ pub(crate) unsafe fn PurgeInputBuffer(InputBuffer: PCONSOLE_INPUT_BUFFER) {
     while IsListEmpty(core::ptr::addr_of_mut!((*InputBuffer).InputEvents)) == 0 {
         CurrentEntry = RemoveHeadList(core::ptr::addr_of_mut!((*InputBuffer).InputEvents));
         let offset = core::mem::offset_of!(ConsoleInput, ListEntry);
-        Event = CONTAINING_RECORD(CurrentEntry as PVOID, core::ptr::null_mut(), offset) as *mut ConsoleInput;
+        Event = CONTAINING_RECORD((CurrentEntry as PVOID) as _, 0, offset) as *mut ConsoleInput;
         ConsoleFreeHeap(Event as PVOID);
     }
 }
@@ -269,7 +269,7 @@ pub unsafe extern "system" fn ConDrvGetConsoleInput(
         && i < NumEventsToRead
     {
         let offset = core::mem::offset_of!(ConsoleInput, ListEntry);
-        Input = CONTAINING_RECORD(CurrentInput as PVOID, core::ptr::null_mut(), offset) as *mut ConsoleInput;
+        Input = CONTAINING_RECORD((CurrentInput as PVOID) as _, 0, offset) as *mut ConsoleInput;
 
         *InputRecord = (*Input).InputEvent;
 

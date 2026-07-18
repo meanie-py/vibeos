@@ -100,7 +100,10 @@ mod dprint_syms {
     macro_rules! noop { ($($n:ident),*) => { $(
         #[no_mangle] unsafe extern "C" fn $n(_fmt: *const ::core::ffi::c_char) {}
     )* } }
-    noop!(DPRINT, DPRINT_CORE, DPRINT_URB, DPRINT_QUEUE, DPRINT_USB, DPRINT_TIMER, DPRINT_INT, DPRINT_MINIPORT);
+    // DPRINT_CORE/URB/QUEUE/TIMER/INT/MINIPORT relocated to drvtrace-shim
+    // (§9.99: variadic call sites + fixed-arity in-crate def = instcombine ud2
+    // fold). DPRINT/DPRINT_USB stay local: exact-arity callers only.
+    noop!(DPRINT, DPRINT_USB);
 }
 
 // ASSERT — NT_ASSERT, no-op in retail (NDEBUG).

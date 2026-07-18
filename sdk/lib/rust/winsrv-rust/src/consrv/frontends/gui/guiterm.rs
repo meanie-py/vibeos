@@ -47,7 +47,7 @@ extern "system" {
     // InitFonts comes from super::conwnd::* with correct sig.
     fn EnableMenuItem(hMenu: HMENU, uIDEnableItem: UINT, uEnable: UINT) -> BOOL;
     fn ConsoleAllocHeap(Flags: ULONG, Size: SIZE_T) -> PVOID;
-    fn ConsoleFreeHeap(Ptr: PVOID);
+    fn ConsoleFreeHeap(HeapBase: winsrv_sys::winsrv::PVOID) -> winsrv_sys::winsrv::BOOLEAN; // def returns BOOLEAN — ret-void decl is a §9.99 fold
     fn GuiConsoleGetDefaultSettings(TermInfo: *mut GUI_CONSOLE_INFO);
     fn GuiConsoleReadUserSettings(TermInfo: *mut GUI_CONSOLE_INFO);
     // StringCchCopyNW is a plain Rust helper in super::helpers (via glob import).

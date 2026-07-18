@@ -557,3 +557,58 @@ Also owed from tonight: scan_ud2 driver extension (§9.99 has the recipe +
 KNOWN_DRIVER_UD2 candidates); SPECIALPOOL tripwire not plumbed on windows-host
 backend; kernel-island def-vs-bindgen audit (iomgr bootlog, se SepDump*,
 byteswap fastcall, config CmpAssignSecurityDescriptor).
+
+## 2026-07-18 (day): the IR-mismatch campaign — §9.99 tooled at source level, driver fleet swept
+
+User green-lit both owed lanes (scan_ud2 driver extension; bindgen "system"
+normalization). The scan_ud2 work immediately escalated: prototyping the binary
+driver sweep surfaced ~10 named residual ud2s, and root-causing them produced a
+**new detector** — `tools/scan_ir_mismatch.py` (§9.101) — that catches the whole
+§9.99 class pre-fold in dev IR. The full i386 workspace sweep: **346 findings
+across 44 crates** (refined to 250 true landmines once decl-vs-decl SIG was
+proven non-folding).
+
+Fix batches (all deterministic, zero subagents):
+- **Proven-armed bombs fixed by hand:** winsrv `ConDrvCreateScreenBuffer`
+  (bindgen_i386 decl class "C" vs "system" def — the ConDrvInitConsole ud2) +
+  3 sig drifts; fastfat 5-symbol CC set (`ExReleaseResourceLite` fastcall truth,
+  `IoGet*/IoSet*/IoCopy*` cdecl truth per nm+bindgen — 2-decl-class mixes);
+  se `SepDump*` ×4 + config `CmpAssignSecurityDescriptor` def-flips to bindgen
+  class; cdrom one-liner `KeInitializeSpinLock` (the §9.99 scanner-gotcha form,
+  AGAIN); kd `KdIoPrintf` variadic-decl misuse in kdprompt (echo now via
+  KdIoPuts — was printing raw "%c" format strings).
+- **Batch B (VAR relocations):** 13 DPRINT-family no-ops + serial `TRACE_` moved
+  to drvtrace-shim; new **winetrace-shim** crate for kernel32's Wine
+  TRACE/FIXME/WARN/ERR (names too generic for the shared shim).
+- **Batch A2 (scripted def-authority SIG alignment):** align decls to the def's
+  IR shape with primitive-only tokens (the Batch A source-text transplant died
+  on import-scope drift — see §9.101 recipe); compiler-driven cast repair +
+  crate-revert convergence.
+
+Late-day closeout: Batch A2 (IR-shape decl morphs, byte-mode span-guarded cast
+repair) + hand-finish drove the driver fleet to ZERO unexpected binary ud2s.
+The last 5 survivors were a NEW class — provable-null-deref folds (§9.102):
+cdfs eager SEH-filter evaluation (both CdPerformVerify ud2s from one line) and
+win32k unguarded null-blind derefs (UserRedrawDesktop, NtGdiGetRealizationInfo)
+— all fixed with real guards, not baselines. Repair-tooling scars worth keeping:
+rustc spans are BYTES (a `§` in a comment corrupted 3 classpnp files via char
+offsets — stashed, guards added), and span-text verification before splicing is
+mandatory (§9.101).
+
+First-ever amd64/arm64 driver sweeps (gate leg 2) surfaced 15 more pre-existing
+latents: ExitProcess/Fatal* terminal spins classified EXPECTED (deliberate
+`for(;;);` after NtTerminateProcess); the win32k amd64 NtGdiGetRealizationInfo
+twin got the same §9.102 null-guard; OWED root-causes baselined in
+KNOWN_DRIVER_UD2 with writeups: user32 SwitchWndProc_common ×2 (error-path
+folds after SetLastError), kernel32 arm64 time/locale spins ×7 (suspected
+non-volatile KUSER_SHARED_DATA tick-capture retry loops folded to `b .` —
+would hang if the subpath runs; POTENTIAL REAL arm64 HANG CLASS, prioritize),
+JapaneseEra_Find, win32k EngInitializeSafeSemaphore.
+
+Owed from today: ntoskrnl-rust (13 def-authority findings incl. the Mm* cluster
+that plausibly explains several KNOWN_CGU_UD2 entries) + hal-rust (3) as a
+reviewed-individually batch; classpnp/disk Shape-2 VAR items (real fns with
+drifted arity: CreateStorageRequestBlock, RtlStringCbPrintfW, sprintfW…) plus
+the revert-bounced decl files in fastfat/classpnp/cdrom/cabinet (landmines, not
+armed folds — IR count 250→~30); freeldr-rust IR emission fails for i686
+(rosload halstub mangled ud2 unexplored).

@@ -28,7 +28,7 @@ extern "C" {
     fn ASSERT_EXCLUSIVE_CDDATA();
 }
 extern "C" {
-    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg2: i32);
+    fn CdAcquireVcbExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg2: u8) -> u32;
 }
 extern "C" {
     fn CdFspClose(Vcb: *mut VCB);
@@ -61,7 +61,7 @@ extern "C" {
     fn CdFreePool(Ptr: *mut *mut core::ffi::c_void);
 }
 extern "C" {
-    fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flag: i32);
+    fn CdPurgeVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flag: u8) -> u32;
 }
 extern "C" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
@@ -82,11 +82,11 @@ extern "C" {
 // decl must match or LLVM UB-folds the caller on i386 (field manual §9.30).
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn CdPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: PDEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, b1: i32, b2: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
+    fn CdPerformDevIoCtrl(IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: PDEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, b1: u8, b2: u8, Iosb: *mut _IO_STATUS_BLOCK) -> i32;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn CdPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: PDEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, b1: i32, b2: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
+    fn CdPerformDevIoCtrl(IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: PDEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, b1: u8, b2: u8, Iosb: *mut _IO_STATUS_BLOCK) -> i32;
 }
 extern "C" {
     fn CdIsRawDevice(IrpContext: *mut IRP_CONTEXT, Status: i32) -> u8;
@@ -116,7 +116,7 @@ extern "C" {
     fn CdOperationIsDasdOpen(IrpContext: PIRP_CONTEXT) -> i32;
 }
 extern "C" {
-    fn CdAcquireVcbShared( IrpContext: PIRP_CONTEXT, Vcb: *mut VCB, Force: i32, );
+    fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: *mut VCB, Force: u8) -> u8;
 }
 extern "C" {
     fn CdAcquireCdData(IrpContext: PIRP_CONTEXT);
@@ -240,11 +240,17 @@ pub unsafe extern "C" fn CdPerformVerify(
 
     // -------- end try body --------
 
-    // SEH_EXCEPT block: catch exception, process it, and update Status
-    _SEH2_EXCEPT(CdExceptionFilter(
-        IrpContext,
-        _SEH2_GetExceptionInformation(),
-    ));
+    // SEH_EXCEPT block: catch exception, process it, and update Status.
+    // DUMMY_PSEH: never EVALUATE the filter expression eagerly — C evaluates a
+    // filter only while an exception is live. CdExceptionFilter derefs the
+    // exception pointers, and _SEH2_GetExceptionInformation() returns null
+    // here, so the eager call is a provable null-deref that LLVM folds into
+    // `ud2` for every path reaching this line (both CdPerformVerify boot ud2s
+    // — field manual §9.102).
+    _SEH2_EXCEPT(0);
+    if false {
+        CdExceptionFilter(IrpContext, _SEH2_GetExceptionInformation());
+    }
     {
         // DUMMY_PSEH: there is no exception unwind — a raise bugchecks rather than
         // transferring control here, so this _SEH2_EXCEPT handler is dead code on

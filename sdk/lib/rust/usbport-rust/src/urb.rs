@@ -20,7 +20,7 @@ extern "system" {
     fn USBPORT_DumpingURB(Urb: PURB);
     fn USBPORT_GetEndpointState(Endpoint: PUSBPORT_ENDPOINT) -> ULONG;
     fn USBPORT_SetEndpointState(Endpoint: PUSBPORT_ENDPOINT, EndpointState: ULONG);
-    fn USBPORT_Wait(FdoDevice: PDEVICE_OBJECT, Milliseconds: ULONG) -> NTSTATUS;
+    fn USBPORT_Wait(MiniPortExtension: PVOID, Milliseconds: ULONG,) -> NTSTATUS;
     fn USBPORT_AllocateTransfer( FdoDevice: PDEVICE_OBJECT, Urb: PURB, DeviceHandle: PUSBPORT_DEVICE_HANDLE, Irp: PIRP, Transfer: *mut core::ffi::c_void, ) -> USBD_STATUS;
     fn USBPORT_ValidateDeviceHandle( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, ) -> BOOLEAN;
     fn USBPORT_HandleSelectConfiguration( FdoDevice: PDEVICE_OBJECT, Irp: PIRP, Urb: PURB, ) -> NTSTATUS;
@@ -296,7 +296,7 @@ pub unsafe extern "system" fn USBPORT_SyncResetPipeAndClearStall(
                     break;
                 }
 
-                USBPORT_Wait(FdoDevice, 1);
+                USBPORT_Wait((FdoDevice) as _, 1);
             }
         }
     }

@@ -543,7 +543,7 @@ extern "system" {
     (*IoGetCurrentIrpStackLocation(Irp)).Control |= 0x01; // SL_PENDING_RETURNED
 }
 // KeInitializeSpinLock(lock) => *lock = 0
-#[no_mangle] pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
+#[no_mangle] pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; } // CC = ntkrnl-sys bindgen_i386 decl class (§9.99; one-liner form dodged the 07-18 sweep)
 
 // c2rust panic/UB paths emit a call to libc `abort`; there is no CRT abort in the
 // kernel. Halt (matches the crate panic_handler).

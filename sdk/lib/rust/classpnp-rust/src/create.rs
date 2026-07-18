@@ -119,7 +119,7 @@ pub unsafe extern "system" fn ClassCreateClose(
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     status
 }
 #[no_mangle]

@@ -627,7 +627,7 @@ pub unsafe extern "C" fn ClasspGetBlockDeviceTokenLimitsInfo(
 
     SrbSetTimeOutValue(srb as PVOID, (*fdoExtension).TimeOutValue);
     SrbSetRequestTag(srb as PVOID, SP_UNTAGGED);
-    SrbSetRequestAttribute(srb as PVOID, SRB_SIMPLE_TAG_REQUEST);
+    SrbSetRequestAttribute(srb as PVOID, (SRB_SIMPLE_TAG_REQUEST) as _);
     SrbAssignSrbFlags(srb as PVOID, (*fdoExtension).SrbFlags);
 
     SrbSetCdbLength(srb as PVOID, 6);
@@ -2086,7 +2086,7 @@ pub unsafe extern "system" fn ClassShutdownFlush(
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
 
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
 
         return STATUS_DEVICE_DOES_NOT_EXIST;
     }
@@ -2098,7 +2098,7 @@ pub unsafe extern "system" fn ClassShutdownFlush(
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_DEVICE_REQUEST;
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }

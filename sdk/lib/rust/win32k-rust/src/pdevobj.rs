@@ -141,7 +141,7 @@ extern "system" {
 }
 extern "C" {
     fn LDEVOBJ_pLoadInternal(pfnEnableDriver: *mut core::ffi::c_void, ldevtype: u32) -> PLDEVOBJ;
-    fn LDEVOBJ_bProbeAndCaptureDevmode( pGraphicsDevice: PGRAPHICS_DEVICE, RequestedMode: PDEVMODEW, ppdm: *mut PDEVMODEW, bSearchClosestMode: BOOL, ) -> BOOL;
+    fn LDEVOBJ_bProbeAndCaptureDevmode(pGraphicsDevice: PGRAPHICS_DEVICE, RequestedMode: PDEVMODEW, pSelectedMode: *mut PDEVMODEW, bSearchClosestMode: BOOL,) -> BOOL;
     fn MDEVOBJ_Create(pustrDeviceName: PUNICODE_STRING, pdm: PDEVMODEW) -> PMDEVOBJ;
     fn MDEVOBJ_bDisable(pmdev: PMDEVOBJ) -> BOOL;
     fn MDEVOBJ_vEnable(pmdev: PMDEVOBJ);

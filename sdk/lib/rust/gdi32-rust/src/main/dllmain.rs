@@ -59,7 +59,7 @@ extern "system" {
     fn RtlDeleteCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
     fn RtlZeroMemory(Destination: PVOID, Length: SIZE_T);
     // gdi32 internal (WINAPI) — objects/utils.c
-    fn GdiInitializeLanguagePack(InitParam: DWORD) -> BOOL;
+    fn GdiInitializeLanguagePack(InitParam: DWORD);
 }
 
 // ── globals owned by another gdi32-rust file (misc.rs) — referenced by definition there ──

@@ -102,10 +102,8 @@ pub unsafe extern "system" fn InterlockedExchange(Target: *mut LONG, Value: LONG
 // gap — owed a faithful ntstrsafe port (mirrors cdrom-rust's RtlStringCchPrintfW shim).
 // DPRINT_PNP / DPRINT_SCE — NDEBUG-disabled DbgPrint wrappers (dbg_uhub.h); no symbol in retail.
 // cdecl no-ops (fixed arity is fine: cdecl caller cleans the varargs).
-#[no_mangle]
-pub unsafe extern "C" fn DPRINT_PNP(_fmt: *const i8) {}
-#[no_mangle]
-pub unsafe extern "C" fn DPRINT_SCE(_fmt: *const i8) {}
+// DPRINT_PNP def relocated to drvtrace-shim (§9.99 fold-proofing)
+// DPRINT_SCE def relocated to drvtrace-shim (§9.99 fold-proofing)
 // InterlockedIncrement/Decrement — atomic +1/-1 returning the NEW value (intrinsics, no export).
 // stdcall `@4`.
 #[no_mangle]

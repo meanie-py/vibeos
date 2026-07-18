@@ -15,8 +15,8 @@ use core::ffi::c_void;
 extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
-    fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, buffer: *mut core::ffi::c_void, transferSize: u32, isRequest: i32, cdb: *mut CDB, cdbLength: u8, timeout: u32, ) -> i32;
-    fn ScratchBuffer_ExecuteCdb( DeviceExtension: PCDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, TransferSize: u32, param4: u8, Cdb: *mut CDB, CdbLength: u8, ) -> i32;
+    fn ScratchBuffer_ExecuteCdbEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: *mut CDB, OprationLength: u8, TimeoutValue: u32,) -> i32;
+    fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: PCDB, OprationLength: u8) -> NTSTATUS;
     fn NT_ASSERT(condition: i32);
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     // DeviceSendPowerDownProcessRequest resolves from crate::types (canonical
@@ -33,10 +33,10 @@ unsafe extern "C" {
     pub fn RequestClearSendTime(Request: WDFREQUEST);
 }
 extern "C" {
-    fn ScratchBuffer_SetupSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, transfer_byte_count: u32, use_scratch: i32, ) -> i32;
-    fn ScratchBuffer_SendSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, wait: i32, unused: *mut core::ffi::c_void, ) -> i32;
+    fn ScratchBuffer_SetupSrb(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, MaximumTransferLength: u32, GetDataFromDevice: u8);
+    fn ScratchBuffer_SendSrb(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SynchronousSrb: u8, SrbHistoryItem: *mut *mut SRB_HISTORY_ITEM,) -> i32;
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, TimesRetried: u32, Status: *mut NTSTATUS, RetryIn100nsUnits: *mut i64, ) -> i32;
-    fn DeviceMarkActive(dev_ext: *mut CDROM_DEVICE_EXTENSION, active: u8, something: u8);
+    fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, IsActive: BOOLEAN, SetIdleTimeout: BOOLEAN,);
 }
 unsafe extern "system" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);

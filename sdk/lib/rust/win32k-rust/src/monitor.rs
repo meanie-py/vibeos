@@ -19,12 +19,12 @@ const USERTAG_MONITORRECTS: u32 = u32::from_le_bytes(*b"Usmr");
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
-    fn SetLastNtError(Status: NTSTATUS) -> DWORD;
+    fn SetLastNtError(Status: NTSTATUS);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
-    fn SetLastNtError(Status: NTSTATUS) -> DWORD;
+    fn SetLastNtError(Status: NTSTATUS);
 }
 
 // cdecl (`_Name`):

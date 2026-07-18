@@ -108,7 +108,7 @@ extern "fastcall" {
     fn co_IntSetForegroundWindow(Window: PWND) -> BOOL;
     fn co_IntSetForegroundWindowMouse(Window: PWND) -> BOOL;
     fn co_IntUpdateWindows(Window: PWND, Flags: u32, Recurse: BOOL);
-    fn co_WinPosArrangeIconicWindows(Window: PWND);
+    fn co_WinPosArrangeIconicWindows(Window: PWND) -> u32;
     fn co_WinPosSetWindowPos( Window: PWND, WndInsertAfter: HWND, x: core::ffi::c_int, y: core::ffi::c_int, cx: core::ffi::c_int, cy: core::ffi::c_int, flags: u32, ) -> BOOL;
     fn co_UserRedrawWindow(Window: PWND, UpdateRect: *mut core::ffi::c_void, Rgn: PREGION, Flags: u32) -> u8;
     fn DWP_GetEnabledPopup(pWnd: PWND) -> PWND;
@@ -119,7 +119,7 @@ extern "C" {
     fn co_IntSetForegroundWindow(Window: PWND) -> BOOL;
     fn co_IntSetForegroundWindowMouse(Window: PWND) -> BOOL;
     fn co_IntUpdateWindows(Window: PWND, Flags: u32, Recurse: BOOL);
-    fn co_WinPosArrangeIconicWindows(Window: PWND);
+    fn co_WinPosArrangeIconicWindows(Window: PWND) -> u32;
     fn co_WinPosSetWindowPos( Window: PWND, WndInsertAfter: HWND, x: core::ffi::c_int, y: core::ffi::c_int, cx: core::ffi::c_int, cy: core::ffi::c_int, flags: u32, ) -> BOOL;
     fn co_UserRedrawWindow(Window: PWND, UpdateRect: *mut core::ffi::c_void, Rgn: PREGION, Flags: u32) -> u8;
     fn DWP_GetEnabledPopup(pWnd: PWND) -> PWND;
@@ -168,8 +168,8 @@ extern "fastcall" {
     fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG_PTR);
     fn MsqSetMessageExtraInfo(lData: LPARAM) -> LPARAM;
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: ULONG, hWnd: HWND) -> HWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
-    fn SetLastNtError(Status: NTSTATUS) -> DWORD;
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: u32);
+    fn SetLastNtError(Status: NTSTATUS);
     fn UserDereferenceObject(obj: PVOID) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
@@ -177,8 +177,8 @@ extern "C" {
     fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG_PTR);
     fn MsqSetMessageExtraInfo(lData: LPARAM) -> LPARAM;
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: ULONG, hWnd: HWND) -> HWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
-    fn SetLastNtError(Status: NTSTATUS) -> DWORD;
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: u32);
+    fn SetLastNtError(Status: NTSTATUS);
     fn UserDereferenceObject(obj: PVOID) -> BOOL;
 }
 

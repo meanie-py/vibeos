@@ -20,13 +20,13 @@ use core::ffi::c_void;
 extern "fastcall" {
     fn MsqCleanupThreadMsgs(pti: PTHREADINFO);
     fn MsqDestroyMessageQueue(pti: PTHREADINFO);
-    fn co_MsqInsertMouseMessage(msg: *mut MSG, flags: u32, extra: usize, hook: u8);
+    fn co_MsqInsertMouseMessage(msg: *mut MSG, flags: u32, extra: usize, hook: u32);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn MsqCleanupThreadMsgs(pti: PTHREADINFO);
     fn MsqDestroyMessageQueue(pti: PTHREADINFO);
-    fn co_MsqInsertMouseMessage(msg: *mut MSG, flags: u32, extra: usize, hook: u8);
+    fn co_MsqInsertMouseMessage(msg: *mut MSG, flags: u32, extra: usize, hook: u32);
 }
 extern "C" {
     static Win32kSSDT: [usize; 0];
@@ -62,7 +62,7 @@ extern "C" {
     fn UserDestroyObjectsForOwner(HandleTable: *mut core::ffi::c_void, Owner: *mut core::ffi::c_void) -> u8;
     fn GdiProcessDestroy(Process: PEPROCESS) -> NTSTATUS;
     fn W32kGetDefaultKeyLayout() -> PKL;
-    fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOOLEAN) -> BOOL;
+    fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: u32) -> BOOL;
     fn RtlGetExpWinVer(BaseAddress: *mut core::ffi::c_void) -> u32;
     fn UserDisplayNotifyShutdown(ppiCurrent: PPROCESSINFO);
     fn UserCreateHeap(SectionObject: *mut *mut core::ffi::c_void, SystemBase: *mut PVOID, HeapSize: usize) -> *mut core::ffi::c_void;
@@ -273,7 +273,7 @@ unsafe fn UserProcessDestroy(Process: PEPROCESS) -> NTSTATUS {
     UserDestroyObjectsForOwner(gHandleTable as *mut core::ffi::c_void, ppiCurrent as *mut core::ffi::c_void);
 
     /* Remove it from the list of GUI apps */
-    co_IntGraphicsCheck(0u8);
+    co_IntGraphicsCheck((0u8) as _);
 
     /*
      * Deregister logon application automatically
@@ -447,7 +447,7 @@ unsafe extern "C" fn UserDeleteW32Thread(pti: PTHREADINFO) {
         msg.wParam = UserGetMouseButtonsState() as _;
         msg.lParam = MAKELPARAM((*gpsi_pusi()).ptCursor.x as u32, (*gpsi_pusi()).ptCursor.y as u32) as _;
         msg.pt = (*gpsi_pusi()).ptCursor;
-        co_MsqInsertMouseMessage(core::ptr::addr_of_mut!(msg), 0, 0, 1u8);
+        co_MsqInsertMouseMessage(core::ptr::addr_of_mut!(msg), 0, 0, (1u8) as _);
     }
 }
 
@@ -623,7 +623,7 @@ pub unsafe extern "system" fn InitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
 
         Status = IntResolveDesktop(Process,
                                    &mut DesktopPath,
-                                   if (*ProcessParams).WindowFlags & STARTF_INHERITDESKTOP != 0 { 1u8 } else { 0u8 },
+                                   if (*ProcessParams).WindowFlags & STARTF_INHERITDESKTOP != 0 { (1u8) as _ } else { (0u8) as _ },
                                    &mut hWinSta,
                                    &mut hDesk);
 
@@ -654,7 +654,7 @@ pub unsafe extern "system" fn InitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
     }
 
     if !(*(*ptiCurrent).ppi).hdeskStartup.is_null() {
-        if IntSetThreadDesktop((*(*ptiCurrent).ppi).hdeskStartup, 0u8) == 0 {
+        if IntSetThreadDesktop((*(*ptiCurrent).ppi).hdeskStartup, (0u8) as _) == 0 {
             Status = STATUS_UNSUCCESSFUL;
             ExitThreadCallback(Thread);
             return Status;
@@ -778,7 +778,7 @@ pub unsafe extern "system" fn ExitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
             (*w32proc(ppiCurrent)).W32PF_flags &= !W32PF_CLASSESREGISTERED;
         }
 
-        IntBlockInput(ptiCurrent, 0u8);
+        IntBlockInput(ptiCurrent, (0u8) as _);
         IntCleanupThreadCallbacks(ptiCurrent);
 
         psle = PopEntryList(core::ptr::addr_of_mut!((*ptiCurrent).ReferencesList) as *mut _) as *mut _;
@@ -820,7 +820,7 @@ pub unsafe extern "system" fn ExitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
         UserDisplayNotifyShutdown(ppiCurrent);
     }
 
-    IntSetThreadDesktop(core::ptr::null_mut(), 1u8);
+    IntSetThreadDesktop(core::ptr::null_mut(), (1u8) as _);
 
     if !(*ptiCurrent).hEventQueueClient.is_null() {
         ObCloseHandle((*ptiCurrent).hEventQueueClient, 1i32 as i8);
@@ -980,7 +980,7 @@ extern "system" {
     fn co_IntClientThreadSetup() -> NTSTATUS;
     fn UserGetMonitorObject(hMonitor: HMONITOR) -> *mut core::ffi::c_void;
     fn UserCloseClipboard() -> BOOL;
-    fn IntWin32PowerManagementCleanup();
+    fn IntWin32PowerManagementCleanup() -> u32;
 }
 extern "C" {
     fn ResetCsrApiPort();
@@ -993,54 +993,54 @@ extern "fastcall" {
     fn CreateStockObjects();
     fn CreateSysColorObjects();
     fn IntFreeImeHotKeys();
-    fn co_IntGraphicsCheck(Create: BOOLEAN);
+    fn co_IntGraphicsCheck(Create: u32) -> u32;
     fn UserSetProcessWindowStation(hWindowStation: HWINSTA) -> BOOL;
     fn IntCleanupCurIconCache(ppi: PPROCESSINFO);
     fn UserGetMouseButtonsState() -> WORD;
     fn UserAssignmentLock(ppvObj: *mut *mut core::ffi::c_void, pvNew: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn UserAssignmentUnlock(ppvObj: *mut *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn IntResolveDesktop(Process: PEPROCESS, DesktopPath: *mut _UNICODE_STRING, bInherit: BOOLEAN, phWinSta: *mut HWINSTA, phDesktop: *mut HDESK) -> NTSTATUS;
+    fn IntResolveDesktop(Process: PEPROCESS, DesktopPath: *mut _UNICODE_STRING, bInherit: u32, phWinSta: *mut HWINSTA, phDesktop: *mut HDESK) -> NTSTATUS;
     fn IntSafeCopyUnicodeStringTerminateNULL(Dest: *mut _UNICODE_STRING, Source: *mut _UNICODE_STRING) -> NTSTATUS;
     fn IntValidateDesktopHandle(hDesktop: HDESK, AccessMode: i8, DesiredAccess: u32, ppdesk: *mut PDESKTOP) -> NTSTATUS;
     fn UserCreateInputContext(dwClientImcData: usize) -> *mut core::ffi::c_void;
     fn MsqCreateMessageQueue(pti: PTHREADINFO) -> *mut _USER_MESSAGE_QUEUE;
-    fn IsRemoveAttachThread(pti: PTHREADINFO);
+    fn IsRemoveAttachThread(pti: PTHREADINFO) -> u32;
     fn IntFreeHwndList(pwl: PWINDOWLIST);
-    fn UserUnregisterUserApiHook();
+    fn UserUnregisterUserApiHook() -> u32;
     fn UserPostMessage(Wnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
     fn DceFreeThreadDCE(pti: PTHREADINFO);
     fn DestroyTimersForThread(pti: PTHREADINFO) -> BOOL;
     fn UnregisterThreadHotKeys(pti: PTHREADINFO);
     fn DestroyProcessClasses(ppi: PPROCESSINFO);
-    fn IntBlockInput(pti: PTHREADINFO, BlockIt: BOOLEAN) -> BOOL;
+    fn IntBlockInput(pti: PTHREADINFO, BlockIt: u32) -> BOOL;
     fn IntCleanupThreadCallbacks(pti: PTHREADINFO);
-    fn UserDereferenceObject(obj: *mut core::ffi::c_void);
+    fn UserDereferenceObject(obj: *mut core::ffi::c_void) -> u32;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn CreateStockObjects();
     fn CreateSysColorObjects();
     fn IntFreeImeHotKeys();
-    fn co_IntGraphicsCheck(Create: BOOLEAN);
+    fn co_IntGraphicsCheck(Create: u32) -> u32;
     fn UserSetProcessWindowStation(hWindowStation: HWINSTA) -> BOOL;
     fn IntCleanupCurIconCache(ppi: PPROCESSINFO);
     fn UserGetMouseButtonsState() -> WORD;
     fn UserAssignmentLock(ppvObj: *mut *mut core::ffi::c_void, pvNew: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn UserAssignmentUnlock(ppvObj: *mut *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn IntResolveDesktop(Process: PEPROCESS, DesktopPath: *mut _UNICODE_STRING, bInherit: BOOLEAN, phWinSta: *mut HWINSTA, phDesktop: *mut HDESK) -> NTSTATUS;
+    fn IntResolveDesktop(Process: PEPROCESS, DesktopPath: *mut _UNICODE_STRING, bInherit: u32, phWinSta: *mut HWINSTA, phDesktop: *mut HDESK) -> NTSTATUS;
     fn IntSafeCopyUnicodeStringTerminateNULL(Dest: *mut _UNICODE_STRING, Source: *mut _UNICODE_STRING) -> NTSTATUS;
     fn IntValidateDesktopHandle(hDesktop: HDESK, AccessMode: i8, DesiredAccess: u32, ppdesk: *mut PDESKTOP) -> NTSTATUS;
     fn UserCreateInputContext(dwClientImcData: usize) -> *mut core::ffi::c_void;
     fn MsqCreateMessageQueue(pti: PTHREADINFO) -> *mut _USER_MESSAGE_QUEUE;
-    fn IsRemoveAttachThread(pti: PTHREADINFO);
+    fn IsRemoveAttachThread(pti: PTHREADINFO) -> u32;
     fn IntFreeHwndList(pwl: PWINDOWLIST);
-    fn UserUnregisterUserApiHook();
+    fn UserUnregisterUserApiHook() -> u32;
     fn UserPostMessage(Wnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
     fn DceFreeThreadDCE(pti: PTHREADINFO);
     fn DestroyTimersForThread(pti: PTHREADINFO) -> BOOL;
     fn UnregisterThreadHotKeys(pti: PTHREADINFO);
     fn DestroyProcessClasses(ppi: PPROCESSINFO);
-    fn IntBlockInput(pti: PTHREADINFO, BlockIt: BOOLEAN) -> BOOL;
+    fn IntBlockInput(pti: PTHREADINFO, BlockIt: u32) -> BOOL;
     fn IntCleanupThreadCallbacks(pti: PTHREADINFO);
-    fn UserDereferenceObject(obj: *mut core::ffi::c_void);
+    fn UserDereferenceObject(obj: *mut core::ffi::c_void) -> u32;
 }

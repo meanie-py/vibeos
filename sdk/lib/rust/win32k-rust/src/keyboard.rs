@@ -115,11 +115,11 @@ extern "C" {
 // MsqPostMessage — FASTCALL (msgqueue.h).
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn MsqPostMessage(pti: PTHREADINFO, msg: *mut MSG, hardware: BOOLEAN, dwQEvent: DWORD, mf: DWORD, extra: LONG_PTR) -> BOOLEAN;
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn MsqPostMessage(pti: PTHREADINFO, msg: *mut MSG, hardware: BOOLEAN, dwQEvent: DWORD, mf: DWORD, extra: LONG_PTR) -> BOOLEAN;
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
 }
 
 // ---- additional win32k internal exports referenced by keyboard.c/split2 ----
@@ -128,11 +128,11 @@ extern "C" {
 // (i686-gnu re-prepends `_` to the extern "C" name `_MmCopyToCaller`).
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn SetLastNtError(Status: NTSTATUS) -> ULONG;
+    fn SetLastNtError(Status: NTSTATUS);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn SetLastNtError(Status: NTSTATUS) -> ULONG;
+    fn SetLastNtError(Status: NTSTATUS);
 }
 extern "system" {
     fn SafeProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;

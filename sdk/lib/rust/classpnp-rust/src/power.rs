@@ -118,7 +118,7 @@ pub unsafe extern "system" fn ClassDispatchPower(
         ClassReleaseRemoveLock(DeviceObject, Irp);
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
         PoStartNextPowerIrp(Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as i8);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as i8) as _);
         return STATUS_DEVICE_DOES_NOT_EXIST;
     }
 
@@ -301,7 +301,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     SrbSetOriginalRequest(srbHeader as PVOID, ((*(*fdoExtension).PrivateFdoData).PowerProcessIrp as PVOID).cast());
                     SrbSetSenseInfoBuffer(srbHeader as PVOID, (*(*commonExtension).PartitionZeroExtension).SenseData as PVOID);
                     SrbSetSenseInfoBufferLength(srbHeader as PVOID,
-                        GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION) as u32);
+                        (GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION) as u32) as _);
                     SrbSetTimeOutValue(srbHeader as PVOID, timeoutValue);
                     SrbAssignSrbFlags(srbHeader as PVOID,
                         SRB_FLAGS_NO_DATA_TRANSFER | SRB_FLAGS_DISABLE_AUTOSENSE | SRB_FLAGS_DISABLE_SYNCH_TRANSFER | SRB_FLAGS_NO_QUEUE_FREEZE );
@@ -462,7 +462,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
 
                 // Prevent completing the IRP we allocated
                 if !(*fdoExtension).PrivateFdoData.is_null() && Irp == (*(*fdoExtension).PrivateFdoData).PowerProcessIrp {
-                    ClassCompleteRequest((*commonExtension).DeviceObject, OriginalIrp, IO_NO_INCREMENT as i8);
+                    ClassCompleteRequest((*commonExtension).DeviceObject, OriginalIrp, (IO_NO_INCREMENT as i8) as _);
                     return STATUS_MORE_PROCESSING_REQUIRED;
                 }
 
@@ -687,7 +687,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     SrbSetSenseInfoBuffer(srbHeader as PVOID, (*(*commonExtension).PartitionZeroExtension).SenseData as PVOID);
                     SrbSetSenseInfoBufferLength(
                         srbHeader as PVOID,
-                        GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension) as u32,
+                        (GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension) as u32) as _,
                     );
                     SrbSetTimeOutValue(srbHeader as PVOID, (*fdoExtension).TimeOutValue);
                     SrbAssignSrbFlags(
@@ -874,7 +874,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     SrbSetSenseInfoBuffer(srbHeader as PVOID, (*(*commonExtension).PartitionZeroExtension).SenseData as PVOID);
                     SrbSetSenseInfoBufferLength(
                         srbHeader as PVOID,
-                        GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension) as u32,
+                        (GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension) as u32) as _,
                     );
                     SrbSetTimeOutValue(srbHeader as PVOID, timeoutValue);
                     SrbAssignSrbFlags(
@@ -983,7 +983,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         let mut additionalSenseCodeQualifier: u8 = 0;
                         let validSense = ScsiGetSenseKeyAndCodes(
                             senseBuffer,
-                            SrbGetSenseInfoBufferLength(srbHeader as PVOID),
+                            (SrbGetSenseInfoBufferLength(srbHeader as PVOID)) as _,
                             SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED,
                             &mut senseKey,
                             &mut additionalSenseCode,
@@ -1154,7 +1154,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                 (*fdoExtension).PowerDownInProgress =FALSE;
 
                 if Irp == (*(*fdoExtension).PrivateFdoData).PowerProcessIrp {
-                    ClassCompleteRequest((*commonExtension).DeviceObject, OriginalIrp, IO_NO_INCREMENT);
+                    ClassCompleteRequest((*commonExtension).DeviceObject, OriginalIrp, (IO_NO_INCREMENT) as _);
                     return STATUS_MORE_PROCESSING_REQUIRED;
                 }
 
@@ -1216,7 +1216,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
         ClassReleaseRemoveLock(DeviceObject, Irp);
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOT_SUPPORTED;
         PoStartNextPowerIrp(Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as i8);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as i8) as _);
         return STATUS_NOT_SUPPORTED;
     }
 
@@ -1595,7 +1595,7 @@ pub unsafe extern "system" fn ClassMinimalPowerHandler(
         status = PoCallDriver((*commonExtension).LowerDeviceObject, Irp);
     } else {
         status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
     }
 
     status
@@ -2089,13 +2089,6 @@ extern "system" {
     ) -> NTSTATUS;
 }
 extern "system" {
-    fn ScsiGetSenseKeyAndCodes(
-        SenseInfoBuffer: PVOID,
-        SenseInfoBufferLength: UCHAR,
-        Options: ULONG,
-        SenseKey: *mut UCHAR,
-        AdditionalSenseCode: *mut UCHAR,
-        AdditionalSenseCodeQualifier: *mut UCHAR,
-    ) -> BOOLEAN;
+    fn ScsiGetSenseKeyAndCodes(SenseInfoBuffer: PVOID, SenseInfoBufferLength: u32, Options: ULONG, SenseKey: *mut UCHAR, AdditionalSenseCode: *mut UCHAR, AdditionalSenseCodeQualifier: *mut UCHAR) -> BOOLEAN;
     fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) -> UCHAR;
 }

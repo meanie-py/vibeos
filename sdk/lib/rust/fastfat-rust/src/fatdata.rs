@@ -14,6 +14,7 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, ERESOURCE, EXCEPTION_POINTERS, FILE_OBJECT,
 use crate::glue::{DEBUG_TRACE_CATCH_EXCEPTIONS, FAT_NTC_FCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlFastCheckLockForWrite, FsRtlIsNtstatusExpected};
+use ntkrnl_sys::ddk::ExReleaseResourceLite;
 
 extern "system" {
     fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
@@ -37,7 +38,7 @@ extern "system" {
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatDeleteIrpContext(IrpContext: PIRP_CONTEXT);
     fn ExAcquireResourceSharedLite(resource: *mut ERESOURCE, wait: i32) -> u8;
-    fn ExReleaseResourceLite(resource: *mut ERESOURCE);
+    // ExReleaseResourceLite via ntkrnl_sys::ddk (kernel FASTCALL export — §9.99)
     fn BooleanFlagOn(Flags: u32, Mask: u32) -> u8;
 }
 

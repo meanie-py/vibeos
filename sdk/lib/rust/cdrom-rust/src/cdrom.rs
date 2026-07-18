@@ -120,7 +120,7 @@ extern "system" {
     fn TEST_FLAG(flags: u32, mask: u32) -> i32;
     fn PagedCode();
     fn FileObjectGetContext(fileObject: WDFFILEOBJECT) -> *mut FILE_OBJECT_CONTEXT;
-    fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, Length: u32, WriteToDevice: i32, BytesReturned: *mut u32, ) -> NTSTATUS;
+    fn DeviceSendSrbSynchronously(Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, Length: u32, WriteToDevice: u8, BytesReturned: *mut u32) -> NTSTATUS;
     fn RequestHandleEventNotification( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, RequestParameters: *const WDF_REQUEST_PARAMETERS, dataLength: *mut usize, ) -> NTSTATUS;
     fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> UCHAR;
     fn IoInvalidateDeviceRelations( Pdo: *mut core::ffi::c_void, Relations: u32, );
@@ -259,10 +259,10 @@ unsafe extern "C" {
     fn PowerContextBeginUse(extension: *mut CDROM_DEVICE_EXTENSION) -> i32;
 }
 unsafe extern "C" {
-    fn PowerContextEndUse(extension: *mut CDROM_DEVICE_EXTENSION);
+    fn PowerContextEndUse(extension: *mut CDROM_DEVICE_EXTENSION) -> u32;
 }
 unsafe extern "C" {
-    fn DeviceEnableMediaChangeDetection( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObjectContext: *mut FILE_OBJECT_CONTEXT, Enable: i32, ) -> i32;
+    fn DeviceEnableMediaChangeDetection(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObjectContext: *mut FILE_OBJECT_CONTEXT, Enable: i32);
 }
 unsafe extern "C" {
     fn RequestSend( device_ext: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, target: WDFIOTARGET, flags: u32, request_sent: *mut u8, ) -> NTSTATUS;
@@ -280,7 +280,7 @@ unsafe extern "C" {
     fn RequestSetReceivedTime(Request: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn DeviceEnableMainTimer(DeviceExtension: PCDROM_DEVICE_EXTENSION);
+    fn DeviceEnableMainTimer(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> u32;
 }
 extern "C" {
     fn RequestHandleGetMediaTypeEx( deviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, dataLength: *mut usize, ) -> NTSTATUS;

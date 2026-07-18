@@ -455,7 +455,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                                 );
                                 SrbSetSenseInfoBufferLength(
                                     srbEx as *mut ::core::ffi::c_void,
-                                    (core::mem::size_of::<SENSE_DATA>() as UCHAR) as u32,
+                                    ((core::mem::size_of::<SENSE_DATA>() as UCHAR) as u32) as _,
                                 );
                                 srbPtr = srbEx as PSCSI_REQUEST_BLOCK;
                             } else {
@@ -1182,7 +1182,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
 
         SrbSetScsiStatus(srbEx as PVOID, 0);
         SrbSetSenseInfoBuffer(srbEx as PVOID, buffer);
-        SrbSetSenseInfoBufferLength(srbEx as PVOID, (bufferLength) as u32);
+        SrbSetSenseInfoBufferLength(srbEx as PVOID, ((bufferLength) as u32) as _);
         SrbSetCdbLength(srbEx as PVOID, cdbLength);
         cdb = SrbGetCdb(srbEx as PVOID);
     } else {
@@ -2837,7 +2837,7 @@ pub unsafe extern "C" fn ClasspMcnControl(
     ClassCompleteRequest(
         (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         Irp,
-        IO_NO_INCREMENT,
+        (IO_NO_INCREMENT) as _,
     );
 
     status

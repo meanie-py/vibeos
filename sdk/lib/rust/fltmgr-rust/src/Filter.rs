@@ -23,14 +23,14 @@ use crate::Object::{FltObjectReference, FltObjectDereference};
 // variadic cdecl ntoskrnl export (left extern "C").
 extern "system" {
     // Object.rs defines FltpObjectRundownWait extern "system" (§9.30)
-    fn FltpObjectRundownWait(RundownRef: *mut core::ffi::c_void);
+    fn FltpObjectRundownWait(RundownRef: *mut core::ffi::c_void) -> u32;
 }
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
     fn FltpOpenFilterServicesKey( Filter: PFLT_FILTER, DesiredAccess: ACCESS_MASK, KeyName: PUNICODE_STRING, RootHandle: *mut HANDLE, ) -> NTSTATUS;
     fn FltpReadRegistryValue( KeyHandle: HANDLE, ValueName: PUNICODE_STRING, Type: ULONG, Data: PVOID, DataSize: ULONG, BytesRequired: *mut ULONG, ) -> NTSTATUS;
 
-    fn FltpExRundownCompleted(RundownRef: *mut core::ffi::c_void);
+    fn FltpExRundownCompleted(RundownRef: *mut core::ffi::c_void) -> u8;
     fn FltpExInitializeRundownProtection(RunRef: PVOID);
     fn FltpRegisterContexts( Filter: PFLT_FILTER, Contexts: *const FLT_CONTEXT_REGISTRATION, ) -> NTSTATUS;
 }

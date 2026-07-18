@@ -19,7 +19,7 @@ extern "C" {
     pub fn TermSetCodePage( Console: PCONSRV_CONSOLE, CodePage: u32, ) -> u8;
     pub fn TermResizeTerminal(Console: PCONSRV_CONSOLE);
     pub fn ConioResizeBuffer( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, Size: COORD, ) -> i32;
-    pub fn HistoryReshapeAllBuffers( Console: PCONSRV_CONSOLE, HistoryBufferSize: u32, NumberOfHistoryBuffers: u32, HistoryNoDup: u32, );
+    pub fn HistoryReshapeAllBuffers(Console: PCONSRV_CONSOLE, HistoryBufferSize: ULONG, MaxNumberOfHistoryBuffers: ULONG, HistoryNoDup: BOOLEAN,);
 }
 
 #[no_mangle]
@@ -36,7 +36,7 @@ pub unsafe extern "C" fn ConSrvApplyUserSettings(
         Console,
         (*ConsoleInfo).HistoryBufferSize,
         (*ConsoleInfo).NumberOfHistoryBuffers,
-        (*ConsoleInfo).HistoryNoDup as u32,
+        (*ConsoleInfo).HistoryNoDup as u8,
     );
 
     core::ptr::copy_nonoverlapping(

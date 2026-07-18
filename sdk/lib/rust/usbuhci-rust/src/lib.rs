@@ -9,6 +9,8 @@
 //! opus + c2rust-anchored). 2 .c (roothub/usbuhci) -> 2 modules. Registers a
 //! USBPORT_REGISTRATION_PACKET with the usbport framework. guid.c stays as a C data TU.
 //! NOT boot-loaded in smoke (boots from CD/ramdisk, not USB). Bar: link-clean x3.
+// Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
+extern crate drvtrace_shim;
 
 pub mod types;
 pub mod glue;

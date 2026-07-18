@@ -27,6 +27,7 @@ use ntkrnl_sys::ddk::{IRP};
 use crate::glue::{DEBUG_TRACE_CLEANUP, DO_VERIFY_VOLUME, FAT_NTC_DCB, FAT_NTC_ROOT_DCB, FILE_ACTION_REMOVED, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FO_CACHE_SUPPORTED, FO_CLEANUP_COMPLETE, FO_FILE_MODIFIED, FSRTL_VOLUME_UNLOCK, VPB_DIRECT_WRITES_ALLOWED, VPB_LOCKED};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlIsNtstatusExpected};
+use ntkrnl_sys::ddk::ExReleaseResourceLite;
 
 extern "system" {
     fn FatDeviceIsFatFsdo(VolumeDeviceObject: *mut core::ffi::c_void) -> u8;
@@ -58,10 +59,10 @@ extern "system" {
     fn FatFlushFat(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> NTSTATUS;
     fn FatIsFat12(Vcb: PVCB) -> BOOLEAN;
     fn FatHijackIrpAndFlushDevice(IrpContext: PIRP_CONTEXT, Irp: PIRP, TargetDeviceObject: *mut c_void) -> NTSTATUS;
-    fn FatCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Force: BOOLEAN);
+    fn FatCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Force: BOOLEAN) -> u8;
     fn FatIsDirectoryEmpty(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
     fn FatTruncateFileAllocation(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Size: i32);
-    fn FatDeleteDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, DeleteContext: *const DELETE_CONTEXT, IgnoreCase: BOOLEAN);
+    fn FatDeleteDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, DeleteContext: *const DELETE_CONTEXT, IgnoreCase: u32);
     fn FatTunnelFcbOrDcb(FcbOrDcb: *mut c_void, Ccb: PCCB);
     fn FatNotifyReportChange(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Fcb: PFCB, Filter: u32, Action: u32);
     fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -85,7 +86,8 @@ extern "system" {
     fn FatIsFileOplockable(Fcb: PFCB) -> BOOLEAN;
     fn FsRtlNotifyVolumeEvent(FileObject: PFILE_OBJECT, Event: u32);
     fn ExAcquireResourceExclusiveLite(Resource: *mut c_void, Wait: BOOLEAN) -> BOOLEAN;
-    fn ExReleaseResourceLite(Resource: *mut c_void);
+    // ExReleaseResourceLite: kernel FASTCALL export — local "system" decl was a
+    // §9.99 fold class; use the ntkrnl-sys bindgen (fastcall) decl instead.
     fn CcUninitializeCacheMap(FileObject: PFILE_OBJECT, TruncateSize: *const LARGE_INTEGER, Vacant: *mut c_void) -> BOOLEAN;
     fn IoRemoveShareAccess(FileObject: PFILE_OBJECT, ShareAccess: *mut c_void);
 }
@@ -395,7 +397,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                 if (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart == 0 {
                                     DebugTrace(0, Dbg, b"Delete the directory dirent\n\0".as_ptr() as *const i8, 0);
                                     FatTunnelFcbOrDcb(Fcb as *mut c_void, ptr::null_mut());
-                                    FatDeleteDirent(IrpContext, Fcb, &DeleteContext, TRUE);
+                                    FatDeleteDirent(IrpContext, Fcb, &DeleteContext, (TRUE) as _);
                                     FatNotifyReportChange(
                                         IrpContext, Vcb, Fcb,
                                         FILE_NOTIFY_CHANGE_DIR_NAME,
@@ -545,7 +547,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                             {
                                 DebugTrace(0, Dbg, b"Delete File\n\0".as_ptr() as *const i8, 0);
                                 FatTunnelFcbOrDcb(Fcb as *mut c_void, Ccb);
-                                FatDeleteDirent(IrpContext, Fcb, &DeleteContext, TRUE);
+                                FatDeleteDirent(IrpContext, Fcb, &DeleteContext, (TRUE) as _);
                                 FatNotifyReportChange(
                                     IrpContext, Vcb, Fcb,
                                     FILE_NOTIFY_CHANGE_FILE_NAME,

@@ -14,9 +14,6 @@ extern "C" {
     // KdbDebugState owned by kdterminal.rs.
     static mut KdbDebugState: u32;
 
-    // KdIoPrintf is variadic — must stay extern "C".
-    fn KdIoPrintf(Format: PCSTR, ...);
-
     fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn strlen(s: PCSTR) -> usize;
 
@@ -74,9 +71,9 @@ pub unsafe extern "system" fn KdIoReadLine(
                 *Buffer = 0;
 
                 if EchoOn {
-                    KdIoPrintf(b"%c %c\0".as_ptr() as PCSTR, KEY_BS as i32, KEY_BS as i32);
+                    let __echo = [KEY_BS as u8, b' ', KEY_BS as u8, 0]; KdIoPuts(__echo.as_ptr() as PCSTR);
                 } else {
-                    KdIoPrintf(b" %c\0".as_ptr() as PCSTR, KEY_BS as i32);
+                    let __echo = [b' ', KEY_BS as u8, 0]; KdIoPuts(__echo.as_ptr() as PCSTR);
                 }
             }
         } else if ScanCode == KEY_SCAN_UP || ScanCode == KEY_SCAN_DOWN {
@@ -90,9 +87,9 @@ pub unsafe extern "system" fn KdIoReadLine(
                     *Buffer = 0;
 
                     if EchoOn {
-                        KdIoPrintf(b"%c %c\0".as_ptr() as PCSTR, KEY_BS as i32, KEY_BS as i32);
+                        let __echo = [KEY_BS as u8, b' ', KEY_BS as u8, 0]; KdIoPuts(__echo.as_ptr() as PCSTR);
                     } else {
-                        KdIoPrintf(b" %c\0".as_ptr() as PCSTR, KEY_BS as i32);
+                        let __echo = [b' ', KEY_BS as u8, 0]; KdIoPuts(__echo.as_ptr() as PCSTR);
                     }
                 }
 
@@ -108,7 +105,7 @@ pub unsafe extern "system" fn KdIoReadLine(
             }
 
             if EchoOn {
-                KdIoPrintf(b"%c\0".as_ptr() as PCSTR, Key as i32);
+                let __echo = [Key as u8, 0]; KdIoPuts(__echo.as_ptr() as PCSTR);
             }
 
             *Buffer = Key;

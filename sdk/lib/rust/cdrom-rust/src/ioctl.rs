@@ -82,7 +82,7 @@ extern "C" {
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
     fn CdromDbgPrint3(format: *const i8, arg1: usize, arg2: usize, arg3: usize) -> u32;
     fn NT_SUCCESS(status: NTSTATUS) -> bool;
-    fn PerformEjectionControl( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, LockType: i32, PreventMediaRemoval: i32, ) -> NTSTATUS;
+    fn PerformEjectionControl(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, LockType: i32, PreventMediaRemoval: u8) -> NTSTATUS;
     fn CdromDbgPrintReadWriteValidate(
         format: *const i8,
         request_type: usize,
@@ -106,9 +106,9 @@ extern "system" {
     static CLASSP_REG_REMOVAL_POLICY_VALUE_NAME: u16;
     fn RequestGetContext(request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
     fn ScratchBuffer_BeginUse(device_extension: *mut CDROM_DEVICE_EXTENSION);
-    fn ScratchBuffer_PerformNextReadWrite( device_extension: *mut CDROM_DEVICE_EXTENSION, first: BOOLEAN, ) -> NTSTATUS;
+    fn ScratchBuffer_PerformNextReadWrite(device_extension: *mut CDROM_DEVICE_EXTENSION, first: u32) -> NTSTATUS;
     fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION);
-    fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: WDFREQUEST, transferByteCount: u32, flag: i32, cdb: *mut CDB, cdbLen: u8) -> NTSTATUS;
+    fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, transferByteCount: u32, flag: u8, cdb: *mut CDB, cdbLen: u8) -> NTSTATUS;
     fn NT_ASSERT(condition: i32);
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn MmGetMdlVirtualAddress(Mdl: PMDL) -> *mut core::ffi::c_void;
@@ -137,20 +137,20 @@ unsafe extern "C" {
 }
 extern "system" {
     fn RequestDummyCompletionRoutine( Request: WDFREQUEST, ioTarget: WDFIOTARGET, CompletionParams: *mut WDF_REQUEST_COMPLETION_PARAMS, CompletionContext: WDFCONTEXT, );
-    fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataTransferLength: u32, AutoSense: u8, Request: WDFREQUEST, ) -> i32;
+    fn DeviceSendSrbSynchronously(Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataTransferLength: u32, AutoSense: u8, Request: *mut core::ffi::c_void) -> i32;
     fn IoWriteErrorLogEntry(ElEntry: *mut IO_ERROR_LOG_PACKET);
     fn IoAllocateErrorLogEntry(IoObject: *mut core::ffi::c_void, EntrySize: u32) -> *mut IO_ERROR_LOG_PACKET;
     fn WDF_REQUEST_PARAMETERS_INIT(Parameters: *mut WDF_REQUEST_PARAMETERS);
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
     fn KeGetCurrentIrql() -> u8;
     fn ExFreePool(Pool: *mut core::ffi::c_void);
-    fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, transferSize: u32, bFlag: u8, Cdb: *const CDB, CdbLength: u32, TimeoutValue: u32, ) -> NTSTATUS;
+    fn ScratchBuffer_ExecuteCdbEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, transferSize: u32, bFlag: u8, Cdb: *const CDB, CdbLength: u8, TimeoutValue: u32) -> NTSTATUS;
     fn DeviceSetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubkeyName: *const u16, ValueName: *const u16, Value: u32, ) -> NTSTATUS;
     fn FileObjectGetContext(FileObject: WDFFILEOBJECT) -> PFILE_OBJECT_CONTEXT;
     fn TEST_FLAG(flags: u32, bit: u32) -> bool;
-    fn RequestSetupMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, supported: i32, ) -> i32;
+    fn RequestSetupMcnRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, supported: u8) -> i32;
     fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> u8;
-    fn ScratchBuffer_ResetItems( device_extension: *mut CDROM_DEVICE_EXTENSION, free_mdl: i32, ) -> i32;
+    fn ScratchBuffer_ResetItems(device_extension: *mut CDROM_DEVICE_EXTENSION, free_mdl: u8);
     fn DevicePickDvdRegion(Device: *mut core::ffi::c_void);
 }
 unsafe extern "C" {
@@ -171,7 +171,7 @@ unsafe extern "C" {
     fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
 }
 unsafe extern "C" {
-    fn DeviceSendNotification(deviceExtension: PCDROM_DEVICE_EXTENSION, guid: *const GUID, param1: u32, param2: *mut core::ffi::c_void) -> NTSTATUS;
+    fn DeviceSendNotification(deviceExtension: PCDROM_DEVICE_EXTENSION, guid: *const GUID, param1: u32, param2: *mut core::ffi::c_void);
 }
 unsafe extern "C" {
     fn IsVolumeMounted(DeviceObject: *mut core::ffi::c_void) -> u8;
@@ -186,10 +186,10 @@ unsafe extern "C" {
     fn RequestDuidGetDeviceProperty( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, requestParameters: WDF_REQUEST_PARAMETERS, outLength: *mut usize, ) -> i32;
 }
 unsafe extern "C" {
-    fn DeviceRetrieveModeSenseUsingScratch( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut i8, BufferLength: usize, Page: u32, PageControl: u32, ) -> usize;
+    fn DeviceRetrieveModeSenseUsingScratch(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut i8, BufferLength: usize, Page: u8, PageControl: u8) -> usize;
 }
 unsafe extern "C" {
-    fn ModeSenseFindSpecificPage( Data: *mut i8, DataLength: usize, PageCode: u32, ReadWrite: i32, ) -> *mut MODE_CACHING_PAGE;
+    fn ModeSenseFindSpecificPage(Data: *mut i8, DataLength: usize, PageCode: u8, ReadWrite: i32) -> *mut MODE_CACHING_PAGE;
 }
 unsafe extern "C" {
     fn FREE_POOL(Pool: *mut core::ffi::c_void);
@@ -210,13 +210,13 @@ unsafe extern "C" {
     fn RequestSenseInfoInterpretForScratchBuffer( device_extension: *mut CDROM_DEVICE_EXTENSION, times_already_retried: u32, status: *mut i32, retry_in_100ns_units: *mut i64, ) -> i32;
 }
 unsafe extern "C" {
-    fn ScratchBuffer_SetupSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, transfer_byte_count: u32, use_scratch: i32, ) -> i32;
+    fn ScratchBuffer_SetupSrb(device_extension: *mut CDROM_DEVICE_EXTENSION, request: *mut core::ffi::c_void, transfer_byte_count: u32, use_scratch: u8);
 }
 unsafe extern "C" {
-    fn ScratchBuffer_SendSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, wait: i32, unused: *mut core::ffi::c_void, ) -> i32;
+    fn ScratchBuffer_SendSrb(device_extension: *mut CDROM_DEVICE_EXTENSION, wait: u8, unused: *mut core::ffi::c_void) -> i32;
 }
 unsafe extern "C" {
-    fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, b1: i32, b2: i32);
+    fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, b1: u8, b2: u8);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -483,7 +483,7 @@ pub unsafe extern "C" fn ReadQChannel(
 
     status = ScratchBuffer_ExecuteCdb(
         DeviceExtension,
-        OriginalRequest,
+        (OriginalRequest) as _,
         transferByteCount,
         1, // TRUE
         &mut cdb,
@@ -644,7 +644,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
     (*((&raw mut cdb) as *mut CDB)).READ_DVD_STRUCTURE.as_mut().AllocationLength[0] = (dataLength >> 8) as u8;
     (*((&raw mut cdb) as *mut CDB)).READ_DVD_STRUCTURE.as_mut().AllocationLength[1] = (dataLength & 0xff) as u8;
 
-    status = ScratchBuffer_ExecuteCdb(DeviceExtension, OriginalRequest, dataLength as u32, 1i32, &raw const cdb as *mut CDB, 12);
+    status = ScratchBuffer_ExecuteCdb(DeviceExtension, (OriginalRequest) as _, dataLength as u32, (1i32) as _, &raw const cdb as *mut CDB, 12);
 
     if status >= 0 { // NT_SUCCESS(status)
         TracePrint!(
@@ -1076,7 +1076,7 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
                 core::ptr::null_mut(),
                 0,
                 0,
-                Request,
+                (Request) as _,
             );
 
             if NT_SUCCESS(status) {
@@ -2964,7 +2964,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
             core::ptr::null_mut(),
             0,
             1, // TRUE -> flush drive cache
-            Request,
+            (Request) as _,
         );
 
         if status >= 0 {
@@ -3006,8 +3006,8 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
             deviceExtension,
             modeData as *mut i8,
             MODE_PAGE_DATA_SIZE as usize,
-            MODE_PAGE_CACHING,
-            MODE_SENSE_CURRENT_VALUES,
+            (MODE_PAGE_CACHING) as _,
+            (MODE_SENSE_CURRENT_VALUES) as _,
         );
 
         if length < core::mem::size_of::<MODE_PARAMETER_HEADER>() {
@@ -3016,8 +3016,8 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
                 deviceExtension,
                 modeData as *mut i8,
                 MODE_PAGE_DATA_SIZE as usize,
-                MODE_PAGE_CACHING,
-                MODE_SENSE_CURRENT_VALUES,
+                (MODE_PAGE_CACHING) as _,
+                (MODE_SENSE_CURRENT_VALUES) as _,
             );
 
             if length < core::mem::size_of::<MODE_PARAMETER_HEADER>() {
@@ -3039,7 +3039,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
         pageData = ModeSenseFindSpecificPage(
             modeData as *mut i8,
             length,
-            MODE_PAGE_CACHING,
+            (MODE_PAGE_CACHING) as _,
             1, // TRUE
         );
 
@@ -3079,8 +3079,8 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
             deviceExtension,
             modeData as *mut i8,
             MODE_PAGE_DATA_SIZE as usize,
-            MODE_PAGE_CACHING,
-            MODE_SENSE_CHANGEABLE_VALUES,
+            (MODE_PAGE_CACHING) as _,
+            (MODE_SENSE_CHANGEABLE_VALUES) as _,
         );
 
         if length < core::mem::size_of::<MODE_PARAMETER_HEADER>() {
@@ -3089,8 +3089,8 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
                 deviceExtension,
                 modeData as *mut i8,
                 MODE_PAGE_DATA_SIZE as usize,
-                MODE_PAGE_CACHING,
-                MODE_SENSE_CHANGEABLE_VALUES,
+                (MODE_PAGE_CACHING) as _,
+                (MODE_SENSE_CHANGEABLE_VALUES) as _,
             );
 
             if length < core::mem::size_of::<MODE_PARAMETER_HEADER>() {
@@ -3114,7 +3114,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
         pageData = ModeSenseFindSpecificPage(
             modeData as *mut i8,
             length,
-            MODE_PAGE_CACHING,
+            (MODE_PAGE_CACHING) as _,
             1, // TRUE
         );
 
@@ -3943,7 +3943,7 @@ pub unsafe extern "C" fn RequestHandleReadTOC(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            Request,
+            (Request) as _,
             transferSize as u32,
             1, // TRUE
             core::ptr::addr_of_mut!(cdb),
@@ -4030,9 +4030,9 @@ pub unsafe extern "C" fn RequestHandleReadTocEx(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            Request,
+            (Request) as _,
             transfer_size as u32,
-            1i32, // TRUE
+            (1i32) as _, // TRUE
             &mut cdb,
             10u8,
         );
@@ -4316,7 +4316,7 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
                 cdb.GET_CONFIGURATION.as_mut().set_RequestType(SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL);
             }
 
-            status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, transferByteCount as u32, 1, core::ptr::addr_of_mut!(cdb), 12);
+            status = ScratchBuffer_ExecuteCdb(DeviceExtension, (Request) as _, transferByteCount as u32, 1, core::ptr::addr_of_mut!(cdb), 12);
 
             if status >= 0 {
                 let scratch_srb = (*DeviceExtension).ScratchContext.ScratchSrb;
@@ -4525,11 +4525,11 @@ pub unsafe extern "C" fn RequestHandleDiskVerify(
 
                 status = ScratchBuffer_ExecuteCdbEx(
                     DeviceExtension,
-                    Request,
+                    (Request) as _,
                     transferSize,
                     0u8, // FALSE
                     &cdb as *const CDB,
-                    10u32,
+                    (10u32) as _,
                     timeoutValue,
                 );
 
@@ -4566,7 +4566,7 @@ pub unsafe extern "C" fn RequestHandleCheckVerify(
 
         status = ScratchBuffer_ExecuteCdbEx(
             DeviceExtension,
-            Request,
+            (Request) as _,
             transfer_size,
             0, // FALSE
             &mut cdb,
@@ -4959,9 +4959,9 @@ pub unsafe extern "C" fn RequestHandleEjectionControl(
         };
         status = PerformEjectionControl(
             DeviceExtension,
-            Request,
+            (Request) as _,
             lock_type,
-            (*mediaRemoval).PreventMediaRemoval as i32,
+            ((*mediaRemoval).PreventMediaRemoval as i32) as _,
         );
     }
 
@@ -5075,7 +5075,7 @@ pub unsafe extern "C" fn RequestHandleSendOpcInformation(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            Request,
+            (Request) as _,
             0,
             0, // FALSE
             core::ptr::addr_of_mut!(cdb),
@@ -5196,11 +5196,11 @@ pub unsafe extern "C" fn RequestHandleGetPerformance(
         if status >= 0 {
             status = ScratchBuffer_ExecuteCdbEx(
                 DeviceExtension,
-                Request,
+                (Request) as _,
                 transferSize as u32,
                 1, // TRUE
                 &cdb,
-                core::mem::size_of::<GetPerformanceCdb>() as u32,
+                (core::mem::size_of::<GetPerformanceCdb>() as u32) as _,
                 10 /* CDROM_GET_PERFORMANCE_TIMEOUT */,
             );
         }
@@ -5246,7 +5246,7 @@ pub unsafe extern "C" fn RequestHandleMcnSyncFakeIoctl(
     while shouldRetry != 0 {
         status = RequestSetupMcnRequest(
             DeviceExtension,
-            (*info).Gesn.Supported as i32,
+            ((*info).Gesn.Supported as i32) as _,
         );
 
         if !(status >= 0) {
@@ -5698,7 +5698,7 @@ pub unsafe extern "C" fn RequestHandleLoadEjectMedia(
                 core::ptr::null_mut(),
                 0u32,
                 0, // FALSE
-                Request,
+                (Request) as _,
             );
 
             if !zpoddInfo.is_null() {
@@ -5773,7 +5773,7 @@ pub unsafe extern "C" fn RequestHandleReserveRelease(
             core::ptr::null_mut(),
             0,
             0,
-            Request as WDFREQUEST,
+            (Request as WDFREQUEST) as _,
         );
         *DataLength = 0;
 
@@ -6000,7 +6000,7 @@ pub unsafe extern "C" fn RequestHandlePersistentReserve(
             reserveCommand as *mut core::ffi::c_void,
             dataBufLen as u32,
             writeToDevice,
-            Request,
+            (Request) as _,
         );
 
         ExFreePool(srb as *mut core::ffi::c_void);
@@ -6254,7 +6254,7 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
                 }
             }
 
-            ScratchBuffer_SetupSrb(DeviceExtension, Request, transferByteCount as u32, 1);
+            ScratchBuffer_SetupSrb(DeviceExtension, (Request) as _, transferByteCount as u32, 1);
             {
                 let scratchIrp = WdfRequestWdmGetIrp((*DeviceExtension).ScratchContext.ScratchRequest);
                 (*scratchIrp).MdlAddress = (*irp).MdlAddress;
@@ -6349,7 +6349,7 @@ pub unsafe extern "C" fn DeviceHandlePlayAudioMsf(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            Request,
+            (Request) as _,
             transfer_size,
             0, // FALSE
             core::ptr::addr_of_mut!(cdb),
@@ -6441,9 +6441,9 @@ pub unsafe extern "C" fn DeviceHandlePauseAudio(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            Request,
+            (Request) as _,
             transferSize,
-            0i32, // FALSE
+            (0i32) as _, // FALSE
             core::ptr::addr_of_mut!(cdb),
             10u8,
         );
@@ -6479,7 +6479,7 @@ pub unsafe extern "C" fn DeviceHandleResumeAudio(
         );
         cdb.PAUSE_RESUME.as_mut().OperationCode = SCSIOP_PAUSE_RESUME as u8;
         cdb.PAUSE_RESUME.as_mut().Action = CDB_AUDIO_RESUME as u8;
-        status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, transferSize, 0, &mut cdb, 10);
+        status = ScratchBuffer_ExecuteCdb(DeviceExtension, (Request) as _, transferSize, 0, &mut cdb, 10);
         if ntkrnl_sys::base::NT_SUCCESS(status) {
             (*DeviceExtension).DeviceAdditionalData.PlayActive = 1;
             *DataLength = 0;
@@ -6539,9 +6539,9 @@ pub unsafe extern "C" fn DeviceHandleSeekAudioMsf(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            Request,
+            (Request) as _,
             transferSize,
-            0_i32, // FALSE
+            (0_i32) as _, // FALSE
             &mut cdb,
             10_u8,
         );
@@ -6587,9 +6587,9 @@ pub unsafe extern "C" fn DeviceHandleStopAudio(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            Request,
+            (Request) as _,
             transferSize,
-            0i32,
+            (0i32) as _,
             core::ptr::addr_of_mut!(cdb),
             6u8,
         );
@@ -6626,7 +6626,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
         cdb.MODE_SENSE10.as_mut().AllocationLength[0] = (MODE_DATA_SIZE >> 8) as u8;
         cdb.MODE_SENSE10.as_mut().AllocationLength[1] = (MODE_DATA_SIZE & 0xFF) as u8;
 
-        status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, transferSize, 1, core::ptr::addr_of_mut!(cdb), 10);
+        status = ScratchBuffer_ExecuteCdb(DeviceExtension, (Request) as _, transferSize, 1, core::ptr::addr_of_mut!(cdb), 10);
 
         if NT_SUCCESS(status) {
             if RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_CDROM_GET_VOLUME {
@@ -6645,7 +6645,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
                     audioOutput = ModeSenseFindSpecificPage(
                         (*(*DeviceExtension).ScratchContext.ScratchSrb).DataBuffer as *mut i8,
                         (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength as usize,
-                        CDROM_AUDIO_CONTROL_PAGE as u32,
+                        (CDROM_AUDIO_CONTROL_PAGE as u32) as _,
                         0,
                     ) as *mut AUDIO_OUTPUT;
 
@@ -6684,7 +6684,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
                     audioInput = ModeSenseFindSpecificPage(
                         (*(*DeviceExtension).ScratchContext.ScratchSrb).DataBuffer as *mut i8,
                         (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength as usize,
-                        CDROM_AUDIO_CONTROL_PAGE as u32,
+                        (CDROM_AUDIO_CONTROL_PAGE as u32) as _,
                         0,
                     ) as *mut AUDIO_OUTPUT;
 
@@ -6724,7 +6724,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
                     cdb.MODE_SELECT10.as_mut().ParameterListLength[1] = (bytesTransferred & 0xFF) as u8;
                     cdb.MODE_SELECT10.as_mut().set_PFBit(1);
 
-                    status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, bytesTransferred, 0, core::ptr::addr_of_mut!(cdb), 10);
+                    status = ScratchBuffer_ExecuteCdb(DeviceExtension, (Request) as _, bytesTransferred, 0, core::ptr::addr_of_mut!(cdb), 10);
                 }
                 *DataLength = 0;
             }
@@ -6826,9 +6826,9 @@ pub unsafe extern "C" fn DeviceHandleDvdEndSession(
 
             status = ScratchBuffer_ExecuteCdb(
                 DeviceExtension,
-                Request,
+                (Request) as _,
                 transferSize,
-                0i32, // FALSE
+                (0i32) as _, // FALSE
                 core::ptr::addr_of_mut!(cdb),
                 12,
             );
@@ -7049,7 +7049,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            OriginalRequest,
+            (OriginalRequest) as _,
             keyLength,
             1, // TRUE
             &mut cdb,
@@ -7234,7 +7234,7 @@ pub unsafe extern "C" fn DvdSendKey(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            OriginalRequest,
+            (OriginalRequest) as _,
             keyLength,
             0,
             &mut cdb,
@@ -7300,7 +7300,7 @@ pub unsafe extern "C" fn DeviceHandleSetReadAhead(
         cdb.SET_READ_AHEAD.as_mut().ReadAheadLBA[2] = (*fourByte).__bindgen_anon_1.as_ref().Byte1;
         cdb.SET_READ_AHEAD.as_mut().ReadAheadLBA[3] = (*fourByte).__bindgen_anon_1.as_ref().Byte0;
 
-        status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, transferSize, 0i32, &mut cdb, 12);
+        status = ScratchBuffer_ExecuteCdb(DeviceExtension, (Request) as _, transferSize, (0i32) as _, &mut cdb, 12);
 
         if status >= 0 {
             *DataLength = 0;
@@ -7421,7 +7421,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
-            Request as WDFREQUEST,
+            (Request as WDFREQUEST) as _,
             transferSize,
             0,
             &raw mut cdb,

@@ -20,7 +20,7 @@ unsafe fn RtlMoveMemory(Destination: PVOID, Source: *const core::ffi::c_void, Le
 
 extern "system" {
     fn BaseSetLastNTError(Status: NTSTATUS);
-    fn CloseHandle(hObject: HANDLE);
+    fn CloseHandle(hObject: HANDLE) -> u32;
     fn CreateFileW( lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD, lpSecurityAttributes: *mut core::ffi::c_void, dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE, ) -> HANDLE;
     fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: DWORD, lpInBuffer: *mut core::ffi::c_void, nInBufferSize: DWORD, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: DWORD, lpBytesReturned: LPDWORD, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
     fn GetLastError() -> DWORD;

@@ -38082,11 +38082,7 @@ unsafe extern "C" {
     ) -> PSCSI_PORT_LUN_EXTENSION;
 }
 unsafe extern "C" {
-    pub fn SpiGetSrbData(
-        DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION,
-        LunExtension: PSCSI_PORT_LUN_EXTENSION,
-        QueueTag: UCHAR,
-    ) -> PSCSI_REQUEST_BLOCK_INFO;
+    pub fn SpiGetSrbData(DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION, LunExtension: PSCSI_PORT_LUN_EXTENSION, QueueTag: u8,) -> PSCSI_REQUEST_BLOCK_INFO;
 }
 unsafe extern "C" {
     pub fn PdoDispatchPnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;

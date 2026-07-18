@@ -7,6 +7,8 @@
 //! usbhub.sys — USB hub class driver. Faithful C→Rust cohab (rustconv opus; usbhub.c via
 //! pure-LLM as c2rust couldn't anchor it, the rest c2rust-anchored). 5 .c -> 5 modules.
 //! Enumerates/powers/resets downstream ports. NOT boot-loaded in smoke (boots from CD/ramdisk).
+// Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
+extern crate drvtrace_shim;
 
 pub mod types;
 pub mod glue;

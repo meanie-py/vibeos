@@ -32,3 +32,32 @@ pub unsafe extern "C" fn TracePrint(lvl: u32, _flags: u32, fmt: *const i8) {
 /// Storport debug print: no-op.
 #[no_mangle]
 pub unsafe extern "C" fn StorDebugPrint(_level: u32, _flags: u32, _fmt: *const i8) {}
+
+// ---------------------------------------------------------------------------
+// USB-fleet + serial DPRINT-family no-ops (2026-07-18). Same §9.99 story as
+// TracePrint above: call sites declare these C-variadic, the defs are
+// non-variadic no-ops — fine at machine level (cdecl caller-clean), UB to LLVM
+// in one module. Living here keeps def and callers in different LLVM modules,
+// so the pattern is fold-proof. Names are driver-unique on purpose; do NOT add
+// generic names (DPRINT, TRACE, ERR…) here — they'd leak into every binary
+// that links this shim and collide with crates' own defs.
+
+macro_rules! dprint_noop {
+    ($($n:ident),* $(,)?) => { $(
+        #[no_mangle]
+        pub unsafe extern "C" fn $n(_fmt: *const i8) {}
+    )* }
+}
+
+dprint_noop!(
+    DPRINT_EHCI, DPRINT_RH,                    // usbehci
+    DPRINT_PNP, DPRINT_SCE,                    // usbhub
+    DPRINT_OHCI,                               // usbohci
+    DPRINT_IMPL, DPRINT_UHCI,                  // usbuhci
+    DPRINT_CORE, DPRINT_URB, DPRINT_QUEUE,     // usbport
+    DPRINT_TIMER, DPRINT_INT, DPRINT_MINIPORT, // usbport
+);
+
+/// serial.sys TRACE_ (ReactOS debug.h, __noop in retail).
+#[no_mangle]
+pub unsafe extern "C" fn TRACE_(_component: u32, _fmt: *const i8) {}

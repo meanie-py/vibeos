@@ -98,7 +98,7 @@ extern "C" {
     fn FREE_POOL(Ptr: PVOID);
     fn ClasspPerfIncrementSuccessfulIo( FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, );
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
-    fn ClasspLogSystemEventWithDeviceNumber( Fdo: PDEVICE_OBJECT, EventId: ULONG, );
+    fn ClasspLogSystemEventWithDeviceNumber(Fdo: PDEVICE_OBJECT, EventId: ULONG) -> u32;
     fn IoMarkIrpPending(Irp: PIRP);
     
     fn ClassAcquireRemoveLock(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> ULONG;
@@ -137,7 +137,7 @@ extern "C" {
     fn NT_ASSERTMSG(Msg: *const i8, Expr: BOOLEAN);
 }
 unsafe extern "system" {
-    fn PoUnregisterPowerSettingCallback(Handle: PVOID);
+    fn PoUnregisterPowerSettingCallback(Handle: PVOID) -> u32;
     fn EtwRegister(ProviderId: *const GUID, EnableCallback: *mut c_void, CallbackContext: *mut c_void, RegHandle: *mut u64) -> NTSTATUS;
     fn EtwUnregister(RegHandle: u64) -> NTSTATUS;
     fn IsEqualGUID(Guid1: *const GUID, Guid2: *const GUID) -> BOOLEAN;
@@ -204,7 +204,7 @@ pub unsafe extern "system" fn ClassCheckVerifyComplete(
     (*original_irp).IoStatus.Information = core::mem::size_of::<ULONG>() as _;
 
     ClassReleaseRemoveLock(Fdo, original_irp);
-    ClassCompleteRequest(Fdo, original_irp, ntkrnl_sys::constants::IO_DISK_INCREMENT);
+    ClassCompleteRequest(Fdo, original_irp, (ntkrnl_sys::constants::IO_DISK_INCREMENT) as _);
 
     IoFreeIrp(Irp);
 
@@ -1225,7 +1225,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
         if lock_released == 0 {
             ClassReleaseRemoveLock(DeviceObject, Irp);
         }
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_PNP,
@@ -1673,7 +1673,7 @@ pub unsafe extern "system" fn ClassReadWrite(DeviceObject: *mut _DEVICE_OBJECT, 
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
         (*Irp).IoStatus.Information = 0;
         ClassReleaseRemoveLock(DeviceObject, (Irp as *mut c_void).cast());
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         status = STATUS_DEVICE_DOES_NOT_EXIST;
     } else if ((*DeviceObject).Flags & DO_VERIFY_VOLUME) != 0
         && (*currentIrpStack).MinorFunction != (CLASSP_VOLUME_VERIFY_CHECKED) as u8
@@ -1696,7 +1696,7 @@ pub unsafe extern "system" fn ClassReadWrite(DeviceObject: *mut _DEVICE_OBJECT, 
             NT_ASSERT(((*Irp).IoStatus.__bindgen_anon_1.Status == status) as u8);
             (*Irp).IoStatus.Information = 0;
             ClassReleaseRemoveLock(DeviceObject, (Irp as *mut c_void).cast());
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         } else if status == STATUS_PENDING {
             // queued, nothing to do
         } else {
@@ -1706,7 +1706,7 @@ pub unsafe extern "system" fn ClassReadWrite(DeviceObject: *mut _DEVICE_OBJECT, 
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                     (*Irp).IoStatus.Information = 0;
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
                     status = STATUS_SUCCESS;
                     break 'exit;
                 }
@@ -1736,7 +1736,7 @@ pub unsafe extern "system" fn ClassReadWrite(DeviceObject: *mut _DEVICE_OBJECT, 
                             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
                             (*Irp).IoStatus.Information = 0;
                             ClassReleaseRemoveLock(DeviceObject, (Irp as *mut c_void).cast());
-                            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+                            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
                             status = STATUS_INVALID_PARAMETER;
                             break 'exit;
                         }

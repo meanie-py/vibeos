@@ -249,11 +249,7 @@ extern "system" {
     fn LdrpInsertMemoryTableEntry(LdrEntry: PLDR_DATA_TABLE_ENTRY);
     fn LdrpSetProtection(ViewBase: PVOID, Restore: BOOLEAN) -> NTSTATUS;
     fn LdrpWalkImportDescriptor(DllPath: LPWSTR, LdrEntry: PLDR_DATA_TABLE_ENTRY) -> NTSTATUS;
-    fn LdrpLoadShimEngine(
-        ImageName: PWCHAR,
-        ProcessImageName: PUNICODE_STRING,
-        pShimData: PVOID,
-    ) -> NTSTATUS;
+    fn LdrpLoadShimEngine(ImageName: PWSTR, ProcessImage: PUNICODE_STRING, pShimData: PVOID,);
     fn AVrfInitializeVerifier() -> NTSTATUS;
     fn RtlpInitDeferredCriticalSection();
     fn RtlpInitializeVectoredExceptionHandling();

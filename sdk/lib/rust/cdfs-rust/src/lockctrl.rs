@@ -31,7 +31,7 @@ extern "C" {
     fn CdGetFcbOplock(Fcb: PFCB) -> POPLOCK;
 }
 extern "C" {
-    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
+    fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> u32;
 }
 extern "C" {
     fn CdCreateFileLock(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Lock: BOOLEAN) -> BOOLEAN;

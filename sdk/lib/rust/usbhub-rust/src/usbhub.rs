@@ -64,7 +64,7 @@ unsafe extern "system" {
     fn USBHUB_DumpingConfiguration(ConfigDescriptor: PUSB_CONFIGURATION_DESCRIPTOR);
 }
 unsafe extern "system" {
-    fn USBH_HubStartESDRecovery(HubExtension: PUSBHUB_FDO_EXTENSION);
+    fn USBH_HubStartESDRecovery(HubExtension: PUSBHUB_FDO_EXTENSION,) -> NTSTATUS;
 }
 
 // NTAPI (stdcall on i386) kernel exports — MUST be extern "system" so the `_Name@N` decoration

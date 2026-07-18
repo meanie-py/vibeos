@@ -51,7 +51,7 @@ const FileReparsePointInformation: u32 = _FILE_INFORMATION_CLASS_FileReparsePoin
 const CreateFileTypeNone: u32 = _CREATE_FILE_TYPE_CreateFileTypeNone;
 
 extern "C" {
-    fn MountMgrCreatePointWorker( DeviceExtension: *mut DEVICE_EXTENSION, SymbolicString: *const _UNICODE_STRING, DeviceName: *const _UNICODE_STRING, );
+    fn MountMgrCreatePointWorker(DeviceExtension: *mut DEVICE_EXTENSION, SymbolicString: *const _UNICODE_STRING, DeviceName: *const _UNICODE_STRING) -> u32;
     static mut Unloading: i32;
     static mut UnloadEvent: KEVENT;
     static mut SafeVolumes: _UNICODE_STRING;

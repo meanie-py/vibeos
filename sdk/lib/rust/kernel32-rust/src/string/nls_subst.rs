@@ -1439,15 +1439,8 @@ pub extern "C" fn SUBLANGID(langid: LANGID) -> DWORD {
     ((langid as u16) >> 10) as DWORD
 }
 
-// ---- Wine debug macros (no-ops; symbols only) ----
-#[no_mangle]
-pub extern "C" fn TRACE(_fmt: *const i8) {}
-#[no_mangle]
-pub extern "C" fn FIXME(_fmt: *const i8) {}
-#[no_mangle]
-pub extern "C" fn WARN(_fmt: *const i8) {}
-#[no_mangle]
-pub extern "C" fn ERR(_fmt: *const i8) {}
+// ---- Wine debug macros: defs relocated to winetrace-shim (§9.99 — variadic
+// call sites + fixed-arity in-crate defs = instcombine ud2 fold) ----
 #[no_mangle]
 pub extern "C" fn debugstr_w(_s: *const WCHAR) -> *const u8 {
     core::ptr::null()

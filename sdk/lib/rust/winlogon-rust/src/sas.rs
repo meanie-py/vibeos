@@ -268,11 +268,11 @@ extern "C" {
     fn DisplayStatusMessage(Session: PWLSESSION, hDesktop: HDESK, ResourceId: DWORD) -> BOOL;
     fn CreateUserEnvironment(Session: PWLSESSION) -> BOOL;
     fn AllowAccessOnSession(Session: PWLSESSION) -> BOOL;
-    fn CallNotificationDlls(Session: PWLSESSION, Function: NOTIFICATION_TYPE) -> BOOL;
+    fn CallNotificationDlls(pSession: PWLSESSION, Type: NOTIFICATION_TYPE);
     fn InitializeScreenSaver(Session: PWLSESSION) -> BOOL;
     fn StartScreenSaver(Session: PWLSESSION);
     fn RemoveStatusMessage(Session: PWLSESSION) -> BOOL;
-    fn CloseAllDialogWindows() -> BOOL;
+    fn CloseAllDialogWindows();
     fn WlStrDup(str_: LPCWSTR) -> LPWSTR;
     fn GetSetupType() -> DWORD;
 }
