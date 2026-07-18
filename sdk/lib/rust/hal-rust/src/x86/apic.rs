@@ -470,7 +470,7 @@ unsafe extern "C" {
 #[cfg(target_arch = "x86")]
 const APC_LEVEL: KIRQL = 1;
 #[cfg(target_arch = "x86")]
-const SYNCH_LEVEL: KIRQL = DISPATCH_LEVEL; // UP i386: SYNCH == DISPATCH
+use crate::x86::buildtype::SYNCH_LEVEL; // 2 on the UP HAL, 27 on the SMP HAL (i386)
 #[cfg(target_arch = "x86")]
 const EFLAGS_V86_MASK: ULONG = 0x0002_0000;
 #[cfg(target_arch = "x86")]

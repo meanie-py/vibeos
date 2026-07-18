@@ -8095,3 +8095,93 @@ pass=1566/fail=87 == UP baseline (was: ~60s strands within seconds of start, TIM
   `sizeof(KTHREAD)` stub — no DWARF wrestling (split-DWARF `.dwo` are canonical-path
   + often unloadable), no hand-derived offsets. gdb data symbols need manual reloc:
   `llvm-nm <exe> | grep <sym>` → RVA + runtime kbase (add-symbol-file only maps .text).
+
+### 9.96 (ROOT-CAUSED + FIXED 2026-07-17) `-smp 2` KeIrql/KeSpinLock kmtest deltas — SYNCH_LEVEL's flavor-variance was frozen at the UP value in FIVE independent translation sites (+ a latent kmtest union-aliasing bug that fabricated "byte-shifted pointer" corruption)
+
+**Symptom.** amd64 `-smp 2` kmtest ratchet: `KeIrql fail 0→3` (deterministic),
+`KeSpinLock fail 2→31` (WILDLY run-dependent: 31 in one boot, 1 in the next, same
+binaries), `KeEvent pass 42733→42601 fail 0` (deterministic dip). KeSpinLock failure
+text showed pointer values that looked like `&MmPfnLock` byte-shifted (`>>8`, `>>16`,
+low-bytes-at-top) — pattern-matching to wild-write corruption.
+
+**KeIrql root cause — SYNCH_LEVEL frozen at the UP value across the translation.**
+C encodes "2 on UP, IPI_LEVEL-2 on MP" either via `#ifdef CONFIG_SMP` (ndk headers) or
+via a runtime variable (`halp.h`: `#define SYNCH_LEVEL HalpIrqlSynchLevel`, set
+per-flavor in `buildtype.c`). Five translated sites each froze their own copy:
+1. `ntoskrnl/ke/ke_rust_shims.c` amd64 `KeRaiseIrqlToSynchLevel` — hardcoded
+   `DISPATCH_LEVEL` into CR8 (this is the amd64 provider of the export; the kmtest
+   fail's direct cause together with #5).
+2. `hal-rust/src/x86/apic.rs` + `pic_pic.rs` — `const SYNCH_LEVEL = DISPATCH_LEVEL`
+   feeding the i386 hal exports.
+3. `hal-rust/src/x86/spinlock.rs` — `const SYNCH_LEVEL = 2` feeding the whole i386
+   `*RaiseToSynch` spinlock-export family.
+4. `ke/i386/irqobj.rs` `= 28` (the pre-WS03 `IPI_LEVEL-1` value) and
+   `ke/i386/thrdini.rs` `KfRaiseIrql(0x0C)` (0x0C=12 is the **amd64** SYNCH — wrong
+   arch's constant, live at the SMP context-switch raise).
+5. `sdk/include/xdk/amd64/ke.h` `KeRaiseIrqlToSynchLevel` was FORCEINLINE over CR8 —
+   so the constant is compiled into **every driver binary** (kmtest raised to its own
+   baked-in 2 and no kernel change could alter that).
+
+**Fixes.** Single source of truth per crate + runtime-reachable for drivers:
+kernel exports `KiSynchIrql` (`ke_defs.rs`, per-flavor via `feature="smp"`) and the C
+shim reads it; hal-rust sites all take `x86::buildtype::SYNCH_LEVEL` (cfg'd beside
+`HalpBuildType` — the hal `smp` feature already pairs hal.dll with the kernel flavor,
+proven by the MISMATCHED_HAL check passing); xdk amd64 header switched
+FORCEINLINE→`NTKERNELAPI` import + `@ cdecl -arch=x86_64 KeRaiseIrqlToSynchLevel()`
+added to ntoskrnl.spec (real NT amd64 exports it; UP kernel exports 2, SMP kernel 12,
+so one driver binary is correct against both flavors).
+
+**KeSpinLock root cause — the TEST, not the kernel.** kmtest `CHECK_DATA` held
+`union { KLOCK_QUEUE_HANDLE QueueHandle; PKSPIN_LOCK_QUEUE Queue; KIRQL Irql; }` —
+and the CheckQueue rows use **both** `Queue` and `Irql`: every queued-acquire wrapper
+stores the returned IRQL into `Irql`, stomping the LOW BYTE of the `Queue` pointer;
+`CheckSpinLockQueue` then dereferences the garbled pointer. And the twist found in
+validation: `LockQueue[n].Lock` is boot-initialized **on UP kernels too**
+(`KiInitSystem`, faithful to C and to real NT — the queued-lock exports exist on UP)
+— the test's unconditional NULL-expectation has therefore NEVER been checkable; it
+only ever "passed" because the garbled pointer happened to land on zeroed memory. A
+first fix attempt that kept NULL/NULL on a `!KmtIsMultiProcessorBuild` branch
+regressed the UP guard run 321/2 → 303/20 by de-garbling the read — proof by
+validation. The "byte-shifted `&MmPfnLock`" values were misaligned reads of
+neighboring initialized queue entries — **test-local aliasing, not kernel corruption**.
+Fix: `Irql` moved out of the union + `CheckSpinLockQueue` made a universal
+captured-compare, no flavor branch (capture `InitialQueueLock = Lock & ~7` at row
+init; expect `Next==NULL`, `Lock&~7 == initial` — correct against real-NT MP
+LQ_WAIT/LQ_OWN flag toggling, our ReactOS-HACK impl, AND any kernel that leaves the
+array zeroed; same check count as before so baseline totals are comparable).
+
+**KeEvent dip — legitimate.** The test skips a "spinlock acquired and never
+released" section on MP builds by design (would wedge an MP kernel). Handled at the
+harness: `vibeos-cli conformance --smp N` now ratchets against
+`tools/conformance-baseline/<arch>/kmtest-smp<N>.txt` (MP kernels legitimately
+diverge from UP: `KmtIsMultiProcessorBuild` branches, skipped MP-fatal sections,
+SYNCH=IPI-2 expectations), seeded via `--smp N --write-baseline`.
+
+**Reusable lessons.**
+- **Flavor-variant C constants are a translation drop-class of their own** (sibling
+  of §9.95's dropped `#ifdef CONFIG_SMP` blocks): a C macro/variable that changes
+  value per kernel flavor becomes a frozen UP constant in translation — and every
+  crate/module that froze its own copy diverges independently (we had 2, 12, 27, 28
+  live simultaneously for the same concept). Sweep:
+  `grep -rn "SYNCH_LEVEL\s*[:=]" sdk/lib/rust/` and compare every hit against the
+  cfg'd source of truth (`ke_defs.rs` kernel-side, `buildtype.rs` hal-side).
+- **A FORCEINLINE in a DDK header bakes the constant into every driver** — no kernel
+  fix can reach it. If the value is kernel-flavor-dependent, it must be an export
+  (check real NT: it usually already is).
+- **"Byte-shifted pointer" values in TEST failure output ≠ kernel corruption.**
+  Shifted-looking reads (`P>>8`, `P>>16`, `P<<48`) mean a *misaligned read through a
+  garbled pointer* — on little-endian, reading 8 bytes at `A±k` of a pointer stored
+  at `A` shifts it by 8k bits. Before hunting a kernel wild-write, check the test for
+  union aliasing / low-byte stomps of the pointer it's dereferencing. The tell here:
+  fail count varied 31↔1 across boots of identical binaries (kernel state is not that
+  nondeterministic; a stomped pointer's target contents are).
+- **Count-math triage from two summary lines, zero boots:** SMP run had
+  pass+fail == UP baseline's pass+fail exactly ⇒ identical branch structure ⇒ the
+  runtime flags (`KmtIsCheckedBuild`, `pSpinLock` NULLing, IRQL-loop trims) resolved
+  identically ⇒ the deltas are expectation-value flips, not new/removed checks.
+  Fifteen minutes of reading beats a repro boot.
+- **kmtest self-reports the kernel flavor**: `KmtIsMultiProcessorBuild =
+  !(Prcb->BuildType & PRCB_BUILD_UNIPROCESSOR)`, `KmtIsCheckedBuild = BuildType & 1`.
+  Our SMP kernel publishes DEBUG-only (kiinit drops UNIPROCESSOR under
+  `feature="smp"`) — so kmtest runs MP expectations. When triaging kmtest deltas,
+  derive both flags FIRST; they gate nearly every branch.

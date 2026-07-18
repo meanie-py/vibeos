@@ -952,3 +952,44 @@ gaps, next up): KeSpinLock pass 321→292/fail 2→31 (queued-lock handle `Lock`
 not cleared MP-style — residues are a global lock pointer at byte-shifted offsets —
 plus `KmtIsMultiProcessorBuild` try-acquire semantics), KeIrql 131→128/fail 3,
 KeEvent pass dip 42733→42601.
+
+**Wave-2 burn-down 2/3 + 3/3 (2026-07-17): KeIrql + KeSpinLock + KeEvent deltas ALL
+CLOSED** (field manual §9.96). Three distinct roots, none of them the guessed
+"queued-lock handle not cleared MP-style":
+- **KeIrql fail 3 → 0**: SYNCH_LEVEL's UP/MP flavor-variance was frozen at the UP
+  value in FIVE translation sites — the amd64 `ke_rust_shims.c` CR8 shim (hardcoded
+  DISPATCH), hal-rust's apic/pic/spinlock consts (i386 exports), the xdk amd64
+  `KeRaiseIrqlToSynchLevel` FORCEINLINE (baked `2` into every driver binary incl.
+  kmtest — no kernel fix could reach it), and two stray i386 kernel constants (28 =
+  pre-WS03 value in irqobj; 0x0C = the **amd64** value at the thrdini context-switch
+  raise). Fixed: kernel exports `KiSynchIrql` (per-flavor via `feature="smp"`) + the
+  shim reads it; xdk header switched to `NTKERNELAPI` import + `-arch=x86_64` spec
+  export (matching real NT amd64); hal-rust sites all take `buildtype::SYNCH_LEVEL`;
+  i386 strays aligned to 27. UP kernels still raise 2 by construction.
+- **KeSpinLock fail 31 → 1**: the storm was kmtest's OWN latent bug — `CHECK_DATA`
+  unioned the `Queue` pointer with the `Irql` byte, so queued-acquire wrappers
+  stomped the pointer's low byte and `CheckSpinLockQueue` dereferenced the garble
+  ("byte-shifted MmPfnLock" reads = misaligned neighbor entries; fail count varied
+  31↔1 across identical binaries). Latent on UP only because the garble happened to
+  read zeroed memory — validation showed `KiInitSystem` initializes LockQueue on UP
+  kernels too (faithful to C/real NT), so the test's NULL expectation was never
+  checkable on any flavor. Fixed the union + made the check a universal
+  captured-compare (`Lock & ~7 == captured initial`, `Next == NULL`, no flavor
+  branch). Remaining 1 fail = the known DUMMY_PSEH checked-build divergence
+  (no `KTHREAD|1` owner store) that UP also carries (2 fails there).
+- **KeEvent pass dip**: legitimate — the test skips an MP-fatal section by design.
+  Handled at the harness: `conformance --smp N` now ratchets against
+  `tools/conformance-baseline/<arch>/kmtest-smp<N>.txt` (seeded via
+  `--smp N --write-baseline`).
+- **BONUS build-system fix**: `sdk/include/xdk/CMakeLists.txt` GLOB → GLOB_RECURSE —
+  per-arch fragment edits (amd64/ke.h!) were NOT dependencies of the `native-hpp`
+  header generation, so wdm.h stayed silently stale (bit this lane: first validation
+  ran against a Jul-10 wdm.h).
+Validated: amd64 `-smp 2` full sweep **87/87 ok, 258s**, `kmtest-smp2.txt` baseline
+seeded; KeIrql **131/0** (UP parity), KeSpinLock **322/1** (beats UP's 321/2),
+KeGuardedMutex 1566/87 (exact UP parity), IoInterrupt 1095/0 (UP: 939/156 — MP
+kernel outright better); the only SMP-worse entry is a known IoDeviceObject ±1
+flicker (184/5 vs 185/4), baselined. i386 `-smp 2` smoke 3/3 with the SYNCH=27
+context-switch raise. arm64 untouched behaviorally (halstubs still DISPATCH — its
+SYNCH alignment is OWED for when arm64 -smp conformance opens; ndk arm64 defines no
+MP SYNCH variant, real NT arm64 uses IPI-2=12).
