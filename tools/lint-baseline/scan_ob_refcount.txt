@@ -5,4 +5,4 @@ sdk/lib/rust/ex-rust/src/profile.rs:225: OBREF_LEAK_RETURN
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:1336: OBREF_LEAK_RETURN
 sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs:3121: OBREF_LEAK_RETURN
 sdk/lib/rust/ps-rust/src/process.rs:569: OBREF_LEAK_RETURN
-sdk/lib/rust/ps-rust/src/thread.rs:331: OBREF_LEAK_RETURN
+sdk/lib/rust/ps-rust/src/thread.rs:333: OBREF_LEAK_RETURN

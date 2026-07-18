@@ -11,6 +11,8 @@ extern "system" {
     fn CpGetByte(P: PCPPORT, B: *mut u8, Wait: u8, Poll: u8) -> u16;
     fn CpPutByte(P: PCPPORT, B: u8);
     fn CpInitialize(PortInformation: PCPPORT, Address: PUCHAR, BaudRate: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
     fn UlongToPtr(ul: ULONG) -> PUCHAR;
 }
 

@@ -34,7 +34,6 @@ extern "system" {
     fn WriteFile(hFile: *mut core::ffi::c_void, lpBuffer: *const core::ffi::c_void, nNumberOfBytesToWrite: u32, lpNumberOfBytesWritten: *mut u32, lpOverlapped: *mut core::ffi::c_void) -> i32;
     fn SetFilePointer( hFile: *mut core::ffi::c_void, lDistanceToMove: i32, lpDistanceToMoveHigh: *mut i32, dwMoveMethod: u32, ) -> u32;
     fn lstrcpyA(lpString1: *mut i8, lpString2: *const i8) -> *mut i8;
-    fn strlen(s: *const i8) -> usize;
     fn lstrcmpiA(lpStr1: *const i8, lpStr2: *const i8) -> i32;
     fn CloseHandle(handle: HANDLE) -> BOOL;
     fn CreateDirectoryA( lpPathName: LPCSTR, lpSecurityAttributes: *mut core::ffi::c_void, ) -> BOOL;
@@ -45,6 +44,9 @@ extern "system" {
     fn lstrcatA(lpString1: LPSTR, lpString2: LPCSTR) -> LPSTR;
     fn lstrcpynA(lpString1: LPSTR, lpString2: LPCSTR, iMaxLength: i32) -> LPSTR;
     fn lstrlenA(lpString: LPCSTR) -> i32;
+}
+unsafe extern "C" {
+    fn strlen(s: *const i8) -> usize;
     fn strrchr(s: *const i8, c: i32) -> *mut i8;
 }
 

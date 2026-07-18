@@ -19,6 +19,10 @@ extern "C" {
     fn USBSTOR_SyncUrbRequest(DeviceObject: PDEVICE_OBJECT, Urb: PURB) -> NTSTATUS;
     fn UsbBuildGetDescriptorRequest( Urb: PURB, Length: USHORT, DescriptorType: UCHAR, Index: UCHAR, LanguageId: USHORT, TransferBuffer: PVOID, TransferBufferMDL: PVOID, TransferBufferLength: ULONG, UrbLink: PURB, );
     fn DbgPrint(Format: *const ::core::ffi::c_char, ...) -> ULONG;
+}
+// libusbd exports this stdcall on i386 (_USBD_CreateConfigurationRequestEx@8) — a cdecl
+// decl leaves _USBD_CreateConfigurationRequestEx undefined at link.
+unsafe extern "system" {
     fn USBD_CreateConfigurationRequestEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, InterfaceList: PUSBD_INTERFACE_LIST_ENTRY, ) -> PURB;
 }
 

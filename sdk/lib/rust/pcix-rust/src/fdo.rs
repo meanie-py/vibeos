@@ -29,6 +29,8 @@ extern "system" {
 }
 extern "C" {
     fn DbgPrint(format: *const u8, ...) -> ULONG;
+}
+unsafe extern "system" {
     fn PciSendIoctl( DeviceObject: PDEVICE_OBJECT, Ioctl: ULONG, InputBuffer: PVOID, InputBufferLength: ULONG, OutputBuffer: PVOID, OutputBufferLength: ULONG, ) -> NTSTATUS;
 }
 

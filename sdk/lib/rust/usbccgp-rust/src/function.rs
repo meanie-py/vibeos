@@ -43,10 +43,16 @@ extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
 }
 extern "system" {
-    fn AllocateItem(PoolType: u32, NumberOfBytes: ULONG) -> *mut core::ffi::c_void;
     fn USBCCGP_GetStringDescriptor( DeviceObject: PDEVICE_OBJECT, DescriptorLength: ULONG, DescriptorIndex: u8, LanguageId: u16, OutDescriptor: *mut PVOID, ) -> NTSTATUS;
-    fn FreeItem(Item: PVOID);
     fn USBD_ParseConfigurationDescriptorEx( ConfigurationDescriptor: PVOID, StartPosition: PVOID, InterfaceNumber: LONG, AlternateSetting: LONG, InterfaceClass: LONG, InterfaceSubClass: LONG, InterfaceProtocol: LONG, ) -> PUSB_INTERFACE_DESCRIPTOR;
+}
+unsafe extern "C" {
+    fn AllocateItem(PoolType: u32, NumberOfBytes: ULONG) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    fn FreeItem(Item: PVOID);
+}
+unsafe extern "C" {
     fn AllocateInterfaceDescriptorsArray( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, InterfaceDescriptorArray: *mut *mut PUSB_INTERFACE_DESCRIPTOR, ) -> NTSTATUS;
 }
 

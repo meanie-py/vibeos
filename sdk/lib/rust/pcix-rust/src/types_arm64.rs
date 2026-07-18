@@ -1238,7 +1238,7 @@ unsafe extern "C" {
         OutputBuffer: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PciSendIoctl(
         DeviceObject: PDEVICE_OBJECT,
         IoControlCode: ULONG,
@@ -1327,13 +1327,13 @@ unsafe extern "C" {
         Rom: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PciIsSlotPresentInParentMethod(
         PdoExtension: PPCI_PDO_EXTENSION,
         Method: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PciDecodeEnable(PdoExtension: PPCI_PDO_EXTENSION, Enable: BOOLEAN, Command: PUSHORT);
 }
 unsafe extern "C" {
@@ -1360,7 +1360,7 @@ unsafe extern "C" {
         Length: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PciWriteDeviceConfig(
         DeviceExtension: PPCI_PDO_EXTENSION,
         Buffer: PVOID,
@@ -1368,7 +1368,7 @@ unsafe extern "C" {
         Length: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PciReadDeviceConfig(
         DeviceExtension: PPCI_PDO_EXTENSION,
         Buffer: PVOID,

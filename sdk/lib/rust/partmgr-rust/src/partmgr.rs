@@ -19,7 +19,7 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{CREATE_DISK_MBR, DISK_PARTITION_INFO, FILE_OBJECT, GUID, PARTITION_STYLE, PCSTR, PDRIVER_ADD_DEVICE, PDRIVER_DISPATCH, PDRIVER_UNLOAD, RtlAssert, _CREATE_DISK, _DPFLTR_TYPE_DPFLTR_DISK_ID as DPFLTR_DISK_ID, _DRIVE_LAYOUT_INFORMATION, _DRIVE_LAYOUT_INFORMATION_EX, _LARGE_INTEGER, _PARTITION_INFORMATION, _PARTITION_INFORMATION_EX__bindgen_ty_1, _PARTITION_INFORMATION_MBR, _STORAGE_DEVICE_NUMBER, _UNICODE_STRING};
 
-extern "system" {
+extern "C" {
     // KeGetCurrentIrql comes from ntkrnl_sys::ke (FORCEINLINE on amd64/arm64, not an
     // export there) — declared above; the LLM's local phantom extern is removed.
     fn IssueSyncIoControlRequest(

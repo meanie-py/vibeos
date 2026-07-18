@@ -30,9 +30,12 @@ pub extern "C" fn rust_eh_personality() {}
 // an undefined symbol on a from-scratch amd64 link. Provide the trivial
 // out-of-line definition for amd64 only (cohab-shim, same pattern as
 // cdrom-rust/cdfs-rust ddk_shims). NTAPI=cdecl on amd64.
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-pub unsafe extern "C" fn RtlFillMemoryUlong(
+pub unsafe extern "system" fn RtlFillMemoryUlong(
     destination: *mut core::ffi::c_void,
     length: usize,
     fill: u32,

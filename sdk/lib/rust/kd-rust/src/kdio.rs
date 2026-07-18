@@ -186,12 +186,14 @@ extern "C" {
 
     /// IRQL APIs — exported as extern "C" by Rust shim_exports on i386,
     /// real bindgen extern "C" on amd64/arm64.
-    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn KeLowerIrql(NewIrql: KIRQL);
 
     /// CRT-style: msvcrt._snprintf for inline format helpers.
     fn _snprintf(buffer: *mut CHAR, count: usize, format: PCSTR, ...) -> i32;
     fn strlen(s: *const CHAR) -> usize;
+}
+unsafe extern "system" {
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    fn KeLowerIrql(NewIrql: KIRQL);
 }
 
 // Per kdio.c, this file owns: KdpDebugMode, SerialPortNumber, SerialPortInfo,

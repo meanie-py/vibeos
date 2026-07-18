@@ -34,8 +34,10 @@ extern "system" {
     fn AllocFunction(size: u32) -> *mut core::ffi::c_void;
     fn CopyFunction(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, size: u32);
     fn FreeFunction(ptr: *mut core::ffi::c_void);
-    fn HidParser_BuildCollectionContext( Collection: PHID_COLLECTION, Context: PVOID, ContextSize: ULONG, ) -> NTSTATUS;
     fn ZeroFunction(mem: *mut core::ffi::c_void, size: u32);
+}
+unsafe extern "C" {
+    fn HidParser_BuildCollectionContext( Collection: PHID_COLLECTION, Context: PVOID, ContextSize: ULONG, ) -> NTSTATUS;
 }
 extern "C" {
     fn DebugFunction(msg: *const i8, ...);

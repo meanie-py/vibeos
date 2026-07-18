@@ -28,10 +28,15 @@ macro_rules! w {
 
 
 extern "C" {
+    fn TRACE(format: *const u8, ...);
+}
+// Win32 APIs are stdcall on i386 (_Name@N) — a cdecl decl leaves _Name undefined at link.
+unsafe extern "system" {
     fn ConvertSidToStringSidW(sid: PSID, string: *mut LPWSTR) -> BOOL;
     fn LocalFree(h: *mut core::ffi::c_void) -> HLOCAL;
+}
+unsafe extern "system" {
     fn MIDL_user_allocate(size: usize) -> *mut core::ffi::c_void;
-    fn TRACE(format: *const u8, ...);
 }
 
 // ---- file-scope preamble (translated) ----

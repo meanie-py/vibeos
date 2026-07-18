@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "varargs-rust",
+    "drvtrace-shim",
     "classpnp-rust",
     "disk-rust",
     "mountmgr-rust",

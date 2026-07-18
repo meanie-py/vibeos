@@ -47,8 +47,10 @@ pub const STATUS_INVALID_BUFFER_SIZE: NTSTATUS = 0xC0000206u32 as NTSTATUS;
 extern "C" {
     pub fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
     pub fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
-    pub fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: u32, lpInBuffer: *const core::ffi::c_void, nInBufferSize: u32, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: u32, lpBytesReturned: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
     pub fn RtlStringCbPrintfA(pszDest: *mut i8, cbDest: usize, pszFormat: *const i8, ...) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: u32, lpInBuffer: *const core::ffi::c_void, nInBufferSize: u32, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: u32, lpBytesReturned: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
 }
 extern "system" {
     pub fn Beep(dwFreq: u32, dwDuration: u32) -> BOOL;

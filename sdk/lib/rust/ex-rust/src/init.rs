@@ -1407,7 +1407,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     #[cfg(target_arch = "aarch64")]
     {
         use ntkrnl_sys::ddk::MmMapIoSpace;
-        extern "C" {
+        extern "system" {
             fn HalInitializeClockArm64(GicDistVa: PVOID, GicCpuVa: PVOID);
         }
         let mut Phys: LARGE_INTEGER = core::mem::zeroed();

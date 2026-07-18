@@ -21,10 +21,16 @@ extern "C" {
 extern "C" {
 }
 extern "system" {
-    fn PAGED_CODE();
     fn DeviceSendSrbSynchronously(device: PDEVICE_OBJECT, srb: *mut SCSI_REQUEST_BLOCK, buffer: *mut core::ffi::c_void, length: u32, request_sense: u8, sense_info: *mut u8) -> NTSTATUS;
     fn DeviceGetConfigurationWithAlloc( Device: PDEVICE_OBJECT, Buffer: *mut *mut core::ffi::c_void, BufferSize: *mut ULONG, Feature: u32, RequestType: u32, ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    fn PAGED_CODE();
+}
+unsafe extern "C" {
     fn DeviceSendIoctlAsynchronously( DeviceExtension: PCDROM_DEVICE_EXTENSION, IoControlCode: u32, LowerPdo: PDEVICE_OBJECT, );
+}
+unsafe extern "C" {
     fn DeviceFindFeaturePage(buffer: *mut u8, buffer_size: u32, feature_code: u32) -> *mut FEATURE_DATA_REMOVABLE_MEDIUM;
 }
 

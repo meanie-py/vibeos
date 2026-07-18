@@ -8560,19 +8560,19 @@ unsafe extern "C" {
         Context: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBAudioPinCreate(Pin: PKSPIN, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBAudioPinClose(Pin: PKSPIN, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBAudioPinProcess(Pin: PKSPIN) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBAudioPinReset(Pin: PKSPIN);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBAudioPinSetDataFormat(
         Pin: PKSPIN,
         OldFormat: PKSDATAFORMAT,
@@ -8581,7 +8581,7 @@ unsafe extern "C" {
         AttributeRange: *const KSATTRIBUTE_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBAudioPinSetDeviceState(Pin: PKSPIN, ToState: KSSTATE, FromState: KSSTATE)
         -> NTSTATUS;
 }

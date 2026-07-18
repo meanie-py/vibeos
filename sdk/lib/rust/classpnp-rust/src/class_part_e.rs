@@ -222,6 +222,8 @@ extern "system" {
 }
 extern "C" {
     fn ClasspReleaseQueue(Fdo: PDEVICE_OBJECT, Irp: PIRP);
+}
+unsafe extern "system" {
     fn ClassReleaseRemoveLock(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
 }
 

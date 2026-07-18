@@ -79,6 +79,8 @@ extern "system" {
 extern "C" {
     fn ProbeAndCaptureUnicodeString(CapturedString: PUNICODE_STRING, PreviousMode: KPROCESSOR_MODE, DisplayString: PUNICODE_STRING) -> NTSTATUS;
     fn ReleaseCapturedUnicodeString(CapturedString: PUNICODE_STRING, PreviousMode: KPROCESSOR_MODE);
+}
+unsafe extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }

@@ -18841,7 +18841,7 @@ unsafe extern "C" {
         InterfaceSpecificData: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TranslateResourceListAddress(
         DeviceExtension: PFDO_DEVICE_EXTENSION,
         BusType: INTERFACE_TYPE,
@@ -18862,7 +18862,7 @@ unsafe extern "C" {
         Affinity: PKAFFINITY,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AllocateAddressMapping(
         MappedAddressList: *mut PMAPPED_ADDRESS,
         IoAddress: STOR_PHYSICAL_ADDRESS,

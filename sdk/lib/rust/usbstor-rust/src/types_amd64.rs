@@ -38979,7 +38979,7 @@ unsafe extern "C" {
     pub fn USBSTOR_HandleInternalDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP)
         -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBSTOR_HandleDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -38994,7 +38994,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn USBSTOR_QueueAddIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBSTOR_CancelIo(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
 }
 unsafe extern "C" {
@@ -39022,9 +39022,9 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn USBSTOR_TimerRoutine(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBSTOR_QueueResetPipe(FDODeviceExtension: PFDO_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBSTOR_QueueResetDevice(FDODeviceExtension: PFDO_DEVICE_EXTENSION);
 }

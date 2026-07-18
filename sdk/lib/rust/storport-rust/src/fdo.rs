@@ -23,6 +23,8 @@ extern "C" {
     fn MiniportHwInitialize(Miniport: PMINIPORT) -> NTSTATUS;
     fn CopyResourceList( PoolType: POOL_TYPE, ResourceList: PCM_RESOURCE_LIST, ) -> PCM_RESOURCE_LIST;
     fn QueryBusInterface( DeviceObject: PDEVICE_OBJECT, InterfaceType: PGUID, Size: USHORT, Version: USHORT, Interface: PINTERFACE, InterfaceSpecificData: PVOID, ) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn ForwardIrpAndForget(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 

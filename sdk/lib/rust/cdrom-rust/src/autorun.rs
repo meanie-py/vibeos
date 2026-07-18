@@ -18,12 +18,18 @@ extern "C" {
     static GUID_IO_MEDIA_REMOVAL: GUID;
     static CDROM_DEVICE_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
     static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
-    fn SET_FLAG(flags: *mut u32, flag: u32);
     fn SRB_STATUS(srb_status: u8) -> u32;
-    fn TEST_FLAG(flags: u32, flag: u32) -> i32;
     fn PORT_ALLOCATED_SENSE(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> u8;
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
+}
+unsafe extern "system" {
+    fn SET_FLAG(flags: *mut u32, flag: u32);
+    fn TEST_FLAG(flags: u32, flag: u32) -> i32;
+}
+unsafe extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
+}
+unsafe extern "system" {
     fn WDF_WORKITEM_CONFIG_INIT(config: *mut WDF_WORKITEM_CONFIG, routine: unsafe extern "C" fn(WDFWORKITEM));
 }
 extern "system" {
@@ -39,7 +45,6 @@ extern "system" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
     fn DeviceGetExtension(device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
     fn DeviceSetParameter( deviceExtension: PCDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Value: u32, ) -> i32;
-    fn UNREFERENCED_PARAMETER(param: NTSTATUS);
     fn RtlInitUnicodeString( DestinationString: *mut ntkrnl_sys::ddk::_UNICODE_STRING, SourceString: *const u16 );
     fn KeWaitForMutexObject( Mutex: *mut core::ffi::c_void, WaitReason: i32, WaitMode: i32, Alertable: i32, Timeout: *const core::ffi::c_void, ) -> i32;
     static GUID_IO_DEVICE_EXTERNAL_REQUEST: GUID;
@@ -48,6 +53,9 @@ extern "system" {
     fn DeviceGetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Data: *mut u32, ); // PULONG
     fn PoRegisterPowerSettingCallback( DeviceObject: *mut core::ffi::c_void, SettingGuid: *const core::ffi::c_void, Callback: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, Handle: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attr: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void, );
+}
+unsafe extern "C" {
+    fn UNREFERENCED_PARAMETER(param: NTSTATUS);
 }
 
 // These two are cdecl, NOT stdcall — they were mis-declared in the `extern "system"` block
@@ -184,7 +192,7 @@ const CdromDetectionSupported: u32 = 2;
 
 // Pool / SRB constants (caller expected to provide correct values)
 const CDROM_TAG_MEDIA_CHANGE_DETECTION: u32 = 0x61436353; // 'CMCM'
-const SENSE_BUFFER_SIZE: usize = 18; // Example; actual value unknown
+const SENSE_BUFFER_SIZE: usize = 18; // classic SENSE_DATA size — matches the senseBuffer alloc
 const FDO_HACK_NO_ASYNCHRONOUS_NOTIFICATION: u64 = 0x40; // matches HackFlags (ULONG_PTR)  // was 0x20000 (LLM-invented); bindgen-correct
 const SRB_CLASS_FLAGS_LOW_PRIORITY: u32 = 0x10000000; // Unknown  // was 0x100 (LLM-invented); bindgen-correct
 const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x100; // Unknown  // was 0x200 (LLM-invented); bindgen-correct
@@ -798,7 +806,12 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
         buffer = (*info).SenseBuffer as *mut core::ffi::c_void;
 
         RtlZeroMemory(srb as *mut core::ffi::c_void, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
-        RtlZeroMemory(buffer as *mut core::ffi::c_void, 32); // SENSE_BUFFER_SIZE
+        // SENSE_BUFFER_SIZE is 18 (matching the 18-byte senseBuffer allocation) —
+        // the translated literal 32 zeroed 8 bytes PAST the 24-usable pool block,
+        // wiping the next pool header => deterministic BAD_POOL_HEADER 0x19/5 at a
+        // later free (2026-07-18 i386 boot bugcheck; forensics: [POOL] page walk,
+        // corrupted neighbor of the ScCa block).
+        RtlZeroMemory(buffer as *mut core::ffi::c_void, SENSE_BUFFER_SIZE);
 
         (*srb).QueueTag = 0; // SP_UNTAGGED
         (*srb).QueueAction = 0; // SRB_SIMPLE_TAG_REQUEST
@@ -808,7 +821,7 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
         (*srb).SrbStatus = 0;
         (*srb).ScsiStatus = 0;
         (*srb).OriginalRequest = irp as *mut core::ffi::c_void;
-        (*srb).SenseInfoBufferLength = 32; // SENSE_BUFFER_SIZE
+        (*srb).SenseInfoBufferLength = SENSE_BUFFER_SIZE as u8; // 18 — see above
 
         (*srb).SrbFlags = (*DeviceExtension).SrbFlags;
         (*srb).SrbFlags |= (*info).SrbFlags; // SET_FLAG expansion

@@ -50054,7 +50054,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DeviceEvtIoInCallerContext(Device: WDFDEVICE, Request: WDFREQUEST);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -50090,10 +50090,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn RequestEvtCleanup(Object: WDFOBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RequestProcessShutdownFlush(Device: WDFDEVICE, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RequestProcessSetPower(Device: WDFDEVICE, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -50121,7 +50121,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn StringsAreMatched(StringToMatch: PCHAR, TargetString: PCHAR) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceGetParameter(
         DeviceExtension: PCDROM_DEVICE_EXTENSION,
         SubkeyName: PWSTR,
@@ -50129,7 +50129,7 @@ unsafe extern "C" {
         ParameterValue: PULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceSetParameter(
         DeviceExtension: PCDROM_DEVICE_EXTENSION,
         SubkeyName: PWSTR,
@@ -50143,7 +50143,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ScanForSpecialHandler(DeviceExtension: PCDROM_DEVICE_EXTENSION, HackFlags: ULONG_PTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceSendSrbSynchronously(
         Device: WDFDEVICE,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -50202,7 +50202,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DeviceReleaseQueue(Device: WDFDEVICE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceReleaseQueueCompletion(
         Request: WDFREQUEST,
         Target: WDFIOTARGET,
@@ -50253,7 +50253,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DeviceInitializeDvd(Device: WDFDEVICE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DevicePickDvdRegion(Device: WDFDEVICE);
 }
 unsafe extern "C" {
@@ -50287,7 +50287,7 @@ unsafe extern "C" {
         Retry: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceErrorHandlerForHitachiGD2000(
         DeviceExtension: PCDROM_DEVICE_EXTENSION,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -50387,7 +50387,7 @@ unsafe extern "C" {
         FileObjectContext: PFILE_OBJECT_CONTEXT,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RequestSetContextFields(Request: WDFREQUEST, Handler: PSYNC_HANDLER) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -50446,7 +50446,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn RequestSetupMcnSyncIrp(DeviceExtension: PCDROM_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RequestSetupMcnRequest(
         DeviceExtension: PCDROM_DEVICE_EXTENSION,
         UseGesn: BOOLEAN,
@@ -50557,7 +50557,7 @@ unsafe extern "C" {
         RequestSent: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RequestDummyCompletionRoutine(
         Request: WDFREQUEST,
         Target: WDFIOTARGET,

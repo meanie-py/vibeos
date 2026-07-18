@@ -30,12 +30,14 @@ extern "system" {
     fn USBPORT_MiniportInterrupts(FdoDevice: PDEVICE_OBJECT, IsEnable: BOOLEAN);
     fn USBPORT_StartTimer(FdoDevice: PVOID, TimerValue: ULONG) -> BOOLEAN;
     fn USBPORT_StopWorkerThread(FdoDevice: PDEVICE_OBJECT);
-    fn RtlStringCbCopyW(pszDest: PWSTR, cbDest: usize, pszSrc: *const u16) -> NTSTATUS;
     fn USBPORT_PdoQueryInterface( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, Irp: PIRP, ) -> NTSTATUS;
     fn USBPORT_RootHubCreateDevice( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, ) -> NTSTATUS;
     fn USBPORT_AddUSB1Fdo(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn USBPORT_AddUSB2Fdo(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn USBPORT_InvalidateControllerHandler( FdoDevice: PDEVICE_OBJECT, Type: ULONG, ) -> ();
+}
+unsafe extern "C" {
+    fn RtlStringCbCopyW(pszDest: PWSTR, cbDest: usize, pszSrc: *const u16) -> NTSTATUS;
 }
 extern "C" {
     fn RtlStringCbPrintfW(pszDest: PWSTR, cbDest: usize, pszFormat: PWSTR, ...) -> NTSTATUS;

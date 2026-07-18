@@ -406,6 +406,8 @@ extern "C" {
 // corruption masked it earlier in boot.)
 extern "system" {
     fn CpDoesPortExist(Port: PUCHAR) -> BOOLEAN;
+}
+unsafe extern "C" {
     fn Rs232PortInUse(Port: PUCHAR) -> BOOLEAN;
 }
 

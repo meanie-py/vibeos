@@ -56,6 +56,8 @@ extern "C" {
 }
 extern "C" {
     fn RtlStringCbPrintfW( pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ... ) -> NTSTATUS;
+}
+unsafe extern "system" {
     fn IsEqualGUID(Guid1: *const _GUID, Guid2: *const _GUID) -> bool;
 }
 
@@ -922,7 +924,7 @@ extern "system" {
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
-extern "system" {
+extern "C" {
     pub fn IoWMIDeviceObjectToProviderId(DeviceObject: PDEVICE_OBJECT) -> ULONG;
     
 }

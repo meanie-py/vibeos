@@ -30,6 +30,8 @@ extern "C" {
     #[link_name = "w32r_RtlStringCchCopyNW"]
     fn RtlStringCchCopyNW( pszDest: LPWSTR, cchDest: usize, pszSrc: LPCWSTR, cchToCopy: usize, ) -> NTSTATUS;
     fn ERR(fmt: *const i8, ...);
+}
+unsafe extern "system" {
     fn GetTextExtentExPointW( hdc: HDC, lpszString: LPCWSTR, cchString: i32, nMaxExtent: i32, lpnFit: *mut i32, lpnDx: *mut i32, lpSize: *mut SIZE, ) -> i32;
 }
 // UserEnterCo/UserLeaveCo are C macros for UserEnterExclusive()/UserLeave()
