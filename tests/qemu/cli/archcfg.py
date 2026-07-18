@@ -124,6 +124,15 @@ _CFGS = {
             # mkramdisk.sh already copies it (line 272).
             "rust_shell32",
             "dll/win32/shell32/shell32.dll",
+            # winlogon + explorer: mkramdisk stages both .exes and both are
+            # Rust-bodied (winlogon-rust / explorer-rust cargo staticlibs) —
+            # the same stale-binary trap as gdi32/user32/shell32 above. Caught
+            # 2026-07-18: a master merge touched explorer-rust/appbar.rs, no
+            # listed target rebuilt explorer.exe, and the artifact-check
+            # (correctly) failed the build on "cargo output older than .rs".
+            "winlogon",
+            "rust_explorer",
+            "explorer",
             "fastfat",
             # ramdisk is THE arm64 boot device (the FAT32 image lives in RAM, exposed
             # as \Device\Ramdisk{GUID} via \ArcName\ramdisk(0)) — same stale-driver trap
