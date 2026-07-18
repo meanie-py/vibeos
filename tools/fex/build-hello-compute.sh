@@ -93,6 +93,19 @@ else
     echo "[!] async32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD)"
 fi
 
+# fault32.exe — the E5 guest-SEH verification guest: hardware AV caught by a raw
+# fs:[0] handler with the LIVE faulting context (the E5 flush oracle), software
+# RaiseException round-trip (the NtRaiseException marshaller), and
+# OutputDebugStringA consumption (DBG_PRINTEXCEPTION must not reach guest SEH).
+if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -o "$HARNESS_BUILD/fault32.exe" "$HARNESS_SRC/Fault32.c" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] fault32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD)"
+fi
+
 # marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
 # TBI (verified against the guest's OWN TEB32), IOCP post/get sentinel round-trip
 # (NtRemoveIoCompletion out-slots + IOSB), EnumDisplayMonitors/GetMonitorInfo/

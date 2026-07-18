@@ -1406,6 +1406,105 @@ static NTSTATUS Wow64Manual_NtContinue(ULONG *a)
                                  NULL, Ctx32);
 }
 
+/* E5 — NtRaiseException: dispatch a guest software raise into the guest's own
+ * 32-bit SEH. The flat thunk handed the 64-bit kernel the guest's 32-bit
+ * EXCEPTION_RECORD/CONTEXT to read at 64-bit layout — garbage. With no
+ * debugger attached a first-chance user raise comes straight back to user
+ * dispatch anyway, so skip the kernel round-trip: build the i386
+ * KiUserExceptionDispatcher frame on the guest stack below the raiser's Esp
+ * (Wow64pBuildGuestExceptionFrame, wow64.c) and point the CPU layer at it via
+ * BTCpuSetContext — works on both arches (amd64 REPLACED-flag resume, arm64
+ * FEX context reload). Second chance == the guest's dispatcher found no
+ * handler: terminate the process with the exception code, loudly.
+ *   NtRaiseException(ExceptionRecord, Context, FirstChance) */
+#define WOW64_CTX32_SIZE 0x2CC /* i386 CONTEXT (through ExtendedRegisters) */
+#define WOW64_CTX32_EIP  0xB8
+#define WOW64_CTX32_ESP  0xC4
+static NTSTATUS Wow64Manual_NtRaiseException(ULONG *a)
+{
+    extern LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
+    extern LONG (WINAPI *Wow64pBTCpuGetContext)(HANDLE, HANDLE, PVOID, PVOID);
+    extern PVOID Wow64pKiUserExceptionDispatcher32;
+    extern ULONG Wow64pBuildGuestExceptionFrame(const void *Rec32,
+                                                const void *Ctx32, ULONG Below);
+    extern NTSTATUS WINAPI NtTerminateProcess(HANDLE Process, LONG ExitStatus);
+    extern ULONG Wow64TraceSyscalls;
+    const BYTE *Rec32 = (const BYTE *)(ULONG_PTR)a[0];
+    const BYTE *Ctx32 = (const BYTE *)(ULONG_PTR)a[1];
+    ULONG FirstChance = a[2];
+    ULONG Resume[WOW64_CTX32_SIZE / 4];
+    ULONG Live[WOW64_CTX32_SIZE / 4];
+    ULONG Esp, i;
+
+    if (!Rec32 || !Ctx32 || (ULONG_PTR)Rec32 >= 0x80000000u ||
+        (ULONG_PTR)Ctx32 >= 0x80000000u)
+        return (NTSTATUS)0xC000000DL;
+
+    if (!FirstChance)
+    {
+        DbgPrint("[WOW64] second-chance exception %08lx eip=%08lx — unhandled in guest, terminating\n",
+                 *(const ULONG *)Rec32, *(const ULONG *)(Ctx32 + WOW64_CTX32_EIP));
+        NtTerminateProcess((HANDLE)(LONG_PTR)-1, (LONG)*(const ULONG *)Rec32);
+        return (NTSTATUS)0xC000000DL; /* not reached */
+    }
+
+    if (!Wow64pKiUserExceptionDispatcher32 || !Wow64pBTCpuSetContext ||
+        !Wow64pBTCpuGetContext)
+        return (NTSTATUS)0xC000000DL;
+
+    /* DBG_PRINTEXCEPTION(_WIDE)_C: natively the kernel's KD consumes these
+     * (that's how OutputDebugString "returns" with no debugger). We bypass the
+     * kernel, so consume them here the same way — print and resume at the
+     * captured context. Dispatching them to guest SEH instead would kill the
+     * process: the guest kernel32's __except is DUMMY_PSEH (never registers). */
+    {
+        ULONG Code = *(const ULONG *)Rec32;
+        const ULONG *Prm = (const ULONG *)(Rec32 + 0x14); /* ExceptionInformation */
+        if (Code == 0x40010006 /* DBG_PRINTEXCEPTION_C */ ||
+            Code == 0x4001000A /* DBG_PRINTEXCEPTION_WIDE_C */)
+        {
+            ULONG Len = Prm[0], Str = Prm[1];
+            if (Str && Str < 0x80000000u && Len && Len < 512)
+            {
+                if (Code == 0x40010006)
+                    DbgPrint("[GUEST32] %.*s", (int)Len,
+                             (const char *)(ULONG_PTR)Str);
+                else
+                    DbgPrint("[GUEST32] %.*ws", (int)Len,
+                             (const WCHAR *)(ULONG_PTR)Str);
+            }
+            for (i = 0; i < WOW64_CTX32_SIZE / 4; i++)
+                Resume[i] = ((const ULONG *)(ULONG_PTR)Ctx32)[i];
+            return Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2,
+                                         (HANDLE)(LONG_PTR)-1, NULL, Resume);
+        }
+    }
+
+    /* Frame placement: below the LIVE guest Esp (the syscall-stub esp from the
+     * CPU layer), NOT below the captured Ctx32->Esp — the raiser's frames (and
+     * the very Rec32/Ctx32 buffers being copied) live between the two. */
+    for (i = 0; i < WOW64_CTX32_SIZE / 4; i++)
+        Live[i] = 0;
+    if (Wow64pBTCpuGetContext((HANDLE)(LONG_PTR)-2, (HANDLE)(LONG_PTR)-1,
+                              NULL, Live) < 0)
+        return (NTSTATUS)0xC000000DL;
+    Esp = Wow64pBuildGuestExceptionFrame(Rec32, Ctx32,
+                                         Live[WOW64_CTX32_ESP / 4] - 0x40);
+    if (!Esp)
+        return (NTSTATUS)0xC000000DL;
+
+    if (Wow64TraceSyscalls)
+        DbgPrint("[WOW64] NtRaiseException %08lx eip=%08lx -> 32-bit SEH dispatch (esp=%08lx)\n",
+                 *(const ULONG *)Rec32, *(const ULONG *)(Ctx32 + WOW64_CTX32_EIP), Esp);
+
+    for (i = 0; i < WOW64_CTX32_SIZE / 4; i++)
+        Resume[i] = ((const ULONG *)(ULONG_PTR)Ctx32)[i];
+    Resume[WOW64_CTX32_EIP / 4] = (ULONG)(ULONG_PTR)Wow64pKiUserExceptionDispatcher32;
+    Resume[WOW64_CTX32_ESP / 4] = Esp;
+    return Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2, (HANDLE)(LONG_PTR)-1,
+                                 NULL, Resume);
+}
+
 /* ---- NtGdiOpenDCW (M4/wow64win) ----------------------------------------- *
  * The first win32k marshaller: gdi32's CreateDC path. The two UNICODE_STRING
  * args (device name, log address) widen 8->16 bytes; DEVMODEW is a flat
@@ -2771,6 +2870,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtConnectPort(Arguments);
     if (WOW64_IS("NtContinue"))
         return Wow64Manual_NtContinue(Arguments);
+    if (WOW64_IS("NtRaiseException"))
+        return Wow64Manual_NtRaiseException(Arguments);
     if (WOW64_IS("NtCreateDirectoryObject"))
         return Wow64pOpenByOa(NtCreateDirectoryObject, Arguments);
     if (WOW64_IS("NtCreateEvent"))

@@ -222,6 +222,51 @@ LONG WINAPI BTCpuGetContext(HANDLE Thread, HANDLE Process, PVOID Unknown,
     return 0;
 }
 
+/*
+ * BTCpuResetToConsistentState — flush the LIVE guest state into the CPU-area
+ * WOW64_CONTEXT at a hardware fault (E5). Called first thing by wow64.dll's
+ * VEH for every process exception.
+ *
+ * The heaven's-gate property makes this trivial: when compat-mode guest code
+ * faults, the kernel captures the full register file in the 64-bit trap
+ * CONTEXT — the low 32 bits of the captured GPRs (and Rsp/Rip) ARE the guest
+ * registers, and SegCs == 0x23 identifies the frame as guest code. Without
+ * this flush the CPU area holds the state of the PREVIOUS syscall boundary,
+ * so everything downstream (the [FEX-WOW64C] fault diagnostics, GetContext,
+ * and the guest-SEH dispatch wow64.dll builds from this context) reads stale
+ * values. FEX does the equivalent flush internally on arm64.
+ *
+ * Never NtContinues — dispatch policy belongs to the host VEH.
+ */
+LONG WINAPI BTCpuResetToConsistentState(EXCEPTION_POINTERS *Info)
+{
+    CONTEXT *H = Info->ContextRecord;
+    PBYTE CpuArea = Wow64CpuArea();
+    PBYTE Ctx;
+
+    if (!CpuArea || H->SegCs != 0x23)
+        return 0; /* fault was in host 64-bit code — nothing of the guest's to flush */
+    Ctx = CpuArea + 16;
+
+    *(volatile ULONG *)(Ctx + 0x8C) = H->SegGs;    /* SegGs  */
+    *(volatile ULONG *)(Ctx + 0x90) = H->SegFs;    /* SegFs  */
+    *(volatile ULONG *)(Ctx + 0x94) = H->SegEs;    /* SegEs  */
+    *(volatile ULONG *)(Ctx + 0x98) = H->SegDs;    /* SegDs  */
+    *(volatile ULONG *)(Ctx + 0x9C) = (ULONG)H->Rdi;
+    *(volatile ULONG *)(Ctx + 0xA0) = (ULONG)H->Rsi;
+    *(volatile ULONG *)(Ctx + 0xA4) = (ULONG)H->Rbx;
+    *(volatile ULONG *)(Ctx + 0xA8) = (ULONG)H->Rdx;
+    *(volatile ULONG *)(Ctx + 0xAC) = (ULONG)H->Rcx;
+    *(volatile ULONG *)(Ctx + 0xB0) = (ULONG)H->Rax;
+    *(volatile ULONG *)(Ctx + 0xB4) = (ULONG)H->Rbp;
+    *(volatile ULONG *)(Ctx + 0xB8) = (ULONG)H->Rip; /* Eip */
+    *(volatile ULONG *)(Ctx + 0xBC) = H->SegCs;    /* SegCs  */
+    *(volatile ULONG *)(Ctx + 0xC0) = H->EFlags;
+    *(volatile ULONG *)(Ctx + 0xC4) = (ULONG)H->Rsp; /* Esp */
+    *(volatile ULONG *)(Ctx + 0xC8) = H->SegSs;    /* SegSs  */
+    return 0;
+}
+
 /* No JIT code cache to invalidate — 32-bit code executes natively. */
 LONG WINAPI BTCpuNotifyMapViewOfSection(PVOID a, PVOID Base, PVOID c,
                                         SIZE_T d, ULONG e, ULONG f)

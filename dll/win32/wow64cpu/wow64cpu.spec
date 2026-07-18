@@ -8,3 +8,4 @@
 @ stdcall -arch=x86_64 BTCpuNotifyMapViewOfSection(ptr ptr ptr long long long)
 @ stdcall -arch=x86_64 BTCpuSetContext(ptr ptr ptr ptr)
 @ stdcall -arch=x86_64 BTCpuGetContext(ptr ptr ptr ptr)
+@ stdcall -arch=x86_64 BTCpuResetToConsistentState(ptr)

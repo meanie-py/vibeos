@@ -59,6 +59,9 @@ NtOpenKeyedEvent
 NtConnectPort
 NtSecureConnectPort
 NtContinue
+# E5: EXCEPTION_RECORD32 + CONTEXT32 — the flat thunk fed both to the 64-bit
+# kernel at 64-bit layout. Dispatched directly into the guest's own SEH.
+NtRaiseException
 # M8: kernel->user callback completion — the guest's 32-bit result buffer
 # must be translated per in-flight callback type (wow64_callback.c).
 NtCallbackReturn
