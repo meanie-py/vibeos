@@ -397,6 +397,13 @@ unsafe fn StatusDialogProc(
             }
             SetDlgItemTextW(hwndDlg, IDC_STATUS_MESSAGE, (*msg).pMessage);
             SetEvent((*msg).StartupEvent);
+            // Denominator for the 9.12 tripwire in GUIDisplayStatusMessage: proves
+            // the status-dialog path ran AND won the creation race this boot. Fires
+            // after WM_INITDIALOG dispatched, so it cannot perturb the race itself.
+            DbgPrint(
+                b"[MSGINA] status dialog up (WM_INITDIALOG dispatched)\n\0".as_ptr()
+                    as *const i8,
+            );
 
             pDlgData = DlgData_Create(hwndDlg, (*msg).Context);
             if pDlgData.is_null() {
@@ -597,8 +604,9 @@ pub(crate) unsafe extern "C" fn GUIDisplayStatusMessage(
             // never SetEvents) must never wedge the whole logon session forever.
             // On timeout we proceed; the worker owns msg + its string copies + the
             // event and cleans up if/when the dialog ever completes (else a small,
-            // one-time, boot-only leak). The underlying win32k race is tracked
-            // separately (see docs/engineering — winlogon status-dialog hang).
+            // one-time, boot-only leak). The underlying win32k race: field manual
+            // §9.12 + its 2026-07-17 addendum (not reproducing; this timeout path
+            // is the permanent tripwire that re-opens it).
             let wr = WaitForSingleObject((*msg).StartupEvent, STATUS_WINDOW_TIMEOUT_MS);
             if wr == WAIT_OBJECT_0_LOCAL {
                 CloseHandle((*msg).StartupEvent);
@@ -607,6 +615,17 @@ pub(crate) unsafe extern "C" fn GUIDisplayStatusMessage(
                     b"WlxDisplayStatusMessage: status window timed out (0x%lx); proceeding\n\0"
                         .as_ptr() as *const i8,
                     wr,
+                );
+                // Unconditional tripwire — the ERR! above is compiled dark (wine
+                // debug channels default off), which left the §9.12 win32k
+                // dialog-creation race with NO serial signature at all. The worker
+                // is left wedged inside win32k, so its kernel stack IS the live
+                // evidence: dump it via the printed tid (inspect.sh dump-thread).
+                DbgPrint(
+                    b"[MSGINA] 9.12-TRIPWIRE: status dialog never reached WM_INITDIALOG \
+(win32k dialog-creation race); worker tid=%lu left wedged, boot proceeding\n\0"
+                        .as_ptr() as *const i8,
+                    ThreadId,
                 );
                 // Leave StartupEvent + msg to the worker; do not close/free here.
             }

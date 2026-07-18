@@ -2454,6 +2454,33 @@ race the stale objects were masking — and audit any `WaitForSingleObject(…, 
 whose signal sits on a lone happy path; make the wait bounded and the shared state
 owned by the side that outlives the wait.
 
+**ADDENDUM (2026-07-17): NOT REPRODUCING — and the mitigation had been running BLIND the
+whole time.** Attempting to root-cause the underlying win32k race, the first discovery was
+that its only signature — the `ERR!("WlxDisplayStatusMessage: status window timed out …")`
+on the bounded-wait timeout path — is **compiled dark**: msgina's Wine debug-channel macros
+gate on `__wine_dbch___default.flags`, which default to 0 (the `wine_debug` cargo feature
+flips them). So for a month "no timeout in the logs" was evidence of nothing; the race could
+have been firing on every third boot with zero serial trace. *Reusable rule: a mitigation
+whose "tracked separately" detector is an `ERR!`/`TRACE!` behind Wine channels has NO
+detector — permanent tripwires must be unconditional `DbgPrint`.* Fixed with a permanent
+pair in `msgina-rust/src/gui.rs`: `[MSGINA] status dialog up (WM_INITDIALOG dispatched)`
+(the denominator — proves the path ran and won the race this boot; fires post-race so it
+cannot perturb it) and `[MSGINA] 9.12-TRIPWIRE: … worker tid=%lu left wedged` (the
+detector, on the 20s timeout). On a hit the worker thread stays wedged inside win32k
+*forever* while the mitigated boot proceeds to desktop — so the printed tid is a live,
+at-leisure forensic handle: `qemu/inspect.sh dump-thread` its kernel stack to see exactly
+which win32k wait dialog-creation is stuck on. **Census: 0 hits / 20 boots** (10
+contended-parallel windows-host TCG — the 4-lease pool saturated, plus the net lane; 6
+sequential TCG; 4 native KVM), denominator visible in all 20, so the path is exercised
+every boot and the probe provably fires. At the historical ~1-in-3 rate, P(0/20) ≈ 0.03%.
+Not root-caused-and-fixed — *gone at the current tree*, plausibly closed incidentally by
+one of the win32k/ke waves since mid-June (§9.41 GdiBatchCount TEB-batch corruption on
+exactly this desktop path is the strongest candidate; also the §9.40 DesktopHeapReAlloc
+fix, the msgqueue/painting split-file waves, §9.94 SwapBusy enforcement). Per the §9.82
+lesson, no candidate is *claimed* without a repro. Re-open ONLY on a fresh
+`[MSGINA] 9.12-TRIPWIRE` line — and then start from the wedged worker's kernel stack, not
+from this section's guesses.
+
 ### 9.13 ✅ RESOLVED — the amd64 service-startup wedge: a Mm WS-pushlock self-deadlock, root-caused to the `OriginalPte`/`RmapListHead` PFN-union confusion (2026-07-04→05)
 
 **Symptom (as it presented for weeks):** amd64 boot wedged at service startup ~50% of runs — `DcomLaunch done: 1053` on serial ⟺ wedge. A single vCPU idle in `KiIdleLoop` (scheduler alive) while 3–6 freshly-created processes (eventlog/svchost/rundll32/setup) each had their FIRST thread permanently parked acquiring their own `EPROCESS.Vm.WorkingSetMutex`. eventlog.exe was silently dead on *every* boot (deterministic stranding); the boot only died when a boot-critical thread was among the caught, hence the ~50%.
@@ -8096,7 +8123,97 @@ pass=1566/fail=87 == UP baseline (was: ~60s strands within seconds of start, TIM
   + often unloadable), no hand-derived offsets. gdb data symbols need manual reloc:
   `llvm-nm <exe> | grep <sym>` → RVA + runtime kbase (add-symbol-file only maps .text).
 
-### 9.96 (ROOT-CAUSED + FIXED 2026-07-17) `-smp 2` KeIrql/KeSpinLock kmtest deltas — SYNCH_LEVEL's flavor-variance was frozen at the UP value in FIVE independent translation sites (+ a latent kmtest union-aliasing bug that fabricated "byte-shifted pointer" corruption)
+### 9.96 (CLOSED 2026-07-17 — root: a DROPPED `PAGE_NOACCESS` early-return in the Rust translation) An arm64 kmtest quarantine mislabeled "fastfat stub bugcheck" was actually a translation-fault STORM — `MmAccessFault` returns SUCCESS but leaves the section-view leaf PTE invalid, so a kernel `RtlCompareMemory` re-faults forever (HANG, no bugcheck)
+
+**Symptom.** arm64 `ZwMapViewOfSection` kmtest quarantined 2026-07-16 as "BUGCHECK 0x23 FAT_FILE_SYSTEM
+P1=0xdead0000 = fastfat STUB_BUGCHECK → translate the untranslated fastfat fn." That label was **wrong**.
+Fresh sweep: `ZwMapViewOfSection INCOMPLETE`, `summary.json bugcheck=null` — i.e. an **in-kernel HANG**, not
+a bugcheck. No `FASTFAT_STUB_HIT` anywhere in the serial. The two-run A/B (before/after an unrelated fastfat
+fix) was identical: the test starts, one `FatAllocateDiskSpace` runs, then silence.
+
+**Triage recipe (hang with no faulting PC — the payoff pattern).** Boot the *already-staged* conformance
+media under GDB (`qemu/start.sh arm64 --gdb`; a conformance build leaves the sweep payload in the ramdisk,
+so it auto-runs), `wait-for.sh` the test's start line, then:
+- `inspect.sh $RUN --command bt-all-cpus` + `--command sample-pc` ×4. **A byte-for-byte identical PC across
+  every sample = a stuck CPU** (here `0xfffff800421e175c`, in `mem::compare_memory` / `RtlCompareMemory`).
+- `info registers` caught PC oscillating to `KiArm64VectorTable+0x200` (current-EL **sync** vector) — so it's
+  not a compute spin, it's a **fault storm**: fault → handler → ERET → same fault.
+- Decode the fault: `p/x $FAR_EL1` (=`0x4e0000`, a low USER-VA), `p/x $ESR_EL1` (=`0x96000007` → EC `0x25`
+  data-abort-current-EL, DFSC `0x07` **translation fault L3 = leaf PTE invalid**, WnR=0 read), `p/x $ELR_EL1`
+  (=the faulting `ldrb`). `RtlCompareMemory` is a leaf, so **`x30` still holds the caller's return addr** — no
+  frame-pointer walk needed (the `bt` past frame #1 was garbage: `#3 0x12`).
+
+**Root cause (fully pinned via GDB + QMP gva2gpa — supersedes the initial "self-map wrong-slot" guess).**
+The self-map is NOT wrong-slot: neighbor L3 slots (`0x4df000`,`0x4e1000`) read `0x0` correctly, so
+`MiAddressToPte(0x4e0000)` @ `0xFFFFF68000002700` genuinely IS `0x4e0000`'s L3 descriptor. It reads
+**`0x45c32441`**. Decode: PFN `0x45c32`, AF(bit10) set, AP(bit6) set, **bit0(Valid) set, bit1 CLEAR**. On
+arm64 a valid L3 *page* descriptor requires **bits[1:0]=`0b11`** — every known-good mapped user page reads
+`0x...4c3` (`0x461b74c3`,`0x461c04c3`,`0x43c8e4c3`); the PDE/PPE table descriptors likewise end in `3`. A
+descriptor with bits[1:0]=`0b01` at L3 is the *reserved/invalid* encoding → the CPU faults (QMP
+`gva2gpa 0x4e0000` = **Unmapped**, DFSC 0x07). BUT `MMPTE.valid()` (`ntkrnl-sys/src/mm.rs:310`) is
+`(self.Long & 1) != 0` — **bit0 only** — so it reports this malformed descriptor as *valid*. Chain confirmed
+by breakpoints: `MmAccessFault`(FaultCode=0,Addr=0x4e0000,KernelMode) returns **x0=0 (SUCCESS)**;
+`MmArmAccessFault` (ARM3) NOT hit and `MmCreateVirtualMapping` NOT hit → the fault takes the **early-out at
+`mm/section.rs:2203-2205`**: `if MmIsPagePresent(Process, Address) != 0 { return STATUS_SUCCESS; }`. arm64
+`MmIsPagePresent` (`arm64/page.rs:148`) walks `MiAddressToPxe/Ppe/Pde` (all valid) then returns
+`(*MiAddressToPte(Address)).valid()` = TRUE for the `0b01` descriptor → spurious present → early SUCCESS →
+ERET → re-fault → **hang**. **Same root almost certainly drives the `MmSection` hang** (same section-view path).
+
+**Bug = a malformed L3 descriptor written with bit0 but not bit1**, by a legacy/proto→hardware PTE builder that
+uses `set_valid(true)` (bit0 only, `mm.rs:315`) instead of the correct `MI_MAKE_HARDWARE_PTE` path (which bases
+on `MiDetermineUserGlobalPteMask` → bits[1:0]=`0b11` → the good `0x...4c3`). Candidate writers all set bit0
+without guaranteeing bit1: `arm64/page.rs:378` (`MmSetPageProtect`), `ARM3/helpers.rs:533`
+(`MI_MAKE_HARDWARE_PTE_USER`), `ARM3/pagfault.rs:1122` (transition→valid resolve). Each ORs `MmProtectToPteMask`
+whose non-zero entries carry `_B=0x402` (bit1+AF) — so the culprit is a path reaching one of these with a
+**zero/NOACCESS mask index** (or a bit1-clearing step), which set_valid + `MI_MAKE_ACCESSED_PAGE` then leaves at
+`0b01`.
+
+**True root (CLOSED — found statically, no writer-hunt boot needed).** The malformed-value *signature* did the
+work: `0x441` = exactly `MiDetermineUserGlobalPteMask` (valid+accessed+user) with a **zero**
+`MmProtectToPteMask[idx]` contribution, and the only zero entries are the NOACCESS family. The writer is
+`MmCreateVirtualMapping(Process, PAddress, PAGE_NOACCESS, Page)` from the legacy section fault-in — reachable
+only because the Rust `MmNotPresentFaultSectionView` (mm/section.rs) **dropped the C's guard**
+(`ntoskrnl/mm/section.c:1640`): `if (Region->Protect & PAGE_NOACCESS) return STATUS_ACCESS_VIOLATION;` right
+after `MmFindRegion`. A touch on a NOACCESS section view fell through, allocated a page, and made a "hardware
+valid" PTE with mask index `MM_NOACCESS` → `pfn|0x441` → `0b01` at L3 → storm. On x86 the same composition
+happens to be a *valid present* PTE, so the identical dropped guard silently mapped NOACCESS views readable —
+wrong but non-fatal, which is why only arm64 hung. **Fix:** the guard restored verbatim + a fail-loud tripwire
+in arm64 `MmCreateVirtualMappingUnsafeEx` (`TempPte.Long & 3 == 1` → `KeBugCheck(MEMORY_MANAGEMENT)` with a
+`[PAGE] BUG:` banner) so any future zero-mask composition dies AT the store instead of storming. Cleared BOTH
+arm64 quarantines (`ZwMapViewOfSection` + `MmSection`, 4/4 stable sweeps); amd64/i386 sweeps byte-identical
+(behavior-neutral where SEH differs — i386 keeps its own quarantines, task #18). Do NOT globally change
+`MMPTE.valid()` to `&3==3` — L1/L2 *block* descriptors legitimately use `0b01`, and `valid()`/set_valid are
+shared with amd64/i386 where bit1 = R/W.
+
+**Reusable:** (a) A conformance quarantine note is a *hypothesis*, not ground truth — re-triage from a fresh
+repro before acting on an old label; "0xdead0000 stub bugcheck" here was a stale guess and the real bug was a
+hang. (b) **Persistent same-DFSC translation-fault storm + no bugcheck ⟹ the fault resolver returned SUCCESS
+without validating the PTE** (arm64 doesn't cache faults, so a real re-fault means a still-invalid descriptor).
+(c) For a leaf-function fault, `x30`/`ELR` beat `bt` (which unwinds into garbage without frame pointers).
+(d) A separate latent keeper found while chasing this: `FatOpenExistingFcb` (create.rs) called the snake_case
+`rust_cohab_stub.c` STUB_BUGCHECK stubs `fat_supersede_or_overwrite_file` + `fat_check_system_security_access`
+while its sibling `FatOpenExistingFile` already called the **real in-file** `FatSupersedeOrOverwriteFile` /
+`FatCheckSystemSecurityAccess` (identical sigs) — re-pointed (free, no re-translation). Any supersede/overwrite
+of an *existing* FAT file through that path would have 0x23/0xdead0000'd; not the ZwMapViewOfSection hang.
+(e) **QMP `gva2gpa <va>` is the ground-truth oracle for "is this VA actually mapped?"** — it uses the CPU's
+real translation, so it settles any software-PTE-vs-hardware disagreement instantly (`inspect.sh $RUN --command
+raw 'monitor gva2gpa 0xADDR'`). (f) On arm64 a *valid L3 page* descriptor is bits[1:0]=`0b11`; bit0-alone
+(`0b01`) is reserved-invalid at L3 → the CPU faults while a bit0-only `.valid()` says "present." Read a
+known-good mapped page's PTE (`x/1gx` at `PTE_BASE + (va>>12)*8`, `PTE_BASE=0xFFFFF68000000000`) to learn the
+expected bit pattern before trusting a software validity predicate. (g) **A malformed-PTE VALUE is a
+fingerprint — decode it against the builder macros before booting a writer-hunt.** `pfn|0x441` ≡ "user
+hardware-PTE base with a zero protection-mask entry" named the guilty caller (and the missing guard) from the
+armchair. (h) **Check the actual constant values before calling a translated `|=` a no-op**: ReactOS
+`MM_NOACCESS` is `0x18` (=`MM_ZERO_ACCESS|MM_WRITECOMBINE`), NOT 0 — so `ProtectMask |= MM_NOACCESS` in the
+WRITECOMBINE branch really does turn on WC bits, and `mask != MM_NOACCESS` guards correctly. Two "obvious
+bugs" evaporated on constant-check; the dropped early-return was the only real one. (i) **Un-quarantining
+heavy tests can expose *downstream* latent bugs**: with the section tests active, ~2/4 arm64 sweeps now kill a
+*later* kmtest_.exe launch with garbage instruction bytes inside the same image page (`0xC000001D` at
+`0x140007xxx`, or a `0xC0000005` at exit) — a shared image-section page corrupted under heavy map/unmap
+traffic, same latent family as the quarantined `ZwAllocateVirtualMemory` 0x4E PFN_LIST_CORRUPT. Registered as
+a known flake; hunt owed (task #7 family).
+
+### 9.97 (ROOT-CAUSED + FIXED 2026-07-17) `-smp 2` KeIrql/KeSpinLock kmtest deltas — SYNCH_LEVEL's flavor-variance was frozen at the UP value in FIVE independent translation sites (+ a latent kmtest union-aliasing bug that fabricated "byte-shifted pointer" corruption)
 
 **Symptom.** amd64 `-smp 2` kmtest ratchet: `KeIrql fail 0→3` (deterministic),
 `KeSpinLock fail 2→31` (WILDLY run-dependent: 31 in one boot, 1 in the next, same

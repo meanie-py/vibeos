@@ -78,14 +78,12 @@ KeMutex
 KeSpinLock
 KeTimer
 MmMdl
-# QUARANTINED 2026-07-16 (re-triaged after the SEH-RESUME fix): NOT the SEH cluster and NOT
-# cleared. The fix stopped the old crash, but MmSection now WEDGES IN-KERNEL (no exit code; the
-# sweep drains to the launch_drain_secs budget; launches twice across re-autostart, never returns).
-# Passes on amd64, so arm64-specific — a hang in the Mm section-object test path (candidate: an
-# arm64 section-map/teardown wait that never completes). Like ExFastMutex it poisons the rest of
-# the run and must stay quarantined until the hang is triaged (GDB: break the wedge on the MmSection
-# create/map path; no faulting PC — it's a hang, not a crash).
-#MmSection
+# UN-QUARANTINED 2026-07-17 (§9.96 root fix): the wedge was the NOACCESS-view translation-fault
+# storm — MmNotPresentFaultSectionView dropped the C's `Region->Protect & PAGE_NOACCESS →
+# STATUS_ACCESS_VIOLATION` early-return, so a touch on a NOACCESS section view mapped the page
+# with protection-mask 0 → malformed 0b01 L3 descriptor → infinite re-fault (hang, no bugcheck).
+# Check restored in mm/section.rs + fail-loud tripwire in arm64 MmCreateVirtualMappingUnsafeEx.
+MmSection
 # QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode
 # 0x101, P3=tag 'KmRM' — MmAllocateMappingAddress/MmFreeMappingAddress reserved-mapping
 # path (Rust mdlsup.rs). Triage owed; quest doc has details.
@@ -160,13 +158,15 @@ SeQueryInfoToken
 # vs ReactOS C (mm/ARM3/pfnlist.c). Owed (task #7 family).
 #ZwAllocateVirtualMemory
 ZwCreateSection
-# QUARANTINED 2026-07-16 (arm64 sweep 12): BUGCHECK 0x23 FAT_FILE_SYSTEM P1=0xdead0000 — a
-# DIFFERENT root from the SEH cluster: 0xdead0000 is the fastfat STUB_BUGCHECK marker
-# (rust_cohab_stub.c), i.e. an untranslated fastfat function (one of the ~25 dropped-at-translate
-# stubs, same class as the fixed FatSetEndOfFileInfo). ZwMapViewOfSection maps a file-backed
-# section → fastfat path → untranslated stub. arm64-only because arm64 boots the FAT32 ramdisk
-# (x86 boot FS differs). Fix = translate the specific fastfat fn (rustconv single-fn), not task #10.
-#ZwMapViewOfSection
+# UN-QUARANTINED 2026-07-17 (§9.96 root fix): the GDB-pinned translation-fault storm
+# (RtlCompareMemory on a mapped view, FAR=0x4e0000, DFSC 0x07, PTE=pfn|0x441 = malformed 0b01
+# L3 descriptor) traced to MmNotPresentFaultSectionView DROPPING the C's PAGE_NOACCESS
+# early-return: a NOACCESS-view touch fell through to MmCreateVirtualMapping(PAGE_NOACCESS) →
+# MmProtectToPteMask[0]==0 → bit0-only descriptor the CPU faults on while MMPTE.valid() calls
+# it present → MmAccessFault returns SUCCESS → ERET → re-fault forever. Check restored in
+# mm/section.rs; fail-loud tripwire added in arm64 MmCreateVirtualMappingUnsafeEx. Full recipe
+# + disproven hypotheses (fastfat stub, §9.16 self-map residual): field manual §9.96.
+ZwMapViewOfSection
 # UN-QUARANTINED 2026-07-17 (§9.93): NtWaitForMultipleObjects handle-array capture now goes through
 # the fault-tolerant KmProtectedCopyMemory on arm64 (validated HW-fault SEH). Same fix as amd64.
 ZwWaitForMultipleObjects

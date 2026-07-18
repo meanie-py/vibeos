@@ -1216,9 +1216,9 @@ unsafe fn IntDefWindowProc(
             }
             // input.h IS_KEY_DOWN: async key state is 2 bits per key —
             // byte (vk*2)/8, KS_DOWN_BIT mask 1 << ((vk%4)*2).
-            let lwin_down = (*gafAsyncKeyState.as_ptr().offset((VK_LWIN as usize * 2 / 8) as isize)
+            let lwin_down = (*(*(&raw const gafAsyncKeyState)).as_ptr().offset((VK_LWIN as usize * 2 / 8) as isize)
                 & (1 << ((VK_LWIN as usize % 4) * 2))) != 0;
-            let rwin_down = (*gafAsyncKeyState.as_ptr().offset((VK_RWIN as usize * 2 / 8) as isize)
+            let rwin_down = (*(*(&raw const gafAsyncKeyState)).as_ptr().offset((VK_RWIN as usize * 2 / 8) as isize)
                 & (1 << ((VK_RWIN as usize % 4) * 2))) != 0;
             if g_bWindowSnapEnabled != 0 && (lwin_down || rwin_down) {
                 let hwndTop = UserGetForegroundWindow();

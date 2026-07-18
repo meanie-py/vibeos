@@ -332,27 +332,27 @@ unsafe fn CreateStockFonts() {
     match ActiveCodePage {
         936 => {
             bIsCJK = 1u8;
-            wcscpy(DefaultGuiFont.lfFaceName.as_mut_ptr(), SimSun.as_ptr());
+            wcscpy((*(&raw mut DefaultGuiFont)).lfFaceName.as_mut_ptr(), SimSun.as_ptr());
         }
 
         950 => {
             bIsCJK = 1u8;
-            wcscpy(DefaultGuiFont.lfFaceName.as_mut_ptr(), MingLiU.as_ptr());
+            wcscpy((*(&raw mut DefaultGuiFont)).lfFaceName.as_mut_ptr(), MingLiU.as_ptr());
         }
 
         932 => {
             bIsCJK = 1u8;
-            wcscpy(DefaultGuiFont.lfFaceName.as_mut_ptr(), [0x004D, 0x0053, 0x0020, 0x0055, 0x0049, 0x0020, 0x0047, 0x006F, 0x0074, 0x0068, 0x0069, 0x0063, 0].as_ptr());
+            wcscpy((*(&raw mut DefaultGuiFont)).lfFaceName.as_mut_ptr(), [0x004D, 0x0053, 0x0020, 0x0055, 0x0049, 0x0020, 0x0047, 0x006F, 0x0074, 0x0068, 0x0069, 0x0063, 0].as_ptr());
         }
 
         949 | 1361 => {
             bIsCJK = 1u8;
-            wcscpy(DefaultGuiFont.lfFaceName.as_mut_ptr(), Batang.as_ptr());
+            wcscpy((*(&raw mut DefaultGuiFont)).lfFaceName.as_mut_ptr(), Batang.as_ptr());
         }
 
         _ => {
             bIsCJK = 0u8;
-            wcscpy(DefaultGuiFont.lfFaceName.as_mut_ptr(), [0x004D, 0x0053, 0x0020, 0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0020, 0x0044, 0x006C, 0x0067, 0].as_ptr());
+            wcscpy((*(&raw mut DefaultGuiFont)).lfFaceName.as_mut_ptr(), [0x004D, 0x0053, 0x0020, 0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0020, 0x0044, 0x006C, 0x0067, 0].as_ptr());
         }
     }
 

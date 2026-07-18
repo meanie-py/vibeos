@@ -479,27 +479,40 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
-- **arm64 0x1E / `[WAITDEP]` ALL-ONES residual** (~2 hits / 2 days organic gate) — the
-  dominant netstack-TDI source is FIXED (§9.36) but a residual arm64 dispatcher/stack
-  corruption with the same ALL-ONES `bad-thread-ptr` face still recurs (07-09 gate
-  `ntoskrnl+0x451B0`, evidence in `~/vibeos-flake-farm/waitdep-evidence/`; 07-10 overnight
-  `+0x1CD8C` retried green). `ke/waitdep.rs` always-on captures each hit — a `[WAITDEP]`
-  0x109 in a gate log IS the live capture. §9.36 addendum. **2026-07-11 §9.54 reframe:
-  all recorded arm64 `+0xNNNN` top-symbols were MASKS (every arm64 bugcheck nested through
-  a KeGetBugMessageText fault; harness logged the reporter's crash PC). Mask fixed + one
-  true face root-caused & fixed (KiUserModeCallout callback-ERET IRQ-clobber, dropped-`cli`
-  translation bug). Re-triage the residual from fresh evidence only — symbolicate the FIRST
-  banner in a log, never the last.**
-- **winlogon 0xC000021A→0x4C init race** (~3/20, all arches) — kernel32 `%wZ` races basesrv's
-  CSR shared-section population. MITIGATED (snapshot validation + loud `snapshot CORRUPT`
-  print); real fix owed: publish-last ordering in csrsrv/basesrv. §9.36.
-- **win32k `DialogBoxParamW` dialog-creation race** (amd64) — WM_INITDIALOG occasionally never
-  dispatched on the winlogon desktop; wedge defensively fixed (§9.12), underlying race open
-  (would bite real SAS/logon dialogs outside autologon).
-- **amd64 start-menu render residue** (§9.41) — Programs/Documents/Settings render without label
-  text + Run/Shut Down dropped (i386 renders full). Root-caused on the `screen-painting` lane
-  (GDI TEB batch never flushed — `GdiBatchCount` read at 0x74 vs real 0x1740, `ee3c81e348c`);
-  strike this when that lane lands on master.
+- **arm64 0x1E / `[WAITDEP]` ALL-ONES residual — CLOSED 2026-07-17** (§9.92 item 4). The
+  "~2 hits / 2 days" residual was the SAME netstack-TDI wait-block bug as §9.36 on the
+  *synchronous*-completion path the 07-08 fix didn't cover (`IofCompleteRequestInner`'s
+  deferred special kernel APC landing on the freed block during the next self-test's IRP
+  build). Fixed by leaking the wait-block on the sync path too; arm64 conformance boot went
+  `BUGCHECK 0x109` → clean `sweep=done`. `ke/waitdep.rs` stays always-on — a fresh
+  `[WAITDEP]` 0x109 is NEW evidence, triaged from scratch (per §9.54: symbolicate the FIRST
+  banner in a log, never the last). Deeper owed root, still open: arm64 does not promptly
+  deliver a self-targeted special kernel APC queued at PASSIVE_LEVEL (real NT delivers it
+  before `IofCallDriver` returns — what makes the classic stack-event sync-IRP idiom safe).
+- **winlogon 0xC000021A→0x4C init race — PREMISE REFUTED + NOT REPRODUCING** (2026-07-14,
+  §9.82). The "owed publish-last ordering fix" is already in the tree at three nested levels
+  (csrsrv step-ordering, CsrLoadServerDll, basesrv SharedSection-last), and the tripwire
+  evidence (identical kernel VA across hits) never fit a race. 20/20 arm64 boots clean with
+  the detector proven visible; zero hits in 1254 retained run dirs. Re-open ONLY on a fresh
+  `[kernel32] BASE_STATIC_SERVER_DATA CORRUPT` print, starting from its printed fields.
+- **win32k `DialogBoxParamW` dialog-creation race — NOT REPRODUCING, tripwire armed**
+  (2026-07-17, §9.12 addendum). 0 hits / 20 boots across three regimes (contended-parallel
+  TCG / sequential TCG / native KVM) with the path proven exercised in all 20. The old
+  mitigation had NO working detector (its `ERR!` was compiled dark behind Wine debug
+  channels) — replaced by a permanent unconditional pair in msgina `gui.rs`:
+  `[MSGINA] status dialog up` each boot + `[MSGINA] 9.12-TRIPWIRE … worker tid=N` on a hit.
+  A hit leaves the worker wedged in win32k with the tid printed — dump its kernel stack
+  (`inspect.sh dump-thread`) for the exact blocking site. Re-open only on a tripwire line.
+- **arm64 kmtest-sweep late-run user-process corruption** (~2/4 sweeps since the §9.96
+  un-quarantine of MmSection/ZwMapViewOfSection, 2026-07-17) — a *later* kmtest_.exe launch
+  dies with `0xC000001D` on garbage instruction encodings inside its own image page
+  (`PC=0x140007xxx`, `[UEXC-KILL] Instr=` shows non-decodable bytes) or `0xC0000005` at
+  process exit; manifests as `IoReadWrite`/`NtSystemDebugControl`/`IoDeviceObject` NO-END /
+  FAIL-EXIT ratchet noise. A shared image-section page is being corrupted under the section
+  tests' heavy map/unmap traffic — same latent arm64 PFN/section-teardown family as the
+  quarantined `ZwAllocateVirtualMemory` 0x4E PFN_LIST_CORRUPT (task #7). The section tests
+  stay ACTIVE (they pass and are the canary); expect occasional ratchet flags on these
+  victims until the PFN bug is slain. Field manual §9.96(i).
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

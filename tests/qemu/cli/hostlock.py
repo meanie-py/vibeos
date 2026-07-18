@@ -114,11 +114,28 @@ def _write_meta(fd: int, meta: dict) -> None:
         pass
 
 
+# The queue/acquire announcement pair. A captured transcript containing WAIT_ANNOUNCE with
+# no ACQUIRED_ANNOUNCE means the process spent its whole budget QUEUED on the broker and
+# never ran the work it was queueing for (field manual §9.84) — `looks_starved` below is
+# the classifier both gate.py and smoke.py use to tell that apart from a real test failure.
+WAIT_ANNOUNCE = "[hostlock] waiting for host CPU lease"
+ACQUIRED_ANNOUNCE = "[hostlock] lease acquired"
+
+
+def looks_starved(output: str) -> bool:
+    """True when `output` (a captured pytest/boot transcript) announced queueing on the
+    lease broker but never printed the matching acquisition line. ACQUIRED_ANNOUNCE is
+    printed ONLY after an announced wait, so the pair-absence is exact: the run's flat
+    timeouts are host starvation (another lane owns the leases), not a code regression."""
+    return WAIT_ANNOUNCE in output and ACQUIRED_ANNOUNCE not in output
+
+
 def _acquire_one(files: list[Path], timeout: float, meta: dict) -> int | None:
     """Try to grab ANY of `files` (an exclusive flock). Returns the held fd, or None on
     timeout. Loops the candidate set so a lease of N permits picks the first free slot."""
     HOSTLOCK_DIR.mkdir(parents=True, exist_ok=True)
-    deadline = time.monotonic() + timeout
+    t0 = time.monotonic()
+    deadline = t0 + timeout
     announced = False
     while True:
         for p in files:
@@ -129,11 +146,17 @@ def _acquire_one(files: list[Path], timeout: float, meta: dict) -> int | None:
                 os.close(fd)
                 continue
             _write_meta(fd, meta)
+            if announced:
+                print(
+                    f"{ACQUIRED_ANNOUNCE} ({meta.get('kind', '?')}) "
+                    f"after {time.monotonic() - t0:.0f}s queued",
+                    flush=True,
+                )
             return fd
         if time.monotonic() >= deadline:
             return None
         if not announced:
-            print(f"[hostlock] waiting for host CPU lease ({meta.get('kind', '?')})...")
+            print(f"{WAIT_ANNOUNCE} ({meta.get('kind', '?')})...", flush=True)
             announced = True
         time.sleep(_POLL)
 

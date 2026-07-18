@@ -954,7 +954,7 @@ plus `KmtIsMultiProcessorBuild` try-acquire semantics), KeIrql 131→128/fail 3,
 KeEvent pass dip 42733→42601.
 
 **Wave-2 burn-down 2/3 + 3/3 (2026-07-17): KeIrql + KeSpinLock + KeEvent deltas ALL
-CLOSED** (field manual §9.96). Three distinct roots, none of them the guessed
+CLOSED** (field manual §9.97). Three distinct roots, none of them the guessed
 "queued-lock handle not cleared MP-style":
 - **KeIrql fail 3 → 0**: SYNCH_LEVEL's UP/MP flavor-variance was frozen at the UP
   value in FIVE translation sites — the amd64 `ke_rust_shims.c` CR8 shim (hardcoded
