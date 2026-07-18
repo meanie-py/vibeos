@@ -175,15 +175,15 @@ static mut gIndicators: KEYBOARD_INDICATOR_PARAMETERS = KEYBOARD_INDICATOR_PARAM
 pub unsafe extern "system" fn InitKeyboardImpl() -> NTSTATUS {
     RtlZeroMemory(
         core::ptr::addr_of_mut!(gafAsyncKeyState) as *mut core::ffi::c_void,
-        core::mem::size_of_val(&gafAsyncKeyState),
+        core::mem::size_of_val(&*(&raw const gafAsyncKeyState)),
     );
     RtlZeroMemory(
         core::ptr::addr_of_mut!(gafAsyncKeyStateRecentDown) as *mut core::ffi::c_void,
-        core::mem::size_of_val(&gafAsyncKeyStateRecentDown),
+        core::mem::size_of_val(&*(&raw const gafAsyncKeyStateRecentDown)),
     );
     RtlZeroMemory(
         core::ptr::addr_of_mut!(gKeyboardInfo) as *mut core::ffi::c_void,
-        core::mem::size_of_val(&gKeyboardInfo),
+        core::mem::size_of_val(&*(&raw const gKeyboardInfo)),
     );
     gKeyboardInfo.KeyboardIdentifier.Type = 4;
     gKeyboardInfo.NumberOfFunctionKeys = 12;
@@ -284,7 +284,7 @@ unsafe extern "system" fn IntKeyboardUpdateLeds(
             core::ptr::addr_of_mut!(Block) as _,
             IOCTL_KEYBOARD_SET_INDICATORS,
             core::ptr::addr_of_mut!(gIndicators) as *mut _,
-            core::mem::size_of_val(&gIndicators) as u32,
+            core::mem::size_of_val(&*(&raw const gIndicators)) as u32,
             core::ptr::null_mut(),
             0,
         );
@@ -315,7 +315,7 @@ pub unsafe extern "stdcall" fn UserInitKeyboard(hKeyboardDevice: HANDLE) {
         core::ptr::null_mut(),
         0,
         core::ptr::addr_of_mut!(gIndicators) as *mut _,
-        core::mem::size_of_val(&gIndicators) as u32,
+        core::mem::size_of_val(&*(&raw const gIndicators)) as u32,
     );
 
     if !NT_SUCCESS(Status) {
@@ -324,17 +324,17 @@ pub unsafe extern "stdcall" fn UserInitKeyboard(hKeyboardDevice: HANDLE) {
     }
 
     SET_KEY_LOCKED!(
-        gafAsyncKeyState.as_mut_ptr(),
+        (*(&raw mut gafAsyncKeyState)).as_mut_ptr(),
         VK_CAPITAL as i32,
         (gIndicators.LedFlags & KEYBOARD_CAPS_LOCK_ON as u16) as i32,
     );
     SET_KEY_LOCKED!(
-        gafAsyncKeyState.as_mut_ptr(),
+        (*(&raw mut gafAsyncKeyState)).as_mut_ptr(),
         VK_NUMLOCK as i32,
         (gIndicators.LedFlags & KEYBOARD_NUM_LOCK_ON as u16) as i32,
     );
     SET_KEY_LOCKED!(
-        gafAsyncKeyState.as_mut_ptr(),
+        (*(&raw mut gafAsyncKeyState)).as_mut_ptr(),
         VK_SCROLL as i32,
         (gIndicators.LedFlags & KEYBOARD_SCROLL_LOCK_ON as u16) as i32,
     );
@@ -349,7 +349,7 @@ pub unsafe extern "stdcall" fn UserInitKeyboard(hKeyboardDevice: HANDLE) {
         core::ptr::null_mut(),
         0,
         core::ptr::addr_of_mut!(gKeyboardInfo) as *mut _,
-        core::mem::size_of_val(&gKeyboardInfo) as u32,
+        core::mem::size_of_val(&*(&raw const gKeyboardInfo)) as u32,
     );
 
     if !NT_SUCCESS(Status) {}
@@ -376,7 +376,7 @@ pub unsafe extern "C" fn UserInitKeyboard(hKeyboardDevice: HANDLE) {
         core::ptr::null_mut(),
         0,
         core::ptr::addr_of_mut!(gIndicators) as *mut _,
-        core::mem::size_of_val(&gIndicators) as u32,
+        core::mem::size_of_val(&*(&raw const gIndicators)) as u32,
     );
 
     if !NT_SUCCESS(Status) {
@@ -385,17 +385,17 @@ pub unsafe extern "C" fn UserInitKeyboard(hKeyboardDevice: HANDLE) {
     }
 
     SET_KEY_LOCKED!(
-        gafAsyncKeyState.as_mut_ptr(),
+        (*(&raw mut gafAsyncKeyState)).as_mut_ptr(),
         VK_CAPITAL as i32,
         (gIndicators.LedFlags & KEYBOARD_CAPS_LOCK_ON as u16) as i32,
     );
     SET_KEY_LOCKED!(
-        gafAsyncKeyState.as_mut_ptr(),
+        (*(&raw mut gafAsyncKeyState)).as_mut_ptr(),
         VK_NUMLOCK as i32,
         (gIndicators.LedFlags & KEYBOARD_NUM_LOCK_ON as u16) as i32,
     );
     SET_KEY_LOCKED!(
-        gafAsyncKeyState.as_mut_ptr(),
+        (*(&raw mut gafAsyncKeyState)).as_mut_ptr(),
         VK_SCROLL as i32,
         (gIndicators.LedFlags & KEYBOARD_SCROLL_LOCK_ON as u16) as i32,
     );
@@ -410,7 +410,7 @@ pub unsafe extern "C" fn UserInitKeyboard(hKeyboardDevice: HANDLE) {
         core::ptr::null_mut(),
         0,
         core::ptr::addr_of_mut!(gKeyboardInfo) as *mut _,
-        core::mem::size_of_val(&gKeyboardInfo) as u32,
+        core::mem::size_of_val(&*(&raw const gKeyboardInfo)) as u32,
     );
 
     if !NT_SUCCESS(Status) {}
@@ -839,15 +839,15 @@ pub unsafe extern "C" fn NtUserGetAsyncKeyState(Key: INT) -> SHORT {
 
 unsafe extern "system" fn UpdateAsyncKeyState(wVk: WORD, bIsDown: BOOL) {
     if bIsDown != 0 {
-        if IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), wVk) == 0 {
-            let locked = IS_KEY_LOCKED!(gafAsyncKeyState.as_mut_ptr(), wVk);
-            SET_KEY_LOCKED!(gafAsyncKeyState.as_mut_ptr(), wVk, (locked == 0) as u8);
+        if IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), wVk) == 0 {
+            let locked = IS_KEY_LOCKED!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), wVk);
+            SET_KEY_LOCKED!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), wVk, (locked == 0) as u8);
         }
 
-        SET_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), wVk, 1u8);
+        SET_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), wVk, 1u8);
         gafAsyncKeyStateRecentDown[(wVk / 8) as usize] |= 1 << (wVk % 8);
     } else {
-        SET_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), wVk, 0u8);
+        SET_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), wVk, 0u8);
     }
 }
 
@@ -861,7 +861,7 @@ unsafe fn co_CallLowLevelKeyboardHook(wVk: WORD, wScanCode: WORD, dwFlags: DWORD
     if dwFlags & KEYEVENTF_EXTENDEDKEY != 0 {
         KbdHookData.flags |= LLKHF_EXTENDED;
     }
-    if IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_MENU as i32) != 0 {
+    if IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MENU as i32) != 0 {
         KbdHookData.flags |= LLKHF_ALTDOWN;
     }
     if dwFlags & KEYEVENTF_KEYUP != 0 {
@@ -875,8 +875,8 @@ unsafe fn co_CallLowLevelKeyboardHook(wVk: WORD, wScanCode: WORD, dwFlags: DWORD
 
     if dwFlags & KEYEVENTF_KEYUP != 0 {
         uMsg = WM_KEYUP;
-    } else if IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_MENU as i32) != 0
-        && IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_CONTROL as i32) == 0
+    } else if IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MENU as i32) != 0
+        && IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_CONTROL as i32) == 0
     {
         uMsg = WM_SYSKEYDOWN;
     } else {
@@ -1059,9 +1059,9 @@ unsafe fn IntCheckLanguageToggle(
             *pKeyState = INPUTLANGCHANGE_FORWARD as INT;
         } else if wVk == VK_RSHIFT as WORD {
             *pKeyState = INPUTLANGCHANGE_BACKWARD as INT;
-        } else if wVk == 0 && IS_KEY_DOWN!(gafAsyncKeyState.as_ptr(), VK_LSHIFT) != 0 {
+        } else if wVk == 0 && IS_KEY_DOWN!((*(&raw const gafAsyncKeyState)).as_ptr(), VK_LSHIFT) != 0 {
             *pKeyState = INPUTLANGCHANGE_FORWARD as INT;
-        } else if wVk == 0 && IS_KEY_DOWN!(gafAsyncKeyState.as_ptr(), VK_RSHIFT) != 0 {
+        } else if wVk == 0 && IS_KEY_DOWN!((*(&raw const gafAsyncKeyState)).as_ptr(), VK_RSHIFT) != 0 {
             *pKeyState = INPUTLANGCHANGE_BACKWARD as INT;
         } else {
             return 0;
@@ -1383,7 +1383,7 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
 
     if PRIMARYLANGID(gusLanguageID) == LANG_JAPANESE as u16 {
         /* Japanese special! */
-        if IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_SHIFT) != 0 {
+        if IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_SHIFT) != 0 {
             if wSimpleVk == VK_OEM_ATTN as WORD {
                 wSimpleVk = VK_CAPITAL as WORD;
             } else if wSimpleVk == VK_OEM_COPY as WORD {
@@ -1392,11 +1392,11 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
         }
     }
 
-    bWasSimpleDown = IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), wSimpleVk);
+    bWasSimpleDown = IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), wSimpleVk);
 
     /* Update key without shifts */
     wVk2 = IntFixVk(wSimpleVk, (bExt == 0) as BOOL);
-    bIsSimpleDown = if bIsDown != 0 || IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), wVk2) != 0 { 1 } else { 0 };
+    bIsSimpleDown = if bIsDown != 0 || IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), wVk2) != 0 { 1 } else { 0 };
     UpdateAsyncKeyState(wSimpleVk, bIsSimpleDown);
 
     if bIsDown != 0 {
@@ -1440,8 +1440,8 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
     /* If it is F10 or ALT is down and CTRL is up, it's a system key */
     if wVk == VK_F10 as WORD
         || (wSimpleVk == VK_MENU as WORD && bMenuDownRecently != 0)
-        || (IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_MENU) != 0
-            && IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_CONTROL) == 0)
+        || (IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MENU) != 0
+            && IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_CONTROL) == 0)
         || (!pFocusQueue.is_null() && (*pFocusQueue).spwndFocus.is_null())
     {
         bMenuDownRecently = 0;
@@ -1464,8 +1464,8 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
 
     /* Alt-Tab/Esc Check. */
     if bIsSimpleDown != 0 && bWasSimpleDown == 0
-        && IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_MENU) != 0
-        && IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_CONTROL) == 0
+        && IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MENU) != 0
+        && IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_CONTROL) == 0
         && (wVk == VK_ESCAPE as WORD || wVk == VK_TAB as WORD)
     {
         TRACE!("Alt-Tab/Esc Pressed\n");
@@ -1475,13 +1475,13 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
     if gdwLanguageToggleKey == 1 || gdwLanguageToggleKey == 2 {
         if wSimpleVk == VK_SHIFT as WORD {
             let targetKey: UINT = if gdwLanguageToggleKey == 1 { VK_LMENU } else { VK_CONTROL };
-            if IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), targetKey) != 0 {
+            if IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), targetKey) != 0 {
                 bLangToggled = IntCheckLanguageToggle(pFocusQueue, bIsDown, wVk, core::ptr::addr_of_mut!(gLanguageToggleKeyState));
             }
         } else if (wSimpleVk == VK_MENU as WORD && gdwLanguageToggleKey == 1)
             || (wSimpleVk == VK_CONTROL as WORD && gdwLanguageToggleKey == 2)
         {
-            if IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_SHIFT) != 0 {
+            if IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_SHIFT) != 0 {
                 bLangToggled = IntCheckLanguageToggle(pFocusQueue, bIsDown, 0, core::ptr::addr_of_mut!(gLanguageToggleKeyState));
             }
         }
@@ -1489,13 +1489,13 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
     if bLangToggled == 0 && (gdwLayoutToggleKey == 1 || gdwLayoutToggleKey == 2) {
         if wSimpleVk == VK_SHIFT as WORD {
             let targetKey: UINT = if gdwLayoutToggleKey == 1 { VK_LMENU } else { VK_CONTROL };
-            if IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), targetKey) != 0 {
+            if IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), targetKey) != 0 {
                 IntCheckLanguageToggle(pFocusQueue, bIsDown, wVk, core::ptr::addr_of_mut!(gLayoutToggleKeyState));
             }
         } else if (wSimpleVk == VK_MENU as WORD && gdwLayoutToggleKey == 1)
             || (wSimpleVk == VK_CONTROL as WORD && gdwLayoutToggleKey == 2)
         {
-            if IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_SHIFT) != 0 {
+            if IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_SHIFT) != 0 {
                 IntCheckLanguageToggle(pFocusQueue, bIsDown, 0, core::ptr::addr_of_mut!(gLayoutToggleKeyState));
             }
         }
@@ -1503,8 +1503,8 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
 
     if bIsDown != 0 && wVk == VK_SNAPSHOT as WORD {
         if !pFocusQueue.is_null()
-            && IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_MENU) != 0
-            && IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_CONTROL) == 0
+            && IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MENU) != 0
+            && IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_CONTROL) == 0
         {
             let hwnd = if !(*pFocusQueue).spwndActive.is_null() {
                 UserHMGetHandle((*pFocusQueue).spwndActive)
@@ -1536,7 +1536,7 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
 
         if Msg.message == WM_KEYDOWN || Msg.message == WM_SYSKEYDOWN {
             if (Msg.wParam == VK_SHIFT as _ || Msg.wParam == VK_CONTROL as _ || Msg.wParam == VK_MENU as _)
-                && IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), Msg.wParam as u32) == 0
+                && IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), Msg.wParam as u32) == 0
             {
                 ERR!("Set last input\n");
             }
@@ -1547,7 +1547,7 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
             if bExt != 0 {
                 Msg.lParam |= (KF_EXTENDED << 16) as LPARAM;
             }
-            if IS_KEY_DOWN!(gafAsyncKeyState.as_mut_ptr(), VK_MENU) != 0 {
+            if IS_KEY_DOWN!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MENU) != 0 {
                 Msg.lParam |= (KF_ALTDOWN << 16) as LPARAM;
             }
             if bWasSimpleDown != 0 {
@@ -1717,7 +1717,7 @@ unsafe fn UserProcessKeyboardInput_impl(pKbdInputData: *mut KEYBOARD_INPUT_DATA)
         let mut KbdInput: KEYBDINPUT = core::mem::zeroed();
 
         /* Support numlock */
-        if (wVk & KBDNUMPAD as u16) != 0 && IS_KEY_LOCKED!(gafAsyncKeyState.as_mut_ptr(), VK_NUMLOCK) != 0 {
+        if (wVk & KBDNUMPAD as u16) != 0 && IS_KEY_LOCKED!((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_NUMLOCK) != 0 {
             wVk = IntTranslateNumpadKey(wVk & 0xFF);
         }
 

@@ -171,12 +171,12 @@ pub static gmxWorldToPageDefault: MATRIX = MATRIX {
 
 #[no_mangle]
 pub unsafe extern "system" fn InitDcImpl() -> NTSTATUS {
-    psurfDefaultBitmap = SURFACE_ShareLockSurface((*StockObjects.as_ptr().add(DEFAULT_BITMAP as usize)) as _);
+    psurfDefaultBitmap = SURFACE_ShareLockSurface((*(*(&raw const StockObjects)).as_ptr().add(DEFAULT_BITMAP as usize)) as _);
     if psurfDefaultBitmap.is_null() {
         return STATUS_UNSUCCESSFUL;
     }
 
-    pbrDefaultBrush = BRUSH_ShareLockBrush((*StockObjects.as_ptr().add(BLACK_BRUSH as usize)) as _);
+    pbrDefaultBrush = BRUSH_ShareLockBrush((*(*(&raw const StockObjects)).as_ptr().add(BLACK_BRUSH as usize)) as _);
     if pbrDefaultBrush.is_null() {
         return STATUS_UNSUCCESSFUL;
     }
@@ -391,7 +391,7 @@ pub unsafe extern "stdcall" fn DC_vInitDc(
 
     IntEngInitClipObj(core::ptr::addr_of_mut!((*pdc).co));
 
-    (*pdc).dclevel.hpal = (*StockObjects.as_ptr().add(DEFAULT_PALETTE as usize)) as _;
+    (*pdc).dclevel.hpal = (*(*(&raw const StockObjects)).as_ptr().add(DEFAULT_PALETTE as usize)) as _;
     (*pdc).dclevel.ppal = PALETTE_ShareLockPalette((*pdc).dclevel.hpal as _);
 
     (*pdc).dclevel.hPath = core::ptr::null_mut();
@@ -406,8 +406,8 @@ pub unsafe extern "stdcall" fn DC_vInitDc(
     (*pdc).dcattr.crPenClr = RGB(0, 0, 0);
     (*pdc).dcattr.ulPenClr = RGB(0, 0, 0);
 
-    (*pdc).dcattr.hbrush = (*StockObjects.as_ptr().add(WHITE_BRUSH as usize)) as _;
-    (*pdc).dcattr.hpen = (*StockObjects.as_ptr().add(BLACK_PEN as usize)) as _;
+    (*pdc).dcattr.hbrush = (*(*(&raw const StockObjects)).as_ptr().add(WHITE_BRUSH as usize)) as _;
+    (*pdc).dcattr.hpen = (*(*(&raw const StockObjects)).as_ptr().add(BLACK_PEN as usize)) as _;
     (*pdc).dclevel.pbrFill = BRUSH_ShareLockBrush((*(*pdc).pdcattr).hbrush as _);
     (*pdc).dclevel.pbrLine = PEN_ShareLockPen((*(*pdc).pdcattr).hpen as _);
     (*pdc).dclevel.ptlBrushOrigin.x = 0;
@@ -457,7 +457,7 @@ pub unsafe extern "stdcall" fn DC_vInitDc(
     (*pdc).dcattr.lRelAbs = 1;
     (*pdc).dcattr.lBreakExtra = 0;
     (*pdc).dcattr.cBreak = 0;
-    (*pdc).dcattr.hlfntNew = (*StockObjects.as_ptr().add(SYSTEM_FONT as usize)) as _;
+    (*pdc).dcattr.hlfntNew = (*(*(&raw const StockObjects)).as_ptr().add(SYSTEM_FONT as usize)) as _;
     (*pdc).dclevel.plfnt = LFONT_ShareLockFont((*pdc).dcattr.hlfntNew as _);
 
     (*pdc).hdcNext = core::ptr::null_mut();
@@ -592,7 +592,7 @@ pub unsafe extern "C" fn DC_vInitDc(
 
     IntEngInitClipObj(core::ptr::addr_of_mut!((*pdc).co));
 
-    (*pdc).dclevel.hpal = (*StockObjects.as_ptr().add(DEFAULT_PALETTE as usize)) as _;
+    (*pdc).dclevel.hpal = (*(*(&raw const StockObjects)).as_ptr().add(DEFAULT_PALETTE as usize)) as _;
     (*pdc).dclevel.ppal = PALETTE_ShareLockPalette((*pdc).dclevel.hpal as _);
 
     (*pdc).dclevel.hPath = core::ptr::null_mut();
@@ -607,8 +607,8 @@ pub unsafe extern "C" fn DC_vInitDc(
     (*pdc).dcattr.crPenClr = RGB(0, 0, 0);
     (*pdc).dcattr.ulPenClr = RGB(0, 0, 0);
 
-    (*pdc).dcattr.hbrush = (*StockObjects.as_ptr().add(WHITE_BRUSH as usize)) as _;
-    (*pdc).dcattr.hpen = (*StockObjects.as_ptr().add(BLACK_PEN as usize)) as _;
+    (*pdc).dcattr.hbrush = (*(*(&raw const StockObjects)).as_ptr().add(WHITE_BRUSH as usize)) as _;
+    (*pdc).dcattr.hpen = (*(*(&raw const StockObjects)).as_ptr().add(BLACK_PEN as usize)) as _;
     (*pdc).dclevel.pbrFill = BRUSH_ShareLockBrush((*(*pdc).pdcattr).hbrush as _);
     (*pdc).dclevel.pbrLine = PEN_ShareLockPen((*(*pdc).pdcattr).hpen as _);
     (*pdc).dclevel.ptlBrushOrigin.x = 0;
@@ -658,7 +658,7 @@ pub unsafe extern "C" fn DC_vInitDc(
     (*pdc).dcattr.lRelAbs = 1;
     (*pdc).dcattr.lBreakExtra = 0;
     (*pdc).dcattr.cBreak = 0;
-    (*pdc).dcattr.hlfntNew = (*StockObjects.as_ptr().add(SYSTEM_FONT as usize)) as _;
+    (*pdc).dcattr.hlfntNew = (*(*(&raw const StockObjects)).as_ptr().add(SYSTEM_FONT as usize)) as _;
     (*pdc).dclevel.plfnt = LFONT_ShareLockFont((*pdc).dcattr.hlfntNew as _);
 
     (*pdc).hdcNext = core::ptr::null_mut();
@@ -795,8 +795,8 @@ unsafe fn DC_vSetOwner(pdc: PDC, ulOwner: ULONG) {
     BRUSH_ShareUnlockBrush((*pdc).dclevel.pbrFill);
     BRUSH_ShareUnlockBrush((*pdc).dclevel.pbrLine);
 
-    (*pdc).dcattr.hbrush = (*StockObjects.as_ptr().add(WHITE_BRUSH as usize)) as _;
-    (*pdc).dcattr.hpen = (*StockObjects.as_ptr().add(BLACK_PEN as usize)) as _;
+    (*pdc).dcattr.hbrush = (*(*(&raw const StockObjects)).as_ptr().add(WHITE_BRUSH as usize)) as _;
+    (*pdc).dcattr.hpen = (*(*(&raw const StockObjects)).as_ptr().add(BLACK_PEN as usize)) as _;
     (*pdc).dclevel.pbrFill = BRUSH_ShareLockBrush((*(*pdc).pdcattr).hbrush as _);
     (*pdc).dclevel.pbrLine = PEN_ShareLockPen((*(*pdc).pdcattr).hpen as _);
 

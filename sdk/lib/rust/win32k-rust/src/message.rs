@@ -483,9 +483,9 @@ unsafe extern "C" fn FindMsgMemory(Msg: UINT) -> PMSGMEMORY {
 }
 
 unsafe fn FindMsgMemory_impl(Msg: UINT) -> PMSGMEMORY {
-    let count = g_MsgMemory.len();
-    let mut MsgMemoryEntry: PMSGMEMORY = g_MsgMemory.as_ptr() as PMSGMEMORY;
-    let end: PMSGMEMORY = (g_MsgMemory.as_ptr() as PMSGMEMORY).add(count);
+    let count = (*(&raw const g_MsgMemory)).len();
+    let mut MsgMemoryEntry: PMSGMEMORY = (*(&raw const g_MsgMemory)).as_ptr() as PMSGMEMORY;
+    let end: PMSGMEMORY = ((*(&raw const g_MsgMemory)).as_ptr() as PMSGMEMORY).add(count);
 
     while MsgMemoryEntry < end {
         if Msg == (*MsgMemoryEntry).Message {

@@ -648,7 +648,7 @@ unsafe fn DbgAddDebugChannel(
 
     let found = bsearch(
         channel as *const core::ffi::c_void,
-        DbgChannels.as_ptr() as *const core::ffi::c_void,
+        (*(&raw const DbgChannels)).as_ptr() as *const core::ffi::c_void,
         DbgChCount as usize,
         core::mem::size_of::<DBG_CHANNEL>(),
         DbgCompareChannels,
