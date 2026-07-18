@@ -616,6 +616,35 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
         if cpp_class and name == cpp_class:
             is_ctor = True
 
+    if return_type == "" and cpp_class is not None and not (is_ctor or is_dtor):
+        # tree-sitter-cpp can absorb `RET WINAPI` into the qualified
+        # declarator node, leaving no top-level return-type child. Recover the
+        # prefix from the intact source signature; the qualified owner/name
+        # makes this shape unambiguous.
+        body_node = next(
+            (child for child in node.children if child.type == "compound_statement"), None
+        )
+        body_start = (
+            body_node.start_byte if body_node is not None else source.find(b"{", node.start_byte)
+        )
+        if body_start >= node.start_byte:
+            signature = source[node.start_byte : body_start].decode("utf-8", errors="replace")
+            qualified = rf"{re.escape(cpp_class)}::{re.escape(name)}\s*\("
+            prefix = re.match(rf"\s*(?P<prefix>.*?)\b{qualified}", signature, flags=re.S)
+            if prefix is None or not prefix.group("prefix").strip():
+                line_start_byte = source.rfind(b"\n", 0, node.start_byte) + 1
+                leading = source[line_start_byte : node.start_byte].decode(
+                    "utf-8", errors="replace"
+                )
+                prefix = re.match(r"\s*(?P<prefix>.*?)\s*$", leading, flags=re.S)
+            if prefix is not None:
+                tokens = [
+                    token
+                    for token in prefix.group("prefix").split()
+                    if token not in CALLING_CONVENTIONS and token != "static"
+                ]
+                return_type = " ".join(tokens)
+
     # Count SEH blocks in body
     body_text = _extract_text(node, source)
     seh_count = body_text.count("_SEH2_TRY")

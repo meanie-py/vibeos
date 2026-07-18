@@ -168,9 +168,7 @@ def test_widl_function_array_parameter_decays_to_pointer(tmp_path: Path):
 
 
 @pytest.mark.parametrize("declarator", ["commands[]", "commands []"])
-def test_cpp_scanner_function_array_parameter_decays_to_pointer(
-    tmp_path: Path, declarator: str
-):
+def test_cpp_scanner_function_array_parameter_decays_to_pointer(tmp_path: Path, declarator: str):
     source = tmp_path / "array-param.cpp"
     source.write_text(f"HRESULT C::Query(ULONG count, OLECMD {declarator}) {{ return S_OK; }}")
     method = scan_file(source).functions[0]
@@ -582,10 +580,10 @@ def test_helper_worker_signature_has_no_invented_this_parameter():
     ) == ("pub unsafe fn GetParsingName_body(pidl: PCIDLIST_ABSOLUTE, Name: *mut PWSTR) -> HRESULT")
 
 
-def test_interface_vtable_repairs_scanner_lost_cpp_return_types():
+def test_interface_vtable_confirms_scanner_recovered_cpp_return_types():
     scan = scan_file(SHELL32 / "folders" / "CControlPanelFolder.cpp")
     deps = extract_call_graph(scan)
-    assert next(d for d in deps if d.name == "COpenControlPanel_Open").return_type == ""
+    assert next(d for d in deps if d.name == "COpenControlPanel_Open").return_type == "HRESULT"
     header = discover_widl_header(REACTOS_ROOT, "i386", interface="IOpenControlPanel")
     interface = parse_widl_interface(header, "IOpenControlPanel")
     repaired = apply_interface_method_signatures(deps, "COpenControlPanel", [interface])
@@ -1013,6 +1011,12 @@ def test_cpp_scanner_strips_legacy_sal_direction_tokens(tmp_path: Path):
     assert functions[0].params == [("HRESULT", "hRes"), ("DWORD *", "value")]
 
 
+def test_cpp_scanner_recovers_return_type_before_winapi_qualified_method():
+    functions = scan_file(SHELL32 / "folders" / "CDrivesFolder.cpp", force_cpp=True).functions
+    final_construct = next(item for item in functions if item.name == "FinalConstruct")
+    assert final_construct.return_type == "HRESULT"
+
+
 def test_cpp_header_scan_extracts_inline_class_methods():
     scan = scan_file(SHELL32 / "folders" / "CMyDocsFolder.h", force_cpp=True)
     methods = {item.name for item in scan.functions if item.cpp_class == "CMyDocsFolder"}
@@ -1050,12 +1054,26 @@ def test_worker_audit_allows_vtable_calls_but_rejects_option_guessing():
 def test_worker_audit_allows_function_pointer_types_but_rejects_extern_declarations():
     source = "{ return register_callback(Worker); }"
     good = (
-        'pub unsafe fn C_f_body() -> HRESULT { register_callback(Worker as unsafe extern '
+        "pub unsafe fn C_f_body() -> HRESULT { register_callback(Worker as unsafe extern "
         '"system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT) }'
     )
     assert audit_worker_body(source, good, "C_f_body") == []
     bad = 'pub unsafe fn C_f_body() { extern "system" { fn invented(); } }'
     assert any("ABI declaration" in item for item in audit_worker_body(source, bad, "C_f_body"))
+
+
+def test_unused_ccomptr_model_debris_is_removed():
+    source = "{ CComPtr<IShellView> view; return E_NOTIMPL; }"
+    rust = (
+        "pub unsafe fn C_f_body() -> HRESULT {\n"
+        "    let view: *mut IShellView = core::ptr::null_mut();\n"
+        "    if !view.is_null() { ((*(*view).lpVtbl).Release)(view); }\n"
+        "    E_NOTIMPL\n"
+        "}"
+    )
+    normalized = normalize_worker_semantics(source, rust)
+    assert "let view" not in normalized
+    assert "Release" not in normalized
 
 
 def test_worker_audit_allows_query_interface_calls_but_rejects_implementation():
@@ -1106,6 +1124,9 @@ def test_worker_semantics_restores_cpp_com_ptr_scope_exit_ownership():
     normalized = normalize_worker_semantics(source, rust)
     assert "let _folder_cpp_com_guard = CppComPtrGuard::new(" in normalized
     assert "let _desktop_cpp_com_guard = CppComPtrGuard::new(" in normalized
+
+    replayed = normalize_worker_semantics(source, normalized)
+    assert replayed == normalized
     assert "folder = core::ptr::null_mut();" in normalized
 
 

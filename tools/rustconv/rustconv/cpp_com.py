@@ -1330,12 +1330,29 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     for interface, name in com_ptr_locals:
         if name in self_guards:
             continue
-        if len(re.findall(rf"\b{re.escape(name)}\b", source)) == 1 and not re.search(
-            rf"\b{re.escape(name)}\b", rust
-        ):
+        if len(re.findall(rf"\b{re.escape(name)}\b", source)) == 1:
             # An unused ATL local has no observable construction/destruction;
-            # omitting it is the exact deterministic lowering.
-            continue
+            # omitting it is the exact deterministic lowering. If the model
+            # emitted an immutable raw-null placeholder, remove that placeholder
+            # and its defensive Release debris. A mutable slot may still be an
+            # out-parameter owner and follows the ordinary guard path below.
+            immutable = re.compile(
+                rf"^[ \t]*let\s+{re.escape(name)}\s*:\s*\*mut\s+"
+                rf"{re.escape(interface)}\s*=\s*core::ptr::null_mut\(\)\s*;\s*",
+                flags=re.M,
+            )
+            if immutable.search(rust):
+                rust = immutable.sub("", rust)
+                rust = re.sub(
+                    rf"\s*if\s+!{re.escape(name)}\.is_null\(\)\s*\{{\s*"
+                    rf"\(\(\*\(\*{re.escape(name)}\)\.lpVtbl\)\.Release\)"
+                    rf"\({re.escape(name)}\);\s*\}}",
+                    "",
+                    rust,
+                )
+                continue
+            if not re.search(rf"\b{re.escape(name)}\b", rust):
+                continue
         # The model sometimes reproduces ATL's wrapper syntax even though the
         # worker contract exposes CComPtr storage as a scaffold-owned raw slot.
         # Lower only the exact null/default construction shape; Attach/Detach,
@@ -1405,27 +1422,30 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
                 f"found {len(matches)}"
             )
         match = matches[0]
-        guard = (
-            match.group(0)
-            + "\n"
-            + match.group("indent")
-            + (
-                f"if !{name}.is_null() {{ ((*(*{name}).lpVtbl).AddRef)({name}); }}\n"
+        guard_name = f"_{name}_cpp_com_guard"
+        if not re.search(rf"\blet\s+{re.escape(guard_name)}\s*=", rust):
+            guard = (
+                match.group(0)
+                + "\n"
                 + match.group("indent")
-                if copied_value is not None and not add_refs
-                else ""
+                + (
+                    f"if !{name}.is_null() {{ ((*(*{name}).lpVtbl).AddRef)({name}); }}\n"
+                    + match.group("indent")
+                    if copied_value is not None and not add_refs
+                    else ""
+                )
+                + f"let {guard_name} = CppComPtrGuard::new("
+                + f"core::ptr::addr_of_mut!({name}));"
             )
-            + f"let _{name}_cpp_com_guard = CppComPtrGuard::new("
-            + f"core::ptr::addr_of_mut!({name}));"
-        )
-        rust = rust[: match.start()] + guard + rust[match.end() :]
+            rust = rust[: match.start()] + guard + rust[match.end() :]
 
         # DeepSeek commonly emits explicit CComPtr-destructor releases on some
         # branches.  Null the watched slot after those releases so the guard is
         # idempotent while retaining the exact point at which C++ destroyed it.
         release = re.compile(
             rf"(?P<indent>^[ \t]*)\(\(\*\(\*{re.escape(name)}\)\.lpVtbl\)\.Release\)"
-            rf"\({re.escape(name)}(?:\s+as\s+\*mut\s+IUnknown)?\);",
+            rf"\({re.escape(name)}(?:\s+as\s+\*mut\s+IUnknown)?\);"
+            rf"(?!\s*{re.escape(name)}\s*=\s*core::ptr::null_mut\(\)\s*;)",
             re.M,
         )
         rust = release.sub(

@@ -455,6 +455,15 @@ after compiler-directed substrate closure. The real i386 shell32 link then caugh
 patch. This is the preferred shape for callback-heavy classes: generate the ABI, callback,
 state lifecycle, SDK records, and imports; ask the model only for method control flow.
 
+The next `$0` replay target is `CDrivesFolder` (1,455 source lines, 40 prepared functions).
+All 35 cached bodies plus five deterministic stubs reassemble without an API call. This
+replay found and fixed two harness roots before class closure: cached `CComPtr` normalization
+could duplicate guards/nulling, and `HRESULT WINAPI CDrivesFolder::FinalConstruct()` lost its
+return prefix when tree-sitter began the method node mid-line. The refreshed paid module is
+preserved at `~/vibeos-rust-staging/shell32-com/monsters-v2/CDrivesFolder-full.rs`. Its next
+closure pass must handle shared PIDL/helper authority, the source-local physical-drive
+enumerator bridge, and compiler-directed PIDL/IID/union type repairs; do not regenerate it.
+
 ## Second monster checkpoint: complete substrate closure (2026-07-16)
 
 `CNewMenu.cpp` is the first giant class whose newly assembled module is compile-clean in the

@@ -45,3 +45,8 @@ signature derivation. For callback-heavy classes, static window procedures and t
 ABI substrate are generated rather than modeled, including pointer-width export aliases
 such as `GetWindowLongPtrW` -> `GetWindowLongW` on i386. A body may use an
 `unsafe extern "system" fn(...)` callback type, but may not declare an ABI block or export.
+
+Assembly re-normalizes every cache hit and must be replay-idempotent: a second normalization
+cannot duplicate `CComPtr` guards or release-paired null assignments. The scanner recovers
+same-line return/calling-convention prefixes that tree-sitter leaves outside a qualified C++
+method node, so `HRESULT WINAPI CClass::FinalConstruct()` retains its HRESULT contract.

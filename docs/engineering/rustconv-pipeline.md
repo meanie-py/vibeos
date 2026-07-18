@@ -455,3 +455,14 @@ The worker audit examines ABI declarations before declaration-only normalization
 them. It permits `unsafe extern "system" fn(...)` as a function-pointer type, but rejects
 model-owned `extern` blocks and exported ABI functions. This keeps callback expressions
 legal without allowing a body worker to compete with deterministic module scaffolding.
+
+Cached-worker normalization is required to be exactly replay-idempotent. In particular,
+`CComPtr` guards and the nulling paired with an explicit `Release` are inserted at most once;
+an unused immutable raw-null placeholder emitted for a source-unused ATL local is removed
+with its invented defensive release. Replaying an already-normalized worker must produce
+byte-identical normalized output.
+
+The C++ scanner also recovers a return type/calling-convention prefix when tree-sitter starts
+an out-of-line qualified method node mid-line after `HRESULT WINAPI`. Without this recovery,
+factory hooks such as `FinalConstruct` can silently acquire `()` in their generated contract.
+The recovered prefix is source syntax, never a model inference.

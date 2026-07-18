@@ -62,6 +62,11 @@ clustering and authority routing; the C++ frontend additionally owns ATL/COM dis
 - Cached workers are normalized on every assembly. Every deterministic normalization must
   therefore be idempotent; replay tests must cover both raw model spelling and already-fixed
   spelling.
+- Treat a changed normalized worker on a second replay as a harness defect. Ownership guards,
+  `Release`-paired nulling, casts, and helper rewrites must reach a fixed point after one pass.
+- Verify scanner-derived return types before trusting compiler cascades. Macro calling
+  conventions can cause tree-sitter to begin a qualified C++ method node after the return
+  prefix; recover that intact same-line prefix deterministically.
 - SDK direction annotations (`IN`, `OUT`, `OPTIONAL`) are scanner syntax, not Rust types;
   strip them before deriving a worker signature. Likewise, `*Ptr` Win32 header aliases must
   resolve to the real pointer-width export names during scaffold generation, with i386 link
