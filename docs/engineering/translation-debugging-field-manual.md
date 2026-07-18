@@ -8748,3 +8748,41 @@ shipped (both found closing out the 2026-07-18 driver sweep):
 sig/VAR class (§9.99/§9.102); (2) if IR-clean, read the fold neighborhood for
 a provably-null deref: eager SEH filters, unguarded lock/lookup results, and
 remember sunk loads mask the true site (this section).
+
+### 9.104 (FIXED 2026-07-18) WoW64 OUT handle/pointer-array not narrowed → 2× guest-heap overrun far from the write
+
+**Symptom:** a 32-bit guest under WoW64 (amd64/arm64 host) takes a first-chance
+AV *inside its own 32-bit ntdll* in `rtl_heap::heap::RtlpRemoveFreeBlock` — the
+`RemoveEntryList(&FreeEntry->FreeList)` unlink, `Blink->Flink = Flink`, with a
+**NULL (or garbage) `Blink`**. The crash is minutes of guest activity *after* the
+real corruption; the faulting "free block" is actually a *busy* allocation whose
+payload got misread as free-list links (its `FreeList.Flink` reads back as an
+HWND/pointer, not a heap address). Under DUMMY_PSEH this surfaces as an
+unhandled guest AV (E5 dispatch → SEH cascade → guest-stack overflow → exit
+0x80). Only *some* GUI apps hit it (calc did; notepad/sol/winmine didn't) —
+whoever enumerates windows/objects into a non-empty buffer.
+
+**Root:** a win32k/ntdll syscall that *fills a caller array of handles or
+pointers* is typed **flat (`ptr`)** in the .spec, so the wow64gen auto-thunk
+hands 64-bit win32k the guest buffer verbatim. The kernel writes **8-byte**
+entries; the guest (its user32/ntdll) sized the buffer at `sizeof(HANDLE)=4`·N.
+Result: an **exactly-2× overrun** that clobbers the adjacent heap block. First
+instance: **`NtUserBuildHwndList`** (behind `Enum{,Child,Thread}Windows`);
+calc's button enumeration corrupted the guest heap. **Native i386 is unaffected**
+(4-byte handles) — this is strictly a WoW64 marshalling gap.
+
+**The dispositive signature in a memory dump:** an array of `{VALUE:4, 0:4}`
+8-byte entries (little-endian: low dword = the real 32-bit handle, high dword =
+0) running *past* its heap block's end. That `{x, 0}` 8-byte stride = 64-bit
+values written into a 32-bit-per-entry buffer. (To read guest memory from the
+host wow64.dll, just deref the guest <4GB address directly — the low-4GB view is
+shared; the E5 fault hook can dump GPRs + a window around the faulting block.)
+
+**Fix:** a manual marshaller (manual-win32k.txt + wow64_manual.c) that gives the
+kernel a host 64-bit scratch array (N·8 B), then narrows each entry's low 32
+bits into the guest's 4-byte-per-entry buffer; a `ULONG` count slot is
+width-identical and flat-passes; the count-query call (`array==NULL`) passes
+through. **Owed sweep:** every flat-typed OUT handle/pointer *array* has this
+shape (`NtUserBuildNameList`/`BuildPropList`, `NtGdi*` handle arrays,
+`NtQueryDirectoryObject`, …) — silently fine until a guest passes a non-empty
+buffer. Add each with an array-narrowing marshaller as coverage reaches it.

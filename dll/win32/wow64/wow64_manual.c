@@ -1903,6 +1903,69 @@ static NTSTATUS Wow64Manual_NtUserGetKeyboardLayoutName(ULONG *a)
     return Ret;
 }
 
+/* ---- E7: NtUserBuildHwndList --------------------------------------------- *
+ * EnumWindows/EnumChildWindows/EnumThreadWindows -> user32 -> this syscall,
+ * which fills a caller HWND[] and returns the count. win32u.spec types the
+ * array slot flat (ptr), so the auto-thunk hands 64-bit win32k the guest's
+ * buffer verbatim — and the kernel writes 8-byte HWNDs into it. The guest
+ * (user32 BuildHwndList) sized that buffer at sizeof(HWND)*count = 4 bytes
+ * per entry, so the kernel's 8-bytes-per-entry write is a 2x OVERRUN that
+ * clobbers the adjacent heap block; the damage surfaces minutes later as a
+ * bad free-list link in RtlpRemoveFreeBlock (calc's button-enum killed the
+ * guest heap this way — a NULL Blink -> BUGCHECK-shaped guest AV -> SEH
+ * cascade). Marshal it: give the kernel a host 64-bit scratch array, then
+ * narrow each handle's low 32 bits back into the guest's 4-byte-per-entry
+ * buffer. The count slot (pcHwndNeeded) is a ULONG — same width 32/64 — so it
+ * flat-passes. Signature:
+ *   NtUserBuildHwndList(HDESK, HWND parent, BOOLEAN children, ULONG tid,
+ *                       ULONG cHwnd, HWND *phwndList, ULONG *pcHwndNeeded) */
+static NTSTATUS Wow64Manual_NtUserBuildHwndList(ULONG *a)
+{
+    extern NTSTATUS NtUserBuildHwndList(HANDLE hDesktop, HANDLE hwndParent,
+                                        BOOLEAN bChildren, ULONG dwThreadId,
+                                        ULONG cHwnd, PVOID phwndList,
+                                        PULONG pcHwndNeeded);
+    HANDLE hDesktop = (HANDLE)(ULONG_PTR)a[0];
+    HANDLE hParent  = (HANDLE)(ULONG_PTR)a[1];
+    BOOLEAN bChild  = (BOOLEAN)a[2];
+    ULONG   dwTid   = a[3];
+    ULONG   cHwnd   = a[4];
+    ULONG  *pList32 = (ULONG *)(ULONG_PTR)a[5];       /* guest OUT array, 4B/entry */
+    PULONG  pNeeded = (PULONG)(ULONG_PTR)a[6];        /* IN/OUT count, 4B both sides */
+    PVOID   Tmp     = NULL;
+    SIZE_T  Size;
+    NTSTATUS St;
+    ULONG   n, i;
+
+    /* No array write (query-count call or empty buffer): flat-pass the guest
+     * pointer — the kernel only touches pNeeded, which is width-identical. */
+    if (!pList32 || cHwnd == 0)
+        return NtUserBuildHwndList(hDesktop, hParent, bChild, dwTid, cHwnd,
+                                   (PVOID)(ULONG_PTR)a[5], pNeeded);
+
+    Size = (SIZE_T)cHwnd * sizeof(PVOID);             /* host: 8 bytes per HWND */
+    St = NtAllocateVirtualMemory((HANDLE)(LONG_PTR)-1, &Tmp, 0, &Size,
+                                 MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (St < 0)
+        return St;
+
+    St = NtUserBuildHwndList(hDesktop, hParent, bChild, dwTid, cHwnd, Tmp, pNeeded);
+    if (St >= 0)
+    {
+        n = pNeeded ? *pNeeded : 0;                   /* count kernel actually wrote */
+        if (n > cHwnd)
+            n = cHwnd;
+        for (i = 0; i < n; i++)
+            pList32[i] = (ULONG)((const ULONGLONG *)Tmp)[i]; /* narrow 64 -> 32 */
+    }
+
+    {
+        SIZE_T Free = 0;
+        NtFreeVirtualMemory((HANDLE)(LONG_PTR)-1, &Tmp, &Free, MEM_RELEASE);
+    }
+    return St;
+}
+
 /* ---- E4b: NtUserGetClassInfo --------------------------------------------- *
  * user32 GetClassInfoExW/A — hit by the stock create-window path (doom/testgui
  * probe their class before registering). The raw auto-thunk fed win32k the
@@ -2994,6 +3057,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserRegisterWindowMessage(Arguments);
     if (WOW64_IS("NtUserGetKeyboardLayoutName"))
         return Wow64Manual_NtUserGetKeyboardLayoutName(Arguments);
+    if (WOW64_IS("NtUserBuildHwndList"))
+        return Wow64Manual_NtUserBuildHwndList(Arguments);
     if (WOW64_IS("NtUserThunkedMenuItemInfo"))
         return Wow64Manual_NtUserThunkedMenuItemInfo(Arguments);
     if (WOW64_IS("NtUserCreateWindowEx"))

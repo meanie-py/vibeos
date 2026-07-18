@@ -336,6 +336,10 @@ static VOID WINAPI Wow64pPrepareForExceptionHook(EXCEPTION_RECORD *R, CONTEXT *C
 
     DbgPrint("[FEX-WOW64C] guest fault %08lx eip=%08lx -> 32-bit SEH dispatch (esp=%08lx)\n",
              Rec32.ExceptionCode, C->Eip, Esp);
+    if (Rec32.ExceptionCode == 0xc0000005)
+        DbgPrint("[FEX-WOW64C]   AV rw=%lx addr=%08lx | eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx esi=%08lx edi=%08lx ebp=%08lx\n",
+                 (ULONG)Rec32.ExceptionInformation[0], (ULONG)Rec32.ExceptionInformation[1],
+                 C->Eax, C->Ebx, C->Ecx, C->Edx, C->Esi, C->Edi, C->Ebp);
     Ctx->Rip = (ULONG_PTR)Wow64pKiUserExceptionDispatcher32;
     Ctx->Rsp = Esp;
     Ctx->EFlags &= ~0x400u; /* cld — fault may have been mid-rep-movs */
