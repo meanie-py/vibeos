@@ -386,9 +386,72 @@ the `NtCreate*`/`NtOpen*` object family) for a real app with DLL imports — the
 are independent + mechanical and are the ideal **subagent fan-out** target. This
 is where the Rust story pays for wow64win.dll (win32k) too.
 
-**Phase E — amd64 classic wow64cpu.** Same phases A–D infrastructure, CPU
-layer swapped: `wow64cpu.dll` doing the far-jmp 0x33 CS switch + 32↔64 stack
-shuffle. No emulator. (x86-on-x64 "for free" once C+D exist.)
+**Phase E — amd64 classic wow64cpu (native x86-on-x64).** Same phases A–D
+infrastructure, CPU layer swapped: a native `wow64cpu.dll` heaven's-gate mode
+switch (no emulator — the silicon runs the 32-bit code in compatibility mode).
+The thesis "x86-on-x64 for free once C+D exist" held: the arch-shared OS layer
+(process bootstrap, the 296-syscall thunk table, wow64win) dropped onto amd64 by
+un-gating, and only the CPU layer + one kernel context-switch line were new.
+Rungs (branch `wow64-amd64`):
+
+*E0 — ungate the shared layer + kernel i386 admission for amd64. DONE
+(2026-07-17, commit 6816923480e).* Flipped the `#[cfg(target_arch="aarch64")]` /
+`-arch=arm64` WoW64 gates to include `x86_64`: ldrinit.rs (WoW64 detect / IAT-
+skip / reloc-skip / wow64.dll handoff), rtl/mod.rs (`wow64shim`), procsup.rs
+(MmCreatePeb PEB32 + MmCreateTeb TEB32 + below-2GB NLS; `ARM64_UART_TRACE_HEX`
+→ portable `MiWow64TraceHex`), ex-rust init.rs (`ImageNumberLow/High=[0x014c,
+0x8664]` so CreateProcessInternalW admits i386), ntdll.spec (10 exports widened;
+dead `-stub -arch=x86_64 RtlWow64*` duplicates removed), wow64.dll CMake/spec +
+wow64gen amd64→x86_64 spec-arch alias, `WOW64_HOST_PC` portability. All 3 arches
+build; amd64 native smoke boot+net green; arm64 FEX path byte-unchanged.
+
+*E1 — wow64cpu.dll, the native heaven's-gate CPU layer. DONE (2026-07-17, commit
+6816923480e).* `dll/win32/wow64cpu/` (amd64-only) exports the SAME `BTCpu*`
+contract wow64.dll resolves by name (so wow64.c only `#ifdef`-selects the DLL
+name + `WOW64INFO.NativeMachineType`). `wow64cpu.S`:
+  - **EnterGuest** builds an `iretq` frame from the CPU-area WOW64_CONTEXT and
+    drops into compat mode (CS 0x23, SS/DS/ES 0x2B, FS 0x53); gs is left
+    untouched so its base stays TEB64 for the dispatcher.
+  - **BTCpuProcessInit** emits a 22-byte heaven's-gate sequence into a below-2GB
+    page: `EA <off32> 0033` (32-bit `jmp far 0x23→0x33`) → `mov r10d,eax;
+    movabs rax,Wow64CpuSyscall64; jmp rax`. `BTCpuGetBopCode` hands its 32-bit
+    entry to wow64.c's `Wow64Transition` patch.
+  - **Wow64CpuSyscall64** (the 64-bit landing) saves guest GPRs into the context,
+    switches to the dispatcher stack, calls the C `Wow64CpuDispatch` (→
+    `Wow64SystemServiceEx(eax, esp+8)`, i386-stdcall stack shape), then
+    re-enters via EnterGuest. **r15 pins the CPU-area context across guest
+    execution** — compat-mode code can't touch r15, so no gs/TEB re-derivation
+    is needed after the mode switch. `BTCpuNotifyMapViewOfSection` is a no-op
+    (native, no JIT cache). Builds on amd64; trampolines disassemble byte-exact.
+
+*E2 — amd64 per-thread CMTEB base (32-bit guest fs). DONE (2026-07-17, commit
+a0c900d2a37).* The amd64 boot GDT (freeldr `Amd64SetupGdt`) already populates
+CMCODE(0x23)/CMTEB(0x53)/R3-data/64-bit-code descriptors with correct type
+flags, and context.rs/except.rs/usercall.rs already special-case compat-mode CS —
+so E2 was tiny: `KiSwapContextResume` (ke/amd64/thrdini.rs) now rewrites the
+CMTEB descriptor **base** = TEB32 (TEB64+0x2000) on switch-in to any
+`Wow64Process` thread (Flags1/Flags2 preserved). Native threads untouched; amd64
+smoke boot+net green.
+
+*E3 — stage syswow64 + run hello32.exe to 0x600D on amd64. NEXT (owed).* The
+whole native code path (E0+E1+E2) is committed and green; E3 is the integration
++ boot-debug rung, the amd64 mirror of arm64 M1→M3b:
+  - **Staging:** amd64 uses `ninja livecd` (not the arm64 `mkramdisk` ramdisk),
+    so the i386 `syswow64\{ntdll,kernel32,ntdll_vista}.dll` + `hello32.exe` (from
+    `build-i386` / build-hello-compute.sh) must be injected into `livecd.iso`
+    (post-build inject, or `add_cd_file FILE <abs path>` behind a `VIBEOS_WOW64`
+    cache var). No `\KnownDlls32`/hive entries exist → file-path redirection
+    fallback (already handled in the wow64.dll marshallers).
+  - **Launch hook:** a winlogon `TryStartWow64Hello` amd64 arm (mirror the arm64
+    one), gated on staging.
+  - **Debug ladder to expect:** first guest entry (KiUserApcDispatcher32 in
+    compat mode) exercising the E1 iretq + E2 fs base; then the same M2/M3a/M3b
+    class of issues the arm64 side hit (guest fault VEH dump via wow64.c's
+    `Wow64pDumpGuestHeap`, `Wow64Transition` publish, image `BTCpuNotify` — but
+    NotifyMap is a no-op here so that rung should be free). Verdict oracle:
+    `[FEX-WOW64C] ... 0x600D` on serial + hello32 exit 0x600D. Native x86 has no
+    JIT/TSO-atomics/RCpc pitfalls, so the arm64 M3b unaligned-LDAR class does not
+    apply.
 
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored
