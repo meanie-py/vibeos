@@ -3128,8 +3128,8 @@ unsafe fn MsqInitializeMessageQueue_impl(
     }
     RtlCopyMemory(
         (*MessageQueue).afKeyState.as_mut_ptr() as *mut _,
-        gafAsyncKeyState.as_ptr() as *const _,
-        core::mem::size_of_val(&gafAsyncKeyState) as _,
+        (*(&raw const gafAsyncKeyState)).as_ptr() as *const _,
+        core::mem::size_of_val(&*(&raw const gafAsyncKeyState)) as _,
     );
     (*MessageQueue).ptiMouse = pti;
     (*MessageQueue).ptiKeyboard = pti;

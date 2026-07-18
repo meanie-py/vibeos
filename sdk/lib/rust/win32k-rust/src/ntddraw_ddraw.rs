@@ -52,7 +52,7 @@ pub unsafe extern "system" fn DxDdStartupDxGraphics(
             b"DxDdCleanupDxGraphics\0".as_ptr() as *mut _,
         ));
 
-        if gpfnStartupDxGraphics.is_some() && gpfnCleanupDxGraphics.is_some() {
+        if (*(&raw const gpfnStartupDxGraphics)).is_some() && (*(&raw const gpfnCleanupDxGraphics)).is_some() {
             DxEngDrv.iDriverVersion = DDI_DRIVER_VERSION_NT5_01 as _;
             DxEngDrv.pdrvfn = core::ptr::addr_of!(gaEngFuncs) as *mut DRVFN ;
             DxEngDrv.c = gcEngFuncs;
