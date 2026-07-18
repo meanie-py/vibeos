@@ -8459,6 +8459,32 @@ invalidation paths OTHER than MiDeletePte/MiProcessValidPteList for a missing/mi
 cross-process ASID/context-switch TLB story (the kmtest faces are a FRESH process's image/heap — a reused frame
 from an EXITED process aliased via a stale ASID TLB entry fits).
 
+**Tripwire #3 result (2026-07-18) — alloc-side is SILENT, and the flake is DORMANT in-tree; the bug (if live) is
+TLB-level.** Built the alloc/reuse-side tripwire the "Next step" asked for: at the hand-out choke point
+`MiRemovePageByColor` (pfnlist.rs:377 — both `MiRemoveAnyPage` and `MiRemoveZeroPage` funnel through it), fire if a
+frame being handed OUT still has a valid USER hardware PTE mapping it (same fault-safe `MmIsAddressValid` gate +
+user leaf-PTE range). Unlike tripwire #2, this is **SILENT on a normal boot** — the exact discriminator wanted:
+tripwire #2 fired always (legit lock-protected decommit), tripwire #3 stays quiet because that decommit invalidates
+the PTE before releasing the PFN lock, so no frame is ever handed out with a live in-memory user PTE. Then ran the
+kmtest sweep **10×** with the tripwire armed: **zero** `0xF1A` fires AND **zero** §9.98 corruption cascades — every
+sweep held `ok=78-79` (the only fails were the known deterministic flappers: RtlCaptureContextKM/HalPortIo NO-END
+every run, IoReadWrite/IoDeviceObject/PoIrp isolated `0xC0000005` debt — none cascade, so none is the §9.98 root).
+Two hard conclusions: (1) the private-page free/alloc PFN lifecycle is CLEAN — no reuse-while-mapped happens via an
+in-memory user PTE, on any of free-side or alloc-side (both refuted). (2) The §9.98 corruption is **not reproducing
+in the current tree** (at the lore'd ~40%/sweep, 10 clean is ~0.6% — so either that rate was overstated from a tiny
+sample, or one of the many origin lanes merged since the §9.96 session quietly changed MM timing/behavior enough to
+suppress it). Net: the catch-it-red-handed strategy is **walled by dormancy** — you cannot trip a tripwire on a bug
+that isn't firing. AND because BOTH in-memory-PTE tripwires are silent, if the bug is still latent it is **not** an
+in-memory PTE/refcount error at all — it is a **stale-TLB / ASID** alias (PTE correctly invalidated in memory, only
+the TLB entry survives), which neither free-side nor alloc-side in-memory-PTE checks can ever see. So the ONLY
+reproduction-independent avenue left is the **static TLB-coverage audit**: enumerate every user-PTE invalidation
+site (`MI_WRITE_INVALID_PTE`/`MI_ERASE_PTE`) and prove each has a `KeFlushCurrentTb` (correct scope) before the
+frame can be re-handed-out; plus the cross-process ASID/context-switch flush. The alloc-side tripwire
+(MiRemovePageByColor, sentinel `0xF1A`) is documented here to **re-arm instantly if the flake resurfaces** — it is
+the right net for a live private-page reuse. Since the flake is dormant and the §9.96 un-quarantines (MmSection,
+ZwMapViewOfSection) held 10/10 green, task #19 is not currently blocking the ratchet; the deterministic arm64
+quarantines (ExHardError 0x1E, NtCreateSection 0x50, ZwAllocateVirtualMemory 0x4E) are the live burndown targets.
+
 **Reusable method (the payoff — how to hunt a rare corruption flake UNATTENDED, no GDB babysitting):**
 (a) **Self-reporting kernel tripwires beat GDB-attach-at-the-instant for a ~40%/sweep, 77-launches-deep flake.**
 A conditional GDB breakpoint on the abnormal event needs the right process live at the right moment and
