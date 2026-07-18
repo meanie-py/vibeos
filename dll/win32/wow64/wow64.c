@@ -692,7 +692,8 @@ Wow64LdrpInitialize(PVOID Context)
     }
 #undef WOW64_RESOLVE
 
-    DbgPrint("[FEX-WOW64C] libwow64fex.dll loaded @ %p; calling BTCpuProcessInit...\n", Fex);
+    DbgPrint("[FEX-WOW64C] CPU layer %ws loaded @ %p; calling BTCpuProcessInit...\n",
+             WOW64_CPU_DLL, Fex);
     /* FEX discovers the process address-space layout during ProcessInit.
      * Allocate every raw guest page first; pages created afterward are not
      * visible until the full memory-notification contract is wired. */

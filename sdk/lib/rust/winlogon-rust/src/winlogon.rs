@@ -708,8 +708,10 @@ unsafe fn TryStartWow64Probe() {
  * CreateProcessW front door. Unlike wow64probe (a native arm64 harness), this
  * exercises the actual WoW64 process bootstrap: kernel32 machine gate →
  * PspCreateProcess → PEB32/TEB32 → 64-bit ntdll loader wow64 branch →
- * wow64!Wow64LdrpInitialize. Verdict = [FEX-WOW64C] serial lines + 0x600D. */
-#[cfg(target_arch = "aarch64")]
+ * wow64!Wow64LdrpInitialize. Verdict = [FEX-WOW64C] serial lines + 0x600D.
+ * amd64 (Phase E): identical probe, but the CPU layer is the native wow64cpu
+ * heaven's-gate instead of FEX — same staging contract, same verdict. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Hello() {
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
@@ -1370,6 +1372,12 @@ pub unsafe extern "system" fn WinMain(
 
         DbgPrint(b"[WINLOGON] ARM64: cmd.exe exited. Sleeping.\n\0".as_ptr() as *const i8);
     }
+
+    /* WOW64 Phase E probe (amd64 native wow64cpu): same hello32.exe guest +
+     * 0x600D verdict as the arm64 Phase C probe above — silent no-op unless
+     * syswow64\hello32.exe is staged on the livecd (wow64cpu/CMakeLists.txt). */
+    #[cfg(target_arch = "x86_64")]
+    TryStartWow64Hello();
 
     /* DOOM (opt-in, VIBEOS_DOOM=1) — x86 call site. On arm64 doom is spawned
      * inside the block above (before the cmd.exe INFINITE wait, which never

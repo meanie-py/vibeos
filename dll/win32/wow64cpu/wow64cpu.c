@@ -40,9 +40,21 @@ ULONG WINAPI Wow64SystemServiceEx(ULONG ServiceNumber, PULONG Arguments);
 
 /* i386 CONTEXT field offsets — the CPU-area WOW64_CONTEXT the host installs.
  * Kept in sync with wow64cpu.S (WCTX_*). */
+#define CTX_EDI(c) (*(volatile ULONG *)((PBYTE)(c) + 0x9C))
 #define CTX_EAX(c) (*(volatile ULONG *)((PBYTE)(c) + 0xB0))
+#define CTX_EBP(c) (*(volatile ULONG *)((PBYTE)(c) + 0xB4))
 #define CTX_EIP(c) (*(volatile ULONG *)((PBYTE)(c) + 0xB8))
+#define CTX_EFL(c) (*(volatile ULONG *)((PBYTE)(c) + 0xC0))
 #define CTX_ESP(c) (*(volatile ULONG *)((PBYTE)(c) + 0xC4))
+
+/* CPU-area header (wow64.c: 16-byte header, WOW64_CONTEXT at +16; +2 = Machine,
+ * +8 = the saved host rsp slot wow64cpu.S owns). +4 is ours: set when
+ * BTCpuSetContext replaced the guest context mid-service, so the dispatcher
+ * must resume the NEW state instead of doing the return-to-stub fixup. */
+#define CPU_CTX_REPLACED(ctx) (*(volatile ULONG *)((PBYTE)(ctx) - 12))
+
+#define WOW64_TEB_TLSSLOTS_OFFSET 0x1480 /* amd64 TEB.TlsSlots */
+#define WOW64_TLS_CPURESERVED     1
 
 /* The below-2GB trampoline page. BTCpuGetBopCode hands its 32-bit entry to the
  * host, which patches the guest ntdll32's Wow64Transition slot to point here. */
@@ -69,6 +81,15 @@ VOID WINAPI Wow64CpuDispatch(PVOID Ctx, ULONG GuestEsp)
     ULONG Service = CTX_EAX(Ctx);
     PULONG Arguments = (PULONG)(ULONG_PTR)(GuestEsp + 8);
     ULONG Result = Wow64SystemServiceEx(Service, Arguments);
+
+    /* A guest NtContinue routed through BTCpuSetContext during this service:
+     * the CPU-area context now IS the state to resume (new Eip/Esp/Eax) —
+     * the normal return-to-stub fixup below would clobber it. */
+    if (CPU_CTX_REPLACED(Ctx))
+    {
+        CPU_CTX_REPLACED(Ctx) = 0;
+        return;
+    }
 
     /* Return to the guest: EAX = result, pop the stub return address. */
     CTX_EAX(Ctx) = Result;
@@ -127,6 +148,40 @@ PVOID WINAPI BTCpuGetBopCode(VOID)
  * whole story. */
 VOID WINAPI BTCpuThreadInit(VOID)
 {
+}
+
+/*
+ * BTCpuSetContext — replace the current thread's guest context. Reached from
+ * the guest's own NtContinue (wow64_manual.c marshaller) DURING a service
+ * dispatch: copy the CONTEXT32 into the CPU-area WOW64_CONTEXT and flag it so
+ * Wow64CpuDispatch resumes the new state instead of returning to the stub.
+ * Self-thread only (the marshaller always passes the current thread) — a
+ * cross-thread SetThreadContext path would need a suspend handshake.
+ */
+LONG WINAPI BTCpuSetContext(HANDLE Thread, HANDLE Process, PVOID Unknown,
+                            PVOID Context32)
+{
+    PBYTE CpuArea = (PBYTE)*(PVOID *)((PBYTE)NtCurrentTeb() +
+                                      WOW64_TEB_TLSSLOTS_OFFSET +
+                                      WOW64_TLS_CPURESERVED * sizeof(PVOID));
+    PBYTE Ctx = CpuArea + 16;
+    PBYTE Src = (PBYTE)Context32;
+    ULONG i;
+
+    (VOID)Thread; (VOID)Process; (VOID)Unknown;
+    if (!Src || !CpuArea)
+        return (LONG)0xC000000DL; /* STATUS_INVALID_PARAMETER */
+
+    /* Integer + control state: Edi..Ebp (0x9C..0xB4), Eip, EFlags, Esp.
+     * Segments stay ours (EnterGuest hardcodes 0x23/0x2B/0x53); x87/XMM state
+     * is live silicon state a native guest never round-trips through here. */
+    for (i = 0x9C; i <= 0xB4; i += 4)
+        *(volatile ULONG *)(Ctx + i) = *(ULONG *)(Src + i);
+    CTX_EIP(Ctx) = *(ULONG *)(Src + 0xB8);
+    CTX_EFL(Ctx) = (*(ULONG *)(Src + 0xC0)) | 0x202; /* IF + reserved bit 1 */
+    CTX_ESP(Ctx) = *(ULONG *)(Src + 0xC4);
+    CPU_CTX_REPLACED(Ctx) = 1;
+    return 0; /* STATUS_SUCCESS — the guest resumes at the new Eip */
 }
 
 /* No JIT code cache to invalidate — 32-bit code executes natively. */
