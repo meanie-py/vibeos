@@ -481,3 +481,52 @@ returns, repeated pure `wcslen`, and a call-nesting audit that rejects argument/
 reversal while allowing valid hoisting. The candidate was subsequently integrated as recorded
 in the 2026-07-17 checkpoint above; the final three-architecture image gate remains the
 landing authority.
+
+## CDrivesFolder / CQueryAssociations / CShellLink landed; CMenuBand deferred (2026-07-17)
+
+Three more classes are Rust-owned and validated (i386 build+boot green; CDrives/CQuery also
+amd64+arm64):
+
+- **CDrivesFolder** (`CLSID_MyComputer`) — hybrid cohab. Rust owns all five published
+  interfaces + state + activation; retained C++ keeps `CDrivesFolderEnum`, the drives
+  context-menu/eject/format cluster, `CDrivesExtractIcon`, `CRegFolder` composition, and the
+  C++-mangled folder helpers behind `*_RustBridge` shims (added to `CDrivesFolder.cpp`,
+  `shlfolder.cpp`, `utils.cpp`). Stitching fixed five real cached-body bugs vs the C++
+  (dropped `pidlRoot` store, reg-enum double-release, inverted GetDriveLabel priority,
+  dropped `SFVM_DEFVIEWMODE`, wrong `PIDLDATA` casts in `CompareIDs`).
+- **CQueryAssociations** (`CLSID_QueryAssociations`) — full Rust ownership; `GetString`
+  hand-ported statement-by-statement (both DeepSeek and Sonnet had mangled its 72-call
+  envelope) preserving the exact `pcchOut` probe/truncate/NOTRUNCATE contract.
+- **CShellLink** (`CLSID_ShellLink`) — hybrid cohab (approach a): `CShellLink.cpp` stays
+  compiled with dead C++ class bodies + retained free helpers; the two C-linkage
+  `IShellLink_ConstructFromPath/FromFile` are `#if 0`'d (Rust owns them); construction
+  rerouted at `CFSDropTarget.cpp:697`; one `SHGetNameAndFlagsW` bridge in `utils.cpp`.
+  Runtime-exercised: the desktop `.lnk` shortcuts (Internet Browser / Command Prompt /
+  Read Me) render through the Rust class on i386.
+
+### CMenuBand deferred — needs a SHARED Rust staticlib (owed, work preserved)
+
+`CMenuBand` was integrated by an agent (branch `worktree-agent-ad4910884ddab9c81`, commit
+`7c278907ca5`; module preserved at `~/vibeos-rust-staging/shell32-com/monsters-v2/
+CMenuBand-integrated.rs` + `CMenuBand-bridges.md` + `CMenuBand-integration-notes.md`) and the
+merge was **reverted** (`4e4755b8d33`) because it breaks the OS build. Root cause — CMenuBand
+is NOT a shell32-private COM class: `CMenuBand.cpp` lived in the **shared `shellmenu` OBJECT
+library**, so the C++ class compiled into BOTH `shell32.dll` AND `base/shell/rshell/
+rshell.dll`. The cutover moved the class to `menu_band.rs` inside `libshell32_rust.a` (which
+only shell32 links) and patched the shared `CMenuToolbars.cpp`/`CMenuFocusManager.cpp` to call
+the Rust exports — so `rshell.dll` (which links those objects but not the rust lib) fails with
+~19 undefined `CMenuBand_*_RustExport` symbols, and the whole livecd won't build. Naively
+linking `libshell32_rust.a` into rshell doesn't work either: `menu_band.rs` calls
+shell32-internal C symbols (`Shell32RustObjectLock`, wine/pidl helpers) absent in rshell.
+
+**Correct fix (owed):** promote `menu_band.rs` into its own standalone Rust staticlib
+(`menuband-rust`, self-contained: its own object-lock + no shell32-private deps) that BOTH
+shell32 and rshell link. This is the first "shared shell-infrastructure" class in the lane;
+the shell32-private RustEntry pattern doesn't cover it. The stitched module itself is green
+×3 in its oracle — only the link topology is unsolved.
+
+Also owed: fix the `libshell32_rust.a` build race `vibeos-cli` hits when the staticlib is
+rebuilt in the same pass as the shell32/rshell link (cargo rewrites the archive in place while
+lld reads it → transient undefined-symbol link failures; a settled-lib relink succeeds). A
+temp-write + atomic-rename in the `add_custom_command`, or an explicit order-only barrier,
+would remove it.
