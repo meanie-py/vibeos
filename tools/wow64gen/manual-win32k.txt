@@ -50,6 +50,13 @@ NtUserGetClassName
 # GetKeyboardLayoutName (in/out).
 NtUserRegisterWindowMessage
 NtUserGetKeyboardLayoutName
+# E8: regedit/comctl32 class teardown. NtUserUnregisterClass(PUNICODE_STRING
+# ClassNameOrAtom, HINSTANCE, PCLSMENUNAME) is typed flat (ptr ptr ptr), so the
+# auto-thunk fed 64-bit win32k the guest's 8-byte US32 as a 16-byte US64 ->
+# garbage Buffer -> ProbeAndCaptureUnicodeStringOrAtom raw_move C0000005 ->
+# BUGCHECK 0x1E. Widen arg0 US32<->US64 (atom form survives); pClassMenuName is
+# ignored kernel-side. Same class as GetClassName/GetAtomName above.
+NtUserUnregisterClass
 # E7: Enum{,Child,Thread}Windows -> NtUserBuildHwndList fills a caller HWND[] and
 # returns the count. The flat (ptr) auto-thunk let 64-bit win32k write 8-byte
 # HWNDs into the guest's sizeof(HWND)=4-byte-per-entry buffer -> 2x heap OVERRUN
