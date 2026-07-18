@@ -53,10 +53,10 @@ class CCopyToMenu
     , public CCopyMoveToMenu
 {
 public:
-    CComHeapPtr<ITEMIDLIST> m_pidlFolder;
-    WNDPROC m_fnOldWndProc;
-    BOOL m_bIgnoreTextBoxChange;
-
+    /* NOTE: this class previously re-declared m_pidlFolder/m_fnOldWndProc/
+     * m_bIgnoreTextBoxChange, SHADOWING the CCopyMoveToMenu copies that every
+     * base method actually uses. The duplicates were dead weight (nothing in
+     * CCopyToMenu touches them) and are removed. */
     CCopyToMenu() { }
 
     // IContextMenu
