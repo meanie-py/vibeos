@@ -8280,7 +8280,9 @@ heavy tests can expose *downstream* latent bugs**: with the section tests active
 *later* kmtest_.exe launch with garbage instruction bytes inside the same image page (`0xC000001D` at
 `0x140007xxx`, or a `0xC0000005` at exit) — a shared image-section page corrupted under heavy map/unmap
 traffic, same latent family as the quarantined `ZwAllocateVirtualMemory` 0x4E PFN_LIST_CORRUPT. Registered as
-a known flake; hunt owed (task #7 family).
+a known flake; hunt owed (task #7 family). **See §9.98 for the deep characterization** — the 07-18 hunt proved
+this is a physical-page-reuse (free-while-mapped) corruption, not the section-view path itself.
+
 
 ### 9.97 (ROOT-CAUSED + FIXED 2026-07-17) `-smp 2` KeIrql/KeSpinLock kmtest deltas — SYNCH_LEVEL's flavor-variance was frozen at the UP value in FIVE independent translation sites (+ a latent kmtest union-aliasing bug that fabricated "byte-shifted pointer" corruption)
 
@@ -8371,3 +8373,72 @@ SYNCH=IPI-2 expectations), seeded via `--smp N --write-baseline`.
   Our SMP kernel publishes DEBUG-only (kiinit drops UNIPROCESSOR under
   `feature="smp"`) — so kmtest runs MP expectations. When triaging kmtest deltas,
   derive both flags FIRST; they gate nearly every branch.
+
+### 9.98 (CHARACTERIZED, root-cause hunt OWED 2026-07-18) The arm64 kmtest-sweep "late-run user-process corruption" (§9.96(i)) is a PHYSICAL-PAGE-REUSE bug — a frame backing a still-mapped user page is freed and re-handed-out, corrupting whichever mapping loses the race — with TWO faces from ONE root
+
+**Why this entry exists.** §9.96(i) registered the flake with a plausible-but-unproven label ("shared
+image-section page corrupted under map/unmap"). An overnight hunt (self-reporting kernel tripwires, no GDB
+babysitting — see method below) upgraded that guess to a proven characterization and killed two wrong sub-hypotheses.
+It is a genuinely deep MM bug; this is the head-start, not a fix.
+
+**The two faces are ONE bug (proven).** ~40% of arm64 kmtest sweeps kill a *later* kmtest_.exe launch (77+
+launches deep, various tests — IoReadWrite/NtSystemDebugControl/RtlRegistry — so NOT test-specific and NOT the
+first process). Two serial faces, both `[UEXC-KILL] Proc=kmtest_.exe`:
+- **`0xC000001D` (illegal instruction) at a kmtest_.exe *image* PC** (e.g. `0x140006004`). The page is
+  *present* (no not-present fault) but its bytes are WRONG: `[UEXC-KILL] Instr=0x00B000B0` at two different
+  offsets (`0x6004`,`0x60A4`) while the on-disk `.text` there is `0xf81f0ff3`/`0xd10283ff`. Same garbage word at
+  both offsets ⇒ the frame was overwritten with a repeating pointer-like pattern (`0x00B000B0` ≈ a user-heap
+  free-block Flink). ⇒ **the image code frame was reused as another allocation's heap page while still mapped.**
+- **`0xC0000005` at `ntdll+0x3D020` = `RemoveEntryList` (inlined in `RtlpCoalesceFreeBlocks`), via
+  `RtlpExtendHeap → RtlCreateActivationContext(actctx_init) → LdrpInitializeProcess`** at process startup. FAR
+  is always a *page-aligned* low VA (`0x132000`,`0x134000`), ESR `0x92000007` (DFSC 0x07 translation-fault L3,
+  read). The heap walks a free block whose next-link lands on an *uncommitted/unmapped* page. ⇒ **the heap
+  frame was freed/unmapped out from under the mapping.** Same root, opposite timing (remapped-and-written vs
+  freed).
+
+**Disproven along the way (don't re-chase).** (1) *Not* an `rtl_heap` translation bug: `RtlpCoalesceFreeBlocks`
+and `RtlpFindAndCommitPages` (sdk/lib/rust/rtl-heap/src/heap.rs) are faithful to `sdk/lib/rtl/heap.c` — the
+heap is the victim, not the culprit. (2) *Not* the §9.96 section-view fault path returning wrong status: a
+kernel `[MAF-FAIL]` tripwire on `MmAccessFault` DECLINING a user fault showed the image-face frame is *present*
+(never enters MmAccessFault) and the only `0x4E0000`-family declines are the §9.96 fix working **correctly**
+(a NOACCESS view touch now returns `STATUS_ACCESS_VIOLATION`, as designed). (3) *Not* a demand-zero/VAD
+misroute for the heap face specifically — that was the leading theory but the dominant captured face is the
+present-but-corrupted image page, which no fault path even sees.
+
+**Where the bug is (the owed hunt).** A physical frame that still backs a mapped user page (image section page
+AND/OR private committed page) is being inserted onto a free list and re-handed-out. Candidates, in the RosMM
+section/PFN layer that manages image pages (NOT the ARM3 MMPFN path — image/section pages use SSE share-counts
++ rmap + `MmReleasePageMemoryConsumer`): a share/unshare count imbalance in `MmUnsharePageEntrySectionSegment`
+/ `MmDeleteVirtualMapping` / `MmDeleteRmap` during process teardown that frees a page another mapping still
+holds; or the image-section physical pages being cached across launches with a wrong cross-process refcount.
+Same PFN family as the quarantined `ZwAllocateVirtualMemory` 0x4E (`MiInsertStandbyListAtFront`) and
+`MmMapLockedPagesSpecifyCache` 0x1000 (task #7) — likely one shared root.
+
+**Tripwire #1 result (2026-07-18) — NEGATIVE, and it narrows the hunt.** Placed the "free-while-mapped"
+tripwire in `MmDereferencePage` (freelist.rs — the RosMM `MmReleasePageMemoryConsumer` sink) right where
+refcount hits 0 before `MiInsertPageInFreeList`: if `(*pfn1).rmap_list_head()` is a non-null, pointer-aligned
+kernel VA, dump the surviving entry's `Process`/`Address`/`Caller`. A sweep that DID corrupt (2 kills) fired
+the tripwire **zero** times. So the premature free is NOT "a ROS page still holding an rmap entry at the
+`MmDereferencePage` free." That rules out the cleanest model and leaves two: (1) the page frees via the **ARM3**
+sink (`MiInsertPageInFreeList` called from `MiDecrementShareCount`/`MiDecrementReferenceCount`, which
+`MmDereferencePage` never reaches — this is the *private*-heap face's expected path), or (2) a **refcount
+imbalance** — an over-decrement drops the frame to 0 and frees it while a PTE still maps it, so the rmap was
+already correctly deleted (empty) yet the mapping's PTE was never torn down. **Next step: move the tripwire to
+the common choke point `MiInsertPageInFreeList` itself** (both sinks funnel there) and, since rmap may be
+legitimately empty under model (2), ALSO validate against the *PTE* side — e.g. cross-check the frame's
+`PteAddress`/`OriginalPte` or add a poison-on-free + check-on-map pass to catch the frame handed out while a
+live PTE still points at it. (An arm64-only `& 0xFFF` alignment guard in the *C* `MmGetRmapListHeadPage` was
+noticed and ruled out — it's cohab-dead; the live Rust accessor (freelist.rs:333) already dropped that hack.)
+
+**Reusable method (the payoff — how to hunt a rare corruption flake UNATTENDED, no GDB babysitting):**
+(a) **Self-reporting kernel tripwires beat GDB-attach-at-the-instant for a ~40%/sweep, 77-launches-deep flake.**
+A conditional GDB breakpoint on the abnormal event needs the right process live at the right moment and
+contends for host CPU leases; a `DbgPrint`/UART dump in the kill path fires every time and a shell loop harvests
+the serial. (b) **`addr2line` the faulting user PC against the on-disk DLL to name the code** — `KiUserApcDispatcher
+→ LdrpInitializeProcess → actctx_init → RtlCreateActivationContext → RtlpExtendHeap → RtlpCoalesceFreeBlocks →
+RemoveEntryList` was decoded entirely from LR-chain offsets + `.build-tools/llvm-mingw/bin/aarch64-w64-mingw32-addr2line
+-f -e ntdll.dll <ImageBase+RVA>`. (c) **Diff the FAULTING BYTES against the on-disk image** to separate
+"page-content corruption" (bytes differ) from "bad jump to valid code" (bytes match) — a 20-line Python PE
+section-walk (`e_lfanew → sections → file offset`) reads the disk word at any RVA. The mismatch here is what
+proved reuse. (d) **A page-aligned FAR on a translation fault = a commit/mapping boundary**, not a random wild
+pointer — it says "the mapping ends exactly here," pointing at frame lifetime, not link corruption.

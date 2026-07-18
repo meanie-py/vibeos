@@ -61,6 +61,7 @@ pub mod open_control_panel;
 pub mod open_with_menu;
 pub mod printer_folder;
 pub mod query_associations;
+pub mod recycle_bin;
 pub mod recycle_bin_cleaner;
 pub mod send_to_menu;
 pub mod shell_item;

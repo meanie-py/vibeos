@@ -409,3 +409,10 @@ HRESULT RecycleBin_AddPropSheetPages(LPFNSVADDPROPSHEETPAGE pfnAddPage, LPARAM l
     HPROPSHEETPAGE hpsp = SH_CreatePropertySheetPage(IDD_RECYCLE_BIN_PROPERTIES, RecycleBinDlg, 0, NULL);
     return AddPropSheetPage(hpsp, pfnAddPage, lParam);
 }
+
+// Rust bridge — shim for the Rust-owned CRecycleBin (shell32-rust recycle_bin).
+extern "C" HRESULT WINAPI
+RecycleBin_AddPropSheetPages_RustBridge(LPFNSVADDPROPSHEETPAGE pfnAddPage, LPARAM lParam)
+{
+    return RecycleBin_AddPropSheetPages(pfnAddPage, lParam);
+}

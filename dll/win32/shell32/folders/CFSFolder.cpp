@@ -2176,3 +2176,48 @@ HRESULT CFSFolder::FormatSize(UINT64 size, LPWSTR Buf, UINT cchBuf)
         *Buf = UNICODE_NULL;
     return E_FAIL;
 }
+
+/**************************************************************************
+ * Rust bridges — C ABI shims over the CFSFolder static helpers and the
+ * file-local SHELL_FS_ProcessDisplayFilename, used by the Rust-owned
+ * CRecycleBin (shell32-rust recycle_bin).
+ */
+
+extern "C" HRESULT WINAPI
+CFSFolder_CompareSortFoldersFirst_RustBridge(LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2)
+{
+    return CFSFolder::CompareSortFoldersFirst(pidl1, pidl2);
+}
+
+extern "C" INT WINAPI
+CFSFolder_CompareUiStrings_RustBridge(LPCWSTR a, LPCWSTR b, LPARAM lParam)
+{
+    return CFSFolder::CompareUiStrings(a, b, lParam);
+}
+
+extern "C" HRESULT WINAPI
+CFSFolder_FormatDateTime_RustBridge(const FILETIME *ft, LPWSTR buf, UINT cchBuf)
+{
+    return CFSFolder::FormatDateTime(*ft, buf, cchBuf);
+}
+
+extern "C" HRESULT WINAPI
+CFSFolder_FormatSize_RustBridge(UINT64 size, LPWSTR buf, UINT cchBuf)
+{
+    return CFSFolder::FormatSize(size, buf, cchBuf);
+}
+
+extern "C" void WINAPI
+SHELL_FS_ProcessDisplayFilename_RustBridge(LPWSTR szPath, DWORD dwFlags)
+{
+    SHELL_FS_ProcessDisplayFilename(szPath, dwFlags);
+}
+
+// SHELL32_CreateSimpleIDListFromPath is itself Rust-owned now (shell32-rust
+// wine/pidl.rs); wine/pidl.c is cohab-flipped out of the build. The shim lives
+// here (a live TU) rather than in the dead C file. Declared in wine/pidl.h.
+extern "C" LPITEMIDLIST WINAPI
+SHELL32_CreateSimpleIDListFromPath_RustBridge(LPCWSTR pszPath, DWORD dwAttributes)
+{
+    return SHELL32_CreateSimpleIDListFromPath(pszPath, dwAttributes);
+}

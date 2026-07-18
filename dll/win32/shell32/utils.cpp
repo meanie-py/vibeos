@@ -2222,3 +2222,9 @@ SHELL_ErrorBox_RustBridge(HWND hwndOwner, UINT Error)
 {
     return SHELL_ErrorBoxHelper(hwndOwner, Error);
 }
+
+extern "C" HRESULT WINAPI
+SHELL_CreateShell32DefaultExtractIcon_RustBridge(INT iconIndex, REFIID riid, LPVOID *ppvOut)
+{
+    return SHELL_CreateShell32DefaultExtractIcon(iconIndex, riid, ppvOut);
+}
