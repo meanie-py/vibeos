@@ -2097,6 +2097,13 @@ def cmd_translate(args):
                     + "\n  - ".join(parallel_errors)
                 )
 
+        # Sequential-path reject collector — mirrors the parallel path's
+        # `parallel_errors`: a per-worker audit reject is recorded and the run
+        # CONTINUES (all other accepted paid artifacts stream to cache), then a
+        # single CppComError surfaces every reject at once after the loop. The
+        # old behavior `raise`d on the first reject, abandoning the rest of an
+        # already-paid sonnet run (sonnet is sequential — conc is ignored).
+        sequential_errors: list[str] = []
         for func_idx, dep in enumerate(sorted_deps, 1):
             if conc > 1:
                 break  # already handled by the parallel path above
@@ -2220,7 +2227,12 @@ def cmd_translate(args):
                         error=str(error),
                         **_result_fields(result, elapsed_ms),
                     )
-                    raise
+                    sequential_errors.append(str(error))
+                    print(
+                        f"  [{func_idx}] {dep.name} AUDIT REJECT: {error}",
+                        file=sys.stderr,
+                    )
+                    continue
                 translated[dep.name] = result.rust_code
                 # Persist for cross-run resume the instant it returns.
                 cache.put(dep.name, dep.body_text, result.rust_code)
@@ -2275,6 +2287,13 @@ def cmd_translate(args):
                 )
                 capped = True
                 break
+
+        if sequential_errors:
+            raise CppComError(
+                "sequential translation completed with rejected/failed worker(s); "
+                "all other accepted paid artifacts were preserved in the resume cache:\n  - "
+                + "\n  - ".join(sequential_errors)
+            )
 
         if not translated:
             print(f"  No functions translated for {c_file.name}", file=sys.stderr)
