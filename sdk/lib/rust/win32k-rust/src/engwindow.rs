@@ -50,7 +50,7 @@ extern "C" {
 // `stdcall`). `extern "system"` resolves to stdcall on i386, cdecl on
 // amd64/arm64 — matches the spec ABI.
 extern "system" {
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pul: *mut ULONG) -> u8;
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> u8;
     fn CLIPOBJ_cEnumStart(
         pco: *mut CLIPOBJ,
         bAll: BOOL,

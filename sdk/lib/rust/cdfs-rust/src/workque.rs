@@ -27,7 +27,7 @@ extern "C" {
     fn ASSERT_IRP(Irp: *mut IRP);
 }
 extern "C" {
-    fn CdTeardownStructures(IrpContext: *mut IRP_CONTEXT, TeardownFcb: *mut core::ffi::c_void, RemovedFcb: *mut u8);
+    pub fn CdTeardownStructures( IrpContext: PIRP_CONTEXT, StartingFcb: PFCB, RemovedStartingFcb: PBOOLEAN, );
 }
 extern "C" {
     fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut core::ffi::c_void);
@@ -168,7 +168,7 @@ pub unsafe extern "system" fn CdPrePostIrp(
             {
                 CdTeardownStructures(
                     IrpContext,
-                    *(*IrpContext).__bindgen_anon_1.TeardownFcb as *mut core::ffi::c_void,
+                    (*(*IrpContext).__bindgen_anon_1.TeardownFcb as *mut core::ffi::c_void) as _,
                     core::ptr::addr_of_mut!(RemovedFcb),
                 );
                 if RemovedFcb == 0 {
@@ -240,7 +240,7 @@ pub unsafe extern "system" fn CdOplockComplete(
                 if !(*IrpContext).__bindgen_anon_1.TeardownFcb.is_null() {
                     CdTeardownStructures(
                         IrpContext,
-                        *((*IrpContext).__bindgen_anon_1.TeardownFcb) as *mut core::ffi::c_void,
+                        (*((*IrpContext).__bindgen_anon_1.TeardownFcb) as *mut core::ffi::c_void) as _,
                         core::ptr::addr_of_mut!(RemovedFcb),
                     );
                     if RemovedFcb == 0 {

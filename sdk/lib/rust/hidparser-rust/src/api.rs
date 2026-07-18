@@ -38,7 +38,7 @@ extern "C" {
 // NTAPI (stdcall on i386) externals: RtlAssert (kernel export) + the hidparse.sys
 // util callbacks (defined extern "system" in hidparse-rust).
 extern "system" {
-    fn RtlAssert(pCondition: *const core::ffi::c_void, pFileName: *const core::ffi::c_void, LineNumber: u32, pMessage: *mut core::ffi::c_void);
+    fn RtlAssert( FailedAssertion: *const core::ffi::c_void, FileName: *const core::ffi::c_void, LineNumber: ULONG, Message: *mut core::ffi::c_void, );
     fn ZeroFunction(p: PVOID, size: ULONG);
     fn CopyFunction(dest: PVOID, src: PVOID, size: ULONG);
 }

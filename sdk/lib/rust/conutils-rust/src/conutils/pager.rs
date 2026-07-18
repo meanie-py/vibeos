@@ -53,7 +53,7 @@ unsafe extern "C" {
     fn ConGetScreenInfo(screen: *mut CON_SCREEN, csbi: *mut CONSOLE_SCREEN_BUFFER_INFO) -> i32;
 }
 unsafe extern "C" {
-    fn ConStreamWrite(stream: *mut CON_STREAM, buffer: *const u16, length: u32);
+    fn ConStreamWrite(Stream: *mut CON_STREAM, Buffer: *const u16, nLength: u32) -> i32;
 }
 
 extern "C" {

@@ -3,7 +3,7 @@ use ntdll_sys::nt::*;
 // (`HANDLE CsrPortHeap;`). connect.rs owns the definition.
 use super::connect::CsrPortHeap;
 extern "system" {
-    fn RtlMoveMemory(Destination: PVOID, Source: *const core::ffi::c_void, Length: SIZE_T);
+    fn RtlMoveMemory(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, len: usize);
 }
 
 #[no_mangle]
@@ -155,7 +155,7 @@ pub unsafe extern "system" fn CsrCaptureMessageBuffer(
         return;
     }
 
-    RtlMoveMemory(*CapturedData, MessageBuffer, MessageLength as SIZE_T);
+    RtlMoveMemory(*CapturedData, MessageBuffer, (MessageLength as SIZE_T) as _);
 }
 
 #[no_mangle]
@@ -201,7 +201,7 @@ pub unsafe extern "system" fn CsrCaptureMessageString(
             RtlMoveMemory(
                 (*CapturedString).Buffer as PVOID,
                 String as *const core::ffi::c_void,
-                actual_length as SIZE_T,
+                (actual_length as SIZE_T) as _,
             );
         }
     }

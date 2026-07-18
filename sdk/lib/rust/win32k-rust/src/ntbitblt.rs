@@ -58,7 +58,7 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 extern "system" {
     fn SafeProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG) -> NTSTATUS;
     fn EBRUSHOBJ_vInit(pebo: *mut EBRUSHOBJ, pbrush: PBRUSH, psurf: *mut c_void, crFore: COLORREF, crBack: COLORREF, ppal: *mut c_void);
-    fn EBRUSHOBJ_vInitFromDC(pebo: *mut EBRUSHOBJ, pbrush: PBRUSH, pdc: *mut c_void);
+    fn EBRUSHOBJ_vInitFromDC(pebo: PEBRUSHOBJ, pbrush: PBRUSH, pdc: PDC);
     fn EBRUSHOBJ_vCleanup(pebo: *mut EBRUSHOBJ);
 }
 

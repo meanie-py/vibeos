@@ -84,7 +84,8 @@ extern "system" {
 // `_Name@N` while the definitions emitted `_Name`. See the block comment above.
 extern "C" {
     fn DeviceSendRequestSynchronously( Device: WDFDEVICE, Request: WDFREQUEST, WaitForCompletion: BOOLEAN, ) -> NTSTATUS;
-    fn DevicePowerSettingCallback( Setting: *mut core::ffi::c_void, Value: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, );
+    // full def sig (pnppower.rs) — old 3-arg decl was address-only shorthand
+    fn DevicePowerSettingCallback( SettingGuid: *const ntkrnl_sys::ddk::GUID, Value: *mut core::ffi::c_void, ValueLength: u32, Context: *mut core::ffi::c_void, ) -> i32;
     fn RequestClearSendTime(request: *mut core::ffi::c_void);
     fn RequestSend( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Target: *mut core::ffi::c_void, Options: u32, RequestSent: *mut u8, ) -> i32;
     fn PAGED_CODE();

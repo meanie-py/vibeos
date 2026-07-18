@@ -43,8 +43,8 @@ macro_rules! w {
 // the defs are extern "C" — CC must agree or LLVM folds callers to ud2.
 extern "C" {
     fn DiskCreateFdo( DriverObject: PDRIVER_OBJECT, Pdo: PDEVICE_OBJECT, Count: *mut ULONG, SuppressMount: BOOLEAN, ) -> NTSTATUS;
-    fn DiskReadSignature(Fdo: PDEVICE_OBJECT);
-    fn DiskReadDriveCapacity(Fdo: PDEVICE_OBJECT);
+    pub fn DiskReadSignature(Fdo: PDEVICE_OBJECT) -> NTSTATUS;
+    pub fn DiskReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTSTATUS;
     fn DiskIsNT4Geometry(Ext: PFUNCTIONAL_DEVICE_EXTENSION) -> BOOLEAN;
 }
 

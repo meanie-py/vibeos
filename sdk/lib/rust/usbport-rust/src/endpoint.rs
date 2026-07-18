@@ -15,14 +15,14 @@ use core::ffi::c_void;
 extern "system" {
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
     fn USBPORT_CancelSplitTransfer(Transfer: PUSBPORT_TRANSFER);
-    fn USBPORT_FreeCommonBuffer(FdoDevice: PDEVICE_OBJECT, HeaderBuffer: *mut core::ffi::c_void);
+    pub fn USBPORT_FreeCommonBuffer( FdoDevice: PDEVICE_OBJECT, HeaderBuffer: PUSBPORT_COMMON_BUFFER_HEADER, );
     fn USBPORT_AllocateCommonBuffer( FdoDevice: PDEVICE_OBJECT, BufferLength: SIZE_T, ) -> PUSBPORT_COMMON_BUFFER_HEADER;
     fn USBPORT_Wait(MiniPortExtension: PVOID, MillisecondsCount: ULONG) -> NTSTATUS;
     fn USBPORT_FreeBandwidthUSB2(FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT);
     fn USBPORT_SignalWorkerThread(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_UpdateAllocatedBwTt(TtExtension: PUSB2_TT_EXTENSION);
     fn USBPORT_AllocateBandwidthUSB2( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, ) -> BOOLEAN;
-    fn USBPORT_USBDStatusToNtStatus(Urb: PVOID, USBDStatus: USBD_STATUS) -> NTSTATUS;
+    pub fn USBPORT_USBDStatusToNtStatus(Urb: PURB, USBDStatus: USBD_STATUS) -> NTSTATUS;
     fn USBPORT_FlushCancelList(Endpoint: PUSBPORT_ENDPOINT);
     fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT);
     fn USBPORT_RootHubEndpointWorker(Endpoint: PUSBPORT_ENDPOINT);
@@ -632,7 +632,7 @@ pub unsafe extern "system" fn USBPORT_DeleteEndpoint(
         MiniportCloseEndpoint(FdoDevice, Endpoint);
 
         if !(*Endpoint).HeaderBuffer.is_null() {
-            USBPORT_FreeCommonBuffer(FdoDevice, ((*Endpoint).HeaderBuffer as *mut c_void));
+            USBPORT_FreeCommonBuffer(FdoDevice, (((*Endpoint).HeaderBuffer as *mut c_void)) as _);
         }
 
         ExFreePoolWithTag(Endpoint as *mut core::ffi::c_void, USB_PORT_TAG);
@@ -1324,7 +1324,7 @@ pub unsafe extern "system" fn USBPORT_ReopenPipe(
     );
 
     if !(*Endpoint).HeaderBuffer.is_null() {
-        USBPORT_FreeCommonBuffer(FdoDevice, ((*Endpoint).HeaderBuffer as *mut c_void));
+        USBPORT_FreeCommonBuffer(FdoDevice, (((*Endpoint).HeaderBuffer as *mut c_void)) as _);
         (*Endpoint).HeaderBuffer = core::ptr::null_mut();
     }
 

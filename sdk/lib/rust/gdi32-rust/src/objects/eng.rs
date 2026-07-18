@@ -85,8 +85,8 @@ pub type PUMPDEV = *mut _UMPDEV;
 
 // ── ntdll (NTAPI → extern "system") ───────────────────────────────────────────
 extern "system" {
-    fn RtlEnterCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION);
-    fn RtlLeaveCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION);
+    fn RtlEnterCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
+    fn RtlLeaveCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
     fn RtlInitializeCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
     fn RtlDeleteCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
     fn RtlAllocateHeap(HeapHandle: PVOID, Flags: ULONG, Size: SIZE_T) -> PVOID;

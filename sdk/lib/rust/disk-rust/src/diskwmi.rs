@@ -67,7 +67,7 @@ extern "C" {
     fn TEST_FLAG(value: u8, flag: u8) -> bool;
     fn SET_FLAG(var: &mut u32, flag: u32);
     fn CLEAR_FLAG(var: &mut u32, flag: u32);
-    fn GetSrbScsiData( srbEx: PSTORAGE_REQUEST_BLOCK, cdbLength8: *mut UCHAR, cdbLength32: *mut ULONG, cdb10: *mut UCHAR, senseBuffer: *mut PVOID, senseBufferLength: *mut UCHAR, );
+    fn GetSrbScsiData( srb: *mut STORAGE_REQUEST_BLOCK, data_out: *mut u8, data_length: *mut u32, scsi_status: *mut u8, sense_buffer: *mut *mut core::ffi::c_void, sense_buffer_length: *mut u8, ) -> *mut CDB;
     fn SetSrbScsiData( srbEx: PSTORAGE_REQUEST_BLOCK, cdbLength8: UCHAR, cdbLength32: ULONG, cdb10: UCHAR, senseBuffer: PVOID, senseBufferLength: UCHAR, );
     fn DiskIsValidSmartSelfTest(Subcommand: u8) -> BOOLEAN;
 }

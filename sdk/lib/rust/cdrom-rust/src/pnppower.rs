@@ -30,11 +30,11 @@ unsafe extern "system" {
     fn KeQueryTickCount(TickCount: *mut ntkrnl_sys::ddk::LARGE_INTEGER);
 }
 unsafe extern "C" {
-    fn RequestClearSendTime(PowerRequest: *mut core::ffi::c_void);
+    pub fn RequestClearSendTime(Request: WDFREQUEST);
 }
 extern "C" {
-    fn ScratchBuffer_SetupSrb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut core::ffi::c_void, TransferSize: u32, Direct: i32, );
-    fn ScratchBuffer_SendSrb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Synchronous: i32, CompletionRoutine: *mut core::ffi::c_void, );
+    fn ScratchBuffer_SetupSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, transfer_byte_count: u32, use_scratch: i32, ) -> i32;
+    fn ScratchBuffer_SendSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, wait: i32, unused: *mut core::ffi::c_void, ) -> i32;
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, TimesRetried: u32, Status: *mut NTSTATUS, RetryIn100nsUnits: *mut i64, ) -> i32;
     fn DeviceMarkActive(dev_ext: *mut CDROM_DEVICE_EXTENSION, active: u8, something: u8);
 }
@@ -411,7 +411,7 @@ pub unsafe extern "C" fn PowerContextBeginUse(DeviceExtension: *mut CDROM_DEVICE
 
     status = PowerContextReuseRequest(DeviceExtension);
 
-    RequestClearSendTime((*DeviceExtension).PowerContext.PowerRequest as *mut core::ffi::c_void);
+    RequestClearSendTime(((*DeviceExtension).PowerContext.PowerRequest as *mut core::ffi::c_void) as _);
 
     return status;
 }

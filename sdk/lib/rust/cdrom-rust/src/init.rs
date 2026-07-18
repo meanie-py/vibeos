@@ -90,7 +90,14 @@ unsafe extern "C" {
     fn DevicePrintAllFeaturePages(buffer: *const u8, size: u32);
 }
 unsafe extern "C" {
-    fn DeviceErrorHandlerForMmc();
+    // full def sig (sense.rs) — the old zero-arg decl was address-only shorthand
+    // and clashed with the types_* mirrors
+    fn DeviceErrorHandlerForMmc(
+        DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+        Srb: *mut SCSI_REQUEST_BLOCK,
+        Status: *mut i32,
+        Retry: *mut u8,
+    ) -> i32;
 }
 unsafe extern "C" {
     fn DeviceInitializeMediaChangeDetection(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;

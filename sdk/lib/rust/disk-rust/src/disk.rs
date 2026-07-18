@@ -533,7 +533,7 @@ pub type PDISK_GEOMETRY_EX_INTERNAL = *mut DISK_GEOMETRY_EX_INTERNAL;
 
 extern "C" {
     // defined in geometry.rs / ddk_shims.rs (#[no_mangle] extern "C", cdecl per types_i386).
-    fn DiskDriverReinitialization(DriverObject: PDEVICE_OBJECT, Nothing: PVOID, Count: ULONG);
+    pub fn DiskDriverReinitialization(DriverObject: PDRIVER_OBJECT, Nothing: PVOID, Count: ULONG);
 }
 
 // IoGetCurrentIrpStackLocation is a header FORCEINLINE — bindgen_i386 declares it cdecl,
@@ -586,9 +586,9 @@ macro_rules! w {
 extern "C" {
     fn DiskReadFailurePredictStatus( FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION, SmartStatus: *mut STORAGE_FAILURE_PREDICT_STATUS, ) -> NTSTATUS;
     fn DiskReadFailurePredictData( FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION, Buffer: *mut STORAGE_FAILURE_PREDICT_DATA, ) -> NTSTATUS;
-    fn DiskInitializeReregistration();
-    fn DiskSaveDetectInfo(DriverObject: PDRIVER_OBJECT);
-    fn DiskReadDriveCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
+    pub fn DiskInitializeReregistration() -> NTSTATUS;
+    pub fn DiskSaveDetectInfo(DriverObject: PDRIVER_OBJECT) -> NTSTATUS;
+    pub fn DiskReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTSTATUS;
     fn DiskGetDetectInfo( fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, Detection: *mut DISK_DETECTION_INFO, ) -> NTSTATUS;
     fn DiskEnableDisableFailurePrediction( fdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION, enable: u8, ) -> i32;
 }
@@ -10988,7 +10988,8 @@ pub unsafe extern "C" fn DiskIoctlPredictFailure(
     // CC must match the in-crate definitions exactly (extern "system" for NTAPI defs) —
     // an in-module CC mismatch is UB that LLVM folds to ud2 (the classpnp lesson).
     extern "C" {
-        fn TracePrint(level: i32, flag: u32, format: *const i8, arg1: *mut DEVICE_OBJECT, arg2: *mut IRP);
+        // variadic — matches the crate's other decl and the drvtrace-shim contract
+        fn TracePrint(level: i32, flag: u32, format: *const i8, ...);
         fn DbgPrint(format: *const i8, ...) -> NTSTATUS;
         fn __int2c();
         // cdecl per types_i386 (no NTAPI in disk.h) — must match the extern "C" defs.
@@ -11062,8 +11063,8 @@ pub unsafe extern "C" fn DiskIoctlPredictFailure(
             2, TRACE_FLAG_IOCTL,
             b"DiskIoctlPredictFailure: Output buffer too small.\n\0" as *const u8 as *const i8,
             // No additional arguments besides the format in this call.
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::ptr::null_mut::<DEVICE_OBJECT>(),
+            core::ptr::null_mut::<IRP>(),
         );
         return STATUS_BUFFER_TOO_SMALL;
     }

@@ -36,7 +36,7 @@ const STATUS_NAME_TOO_LONG: NTSTATUS = 0xC0000106_u32 as i32;
 // Cross-file win32k functions — decoration verified via llvm-nm on win32ss objs.
 // cdecl (`_Name` / `__Name`):
 extern "C" {
-    fn EngpUpdateGraphicsDeviceList();
+    fn EngpUpdateGraphicsDeviceList() -> NTSTATUS;
     fn MenuInit();
     fn InitCursorImpl();
     fn GetW32ProcessInfo() -> PPROCESSINFO;
@@ -59,7 +59,7 @@ extern "C" {
 extern "system" {
     fn co_IntLoadDefaultCursors();
     fn EngpFindGraphicsDevice(arg1: PUNICODE_STRING, arg2: ULONG) -> PGRAPHICS_DEVICE;
-    fn InitMetrics();
+    fn InitMetrics() -> BOOL;
 }
 
 // fastcall (`@Name@N`) — extern "fastcall" on i386, cdecl elsewhere.
