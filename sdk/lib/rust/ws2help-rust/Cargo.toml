@@ -1,0 +1,22 @@
+# ws2help-rust — Rust translation of dll/win32/ws2help (the WinSock 2 Helper DLL).
+# staticlib → libws2help_rust.a, cohab-linked into the cmake-built ws2help.dll with the
+# translated .c files commented out (per-file flip, like ws2_32-rust/wshtcpip-rust/mswsock-rust).
+#
+# ws2help provides the Wah* handle-context table / APC-helper / notification-handle helpers
+# that ws2_32/msafd use to map SOCKET handles to per-provider context. The WAH handle-context
+# + WS2IFSL EA struct layouts are bindgen-GENERATED per arch into `types` by
+# tools/rustconv/gen_driver_types.sh (profile: ws2help), not hand-transcribed.
+[package]
+name = "ws2help-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "ws2help_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
