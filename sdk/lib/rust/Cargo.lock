@@ -2535,6 +2535,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "wshirda-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "wshtcpip-rust"
 version = "0.1.0"
 dependencies = [

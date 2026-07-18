@@ -41,6 +41,7 @@ members = [
     "msafd-rust",
     "ws2_32-rust",
     "wshtcpip-rust",
+    "wshirda-rust",
     "mswsock-rust",
     "ws2help-rust",
     "userenv-rust",
