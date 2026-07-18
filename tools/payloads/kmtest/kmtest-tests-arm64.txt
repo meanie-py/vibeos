@@ -160,12 +160,25 @@ SeQueryInfoToken
 # vs ReactOS C (mm/ARM3/pfnlist.c). Owed (task #7 family).
 #ZwAllocateVirtualMemory
 ZwCreateSection
-# QUARANTINED 2026-07-16 (arm64 sweep 12): BUGCHECK 0x23 FAT_FILE_SYSTEM P1=0xdead0000 — a
-# DIFFERENT root from the SEH cluster: 0xdead0000 is the fastfat STUB_BUGCHECK marker
-# (rust_cohab_stub.c), i.e. an untranslated fastfat function (one of the ~25 dropped-at-translate
-# stubs, same class as the fixed FatSetEndOfFileInfo). ZwMapViewOfSection maps a file-backed
-# section → fastfat path → untranslated stub. arm64-only because arm64 boots the FAT32 ramdisk
-# (x86 boot FS differs). Fix = translate the specific fastfat fn (rustconv single-fn), not task #10.
+# QUARANTINED — RE-TRIAGED 2026-07-17 (GDB, §9.94): the 2026-07-16 "0x23/0xdead0000 fastfat
+# STUB_BUGCHECK" label is STALE/WRONG. Not a stub bugcheck — it's an IN-KERNEL HANG (sweep
+# INCOMPLETE, summary.json bugcheck=null). GDB bt-all-cpus/sample-pc: the CPU is stuck in a
+# translation-fault STORM — ELR_EL1=RtlCompareMemory's first `ldrb [source1]` (mem/lib.rs:24),
+# FAR_EL1=x8=source1=0x4e0000 (a low USER-VA section view), ESR_EL1=0x96000007 → EC 0x25
+# (data abort, current EL), DFSC 0x07 (translation fault, L3 = leaf PTE invalid). Caller is the
+# kmtest test driver (RtlCompareMemory of a mapped SEC_COMMIT view, len 200). arm64 never caches
+# faulting translations, and the trap.c handler's only non-bugchecking outcome is MmAccessFault
+# returning SUCCESS (ke/arm64/trap.c:343→346 `return`) → so MmAccessFault(0x4e0000) returns
+# STATUS_SUCCESS but leaves the L3 PTE invalid → ERET → re-fault forever (HANG, no bugcheck).
+# Root: the arm64 section-view demand-fault path (MmAccessFault → RosMM-VAD → MmNotPresentFault /
+# ARM3 proto pager) writes/reads the wrong leaf PTE slot — the §9.16 self-map / MiAddressToPte
+# offset class, residual in the section path. DEEP arm64 MM bug, almost certainly SHARED with the
+# MmSection hang (same section-view fault path). NOT a fastfat stub, NOT task #10. Fix owed as part
+# of the arm64 MM PFN/section family (task #7); pin the exact wrong-PTE slot with a GDB page-walk
+# of TTBR0→L3[0x4e0000] before touching the fault path. (Sibling latent bug found during this
+# triage & fixed: FatOpenExistingFcb called the snake_case stubs instead of the real in-file
+# FatSupersedeOrOverwriteFile/FatCheckSystemSecurityAccess — create.rs re-point — but that is NOT
+# this hang.)
 #ZwMapViewOfSection
 # UN-QUARANTINED 2026-07-17 (§9.93): NtWaitForMultipleObjects handle-array capture now goes through
 # the fault-tolerant KmProtectedCopyMemory on arm64 (validated HW-fault SEH). Same fix as amd64.
