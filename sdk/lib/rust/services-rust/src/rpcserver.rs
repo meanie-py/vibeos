@@ -115,7 +115,7 @@ extern "C" {
         InParams: PTAG_INFO_NAME_FROM_TAG_IN_PARAMS,
         OutParams: *mut PTAG_INFO_NAME_FROM_TAG_OUT_PARAMS,
     ) -> DWORD;
-    fn ScmLockDatabaseExclusive();
+    pub fn ScmLockDatabaseExclusive() -> BOOL;
     fn ScmUnlockDatabase();
     fn ScmOpenServiceKey(lpServiceName: LPWSTR, DesiredAccess: REGSAM, phKey: *mut HKEY) -> DWORD;
     fn ScmWriteSecurityDescriptor(hServiceKey: HKEY, pSecurityDescriptor: PSECURITY_DESCRIPTOR) -> DWORD;
@@ -125,7 +125,7 @@ extern "C" {
         dwPwSize: DWORD,
         lpClearTextPassword: *mut LPWSTR,
     ) -> DWORD;
-    fn ScmSetServiceGroup(lpService: PSERVICE, lpGroupName: LPWSTR) -> DWORD;
+    fn ScmSetServiceGroup(lpService: PSERVICE, lpGroupName: LPCWSTR) -> DWORD;
     fn ScmSetServicePassword(pszServiceName: *const wchar_t, pszPassword: *const wchar_t) -> DWORD;
     fn ScmWriteDependencies(hServiceKey: HKEY, lpDependencies: LPCWSTR, dwDependenciesLength: DWORD) -> DWORD;
     fn ScmCreateDefaultServiceSD(ppSecurityDescriptor: *mut PSECURITY_DESCRIPTOR) -> DWORD;

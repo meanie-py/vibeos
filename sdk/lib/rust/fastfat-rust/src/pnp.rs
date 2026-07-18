@@ -15,7 +15,7 @@ extern "system" {
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatUnlockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Something: *mut core::ffi::c_void) -> i32;
     fn FatFlushAndCleanVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Vcb: *mut VCB, Flags: i32);
-    fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Force: u8) -> u8;
+    fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg: BOOLEAN) -> BOOLEAN;
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: i32);

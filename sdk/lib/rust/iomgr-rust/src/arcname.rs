@@ -70,7 +70,7 @@ extern "system" {
 extern "C" {
     fn strcmp(s1: *const i8, s2: *const i8) -> i32;
     fn strlen(s: *const i8) -> usize;
-    fn strstr(haystack: *const i8, needle: *const i8) -> *const i8;
+    fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8;
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn wcslen(s: *const u16) -> usize;
 }

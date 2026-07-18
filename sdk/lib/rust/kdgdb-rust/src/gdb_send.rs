@@ -31,7 +31,7 @@ const STATUS_STACK_OVERFLOW: NTSTATUS = 0xC00000FDu32 as NTSTATUS;
 // kdgdb-internal byte I/O — NTAPI (stdcall on i386), defined in kdcom.rs.
 extern "system" {
     fn KdpReceiveByte(byte: *mut u8) -> KDSTATUS;
-    fn KdpSendByte(byte: u8);
+    fn KdpSendByte(byte: UCHAR) -> KDSTATUS;
 }
 // CRT formatting (cdecl) — links from libcntpr at final link.
 extern "C" {

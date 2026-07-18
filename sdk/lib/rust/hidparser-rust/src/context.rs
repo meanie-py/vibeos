@@ -61,17 +61,8 @@ pub unsafe extern "C" fn HidParser_CalculateCollectionSize(Collection: *mut HID_
 
 // NTAPI (stdcall on i386): CopyFunction (hidparse.sys callback) + RtlAssert.
 unsafe extern "system" {
-    fn CopyFunction(
-        dst: *mut core::ffi::c_void,
-        src: *mut core::ffi::c_void,
-        size: u32,
-    );
-    fn RtlAssert(
-        FailedAssertion: *mut core::ffi::c_void,
-        FileName: *mut core::ffi::c_void,
-        LineNumber: u32,
-        Message: *mut core::ffi::c_void,
-    );
+    fn CopyFunction(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, size: u32);
+    fn RtlAssert( FailedAssertion: *const core::ffi::c_void, FileName: *const core::ffi::c_void, LineNumber: ULONG, Message: *mut core::ffi::c_void, );
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_CalculateContextSize(Collection: *mut HID_COLLECTION) -> u32 {

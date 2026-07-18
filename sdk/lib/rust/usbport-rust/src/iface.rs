@@ -13,7 +13,7 @@ extern "system" {
     fn USBPORT_BadRequestFlush(FdoDevice: PDEVICE_OBJECT);
 }
 extern "system" {
-    fn USBPORT_CreateDevice( UsbdDeviceHandle: *mut PUSBPORT_DEVICE_HANDLE, FdoDevice: PDEVICE_OBJECT, HubDeviceHandle: PUSBPORT_DEVICE_HANDLE, PortStatus: USHORT, PortNumber: USHORT, ) -> NTSTATUS;
+    pub fn USBPORT_CreateDevice( pUsbdDeviceHandle: *mut PUSB_DEVICE_HANDLE, FdoDevice: PDEVICE_OBJECT, HubDeviceHandle: PUSBPORT_DEVICE_HANDLE, PortStatus: USHORT, Port: USHORT, ) -> NTSTATUS;
     fn USBPORT_GetUsbDescriptor( DeviceHandle: PUSBPORT_DEVICE_HANDLE, FdoDevice: PDEVICE_OBJECT, Type: UCHAR, ConfigDescBuffer: PUCHAR, ConfigDescBufferLen: PULONG, ) -> NTSTATUS;
     fn USBPORT_DumpingDeviceDescriptor(Descriptor: PUSB_DEVICE_DESCRIPTOR);
     fn USBPORT_RemoveDevice( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, Flags: ULONG, ) -> NTSTATUS;
@@ -64,7 +64,7 @@ pub unsafe extern "system" fn USBHI_CreateUsbDevice(
     PdoExtension = (*PdoDevice).DeviceExtension as PUSBPORT_RHDEVICE_EXTENSION;
 
     Status = USBPORT_CreateDevice(
-        core::ptr::addr_of_mut!(deviceHandle) as *mut PUSBPORT_DEVICE_HANDLE,
+        (core::ptr::addr_of_mut!(deviceHandle) as *mut PUSBPORT_DEVICE_HANDLE) as _,
         (*PdoExtension).FdoDevice,
         UsbdHubDeviceHandle as PUSBPORT_DEVICE_HANDLE,
         PortStatus,
