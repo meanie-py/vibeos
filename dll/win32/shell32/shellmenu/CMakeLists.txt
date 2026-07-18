@@ -9,11 +9,7 @@ if(DBG)
 endif()
 
 list(APPEND SOURCE
-    # CMenuBand.cpp — replaced by Rust (shell32-rust/src/menu_band.rs); cohab via
-    # libshell32_rust.a. Companions stay C++: CMenuToolbars.cpp/CMenuFocusManager.cpp
-    # carry the *_RustBridge shims Rust calls forward through, and call back through
-    # the CMenuBand_*_RustExport surface (CMenuBandRustExports.h). Rust also exports
-    # RSHELL_CMenuBand_CreateInstance (was CMenuBand.cpp:1324).
+    CMenuBand.cpp
     CMenuDeskBar.cpp
     CMenuFocusManager.cpp
     CMenuSite.cpp

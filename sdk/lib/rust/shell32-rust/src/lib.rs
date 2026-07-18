@@ -53,7 +53,6 @@ pub mod drop_target_helper;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
 pub mod folder_options;
-pub mod menu_band;
 pub mod my_docs_folder;
 pub mod net_folder;
 pub mod new_menu;

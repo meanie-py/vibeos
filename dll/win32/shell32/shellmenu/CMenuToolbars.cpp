@@ -23,9 +23,7 @@
 #include <uxtheme.h>
 #include <vssym32.h>
 
-/* CMenuBand is Rust-owned; the class header must stay out of this TU so the compiler
- * enforces the opaque-pointer contract (see CMenuBandRustExports.h). */
-#include "CMenuBandRustExports.h"
+#include "CMenuBand.h"
 #include "CMenuToolbars.h"
 
 #define IDS_MENU_EMPTY 34561
@@ -166,7 +164,7 @@ HRESULT CMenuToolbarBase::OnCustomDraw(LPNMTBCUSTOMDRAW cdraw, LRESULT * theResu
     case CDDS_ITEMPREPAINT:
 
         HWND tlw;
-        CMenuBand_GetTopLevelWindow_RustExport(m_menuBand, &tlw);
+        m_menuBand->_GetTopLevelWindow(&tlw);
 
         // The item with an active submenu gets the CHECKED flag.
         isHot = m_hotBar == this && (int) cdraw->nmcd.dwItemSpec == m_hotItem;
@@ -343,7 +341,7 @@ HRESULT CMenuToolbarBase::UpdateImageLists()
     // Assign the correct imagelist and padding based on the current icon size
 
     int shiml;
-    if (CMenuBand_UseBigIcons_RustExport(m_menuBand))
+    if (m_menuBand->UseBigIcons())
     {
         shiml = SHIL_LARGE;
         SetPadding(4, 0);
@@ -419,7 +417,7 @@ HRESULT CMenuToolbarBase::CreateToolbar(HWND hwndParent, DWORD dwFlags)
 
     SystemParametersInfo(SPI_GETFLATMENU, 0, &m_useFlatMenus, 0);
 
-    CMenuBand_AdjustForTheme_RustExport(m_menuBand, m_useFlatMenus);
+    m_menuBand->AdjustForTheme(m_useFlatMenus);
 
     // If needed, create the pager.
     if (m_usePager)
@@ -705,7 +703,7 @@ LRESULT CMenuToolbarBase::ChangeTrackedItem(UINT uMsg, WPARAM wParam, LPARAM lPa
     if (idx < 0)
     {
         m_isTrackingPopup = FALSE;
-        return CMenuBand_ChangeHotItem_RustExport(m_menuBand, NULL, -1, HICF_MOUSE);
+        return m_menuBand->_ChangeHotItem(NULL, -1, HICF_MOUSE);
     }
 
     if (!GetButton(idx, &btn))
@@ -713,7 +711,7 @@ LRESULT CMenuToolbarBase::ChangeTrackedItem(UINT uMsg, WPARAM wParam, LPARAM lPa
 
     TRACE("ChangeTrackedItem %d, %d\n", idx, wasTracking);
     m_isTrackingPopup = wasTracking;
-    return CMenuBand_ChangeHotItem_RustExport(m_menuBand, this, btn.idCommand, mouse ? HICF_MOUSE : 0);
+    return m_menuBand->_ChangeHotItem(this, btn.idCommand, mouse ? HICF_MOUSE : 0);
 }
 
 HRESULT CMenuToolbarBase::PopupSubMenu(UINT iItem, UINT index, IShellMenu* childShellMenu, BOOL keyInitiated)
@@ -751,8 +749,8 @@ HRESULT CMenuToolbarBase::PopupSubMenu(UINT iItem, UINT index, IShellMenu* child
     // Display the submenu
     m_isTrackingPopup = TRUE;
 
-    CMenuBand_ChangePopupItem_RustExport(m_menuBand, this, iItem);
-    CMenuBand_OnPopupSubMenu_RustExport(m_menuBand, childShellMenu, &pt, &rcl, keyInitiated);
+    m_menuBand->_ChangePopupItem(this, iItem);
+    m_menuBand->_OnPopupSubMenu(childShellMenu, &pt, &rcl, keyInitiated);
 
     return S_OK;
 }
@@ -784,9 +782,9 @@ HRESULT CMenuToolbarBase::PopupSubMenu(UINT iItem, UINT index, HMENU menu)
 
     // Display the submenu
     m_isTrackingPopup = TRUE;
-    CMenuBand_ChangePopupItem_RustExport(m_menuBand, this, iItem);
-    CMenuBand_TrackSubMenu_RustExport(m_menuBand, popup, pt.x, pt.y, &rcl);
-    CMenuBand_ChangePopupItem_RustExport(m_menuBand, NULL, -1);
+    m_menuBand->_ChangePopupItem(this, iItem);
+    m_menuBand->_TrackSubMenu(popup, pt.x, pt.y, rcl);
+    m_menuBand->_ChangePopupItem(NULL, -1);
     m_isTrackingPopup = FALSE;
 
     return S_OK;
@@ -795,12 +793,12 @@ HRESULT CMenuToolbarBase::PopupSubMenu(UINT iItem, UINT index, HMENU menu)
 HRESULT CMenuToolbarBase::TrackContextMenu(IContextMenu* contextMenu, POINT pt)
 {
     // Cancel submenus
-    CMenuBand_KillPopupTimers_RustExport(m_menuBand);
+    m_menuBand->_KillPopupTimers();
     if (m_popupBar)
-        CMenuBand_CancelCurrentPopup_RustExport(m_menuBand);
+        m_menuBand->_CancelCurrentPopup();
 
     // Display the context menu
-    return CMenuBand_TrackContextMenu_RustExport(m_menuBand, contextMenu, pt.x, pt.y);
+    return m_menuBand->_TrackContextMenu(contextMenu, pt.x, pt.y);
 }
 
 HRESULT CMenuToolbarBase::BeforeCancelPopup()
@@ -833,7 +831,7 @@ HRESULT CMenuToolbarBase::ProcessClick(INT iItem)
 
     TRACE("Executing...\n");
 
-    return CMenuBand_MenuItemSelect_RustExport(m_menuBand, MPOS_EXECUTE);
+    return m_menuBand->_MenuItemSelect(MPOS_EXECUTE);
 }
 
 HRESULT CMenuToolbarBase::ProcessContextMenu(INT iItem)
@@ -885,7 +883,7 @@ HRESULT CMenuToolbarBase::MenuBarMouseUp(INT iIndex, BOOL isLButton)
 
 HRESULT CMenuToolbarBase::PrepareExecuteItem(INT iItem)
 {
-    CMenuBand_KillPopupTimers_RustExport(this->m_menuBand);
+    this->m_menuBand->_KillPopupTimers();
 
     m_executeItem = iItem;
     return GetDataFromId(iItem, &m_executeIndex, &m_executeData);
@@ -964,12 +962,12 @@ HRESULT CMenuToolbarBase::KeyboardItemChange(DWORD dwSelectType)
                     if (!(m_initFlags & SMINIT_VERTICAL) && m_isTrackingPopup)
                     {
                         HWND tlw;
-                        CMenuBand_GetTopLevelWindow_RustExport(m_menuBand, &tlw);
+                        m_menuBand->_GetTopLevelWindow(&tlw);
                         ::SendMessageW(tlw, WM_CANCELMODE, 0, 0);
                         PostMessageW(WM_USER_CHANGETRACKEDITEM, index, MAKELPARAM(m_isTrackingPopup, FALSE));
                     }
                     else
-                        CMenuBand_ChangeHotItem_RustExport(m_menuBand, this, btn.idCommand, 0);
+                        m_menuBand->_ChangeHotItem(this, btn.idCommand, 0);
                 }
                 return S_OK;
             }
@@ -990,7 +988,7 @@ HRESULT CMenuToolbarBase::KeyboardItemChange(DWORD dwSelectType)
     if (prev != -1)
     {
         TRACE("Setting Hot item to null\n");
-        CMenuBand_ChangeHotItem_RustExport(m_menuBand, NULL, -1, 0);
+        m_menuBand->_ChangeHotItem(NULL, -1, 0);
     }
 
     return S_FALSE;
@@ -1107,7 +1105,7 @@ HRESULT CMenuToolbarBase::GetDataFromId(INT iItem, INT* pIndex, DWORD_PTR* pData
 
 HRESULT CMenuToolbarBase::CancelCurrentPopup()
 {
-    return CMenuBand_CancelCurrentPopup_RustExport(m_menuBand);
+    return m_menuBand->_CancelCurrentPopup();
 }
 
 HRESULT CMenuToolbarBase::PopupItem(INT iItem, BOOL keyInitiated)
@@ -1137,7 +1135,7 @@ HRESULT CMenuToolbarBase::PopupItem(INT iItem, BOOL keyInitiated)
     if (!(m_initFlags & SMINIT_VERTICAL))
     {
         TRACE("PopupItem non-vertical %d %d\n", index, iItem);
-        CMenuBand_ChangeHotItem_RustExport(m_menuBand, this, iItem, 0);
+        m_menuBand->_ChangeHotItem(this, iItem, 0);
     }
 
     return InternalPopupItem(iItem, index, dwData, keyInitiated);
@@ -1228,7 +1226,7 @@ HRESULT CMenuStaticToolbar::FillToolbar(BOOL clearFirst)
             SMINFO * sminfo = new SMINFO();
             sminfo->dwMask = SMIM_ICON | SMIM_FLAGS;
 
-            HRESULT hr = CMenuBand_CallCBWithItemId_RustExport(m_menuBand, info.wID, SMC_GETINFO, 0, reinterpret_cast<LPARAM>(sminfo));
+            HRESULT hr = m_menuBand->_CallCBWithItemId(info.wID, SMC_GETINFO, 0, reinterpret_cast<LPARAM>(sminfo));
             if (FAILED_UNEXPECTEDLY(hr))
             {
                 delete sminfo;
@@ -1260,7 +1258,7 @@ HRESULT CMenuStaticToolbar::OnDeletingButton(const NMTOOLBAR * tb)
 HRESULT CMenuStaticToolbar::InternalContextMenu(INT iItem, INT index, DWORD_PTR dwData, POINT pt)
 {
     CComPtr<IContextMenu> contextMenu;
-    HRESULT hr = CMenuBand_CallCBWithItemId_RustExport(m_menuBand, iItem, SMC_GETOBJECT,
+    HRESULT hr = m_menuBand->_CallCBWithItemId(iItem, SMC_GETOBJECT,
         reinterpret_cast<WPARAM>(&IID_IContextMenu), reinterpret_cast<LPARAM>(&contextMenu));
     if (hr != S_OK)
         return hr;
@@ -1270,7 +1268,7 @@ HRESULT CMenuStaticToolbar::InternalContextMenu(INT iItem, INT index, DWORD_PTR 
 
 HRESULT CMenuStaticToolbar::InternalExecuteItem(INT iItem, INT index, DWORD_PTR data)
 {
-    return CMenuBand_CallCBWithItemId_RustExport(m_menuBand, iItem, SMC_EXEC, 0, 0);
+    return m_menuBand->_CallCBWithItemId(iItem, SMC_EXEC, 0, 0);
 }
 
 HRESULT CMenuStaticToolbar::InternalPopupItem(INT iItem, INT index, DWORD_PTR dwData, BOOL keyInitiated)
@@ -1286,7 +1284,7 @@ HRESULT CMenuStaticToolbar::InternalPopupItem(INT iItem, INT index, DWORD_PTR dw
     else
     {
         CComPtr<IShellMenu> shellMenu;
-        HRESULT hr = CMenuBand_CallCBWithItemId_RustExport(m_menuBand, iItem, SMC_GETOBJECT, reinterpret_cast<WPARAM>(&IID_IShellMenu), reinterpret_cast<LPARAM>(&shellMenu));
+        HRESULT hr = m_menuBand->_CallCBWithItemId(iItem, SMC_GETOBJECT, reinterpret_cast<WPARAM>(&IID_IShellMenu), reinterpret_cast<LPARAM>(&shellMenu));
         if (FAILED_UNEXPECTEDLY(hr))
             return hr;
 
@@ -1352,7 +1350,7 @@ HRESULT CMenuSFToolbar::FillToolbar(BOOL clearFirst)
     hr = eidl->Next(1, &item, NULL);
     while (hr == S_OK)
     {
-        if (CMenuBand_CallCBWithItemPidl_RustExport(m_menuBand, item, 0x10000000, 0, 0) == S_FALSE)
+        if (m_menuBand->_CallCBWithItemPidl(item, 0x10000000, 0, 0) == S_FALSE)
         {
             DPA_AppendPtr(dpaSort, item);
         }
@@ -1511,7 +1509,7 @@ HRESULT CMenuSFToolbar::InternalContextMenu(INT iItem, INT index, DWORD_PTR dwDa
 
 HRESULT CMenuSFToolbar::InternalExecuteItem(INT iItem, INT index, DWORD_PTR data)
 {
-    return CMenuBand_CallCBWithItemPidl_RustExport(m_menuBand, reinterpret_cast<LPITEMIDLIST>(data), SMC_SFEXEC, 0, 0);
+    return m_menuBand->_CallCBWithItemPidl(reinterpret_cast<LPITEMIDLIST>(data), SMC_SFEXEC, 0, 0);
 }
 
 HRESULT CMenuSFToolbar::InternalPopupItem(INT iItem, INT index, DWORD_PTR dwData, BOOL keyInitiated)
@@ -1532,7 +1530,7 @@ HRESULT CMenuSFToolbar::InternalPopupItem(INT iItem, INT index, DWORD_PTR dwData
     if (FAILED_UNEXPECTEDLY(hr))
         return hr;
 
-    CMenuBand_GetMenuInfo_RustExport(m_menuBand, &psmc, &uId, &uIdAncestor, &flags);
+    m_menuBand->GetMenuInfo(&psmc, &uId, &uIdAncestor, &flags);
 
     // FIXME: not sure what to use as uId/uIdAncestor here
     hr = shellMenu->Initialize(psmc, 0, uId, SMINIT_VERTICAL);
@@ -1562,172 +1560,4 @@ HRESULT CMenuSFToolbar::InternalHasSubMenu(INT iItem, INT index, DWORD_PTR dwDat
         return hr;
 
     return (attrs & SFGAO_FOLDER) ? S_OK : S_FALSE;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
- * Forward bridges: the Rust-owned CMenuBand (shell32-rust/src/menu_band.rs)
- * reaches the retained C++ toolbar companions through these extern "C" shims.
- * Contract: CMenuBand-bridges.md (shell32-com lane). The `CMenuBand *band`
- * parameter is the opaque Rust band pointer (see CMenuBandRustExports.h); the
- * toolbars store it in m_menuBand untouched, exactly as they stored the old
- * C++ `this`. Methods inherited from CMenuToolbarBase share one bridge set
- * taking the base pointer — valid because CMenuStaticToolbar/CMenuSFToolbar
- * derive from CMenuToolbarBase as their ONLY (non-virtual) base
- * (CMenuToolbars.h), so the derived->base conversion is address-preserving.
- * If a second/virtual base is ever added there, this rule breaks and
- * per-derived-class bridges become mandatory (see CMenuBand-bridges.md).
- * FillToolbar is virtual: C++ dispatch picks the override.
- * ───────────────────────────────────────────────────────────────────────────── */
-
-/* Construction/destruction — mirrors `new CMenuStaticToolbar(this)` (old
- * CMenuBand.cpp:140) / `new CMenuSFToolbar(this)` (old CMenuBand.cpp:692) and
- * `delete m_staticToolbar` / `delete m_SFToolbar` (old CMenuBand.cpp:64-65;
- * C++ delete of NULL is a no-op, virtual dtor runs). */
-extern "C" CMenuStaticToolbar* WINAPI CMenuStaticToolbar_Create_RustBridge(CMenuBand *band)
-{
-    return new CMenuStaticToolbar(band);
-}
-
-extern "C" void WINAPI CMenuStaticToolbar_Delete_RustBridge(CMenuStaticToolbar *tb)
-{
-    delete tb;
-}
-
-extern "C" HRESULT WINAPI CMenuStaticToolbar_SetMenu_RustBridge(CMenuStaticToolbar *tb, HMENU hmenu, HWND hwnd, DWORD dwFlags)
-{
-    return tb->SetMenu(hmenu, hwnd, dwFlags);
-}
-
-extern "C" HRESULT WINAPI CMenuStaticToolbar_GetMenu_RustBridge(CMenuStaticToolbar *tb, HMENU *phmenu, HWND *phwnd, DWORD *pdwFlags)
-{
-    return tb->GetMenu(phmenu, phwnd, pdwFlags);
-}
-
-extern "C" CMenuSFToolbar* WINAPI CMenuSFToolbar_Create_RustBridge(CMenuBand *band)
-{
-    return new CMenuSFToolbar(band);
-}
-
-extern "C" void WINAPI CMenuSFToolbar_Delete_RustBridge(CMenuSFToolbar *tb)
-{
-    delete tb;
-}
-
-extern "C" HRESULT WINAPI CMenuSFToolbar_SetShellFolder_RustBridge(CMenuSFToolbar *tb, IShellFolder *psf, LPCITEMIDLIST pidlFolder, HKEY hKey, DWORD dwFlags)
-{
-    return tb->SetShellFolder(psf, pidlFolder, hKey, dwFlags);
-}
-
-extern "C" HRESULT WINAPI CMenuSFToolbar_GetShellFolder_RustBridge(CMenuSFToolbar *tb, DWORD *pdwFlags, LPITEMIDLIST *ppidl, REFIID riid, void **ppv)
-{
-    return tb->GetShellFolder(pdwFlags, ppidl, riid, ppv);
-}
-
-/* Shared CMenuToolbarBase surface (CMenuToolbars.h:63-102) */
-extern "C" HRESULT WINAPI CMenuToolbarBase_IsWindowOwner_RustBridge(CMenuToolbarBase *tb, HWND hwnd)
-{
-    return tb->IsWindowOwner(hwnd);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_CreateToolbar_RustBridge(CMenuToolbarBase *tb, HWND hwndParent, DWORD dwFlags)
-{
-    return tb->CreateToolbar(hwndParent, dwFlags);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_GetWindow_RustBridge(CMenuToolbarBase *tb, HWND *phwnd)
-{
-    return tb->GetWindow(phwnd);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_ShowDW_RustBridge(CMenuToolbarBase *tb, BOOL fShow)
-{
-    return tb->ShowDW(fShow);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_Close_RustBridge(CMenuToolbarBase *tb)
-{
-    return tb->Close();
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_OnWinEvent_RustBridge(CMenuToolbarBase *tb, HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *theResult)
-{
-    return tb->OnWinEvent(hWnd, uMsg, wParam, lParam, theResult);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_ChangeHotItem_RustBridge(CMenuToolbarBase *tb, CMenuToolbarBase *toolbar, INT item, DWORD dwFlags)
-{
-    return tb->ChangeHotItem(toolbar, item, dwFlags);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_ChangePopupItem_RustBridge(CMenuToolbarBase *tb, CMenuToolbarBase *toolbar, INT item)
-{
-    return tb->ChangePopupItem(toolbar, item);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_KeyboardItemChange_RustBridge(CMenuToolbarBase *tb, DWORD changeType)
-{
-    return tb->KeyboardItemChange(changeType);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_PrepareExecuteItem_RustBridge(CMenuToolbarBase *tb, INT iItem)
-{
-    return tb->PrepareExecuteItem(iItem);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_ExecuteItem_RustBridge(CMenuToolbarBase *tb)
-{
-    return tb->ExecuteItem();
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_GetSizes_RustBridge(CMenuToolbarBase *tb, SIZE *pMinSize, SIZE *pMaxSize, SIZE *pIntegralSize)
-{
-    return tb->GetSizes(pMinSize, pMaxSize, pIntegralSize);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_SetPosSize_RustBridge(CMenuToolbarBase *tb, INT x, INT y, INT cx, INT cy)
-{
-    return tb->SetPosSize(x, y, cx, cy);
-}
-
-/* Old CMenuBand.cpp:677/679 `Invalidate()` resolved to CWindow::Invalidate(TRUE)
- * (inherited via CWindowImplBaseT), NOT InvalidateDraw() — keep that resolution. */
-extern "C" void WINAPI CMenuToolbarBase_Invalidate_RustBridge(CMenuToolbarBase *tb)
-{
-    tb->Invalidate();
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_DisableMouseTrack_RustBridge(CMenuToolbarBase *tb, BOOL bDisable)
-{
-    return tb->DisableMouseTrack(bDisable);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_PopupItem_RustBridge(CMenuToolbarBase *tb, INT iItem, BOOL keyInitiated)
-{
-    return tb->PopupItem(iItem, keyInitiated);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_KillPopupTimer_RustBridge(CMenuToolbarBase *tb)
-{
-    return tb->KillPopupTimer();
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_MenuBarMouseDown_RustBridge(CMenuToolbarBase *tb, INT iIndex, BOOL isLButton)
-{
-    return tb->MenuBarMouseDown(iIndex, isLButton);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_MenuBarMouseUp_RustBridge(CMenuToolbarBase *tb, INT iIndex, BOOL isLButton)
-{
-    return tb->MenuBarMouseUp(iIndex, isLButton);
-}
-
-extern "C" HRESULT WINAPI CMenuToolbarBase_BeforeCancelPopup_RustBridge(CMenuToolbarBase *tb)
-{
-    return tb->BeforeCancelPopup();
-}
-
-/* Virtual — C++ dispatch selects the CMenuStaticToolbar/CMenuSFToolbar override. */
-extern "C" HRESULT WINAPI CMenuToolbarBase_FillToolbar_RustBridge(CMenuToolbarBase *tb, BOOL clearFirst)
-{
-    return tb->FillToolbar(clearFirst);
 }

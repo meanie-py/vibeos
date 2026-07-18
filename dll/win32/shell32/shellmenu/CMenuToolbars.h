@@ -19,10 +19,6 @@
 */
 #pragma once
 
-/* CMenuBand is Rust-owned (shell32-rust/src/menu_band.rs): this forward decl is the
- * whole type on the C++ side. Every CMenuBand* below is the opaque Rust band pointer;
- * operations go through CMenuBand_*_RustExport (CMenuBandRustExports.h), never
- * member calls. m_menuBand stays an unowned back-pointer, as before. */
 class CMenuBand;
 class CMenuFocusManager;
 
