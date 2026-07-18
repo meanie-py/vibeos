@@ -86,25 +86,22 @@ EXPECTED_UD2 = {
     "17compiler_builtins3int3big",
 }
 
-# Functions with known ud2 from rustc CGU partitioning bug (codegen-units=16).
-# rustc places function definitions in one CGU but replaces their body with
-# `unreachable` -> ud2. With CGU=16 only a few functions are affected.
-# Most are in dead unnamed functions placed after the labeled function's ret;
-# PopSetSystemPowerState has its actual body replaced but is only called for
-# power state transitions (not during boot). Tracked as a known issue.
-# Fix requires coordinated CGU=1 migration (see feedback_cgu1.md).
-KNOWN_CGU_UD2 = {
-    "IoInitializeCrashDump",
-    "NtQuerySemaphore",
-    "NtSetThreadExecutionState",
-    "NtStopProfile",
-    "PopSetSystemPowerState",
-    "MmPageOutPhysicalAddress",
-    "IopAcquireFileObjectLock",
-    "are_any_accesses_granted",
-    "KiSystemStartup",
-    "KeAcquireInStackQueuedSpinLockForDpc",
-}
+# RETIRED 2026-07-18: the "rustc CGU partitioning bug" allow-set is dead lore.
+# The one entry still firing (MmPageOutPhysicalAddress, i386 + ntkrnlmp) was a
+# §9.99 same-crate CC fold: mm/rmap.rs (where MmPageOutPhysicalAddress lives)
+# IMPORTED MmDeleteVirtualMapping from the bindgen ddk module (extern "C" = cdecl
+# on i386) while the def + every hot caller are extern "system" (stdcall @16 —
+# the REAL ABI; the no-NTAPI decl in internal/mm.h is misleading, §9.105). That
+# intra-crate cdecl-vs-stdcall disagreement folds MmPageOutPhysicalAddress to a
+# ud2 (cold balance-manager path → tolerated latent). Fixed by giving rmap.rs a
+# LOCAL extern "system" decl (matching marea.rs/section.rs), NOT by flipping the
+# ABI to cdecl — cdecl desyncs ESP at the marea.rs VirtFn stdcall call and
+# exec-at-0s during i386 driver init (§9.105). The other nine were already 0-hit
+# on every kernel (i386/amd64/arm64 UP + amd64 ntkrnlmp SMP, verified by direct
+# sweep). There was never a CGU partitioning bug — these were fold-class
+# landmines all along. Any future hit here must be root-caused with
+# tools/scan_ir_mismatch.py (field manual §9.99/§9.102/§9.105), NOT re-baselined.
+KNOWN_CGU_UD2: set[str] = set()
 
 # arm64: named functions whose body is legitimately a branch-to-self `b .` spin
 # (the arm64 analogue of x86's EXPECTED_UD2). These are intentional terminal
@@ -195,32 +192,18 @@ KNOWN_DRIVER_UD2: dict[str, set[str]] = {
     # heuristic. Boots green daily.
     "rosload.exe": {"LoadAndBootWindowsCommon"},
     "freeldr.exe": {"LoadAndBootWindowsCommon"},
-    # --- First-ever amd64/arm64 sweeps (2026-07-18): pre-existing latents,
-    # --- root-cause OWED (warnings-burndown plan doc). Cold paths; both
-    # --- arches boot green daily. Do NOT add new entries without a writeup.
-    # user32 SwitchWndProc_common: two error-path folds right after
-    # SetLastError(ERROR_INVALID_WINDOW_HANDLE) — §9.99/§9.102 shape in the
-    # reverted-9 usermode crate set.
-    "user32.dll": {"SwitchWndProc_common"},
-    # kernel32 arm64 spins in time/locale fns — suspected non-volatile
-    # KUSER_SHARED_DATA tick-capture retry loops folded to `b .` (would hang
-    # IF that subpath runs; clock works today, so the folded path is cold).
-    # JapaneseEra_Find likewise a folded table-scan loop.
-    "kernel32.dll": {
-        "FileTimeToLocalFileTime",
-        "GetLocalTime",
-        "GetSystemTimeAsFileTime",
-        "LocalFileTimeToFileTime",
-        "SetLocalTime",
-        "GetTimeZoneInformation",
-        "JapaneseEra_Find",
-    },
-    # win32k arm64: EngInitializeSafeSemaphore spin — suspected same
-    # non-volatile interlocked-retry shape.
-    "win32k.sys": {"EngInitializeSafeSemaphore"},
+    # Do NOT add new entries without a written root-cause attempt; every
+    # 2026-07-18 first-sweep latent (user32 SwitchWndProc_common §9.103
+    # null-blind deref, kernel32 seqlock spins §9.104, win32k
+    # EngInitializeSafeSemaphore wait-loop) was root-caused and FIXED the
+    # same day — the baseline is for justified terminal shapes only.
+    # (kernel32 time/locale spins RESOLVED 2026-07-18: they were non-volatile
+    # KUSER_SHARED_DATA seqlock capture loops — LLVM hoisted the plain loads,
+    # leaving an unconditional `b .` if entered mid-update. Fixed with
+    # read_volatile capture across kernel32/vista/ke-inlines/ntdll/clock.rs,
+    # plus write_volatile on the kernel writer side. Field manual §9.104.)
 }
 # the SMP kernel image shares ntoskrnl's known-CGU baselines
-KNOWN_DRIVER_UD2["ntkrnlmp.exe"] = set(KNOWN_CGU_UD2)
 
 
 def _is_mangled(fn: str) -> bool:

@@ -49,6 +49,10 @@ extern "system" {
     fn MmIsPageSwapEntry(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID) -> BOOLEAN;
     fn MmDeletePageFileMapping(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID, SwapEntry: *mut SWAPENTRY);
     fn MmDeletePhysicalMapping(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID, WasDirty: *mut BOOLEAN, Page: *mut ntkrnl_sys::ddk::PFN_NUMBER) -> BOOLEAN;
+    // MmDeleteVirtualMapping is NTAPI/stdcall on i386 (extern "system"), NOT cdecl. The
+    // no-NTAPI decl in internal/mm.h is MISLEADING — the working ABI is stdcall (@16): the
+    // def, and the `VirtFn = extern "system" fn(..)` transmute-call below, are both stdcall.
+    // Flipping this to extern "C" desyncs ESP at the VirtFn call → exec-at-0 (field manual §9.99).
     fn MmDeleteVirtualMapping(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID, WasDirty: *mut BOOLEAN, Page: *mut ntkrnl_sys::ddk::PFN_NUMBER) -> BOOLEAN;
 }
 

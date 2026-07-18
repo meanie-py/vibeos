@@ -10,10 +10,13 @@ use core::ffi::c_int;
 pub unsafe extern "system" fn GetTickCount64() -> ULONGLONG {
     let mut high: ULONG;
     let mut low: ULONG;
+    // Volatile seqlock capture — plain loads get hoisted out of the retry loop
+    // (spin_loop() is a CPU hint, not a compiler memory barrier).
+    let tc = core::ptr::addr_of!((*SharedUserData).__bindgen_anon_2.TickCount);
     loop {
-        high = (*SharedUserData).__bindgen_anon_2.TickCount.High1Time as ULONG;
-        low = (*SharedUserData).__bindgen_anon_2.TickCount.LowPart;
-        if high == (*SharedUserData).__bindgen_anon_2.TickCount.High2Time as ULONG {
+        high = core::ptr::read_volatile(core::ptr::addr_of!((*tc).High1Time)) as ULONG;
+        low = core::ptr::read_volatile(core::ptr::addr_of!((*tc).LowPart));
+        if high == core::ptr::read_volatile(core::ptr::addr_of!((*tc).High2Time)) as ULONG {
             break;
         }
         core::hint::spin_loop(); // YieldProcessor
