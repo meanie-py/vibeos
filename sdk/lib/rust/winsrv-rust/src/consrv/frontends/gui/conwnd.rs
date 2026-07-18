@@ -51,7 +51,7 @@ extern "system" {
     /// `ConsoleAllocHeap`/`ConsoleFreeHeap` live in consrv/heap.c; not
     /// in the bindgen allowlist (no real "outer ring" prefix).
     pub fn ConsoleAllocHeap(Flags: u32, Size: usize) -> *mut core::ffi::c_void;
-    pub fn ConsoleFreeHeap(Ptr: *mut core::ffi::c_void);
+    pub fn ConsoleFreeHeap(HeapBase: winsrv_sys::winsrv::PVOID) -> winsrv_sys::winsrv::BOOLEAN; // def returns BOOLEAN
     /// `GetType` — sibling C-side helper in conoutput.c that returns
     /// the buffer-type discriminant (TEXTMODE_BUFFER vs GRAPHICS_BUFFER).
     pub fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;

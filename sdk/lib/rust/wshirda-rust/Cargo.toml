@@ -1,0 +1,26 @@
+# wshirda-rust — Rust translation of dll/win32/wshirda (the IrDA WinSock Helper DLL).
+# staticlib → libwshirda_rust.a, cohab-linked into the cmake-built wshirda.dll with the
+# translated wshirda.c commented out (per-file flip, like wshtcpip-rust).
+#
+# wshirda is the transport-specific WSH provider for the IrDA (AF_IRDA) address family.
+# Unlike wshtcpip, every ReactOS export here is a pure UNIMPLEMENTED stub (returns 0) — the
+# DLL is a placeholder that ships so the winsock catalog can load it, but no IrDA transport
+# is wired. So there are NO struct layouts to bindgen-generate (no field is ever accessed):
+# the exports pass their pointer/scalar params straight through and return 0. The prelude
+# hand-declares the handful of pointer/scalar type aliases used in the signatures; the .spec
+# stays the ABI ground truth (stdcall @N decoration on i386 matches, since every arg is
+# pointer/long-width and SOCKET is UINT_PTR).
+[package]
+name = "wshirda-rust"
+version = "0.1.0"
+edition = "2021"
+# staticlib cohab crate only — stop Cargo auto-discovering any src/main.rs.
+autobins = false
+
+[lib]
+name = "wshirda_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }

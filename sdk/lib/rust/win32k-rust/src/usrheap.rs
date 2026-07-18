@@ -10,9 +10,9 @@ use ntkrnl_sys::constants::STATUS_UNSUCCESSFUL;
 
 // SetLastNtError is FASTCALL.
 #[cfg(target_arch = "x86")]
-extern "fastcall" { fn SetLastNtError(status: NTSTATUS); }
+extern "fastcall" { fn SetLastNtError(Status: NTSTATUS); }
 #[cfg(not(target_arch = "x86"))]
-extern "C" { fn SetLastNtError(status: NTSTATUS); }
+extern "C" { fn SetLastNtError(Status: NTSTATUS); }
 
 // NtCurrentProcess() == (HANDLE)-1.
 #[inline(always)]

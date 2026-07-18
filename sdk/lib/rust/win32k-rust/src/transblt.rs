@@ -12,7 +12,7 @@ extern "C" {
     fn RECTL_bIntersectRect(rcDst: *mut RECTL, rc1: *const RECTL, rc2: *const RECTL) -> BOOL;
 }
 extern "system" {
-    fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: BOOL, iType: ULONG, iDirection: ULONG, cLimit: ULONG) -> ULONG;
+    fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
     fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> u8;
 }
 extern "C" {

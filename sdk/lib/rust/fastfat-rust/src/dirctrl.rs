@@ -39,7 +39,6 @@ extern "system" {
     fn FatFreeStringBuffer(String: *mut c_void) -> ();
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
-    fn IoGetCurrentIrpStackLocation(Irp: *mut IRP) -> PIO_STACK_LOCATION;
     fn FsRtlNotifyFullChangeDirectory( NotifySync: PNOTIFY_SYNC, NotifyList: PLIST_ENTRY, FsContext: *mut c_void, FullDirectoryName: PSTRING, WatchTree: BOOLEAN, IgnoreBuffer: BOOLEAN, CompletionFilter: ULONG, NotifyIrp: *mut IRP, TraverseCallback: PVOID, SubjectContext: *mut c_void, ) -> ();
     fn ClearFlag(Flags: *mut u32, Flag: u32);
     fn Fat8dot3ToString( IrpContext: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, Upcase: u8, String: *mut OEM_STRING, );
@@ -70,6 +69,10 @@ extern "system" {
     fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void;
     fn _SEH2_GetExceptionCode() -> u32;
     fn SEH_TRY_EXCEPT( ctx: *mut core::ffi::c_void, try_fn: unsafe extern "system" fn(*mut core::ffi::c_void), filter_fn: unsafe extern "system" fn(*mut core::ffi::c_void, *mut core::ffi::c_void) -> i32, except_fn: unsafe extern "system" fn(*mut core::ffi::c_void, u32), );
+}
+extern "C" {
+    // wdm FORCEINLINE helper: cdecl body, bindgen class — was "system" (§9.99).
+    fn IoGetCurrentIrpStackLocation(Irp: *mut IRP) -> PIO_STACK_LOCATION;
 }
 
 // ---- file-scope preamble (translated) ----

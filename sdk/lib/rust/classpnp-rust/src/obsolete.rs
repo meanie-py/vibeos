@@ -26,7 +26,7 @@ extern "C" {
     fn ClassFreeOrReuseSrb( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, );
     
     fn IoIsErrorUserInduced(status: i32) -> u8;
-    fn ClassAcquireRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
+    fn ClassAcquireRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP) -> u32;
     
     
 }
@@ -182,7 +182,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 
     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassIoCompleteAssociated: Partial IRPs left %d\n\0".as_ptr() as *const i8, irp_count as i32);
 
-    NT_ASSERT((irp_count >= 0) as i32);
+    NT_ASSERT(((irp_count >= 0) as i32) as _);
 
     if irp_count == 0 {
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassIoCompleteAssociated: All partial IRPs complete %p\n\0".as_ptr() as *const i8, original_irp as usize);
@@ -192,7 +192,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
             let mut unique_address: u8 = 0;
             ClassAcquireRemoveLock(Fdo, &mut unique_address as *mut u8 as *mut IRP);
             ClassReleaseRemoveLock(Fdo, original_irp);
-            ClassCompleteRequest(Fdo, original_irp, (IO_DISK_INCREMENT) as i32);
+            ClassCompleteRequest(Fdo, original_irp, ((IO_DISK_INCREMENT) as i32) as _);
 
             let mut old_irql: u8 = 0;
             KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
@@ -202,7 +202,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
             ClassReleaseRemoveLock(Fdo, &mut unique_address as *mut u8 as *mut IRP);
         } else {
             ClassReleaseRemoveLock(Fdo, original_irp);
-            ClassCompleteRequest(Fdo, original_irp, (IO_DISK_INCREMENT) as i32);
+            ClassCompleteRequest(Fdo, original_irp, ((IO_DISK_INCREMENT) as i32) as _);
         }
     }
 
@@ -226,7 +226,7 @@ extern "C" {
 }
 extern "system" {
     fn ClassReleaseQueue(fdo: *mut DEVICE_OBJECT);
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: u8);
     fn ClassReleaseRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
-    fn ClassCompleteRequest( fdo: *mut DEVICE_OBJECT, irp: *mut IRP, priority_boost: i32, );
+    fn ClassCompleteRequest(fdo: *mut DEVICE_OBJECT, irp: *mut IRP, priority_boost: u8);
 }

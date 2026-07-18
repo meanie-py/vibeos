@@ -6,13 +6,13 @@ use ntkrnl_sys::ddk::*;
 use core::ffi::c_void;
 
 extern "C" {
-    pub fn ClassAcquireRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
+    pub fn ClassAcquireRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP) -> u32;
     
     pub fn ClassFreeOrReuseSrb( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, );
     
     
     pub fn ClasspIsThinProvisioningError(srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN;
-    pub fn ClasspLogSystemEventWithDeviceNumber( Fdo: PDEVICE_OBJECT, EventId: ULONG, );
+    pub fn ClasspLogSystemEventWithDeviceNumber(Fdo: PDEVICE_OBJECT, EventId: ULONG) -> u32;
     pub fn ClasspPerfIncrementSuccessfulIo( FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, );
     pub fn DbgGetScsiOpStr(srb: PVOID) -> PCCHAR;
     pub fn FREE_POOL(Ptr: PVOID);
@@ -36,7 +36,7 @@ extern "C" {
     pub fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
 }
 unsafe extern "system" {
-    pub fn KeSetCoalescableTimer( Timer: *mut KTIMER, DueTime: LARGE_INTEGER, Period: ULONG, TolerableDelay: ULONG, Dpc: PKDPC, );
+    pub fn KeSetCoalescableTimer(Timer: *mut KTIMER, DueTime: *mut core::ffi::c_void, Period: ULONG, TolerableDelay: ULONG, Dpc: PKDPC) -> u8;
 }
 
 extern "system" {
@@ -45,9 +45,9 @@ extern "system" {
     pub fn SrbAssignSrbFlags(srb: *mut core::ffi::c_void, flags: u32);
     pub fn SrbSetCdbLength(srb: *mut core::ffi::c_void, length: u8);
     pub fn SrbSetOriginalRequest(srb: *mut core::ffi::c_void, irp: PIRP);
-    pub fn SrbSetRequestAttribute(srb: *mut core::ffi::c_void, attribute: u32);
+    pub fn SrbSetRequestAttribute(srb: *mut core::ffi::c_void, attribute: u8);
     pub fn SrbSetSenseInfoBuffer(srb: *mut core::ffi::c_void, sense_info: *mut core::ffi::c_void);
-    pub fn SrbSetSenseInfoBufferLength(srb: *mut core::ffi::c_void, length: u32);
+    pub fn SrbSetSenseInfoBufferLength(srb: *mut core::ffi::c_void, length: u8);
     pub fn SrbSetTimeOutValue(srb: *mut core::ffi::c_void, timeout: u32);
 }
 
@@ -76,7 +76,7 @@ unsafe extern "system" {
     pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
 }
 extern "system" {
-    pub fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: CCHAR);
+    pub fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: u8);
     pub fn ClassReleaseQueue(fdo: *mut DEVICE_OBJECT);
     pub fn ClassReleaseRemoveLock(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP);
     pub fn SrbGetCdb(srb: PVOID) -> PCDB;

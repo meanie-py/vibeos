@@ -35,7 +35,7 @@ extern "system" {
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
 }
 unsafe extern "C" {
-    fn SRB_STATUS(status: u32) -> u32;
+    fn SRB_STATUS(status: u8) -> u32;
     fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
 }
 unsafe extern "C" {
@@ -45,7 +45,7 @@ unsafe extern "C" {
     fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32;
 }
 unsafe extern "C" {
-    fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Guid: *const GUID, DataSize: u32, Data: *const core::ffi::c_void, ) -> NTSTATUS;
+    fn DeviceSendNotification(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Guid: *const GUID, DataSize: u32, Data: *const core::ffi::c_void);
 }
 extern "C" {
     fn DeviceSendStartUnit(device: *mut DEVICE_OBJECT);
@@ -1249,7 +1249,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySrbStatus(
     *Retry = 1; // TRUE
     *RetryIntervalInSeconds = 0;
 
-    let srb_status = SRB_STATUS((*Srb).SrbStatus as u32);
+    let srb_status = SRB_STATUS(((*Srb).SrbStatus as u32) as _);
     match srb_status {
         SRB_STATUS_INVALID_LUN
         | SRB_STATUS_INVALID_TARGET_ID
@@ -1560,7 +1560,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
         {
             *RetryIntervalIn100ns =
                 max(*RetryIntervalIn100ns, SECONDS_TO_100NS_UNITS(2));
-        } else if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_SELECTION_TIMEOUT {
+        } else if SRB_STATUS(((*Srb).SrbStatus as u32) as _) == SRB_STATUS_SELECTION_TIMEOUT {
             *RetryIntervalIn100ns =
                 max(*RetryIntervalIn100ns, SECONDS_TO_100NS_UNITS(2));
         }
@@ -1570,14 +1570,14 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
         {
             *RetryIntervalIn100ns =
                 max(*RetryIntervalIn100ns, SECONDS_TO_100NS_UNITS(2));
-        } else if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_SELECTION_TIMEOUT {
+        } else if SRB_STATUS(((*Srb).SrbStatus as u32) as _) == SRB_STATUS_SELECTION_TIMEOUT {
             *RetryIntervalIn100ns =
                 max(*RetryIntervalIn100ns, SECONDS_TO_100NS_UNITS(2));
         }
 
         if *Status == STATUS_VERIFY_REQUIRED {
             *Retry = 1; // TRUE
-        } else if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_DATA_OVERRUN {
+        } else if SRB_STATUS(((*Srb).SrbStatus as u32) as _) == SRB_STATUS_DATA_OVERRUN {
             *Status = STATUS_SUCCESS;
             *Retry = 0; // FALSE
         }
@@ -1622,10 +1622,10 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
         {
             let mut disableStreaming: i32 = 0; // FALSE
 
-            if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_TIMEOUT
-                || SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_COMMAND_TIMEOUT
-                || SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_SELECTION_TIMEOUT
-                || SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_BUS_RESET
+            if SRB_STATUS(((*Srb).SrbStatus as u32) as _) == SRB_STATUS_TIMEOUT
+                || SRB_STATUS(((*Srb).SrbStatus as u32) as _) == SRB_STATUS_COMMAND_TIMEOUT
+                || SRB_STATUS(((*Srb).SrbStatus as u32) as _) == SRB_STATUS_SELECTION_TIMEOUT
+                || SRB_STATUS(((*Srb).SrbStatus as u32) as _) == SRB_STATUS_BUS_RESET
             {
                 disableStreaming = 1; // TRUE
             } else if ((*senseBuffer).SenseKey() & 0xf) == SCSI_SENSE_UNIT_ATTENTION {
@@ -1669,7 +1669,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
                 (*DeviceExtension).DeviceAdditionalData.ReadWriteRetryDelay100nsUnits;
         }
     } else if opCode == SCSIOP_GET_PERFORMANCE {
-        if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_DATA_OVERRUN {
+        if SRB_STATUS(((*Srb).SrbStatus as u32) as _) == SRB_STATUS_DATA_OVERRUN {
             *Status = STATUS_SUCCESS;
             *Retry = 0; // FALSE
         }
@@ -1679,8 +1679,8 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
             || TEST_FLAG((*Srb).SrbStatus as u32, SRB_STATUS_AUTOSENSE_VALID as u32) == 0
         {
             let tempCdb2: *const CDB = (*Srb).Cdb.as_ptr() as *const CDB;
-            if SRB_STATUS((*Srb).SrbStatus as u32) != SRB_STATUS_SUCCESS
-                && SRB_STATUS((*Srb).SrbStatus as u32) != SRB_STATUS_DATA_OVERRUN
+            if SRB_STATUS(((*Srb).SrbStatus as u32) as _) != SRB_STATUS_SUCCESS
+                && SRB_STATUS(((*Srb).SrbStatus as u32) as _) != SRB_STATUS_DATA_OVERRUN
                 && (*tempCdb2).GET_CONFIGURATION.as_ref().RequestType() as u32
                     == SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE
             {
@@ -2227,7 +2227,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpret(
     let mut retryIntervalIn100ns: i64 = 0;
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
-    if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_SUCCESS {
+    if SRB_STATUS(((*Srb).SrbStatus as u32) as _) == SRB_STATUS_SUCCESS {
         if !zpoddInfo.is_null() && ((*zpoddInfo).BecomingReadyRetryCount > 0) {
             (*zpoddInfo).BecomingReadyRetryCount = 0;
         }

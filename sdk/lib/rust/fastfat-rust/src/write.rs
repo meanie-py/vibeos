@@ -32,10 +32,10 @@ extern "system" {
     fn CcDeferWrite( FileObject: PFILE_OBJECT, PostDeferredWrite: PCC_POST_DEFERRED_WRITE, Context: PVOID, Irp: PIRP, ByteCount: u32, Retrying: u8, );
     fn FatMultipleAsync( IrpContext: PIRP_CONTEXT, Vcb: PVCB, Irp: PIRP, NumberOfIoRuns: u32, IoRuns: PIO_RUN, );
     fn FsRtlNumberOfRunsInLargeMcb(Mcb: *const LARGE_MCB) -> u32;
-    fn FatLookupMcbEntry( Vcb: PVCB, Mcb: *const LARGE_MCB, Vbo: VBO, Lbo: *mut LBO, ByteCount: *mut u32, Extra: *mut c_void, ) -> u8;
+    fn FatLookupMcbEntry(Vcb: PVCB, Mcb: *const LARGE_MCB, Vbo: u32, Lbo: *mut LBO, ByteCount: *mut u32, Extra: *mut c_void) -> u8;
     fn FatBugCheck(arg1: u32, arg2: usize, arg3: u32);
     fn ExGetCurrentResourceThread() -> ERESOURCE_THREAD;
-    fn FatFlushFat(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+    fn FatFlushFat(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> u32;
     fn CcPurgeCacheSection( SectionObjectPointers: *mut SECTION_OBJECT_POINTERS, FileOffset: PLARGE_INTEGER, Length: u32, FlushType: u8, ) -> u8;
     fn FatPurgeReferencedFileObjects( IrpContext: PIRP_CONTEXT, RootDcb: PDCB, FlushType: u32, );
     fn FatReleaseVolume(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
@@ -48,7 +48,7 @@ extern "system" {
     fn Int32x32To64(a: i32, b: i32) -> i64;
     fn FatReservedBytes(Bpb: *mut BIOS_PARAMETER_BLOCK) -> u64;
     fn FatQuickVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
-    fn FatLockUserBuffer( IrpContext: PIRP_CONTEXT, Irp: PIRP, Access: u8, ByteCount: u32, );
+    fn FatLockUserBuffer(IrpContext: PIRP_CONTEXT, Irp: PIRP, Access: u32, ByteCount: u32);
     fn FatBytesPerFat(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatAddToWorkque( IrpContext: PIRP_CONTEXT, Irp: PIRP, );
     fn PsUpdateDiskCounters( Process: PEPROCESS, ReadBytes: u64, WriteBytes: u64, ReadOps: u32, WriteOps: u32, FlushOps: u32, );
@@ -674,7 +674,7 @@ pub unsafe extern "system" fn FatCommonWrite(
             }
         }
 
-        FatLockUserBuffer(IrpContext, Irp, IoReadAccess as u8, ByteCount);
+        FatLockUserBuffer(IrpContext, Irp, (IoReadAccess as u8) as _, ByteCount);
 
         (*FileObject).Flags |= FO_FILE_MODIFIED;
 

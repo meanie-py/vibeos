@@ -56,7 +56,7 @@ extern "system" {
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn FatDecodeFileObject(FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, FcbOrDcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> TYPE_OF_OPEN;
     fn FatDeleteIrpContext(IrpContext: *mut IRP_CONTEXT);
-    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Flush: u32);
+    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Flush: u32) -> u32;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatGetFcbOplock(FcbOrDcb: *mut FCB) -> *mut OPLOCK;
     fn FatInitializeCacheMap(FileObject: *mut FILE_OBJECT, Sizes: *mut CC_FILE_SIZES, CacheSupported: BOOLEAN, Callbacks: *mut CACHE_MANAGER_CALLBACKS, FcbOrDcb: *mut FCB);

@@ -41261,7 +41261,7 @@ unsafe extern "stdcall" {
     pub fn ClassGetDriverExtension(DriverObject: PDRIVER_OBJECT) -> PCLASS_DRIVER_EXTENSION;
 }
 unsafe extern "stdcall" {
-    pub fn ClassCompleteRequest(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, PriorityBoost: CCHAR);
+    pub fn ClassCompleteRequest(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, PriorityBoost: u8);
 }
 unsafe extern "stdcall" {
     pub fn ClassReleaseRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PIRP);

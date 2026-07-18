@@ -33,7 +33,7 @@ unsafe extern "C" {
     fn USBCCGP_SelectConfiguration( DeviceObject: PDEVICE_OBJECT, FDODeviceExtension: PFDO_DEVICE_EXTENSION, ) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn USBCCGP_QueryInterface( DeviceObject: PDEVICE_OBJECT, BusInterface: PVOID, );
+    fn USBCCGP_QueryInterface(DeviceObject: PDEVICE_OBJECT, BusInterface: PVOID) -> u32;
 }
 unsafe extern "C" {
     fn USBCCGP_EnumerateFunctions(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;

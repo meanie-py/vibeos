@@ -1,0 +1,25 @@
+# mswsock-rust — Rust translation of dll/win32/mswsock (the Microsoft WinSock extensions DLL).
+# staticlib → libmswsock_rust.a, cohab-linked into the cmake-built mswsock.dll with the
+# translated .c files commented out (per-file flip, like ws2_32-rust/wshtcpip-rust/msafd-rust).
+#
+# mswsock provides the MS WinSock extensions (AcceptEx/TransmitFile/GetAcceptExSockaddrs),
+# the RNR/namespace-provider wrappers (Get/SetService*, the NSP* dispatch), and the WSPStartup
+# helper glue. The winsock/NSP/DNS struct layouts (SOCKET/WSAPROTOCOL_INFO/LPFN_*/SOCKADDR,
+# SERVICE_INFO/NS_*, DnsQuery types) are bindgen-GENERATED per arch into `types` by
+# tools/rustconv/gen_driver_types.sh (profile: mswsock) — not hand-transcribed, since a
+# mis-transcribed sockaddr/WSAPROTOCOL_INFO offset is a silent wire-format break.
+[package]
+name = "mswsock-rust"
+version = "0.1.0"
+edition = "2021"
+# staticlib cohab crate only — stop Cargo auto-discovering any src/main.rs.
+autobins = false
+
+[lib]
+name = "mswsock_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }

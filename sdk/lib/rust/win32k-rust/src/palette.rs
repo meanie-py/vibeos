@@ -22,13 +22,13 @@ extern "C" {
 #[cfg(target_arch = "x86")] extern "fastcall" {
     fn SetLastNtError(Status: NTSTATUS);
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn co_UserRedrawWindow(Wnd: PWND, UpdateRect: *const RECTL, UpdateRgn: PREGION, Flags: ULONG) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))] extern "C" {
     fn SetLastNtError(Status: NTSTATUS);
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn co_UserRedrawWindow(Wnd: PWND, UpdateRect: *const RECTL, UpdateRgn: PREGION, Flags: ULONG) -> BOOL;
 }
 

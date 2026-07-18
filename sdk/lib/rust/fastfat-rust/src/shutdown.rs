@@ -33,10 +33,10 @@ extern "system" {
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, arg: BOOLEAN) -> BOOLEAN;
-    fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, operation: VOLUME_CONDITION);
+    fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, operation: u32);
     fn FatReleaseVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
-    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flush: FAT_FLUSH_TYPE);
+    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flush: u32) -> u32;
     fn FlagOn(flags: u32, mask: u32) -> BOOLEAN;
     fn NT_ASSERT(condition: BOOLEAN);
     fn FsRtlExitFileSystem();
@@ -153,7 +153,7 @@ pub unsafe extern "system" fn FatCommonShutdown(
 
             // Inner _SEH2_TRY (flush volume) — USE_DUMMY_PSEH: no real exception dispatch
             {
-                FatFlushVolume(IrpContext, vcb, Flush);
+                FatFlushVolume(IrpContext, vcb, (Flush) as _);
 
                 if ((*vcb).VcbState & VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
                     CcPurgeCacheSection(
@@ -163,7 +163,7 @@ pub unsafe extern "system" fn FatCommonShutdown(
                         0, // FALSE
                     );
 
-                    FatMarkVolume(IrpContext, vcb, VolumeClean);
+                    FatMarkVolume(IrpContext, vcb, (VolumeClean) as _);
                 }
             }
 

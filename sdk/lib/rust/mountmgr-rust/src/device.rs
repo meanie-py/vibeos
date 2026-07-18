@@ -23,7 +23,7 @@ extern "C" {
     static DosDevices: _UNICODE_STRING;
     static DeviceFloppy: _UNICODE_STRING;
     static DeviceCdRom: _UNICODE_STRING;
-    fn DeleteSymbolicLinkNameFromMemory(DeviceExtension: PDEVICE_EXTENSION, SymbolicName: *mut _UNICODE_STRING, b: i32);
+    fn DeleteSymbolicLinkNameFromMemory(DeviceExtension: PDEVICE_EXTENSION, SymbolicName: *mut _UNICODE_STRING, b: u8);
     static DatabasePath: PWSTR;
     fn ReconcileAllDatabasesWithMaster(DeviceExtension: PDEVICE_EXTENSION);
     fn WaitForOnlinesToComplete(DeviceExtension: PDEVICE_EXTENSION);
@@ -1742,7 +1742,7 @@ pub unsafe extern "C" fn MountMgrQueryDosVolumePaths(
         MountMgrNotifyNameChange(
             DeviceExtension,
             core::ptr::addr_of_mut!(SymbolicName),
-            0i32,
+            (0i32) as _,
         );
     }
 
@@ -2115,7 +2115,7 @@ pub unsafe extern "C" fn MountMgrDeletePoints(
         DeleteSymbolicLinkNameFromMemory(
             DeviceExtension,
             &raw mut SymbolicName,
-            0i32, // FALSE
+            (0i32) as _, // FALSE
         );
         RtlDeleteRegistryValue(
             RTL_REGISTRY_ABSOLUTE as u32,
@@ -2131,7 +2131,7 @@ pub unsafe extern "C" fn MountMgrDeletePoints(
         MountMgrNotifyNameChange(
             DeviceExtension,
             &raw mut DeviceName,
-            1i32, // TRUE
+            (1i32) as _, // TRUE
         );
     }
 
@@ -2207,7 +2207,7 @@ pub unsafe extern "C" fn MountMgrDeletePointsDbOnly(
         DeleteSymbolicLinkNameFromMemory(
             DeviceExtension,
             &raw mut SymbolicName,
-            1i32, // TRUE
+            (1i32) as _, // TRUE
         );
         RtlDeleteRegistryValue(
             RTL_REGISTRY_ABSOLUTE,
@@ -2467,7 +2467,7 @@ pub unsafe extern "C" fn MountMgrVolumeMountPointChanged(
                                                     MountMgrNotifyNameChange(
                                                         DeviceExtension,
                                                         core::ptr::addr_of_mut!(TargetDeviceName),
-                                                        1i32,
+                                                        (1i32) as _,
                                                     );
                                                     if LockStatus >= 0 {
                                                         Status = FindDeviceInfo(
@@ -5955,16 +5955,16 @@ unsafe extern "C" {
     fn GetRemoteDatabaseEntry( RemoteDatabase: HANDLE, Offset: LONG, ) -> PDATABASE_ENTRY;
     fn WriteRemoteDatabaseEntry( RemoteDatabase: HANDLE, Offset: LONG, DatabaseEntry: PDATABASE_ENTRY, ) -> NTSTATUS;
     fn AddRemoteDatabaseEntry( RemoteDatabase: HANDLE, DatabaseEntry: PDATABASE_ENTRY, ) -> NTSTATUS;
-    fn CloseRemoteDatabase(RemoteDatabase: HANDLE);
+    fn CloseRemoteDatabase(RemoteDatabase: HANDLE) -> u32;
     fn DeleteRemoteDatabaseEntry(Handle: HANDLE, Offset: i32) -> NTSTATUS;
     fn QueryDeviceInformation( DeviceName: PUNICODE_STRING, TargetDeviceName: *mut _UNICODE_STRING, UniqueId: *mut PMOUNTDEV_UNIQUE_ID, Removable: *mut BOOLEAN, GptDriveLetter: *mut BOOLEAN, param5: *mut u8, param6: *mut GUID, param7: *mut u8, ) -> NTSTATUS;
     fn IsDriveLetter(Name: *mut _UNICODE_STRING) -> BOOLEAN;
     fn HasNoDriveLetterEntry(UniqueId: PMOUNTDEV_UNIQUE_ID) -> BOOLEAN;
     fn CreateNoDriveLetterEntry(UniqueId: PMOUNTDEV_UNIQUE_ID);
     fn DeleteNoDriveLetterEntry(UniqueId: *mut MOUNTDEV_UNIQUE_ID);
-    fn GlobalDeleteSymbolicLink(SymbolicName: *mut _UNICODE_STRING);
+    fn GlobalDeleteSymbolicLink(SymbolicName: *mut _UNICODE_STRING) -> u32;
     fn MountMgrNotify(DeviceExtension: PDEVICE_EXTENSION);
-    fn MountMgrNotifyNameChange(DeviceExtension: PDEVICE_EXTENSION, DeviceName: *mut _UNICODE_STRING, b: i32);
+    fn MountMgrNotifyNameChange(DeviceExtension: PDEVICE_EXTENSION, DeviceName: *mut _UNICODE_STRING, b: u8);
     fn ReleaseRemoteDatabaseSemaphore(DeviceExtension: PDEVICE_EXTENSION);
     fn WaitForRemoteDatabaseSemaphore(DeviceExtension: PDEVICE_EXTENSION) -> NTSTATUS;
 }

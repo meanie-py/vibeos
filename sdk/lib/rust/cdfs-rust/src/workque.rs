@@ -42,7 +42,7 @@ extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn CdCleanupIrpContext(IrpContext: *mut IRP_CONTEXT, b: u8);
+    fn CdCleanupIrpContext(IrpContext: *mut IRP_CONTEXT, b: u32);
 }
 extern "C" {
     fn CdLockUserBuffer(IrpContext: *mut IRP_CONTEXT, Length: u32, DesiredAccess: u32);

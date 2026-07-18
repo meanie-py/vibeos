@@ -12,6 +12,9 @@
 //! translated .c commented out. Imports resolve to ntdll.dll at runtime; FFI decls from
 //! ntdll-sys. See docs/engineering/ — kernel32 translation campaign (proc.c first).
 
+// Fold-proof Wine TRACE/FIXME/WARN/ERR shims (§9.99) — see winetrace-shim.
+extern crate winetrace_shim;
+
 // Crate-wide `w!("...")` — compile-time UTF-16, NUL-terminated wide string literal
 // (Wine/DDK idiom). All call sites pass ASCII; `.as_ptr()` yields the LPCWSTR.
 // Defined at crate root (before the mods) so every descendant module sees bare `w!`.

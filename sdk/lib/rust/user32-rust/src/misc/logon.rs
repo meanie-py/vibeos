@@ -17,7 +17,7 @@ extern "system" {
     // misc/misc.c internal user32 symbol.
     fn UserSetLastNTError(Status: NTSTATUS);
     // user32 own-exports / internal helpers, resolved at link.
-    fn UpdatePerUserImmEnabling();
+    fn UpdatePerUserImmEnabling() -> BOOL;
     fn CliImmInitializeHotKeys(action: u32, hwnd: HWND);
 }
 

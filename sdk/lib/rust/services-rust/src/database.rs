@@ -107,9 +107,9 @@ extern "C" {
     fn ScmStartDriver(Service: PSERVICE) -> DWORD;
     fn ScmAcquireServiceStartLock(bExclusive: BOOL, Lock: *mut SC_RPC_LOCK) -> DWORD;
     fn ScmReleaseServiceStartLock(lpLock: LPSC_RPC_LOCK) -> DWORD;
-    fn ScmLogEvent(dwEventId: DWORD, wType: WORD, wStrings: WORD, lpStrings: *mut LPCWSTR) -> DWORD;
+    fn ScmLogEvent(dwEventId: DWORD, wType: WORD, wStrings: WORD, lpStrings: *mut LPCWSTR,);
     fn ScmWaitForLsa();
-    fn SetSecurityServicesEvent();
+    fn SetSecurityServicesEvent() -> DWORD;
     fn Int_EnumDependentServicesW(
         hServicesKey: HKEY,
         lpService: PSERVICE,

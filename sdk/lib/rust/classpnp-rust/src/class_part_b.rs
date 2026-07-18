@@ -217,11 +217,11 @@ unsafe extern "C" {
     fn IsSenseDataFormatValueValid(buf: PVOID) -> BOOLEAN;
     fn ScsiGetSenseDescriptor(buf: PVOID, buf_len: UCHAR, desc_buf: *mut PVOID, desc_len: *mut UCHAR) -> BOOLEAN;
     fn ScsiGetNextSenseDescriptorByType(start: PVOID, start_len: UCHAR, types: *const UCHAR, type_count: ULONG, out_type: *mut UCHAR, out_buf: *mut PVOID, out_len: *mut UCHAR) -> BOOLEAN;
-    fn ScsiValidateInformationSenseDescriptor(buf: PVOID, buf_len: UCHAR) -> BOOLEAN;
-    fn ScsiValidateBlockCommandSenseDescriptor(buf: PVOID, buf_len: UCHAR) -> BOOLEAN;
+    fn ScsiValidateInformationSenseDescriptor(buf: PVOID, buf_len: u32) -> BOOLEAN;
+    fn ScsiValidateBlockCommandSenseDescriptor(buf: PVOID, buf_len: u32) -> BOOLEAN;
     fn ScsiGetTotalSenseByteCountIndicated(buf: PVOID, buf_len: UCHAR, count: *mut UCHAR) -> BOOLEAN;
     fn ScsiGetSenseDescriptorLength(buf: PVOID) -> UCHAR;
-    fn ScsiConvertToFixedSenseFormat(sense_buf: PVOID, buf_len: UCHAR, fixed_buf: PVOID, fixed_buf_len: UCHAR) -> BOOLEAN;
+    fn ScsiConvertToFixedSenseFormat(sense_buf: PVOID, buf_len: u32, fixed_buf: PVOID, fixed_buf_len: u32) -> BOOLEAN;
     fn SrbGetScsiStatus(srb: PVOID) -> UCHAR;
     fn SrbGetRequestAttribute(srb: PVOID) -> u8;
     fn SrbGetPathId(srb: PVOID) -> UCHAR;
@@ -715,7 +715,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
 
                         ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
 
                         status = STATUS_INVALID_PARAMETER;
                         return status;
@@ -727,7 +727,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
 
                         ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
 
                         status = STATUS_INVALID_PARAMETER;
                         return status;
@@ -743,7 +743,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
 
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
 
                     status = STATUS_INVALID_PARAMETER;
                     return status;
@@ -967,7 +967,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
         if srb.is_null() {
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INSUFFICIENT_RESOURCES;
             ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+            ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
             status = STATUS_INSUFFICIENT_RESOURCES;
             return status;
         }
@@ -1023,7 +1023,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     (*Irp).IoStatus.Information = core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as _;
 
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     status = STATUS_BUFFER_TOO_SMALL;
                 } else if (*commonExtension).__bindgen_anon_1.IsFdo() == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
@@ -1037,7 +1037,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                     (*Irp).IoStatus.Information = core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as _;
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     status = STATUS_SUCCESS;
                 }
             }
@@ -1049,7 +1049,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as u32 {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INFO_LENGTH_MISMATCH;
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     status = STATUS_INFO_LENGTH_MISMATCH;
                     break 'switch;
                 }
@@ -1100,7 +1100,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                 }
             }
 
@@ -1121,7 +1121,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                         FREE_POOL!(srb);
 
                         ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
 
                         status = STATUS_BUFFER_TOO_SMALL;
                         break 'switch;
@@ -1148,7 +1148,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                         (*Irp).IoStatus.Information = 0;
                         FREE_POOL!(srb);
                         ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                         status = STATUS_INSUFFICIENT_RESOURCES;
                         break 'switch;
                     }
@@ -1214,7 +1214,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     core::mem::size_of::<PREVENT_MEDIA_REMOVAL>() as u32 {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INFO_LENGTH_MISMATCH;
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     status = STATUS_INFO_LENGTH_MISMATCH;
                     break 'switch;
                 }
@@ -1233,7 +1233,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                 }
             }
 
@@ -1248,7 +1248,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     FREE_POOL!(srb);
 
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     status = STATUS_INFO_LENGTH_MISMATCH;
                     break 'switch;
                 }
@@ -1346,7 +1346,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     FREE_POOL!(srb);
 
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     break 'switch;
                 }
 
@@ -1369,7 +1369,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     FREE_POOL!(srb);
 
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
 
                     KeSetEvent(
                         (core::ptr::addr_of_mut!((*fdoExtension).EjectSynchronizationEvent) as PKEVENT).cast(),
@@ -1420,7 +1420,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
 
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                 } else {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
 
@@ -1450,7 +1450,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                 (*Irp).IoStatus.__bindgen_anon_1.Status = status;
                 ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
             }
 
             IOCTL_STORAGE_READ_CAPACITY => {
@@ -1462,7 +1462,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     (*Irp).IoStatus.Information = core::mem::size_of::<STORAGE_READ_CAPACITY>() as _;
 
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     status = STATUS_BUFFER_TOO_SMALL;
                     break;
                 }
@@ -1503,7 +1503,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                         (*Irp).IoStatus.Information = 0;
                     }
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                 }
             }
 
@@ -1514,7 +1514,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     status = STATUS_INFO_LENGTH_MISMATCH;
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     FREE_POOL!(srb);
                     break;
                 }
@@ -1585,7 +1585,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     status = STATUS_INVALID_PARAMETER;
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     FREE_POOL!(srb);
                     break;
                 }
@@ -1595,7 +1595,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     status = STATUS_INVALID_PARAMETER;
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
                     ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+                    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
                     FREE_POOL!(srb);
                     break;
                 }
@@ -1895,7 +1895,7 @@ pub unsafe extern "system" fn ClassInternalIoControl(
 
         ClassReleaseRemoveLock(DeviceObject, (Irp as PVOID).cast());
 
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
 
         return STATUS_DEVICE_DOES_NOT_EXIST;
     }
@@ -1990,7 +1990,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
             validSense = ScsiGetSenseKeyAndCodes(
                 senseBuffer,
-                SrbGetSenseInfoBufferLength((Srb).cast()),
+                (SrbGetSenseInfoBufferLength((Srb).cast())) as _,
                 SCSI_SENSE_OPTIONS_NONE,
                 &mut senseKey,
                 &mut addlSenseCode,
@@ -2065,7 +2065,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                                     if ScsiValidateBlockCommandSenseDescriptor(
                                         outBuffer,
-                                        outBufferLength,
+                                        (outBufferLength) as _,
                                     ) != 0
                                     {
                                         incorrectLength =
@@ -2082,7 +2082,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                                     if ScsiValidateInformationSenseDescriptor(
                                         outBuffer,
-                                        outBufferLength,
+                                        (outBufferLength) as _,
                                     ) != 0
                                     {
                                         REVERSE_BYTES_QUAD_M!(
@@ -3143,9 +3143,9 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                 senseDataConverted = ScsiConvertToFixedSenseFormat(
                     senseBuffer,
-                    senseInfoBufferLength,
+                    (senseInfoBufferLength) as _,
                     core::ptr::addr_of_mut!(convertedSenseBuffer) as PVOID,
-                    convertedSenseBufferLength,
+                    (convertedSenseBufferLength) as _,
                 );
             }
 
@@ -3554,7 +3554,7 @@ pub unsafe extern "system" fn ClassReleaseChildLock(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION
 ) {
     extern "system" {
-        fn NT_ASSERT(condition: u32);
+        fn NT_ASSERT(condition: u8);
     }
 
     NT_ASSERT!(((*FdoExtension).ChildLockOwner == (KeGetCurrentThread()).cast()) as u32);
@@ -4088,7 +4088,7 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
                 }
                 ClassFreeOrReuseSrb(fdoExtension, _Srb);
                 ClassReleaseRemoveLock(Fdo, (Irp as PVOID).cast());
-                ClassCompleteRequest(Fdo, Irp, (IO_NO_INCREMENT as u8) as i8);
+                ClassCompleteRequest(Fdo, Irp, ((IO_NO_INCREMENT as u8) as i8) as _);
 
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
@@ -4377,7 +4377,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
                 if status == STATUS_DEVICE_NOT_READY {
                     validSense = ScsiGetSenseKeyAndCodes(
                         senseInfoBuffer,
-                        SrbGetSenseInfoBufferLength((Srb).cast()),
+                        (SrbGetSenseInfoBufferLength((Srb).cast())) as _,
                         SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED,
                         core::ptr::null_mut(),
                         &mut additionalSenseCode,
@@ -4612,14 +4612,7 @@ extern "system" {
     fn SrbSetSenseInfoBufferLength(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Length: UCHAR);
     fn SrbSetDataTransferLength(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Length: ULONG);
     fn SrbSetOriginalRequest(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Request: PVOID);
-    fn ScsiGetSenseKeyAndCodes(
-            SenseInfoBuffer: PVOID,
-            SenseInfoBufferLength: UCHAR,
-            Options: ULONG,
-            SenseKey: *mut UCHAR,
-            AdditionalSenseCode: *mut UCHAR,
-            AdditionalSenseCodeQualifier: *mut UCHAR,
-        ) -> BOOLEAN;
+    fn ScsiGetSenseKeyAndCodes(SenseInfoBuffer: PVOID, SenseInfoBufferLength: u32, Options: ULONG, SenseKey: *mut UCHAR, AdditionalSenseCode: *mut UCHAR, AdditionalSenseCodeQualifier: *mut UCHAR) -> BOOLEAN;
     fn SrbSetCdbLength(srb: PVOID, len: UCHAR);
     fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) -> UCHAR;
 }

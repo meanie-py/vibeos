@@ -2253,7 +2253,16 @@ pub unsafe extern "stdcall" fn UserRedrawDesktop() {
     let Rgn: PREGION;
 
     Window = UserGetDesktopWindow();
+    // Null-guard: UserGetDesktopWindow provably returns null pre-desktop (its
+    // inlined body shows LLVM the path), so the unguarded deref below folded
+    // both error branches into `ud2` (§9.103).
+    if Window.is_null() {
+        return;
+    }
     Rgn = IntSysCreateRectpRgnIndirect(core::ptr::addr_of_mut!((*Window).rcWindow) as _);
+    if Rgn.is_null() {
+        return;
+    }
 
     IntInvalidateWindows(
         Window,
@@ -2271,7 +2280,14 @@ pub unsafe extern "C" fn UserRedrawDesktop() {
     let Rgn: PREGION;
 
     Window = UserGetDesktopWindow();
+    // Null-guard — see the x86 twin above (§9.103).
+    if Window.is_null() {
+        return;
+    }
     Rgn = IntSysCreateRectpRgnIndirect(core::ptr::addr_of_mut!((*Window).rcWindow) as _);
+    if Rgn.is_null() {
+        return;
+    }
 
     IntInvalidateWindows(
         Window,

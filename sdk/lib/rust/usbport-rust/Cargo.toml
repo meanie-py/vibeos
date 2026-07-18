@@ -11,6 +11,7 @@ autobenches = false
 crate-type = ["staticlib"]
 
 [dependencies]
+drvtrace-shim = { path = "../drvtrace-shim" }
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 varargs-rust = { path = "../varargs-rust" }

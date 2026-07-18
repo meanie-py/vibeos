@@ -48,18 +48,18 @@ extern "system" {
     fn EngpGetPDEV(pustrDevice: PUNICODE_STRING) -> PPDEVOBJ;
     fn EngpRegisterGraphicsDevice(pustrDeviceName: PUNICODE_STRING, pustrDisplayDrivers: PUNICODE_STRING, pustrDescription: PUNICODE_STRING) -> PGRAPHICS_DEVICE;
     fn EngpFindGraphicsDevice(pustrDevice: PUNICODE_STRING, iDevNum: ULONG) -> PGRAPHICS_DEVICE;
-    fn EngpUpdateMonitorDevices(pGraphicsDevice: PGRAPHICS_DEVICE);
+    fn EngpUpdateMonitorDevices(pGraphicsDevice: PGRAPHICS_DEVICE) -> u32;
     fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: usize, Alignment: usize) -> i32;
     fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: usize, Alignment: usize) -> i32;
 }
 
 extern "system" {
-    fn InitMetrics();
+    fn InitMetrics() -> u32;
 }
 
 extern "C" {
     fn EngpUpdateGraphicsDeviceList() -> NTSTATUS;
-    fn LDEVOBJ_bProbeAndCaptureDevmode(pGraphicsDevice: *mut core::ffi::c_void, pdm: PDEVMODEW, ppdmOut: *mut PDEVMODEW, bSearchClosest: u8) -> u8;
+    fn LDEVOBJ_bProbeAndCaptureDevmode(pGraphicsDevice: *mut core::ffi::c_void, pdm: PDEVMODEW, ppdmOut: *mut PDEVMODEW, bSearchClosest: u32) -> u32;
     fn InitSysParams() -> BOOL;
 }
 
@@ -906,7 +906,7 @@ pub unsafe extern "system" fn UserChangeDisplaySettings(
             (*ppdev).pGraphicsDevice as *mut core::ffi::c_void,
             &mut dm,
             &mut newDevMode,
-            0u8,
+            (0u8) as _,
         ) == 0
         {
             lResult = DISP_CHANGE_BADMODE as LONG;

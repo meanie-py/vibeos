@@ -151,13 +151,13 @@ extern "C" {
 extern "fastcall" {
     fn ValidateHwndNoErr(hWnd: HWND) -> PWND;
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn ValidateHwndNoErr(hWnd: HWND) -> PWND;
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 extern "system" {
     fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: u32, Alignment: u32) -> i32;
@@ -5125,12 +5125,12 @@ extern "fastcall" {
     fn UpdateShellHook(Window: PWND);
     fn DceResetActiveDCEs(Window: PWND);
     fn co_IntSendMessageNoWait(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn UpdateShellHook(Window: PWND);
     fn DceResetActiveDCEs(Window: PWND);
     fn co_IntSendMessageNoWait(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn SetLastNtError(Status: i32);
+    fn SetLastNtError(Status: NTSTATUS);
 }

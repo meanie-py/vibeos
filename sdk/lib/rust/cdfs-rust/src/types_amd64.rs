@@ -3296,11 +3296,7 @@ unsafe extern "C" {
     ) -> BOOLEAN;
 }
 unsafe extern "C" {
-    pub fn CdUpdatePathEntryName(
-        IrpContext: PIRP_CONTEXT,
-        PathEntry: PPATH_ENTRY,
-        IgnoreCase: BOOLEAN,
-    );
+    pub fn CdUpdatePathEntryName(IrpContext: PIRP_CONTEXT, PathEntry: PPATH_ENTRY, IgnoreCase: u32);
 }
 unsafe extern "C" {
     pub fn CdInsertPrefix(
@@ -3379,12 +3375,7 @@ unsafe extern "C" {
     pub fn CdDeleteVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
 }
 unsafe extern "C" {
-    pub fn CdCreateFcb(
-        IrpContext: PIRP_CONTEXT,
-        FileId: FILE_ID,
-        NodeTypeCode: NODE_TYPE_CODE,
-        FcbExisted: PBOOLEAN,
-    ) -> PFCB;
+    pub fn CdCreateFcb(IrpContext: PIRP_CONTEXT, FileId: *mut core::ffi::c_void, NodeTypeCode: u16, FcbExisted: PBOOLEAN) -> PFCB;
 }
 unsafe extern "C" {
     pub fn CdInitializeFcbFromPathEntry(
@@ -3418,7 +3409,7 @@ unsafe extern "C" {
     pub fn CdCreateIrpContext(Irp: PIRP, Wait: BOOLEAN) -> PIRP_CONTEXT;
 }
 unsafe extern "C" {
-    pub fn CdCleanupIrpContext(IrpContext: PIRP_CONTEXT, Post: BOOLEAN);
+    pub fn CdCleanupIrpContext(IrpContext: PIRP_CONTEXT, Post: u32);
 }
 unsafe extern "C" {
     pub fn CdInitializeStackIrpContext(IrpContext: PIRP_CONTEXT, IrpContextLite: PIRP_CONTEXT_LITE);
@@ -3454,16 +3445,16 @@ unsafe extern "C" {
     ) -> NTSTATUS;
 }
 unsafe extern "C" {
-    pub fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Force: BOOLEAN) -> BOOLEAN;
+    pub fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Force: u32) -> u32;
 }
 unsafe extern "C" {
-    pub fn CdMarkDevForVerifyIfVcbMounted(Vcb: PVCB) -> BOOLEAN;
+    pub fn CdMarkDevForVerifyIfVcbMounted(Vcb: PVCB) -> u32;
 }
 unsafe extern "C" {
     pub fn CdVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
 }
 unsafe extern "C" {
-    pub fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> BOOLEAN;
+    pub fn CdVerifyFcbOperation(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> u32;
 }
 unsafe extern "C" {
     pub fn CdDismountVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;

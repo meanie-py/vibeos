@@ -23,7 +23,7 @@ extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn ExGetPreviousMode() -> KPROCESSOR_MODE;
     // PspRunCreateThreadNotifyRoutines: imported via ddk::* (bindgen extern "C")
-    fn PspTerminateThreadByPointer(Thread: PETHREAD, ExitStatus: NTSTATUS, DirectTerminate: BOOLEAN);
+    fn PspTerminateThreadByPointer(thread: PETHREAD, exit_status: NTSTATUS, b_self: BOOLEAN,) -> NTSTATUS;
     fn PsLookupProcessThreadByCid(Cid: PCLIENT_ID, Process: *mut PEPROCESS, Thread: *mut PETHREAD) -> NTSTATUS;
     fn PsReferencePrimaryToken(Process: PEPROCESS) -> PACCESS_TOKEN;
 

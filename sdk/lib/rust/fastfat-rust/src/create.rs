@@ -15,6 +15,7 @@ use ntkrnl_sys::ddk::{CC_FILE_SIZES, DEVICE_OBJECT, ERESOURCE, FILE_FULL_EA_INFO
 use crate::glue::{DEBUG_TRACE_CREATE, FILE_ATTRIBUTE_ARCHIVE, NT_SUCCESS, STATUS_DISK_FULL};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlCheckOplock, FsRtlCurrentBatchOplock, FsRtlEnterFileSystem, FsRtlFindInTunnelCache};
+use ntkrnl_sys::ddk::ExReleaseResourceLite;
 
 // FAT_CALLOUT_PARAMETERS: local to create.c, not in shared headers.
 #[repr(C)]
@@ -43,8 +44,8 @@ extern "system" {
     fn FlagOn(Value: u32, Flags: u32) -> i32; // returns BOOL (0 = FALSE, non-zero = TRUE) fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
     fn FatSelectNames( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, OemName: *mut OEM_STRING, UnicodeName: *mut _UNICODE_STRING, ShortName: *mut OEM_STRING, TunneledShortName: *mut _UNICODE_STRING, AllLowerComponent: *mut i32, AllLowerExtension: *mut i32, CreateLfn: *mut i32, );
     fn FatCreateNewDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, DirentsNeeded: u32, BypassHint: i32, ) -> u32;
-    fn FatPrepareWriteDirectoryFile( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, Wait: i32, Flush: i32, Status: *mut NTSTATUS, );
-    fn FatConstructDirent( IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, Name: *mut OEM_STRING, AllLowerComponent: i32, AllLowerExtension: i32, Lfn: *mut _UNICODE_STRING, Attributes: u16, SetCreationTime: i32, CreationTime: *mut LARGE_INTEGER, );
+    fn FatPrepareWriteDirectoryFile(IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, Wait: u8, Flush: u8, Status: *mut NTSTATUS);
+    fn FatConstructDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, Name: *mut OEM_STRING, AllLowerComponent: u8, AllLowerExtension: u8, Lfn: *mut _UNICODE_STRING, Attributes: u16, SetCreationTime: u8, CreationTime: *mut LARGE_INTEGER);
     fn FatCreateFcb( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ParentDcb: *mut DCB, DirentByteOffset: u32, ShortDirentByteOffset: u32, ShortDirent: *mut DIRENT, LongName: *mut _UNICODE_STRING, Lfn: *mut _UNICODE_STRING, IsPagingFile: i32, Temporary: i32, ) -> *mut FCB;
     fn FatAddFileAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileObject: *mut FILE_OBJECT, AllocationSize: u32, );
     fn FatCreateEa( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, EaBuffer: *mut u8, EaLength: u32, ShortName: *mut OEM_STRING, EaHandle: *mut u16, );
@@ -88,11 +89,11 @@ extern "system" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
     fn KeExpandKernelStackAndCalloutEx( Callout: extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), Context: *mut FAT_CALLOUT_PARAMETERS, StackSize: u32, Wait: i32, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB) -> u8;
-    fn FatCheckFileAccess(IrpContext: *mut IRP_CONTEXT, DirentFatFlags: u16, DesiredAccess: *mut ACCESS_MASK) -> BOOLEAN;
+    fn FatCheckFileAccess(IrpContext: *mut IRP_CONTEXT, DirentFatFlags: u8, DesiredAccess: *mut ACCESS_MASK) -> u32;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB);
     fn _SEH2_AbnormalTermination() -> BOOLEAN;
     fn FatResetExceptionState(irp_context: *mut IRP_CONTEXT);
-    fn FatGetDirentFromFcbOrDcb( irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, allow_deleted: BOOLEAN, dirent: *mut *mut DIRENT, bcb: *mut *mut Bcb, );
+    fn FatGetDirentFromFcbOrDcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, allow_deleted: u32, dirent: *mut *mut DIRENT, bcb: *mut *mut Bcb);
     fn FatNtTimeToFatTime( irp_context: *mut IRP_CONTEXT, nt_time: *mut LARGE_INTEGER, precise: BOOLEAN, fat_time: *mut FAT_TIME, fat_date: *mut FAT_DATE, ) -> BOOLEAN;
     fn FatIsIoRangeValid(vcb: *mut VCB, alloc_size: LARGE_INTEGER, low_size: u32) -> BOOLEAN;
     fn FatSetDirtyBcb( irp_context: *mut IRP_CONTEXT, bcb: *mut Bcb, vcb: *mut VCB, set_archive: BOOLEAN, );
@@ -102,7 +103,7 @@ extern "system" {
     fn CcSetFileSizes(file_object: *mut FILE_OBJECT, sizes: *mut CC_FILE_SIZES);
     fn MmCanFileBeTruncated( section_object_pointer: *mut SECTION_OBJECT_POINTERS, new_file_size: *mut LARGE_INTEGER, ) -> BOOLEAN;
     fn ExAcquireResourceExclusiveLite(resource: *mut ERESOURCE, wait: BOOLEAN) -> BOOLEAN;
-    fn ExReleaseResourceLite(resource: *mut ERESOURCE);
+    // ExReleaseResourceLite via ntkrnl_sys::ddk (kernel FASTCALL export — §9.99)
     fn RtlAssert( FailedAssertion: *const u8, FileName: *const u8, LineNumber: u32, Message: *const u8, );
     fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: PEXCEPTION_POINTERS) -> i32;
     fn FAT_LFN_DIRENTS_NEEDED(UnicodeName: PUNICODE_STRING) -> ULONG;
@@ -143,7 +144,6 @@ extern "system" {
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FsRtlDissectName( Name: _UNICODE_STRING, FirstPart: *mut _UNICODE_STRING, RemainingPart: *mut _UNICODE_STRING, );
-    fn IoGetCurrentIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
     fn IoSetHardErrorOrVerifyDevice(Irp: *mut IRP, RealDevice: *mut DEVICE_OBJECT);
     fn RtlDowncaseUnicodeString( Dest: *mut _UNICODE_STRING, Src: *mut _UNICODE_STRING, Allocate: BOOLEAN, ) -> NTSTATUS;
     fn RtlUpcaseUnicodeString( Dest: *mut _UNICODE_STRING, Src: *mut _UNICODE_STRING, Allocate: BOOLEAN, ) -> NTSTATUS;
@@ -154,11 +154,15 @@ extern "system" {
     fn FatDeviceIsFatFsdo(VolumeDeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
     fn TimerStart(Dbg: *const u8);
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: PIRP, CanWait: BOOLEAN) -> PIRP_CONTEXT;
+    fn FatCreateIrpContext(Irp: PIRP, CanWait: u32) -> PIRP_CONTEXT;
     fn IoSetTopLevelIrp(Irp: PIRP) -> *mut core::ffi::c_void;
     fn FsRtlExitFileSystem();
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn TimerStop(Dbg: *const u8, Name: *const i8);
+}
+extern "C" {
+    // wdm FORCEINLINE helper: cdecl body, bindgen class — was "system" (§9.99).
+    fn IoGetCurrentIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -1185,7 +1189,7 @@ pub unsafe extern "system" fn FatOpenRootDcb(
             break 'seh2;
         }
 
-        if FatCheckFileAccess(IrpContext, ((*RootDcb).DirentFatFlags) as u16, DesiredAccess) == (0i32) as u8 {
+        if FatCheckFileAccess(IrpContext, (((*RootDcb).DirentFatFlags) as u16) as _, DesiredAccess) == ((0i32) as u8) as _ {
             Iosb.__bindgen_anon_1.Status = STATUS_ACCESS_DENIED;
             break 'seh2;
         }
@@ -1341,7 +1345,7 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
         }
 
         // File access check
-        if FatCheckFileAccess(IrpContext, ((*Dcb).DirentFatFlags) as u16, DesiredAccess) == 0 {
+        if FatCheckFileAccess(IrpContext, (((*Dcb).DirentFatFlags) as u16) as _, DesiredAccess) == 0 {
             Iosb.__bindgen_anon_1.Status = STATUS_ACCESS_DENIED;
             break 'try_body_dcb; // try_return Iosb
         }
@@ -1528,7 +1532,7 @@ pub unsafe extern "system" fn FatOpenExistingDirectory(
         }
 
         // Check the desired access against the dirent's attributes.
-        if FatCheckFileAccess(IrpContext, (*Dirent).Attributes as u16, DesiredAccess) == 0 {
+        if FatCheckFileAccess(IrpContext, ((*Dirent).Attributes as u16) as _, DesiredAccess) == 0 {
             Iosb.__bindgen_anon_1.Status = STATUS_ACCESS_DENIED;
             break 'try_body; // try_return(Iosb)
         }
@@ -1702,7 +1706,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
             }
 
             // Desired access check
-            if FatCheckFileAccess(IrpContext, (((*Fcb).DirentFatFlags) as u8) as u16, DesiredAccess) == 0 {
+            if FatCheckFileAccess(IrpContext, ((((*Fcb).DirentFatFlags) as u8) as u16) as _, DesiredAccess) == 0 {
                 Iosb.__bindgen_anon_1.Status = 0xC0000022_u32 as i32 /* STATUS_ACCESS_DENIED */;
                 break 'try_scope_body;
             }
@@ -2193,7 +2197,7 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                 *DesiredAccess |= FILE_WRITE_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES;
             }
 
-            if FatCheckFileAccess(IrpContext, ((*Dirent).Attributes) as u16, DesiredAccess) == 0 {
+            if FatCheckFileAccess(IrpContext, (((*Dirent).Attributes) as u16) as _, DesiredAccess) == 0 {
                 Iosb.__bindgen_anon_1.Status = STATUS_ACCESS_DENIED;
                 break 'try_block;
             }
@@ -2554,8 +2558,8 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
             IrpContext,
             ShortDirent,
             &mut ShortName,
-            AllLowerComponent,
-            AllLowerExtension,
+            (AllLowerComponent) as _,
+            (AllLowerExtension) as _,
             if CreateLfn != 0 { UnicodeName } else { core::ptr::null_mut() },
             (FileAttributes as u32 | FAT_DIRENT_ATTR_DIRECTORY as u32) as u16,
             1,
@@ -2979,8 +2983,8 @@ pub unsafe extern "system" fn FatCreateNewFile(
             IrpContext,
             ShortDirent,
             &mut ShortName as *mut OEM_STRING,
-            AllLowerComponent as i32,
-            AllLowerExtension as i32,
+            (AllLowerComponent as i32) as _,
+            (AllLowerExtension as i32) as _,
             if CreateLfn != 0 { RealUnicodeName as *mut _ } else { core::ptr::null_mut() },
             FileAttributes | (FILE_ATTRIBUTE_ARCHIVE as u16),
             1,
@@ -3364,7 +3368,7 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
         (*fcb).FcbState |= FCB_STATE_TRUNCATE_ON_CLOSE;
 
         // Modify attributes and time of the file
-        FatGetDirentFromFcbOrDcb(irp_context, fcb, 0u8, &mut dirent, &mut dirent_bcb);
+        FatGetDirentFromFcbOrDcb(irp_context, fcb, (0u8) as _, &mut dirent, &mut dirent_bcb);
 
         (*dirent).FileSize = 0;
 

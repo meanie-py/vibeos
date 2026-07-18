@@ -22,7 +22,7 @@ extern "system" {
     fn USBPORT_FlushMapTransfers(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_InvalidateEndpointHandler( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, Type: ULONG, );
     fn USBPORT_GetEndpointState(Endpoint: PUSBPORT_ENDPOINT) -> ULONG;
-    fn USBPORT_Wait(MiniPortExtension: PVOID, MicroSeconds: ULONG);
+    fn USBPORT_Wait(MiniPortExtension: PVOID, Milliseconds: ULONG,) -> NTSTATUS;
 }
 extern "C" {
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;

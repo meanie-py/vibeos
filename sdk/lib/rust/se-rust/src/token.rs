@@ -178,7 +178,7 @@ extern "C" {
 }
 extern "C" {
     fn SepGetOwnerFromDescriptor(sd: PSECURITY_DESCRIPTOR) -> PSID;
-    fn SepRmDereferenceLogonSession(auth_id: *const LUID);
+    fn SepRmDereferenceLogonSession(auth_id: *const LUID) -> u32;
     fn SeLengthSid(sid: PSID) -> ULONG;
     fn ObpValidateAttributes(attrs: ULONG, mode: KPROCESSOR_MODE) -> ULONG;
 }

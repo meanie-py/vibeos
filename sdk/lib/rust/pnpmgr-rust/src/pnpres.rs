@@ -67,7 +67,7 @@ unsafe fn InitializeObjectAttributes(
 }
 
 extern "C" {
-    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: ULONG) -> ULONG;
+    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: u32) -> u32;
 }
 extern "system" {
     fn PnpDetermineResourceListSize(ResourceList: PCM_RESOURCE_LIST) -> ULONG;

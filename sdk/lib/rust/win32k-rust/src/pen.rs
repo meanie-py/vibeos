@@ -14,9 +14,9 @@ extern "system" {
 }
 // SetLastNtError is FASTCALL (win32k) — @-decorated on i386, cdecl elsewhere.
 #[cfg(target_arch = "x86")]
-extern "fastcall" { fn SetLastNtError(status: NTSTATUS); }
+extern "fastcall" { fn SetLastNtError(Status: NTSTATUS); }
 #[cfg(not(target_arch = "x86"))]
-extern "C" { fn SetLastNtError(status: NTSTATUS); }
+extern "C" { fn SetLastNtError(Status: NTSTATUS); }
 
 // NT_SUCCESS / GDI_HANDLE_GET_TYPE are C macros (gap functions); GDITAG_PENSTYLE
 // is 'ytsG' (tags.h) — pool tags are stored little-endian, so b"Gsty".

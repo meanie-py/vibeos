@@ -94,7 +94,7 @@ extern "system" {
 // win32k-internal FASTCALL helpers (i386 `@Name@N`, cdecl elsewhere).
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn DefWndDoSizeMove(pwnd: PWND, wParam: WPARAM);
+    fn DefWndDoSizeMove(pwnd: PWND, wParam: u16);
     fn DefWndGetHotKey(Wnd: PWND) -> LRESULT;
     fn co_IntSendMessage(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn co_UserRedrawWindow(Wnd: PWND, lprcUpdate: LPRECT, hrgnUpdate: HRGN, flags: u32) -> u8;
@@ -109,7 +109,7 @@ extern "fastcall" {
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn DefWndDoSizeMove(pwnd: PWND, wParam: WPARAM);
+    fn DefWndDoSizeMove(pwnd: PWND, wParam: u16);
     fn DefWndGetHotKey(Wnd: PWND) -> LRESULT;
     fn co_IntSendMessage(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn co_UserRedrawWindow(Wnd: PWND, lprcUpdate: LPRECT, hrgnUpdate: HRGN, flags: u32) -> u8;
@@ -135,7 +135,7 @@ extern "C" {
     fn co_UserDestroyWindow(Window: PWND) -> BOOL;
     fn NC_HandleNCCalcSize(Wnd: PWND, wparam: WPARAM, Rect: *mut RECTL, Suppress: BOOL) -> LRESULT;
     fn NC_HandleNCActivate(Wnd: PWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn NC_DoNCPaint(pWnd: PWND, hDC: HDC, Flags: INT);
+    fn NC_DoNCPaint(pWnd: PWND, hDC: HDC, Flags: INT) -> u32;
 }
 // DefSetText — APIENTRY (stdcall `_DefSetText@8`).
 extern "system" {
@@ -391,7 +391,7 @@ unsafe fn DefWndHandleSysCommand(mut pWnd: PWND, wParam: WPARAM, lParam: LPARAM)
 
     match (wParam & 0xfff0) as u32 {
         SC_MOVE | SC_SIZE => {
-            DefWndDoSizeMove(pWnd, wParam);
+            DefWndDoSizeMove(pWnd, (wParam) as _);
         }
 
         SC_MINIMIZE => {

@@ -211,7 +211,7 @@ unsafe fn ProbeAndCaptureUnicodeString(
 // (`_Name@N` on i386, cdecl elsewhere) — nm confirms @16 / @36.
 extern "system" {
     fn co_IntClientLoadLibrary( pstrLibName: PUNICODE_STRING, pstrInitFunc: PUNICODE_STRING, Unload: BOOL, ApiHook: BOOL, ) -> BOOL;
-    fn co_IntCallHookProc( HookId: INT, Code: INT, wParam: WPARAM, lParam: LPARAM, Proc: HOOKPROC, ihmod: INT, offPfn: ULONG_PTR, Ansi: BOOL, ModuleName: PUNICODE_STRING, ) -> LRESULT;
+    fn co_IntCallHookProc(HookId: INT, Code: INT, wParam: u32, lParam: u32, Proc: HOOKPROC, ihmod: INT, offPfn: ULONG_PTR, Ansi: u8, ModuleName: PUNICODE_STRING) -> u32;
 }
 extern "C" {
     // GetW32ThreadInfo + UserDeleteW32Thread + _MmCopyFromCaller: real exported cdecl symbols.
@@ -680,17 +680,17 @@ pub unsafe extern "stdcall" fn co_CallHook(
     }
 
     if UserObjectInDestroy(UserHMGetHandle(phk)) == 0 {
-        Result = co_IntCallHookProc(
+        Result = (co_IntCallHookProc(
             HookId,
             Code,
             wParam,
-            lParam,
+            (lParam) as _,
             (*phk).Proc,
             (*phk).ihmod as INT,
             (*phk).offPfn,
-            (*phk).Ansi as INT,
+            ((*phk).Ansi as INT) as _,
             core::ptr::addr_of_mut!((*phk).ModuleName),
-        );
+        )) as _;
     }
 
     if !(*pHP).pHookStructs.is_null() {
@@ -724,17 +724,17 @@ pub unsafe extern "C" fn co_CallHook(
     }
 
     if UserObjectInDestroy(UserHMGetHandle(phk)) == 0 {
-        Result = co_IntCallHookProc(
+        Result = (co_IntCallHookProc(
             HookId,
             Code,
-            wParam,
-            lParam,
+            (wParam) as _,
+            (lParam) as _,
             (*phk).Proc,
             (*phk).ihmod as INT,
             (*phk).offPfn,
-            (*phk).Ansi as INT,
+            ((*phk).Ansi as INT) as _,
             core::ptr::addr_of_mut!((*phk).ModuleName),
-        );
+        )) as _;
     }
 
     if !(*pHP).pHookStructs.is_null() {
@@ -752,17 +752,17 @@ unsafe extern "system" fn co_HOOK_CallHookNext(
 ) -> LRESULT {
     TRACE!(b"Calling Next HOOK %d\n\0".as_ptr() as *const i8, (*Hook).HookId);
 
-    co_IntCallHookProc(
+    (co_IntCallHookProc(
         (*Hook).HookId,
         Code,
-        wParam,
-        lParam,
+        (wParam) as _,
+        (lParam) as _,
         (*Hook).Proc,
         (*Hook).ihmod as INT,
         (*Hook).offPfn,
-        (*Hook).Ansi as INT,
+        ((*Hook).Ansi as INT) as _,
         core::ptr::addr_of_mut!((*Hook).ModuleName),
-    )
+    )) as _
 }
 
 #[cfg(target_arch = "x86")]
@@ -1542,17 +1542,17 @@ pub unsafe extern "stdcall" fn co_HOOK_CallHooks(
             if !ClientInfo.is_null() {
                 (*ClientInfo).phkCurrent = Hook;
             }
-            Result = co_IntCallHookProc(
+            Result = (co_IntCallHookProc(
                 HookId,
                 Code,
                 wParam,
-                lParam,
+                (lParam) as _,
                 (*Hook).Proc,
                 (*Hook).ihmod as INT,
                 (*Hook).offPfn,
-                (*Hook).Ansi as INT,
+                ((*Hook).Ansi as INT) as _,
                 core::ptr::addr_of_mut!((*Hook).ModuleName),
-            );
+            )) as _;
             if !ClientInfo.is_null() {
                 (*ClientInfo).phkCurrent = SaveHook;
             }
@@ -1623,17 +1623,17 @@ pub unsafe extern "stdcall" fn co_HOOK_CallHooks(
                         );
                         ObReferenceObject(pti_ethread(ptiHook) as *mut core::ffi::c_void);
                         IntReferenceThreadInfo(ptiHook);
-                        Result = co_IntCallHookProc(
+                        Result = (co_IntCallHookProc(
                             HookId,
                             Code,
                             wParam,
-                            lParam,
+                            (lParam) as _,
                             (*Hook).Proc,
                             (*Hook).ihmod as INT,
                             (*Hook).offPfn,
-                            (*Hook).Ansi as INT,
+                            ((*Hook).Ansi as INT) as _,
                             core::ptr::addr_of_mut!((*Hook).ModuleName),
-                        );
+                        )) as _;
                         IntDereferenceThreadInfo(ptiHook);
                         ObDereferenceObject(pti_ethread(ptiHook) as *mut core::ffi::c_void);
                     }
@@ -1645,17 +1645,17 @@ pub unsafe extern "stdcall" fn co_HOOK_CallHooks(
                     );
                     ObReferenceObject(pti_ethread(pti) as *mut core::ffi::c_void);
                     IntReferenceThreadInfo(pti);
-                    Result = co_IntCallHookProc(
+                    Result = (co_IntCallHookProc(
                         HookId,
                         Code,
                         wParam,
-                        lParam,
+                        (lParam) as _,
                         (*Hook).Proc,
                         (*Hook).ihmod as INT,
                         (*Hook).offPfn,
-                        (*Hook).Ansi as INT,
+                        ((*Hook).Ansi as INT) as _,
                         core::ptr::addr_of_mut!((*Hook).ModuleName),
-                    );
+                    )) as _;
                     IntDereferenceThreadInfo(pti);
                     ObDereferenceObject(pti_ethread(pti) as *mut core::ffi::c_void);
                 }
@@ -1754,17 +1754,17 @@ pub unsafe extern "C" fn co_HOOK_CallHooks(
             if !ClientInfo.is_null() {
                 (*ClientInfo).phkCurrent = Hook;
             }
-            Result = co_IntCallHookProc(
+            Result = (co_IntCallHookProc(
                 HookId,
                 Code,
-                wParam,
-                lParam,
+                (wParam) as _,
+                (lParam) as _,
                 (*Hook).Proc,
                 (*Hook).ihmod as INT,
                 (*Hook).offPfn,
-                (*Hook).Ansi as INT,
+                ((*Hook).Ansi as INT) as _,
                 core::ptr::addr_of_mut!((*Hook).ModuleName),
-            );
+            )) as _;
             if !ClientInfo.is_null() {
                 (*ClientInfo).phkCurrent = SaveHook;
             }
@@ -1835,17 +1835,17 @@ pub unsafe extern "C" fn co_HOOK_CallHooks(
                         );
                         ObReferenceObject(pti_ethread(ptiHook) as *mut core::ffi::c_void);
                         IntReferenceThreadInfo(ptiHook);
-                        Result = co_IntCallHookProc(
+                        Result = (co_IntCallHookProc(
                             HookId,
                             Code,
-                            wParam,
-                            lParam,
+                            (wParam) as _,
+                            (lParam) as _,
                             (*Hook).Proc,
                             (*Hook).ihmod as INT,
                             (*Hook).offPfn,
-                            (*Hook).Ansi as INT,
+                            ((*Hook).Ansi as INT) as _,
                             core::ptr::addr_of_mut!((*Hook).ModuleName),
-                        );
+                        )) as _;
                         IntDereferenceThreadInfo(ptiHook);
                         ObDereferenceObject(pti_ethread(ptiHook) as *mut core::ffi::c_void);
                     }
@@ -1857,17 +1857,17 @@ pub unsafe extern "C" fn co_HOOK_CallHooks(
                     );
                     ObReferenceObject(pti_ethread(pti) as *mut core::ffi::c_void);
                     IntReferenceThreadInfo(pti);
-                    Result = co_IntCallHookProc(
+                    Result = (co_IntCallHookProc(
                         HookId,
                         Code,
-                        wParam,
-                        lParam,
+                        (wParam) as _,
+                        (lParam) as _,
                         (*Hook).Proc,
                         (*Hook).ihmod as INT,
                         (*Hook).offPfn,
-                        (*Hook).Ansi as INT,
+                        ((*Hook).Ansi as INT) as _,
                         core::ptr::addr_of_mut!((*Hook).ModuleName),
-                    );
+                    )) as _;
                     IntDereferenceThreadInfo(pti);
                     ObDereferenceObject(pti_ethread(pti) as *mut core::ffi::c_void);
                 }

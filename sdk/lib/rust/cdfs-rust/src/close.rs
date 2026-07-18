@@ -33,7 +33,7 @@ extern "C" {
     fn CdUnlockCdData();
 }
 extern "C" {
-    fn CdCleanupIrpContext(IrpContext: PIRP_CONTEXT, arg1: u8);
+    fn CdCleanupIrpContext(IrpContext: PIRP_CONTEXT, arg1: u32);
 }
 extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
@@ -57,13 +57,13 @@ extern "C" {
     fn CdDeleteCcb(IrpContext: PIRP_CONTEXT, Ccb: PCCB);
 }
 extern "C" {
-    fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Param: i32);
+    fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Param: i32) -> u32;
 }
 extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
 }
 extern "C" {
-    fn CdAcquireVcbShared(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: i32) -> BOOLEAN;
+    fn CdAcquireVcbShared(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Wait: u8) -> BOOLEAN;
 }
 extern "C" {
     fn CdFreeIrpContextLite(Ptr: *mut core::ffi::c_void);
@@ -88,7 +88,7 @@ extern "C" {
 }
 extern "C" {
     // Additional cdfs-internal NTAPI routines used by the (re-)translated bodies below.
-    fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Wait: BOOLEAN) -> BOOLEAN;
+    fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Wait: BOOLEAN) -> u32;
 }
 extern "C" {
     fn CdLockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn CdCommonClosePrivate(
     //  Try to acquire the Vcb and Fcb.  If we can't acquire them then return
     //  FALSE and let our caller post the request to the async queue.
     //
-    if CdAcquireVcbShared(IrpContext, Vcb, FromFsd as i32) != 0 {
+    if CdAcquireVcbShared(IrpContext, Vcb, (FromFsd as i32) as _) != 0 {
         if CdAcquireFcbExclusive(IrpContext, Fcb, FromFsd) == 0 {
             //
             //  We couldn't get the Fcb.  Release the Vcb and let our caller

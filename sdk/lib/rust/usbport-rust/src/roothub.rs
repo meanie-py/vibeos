@@ -17,12 +17,12 @@ extern "system" {
     pub fn USBPORT_QueueDoneTransfer( Transfer: PUSBPORT_TRANSFER, USBDStatus: USBD_STATUS, ) -> BOOLEAN;
 }
 extern "system" {
-    fn USBPORT_FindCompanionControllers( FdoDevice: PDEVICE_OBJECT, IsObtainList: i32, IsLockNotAcquired: i32, ) -> PDEVICE_RELATIONS;
+    fn USBPORT_FindCompanionControllers(USB2FdoDevice: PDEVICE_OBJECT, IsObRefer: BOOLEAN, IsFDOsReturned: BOOLEAN,) -> PDEVICE_RELATIONS;
     fn USBPORT_AddDeviceHandle(FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE);
     pub fn USBPORT_OpenPipe( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, UsbdStatus: PUSBD_STATUS, ) -> NTSTATUS;
     fn USBPORT_HcQueueWakeDpc(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_InvalidateEndpointHandler( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, Type: ULONG, );
-    pub fn USBPORT_Wait(MiniPortExtension: PVOID, Milliseconds: ULONG) -> NTSTATUS;
+    pub fn USBPORT_Wait(MiniPortExtension: PVOID, Milliseconds: ULONG,) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----

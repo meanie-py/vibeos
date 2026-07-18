@@ -15,7 +15,7 @@ extern "system" {
     fn RtlAssert(cond: *const core::ffi::c_void, file: *const core::ffi::c_void, line: u32, msg: *const core::ffi::c_void);
     fn CompareNames(name1: PSTRING, name2: PSTRING) -> COMPARISON;
     fn KeBugCheckEx( bugcheck_code: u32, param1: usize, param2: usize, param3: usize, param4: usize, ) -> !;
-    fn FatMarkFcbCondition( IrpContext: PIRP_CONTEXT, Fcb: PFCB, Condition: u32, b: BOOLEAN, );
+    fn FatMarkFcbCondition(IrpContext: PIRP_CONTEXT, Fcb: PFCB, Condition: u32, b: u32);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -112,7 +112,7 @@ pub unsafe extern "system" fn FatInsertName(
                     IrpContext,
                     (*Node).Fcb as PFCB,
                     FcbBad,
-                    0u8, // FALSE as BOOLEAN
+                    (0u8) as _, // FALSE as BOOLEAN
                 );
                 FatRemoveNames(IrpContext, (*Node).Fcb as PFCB);
                 break; // restarts the 'restart loop

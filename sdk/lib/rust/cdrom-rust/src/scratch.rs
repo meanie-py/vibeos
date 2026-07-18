@@ -74,7 +74,7 @@ unsafe extern "C" {
 extern "C" {
     fn RequestIsRealtimeStreaming(Request: WDFREQUEST, IsRead: u8) -> u8; // BOOLEAN
     fn MmPrepareMdlForReuse(Mdl: *mut MDL);
-    fn SRB_STATUS(srb_status: u8) -> u32;
+    fn SRB_STATUS(status: u8) -> u32;
 }
 
 const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;

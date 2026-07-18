@@ -50,7 +50,7 @@ extern "C" {
     fn CdGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
 }
 extern "C" {
-    fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, Buffer: *mut *mut c_void);
+    fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, UserBuffer: *mut *mut c_void,);
 }
 extern "C" {
     fn CdNonCachedRead( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, ReadByteCount: u32, ) -> NTSTATUS;
@@ -65,7 +65,7 @@ extern "C" {
     fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
 extern "C" {
-    fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+    fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB,) -> i32;
 }
 extern "C" {
     fn ExGetCurrentResourceThread() -> *mut c_void;

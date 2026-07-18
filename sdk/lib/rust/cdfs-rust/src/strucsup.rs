@@ -217,7 +217,7 @@ extern "system" {
     static CdAudioLabel: [u8; 32];
 }
 extern "C" {
-    fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Wait: u32) -> u32;
+    fn CdAcquireFcbExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Wait: u8) -> u32;
 }
 extern "C" {
     fn CdDecrementReferenceCounts(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, RefCount: u32, UserRefCount: u32);

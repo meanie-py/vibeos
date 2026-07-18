@@ -843,9 +843,100 @@ What it flushed out:
 CSR/static-server-data marshalling that should carry `X:` is incomplete);
 uxtheme.dll not in closure (theme api hooks disabled); guest hardware-fault
 context flush (the CPU-area is fresh at syscall boundaries now, but a fault at
-an arbitrary guest instruction still reads stale values — the "[GUEST32]
-int-2d forwarding silent on amd64" gap); doom input on amd64 unverified (arm64
-M14 did the input work; paths are arch-shared).
+an arbitrary guest instruction still reads stale values — Phase E5 below).
+
+*E4d — doom INPUT on amd64: VERIFIED PLAYABLE (2026-07-18).* The M14 oracle
+replayed against the amd64 livecd boot: QMP-injected ESC opened DOOM's main
+menu, ENTER advanced to episode select, ENTER again to skill select — three
+distinct screen transitions, each caused by an injected key, with WineMine
+alive alongside. Keys ride the `NtUserPeekMessage` return path (~1,800 pump
+iterations traced) and dispatch inside guest code, exactly as on arm64.
+Harness: the session's `doom-play-amd64.sh` (start.sh amd64 + QMP send-key +
+screendump), a straight port of `tools/doom/play.sh`.
+
+*E4d finding — the "[GUEST32] int-2d silent on amd64" note was MISDIAGNOSED:*
+guest DbgPrints are NOT lost on amd64. The compat-mode `int 2d` is consumed
+in-kernel by the KD path (KdpPrint → serial) and the guest resumes — the
+prints appear WITHOUT the `[GUEST32]` prefix (e.g. winmine PID 648's
+`[kernel32] DllMain PROCESS_ATTACH` lines). wow64.dll's VEH forwarder never
+sees them, which is fine; only arm64/FEX needs the VEH branch (FEX surfaces
+int 2d as a host exception instead of reaching the kernel's IDT).
+
+**Phase E5 — guest fault-context flush + exceptions dispatched INTO guest SEH
+(2026-07-18).** Before E5, a hardware fault at an arbitrary guest instruction
+was a death sentence: the CPU-area WOW64_CONTEXT was fresh only at syscall
+boundaries (the E4b fix), the host VEH read stale guest registers for its
+diagnostics, and the guest's own 32-bit SEH never ran — the 64-bit
+RtlDispatchException walked 64-bit unwind info from a guest RIP and
+second-chanced. Software raises were worse: the generated flat thunk for
+`NtRaiseException` passed the guest's 32-bit EXCEPTION_RECORD/CONTEXT
+pointers straight to the 64-bit kernel to read at 64-bit layout. Three
+mechanisms close it (all landed together):
+
+1. **`BTCpuResetToConsistentState` in wow64cpu (the flush).** The heaven's-
+   gate property makes it trivial: when compat-mode code faults, the kernel's
+   trap CONTEXT captures the full register file — the low 32 bits of the
+   captured GPRs/Rsp/Rip ARE the guest registers, and `SegCs == 0x23`
+   identifies the frame as guest code. The VEH already called this entry
+   point by contract (FEX exports it on arm64); wow64cpu just never
+   implemented it.
+2. **VEH hardware-fault redirect into guest SEH (amd64, wow64.c).** After the
+   flush, a `SegCs == 0x23` exception converts EXCEPTION_RECORD 64→32, builds
+   the i386 `KiUserExceptionDispatcher` frame on the guest stack BELOW the
+   deepest 64-bit frame (the kernel dispatched the 64-bit handler ON the
+   guest stack; building below guest-Esp would be trodden on by the host
+   dispatch path before its NtContinue), redirects the host CONTEXT
+   (Rip=guest dispatcher, Rsp=frame, DF cleared) and returns
+   EXCEPTION_CONTINUE_EXECUTION → ZwContinue → the kernel's context sanitizer
+   (`ke/amd64/context.rs`) keeps CS 0x23 → guest dispatcher →
+   `RtlDispatchException`(i386) walks the REAL fs:[0] chain (guest apps'
+   handlers are genuine x86 SEH — DUMMY_PSEH only neuters our own C's
+   `_SEH2_TRY`). Handler-continue resumes via the guest's `NtContinue`
+   (already marshalled); handler-not-found second-chances via
+   `NtRaiseException(...,FALSE)` — see 3. arm64 hardware redirect is OWED
+   (FEX's simulate loop owns fault recovery there).
+3. **`NtRaiseException` manual marshaller (both arches, wow64_manual.c).**
+   With no debugger a first-chance user raise comes straight back to user
+   dispatch, so skip the kernel: build the same guest dispatcher frame below
+   the LIVE guest Esp (from BTCpuGetContext — NOT the captured Ctx32->Esp;
+   the raiser's frames and the very structs being copied live between the
+   two) and enter it via BTCpuSetContext. `DBG_PRINTEXCEPTION(_WIDE)_C` are
+   consumed here (print `[GUEST32]` + resume at the captured context) exactly
+   as the kernel's KD does natively — dispatching them to guest SEH would
+   kill every `OutputDebugString` caller, since guest kernel32's `__except`
+   is DUMMY_PSEH. Second chance (guest dispatcher found no handler) =
+   loud process termination with the exception code.
+
+Two mechanism corrections found while bringing E5 up (both were dead-wrong
+first guesses that fault32 exposed):
+
+* **VEH is NOT the dispatch path.** This build compiles ntdll with
+  `-D_NTOSKRNL_`, so `RtlDispatchException` (amd64) elides the
+  vectored-handler block entirely — a `RtlAddVectoredExceptionHandler` in
+  wow64.dll never fires. The real dispatch point is the
+  `Wow64PrepareForException` slot that `KiUserExceptionDispatcher` already
+  calls unconditionally before `RtlDispatchException`; wow64.dll installs its
+  handler there (ntdll exports the slot as data — dispatch.S + ntdll.spec).
+  The hook ends in `NtContinue`, so `RtlDispatchException` never runs on the
+  host frame and the guest's own i386 dispatcher takes over cleanly.
+* **TEB32 stack bounds were never set — guest SEH had NEVER worked on amd64.**
+  The kernel's `MmCreateTeb` deliberately leaves `TEB32.NtTib.StackBase/
+  StackLimit` zero for a WoW64 TEB (comment: *"Guest stack bounds are set by
+  wow64.dll at thread init"*), but wow64.dll's bootstrap never did. i386
+  `RtlDispatchException` validates every fs:[0] registration against those
+  bounds and rejects all of them when they're 0 — so every guest exception
+  silently second-chanced. fault32 is the first guest to install a real SEH
+  handler, which is why it surfaced only now. wow64.dll now writes the
+  GuestStack bounds into TEB32 (+0x04/+0x08) during process bootstrap.
+
+Oracle: **fault32.exe** (tools/fex/hello-compute/Fault32.c), the E5 ladder
+rung (amd64): rung 1 hardware AV caught by a raw fs:[0] handler that verifies
+the LIVE faulting context (marker regs ebx/esi/edi, AV parameters), retargets
+Eip, and resumes; rung 2 `RaiseException` round-trip with parameters intact;
+rung 3 `OutputDebugStringA` must return WITHOUT hitting the guest handler.
+Exit 0x600D; 0xBAF1..5 name the failing rung. Gotcha for future guests: the
+fs:[0] registration record MUST live on the thread stack —
+RtlDispatchException validates against the TEB stack limits.
 
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored

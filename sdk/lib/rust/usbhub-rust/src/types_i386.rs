@@ -6393,7 +6393,7 @@ unsafe extern "stdcall" {
     pub fn USBH_HubSetD0(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
 }
 unsafe extern "stdcall" {
-    pub fn USBH_HubStartESDRecovery(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS;
+    pub fn USBH_HubStartESDRecovery(HubExtension: PUSBHUB_FDO_EXTENSION,) -> NTSTATUS;
 }
 unsafe extern "stdcall" {
     pub fn USBH_FdoPower(HubExtension: PUSBHUB_FDO_EXTENSION, Irp: PIRP, Minor: UCHAR) -> NTSTATUS;
@@ -6427,7 +6427,7 @@ unsafe extern "stdcall" {
     pub fn PdoExt(DeviceObject: PDEVICE_OBJECT) -> PUSBHUB_PORT_PDO_EXTENSION;
 }
 unsafe extern "stdcall" {
-    pub fn USBH_WriteFailReasonID(DeviceObject: PDEVICE_OBJECT, Data: ULONG) -> NTSTATUS;
+    pub fn USBH_WriteFailReasonID(DeviceObject: PDEVICE_OBJECT, FailReason: ULONG,) -> NTSTATUS;
 }
 unsafe extern "stdcall" {
     pub fn USBH_SetPdoRegistryParameter(

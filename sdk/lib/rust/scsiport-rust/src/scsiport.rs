@@ -40,7 +40,7 @@ extern "C" {
     fn PdoDispatchPnp(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
     fn DbgPrint(format: *const i8, ...);
     fn GetLunByPath( DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION, PathId: u8, TargetId: u8, Lun: u8, ) -> *mut SCSI_PORT_LUN_EXTENSION;
-    fn SpiGetSrbData( DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION, LunExtension: *mut SCSI_PORT_LUN_EXTENSION, QueueTag: u32, ) -> *mut SCSI_REQUEST_BLOCK_INFO;
+    fn SpiGetSrbData(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION, LunExtension: *mut SCSI_PORT_LUN_EXTENSION, QueueTag: u8) -> *mut SCSI_REQUEST_BLOCK_INFO;
     fn _strnicmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
@@ -426,7 +426,7 @@ pub unsafe extern "system" fn ScsiPortGetPhysicalAddress(
         debug_assert!(!LunExtension.is_null());
         debug_assert!((*LunExtension).Common.IsFDO == 0);
 
-        let SrbInfo = SpiGetSrbData(DeviceExtension, LunExtension, ((*Srb).QueueTag) as u32);
+        let SrbInfo = SpiGetSrbData(DeviceExtension, LunExtension, (((*Srb).QueueTag) as u32) as _);
         let mut SGList = (*SrbInfo).ScatterGather;
 
         let mut Offset = (VirtualAddress as usize) - ((*Srb).DataBuffer as usize);
@@ -1394,7 +1394,7 @@ pub unsafe extern "C" fn ScsiPortNotification_v(
                     DbgBreakPoint();
                 }
 
-                let SrbData = SpiGetSrbData(DeviceExtension, LunExtension, ((*Srb).QueueTag) as u32);
+                let SrbData = SpiGetSrbData(DeviceExtension, LunExtension, (((*Srb).QueueTag) as u32) as _);
 
                 // ASSERT(SrbData->CompletedRequests == NULL && SrbData->Srb != NULL)
                 if !((*SrbData).CompletedRequests.is_null() && !(*SrbData).Srb.is_null()) {

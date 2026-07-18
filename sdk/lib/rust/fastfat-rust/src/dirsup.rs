@@ -17,7 +17,7 @@ extern "system" {
     fn FatDeleteEa( IrpContext: *mut IRP_CONTEXT, Vcb: *mut core::ffi::c_void, ExtendedAttributes: u16, OemName: *const OEM_STRING, );
     fn FatBugCheck(a: u32, b: u32, c: u32);
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
-    fn FatPrepareWriteDirectoryFile( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Offset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, LowPriority: i32, ReturnMapped: i32, Status: *mut NTSTATUS, );
+    fn FatPrepareWriteDirectoryFile(IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Offset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, LowPriority: u8, ReturnMapped: u8, Status: *mut NTSTATUS);
     fn FatIsFat32(Vcb: *mut core::ffi::c_void) -> u8;
     fn NodeType(obj: *mut core::ffi::c_void) -> u32;
     } extern "C" { fn DebugTrace(level: i32, flag: u32, fmt: *const i8, ...); } extern "system" {
@@ -41,10 +41,10 @@ extern "system" {
     fn FatGetCurrentFatTime(IrpContext: *mut IRP_CONTEXT) -> LARGE_INTEGER;
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
-    fn FatMarkFcbCondition( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Condition: u32, Value: BOOLEAN, );
+    fn FatMarkFcbCondition(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Condition: u32, Value: u32);
     fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> BOOLEAN;
     fn FAT_LFN_DIRENTS_NEEDED(Lfn: *mut _UNICODE_STRING) -> u32;
-    fn FatSetDirtyBcb( IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, MarkDirty: i32, );
+    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, MarkDirty: u8);
     fn ExSystemTimeToLocalTime(SystemTime: *const LARGE_INTEGER, LocalTime: *mut LARGE_INTEGER);
     fn ExLocalTimeToSystemTime(LocalTime: *const LARGE_INTEGER, SystemTime: *mut LARGE_INTEGER);
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
@@ -60,7 +60,7 @@ extern "system" {
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, ParentDirectory: *mut DCB) -> ();
     fn FatFreeStringBuffer(Str: *mut _UNICODE_STRING) -> ();
     fn FatEnsureStringBufferEnough(Str: *mut _UNICODE_STRING, Length: u16) -> ();
-    fn Fat8dot3ToString( IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, uppercase: BOOLEAN, Name: *mut OEM_STRING, ) -> BOOLEAN;
+    fn Fat8dot3ToString(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, uppercase: u32, Name: *mut OEM_STRING);
     fn FatIsNameInExpression( IrpContext: *mut IRP_CONTEXT, Expression: OEM_STRING, Name: OEM_STRING, ) -> BOOLEAN;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> ();
     fn SetFlag(Flags: *mut u32, Flag: u32) -> ();
@@ -270,8 +270,8 @@ pub unsafe extern "system" fn FatCreateNewDirent(
                     1,
                     core::ptr::addr_of_mut!(Bcb),
                     core::ptr::addr_of_mut!(Buffer),
-                    0i32,  // FALSE
-                    1i32,  // TRUE
+                    (0i32) as _,  // FALSE
+                    (1i32) as _,  // TRUE
                     core::ptr::addr_of_mut!(Status),
                 );
             }
@@ -311,8 +311,8 @@ pub unsafe extern "system" fn FatInitializeDirectoryDirent(
         2 * core::mem::size_of::<DIRENT>() as u32,
         &mut Bcb,
         &mut Buffer,
-        0i32,
-        1i32,
+        (0i32) as _,
+        (1i32) as _,
         &mut DontCare,
     );
 
@@ -465,8 +465,8 @@ pub unsafe extern "system" fn FatDeleteDirent(
                     core::mem::size_of::<DIRENT>() as u32,
                     &mut Bcb,
                     &mut Dirent,
-                    0i32,
-                    1i32,
+                    (0i32) as _,
+                    (1i32) as _,
                     &mut DontCare,
                 );
             }
@@ -1482,7 +1482,7 @@ pub unsafe extern "system" fn FatSetFileSizeInDirent(
     } else {
         (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart
     };
-    FatSetDirtyBcb(IrpContext, DirentBcb, (*Fcb).Vcb, (1u8) as i32);
+    FatSetDirtyBcb(IrpContext, DirentBcb, (*Fcb).Vcb, ((1u8) as i32) as _);
 
     FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
 }

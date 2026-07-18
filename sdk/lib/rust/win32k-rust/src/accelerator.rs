@@ -16,17 +16,17 @@ extern "system" {
 // FASTCALL win32k exports.
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn SetLastNtError(status: NTSTATUS);
+    fn SetLastNtError(Status: NTSTATUS);
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID);
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn MENU_FindItem(pmenu: *mut PMENU, ppos: *mut u32, flag: u32) -> PVOID;
     fn co_IntSendMessage(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: isize) -> isize;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn SetLastNtError(status: NTSTATUS);
+    fn SetLastNtError(Status: NTSTATUS);
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID);
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn MENU_FindItem(pmenu: *mut PMENU, ppos: *mut u32, flag: u32) -> PVOID;
     fn co_IntSendMessage(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: isize) -> isize;
 }

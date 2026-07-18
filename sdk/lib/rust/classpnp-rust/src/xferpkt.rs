@@ -67,11 +67,11 @@ extern "C" {
 extern "system" {
     fn PAGED_CODE();
     fn NT_ASSERT(condition: bool);
-    fn SrbSetRequestAttribute(srb: *mut core::ffi::c_void, attribute: u32);
+    fn SrbSetRequestAttribute(srb: *mut core::ffi::c_void, attribute: u8);
     fn SrbSetCdbLength(srb: *mut core::ffi::c_void, length: u8);
     fn SrbSetOriginalRequest(srb: *mut core::ffi::c_void, irp: PIRP);
     fn SrbSetSenseInfoBuffer(srb: *mut core::ffi::c_void, sense_info: *mut core::ffi::c_void);
-    fn SrbSetSenseInfoBufferLength(srb: *mut core::ffi::c_void, length: u32);
+    fn SrbSetSenseInfoBufferLength(srb: *mut core::ffi::c_void, length: u8);
     fn SrbSetTimeOutValue(srb: *mut core::ffi::c_void, timeout: u32);
     fn SrbSetDataBuffer(srb: *mut core::ffi::c_void, buffer: *mut core::ffi::c_void);
     fn SrbSetDataTransferLength(srb: *mut core::ffi::c_void, length: u32);
@@ -377,11 +377,11 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTA
     if status == STATUS_SUCCESS {
         SrbSetRequestAttribute(
             (*fdoData).SrbTemplate as PVOID,
-            SRB_SIMPLE_TAG_REQUEST,
+            (SRB_SIMPLE_TAG_REQUEST) as _,
         );
         SrbSetSenseInfoBufferLength(
             (*fdoData).SrbTemplate as PVOID,
-            (SENSE_BUFFER_SIZE_EX) as u32,
+            ((SENSE_BUFFER_SIZE_EX) as u32) as _,
         );
         SrbSetCdbLength((*fdoData).SrbTemplate as PVOID, 10);
     }
@@ -1082,7 +1082,7 @@ pub unsafe extern "C" fn SubmitTransferPacket(Pkt: PTRANSFER_PACKET) -> NTSTATUS
 
     SrbSetScsiStatus((*Pkt).Srb as PVOID, 0u8);
     (*(*Pkt).Srb).SrbStatus = 0u8;
-    SrbSetSenseInfoBufferLength((*Pkt).Srb as PVOID, (SENSE_BUFFER_SIZE_EX as u8) as u32);
+    SrbSetSenseInfoBufferLength((*Pkt).Srb as PVOID, ((SENSE_BUFFER_SIZE_EX as u8) as u32) as _);
 
     if (*Pkt).CompleteOriginalIrpWhenLastPacketCompletes != 0 {
         let origCurSp = IoGetCurrentIrpStackLocation((*Pkt).OriginalIrp);
@@ -1266,7 +1266,7 @@ pub unsafe extern "system" fn TransferPktComplete(
             );
             SrbSetSenseInfoBufferLength(
                 (*pkt).Srb as PVOID,
-                (core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32,
+                ((core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32) as _,
             );
         } else {
             NT_ASSERT(
@@ -1328,7 +1328,7 @@ pub unsafe extern "system" fn TransferPktComplete(
                     IoMarkIrpPending((*pkt).OriginalIrp);
                 }
 
-                ClassCompleteRequest(fdo, (*pkt).OriginalIrp, IO_DISK_INCREMENT as CCHAR);
+                ClassCompleteRequest(fdo, (*pkt).OriginalIrp, (IO_DISK_INCREMENT as CCHAR) as _);
 
                 if priority == IO_PAGING_PRIORITY_HIGH as IO_PAGING_PRIORITY {
                     KeAcquireSpinLock((&raw mut (*fdoData).SpinLock).cast(), &raw mut oldIrql);
@@ -1467,7 +1467,7 @@ pub unsafe extern "C" fn SetupEjectionTransferPacket(
         (*Pkt).Srb as *mut u8,
         srbLength as usize,
     );
-    SrbSetRequestAttribute((*Pkt).Srb as PVOID, (SRB_SIMPLE_TAG_REQUEST as UCHAR) as u32);
+    SrbSetRequestAttribute((*Pkt).Srb as PVOID, ((SRB_SIMPLE_TAG_REQUEST as UCHAR) as u32) as _);
     SrbSetCdbLength((*Pkt).Srb as PVOID, 6 as UCHAR);
     SrbSetOriginalRequest((*Pkt).Srb as PVOID, ((*Pkt).Irp as PVOID).cast());
     SrbSetSenseInfoBuffer(
@@ -1476,7 +1476,7 @@ pub unsafe extern "C" fn SetupEjectionTransferPacket(
     );
     SrbSetSenseInfoBufferLength(
         (*Pkt).Srb as PVOID,
-        (::core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32,
+        ((::core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32) as _,
     );
     SrbSetTimeOutValue((*Pkt).Srb as PVOID, (*fdoExt).TimeOutValue);
     SrbAssignSrbFlags(
@@ -1532,11 +1532,11 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
         srbLength as usize,
     );
 
-    SrbSetRequestAttribute(((*Pkt).Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+    SrbSetRequestAttribute(((*Pkt).Srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
     SrbSetCdbLength(((*Pkt).Srb).cast(), 6u8);
     SrbSetOriginalRequest(((*Pkt).Srb).cast(), (*Pkt).Irp);
     SrbSetSenseInfoBuffer(((*Pkt).Srb).cast(), core::ptr::addr_of_mut!((*Pkt).SrbErrorSenseData) as _);
-    SrbSetSenseInfoBufferLength(((*Pkt).Srb).cast(), core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32);
+    SrbSetSenseInfoBufferLength(((*Pkt).Srb).cast(), (core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32) as _);
     SrbSetTimeOutValue(((*Pkt).Srb).cast(), (*fdoExt).TimeOutValue);
     SrbSetDataBuffer(((*Pkt).Srb).cast(), ModeSenseBuffer);
     SrbSetDataTransferLength(((*Pkt).Srb).cast(), ModeSenseBufferLen as u32);
@@ -1592,7 +1592,7 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
         (*fdoData).SrbTemplate as *const ::core::ffi::c_void,
         srbLength as usize,
     );
-    SrbSetRequestAttribute((*Pkt).Srb as PVOID, (SRB_SIMPLE_TAG_REQUEST as u8) as u32);
+    SrbSetRequestAttribute((*Pkt).Srb as PVOID, ((SRB_SIMPLE_TAG_REQUEST as u8) as u32) as _);
     SrbSetCdbLength((*Pkt).Srb as PVOID, 6u8);
     SrbSetOriginalRequest((*Pkt).Srb as PVOID, ((*Pkt).Irp as PVOID).cast());
     SrbSetSenseInfoBuffer(
@@ -1601,7 +1601,7 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
     );
     SrbSetSenseInfoBufferLength(
         (*Pkt).Srb as PVOID,
-        (::core::mem::size_of::<SENSE_DATA_EX>() as u8) as u32,
+        ((::core::mem::size_of::<SENSE_DATA_EX>() as u8) as u32) as _,
     );
     SrbSetTimeOutValue((*Pkt).Srb as PVOID, (*fdoExt).TimeOutValue);
     SrbSetDataBuffer((*Pkt).Srb as PVOID, ModeSelectBuffer);
@@ -1663,7 +1663,7 @@ pub unsafe extern "C" fn SetupDriveCapacityTransferPacket(
         srbLength as usize,
     );
 
-    SrbSetRequestAttribute((*Pkt).Srb as PVOID, (SRB_SIMPLE_TAG_REQUEST as UCHAR) as u32);
+    SrbSetRequestAttribute((*Pkt).Srb as PVOID, ((SRB_SIMPLE_TAG_REQUEST as UCHAR) as u32) as _);
     SrbSetOriginalRequest((*Pkt).Srb as PVOID, ((*Pkt).Irp as PVOID).cast());
     SrbSetSenseInfoBuffer(
         (*Pkt).Srb as PVOID,
@@ -1671,7 +1671,7 @@ pub unsafe extern "C" fn SetupDriveCapacityTransferPacket(
     );
     SrbSetSenseInfoBufferLength(
         (*Pkt).Srb as PVOID,
-        (core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32,
+        ((core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32) as _,
     );
     SrbSetTimeOutValue((*Pkt).Srb as PVOID, timeoutValue);
     SrbSetDataBuffer((*Pkt).Srb as PVOID, ReadCapacityBuffer);
@@ -1864,7 +1864,7 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
         srb_length as usize,
     );
 
-    SrbSetRequestAttribute(((*Pkt).Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
+    SrbSetRequestAttribute(((*Pkt).Srb).cast(), (SRB_SIMPLE_TAG_REQUEST) as _);
     SrbSetCdbLength(((*Pkt).Srb).cast(), 16);
     SrbSetOriginalRequest(((*Pkt).Srb).cast(), (*Pkt).Irp);
     SrbSetSenseInfoBuffer(
@@ -1873,7 +1873,7 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
     );
     SrbSetSenseInfoBufferLength(
         ((*Pkt).Srb).cast(),
-        core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32,
+        (core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32) as _,
     );
     SrbSetTimeOutValue(((*Pkt).Srb).cast(), (*fdoExt).TimeOutValue);
     SrbSetDataBuffer(((*Pkt).Srb).cast(), (ReceiveWriteUsingTokenInformationBuffer).cast());

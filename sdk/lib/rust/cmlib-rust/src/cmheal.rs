@@ -37,7 +37,7 @@ unsafe extern "system" {
 unsafe fn DPRINT1(_format: *const i8) {}
 unsafe extern "C" {
     fn DbgPrint(format: *const i8, ...);
-    fn ASSERT(cond: i32);
+    fn ASSERT(_cond: i32);
     // Consumer-provided globals (ntoskrnl in the kernel; loader supplies a
     // zero stub). Gated behind !CMLIB_HOST && !_BLDR_ in C.
     #[cfg(not(feature = "bldr"))]

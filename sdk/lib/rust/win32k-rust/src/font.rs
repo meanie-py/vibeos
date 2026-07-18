@@ -1681,6 +1681,14 @@ pub unsafe extern "stdcall" fn NtGdiGetRealizationInfo(
     }
     pdcattr = (*pDc).pdcattr;
     pTextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    // Null-guard: RealizeFontInit provably returns null on failure (inlined
+    // body), and the (*pTextObj).Font load sinks below UnlockText in release —
+    // the unguarded deref folded the tail into `ud2` (§9.103).
+    if pTextObj.is_null() {
+        DC_UnlockDc(pDc);
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
     pFontGdi = ObjToGDI!((*pTextObj).Font);
     w32r_TEXTOBJ_UnlockText(pTextObj);
     DC_UnlockDc(pDc);
@@ -1745,6 +1753,12 @@ pub unsafe extern "C" fn NtGdiGetRealizationInfo(
     }
     pdcattr = (*pDc).pdcattr;
     pTextObj = RealizeFontInit((*pdcattr).hlfntNew as _ );
+    // Null-guard — see the x86 twin above (§9.103).
+    if pTextObj.is_null() {
+        DC_UnlockDc(pDc);
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
     pFontGdi = ObjToGDI!((*pTextObj).Font);
     w32r_TEXTOBJ_UnlockText(pTextObj);
     DC_UnlockDc(pDc);

@@ -52,10 +52,10 @@ extern "C" {
     fn CdFreePool(Pool: *mut *mut core::ffi::c_void);
 }
 extern "C" {
-    fn NT_ASSERT(condition: BOOLEAN);
+    fn NT_ASSERT(condition: u32);
 }
 extern "C" {
-    fn __analysis_assert(condition: BOOLEAN);
+    fn __analysis_assert(condition: u32);
 }
 extern "C" {
     fn CdCleanupDirContext(IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT);
@@ -439,8 +439,8 @@ pub unsafe extern "C" fn CdUpdateDirentName(
                 (*Dirent).FileNameLen,
             );
 
-            __analysis_assert((Status == STATUS_SUCCESS) as BOOLEAN);
-            NT_ASSERT((Status == STATUS_SUCCESS) as BOOLEAN);
+            __analysis_assert(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
+            NT_ASSERT(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
             (*Dirent).CdFileName.FileName.Length = Length as USHORT;
         } else {
             CdConvertBigToLittleEndian(
@@ -807,7 +807,7 @@ pub unsafe extern "C" fn CdCheckRawDirentBounds(
     PAGED_CODE();
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
-    NT_ASSERT((((*DirContext).DataLength - (*DirContext).SectorOffset) >= 1) as BOOLEAN);
+    NT_ASSERT(((((*DirContext).DataLength - (*DirContext).SectorOffset) >= 1) as BOOLEAN) as _);
 
     if ((*DirContext).SectorOffset >= (*DirContext).DataLength) ||
         ((*DirContext).Sector.is_null())

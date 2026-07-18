@@ -56,7 +56,7 @@ extern "fastcall" {
     fn SetLastNtError(Status: NTSTATUS);
     fn co_IntDeliverUserAPC();
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn DoTheScreenSaver();
 }
 #[cfg(not(target_arch = "x86"))]
@@ -68,7 +68,7 @@ extern "C" {
     fn SetLastNtError(Status: NTSTATUS);
     fn co_IntDeliverUserAPC();
     fn UserReferenceObject(obj: PVOID);
-    fn UserDereferenceObject(obj: PVOID) -> BOOL;
+    fn UserDereferenceObject(Object: PVOID) -> BOOL;
     fn DoTheScreenSaver();
 }
 
