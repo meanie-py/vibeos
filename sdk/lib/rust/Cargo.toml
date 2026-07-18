@@ -207,6 +207,7 @@ members = [
     "user32-rust",
     "gdi32-rust",
     "shell32-rust",
+    "menuband-rust",
     "msgina-rust",
     "uniata-rust",
     "dxg-rust",

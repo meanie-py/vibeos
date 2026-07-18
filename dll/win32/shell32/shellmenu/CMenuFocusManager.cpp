@@ -46,7 +46,9 @@ and switch to another submenu when the mouse goes over another item from the par
 
 #include "CMenuFocusManager.h"
 #include "CMenuToolbars.h"
-#include "CMenuBand.h"
+/* CMenuBand is Rust-owned; the class header must stay out of this TU so the compiler
+ * enforces the opaque-pointer contract (see CMenuBandRustExports.h). */
+#include "CMenuBandRustExports.h"
 
 #if DBG
 #   undef _ASSERT
@@ -214,20 +216,20 @@ void CMenuFocusManager::DisableMouseTrack(HWND parent, BOOL disableThis)
         if (entry.type != TrackedMenuEntry)
         {
             HWND hwnd;
-            HRESULT hr = entry.mb->_GetTopLevelWindow(&hwnd);
+            HRESULT hr = CMenuBand_GetTopLevelWindow_RustExport(entry.mb, &hwnd);
             if (FAILED_UNEXPECTEDLY(hr))
                 break;
 
             if (hwnd == parent)
             {
                 lastDisable = disableThis;
-                entry.mb->_DisableMouseTrack(disableThis);
+                CMenuBand_DisableMouseTrack_RustExport(entry.mb, disableThis);
                 bDisable = TRUE;
             }
             else
             {
                 lastDisable = bDisable;
-                entry.mb->_DisableMouseTrack(bDisable);
+                CMenuBand_DisableMouseTrack_RustExport(entry.mb, bDisable);
             }
         }
     }
@@ -265,7 +267,7 @@ HRESULT CMenuFocusManager::IsTrackedWindow(HWND hWnd, StackEntry ** pentry)
 
         if (entry.type != TrackedMenuEntry)
         {
-            HRESULT hr = entry.mb->IsWindowOwner(hWnd);
+            HRESULT hr = CMenuBand_IsWindowOwner_RustExport(entry.mb, hWnd);
             if (FAILED_UNEXPECTEDLY(hr))
                 return hr;
             if (hr == S_OK)
@@ -288,16 +290,16 @@ HRESULT CMenuFocusManager::IsTrackedWindowOrParent(HWND hWnd)
 
         if (entry.type != TrackedMenuEntry)
         {
-            HRESULT hr = entry.mb->IsWindowOwner(hWnd);
+            HRESULT hr = CMenuBand_IsWindowOwner_RustExport(entry.mb, hWnd);
             if (FAILED_UNEXPECTEDLY(hr))
                 return hr;
             if (hr == S_OK)
                 return S_OK;
-            if (entry.mb->_IsPopup() == S_OK)
+            if (CMenuBand_IsPopup_RustExport(entry.mb) == S_OK)
             {
                 CComPtr<IUnknown> site;
                 CComPtr<IOleWindow> pw;
-                hr = entry.mb->GetSite(IID_PPV_ARG(IUnknown, &site));
+                hr = CMenuBand_GetSite_RustExport(entry.mb, IID_PPV_ARG(IUnknown, &site));
                 if (FAILED_UNEXPECTEDLY(hr))
                     continue;
                 hr = IUnknown_QueryService(site, SID_SMenuBandParent, IID_PPV_ARG(IOleWindow, &pw));
@@ -346,7 +348,7 @@ LRESULT CMenuFocusManager::ProcessMouseMove(MSG* msg)
     {
         ScreenToClient(child, &pt);
         iHitTestResult = SendMessageW(child, TB_HITTEST, 0, (LPARAM) &pt);
-        isTracking = entry->mb->_IsTracking();
+        isTracking = CMenuBand_IsTracking_RustExport(entry->mb);
 
         if (iHitTestResult < -1)
         {
@@ -384,7 +386,7 @@ LRESULT CMenuFocusManager::ProcessMouseMove(MSG* msg)
         // Mouse moved away from a tracked window
         if (m_entryUnderMouse)
         {
-            m_entryUnderMouse->mb->_ChangeHotItem(NULL, -1, HICF_MOUSE);
+            CMenuBand_ChangeHotItem_RustExport(m_entryUnderMouse->mb, NULL, -1, HICF_MOUSE);
         }
     }
 
@@ -456,7 +458,7 @@ LRESULT CMenuFocusManager::ProcessMouseDown(MSG* msg, BOOL isLButton)
         if (iHitTestResult >= 0)
         {
             TRACE("MouseDown send %d\n", iHitTestResult);
-            entry->mb->_MenuBarMouseDown(child, iHitTestResult, isLButton);
+            CMenuBand_MenuBarMouseDown_RustExport(entry->mb, child, iHitTestResult, isLButton);
         }
     }
 
@@ -498,7 +500,7 @@ LRESULT CMenuFocusManager::ProcessMouseUp(MSG* msg, BOOL isLButton)
         if (iHitTestResult >= 0)
         {
             TRACE("MouseUp send %d\n", iHitTestResult);
-            entry->mb->_MenuBarMouseUp(child, iHitTestResult, isLButton);
+            CMenuBand_MenuBarMouseUp_RustExport(entry->mb, child, iHitTestResult, isLButton);
         }
     }
 
@@ -523,10 +525,10 @@ LRESULT CMenuFocusManager::MsgFilterHook(INT nCode, WPARAM hookWParam, LPARAM ho
             {
                 POINT pt = msg->pt;
                 HWND child = WindowFromPoint(pt);
-                BOOL hoveringMenuBar = m_menuBar->mb->IsWindowOwner(child) == S_OK;
+                BOOL hoveringMenuBar = CMenuBand_IsWindowOwner_RustExport(m_menuBar->mb, child) == S_OK;
                 if (hoveringMenuBar)
                 {
-                    m_menuBar->mb->_BeforeCancelPopup();
+                    CMenuBand_BeforeCancelPopup_RustExport(m_menuBar->mb);
                 }
             }
             break;
@@ -551,13 +553,13 @@ LRESULT CMenuFocusManager::MsgFilterHook(INT nCode, WPARAM hookWParam, LPARAM ho
             case VK_LEFT:
                 if (m_current->hmenu == m_selectedMenu)
                 {
-                    m_parent->mb->_MenuItemSelect(VK_LEFT);
+                    CMenuBand_MenuItemSelect_RustExport(m_parent->mb, VK_LEFT);
                 }
                 break;
             case VK_RIGHT:
                 if (m_selectedItem < 0 || !(m_selectedItemFlags & MF_POPUP))
                 {
-                    m_parent->mb->_MenuItemSelect(VK_RIGHT);
+                    CMenuBand_MenuItemSelect_RustExport(m_parent->mb, VK_RIGHT);
                 }
                 break;
             }
@@ -603,10 +605,10 @@ LRESULT CMenuFocusManager::GetMsgHook(INT nCode, WPARAM hookWParam, LPARAM hookL
             {
                 POINT pt = msg->pt;
                 HWND child = WindowFromPoint(pt);
-                BOOL hoveringMenuBar = m_menuBar->mb->IsWindowOwner(child) == S_OK;
+                BOOL hoveringMenuBar = CMenuBand_IsWindowOwner_RustExport(m_menuBar->mb, child) == S_OK;
                 if (hoveringMenuBar)
                 {
-                    m_current->mb->_MenuItemSelect(MPOS_FULLCANCEL);
+                    CMenuBand_MenuItemSelect_RustExport(m_current->mb, MPOS_FULLCANCEL);
                     break;
                 }
             }
@@ -617,7 +619,7 @@ LRESULT CMenuFocusManager::GetMsgHook(INT nCode, WPARAM hookWParam, LPARAM hookL
 
                 if (IsTrackedWindowOrParent(child) != S_OK)
                 {
-                    m_current->mb->_MenuItemSelect(MPOS_FULLCANCEL);
+                    CMenuBand_MenuItemSelect_RustExport(m_current->mb, MPOS_FULLCANCEL);
                     break;
                 }
             }
@@ -652,22 +654,22 @@ LRESULT CMenuFocusManager::GetMsgHook(INT nCode, WPARAM hookWParam, LPARAM hookL
                 case VK_MENU:
                 case VK_LMENU:
                 case VK_RMENU:
-                    m_current->mb->_MenuItemSelect(MPOS_FULLCANCEL);
+                    CMenuBand_MenuItemSelect_RustExport(m_current->mb, MPOS_FULLCANCEL);
                     break;
                 case VK_RETURN:
-                    m_current->mb->_MenuItemSelect(MPOS_EXECUTE);
+                    CMenuBand_MenuItemSelect_RustExport(m_current->mb, MPOS_EXECUTE);
                     break;
                 case VK_LEFT:
-                    m_current->mb->_MenuItemSelect(VK_LEFT);
+                    CMenuBand_MenuItemSelect_RustExport(m_current->mb, VK_LEFT);
                     break;
                 case VK_RIGHT:
-                    m_current->mb->_MenuItemSelect(VK_RIGHT);
+                    CMenuBand_MenuItemSelect_RustExport(m_current->mb, VK_RIGHT);
                     break;
                 case VK_UP:
-                    m_current->mb->_MenuItemSelect(VK_UP);
+                    CMenuBand_MenuItemSelect_RustExport(m_current->mb, VK_UP);
                     break;
                 case VK_DOWN:
-                    m_current->mb->_MenuItemSelect(VK_DOWN);
+                    CMenuBand_MenuItemSelect_RustExport(m_current->mb, VK_DOWN);
                     break;
                 }
                 msg->message = WM_NULL;
@@ -754,7 +756,7 @@ HRESULT CMenuFocusManager::UpdateFocus()
     // Obtain the top-level window for the new active menu
     if (m_current && m_current->type != TrackedMenuEntry)
     {
-        hr = m_current->mb->_GetTopLevelWindow(&(m_current->hwnd));
+        hr = CMenuBand_GetTopLevelWindow_RustExport(m_current->mb, &(m_current->hwnd));
         if (FAILED_UNEXPECTEDLY(hr))
             return hr;
     }
@@ -819,7 +821,7 @@ HRESULT CMenuFocusManager::UpdateFocus()
             // Get the top-level window from the top popup
             CComPtr<IServiceProvider> bandSite;
             CComPtr<IOleWindow> deskBar;
-            hr = topMenu->mb->GetSite(IID_PPV_ARG(IServiceProvider, &bandSite));
+            hr = CMenuBand_GetSite_RustExport(topMenu->mb, IID_PPV_ARG(IServiceProvider, &bandSite));
             if (FAILED(hr))
                 goto NoCapture;
             hr = bandSite->QueryService(SID_SMenuPopup, IID_PPV_ARG(IOleWindow, &deskBar));
@@ -880,7 +882,8 @@ HRESULT CMenuFocusManager::PushMenuBar(CMenuBand * mb)
 {
     TRACE("PushMenuBar %p\n", mb);
 
-    mb->AddRef();
+    /* Retaining the opaque Rust band: balance with Release in PopMenuBar */
+    CMenuBand_AddRef_RustExport(mb);
 
     _ASSERT(m_bandCount == 0);
 
@@ -896,7 +899,8 @@ HRESULT CMenuFocusManager::PushMenuPopup(CMenuBand * mb)
 {
     TRACE("PushTrackedPopup %p\n", mb);
 
-    mb->AddRef();
+    /* Retaining the opaque Rust band: balance with Release in PopMenuPopup */
+    CMenuBand_AddRef_RustExport(mb);
 
     _ASSERT(!m_current || m_current->type != TrackedMenuEntry);
 
@@ -910,8 +914,8 @@ HRESULT CMenuFocusManager::PushMenuPopup(CMenuBand * mb)
 
     if (m_parent && m_parent->type != TrackedMenuEntry)
     {
-        m_parent->mb->_SetChildBand(mb);
-        mb->_SetParentBand(m_parent->mb);
+        CMenuBand_SetChildBand_RustExport(m_parent->mb, mb);
+        CMenuBand_SetParentBand_RustExport(mb, m_parent->mb);
     }
 
     return hr;
@@ -965,9 +969,10 @@ HRESULT CMenuFocusManager::PopMenuBar(CMenuBand * mb)
     if (!mbc)
         return E_FAIL;
 
-    mbc->_SetParentBand(NULL);
+    CMenuBand_SetParentBand_RustExport(mbc, NULL);
 
-    mbc->Release();
+    /* Balances the AddRef in PushMenuBar */
+    CMenuBand_Release_RustExport(mbc);
 
     hr = UpdateFocus();
     if (FAILED_UNEXPECTEDLY(hr))
@@ -976,7 +981,7 @@ HRESULT CMenuFocusManager::PopMenuBar(CMenuBand * mb)
     if (m_current)
     {
         _ASSERT(m_current->type != TrackedMenuEntry);
-        m_current->mb->_SetChildBand(NULL);
+        CMenuBand_SetChildBand_RustExport(m_current->mb, NULL);
     }
 
     return S_OK;
@@ -1012,9 +1017,10 @@ HRESULT CMenuFocusManager::PopMenuPopup(CMenuBand * mb)
     if (!mbc)
         return E_FAIL;
 
-    mbc->_SetParentBand(NULL);
+    CMenuBand_SetParentBand_RustExport(mbc, NULL);
 
-    mbc->Release();
+    /* Balances the AddRef in PushMenuPopup */
+    CMenuBand_Release_RustExport(mbc);
 
     hr = UpdateFocus();
     if (FAILED_UNEXPECTEDLY(hr))
@@ -1023,7 +1029,7 @@ HRESULT CMenuFocusManager::PopMenuPopup(CMenuBand * mb)
     if (m_current)
     {
         _ASSERT(m_current->type != TrackedMenuEntry);
-        m_current->mb->_SetChildBand(NULL);
+        CMenuBand_SetChildBand_RustExport(m_current->mb, NULL);
     }
 
     return S_OK;
@@ -1057,4 +1063,53 @@ HRESULT CMenuFocusManager::PopTrackedPopup(HMENU popup)
         return hr;
 
     return S_OK;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Forward bridges: the Rust-owned CMenuBand (shell32-rust/src/menu_band.rs)
+ * drives the focus manager through these extern "C" shims (contract:
+ * CMenuBand-bridges.md, shell32-com lane). The `CMenuBand *mb` parameters are
+ * the opaque Rust band pointer (see CMenuBandRustExports.h); the manager
+ * stores them in StackEntry::mb and only ever hands them back through the
+ * CMenuBand_*_RustExport calls above.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+extern "C" CMenuFocusManager* WINAPI CMenuFocusManager_AcquireManager_RustBridge(void)
+{
+    return CMenuFocusManager::AcquireManager();
+}
+
+extern "C" void WINAPI CMenuFocusManager_ReleaseManager_RustBridge(CMenuFocusManager *mgr)
+{
+    CMenuFocusManager::ReleaseManager(mgr);
+}
+
+extern "C" HRESULT WINAPI CMenuFocusManager_PushMenuBar_RustBridge(CMenuFocusManager *mgr, CMenuBand *mb)
+{
+    return mgr->PushMenuBar(mb);
+}
+
+extern "C" HRESULT WINAPI CMenuFocusManager_PushMenuPopup_RustBridge(CMenuFocusManager *mgr, CMenuBand *mb)
+{
+    return mgr->PushMenuPopup(mb);
+}
+
+extern "C" HRESULT WINAPI CMenuFocusManager_PushTrackedPopup_RustBridge(CMenuFocusManager *mgr, HMENU popup)
+{
+    return mgr->PushTrackedPopup(popup);
+}
+
+extern "C" HRESULT WINAPI CMenuFocusManager_PopMenuBar_RustBridge(CMenuFocusManager *mgr, CMenuBand *mb)
+{
+    return mgr->PopMenuBar(mb);
+}
+
+extern "C" HRESULT WINAPI CMenuFocusManager_PopMenuPopup_RustBridge(CMenuFocusManager *mgr, CMenuBand *mb)
+{
+    return mgr->PopMenuPopup(mb);
+}
+
+extern "C" HRESULT WINAPI CMenuFocusManager_PopTrackedPopup_RustBridge(CMenuFocusManager *mgr, HMENU popup)
+{
+    return mgr->PopTrackedPopup(popup);
 }

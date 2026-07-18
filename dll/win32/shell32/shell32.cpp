@@ -593,6 +593,31 @@ public:
     };
 };
 
+/* shellmenu/shellmenu.h (via precomp.h) macro-renames the 2-arg internal creator
+ * CMenuBand_CreateInstance(riid, ppv) to RSHELL_CMenuBand_CreateInstance. The Rust factory
+ * export (menuband-rust) owns the plain 3-arg name, so drop the macro in this TU before
+ * declaring it. (menuband-rust also exports RSHELL_CMenuBand_CreateInstance for the in-tree
+ * shellmenu callers.) */
+#ifdef CMenuBand_CreateInstance
+#undef CMenuBand_CreateInstance
+#endif
+extern "C" HRESULT WINAPI CMenuBand_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CMenuBandRustEntry : public CMenuBand
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CMenuBand_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
@@ -622,7 +647,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_MoveToMenu, CMoveToMenu)
     OBJECT_ENTRY(CLSID_StartMenu, CStartMenuDummy)
     OBJECT_ENTRY(CLSID_MenuBandSite, CMenuSite)
-    OBJECT_ENTRY(CLSID_MenuBand, CMenuBand)
+    OBJECT_ENTRY(CLSID_MenuBand, CMenuBandRustEntry)
     OBJECT_ENTRY(CLSID_MenuDeskBar, CMenuDeskBar)
     OBJECT_ENTRY(CLSID_MergedFolder, CMergedFolder)
     OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandlerRustEntry)
@@ -638,6 +663,19 @@ extern "C" void WINAPI Shell32RustObjectLock()
 }
 
 extern "C" void WINAPI Shell32RustObjectUnlock()
+{
+    gModule.Unlock();
+}
+
+/* menuband-rust (libmenuband_rust.a) is linked into both shell32.dll and rshell.dll and
+ * locks its host DLL's COM module around each CMenuBand instance. shell32's copy forwards
+ * to gModule; rshell provides its own in base/shell/rshell/misc.cpp. */
+extern "C" void WINAPI MenuBandRustModuleLock()
+{
+    gModule.Lock();
+}
+
+extern "C" void WINAPI MenuBandRustModuleUnlock()
 {
     gModule.Unlock();
 }
