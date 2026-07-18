@@ -45,7 +45,7 @@ Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 fro
 
 | Batch | Top targets (native LOC) |
 |---|---|
-| **Winsock / net client** | ws2_32 (14K), dhcpcsvc (6.4K), dnsapi (3.2K), mswsock, ws2help, wshtcpip |
+| **Winsock / net client** | ws2_32 (14K) ✅, **wshtcpip ✅** (2026-07-17, first satellite — recipe in its commit); dhcpcsvc (6.4K); dnsapi (3.2K, +adns/RPC), mswsock, ws2help (dual-role static lib) — all **translated & banked** (`tools/rustconv/.responses/`), integration owed |
 | **Setup / PnP / device** | devmgr (10K), netcfgx (9K), syssetup (9K), umpnpmgr (7K), newdev, msports |
 | **Control panels (`dll/cpl`)** | desk (11.5K), sysdm (7.9K), intl (5.2K), mmsys (3.8K), timedate, access, main, usrmgr, powercfg, input — ~15 CPLs, uniform shape, very batchable |
 | **Services (`base/services`)** | eventlog (3.5K), netshell (4.5K), svchost, wkssvc, dnsrslvr, audiosrv, wlansvc |
