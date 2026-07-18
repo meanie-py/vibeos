@@ -1716,7 +1716,7 @@ pub unsafe extern "C" fn TranslateCOLORREF(pdc: PDC, crColor: COLORREF) -> u32 {
         crColor = PALETTE_ulGetRGBColorFromIndex(ppalDC, index);
     }
     else if (crColor & 0x02000000) != 0 {
-        if (*pdc).dclevel.hpal != (*StockObjects.as_ptr().add(DEFAULT_PALETTE as usize)) as _ {
+        if (*pdc).dclevel.hpal != (*(*(&raw const StockObjects)).as_ptr().add(DEFAULT_PALETTE as usize)) as _ {
             ppalDC = (*pdc).dclevel.ppal;
             index = PALETTE_ulGetNearestIndex(ppalDC, crColor & 0xFFFFFF);
             crColor = PALETTE_ulGetRGBColorFromIndex(ppalDC, index);

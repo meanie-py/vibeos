@@ -8122,3 +8122,69 @@ pass=1566/fail=87 == UP baseline (was: ~60s strands within seconds of start, TIM
   `sizeof(KTHREAD)` stub — no DWARF wrestling (split-DWARF `.dwo` are canonical-path
   + often unloadable), no hand-derived offsets. gdb data symbols need manual reloc:
   `llvm-nm <exe> | grep <sym>` → RVA + runtime kbase (add-symbol-file only maps .text).
+
+### 9.96 (ROOT-CAUSED, fix OWED 2026-07-17) An arm64 kmtest quarantine mislabeled "fastfat stub bugcheck" was actually a translation-fault STORM — `MmAccessFault` returns SUCCESS but leaves the section-view leaf PTE invalid, so a kernel `RtlCompareMemory` re-faults forever (HANG, no bugcheck)
+
+**Symptom.** arm64 `ZwMapViewOfSection` kmtest quarantined 2026-07-16 as "BUGCHECK 0x23 FAT_FILE_SYSTEM
+P1=0xdead0000 = fastfat STUB_BUGCHECK → translate the untranslated fastfat fn." That label was **wrong**.
+Fresh sweep: `ZwMapViewOfSection INCOMPLETE`, `summary.json bugcheck=null` — i.e. an **in-kernel HANG**, not
+a bugcheck. No `FASTFAT_STUB_HIT` anywhere in the serial. The two-run A/B (before/after an unrelated fastfat
+fix) was identical: the test starts, one `FatAllocateDiskSpace` runs, then silence.
+
+**Triage recipe (hang with no faulting PC — the payoff pattern).** Boot the *already-staged* conformance
+media under GDB (`qemu/start.sh arm64 --gdb`; a conformance build leaves the sweep payload in the ramdisk,
+so it auto-runs), `wait-for.sh` the test's start line, then:
+- `inspect.sh $RUN --command bt-all-cpus` + `--command sample-pc` ×4. **A byte-for-byte identical PC across
+  every sample = a stuck CPU** (here `0xfffff800421e175c`, in `mem::compare_memory` / `RtlCompareMemory`).
+- `info registers` caught PC oscillating to `KiArm64VectorTable+0x200` (current-EL **sync** vector) — so it's
+  not a compute spin, it's a **fault storm**: fault → handler → ERET → same fault.
+- Decode the fault: `p/x $FAR_EL1` (=`0x4e0000`, a low USER-VA), `p/x $ESR_EL1` (=`0x96000007` → EC `0x25`
+  data-abort-current-EL, DFSC `0x07` **translation fault L3 = leaf PTE invalid**, WnR=0 read), `p/x $ELR_EL1`
+  (=the faulting `ldrb`). `RtlCompareMemory` is a leaf, so **`x30` still holds the caller's return addr** — no
+  frame-pointer walk needed (the `bt` past frame #1 was garbage: `#3 0x12`).
+
+**Root cause (fully pinned via GDB + QMP gva2gpa — supersedes the initial "self-map wrong-slot" guess).**
+The self-map is NOT wrong-slot: neighbor L3 slots (`0x4df000`,`0x4e1000`) read `0x0` correctly, so
+`MiAddressToPte(0x4e0000)` @ `0xFFFFF68000002700` genuinely IS `0x4e0000`'s L3 descriptor. It reads
+**`0x45c32441`**. Decode: PFN `0x45c32`, AF(bit10) set, AP(bit6) set, **bit0(Valid) set, bit1 CLEAR**. On
+arm64 a valid L3 *page* descriptor requires **bits[1:0]=`0b11`** — every known-good mapped user page reads
+`0x...4c3` (`0x461b74c3`,`0x461c04c3`,`0x43c8e4c3`); the PDE/PPE table descriptors likewise end in `3`. A
+descriptor with bits[1:0]=`0b01` at L3 is the *reserved/invalid* encoding → the CPU faults (QMP
+`gva2gpa 0x4e0000` = **Unmapped**, DFSC 0x07). BUT `MMPTE.valid()` (`ntkrnl-sys/src/mm.rs:310`) is
+`(self.Long & 1) != 0` — **bit0 only** — so it reports this malformed descriptor as *valid*. Chain confirmed
+by breakpoints: `MmAccessFault`(FaultCode=0,Addr=0x4e0000,KernelMode) returns **x0=0 (SUCCESS)**;
+`MmArmAccessFault` (ARM3) NOT hit and `MmCreateVirtualMapping` NOT hit → the fault takes the **early-out at
+`mm/section.rs:2203-2205`**: `if MmIsPagePresent(Process, Address) != 0 { return STATUS_SUCCESS; }`. arm64
+`MmIsPagePresent` (`arm64/page.rs:148`) walks `MiAddressToPxe/Ppe/Pde` (all valid) then returns
+`(*MiAddressToPte(Address)).valid()` = TRUE for the `0b01` descriptor → spurious present → early SUCCESS →
+ERET → re-fault → **hang**. **Same root almost certainly drives the `MmSection` hang** (same section-view path).
+
+**Bug = a malformed L3 descriptor written with bit0 but not bit1**, by a legacy/proto→hardware PTE builder that
+uses `set_valid(true)` (bit0 only, `mm.rs:315`) instead of the correct `MI_MAKE_HARDWARE_PTE` path (which bases
+on `MiDetermineUserGlobalPteMask` → bits[1:0]=`0b11` → the good `0x...4c3`). Candidate writers all set bit0
+without guaranteeing bit1: `arm64/page.rs:378` (`MmSetPageProtect`), `ARM3/helpers.rs:533`
+(`MI_MAKE_HARDWARE_PTE_USER`), `ARM3/pagfault.rs:1122` (transition→valid resolve). Each ORs `MmProtectToPteMask`
+whose non-zero entries carry `_B=0x402` (bit1+AF) — so the culprit is a path reaching one of these with a
+**zero/NOACCESS mask index** (or a bit1-clearing step), which set_valid + `MI_MAKE_ACCESSED_PAGE` then leaves at
+`0b01`. **FIX (owed, task #7): a fresh boot with a generic writer-side breakpoint (the fixed slot address
+varies per boot, so watch the writers, not `0xFFFFF680...2700`) to catch which builder emits the `0b01`
+descriptor, then make it set bits[1:0]=`0b11` for L3 pages; ×3-gate.** Do NOT globally change `MMPTE.valid()`
+to `&3==3` — L1/L2 *block* descriptors legitimately use `0b01`, and `valid()`/set_valid are shared with
+amd64/i386 where bit1 = R/W.
+
+**Reusable:** (a) A conformance quarantine note is a *hypothesis*, not ground truth — re-triage from a fresh
+repro before acting on an old label; "0xdead0000 stub bugcheck" here was a stale guess and the real bug was a
+hang. (b) **Persistent same-DFSC translation-fault storm + no bugcheck ⟹ the fault resolver returned SUCCESS
+without validating the PTE** (arm64 doesn't cache faults, so a real re-fault means a still-invalid descriptor).
+(c) For a leaf-function fault, `x30`/`ELR` beat `bt` (which unwinds into garbage without frame pointers).
+(d) A separate latent keeper found while chasing this: `FatOpenExistingFcb` (create.rs) called the snake_case
+`rust_cohab_stub.c` STUB_BUGCHECK stubs `fat_supersede_or_overwrite_file` + `fat_check_system_security_access`
+while its sibling `FatOpenExistingFile` already called the **real in-file** `FatSupersedeOrOverwriteFile` /
+`FatCheckSystemSecurityAccess` (identical sigs) — re-pointed (free, no re-translation). Any supersede/overwrite
+of an *existing* FAT file through that path would have 0x23/0xdead0000'd; not the ZwMapViewOfSection hang.
+(e) **QMP `gva2gpa <va>` is the ground-truth oracle for "is this VA actually mapped?"** — it uses the CPU's
+real translation, so it settles any software-PTE-vs-hardware disagreement instantly (`inspect.sh $RUN --command
+raw 'monitor gva2gpa 0xADDR'`). (f) On arm64 a *valid L3 page* descriptor is bits[1:0]=`0b11`; bit0-alone
+(`0b01`) is reserved-invalid at L3 → the CPU faults while a bit0-only `.valid()` says "present." Read a
+known-good mapped page's PTE (`x/1gx` at `PTE_BASE + (va>>12)*8`, `PTE_BASE=0xFFFFF68000000000`) to learn the
+expected bit pattern before trusting a software validity predicate.

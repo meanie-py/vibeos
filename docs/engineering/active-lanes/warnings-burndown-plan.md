@@ -89,6 +89,22 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
 
 ## Progress log
 
+- **2026-07-17 — `win32k-rust` 118 unsuppressed `static_mut_refs` → ZERO (the boot-path side-finding, closed).**
+  win32k-rust never carried the `static_mut_refs` allow, so its 118 sites leaked raw as
+  warnings (nobody gates rustc warning *counts*, so they sat unfixed). Census ×3: 118 per
+  arch, **146 unique** across arches (the 28-site delta is `#[cfg(target_arch)]` code compiled
+  only on specific targets — source bytes identical, so the union applies to the one tree
+  cleanly). win32k is autoref-heavy: only **10** plain `&STATIC` sites, **108** method/field-autoref
+  (big global-state structs — `gafAsyncKeyState.as_mut_ptr()`, `gpsi.field`, `size_of_val(&gKeyboardInfo)`).
+  Applied the **type-preserving raw-deref wrap uniformly to all 146** (`smr_wrap_residual.py`):
+  `&X`→`&*(&raw const X)`, `&mut X`→`&mut *(&raw mut X)`, `X.rest`→`(*(&raw kw X)).rest` (kw from
+  rustc's shared/mutable message). Unlike the pure-`&raw` prefix (which yields a *raw pointer* and
+  breaks the `size_of_val`/ref-needed sites with E0308), the wrap yields a *reference to a deref
+  expression* — silences the lint AND preserves the reference/place type at every shape, so **zero
+  ref-needed breakage**. Oracle-guarded ×3: `rc=0, static_mut_refs=0, errors=0` on all arches; own-crate
+  warning histogram delta is exactly `static_mut_refs 118→0` with **every other class +0** (the 6
+  pre-existing `unused_parens` etc. unchanged — no new lints). 16 files, boot-path so full 3-arch gate
+  before landing. No allow removed (win32k never had one) — the class is simply at zero now.
 - **2026-07-16 — Tier-3 (timebombs) LANDED** (`5125e242d40` on master): deref_nullptr
   128 sites → `offset_of!`; unsupported_calling_conventions 164 sites (fastcall/stdcall,
   per-arch ABI preserved via a `fastcall_fn!` dual-emit macro); bindgen
@@ -192,11 +208,11 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   **0 unused_unsafe, 0 unused_braces, 0 errors**; full own-crate warning histogram delta is `unused_unsafe
   29→0` and **every other class +0** (no new warnings). Multi-line `= { [..] }` initializers keep
   their (non-warning) braces — `unused_braces`' multi-line heuristic doesn't flag them, goal is 0
-  warnings not 0 braces. Removes 24 blanket suppressions (durability). **Side finding (follow-up, NOT
-  this batch): `win32k-rust` leaks 118 `static_mut_refs` UNSUPPRESSED** — it never carried the
-  `static_mut_refs` allow so it was never in the peel campaign; needs the `&raw`/wrap treatment (it's
-  a boot-path crate, so careful + gated). Does not affect the "30/35 allow-carrying crates → zero"
-  claim (win32k was never allow-carrying).
+  warnings not 0 braces. Removes 24 blanket suppressions (durability). **Side finding (NOW CLOSED — see the
+  2026-07-17 win32k entry at the top of this log): `win32k-rust` leaked 118 `static_mut_refs`
+  UNSUPPRESSED** — it never carried the `static_mut_refs` allow so it was never in the peel campaign;
+  driven to zero via the type-preserving raw-deref wrap (boot-path, full-gated). Does not affect the
+  "30/35 allow-carrying crates → zero" claim (win32k was never allow-carrying — it's a separate axis).
 - **2026-07-17 — FNPTR-CMP follow-up CLOSED (no code change; see Owed-follow-ups entry).**
   Peel-and-census of all 34 audited allows showed every one of the 63 fn-ptr comparisons is an
   `Option<fn>` compare (bindgen renders Windows fn-ptr typedefs as `Option<extern fn>`), so

@@ -153,10 +153,10 @@ unsafe fn UserGetMouseButtonsState_impl() -> WORD {
 
     wRet = (*IntGetSysCursorInfo()).ButtonsDown as WORD;
 
-    if IS_KEY_DOWN(gafAsyncKeyState.as_ptr(), VK_SHIFT) != 0 {
+    if IS_KEY_DOWN((*(&raw const gafAsyncKeyState)).as_ptr(), VK_SHIFT) != 0 {
         wRet |= MK_SHIFT as WORD;
     }
-    if IS_KEY_DOWN(gafAsyncKeyState.as_ptr(), VK_CONTROL) != 0 {
+    if IS_KEY_DOWN((*(&raw const gafAsyncKeyState)).as_ptr(), VK_CONTROL) != 0 {
         wRet |= MK_CONTROL as WORD;
     }
 
@@ -391,7 +391,7 @@ pub unsafe extern "stdcall" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjecte
     gMouseHistoryOfMoves[gcMouseHistoryOfMoves as usize].time = Msg.time;
     gMouseHistoryOfMoves[gcMouseHistoryOfMoves as usize].dwExtraInfo = (*pmi).dwExtraInfo;
     gcMouseHistoryOfMoves += 1;
-    if gcMouseHistoryOfMoves as usize == ARRAYSIZE(gMouseHistoryOfMoves.as_ptr() as *const _) as usize {
+    if gcMouseHistoryOfMoves as usize == ARRAYSIZE((*(&raw const gMouseHistoryOfMoves)).as_ptr() as *const _) as usize {
         gcMouseHistoryOfMoves = 0;
     }
 
@@ -399,26 +399,26 @@ pub unsafe extern "stdcall" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjecte
         UserSetCursorPos(ptCursor.x, ptCursor.y, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
     }
 
-    if IS_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_SHIFT) != 0 {
+    if IS_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_SHIFT) != 0 {
         (*pCurInfo).ButtonsDown |= MK_SHIFT as UINT;
     } else {
         (*pCurInfo).ButtonsDown &= !(MK_SHIFT as UINT);
     }
 
-    if IS_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_CONTROL) != 0 {
+    if IS_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_CONTROL) != 0 {
         (*pCurInfo).ButtonsDown |= MK_CONTROL as UINT;
     } else {
         (*pCurInfo).ButtonsDown &= !(MK_CONTROL as UINT);
     }
 
     if dwFlags & MOUSEEVENTF_LEFTDOWN != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_LBUTTON, 1);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_LBUTTON, 1);
         Msg.message = WM_LBUTTONDOWN;
         (*pCurInfo).ButtonsDown |= MK_LBUTTON as UINT;
         Msg.wParam |= MK_LBUTTON as WPARAM;
         co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
     } else if dwFlags & MOUSEEVENTF_LEFTUP != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_LBUTTON, 0);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_LBUTTON, 0);
         Msg.message = WM_LBUTTONUP;
         (*pCurInfo).ButtonsDown &= !(MK_LBUTTON as UINT);
         Msg.wParam &= !(MK_LBUTTON as WPARAM);
@@ -426,13 +426,13 @@ pub unsafe extern "stdcall" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjecte
     }
 
     if dwFlags & MOUSEEVENTF_MIDDLEDOWN != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_MBUTTON, 1);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MBUTTON, 1);
         Msg.message = WM_MBUTTONDOWN;
         (*pCurInfo).ButtonsDown |= MK_MBUTTON as UINT;
         Msg.wParam |= MK_MBUTTON as WPARAM;
         co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
     } else if dwFlags & MOUSEEVENTF_MIDDLEUP != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_MBUTTON, 0);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MBUTTON, 0);
         Msg.message = WM_MBUTTONUP;
         (*pCurInfo).ButtonsDown &= !(MK_MBUTTON as UINT);
         Msg.wParam &= !(MK_MBUTTON as WPARAM);
@@ -440,13 +440,13 @@ pub unsafe extern "stdcall" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjecte
     }
 
     if dwFlags & MOUSEEVENTF_RIGHTDOWN != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_RBUTTON, 1);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_RBUTTON, 1);
         Msg.message = WM_RBUTTONDOWN;
         (*pCurInfo).ButtonsDown |= MK_RBUTTON as UINT;
         Msg.wParam |= MK_RBUTTON as WPARAM;
         co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
     } else if dwFlags & MOUSEEVENTF_RIGHTUP != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_RBUTTON, 0);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_RBUTTON, 0);
         Msg.message = WM_RBUTTONUP;
         (*pCurInfo).ButtonsDown &= !(MK_RBUTTON as UINT);
         Msg.wParam &= !(MK_RBUTTON as WPARAM);
@@ -461,13 +461,13 @@ pub unsafe extern "stdcall" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjecte
     if dwFlags & MOUSEEVENTF_XDOWN != 0 {
         Msg.message = WM_XBUTTONDOWN;
         if (*pmi).mouseData & XBUTTON1 != 0 {
-            SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_XBUTTON1, 1);
+            SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_XBUTTON1, 1);
             (*pCurInfo).ButtonsDown |= MK_XBUTTON1 as UINT;
             Msg.wParam |= MAKEWPARAM(MK_XBUTTON1 as WORD, XBUTTON1 as WORD) as WPARAM;
             co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
         }
         if (*pmi).mouseData & XBUTTON2 != 0 {
-            SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_XBUTTON2, 1);
+            SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_XBUTTON2, 1);
             (*pCurInfo).ButtonsDown |= MK_XBUTTON2 as UINT;
             Msg.wParam |= MAKEWPARAM(MK_XBUTTON2 as WORD, XBUTTON2 as WORD) as WPARAM;
             co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
@@ -475,14 +475,14 @@ pub unsafe extern "stdcall" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjecte
     } else if dwFlags & MOUSEEVENTF_XUP != 0 {
         Msg.message = WM_XBUTTONUP;
         if (*pmi).mouseData & XBUTTON1 != 0 {
-            SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_XBUTTON1, 0);
+            SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_XBUTTON1, 0);
             (*pCurInfo).ButtonsDown &= !(MK_XBUTTON1 as UINT);
             Msg.wParam &= !(MK_XBUTTON1 as WPARAM);
             Msg.wParam |= MAKEWPARAM(0, XBUTTON2 as WORD) as WPARAM;
             co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
         }
         if (*pmi).mouseData & XBUTTON2 != 0 {
-            SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_XBUTTON2, 0);
+            SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_XBUTTON2, 0);
             (*pCurInfo).ButtonsDown &= !(MK_XBUTTON2 as UINT);
             Msg.wParam &= !(MK_XBUTTON2 as WPARAM);
             Msg.wParam |= MAKEWPARAM(0, XBUTTON2 as WORD) as WPARAM;
@@ -539,7 +539,7 @@ pub unsafe extern "C" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjected: BOO
     gMouseHistoryOfMoves[gcMouseHistoryOfMoves as usize].time = Msg.time;
     gMouseHistoryOfMoves[gcMouseHistoryOfMoves as usize].dwExtraInfo = (*pmi).dwExtraInfo;
     gcMouseHistoryOfMoves += 1;
-    if gcMouseHistoryOfMoves as usize == ARRAYSIZE(gMouseHistoryOfMoves.as_ptr() as *const _) as usize {
+    if gcMouseHistoryOfMoves as usize == ARRAYSIZE((*(&raw const gMouseHistoryOfMoves)).as_ptr() as *const _) as usize {
         gcMouseHistoryOfMoves = 0;
     }
 
@@ -547,26 +547,26 @@ pub unsafe extern "C" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjected: BOO
         UserSetCursorPos(ptCursor.x, ptCursor.y, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
     }
 
-    if IS_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_SHIFT) != 0 {
+    if IS_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_SHIFT) != 0 {
         (*pCurInfo).ButtonsDown |= MK_SHIFT as UINT;
     } else {
         (*pCurInfo).ButtonsDown &= !(MK_SHIFT as UINT);
     }
 
-    if IS_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_CONTROL) != 0 {
+    if IS_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_CONTROL) != 0 {
         (*pCurInfo).ButtonsDown |= MK_CONTROL as UINT;
     } else {
         (*pCurInfo).ButtonsDown &= !(MK_CONTROL as UINT);
     }
 
     if dwFlags & MOUSEEVENTF_LEFTDOWN != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_LBUTTON, 1);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_LBUTTON, 1);
         Msg.message = WM_LBUTTONDOWN;
         (*pCurInfo).ButtonsDown |= MK_LBUTTON as UINT;
         Msg.wParam |= MK_LBUTTON as WPARAM;
         co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
     } else if dwFlags & MOUSEEVENTF_LEFTUP != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_LBUTTON, 0);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_LBUTTON, 0);
         Msg.message = WM_LBUTTONUP;
         (*pCurInfo).ButtonsDown &= !(MK_LBUTTON as UINT);
         Msg.wParam &= !(MK_LBUTTON as WPARAM);
@@ -574,13 +574,13 @@ pub unsafe extern "C" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjected: BOO
     }
 
     if dwFlags & MOUSEEVENTF_MIDDLEDOWN != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_MBUTTON, 1);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MBUTTON, 1);
         Msg.message = WM_MBUTTONDOWN;
         (*pCurInfo).ButtonsDown |= MK_MBUTTON as UINT;
         Msg.wParam |= MK_MBUTTON as WPARAM;
         co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
     } else if dwFlags & MOUSEEVENTF_MIDDLEUP != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_MBUTTON, 0);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_MBUTTON, 0);
         Msg.message = WM_MBUTTONUP;
         (*pCurInfo).ButtonsDown &= !(MK_MBUTTON as UINT);
         Msg.wParam &= !(MK_MBUTTON as WPARAM);
@@ -588,13 +588,13 @@ pub unsafe extern "C" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjected: BOO
     }
 
     if dwFlags & MOUSEEVENTF_RIGHTDOWN != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_RBUTTON, 1);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_RBUTTON, 1);
         Msg.message = WM_RBUTTONDOWN;
         (*pCurInfo).ButtonsDown |= MK_RBUTTON as UINT;
         Msg.wParam |= MK_RBUTTON as WPARAM;
         co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
     } else if dwFlags & MOUSEEVENTF_RIGHTUP != 0 {
-        SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_RBUTTON, 0);
+        SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_RBUTTON, 0);
         Msg.message = WM_RBUTTONUP;
         (*pCurInfo).ButtonsDown &= !(MK_RBUTTON as UINT);
         Msg.wParam &= !(MK_RBUTTON as WPARAM);
@@ -609,13 +609,13 @@ pub unsafe extern "C" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjected: BOO
     if dwFlags & MOUSEEVENTF_XDOWN != 0 {
         Msg.message = WM_XBUTTONDOWN;
         if (*pmi).mouseData & XBUTTON1 != 0 {
-            SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_XBUTTON1, 1);
+            SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_XBUTTON1, 1);
             (*pCurInfo).ButtonsDown |= MK_XBUTTON1 as UINT;
             Msg.wParam |= MAKEWPARAM(MK_XBUTTON1 as WORD, XBUTTON1 as WORD) as WPARAM;
             co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
         }
         if (*pmi).mouseData & XBUTTON2 != 0 {
-            SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_XBUTTON2, 1);
+            SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_XBUTTON2, 1);
             (*pCurInfo).ButtonsDown |= MK_XBUTTON2 as UINT;
             Msg.wParam |= MAKEWPARAM(MK_XBUTTON2 as WORD, XBUTTON2 as WORD) as WPARAM;
             co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
@@ -623,14 +623,14 @@ pub unsafe extern "C" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjected: BOO
     } else if dwFlags & MOUSEEVENTF_XUP != 0 {
         Msg.message = WM_XBUTTONUP;
         if (*pmi).mouseData & XBUTTON1 != 0 {
-            SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_XBUTTON1, 0);
+            SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_XBUTTON1, 0);
             (*pCurInfo).ButtonsDown &= !(MK_XBUTTON1 as UINT);
             Msg.wParam &= !(MK_XBUTTON1 as WPARAM);
             Msg.wParam |= MAKEWPARAM(0, XBUTTON2 as WORD) as WPARAM;
             co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
         }
         if (*pmi).mouseData & XBUTTON2 != 0 {
-            SET_KEY_DOWN(gafAsyncKeyState.as_mut_ptr(), VK_XBUTTON2, 0);
+            SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_XBUTTON2, 0);
             (*pCurInfo).ButtonsDown &= !(MK_XBUTTON2 as UINT);
             Msg.wParam &= !(MK_XBUTTON2 as WPARAM);
             Msg.wParam |= MAKEWPARAM(0, XBUTTON2 as WORD) as WPARAM;

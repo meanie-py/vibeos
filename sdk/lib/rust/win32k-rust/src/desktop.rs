@@ -2723,7 +2723,7 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
             }
         }
     } else {
-        DesktopBrush = (*StockObjects.as_ptr().add(BLACK_BRUSH as usize)) as _;
+        DesktopBrush = (*(*(&raw const StockObjects)).as_ptr().add(BLACK_BRUSH as usize)) as _;
     }
 
     // Diagnostic (arm64 black-desktop hunt): first few desktop paints, dump
@@ -2817,15 +2817,15 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
 
         if wszzVersion[0] == 0 {
             Status = GetSystemVersionString(
-                wszzVersion.as_mut_ptr(),
-                wszzVersion.len(),
+                (*(&raw mut wszzVersion)).as_mut_ptr(),
+                (*(&raw const wszzVersion)).len(),
                 InSafeMode,
                 g_AlwaysDisplayVersion as u8,
             );
             if InSafeMode == 0 && NT_SUCCESS(Status) && wszzVersion[0] != 0 {
-                let mut pstr: *mut u16 = wszzVersion.as_mut_ptr();
+                let mut pstr: *mut u16 = (*(&raw mut wszzVersion)).as_mut_ptr();
                 i = 0;
-                while (i < VerStrs.len() as i32) && *pstr != 0 {
+                while (i < (*(&raw const VerStrs)).len() as i32) && *pstr != 0 {
                     VerStrs[i as usize].n = lstrlenW(pstr) as u32;
                     VerStrs[i as usize].lpstr = pstr;
                     pstr = pstr.add((VerStrs[i as usize].n + 1) as usize);
@@ -2847,7 +2847,7 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                     NtGdiSelectFont(hDC, hFont1);
                 }
                 i = 0;
-                while i < VerStrs.len() as i32 {
+                while i < (*(&raw const VerStrs)).len() as i32 {
                     if VerStrs[i as usize].lpstr.is_null()
                         || *VerStrs[i as usize].lpstr == 0
                         || VerStrs[i as usize].n == 0
@@ -2872,7 +2872,7 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                     NtGdiSelectFont(hDC, hFont1);
                 }
                 i = 0;
-                while i < VerStrs.len() as i32 {
+                while i < (*(&raw const VerStrs)).len() as i32 {
                     if VerStrs[i as usize].lpstr.is_null()
                         || *VerStrs[i as usize].lpstr == 0
                         || VerStrs[i as usize].n == 0
@@ -2903,7 +2903,7 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                     NtGdiSelectFont(hDC, hFont1);
                 }
 
-                len = wcslen(wszzVersion.as_ptr());
+                len = wcslen((*(&raw const wszzVersion)).as_ptr());
 
                 IntGdiSetTextAlign(hDC, TA_CENTER | TA_TOP);
                 GreExtTextOutW(
@@ -2912,7 +2912,7 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                     Rect.top + 3,
                     0,
                     core::ptr::null_mut(),
-                    wszzVersion.as_ptr(),
+                    (*(&raw const wszzVersion)).as_ptr(),
                     len as i32,
                     core::ptr::null_mut(),
                     0,
@@ -2925,16 +2925,16 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                 NtGdiSelectFont(hDC, hFont1);
             }
 
-            len = wcslen(s_wszSafeMode.as_ptr());
+            len = wcslen((*(&raw const s_wszSafeMode)).as_ptr());
 
             IntGdiSetTextAlign(hDC, TA_LEFT | TA_TOP);
-            GreExtTextOutW(hDC, Rect.left, Rect.top + 3, 0, core::ptr::null_mut(), s_wszSafeMode.as_ptr(), len as i32, core::ptr::null_mut(), 0);
+            GreExtTextOutW(hDC, Rect.left, Rect.top + 3, 0, core::ptr::null_mut(), (*(&raw const s_wszSafeMode)).as_ptr(), len as i32, core::ptr::null_mut(), 0);
             IntGdiSetTextAlign(hDC, TA_RIGHT | TA_TOP);
-            GreExtTextOutW(hDC, Rect.right, Rect.top + 3, 0, core::ptr::null_mut(), s_wszSafeMode.as_ptr(), len as i32, core::ptr::null_mut(), 0);
+            GreExtTextOutW(hDC, Rect.right, Rect.top + 3, 0, core::ptr::null_mut(), (*(&raw const s_wszSafeMode)).as_ptr(), len as i32, core::ptr::null_mut(), 0);
             IntGdiSetTextAlign(hDC, TA_LEFT | TA_BOTTOM);
-            GreExtTextOutW(hDC, Rect.left, Rect.bottom - 5, 0, core::ptr::null_mut(), s_wszSafeMode.as_ptr(), len as i32, core::ptr::null_mut(), 0);
+            GreExtTextOutW(hDC, Rect.left, Rect.bottom - 5, 0, core::ptr::null_mut(), (*(&raw const s_wszSafeMode)).as_ptr(), len as i32, core::ptr::null_mut(), 0);
             IntGdiSetTextAlign(hDC, TA_RIGHT | TA_BOTTOM);
-            GreExtTextOutW(hDC, Rect.right, Rect.bottom - 5, 0, core::ptr::null_mut(), s_wszSafeMode.as_ptr(), len as i32, core::ptr::null_mut(), 0);
+            GreExtTextOutW(hDC, Rect.right, Rect.bottom - 5, 0, core::ptr::null_mut(), (*(&raw const s_wszSafeMode)).as_ptr(), len as i32, core::ptr::null_mut(), 0);
         }
 
         IntGdiSetBkMode(hDC, mode_old);

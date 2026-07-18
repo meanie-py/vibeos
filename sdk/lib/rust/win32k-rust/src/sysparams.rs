@@ -805,7 +805,7 @@ unsafe fn SpiSetWallpaper(pvParam: PVOID, fl: FLONG) -> UINT_PTR {
     }
 
     bResult = SpiMemCopy(
-        gspv.awcWallpaper.as_mut_ptr() as PVOID,
+        (*(&raw mut gspv)).awcWallpaper.as_mut_ptr() as PVOID,
         ustr.Buffer as PVOID,
         ustr.Length as ULONG,
         (fl & SPIF_PROTECT) as BOOL,
@@ -814,20 +814,20 @@ unsafe fn SpiSetWallpaper(pvParam: PVOID, fl: FLONG) -> UINT_PTR {
         return 0;
     }
 
-    gspv.ustrWallpaper.Buffer = gspv.awcWallpaper.as_mut_ptr();
+    gspv.ustrWallpaper.Buffer = (*(&raw mut gspv)).awcWallpaper.as_mut_ptr();
     gspv.ustrWallpaper.MaximumLength = (MAX_PATH as usize * core::mem::size_of::<WCHAR>()) as u16;
     gspv.ustrWallpaper.Length = ustr.Length;
     gspv.awcWallpaper[ustr.Length as usize / core::mem::size_of::<WCHAR>()] = 0;
 
     if fl & SPIF_UPDATEINIFILE != 0 {
-        SpiStoreSz(KEY_DESKTOP.as_ptr(), wide_str!("Wallpaper"), gspv.awcWallpaper.as_ptr());
+        SpiStoreSz(KEY_DESKTOP.as_ptr(), wide_str!("Wallpaper"), (*(&raw const gspv)).awcWallpaper.as_ptr());
     }
 
     if gspv.awcWallpaper[0] != 0 {
         ustr.Buffer = awc.as_mut_ptr();
         ustr.MaximumLength = (MAX_PATH as usize * core::mem::size_of::<WCHAR>()) as u16;
         ustr.Length = 0;
-        if W32kDosPathNameToNtPathName(gspv.awcWallpaper.as_ptr(), core::ptr::addr_of_mut!(ustr)) == 0 {
+        if W32kDosPathNameToNtPathName((*(&raw const gspv)).awcWallpaper.as_ptr(), core::ptr::addr_of_mut!(ustr)) == 0 {
             return 0;
         }
 
@@ -1031,7 +1031,7 @@ unsafe fn SpiGetSet_SPI_GETDESKWALLPAPER(mut uiParam: UINT, pvParam: PVOID, fl: 
     if uiParam > max {
         uiParam = max;
     }
-    SpiGet(pvParam, gspv.awcWallpaper.as_mut_ptr() as PVOID, uiParam, fl)
+    SpiGet(pvParam, (*(&raw mut gspv)).awcWallpaper.as_mut_ptr() as PVOID, uiParam, fl)
 }
 
 unsafe fn SpiGetSet_SPI_SETDESKWALLPAPER(pvParam: PVOID, fl: FLONG) -> UINT_PTR {
