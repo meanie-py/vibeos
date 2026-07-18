@@ -525,6 +525,23 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CControlPanelFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CControlPanelFolderRustEntry : public CControlPanelFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CControlPanelFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 extern "C" HRESULT WINAPI CDrivesFolder_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
@@ -630,7 +647,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ShellLink, CShellLinkRustEntry)
     OBJECT_ENTRY(CLSID_Shell, CShellDispatch)
     OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)
-    OBJECT_ENTRY(CLSID_ControlPanel, CControlPanelFolder)
+    OBJECT_ENTRY(CLSID_ControlPanel, CControlPanelFolderRustEntry)
     OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanelRustEntry)
     OBJECT_ENTRY(CLSID_MyDocuments, CMyDocsFolderRustEntry)
     OBJECT_ENTRY(CLSID_NetworkPlaces, CNetFolderRustEntry)

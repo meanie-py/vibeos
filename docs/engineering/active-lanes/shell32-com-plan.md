@@ -504,7 +504,19 @@ amd64+arm64):
   Runtime-exercised: the desktop `.lnk` shortcuts (Internet Browser / Command Prompt /
   Read Me) render through the Rust class on i386.
 
-### CMenuBand deferred — needs a SHARED Rust staticlib (owed, work preserved)
+### CMenuBand — RESOLVED (relanded 2026-07-18 via shared `menuband-rust` staticlib, commit `3aa11392971`)
+
+The shared-staticlib fix below was implemented: `menu_band.rs` now lives in a standalone
+`menuband-rust` crate (`sdk/lib/rust/menuband-rust/`, `crate-type=["staticlib"]`, its own
+`MenuBandRustModuleLock/Unlock` + panic-handler + `rust_eh_personality` stub) built once at the
+top-level `CMakeLists.txt` (before `add_subdirectory(base)`) into `${MENUBAND_RUST_LIB}`, and
+linked by BOTH `shell32.dll` and `base/shell/rshell/rshell.dll`. Each DLL provides its own
+`MenuBandRustModuleLock/Unlock` over its COM module (`shell32.cpp` / rshell `misc.cpp`).
+Green ×3, full desktop + taskbar + Start menu on all arches. This is the reusable
+**shared-shellmenu-staticlib pattern** for the remaining shared `shellmenu` classes
+(CMenuSite / CMenuDeskBar / CMergedFolder). The historical deferral analysis is retained below.
+
+### CMenuBand deferral analysis (historical — needs a SHARED Rust staticlib)
 
 `CMenuBand` was integrated by an agent (branch `worktree-agent-ad4910884ddab9c81`, commit
 `7c278907ca5`; module preserved at `~/vibeos-rust-staging/shell32-com/monsters-v2/
@@ -531,6 +543,32 @@ three build logs (`FAILED: base/shell/rshell/rshell.dll` every time). shell32.dl
 (it has `libshell32_rust.a`). There is NO cargo-rewrite-in-place build race; the single root
 cause is the shared-DLL topology above. Do not add a temp-write/atomic-rename "fix" to the
 staticlib custom command — there is nothing to fix there.
+
+## CControlPanelFolder landed (2026-07-18)
+
+**CControlPanelFolder** (`CLSID_ControlPanel`) — hybrid cohab, standard shell32-private
+RustEntry pattern (like CDrivesFolder). Rust (`control_panel_folder.rs`) owns the folder's
+three published interfaces (IShellFolder2 / IPersistFolder2 / IShellFolderViewCB) + state +
+activation; `CControlPanelFolder.cpp` stays compiled with dead C++ folder bodies and the
+retained companions `CControlPanelEnum` (enumerator) + `CCPLItemMenu` (context menu) + the
+`CCPLExtractIcon`/free helpers. `COpenControlPanel` in the same TU was already Rust
+(`open_control_panel.rs`) — undisturbed. Integration: `shell32.cpp` gets
+`CControlPanelFolderRustEntry` + object-map swap; four `*_RustBridge` shims appended to
+`CControlPanelFolder.cpp` (`CreateRegFolder` = CRegFolder aggregation, `CControlPanelEnum`
+create, `CCPLItemMenu` create, `CCPLExtractIcon` create); the shared
+`SH32_GetDetailsOfPKeyAsVariant_RustBridge` (shlfolder.cpp) reused as-is.
+
+Pipeline: bulk-translated with `translate --cpp-com` (DeepSeek, 25 fns, all cached), then a
+Sonnet subagent-stitch drove the module to green ×3 in an isolated candidate-oracle sandbox
+(44 arch-identical errors → 0), fixing ~14 real cached-body bugs vs the C++ (notably:
+`MessageSFVCB` took the dead `#else` branch — corrected to the active
+`ROSPOLICY_CONTROLSFOLDER_DEFLARGEICONS=1` → `FVM_ICON`; `GetAttributesOf` passed element-0
+instead of the walked pidl; `GetUIObjectOf` never dereferenced `apidl[0]`; malformed
+`GetDetailsEx` vtable call; packed-`PIDLCPanelStruct` field refs → `addr_of!`;
+`SHELLDETAILS.str__`→`str_`). One integrator fix on top: `_ILGetType` is `static inline` in
+`wine/pidl.h:144` (no global symbol — `wine/pidl.c` is cohabbed out), so it became a local
+inline in the module rather than an extern decl to a nonexistent symbol. Validated: build
+green ×3 (i386/amd64/arm64).
 
 ## rustconv enhancement backlog (from the 2026-07-17 4-class session)
 
@@ -570,3 +608,17 @@ risk). Priority-ordered:
 a mis-read; the failures were all rshell.dll from the shared-DLL topology, not a cargo
 in-place-rewrite. No CMakeLists staticlib fix is warranted. Item #1 (link-topology preflight)
 is the real lesson.)
+
+## Environment gotcha: `rustconv translate --cpp-com` needs `rg` on PATH (2026-07-18)
+
+`translate`'s final assembly step (`cpp_com.render_cpp_support` → `_sdk_numeric_definitions`,
+`cpp_com.py:2406`) shells out to `rg` to resolve referenced SDK numeric `#define`s in one
+indexed header pass. If ripgrep isn't installed it dies with
+`PermissionError: [Errno 13] Permission denied: 'rg'` (or FileNotFound) — *after* every
+per-function paid call has already streamed to `.responses/`, so no spend is lost, but the
+`-o` module never gets written. This box (curi's WSL) has no `rg`. Fix without touching
+`tools/rustconv/`: drop a small ripgrep-compatible shim at `~/.local/bin/rg` (on PATH) that
+maps the `rg -n --no-heading --glob '*.h' <pat> <roots>` shape onto `grep -rnP --include=`.
+Re-run `translate` with the shim on PATH — all functions replay from cache for $0 and the
+assembly completes. (A single `grep -P` shim is enough; the invocation only uses `-n`,
+`--no-heading`, `--glob`.)
