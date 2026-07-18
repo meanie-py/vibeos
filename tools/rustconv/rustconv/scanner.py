@@ -111,12 +111,13 @@ RE_SAL = re.compile(
     r"[A-Za-z0-9_]*_"  # rest of the SAL token, ending in '_'
     r"(?:\s*\([^()]*\))?"  # optional ( args ) — SAL args have no nesting
 )
+RE_LEGACY_SAL = re.compile(r"(?<![A-Za-z0-9_])(?:IN|OUT|OPTIONAL)(?![A-Za-z0-9_])")
 
 
 def _strip_sal(text: str) -> str:
     """Remove SAL annotations (no-op macros) so tree-sitter parses the function
     signatures of annotated Windows headers. Safe: only removes annotations."""
-    return RE_SAL.sub("", text)
+    return RE_LEGACY_SAL.sub("", RE_SAL.sub("", text))
 
 
 # Win32 calling-convention macros that tree-sitter-c CANNOT parse between the
@@ -201,6 +202,43 @@ RE_EMPTY_MEMMODEL = re.compile(r"\b(?:FAR|NEAR)\b")
 # arches, and passed every check while missing the functions a socket client cannot work
 # without. Only the .spec export audit caught it. Normalise to the lowercase keyword.
 RE_UPPER_CONST = re.compile(r"\bCONST\b")
+
+# ATL spells in-class COM method definitions as macro declarators:
+#
+#     STDMETHOD(QueryService)(REFGUID svc, REFIID riid, void **ppv) override
+#     {
+#         ...
+#     }
+#
+# The compiler expands this to an ordinary HRESULT method, but tree-sitter-cpp
+# sees a function_definition whose declarator is just ``STDMETHOD`` and records
+# the real method as an unextractable body.  Normalize only the definition shape
+# (a balanced-looking parameter list followed by an optional ``override`` and
+# ``{``); declarations ending in ``;`` are deliberately untouched.
+RE_INLINE_STDMETHOD = re.compile(
+    r"\bSTDMETHOD\s*\(\s*(?P<name>[A-Za-z_]\w*)\s*\)\s*"
+    r"\((?P<params>[^;{}]*)\)\s*(?:override\s*)?(?=\{)",
+    re.S,
+)
+RE_INLINE_STDMETHOD_TYPED = re.compile(
+    r"\bSTDMETHOD_\s*\(\s*(?P<ret>[^,()]+?)\s*,\s*"
+    r"(?P<name>[A-Za-z_]\w*)\s*\)\s*"
+    r"\((?P<params>[^;{}]*)\)\s*(?:override\s*)?(?=\{)",
+    re.S,
+)
+
+
+def _expand_inline_stdmethod(text: str) -> str:
+    """Expose ATL inline COM definitions to the C++ structural scanner."""
+    text = RE_INLINE_STDMETHOD_TYPED.sub(
+        lambda match: (
+            f"{match.group('ret').strip()} {match.group('name')}({match.group('params')}) "
+        ),
+        text,
+    )
+    return RE_INLINE_STDMETHOD.sub(
+        lambda match: f"HRESULT {match.group('name')}({match.group('params')}) ", text
+    )
 
 
 def _blank_memmodel(text: str) -> str:
@@ -364,6 +402,11 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                 calling_convention = text
             elif return_type == "":
                 return_type = text
+        elif child.type == "qualified_identifier" and return_type == "":
+            # A nested C++ return type is a top-level type node, distinct from
+            # the qualified method name inside the function declarator:
+            # `CNewMenu::ITEM *CNewMenu::LoadItem(...)`.
+            return_type = text
         elif child.type == "function_declarator":
             declarator = child
         elif child.type == "pointer_declarator":
@@ -371,16 +414,92 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
             for sub in child.children:
                 if sub.type == "function_declarator":
                     declarator = sub
-
-    if declarator is None:
-        return None
+                    pointer_prefix = re.match(r"\s*(\*+)", text)
+                    stars = len(pointer_prefix.group(1)) if pointer_prefix else 0
+                    if stars:
+                        return_type = (return_type + " " + "*" * stars).strip()
 
     cpp_class = None
     is_ctor = False
     is_dtor = False
+    recovered_declarator = False
+
+    if declarator is None and node.type == "function_definition":
+        # tree-sitter-cpp parses some perfectly ordinary out-of-line methods
+        # without a calling-convention token as ``field_identifier`` + ERROR:
+        #
+        #     BOOL CThing::Method(DWORD flags) { ... }
+        #
+        # Recover only that narrow, compiler-unambiguous surface from the text
+        # before the compound body.  This keeps the class-atomic fail-loud gate
+        # useful without accepting arbitrary malformed C++.
+        body_node = next((c for c in node.children if c.type == "compound_statement"), None)
+        if body_node is not None:
+            signature = source[node.start_byte : body_node.start_byte].decode(
+                "utf-8", errors="replace"
+            )
+            recovered = re.fullmatch(
+                r"\s*(?P<prefix>.*?)\b(?P<class>[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)"
+                r"::(?P<name>~?[A-Za-z_]\w*)\s*\((?P<params>.*)\)\s*",
+                signature,
+                flags=re.S,
+            )
+            if recovered:
+                prefix_tokens = recovered.group("prefix").split()
+                is_static = "static" in prefix_tokens
+                prefix_tokens = [token for token in prefix_tokens if token != "static"]
+                for token in tuple(prefix_tokens):
+                    if token in CALLING_CONVENTIONS:
+                        calling_convention = token
+                        prefix_tokens.remove(token)
+                return_type = " ".join(prefix_tokens)
+                cpp_class = recovered.group("class")
+                name = recovered.group("name")
+                is_dtor = name.startswith("~")
+                name = name.lstrip("~")
+                is_ctor = name == cpp_class.rpartition("::")[2]
+
+                raw_params = recovered.group("params").strip()
+                if raw_params and raw_params != "VOID":
+                    depth = 0
+                    pieces: list[str] = []
+                    start = 0
+                    for index, char in enumerate(raw_params):
+                        if char in "(<[":
+                            depth += 1
+                        elif char in ")>]":
+                            depth -= 1
+                        elif char == "," and depth == 0:
+                            pieces.append(raw_params[start:index].strip())
+                            start = index + 1
+                    pieces.append(raw_params[start:].strip())
+                    for raw_param in pieces:
+                        parts = raw_param.rsplit(None, 1)
+                        if len(parts) == 2:
+                            ptype, pname = parts
+                            while pname.startswith("*"):
+                                ptype += " *"
+                                pname = pname[1:]
+                            params.append((ptype.strip(), pname.strip()))
+                        elif "*" in raw_param:
+                            adjacent = re.match(r"(?P<type>.+\*)(?P<name>[A-Za-z_]\w*)$", raw_param)
+                            if adjacent:
+                                params.append(
+                                    (adjacent.group("type").strip(), adjacent.group("name"))
+                                )
+                            else:
+                                params.append((raw_param, ""))
+                        else:
+                            params.append((raw_param, ""))
+
+                declarator = node  # mark the deliberately recovered shape as parsed
+                recovered_declarator = True
+
+    if declarator is None:
+        return None
 
     # Extract function name from declarator
-    for child in declarator.children:
+    for child in () if recovered_declarator else declarator.children:
         if child.type == "identifier":
             name = _extract_text(child, source)
         elif child.type == "field_identifier":
@@ -410,17 +529,56 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
             return None  # operators stay unextracted (no C ABI shape)
         elif child.type == "parameter_list":
             for param_node in child.children:
-                if param_node.type == "parameter_declaration":
+                if param_node.type in (
+                    "parameter_declaration",
+                    "optional_parameter_declaration",
+                ):
                     param_text = _extract_text(param_node, source)
+                    if param_node.type == "optional_parameter_declaration":
+                        param_text = param_text.split("=", 1)[0].strip()
+                    if cpp_class is not None and param_text == "THIS":
+                        # Legacy DECLARE_INTERFACE methods sometimes retain the
+                        # C spelling in an out-of-line C++ definition. In C++
+                        # this macro expands to void; the receiver is implicit.
+                        continue
+                    spaced_array = re.fullmatch(
+                        r"(?P<type>.+?)\s+(?P<name>[A-Za-z_]\w*)\s*\[[^]]*\]",
+                        param_text,
+                    )
+                    if spaced_array:
+                        # A space between the identifier and brackets makes
+                        # rsplit() see "[]" as the name. Function-parameter
+                        # arrays still decay to pointers regardless of that
+                        # harmless C/C++ spelling difference.
+                        params.append(
+                            (
+                                f"{spaced_array.group('type').strip()} *",
+                                spaced_array.group("name"),
+                            )
+                        )
+                        continue
                     # Crude but effective: split into type and name
                     parts = param_text.rsplit(None, 1)
                     if len(parts) == 2:
                         ptype, pname = parts
+                        array = re.fullmatch(r"([A-Za-z_]\w*)\s*\[[^]]*\]", pname)
+                        if array:
+                            # C/C++ adjusts function-parameter arrays to
+                            # pointers; retain that ABI fact, not declarator
+                            # punctuation that is invalid in Rust.
+                            ptype += " *"
+                            pname = array.group(1)
                         # Remove pointer markers from name
                         while pname.startswith("*"):
                             ptype += " *"
                             pname = pname[1:]
                         params.append((ptype.strip(), pname.strip()))
+                    elif parts and "*" in parts[0]:
+                        adjacent = re.match(r"(?P<type>.+\*)(?P<name>[A-Za-z_]\w*)$", parts[0])
+                        if adjacent:
+                            params.append((adjacent.group("type").strip(), adjacent.group("name")))
+                        else:
+                            params.append((parts[0], ""))
                     elif parts and parts[0] != "VOID":
                         params.append((parts[0], ""))
 
@@ -439,9 +597,53 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                         cpp_class = _extract_text(c, source)
                         break
                 break
+            # Macro-heavy ATL classes can make tree-sitter wrap the otherwise
+            # intact class/struct body in one ERROR node.  Recover only when
+            # that node begins with an actual class-key followed by its type
+            # identifier; the owning syntax is still compiler-unambiguous.
+            if anc.type == "ERROR":
+                children = list(anc.children)
+                # The observed recovery case is `struct Name : ATL...`.
+                # Do not extend this to a malformed `class` ERROR: in large
+                # headers tree-sitter may absorb later free helpers into that
+                # node, falsely turning them into class methods.
+                if children and children[0].type == "struct":
+                    owner = next((c for c in children[1:] if c.type == "type_identifier"), None)
+                    if owner is not None:
+                        cpp_class = _extract_text(owner, source)
+                        break
             anc = anc.parent
         if cpp_class and name == cpp_class:
             is_ctor = True
+
+    if return_type == "" and cpp_class is not None and not (is_ctor or is_dtor):
+        # tree-sitter-cpp can absorb `RET WINAPI` into the qualified
+        # declarator node, leaving no top-level return-type child. Recover the
+        # prefix from the intact source signature; the qualified owner/name
+        # makes this shape unambiguous.
+        body_node = next(
+            (child for child in node.children if child.type == "compound_statement"), None
+        )
+        body_start = (
+            body_node.start_byte if body_node is not None else source.find(b"{", node.start_byte)
+        )
+        if body_start >= node.start_byte:
+            signature = source[node.start_byte : body_start].decode("utf-8", errors="replace")
+            qualified = rf"{re.escape(cpp_class)}::{re.escape(name)}\s*\("
+            prefix = re.match(rf"\s*(?P<prefix>.*?)\b{qualified}", signature, flags=re.S)
+            if prefix is None or not prefix.group("prefix").strip():
+                line_start_byte = source.rfind(b"\n", 0, node.start_byte) + 1
+                leading = source[line_start_byte : node.start_byte].decode(
+                    "utf-8", errors="replace"
+                )
+                prefix = re.match(r"\s*(?P<prefix>.*?)\s*$", leading, flags=re.S)
+            if prefix is not None:
+                tokens = [
+                    token
+                    for token in prefix.group("prefix").split()
+                    if token not in CALLING_CONVENTIONS and token != "static"
+                ]
+                return_type = " ".join(tokens)
 
     # Count SEH blocks in body
     body_text = _extract_text(node, source)
@@ -836,14 +1038,15 @@ def _resolve_pp_conditionals(path: Path, text: str) -> str:
     return "\n".join(out)
 
 
-def scan_file(path: Path) -> ScanResult:
+def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     """Parse a C/C++ source file and extract structural information."""
     raw = _expand_split_includes(path, path.read_text(errors="replace"))
-    is_cpp = path.suffix.lower() in _CPP_SUFFIXES
+    is_cpp = force_cpp or path.suffix.lower() in _CPP_SUFFIXES
     if is_cpp:
         # Resolve preprocessor conditionals so #ifdef-spanning constructs don't
         # break tree-sitter function extraction (uniata etc.). Macros preserved.
         raw = _resolve_pp_conditionals(path, raw)
+        raw = _expand_inline_stdmethod(raw)
     source_text = _normalize_callbacks(
         _blank_memmodel(
             _strip_sal(_expand_csr_api(_resolve_known_preproc(_strip_known_off_ifdefs(raw))))

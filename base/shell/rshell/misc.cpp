@@ -60,6 +60,19 @@ public:
 CRShellModule gModule;
 CAtlWinModule gWinModule;
 
+/* menuband-rust (libmenuband_rust.a) is linked into both shell32.dll and rshell.dll and
+ * locks its host DLL's COM module around each CMenuBand instance. This is rshell's copy
+ * (shell32 provides its own in dll/win32/shell32/shell32.cpp). */
+extern "C" void WINAPI MenuBandRustModuleLock()
+{
+    gModule.Lock();
+}
+
+extern "C" void WINAPI MenuBandRustModuleUnlock()
+{
+    gModule.Unlock();
+}
+
 HINSTANCE shell32_hInstance = NULL;
 
 static LSTATUS inline _RegSetStringValueW(HKEY hKey, LPCWSTR lpValueName, LPCWSTR lpStringData)

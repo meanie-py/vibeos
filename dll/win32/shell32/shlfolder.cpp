@@ -634,3 +634,59 @@ SHELL32_DefaultContextMenuCallBack(IShellFolder *psf, IDataObject *pdo, UINT msg
     }
     return E_NOTIMPL;
 }
+
+/**************************************************************************
+ * Rust bridges — C ABI shims over the C++-linkage folder helpers for the
+ * Rust-owned shell folder modules (shell32-rust).
+ */
+
+extern "C" HRESULT WINAPI
+SHELL32_BindToSF_RustBridge(
+    LPCITEMIDLIST pidlRoot, PERSIST_FOLDER_TARGET_INFO *ppfti,
+    LPCITEMIDLIST pidl, const GUID *clsid, REFIID riid, LPVOID *ppvOut)
+{
+    return SHELL32_BindToSF(pidlRoot, ppfti, pidl, clsid, riid, ppvOut);
+}
+
+extern "C" HRESULT WINAPI
+SHELL32_CompareChildren_RustBridge(
+    IShellFolder2 *psf, LPARAM lParam, LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2)
+{
+    return SHELL32_CompareChildren(psf, lParam, pidl1, pidl2);
+}
+
+extern "C" HRESULT WINAPI
+SHELL32_GetDisplayNameOfChild_RustBridge(
+    IShellFolder2 *psf, LPCITEMIDLIST pidl, DWORD dwFlags, LPSTRRET strRet)
+{
+    return SHELL32_GetDisplayNameOfChild(psf, pidl, dwFlags, strRet);
+}
+
+extern "C" HRESULT WINAPI
+SH32_GetDetailsOfPKeyAsVariant_RustBridge(
+    IShellFolder2 *pSF, PCUITEMID_CHILD pidl, const SHCOLUMNID *pscid,
+    VARIANT *pVar, BOOL UseFsColMap)
+{
+    return SH32_GetDetailsOfPKeyAsVariant(pSF, pidl, pscid, pVar, UseFsColMap);
+}
+
+extern "C" HRESULT WINAPI
+SHELL32_DefaultContextMenuCallBack_RustBridge(
+    IShellFolder *psf, IDataObject *pdo, UINT uMsg)
+{
+    return SHELL32_DefaultContextMenuCallBack(psf, pdo, uMsg);
+}
+
+extern "C" HRESULT WINAPI
+SHELL_CreateSHDESCRIPTIONID_RustBridge(VARIANT *pVar, DWORD Id, const CLSID *pCLSID)
+{
+    return SHELL_CreateSHDESCRIPTIONID(pVar, Id, pCLSID);
+}
+
+extern "C" HRESULT WINAPI
+CRecycleBin_CoCreateInitSF_RustBridge(
+    LPCITEMIDLIST pidlRoot, PERSIST_FOLDER_TARGET_INFO *ppfti, LPCITEMIDLIST pidlChild,
+    const GUID *clsid, REFIID riid, LPVOID *ppvOut)
+{
+    return SHELL32_CoCreateInitSF(pidlRoot, ppfti, pidlChild, clsid, riid, ppvOut);
+}

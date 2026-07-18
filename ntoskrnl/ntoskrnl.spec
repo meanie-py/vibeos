@@ -647,6 +647,7 @@
 @ stdcall -arch=i386,arm KeQueryTickCount(ptr)
 @ stdcall KeQueryTimeIncrement()
 @ cdecl -arch=x86_64 -private KeRaiseIrqlToDpcLevel() KxRaiseIrqlToDpcLevel
+@ cdecl -arch=x86_64 KeRaiseIrqlToSynchLevel()
 @ stdcall KeRaiseUserException(long)
 @ stdcall KeReadStateEvent(ptr)
 @ stdcall KeReadStateMutant(ptr)

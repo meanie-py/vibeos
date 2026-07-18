@@ -393,6 +393,42 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
     # not reused from a cmake-built libhal_rust_mini.a — so the cmake
     # rust_hal_mini custom_command and this shared-path var are both retired.)
 
+    # --- menuband-rust shared cohab staticlib (libmenuband_rust.a) ----------------------
+    # CMenuBand's Rust translation (sdk/lib/rust/menuband-rust). Unlike the shell32-private
+    # COM classes, CMenuBand lived in the SHARED dll/win32/shell32/shellmenu object library
+    # and compiled into BOTH shell32.dll AND base/shell/rshell/rshell.dll, so its Rust form
+    # is a standalone staticlib linked by both. Defined HERE (not in shellmenu) because
+    # `base` (rshell) configures before `dll` (shell32/shellmenu) — the var + target must
+    # exist before either link recipe. Each linking DLL provides MenuBandRustModuleLock/
+    # Unlock over its own COM module. Mirrors the shell32-rust custom-command shape.
+    set(MENUBAND_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+    set(MENUBAND_RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/sdk/rust-menuband-target")
+    set(MENUBAND_RUST_LIB "${CMAKE_BINARY_DIR}/sdk/libmenuband_rust.a" CACHE INTERNAL "menuband-rust staticlib")
+    if(ARCH STREQUAL "i386")
+        set(MENUBAND_RUST_TARGET "i686-pc-windows-gnu")
+    elseif(ARCH STREQUAL "amd64")
+        set(MENUBAND_RUST_TARGET "x86_64-pc-windows-gnu")
+    elseif(ARCH STREQUAL "arm64")
+        set(MENUBAND_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    endif()
+    file(GLOB_RECURSE MENUBAND_RUST_SRCS "${MENUBAND_RUST_WORKSPACE_DIR}/menuband-rust/src/*.rs")
+    add_custom_command(
+        OUTPUT ${MENUBAND_RUST_LIB}
+        COMMAND ${CMAKE_COMMAND} -E env
+            CARGO_TARGET_DIR=${MENUBAND_RUST_TARGET_DIR}
+            cargo build --release --target ${MENUBAND_RUST_TARGET}
+                -p menuband-rust
+                --manifest-path ${MENUBAND_RUST_WORKSPACE_DIR}/Cargo.toml
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${MENUBAND_RUST_TARGET_DIR}/${MENUBAND_RUST_TARGET}/release/libmenuband_rust.a
+            ${MENUBAND_RUST_LIB}
+        DEPENDS ${MENUBAND_RUST_SRCS}
+                ${MENUBAND_RUST_WORKSPACE_DIR}/menuband-rust/Cargo.toml
+        WORKING_DIRECTORY ${MENUBAND_RUST_WORKSPACE_DIR}
+        COMMENT "Building menuband-rust (${MENUBAND_RUST_TARGET})"
+        VERBATIM)
+    add_custom_target(rust_menuband DEPENDS ${MENUBAND_RUST_LIB})
+
     #begin with boot so reactos_cab target is defined before all other modules
     add_subdirectory(boot)
     add_subdirectory(base)

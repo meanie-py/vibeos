@@ -112,16 +112,14 @@ KeRaiseIrqlToDpcLevel(
     return KfRaiseIrql(DISPATCH_LEVEL);
 }
 
-FORCEINLINE
+/* Import, not inline: SYNCH_LEVEL depends on the KERNEL flavor (2 on the UP
+ * kernel, IPI_LEVEL-2 == 12 on the SMP kernel), which a driver can't know at
+ * compile time. Real NT amd64 ntoskrnl exports this; ours does too
+ * (ke_rust_shims.c provides the CR8 implementation). */
+_IRQL_saves_
+NTKERNELAPI
 KIRQL
-KeRaiseIrqlToSynchLevel(VOID)
-{
-#ifdef CONFIG_SMP
-    return KfRaiseIrql(12); // SYNCH_LEVEL = IPI_LEVEL - 2
-#else
-    return KfRaiseIrql(2); // SYNCH_LEVEL = DISPATCH_LEVEL
-#endif
-}
+KeRaiseIrqlToSynchLevel(VOID);
 
 FORCEINLINE
 PKTHREAD
