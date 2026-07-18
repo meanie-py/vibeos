@@ -3962,7 +3962,15 @@ def apply_interface_method_signatures(
 
     out = []
     for dep in deps:
-        variants = methods.get(dep.cpp_method or "") if dep.cpp_class == class_name else None
+        # A `static` class method (e.g. a `static inline GetClassID()` helper) has
+        # no `this` and can never occupy a vtable slot, even when it shares a name
+        # with a virtual method. It is a plain class-scoped helper bound by the
+        # sibling/arity machinery, not against the WIDL vtable shape.
+        variants = (
+            methods.get(dep.cpp_method or "")
+            if dep.cpp_class == class_name and not dep.is_static
+            else None
+        )
         if not variants:
             out.append(dep)
             continue
