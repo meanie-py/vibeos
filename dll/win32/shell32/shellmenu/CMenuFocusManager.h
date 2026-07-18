@@ -19,6 +19,11 @@
 */
 #pragma once
 
+/* CMenuBand is Rust-owned (shell32-rust/src/menu_band.rs): this forward decl is the
+ * whole type on the C++ side. StackEntry::mb and the Push/Pop parameters are the
+ * opaque Rust band pointer; operations go through CMenuBand_*_RustExport
+ * (CMenuBandRustExports.h). Retained entries balance CMenuBand_AddRef_RustExport /
+ * CMenuBand_Release_RustExport exactly where AddRef()/Release() sat before. */
 class CMenuBand;
 
 class CMenuFocusManager :
