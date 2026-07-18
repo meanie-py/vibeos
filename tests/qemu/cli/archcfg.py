@@ -124,6 +124,14 @@ _CFGS = {
             # mkramdisk.sh already copies it (line 272).
             "rust_shell32",
             "dll/win32/shell32/shell32.dll",
+            # explorer.exe is the boot marker's own process and its body is Rust
+            # (explorer-rust cohab staticlib). Same stale trap as the DLLs above:
+            # NOT in this set → a merge touching explorer-rust/*.rs leaves
+            # libexplorer_rust.a stale and mkramdisk stages an old explorer.exe
+            # (caught by artifact-check, gate 2026-07-18). rust_explorer builds
+            # the staticlib; the .exe target relinks it in.
+            "rust_explorer",
+            "base/shell/explorer/explorer.exe",
             "fastfat",
             # ramdisk is THE arm64 boot device (the FAT32 image lives in RAM, exposed
             # as \Device\Ramdisk{GUID} via \ArcName\ramdisk(0)) — same stale-driver trap
