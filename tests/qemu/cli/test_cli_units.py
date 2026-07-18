@@ -1736,6 +1736,56 @@ def test_hostlock_cpu_lease_cm_acquires_and_releases(tmp_path, monkeypatch):
     hl_mod.release(fd2)
 
 
+def test_hostlock_announce_pair_on_queued_acquire(tmp_path, monkeypatch, capsys):
+    # The §9.84 starvation classifier depends on this exact invariant: a queued
+    # acquire that eventually succeeds prints BOTH announce lines; one that times
+    # out prints only WAIT; an uncontended acquire prints neither.
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    holder = hl_mod.acquire_cpu_lease("boot:a", leases=1, timeout=0.0)
+    assert holder is not None
+    # timed-out queue → WAIT only
+    assert hl_mod.acquire_cpu_lease("boot:b", leases=1, timeout=0.8) is None
+    out = capsys.readouterr().out
+    assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE not in out
+    assert hl_mod.looks_starved(out)
+    # queued-then-granted → WAIT + ACQUIRED (holder released mid-wait by a thread)
+    threading.Timer(0.8, hl_mod.release, args=(holder,)).start()
+    fd = hl_mod.acquire_cpu_lease("boot:c", leases=1, timeout=10.0)
+    assert fd is not None
+    out = capsys.readouterr().out
+    assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE in out
+    assert not hl_mod.looks_starved(out)
+    hl_mod.release(fd)
+    # uncontended → silent
+    fd2 = hl_mod.acquire_cpu_lease("boot:d", leases=1, timeout=0.5)
+    assert fd2 is not None
+    out = capsys.readouterr().out
+    assert hl_mod.WAIT_ANNOUNCE not in out and hl_mod.ACQUIRED_ANNOUNCE not in out
+    assert not hl_mod.looks_starved(out)
+    hl_mod.release(fd2)
+
+
+def test_hostlock_looks_starved_classifier():
+    assert hl_mod.looks_starved(f"setup\n{hl_mod.WAIT_ANNOUNCE} (boot:amd64-uefi-net)...\n")
+    assert not hl_mod.looks_starved(
+        f"{hl_mod.WAIT_ANNOUNCE} (boot:amd64-uefi-net)...\n"
+        f"{hl_mod.ACQUIRED_ANNOUNCE} (boot:amd64-uefi-net) after 42s queued\n"
+        "2 failed, 13 passed"
+    )
+    assert not hl_mod.looks_starved("15 errors in 600.39s")  # no queue announced
+
+
+def test_gate_host_starved_is_retryable():
+    # gate retries HOST_STARVED: its retry phase runs after the gate's own lanes
+    # released their leases, so self-inflicted contention clears; an external
+    # holder keeps the retry starved and the final red says HOST_STARVED.
+    from . import gate as gate_mod
+
+    assert "HOST_STARVED" in gate_mod.RETRYABLE
+    assert gate_mod._retryable("HOST_STARVED", {}) is True
+
+
 def test_hostlock_status_reports_live_holder(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
