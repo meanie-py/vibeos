@@ -721,3 +721,16 @@ CRecycleBin_CoCreateInitSF_RustBridge(
 {
     return SHELL32_CoCreateInitSF(pidlRoot, ppfti, pidlChild, clsid, riid, ppvOut);
 }
+
+/* Rust bridges for the Rust-owned CDesktopFolder (shell32-rust desktop_folder). */
+extern "C" LSTATUS WINAPI
+AddClsidKeyToArray_RustBridge(REFCLSID clsid, HKEY *array, UINT *cKeys)
+{
+    return AddClsidKeyToArray(clsid, array, cKeys);
+}
+
+extern "C" HRESULT WINAPI
+SHELL32_ShowPropertiesDialog_RustBridge(IDataObject *pdo)
+{
+    return SHELL32_ShowPropertiesDialog(pdo);
+}

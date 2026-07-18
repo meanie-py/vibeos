@@ -2266,3 +2266,18 @@ CFileSysEnum_CreateInstance_RustBridge(LPWSTR pszPath, DWORD dwFlags, REFIID rii
     // the Rust caller's LPCWSTR decl is ABI-identical (const is a C++-only check).
     return ShellObjectCreatorInit<CFileSysEnum>(pszPath, dwFlags, riid, ppv);
 }
+
+/* Rust bridges for the Rust-owned CDesktopFolder (shell32-rust desktop_folder):
+ * the CFSFolder static column helpers are "shared with CDesktopFolder" (CFSFolder.h);
+ * shim the SHELLDETAILS&/SHCOLSTATEF& references behind pointers for the C ABI. */
+extern "C" HRESULT WINAPI
+CFSFolder_GetFSColumnDetails_RustBridge(UINT iColumn, SHELLDETAILS *sd)
+{
+    return CFSFolder::GetFSColumnDetails(iColumn, *sd);
+}
+
+extern "C" HRESULT WINAPI
+CFSFolder_GetDefaultFSColumnState_RustBridge(UINT iColumn, SHCOLSTATEF *csFlags)
+{
+    return CFSFolder::GetDefaultFSColumnState(iColumn, *csFlags);
+}

@@ -2241,3 +2241,30 @@ PathIsDosDevice_RustBridge(LPCWSTR pszName)
 {
     return PathIsDosDevice(pszName);
 }
+
+/* Rust bridges for the Rust-owned CDesktopFolder (shell32-rust desktop_folder):
+ * these utils.cpp helpers are C++ linkage, so the Rust module reaches them through
+ * WINAPI shims. */
+extern "C" BOOL WINAPI
+BindCtx_ContainsObject_RustBridge(IBindCtx *pbc, LPCWSTR pszName)
+{
+    return BindCtx_ContainsObject(pbc, pszName);
+}
+
+extern "C" BOOL WINAPI
+SHSkipJunctionBinding_RustBridge(IBindCtx *pbc, CLSID *pclsid)
+{
+    return SHSkipJunctionBinding(pbc, pclsid);
+}
+
+extern "C" BOOL WINAPI
+Shell_FailForceReturn_RustBridge(HRESULT hr)
+{
+    return Shell_FailForceReturn(hr);
+}
+
+extern "C" HRESULT WINAPI
+SHGetNameAndFlagsW_RustBridge(LPCITEMIDLIST pidl, DWORD dwFlags, LPWSTR pszText, UINT cchBuf, DWORD *pdwAttributes)
+{
+    return SHGetNameAndFlagsW(pidl, dwFlags, pszText, cchBuf, pdwAttributes);
+}

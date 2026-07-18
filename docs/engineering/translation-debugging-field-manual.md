@@ -8459,6 +8459,32 @@ invalidation paths OTHER than MiDeletePte/MiProcessValidPteList for a missing/mi
 cross-process ASID/context-switch TLB story (the kmtest faces are a FRESH process's image/heap — a reused frame
 from an EXITED process aliased via a stale ASID TLB entry fits).
 
+**Tripwire #3 result (2026-07-18) — alloc-side is SILENT, and the flake is DORMANT in-tree; the bug (if live) is
+TLB-level.** Built the alloc/reuse-side tripwire the "Next step" asked for: at the hand-out choke point
+`MiRemovePageByColor` (pfnlist.rs:377 — both `MiRemoveAnyPage` and `MiRemoveZeroPage` funnel through it), fire if a
+frame being handed OUT still has a valid USER hardware PTE mapping it (same fault-safe `MmIsAddressValid` gate +
+user leaf-PTE range). Unlike tripwire #2, this is **SILENT on a normal boot** — the exact discriminator wanted:
+tripwire #2 fired always (legit lock-protected decommit), tripwire #3 stays quiet because that decommit invalidates
+the PTE before releasing the PFN lock, so no frame is ever handed out with a live in-memory user PTE. Then ran the
+kmtest sweep **10×** with the tripwire armed: **zero** `0xF1A` fires AND **zero** §9.98 corruption cascades — every
+sweep held `ok=78-79` (the only fails were the known deterministic flappers: RtlCaptureContextKM/HalPortIo NO-END
+every run, IoReadWrite/IoDeviceObject/PoIrp isolated `0xC0000005` debt — none cascade, so none is the §9.98 root).
+Two hard conclusions: (1) the private-page free/alloc PFN lifecycle is CLEAN — no reuse-while-mapped happens via an
+in-memory user PTE, on any of free-side or alloc-side (both refuted). (2) The §9.98 corruption is **not reproducing
+in the current tree** (at the lore'd ~40%/sweep, 10 clean is ~0.6% — so either that rate was overstated from a tiny
+sample, or one of the many origin lanes merged since the §9.96 session quietly changed MM timing/behavior enough to
+suppress it). Net: the catch-it-red-handed strategy is **walled by dormancy** — you cannot trip a tripwire on a bug
+that isn't firing. AND because BOTH in-memory-PTE tripwires are silent, if the bug is still latent it is **not** an
+in-memory PTE/refcount error at all — it is a **stale-TLB / ASID** alias (PTE correctly invalidated in memory, only
+the TLB entry survives), which neither free-side nor alloc-side in-memory-PTE checks can ever see. So the ONLY
+reproduction-independent avenue left is the **static TLB-coverage audit**: enumerate every user-PTE invalidation
+site (`MI_WRITE_INVALID_PTE`/`MI_ERASE_PTE`) and prove each has a `KeFlushCurrentTb` (correct scope) before the
+frame can be re-handed-out; plus the cross-process ASID/context-switch flush. The alloc-side tripwire
+(MiRemovePageByColor, sentinel `0xF1A`) is documented here to **re-arm instantly if the flake resurfaces** — it is
+the right net for a live private-page reuse. Since the flake is dormant and the §9.96 un-quarantines (MmSection,
+ZwMapViewOfSection) held 10/10 green, task #19 is not currently blocking the ratchet; the deterministic arm64
+quarantines (ExHardError 0x1E, NtCreateSection 0x50, ZwAllocateVirtualMemory 0x4E) are the live burndown targets.
+
 **Reusable method (the payoff — how to hunt a rare corruption flake UNATTENDED, no GDB babysitting):**
 (a) **Self-reporting kernel tripwires beat GDB-attach-at-the-instant for a ~40%/sweep, 77-launches-deep flake.**
 A conditional GDB breakpoint on the abnormal event needs the right process live at the right moment and
@@ -8749,7 +8775,42 @@ sig/VAR class (§9.99/§9.102); (2) if IR-clean, read the fold neighborhood for
 a provably-null deref: eager SEH filters, unguarded lock/lookup results, and
 remember sunk loads mask the true site (this section).
 
-### 9.104 (FIXED 2026-07-18) WoW64 OUT handle/pointer-array not narrowed → 2× guest-heap overrun far from the write
+### 9.104 (LAYER-1 FIXED, LAYER-2 = task #18 class, 2026-07-18) NtCreateSection 0x50 is a dropped ProbeForRead sitting on the arm64 exception-dispatch recursion — NOT a deep-MM bug
+
+**Symptom:** kmtest `NtCreateSection` BUGCHECK 0x50 (PAGE_FAULT_IN_NONPAGED_AREA,
+read). Quarantined 2026-07-11 (amd64 sweep 13); task #7 filed it as a "deep MM
+bug (param-capture path)." It is not.
+
+**Layer 1 — a dropped probe (FIXED, kept).** ReactOS C `NtCreateSection`
+(section.c:3177) captures the user `MaximumSize` via `ProbeForReadLargeInteger`
+inside `_SEH2_TRY` — validate range + ULONG alignment, *then* read. The Rust port
+(ARM3/section.rs:2132) had dropped the probe and did a raw `safe_maximum_size =
+*maximum_size`. The test deliberately passes a **bad kernel** `MaximumSize`
+pointer; the raw deref hits it → 0x50 at exactly that address. Fix = restore
+`ProbeForRead(maximum_size, size_of::<LARGE_INTEGER>(), size_of::<ULONG>())`
+before the deref (arch-neutral, shared file). This is the classic §9.96 "dropped
+guard" pattern; find it by diffing the faulting fn's user-param capture vs C.
+
+**Layer 2 — the deep root, unmasked by Layer 1 (task #18 class).** With the probe
+in, a bad pointer now RAISES `ExRaiseAccessViolation` (exintrin.rs:166) exactly as
+the C intends — but a GDB-bt at the resulting bugcheck shows a **recursive
+`KiSynchronousExceptionEntry` cascade** (dozens of nested frames,
+KiSynchronousExceptionHandler re-entering itself) ending in the 0x50. I.e. a
+software raise in the **syscall** path on arm64 is not cleanly caught — the
+dispatch fault-in-fault-handler recurses. This is the **same structural root as
+task #18 / the async-SEH quarantine cluster** (IoCreateFile, RtlExceptionKM):
+arm64 exception dispatch from a KiSvcDispatch frame doesn't catch a raise. So
+retire the "deep MM" framing for NtCreateSection — it is arm64-exception-dispatch,
+and **one dispatch fix clears NtCreateSection + the async-SEH cluster** together.
+
+**Method note:** the dropped probe MASKED the deeper bug — the raw deref 0x50 hid
+the fact that even the *correct* (probe-raising) path fails on arm64. Fixing a
+dropped guard often just advances the symptom to the real root; keep the correct
+fix and re-triage the new fault, don't assume the guard *was* the bug. GDB-bt at
+the halt (wait-for the `*** BUGCHECK` serial line so KeBugCheckEx has halted the
+CPU, then `inspect.sh --command bt`) is what exposed the recursion vs a flat 0x50.
+
+### 9.105 (FIXED 2026-07-18) WoW64 OUT handle/pointer-array not narrowed → 2× guest-heap overrun far from the write
 
 **Symptom:** a 32-bit guest under WoW64 (amd64/arm64 host) takes a first-chance
 AV *inside its own 32-bit ntdll* in `rtl_heap::heap::RtlpRemoveFreeBlock` — the
