@@ -654,7 +654,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     let mut BaseSrvRestrictedObjectDirectory: HANDLE = core::ptr::null_mut();
     let mut BnoDacl: PACL = core::ptr::null_mut();
     let mut BnoRestrictedDacl: PACL = core::ptr::null_mut();
-    let mut BnoSd: PSECURITY_DESCRIPTOR;
+    let BnoSd: PSECURITY_DESCRIPTOR;
     let mut SymHandle: HANDLE = core::ptr::null_mut();
     let mut DirectoryName: _UNICODE_STRING = core::mem::zeroed();
     let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
@@ -764,7 +764,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
             break;
         }
     }
-    Success = RtlCreateUnicodeString(&mut BaseSrvKernel32DllPath, Buffer.as_ptr());
+    Success = RtlCreateUnicodeString(&raw mut BaseSrvKernel32DllPath, Buffer.as_ptr());
 
     if SessionId != 0 {
         let sessions = [
@@ -1200,7 +1200,7 @@ pub unsafe extern "system" fn BaseClientConnectRoutine(
     ConnectionInfo: PVOID,
     ConnectionInfoLength: *mut ULONG,
 ) -> NTSTATUS {
-    let ConnectInfo = ConnectionInfo as PBASESRV_API_CONNECTINFO;
+    let _ConnectInfo = ConnectionInfo as PBASESRV_API_CONNECTINFO;
 
     if ConnectionInfo.is_null()
         || ConnectionInfoLength.is_null()

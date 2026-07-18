@@ -26,7 +26,7 @@ file(GLOB_RECURSE USBPORT_RUST_SRCS ${USBPORT_RUST_WORKSPACE_DIR}/usbport-rust/s
 add_custom_command(
     OUTPUT ${USBPORT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${USBPORT_RUST_TARGET_DIR} RUSTFLAGS=${USBPORT_RUST_RUSTFLAGS} RUSTC_BOOTSTRAP=1
+        CARGO_TARGET_DIR=${USBPORT_RUST_TARGET_DIR} RUSTFLAGS=${USBPORT_RUST_RUSTFLAGS}
         cargo build --release --target ${USBPORT_RUST_TARGET} -p usbport-rust --manifest-path ${USBPORT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
         ${USBPORT_RUST_TARGET_DIR}/${USBPORT_RUST_TARGET}/release/libusbport_rust.a ${USBPORT_RUST_LIB}
@@ -42,6 +42,7 @@ list(APPEND PCH_SKIP_SOURCE
 
 add_library(usbport MODULE
     rust_cohab_stub.c
+    rust_varargs_shim.c
     ${PCH_SKIP_SOURCE}
     usbport.rc
     ${CMAKE_CURRENT_BINARY_DIR}/usbport.def)

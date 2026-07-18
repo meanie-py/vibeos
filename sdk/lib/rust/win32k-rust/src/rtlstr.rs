@@ -1,7 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{RtlAnsiStringToUnicodeString, RtlCreateUnicodeString, RtlInitAnsiString, RtlInitUnicodeString};
 use ntkrnl_sys::base::NT_SUCCESS;
-use core::ffi::c_void;
 
 extern "C" {
     fn wcslen(s: PCWSTR) -> usize;

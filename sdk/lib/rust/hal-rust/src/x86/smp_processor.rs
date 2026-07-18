@@ -398,20 +398,28 @@ static NEXT_PROCESSOR: AtomicU32 = AtomicU32::new(1); // 0 == BSP, already up
 
 // ---------------------------------------------------------------------------
 // identity_map_stub — make VA==stub_pa valid in the current (System) address
-// space via the amd64 recursive self-map (slot 0x1ED, same PTE_BASE the HAL's
-// memory.rs uses). For a <1MB VA every table index but the PT's is 0, so the
-// chain is PML4[0] -> PDPT[0] -> PD[0] -> PT[stub_pa>>12]. Pages 1-3 of the
-// low-stub run become the PDPT/PD/PT (zeroed via their BSP mapping first).
-// Idempotent: a second call sees the chain valid and just revalidates the PTE.
-// Fails (false) only if a DIFFERENT low mapping already occupies the chain —
-// never silently reuses foreign tables at the PT level with a mismatched PA.
+// space via the recursive self-map. For a <1MB VA every table index but the
+// PT's is 0, so on amd64 the chain is PML4[0] -> PDPT[0] -> PD[0] ->
+// PT[stub_pa>>12] (pages 1-3 of the scratch run become the PDPT/PD/PT) and on
+// i386 (non-PAE 2-level) it collapses to PD[0] -> PT[stub_pa>>12] (one scratch
+// page is the PT). Idempotent: a second call sees the chain valid and just
+// revalidates the PTE. Fails (false) only if a DIFFERENT low mapping already
+// occupies the chain — never silently reuses foreign tables with a mismatched
+// PA. The AP trampoline enables paging on this same kernel CR3, so the stub
+// page must translate VA==PA for the instruction window around the CR0 write.
 // ---------------------------------------------------------------------------
+#[cfg(target_arch = "x86_64")]
 const PTE_BASE: u64 = 0xFFFF_F680_0000_0000;
+#[cfg(target_arch = "x86_64")]
 const PDE_BASE: u64 = 0xFFFF_F6FB_4000_0000;
+#[cfg(target_arch = "x86_64")]
 const PPE_BASE: u64 = 0xFFFF_F6FB_7DA0_0000;
+#[cfg(target_arch = "x86_64")]
 const PXE_BASE: u64 = 0xFFFF_F6FB_7DBE_D000;
+#[cfg(target_arch = "x86_64")]
 const PTE_VALID_WRITE: u64 = 0x3; // P | RW (kernel, not global, not NX)
 
+#[cfg(target_arch = "x86_64")]
 unsafe fn identity_map_stub(_stub_va: *mut u8, stub_pa: u64) -> bool {
     // 3 contiguous scratch pages (PDPT/PD/PT), allocated <4GB at Phase 0
     // (halacpi.rs HalpApPtScratch) — the <1MB constraint only binds the SIPI
@@ -452,11 +460,61 @@ unsafe fn identity_map_stub(_stub_va: *mut u8, stub_pa: u64) -> bool {
 
     let want = stub_pa | PTE_VALID_WRITE;
     let cur = pte.read_volatile();
-    if cur & 1 != 0 && cur != want {
+    // Ignore hardware-stamped Accessed/Dirty (bits 5/6) in the ours-vs-foreign
+    // compare: AP1 executing through this mapping sets A (and D on its stack
+    // pokes), and the exact-match check then called OUR OWN page "foreign" —
+    // HalStartNextProcessor returned FALSE for every AP after the first
+    // (the -smp 4 BUGCHECK 0x61 cap, quest log 2026-07-12).
+    if cur & 1 != 0 && (cur & !0x60u64) != want {
         return false; // foreign mapping at our VA — refuse to clobber
     }
     pte.write_volatile(want);
     core::arch::asm!("invlpg [{}]", in(reg) stub_pa, options(nostack, preserves_flags));
+    true
+}
+
+// i386 (non-PAE, 2-level) self-map: PTE_BASE=0xC0000000, PDE self-map at
+// 0xC0300000 (== PTE_BASE + (PTE_BASE>>12)*4), 4-byte PTEs — same constants
+// the HAL's memory.rs uses. For a <1MB stub the PD index (stub_pa>>22) is 0,
+// so the whole chain is just PD[0] -> scratch PT -> PT[stub_pa>>12]. One
+// scratch page (the PT for VA 0-4MB) suffices; we reuse page 0 of the same
+// HalpApPtScratch run the amd64 path allocates 3 of.
+#[cfg(target_arch = "x86")]
+unsafe fn identity_map_stub(_stub_va: *mut u8, stub_pa: u64) -> bool {
+    const PTE_BASE_I386: u32 = 0xC000_0000;
+    const PDE_BASE_I386: u32 = 0xC030_0000; // PTE_BASE + (PTE_BASE>>12)*4
+    const PTE_VALID_WRITE_I386: u32 = 0x3; // P | RW (kernel, not global)
+
+    let scratch_pa = (&raw const HalpApPtScratchPhysicalAddress).read().QuadPart as u32;
+    let scratch_va = (&raw const HalpApPtScratch).read() as *mut u8;
+    if scratch_pa == 0 || scratch_va.is_null() {
+        return false; // Phase 0 couldn't allocate page-table scratch
+    }
+
+    let stub_pa32 = stub_pa as u32; // guaranteed < 1MB by the caller
+    // PD index is 0 for a <4MB VA, so the PDE is exactly PDE_BASE[0].
+    let pde0 = PDE_BASE_I386 as *mut u32;
+    // Self-map PTE slot for VA == stub_pa32 (reachable once PD[0] is valid).
+    let pte = (PTE_BASE_I386 + (stub_pa32 >> 12) * 4) as *mut u32;
+
+    if pde0.read_volatile() & 1 == 0 {
+        // Zero the scratch PT through its BSP mapping, then plug it in as the
+        // page table for VA 0-4MB. The PTE self-map slot above becomes valid
+        // as soon as this write lands.
+        core::ptr::write_bytes(scratch_va, 0, 0x1000);
+        pde0.write_volatile(scratch_pa | PTE_VALID_WRITE_I386);
+    }
+
+    let want = stub_pa32 | PTE_VALID_WRITE_I386;
+    let cur = pte.read_volatile();
+    // Ignore hardware-stamped Accessed/Dirty (bits 5/6) in the ours-vs-foreign
+    // compare (same rationale as the amd64 arm — AP1 running through this
+    // mapping sets A/D and must not read as "foreign" on the next AP start).
+    if cur & 1 != 0 && (cur & !0x60u32) != want {
+        return false; // foreign mapping at our VA — refuse to clobber
+    }
+    pte.write_volatile(want);
+    core::arch::asm!("invlpg [{}]", in(reg) stub_pa32, options(nostack, preserves_flags));
     true
 }
 

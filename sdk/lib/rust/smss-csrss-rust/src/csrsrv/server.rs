@@ -335,7 +335,7 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(ParameterValue: *mut i8)
 
     SectionSize.QuadPart = CsrSrvSharedSectionSize as i64;
     Status = NtCreateSection(
-        &mut CsrSrvSharedSection,
+        &raw mut CsrSrvSharedSection,
         SECTION_ALL_ACCESS,
         core::ptr::null_mut(),
         &mut SectionSize,
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(ParameterValue: *mut i8)
     Status = NtMapViewOfSection(
         CsrSrvSharedSection,
         NtCurrentProcess(),
-        &mut CsrSrvSharedSectionBase,
+        &raw mut CsrSrvSharedSectionBase,
         0,
         0,
         core::ptr::null_mut(),
@@ -411,7 +411,7 @@ pub unsafe extern "system" fn CsrSrvAttachSharedSection(
         Status = NtMapViewOfSection(
             CsrSrvSharedSection,
             (*CsrProcess).ProcessHandle,
-            &mut CsrSrvSharedSectionBase,
+            &raw mut CsrSrvSharedSectionBase,
             0,
             0,
             core::ptr::null_mut(),
@@ -421,6 +421,11 @@ pub unsafe extern "system" fn CsrSrvAttachSharedSection(
             PAGE_EXECUTE_READ,
         );
         if Status < 0 {
+            crate::dbg_print!(
+                b"[CSRSRV] AttachSharedSection: map at fixed base %p FAILED st=%lx\n\0",
+                CsrSrvSharedSectionBase,
+                Status
+            );
             return Status;
         }
     }

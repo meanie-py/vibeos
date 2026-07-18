@@ -243,7 +243,7 @@ pub unsafe extern "C" fn KspValidateConnectRequest(
         Interface = (*Descriptor).Interfaces as PKSPIN_INTERFACE;
     } else {
         Count = 1;
-        Interface = &mut StandardPinInterface as PKSPIN_INTERFACE;
+        Interface = &raw mut StandardPinInterface as PKSPIN_INTERFACE;
     }
 
     Found = FALSE;
@@ -282,7 +282,7 @@ pub unsafe extern "C" fn KspValidateConnectRequest(
         Medium = (*Descriptor).Mediums as PKSPIN_MEDIUM;
     } else {
         Count = 1;
-        Medium = &mut StandardPinMedium as PKSPIN_MEDIUM;
+        Medium = &raw mut StandardPinMedium as PKSPIN_MEDIUM;
     }
 
     Found = FALSE;
@@ -548,7 +548,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
             if !(*Descriptor).Interfaces.is_null() {
                 return KsHandleSizedListQuery(Irp, (*Descriptor).InterfacesCount, core::mem::size_of::<KSPIN_MEDIUM>() as ULONG, (*Descriptor).Interfaces as *const core::ffi::c_void);
             } else {
-                return KsHandleSizedListQuery(Irp, 1, core::mem::size_of::<KSPIN_INTERFACE>() as ULONG, &StandardPinInterface as *const _ as *const core::ffi::c_void);
+                return KsHandleSizedListQuery(Irp, 1, core::mem::size_of::<KSPIN_INTERFACE>() as ULONG, &raw const StandardPinInterface as *const _ as *const core::ffi::c_void);
             }
         }
 
@@ -556,7 +556,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
             if (*Descriptor).MediumsCount != 0 {
                 return KsHandleSizedListQuery(Irp, (*Descriptor).MediumsCount, core::mem::size_of::<KSPIN_MEDIUM>() as ULONG, (*Descriptor).Mediums as *const core::ffi::c_void);
             } else {
-                return KsHandleSizedListQuery(Irp, 1, core::mem::size_of::<KSPIN_MEDIUM>() as ULONG, &StandardPinMedium as *const _ as *const core::ffi::c_void);
+                return KsHandleSizedListQuery(Irp, 1, core::mem::size_of::<KSPIN_MEDIUM>() as ULONG, &raw const StandardPinMedium as *const _ as *const core::ffi::c_void);
             }
         }
 

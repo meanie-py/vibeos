@@ -18,7 +18,6 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 // File-statics translate to `static mut`; access is from `unsafe` fns.
-#![allow(static_mut_refs)]
 // rustconv-style transliteration keeps some explicit casts / dead locals.
 #![allow(unused_unsafe, unused_parens, unused_variables, unused_assignments, dead_code)]
 

@@ -160,8 +160,8 @@ pub unsafe extern "C" fn send_gdb_partial_memory(
 
     while length > 0 {
         length -= 1;
-        gdb_out[0] = hex_chars[(((*ptr >> 4) & 0xf) as usize)] as CHAR;
-        gdb_out[1] = hex_chars[((*ptr & 0xf) as usize)] as CHAR;
+        gdb_out[0] = hex_chars[((*ptr >> 4) & 0xf) as usize ] as CHAR;
+        gdb_out[1] = hex_chars[(*ptr & 0xf) as usize ] as CHAR;
         ptr = ptr.offset(1);
         send_gdb_partial_packet(gdb_out.as_ptr());
     }

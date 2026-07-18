@@ -118,13 +118,13 @@ pub unsafe extern "system" fn KdbgSendPacket(
         let ManipulateState = (*MessageHeader).Buffer as PDBGKD_MANIPULATE_STATE64;
         if (*ManipulateState).ApiNumber == DbgKdGetContextApi {
             if KdbgExceptionRecord.ExceptionCode == STATUS_ASSERTION_FAILURE {
-                KeSetContextPc(&mut KdbgContext, KeGetContextPc(&KdbgContext) + 2);
+                KeSetContextPc(&raw mut KdbgContext, KeGetContextPc(&raw const KdbgContext) + 2);
             }
 
             let Result = KdbEnterDebuggerException(
-                &mut KdbgExceptionRecord,
+                &raw mut KdbgExceptionRecord,
                 (KdbgContext.SegCs & 1) as BOOLEAN,
-                &mut KdbgContext,
+                &raw mut KdbgContext,
                 KdbgFirstChanceException,
             );
 
@@ -173,12 +173,12 @@ pub unsafe extern "system" fn KdbgReceivePacket(
         if KdbgNextApiNumber == DbgKdGetContextApi {
             (*ManipulateState).ApiNumber = DbgKdGetContextApi;
             (*MessageData).Length = 0;
-            (*MessageData).Buffer = &mut KdbgContext as *mut CONTEXT as PCHAR;
+            (*MessageData).Buffer = &raw mut KdbgContext as *mut CONTEXT as PCHAR;
             return KdPacketReceived;
         } else if KdbgNextApiNumber == DbgKdSetContextApi {
             (*ManipulateState).ApiNumber = DbgKdSetContextApi;
             (*MessageData).Length = core::mem::size_of::<CONTEXT>() as USHORT;
-            (*MessageData).Buffer = &mut KdbgContext as *mut CONTEXT as PCHAR;
+            (*MessageData).Buffer = &raw mut KdbgContext as *mut CONTEXT as PCHAR;
             return KdPacketReceived;
         } else if KdbgNextApiNumber != DbgKdContinueApi {
             crate::kdb_printf!(b"%s:%d is UNIMPLEMENTED\n\0",

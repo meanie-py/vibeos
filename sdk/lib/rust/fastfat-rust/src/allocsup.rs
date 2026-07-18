@@ -927,7 +927,7 @@ pub unsafe extern "system" fn FatAddFileAllocation(
         if (*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart == 0 {
             let mut first_lbo_of_file: i64 = 0;
 
-            core::assert!((*FcbOrDcb).FcbCondition == FcbGood);
+            core::debug_assert!((*FcbOrDcb).FcbCondition == FcbGood);
 
             FatGetDirentFromFcbOrDcb(
                 IrpContext,
@@ -1325,7 +1325,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
     DbgPrint(b"FatAllocateDiskSpace\n\0".as_ptr() as *const i8);
     // DbgPrint Vcb/ByteCount/Mcb/Hint — variadic not expressible in safe Rust
 
-    assert!((AbsoluteClusterHint <= (*Vcb).AllocationSupport.NumberOfClusters + 2) && (1 != AbsoluteClusterHint));
+    debug_assert!((AbsoluteClusterHint <= (*Vcb).AllocationSupport.NumberOfClusters + 2) && (1 != AbsoluteClusterHint));
 
     if *ByteCount == 0 {
         DbgPrint(b"Nothing to allocate.\n\0".as_ptr() as *const i8);
@@ -1364,7 +1364,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
                 || AbsoluteClusterHint > (*(*Vcb).CurrentWindow).LastCluster
             {
                 let BucketNum: ULONG = FatWindowOfCluster(AbsoluteClusterHint);
-                assert!(BucketNum < (*Vcb).NumberOfWindows);
+                debug_assert!(BucketNum < (*Vcb).NumberOfWindows);
 
                 FatUnlockFreeClusterBitMap(Vcb);
                 ExReleaseResourceLite(core::ptr::addr_of_mut!((*Vcb).ChangeBitMapResource));
@@ -1906,7 +1906,7 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
     // Assert zeroing succeeded
     // NT_ASSERT( NT_SUCCESS(ZeroingStatus) );
     if cfg!(debug_assertions) {
-        assert!(ZeroingStatus >= 0);
+        debug_assert!(ZeroingStatus >= 0);
     }
 
     // ----- Deallocation phase (SEH2_TRY/FINALLY) -----
@@ -1945,12 +1945,12 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
             ExAcquireFastMutexUnsafe(&mut (*(Vcb)).FreeClusterBitMapMutex as *mut _ as *mut core::ffi::c_void);
             // ASSERT_CURRENT_WINDOW_GOOD(Vcb) - we'll inline:
             if cfg!(debug_assertions) {
-                assert!((*(Vcb)).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer.is_null() == false);
+                debug_assert!((*(Vcb)).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer.is_null() == false);
                 let clear = RtlNumberOfClearBits((&mut (*(Vcb)).FreeClusterBitMap as *mut RTL_BITMAP_DBG as *mut RTL_BITMAP).cast());
                 if (*(*Vcb).CurrentWindow).ClustersFree != clear {
                     DbgPrint((b"FAT: ClustersFree %x h != FreeClusterBitMapClear %x h\n\0".as_ptr() as *const u8).cast(), (*(*Vcb).CurrentWindow).ClustersFree, clear);
                 }
-                assert!((*(*Vcb).CurrentWindow).ClustersFree == clear);
+                debug_assert!((*(*Vcb).CurrentWindow).ClustersFree == clear);
             }
         }
 
@@ -1998,10 +1998,10 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
                 // Debug checks (if DBG)
                 if cfg!(debug_assertions) {
                     let previous_clear = RtlNumberOfClearBits((&mut (*(Vcb)).FreeClusterBitMap as *mut RTL_BITMAP_DBG as *mut RTL_BITMAP).cast());
-                    assert!(MyStart + MyLength - (*(Window)).FirstCluster <= (*(Vcb)).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().SizeOfBitMap);
+                    debug_assert!(MyStart + MyLength - (*(Window)).FirstCluster <= (*(Vcb)).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().SizeOfBitMap);
                     for i in 0..MyLength {
                         let bit_index = MyStart - (*(Window)).FirstCluster + i;
-                        assert!(RtlCheckBit(&(*(Vcb)).FreeClusterBitMap as *const RTL_BITMAP_DBG as *const RTL_BITMAP, bit_index) == 1);
+                        debug_assert!(RtlCheckBit(&(*(Vcb)).FreeClusterBitMap as *const RTL_BITMAP_DBG as *const RTL_BITMAP, bit_index) == 1);
                     }
                 }
 
@@ -2009,8 +2009,8 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
                 {
                     let fat_index = MyStart - (*(Window)).FirstCluster + 2;
                     let cluster_count = MyLength;
-                    assert!(fat_index + cluster_count - 2 <= (*(Vcb)).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().SizeOfBitMap);
-                    assert!(fat_index >= 2);
+                    debug_assert!(fat_index + cluster_count - 2 <= (*(Vcb)).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().SizeOfBitMap);
+                    debug_assert!(fat_index >= 2);
                     RtlClearBits(&mut (*(Vcb)).FreeClusterBitMap as *mut RTL_BITMAP_DBG as *mut RTL_BITMAP, fat_index - 2, cluster_count);
                     if fat_index < (*(Vcb)).ClusterHint {
                         (*(Vcb)).ClusterHint = fat_index;
@@ -2058,12 +2058,12 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
         {
             // ASSERT_CURRENT_WINDOW_GOOD as above
             if cfg!(debug_assertions) {
-                assert!((*(Vcb)).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer.is_null() == false);
+                debug_assert!((*(Vcb)).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer.is_null() == false);
                 let clear = RtlNumberOfClearBits((&mut (*(Vcb)).FreeClusterBitMap as *mut RTL_BITMAP_DBG as *mut RTL_BITMAP).cast());
                 if (*(*Vcb).CurrentWindow).ClustersFree != clear {
                     DbgPrint((b"FAT: ClustersFree %x h != FreeClusterBitMapClear %x h\n\0".as_ptr() as *const u8).cast(), (*(*Vcb).CurrentWindow).ClustersFree, clear);
                 }
-                assert!((*(*Vcb).CurrentWindow).ClustersFree == clear);
+                debug_assert!((*(*Vcb).CurrentWindow).ClustersFree == clear);
             }
             ExReleaseFastMutexUnsafe(&mut (*(Vcb)).FreeClusterBitMapMutex as *mut _ as *mut core::ffi::c_void);
         }
@@ -2380,7 +2380,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
 
         FatVerifyIndexIsValid(IrpContext, Vcb, FatIndex);
 
-        if ((*Vcb).AllocationSupport.FatIndexBitSize == 12) {
+        if (*Vcb).AllocationSupport.FatIndexBitSize == 12  {
             if (*Context).Bcb.is_null() {
                 FatReadVolumeFile(
                     IrpContext,
@@ -2393,7 +2393,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
             }
 
             FatLookup12BitEntry((*Context).PinnedPage as *mut u8, FatIndex, FatEntry);
-        } else if ((*Vcb).AllocationSupport.FatIndexBitSize == 32) {
+        } else if (*Vcb).AllocationSupport.FatIndexBitSize == 32  {
             let OffsetIntoVolumeFile: u32;
             let PageEntryOffset: u32;
 
@@ -2509,7 +2509,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
             IRP_CONTEXT_FLAG_WAIT | IRP_CONTEXT_FLAG_DISABLE_DIRTY,
         );
     } else {
-        assert!((FatEntry & !0x0FFFFFFF) == 0); // !FAT32_ENTRY_MASK = 0xF0000000 approx
+        debug_assert!((FatEntry & !0x0FFFFFFF) == 0); // !FAT32_ENTRY_MASK = 0xF0000000 approx
         FatVerifyIndexIsValid(IrpContext, Vcb, FatIndex);
     }
 
@@ -2644,7 +2644,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
 
     // If we still hold the mutex (only if abnormal termination)
     if ReleaseMutex != 0 {
-        assert!(seh_abnormal);
+        debug_assert!(seh_abnormal);
         FatUnlockFreeClusterBitMap(Vcb);
     }
 

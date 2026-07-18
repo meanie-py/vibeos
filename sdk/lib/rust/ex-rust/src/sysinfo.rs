@@ -1408,15 +1408,15 @@ unsafe extern "C" fn QSI_SystemCallTimeInformation(_Buffer: PVOID, _Size: ULONG,
 // Class 11
 unsafe extern "C" fn QSI_SystemModuleInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
     KeEnterCriticalRegion();
-    ExAcquireResourceExclusiveLite(&mut PsLoadedModuleResource, 1u8);
+    ExAcquireResourceExclusiveLite(&raw mut PsLoadedModuleResource, 1u8);
     let Status = ExpQueryModuleInformation(
-        &mut PsLoadedModuleList,
-        &mut MmLoadedUserImageList,
+        &raw mut PsLoadedModuleList,
+        &raw mut MmLoadedUserImageList,
         Buffer as PRTL_PROCESS_MODULES,
         Size,
         ReqSize,
     );
-    ExReleaseResourceLite(&mut PsLoadedModuleResource);
+    ExReleaseResourceLite(&raw mut PsLoadedModuleResource);
     KeLeaveCriticalRegion();
     Status
 }
@@ -1965,7 +1965,7 @@ unsafe extern "C" fn QSI_SystemCurrentTimeZoneInformation(Buffer: PVOID, Size: U
         return STATUS_INFO_LENGTH_MISMATCH;
     }
     core::ptr::copy_nonoverlapping(
-        &ExpTimeZoneInfo as *const RTL_TIME_ZONE_INFORMATION as *const u8,
+        &raw const ExpTimeZoneInfo as *const RTL_TIME_ZONE_INFORMATION as *const u8,
         Buffer as *mut u8,
         core::mem::size_of::<RTL_TIME_ZONE_INFORMATION>(),
     );
@@ -2002,9 +2002,9 @@ unsafe extern "C" fn QSI_SystemLookasideInformation(Buffer: PVOID, Size: ULONG, 
         return Status;
     }
 
-    ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExPoolLookasideListHead, 0u8);
+    ExpCopyLookasideInformation(&mut Info, &mut Remaining, &raw mut ExPoolLookasideListHead, 0u8);
     if Remaining > 0 {
-        ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExSystemLookasideListHead, 1u8);
+        ExpCopyLookasideInformation(&mut Info, &mut Remaining, &raw mut ExSystemLookasideListHead, 1u8);
     }
     if Remaining > 0 {
         // RAII: guard drops (releases) at block end — release was already the
@@ -2012,13 +2012,13 @@ unsafe extern "C" fn QSI_SystemLookasideInformation(Buffer: PVOID, Size: ULONG, 
         let _lk = ntkrnl_sys::guards::SpinLockGuard::acquire(
             core::ptr::addr_of_mut!(ExpNonPagedLookasideListLock) as ntkrnl_sys::ke::PKSPIN_LOCK,
         );
-        ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExpNonPagedLookasideListHead, 1u8);
+        ExpCopyLookasideInformation(&mut Info, &mut Remaining, &raw mut ExpNonPagedLookasideListHead, 1u8);
     }
     if Remaining > 0 {
         let _lk = ntkrnl_sys::guards::SpinLockGuard::acquire(
             core::ptr::addr_of_mut!(ExpPagedLookasideListLock) as ntkrnl_sys::ke::PKSPIN_LOCK,
         );
-        ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExpPagedLookasideListHead, 1u8);
+        ExpCopyLookasideInformation(&mut Info, &mut Remaining, &raw mut ExpPagedLookasideListHead, 1u8);
     }
 
     ExUnlockUserBuffer(Mdl);

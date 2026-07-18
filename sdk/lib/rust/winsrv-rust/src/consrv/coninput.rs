@@ -1,16 +1,9 @@
 use winsrv_sys::nt::*;
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
 use super::condrv::coninput::*;
-use super::condrv::console::*;
 use super::console::*;
-use super::handle::*;
 use super::console::ConSrvGetConsole;
 use super::console::ConSrvReleaseConsole;
-use super::{GetConsoleInputBufferMode, GetType};
-use super::lineinput::*;
-use super::history::*;
-use super::init::*;
+use super::GetConsoleInputBufferMode;
 use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -292,18 +285,18 @@ pub(crate) unsafe fn WaitBeforeReading(
 }
 
 unsafe extern "system" fn ReadCharsThread(
-    WaitList: PLIST_ENTRY,
-    WaitThread: PCSR_THREAD,
+    _WaitList: PLIST_ENTRY,
+    _WaitThread: PCSR_THREAD,
     WaitApiMessage: PCSR_API_MESSAGE,
     WaitContext: PVOID,
-    WaitArgument1: PVOID,
+    _WaitArgument1: PVOID,
     WaitArgument2: PVOID,
     WaitFlags: ULONG,
 ) -> BOOLEAN {
     let InputInfo = WaitContext as PGET_INPUT_INFO;
     let InputHandle = WaitArgument2;
 
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     if (WaitFlags & CsrProcessTerminating) != 0 {
         Status = STATUS_THREAD_IS_TERMINATING;
@@ -398,18 +391,18 @@ pub(crate) unsafe fn ReadChars(
 }
 
 unsafe extern "system" fn ReadInputBufferThread(
-    WaitList: PLIST_ENTRY,
-    WaitThread: PCSR_THREAD,
+    _WaitList: PLIST_ENTRY,
+    _WaitThread: PCSR_THREAD,
     WaitApiMessage: PCSR_API_MESSAGE,
     WaitContext: PVOID,
-    WaitArgument1: PVOID,
+    _WaitArgument1: PVOID,
     WaitArgument2: PVOID,
     WaitFlags: ULONG,
 ) -> BOOLEAN {
     let InputInfo = WaitContext as PGET_INPUT_INFO;
     let InputHandle = WaitArgument2;
 
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     if (WaitFlags & CsrProcessTerminating) != 0 {
         Status = STATUS_THREAD_IS_TERMINATING;

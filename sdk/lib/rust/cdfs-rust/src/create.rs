@@ -1,8 +1,6 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ACCESS_MASK, _FAST_IO_POSSIBLE_FastIoIsNotPossible, IoCheckShareAccess, IoGetCurrentIrpStackLocation, IoSetShareAccess, IoUpdateShareAccess, POPLOCK, POPLOCK_WAIT_COMPLETE_ROUTINE, POPLOCK_FS_PREPOST_IRP, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{_FAST_IO_POSSIBLE_FastIoIsNotPossible, IoCheckShareAccess, IoGetCurrentIrpStackLocation, IoSetShareAccess, IoUpdateShareAccess, POPLOCK, POPLOCK_WAIT_COMPLETE_ROUTINE, POPLOCK_FS_PREPOST_IRP, PIRP, _UNICODE_STRING};
 use core::ffi::c_void;
 use core::mem::{size_of, zeroed};
 use core::ptr::null_mut;
@@ -729,7 +727,7 @@ pub unsafe extern "C" fn CdOpenDirectoryFromPathEntry(
         let mut FileId: FILE_ID = core::mem::zeroed();
         let mut UnlockVcb: u8 = 0;
         let mut FcbExisted: u8 = 0;
-        let mut NextFcb: *mut FCB;
+        let NextFcb: *mut FCB;
         let mut ParentFcb: *mut FCB = core::ptr::null_mut();
         let mut Status: NTSTATUS = STATUS_SUCCESS;
 

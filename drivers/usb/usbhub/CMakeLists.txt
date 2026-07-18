@@ -20,7 +20,7 @@ file(GLOB_RECURSE USBHUB_RUST_SRCS ${USBHUB_RUST_WORKSPACE_DIR}/usbhub-rust/src/
 add_custom_command(
     OUTPUT ${USBHUB_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${USBHUB_RUST_TARGET_DIR} RUSTFLAGS=${USBHUB_RUST_RUSTFLAGS} RUSTC_BOOTSTRAP=1
+        CARGO_TARGET_DIR=${USBHUB_RUST_TARGET_DIR} RUSTFLAGS=${USBHUB_RUST_RUSTFLAGS}
         cargo build --release --target ${USBHUB_RUST_TARGET} -p usbhub-rust --manifest-path ${USBHUB_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
         ${USBHUB_RUST_TARGET_DIR}/${USBHUB_RUST_TARGET}/release/libusbhub_rust.a ${USBHUB_RUST_LIB}
@@ -29,7 +29,7 @@ add_custom_command(
     COMMENT "Building usbhub-rust (${USBHUB_RUST_TARGET})" VERBATIM)
 add_custom_target(rust_usbhub DEPENDS ${USBHUB_RUST_LIB})
 
-add_library(usbhub MODULE rust_cohab_stub.c usbhub.rc)
+add_library(usbhub MODULE rust_cohab_stub.c rust_varargs_shim.c usbhub.rc)
 set_module_type(usbhub kernelmodedriver)
 add_dependencies(usbhub rust_usbhub)
 target_link_libraries(usbhub ${USBHUB_RUST_LIB} ${PSEH_LIB})

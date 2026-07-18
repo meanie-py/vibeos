@@ -1,8 +1,6 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{IMAGE_RESOURCE_DATA_ENTRY, IMAGE_RESOURCE_DIRECTORY, IMAGE_RESOURCE_DIRECTORY_ENTRY, LDR_ENUM_RESOURCE_INFO, LDR_RESOURCE_INFO, LPCWSTR, PIMAGE_RESOURCE_DATA_ENTRY, PIMAGE_RESOURCE_DIRECTORY, PIMAGE_RESOURCE_DIRECTORY_ENTRY, PLDR_RESOURCE_INFO, RtlImageDirectoryEntryToData, RtlImageNtHeader, RtlImageRvaToVa, wchar_t};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{IMAGE_RESOURCE_DATA_ENTRY, IMAGE_RESOURCE_DIRECTORY, IMAGE_RESOURCE_DIRECTORY_ENTRY, LDR_ENUM_RESOURCE_INFO, LPCWSTR, PIMAGE_RESOURCE_DATA_ENTRY, PIMAGE_RESOURCE_DIRECTORY, PIMAGE_RESOURCE_DIRECTORY_ENTRY, PLDR_RESOURCE_INFO, RtlImageDirectoryEntryToData, RtlImageNtHeader, RtlImageRvaToVa, wchar_t};
 
 // find_entry is provided per-environment by libsupp (dll/ntdll/rtl/libsupp.c
 // for ntdll, the kernel libsupp for ntoskrnl) — declared `NTSTATUS find_entry`

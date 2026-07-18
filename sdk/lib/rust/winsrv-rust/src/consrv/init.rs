@@ -1,18 +1,11 @@
 use winsrv_sys::nt::*;
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
 use super::console::*;
 use super::handle::*;
-use super::lineinput::*;
 use super::history::*;
 // Phase 5.4 sibling Srv* definitions
 use super::alias::*;
 use super::coninput::*;
-use super::conoutput::*;
 use super::frontendctl::*;
-use super::shutdown::*;
 use super::subsysreg::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -294,7 +287,7 @@ pub unsafe extern "system" fn ConSrvNewProcess(
         return STATUS_INVALID_PARAMETER;
     }
 
-    let TargetProcessData = ((*(*TargetProcess).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as PCONSOLE_PROCESS_DATA);
+    let TargetProcessData = (*(*TargetProcess).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as PCONSOLE_PROCESS_DATA ;
 
     core::ptr::write_bytes(TargetProcessData as *mut u8, 0, core::mem::size_of::<CONSOLE_PROCESS_DATA>());
     (*TargetProcessData).Process = TargetProcess;
@@ -311,7 +304,7 @@ pub unsafe extern "system" fn ConSrvNewProcess(
     }
 
     if ((*TargetProcess).Flags & CsrProcessIsConsoleApp) != 0 {
-        let SourceProcessData = ((*(*SourceProcess).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as PCONSOLE_PROCESS_DATA);
+        let SourceProcessData = (*(*SourceProcess).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as PCONSOLE_PROCESS_DATA ;
         let mut SourceConsole: PCONSRV_CONSOLE = core::ptr::null_mut();
 
         if ConSrvValidateConsole(
@@ -341,7 +334,7 @@ pub unsafe extern "system" fn ConSrvConnect(
 ) -> NTSTATUS {
     let mut Status = STATUS_SUCCESS;
     let ConnectInfo = ConnectionInfo as PCONSRV_API_CONNECTINFO;
-    let ProcessData = ((*(*CsrProcess).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as PCONSOLE_PROCESS_DATA);
+    let ProcessData = (*(*CsrProcess).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as PCONSOLE_PROCESS_DATA ;
 
     if ConnectionInfo.is_null() || ConnectionInfoLength.is_null() || *ConnectionInfoLength != core::mem::size_of::<CONSRV_API_CONNECTINFO>() as ULONG {
         return STATUS_UNSUCCESSFUL;
@@ -425,7 +418,7 @@ pub unsafe extern "system" fn ConSrvConnect(
 
 #[cfg_attr(feature = "winsrv_dll_only", no_mangle)]
 pub unsafe extern "system" fn ConSrvDisconnect(CsrProcess: PCSR_PROCESS) {
-    let ProcessData = ((*(*CsrProcess).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as PCONSOLE_PROCESS_DATA);
+    let ProcessData = (*(*CsrProcess).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as PCONSOLE_PROCESS_DATA ;
 
     if !(*ProcessData).ConsoleHandle.is_null() || !(*ProcessData).HandleTable.is_null() {
         ConSrvRemoveConsole(ProcessData);

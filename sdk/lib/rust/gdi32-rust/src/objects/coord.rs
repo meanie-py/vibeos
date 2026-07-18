@@ -14,6 +14,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys's FALSE/TRUE are bindgen u32 (#define), but BOOL is i32 — shadow with
 // BOOL-typed locals so `== FALSE`/`return TRUE` type-check against the i32 BOOL returns.
@@ -64,7 +65,12 @@ extern "C" {
 }
 
 // gdi32p.h: `GdiGetLDC` is defined FASTCALL in misc.rs (i386 `@GdiGetLDC@4`).
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC;
 }
 
@@ -224,7 +230,7 @@ pub unsafe extern "system" fn GetMapMode(hdc: HDC) -> INT {
     }
 
     /* Return the map mode */
-    (*pdcattr).iMapMode
+    (*dcattr_f!(pdcattr, iMapMode))
 }
 
 /*
@@ -247,8 +253,8 @@ pub unsafe extern "system" fn SetMapMode(hdc: HDC, iMode: INT) -> INT {
     }
 
     /* Force change if Isotropic is set for recompute. */
-    if (iMode != (*pdcattr).iMapMode) || (iMode == MM_ISOTROPIC as INT) {
-        (*pdcattr).ulDirty_ &= !(SLOW_WIDTHS as ULONG);
+    if (iMode != (*dcattr_f!(pdcattr, iMapMode))) || (iMode == MM_ISOTROPIC as INT) {
+        (*dcattr_f!(pdcattr, ulDirty_)) &= !(SLOW_WIDTHS as ULONG);
         return GetAndSetDCDWord(
             hdc,
             _GETSETDCDWORD_GdiGetSetMapMode as UINT,
@@ -259,7 +265,7 @@ pub unsafe extern "system" fn SetMapMode(hdc: HDC, iMode: INT) -> INT {
         ) as INT;
     }
 
-    (*pdcattr).iMapMode
+    (*dcattr_f!(pdcattr, iMapMode))
 }
 
 #[no_mangle]
@@ -283,7 +289,7 @@ pub unsafe extern "system" fn DPtoLP(hdc: HDC, lpPoints: LPPOINT, nCount: INT) -
         return FALSE;
     }
 
-    if (*pdcattr).iMapMode == MM_ISOTROPIC as INT {
+    if (*dcattr_f!(pdcattr, iMapMode)) == MM_ISOTROPIC as INT {
         if NtGdiGetDCPoint(
             hdc,
             _GETDCPOINT_GdiGetViewPortExt as UINT,
@@ -345,17 +351,17 @@ pub unsafe extern "system" fn GetCurrentPositionEx(hdc: HDC, lpPoint: LPPOINT) -
         return FALSE;
     }
 
-    if ((*pdcattr).ulDirty_ & DIRTY_PTLCURRENT as ULONG) != 0 {
+    if ((*dcattr_f!(pdcattr, ulDirty_)) & DIRTY_PTLCURRENT as ULONG) != 0 {
         // have a hit!
-        (*lpPoint).x = (*pdcattr).ptfxCurrent.x;
-        (*lpPoint).y = (*pdcattr).ptfxCurrent.y;
+        (*lpPoint).x = (*dcattr_f!(pdcattr, ptfxCurrent)).x;
+        (*lpPoint).y = (*dcattr_f!(pdcattr, ptfxCurrent)).y;
         DPtoLP(hdc, lpPoint, 1); // reconvert back.
-        (*pdcattr).ptlCurrent.x = (*lpPoint).x; // save it
-        (*pdcattr).ptlCurrent.y = (*lpPoint).y;
-        (*pdcattr).ulDirty_ &= !(DIRTY_PTLCURRENT as ULONG); // clear bit
+        (*dcattr_f!(pdcattr, ptlCurrent)).x = (*lpPoint).x; // save it
+        (*dcattr_f!(pdcattr, ptlCurrent)).y = (*lpPoint).y;
+        (*dcattr_f!(pdcattr, ulDirty_)) &= !(DIRTY_PTLCURRENT as ULONG); // clear bit
     } else {
-        (*lpPoint).x = (*pdcattr).ptlCurrent.x;
-        (*lpPoint).y = (*pdcattr).ptlCurrent.y;
+        (*lpPoint).x = (*dcattr_f!(pdcattr, ptlCurrent)).x;
+        (*lpPoint).y = (*dcattr_f!(pdcattr, ptlCurrent)).y;
     }
 
     TRUE
@@ -442,7 +448,7 @@ pub unsafe extern "system" fn ModifyWorldTransform(
     }
 
     /* Check that graphics mode is GM_ADVANCED */
-    if (*pdcattr).iGraphicsMode != GM_ADVANCED as INT {
+    if (*dcattr_f!(pdcattr, iGraphicsMode)) != GM_ADVANCED as INT {
         return FALSE;
     }
 
@@ -460,8 +466,8 @@ pub unsafe extern "system" fn GetViewportExtEx(hdc: HDC, lpSize: LPSIZE) -> BOOL
     }
 
     /* Check if we need to update values */
-    if ((*pdcattr).flXform & PAGE_EXTENTS_CHANGED as FLONG) != 0
-        && ((*pdcattr).iMapMode == MM_ISOTROPIC as INT)
+    if ((*dcattr_f!(pdcattr, flXform)) & PAGE_EXTENTS_CHANGED as FLONG) != 0
+        && ((*dcattr_f!(pdcattr, iMapMode)) == MM_ISOTROPIC as INT)
     {
         /* Call win32k to do the work */
         return NtGdiGetDCPoint(
@@ -472,8 +478,8 @@ pub unsafe extern "system" fn GetViewportExtEx(hdc: HDC, lpSize: LPSIZE) -> BOOL
     }
 
     /* Nothing to calculate, return the current extension */
-    (*lpSize).cx = (*pdcattr).szlViewportExt.cx;
-    (*lpSize).cy = (*pdcattr).szlViewportExt.cy;
+    (*lpSize).cx = (*dcattr_f!(pdcattr, szlViewportExt)).cx;
+    (*lpSize).cy = (*dcattr_f!(pdcattr, szlViewportExt)).cy;
 
     TRUE
 }
@@ -488,11 +494,11 @@ pub unsafe extern "system" fn GetViewportOrgEx(hdc: HDC, lpPoint: LPPOINT) -> BO
     }
 
     /* Get the current viewport org */
-    (*lpPoint).x = (*pdcattr).ptlViewportOrg.x;
-    (*lpPoint).y = (*pdcattr).ptlViewportOrg.y;
+    (*lpPoint).x = (*dcattr_f!(pdcattr, ptlViewportOrg)).x;
+    (*lpPoint).y = (*dcattr_f!(pdcattr, ptlViewportOrg)).y;
 
     /* Handle right-to-left layout */
-    if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+    if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
         (*lpPoint).x = -(*lpPoint).x;
     }
 
@@ -509,11 +515,11 @@ pub unsafe extern "system" fn GetWindowExtEx(hdc: HDC, lpSize: LPSIZE) -> BOOL {
     }
 
     /* Get the current window extension */
-    (*lpSize).cx = (*pdcattr).szlWindowExt.cx;
-    (*lpSize).cy = (*pdcattr).szlWindowExt.cy;
+    (*lpSize).cx = (*dcattr_f!(pdcattr, szlWindowExt)).cx;
+    (*lpSize).cy = (*dcattr_f!(pdcattr, szlWindowExt)).cy;
 
     /* Handle right-to-left layout */
-    if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+    if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
         (*lpSize).cx = -(*lpSize).cx;
     }
 
@@ -530,8 +536,8 @@ pub unsafe extern "system" fn GetWindowOrgEx(hdc: HDC, lpPoint: LPPOINT) -> BOOL
     }
 
     /* Get the current window origin */
-    (*lpPoint).x = (*pdcattr).ptlWindowOrg.x;
-    (*lpPoint).y = (*pdcattr).ptlWindowOrg.y;
+    (*lpPoint).x = (*dcattr_f!(pdcattr, ptlWindowOrg)).x;
+    (*lpPoint).y = (*dcattr_f!(pdcattr, ptlWindowOrg)).y;
 
     TRUE
 }
@@ -578,12 +584,12 @@ pub unsafe extern "system" fn SetViewportExtEx(
     /* Check if the caller wants the old extension */
     if !lpSize.is_null() {
         /* Return the current viewport extension */
-        (*lpSize).cx = (*pdcattr).szlViewportExt.cx;
-        (*lpSize).cy = (*pdcattr).szlViewportExt.cy;
+        (*lpSize).cx = (*dcattr_f!(pdcattr, szlViewportExt)).cx;
+        (*lpSize).cy = (*dcattr_f!(pdcattr, szlViewportExt)).cy;
     }
 
     /* Check for trivial case */
-    if ((*pdcattr).szlViewportExt.cx == nXExtent) && ((*pdcattr).szlViewportExt.cy == nYExtent) {
+    if ((*dcattr_f!(pdcattr, szlViewportExt)).cx == nXExtent) && ((*dcattr_f!(pdcattr, szlViewportExt)).cy == nYExtent) {
         return TRUE;
     }
 
@@ -592,27 +598,27 @@ pub unsafe extern "system" fn SetViewportExtEx(
     }
 
     /* Only change viewport extension if we are in iso or aniso mode */
-    if ((*pdcattr).iMapMode == MM_ISOTROPIC as INT)
-        || ((*pdcattr).iMapMode == MM_ANISOTROPIC as INT)
+    if ((*dcattr_f!(pdcattr, iMapMode)) == MM_ISOTROPIC as INT)
+        || ((*dcattr_f!(pdcattr, iMapMode)) == MM_ANISOTROPIC as INT)
     {
         if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-            if ((*pdcattr).ulDirty_ & DC_MODE_DIRTY as ULONG) != 0 {
+            if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_MODE_DIRTY as ULONG) != 0 {
                 NtGdiFlush(); // Sync up pdcattr from Kernel space.
-                (*pdcattr).ulDirty_ &= !(DC_MODE_DIRTY as ULONG);
+                (*dcattr_f!(pdcattr, ulDirty_)) &= !(DC_MODE_DIRTY as ULONG);
             }
         }
 
         /* Set the new viewport extension */
-        (*pdcattr).szlViewportExt.cx = nXExtent;
-        (*pdcattr).szlViewportExt.cy = nYExtent;
+        (*dcattr_f!(pdcattr, szlViewportExt)).cx = nXExtent;
+        (*dcattr_f!(pdcattr, szlViewportExt)).cy = nYExtent;
 
         /* Handle right-to-left layout */
-        if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+        if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
             NtGdiMirrorWindowOrg(hdc);
         }
 
         /* Update xform flags */
-        (*pdcattr).flXform |=
+        (*dcattr_f!(pdcattr, flXform)) |=
             (PAGE_EXTENTS_CHANGED | INVALIDATE_ATTRIBUTES | DEVICE_TO_WORLD_INVALID) as FLONG;
     }
 
@@ -657,29 +663,29 @@ pub unsafe extern "system" fn SetWindowOrgEx(
     }
 
     if !lpPoint.is_null() {
-        (*lpPoint).x = (*pdcattr).ptlWindowOrg.x;
-        (*lpPoint).y = (*pdcattr).ptlWindowOrg.y;
+        (*lpPoint).x = (*dcattr_f!(pdcattr, ptlWindowOrg)).x;
+        (*lpPoint).y = (*dcattr_f!(pdcattr, ptlWindowOrg)).y;
     }
 
-    if ((*pdcattr).ptlWindowOrg.x == X) && ((*pdcattr).ptlWindowOrg.y == Y) {
+    if ((*dcattr_f!(pdcattr, ptlWindowOrg)).x == X) && ((*dcattr_f!(pdcattr, ptlWindowOrg)).y == Y) {
         return TRUE;
     }
 
     if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-        if ((*pdcattr).ulDirty_ & DC_MODE_DIRTY as ULONG) != 0 {
+        if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_MODE_DIRTY as ULONG) != 0 {
             NtGdiFlush(); // Sync up pdcattr from Kernel space.
-            (*pdcattr).ulDirty_ &= !(DC_MODE_DIRTY as ULONG);
+            (*dcattr_f!(pdcattr, ulDirty_)) &= !(DC_MODE_DIRTY as ULONG);
         }
     }
 
-    (*pdcattr).ptlWindowOrg.x = X;
-    (*pdcattr).ptlWindowOrg.y = Y;
+    (*dcattr_f!(pdcattr, ptlWindowOrg)).x = X;
+    (*dcattr_f!(pdcattr, ptlWindowOrg)).y = Y;
 
-    (*pdcattr).lWindowOrgx = X;
-    if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+    (*dcattr_f!(pdcattr, lWindowOrgx)) = X;
+    if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
         NtGdiMirrorWindowOrg(hdc);
     }
-    (*pdcattr).flXform |=
+    (*dcattr_f!(pdcattr, flXform)) |=
         (PAGE_XLATE_CHANGED | WORLD_XFORM_CHANGED | DEVICE_TO_WORLD_INVALID) as FLONG;
     TRUE
 
@@ -729,23 +735,23 @@ pub unsafe extern "system" fn SetWindowExtEx(
     /* Check if the caller wants the old extension */
     if !lpSize.is_null() {
         /* Return the current window extension */
-        (*lpSize).cx = (*pdcattr).szlWindowExt.cx;
-        (*lpSize).cy = (*pdcattr).szlWindowExt.cy;
+        (*lpSize).cx = (*dcattr_f!(pdcattr, szlWindowExt)).cx;
+        (*lpSize).cy = (*dcattr_f!(pdcattr, szlWindowExt)).cy;
 
         /* Handle right-to-left layout */
-        if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+        if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
             (*lpSize).cx = -(*lpSize).cx;
         }
     }
 
-    if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+    if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
         NtGdiMirrorWindowOrg(hdc);
-        (*pdcattr).flXform |=
+        (*dcattr_f!(pdcattr, flXform)) |=
             (PAGE_EXTENTS_CHANGED | INVALIDATE_ATTRIBUTES | DEVICE_TO_WORLD_INVALID) as FLONG;
-    } else if ((*pdcattr).iMapMode == MM_ISOTROPIC as INT)
-        || ((*pdcattr).iMapMode == MM_ANISOTROPIC as INT)
+    } else if ((*dcattr_f!(pdcattr, iMapMode)) == MM_ISOTROPIC as INT)
+        || ((*dcattr_f!(pdcattr, iMapMode)) == MM_ANISOTROPIC as INT)
     {
-        if ((*pdcattr).szlWindowExt.cx == nXExtent) && ((*pdcattr).szlWindowExt.cy == nYExtent) {
+        if ((*dcattr_f!(pdcattr, szlWindowExt)).cx == nXExtent) && ((*dcattr_f!(pdcattr, szlWindowExt)).cy == nYExtent) {
             return TRUE;
         }
 
@@ -754,19 +760,19 @@ pub unsafe extern "system" fn SetWindowExtEx(
         }
 
         if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-            if ((*pdcattr).ulDirty_ & DC_MODE_DIRTY as ULONG) != 0 {
+            if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_MODE_DIRTY as ULONG) != 0 {
                 NtGdiFlush(); // Sync up Dc_Attr from Kernel space.
-                (*pdcattr).ulDirty_ &= !(DC_MODE_DIRTY as ULONG);
+                (*dcattr_f!(pdcattr, ulDirty_)) &= !(DC_MODE_DIRTY as ULONG);
             }
         }
 
-        (*pdcattr).szlWindowExt.cx = nXExtent;
-        (*pdcattr).szlWindowExt.cy = nYExtent;
-        if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+        (*dcattr_f!(pdcattr, szlWindowExt)).cx = nXExtent;
+        (*dcattr_f!(pdcattr, szlWindowExt)).cy = nYExtent;
+        if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
             NtGdiMirrorWindowOrg(hdc);
         }
 
-        (*pdcattr).flXform |=
+        (*dcattr_f!(pdcattr, flXform)) |=
             (PAGE_EXTENTS_CHANGED | INVALIDATE_ATTRIBUTES | DEVICE_TO_WORLD_INVALID) as FLONG;
     }
 
@@ -811,27 +817,27 @@ pub unsafe extern "system" fn SetViewportOrgEx(
     }
     //// HACK : XP+ doesn't do this. See CORE-16656 & CORE-16644.
     if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-        if ((*pdcattr).ulDirty_ & DC_MODE_DIRTY as ULONG) != 0 {
+        if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_MODE_DIRTY as ULONG) != 0 {
             NtGdiFlush();
-            (*pdcattr).ulDirty_ &= !(DC_MODE_DIRTY as ULONG);
+            (*dcattr_f!(pdcattr, ulDirty_)) &= !(DC_MODE_DIRTY as ULONG);
         }
     }
     ////
     if !lpPoint.is_null() {
-        (*lpPoint).x = (*pdcattr).ptlViewportOrg.x;
-        (*lpPoint).y = (*pdcattr).ptlViewportOrg.y;
-        if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+        (*lpPoint).x = (*dcattr_f!(pdcattr, ptlViewportOrg)).x;
+        (*lpPoint).y = (*dcattr_f!(pdcattr, ptlViewportOrg)).y;
+        if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
             (*lpPoint).x = -(*lpPoint).x;
         }
     }
-    (*pdcattr).flXform |=
+    (*dcattr_f!(pdcattr, flXform)) |=
         (PAGE_XLATE_CHANGED | WORLD_XFORM_CHANGED | DEVICE_TO_WORLD_INVALID) as FLONG;
     let mut X = X;
-    if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+    if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
         X = -X;
     }
-    (*pdcattr).ptlViewportOrg.x = X;
-    (*pdcattr).ptlViewportOrg.y = Y;
+    (*dcattr_f!(pdcattr, ptlViewportOrg)).x = X;
+    (*dcattr_f!(pdcattr, ptlViewportOrg)).y = Y;
     TRUE
 
     //    return NtGdiSetViewportOrgEx(hdc,X,Y,lpPoint);
@@ -942,7 +948,7 @@ pub unsafe extern "system" fn GetLayout(hdc: HDC) -> DWORD {
     }
 
     /* Return the layout */
-    (*pdcattr).dwLayout
+    (*dcattr_f!(pdcattr, dwLayout))
 }
 
 /*
@@ -1048,9 +1054,9 @@ pub unsafe extern "system" fn OffsetViewportOrgEx(
     }
 
     if !lpPoint.is_null() {
-        (*lpPoint).x = (*pdcattr).ptlViewportOrg.x;
-        (*lpPoint).y = (*pdcattr).ptlViewportOrg.y;
-        if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+        (*lpPoint).x = (*dcattr_f!(pdcattr, ptlViewportOrg)).x;
+        (*lpPoint).y = (*dcattr_f!(pdcattr, ptlViewportOrg)).y;
+        if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
             (*lpPoint).x = -(*lpPoint).x;
         }
     }
@@ -1058,19 +1064,19 @@ pub unsafe extern "system" fn OffsetViewportOrgEx(
     let mut nXOffset = nXOffset;
     if nXOffset != 0 || nYOffset != nXOffset {
         if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-            if ((*pdcattr).ulDirty_ & DC_MODE_DIRTY as ULONG) != 0 {
+            if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_MODE_DIRTY as ULONG) != 0 {
                 NtGdiFlush();
-                (*pdcattr).ulDirty_ &= !(DC_MODE_DIRTY as ULONG);
+                (*dcattr_f!(pdcattr, ulDirty_)) &= !(DC_MODE_DIRTY as ULONG);
             }
         }
 
-        (*pdcattr).flXform |=
+        (*dcattr_f!(pdcattr, flXform)) |=
             (PAGE_XLATE_CHANGED | WORLD_XFORM_CHANGED | DEVICE_TO_WORLD_INVALID) as FLONG;
-        if ((*pdcattr).dwLayout & LAYOUT_RTL as DWORD) != 0 {
+        if ((*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL as DWORD) != 0 {
             nXOffset = -nXOffset;
         }
-        (*pdcattr).ptlViewportOrg.x += nXOffset;
-        (*pdcattr).ptlViewportOrg.y += nYOffset;
+        (*dcattr_f!(pdcattr, ptlViewportOrg)).x += nXOffset;
+        (*dcattr_f!(pdcattr, ptlViewportOrg)).y += nYOffset;
     }
 
     // HANDLE_EMETAFDC(BOOL, SetViewportOrgEx, FALSE, hdc, ptlViewportOrg.x, ptlViewportOrg.y);
@@ -1087,7 +1093,7 @@ pub unsafe extern "system" fn OffsetViewportOrgEx(
             return _Ret;
         }
         if (*pLDC).iType == LDC_EMFLDC as INT
-            && EMFDC_SetViewportOrgEx(pLDC, (*pdcattr).ptlViewportOrg.x, (*pdcattr).ptlViewportOrg.y)
+            && EMFDC_SetViewportOrgEx(pLDC, (*dcattr_f!(pdcattr, ptlViewportOrg)).x, (*dcattr_f!(pdcattr, ptlViewportOrg)).y)
                 == 0
         {
             return _Ret;
@@ -1127,24 +1133,24 @@ pub unsafe extern "system" fn OffsetWindowOrgEx(
     }
 
     if !lpPoint.is_null() {
-        (*lpPoint).x = (*pdcattr).ptlWindowOrg.x;
-        (*lpPoint).y = (*pdcattr).ptlWindowOrg.y;
+        (*lpPoint).x = (*dcattr_f!(pdcattr, ptlWindowOrg)).x;
+        (*lpPoint).y = (*dcattr_f!(pdcattr, ptlWindowOrg)).y;
         //lpPoint->x = pdcattr->lWindowOrgx;
     }
 
     if nXOffset != 0 || nYOffset != nXOffset {
         if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-            if ((*pdcattr).ulDirty_ & DC_MODE_DIRTY as ULONG) != 0 {
+            if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_MODE_DIRTY as ULONG) != 0 {
                 NtGdiFlush();
-                (*pdcattr).ulDirty_ &= !(DC_MODE_DIRTY as ULONG);
+                (*dcattr_f!(pdcattr, ulDirty_)) &= !(DC_MODE_DIRTY as ULONG);
             }
         }
 
-        (*pdcattr).flXform |=
+        (*dcattr_f!(pdcattr, flXform)) |=
             (PAGE_XLATE_CHANGED | WORLD_XFORM_CHANGED | DEVICE_TO_WORLD_INVALID) as FLONG;
-        (*pdcattr).ptlWindowOrg.x += nXOffset;
-        (*pdcattr).ptlWindowOrg.y += nYOffset;
-        (*pdcattr).lWindowOrgx += nXOffset;
+        (*dcattr_f!(pdcattr, ptlWindowOrg)).x += nXOffset;
+        (*dcattr_f!(pdcattr, ptlWindowOrg)).y += nYOffset;
+        (*dcattr_f!(pdcattr, lWindowOrgx)) += nXOffset;
     }
 
     // HANDLE_EMETAFDC(BOOL, SetWindowOrgEx, FALSE, hdc, ptlWindowOrg.x, ptlWindowOrg.y);
@@ -1161,7 +1167,7 @@ pub unsafe extern "system" fn OffsetWindowOrgEx(
             return _Ret;
         }
         if (*pLDC).iType == LDC_EMFLDC as INT
-            && EMFDC_SetWindowOrgEx(pLDC, (*pdcattr).ptlWindowOrg.x, (*pdcattr).ptlWindowOrg.y) == 0
+            && EMFDC_SetWindowOrgEx(pLDC, (*dcattr_f!(pdcattr, ptlWindowOrg)).x, (*dcattr_f!(pdcattr, ptlWindowOrg)).y) == 0
         {
             return _Ret;
         }

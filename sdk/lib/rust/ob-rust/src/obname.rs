@@ -88,7 +88,7 @@ pub static mut ObpUnsecureGlobalNamesLength: ULONG = 256;
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 #[no_mangle]
 pub static OBNAME_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Session Manager\\Kernel", "ObUnsecureGlobalNames",
             core::ptr::addr_of_mut!(ObpUnsecureGlobalNamesBuffer),
             core::ptr::addr_of_mut!(ObpUnsecureGlobalNamesLength)),
@@ -383,6 +383,7 @@ unsafe fn ObpIsUnsecureName(
     unsecure
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn ObpLookupObjectName(
     RootHandle: HANDLE,

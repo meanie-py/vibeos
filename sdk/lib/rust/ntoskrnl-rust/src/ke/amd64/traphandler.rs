@@ -30,6 +30,7 @@ extern "system" {
 extern "C" {
     fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
     fn KiSendEOI();
+    #[cfg(not(feature = "smp"))]
     fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
     fn KiAcquirePrcbLock(Prcb: PKPRCB);
     fn NtCurrentTeb() -> PVOID;
@@ -70,6 +71,14 @@ pub unsafe extern "system" fn KiDpcInterruptHandler() {
 
     KiSendEOI();
 
+    // M3 SMP: if this CPU was idle in lazy-TLB state, service any deferred
+    // shootdown BEFORE retiring DPCs (DPC routines touch remappable memory).
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "C" { fn KiTbLazyIdleExit(); }
+        KiTbLazyIdleExit();
+    }
+
     if ((*Prcb).DpcData[0].DpcQueueDepth != 0) ||
        ((*Prcb).TimerRequest != 0) ||
        (!(*Prcb).DeferredReadyListHead.Next.is_null())
@@ -88,11 +97,23 @@ pub unsafe extern "system" fn KiDpcInterruptHandler() {
         OldThread = (*Prcb).CurrentThread;
         NewThread = (*Prcb).NextThread;
 
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::ki_check_promote_not_linked(NewThread, 0x02); // KiDpcInterruptHandler
+
         (*Prcb).NextThread = core::ptr::null_mut();
         (*Prcb).CurrentThread = NewThread;
 
         (*NewThread).__bindgen_anon_5.__bindgen_anon_6.State = KTHREAD_STATE::Running as u8;
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread);
         (*OldThread).WaitReason = KWAIT_REASON::_KWAIT_REASON_WrDispatchInt as u8;
+
+        // NT MP (2k3 KiDispatchInterrupt): mark the outgoing thread
+        // context-swap-busy BEFORE queueing it ready — without this, another
+        // CPU that picks it sails straight through ctxswitch.S's SwapBusy
+        // spin (flag never raised) and adopts a stack we're still running on.
+        // KiSwapContextInternal clears it once the old context is fully saved.
+        ntkrnl_sys::inline::ke::KiSetThreadSwapBusy(OldThread);
 
         KxQueueReadyThread(OldThread, Prcb);
 

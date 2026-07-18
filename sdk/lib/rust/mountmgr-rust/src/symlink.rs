@@ -587,7 +587,7 @@ pub unsafe extern "C" fn CreateNewVolumeName(
         ((0x14u32 + 0x4cu32) as usize + core::mem::size_of::<u16>()) as u16;
     (*VolumeName).Buffer = ExAllocatePoolWithTag(
         PagedPool,
-        ((0x14u32 + 0x4cu32) as usize + core::mem::size_of::<u16>()),
+        (0x14u32 + 0x4cu32) as usize + core::mem::size_of::<u16>() ,
         1098149453i32 as u32,
     ) as *mut u16;
     if (*VolumeName).Buffer.is_null() {
@@ -931,8 +931,7 @@ pub unsafe extern "C" fn RedirectSavedLink(
     NextEntry = (*SavedLinkInformation).SymbolicLinksListHead.Flink;
     while NextEntry != &raw mut (*SavedLinkInformation).SymbolicLinksListHead {
         SymlinkInformation = (NextEntry as usize).wrapping_sub(
-            &raw mut (*::core::ptr::null_mut::<SYMLINK_INFORMATION>()).SymbolicLinksListEntry
-                as usize,
+            core::mem::offset_of!(SYMLINK_INFORMATION, SymbolicLinksListEntry),
         ) as *mut SYMLINK_INFORMATION;
 
         if RtlEqualUnicodeString(

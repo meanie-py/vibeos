@@ -983,6 +983,7 @@ pub unsafe extern "system" fn IoUnregisterFileSystem(DeviceObject: PDEVICE_OBJEC
     );
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn IoRegisterFsRegistrationChange(
     DriverObject: PDRIVER_OBJECT,
@@ -1053,6 +1054,7 @@ pub unsafe extern "system" fn IoRegisterFsRegistrationChange(
     STATUS_SUCCESS
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn IoUnregisterFsRegistrationChange(
     DriverObject: PDRIVER_OBJECT,

@@ -58,19 +58,25 @@ impl UUID_CACHED_VALUES_STRUCT {
         }
     }
 
-    fn ClockSeqLow(&self) -> u8 {
+    // GuidInit[] is the union's byte view of { ClockSeqHiAndReserved, ClockSeqLow,
+    // NodeId[6] } — see UUID_CACHED_VALUES_STRUCT in ntoskrnl/include/internal/ex.h.
+    // HiAndReserved is the FIRST byte: the union exists so GuidInit[0] lands on
+    // GUID.Data4[0], which RFC4122 defines as the variant-stamped byte. Transposing
+    // these two indices puts the raw sequence low byte in Data4[0] and breaks the
+    // (Data4[0] & 0xC0) == 0x80 variant invariant.
+    fn ClockSeqHiAndReserved(&self) -> u8 {
         self.GuidInit[0]
     }
 
-    fn set_ClockSeqLow(&mut self, value: u8) {
+    fn set_ClockSeqHiAndReserved(&mut self, value: u8) {
         self.GuidInit[0] = value;
     }
 
-    fn ClockSeqHiAndReserved(&self) -> u8 {
+    fn ClockSeqLow(&self) -> u8 {
         self.GuidInit[1]
     }
 
-    fn set_ClockSeqHiAndReserved(&mut self, value: u8) {
+    fn set_ClockSeqLow(&mut self, value: u8) {
         self.GuidInit[1] = value;
     }
 
@@ -380,7 +386,7 @@ pub unsafe extern "system" fn ExUuidCreate(Uuid: *mut UUID) -> NTSTATUS {
             Time.QuadPart = ExpUuidCachedValues.Time as i64;
 
             core::ptr::copy_nonoverlapping(
-                ExpUuidCachedValues.GuidInit.as_ptr(),
+                (*(&raw const ExpUuidCachedValues)).GuidInit.as_ptr(),
                 (*Uuid).Data4.as_mut_ptr(),
                 8,
             );
@@ -496,7 +502,7 @@ pub unsafe extern "system" fn NtAllocateUuids(
             *Sequence = IntSequence;
 
             core::ptr::copy_nonoverlapping(
-                ExpUuidCachedValues.NodeId().as_ptr(),
+                (*(&raw const ExpUuidCachedValues)).NodeId().as_ptr(),
                 Seed,
                 SEED_BUFFER_SIZE,
             );
@@ -540,7 +546,7 @@ pub unsafe extern "system" fn NtSetUuidSeed(Seed: *const u8) -> NTSTATUS {
             ProbeForRead(Seed as PVOID, SEED_BUFFER_SIZE, core::mem::align_of::<u8>());
             core::ptr::copy_nonoverlapping(
                 Seed,
-                ExpUuidCachedValues.NodeId_mut().as_mut_ptr(),
+                (*(&raw mut ExpUuidCachedValues)).NodeId_mut().as_mut_ptr(),
                 SEED_BUFFER_SIZE,
             );
 

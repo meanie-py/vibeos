@@ -9410,19 +9410,19 @@ pub struct _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
 impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub fn Reserved(&self) -> LONG64 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 8u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(0usize, 8u8) as u64) }
     }
     #[inline]
     pub fn set_Reserved(&mut self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(0usize, 8u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn Reserved_raw(this: *const Self) -> LONG64 {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 0usize,
                 8u8,
@@ -9432,7 +9432,7 @@ impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_Reserved_raw(this: *mut Self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 8usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 0usize,
@@ -9443,19 +9443,19 @@ impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     }
     #[inline]
     pub fn Hint(&self) -> LONG64 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(8usize, 56u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(8usize, 56u8) as u64) }
     }
     #[inline]
     pub fn set_Hint(&mut self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(8usize, 56u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn Hint_raw(this: *const Self) -> LONG64 {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 8usize,
                 56u8,
@@ -9465,7 +9465,7 @@ impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_Hint_raw(this: *mut Self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 8usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 8usize,
@@ -9478,11 +9478,11 @@ impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     pub fn new_bitfield_1(Reserved: LONG64, Hint: LONG64) -> __BindgenBitfieldUnit<[u8; 8usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 8usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 8u8, {
-            let Reserved: u64 = unsafe { ::core::mem::transmute(Reserved) };
+            let Reserved: u64 = unsafe { i64::cast_unsigned(Reserved) };
             Reserved as u64
         });
         __bindgen_bitfield_unit.set(8usize, 56u8, {
-            let Hint: u64 = unsafe { ::core::mem::transmute(Hint) };
+            let Hint: u64 = unsafe { i64::cast_unsigned(Hint) };
             Hint as u64
         });
         __bindgen_bitfield_unit
@@ -46727,19 +46727,19 @@ impl _KTHREAD__bindgen_ty_4__bindgen_ty_1__bindgen_ty_1__bindgen_ty_1 {
     }
     #[inline]
     pub fn ReservedFlags(&self) -> LONG {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(2usize, 30u8) as u32) }
+        unsafe { u32::cast_signed(self._bitfield_1.get(2usize, 30u8) as u32) }
     }
     #[inline]
     pub fn set_ReservedFlags(&mut self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             self._bitfield_1.set(2usize, 30u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn ReservedFlags_raw(this: *const Self) -> LONG {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
+            u32::cast_signed(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 2usize,
                 30u8,
@@ -46749,7 +46749,7 @@ impl _KTHREAD__bindgen_ty_4__bindgen_ty_1__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_ReservedFlags_raw(this: *mut Self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 2usize,
@@ -46774,7 +46774,7 @@ impl _KTHREAD__bindgen_ty_4__bindgen_ty_1__bindgen_ty_1__bindgen_ty_1 {
             DisableBoost as u64
         });
         __bindgen_bitfield_unit.set(2usize, 30u8, {
-            let ReservedFlags: u32 = unsafe { ::core::mem::transmute(ReservedFlags) };
+            let ReservedFlags: u32 = unsafe { i32::cast_unsigned(ReservedFlags) };
             ReservedFlags as u64
         });
         __bindgen_bitfield_unit
@@ -46976,19 +46976,19 @@ pub struct _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
 impl _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub fn AutoAlignment(&self) -> LONG {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u32) }
+        unsafe { u32::cast_signed(self._bitfield_1.get(0usize, 1u8) as u32) }
     }
     #[inline]
     pub fn set_AutoAlignment(&mut self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             self._bitfield_1.set(0usize, 1u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn AutoAlignment_raw(this: *const Self) -> LONG {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
+            u32::cast_signed(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 0usize,
                 1u8,
@@ -46998,7 +46998,7 @@ impl _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_AutoAlignment_raw(this: *mut Self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 0usize,
@@ -47009,19 +47009,19 @@ impl _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
     }
     #[inline]
     pub fn DisableBoost(&self) -> LONG {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 1u8) as u32) }
+        unsafe { u32::cast_signed(self._bitfield_1.get(1usize, 1u8) as u32) }
     }
     #[inline]
     pub fn set_DisableBoost(&mut self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             self._bitfield_1.set(1usize, 1u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn DisableBoost_raw(this: *const Self) -> LONG {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
+            u32::cast_signed(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 1usize,
                 1u8,
@@ -47031,7 +47031,7 @@ impl _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_DisableBoost_raw(this: *mut Self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 1usize,
@@ -47042,19 +47042,19 @@ impl _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
     }
     #[inline]
     pub fn DisableQuantum(&self) -> LONG {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(2usize, 1u8) as u32) }
+        unsafe { u32::cast_signed(self._bitfield_1.get(2usize, 1u8) as u32) }
     }
     #[inline]
     pub fn set_DisableQuantum(&mut self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             self._bitfield_1.set(2usize, 1u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn DisableQuantum_raw(this: *const Self) -> LONG {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
+            u32::cast_signed(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 2usize,
                 1u8,
@@ -47064,7 +47064,7 @@ impl _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_DisableQuantum_raw(this: *mut Self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 2usize,
@@ -47075,19 +47075,19 @@ impl _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
     }
     #[inline]
     pub fn ReservedFlags(&self) -> LONG {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(3usize, 29u8) as u32) }
+        unsafe { u32::cast_signed(self._bitfield_1.get(3usize, 29u8) as u32) }
     }
     #[inline]
     pub fn set_ReservedFlags(&mut self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             self._bitfield_1.set(3usize, 29u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn ReservedFlags_raw(this: *const Self) -> LONG {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
+            u32::cast_signed(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 3usize,
                 29u8,
@@ -47097,7 +47097,7 @@ impl _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_ReservedFlags_raw(this: *mut Self, val: LONG) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 3usize,
@@ -47115,19 +47115,19 @@ impl _KPROCESS__bindgen_ty_1__bindgen_ty_1 {
     ) -> __BindgenBitfieldUnit<[u8; 4usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 4usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 1u8, {
-            let AutoAlignment: u32 = unsafe { ::core::mem::transmute(AutoAlignment) };
+            let AutoAlignment: u32 = unsafe { i32::cast_unsigned(AutoAlignment) };
             AutoAlignment as u64
         });
         __bindgen_bitfield_unit.set(1usize, 1u8, {
-            let DisableBoost: u32 = unsafe { ::core::mem::transmute(DisableBoost) };
+            let DisableBoost: u32 = unsafe { i32::cast_unsigned(DisableBoost) };
             DisableBoost as u64
         });
         __bindgen_bitfield_unit.set(2usize, 1u8, {
-            let DisableQuantum: u32 = unsafe { ::core::mem::transmute(DisableQuantum) };
+            let DisableQuantum: u32 = unsafe { i32::cast_unsigned(DisableQuantum) };
             DisableQuantum as u64
         });
         __bindgen_bitfield_unit.set(3usize, 29u8, {
-            let ReservedFlags: u32 = unsafe { ::core::mem::transmute(ReservedFlags) };
+            let ReservedFlags: u32 = unsafe { i32::cast_unsigned(ReservedFlags) };
             ReservedFlags as u64
         });
         __bindgen_bitfield_unit
@@ -49108,19 +49108,19 @@ impl _MMPTE_PROTOTYPE {
     }
     #[inline]
     pub fn ProtoAddress(&self) -> LONG64 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(16usize, 48u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(16usize, 48u8) as u64) }
     }
     #[inline]
     pub fn set_ProtoAddress(&mut self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(16usize, 48u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn ProtoAddress_raw(this: *const Self) -> LONG64 {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 16usize,
                 48u8,
@@ -49130,7 +49130,7 @@ impl _MMPTE_PROTOTYPE {
     #[inline]
     pub unsafe fn set_ProtoAddress_raw(this: *mut Self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 8usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 16usize,
@@ -49175,7 +49175,7 @@ impl _MMPTE_PROTOTYPE {
             Protection as u64
         });
         __bindgen_bitfield_unit.set(16usize, 48u8, {
-            let ProtoAddress: u64 = unsafe { ::core::mem::transmute(ProtoAddress) };
+            let ProtoAddress: u64 = unsafe { i64::cast_unsigned(ProtoAddress) };
             ProtoAddress as u64
         });
         __bindgen_bitfield_unit
@@ -49356,19 +49356,19 @@ impl _MMPTE_SUBSECTION {
     }
     #[inline]
     pub fn SubsectionAddress(&self) -> LONG64 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(16usize, 48u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(16usize, 48u8) as u64) }
     }
     #[inline]
     pub fn set_SubsectionAddress(&mut self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(16usize, 48u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn SubsectionAddress_raw(this: *const Self) -> LONG64 {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 16usize,
                 48u8,
@@ -49378,7 +49378,7 @@ impl _MMPTE_SUBSECTION {
     #[inline]
     pub unsafe fn set_SubsectionAddress_raw(this: *mut Self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 8usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 16usize,
@@ -49418,7 +49418,7 @@ impl _MMPTE_SUBSECTION {
             Unused1 as u64
         });
         __bindgen_bitfield_unit.set(16usize, 48u8, {
-            let SubsectionAddress: u64 = unsafe { ::core::mem::transmute(SubsectionAddress) };
+            let SubsectionAddress: u64 = unsafe { i64::cast_unsigned(SubsectionAddress) };
             SubsectionAddress as u64
         });
         __bindgen_bitfield_unit
@@ -56696,19 +56696,19 @@ pub union _MMADDRESS_NODE__bindgen_ty_1 {
 impl _MMADDRESS_NODE__bindgen_ty_1 {
     #[inline]
     pub fn Balance(&self) -> LONG_PTR {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 2u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(0usize, 2u8) as u64) }
     }
     #[inline]
     pub fn set_Balance(&mut self, val: LONG_PTR) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(0usize, 2u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn Balance_raw(this: *const Self) -> LONG_PTR {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 0usize,
                 2u8,
@@ -56718,7 +56718,7 @@ impl _MMADDRESS_NODE__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_Balance_raw(this: *mut Self, val: LONG_PTR) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 0usize,
@@ -56731,7 +56731,7 @@ impl _MMADDRESS_NODE__bindgen_ty_1 {
     pub fn new_bitfield_1(Balance: LONG_PTR) -> __BindgenBitfieldUnit<[u8; 1usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 2u8, {
-            let Balance: u64 = unsafe { ::core::mem::transmute(Balance) };
+            let Balance: u64 = unsafe { i64::cast_unsigned(Balance) };
             Balance as u64
         });
         __bindgen_bitfield_unit
@@ -57545,19 +57545,19 @@ pub union _MMVAD__bindgen_ty_1 {
 impl _MMVAD__bindgen_ty_1 {
     #[inline]
     pub fn Balance(&self) -> LONG_PTR {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 2u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(0usize, 2u8) as u64) }
     }
     #[inline]
     pub fn set_Balance(&mut self, val: LONG_PTR) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(0usize, 2u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn Balance_raw(this: *const Self) -> LONG_PTR {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 0usize,
                 2u8,
@@ -57567,7 +57567,7 @@ impl _MMVAD__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_Balance_raw(this: *mut Self, val: LONG_PTR) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 0usize,
@@ -57580,7 +57580,7 @@ impl _MMVAD__bindgen_ty_1 {
     pub fn new_bitfield_1(Balance: LONG_PTR) -> __BindgenBitfieldUnit<[u8; 1usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 2u8, {
-            let Balance: u64 = unsafe { ::core::mem::transmute(Balance) };
+            let Balance: u64 = unsafe { i64::cast_unsigned(Balance) };
             Balance as u64
         });
         __bindgen_bitfield_unit
@@ -57626,19 +57626,19 @@ pub union _MMVAD_LONG__bindgen_ty_1 {
 impl _MMVAD_LONG__bindgen_ty_1 {
     #[inline]
     pub fn Balance(&self) -> LONG_PTR {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 2u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(0usize, 2u8) as u64) }
     }
     #[inline]
     pub fn set_Balance(&mut self, val: LONG_PTR) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(0usize, 2u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn Balance_raw(this: *const Self) -> LONG_PTR {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 0usize,
                 2u8,
@@ -57648,7 +57648,7 @@ impl _MMVAD_LONG__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_Balance_raw(this: *mut Self, val: LONG_PTR) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 0usize,
@@ -57661,7 +57661,7 @@ impl _MMVAD_LONG__bindgen_ty_1 {
     pub fn new_bitfield_1(Balance: LONG_PTR) -> __BindgenBitfieldUnit<[u8; 1usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 2u8, {
-            let Balance: u64 = unsafe { ::core::mem::transmute(Balance) };
+            let Balance: u64 = unsafe { i64::cast_unsigned(Balance) };
             Balance as u64
         });
         __bindgen_bitfield_unit
@@ -57713,19 +57713,19 @@ pub union _MMVAD_SHORT__bindgen_ty_1 {
 impl _MMVAD_SHORT__bindgen_ty_1 {
     #[inline]
     pub fn Balance(&self) -> LONG_PTR {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 2u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(0usize, 2u8) as u64) }
     }
     #[inline]
     pub fn set_Balance(&mut self, val: LONG_PTR) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(0usize, 2u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn Balance_raw(this: *const Self) -> LONG_PTR {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 0usize,
                 2u8,
@@ -57735,7 +57735,7 @@ impl _MMVAD_SHORT__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_Balance_raw(this: *mut Self, val: LONG_PTR) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 0usize,
@@ -57748,7 +57748,7 @@ impl _MMVAD_SHORT__bindgen_ty_1 {
     pub fn new_bitfield_1(Balance: LONG_PTR) -> __BindgenBitfieldUnit<[u8; 1usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 2u8, {
-            let Balance: u64 = unsafe { ::core::mem::transmute(Balance) };
+            let Balance: u64 = unsafe { i64::cast_unsigned(Balance) };
             Balance as u64
         });
         __bindgen_bitfield_unit

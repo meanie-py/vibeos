@@ -19,12 +19,9 @@
 //!   7 of 9 CMAPI functions in hivecell.c remain C (HvIsCellAllocated, HvpGetCellData,
 //!   HvGetCellSize, HvMarkCellDirty, HvIsCellDirty, HvpCreateHiveFreeCellList, HvFreeCell).
 
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PCELL_DATA, PHBIN, PHCELL, PHCELL_INDEX, PHHIVE, PHV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, HV_TRACK_CELL_REF, RtlSetBits, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{CELL_DATA, CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, HV_TRACK_CELL_REF, RtlSetBits, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE};
 use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, HvGetCellBlock, PAGED_CODE, HCELL_NIL, HBLOCK_SIZE};
 use core::ffi::c_void;
 
@@ -275,7 +272,7 @@ pub unsafe extern "system" fn HvAllocateCell(
     const HCELL_TYPE_SHIFT: u32 = 31;
     let _ = Vicinity;
 
-    let mut FreeCell: *mut HCELL;
+    let FreeCell: *mut HCELL;
     let mut FreeCellOffset: u32;
     let NewCell: *mut HCELL;
     let Bin: *mut HBIN;

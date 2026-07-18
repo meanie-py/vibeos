@@ -5,13 +5,11 @@ use win32k_sys::win32k::*;
 // at the call site rather than re-bindgen the rtl APIs here.
 use ntkrnl_sys::ddk::{
     ExAllocatePoolWithTag as DdkExAllocatePoolWithTag,
-    ExAllocatePoolZero as DdkExAllocatePoolZero,
     ExFreePoolWithTag as DdkExFreePoolWithTag,
     RtlAppendUnicodeToString as DdkRtlAppendUnicodeToString,
     RtlCopyUnicodeString as DdkRtlCopyUnicodeString,
     RtlEqualUnicodeString as DdkRtlEqualUnicodeString,
     RtlImageDirectoryEntryToData as DdkRtlImageDirectoryEntryToData,
-    RtlInitEmptyUnicodeString as DdkRtlInitEmptyUnicodeString,
     RtlInitUnicodeString as DdkRtlInitUnicodeString,
     ZwSetSystemInformation as DdkZwSetSystemInformation,
     _POOL_TYPE_PagedPool,
@@ -222,7 +220,7 @@ static mut gpldevWin32k: *mut LDEVOBJ = core::ptr::null_mut();
 pub unsafe extern "system" fn InitLDEVImpl() -> NTSTATUS {
     let mut cbSize: ULONG = 0;
 
-    InitializeListHead(&mut gleLdevListHead);
+    InitializeListHead(&raw mut gleLdevListHead);
 
     ghsemLDEVList = EngCreateSemaphore();
     if ghsemLDEVList.is_null() {

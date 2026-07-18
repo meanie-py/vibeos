@@ -1,10 +1,7 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ddk::{CM_RESOURCE_TYPE, KEVENT, PKEVENT, PRKEVENT, KeInitializeEvent, PARBITER_ALLOCATION_STATE, PARBITER_INSTANCE, ARBITER_ORDERING_LIST, PARBITER_ORDERING_LIST, PARB_TRANSLATE_ORDERING, PDEVICE_OBJECT, RTL_RANGE_LIST, PRTL_RANGE_LIST, RtlInitializeRangeList, _EVENT_TYPE_SynchronizationEvent, UINT64, PLIST_ENTRY};
-use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(Format: *const i8, ...) -> u32;
@@ -42,8 +39,8 @@ const TAG_ARB_RANGE: u32 = 0x52627241; // 'RbrA'
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbTestAllocation(
-    Arbiter: PARBITER_INSTANCE,
-    ArbitrationList: PLIST_ENTRY,
+    _Arbiter: PARBITER_INSTANCE,
+    _ArbitrationList: PLIST_ENTRY,
 ) -> NTSTATUS {
     // PAGED_CODE() macro expansion
     if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
@@ -77,8 +74,8 @@ pub unsafe extern "system" fn ArbTestAllocation(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbRetestAllocation(
-    mut Arbiter: PARBITER_INSTANCE,
-    mut ArbitrationList: PLIST_ENTRY,
+    _Arbiter: PARBITER_INSTANCE,
+    _ArbitrationList: PLIST_ENTRY,
 ) -> NTSTATUS {
     const APC_LEVEL: i32 = 1;
 
@@ -108,7 +105,7 @@ pub unsafe extern "system" fn ArbRetestAllocation(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ArbCommitAllocation(mut Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
+pub unsafe extern "system" fn ArbCommitAllocation(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
     if KeGetCurrentIrql() as ::core::ffi::c_int > APC_LEVEL as ::core::ffi::c_int {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
@@ -136,7 +133,7 @@ pub unsafe extern "system" fn ArbCommitAllocation(mut Arbiter: PARBITER_INSTANCE
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ArbRollbackAllocation(Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
+pub unsafe extern "system" fn ArbRollbackAllocation(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
     const APC_LEVEL: i32 = 1;
 
     if KeGetCurrentIrql() as i32 > APC_LEVEL {
@@ -193,8 +190,8 @@ pub unsafe extern "system" fn ArbAddReserved(_Arbiter: PARBITER_INSTANCE) -> NTS
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbPreprocessEntry(
-    Arbiter: PARBITER_INSTANCE,
-    ArbState: PARBITER_ALLOCATION_STATE,
+    _Arbiter: PARBITER_INSTANCE,
+    _ArbState: PARBITER_ALLOCATION_STATE,
 ) -> NTSTATUS {
     if (KeGetCurrentIrql() as i32) > (APC_LEVEL as i32) {
         DbgPrint(
@@ -216,8 +213,8 @@ pub unsafe extern "system" fn ArbPreprocessEntry(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbAllocateEntry(
-    Arbiter: PARBITER_INSTANCE,
-    ArbState: PARBITER_ALLOCATION_STATE,
+    _Arbiter: PARBITER_INSTANCE,
+    _ArbState: PARBITER_ALLOCATION_STATE,
 ) -> NTSTATUS {
     if (KeGetCurrentIrql() as i32) > APC_LEVEL {
         DbgPrint(
@@ -248,8 +245,8 @@ pub unsafe extern "system" fn ArbAllocateEntry(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbGetNextAllocationRange(
-    Arbiter: PARBITER_INSTANCE,
-    ArbState: PARBITER_ALLOCATION_STATE,
+    _Arbiter: PARBITER_INSTANCE,
+    _ArbState: PARBITER_ALLOCATION_STATE,
 ) -> i32 {
     unsafe {
         if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
@@ -281,8 +278,8 @@ pub unsafe extern "system" fn ArbGetNextAllocationRange(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbFindSuitableRange(
-    mut Arbiter: PARBITER_INSTANCE,
-    mut ArbState: PARBITER_ALLOCATION_STATE,
+    _Arbiter: PARBITER_INSTANCE,
+    _ArbState: PARBITER_ALLOCATION_STATE,
 ) -> BOOLEAN {
     if KeGetCurrentIrql() as i32 > APC_LEVEL {
         DbgPrint(
@@ -311,12 +308,12 @@ pub unsafe extern "system" fn ArbFindSuitableRange(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbAddAllocation(
-    mut Arbiter: PARBITER_INSTANCE,
-    mut ArbState: PARBITER_ALLOCATION_STATE,
+    _Arbiter: PARBITER_INSTANCE,
+    _ArbState: PARBITER_ALLOCATION_STATE,
 ) {
     if KeGetCurrentIrql() as i32 > APC_LEVEL {
         DbgPrint(
-            (b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8),
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8 ,
             KeGetCurrentIrql() as i32,
         );
         if 0i32 == 0 {
@@ -329,17 +326,17 @@ pub unsafe extern "system" fn ArbAddAllocation(
         }
     }
     DbgPrint(
-        (b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8),
-        (b"ArbAddAllocation\0".as_ptr() as *const i8),
-        (b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8),
+        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8 ,
+        b"ArbAddAllocation\0".as_ptr() as *const i8 ,
+        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 ,
         146i32,
     );
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbBacktrackAllocation(
-    Arbiter: PARBITER_INSTANCE,
-    ArbState: PARBITER_ALLOCATION_STATE,
+    _Arbiter: PARBITER_INSTANCE,
+    _ArbState: PARBITER_ALLOCATION_STATE,
 ) {
     let irql = KeGetCurrentIrql() as i32;
     if irql > APC_LEVEL as i32 {
@@ -363,8 +360,8 @@ pub unsafe extern "system" fn ArbBacktrackAllocation(
         158 as i32,
     );
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn ArbOverrideConflict(Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
+#[no_mangle]
+ pub unsafe extern "system" fn ArbOverrideConflict(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
     const APC_LEVEL: i32 = 1;
     if KeGetCurrentIrql() as i32 > APC_LEVEL {
         DbgPrint(
@@ -391,8 +388,8 @@ pub unsafe extern "system" fn ArbBacktrackAllocation(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbBootAllocation(
-    Arbiter: PARBITER_INSTANCE,
-    ArbitrationList: PLIST_ENTRY,
+    _Arbiter: PARBITER_INSTANCE,
+    _ArbitrationList: PLIST_ENTRY,
 ) -> NTSTATUS {
     if (KeGetCurrentIrql() as i32) > (APC_LEVEL as i32) {
         DbgPrint(
@@ -419,7 +416,7 @@ pub unsafe extern "system" fn ArbBootAllocation(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ArbQueryConflict(mut Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
+pub unsafe extern "system" fn ArbQueryConflict(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
     const APC_LEVEL: u8 = 1;
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
@@ -448,7 +445,7 @@ pub unsafe extern "system" fn ArbQueryConflict(mut Arbiter: PARBITER_INSTANCE) -
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ArbStartArbiter(Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
+pub unsafe extern "system" fn ArbStartArbiter(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
     if KeGetCurrentIrql() as core::ffi::c_int > APC_LEVEL as core::ffi::c_int {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
@@ -476,9 +473,9 @@ pub unsafe extern "system" fn ArbStartArbiter(Arbiter: PARBITER_INSTANCE) -> NTS
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbAddOrdering(
-    mut OrderList: PARBITER_ORDERING_LIST,
-    mut MinimumAddress: u64,
-    mut MaximumAddress: u64,
+    _OrderList: PARBITER_ORDERING_LIST,
+    _MinimumAddress: u64,
+    _MaximumAddress: u64,
 ) -> i32 {
     const APC_LEVEL: i32 = 1;
 
@@ -510,9 +507,9 @@ pub unsafe extern "system" fn ArbAddOrdering(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbPruneOrdering(
-    OrderingList: PARBITER_ORDERING_LIST,
-    MinimumAddress: UINT64,
-    MaximumAddress: UINT64,
+    _OrderingList: PARBITER_ORDERING_LIST,
+    _MinimumAddress: UINT64,
+    _MaximumAddress: UINT64,
 ) -> NTSTATUS {
     if KeGetCurrentIrql() as i32 > APC_LEVEL {
         DbgPrint(
@@ -542,7 +539,7 @@ pub unsafe extern "system" fn ArbPruneOrdering(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbInitializeOrderingList(
-    OrderList: *mut ARBITER_ORDERING_LIST,
+    _OrderList: *mut ARBITER_ORDERING_LIST,
 ) -> NTSTATUS {
     // PAGED_CODE() macro expansion
     if (KeGetCurrentIrql() as i32) > APC_LEVEL {
@@ -574,7 +571,7 @@ pub unsafe extern "system" fn ArbInitializeOrderingList(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbFreeOrderingList(
-    OrderList: *mut core::ffi::c_void,
+    _OrderList: *mut core::ffi::c_void,
 ) {
     if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
         DbgPrint(
@@ -605,10 +602,10 @@ pub unsafe extern "system" fn ArbFreeOrderingList(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbBuildAssignmentOrdering(
-    ArbInstance: PARBITER_INSTANCE,
-    OrderName: PCWSTR,
-    ReservedOrderName: PCWSTR,
-    TranslateOrderingFunction: PARB_TRANSLATE_ORDERING,
+    _ArbInstance: PARBITER_INSTANCE,
+    _OrderName: PCWSTR,
+    _ReservedOrderName: PCWSTR,
+    _TranslateOrderingFunction: PARB_TRANSLATE_ORDERING,
 ) -> NTSTATUS {
     if KeGetCurrentIrql() as i32 > APC_LEVEL {
         DbgPrint(
@@ -635,14 +632,14 @@ pub unsafe extern "system" fn ArbBuildAssignmentOrdering(
 
 #[no_mangle]
 pub unsafe extern "system" fn ArbInitializeArbiterInstance(
-    mut Arbiter: PARBITER_INSTANCE,
-    mut BusDeviceObject: PDEVICE_OBJECT,
-    mut ResourceType: CM_RESOURCE_TYPE,
-    mut ArbiterName: PCWSTR,
-    mut OrderName: PCWSTR,
-    mut TranslateOrderingFunction: PARB_TRANSLATE_ORDERING,
+    Arbiter: PARBITER_INSTANCE,
+    BusDeviceObject: PDEVICE_OBJECT,
+    ResourceType: CM_RESOURCE_TYPE,
+    ArbiterName: PCWSTR,
+    OrderName: PCWSTR,
+    TranslateOrderingFunction: PARB_TRANSLATE_ORDERING,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     unsafe {
         // PAGED_CODE

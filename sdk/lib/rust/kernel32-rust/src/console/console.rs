@@ -119,7 +119,7 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
                 }
                 // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
                 {
-                    RtlEnterCriticalSection(&mut ConsoleLock);
+                    RtlEnterCriticalSection(&raw mut ConsoleLock);
 
                     if (nCode != 0) ||
                         ((*(*(NtCurrentPeb())).ProcessParameters).ConsoleFlags != 1)
@@ -133,7 +133,7 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
                         }
                     }
 
-                    RtlLeaveCriticalSection(&mut ConsoleLock);
+                    RtlLeaveCriticalSection(&raw mut ConsoleLock);
                 }
                 // _SEH2_END
 
@@ -164,7 +164,7 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
 
     // ASSERT(ConsoleInitialized);
 
-    RtlEnterCriticalSection(&mut ConsoleLock);
+    RtlEnterCriticalSection(&raw mut ConsoleLock);
 
     nExitCode = 0;
     if (nCode != 0) || ((*(*(NtCurrentPeb())).ProcessParameters).ConsoleFlags != 1) {
@@ -192,7 +192,7 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
         }
     }
 
-    RtlLeaveCriticalSection(&mut ConsoleLock);
+    RtlLeaveCriticalSection(&raw mut ConsoleLock);
 
     ExitThread(nExitCode);
     return 0; // STATUS_SUCCESS
@@ -201,7 +201,7 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
 pub unsafe extern "C" fn InitializeCtrlHandling() {
     NrAllocatedHandlers = 1;
     NrCtrlHandlers = 1;
-    CtrlHandlers = InitialHandler.as_mut_ptr();
+    CtrlHandlers = (*(&raw mut InitialHandler)).as_mut_ptr();
     *CtrlHandlers = core::mem::transmute::<unsafe extern "system" fn(DWORD) -> BOOL, PHANDLER_ROUTINE>(DefaultConsoleCtrlHandler);
 }
 #[no_mangle]
@@ -216,7 +216,7 @@ pub unsafe extern "C" fn InitExeName() {
     }
 
     /* Initialize the EXE name lock */
-    Status = RtlInitializeCriticalSection(&mut ExeNameLock);
+    Status = RtlInitializeCriticalSection(&raw mut ExeNameLock);
     if !NT_SUCCESS(Status) {
         return;
     }
@@ -234,7 +234,7 @@ pub unsafe extern "C" fn InitExeName() {
         (*ImageEntry).BaseDllName.Length as ULONG / (core::mem::size_of::<WCHAR>() as ULONG),
     ) as USHORT;
     RtlCopyMemory(
-        ExeNameBuffer.as_mut_ptr() as *mut core::ffi::c_void,
+        (*(&raw mut ExeNameBuffer)).as_mut_ptr() as *mut core::ffi::c_void,
         (*ImageEntry).BaseDllName.Buffer as *const core::ffi::c_void,
         (*ImageEntry).BaseDllName.Length as SIZE_T,
     );
@@ -246,7 +246,7 @@ pub unsafe extern "C" fn InitExeName() {
         (*CurrentDirectory).DosPath.Length as ULONG / (core::mem::size_of::<WCHAR>() as ULONG),
     ) as USHORT;
     RtlCopyMemory(
-        StartDirBuffer.as_mut_ptr() as *mut core::ffi::c_void,
+        (*(&raw mut StartDirBuffer)).as_mut_ptr() as *mut core::ffi::c_void,
         (*CurrentDirectory).DosPath.Buffer as *const core::ffi::c_void,
         (*CurrentDirectory).DosPath.Length as SIZE_T,
     );
@@ -278,12 +278,12 @@ pub unsafe extern "C" fn SetUpAppName(
         Length -= (core::mem::size_of::<WCHAR>() as ULONG) as DWORD;
         RtlCopyMemory(
             *CurDir as *mut core::ffi::c_void,
-            StartDirBuffer.as_ptr() as *const core::ffi::c_void,
+            (*(&raw const StartDirBuffer)).as_ptr() as *const core::ffi::c_void,
             Length as SIZE_T,
         );
         (*(*CurDir as *mut WCHAR).offset((Length / (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as isize)) = UNICODE_NULL;
     } else {
-        *CurDir = StartDirBuffer.as_ptr() as LPWSTR;
+        *CurDir = (*(&raw const StartDirBuffer)).as_ptr() as LPWSTR;
     }
 
     /* Retrieve the needed buffer size */
@@ -302,12 +302,12 @@ pub unsafe extern "C" fn SetUpAppName(
         Length -= (core::mem::size_of::<WCHAR>() as ULONG) as DWORD;
         RtlCopyMemory(
             *AppName as *mut core::ffi::c_void,
-            ExeNameBuffer.as_ptr() as *const core::ffi::c_void,
+            (*(&raw const ExeNameBuffer)).as_ptr() as *const core::ffi::c_void,
             Length as SIZE_T,
         );
         (*(*AppName as *mut WCHAR).offset((Length / (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as isize)) = UNICODE_NULL;
     } else {
-        *AppName = ExeNameBuffer.as_ptr() as LPWSTR;
+        *AppName = (*(&raw const ExeNameBuffer)).as_ptr() as LPWSTR;
     }
 }
 #[no_mangle]
@@ -318,16 +318,16 @@ pub unsafe extern "C" fn GetCurrentExeName(
     let ExeLength: u16;
 
     if ExeNameInitialized != 0 {
-        RtlEnterCriticalSection(&mut ExeNameLock);
+        RtlEnterCriticalSection(&raw mut ExeNameLock);
 
         let mut BufferSize = BufferSize;
         if (BufferSize as u32) > (ExeNameLength as u32) * (core::mem::size_of::<u16>() as ULONG) as u32 {
             BufferSize = (ExeNameLength as u32 * (core::mem::size_of::<u16>() as ULONG) as u32) as u16;
         }
 
-        core::ptr::copy_nonoverlapping(ExeNameBuffer.as_ptr(), ExeName, (BufferSize as usize) / core::mem::size_of::<u16>());
+        core::ptr::copy_nonoverlapping((*(&raw const ExeNameBuffer)).as_ptr(), ExeName, (BufferSize as usize) / core::mem::size_of::<u16>());
 
-        RtlLeaveCriticalSection(&mut ExeNameLock);
+        RtlLeaveCriticalSection(&raw mut ExeNameLock);
         ExeLength = BufferSize;
     } else {
         *ExeName = 0x0000u16; // UNICODE_NULL
@@ -1198,7 +1198,7 @@ pub unsafe extern "system" fn AllocConsole() -> BOOL {
     let mut AppNameLength: ULONG = 128 * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
     let mut CurDirLength: ULONG = (MAX_PATH + 1) * (core::mem::size_of::<WCHAR>() as ULONG) as ULONG;
 
-    RtlEnterCriticalSection(&mut ConsoleLock);
+    RtlEnterCriticalSection(&raw mut ConsoleLock);
 
     'quit: {
         if !(*(*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessParameters).ConsoleHandle.is_null() {
@@ -1256,7 +1256,7 @@ pub unsafe extern "system" fn AllocConsole() -> BOOL {
         }
     }
 
-    RtlLeaveCriticalSection(&mut ConsoleLock);
+    RtlLeaveCriticalSection(&raw mut ConsoleLock);
     return Success;
 }
 
@@ -1267,7 +1267,7 @@ pub unsafe extern "system" fn FreeConsole() -> BOOL {
     let FreeConsoleRequest: *mut CONSOLE_FREECONSOLE = &mut ApiMessage.Data.FreeConsoleRequest;
     let ConsoleHandle: HANDLE = (*(*((*NtCurrentTeb()).ProcessEnvironmentBlock)).ProcessParameters).ConsoleHandle;
 
-    RtlEnterCriticalSection(&mut ConsoleLock);
+    RtlEnterCriticalSection(&raw mut ConsoleLock);
 
     'quit: {
         /* We must have a non-trivial handle to close */
@@ -1305,7 +1305,7 @@ pub unsafe extern "system" fn FreeConsole() -> BOOL {
         InputWaitHandle = INVALID_HANDLE_VALUE;
     }
 
-    RtlLeaveCriticalSection(&mut ConsoleLock);
+    RtlLeaveCriticalSection(&raw mut ConsoleLock);
     return Success;
 }
 
@@ -1841,6 +1841,7 @@ unsafe fn AddConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
     *CtrlHandlers.add(idx as usize) = HandlerRoutine;
     return 1;
 }
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn RemoveConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
     let mut i: ULONG;
 
@@ -1882,7 +1883,7 @@ pub unsafe extern "system" fn SetConsoleCtrlHandler(
 ) -> BOOL {
     let Ret: BOOL;
 
-    RtlEnterCriticalSection(&mut ConsoleLock);
+    RtlEnterCriticalSection(&raw mut ConsoleLock);
 
     if Add != 0 {
         Ret = AddConsoleCtrlHandler(HandlerRoutine);
@@ -1890,7 +1891,7 @@ pub unsafe extern "system" fn SetConsoleCtrlHandler(
         Ret = RemoveConsoleCtrlHandler(HandlerRoutine);
     }
 
-    RtlLeaveCriticalSection(&mut ConsoleLock);
+    RtlLeaveCriticalSection(&raw mut ConsoleLock);
     return Ret;
 }
 
@@ -2419,7 +2420,7 @@ pub unsafe extern "system" fn AttachConsole(dwProcessId: DWORD) -> BOOL {
     let mut ConsoleStartInfo: CONSOLE_START_INFO = core::mem::zeroed();
     let mut dummy: DWORD = 0;
 
-    RtlEnterCriticalSection(&mut ConsoleLock);
+    RtlEnterCriticalSection(&raw mut ConsoleLock);
 
     'quit: {
         if !(*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle.is_null() {
@@ -2457,7 +2458,7 @@ pub unsafe extern "system" fn AttachConsole(dwProcessId: DWORD) -> BOOL {
         }
     }
 
-    RtlLeaveCriticalSection(&mut ConsoleLock);
+    RtlLeaveCriticalSection(&raw mut ConsoleLock);
     return Success;
 }
 
@@ -2515,11 +2516,11 @@ pub unsafe extern "system" fn SetConsoleInputExeNameW(lpExeName: LPCWSTR) -> BOO
         return FALSE;
     }
 
-    RtlEnterCriticalSection(&mut ExeNameLock);
+    RtlEnterCriticalSection(&raw mut ExeNameLock);
     // _SEH2_TRY (DUMMY_PSEH: _SEH2_EXCEPT handler is dead code; _SEH2_FINALLY always runs)
     {
         RtlCopyMemory(
-            ExeNameBuffer.as_mut_ptr() as *mut core::ffi::c_void,
+            (*(&raw mut ExeNameBuffer)).as_mut_ptr() as *mut core::ffi::c_void,
             lpExeName as *const core::ffi::c_void,
             (ExeLength * (core::mem::size_of::<WCHAR>() as ULONG) as DWORD) as SIZE_T,
         );
@@ -2528,7 +2529,7 @@ pub unsafe extern "system" fn SetConsoleInputExeNameW(lpExeName: LPCWSTR) -> BOO
     }
     // _SEH2_FINALLY
     {
-        RtlLeaveCriticalSection(&mut ExeNameLock);
+        RtlLeaveCriticalSection(&raw mut ExeNameLock);
     }
     return _SEH2_ret;
 }
@@ -2574,20 +2575,20 @@ pub unsafe extern "system" fn GetConsoleInputExeNameW(
         return (ExeNameLength + 1) as DWORD;
     }
 
-    RtlEnterCriticalSection(&mut ExeNameLock);
+    RtlEnterCriticalSection(&raw mut ExeNameLock);
     // _SEH2_TRY
     {
         // Copy the input EXE name and NULL-terminate it
         RtlCopyMemory(
             lpExeName as *mut core::ffi::c_void,
-            ExeNameBuffer.as_ptr() as *const core::ffi::c_void,
+            (*(&raw const ExeNameBuffer)).as_ptr() as *const core::ffi::c_void,
             (ExeNameLength as SIZE_T) * (core::mem::size_of::<WCHAR>() as SIZE_T),
         );
         *lpExeName.offset(ExeNameLength as isize) = 0u16; // UNICODE_NULL
     }
     // _SEH2_FINALLY
     {
-        RtlLeaveCriticalSection(&mut ExeNameLock);
+        RtlLeaveCriticalSection(&raw mut ExeNameLock);
     }
     // _SEH2_END
 

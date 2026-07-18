@@ -2509,7 +2509,7 @@ pub fn PFN_FROM_SSE(entry: ULONG_PTR) -> PFN_NUMBER {
 /// MA_GetStartingAddress — get the starting address of a memory area
 /// This is a ReactOS-internal function
 #[inline]
-pub unsafe fn MA_GetStartingAddress(marea: PVOID) -> ULONG_PTR {
+pub unsafe fn MA_GetStartingAddress(_marea: PVOID) -> ULONG_PTR {
     // Memory area structure: offset 0 is MMVAD_NODE, starting address at specific offset
     // For now, use extern declaration
     extern "system" {

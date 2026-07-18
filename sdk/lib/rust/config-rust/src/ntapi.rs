@@ -1843,7 +1843,7 @@ pub unsafe extern "system" fn NtUnloadKey2(
     }
 
     CmpLockRegistryExclusive();
-    ExAcquirePushLockExclusive(&mut CmpLoadHiveLock);
+    ExAcquirePushLockExclusive(&raw mut CmpLoadHiveLock);
 
     if (*(*KeyBody).KeyControlBlock).__bindgen_anon_1.Delete() != 0 {
         Status = STATUS_KEY_DELETED;
@@ -1854,7 +1854,7 @@ pub unsafe extern "system" fn NtUnloadKey2(
     }
 
     if !NT_SUCCESS(Status) {
-        ExReleasePushLockExclusive(&mut CmpLoadHiveLock);
+        ExReleasePushLockExclusive(&raw mut CmpLoadHiveLock);
         CmpUnlockRegistry();
     }
 

@@ -19,10 +19,10 @@ pub unsafe extern "C" fn KdbpCommandHistoryAppend(Command: PCSTR) {
         return;
     }
 
-    Buffer = KdbCommandHistoryBuffer.as_mut_ptr().add(KdbCommandHistoryBufferIndex as usize);
+    Buffer = (*(&raw mut KdbCommandHistoryBuffer)).as_mut_ptr().add(KdbCommandHistoryBufferIndex as usize);
     KdbCommandHistoryBufferIndex += Length1 as LONG;
-    if KdbCommandHistoryBufferIndex >= KdbCommandHistoryBuffer.len() as LONG {
-        KdbCommandHistoryBufferIndex -= KdbCommandHistoryBuffer.len() as LONG;
+    if KdbCommandHistoryBufferIndex >= (*(&raw const KdbCommandHistoryBuffer)).len() as LONG {
+        KdbCommandHistoryBufferIndex -= (*(&raw const KdbCommandHistoryBuffer)).len() as LONG;
         Length2 = KdbCommandHistoryBufferIndex as usize;
         Length1 -= Length2;
     }
@@ -32,10 +32,10 @@ pub unsafe extern "C" fn KdbpCommandHistoryAppend(Command: PCSTR) {
         if !KdbCommandHistory[i as usize].is_null() {
             if (Length2 > 0 &&
                 (KdbCommandHistory[i as usize] >= Buffer ||
-                 KdbCommandHistory[i as usize] < KdbCommandHistoryBuffer.as_ptr().add(KdbCommandHistoryBufferIndex as usize))) ||
+                 KdbCommandHistory[i as usize] < (*(&raw const KdbCommandHistoryBuffer)).as_ptr().add(KdbCommandHistoryBufferIndex as usize))) ||
                 (Length2 <= 0 &&
                  (KdbCommandHistory[i as usize] >= Buffer &&
-                  KdbCommandHistory[i as usize] < KdbCommandHistoryBuffer.as_ptr().add(KdbCommandHistoryBufferIndex as usize)))
+                  KdbCommandHistory[i as usize] < (*(&raw const KdbCommandHistoryBuffer)).as_ptr().add(KdbCommandHistoryBufferIndex as usize)))
             {
                 KdbCommandHistory[i as usize] = core::ptr::null();
             }
@@ -43,7 +43,7 @@ pub unsafe extern "C" fn KdbpCommandHistoryAppend(Command: PCSTR) {
 
         i -= 1;
         if i < 0 {
-            i = (KdbCommandHistory.len() - 1) as LONG;
+            i = ((*(&raw const KdbCommandHistory)).len() - 1) as LONG;
         }
 
         if i == KdbCommandHistoryIndex {
@@ -52,7 +52,7 @@ pub unsafe extern "C" fn KdbpCommandHistoryAppend(Command: PCSTR) {
     }
 
     KdbCommandHistoryIndex += 1;
-    KdbCommandHistoryIndex %= KdbCommandHistory.len() as LONG;
+    KdbCommandHistoryIndex %= (*(&raw const KdbCommandHistory)).len() as LONG;
     if !KdbCommandHistory[KdbCommandHistoryIndex as usize].is_null() {
         KdbCommandHistory[KdbCommandHistoryIndex as usize] = core::ptr::null();
     }
@@ -66,7 +66,7 @@ pub unsafe extern "C" fn KdbpCommandHistoryAppend(Command: PCSTR) {
     if Length2 > 0 {
         core::ptr::copy_nonoverlapping(
             (Command as *const u8).add(Length1),
-            KdbCommandHistoryBuffer.as_mut_ptr() as *mut u8,
+            (*(&raw mut KdbCommandHistoryBuffer)).as_mut_ptr() as *mut u8,
             Length2
         );
     }
@@ -78,7 +78,7 @@ unsafe fn KdbpGetPrevHistoryEntry(NextIndex: *mut LONG) -> PCSTR {
     } else {
         let mut i = *NextIndex - 1;
         if i < 0 {
-            *NextIndex = (KdbCommandHistory.len() - 1) as LONG;
+            *NextIndex = ((*(&raw const KdbCommandHistory)).len() - 1) as LONG;
         }
 
         if !KdbCommandHistory[i as usize].is_null() && i != KdbCommandHistoryIndex {
@@ -97,7 +97,7 @@ unsafe fn KdbpGetNextHistoryEntry(NextIndex: *mut LONG) -> PCSTR {
     }
 
     let mut i = *NextIndex + 1;
-    if i >= KdbCommandHistory.len() as LONG {
+    if i >= (*(&raw const KdbCommandHistory)).len() as LONG {
         i = 0;
     }
 

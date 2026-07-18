@@ -277,7 +277,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
             StreamFile = core::ptr::null_mut();
 
             if FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0 {
-                let mut NewDataLength: u32;
+                let NewDataLength: u32;
 
                 CdInitializeDirContext(IrpContext, &mut DirContext);
                 CdInitializeDirent(IrpContext, &mut Dirent);
@@ -411,7 +411,7 @@ pub unsafe extern "C" fn CdDeleteInternalStream(
 
     CdLockFcb(IrpContext, Fcb);
 
-    let mut FileObject: *mut FILE_OBJECT;
+    let FileObject: *mut FILE_OBJECT;
     FileObject = (*fcb_index(Fcb)).FileObject;
     (*fcb_index(Fcb)).FileObject = core::ptr::null_mut();
 

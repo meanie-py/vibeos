@@ -1109,7 +1109,9 @@ def emit_driver_assert(crate, arch_name, resolved, c_offsets, keep):
         return
 
     nightly = DRIVER_CONFIGS[crate].get("nightly", False)
-    cargo_cmd = (["cargo", "+nightly"] if nightly else ["cargo"]) + [
+    # Pinned nightly, single-sourced from `.rust-nightly` (see rust-toolchain.toml).
+    pin = (SCRIPT_DIR.parent / ".rust-nightly").read_text().strip()
+    cargo_cmd = (["cargo", f"+{pin}"] if nightly else ["cargo"]) + [
         "check",
         "-p",
         crate,

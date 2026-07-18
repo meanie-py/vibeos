@@ -115,12 +115,12 @@ unsafe extern "C" fn DiskGetFileInformation(FileId: ULONG, Information: *mut FIL
     ESUCCESS
 }
 
-unsafe extern "C" fn DiskOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG) -> ARC_STATUS {
-    let mut Context: *mut DISKCONTEXT;
-    let mut DriveType: CONFIGURATION_TYPE;
+unsafe extern "C" fn DiskOpen(Path: PCHAR, _OpenMode: OPENMODE, FileId: *mut ULONG) -> ARC_STATUS {
+    let Context: *mut DISKCONTEXT;
+    let DriveType: CONFIGURATION_TYPE;
     let mut DriveNumber: UCHAR = 0;
     let mut DrivePartition: ULONG = 0;
-    let mut SectorSize: ULONG;
+    let SectorSize: ULONG;
     let mut SectorOffset: ULONGLONG = 0;
     let mut SectorCount: ULONGLONG = 0;
     let mut PartitionTableEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
@@ -146,8 +146,8 @@ unsafe extern "C" fn DiskOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULON
             return EINVAL;
         }
 
-        SectorOffset = ((PartitionTableEntry.SectorCountBeforePartition) as u64);
-        SectorCount = ((PartitionTableEntry.PartitionSectorCount) as u64);
+        SectorOffset = (PartitionTableEntry.SectorCountBeforePartition) as u64 ;
+        SectorCount = (PartitionTableEntry.PartitionSectorCount) as u64 ;
     } else {
         let mut Geometry: GEOMETRY = core::mem::zeroed();
         if MachDiskGetDriveGeometry(DriveNumber, &mut Geometry) == 0 {
@@ -189,7 +189,7 @@ unsafe extern "C" fn DiskRead(FileId: ULONG, Buffer: *mut VOID, mut N: ULONG, Co
     let mut ret: BOOLEAN;
 
     TotalSectors = (N + (*Context).SectorSize - 1) / (*Context).SectorSize;
-    MaxSectors = ((DiskReadBufferSize / (((*Context).SectorSize) as usize)) as u32);
+    MaxSectors = (DiskReadBufferSize / (((*Context).SectorSize) as usize)) as u32 ;
     SectorOffset = (*Context).SectorOffset + (*Context).SectorNumber;
 
     ret = 1u8;
@@ -201,7 +201,7 @@ unsafe extern "C" fn DiskRead(FileId: ULONG, Buffer: *mut VOID, mut N: ULONG, Co
         }
 
         ret = MachDiskReadLogicalSectors(
-            (((*Context).DriveNumber) as u32),
+            ((*Context).DriveNumber) as u32 ,
             SectorOffset,
             ReadSectors,
             DiskReadBuffer,
@@ -223,7 +223,7 @@ unsafe extern "C" fn DiskRead(FileId: ULONG, Buffer: *mut VOID, mut N: ULONG, Co
         TotalSectors -= ReadSectors;
     }
 
-    *Count = ((Ptr as ULONG_PTR - Buffer as ULONG_PTR) as u32);
+    *Count = (Ptr as ULONG_PTR - Buffer as ULONG_PTR) as u32 ;
     (*Context).SectorNumber = SectorOffset - (*Context).SectorOffset;
 
     if ret == 0 { EIO } else { ESUCCESS }
@@ -277,7 +277,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: u8) {
 
     DiskDetectPartitionType(DriveNumber);
 
-    if MachDiskReadLogicalSectors(((DriveNumber) as u32), 0u64, 1, DiskReadBuffer as *mut core::ffi::c_void) == 0 {
+    if MachDiskReadLogicalSectors((DriveNumber) as u32 , 0u64, 1, DiskReadBuffer as *mut core::ffi::c_void) == 0 {
         ERR(b"Reading MBR failed\n\0".as_ptr() as *const i8);
         sprintf(Identifier as *mut i8, b"BIOSDISK%d\0".as_ptr() as *const i8, (DriveNumber - FIRST_BIOS_DISK + 1) as i32);
         return;
@@ -344,8 +344,8 @@ unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
 
     let DiskCount: u8;
     let mut DriveNumber: u8;
-    let i: u32;
-    let Changed: u8;
+    let _i: u32;
+    let _Changed: u8;
 
     *BootDriveReported = 0u8;
 
@@ -354,7 +354,7 @@ unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
     DriveNumber = FIRST_BIOS_DISK;
 
     memset(DiskReadBuffer as *mut core::ffi::c_void, 0xcd, DiskReadBufferSize);
-    while MachDiskReadLogicalSectors(((DriveNumber) as u32), 0u64, 1, DiskReadBuffer as *mut core::ffi::c_void) != 0 {
+    while MachDiskReadLogicalSectors((DriveNumber) as u32 , 0u64, 1, DiskReadBuffer as *mut core::ffi::c_void) != 0 {
         let mut Changed = 0u8;
         let mut i = 0u32;
         while Changed == 0 && i < DiskReadBufferSize as u32 {
@@ -374,7 +374,7 @@ unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
             *BootDriveReported = 1u8;
         }
 
-        let DiskCount = DiskCount + 1;
+        let _DiskCount = DiskCount + 1;
         DriveNumber += 1;
         memset(DiskReadBuffer as *mut core::ffi::c_void, 0xcd, DiskReadBufferSize);
     }
@@ -422,7 +422,7 @@ unsafe fn DiskGetBootPath(IsPxe: BOOLEAN) -> BOOLEAN {
         let mut BootPartition: ULONG = 0;
         let mut PartitionEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
 
-        if DiskGetBootPartitionEntry(((FrldrBootDrive) as u32), &mut PartitionEntry, &mut BootPartition) == 0 {
+        if DiskGetBootPartitionEntry((FrldrBootDrive) as u32 , &mut PartitionEntry, &mut BootPartition) == 0 {
             ERR(b"Failed to get boot partition entry\n\0".as_ptr() as *const i8);
             return 0u8;
         }
@@ -467,7 +467,7 @@ pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
         let Signature: ULONG;
         let mut i: ULONG;
 
-        if MachDiskReadLogicalSectors(((FrldrBootDrive) as u32), 16u64, 1, DiskReadBuffer as *mut core::ffi::c_void) == 0u8 {
+        if MachDiskReadLogicalSectors((FrldrBootDrive) as u32 , 16u64, 1, DiskReadBuffer as *mut core::ffi::c_void) == 0u8 {
             ERR(b"Reading MBR failed\n\0".as_ptr() as *const i8);
             return 0u8;
         }

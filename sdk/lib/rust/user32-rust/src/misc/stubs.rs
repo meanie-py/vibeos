@@ -132,13 +132,13 @@ pub unsafe extern "system" fn SetSysColorsTemp(
         p = (p as *mut u8).add(core::mem::size_of::<u32>()) as LPVOID;
         memcpy(
             p,
-            SysColorPens.as_ptr() as *const core::ffi::c_void,
+            (*(&raw const SysColorPens)).as_ptr() as *const core::ffi::c_void,
             (n as usize) * core::mem::size_of::<HPEN>(),
         );
         p = (p as *mut u8).add((n as usize) * core::mem::size_of::<HPEN>()) as LPVOID;
         memcpy(
             p,
-            SysColorBrushes.as_ptr() as *const core::ffi::c_void,
+            (*(&raw const SysColorBrushes)).as_ptr() as *const core::ffi::c_void,
             (n as usize) * core::mem::size_of::<HBRUSH>(),
         );
         p = (p as *mut u8).add((n as usize) * core::mem::size_of::<HBRUSH>()) as LPVOID;

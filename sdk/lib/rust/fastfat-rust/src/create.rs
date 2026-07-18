@@ -478,12 +478,12 @@ pub unsafe extern "system" fn FatCommonCreate(
     let CreateDisposition = (Options >> 24) & 0xFF;
     let IsPagingFile = FlagOn(((*IrpSp).Flags) as u32, SL_OPEN_PAGING_FILE) != 0;
     let OpenTargetDirectory = FlagOn(((*IrpSp).Flags) as u32, SL_OPEN_TARGET_DIRECTORY) != 0;
-    let CreateDirectory = (DirectoryFile &&
+    let CreateDirectory = DirectoryFile &&
                            ((CreateDisposition == FILE_CREATE) ||
-                            (CreateDisposition == FILE_OPEN_IF)));
-    let OpenDirectory = (DirectoryFile &&
+                            (CreateDisposition == FILE_OPEN_IF)) ;
+    let OpenDirectory = DirectoryFile &&
                          ((CreateDisposition == FILE_OPEN) ||
-                          (CreateDisposition == FILE_OPEN_IF)));
+                          (CreateDisposition == FILE_OPEN_IF)) ;
 
     if (*Irp).Overlay.AllocationSize.__bindgen_anon_1.HighPart != 0 ||
         (DirectoryFile && NonDirectoryFile) {
@@ -674,8 +674,8 @@ pub unsafe extern "system" fn FatCommonCreate(
                 let mut NextFcb: *mut FCB;
                 FsRtlDissectName(RemainingPart, &mut FinalName, &mut NextRemainingPart);
 
-                if ((NextRemainingPart.Length != 0 && *(NextRemainingPart.Buffer.offset(0)) == '\\' as u16) ||
-                    FinalName.Length > 255 * core::mem::size_of::<u16>() as u16) {
+                if (NextRemainingPart.Length != 0 && *(NextRemainingPart.Buffer.offset(0)) == '\\' as u16) ||
+                    FinalName.Length > 255 * core::mem::size_of::<u16>() as u16  {
                     Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_INVALID;
                     break 'main_try;
                 }
@@ -732,7 +732,7 @@ pub unsafe extern "system" fn FatCommonCreate(
 
             if (*Fcb).FcbCondition == FcbGood as u32 {
                 if IsPagingFile && FirstLoop && NodeType(Fcb as *const c_void) == (FAT_NTC_FCB) as u32 &&
-                    (!IsListEmpty(&FatData.AsyncCloseList as *const _) || !IsListEmpty(&FatData.DelayedCloseList as *const _)) {
+                    (!IsListEmpty(&raw const FatData.AsyncCloseList as *const _) || !IsListEmpty(&raw const FatData.DelayedCloseList as *const _)) {
                     FatFspClose(Vcb);
                     FirstLoop = false;
                     continue;
@@ -840,8 +840,8 @@ pub unsafe extern "system" fn FatCommonCreate(
                 DebugTrace(0, 0, b"Dissecting the name %wZ\n\0".as_ptr() as *const i8, &RemainingPart);
                 FsRtlDissectName(RemainingPart, &mut FinalName, &mut RemainingPart);
 
-                if ((RemainingPart.Length != 0 && *(RemainingPart.Buffer.offset(0)) == '\\' as u16) ||
-                    FinalName.Length > 255 * core::mem::size_of::<u16>() as u16) {
+                if (RemainingPart.Length != 0 && *(RemainingPart.Buffer.offset(0)) == '\\' as u16) ||
+                    FinalName.Length > 255 * core::mem::size_of::<u16>() as u16  {
                     Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_INVALID;
                     break 'main_try;
                 }
@@ -1690,7 +1690,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
             } else if CreateDisposition == FILE_SUPERSEDE {
                 SetFlag(
                     &mut AddedAccess,
-                    (0x00010000 /* DELETE */ & !(*DesiredAccess)),
+                    0x00010000 /* DELETE */ & !(*DesiredAccess) ,
                 );
                 *DesiredAccess |= 0x00010000;
             } else if CreateDisposition == FILE_OVERWRITE || CreateDisposition == FILE_OVERWRITE_IF {
@@ -1878,11 +1878,17 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                 let OldStatus: i32;
                 DebugTrace(0, (Dbg) as i32, b"Doing supersede/overwrite operation\n\0".as_ptr() as *const i8);
                 OldStatus = Iosb.__bindgen_anon_1.Status;
-                Iosb.__bindgen_anon_1.Status = fat_check_system_security_access(IrpContext);
+                Iosb.__bindgen_anon_1.Status = FatCheckSystemSecurityAccess(IrpContext);
                 if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) == 0 {
                     break 'try_scope_body;
                 }
-                Iosb = fat_supersede_or_overwrite_file(
+                // Re-point from the rust_cohab_stub.c STUB_BUGCHECK stubs to the real Rust
+                // translations already present in this file (FatSupersedeOrOverwriteFile @ ~3213,
+                // FatCheckSystemSecurityAccess @ ~3569). FatOpenExistingFcb was translated calling
+                // the snake_case stubs while its sibling FatOpenExistingFile got the real fns; any
+                // supersede/overwrite of an existing FAT file through FatOpenExistingFcb bugchecked
+                // 0x23 0xdead0000. Signatures are identical (BOOLEAN = u8).
+                Iosb = FatSupersedeOrOverwriteFile(
                     IrpContext,
                     FileObject,
                     Fcb,
@@ -2062,7 +2068,7 @@ pub unsafe extern "system" fn FatOpenTargetDirectory(
             // NT_ASSERT(i != 0);
             if i == 0 {
                 // We'll keep a debug assert; using core::assert! in Rust
-                core::assert!(false, "i != 0");
+                core::debug_assert!(false, "i != 0");
             }
             (*FileObject).FileName.Length -= core::mem::size_of::<u16>() as u16;
             i -= 1;
@@ -3570,7 +3576,7 @@ pub unsafe extern "system" fn FatCheckSystemSecurityAccess(IrpContext: *mut IRP_
     // PAGED_CODE();
     let irp_sp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp);
     let security_context: *mut IO_SECURITY_CONTEXT = ((*irp_sp).Parameters.Create.SecurityContext).cast();
-    core::assert!(!security_context.is_null());
+    core::debug_assert!(!security_context.is_null());
     let access_state: *mut _ACCESS_STATE = (*security_context).AccessState;
     if ((*access_state).RemainingDesiredAccess & ACCESS_SYSTEM_SECURITY) != 0 {
         if SeSinglePrivilegeCheck(FatSecurityPrivilege, 1 as KPROCESSOR_MODE) == 0 {
@@ -3636,7 +3642,7 @@ pub unsafe extern "system" fn FatCallSelfCompletionRoutine(
     let _ = Irp;
 
     // STATUS_MORE_PROCESSING_REQUIRED
-    (0xC0000016u32 as i32)
+    0xC0000016u32 as i32
 }
 
 

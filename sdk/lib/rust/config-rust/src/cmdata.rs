@@ -44,7 +44,7 @@ pub static mut IopAutoReboot: ULONG = 0;
 
 // iomgr's registry slice (was IOMGR_CONTROL_VECTOR in iomgr.rs). Local const so the
 // const CmControlVector concatenation can reference it. crate-split Phase 1b.
-const IOMGR_CONTROL_VECTOR: SubVector<1> = SubVector(unsafe {
+const IOMGR_CONTROL_VECTOR: SubVector<1> = SubVector({
     [cv!("CrashControl", "AutoReboot", core::ptr::addr_of_mut!(IopAutoReboot))]
 });
 
@@ -353,7 +353,7 @@ pub static mut CmpMultifunctionTypes: [_CMP_MF_TYPE; 9] = [
 // Local entries — entries that reference cmdata-owned globals or are still
 // awaiting Phase B chop. Excludes the NULL terminator (added separately by
 // the assembler below).
-const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 50] = unsafe { [
+const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 50] = { [
     cv!("LSA", "AuditBaseDirectories", core::ptr::addr_of_mut!(DummyData)),
     cv!("LSA", "AuditBaseObjects", core::ptr::addr_of_mut!(DummyData)),
     cv!("LSA\\audit", "ProcessAccessesToAudit", core::ptr::addr_of_mut!(DummyData)),

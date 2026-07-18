@@ -55,15 +55,12 @@
 //! The bootloader `bldr` feature mirrors the C `_BLDR_` build by gating the
 //! kernel-only hard-error and timestamp calls.
 
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, HBASE_BLOCK, HBIN, HCELL, HCELL_INDEX, HHIVE, PCELL_DATA, PHBASE_BLOCK, PHBIN, PHHIVE, RtlFindSetBits, HSTORAGE_TYPE_Stable as Stable, UINT32, _HHIVE, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{HBASE_BLOCK, HHIVE, PHBASE_BLOCK, PHHIVE, RtlFindSetBits, HSTORAGE_TYPE_Stable as Stable};
 #[cfg(not(feature = "bldr"))]
 use ntkrnl_sys::ddk::IoSetThreadHardErrorMode;
-use crate::glue::{HCELL_NIL, HBLOCK_SIZE, TAG_CM, HV_HHIVE_SIGNATURE, HFILE_TYPE_ALTERNATE, HFILE_TYPE_LOG, HFILE_TYPE_PRIMARY, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, STATUS_REGISTRY_IO_FAILED, STATUS_NOT_REGISTRY_FILE, STATUS_REGISTRY_RECOVERED, HIVE_VOLATILE};
+use crate::glue::{HCELL_NIL, HBLOCK_SIZE, TAG_CM, HV_HHIVE_SIGNATURE, HFILE_TYPE_ALTERNATE, HFILE_TYPE_LOG, HFILE_TYPE_PRIMARY, HIVE_VOLATILE};
 use core::ffi::c_void;
 use core::ptr::addr_of_mut;
 
@@ -450,7 +447,7 @@ pub unsafe extern "system" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
 }
 #[no_mangle]
 pub unsafe extern "system" fn HvHiveWillShrink(
-    RegistryHive: *mut HHIVE,
+    _RegistryHive: *mut HHIVE,
 ) -> i32 {
     // No shrinking yet
     DbgPrint(b"HvHiveWillShrink is unimplemented\n\0".as_ptr() as *const i8);

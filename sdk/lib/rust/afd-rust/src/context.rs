@@ -1,13 +1,11 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
-use core::ffi::c_void;
 
 extern "C" {
     fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Force: BOOLEAN, Size: PULONG) -> PVOID;

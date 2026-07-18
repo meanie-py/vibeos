@@ -271,10 +271,27 @@ pub unsafe fn KeInvalidateTlbEntry(address: PVOID) {
     {
         core::arch::asm!("invlpg [{}]", in(reg) address, options(nostack, preserves_flags));
     }
+    // M3 SMP (amd64): targeted remote shootdown — remotes invlpg exactly
+    // this VA instead of a full cr3 reload (see KeFlushProcessTb note for
+    // why the remote round-trip is load-bearing at -smp 2).
+    #[cfg(all(feature = "smp", target_arch = "x86_64"))]
+    {
+        unsafe extern "C" { fn KiTbShootdownSingle(Address: u64); }
+        KiTbShootdownSingle(address as u64);
+    }
+    // arm64: `vale1is` is INNER-SHAREABLE — the invalidate broadcasts to every
+    // core in hardware, so this single sequence IS the SMP shootdown (no IPI
+    // protocol needed; the amd64 KiTbShootdownSingle machinery has no arm64
+    // twin BY DESIGN — smp-bringup-quest.md M5d). The leading `dsb ishst`
+    // publishes the caller's PTE store to remote table walkers BEFORE the
+    // invalidate lands — without it a remote walk can refill from the stale
+    // PTE (TCG forgives this; real hardware does not). The trailing `dsb ish`
+    // completes only when every core has dropped the entry.
     #[cfg(target_arch = "aarch64")]
     {
         let tlbi_arg = (address as u64) >> 12;
         core::arch::asm!(
+            "dsb ishst",
             "tlbi vale1is, {}",
             "dsb ish",
             "isb",
@@ -297,9 +314,21 @@ pub unsafe fn KeFlushProcessTb() {
         core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, nomem));
         core::arch::asm!("mov cr3, {}", in(reg) cr3, options(nostack));
     }
+    // M3 SMP (amd64): the Rust callers of this primitive rely on it for
+    // mappings other CPUs may have cached (verified: removing the broadcast
+    // brings back the 0xF4/wild-RIP user corruption at -smp 2). The lazy-idle
+    // protocol in ke/amd64/ipi.rs makes this cheap while the other CPU idles.
+    #[cfg(all(feature = "smp", target_arch = "x86_64"))]
+    {
+        unsafe extern "C" { fn KiTbShootdownBroadcast(); }
+        KiTbShootdownBroadcast();
+    }
+    // arm64: hardware-broadcast full flush (see KeInvalidateTlbEntry above for
+    // the barrier + no-IPI-needed rationale).
     #[cfg(target_arch = "aarch64")]
     {
         core::arch::asm!(
+            "dsb ishst",
             "tlbi vmalle1is",
             "dsb ish",
             "isb",
@@ -912,8 +941,8 @@ extern "C" {
 pub unsafe fn UpdateTotalCommittedPages(delta: i32) {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
-    let total = &*(&MmTotalCommittedPages as *const _ as *const AtomicUsize);
-    let peak = &*(&MmPeakCommitment as *const _ as *const AtomicUsize);
+    let total = &*(&raw const MmTotalCommittedPages as *const _ as *const AtomicUsize);
+    let peak = &*(&raw const MmPeakCommitment as *const _ as *const AtomicUsize);
 
     let new_total = if delta >= 0 {
         total.fetch_add(delta as usize, Ordering::SeqCst).wrapping_add(delta as usize)

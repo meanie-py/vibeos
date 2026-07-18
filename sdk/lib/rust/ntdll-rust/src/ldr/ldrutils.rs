@@ -243,7 +243,7 @@ pub unsafe extern "system" fn LdrpUpdateLoadCount3(
     UpdateString: PUNICODE_STRING,
 ) {
     let mut NewImportForwarder: PIMAGE_BOUND_FORWARDER_REF;
-    let mut FirstEntry: PIMAGE_BOUND_IMPORT_DESCRIPTOR;
+    let FirstEntry: PIMAGE_BOUND_IMPORT_DESCRIPTOR;
     let mut BoundEntry: PIMAGE_BOUND_IMPORT_DESCRIPTOR;
     let mut ImportEntry: PIMAGE_IMPORT_DESCRIPTOR;
     let mut FirstThunk: PIMAGE_THUNK_DATA;
@@ -537,8 +537,8 @@ pub unsafe extern "system" fn LdrpCallTlsInitializers(
 
 #[no_mangle]
 pub unsafe extern "system" fn LdrpCodeAuthzCheckDllAllowed(
-    FullName: PUNICODE_STRING,
-    DllHandle: HANDLE,
+    _FullName: PUNICODE_STRING,
+    _DllHandle: HANDLE,
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }
@@ -990,9 +990,9 @@ pub unsafe extern "system" fn LdrpMapDll(
     let mut HardErrorStatus: NTSTATUS;
     let mut Status: NTSTATUS;
     let mut OverlapDllFound: BOOLEAN = 0u8;
-    let mut ImageBase: ULONG_PTR;
-    let mut ImageEnd: ULONG_PTR;
-    let mut ListHead: PLIST_ENTRY;
+    let ImageBase: ULONG_PTR;
+    let ImageEnd: ULONG_PTR;
+    let ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut CandidateEntry: PLDR_DATA_TABLE_ENTRY;
     let mut LdrEntry: PLDR_DATA_TABLE_ENTRY;
@@ -1001,7 +1001,7 @@ pub unsafe extern "system" fn LdrpMapDll(
     let mut OverlapDll: _UNICODE_STRING = core::mem::zeroed();
     let mut RelocatableDll: BOOLEAN = 1u8;
     let mut IllegalDll: _UNICODE_STRING = core::mem::zeroed();
-    let mut RelocData: PVOID;
+    let RelocData: PVOID;
     let mut RelocDataSize: ULONG = 0;
 
     if ShowSnaps != 0 {
@@ -1732,7 +1732,7 @@ pub unsafe extern "system" fn LdrpCheckForLoadedDll(
     RedirectedDll: BOOLEAN,
     LdrEntry: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> BOOLEAN {
-    let mut HashIndex: ULONG;
+    let HashIndex: ULONG;
     let mut ListHead: PLIST_ENTRY;
     let mut ListEntry: PLIST_ENTRY;
     let mut CurEntry: PLDR_DATA_TABLE_ENTRY;

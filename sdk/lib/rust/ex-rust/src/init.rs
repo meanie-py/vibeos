@@ -190,7 +190,7 @@ pub static mut CmNtCSDReleaseType: ULONG = 0;
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 #[no_mangle]
 pub static INIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Windows", "CSDVersion",
             core::ptr::addr_of_mut!(CmNtCSDVersion)),
         ntkrnl_sys::cv!("Windows", "CSDReleaseType",
@@ -447,9 +447,9 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
             (ExpNlsTableBase as usize + ExpAnsiCodePageDataOffset as usize) as *mut u16,
             (ExpNlsTableBase as usize + ExpOemCodePageDataOffset as usize) as *mut u16,
             (ExpNlsTableBase as usize + ExpUnicodeCaseTableDataOffset as usize) as *mut u16,
-            &mut ExpNlsTableInfo,
+            &raw mut ExpNlsTableInfo,
         );
-        RtlResetRtlTranslations(&mut ExpNlsTableInfo);
+        RtlResetRtlTranslations(&raw mut ExpNlsTableInfo);
         return;
     }
 
@@ -473,7 +473,7 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         0x000F0001,
         MmSectionObjectType as ntkrnl_sys::ddk::POBJECT_TYPE,
         0i8,
-        &mut ExpNlsSectionPointer,
+        &raw mut ExpNlsSectionPointer,
         core::ptr::null_mut(),
     );
     ObCloseHandle(NlsSection, 0i8);
@@ -506,9 +506,9 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         (ExpNlsTableBase as usize + ExpAnsiCodePageDataOffset as usize) as *mut u16,
         (ExpNlsTableBase as usize + ExpOemCodePageDataOffset as usize) as *mut u16,
         (ExpNlsTableBase as usize + ExpUnicodeCaseTableDataOffset as usize) as *mut u16,
-        &mut ExpNlsTableInfo,
+        &raw mut ExpNlsTableInfo,
     );
-    RtlResetRtlTranslations(&mut ExpNlsTableInfo);
+    RtlResetRtlTranslations(&raw mut ExpNlsTableInfo);
 
     SectionBase = core::ptr::null_mut();
 
@@ -584,7 +584,7 @@ unsafe fn ExpLoadInitialProcess(
 
     RtlCopyUnicodeString(
         &mut (*ProcessParams).CurrentDirectory.DosPath,
-        &NtSystemRoot,
+        &raw const NtSystemRoot,
     );
 
     p = ((*ProcessParams).CurrentDirectory.DosPath.Buffer as usize + (*ProcessParams).CurrentDirectory.DosPath.MaximumLength as usize) as *mut u16;
@@ -601,20 +601,20 @@ unsafe fn ExpLoadInitialProcess(
     if (NtInitialUserProcessBufferType != 1) ||
        ((NtInitialUserProcessBufferLength != 0xFFFFFFFF) &&
         ((NtInitialUserProcessBufferLength < 2) ||
-         (NtInitialUserProcessBufferLength > (core::mem::size_of_val(&NtInitialUserProcessBuffer) - 2) as ULONG)))
+         (NtInitialUserProcessBufferLength > (core::mem::size_of_val(&*(&raw const NtInitialUserProcessBuffer)) - 2) as ULONG)))
     {
-        KeBugCheckEx(0x63, 0xC000000D, NtInitialUserProcessBufferType as ULONG_PTR, NtInitialUserProcessBufferLength as ULONG_PTR, core::mem::size_of_val(&NtInitialUserProcessBuffer));
+        KeBugCheckEx(0x63, 0xC000000D, NtInitialUserProcessBufferType as ULONG_PTR, NtInitialUserProcessBufferLength as ULONG_PTR, core::mem::size_of_val(&*(&raw const NtInitialUserProcessBuffer)));
     }
 
-    p = NtInitialUserProcessBuffer.as_mut_ptr();
+    p = (*(&raw mut NtInitialUserProcessBuffer)).as_mut_ptr();
     while (*p != 0) && (*p != b' ' as u16) {
         p = p.add(1);
     }
 
-    (*ProcessParams).ImagePathName.Length = (p as usize - NtInitialUserProcessBuffer.as_ptr() as usize) as USHORT;
+    (*ProcessParams).ImagePathName.Length = (p as usize - (*(&raw const NtInitialUserProcessBuffer)).as_ptr() as usize) as USHORT;
 
     core::ptr::copy_nonoverlapping(
-        NtInitialUserProcessBuffer.as_ptr(),
+        (*(&raw const NtInitialUserProcessBuffer)).as_ptr(),
         (*ProcessParams).ImagePathName.Buffer,
         (*ProcessParams).ImagePathName.Length as usize / 2,
     );
@@ -625,7 +625,7 @@ unsafe fn ExpLoadInitialProcess(
     (*ProcessParams).CommandLine.Buffer = p;
     (*ProcessParams).CommandLine.MaximumLength = (520 * 2) as USHORT;
 
-    RtlAppendUnicodeToString(&mut (*ProcessParams).CommandLine, NtInitialUserProcessBuffer.as_ptr());
+    RtlAppendUnicodeToString(&mut (*ProcessParams).CommandLine, (*(&raw const NtInitialUserProcessBuffer)).as_ptr());
 
     RtlInitEmptyUnicodeString(
         &mut Environment,
@@ -645,7 +645,7 @@ unsafe fn ExpLoadInitialProcess(
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
     RtlAppendUnicodeToString(&mut Environment, w!("SystemRoot=").as_ptr() as *mut u16);
-    RtlAppendUnicodeStringToString(&mut Environment, &NtSystemRoot);
+    RtlAppendUnicodeStringToString(&mut Environment, &raw const NtSystemRoot);
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
     SmssName = (*ProcessParams).ImagePathName;
@@ -898,9 +898,17 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     ExInitPoolLookasidePointers();
 
     if Cpu != 0 {
-        if HalInitSystem(ExpInitializationPhase, LoaderBlock) == 0 {
-            KeBugCheck(0x61);
-        }
+        // i386 SMP (M5 Phase C): the AP must NOT call HalInitSystem. On i386 that
+        // re-runs GLOBAL Phase-1 HAL init (HalpInitBusHandlers → contiguous-memory
+        // alloc → MmMapIoSpace → KeFlushEntireTb), which broadcasts a TLB-flush
+        // IPI to P0 — but P0 is spin-waiting in KeStartAllProcessors' handshake
+        // (LoaderBlock->Prcb != 0) with IPIs unserviced → hard deadlock (GDB:
+        // AP@KiIpiSendPacket ⇄ P0@YieldProcessor). The AP's per-CPU HAL is already
+        // done by HalInitializeProcessor (KiSystemStartup). amd64/arm64 APs never
+        // reach ExpInitializeExecutive (ReactOS's i386 AP path was an unimplemented
+        // FIXME), so skipping HalInitSystem here is a no-op there. Gate on the
+        // explicit Cpu arg — reliable, unlike a PRCB field read across the
+        // hal_ddk/ddk bindgen boundary (that read returns a stale 0 on the AP).
         return;
     }
 
@@ -929,9 +937,9 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         (ExpNlsTableBase as usize + ExpAnsiCodePageDataOffset as usize) as *mut u16,
         (ExpNlsTableBase as usize + ExpOemCodePageDataOffset as usize) as *mut u16,
         (ExpNlsTableBase as usize + ExpUnicodeCaseTableDataOffset as usize) as *mut u16,
-        &mut ExpNlsTableInfo,
+        &raw mut ExpNlsTableInfo,
     );
-    RtlResetRtlTranslations(&mut ExpNlsTableInfo);
+    RtlResetRtlTranslations(&raw mut ExpNlsTableInfo);
 
 
     if HalInitSystem(ExpInitializationPhase, LoaderBlock) == 0 {
@@ -976,12 +984,12 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     AnsiPath.Length -= 1;
 
     RtlInitEmptyUnicodeString(
-        &mut NtSystemRoot,
+        &raw mut NtSystemRoot,
         (*SharedUserData).NtSystemRoot.as_mut_ptr(),
         (core::mem::size_of_val(&(*SharedUserData).NtSystemRoot)) as USHORT,
     );
 
-    Status = RtlAnsiStringToUnicodeString(&mut NtSystemRoot, &mut AnsiPath, 0u8);
+    Status = RtlAnsiStringToUnicodeString(&raw mut NtSystemRoot, &mut AnsiPath, 0u8);
     if Status < 0 {
         KeBugCheck(0x64);
     }
@@ -1079,7 +1087,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     }
 
     RtlInitAnsiString(&mut CSDString, Buffer.as_ptr() as *mut i8);
-    Status = RtlAnsiStringToUnicodeString(&mut CmCSDVersionString, &mut CSDString, 1u8);
+    Status = RtlAnsiStringToUnicodeString(&raw mut CmCSDVersionString, &mut CSDString, 1u8);
     if Status < 0 {
         KeBugCheckEx(0x31, Status as ULONG_PTR, 0, 0, 0);
     }
@@ -1093,7 +1101,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         KeBugCheckEx(0x31, Status as ULONG_PTR, 0, 0, 0);
     }
 
-    RtlCreateUnicodeStringFromAsciiz(&mut CmVersionString, VersionBuffer.as_ptr() as *mut i8);
+    RtlCreateUnicodeStringFromAsciiz(&raw mut CmVersionString, VersionBuffer.as_ptr() as *mut i8);
 
     // Initialize Power Subsystem in Phase 0
     if PoInitSystem(0) == 0 {
@@ -1247,6 +1255,91 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     NtosEntry = ((*LoaderBlock).LoadOrderListHead.Flink as usize - core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)) as *mut LDR_DATA_TABLE_ENTRY;
 
     InbvUpdateProgressBar(5);
+
+    // CONFIG_SMP (C-reference order): start the application processors
+    // BEFORE the Phase-1 Ob/Ex/Io inits — their per-processor loops iterate
+    // KeNumberProcessors, so every AP must exist first. Wiring this after
+    // ObInitSystem left CPU1's PRCB.PPLookasideList unset; the first
+    // ObCreateObject scheduled onto the AP AV'd in
+    // ObpAllocateObjectCreateInfoBuffer (M3 bring-up, 2026-07-11).
+    // NUMPROC/BOOTPROC/MAXPROC command-line caps still unplumbed.
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "system" {
+            fn KeStartAllProcessors();
+            fn HalAllProcessorsStarted() -> u8;
+        }
+        KeStartAllProcessors();
+        if HalAllProcessorsStarted() == 0 {
+            KeBugCheck(0x61); // HAL1_INITIALIZATION_FAILED
+        }
+
+        // M3 self-test: prove the KeIpiGenericCall rendezvous actually runs
+        // the worker on EVERY active processor (the amd64 implementation is
+        // new — nothing else on the boot path exercises it). Each CPU ORs
+        // its SetMember into the shared mask; a mismatch vs the active set
+        // is a hard protocol failure — bugcheck loud, never limp on.
+        {
+            use core::sync::atomic::{AtomicU64, Ordering};
+            // KeGetCurrentProcessorNumber via bindgen — hand-declaring it here
+            // decorates wrong on i386 (stdcall `_..@0` vs the real export) and
+            // broke the ntkrnlmp i386 link (gate 2026-07-11).
+            use ntkrnl_sys::ddk::KeGetCurrentProcessorNumber;
+            unsafe extern "system" {
+                fn KeIpiGenericCall(
+                    // PKIPI_BROADCAST_WORKER is NTAPI (stdcall on i386): the
+                    // worker MUST be `extern "system"`, not `extern "C"`. A cdecl
+                    // worker leaves KeIpiGenericCall's `(Function)(Argument)` call
+                    // 4 bytes off (callee doesn't clean the stdcall arg) → the
+                    // rendezvous frame skews → bad ret → EIP executes on the stack
+                    // → deterministic 0x50. Invisible on amd64/arm64 (extern "C"
+                    // == extern "system" there); i386-fatal. (field manual §9.91
+                    // ABI family; the i386 M5 -smp 1 blocker, 2026-07-16.)
+                    Function: Option<unsafe extern "system" fn(usize) -> usize>,
+                    Argument: usize,
+                ) -> usize;
+                static KeActiveProcessors: usize;
+                static KeNumberProcessors: i8;
+            }
+            unsafe extern "system" fn gc_selftest_worker(arg: usize) -> usize {
+                let mask = &*(arg as *const AtomicU64);
+                mask.fetch_or(1u64 << KeGetCurrentProcessorNumber(), Ordering::SeqCst);
+                0
+            }
+            // The AP publishes its KeActiveProcessors bit at idle-loop entry,
+            // which can trail KeStartAllProcessors returning — bounded wait.
+            let want = KeNumberProcessors as u32;
+            let mut spins: u64 = 0;
+            while (core::ptr::read_volatile(core::ptr::addr_of!(KeActiveProcessors)) as u64)
+                .count_ones() < want
+            {
+                core::hint::spin_loop();
+                spins += 1;
+                if spins > 500_000_000 {
+                    break; // fall through — the mismatch print below reports it
+                }
+            }
+            let active = core::ptr::read_volatile(core::ptr::addr_of!(KeActiveProcessors)) as u64;
+            let mask = AtomicU64::new(0);
+            KeIpiGenericCall(
+                Some(gc_selftest_worker),
+                core::ptr::addr_of!(mask) as usize,
+            );
+            let ran = mask.load(Ordering::SeqCst);
+            if ran == active {
+                crate::dbg_print!(
+                    b"[SMP] KeIpiGenericCall self-test: worker ran on 0x%llx == active set OK\n\0",
+                    ran
+                );
+            } else {
+                crate::dbg_print!(
+                    b"[SMP] KeIpiGenericCall self-test FAILED: ran 0x%llx vs active 0x%llx\n\0",
+                    ran, active
+                );
+                KeBugCheckEx(0x5C, 0x4743, ran as usize, active as usize, 0); // 0x4743 = 'GC'
+            }
+        }
+    }
 
     if ObInitSystem() == 0 {
         KeBugCheck(0x5F);
@@ -1415,21 +1508,6 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         ZwSetSystemTime(core::ptr::null_mut(), core::ptr::null_mut());
     }
 
-    // CONFIG_SMP block from the C original (see the reference block below):
-    // start the application processors, then verify the HAL agrees they all
-    // came up. The NUMPROC/BOOTPROC/MAXPROC command-line caps are not yet
-    // plumbed (smp-bringup M2 — QEMU bring-up starts every MADT CPU).
-    #[cfg(feature = "smp")]
-    {
-        unsafe extern "system" {
-            fn KeStartAllProcessors();
-            fn HalAllProcessorsStarted() -> u8;
-        }
-        KeStartAllProcessors();
-        if HalAllProcessorsStarted() == 0 {
-            KeBugCheck(0x61); // HAL1_INITIALIZATION_FAILED
-        }
-    }
 
     if FsRtlInitSystem() == 0 {
         KeBugCheck(0x45);
@@ -1513,12 +1591,30 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     // in the x86_64-kernel target json (without it the image has no .pdata
     // for Rust frames and the walk double-faults — field manual §9.42). See
     // ntoskrnl/seh_poc.c + docs/engineering/dummy-pseh-verdict.md.
-    #[cfg(target_arch = "x86_64")]
+    // arm64: this is the boot-time oracle for KERNEL-mode software raise + native
+    // __try/__except dispatch — the exact shape the kmtest exception-raising cluster
+    // (ExHardError/ExResource/KeMutex/…) exercises. It had never run on arm64 (this
+    // block was x86_64-only), which is why the arm64 kernel-SEH bug (§9.69 / task #10)
+    // only surfaced under conformance. Now it fails loud at boot instead of hiding.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         extern "C" {
             fn SehPocRun();
         }
         SehPocRun();
+    }
+
+    // Per-boot tripwire for the FAULT-TOLERANT COPY (ntoskrnl/kmsafecopy.c).
+    // SehPocRun above only proves a *software* raise dispatches; safe_copy_* depends
+    // on a real HARDWARE page fault being caught (KiPageFault -> MmAccessFault ->
+    // KiDispatchException -> __except). Nothing was checking that end-to-end. Prints
+    // `[KMSAFECOPY] ... (PASS)`; a FAIL means the copy is silently unprotected.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        extern "C" {
+            fn KmSafeCopySelfTest() -> i32;
+        }
+        KmSafeCopySelfTest();
     }
 
     #[cfg(target_arch = "aarch64")]

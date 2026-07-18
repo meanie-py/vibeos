@@ -1,0 +1,189 @@
+# vibeos conformance sweep list — i386 (M3 baseline).
+# Generated from kmtest_drv/testlist.c + kmtest/testlist.c (visible tests).
+# One name per line; kmtest-sweep.exe runs one kmtest_.exe process per test.
+# i386 runs kmtest_drv under DUMMY_PSEH (native SEH is amd64/arm64-only — see
+# conformance-ratchet-quest.md M1 note), so it has a SUPERSET of amd64's
+# structural crashers. Quarantines below carry the amd64 set + i386-only extras.
+CmSecurity
+ExCallback
+ExDoubleList
+ExFastMutex
+# QUARANTINED 2026-07-12 (i386 sweep 1): BUGCHECK 0x1E (0xc0000005) at
+# ntoskrnl.exe+0x675D (0x804c975d). Passes on amd64 (native SEH). i386-only
+# DUMMY_PSEH-structural candidate on the ExRaiseHardError path — the test's
+# deliberate fault escapes the dead in-kernel __try. Triage owed; quarantine to
+# un-mask the rest of the i386 sweep.
+#ExHardError
+ExInterlocked
+ExPools
+# QUARANTINED 2026-07-12 (i386 sweep 2): BUGCHECK 0x1E (0xc0000005) at
+# ntoskrnl.exe+0x8A7EB (0x8054d7eb). Passes on amd64. i386-only — real-bug-vs-
+# DUMMY_PSEH triage owed (needs live GDB; offline i386 index is symbol-poor).
+#ExResource
+ExSequencedList
+ExSingleList
+ExUuid
+Example
+FsRtlDissect
+FsRtlExpression
+FsRtlLegal
+FsRtlMcb
+FsRtlRemoveDotsFromPath
+FsRtlTunnel
+HalPortIo
+HalSystemInfo
+# QUARANTINED 2026-07-10 (amd64 sweep 1): BUGCHECK 0x1E — RtlRaiseStatus(0xC0000005)
+# from kmtest_drv PC, escapes __try (calls-only native-SEH coverage). Quest doc has triage.
+#IoCreateFile
+IoDeviceInterface
+IoEvent
+# QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
+# MiFindEmptyAddressRangeInTree+0x173 (Rust, ARM3/vadnode.rs:370). Triage owed — real
+# kernel-bug candidate in the VAD-tree range search. Quest doc has details.
+#IoFilesystem
+IoInterrupt
+IoIrp
+IoMdl
+IoVolume
+# UN-QUARANTINED 2026-07-17: fixed. The vibeos "KD forced off" config disables KD WITHOUT setting
+# KdPitchDebugger, so KdRefreshDebuggerNotPresent (only early-outs on KdPitchDebugger) → KdExitDebugger
+# queued the never-KeInitializeDpc'd (NULL-routine) KdpTimeSlipDpc → KiRetireDpcList unwrap panic.
+# Fix: guard the time-slip queue on KdpDebuggerStructuresInitialized in kd64-rust KdExitDebugger (arch-uniform).
+KdSystemDebugControl
+KeApc
+KeDeviceQueue
+# QUARANTINED 2026-07-12 (i386 sweep 3): BUGCHECK 0x1E (0xc0000005) at
+# ntoskrnl.exe+0x1F061 (0x804e2061). Passes on amd64. i386-only DPC-path crash;
+# real-bug-vs-DUMMY_PSEH triage owed (live GDB).
+#KeDpc
+KeEvent
+KeFloatPointState
+KeGuardedMutex
+KeIrql
+# QUARANTINED 2026-07-12 (i386 sweep 4): BUGCHECK 0x1E but exception 0xC0000191
+# (not the usual 0xC0000005 AV) at ntoskrnl.exe+0x944EF (0x805574ef). Passes on
+# amd64. i386-only; distinct fault type from the AV crashers — triage owed (GDB).
+#KeMutex
+KeSpinLock
+KeTimer
+MmMdl
+# QUARANTINED 2026-07-12 (i386 sweep 5): BUGCHECK 0x1E (0xc0000005) at
+# ntoskrnl.exe+0xA0F3B (0x80563f3b). Passes on amd64 (71/13/4). i386-only Mm
+# section-path crash; triage owed (GDB).
+#MmSection
+# QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode
+# 0x101, P3=tag 'KmRM' — MmAllocateMappingAddress/MmFreeMappingAddress reserved-mapping
+# path (Rust mdlsup.rs). Triage owed; quest doc has details.
+#MmReservedMapping
+NpfsConnect
+NpfsCreate
+# QUARANTINED 2026-07-10 (amd64 sweep 5): BUGCHECK 0x19 BAD_POOL_HEADER subcode 5
+# (corrupt pool header on free) right at test start. Repro with
+# --tripwire "SPECIALPOOL=*" to catch the corrupting store. Triage owed.
+#NpfsFileInfo
+NpfsReadWrite
+NpfsVolumeInfo
+ObHandle
+ObQuery
+ObReference
+ObSecurity
+# QUARANTINED 2026-07-10 (amd64 sweep 6): BUGCHECK 0x1E — AV in memcpy+0x40, caller
+# in the symbolic-link path (ob-rust candidate: NtCreateSymbolicLinkObject/reparse
+# buffer copy with bad length/pointer). Triage owed.
+#ObSymbolicLink
+ObType
+ObTypes
+PsNotify
+PsQuota
+RtlAvlTreeKM
+# QUARANTINED 2026-07-10 (amd64 sweep 7): BUGCHECK 0x1E — AV at a kmtest_drv PC.
+# PSEH-STRUCTURAL: the test deliberately faults inside __try; mingw native SEH is
+# calls-only (no -fasync-exceptions), hardware faults in the guarded body escape.
+# Expected-fail until async-exceptions story exists; not an OS bug.
+#RtlExceptionKM
+RtlIntSafeKM
+# QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x66868. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
+#RtlIsValidOemCharacter
+RtlMemoryKM
+RtlRangeList
+RtlRegistryKM
+# QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK 0x19 BAD_POOL_HEADER (not an
+# AV — pool corruption on free). Passes on amd64. Exercises the `splaytree` Rust
+# crate — REAL-BUG candidate (i386-specific splay corruption), not DUMMY_PSEH.
+# Repro: SPECIALPOOL=* to catch the corrupting store. Triage owed.
+#RtlSplayTreeKM
+# QUARANTINED 2026-07-17: the RtlWalkFrameChain(NULL) NULL-store guard (rtlk-rust libsupp.rs) DID
+# clear the first fault — but on i386 a SECOND, previously-masked fault remains: BUGCHECK 0x1E
+# (0xc0000005 at ntoskrnl.exe 0x8058dc75, fault addr 0xf7190894 — a bad frame-walk deref, NOT NULL).
+# So the REAL-frame walk (call #2/#3, RtlWalkFrameChain(Frames,5,0)) over-walks its ebp chain on i386
+# and derefs an unmapped high address that the StackBegin/StackEnd bounds check let through. Fixed +
+# passing on arm64+amd64 (they use RtlVirtualUnwind, not ebp-chaining); i386-specific ebp-walk bound
+# gap owed (GDB: break RtlWalkFrameChain on i386, dump Stack/StackBegin/StackEnd at the faulting read).
+#RtlStackKM
+RtlStrSafeKM
+RtlUnicodeStringKM
+# QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x8E3BD. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
+#SeInheritance
+SeLogonSession
+SeQueryInfoToken
+# QUARANTINED 2026-07-11 (amd64 sweep 9): TIMEOUT at 180s — process wedges IN-KERNEL
+# (TerminateProcess can't reap it), driver keeps the result buffer registered, and every
+# subsequent test in the boot fails SET_RESULTBUFFER with 0x5. One wedge poisons the
+# whole rest of the run — must stay quarantined until the hang is triaged.
+#SeTokenFiltering
+# QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x14E4. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
+#ZwAllocateVirtualMemory
+ZwCreateSection
+# QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at kmtest_drv.sys+0x5ACF2. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
+#ZwMapViewOfSection
+# QUARANTINED 2026-07-11 (amd64 sweep 10): BUGCHECK 0x1E — AV in memcpy+0x40 (same PC
+# as ObSymbolicLink's crash): NtWaitForMultipleObjects handle-array capture with hostile
+# params — the C capture relies on SEH probing (dead under DUMMY_PSEH). Triage owed.
+#ZwWaitForMultipleObjects
+RtlCaptureContextKM
+FileAttributes
+FindFile
+HidPDescription
+IoDeviceObject
+# QUARANTINED 2026-07-11 (amd64 sweep 11): BUGCHECK 0x1E — AV in memcpy+0x40 (3rd of
+# this face, w/ ObSymbolicLink + ZwWaitForMultipleObjects): unprobed user-buffer copy on
+# the Io read/write path. Common root candidate w/ the other two. Triage owed.
+#IoReadWrite
+# QUARANTINED 2026-07-11 (amd64 sweep 12): BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class,
+# P1=0x401) — MmMapLockedPagesSpecifyCache PTE/PFN accounting in the Rust MDL-map path.
+# Triage owed.
+#MmMapLockedPagesSpecifyCache
+# QUARANTINED 2026-07-11 (amd64 sweep 13): BUGCHECK 0x50 PAGE_FAULT_IN_NONPAGED_AREA
+# (read at fffff880045ae040) — NtCreateSection param-capture/validation path
+# (candidate: unprobed SECTION params under DUMMY_PSEH). Triage owed.
+#NtCreateSection
+NtSystemDebugControl
+PoIrp
+RtlAvlTree
+# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): NO-END exit=128 — the USER-MODE
+# twin of the quarantined RtlExceptionKM. Deliberately faults inside SEH; native SEH is
+# calls-only (no async exceptions) so the in-body AV escapes. As a UM process it self-
+# crashes (exit 128) WITHOUT a kernel BUGCHECK and the sweep continues clean — the good
+# harness-robustness outcome. Expected-fail (same class as RtlExceptionKM); not an OS bug.
+#RtlException
+RtlIntSafe
+RtlMemory
+RtlRegistry
+RtlSplayTree
+# QUARANTINED 2026-07-17: UNVALIDATED on i386 — the kernel RtlStackKM BUGCHECK (above) aborted the
+# i386 sweep before this UM twin ran. The ntdll NULL guard is in place, but i386 likely shares the
+# same real-frame ebp-walk bound gap as RtlStackKM, so hold it quarantined here until that's fixed.
+# (RtlStack passes on arm64+amd64 — RtlVirtualUnwind-based, not ebp-chaining.)
+#RtlStack
+RtlStrSafe
+RtlUnicodeString
+TcpIpTdi
+# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): TIMEOUT at 180s — wedges IN-KERNEL
+# on the TDI connect path (TcpIpTdi ran clean 31/4 immediately before). Like SeTokenFiltering,
+# the kernel-stuck process can't be reaped by TerminateProcess, so kmtest_drv keeps the
+# result buffer registered and the NEXT test (RtlCaptureContextUM) cascade-fails
+# SET_RESULTBUFFER 0x5 (kmtest.c:334). First real observation — earlier sweeps never reached
+# it un-masked. Triage owed (GDB: break the hang on the tcpip/afd connect path; no faulting
+# PC — it's a hang, not a crash). Quarantining it un-masks RtlCaptureContextUM's real result.
+#TcpIpConnect
+RtlCaptureContextUM

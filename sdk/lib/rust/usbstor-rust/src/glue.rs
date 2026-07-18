@@ -5,6 +5,10 @@
 //! but only import explicitly/partially from ddk, plus aliases for types absent from ddk.
 #![allow(unused_imports)]
 
+// C-variadic entry points live in drivers/usb/usbstor/rust_varargs_shim.c (stable Rust
+// cannot DEFINE one — c_variadic, rust-lang#44930). `VaArgs` reads their va_list.
+use varargs_rust::VaArgs;
+
 pub use crate::types::*;
 
 // Basic kernel scalar/pointer types — present in ntkrnl_sys::ddk but the translated modules
@@ -230,7 +234,7 @@ unsafe fn strsafe_vformat_w(
     pszDest: *mut u16,
     cbDest: usize,
     pszFormat: *const u16,
-    args: &mut core::ffi::VaListImpl,
+    args: &mut VaArgs,
 ) -> (usize, NTSTATUS) {
     if pszDest.is_null() || pszFormat.is_null() || cbDest < core::mem::size_of::<u16>() {
         return (0, STATUS_INVALID_PARAMETER_W);
@@ -312,13 +316,19 @@ unsafe fn strsafe_vformat_w(
     }
 }
 
+/// Fixed-arity twin of the `RtlStringCbPrintfW` C-variadic entry point in
+/// `drivers/usb/usbstor/rust_varargs_shim.c`. The C side exists only to do the
+/// `va_start` that stable Rust cannot (`c_variadic`, rust-lang#44930); `ap` is a
+/// pointer to its `va_list`. All the logic lives here — see the module header of
+/// `varargs-rust` for the contract.
 #[no_mangle]
-pub unsafe extern "C" fn RtlStringCbPrintfW(
+pub unsafe extern "C" fn RtlStringCbPrintfW_v(
     pszDest: *mut u16,
     cbDest: usize,
     pszFormat: *const u16,
-    mut args: ...
+    ap: *mut core::ffi::c_void,
 ) -> NTSTATUS {
+    let mut args = VaArgs::from_ptr(ap);
     let (_len, status) = strsafe_vformat_w(pszDest, cbDest, pszFormat, &mut args);
     status
 }
@@ -347,14 +357,19 @@ pub unsafe extern "C" fn RtlStringCbCopyW(
 }
 
 
+/// Fixed-arity twin of the `RtlStringCchPrintfW` C-variadic entry point — see
+/// `RtlStringCbPrintfW_v` above. The `#[cfg]` (i386 resolves the entry point from the
+/// import lib instead) is mirrored by an `#if !defined(__i386__)` around the C
+/// trampoline in `drivers/usb/usbstor/rust_varargs_shim.c` — keep the two in sync.
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn RtlStringCchPrintfW(
+pub unsafe extern "C" fn RtlStringCchPrintfW_v(
     Dst: *mut u16,
     CchDst: usize,
     Format: *const u16,
-    mut args: ...
+    ap: *mut core::ffi::c_void,
 ) -> NTSTATUS {
+    let mut args = VaArgs::from_ptr(ap);
     let (_len, status) = strsafe_vformat_w(Dst, CchDst * core::mem::size_of::<u16>(), Format, &mut args);
     status
 }

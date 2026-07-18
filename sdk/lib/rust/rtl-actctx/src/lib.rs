@@ -15,7 +15,6 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 // The activation-context globals (system/process/implicit_actctx) are
 // `static mut`, matching the C file-statics; access is from `unsafe` fns.
-#![allow(static_mut_refs)]
 // rustconv-style transliteration keeps some explicit casts / dead locals.
 #![allow(unused_unsafe, unused_parens)]
 

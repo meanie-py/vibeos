@@ -586,7 +586,7 @@ pub unsafe extern "C" fn KdbpGetNextBreakPointNr(
     Start: ULONG
 ) -> LONG {
     let mut Start = Start;
-    while Start < (core::mem::size_of_val(&KdbBreakPoints) / core::mem::size_of::<KDB_BREAKPOINT>()) as ULONG {
+    while Start < (core::mem::size_of_val(&*(&raw const KdbBreakPoints)) / core::mem::size_of::<KDB_BREAKPOINT>()) as ULONG {
         if KdbBreakPoints[Start as usize].Type != KdbBreakPointNone {
             return Start as LONG;
         }
@@ -611,13 +611,13 @@ pub unsafe extern "C" fn KdbpGetBreakPointInfo(
 ) -> BOOLEAN {
     let bp: PKDB_BREAKPOINT;
 
-    if BreakPointNr >= RTL_NUMBER_OF!(KdbBreakPoints) ||
+    if BreakPointNr >= RTL_NUMBER_OF!((*(&raw const KdbBreakPoints))) ||
         KdbBreakPoints[BreakPointNr as usize].Type == KdbBreakPointNone
     {
         return 0u8;
     }
 
-    bp = KdbBreakPoints.as_mut_ptr().add(BreakPointNr as usize);
+    bp = (*(&raw mut KdbBreakPoints)).as_mut_ptr().add(BreakPointNr as usize);
     // All writes use write_volatile to defeat LLVM captures(none) elimination —
     // see project notes on `tools/lint_kernel.py` and the captures(none) bug.
     if !Address.is_null() {
@@ -727,34 +727,34 @@ pub unsafe extern "C" fn KdbpInsertBreakPoint(
     }
 
     if Type == KdbBreakPointTemporary {
-        i = (RTL_NUMBER_OF!(KdbBreakPoints) - 1) as LONG_PTR;
+        i = (RTL_NUMBER_OF!((*(&raw const KdbBreakPoints))) - 1) as LONG_PTR;
         while i >= 0 {
-            if (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Type == KdbBreakPointNone {
+            if (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Type == KdbBreakPointNone {
                 break;
             }
             i -= 1;
         }
     } else {
         i = 0;
-        while i < RTL_NUMBER_OF!(KdbBreakPoints) as LONG_PTR {
-            if (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Type == KdbBreakPointNone {
+        while i < RTL_NUMBER_OF!((*(&raw const KdbBreakPoints))) as LONG_PTR {
+            if (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Type == KdbBreakPointNone {
                 break;
             }
             i += 1;
         }
     }
 
-    (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Type = Type;
-    (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Address = Address;
-    (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Enabled = 0u8;
-    (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Global = Global;
-    (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Process = KdbCurrentProcess;
-    (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).ConditionExpression = ConditionExpressionDup;
-    (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Condition = Condition;
+    (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Type = Type;
+    (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Address = Address;
+    (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Enabled = 0u8;
+    (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Global = Global;
+    (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Process = KdbCurrentProcess;
+    (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).ConditionExpression = ConditionExpressionDup;
+    (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Condition = Condition;
 
     if Type == KdbBreakPointHardware {
-        (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Data.Hw.Size = Size;
-        (*KdbBreakPoints.as_mut_ptr().offset(i as isize)).Data.Hw.AccessType = AccessType;
+        (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Data.Hw.Size = Size;
+        (*(*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(i as isize)).Data.Hw.AccessType = AccessType;
     }
 
     KdbBreakPointCount += 1;
@@ -784,7 +784,7 @@ unsafe fn KdbpIsBreakPointOurs(
         i = 0;
         while i < KdbSwBreakPointCount {
             if (*KdbSwBreakPoints[i as usize]).Address == BpPc {
-                return KdbSwBreakPoints[i as usize].offset_from(KdbBreakPoints.as_ptr()) as LONG;
+                return KdbSwBreakPoints[i as usize].offset_from((*(&raw const KdbBreakPoints)).as_ptr()) as LONG;
             }
             i = i.wrapping_add(1);
         }
@@ -796,7 +796,7 @@ unsafe fn KdbpIsBreakPointOurs(
             DebugReg = (*KdbHwBreakPoints[i as usize]).Data.Hw.DebugReg;
 
             if ((*Context).Dr6 & (1 << DebugReg as ULONG)) != 0 {
-                return KdbHwBreakPoints[i as usize].offset_from(KdbBreakPoints.as_ptr()) as LONG;
+                return KdbHwBreakPoints[i as usize].offset_from((*(&raw const KdbBreakPoints)).as_ptr()) as LONG;
             }
             i = i.wrapping_add(1);
         }
@@ -816,7 +816,7 @@ pub unsafe extern "C" fn KdbpDisableBreakPoint(
 
     if BreakPointNr < 0
     {
-        BreakPointNr = BreakPoint.offset_from(KdbBreakPoints.as_ptr()) as LONG;
+        BreakPointNr = BreakPoint.offset_from((*(&raw const KdbBreakPoints)).as_ptr()) as LONG;
     }
 
     if BreakPointNr < 0 || BreakPointNr >= KDB_MAXIMUM_BREAKPOINT_COUNT as LONG
@@ -827,7 +827,7 @@ pub unsafe extern "C" fn KdbpDisableBreakPoint(
 
     if BreakPoint.is_null()
     {
-        BreakPoint = KdbBreakPoints.as_mut_ptr().offset(BreakPointNr as isize);
+        BreakPoint = (*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(BreakPointNr as isize);
     }
 
     if (*BreakPoint).Type == KdbBreakPointNone
@@ -913,7 +913,7 @@ pub unsafe extern "C" fn KdbpGetEnterCondition(
     Condition: *mut KDB_ENTER_CONDITION,
 ) -> BOOLEAN {
     
-    if ExceptionNr >= (core::mem::size_of_val(&KdbEnterConditions) / core::mem::size_of::<[KDB_ENTER_CONDITION; 2]>()) as LONG {
+    if ExceptionNr >= (core::mem::size_of_val(&*(&raw const KdbEnterConditions)) / core::mem::size_of::<[KDB_ENTER_CONDITION; 2]>()) as LONG {
         return 0u8;
     }
 
@@ -929,7 +929,7 @@ pub unsafe extern "C" fn KdbpSetEnterCondition(
 ) -> BOOLEAN {
     if ExceptionNr < 0 {
         let mut ExceptionNr = 0i32;
-        while ExceptionNr < RTL_NUMBER_OF!(KdbEnterConditions) as LONG {
+        while ExceptionNr < RTL_NUMBER_OF!((*(&raw const KdbEnterConditions))) as LONG {
             if ExceptionNr == 1 || ExceptionNr == 8 ||
                ExceptionNr == 9 || ExceptionNr == 15 {
                 ExceptionNr += 1;
@@ -940,7 +940,7 @@ pub unsafe extern "C" fn KdbpSetEnterCondition(
             ExceptionNr += 1;
         }
     } else {
-        if ExceptionNr >= RTL_NUMBER_OF!(KdbEnterConditions) as LONG ||
+        if ExceptionNr >= RTL_NUMBER_OF!((*(&raw const KdbEnterConditions))) as LONG ||
            ExceptionNr == 1 || ExceptionNr == 8 ||
            ExceptionNr == 9 || ExceptionNr == 15 {
             return 0u8;
@@ -1065,13 +1065,13 @@ unsafe fn KdbpInternalEnter(Procedure: Option<unsafe extern "C" fn()>) {
     SavedStackBase = (*Thread).Tcb.StackBase;
     SavedStackLimit = (*Thread).Tcb.StackLimit as ULONG_PTR;
     SavedKernelStack = (*Thread).Tcb.KernelStack;
-    (*Thread).Tcb.InitialStack = (KdbStack.as_mut_ptr() as *mut i8).add(KDB_STACK_SIZE as usize) as *mut core::ffi::c_void;
-    (*Thread).Tcb.StackBase = (KdbStack.as_mut_ptr() as *mut i8).add(KDB_STACK_SIZE as usize) as *mut core::ffi::c_void;
-    (*Thread).Tcb.StackLimit = KdbStack.as_mut_ptr() as _;
-    (*Thread).Tcb.KernelStack = (KdbStack.as_mut_ptr() as *mut i8).add(KDB_STACK_SIZE as usize) as *mut core::ffi::c_void;
+    (*Thread).Tcb.InitialStack = ((*(&raw mut KdbStack)).as_mut_ptr() as *mut i8).add(KDB_STACK_SIZE as usize) as *mut core::ffi::c_void;
+    (*Thread).Tcb.StackBase = ((*(&raw mut KdbStack)).as_mut_ptr() as *mut i8).add(KDB_STACK_SIZE as usize) as *mut core::ffi::c_void;
+    (*Thread).Tcb.StackLimit = (*(&raw mut KdbStack)).as_mut_ptr() as _;
+    (*Thread).Tcb.KernelStack = ((*(&raw mut KdbStack)).as_mut_ptr() as *mut i8).add(KDB_STACK_SIZE as usize) as *mut core::ffi::c_void;
 
     KdbpStackSwitchAndCall(
-        KdbStack.as_mut_ptr().add((KDB_STACK_SIZE - KDB_STACK_RESERVE) as usize) as PVOID,
+        (*(&raw mut KdbStack)).as_mut_ptr().add((KDB_STACK_SIZE - KDB_STACK_RESERVE) as usize) as PVOID,
         Procedure,
     );
 
@@ -1130,7 +1130,7 @@ unsafe fn KdbpGetExceptionNumberFromStatus(
             Ret = 20;
         }
         _ => {
-            Ret = (core::mem::size_of_val(&KdbEnterConditions) / core::mem::size_of::<KDB_ENTER_CONDITION>()) as ULONG - 1;
+            Ret = (core::mem::size_of_val(&*(&raw const KdbEnterConditions)) / core::mem::size_of::<KDB_ENTER_CONDITION>()) as ULONG - 1;
         }
     }
 
@@ -1188,7 +1188,7 @@ pub unsafe extern "C" fn KdbEnterDebuggerException(
     {
         KdbLastBreakPointNr = KdbpIsBreakPointOurs(ExceptionCode, Context);
         if KdbLastBreakPointNr >= 0 {
-            BreakPoint = KdbBreakPoints.as_mut_ptr().offset(KdbLastBreakPointNr as isize);
+            BreakPoint = (*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(KdbLastBreakPointNr as isize);
 
             if ExceptionCode == STATUS_BREAKPOINT {
                 if !NT_SUCCESS(KdbpOverwriteInstruction(
@@ -1329,7 +1329,7 @@ pub unsafe extern "C" fn KdbEnterDebuggerException(
                 core::ptr::addr_of_mut!((*BreakPoint).Data.SavedInstruction),
             )) {
                 crate::kdb_printf!(b"Warning: Couldn't reenable breakpoint %d\n\0",
-                    BreakPoint.offset_from(KdbBreakPoints.as_ptr()),
+                    BreakPoint.offset_from((*(&raw const KdbBreakPoints)).as_ptr()),
                 );
             }
 
@@ -1578,7 +1578,7 @@ pub unsafe extern "C" fn KdbpDeleteBreakPoint(
 ) -> BOOLEAN {
     if BreakPointNr < 0 {
         // ASSERT(BreakPoint != NULL)
-        BreakPointNr = BreakPoint.offset_from(KdbBreakPoints.as_ptr()) as LONG;
+        BreakPointNr = BreakPoint.offset_from((*(&raw const KdbBreakPoints)).as_ptr()) as LONG;
     }
 
     if BreakPointNr < 0 || BreakPointNr >= KDB_MAXIMUM_BREAKPOINT_COUNT as LONG {
@@ -1587,7 +1587,7 @@ pub unsafe extern "C" fn KdbpDeleteBreakPoint(
     }
 
     if BreakPoint.is_null() {
-        BreakPoint = KdbBreakPoints.as_mut_ptr().offset(BreakPointNr as isize);
+        BreakPoint = (*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(BreakPointNr as isize);
     }
 
     if (*BreakPoint).Type == KdbBreakPointNone {
@@ -1623,7 +1623,7 @@ pub unsafe extern "C" fn KdbpEnableBreakPoint(
 
     if BreakPointNr < 0 {
         // ASSERT(BreakPoint != NULL)
-        BreakPointNr = BreakPoint.offset_from(KdbBreakPoints.as_ptr()) as LONG;
+        BreakPointNr = BreakPoint.offset_from((*(&raw const KdbBreakPoints)).as_ptr()) as LONG;
     }
 
     if BreakPointNr < 0 || BreakPointNr >= KDB_MAXIMUM_BREAKPOINT_COUNT as LONG {
@@ -1632,7 +1632,7 @@ pub unsafe extern "C" fn KdbpEnableBreakPoint(
     }
 
     if BreakPoint.is_null() {
-        BreakPoint = KdbBreakPoints.as_mut_ptr().offset(BreakPointNr as isize);
+        BreakPoint = (*(&raw mut KdbBreakPoints)).as_mut_ptr().offset(BreakPointNr as isize);
     }
 
     if (*BreakPoint).Type == KdbBreakPointNone {

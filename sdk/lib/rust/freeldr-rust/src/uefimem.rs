@@ -126,7 +126,7 @@ unsafe fn UefiSetMemory(
         MemoryMap,
         UNUSED_MAX_DESCRIPTOR_COUNT,
         BasePage,
-        ((PageCount) as usize),
+        (PageCount) as usize ,
         MemoryType,
     );
 }
@@ -156,10 +156,10 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
     let mut DescriptorVersion: UINT32 = 0;
     let FreeldrMemMapSize: SIZE_T;
     let mut DescriptorSize: UINTN = 0;
-    let Status: EFI_STATUS;
+    let _Status: EFI_STATUS;
     let mut MapSize: UINTN = 0;
     let mut MapKey: UINTN = 0;
-    let Index: UINT32;
+    let _Index: UINT32;
 
     let EfiLoadedImageProtocol: EFI_GUID = EFI_LOADED_IMAGE_PROTOCOL_GUID;
     let mut FreeldrMem: PFREELDR_MEMORY_DESCRIPTOR = core::ptr::null_mut();
@@ -178,7 +178,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
         return core::ptr::null_mut();
     }
     OsLoaderBase = (*LoadedImage).ImageBase;
-    OsLoaderSize = (((*LoadedImage).ImageSize) as usize);
+    OsLoaderSize = ((*LoadedImage).ImageSize) as usize ;
     PublicBootHandle = (*LoadedImage).DeviceHandle;
     EfiMemoryMap = core::ptr::null_mut();
 
@@ -200,7 +200,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
     FreeldrMemMapSize = (core::mem::size_of::<FREELDR_MEMORY_DESCRIPTOR>() * EntryCount as usize) as SIZE_T;
     let status_alloc = ((*(*GlobalSystemTable).BootServices).AllocatePool).unwrap()(
         EfiLoaderData,
-        ((FreeldrMemMapSize) as UINTN),
+        (FreeldrMemMapSize) as UINTN ,
         core::ptr::addr_of_mut!(FreeldrMem) as *mut *mut core::ffi::c_void,
     );
     if status_alloc != EFI_SUCCESS {
@@ -219,7 +219,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
             let status_alloc_pages = ((*(*GlobalSystemTable).BootServices).AllocatePages).unwrap()(
                 AllocateAddress,
                 EfiLoaderData,
-                (((*MapEntry).NumberOfPages) as UINTN),
+                ((*MapEntry).NumberOfPages) as UINTN ,
                 core::ptr::addr_of_mut!(PhysAddr),
             );
             if status_alloc_pages != EFI_SUCCESS {
@@ -229,7 +229,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
 
         if MemoryType == LoaderLoadedProgram {
             if (((*MapEntry).PhysicalStart + ((*MapEntry).NumberOfPages * PAGE_SIZE as u64)) >> EFI_PAGE_SHIFT) > ((LoaderPagesSpanned) as u64) {
-                LoaderPagesSpanned = (((((*MapEntry).PhysicalStart + ((*MapEntry).NumberOfPages * PAGE_SIZE as u64)) >> EFI_PAGE_SHIFT)) as usize);
+                LoaderPagesSpanned = ((((*MapEntry).PhysicalStart + ((*MapEntry).NumberOfPages * PAGE_SIZE as u64)) >> EFI_PAGE_SHIFT)) as usize ;
             }
         }
 

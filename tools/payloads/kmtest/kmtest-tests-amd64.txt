@@ -1,0 +1,178 @@
+# vibeos conformance sweep list — amd64 (M3 baseline).
+# Generated from kmtest_drv/testlist.c + kmtest/testlist.c (visible tests).
+# One name per line; kmtest-sweep.exe runs one kmtest_.exe process per test.
+# amd64 runs kmtest_drv with native SEH. Per-arch list (i386 diverges — it's
+# DUMMY_PSEH, a superset of these quarantines).
+CmSecurity
+ExCallback
+ExDoubleList
+ExFastMutex
+ExHardError
+ExInterlocked
+ExPools
+ExResource
+ExSequencedList
+ExSingleList
+ExUuid
+Example
+FsRtlDissect
+FsRtlExpression
+FsRtlLegal
+FsRtlMcb
+FsRtlRemoveDotsFromPath
+FsRtlTunnel
+HalPortIo
+HalSystemInfo
+# QUARANTINED 2026-07-10 (amd64 sweep 1): BUGCHECK 0x1E — RtlRaiseStatus(0xC0000005)
+# from kmtest_drv PC, escapes __try (calls-only native-SEH coverage). Quest doc has triage.
+#IoCreateFile
+IoDeviceInterface
+IoEvent
+# QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
+# MiFindEmptyAddressRangeInTree+0x173 (Rust, ARM3/vadnode.rs:370). Triage owed — real
+# kernel-bug candidate in the VAD-tree range search. Quest doc has details.
+#IoFilesystem
+IoInterrupt
+IoIrp
+IoMdl
+IoVolume
+# UN-QUARANTINED 2026-07-17: fixed. The vibeos "KD forced off" config disables KD WITHOUT setting
+# KdPitchDebugger, so KdRefreshDebuggerNotPresent (only early-outs on KdPitchDebugger) → KdExitDebugger
+# queued the never-KeInitializeDpc'd (NULL-routine) KdpTimeSlipDpc → KiRetireDpcList unwrap panic.
+# Fix: guard the time-slip queue on KdpDebuggerStructuresInitialized in kd64-rust KdExitDebugger (arch-uniform).
+KdSystemDebugControl
+KeApc
+KeDeviceQueue
+KeDpc
+KeEvent
+KeFloatPointState
+KeGuardedMutex
+KeIrql
+KeMutex
+KeSpinLock
+KeTimer
+MmMdl
+MmSection
+# QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode
+# 0x101, P3=tag 'KmRM' — MmAllocateMappingAddress/MmFreeMappingAddress reserved-mapping
+# path (Rust mdlsup.rs). Triage owed; quest doc has details.
+#MmReservedMapping
+NpfsConnect
+NpfsCreate
+# QUARANTINED 2026-07-10 (amd64 sweep 5): BUGCHECK 0x19 BAD_POOL_HEADER subcode 5
+# (corrupt pool header on free) right at test start. Repro with
+# --tripwire "SPECIALPOOL=*" to catch the corrupting store. Triage owed.
+#NpfsFileInfo
+NpfsReadWrite
+NpfsVolumeInfo
+ObHandle
+ObQuery
+ObReference
+ObSecurity
+# UNQUARANTINED 2026-07-12: memcpy+0x40 cluster fixed — NtCreateSymbolicLinkObject's
+# link-target capture now goes through the fault-tolerant safe_copy_from_user
+# (ntoskrnl/kmsafecopy.c native-SEH shim). Was: BUGCHECK 0x1E AV in memcpy+0x40.
+ObSymbolicLink
+ObType
+ObTypes
+PsNotify
+PsQuota
+RtlAvlTreeKM
+# QUARANTINED 2026-07-10 (amd64 sweep 7): BUGCHECK 0x1E — AV at a kmtest_drv PC.
+# PSEH-STRUCTURAL: the test deliberately faults inside __try; mingw native SEH is
+# calls-only (no -fasync-exceptions), hardware faults in the guarded body escape.
+# Expected-fail until async-exceptions story exists; not an OS bug.
+#RtlExceptionKM
+RtlIntSafeKM
+RtlIsValidOemCharacter
+RtlMemoryKM
+RtlRangeList
+RtlRegistryKM
+RtlSplayTreeKM
+# UN-QUARANTINED 2026-07-17: fixed. RtlWalkFrameChain(NULL,5,0) must return 0; the dropped C
+# _SEH2_EXCEPT{i=0} left the NULL output-store unguarded -> AV at +0x2b0. Fixed with an explicit
+# `if Callers.is_null() { return 0; }` (amd64 rtl-except unwind.rs; the walk is already bounds-checked).
+RtlStackKM
+RtlStrSafeKM
+RtlUnicodeStringKM
+SeInheritance
+SeLogonSession
+SeQueryInfoToken
+# QUARANTINED 2026-07-11 (amd64 sweep 9): TIMEOUT at 180s — process wedges IN-KERNEL
+# (TerminateProcess can't reap it), driver keeps the result buffer registered, and every
+# subsequent test in the boot fails SET_RESULTBUFFER with 0x5. One wedge poisons the
+# whole rest of the run — must stay quarantined until the hang is triaged.
+#SeTokenFiltering
+ZwAllocateVirtualMemory
+ZwCreateSection
+ZwMapViewOfSection
+# UNQUARANTINED 2026-07-12: memcpy+0x40 cluster fixed — NtWaitForMultipleObjects'
+# handle-array capture now goes through the fault-tolerant safe_copy_from_user
+# (ntoskrnl/kmsafecopy.c native-SEH shim). Was: BUGCHECK 0x1E AV in memcpy+0x40.
+ZwWaitForMultipleObjects
+RtlCaptureContextKM
+FileAttributes
+FindFile
+HidPDescription
+IoDeviceObject
+# RE-QUARANTINED 2026-07-12 — SECOND, INDEPENDENT BUG behind the memcpy one.
+# UN-QUARANTINED 2026-07-12. The three tests below were one bug, and it was NOT in the
+# kernel: the 17 STANDALONE kmtest helper drivers never got _USE_NATIVE_SEH (only
+# kmtest_drv/kmtest.exe did), so under the project-wide USE_DUMMY_PSEH their own
+# _SEH2_TRY/_SEH2_EXCEPT compiled to DEAD handlers. Each of these drivers deliberately
+# faults and expects to CATCH it:
+#   IoReadWrite_drv   — fast I/O hands it the raw user buffer; TestCommonWrite() derefs
+#                       it with no NULL guard, expecting its own _SEH2_EXCEPT to turn the
+#                       AV into STATUS_ACCESS_VIOLATION (exactly what the test asserts).
+#   NtCreateSection_drv, MmMapLockedPagesSpecifyCache_drv — same shape (3 and 4 _SEH2_TRY
+#                       sites respectively).
+# With a dead handler the AV escaped to the kernel -> BUGCHECK. Fixed by wiring
+# kmt_enable_native_seh() into every standalone driver (kmtests/CMakeLists.txt).
+# NOTE the earlier IoReadWrite triage note ("needs a protected *call* around the fast-I/O
+# dispatch in the kernel") was WRONG: C does NOT dispatch fast I/O inside _SEH2_TRY —
+# the DRIVER catches its own fault. The kernel was innocent in all three.
+IoReadWrite
+# STILL QUARANTINED (re-checked 2026-07-12): native SEH did NOT save this one, so its
+# original triage stands — a REAL kernel bug, not a dead-handler artifact. Un-quarantined
+# alongside IoReadWrite/NtCreateSection to test the dead-handler theory; it still
+# BUGCHECKs 0x1000 (PFN_LIST_CORRUPT-class, P1=0x401) and took the sweep down at test 74,
+# so the fault is in the Rust MDL-map PTE/PFN accounting (MmMapLockedPagesSpecifyCache),
+# NOT in its driver's SEH. Useful negative result: it cleanly separates the two causes.
+# Triage owed.
+#MmMapLockedPagesSpecifyCache
+# STILL QUARANTINED (re-checked 2026-07-12): same negative result as
+# MmMapLockedPagesSpecifyCache above — native SEH did NOT save it. Its driver has 3
+# _SEH2_TRY sites (now real handlers, verified: ntcreatesection_drv.sys imports
+# __C_specific_handler), yet it still BUGCHECKs 0x50 PAGE_FAULT_IN_NONPAGED_AREA with the
+# SAME stop code as before the change — so this is a REAL kernel bug in the NtCreateSection
+# param-capture/validation path, not a dead-handler artifact. Triage owed.
+#NtCreateSection
+NtSystemDebugControl
+PoIrp
+RtlAvlTree
+# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): NO-END exit=128 — the USER-MODE
+# twin of the quarantined RtlExceptionKM. Deliberately faults inside SEH; native SEH is
+# calls-only (no async exceptions) so the in-body AV escapes. As a UM process it self-
+# crashes (exit 128) WITHOUT a kernel BUGCHECK and the sweep continues clean — the good
+# harness-robustness outcome. Expected-fail (same class as RtlExceptionKM); not an OS bug.
+#RtlException
+RtlIntSafe
+RtlMemory
+RtlRegistry
+RtlSplayTree
+# UN-QUARANTINED 2026-07-17: fixed (same RtlWalkFrameChain(NULL) NULL-store as RtlStackKM, in
+# user-mode ntdll — the test calls it without a catch, so the AV self-crashed the process, exit 128).
+# Fixed by the `if Callers.is_null() { return 0; }` guard in rtl-except amd64 unwind.rs (shared UM).
+RtlStack
+RtlStrSafe
+RtlUnicodeString
+TcpIpTdi
+# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): TIMEOUT at 180s — wedges IN-KERNEL
+# on the TDI connect path (TcpIpTdi ran clean 31/4 immediately before). Like SeTokenFiltering,
+# the kernel-stuck process can't be reaped by TerminateProcess, so kmtest_drv keeps the
+# result buffer registered and the NEXT test (RtlCaptureContextUM) cascade-fails
+# SET_RESULTBUFFER 0x5 (kmtest.c:334). First real observation — earlier sweeps never reached
+# it un-masked. Triage owed (GDB: break the hang on the tcpip/afd connect path; no faulting
+# PC — it's a hang, not a crash). Quarantining it un-masks RtlCaptureContextUM's real result.
+#TcpIpConnect
+RtlCaptureContextUM

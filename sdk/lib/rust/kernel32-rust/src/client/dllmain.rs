@@ -191,7 +191,7 @@ pub unsafe extern "system" fn DllMain(
 
             LdrDisableThreadCalloutsForDll(hDll as PVOID);
 
-            RtlInitUnicodeString(&mut BaseDefaultPath, core::ptr::null());
+            RtlInitUnicodeString(&raw mut BaseDefaultPath, core::ptr::null());
 
             if SessionId == 0 {
                 wcscpy(
@@ -213,7 +213,7 @@ pub unsafe extern "system" fn DllMain(
                 BASESRV_SERVERDLL_INDEX as ULONG,
                 &mut ConnectInfo as *mut BASESRV_API_CONNECTINFO as PVOID,
                 &mut ConnectInfoSize,
-                &mut BaseRunningInServerProcess,
+                &raw mut BaseRunningInServerProcess,
             );
 
             if !NT_SUCCESS(Status) {
@@ -278,7 +278,7 @@ pub unsafe extern "system" fn DllMain(
                                 .as_ptr() as *const i8,
                         );
                         BaseStaticServerDataFallback = ::core::mem::MaybeUninit::zeroed();
-                        let fallback = BaseStaticServerDataFallback.as_mut_ptr();
+                        let fallback = (*(&raw mut BaseStaticServerDataFallback)).as_mut_ptr();
                         NtQuerySystemInformation(
                             SystemBasicInformation,
                             core::ptr::addr_of_mut!((*fallback).SysInfo) as *mut core::ffi::c_void,
@@ -366,7 +366,7 @@ pub unsafe extern "system" fn DllMain(
                             as *const i8,
                     );
                     BaseStaticServerDataFallback = ::core::mem::MaybeUninit::zeroed();
-                    let fallback = BaseStaticServerDataFallback.as_mut_ptr();
+                    let fallback = (*(&raw mut BaseStaticServerDataFallback)).as_mut_ptr();
                     NtQuerySystemInformation(
                         SystemBasicInformation,
                         core::ptr::addr_of_mut!((*fallback).SysInfo) as *mut core::ffi::c_void,
@@ -418,7 +418,7 @@ pub unsafe extern "system" fn DllMain(
                         || (b != 0 && b < 0x10000)
                         || (b & 1) != 0
                 };
-                if bad(&BaseWindowsDirectory) || bad(&BaseWindowsSystemDirectory) {
+                if bad(&*(&raw const BaseWindowsDirectory)) || bad(&*(&raw const BaseWindowsSystemDirectory)) {
                     DbgPrint(
                         b"[kernel32] BASE_STATIC_SERVER_DATA snapshot CORRUPT (raced basesrv?): WinDir.Buffer=%p Len=%u SysDir.Buffer=%p Len=%u data=%p - using fallback strings\n\0"
                             .as_ptr() as *const i8,
@@ -428,9 +428,9 @@ pub unsafe extern "system" fn DllMain(
                         BaseWindowsSystemDirectory.Length as u32,
                         BaseStaticServerData,
                     );
-                    RtlInitUnicodeString(&mut BaseWindowsDirectory, w!("\\reactos").as_ptr());
+                    RtlInitUnicodeString(&raw mut BaseWindowsDirectory, w!("\\reactos").as_ptr());
                     RtlInitUnicodeString(
-                        &mut BaseWindowsSystemDirectory,
+                        &raw mut BaseWindowsSystemDirectory,
                         w!("\\reactos\\system32").as_ptr(),
                     );
                 }
@@ -438,7 +438,7 @@ pub unsafe extern "system" fn DllMain(
 
             let cb_dest = core::mem::size_of::<[WCHAR; 6140]>();
             let written = _snwprintf(
-                BaseDefaultPathBuffer.as_mut_ptr(),
+                (*(&raw mut BaseDefaultPathBuffer)).as_mut_ptr(),
                 (cb_dest / core::mem::size_of::<WCHAR>()).saturating_sub(1),
                 w!("%wZ;%wZ\\system;%wZ;\0").as_ptr() as *const u16,
                 core::ptr::addr_of!(BaseWindowsSystemDirectory),
@@ -448,7 +448,7 @@ pub unsafe extern "system" fn DllMain(
             Status = rtl_strcbprintf_w_status(
                 written,
                 cb_dest,
-                BaseDefaultPathBuffer.as_mut_ptr(),
+                (*(&raw mut BaseDefaultPathBuffer)).as_mut_ptr(),
             );
 
             if !NT_SUCCESS(Status) {
@@ -460,13 +460,13 @@ pub unsafe extern "system" fn DllMain(
                 return FALSE;
             }
 
-            BaseDefaultPath.Buffer = BaseDefaultPathBuffer.as_mut_ptr();
-            BaseDefaultPath.Length = (wcslen(BaseDefaultPathBuffer.as_mut_ptr()) as USHORT as usize)
+            BaseDefaultPath.Buffer = (*(&raw mut BaseDefaultPathBuffer)).as_mut_ptr();
+            BaseDefaultPath.Length = (wcslen((*(&raw mut BaseDefaultPathBuffer)).as_mut_ptr()) as USHORT as usize)
                 .wrapping_mul(core::mem::size_of::<WCHAR>())
                 as USHORT;
             BaseDefaultPath.MaximumLength = core::mem::size_of::<[WCHAR; 6140]>() as USHORT;
 
-            BaseDefaultPathAppend.Buffer = (BaseDefaultPathBuffer.as_mut_ptr() as usize)
+            BaseDefaultPathAppend.Buffer = ((*(&raw mut BaseDefaultPathBuffer)).as_mut_ptr() as usize)
                 .wrapping_add(BaseDefaultPath.Length as usize)
                 as PWSTR;
             BaseDefaultPathAppend.Length = 0u16;
@@ -477,7 +477,7 @@ pub unsafe extern "system" fn DllMain(
             InitCommandLines();
             if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-InitCommandLines\n\0".as_ptr() as *const i8); }
 
-            RtlInitializeCriticalSection(&mut BaseDllDirectoryLock);
+            RtlInitializeCriticalSection(&raw mut BaseDllDirectoryLock);
 
             if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] pre-NlsInit\n\0".as_ptr() as *const i8); }
             if NlsInit() == 0 {
@@ -500,8 +500,8 @@ pub unsafe extern "system" fn DllMain(
             }
             if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-ConDllInitialize\n\0".as_ptr() as *const i8); }
 
-            InitializeListHead(&mut BasepAppCertDllsList);
-            RtlInitializeCriticalSection(&mut gcsAppCert);
+            InitializeListHead(&raw mut BasepAppCertDllsList);
+            RtlInitializeCriticalSection(&raw mut gcsAppCert);
 
             DllInitialized = TRUE as BOOL;
 
@@ -515,7 +515,7 @@ pub unsafe extern "system" fn DllMain(
             if DllInitialized != FALSE {
                 ConDllInitialize(dwReason, core::ptr::null_mut());
                 NlsUninit();
-                RtlDeleteCriticalSection(&mut BaseDllDirectoryLock);
+                RtlDeleteCriticalSection(&raw mut BaseDllDirectoryLock);
             }
         }
 

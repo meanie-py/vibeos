@@ -1,4 +1,3 @@
-use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
 extern "C" {

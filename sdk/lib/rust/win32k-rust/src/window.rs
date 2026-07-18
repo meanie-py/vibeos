@@ -1481,6 +1481,7 @@ unsafe extern "fastcall" fn IntGetWindowProc(pWnd: PWND, Ansi: BOOL) -> WNDPROC 
     IntGetWindowProc_impl(pWnd, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetWindowProc_impl(pWnd: PWND, Ansi: BOOL) -> WNDPROC {
     let mut i: INT;
     let Class: PCLS;
@@ -1542,6 +1543,7 @@ unsafe fn IntGetWindowProc_impl(pWnd: PWND, Ansi: BOOL) -> WNDPROC {
     }
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntSetWindowProc(pWnd: PWND, mut NewWndProc: WNDPROC, mut Ansi: i32) -> WNDPROC {
     let mut i: i32;
     let CallProc: PCALLPROCDATA;
@@ -2145,7 +2147,8 @@ unsafe fn IntUnlinkWindow_impl(Wnd: PWND) {
     WndSetNext(Wnd, core::ptr::null_mut());
 }
 
-unsafe extern "fastcall" fn IntGrowHwndList(ppwl: *mut PWINDOWLIST) -> BOOL {
+fastcall_fn! {
+unsafe fn IntGrowHwndList(ppwl: *mut PWINDOWLIST) -> BOOL {
     let pwlOld: PWINDOWLIST;
     let pwlNew: PWINDOWLIST;
     let ibOld: SIZE_T;
@@ -2171,8 +2174,10 @@ unsafe extern "fastcall" fn IntGrowHwndList(ppwl: *mut PWINDOWLIST) -> BOOL {
     *ppwl = pwlNew;
     1
 }
+}
 
-unsafe extern "fastcall" fn IntPopulateHwndList(mut pwl: PWINDOWLIST, mut pwnd: PWND, dwFlags: DWORD) -> PWINDOWLIST {
+fastcall_fn! {
+unsafe fn IntPopulateHwndList(mut pwl: PWINDOWLIST, mut pwnd: PWND, dwFlags: DWORD) -> PWINDOWLIST {
     while !pwnd.is_null() {
         if (*pwl).pti.is_null() || (*pwl).pti == HEAD_pti(core::ptr::addr_of!((*pwnd).head)) {
             *(*pwl).phwndLast = UserHMGetHandle(pwnd as PVOID);
@@ -2199,9 +2204,11 @@ unsafe extern "fastcall" fn IntPopulateHwndList(mut pwl: PWINDOWLIST, mut pwnd: 
 
     pwl
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntBuildHwndList(pwnd: PWND, dwFlags: DWORD, pti: PTHREADINFO) -> PWINDOWLIST {
+unsafe fn IntBuildHwndList(pwnd: PWND, dwFlags: DWORD, pti: PTHREADINFO) -> PWINDOWLIST {
     let mut pwl: PWINDOWLIST;
     let cbWL: DWORD;
 
@@ -2239,6 +2246,7 @@ unsafe extern "fastcall" fn IntBuildHwndList(pwnd: PWND, dwFlags: DWORD, pti: PT
     gpwlList = pwl;
 
     pwl
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -2688,8 +2696,10 @@ unsafe fn IntFixWindowCoordinates_impl(
     }
 }
 
+fastcall_fn! {
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
-unsafe extern "fastcall" fn IntCreateWindow(
+unsafe fn IntCreateWindow(
     Cs: *mut CREATESTRUCTW,
     WindowName: PLARGE_STRING,
     Class: PCLS,
@@ -2740,7 +2750,7 @@ unsafe extern "fastcall" fn IntCreateWindow(
 
         pWnd = UserCreateObject(
             gHandleTable,
-            (if !pdeskCreated.is_null() { pdeskCreated } else { (*pti).rpdesk }),
+            if !pdeskCreated.is_null() { pdeskCreated } else { (*pti).rpdesk } ,
             pti,
             core::ptr::addr_of_mut!(hWnd) as PHANDLE,
             TYPE_WINDOW,
@@ -2802,22 +2812,22 @@ unsafe extern "fastcall" fn IntCreateWindow(
             if ((*(*Class).spicn).CURSORF_flags & (CURSORF_LRSHARED | CURSORF_FROMRESOURCE))
                 == (CURSORF_LRSHARED | CURSORF_FROMRESOURCE)
             {
-                IconSmHandle = (co_IntCopyImage(
+                IconSmHandle = co_IntCopyImage(
                     UserHMGetHandle((*Class).spicn as PVOID) as HANDLE,
                     IMAGE_ICON,
                     UserGetSystemMetrics(SM_CXSMICON as u32),
                     UserGetSystemMetrics(SM_CYSMICON as u32),
                     LR_COPYFROMRESOURCE,
-                ) as HICON);
+                ) as HICON ;
             }
             if IconSmHandle.is_null() {
-                IconSmHandle = (co_IntCopyImage(
+                IconSmHandle = co_IntCopyImage(
                     UserHMGetHandle((*Class).spicn as PVOID) as HANDLE,
                     IMAGE_ICON,
                     UserGetSystemMetrics(SM_CXSMICON as u32),
                     UserGetSystemMetrics(SM_CYSMICON as u32),
                     0,
-                ) as HICON);
+                ) as HICON ;
             }
 
             if !IconSmHandle.is_null() {
@@ -2997,6 +3007,7 @@ unsafe extern "fastcall" fn IntCreateWindow(
     }
 
     core::ptr::null_mut()
+}
 }
 
 unsafe fn alloc_error(pWnd: PWND) -> PWND {
@@ -4136,7 +4147,8 @@ pub unsafe extern "C" fn NtUserCreateWindowEx(
     hwnd
 }
 
-unsafe extern "fastcall" fn IntDestroyOwnedWindows(Window: PWND) {
+fastcall_fn! {
+unsafe fn IntDestroyOwnedWindows(Window: PWND) {
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
 
     let List = IntWinListOwnedPopups(Window);
@@ -4165,6 +4177,7 @@ unsafe extern "fastcall" fn IntDestroyOwnedWindows(Window: PWND) {
     }
 
     ExFreePoolWithTag(List as PVOID, USERTAG_WINDOWLIST);
+}
 }
 
 #[no_mangle]
@@ -4848,8 +4861,9 @@ pub unsafe extern "C" fn NtUserFindWindowEx(
     Ret
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn UserGetAncestor(pWnd: PWND, uType: UINT) -> PWND {
+unsafe fn UserGetAncestor(pWnd: PWND, uType: UINT) -> PWND {
     let mut WndAncestor: PWND;
     let mut Parent: PWND;
     let pwndMessage: PWND;
@@ -4911,6 +4925,7 @@ unsafe extern "fastcall" fn UserGetAncestor(pWnd: PWND, uType: UINT) -> PWND {
     }
 
     WndAncestor
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -5491,6 +5506,35 @@ unsafe extern "C" fn IntCheckFrameEdge(Style: ULONG, ExStyle: ULONG) -> BOOL {
     }
 }
 
+/// Size, in bytes, of the CALLER's `LONG_PTR`.
+///
+/// `SetWindowLongPtr`/`GetWindowLongPtr` address a pointer-sized slot in the
+/// window's extra bytes. For a WoW64 (32-bit) caller that slot is FOUR bytes,
+/// not the kernel's eight — and the guest's class registration sized
+/// `cbwndExtra` in 32-bit units. Using the kernel's 8 therefore both overruns
+/// the region and trips the bounds check below (`0 + 8 > cbwndExtra(4)` →
+/// ERROR_INVALID_INDEX), so the store is silently REJECTED.
+///
+/// user32's EDIT control keeps its `EDITSTATE*` in exactly this slot, so every
+/// 32-bit edit box lost its state on creation and then dereferenced whatever it
+/// read back (M11: a fault at address 0x2A inside `EDIT_LockBuffer`).
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+unsafe fn UserCallerPtrSize() -> ULONG {
+    if (*PsGetCurrentProcess()).Wow64Process.is_null() {
+        core::mem::size_of::<LONG_PTR>() as ULONG
+    } else {
+        4
+    }
+}
+
+/// A 32-bit host has no WoW64 layer; every caller is 32-bit.
+#[cfg(target_arch = "x86")]
+#[inline]
+unsafe fn UserCallerPtrSize() -> ULONG {
+    core::mem::size_of::<LONG_PTR>() as ULONG
+}
+
 unsafe fn co_IntSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue: LONG_PTR, Ansi: BOOL, Size: ULONG, bAlter: BOOL) -> LONG_PTR {
     let Window: PWND;
     let Parent: PWND;
@@ -5679,12 +5723,12 @@ unsafe extern "C" fn co_UserSetWindowLong(hWnd: HWND, Index: DWORD, NewValue: LO
 
 #[cfg(target_pointer_width = "64")]
 unsafe extern "C" fn co_UserSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue: LONG_PTR, Ansi: BOOL) -> LONG_PTR {
-    co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, core::mem::size_of::<LONG_PTR>() as ULONG, 0)
+    co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, UserCallerPtrSize(), 0)
 }
 
 #[cfg(not(target_pointer_width = "64"))]
 unsafe extern "fastcall" fn co_UserSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue: LONG_PTR, Ansi: BOOL) -> LONG_PTR {
-    co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, core::mem::size_of::<LONG_PTR>() as ULONG, 0)
+    co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, UserCallerPtrSize(), 0)
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -5739,7 +5783,7 @@ pub unsafe extern "system" fn NtUserSetWindowLongPtr(hWnd: HWND, Index: DWORD, N
         return 0;
     }
 
-    ret = co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, core::mem::size_of::<LONG_PTR>() as ULONG, 0);
+    ret = co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, UserCallerPtrSize(), 0);
 
     UserLeave();
 
@@ -6265,7 +6309,7 @@ unsafe extern "system" fn DefSetText(Wnd: PWND, WindowText: PCWSTR) -> BOOL {
 
                 (*Wnd).strName.Buffer = DesktopHeapAlloc(
                     (*Wnd).head.rpdesk,
-                    ((UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32) as usize),
+                    (UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32) as usize ,
                 ) as *mut u16;
                 if !(*Wnd).strName.Buffer.is_null() {
                     *(*Wnd).strName.Buffer.add(
@@ -6473,7 +6517,7 @@ pub unsafe extern "C" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING)
 
                 (*Wnd).strName.Buffer = DesktopHeapAlloc(
                     (*Wnd).head.rpdesk,
-                    ((UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32) as usize),
+                    (UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32) as usize ,
                 ) as *mut u16;
                 if !(*Wnd).strName.Buffer.is_null() {
                     *(*Wnd)

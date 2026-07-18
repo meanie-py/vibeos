@@ -240,6 +240,7 @@ pub unsafe fn check_unwait(Thread: PKTHREAD) {
 /// the Rust sets `WaitBlock->Object`, so it legitimately holds whatever the
 /// thread's previous wait left there. Pass `false` for queue wait lists or
 /// every contended queue wake false-positives K_OBJ_BACKPTR.
+#[track_caller]
 pub unsafe fn check_waittest(object: usize, wait_list: *mut LIST_ENTRY, require_obj_backptr: bool) {
     VIBEOS_WAITDEP_CHECKS.fetch_add(1, Relaxed);
 
@@ -247,6 +248,30 @@ pub unsafe fn check_waittest(object: usize, wait_list: *mut LIST_ENTRY, require_
     let mut i = 0usize;
     while entry != wait_list {
         if !is_kva(entry as usize) || !entry_ok(entry) {
+            if is_kva(entry as usize) {
+                let wb = ((entry as usize) - core::mem::offset_of!(_KWAIT_BLOCK, WaitListEntry))
+                    as PKWAIT_BLOCK;
+                crate::dbg_print!(
+                    b"[WAITDEP] waitlist site=%u current=%p head=%p entry=%p Flink=%p Blink=%p wb.Thread=%p wb.Object=%p wb.Next=%p\n\0",
+                    core::panic::Location::caller().line(),
+                    ntkrnl_sys::mm::KeGetCurrentThread() as *const (),
+                    wait_list as *const (),
+                    entry as *const (),
+                    (*entry).Flink as *const (),
+                    (*entry).Blink as *const (),
+                    (*wb).Thread as *const (),
+                    (*wb).Object as *const (),
+                    (*wb).NextWaitBlock as *const (),
+                );
+            } else {
+                crate::dbg_print!(
+                    b"[WAITDEP] waitlist site=%u current=%p head=%p entry=%p (bad pointer)\n\0",
+                    core::panic::Location::caller().line(),
+                    ntkrnl_sys::mm::KeGetCurrentThread() as *const (),
+                    wait_list as *const (),
+                    entry as *const (),
+                );
+            }
             violation(K_WAITLIST, object, entry as usize, core::ptr::null_mut());
         }
         let wb = ((entry as usize) - core::mem::offset_of!(_KWAIT_BLOCK, WaitListEntry)) as PKWAIT_BLOCK;

@@ -2,6 +2,87 @@
 include_directories(include)
 
 #
+# Native SEH for the standalone kernel-mode test drivers (amd64/arm64)
+#
+# USE_DUMMY_PSEH is the project-wide C compile mode, so every _SEH2_TRY/_SEH2_EXCEPT
+# compiles to a DEAD handler. A test driver that deliberately faults and expects to
+# catch it therefore BUGCHECKs instead. IoReadWrite_drv is the textbook case: fast I/O
+# hands the driver the raw user buffer, TestCommonWrite() derefs it with no NULL guard,
+# and its _SEH2_EXCEPT is supposed to turn the AV into STATUS_ACCESS_VIOLATION — which
+# is precisely what the test asserts.
+#
+# kmtest_drv and kmtest.exe opted into real clang SEH (below); the 17 STANDALONE helper
+# drivers never did, so their handlers were silently dead. That is the single root cause
+# of the IoReadWrite / NtCreateSection / MmMapLockedPagesSpecifyCache crasher quarantines
+# — the kernel was innocent in all three.
+#
+# pseh2.h's _USE_NATIVE_SEH branch outranks the global _USE_DUMMY_PSEH define and maps
+# _SEH2_TRY straight to __try. Coverage of a *hardware* fault relies on clang's
+# calls-only contract (dummy-pseh-verdict.md §C): the fault must happen in a CALLEE of
+# the __try body, so the return address lands inside the scope table. That holds here for
+# free — clang refuses to inline any callee into a __try region (the same funclet-EH
+# restriction that makes the shims TU below necessary), so the deref stays a real call.
+#
+# Applied to ALL standalone drivers, not just the three that fault today: the invariant
+# is "kmtest drivers get real SEH wherever clang lowers it", which keeps the next
+# SEH-using test from silently inheriting a dead handler.
+#
+# i386 stays dummy-PSEH — its SEH lowering is MSVC-env-only (dummy-pseh-verdict.md §C).
+# Those buckets remain baselined per-arch.
+#
+set(KMT_NATIVE_SEH_SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/kmt_native_seh_shims.c)
+
+#
+# INDEPENDENT-ORACLE build: compile the fault-and-catch kmtest drivers with the
+# SAME clang retargeted to the -windows-msvc environment instead of the
+# project-default -windows-gnu (llvm-mingw). The point is a conformance oracle
+# built by a *different* toolchain environment than the OS-under-test, so a
+# blind spot shared by our clang-mingw toolchain can't hide a bug from the tests.
+# ON by default (this is the standard conformance build). Opt out with
+# -DKMT_MSVC_ENV=OFF for an apples-to-apples same-toolchain build.
+#
+# Proven on amd64/arm64 (2026-07-17): a clean drop-in relink — the retargeted
+# objects add ZERO new undefined refs, keep the same .pdata/.xdata SEH model
+# (table-based in both envs), and boot+sweep produce results identical to the
+# mingw build (only IoDeviceObject wobbles ±1, a pre-existing flaky assertion).
+# The real payoff is i386, where -windows-msvc unlocks the frame-based fs:[0] SEH
+# the gnu target refuses to lower (L__ehtable$ errors) — see the i386 branch.
+#
+option(KMT_MSVC_ENV "Build kmtest fault-catch drivers with the clang -windows-msvc env (independent conformance oracle)" ON)
+
+# i386 frame-based native SEH via -windows-msvc (SPIKE — default OFF).
+# Unlike amd64/arm64 (table-based SEH lowers in BOTH clang envs), i386's
+# frame-based fs:[0] __try/__except lowers ONLY under -windows-msvc (the gnu
+# target errors "L__ehtable$... can not be undefined"). So on i386, native SEH
+# is inseparable from the msvc-env retarget — hence its own coupled flag. The
+# lone runtime dep is _except_handler3 (in sdk/lib/crt/wine/except_i386.c). Kept
+# OFF by default so the standard i386 conformance build stays DUMMY_PSEH (with
+# its committed baseline) until this is validated end-to-end (link+boot+catch).
+option(KMT_I386_NATIVE_SEH "SPIKE: i386 kmtest drivers get frame-based native SEH via -windows-msvc" OFF)
+
+function(kmt_enable_native_seh _target)
+    if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+        target_compile_definitions(${_target} PRIVATE _USE_NATIVE_SEH)
+        # Out-of-line homes for FORCEINLINE SDK helpers clang won't inline into a
+        # __try region. See kmt_native_seh_shims.c.
+        target_sources(${_target} PRIVATE ${KMT_NATIVE_SEH_SHIMS})
+        # Retarget to the -windows-msvc env (see the KMT_MSVC_ENV option above).
+        if(KMT_MSVC_ENV)
+            if(ARCH STREQUAL "amd64")
+                target_compile_options(${_target} PRIVATE --target=x86_64-pc-windows-msvc)
+            elseif(ARCH STREQUAL "arm64")
+                target_compile_options(${_target} PRIVATE --target=aarch64-pc-windows-msvc)
+            endif()
+        endif()
+    elseif(ARCH STREQUAL "i386" AND KMT_I386_NATIVE_SEH)
+        # i386 native SEH is coupled to the msvc-env retarget (see KMT_I386_NATIVE_SEH).
+        target_compile_definitions(${_target} PRIVATE _USE_NATIVE_SEH)
+        target_sources(${_target} PRIVATE ${KMT_NATIVE_SEH_SHIMS})
+        target_compile_options(${_target} PRIVATE --target=i686-pc-windows-msvc)
+    endif()
+endfunction()
+
+#
 # subdirectories containing special-purpose drivers
 #
 add_subdirectory(example)
@@ -34,6 +115,12 @@ elseif(ARCH STREQUAL "amd64")
         ../apitests/rtl/amd64/RtlCaptureContext.c
         ${kmtest_common_asm}
     )
+endif()
+
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    # Native-SEH support (see the _USE_NATIVE_SEH opt-ins below): out-of-line
+    # homes for FORCEINLINE SDK helpers clang won't inline into __try regions.
+    list(APPEND COMMON_SOURCE kmt_native_seh_shims.c)
 endif()
 
 #
@@ -130,6 +217,14 @@ endif()
 
 add_library(kmtest_drv MODULE ${KMTEST_DRV_SOURCE})
 set_module_type(kmtest_drv kernelmodedriver)
+# Real clang SEH lowers on amd64/arm64 only (base/system/sehtest, dummy-pseh-verdict.md
+# §C); pseh2.h's _USE_NATIVE_SEH branch outranks the global _USE_DUMMY_PSEH define, so
+# SEH-dependent tests get real __try/__except semantics instead of dead handlers.
+# i386 stays dummy-PSEH (its SEH lowering is MSVC-env-only) — expect a crash/fail
+# bucket there, baselined per-arch.
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    target_compile_definitions(kmtest_drv PRIVATE _USE_NATIVE_SEH)
+endif()
 target_link_libraries(kmtest_drv kmtest_printf chkstk memcmp ntoskrnl_vista ${PSEH_LIB})
 add_importlibs(kmtest_drv ntoskrnl hal)
 add_dependencies(kmtest_drv bugcodes xdk)
@@ -185,9 +280,15 @@ list(APPEND KMTEST_SOURCE
 
 add_executable(kmtest ${KMTEST_SOURCE})
 set_module_type(kmtest win32cui)
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    # Same native-SEH opt-in as kmtest_drv above (user-mode dispatch proven by sehtest)
+    target_compile_definitions(kmtest PRIVATE _USE_NATIVE_SEH)
+endif()
 target_link_libraries(kmtest ${PSEH_LIB})
 add_importlibs(kmtest fltlib advapi32 ws2_32 msvcrt kernel32 ntdll)
 target_compile_definitions(kmtest PRIVATE KMT_USER_MODE NTDDI_VERSION=NTDDI_WS03SP1)
+# vibeos: tee results + BEGIN/END markers to kernel debug serial (host capture)
+target_compile_definitions(kmtest PRIVATE VIBEOS_KMTEST_SERIAL)
 #add_pch(kmtest include/kmt_test.h)
 set_target_properties(kmtest PROPERTIES OUTPUT_NAME "kmtest_")
 add_rostests_file(TARGET kmtest)

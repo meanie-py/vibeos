@@ -746,7 +746,7 @@ unsafe fn UserAttachThreadInput_impl(
                 (*(*ptiTo).MessageQueue).spwndFocus = (*(*ptiFrom).MessageQueue).spwndFocus;
                 (*(*ptiTo).MessageQueue).spwndCapture = (*(*ptiFrom).MessageQueue).spwndCapture;
                 (*(*ptiTo).MessageQueue).QF_flags ^=
-                    (((*(*ptiTo).MessageQueue).QF_flags ^ (*(*ptiFrom).MessageQueue).QF_flags) & QF_CAPTURELOCKED);
+                    ((*(*ptiTo).MessageQueue).QF_flags ^ (*(*ptiFrom).MessageQueue).QF_flags) & QF_CAPTURELOCKED;
                 RtlCopyMemory(
                     core::ptr::addr_of_mut!((*(*ptiTo).MessageQueue).CaretInfo) as *mut _,
                     core::ptr::addr_of_mut!((*(*ptiFrom).MessageQueue).CaretInfo) as *const _,
@@ -843,8 +843,8 @@ unsafe fn UserAttachThreadInput_impl(
 
     RtlCopyMemory(
         (*(*ptiTo).MessageQueue).afKeyState.as_mut_ptr() as *mut _,
-        gafAsyncKeyState.as_ptr() as *const _,
-        core::mem::size_of_val(&gafAsyncKeyState),
+        (*(&raw const gafAsyncKeyState)).as_ptr() as *const _,
+        core::mem::size_of_val(&*(&raw const gafAsyncKeyState)),
     );
 
     (*(*ptiTo).MessageQueue).msgDblClk.message = 0;

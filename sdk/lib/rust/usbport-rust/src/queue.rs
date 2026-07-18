@@ -107,8 +107,7 @@ pub unsafe extern "system" fn USBPORT_AcquireIdleLock(Csq: PIO_CSQ, Irql: PKIRQL
 
     FdoExtension = (Csq as usize)
         .wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<USBPORT_DEVICE_EXTENSION>()).IdleIoCsq)
-                as usize,
+            core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, IdleIoCsq),
         ) as *mut USBPORT_DEVICE_EXTENSION as PUSBPORT_DEVICE_EXTENSION;
 
     KeAcquireSpinLock((core::ptr::addr_of_mut!((*FdoExtension).IdleIoCsqSpinLock) as *mut usize), Irql);
@@ -121,8 +120,7 @@ pub unsafe extern "system" fn USBPORT_ReleaseIdleLock(Csq: PIO_CSQ, Irql: KIRQL)
     DPRINT_QUEUE(b"USBPORT_ReleaseIdleLock: ... \n\0".as_ptr() as *const i8);
 
     FdoExtension = (Csq as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<USBPORT_DEVICE_EXTENSION>()).IdleIoCsq)
-            as ULONG_PTR,
+        core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, IdleIoCsq) as ULONG_PTR,
     ) as *mut USBPORT_DEVICE_EXTENSION;
 
     KeReleaseSpinLock((core::ptr::addr_of_mut!((*FdoExtension).IdleIoCsqSpinLock) as *mut usize), Irql);
@@ -150,7 +148,7 @@ pub unsafe extern "system" fn USBPORT_InsertBadRequest(Csq: PIO_CSQ, Irp: PIRP) 
     DPRINT_QUEUE(b"USBPORT_InsertBadRequest: Irp - %p\n\0".as_ptr() as *const i8, Irp);
 
     FdoExtension = ((Csq as usize)
-        - (core::ptr::addr_of_mut!((*core::ptr::null_mut::<USBPORT_DEVICE_EXTENSION>()).BadRequestIoCsq) as usize))
+        - (core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, BadRequestIoCsq)))
         as *mut USBPORT_DEVICE_EXTENSION;
 
     InsertTailList(
@@ -253,7 +251,7 @@ pub unsafe extern "system" fn USBPORT_CompleteCanceledBadRequest(Csq: PIO_CSQ, I
     DPRINT_QUEUE(b"USBPORT_CompleteCanceledBadRequest: Irp - %p\n\0".as_ptr() as *const i8, Irp);
 
     FdoExtension = ((Csq as usize)
-        - (core::ptr::addr_of_mut!((*core::ptr::null_mut::<USBPORT_DEVICE_EXTENSION>()).BadRequestIoCsq) as usize))
+        - (core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, BadRequestIoCsq)))
         as *mut USBPORT_DEVICE_EXTENSION;
 
     InterlockedDecrement(core::ptr::addr_of_mut!((*FdoExtension).BadRequestLockCounter) as *mut core::ffi::c_long);
@@ -1458,9 +1456,7 @@ pub unsafe extern "system" fn USBPORT_FlushController(FdoDevice: PDEVICE_OBJECT)
         if !IsListEmpty(EndpointList) {
             while !Entry.is_null() && Entry != EndpointList {
                 Endpoint = (Entry as ULONG_PTR).wrapping_sub(
-                    core::ptr::addr_of_mut!(
-                        (*core::ptr::null_mut::<USBPORT_ENDPOINT>()).EndpointLink
-                    ) as ULONG_PTR,
+                    core::mem::offset_of!(USBPORT_ENDPOINT, EndpointLink) as ULONG_PTR,
                 ) as PUSBPORT_ENDPOINT;
 
                 if (*Endpoint).StateLast != USBPORT_ENDPOINT_REMOVE as ULONG
@@ -1487,9 +1483,7 @@ pub unsafe extern "system" fn USBPORT_FlushController(FdoDevice: PDEVICE_OBJECT)
         KilledTransfers = 0;
         while !IsListEmpty(core::ptr::addr_of_mut!(FlushList)) {
             Endpoint = (FlushList.Flink as ULONG_PTR).wrapping_sub(
-                core::ptr::addr_of_mut!(
-                    (*core::ptr::null_mut::<USBPORT_ENDPOINT>()).FlushControllerLink
-                ) as ULONG_PTR,
+                core::mem::offset_of!(USBPORT_ENDPOINT, FlushControllerLink) as ULONG_PTR,
             ) as PUSBPORT_ENDPOINT;
 
             RemoveHeadList(core::ptr::addr_of_mut!(FlushList));

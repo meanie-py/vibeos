@@ -33,11 +33,7 @@
 //!   (arch-conditional 32/64 bit magic) — the fix must use the correct arch-specific constant.
 
 use crate::types::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER, PIMAGE_DOS_HEADER, PIMAGE_NT_HEADERS, PIMAGE_SECTION_HEADER};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER};
 
 extern "C" {
     fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32;
@@ -81,7 +77,7 @@ pub unsafe extern "C" fn RosSymCreateFromMem(
         let DosHeader: *mut IMAGE_DOS_HEADER;
         let NtHeaders: *mut IMAGE_NT_HEADERS;
         let mut SectionHeader: *mut IMAGE_SECTION_HEADER;
-        let mut SectionIndex: u32;
+        let _SectionIndex: u32;
         let mut RosSymSectionFound: i32 = 0;
         let mut SectionName: [u8; IMAGE_SIZEOF_SHORT_NAME] = [0u8; IMAGE_SIZEOF_SHORT_NAME];
 
@@ -115,7 +111,7 @@ pub unsafe extern "C" fn RosSymCreateFromMem(
             IMAGE_SIZEOF_SHORT_NAME as usize,
         );
 
-        for SectionIndex in 0..((*NtHeaders).FileHeader.NumberOfSections as u32) {
+        for _SectionIndex in 0..((*NtHeaders).FileHeader.NumberOfSections as u32) {
             if memcmp(
                 SectionName.as_ptr() as *const u8,
                 (*SectionHeader).Name.as_ptr() as *const u8,

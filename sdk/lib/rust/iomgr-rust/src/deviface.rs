@@ -78,7 +78,7 @@ static BASE_KEY_STRING: &[u16] = &[
     0
 ];
 
-// L"\\?\\" — 4 wide chars, no null needed (Length == MaximumLength)
+// L"\\??\\" — 4 wide chars, no null needed (Length == MaximumLength)
 static KERNEL_MODE_PREFIX_BUF: [u16; 4] = [0x5C, 0x3F, 0x3F, 0x5C]; // \??\
 
 static mut KERNEL_MODE_PREFIX: _UNICODE_STRING = _UNICODE_STRING {
@@ -146,9 +146,9 @@ unsafe fn IopBuildSymbolicLink(
     }
 
     let prefix = if UserModePrefixFormat != 0 {
-        &USER_MODE_PREFIX
+        &raw const USER_MODE_PREFIX
     } else {
-        &KERNEL_MODE_PREFIX
+        &raw const KERNEL_MODE_PREFIX
     };
 
     let Status = RtlUnicodeStringPrintf_4wZ(
@@ -181,8 +181,8 @@ unsafe fn IopSeparateSymbolicLink(
     ReferenceStringPresent: PBOOLEAN,
     InterfaceClassGuid: LPGUID,
 ) -> NTSTATUS {
-    if RtlPrefixUnicodeString(&KERNEL_MODE_PREFIX, SymbolicLinkName, 0u8) == 0 &&
-       RtlPrefixUnicodeString(&USER_MODE_PREFIX, SymbolicLinkName, 0u8) == 0 {
+    if RtlPrefixUnicodeString(&raw const KERNEL_MODE_PREFIX, SymbolicLinkName, 0u8) == 0 &&
+       RtlPrefixUnicodeString(&raw const USER_MODE_PREFIX, SymbolicLinkName, 0u8) == 0 {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -694,7 +694,7 @@ pub unsafe extern "system" fn IoGetDeviceInterfaceAlias(
         return Status;
     }
 
-    let UserModePrefixFormat = RtlPrefixUnicodeString(&USER_MODE_PREFIX, SymbolicLinkName, 0u8);
+    let UserModePrefixFormat = RtlPrefixUnicodeString(&raw const USER_MODE_PREFIX, SymbolicLinkName, 0u8);
 
     Status = IopBuildSymbolicLink(
         &DeviceString,
@@ -1022,7 +1022,7 @@ pub unsafe extern "system" fn IoGetDeviceInterfaces(
             KeyName.MaximumLength = KeyName.Length;
             KeyName.Buffer = (*bip).Data.as_ptr() as *mut u16;
 
-            // Copy L"\\?\\" (4 wide chars) into KeyName.Buffer
+            // Copy L"\\??\\" (4 wide chars) into KeyName.Buffer
             const DOSDEV_PREFIX: [u16; 4] = [0x5C, 0x3F, 0x3F, 0x5C];
             core::ptr::copy_nonoverlapping(DOSDEV_PREFIX.as_ptr(), KeyName.Buffer, 4);
 
@@ -1400,7 +1400,7 @@ pub unsafe extern "system" fn IoRegisterDeviceInterface(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    // L"\\?\\"
+    // L"\\??\\"
     const DOSDEV_PREFIX2: [u16; 5] = [0x5C, 0x3F, 0x3F, 0x5C, 0];
     RtlAppendUnicodeToString(SymbolicLinkName, DOSDEV_PREFIX2.as_ptr());
     let StartIndexSym = (*SymbolicLinkName).Length / 2;
@@ -1488,7 +1488,7 @@ pub unsafe extern "system" fn IoSetDeviceInterfaceState(
     let mut DeviceInstance: _UNICODE_STRING = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut DeviceGuid: GUID = core::mem::zeroed();
-    // L"\\?\\" — 4 wide chars, Length = 8
+    // L"\\??\\" — 4 wide chars, Length = 8
     const DOSDEV1_W: [u16; 5] = [0x5C, 0x3F, 0x3F, 0x5C, 0];
     let mut DosDevicesPrefix1: _UNICODE_STRING = _UNICODE_STRING {
         Length: 8,

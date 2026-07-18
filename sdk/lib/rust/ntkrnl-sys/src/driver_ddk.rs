@@ -23,7 +23,7 @@
 use crate::base::*;
 use crate::ddk::{
     CCHAR, IofCallDriver, IofCompleteRequest, PIRP, PDEVICE_OBJECT,
-    PMDL, PLIST_ENTRY, PKSPIN_LOCK,
+    PMDL,
     MmMapLockedPagesSpecifyCache, _MM_PAGE_PRIORITY,
 };
 
@@ -242,7 +242,7 @@ pub unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS 
 // i386: ExInterlockedInsertTailList is a macro over the fastcall thunk Exf*.
 // amd64/arm64: no fastcall — the real export IS ExInterlockedInsertTailList.
 #[cfg(target_arch = "x86")]
-use crate::ddk::ExfInterlockedInsertTailList;
+use crate::ddk::{ExfInterlockedInsertTailList, PLIST_ENTRY, PKSPIN_LOCK};
 #[cfg(target_arch = "x86")]
 #[inline(always)]
 pub unsafe fn ExInterlockedInsertTailList(

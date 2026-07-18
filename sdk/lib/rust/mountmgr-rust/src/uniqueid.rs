@@ -446,7 +446,7 @@ pub unsafe extern "C" fn UpdateReplicatedUniqueIds(
     NextEntry = (*DeviceInformation).ReplicatedUniqueIdsListHead.Flink;
     while NextEntry != core::ptr::addr_of_mut!((*DeviceInformation).ReplicatedUniqueIdsListHead) {
         ReplicatedUniqueId = ((NextEntry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<UNIQUE_ID_REPLICATE>()).ReplicatedUniqueIdsListEntry) as usize
+            core::mem::offset_of!(UNIQUE_ID_REPLICATE, ReplicatedUniqueIdsListEntry)
         )) as PUNIQUE_ID_REPLICATE;
 
         if (*(*ReplicatedUniqueId).UniqueId).UniqueIdLength == (*DatabaseEntry).UniqueIdLength {

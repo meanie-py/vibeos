@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 unsafe fn IsStringType(Type: ULONG) -> BOOLEAN {
     ((Type == REG_SZ) || (Type == REG_EXPAND_SZ) || (Type == REG_MULTI_SZ)) as BOOLEAN
@@ -317,7 +316,7 @@ pub unsafe extern "C" fn SampRegQueryValue(
     Data: PVOID,
     DataLength: PULONG,
 ) -> NTSTATUS {
-    let mut ValueInfo: PKEY_VALUE_PARTIAL_INFORMATION;
+    let ValueInfo: PKEY_VALUE_PARTIAL_INFORMATION;
     let mut Name: _UNICODE_STRING = core::mem::zeroed();
     let mut BufferLength: ULONG = 0;
     let mut Status: NTSTATUS;

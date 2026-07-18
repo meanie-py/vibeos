@@ -52,6 +52,7 @@ from .function_prompt import (
 from .function_resolver import resolve_function
 from .objdiff import run_objdiff
 from .postprocess import postprocess
+from .preamble_audit import audit_preamble
 from .probe_migrate import (
     build_probe_file_prompt,
     load_probe_system_prompt,
@@ -79,7 +80,34 @@ from .sink import (
 )
 from .spec_parser import parse_spec
 from .stitcher import stitch_file
+from .table_audit import audit_tables
 from .trace_catalog import generate_catalog, print_catalog
+from .vtbl_gen import find_vtbl_tables
+
+_VTBL_STATIC_RE = re.compile(
+    r"^\s*(?:pub\s+)?static(?:\s+mut)?\s+[A-Za-z_]\w*\s*:\s*[A-Za-z_]\w*Vtbl\b",
+)
+
+
+def _strip_vtbl_statics(rust: str) -> str:
+    """Drop `static X: IFooVtbl = { .. };` items (brace/bracket-balanced).
+
+    Used on the c2rust preamble: c2rust spells each slot `f as unsafe extern "C"
+    fn(..)`, hardcoding the amd64 ABI, which does not typecheck against i386's
+    `extern "stdcall"` slot. vtbl_gen emits these per-arch instead.
+    """
+    out: list[str] = []
+    depth, dropping = 0, False
+    for ln in rust.splitlines():
+        if not dropping and _VTBL_STATIC_RE.match(ln):
+            dropping, depth = True, 0
+        if dropping:
+            depth += ln.count("[") - ln.count("]") + ln.count("{") - ln.count("}")
+            if depth <= 0 and ln.rstrip().endswith(";"):
+                dropping = False
+            continue
+        out.append(ln)
+    return "\n".join(out)
 
 
 def resolve_target(args, path):
@@ -155,6 +183,36 @@ def resolve_c_path(path_str: str) -> Path:
     sys.exit(1)
 
 
+def _exports_lost_to_unextracted(scan) -> set[str]:
+    """Names the module's .spec EXPORTS that the scanner failed to extract.
+
+    `scan.unextracted` entries are free text ("* cp @ L69", "Cls::m @ L120") because the
+    declarator didn't parse — so the failed fn's real name is precisely what we do NOT
+    have. Recover it from the C instead: any spec export whose definition is present in
+    the source but absent from `scan.functions` was lost in the parse.
+    """
+    target = detect_target(scan.path)
+    if target is None or not target.spec_file or not target.spec_file.is_file():
+        return set()
+    try:
+        spec = parse_spec(target.spec_file)
+    except (OSError, ValueError):
+        return set()
+
+    got = {f.name for f in scan.functions}
+    text = scan.raw_source
+    lost: set[str] = set()
+    for name, entry in spec.items():
+        if name in got or not getattr(entry, "needs_implementation", True):
+            continue
+        # Defined in THIS file? A definition is `name` at the head of a line followed by
+        # `(` — the ReactOS/wine house style puts the return type + convention on their own
+        # lines above it. Cheap and precise enough to distinguish from a call site.
+        if re.search(rf"^{re.escape(name)}\s*\(", text, re.M):
+            lost.add(name)
+    return lost
+
+
 def _gate_unextracted(scan, allow_partial: bool):
     """Fail-loud gate: refuse to run a paid per-function translation over a
     file whose bodies the scanner could only PARTIALLY extract (C++ methods —
@@ -178,6 +236,31 @@ def _gate_unextracted(scan, allow_partial: bool):
         # .c files: parse artifacts (PSEH macro blocks etc.) have always been
         # dropped silently by the kernel pipeline — keep that path unblocked,
         # just make the drop visible.
+        #
+        # …UNLESS the dropped body is a real function. The "it's only a parse artifact"
+        # assumption held for PSEH macro blocks and quietly stopped holding for ws2_32:
+        # `inet_addr(IN CONST CHAR FAR* cp)` came back as an unextractable body named `cp`
+        # (tree-sitter can't parse `CHAR FAR*`), so an EXPORTED fn — one the net smoke test
+        # actually calls — would have been dropped from a paid run with a warning nobody
+        # reads. A lost export is never an artifact. Cross-check the drop against the
+        # module's .spec and HARD FAIL on a hit, per the fail-loud rule.
+        lost = sorted(_exports_lost_to_unextracted(scan))
+        if lost:
+            print(
+                f"\n✗ {scan.path.name}: {len(lost)} SPEC-EXPORTED function(s) are in the "
+                "unextractable set — this is a scanner parse failure, not a macro artifact:",
+                file=sys.stderr,
+            )
+            for name in lost[:12]:
+                print(f"    {name}", file=sys.stderr)
+            print(
+                "  Refusing to spend a paid translation that silently omits an export.\n"
+                "  Fix the scanner (see _blank_memmodel / _normalize_callbacks for the shape),\n"
+                "  or pass --allow-partial to translate the extractable subset deliberately.",
+                file=sys.stderr,
+            )
+            if not allow_partial:
+                sys.exit(1)
         print("  (.c file: legacy behavior, proceeding without these)", file=sys.stderr)
         return
     if allow_partial:
@@ -253,11 +336,11 @@ def cmd_prompt(args):
     res = resolve(scan, catalog, spec)
 
     if args.estimate:
-        prompt = build_full_prompt(scan, res)
+        prompt = build_full_prompt(scan, res, target)
         tokens = estimate_tokens(prompt)
         print(f"Estimated tokens: ~{tokens:,}", file=sys.stderr)
     else:
-        prompt = build_full_prompt(scan, res)
+        prompt = build_full_prompt(scan, res, target)
         print(prompt)
 
 
@@ -281,10 +364,10 @@ def cmd_submit(args):
     # For Gemini, combine into single prompt
     if model.startswith("claude-"):
         system_prompt = load_system_prompt(target)
-        file_prompt = build_file_prompt(scan, res)
+        file_prompt = build_file_prompt(scan, res, target)
     else:
         system_prompt = ""
-        file_prompt = build_full_prompt(scan, res)
+        file_prompt = build_full_prompt(scan, res, target)
 
     # Durable archive + cost banner + kill guard for this one paid call.
     warn_if_tmp_output(getattr(args, "output", None))
@@ -327,6 +410,7 @@ def cmd_submit(args):
             target_name=target.name,
             sys_crate=target.sys_crate,
             sys_umbrella=target.sys_umbrella,
+            crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
         )
         Path(args.output).write_text(code)
         print(f"Written to {args.output}", file=sys.stderr)
@@ -350,6 +434,9 @@ def cmd_submit(args):
             target_name=target.name,
             sys_crate=target.sys_crate,
             sys_umbrella=target.sys_umbrella,
+            c_source_path=path,
+            com_method_macro=target.com_method_macro,
+            crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
         )
         print(code)
 
@@ -373,8 +460,13 @@ def cmd_batch(args):
 
     print(f"Found {len(c_files)} C files in {dir_path.name}/", file=sys.stderr)
 
-    catalog = build_catalog(arch=args.arch)
-    spec = parse_spec()
+    # Resolve the target from the path like every other command, instead of silently
+    # defaulting to ntoskrnl: `batch` built its catalog and parsed its spec with no target
+    # at all, so batching a user-mode DLL got the KERNEL catalog and the KERNEL spec. For
+    # an ntoskrnl path this resolves to the same thing it always did (no behaviour change).
+    target = resolve_target(args, dir_path)
+    catalog = build_catalog(arch=args.arch, target=target)
+    spec = parse_spec(target.spec_file) if target.spec_file else {}
 
     model = resolve_model(args.model)
     use_claude = model.startswith("claude-")
@@ -392,9 +484,9 @@ def cmd_batch(args):
         res = resolve(scan, catalog, spec)
         resolves[cf.name] = res
         if use_claude:
-            prompts[cf.name] = build_file_prompt(scan, res)
+            prompts[cf.name] = build_file_prompt(scan, res, target)
         else:
-            prompts[cf.name] = build_full_prompt(scan, res)
+            prompts[cf.name] = build_full_prompt(scan, res, target)
 
     print(f"\nSubmitting {len(prompts)} files to {model}...", file=sys.stderr)
     results = submit_batch(prompts, model=model, system_prompt=system_prompt)
@@ -1022,6 +1114,7 @@ def cmd_translate(args):
         install_kill_guard(archive)
 
     total_files = len(c_files)
+    audit_findings: dict[str, list[str]] = {}
     for file_idx, c_file in enumerate(c_files, 1):
         print(f"\n{'=' * 60}", file=sys.stderr)
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
@@ -1417,7 +1510,24 @@ def cmd_translate(args):
                     f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)", file=sys.stderr
                 )
             else:
-                print(f"FAIL: {pre_res.error} (stitching without preamble)", file=sys.stderr)
+                # The preamble is the ONLY pass that sees file-scope C — every
+                # struct, typedef and lookup table in the file rides on it.
+                # "Stitching without preamble" silently ships a crate missing all
+                # of them, so this is a hard failure, not a warning.
+                raise RuntimeError(
+                    f"preamble translation FAILED for {c_file.name}: {pre_res.error}\n"
+                    "  Refusing to stitch without it — the result would be missing every\n"
+                    "  file-scope struct/typedef/table. Re-run (the per-function work is\n"
+                    "  cached in .responses/, so the retry only re-pays for the preamble)."
+                )
+
+        # c2rust's vtbl tables are NOT usable: it hardcodes each slot as
+        # `f as unsafe extern "C" fn(..)`, which is the amd64 spelling. On i386 the
+        # bindgen slot is `extern "stdcall"`, so the cast is simply wrong there.
+        # vtbl_gen regenerates them per-arch from the bindgen struct (and agrees
+        # 149/149 with our hand-written tables), so let it own them exclusively.
+        if c2rust_preamble.strip():
+            c2rust_preamble = _strip_vtbl_statics(c2rust_preamble)
 
         # c2rust DATA preamble wins over the LLM's: prepend the compiler-exact
         # static/const tables, and strip any LLM-emitted item with the same name
@@ -1466,6 +1576,24 @@ def cmd_translate(args):
             translated, sorted_deps, scan, file_res, target=rustconv_target, preamble=preamble_rust
         )
 
+        # COM vtbl tables, GENERATED — never asked of the model. `translate` is
+        # function-granular, so file-scope `static const IXVtbl` tables fall to the
+        # one preamble call, and it drops them: all 10 of storage32's went missing
+        # in the ole32 run, which is a COM object with no methods at all. Slot order
+        # comes from the bindgen'd struct; an arity mismatch raises rather than
+        # zipping a table into the wrong methods.
+        vtbls = find_vtbl_tables(c_file)
+        new_vtbls = [t for t in vtbls if not re.search(rf"\b{re.escape(t.name)}\s*:", stitched)]
+        if new_vtbls:
+            body = "\n\n".join(t.render(c_name=c_file.name) for t in new_vtbls)
+            stitched += f"\n\n// COM vtable tables — generated from {c_file.name} by vtbl_gen.py\n"
+            stitched += body + "\n"
+            print(
+                f"  [vtbl] generated {len(new_vtbls)} vtable table(s) "
+                f"({sum(len(t.slots) for t in new_vtbls)} slots)",
+                file=sys.stderr,
+            )
+
         # Post-process
         code = postprocess(
             stitched,
@@ -1475,7 +1603,31 @@ def cmd_translate(args):
             sys_crate=rustconv_target.sys_crate,
             sys_umbrella=rustconv_target.sys_umbrella,
             c_source_path=c_file,
+            com_method_macro=rustconv_target.com_method_macro,
+            crate_module=(
+                getattr(rustconv_target, "crate_module", "")
+                if rustconv_target.crate_bindgen_files
+                else ""
+            ),
         )
+
+        # --- Post-translation audits -------------------------------------
+        # These catch the SILENT class: output that compiles, links and boots but
+        # is wrong. A dropped struct is a compile error and finds itself; a table
+        # with one wrong byte does not.
+        file_findings: list[str] = []
+        for name in audit_preamble(c_file, preamble_rust, rust_full=code):
+            file_findings.append(f"preamble: {name}")
+        for d in audit_tables(c_file, code):
+            if d.kind in ("missing", "count", "value"):
+                file_findings.append(f"table {d.kind}: {d.name}: {d.detail}")
+            elif d.kind == "unparsed":
+                file_findings.append(f"table UNVERIFIED (read by hand): {d.name}")
+        if file_findings:
+            audit_findings[c_file.name] = file_findings
+            print(f"\n  ⚠ {len(file_findings)} audit finding(s) in {c_file.name}:", file=sys.stderr)
+            for f in file_findings[:10]:
+                print(f"      {f}", file=sys.stderr)
 
         if args.output and total_files == 1:
             Path(args.output).write_text(code)
@@ -1509,6 +1661,33 @@ def cmd_translate(args):
                 file=sys.stderr,
             )
             break
+
+    # Audit summary. Printed LAST and written to disk, because the per-file
+    # warnings scroll away under a long run — and these are the findings that do
+    # NOT announce themselves later: a dropped struct is a compile error, but a
+    # lookup table with one wrong byte compiles, links, boots, and formats a date
+    # wrong forever.
+    if audit_findings:
+        total = sum(len(v) for v in audit_findings.values())
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(
+            f"⚠ AUDIT: {total} finding(s) across {len(audit_findings)} file(s) — "
+            "review before trusting this output",
+            file=sys.stderr,
+        )
+        for fname, findings in audit_findings.items():
+            print(f"\n  {fname}:", file=sys.stderr)
+            for f in findings:
+                print(f"    - {f}", file=sys.stderr)
+        if archive is not None:
+            report = archive.dir / "AUDIT.md"
+            lines = ["# rustconv post-translation audit\n"]
+            for fname, findings in audit_findings.items():
+                lines.append(f"\n## {fname}\n")
+                lines.extend(f"- {f}\n" for f in findings)
+            report.write_text("".join(lines))
+            print(f"\n  Written to {report}", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
 
     # Generate mod.rs and lib.rs for batch runs (ntoskrnl only — HAL handles
     # mod.rs incrementally via _hal_register_mod and has a single src/x86 dir).
@@ -1559,7 +1738,7 @@ def cmd_estimate(args):
     for cf in c_files:
         scan = scan_file(cf)
         res = resolve(scan, catalog, spec)
-        prompt = build_full_prompt(scan, res)
+        prompt = build_full_prompt(scan, res, rustconv_target)
         tokens = estimate_tokens(prompt)
         lines = len(scan.raw_source.splitlines())
         total_input += tokens

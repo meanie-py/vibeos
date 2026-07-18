@@ -735,7 +735,7 @@
 @ stdcall -arch=arm64 KiDispatchInterruptArm64(long)
 @ stdcall -arch=arm64 KiDispatchSoftwareIntArm64()
 @ extern -arch=i386,arm,x86_64 KiEnableTimerWatchdog
-@ stdcall -arch=i386,arm KiIpiServiceRoutine(ptr ptr)
+@ stdcall -arch=i386,arm,arm64 KiIpiServiceRoutine(ptr ptr)
 @ fastcall -arch=i386,arm KiReleaseSpinLock(ptr)
 @ cdecl -arch=i386,arm KiUnexpectedInterrupt()
 @ stdcall -arch=i386 Kii386SpinOnSpinLock(ptr long)
@@ -1545,7 +1545,7 @@
 @ stdcall ZwWaitForSingleObject(ptr long ptr)
 @ stdcall ZwWriteFile(ptr ptr ptr ptr ptr ptr long ptr ptr)
 @ stdcall ZwYieldExecution()
-@ cdecl -arch=x86_64,arm __C_specific_handler(ptr long ptr ptr)
+@ cdecl -arch=x86_64,arm,arm64 __C_specific_handler(ptr long ptr ptr)
 @ cdecl -arch=arm __jump_unwind()
 @ cdecl -arch=x86_64 __chkstk()
 ;@ cdecl -arch=x86_64 __misaligned_access()

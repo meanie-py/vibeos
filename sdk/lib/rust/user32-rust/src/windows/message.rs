@@ -270,7 +270,8 @@ unsafe fn ISITHOOKED(HookId: UINT) -> bool {
     if ((*pci).fsHooks & flag) != 0 {
         return true;
     }
-    !(*pci).pDeskInfo.is_null() && ((*(*pci).pDeskInfo).fsHooks & flag) != 0
+    !(*pci).pDeskInfo.is_null()
+        && (crate::wow64::desktop_info_fshooks((*pci).pDeskInfo) & flag) != 0
 }
 /// ntuser.h `HOOKID_TO_FLAG(HookId)` — `1 << ((HookId) + 1)`.
 #[inline]
@@ -293,13 +294,10 @@ pub unsafe extern "C" fn GetW32ThreadInfo() -> PTHREADINFO {
 /// In the C it offsets by `GetWin32ClientInfo()->pDeskInfo->pvDesktopBase` delta.
 #[inline]
 unsafe fn DesktopPtrToUser(p: PVOID) -> PVOID {
-    let pci = GetWin32ClientInfo();
-    let di = (*pci).pDeskInfo;
-    if di.is_null() {
-        return core::ptr::null_mut();
-    }
-    // C: ((PVOID)((ULONG_PTR)Ptr - (ULONG_PTR)pci->ulClientDelta))
-    (p as ULONG_PTR).wrapping_sub((*pci).ulClientDelta) as PVOID
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(p)
 }
 /// `Wnd->head.pti` — bindgen put `pti` at `_THRDESKHEAD.__bindgen_padding_0[2]`.
 #[inline]
@@ -2125,6 +2123,7 @@ unsafe fn IntCallWindowProcA_impl(
     Result
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe extern "system" fn IntCallMessageProc(
     Wnd: PWND,
     hWnd: HWND,
@@ -2137,7 +2136,7 @@ unsafe extern "system" fn IntCallMessageProc(
     let IsAnsi: BOOL;
     let Class: PCLS;
 
-    Class = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     WndProc = None;
 
     if wnd_pti(Wnd) != GetW32ThreadInfo() {
@@ -3231,6 +3230,7 @@ unsafe fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG {
         .swap(value, core::sync::atomic::Ordering::SeqCst)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn RegisterMessagePumpHook(Hook: MESSAGEPUMPHOOKPROC) -> BOOL {
     EnterCriticalSection(core::ptr::addr_of_mut!(gcsMPH));

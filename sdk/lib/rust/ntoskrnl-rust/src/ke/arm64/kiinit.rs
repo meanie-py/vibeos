@@ -80,7 +80,21 @@ pub static mut FrLdrDbgPrint: Option<unsafe extern "C" fn(*const u8, ...) -> ULO
 
 static mut LdrCoreEntries: [_LDR_DATA_TABLE_ENTRY; 3] = unsafe { core::mem::zeroed() };
 
-unsafe fn KiInitializePcr(
+// SMP AP progress beacon (smp-bringup-quest.md M5a debug). The AP writes its
+// current milestone here (memory only — no UART, so no BSP/AP serial interleave
+// and no TCG slowdown that shifts the wedge); the BSP prints it on handshake
+// timeout and re-reads to tell "hung" (stage frozen) from "slow" (still rising).
+#[no_mangle]
+pub static KiArm64ApStage: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+#[inline(always)]
+fn ap_stage(cpu_nonzero: bool, n: u32) {
+    if cpu_nonzero {
+        KiArm64ApStage.store(n, core::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+pub(crate) unsafe fn KiInitializePcr(
     Pcr: PKIPCR,
     ProcessorNumber: ULONG,
     IdleThread: PKTHREAD,
@@ -170,6 +184,24 @@ pub unsafe extern "system" fn KiSystemStartup(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> ! {
     let LoaderBlock = opaque_ptr(LoaderBlock);
+
+    // Enable FP/SIMD access (CPACR_EL1.FPEN = 0b11). The BSP inherits an
+    // FP-enabled CPACR from the UEFI firmware, but a PSCI-started AP (SMP) comes
+    // up at the trapping reset value (FPEN=00) — so the first NEON-vectorized
+    // store the AP executes (e.g. KiInitSpinLocks' LockQueue block) takes an
+    // EC=0x07 SIMD-disabled abort, and the exception path re-enters the vector on
+    // a corrupted SP and wedges the core (GDB: CPU1 PC=KiArm64VectorTable+0x200,
+    // "FPU disabled"; smp-bringup-quest.md M5a). Set it for every CPU here
+    // (idempotent on the BSP) before any code that may vectorize.
+    core::arch::asm!(
+        "mrs {t}, cpacr_el1",
+        "orr {t}, {t}, #(3 << 20)",
+        "msr cpacr_el1, {t}",
+        "isb",
+        t = out(reg) _,
+        options(nomem, nostack),
+    );
+
     // Direct PL011 UART write to confirm kernel entry (bypasses KD)
     {
         let uart = Arm64UartKernelBase as *mut ULONG;
@@ -214,6 +246,25 @@ pub unsafe extern "system" fn KiSystemStartup(
         tmp = out(reg) _,
     );
 
+    // Same family, SCTLR_EL1 edition: grant EL0 the cache-maintenance surface
+    // production Windows-on-ARM64 exposes. The reset value leaves UCI/UCT/DZE
+    // clear, so EL0 `dc cvau` (FEX's inline JIT icache flush on the guest-SMC
+    // path), `mrs CTR_EL0` (cache geometry, read by ARM64 memcpy/JIT runtimes)
+    // and `dc zva` (memset fast path) all trap to EL1 as EC=0x18 and die as
+    // STATUS_ILLEGAL_INSTRUCTION. That was the task-#46 FEX startup-death
+    // flake: rare only because QEMU's CTR_EL0 DIC/IDC lets vixl skip
+    // maintenance on the common flush path, so `dc cvau` executed maybe once
+    // per boot. UCI (bit 26) + UCT (bit 15) + DZE (bit 14). fexprobe.exe
+    // executes all three ops every boot as the deterministic tripwire.
+    core::arch::asm!(
+        "mrs {tmp}, sctlr_el1",
+        "orr {tmp}, {tmp}, #0x04000000", // UCI
+        "orr {tmp}, {tmp}, #0xC000",     // UCT | DZE
+        "msr sctlr_el1, {tmp}",
+        "isb",
+        tmp = out(reg) _,
+    );
+
     // Install ARM64 exception vector table (VBAR_EL1)
     {
         let vbar = KiArm64VectorTable.as_ptr() as u64;
@@ -240,6 +291,7 @@ pub unsafe extern "system" fn KiSystemStartup(
         let msg = b"[KERNEL] pre-HAL\r\n";
         for &b in msg { core::ptr::write_volatile(uart, b as ULONG); }
     }
+    ap_stage(Cpu != 0, 3);
 
     // Initial setup for the boot CPU
     if Cpu == 0 {
@@ -255,6 +307,7 @@ pub unsafe extern "system" fn KiSystemStartup(
 
     // Set processor as active
     KeActiveProcessors |= (1 as KAFFINITY) << Cpu;
+    ap_stage(Cpu != 0, 4);
 
     // Raise to HIGH_LEVEL
     KfRaiseIrql(HIGH_LEVEL);
@@ -265,6 +318,7 @@ pub unsafe extern "system" fn KiSystemStartup(
     }
 
     // Switch to boot stack and continue initialization
+    ap_stage(Cpu != 0, 5);
     KiSwitchToBootStack((*LoaderBlock).KernelStack as ULONG_PTR);
 }
 
@@ -277,18 +331,24 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
     let Process = (*Thread).__bindgen_anon_1.ApcState.Process as PKPROCESS;
     let KernelStack = (*KeLoaderBlock).KernelStack as PVOID;
 
+    let ap = (*Prcb).Number != 0;
+    ap_stage(ap, 10);
+
     (*Prcb).ParentNode = *(core::ptr::addr_of!(KeNodeBlock) as *const *mut core::ffi::c_void).add(0) as *mut ntkrnl_sys::ddk::_KNODE;
     (*((*Prcb).ParentNode as *mut _KNODE)).ProcessorMask |= (*Prcb).SetMember;
 
     KiSaveProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
+    ap_stage(ap, 11);
 
     KiInitSpinLocks(Prcb, (*Prcb).Number as CCHAR);
+    ap_stage(ap, 13);
 
     (*Prcb).CurrentThread = Thread;
     (*Prcb).NextThread = core::ptr::null_mut();
     (*Prcb).IdleThread = Thread;
 
     KeLowerIrql(APC_LEVEL);
+    ap_stage(ap, 14);
 
     if (*Prcb).Number == 0 {
         KiInitializeKernel(Process, Thread, KernelStack, Prcb, LoaderBlock);
@@ -297,15 +357,18 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
     KfRaiseIrql(DISPATCH_LEVEL);
 
     KeSetPriorityThread(Thread, 0);
+    ap_stage(ap, 16);
 
     KiAcquirePrcbLock(Prcb);
     if (*Prcb).NextThread.is_null() {
         KiIdleSummary |= (1 as KAFFINITY) << (*Prcb).Number;
     }
     KiReleasePrcbLock(Prcb);
+    ap_stage(ap, 17);
 
     KfRaiseIrql(HIGH_LEVEL);
     (*LoaderBlock).Prcb = 0;
+    ap_stage(ap, 19);
 
     let Thread = KeGetCurrentThread() as PKTHREAD;
     (*Thread).Priority = 0;

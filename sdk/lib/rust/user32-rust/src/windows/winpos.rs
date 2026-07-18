@@ -12,7 +12,12 @@ use win32k_sys::win32k::*;
 // `extern "C"`/`extern "system"` decl would mismatch the i386 calling
 // convention). It is a user32-internal helper (not a win32k syscall, not in
 // win32k-sys); it resolves against the user32 misc.c translation at link.
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn ValidateHwnd(hwnd: HWND) -> PWND;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn ValidateHwnd(hwnd: HWND) -> PWND;
 }
 

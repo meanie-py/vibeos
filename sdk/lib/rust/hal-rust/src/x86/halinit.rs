@@ -152,6 +152,14 @@ pub unsafe extern "system" fn HalInitSystem(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> BOOLEAN {
     unsafe {
+        // NOTE (i386 SMP M5 Phase C): the AP is prevented from re-running this
+        // GLOBAL HAL init at the CALLER — ex-rust ExpInitializeExecutive skips
+        // HalInitSystem when its explicit `Cpu` arg != 0. We do NOT gate here on
+        // (*KeGetCurrentPrcb()).Number because the HAL's `hal_ddk` bindgen lays
+        // out _KPRCB.Number at a different offset than the kernel's `ddk` view
+        // (proven by GDB: KiInitializePcr writes Number=1 at the ddk offset, but a
+        // hal_ddk read returns 0 on the AP) — an unreliable cross-bindgen field
+        // read. The Cpu-parameter gate at the caller is layout-independent.
         if BootPhase == 0 {
             let prcb = KeGetCurrentPrcb();
 

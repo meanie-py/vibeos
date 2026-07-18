@@ -845,16 +845,23 @@ pub unsafe extern "C" fn PciIdeXChannelState(
     IDE_CHANNEL_STATE_ChannelStateUnknown
 }
 
+// PciIdeXDebugPrint — an EXPORT (pciidex.spec: `@ varargs PciIdeXDebugPrint(long str)`;
+// uniata.sys / pciide.sys import it). The variadic ENTRY that keeps that exact symbol name
+// and cdecl-varargs ABI is in drivers/storage/ide/pciidex/rust_varargs_shim.c, because
+// stable Rust cannot `va_start` (c_variadic, rust-lang#44930). It calls straight back into
+// this fixed-arity twin, which keeps the level filter and the vDbgPrintEx dispatch; `ap` is
+// a pointer to the shim frame's va_list, forwarded to vDbgPrintEx by `vibeos_vDbgPrintEx`
+// (Rust cannot pass a va_list by value).
 #[no_mangle]
-pub unsafe extern "C" fn PciIdeXDebugPrint(
+pub unsafe extern "C" fn PciIdeXDebugPrint_v(
     mut DebugPrintLevel: ULONG,
     DebugMessage: PCCHAR,
-    mut args: ...
+    ap: *mut core::ffi::c_void,
 ) {
     if DebugPrintLevel <= PciIdeDebug {
         DebugPrintLevel = 0 as ULONG;
     }
-    vDbgPrintEx(DPFLTR_PCIIDE_ID as ULONG, DebugPrintLevel, DebugMessage, args.as_va_list());
+    vibeos_vDbgPrintEx(DPFLTR_PCIIDE_ID as ULONG, DebugPrintLevel, DebugMessage, ap);
 }
 
 #[no_mangle]
@@ -866,9 +873,7 @@ pub unsafe extern "system" fn PciIdeXGetBusData(
 ) -> NTSTATUS {
     let fdo_extension: PFDO_DEVICE_EXTENSION = (DeviceExtension as usize)
         .wrapping_sub(
-            core::ptr::addr_of!(
-                (*core::ptr::null::<FDO_DEVICE_EXTENSION>()).MiniControllerExtension
-            ) as usize,
+            core::mem::offset_of!(FDO_DEVICE_EXTENSION, MiniControllerExtension),
         ) as PFDO_DEVICE_EXTENSION;
 
     let bytes_read = ((*fdo_extension).BusInterface.GetBusData).unwrap()(
@@ -898,7 +903,7 @@ pub unsafe extern "system" fn PciIdeXSetBusData(
     }
 
     let FdoExtension = (DeviceExtension as usize).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<_FDO_DEVICE_EXTENSION>()).MiniControllerExtension) as usize,
+        core::mem::offset_of!(_FDO_DEVICE_EXTENSION, MiniControllerExtension),
     ) as *mut _FDO_DEVICE_EXTENSION;
 
     let mut OldIrql: u8 = 0;

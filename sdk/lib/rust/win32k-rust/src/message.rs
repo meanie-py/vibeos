@@ -483,9 +483,9 @@ unsafe extern "C" fn FindMsgMemory(Msg: UINT) -> PMSGMEMORY {
 }
 
 unsafe fn FindMsgMemory_impl(Msg: UINT) -> PMSGMEMORY {
-    let count = g_MsgMemory.len();
-    let mut MsgMemoryEntry: PMSGMEMORY = g_MsgMemory.as_ptr() as PMSGMEMORY;
-    let end: PMSGMEMORY = (g_MsgMemory.as_ptr() as PMSGMEMORY).add(count);
+    let count = (*(&raw const g_MsgMemory)).len();
+    let mut MsgMemoryEntry: PMSGMEMORY = (*(&raw const g_MsgMemory)).as_ptr() as PMSGMEMORY;
+    let end: PMSGMEMORY = ((*(&raw const g_MsgMemory)).as_ptr() as PMSGMEMORY).add(count);
 
     while MsgMemoryEntry < end {
         if Msg == (*MsgMemoryEntry).Message {
@@ -589,7 +589,8 @@ unsafe extern "C" fn lParamMemorySize(Msg: UINT, wParam: WPARAM, lParam: LPARAM)
     MsgMemorySize(MsgMemoryEntry, wParam, lParam)
 }
 
-unsafe extern "fastcall" fn PackParam(
+fastcall_fn! {
+unsafe fn PackParam(
     lParamPacked: *mut LPARAM,
     Msg: UINT,
     wParam: WPARAM,
@@ -718,6 +719,7 @@ unsafe extern "fastcall" fn PackParam(
 
     STATUS_SUCCESS
 }
+}
 
 unsafe fn UnpackParam(lParamPacked: LPARAM, Msg: UINT, wParam: WPARAM, lParam: LPARAM, NonPagedPoolUsed: BOOL) -> NTSTATUS {
     let UnpackedParams: *mut NCCALCSIZE_PARAMS;
@@ -756,7 +758,8 @@ unsafe fn UnpackParam(lParamPacked: LPARAM, Msg: UINT, wParam: WPARAM, lParam: L
     STATUS_INVALID_PARAMETER
 }
 
-unsafe extern "fastcall" fn CopyMsgToKernelMem(
+fastcall_fn! {
+unsafe fn CopyMsgToKernelMem(
     KernelModeMsg: *mut MSG,
     UserModeMsg: *mut MSG,
     MsgMemoryEntry: PMSGMEMORY,
@@ -816,8 +819,10 @@ unsafe extern "fastcall" fn CopyMsgToKernelMem(
 
     STATUS_SUCCESS
 }
+}
 
-unsafe extern "fastcall" fn CopyMsgToUserMem(
+fastcall_fn! {
+unsafe fn CopyMsgToUserMem(
     UserModeMsg: *mut MSG,
     KernelModeMsg: *mut MSG,
 ) -> NTSTATUS {
@@ -849,6 +854,7 @@ unsafe extern "fastcall" fn CopyMsgToUserMem(
     }
 
     STATUS_SUCCESS
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1030,7 +1036,7 @@ unsafe fn IntMsgCreateStructW_impl(
 
     if (*WindowName).Length != 0 {
         let mut Name: _UNICODE_STRING = core::mem::zeroed();
-        Name.Buffer = ((*WindowName).Buffer as _);
+        Name.Buffer = (*WindowName).Buffer as _ ;
         Name.Length = core::cmp::min((*WindowName).Length, MAXUSHORT as _) as u16;
         Name.MaximumLength = core::cmp::min((*WindowName).MaximumLength(), MAXUSHORT as _) as u16;
 
@@ -1065,7 +1071,8 @@ unsafe fn IntMsgCreateStructW_impl(
     1
 }
 
-unsafe extern "fastcall" fn IntCallWndProc(
+fastcall_fn! {
+unsafe fn IntCallWndProc(
     Window: PWND,
     hWnd: HWND,
     Msg: UINT,
@@ -1122,8 +1129,10 @@ unsafe extern "fastcall" fn IntCallWndProc(
         UserHeapFree(pszClass);
     }
 }
+}
 
-unsafe extern "fastcall" fn IntCallWndProcRet(
+fastcall_fn! {
+unsafe fn IntCallWndProcRet(
     Window: PWND,
     hWnd: HWND,
     Msg: UINT,
@@ -1183,6 +1192,7 @@ unsafe extern "fastcall" fn IntCallWndProcRet(
         UserHeapFree(pszClass);
     }
 }
+}
 
 unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let lRes: LRESULT;
@@ -1202,7 +1212,7 @@ unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam:
             if winpos.is_null() {
                 return 0;
             }
-            lRes = ((co_WinPosSetWindowPos(
+            lRes = (co_WinPosSetWindowPos(
                 pWnd,
                 (*winpos).hwndInsertAfter,
                 (*winpos).x,
@@ -1210,7 +1220,7 @@ unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam:
                 (*winpos).cx,
                 (*winpos).cy,
                 (*winpos).flags,
-            ) as LRESULT));
+            ) as LRESULT) ;
             ExFreePoolWithTag(winpos as *mut core::ffi::c_void, USERTAG_SWP);
             return lRes;
         }
@@ -1224,7 +1234,7 @@ unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam:
                     1u8,
                 );
             } else {
-                co_UserDestroyWindow((pWnd as _));
+                co_UserDestroyWindow(pWnd as _ );
             }
         }
         _ => {}
@@ -1286,7 +1296,7 @@ unsafe fn IntDispatchMessage_impl(pMsg: PMSG) -> LRESULT {
     if ((*pMsg).message == WM_SYSTIMER || (*pMsg).message == WM_TIMER) && (*pMsg).lParam != 0 {
         if (*pMsg).message == WM_TIMER {
             if ValidateTimerCallback(pti, (*pMsg).lParam) != 0 {
-                Time = ((EngGetTickCount32() as i32));
+                Time = (EngGetTickCount32() as i32) ;
                 retval = co_IntCallWindowProc(
                     core::mem::transmute::<LPARAM, WNDPROC>((*pMsg).lParam),
                     1,
@@ -1301,7 +1311,7 @@ unsafe fn IntDispatchMessage_impl(pMsg: PMSG) -> LRESULT {
         } else {
             let pTimer: PTIMER = FindSystemTimer(pMsg);
             if !pTimer.is_null() && (*pTimer).pfn.is_some() {
-                Time = ((EngGetTickCount32() as i32));
+                Time = (EngGetTickCount32() as i32) ;
                 ((*pTimer).pfn.unwrap())(
                     (*pMsg).hwnd,
                     WM_SYSTIMER,
@@ -1557,8 +1567,9 @@ pub unsafe extern "system" fn co_IntPeekMessage(
     }
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_IntWaitMessage(
+unsafe fn co_IntWaitMessage(
     Window: PWND,
     MsgFilterMin: UINT,
     MsgFilterMax: UINT,
@@ -1568,7 +1579,7 @@ unsafe extern "fastcall" fn co_IntWaitMessage(
     let mut Msg: MSG = core::mem::zeroed();
     let mut ExtraInfo: LONG_PTR = 0;
 
-    pti = (PsGetCurrentThreadWin32Thread() as _);
+    pti = PsGetCurrentThreadWin32Thread() as _ ;
 
     loop {
         if co_IntPeekMessage(
@@ -1594,6 +1605,7 @@ unsafe extern "fastcall" fn co_IntWaitMessage(
             return FALSE as BOOL;
         }
     }
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -1895,8 +1907,9 @@ unsafe fn IntSendToImpl(Window: PWND, ptiCur: PTHREADINFO, _Msg: u32) -> PTHREAD
     }
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn UserPostMessage(
+unsafe fn UserPostMessage(
     Wnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -1957,7 +1970,7 @@ unsafe extern "fastcall" fn UserPostMessage(
         let Window: PWND = UserGetWindowObject(Wnd);
         if Window.is_null() {
             ERR!(b"UserPostMessage: Invalid handle 0x%p Msg 0x%x!\n\0".as_ptr() as *const i8, Wnd, Msg);
-            return ((FALSE as i32));
+            return (FALSE as i32) ;
         }
 
         pti = head_pti(Window);
@@ -1984,6 +1997,7 @@ unsafe extern "fastcall" fn UserPostMessage(
         MsqPostMessage(pti, &mut Message, (FALSE as BOOL).try_into().unwrap(), QS_POSTMESSAGE, 0, ExtraInfo);
     }
     TRUE.try_into().unwrap()
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -2036,7 +2050,8 @@ unsafe extern "C" fn co_IntSendMessage(
     0
 }
 
-unsafe extern "fastcall" fn co_IntSendMessageTimeoutSingle(
+fastcall_fn! {
+unsafe fn co_IntSendMessageTimeoutSingle(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2220,9 +2235,11 @@ unsafe extern "fastcall" fn co_IntSendMessageTimeoutSingle(
     UserDerefObjectCo(Window);
     Ret
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_IntSendMessageTimeout(
+unsafe fn co_IntSendMessageTimeout(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2290,6 +2307,7 @@ unsafe extern "fastcall" fn co_IntSendMessageTimeout(
 
     1 as LRESULT
 }
+}
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -2331,8 +2349,9 @@ unsafe extern "C" fn co_IntSendMessageNoWait(
     )
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_IntSendMessageWithCallBack(
+unsafe fn co_IntSendMessageWithCallBack(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2367,7 +2386,7 @@ unsafe extern "fastcall" fn co_IntSendMessageWithCallBack(
             break 'cleanup;
         }
 
-        Win32Thread = (PsGetCurrentThreadWin32Thread() as _);
+        Win32Thread = PsGetCurrentThreadWin32Thread() as _ ;
 
         if Win32Thread.is_null() || (*Win32Thread).TIF_flags & TIF_INCLEANUP != 0 {
             break 'cleanup;
@@ -2482,7 +2501,7 @@ unsafe extern "fastcall" fn co_IntSendMessageWithCallBack(
         (*Message).ptiCallBackSender = Win32Thread;
         (*Message).CompletionCallback = CompletionCallback;
         (*Message).CompletionCallbackContext = CompletionCallbackContext;
-        (*Message).HookMessage = ((MSQ_NORMAL as UINT as i32));
+        (*Message).HookMessage = (MSQ_NORMAL as UINT as i32) ;
         (*Message).HasPackedLParam = (lParamBufferSize > 0) as BOOL;
         (*Message).QS_Flags = QS_SENDMESSAGE;
         (*Message).flags = SMF_RECEIVERFREE;
@@ -2500,8 +2519,10 @@ unsafe extern "fastcall" fn co_IntSendMessageWithCallBack(
     UserDerefObjectCo(Window);
     Ret
 }
+}
 
-unsafe extern "fastcall" fn co_IntDoSendMessage(
+fastcall_fn! {
+unsafe fn co_IntDoSendMessage(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2576,9 +2597,11 @@ unsafe extern "fastcall" fn co_IntDoSendMessage(
 
     Result as LRESULT
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn UserSendNotifyMessage(
+unsafe fn UserSendNotifyMessage(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2622,6 +2645,7 @@ unsafe extern "fastcall" fn UserSendNotifyMessage(
     }
     Ret
 }
+}
 
 #[no_mangle]
 unsafe extern "system" fn IntGetQueueStatus(mut Changes: DWORD) -> DWORD {
@@ -2633,7 +2657,7 @@ unsafe extern "system" fn IntGetQueueStatus(mut Changes: DWORD) -> DWORD {
     Result = ((((*(*pti).pcti).fsWakeBits & ((Changes as u16))) as u16 as u32) << 16)
         | ((((*(*pti).pcti).fsChangeBits & ((Changes as u16))) as u16) as u32);
 
-    (*(*pti).pcti).fsChangeBits &= ((!Changes as u16));
+    (*(*pti).pcti).fsChangeBits &= (!Changes as u16) ;
 
     Result
 }
@@ -2837,7 +2861,7 @@ pub unsafe extern "C" fn NtUserDragDetect(hWnd: HWND, pt: POINT) -> BOOL {
                 if msg.message == WM_MOUSEMOVE {
                     let tmp_x = LOWORD(msg.lParam as DWORD) as i16 as LONG;
                     let tmp_y = HIWORD(msg.lParam as DWORD) as i16 as LONG;
-                    if RECTL_bPointInRect((&mut rect as *mut _ as _), tmp_x, tmp_y) == 0 {
+                    if RECTL_bPointInRect(&mut rect as *mut _ as _ , tmp_x, tmp_y) == 0 {
                         co_UserSetCapture(core::ptr::null_mut());
                         Ret = 1;
                         break 'exit;

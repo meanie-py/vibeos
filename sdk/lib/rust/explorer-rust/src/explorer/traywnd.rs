@@ -45,7 +45,6 @@ use explorer_sys::server::{
 use explorer_sys::types::{TaskbarSettings, TW_STRUCKRECTS2};
 // ClearRecentAndMru is now Rust (startmnucust.rs, #[no_mangle] extern "C").
 use crate::explorer::startmnucust::ClearRecentAndMru;
-use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 // POINTL is in BOTH explorer_sys::com and winsrv bindgen — disambiguate.
@@ -2201,10 +2200,10 @@ unsafe fn tw_track_ctx_menu(
     context_menu: *mut IContextMenu,
     ppt: *const POINT,
     hwnd_exclude: HWND,
-    track_up: BOOL,
+    _track_up: BOOL,
     _context: *mut c_void,
 ) -> HRESULT {
-    let mut pt: POINT;
+    let pt: POINT;
     let mut params: TPMPARAMS = core::mem::zeroed();
     let mut rc: RECT = core::mem::zeroed();
     let mut hr: HRESULT;
@@ -4173,7 +4172,7 @@ unsafe fn on_nc_calc_size(this: *mut CTrayWindow, w_param: WPARAM, l_param: LPAR
     0
 }
 
-unsafe fn on_init_menu_popup(this: *mut CTrayWindow, w_param: WPARAM) -> LRESULT {
+unsafe fn on_init_menu_popup(_this: *mut CTrayWindow, w_param: WPARAM) -> LRESULT {
     let h_menu = w_param as HMENU;
     if IsThereAnyEffectiveWindow(FALSE as BOOL) != 0 {
         EnableMenuItem(h_menu, ID_SHELL_CMD_CASCADE_WND, MF_BYCOMMAND | MF_ENABLED);
@@ -4542,7 +4541,7 @@ unsafe fn tw_init(this: *mut CTrayWindow) {
 unsafe fn tw_process(
     this: *mut CTrayWindow,
     hWnd: HWND,
-    mut uMsg: UINT,
+    uMsg: UINT,
     mut wParam: WPARAM,
     mut lParam: LPARAM,
 ) -> LRESULT {

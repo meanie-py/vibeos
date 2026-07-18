@@ -1,7 +1,5 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{GENERATE_NAME_CONTEXT, OEM_STRING, PUNICODE_STRING, RtlCompareMemory, RtlFreeOemString, RtlGenerate8dot3Name, RtlUnicodeStringToCountedOemString, RtlUnicodeStringToOemString, RtlUpcaseUnicodeString, STRING};
 use ntkrnl_sys::ddk::{FSRTL_COMPARISON_RESULT, _FSRTL_COMPARISON_RESULT_EqualTo as EqualTo, _FSRTL_COMPARISON_RESULT_GreaterThan as GreaterThan, _FSRTL_COMPARISON_RESULT_LessThan as LessThan};
 use core::ffi::c_void;
@@ -303,7 +301,7 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
 ) {
     // PAGED_CODE();
 
-    let mut Status: i32;
+    let Status: i32;
     let mut ShortName: _UNICODE_STRING = core::mem::zeroed();
     let mut BiasedShortName: _UNICODE_STRING = core::mem::zeroed();
     let mut ShortNameBuffer: [u16; BYTE_COUNT_8_DOT_3 / core::mem::size_of::<u16>()] = [0; BYTE_COUNT_8_DOT_3 / core::mem::size_of::<u16>()];
@@ -311,7 +309,7 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
 
     let mut NameContext: GENERATE_NAME_CONTEXT = core::mem::zeroed();
     let mut BiasedDirentOffset: u32;
-    let mut MaximumBaseBytes: u32;
+    let MaximumBaseBytes: u32;
     let mut BaseNameOffset: u32;
     let mut NextWchar: *mut u16;
     let mut ThisWchar: u16;
@@ -440,7 +438,7 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
         let count = (ShortName.Length as u32 - BaseNameOffset) as usize;
         core::ptr::copy_nonoverlapping(src, dst, count);
 
-        Length += (ShortName.Length as u16 - BaseNameOffset as u16);
+        Length += ShortName.Length as u16 - BaseNameOffset as u16 ;
     }
 
     // Store the final byte count.
@@ -556,11 +554,11 @@ pub unsafe extern "C" fn CdShortNameDirentOffset(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdFullCompareNames(
-    IrpContext: PIRP_CONTEXT,
+    _IrpContext: PIRP_CONTEXT,
     NameA: PUNICODE_STRING,
     NameB: PUNICODE_STRING,
 ) -> FSRTL_COMPARISON_RESULT {
-    let mut i: u32;
+    let i: u32;
     let mut MinLength: u16 = (*NameA).Length;
     let mut Result: FSRTL_COMPARISON_RESULT = LessThan;
 

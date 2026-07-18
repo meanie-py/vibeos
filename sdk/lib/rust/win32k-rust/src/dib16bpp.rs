@@ -1,6 +1,5 @@
 use win32k_sys::win32k::*;
 
-use core::ffi::c_void;
 use crate::dib_helpers::*;
 
 // EXLATEOBJ_vInitialize/Cleanup are NTAPI in C (win32ss/gdi/eng/xlateobj.c).

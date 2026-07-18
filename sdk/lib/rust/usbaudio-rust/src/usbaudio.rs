@@ -446,7 +446,7 @@ pub unsafe extern "system" fn DriverEntry(
     KsDeviceDispatch.QueryInterface = None;
     KsDeviceDescriptor.Dispatch = &raw const KsDeviceDispatch as *const KSDEVICE_DISPATCH;
 
-    let Status = KsInitializeDriver(DriverObject, RegistryPath, &mut KsDeviceDescriptor);
+    let Status = KsInitializeDriver(DriverObject, RegistryPath, &raw mut KsDeviceDescriptor);
     if !NT_SUCCESS(Status) {
         return Status;
     }

@@ -1,6 +1,6 @@
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
-use crate::conutils::stream::{CON_STREAM, CON_WRITE_FUNC};
+use crate::conutils::stream::CON_STREAM;
 use crate::conutils::outstream::{COORD, CONSOLE_SCREEN_BUFFER_INFO, CONSOLE_CURSOR_INFO};
 
 #[repr(C)]

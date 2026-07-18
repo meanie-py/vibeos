@@ -46,12 +46,28 @@ extern "system" {
 }
 
 // user32-internal FASTCALL helper (user32p.h).
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn TestWindowProcess(pWnd: PWND) -> BOOL;                     // user32p.h
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn TestWindowProcess(pWnd: PWND) -> BOOL;                     // user32p.h
 }
 
 // ntdll activation-context APIs (not in crate::internal; resolve via importlib).
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn RtlActivateActivationContextUnsafeFast(
+        Frame: *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
+        Context: PVOID,
+    ) -> PVOID;
+    fn RtlDeactivateActivationContextUnsafeFast(
+        Frame: *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
+    ) -> PVOID;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn RtlActivateActivationContextUnsafeFast(
         Frame: *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
         Context: PVOID,
@@ -198,16 +214,10 @@ unsafe fn SharedPtrToUser(Ptr: PVOID) -> PVOID {
 // DesktopPtrToUser (user_x.h, static inline).
 #[inline]
 unsafe fn DesktopPtrToUser(Ptr: PVOID) -> PVOID {
-    let pci: PCLIENTINFO = GetWin32ClientInfo();
-    let pdi: PDESKTOPINFO = (*pci).pDeskInfo;
-    if (Ptr as ULONG_PTR) >= ((*pdi).pvDesktopBase as ULONG_PTR)
-        && (Ptr as ULONG_PTR) < ((*pdi).pvDesktopLimit as ULONG_PTR)
-    {
-        (Ptr as ULONG_PTR - (*pci).ulClientDelta) as PVOID
-    } else {
-        // Slow path: round-trips to win32k.
-        NtUserxGetDesktopMapping(Ptr)
-    }
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(Ptr)
 }
 
 // ---------------------------------------------------------------------------
@@ -454,8 +464,9 @@ unsafe fn ClassNameToVersion_impl(
 }
 
 // VersionRegisterClass — FASTCALL, declared in regcontrol.h → cross-TU export.
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn VersionRegisterClass(
+pub unsafe fn VersionRegisterClass(
     mut pszClass: PCWSTR,
     lpLibFileName: LPCWSTR,
     Contex: HANDLE,
@@ -515,6 +526,7 @@ pub unsafe extern "fastcall" fn VersionRegisterClass(
     }
     RtlDeactivateActivationContextUnsafeFast(&mut Frame);
     Ret
+}
 }
 
 #[no_mangle]
@@ -772,6 +784,7 @@ unsafe extern "C" fn IntGetClsWndProc(pWnd: PWND, Class: PCLS, Ansi: i32) -> DWO
     IntGetClsWndProc_impl(pWnd, Class, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetClsWndProc_impl(pWnd: PWND, Class: PCLS, Ansi: i32) -> DWORD_PTR {
     let mut i: i32;
     let gcpd: DWORD_PTR;
@@ -841,11 +854,12 @@ unsafe extern "C" fn IntGetWndProc(pWnd: PWND, Ansi: i32) -> WNDPROC {
     IntGetWndProc_impl(pWnd, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetWndProc_impl(pWnd: PWND, Ansi: i32) -> WNDPROC {
     let mut i: i32;
     let gcpd: WNDPROC;
     let mut Ret: WNDPROC = None;
-    let Class: PCLS = DesktopPtrToUser((*pWnd).pcls as *mut c_void) as PCLS;
+    let Class: PCLS = crate::wow64::desktop_cls_to_user((*pWnd).pcls as PVOID);
 
     if Class.is_null() {
         return Ret;
@@ -1078,7 +1092,7 @@ pub unsafe extern "system" fn GetClassLongA(hWnd: HWND, nIndex: i32) -> u32 {
     }
 
     // _SEH2_TRY body — except handler (Ret = 0) is DEAD CODE under USE_DUMMY_PSEH.
-    let Class = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    let Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
         #[cfg(target_arch = "x86_64")]
         {
@@ -1112,7 +1126,7 @@ pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
         return 0;
     }
 
-    Class = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
         #[cfg(target_arch = "x86_64")]
         {
@@ -1146,7 +1160,7 @@ pub unsafe extern "system" fn GetClassLongPtrA(hWnd: HWND, nIndex: i32) -> ULONG
         return 0;
     }
 
-    let Class: PCLS = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    let Class: PCLS = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
         Ret = IntGetClassLongA(Wnd, Class, nIndex);
     }
@@ -1166,7 +1180,7 @@ pub unsafe extern "system" fn GetClassLongPtrW(hWnd: HWND, nIndex: i32) -> ULONG
         return 0;
     }
 
-    Class = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
         Ret = IntGetClassLongW(Wnd, Class, nIndex);
     }
@@ -1254,7 +1268,7 @@ pub unsafe extern "system" fn GetClassWord(hwnd: HWND, offset: i32) -> u16 {
         return 0;
     }
 
-    class = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if class.is_null() {
         return 0;
     }
@@ -1302,7 +1316,15 @@ unsafe fn IntGetWindowLong(hwnd: HWND, offset: i32, size: u32, unicode: i32) -> 
             SetLastError(ERROR_INVALID_INDEX);
             return 0;
         }
-        retvalue = *((wndPtr.add(1) as *mut u8).add(offset as usize) as *mut isize);
+        /* NOT `wndPtr.add(1)`: under WoW64 wndPtr is a normalized 32-bit COPY of
+         * the real 64-bit WND, and the extra bytes live after the ORIGINAL.
+         * wnd_extra_base() resolves both cases. */
+        let ExtraBase = crate::wow64::wnd_extra_base(wndPtr);
+        if ExtraBase.is_null() {
+            SetLastError(ERROR_INVALID_INDEX);
+            return 0;
+        }
+        retvalue = *(ExtraBase.add(offset as usize) as *mut isize);
         return retvalue;
     }
 

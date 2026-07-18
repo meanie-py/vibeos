@@ -12,6 +12,12 @@ use ntkrnl_sys::ddk::{IoAllocateDriverObjectExtension, IoAttachDeviceToDeviceSta
 use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
 use ntkrnl_sys::ddk::{PCSTR, PCCH, CCHAR, INT, INTERFACE_TYPE, KINTERRUPT_MODE, KPROCESSOR_MODE, CM_FULL_RESOURCE_DESCRIPTOR, CM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PINTERFACE, PPHYSICAL_ADDRESS, MEMORY_CACHING_TYPE, SIZE_T, _UNICODE_STRING, BUS_INTERFACE_STANDARD};
 use core::ffi::c_void;
+// The C-variadic entry points (StorPortDebugPrint / StorPortExtendedFunction /
+// StorPortNotification) live in drivers/storage/port/storport/rust_varargs_shim.c —
+// stable Rust cannot DEFINE one (c_variadic, rust-lang#44930). Each is a 3-line
+// va_start trampoline into the fixed-arity `*_v` twin below, which holds ALL the
+// logic. `VaArgs` reads the va_list the shim hands over.
+use varargs_rust::VaArgs;
 
 extern "system" {
     fn vDbgPrintExWithPrefix( Prefix: PCCH, ComponentId: ULONG, Level: ULONG, Format: PCCH, arglist: va_list, ) -> ULONG;
@@ -812,21 +818,24 @@ pub unsafe extern "system" fn StorPortConvertUlongToPhysicalAddress(
     return Address;
 }
 
+/// Fixed-arity twin of the `StorPortDebugPrint` C-variadic entry point in
+/// `drivers/storage/port/storport/rust_varargs_shim.c`. The C side exists only to do
+/// the `va_start` that stable Rust cannot (`c_variadic`, rust-lang#44930). This body
+/// never `va_arg`s — it forwards the whole list to `vDbgPrintExWithPrefix` — so the
+/// shim hands over the `va_list` BY VALUE (same arrangement as the shipping
+/// sdk/lib/rtl/dbgprint_variadic.c ↔ rtl-diag pair).
 #[no_mangle]
-pub unsafe extern "C" fn StorPortDebugPrint(
+pub unsafe extern "C" fn StorPortDebugPrint_v(
     mut DebugPrintLevel: ULONG,
     mut DebugMessage: PCHAR,
-    mut args: ...
+    ap: va_list,
 ) {
-
-    let mut ap: ::core::ffi::VaListImpl;
-    ap = args.clone();
     vDbgPrintExWithPrefix(
         b"STORMINI: \0".as_ptr() as PCCH,
         0x58 as ULONG,
         DebugPrintLevel,
         DebugMessage as PCCH,
-        core::mem::transmute(ap.as_va_list()),
+        ap,
     );
 }
 
@@ -893,11 +902,15 @@ pub unsafe extern "system" fn StorPortDeviceReady(
     return 0 as BOOLEAN;
 }
 
+/// Fixed-arity twin of the `StorPortExtendedFunction` C-variadic entry point in
+/// `drivers/storage/port/storport/rust_varargs_shim.c` (see `StorPortDebugPrint_v`).
+/// `_ap` is a pointer to the shim frame's `va_list`; this body is the C's unimplemented
+/// stub and never pulled an argument, so it stays unread.
 #[no_mangle]
-pub unsafe extern "C" fn StorPortExtendedFunction(
+pub unsafe extern "C" fn StorPortExtendedFunction_v(
     mut FunctionCode: STORPORT_FUNCTION_CODE,
     mut HwDeviceExtension: PVOID,
-    mut args: ...
+    _ap: *mut core::ffi::c_void,
 ) -> ULONG {
     if DbgPrint(
         b"(%s:%d) StorPortExtendedFunction(%d %p ...)\n\0" as *const u8 as PCSTR,
@@ -1012,9 +1025,7 @@ pub unsafe extern "system" fn StorPortGetBusData(
     }
 
     MiniportExtension = (DeviceExtension as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!(
-            (*core::ptr::null_mut::<MINIPORT_DEVICE_EXTENSION>()).HwDeviceExtension
-        ) as ULONG_PTR,
+        core::mem::offset_of!(MINIPORT_DEVICE_EXTENSION, HwDeviceExtension) as ULONG_PTR,
     ) as *mut MINIPORT_DEVICE_EXTENSION as PMINIPORT_DEVICE_EXTENSION;
 
     if DbgPrint(
@@ -1561,11 +1572,16 @@ pub unsafe extern "system" fn StorPortMoveMemory(
     );
 }
 
+/// Fixed-arity twin of the `StorPortNotification` C-variadic entry point in
+/// `drivers/storage/port/storport/rust_varargs_shim.c` (see `StorPortDebugPrint_v`).
+/// `ap_list` is a pointer to the shim frame's `va_list`; `VaArgs::arg::<T>()` mirrors
+/// nightly's `VaListImpl::arg::<T>()`, so the dispatch below is byte-for-byte the
+/// translation it was. All the logic stays here.
 #[no_mangle]
-pub unsafe extern "C" fn StorPortNotification(
+pub unsafe extern "C" fn StorPortNotification_v(
     mut NotificationType: SCSI_NOTIFICATION_TYPE,
     mut HwDeviceExtension: PVOID,
-    mut args: ...
+    ap_list: *mut core::ffi::c_void,
 ) {
     let mut MiniportExtension: PMINIPORT_DEVICE_EXTENSION = core::ptr::null_mut();
     let mut DeviceExtension: PFDO_DEVICE_EXTENSION = core::ptr::null_mut();
@@ -1574,7 +1590,6 @@ pub unsafe extern "C" fn StorPortNotification(
     let mut Result: PBOOLEAN;
     let mut Dpc: PSTOR_DPC;
     let mut HwDpcRoutine: PHW_DPC_ROUTINE;
-    let mut ap: core::ffi::VaListImpl;
 
     let mut SpinLock: STOR_SPINLOCK;
     let mut LockContext: PVOID;
@@ -1591,7 +1606,7 @@ pub unsafe extern "C" fn StorPortNotification(
             (*(*MiniportExtension).Miniport).DeviceExtension as PFDO_DEVICE_EXTENSION;
     }
 
-    ap = args.clone();
+    let mut ap = VaArgs::from_ptr(ap_list);
 
     match NotificationType as u32 {
         0 => {
@@ -1916,9 +1931,7 @@ pub unsafe extern "system" fn StorPortSetBusDataByOffset(
     }
 
     MiniportExtension = (DeviceExtension as usize).wrapping_sub(
-        core::ptr::addr_of_mut!(
-            (*core::ptr::null_mut::<MINIPORT_DEVICE_EXTENSION>()).HwDeviceExtension
-        ) as usize,
+        core::mem::offset_of!(MINIPORT_DEVICE_EXTENSION, HwDeviceExtension),
     ) as *mut MINIPORT_DEVICE_EXTENSION;
 
     if DbgPrint(

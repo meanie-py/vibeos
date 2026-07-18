@@ -177,14 +177,14 @@ pub unsafe extern "system" fn SepRegQueryHelper(
 
 #[no_mangle]
 pub unsafe extern "system" fn SeRmInitPhase0() -> BOOLEAN {
-    KeInitializeGuardedMutex(&mut SepRmDbLock);
+    KeInitializeGuardedMutex(&raw mut SepRmDbLock);
 
-    let mut Status = SepRmCreateLogonSession(&mut SeSystemAuthenticationId);
+    let mut Status = SepRmCreateLogonSession(&raw mut SeSystemAuthenticationId);
     if Status < 0 {
         return 0u8;
     }
 
-    Status = SepRmCreateLogonSession(&mut SeAnonymousAuthenticationId);
+    Status = SepRmCreateLogonSession(&raw mut SeAnonymousAuthenticationId);
     if Status < 0 {
         return 0u8;
     }
@@ -207,7 +207,7 @@ pub unsafe extern "system" fn SeRmInitPhase1() -> BOOLEAN {
         core::ptr::null_mut(),
     );
     let mut Status = ZwCreatePort(
-        &mut SeRmCommandPort,
+        &raw mut SeRmCommandPort,
         &mut ObjectAttributes,
         core::mem::size_of::<ULONG>() as ULONG,
         256, // PORT_MAXIMUM_MESSAGE_LENGTH
@@ -226,7 +226,7 @@ pub unsafe extern "system" fn SeRmInitPhase1() -> BOOLEAN {
         core::ptr::null_mut(),
     );
     Status = ZwCreateEvent(
-        &mut SeLsaInitEvent,
+        &raw mut SeLsaInitEvent,
         GENERIC_WRITE,
         &mut ObjectAttributes,
         0, // NotificationEvent (EVENT_TYPE: Notification=0, Synchronization=1)
@@ -304,7 +304,7 @@ pub unsafe extern "system" fn SepRmInsertLogonSessionIntoToken(Token: PTOKEN) ->
     let Token = opaque_ptr(Token);
     debug_assert!(!Token.is_null());
 
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     let mut LogonSession = SepLogonSessions;
     while !LogonSession.is_null() {
@@ -319,7 +319,7 @@ pub unsafe extern "system" fn SepRmInsertLogonSessionIntoToken(Token: PTOKEN) ->
     }
 
     if LogonSession.is_null() {
-        KeReleaseGuardedMutex(&mut SepRmDbLock);
+        KeReleaseGuardedMutex(&raw mut SepRmDbLock);
         return STATUS_NO_SUCH_LOGON_SESSION;
     }
 
@@ -329,7 +329,7 @@ pub unsafe extern "system" fn SepRmInsertLogonSessionIntoToken(Token: PTOKEN) ->
         TAG_LOGON_SESSION,
     ) as PSEP_LOGON_SESSION_REFERENCES;
     if (*Token).LogonSession.is_null() {
-        KeReleaseGuardedMutex(&mut SepRmDbLock);
+        KeReleaseGuardedMutex(&raw mut SepRmDbLock);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -343,7 +343,7 @@ pub unsafe extern "system" fn SepRmInsertLogonSessionIntoToken(Token: PTOKEN) ->
         core::ptr::addr_of_mut!((*(*Token).LogonSession).TokenList) as PLIST_ENTRY,
     );
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
     STATUS_SUCCESS
 }
 
@@ -352,7 +352,7 @@ pub unsafe extern "system" fn SepRmRemoveLogonSessionFromToken(Token: PTOKEN) ->
     let Token = opaque_ptr(Token);
     debug_assert!(!Token.is_null());
 
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     let mut LogonSession = SepLogonSessions;
     while !LogonSession.is_null() {
@@ -367,14 +367,14 @@ pub unsafe extern "system" fn SepRmRemoveLogonSessionFromToken(Token: PTOKEN) ->
     }
 
     if LogonSession.is_null() {
-        KeReleaseGuardedMutex(&mut SepRmDbLock);
+        KeReleaseGuardedMutex(&raw mut SepRmDbLock);
         return STATUS_NO_SUCH_LOGON_SESSION;
     }
 
     RemoveEntryList(core::ptr::addr_of_mut!((*(*Token).LogonSession).TokenList) as PLIST_ENTRY);
     ExFreePoolWithTag((*Token).LogonSession as PVOID, TAG_LOGON_SESSION);
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
     STATUS_SUCCESS
 }
 
@@ -394,12 +394,12 @@ unsafe fn SepRmCreateLogonSession(LogonLuid: PLUID) -> NTSTATUS {
     (*NewSession).pDeviceMap = core::ptr::null_mut();
     InitializeListHead(core::ptr::addr_of_mut!((*NewSession).TokenList) as PLIST_ENTRY);
 
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     let mut CurrentSession = SepLogonSessions;
     while !CurrentSession.is_null() {
         if RtlEqualLuid(core::ptr::addr_of_mut!((*CurrentSession).LogonId), LogonLuid) != 0 {
-            KeReleaseGuardedMutex(&mut SepRmDbLock);
+            KeReleaseGuardedMutex(&raw mut SepRmDbLock);
             ExFreePoolWithTag(NewSession as PVOID, TAG_LOGON_SESSION);
             return STATUS_LOGON_SESSION_EXISTS;
         }
@@ -409,27 +409,27 @@ unsafe fn SepRmCreateLogonSession(LogonLuid: PLUID) -> NTSTATUS {
     (*NewSession).Next = SepLogonSessions;
     SepLogonSessions = NewSession;
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
 
     STATUS_SUCCESS
 }
 
 unsafe fn SepRmDeleteLogonSession(LogonLuid: PLUID) -> NTSTATUS {
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     let mut SessionToDelete = SepLogonSessions;
     while !SessionToDelete.is_null() {
         if RtlEqualLuid(core::ptr::addr_of_mut!((*SessionToDelete).LogonId), LogonLuid) != 0 {
             if RtlEqualLuid(
                 core::ptr::addr_of_mut!((*SessionToDelete).LogonId),
-                &mut SeSystemAuthenticationId,
+                &raw mut SeSystemAuthenticationId,
             ) != 0
                 || RtlEqualLuid(
                     core::ptr::addr_of_mut!((*SessionToDelete).LogonId),
-                    &mut SeAnonymousAuthenticationId,
+                    &raw mut SeAnonymousAuthenticationId,
                 ) != 0
             {
-                KeReleaseGuardedMutex(&mut SepRmDbLock);
+                KeReleaseGuardedMutex(&raw mut SepRmDbLock);
                 return STATUS_BAD_LOGON_SESSION_STATE;
             } else {
                 break;
@@ -439,19 +439,19 @@ unsafe fn SepRmDeleteLogonSession(LogonLuid: PLUID) -> NTSTATUS {
     }
 
     if SessionToDelete.is_null() {
-        KeReleaseGuardedMutex(&mut SepRmDbLock);
+        KeReleaseGuardedMutex(&raw mut SepRmDbLock);
         return STATUS_NO_SUCH_LOGON_SESSION;
     }
 
     if (*SessionToDelete).ReferenceCount != 0 {
-        KeReleaseGuardedMutex(&mut SepRmDbLock);
+        KeReleaseGuardedMutex(&raw mut SepRmDbLock);
         return STATUS_BAD_LOGON_SESSION_STATE;
     }
 
     if !(*SessionToDelete).pDeviceMap.is_null() {
         let Status = SepCleanupLUIDDeviceMapDirectory(LogonLuid);
         if Status < 0 {
-            KeReleaseGuardedMutex(&mut SepRmDbLock);
+            KeReleaseGuardedMutex(&raw mut SepRmDbLock);
             return Status;
         }
 
@@ -461,27 +461,27 @@ unsafe fn SepRmDeleteLogonSession(LogonLuid: PLUID) -> NTSTATUS {
     let Status = STATUS_SUCCESS;
     ExFreePoolWithTag(SessionToDelete as PVOID, TAG_LOGON_SESSION);
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
     Status
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn SepRmReferenceLogonSession(LogonLuid: PLUID) -> NTSTATUS {
     let LogonLuid = opaque_ptr(LogonLuid);
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     let mut CurrentSession = SepLogonSessions;
     while !CurrentSession.is_null() {
         if RtlEqualLuid(core::ptr::addr_of_mut!((*CurrentSession).LogonId), LogonLuid) != 0 {
             (*CurrentSession).ReferenceCount += 1;
 
-            KeReleaseGuardedMutex(&mut SepRmDbLock);
+            KeReleaseGuardedMutex(&raw mut SepRmDbLock);
             return STATUS_SUCCESS;
         }
         CurrentSession = (*CurrentSession).Next;
     }
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
 
     STATUS_NO_SUCH_LOGON_SESSION
 }
@@ -651,7 +651,7 @@ unsafe fn SepCleanupLUIDDeviceMapDirectory(LogonLuid: PLUID) -> NTSTATUS {
 #[no_mangle]
 pub unsafe extern "C" fn SepRmDereferenceLogonSession(LogonLuid: PLUID) -> NTSTATUS {
     let LogonLuid = opaque_ptr(LogonLuid);
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     let mut CurrentSession = SepLogonSessions;
     while !CurrentSession.is_null() {
@@ -659,7 +659,7 @@ pub unsafe extern "C" fn SepRmDereferenceLogonSession(LogonLuid: PLUID) -> NTSTA
             (*CurrentSession).ReferenceCount -= 1;
             let RefCount = (*CurrentSession).ReferenceCount;
 
-            KeReleaseGuardedMutex(&mut SepRmDbLock);
+            KeReleaseGuardedMutex(&raw mut SepRmDbLock);
 
             if RefCount == 0 {
                 let DeviceMap = (*CurrentSession).pDeviceMap;
@@ -675,7 +675,7 @@ pub unsafe extern "C" fn SepRmDereferenceLogonSession(LogonLuid: PLUID) -> NTSTA
         CurrentSession = (*CurrentSession).Next;
     }
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
 
     STATUS_NO_SUCH_LOGON_SESSION
 }
@@ -708,7 +708,7 @@ unsafe fn SepRmCommandServerThreadInit() -> BOOLEAN {
             RemotePortView.Length = core::mem::size_of::<REMOTE_PORT_VIEW>() as ULONG;
 
             Status = ZwAcceptConnectPort(
-                &mut SepRmCommandMessagePort,
+                &raw mut SepRmCommandMessagePort,
                 core::ptr::null_mut(),
                 &mut Message.Header,
                 1u8,
@@ -864,7 +864,7 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
         return STATUS_INVALID_PARAMETER;
     }
 
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     let mut CurrentSession = SepLogonSessions;
     while !CurrentSession.is_null() {
@@ -875,13 +875,13 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
     }
 
     if CurrentSession.is_null() {
-        KeReleaseGuardedMutex(&mut SepRmDbLock);
+        KeReleaseGuardedMutex(&raw mut SepRmDbLock);
         return STATUS_NO_SUCH_LOGON_SESSION;
     }
 
     if !(*CurrentSession).pDeviceMap.is_null() {
         *DeviceMap = (*CurrentSession).pDeviceMap;
-        KeReleaseGuardedMutex(&mut SepRmDbLock);
+        KeReleaseGuardedMutex(&raw mut SepRmDbLock);
         return STATUS_SUCCESS;
     }
 
@@ -889,7 +889,7 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
 
     (*CurrentSession).ReferenceCount += 1;
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
 
     let mut Buffer: [u16; 63] = [0; 63];
     let mut DirectoryName: _UNICODE_STRING = core::mem::zeroed();
@@ -933,7 +933,7 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
         ZwClose(DirectoryHandle);
     }
 
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     if Status >= 0 {
         if !(*CurrentSession).pDeviceMap.is_null() {
@@ -947,7 +947,7 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
         *DeviceMap = core::ptr::null_mut();
     }
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
 
     SepRmDereferenceLogonSession(core::ptr::addr_of_mut!((*CurrentSession).LogonId));
 
@@ -957,7 +957,7 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
 #[no_mangle]
 pub unsafe extern "system" fn SeMarkLogonSessionForTerminationNotification(LogonId: PLUID) -> NTSTATUS {
     let LogonId = opaque_ptr(LogonId);
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     let mut SessionToMark = SepLogonSessions;
     while !SessionToMark.is_null() {
@@ -968,13 +968,13 @@ pub unsafe extern "system" fn SeMarkLogonSessionForTerminationNotification(Logon
     }
 
     if SessionToMark.is_null() {
-        KeReleaseGuardedMutex(&mut SepRmDbLock);
+        KeReleaseGuardedMutex(&raw mut SepRmDbLock);
         return STATUS_NOT_FOUND;
     }
 
     (*SessionToMark).Flags |= 0x1; // SEP_LOGON_SESSION_TERMINATION_NOTIFY
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
     STATUS_SUCCESS
 }
 
@@ -995,18 +995,19 @@ pub unsafe extern "system" fn SeRegisterLogonSessionTerminatedRoutine(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     (*Notification).CallbackRoutine = CallbackRoutine;
 
     (*Notification).Next = SepLogonNotifications;
     SepLogonNotifications = Notification;
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
 
     STATUS_SUCCESS
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn SeUnregisterLogonSessionTerminatedRoutine(
     CallbackRoutine: PSE_LOGON_SESSION_TERMINATED_ROUTINE,
@@ -1015,7 +1016,7 @@ pub unsafe extern "system" fn SeUnregisterLogonSessionTerminatedRoutine(
         return STATUS_INVALID_PARAMETER;
     }
 
-    KeAcquireGuardedMutex(&mut SepRmDbLock);
+    KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
     let mut Current = SepLogonNotifications;
     let mut Previous: PSEP_LOGON_SESSION_TERMINATED_NOTIFICATION = core::ptr::null_mut();
@@ -1041,7 +1042,7 @@ pub unsafe extern "system" fn SeUnregisterLogonSessionTerminatedRoutine(
         STATUS_SUCCESS
     };
 
-    KeReleaseGuardedMutex(&mut SepRmDbLock);
+    KeReleaseGuardedMutex(&raw mut SepRmDbLock);
 
     Status
 }

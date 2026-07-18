@@ -1,6 +1,6 @@
 #![allow(non_snake_case, non_upper_case_globals, unused_unsafe)]
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{KeStackAttachProcess, KeUnstackDetachProcess, PsGetCurrentProcessWin32Process, PsGetCurrentThreadWin32Thread, PsGetProcessId, PsGetProcessWin32Process, PsIsSystemProcess, RtlInitUnicodeString, RtlNtStatusToDosError, ExAllocatePoolWithTag, ExFreePoolWithTag};
+use ntkrnl_sys::ddk::{KeStackAttachProcess, KeUnstackDetachProcess, PsGetCurrentProcessWin32Process, PsGetCurrentThreadWin32Thread, PsGetProcessWin32Process, PsIsSystemProcess, RtlInitUnicodeString, RtlNtStatusToDosError, ExAllocatePoolWithTag, ExFreePoolWithTag};
 // NtCurrentTeb: FORCEINLINE per-arch TIB read (no kernel symbol) — use the intrinsic.
 use ntkrnl_sys::inline::ke::NtCurrentTeb;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES};
@@ -1899,6 +1899,7 @@ pub unsafe extern "C" fn IntUnhookWindowsHook(HookId: INT, pfnFilterProc: HOOKPR
     IntUnhookWindowsHook_impl(HookId, pfnFilterProc)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntUnhookWindowsHook_impl(HookId: INT, pfnFilterProc: HOOKPROC) -> BOOL {
     let mut Hook: PHOOK;
     let pLastHead: PLIST_ENTRY;

@@ -103,7 +103,7 @@ pub unsafe extern "system" fn IntGdiExtCreatePen(
     dwWidth = (dwWidth as i32).unsigned_abs() as DWORD;
 
     if (dwPenStyle & PS_STYLE_MASK) == PS_NULL {
-        return (*StockObjects.as_ptr().add(NULL_PEN as usize)) as HPEN;
+        return (*(*(&raw const StockObjects)).as_ptr().add(NULL_PEN as usize)) as HPEN;
     }
 
     let pbrushPen: PBRUSH = if bOldStylePen != 0 {
@@ -167,28 +167,28 @@ pub unsafe extern "system" fn IntGdiExtCreatePen(
             }
             x if x == PS_ALTERNATE => {
                 (*bb).flAttrs |= BR_IS_SOLID | BR_IS_DEFAULTSTYLE;
-                (*bb).pStyle = aulStyleAlternate.as_mut_ptr();
-                (*bb).dwStyleCount = aulStyleAlternate.len() as DWORD;
+                (*bb).pStyle = (*(&raw mut aulStyleAlternate)).as_mut_ptr();
+                (*bb).dwStyleCount = (*(&raw const aulStyleAlternate)).len() as DWORD;
             }
             x if x == PS_DOT => {
                 (*bb).flAttrs |= BR_IS_SOLID | BR_IS_DEFAULTSTYLE;
-                (*bb).pStyle = aulStyleDot.as_mut_ptr();
-                (*bb).dwStyleCount = aulStyleDot.len() as DWORD;
+                (*bb).pStyle = (*(&raw mut aulStyleDot)).as_mut_ptr();
+                (*bb).dwStyleCount = (*(&raw const aulStyleDot)).len() as DWORD;
             }
             x if x == PS_DASH => {
                 (*bb).flAttrs |= BR_IS_SOLID | BR_IS_DEFAULTSTYLE;
-                (*bb).pStyle = aulStyleDash.as_mut_ptr();
-                (*bb).dwStyleCount = aulStyleDash.len() as DWORD;
+                (*bb).pStyle = (*(&raw mut aulStyleDash)).as_mut_ptr();
+                (*bb).dwStyleCount = (*(&raw const aulStyleDash)).len() as DWORD;
             }
             x if x == PS_DASHDOT => {
                 (*bb).flAttrs |= BR_IS_SOLID | BR_IS_DEFAULTSTYLE;
-                (*bb).pStyle = aulStyleDashDot.as_mut_ptr();
-                (*bb).dwStyleCount = aulStyleDashDot.len() as DWORD;
+                (*bb).pStyle = (*(&raw mut aulStyleDashDot)).as_mut_ptr();
+                (*bb).dwStyleCount = (*(&raw const aulStyleDashDot)).len() as DWORD;
             }
             x if x == PS_DASHDOTDOT => {
                 (*bb).flAttrs |= BR_IS_SOLID | BR_IS_DEFAULTSTYLE;
-                (*bb).pStyle = aulStyleDashDotDot.as_mut_ptr();
-                (*bb).dwStyleCount = aulStyleDashDotDot.len() as DWORD;
+                (*bb).pStyle = (*(&raw mut aulStyleDashDotDot)).as_mut_ptr();
+                (*bb).dwStyleCount = (*(&raw const aulStyleDashDotDot)).len() as DWORD;
             }
             x if x == PS_INSIDEFRAME => {
                 (*bb).flAttrs |= BR_IS_SOLID | BR_IS_INSIDEFRAME;
@@ -418,7 +418,7 @@ pub unsafe extern "stdcall" fn NtGdiExtCreatePen(
     }
 
     if ((dwPenStyle & PS_STYLE_MASK) == PS_NULL) || (ulBrushStyle == BS_NULL) {
-        return (*StockObjects.as_ptr().add(NULL_PEN as usize)) as HPEN;
+        return (*(*(&raw const StockObjects)).as_ptr().add(NULL_PEN as usize)) as HPEN;
     }
 
     if (ulBrushStyle == BS_PATTERN)
@@ -535,7 +535,7 @@ pub unsafe extern "C" fn NtGdiExtCreatePen(
     }
 
     if ((dwPenStyle & PS_STYLE_MASK) == PS_NULL) || (ulBrushStyle == BS_NULL) {
-        return (*StockObjects.as_ptr().add(NULL_PEN as usize)) as HPEN;
+        return (*(*(&raw const StockObjects)).as_ptr().add(NULL_PEN as usize)) as HPEN;
     }
 
     if (ulBrushStyle == BS_PATTERN)

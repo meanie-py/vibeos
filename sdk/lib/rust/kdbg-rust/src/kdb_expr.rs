@@ -428,6 +428,7 @@ type PKDB_KTRAP_FRAME = *mut KDB_KTRAP_FRAME;
 
 const TAG_KDBG: u32 = u32::from_le_bytes(*b"KDBG");
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn RpnpParseExpression(
     Stack: PRPN_STACK,
     Expression: *mut u8,
@@ -821,6 +822,7 @@ unsafe fn RpnpParseExpression(
     1u8
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn RpnpEvaluateStack(
     Stack: PRPN_STACK,
     TrapFrame: PKDB_KTRAP_FRAME,

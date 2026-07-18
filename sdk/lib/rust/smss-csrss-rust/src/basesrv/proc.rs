@@ -18,7 +18,7 @@ unsafe fn CsrGetClientThread() -> PCSR_THREAD {
 // layout-exact definition in basesrv/vdm_types.rs, shared with vdm.rs. (This
 // file previously carried a TRUNCATED mirror with ProcessId at offset 0 vs the
 // real offset 24 — latent until vdm.c flipped to Rust.)
-use super::vdm_types::{PVDM_CONSOLE_RECORD, VDM_CONSOLE_RECORD};
+use super::vdm_types::PVDM_CONSOLE_RECORD;
 
 // VDM console-record helpers live in basesrv/vdm.rs (now translated).
 // C signatures have no NTAPI/__stdcall — default cdecl → `extern "C"`.
@@ -234,7 +234,7 @@ pub unsafe extern "system" fn BaseSrvCreateProcess(
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvCreateThread(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut CSR_REPLY_CODE,
+    _ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
     let CreateThreadRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE))
         .Data
@@ -314,7 +314,7 @@ pub unsafe extern "system" fn BaseSrvExitProcess(
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvGetProcessShutdownParam(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut CSR_REPLY_CODE,
+    _ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
     let ShutdownParametersRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE))
         .Data
@@ -332,7 +332,7 @@ pub unsafe extern "system" fn BaseSrvGetProcessShutdownParam(
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvSetProcessShutdownParam(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut CSR_REPLY_CODE,
+    _ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
     let ShutdownParametersRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE))
         .Data

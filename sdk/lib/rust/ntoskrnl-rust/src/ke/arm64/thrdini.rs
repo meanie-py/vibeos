@@ -180,6 +180,19 @@ pub unsafe extern "system" fn KiSwapContextResume(
     (*Pcr).Prcb.KeContextSwitches += 1;
     (*NewThread).__bindgen_anon_5.__bindgen_anon_5.ContextSwitches += 1;
 
+    // M5c SMP visibility: one-shot "[SMP] CPUn scheduling live" markers when
+    // an AP switches onto a real (non-idle) thread — count-only tap (NEVER
+    // DbgPrint mid-swap: SwapBusy is still set); the print is flushed from
+    // the idle loop. Shared machinery: ke/ipi.rs.
+    #[cfg(feature = "smp")]
+    {
+        if (*Pcr).Prcb.Number != 0
+            && NewThread as usize != (*Pcr).Prcb.IdleThread as usize
+        {
+            crate::ke::ipi::KiSmpNoteApSwitch((*Pcr).Prcb.Number as u32);
+        }
+    }
+
     // cswitchdep tap 2 (post-swap, on the NEW thread's stack) — arm64 parity
     // with amd64/thrdini.rs; runs BEFORE the ATTEMPTED_SWITCH_FROM_DPC
     // BugCheck below so the record reaches the table + serial either way.
@@ -242,6 +255,12 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
         core::hint::spin_loop();
         core::arch::asm!("msr daifset, #2");
 
+        // M5c SMP visibility: flush any earned "[SMP] CPUn scheduling live"
+        // marker — idle-thread context, safe to DbgPrint (the count tap in
+        // KiSwapContextResume must not). Two relaxed loads when idle.
+        #[cfg(feature = "smp")]
+        crate::ke::ipi::KiSmpApMarkerFlush((*Prcb).Number as u32);
+
         if (*Prcb).DpcData[0].DpcQueueDepth != 0
             || (*Prcb).TimerRequest != 0
             || !(*Prcb).DeferredReadyListHead.Next.is_null()
@@ -251,25 +270,96 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
         }
 
         if !(*Prcb).NextThread.is_null() {
-            core::arch::asm!("msr daifclr, #2");
+            // UP keeps the historical shape: unmask, then a lock-free consume
+            // (single CPU — nothing can race it).
+            #[cfg(not(feature = "smp"))]
+            {
+                core::arch::asm!("msr daifclr, #2");
 
-            let OldThread = (*Prcb).CurrentThread;
-            let NewThread = (*Prcb).NextThread;
+                let OldThread = (*Prcb).CurrentThread;
+                let NewThread = (*Prcb).NextThread;
 
-            (*Prcb).NextThread = core::ptr::null_mut();
-            (*Prcb).CurrentThread = NewThread;
+                (*Prcb).NextThread = core::ptr::null_mut();
+                (*Prcb).CurrentThread = NewThread;
 
-            (*NewThread).__bindgen_anon_5.__bindgen_anon_6.State = Running as UCHAR;
+                (*NewThread).__bindgen_anon_5.__bindgen_anon_6.State = Running as UCHAR;
 
-            KiSwapContext(APC_LEVEL, OldThread);
+                KiSwapContext(APC_LEVEL, OldThread);
+            }
+
+            // SMP (§9.56, mirrors amd64/stubs.rs KiIdleLoop): consume
+            // NextThread UNDER THE PRCB LOCK with IRQs still masked. The
+            // lock-free consume races KiDeferredReadyThread's standby
+            // DISPLACEMENT (which runs under this lock and re-defers a
+            // NextThread it reads) — idle would promote T to Running while
+            // the displacement sets T DeferredReady → double-link tear.
+            // Re-check under the lock, promote + in-flight unmark, release,
+            // THEN unmask. (arm64 SMP SYNCH_LEVEL == DISPATCH_LEVEL and the
+            // idle loop is pinned at DISPATCH, so no SYNCH raise around the
+            // swap — amd64 raises to 12 here.)
+            #[cfg(feature = "smp")]
+            {
+                ntkrnl_sys::inline::ke::KiAcquirePrcbLock(Prcb);
+                if (*Prcb).NextThread.is_null() {
+                    ntkrnl_sys::inline::ke::KiReleasePrcbLock(Prcb);
+                    continue;
+                }
+
+                let OldThread = (*Prcb).CurrentThread;
+                let NewThread = (*Prcb).NextThread;
+
+                (*Prcb).NextThread = core::ptr::null_mut();
+                (*Prcb).CurrentThread = NewThread;
+
+                (*NewThread).__bindgen_anon_5.__bindgen_anon_6.State = Running as UCHAR;
+
+                // §9.56 in-flight oracle: promotion-to-Running unmark.
+                // Without this every idle-loop promote leaks a stale mark
+                // and the thread's next wake false-positives a [RQDEFER2]
+                // DOUBLE-DEFER (seen spamming the -smp 2 settle log).
+                ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread);
+
+                ntkrnl_sys::inline::ke::KiReleasePrcbLock(Prcb);
+
+                core::arch::asm!("msr daifclr, #2");
+
+                KiSwapContext(APC_LEVEL, OldThread);
+            }
         } else if (*Prcb).ReadySummary != 0 {
-            core::arch::asm!("msr daifclr, #2");
+            #[cfg(not(feature = "smp"))]
+            {
+                core::arch::asm!("msr daifclr, #2");
 
-            let OldThread = (*Prcb).CurrentThread;
-            let NewThread = KiSelectReadyThread(0, Prcb);
-            if !NewThread.is_null() {
+                let OldThread = (*Prcb).CurrentThread;
+                let NewThread = KiSelectReadyThread(0, Prcb);
+                if !NewThread.is_null() {
+                    (*Prcb).CurrentThread = NewThread;
+                    (*NewThread).__bindgen_anon_5.__bindgen_anon_6.State = Running as UCHAR;
+                    KiSwapContext(APC_LEVEL, OldThread);
+                }
+            }
+
+            // SMP: the per-PRCB ready lists are PRCB-lock serialized
+            // (KiSwapThread selects under the lock) — select + promote under
+            // it here too, IRQs masked until release.
+            #[cfg(feature = "smp")]
+            {
+                ntkrnl_sys::inline::ke::KiAcquirePrcbLock(Prcb);
+
+                let OldThread = (*Prcb).CurrentThread;
+                let NewThread = KiSelectReadyThread(0, Prcb);
+                if NewThread.is_null() {
+                    ntkrnl_sys::inline::ke::KiReleasePrcbLock(Prcb);
+                    continue;
+                }
+
                 (*Prcb).CurrentThread = NewThread;
                 (*NewThread).__bindgen_anon_5.__bindgen_anon_6.State = Running as UCHAR;
+                ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread);
+                ntkrnl_sys::inline::ke::KiReleasePrcbLock(Prcb);
+
+                core::arch::asm!("msr daifclr, #2");
+
                 KiSwapContext(APC_LEVEL, OldThread);
             }
         } else {

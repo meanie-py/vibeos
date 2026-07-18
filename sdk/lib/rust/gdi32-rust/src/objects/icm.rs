@@ -23,6 +23,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys's FALSE/TRUE are bindgen u32 (#define), but BOOL is i32 — shadow with
 // BOOL-typed locals so `return FALSE`/`= TRUE` type-check against the i32 BOOL returns.
@@ -59,8 +60,9 @@ extern "C" {
     fn GdiGetHandleUserData(hGdiObj: HGDIOBJ, ObjectType: DWORD, UserData: *mut PVOID) -> BOOL;
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IntCreateColorSpaceW(
+pub unsafe fn IntCreateColorSpaceW(
     lplcpw: LPLOGCOLORSPACEW,
     _Ascii: BOOL,
 ) -> HCOLORSPACE {
@@ -81,6 +83,7 @@ pub unsafe extern "fastcall" fn IntCreateColorSpaceW(
     );
 
     NtGdiCreateColorSpace(&mut lcpeexw) as HCOLORSPACE
+}
 }
 
 /*
@@ -143,7 +146,7 @@ pub unsafe extern "system" fn GetColorSpace(hDC: HDC) -> HCOLORSPACE {
         SetLastError(ERROR_INVALID_HANDLE);
         return core::ptr::null_mut();
     }
-    (*pDc_Attr).hColorSpace
+    (*dcattr_f!(pDc_Attr, hColorSpace))
 }
 
 /*

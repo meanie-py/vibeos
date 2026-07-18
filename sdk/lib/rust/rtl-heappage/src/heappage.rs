@@ -1,5 +1,3 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
@@ -7,8 +5,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::interlocked::InterlockedIncrement;
 use ntkrnl_sys::ddk::{
     CLONG, EXCEPTION_RECORD, HEAP_LOCK, LARGE_INTEGER, LIST_ENTRY,
-    MEMORY_BASIC_INFORMATION, PHEAP_LOCK, PRTL_AVL_TABLE,
-    PRTL_BALANCED_LINKS, PRTL_HEAP_PARAMETERS, PTEB, RtlCreateHeap,
+    MEMORY_BASIC_INFORMATION, PHEAP_LOCK, PRTL_AVL_TABLE, PRTL_HEAP_PARAMETERS, PTEB, RtlCreateHeap,
     RtlDeleteElementGenericTableAvl, RtlDestroyHeap,
     RtlEnumerateGenericTableAvl, RtlFreeHeap,
     RtlInitUnicodeString, RtlInitializeGenericTableAvl,
@@ -21,7 +18,6 @@ use ntkrnl_sys::ddk::{
     ZwProtectVirtualMemory, ZwQueryPerformanceCounter,
     ZwQueryVirtualMemory,
 };
-use core::ffi::c_void;
 
 // ---- missing type aliases ----
 pub type RTL_GENERIC_COMPARE_RESULTS = _RTL_GENERIC_COMPARE_RESULTS;
@@ -787,7 +783,7 @@ pub unsafe extern "system" fn RtlpDphCoalesceFreeIntoAvailable(
 #[no_mangle]
 pub unsafe extern "system" fn RtlpDphAddNewPool(
     DphRoot: PDPH_HEAP_ROOT,
-    NodeBlock: PDPH_HEAP_BLOCK,
+    _NodeBlock: PDPH_HEAP_BLOCK,
     Virtual: *mut core::ffi::c_void,
     Size: SIZE_T,
     PlaceOnPool: BOOLEAN,
@@ -940,7 +936,7 @@ pub unsafe extern "system" fn RtlpDphSetProtectionBeforeUse(
 #[no_mangle]
 pub unsafe extern "system" fn RtlpDphSetProtectionAfterUse(
     DphRoot: PDPH_HEAP_ROOT,
-    Node: PDPH_HEAP_BLOCK,
+    _Node: PDPH_HEAP_BLOCK,
 ) -> NTSTATUS {
     if (*DphRoot).ExtraFlags & DPH_EXTRA_CHECK_UNDERRUN != 0 {
     } else {
@@ -1092,7 +1088,7 @@ pub unsafe extern "system" fn RtlpDphGrowVirtual(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpDphCompareNodeForTable(
-    Table: PRTL_AVL_TABLE,
+    _Table: PRTL_AVL_TABLE,
     FirstStruct: *mut core::ffi::c_void,
     SecondStruct: *mut core::ffi::c_void,
 ) -> RTL_GENERIC_COMPARE_RESULTS {
@@ -1125,7 +1121,7 @@ pub unsafe extern "system" fn RtlpDphAllocateNodeForTable(
     core::ptr::addr_of_mut!((*pBlock).__bindgen_anon_1.TableLinks) as PVOID
 }
 #[no_mangle]
-pub unsafe extern "system" fn RtlpDphFreeNodeForTable(Table: PRTL_AVL_TABLE, Buffer: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn RtlpDphFreeNodeForTable(_Table: PRTL_AVL_TABLE, _Buffer: *mut core::ffi::c_void) {
     /* Nothing */
 }
 
@@ -1203,16 +1199,16 @@ pub unsafe extern "system" fn RtlpDphTargetDllsLogicInitialize() -> NTSTATUS {
     STATUS_SUCCESS
 }
 #[no_mangle]
-pub unsafe extern "system" fn RtlpDphInternalValidatePageHeap(DphRoot: PDPH_HEAP_ROOT, Address: PVOID, Value: ULONG) {
+pub unsafe extern "system" fn RtlpDphInternalValidatePageHeap(_DphRoot: PDPH_HEAP_ROOT, _Address: PVOID, _Value: ULONG) {
 }
 #[no_mangle]
-pub unsafe extern "system" fn RtlpDphVerifyIntegrity(DphRoot: PDPH_HEAP_ROOT) {
+pub unsafe extern "system" fn RtlpDphVerifyIntegrity(_DphRoot: PDPH_HEAP_ROOT) {
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpDphReportCorruptedBlock(
     DphRoot: PDPH_HEAP_ROOT,
-    Reserved: ULONG,
+    _Reserved: ULONG,
     Block: PVOID,
     ValidationInfo: ULONG,
 ) {
@@ -1422,9 +1418,9 @@ pub unsafe extern "system" fn RtlpDphIsPageHeapBlock(
 }
 #[no_mangle]
 pub unsafe extern "system" fn RtlpDphIsNormalFreeHeapBlock(
-    Block: PVOID,
+    _Block: PVOID,
     ValidationInformation: PULONG,
-    CheckFillers: BOOLEAN,
+    _CheckFillers: BOOLEAN,
 ) -> BOOLEAN {
     core::ptr::write_volatile(ValidationInformation, 0);
     1u8
@@ -1458,8 +1454,8 @@ pub unsafe extern "system" fn RtlpDphProcessStartupInitialization() -> NTSTATUS 
 }
 #[no_mangle]
 pub unsafe extern "system" fn RtlpDphShouldAllocateInPageHeap(
-    DphRoot: PDPH_HEAP_ROOT,
-    Size: SIZE_T,
+    _DphRoot: PDPH_HEAP_ROOT,
+    _Size: SIZE_T,
 ) -> BOOLEAN {
     1u8
 }

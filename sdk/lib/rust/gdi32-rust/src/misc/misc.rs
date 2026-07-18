@@ -15,6 +15,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // ── Local constants not present in the win32k_sys bindgen surface ──────────────
 // (Locally-defined items shadow any same-named win32k_sys glob import — no ambiguity.)
@@ -121,6 +122,38 @@ pub static mut GDI_BatchLimit: DWORD = 1;
 // extern PGDIHANDLECACHE GdiHandleCache; (defined in dllmain.rs)
 extern "C" {
     static mut GdiHandleCache: PGDIHANDLECACHE;
+}
+
+// ── WoW64 shared-table entry width (i386 gdi32 under a 64-bit kernel) ─────────
+// The 64-bit kernel writes 24-byte entries into the shared GDI handle table:
+// same field ORDER as GDI_TABLE_ENTRY, wide KernelData/UserData. Detected once
+// in GdiProcessSetup (ProcessWow64Information != 0). UserData (DC_ATTR etc.) is
+// mapped below 4GB for WoW64 processes by win32k, so the truncation is
+// lossless; KernelData is unusable from user mode either way.
+#[cfg(target_arch = "x86")]
+#[repr(C)]
+struct GDI_TABLE_ENTRY64 {
+    KernelData: u64,
+    ProcessId: u32,
+    Type: i32,
+    UserData: u64,
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub static mut g_GdiWow64: BOOL = 0;
+
+/// Normalized (Type, ProcessId, UserData) read of shared-table entry `Index`,
+/// honoring the WoW64 wide layout when `g_GdiWow64` is set.
+#[inline]
+pub(crate) unsafe fn GdiReadSharedEntry(Index: usize) -> (LONG, usize, PVOID) {
+    #[cfg(target_arch = "x86")]
+    if g_GdiWow64 != 0 {
+        let e = (GdiHandleTable as *const GDI_TABLE_ENTRY64).add(Index);
+        return ((*e).Type, (*e).ProcessId as usize, (*e).UserData as usize as PVOID);
+    }
+    let e = GdiHandleTable.add(Index);
+    ((*e).__bindgen_anon_1.Type, (*e).ProcessId as usize, (*e).UserData)
 }
 
 // ── Cross-TU gdi32 / kernel32 exports (WINAPI = stdcall on i386) ───────────────
@@ -844,13 +877,12 @@ pub unsafe extern "system" fn GdiDrawStream(dc: HDC, l: ULONG, pDS: PGDI_DRAW_ST
  */
 #[no_mangle]
 pub unsafe extern "system" fn GdiValidateHandle(hobj: HGDIOBJ) -> BOOL {
-    let Entry: PGDI_TABLE_ENTRY = GdiHandleTable.add(GDI_HANDLE_GET_INDEX(hobj));
-    let ty: LONG = (*Entry).__bindgen_anon_1.Type;
+    let (ty, EntryPid, _) = GdiReadSharedEntry(GDI_HANDLE_GET_INDEX(hobj));
     if (ty & GDI_ENTRY_BASETYPE_MASK as LONG) != 0
         && ((ty.wrapping_shl(GDI_ENTRY_UPPER_SHIFT) & GDI_HANDLE_TYPE_MASK as LONG) as usize)
             == GDI_HANDLE_GET_TYPE(hobj)
     {
-        let pid: HANDLE = ((*Entry).ProcessId as usize & !0x1usize) as HANDLE;
+        let pid: HANDLE = (EntryPid & !0x1usize) as HANDLE;
         if pid.is_null() || pid == CurrentProcessId {
             return TRUE;
         }
@@ -868,8 +900,7 @@ pub unsafe extern "system" fn GdiFixUpHandle(hGdiObj: HGDIOBJ) -> HGDIOBJ {
     }
 
     /* FIXME is this right ?? */
-    let Entry: PGDI_TABLE_ENTRY = GdiHandleTable.add(GDI_HANDLE_GET_INDEX(hGdiObj));
-    let ty: LONG = (*Entry).__bindgen_anon_1.Type;
+    let (ty, _, _) = GdiReadSharedEntry(GDI_HANDLE_GET_INDEX(hGdiObj));
 
     /* Rebuild handle for Object */
     ((hGdiObj as usize) | (ty.wrapping_shl(GDI_ENTRY_UPPER_SHIFT) as isize as usize)) as HGDIOBJ
@@ -895,8 +926,7 @@ pub unsafe extern "C" fn GdiGetHandleUserData(
         return FALSE;
     }
 
-    let Entry: PGDI_TABLE_ENTRY = GdiHandleTable.add(GDI_HANDLE_GET_INDEX(hGdiObj));
-    let ty: LONG = (*Entry).__bindgen_anon_1.Type;
+    let (ty, EntryPid, EntryUser) = GdiReadSharedEntry(GDI_HANDLE_GET_INDEX(hGdiObj));
 
     /* Check if we have the correct type */
     if GDI_HANDLE_GET_TYPE(hGdiObj) != ObjectType as usize
@@ -907,16 +937,17 @@ pub unsafe extern "C" fn GdiGetHandleUserData(
     }
 
     /* Check if we are the owner */
-    if ((*Entry).ProcessId as usize & !0x1usize) as HANDLE != CurrentProcessId {
+    if (EntryPid & !0x1usize) as HANDLE != CurrentProcessId {
         return FALSE;
     }
 
-    *UserData = (*Entry).UserData;
+    *UserData = EntryUser;
     TRUE
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn GdiGetLDC(hdc: HDC) -> PLDC {
+pub unsafe fn GdiGetLDC(hdc: HDC) -> PLDC {
     /* Get the DC attribute */
     let pdcattr: PDC_ATTR = GdiGetDcAttr(hdc);
     if pdcattr.is_null() {
@@ -924,11 +955,13 @@ pub unsafe extern "fastcall" fn GdiGetLDC(hdc: HDC) -> PLDC {
     }
 
     /* Return the LDC pointer */
-    (*pdcattr).pvLDC as PLDC
+    (*dcattr_f!(pdcattr, pvLDC)) as PLDC
+}
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn GdiSetLDC(hdc: HDC, pvLDC: PVOID) -> BOOL {
+pub unsafe fn GdiSetLDC(hdc: HDC, pvLDC: PVOID) -> BOOL {
     /* Get the DC attribute */
     let pdcattr: PDC_ATTR = GdiGetDcAttr(hdc);
     if pdcattr.is_null() {
@@ -936,8 +969,9 @@ pub unsafe extern "fastcall" fn GdiSetLDC(hdc: HDC, pvLDC: PVOID) -> BOOL {
     }
 
     /* Set the LDC pointer */
-    (*pdcattr).pvLDC = pvLDC;
+    (*dcattr_f!(pdcattr, pvLDC)) = pvLDC;
     TRUE
+}
 }
 
 #[no_mangle]
@@ -989,8 +1023,9 @@ pub unsafe extern "system" fn GdiSetLastError(dwErrCode: DWORD) {
     (*NtCurrentTeb()).LastErrorValue = dwErrCode as ULONG;
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn hGetPEBHandle(Type: HANDLECACHETYPE, cr: COLORREF) -> HGDIOBJ {
+pub unsafe fn hGetPEBHandle(Type: HANDLECACHETYPE, cr: COLORREF) -> HGDIOBJ {
     let Number: INT;
     let Offset: INT;
     let MaxNum: INT;
@@ -1052,6 +1087,7 @@ pub unsafe extern "fastcall" fn hGetPEBHandle(Type: HANDLECACHETYPE, cr: COLORRE
     }
     InterlockedExchangePointer(core::ptr::addr_of_mut!((*GdiHandleCache).ulLock) as *mut PVOID, Lock);
     Handle
+}
 }
 
 /*

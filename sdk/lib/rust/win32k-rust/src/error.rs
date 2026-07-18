@@ -3,7 +3,6 @@ use win32k_sys::win32k::*;
 // not the bindgen extern decl in ddk — the latter has no link symbol on i386.
 use ntkrnl_sys::inline::ke::NtCurrentTeb;
 use ntkrnl_sys::ddk::RtlNtStatusToDosError;
-use core::ffi::c_void;
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "stdcall" fn EngGetLastError() -> ULONG {

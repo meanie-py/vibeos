@@ -39,12 +39,10 @@ unsafe fn GetWin32ClientInfo() -> PCLIENTINFO {
 /// `DesktopPtrToUser` — user32p.h inline: offsets by `pci->ulClientDelta`.
 #[inline]
 unsafe fn DesktopPtrToUser(p: PVOID) -> PVOID {
-    let pci = GetWin32ClientInfo();
-    let di = (*pci).pDeskInfo;
-    if di.is_null() {
-        return core::ptr::null_mut();
-    }
-    (p as ULONG_PTR).wrapping_sub((*pci).ulClientDelta) as PVOID
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(p)
 }
 
 /// `GetControlBrush` — user32p.h inline over the NtUserGetControlBrush syscall.
@@ -130,6 +128,7 @@ static mut ScrollTrackVertical: BOOL = 0;
 static mut ScrollMovingThumb: BOOL = 0;
 
 unsafe fn IntGetSBData(pwnd: PWND, Bar: INT) -> PSBDATA {
+    crate::wow64::wow64_unsupported("SBINFO");
     let pSBInfo: PSBINFO = DesktopPtrToUser((*pwnd).pSBInfo as *mut _) as PSBINFO;
     match Bar as u32 {
         SB_HORZ => {
@@ -431,7 +430,8 @@ unsafe extern "C" fn IntGetScrollBarInfo(Wnd: HWND, Bar: INT, ScrollBarInfo: PSC
     NtUserGetScrollBarInfo(Wnd, IntScrollGetObjectId(Bar), ScrollBarInfo)
 }
 
-unsafe extern "fastcall" fn IntUpdateScrollArrows(
+fastcall_fn! {
+unsafe fn IntUpdateScrollArrows(
     Wnd: HWND,
     hDC: HDC,
     ScrollBarInfo: PSCROLLBARINFO,
@@ -450,6 +450,7 @@ unsafe extern "fastcall" fn IntUpdateScrollArrows(
     NtUserSetScrollBarInfo(Wnd, IntScrollGetObjectId(SBType), info);
 
     IntDrawScrollArrows(hDC, ScrollBarInfo, Vertical);
+}
 }
 
 unsafe fn IntDrawScrollBar(Wnd: HWND, DC: HDC, Bar: INT) {
@@ -525,7 +526,8 @@ unsafe fn IntScrollPtInRectEx_impl(Rect: LPRECT, Pt: POINT, Vertical: BOOL) -> B
     PtInRect(&TempRect, Pt)
 }
 
-unsafe extern "fastcall" fn IntScrollHitTest(ScrollBarInfo: PSCROLLBARINFO, Vertical: BOOL, mut Pt: POINT, Dragging: BOOL) -> DWORD {
+fastcall_fn! {
+unsafe fn IntScrollHitTest(ScrollBarInfo: PSCROLLBARINFO, Vertical: BOOL, mut Pt: POINT, Dragging: BOOL) -> DWORD {
 
     let ArrowSize: INT;
     let ThumbSize: INT;
@@ -579,8 +581,10 @@ unsafe extern "fastcall" fn IntScrollHitTest(ScrollBarInfo: PSCROLLBARINFO, Vert
 
     SCROLL_THUMB
 }
+}
 
-unsafe extern "fastcall" fn IntScrollGetScrollBarRect(
+fastcall_fn! {
+unsafe fn IntScrollGetScrollBarRect(
     Wnd: HWND,
     Bar: INT,
     Rect: *mut RECT,
@@ -599,6 +603,7 @@ unsafe extern "fastcall" fn IntScrollGetScrollBarRect(
     if pWnd.is_null() {
         return 0;
     }
+    crate::wow64::wow64_unsupported("SBINFO");
     pSBInfo = DesktopPtrToUser((*pWnd).pSBInfo as PVOID) as PSBINFO;
 
     *Rect = core::mem::transmute_copy(&(*pWnd).rcClient);
@@ -701,6 +706,7 @@ unsafe extern "fastcall" fn IntScrollGetScrollBarRect(
         }
     }
     Vertical
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -868,7 +874,8 @@ unsafe fn IntScrollHandleKbdEventImpl(Wnd: HWND, mut wParam: WPARAM, lParam: LPA
     );
 }
 
-unsafe extern "fastcall" fn IntScrollHandleScrollEvent(Wnd: HWND, SBType: INT, Msg: UINT, mut Pt: POINT) {
+fastcall_fn! {
+unsafe fn IntScrollHandleScrollEvent(Wnd: HWND, SBType: INT, Msg: UINT, mut Pt: POINT) {
     static mut PrevPt: POINT = POINT { x: 0, y: 0 };
     static mut TrackThumbPos: UINT = 0;
     static mut LastClickPos: INT = 0;
@@ -1196,6 +1203,7 @@ unsafe extern "fastcall" fn IntScrollHandleScrollEvent(Wnd: HWND, SBType: INT, M
     }
 
     ReleaseDC(Wnd, Dc);
+}
 }
 
 unsafe fn IntScrollCreateScrollBar(Wnd: HWND, lpCreate: LPCREATESTRUCTW) {

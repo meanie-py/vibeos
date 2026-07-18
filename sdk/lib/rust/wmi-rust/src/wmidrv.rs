@@ -18,7 +18,12 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
 }
 
@@ -616,17 +621,17 @@ pub unsafe extern "system" fn WmipDriverEntry(
     let mut Status = IoCreateDevice(
         DriverObject,
         0,
-        &mut SERVICE_DEVICE_NAME,
+        &raw mut SERVICE_DEVICE_NAME,
         FILE_DEVICE_UNKNOWN,
         FILE_DEVICE_SECURE_OPEN,
         0u8,
-        &mut WmipServiceDeviceObject,
+        &raw mut WmipServiceDeviceObject,
     );
     if Status < 0 {
         return Status;
     }
 
-    Status = IoCreateSymbolicLink(&mut SERVICE_DOS_DEVICE_NAME, &mut SERVICE_DEVICE_NAME);
+    Status = IoCreateSymbolicLink(&raw mut SERVICE_DOS_DEVICE_NAME, &raw mut SERVICE_DEVICE_NAME);
     if Status < 0 {
         IoDeleteDevice(WmipServiceDeviceObject);
         return Status;
@@ -635,21 +640,21 @@ pub unsafe extern "system" fn WmipDriverEntry(
     Status = IoCreateDevice(
         DriverObject,
         0,
-        &mut ADMIN_DEVICE_NAME,
+        &raw mut ADMIN_DEVICE_NAME,
         FILE_DEVICE_UNKNOWN,
         FILE_DEVICE_SECURE_OPEN,
         0u8,
-        &mut WmipAdminDeviceObject,
+        &raw mut WmipAdminDeviceObject,
     );
     if Status < 0 {
         IoDeleteDevice(WmipServiceDeviceObject);
-        IoDeleteSymbolicLink(&mut SERVICE_DOS_DEVICE_NAME);
+        IoDeleteSymbolicLink(&raw mut SERVICE_DOS_DEVICE_NAME);
         return Status;
     }
 
-    Status = IoCreateSymbolicLink(&mut ADMIN_DOS_DEVICE_NAME, &mut ADMIN_DEVICE_NAME);
+    Status = IoCreateSymbolicLink(&raw mut ADMIN_DOS_DEVICE_NAME, &raw mut ADMIN_DEVICE_NAME);
     if Status < 0 {
-        IoDeleteSymbolicLink(&mut SERVICE_DOS_DEVICE_NAME);
+        IoDeleteSymbolicLink(&raw mut SERVICE_DOS_DEVICE_NAME);
         IoDeleteDevice(WmipServiceDeviceObject);
         IoDeleteDevice(WmipAdminDeviceObject);
         return Status;
@@ -665,10 +670,10 @@ pub unsafe extern "system" fn WmipDriverEntry(
     (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL] = core::mem::transmute(WmipSystemControl as usize);
     (*DriverObject).MajorFunction[IRP_MJ_SHUTDOWN] = core::mem::transmute(WmipShutdown as usize);
 
-    core::ptr::write_bytes(&mut WmipFastIoDispatch as *mut FAST_IO_DISPATCH as *mut u8, 0, core::mem::size_of::<FAST_IO_DISPATCH>());
+    core::ptr::write_bytes(&raw mut WmipFastIoDispatch as *mut FAST_IO_DISPATCH as *mut u8, 0, core::mem::size_of::<FAST_IO_DISPATCH>());
     WmipFastIoDispatch.SizeOfFastIoDispatch = core::mem::size_of::<FAST_IO_DISPATCH>() as ULONG;
     WmipFastIoDispatch.FastIoDeviceControl = core::mem::transmute(WmipFastIoDeviceControl as usize);
-    (*DriverObject).FastIoDispatch = &mut WmipFastIoDispatch;
+    (*DriverObject).FastIoDispatch = &raw mut WmipFastIoDispatch;
 
     IoWMIRegistrationControl(WmipServiceDeviceObject, WMIREG_ACTION_REGISTER);
 

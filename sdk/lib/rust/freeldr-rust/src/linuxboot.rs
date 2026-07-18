@@ -154,7 +154,7 @@ unsafe fn RemoveQuotes(QuotedString: PSTR) {
 pub unsafe extern "C" fn LoadAndBootLinux(
     Argc: ULONG,
     Argv: *mut PCHAR,
-    Envp: *mut PCHAR,
+    _Envp: *mut PCHAR,
 ) -> ARC_STATUS {
     let mut Status: ARC_STATUS;
     let Description: PCSTR;

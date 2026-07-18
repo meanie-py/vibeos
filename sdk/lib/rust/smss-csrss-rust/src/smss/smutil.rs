@@ -211,7 +211,7 @@ pub unsafe extern "system" fn SmpParseToken(
     let mut p: PWSTR;
     let mut pp: PWSTR;
     let mut Length: ULONG;
-    let mut TokenLength: ULONG;
+    let TokenLength: ULONG;
     let InputLength: ULONG;
 
     RtlInitUnicodeString(Token, core::ptr::null_mut());

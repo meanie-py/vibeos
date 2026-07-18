@@ -3,11 +3,10 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentThreadWin32Thread, ExAllocatePoolWithTag, ExFreePoolWithTag};
 // NtCurrentTeb is a FORCEINLINE per-arch TIB read (no kernel symbol) — use the intrinsic.
 use ntkrnl_sys::inline::ke::NtCurrentTeb;
-use ntkrnl_sys::ob::{ObDereferenceObject, ObReferenceObject};
-use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
-use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_NO_MEMORY, STATUS_INSUFFICIENT_RESOURCES};
+use ntkrnl_sys::ob::ObDereferenceObject;
+use ntkrnl_sys::rtl::RtlCopyMemory;
+use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use ntkrnl_sys::constants::STATUS_INVALID_HANDLE;
-use core::ffi::c_void;
 
 // USERTAG_CLIPBOARD: C `'bcsU'` = ('b'<<24)|('c'<<16)|('s'<<8)|'U' = 0x62637355,
 // stored little-endian = bytes "Uscb".

@@ -495,7 +495,7 @@ unsafe fn VerifyMenu_impl(pMenu: PMENU) -> PMENU {
 
     Error = EngGetLastError();
 
-    _hMenu = (UserHMGetHandle(pMenu) as HMENU);
+    _hMenu = UserHMGetHandle(pMenu) as HMENU ;
     pItem = (*pMenu).rgItems;
     if !pItem.is_null() {
         i = (*pItem.offset(0)).wID;
@@ -562,7 +562,7 @@ unsafe fn IntDestroyMenu(pMenu: PMENU, bRecurse: BOOL) -> BOOL {
 
             /* Remove Item Bitmap and set it for this process */
             if !(*item).hbmp.is_null() && ((*item).fState & MFS_HBMMENUBMP) == 0 {
-                GreSetObjectOwner(((*item).hbmp as *mut core::ffi::c_void), GDI_OBJ_HMGR_POWNED);
+                GreSetObjectOwner((*item).hbmp as *mut core::ffi::c_void , GDI_OBJ_HMGR_POWNED);
                 (*item).hbmp = core::ptr::null_mut();
             }
 
@@ -657,13 +657,13 @@ unsafe extern "C" fn MenuInit() -> BOOL {
 
         ghMenuFontBold = GreCreateFontIndirectW(core::ptr::addr_of_mut!(ncm.lfMenuFont));
         if ghMenuFontBold.is_null() {
-            GreDeleteObject((ghMenuFont as *mut core::ffi::c_void));
+            GreDeleteObject(ghMenuFont as *mut core::ffi::c_void );
             ghMenuFont = core::ptr::null_mut();
             return 0;
         }
 
-        GreSetObjectOwner((ghMenuFont as *mut core::ffi::c_void), GDI_OBJ_HMGR_PUBLIC);
-        GreSetObjectOwner((ghMenuFontBold as *mut core::ffi::c_void), GDI_OBJ_HMGR_PUBLIC);
+        GreSetObjectOwner(ghMenuFont as *mut core::ffi::c_void , GDI_OBJ_HMGR_PUBLIC);
+        GreSetObjectOwner(ghMenuFontBold as *mut core::ffi::c_void , GDI_OBJ_HMGR_PUBLIC);
 
         DbgPrint(b"MenuInit: skipping co_IntSetupOBM (DUMMY_PSEH)\n\0".as_ptr() as *const i8);
     }
@@ -776,7 +776,7 @@ unsafe fn MENU_GetStartOfPrevColumn(menu: PMENU) -> UINT {
         return NO_SELECTED_ITEM;
     }
 
-    i = ((*menu).iItem as u32);
+    i = (*menu).iItem as u32 ;
     while i != 0 && ((*pItem.add(i as usize)).fType & (MF_MENUBREAK | MF_MENUBARBREAK)) == 0 {
         i -= 1;
     }
@@ -796,8 +796,9 @@ unsafe fn MENU_GetStartOfPrevColumn(menu: PMENU) -> UINT {
     i
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn MENU_FindItem(pmenu: *mut PMENU, nPos: *mut UINT, wFlags: UINT) -> PITEM {
+unsafe fn MENU_FindItem(pmenu: *mut PMENU, nPos: *mut UINT, wFlags: UINT) -> PITEM {
     let menu: PMENU = *pmenu;
     let mut fallback: PITEM = core::ptr::null_mut();
     let mut fallback_pos: UINT = 0;
@@ -843,6 +844,7 @@ unsafe extern "fastcall" fn MENU_FindItem(pmenu: *mut PMENU, nPos: *mut UINT, wF
     }
 
     fallback
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1007,8 +1009,9 @@ unsafe extern "C" fn MENU_InsertItem(mut menu: PMENU, mut pos: UINT, flags: UINT
     newItems.offset(pos as isize)
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntInsertMenuItem(
+unsafe fn IntInsertMenuItem(
     MenuObject: PMENU,
     mut uItem: UINT,
     fByPosition: BOOL,
@@ -1047,13 +1050,15 @@ unsafe extern "fastcall" fn IntInsertMenuItem(
     }
 
     (*SubMenu).cyMenu = 0;
-    (*MenuItem).hbmpUnchecked = (0 as HBITMAP as *mut core::ffi::c_void);
+    (*MenuItem).hbmpUnchecked = 0 as HBITMAP as *mut core::ffi::c_void ;
     (*MenuItem).hbmpChecked = (*MenuItem).hbmpUnchecked;
 
     1
 }
+}
 
-unsafe extern "fastcall" fn IntCreateMenu(
+fastcall_fn! {
+unsafe fn IntCreateMenu(
     Handle: PHANDLE,
     IsMenuBar: BOOL,
     Desktop: PDESKTOP,
@@ -1077,7 +1082,7 @@ unsafe extern "fastcall" fn IntCreateMenu(
     (*Menu).hbrBack = core::ptr::null_mut();
     (*Menu).dwContextHelpId = 0;
     (*Menu).dwMenuData = 0;
-    (*Menu).iItem = (NO_SELECTED_ITEM as i32);
+    (*Menu).iItem = NO_SELECTED_ITEM as i32 ;
     (*Menu).fFlags = if IsMenuBar != 0 { 0 } else { MNF_POPUP } as u32;
     (*Menu).spwndNotify = core::ptr::null_mut();
     (*Menu).cyMenu = 0;
@@ -1089,9 +1094,10 @@ unsafe extern "fastcall" fn IntCreateMenu(
     (*Menu).rgItems = core::ptr::null_mut();
 
     (*Menu).hWnd = core::ptr::null_mut();
-    (*Menu).TimeToHide = (0u8 as i32);
+    (*Menu).TimeToHide = 0u8 as i32 ;
 
     Menu
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1174,8 +1180,9 @@ unsafe fn IntCloneMenuItems_impl(Destination: PMENU, Source: PMENU) -> i32 {
     1
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IntCloneMenu(Source: PMENU) -> PMENU {
+pub unsafe fn IntCloneMenu(Source: PMENU) -> PMENU {
     let mut hMenu: HANDLE = core::ptr::null_mut();
     let Menu: PMENU;
 
@@ -1188,7 +1195,7 @@ pub unsafe extern "fastcall" fn IntCloneMenu(Source: PMENU) -> PMENU {
         (*Source).head.rpdesk,
         (*((*Source).head.hTaskWow as PPROCESSINFO)).ptiList,
         &mut hMenu,
-        (TYPE_MENU as u8 as u32),
+        TYPE_MENU as u8 as u32 ,
         core::mem::size_of::<MENU>() as u32,
     ) as PMENU;
 
@@ -1201,7 +1208,7 @@ pub unsafe extern "fastcall" fn IntCloneMenu(Source: PMENU) -> PMENU {
     (*Menu).hbrBack = (*Source).hbrBack;
     (*Menu).dwContextHelpId = (*Source).dwContextHelpId;
     (*Menu).dwMenuData = (*Source).dwMenuData;
-    (*Menu).iItem = (NO_SELECTED_ITEM as i32);
+    (*Menu).iItem = NO_SELECTED_ITEM as i32 ;
     (*Menu).spwndNotify = core::ptr::null_mut();
     (*Menu).cyMenu = 0;
     (*Menu).cxMenu = 0;
@@ -1212,11 +1219,12 @@ pub unsafe extern "fastcall" fn IntCloneMenu(Source: PMENU) -> PMENU {
     (*Menu).rgItems = core::ptr::null_mut();
 
     (*Menu).hWnd = core::ptr::null_mut();
-    (*Menu).TimeToHide = (0u8 as i32);
+    (*Menu).TimeToHide = 0u8 as i32 ;
 
     IntCloneMenuItems(Menu, Source);
 
     Menu
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1273,9 +1281,9 @@ unsafe fn IntGetMenuInfo_impl(Menu: PMENU, lpmi: PROSMENUINFO) -> bool {
     if (core::mem::size_of::<MENUINFO>() as u32) < (*lpmi).cbSize {
         (*lpmi).cItems = (*Menu).cItems;
 
-        (*lpmi).iItem = ((*Menu).iItem as u32);
-        (*lpmi).cxMenu = ((*Menu).cxMenu as u16);
-        (*lpmi).cyMenu = ((*Menu).cyMenu as u16);
+        (*lpmi).iItem = (*Menu).iItem as u32 ;
+        (*lpmi).cxMenu = (*Menu).cxMenu as u16 ;
+        (*lpmi).cyMenu = (*Menu).cyMenu as u16 ;
         (*lpmi).spwndNotify = (*Menu).spwndNotify;
         (*lpmi).cxTextAlign = (*Menu).cxTextAlign;
         (*lpmi).iTop = (*Menu).iTop;
@@ -1328,9 +1336,9 @@ unsafe fn IntSetMenuInfoImpl(Menu: PMENU, lpmi: PROSMENUINFO) -> u8 {
         }
     }
     if (core::mem::size_of::<MENUINFO>() as u32) < (*lpmi).cbSize {
-        (*Menu).iItem = ((*lpmi).iItem as i32);
-        (*Menu).cyMenu = ((*lpmi).cyMenu as u32);
-        (*Menu).cxMenu = ((*lpmi).cxMenu as u32);
+        (*Menu).iItem = (*lpmi).iItem as i32 ;
+        (*Menu).cyMenu = (*lpmi).cyMenu as u32 ;
+        (*Menu).cxMenu = (*lpmi).cxMenu as u32 ;
         (*Menu).spwndNotify = (*lpmi).spwndNotify;
         (*Menu).cxTextAlign = (*lpmi).cxTextAlign;
         (*Menu).iTop = (*lpmi).iTop;
@@ -1386,8 +1394,8 @@ unsafe fn IntGetMenuItemInfo_impl(
         (*lpmii).hbmpItem = (*MenuItem).hbmp;
     }
     if (*lpmii).fMask & MIIM_CHECKMARKS != 0 {
-        (*lpmii).hbmpChecked = ((*MenuItem).hbmpChecked as HBITMAP);
-        (*lpmii).hbmpUnchecked = ((*MenuItem).hbmpUnchecked as HBITMAP);
+        (*lpmii).hbmpChecked = (*MenuItem).hbmpChecked as HBITMAP ;
+        (*lpmii).hbmpUnchecked = (*MenuItem).hbmpUnchecked as HBITMAP ;
     }
     if (*lpmii).fMask & MIIM_DATA != 0 {
         (*lpmii).dwItemData = (*MenuItem).dwItemData as _;
@@ -1430,10 +1438,10 @@ unsafe fn IntGetMenuItemInfo_impl(
     }
 
     if core::mem::size_of::<ROSMENUITEMINFO>() == (*lpmii).cbSize as usize {
-        (*lpmii).Rect.left = ((*MenuItem).xItem as i32);
-        (*lpmii).Rect.top = ((*MenuItem).yItem as i32);
-        (*lpmii).Rect.right = ((*MenuItem).cxItem as i32);
-        (*lpmii).Rect.bottom = ((*MenuItem).cyItem as i32);
+        (*lpmii).Rect.left = (*MenuItem).xItem as i32 ;
+        (*lpmii).Rect.top = (*MenuItem).yItem as i32 ;
+        (*lpmii).Rect.right = (*MenuItem).cxItem as i32 ;
+        (*lpmii).Rect.bottom = (*MenuItem).cyItem as i32 ;
         (*lpmii).dxTab = (*MenuItem).dxTab;
         (*lpmii).lpstr = (*MenuItem).lpstr.Buffer;
         (*lpmii).maxBmpSize.cx = (*MenuItem).cxBmp;
@@ -1808,7 +1816,8 @@ pub unsafe extern "C" fn IntSetMenuItemInfo(
     1
 }
 
-unsafe extern "fastcall" fn IntEnableMenuItem(MenuObject: PMENU, uIDEnableItem: UINT, uEnable: UINT) -> UINT {
+fastcall_fn! {
+unsafe fn IntEnableMenuItem(MenuObject: PMENU, uIDEnableItem: UINT, uEnable: UINT) -> UINT {
     let MenuItem: PITEM;
     let res: UINT;
 
@@ -1841,6 +1850,7 @@ unsafe extern "fastcall" fn IntEnableMenuItem(MenuObject: PMENU, uIDEnableItem: 
         }
     }
     res
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1939,7 +1949,8 @@ unsafe fn UserSetMenuDefaultItem_impl(MenuObject: PMENU, uItem: UINT, fByPos: UI
     0
 }
 
-unsafe extern "fastcall" fn IntGetMenuDefaultItem(MenuObject: PMENU, fByPos: UINT, gmdiFlags: UINT, gismc: *mut DWORD) -> UINT {
+fastcall_fn! {
+unsafe fn IntGetMenuDefaultItem(MenuObject: PMENU, fByPos: UINT, gmdiFlags: UINT, gismc: *mut DWORD) -> UINT {
     let mut i: UINT = 0;
     let mut MenuItem: PITEM = (*MenuObject).rgItems;
 
@@ -1979,6 +1990,7 @@ unsafe extern "fastcall" fn IntGetMenuDefaultItem(MenuObject: PMENU, fByPos: UIN
         (*MenuItem).wID as UINT
     }
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn co_IntGetSubMenu(mut pMenu: PMENU, mut nPos: core::ffi::c_int) -> PMENU {
@@ -2006,8 +2018,9 @@ unsafe extern "C" fn co_IntGetSubMenu(mut pMenu: PMENU, mut nPos: core::ffi::c_i
     (*pItem).spSubMenu
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn MENU_InitSysMenuPopup(menu: PMENU, style: DWORD, clsStyle: DWORD, HitTest: LONG) {
+unsafe fn MENU_InitSysMenuPopup(menu: PMENU, style: DWORD, clsStyle: DWORD, HitTest: LONG) {
     let mut gray: BOOL;
     let DefItem: UINT;
 
@@ -2036,6 +2049,7 @@ unsafe extern "fastcall" fn MENU_InitSysMenuPopup(menu: PMENU, style: DWORD, cls
     }
 
     UserSetMenuDefaultItem(menu, DefItem, MF_BYCOMMAND);
+}
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -2142,13 +2156,15 @@ unsafe fn MENU_DrawPopupGlyph_impl(
 }
 
 
-unsafe extern "fastcall" fn MENU_AdjustMenuItemRect(menu: PMENU, rect: PRECTL) {
+fastcall_fn! {
+unsafe fn MENU_AdjustMenuItemRect(menu: PMENU, rect: PRECTL) {
     if (*menu).dwArrowsOn() != 0 {
         let arrow_bitmap_height: UINT;
         arrow_bitmap_height = (*pusi(gpsi)).oembmi[OBI_UPARROW as usize].cy as UINT;
         (*rect).top += arrow_bitmap_height as i32 - (*menu).iTop as i32;
         (*rect).bottom += arrow_bitmap_height as i32 - (*menu).iTop as i32;
     }
+}
 }
 
 unsafe fn MENU_FindItemByCoords(menu: *mut MENU, mut pt: POINT, pos: *mut UINT) -> *mut ITEM {
@@ -2220,7 +2236,8 @@ unsafe fn IntMenuItemFromPoint_impl(_pWnd: PWND, hMenu: HMENU, ptScreen: POINT) 
     pos as INT
 }
 
-unsafe extern "fastcall" fn MENU_FindItemByKey(WndOwner: PWND, mut menu: PMENU, Key: WCHAR, ForceMenuChar: BOOL) -> UINT {
+fastcall_fn! {
+unsafe fn MENU_FindItemByKey(WndOwner: PWND, mut menu: PMENU, Key: WCHAR, ForceMenuChar: BOOL) -> UINT {
     let MenuChar: LRESULT;
     let mut Flags: WORD = 0;
 
@@ -2232,7 +2249,7 @@ unsafe extern "fastcall" fn MENU_FindItemByKey(WndOwner: PWND, mut menu: PMENU, 
 
         if ForceMenuChar == 0 {
             let mut i: UINT;
-            let cjk: BOOL = UserGetSystemMetrics((SM_DBCSENABLED as core::ffi::c_int as u32));
+            let cjk: BOOL = UserGetSystemMetrics(SM_DBCSENABLED as core::ffi::c_int as u32 );
 
             i = 0;
             while i < (*menu).cItems {
@@ -2275,6 +2292,7 @@ unsafe extern "fastcall" fn MENU_FindItemByKey(WndOwner: PWND, mut menu: PMENU, 
         }
     }
     (-1i32) as UINT
+}
 }
 
 unsafe fn MENU_GetBitmapItemSize(lpitem: PITEM, size: *mut SIZE, WndOwner: PWND) {
@@ -2539,7 +2557,7 @@ unsafe fn MENU_DrawBitmapItem_impl(
                     } else {
                         0
                     };
-                    drawItem.hwndItem = (UserHMGetHandle(Menu as *mut core::ffi::c_void) as HWND);
+                    drawItem.hwndItem = UserHMGetHandle(Menu as *mut core::ffi::c_void) as HWND ;
                     drawItem.hDC = hdc;
                     drawItem.rcItem = core::mem::transmute_copy(&*rect);
                     drawItem.itemData = (*lpitem).dwItemData;
@@ -2550,7 +2568,7 @@ unsafe fn MENU_DrawBitmapItem_impl(
                         core::ptr::addr_of_mut!(origorg).cast(),
                     );
                     RECTL_vOffsetRect(
-                        (core::ptr::addr_of_mut!(drawItem.rcItem) as *mut RECT),
+                        core::ptr::addr_of_mut!(drawItem.rcItem) as *mut RECT ,
                         -((*lpitem).xItem as i32),
                         -((*lpitem).yItem as i32),
                     );
@@ -2650,17 +2668,18 @@ unsafe fn IntGetDialogBaseUnits() -> LONG {
 
         hdc = UserGetDCEx(core::ptr::null_mut(), core::ptr::null_mut(), DCX_CACHE);
         if !hdc.is_null() {
-            size.cx = (IntGetCharDimensions(hdc, core::ptr::null_mut(), core::ptr::addr_of_mut!(size.cy) as PDWORD) as i32);
+            size.cx = IntGetCharDimensions(hdc, core::ptr::null_mut(), core::ptr::addr_of_mut!(size.cy) as PDWORD) as i32 ;
             if size.cx != 0 {
                 units = ((size.cx as u16 as u32) | ((size.cy as u16 as u32) << 16)) as DWORD;
             }
-            UserReleaseDC(core::ptr::null_mut(), hdc, (0u8 as i32));
+            UserReleaseDC(core::ptr::null_mut(), hdc, 0u8 as i32 );
         }
     }
     units as LONG
 }
 
-unsafe extern "fastcall" fn MENU_CalcItemSize(
+fastcall_fn! {
+unsafe fn MENU_CalcItemSize(
     hdc: HDC,
     lpitem: PITEM,
     Menu: PMENU,
@@ -2678,7 +2697,7 @@ unsafe extern "fastcall" fn MENU_CalcItemSize(
 
     arrow_bitmap_width = (*pusi(gpsi)).oembmi[OBI_MNARROW as usize].cx as UINT;
 
-    MenuCharSize.cx = (IntGetCharDimensions(hdc, core::ptr::null_mut(), core::ptr::addr_of_mut!(MenuCharSize.cy) as PDWORD) as i32);
+    MenuCharSize.cx = IntGetCharDimensions(hdc, core::ptr::null_mut(), core::ptr::addr_of_mut!(MenuCharSize.cy) as PDWORD) as i32 ;
 
     RECTL_vSetRect(core::ptr::addr_of_mut!(Rect) as *mut _, orgX, orgY, orgX, orgY);
 
@@ -2703,18 +2722,18 @@ unsafe extern "fastcall" fn MENU_CalcItemSize(
             Rect.bottom += mis.itemHeight as LONG;
         }
 
-        (*lpitem).xItem = (Rect.left as u32);
-        (*lpitem).yItem = (Rect.top as u32);
-        (*lpitem).cxItem = (Rect.right as u32);
-        (*lpitem).cyItem = (Rect.bottom as u32);
+        (*lpitem).xItem = Rect.left as u32 ;
+        (*lpitem).yItem = Rect.top as u32 ;
+        (*lpitem).cxItem = Rect.right as u32 ;
+        (*lpitem).cyItem = Rect.bottom as u32 ;
 
         return;
     }
 
-    (*lpitem).xItem = (orgX as u32);
-    (*lpitem).yItem = (orgY as u32);
-    (*lpitem).cxItem = (orgX as u32);
-    (*lpitem).cyItem = (orgY as u32);
+    (*lpitem).xItem = orgX as u32 ;
+    (*lpitem).yItem = orgY as u32 ;
+    (*lpitem).cxItem = orgX as u32 ;
+    (*lpitem).cyItem = orgY as u32 ;
 
     if (*lpitem).fType & MF_SEPARATOR != 0 {
         (*lpitem).cyItem += (UserGetSystemMetrics(SM_CYMENUSIZE) / 2) as u32;
@@ -2733,19 +2752,19 @@ unsafe extern "fastcall" fn MENU_CalcItemSize(
             MENU_GetBitmapItemSize(lpitem, core::ptr::addr_of_mut!(size), pwndOwner);
             (*lpitem).cxBmp = size.cx;
             (*lpitem).cyBmp = size.cy;
-            (*Menu).cxTextAlign = max((*Menu).cxTextAlign, (size.cx as u32));
+            (*Menu).cxTextAlign = max((*Menu).cxTextAlign, size.cx as u32 );
             (*lpitem).cxItem += (size.cx + 2) as u32;
             itemheight = size.cy + 2;
 
             if ((*Menu).fFlags & (MNS_STYLE_MASK as u32)) & (MNS_NOCHECK as u32) == 0 {
-                (*lpitem).cxItem += (2 * check_bitmap_width as LONG as u32);
+                (*lpitem).cxItem += 2 * check_bitmap_width as LONG as u32 ;
             }
-            (*lpitem).cxItem += (4 + MenuCharSize.cx as u32);
+            (*lpitem).cxItem += 4 + MenuCharSize.cx as u32 ;
             (*lpitem).dxTab = (*lpitem).cxItem;
-            (*lpitem).cxItem += (arrow_bitmap_width as LONG as u32);
+            (*lpitem).cxItem += arrow_bitmap_width as LONG as u32 ;
         } else {
             MENU_GetBitmapItemSize(lpitem, core::ptr::addr_of_mut!(size), pwndOwner);
-            (*lpitem).cxItem += (size.cx as u32);
+            (*lpitem).cxItem += size.cx as u32 ;
             if !(*lpitem).Xlpstr.is_null() {
                 (*lpitem).cxItem += 2;
             }
@@ -2759,11 +2778,11 @@ unsafe extern "fastcall" fn MENU_CalcItemSize(
         }
     } else if menuBar == 0 {
         if ((*Menu).fFlags & (MNS_STYLE_MASK as u32)) & (MNS_NOCHECK as u32) == 0 {
-            (*lpitem).cxItem += (check_bitmap_width as LONG as u32);
+            (*lpitem).cxItem += check_bitmap_width as LONG as u32 ;
         }
-        (*lpitem).cxItem += (4 + MenuCharSize.cx as u32);
+        (*lpitem).cxItem += 4 + MenuCharSize.cx as u32 ;
         (*lpitem).dxTab = (*lpitem).cxItem;
-        (*lpitem).cxItem += (arrow_bitmap_width as LONG as u32);
+        (*lpitem).cxItem += arrow_bitmap_width as LONG as u32 ;
     }
 
     if (*lpitem).fType & MF_SYSMENU == 0 && !(*lpitem).Xlpstr.is_null() {
@@ -2792,7 +2811,7 @@ unsafe extern "fastcall" fn MENU_CalcItemSize(
             (*lpitem).cxItem += (rc.right - rc.left) as u32;
             itemheight = max(max(itemheight, txtheight), UserGetSystemMetrics(SM_CYMENU) - 1);
 
-            (*lpitem).cxItem += (2 * MenuCharSize.cx as u32);
+            (*lpitem).cxItem += 2 * MenuCharSize.cx as u32 ;
         } else {
             let pp = wcschr((*lpitem).Xlpstr, '\t' as WCHAR as i32);
             if !pp.is_null() {
@@ -2815,10 +2834,10 @@ unsafe extern "fastcall" fn MENU_CalcItemSize(
                     core::ptr::addr_of_mut!(tmprc) as LPRECT,
                     (DT_SINGLELINE | DT_CALCRECT) as UINT,
                 );
-                (*lpitem).dxTab += (txtwidth_v as u32);
+                (*lpitem).dxTab += txtwidth_v as u32 ;
                 txtheight = max(txtheight, tmpheight);
                 txtwidth_v += MenuCharSize.cx + tmprc.right - tmprc.left;
-                (*lpitem).cxItem += (2 + txtwidth_v as u32);
+                (*lpitem).cxItem += 2 + txtwidth_v as u32 ;
                 itemheight = max(itemheight, max(txtheight + 2, MenuCharSize.cy + 4));
             } else {
                 txtheight = DrawTextW(
@@ -2829,8 +2848,8 @@ unsafe extern "fastcall" fn MENU_CalcItemSize(
                     (DT_SINGLELINE | DT_CALCRECT) as UINT,
                 );
                 let txtwidth_v = rc.right - rc.left;
-                (*lpitem).dxTab += (txtwidth_v as u32);
-                (*lpitem).cxItem += (2 + txtwidth_v as u32);
+                (*lpitem).dxTab += txtwidth_v as u32 ;
+                (*lpitem).cxItem += 2 + txtwidth_v as u32 ;
                 itemheight = max(itemheight, max(txtheight + 2, MenuCharSize.cy + 4));
             }
             let _ = p;
@@ -2841,8 +2860,9 @@ unsafe extern "fastcall" fn MENU_CalcItemSize(
     } else if menuBar != 0 {
         itemheight = max(itemheight, UserGetSystemMetrics(SM_CYMENU) - 1);
     }
-    (*lpitem).cyItem += (itemheight as u32);
+    (*lpitem).cyItem += itemheight as u32 ;
     let _ = (textandbmp, check_bitmap_width);
+}
 }
 
 unsafe fn MENU_GetMaxPopupHeight(lppop: PMENU) -> UINT {
@@ -2852,7 +2872,8 @@ unsafe fn MENU_GetMaxPopupHeight(lppop: PMENU) -> UINT {
     (UserGetSystemMetrics(SM_CYSCREEN as ULONG) - UserGetSystemMetrics(SM_CYBORDER as ULONG)) as UINT
 }
 
-unsafe extern "fastcall" fn MENU_PopupMenuCalcSize(Menu: PMENU, WndOwner: PWND) {
+fastcall_fn! {
+unsafe fn MENU_PopupMenuCalcSize(Menu: PMENU, WndOwner: PWND) {
     let mut lpitem: PITEM;
     let hdc: HDC;
     let mut start: i32;
@@ -2899,10 +2920,10 @@ unsafe extern "fastcall" fn MENU_PopupMenuCalcSize(Menu: PMENU, WndOwner: PWND) 
             }
 
             MENU_CalcItemSize(hdc, lpitem, Menu, WndOwner, orgX, orgY, 0, textandbmp);
-            maxX = core::cmp::max(maxX, ((*lpitem).cxItem as i32));
-            orgY = ((*lpitem).cyItem as i32);
+            maxX = core::cmp::max(maxX, (*lpitem).cxItem as i32 );
+            orgY = (*lpitem).cyItem as i32 ;
             if (MF_STRING == ((*lpitem).fType & MENUITEMINFO_TYPE_MASK)) && (*lpitem).dxTab != 0 {
-                maxTab = core::cmp::max(maxTab, ((*lpitem).dxTab as i32));
+                maxTab = core::cmp::max(maxTab, (*lpitem).dxTab as i32 );
         maxTabWidth = core::cmp::max(maxTabWidth, ((*lpitem).cxItem - (*lpitem).dxTab) as i32);
             }
             if (*lpitem).Xlpstr != core::ptr::null_mut() && (*lpitem).hbmp != core::ptr::null_mut() {
@@ -2916,34 +2937,36 @@ unsafe extern "fastcall" fn MENU_PopupMenuCalcSize(Menu: PMENU, WndOwner: PWND) 
         maxX = core::cmp::max(maxX, maxTab + maxTabWidth);
         lpitem = (*Menu).rgItems.offset(start as isize);
         while start < i {
-            (*lpitem).cxItem = (maxX as u32);
+            (*lpitem).cxItem = maxX as u32 ;
             if (MF_STRING == ((*lpitem).fType & MENUITEMINFO_TYPE_MASK)) && (*lpitem).dxTab != 0 {
-                (*lpitem).dxTab = (maxTab as u32);
+                (*lpitem).dxTab = maxTab as u32 ;
             }
             start += 1;
             lpitem = lpitem.offset(1);
         }
-        (*Menu).cyMenu = core::cmp::max((*Menu).cyMenu, (orgY as u32));
+        (*Menu).cyMenu = core::cmp::max((*Menu).cyMenu, orgY as u32 );
     }
 
-    (*Menu).cxMenu = (maxX as u32);
+    (*Menu).cxMenu = maxX as u32 ;
 
     if textandbmp == 0 {
         (*Menu).cxTextAlign = 0;
     }
 
     maxHeight = MENU_GetMaxPopupHeight(Menu) as i32;
-    (*Menu).iMaxTop = ((*Menu).cyMenu as i32);
+    (*Menu).iMaxTop = (*Menu).cyMenu as i32 ;
     if (*Menu).cyMenu >= (maxHeight as u32) {
-        (*Menu).cyMenu = (maxHeight as u32);
+        (*Menu).cyMenu = maxHeight as u32 ;
         (*Menu).set_dwArrowsOn(1);
     } else {
         (*Menu).set_dwArrowsOn(0);
     }
     UserReleaseDC(core::ptr::null_mut(), hdc, 0);
 }
+}
 
-unsafe extern "fastcall" fn MENU_MenuBarCalcSize(hdc: HDC, lprect: LPRECT, lppop: PMENU, pwndOwner: PWND) {
+fastcall_fn! {
+unsafe fn MENU_MenuBarCalcSize(hdc: HDC, lprect: LPRECT, lppop: PMENU, pwndOwner: PWND) {
     let mut lpitem: *mut ITEM;
     let mut start: UINT;
     let mut i: UINT;
@@ -2987,11 +3010,11 @@ unsafe extern "fastcall" fn MENU_MenuBarCalcSize(hdc: HDC, lprect: LPRECT, lppop
                 if i != start {
                     break;
                 } else {
-                    (*lpitem).cxItem = ((*lprect).right as u32);
+                    (*lpitem).cxItem = (*lprect).right as u32 ;
                 }
             }
-            maxY = if maxY > ((*lpitem).cyItem as i32) { maxY } else { ((*lpitem).cyItem as i32) };
-            orgX = ((*lpitem).cxItem as i32);
+            maxY = if maxY > ((*lpitem).cyItem as i32) { maxY } else { (*lpitem).cyItem as i32  };
+            orgX = (*lpitem).cxItem as i32 ;
 
             i += 1;
             lpitem = lpitem.offset(1);
@@ -3007,7 +3030,7 @@ unsafe extern "fastcall" fn MENU_MenuBarCalcSize(hdc: HDC, lprect: LPRECT, lppop
         return;
     }
     lpitem = core::ptr::addr_of_mut!(*(*lppop).rgItems.offset(((*lppop).cItems - 1) as isize));
-    orgY = ((*lpitem).yItem as i32);
+    orgY = (*lpitem).yItem as i32 ;
     orgX = (*lprect).right;
     i = (*lppop).cItems - 1;
     loop {
@@ -3021,8 +3044,8 @@ unsafe extern "fastcall" fn MENU_MenuBarCalcSize(hdc: HDC, lprect: LPRECT, lppop
             break;
         }
         (*lpitem).xItem = ((*lpitem).xItem as i32 + orgX - (*lpitem).cxItem as i32) as u32;
-        (*lpitem).cxItem = (orgX as u32);
-        orgX = ((*lpitem).xItem as i32);
+        (*lpitem).cxItem = orgX as u32 ;
+        orgX = (*lpitem).xItem as i32 ;
 
         if i == 0 {
             break;
@@ -3030,6 +3053,7 @@ unsafe extern "fastcall" fn MENU_MenuBarCalcSize(hdc: HDC, lprect: LPRECT, lppop
         i -= 1;
         lpitem = lpitem.offset(-1);
     }
+}
 }
 
 unsafe fn MENU_DrawScrollArrows(lppop: PMENU, hdc: HDC) {
@@ -3043,19 +3067,20 @@ unsafe fn MENU_DrawScrollArrows(lppop: PMENU, hdc: HDC) {
     rect.top = 0;
     rect.right = (*lppop).cxMenu as i32;
     rect.bottom = arrow_bitmap_height as i32;
-    FillRect(hdc, &mut rect, (IntGetSysColorBrush(COLOR_MENU as i32) as HBRUSH));
+    FillRect(hdc, &mut rect, IntGetSysColorBrush(COLOR_MENU as i32) as HBRUSH );
     UITOOLS95_DrawFrameMenu(hdc, &mut rect, (if (*lppop).iTop != 0 { 0 } else { DFCS_INACTIVE }) | DFCS_MENUARROWUP);
 
     rect.top = ((*lppop).cyMenu - arrow_bitmap_height) as i32;
     rect.bottom = (*lppop).cyMenu as i32;
-    FillRect(hdc, &mut rect, (IntGetSysColorBrush(COLOR_MENU as i32) as HBRUSH));
+    FillRect(hdc, &mut rect, IntGetSysColorBrush(COLOR_MENU as i32) as HBRUSH );
     if !((*lppop).iTop < (*lppop).iMaxTop - (MENU_GetMaxPopupHeight(lppop) as i32 - 2 * arrow_bitmap_height as i32)) {
         Flags = DFCS_INACTIVE;
     }
     UITOOLS95_DrawFrameMenu(hdc, &mut rect, Flags | DFCS_MENUARROWDOWN);
 }
 
-unsafe extern "fastcall" fn MENU_DrawMenuItem(
+fastcall_fn! {
+unsafe fn MENU_DrawMenuItem(
     Wnd: PWND,
     Menu: PMENU,
     WndOwner: PWND,
@@ -3191,19 +3216,19 @@ unsafe extern "fastcall" fn MENU_DrawMenuItem(
     if (*lpitem).fState & MF_HILITE != 0 {
         if flat_menu != 0 {
             RECTL_vInflateRect(&mut rect, -1, -1);
-            FillRect(hdc, &mut rect, (IntGetSysColorBrush(COLOR_MENUHILIGHT as INT) as HBRUSH));
+            FillRect(hdc, &mut rect, IntGetSysColorBrush(COLOR_MENUHILIGHT as INT) as HBRUSH );
             RECTL_vInflateRect(&mut rect, 1, 1);
-            FrameRect(hdc, &mut rect, (IntGetSysColorBrush(COLOR_HIGHLIGHT as INT) as HBRUSH));
+            FrameRect(hdc, &mut rect, IntGetSysColorBrush(COLOR_HIGHLIGHT as INT) as HBRUSH );
         } else {
             if menuBar != 0 {
-                FillRect(hdc, &mut rect, (IntGetSysColorBrush(COLOR_MENU as INT) as HBRUSH));
+                FillRect(hdc, &mut rect, IntGetSysColorBrush(COLOR_MENU as INT) as HBRUSH );
                 DrawEdge(hdc, &mut rect, BDR_SUNKENOUTER, BF_RECT);
             } else {
-                FillRect(hdc, &mut rect, (IntGetSysColorBrush(COLOR_HIGHLIGHT as INT) as HBRUSH));
+                FillRect(hdc, &mut rect, IntGetSysColorBrush(COLOR_HIGHLIGHT as INT) as HBRUSH );
             }
         }
     } else {
-        FillRect(hdc, &mut rect, (IntGetSysColorBrush(bkgnd as INT) as HBRUSH));
+        FillRect(hdc, &mut rect, IntGetSysColorBrush(bkgnd as INT) as HBRUSH );
     }
 
     IntGdiSetBkMode(hdc, TRANSPARENT as core::ffi::c_int);
@@ -3217,7 +3242,7 @@ unsafe extern "fastcall" fn MENU_DrawMenuItem(
         rc.top = 3;
         rc.bottom = Height as core::ffi::c_long - 3;
         if flat_menu != 0 {
-            oldPen = NtGdiSelectPen(hdc, (NtGdiGetStockObject(DC_PEN as INT) as HPEN));
+            oldPen = NtGdiSelectPen(hdc, NtGdiGetStockObject(DC_PEN as INT) as HPEN );
             IntSetDCPenColor(hdc, IntGetSysColor(COLOR_BTNSHADOW as INT));
             GreMoveTo(hdc, rc.left, rc.top, core::ptr::null_mut());
             NtGdiLineTo(hdc, rc.left, rc.bottom);
@@ -3236,7 +3261,7 @@ unsafe extern "fastcall" fn MENU_DrawMenuItem(
         rc.right -= 1;
         rc.top = (rc.top + rc.bottom) / 2 - 1;
         if flat_menu != 0 {
-            oldPen = NtGdiSelectPen(hdc, (NtGdiGetStockObject(DC_PEN as INT) as HPEN));
+            oldPen = NtGdiSelectPen(hdc, NtGdiGetStockObject(DC_PEN as INT) as HPEN );
             IntSetDCPenColor(hdc, IntGetSysColor(COLOR_BTNSHADOW as INT));
             GreMoveTo(hdc, rc.left, rc.top, core::ptr::null_mut());
             NtGdiLineTo(hdc, rc.right, rc.top);
@@ -3257,9 +3282,9 @@ unsafe extern "fastcall" fn MENU_DrawMenuItem(
 
         if (*Menu).fFlags & (MNS_STYLE_MASK as u32) & (MNS_NOCHECK as u32) == 0 {
             bm = if (*lpitem).fState & MF_CHECKED != 0 {
-                ((*lpitem).hbmpChecked as HBITMAP)
+                (*lpitem).hbmpChecked as HBITMAP
             } else {
-                ((*lpitem).hbmpUnchecked as HBITMAP)
+                (*lpitem).hbmpUnchecked as HBITMAP
             };
             if !bm.is_null() {
                 let hdcMem: HDC = NtGdiCreateCompatibleDC(hdc);
@@ -3445,10 +3470,12 @@ unsafe extern "fastcall" fn MENU_DrawMenuItem(
         }
     }
 }
+}
 
-unsafe extern "fastcall" fn MENU_DrawPopupMenu(wnd: PWND, hdc: HDC, menu: PMENU) {
+fastcall_fn! {
+unsafe fn MENU_DrawPopupMenu(wnd: PWND, hdc: HDC, menu: PMENU) {
     let mut hPrevBrush: HBRUSH = core::ptr::null_mut();
-    let mut brush: HBRUSH = (IntGetSysColorBrush(COLOR_MENU as i32) as HBRUSH);
+    let mut brush: HBRUSH = IntGetSysColorBrush(COLOR_MENU as i32) as HBRUSH ;
     let mut rect: RECT = core::mem::zeroed();
 
     IntGetClientRect(wnd, (&mut rect as *mut RECT).cast());
@@ -3461,7 +3488,7 @@ unsafe extern "fastcall" fn MENU_DrawPopupMenu(wnd: PWND, hdc: HDC, menu: PMENU)
     if !hPrevBrush.is_null() && !NtGdiSelectFont(hdc, ghMenuFont).is_null() {
         FillRect(hdc, &mut rect, brush);
 
-        let hPrevPen: HPEN = NtGdiSelectPen(hdc, (NtGdiGetStockObject(NULL_PEN as i32) as HPEN));
+        let hPrevPen: HPEN = NtGdiSelectPen(hdc, NtGdiGetStockObject(NULL_PEN as i32) as HPEN );
         if !hPrevPen.is_null() {
             if !menu.is_null() && (*menu).cItems != 0 {
                 let mut item: *mut ITEM = (*menu).rgItems;
@@ -3488,6 +3515,7 @@ unsafe extern "fastcall" fn MENU_DrawPopupMenu(wnd: PWND, hdc: HDC, menu: PMENU)
             NtGdiSelectBrush(hdc, hPrevBrush);
         }
     }
+}
 }
 
 #[no_mangle]
@@ -3714,7 +3742,7 @@ unsafe fn DebugRect(rectl: *const RECT, color: COLORREF) {
         return;
     }
 
-    hdc = UserGetDCEx(core::ptr::null_mut(), (0 as usize as *mut core::ffi::c_void), DCX_USESTYLE);
+    hdc = UserGetDCEx(core::ptr::null_mut(), 0 as usize as *mut core::ffi::c_void , DCX_USESTYLE);
 
     brush = IntGdiCreateSolidBrush(color);
 
@@ -3723,8 +3751,8 @@ unsafe fn DebugRect(rectl: *const RECT, color: COLORREF) {
     FrameRect(hdc, rectl, brush);
     FrameRect(hdc, core::ptr::addr_of!(rr), brush);
 
-    NtGdiDeleteObjectApp((brush as *mut core::ffi::c_void));
-    UserReleaseDC(core::ptr::null_mut(), hdc, (1u8 as i32));
+    NtGdiDeleteObjectApp(brush as *mut core::ffi::c_void );
+    UserReleaseDC(core::ptr::null_mut(), hdc, 1u8 as i32 );
 }
 
 unsafe fn DebugPoint(x: INT, y: INT, color: COLORREF) {
@@ -3775,7 +3803,8 @@ unsafe fn MENU_MoveRect(flags: UINT, x: *mut INT, y: *mut INT, width: INT, heigh
     0
 }
 
-unsafe extern "fastcall" fn MENU_ShowPopup(pwndOwner: PWND, menu: PMENU, id: UINT, mut flags: UINT, mut x: INT, mut y: INT, pExclude: *const RECT) -> BOOL {
+fastcall_fn! {
+unsafe fn MENU_ShowPopup(pwndOwner: PWND, menu: PMENU, id: UINT, mut flags: UINT, mut x: INT, mut y: INT, pExclude: *const RECT) -> BOOL {
     let width: INT;
     let height: INT;
     let mut ptx: POINT = core::mem::zeroed();
@@ -3785,7 +3814,7 @@ unsafe extern "fastcall" fn MENU_ShowPopup(pwndOwner: PWND, menu: PMENU, id: UIN
     let bIsPopup: BOOL = ((flags & TPM_POPUPMENU) != 0) as BOOL;
 
     if (*menu).iItem != NO_SELECTED_ITEM as i32 {
-        (*(*menu).rgItems.offset((*menu).iItem as isize)).fState &= (!(MF_HILITE | MF_MOUSESELECT) as i32 as u32);
+        (*(*menu).rgItems.offset((*menu).iItem as isize)).fState &= !(MF_HILITE | MF_MOUSESELECT) as i32 as u32 ;
         (*menu).iItem = NO_SELECTED_ITEM as i32;
     }
 
@@ -3902,6 +3931,7 @@ unsafe extern "fastcall" fn MENU_ShowPopup(pwndOwner: PWND, menu: PMENU, id: UIN
 
     1
 }
+}
 
 unsafe fn MENU_EnsureMenuItemVisible(lppop: PMENU, wIndex: UINT, hdc: HDC) {
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
@@ -3927,7 +3957,7 @@ unsafe fn MENU_EnsureMenuItemVisible(lppop: PMENU, wIndex: UINT, hdc: HDC) {
             IntScrollWindow(pWnd, 0, (nOldPos as i32 - (*lppop).iTop) as i32, (&mut rc as *mut RECT).cast(), (&mut rc as *mut RECT).cast());
             MENU_DrawScrollArrows(lppop, hdc);
         } else if ((*item).yItem) < ((*lppop).iTop as u32) {
-            (*lppop).iTop = ((*item).yItem as i32);
+            (*lppop).iTop = (*item).yItem as i32 ;
             IntScrollWindow(pWnd, 0, (nOldPos as i32 - (*lppop).iTop) as i32, (&mut rc as *mut RECT).cast(), (&mut rc as *mut RECT).cast());
             MENU_DrawScrollArrows(lppop, hdc);
         }
@@ -3935,7 +3965,8 @@ unsafe fn MENU_EnsureMenuItemVisible(lppop: PMENU, wIndex: UINT, hdc: HDC) {
     }
 }
 
-unsafe extern "fastcall" fn MENU_SelectItem(
+fastcall_fn! {
+unsafe fn MENU_SelectItem(
     pwndOwner: PWND,
     menu: PMENU,
     wIndex: UINT,
@@ -3967,7 +3998,7 @@ unsafe extern "fastcall" fn MENU_SelectItem(
 
     if top_popup.is_null() {
         top_popup = (*menu).hWnd;
-        top_popup_hmenu = (UserHMGetHandle(menu) as HMENU);
+        top_popup_hmenu = UserHMGetHandle(menu) as HMENU ;
     }
 
     NtGdiSelectFont(hdc, ghMenuFont);
@@ -4043,6 +4074,7 @@ unsafe extern "fastcall" fn MENU_SelectItem(
     }
     UserReleaseDC(pWnd, hdc, 0u8 as BOOL);
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn MENU_MoveSelection(pwndOwner: PWND, menu: PMENU, offset: INT) {
@@ -4086,7 +4118,8 @@ unsafe fn MENU_MoveSelection_impl(pwndOwner: PWND, menu: PMENU, offset: INT) {
     }
 }
 
-unsafe extern "fastcall" fn MENU_HideSubPopups(
+fastcall_fn! {
+unsafe fn MENU_HideSubPopups(
     pWndOwner: PWND,
     Menu: PMENU,
     SendMenuSelect: BOOL,
@@ -4114,7 +4147,7 @@ unsafe extern "fastcall" fn MENU_HideSubPopups(
             MENU_SelectItem(pWndOwner, (*Item).spSubMenu, NO_SELECTED_ITEM as UINT, SendMenuSelect, core::ptr::null_mut());
             pWnd = ValidateHwndNoErr((*(*Item).spSubMenu).hWnd);
             if !pWnd.is_null() {
-                co_UserDestroyWindow((pWnd as *mut core::ffi::c_void));
+                co_UserDestroyWindow(pWnd as *mut core::ffi::c_void );
             }
 
             if (wFlags & TPM_NONOTIFY) == 0 {
@@ -4130,8 +4163,10 @@ unsafe extern "fastcall" fn MENU_HideSubPopups(
         }
     }
 }
+}
 
-unsafe extern "fastcall" fn MENU_ShowSubPopup(WndOwner: PWND, Menu: PMENU, SelectFirst: BOOL, mut Flags: UINT) -> PMENU {
+fastcall_fn! {
+unsafe fn MENU_ShowSubPopup(WndOwner: PWND, Menu: PMENU, SelectFirst: BOOL, mut Flags: UINT) -> PMENU {
     let mut Rect: RECT = core::mem::zeroed();
     let mut ParentRect: RECT = core::mem::zeroed();
     let Item: *mut ITEM;
@@ -4164,10 +4199,10 @@ unsafe extern "fastcall" fn MENU_ShowSubPopup(WndOwner: PWND, Menu: PMENU, Selec
     }
 
     let Item = (*Menu).rgItems.offset((*Menu).iItem as isize);
-    Rect.left = ((*Item).xItem as i32);
-    Rect.top = ((*Item).yItem as i32);
-    Rect.right = ((*Item).cxItem as i32);
-    Rect.bottom = ((*Item).cyItem as i32);
+    Rect.left = (*Item).xItem as i32 ;
+    Rect.top = (*Item).yItem as i32 ;
+    Rect.right = (*Item).cxItem as i32 ;
+    Rect.bottom = (*Item).cyItem as i32 ;
 
     pWnd = ValidateHwndNoErr((*Menu).hWnd);
 
@@ -4217,10 +4252,10 @@ unsafe extern "fastcall" fn MENU_ShowSubPopup(WndOwner: PWND, Menu: PMENU, Selec
     }
 
     if (*Item).yItem == 0 && (*Item).xItem == 0 && (*Item).cyItem == 0 && (*Item).cxItem == 0 {
-        (*Item).xItem = (Rect.left as u32);
-        (*Item).yItem = (Rect.top as u32);
-        (*Item).cxItem = (Rect.right as u32);
-        (*Item).cyItem = (Rect.bottom as u32);
+        (*Item).xItem = Rect.left as u32 ;
+        (*Item).yItem = Rect.top as u32 ;
+        (*Item).cxItem = Rect.right as u32 ;
+        (*Item).cyItem = Rect.bottom as u32 ;
     }
     (*Item).fState |= MF_MOUSESELECT;
 
@@ -4262,9 +4297,9 @@ unsafe extern "fastcall" fn MENU_ShowSubPopup(WndOwner: PWND, Menu: PMENU, Selec
             if (Flags & TPM_LAYOUTRTL) != 0 {
                 Rect.left += Rect.right - ((*Item).xItem as i32);
             } else {
-                Rect.left += ((*Item).xItem as i32);
+                Rect.left += (*Item).xItem as i32 ;
             }
-            Rect.top += ((*Item).cyItem as i32);
+            Rect.top += (*Item).cyItem as i32 ;
             Rect.right = ((*Item).cxItem - (*Item).xItem) as i32;
             Rect.bottom = ((*Item).cyItem - (*Item).yItem) as i32;
         }
@@ -4292,8 +4327,10 @@ unsafe extern "fastcall" fn MENU_ShowSubPopup(WndOwner: PWND, Menu: PMENU, Selec
     }
     (*Item).spSubMenu
 }
+}
 
-unsafe extern "fastcall" fn MENU_ExecFocusedItem(pmt: *mut MTRACKER, Menu: PMENU, Flags: UINT) -> INT {
+fastcall_fn! {
+unsafe fn MENU_ExecFocusedItem(pmt: *mut MTRACKER, Menu: PMENU, Flags: UINT) -> INT {
     let Item: PITEM;
 
     if Menu.is_null() || (*Menu).cItems == 0 || (*Menu).iItem == NO_SELECTED_ITEM as i32 {
@@ -4346,8 +4383,10 @@ unsafe extern "fastcall" fn MENU_ExecFocusedItem(pmt: *mut MTRACKER, Menu: PMENU
 
     -1
 }
+}
 
-unsafe extern "fastcall" fn MENU_SwitchTracking(
+fastcall_fn! {
+unsafe fn MENU_SwitchTracking(
     pmt: *mut MTRACKER,
     PtMenu: PMENU,
     Index: UINT,
@@ -4371,8 +4410,10 @@ unsafe extern "fastcall" fn MENU_SwitchTracking(
 
     MENU_SelectItem((*pmt).OwnerWnd, PtMenu, Index, 1, core::ptr::null_mut());
 }
+}
 
-unsafe extern "fastcall" fn MENU_ButtonDown(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> BOOL {
+fastcall_fn! {
+unsafe fn MENU_ButtonDown(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> BOOL {
     if !PtMenu.is_null() {
         let mut id: UINT = 0;
         let item: PITEM;
@@ -4397,8 +4438,10 @@ unsafe extern "fastcall" fn MENU_ButtonDown(pmt: *mut MTRACKER, PtMenu: PMENU, F
     }
     0
 }
+}
 
-unsafe extern "fastcall" fn MENU_ButtonUp(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> INT {
+fastcall_fn! {
+unsafe fn MENU_ButtonUp(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> INT {
     if !PtMenu.is_null() {
         let mut Id: UINT = 0;
         let item: *mut ITEM;
@@ -4427,6 +4470,7 @@ unsafe extern "fastcall" fn MENU_ButtonUp(pmt: *mut MTRACKER, PtMenu: PMENU, Fla
         }
     }
     -1
+}
 }
 
 unsafe fn MENU_PtMenu(menu: PMENU, pt: POINT) -> PMENU {
@@ -4465,7 +4509,8 @@ unsafe fn MENU_PtMenu(menu: PMENU, pt: POINT) -> PMENU {
     ret
 }
 
-unsafe extern "fastcall" fn MENU_MouseMove(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> BOOL {
+fastcall_fn! {
+unsafe fn MENU_MouseMove(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> BOOL {
     let mut Index: UINT = NO_SELECTED_ITEM as UINT;
 
     if !PtMenu.is_null() {
@@ -4479,6 +4524,7 @@ unsafe extern "fastcall" fn MENU_MouseMove(pmt: *mut MTRACKER, PtMenu: PMENU, Fl
         (*pmt).CurrentMenu = MENU_ShowSubPopup((*pmt).OwnerWnd, PtMenu, 0, Flags);
     }
     1
+}
 }
 
 unsafe fn MENU_GetSubPopup(menu: PMENU) -> PMENU {
@@ -4495,7 +4541,8 @@ unsafe fn MENU_GetSubPopup(menu: PMENU) -> PMENU {
     core::ptr::null_mut()
 }
 
-unsafe extern "fastcall" fn MENU_DoNextMenu(pmt: *mut MTRACKER, Vk: UINT, wFlags: UINT) -> LRESULT {
+fastcall_fn! {
+unsafe fn MENU_DoNextMenu(pmt: *mut MTRACKER, Vk: UINT, wFlags: UINT) -> LRESULT {
     let mut atEnd: BOOL = 0;
 
     if Vk == VK_LEFT && (*(*pmt).TopMenu).iItem == 0 {
@@ -4629,6 +4676,7 @@ unsafe extern "fastcall" fn MENU_DoNextMenu(pmt: *mut MTRACKER, Vk: UINT, wFlags
     }
     0
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn MENU_SuspendPopup(pmt: *mut MTRACKER, uMsg: UINT) -> BOOL {
@@ -4643,18 +4691,18 @@ unsafe extern "C" fn MENU_SuspendPopup(pmt: *mut MTRACKER, uMsg: UINT) -> BOOL {
 unsafe fn MENU_SuspendPopup_impl(pmt: *mut MTRACKER, uMsg: UINT) -> BOOL {
     let mut msg: MSG = core::mem::zeroed();
 
-    msg.hwnd = (UserHMGetHandle((*pmt).OwnerWnd) as HWND);
+    msg.hwnd = UserHMGetHandle((*pmt).OwnerWnd) as HWND ;
 
-    co_IntGetPeekMessage(&mut msg, 0 as HWND, uMsg, uMsg, (PM_NOYIELD | PM_REMOVE) as UINT, (0u8 as i32));
+    co_IntGetPeekMessage(&mut msg, 0 as HWND, uMsg, uMsg, (PM_NOYIELD | PM_REMOVE) as UINT, 0u8 as i32 );
     (*pmt).TrackFlags |= TF_SUSPENDPOPUP as UINT >> 0 | 0; // placeholder removed below
     (*pmt).TrackFlags |= TF_SKIPREMOVE as UINT;
 
     match uMsg {
         WM_KEYDOWN => {
-            co_IntGetPeekMessage(&mut msg, 0 as HWND, 0, 0, (PM_NOYIELD | PM_NOREMOVE) as UINT, (0u8 as i32));
+            co_IntGetPeekMessage(&mut msg, 0 as HWND, 0, 0, (PM_NOYIELD | PM_NOREMOVE) as UINT, 0u8 as i32 );
             if msg.message == WM_KEYUP || msg.message == WM_PAINT {
-                co_IntGetPeekMessage(&mut msg, 0 as HWND, 0, 0, (PM_NOYIELD | PM_REMOVE) as UINT, (0u8 as i32));
-                co_IntGetPeekMessage(&mut msg, 0 as HWND, 0, 0, (PM_NOYIELD | PM_NOREMOVE) as UINT, (0u8 as i32));
+                co_IntGetPeekMessage(&mut msg, 0 as HWND, 0, 0, (PM_NOYIELD | PM_REMOVE) as UINT, 0u8 as i32 );
+                co_IntGetPeekMessage(&mut msg, 0 as HWND, 0, 0, (PM_NOYIELD | PM_NOREMOVE) as UINT, 0u8 as i32 );
                 if msg.message == WM_KEYDOWN
                     && (msg.wParam == VK_LEFT as WPARAM || msg.wParam == VK_RIGHT as WPARAM)
                 {
@@ -4705,7 +4753,8 @@ unsafe fn MENU_KeyEscape_impl(pmt: *mut MTRACKER, Flags: UINT) -> BOOL {
     EndMenu
 }
 
-unsafe extern "fastcall" fn MENU_KeyLeft(pmt: *mut MTRACKER, Flags: UINT, msg: UINT) {
+fastcall_fn! {
+unsafe fn MENU_KeyLeft(pmt: *mut MTRACKER, Flags: UINT, msg: UINT) {
     let mut MenuTmp: PMENU;
     let mut MenuPrev: PMENU;
     let PrevCol: UINT;
@@ -4746,8 +4795,10 @@ unsafe extern "fastcall" fn MENU_KeyLeft(pmt: *mut MTRACKER, Flags: UINT, msg: U
         }
     }
 }
+}
 
-unsafe extern "fastcall" fn MENU_KeyRight(pmt: *mut MTRACKER, Flags: UINT, msg: UINT) {
+fastcall_fn! {
+unsafe fn MENU_KeyRight(pmt: *mut MTRACKER, Flags: UINT, msg: UINT) {
     let mut menutmp: PMENU;
     let NextCol: UINT;
 
@@ -4792,8 +4843,10 @@ unsafe extern "fastcall" fn MENU_KeyRight(pmt: *mut MTRACKER, Flags: UINT, msg: 
         }
     }
 }
+}
 
-unsafe extern "fastcall" fn MENU_TrackMenu(
+fastcall_fn! {
+unsafe fn MENU_TrackMenu(
     pmenu: PMENU,
     wFlags: UINT,
     x: INT,
@@ -4860,7 +4913,7 @@ unsafe extern "fastcall" fn MENU_TrackMenu(
                 0,
             ) != 0
             {
-                if IntCallMsgFilter(&mut msg, (MSGF_MENU as i32)) == 0 {
+                if IntCallMsgFilter(&mut msg, MSGF_MENU as i32 ) == 0 {
                     break;
                 }
                 co_IntGetPeekMessage(
@@ -5065,7 +5118,7 @@ unsafe extern "fastcall" fn MENU_TrackMenu(
                         k if k == VK_F1 => {
                             let mut hi: HELPINFO = core::mem::zeroed();
                             hi.cbSize = core::mem::size_of::<HELPINFO>() as UINT;
-                            hi.iContextType = (HELPINFO_MENUITEM as i32);
+                            hi.iContextType = HELPINFO_MENUITEM as i32 ;
                             if (*mt.CurrentMenu).iItem == (NO_SELECTED_ITEM as i32) {
                                 hi.iCtrlId = 0;
                             } else {
@@ -5101,7 +5154,7 @@ unsafe extern "fastcall" fn MENU_TrackMenu(
                         pos = MENU_FindItemByKey(
                             mt.OwnerWnd,
                             mt.CurrentMenu,
-                            (LOWORD(msg.wParam as DWORD) as u16),
+                            LOWORD(msg.wParam as DWORD) as u16 ,
                             0,
                         );
 
@@ -5170,7 +5223,7 @@ unsafe extern "fastcall" fn MENU_TrackMenu(
                         0,
                     );
 
-                    co_UserDestroyWindow((pwndTM as *mut core::ffi::c_void));
+                    co_UserDestroyWindow(pwndTM as *mut core::ffi::c_void );
                 }
                 (*mt.TopMenu).hWnd = core::ptr::null_mut();
 
@@ -5217,9 +5270,11 @@ unsafe extern "fastcall" fn MENU_TrackMenu(
     }
     executedMenuId
 }
+}
 
 
-unsafe extern "fastcall" fn MENU_InitTracking(pWnd: PWND, Menu: PMENU, bPopup: u8, wFlags: UINT) -> u8 {
+fastcall_fn! {
+unsafe fn MENU_InitTracking(pWnd: PWND, Menu: PMENU, bPopup: u8, wFlags: UINT) -> u8 {
     let capture_win: HWND;
     let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
 
@@ -5269,11 +5324,12 @@ unsafe extern "fastcall" fn MENU_InitTracking(pWnd: PWND, Menu: PMENU, bPopup: u
     IntNotifyWinEvent(
         EVENT_SYSTEM_MENUSTART,
         pWnd,
-        if (*Menu).fFlags & MNF_SYSMENU != 0 { (OBJID_SYSMENU as i32) } else { (OBJID_MENU as i32) },
+        if (*Menu).fFlags & MNF_SYSMENU != 0 { OBJID_SYSMENU as i32  } else { OBJID_MENU as i32  },
         CHILDID_SELF as LONG,
         0,
     );
     1
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -5603,10 +5659,10 @@ pub unsafe extern "system" fn PopupMenuWndProc(
                 *lResult = IntDefWindowProc(Wnd, Message, wParam, lParam, 0u8 as BOOL);
                 return 1;
             }
-            (*Wnd).fnid = (FNID_MENU as u16 as u32);
+            (*Wnd).fnid = FNID_MENU as u16 as u32 ;
             pPopupMenu = DesktopHeapAlloc(
                 (*Wnd).head.rpdesk,
-                (core::mem::size_of::<POPUPMENU>() as u32 as usize),
+                core::mem::size_of::<POPUPMENU>() as u32 as usize ,
             ) as PPOPUPMENU;
             if pPopupMenu.is_null() {
                 return 1;
@@ -5669,7 +5725,7 @@ pub unsafe extern "system" fn PopupMenuWndProc(
             }
             DesktopHeapFree((*Wnd).head.rpdesk, pPopupMenu as *mut core::ffi::c_void);
             (*(Wnd as PMENUWND)).ppopupmenu = core::ptr::null_mut();
-            (*Wnd).fnid = (FNID_DESTROY as u16 as u32);
+            (*Wnd).fnid = FNID_DESTROY as u16 as u32 ;
         }
 
         x if x == MM_SETMENUHANDLE || x == MN_SETHMENU => {
@@ -5707,8 +5763,9 @@ pub unsafe extern "system" fn PopupMenuWndProc(
 
 // MM_SETMENUHANDLE/MM_GETMENUHANDLE are defined as pub const near the top of this file.
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IntHiliteMenuItem(
+pub unsafe fn IntHiliteMenuItem(
     WindowObject: PWND,
     MenuObject: PMENU,
     uItemHilite: UINT,
@@ -5742,6 +5799,7 @@ pub unsafe extern "fastcall" fn IntHiliteMenuItem(
 
     1
 }
+}
 
 unsafe extern "system" fn intGetTitleBarInfo(pWindowObject: PWND, bti: PTITLEBARINFO) -> BOOLEAN {
     let mut dwStyle: DWORD;
@@ -5770,19 +5828,19 @@ unsafe extern "system" fn intGetTitleBarInfo(pWindowObject: PWND, bti: PTITLEBAR
         if (dwStyle & WS_ICONIC) != WS_ICONIC {
             if HAS_THICKFRAME(dwStyle, dwExStyle) != 0 {
                 RECTL_vInflateRect(
-                    (core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT),
+                    core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT ,
                     -UserGetSystemMetrics(SM_CXFRAME as ULONG),
                     -UserGetSystemMetrics(SM_CYFRAME as ULONG),
                 );
             } else if HAS_DLGFRAME(dwStyle, dwExStyle) != 0 {
                 RECTL_vInflateRect(
-                    (core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT),
+                    core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT ,
                     -UserGetSystemMetrics(SM_CXDLGFRAME as ULONG),
                     -UserGetSystemMetrics(SM_CYDLGFRAME as ULONG),
                 );
             } else if HAS_THINFRAME(dwStyle, dwExStyle) != 0 {
                 RECTL_vInflateRect(
-                    (core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT),
+                    core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT ,
                     -UserGetSystemMetrics(SM_CXBORDER as ULONG),
                     -UserGetSystemMetrics(SM_CYBORDER as ULONG),
                 );
@@ -5791,7 +5849,7 @@ unsafe extern "system" fn intGetTitleBarInfo(pWindowObject: PWND, bti: PTITLEBAR
             if (dwStyle & WS_CHILD) != 0 && (dwExStyle & WS_EX_MDICHILD) == 0 {
                 if dwExStyle & WS_EX_CLIENTEDGE != 0 {
                     RECTL_vInflateRect(
-                        (core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT),
+                        core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT ,
                         -UserGetSystemMetrics(SM_CXEDGE as ULONG),
                         -UserGetSystemMetrics(SM_CYEDGE as ULONG),
                     );
@@ -5799,7 +5857,7 @@ unsafe extern "system" fn intGetTitleBarInfo(pWindowObject: PWND, bti: PTITLEBAR
 
                 if dwExStyle & WS_EX_STATICEDGE != 0 {
                     RECTL_vInflateRect(
-                        (core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT),
+                        core::ptr::addr_of_mut!((*bti).rcTitleBar) as *mut RECT ,
                         -UserGetSystemMetrics(SM_CXBORDER as ULONG),
                         -UserGetSystemMetrics(SM_CYBORDER as ULONG),
                     );
@@ -5857,7 +5915,8 @@ unsafe extern "system" fn intGetTitleBarInfo(pWindowObject: PWND, bti: PTITLEBAR
     retValue
 }
 
-unsafe extern "fastcall" fn UserInsertMenuItem(
+fastcall_fn! {
+unsafe fn UserInsertMenuItem(
     Menu: PMENU,
     uItem: UINT,
     fByPosition: BOOL,
@@ -5919,6 +5978,7 @@ unsafe extern "fastcall" fn UserInsertMenuItem(
 
     SetLastNtError(Status);
     0
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -5994,8 +6054,9 @@ unsafe fn IntGetSubMenu_impl(hMenu: HMENU, mut nPos: core::ffi::c_int) -> HMENU 
     core::ptr::null_mut()
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntFindSubMenu(hMenu: *mut HMENU, hSubTarget: HMENU) -> UINT {
+unsafe fn IntFindSubMenu(hMenu: *mut HMENU, hSubTarget: HMENU) -> UINT {
     let mut menu: PMENU;
     let pSubTarget: PMENU;
     let posIdx: UINT;
@@ -6012,12 +6073,13 @@ unsafe extern "fastcall" fn IntFindSubMenu(hMenu: *mut HMENU, hSubTarget: HMENU)
     posIdx = MENU_FindSubMenu(&mut menu, pSubTarget);
 
     *hMenu = if !menu.is_null() {
-        (UserHMGetHandle(menu) as HMENU)
+        UserHMGetHandle(menu) as HMENU
     } else {
         core::ptr::null_mut()
     };
 
     posIdx
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -6187,8 +6249,9 @@ pub unsafe extern "C" fn IntMenuItemInfo(
     Ret
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn UserMenuItemInfo(
+pub unsafe fn UserMenuItemInfo(
     mut Menu: PMENU,
     mut Item: UINT,
     ByPosition: BOOL,
@@ -6272,8 +6335,10 @@ pub unsafe extern "fastcall" fn UserMenuItemInfo(
 
     Ret
 }
+}
 
-unsafe extern "fastcall" fn UserMenuInfo(
+fastcall_fn! {
+unsafe fn UserMenuInfo(
     Menu: PMENU,
     UnsafeMenuInfo: PROSMENUINFO,
     SetOrGet: i32,
@@ -6328,6 +6393,7 @@ unsafe extern "fastcall" fn UserMenuInfo(
 
     Res
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntGetMenuItemRect(
@@ -6367,10 +6433,10 @@ unsafe fn IntGetMenuItemRect_impl(
         MF_BYPOSITION,
     );
     if !MenuItem.is_null() {
-        (*Rect).left = ((*MenuItem).xItem as i32);
-        (*Rect).top = ((*MenuItem).yItem as i32);
-        (*Rect).right = ((*MenuItem).cxItem as i32);
-        (*Rect).bottom = ((*MenuItem).cyItem as i32);
+        (*Rect).left = (*MenuItem).xItem as i32 ;
+        (*Rect).top = (*MenuItem).yItem as i32 ;
+        (*Rect).right = (*MenuItem).cxItem as i32 ;
+        (*Rect).bottom = (*MenuItem).cyItem as i32 ;
     } else {
         return 0;
     }
@@ -6439,7 +6505,8 @@ unsafe fn IntSetSystemMenu_impl(Window: PWND, Menu: PMENU) -> BOOL {
     TRUE as BOOL
 }
 
-unsafe extern "fastcall" fn MENU_GetSystemMenu(Window: PWND, Popup: PMENU) -> PMENU {
+fastcall_fn! {
+unsafe fn MENU_GetSystemMenu(Window: PWND, Popup: PMENU) -> PMENU {
     let Menu: PMENU;
     let mut NewMenu: PMENU = core::ptr::null_mut();
     let SysMenu: PMENU;
@@ -6460,7 +6527,7 @@ unsafe extern "fastcall" fn MENU_GetSystemMenu(Window: PWND, Popup: PMENU) -> PM
     }
 
     (*SysMenu).fFlags |= MNF_SYSMENU;
-    (*SysMenu).hWnd = (UserHMGetHandle(Window) as HWND);
+    (*SysMenu).hWnd = UserHMGetHandle(Window) as HWND ;
 
     if Popup.is_null() {
         if (*Window).ExStyle & WS_EX_MDICHILD != 0 {
@@ -6523,13 +6590,14 @@ unsafe extern "fastcall" fn MENU_GetSystemMenu(Window: PWND, Popup: PMENU) -> PM
         ItemInfo.fState = MFS_ENABLED;
         ItemInfo.dwTypeData = core::ptr::null_mut();
         ItemInfo.cch = 0;
-        ItemInfo.hSubMenu = (UserHMGetHandle(NewMenu) as HMENU);
+        ItemInfo.hSubMenu = UserHMGetHandle(NewMenu) as HMENU ;
         IntInsertMenuItem(SysMenu, !0u32, 1, &mut ItemInfo, core::ptr::null_mut());
 
         return SysMenu;
     }
     ERR!(b"failed to load system menu!\n\0".as_ptr());
     core::ptr::null_mut()
+}
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -6567,7 +6635,7 @@ unsafe fn IntGetSystemMenu_impl(Window: PWND, bRevert: BOOL) -> PMENU {
         {
             Menu = MENU_GetSystemMenu(Window, core::ptr::null_mut());
             (*Window).SystemMenu = if !Menu.is_null() {
-                (UserHMGetHandle(Menu) as HMENU)
+                UserHMGetHandle(Menu) as HMENU
             } else {
                 core::ptr::null_mut()
             };
@@ -6586,8 +6654,9 @@ unsafe fn IntGetSystemMenu_impl(Window: PWND, bRevert: BOOL) -> PMENU {
     core::ptr::null_mut()
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntSetMenu(
+unsafe fn IntSetMenu(
     Wnd: PWND,
     Menu: HMENU,
     Changed: *mut BOOL,
@@ -6631,7 +6700,7 @@ unsafe extern "fastcall" fn IntSetMenu(
 
     (*Wnd).IDMenu = Menu as UINT_PTR;
     if !NewMenu.is_null() {
-        (*NewMenu).hWnd = (UserHMGetHandle(Wnd) as HWND);
+        (*NewMenu).hWnd = UserHMGetHandle(Wnd) as HWND ;
         IntReleaseMenuObject(NewMenu);
     }
     if !OldMenu.is_null() {
@@ -6640,6 +6709,7 @@ unsafe extern "fastcall" fn IntSetMenu(
     }
 
     1
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]

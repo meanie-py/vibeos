@@ -38,7 +38,6 @@ add_custom_command(
     OUTPUT ${SCSIPORT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${SCSIPORT_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
         RUSTFLAGS=${SCSIPORT_RUST_RUSTFLAGS}
         cargo build --release --target ${SCSIPORT_RUST_TARGET}
             -p scsiport-rust
@@ -58,8 +57,13 @@ add_custom_target(rust_scsiport DEPENDS ${SCSIPORT_RUST_LIB})
 list(APPEND PCH_SKIP_SOURCE
     guid.c)
 
+# rust_varargs_shim.c — va_start/va_arg trampolines for the cdecl-varargs exports
+# (ScsiDebugPrint / ScsiPortNotification). Stable Rust cannot DEFINE a C-variadic fn;
+# the logic stays in scsiport-rust's *_v twins. Delete once c_variadic stabilizes
+# (rust-lang#44930).
 add_library(scsiport MODULE
     rust_cohab_stub.c
+    rust_varargs_shim.c
     ${PCH_SKIP_SOURCE}
     scsiport.rc
     ${CMAKE_CURRENT_BINARY_DIR}/scsiport.def)

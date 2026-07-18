@@ -100,7 +100,7 @@ pub unsafe extern "system" fn U32LoadAccelerators(hInstance: HINSTANCE, hTableRe
         return core::ptr::null_mut();
     }
 
-    EnterCriticalSection(&mut U32AccelCacheLock);
+    EnterCriticalSection(&raw mut U32AccelCacheLock);
 
     'l_Leave: {
         /* see if this accelerator table has already been loaded */
@@ -156,7 +156,7 @@ pub unsafe extern "system" fn U32LoadAccelerators(hInstance: HINSTANCE, hTableRe
         U32AccelCacheAdd(hAccTable, pAccTableResData as HGLOBAL);
     }
 
-    LeaveCriticalSection(&mut U32AccelCacheLock);
+    LeaveCriticalSection(&raw mut U32AccelCacheLock);
     hAccTable
 }
 #[no_mangle]

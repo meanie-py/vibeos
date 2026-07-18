@@ -32889,19 +32889,19 @@ impl _MMPTE_PROTOTYPE {
     }
     #[inline]
     pub fn ProtoAddress(&self) -> LONG64 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(16usize, 48u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(16usize, 48u8) as u64) }
     }
     #[inline]
     pub fn set_ProtoAddress(&mut self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(16usize, 48u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn ProtoAddress_raw(this: *const Self) -> LONG64 {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 16usize,
                 48u8,
@@ -32911,7 +32911,7 @@ impl _MMPTE_PROTOTYPE {
     #[inline]
     pub unsafe fn set_ProtoAddress_raw(this: *mut Self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 8usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 16usize,
@@ -32956,7 +32956,7 @@ impl _MMPTE_PROTOTYPE {
             Protection as u64
         });
         __bindgen_bitfield_unit.set(16usize, 48u8, {
-            let ProtoAddress: u64 = unsafe { ::core::mem::transmute(ProtoAddress) };
+            let ProtoAddress: u64 = unsafe { i64::cast_unsigned(ProtoAddress) };
             ProtoAddress as u64
         });
         __bindgen_bitfield_unit
@@ -33137,19 +33137,19 @@ impl _MMPTE_SUBSECTION {
     }
     #[inline]
     pub fn SubsectionAddress(&self) -> LONG64 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(16usize, 48u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(16usize, 48u8) as u64) }
     }
     #[inline]
     pub fn set_SubsectionAddress(&mut self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(16usize, 48u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn SubsectionAddress_raw(this: *const Self) -> LONG64 {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 16usize,
                 48u8,
@@ -33159,7 +33159,7 @@ impl _MMPTE_SUBSECTION {
     #[inline]
     pub unsafe fn set_SubsectionAddress_raw(this: *mut Self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 8usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 16usize,
@@ -33199,7 +33199,7 @@ impl _MMPTE_SUBSECTION {
             Unused1 as u64
         });
         __bindgen_bitfield_unit.set(16usize, 48u8, {
-            let SubsectionAddress: u64 = unsafe { ::core::mem::transmute(SubsectionAddress) };
+            let SubsectionAddress: u64 = unsafe { i64::cast_unsigned(SubsectionAddress) };
             SubsectionAddress as u64
         });
         __bindgen_bitfield_unit
@@ -49675,19 +49675,19 @@ pub struct tagMENUBARINFO {
 impl tagMENUBARINFO {
     #[inline]
     pub fn fBarFocused(&self) -> BOOL {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u32) }
+        unsafe { u32::cast_signed(self._bitfield_1.get(0usize, 1u8) as u32) }
     }
     #[inline]
     pub fn set_fBarFocused(&mut self, val: BOOL) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             self._bitfield_1.set(0usize, 1u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn fBarFocused_raw(this: *const Self) -> BOOL {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+            u32::cast_signed(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 0usize,
                 1u8,
@@ -49697,7 +49697,7 @@ impl tagMENUBARINFO {
     #[inline]
     pub unsafe fn set_fBarFocused_raw(this: *mut Self, val: BOOL) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 0usize,
@@ -49708,19 +49708,19 @@ impl tagMENUBARINFO {
     }
     #[inline]
     pub fn fFocused(&self) -> BOOL {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 1u8) as u32) }
+        unsafe { u32::cast_signed(self._bitfield_1.get(1usize, 1u8) as u32) }
     }
     #[inline]
     pub fn set_fFocused(&mut self, val: BOOL) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             self._bitfield_1.set(1usize, 1u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn fFocused_raw(this: *const Self) -> BOOL {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+            u32::cast_signed(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 1usize,
                 1u8,
@@ -49730,7 +49730,7 @@ impl tagMENUBARINFO {
     #[inline]
     pub unsafe fn set_fFocused_raw(this: *mut Self, val: BOOL) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 1usize,
@@ -49746,11 +49746,11 @@ impl tagMENUBARINFO {
     ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 1u8, {
-            let fBarFocused: u32 = unsafe { ::core::mem::transmute(fBarFocused) };
+            let fBarFocused: u32 = unsafe { i32::cast_unsigned(fBarFocused) };
             fBarFocused as u64
         });
         __bindgen_bitfield_unit.set(1usize, 1u8, {
-            let fFocused: u32 = unsafe { ::core::mem::transmute(fFocused) };
+            let fFocused: u32 = unsafe { i32::cast_unsigned(fFocused) };
             fFocused as u64
         });
         __bindgen_bitfield_unit
@@ -52776,19 +52776,19 @@ pub struct tagIMEINFOEX__bindgen_ty_1 {
 impl tagIMEINFOEX__bindgen_ty_1 {
     #[inline]
     pub fn fSysWow64Only(&self) -> INT {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u32) }
+        unsafe { u32::cast_signed(self._bitfield_1.get(0usize, 1u8) as u32) }
     }
     #[inline]
     pub fn set_fSysWow64Only(&mut self, val: INT) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             self._bitfield_1.set(0usize, 1u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn fSysWow64Only_raw(this: *const Self) -> INT {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+            u32::cast_signed(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 0usize,
                 1u8,
@@ -52798,7 +52798,7 @@ impl tagIMEINFOEX__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_fSysWow64Only_raw(this: *mut Self, val: INT) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 0usize,
@@ -52809,19 +52809,19 @@ impl tagIMEINFOEX__bindgen_ty_1 {
     }
     #[inline]
     pub fn fCUASLayer(&self) -> INT {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 1u8) as u32) }
+        unsafe { u32::cast_signed(self._bitfield_1.get(1usize, 1u8) as u32) }
     }
     #[inline]
     pub fn set_fCUASLayer(&mut self, val: INT) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             self._bitfield_1.set(1usize, 1u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn fCUASLayer_raw(this: *const Self) -> INT {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+            u32::cast_signed(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 1usize,
                 1u8,
@@ -52831,7 +52831,7 @@ impl tagIMEINFOEX__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_fCUASLayer_raw(this: *mut Self, val: INT) {
         unsafe {
-            let val: u32 = ::core::mem::transmute(val);
+            let val: u32 = i32::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 1usize,
@@ -52847,11 +52847,11 @@ impl tagIMEINFOEX__bindgen_ty_1 {
     ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 1u8, {
-            let fSysWow64Only: u32 = unsafe { ::core::mem::transmute(fSysWow64Only) };
+            let fSysWow64Only: u32 = unsafe { i32::cast_unsigned(fSysWow64Only) };
             fSysWow64Only as u64
         });
         __bindgen_bitfield_unit.set(1usize, 1u8, {
-            let fCUASLayer: u32 = unsafe { ::core::mem::transmute(fCUASLayer) };
+            let fCUASLayer: u32 = unsafe { i32::cast_unsigned(fCUASLayer) };
             fCUASLayer as u64
         });
         __bindgen_bitfield_unit

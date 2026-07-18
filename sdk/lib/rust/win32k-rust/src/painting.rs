@@ -4,7 +4,6 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use ntkrnl_sys::ddk::{ExFreePoolWithTag};
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 use ntkrnl_sys::base::IsListEmpty;
-use core::ffi::c_void;
 
 // Debug-channel sinks (no kernel symbol in non-DBG build; inert no-op macros).
 macro_rules! ERR { ($($t:tt)*) => {{}}; }
@@ -256,8 +255,9 @@ unsafe fn IntIntersectWithParents_impl(Child: PWND, WindowRect: *mut RECTL) -> u
     1u8
 }
 
+fastcall_fn! {
 #[allow(non_snake_case)]
-unsafe extern "fastcall" fn IntValidateParents(Child: PWND, mut Recurse: i32) -> i32 {
+unsafe fn IntValidateParents(Child: PWND, mut Recurse: i32) -> i32 {
     let mut ParentRect: RECTL = core::mem::zeroed();
     let mut Rect: RECTL = core::mem::zeroed();
     let mut Start: i32;
@@ -329,6 +329,7 @@ unsafe extern "fastcall" fn IntValidateParents(Child: PWND, mut Recurse: i32) ->
     }
 
     Ret
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -447,7 +448,8 @@ unsafe fn IntCalcWindowRgn_impl(Wnd: PWND, Client: i32) -> HRGN {
     hRgnWindow
 }
 
-unsafe extern "fastcall" fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HRGN {
+fastcall_fn! {
+unsafe fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HRGN {
     let hRgnNonClient: HRGN;
     let hRgnWindow: HRGN;
     let RgnType: u32;
@@ -465,21 +467,21 @@ unsafe extern "fastcall" fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HR
 
         hRgnWindow = IntCalcWindowRgn(Window, 1);
         if hRgnWindow == core::ptr::null_mut() {
-            GreDeleteObject((hRgnNonClient as _));
+            GreDeleteObject(hRgnNonClient as _ );
             return HRGN_WINDOW;
         }
 
-        NcType = IntGdiGetRgnBox(hRgnNonClient, (&mut update as *mut _ as _)) as u32;
+        NcType = IntGdiGetRgnBox(hRgnNonClient, &mut update as *mut _ as _ ) as u32;
 
         RgnType = NtGdiCombineRgn(hRgnNonClient, hRgnNonClient, hRgnWindow, RGN_DIFF as i32) as u32;
 
         if RgnType == ERROR {
-            GreDeleteObject((hRgnWindow as _));
-            GreDeleteObject((hRgnNonClient as _));
+            GreDeleteObject(hRgnWindow as _ );
+            GreDeleteObject(hRgnNonClient as _ );
             return HRGN_WINDOW;
         } else if RgnType == NULLREGION {
-            GreDeleteObject((hRgnWindow as _));
-            GreDeleteObject((hRgnNonClient as _));
+            GreDeleteObject(hRgnWindow as _ );
+            GreDeleteObject(hRgnNonClient as _ );
             (*Window).state &= !WNDS_UPDATEDIRTY;
             return core::ptr::null_mut();
         }
@@ -487,7 +489,7 @@ unsafe extern "fastcall" fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HR
         if Validate != 0 {
             if NtGdiCombineRgn((*Window).hrgnUpdate, (*Window).hrgnUpdate, hRgnWindow, RGN_AND as i32) as u32 == NULLREGION {
                 IntGdiSetRegionOwner((*Window).hrgnUpdate, GDI_OBJ_HMGR_POWNED);
-                GreDeleteObject(((*Window).hrgnUpdate as _));
+                GreDeleteObject((*Window).hrgnUpdate as _ );
                 (*Window).state &= !WNDS_UPDATEDIRTY;
                 (*Window).hrgnUpdate = core::ptr::null_mut();
                 if (*Window).state & WNDS_INTERNALPAINT == 0 {
@@ -498,21 +500,22 @@ unsafe extern "fastcall" fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HR
 
         if NcType == SIMPLEREGION {
             let mut window: RECT = core::mem::zeroed();
-            IntGetWindowRect(Window, (&mut window as *mut _ as _));
+            IntGetWindowRect(Window, &mut window as *mut _ as _ );
 
             if IntEqualRect(&mut window as *mut _ as _, &mut update as *mut _ as _) != 0 {
-                GreDeleteObject((hRgnNonClient as _));
-                GreDeleteObject((hRgnWindow as _));
+                GreDeleteObject(hRgnNonClient as _ );
+                GreDeleteObject(hRgnWindow as _ );
                 return HRGN_WINDOW;
             }
         }
 
-        GreDeleteObject((hRgnWindow as _));
+        GreDeleteObject(hRgnWindow as _ );
 
         return hRgnNonClient;
     } else {
         return (*Window).hrgnUpdate;
     }
+}
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -548,7 +551,8 @@ unsafe fn IntSendNCPaintImpl(pWnd: PWND, mut hRgn: HRGN) {
     }
 }
 
-unsafe extern "fastcall" fn IntSendChildNCPaint(mut pWnd: PWND) {
+fastcall_fn! {
+unsafe fn IntSendChildNCPaint(mut pWnd: PWND) {
     pWnd = (*pWnd).spwndChild;
     while !pWnd.is_null() {
         if (*pWnd).hrgnUpdate.is_null() && ((*pWnd).state & WNDS_SENDNCPAINT) != 0 {
@@ -566,9 +570,11 @@ unsafe extern "fastcall" fn IntSendChildNCPaint(mut pWnd: PWND) {
         }
     }
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recurse: i32) {
+unsafe fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recurse: i32) {
     let hDC: HDC;
     let hWnd: HWND = UserHMGetHandle(Wnd as _) as HWND;
     let mut TempRegion: HRGN = core::ptr::null_mut();
@@ -589,8 +595,8 @@ unsafe extern "fastcall" fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recu
                     TempRegion = IntGetNCUpdateRgn(Wnd, 1);
                     IntSendNCPaint(Wnd, TempRegion);
 
-                    if TempRegion > HRGN_WINDOW && GreIsHandleValid((TempRegion as _)) != 0 {
-                        GreDeleteObject((TempRegion as _));
+                    if TempRegion > HRGN_WINDOW && GreIsHandleValid(TempRegion as _ ) != 0 {
+                        GreDeleteObject(TempRegion as _ );
                     }
                 }
 
@@ -599,7 +605,7 @@ unsafe extern "fastcall" fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recu
                     if !(*Wnd).hrgnUpdate.is_null() {
                         hDC = UserGetDCEx(
                             Wnd,
-                            ((*Wnd).hrgnUpdate as _),
+                            (*Wnd).hrgnUpdate as _ ,
                             DCX_CACHE | DCX_USESTYLE | DCX_INTERSECTRGN | DCX_KEEPCLIPRGN,
                         );
 
@@ -658,10 +664,12 @@ unsafe extern "fastcall" fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recu
         }
     }
 }
+}
 
+fastcall_fn! {
 #[allow(non_snake_case)]
 #[no_mangle]
-unsafe extern "fastcall" fn co_IntUpdateWindows(Wnd: PWND, mut Flags: ULONG, Recurse: i32) {
+unsafe fn co_IntUpdateWindows(Wnd: PWND, mut Flags: ULONG, Recurse: i32) {
     let hWnd = UserHMGetHandle(Wnd);
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
 
@@ -732,6 +740,7 @@ unsafe extern "fastcall" fn co_IntUpdateWindows(Wnd: PWND, mut Flags: ULONG, Rec
             Child = (*Child).spwndNext;
         }
     }
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -813,8 +822,9 @@ pub unsafe extern "C" fn UserSyncAndPaintWindows(pWnd: PWND, Flags: ULONG) {
     co_IntPaintWindows(pWnd, Flags, 0);
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Flags: ULONG) {
+unsafe fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Flags: ULONG) {
     let mut RgnType: INT = NULLREGION as INT;
     let HadPaintMessage: BOOL;
 
@@ -888,7 +898,7 @@ unsafe extern "fastcall" fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Fl
                         REGION_UnlockRgn(RgnUpdate);
                         if RgnType == NULLREGION as INT {
                             IntGdiSetRegionOwner((*Wnd).hrgnUpdate, GDI_OBJ_HMGR_POWNED);
-                            GreDeleteObject(((*Wnd).hrgnUpdate as _));
+                            GreDeleteObject((*Wnd).hrgnUpdate as _ );
                             (*Wnd).hrgnUpdate = core::ptr::null_mut();
                         }
                     }
@@ -930,7 +940,7 @@ unsafe extern "fastcall" fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Fl
 
                     if RgnType == NULLREGION as INT {
                         IntGdiSetRegionOwner((*Wnd).hrgnUpdate, GDI_OBJ_HMGR_POWNED);
-                        GreDeleteObject(((*Wnd).hrgnUpdate as _));
+                        GreDeleteObject((*Wnd).hrgnUpdate as _ );
                         (*Wnd).hrgnUpdate = core::ptr::null_mut();
                     }
                 }
@@ -969,6 +979,7 @@ unsafe extern "fastcall" fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Fl
             Child = (*Child).spwndNext;
         }
     }
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1213,12 +1224,12 @@ unsafe fn PaintSuspendedWindow_impl(pwnd: PWND, hrgnOrig: HRGN) {
             return;
         }
 
-        hDC = UserGetDCEx(pwnd, (hrgnTemp as _), DCX_WINDOW | DCX_INTERSECTRGN | DCX_USESTYLE | DCX_KEEPCLIPRGN);
+        hDC = UserGetDCEx(pwnd, hrgnTemp as _ , DCX_WINDOW | DCX_INTERSECTRGN | DCX_USESTYLE | DCX_KEEPCLIPRGN);
 
         Rect = core::mem::transmute((*pwnd).rcWindow);
         RECTL_vOffsetRect(core::ptr::addr_of_mut!(Rect), -(*pwnd).rcWindow.left, -(*pwnd).rcWindow.top);
 
-        FillRect(hDC, core::ptr::addr_of_mut!(Rect), (IntGetSysColorBrush(COLOR_WINDOW as i32) as _));
+        FillRect(hDC, core::ptr::addr_of_mut!(Rect), IntGetSysColorBrush(COLOR_WINDOW as i32) as _ );
 
         NC_DoNCPaint(pwnd, hDC, Flags);
 
@@ -1266,9 +1277,10 @@ unsafe extern "C" fn UpdateTheadChildren(mut pWnd: PWND, hRgn: HRGN) {
     }
 }
 
+fastcall_fn! {
 #[allow(non_snake_case)]
 #[no_mangle]
-unsafe extern "fastcall" fn UpdateThreadWindows(pWnd: PWND, pti: PTHREADINFO, hRgn: HRGN) {
+unsafe fn UpdateThreadWindows(pWnd: PWND, pti: PTHREADINFO, hRgn: HRGN) {
     let mut pwndTemp: PWND = pWnd;
 
     while !pwndTemp.is_null() {
@@ -1286,6 +1298,7 @@ unsafe extern "fastcall" fn UpdateThreadWindows(pWnd: PWND, pti: PTHREADINFO, hR
         pwndTemp = (*pwndTemp).spwndNext;
     }
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntIsWindowDirty(Wnd: PWND) -> BOOL {
@@ -1301,7 +1314,8 @@ unsafe extern "C" fn IntIsWindowDirty(Wnd: PWND) -> BOOL {
             || ((*Wnd).state & WNDS_INTERNALPAINT) != 0)) as BOOL
 }
 
-unsafe extern "fastcall" fn IntFindWindowToRepaint(mut Window: PWND, Thread: PTHREADINFO) -> PWND {
+fastcall_fn! {
+unsafe fn IntFindWindowToRepaint(mut Window: PWND, Thread: PTHREADINFO) -> PWND {
     let mut hChild: PWND;
     let mut TempWindow: PWND;
 
@@ -1336,6 +1350,7 @@ unsafe extern "fastcall" fn IntFindWindowToRepaint(mut Window: PWND, Thread: PTH
     }
     Window
 }
+}
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -1349,8 +1364,9 @@ unsafe extern "C" fn IntPaintWindow(Window: PWND) {
     co_IntPaintWindows(Window, RDW_NOCHILDREN, 0);
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntGetPaintMessage(
+unsafe fn IntGetPaintMessage(
     mut Window: PWND,
     MsgFilterMin: UINT,
     MsgFilterMax: UINT,
@@ -1439,6 +1455,7 @@ unsafe extern "fastcall" fn IntGetPaintMessage(
     (*Message).message = WM_PAINT;
     1
 }
+}
 
 #[cfg(target_arch = "x86")]
 #[allow(non_snake_case)]
@@ -1515,8 +1532,9 @@ unsafe fn IntPrintWindow_impl(
     }
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntFlashWindowEx(pWnd: PWND, pfwi: PFLASHWINFO) -> BOOL {
+unsafe fn IntFlashWindowEx(pWnd: PWND, pfwi: PFLASHWINFO) -> BOOL {
     let mut FlashState: DWORD_PTR;
     let mut uCount: UINT = (*pfwi).uCount;
     let mut Activate: BOOL = 0;
@@ -1622,9 +1640,11 @@ unsafe extern "fastcall" fn IntFlashWindowEx(pWnd: PWND, pfwi: PFLASHWINFO) -> B
     }
     Ret
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC {
+unsafe fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC {
     let mut Rect: RECT = core::mem::zeroed();
     let mut type_: INT;
     let mut Erase: BOOL = 0;
@@ -1641,9 +1661,9 @@ unsafe extern "fastcall" fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC
             (*Window).state &= !WNDS_UPDATEDIRTY;
             hRgn = IntGetNCUpdateRgn(Window, 0);
             IntSendNCPaint(Window, hRgn);
-            if hRgn as usize > HRGN_WINDOW as usize && GreIsHandleValid((hRgn as _)) != 0 {
+            if hRgn as usize > HRGN_WINDOW as usize && GreIsHandleValid(hRgn as _ ) != 0 {
                 /* NOTE: The region can already be deleted! */
-                GreDeleteObject((hRgn as _));
+                GreDeleteObject(hRgn as _ );
             }
             if (*Window).state & WNDS_UPDATEDIRTY == 0 {
                 break;
@@ -1661,7 +1681,7 @@ unsafe extern "fastcall" fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC
 
     (*Ps).hdc = UserGetDCEx(
         Window,
-        ((*Window).hrgnUpdate as _),
+        (*Window).hrgnUpdate as _ ,
         DCX_INTERSECTRGN | DCX_USESTYLE,
     );
     if (*Ps).hdc.is_null() {
@@ -1740,6 +1760,7 @@ unsafe extern "fastcall" fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC
 
     (*Ps).hdc
 }
+}
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -1806,9 +1827,9 @@ unsafe fn IntFillWindow_impl(
         pWndParent = pWnd;
     }
 
-    type_ = GdiGetClipBox(hDC, (&mut Rect as *mut _ as _));
+    type_ = GdiGetClipBox(hDC, &mut Rect as *mut _ as _ );
 
-    IntGetClientRect(pWnd, (&mut Rect1 as *mut _ as _));
+    IntGetClientRect(pWnd, &mut Rect1 as *mut _ as _ );
 
     if type_ != NULLREGION as INT
         && ((*(*pWnd).pcls).style & CS_PARENTDC as ULONG == 0
@@ -1823,7 +1844,7 @@ unsafe fn IntFillWindow_impl(
             y = (*pWndParent).rcClient.top - (*pWnd).rcClient.top;
         }
 
-        GreSetBrushOrg(hDC, x, y, (&mut ppt as *mut _ as _));
+        GreSetBrushOrg(hDC, x, y, &mut ppt as *mut _ as _ );
 
         if (hBrush as usize) < CTLCOLOR_MAX as usize {
             hBrush = GetControlColor(
@@ -2186,8 +2207,9 @@ pub unsafe extern "C" fn NtUserFlashWindowEx(pfwi: PFLASHWINFO) -> BOOL {
     Ret
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase: i32) -> i32 {
+unsafe fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase: i32) -> i32 {
     let RegionType: i32;
     let Type: u8;
     let mut Rect: RECTL = core::mem::zeroed();
@@ -2222,7 +2244,7 @@ unsafe extern "fastcall" fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase
 
         if UserIsDesktopWindow(Window) == 0 {
             RECTL_vOffsetRect(
-                (&mut Rect as *mut _ as _),
+                &mut Rect as *mut _ as _ ,
                 -(*Window).rcClient.left,
                 -(*Window).rcClient.top,
             );
@@ -2235,7 +2257,7 @@ unsafe extern "fastcall" fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase
 
         if RegionType == ERROR as i32 || RegionType == NULLREGION as i32 {
             if !hrgnTemp.is_null() {
-                GreDeleteObject((hrgnTemp as _));
+                GreDeleteObject(hrgnTemp as _ );
             }
             NtGdiSetRectRgn(hRgn, 0, 0, 0, 0);
             return RegionType;
@@ -2245,15 +2267,17 @@ unsafe extern "fastcall" fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase
             NtGdiOffsetRgn(hRgn, -(*Window).rcClient.left, -(*Window).rcClient.top);
         }
         if !hrgnTemp.is_null() {
-            GreDeleteObject((hrgnTemp as _));
+            GreDeleteObject(hrgnTemp as _ );
         }
     }
     RegionType
 }
+}
 
+fastcall_fn! {
 #[allow(non_snake_case)]
 #[no_mangle]
-unsafe extern "fastcall" fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bErase: i32) -> i32 {
+unsafe fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bErase: i32) -> i32 {
     let RegionType: INT;
     let mut Ret: i32 = 1;
 
@@ -2277,7 +2301,7 @@ unsafe extern "fastcall" fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bEr
             *pRect = core::mem::transmute((*Window).rcClient);
             ERR!(b"GURt: Caller is retrieving Window Region 1\n\0".as_ptr() as *const i8);
         } else {
-            RegionType = IntGdiGetRgnBox((*Window).hrgnUpdate, (pRect as _));
+            RegionType = IntGdiGetRgnBox((*Window).hrgnUpdate, pRect as _ );
 
             if RegionType != ERROR as INT && RegionType != NULLREGION as INT {
                 RECTL_bIntersectRect(pRect as *mut _ as _, pRect as *mut _ as _, core::ptr::addr_of_mut!((*Window).rcClient));
@@ -2291,7 +2315,7 @@ unsafe extern "fastcall" fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bEr
             if (*(*Window).pcls).style & CS_OWNDC as u32 != 0 {
                 let hdc: HDC;
                 hdc = UserGetDCEx(Window, core::ptr::null_mut(), DCX_USESTYLE);
-                GreDPtoLP(hdc, (pRect as LPPOINT as _), 2);
+                GreDPtoLP(hdc, pRect as LPPOINT as _ , 2);
                 UserReleaseDC(Window, hdc, 0);
             }
         } else {
@@ -2302,6 +2326,7 @@ unsafe extern "fastcall" fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bEr
         }
     }
     Ret
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -2673,7 +2698,7 @@ unsafe extern "system" fn UserDrawCaptionText(
             hDc,
             (*Text).Buffer,
             ((*Text).Length / core::mem::size_of::<u16>() as u16) as i32,
-            (core::ptr::addr_of_mut!(r) as _),
+            core::ptr::addr_of_mut!(r) as _ ,
             DT_END_ELLIPSIS | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_LEFT,
         );
     }
@@ -2685,7 +2710,7 @@ unsafe extern "system" fn UserDrawCaptionText(
     }
 
     if bDeleteFont != 0 {
-        GreDeleteObject((hFont as _));
+        GreDeleteObject(hFont as _ );
     }
 
     Ret
@@ -2766,11 +2791,11 @@ unsafe extern "C" fn UserDrawCaption(
             }
         } else {
             if (uFlags & DC_INBUTTON) != 0 {
-                hBgBrush = (IntGetSysColorBrush(COLOR_3DFACE.try_into().unwrap()) as _);
+                hBgBrush = IntGetSysColorBrush(COLOR_3DFACE.try_into().unwrap()) as _ ;
             } else if (uFlags & DC_ACTIVE) != 0 {
-                hBgBrush = (IntGetSysColorBrush(COLOR_ACTIVECAPTION.try_into().unwrap()) as _);
+                hBgBrush = IntGetSysColorBrush(COLOR_ACTIVECAPTION.try_into().unwrap()) as _ ;
             } else {
-                hBgBrush = (IntGetSysColorBrush(COLOR_INACTIVECAPTION.try_into().unwrap()) as _);
+                hBgBrush = IntGetSysColorBrush(COLOR_INACTIVECAPTION.try_into().unwrap()) as _ ;
             }
 
             hOldBrush = NtGdiSelectBrush(hDc, hBgBrush);
@@ -3125,7 +3150,8 @@ pub unsafe extern "C" fn NtUserDrawCaption(
     NtUserDrawCaptionTemp(hWnd, hDC, lpRc, 0 as HFONT, 0 as HICON, core::ptr::null_mut(), uFlags)
 }
 
-unsafe extern "fastcall" fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> INT {
+fastcall_fn! {
+unsafe fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> INT {
     let mut pt: POINT = core::mem::zeroed();
     let mut rc: RECT = core::mem::zeroed();
 
@@ -3136,7 +3162,7 @@ unsafe extern "fastcall" fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> I
             let mut ret: INT = ERROR.try_into().unwrap();
             let hrgn = NtGdiCreateRectRgn(0, 0, 0, 0);
 
-            if !hrgn.is_null() && GreGetDCPoint(hDC, GdiGetDCOrg, (&mut pt as *mut _ as _)) != 0 {
+            if !hrgn.is_null() && GreGetDCPoint(hDC, GdiGetDCOrg, &mut pt as *mut _ as _ ) != 0 {
                 if NtGdiGetRandomRgn(hDC, hrgn, CLIPRGN as INT) == NULLREGION as INT {
                     NtGdiOffsetRgn(hrgn, pt.x, pt.y);
                 } else {
@@ -3146,7 +3172,7 @@ unsafe extern "fastcall" fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> I
 
                     NtGdiCombineRgn(hrgn, hrgnScreen, core::ptr::null_mut(), RGN_COPY as INT);
 
-                    GreDeleteObject((hrgnScreen as _));
+                    GreDeleteObject(hrgnScreen as _ );
                 }
 
                 NtGdiCombineRgn(hrgn, hrgn, (*Window).hrgnUpdate, RGN_DIFF as INT);
@@ -3155,13 +3181,14 @@ unsafe extern "fastcall" fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> I
 
                 ret = NtGdiExtSelectClipRgn(hDC, hrgn, RGN_COPY as INT);
 
-                GreDeleteObject((hrgn as _));
+                GreDeleteObject(hrgn as _ );
             }
             return ret;
         }
     } else {
-        return GdiGetClipBox(hDC, (&mut rc as *mut _ as _));
+        return GdiGetClipBox(hDC, &mut rc as *mut _ as _ );
     }
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]

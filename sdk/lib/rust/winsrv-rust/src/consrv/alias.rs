@@ -1,13 +1,4 @@
 use winsrv_sys::nt::*;
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::console::*;
-use super::handle::*;
-use super::lineinput::*;
-use super::history::*;
-use super::init::*;
 use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -98,7 +89,7 @@ pub(crate) unsafe fn IntFindAliasHeader(
     UnicodeExe: BOOLEAN,
 ) -> PALIAS_HEADER {
     let mut ExeNameU: _UNICODE_STRING = core::mem::zeroed();
-    let mut RootHeader = ((*Console).Aliases as PALIAS_HEADER);
+    let mut RootHeader = (*Console).Aliases as PALIAS_HEADER ;
     let mut Diff: i32;
 
     if ExeName.is_null() {
@@ -452,7 +443,7 @@ pub(crate) unsafe fn IntGetAllConsoleAliasesLength(Header: PALIAS_HEADER, IsUnic
 
 #[no_mangle]
 pub unsafe extern "C" fn IntDeleteAllAliases(Console: PCONSRV_CONSOLE) {
-    let mut Header = ((*Console).Aliases as PALIAS_HEADER);
+    let mut Header = (*Console).Aliases as PALIAS_HEADER ;
     let mut NextHeader: PALIAS_HEADER;
     let mut Entry: PALIAS_ENTRY;
     let mut NextEntry: PALIAS_ENTRY;
@@ -492,7 +483,7 @@ pub(crate) unsafe fn SrvAddConsoleAliasImpl(
     ConsoleAliasRequest: PCONSOLE_ADDGETALIAS,
 ) -> NTSTATUS {
     let mut Header: PALIAS_HEADER;
-    let mut Entry: PALIAS_ENTRY;
+    let Entry: PALIAS_ENTRY;
     let lpTarget: PVOID;
 
     if CsrValidateMessageBuffer(
@@ -595,7 +586,7 @@ pub(crate) unsafe fn SrvGetConsoleAliasImpl(
 ) -> NTSTATUS {
     let Header: PALIAS_HEADER;
     let Entry: PALIAS_ENTRY;
-    let mut Length: UINT;
+    let Length: UINT;
     let lpTarget: PVOID;
 
     if CsrValidateMessageBuffer(
@@ -894,12 +885,12 @@ pub(crate) unsafe fn SrvGetConsoleAliasExesImpl(
         return STATUS_INVALID_PARAMETER;
     }
 
-    if IntGetConsoleAliasesExesLength(((*Console).Aliases as PALIAS_HEADER), (*GetAliasesExesRequest).Unicode)
+    if IntGetConsoleAliasesExesLength((*Console).Aliases as PALIAS_HEADER , (*GetAliasesExesRequest).Unicode)
         > (*GetAliasesExesRequest).Length
     {
         Status = STATUS_BUFFER_OVERFLOW;
     } else {
-        let mut RootHeader = ((*Console).Aliases as PALIAS_HEADER);
+        let mut RootHeader = (*Console).Aliases as PALIAS_HEADER ;
 
         let mut TargetBufferA: LPSTR = core::ptr::null_mut();
         let mut TargetBufferW: LPWSTR = core::ptr::null_mut();
@@ -977,12 +968,12 @@ pub unsafe extern "system" fn SrvGetConsoleAliasExesLength(
 
 pub(crate) unsafe fn SrvGetConsoleAliasExesLengthImpl(
     Console: PCONSRV_CONSOLE,
-    ApiMessage: PCSR_API_MESSAGE,
+    _ApiMessage: PCSR_API_MESSAGE,
     GetAliasesExesLengthRequest: PCONSOLE_GETALIASESEXESLENGTH,
 ) -> NTSTATUS {
 
     (*GetAliasesExesLengthRequest).Length = IntGetConsoleAliasesExesLength(
-        ((*Console).Aliases as PALIAS_HEADER),
+        (*Console).Aliases as PALIAS_HEADER ,
         (*GetAliasesExesLengthRequest).Unicode,
     );
 

@@ -20,6 +20,7 @@
 @ stdcall -arch=arm64 HalSelfTestGicSpiArm64(long)
 @ stdcall -arch=arm64 HalpEnterInterruptIrql(long)
 @ stdcall -arch=arm64 HalpExitInterruptIrql(long)
+@ stdcall -arch=arm64 HalVibeosQuiesceIrqlTripwire()
 @ stdcall HalDisableSystemInterrupt(long long)
 @ stdcall HalDisplayString(str)
 @ stdcall HalEnableSystemInterrupt(long long long)

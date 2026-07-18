@@ -6,7 +6,6 @@
 use crate::base::*;
 use crate::constants::*;
 use crate::ddk;
-use core::ffi::c_void;
 
 // ============================================================================
 // Object header macros (from obtypes.h)

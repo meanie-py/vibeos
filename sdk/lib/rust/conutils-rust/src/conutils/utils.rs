@@ -133,7 +133,7 @@ pub unsafe extern "system" fn FormatMessageSafeW(
     Arguments: *const va_list,
 ) -> u32 {
     let mut dwLength: u32 = 0;
-    let mut dwFlags_mut = dwFlags;
+    let dwFlags_mut = dwFlags;
 
     // SEH_TRY — direct call (DUMMY_PSEH: SEH handlers are dead code)
     // inner SEH_TRY
@@ -153,7 +153,7 @@ pub unsafe extern "system" fn FormatMessageSafeW(
 
 #[no_mangle]
 pub unsafe extern "C" fn ConSetThreadUILanguage(lang_id: LANGID) -> LANGID {
-    let initial = core::ptr::read_volatile(&pfnSetThreadUILanguage);
+    let initial = core::ptr::read_volatile(&raw const pfnSetThreadUILanguage);
     if initial.is_null() {
         let kernel32_name: [u16; 13] = [
             b'k' as u16, b'e' as u16, b'r' as u16, b'n' as u16, b'e' as u16, b'l' as u16,
@@ -172,7 +172,7 @@ pub unsafe extern "C" fn ConSetThreadUILanguage(lang_id: LANGID) -> LANGID {
             core::ptr::null_mut(),
         );
     }
-    let fn_ptr = core::ptr::read_volatile(&pfnSetThreadUILanguage);
+    let fn_ptr = core::ptr::read_volatile(&raw const pfnSetThreadUILanguage);
     if !fn_ptr.is_null() {
         let func: unsafe extern "system" fn(LANGID) -> LANGID = core::mem::transmute(fn_ptr);
         func(lang_id)

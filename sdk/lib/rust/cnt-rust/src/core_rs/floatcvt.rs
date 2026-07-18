@@ -289,6 +289,17 @@ pub mod fl {
     /// directly (the harness `#define`s `log10(f)` to a C function
     /// returning exactly this as a double, so `(int)floor(...)` of it
     /// is identity → ref == this by construction).
+    ///
+    /// Non-finite input returns 308 (DBL_MAX_10_EXP). Load-bearing, not
+    /// cosmetic: for ±Inf the correction loop below would spin forever
+    /// (`pow10(309)` saturates to +Inf and `Inf <= Inf` holds) — a silent
+    /// kernel hang on any `%f/%e/%g` of an infinity (found by the msvcrt
+    /// printf probe, 2026-07-14). NaN already fell out at 308 by accident
+    /// (every comparison false); the guard makes both cases explicit and
+    /// terminating. The genuine C hit UB here (`(int)floor(log10(inf))`)
+    /// and survived only because format_float overwrites the digits with
+    /// `#INF`/`#QNAN` downstream — 308 keeps that path deterministic. The
+    /// harness's `cnt_log10` C twin carries the identical guard.
     #[inline]
     pub fn exp10_floor(mut f: f64) -> i32 {
         if f == 0.0 {
@@ -299,6 +310,9 @@ pub mod fl {
         }
         let bits = f.to_bits();
         let biased = ((bits >> 52) & 0x7ff) as i32;
+        if biased == 0x7ff {
+            return 308;
+        }
         let mut e = (((biased - 1023) as f64) * 0.301_029_995_663_981_2) as i32;
         while pow10(e) > f {
             e -= 1;

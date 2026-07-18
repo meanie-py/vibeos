@@ -74,8 +74,19 @@ const KGDT_NMI_TSS: USHORT = 0x58;
 const I386_TSS: u8 = 0x09;
 const EFLAGS_INTERRUPT_MASK: ULONG_PTR = 0x200;
 
+// Canonical i386 KDESCRIPTOR (ke.h): { Pad, Limit, Base }. The leading Pad is
+// REQUIRED — `sgdt`/`sidt` write a PACKED 6-byte pseudo-descriptor ([2-byte
+// limit][4-byte base]) at `&self.Limit`, and only with Pad at offset 0 does
+// Limit land at offset 2 and Base contiguously at offset 4 (u32-aligned, no
+// hole). Without Pad, `{Limit@0, Base@4}` has a 2-byte alignment hole at @2:
+// sgdt would write the base at bytes 2..6 while the struct reads Base from
+// bytes 4..8, so Base = (real_base>>16) | (stack_garbage<<16) — a wild pointer
+// (~0xf7bbXXXX). KeStartAllProcessors' GDT/IDT RtlCopyMemory then reads Limit+1
+// bytes from it and faults off the kernel stack → BUGCHECK 0x1E. (Masked on UP:
+// KeStartAllProcessors never runs there.)
 #[repr(C)]
 struct KDESCRIPTOR {
+    Pad: USHORT,
     Limit: USHORT,
     Base: ULONG_PTR,
 }
@@ -211,15 +222,40 @@ pub unsafe extern "system" fn KeStartAllProcessors() {
         (*ApStack).KxLoaderBlock = KeLoaderBlock as PVOID;
         (*ApStack).ReturnAddr = core::ptr::null_mut();
 
-        *(KeLoaderBlock as *mut ULONG_PTR).offset(0) = KernelStack as ULONG_PTR;
-        *(KeLoaderBlock as *mut ULONG_PTR).offset(1) = (*APInfo).Pcr.Prcb as ULONG_PTR;
-        *(KeLoaderBlock as *mut ULONG_PTR).offset(2) = (*(*APInfo).Pcr.Prcb).IdleThread as ULONG_PTR;
+        // Update the LOADER_PARAMETER_BLOCK for the new processor. These MUST be
+        // written through the named fields, NOT `offset(0/1/2)`: KernelStack/Prcb/
+        // Thread live AFTER LoadOrderListHead + MemoryDescriptorListHead, so raw
+        // offsets 0/4/8 scribble the two list heads instead. That corruption
+        // detonated two ways downstream — a BUGCHECK 0x50 when the memory-descriptor
+        // walk hit the clobbered Flink, and the KeBugCheckEx PsLoadedModuleList walk
+        // faulting on the clobbered LoadOrderListHead (masking the real stop). Prcb/
+        // Thread store the ADDRESS of the field (C: `&APInfo->Pcr.Prcb`), because
+        // i386 KiSystemStartup recovers the PCR via CONTAINING_RECORD(LoaderBlock->
+        // Prcb, KIPCR, Prcb) — matching the amd64 path (ke/amd64/mproc.rs).
+        // NB: the bindgen LOADER_PARAMETER_BLOCK fields are `u32` (ULONG_PTR from
+        // ntkrnl-sys), which is a distinct type from mproc's `ULONG_PTR = usize` —
+        // cast to `u32` explicitly.
+        (*KeLoaderBlock).KernelStack = KernelStack as u32;
+        (*KeLoaderBlock).Prcb = core::ptr::addr_of_mut!((*APInfo).Pcr.Prcb) as u32;
+        // i386 M5 Phase C: point Thread at the AP's actual idle-thread KTHREAD
+        // (`APInfo->Thread`, the SAME storage handed to KiInitializePcr above at
+        // the `IdleThread` arg), NOT `&Prcb->IdleThread` — that is the address of
+        // the IdleThread *pointer field* inside the PRCB. KiSystemStartupBootStack
+        // reads LoaderBlock->Thread DIRECTLY as `InitThread` (no CONTAINING_RECORD,
+        // unlike Prcb) and hands it to KiInitializeKernel→KeInitializeThread, which
+        // would then initialize a whole KTHREAD *on top of the PRCB* and set
+        // CurrentThread to that in-PRCB junk → KiSystemStartupBootStack's
+        // `(*Thread).Priority = 0` faults on garbage → double-fault (0x7F/8). The
+        // ReactOS C set `&Prcb->IdleThread` here, but its i386 AP path was an
+        // unimplemented FIXME stub that never consumed it. P0 does the analogous
+        // `LoaderBlock->Thread = &KiInitialThread` (a real KTHREAD) — match that.
+        (*KeLoaderBlock).Thread = core::ptr::addr_of_mut!((*APInfo).Thread) as u32;
 
         if HalStartNextProcessor(KeLoaderBlock as *mut _, ProcessorState) == 0 {
             break;
         }
 
-        while *(KeLoaderBlock as *mut ULONG_PTR).offset(1) != 0 {
+        while core::ptr::read_volatile(core::ptr::addr_of!((*KeLoaderBlock).Prcb)) != 0 {
             KeMemoryBarrier();
             YieldProcessor();
         }

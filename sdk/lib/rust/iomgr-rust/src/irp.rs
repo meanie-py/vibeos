@@ -589,11 +589,24 @@ unsafe fn IopCompleteRequestInner(
             && (*Irp).IoStatus.__bindgen_anon_1.Status != STATUS_VERIFY_REQUIRED
             && !NT_ERROR((*Irp).IoStatus.__bindgen_anon_1.Status)
         {
-            core::ptr::copy_nonoverlapping(
-                (*Irp).AssociatedIrp.SystemBuffer as *const u8,
-                (*Irp).UserBuffer as *mut u8,
+            // Fault-tolerant copy-back to the caller's buffer. The C wrapped this in
+            // _SEH2_TRY and failed the IRP with the exception code (irp.c:292-304);
+            // under DUMMY_PSEH that handler is dead, so a NULL/hostile UserBuffer
+            // faulted memcpy+0x40 -> BUGCHECK 0x1E. This is the completion-path member
+            // of that cluster: kmtest IoReadWrite issues NtReadFile(Buffer=NULL,
+            // Length=32) expecting STATUS_ACCESS_VIOLATION — the range probe at the
+            // syscall passes (NULL is below MmUserProbeAddress), so the only thing that
+            // ever protected this copy was the SEH.
+            if ntkrnl_sys::probe::safe_copy_raw(
+                (*Irp).UserBuffer,
+                (*Irp).AssociatedIrp.SystemBuffer,
                 (*Irp).IoStatus.Information as usize,
-            );
+            )
+            .is_err()
+            {
+                (*Irp).IoStatus.__bindgen_anon_1.Status =
+                    ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if ((*Irp).Flags & IRP_DEALLOCATE_BUFFER) != 0 {
@@ -620,7 +633,14 @@ unsafe fn IopCompleteRequestInner(
         }
 
         if !(*Irp).UserIosb.is_null() {
-            *(*Irp).UserIosb = (*Irp).IoStatus;
+            if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
+                // wow64-plan M15b: guest IO_STATUS_BLOCK32 — write the 8-byte layout.
+                let P = (*Irp).UserIosb as *mut crate::iofunc::IoStatusBlock32;
+                (*P).Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+                (*P).Information = (*Irp).IoStatus.Information as u32;
+            } else {
+                *(*Irp).UserIosb = (*Irp).IoStatus;
+            }
         }
 
         if !(*Irp).UserEvent.is_null() {
@@ -699,7 +719,14 @@ unsafe fn IopCompleteRequestInner(
     } else {
         if (*Irp).PendingReturned != 0 && !FileObject.is_null() {
             if ((*Irp).Flags & IRP_SYNCHRONOUS_API) != 0 {
-                *(*Irp).UserIosb = (*Irp).IoStatus;
+                if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
+                    // wow64-plan M15b: guest IO_STATUS_BLOCK32 — 8-byte layout.
+                    let P = (*Irp).UserIosb as *mut crate::iofunc::IoStatusBlock32;
+                    (*P).Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+                    (*P).Information = (*Irp).IoStatus.Information as u32;
+                } else {
+                    *(*Irp).UserIosb = (*Irp).IoStatus;
+                }
 
                 if !(*Irp).UserEvent.is_null() {
                     KeSetEvent((*Irp).UserEvent as PVOID, 0, 0u8);
@@ -1301,9 +1328,9 @@ unsafe fn IofCompleteRequestInner(Irp: PIRP, PriorityBoost: CCHAR) {
             }
         }
 
-        if ((NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) && ((*StackPtr).Control & SL_INVOKE_ON_SUCCESS) != 0)
+        if (NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) && ((*StackPtr).Control & SL_INVOKE_ON_SUCCESS) != 0)
             || (!NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) && ((*StackPtr).Control & SL_INVOKE_ON_ERROR) != 0)
-            || ((*Irp).Cancel != 0 && ((*StackPtr).Control & SL_INVOKE_ON_CANCEL) != 0))
+            || ((*Irp).Cancel != 0 && ((*StackPtr).Control & SL_INVOKE_ON_CANCEL) != 0)
         {
             IopClearStackLocation(StackPtr);
 

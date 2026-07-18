@@ -25,20 +25,98 @@ const SYNCH_LEVEL: ddk::KIRQL = DISPATCH_LEVEL;
 static mut HalpCurrentTimeIncrement: ddk::ULONG = 100000;
 static mut HalpNextTimeIncrement: ddk::ULONG = 100000;
 static mut HalpNextIntervalCount: ddk::ULONG = 0;
-static mut HalpCurrentIrql: ddk::KIRQL = PASSIVE_LEVEL;
 
-static HalpSoftwareInterruptPending: AtomicU32 = AtomicU32::new(0);
-/// Nesting depth of exception-context interrupt dispatch. Bumped for the whole
-/// IRQ-vector body (HalClockInterruptArm64) and again by each
-/// HalpEnterInterruptIrql/HalpExitInterruptIrql bracket (ISR dispatch, IRQ-exit
-/// DPC retire). Non-zero means we are inside an IRQ exception window —
-/// software-interrupt delivery that can wake/swap threads (DISPATCH work) must
-/// NOT run there (§9.19 DAIF-inheritance class). Notably the clock-tick branch
-/// runs KeUpdateSystemTime with NO IRQL bracket at all, so without the vector-
-/// wide bump a raise/lower pair inside the tick path delivers DISPATCH work in
-/// exception context (BUGCHECK 0x1E, EC=0x0E illegal-execution-state).
-pub(crate) static HalpInterruptContextDepth: AtomicU32 = AtomicU32::new(0);
-static HalpSoftIntDeliveryInProgress: AtomicI32 = AtomicI32::new(0);
+// ---------------------------------------------------------------------------
+// Per-CPU IRQL + software-interrupt state (SMP — smp-bringup-quest.md M5b).
+//
+// The soft IRQL lives in the KPCR (KPCR.CurrentIrql via tpidr_el1) — the same
+// slot KiInitializePcr initializes for every CPU — with a boot-global fallback
+// for the pre-PCR window (KiSystemStartup before `msr tpidr_el1`: single CPU,
+// IRQs hard-masked). The softint pending/in-progress masks and the exception-
+// window depth are banked per CPU: with one global, CPU0's clock tick would
+// gate CPU1's softint dispatch, and CPU1's KfLowerIrql drain would consume
+// (and clear) a DISPATCH request CPU0 posted for itself — a lost-DPC hang.
+// ---------------------------------------------------------------------------
+
+/// Pre-PCR boot IRQL slot (BSP only, before tpidr_el1 is programmed).
+static mut HalpBootIrql: ddk::KIRQL = PASSIVE_LEVEL;
+
+const HALP_MAX_CPUS: usize = 64;
+
+/// One CPU's softint/exception-window state, padded to its own cache lines.
+#[repr(C, align(128))]
+pub(crate) struct HalpCpuState {
+    /// Pending software-interrupt bits (1 << APC_LEVEL / 1 << DISPATCH_LEVEL).
+    pub(crate) soft_int_pending: AtomicU32,
+    /// Reentrancy latch for HalpDispatchSoftwareInterrupts on this CPU.
+    pub(crate) soft_int_in_progress: AtomicI32,
+    /// Nesting depth of exception-context interrupt dispatch. Bumped for the
+    /// whole IRQ-vector body (HalClockInterruptArm64) and again by each
+    /// HalpEnterInterruptIrql/HalpExitInterruptIrql bracket (ISR dispatch,
+    /// IRQ-exit DPC retire). Non-zero means this CPU is inside an IRQ
+    /// exception window — software-interrupt delivery that can wake/swap
+    /// threads (DISPATCH work) must NOT run there (§9.19 DAIF-inheritance
+    /// class). Notably the clock-tick branch runs KeUpdateSystemTime with NO
+    /// IRQL bracket at all, so without the vector-wide bump a raise/lower
+    /// pair inside the tick path delivers DISPATCH work in exception context
+    /// (BUGCHECK 0x1E, EC=0x0E illegal-execution-state).
+    pub(crate) interrupt_context_depth: AtomicU32,
+    /// M5c tail: this CPU's virtual timer is armed (banked PPI-27 enabled +
+    /// CNTV deadline programmed). APs arm lazily on their first IRQ after
+    /// clock init publishes the interval (clock.rs vtimer_percpu_arm).
+    pub(crate) vtimer_armed: AtomicU32,
+}
+
+#[allow(clippy::declare_interior_mutable_const)]
+const HALP_CPU_STATE_INIT: HalpCpuState = HalpCpuState {
+    soft_int_pending: AtomicU32::new(0),
+    soft_int_in_progress: AtomicI32::new(0),
+    interrupt_context_depth: AtomicU32::new(0),
+    vtimer_armed: AtomicU32::new(0),
+};
+static HalpCpuStates: [HalpCpuState; HALP_MAX_CPUS] = [HALP_CPU_STATE_INIT; HALP_MAX_CPUS];
+
+#[inline(always)]
+unsafe fn halp_pcr() -> *mut ddk::_KIPCR {
+    let pcr: u64;
+    core::arch::asm!("mrs {}, tpidr_el1", out(reg) pcr, options(nomem, nostack, preserves_flags));
+    pcr as *mut ddk::_KIPCR
+}
+
+/// This CPU's banked softint/depth state (index 0 pre-PCR: BSP only).
+#[inline(always)]
+pub(crate) unsafe fn halp_cpu_state() -> &'static HalpCpuState {
+    let pcr = halp_pcr();
+    let n = if pcr.is_null() { 0 } else { (*pcr).Prcb.Number as usize };
+    &HalpCpuStates[n % HALP_MAX_CPUS]
+}
+
+/// This CPU's processor number (0 pre-PCR: BSP only).
+#[inline(always)]
+pub(crate) unsafe fn halp_cpu_number() -> u32 {
+    let pcr = halp_pcr();
+    if pcr.is_null() { 0 } else { (*pcr).Prcb.Number as u32 }
+}
+
+#[inline(always)]
+unsafe fn halp_irql_slot() -> *mut ddk::KIRQL {
+    let pcr = halp_pcr();
+    if pcr.is_null() {
+        core::ptr::addr_of_mut!(HalpBootIrql)
+    } else {
+        core::ptr::addr_of_mut!((*pcr).CurrentIrql)
+    }
+}
+
+#[inline(always)]
+pub(crate) unsafe fn halp_get_irql() -> ddk::KIRQL {
+    core::ptr::read_volatile(halp_irql_slot())
+}
+
+#[inline(always)]
+unsafe fn halp_set_irql(irql: ddk::KIRQL) {
+    core::ptr::write_volatile(halp_irql_slot(), irql)
+}
 
 #[unsafe(no_mangle)]
 pub static mut KdComPortInUse: ddk::PUCHAR = core::ptr::null_mut();
@@ -104,6 +182,26 @@ pub unsafe extern "system" fn HalInitializeProcessor(
     ProcessorNumber: ddk::ULONG,
     LoaderBlock: ddk::PLOADER_PARAMETER_BLOCK,
 ) {
+    // BSP (P0): called in Phase 0, before the GIC matters — its per-CPU GIC
+    // init happens in HalInitializeClockArm64 (Phase 1). An AP starts much
+    // later (KeStartAllProcessors, Phase 1) and must wire its OWN banked GICv2
+    // registers here — SGI enable/priority and the CPU interface are banked
+    // per accessing core, so the BSP cannot do it on the AP's behalf. Until
+    // the MmMapIoSpace remap (clock init) the GIC is reached through the boot
+    // identity mapping (same pattern as Arm64UartKernelBase / fw_cfg; the
+    // loader maps the GICD/GICC pages as Device — winldr_arm64.rs).
+    if ProcessorNumber != 0 {
+        super::clock::gic_ensure_early_bases();
+        if !super::clock::gic_percpu_init() {
+            // Fail loud: an AP with no GIC CPU interface can never receive an
+            // IPI — every KeIpiGenericCall would hang the sender.
+            DbgPrint(
+                b"[SMP] arm64 HalInitializeProcessor: CPU %u GIC init FAILED - IPIs to this CPU are dead\n\0"
+                    .as_ptr(),
+                ProcessorNumber,
+            );
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -534,15 +632,25 @@ pub unsafe extern "system" fn HalReadDmaCounter(AdapterObject: ddk::PADAPTER_OBJ
 pub unsafe extern "system" fn HalReportResourceUsage() {}
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalRequestIpi(TargetProcessors: ddk::KAFFINITY) {}
+pub unsafe extern "system" fn HalRequestIpi(TargetProcessors: ddk::KAFFINITY) {
+    // NT IPI = SGI 0 to the target CPUs (GICv2 SGIR; KAFFINITY bit N == GIC
+    // CPU interface N on QEMU virt, where MPIDR.Aff0 == the boot CPU index).
+    super::clock::gic_send_sgi(TargetProcessors as u64);
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalRequestSoftwareInterrupt(Request: ddk::KIRQL) {
-    HalpSoftwareInterruptPending.fetch_or(software_interrupt_bit(Request), Ordering::SeqCst);
+    // Per-CPU: a software interrupt targets the REQUESTING processor (the
+    // cross-CPU flavor is an IPI — KiIpiServiceRoutine calls this on the
+    // receiving CPU, so the bit lands on the right bank).
+    halp_cpu_state()
+        .soft_int_pending
+        .fetch_or(software_interrupt_bit(Request), Ordering::SeqCst);
 
     unsafe {
-        if HalpCurrentIrql < APC_LEVEL && Request == APC_LEVEL {
-            HalpDispatchSoftwareInterrupts(APC_LEVEL, HalpCurrentIrql);
+        let irql = halp_get_irql();
+        if irql < APC_LEVEL && Request == APC_LEVEL {
+            HalpDispatchSoftwareInterrupts(APC_LEVEL, irql);
         }
     }
 }
@@ -612,11 +720,23 @@ pub unsafe extern "system" fn HalSetTimeIncrement(Increment: ddk::ULONG) -> ddk:
     }
 }
 
+// SMP HAL (ntkrnlmp): the real PSCI CPU_ON body lives in mpboot.rs. UP HAL keeps
+// this FALSE stub (no APs to start) — but a CALL here means an MP kernel is
+// running on a UP hal.dll (the smp HAL flavor rides the VIBEOS_SMP_DEFAULT_BOOT
+// cmake cache var, so a plain UP `build` reconfigure silently flips hal.dll
+// back to UP and a later `ninja ntkrnlmp` inherits it; arm64 has no
+// MISMATCHED_HAL 0x79 handshake to catch the pair). Fail loud, not silent
+// 1-CPU degrade — this exact mismatch cost an M5c debug round (2026-07-14).
+#[cfg(not(feature = "smp"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalStartNextProcessor(
     LoaderBlock: ddk::PLOADER_PARAMETER_BLOCK,
     ProcessorState: ddk::PKPROCESSOR_STATE,
 ) -> ddk::BOOLEAN {
+    DbgPrint(
+        b"[SMP] arm64 HalStartNextProcessor: UP HAL stub called - MP kernel on a UP hal.dll? Rebuild with --smp-kernel (VIBEOS_SMP_DEFAULT_BOOT)\n\0"
+            .as_ptr(),
+    );
     FALSE
 }
 
@@ -741,7 +861,7 @@ pub unsafe extern "system" fn KeStallExecutionProcessor(MicroSeconds: ddk::ULONG
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn KeGetCurrentIrql() -> ddk::KIRQL {
-    unsafe { HalpCurrentIrql }
+    unsafe { halp_get_irql() }
 }
 
 extern "system" {
@@ -753,7 +873,9 @@ extern "system" {
 }
 
 unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQL) {
-    if HalpSoftIntDeliveryInProgress
+    let cpu = halp_cpu_state();
+    if cpu
+        .soft_int_in_progress
         .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
@@ -777,19 +899,19 @@ unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQ
     // context dispatch window, so depth 0 == genuine thread/SVC context.
     let dispatch_bit = software_interrupt_bit(DISPATCH_LEVEL);
     if NewIrql < DISPATCH_LEVEL
-        && HalpInterruptContextDepth.load(Ordering::SeqCst) == 0
-        && (HalpSoftwareInterruptPending.load(Ordering::SeqCst) & dispatch_bit) != 0
+        && cpu.interrupt_context_depth.load(Ordering::SeqCst) == 0
+        && (cpu.soft_int_pending.load(Ordering::SeqCst) & dispatch_bit) != 0
     {
-        HalpSoftwareInterruptPending.fetch_and(!dispatch_bit, Ordering::SeqCst);
+        cpu.soft_int_pending.fetch_and(!dispatch_bit, Ordering::SeqCst);
         unsafe {
-            HalpCurrentIrql = DISPATCH_LEVEL;
+            halp_set_irql(DISPATCH_LEVEL);
             KiDispatchSoftwareIntArm64();
-            HalpCurrentIrql = NewIrql;
+            halp_set_irql(NewIrql);
         }
     }
 
     let apc_bit = software_interrupt_bit(APC_LEVEL);
-    if NewIrql < APC_LEVEL && (HalpSoftwareInterruptPending.load(Ordering::SeqCst) & apc_bit) != 0 {
+    if NewIrql < APC_LEVEL && (cpu.soft_int_pending.load(Ordering::SeqCst) & apc_bit) != 0 {
         unsafe {
             let thread = ddk::KeGetCurrentThread();
             if !thread.is_null() {
@@ -802,20 +924,20 @@ unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQ
                     .SpecialApcDisable;
 
                 if kernel_apc_pending && special_apc_disable == 0 {
-                    HalpSoftwareInterruptPending.fetch_and(!apc_bit, Ordering::SeqCst);
-                    HalpCurrentIrql = APC_LEVEL;
+                    cpu.soft_int_pending.fetch_and(!apc_bit, Ordering::SeqCst);
+                    halp_set_irql(APC_LEVEL);
                     ddk::KiDeliverApc(
                         ddk::_MODE_KernelMode as ddk::KPROCESSOR_MODE,
                         core::ptr::null_mut(),
                         core::ptr::null_mut(),
                     );
-                    HalpCurrentIrql = NewIrql;
+                    halp_set_irql(NewIrql);
                 }
             }
         }
     }
 
-    HalpSoftIntDeliveryInProgress.store(0, Ordering::SeqCst);
+    cpu.soft_int_in_progress.store(0, Ordering::SeqCst);
 }
 
 // --- IRQL-violation tripwire (serial self-reporting) -----------------------
@@ -867,21 +989,34 @@ unsafe fn irql_violation(kind: &'static [u8], old: ddk::KIRQL, new: ddk::KIRQL) 
     }
 }
 
+/// One-way mute for the IRQL tripwire, called by the kernel at bugcheck entry.
+/// The bugcheck path parks IRQL at HIGH_LEVEL by design while its display path
+/// acquires DISPATCH-level locks, so every acquire would report raise-DOWN /
+/// lower-UP — eight lines of noise wedged between the banner and the
+/// diagnostics that read like the crash signal (they misled a 2026-07-11
+/// triage). Burning the report budget mutes it without touching the hot path.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosQuiesceIrqlTripwire() {
+    HalpIrqlViolations.store(IRQL_VIOLATION_REPORT_MAX, Ordering::Relaxed);
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn KfLowerIrql(NewIrql: ddk::KIRQL) {
     unsafe {
-        let OldIrql = HalpCurrentIrql;
+        let OldIrql = halp_get_irql();
         if NewIrql > OldIrql {
             irql_violation(b"lower-UP\0", OldIrql, NewIrql);
         }
-        HalpCurrentIrql = NewIrql;
+        halp_set_irql(NewIrql);
         // Hardware half: reopen the GIC priority mask for the new level (MMIO
         // skipped inside the software band) BEFORE draining soft interrupts,
         // so a device IRQ deliverable at the new level isn't held off by a
         // stale mask while we run APC delivery.
         super::clock::update_pmr(OldIrql, NewIrql);
 
-        if OldIrql > NewIrql && HalpSoftwareInterruptPending.load(Ordering::SeqCst) != 0 {
+        if OldIrql > NewIrql
+            && halp_cpu_state().soft_int_pending.load(Ordering::SeqCst) != 0
+        {
             HalpDispatchSoftwareInterrupts(OldIrql, NewIrql);
         }
     }
@@ -890,7 +1025,7 @@ pub unsafe extern "system" fn KfLowerIrql(NewIrql: ddk::KIRQL) {
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn KfRaiseIrql(NewIrql: ddk::KIRQL) -> ddk::KIRQL {
     unsafe {
-        let OldIrql = HalpCurrentIrql;
+        let OldIrql = halp_get_irql();
         if NewIrql < OldIrql {
             irql_violation(b"raise-DOWN\0", OldIrql, NewIrql);
         }
@@ -901,7 +1036,7 @@ pub unsafe extern "system" fn KfRaiseIrql(NewIrql: ddk::KIRQL) -> ddk::KIRQL {
             core::arch::asm!("mov {0}, x30", out(reg) ra, options(nomem, nostack, preserves_flags));
             HalpLastHighRaiseRa.store(ra, Ordering::Relaxed);
         }
-        HalpCurrentIrql = NewIrql;
+        halp_set_irql(NewIrql);
         // Hardware half: mask GIC lines at-or-below the new level (MMIO
         // skipped inside the software band, so spinlocks stay register-only).
         super::clock::update_pmr(OldIrql, NewIrql);
@@ -916,9 +1051,11 @@ pub unsafe extern "system" fn KfRaiseIrql(NewIrql: ddk::KIRQL) -> ddk::KIRQL {
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpEnterInterruptIrql(NewIrql: ddk::KIRQL) -> ddk::KIRQL {
     unsafe {
-        HalpInterruptContextDepth.fetch_add(1, Ordering::SeqCst);
-        let OldIrql = HalpCurrentIrql;
-        HalpCurrentIrql = NewIrql;
+        halp_cpu_state()
+            .interrupt_context_depth
+            .fetch_add(1, Ordering::SeqCst);
+        let OldIrql = halp_get_irql();
+        halp_set_irql(NewIrql);
         super::clock::update_pmr(OldIrql, NewIrql);
         OldIrql
     }
@@ -931,10 +1068,12 @@ pub unsafe extern "system" fn HalpEnterInterruptIrql(NewIrql: ddk::KIRQL) -> ddk
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpExitInterruptIrql(RestoreIrql: ddk::KIRQL) {
     unsafe {
-        let OldIrql = HalpCurrentIrql;
-        HalpCurrentIrql = RestoreIrql;
+        let OldIrql = halp_get_irql();
+        halp_set_irql(RestoreIrql);
         super::clock::update_pmr(OldIrql, RestoreIrql);
-        HalpInterruptContextDepth.fetch_sub(1, Ordering::SeqCst);
+        halp_cpu_state()
+            .interrupt_context_depth
+            .fetch_sub(1, Ordering::SeqCst);
     }
 }
 

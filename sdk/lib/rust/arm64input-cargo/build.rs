@@ -18,7 +18,7 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
-        "aarch64" => ("aarch64-kernel.json", "DriverEntry", 0x7FFB_0000_0000),
+        "aarch64" => ("aarch64-pc-windows-gnullvm", "DriverEntry", 0x7FFB_0000_0000),
         other => panic!("arm64input-cargo: arm64-only driver, unsupported arch {other}"),
     };
 

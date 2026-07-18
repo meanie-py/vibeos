@@ -107,6 +107,33 @@ pub unsafe extern "system" fn KiInsertQueue(
         WaitBlock = CONTAINING_RECORD!(WaitEntry, KWAIT_BLOCK, WaitListEntry);
         Thread = (*WaitBlock).Thread;
 
+        // §9.56 tripwire 0x60 — the LAST unguarded readier. This manual queue
+        // wake bypasses KiUnwaitThread (so 0x5E can't see it) and its
+        // fingerprint (WaitReason=0) matched 2/3 of the 0x5D victims. A popped
+        // queue waiter must be Waiting; anything else = a stale queue wait
+        // block waking a running thread.
+        #[cfg(feature = "smp")]
+        {
+            if *kt_State(Thread) != 5u8 {
+                crate::dbg_print!(
+                    b"[RQ60] queue wake popped non-Waiting thr=%p state=%u queue=%p reason=%u\n\0",
+                    Thread,
+                    *kt_State(Thread) as u32,
+                    Queue,
+                    (*Thread).WaitReason as u32,
+                );
+                if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
+                KeBugCheckEx(
+                    0x96,
+                    Thread as ULONG_PTR,
+                    ((0x60u64 << 40) | ((*kt_State(Thread)) as u64) << 8) as ULONG_PTR,
+                    Queue as ULONG_PTR,
+                    WaitBlock as ULONG_PTR,
+                );
+                }
+            }
+        }
+
         (*Thread).WaitStatus = Entry as LONG_PTR;
         if !(*Thread).__bindgen_anon_3.WaitListEntry.Flink.is_null() {
             RemoveEntryList(core::ptr::addr_of_mut!((*Thread).__bindgen_anon_3.WaitListEntry) as PLIST_ENTRY);

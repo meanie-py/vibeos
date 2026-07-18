@@ -116,7 +116,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
     // DPRINT entry
     {
         let file: *const i8 = b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
-        if crate::glue::dprint_noop(
+        if crate::glue::dprint_noop!(
             b"ScsiPortDispatchScsi(DeviceObject %p  Irp %p)\n\0".as_ptr() as *const i8,
             DeviceObject,
             Irp,
@@ -161,7 +161,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
 
     // DPRINT: "Srb: %p, Srb->Function: %lu"
     let file: *const i8 = b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
-    if crate::glue::dprint_noop(
+    if crate::glue::dprint_noop!(
         b"Srb: %p, Srb->Function: %lu\n\0".as_ptr() as *const i8,
         Srb,
         (*Srb).Function as u32,
@@ -253,11 +253,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
                     if Entry.is_null() {
                         break;
                     }
-                    let offset = &raw const (*core::ptr::null::<IRP>())
-                        .Tail
-                        .Overlay
-                        .__bindgen_anon_1
-                        .DeviceQueueEntry as usize;
+                    let offset = core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_1.DeviceQueueEntry);
                     NextIrp = (Entry as usize).wrapping_sub(offset) as PIRP;
                     Stack = IoGetCurrentIrpStackLocation(NextIrp);
                     Srb = (*Stack).Parameters.Scsi.Srb as PSCSI_REQUEST_BLOCK;
@@ -1063,11 +1059,7 @@ pub unsafe extern "C" fn SpiGetNextRequestFromLun(
     );
 
     if !Entry.is_null() {
-        let offset = &raw mut (*core::ptr::null_mut::<IRP>())
-            .Tail
-            .Overlay
-            .__bindgen_anon_1
-            .DeviceQueueEntry as usize;
+        let offset = core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_1.DeviceQueueEntry);
         NextIrp = (Entry as usize).wrapping_sub(offset) as *mut IRP as PIRP;
 
         IrpStack = IoGetCurrentIrpStackLocation(NextIrp);
@@ -1188,7 +1180,7 @@ pub unsafe extern "system" fn SpiSaveInterruptData(Context: *mut core::ffi::c_vo
                 (*LunExtension).RequestTimeout = -1i32;
             } else {
                 NextSrbInfo = ((*LunExtension).SrbInfo.Requests.Flink as usize).wrapping_sub(
-                    &raw mut (*core::ptr::null_mut::<SCSI_REQUEST_BLOCK_INFO>()).Requests as usize,
+                    core::mem::offset_of!(SCSI_REQUEST_BLOCK_INFO, Requests),
                 ) as *mut SCSI_REQUEST_BLOCK_INFO;
                 Srb = (*NextSrbInfo).Srb;
                 (*LunExtension).RequestTimeout = (*Srb).TimeOutValue as i32;

@@ -50,8 +50,9 @@ unsafe fn HEAP_alloc(len: SIZE_T) -> PVOID {
     RtlAllocateHeap(hProcessHeap, 0, len)
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn HEAP_strdupA2W(ppszW: *mut PWSTR, lpszA: PCSTR) -> NTSTATUS {
+pub unsafe fn HEAP_strdupA2W(ppszW: *mut PWSTR, lpszA: PCSTR) -> NTSTATUS {
     let len: ULONG;
     let Status: NTSTATUS;
 
@@ -75,9 +76,11 @@ pub unsafe extern "fastcall" fn HEAP_strdupA2W(ppszW: *mut PWSTR, lpszA: PCSTR) 
     *(*ppszW).add(len as usize) = UNICODE_NULL;
     Status
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn HEAP_strdupA2W_buf(
+pub unsafe fn HEAP_strdupA2W_buf(
     lpszA: PCSTR,
     pszStaticBuff: PWSTR,
     cchStaticBuff: SIZE_T,
@@ -104,4 +107,5 @@ pub unsafe extern "fastcall" fn HEAP_strdupA2W_buf(
         size as ULONG,
     );
     pszW
+}
 }

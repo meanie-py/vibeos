@@ -1,7 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentThreadWin32Thread, RtlUnicodeToMultiByteSize};
 use ntkrnl_sys::base::NT_SUCCESS;
-use core::ffi::c_void;
 
 // TRACE/WARN/ERR/FIXME — DbgPrint-style no-ops (no kernel symbol in non-DBG build).
 macro_rules! TRACE { ($($t:tt)*) => {{}}; }
@@ -376,7 +375,8 @@ unsafe fn DefWndHandleWindowPosChanged_impl(pWnd: PWND, WinPos: PWINDOWPOS) -> L
     0
 }
 
-unsafe extern "fastcall" fn DefWndHandleSysCommand(mut pWnd: PWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+fastcall_fn! {
+unsafe fn DefWndHandleSysCommand(mut pWnd: PWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     let mut lResult: LRESULT = 0;
     let mut Hook: u8 = 0u8;
 
@@ -458,6 +458,7 @@ unsafe extern "fastcall" fn DefWndHandleSysCommand(mut pWnd: PWND, wParam: WPARA
     }
 
     if Hook != 0 { 1 } else { 0 }
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -927,8 +928,9 @@ unsafe fn IntDefWindowProc_WM_SETREDRAW(Wnd: PWND, wParam: WPARAM) -> LRESULT {
     0
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntDefWindowProc(
+unsafe fn IntDefWindowProc(
     Wnd: PWND,
     Msg: UINT,
     mut wParam: WPARAM,
@@ -1214,9 +1216,9 @@ unsafe extern "fastcall" fn IntDefWindowProc(
             }
             // input.h IS_KEY_DOWN: async key state is 2 bits per key —
             // byte (vk*2)/8, KS_DOWN_BIT mask 1 << ((vk%4)*2).
-            let lwin_down = (*gafAsyncKeyState.as_ptr().offset((VK_LWIN as usize * 2 / 8) as isize)
+            let lwin_down = (*(*(&raw const gafAsyncKeyState)).as_ptr().offset((VK_LWIN as usize * 2 / 8) as isize)
                 & (1 << ((VK_LWIN as usize % 4) * 2))) != 0;
-            let rwin_down = (*gafAsyncKeyState.as_ptr().offset((VK_RWIN as usize * 2 / 8) as isize)
+            let rwin_down = (*(*(&raw const gafAsyncKeyState)).as_ptr().offset((VK_RWIN as usize * 2 / 8) as isize)
                 & (1 << ((VK_RWIN as usize % 4) * 2))) != 0;
             if g_bWindowSnapEnabled != 0 && (lwin_down || rwin_down) {
                 let hwndTop = UserGetForegroundWindow();
@@ -1682,6 +1684,7 @@ unsafe extern "fastcall" fn IntDefWindowProc(
         _ => {}
     }
     lResult
+}
 }
 
 

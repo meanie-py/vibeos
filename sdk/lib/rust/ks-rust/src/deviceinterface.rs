@@ -22,9 +22,8 @@ pub unsafe extern "C" fn KspSetDeviceInterfacesState(
 
     Entry = (*ListHead).Flink;
     while Entry != ListHead {
-        SymEntry = core::mem::transmute::<isize, PSYMBOLIC_LINK_ENTRY>(
-            (Entry as isize).wrapping_sub(
-                &raw const (*core::ptr::null_mut::<SYMBOLIC_LINK_ENTRY>()).Entry as isize,
+        SymEntry = core::ptr::with_exposed_provenance_mut::<SYMBOLIC_LINK_ENTRY>((Entry as usize).wrapping_sub(
+                core::mem::offset_of!(SYMBOLIC_LINK_ENTRY, Entry) as usize,
             ),
         );
         Status = IoSetDeviceInterfaceState(&raw mut (*SymEntry).SymbolicLink, Enable as BOOLEAN);
@@ -44,9 +43,8 @@ pub unsafe extern "C" fn KspFreeDeviceInterfaces(
 
     while !IsListEmpty(ListHead) {
         Entry = RemoveHeadList(ListHead);
-        SymEntry = core::mem::transmute::<isize, PSYMBOLIC_LINK_ENTRY>(
-            (Entry as isize)
-                - core::mem::offset_of!(SYMBOLIC_LINK_ENTRY, Entry) as isize,
+        SymEntry = core::ptr::with_exposed_provenance_mut::<SYMBOLIC_LINK_ENTRY>((Entry as usize)
+                - core::mem::offset_of!(SYMBOLIC_LINK_ENTRY, Entry) as usize,
         );
         RtlFreeUnicodeString(&mut (*SymEntry).SymbolicLink);
         FreeItem(Entry as *mut core::ffi::c_void);
@@ -107,9 +105,8 @@ pub unsafe extern "C" fn KspSetFilterFactoriesState(
 
     Entry = (*DeviceHeader).ItemList.Flink;
     while Entry != &mut (*DeviceHeader).ItemList && Status == STATUS_SUCCESS {
-        let CreateEntry: PCREATE_ITEM_ENTRY = core::mem::transmute(
-            (Entry as usize).wrapping_sub(
-                &raw mut (*core::ptr::null_mut::<CREATE_ITEM_ENTRY>()).Entry as usize,
+        let CreateEntry: PCREATE_ITEM_ENTRY = core::ptr::with_exposed_provenance_mut::<CREATE_ITEM_ENTRY>((Entry as usize).wrapping_sub(
+                core::mem::offset_of!(CREATE_ITEM_ENTRY, Entry),
             ),
         );
 

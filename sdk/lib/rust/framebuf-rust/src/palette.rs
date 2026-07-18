@@ -106,7 +106,7 @@ pub unsafe extern "C" fn IntSetPalette(
     core::ptr::copy_nonoverlapping(
         ppalent as *const u8,
         core::ptr::addr_of_mut!((*pClut).LookupTable) as *mut u8,
-        (core::mem::size_of::<u32>() * cColors as usize),
+        core::mem::size_of::<u32>() * cColors as usize ,
     );
 
     if (*(dhpdev as *mut PDEV)).PaletteShift != 0 {
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn IntSetPalette(
 pub unsafe extern "C" fn DrvSetPalette(
     dhpdev: DHPDEV,
     ppalo: *mut PALOBJ,
-    fl: FLONG,
+    _fl: FLONG,
     iStart: u32,
     cColors: u32,
 ) -> BOOL {
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn DrvSetPalette(
 
     let PaletteEntries = EngAllocMem(
         0,
-        (cColors * core::mem::size_of::<u32>() as u32),
+        cColors * core::mem::size_of::<u32>() as u32 ,
         ALLOC_TAG,
     ) as PPALETTEENTRY;
     if PaletteEntries.is_null() {

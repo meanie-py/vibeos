@@ -25,7 +25,7 @@ static mut AppCompatCacheKey: _UNICODE_STRING = _UNICODE_STRING {
 static mut AppCompatKeyAttributes: _OBJECT_ATTRIBUTES = _OBJECT_ATTRIBUTES {
     Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
     RootDirectory: core::ptr::null_mut(),
-    ObjectName: unsafe { core::ptr::addr_of_mut!(AppCompatCacheKey) },
+    ObjectName: { core::ptr::addr_of_mut!(AppCompatCacheKey) },
     Attributes: OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
     SecurityDescriptor: core::ptr::null_mut(),
     SecurityQualityOfService: core::ptr::null_mut(),

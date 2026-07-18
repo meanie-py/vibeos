@@ -6,7 +6,6 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::ddk::ExAllocatePoolWithTag;
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::rtl::RtlZeroMemory;
-use core::ffi::c_void;
 
 // Debug-channel macros — no kernel symbol, no-op.
 macro_rules! ERR   { ($($t:tt)*) => {{}}; }

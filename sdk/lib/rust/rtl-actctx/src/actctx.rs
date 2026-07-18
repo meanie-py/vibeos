@@ -1,10 +1,8 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ACTIVATION_CONTEXT_STACK, FILE_BOTH_DIR_INFORMATION, FILE_END_OF_FILE_INFORMATION, GUID, IMAGE_RESOURCE_DATA_ENTRY, IMAGE_RESOURCE_DIRECTORY, IMAGE_RESOURCE_DIRECTORY_ENTRY, _IO_STATUS_BLOCK, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LDR_RESOURCE_INFO, LdrAccessResource, LdrFindResource_U, LdrLockLoaderLock, LdrUnlockLoaderLock, NtClose, NtOpenFile, NtQueryDirectoryFile, NtQueryInformationFile, NtReadFile, _OBJECT_ATTRIBUTES, PACTIVATION_CONTEXT_STACK, RtlCompareUnicodeStrings, RtlCreateUnicodeString, RtlDetermineDosPathNameType_U, RtlDosPathNameToNtPathName_U, RtlEqualUnicodeString, RtlFreeHeap, RtlFreeUnicodeString, RtlGUIDFromString, RtlGetFullPathName_U, RtlHashUnicodeString, RtlImageDirectoryEntryToData, RtlImageNtHeader, RtlInitUnicodeString, RtlIsTextUnicode, RtlUnicodeStringToInteger, RtlUniform, RtlUpcaseUnicodeString, RtlUshortByteSwap, TEB};
-use core::ffi::c_void;
 
 // The byte-exact private/public type substrate + the file-static string
 // constants (machine-extracted). LPCWSTR/LPWSTR/PACTIVATION_CONTEXT and
@@ -13,7 +11,6 @@ use core::ffi::c_void;
 use crate::types::*;
 use crate::strings::*;
 use crate::shim::*;
-use crate::{FIELD_OFFSET, wine_dbg_sprintf, TRACE, FIXME, WARN, ERR, HIWORD};
 // The draft uses the bindgen underscore name; unify both spellings on
 // ddk's _UNICODE_STRING (layout-identical to base's UNICODE_STRING) so
 // the ddk Rtl*/Nt* signatures line up.
@@ -182,7 +179,7 @@ unsafe fn debugstr_xmlstr(str: *const xmlstr_t) -> *const core::ffi::c_char {
     debugstr_wn((*str).ptr, (*str).len)
 }
 
-unsafe fn debugstr_xml_elem(elem: *const xml_elem) -> *const core::ffi::c_char {
+unsafe fn debugstr_xml_elem(_elem: *const xml_elem) -> *const core::ffi::c_char {
     wine_dbg_sprintf!(
         b"%s ns %s\0".as_ptr() as *const core::ffi::c_char,
         debugstr_wn((*elem).name.ptr, (*elem).name.len),
@@ -190,7 +187,7 @@ unsafe fn debugstr_xml_elem(elem: *const xml_elem) -> *const core::ffi::c_char {
     )
 }
 
-unsafe fn debugstr_xml_attr(attr: *const xml_attr) -> *const core::ffi::c_char {
+unsafe fn debugstr_xml_attr(_attr: *const xml_attr) -> *const core::ffi::c_char {
     wine_dbg_sprintf!(
         b"%s=%s\0".as_ptr() as *const core::ffi::c_char,
         debugstr_wn((*attr).name.ptr, (*attr).name.len),
@@ -198,7 +195,7 @@ unsafe fn debugstr_xml_attr(attr: *const xml_attr) -> *const core::ffi::c_char {
     )
 }
 
-unsafe fn debugstr_version(ver: *const assembly_version) -> *const core::ffi::c_char {
+unsafe fn debugstr_version(_ver: *const assembly_version) -> *const core::ffi::c_char {
     wine_dbg_sprintf!(
         b"%u.%u.%u.%u\0".as_ptr() as *const core::ffi::c_char,
         (*ver).major as core::ffi::c_uint,
@@ -598,7 +595,7 @@ unsafe fn build_assembly_id(ai: *const assembly_identity) -> *mut WCHAR {
     ];
 
     let mut version: [WCHAR; 64] = [0; 64];
-    let mut ret: *mut WCHAR;
+    let ret: *mut WCHAR;
     let mut size: SIZE_T = 0;
 
     swprintf(
@@ -1071,7 +1068,7 @@ unsafe fn parse_unknown_elem(xmlbuf: *mut xmlbuf_t, parent: *const xml_elem) {
 
 unsafe fn parse_assembly_identity_elem(
     xmlbuf: *mut xmlbuf_t,
-    actctx: *mut ACTIVATION_CONTEXT,
+    _actctx: *mut ACTIVATION_CONTEXT,
     ai: *mut assembly_identity,
     parent: *const xml_elem,
 ) {
@@ -2170,7 +2167,7 @@ unsafe fn parse_file_elem(
 unsafe fn parse_supportedos_elem(
     xmlbuf: *mut xmlbuf_t,
     assembly: *mut assembly,
-    acl: *mut actctx_loader,
+    _acl: *mut actctx_loader,
     parent: *const xml_elem,
 ) {
     let mut attr: xml_attr = core::mem::zeroed();
@@ -2258,7 +2255,7 @@ unsafe fn parse_compatibility_elem(
 unsafe fn parse_settings_elem(
     xmlbuf: *mut xmlbuf_t,
     assembly: *mut assembly,
-    acl: *mut actctx_loader,
+    _acl: *mut actctx_loader,
     parent: *mut xml_elem,
 ) {
     let mut elem: xml_elem = core::mem::zeroed();
@@ -2620,7 +2617,7 @@ unsafe fn parse_manifest_buffer(
     xmlbuf: *mut xmlbuf_t,
 ) -> NTSTATUS {
     let mut elem: xml_elem = core::mem::zeroed();
-    let mut parent: xml_elem = core::mem::zeroed();
+    let parent: xml_elem = core::mem::zeroed();
 
     (*xmlbuf).error = 0;
     (*xmlbuf).ns_pos = 0;
@@ -2882,7 +2879,7 @@ unsafe fn search_manifest_in_module(
     directory: LPCWSTR,
     shared: BOOL,
     hModule: HANDLE,
-    lang: ULONG,
+    _lang: ULONG,
 ) -> NTSTATUS {
     let mut size: ULONG = 0;
     let mut ptr: PVOID;
@@ -3432,7 +3429,7 @@ unsafe fn find_query_actctx( handle: *mut HANDLE, flags: DWORD, class: ULONG ) -
 unsafe fn build_dllredirect_section(actctx: *mut ACTIVATION_CONTEXT, section: *mut *mut strsection_header) -> NTSTATUS {
     let mut total_len: u32 = 0;
     let mut dll_count: u32 = 0;
-    let mut header: *mut strsection_header;
+    let header: *mut strsection_header;
     let mut data: *mut dllredirect_data;
     let mut index: *mut string_index;
     let mut name_offset: ULONG;
@@ -3568,8 +3565,8 @@ unsafe fn get_dllredirect_data(ctxt: *mut ACTIVATION_CONTEXT, index: *mut string
 }
 
 unsafe fn find_dll_redirection(actctx: *mut ACTIVATION_CONTEXT, name: *const _UNICODE_STRING, data: PACTCTX_SECTION_KEYED_DATA) -> NTSTATUS {
-    let mut dll: *mut dllredirect_data;
-    let mut index: *mut string_index;
+    let dll: *mut dllredirect_data;
+    let index: *mut string_index;
 
     if ((*actctx).sections & DLLREDIRECT_SECTION as u32) == 0 {
         return STATUS_SXS_KEY_NOT_FOUND;
@@ -3962,7 +3959,7 @@ unsafe fn get_tlib_data(actctx: *mut ACTIVATION_CONTEXT, index: *mut guid_index)
 }
 
 unsafe fn find_tlib_redirection(actctx: *mut ACTIVATION_CONTEXT, guid: *const GUID, data: *mut ACTCTX_SECTION_KEYED_DATA) -> NTSTATUS {
-    let mut index: *mut guid_index;
+    let index: *mut guid_index;
     let tlib: *mut tlibredirect_data;
 
     if ((*actctx).sections & TLIBREDIRECT_SECTION) == 0 {
@@ -4098,7 +4095,7 @@ unsafe fn add_comserver_record(
             let mut miscmask: ULONG;
             let data: *mut comclassredirect_data;
             let alias_index: *mut guid_index;
-            let mut clrdata: *mut clrclass_data;
+            let clrdata: *mut clrclass_data;
             let mut str: _UNICODE_STRING = core::mem::zeroed();
             let mut ptrW: *mut WCHAR;
 
@@ -4627,7 +4624,7 @@ unsafe fn get_ifaceps_data(actctx: *mut ACTIVATION_CONTEXT, index: *mut guid_ind
 }
 
 unsafe fn find_cominterface_redirection(actctx: *mut ACTIVATION_CONTEXT, guid: *const GUID, data: *mut ACTCTX_SECTION_KEYED_DATA) -> NTSTATUS {
-    let mut index: *mut guid_index;
+    let index: *mut guid_index;
 
     if ((*actctx).sections & IFACEREDIRECT_SECTION as u32) == 0 {
         return STATUS_SXS_KEY_NOT_FOUND;
@@ -5287,7 +5284,7 @@ pub unsafe extern "system" fn RtlZombifyActivationContext(handle: HANDLE) -> NTS
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlActivateActivationContext(
-    unknown: ULONG,
+    _unknown: ULONG,
     handle: HANDLE,
     cookie: PULONG_PTR,
 ) -> NTSTATUS {
@@ -5296,7 +5293,7 @@ pub unsafe extern "system" fn RtlActivateActivationContext(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlActivateActivationContextEx(
-    flags: ULONG,
+    _flags: ULONG,
     teb: *mut TEB,
     handle: HANDLE,
     cookie: *mut ULONG_PTR,
@@ -5423,7 +5420,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
     retlen: *mut SIZE_T,
 ) -> NTSTATUS {
     let actctx: *mut ACTIVATION_CONTEXT;
-    let mut status: NTSTATUS;
+    let status: NTSTATUS;
 
     if !retlen.is_null() {
         core::ptr::write_volatile(retlen, 0);
@@ -5668,7 +5665,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
             let dll: *mut dll_redirect;
             let len: SIZE_T;
             let mut dll_len: SIZE_T = 0;
-            let mut ptr: LPWSTR;
+            let ptr: LPWSTR;
 
             let actctx = check_actctx(handle);
             if actctx.is_null() {
@@ -5828,8 +5825,8 @@ pub unsafe extern "system" fn RtlQueryInformationActiveActivationContext(
 #[no_mangle]
 pub unsafe extern "system" fn RtlpFindActivationContextSection_CheckParameters(
     flags: ULONG,
-    guid: *const GUID,
-    section_kind: ULONG,
+    _guid: *const GUID,
+    _section_kind: ULONG,
     section_name: *const _UNICODE_STRING,
     data: PACTCTX_SECTION_KEYED_DATA,
 ) -> NTSTATUS {
@@ -6133,7 +6130,7 @@ unsafe fn RtlDeactivateActivationContextUnsafeFast_impl(
 unsafe fn lookup_assembly(acl: *mut actctx_loader, ai: *mut assembly_identity) -> NTSTATUS {
     static dotDllW: [WCHAR; 5] = [b'.' as WCHAR, b'd' as WCHAR, b'l' as WCHAR, b'l' as WCHAR, 0];
     let mut i: u32;
-    let mut buffer: *mut WCHAR;
+    let buffer: *mut WCHAR;
     let mut p: *mut WCHAR;
     let directory: *mut WCHAR;
     let mut status: NTSTATUS;

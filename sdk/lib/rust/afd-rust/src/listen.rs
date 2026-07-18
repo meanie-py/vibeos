@@ -1,6 +1,5 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -9,7 +8,6 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ddk::{IRP, ObReferenceObjectByHandle, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};
-use core::ffi::c_void;
 
 unsafe fn SatisfyAccept(
     DeviceExt: PAFD_DEVICE_EXTENSION,
@@ -65,7 +63,7 @@ unsafe fn SatisfyAccept(
 
 unsafe fn SatisfyPreAccept(Irp: PIRP, Qelt: PAFD_TDI_OBJECT_QELT) -> NTSTATUS {
     let ListenReceive = (*Irp).AssociatedIrp.SystemBuffer as PAFD_RECEIVED_ACCEPT_DATA;
-    let mut IPAddr: PTA_IP_ADDRESS;
+    let IPAddr: PTA_IP_ADDRESS;
 
     (*ListenReceive).SequenceNumber = (*Qelt).Seq;
 
@@ -128,7 +126,7 @@ unsafe fn listen_complete_impl(
     // Listen-path breadcrumb (see AfdListenSocket).
     DbgPrint(b"[AFD] ListenComplete FCB=%p status=0x%x\n\0".as_ptr() as PCHAR,
              FCB, (*Irp).IoStatus.__bindgen_anon_1.Status);
-    let mut Qelt: PAFD_TDI_OBJECT_QELT;
+    let Qelt: PAFD_TDI_OBJECT_QELT;
     let mut NextIrpEntry: PLIST_ENTRY;
     let mut NextIrp: PIRP;
 
@@ -365,13 +363,13 @@ pub unsafe extern "C" fn AfdListenSocket(
 }
 #[no_mangle]
 pub unsafe extern "C" fn AfdWaitForListen(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     AFD_DbgPrint!(MID_TRACE, b"Called\n\0".as_ptr() as PCHAR);
 

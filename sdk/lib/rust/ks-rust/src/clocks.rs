@@ -549,7 +549,7 @@ pub unsafe extern "system" fn KsCreateDefaultClock(
         0,
         core::ptr::null_mut(),
         Irp,
-        &mut DispatchTable,
+        &raw mut DispatchTable,
     );
 
     if !NT_SUCCESS(Status) {

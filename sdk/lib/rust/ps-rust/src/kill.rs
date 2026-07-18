@@ -319,6 +319,25 @@ unsafe extern "system" fn PspReapRoutine(context: PVOID) {
             let offset = core::mem::offset_of!(_ETHREAD, __bindgen_anon_3) + core::mem::offset_of!(_ETHREAD__bindgen_ty_3, ReaperLink);
             thread = (entry_addr - offset) as PETHREAD;
 
+            // SMP kernel-stack teardown race (field manual §9.88 Bug 2 /
+            // §9.94): KeTerminateThread queues this reaper entry (and sets
+            // SwapBusy) while the dying thread is STILL RUNNING on the stack
+            // we're about to free — its final SwapContext clears SwapBusy only
+            // once its CPU is off the stack.  Freeing before that leaves the
+            // dying CPU executing on released system PTEs → 0x1E
+            // STATUS_IN_PAGE_ERROR on a kernel-stack VA.  Spin until the
+            // context swap completes (Acquire pairs with the Release clear in
+            // KiSwapContextExit / SwapContext).  UP: SwapBusy is never set —
+            // the load returns 0 immediately.
+            {
+                let busy = core::sync::atomic::AtomicU8::from_ptr(
+                    core::ptr::addr_of_mut!((*(thread as *mut _ETHREAD)).Tcb.SwapBusy),
+                );
+                while busy.load(core::sync::atomic::Ordering::Acquire) != 0 {
+                    core::hint::spin_loop();
+                }
+            }
+
             MmDeleteKernelStack(
                 (*(thread as *mut _ETHREAD)).Tcb.StackBase as PVOID,
                 kthread_large_stack(thread as *mut _ETHREAD),
@@ -438,6 +457,18 @@ pub unsafe extern "system" fn PspDeleteThread(object_body: PVOID) {
     let process = (*(thread as *mut _ETHREAD)).ThreadsProcess;
 
     if !(*(thread as *mut _ETHREAD)).Tcb.InitialStack.is_null() {
+        // Same context-swap guard as PspReapRoutine (§9.88 Bug 2): never free
+        // a stack a CPU may still be walking off.  Threads that never ran
+        // (failed creation) have SwapBusy 0 — the load passes immediately.
+        {
+            let busy = core::sync::atomic::AtomicU8::from_ptr(
+                core::ptr::addr_of_mut!((*(thread as *mut _ETHREAD)).Tcb.SwapBusy),
+            );
+            while busy.load(core::sync::atomic::Ordering::Acquire) != 0 {
+                core::hint::spin_loop();
+            }
+        }
+
         MmDeleteKernelStack(
             (*(thread as *mut _ETHREAD)).Tcb.StackBase as PVOID,
             kthread_large_stack(thread as *mut _ETHREAD),
@@ -814,8 +845,8 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
 
             current_entry = (*current_entry).Flink;
 
-            if (*(apc as *mut _KAPC)).RundownRoutine.is_some() {
-                ((*(apc as *mut _KAPC)).RundownRoutine.unwrap())(apc);
+            if let Some(rundown) = (*(apc as *mut _KAPC)).RundownRoutine {
+                rundown(apc);
             } else {
                 ExFreePool(apc as PVOID);
             }

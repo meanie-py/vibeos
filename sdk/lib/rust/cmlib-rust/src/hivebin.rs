@@ -1,8 +1,3 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::base::*;
-use ntkrnl_sys::mm::*;
-use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{HBIN, HMAP_ENTRY, HSTORAGE_TYPE, PHBIN, PHCELL, PHHIVE, PHMAP_ENTRY, RtlSetBits, RtlInitializeBitMap, HSTORAGE_TYPE_Stable as Stable};
 use crate::glue::{round_up, HBLOCK_SIZE, HV_HBIN_SIGNATURE, TAG_CM};
 // CMAPI = NTAPI → stdcall on i386 (_HvpAddBin@12): extern "system".
@@ -12,14 +7,14 @@ pub unsafe extern "system" fn HvpAddBin(
     Size: u32,
     Storage: HSTORAGE_TYPE,
 ) -> PHBIN {
-    let mut BlockList: PHMAP_ENTRY;
-    let mut Bin: PHBIN;
+    let BlockList: PHMAP_ENTRY;
+    let Bin: PHBIN;
     let BinSize: u32;
     let mut i: u32;
     let BitmapSize: u32;
     let BlockCount: u32;
     let OldBlockListSize: u32;
-    let mut Block: PHCELL;
+    let Block: PHCELL;
 
     BinSize = round_up(Size + core::mem::size_of::<HBIN>() as u32, HBLOCK_SIZE);
     BlockCount = BinSize / HBLOCK_SIZE;

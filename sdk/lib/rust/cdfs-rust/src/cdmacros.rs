@@ -17,7 +17,7 @@ use core::ptr::null_mut;
 use ntkrnl_sys::ddk::{
     ExAcquireFastMutex, ExReleaseFastMutex, ExReleaseResourceLite, IoSetTopLevelIrp,
     PsGetCurrentThread,
-    CcUnpinData, ExAllocatePoolWithTag, ExFreePoolWithTag,
+    CcUnpinData, ExAllocatePoolWithTag,
     RtlDeleteElementGenericTable, RtlTimeFieldsToTime,
     PDEVICE_OBJECT, PERESOURCE, PFAST_MUTEX, PFILE_LOCK, PFILE_OBJECT, PIO_STATUS_BLOCK,
     PLARGE_INTEGER, PEPROCESS, PIRP, POPLOCK, PRTL_GENERIC_TABLE, PVOID,
@@ -893,7 +893,7 @@ pub static mut CdAudioLabel: [u16; 8] = [
 // Batch 4 — third macro layer surfaced after batch 3 linked.
 // ===========================================================================
 
-use crate::types::{IRP_CONTEXT_LITE, PCCB, RAW_DIRENT, TYPE_OF_OPEN};
+use crate::types::{IRP_CONTEXT_LITE, RAW_DIRENT};
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, MmMapLockedPagesSpecifyCache, PMDL};
 use crate::ddk_shims::CdRaiseStatus;
 use crate::dirsup::{CdLookupDirent, CdUpdateDirentFromRawDirent};

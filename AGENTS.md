@@ -261,6 +261,36 @@ After modifying a `CMakeLists.txt` or `.cmake` file, re-run cmake before buildin
 - **16-bit assembly:** Homebrew `i686-w64-mingw32-gcc` for boot sectors/frldr16/MVDM (Clang can't handle `.code16`)
 - **Output format:** PE-COFF (Windows executables/DLLs), not ELF
 
+### Rust is on PINNED STABLE — write stable Rust (2026-07-12)
+
+**The Rust tree builds on stable rustc** (pinned in `rust-toolchain.toml`). Your new code
+must compile on stable. **Do NOT add `#![feature(...)]`, and do NOT add `RUSTC_BOOTSTRAP=1`
+to a CMakeLists** — that env var is the stable-rustc escape hatch that silently unlocks
+nightly, and it is how nightly crept back in the same day the lane removed it. Both are
+now hard-gated by `scan_nightly_surface` (`vibeos-cli check`), so you'll get a loud failure
+rather than a surprise.
+
+The **one** sanctioned nightly user is the **i386 kernel** `*-cargo` cell: it needs
+`-Z build-std` + `i686-kernel.json` for `rustc-abi: x86-softfloat` (no builtin triple
+provides a no-SSE `core`), pinned in `.rust-nightly`. It *retires* with the wow64 lane.
+amd64/arm64 build the **builtin triples** with rustup's precompiled std.
+
+If you think you need a nightly feature, you almost certainly don't:
+- **`c_variadic`** — needed only to *DEFINE* a C-variadic fn. *Declaring* and *calling* one
+  is fine on stable. No-op debug shims (`TRACE(fmt, ...)`) should be a `macro_rules!` (see
+  `ole32-rust/src/debug_shims.rs`); to genuinely define one, use the C `va_start` trampoline
+  in `sdk/lib/rust/varargs-rust/`.
+- **`linkage`** — perma-unstable upstream; it will never stabilize. Restructure.
+
+Two related traps, both real bugs we ate (field manual §9.65):
+- **Never translate a C debug MACRO into a no-op `fn`.** An out-of-line no-op is an
+  optimization barrier that uncloaks latent ABI mismatches → `ud2` → BUGCHECK. Use a macro.
+- **Never hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust.** LLVM folds any byte-copy
+  loop back into a call to the function itself → infinite self-recursion → silent hang.
+  ntoskrnl exports them; just import them.
+
+Full reference: `docs/engineering/build-system.md` §"Cargo target model".
+
 ## Key Technical Patterns
 
 ### SEH / DUMMY_PSEH (status 2026-07-10 — the ruling doc is `docs/engineering/dummy-pseh-verdict.md`)
@@ -410,7 +440,11 @@ sdk/lib/rust/
 ├── ntoskrnl-cargo/         # PRODUCTION cargo-driven ntoskrnl.exe link (graduated from cmake
 │                           #   add_executable — reactos-link engine; ntoskrnl/CMakeLists.txt:118)
 ├── ntkrnlmp-cargo/         # SMP-kernel sibling link (ntkrnlmp.exe): kernel asm assembled with
-│                           #   CONFIG_SMP. Bring-up lane: docs/engineering/active-lanes/smp-bringup-quest.md (on the smp-bringup branch until it lands)
+│                           #   CONFIG_SMP. ON MASTER since 2026-07-11 (M0–M3 complete: -smp 2
+│                           #   boots to desktop, both CPUs schedule, TLB shootdown + generic-call
+│                           #   IPI live; all opt-in via `build --smp-kernel` + `smoke --smp N`,
+│                           #   defaults stay UP). Quest log + remaining M4/M5 work:
+│                           #   docs/engineering/active-lanes/smp-bringup-quest.md
 ├── kernel-rust/            # staticlib umbrella that pulls in all sibling rlibs via extern crate
 ├── ntkrnl-sys/             # Two-layer FFI crate: hand-written + bindgen (see below)
 ├── hal-rust/               # HAL Rust translation — x86 flavors (i386 + amd64, minihal feature

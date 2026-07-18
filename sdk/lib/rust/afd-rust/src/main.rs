@@ -1,6 +1,5 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -14,7 +13,6 @@ use ntkrnl_sys::ddk::{FILE_FS_DEVICE_INFORMATION, _FSINFOCLASS_FileFsDeviceInfor
 // bindgen `ddk` extern stubs.
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};
 use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
-use core::ffi::c_void;
 
 // The Afd* cross-module dispatch fns are declared (stdcall) by the per-arch
 // `types` substrate (imported via `use crate::types::*`) — re-declaring them here
@@ -355,14 +353,14 @@ unsafe fn AfdCreateSocket(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    let mut FCB: PAFD_FCB;
+    let FCB: PAFD_FCB;
     let FileObject: PFILE_OBJECT;
     let DeviceExt: PAFD_DEVICE_EXTENSION;
     let EaInfo: PFILE_FULL_EA_INFORMATION;
     let mut ConnectInfo: PAFD_CREATE_PACKET = core::ptr::null_mut();
     let mut EaInfoValue: PWCHAR = core::ptr::null_mut();
-    let i: UINT;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let _i: UINT;
+    let Status: NTSTATUS = STATUS_SUCCESS;
 
     AFD_DbgPrint!(
         MID_TRACE,
@@ -561,7 +559,7 @@ unsafe fn AfdCleanupSocket(
 }
 
 unsafe fn AfdCloseSocket(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
@@ -739,7 +737,7 @@ unsafe extern "C" fn DisconnectComplete(
 }
 
 unsafe fn disconnect_complete_impl(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
 ) -> NTSTATUS {
@@ -859,7 +857,7 @@ unsafe fn AfdDisconnect(
 ) -> NTSTATUS {
     let FileObject = (*IrpSp).FileObject;
     let FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut DisReq: PAFD_DISCONNECT_INFO;
+    let DisReq: PAFD_DISCONNECT_INFO;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let Flags: USHORT;
     let mut CurrentEntry: PLIST_ENTRY;
@@ -982,7 +980,7 @@ unsafe fn AfdDisconnect(
 }
 #[no_mangle]
 pub unsafe extern "system" fn AfdQueryFsDeviceInfo(
-    DeviceObject: PDEVICE_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
     Buffer: PFILE_FS_DEVICE_INFORMATION,
     Length: *mut u32,
 ) -> i32 {
@@ -1076,7 +1074,7 @@ const IOCTL_AFD_SUPER_CONNECT: u32 = afd_ctl(49, 3);
 unsafe extern "system" fn AfdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
     let mut Status: NTSTATUS = STATUS_NOT_IMPLEMENTED;
-    let FileObject = (*IrpSp).FileObject;
+    let _FileObject = (*IrpSp).FileObject;
 
     AFD_DbgPrint!(MID_TRACE, b"AfdDispatch: %u\n\0".as_ptr() as *const i8, (*IrpSp).MajorFunction);
     if (*IrpSp).MajorFunction != IRP_MJ_CREATE {
@@ -1306,9 +1304,9 @@ pub unsafe extern "C" fn CheckUnlockExtraBuffers(FCB: PAFD_FCB, IrpSp: PIO_STACK
 }
 #[no_mangle]
 pub unsafe extern "C" fn CleanupPendingIrp(FCB: PAFD_FCB, Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Poll: PAFD_ACTIVE_POLL) {
-    let mut RecvReq: PAFD_RECV_INFO;
-    let mut SendReq: PAFD_SEND_INFO;
-    let mut PollReq: PAFD_POLL_INFO;
+    let RecvReq: PAFD_RECV_INFO;
+    let SendReq: PAFD_SEND_INFO;
+    let PollReq: PAFD_POLL_INFO;
 
     if (*IrpSp).MajorFunction == IRP_MJ_READ as u8 {
         RecvReq = GetLockedData(Irp, IrpSp) as PAFD_RECV_INFO;
@@ -1458,7 +1456,7 @@ unsafe extern "system" fn AfdUnload(DriverObject: PDRIVER_OBJECT) {
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
-    RegistryPath: PUNICODE_STRING,
+    _RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
     let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
     // RTL_CONSTANT_STRING(L"\\Device\\Afd") — a UTF-16 (wide) device name. The grind

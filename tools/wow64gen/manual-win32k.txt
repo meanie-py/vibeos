@@ -1,0 +1,60 @@
+# wow64gen deep-marshal list for the WIN32K table (NtGdi*/NtUser*, ordered by
+# win32ss/w32ksvc32.h; guest EAX carries 0x1000+index). Same rules as
+# manual.txt: one name per line, # comments; a listed name becomes a loud
+# WOW64_NEEDS_MANUAL stub routed to Wow64ManualDispatch (wow64_manual.c).
+#
+# GDI/USER structs are mostly pointer-free and identical 32/64 (RECT, POINT,
+# SIZE, COLORREF, LOGBRUSH sans hooks...), so auto zero-extension covers far
+# more of this table than the ntdll one. List here the calls whose args embed
+# POINTERS or ULONG_PTR fields (UNICODE_STRING, DEVMODEW+driver extra,
+# LOGFONT arrays with pointers, MSG with ULONG_PTR wParam...).
+#
+# Bring-up policy: intentionally MINIMAL — every unlisted call with a
+# divergent struct will misbehave loudly under the per-syscall trace; add it
+# here + a marshaller when boot coverage hits it.
+
+# gui32.exe bring-up path (CreateDCA -> NtGdiOpenDCW: UNICODE_STRING device
+# name + optional DEVMODEW + PVOID* output slot)
+NtGdiOpenDCW
+
+# MSG out-param (ULONG_PTR wParam / LPARAM widen) — the user32 pump family,
+# listed pre-emptively so a future window pump never runs a silently-wrong
+# auto thunk.
+NtUserGetMessage
+NtUserPeekMessage
+NtUserDispatchMessage
+
+# user32 per-process win32k handshake: USERCONNECT is layout-divergent
+# (SHAREDINFO pointers widen; 0x124 -> 0x240). Task #29.
+NtUserProcessConnect
+
+# M8 window-creation path: pointer-bearing structs (WNDCLASSEX/CLSMENUNAME,
+# LARGE_STRING, PAINTSTRUCT) + the message pump family above.
+NtUserRegisterClassExWOW
+NtUserCreateWindowEx
+NtUserTranslateMessage
+NtUserBeginPaint
+NtUserEndPaint
+
+# M9 default-cursor load (LoadCursor(NULL, IDC_ARROW) during first window's
+# class setup): module/resource UNICODE_STRINGs widen 8->16 (align-8 probe),
+# and SetCursorIconData's CURSORDATA has pointer/HBITMAP fields that widen.
+NtUserFindExistingCursorIcon
+NtUserSetCursorIconData
+
+# The LARGE_STRING family. LARGE_STRING is 12 bytes on i386 and 16 on the host
+# (PVOID Buffer at +8), so auto-thunking one hands win32k a wild 64-bit pointer
+# that it dereferences under the USER lock — a whole-desktop wedge, not a clean
+# fault. NtUserCreateWindowEx (above) was listed in M8; NtUserDefSetText was
+# missed, and every stock window hits it via DefWindowProcW(WM_NCCREATE) setting
+# the title from CREATESTRUCT.lpszName. These two are the entire family — if a
+# new win32k syscall ever takes a PLARGE_STRING, it belongs here.
+NtUserDefSetText
+
+# M16 (task #43): NtUserMessageCall(FNID_DEFWINDOWPROC, WM_WINDOWPOSCHANG*) carries
+# a WINDOWPOS by lParam. The guest passes a 28-byte 32-bit WINDOWPOS; 64-bit win32k
+# reads it as 40 bytes -> field shift past the two leading handles -> garbage
+# cx/cy/flags, so DefWindowProc's WINDOWPOSCHANGING size adjustment corrupts the
+# window (collapses to 0x0, no WM_PAINT). The manual thunk marshals the lParam
+# payload 32<->64 for this (FNID,Msg); every other message flat-passes as before.
+NtUserMessageCall

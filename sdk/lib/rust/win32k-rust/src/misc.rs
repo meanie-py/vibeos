@@ -5,7 +5,6 @@ use ntkrnl_sys::constants::{STATUS_UNSUCCESSFUL, STATUS_INVALID_PARAMETER, STATU
 use ntkrnl_sys::ddk::{ExGetPreviousMode, ExAllocatePoolWithTag, ExFreePoolWithTag, ObReferenceObjectByHandle, PsGetCurrentProcessId, PsGetCurrentProcessWin32Process, PsGetCurrentThread, PsGetCurrentThreadWin32Thread, PsGetThreadId, PsGetThreadProcess, PsGetThreadWin32Thread, PsIsThreadTerminating, PsLookupThreadByThreadId, PsReferenceImpersonationToken, PsReferencePrimaryToken, RtlInitUnicodeString, RtlUnicodeStringToInteger, SeQueryAuthenticationIdToken, ZwClose, ZwOpenKey, ZwQueryValueKey};
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::inline::ke::NtCurrentTeb;
-use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and

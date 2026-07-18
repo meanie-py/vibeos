@@ -1,7 +1,6 @@
 use crate::misc::{ForwardIrpAndForget, DuplicateUnicodeString};
 use crate::mouclass_h::*;
 // Glob the small disjoint hand modules + driver_ddk (deduped vs constants).
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
@@ -20,8 +19,7 @@ use ntkrnl_sys::inline::tier1::{
 // ddk-ONLY names (pointer aliases, bindgen `_`-structs, Io/Zw/Rtl fns, enum variants).
 use ntkrnl_sys::ddk::{
     PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PUNICODE_STRING, PFILE_OBJECT,
-    PIO_STACK_LOCATION, _UNICODE_STRING, _OBJECT_ATTRIBUTES, _IO_STATUS_BLOCK, _GUID,
-    IO_STATUS_BLOCK, KEVENT, OBJECT_ATTRIBUTES,
+    PIO_STACK_LOCATION, _UNICODE_STRING, _OBJECT_ATTRIBUTES, _IO_STATUS_BLOCK, _GUID, KEVENT,
     KEY_VALUE_BASIC_INFORMATION, PKEY_VALUE_BASIC_INFORMATION,
     RTL_QUERY_REGISTRY_TABLE,
     IoAcquireCancelSpinLock, IoAllocateDriverObjectExtension,
@@ -30,13 +28,12 @@ use ntkrnl_sys::ddk::{
     IoGetDriverObjectExtension, IoRegisterDeviceInterface, IoRegisterDriverReinitialization,
     IoReleaseCancelSpinLock, IoSetDeviceInterfaceState, IoSetStartIoAttributes,
     KeInitializeEvent, KeWaitForSingleObject,
-    ZwClose, ZwOpenKey, ZwQueryValueKey, ZwOpenFile, ZwEnumerateValueKey,
+    ZwClose, ZwOpenKey, ZwOpenFile, ZwEnumerateValueKey,
     RtlCopyUnicodeString, RtlAppendUnicodeToString, RtlAppendUnicodeStringToString,
     RtlCreateUnicodeString, RtlQueryRegistryValues, RtlWriteRegistryValue,
-    RtlDeleteRegistryValue, RtlInitUnicodeString,
+    RtlDeleteRegistryValue,
     _EVENT_TYPE_NotificationEvent, _KWAIT_REASON_Suspended,
 };
-use core::ffi::c_void;
 use ntkrnl_sys::CONTAINING_RECORD;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
@@ -65,7 +62,7 @@ macro_rules! w {
 // correct device-extension structs live in mouclass_h.rs (hand-written from
 // mouclass.h), globbed above. MOUCLASS_TAG is unused (CLASS_TAG from _h).
 
-unsafe extern "system" fn DriverUnload(DriverObject: PDRIVER_OBJECT) {
+unsafe extern "system" fn DriverUnload(_DriverObject: PDRIVER_OBJECT) {
 }
 
 unsafe extern "system" fn ClassCreate(
@@ -625,7 +622,7 @@ unsafe fn DestroyPortDriver(PortDO: PDEVICE_OBJECT) {
     let Irp: PIRP;
     let mut IoStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut OldIrql: KIRQL = 0;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     DeviceExtension = (*PortDO).DeviceExtension as PPORT_DEVICE_EXTENSION;
     ClassDeviceExtension = (*(*DeviceExtension).ClassDO).DeviceExtension as PCLASS_DEVICE_EXTENSION;
@@ -819,7 +816,7 @@ unsafe fn HandleReadIrp(
 ) -> NTSTATUS {
 	let DeviceExtension: PCLASS_DEVICE_EXTENSION =
 		(*DeviceObject).DeviceExtension as PCLASS_DEVICE_EXTENSION;
-	let mut Status: NTSTATUS;
+	let Status: NTSTATUS;
 	let mut OldIrql: KIRQL = 0;
 	let _ = IsInStartIo;
 

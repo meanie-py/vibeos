@@ -209,7 +209,7 @@ pub unsafe extern "C" fn AllocateAndInitLPB(
     Extension = core::ptr::addr_of_mut!((*WinLdrSystemBlock).Extension);
     (*LoaderBlock).Extension = Extension;
     (*Extension).Size = core::mem::size_of::<LOADER_PARAMETER_EXTENSION>() as u32;
-    (*Extension).MajorVersion = (((VersionToBoot & 0xFF00) >> 8) as u32);
+    (*Extension).MajorVersion = ((VersionToBoot & 0xFF00) >> 8) as u32 ;
     (*Extension).MinorVersion = (VersionToBoot & 0xFF) as u32;
 
     InitializeListHead(core::ptr::addr_of_mut!((*LoaderBlock).LoadOrderListHead));
@@ -233,19 +233,19 @@ pub unsafe extern "C" fn WinLdrInitializePhase1(
     let HalPath: [u8; 2] = *b"\\\0";
     let mut ArcBoot: [u8; 260 + 1] = [0; 261];
     let mut MiscFiles: [u8; 260 + 1] = [0; 261];
-    let i: u32;
+    let _i: u32;
     let PathSeparator: usize;
-    let Extension: PLOADER_PARAMETER_EXTENSION;
+    let _Extension: PLOADER_PARAMETER_EXTENSION;
 
-    PathSeparator = strstr((BootPath as *const u8), b"\\\0".as_ptr()).offset_from((BootPath as *const u8)) as usize;
-    RtlStringCbCopyNA(ArcBoot.as_mut_ptr(), core::mem::size_of_val(&ArcBoot), (BootPath as *const u8), PathSeparator);
+    PathSeparator = strstr(BootPath as *const u8 , b"\\\0".as_ptr()).offset_from(BootPath as *const u8 ) as usize;
+    RtlStringCbCopyNA(ArcBoot.as_mut_ptr(), core::mem::size_of_val(&ArcBoot), BootPath as *const u8 , PathSeparator);
 
     TRACE(b"ArcBoot: '%s'\\n\0".as_ptr() as PCSTR, (ArcBoot.as_ptr()) as usize);
     TRACE(b"SystemRoot: '%s'\\n\0".as_ptr() as PCSTR, (SystemRoot) as usize);
     TRACE(b"Options: '%s'\\n\0".as_ptr() as PCSTR, (Options) as usize);
 
     (*LoaderBlock).ArcBootDeviceName = (*WinLdrSystemBlock).ArcBootDeviceName.as_mut_ptr();
-    RtlStringCbCopyA((*LoaderBlock).ArcBootDeviceName, core::mem::size_of_val(&(*WinLdrSystemBlock).ArcBootDeviceName), (ArcBoot.as_ptr() as *const i8));
+    RtlStringCbCopyA((*LoaderBlock).ArcBootDeviceName, core::mem::size_of_val(&(*WinLdrSystemBlock).ArcBootDeviceName), ArcBoot.as_ptr() as *const i8 );
     (*LoaderBlock).ArcBootDeviceName = PaToVa((*LoaderBlock).ArcBootDeviceName as *mut core::ffi::c_void) as PSTR;
 
     if !(*LoaderBlock).SetupLdrBlock.is_null() {
@@ -265,7 +265,7 @@ pub unsafe extern "C" fn WinLdrInitializePhase1(
     (*LoaderBlock).NtBootPathName = PaToVa((*LoaderBlock).NtBootPathName as *mut core::ffi::c_void) as PSTR;
 
     (*LoaderBlock).NtHalPathName = (*WinLdrSystemBlock).NtHalPathName.as_mut_ptr();
-    RtlStringCbCopyA((*LoaderBlock).NtHalPathName, core::mem::size_of_val(&(*WinLdrSystemBlock).NtHalPathName), (HalPath.as_ptr() as *const i8));
+    RtlStringCbCopyA((*LoaderBlock).NtHalPathName, core::mem::size_of_val(&(*WinLdrSystemBlock).NtHalPathName), HalPath.as_ptr() as *const i8 );
     (*LoaderBlock).NtHalPathName = PaToVa((*LoaderBlock).NtHalPathName as *mut core::ffi::c_void) as PSTR;
 
     NewLoadOptions = (*WinLdrSystemBlock).LoadOptions.as_mut_ptr();
@@ -363,8 +363,8 @@ pub unsafe extern "C" fn WinLdrInitializePhase1(
         }
     }
 
-    RtlStringCbCopyA((MiscFiles.as_mut_ptr() as *mut i8), core::mem::size_of_val(&MiscFiles), BootPath);
-    RtlStringCbCatA(MiscFiles.as_mut_ptr(), core::mem::size_of_val(&MiscFiles), (b"AppPatch\\drvmain.sdb\0".as_ptr() as *const i8));
+    RtlStringCbCopyA(MiscFiles.as_mut_ptr() as *mut i8 , core::mem::size_of_val(&MiscFiles), BootPath);
+    RtlStringCbCatA(MiscFiles.as_mut_ptr(), core::mem::size_of_val(&MiscFiles), b"AppPatch\\drvmain.sdb\0".as_ptr() as *const i8 );
     (*Extension).DrvDBImage = PaToVa(WinLdrLoadModule(
         MiscFiles.as_ptr() as PCSTR,
         core::ptr::addr_of_mut!((*Extension).DrvDBSize),
@@ -387,7 +387,7 @@ unsafe fn WinLdrLoadDeviceDriver(
     let mut FullPath: [u8; 1024] = [0; 1024];
     let mut DriverPath: [u8; 1024] = [0; 1024];
     let mut DllName: [u8; 1024] = [0; 1024];
-    let mut DriverNamePos: *mut i8;
+    let DriverNamePos: *mut i8;
     let mut Success: u8;
     let mut DriverBase: *mut core::ffi::c_void = core::ptr::null_mut();
 
@@ -400,17 +400,17 @@ unsafe fn WinLdrLoadDeviceDriver(
     DriverNamePos = strrchr(DriverPath.as_ptr() as *const i8, '\\' as i32);
     if DriverNamePos != core::ptr::null_mut() {
         RtlStringCbCopyA(
-            (DllName.as_mut_ptr() as *mut i8),
+            DllName.as_mut_ptr() as *mut i8 ,
             core::mem::size_of_val(&DllName),
-            (DriverNamePos.offset(1) as *const u8 as *const i8),
+            DriverNamePos.offset(1) as *const u8 as *const i8 ,
         );
 
         *DriverNamePos.offset(1) = 0;
     } else {
         RtlStringCbCopyA(
-            (DllName.as_mut_ptr() as *mut i8),
+            DllName.as_mut_ptr() as *mut i8 ,
             core::mem::size_of_val(&DllName),
-            (DriverPath.as_ptr() as *const i8),
+            DriverPath.as_ptr() as *const i8 ,
         );
         *DriverPath.as_mut_ptr() = 0;
     }
@@ -552,7 +552,7 @@ pub unsafe extern "C" fn WinLdrLoadModule(
 {
 
     let mut FileId: u32 = 0;
-    let mut PhysicalBase: *mut core::ffi::c_void;
+    let PhysicalBase: *mut core::ffi::c_void;
     let mut FileInfo: FILEINFORMATION = core::mem::zeroed();
     let FileSize: u32;
     let mut Status: ARC_STATUS;
@@ -635,7 +635,7 @@ unsafe fn LoadModule(
     UiUpdateProgressBar(Percentage, ProgressString.as_ptr() as PCCH);
 
     RtlStringCbCopyA(
-        (FullFileName.as_mut_ptr() as *mut i8),
+        FullFileName.as_mut_ptr() as *mut i8 ,
         core::mem::size_of_val(&FullFileName),
         Path,
     );
@@ -677,11 +677,11 @@ unsafe fn LoadModule(
 
 unsafe fn WinLdrIsPaeSupported(
     OperatingSystemVersion: u16,
-    LoaderBlock: PLOADER_PARAMETER_BLOCK,
+    _LoaderBlock: PLOADER_PARAMETER_BLOCK,
     BootOptions: PCSTR,
-    HalFileName: PCSTR,
-    KernelFileName: PSTR,
-    KernelFileNameSize: usize,
+    _HalFileName: PCSTR,
+    _KernelFileName: PSTR,
+    _KernelFileNameSize: usize,
 ) -> u8 {
 
     let mut PaeEnabled: u8 = 0u8;
@@ -734,8 +734,8 @@ unsafe fn LoadWindowsCore(
     let mut Success: u8;
     let mut Option: PCSTR;
     let mut OptionLength: u32 = 0;
-    let mut KernelBase: *mut core::ffi::c_void;
-    let mut HalBase: *mut core::ffi::c_void;
+    let KernelBase: *mut core::ffi::c_void;
+    let HalBase: *mut core::ffi::c_void;
     let mut KdDllBase: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut HalDTE: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let mut KdDllDTE: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
@@ -748,10 +748,10 @@ unsafe fn LoadWindowsCore(
         return 0u8;
     }
 
-    RtlStringCbCopyA((DirPath.as_mut_ptr() as *mut i8), 260, BootPath);
-    RtlStringCbCatA(DirPath.as_mut_ptr(), 260, (b"system32\\\0".as_ptr() as *const i8));
+    RtlStringCbCopyA(DirPath.as_mut_ptr() as *mut i8 , 260, BootPath);
+    RtlStringCbCatA(DirPath.as_mut_ptr(), 260, b"system32\\\0".as_ptr() as *const i8 );
 
-    TRACE((b"LoadWindowsCore: BootOptions '%s'\n\0".as_ptr() as *const i8), (BootOptions) as usize);
+    TRACE(b"LoadWindowsCore: BootOptions '%s'\n\0".as_ptr() as *const i8 , (BootOptions) as usize);
 
     #[cfg(target_arch = "x86")]
     {
@@ -762,17 +762,17 @@ unsafe fn LoadWindowsCore(
     }
 
     if (OperatingSystemVersion > 0x0400) &&
-        (NtLdrGetOption(BootOptions, (b"SAFEBOOT\0".as_ptr() as *const i8)) != 0 ||
-         NtLdrGetOption(BootOptions, (b"SAFEBOOT:\0".as_ptr() as *const i8)) != 0)
+        (NtLdrGetOption(BootOptions, b"SAFEBOOT\0".as_ptr() as *const i8 ) != 0 ||
+         NtLdrGetOption(BootOptions, b"SAFEBOOT:\0".as_ptr() as *const i8 ) != 0)
     {
-        FIXME((b"LoadWindowsCore: SAFEBOOT - TRUE (not implemented)\n\0".as_ptr() as *const i8));
+        FIXME(b"LoadWindowsCore: SAFEBOOT - TRUE (not implemented)\n\0".as_ptr() as *const i8 );
         SafeBoot = 1u8;
     }
 
     if (OperatingSystemVersion > 0x0500) &&
-        NtLdrGetOption(BootOptions, (b"BOOTLOGO\0".as_ptr() as *const i8)) != 0
+        NtLdrGetOption(BootOptions, b"BOOTLOGO\0".as_ptr() as *const i8 ) != 0
     {
-        FIXME((b"LoadWindowsCore: BOOTLOGO - TRUE (not implemented)\n\0".as_ptr() as *const i8));
+        FIXME(b"LoadWindowsCore: BOOTLOGO - TRUE (not implemented)\n\0".as_ptr() as *const i8 );
         BootLogo = 1u8;
     }
 
@@ -816,24 +816,24 @@ unsafe fn LoadWindowsCore(
             }
         }
     }
-    TRACE((b"NoExecuteEnabled %X\n\0".as_ptr() as *const i8), (NoExecuteEnabled) as usize);
+    TRACE(b"NoExecuteEnabled %X\n\0".as_ptr() as *const i8 , (NoExecuteEnabled) as usize);
 
-    RtlStringCbCopyA((HalFileName.as_mut_ptr() as *mut i8), 260, (b"hal.dll\0".as_ptr() as *const i8));
-    RtlStringCbCopyA((KernelFileName.as_mut_ptr() as *mut i8), 260, (b"ntoskrnl.exe\0".as_ptr() as *const i8));
+    RtlStringCbCopyA(HalFileName.as_mut_ptr() as *mut i8 , 260, b"hal.dll\0".as_ptr() as *const i8 );
+    RtlStringCbCopyA(KernelFileName.as_mut_ptr() as *mut i8 , 260, b"ntoskrnl.exe\0".as_ptr() as *const i8 );
 
-    Option = NtLdrGetOptionEx(BootOptions, (b"HAL=\0".as_ptr() as *const i8), core::ptr::addr_of_mut!(OptionLength));
+    Option = NtLdrGetOptionEx(BootOptions, b"HAL=\0".as_ptr() as *const i8 , core::ptr::addr_of_mut!(OptionLength));
     if !Option.is_null() && (OptionLength > 4) {
         Option = Option.add(4);
         OptionLength -= 4;
-        RtlStringCbCopyNA(HalFileName.as_mut_ptr(), 260, (Option as *const u8), OptionLength as usize);
+        RtlStringCbCopyNA(HalFileName.as_mut_ptr(), 260, Option as *const u8 , OptionLength as usize);
         _strlwr(HalFileName.as_mut_ptr());
     }
 
-    Option = NtLdrGetOptionEx(BootOptions, (b"KERNEL=\0".as_ptr() as *const i8), core::ptr::addr_of_mut!(OptionLength));
+    Option = NtLdrGetOptionEx(BootOptions, b"KERNEL=\0".as_ptr() as *const i8 , core::ptr::addr_of_mut!(OptionLength));
     if !Option.is_null() && (OptionLength > 7) {
         Option = Option.add(7);
         OptionLength -= 7;
-        RtlStringCbCopyNA(KernelFileName.as_mut_ptr(), 260, (Option as *const u8), OptionLength as usize);
+        RtlStringCbCopyNA(KernelFileName.as_mut_ptr(), 260, Option as *const u8 , OptionLength as usize);
         _strlwr(KernelFileName.as_mut_ptr());
     }
 
@@ -852,35 +852,35 @@ unsafe fn LoadWindowsCore(
         }
     }
 
-    TRACE((b"HAL file = '%s' ; Kernel file = '%s'\n\0".as_ptr() as *const i8), (HalFileName.as_ptr()) as usize, (KernelFileName.as_ptr()) as usize);
+    TRACE(b"HAL file = '%s' ; Kernel file = '%s'\n\0".as_ptr() as *const i8 , (HalFileName.as_ptr()) as usize, (KernelFileName.as_ptr()) as usize);
 
     KernelBase = LoadModule(
         LoaderBlock,
-        (DirPath.as_ptr() as *const i8),
-        (KernelFileName.as_ptr() as *const i8),
-        (b"ntoskrnl.exe\0".as_ptr() as *const i8),
+        DirPath.as_ptr() as *const i8 ,
+        KernelFileName.as_ptr() as *const i8 ,
+        b"ntoskrnl.exe\0".as_ptr() as *const i8 ,
         LoaderSystemCode,
         KernelDTE,
         30,
     );
     if KernelBase.is_null() {
-        ERR((b"LoadModule('%s') failed\n\0".as_ptr() as *const i8), (KernelFileName.as_ptr()) as usize);
-        UiMessageBox((b"Could not load %s\0".as_ptr() as *const i8), KernelFileName.as_ptr());
+        ERR(b"LoadModule('%s') failed\n\0".as_ptr() as *const i8 , (KernelFileName.as_ptr()) as usize);
+        UiMessageBox(b"Could not load %s\0".as_ptr() as *const i8 , KernelFileName.as_ptr());
         return 0u8;
     }
 
     HalBase = LoadModule(
         LoaderBlock,
-        (DirPath.as_ptr() as *const i8),
-        (HalFileName.as_ptr() as *const i8),
-        (b"hal.dll\0".as_ptr() as *const i8),
+        DirPath.as_ptr() as *const i8 ,
+        HalFileName.as_ptr() as *const i8 ,
+        b"hal.dll\0".as_ptr() as *const i8 ,
         LoaderHalCode,
         core::ptr::addr_of_mut!(HalDTE),
         35,
     );
     if HalBase.is_null() {
-        ERR((b"LoadModule('%s') failed\n\0".as_ptr() as *const i8), (HalFileName.as_ptr()) as usize);
-        UiMessageBox((b"Could not load %s\0".as_ptr() as *const i8), HalFileName.as_ptr());
+        ERR(b"LoadModule('%s') failed\n\0".as_ptr() as *const i8 , (HalFileName.as_ptr()) as usize);
+        UiMessageBox(b"Could not load %s\0".as_ptr() as *const i8 , HalFileName.as_ptr());
         PeLdrFreeDataTableEntry(*KernelDTE);
         MmFreeMemory(KernelBase);
         return 0u8;
@@ -889,15 +889,15 @@ unsafe fn LoadWindowsCore(
     if OperatingSystemVersion > 0x0500 {
         let mut IsCustomKdDll: u8 = 0u8;
 
-        Option = NtLdrGetOptionEx(BootOptions, (b"DEBUGPORT=\0".as_ptr() as *const i8), core::ptr::addr_of_mut!(OptionLength));
+        Option = NtLdrGetOptionEx(BootOptions, b"DEBUGPORT=\0".as_ptr() as *const i8 , core::ptr::addr_of_mut!(OptionLength));
         if !Option.is_null() && (OptionLength > 10) {
             Option = Option.add(10);
             OptionLength -= 10;
 
-            OptionLength = strcspn((Option as *const u8), b" \t:\0".as_ptr()) as u32;
+            OptionLength = strcspn(Option as *const u8 , b" \t:\0".as_ptr()) as u32;
 
             if (OptionLength == 0) ||
-                ((OptionLength >= 3) && (_strnicmp((Option as *const u8), b"COM\0".as_ptr(), 3) == 0) &&
+                ((OptionLength >= 3) && (_strnicmp(Option as *const u8 , b"COM\0".as_ptr(), 3) == 0) &&
                  ((OptionLength == 3) || (*Option.add(3) >= ((b'0') as i8) && *Option.add(3) <= ((b'9') as i8))))
             {
             } else {
@@ -905,14 +905,14 @@ unsafe fn LoadWindowsCore(
             }
         }
         if IsCustomKdDll == 0 {
-            Option = (b"COM\0".as_ptr() as *const i8);
+            Option = b"COM\0".as_ptr() as *const i8 ;
             OptionLength = 3;
         }
 
         RtlStringCbPrintfA(
             KdDllName.as_mut_ptr(),
             260,
-            (b"kd%.*s.dll\0".as_ptr() as *const i8),
+            b"kd%.*s.dll\0".as_ptr() as *const i8 ,
             OptionLength,
             Option,
         );
@@ -920,25 +920,25 @@ unsafe fn LoadWindowsCore(
 
         KdDllBase = LoadModule(
             LoaderBlock,
-            (DirPath.as_ptr() as *const i8),
-            (KdDllName.as_ptr() as *const i8),
-            (b"kdcom.dll\0".as_ptr() as *const i8),
+            DirPath.as_ptr() as *const i8 ,
+            KdDllName.as_ptr() as *const i8 ,
+            b"kdcom.dll\0".as_ptr() as *const i8 ,
             LoaderSystemCode,
             core::ptr::addr_of_mut!(KdDllDTE),
             40,
         );
         if KdDllBase.is_null() {
             if IsCustomKdDll != 0 {
-                WARN((b"LoadModule('%s') failed\n\0".as_ptr() as *const i8), (KdDllName.as_ptr()) as usize);
+                WARN(b"LoadModule('%s') failed\n\0".as_ptr() as *const i8 , (KdDllName.as_ptr()) as usize);
 
                 IsCustomKdDll = 0u8;
-                RtlStringCbCopyA((KdDllName.as_mut_ptr() as *mut i8), 260, (b"kdcom.dll\0".as_ptr() as *const i8));
+                RtlStringCbCopyA(KdDllName.as_mut_ptr() as *mut i8 , 260, b"kdcom.dll\0".as_ptr() as *const i8 );
 
                 KdDllBase = LoadModule(
                     LoaderBlock,
-                    (DirPath.as_ptr() as *const i8),
-                    (KdDllName.as_ptr() as *const i8),
-                    (b"kdcom.dll\0".as_ptr() as *const i8),
+                    DirPath.as_ptr() as *const i8 ,
+                    KdDllName.as_ptr() as *const i8 ,
+                    b"kdcom.dll\0".as_ptr() as *const i8 ,
                     LoaderSystemCode,
                     core::ptr::addr_of_mut!(KdDllDTE),
                     40,
@@ -946,34 +946,34 @@ unsafe fn LoadWindowsCore(
             }
 
             if KdDllBase.is_null() {
-                ERR((b"LoadModule('%s') failed\n\0".as_ptr() as *const i8), (KdDllName.as_ptr()) as usize);
+                ERR(b"LoadModule('%s') failed\n\0".as_ptr() as *const i8 , (KdDllName.as_ptr()) as usize);
             }
         }
     }
 
     Success = PeLdrScanImportDescriptorTable(
         core::ptr::addr_of_mut!((*LoaderBlock).LoadOrderListHead),
-        (DirPath.as_ptr() as *const i8),
+        DirPath.as_ptr() as *const i8 ,
         *KernelDTE,
     );
     if Success == 0 {
-        UiMessageBox((b"Could not load %s\0".as_ptr() as *const i8), KernelFileName.as_ptr());
+        UiMessageBox(b"Could not load %s\0".as_ptr() as *const i8 , KernelFileName.as_ptr());
     } else {
         Success = PeLdrScanImportDescriptorTable(
             core::ptr::addr_of_mut!((*LoaderBlock).LoadOrderListHead),
-            (DirPath.as_ptr() as *const i8),
+            DirPath.as_ptr() as *const i8 ,
             HalDTE,
         );
         if Success == 0 {
-            UiMessageBox((b"Could not load %s\0".as_ptr() as *const i8), HalFileName.as_ptr());
+            UiMessageBox(b"Could not load %s\0".as_ptr() as *const i8 , HalFileName.as_ptr());
         } else if !KdDllDTE.is_null() {
             Success = PeLdrScanImportDescriptorTable(
                 core::ptr::addr_of_mut!((*LoaderBlock).LoadOrderListHead),
-                (DirPath.as_ptr() as *const i8),
+                DirPath.as_ptr() as *const i8 ,
                 KdDllDTE,
             );
             if Success == 0 {
-                UiMessageBox((b"Could not load %s\0".as_ptr() as *const i8), KdDllName.as_ptr());
+                UiMessageBox(b"Could not load %s\0".as_ptr() as *const i8 , KdDllName.as_ptr());
             }
         }
     }
@@ -1039,7 +1039,7 @@ unsafe fn WinLdrInitErrataInf(
 
     RegCloseKey(hKey);
 
-    RtlStringCbPrintfA((ErrataFilePath.as_mut_ptr() as PSTR as *mut u8),
+    RtlStringCbPrintfA(ErrataFilePath.as_mut_ptr() as PSTR as *mut u8 ,
                       core::mem::size_of::<[u8; 260]>(),
                       b"%s%s%S\0".as_ptr() as PCSTR,
                       SystemRoot,
@@ -1064,7 +1064,7 @@ unsafe fn WinLdrInitErrataInf(
 pub unsafe extern "C" fn LoadAndBootWindows(
     Argc: u32,
     Argv: *mut PCHAR,
-    Envp: *mut PCHAR,
+    _Envp: *mut PCHAR,
 ) -> ARC_STATUS {
 
     let Status: ARC_STATUS;
@@ -1119,14 +1119,14 @@ pub unsafe extern "C" fn LoadAndBootWindows(
         RtlStringCbCopyA(BootPath.as_mut_ptr() as PCHAR, core::mem::size_of_val(&BootPath), SystemPartition);
 
         if *FilePath.as_ptr() != b'\\' as i8 && *FilePath.as_ptr() != b'/' as i8 {
-            RtlStringCbCatA((BootPath.as_mut_ptr() as PCHAR as *mut u8), core::mem::size_of_val(&BootPath), b"\\\0".as_ptr() as PCSTR);
+            RtlStringCbCatA(BootPath.as_mut_ptr() as PCHAR as *mut u8 , core::mem::size_of_val(&BootPath), b"\\\0".as_ptr() as PCSTR);
         }
 
-        RtlStringCbCatA((BootPath.as_mut_ptr() as PCHAR as *mut u8), core::mem::size_of_val(&BootPath), FilePath.as_ptr() as PCSTR);
+        RtlStringCbCatA(BootPath.as_mut_ptr() as PCHAR as *mut u8 , core::mem::size_of_val(&BootPath), FilePath.as_ptr() as PCSTR);
     }
 
     if *BootPath.as_ptr() == 0 || BootPath[strlen(BootPath.as_ptr() as PCSTR) - 1] != b'\\' as i8 {
-        RtlStringCbCatA((BootPath.as_mut_ptr() as PCHAR as *mut u8), core::mem::size_of_val(&BootPath), b"\\\0".as_ptr() as PCSTR);
+        RtlStringCbCatA(BootPath.as_mut_ptr() as PCHAR as *mut u8 , core::mem::size_of_val(&BootPath), b"\\\0".as_ptr() as PCSTR);
     }
 
     TRACE(b"BootPath: '%s'\n\0".as_ptr() as PCSTR, (BootPath.as_ptr()) as usize);
@@ -1142,15 +1142,15 @@ pub unsafe extern "C" fn LoadAndBootWindows(
     if NtLdrGetOption(BootOptions.as_ptr() as PCSTR, b"HAL=\0".as_ptr() as PCSTR) == 0 {
         ArgValue = GetArgumentValue(Argc, Argv, b"Hal\0".as_ptr() as PCSTR);
         if !ArgValue.is_null() && *ArgValue != 0 {
-            RtlStringCbCatA((BootOptions.as_mut_ptr() as PCHAR as *mut u8), core::mem::size_of_val(&BootOptions), b" /HAL=\0".as_ptr() as PCSTR);
-            RtlStringCbCatA((BootOptions.as_mut_ptr() as PCHAR as *mut u8), core::mem::size_of_val(&BootOptions), ArgValue);
+            RtlStringCbCatA(BootOptions.as_mut_ptr() as PCHAR as *mut u8 , core::mem::size_of_val(&BootOptions), b" /HAL=\0".as_ptr() as PCSTR);
+            RtlStringCbCatA(BootOptions.as_mut_ptr() as PCHAR as *mut u8 , core::mem::size_of_val(&BootOptions), ArgValue);
         }
     }
     if NtLdrGetOption(BootOptions.as_ptr() as PCSTR, b"KERNEL=\0".as_ptr() as PCSTR) == 0 {
         ArgValue = GetArgumentValue(Argc, Argv, b"Kernel\0".as_ptr() as PCSTR);
         if !ArgValue.is_null() && *ArgValue != 0 {
-            RtlStringCbCatA((BootOptions.as_mut_ptr() as PCHAR as *mut u8), core::mem::size_of_val(&BootOptions), b" /KERNEL=\0".as_ptr() as PCSTR);
-            RtlStringCbCatA((BootOptions.as_mut_ptr() as PCHAR as *mut u8), core::mem::size_of_val(&BootOptions), ArgValue);
+            RtlStringCbCatA(BootOptions.as_mut_ptr() as PCHAR as *mut u8 , core::mem::size_of_val(&BootOptions), b" /KERNEL=\0".as_ptr() as PCSTR);
+            RtlStringCbCatA(BootOptions.as_mut_ptr() as PCHAR as *mut u8 , core::mem::size_of_val(&BootOptions), ArgValue);
         }
     }
 
@@ -1185,7 +1185,7 @@ pub unsafe extern "C" fn LoadAndBootWindows(
     if OperatingSystemVersion == 0 {
         OperatingSystemVersion = WinLdrDetectVersion();
     }
-    (*(*LoaderBlock).Extension).MajorVersion = (((OperatingSystemVersion & 0xFF00) >> 8) as u32);
+    (*(*LoaderBlock).Extension).MajorVersion = ((OperatingSystemVersion & 0xFF00) >> 8) as u32 ;
     (*(*LoaderBlock).Extension).MinorVersion = (OperatingSystemVersion & 0xFF) as u32;
 
     DbgPrint(b"[FLDR] phase: system hive loaded\n\0".as_ptr() as *const i8);
@@ -1220,7 +1220,7 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
         WinLdrSetupEms(BootOptions);
     }
 
-    SystemRoot = (strstr((BootPath as *const u8), (b"\\\0".as_ptr() as PCSTR as *const u8)) as *const i8);
+    SystemRoot = strstr(BootPath as *const u8 , b"\\\0".as_ptr() as PCSTR as *const u8 ) as *const i8 ;
 
     DbgPrint(b"[FLDR] phase: hw-detect begin\n\0".as_ptr() as *const i8);
     UiUpdateProgressBar(20, b"Detecting hardware...\0".as_ptr() as PCSTR);
@@ -1387,7 +1387,7 @@ pub unsafe fn WinLdrpDumpBootDriver(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
             as PBOOT_DRIVER_LIST_ENTRY;
 
         TRACE(
-            (b"BootDriver %wZ DTE %08X RegPath: %wZ\n\0".as_ptr() as *const i8), (core::ptr::addr_of_mut!((*BootDriver).FilePath)) as usize, ((*BootDriver).LdrEntry) as usize, (core::ptr::addr_of_mut!((*BootDriver).RegistryPath)) as usize,
+            b"BootDriver %wZ DTE %08X RegPath: %wZ\n\0".as_ptr() as *const i8 , (core::ptr::addr_of_mut!((*BootDriver).FilePath)) as usize, ((*BootDriver).LdrEntry) as usize, (core::ptr::addr_of_mut!((*BootDriver).RegistryPath)) as usize,
         );
 
         NextBd = (*BootDriver).Link.Flink;
@@ -1404,7 +1404,7 @@ unsafe fn WinLdrpDumpArcDisks(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         ArcDisk = (NextBd as *mut u8).offset(-(core::mem::offset_of!(ARC_DISK_SIGNATURE, ListEntry) as isize)) as PARC_DISK_SIGNATURE;
 
         TRACE(
-            (b"ArcDisk %s checksum: 0x%X, signature: 0x%X\n\0".as_ptr() as *const i8), ((*ArcDisk).ArcName) as usize, ((*ArcDisk).CheckSum) as usize, ((*ArcDisk).Signature) as usize);
+            b"ArcDisk %s checksum: 0x%X, signature: 0x%X\n\0".as_ptr() as *const i8 , ((*ArcDisk).ArcName) as usize, ((*ArcDisk).CheckSum) as usize, ((*ArcDisk).Signature) as usize);
 
         NextBd = (*ArcDisk).ListEntry.Flink;
     }

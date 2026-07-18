@@ -19,6 +19,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys's FALSE/TRUE are bindgen u32 (#define), but BOOL is i32 — shadow with
 // BOOL-typed locals so `== FALSE`/`return TRUE` type-check against the i32 BOOL returns.
@@ -37,7 +38,12 @@ extern "system" {
 }
 
 // ── GdiGetLDC (FASTCALL → extern "fastcall", i386 `@GdiGetLDC@4`) ───────────────
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC;
 }
 
@@ -239,22 +245,22 @@ pub unsafe extern "system" fn MoveToEx(hdc: HDC, x: INT, y: INT, ppt: LPPOINT) -
     }
 
     if !ppt.is_null() {
-        if ((*pdcattr).ulDirty_ & DIRTY_PTLCURRENT) != 0 {
+        if ((*dcattr_f!(pdcattr, ulDirty_)) & DIRTY_PTLCURRENT) != 0 {
             // Double hit!
-            (*ppt).x = (*pdcattr).ptfxCurrent.x; // ret prev before change.
-            (*ppt).y = (*pdcattr).ptfxCurrent.y;
+            (*ppt).x = (*dcattr_f!(pdcattr, ptfxCurrent)).x; // ret prev before change.
+            (*ppt).y = (*dcattr_f!(pdcattr, ptfxCurrent)).y;
             DPtoLP(hdc, ppt, 1); // reconvert back.
         } else {
-            (*ppt).x = (*pdcattr).ptlCurrent.x;
-            (*ppt).y = (*pdcattr).ptlCurrent.y;
+            (*ppt).x = (*dcattr_f!(pdcattr, ptlCurrent)).x;
+            (*ppt).y = (*dcattr_f!(pdcattr, ptlCurrent)).y;
         }
     }
 
-    (*pdcattr).ptlCurrent.x = x;
-    (*pdcattr).ptlCurrent.y = y;
+    (*dcattr_f!(pdcattr, ptlCurrent)).x = x;
+    (*dcattr_f!(pdcattr, ptlCurrent)).y = y;
 
-    (*pdcattr).ulDirty_ &= !DIRTY_PTLCURRENT;
-    (*pdcattr).ulDirty_ |= DIRTY_PTFXCURRENT | DIRTY_STYLESTATE; // Set dirty
+    (*dcattr_f!(pdcattr, ulDirty_)) &= !DIRTY_PTLCURRENT;
+    (*dcattr_f!(pdcattr, ulDirty_)) |= DIRTY_PTFXCURRENT | DIRTY_STYLESTATE; // Set dirty
     TRUE
 }
 
@@ -1074,25 +1080,25 @@ pub unsafe extern "system" fn PatBlt(
 
     /* Get the DC attribute */
     pdcattr = GdiGetDcAttr(hdc);
-    if !pdcattr.is_null() && ((*pdcattr).ulDirty_ & DC_DIBSECTION) == 0 {
+    if !pdcattr.is_null() && ((*dcattr_f!(pdcattr, ulDirty_)) & DC_DIBSECTION) == 0 {
         let pgO: PGDIBSPATBLT;
 
         pgO = GdiAllocBatchCommand(hdc, crate::gdihelp::GdiBCPatBlt) as PGDIBSPATBLT;
         if !pgO.is_null() {
-            (*pdcattr).ulDirty_ |= DC_MODE_DIRTY;
+            (*dcattr_f!(pdcattr, ulDirty_)) |= DC_MODE_DIRTY;
             (*pgO).nXLeft = nXLeft;
             (*pgO).nYLeft = nYLeft;
             (*pgO).nWidth = nWidth;
             (*pgO).nHeight = nHeight;
             (*pgO).dwRop = dwRop;
             /* Snapshot attributes */
-            (*pgO).hbrush = (*pdcattr).hbrush;
-            (*pgO).crForegroundClr = (*pdcattr).crForegroundClr;
-            (*pgO).crBackgroundClr = (*pdcattr).crBackgroundClr;
-            (*pgO).crBrushClr = (*pdcattr).crBrushClr;
-            (*pgO).ulForegroundClr = (*pdcattr).ulForegroundClr;
-            (*pgO).ulBackgroundClr = (*pdcattr).ulBackgroundClr;
-            (*pgO).ulBrushClr = (*pdcattr).ulBrushClr;
+            (*pgO).hbrush = (*dcattr_f!(pdcattr, hbrush));
+            (*pgO).crForegroundClr = (*dcattr_f!(pdcattr, crForegroundClr));
+            (*pgO).crBackgroundClr = (*dcattr_f!(pdcattr, crBackgroundClr));
+            (*pgO).crBrushClr = (*dcattr_f!(pdcattr, crBrushClr));
+            (*pgO).ulForegroundClr = (*dcattr_f!(pdcattr, ulForegroundClr));
+            (*pgO).ulBackgroundClr = (*dcattr_f!(pdcattr, ulBackgroundClr));
+            (*pgO).ulBrushClr = (*dcattr_f!(pdcattr, ulBrushClr));
             return TRUE;
         }
     }
@@ -1151,7 +1157,7 @@ pub unsafe extern "system" fn PolyPatBlt(
 
     /* Get the DC attribute */
     pdcattr = GdiGetDcAttr(hdc);
-    if nCount != 0 && !pdcattr.is_null() && ((*pdcattr).ulDirty_ & DC_DIBSECTION) == 0 {
+    if nCount != 0 && !pdcattr.is_null() && ((*dcattr_f!(pdcattr, ulDirty_)) & DC_DIBSECTION) == 0 {
         let pgO: PGDIBSPPATBLT;
         let pTeb: PTEB = NtCurrentTeb();
 
@@ -1163,17 +1169,17 @@ pub unsafe extern "system" fn PolyPatBlt(
             }
 
             if ((*pTeb).GdiTebBatch.Offset + cjSize as ULONG) <= GDIBATCHBUFSIZE {
-                (*pdcattr).ulDirty_ |= DC_MODE_DIRTY;
+                (*dcattr_f!(pdcattr, ulDirty_)) |= DC_MODE_DIRTY;
                 (*pgO).Count = nCount;
                 (*pgO).Mode = dwMode;
                 (*pgO).rop4 = dwRop;
                 /* Snapshot attributes */
-                (*pgO).crForegroundClr = (*pdcattr).crForegroundClr;
-                (*pgO).crBackgroundClr = (*pdcattr).crBackgroundClr;
-                (*pgO).crBrushClr = (*pdcattr).crBrushClr;
-                (*pgO).ulForegroundClr = (*pdcattr).ulForegroundClr;
-                (*pgO).ulBackgroundClr = (*pdcattr).ulBackgroundClr;
-                (*pgO).ulBrushClr = (*pdcattr).ulBrushClr;
+                (*pgO).crForegroundClr = (*dcattr_f!(pdcattr, crForegroundClr));
+                (*pgO).crBackgroundClr = (*dcattr_f!(pdcattr, crBackgroundClr));
+                (*pgO).crBrushClr = (*dcattr_f!(pdcattr, crBrushClr));
+                (*pgO).ulForegroundClr = (*dcattr_f!(pdcattr, ulForegroundClr));
+                (*pgO).ulBackgroundClr = (*dcattr_f!(pdcattr, ulBackgroundClr));
+                (*pgO).ulBrushClr = (*dcattr_f!(pdcattr, ulBrushClr));
                 core::ptr::copy_nonoverlapping(
                     pPoly as *const u8,
                     (*pgO).pRect.as_mut_ptr() as *mut u8,

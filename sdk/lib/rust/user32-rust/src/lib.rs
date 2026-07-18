@@ -2,7 +2,6 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(unused_assignments)]
-#![allow(static_mut_refs)]
 #![allow(clippy::all)]
 
 //! user32.dll — Rust translation of win32ss/user/user32 (the usermode windowing API DLL).
@@ -13,6 +12,22 @@
 //! docs/engineering/user32-translation-audit.md for the per-wave plan.
 
 // Foundation: minimal Win32 type aliases + the NtUser* syscall import surface.
+// Emit a fn twice: `extern "fastcall"` on i386, `extern "C"` elsewhere.
+// FASTCALL only exists as a distinct ABI on x86; rustc treats "fastcall" as "C"
+// on other arches today and makes it a HARD ERROR on newer toolchains
+// (unsupported_calling_conventions). Same pattern as ex-rust's fastcall_export!.
+macro_rules! fastcall_fn {
+    ($(#[$attr:meta])* $vis:vis unsafe fn $name:ident($($params:tt)*) $(-> $ret:ty)? $body:block) => {
+        $(#[$attr])*
+        #[cfg(target_arch = "x86")]
+        $vis unsafe extern "fastcall" fn $name($($params)*) $(-> $ret)? $body
+
+        $(#[$attr])*
+        #[cfg(not(target_arch = "x86"))]
+        $vis unsafe extern "C" fn $name($($params)*) $(-> $ret)? $body
+    };
+}
+
 pub mod types;
 pub mod ntuser;
 
@@ -24,6 +39,9 @@ pub mod ntwrapper;
 // ValidateHwnd/UserApiHook cohab externs, and Win32 word macros. Used by the big
 // windows/ bodies (class/window/message/defwnd). Typed against win32k-sys.
 pub mod internal;
+
+// WoW64: 32-bit client view of the 64-bit USER shared/desktop-heap structures.
+pub mod wow64;
 pub mod winbase;
 
 // misc/ — dllmain, timer, object, exit, ... (Wave 0 leaf: timer.rs).

@@ -32,7 +32,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${HIDCLASS_RUST_TARGET_DIR}
         RUSTFLAGS=${HIDCLASS_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${HIDCLASS_RUST_TARGET}
             -p hidclass-rust
             --manifest-path ${HIDCLASS_RUST_WORKSPACE_DIR}/Cargo.toml

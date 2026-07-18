@@ -5,13 +5,11 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
-#![allow(unused_unsafe)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 // dbgprint macros ex uses (dbg_print/dbg_print_ex/kdbp_print/rtl_string_cb_printf_a/
 // swprintf/wstr), re-exported so `crate::<macro>!` sites resolve unchanged.

@@ -154,7 +154,7 @@ pub unsafe extern "C" fn KspCreatePDO(
     let mut Status: NTSTATUS;
     let mut DeviceExtension: PCOMMON_DEVICE_EXTENSION;
 
-    CurDeviceId = InterlockedIncrement(&mut KsDeviceCount) as ULONG;
+    CurDeviceId = InterlockedIncrement(&raw mut KsDeviceCount) as ULONG;
 
     swprintf(
         Buffer.as_mut_ptr(),
@@ -247,9 +247,8 @@ pub unsafe extern "C" fn KspRemoveDeviceAssociations(
     Entry = (*DeviceEntry).DeviceInterfaceList.Flink;
 
     while Entry != &mut (*DeviceEntry).DeviceInterfaceList as *mut _ as PLIST_ENTRY {
-        CurEntry = core::mem::transmute::<isize, PBUS_INSTANCE_ENTRY>(
-            (Entry as isize)
-                .wrapping_sub(core::mem::offset_of!(BUS_INSTANCE_ENTRY, Entry) as isize),
+        CurEntry = core::ptr::with_exposed_provenance_mut::<BUS_INSTANCE_ENTRY>((Entry as usize)
+                .wrapping_sub(core::mem::offset_of!(BUS_INSTANCE_ENTRY, Entry) as usize),
         );
 
         if (*CurEntry).SymbolicLink.Buffer.is_null() {
@@ -442,7 +441,7 @@ pub unsafe extern "system" fn KspCreateDeviceReference(
     Entry = (*BusDeviceExtension).Common.Entry.Flink;
     while Entry != &mut (*BusDeviceExtension).Common.Entry as *mut _ as PLIST_ENTRY {
         DeviceEntry = (Entry as usize).wrapping_sub(
-            &mut (*(core::ptr::null_mut::<BUS_DEVICE_ENTRY>())).Entry as *mut _ as usize,
+            core::mem::offset_of!(BUS_DEVICE_ENTRY, Entry),
         ) as *mut BUS_DEVICE_ENTRY as PBUS_DEVICE_ENTRY;
 
         if _wcsicmp((*DeviceEntry).DeviceName, DeviceName) == 0 {
@@ -736,8 +735,7 @@ pub unsafe extern "C" fn KspCompletePendingIrps(
         Entry = RemoveHeadList(&mut (*DeviceEntry).IrpPendingList);
 
         Irp = (Entry as usize).wrapping_sub(
-            &mut (*core::ptr::null_mut::<IRP>())
-                .Tail.Overlay.__bindgen_anon_2.ListEntry as *mut _ as usize,
+            core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry),
         ) as *mut IRP as PIRP;
 
         if ResultCode == STATUS_REPARSE {

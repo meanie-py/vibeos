@@ -22,6 +22,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys FALSE/TRUE are bindgen u32; BOOL is i32 — BOOL-typed shadows so
 // `return FALSE`/`return TRUE` type-check against the i32 BOOL returns.
@@ -38,7 +39,12 @@ const GDITAG_TYPE_EMF: DWORD = 0x5845_464D; // 'XEFM' — EnhMetaFile
 const GDITAG_TYPE_MFP: DWORD = 0x5F50_464D; // '_PFM' — MetaFile Picture
 
 // ── Cross-file fns ───────────────────────────────────────────────────────────────
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC; // gdi32-private (misc.rs)
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC; // gdi32-private (misc.rs)
 }
 
@@ -81,7 +87,7 @@ pub unsafe extern "system" fn GdiIsPlayMetafileDC(hdc: HDC) -> BOOL {
     let pdcattr: PDC_ATTR = GdiGetDcAttr(hdc);
 
     if !pdcattr.is_null() {
-        return (((*pdcattr).ulDirty_ & DC_PLAYMETAFILE) != 0) as BOOL;
+        return (((*dcattr_f!(pdcattr, ulDirty_)) & DC_PLAYMETAFILE) != 0) as BOOL;
     }
     FALSE
 }

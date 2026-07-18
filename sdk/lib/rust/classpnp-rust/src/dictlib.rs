@@ -151,7 +151,7 @@ pub unsafe extern "C" fn FreeDictionaryEntry(Dictionary: *mut DICTIONARY, Entry:
     found = 0u8;
     // CONTAINING_RECORD macro expansion
     header = (Entry as usize)
-        .wrapping_sub(core::ptr::addr_of!((*core::ptr::null_mut::<DICTIONARY_HEADER>()).Data) as usize)
+        .wrapping_sub(core::mem::offset_of!(DICTIONARY_HEADER, Data))
         as *mut DICTIONARY_HEADER;
 
     KeAcquireSpinLock((core::ptr::addr_of_mut!((*Dictionary).SpinLock)).cast(), core::ptr::addr_of_mut!(oldIrql));

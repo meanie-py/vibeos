@@ -30,9 +30,9 @@ static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
+    &raw const __wine_dbch_msgina as *mut __wine_debug_channel;
 
-pub static mut GinaTextUI: GINA_UI = unsafe {
+pub static mut GinaTextUI: GINA_UI = {
     _GINA_UI {
         Initialize: Some(TUIInitialize as unsafe extern "C" fn(PGINA_CONTEXT) -> BOOL),
         DisplayStatusMessage: Some(

@@ -7,7 +7,6 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-#![allow(static_mut_refs)]
 
 const LCG_A: u64 = 0x7fffffed;
 const LCG_C: u64 = 0x7fffffc3;

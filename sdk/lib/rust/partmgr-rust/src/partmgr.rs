@@ -1304,7 +1304,7 @@ pub unsafe extern "C" fn FdoHandleDeviceRelations(
         while !curEntry.is_null() {
             let partExt = (curEntry as usize)
                 .wrapping_sub(
-                    &raw const (*core::ptr::null::<PARTITION_EXTENSION>()).ListEntry as usize,
+                    core::mem::offset_of!(PARTITION_EXTENSION, ListEntry),
                 ) as PPARTITION_EXTENSION;
 
             (*partExt).IsEnumerated = 1u8;
@@ -1400,7 +1400,7 @@ pub unsafe extern "C" fn FdoHandleSurpriseRemoval(
     let mut curEntry: PSINGLE_LIST_ENTRY = ((*FdoExtension).PartitionList.Next).cast();
     while !curEntry.is_null() {
         let partExt: PPARTITION_EXTENSION = (curEntry as ULONG_PTR).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<PARTITION_EXTENSION>()).ListEntry as ULONG_PTR,
+            core::mem::offset_of!(PARTITION_EXTENSION, ListEntry) as ULONG_PTR,
         ) as PPARTITION_EXTENSION;
         if (*partExt).IsEnumerated != 0u8 {
             PartitionHandleRemove(partExt, 1u8);

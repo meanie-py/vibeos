@@ -551,7 +551,7 @@ pub unsafe extern "system" fn IKsPin_PinStatePropertyHandler(
     let IoStack = IoGetCurrentIrpStackLocation(Irp);
     let ObjectHeader = (*((*IoStack).FileObject)).FsContext2 as PKSIOBJECT_HEADER;
     let This = ((*ObjectHeader).ObjectType as usize)
-        .wrapping_sub(&raw mut ((*(core::ptr::null_mut::<IKsPinImpl>())).Pin) as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
         as *mut IKsPinImpl;
     let mut Status = STATUS_SUCCESS;
     let mut OldState: KSSTATE = KSSTATE_STOP;
@@ -659,7 +659,7 @@ pub unsafe extern "system" fn IKsPin_PinDataFormatPropertyHandler(
     let IoStack = IoGetCurrentIrpStackLocation(Irp);
     let ObjectHeader = (*((*IoStack).FileObject)).FsContext2 as PKSIOBJECT_HEADER;
     let This = ((*ObjectHeader).ObjectType as usize).wrapping_sub(
-        &raw mut (*core::ptr::null_mut::<IKsPinImpl>()).Pin as usize,
+        core::mem::offset_of!(IKsPinImpl, Pin),
     ) as *mut IKsPinImpl;
 
     KeWaitForSingleObject(
@@ -715,7 +715,7 @@ pub unsafe extern "system" fn IKsPin_fnQueryInterface(
     Output: *mut *mut core::ffi::c_void,
 ) -> NTSTATUS {
     let This = (iface as *mut u8).sub(
-        &raw const (*core::ptr::null_mut::<IKsPinImpl>()).BasicHeader.OuterUnknown as usize,
+        core::mem::offset_of!(IKsPinImpl, BasicHeader.OuterUnknown),
     ) as *mut IKsPinImpl;
 
     if IsEqualGUIDAligned(refiid, &raw const IID_IUnknown) {
@@ -924,9 +924,8 @@ pub unsafe extern "system" fn IKsReferenceClock_fnAddRef(iface: *mut IKsReferenc
 }
 #[no_mangle]
 pub unsafe extern "system" fn IKsReferenceClock_fnRelease(iface: *mut IKsReferenceClock) -> ULONG {
-    let This: *mut IKsPinImpl = core::mem::transmute(
-        (iface as usize).wrapping_sub(
-            &raw const (*core::ptr::null_mut::<IKsPinImpl>()).lpVtblReferenceClock as usize,
+    let This: *mut IKsPinImpl = core::ptr::with_exposed_provenance_mut::<IKsPinImpl>((iface as usize).wrapping_sub(
+            core::mem::offset_of!(IKsPinImpl, lpVtblReferenceClock),
         )
     );
     return IKsPin_fnRelease(&raw mut (*This).BasicHeader.OuterUnknown as *mut IKsPin);
@@ -1049,9 +1048,8 @@ pub unsafe extern "system" fn IKsReferenceClock_fnGetState(
     let mut Property: KSPROPERTY = core::mem::zeroed();
     let mut BytesReturned: ULONG = 0;
 
-    let This = core::mem::transmute::<usize, *mut IKsPinImpl>(
-        (iface as usize).wrapping_sub(
-            &raw const (*core::ptr::null_mut::<IKsPinImpl>()).lpVtblReferenceClock as usize,
+    let This = core::ptr::with_exposed_provenance_mut::<IKsPinImpl>((iface as usize).wrapping_sub(
+            core::mem::offset_of!(IKsPinImpl, lpVtblReferenceClock),
         ),
     );
 
@@ -1100,7 +1098,7 @@ pub unsafe extern "system" fn KsPinAttachAndGate(
     AndGate: PKSGATE,
 ) {
     let This: *mut IKsPinImpl = (Pin as usize)
-        .wrapping_sub(&raw mut ((*(core::ptr::null_mut::<IKsPinImpl>())).Pin) as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
         as *mut IKsPinImpl;
     (*This).AttachedGate = AndGate;
     (*This).OrGate = 0i32;
@@ -1121,7 +1119,7 @@ pub unsafe extern "system" fn KsPinGetAndGate(
     Pin: PKSPIN,
 ) -> PKSGATE {
     let This: *mut IKsPinImpl = (Pin as usize)
-        .wrapping_sub(&raw mut ((*(core::ptr::null_mut::<IKsPinImpl>())).Pin) as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
         as *mut IKsPinImpl;
     return (*This).AttachedGate;
 }
@@ -1214,7 +1212,7 @@ pub unsafe extern "system" fn KsPinGetReferenceClockInterface(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_DEVICE_NOT_READY;
     let This: *mut IKsPinImpl = (Pin as usize)
-        .wrapping_sub(&raw mut ((*(core::ptr::null_mut::<IKsPinImpl>())).Pin) as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
         as *mut IKsPinImpl;
     if !(*This).ClockFileObject.is_null() {
         *Interface = &raw mut ((*This).lpVtblReferenceClock) as PIKSREFERENCECLOCK;
@@ -1240,7 +1238,7 @@ pub unsafe extern "system" fn KsPinRegisterHandshakeCallback(
     Handshake: PFNKSPINHANDSHAKE,
 ) {
     let This: *mut IKsPinImpl = (Pin as usize)
-        .wrapping_sub(&raw mut (*core::ptr::null_mut::<IKsPinImpl>()).Pin as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
         as *mut IKsPinImpl;
     (*This).Handshake = Handshake;
 }
@@ -1251,7 +1249,7 @@ pub unsafe extern "system" fn KsPinRegisterIrpCompletionCallback(
     IrpCompletion: PFNKSPINIRPCOMPLETION,
 ) {
     let This = (Pin as usize)
-        .wrapping_sub(&raw mut ((*(core::ptr::null_mut::<IKsPinImpl>())).Pin) as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
         as *mut IKsPinImpl;
     (*This).IrpCompletion = IrpCompletion;
 }
@@ -1272,7 +1270,7 @@ pub unsafe extern "system" fn KsPinReleaseProcessingMutex(
     Pin: PKSPIN,
 ) {
     let This: *mut IKsPinImpl = (Pin as usize)
-        .wrapping_sub(&raw mut (*core::ptr::null_mut::<IKsPinImpl>()).Pin as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
         as *mut IKsPinImpl;
 
     KeReleaseMutex(&raw mut (*This).ProcessingMutex, 0u8);
@@ -1486,13 +1484,11 @@ pub unsafe extern "system" fn KsStreamPointerAdvanceOffsetsAndUnlock(
 pub unsafe extern "system" fn KsStreamPointerDelete(
     StreamPointer: PKSSTREAM_POINTER,
 ) {
-    let Pointer: PKSISTREAM_POINTER = core::mem::transmute(
-        (StreamPointer as usize)
+    let Pointer: PKSISTREAM_POINTER = core::ptr::with_exposed_provenance_mut::<_KSISTREAM_POINTER>((StreamPointer as usize)
             .wrapping_sub(core::mem::offset_of!(KSISTREAM_POINTER, StreamPointer))
     );
     DbgBreakPoint();
-    let This: *mut IKsPinImpl = core::mem::transmute(
-        ((*Pointer).StreamPointer.Pin as usize)
+    let This: *mut IKsPinImpl = core::ptr::with_exposed_provenance_mut::<IKsPinImpl>(((*Pointer).StreamPointer.Pin as usize)
             .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
     );
     let mut Last: PKSISTREAM_POINTER = core::ptr::null_mut();
@@ -1668,7 +1664,7 @@ pub unsafe extern "system" fn KsStreamPointerScheduleTimeout(
 ) {
     let mut DueTime: LARGE_INTEGER = core::mem::zeroed();
     let Pointer: PKSISTREAM_POINTER = (StreamPointer as usize).wrapping_sub(
-        &raw const (*(core::ptr::null::<KSISTREAM_POINTER>())).StreamPointer as usize,
+        core::mem::offset_of!(KSISTREAM_POINTER, StreamPointer),
     ) as *mut KSISTREAM_POINTER as PKSISTREAM_POINTER;
 
     (*Pointer).Callback = Callback;
@@ -1685,8 +1681,8 @@ pub unsafe extern "system" fn KsStreamPointerCancelTimeout(
     StreamPointer: PKSSTREAM_POINTER,
 ) {
     let Pointer: PKSISTREAM_POINTER = {
-        let base = core::ptr::addr_of!((*core::ptr::null_mut::<KSISTREAM_POINTER>()).StreamPointer);
-        (StreamPointer as usize).wrapping_sub(base as usize) as *mut KSISTREAM_POINTER
+        let base = core::mem::offset_of!(KSISTREAM_POINTER, StreamPointer);
+        (StreamPointer as usize).wrapping_sub(base) as *mut KSISTREAM_POINTER
     };
 
     KeCancelTimer(core::ptr::addr_of_mut!((*Pointer).Timer));
@@ -1697,7 +1693,7 @@ pub unsafe extern "system" fn KsPinGetFirstCloneStreamPointer(
     Pin: PKSPIN,
 ) -> PKSSTREAM_POINTER {
     let This: *mut IKsPinImpl = (Pin as usize)
-        .wrapping_sub(&raw mut (*core::ptr::null_mut::<IKsPinImpl>()).Pin as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
         as *mut IKsPinImpl;
 
     if (*This).ClonedStreamPointer.is_null() {
@@ -1714,7 +1710,7 @@ pub unsafe extern "system" fn KsStreamPointerGetNextClone(
     let Pointer: PKSISTREAM_POINTER;
     DbgBreakPoint();
     Pointer = (StreamPointer as usize).wrapping_sub(
-        &raw mut (*core::ptr::null_mut::<KSISTREAM_POINTER>()).StreamPointer as usize,
+        core::mem::offset_of!(KSISTREAM_POINTER, StreamPointer),
     ) as *mut KSISTREAM_POINTER as PKSISTREAM_POINTER;
     if (*Pointer).Next.is_null() {
         return core::ptr::null_mut::<_KSSTREAM_POINTER>();
@@ -1864,7 +1860,7 @@ pub unsafe extern "system" fn IKsPin_DispatchDeviceIoControl(
     ObjectHeader = (*((*IoStack).FileObject)).FsContext2 as PKSIOBJECT_HEADER;
 
     This = ((*ObjectHeader).ObjectType as usize).wrapping_sub(
-        &raw mut (*core::ptr::null_mut::<IKsPinImpl>()).Pin as *mut _ as usize,
+        core::mem::offset_of!(IKsPinImpl, Pin),
     ) as *mut IKsPinImpl;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -2008,7 +2004,7 @@ pub unsafe extern "system" fn IKsPin_DispatchCreateClock(
 
     Pin = (*CreateItem).Context as PKSPIN;
 
-    This = (Pin as usize).wrapping_sub(&raw mut ((*(core::ptr::null_mut::<IKsPinImpl>())).Pin) as usize) as *mut IKsPinImpl;
+    This = (Pin as usize).wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin)) as *mut IKsPinImpl;
 
     KsAcquireControl(Pin as PVOID);
 
@@ -2162,7 +2158,7 @@ pub unsafe extern "C" fn KspCreatePin(
     (*This).BasicHeader.KsDevice = KsDevice;
     (*This).BasicHeader.Type = KsObjectTypePin;
     (*This).BasicHeader.Parent.KsFilter = (*(*Filter).lpVtbl).GetStruct.expect("non-null function pointer")(Filter);
-    (*This).BasicHeader.OuterUnknown = &mut vt_IKsPin as *mut _ as PUNKNOWN;
+    (*This).BasicHeader.OuterUnknown = &raw mut vt_IKsPin as *mut _ as PUNKNOWN;
     InitializeListHead(&mut (*This).BasicHeader.EventList);
     KeInitializeSpinLock(&mut (*This).BasicHeader.EventListLock);
 
@@ -2192,7 +2188,7 @@ pub unsafe extern "C" fn KspCreatePin(
 
     (*This).FrameSize = FrameSize;
     (*This).NumFrames = NumFrames;
-    (*This).lpVtblReferenceClock = &mut vt_ReferenceClock;
+    (*This).lpVtblReferenceClock = &raw mut vt_ReferenceClock;
     (*This).ref_ = 1;
     (*This).FileObject = (*IoStack).FileObject;
     (*This).Filter = Filter;
@@ -2230,7 +2226,7 @@ pub unsafe extern "C" fn KspCreatePin(
     core::ptr::write_bytes(&mut AutomationTable, 0, 1);
 
     AutomationTable.PropertyItemSize = core::mem::size_of::<KSPROPERTY_ITEM>() as ULONG;
-    AutomationTable.PropertySets = &PinPropertySet as *const _ as *mut KSPROPERTY_SET;
+    AutomationTable.PropertySets = &raw const PinPropertySet as *const _ as *mut KSPROPERTY_SET;
     AutomationTable.PropertySetsCount = (core::mem::size_of_val(&PinPropertySet) / core::mem::size_of::<KSPROPERTY_SET>()) as ULONG;
 
     Status = KsMergeAutomationTables(

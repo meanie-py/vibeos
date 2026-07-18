@@ -1,6 +1,5 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -10,7 +9,6 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAllocateMdl, IoFreeMdl, _LOCK_OPERATION_IoModifyAccess as IoModifyAccess, _LOCK_OPERATION_IoReadAccess as IoReadAccess, IoReleaseCancelSpinLock, KPROCESSOR_MODE, KWAIT_REASON, KeReleaseMutex, MmProbeAndLockPages, MmUnlockPages, ObReferenceObjectByHandle, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PDEVICE_OBJECT, PDRIVER_CANCEL};
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
-use core::ffi::c_void;
 
 extern "system" {
     fn KeWaitForMutexObject( Mutex: PVOID, WaitReason: KWAIT_REASON, WaitMode: KPROCESSOR_MODE, Alertable: BOOLEAN, Timeout: PLARGE_INTEGER, ) -> NTSTATUS;
@@ -42,7 +40,7 @@ pub unsafe extern "C" fn LockRequest(
     Output: BOOLEAN,
     LockMode: *mut KPROCESSOR_MODE,
 ) -> PVOID {
-    let mut LockFailed: BOOLEAN = 0u8;
+    let LockFailed: BOOLEAN = 0u8;
 
     (*Irp).MdlAddress = core::ptr::null_mut();
 
@@ -202,7 +200,7 @@ pub unsafe extern "C" fn LockBuffers(
     let Lock = if LockAddress != 0 { 2 } else { 0 };
     let Size = (core::mem::size_of::<AFD_WSABUF>() + core::mem::size_of::<AFD_MAPBUF>()) * (Count as usize + Lock);
     let NewBuf = ExAllocatePoolWithTag(PagedPool, Size, TAG_AFD_WSA_BUFFER) as PAFD_WSABUF;
-    let mut LockFailed: BOOLEAN = 0;
+    let LockFailed: BOOLEAN = 0;
     let MapBuf: PAFD_MAPBUF;
 
     AFD_DbgPrint!(MID_TRACE, b"Called(%p)\n\0".as_ptr() as PCHAR, NewBuf);
@@ -210,7 +208,7 @@ pub unsafe extern "C" fn LockBuffers(
     if !NewBuf.is_null() {
         RtlZeroMemory(NewBuf as PVOID, Size);
 
-        MapBuf = NewBuf.offset((Count as isize + Lock as isize)) as PAFD_MAPBUF;
+        MapBuf = NewBuf.offset(Count as isize + Lock as isize ) as PAFD_MAPBUF;
 
         {
             RtlCopyMemory(

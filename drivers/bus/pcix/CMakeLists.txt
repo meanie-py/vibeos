@@ -14,11 +14,13 @@ include_directories(
 # pci-romimage, 0 functions) stay C. pcix is NOT loaded at boot (pci.sys is the live
 # PNP0A03 driver), so the integration bar is a clean link ×3, not smoke boot.
 #
-# RUSTC_BOOTSTRAP=1: pci/id.rs faithfully translates id.c's C-variadic PciIdPrintf/
-# PciIdPrintfAppend (va_start/vsprintf), which need the nightly `c_variadic` feature;
-# build.rs sets the pcix_nightly cfg when bootstrap/nightly is available. The real
-# build host is nightly anyway (cargo-drive); this keeps the standard-target staticlib
-# build self-sufficient. Mirrors the pci-rust / arbiter cohab.
+# pcix-rust builds on PLAIN STABLE rustc. pci/id.rs faithfully translates id.c's C-variadic
+# PciIdPrintf/PciIdPrintfAppend (va_start/vsprintf), and stable Rust cannot DEFINE a
+# C-variadic fn (`c_variadic`, rust-lang#44930) — so their variadic ENTRY points are 3-line
+# trampolines in rust_varargs_shim.c below, calling the fixed-arity `*_v` twins in
+# pcix-rust/src/pci/id.rs. All logic stays in Rust. No RUSTC_BOOTSTRAP, no build.rs cfg
+# probe (both retired 2026-07-12). Mirrors the usbhub shim; otherwise the pci-rust /
+# arbiter cohab shape.
 set(PCIX_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(PCIX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pcix-target")
 set(PCIX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libpcix_rust.a")
@@ -38,7 +40,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${PCIX_RUST_TARGET_DIR}
         RUSTFLAGS=${PCIX_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${PCIX_RUST_TARGET}
             -p pcix-rust
             --manifest-path ${PCIX_RUST_WORKSPACE_DIR}/Cargo.toml
@@ -47,7 +48,6 @@ add_custom_command(
         ${PCIX_RUST_LIB}
     DEPENDS ${PCIX_RUST_SRCS}
             ${PCIX_RUST_WORKSPACE_DIR}/pcix-rust/Cargo.toml
-            ${PCIX_RUST_WORKSPACE_DIR}/pcix-rust/build.rs
     WORKING_DIRECTORY ${PCIX_RUST_WORKSPACE_DIR}
     COMMENT "Building pcix-rust (${PCIX_RUST_TARGET})"
     VERBATIM)
@@ -60,6 +60,7 @@ add_custom_target(rust_pcix DEPENDS ${PCIX_RUST_LIB})
 #   debug.c device.c dispatch.c enum.c fdo.c hookhal.c init.c pcivrify.c pdo.c power.c utils.c
 # guid.c (GUID data) + the 4 empty stub TUs stay C:
 list(APPEND SOURCE
+    rust_varargs_shim.c
     usage.c
     intrface/ideintrf.c
     pci/devhere.c

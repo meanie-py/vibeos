@@ -1,5 +1,4 @@
 use super::vdm_types::*;
-use core::ffi::c_void;
 use ntdll_sys::nt::*;
 
 // CsrGetClientThread is a CSR macro (csrsrv.h: TEB->CsrClientThread), inlined
@@ -699,7 +698,7 @@ pub unsafe extern "C" fn BaseInitializeVDM() {
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvCheckVDM(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let CheckVdmRequest: PBASE_CHECK_VDM =
@@ -905,7 +904,7 @@ pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(
     );
     let CriticalSection: PRTL_CRITICAL_SECTION;
     let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
-    let mut DosRecord: PVDM_DOS_RECORD;
+    let DosRecord: PVDM_DOS_RECORD;
 
     CriticalSection = if (*UpdateVdmEntryRequest).BinaryType != BINARY_TYPE_SEPARATE_WOW {
         core::ptr::addr_of_mut!(DosCriticalSection)
@@ -938,7 +937,7 @@ pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(
                 as PVDM_DOS_RECORD;
 
             match (*UpdateVdmEntryRequest).EntryIndex {
-                VdmEntryUndo => {
+                _VdmEntryUndo => {
                     NtClose((*DosRecord).ServerEvent);
                     (*DosRecord).ClientEvent = core::ptr::null_mut();
                     (*DosRecord).ServerEvent = core::ptr::null_mut();
@@ -964,7 +963,7 @@ pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(
                     Status = STATUS_SUCCESS;
                 }
 
-                VdmEntryUpdateProcess => {
+                _VdmEntryUpdateProcess => {
                     Status = NtDuplicateObject(
                         (*(*CsrGetClientThread()).Process).ProcessHandle,
                         (*UpdateVdmEntryRequest).VDMProcessHandle,
@@ -989,7 +988,7 @@ pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(
                     (*UpdateVdmEntryRequest).WaitObjectForParent = (*DosRecord).ClientEvent;
                 }
 
-                VdmEntryUpdateControlCHandler => {
+                _VdmEntryUpdateControlCHandler => {
                     Status = STATUS_NOT_IMPLEMENTED;
                 }
 
@@ -1241,7 +1240,7 @@ pub unsafe extern "system" fn BaseSrvExitVDM(
     ApiMessage: PCSR_API_MESSAGE,
     _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let ExitVdmRequest: PBASE_EXIT_VDM =
         core::ptr::addr_of_mut!((*(ApiMessage as PBASE_API_MESSAGE)).Data.ExitVDMRequest);
     let CriticalSection: PRTL_CRITICAL_SECTION;
@@ -1382,7 +1381,7 @@ pub unsafe extern "system" fn BaseSrvGetVDMExitCode(
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvSetReenterCount(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let SetReenterCountRequest: PBASE_SET_REENTER_COUNT = core::ptr::addr_of_mut!(
@@ -1432,7 +1431,7 @@ pub unsafe extern "system" fn BaseSrvSetVDMCurDirs(
             .VDMCurrentDirsRequest
     );
     let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
-    let mut Buffer: PCHAR;
+    let Buffer: PCHAR;
 
     if CsrValidateMessageBuffer(
         ApiMessage,
@@ -1493,7 +1492,7 @@ pub unsafe extern "system" fn BaseSrvSetVDMCurDirs(
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvGetVDMCurDirs(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let VDMCurrentDirsRequest: PBASE_GETSET_VDM_CURDIRS = core::ptr::addr_of_mut!(
@@ -1545,24 +1544,24 @@ pub unsafe extern "system" fn BaseSrvGetVDMCurDirs(
 
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvBatNotification(
-    ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvRegisterWowExec(
-    ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvRefreshIniFileMapping(
-    ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }

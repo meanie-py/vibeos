@@ -614,7 +614,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         (*NextIrpSp).Parameters.Read.Length = ByteCount;
         (*NextIrpSp).Parameters.Read.ByteOffset.QuadPart = NextLbo as i64;
 
-        SetFlag(((addr_of_mut!((*NextIrpSp).Flags)).cast()), SL_OVERRIDE_VERIFY_VOLUME);
+        SetFlag((addr_of_mut!((*NextIrpSp).Flags)).cast() , SL_OVERRIDE_VERIFY_VOLUME);
 
         ntkrnl_sys::ddk::IoSetCompletionRoutine(
             Irp,
@@ -771,7 +771,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
 
         NextIrpSp = ntkrnl_sys::ddk::IoGetNextIrpStackLocation(AssocIrp);
 
-        SetFlag(((addr_of_mut!((*NextIrpSp).Flags)).cast()), SL_OVERRIDE_VERIFY_VOLUME);
+        SetFlag((addr_of_mut!((*NextIrpSp).Flags)).cast() , SL_OVERRIDE_VERIFY_VOLUME);
 
         (*NextIrpSp).MajorFunction = (*IrpSp).MajorFunction;
         (*NextIrpSp).Parameters.Read.Length = NextByteCount;
@@ -1328,7 +1328,7 @@ pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
             (*(Irp as *mut _IRP)).UserBuffer = (MmGetMdlVirtualAddress(SavedMdl) as *mut u8)
                 .add((StartingVbo - OriginalStartingVbo) as usize) as *mut c_void;
 
-            Mdl = (IoAllocateMdl((*(Irp as *mut _IRP)).UserBuffer, ByteCount, 0, 0, (Irp).cast()).cast());
+            Mdl = IoAllocateMdl((*(Irp as *mut _IRP)).UserBuffer, ByteCount, 0, 0, (Irp).cast()).cast() ;
             if Mdl.is_null() {
                 (*(Irp as *mut _IRP)).MdlAddress = (SavedMdl).cast();
                 (*(Irp as *mut _IRP)).UserBuffer = SavedUserBuffer;

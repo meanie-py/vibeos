@@ -33,6 +33,7 @@ BOOT_SIZE_MB=280
 # populate call idempotent (harmless on a fresh image, overwrite on refresh)
 # — zero list drift vs the full build path (same calls run either way).
 REFRESH=""
+SMP=""   # --smp: stage ntkrnlmp.exe + boot-select it (smp-bringup-quest.md M5)
 
 # Stage debug-stripped PE twins into the ramdisk (same rationale as the livecd
 # strip pass in boot/boot_images.cmake): DWARF sections are never mapped, and
@@ -55,6 +56,9 @@ for arg in "$@"; do
         --rebuild)
             echo "[*] Rebuilding kernel..."
             ninja -C "$BUILD_DIR" ntoskrnl hal uefildr ramdisk fastfat
+            ;;
+        --smp)
+            SMP=1
             ;;
         --refresh)
             REFRESH=1
@@ -236,9 +240,39 @@ else
     mmd -i "$RAMDISK_IMG" ::/reactos/system32/drivers
 fi
 
+# Profile tree — livecd parity. The x86 LiveCD stages Profiles/ onto the ISO
+# (boot/bootdata/CMakeLists.txt) and the livecd hives point ProfilesDirectory
+# at %SystemDrive%\Profiles; shell32's CSIDL resolution (and therefore
+# explorer's start menu — CStartMenu GetMergedFolder) needs the directories
+# to actually exist. Without these the start menu object silently fails to
+# build (E_FAIL) and Ctrl+Esc opens nothing. Idempotent: mmd errors on
+# existing dirs are expected on --refresh of an existing image.
+echo "[*] Staging profile tree..."
+while IFS= read -r d; do
+    mmd -i "$RAMDISK_IMG" "$d" 2>/dev/null || true
+done <<'PROFILES'
+::/Profiles
+::/Profiles/All Users
+::/Profiles/All Users/Desktop
+::/Profiles/All Users/Start Menu
+::/Profiles/All Users/Start Menu/Programs
+::/Profiles/All Users/Start Menu/Programs/Administrative Tools
+::/Profiles/All Users/Start Menu/Programs/Accessories
+::/Profiles/Default User
+::/Profiles/Default User/Desktop
+::/Profiles/Default User/My Documents
+::/Profiles/Default User/Start Menu
+::/Profiles/Default User/Start Menu/Programs
+PROFILES
+
 # Copy system files
 echo "[*] Populating ramdisk..."
 RMC "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"                        ::/reactos/system32/ntoskrnl.exe
+# SMP kernel (M5): the ntkrnlmp.exe target lives in the ntkrnlmp/ subdir. Only
+# staged with --smp; freeldr.ini boot-select (below) points /KERNEL at it.
+if [ -n "$SMP" ]; then
+    RMC "$BUILD_DIR/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"           ::/reactos/system32/ntkrnlmp.exe
+fi
 RMC "$BUILD_DIR/hal/halarm64/hal.dll"                          ::/reactos/system32/hal.dll
 RMC "$BUILD_DIR/drivers/base/kdrosdbg/kdcom.dll"               ::/reactos/system32/kdcom.dll
 RMC "$BUILD_DIR/drivers/base/bootvid/bootvid.dll"              ::/reactos/system32/bootvid.dll
@@ -277,6 +311,9 @@ RMC "$BUILD_DIR/dll/win32/kernelbase/kernelbase.dll"          ::/reactos/system3
 # wow64.dll — WOW64 host-layer skeleton (docs/engineering/wow64-plan.md);
 # libwow64fex.dll imports it, so it must stage wherever the FEX layer does.
 RMC "$BUILD_DIR/dll/win32/wow64/wow64.dll"                    ::/reactos/system32/wow64.dll
+# win32u.dll — native NtGdi*/NtUser* syscall stubs; wow64.dll's win32k thunk
+# table imports it (M4/wow64win).
+RMC "$BUILD_DIR/win32ss/win32u/win32u.dll"                    ::/reactos/system32/win32u.dll
 RMC "$BUILD_DIR/dll/ntdll/nt_0600/ntdll_vista.dll"           ::/reactos/system32/ntdll_vista.dll
 RMC "$BUILD_DIR/base/system/winlogon/winlogon.exe"            ::/reactos/system32/winlogon.exe
 RMC "$BUILD_DIR/win32ss/win32k.sys"                           ::/reactos/system32/win32k.sys
@@ -383,6 +420,76 @@ for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf t
     fi
 done
 
+# --- kmtest corpus (the arm64 twin of add_rostests_file) --------------------
+# x86 stages the kmtests onto the LiveCD declaratively: every kmtest driver
+# calls add_rostests_file(TARGET x), which is add_cd_file(... DESTINATION
+# "reactos/bin") (sdk/cmake/CMakeMacros.cmake). arm64 has no cd-file pass, so
+# without this block `vibeos-cli conformance --arch arm64` boots an image with
+# the sweep runner but no corpus for it to run -> [KMTEST-SWEEP] launch FAILED.
+#
+# reactos/bin, and ALL of it in that ONE directory, is load-bearing rather than
+# cosmetic: KmtpCreateService resolves each driver by taking
+# GetModuleFileName(kmtest_.exe), truncating at the last backslash, and
+# appending "<name>_drv.sys" (kmtest/service.c:428-439, which then
+# GetFileAttributes()-checks it). A driver staged anywhere else is simply never
+# found, so the flat layout mirrors x86 exactly.
+#
+# Globbed, not enumerated, so STAGING can't drift (same rationale as RMC
+# above). Note the glob can only stage what got BUILT, and that list is still
+# hand-maintained upstream: kmtest_all -> kmtest_drivers in kmtests/
+# CMakeLists.txt, which today omits the cc*/fltmgr drivers (x86 doesn't notice
+# — its livecd DAG builds every add_rostests_file target). That's harmless
+# while no visible test needs them (none of the 3 sweep lists reference a
+# Cc*/Flt* test), but if you make one visible, add its driver to
+# kmtest_drivers or arm64 will silently sweep without it.
+# Self-gating on the artifacts: they exist only when the build dir is
+# configured -DENABLE_ROSTESTS(_KMTESTS)=ON, which is precisely when x86's
+# add_rostests_file fires — so an unconfigured build stages nothing and the
+# ramdisk stays byte-identical. archcfg.py builds `kmtest_all` (optional) so
+# what lands here is freshly built, never a stale leftover.
+# npfs.sys + services.exe — the SCM chain the kmtest corpus needs.
+# Every kmtest loads its driver via CreateService/StartService, which is
+# advapi32 -> RPC ncacn_np "\pipe\ntsvcs" -> services.exe (scm.c:42-44,
+# services/rpcserver.c:115). So the sweep needs BOTH the named-pipe FS and the
+# SCM itself, neither of which arm64 has ever staged: without them every test
+# raises RPC_S_SERVER_UNAVAILABLE (0x6BA) before its first print and the sweep
+# only sees a 180s timeout. Npfs is already registered Start=1 in the arm64
+# SYSTEM hive; it just needs the binary here + an entry in iomgr's arm64
+# STAGED_SVCS (the arm64 boot hand-loads an explicit list instead of the bulk
+# Start=1 enumeration). services.exe's whole import set (advapi32, rpcrt4,
+# user32, userenv, msvcrt, ntdll, kernel32, advapi32_vista) is already staged
+# above. lsass is deliberately NOT staged: kmtest needs the SCM, not the LSA,
+# and lsass would drag in lsasrv/samsrv.
+RMC "$BUILD_DIR/drivers/filesystems/npfs/npfs.sys"             ::/reactos/system32/drivers/npfs.sys
+RMC "$BUILD_DIR/base/system/services/services.exe"             ::/reactos/system32/services.exe
+# lsass is NOT optional once services.exe runs: ScmCreateServiceDatabase ends in
+# ScmWaitForLsa() = WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE), and
+# only lsass.exe ever signals that event (services-rust/src/services.rs:253). An
+# SCM without an LSA hangs forever mid-database (measured: stuck 420s+ after
+# "LastKnownGood OK"), so SC_AutoStartComplete never fires and every kmtest times
+# out. lsasrv/samsrv are the only 2 of lsass's 15 transitive DLLs not already
+# staged above.
+RMC "$BUILD_DIR/base/system/lsass/lsass.exe"                   ::/reactos/system32/lsass.exe
+RMC "$BUILD_DIR/dll/win32/lsasrv/lsasrv.dll"                   ::/reactos/system32/lsasrv.dll
+RMC "$BUILD_DIR/dll/win32/samsrv/samsrv.dll"                   ::/reactos/system32/samsrv.dll
+# msv1_0 = the MSV1_0 authentication package. lsasrv loads it BY NAME at runtime
+# (the Lsa "Authentication Packages" registry value), so it is invisible to an
+# import-table walk — lsass.exe's every STATIC import resolves and it still died
+# with ExitStatus=0xC0000135 (STATUS_DLL_NOT_FOUND) propagated as its exit code.
+RMC "$BUILD_DIR/dll/win32/msv1_0/msv1_0.dll"                   ::/reactos/system32/msv1_0.dll
+
+KMTESTS_DIR="$BUILD_DIR/modules/rostests/kmtests"
+if [ -f "$KMTESTS_DIR/kmtest_.exe" ]; then
+    echo "[*] Staging kmtest corpus..."
+    mdir -i "$RAMDISK_IMG" ::/reactos/bin >/dev/null 2>&1 \
+        || mmd -i "$RAMDISK_IMG" ::/reactos/bin
+    RMC "$KMTESTS_DIR/kmtest_.exe" ::/reactos/bin/kmtest_.exe
+    # Flatten: co-located next to kmtest_.exe regardless of source subdir.
+    while IFS= read -r drv; do
+        RMC "$drv" "::/reactos/bin/$(basename "$drv")"
+    done < <(find "$KMTESTS_DIR" -name '*_drv.sys' | sort)
+fi
+
 # --- Payloads (opt-in, VIBEOS_PAYLOAD=name[,name...]) -----------------------
 # Declarative test/demo app staging — docs/engineering/payload-harness-design.md.
 # OFF by default: with no payloads selected the compiler prints nothing and the
@@ -460,6 +567,125 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         else
             echo "[!] VIBEOS_FEX=1: i386 kernel32/ntdll_vista missing ($KERNEL32_32 / $NTDLLVISTA32) — guest loader will stall at kernel32"
         fi
+        # M4/wow64win: the 32-bit GUI-DLL set for gui32.exe (gdi32 + user32 +
+        # their import closure) — the guest loader pulls whatever the image
+        # imports; missing deps show up as loud NtOpenFile c0000034 lines.
+        GDI32_32="${VIBEOS_GDI32_32:-$PROJECT_DIR/build-i386/win32ss/gdi/gdi32/gdi32.dll}"
+        USER32_32="${VIBEOS_USER32_32:-$PROJECT_DIR/build-i386/win32ss/user/user32/user32.dll}"
+        if [ -f "$GDI32_32" ] && [ -f "$USER32_32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/gdi32.dll + user32.dll (i386)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$GDI32_32" ::/reactos/syswow64/gdi32.dll
+            mcopy -o -i "$RAMDISK_IMG" "$USER32_32" ::/reactos/syswow64/user32.dll
+        else
+            echo "[!] VIBEOS_FEX=1: i386 gdi32/user32 missing — gui32 guest will stall at import"
+        fi
+        # M11: the FULL SysWOW64 DLL set — the transitive import closure of the
+        # stock i386 guest (testgui.exe), computed at stage time.
+        #
+        # This SUPERSEDES the M8 rule ("do NOT stage advapi32/rpcrt4/msvcrt —
+        # they leave unbound IATs"). That rule was right about the hazard and
+        # wrong about the cure: when a DLL is staged but one of ITS imports is
+        # missing, the loader prints "Skipping missing import" and leaves that
+        # module half-bound; the first call through an unbound slot jumps to
+        # garbage (guest AV @0x76AA4, 2026-07-11). Not-staging avoided it only
+        # because nothing on the M8 path called into those DLLs. A CRT-linked
+        # binary DOES call them, so the answer is the COMPLETE closure — no
+        # module is ever left half-bound. A bigger PARTIAL set has the same
+        # landmine, just later. wow64-closure.py hard-fails rather than emit a
+        # partial set, and the loader's "Skipping missing import" line is the
+        # standing oracle that the closure is still complete.
+        TESTGUI32="${VIBEOS_TESTGUI32_EXE:-$PROJECT_DIR/build-i386/base/applications/testgui/testgui.exe}"
+        if [ -f "$TESTGUI32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging the SysWOW64 DLL closure (i386)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            CLOSURE=$(python3 "$PROJECT_DIR/tools/fex/wow64-closure.py" \
+                          --build-dir "$PROJECT_DIR/build-i386" "$TESTGUI32") || {
+                echo "[!] VIBEOS_FEX=1: SysWOW64 import closure is INCOMPLETE (see above)."
+                echo "[!]   Refusing to stage a partial set — a half-bound module crashes"
+                echo "[!]   at first call, far from the missing DLL. Build the module first."
+                exit 1
+            }
+            echo "$CLOSURE" | while IFS=$'\t' read -r name path; do
+                [ -n "$name" ] || continue
+                mcopy -o -i "$RAMDISK_IMG" "$path" "::/reactos/syswow64/$name"
+            done
+            echo "[*]   staged $(echo "$CLOSURE" | wc -l) SysWOW64 modules"
+            # testgui.exe — the M11 guest: a STOCK, unmodified ReactOS i386 GUI
+            # app (real msvcrt CRT startup, real import table, real window +
+            # message loop). Every earlier guest was one we wrote to dodge the
+            # gaps; this one can't dodge anything.
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/testgui.exe (M11 stock-binary guest)"
+            mcopy -o -i "$RAMDISK_IMG" "$TESTGUI32" ::/reactos/syswow64/testgui.exe
+            # The NATIVE arm64 build of the same app, into system32. This is the
+            # A/B control: same source, same user32-rust, one running native and
+            # one under WoW64. Without it there is no way to tell a WoW64 bug
+            # from a plain user32 bug that would crash natively too.
+            TESTGUI_NATIVE="${VIBEOS_TESTGUI_NATIVE:-$PROJECT_DIR/build-arm64/base/applications/testgui/testgui.exe}"
+            if [ -f "$TESTGUI_NATIVE" ]; then
+                echo "[*] VIBEOS_FEX=1 — staging system32/testgui.exe (native A/B control)"
+                mcopy -o -i "$RAMDISK_IMG" "$TESTGUI_NATIVE" ::/reactos/system32/testgui.exe
+            fi
+
+            # M12 — THE NORTH STAR: x86 Doom under WoW64. doomgeneric's Win32/GDI
+            # backend built for i386 (tools/doom/build.sh i386): a genuinely foreign
+            # mingw binary. Its import closure is the SAME 53 modules staged above,
+            # so nothing extra is needed beyond the exe + the IWAD.
+            DOOM32="${VIBEOS_DOOM32_EXE:-$PROJECT_DIR/tools/doom/doom-i386.exe}"
+            DOOMWAD="${VIBEOS_DOOM_WAD:-$PROJECT_DIR/tools/doom/doom1.wad}"
+            if [ -f "$DOOM32" ] && [ -f "$DOOMWAD" ]; then
+                echo "[*] VIBEOS_FEX=1 — staging syswow64/doom.exe + doom1.wad (M12: x86 DOOM)"
+                mcopy -o -i "$RAMDISK_IMG" "$DOOM32" ::/reactos/syswow64/doom.exe
+                mcopy -o -i "$RAMDISK_IMG" "$DOOMWAD" ::/reactos/syswow64/doom1.wad
+                # A/B control, same idea as the native testgui: the NATIVE arm64
+                # build of the very same doomgeneric. VIBEOS_DOOM_AB=1 stages it
+                # into system32 so both run side by side and a rendering failure
+                # can be attributed to the WoW64 layer or to win32k.
+                DOOM_NATIVE="${VIBEOS_DOOM_NATIVE:-$PROJECT_DIR/tools/doom/doom-arm64.exe}"
+                if [ "${VIBEOS_DOOM_AB:-0}" = "1" ] && [ -f "$DOOM_NATIVE" ]; then
+                    echo "[*] VIBEOS_DOOM_AB=1 — staging system32/doom.exe + doom1.wad (native A/B)"
+                    mcopy -o -i "$RAMDISK_IMG" "$DOOM_NATIVE" ::/reactos/system32/doom.exe
+                    mcopy -o -i "$RAMDISK_IMG" "$DOOMWAD" ::/reactos/system32/doom1.wad
+                fi
+            fi
+        fi
+        # gui32.exe — the win32k-thunk guest (winlogon TryStartWow64Gui).
+        GUI32="${VIBEOS_GUI32_EXE:-$PROJECT_DIR/build-fex-hello/gui32.exe}"
+        if [ -f "$GUI32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/gui32.exe (wow64win guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$GUI32" ::/reactos/syswow64/gui32.exe
+        fi
+        # win32.exe — the M8 window-creation guest (winlogon TryStartWow64Win32).
+        WIN32APP="${VIBEOS_WIN32_EXE:-$PROJECT_DIR/build-fex-hello/win32.exe}"
+        if [ -f "$WIN32APP" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/win32.exe (M8 window guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$WIN32APP" ::/reactos/syswow64/win32.exe
+        fi
+        # marshal32.exe — the M18 marshaller-verification guest (winlogon
+        # TryStartWow64Marshal): TBI/IOCP/monitor marshallers, self-verified.
+        MARSHAL32="${VIBEOS_MARSHAL32_EXE:-$PROJECT_DIR/build-fex-hello/marshal32.exe}"
+        if [ -f "$MARSHAL32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/marshal32.exe (M18 marshaller guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$MARSHAL32" ::/reactos/syswow64/marshal32.exe
+        fi
+        # file32.exe — the M10 file-I/O guest (winlogon TryStartWow64File).
+        FILE32="${VIBEOS_FILE32_EXE:-$PROJECT_DIR/build-fex-hello/file32.exe}"
+        if [ -f "$FILE32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/file32.exe (M10 file-I/O guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$FILE32" ::/reactos/syswow64/file32.exe
+        fi
+        # async32.exe — the M15b overlapped-I/O guest (winlogon TryStartWow64Async):
+        # kernel-side IO_STATUS_BLOCK32 completion oracle.
+        ASYNC32="${VIBEOS_ASYNC32_EXE:-$PROJECT_DIR/build-fex-hello/async32.exe}"
+        if [ -f "$ASYNC32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/async32.exe (M15b overlapped-I/O guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$ASYNC32" ::/reactos/syswow64/async32.exe
+        fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
         HELLO32="${VIBEOS_HELLO32_EXE:-$PROJECT_DIR/build-fex-hello/hello32.exe}"
@@ -493,8 +719,19 @@ mmd -i "$BOOT_IMG" ::/EFI/BOOT
 # Copy bootloader
 mcopy -i "$BOOT_IMG" "$UEFILDR" ::/EFI/BOOT/BOOTAA64.EFI
 
-# Copy freeldr.ini
-mcopy -i "$BOOT_IMG" "$FREELDR_INI" ::/freeldr.ini
+# Copy freeldr.ini — with --smp, boot-select the SMP kernel by injecting
+# /KERNEL=ntkrnlmp.exe into the [ReactOS_Arm64] Options (mirrors the x86
+# livecd.ini [LiveCD_SMP] entry). Default (no --smp) ships the file verbatim
+# so it boots UP ntoskrnl.exe.
+if [ -n "$SMP" ]; then
+    SMP_INI="$(mktemp)"
+    sed 's#^\(Options=\)#\1/KERNEL=ntkrnlmp.exe #' "$FREELDR_INI" > "$SMP_INI"
+    echo "[*] SMP: freeldr.ini -> /KERNEL=ntkrnlmp.exe"
+    mcopy -o -i "$BOOT_IMG" "$SMP_INI" ::/freeldr.ini
+    rm -f "$SMP_INI"
+else
+    mcopy -i "$BOOT_IMG" "$FREELDR_INI" ::/freeldr.ini
+fi
 
 # Copy ramdisk image
 echo "[*] Copying ramdisk.img to boot.img..."

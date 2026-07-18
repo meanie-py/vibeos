@@ -816,7 +816,7 @@ unsafe fn DestroyTimersForThread_impl(pti: PTHREADINFO) -> BOOL {
     let mut TimersRemoved: BOOL = 0;
 
     KeEnterCriticalRegion();
-    ExAcquireResourceExclusiveLite(&mut TimerLock as *mut _ as _, 1);
+    ExAcquireResourceExclusiveLite(&raw mut TimerLock as *mut _ as _, 1);
 
     while pLE != core::ptr::addr_of_mut!(TimersListHead) {
         pTmr = CONTAINING_RECORD!(pLE, TIMER, ptmrList);
@@ -826,7 +826,7 @@ unsafe fn DestroyTimersForThread_impl(pti: PTHREADINFO) -> BOOL {
         }
     }
 
-    ExReleaseResourceLite(&mut TimerLock as *mut _ as _);
+    ExReleaseResourceLite(&raw mut TimerLock as *mut _ as _);
     KeLeaveCriticalRegion();
 
     TimersRemoved

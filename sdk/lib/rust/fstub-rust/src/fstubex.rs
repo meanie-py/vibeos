@@ -929,7 +929,7 @@ pub unsafe extern "system" fn FstubReadPartitionTableEFI(
             PartitionIndex = 0;
         }
 
-        let PartitionEntry = (*(((*Disk).Buffer as PEFI_PARTITION_ENTRY).offset(PartitionIndex as isize)));
+        let PartitionEntry = *(((*Disk).Buffer as PEFI_PARTITION_ENTRY).offset(PartitionIndex as isize)) ;
         PartitionIndex = PartitionIndex.wrapping_add(1);
 
         if PartitionEntry.PartitionType.Data1 == 0 &&

@@ -288,7 +288,95 @@ pub unsafe fn probe_write_size_t(
 // Safe copy to/from user-mode
 // ============================================================================
 
-/// Validate a user-mode source buffer, then copy `length` bytes to a kernel buffer.
+// amd64 + arm64: the fault-tolerant copy is a native-SEH C shim
+// (ntoskrnl/kmsafecopy.c), the validated table-based-SEH path (seh_poc.c PASS +
+// __C_specific_handler in the link). Returns 1 on success, 0 if the copy faulted.
+// arm64 added 2026-07-17: the arm64 kernel-mode HARDWARE-fault SEH path was
+// validated end-to-end (KmSafeCopySelfTest PASS after the .xdata save_next decoder
+// fix, §9.69/§9.93) — a real page fault in a callee now unwinds into the __except.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+extern "C" {
+    fn KmProtectedCopyMemory(
+        dst: *mut core::ffi::c_void,
+        src: *const core::ffi::c_void,
+        len: usize,
+    ) -> i32;
+}
+
+/// Copy `length` bytes, returning `Err(STATUS_ACCESS_VIOLATION)` instead of
+/// BUGCHECKing when the source or destination faults.
+///
+/// This is the primitive the DUMMY_PSEH world lost: in C the capture memcpy sat
+/// inside `_SEH2_TRY`, but under `USE_DUMMY_PSEH` that handler is dead and the
+/// Rust translations dropped it, so a hostile pointer crashed the kernel (the
+/// memcpy+0x40 cluster: ObSymbolicLink / ZwWaitForMultipleObjects / IoReadWrite).
+///
+/// **amd64**: routes through the native-SEH shim `KmProtectedCopyMemory`
+/// (ntoskrnl/kmsafecopy.c). A genuine hardware-fault catch — and because the
+/// fault dispatches through `MmAccessFault` FIRST, a valid-but-nonresident page
+/// is simply paged in and the copy proceeds; only a truly invalid address reaches
+/// the `__except`. Validated 2026-07-12: ObSymbolicLink + ZwWaitForMultipleObjects
+/// went CRASH -> OK.
+///
+/// **arm64: PROTECTED (2026-07-17)** — routes through `KmProtectedCopyMemory` like
+/// amd64. The arm64 kernel-mode hardware-fault SEH path was validated end-to-end
+/// after the `.xdata` save_next decoder fix (§9.69/§9.93): `KmSafeCopySelfTest`
+/// now catches a genuine page fault at an unmapped VA (`invalid_caught=1`), where
+/// before it wedged the boot. Same MmAccessFault-first semantics as amd64.
+///
+/// **i386: NO PROTECTION — this is a plain copy (status quo).** Stated
+/// plainly rather than faked, per the fail-loud rule. The obvious stand-in,
+/// an `MmIsAddressValid` per-page pre-check, is NOT a valid substitute: it cannot
+/// distinguish "invalid" from "valid but paged out", so on a hot path (e.g. the
+/// IRP completion copy-back) it would spuriously fail legitimate I/O with
+/// STATUS_ACCESS_VIOLATION under memory pressure — a subtly-wrong degradation far
+/// worse than the crash it papers over. Closing the i386 gap needs either
+/// (a) validating clang's frame-based i386 kernel SEH the way seh_poc.c validated
+/// amd64/arm64, or (b) a Linux-extable-style fault-fixup copy primitive the
+/// page-fault handler consults. OWED; the i386 equivalents stay quarantined.
+///
+/// `length` must be > 0 (callers early-return on 0).
+#[inline]
+unsafe fn fault_tolerant_copy(
+    dst: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    length: usize,
+) -> Result<(), NTSTATUS> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        if KmProtectedCopyMemory(dst, src, length) == 0 {
+            return Err(STATUS_ACCESS_VIOLATION);
+        }
+        Ok(())
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, length);
+        Ok(())
+    }
+}
+
+/// Fault-tolerant copy with NO probing — the direct replacement for a bare
+/// `_SEH2_TRY { RtlCopyMemory(..) } _SEH2_EXCEPT { .. }` at sites where the C did
+/// no probe because both pointers are already-validated/kernel-owned, yet the copy
+/// still had to survive a bad one (e.g. `IopCompleteRequest`'s buffered copy-back
+/// to `Irp->UserBuffer`, irp.c:292 — the caller's buffer may be NULL/hostile).
+///
+/// See `fault_tolerant_copy` for the per-arch protection guarantee.
+#[inline]
+pub unsafe fn safe_copy_raw(
+    dst: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    length: usize,
+) -> Result<(), NTSTATUS> {
+    if length == 0 {
+        return Ok(());
+    }
+    fault_tolerant_copy(dst, src, length)
+}
+
+/// Validate a user-mode source buffer, then fault-tolerantly copy `length` bytes
+/// to a kernel buffer.
 ///
 /// Replaces the pattern:
 /// ```c
@@ -298,7 +386,11 @@ pub unsafe fn probe_write_size_t(
 /// } _SEH2_EXCEPT(...) { Status = _SEH2_GetExceptionCode(); }
 /// ```
 ///
-/// For KernelMode callers, skips validation and copies directly.
+/// The range/alignment probe is skipped for KernelMode callers (a kernel-range
+/// source is legitimate), but the copy itself is ALWAYS fault-protected — the C
+/// `_SEH2_TRY` wrapped it unconditionally, and kernel-mode callers (e.g. the
+/// kmtest drivers) still pass hostile pointers that must return an error rather
+/// than crash.
 #[inline]
 pub unsafe fn safe_copy_from_user(
     kernel_dst: *mut core::ffi::c_void,
@@ -311,11 +403,11 @@ pub unsafe fn safe_copy_from_user(
         return Ok(());
     }
     probe_user_buffer(user_src, length, alignment, previous_mode)?;
-    core::ptr::copy_nonoverlapping(user_src as *const u8, kernel_dst as *mut u8, length);
-    Ok(())
+    fault_tolerant_copy(kernel_dst, user_src, length)
 }
 
-/// Validate a user-mode destination buffer, then copy `length` bytes from a kernel buffer.
+/// Validate a user-mode destination buffer, then fault-tolerantly copy `length`
+/// bytes from a kernel buffer.
 ///
 /// Replaces the pattern:
 /// ```c
@@ -325,7 +417,7 @@ pub unsafe fn safe_copy_from_user(
 /// } _SEH2_EXCEPT(...) { Status = _SEH2_GetExceptionCode(); }
 /// ```
 ///
-/// For KernelMode callers, skips validation and copies directly.
+/// Copy is always fault-protected (see `safe_copy_from_user`).
 #[inline]
 pub unsafe fn safe_copy_to_user(
     user_dst: *mut core::ffi::c_void,
@@ -338,8 +430,7 @@ pub unsafe fn safe_copy_to_user(
         return Ok(());
     }
     probe_user_buffer(user_dst, length, alignment, previous_mode)?;
-    core::ptr::copy_nonoverlapping(kernel_src as *const u8, user_dst as *mut u8, length);
-    Ok(())
+    fault_tolerant_copy(user_dst, kernel_src, length)
 }
 
 // ============================================================================

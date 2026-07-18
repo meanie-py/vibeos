@@ -24,7 +24,7 @@ const IMAGE_SUBSYSTEM_NATIVE: u32 = 1;
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpSbCreateSession(
-    Reserved: PVOID,
+    _Reserved: PVOID,
     OtherSubsystem: PSMP_SUBSYSTEM,
     ProcessInformation: PRTL_USER_PROCESS_INFORMATION,
     DbgSessionId: ULONG,
@@ -138,7 +138,7 @@ pub unsafe extern "system" fn SmpSbCreateSession(
         // Fail
         #[cfg(debug_assertions)]
         {
-            let SubSysName = if (SubSystemType as usize) < SMP_SUBSYSTEM_NAMES.len() {
+            let _SubSysName = if (SubSystemType as usize) < SMP_SUBSYSTEM_NAMES.len() {
                 SMP_SUBSYSTEM_NAMES[SubSystemType as usize]
             } else {
                 None

@@ -315,7 +315,7 @@ pub unsafe extern "system" fn ConDllInitialize(
             /* Free our resources */
             if ConsoleInitialized != 0 {
                 ConsoleInitialized = 0;
-                RtlDeleteCriticalSection(&mut ConsoleLock);
+                RtlDeleteCriticalSection(&raw mut ConsoleLock);
             }
         }
 
@@ -323,7 +323,7 @@ pub unsafe extern "system" fn ConDllInitialize(
     }
 
     /* Initialize our global console DLL lock */
-    Status = RtlInitializeCriticalSection(&mut ConsoleLock);
+    Status = RtlInitializeCriticalSection(&raw mut ConsoleLock);
     if !NT_SUCCESS(Status) {
         return 0;
     }

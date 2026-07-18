@@ -16,6 +16,57 @@ extern HANDLE hProcessHeap;
 extern HANDLE CurrentProcessId;
 extern DWORD GDI_BatchLimit;
 extern PDEVCAPS GdiDevCaps;
+
+#ifdef _M_IX86
+/* WoW64: a 64-bit kernel writes 24-byte entries into the shared GDI handle
+ * table; a 32-bit gdi32 running under wow64 must read that layout (and find
+ * DevCaps after 0x10000 of the WIDE entries). Detected once in
+ * GdiProcessSetup via ProcessWow64Information. KernelData/UserData are
+ * truncated to 32 bits — UserData (DC_ATTR etc.) is mapped below 4GB for
+ * WoW64 processes by win32k, so the truncation is lossless; KernelData is
+ * unusable from user mode either way. */
+typedef struct _GDI_TABLE_ENTRY64
+{
+    ULONGLONG KernelData;
+    DWORD ProcessId;
+    union{
+    LONG  Type;
+    struct{
+    USHORT FullUnique;
+    UCHAR  ObjectType;
+    UCHAR  Flags;
+    };};
+    ULONGLONG UserData;
+} GDI_TABLE_ENTRY64, *PGDI_TABLE_ENTRY64;
+
+extern BOOL g_GdiWow64;
+
+FORCEINLINE
+VOID
+GdiReadSharedEntry(ULONG Index, GDI_TABLE_ENTRY *Out)
+{
+    if (g_GdiWow64)
+    {
+        PGDI_TABLE_ENTRY64 e = (PGDI_TABLE_ENTRY64)GdiHandleTable + Index;
+        Out->KernelData = (PVOID)(ULONG_PTR)e->KernelData;
+        Out->ProcessId = e->ProcessId;
+        Out->Type = e->Type;
+        Out->UserData = (PVOID)(ULONG_PTR)e->UserData;
+    }
+    else
+    {
+        *Out = GdiHandleTable[Index];
+    }
+}
+#else
+#define g_GdiWow64 FALSE
+FORCEINLINE
+VOID
+GdiReadSharedEntry(ULONG Index, GDI_TABLE_ENTRY *Out)
+{
+    *Out = GdiHandleTable[Index];
+}
+#endif
 extern BOOL gbLpk;          // Global bool LanguagePack
 extern HANDLE ghSpooler;
 extern RTL_CRITICAL_SECTION semLocal;

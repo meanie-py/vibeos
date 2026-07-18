@@ -32,9 +32,31 @@ extern "system" {
     fn RtlAssert(pvFailedAssertion: PVOID, pvFileName: PVOID, ulLineNumber: ULONG, pszMessage: *mut ::core::ffi::c_char);
 }
 extern "C" {
-    fn vsprintf(buffer: *mut ::core::ffi::c_char, format: *const ::core::ffi::c_char, ap: ::core::ffi::VaList) -> i32;
     fn sprintf(buffer: *mut ::core::ffi::c_char, format: *const ::core::ffi::c_char, ...) -> i32;
     fn swprintf(buffer: *mut WCHAR, format: *const WCHAR, ...) -> i32;
+}
+
+// ---- the C-variadic boundary (drivers/bus/pcix/rust_varargs_shim.c) -----------------
+//
+// Stable Rust cannot DEFINE a C-variadic fn (`va_start`) nor `va_arg` — that is the
+// nightly `c_variadic` feature (rust-lang#44930). It CAN declare and CALL one. So the
+// variadic ENTRY of PciIdPrintf / PciIdPrintfAppend lives in the shim, which immediately
+// calls the fixed-arity `_v` twin below holding ALL of id.c's logic. The call sites in
+// PciQueryId are unchanged — they still call `PciIdPrintf(...)`, now the shim's trampoline.
+extern "C" {
+    fn PciIdPrintf(IdBuffer: PPCI_ID_BUFFER, Format: PCCH, ...) -> ULONG;
+    fn PciIdPrintfAppend(IdBuffer: PPCI_ID_BUFFER, Format: PCCH, ...) -> ULONG;
+
+    // Neither function pulls args itself: both hand the whole va_list to ntoskrnl's
+    // exported `vsprintf`. Rust only ever holds an opaque POINTER to the C frame's
+    // va_list, so it cannot pass one BY VALUE — this shim forwarder dereferences the
+    // pointer and makes that call. It does nothing else; the destination pointer, the
+    // length accounting and every ANSI_STRING field update stay in the `_v` twins.
+    fn vibeos_vsprintf(
+        buffer: *mut ::core::ffi::c_char,
+        format: *const ::core::ffi::c_char,
+        ap: *mut c_void,
+    ) -> i32;
 }
 // RtlAssert / RtlxAnsiStringToUnicodeSize are NTAPI (stdcall on i386, _Name@N).
 extern "system" {
@@ -210,8 +232,13 @@ pub unsafe extern "system" fn PciInitIdBuffer(IdBuffer: PPCI_ID_BUFFER) {
     (*IdBuffer).Count = 0u32;
     (*IdBuffer).CharBuffer = core::ptr::addr_of_mut!((*IdBuffer).BufferData) as PCHAR;
 }
+/// Fixed-arity twin of the `PciIdPrintf` C-variadic entry point in
+/// `drivers/bus/pcix/rust_varargs_shim.c`. The C side exists only to do the `va_start`
+/// that stable Rust cannot; `ap` is a pointer to its `va_list`. All of id.c's logic —
+/// the RtlAssert, RtlInitAnsiString, StringSize/TotalLength/Count bookkeeping and the
+/// CharBuffer bump — stays here.
 #[no_mangle]
-pub unsafe extern "C" fn PciIdPrintf(mut IdBuffer: PPCI_ID_BUFFER, Format: PCCH, args: ...) -> ULONG {
+pub unsafe extern "C" fn PciIdPrintf_v(mut IdBuffer: PPCI_ID_BUFFER, Format: PCCH, ap: *mut c_void) -> ULONG {
 
     if !((*IdBuffer).Count < 0x8u32) {
         RtlAssert(
@@ -222,11 +249,10 @@ pub unsafe extern "C" fn PciIdPrintf(mut IdBuffer: PPCI_ID_BUFFER, Format: PCCH,
         );
     }
 
-    let mut va: ::core::ffi::VaListImpl = args.clone();
-    vsprintf(
+    vibeos_vsprintf(
         (*IdBuffer).CharBuffer as *mut ::core::ffi::c_char,
         Format,
-        va.as_va_list(),
+        ap,
     );
 
     let AnsiString: PANSI_STRING = (*IdBuffer).Strings.as_mut_ptr().add((*IdBuffer).Count as usize) as PANSI_STRING;
@@ -253,18 +279,19 @@ pub unsafe extern "C" fn PciIdPrintf(mut IdBuffer: PPCI_ID_BUFFER, Format: PCCH,
 
     Length
 }
+/// Fixed-arity twin of the `PciIdPrintfAppend` C-variadic entry point — see
+/// `PciIdPrintf_v` above.
 #[no_mangle]
-pub unsafe extern "C" fn PciIdPrintfAppend(
+pub unsafe extern "C" fn PciIdPrintfAppend_v(
     mut IdBuffer: PPCI_ID_BUFFER,
     mut Format: PCCH,
-    mut args: ...
+    ap: *mut c_void,
 ) -> ULONG {
     let mut NextId: ULONG = 0;
     let mut Size: ULONG = 0;
     let mut Length: ULONG = 0;
     let mut MaxLength: ULONG = 0;
     let mut AnsiString: PANSI_STRING = core::ptr::null_mut();
-    let mut va: core::ffi::VaListImpl;
 
     if (*IdBuffer).Count == 0 {
         RtlAssert(
@@ -279,11 +306,10 @@ pub unsafe extern "C" fn PciIdPrintfAppend(
     NextId = ((*IdBuffer).Count as u32).wrapping_sub(1) as ULONG;
     MaxLength = (IdBuffer.offset(1) as PCHAR).offset_from((*IdBuffer).CharBuffer) as i64 as ULONG;
 
-    va = args.clone();
-    Length = vsprintf(
+    Length = vibeos_vsprintf(
         (*IdBuffer).CharBuffer.offset(-(1isize)),
         Format as *const i8,
-        va.as_va_list(),
+        ap,
     ) as ULONG;
 
     if !(Length < MaxLength) {

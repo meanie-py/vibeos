@@ -163,6 +163,84 @@ const IRP_NOCACHE: u32 = 0x00000001;
 const IRP_SYNCHRONOUS_PAGING_IO: u32 = 0x00000040;
 const IRP_READ_OPERATION: u32 = 0x00000100;
 
+/* wow64-plan M15b: kernel-side IO_STATUS_BLOCK32 completion. A WoW64 guest's
+ * IOSB is 8 bytes {Status, Information}; the host kernel writes 16 — an
+ * 8-byte overflow past the guest struct plus Information at the wrong offset.
+ * wow64.dll latches the guest IOSB pointer into TEB.Instrumentation[0] right
+ * before an IOSB-bearing syscall; the Nt* entry consumes the latch (read-and-
+ * clear, honored only when it matches the IoStatusBlock argument exactly) and
+ * marks the IRP so IopCompleteRequest writes the 32-bit layout at completion —
+ * sync AND async, which lets the wow64 thunk stop refusing Event-based I/O. */
+pub(crate) const IRP_WOW64_IOSB32: u32 = 0x8000_0000;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub(crate) struct IoStatusBlock32 {
+    pub Status: NTSTATUS,
+    pub Information: u32,
+}
+
+/// A 32-bit kernel never hosts WoW64 guests — compile the capture out on i386
+/// (its bindgen EPROCESS has no Wow64Process field).
+#[cfg(target_arch = "x86")]
+unsafe fn IopCaptureWow64Iosb32(
+    _IoStatusBlock: PIO_STATUS_BLOCK,
+    _PreviousMode: KPROCESSOR_MODE,
+) -> bool {
+    false
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe fn IopCaptureWow64Iosb32(
+    IoStatusBlock: PIO_STATUS_BLOCK,
+    PreviousMode: KPROCESSOR_MODE,
+) -> bool {
+    if PreviousMode == 0i8 {
+        return false;
+    }
+    let Process = PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS;
+    if Process.is_null() || (*Process).Wow64Process.is_null() {
+        return false;
+    }
+    let Teb = ntkrnl_sys::ddk::PsGetCurrentThreadTeb() as *mut ntkrnl_sys::ddk::_TEB;
+    if Teb.is_null() {
+        return false;
+    }
+    let Slot = core::ptr::addr_of_mut!((*Teb).Instrumentation) as *mut usize;
+    let mut Latch: usize = 0;
+    if ntkrnl_sys::probe::safe_copy_raw(
+        core::ptr::addr_of_mut!(Latch) as *mut core::ffi::c_void,
+        Slot as *const core::ffi::c_void,
+        core::mem::size_of::<usize>(),
+    )
+    .is_err()
+        || Latch == 0
+    {
+        return false;
+    }
+    // Consume: the latch is strictly per-call — nested I/O (e.g. a future
+    // guest-APC path issuing its own read) must never inherit it.
+    let Zero: usize = 0;
+    let _ = ntkrnl_sys::probe::safe_copy_raw(
+        Slot as *mut core::ffi::c_void,
+        core::ptr::addr_of!(Zero) as *const core::ffi::c_void,
+        core::mem::size_of::<usize>(),
+    );
+    if Latch != IoStatusBlock as usize {
+        extern "C" {
+            fn DbgPrint(Format: *const i8, ...) -> u32;
+        }
+        DbgPrint(
+            b"[IOSB32] TEB latch %p != IOSB arg %p - ignoring (wow64.dll bug?)\n\0".as_ptr()
+                as *const i8,
+            Latch as *const core::ffi::c_void,
+            IoStatusBlock,
+        );
+        return false;
+    }
+    true
+}
+
 // Method constants (from IoControlCode)
 const METHOD_BUFFERED: u32 = 0;
 const METHOD_IN_DIRECT: u32 = 1;
@@ -2582,6 +2660,8 @@ pub unsafe extern "system" fn NtReadFile(
     let mut KernelIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
     let Success: BOOLEAN;
 
+    let Iosb32 = IopCaptureWow64Iosb32(IoStatusBlock, PreviousMode);
+
     Status = ObReferenceObjectByHandle(
         FileHandle,
         FILE_READ_DATA,
@@ -2597,10 +2677,21 @@ pub unsafe extern "system" fn NtReadFile(
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
 
     if PreviousMode != 0i8 {
+        let (IosbSize, IosbAlign) = if Iosb32 {
+            (
+                core::mem::size_of::<IoStatusBlock32>(),
+                core::mem::align_of::<IoStatusBlock32>(),
+            )
+        } else {
+            (
+                core::mem::size_of::<_IO_STATUS_BLOCK>(),
+                core::mem::align_of::<_IO_STATUS_BLOCK>(),
+            )
+        };
         if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
-            core::mem::size_of::<_IO_STATUS_BLOCK>(),
-            core::mem::align_of::<_IO_STATUS_BLOCK>(),
+            IosbSize,
+            IosbAlign,
             PreviousMode,
         ) {
             ObDereferenceObject(FileObject as PVOID);
@@ -2712,7 +2803,18 @@ pub unsafe extern "system" fn NtReadFile(
             {
                 IopUpdateOperationCount(IopReadTransfer);
                 IopUpdateTransferCount(IopReadTransfer, KernelIosb.Information as ULONG);
-                let write_result = write_user(IoStatusBlock, KernelIosb, PreviousMode);
+                let write_result = if Iosb32 {
+                    write_user(
+                        IoStatusBlock as *mut IoStatusBlock32,
+                        IoStatusBlock32 {
+                            Status: KernelIosb.__bindgen_anon_1.Status,
+                            Information: KernelIosb.Information as u32,
+                        },
+                        PreviousMode,
+                    )
+                } else {
+                    write_user(IoStatusBlock, KernelIosb, PreviousMode)
+                };
                 if let Err(e) = write_result {
                     if !EventObject.is_null() {
                         ObDereferenceObject(EventObject as PVOID);
@@ -2808,6 +2910,9 @@ pub unsafe extern "system" fn NtReadFile(
     }
 
     (*Irp).Flags |= IRP_READ_OPERATION | IRP_DEFER_IO_COMPLETION;
+    if Iosb32 {
+        (*Irp).Flags |= IRP_WOW64_IOSB32;
+    }
     if (*FileObject).Flags & FO_NO_INTERMEDIATE_BUFFERING != 0 {
         (*Irp).Flags |= IRP_NOCACHE;
     }
@@ -3353,6 +3458,8 @@ pub unsafe extern "system" fn NtWriteFile(
 
     CapturedByteOffset.QuadPart = 0;
 
+    let Iosb32 = IopCaptureWow64Iosb32(IoStatusBlock, PreviousMode);
+
     Status = ObReferenceFileObjectForWrite(
         FileHandle,
         PreviousMode,
@@ -3366,7 +3473,19 @@ pub unsafe extern "system" fn NtWriteFile(
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
 
     if PreviousMode != 0i8 {
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
+        if Iosb32 {
+            if let Err(e) = probe_user_buffer(
+                IoStatusBlock as *const core::ffi::c_void,
+                core::mem::size_of::<IoStatusBlock32>(),
+                core::mem::align_of::<IoStatusBlock32>(),
+                PreviousMode,
+            ) {
+                ObDereferenceObject(FileObject as PVOID);
+                return e;
+            }
+        } else {
+            ProbeForWriteIoStatusBlock(IoStatusBlock);
+        }
         ProbeForRead(Buffer, Length as ULONG_PTR, 1);
 
         if !ByteOffset.is_null() {
@@ -3479,7 +3598,13 @@ pub unsafe extern "system" fn NtWriteFile(
             if Success != 0 && KernelIosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
                 IopUpdateOperationCount(IopWriteTransfer);
                 IopUpdateTransferCount(IopWriteTransfer, KernelIosb.Information as ULONG);
-                *IoStatusBlock = KernelIosb;
+                if Iosb32 {
+                    let P = IoStatusBlock as *mut IoStatusBlock32;
+                    (*P).Status = KernelIosb.__bindgen_anon_1.Status;
+                    (*P).Information = KernelIosb.Information as u32;
+                } else {
+                    *IoStatusBlock = KernelIosb;
+                }
 
                 if !EventObject.is_null() {
                     KeSetEvent(EventObject, 0, 0u8);
@@ -3539,11 +3664,23 @@ pub unsafe extern "system" fn NtWriteFile(
         if Length != 0 {
             (*Irp).AssociatedIrp.SystemBuffer =
                 ExAllocatePoolWithQuotaTag(NonPagedPool, Length as _, TAG_IOBUF);
-            core::ptr::copy_nonoverlapping(
-                Buffer as *const u8,
-                (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+            // Fault-tolerant capture of the caller's write buffer. The C original
+            // wrapped this copy in _SEH2_TRY with an IopCleanupAfterException
+            // handler (iofunc.c:295-310); under DUMMY_PSEH that handler is dead, so
+            // a hostile Buffer (kmtest IoReadWrite) faulted memcpy+0x40. This is the
+            // third member of the memcpy+0x40 cluster — the *write* side only, which
+            // is why reads never crashed: the read path allocates SystemBuffer but
+            // copies data OUT, never from a caller-supplied source.
+            if let Err(s) = safe_copy_from_user(
+                (*Irp).AssociatedIrp.SystemBuffer,
+                Buffer,
                 Length as usize,
-            );
+                1,
+                PreviousMode,
+            ) {
+                IopCleanupAfterException(FileObject, Irp, EventObject, core::ptr::null_mut());
+                return s;
+            }
             (*Irp).Flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
         } else {
             (*Irp).Flags = IRP_BUFFERED_IO;
@@ -3563,6 +3700,9 @@ pub unsafe extern "system" fn NtWriteFile(
     }
 
     (*Irp).Flags |= IRP_WRITE_OPERATION | IRP_DEFER_IO_COMPLETION;
+    if Iosb32 {
+        (*Irp).Flags |= IRP_WOW64_IOSB32;
+    }
     if (*FileObject).Flags & FO_NO_INTERMEDIATE_BUFFERING != 0 {
         (*Irp).Flags |= IRP_NOCACHE;
     }

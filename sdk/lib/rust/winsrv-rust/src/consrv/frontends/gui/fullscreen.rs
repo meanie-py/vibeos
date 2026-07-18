@@ -1,10 +1,8 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
-use super::helpers::*;
-use super::guiterm::*;
 
-pub unsafe extern "system" fn EnterFullScreen(GuiData: PGUI_CONSOLE_DATA) -> BOOLEAN {
+pub unsafe extern "system" fn EnterFullScreen(_GuiData: PGUI_CONSOLE_DATA) -> BOOLEAN {
     let mut DevMode: DEVMODEW = core::mem::zeroed();
     DevMode.dmSize = core::mem::size_of::<DEVMODEW>() as u16;
 

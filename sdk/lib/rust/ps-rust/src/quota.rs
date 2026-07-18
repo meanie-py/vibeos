@@ -62,8 +62,8 @@ type PS_QUOTA_TYPE = usize;
 #[no_mangle]
 static mut PspDefaultQuotaBlock: EPROCESS_QUOTA_BLOCK = unsafe { core::mem::zeroed() };
 static mut PspQuotaBlockList: LIST_ENTRY = LIST_ENTRY {
-    Flink: unsafe { core::ptr::addr_of_mut!(PspQuotaBlockList) as PLIST_ENTRY },
-    Blink: unsafe { core::ptr::addr_of_mut!(PspQuotaBlockList) as PLIST_ENTRY },
+    Flink: { core::ptr::addr_of_mut!(PspQuotaBlockList) as PLIST_ENTRY },
+    Blink: { core::ptr::addr_of_mut!(PspQuotaBlockList) as PLIST_ENTRY },
 };
 static mut PspQuotaLock: KSPIN_LOCK = 0;
 

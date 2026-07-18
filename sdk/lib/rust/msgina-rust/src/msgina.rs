@@ -50,7 +50,7 @@ static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_msgina as *mut __wine_debug_channel };
+    &raw const __wine_dbch_msgina as *mut __wine_debug_channel;
 
 // #[no_mangle]: the C dimmedwindow.cpp references `extern HINSTANCE hDllInstance`,
 // so this global must export the undecorated `_hDllInstance` data symbol.

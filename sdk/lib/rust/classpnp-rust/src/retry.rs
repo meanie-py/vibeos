@@ -637,9 +637,9 @@ pub unsafe extern "C" fn StepLowMemRetry(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
                 hwMaxXferLen
             };
         } else {
-            let bytesToNextPageBoundary: ULONG = (PAGE_SIZE.wrapping_sub(
+            let bytesToNextPageBoundary: ULONG = PAGE_SIZE.wrapping_sub(
                 (((*Pkt).LowMemRetry_remainingBufPtr as u64).wrapping_rem(PAGE_SIZE as u64) as ULONG) as usize,
-  ) as u32          );
+  ) as u32 ;
             thisChunkLen = if (*Pkt).LowMemRetry_remainingBufLen < bytesToNextPageBoundary {
                 (*Pkt).LowMemRetry_remainingBufLen
             } else {

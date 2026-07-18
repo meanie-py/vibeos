@@ -1,24 +1,17 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 
-use core::ffi::c_void;
 
 use crate::parser_h::{
-    HID_COLLECTION, PHID_COLLECTION,
+    PHID_COLLECTION,
     HID_REPORT, PHID_REPORT, _HID_REPORT,
     HID_REPORT_ITEM, PHID_REPORT_ITEM,
-    USAGE_VALUE, usage_value,
 };
 use hid_sys::{
     HIDP_VALUE_CAPS, PHIDP_VALUE_CAPS,
-    HIDP_CAPS,
     HIDP_KEYBOARD_MODIFIER_STATE, PHIDP_KEYBOARD_MODIFIER_STATE,
     HIDP_KEYBOARD_DIRECTION,
     PHIDP_INSERT_SCANCODES,
-    HIDP_DEVICE_DESC,
     USAGE,
-    HidP_Input, HidP_Output, HidP_Feature,
     HIDP_STATUS_SUCCESS, HIDP_STATUS_REPORT_DOES_NOT_EXIST,
     HIDP_STATUS_INVALID_REPORT_LENGTH, HIDP_STATUS_BUFFER_TOO_SMALL,
     HIDP_STATUS_USAGE_NOT_FOUND, HIDP_STATUS_BAD_LOG_PHY_VALUES,
@@ -408,7 +401,7 @@ pub unsafe extern "C" fn HidParser_GetUsageValueWithReport(
     ReportDescriptorLength: ULONG,
 ) -> NTSTATUS {
     let mut Index: ULONG;
-    let mut Report: PHID_REPORT;
+    let Report: PHID_REPORT;
     let mut CurrentUsagePage: USHORT;
     let mut ReportItem: PHID_REPORT_ITEM;
     let mut Data: ULONG;
@@ -530,7 +523,7 @@ pub unsafe extern "C" fn HidParser_GetScaledUsageValueWithReport(
     return HIDP_STATUS_USAGE_NOT_FOUND;
 }
 #[no_mangle]
-pub unsafe extern "C" fn HidParser_GetScanCodeFromKbdUsage(mut Usage: USAGE) -> ULONG {
+pub unsafe extern "C" fn HidParser_GetScanCodeFromKbdUsage(Usage: USAGE) -> ULONG {
     if (Usage as usize)
         < (::core::mem::size_of::<[ULONG; 256]>() as usize)
             .wrapping_div(::core::mem::size_of::<ULONG>() as usize)
@@ -581,7 +574,7 @@ pub unsafe extern "C" fn HidParser_DispatchKey(
 pub unsafe extern "C" fn HidParser_TranslateKbdUsage(
     Usage: u16,
     KeyAction: i32,
-    ModifierState: *mut HIDP_KEYBOARD_MODIFIER_STATE,
+    _ModifierState: *mut HIDP_KEYBOARD_MODIFIER_STATE,
     InsertCodesProcedure: unsafe extern "system" fn(
         *mut core::ffi::c_void,
         *mut i8,
@@ -655,11 +648,11 @@ pub unsafe extern "C" fn HidParser_TranslateKbdUsage(
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_TranslateCustUsage(
-    mut Usage: USAGE,
-    mut KeyAction: HIDP_KEYBOARD_DIRECTION,
-    mut ModifierState: PHIDP_KEYBOARD_MODIFIER_STATE,
-    mut InsertCodesProcedure: PHIDP_INSERT_SCANCODES,
-    mut InsertCodesContext: PVOID,
+    Usage: USAGE,
+    KeyAction: HIDP_KEYBOARD_DIRECTION,
+    _ModifierState: PHIDP_KEYBOARD_MODIFIER_STATE,
+    InsertCodesProcedure: PHIDP_INSERT_SCANCODES,
+    InsertCodesContext: PVOID,
 ) -> NTSTATUS {
     let mut ScanCode: ULONG = 0;
     ScanCode = HidParser_GetScanCodeFromCustUsage(Usage);

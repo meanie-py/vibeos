@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import build as build_mod
 from . import cargoswap, debugcmd, hostlock, tooling
+from . import conformance as conformance_mod
 from . import farm as farm_mod
 from . import gate as gate_mod
 from . import gdbengine as gdb_mod
@@ -78,6 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
         "media whose freeldr default entry boots the MP kernel (ntkrnlmp.exe, "
         "-DVIBEOS_SMP_DEFAULT_BOOT=ON). Opt-in only; default media stays UP. "
         "Pair with `smoke --smp N` to boot it with N vCPUs",
+    )
+    b.add_argument(
+        "--hal-pic",
+        action="store_true",
+        help="i386 legacy PIC HAL escape hatch "
+        "(docs/engineering/active-lanes/i386-apic-hal-plan.md): build hal.dll "
+        "with the legacy 8259 PIC interrupt model instead of the DEFAULT "
+        "LAPIC/IOAPIC/TPR APIC HAL (-DVIBEOS_PIC_HAL=ON). i386 only (amd64 hal "
+        "is always APIC); a plain build is the APIC HAL",
     )
     b.add_argument("--strict", action="store_true")
     b.add_argument(
@@ -286,6 +296,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="which cargo-driven module to boot-swap (ntoskrnl is i386-only)",
     )
     cs.set_defaults(fn=cargoswap.cargo_swap)
+
+    cf = sub.add_parser(
+        "conformance",
+        help="NT test-corpus ratchet: build kmtest payload -> boot -> sweep -> "
+        "parse -> compare vs baseline (quest M4)",
+    )
+    arch_arg(cf)
+    cf.add_argument(
+        "--no-build",
+        action="store_true",
+        help="skip the VIBEOS_PAYLOAD=kmtest build; media must already be staged",
+    )
+    cf.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="store this run's results as the new per-arch baseline "
+        "(tools/conformance-baseline/<arch>/kmtest.txt)",
+    )
+    cf.add_argument(
+        "--gate",
+        action="store_true",
+        help="exit nonzero on any ratchet regression (default: report-only)",
+    )
+    cf.add_argument(
+        "--smp",
+        type=int,
+        default=0,
+        help="boot the sweep with N vCPUs (VIBEOS_QEMU_SMP); N>1 builds the "
+        "ntkrnlmp SMP media. For the SMP/AP lane's guest-load testing",
+    )
+    cf.add_argument(
+        "--timeout",
+        type=int,
+        default=6000,
+        help="serial-drain budget in seconds (default 6000; the sweep's launch_drain_secs is 5400)",
+    )
+    cf.set_defaults(fn=conformance_mod.conformance)
 
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")
     ps.add_argument("--json", action="store_true")

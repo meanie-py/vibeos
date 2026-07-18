@@ -178,7 +178,6 @@ unsafe extern "system" fn SamSsServiceMain(dwArgc: DWORD, pszArgv: *mut LPWSTR) 
 
 unsafe extern "system" fn DispatcherThread(pParameter: *mut core::ffi::c_void) -> u32 {
     let mut hEvent: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut dwError: u32;
 
     // TRACE
     if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_TRACE) != 0 {
@@ -195,79 +194,34 @@ unsafe extern "system" fn DispatcherThread(pParameter: *mut core::ffi::c_void) -
         );
     }
 
+    // Best-effort, BOUNDED wait for the SCM's SECURITY_SERVICES_STARTED signal,
+    // then connect. This wait is intentionally neither fatal nor INFINITE: the
+    // event is cross-process-shared with the SCM (services.exe) and that sharing
+    // is timing-fragile in this kernel — when lsasrv won the create race the
+    // SCM's SetEvent intermittently did NOT wake this waiter, so the old INFINITE
+    // wait hung DispatcherThread forever, it never reached
+    // StartServiceCtrlDispatcher, and the SCM timed SamSs out at 30s (connect
+    // result=1053: a 30s stall before SC_AutoStartComplete on EVERY boot, all
+    // arches; any added debug print perturbed the timing enough to hide it). The
+    // real sync point is the SamSs control pipe (\pipe\net\NtControlPipe0), which
+    // the SCM creates just BEFORE it signals this event and which — unlike the
+    // event — shares reliably across processes; ScConnectControlPipe (advapi32)
+    // now polls for it, so we proceed to the connect regardless of this event.
+    // Open the SCM's object if present, else create our own to wait on briefly.
     let event_name = b"S\0E\0C\0U\0R\0I\0T\0Y\0_\0S\0E\0R\0V\0I\0C\0E\0S\0_\0S\0T\0A\0R\0T\0E\0D\0\0\0"
         .as_ptr() as *const u16;
-
-    hEvent = CreateEventW(
-        core::ptr::null_mut::<_SECURITY_ATTRIBUTES>(),
-        1i32,  // TRUE
-        0i32,  // FALSE
-        event_name,
-    );
-
+    hEvent = OpenEventW(SYNCHRONIZE, 0i32, event_name);
     if hEvent.is_null() {
-        dwError = GetLastError();
-        if dwError != ERROR_ALREADY_EXISTS {
-            return dwError;
-        }
-        hEvent = OpenEventW(
-            SYNCHRONIZE,
-            0i32,  // FALSE
+        hEvent = CreateEventW(
+            core::ptr::null_mut::<_SECURITY_ATTRIBUTES>(),
+            1i32, // TRUE (manual reset)
+            0i32, // FALSE
             event_name,
         );
-        if hEvent.is_null() {
-            return GetLastError();
-        }
     }
-
-    // TRACE
-    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_TRACE) != 0 {
-        let __dbch = __wine_dbch___default;
-        ros_dbg_log(
-            __WINE_DBCL_TRACE,
-            __dbch,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/lsasrv/service.c\0"
-                .as_ptr() as *const i8,
-            b"DispatcherThread\0".as_ptr() as *const i8,
-            138i32,
-            b"Waiting for the SECURITY_SERVICES_STARTED event!\n\0".as_ptr() as *const i8,
-        );
-    }
-
-    dwError = WaitForSingleObject(hEvent, INFINITE);
-
-    // TRACE
-    if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_TRACE) != 0 {
-        let __dbch = __wine_dbch___default;
-        ros_dbg_log(
-            __WINE_DBCL_TRACE,
-            __dbch,
-            b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/lsasrv/service.c\0"
-                .as_ptr() as *const i8,
-            b"DispatcherThread\0".as_ptr() as *const i8,
-            140i32,
-            b"WaitForSingleObject returned %lu\n\0".as_ptr() as *const i8,
-            dwError,
-        );
-    }
-
-    CloseHandle(hEvent);
-
-    if dwError != WAIT_OBJECT_0 {
-        // ERR
-        if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_ERR) != 0 {
-            let __dbch = __wine_dbch___default;
-            ros_dbg_log(
-                __WINE_DBCL_ERR,
-                __dbch,
-                b"/home/curi/Projects/os-playground/vibeos-wt-kernel32/dll/win32/lsasrv/service.c\0"
-                    .as_ptr() as *const i8,
-                b"DispatcherThread\0".as_ptr() as *const i8,
-                148i32,
-                b"Wait failed!\n\0".as_ptr() as *const i8,
-            );
-        }
-        return dwError;
+    if !hEvent.is_null() {
+        let _ = WaitForSingleObject(hEvent, 3000);
+        CloseHandle(hEvent);
     }
 
     I_ScIsSecurityProcess();

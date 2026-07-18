@@ -46,7 +46,7 @@ pub unsafe extern "system" fn KoCreateInstance(
         return STATUS_INVALID_PARAMETER_3;
     }
 
-    if IsEqualGUIDAligned(InterfaceId, &IID_IUnknown) {
+    if IsEqualGUIDAligned(InterfaceId, &raw const IID_IUnknown) {
         return STATUS_INVALID_PARAMETER_4;
     }
 

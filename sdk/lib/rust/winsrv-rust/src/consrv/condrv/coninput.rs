@@ -167,7 +167,7 @@ pub unsafe extern "system" fn ConDrvInitInputBuffer(
     Console: PCONSOLE,
     InputBufferSize: ULONG,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
     ConSrvInitObject(

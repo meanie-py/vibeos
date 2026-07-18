@@ -3,7 +3,6 @@ use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, RtlAppendUnicode
 use ntkrnl_sys::rtl::RtlCopyMemory;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_NO_MEMORY};
 use ntkrnl_sys::constants::{STATUS_BUFFER_OVERFLOW, STATUS_BUFFER_TOO_SMALL, STATUS_OBJECT_TYPE_MISMATCH};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // tags.h: TAG_TEMP 'K0hG' (C multichar big-endian -> reversed bytes).

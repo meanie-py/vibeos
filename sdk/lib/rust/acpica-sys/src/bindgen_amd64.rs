@@ -1445,19 +1445,19 @@ pub struct _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
 impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub fn Reserved(&self) -> LONG64 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 8u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(0usize, 8u8) as u64) }
     }
     #[inline]
     pub fn set_Reserved(&mut self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(0usize, 8u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn Reserved_raw(this: *const Self) -> LONG64 {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 0usize,
                 8u8,
@@ -1467,7 +1467,7 @@ impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_Reserved_raw(this: *mut Self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 8usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 0usize,
@@ -1478,19 +1478,19 @@ impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     }
     #[inline]
     pub fn Hint(&self) -> LONG64 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(8usize, 56u8) as u64) }
+        unsafe { u64::cast_signed(self._bitfield_1.get(8usize, 56u8) as u64) }
     }
     #[inline]
     pub fn set_Hint(&mut self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             self._bitfield_1.set(8usize, 56u8, val as u64)
         }
     }
     #[inline]
     pub unsafe fn Hint_raw(this: *const Self) -> LONG64 {
         unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
+            u64::cast_signed(<__BindgenBitfieldUnit<[u8; 8usize]>>::raw_get(
                 ::core::ptr::addr_of!((*this)._bitfield_1),
                 8usize,
                 56u8,
@@ -1500,7 +1500,7 @@ impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     #[inline]
     pub unsafe fn set_Hint_raw(this: *mut Self, val: LONG64) {
         unsafe {
-            let val: u64 = ::core::mem::transmute(val);
+            let val: u64 = i64::cast_unsigned(val);
             <__BindgenBitfieldUnit<[u8; 8usize]>>::raw_set(
                 ::core::ptr::addr_of_mut!((*this)._bitfield_1),
                 8usize,
@@ -1513,11 +1513,11 @@ impl _KDEVICE_QUEUE__bindgen_ty_1__bindgen_ty_1 {
     pub fn new_bitfield_1(Reserved: LONG64, Hint: LONG64) -> __BindgenBitfieldUnit<[u8; 8usize]> {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 8usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 8u8, {
-            let Reserved: u64 = unsafe { ::core::mem::transmute(Reserved) };
+            let Reserved: u64 = unsafe { i64::cast_unsigned(Reserved) };
             Reserved as u64
         });
         __bindgen_bitfield_unit.set(8usize, 56u8, {
-            let Hint: u64 = unsafe { ::core::mem::transmute(Hint) };
+            let Hint: u64 = unsafe { i64::cast_unsigned(Hint) };
             Hint as u64
         });
         __bindgen_bitfield_unit

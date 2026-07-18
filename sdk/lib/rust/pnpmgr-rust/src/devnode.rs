@@ -32,12 +32,14 @@ pub static mut IopDeviceTreeLock: KSPIN_LOCK = 0;
 #[used]
 pub static mut IopNumberDeviceNodes: i32 = 0;
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IopGetDeviceNode(
+pub unsafe fn IopGetDeviceNode(
     DeviceObject: PDEVICE_OBJECT,
 ) -> PDEVICE_NODE {
     let DeviceObject = opaque_ptr(DeviceObject);
     (*((*DeviceObject).DeviceObjectExtension as PEXTENDED_DEVOBJ_EXTENSION)).DeviceNode
+}
 }
 
 #[no_mangle]

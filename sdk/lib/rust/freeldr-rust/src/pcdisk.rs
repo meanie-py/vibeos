@@ -232,8 +232,8 @@ unsafe fn DiskGetExtendedDriveParameters(
 
     RegsIn.b.ah = 0x48;
     RegsIn.b.dl = DriveNumber;
-    RegsIn.x.ds = ((BIOSCALLBUFSEGMENT) as u16);
-    RegsIn.w.si = ((BIOSCALLBUFOFFSET) as u16);
+    RegsIn.x.ds = (BIOSCALLBUFSEGMENT) as u16 ;
+    RegsIn.w.si = (BIOSCALLBUFOFFSET) as u16 ;
 
     Int386(0x13, &mut RegsIn, &mut RegsOut);
     if INT386_SUCCESS(RegsOut) == 0 {
@@ -427,8 +427,8 @@ unsafe fn PcDiskReadLogicalSectorsLBA(
 
     RegsIn.b.ah = 0x42;
     RegsIn.b.dl = DriveNumber;
-    RegsIn.x.ds = ((BIOSCALLBUFSEGMENT) as u16);
-    RegsIn.w.si = ((BIOSCALLBUFOFFSET) as u16);
+    RegsIn.x.ds = (BIOSCALLBUFSEGMENT) as u16 ;
+    RegsIn.w.si = (BIOSCALLBUFOFFSET) as u16 ;
 
     RetryCount = 0;
     while RetryCount < 3 {
@@ -577,7 +577,7 @@ pub unsafe extern "C" fn PcDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: PG
         (*Geometry).Cylinders = (*DiskDrive).ExtGeometry.Cylinders;
         (*Geometry).Heads = (*DiskDrive).ExtGeometry.Heads;
         (*Geometry).SectorsPerTrack = (*DiskDrive).ExtGeometry.SectorsPerTrack;
-        (*Geometry).BytesPerSector = (((*DiskDrive).ExtGeometry.BytesPerSector) as u32);
+        (*Geometry).BytesPerSector = ((*DiskDrive).ExtGeometry.BytesPerSector) as u32 ;
         (*Geometry).Sectors = (*DiskDrive).ExtGeometry.Sectors;
     } else {
         *Geometry = (*DiskDrive).Geometry;

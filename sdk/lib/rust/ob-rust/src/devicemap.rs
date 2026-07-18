@@ -42,7 +42,7 @@ pub static mut ObpLUIDDeviceMapsEnabled: ULONG = 0;
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 #[no_mangle]
 pub static DEVICEMAP_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
-    ntkrnl_sys::SubVector(unsafe { [
+    ntkrnl_sys::SubVector({ [
         ntkrnl_sys::cv!("Session Manager", "LUIDDeviceMapsDisabled",
             core::ptr::addr_of_mut!(ObpLUIDDeviceMapsDisabled)),
     ] });

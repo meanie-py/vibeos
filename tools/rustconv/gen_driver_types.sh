@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|afd|msafd|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -580,6 +580,106 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]winsock\.h' --allowlist-file '.*[/\\]ws2def\.h'
                   --allowlist-file '.*[/\\]wsahelp\.h' --allowlist-file '.*afd[/\\]shared\.h'
                   --allowlist-file '.*[/\\]mswsock\.h' --allowlist-file '.*[/\\]tdi\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
+  ws2_32)
+    # USERMODE Winsock 2.2 library (dll/win32/ws2_32) — the rung ABOVE msafd in the
+    # netstack→winsock vertical, and the TOP of it: the public Win32 sockets API that
+    # applications call. ws2_32 dispatches through the transport-provider catalog into
+    # msafd's WSP* entry points (which become IOCTL_AFD_* down to afd.sys). Same USERMODE=1
+    # treatment as msafd: blocklist against ntdll-sys and re-export `pub use ntdll_sys::nt::*;`
+    # so NT base types keep ONE identity across the whole vertical.
+    #
+    # Wrapper = inc/ws2_32.h, which IS the module's PCH (CMakeLists: `add_pch(ws2_32
+    # inc/ws2_32.h SOURCE)`). That matters: the .c files include NOTHING themselves — they
+    # rely entirely on the PCH having already pulled windef/winbase/winreg/winnls/winuser,
+    # ws2spi, the NDK rtlfuncs, pseh2, ws2help, nsp_dns, iptypes, and finally the private
+    # inc/ws2_32p.h. ws2_32p.h has no #includes of its own and does not compile standalone,
+    # so the PCH is the ONLY correct wrapper.
+    #
+    # The whole point of allowlisting ws2_32p.h is the object model: TCATALOG/TCATALOG_ENTRY/
+    # TPROVIDER (transport-provider catalog), NSCATALOG/NSPROVIDER/NSQUERY (namespace),
+    # WSPROCESS/WSTHREAD/WSSOCKET (the refcounted per-process/thread/socket objects), and
+    # WSASYNCBLOCK (the async window-message machinery). These are reference-counted C-with-
+    # objects with hot field access on every socket call — hand-transcribing them is exactly
+    # the offset-drift class `scan_magic_offsets` exists to catch, so GENERATE them.
+    #
+    # BLOCKLIST_FUNCS=1: ws2_32p.h declares the internal Ws*/Ns* prototypes (WsProcOpen,
+    # WsSockOpen, WsTcOpen, ...) that the translated modules themselves define — emitting them
+    # as externs here would collide under the flat `use crate::types::*` glob.
+    # BLOCKLIST_VARS=1: ws2_32 keeps module globals (WsProcess/WsAsyncQueue/startup lock).
+    # CALLBACK_SYSTEM=1: the LPWSP*/LPFN_*/upcall fn-ptr types must be extern "system" —
+    # on i386 these are stdcall, and a cdecl fn-ptr in a provider dispatch slot is a silent
+    # stack imbalance on every socket call (the ole32 CALLBACK class, one layer down).
+    #
+    # -DLE mirrors the module's own `add_definitions(-DLE)`; the extra -I matches its
+    # `include_directories(inc ${REACTOS_SOURCE_DIR}/sdk/include/reactos/winsock)`.
+    # Version macros track the global usermode build (DLL_EXPORT_VERSION default 0x502 →
+    # ws2help_static is NOT linked, so no ws2help static surface to model).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    BLOCKLIST_VARS=1
+    CALLBACK_SYSTEM=1
+    DRIVER_DIR="${SRC}/dll/win32/ws2_32/inc"
+    # ws2_32.h is the PCH, but addrinfo.c/rnr.c ALSO include <ws2tcpip.h> on top of it (that
+    # is where SOCKADDR_IN6/IN6_ADDR/addrinfo live — via ws2ipdef.h). Allowlisting a header
+    # the wrapper never includes does nothing, so include it here as the .c files do.
+    WRAPPER_INC=$'#include "ws2_32.h"\n#include <ws2tcpip.h>'
+    # ws2ipdef.h/ws2tcpip.h carry the IPv6 surface (sockaddr_in6 with its scope-id union,
+    # in6_addr, ipv6_mreq) that addrinfo.c/rnr.c use. Leaving them out does not produce an
+    # error — it produces a MISSING type, which the model then hand-invents, and a
+    # hand-invented sockaddr_in6 is a silent wire-format bug.
+    ALLOW_FILES=( --allowlist-file '.*ws2_32[/\\]inc[/\\]ws2_32p?\.h'
+                  --allowlist-file '.*[/\\]ws2spi\.h' --allowlist-file '.*[/\\]winsock2\.h'
+                  --allowlist-file '.*[/\\]winsock\.h' --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]ws2ipdef\.h' --allowlist-file '.*[/\\]ws2tcpip\.h'
+                  --allowlist-file '.*[/\\]ws2help\.h' --allowlist-file '.*[/\\]nsp_dns\.h'
+                  --allowlist-file '.*[/\\]nspapi\.h' --allowlist-file '.*[/\\]svcguid\.h'
+                  --allowlist-file '.*[/\\]iptypes\.h' --allowlist-file '.*[/\\]wsahelp\.h'
+                  --allowlist-file '.*[/\\]mswsock\.h' )
+    EXTRA_INC=( -I"${SRC}/sdk/include/reactos/winsock" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 -DLE )
+    ;;
+  wshtcpip)
+    # USERMODE Winsock TCP/IP helper DLL (dll/win32/wshtcpip) — the transport-specific
+    # WSH provider ws2_32/msafd load to resolve the TCP/IP address family: it maps winsock
+    # protocol/socket params to TDI and answers WSHOpenSocket/WSHGetSocketInformation/
+    # WSHIoctl. Same USERMODE=1 treatment as msafd/ws2_32: blocklist against ntdll-sys and
+    # re-export `pub use ntdll_sys::nt::*;` so the NT base types keep ONE identity with the
+    # translated modules (`use ntdll_sys::nt::*`). Only the WSH/TDI/winsock structs go local.
+    #
+    # Wrapper = wshtcpip.h (it pulls windef/winbase/wsahelp/tdiinfo/tcpioctl/tdilib/
+    # ws2tcpip/rtlfuncs — the whole type surface). iflist.c additionally pulls iptypes.h
+    # (IP_ADAPTER_INFO for the interface enumeration), so allowlist it too. The private
+    # structs the translation touches: WSH_HANDLE/WSH_*_INFO + WINSOCK_MAPPING (wsahelp.h),
+    # TDIEntityID/TDIObjectID/TDI_ADDRESS_* (tdiinfo.h), TCP_REQUEST_QUERY_INFORMATION_EX
+    # (tcpioctl.h), SOCKADDR/SOCKADDR_IN/SOCKADDR_IN6/WSAPROTOCOL_INFOW (ws2tcpip →
+    # winsock2/ws2def/ws2ipdef), IP_ADAPTER_INFO/IP_ADDR_STRING (iptypes.h). A hand-invented
+    # sockaddr_in6 or TDIObjectID is a silent wire-format/IOCTL bug — the scan_magic_offsets
+    # class — so GENERATE them.
+    #
+    # BLOCKLIST_FUNCS=1: wsahelp.h/tdilib.h declare WSH*/tdi-helper prototypes the translated
+    # modules define/call as their own externs — emitting them here collides under the flat
+    # `use crate::types::*` glob. CALLBACK_SYSTEM=1: WSH provider entry points are stdcall on
+    # i386, and a cdecl fn-ptr in a provider slot is a silent stack imbalance (the ws2_32/
+    # ole32 CALLBACK class). Version macros track the global usermode build (0x502).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    CALLBACK_SYSTEM=1
+    DRIVER_DIR="${SRC}/dll/win32/wshtcpip"
+    WRAPPER_INC=$'#include "wshtcpip.h"\n#include <iptypes.h>'
+    ALLOW_FILES=( --allowlist-file '.*wshtcpip[/\\]wshtcpip\.h'
+                  --allowlist-file '.*[/\\]wsahelp\.h' --allowlist-file '.*[/\\]tdiinfo\.h'
+                  --allowlist-file '.*[/\\]tcpioctl\.h' --allowlist-file '.*[/\\]tdilib\.h'
+                  --allowlist-file '.*[/\\]tdi\.h' --allowlist-file '.*[/\\]ws2tcpip\.h'
+                  --allowlist-file '.*[/\\]winsock2\.h' --allowlist-file '.*[/\\]winsock\.h'
+                  --allowlist-file '.*[/\\]ws2def\.h' --allowlist-file '.*[/\\]ws2ipdef\.h'
+                  --allowlist-file '.*[/\\]iptypes\.h' )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/tdilib" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )

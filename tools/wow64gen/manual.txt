@@ -36,6 +36,7 @@ NtOpenDirectoryObject
 NtOpenEvent
 NtOpenFile
 NtOpenKey
+NtQueryValueKey
 NtOpenMutant
 NtOpenProcess
 NtOpenSection
@@ -58,3 +59,35 @@ NtOpenKeyedEvent
 NtConnectPort
 NtSecureConnectPort
 NtContinue
+# M8: kernel->user callback completion — the guest's 32-bit result buffer
+# must be translated per in-flight callback type (wow64_callback.c).
+NtCallbackReturn
+# --- M10: the IO_STATUS_BLOCK family ---
+# Every one of these takes an IO_STATUS_BLOCK, whose `ULONG_PTR Information` is
+# 4 bytes on i386 and 8 on the host: the guest's struct is 8 bytes, the host
+# kernel writes 16. Auto-thunking them (which is what happened before M10) both
+# overflows the guest struct by 8 bytes AND reads Information from the wrong
+# offset. The first six + NtQueryDirectoryFile are implemented in wow64_manual.c
+# (Doom needs ReadFile); the rest are listed so they fail LOUD instead of
+# silently corrupting the guest — implement on demand.
+NtReadFile
+NtWriteFile
+NtQueryInformationFile
+NtSetInformationFile
+NtQueryVolumeInformationFile
+NtFlushBuffersFile
+NtSetVolumeInformationFile
+NtReadFileScatter
+NtWriteFileGather
+NtLockFile
+NtUnlockFile
+NtQueryEaFile
+NtSetEaFile
+NtQueryQuotaInformationFile
+NtSetQuotaInformationFile
+NtCancelIoFile
+NtNotifyChangeKey
+NtNotifyChangeMultipleKeys
+NtRemoveIoCompletion
+NtCreateIoCompletion
+NtOpenIoCompletion

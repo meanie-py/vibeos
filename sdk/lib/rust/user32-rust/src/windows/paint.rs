@@ -48,7 +48,15 @@ extern "system" {
 // user32-internal C symbols (still in the cohab C objects of this DLL).
 // `FASTCALL` → `extern "fastcall"` on i386; data globals → plain extern statics.
 // ---------------------------------------------------------------------------
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn ValidateHwnd(hwnd: HWND) -> PWND;
+    fn BeginIfHookedUserApiHook() -> BOOL;
+    fn EndUserApiHook() -> BOOL;
+    fn IsInsideUserApiHook() -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn ValidateHwnd(hwnd: HWND) -> PWND;
     fn BeginIfHookedUserApiHook() -> BOOL;
     fn EndUserApiHook() -> BOOL;
@@ -119,7 +127,7 @@ unsafe fn CreateFrameBrushes() {
 #[allow(dead_code)]
 #[no_mangle]
 pub unsafe extern "C" fn DeleteFrameBrushes() {
-    let count = FrameBrushes.len(); // sizeof(FrameBrushes)/sizeof(HBRUSH) == 13
+    let count = (*(&raw const FrameBrushes)).len(); // sizeof(FrameBrushes)/sizeof(HBRUSH) == 13
     for Brush in 0..count {
         if !FrameBrushes[Brush].is_null() {
             DeleteObject(FrameBrushes[Brush] as HGDIOBJ);

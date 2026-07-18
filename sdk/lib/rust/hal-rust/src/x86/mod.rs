@@ -12,11 +12,13 @@
 // pcr, dma per-item-gated). Every other module is full-HAL and is
 // `#[cfg(not(feature = "minihal"))]` so its kernel deps stay out of
 // libhal_rust_mini.a. feedback_freeldr_clean_build_regression
-#[cfg(target_arch = "x86_64")]
+// APIC interrupt-model backend (LAPIC/IOAPIC/TPR). `hal_apic` = amd64 always,
+// or i386 with the `apic` feature (i386-apic-hal lane). See build.rs.
+#[cfg(hal_apic)]
 pub mod apic;
-#[cfg(target_arch = "x86_64")]
+#[cfg(hal_apic)]
 pub mod apic_halinit;
-#[cfg(target_arch = "x86_64")]
+#[cfg(hal_apic)]
 pub mod apictimer;
 pub mod beep;
 pub mod buildtype;
@@ -60,7 +62,7 @@ pub mod kdpci;
 // ACPI\PNP0303. File kept (never-delete). Task #4.
 #[cfg(any())]
 pub mod legacy_halpnpdd;
-#[cfg(target_arch = "x86_64")]
+#[cfg(hal_apic)]
 pub mod madt;
 #[cfg(not(feature = "minihal"))]
 pub mod memory;
@@ -73,36 +75,42 @@ pub mod pcibus;
 pub mod pcidata;
 pub mod pcr;
 pub mod pic;
-#[cfg(all(target_arch = "x86", not(feature = "minihal")))]
+#[cfg(all(hal_pic, not(feature = "minihal")))]
 pub mod pic_halinit;
-#[cfg(target_arch = "x86")]
+#[cfg(hal_pic)]
 pub mod pic_pic;
 #[cfg(not(feature = "minihal"))]
 pub mod processor;
 pub mod reboot;
-#[cfg(target_arch = "x86_64")]
+#[cfg(hal_apic)]
 pub mod rtctimer;
-// profil only on i386 — amd64 has its own LAPIC-timer-based version
-// in apic/apictimer.c (will translate later as part of the APIC backend).
+// portio: i386 port-I/O PCI config — needed by BOTH flavors (bus/IO, not
+// interrupt-controller), so it stays keyed on the arch, not the flavor.
 #[cfg(target_arch = "x86")]
 pub mod portio;
-#[cfg(all(target_arch = "x86", not(feature = "minihal")))]
+// profil: RTC-based profiling for the PIC flavor. The APIC flavor profiles via
+// the LAPIC timer (apictimer), so this is hal_pic-only.
+#[cfg(all(hal_pic, not(feature = "minihal")))]
 pub mod profil;
 pub mod spinlock;
 #[cfg(not(feature = "minihal"))]
 pub mod sysbus;
 #[cfg(not(feature = "minihal"))]
 pub mod sysinfo;
-#[cfg(target_arch = "x86")]
+// timer: the 8254 PIT system clock — PIC flavor only (and the FreeLDR mini-HAL,
+// which is always hal_pic). The APIC flavor's clock is the RTC (rtctimer).
+#[cfg(hal_pic)]
 pub mod timer;
-#[cfg(target_arch = "x86_64")]
+#[cfg(hal_apic)]
 pub mod tsc;
-// SMP AP-start + real-IPI backend (smp-bringup-quest.md M2). amd64-only —
-// i386 runs the PIC HAL (no LAPIC/MADT); its SMP story is M5. The colliding
-// UP stubs in up.rs/processor.rs are cfg'd out under this same condition.
-#[cfg(all(feature = "smp", target_arch = "x86_64", not(feature = "minihal")))]
+// SMP AP-start + real-IPI backend (smp-bringup-quest.md M2/M5). Keyed on the
+// APIC flavor, not the arch: amd64 is always hal_apic, and i386 gets it on the
+// (now default) APIC HAL — SMP requires the LAPIC/IOAPIC/MADT the PIC flavor
+// lacks, so hal_pic stays UP. The colliding UP stubs in up.rs/processor.rs are
+// cfg'd out under this same condition (their stub gate flips to hal_pic).
+#[cfg(all(feature = "smp", hal_apic, not(feature = "minihal")))]
 pub mod smp_processor;
-#[cfg(all(feature = "smp", target_arch = "x86_64", not(feature = "minihal")))]
+#[cfg(all(feature = "smp", hal_apic, not(feature = "minihal")))]
 pub(crate) mod trampoline;
 pub mod up;
 pub mod usage;

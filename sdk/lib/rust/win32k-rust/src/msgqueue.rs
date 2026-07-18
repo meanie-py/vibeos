@@ -129,7 +129,7 @@ unsafe fn UserHMGetHandle<T>(obj: *mut T) -> HWND {
 // RECTL_bPointInRect / RECTL_vSetRect (rect.h FORCEINLINE).
 #[inline(always)]
 unsafe fn RECTL_bPointInRect(prcl: *const RECTL, x: LONG, y: LONG) -> BOOLEAN {
-    ((x >= (*prcl).left && x < (*prcl).right && y >= (*prcl).top && y < (*prcl).bottom) as BOOLEAN)
+    (x >= (*prcl).left && x < (*prcl).right && y >= (*prcl).top && y < (*prcl).bottom) as BOOLEAN
 }
 #[inline(always)]
 unsafe fn RECTL_vSetRect(prcl: *mut RECTL, left: LONG, top: LONG, right: LONG, bottom: LONG) {
@@ -1425,7 +1425,7 @@ unsafe fn co_MsqDispatchOneSentMessage_impl(pti: PTHREADINFO) -> BOOLEAN {
 
     Entry = RemoveHeadList(core::ptr::addr_of_mut!((*pti).SentMessagesListHead));
     Message = (Entry as *mut u8).sub(
-        &(*(core::ptr::null::<USER_SENT_MESSAGE>())).ListEntry as *const _ as usize,
+        core::mem::offset_of!(USER_SENT_MESSAGE, ListEntry),
     ) as PUSER_SENT_MESSAGE;
 
     (*Message).flags |= (SMF_RECEIVERBUSY | SMF_RECEIVEDMESSAGE) as u32;
@@ -3128,8 +3128,8 @@ unsafe fn MsqInitializeMessageQueue_impl(
     }
     RtlCopyMemory(
         (*MessageQueue).afKeyState.as_mut_ptr() as *mut _,
-        gafAsyncKeyState.as_ptr() as *const _,
-        core::mem::size_of_val(&gafAsyncKeyState) as _,
+        (*(&raw const gafAsyncKeyState)).as_ptr() as *const _,
+        core::mem::size_of_val(&*(&raw const gafAsyncKeyState)) as _,
     );
     (*MessageQueue).ptiMouse = pti;
     (*MessageQueue).ptiKeyboard = pti;

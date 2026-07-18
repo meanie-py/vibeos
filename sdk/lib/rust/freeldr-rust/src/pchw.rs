@@ -200,7 +200,7 @@ unsafe fn DetectBiosFloppyPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DAT
     let mut PeripheralKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let mut Size: ULONG;
     let mut FloppyNumber: UCHAR;
-    let FloppyType: UCHAR;
+    let _FloppyType: UCHAR;
     let MaxDensity: [ULONG; 6] = [0, 360, 1200, 720, 1440, 2880];
     let mut Ptr: PUCHAR;
 
@@ -306,7 +306,7 @@ unsafe fn DetectBiosFloppyController(BusKey: PCONFIGURATION_COMPONENT_DATA) -> P
         return core::ptr::null_mut();
     }
 
-    RtlZeroMemory(PartialResourceList as *mut core::ffi::c_void, ((Size) as usize));
+    RtlZeroMemory(PartialResourceList as *mut core::ffi::c_void, (Size) as usize );
     (*PartialResourceList).Version = 1;
     (*PartialResourceList).Revision = 1;
     (*PartialResourceList).Count = 3;
@@ -360,10 +360,10 @@ pub unsafe extern "C" fn DetectBiosDisks(
     BusKey: PCONFIGURATION_COMPONENT_DATA,
 ) {
 
-    let mut ControllerKey: PCONFIGURATION_COMPONENT_DATA;
+    let ControllerKey: PCONFIGURATION_COMPONENT_DATA;
     let mut DiskKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
-    let mut Int13Drives: PCM_INT13_DRIVE_PARAMETER;
+    let Int13Drives: PCM_INT13_DRIVE_PARAMETER;
     let mut Geometry: GEOMETRY = core::mem::zeroed();
     let DiskCount: UCHAR;
     let mut DriveNumber: UCHAR;
@@ -381,13 +381,13 @@ pub unsafe extern "C" fn DetectBiosDisks(
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1])
         + core::mem::size_of::<CM_INT13_DRIVE_PARAMETER>() as ULONG * DiskCount as ULONG;
     
-    PartialResourceList = FrLdrHeapAlloc(((Size) as usize), TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
+    PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
         ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCSTR);
         return;
     }
 
-    RtlZeroMemory(PartialResourceList as *mut core::ffi::c_void, ((Size) as usize));
+    RtlZeroMemory(PartialResourceList as *mut core::ffi::c_void, (Size) as usize );
     (*PartialResourceList).Version = 1;
     (*PartialResourceList).Revision = 1;
     (*PartialResourceList).Count = 1;
@@ -403,11 +403,11 @@ pub unsafe extern "C" fn DetectBiosDisks(
         DriveNumber = 0x80 + i as UCHAR;
 
         if MachDiskGetDriveGeometry(DriveNumber, core::ptr::addr_of_mut!(Geometry)) != 0 {
-            (*Int13Drives.offset(i as isize)).DriveSelect = ((DriveNumber) as u16);
+            (*Int13Drives.offset(i as isize)).DriveSelect = (DriveNumber) as u16 ;
             (*Int13Drives.offset(i as isize)).MaxCylinders = Geometry.Cylinders - 1;
             (*Int13Drives.offset(i as isize)).SectorsPerTrack = Geometry.SectorsPerTrack as USHORT;
             (*Int13Drives.offset(i as isize)).MaxHeads = (Geometry.Heads - 1) as USHORT;
-            (*Int13Drives.offset(i as isize)).NumberDrives = ((DiskCount) as u16);
+            (*Int13Drives.offset(i as isize)).NumberDrives = (DiskCount) as u16 ;
 
             TRACE(
                 b"Disk %x: %u Cylinders  %u Heads  %u Sectors  %u Bytes\n\0".as_ptr() as PCSTR, (DriveNumber) as usize, (Geometry.Cylinders - 1) as usize, (Geometry.Heads - 1) as usize, (Geometry.SectorsPerTrack) as usize, (Geometry.BytesPerSector) as usize,
@@ -455,7 +455,7 @@ pub unsafe extern "C" fn DetectBiosDisks(
 pub unsafe extern "C" fn FrLdrCheckCpuCompatibility() {
     dbgcon(b'F'); dbgcon(b'C'); dbgcon(b'C');
     let mut CpuInformation: [INT; 4] = [-1; 4];
-    let mut NumberOfIds: ULONG;
+    let NumberOfIds: ULONG;
 
     __cpuid(CpuInformation.as_mut_ptr(), 0);
 

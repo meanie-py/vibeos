@@ -8,13 +8,11 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
-#![allow(unused_unsafe)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 // Debug-print macros hoisted to the dbgprint-rust leaf. Re-export at this crate's
 // root so iomgr's `crate::dbg_print!(…)` / `crate::wstr!(…)` / `crate::swprintf!(…)`
@@ -24,6 +22,22 @@
 // its local w!/ARM64_UART_TRACE!/CONTAINING_RECORD!/FIELD_OFFSET! macros are
 // defined inside the module files and travel with them.
 pub use dbgprint_rust::{dbg_print, swprintf, wstr};
+
+// Emit a fn twice: `extern "fastcall"` on i386, `extern "C"` elsewhere.
+// FASTCALL only exists as a distinct ABI on x86; rustc treats "fastcall" as "C"
+// on other arches today and makes it a HARD ERROR on newer toolchains
+// (unsupported_calling_conventions). Same pattern as ex-rust's fastcall_export!.
+macro_rules! fastcall_fn {
+    ($(#[$attr:meta])* $vis:vis unsafe fn $name:ident($($params:tt)*) $(-> $ret:ty)? $body:block) => {
+        $(#[$attr])*
+        #[cfg(target_arch = "x86")]
+        $vis unsafe extern "fastcall" fn $name($($params)*) $(-> $ret)? $body
+
+        $(#[$attr])*
+        #[cfg(not(target_arch = "x86"))]
+        $vis unsafe extern "C" fn $name($($params)*) $(-> $ret)? $body
+    };
+}
 
 pub mod global_barrier;
 

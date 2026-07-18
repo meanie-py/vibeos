@@ -991,8 +991,8 @@ pub unsafe extern "system" fn AtapiFindPCIController(
             BrokenAdapters[i as usize].VendorIdLength,
             BrokenAdapters[i as usize].DeviceId as PUCHAR,
             BrokenAdapters[i as usize].DeviceIdLength,
-            &mut PCIC_functionNumber,
-            &mut PCIC_slotNumber,
+            &raw mut PCIC_functionNumber,
+            &raw mut PCIC_slotNumber,
             (*ConfigInfo).SystemIoBusNumber,
             &mut lastSlot,
         ) != 0

@@ -23,7 +23,7 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 | **DUMMY_PSEH** resolution | spike + docs, direction open | **see through** (high value) |
 | **Doom on vibeos** / screen-painting / perf | showcase landed | done — winding down |
 | **IRQL/spinlock RAII** audit | 0 leaks; 130 candidates catalogued | **park** — adopt incrementally ([`../engineering/archive/irql-raii-conversion-queue.md`](../engineering/archive/irql-raii-conversion-queue.md)) |
-| **sync-instrumentation** (lockdep/waitdep/cswitchdep) | landed / phase-1 active | keep as always-on tripwires |
+| **sync-instrumentation** (lockdep/waitdep/cswitchdep) | landed — cswitchdep all 4 phases done, lane closed 2026-07-11 (×3 arches, all 5 taps + decoder + farm) | keep as always-on tripwires; follow-ons in the ledger |
 | the **linter suite** (ghost-tax Tier 1) | landed + 0-NEW gated | burn stock opportunistically |
 
 ### Tier 1 — Finish the high-value unlocks
@@ -45,7 +45,7 @@ Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 fro
 
 | Batch | Top targets (native LOC) |
 |---|---|
-| **Winsock / net client** | ws2_32 (14K), dhcpcsvc (6.4K), dnsapi (3.2K), mswsock, ws2help, wshtcpip |
+| **Winsock / net client** | ws2_32 (14K) ✅, **wshtcpip ✅** (2026-07-17, first satellite — recipe in its commit); dhcpcsvc (6.4K); dnsapi (3.2K, +adns/RPC), mswsock, ws2help (dual-role static lib) — all **translated & banked** (`tools/rustconv/.responses/`), integration owed |
 | **Setup / PnP / device** | devmgr (10K), netcfgx (9K), syssetup (9K), umpnpmgr (7K), newdev, msports |
 | **Control panels (`dll/cpl`)** | desk (11.5K), sysdm (7.9K), intl (5.2K), mmsys (3.8K), timedate, access, main, usrmgr, powercfg, input — ~15 CPLs, uniform shape, very batchable |
 | **Services (`base/services`)** | eventlog (3.5K), netshell (4.5K), svchost, wkssvc, dnsrslvr, audiosrv, wlansvc |
@@ -115,6 +115,8 @@ Current translations are direct C transliterations (`unsafe` everywhere, raw poi
 - Replace raw pointer arithmetic with typed wrapper structs
 - This is a LATER concern — correctness first, idioms second
 
+> **Concrete design → [`../engineering/idiomatic-rust-idiomization-design.md`](../engineering/idiomatic-rust-idiomization-design.md)** (2026-07-16). The executable plan: a **two-phase** program — (1) a *mechanical* trampoline breakout (`rustconv breakout`, an AST transform, free + behavior-preserving, splits every `#[no_mangle] extern fn` into a thin ABI trampoline + a `_rs()` impl, lands gate-once across ~20–24K exports); (2) *incremental* idiomization of `_rs` to `Result<(T,NTSTATUS),NTSTATUS>` + references. Includes the **reachability ceiling** (public DDK ABI stays raw — `DeviceExtension` 15.6K, `IoStatus`, stack-locations; private plumbing idiomizes now — MMVAD/MMPFN/KWAIT_BLOCK/handle-table), the **IRP façade/DTO experiment** (idiomatic interior + `#[repr(C)]` mailbox, reconcile at owned API seams; soundness test = *async observation must be API-gated*), the **compile-collapse design rule** (hot-path primitives generic/`#[inline]` to cross the `lto=false`/`cgu=256` firewall; `#[no_mangle]` only at the ABI wall), and the **arm64/x86 asymmetry** (shared driver source shackles arm64 to x86's WDM ABI; the internal/external split is what lets it diverge). Sequencing: (a) finish translating → (b) idiomize *ABI-preserving* [this] → (c) driver-model XP→Win10 [§7-adjacent, separate later project, the only ABI-moving one].
+
 ### 2d. Cross-Model Review Integration — Size: S
 
 Already proven with Codex. Formalize into the pipeline:
@@ -142,9 +144,13 @@ Already designed, partially implemented. Transform `_SEH2_TRY`/`_SEH2_EXCEPT` pa
 
 **Size: L** — The infrastructure exists but applying it across all subsystems and handling the edge cases (nested SEH, cross-function exception flow) is significant work.
 
+> **Note:** the `_rs()` output shape and the two-phase mechanical-breakout-then-idiomize structure are unified with §2c in [`../engineering/idiomatic-rust-idiomization-design.md`](../engineering/idiomatic-rust-idiomization-design.md). Stage 3 (SEH/Result/RAII) and §2c (raw-ptr → idiomatic) are the same `_rs` de-transliteration seen from two angles.
+
 ---
 
 ## 4. Testing Infrastructure Modernization
+
+> **Inline-asm safety — design → [`../engineering/asm-safety-design.md`](../engineering/asm-safety-design.md)** (2026-07-16, Size: M). ~850 asm blocks split into two regimes: **pure** (barriers/atomics/portio — already Kani/loom-tested in `slist`) and **privileged** (CR/MSR/cli-sti/context-switch — `#GP` in ring 3, untestable in userspace). Three moves: (1) an **asm-constraint linter** (the `verify_ffi` of asm — cross-check instructions vs declared `options`/clobbers; catches the CMPXCHG16B-`rbx` under-declared-clobber class that cost a multi-hour 0x50); (2) **one-wrapper-per-instruction** consolidation (~850 sites → ~40 primitives) + prefer `core::arch` intrinsics; (3) test the privileged half by **shrinking the asm to its irreducible instruction** (test the pure logic, the trampoline lever) + the existing **QEMU ring-0 harness** (`test_kernel.py`) + extending the **`verify_sacred_primitives` "survived optimization"** gate.
 
 Current testing: QEMU smoke tests (boot to desktop) + Rust host tests (unit + Kani + Loom). This is necessary but insufficient.
 
@@ -441,28 +447,72 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   channel — highest-value); PuTTY payload (pure-YAML generalization exam).
 - [ ] **arm64 harness waits sweep**: boot_timeout right-sized (540→180); net-suite/snapshot/
   per-milestone waits likely still oversized.
+- [ ] **cswitchdep follow-ons** *(cswitchdep lane closed 2026-07-11, `cswitchdep-design.md`)*:
+  (a) per-check subset arming `CSWITCH=irql,parity` — deliberately not built (would add a
+  runtime-mask branch to every hot-path tap for a single-digit-% overhead the cost model
+  already accepts); cheap to add if a measured soak overhead ever justifies it. (b) The
+  overnight cswitch/lockdep farm soak — run `vibeos-cli farm ... ` when the host is quiet and
+  read the new `farm-report` "tripwire hits" section (clusters green-boot violations).
+- [x] **Stable-everything toolchain program** — **DONE 2026-07-12** (lane `stable-toolchain`;
+  writeup `../engineering/stable-toolchain-plan.md`). All 4 nightly deps killed:
+  (1) `link_llvm_intrinsics` → `code_addr!()`. (2) `-Z build-std` + the custom JSON targets →
+  amd64/arm64 now build the **builtin triples on pinned stable**; 80 target JSONs deleted;
+  `abi-return-struct-as-int` audit discharged (proven inert off 32-bit x86); ntoskrnl `.text`
+  measured **+0.4% amd64 / −2.9% arm64** (the feared ~2.4× never materialised). (3) `c_variadic`
+  → C `va_start` shims + a `varargs-rust` wrapper; zero of the 184 call sites changed.
+  (4) `linkage` → the `hal-cargo` use was vestigial, just deleted. Toolchain now pinned
+  (`rust-toolchain.toml` + `.rust-nightly`). **i386 kernel is the sole remaining nightly cell**,
+  hard-blocked upstream on `rustc-abi=x86-softfloat` — it RETIRES with the wow64 lane, not fixed.
+- [ ] **30 pre-existing infinite self-jump functions** *(found by the new
+  `tools/scan_self_recursive.py`; baselined in `tools/lint-baseline/scan_self_recursive.txt`,
+  gate fails on NEW ones)*: functions whose first instruction jumps to their own entry — the CPU
+  spins forever with **no bugcheck and no serial output**. 23× a C `exp2()` that LLVM folded into
+  a call to itself (same idiom-recursion trap as field manual §9.65, in C — needs
+  `-fno-builtin-exp2` on those TUs); classpnp's local `KeRaiseIrql`/`KeLowerIrql` stubs (hang if
+  ever called); `ftfd.dll`'s `rust_begin_unwind` written as `loop {}` (a panic that hangs
+  silently — should adopt `panic-common`); `cdrom.sys: abort`. Tracked and owed, not accepted.
+- [ ] **KeGetPcr x18 cohab dedup** *(cswitchdep arm64 first-light, task #2)*: the x18
+  `ddk::KeGetPcr` copies are unsafe in switch context — dedup to the single TPIDR-backed path.
 
 ## Known bugs & flakes (live registry)
 
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
-- **arm64 0x1E / `[WAITDEP]` ALL-ONES residual** (~2 hits / 2 days organic gate) — the
-  dominant netstack-TDI source is FIXED (§9.36) but a residual arm64 dispatcher/stack
-  corruption with the same ALL-ONES `bad-thread-ptr` face still recurs (07-09 gate
-  `ntoskrnl+0x451B0`, evidence in `~/vibeos-flake-farm/waitdep-evidence/`; 07-10 overnight
-  `+0x1CD8C` retried green). `ke/waitdep.rs` always-on captures each hit — a `[WAITDEP]`
-  0x109 in a gate log IS the live capture. §9.36 addendum.
-- **winlogon 0xC000021A→0x4C init race** (~3/20, all arches) — kernel32 `%wZ` races basesrv's
-  CSR shared-section population. MITIGATED (snapshot validation + loud `snapshot CORRUPT`
-  print); real fix owed: publish-last ordering in csrsrv/basesrv. §9.36.
-- **win32k `DialogBoxParamW` dialog-creation race** (amd64) — WM_INITDIALOG occasionally never
-  dispatched on the winlogon desktop; wedge defensively fixed (§9.12), underlying race open
-  (would bite real SAS/logon dialogs outside autologon).
-- **amd64 start-menu render residue** (§9.41) — Programs/Documents/Settings render without label
-  text + Run/Shut Down dropped (i386 renders full). Root-caused on the `screen-painting` lane
-  (GDI TEB batch never flushed — `GdiBatchCount` read at 0x74 vs real 0x1740, `ee3c81e348c`);
-  strike this when that lane lands on master.
+- **arm64 0x1E / `[WAITDEP]` ALL-ONES residual — CLOSED 2026-07-17** (§9.92 item 4). The
+  "~2 hits / 2 days" residual was the SAME netstack-TDI wait-block bug as §9.36 on the
+  *synchronous*-completion path the 07-08 fix didn't cover (`IofCompleteRequestInner`'s
+  deferred special kernel APC landing on the freed block during the next self-test's IRP
+  build). Fixed by leaking the wait-block on the sync path too; arm64 conformance boot went
+  `BUGCHECK 0x109` → clean `sweep=done`. `ke/waitdep.rs` stays always-on — a fresh
+  `[WAITDEP]` 0x109 is NEW evidence, triaged from scratch (per §9.54: symbolicate the FIRST
+  banner in a log, never the last). Deeper owed root, still open: arm64 does not promptly
+  deliver a self-targeted special kernel APC queued at PASSIVE_LEVEL (real NT delivers it
+  before `IofCallDriver` returns — what makes the classic stack-event sync-IRP idiom safe).
+- **winlogon 0xC000021A→0x4C init race — PREMISE REFUTED + NOT REPRODUCING** (2026-07-14,
+  §9.82). The "owed publish-last ordering fix" is already in the tree at three nested levels
+  (csrsrv step-ordering, CsrLoadServerDll, basesrv SharedSection-last), and the tripwire
+  evidence (identical kernel VA across hits) never fit a race. 20/20 arm64 boots clean with
+  the detector proven visible; zero hits in 1254 retained run dirs. Re-open ONLY on a fresh
+  `[kernel32] BASE_STATIC_SERVER_DATA CORRUPT` print, starting from its printed fields.
+- **win32k `DialogBoxParamW` dialog-creation race — NOT REPRODUCING, tripwire armed**
+  (2026-07-17, §9.12 addendum). 0 hits / 20 boots across three regimes (contended-parallel
+  TCG / sequential TCG / native KVM) with the path proven exercised in all 20. The old
+  mitigation had NO working detector (its `ERR!` was compiled dark behind Wine debug
+  channels) — replaced by a permanent unconditional pair in msgina `gui.rs`:
+  `[MSGINA] status dialog up` each boot + `[MSGINA] 9.12-TRIPWIRE … worker tid=N` on a hit.
+  A hit leaves the worker wedged in win32k with the tid printed — dump its kernel stack
+  (`inspect.sh dump-thread`) for the exact blocking site. Re-open only on a tripwire line.
+- **arm64 kmtest-sweep late-run user-process corruption** (~2/4 sweeps since the §9.96
+  un-quarantine of MmSection/ZwMapViewOfSection, 2026-07-17) — a *later* kmtest_.exe launch
+  dies with `0xC000001D` on garbage instruction encodings inside its own image page
+  (`PC=0x140007xxx`, `[UEXC-KILL] Instr=` shows non-decodable bytes) or `0xC0000005` at
+  process exit; manifests as `IoReadWrite`/`NtSystemDebugControl`/`IoDeviceObject` NO-END /
+  FAIL-EXIT ratchet noise. A shared image-section page is being corrupted under the section
+  tests' heavy map/unmap traffic — same latent arm64 PFN/section-teardown family as the
+  quarantined `ZwAllocateVirtualMemory` 0x4E PFN_LIST_CORRUPT (task #7). The section tests
+  stay ACTIVE (they pass and are the canary); expect occasional ratchet flags on these
+  victims until the PFN bug is slain. Field manual §9.96(i).
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

@@ -31,7 +31,7 @@ pub unsafe extern "C" fn rand_s(pval: *mut u32) -> i32 {
 
     *pval = 0;
 
-    if g_pfnSystemFunction036.is_none() {
+    if (*(&raw const g_pfnSystemFunction036)).is_none() {
         let hadvapi32 = LoadLibraryA(b"advapi32.dll\0".as_ptr());
         if hadvapi32.is_null() {
             _invalid_parameter(

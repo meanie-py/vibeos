@@ -1,4 +1,5 @@
 use super::ke_defs::*;
+use ntkrnl_sys::inline::ke::KiInsertDeferredReadyList; // §9.56: inline (not the extern-C shim) so #[track_caller] names the true site
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -31,7 +32,6 @@ use ntkrnl_sys::ddk::{
     KiComputeNewPriority,
     KiDeliverApc,
     KiExitDispatcher,
-    KiInsertDeferredReadyList,
     KiIpiSend,
     KiReleasePrcbLock,
     KiReleaseThreadLock,
@@ -133,10 +133,77 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
     let mut ListEntry: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY;
     let mut Thread: PKTHREAD;
 
+    // §9.56 tripwire 0x5C — validate the deferred chain BEFORE consuming it.
+    // Every node must be a thread with State==DeferredReady parked for THIS
+    // cpu; anything else means a foreign write rerouted the SLIST through the
+    // WaitListEntry union (e.g. a ready-list insert of a parked node) — catch
+    // it here with the offending node's identity, before the walk spreads it.
+    #[cfg(feature = "smp")]
+    {
+        let mut probe = (*Prcb).DeferredReadyListHead.Next;
+        let mut n: u32 = 0;
+        while !probe.is_null() {
+            let t = CONTAINING_RECORD(
+                probe as PVOID,
+                core::ptr::null_mut(),
+                core::mem::offset_of!(_KTHREAD, __bindgen_anon_3),
+            ) as PKTHREAD;
+            n += 1;
+            if *kt_State(t) != DeferredReady
+                || *kt_DeferredProcessor(t) != (*Prcb).Number as u8
+                || n > 64
+            {
+                crate::dbg_print!(
+                    b"[RQ5C] deferred-chain BAD node thr=%p state=%u defproc=%u thiscpu=%u pos=%u reason=%u\n\0",
+                    t,
+                    *kt_State(t) as u32,
+                    *kt_DeferredProcessor(t) as u32,
+                    (*Prcb).Number as u32,
+                    n,
+                    (*t).WaitReason as u32,
+                );
+                if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
+                ntkrnl_sys::ddk::KeBugCheckEx(
+                    0x96,
+                    t as ntkrnl_sys::ddk::ULONG_PTR,
+                    ((0x5Cu64 << 40) | ((*kt_State(t)) as u64) << 8 | n as u64)
+                        as ntkrnl_sys::ddk::ULONG_PTR,
+                    Prcb as ntkrnl_sys::ddk::ULONG_PTR,
+                    probe as ntkrnl_sys::ddk::ULONG_PTR,
+                );
+                }
+            }
+            probe = (*probe).Next;
+        }
+    }
+
     ListEntry = (*Prcb).DeferredReadyListHead.Next;
     (*Prcb).DeferredReadyListHead.Next = core::ptr::null_mut();
 
+    // §9.56 tripwire 0x5B — deferred-chain CYCLE detector. SwapListEntry.Next
+    // is the WaitListEntry.Flink union byte-for-byte: one foreign write to a
+    // parked deferred node cycles the chain, and this walk would then insert
+    // the same thread twice (the self-loop tear) with 0x59 silent (single
+    // push). A 2-CPU boot's deferred chain is short; >64 nodes = a cycle.
+    #[cfg(feature = "smp")]
+    let mut walk_count: u32 = 0;
+
     loop {
+        #[cfg(feature = "smp")]
+        {
+            walk_count += 1;
+            if walk_count > 64 {
+                if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
+                ntkrnl_sys::ddk::KeBugCheckEx(
+                    0x96,
+                    Prcb as ntkrnl_sys::ddk::ULONG_PTR,
+                    (0x5Bu64 << 40) as ntkrnl_sys::ddk::ULONG_PTR,
+                    ListEntry as ntkrnl_sys::ddk::ULONG_PTR,
+                    walk_count as ntkrnl_sys::ddk::ULONG_PTR,
+                );
+                }
+            }
+        }
         Thread = CONTAINING_RECORD(
             ListEntry as PVOID,
             core::ptr::null_mut(),
@@ -198,6 +265,20 @@ unsafe fn KiSelectNextProcessor(Thread: PKTHREAD) -> ULONG {
 
     PreferredSet = (*Thread).Affinity;
 
+    // §9.56 guard 0x63: a zero affinity makes trailing_zeros() return 64 below
+    // and KiProcessorBlock[64] is walked OUT OF BOUNDS — fail loud instead.
+    if PreferredSet == 0 {
+        if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
+        ntkrnl_sys::ddk::KeBugCheckEx(
+            0x96,
+            Thread as ntkrnl_sys::ddk::ULONG_PTR,
+            (0x63u64 << 40 | 1) as ntkrnl_sys::ddk::ULONG_PTR,
+            0,
+            0,
+        );
+        }
+    }
+
     IdleSet = PreferredSet & KiIdleSummary;
     if IdleSet != 0 {
         PreferredSet = IdleSet;
@@ -239,6 +320,15 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
     let Processor: ULONG;
     let mut OldPriority: KPRIORITY;
     let NextThread: PKTHREAD;
+
+    // §9.56 diagnostic (armed): catches a thread being deferred-readied while it is
+    // still CurrentThread (running) on some CPU — the confirmed root of the ready-list
+    // tear. NOTE: the "spin on SwapBusy here" fix was WRONG — deferred-ready threads
+    // NORMALLY carry SwapBusy set (it's part of the readying transition), so spinning
+    // deadlocks every boot (0/16, wedge at 1 cswitch). The correct fix is upstream in
+    // the wait-commit / unwait serialization (dethrone-before-readiable), NOT here.
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::ki_check_not_running(Thread, 8888); // 8888 = via KiDeferredReadyThreadImpl drain
 
     if *kt_AdjustReason(Thread) == AdjustBoost {
         KiAcquireThreadLock(Thread);
@@ -355,6 +445,13 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
             (*Prcb).NextThread = Thread;
             *kt_State(NextThread) = DeferredReady;
             *kt_DeferredProcessor(NextThread) = (*Prcb).Number as u8;
+            // §9.56: direct re-defer (displaced NextThread) — mark+stamp so
+            // deferred_by attributes it (9200) instead of reading 0.
+            #[cfg(feature = "smp")]
+            {
+                let _ = ntkrnl_sys::inline::ke::rq_inflight_mark(NextThread);
+                ntkrnl_sys::inline::ke::rq_waker_stamp_pub(NextThread, 9200);
+            }
             KiReleasePrcbLock(Prcb);
             KiDeferredReadyThreadImpl(NextThread);
             return;
@@ -381,6 +478,48 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
     *kt_State(Thread) = Ready;
     *kt_WaitTime(Thread) = KeTickCount.LowPart as ULONG;
 
+    // §9.56 tripwire 0x5A — the ONE ready-list insert with no already-linked
+    // guard (KxQueueReadyThread has 0x54). The recurring self-loop tear at
+    // site 0x22 is mechanically "InsertTailList of an entry that is ALREADY
+    // the tail/sole element of this list" — catch it pre-mutation, with the
+    // thread state + wait attribution. P2 tag 0x5A | state<<8 | reason.
+    #[cfg(feature = "smp")]
+    {
+        let entry = core::ptr::addr_of_mut!((*Thread).__bindgen_anon_3.WaitListEntry)
+            as PLIST_ENTRY;
+        let f = (*entry).Flink;
+        let b = (*entry).Blink;
+        let still_linked = !f.is_null()
+            && !b.is_null()
+            && f != entry
+            && (*f).Blink == entry
+            && (*b).Flink == entry;
+        if still_linked {
+            crate::dbg_print!(
+                b"[RQ5A] drain-insert of ALREADY-LINKED thr=%p state=%u reason=%u wstat=%p pri=%u F=%p B=%p deferred_by=%u\n\0",
+                Thread,
+                *kt_State(Thread) as u32,
+                (*Thread).WaitReason as u32,
+                (*Thread).WaitStatus as usize as *const u8,
+                OldPriority as u32,
+                f,
+                b,
+                ntkrnl_sys::inline::ke::rq_inflight_waker(Thread),
+            );
+            if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
+            ntkrnl_sys::ddk::KeBugCheckEx(
+                0x96,
+                Thread as ntkrnl_sys::ddk::ULONG_PTR,
+                ((0x5Au64 << 40)
+                    | ((*kt_State(Thread)) as u64) << 8
+                    | (*Thread).WaitReason as u64) as ntkrnl_sys::ddk::ULONG_PTR,
+                f as ntkrnl_sys::ddk::ULONG_PTR,
+                b as ntkrnl_sys::ddk::ULONG_PTR,
+            );
+            }
+        }
+    }
+
     if Preempted != 0 {
         InsertHeadList(
             core::ptr::addr_of_mut!(
@@ -399,6 +538,8 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
 
     (*Prcb).ReadySummary |= 1u32 << OldPriority;
 
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::ki_rq_integrity(Prcb, OldPriority as u32, 0x22); // site 0x22 = KiDeferredReadyThread insert
     KiReleasePrcbLock(Prcb);
 }
 
@@ -480,14 +621,21 @@ unsafe fn KiSwapThreadImpl(
             }
         }
 
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::ki_check_promote_not_linked(NextThread, 0x04); // KiSwapThread
+
         (*Prcb).NextThread = core::ptr::null_mut();
         (*Prcb).CurrentThread = NextThread;
         *kt_State(NextThread) = Running;
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::rq_inflight_unmark(NextThread);
     } else {
         NextThread = KiSelectReadyThread(0, Prcb);
         if !NextThread.is_null() {
             (*Prcb).CurrentThread = NextThread;
             *kt_State(NextThread) = Running;
+            #[cfg(feature = "smp")]
+            ntkrnl_sys::inline::ke::rq_inflight_unmark(NextThread);
         } else {
             InterlockedOrSetMember!(&mut KiIdleSummary, (*Prcb).SetMember);
             NextThread = (*Prcb).IdleThread;
@@ -497,6 +645,31 @@ unsafe fn KiSwapThreadImpl(
     }
 
     KiReleasePrcbLock(Prcb);
+
+    // §9.56 tripwire 0x57 — THE SELF-SWAP. During the legal post-lock-release
+    // wait-commit window a cross-CPU readier (deferred drain, often after an
+    // AdjustUnwait boost) can standby/queue the committing thread onto ITS OWN
+    // still-running CPU; this swap then resolves NextThread == CurrentThread and
+    // KiSwapContext(T,T) wedges forever in ctxswitch.S's SwapBusy spin (T's own
+    // SwapBusy only clears in KiSwapContextResume — AFTER the spin). NT tolerates
+    // old==new; ReactOS's never-validated SMP spin does not. This converts the
+    // silent HANG_TIMEOUT into an attributed report proving the mechanism.
+    #[cfg(feature = "smp")]
+    {
+        if NextThread == CurrentThread {
+            if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
+            ntkrnl_sys::ddk::KeBugCheckEx(
+                0x96,
+                CurrentThread as ntkrnl_sys::ddk::ULONG_PTR,
+                ((0x57u64 << 40)
+                    | ((*kt_State(CurrentThread)) as u64) << 8
+                    | (*Prcb).Number as u64) as ntkrnl_sys::ddk::ULONG_PTR,
+                (*CurrentThread).SwapBusy as ntkrnl_sys::ddk::ULONG_PTR,
+                (*CurrentThread).Priority as u64 as ntkrnl_sys::ddk::ULONG_PTR,
+            );
+            }
+        }
+    }
 
     WaitIrql = *kt_WaitIrql(CurrentThread);
 
@@ -637,6 +810,9 @@ unsafe fn KiSetPriorityThreadImpl(
                         }
 
                         (*Thread).Priority = Priority as SCHAR;
+                        #[cfg(feature = "smp")]
+                        ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
+                        #[cfg(not(feature = "smp"))]
                         KiInsertDeferredReadyList(Thread);
                         KiReleasePrcbLock(Prcb);
                     } else {
@@ -661,6 +837,9 @@ unsafe fn KiSetPriorityThreadImpl(
                         if !new_th.is_null() {
                             *kt_State(new_th) = Standby;
                             (*Prcb).NextThread = new_th;
+                            #[cfg(feature = "smp")]
+                            ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
+                            #[cfg(not(feature = "smp"))]
                             KiInsertDeferredReadyList(Thread);
                         }
                     }
@@ -751,13 +930,13 @@ unsafe fn KiUpdateEffectiveAffinityThread(Thread: PKTHREAD) {
         } else if *kt_State(Thread) == Standby {
             (*Prcb).NextThread = KiSelectNextThread(Prcb);
             *kt_State((*Prcb).NextThread) = Standby;
-            KiInsertDeferredReadyList(Thread);
+            ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
         } else if *kt_State(Thread) == Ready {
             if RemoveEntryList(core::ptr::addr_of_mut!((*Thread).__bindgen_anon_3.WaitListEntry) as PLIST_ENTRY)
             {
                 (*Prcb).ReadySummary &= !(1u32 << ((*Thread).Priority as u32));
             }
-            KiInsertDeferredReadyList(Thread);
+            ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
         }
     }
 
@@ -875,6 +1054,8 @@ pub unsafe extern "system" fn NtYieldExecution() -> NTSTATUS {
             (*Prcb).NextThread = core::ptr::null_mut();
             (*Prcb).CurrentThread = NextThread;
             *kt_State(NextThread) = Running;
+            #[cfg(feature = "smp")]
+            ntkrnl_sys::inline::ke::rq_inflight_unmark(NextThread);
 
             (*Thread).WaitReason = _KWAIT_REASON_WrYieldExecution as UCHAR;
             KxQueueReadyThread(Thread, Prcb);

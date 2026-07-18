@@ -340,7 +340,7 @@ pub unsafe extern "system" fn FatFspClose(
                 // CONTAINING_RECORD(CloseContext, CCB, CloseContext)
                 // CloseContext lives at CCB.__bindgen_anon_1 (union, zero offset within it)
                 let offset = core::mem::offset_of!(CCB, __bindgen_anon_1);
-                ((CloseContext as *const u8).offset(-(offset as isize)) as *mut CCB)
+                (CloseContext as *const u8).offset(-(offset as isize)) as *mut CCB
             };
 
             let _ = FatCommonClose(
@@ -689,11 +689,11 @@ pub unsafe extern "system" fn FatCommonClose(
             }
         }
 
-        if ((((*Fcb).Header.NodeTypeCode == (FAT_NTC_FCB) as i16) && ((*Fcb).OpenCount == 0))
+        if (((*Fcb).Header.NodeTypeCode == (FAT_NTC_FCB) as i16) && ((*Fcb).OpenCount == 0))
             || (((*Fcb).Header.NodeTypeCode == (FAT_NTC_DCB) as i16) &&
                 IsListEmpty(core::ptr::addr_of!((*Fcb).Specific.Dcb.as_ref().ParentDcbQueue)) &&
                 ((*Fcb).OpenCount == 0) &&
-                ((*Fcb).Specific.Dcb.as_ref().DirectoryFileOpenCount == 0)))
+                ((*Fcb).Specific.Dcb.as_ref().DirectoryFileOpenCount == 0))
         {
             ParentDcb = (*Fcb).ParentDcb;
             (*Vcb).VcbState |= VCB_STATE_FLAG_DELETED_FCB;

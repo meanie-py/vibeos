@@ -13,6 +13,11 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ANSI_STRING, CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, CM_SCSI_DEVICE_DATA, DEVICE_DESCRIPTION, HalAllocateCommonBuffer, HalAssignSlotResources, HalGetBusData, HalGetInterruptVector, HalTranslateBusAddress, INT64, IoMapTransfer, IoQueryDeviceDescription, IoStartPacket, KeSynchronizeExecution, MAPPED_ADDRESS, MmMapIoSpace, MmUnmapIoSpace, _OBJECT_ATTRIBUTES, PCCHAR, PCI_COMMON_CONFIG, PCI_SLOT_NUMBER, PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCM_SCSI_DEVICE_DATA, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKAFFINITY, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PKIRQL, PMAPPED_ADDRESS, PPCI_SLOT_NUMBER, PUNICODE_STRING, RtlUnicodeStringToAnsiString, UINT8, ZwEnumerateValueKey, _KDPC, va_list, CM_FULL_RESOURCE_DESCRIPTOR, CONFIGURATION_INFORMATION, DEVICE_OBJECT, DRIVER_OBJECT, INTERFACE_TYPE, IO_ALLOCATION_ACTION, IO_STACK_LOCATION, IRP, KEY_VALUE_FULL_INFORMATION, KTIMER, _UNICODE_STRING};
 use core::ffi::c_void;
 use core::mem::{align_of, size_of, offset_of};
+// The C-variadic entry points (ScsiDebugPrint / ScsiPortNotification) live in
+// drivers/storage/port/scsiport/rust_varargs_shim.c — stable Rust cannot DEFINE one
+// (c_variadic, rust-lang#44930). Each is a 3-line va_start trampoline into the
+// fixed-arity `*_v` twin below, which holds ALL the logic. `VaArgs` reads the va_list.
+use varargs_rust::VaArgs;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{ACCESS_RANGE, CONFIGURATION_INFO, HW_INITIALIZATION_DATA, IO_SCSI_CAPABILITIES, PORT_CONFIGURATION_INFORMATION, RESETBUS_PARAMS, SCSI_BUS_INFO, SCSI_NOTIFICATION_TYPE, SCSI_PHYSICAL_ADDRESS, SCSI_PORT_COMMON_EXTENSION, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DRIVER_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_REQUEST_BLOCK, SCSI_REQUEST_BLOCK_INFO, SCSI_SG_ADDRESS, SENSE_DATA, PSCSI_PORT_DEVICE_EXTENSION};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -20,6 +25,15 @@ use crate::types::{ACCESS_RANGE, CONFIGURATION_INFO, HW_INITIALIZATION_DATA, IO_
 extern "C" {
     fn vsprintf( buffer: *mut core::ffi::c_char, format: *const core::ffi::c_char, args: *mut core::ffi::c_char, ) -> i32;
     fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32;
+    // ScsiPortNotification's variadic ENTRY is the trampoline in rust_varargs_shim.c;
+    // the logic is ScsiPortNotification_v below. Declaring + CALLING a C-variadic fn is
+    // stable (only DEFINING one isn't), so the in-crate call sites are unchanged.
+    // Same decl as scsi.rs:23. SCSI_NOTIFICATION_TYPE is a C enum -> c_uint.
+    fn ScsiPortNotification(
+        NotificationType: SCSI_NOTIFICATION_TYPE,
+        HwDeviceExtension: *mut c_void,
+        ...
+    );
 }
 extern "C" {
     fn FdoDispatchPnp(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
@@ -104,7 +118,7 @@ pub unsafe extern "system" fn ScsiPortAddDevice(
     DriverObject: *mut DRIVER_OBJECT,
     PhysicalDeviceObject: *mut DEVICE_OBJECT,
 ) -> NTSTATUS {
-    crate::glue::dprint_noop(
+    crate::glue::dprint_noop!(
         b"AddDevice no-op DriverObj: %p, PDO: %p\n\0".as_ptr() as *const i8,
         DriverObject as *mut core::ffi::c_void,
         PhysicalDeviceObject as *mut core::ffi::c_void,
@@ -112,26 +126,26 @@ pub unsafe extern "system" fn ScsiPortAddDevice(
     return STATUS_SUCCESS;
 }
 
+/// Fixed-arity twin of the `ScsiDebugPrint` C-variadic entry point in
+/// `drivers/storage/port/scsiport/rust_varargs_shim.c`. The C side exists only to do
+/// the `va_start` that stable Rust cannot (`c_variadic`, rust-lang#44930). This body
+/// never `va_arg`s — it forwards the whole list to `vsprintf` — so the shim hands over
+/// the `va_list` BY VALUE (same arrangement as the shipping
+/// sdk/lib/rtl/dbgprint_variadic.c ↔ rtl-diag pair; `va_list` == `*mut c_char` on all
+/// three arches, which is exactly the file-scope `vsprintf` decl's argptr type).
 #[no_mangle]
-pub unsafe extern "C" fn ScsiDebugPrint(
+pub unsafe extern "C" fn ScsiDebugPrint_v(
     DebugPrintLevel: u32,
     DebugMessage: *const core::ffi::c_char,
-    mut args: ...
+    ap: va_list,
 ) {
     if DebugPrintLevel > InternalDebugLevel {
         return;
     }
 
     let mut buffer: [core::ffi::c_char; 256] = [0; 256];
-    // ntoskrnl CRT export vsprintf (@ cdecl), called with the Rust c_variadic VaList.
-    unsafe extern "C" {
-        fn vsprintf(
-            buffer: *mut core::ffi::c_char,
-            format: *const core::ffi::c_char,
-            argptr: core::ffi::VaList,
-        ) -> i32;
-    }
-    vsprintf(buffer.as_mut_ptr(), DebugMessage, args.as_va_list());
+    // ntoskrnl CRT export vsprintf (@ cdecl), called with the C frame's va_list.
+    vsprintf(buffer.as_mut_ptr(), DebugMessage, ap);
 
     DbgPrint((buffer.as_ptr() as *const u8).cast());
 }
@@ -166,7 +180,7 @@ pub unsafe extern "system" fn ScsiPortCompleteRequest(
 ) {
     // DPRINT("ScsiPortCompleteRequest() called\n");
     if InternalDebugLevel != 0 {
-        crate::glue::dprint_noop(b"ScsiPortCompleteRequest() called\n\0".as_ptr() as *const i8);
+        crate::glue::dprint_noop!(b"ScsiPortCompleteRequest() called\n\0".as_ptr() as *const i8);
     }
 
     let device_extension = (HwDeviceExtension as *mut u8)
@@ -216,7 +230,7 @@ pub unsafe extern "system" fn ScsiPortCompleteRequest(
 #[no_mangle]
 pub unsafe extern "system" fn ScsiPortFlushDma(HwDeviceExtension: *mut core::ffi::c_void) {
     if InternalDebugLevel != 0 {
-        crate::glue::dprint_noop(b"ScsiPortFlushDma()\n\0".as_ptr() as *const i8);
+        crate::glue::dprint_noop!(b"ScsiPortFlushDma()\n\0".as_ptr() as *const i8);
     }
     DbgPrint(b"UNIMPLEMENTED\n\0".as_ptr() as *const i8);
     DbgBreakPoint();
@@ -260,7 +274,7 @@ pub unsafe extern "system" fn ScsiPortGetBusData(
     Length: u32,
 ) -> u32 {
     unsafe {
-        crate::glue::dprint_noop((b"ScsiPortGetBusData()\n\0".as_ptr()).cast());
+        crate::glue::dprint_noop!((b"ScsiPortGetBusData()\n\0".as_ptr()).cast());
         if Length != 0 {
             return HalGetBusData((BusDataType) as i32, SystemIoBusNumber, SlotNumber, Buffer, Length);
         }
@@ -279,7 +293,7 @@ pub unsafe extern "system" fn ScsiPortSetBusDataByOffset(
     Offset: u32,
     Length: u32,
 ) -> u32 {
-    crate::glue::dprint_noop(b"ScsiPortSetBusDataByOffset()\n\0".as_ptr() as *const i8);
+    crate::glue::dprint_noop!(b"ScsiPortSetBusDataByOffset()\n\0".as_ptr() as *const i8);
     HalSetBusDataByOffset(
         BusDataType,
         SystemIoBusNumber,
@@ -345,7 +359,7 @@ pub unsafe extern "system" fn ScsiPortGetLogicalUnit(
     let DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION;
     let LunExtension: *mut SCSI_PORT_LUN_EXTENSION;
 
-    crate::glue::dprint_noop(
+    crate::glue::dprint_noop!(
         b"ScsiPortGetLogicalUnit() called\n\0".as_ptr() as *const i8,
     );
 
@@ -380,7 +394,7 @@ pub unsafe extern "system" fn ScsiPortGetPhysicalAddress(
     VirtualAddress: *mut core::ffi::c_void,
     Length: *mut u32,
 ) -> SCSI_PHYSICAL_ADDRESS {
-    crate::glue::dprint_noop(
+    crate::glue::dprint_noop!(
         b"ScsiPortGetPhysicalAddress(%p %p %p %p)\n\0".as_ptr() as *const i8,
         HwDeviceExtension as *const core::ffi::c_void,
         Srb as *const core::ffi::c_void,
@@ -460,7 +474,7 @@ pub unsafe extern "system" fn ScsiPortGetUncachedExtension(
     let mut status: i32;
 
     // DPRINT call (mapped to DbgPrint)
-    crate::glue::dprint_noop(
+    crate::glue::dprint_noop!(
         b"ScsiPortGetUncachedExtension(%p %p %lu)\n\0".as_ptr() as *const i8,
         HwDeviceExtension,
         ConfigInfo,
@@ -637,7 +651,7 @@ pub unsafe extern "system" fn ScsiPortGetVirtualAddress(
     PhysicalAddress: SCSI_PHYSICAL_ADDRESS,
 ) -> *mut core::ffi::c_void {
     // DPRINT("ScsiPortGetVirtualAddress(%p %I64x)\n", HwDeviceExtension, PhysicalAddress.QuadPart);
-    crate::glue::dprint_noop(
+    crate::glue::dprint_noop!(
         b"ScsiPortGetVirtualAddress(%p %I64x)\n\0".as_ptr() as *const i8,
         HwDeviceExtension,
         PhysicalAddress.QuadPart,
@@ -688,7 +702,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
         let mut PortCapabilities: *mut IO_SCSI_CAPABILITIES;
         let mut ResourceList: *mut CM_RESOURCE_LIST;
 
-        crate::glue::dprint_noop((b"ScsiPortInitialize() called!\n\0".as_ptr() as *const u8).cast());
+        crate::glue::dprint_noop!((b"ScsiPortInitialize() called!\n\0".as_ptr() as *const u8).cast());
 
         if (*HwInitializationData).HwInitialize.is_none() ||
             (*HwInitializationData).HwStartIo.is_none() ||
@@ -773,7 +787,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
         DeviceExtensionSize = core::mem::size_of::<SCSI_PORT_DEVICE_EXTENSION>() as u32
             + (*HwInitializationData).DeviceExtensionSize;
 
-        crate::glue::dprint_noop(
+        crate::glue::dprint_noop!(
             (b"AdapterInterfaceType: %lu\n\0".as_ptr() as *const u8).cast(),
             (*HwInitializationData).AdapterInterfaceType as u32,
         );
@@ -798,7 +812,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 break 'outer;
             }
 
-            crate::glue::dprint_noop((b"Creating device: %wZ\n\0".as_ptr() as *const u8).cast(), &DeviceName);
+            crate::glue::dprint_noop!((b"Creating device: %wZ\n\0".as_ptr() as *const u8).cast(), &DeviceName);
 
             Status = IoCreateDevice(
                 DriverObject,
@@ -881,7 +895,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     FirstConfigCall,
                 );
                 if Status < 0 {
-                    crate::glue::dprint_noop(
+                    crate::glue::dprint_noop!(
                         (b"SpiCreatePortConfig() failed with Status 0x%08X\n\0".as_ptr() as *const u8).cast(),
                         Status,
                     );
@@ -916,7 +930,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     && !(*HwInitializationData).DeviceId.is_null()
                 {
                     (*PortConfig).BusInterruptLevel = 0;
-                    crate::glue::dprint_noop(
+                    crate::glue::dprint_noop!(
                         (b"VendorId '%.*s'  DeviceId '%.*s'\n\0".as_ptr() as *const u8).cast(),
                         (*HwInitializationData).VendorIdLength as u32,
                         (*HwInitializationData).VendorId,
@@ -946,7 +960,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                         continue 'create_port_config;
                     }
                 } else {
-                    crate::glue::dprint_noop((b"Non-pci bus\n\0".as_ptr() as *const u8).cast());
+                    crate::glue::dprint_noop!((b"Non-pci bus\n\0".as_ptr() as *const u8).cast());
                 }
 
                 // Re-seed the AT-disk claim state from the authoritative system
@@ -966,7 +980,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 }
 
                 Again = 0;
-                crate::glue::dprint_noop(
+                crate::glue::dprint_noop!(
                     (b"Calling HwFindAdapter() for Bus %lu\n\0".as_ptr() as *const u8).cast(),
                     (*PortConfig).SystemIoBusNumber,
                 );
@@ -980,7 +994,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     &mut Again,
                 );
 
-                crate::glue::dprint_noop(
+                crate::glue::dprint_noop!(
                     (b"HwFindAdapter() Result: %lu  Again: %s\n\0".as_ptr() as *const u8).cast(),
                     Result,
                     if Again != 0 { b"True\0".as_ptr() as *const u8 } else { b"False\0".as_ptr() as *const u8 },
@@ -992,7 +1006,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 }
 
                 if Result != SP_RETURN_FOUND {
-                    crate::glue::dprint_noop(
+                    crate::glue::dprint_noop!(
                         (b"HwFindAdapter() Result: %lu\n\0".as_ptr() as *const u8).cast(),
                         Result,
                     );
@@ -1007,7 +1021,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     break 'outer;
                 }
 
-                crate::glue::dprint_noop(
+                crate::glue::dprint_noop!(
                     (b"ScsiPortInitialize(): Found HBA! (%x), adapter Id %d\n\0".as_ptr() as *const u8).cast(),
                     (*PortConfig).BusInterruptVector,
                     ((*PortConfig).InitiatorBusId[0]) as i32,
@@ -1222,7 +1236,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 if Again == 0 {
                     ConfigInfo.BusNumber += 1;
                 }
-                crate::glue::dprint_noop((b"  Bus: %lu\n\0".as_ptr() as *const u8).cast(), ConfigInfo.BusNumber);
+                crate::glue::dprint_noop!((b"  Bus: %lu\n\0".as_ptr() as *const u8).cast(), ConfigInfo.BusNumber);
                 DeviceFound = 1;
                 break 'create_port_config;
             }
@@ -1248,7 +1262,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
             ExFreePool(ConfigInfo.Parameter as *mut c_void);
         }
 
-        crate::glue::dprint_noop(
+        crate::glue::dprint_noop!(
             (b"ScsiPortInitialize() done, Status = 0x%08X, DeviceFound = %d!\n\0".as_ptr() as *const u8).cast(),
             Status,
             DeviceFound as u32,
@@ -1297,7 +1311,7 @@ pub unsafe extern "system" fn ScsiPortLogError(
 
     // DeviceExtension = CONTAINING_RECORD(HwDeviceExtension, SCSI_PORT_DEVICE_EXTENSION, MiniPortDeviceExtension);
 
-    crate::glue::dprint_noop(
+    crate::glue::dprint_noop!(
         b"ScsiPortLogError() done\n\0".as_ptr() as *const i8,
     );
 }
@@ -1310,11 +1324,16 @@ pub unsafe extern "system" fn ScsiPortMoveMemory(
 ) {
     core::ptr::copy(Source as *const u8, Destination as *mut u8, Length as usize);
 }
+/// Fixed-arity twin of the `ScsiPortNotification` C-variadic entry point in
+/// `drivers/storage/port/scsiport/rust_varargs_shim.c` (see `ScsiDebugPrint_v`).
+/// `ap` is a pointer to the shim frame's `va_list`; `VaArgs::arg::<T>()` mirrors
+/// nightly's `VaListImpl::arg::<T>()`, so the dispatch below is byte-for-byte the
+/// translation it was. All the logic stays here.
 #[no_mangle]
-pub unsafe extern "C" fn ScsiPortNotification(
+pub unsafe extern "C" fn ScsiPortNotification_v(
     NotificationType: SCSI_NOTIFICATION_TYPE,
     HwDeviceExtension: *mut c_void,
-    mut args: ...
+    ap: *mut c_void,
 ) {
 
     // NDEBUG defined → DPRINT is empty; DPRINT1 stays
@@ -1328,9 +1347,10 @@ pub unsafe extern "C" fn ScsiPortNotification(
         ptr
     };
 
-    // Real c_variadic VaList — the previous hand-rolled &param stack-walk only worked
-    // on i386 cdecl; on win64 the params live in registers and it read garbage
-    // (PathId=160 from a junk Srb).
+    // Real va_list walk (via the C shim's pullers) — the hand-rolled &param stack-walk
+    // this replaced only worked on i386 cdecl; on win64 the params live in registers and
+    // it read garbage (PathId=160 from a junk Srb).
+    let mut args = VaArgs::from_ptr(ap);
 
     match NotificationType {
         RequestComplete => {
@@ -1484,7 +1504,7 @@ pub unsafe extern "system" fn ScsiPortValidateRange(
     NumberOfBytes: u32,
     InIoSpace: BOOLEAN,
 ) -> BOOLEAN {
-    crate::glue::dprint_noop(b"ScsiPortValidateRange()\n\0".as_ptr() as *const i8);
+    crate::glue::dprint_noop!(b"ScsiPortValidateRange()\n\0".as_ptr() as *const i8);
     return 1;
 }
 unsafe fn SpiResourceToConfig(
@@ -1797,7 +1817,7 @@ unsafe fn SpiGetPciConfigData(
                 0x0072, 0x0000,
             ];
 
-            crate::glue::dprint_noop(
+            crate::glue::dprint_noop!(
                 b"Found device 0x%04hx 0x%04hx at %1lu %2lu %1lu\n\0".as_ptr() as *const i8,
                 (PciConfig.VendorID) as i32,
                 (PciConfig.DeviceID) as i32,
@@ -1865,7 +1885,7 @@ pub unsafe extern "system" fn ScsiPortCreateClose(
     Irp: *mut IRP,
 ) -> i32 {
     if InternalDebugLevel != 0 {
-        crate::glue::dprint_noop(b"ScsiPortCreateClose()\n\0".as_ptr() as *const i8);
+        crate::glue::dprint_noop!(b"ScsiPortCreateClose()\n\0".as_ptr() as *const i8);
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
@@ -2037,7 +2057,7 @@ pub unsafe extern "system" fn SpiProcessTimeout(
     let DeviceObject = ServiceContext as *mut DEVICE_OBJECT;
     let DeviceExtension = (*DeviceObject).DeviceExtension as PSCSI_PORT_DEVICE_EXTENSION;
 
-    crate::glue::dprint_noop(b"SpiProcessTimeout() entered\n\0".as_ptr() as *const i8);
+    crate::glue::dprint_noop!(b"SpiProcessTimeout() entered\n\0".as_ptr() as *const i8);
 
     (*DeviceExtension).TimerCount = (core::u32::MAX) as i32; // -1
 
@@ -2051,7 +2071,7 @@ pub unsafe extern "system" fn SpiProcessTimeout(
 
         return 0; // FALSE
     } else {
-        crate::glue::dprint_noop(b"Resetting the bus\n\0".as_ptr() as *const i8);
+        crate::glue::dprint_noop!(b"Resetting the bus\n\0".as_ptr() as *const i8);
 
         for Bus in 0..(*DeviceExtension).NumberOfBuses {
             ((*DeviceExtension).HwResetBus.unwrap())((*DeviceExtension).MiniPortDeviceExtension.as_mut_ptr() as *mut c_void, Bus as u32);
@@ -2101,7 +2121,7 @@ pub unsafe extern "system" fn ScsiPortIoTimer(
     Context: *mut core::ffi::c_void,
 ) {
     // DPRINT("ScsiPortIoTimer()\n");
-    crate::glue::dprint_noop(b"ScsiPortIoTimer()\n\0".as_ptr() as *const i8);
+    crate::glue::dprint_noop!(b"ScsiPortIoTimer()\n\0".as_ptr() as *const i8);
 
     let DeviceExtension = (*DeviceObject).DeviceExtension as *mut SCSI_PORT_DEVICE_EXTENSION;
 
@@ -2121,7 +2141,7 @@ pub unsafe extern "system" fn ScsiPortIoTimer(
                 (*DeviceExtension).Common.DeviceObject as *mut core::ffi::c_void,
             ) != 0
             {
-                crate::glue::dprint_noop(b"Error happened during processing timeout, but nothing critical\n\0".as_ptr() as *const i8);
+                crate::glue::dprint_noop!(b"Error happened during processing timeout, but nothing critical\n\0".as_ptr() as *const i8);
             }
         }
 
@@ -2143,7 +2163,7 @@ pub unsafe extern "system" fn ScsiPortIoTimer(
 
             if ((*LunExtension).Flags & 0x8 /* LUNEX_BUSY */) != 0 {
                 if ((*LunExtension).Flags & (0x4 | 0x1) /* LUNEX_NEED_REQUEST_SENSE | LUNEX_FROZEN_QUEUE */) == 0 {
-                    crate::glue::dprint_noop(b"Retrying busy request\n\0".as_ptr() as *const i8);
+                    crate::glue::dprint_noop!(b"Retrying busy request\n\0".as_ptr() as *const i8);
 
                     // Clear flags, and retry busy request
                     (*LunExtension).Flags &= !(0x8 | 0x10 /* LUNEX_BUSY | LUNEX_FULL_QUEUE */);
@@ -2163,7 +2183,7 @@ pub unsafe extern "system" fn ScsiPortIoTimer(
 
                 (*LunExtension).RequestTimeout = -1i32;
 
-                crate::glue::dprint_noop(b"Request timed out, resetting bus\n\0".as_ptr() as *const i8);
+                crate::glue::dprint_noop!(b"Request timed out, resetting bus\n\0".as_ptr() as *const i8);
 
                 // Pass params to the bus reset routine
                 ResetParams.PathId = (*LunExtension).PathId as u32;
@@ -2199,7 +2219,7 @@ pub unsafe extern "system" fn SpiMiniportTimerDpc(
 ) {
 
 
-    crate::glue::dprint_noop(b"Miniport timer DPC\n\0".as_ptr() as *const i8);
+    crate::glue::dprint_noop!(b"Miniport timer DPC\n\0".as_ptr() as *const i8);
 
     let device_object = DeviceObject as *mut DEVICE_OBJECT;
     let device_extension: *mut SCSI_PORT_DEVICE_EXTENSION =
@@ -2354,7 +2374,7 @@ unsafe fn SpiCreatePortConfig(
                     if (*InternalConfigInfo).LastAdapterNumber
                         != (*InternalConfigInfo).AdapterNumber
                     {
-                        crate::glue::dprint_noop(
+                        crate::glue::dprint_noop!(
                             b"Hardware info found at %S\n\0".as_ptr() as *const i8,
                             StrBuffer.as_mut_ptr(),
                         );
@@ -2373,14 +2393,14 @@ unsafe fn SpiCreatePortConfig(
                         continue 'try_next_ad;
                     }
                 } else {
-                    crate::glue::dprint_noop(
+                    crate::glue::dprint_noop!(
                         b"ZwOpenKey() failed with Status=0x%08X\n\0".as_ptr() as *const i8,
                         Status,
                     );
                     return STATUS_DEVICE_DOES_NOT_EXIST;
                 }
             } else {
-                crate::glue::dprint_noop(
+                crate::glue::dprint_noop!(
                     b"ZwOpenKey() failed with Status=0x%08X\n\0".as_ptr() as *const i8,
                     Status,
                 );
@@ -2628,7 +2648,7 @@ pub unsafe extern "system" fn ScsiPortAllocateAdapterChannel(
 #[no_mangle]
 pub unsafe extern "system" fn ScsiPortConvertPhysicalAddressToUlong(Address: SCSI_PHYSICAL_ADDRESS) -> u32 {
     unsafe {
-        crate::glue::dprint_noop(b"ScsiPortConvertPhysicalAddressToUlong()\n\0".as_ptr() as *const i8);
+        crate::glue::dprint_noop!(b"ScsiPortConvertPhysicalAddressToUlong()\n\0".as_ptr() as *const i8);
     }
     Address.u.LowPart
 }

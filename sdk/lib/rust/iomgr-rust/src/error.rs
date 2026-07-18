@@ -461,7 +461,7 @@ unsafe extern "system" fn IopLogWorker(_Parameter: PVOID) {
                 - core::mem::size_of::<ERROR_LOG_ENTRY>() as ULONG
                 - (*Packet).StringOffset as ULONG;
 
-            ExtraStringLength = ((ExtraStringLength + 1) & !1);
+            ExtraStringLength = (ExtraStringLength + 1) & !1 ;
 
             if ExtraStringLength > RemainingLength - 2 {
                 MessageLength -= (ExtraStringLength - RemainingLength) as usize;

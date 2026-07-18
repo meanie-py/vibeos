@@ -1,7 +1,6 @@
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_parens, unused_mut, unused_assignments)]
-#![allow(static_mut_refs)]
 #![allow(clippy::all)]
 
 //! kernel32-vista-rust — Rust translation of dll/win32/kernel32/kernel32_vista/*.c

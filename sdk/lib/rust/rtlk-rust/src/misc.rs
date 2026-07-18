@@ -40,7 +40,7 @@ extern "system" {
     static mut NtOSCSDVersion: ULONG;
     static mut NtBuildNumber: ULONG;
     static mut CmNtCSDVersion: ULONG;
-    static mut SharedUserData: *mut KUSER_SHARED_DATA;
+    static mut SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
 }
 
 extern "C" {
@@ -53,13 +53,10 @@ extern "C" {
     );
 }
 
-#[repr(C)]
-struct KUSER_SHARED_DATA {
-    _padding: [u8; 0x2e0],
-    SuiteMask: USHORT,
-    _padding2: [u8; 0x2],
-    NtProductType: UCHAR,
-}
+// KUSER_SHARED_DATA: bindgen layout. The shadow struct here read SuiteMask at
+// +0x2E0 as USHORT and NtProductType at +0x2E4 as UCHAR (real: +0x2D0 ULONG /
+// +0x264 enum) — RtlGetVersion reported garbage suite/product values. Same
+// landmine class as ke/amd64/kiinit.rs (2026-07-11).
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlGetNtGlobalFlags() -> ULONG {
@@ -82,7 +79,7 @@ pub unsafe extern "system" fn RtlGetVersion(
         (*info_ex).wServicePackMajor = ((CmNtCSDVersion >> 8) & 0xFF) as USHORT;
         (*info_ex).wServicePackMinor = (CmNtCSDVersion & 0xFF) as USHORT;
         (*info_ex).wSuiteMask = ((*SharedUserData).SuiteMask & 0xFFFF) as USHORT;
-        (*info_ex).wProductType = (*SharedUserData).NtProductType;
+        (*info_ex).wProductType = (*SharedUserData).NtProductType as UCHAR;
         (*info_ex).wReserved = 0;
     }
 
@@ -137,7 +134,7 @@ pub unsafe extern "system" fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE)
 
     InitializeObjectAttributes(
         &mut object_attributes,
-        &mut KEY_PRODUCT,
+        &raw mut KEY_PRODUCT,
         OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -153,7 +150,7 @@ pub unsafe extern "system" fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE)
 
     let status = ZwQueryValueKey(
         key,
-        &mut VALUE_NT_PRODUCT,
+        &raw mut VALUE_NT_PRODUCT,
         2,
         buffer_key,
         buffer_key_length,
@@ -192,13 +189,13 @@ pub unsafe extern "system" fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE)
         nt_product_type.Length -= 2;
     }
 
-    if RtlCompareUnicodeString(&mut nt_product_type, &mut WORKSTATION_PRODUCT, 1) == 0 {
+    if RtlCompareUnicodeString(&mut nt_product_type, &raw mut WORKSTATION_PRODUCT, 1) == 0 {
         *ProductType = 1;
         success = 1u8;
-    } else if RtlCompareUnicodeString(&mut nt_product_type, &mut LANMAN_PRODUCT, 1) == 0 {
+    } else if RtlCompareUnicodeString(&mut nt_product_type, &raw mut LANMAN_PRODUCT, 1) == 0 {
         *ProductType = 2;
         success = 1u8;
-    } else if RtlCompareUnicodeString(&mut nt_product_type, &mut SERVER_PRODUCT, 1) == 0 {
+    } else if RtlCompareUnicodeString(&mut nt_product_type, &raw mut SERVER_PRODUCT, 1) == 0 {
         *ProductType = 3;
         success = 1u8;
     } else {

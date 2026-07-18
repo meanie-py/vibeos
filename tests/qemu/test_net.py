@@ -166,9 +166,46 @@ def test_dhcp_lease(vm: QemuVM) -> None:
 
 
 def test_dns_resolve(vm: QemuVM) -> None:
-    """Kernel self-test resolved an A record via the slirp DNS forwarder."""
+    """Kernel self-test resolved an A record via the slirp DNS forwarder.
+
+    POLLS the live log rather than reading the static `_boot_output` snapshot,
+    and it is the only one of the netstack self-test markers that needs to.
+    Measured on a healthy boot (~1000 lines of serial output):
+
+        [NETSTACK] tcp echo ready    line 863    (~140 lines of headroom)
+        [NETSTACK] dhcp lease        line 864    (~139)
+        [NETSTACK] ping gateway OK   line 866    (~137)
+        [NETSTACK] dns OK            line 981    (   22)   <-- ~2% margin
+        shell ready                  line 1003   (the _boot_output cutoff)
+
+    DNS is the LAST thing to land before boot completes, and it is the only
+    marker in this suite whose latency depends on a resolver OUTSIDE the machine
+    (slirp forwards 10.0.2.3 to the host's DNS). A 2% margin against an external
+    round-trip is a race, not a contract: any perturbation of the boot — host
+    load, a slow upstream resolver, a concurrent gate — eats it, and the test
+    goes red for a reason that has nothing to do with the OS.
+
+    That is exactly how it failed during the msvcrt wave-4 NULL regression
+    (§9.64): the real bug perturbed the boot, DNS lost its 22-line margin, and
+    `test_dns_resolve` fired alongside the genuine failure — sending the triage
+    at a kernel-side marker that user-mode msvcrt cannot even reach.
+
+    This is STRICTLY STRONGER than the snapshot assert, not weaker:
+    `_wait_for_marker` checks `_boot_output` FIRST and returns immediately on a
+    hit, so it is a superset — it can only ever convert a spurious FAIL into a
+    PASS. The marker is still REQUIRED; a genuinely broken DNS still goes red,
+    just after a bounded wait. The timeout is deliberately tight (30s, vs the
+    90s default) so a DNS path that regresses into being *slow* is still caught.
+
+    The other five netstack markers keep their snapshot asserts on purpose —
+    they land with ~140 lines of headroom and are not at risk; polling them would
+    add tolerance where none is needed.
+    """
     _require_net_config(vm)
-    assert MARK_DNS in vm._boot_output
+    assert _wait_for_marker(vm, MARK_DNS, timeout=30.0), (
+        "kernel DNS self-test never resolved an A record via the slirp forwarder "
+        "(10.0.2.3 -> host resolver)"
+    )
 
 
 # --------------------------------------------------------------------------- #

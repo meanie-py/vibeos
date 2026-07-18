@@ -2,8 +2,6 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 
 // ── DC-lifecycle shared preamble (hand-added; macros/consts rustconv can't see) ──
-use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
-use ntkrnl_sys::base::STATUS_SUCCESS;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
 // GDITAG_HMGR_LOOKASIDE_DC_TYPE = '1alG' (big-endian multichar)
 use crate::dib_helpers::BitsPerFormat;
@@ -119,7 +117,7 @@ pub unsafe extern "fastcall" fn DC_vUpdateFillBrush(pdc: PDC) {
         );
     }
 
-    if (*pdcattr).hbrush == (*StockObjects.as_ptr().add(DC_BRUSH as usize)) as _ {
+    if (*pdcattr).hbrush == (*(*(&raw const StockObjects)).as_ptr().add(DC_BRUSH as usize)) as _ {
         EBRUSHOBJ_vSetSolidRGBColor(
             core::ptr::addr_of_mut!((*pdc).eboFill),
             (*pdcattr).crBrushClr,
@@ -155,7 +153,7 @@ pub unsafe extern "C" fn DC_vUpdateFillBrush(pdc: PDC) {
         );
     }
 
-    if (*pdcattr).hbrush == (*StockObjects.as_ptr().add(DC_BRUSH as usize)) as _ {
+    if (*pdcattr).hbrush == (*(*(&raw const StockObjects)).as_ptr().add(DC_BRUSH as usize)) as _ {
         EBRUSHOBJ_vSetSolidRGBColor(
             core::ptr::addr_of_mut!((*pdc).eboFill),
             (*pdcattr).crBrushClr,
@@ -191,7 +189,7 @@ unsafe extern "fastcall" fn DC_vUpdateLineBrush(pdc: PDC) {
         );
     }
 
-    if (*pdcattr).hpen == (*StockObjects.as_ptr().add(DC_PEN as usize)) as _ {
+    if (*pdcattr).hpen == (*(*(&raw const StockObjects)).as_ptr().add(DC_PEN as usize)) as _ {
         EBRUSHOBJ_vSetSolidRGBColor(
             core::ptr::addr_of_mut!((*pdc).eboLine),
             (*pdcattr).crPenClr,
@@ -227,7 +225,7 @@ unsafe extern "C" fn DC_vUpdateLineBrush(pdc: PDC) {
         );
     }
 
-    if (*pdcattr).hpen == (*StockObjects.as_ptr().add(DC_PEN as usize)) as _ {
+    if (*pdcattr).hpen == (*(*(&raw const StockObjects)).as_ptr().add(DC_PEN as usize)) as _ {
         EBRUSHOBJ_vSetSolidRGBColor(
             core::ptr::addr_of_mut!((*pdc).eboLine),
             (*pdcattr).crPenClr,
@@ -613,7 +611,7 @@ pub unsafe extern "stdcall" fn NtGdiSelectBitmap(
     if psurfOld != core::ptr::null_mut() {
         hbmpOld = (*psurfOld).BaseObject.hHmgr as _;
     } else {
-        hbmpOld = (*StockObjects.as_ptr().add(DEFAULT_BITMAP as usize)) as _;
+        hbmpOld = (*(*(&raw const StockObjects)).as_ptr().add(DEFAULT_BITMAP as usize)) as _;
     }
 
     if hbmp == hbmpOld {
@@ -621,7 +619,7 @@ pub unsafe extern "stdcall" fn NtGdiSelectBitmap(
         return hbmpOld;
     }
 
-    if hbmp == (*StockObjects.as_ptr().add(DEFAULT_BITMAP as usize)) as _ {
+    if hbmp == (*(*(&raw const StockObjects)).as_ptr().add(DEFAULT_BITMAP as usize)) as _ {
         psurfNew = core::ptr::null_mut();
 
         (*pdc).dclevel.sizl.cx = 1;
@@ -714,7 +712,7 @@ pub unsafe extern "C" fn NtGdiSelectBitmap(
     if psurfOld != core::ptr::null_mut() {
         hbmpOld = (*psurfOld).BaseObject.hHmgr as _;
     } else {
-        hbmpOld = (*StockObjects.as_ptr().add(DEFAULT_BITMAP as usize)) as _;
+        hbmpOld = (*(*(&raw const StockObjects)).as_ptr().add(DEFAULT_BITMAP as usize)) as _;
     }
 
     if hbmp == hbmpOld {
@@ -722,7 +720,7 @@ pub unsafe extern "C" fn NtGdiSelectBitmap(
         return hbmpOld;
     }
 
-    if hbmp == (*StockObjects.as_ptr().add(DEFAULT_BITMAP as usize)) as _ {
+    if hbmp == (*(*(&raw const StockObjects)).as_ptr().add(DEFAULT_BITMAP as usize)) as _ {
         psurfNew = core::ptr::null_mut();
 
         (*pdc).dclevel.sizl.cx = 1;
@@ -769,7 +767,7 @@ pub unsafe extern "C" fn NtGdiSelectBitmap(
     }
 
     (*(*pdc).pdcattr).ulDirty_ |= DIRTY_FILL | DIRTY_LINE;
-    (*pdc).fs |= (DC_DIRTY_RAO as i32);
+    (*pdc).fs |= DC_DIRTY_RAO as i32 ;
 
     REGION_SetRectRgn(
         (*pdc).prgnVis,
@@ -1095,7 +1093,7 @@ pub unsafe extern "stdcall" fn NtGdiGetDCObject(hDC: HDC, ObjectType: INT) -> HA
             SelObject = if !psurf.is_null() {
                 (*psurf).BaseObject.hHmgr
             } else {
-                (*StockObjects.as_ptr().add(DEFAULT_BITMAP as usize))
+                (*(*(&raw const StockObjects)).as_ptr().add(DEFAULT_BITMAP as usize))
             };
         }
 
@@ -1174,7 +1172,7 @@ pub unsafe extern "C" fn NtGdiGetDCObject(hDC: HDC, ObjectType: INT) -> HANDLE {
             SelObject = if !psurf.is_null() {
                 (*psurf).BaseObject.hHmgr
             } else {
-                (*StockObjects.as_ptr().add(DEFAULT_BITMAP as usize))
+                *(*(&raw const StockObjects)).as_ptr().add(DEFAULT_BITMAP as usize)
             };
         }
 

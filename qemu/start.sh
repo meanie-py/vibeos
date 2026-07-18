@@ -31,7 +31,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # (not $$) because start.sh itself is short-lived; we want to skip past the
 # calling bash (per-tool-call in claude, login in terminal, transient in $()).
 # See lib/common.sh:owner_pid_for for the rationale in full.
-OWNER_PID="$(owner_pid_for "$PPID")"
+# VIBEOS_QEMU_OWNER_PID: explicit owner override for detached driver scripts.
+# The ancestry walk lands on the first NON-SHELL ancestor — for an agent's
+# `setsid nohup bash driver.sh` that is the agent harness's TRANSIENT relay
+# process, which dies when the launching tool-call returns; any sibling
+# session's reaper then sees launcher_pid dead and SIGTERMs the QEMU mid-run
+# (bit the fex-m4 lane 2026-07-15). A long-lived driver passes its own $$.
+OWNER_PID="${VIBEOS_QEMU_OWNER_PID:-$(owner_pid_for "$PPID")}"
 
 # --- arg parsing ------------------------------------------------------------
 ARCH=""
@@ -235,6 +241,14 @@ case "$ARCH" in
             -drive "if=pflash,format=raw,file=$EFIVARS"
             -drive "file=$BOOT_IMG,format=raw,if=virtio"
             -device ramfb
+            # virtio-mmio kbd+mouse — the devices arm64input.sys binds to. Mirror
+            # vm.py/smoke so manual & agent-driven boots are interactive by default
+            # (without these a GUI guest — e.g. x86 Doom under WoW64 — renders but
+            # receives no input). Modern (v2) split-queue is arm64input's exercised
+            # path; force it off legacy like smoke does.
+            -device "virtio-keyboard-device,id=arm64kbd"
+            -device "virtio-mouse-device,id=arm64mouse"
+            -global "virtio-mmio.force-legacy=false"
             "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
         )
         ;;
@@ -333,4 +347,16 @@ for _ in 1 2 3 4 5; do
 done
 
 log_info "QEMU running: pid=$QEMU_PID gdb_port=${GDB_PORT:-none}"
+if [ -n "$GDB_PORT" ]; then
+    # FOOTGUN GUARD: the gdb port is auto-allocated per run (12000..12999) — it is
+    # NOT a fixed 12001. Hardcoding a port silently connects you to a *stale* QEMU
+    # from an earlier run that still holds it, and your breakpoints never fire.
+    # Always take the port from here / `qemu/gdb-port <run-id>` / the manifest.
+    # NOTE re symbols: the manifest kernel is the UP image; if this media boots the
+    # SMP kernel (built --smp-kernel) symbolicate ntkrnlmp.exe instead (its base is
+    # the same VA). See smp-bringup-quest.md "GDB recipe".
+    log_info "gdb: gdb-multiarch -ex 'target remote 127.0.0.1:$GDB_PORT' \\"
+    log_info "       -ex 'add-symbol-file $KERNEL_IMAGE <kbase+0x1000>' -ex 'set language c'"
+    log_info "     (port also: qemu/gdb-port $RUN_ID)"
+fi
 echo "$RUN_ID"

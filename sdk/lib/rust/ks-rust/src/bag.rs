@@ -54,7 +54,7 @@ pub unsafe extern "system" fn KspFindObjectBagItem(
     let mut Entry: PLIST_ENTRY = (*ObjectList).Flink;
     while Entry != ObjectList {
         let BagEntry: PKSIOBJECT_BAG_ENTRY = {
-            let offset = &raw const (*core::ptr::null_mut::<KSIOBJECT_BAG_ENTRY>()).Entry as usize;
+            let offset = core::mem::offset_of!(KSIOBJECT_BAG_ENTRY, Entry);
             (Entry as usize).wrapping_sub(offset) as *mut KSIOBJECT_BAG_ENTRY
         };
         if (*BagEntry).Item == Item {
@@ -264,7 +264,7 @@ pub unsafe extern "system" fn KsFreeObjectBag(
     while !IsListEmpty(&mut (*Bag).ObjectList) {
         Entry = RemoveHeadList(&mut (*Bag).ObjectList);
         BagEntry = (Entry as usize)
-            .wrapping_sub(&raw mut (*core::ptr::null_mut::<KSIOBJECT_BAG_ENTRY>()).Entry as usize)
+            .wrapping_sub(core::mem::offset_of!(KSIOBJECT_BAG_ENTRY, Entry))
             as *mut KSIOBJECT_BAG_ENTRY;
 
         TotalRefs = KspGetObjectItemReferenceCount(

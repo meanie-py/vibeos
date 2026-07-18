@@ -190,6 +190,25 @@ FEXCore::Core::CPUState::gdt_segment gdt[32] {};
 
 extern "C" int main(int /*argc*/, char** /*argv*/) {
   DbgPrint("[FEX-HELLO] rung-2 hello-compute harness start\n");
+
+  // EL0 cache-maintenance tripwire (task #46): production Windows-on-ARM64
+  // exposes `mrs CTR_EL0`, `dc cvau` and `dc zva` to user mode (SCTLR_EL1
+  // UCI/UCT/DZE). vibeos inherited the reset-clear bits from firmware, so
+  // these trapped as EC=0x18 -> STATUS_ILLEGAL_INSTRUCTION and killed
+  // whichever FEX guest first took the rare inline-SMC-flush path (the
+  // 2-in-13 startup-death flake). Executing all three here, every boot,
+  // makes any regression deterministic: fexprobe dies right here with a
+  // 0xC000001D exit instead of a random guest dying once a fortnight.
+  {
+    alignas(2048) static unsigned char ZvaBuf[2048]; // >= max DC ZVA block
+    uint64_t Ctr;
+    __asm__ __volatile__("mrs %0, ctr_el0" : "=r"(Ctr));
+    __asm__ __volatile__("dc cvau, %0" ::"r"(&ZvaBuf[0]) : "memory");
+    __asm__ __volatile__("dc zva, %0" ::"r"(&ZvaBuf[0]) : "memory");
+    DbgPrint("[FEX-HELLO] EL0 cache ops OK (dc cvau/dc zva/CTR_EL0=%llx)\n",
+             (unsigned long long)Ctr);
+  }
+
   AddVectoredExceptionHandler(1, ProbeVeh);
 
   // 64-bit guest.

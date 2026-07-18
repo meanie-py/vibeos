@@ -170,10 +170,10 @@ pub unsafe extern "system" fn WmipInitializeGuidObjectType() -> NTSTATUS {
     object_type_initializer.CloseProcedure = core::mem::transmute(WmipCloseMethod as usize);
 
     let status = ObCreateObjectType(
-        &mut GUID_OBJECT_NAME,
+        &raw mut GUID_OBJECT_NAME,
         &mut object_type_initializer,
         core::ptr::null_mut(),
-        &mut WmipGuidObjectType,
+        &raw mut WmipGuidObjectType,
     );
 
     status
@@ -314,7 +314,7 @@ pub unsafe extern "system" fn WmipOpenGuidObjectByName(
     let mut guid_string: _UNICODE_STRING;
     let mut guid: GUID = core::mem::zeroed();
 
-    if RtlPrefixUnicodeString(&mut PREFIX, (*ObjectAttributes).ObjectName, 0u8) == 0 {
+    if RtlPrefixUnicodeString(&raw mut PREFIX, (*ObjectAttributes).ObjectName, 0u8) == 0 {
         return STATUS_INVALID_PARAMETER;
     }
 

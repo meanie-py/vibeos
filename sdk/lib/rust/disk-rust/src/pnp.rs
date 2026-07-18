@@ -164,8 +164,8 @@ const MAX_SECTORS_PER_VERIFY: ULONG = 0x0100;
 const TRUE: BOOLEAN = 1;
 const FALSE: BOOLEAN = 0;
 const STATUS_SUCCESS: NTSTATUS = 0;
-const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = (0xC000009Au32 as i32);
-const STATUS_UNSUCCESSFUL: NTSTATUS = (0xC0000001u32 as i32);
+const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as i32 ;
+const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32 ;
 const STATUS_PENDING: NTSTATUS = 0x00000103;
 const Executive: KWAIT_REASON = 0;
 const SynchronizationEvent: EVENT_TYPE = 0x01;
@@ -636,11 +636,15 @@ pub unsafe extern "C" fn DiskCreateSymbolicLinks(
 
     if (*diskData).LinkStatus.WellKnownNameCreated() == 0 {
         let fmt1: [u8; 60] = *b"\\\0D\0e\0v\0i\0c\0e\0\\\0H\0a\0r\0d\0d\0i\0s\0k\0%\0d\0\\\0P\0a\0r\0t\0i\0t\0i\0o\0n\x000\0\0\0";
-        let fmt1_ptr: *const u16 = core::mem::transmute::<[u8; 60], [u16; 30]>(fmt1).as_ptr();
+        // Bind the transmuted [u16] array so it OUTLIVES the RtlStringCchPrintfW call
+        // below. Taking `.as_ptr()` on the transmute temporary directly leaves fmt1_ptr
+        // dangling the instant the statement ends (dangling_pointers_from_temporaries).
+        let fmt1_wide: [u16; 30] = core::mem::transmute::<[u8; 60], [u16; 30]>(fmt1);
+        let fmt1_ptr: *const u16 = fmt1_wide.as_ptr();
 
         status = RtlStringCchPrintfW(
             wideSourceName.as_mut_ptr(),
-            (core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>() - 1),
+            core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>() - 1 ,
             fmt1_ptr,
             (*(*commonExtension).PartitionZeroExtension).DeviceNumber,
         );
@@ -670,11 +674,13 @@ pub unsafe extern "C" fn DiskCreateSymbolicLinks(
 
     if (*diskData).LinkStatus.PhysicalDriveLinkCreated() == 0 {
         let fmt2: [u8; 56] = *b"\\\0D\0o\0s\0D\0e\0v\0i\0c\0e\0s\0\\\0P\0h\0y\0s\0i\0c\0a\0l\0D\0r\0i\0v\0e\0%\0d\0\0\0";
-        let fmt2_ptr: *const u16 = core::mem::transmute::<[u8; 56], [u16; 28]>(fmt2).as_ptr();
+        // Bind the transmuted [u16] array so it outlives the RtlStringCchPrintfW call.
+        let fmt2_wide: [u16; 28] = core::mem::transmute::<[u8; 56], [u16; 28]>(fmt2);
+        let fmt2_ptr: *const u16 = fmt2_wide.as_ptr();
 
         status = RtlStringCchPrintfW(
             wideSourceName.as_mut_ptr(),
-            (core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>() - 1),
+            core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>() - 1 ,
             fmt2_ptr,
             (*(*commonExtension).PartitionZeroExtension).DeviceNumber,
         );

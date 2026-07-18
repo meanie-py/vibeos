@@ -44,7 +44,7 @@ unsafe fn ExpGetGlobalAtomTable() -> PRTL_ATOM_TABLE {
         return GlobalAtomTable;
     }
 
-    let Status = RtlCreateAtomTable(37, &mut GlobalAtomTable);
+    let Status = RtlCreateAtomTable(37, &raw mut GlobalAtomTable);
 
     if Status < 0 {
         return core::ptr::null_mut();
@@ -78,8 +78,8 @@ pub unsafe extern "system" fn NtAddAtom(
             CapturedName = AtomName;
         } else {
             if !AtomName.is_null() {
-                let CapturedSize = ((AtomNameLength + core::mem::size_of::<u16>() as ULONG) & 
-                                    !(core::mem::size_of::<u16>() as ULONG - 1));
+                let CapturedSize = (AtomNameLength + core::mem::size_of::<u16>() as ULONG) &
+                                    !(core::mem::size_of::<u16>() as ULONG - 1) ;
                 CapturedName = ExAllocatePoolWithTag(
                     PagedPool,
                     CapturedSize as usize,
@@ -179,8 +179,8 @@ pub unsafe extern "system" fn NtFindAtom(
                     PreviousMode,
                 )?;
 
-                let CapturedSize = ((AtomNameLength + core::mem::size_of::<u16>() as ULONG) &
-                                    !(core::mem::size_of::<u16>() as ULONG - 1));
+                let CapturedSize = (AtomNameLength + core::mem::size_of::<u16>() as ULONG) &
+                                    !(core::mem::size_of::<u16>() as ULONG - 1) ;
                 CapturedName = ExAllocatePoolWithTag(
                     PagedPool,
                     CapturedSize as usize,

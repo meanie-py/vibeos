@@ -1624,7 +1624,7 @@ pub unsafe extern "system" fn DriverEntry(
         // Fallback: no usable interrupt routing — poll as before.
         VirtioPollRunning = 1u8;
         Status = PsCreateSystemThread(
-            &mut VirtioPollThreadHandle,
+            &raw mut VirtioPollThreadHandle,
             0x001F03FF,
             core::ptr::null_mut(),
             core::ptr::null_mut(),

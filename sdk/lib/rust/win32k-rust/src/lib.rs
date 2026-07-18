@@ -20,7 +20,6 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
-#![allow(unused_unsafe)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
@@ -32,9 +31,26 @@ extern crate ntprintf_w;
 extern crate win32k_sys;
 
 // ── Translated modules (one `pub mod` per landed src/<name>.rs) ──────
+// Emit a fn twice: `extern "fastcall"` on i386, `extern "C"` elsewhere.
+// FASTCALL only exists as a distinct ABI on x86; rustc treats "fastcall" as "C"
+// on other arches today and makes it a HARD ERROR on newer toolchains
+// (unsupported_calling_conventions). Same pattern as ex-rust's fastcall_export!.
+macro_rules! fastcall_fn {
+    ($(#[$attr:meta])* $vis:vis unsafe fn $name:ident($($params:tt)*) $(-> $ret:ty)? $body:block) => {
+        $(#[$attr])*
+        #[cfg(target_arch = "x86")]
+        $vis unsafe extern "fastcall" fn $name($($params)*) $(-> $ret)? $body
+
+        $(#[$attr])*
+        #[cfg(not(target_arch = "x86"))]
+        $vis unsafe extern "C" fn $name($($params)*) $(-> $ret)? $body
+    };
+}
+
 pub mod sort; // gdi/eng/sort.c — EngSort (proving slice)
 pub mod gdiobj; // gdi/ntgdi/gdiobj.c (+split2) — GDI handle table [Phase 1a]
 pub mod object; // user/ntuser/object.c — USER handle/object table [Phase 1b]
+pub mod wow64;  // WoW64: project the 64-bit CLIENTINFO into a 32-bit guest's TEB32
 pub mod math;   // gdi/eng/math.c — EngMulDiv (Phase 2a proving slice)
 pub mod error;     // gdi/eng/error.c — Eng{Get,Set}LastError + SetLastNtError (FASTCALL)
 pub mod string;    // gdi/eng/string.c — STROBJ_* (re-translated with upgraded pipeline)

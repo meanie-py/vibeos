@@ -24,7 +24,7 @@ use crate::preamble::{
 };
 use crate::wstr;
 use core::mem::{offset_of, size_of, transmute};
-use core::ptr::{addr_of, addr_of_mut, null, null_mut};
+use core::ptr::{addr_of, addr_of_mut, null_mut};
 use winlogon_sys::nt::*;
 
 // Define a WINAPI fn with the per-arch ABI the bindgen WLX/Win32 callback

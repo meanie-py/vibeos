@@ -1,12 +1,10 @@
 use crate::types::*;
 use crate::glue::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ddk::{ObOpenObjectByPointer, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
-use core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "C" fn WarmSocketForBind(FCB: PAFD_FCB, ShareType: ULONG) -> NTSTATUS {
     let mut Status: NTSTATUS;
@@ -89,7 +87,7 @@ pub unsafe extern "system" fn AfdBindSocket(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut BindReq: PAFD_BIND_DATA;
+    let BindReq: PAFD_BIND_DATA;
     let mut UserHandle: HANDLE = core::ptr::null_mut();
 
     let _ = DeviceObject;

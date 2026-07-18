@@ -1,11 +1,10 @@
 use win32k_sys::win32k::*;
-use core::ffi::c_void;
 use crate::dib_helpers::*;
 
 // RECTL_bPointInRect is FORCEINLINE in rect.h (no exported symbol) — inline it.
 #[inline(always)]
 unsafe fn RECTL_bPointInRect(prcl: *const RECTL, x: INT, y: INT) -> BOOL {
-    ((x >= (*prcl).left && x < (*prcl).right && y >= (*prcl).top && y < (*prcl).bottom) as BOOL)
+    (x >= (*prcl).left && x < (*prcl).right && y >= (*prcl).top && y < (*prcl).bottom) as BOOL
 }
 // DibFunctionsForBitmapFormat (defined #[no_mangle] in dib.rs) — declared with
 // the real [_; 11] layout so indexing uses the correct stride (the win32k_sys

@@ -74,8 +74,14 @@ const PCR_MAJOR_VERSION: ULONG = 1;
 const PCR_MINOR_VERSION: ULONG = 1;
 const PRCB_MAJOR_VERSION: USHORT = 1;
 const PRCB_MINOR_VERSION: USHORT = 1;
-const PRCB_BUILD_UNIPROCESSOR: USHORT = 1;
-const PRCB_BUILD_DEBUG: USHORT = 2;
+// Canonical Windows values (ke.h): DEBUG=1, UNIPROCESSOR=2. These were swapped
+// here, which was masked on UP (both bits set → BuildType==3 either way, and the
+// HAL's UP HalpBuildType is also 3) but unmasked the instant SMP sets DEBUG-only:
+// the kernel published BuildType=2 while the SMP HAL's HalpBuildType=DEBUG=1, so
+// halinit.rs:178's build-type check bugchecked 0x79 MISMATCHED_HAL(2,2,1). The
+// HAL, the ntkrnl-sys bindgen headers, and the amd64 kernel all use DEBUG=1/UP=2.
+const PRCB_BUILD_UNIPROCESSOR: USHORT = 2;
+const PRCB_BUILD_DEBUG: USHORT = 1;
 const HIGH_PRIORITY: i8 = 31;
 const MAXCHAR: i8 = 127;
 const EFLAGS_ID: ULONG = 0x200000;
@@ -254,13 +260,12 @@ struct LARGE_IDENTITY_MAP {
     _opaque: [u8; 64],
 }
 
-#[repr(C)]
-struct KUSER_SHARED_DATA {
-    _padding1: [u8; 0x2D4],
-    ProcessorFeatures: [BOOLEAN; 64],
-    _padding2: [u8; 0x1C],
-    NXSupportPolicy: ULONG,
-}
+// KUSER_SHARED_DATA: bindgen layout. The shadow struct here put
+// ProcessorFeatures at +0x2D4 and NXSupportPolicy at +0x330 (real: +0x274 /
+// +0x2D5) — writes landed on ActiveConsoleId..Cookie. Masked by boot ordering
+// on UP; same landmine class as the amd64 -smp 2 NtSystemRoot chop (see
+// ke/amd64/kiinit.rs note, 2026-07-11).
+use ntkrnl_sys::ddk::_KUSER_SHARED_DATA as KUSER_SHARED_DATA;
 
 #[repr(C)]
 struct KNODE {
@@ -608,12 +613,12 @@ pub unsafe extern "system" fn KiInitializeKernel(
             (*Prcb).FeatureBits as u64 | (((*Prcb).FeatureBitsHigh as u64) << 32);
     }
 
-    (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_OPTIN;
+    (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_OPTIN as u8);
 
     if !strstr((*KeLoaderBlock).LoadOptions, b"NOEXECUTE=ALWAYSON\0".as_ptr() as *const i8)
         .is_null()
     {
-        (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_ALWAYSON;
+        (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_ALWAYSON as u8);
         KeFeatureBits |= KF_NX_ENABLED as u64;
     } else if !strstr(
         (*KeLoaderBlock).LoadOptions,
@@ -621,7 +626,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
     )
     .is_null()
     {
-        (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_OPTOUT;
+        (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_OPTOUT as u8);
         KeFeatureBits |= KF_NX_ENABLED as u64;
     } else if !strstr(
         (*KeLoaderBlock).LoadOptions,
@@ -638,7 +643,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
     .is_null()
         || !strstr((*KeLoaderBlock).LoadOptions, b"EXECUTE\0".as_ptr() as *const i8).is_null()
     {
-        (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_ALWAYSOFF;
+        (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_ALWAYSOFF as u8);
         KeFeatureBits |= KF_NX_DISABLED as u64;
     }
 
@@ -698,6 +703,19 @@ pub unsafe extern "system" fn KiInitializeKernel(
         );
         (*InitProcess).QuantumReset = MAXCHAR;
     } else {
+        // i386 M5 Phase C: the AP enters KiInitializeKernel at HIGH_LEVEL (raised
+        // in KiSystemStartup before KiSwitchToBootStack) and, unlike P0, skips the
+        // APC_LEVEL lower above — but it STILL runs ExpInitializeExecutive(Cpu!=0)
+        // below (→ ExInitPoolLookasidePointers + HalInitSystem, which allocate
+        // pool) and then KeRaiseIrql(DISPATCH_LEVEL). At HIGH_LEVEL both are
+        // illegal: pool ops require IRQL <= DISPATCH (else 0xC2 BAD_POOL_CALLER
+        // Arg1=8/Arg2=0x1f, the exact AP crash observed), and KeRaiseIrql can't
+        // "raise" from HIGH_LEVEL down to DISPATCH. ReactOS's i386 AP branch is a
+        // `/* FIXME */ "you are brave"` stub — never implemented — so this lower
+        // is greenfield, mirroring the amd64/arm64 AP (arm64 KiSystemStartupBootStack
+        // does KeLowerIrql(APC_LEVEL) for both CPUs). Lower the AP to APC_LEVEL so
+        // its executive/HAL init runs at a legal IRQL, matching P0.
+        KeLowerIrql(APC_LEVEL as u8);
     }
 
     KeInitializeThread(
@@ -863,24 +881,30 @@ pub unsafe extern "fastcall" fn KiGetMachineBootPointers(
     let Fs: u16;
     core::arch::asm!("mov {:x}, fs", out(reg) Fs, options(nomem, nostack));
 
-    *Gdt = gdt_base as PKGDTENTRY;
-    *Idt = idt_base as PKIDTENTRY;
+    core::ptr::write_volatile(Gdt, gdt_base as PKGDTENTRY);
+    core::ptr::write_volatile(Idt, idt_base as PKIDTENTRY);
 
     PcrSelector = *((gdt_base as ULONG_PTR + (Fs & !RPL_MASK) as ULONG_PTR)
         as *const _KGDTENTRY);
 
-    *Pcr = (PcrSelector.BaseLow as ULONG_PTR
-        | ((PcrSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
-        | ((PcrSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
-        as PKIPCR;
+    core::ptr::write_volatile(
+        Pcr,
+        (PcrSelector.BaseLow as ULONG_PTR
+            | ((PcrSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
+            | ((PcrSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
+            as PKIPCR,
+    );
 
     TssSelector = *((gdt_base as ULONG_PTR + (Tr & !RPL_MASK) as ULONG_PTR)
         as *const _KGDTENTRY);
 
-    *Tss = (TssSelector.BaseLow as ULONG_PTR
-        | ((TssSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
-        | ((TssSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
-        as PKTSS;
+    core::ptr::write_volatile(
+        Tss,
+        (TssSelector.BaseLow as ULONG_PTR
+            | ((TssSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
+            | ((TssSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
+            as PKTSS,
+    );
 }
 
 // CODE_SEG("INIT")
@@ -962,14 +986,16 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
 
     KiInitializeMachineType();
 
-    if Cpu != 0 {
-        KeMemoryBarrier();
-        (*LoaderBlock).Prcb = 0;
-
-        loop {
-            YieldProcessor();
-        }
-    }
+    // i386 M5 Phase C: the AP (Cpu != 0) now flows the FULL per-CPU init path
+    // instead of parking. Everything below is per-CPU-parameterized (Cpu/Pcr
+    // args, `if Cpu == 0` guards on the global-init parts), so the AP sets up
+    // its own PCR/TSS/IDT/exceptions, acquires+releases the freeze lock,
+    // publishes its KeActiveProcessors bit, HalInitializeProcessor, and
+    // KiSwitchToBootStack → KiSystemStartupBootStack → KiInitializeKernel(AP,
+    // Number!=0) → KiIdleLoop. KiInitializeKernel clears LoaderBlock->Prcb at
+    // its end (the KeStartAllProcessors handshake). The M5a spin-stub that
+    // used to sit here (KeMemoryBarrier + LoaderBlock->Prcb=0 + spin) is
+    // removed; the handshake now happens at the ReactOS-faithful point.
 
     KiGetMachineBootPointers(
         core::ptr::addr_of_mut!(Gdt),
@@ -996,38 +1022,61 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
     __writefsdword(KPCR_DR6, 0);
     __writefsdword(KPCR_DR7, 0);
 
-    KeInitExceptions();
+    // KeInitExceptions ONLY flips KiIdt's Selector/ExtendedOffset into hardware
+    // layout (P0-only, one-shot prep for the KiIdtDescriptor recopy below). It is
+    // unguarded, so an AP re-running it would DOUBLE-flip (corrupt) the global
+    // template. The AP skips both the recopy and this (see the Cpu==0 gate on the
+    // recopy block below) — its IDT is the already-correct mproc copy of P0's live
+    // IDT. (i386 M5 Phase C.)
+    if Cpu == 0 {
+        KeInitExceptions();
+    }
 
     Ke386SetDs(KGDT_R3_DATA | RPL_MASK);
     Ke386SetEs(KGDT_R3_DATA | RPL_MASK);
 
-    RtlCopyMemory(
-        core::ptr::addr_of_mut!(NmiEntry) as PVOID,
-        Idt.add(2) as *const core::ffi::c_void,
-        core::mem::size_of::<_KIDTENTRY>(),
-    );
-    RtlCopyMemory(
-        core::ptr::addr_of_mut!(DoubleFaultEntry) as PVOID,
-        Idt.add(8) as *const core::ffi::c_void,
-        core::mem::size_of::<_KIDTENTRY>(),
-    );
+    // i386 M5 Phase C: this block re-copies the KERNEL IDT TEMPLATE
+    // (KiIdtDescriptor.Base = &KiIdt) over the live IDT, preserving only the
+    // NMI/double-fault task gates. On P0 that's correct — the HAL then wires its
+    // interrupt vectors (clock IPI 0xd2 → HalpClockIpi, etc.) into P0's live IDT
+    // afterward. But the AP's IDT was already copied from P0's LIVE, fully-wired
+    // IDT in KeStartAllProcessors (ke/i386/mproc.rs, via __sidt); re-applying the
+    // bare template here UNWIRES those HAL vectors (0xd2 reverts to
+    // KiUnexpectedInterrupt210), and the AP never re-runs HAL init to re-wire them
+    // (its per-CPU HAL is HalInitializeProcessor, which doesn't touch the IDT). So
+    // the AP's FIRST clock IPI would hit the unexpected-interrupt stub and fault →
+    // #DF (GDB: v=d2 → #PF@0x8048 → #DF). Skip the recopy on the AP and keep the
+    // mproc copy, which already carries the correct traps + HAL vectors + NMI/DF
+    // task gates (the gates resolve through the AP's own GDT TSS selectors).
+    if Cpu == 0 {
+        RtlCopyMemory(
+            core::ptr::addr_of_mut!(NmiEntry) as PVOID,
+            Idt.add(2) as *const core::ffi::c_void,
+            core::mem::size_of::<_KIDTENTRY>(),
+        );
+        RtlCopyMemory(
+            core::ptr::addr_of_mut!(DoubleFaultEntry) as PVOID,
+            Idt.add(8) as *const core::ffi::c_void,
+            core::mem::size_of::<_KIDTENTRY>(),
+        );
 
-    RtlCopyMemory(
-        Idt as PVOID,
-        KiIdtDescriptor.Base as *const core::ffi::c_void,
-        (KiIdtDescriptor.Limit + 1) as usize,
-    );
+        RtlCopyMemory(
+            Idt as PVOID,
+            KiIdtDescriptor.Base as *const core::ffi::c_void,
+            (KiIdtDescriptor.Limit + 1) as usize,
+        );
 
-    RtlCopyMemory(
-        Idt.add(2) as PVOID,
-        core::ptr::addr_of!(NmiEntry) as *const core::ffi::c_void,
-        core::mem::size_of::<_KIDTENTRY>(),
-    );
-    RtlCopyMemory(
-        Idt.add(8) as PVOID,
-        core::ptr::addr_of!(DoubleFaultEntry) as *const core::ffi::c_void,
-        core::mem::size_of::<_KIDTENTRY>(),
-    );
+        RtlCopyMemory(
+            Idt.add(2) as PVOID,
+            core::ptr::addr_of!(NmiEntry) as *const core::ffi::c_void,
+            core::mem::size_of::<_KIDTENTRY>(),
+        );
+        RtlCopyMemory(
+            Idt.add(8) as PVOID,
+            core::ptr::addr_of!(DoubleFaultEntry) as *const core::ffi::c_void,
+            core::mem::size_of::<_KIDTENTRY>(),
+        );
+    }
 
     loop {
         while (core::ptr::read_volatile(core::ptr::addr_of!(KiFreezeExecutionLock)) as usize) != 0 {}
@@ -1052,6 +1101,21 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
 
     KeActiveProcessors |= __readfsdword(KPCR_SET_MEMBER);
     KeNumberProcessors += 1;
+
+    // Release the freeze-execution lock so the NEXT processor can acquire it
+    // and continue its own KiSystemStartup. amd64 does this here
+    // (ntoskrnl/ke/i386/../amd64/kiinit.c:566 — InterlockedAnd64(&lock, 0));
+    // the i386 KiSwitchToBootStack asm translation DROPPED the upstream
+    // release, which is latent while the AP parks at the M5a spin-stub (it
+    // never reaches this acquire) but deadlocks the moment the AP flows the
+    // full path: it would spin forever at the acquire loop above and P0's
+    // KeStartAllProcessors handshake (mproc.rs waits on LoaderBlock->Prcb==0)
+    // would never complete. Atomic Release store matches the acquire's
+    // InterlockedBitTestAndSet/read_volatile pairing. (i386 M5 Phase C.)
+    core::sync::atomic::AtomicUsize::from_ptr(
+        core::ptr::addr_of_mut!(KiFreezeExecutionLock) as *mut usize,
+    )
+    .store(0, core::sync::atomic::Ordering::Release);
 
     if Cpu == 0 {
         KdInitSystem(0, KeLoaderBlock as PLOADER_PARAMETER_BLOCK);

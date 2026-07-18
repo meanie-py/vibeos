@@ -1,5 +1,6 @@
 use super::ke_defs::*;
 use crate::CONTAINING_RECORD;
+use ntkrnl_sys::inline::ke::KiInsertDeferredReadyList; // §9.56: inline (not the extern-C shim) so #[track_caller] names the true site
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -21,7 +22,6 @@ use ntkrnl_sys::ddk::{
     KeWaitForMultipleObjects,
     KiAcquireDispatcherLock,
     KiAcquirePrcbLock,
-    KiInsertDeferredReadyList,
     KiReleaseDispatcherLock,
     KiReleasePrcbLock,
 };
@@ -111,6 +111,11 @@ pub unsafe extern "system" fn KiScanReadyQueues(
 
                         (*Thread).Priority = THREAD_BOOST_PRIORITY as i8;
                         *kt_Quantum(Thread) = (WAIT_QUANTUM_DECREMENT * 4) as i8;
+                        // §9.56 in-flight oracle: legal repositioning (removed
+                        // from the ready queue above) — requeue, not a wake.
+                        #[cfg(feature = "smp")]
+                        ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
+                        #[cfg(not(feature = "smp"))]
                         KiInsertDeferredReadyList(Thread);
                         Count -= 1;
                     }
@@ -130,6 +135,15 @@ pub unsafe extern "system" fn KiScanReadyQueues(
                 break;
             }
         }
+    }
+
+    // §9.56: balmgr is the one cross-CPU ready-list writer (it locks and
+    // mutates the SCANNED Prcb, not the current one). Validate every priority
+    // it may have touched before releasing — site 0x44 fires if balmgr left a
+    // torn list. Cheap: 32 checks once per (infrequent) scan.
+    #[cfg(feature = "smp")]
+    for p in 1..32u32 {
+        ntkrnl_sys::inline::ke::ki_rq_integrity(Prcb, p, 0x44);
     }
 
     KiReleasePrcbLock(Prcb);

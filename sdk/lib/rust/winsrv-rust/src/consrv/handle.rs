@@ -1,12 +1,4 @@
 use winsrv_sys::nt::*;
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::console::*;
-use super::lineinput::*;
-use super::history::*;
-use super::init::*;
 use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -117,7 +109,7 @@ pub unsafe extern "C" fn ConSrvInheritHandlesTable(
                 {
                     *((*TargetProcessData).HandleTable.add(j as usize) as PCONSOLE_IO_HANDLE) =
                         *((*SourceProcessData).HandleTable.add(i as usize) as PCONSOLE_IO_HANDLE);
-                    AdjustHandleCounts(((*TargetProcessData).HandleTable.add(j as usize) as PCONSOLE_IO_HANDLE), 1);
+                    AdjustHandleCounts((*TargetProcessData).HandleTable.add(j as usize) as PCONSOLE_IO_HANDLE , 1);
                     j += 1;
                 }
             }
@@ -135,7 +127,7 @@ pub unsafe extern "C" fn ConSrvFreeHandlesTable(ProcessData: PCONSOLE_PROCESS_DA
     if !(*ProcessData).HandleTable.is_null() {
         if !(*ProcessData).ConsoleHandle.is_null() {
             for i in 0..(*ProcessData).HandleTableSize {
-                ConSrvCloseHandle(((*ProcessData).HandleTable.add(i as usize) as PCONSOLE_IO_HANDLE));
+                ConSrvCloseHandle((*ProcessData).HandleTable.add(i as usize) as PCONSOLE_IO_HANDLE );
             }
         }
         ConsoleFreeHeap((*ProcessData).HandleTable as PVOID);
@@ -210,7 +202,7 @@ pub unsafe extern "C" fn ConSrvInsertObject(
     (*((*ProcessData).HandleTable.add(i as usize) as PCONSOLE_IO_HANDLE)).Access = Access;
     (*((*ProcessData).HandleTable.add(i as usize) as PCONSOLE_IO_HANDLE)).Inheritable = Inheritable;
     (*((*ProcessData).HandleTable.add(i as usize) as PCONSOLE_IO_HANDLE)).ShareMode = ShareMode;
-    AdjustHandleCounts(((*ProcessData).HandleTable.add(i as usize) as PCONSOLE_IO_HANDLE), 1);
+    AdjustHandleCounts((*ProcessData).HandleTable.add(i as usize) as PCONSOLE_IO_HANDLE , 1);
     *Handle = ULongToHandle((i as u32) << 2 | 0x3);
 
     STATUS_SUCCESS
@@ -232,7 +224,7 @@ pub unsafe extern "C" fn ConSrvRemoveObject(
         return STATUS_INVALID_HANDLE;
     }
 
-    ConSrvCloseHandle(((*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE));
+    ConSrvCloseHandle((*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE );
 
     RtlLeaveCriticalSection(core::ptr::addr_of_mut!((*ProcessData).HandleTableLock));
     STATUS_SUCCESS
@@ -259,7 +251,7 @@ pub unsafe extern "C" fn ConSrvGetObject(
     RtlEnterCriticalSection(core::ptr::addr_of_mut!((*ProcessData).HandleTableLock));
 
     if IsConsoleHandle(Handle) && Index < (*ProcessData).HandleTableSize {
-        HandleEntry = ((*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE);
+        HandleEntry = (*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE ;
         ObjectEntry = (*HandleEntry).Object;
     }
 
@@ -352,7 +344,7 @@ pub unsafe extern "system" fn SrvOpenConsole(
 #[no_mangle]
 pub unsafe extern "system" fn SrvDuplicateHandle(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let DuplicateHandleRequest = &mut (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.DuplicateHandleRequest;
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
@@ -364,13 +356,13 @@ pub unsafe extern "system" fn SrvDuplicateHandle(
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!((*ProcessData).HandleTableLock));
 
-    let mut Status;
+    let Status;
     if Index >= (*ProcessData).HandleTableSize
         || (*((*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE)).Object.is_null()
     {
         Status = STATUS_INVALID_HANDLE;
     } else {
-        let Entry = ((*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE);
+        let Entry = (*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE ;
         let DesiredAccess = if (DuplicateHandleRequest.Options & DUPLICATE_SAME_ACCESS) != 0 {
             (*Entry).Access
         } else {
@@ -404,7 +396,7 @@ pub unsafe extern "system" fn SrvDuplicateHandle(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetHandleInformation(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let GetHandleInfoRequest = &mut (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.GetHandleInfoRequest;
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
@@ -420,7 +412,7 @@ pub unsafe extern "system" fn SrvGetHandleInformation(
     {
         STATUS_INVALID_HANDLE
     } else {
-        let Entry = ((*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE);
+        let Entry = (*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE ;
         GetHandleInfoRequest.Flags = 0;
         if (*Entry).Inheritable != 0 {
             GetHandleInfoRequest.Flags |= HANDLE_FLAG_INHERIT;
@@ -436,7 +428,7 @@ pub unsafe extern "system" fn SrvGetHandleInformation(
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetHandleInformation(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let SetHandleInfoRequest = &mut (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.SetHandleInfoRequest;
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
@@ -452,7 +444,7 @@ pub unsafe extern "system" fn SrvSetHandleInformation(
     {
         STATUS_INVALID_HANDLE
     } else {
-        let Entry = ((*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE);
+        let Entry = (*ProcessData).HandleTable.add(Index as usize) as PCONSOLE_IO_HANDLE ;
         if (SetHandleInfoRequest.Mask & HANDLE_FLAG_INHERIT) != 0 {
             (*Entry).Inheritable =
                 if (SetHandleInfoRequest.Flags & HANDLE_FLAG_INHERIT) != 0 { 1 } else { 0 };
@@ -468,7 +460,7 @@ pub unsafe extern "system" fn SrvSetHandleInformation(
 #[no_mangle]
 pub unsafe extern "system" fn SrvCloseHandle(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let CloseHandleRequest = &mut (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.CloseHandleRequest;
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
@@ -479,7 +471,7 @@ pub unsafe extern "system" fn SrvCloseHandle(
 #[no_mangle]
 pub unsafe extern "system" fn SrvVerifyConsoleIoHandle(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let VerifyHandleRequest = &mut (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.VerifyHandleRequest;
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);

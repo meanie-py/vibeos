@@ -1486,7 +1486,7 @@ unsafe fn tp_object_execute(object: *mut threadpool_object, wait_thread: BOOL) {
     (*object).num_running_callbacks += 1;
     RtlLeaveCriticalSection(&mut (*pool).cs);
     if wait_thread != 0 {
-        RtlLeaveCriticalSection(&mut waitqueue.cs);
+        RtlLeaveCriticalSection(&raw mut waitqueue.cs);
     }
 
     callback_instance = &mut instance as *mut threadpool_instance as *mut TP_CALLBACK_INSTANCE;
@@ -1547,7 +1547,7 @@ unsafe fn tp_object_execute(object: *mut threadpool_object, wait_thread: BOOL) {
     }
 
     if wait_thread != 0 {
-        RtlEnterCriticalSection(&mut waitqueue.cs);
+        RtlEnterCriticalSection(&raw mut waitqueue.cs);
     }
     RtlEnterCriticalSection(&mut (*pool).cs);
 

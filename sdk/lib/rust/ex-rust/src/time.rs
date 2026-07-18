@@ -45,7 +45,7 @@ const STATUS_TIMER_RESOLUTION_NOT_SET: NTSTATUS = 0xC0000245u32 as NTSTATUS;
 
 // Use actual definitions, not extern declarations (lto=false splits them)
 extern "system" {
-    pub static mut SharedUserData: *mut KUSER_SHARED_DATA;
+    pub static mut SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
     pub static mut SeSystemtimePrivilege: LUID;
     pub fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
     pub fn PoNotifySystemTimeSet();
@@ -55,16 +55,10 @@ extern "system" {
     pub fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 
-#[repr(C)]
-pub struct KUSER_SHARED_DATA {
-    pub TickCountLowDeprecated: ULONG,
-    pub TickCountMultiplier: ULONG,
-    pub InterruptTime: KSYSTEM_TIME,
-    pub SystemTime: KSYSTEM_TIME,
-    pub TimeZoneBias: KSYSTEM_TIME,
-    pub TimeZoneId: ULONG,
-    // ... other fields omitted for brevity
-}
+// KUSER_SHARED_DATA: bindgen layout. The shadow struct here placed TimeZoneId
+// right after TimeZoneBias (+0x2C; real +0x240) — every time-zone refresh
+// stomped ImageNumberLow/High. Same landmine class as ke/amd64/kiinit.rs
+// (2026-07-11 -smp 2 NtSystemRoot chop).
 
 #[repr(C)]
 pub struct KSYSTEM_TIME {

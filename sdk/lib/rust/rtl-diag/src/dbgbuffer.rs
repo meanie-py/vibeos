@@ -1,9 +1,7 @@
 use crate::shim::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{ANSI_STRING, _CLIENT_ID, LDR_DATA_TABLE_ENTRY, NtAllocateVirtualMemory, NtFreeVirtualMemory, NtOpenProcess, NtQueryInformationProcess, NtReadVirtualMemory, _OBJECT_ATTRIBUTES, PPEB_LDR_DATA, PROCESS_BASIC_INFORMATION, PRTL_DEBUG_INFORMATION, PRTL_PROCESS_HEAPS, PRTL_PROCESS_LOCKS, PRTL_PROCESS_MODULES, PRTL_PROCESS_MODULE_INFORMATION, _PROCESSINFOCLASS_ProcessBasicInformation as ProcessBasicInformation, RTL_DEBUG_INFORMATION, RTL_PROCESS_HEAPS, RTL_PROCESS_LOCKS, RTL_PROCESS_MODULE_INFORMATION, RtlUnicodeStringToAnsiString};
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // NDEBUG defined; no runtime declarations needed.

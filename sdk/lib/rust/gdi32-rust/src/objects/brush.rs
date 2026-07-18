@@ -17,6 +17,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys's FALSE/TRUE are bindgen u32 (#define), but BOOL is i32 — shadow with
 // BOOL-typed locals so `== FALSE`/`return TRUE` type-check against the i32 BOOL returns.
@@ -327,8 +328,8 @@ pub unsafe extern "system" fn GetBrushOrgEx(hdc: HDC, pt: LPPOINT) -> BOOL {
         return FALSE;
     }
     if !pt.is_null() {
-        (*pt).x = (*Dc_Attr).ptlBrushOrigin.x;
-        (*pt).y = (*Dc_Attr).ptlBrushOrigin.y;
+        (*pt).x = (*dcattr_f!(Dc_Attr, ptlBrushOrigin)).x;
+        (*pt).y = (*dcattr_f!(Dc_Attr, ptlBrushOrigin)).y;
     }
     TRUE
 }
@@ -356,12 +357,12 @@ pub unsafe extern "system" fn SetBrushOrgEx(
 
         /* Does the caller want the current brush origin to be returned? */
         if !lppt.is_null() {
-            (*lppt).x = (*Dc_Attr).ptlBrushOrigin.x;
-            (*lppt).y = (*Dc_Attr).ptlBrushOrigin.y;
+            (*lppt).x = (*dcattr_f!(Dc_Attr, ptlBrushOrigin)).x;
+            (*lppt).y = (*dcattr_f!(Dc_Attr, ptlBrushOrigin)).y;
         }
 
         /* Check if we have nothing to do */
-        if (nXOrg == (*Dc_Attr).ptlBrushOrigin.x) && (nYOrg == (*Dc_Attr).ptlBrushOrigin.y) {
+        if (nXOrg == (*dcattr_f!(Dc_Attr, ptlBrushOrigin)).x) && (nYOrg == (*dcattr_f!(Dc_Attr, ptlBrushOrigin)).y) {
             return TRUE;
         }
 
@@ -369,11 +370,11 @@ pub unsafe extern "system" fn SetBrushOrgEx(
         pgSBO = GdiAllocBatchCommand(hdc, crate::gdihelp::GdiBCSetBrushOrg) as PGDIBSSETBRHORG;
         if !pgSBO.is_null() {
             /* Set current brush origin in the DC attribute */
-            (*Dc_Attr).ptlBrushOrigin.x = nXOrg;
-            (*Dc_Attr).ptlBrushOrigin.y = nYOrg;
+            (*dcattr_f!(Dc_Attr, ptlBrushOrigin)).x = nXOrg;
+            (*dcattr_f!(Dc_Attr, ptlBrushOrigin)).y = nYOrg;
 
             /* Setup the GDI batch command */
-            (*pgSBO).ptlBrushOrigin = (*Dc_Attr).ptlBrushOrigin;
+            (*pgSBO).ptlBrushOrigin = (*dcattr_f!(Dc_Attr, ptlBrushOrigin));
 
             return TRUE;
         }

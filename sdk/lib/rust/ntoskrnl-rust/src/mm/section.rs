@@ -2224,6 +2224,11 @@ pub unsafe extern "system" fn MmNotPresentFaultSectionView(
         core::ptr::null_mut(),
     );
 
+    /* Check for a NOACCESS mapping */
+    if ((*Region).Protect & PAGE_NOACCESS) != 0 {
+        return STATUS_ACCESS_VIOLATION;
+    }
+
     if ((*Region).Protect & PAGE_GUARD) != 0 {
         MmAlterRegion(
             AddressSpace,

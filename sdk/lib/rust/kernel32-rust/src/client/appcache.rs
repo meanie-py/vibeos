@@ -365,7 +365,7 @@ unsafe fn BaseInitApphelp() {
     }
 
     if InterlockedCompareExchangePointer(
-        &mut g_pApphelpCheckRunAppEx,
+        &raw mut g_pApphelpCheckRunAppEx,
         RtlEncodeSystemPointer(pApphelpCheckRunAppEx),
         core::ptr::null_mut(),
     ).is_null() {

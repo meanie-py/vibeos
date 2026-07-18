@@ -155,7 +155,12 @@ extern "C" {
 }
 
 // misc.rs FASTCALL helper.
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC;
 }
 
@@ -168,7 +173,8 @@ unsafe fn clear_cspins() {
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
-unsafe extern "fastcall" fn IntEndPage(hdc: HDC, Form: BOOL) -> INT {
+fastcall_fn! {
+unsafe fn IntEndPage(hdc: HDC, Form: BOOL) -> INT {
     let pldc: PLDC;
     let mut Ret: INT = SP_ERROR;
     let hType: usize = GDI_HANDLE_GET_TYPE(hdc as HGDIOBJ);
@@ -235,16 +241,20 @@ unsafe extern "fastcall" fn IntEndPage(hdc: HDC, Form: BOOL) -> INT {
     }
     Ret
 }
+}
 
 /* FUNCTIONS *****************************************************************/
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn AbortPrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
+pub unsafe fn AbortPrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
     (fpAbortPrinter.unwrap())(hPrinter)
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn DocumentEventEx(
+pub unsafe fn DocumentEventEx(
     _pvUMPDev: PVOID,
     hPrinter: HANDLE,
     hdc: HDC,
@@ -256,19 +266,25 @@ pub unsafe extern "fastcall" fn DocumentEventEx(
 ) -> INT {
     (fpDocumentEvent.unwrap())(hPrinter, hdc, iEsc, cbIn, pvIn, cbOut, pvOut)
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn EndDocPrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
+pub unsafe fn EndDocPrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
     (fpEndDocPrinter.unwrap())(hPrinter)
 }
-
-#[no_mangle]
-pub unsafe extern "fastcall" fn EndPagePrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
-    (fpEndPagePrinter.unwrap())(hPrinter)
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn LoadTheSpoolerDrv() -> BOOL {
+pub unsafe fn EndPagePrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
+    (fpEndPagePrinter.unwrap())(hPrinter)
+}
+}
+
+fastcall_fn! {
+#[no_mangle]
+pub unsafe fn LoadTheSpoolerDrv() -> BOOL {
     let mut hModWinSpoolDrv: HMODULE;
 
     if ghSpooler.is_null() {
@@ -359,30 +375,30 @@ pub unsafe extern "fastcall" fn LoadTheSpoolerDrv() -> BOOL {
                 b"StartPagePrinter\0".as_ptr() as PCSTR,
             ));
 
-            if fpAbortPrinter.is_none()
-                || fpClosePrinter.is_none()
-                || fpCloseSpoolFileHandle.is_none()
-                || fpCommitSpoolData.is_none()
-                || fpDocumentEvent.is_none()
-                || fpDocumentPropertiesW.is_none()
-                || fpEndDocPrinter.is_none()
-                || fpEndPagePrinter.is_none()
-                || fpGetPrinterW.is_none()
-                || fpGetPrinterDriverW.is_none()
-                || fpGetSpoolFileHandle.is_none()
-                || fpIsValidDevmodeW.is_none()
-                || fpOpenPrinterW.is_none()
-                || fpQueryColorProfile.is_none()
-                || fpQueryRemoteFonts.is_none()
-                || fpQuerySpoolMode.is_none()
-                || fpReadPrinter.is_none()
-                || fpResetPrinterW.is_none()
-                || fpSeekPrinter.is_none()
-                || fpSplDriverUnloadComplete.is_none()
-                || fpSplReadPrinter.is_none()
-                || fpStartDocDlgW.is_none()
-                || fpStartDocPrinterW.is_none()
-                || fpStartPagePrinter.is_none()
+            if (*(&raw const fpAbortPrinter)).is_none()
+                || (*(&raw const fpClosePrinter)).is_none()
+                || (*(&raw const fpCloseSpoolFileHandle)).is_none()
+                || (*(&raw const fpCommitSpoolData)).is_none()
+                || (*(&raw const fpDocumentEvent)).is_none()
+                || (*(&raw const fpDocumentPropertiesW)).is_none()
+                || (*(&raw const fpEndDocPrinter)).is_none()
+                || (*(&raw const fpEndPagePrinter)).is_none()
+                || (*(&raw const fpGetPrinterW)).is_none()
+                || (*(&raw const fpGetPrinterDriverW)).is_none()
+                || (*(&raw const fpGetSpoolFileHandle)).is_none()
+                || (*(&raw const fpIsValidDevmodeW)).is_none()
+                || (*(&raw const fpOpenPrinterW)).is_none()
+                || (*(&raw const fpQueryColorProfile)).is_none()
+                || (*(&raw const fpQueryRemoteFonts)).is_none()
+                || (*(&raw const fpQuerySpoolMode)).is_none()
+                || (*(&raw const fpReadPrinter)).is_none()
+                || (*(&raw const fpResetPrinterW)).is_none()
+                || (*(&raw const fpSeekPrinter)).is_none()
+                || (*(&raw const fpSplDriverUnloadComplete)).is_none()
+                || (*(&raw const fpSplReadPrinter)).is_none()
+                || (*(&raw const fpStartDocDlgW)).is_none()
+                || (*(&raw const fpStartDocPrinterW)).is_none()
+                || (*(&raw const fpStartPagePrinter)).is_none()
             {
                 FreeLibrary(hModWinSpoolDrv);
                 hModWinSpoolDrv = core::ptr::null_mut();
@@ -400,6 +416,7 @@ pub unsafe extern "fastcall" fn LoadTheSpoolerDrv() -> BOOL {
 
     (!ghSpooler.is_null()) as BOOL
 }
+}
 
 /*
   Note from msdn:
@@ -414,8 +431,9 @@ pub unsafe extern "fastcall" fn LoadTheSpoolerDrv() -> BOOL {
    6. To end the print job, call EndDocPrinter.
 
  */
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn StartDocPrinterWEx(
+pub unsafe fn StartDocPrinterWEx(
     _pvUMPDev: PVOID,
     hPrinter: HANDLE,
     Level: DWORD,
@@ -423,10 +441,13 @@ pub unsafe extern "fastcall" fn StartDocPrinterWEx(
 ) -> DWORD {
     (fpStartDocPrinterW.unwrap())(hPrinter, Level, pDocInfo)
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn StartPagePrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
+pub unsafe fn StartPagePrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
     (fpStartPagePrinter.unwrap())(hPrinter)
+}
 }
 
 /* SYSCALLS ******************************************************************/

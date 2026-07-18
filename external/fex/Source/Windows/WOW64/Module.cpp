@@ -862,6 +862,25 @@ bool BTCpuResetToConsistentStateImpl(EXCEPTION_POINTERS* Ptrs) {
   auto* Exception = Ptrs->ExceptionRecord;
   auto TLS = GetTLS();
   auto Thread = TLS.ThreadState();
+
+  // VIBEOS PATCH (task #46 Face B): an exception delivered before
+  // BTCpuThreadInit populates the THREAD_STATE TLS slot cannot be FEX-owned,
+  // but the handlers below all deref Thread (CallRetStack::GetInfoThread
+  // reads Thread->CallRetStackBase, ReconstructWowContext derefs
+  // ThreadState(), ...). With Thread == nullptr each attempt AVs at a small
+  // offset, re-enters this handler, and recurses until stack overflow —
+  // observed as wow64probe dying mid-BTCpuProcessInit with a ~1600-frame AV
+  // storm (arm64-20260714-181535). Pass the exception to the next handler so
+  // the true seed fault gets reported instead.
+  if (!Thread) {
+    // Overcommit handling is the one thread-independent handler: keep
+    // on-demand commit working for pre-thread faults.
+    if (Exception->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && OvercommitTracker &&
+        OvercommitTracker->HandleAccessViolation(static_cast<uint64_t>(Exception->ExceptionInformation[1]))) {
+      return true;
+    }
+    return false;
+  }
   FEXCORE_PROFILE_ACCUMULATION(Thread, AccumulatedSignalTime);
 
   if (Exception->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {

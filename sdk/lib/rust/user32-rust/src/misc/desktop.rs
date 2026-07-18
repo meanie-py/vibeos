@@ -18,7 +18,13 @@ struct SaReal {
 //
 // EnumNamesA/EnumNamesW: `BOOL FASTCALL` in user32p.h (defined misc/winsta.c) — on
 // i386 FASTCALL is `@Name@N`, so they must be `extern "fastcall"` (NOT "system").
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn EnumNamesA(WindowStation: HWINSTA, EnumFunc: DESKTOPENUMPROCA, Context: LPARAM, Desktops: BOOL) -> BOOL;
+    fn EnumNamesW(WindowStation: HWINSTA, EnumFunc: DESKTOPENUMPROCW, Context: LPARAM, Desktops: BOOL) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn EnumNamesA(WindowStation: HWINSTA, EnumFunc: DESKTOPENUMPROCA, Context: LPARAM, Desktops: BOOL) -> BOOL;
     fn EnumNamesW(WindowStation: HWINSTA, EnumFunc: DESKTOPENUMPROCW, Context: LPARAM, Desktops: BOOL) -> BOOL;
 }
@@ -715,7 +721,7 @@ pub unsafe extern "system" fn SetShellWindow(hwndShell: HWND) -> i32 {
 pub unsafe extern "system" fn GetShellWindow() -> HWND {
     let pdi: PDESKTOPINFO = GetThreadDesktopInfo();
     if !pdi.is_null() {
-        return (*pdi).hShellWindow;
+        return crate::wow64::desktop_info_shell_window(pdi);
     }
     core::ptr::null_mut()
 }

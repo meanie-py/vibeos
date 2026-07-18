@@ -54,12 +54,12 @@ unsafe fn FindAcpiBios() -> *mut RSDP_DESCRIPTOR {
     i = 0;
     while i < (*GlobalSystemTable).NumberOfTableEntries {
         if memcmp(
-            core::ptr::addr_of!((*(*GlobalSystemTable).ConfigurationTable.add(((i) as usize))).VendorGuid) as *const core::ffi::c_void,
+            core::ptr::addr_of!((*(*GlobalSystemTable).ConfigurationTable.add((i) as usize )).VendorGuid) as *const core::ffi::c_void,
             core::ptr::addr_of!(acpi2_guid) as *const core::ffi::c_void,
             core::mem::size_of::<EFI_GUID>(),
         ) == 0
         {
-            rsdp = (*(*GlobalSystemTable).ConfigurationTable.add(((i) as usize))).VendorTable as *mut RSDP_DESCRIPTOR;
+            rsdp = (*(*GlobalSystemTable).ConfigurationTable.add((i) as usize )).VendorTable as *mut RSDP_DESCRIPTOR;
             break;
         }
         i += 1;
@@ -70,12 +70,12 @@ unsafe fn FindAcpiBios() -> *mut RSDP_DESCRIPTOR {
 
 unsafe fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mut ULONG) {
     let mut BiosKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
-    let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
-    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
-    let mut Rsdp: *mut RSDP_DESCRIPTOR;
-    let mut AcpiBiosData: PACPI_BIOS_DATA;
-    let mut TableSize: ULONG;
-    let mut Size: ULONG;
+    let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
+    let PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
+    let Rsdp: *mut RSDP_DESCRIPTOR;
+    let AcpiBiosData: PACPI_BIOS_DATA;
+    let TableSize: ULONG;
+    let Size: ULONG;
 
     Rsdp = FindAcpiBios();
 
@@ -100,20 +100,20 @@ unsafe fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *m
 
         PartialDescriptor = core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]);
         (*PartialDescriptor).Type = CmResourceTypeDeviceSpecific;
-        (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+        (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
         (*PartialDescriptor).u.DeviceSpecificData.DataSize = TableSize;
 
         AcpiBiosData = (PartialDescriptor.add(1)) as PACPI_BIOS_DATA;
 
         if (*Rsdp).revision > 0 {
             TRACE(b"ACPI >1.0, using XSDT address\n\0".as_ptr() as *const i8);
-            (*AcpiBiosData).RSDTAddress.QuadPart = (((*Rsdp).xsdt_physical_address) as i64);
+            (*AcpiBiosData).RSDTAddress.QuadPart = ((*Rsdp).xsdt_physical_address) as i64 ;
         } else {
             TRACE(b"ACPI 1.0, using RSDT address\n\0".as_ptr() as *const i8);
             (*AcpiBiosData).RSDTAddress.u.LowPart = (*Rsdp).rsdt_physical_address;
         }
 
-        (*AcpiBiosData).Count = ((FreeldrDescCount) as u64);
+        (*AcpiBiosData).Count = (FreeldrDescCount) as u64 ;
         core::ptr::copy_nonoverlapping(
             EfiMemoryMap as *const u8,
             core::ptr::addr_of_mut!((*AcpiBiosData).MemoryMap) as *mut u8,
@@ -172,15 +172,15 @@ unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
     PartialDescriptor = core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]);
     (*PartialDescriptor).Type = CmResourceTypeMemory;
-    (*PartialDescriptor).ShareDisposition = ((CmResourceShareDeviceExclusive) as u8);
+    (*PartialDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8 ;
     (*PartialDescriptor).Flags = CM_RESOURCE_MEMORY_READ_WRITE;
-    (*PartialDescriptor).u.Memory.Start.QuadPart = ((VramAddress) as i64);
+    (*PartialDescriptor).u.Memory.Start.QuadPart = (VramAddress) as i64 ;
     (*PartialDescriptor).u.Memory.Length = VramSize;
 
     // flex array: element [1] is past the [1]-sized field — pointer-step it.
     PartialDescriptor = core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]).add(1);
     (*PartialDescriptor).Type = CmResourceTypeDeviceSpecific;
-    (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+    (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
     (*PartialDescriptor).Flags = 0;
     (*PartialDescriptor).u.DeviceSpecificData.DataSize = core::mem::size_of::<CM_FRAMEBUF_DEVICE_DATA>() as u32;
 
@@ -443,7 +443,7 @@ pub unsafe extern "C" fn UefiFindPciBios(BusData: crate::hwpci::PPCI_REGISTRY_IN
 
 #[no_mangle]
 pub unsafe extern "C" fn UefiHwDetect(
-    Options: PCSTR,
+    _Options: PCSTR,
 ) -> PCONFIGURATION_COMPONENT_DATA {
     let mut SystemKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let mut BusNumber: ULONG = 0;

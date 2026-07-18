@@ -305,10 +305,30 @@ pub(crate) unsafe fn tdi_wait_finish(
             );
             return (STATUS_IO_TIMEOUT, true);
         }
+        // Waited: the completion's special-kernel-APC (IopCompleteRequest ->
+        // KeSetEvent(UserEvent) + write UserIosb) delivered DURING this wait (a
+        // special-APC checkpoint) and has fully drained, so the block is dead and
+        // safe to free.
         st = (*wb).iosb.__bindgen_anon_1.Status;
+        ExFreePool(wb as PVOID);
+        return (st, false);
     }
-    ExFreePool(wb as PVOID);
-    (st, false)
+    // SYNCHRONOUS completion (dispatch called IofCompleteRequest inline and
+    // returned a final status, e.g. SET_EVENT_HANDLER / ASSOCIATE): we did NOT
+    // wait. But IoBuildDeviceIoControlRequest IRPs carry no IRP_DEFER_IO_COMPLETION,
+    // so IofCompleteRequestInner STILL queues a special kernel APC to THIS thread to
+    // KeSetEvent(UserEvent) + write UserIosb (irp.rs:1441) — and on arm64 that APC
+    // is not always delivered before we return here (it lands at the next APC
+    // checkpoint, e.g. the next run_tdi's IoBuildDeviceIoControlRequest). Freeing wb
+    // now races that pending APC: the late KeSetEvent walks the freed (reused)
+    // event's wait-list -> Thread=-1 -> [WAITDEP] VIOLATION -> BUGCHECK 0x109
+    // (field manual §9.36; the arm64 conformance-boot flake). LEAK wb so the late
+    // APC writes into valid, owned, waiter-less pool — a harmless no-op. Bounded:
+    // self-test only, a handful of synchronous ops per boot, reclaimed at reboot.
+    // Deeper owed root: arm64 does not promptly deliver a self-targeted special
+    // kernel APC queued at PASSIVE_LEVEL (real NT delivers it before IofCallDriver
+    // returns, so the classic sync-IRP idiom never sees a deferred completion).
+    (st, true)
 }
 
 unsafe extern "system" fn worker(_ctx: PVOID) {

@@ -612,7 +612,7 @@ unsafe fn UserExitReactOSImpl(CsrThread: *mut CSR_THREAD, Flags: UINT) -> NTSTAT
 pub unsafe extern "system" fn UserClientShutdown(
     CsrProcess: *mut CSR_PROCESS,
     Flags: ULONG,
-    FirstPhase: BOOLEAN,
+    _FirstPhase: BOOLEAN,
 ) -> ULONG {
     let result: ULONG;
 
@@ -676,7 +676,7 @@ pub unsafe extern "system" fn SrvEndTask(
         (*(ApiMessage as *mut _USER_API_MESSAGE)).Data.EndTaskRequest
     );
 
-    let mut Status = NtUserSetInformationThread(
+    let Status = NtUserSetInformationThread(
         NtCurrentThread(),
         UserThreadUseActiveDesktop,
         core::ptr::null(),

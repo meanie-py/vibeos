@@ -23,7 +23,7 @@ file(GLOB_RECURSE STORPORT_RUST_SRCS ${STORPORT_RUST_WORKSPACE_DIR}/storport-rus
 add_custom_command(
     OUTPUT ${STORPORT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${STORPORT_RUST_TARGET_DIR} RUSTFLAGS=${STORPORT_RUST_RUSTFLAGS} RUSTC_BOOTSTRAP=1
+        CARGO_TARGET_DIR=${STORPORT_RUST_TARGET_DIR} RUSTFLAGS=${STORPORT_RUST_RUSTFLAGS}
         cargo build --release --target ${STORPORT_RUST_TARGET} -p storport-rust --manifest-path ${STORPORT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
         ${STORPORT_RUST_TARGET_DIR}/${STORPORT_RUST_TARGET}/release/libstorport_rust.a ${STORPORT_RUST_LIB}
@@ -32,7 +32,11 @@ add_custom_command(
     COMMENT "Building storport-rust (${STORPORT_RUST_TARGET})" VERBATIM)
 add_custom_target(rust_storport DEPENDS ${STORPORT_RUST_LIB})
 
-add_library(storport MODULE guid.c storport.rc ${CMAKE_CURRENT_BINARY_DIR}/storport.def)
+# rust_varargs_shim.c — va_start/va_arg trampolines for the cdecl-varargs exports
+# (StorPortDebugPrint/ExtendedFunction/Notification). Stable Rust cannot DEFINE a
+# C-variadic fn; the logic stays in storport-rust's *_v twins. Delete once c_variadic
+# stabilizes (rust-lang#44930).
+add_library(storport MODULE guid.c rust_varargs_shim.c storport.rc ${CMAKE_CURRENT_BINARY_DIR}/storport.def)
 set_module_type(storport kernelmodedriver)
 add_importlibs(storport ntoskrnl hal)
 add_dependencies(storport rust_storport)

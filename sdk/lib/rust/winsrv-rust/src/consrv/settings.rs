@@ -1,14 +1,3 @@
-use winsrv_sys::nt::*;
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::console::*;
-use super::handle::*;
-use super::term::*;
-use super::lineinput::*;
-use super::history::*;
-use super::init::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 

@@ -184,8 +184,8 @@ pub unsafe extern "system" fn FatCreateNewDirent(
 
     // PAGED_CODE();  // macro, ignored
 
-    DebugTrace(1, (Dbg as u32), b"FatCreateNewDirent\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, (Dbg as u32), b"  ParentDirectory = %p\n\0".as_ptr() as *const i8, ParentDirectory);
+    DebugTrace(1, Dbg as u32 , b"FatCreateNewDirent\n\0".as_ptr() as *const i8, 0);
+    DebugTrace(0, Dbg as u32 , b"  ParentDirectory = %p\n\0".as_ptr() as *const i8, ParentDirectory);
 
     UnusedVbo = (*ParentDirectory).Specific.Dcb.as_ref().UnusedDirentVbo;
     DeletedHint = (*ParentDirectory).Specific.Dcb.as_ref().DeletedDirentHint;
@@ -197,15 +197,15 @@ pub unsafe extern "system" fn FatCreateNewDirent(
         DeletedHint = (*ParentDirectory).Specific.Dcb.as_ref().DeletedDirentHint;
     }
 
-    DebugTrace(0, (Dbg as u32), b"  UnusedVbo   = %08lx\n\0".as_ptr() as *const i8, UnusedVbo);
-    DebugTrace(0, (Dbg as u32), b"  DeletedHint = %08lx\n\0".as_ptr() as *const i8, DeletedHint);
+    DebugTrace(0, Dbg as u32 , b"  UnusedVbo   = %08lx\n\0".as_ptr() as *const i8, UnusedVbo);
+    DebugTrace(0, Dbg as u32 , b"  DeletedHint = %08lx\n\0".as_ptr() as *const i8, DeletedHint);
 
     if RescanDir == 0
         && (UnusedVbo.wrapping_add(DirentsNeeded.wrapping_mul(core::mem::size_of::<DIRENT>() as u32))
             <= (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart)
     {
         // Easy case: there is a never-used entry
-        DebugTrace(0, (Dbg as u32), b"There is a never used entry.\n\0".as_ptr() as *const i8, 0);
+        DebugTrace(0, Dbg as u32 , b"There is a never used entry.\n\0".as_ptr() as *const i8, 0);
         ByteOffset = UnusedVbo;
         UnusedVbo = UnusedVbo.wrapping_add(DirentsNeeded.wrapping_mul(core::mem::size_of::<DIRENT>() as u32));
     } else {
@@ -237,7 +237,7 @@ pub unsafe extern "system" fn FatCreateNewDirent(
             }
         } else {
             // Must allocate another cluster
-            DebugTrace(0, (Dbg as u32), b"We have to allocate another cluster.\n\0".as_ptr() as *const i8, 0);
+            DebugTrace(0, Dbg as u32 , b"We have to allocate another cluster.\n\0".as_ptr() as *const i8, 0);
 
             // Check size limits and read-only root
             if (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart >= (64u32 * 1024u32 * core::mem::size_of::<DIRENT>() as u32)
@@ -246,7 +246,7 @@ pub unsafe extern "system" fn FatCreateNewDirent(
             {
                 DebugTrace(
                     0,
-                    (Dbg as u32),
+                    Dbg as u32 ,
                     b"Full root directory or too big on FAT32.  Raise Status.\n\0".as_ptr() as *const i8,
                     0,
                 );
@@ -429,12 +429,12 @@ pub unsafe extern "system" fn FatDeleteDirent(
     DebugTrace(1, Dbg, b"FatDeleteDirent\n\0".as_ptr() as *const i8, 0i32);
     DebugTrace(0, Dbg, b"  FcbOrDcb = %p\n\0".as_ptr() as *const i8, FcbOrDcb as *mut core::ffi::c_void);
 
-    assert!(
+    debug_assert!(
         ExIsResourceAcquiredExclusiveLite(
             core::ptr::addr_of_mut!((*(*FcbOrDcb).Vcb).Resource)
         ) != 0
     );
-    assert!(NodeType((FcbOrDcb).cast()) != FAT_NTC_ROOT_DCB);
+    debug_assert!(NodeType((FcbOrDcb).cast()) != FAT_NTC_ROOT_DCB);
 
     if DeleteEa != 0
         && ((*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart != 0
@@ -471,7 +471,7 @@ pub unsafe extern "system" fn FatDeleteDirent(
                 );
             }
 
-            assert!((*Dirent).FirstClusterOfFile == 0 || DeleteEa == 0);
+            debug_assert!((*Dirent).FirstClusterOfFile == 0 || DeleteEa == 0);
             (*Dirent).FileName[0] = FAT_DIRENT_DELETED;
 
             Offset += core::mem::size_of::<DIRENT>() as u32;
@@ -503,7 +503,7 @@ pub unsafe extern "system" fn FatDeleteDirent(
             / (core::mem::size_of::<DIRENT>() as u32)
             + 1;
 
-        assert!(
+        debug_assert!(
             dcb.UnusedDirentVbo == 0xffffffff_u32
                 || RtlAreBitsSet(
                     core::ptr::addr_of_mut!(dcb.FreeDirentBitmap) as *mut _,
@@ -631,11 +631,21 @@ pub unsafe extern "system" fn FatLocateDirent(
     DebugTrace(0i32, 0u32, b"  Bcb                     = %p\n\0".as_ptr() as *const i8, Bcb as usize);
     DebugTrace(0i32, 0u32, b"  ByteOffset              = %08lx\n\0".as_ptr() as *const i8, (*ByteOffset).QuadPart as u32 as usize);
 
-    assert!(
-        ExIsResourceAcquiredSharedLite((*ParentDirectory).Header.Resource) != 0
+    // C source is NT_ASSERT (dirsup.c:1175) — a DEBUG-only assertion that is a no-op in
+    // the shipping (free) build; the cohab shim `NT_ASSERT` (rust_cohab_stub.c) is a no-op.
+    // The original translation rendered it as a hard `assert!`, which panics unconditionally
+    // and BUGCHECKed arm64 boot once IRP_MJ_CLEANUP started being delivered (ob-rust
+    // ObpDecrementHandleCount fix): FatCommonCleanup -> FatNotifyReportChange ->
+    // FatSetFullFileNameInFcb -> FatGetUnicodeNameFromFcb -> here, on the normal
+    // UserFileOpen cleanup path where FatCommonCleanup legitimately holds only the file's
+    // Fcb (not the parent Dcb / Vcb) — exactly as ReactOS does. Route through NT_ASSERT
+    // like every other NT_ASSERT in this file (cf. dirsup.rs:1157/1164).
+    NT_ASSERT(
+        (ExIsResourceAcquiredSharedLite((*ParentDirectory).Header.Resource) != 0
             || ExIsResourceAcquiredExclusiveLite((*ParentDirectory).Header.Resource) != 0
             || ExIsResourceAcquiredSharedLite(core::ptr::addr_of_mut!((*(*ParentDirectory).Vcb).Resource)) != 0
-            || ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!((*(*ParentDirectory).Vcb).Resource)) != 0
+            || ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!((*(*ParentDirectory).Vcb).Resource)) != 0)
+            as i32,
     );
 
     // UNREFERENCED_PARAMETER( Flags ) -> ignore
@@ -681,7 +691,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                 if ((*ByteOffset).QuadPart as u32) >= (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart {
                     Status = STATUS_END_OF_FILE;
                     FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
-                } else if ((((*ByteOffset).QuadPart as u32) % PAGE_SIZE == 0) || (*Bcb).is_null()) {
+                } else if (((*ByteOffset).QuadPart as u32) % PAGE_SIZE == 0) || (*Bcb).is_null()  {
                     FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
                     FatReadDirectoryFile(
                         IrpContext,
@@ -726,7 +736,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                     {
                         LfnInProgress = 0;
                     } else {
-                        assert!((LfnIndex % 13) == 0 && LfnIndex != 0);
+                        debug_assert!((LfnIndex % 13) == 0 && LfnIndex != 0);
                         LfnIndex -= 13;
 
                         core::ptr::copy_nonoverlapping(
@@ -835,7 +845,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                 && LfnIndex == 0
                 && FatComputeLfnChecksum(*Dirent) == LfnChecksum
             {
-                assert!(Ordinal == 1);
+                debug_assert!(Ordinal == 1);
                 FoundValidLfn = 1;
                 (*LongFileName).Length = (LfnSize * core::mem::size_of::<WCHAR>() as u32) as u16;
 

@@ -35,7 +35,12 @@ extern "C" {
 }
 // FreeFontSupport is FASTCALL (text.h: VOID FASTCALL FreeFontSupport(VOID)) —
 // the freetype.rs export is `@FreeFontSupport@0`, so declare it fastcall.
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn FreeFontSupport();
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn FreeFontSupport();
 }
 
@@ -564,6 +569,10 @@ pub unsafe extern "system" fn InitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
     }
     (*pci).dwExpWinVer = (*ptiCurrent).dwExpWinVer;
 
+    /* A 32-bit guest reads its CLIENTINFO from TEB32, which win32k never
+     * touches otherwise — project it (no-op for native processes). */
+    crate::wow64::Wow64PublishClientInfo(ptiCurrent);
+
     /* Need to pass the user Startup Information to the current process. */
     if !ProcessParams.is_null() {
         if (*(*ptiCurrent).ppi).usi.cb == 0 {
@@ -892,7 +901,7 @@ pub unsafe extern "system" fn DriverEntry(
     PsEstablishWin32Callouts(core::ptr::addr_of_mut!(CalloutData) as *mut _);
 
     GlobalUserHeap = UserCreateHeap(
-        &mut GlobalUserHeapSection,
+        &raw mut GlobalUserHeapSection,
         &mut GlobalUserHeapBase,
         1 * 1024 * 1024,
     );

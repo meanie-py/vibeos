@@ -42,7 +42,12 @@ extern "system" {
     fn SetLastError(dwErrCode: DWORD);
 }
 
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn DeleteRegion(hrgn: HRGN) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn DeleteRegion(hrgn: HRGN) -> BOOL;
 }
 

@@ -1,8 +1,5 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CmpFreeSecurityDescriptor, CmpFreeValue, CmpMarkIndexDirty, CmpMarkValueDataDirty, CmpRemoveSubKey, HCELL_INDEX, PCELL_DATA, PCM_KEY_NODE, PCM_KEY_SECURITY, PHHIVE, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile};
-use core::ffi::c_void;
 
 // Hv* with correct per-fn ABI + KEY_HIVE_EXIT, from the shared glue.
 use crate::glue::{HvFreeCell, HvGetCell, HvMarkCellDirty, HvReleaseCell, KEY_HIVE_EXIT};
@@ -18,10 +15,10 @@ pub unsafe extern "system" fn CmpMarkKeyDirty(
     Cell: HCELL_INDEX,
     CheckNoSubkeys: BOOLEAN,
 ) -> BOOLEAN {
-    let mut CellData: PCM_KEY_NODE;
-    let SecurityData: PCM_KEY_SECURITY;
-    let ListData: PCELL_DATA;
-    let ValueData: PCELL_DATA;
+    let CellData: PCM_KEY_NODE;
+    let _SecurityData: PCM_KEY_SECURITY;
+    let _ListData: PCELL_DATA;
+    let _ValueData: PCELL_DATA;
     let mut i: ULONG;
 
     CellData = HvGetCell(Hive, Cell) as PCM_KEY_NODE;
@@ -117,9 +114,9 @@ pub unsafe extern "system" fn CmpFreeKeyByCell(
     Cell: HCELL_INDEX,
     Unlink: BOOLEAN,
 ) -> NTSTATUS {
-    let mut CellData: PCM_KEY_NODE;
-    let mut ParentData: PCM_KEY_NODE;
-    let mut ListData: PCELL_DATA;
+    let CellData: PCM_KEY_NODE;
+    let ParentData: PCM_KEY_NODE;
+    let ListData: PCELL_DATA;
     let mut i: ULONG;
     let mut Result: BOOLEAN;
 

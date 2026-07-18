@@ -244,11 +244,11 @@ unsafe fn CmpFindTagIndex(
     GroupOrderCell: HCELL_INDEX,
     GroupName: PCUNICODE_STRING,
 ) -> u32 {
-    let mut TagValue: PCM_KEY_VALUE;
-    let mut Value: PCM_KEY_VALUE;
-    let mut Node: PCM_KEY_NODE;
+    let TagValue: PCM_KEY_VALUE;
+    let Value: PCM_KEY_VALUE;
+    let Node: PCM_KEY_NODE;
     let mut OrderCell: HCELL_INDEX;
-    let mut DriverTag: *mut u32;
+    let DriverTag: *mut u32;
     let mut TagOrder: *mut u32 = core::ptr::null_mut();
     let mut CurrentTag: u32;
     let mut Length: u32 = 0;
@@ -361,18 +361,18 @@ unsafe fn CmpAddDriverToList(
     RegistryPath: PCUNICODE_STRING,
     DriverListHead: PLIST_ENTRY,
 ) -> u8 {
-    let mut DriverNode: PBOOT_DRIVER_NODE;
-    let mut DriverEntry: PBOOT_DRIVER_LIST_ENTRY;
-    let mut Node: PCM_KEY_NODE;
+    let DriverNode: PBOOT_DRIVER_NODE;
+    let DriverEntry: PBOOT_DRIVER_LIST_ENTRY;
+    let Node: PCM_KEY_NODE;
     let mut Value: PCM_KEY_VALUE;
     let mut Length: u32 = 0;
-    let mut NameLength: u16;
+    let NameLength: u16;
     let mut ValueCell: HCELL_INDEX;
-    let mut TagCell: HCELL_INDEX;
-    let mut FilePath: PUNICODE_STRING;
-    let mut RegistryString: PUNICODE_STRING;
+    let TagCell: HCELL_INDEX;
+    let FilePath: PUNICODE_STRING;
+    let RegistryString: PUNICODE_STRING;
     let mut Name: _UNICODE_STRING = core::mem::zeroed();
-    let mut ErrorControl: *mut u32;
+    let ErrorControl: *mut u32;
     let mut Buffer: *mut u16;
 
     const CM_BOOT_DEBUG: u32 = 0;
@@ -980,12 +980,12 @@ unsafe fn CmpIsLoadType(
     Cell: HCELL_INDEX,
     LoadType: SERVICE_LOAD_TYPE,
 ) -> BOOLEAN {
-    let mut Node: PCM_KEY_NODE;
-    let mut Value: PCM_KEY_VALUE;
+    let Node: PCM_KEY_NODE;
+    let Value: PCM_KEY_VALUE;
     let mut Name: _UNICODE_STRING = RTL_CONSTANT_STRING(w!("Start").as_ptr() as *mut u16);
-    let mut ValueCell: HCELL_INDEX;
+    let ValueCell: HCELL_INDEX;
     let mut Length: ULONG = 0;
-    let mut Data: PULONG;
+    let Data: PULONG;
 
     Node = HvGetCell(Hive, Cell) as PCM_KEY_NODE;
     if Node.is_null() {
@@ -1029,18 +1029,18 @@ pub unsafe extern "system" fn CmpFindDrivers(
     let Hive = opaque_ptr(Hive);
     let BootFileSystem = opaque_ptr_const(BootFileSystem);
     let DriverListHead = opaque_ptr(DriverListHead);
-    let mut ServicesCell: HCELL_INDEX;
-    let mut ControlCell: HCELL_INDEX;
-    let mut GroupOrderCell: HCELL_INDEX;
+    let ServicesCell: HCELL_INDEX;
+    let ControlCell: HCELL_INDEX;
+    let GroupOrderCell: HCELL_INDEX;
     let mut DriverCell: HCELL_INDEX;
     let mut SafeBootCell: HCELL_INDEX = HCELL_NIL;
     let mut i: u32;
     let mut Name: _UNICODE_STRING = core::mem::zeroed();
     let mut KeyPath: _UNICODE_STRING = core::mem::zeroed();
-    let mut ControlNode: PCM_KEY_NODE;
-    let mut ServicesNode: PCM_KEY_NODE;
+    let ControlNode: PCM_KEY_NODE;
+    let ServicesNode: PCM_KEY_NODE;
     let mut Node: PCM_KEY_NODE;
-    let mut FsNode: PBOOT_DRIVER_NODE;
+    let FsNode: PBOOT_DRIVER_NODE;
 
     ControlNode = HvGetCell(Hive, ControlSet) as PCM_KEY_NODE;
     if ControlNode.is_null() {
@@ -1192,10 +1192,10 @@ pub unsafe extern "system" fn CmpSortDriverList(
     let Hive = opaque_ptr(Hive);
     let DriverListHead = opaque_ptr(DriverListHead);
     let mut Node: PCM_KEY_NODE;
-    let mut ListValue: PCM_KEY_VALUE;
-    let mut ControlCell: HCELL_INDEX;
-    let mut GroupOrder: HCELL_INDEX;
-    let mut ListCell: HCELL_INDEX;
+    let ListValue: PCM_KEY_VALUE;
+    let ControlCell: HCELL_INDEX;
+    let GroupOrder: HCELL_INDEX;
+    let ListCell: HCELL_INDEX;
     let mut Name: _UNICODE_STRING = core::mem::zeroed();
     let mut OrderList: _UNICODE_STRING = core::mem::zeroed();
     let mut Length: u32 = 0;
@@ -1354,8 +1354,8 @@ unsafe fn CmpIsSafe(
     SafeBootCell: HCELL_INDEX,
     DriverCell: HCELL_INDEX,
 ) -> u8 {
-    let mut SafeBootNode: PCM_KEY_NODE;
-    let mut DriverNode: PCM_KEY_NODE;
+    let SafeBootNode: PCM_KEY_NODE;
+    let DriverNode: PCM_KEY_NODE;
     let mut KeyValue: PCM_KEY_VALUE;
     let mut CellIndex: HCELL_INDEX;
     let mut Length: u32 = 0;

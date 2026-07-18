@@ -19,7 +19,6 @@
 use crate::types::*;
 use crate::init::RosSymInit;
 use crate::zwfile::{RosSymZwReadFile, RosSymZwSeekFile};
-use core::ffi::c_void;
 
 extern "system" {
     fn GetProcessHeap() -> *mut core::ffi::c_void;

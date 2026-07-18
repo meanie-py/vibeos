@@ -4,7 +4,6 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use ntkrnl_sys::rtl::RtlZeroMemory;
 use ntkrnl_sys::ddk::ExAllocatePoolWithTag;
 
-use core::ffi::c_void;
 
 // USERTAG_REDIRECT: C 'rdrU' (big-endian multi-char) = 0x72647255 → LE bytes "Urdr".
 const USERTAG_REDIRECT: u32 = u32::from_le_bytes(*b"Urdr");

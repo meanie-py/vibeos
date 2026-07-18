@@ -1010,6 +1010,14 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
     Count: ULONG,
     Flags: ULONG,
 ) -> ULONG {
+    // RtlWalkFrameChain(NULL, ...) writes no frames and must return 0. The C reference
+    // wrapped the walk in _SEH2_TRY/_SEH2_EXCEPT{ i = 0 } so the fault from the NULL
+    // output store (`Callers.add(..).write(..)` below) returned 0; that __except is DEAD
+    // under DUMMY_PSEH (see the "translated directly" note below), so a NULL Callers AV'd
+    // at RtlWalkFrameChain+0x2b0 (the RtlStackKM/RtlStack quarantine). Guard it explicitly.
+    if Callers.is_null() {
+        return 0;
+    }
     let mut Context: CONTEXT = core::mem::zeroed();
     let mut ImageBase: ULONG64 = 0;
     let mut EstablisherFrame: ULONG64 = 0;

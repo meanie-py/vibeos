@@ -1,12 +1,11 @@
 //! inlines.rs — FORCEINLINE / header-only / intrinsic helpers the LLM rendered as calls.
 //! IRP-stack walkers, the ntstrsafe wide-printf wrappers (header inlines over the
-//! ntoskrnl-exported _vsnwprintf), RtlULongAdd (ntintsafe), the interlocked intrinsics,
-//! and the vDbgPrintEx variadic export decl. None are ntoskrnl exports themselves (the
-//! bindgen `ddk` versions are phantom externs that fail at link) except _vsnwprintf /
-//! vDbgPrintEx, which are.
+//! ntoskrnl-exported _vsnwprintf), RtlULongAdd (ntintsafe), the interlocked intrinsics.
+//! None are ntoskrnl exports themselves (the bindgen `ddk` versions are phantom externs
+//! that fail at link) except _vsnwprintf / vDbgPrintEx, which are — and those are now
+//! reached through the C shim (see the va_list note further down).
 #![allow(non_snake_case, non_upper_case_globals, dead_code, non_camel_case_types)]
 use ntkrnl_sys::ddk::{NTSTATUS, ULONG, LONG, va_list};
-use core::ffi::VaList;
 
 // FORCEINLINE IRP-stack walkers (Tail.Overlay arithmetic) — re-export the tier1 inlines
 // (the bindgen ddk versions are phantom externs). Strip these from the modules' explicit
@@ -111,32 +110,57 @@ const STATUS_BUFFER_OVERFLOW_: NTSTATUS = 0x80000005u32 as i32;
 const STATUS_INVALID_PARAMETER_: NTSTATUS = 0xC000000Du32 as i32;
 const STATUS_INTEGER_OVERFLOW_: NTSTATUS = 0xC0000095u32 as i32;
 
-// ntoskrnl exports (real symbols). vDbgPrintEx is variadic-via-va_list; _vsnwprintf is the
-// wide CRT print the ntstrsafe inlines are built on.
-// ntoskrnl.spec: @ stdcall vDbgPrintEx(...) — extern "system" gives _vDbgPrintEx@16 on
-// i386 (stdcall), undecorated on amd64/arm64. extern "C" would mis-decorate on i386.
-extern "system" {
-    pub fn vDbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: *const i8, arglist: VaList) -> ULONG;
-}
-// _vsnwprintf is @ cdecl in the spec — keep extern "C".
+// ---- the C-variadic boundary (drivers/storage/ide/pciidex/rust_varargs_shim.c) -------
+//
+// Stable Rust cannot DEFINE a C-variadic fn (`va_start`) nor `va_arg` — that is the
+// nightly `c_variadic` feature (rust-lang#44930). It CAN declare and CALL one. So the
+// variadic ENTRY of each ntstrsafe wrapper lives in the shim, which immediately calls the
+// fixed-arity `_v` twin below holding ALL the logic. Call sites are unchanged.
+//
+// Neither wrapper pulls args itself: both hand the whole va_list to ntoskrnl's exported
+// `_vsnwprintf`. Rust only ever holds an opaque POINTER to the C frame's va_list, so it
+// cannot pass one BY VALUE — the shim's `vibeos_vsnwprintf` dereferences the pointer and
+// makes that call. It does nothing else; the buffer sizing / NUL-termination / NTSTATUS
+// mapping below is untouched. (Same shape for vDbgPrintEx, used by miniport.rs.)
 extern "C" {
-    fn _vsnwprintf(buffer: *mut u16, count: usize, format: *const u16, argptr: VaList) -> i32;
+    fn vibeos_vsnwprintf(
+        buffer: *mut u16, count: usize, format: *const u16, ap: *mut core::ffi::c_void,
+    ) -> i32;
+    pub fn vibeos_vDbgPrintEx(
+        ComponentId: ULONG, Level: ULONG, Format: *const i8, ap: *mut core::ffi::c_void,
+    ) -> ULONG;
+}
+
+// The variadic entry points themselves — DEFINED in the shim, declared here so the module
+// call sites (pciidex.rs / fdo.rs / pdo.rs) keep calling `RtlStringCbPrintfW(...)` /
+// `RtlStringCchPrintfExW(...)` exactly as before. Declaring + calling a C-variadic fn is
+// stable; only defining one is not.
+extern "C" {
+    pub fn RtlStringCbPrintfW(
+        dest: *mut u16, cbDest: usize, format: *const u16, ...
+    ) -> NTSTATUS;
+    pub fn RtlStringCchPrintfExW(
+        dest: *mut u16, cchDest: usize, ppszDestEnd: *mut *mut u16,
+        pcchRemaining: *mut usize, flags: ULONG, format: *const u16, ...
+    ) -> NTSTATUS;
 }
 
 // ntstrsafe.h FORCEINLINE RtlStringCbPrintfW (cb = byte count) — forward to _vsnwprintf,
 // guarantee null-termination, map overflow to STATUS_BUFFER_OVERFLOW. Faithful to the
 // ntstrsafe contract for the formats pciidex uses (%u / %ls).
-pub unsafe extern "C" fn RtlStringCbPrintfW(
+// Fixed-arity twin of the shim's `RtlStringCbPrintfW`; `ap` points at its va_list.
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbPrintfW_v(
     dest: *mut u16,
     cbDest: usize,
     format: *const u16,
-    mut args: ...
+    ap: *mut core::ffi::c_void,
 ) -> NTSTATUS {
     let cch = cbDest / core::mem::size_of::<u16>();
     if cch == 0 {
         return STATUS_INVALID_PARAMETER_;
     }
-    let n = _vsnwprintf(dest, cch - 1, format, args.as_va_list());
+    let n = vibeos_vsnwprintf(dest, cch - 1, format, ap);
     let overflow = n < 0 || (n as usize) >= cch;
     let idx = if overflow { cch - 1 } else { n as usize };
     *dest.add(idx) = 0;
@@ -145,19 +169,21 @@ pub unsafe extern "C" fn RtlStringCbPrintfW(
 
 // ntstrsafe.h FORCEINLINE RtlStringCchPrintfExW (cch = char count, with end-ptr +
 // remaining out-params + flags). pciidex passes flags=0.
-pub unsafe extern "C" fn RtlStringCchPrintfExW(
+// Fixed-arity twin of the shim's `RtlStringCchPrintfExW`; `ap` points at its va_list.
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCchPrintfExW_v(
     dest: *mut u16,
     cchDest: usize,
     ppszDestEnd: *mut *mut u16,
     pcchRemaining: *mut usize,
     _flags: ULONG,
     format: *const u16,
-    mut args: ...
+    ap: *mut core::ffi::c_void,
 ) -> NTSTATUS {
     if cchDest == 0 {
         return STATUS_INVALID_PARAMETER_;
     }
-    let n = _vsnwprintf(dest, cchDest - 1, format, args.as_va_list());
+    let n = vibeos_vsnwprintf(dest, cchDest - 1, format, ap);
     let overflow = n < 0 || (n as usize) >= cchDest;
     let written = if overflow { cchDest - 1 } else { n as usize };
     *dest.add(written) = 0;

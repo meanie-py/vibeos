@@ -31,7 +31,6 @@ extern "C" {
     fn ScratchBuffer_SendSrb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Synchronous: i32, CompletionRoutine: *mut core::ffi::c_void, );
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, TimesRetried: u32, Status: *mut NTSTATUS, RetryIn100nsUnits: *mut i64, ) -> i32;
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
-    fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn DeviceMarkActive(dev_ext: *mut CDROM_DEVICE_EXTENSION, active: u8, something: u8);
 }
 
@@ -364,7 +363,7 @@ pub unsafe extern "C" fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DE
 
         if !ntkrnl_sys::base::NT_SUCCESS(status) {
             let msg = b"PowerContextReuseRequest: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n\0".as_ptr() as *const i8;
-            TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, msg, status);
+            TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, msg, status);
         }
     }
 
@@ -981,7 +980,7 @@ pub unsafe extern "C" fn DevicePowerSettingCallback(
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                        "PowerContextReuseRequest: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n",
 //                        status));
 //         }

@@ -159,7 +159,12 @@ extern "system" {
 extern "C" {
     fn KeLowerIrql(NewIrql: KIRQL);
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
 }
 
@@ -338,7 +343,7 @@ pub static mut IopHardwareDatabaseKey: _UNICODE_STRING = unsafe {
     _UNICODE_STRING {
         Length: 90, // 45 chars * 2
         MaximumLength: 92, // 46 chars * 2
-        Buffer: IOP_HARDWARE_DATABASE_KEY_BUF.as_ptr() as *mut u16,
+        Buffer: (*(&raw const IOP_HARDWARE_DATABASE_KEY_BUF)).as_ptr() as *mut u16,
     }
 };
 
@@ -629,7 +634,7 @@ unsafe extern "fastcall" fn IopDisplayLoadingMessage(ServiceName: *const _UNICOD
         (*(KeLoaderBlock as *mut _LOADER_PARAMETER_BLOCK)).ArcBootDeviceName,
         (*(KeLoaderBlock as *mut _LOADER_PARAMETER_BLOCK)).NtBootPathName,
         ServiceName,
-        if IopSuffixUnicodeString(&DOT_SYS as *const _UNICODE_STRING, ServiceName, 1u8) != 0 {
+        if IopSuffixUnicodeString(&raw const DOT_SYS as *const _UNICODE_STRING, ServiceName, 1u8) != 0 {
             b"\0".as_ptr() as PCHAR
         } else {
             b".SYS\0".as_ptr() as PCHAR
@@ -660,7 +665,7 @@ unsafe extern "C" fn IopDisplayLoadingMessage(ServiceName: *const _UNICODE_STRIN
         (*(KeLoaderBlock as *mut _LOADER_PARAMETER_BLOCK)).ArcBootDeviceName,
         (*(KeLoaderBlock as *mut _LOADER_PARAMETER_BLOCK)).NtBootPathName,
         ServiceName,
-        if IopSuffixUnicodeString(&DOT_SYS as *const _UNICODE_STRING, ServiceName, 1u8) != 0 {
+        if IopSuffixUnicodeString(&raw const DOT_SYS as *const _UNICODE_STRING, ServiceName, 1u8) != 0 {
             b"\0".as_ptr() as PCHAR
         } else {
             b".SYS\0".as_ptr() as PCHAR
@@ -702,9 +707,9 @@ unsafe extern "fastcall" fn IopNormalizeImagePath(
             return STATUS_NO_MEMORY;
         }
 
-        RtlCopyUnicodeString(ImagePath, &DRIVERS_PATH_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
+        RtlCopyUnicodeString(ImagePath, &raw const DRIVERS_PATH_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
         RtlAppendUnicodeStringToString(ImagePath, ServiceName);
-        RtlAppendUnicodeStringToString(ImagePath, &DOT_SYS_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
+        RtlAppendUnicodeStringToString(ImagePath, &raw const DOT_SYS_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
     } else if *InputImagePath.Buffer != b'\\' as u16 {
         (*ImagePath).Length = 0;
         (*ImagePath).MaximumLength = SYSTEM_ROOT_STRING.Length + InputImagePath.Length + core::mem::size_of::<u16>() as USHORT;
@@ -713,7 +718,7 @@ unsafe extern "fastcall" fn IopNormalizeImagePath(
             return STATUS_NO_MEMORY;
         }
 
-        RtlCopyUnicodeString(ImagePath, &SYSTEM_ROOT_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
+        RtlCopyUnicodeString(ImagePath, &raw const SYSTEM_ROOT_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
         RtlAppendUnicodeStringToString(ImagePath, &InputImagePath as *const _UNICODE_STRING as *mut _UNICODE_STRING);
 
         ExFreePoolWithTag(InputImagePath.Buffer as PVOID, TAG_RTLREGISTRY);
@@ -755,9 +760,9 @@ unsafe extern "C" fn IopNormalizeImagePath(
             return STATUS_NO_MEMORY;
         }
 
-        RtlCopyUnicodeString(ImagePath, &DRIVERS_PATH_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
+        RtlCopyUnicodeString(ImagePath, &raw const DRIVERS_PATH_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
         RtlAppendUnicodeStringToString(ImagePath, ServiceName);
-        RtlAppendUnicodeStringToString(ImagePath, &DOT_SYS_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
+        RtlAppendUnicodeStringToString(ImagePath, &raw const DOT_SYS_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
     } else if *InputImagePath.Buffer != b'\\' as u16 {
         (*ImagePath).Length = 0;
         (*ImagePath).MaximumLength = SYSTEM_ROOT_STRING.Length + InputImagePath.Length + core::mem::size_of::<u16>() as USHORT;
@@ -766,7 +771,7 @@ unsafe extern "C" fn IopNormalizeImagePath(
             return STATUS_NO_MEMORY;
         }
 
-        RtlCopyUnicodeString(ImagePath, &SYSTEM_ROOT_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
+        RtlCopyUnicodeString(ImagePath, &raw const SYSTEM_ROOT_STRING as *const _UNICODE_STRING as *mut _UNICODE_STRING);
         RtlAppendUnicodeStringToString(ImagePath, &InputImagePath as *const _UNICODE_STRING as *mut _UNICODE_STRING);
 
         ExFreePoolWithTag(InputImagePath.Buffer as PVOID, TAG_RTLREGISTRY);
@@ -933,7 +938,7 @@ unsafe fn IopInitializeBuiltinDriver(BootLdrEntry: PLDR_DATA_TABLE_ENTRY) -> BOO
     }
 
     NextEntry = PsLoadedModuleList.Flink;
-    while NextEntry != &mut PsLoadedModuleList as *mut LIST_ENTRY {
+    while NextEntry != &raw mut PsLoadedModuleList as *mut LIST_ENTRY {
         LdrEntry = ((NextEntry as usize) - core::mem::offset_of!(_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)) as PLDR_DATA_TABLE_ENTRY;
         if RtlEqualUnicodeString(ModuleName, &mut (*LdrEntry).BaseDllName as *mut _UNICODE_STRING, 1u8) != 0 {
             break;
@@ -1038,8 +1043,9 @@ unsafe fn IopInitializeBuiltinDriver(BootLdrEntry: PLDR_DATA_TABLE_ENTRY) -> BOO
     deviceAdded
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IopInitializeBootDrivers() {
+pub unsafe fn IopInitializeBootDrivers() {
     let mut ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut NextEntry2: PLIST_ENTRY;
@@ -1174,9 +1180,11 @@ pub unsafe extern "fastcall" fn IopInitializeBootDrivers() {
         core::ptr::null_mut(),
     );
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
+pub unsafe fn IopInitializeSystemDrivers() {
     #[inline(never)]
     unsafe fn sd_trace(s: &[u8]) {
         crate::dbg_print!(b"%s\0", s.as_ptr() as *const i8);
@@ -1210,10 +1218,20 @@ pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
         //      load AFTER netstack (it binds netstack's TDI devices). Stock x86
         //      orders this via the "NDIS Wrapper" → "TDI" load groups; on arm64 we
         //      enforce the order explicitly by listing afd second.
+        //   3. npfs.sys (named-pipe FS) — the transport under LOCAL RPC: advapi32's
+        //      SCM client binds ncacn_np "\pipe\ntsvcs" (advapi32/service/scm.c:42-44)
+        //      and services.exe listens on it (services/rpcserver.c:115). Without it
+        //      every CreateService raises RPC_S_SERVER_UNAVAILABLE (0x6BA), which is
+        //      what blocked the whole arm64 kmtest conformance sweep. It is already
+        //      registered Start=1 in the SYSTEM hive (drivers/filesystems/npfs/
+        //      npfs_reg.inf) and mkramdisk.sh now stages the binary; it only ever
+        //      failed to load because this list — not the registry — is what arm64
+        //      actually honours. Order-independent (no dependency on the two above).
         ARM64_UART_TRACE!("[SYSDRV] ARM64: system-start skipped; loading staged drivers\r\n");
-        const STAGED_SVCS: [&[u16]; 2] = [
+        const STAGED_SVCS: [&[u16]; 3] = [
             crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\netstack"),
             crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Afd"),
+            crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Npfs"),
         ];
         for svc_path in STAGED_SVCS {
             let mut svc = _UNICODE_STRING {
@@ -1286,6 +1304,7 @@ pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
 
     ARM64_UART_TRACE!("[SYSDRV] IopInitializeSystemDrivers complete\r\n");
 }
+}
 
 unsafe extern "system" fn IopUnloadDriver(
     DriverServiceName: PUNICODE_STRING,
@@ -1340,7 +1359,7 @@ unsafe extern "system" fn IopUnloadDriver(
     Status = RtlFindCharInUnicodeString(
         RTL_FIND_CHAR_IN_UNICODE_STRING_START_AT_END,
         &mut CapturedServiceName as *mut _UNICODE_STRING,
-        &BACKSLASH as *const _UNICODE_STRING as *mut _UNICODE_STRING,
+        &raw const BACKSLASH as *const _UNICODE_STRING as *mut _UNICODE_STRING,
         &mut LastBackslash as *mut USHORT,
     );
     if Status >= 0 {
@@ -1474,7 +1493,7 @@ pub unsafe extern "system" fn IopReinitializeDrivers() {
     let mut ReinitItem: PDRIVER_REINIT_ITEM;
     let mut Entry: PLIST_ENTRY;
 
-    Entry = ExInterlockedRemoveHeadList(&mut DriverReinitListHead as *mut LIST_ENTRY, &mut DriverReinitListLock as *mut KSPIN_LOCK as *mut _);
+    Entry = ExInterlockedRemoveHeadList(&raw mut DriverReinitListHead as *mut LIST_ENTRY, &raw mut DriverReinitListLock as *mut KSPIN_LOCK as *mut _);
     while !Entry.is_null() {
         ReinitItem = ((Entry as usize) - core::mem::offset_of!(_DRIVER_REINIT_ITEM, ItemEntry)) as PDRIVER_REINIT_ITEM;
 
@@ -1490,7 +1509,7 @@ pub unsafe extern "system" fn IopReinitializeDrivers() {
 
         ExFreePool(Entry as PVOID);
 
-        Entry = ExInterlockedRemoveHeadList(&mut DriverReinitListHead as *mut LIST_ENTRY, &mut DriverReinitListLock as *mut KSPIN_LOCK as *mut _);
+        Entry = ExInterlockedRemoveHeadList(&raw mut DriverReinitListHead as *mut LIST_ENTRY, &raw mut DriverReinitListLock as *mut KSPIN_LOCK as *mut _);
     }
 }
 
@@ -1499,7 +1518,7 @@ pub unsafe extern "system" fn IopReinitializeBootDrivers() {
     let mut ReinitItem: PDRIVER_REINIT_ITEM;
     let mut Entry: PLIST_ENTRY;
 
-    Entry = ExInterlockedRemoveHeadList(&mut DriverBootReinitListHead as *mut LIST_ENTRY, &mut DriverBootReinitListLock as *mut KSPIN_LOCK as *mut _);
+    Entry = ExInterlockedRemoveHeadList(&raw mut DriverBootReinitListHead as *mut LIST_ENTRY, &raw mut DriverBootReinitListLock as *mut KSPIN_LOCK as *mut _);
     while !Entry.is_null() {
         ReinitItem = ((Entry as usize) - core::mem::offset_of!(_DRIVER_REINIT_ITEM, ItemEntry)) as PDRIVER_REINIT_ITEM;
 
@@ -1515,10 +1534,10 @@ pub unsafe extern "system" fn IopReinitializeBootDrivers() {
 
         ExFreePool(Entry as PVOID);
 
-        Entry = ExInterlockedRemoveHeadList(&mut DriverBootReinitListHead as *mut LIST_ENTRY, &mut DriverBootReinitListLock as *mut KSPIN_LOCK as *mut _);
+        Entry = ExInterlockedRemoveHeadList(&raw mut DriverBootReinitListHead as *mut LIST_ENTRY, &raw mut DriverBootReinitListLock as *mut KSPIN_LOCK as *mut _);
     }
 
-    KeWaitForSingleObject(&mut PiEnumerationFinished as *mut KEVENT as PVOID, _KWAIT_REASON_Executive, 0i32 as i8, 0u8, core::ptr::null_mut());
+    KeWaitForSingleObject(&raw mut PiEnumerationFinished as *mut KEVENT as PVOID, _KWAIT_REASON_Executive, 0i32 as i8, 0u8, core::ptr::null_mut());
 }
 
 #[no_mangle]
@@ -1692,9 +1711,9 @@ pub unsafe extern "system" fn IoRegisterBootDriverReinitialization(
 
     (*DriverObject).Flags |= DRVO_BOOTREINIT_REGISTERED;
     ExInterlockedInsertTailList(
-        &mut DriverBootReinitListHead as *mut LIST_ENTRY,
+        &raw mut DriverBootReinitListHead as *mut LIST_ENTRY,
         &mut (*ReinitItem).ItemEntry as *mut LIST_ENTRY,
-        &mut DriverBootReinitListLock as *mut KSPIN_LOCK as *mut _,
+        &raw mut DriverBootReinitListLock as *mut KSPIN_LOCK as *mut _,
     );
 }
 
@@ -1717,9 +1736,9 @@ pub unsafe extern "system" fn IoRegisterDriverReinitialization(
 
     (*DriverObject).Flags |= DRVO_REINIT_REGISTERED;
     ExInterlockedInsertTailList(
-        &mut DriverReinitListHead as *mut LIST_ENTRY,
+        &raw mut DriverReinitListHead as *mut LIST_ENTRY,
         &mut (*ReinitItem).ItemEntry as *mut LIST_ENTRY,
-        &mut DriverReinitListLock as *mut KSPIN_LOCK as *mut _,
+        &raw mut DriverReinitListLock as *mut KSPIN_LOCK as *mut _,
     );
 }
 
@@ -2204,7 +2223,7 @@ pub unsafe extern "C" fn IopLoadDriver(ServiceHandle: HANDLE, DriverObject: *mut
     }
 
     KeEnterCriticalRegion();
-    ExAcquireResourceExclusiveLite(&mut IopDriverLoadResource as *mut ERESOURCE, 1u8);
+    ExAcquireResourceExclusiveLite(&raw mut IopDriverLoadResource as *mut ERESOURCE, 1u8);
 
     Status = MmLoadSystemImage(
         &mut ImagePath as *mut _UNICODE_STRING,
@@ -2217,7 +2236,7 @@ pub unsafe extern "C" fn IopLoadDriver(ServiceHandle: HANDLE, DriverObject: *mut
     RtlFreeUnicodeString(&mut ImagePath as *mut _UNICODE_STRING);
 
     if Status < 0 {
-        ExReleaseResourceLite(&mut IopDriverLoadResource as *mut ERESOURCE);
+        ExReleaseResourceLite(&raw mut IopDriverLoadResource as *mut ERESOURCE);
         KeLeaveCriticalRegion();
         return Status;
     }
@@ -2246,7 +2265,7 @@ pub unsafe extern "C" fn IopLoadDriver(ServiceHandle: HANDLE, DriverObject: *mut
     if Status < 0 {
     }
 
-    ExReleaseResourceLite(&mut IopDriverLoadResource as *mut ERESOURCE);
+    ExReleaseResourceLite(&raw mut IopDriverLoadResource as *mut ERESOURCE);
     KeLeaveCriticalRegion();
 
     Status

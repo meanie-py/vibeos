@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::lsasrv::database::{
 
 
-    LsapOpenDbObject, LsapCloseDbObject, LsapValidateDbObject,
+    LsapOpenDbObject,
     LsapGetObjectAttribute, LsapSetObjectAttribute,
 };
 
@@ -44,7 +44,7 @@ static mut __wine_dbch_lsasrv: __wine_debug_channel = unsafe {
 #[no_mangle]
 pub unsafe extern "system" fn LsaIOpenPolicyTrusted(PolicyHandle: *mut LSAPR_HANDLE) -> NTSTATUS {
     let mut PolicyObject: PLSA_DB_OBJECT = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     TRACE!(
         b"(%p)\n\0".as_ptr() as *const i8,
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn LsarQueryAuditLog(
 ) -> NTSTATUS {
     let mut AuditLogInfo: PPOLICY_AUDIT_LOG_INFO = core::ptr::null_mut();
     let mut AttributeSize: ULONG = core::mem::size_of::<POLICY_AUDIT_LOG_INFO>() as ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *PolicyInformation = core::ptr::null_mut();
 
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn LsarQueryPrimaryDomain(
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
     let mut p: PLSAPR_POLICY_PRIMARY_DOM_INFO = core::ptr::null_mut();
-    let mut domain_name: PUNICODE_STRING;
+    let domain_name: PUNICODE_STRING;
     let mut attribute_size: ULONG;
     let mut status: NTSTATUS;
 
@@ -332,7 +332,7 @@ pub unsafe extern "C" fn LsarQueryPrimaryDomain(
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsarQueryPdAccount(
-    PolicyObject: PLSA_DB_OBJECT,
+    _PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
     *PolicyInformation = core::ptr::null_mut();
@@ -503,7 +503,7 @@ pub unsafe extern "C" fn LsarQueryServerRole(
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsarQueryReplicaSource(
-    PolicyObject: PLSA_DB_OBJECT,
+    _PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut *mut _LSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
     if ((*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_FIXME as i32)) != 0 {
@@ -527,7 +527,7 @@ pub unsafe extern "C" fn LsarQueryDefaultQuota(
 ) -> NTSTATUS {
     let mut QuotaInfo: PPOLICY_DEFAULT_QUOTA_INFO = core::ptr::null_mut();
     let mut AttributeSize: ULONG;
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     *PolicyInformation = core::ptr::null_mut();
 
@@ -826,7 +826,7 @@ pub unsafe extern "C" fn LsarQueryDnsDomain(
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsarQueryDnsDomainInt(
-    PolicyObject: PLSA_DB_OBJECT,
+    _PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
     if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_FIXME as i32) != 0 {
@@ -844,7 +844,7 @@ pub unsafe extern "C" fn LsarQueryDnsDomainInt(
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsarQueryLocalAccountDomain(
-    PolicyObject: PLSA_DB_OBJECT,
+    _PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
     if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_FIXME as i32) != 0 {
@@ -940,7 +940,7 @@ pub unsafe extern "C" fn LsarSetPrimaryDomain(
 ) -> NTSTATUS {
     let mut Buffer: *mut _UNICODE_STRING = core::ptr::null_mut();
     let mut Length: ULONG;
-    let mut Ptr: LPWSTR;
+    let Ptr: LPWSTR;
 
     TRACE!(b"(%p %p)\n\0".as_ptr() as *const ::core::ffi::c_char, PolicyObject, Info);
 
@@ -1073,8 +1073,8 @@ pub unsafe extern "C" fn LsarSetServerRole(
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsarSetReplicaSource(
-    PolicyObject: PLSA_DB_OBJECT,
-    Info: PPOLICY_LSA_REPLICA_SRCE_INFO,
+    _PolicyObject: PLSA_DB_OBJECT,
+    _Info: PPOLICY_LSA_REPLICA_SRCE_INFO,
 ) -> NTSTATUS {
     if ((*__wine_dbch___default).flags as i32 & (1i32 << (__WINE_DBCL_FIXME as i32))) != 0 {
         let _dbch: *mut __wine_debug_channel = __wine_dbch___default;
@@ -1199,8 +1199,8 @@ pub unsafe extern "C" fn LsarSetAuditFull(
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsarSetDnsDomain(
-    PolicyObject: PLSA_DB_OBJECT,
-    Info: PLSAPR_POLICY_DNS_DOMAIN_INFO,
+    _PolicyObject: PLSA_DB_OBJECT,
+    _Info: PLSAPR_POLICY_DNS_DOMAIN_INFO,
 ) -> NTSTATUS {
     if ((*__wine_dbch___default).flags as ::core::ffi::c_int)
         & ((1 as ::core::ffi::c_int) << __WINE_DBCL_FIXME as ::core::ffi::c_int)
@@ -1220,8 +1220,8 @@ pub unsafe extern "C" fn LsarSetDnsDomain(
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsarSetDnsDomainInt(
-    PolicyObject: PLSA_DB_OBJECT,
-    Info: PLSAPR_POLICY_DNS_DOMAIN_INFO,
+    _PolicyObject: PLSA_DB_OBJECT,
+    _Info: PLSAPR_POLICY_DNS_DOMAIN_INFO,
 ) -> NTSTATUS {
     if (*__wine_dbch___default).flags as ::core::ffi::c_int
         & (1 << __WINE_DBCL_FIXME as ::core::ffi::c_int)
@@ -1243,8 +1243,8 @@ pub unsafe extern "C" fn LsarSetDnsDomainInt(
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsarSetLocalAccountDomain(
-    PolicyObject: PLSA_DB_OBJECT,
-    Info: PLSAPR_POLICY_ACCOUNT_DOM_INFO,
+    _PolicyObject: PLSA_DB_OBJECT,
+    _Info: PLSAPR_POLICY_ACCOUNT_DOM_INFO,
 ) -> NTSTATUS {
     if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_FIXME as i32) != 0 {
         let __dbch: *mut __wine_debug_channel = __wine_dbch___default;

@@ -673,3 +673,25 @@
 @ stdcall NtGdiUMPDEngFreeUserMem(ptr)
 @ stdcall NtGdiDrawStream(ptr long ptr)
 
+
+# WoW64 automarshal targets (M17): stubs exist for every kernel-table
+# service (sys-stubs.S includes the full w32ksvc list); these exports were
+# simply never listed. Arg counts from w32ksvc32.h (i386 @N decoration).
+@ stdcall NtGdiGetFontFamilyInfo(long long long long)
+@ stdcall NtGdiMakeObjectXferable(long long)
+@ stdcall NtGdiOffsetViewportOrgEx(long long long long)
+@ stdcall NtGdiOffsetWindowOrgEx(long long long long)
+@ stdcall NtGdiSetViewportOrgEx(long long long long)
+@ stdcall NtGdiSetWindowOrgEx(long long long long)
+@ stdcall NtUserChangeDisplaySettings(long long long long)
+@ stdcall NtUserDbgWin32HeapFail(long long)
+@ stdcall NtUserDbgWin32HeapStat(long long)
+@ stdcall NtUserEnumDisplayMonitors(long long long long long)
+@ stdcall NtUserGetMonitorInfo(long long)
+@ stdcall NtUserMonitorFromPoint(long long long)
+@ stdcall NtUserMonitorFromRect(long long)
+@ stdcall NtUserMonitorFromWindow(long long)
+@ stdcall NtUserSetDbgTag(long long)
+@ stdcall NtUserSetDbgTagCount(long)
+@ stdcall NtUserSetRipFlags(long)
+@ stdcall NtUserSetScrollBarInfo(long long long)

@@ -199,7 +199,7 @@ unsafe fn FindPxeStructure() -> PPXE {
             continue;
         }
 
-        TRACE((b"!PXE structure found at %p\n\0".as_ptr() as *const i8), (Ptr) as usize);
+        TRACE(b"!PXE structure found at %p\n\0".as_ptr() as *const i8 , (Ptr) as usize);
         return Ptr;
     }
 
@@ -228,7 +228,7 @@ unsafe fn CallPxe(Service: UINT16, Parameter: PVOID) -> BOOLEAN {
         TRACE(b"PxeCall(0x%x, %p)\n\0".as_ptr() as *const i8, (Service) as usize, (Parameter) as usize);
     }
 
-    let exit = PxeCallApi((*pxe).EntryPointSP.segment, (*pxe).EntryPointSP.offset, ((Service) as u16), Parameter);
+    let exit = PxeCallApi((*pxe).EntryPointSP.segment, (*pxe).EntryPointSP.offset, (Service) as u16 , Parameter);
     if exit != PXENV_EXIT_SUCCESS {
         ERR(b"PxeCall(0x%x, %p) failed with exit=%d status=0x%x\n\0".as_ptr() as *const i8, (Service) as usize, (Parameter) as usize, (exit) as usize, (*(Parameter as *const PXENV_STATUS)) as usize);
         return 0u8;
@@ -269,7 +269,7 @@ unsafe extern "C" fn PxeGetFileInformation(FileId: u32, Information: *mut FILEIN
 
     (*Information).Type = NetworkPeripheral;
 
-    (*Information).Attributes = ((ReadOnlyFile) as u8);
+    (*Information).Attributes = (ReadOnlyFile) as u8 ;
 
     FileName = strrchr(_OpenFileName.as_ptr(), b'/' as i32);
     if !FileName.is_null() {
@@ -280,7 +280,7 @@ unsafe extern "C" fn PxeGetFileInformation(FileId: u32, Information: *mut FILEIN
 
     (*Information).FileNameLength = strlen(FileName) as u32;
     (*Information).FileNameLength = min((*Information).FileNameLength, (core::mem::size_of_val(&(*Information).FileName) - 1) as u32);
-    core::ptr::copy_nonoverlapping(FileName as *const u8, ((*Information).FileName.as_mut_ptr() as *mut u8), (*Information).FileNameLength as usize);
+    core::ptr::copy_nonoverlapping(FileName as *const u8, (*Information).FileName.as_mut_ptr() as *mut u8 , (*Information).FileNameLength as usize);
     *core::ptr::addr_of_mut!((*Information).FileName).cast::<u8>().add((*Information).FileNameLength as usize) = 0;
 
     TRACE(b"PxeGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n\0".as_ptr() as PCSTR, (FileId) as usize, ((*Information).EndingAddress.__bindgen_anon_1.LowPart) as usize, ((*Information).CurrentAddress.__bindgen_anon_1.LowPart) as usize);
@@ -330,7 +330,7 @@ unsafe extern "C" fn PxeOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG
     sizeData.ServerIPAddress = _ServerIP;
     core::ptr::copy_nonoverlapping(
         _OpenFileName.as_ptr(),
-        (sizeData.FileName.as_mut_ptr() as *mut i8),
+        sizeData.FileName.as_mut_ptr() as *mut i8 ,
         core::mem::size_of_val(&_OpenFileName),
     );
     if CallPxe(PXENV_TFTP_GET_FSIZE, &mut sizeData as *mut _ as PVOID) == 0 {
@@ -345,7 +345,7 @@ unsafe extern "C" fn PxeOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG
     openData.ServerIPAddress = _ServerIP;
     core::ptr::copy_nonoverlapping(
         _OpenFileName.as_ptr(),
-        (openData.FileName.as_mut_ptr() as *mut i8),
+        openData.FileName.as_mut_ptr() as *mut i8 ,
         core::mem::size_of_val(&_OpenFileName),
     );
     openData.PacketSize = core::mem::size_of_val(&_Packet) as u16;
@@ -456,30 +456,30 @@ static PxeVtbl: DEVVTBL = DEVVTBL {
 };
 
 #[no_mangle]
-pub unsafe extern "C" fn PxeMount(DeviceId: ULONG) -> *const DEVVTBL {
+pub unsafe extern "C" fn PxeMount(_DeviceId: ULONG) -> *const DEVVTBL {
     if GetPxeStructure() == core::ptr::null_mut() {
         return core::ptr::null();
     }
     &PxeVtbl
 }
 
-unsafe extern "C" fn PxeDiskClose(FileId: ULONG) -> ARC_STATUS {
+unsafe extern "C" fn PxeDiskClose(_FileId: ULONG) -> ARC_STATUS {
     ESUCCESS
 }
 
-unsafe extern "C" fn PxeDiskGetFileInformation(FileId: ULONG, Information: *mut FILEINFORMATION) -> ARC_STATUS {
+unsafe extern "C" fn PxeDiskGetFileInformation(_FileId: ULONG, _Information: *mut FILEINFORMATION) -> ARC_STATUS {
     EINVAL
 }
 
-unsafe extern "C" fn PxeDiskOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG) -> ARC_STATUS {
+unsafe extern "C" fn PxeDiskOpen(_Path: PCHAR, _OpenMode: OPENMODE, _FileId: *mut ULONG) -> ARC_STATUS {
     ESUCCESS
 }
 
-unsafe extern "C" fn PxeDiskRead(FileId: ULONG, Buffer: *mut VOID, N: ULONG, Count: *mut ULONG) -> ARC_STATUS {
+unsafe extern "C" fn PxeDiskRead(_FileId: ULONG, _Buffer: *mut VOID, _N: ULONG, _Count: *mut ULONG) -> ARC_STATUS {
     EINVAL
 }
 
-unsafe extern "C" fn PxeDiskSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, SeekMode: SEEKMODE) -> ARC_STATUS {
+unsafe extern "C" fn PxeDiskSeek(_FileId: ULONG, _Position: *mut LARGE_INTEGER, _SeekMode: SEEKMODE) -> ARC_STATUS {
     EINVAL
 }
 

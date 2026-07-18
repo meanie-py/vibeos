@@ -538,34 +538,34 @@ pub unsafe extern "C" fn NlsInit() -> BOOL {
 #[no_mangle]
 pub unsafe extern "fastcall" fn NlsUninit() {
     let mut Current: PCODEPAGE_ENTRY = core::ptr::null_mut();
-    while !IsListEmpty(&mut CodePageListHead as *mut _) {
+    while !IsListEmpty(&raw mut CodePageListHead as *mut _) {
         Current = (CodePageListHead.Flink as usize)
-            .wrapping_sub(&mut (*core::ptr::null_mut::<CODEPAGE_ENTRY>()).Entry as *mut _ as usize)
+            .wrapping_sub(core::mem::offset_of!(CODEPAGE_ENTRY, Entry))
             as *mut CODEPAGE_ENTRY as PCODEPAGE_ENTRY;
         if !(*Current).SectionHandle.is_null() {
             UnmapViewOfFile((*Current).SectionMapping as LPCVOID);
             NtClose((*Current).SectionHandle);
         }
-        RemoveHeadList(&mut CodePageListHead as *mut _);
+        RemoveHeadList(&raw mut CodePageListHead as *mut _);
     }
-    RtlDeleteCriticalSection(&mut CodePageListLock as *mut _);
+    RtlDeleteCriticalSection(&raw mut CodePageListLock as *mut _);
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn NlsUninit() {
     let mut Current: PCODEPAGE_ENTRY = core::ptr::null_mut();
-    while !IsListEmpty(&mut CodePageListHead as *mut _) {
+    while !IsListEmpty(&raw mut CodePageListHead as *mut _) {
         Current = (CodePageListHead.Flink as usize)
-            .wrapping_sub(&mut (*core::ptr::null_mut::<CODEPAGE_ENTRY>()).Entry as *mut _ as usize)
+            .wrapping_sub(core::mem::offset_of!(CODEPAGE_ENTRY, Entry))
             as *mut CODEPAGE_ENTRY as PCODEPAGE_ENTRY;
         if !(*Current).SectionHandle.is_null() {
             UnmapViewOfFile((*Current).SectionMapping as LPCVOID);
             NtClose((*Current).SectionHandle);
         }
-        RemoveHeadList(&mut CodePageListHead as *mut _);
+        RemoveHeadList(&raw mut CodePageListHead as *mut _);
     }
-    RtlDeleteCriticalSection(&mut CodePageListLock as *mut _);
+    RtlDeleteCriticalSection(&raw mut CodePageListLock as *mut _);
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -636,9 +636,9 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
     let mut CodePageEntry: PCODEPAGE_ENTRY = core::ptr::null_mut();
 
     if CodePage == CP_ACP {
-        return &mut AnsiCodePage;
+        return &raw mut AnsiCodePage;
     } else if CodePage == CP_OEMCP {
-        return &mut OemCodePage;
+        return &raw mut OemCodePage;
     } else if CodePage == CP_THREAD_ACP {
         if GetLocaleInfoW(
             GetThreadLocale(),
@@ -650,7 +650,7 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
             return core::ptr::null_mut();
         }
         if CodePage == 0 {
-            return &mut AnsiCodePage;
+            return &raw mut AnsiCodePage;
         }
     } else if CodePage == CP_MACCP {
         if GetLocaleInfoW(
@@ -669,7 +669,7 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
         return CodePageEntry;
     }
 
-    RtlEnterCriticalSection(&mut CodePageListLock);
+    RtlEnterCriticalSection(&raw mut CodePageListLock);
 
     if GetNlsSectionName(
         CodePage,
@@ -680,7 +680,7 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
         core::mem::size_of::<[CHAR; 40]>() as ULONG,
     ) == 0
     {
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -693,7 +693,7 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
         SECTION_MAP_READ as ULONG,
     );
     if !NT_SUCCESS(Status) {
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -758,7 +758,7 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
     RtlFreeUnicodeString(&mut UnicodeName);
 
     if !NT_SUCCESS(Status) {
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -771,7 +771,7 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
     ) as PBYTE;
     if SectionMapping.is_null() {
         NtClose(SectionHandle);
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -782,7 +782,7 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
     ) as PCODEPAGE_ENTRY;
     if CodePageEntry.is_null() {
         NtClose(SectionHandle);
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -795,8 +795,8 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
         &mut (*CodePageEntry).CodePageTable,
     );
 
-    InsertTailList(&mut CodePageListHead, &mut (*CodePageEntry).Entry);
-    RtlLeaveCriticalSection(&mut CodePageListLock);
+    InsertTailList(&raw mut CodePageListHead, &mut (*CodePageEntry).Entry);
+    RtlLeaveCriticalSection(&raw mut CodePageListLock);
 
     return CodePageEntry;
 }
@@ -825,9 +825,9 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
     let mut CodePageEntry: PCODEPAGE_ENTRY = core::ptr::null_mut();
 
     if CodePage == CP_ACP {
-        return &mut AnsiCodePage;
+        return &raw mut AnsiCodePage;
     } else if CodePage == CP_OEMCP {
-        return &mut OemCodePage;
+        return &raw mut OemCodePage;
     } else if CodePage == CP_THREAD_ACP {
         if GetLocaleInfoW(
             GetThreadLocale(),
@@ -839,7 +839,7 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
             return core::ptr::null_mut();
         }
         if CodePage == 0 {
-            return &mut AnsiCodePage;
+            return &raw mut AnsiCodePage;
         }
     } else if CodePage == CP_MACCP {
         if GetLocaleInfoW(
@@ -858,7 +858,7 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
         return CodePageEntry;
     }
 
-    RtlEnterCriticalSection(&mut CodePageListLock);
+    RtlEnterCriticalSection(&raw mut CodePageListLock);
 
     if GetNlsSectionName(
         CodePage,
@@ -869,7 +869,7 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
         core::mem::size_of::<[CHAR; 40]>() as ULONG,
     ) == 0
     {
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -882,7 +882,7 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
         SECTION_MAP_READ as ULONG,
     );
     if !NT_SUCCESS(Status) {
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -947,7 +947,7 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
     RtlFreeUnicodeString(&mut UnicodeName);
 
     if !NT_SUCCESS(Status) {
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -960,7 +960,7 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
     ) as PBYTE;
     if SectionMapping.is_null() {
         NtClose(SectionHandle);
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -971,7 +971,7 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
     ) as PCODEPAGE_ENTRY;
     if CodePageEntry.is_null() {
         NtClose(SectionHandle);
-        RtlLeaveCriticalSection(&mut CodePageListLock);
+        RtlLeaveCriticalSection(&raw mut CodePageListLock);
         return core::ptr::null_mut();
     }
 
@@ -984,8 +984,8 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
         &mut (*CodePageEntry).CodePageTable,
     );
 
-    InsertTailList(&mut CodePageListHead, &mut (*CodePageEntry).Entry);
-    RtlLeaveCriticalSection(&mut CodePageListLock);
+    InsertTailList(&raw mut CodePageListHead, &mut (*CodePageEntry).Entry);
+    RtlLeaveCriticalSection(&raw mut CodePageListLock);
 
     return CodePageEntry;
 }
