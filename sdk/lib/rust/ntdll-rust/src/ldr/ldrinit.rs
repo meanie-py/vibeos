@@ -309,7 +309,7 @@ rtl_constant_string!(
 );
 rtl_constant_string!(Wow64OptionsString, WOW64_OPTIONS_STRING_BUF, "");
 rtl_constant_string!(NtDllString, NTDLL_STRING_BUF, "ntdll.dll");
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 rtl_constant_string!(Wow64DllString, WOW64_DLL_STRING_BUF, "wow64.dll");
 rtl_constant_string!(Kernel32String, KERNEL32_STRING_BUF, "kernel32.dll");
 // C declares LdrpDotLocal `const` but it's only ever read; keep it as the
@@ -2354,7 +2354,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
      * csrss) — loading it earlier runs kernel32's DllMain re-entrantly under
      * the loader lock and hangs. So we only set a flag here; the handoff is
      * right after the init routines run. Mirrors Win10's LdrpLoadWow64 timing. */
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     let IsWow64Process = {
         extern "system" {
             fn NtQueryInformationProcess(
@@ -2422,7 +2422,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     /* Walk the IAT and load all the DLLs. For a WoW64 process the image is
      * i386 — its imports are 32-bit and must be resolved by the 32-bit loader
      * running under emulation, NOT here against 64-bit modules. Skip. */
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     {
         if IsWow64Process {
             ImportStatus = STATUS_SUCCESS;
@@ -2430,7 +2430,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
             ImportStatus = LdrpWalkImportDescriptor(LdrpDefaultPath.Buffer, LdrpImageEntry);
         }
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         ImportStatus = LdrpWalkImportDescriptor(LdrpDefaultPath.Buffer, LdrpImageEntry);
     }
@@ -2438,10 +2438,10 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     /* NtHeader has the native optional-header layout here, so its ImageBase
      * field is not valid for an i386 WoW64 image.  Guest relocation belongs
      * to the 32-bit loader after the handoff below. */
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     let ImageNeedsRelocation =
         !IsWow64Process && (*Peb).ImageBaseAddress != (*NtHeader).OptionalHeader.ImageBase as PVOID;
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     let ImageNeedsRelocation =
         (*Peb).ImageBaseAddress != (*NtHeader).OptionalHeader.ImageBase as PVOID;
     if ImageNeedsRelocation {
@@ -2587,7 +2587,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
      * drives the i386 side under emulation). Everything below here in normal
      * process init — the i386 exe's entry, etc. — is the 32-bit loader's job
      * inside emulation, not ours. Mirrors Win10's LdrpLoadWow64. */
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     if IsWow64Process {
         const STATUS_ENTRYPOINT_NOT_FOUND: NTSTATUS = 0xC000_0139u32 as NTSTATUS;
         DbgPrint(b"[LDR] WoW64 process: init routines done, loading wow64.dll\n\0".as_ptr() as *const i8);

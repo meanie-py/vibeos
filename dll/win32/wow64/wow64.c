@@ -36,6 +36,13 @@ NtQueryInformationProcess(_In_ HANDLE ProcessHandle,
  * kernel32 through us — Win10 keeps it out of wow64 processes too). */
 #define WOW64_CURRENT_PROCESS ((HANDLE)(LONG_PTR)-1)
 
+/* Host program counter in the native CONTEXT (diagnostics only). */
+#ifdef _M_ARM64
+#define WOW64_HOST_PC(Ctx) ((PVOID)(Ctx)->Pc)
+#else /* _M_AMD64 */
+#define WOW64_HOST_PC(Ctx) ((PVOID)(Ctx)->Rip)
+#endif
+
 /* ---- ntdll surface we use (this DLL links ntdll only) ------------------- */
 
 typedef struct _WOW64_UNICODE_STRING {
@@ -112,6 +119,19 @@ LONG Wow64DispatchSystemService(ULONG ServiceNumber, PULONG Arguments);
 #define WOW64_TEB_WOWTEBOFFSET     0x180c  /* raw Win10 slot (see MmCreateTeb) */
 #define WOW64_MACHINE_I386         0x014C
 #define WOW64_MACHINE_ARM64        0xAA64
+#define WOW64_MACHINE_AMD64        0x8664
+
+/* The CPU layer differs by host arch — a JIT on arm64 (FEX), a native
+ * heaven's-gate mode switch on amd64 (wow64cpu) — but both export the identical
+ * BTCpu* contract this file resolves by name, so only the DLL name and the
+ * WOW64INFO NativeMachineType change. */
+#ifdef _M_ARM64
+#define WOW64_CPU_DLL          L"libwow64fex.dll"
+#define WOW64_NATIVE_MACHINE   WOW64_MACHINE_ARM64
+#else /* _M_AMD64 */
+#define WOW64_CPU_DLL          L"wow64cpu.dll"
+#define WOW64_NATIVE_MACHINE   WOW64_MACHINE_AMD64
+#endif
 
 /* FEX winternl.h WOW64INFO — TlsSlots[10] points here; BTCpuProcessInit
  * writes CpuFlags. */
@@ -208,7 +228,7 @@ static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
     DbgPrint("[FEX-WOW64C] VEH: unhandled code=%08lx addr=%p pc=%p\n",
              Info->ExceptionRecord->ExceptionCode,
              Info->ExceptionRecord->ExceptionAddress,
-             (PVOID)Info->ContextRecord->Pc);
+             WOW64_HOST_PC(Info->ContextRecord));
     Wow64pDumpGuestHeap();
     return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -618,7 +638,7 @@ Wow64LdrpInitialize(PVOID Context)
      *    getenv("LOCALAPPDATA") unchecked; default it before the CPU dll's
      *    mini-CRT snapshots the PEB environment) --------------------------- */
     Wow64Info.NativeSystemPageSize = 0x1000;
-    Wow64Info.NativeMachineType = WOW64_MACHINE_ARM64;
+    Wow64Info.NativeMachineType = WOW64_NATIVE_MACHINE;
     Wow64Info.EmulatedMachineType = WOW64_MACHINE_I386;
     Wow64pTlsSlots()[WOW64_TLS_WOW64INFO] = &Wow64Info;
 
@@ -630,13 +650,13 @@ Wow64LdrpInitialize(PVOID Context)
     }
 
     /* -- Load the CPU layer ------------------------------------------------ */
-    DbgPrint("[FEX-WOW64C] InitBlock.ntdll_handle set; loading libwow64fex.dll...\n");
-    RtlInitUnicodeString(&DllName, L"libwow64fex.dll");
+    DbgPrint("[FEX-WOW64C] InitBlock.ntdll_handle set; loading CPU layer...\n");
+    RtlInitUnicodeString(&DllName, WOW64_CPU_DLL);
     Fex = NULL;
     Status = LdrLoadDll(NULL, NULL, &DllName, &Fex);
     if (Status < 0 || !Fex)
     {
-        DbgPrint("[FEX-WOW64C] FAIL: libwow64fex.dll load %08lx\n", Status);
+        DbgPrint("[FEX-WOW64C] FAIL: CPU-layer DLL load %08lx\n", Status);
         NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
     }
 

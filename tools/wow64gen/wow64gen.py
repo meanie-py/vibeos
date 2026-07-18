@@ -149,6 +149,9 @@ def parse_spec(path: str, arch: str, manual: set[str] | None = None) -> list[Sys
     order the applicable Nt* entries appear — the same ordering our i386 ntdll
     numbers its stubs, which is what the guest's EAX will carry.
     """
+    # The build passes CMake arch names, but .spec -arch= lists use the
+    # winebuild convention, which calls amd64 "x86_64". Compare in spec terms.
+    spec_arch = {"amd64": "x86_64"}.get(arch, arch)
     out: list[Syscall] = []
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -165,7 +168,7 @@ def parse_spec(path: str, arch: str, manual: set[str] | None = None) -> list[Sys
                 spec_arches = entry_arch.split(",")
                 negate = spec_arches and spec_arches[0].startswith("!")
                 bare = [x.lstrip("!") for x in spec_arches]
-                listed = arch in bare
+                listed = spec_arch in bare
                 if (negate and listed) or (not negate and not listed):
                     continue
             raw = m.group("args").strip()

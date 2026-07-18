@@ -19,6 +19,20 @@ extern "C" {
     fn ARM64_UART_TRACE_HEX(msg: *const i8, val: ULONG_PTR);
 }
 
+/// Portable "msg + hex value" trace for the WoW64 PEB32/TEB32 paths, which are
+/// live on both arm64 (UART) and amd64 (DbgPrint) hosts.
+unsafe fn MiWow64TraceHex(msg: *const i8, val: ULONG_PTR) {
+    #[cfg(target_arch = "aarch64")]
+    ARM64_UART_TRACE_HEX(msg, val);
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        extern "C" {
+            fn DbgPrint(Format: *const i8, ...) -> u32;
+        }
+        DbgPrint(b"%s%p\n\0".as_ptr() as *const i8, msg, val as PVOID);
+    }
+}
+
 static mut MmProcessColorSeed: ULONG = 0x12345678;
 #[no_mangle]
 pub static mut MmMaximumDeadKernelStacks: ULONG = 5;
@@ -509,12 +523,12 @@ pub unsafe extern "system" fn MmCreatePeb(
         }
     }
 
-    // WoW64 (arm64 host): an i386 image gets a PEB32 below 2GB and the EPROCESS
-    // marked as a WoW64 process (Wow64Process = the PEB32, 5.2-style — this is
-    // what NtQueryInformationProcess(ProcessWow64Information) hands back).
+    // WoW64 (arm64/amd64 host): an i386 image gets a PEB32 below 2GB and the
+    // EPROCESS marked as a WoW64 process (Wow64Process = the PEB32, 5.2-style —
+    // this is what NtQueryInformationProcess(ProcessWow64Information) hands back).
     // The 32-bit ntdll map + LdrSystemDllInitBlock population happen in user
-    // mode (wow64.dll), not here. See docs/engineering/wow64-plan.md Phase C.
-    #[cfg(target_arch = "aarch64")]
+    // mode (wow64.dll), not here. See docs/engineering/wow64-plan.md Phase C/E.
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     if (*(NtHeaders as *mut _IMAGE_NT_HEADERS)).FileHeader.Machine == 0x014c /* IMAGE_FILE_MACHINE_I386 */ {
         use ntkrnl_sys::ddk::{_PEB32, _WOW64_PROCESS};
         let mut Peb32Base: ULONG_PTR = 0;
@@ -587,14 +601,14 @@ pub unsafe extern "system" fn MmCreatePeb(
             (*Peb32).UnicodeCaseTableData =
                 (Nls32Base as usize + ExpUnicodeCaseTableDataOffset as usize) as u32;
         } else {
-            ARM64_UART_TRACE_HEX(
+            MiWow64TraceHex(
                 b"[MM] MmCreatePeb: below-2GB NLS view FAILED status=\0".as_ptr() as *const i8,
                 NlsStatus as usize,
             );
         }
 
         (*(Process as *mut _EPROCESS)).Wow64Process = Peb32 as *mut _WOW64_PROCESS;
-        ARM64_UART_TRACE_HEX(
+        MiWow64TraceHex(
             b"[MM] MmCreatePeb: WoW64 i386 image, PEB32 at \0".as_ptr() as *const i8,
             Peb32Base,
         );
@@ -626,12 +640,12 @@ pub unsafe extern "system" fn MmCreateTeb(
     // 32-bit guest pointers can reach both. WOW64_TEB32_OFFSET below must stay
     // in sync with wow64.dll's view of the layout.
     const WOW64_TEB32_OFFSET: usize = 0x2000;
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     let IsWow64 = !(*(Process as *mut _EPROCESS)).Wow64Process.is_null();
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     let IsWow64 = false;
     if IsWow64 {
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         {
             Status = MiCreatePebOrTebCapped(
                 Process,
@@ -679,7 +693,7 @@ pub unsafe extern "system" fn MmCreateTeb(
     (*Teb).StaticUnicodeString.MaximumLength = core::mem::size_of_val(&(*Teb).StaticUnicodeBuffer) as USHORT;
     (*Teb).StaticUnicodeString.Buffer = (*Teb).StaticUnicodeBuffer.as_mut_ptr();
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     if IsWow64 {
         use ntkrnl_sys::ddk::_TEB32;
         let Teb32 = (Teb as *mut u8).add(WOW64_TEB32_OFFSET) as *mut _TEB32; // nolint: magic-offset (WoW64 combined-region layout, TEB32 at TEB64+0x2000 by design)
@@ -711,7 +725,7 @@ pub unsafe extern "system" fn MmCreateTeb(
             (Teb32 as *mut u8).add(0xfdc) as *mut i32, // nolint: magic-offset (Win10 TEB32.WowTebOffset slot; past 5.2 struct end, committed scratch)
             -(WOW64_TEB32_OFFSET as i32),
         );
-        ARM64_UART_TRACE_HEX(
+        MiWow64TraceHex(
             b"[MM] MmCreateTeb: WoW64 TEB32 at \0".as_ptr() as *const i8,
             Teb32 as ULONG_PTR,
         );
