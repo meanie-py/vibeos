@@ -495,9 +495,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   evidence (identical kernel VA across hits) never fit a race. 20/20 arm64 boots clean with
   the detector proven visible; zero hits in 1254 retained run dirs. Re-open ONLY on a fresh
   `[kernel32] BASE_STATIC_SERVER_DATA CORRUPT` print, starting from its printed fields.
-- **win32k `DialogBoxParamW` dialog-creation race** (amd64) — WM_INITDIALOG occasionally never
-  dispatched on the winlogon desktop; wedge defensively fixed (§9.12), underlying race open
-  (would bite real SAS/logon dialogs outside autologon).
+- **win32k `DialogBoxParamW` dialog-creation race — NOT REPRODUCING, tripwire armed**
+  (2026-07-17, §9.12 addendum). 0 hits / 20 boots across three regimes (contended-parallel
+  TCG / sequential TCG / native KVM) with the path proven exercised in all 20. The old
+  mitigation had NO working detector (its `ERR!` was compiled dark behind Wine debug
+  channels) — replaced by a permanent unconditional pair in msgina `gui.rs`:
+  `[MSGINA] status dialog up` each boot + `[MSGINA] 9.12-TRIPWIRE … worker tid=N` on a hit.
+  A hit leaves the worker wedged in win32k with the tid printed — dump its kernel stack
+  (`inspect.sh dump-thread`) for the exact blocking site. Re-open only on a tripwire line.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

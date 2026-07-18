@@ -2454,6 +2454,33 @@ race the stale objects were masking — and audit any `WaitForSingleObject(…, 
 whose signal sits on a lone happy path; make the wait bounded and the shared state
 owned by the side that outlives the wait.
 
+**ADDENDUM (2026-07-17): NOT REPRODUCING — and the mitigation had been running BLIND the
+whole time.** Attempting to root-cause the underlying win32k race, the first discovery was
+that its only signature — the `ERR!("WlxDisplayStatusMessage: status window timed out …")`
+on the bounded-wait timeout path — is **compiled dark**: msgina's Wine debug-channel macros
+gate on `__wine_dbch___default.flags`, which default to 0 (the `wine_debug` cargo feature
+flips them). So for a month "no timeout in the logs" was evidence of nothing; the race could
+have been firing on every third boot with zero serial trace. *Reusable rule: a mitigation
+whose "tracked separately" detector is an `ERR!`/`TRACE!` behind Wine channels has NO
+detector — permanent tripwires must be unconditional `DbgPrint`.* Fixed with a permanent
+pair in `msgina-rust/src/gui.rs`: `[MSGINA] status dialog up (WM_INITDIALOG dispatched)`
+(the denominator — proves the path ran and won the race this boot; fires post-race so it
+cannot perturb it) and `[MSGINA] 9.12-TRIPWIRE: … worker tid=%lu left wedged` (the
+detector, on the 20s timeout). On a hit the worker thread stays wedged inside win32k
+*forever* while the mitigated boot proceeds to desktop — so the printed tid is a live,
+at-leisure forensic handle: `qemu/inspect.sh dump-thread` its kernel stack to see exactly
+which win32k wait dialog-creation is stuck on. **Census: 0 hits / 20 boots** (10
+contended-parallel windows-host TCG — the 4-lease pool saturated, plus the net lane; 6
+sequential TCG; 4 native KVM), denominator visible in all 20, so the path is exercised
+every boot and the probe provably fires. At the historical ~1-in-3 rate, P(0/20) ≈ 0.03%.
+Not root-caused-and-fixed — *gone at the current tree*, plausibly closed incidentally by
+one of the win32k/ke waves since mid-June (§9.41 GdiBatchCount TEB-batch corruption on
+exactly this desktop path is the strongest candidate; also the §9.40 DesktopHeapReAlloc
+fix, the msgqueue/painting split-file waves, §9.94 SwapBusy enforcement). Per the §9.82
+lesson, no candidate is *claimed* without a repro. Re-open ONLY on a fresh
+`[MSGINA] 9.12-TRIPWIRE` line — and then start from the wedged worker's kernel stack, not
+from this section's guesses.
+
 ### 9.13 ✅ RESOLVED — the amd64 service-startup wedge: a Mm WS-pushlock self-deadlock, root-caused to the `OriginalPte`/`RmapListHead` PFN-union confusion (2026-07-04→05)
 
 **Symptom (as it presented for weeks):** amd64 boot wedged at service startup ~50% of runs — `DcomLaunch done: 1053` on serial ⟺ wedge. A single vCPU idle in `KiIdleLoop` (scheduler alive) while 3–6 freshly-created processes (eventlog/svchost/rundll32/setup) each had their FIRST thread permanently parked acquiring their own `EPROCESS.Vm.WorkingSetMutex`. eventlog.exe was silently dead on *every* boot (deterministic stranding); the boot only died when a boot-critical thread was among the caught, hence the ~50%.
