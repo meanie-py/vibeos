@@ -1009,6 +1009,48 @@ low-4GB is directly host-readable from wow64.dll):
   from the write. Add each to manual-win32k.txt with an array-narrowing
   marshaller as coverage reaches it.
 
+**Phase E8 — new-surface stock-applet ladder + NtUserUnregisterClass (2026-07-18).**
+Extended the amd64 winlogon ladder with four unmodified stock i386 applets chosen
+to exercise win32k surface a prior guest never reached — **charmap** (font
+enumeration + EnumFontFamilies callback), **mspaint** (heavy GDI regions/DIBs +
+comdlg32 dialogs), **regedit** (treeview/listview common controls + registry-enum
+arrays), **winver** (shell32 ShellAbout modal). Staged via the same
+`wow64cpu/CMakeLists.txt` closure roots + `add_cd_file` mechanism (closure
+recomputed complete: 59 modules, no new DLL), launched through the generic
+`TryStartWow64StockApp` with the inverted "still running = PASS" verdict.
+
+*Result:* charmap/mspaint/winver PASS on the first boot; **regedit BUGCHECKed
+0x1E** and its fix is the E8 payload:
+
+* **`NtUserUnregisterClass` was a silent-wrong flat thunk** (the M17 trap). The
+  spec types it `(ptr ptr ptr)`; the real prototype is
+  `NtUserUnregisterClass(PUNICODE_STRING ClassNameOrAtom, HINSTANCE, PCLSMENUNAME)`.
+  The flat auto-thunk fed 64-bit win32k the guest's 8-byte `UNICODE_STRING32` read
+  as a 16-byte `UNICODE_STRING64`; `ProbeAndCaptureUnicodeStringOrAtom` picked up
+  `Buffer` from the wrong offset (garbage) and copied the "class name" from that
+  wild address → C0000005 in win32k's `raw_move` → BUGCHECK 0x1E under DUMMY_PSEH.
+  Symbolicated cleanly: fault at `win32k+0x258EC` (`cnt_rust::cabi::raw_move`),
+  caller `NtUserUnregisterClass+0x117`. regedit/comctl32 hit it during class
+  teardown.
+* **Fix:** `Wow64Manual_NtUserUnregisterClass` (wow64_manual.c + manual-win32k.txt)
+  widens arg0 US32→US64 via `Wow64pUS32to64` (the atom form — `Buffer` < 0x10000,
+  `Length`=0 — survives the zero-extend + the kernel's `IS_ATOM` check). `hInstance`
+  flat-passes; `pClassMenuName` is **ignored kernel-side** (`NtUserUnregisterClass`
+  passes NULL to `UserUnregisterClass` — class.rs), so it needs no OUT marshalling.
+  Post-fix: `NtUserUnregisterClass(0x123a) [manual] => 00000001` ×2, **regedit PASS**,
+  all seven stock apps + all six probe guests green on one boot, zero faults.
+
+* **Systematic insight (owed E9):** `marshalgen report` classifies only syscalls
+  already in the NEEDS_MANUAL list — a **spec-flat-typed** divergent-payload
+  syscall (typed `ptr`/`long`, so wow64gen emits a flat thunk and never stubs it)
+  is **invisible** to the report. So the report cannot find the very class most
+  likely to be silently wrong. The remaining spec-flat `PUNICODE_STRING` NtUser*
+  takers from the E6 note (`FindWindowEx`, `EnumDisplayDevices`, `CreateDesktop`,
+  `SetWindowsHookEx`, …) share this shape and are owed. The durable fix is a
+  spec-vs-prototype audit tool (scan win32u.spec `Nt*` `ptr` args against the real
+  ntuser.h/ntgdi.h prototype; flag any pointing at a divergent payload not on the
+  manual list) — that would mechanically surface them all *before* a guest crashes.
+
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored
   contributions upstream; we consume its binary contract only).
