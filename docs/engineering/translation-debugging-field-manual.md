@@ -8774,3 +8774,38 @@ shipped (both found closing out the 2026-07-18 driver sweep):
 sig/VAR class (§9.99/§9.102); (2) if IR-clean, read the fold neighborhood for
 a provably-null deref: eager SEH filters, unguarded lock/lookup results, and
 remember sunk loads mask the true site (this section).
+
+### 9.103 (LAYER-1 FIXED, LAYER-2 = task #18 class, 2026-07-18) NtCreateSection 0x50 is a dropped ProbeForRead sitting on the arm64 exception-dispatch recursion — NOT a deep-MM bug
+
+**Symptom:** kmtest `NtCreateSection` BUGCHECK 0x50 (PAGE_FAULT_IN_NONPAGED_AREA,
+read). Quarantined 2026-07-11 (amd64 sweep 13); task #7 filed it as a "deep MM
+bug (param-capture path)." It is not.
+
+**Layer 1 — a dropped probe (FIXED, kept).** ReactOS C `NtCreateSection`
+(section.c:3177) captures the user `MaximumSize` via `ProbeForReadLargeInteger`
+inside `_SEH2_TRY` — validate range + ULONG alignment, *then* read. The Rust port
+(ARM3/section.rs:2132) had dropped the probe and did a raw `safe_maximum_size =
+*maximum_size`. The test deliberately passes a **bad kernel** `MaximumSize`
+pointer; the raw deref hits it → 0x50 at exactly that address. Fix = restore
+`ProbeForRead(maximum_size, size_of::<LARGE_INTEGER>(), size_of::<ULONG>())`
+before the deref (arch-neutral, shared file). This is the classic §9.96 "dropped
+guard" pattern; find it by diffing the faulting fn's user-param capture vs C.
+
+**Layer 2 — the deep root, unmasked by Layer 1 (task #18 class).** With the probe
+in, a bad pointer now RAISES `ExRaiseAccessViolation` (exintrin.rs:166) exactly as
+the C intends — but a GDB-bt at the resulting bugcheck shows a **recursive
+`KiSynchronousExceptionEntry` cascade** (dozens of nested frames,
+KiSynchronousExceptionHandler re-entering itself) ending in the 0x50. I.e. a
+software raise in the **syscall** path on arm64 is not cleanly caught — the
+dispatch fault-in-fault-handler recurses. This is the **same structural root as
+task #18 / the async-SEH quarantine cluster** (IoCreateFile, RtlExceptionKM):
+arm64 exception dispatch from a KiSvcDispatch frame doesn't catch a raise. So
+retire the "deep MM" framing for NtCreateSection — it is arm64-exception-dispatch,
+and **one dispatch fix clears NtCreateSection + the async-SEH cluster** together.
+
+**Method note:** the dropped probe MASKED the deeper bug — the raw deref 0x50 hid
+the fact that even the *correct* (probe-raising) path fails on arm64. Fixing a
+dropped guard often just advances the symptom to the real root; keep the correct
+fix and re-triage the new fault, don't assume the guard *was* the bug. GDB-bt at
+the halt (wait-for the `*** BUGCHECK` serial line so KeBugCheckEx has halted the
+CPU, then `inspect.sh --command bt`) is what exposed the recursion vs a flat 0x50.
