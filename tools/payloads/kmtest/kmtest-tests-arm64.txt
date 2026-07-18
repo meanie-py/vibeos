@@ -39,8 +39,12 @@ FsRtlRemoveDotsFromPath
 FsRtlTunnel
 HalPortIo
 HalSystemInfo
-# QUARANTINED 2026-07-10 (amd64 sweep 1): BUGCHECK 0x1E — RtlRaiseStatus(0xC0000005)
-# from kmtest_drv PC, escapes __try (calls-only native-SEH coverage). Quest doc has triage.
+# QUARANTINED 2026-07-10 (amd64 sweep 1): BUGCHECK 0x1E — RtlRaiseStatus(0xC0000005) from a
+# kmtest_drv PC, escapes __try (calls-only native-SEH coverage). RE-TESTED 2026-07-18 after the
+# §9.93 ControlPc-1 SEH mis-walk fix: STILL 0x1E (0xC0000005, PC 0xfffff800421c9618 = a kmtest_drv
+# address, doesn't resolve in the ntoskrnl index). So NOT the §9.93 noreturn-mis-walk class — it's
+# the async-SEH structural class (task #18): the test faults inside __try and mingw native SEH is
+# calls-only (no -fasync-exceptions), so the in-body fault escapes. Same family as RtlExceptionKM.
 #IoCreateFile
 IoDeviceInterface
 IoEvent
@@ -155,7 +159,10 @@ SeQueryInfoToken
 # 0x1000 MDL "valid-PTE" site but same PFN family. Passes on amd64 (1256/11) → arm64-specific.
 # NEXT: find the caller of MiInsertStandbyListAtFront in the ZwAllocateVirtualMemory free/teardown
 # path + why the PFN's prototype/cache state is wrong; diff MiInsertStandbyListAtFront + caller
-# vs ReactOS C (mm/ARM3/pfnlist.c). Owed (task #7 family).
+# vs ReactOS C (mm/ARM3/pfnlist.c). Owed (task #7 family). 2026-07-18: that diff is DONE — the
+# whole chain (MiInsertStandbyListAtFront, MiDecrementShareCount, MI_IS_PFN_DELETED) is FAITHFUL,
+# so the guard is a correct detector of an already-corrupt PFN — same physical-page-reuse root as
+# task #19. Static diffing is exhausted; needs the §9.98 dynamic poison-on-free experiment.
 #ZwAllocateVirtualMemory
 ZwCreateSection
 # UN-QUARANTINED 2026-07-17 (§9.96 root fix): the GDB-pinned translation-fault storm
@@ -184,9 +191,16 @@ IoReadWrite
 # P1=0x401) — MmMapLockedPagesSpecifyCache PTE/PFN accounting in the Rust MDL-map path.
 # Triage owed.
 #MmMapLockedPagesSpecifyCache
-# QUARANTINED 2026-07-11 (amd64 sweep 13): BUGCHECK 0x50 PAGE_FAULT_IN_NONPAGED_AREA
-# (read at fffff880045ae040) — NtCreateSection param-capture/validation path
-# (candidate: unprobed SECTION params under DUMMY_PSEH). Triage owed.
+# QUARANTINED 2026-07-11 (amd64 sweep 13): BUGCHECK 0x50. 2026-07-18 RE-TRIAGED (two layers):
+# LAYER 1 (FIXED): Rust NtCreateSection did a raw `*maximum_size` deref of the user MaximumSize
+# pointer WITHOUT the C's ProbeForReadLargeInteger (section.rs:2132) — the test passes a bad kernel
+# pointer deliberately. Restored the ProbeForRead (range + ULONG align) before the deref (kept).
+# LAYER 2 (DEEP, remains): with the probe in, a bad pointer now RAISES ExRaiseAccessViolation as
+# the C intends — but on arm64 that software raise in the syscall path triggers a RECURSIVE
+# KiSynchronousExceptionEntry cascade (fault-during-fault-handling, GDB-bt'd), not a clean catch.
+# So NtCreateSection is NOT a deep-MM bug (retire the task #7 framing) — it is the arm64 exception-
+# dispatch structural class, SAME ROOT as task #18 (IoCreateFile/RtlExceptionKM async-SEH). One
+# dispatch fix clears this + that cluster. Field manual §9.103.
 #NtCreateSection
 NtSystemDebugControl
 PoIrp
