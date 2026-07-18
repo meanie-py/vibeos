@@ -14,7 +14,7 @@ use core::ptr;
 use ntkrnl_sys::ddk::{ZwClose, ZwSetValueKey};
 use ntkrnl_sys::hal_ddk::{
     HalpAllocPhysicalMemory, HalpMapPhysicalMemory64, HalpOpenRegistryKey,
-    HalpPhase0GetPciDataByOffset, HalpPhase0SetPciDataByOffset, HalpUnmapVirtualAddress, BOOLEAN,
+    HalpUnmapVirtualAddress, BOOLEAN,
     CmResourceTypeMemory, CmResourceTypePort, MAXIMUM_DEBUG_BARS, NTSTATUS, PCI_ADDRESS_IO_SPACE,
     PCI_ADDRESS_IO_ADDRESS_MASK, PCI_ADDRESS_MEMORY_ADDRESS_MASK, PCI_ADDRESS_MEMORY_TYPE_MASK,
     PCI_BRIDGE_TYPE, PCI_CARDBUS_BRIDGE_TYPE, PCI_DEVICE_TYPE, PCI_ENABLE_BUS_MASTER,
@@ -23,6 +23,9 @@ use ntkrnl_sys::hal_ddk::{
     PVOID, ULONG, ULONG64, USHORT, _PCI_COMMON_HEADER as PciCommonHeader,
     _PCI_SLOT_NUMBER as PciSlotNumber, _PCI_TYPE1_CFG_CYCLE_BITS as PciType1CfgCycleBits,
 };
+// Phase0 PCI accessors: use the in-crate stdcall defs directly — the hal_ddk
+// bindgen decl is cdecl and folds against the in-module stdcall def (Â§9.99).
+use super::pcibus::{HalpPhase0GetPciDataByOffset, HalpPhase0SetPciDataByOffset};
 use ntkrnl_sys::ddk::{HANDLE, PHANDLE, RtlIntegerToUnicodeString, UNICODE_STRING};
 
 // RtlInitEmptyUnicodeString is FORCEINLINE in NDK — no exported symbol.

@@ -1411,9 +1411,9 @@ unsafe fn dh_get_hand(header: *const _DISPATCHER_HEADER) -> u8 {
 #[inline(always)]
 unsafe fn ke_query_system_time_inline(out: *mut _LARGE_INTEGER) {
     loop {
-        let high1 = (*SharedUserData).SystemTime.High1Time;
-        let low = (*SharedUserData).SystemTime.LowPart;
-        let high2 = (*SharedUserData).SystemTime.High2Time;
+        let high1 = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).SystemTime.High1Time));
+        let low = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).SystemTime.LowPart));
+        let high2 = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).SystemTime.High2Time));
         if high1 == high2 {
             (*out).QuadPart = ((high1 as i64) << 32) | (low as u32 as i64);
             break;
@@ -1433,9 +1433,9 @@ unsafe fn ke_query_system_time_inline(out: *mut _LARGE_INTEGER) {
 #[inline(always)]
 unsafe fn ke_query_interrupt_time_inline() -> u64 {
     loop {
-        let high1 = (*SharedUserData).InterruptTime.High1Time;
-        let low = (*SharedUserData).InterruptTime.LowPart;
-        let high2 = (*SharedUserData).InterruptTime.High2Time;
+        let high1 = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).InterruptTime.High1Time));
+        let low = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).InterruptTime.LowPart));
+        let high2 = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).InterruptTime.High2Time));
         if high1 == high2 {
             return ((high1 as u64) << 32) | (low as u32 as u64);
         }

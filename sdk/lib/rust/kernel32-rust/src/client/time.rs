@@ -107,17 +107,29 @@ pub unsafe extern "system" fn CompareFileTime(
     return 1;
 }
 
+/// Volatile seqlock capture of a KSYSTEM_TIME (the SharedUserData time fields
+/// are C-`volatile`). Plain loads get hoisted out of the retry loop by LLVM:
+/// entered mid-update, the condition never re-evaluates and the function spins
+/// forever (caught as arm64 `b .` spins by scan_ud2's driver sweep, 2026-07-18).
+unsafe fn read_ksystem_time(p: *const KSYSTEM_TIME) -> LARGE_INTEGER {
+    let mut t: LARGE_INTEGER = core::mem::zeroed();
+    loop {
+        let high1 = core::ptr::read_volatile(core::ptr::addr_of!((*p).High1Time));
+        let low = core::ptr::read_volatile(core::ptr::addr_of!((*p).LowPart));
+        let high2 = core::ptr::read_volatile(core::ptr::addr_of!((*p).High2Time));
+        if high1 == high2 {
+            t.u.HighPart = high1;
+            t.u.LowPart = low;
+            return t;
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn GetSystemTimeAsFileTime(lpFileTime: PFILETIME) {
     let mut SystemTime: LARGE_INTEGER = core::mem::zeroed();
 
-    loop {
-        SystemTime.u.HighPart = (*SharedUserData).SystemTime.High1Time;
-        SystemTime.u.LowPart = (*SharedUserData).SystemTime.LowPart;
-        if !(SystemTime.u.HighPart != (*SharedUserData).SystemTime.High2Time) {
-            break;
-        }
-    }
+    SystemTime = read_ksystem_time(core::ptr::addr_of!((*SharedUserData).SystemTime));
 
     (*lpFileTime).dwLowDateTime = SystemTime.u.LowPart;
     (*lpFileTime).dwHighDateTime = SystemTime.u.HighPart as DWORD;
@@ -215,13 +227,7 @@ pub unsafe extern "system" fn FileTimeToLocalFileTime(
         core::ptr::addr_of_mut!((*SharedUserData).TimeZoneBias)
     };
 
-    loop {
-        TimeZoneBias.u.HighPart = (*TimePtr).High1Time;
-        TimeZoneBias.u.LowPart = (*TimePtr).LowPart;
-        if !(TimeZoneBias.u.HighPart != (*TimePtr).High2Time) {
-            break;
-        }
-    }
+    TimeZoneBias = read_ksystem_time(TimePtr);
 
     FileTime.u.LowPart = (*lpFileTime).dwLowDateTime;
     FileTime.u.HighPart = (*lpFileTime).dwHighDateTime as i32;
@@ -248,13 +254,7 @@ pub unsafe extern "system" fn LocalFileTimeToFileTime(
         &raw mut (*SharedUserData).TimeZoneBias
     };
 
-    loop {
-        TimeZoneBias.u.HighPart = (*TimePtr).High1Time;
-        TimeZoneBias.u.LowPart = (*TimePtr).LowPart;
-        if !(TimeZoneBias.u.HighPart != (*TimePtr).High2Time) {
-            break;
-        }
-    }
+    TimeZoneBias = read_ksystem_time(TimePtr);
 
     FileTime.u.LowPart = (*lpLocalFileTime).dwLowDateTime;
     FileTime.u.HighPart = (*lpLocalFileTime).dwHighDateTime as LONG;
@@ -273,13 +273,7 @@ pub unsafe extern "system" fn GetLocalTime(lpSystemTime: LPSYSTEMTIME) {
     let mut TimeFields: TIME_FIELDS = core::mem::zeroed();
     let mut TimePtr: *mut KSYSTEM_TIME = core::ptr::null_mut();
 
-    loop {
-        SystemTime.u.HighPart = (*SharedUserData).SystemTime.High1Time;
-        SystemTime.u.LowPart = (*SharedUserData).SystemTime.LowPart;
-        if SystemTime.u.HighPart == (*SharedUserData).SystemTime.High2Time {
-            break;
-        }
-    }
+    SystemTime = read_ksystem_time(core::ptr::addr_of!((*SharedUserData).SystemTime));
 
     TimePtr = if IsTimeZoneRedirectionEnabled() != 0 {
         &raw mut (*BaseStaticServerData).ktTermsrvClientBias
@@ -287,13 +281,7 @@ pub unsafe extern "system" fn GetLocalTime(lpSystemTime: LPSYSTEMTIME) {
         &raw mut (*SharedUserData).TimeZoneBias
     };
 
-    loop {
-        TimeZoneBias.u.HighPart = (*TimePtr).High1Time;
-        TimeZoneBias.u.LowPart = (*TimePtr).LowPart;
-        if TimeZoneBias.u.HighPart == (*TimePtr).High2Time {
-            break;
-        }
-    }
+    TimeZoneBias = read_ksystem_time(TimePtr);
 
     SystemTime.QuadPart -= TimeZoneBias.QuadPart;
     RtlTimeToTimeFields(&raw mut SystemTime, &raw mut TimeFields);
@@ -313,13 +301,7 @@ pub unsafe extern "system" fn GetSystemTime(lpSystemTime: LPSYSTEMTIME) {
     let mut SystemTime: LARGE_INTEGER = core::mem::zeroed();
     let mut TimeFields: TIME_FIELDS = core::mem::zeroed();
 
-    loop {
-        SystemTime.u.HighPart = (*SharedUserData).SystemTime.High1Time;
-        SystemTime.u.LowPart = (*SharedUserData).SystemTime.LowPart;
-        if !(SystemTime.u.HighPart != (*SharedUserData).SystemTime.High2Time) {
-            break;
-        }
-    }
+    SystemTime = read_ksystem_time(core::ptr::addr_of!((*SharedUserData).SystemTime));
 
     RtlTimeToTimeFields(&raw mut SystemTime, &raw mut TimeFields);
 
@@ -358,13 +340,7 @@ pub unsafe extern "system" fn SetLocalTime(lpSystemTime: *const SYSTEMTIME) -> B
         core::ptr::addr_of_mut!((*SharedUserData).TimeZoneBias)
     };
 
-    loop {
-        TimeZoneBias.u.HighPart = (*TimePtr).High1Time;
-        TimeZoneBias.u.LowPart = (*TimePtr).LowPart as DWORD;
-        if !(TimeZoneBias.u.HighPart != (*TimePtr).High2Time) {
-            break;
-        }
-    }
+    TimeZoneBias = read_ksystem_time(TimePtr);
 
     TimeFields.Year = (*lpSystemTime).wYear as CSHORT;
     TimeFields.Month = (*lpSystemTime).wMonth as CSHORT;
