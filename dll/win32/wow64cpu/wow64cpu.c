@@ -40,9 +40,7 @@ ULONG WINAPI Wow64SystemServiceEx(ULONG ServiceNumber, PULONG Arguments);
 
 /* i386 CONTEXT field offsets — the CPU-area WOW64_CONTEXT the host installs.
  * Kept in sync with wow64cpu.S (WCTX_*). */
-#define CTX_EDI(c) (*(volatile ULONG *)((PBYTE)(c) + 0x9C))
 #define CTX_EAX(c) (*(volatile ULONG *)((PBYTE)(c) + 0xB0))
-#define CTX_EBP(c) (*(volatile ULONG *)((PBYTE)(c) + 0xB4))
 #define CTX_EIP(c) (*(volatile ULONG *)((PBYTE)(c) + 0xB8))
 #define CTX_EFL(c) (*(volatile ULONG *)((PBYTE)(c) + 0xC0))
 #define CTX_ESP(c) (*(volatile ULONG *)((PBYTE)(c) + 0xC4))
@@ -50,11 +48,27 @@ ULONG WINAPI Wow64SystemServiceEx(ULONG ServiceNumber, PULONG Arguments);
 /* CPU-area header (wow64.c: 16-byte header, WOW64_CONTEXT at +16; +2 = Machine,
  * +8 = the saved host rsp slot wow64cpu.S owns). +4 is ours: set when
  * BTCpuSetContext replaced the guest context mid-service, so the dispatcher
- * must resume the NEW state instead of doing the return-to-stub fixup. */
+ * must resume the NEW state instead of doing the return-to-stub fixup. The
+ * shared bytes are: [0..1] flags, [2..3] Machine, [4..7] REPLACED, [8..15]
+ * host rsp. wow64.dll's callback bridge also knows the +4 flag (documented
+ * contract) so it can clear it around the callback-return path. */
 #define CPU_CTX_REPLACED(ctx) (*(volatile ULONG *)((PBYTE)(ctx) - 12))
+
+/* Maintained-field window copied by Get/SetContext: SegGs..SegSs (0x8C..0xC8).
+ * The FP/extended-register tail is live silicon state a native guest never
+ * round-trips through the CPU layer, so it is untouched. */
+#define CTX_COPY_LO 0x8C
+#define CTX_COPY_HI 0xC8
 
 #define WOW64_TEB_TLSSLOTS_OFFSET 0x1480 /* amd64 TEB.TlsSlots */
 #define WOW64_TLS_CPURESERVED     1
+
+static PBYTE Wow64CpuArea(VOID)
+{
+    return (PBYTE)*(PVOID *)((PBYTE)NtCurrentTeb() +
+                             WOW64_TEB_TLSSLOTS_OFFSET +
+                             WOW64_TLS_CPURESERVED * sizeof(PVOID));
+}
 
 /* The below-2GB trampoline page. BTCpuGetBopCode hands its 32-bit entry to the
  * host, which patches the guest ntdll32's Wow64Transition slot to point here. */
@@ -161,27 +175,51 @@ VOID WINAPI BTCpuThreadInit(VOID)
 LONG WINAPI BTCpuSetContext(HANDLE Thread, HANDLE Process, PVOID Unknown,
                             PVOID Context32)
 {
-    PBYTE CpuArea = (PBYTE)*(PVOID *)((PBYTE)NtCurrentTeb() +
-                                      WOW64_TEB_TLSSLOTS_OFFSET +
-                                      WOW64_TLS_CPURESERVED * sizeof(PVOID));
-    PBYTE Ctx = CpuArea + 16;
+    PBYTE CpuArea = Wow64CpuArea();
+    PBYTE Ctx;
     PBYTE Src = (PBYTE)Context32;
     ULONG i;
 
     (VOID)Thread; (VOID)Process; (VOID)Unknown;
     if (!Src || !CpuArea)
         return (LONG)0xC000000DL; /* STATUS_INVALID_PARAMETER */
+    Ctx = CpuArea + 16;
 
-    /* Integer + control state: Edi..Ebp (0x9C..0xB4), Eip, EFlags, Esp.
-     * Segments stay ours (EnterGuest hardcodes 0x23/0x2B/0x53); x87/XMM state
-     * is live silicon state a native guest never round-trips through here. */
-    for (i = 0x9C; i <= 0xB4; i += 4)
+    /* Segments + integer + control state (SegGs..SegSs). Segments in the
+     * source are ignored on entry — EnterGuest hardcodes 0x23/0x2B/0x53 — but
+     * copying them keeps the CPU-area a faithful CONTEXT32 for a later
+     * GetContext. EFlags gets IF + the reserved bit 1 forced on. */
+    for (i = CTX_COPY_LO; i <= CTX_COPY_HI; i += 4)
         *(volatile ULONG *)(Ctx + i) = *(ULONG *)(Src + i);
-    CTX_EIP(Ctx) = *(ULONG *)(Src + 0xB8);
-    CTX_EFL(Ctx) = (*(ULONG *)(Src + 0xC0)) | 0x202; /* IF + reserved bit 1 */
-    CTX_ESP(Ctx) = *(ULONG *)(Src + 0xC4);
-    CPU_CTX_REPLACED(Ctx) = 1;
-    return 0; /* STATUS_SUCCESS — the guest resumes at the new Eip */
+    CTX_EFL(Ctx) |= 0x202;
+    CPU_CTX_REPLACED(Ctx) = 1; /* dispatcher must resume THIS state, not fixup */
+    return 0; /* STATUS_SUCCESS */
+}
+
+/*
+ * BTCpuGetContext — snapshot the current thread's guest context out of the
+ * CPU-area WOW64_CONTEXT. The inverse of BTCpuSetContext; the callback bridge
+ * (wow64.dll) calls it to save the guest state before entering a nested guest
+ * callback, then restores it via BTCpuSetContext afterwards. Self-thread only.
+ */
+LONG WINAPI BTCpuGetContext(HANDLE Thread, HANDLE Process, PVOID Unknown,
+                            PVOID Context32)
+{
+    PBYTE CpuArea = Wow64CpuArea();
+    PBYTE Ctx;
+    PBYTE Dst = (PBYTE)Context32;
+    ULONG i, Flags;
+
+    (VOID)Thread; (VOID)Process; (VOID)Unknown;
+    if (!Dst || !CpuArea)
+        return (LONG)0xC000000DL;
+    Ctx = CpuArea + 16;
+
+    Flags = *(ULONG *)Dst; /* caller's requested ContextFlags — preserve */
+    for (i = CTX_COPY_LO; i <= CTX_COPY_HI; i += 4)
+        *(volatile ULONG *)(Dst + i) = *(ULONG *)(Ctx + i);
+    *(ULONG *)Dst = Flags;
+    return 0;
 }
 
 /* No JIT code cache to invalidate — 32-bit code executes natively. */

@@ -20,31 +20,61 @@ add_importlibs(wow64cpu ntdll wow64)
 add_dependencies(wow64cpu psdk)
 add_cd_file(TARGET wow64cpu DESTINATION reactos/system32 FOR all)
 
-# E3: stage the i386 SysWOW64 guest set onto the amd64 livecd — the amd64
-# mirror of qemu/mkramdisk.sh's VIBEOS_FEX staging on arm64. The files come
-# from SIBLING build trees (build-i386 + build-fex-hello) via the canonical
+# E3/E4: stage the i386 SysWOW64 set onto the amd64 livecd — the amd64 mirror
+# of qemu/mkramdisk.sh's VIBEOS_FEX staging on arm64. Files come from SIBLING
+# build trees (build-i386 / build-fex-hello / tools/doom) via the canonical
 # path, so this is inherently cross-build: an amd64 configure only stages when
-# the i386 artifacts already exist (build i386 first). Opportunistic like the
-# arm64 probe — winlogon's TryStartWow64Hello is a silent no-op when absent —
-# but the skip itself is loud. All-or-nothing: a partial guest set produces a
-# confusing mid-loader stall instead of a clean probe skip.
-set(_wow64_guest_files
-    ${REACTOS_SOURCE_DIR}/build-i386/dll/ntdll/ntdll.dll
-    ${REACTOS_SOURCE_DIR}/build-i386/dll/win32/kernel32/kernel32.dll
-    ${REACTOS_SOURCE_DIR}/build-i386/dll/ntdll/nt_0600/ntdll_vista.dll
-    ${REACTOS_SOURCE_DIR}/build-fex-hello/hello32.exe)
+# the i386 artifacts already exist (build i386 + build-hello-compute.sh +
+# doom/build.sh i386 first; re-run the amd64 configure after an i386 rebuild
+# to re-snapshot). Opportunistic like the arm64 probes — the winlogon hooks
+# are silent no-ops when a guest is absent — but the skip itself is loud.
+#
+# The DLL set is the transitive import closure of the stock guests, computed
+# by wow64-closure.py exactly as mkramdisk does it (all-or-nothing: a partial
+# set half-binds a module and crashes at first call, far from the missing
+# DLL — the tool hard-fails instead). --no-strip: the amd64 livecd flow has
+# its own strip step, and the hashed boot/stripped names would go stale.
+set(_wow64_guests
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/hello32.exe
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
+    ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe)
 set(_wow64_guest_ok TRUE)
-foreach(_f ${_wow64_guest_files})
+foreach(_f ${_wow64_guests})
     if(NOT EXISTS ${_f})
         set(_wow64_guest_ok FALSE)
-        message(STATUS "WOW64 E3: ${_f} missing — syswow64 NOT staged on livecd (hello32 probe will no-op)")
+        message(STATUS "WOW64 E4: ${_f} missing — syswow64 NOT staged on livecd (WoW64 probes will no-op)")
     endif()
 endforeach()
 if(_wow64_guest_ok)
-    message(STATUS "WOW64 E3: staging i386 syswow64 guest set onto livecd")
-    foreach(_f ${_wow64_guest_files})
-        add_cd_file(FILE ${_f} DESTINATION reactos/syswow64 FOR livecd)
+    execute_process(
+        COMMAND python3 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
+                --build-dir ${REACTOS_SOURCE_DIR}/build-i386
+                --include-prestaged --no-strip
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
+                ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe
+                ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe
+        OUTPUT_VARIABLE _wow64_closure
+        ERROR_VARIABLE _wow64_closure_err
+        RESULT_VARIABLE _wow64_closure_rc)
+    if(NOT _wow64_closure_rc EQUAL 0)
+        message(FATAL_ERROR "WOW64 E4: SysWOW64 import closure INCOMPLETE — refusing to stage a partial set (a half-bound module crashes at first call). Build the missing i386 module first.\n${_wow64_closure_err}")
+    endif()
+    string(STRIP "${_wow64_closure}" _wow64_closure)
+    string(REPLACE "\n" ";" _wow64_lines "${_wow64_closure}")
+    list(LENGTH _wow64_lines _wow64_n)
+    message(STATUS "WOW64 E4: staging ${_wow64_n} i386 SysWOW64 modules + guests onto livecd")
+    foreach(_line ${_wow64_lines})
+        string(REPLACE "\t" ";" _kv "${_line}")
+        list(GET _kv 0 _name)
+        list(GET _kv 1 _path)
+        add_cd_file(FILE ${_path} DESTINATION reactos/syswow64 NAME_ON_CD ${_name} FOR livecd)
     endforeach()
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/hello32.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe DESTINATION reactos/syswow64 NAME_ON_CD doom.exe FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad DESTINATION reactos/syswow64 FOR livecd)
 endif()
 
 endif()

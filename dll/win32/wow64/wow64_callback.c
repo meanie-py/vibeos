@@ -53,9 +53,33 @@ static PVOID *Wow64pCbTlsSlot(VOID)
                      + WOW64_TLS_CBFRAME * sizeof(PVOID)) ;
 }
 
-/* ---- minimal aarch64 setjmp/longjmp (ntdll-only DLL: no CRT import) ------
- * Saves x19-x28, fp, lr, sp, d8-d15 -> 21 slots. Non-volatile only; exactly
- * what a longjmp from a deeper frame on the SAME host stack needs. */
+#ifdef _M_AMD64
+/* Native wow64cpu contract: the CPU-area (TlsSlots[WOW64_TLS_CPURESERVED]) has
+ * a "resume replaced" flag at +4 that BTCpuSetContext sets and the syscall
+ * dispatcher consumes to skip the return-to-stub fixup after a context-
+ * replacing service (NtContinue). The callback-return path below calls
+ * BTCpuSetContext to RESTORE the pre-callback guest state, which sets that flag
+ * too — but here the OUTER syscall (the one the callback interrupted) must
+ * still complete with its normal fixup. Clear the flag so the outer dispatch
+ * does not mistake this restore for an NtContinue. (No-op-costed on arm64,
+ * where FEX owns the resume model — hence the _M_AMD64 guard.) */
+#define WOW64_TLS_CPURESERVED_SLOT 1
+static void Wow64pClearCpuResumeFlag(void)
+{
+    PBYTE *Tls = (PBYTE *)((PBYTE)NtCurrentTeb() + WOW64_TEB_TLSSLOTS_OFFSET);
+    PBYTE CpuArea = Tls[WOW64_TLS_CPURESERVED_SLOT];
+    if (CpuArea)
+        *(volatile ULONG *)(CpuArea + 4) = 0;
+}
+#endif
+
+/* ---- minimal setjmp/longjmp (ntdll-only DLL: no CRT import) --------------
+ * Saves callee-saved state + the caller's SP/return address; exactly what a
+ * longjmp from a deeper frame on the SAME host stack needs. Two arch flavors:
+ * arm64 (x19-x28, fp, lr, sp, d8-d15 -> 21 slots) and amd64 (rbx/rbp/rdi/rsi/
+ * r12-r15, caller-rsp, retaddr, xmm6-xmm15 -> 30 slots). WOW64_CB_JMP_SLOTS
+ * sizes the buffer for the larger. */
+#ifdef _M_ARM64
 __attribute__((naked)) int Wow64pSetJmp(unsigned long long *Buf)
 {
     __asm__ volatile(
@@ -95,6 +119,72 @@ __attribute__((naked, noreturn)) void Wow64pLongJmp(unsigned long long *Buf, int
         "csinc w0, w0, wzr, ne\n"
         "ret\n");
 }
+#else /* _M_AMD64 — Windows x64 ABI: Buf in rcx, Val in rdx. Non-volatile GPRs
+       * at 0..63, caller rsp at 64, return address at 72, xmm6-xmm15 at
+       * 80..239 (movups: buffer need not be 16-aligned). Saving nonvol XMMs is
+       * belt-and-suspenders — the marshalling code is integer-only, but a
+       * compiler SSE spill into xmm6-15 across the setjmp would otherwise leak
+       * past the longjmp. */
+__attribute__((naked)) int Wow64pSetJmp(unsigned long long *Buf)
+{
+    __asm__ volatile(
+        "movq %rbx, 0(%rcx)\n"
+        "movq %rbp, 8(%rcx)\n"
+        "movq %rdi, 16(%rcx)\n"
+        "movq %rsi, 24(%rcx)\n"
+        "movq %r12, 32(%rcx)\n"
+        "movq %r13, 40(%rcx)\n"
+        "movq %r14, 48(%rcx)\n"
+        "movq %r15, 56(%rcx)\n"
+        "leaq 8(%rsp), %rax\n"      /* caller's rsp (after the call's push)   */
+        "movq %rax, 64(%rcx)\n"
+        "movq (%rsp), %rax\n"       /* return address                        */
+        "movq %rax, 72(%rcx)\n"
+        "movups %xmm6,  80(%rcx)\n"
+        "movups %xmm7,  96(%rcx)\n"
+        "movups %xmm8,  112(%rcx)\n"
+        "movups %xmm9,  128(%rcx)\n"
+        "movups %xmm10, 144(%rcx)\n"
+        "movups %xmm11, 160(%rcx)\n"
+        "movups %xmm12, 176(%rcx)\n"
+        "movups %xmm13, 192(%rcx)\n"
+        "movups %xmm14, 208(%rcx)\n"
+        "movups %xmm15, 224(%rcx)\n"
+        "xorl %eax, %eax\n"
+        "ret\n");
+}
+
+__attribute__((naked, noreturn)) void Wow64pLongJmp(unsigned long long *Buf, int Val)
+{
+    __asm__ volatile(
+        "movq 0(%rcx), %rbx\n"
+        "movq 8(%rcx), %rbp\n"
+        "movq 16(%rcx), %rdi\n"
+        "movq 24(%rcx), %rsi\n"
+        "movq 32(%rcx), %r12\n"
+        "movq 40(%rcx), %r13\n"
+        "movq 48(%rcx), %r14\n"
+        "movq 56(%rcx), %r15\n"
+        "movups 80(%rcx),  %xmm6\n"
+        "movups 96(%rcx),  %xmm7\n"
+        "movups 112(%rcx), %xmm8\n"
+        "movups 128(%rcx), %xmm9\n"
+        "movups 144(%rcx), %xmm10\n"
+        "movups 160(%rcx), %xmm11\n"
+        "movups 176(%rcx), %xmm12\n"
+        "movups 192(%rcx), %xmm13\n"
+        "movups 208(%rcx), %xmm14\n"
+        "movups 224(%rcx), %xmm15\n"
+        "movl %edx, %eax\n"         /* return Val (or 1 if Val==0)           */
+        "testl %eax, %eax\n"
+        "jne 1f\n"
+        "incl %eax\n"
+        "1:\n"
+        "movq 72(%rcx), %r8\n"      /* retaddr into a volatile scratch       */
+        "movq 64(%rcx), %rsp\n"     /* switch back to the caller's stack     */
+        "jmp *%r8\n");
+}
+#endif
 
 /* ---- WOW64_CONTEXT (i386 CONTEXT, matches wow64.c usage) ----------------- */
 typedef struct _WOW64_CB_CONTEXT {
@@ -121,7 +211,8 @@ typedef struct _WOW64_CB_FRAME {
     PVOID RetBuf;            /* 64-bit result to hand to the real NtCallbackReturn */
     ULONG RetLen;
     WOW64_CB_CONTEXT SavedCtx;
-    unsigned long long Jmp[21];
+    /* 21 slots on arm64, 30 on amd64 (10 nonvol XMMs); size for the larger. */
+    unsigned long long Jmp[32];
     UCHAR Buf64[1024];       /* translated 64-bit result storage */
 } WOW64_CB_FRAME;
 
@@ -448,6 +539,12 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
     Frame.SavedCtx.ContextFlags = WOW64_CB_CONTEXT_FULL | WOW64_CB_CONTEXT_EXTENDED;
     Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2, WOW64_CURRENT_PROCESS, NULL,
                           &Frame.SavedCtx);
+#ifdef _M_AMD64
+    /* The restore above set the native CPU-area REPLACED flag; the outer
+     * syscall that this callback interrupted must still do its normal
+     * return-to-stub fixup, so clear it before we hand control back. */
+    Wow64pClearCpuResumeFlag();
+#endif
     St = NtCallbackReturn(Frame.RetBuf, Frame.RetLen, Frame.Status);
     DbgPrint("[WOW64CB] FATAL: NtCallbackReturn(%p,%lu) => %08lx fell through\n",
              Frame.RetBuf, Frame.RetLen, St);

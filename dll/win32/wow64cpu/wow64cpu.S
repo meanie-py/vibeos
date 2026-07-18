@@ -76,6 +76,12 @@ PUBLIC BTCpuSimulate
     .endprolog
     mov r15, rcx                        /* pin ctx across guest execution */
 
+    /* Clear the REPLACED flag (CpuArea+4 == ctx-12): a fresh guest entry
+     * always resumes THIS exact context, so any pending "skip fixup" signal
+     * from a context-replacing service has already been consumed by the
+     * dispatch that set it. Leaving it set would poison the next syscall. */
+    mov dword ptr [r15 - 12], 0
+
     /* Guest data segments (gs deliberately left alone). */
     mov ax, SEL_R3_DATA
     mov ds, ax

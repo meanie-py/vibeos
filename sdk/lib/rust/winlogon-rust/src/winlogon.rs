@@ -711,13 +711,18 @@ unsafe fn TryStartWow64Probe() {
  * half-initialized and faults the kernel. Gate every guest spawn on the real
  * support layer, not just the guest exe, so a polluted ramdisk in a non-FEX
  * boot is an inert no-op (kept the standard smoke green — 2026-07-11). */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn Wow64SupportStaged() -> bool {
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
         return false;
     }
+    /* The per-arch CPU layer (the same selection wow64.c makes): FEX JIT on
+     * arm64, native heaven's-gate on amd64. */
+    #[cfg(target_arch = "aarch64")]
     wcscat(Path.as_mut_ptr(), wstr!("\\system32\\libwow64fex.dll").as_ptr());
+    #[cfg(target_arch = "x86_64")]
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\wow64cpu.dll").as_ptr());
     GetFileAttributesW(Path.as_ptr()) != 0xFFFF_FFFF
 }
 
@@ -965,7 +970,7 @@ unsafe fn TryStartWow64Win32() {
  * is the demo: the other GUI guests would materialise on top of its window and
  * occlude it (doomgeneric creates its window at CW_USEDEFAULT and never calls
  * SetForegroundWindow). Same rationale as DoomStaged() gating the notepad spawn. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn Wow64DoomStaged() -> bool {
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
@@ -1048,8 +1053,9 @@ unsafe fn TryStartWow64Marshal() {
  * Its import closure is EXACTLY the same 53 modules testgui needs — msvcrt,
  * user32, gdi32, kernel32 — so M11's closure work covers it with nothing added.
  *
- * Like every other guest: silent no-op unless staged (VIBEOS_FEX=1 image). */
-#[cfg(target_arch = "aarch64")]
+ * Like every other guest: silent no-op unless staged (VIBEOS_FEX=1 image).
+ * amd64 (E4): the same doom-i386.exe, but the CPU under it is real silicon. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Doom() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent
@@ -1217,7 +1223,7 @@ unsafe fn TryStartNativeTestGui() {
  *
  * Verdict: [TESTGUI] serial lines (wWinMain -> RegisterClassExW ->
  * CreateWindowExW -> WM_CREATE -> WM_PAINT) + a blue/green window. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64TestGui() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -1289,7 +1295,7 @@ unsafe fn TryStartWow64TestGui() {
  * draws on the host desktop through the win32k thunk table (direct display
  * DC, no user-mode callbacks). Same contract as hello32: silent no-op unless
  * staged; verdict = [gui32]/[GUEST32] serial lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Gui() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -2042,11 +2048,21 @@ pub unsafe extern "system" fn WinMain(
         DbgPrint(b"[WINLOGON] ARM64: cmd.exe exited. Sleeping.\n\0".as_ptr() as *const i8);
     }
 
-    /* WOW64 Phase E probe (amd64 native wow64cpu): same hello32.exe guest +
-     * 0x600D verdict as the arm64 Phase C probe above — silent no-op unless
-     * syswow64\hello32.exe is staged on the livecd (wow64cpu/CMakeLists.txt). */
+    /* WOW64 Phase E probes (amd64 native wow64cpu): the same guest ladder as
+     * the arm64 block above — hello32 (loader verdict), gui32 (win32k thunk),
+     * testgui (stock i386 binary), doom (the show). All silent no-ops unless
+     * staged on the livecd (wow64cpu/CMakeLists.txt E4 block). Same z-order
+     * discipline as arm64: when the WoW64 doom is staged it IS the demo, so
+     * the never-exiting testgui pair is skipped; doom launches last. */
     #[cfg(target_arch = "x86_64")]
-    TryStartWow64Hello();
+    {
+        TryStartWow64Hello();
+        TryStartWow64Gui();
+        if !Wow64DoomStaged() {
+            TryStartWow64TestGui();
+        }
+        TryStartWow64Doom();
+    }
 
     /* DOOM (opt-in, VIBEOS_DOOM=1) — x86 call site. On arm64 doom is spawned
      * inside the block above (before the cmd.exe INFINITE wait, which never
