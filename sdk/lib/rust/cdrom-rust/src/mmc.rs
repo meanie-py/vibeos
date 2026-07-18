@@ -34,12 +34,14 @@ const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:27 / evntrace.h:63
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
 #[inline] fn min(a: u32, b: u32) -> u32 { core::cmp::min(a, b) }
 extern "system" {
-    fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(SectorsPerSecond: u32) -> i64;
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, unknown: *mut core::ffi::c_void, transferSize: u32, flag: i32, cdb: *const CDB, cdbLength: u32, ) -> NTSTATUS;
     fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Param1: *mut core::ffi::c_void, TransferSize: u32, Flag: u8, /* BOOLEAN TRUE -> 1 */ Cdb: *const CDB, CdbLength: u32, Timeout: u32, ) -> i32; // NTSTATUS
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *const core::ffi::c_void, );
+}
+unsafe extern "C" {
+    fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(SectorsPerSecond: u32) -> i64;
     fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comperand: i32, ) -> i32;
 }
 unsafe extern "C" {

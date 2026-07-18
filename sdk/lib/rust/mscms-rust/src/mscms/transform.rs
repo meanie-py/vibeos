@@ -13,11 +13,13 @@ extern "C" {
     fn release_profile(profile: *mut profile);
 }
 extern "C" {
+    fn cmsCreateMultiprofileTransform(profiles: *const *mut core::ffi::c_void, nprofiles: u32, arg1: i32, arg2: i32, intent: u32, arg3: i32) -> *mut core::ffi::c_void;
+    fn close_transform(handle: HTRANSFORM) -> BOOL;
+}
+unsafe extern "system" {
     fn GetProcessHeap() -> isize;
     fn HeapAlloc(heap: isize, flags: u32, size: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: isize, flags: u32, mem: *mut core::ffi::c_void) -> i32;
-    fn cmsCreateMultiprofileTransform(profiles: *const *mut core::ffi::c_void, nprofiles: u32, arg1: i32, arg2: i32, intent: u32, arg3: i32) -> *mut core::ffi::c_void;
-    fn close_transform(handle: HTRANSFORM) -> BOOL;
     fn MultiByteToWideChar( CodePage: u32, dwFlags: u32, lpMultiByteStr: *const i8, cbMultiByte: i32, lpWideCharStr: *mut u16, cchWideChar: i32, ) -> i32;
 }
 

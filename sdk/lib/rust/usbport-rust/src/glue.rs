@@ -162,7 +162,7 @@ pub unsafe fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL) {
 }
 #[cfg(target_arch = "aarch64")]
 mod lower_irql {
-    extern "C" {
+    extern "system" {
         pub fn KeLowerIrql(NewIrql: super::KIRQL);
     }
 }
@@ -340,7 +340,7 @@ pub unsafe extern "C" fn IoSetCancelRoutine(
     ntkrnl_sys::inline::tier1::IoSetCancelRoutine(Irp, CancelRoutine)
 }
 #[no_mangle]
-pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) {
+pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) {
     *SpinLock = 0;
 }
 // USBD_SUCCESS(Status) = ((USBD_STATUS)(Status) >= 0); USBD_ERROR = (< 0). Sign-tested as LONG.

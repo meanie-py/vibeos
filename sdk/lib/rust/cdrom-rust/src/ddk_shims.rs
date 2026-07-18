@@ -43,14 +43,14 @@ pub unsafe extern "C" fn IoSetCompletionRoutine(
 // to the real kernel export so the feature query stays faithful. arm64-only.
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
-pub unsafe extern "C" fn IsProcessorFeaturePresent(feature: ULONG) -> i32 {
+pub unsafe extern "system" fn IsProcessorFeaturePresent(feature: ULONG) -> i32 {
     ExIsProcessorFeaturePresent(feature) as i32
 }
 
 // ===================== IRQL / tick (cfg-gated like classpnp: real exports on i386) =====================
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 {
+pub unsafe extern "system" fn KeGetCurrentIrql() -> u8 {
     let irql: u64;
     core::arch::asm!("mov {}, cr8", out(reg) irql, options(nomem, nostack, preserves_flags));
     irql as u8
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 {
 // the fixed VA 0xFFFFF78000000000 on both; TickCount (KSYSTEM_TIME) at +0x320. Lockless read.
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn KeQueryTickCount(Count: *mut LARGE_INTEGER) {
+pub unsafe extern "system" fn KeQueryTickCount(Count: *mut LARGE_INTEGER) {
     const LOW: usize = 0xFFFFF78000000000 + 0x320;
     loop {
         let high1 = core::ptr::read_volatile((LOW + 4) as *const i32);
@@ -480,7 +480,7 @@ extern "system" {
 }
 // KeQuerySystemTime: KUSER_SHARED_DATA.SystemTime @ fixed VA +0x14, lockless read (amd64/arm64 inline).
 #[cfg(not(target_arch = "x86"))]
-#[no_mangle] pub unsafe extern "C" fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER) {
+#[no_mangle] pub unsafe extern "system" fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER) {
     const ST: usize = 0xFFFFF78000000000 + 0x14;
     loop {
         let high1 = core::ptr::read_volatile((ST + 4) as *const i32);
@@ -491,14 +491,14 @@ extern "system" {
 }
 // KeRaiseIrql/KeLowerIrql: cr8 on amd64 (inlines; not exported). i386 has real exports.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle] pub unsafe extern "C" fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8) {
+#[no_mangle] pub unsafe extern "system" fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8) {
     let cur: u64;
     core::arch::asm!("mov {}, cr8", out(reg) cur, options(nomem, nostack, preserves_flags));
     *OldIrql = cur as u8;
     core::arch::asm!("mov cr8, {}", in(reg) NewIrql as u64, options(nomem, nostack, preserves_flags));
 }
 #[cfg(target_arch = "x86_64")]
-#[no_mangle] pub unsafe extern "C" fn KeLowerIrql(NewIrql: u8) {
+#[no_mangle] pub unsafe extern "system" fn KeLowerIrql(NewIrql: u8) {
     core::arch::asm!("mov cr8, {}", in(reg) NewIrql as u64, options(nomem, nostack, preserves_flags));
 }
 
@@ -543,7 +543,7 @@ extern "system" {
     (*IoGetCurrentIrpStackLocation(Irp)).Control |= 0x01; // SL_PENDING_RETURNED
 }
 // KeInitializeSpinLock(lock) => *lock = 0
-#[no_mangle] pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
+#[no_mangle] pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
 
 // c2rust panic/UB paths emit a call to libc `abort`; there is no CRT abort in the
 // kernel. Halt (matches the crate panic_handler).

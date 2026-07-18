@@ -89,6 +89,45 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
 
 ## Progress log
 
+- **2026-07-18 — clashing_extern Phase 2: the ORACLE pass — full mechanical CC canon, no agents (~570 decl
+  sites + 20 shim-def bugs; the latent-link-bomb class defused wholesale).** The Phase-1 gate FAILED
+  overnight (build:i386 LINK_FAIL + lint NEW): each incremental i386 build surfaced ANOTHER wrong-ABI decl
+  as CGU reshuffling pulled previously-dead objects into the link (lsasrv `ConvertSidToStringSidW`/`LocalFree`
+  declared cdecl → `_Name` undefined, import lib has `_Name@8`; next build: usbhub `USBD_ParseConfigurationDescriptorEx`).
+  These are **consistently-declared-but-wrong externs — zero warnings, pure link bombs**; the clash lint
+  never sees them. Killed the whole class at once with two new oracles (tools in scratchpad, recipe here):
+  1. **nm-decoration oracle** (`ced_nm_oracle.py`): `llvm-nm --defined-only` over every `.a` in build-i386
+     → symbol → `_N@x`(stdcall)/`_N`(cdecl). 30.5K platform symbols, 27 ambiguous. The linker contract,
+     free, zero judgment. Split platform-vs-rust archives (rust side stale-risk, low priority).
+  2. **`ced_canon3.py`** (supersedes v2): audits EVERY extern decl (not just clash-warned) in non-fenced
+     crates. Truth: in-crate def > workspace def > platform-nm > rust-nm > majority(dead-safe). Def-FLIPS
+     restricted to driver shim files (`ddk_shims|glue|stubs`) where the .sys link context makes platform
+     truth authoritative — 20 real shim bugs fixed (cdrom/ks `KeQueryTickCount` cdecl shims shadowing the
+     stdcall kernel export = the verify_ffi findings, disk/mountmgr `_InterlockedExchange`, usb* `KeInitializeSpinLock`…).
+  **THE key semantic rule learned (cost 3 iterations):** flips are only meaningful where CDECL-vs-STDCALL
+  is ABI-real = **x86-visible code**. Per-arch mirror files (`types_amd64.rs`/`types_arm64.rs`) and
+  `#[cfg(not(x86))]` blocks deliberately use `"C"` strings for TYPE-identity with per-arch bindgen
+  (`bindgen_i386` slots = `"stdcall"`, `bindgen_amd64` = `"C"`; see the po-rust power.rs:152 NOTE and
+  serial.rs DriverUnload transmute idiom). Flipping them is cosmetic ABI-wise but breaks fn-ptr type
+  matching → 144 E0308s. canon3 now skips non-x86-visible blocks (7355 skipped). Other traps fixed in-tool:
+  edit-collision at insertion==next-block-flip line (sort tie-break), `#[inline] fn` on one line matching
+  the attr-carry regex (pure-attr regex), kernel-rust `#[used]` force-arrays re-partitioned per element
+  decl ABI (REFS/REFS_C split). Final: **0 NEW errors ×3 targets**; clashing 1335→1327/1445→1431/1331→1323
+  (the lint barely moves because its remaining population is different — see next). Remaining map:
+  **CC 359** = mostly per-arch-mirror string pairs (CORRECT code the lint hates; root fix = normalize
+  bindgen fn-ptr ABI strings to `"system"` via the i386-twin projection — a systemic ntkrnl-sys/postprocess
+  move, needs user green-light); **TYPE 1038 + ARITY 437 + SIGN 131** = decl-signature drift (Pass C:
+  unify decls to canonical sig + compiler-driven cast repair at E0308 sites); **iaps 42** = duplicate
+  type defs (dedup via `pub use`). All mechanical, no agent fan-out needed.
+  **usbstor-rust EXCLUDED from this batch** (restored to HEAD): its i386 rust archive is
+  link-lottery-fragile — glue shims (`IoCopyCurrentIrpStackLocationToNext`,
+  `ExAllocatePoolUninitialized`, `RtlStringCchPrintfW`) are gated `#[cfg(not(x86))]` with
+  NO i386 provider anywhere (the varargs-shim comment "i386 resolves from the import lib"
+  is STALE LORE — nm proves no archive exports them), so usbstor.sys-i386 links only while
+  the referencing CGUs stay unpulled; any glue.o symbol change (e.g. a def-flip creating
+  interposition) reshuffles member selection and detonates the dead refs. Owed: complete
+  the i386 shim set (drop the not(x86) gates; RtlStringCchPrintfW needs the `_v` varargs
+  trampoline mirrored for i386), THEN re-run the ABI canon on it.
 - **2026-07-17 — `clashing_extern_declarations` Phase 1: the safe ABI-class canon (−122 amd64/arm64, −66 i386).**
   The prior POC (below) proved the *type* re-point (`use crate::mod::SYM`) hits an 80× E0308 wall —
   call sites were written to the loose forward-decl sigs. This batch takes the **narrower, safe cut

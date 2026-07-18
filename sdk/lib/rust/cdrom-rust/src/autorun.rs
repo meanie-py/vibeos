@@ -18,11 +18,13 @@ extern "C" {
     static GUID_IO_MEDIA_REMOVAL: GUID;
     static CDROM_DEVICE_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
     static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
-    fn SET_FLAG(flags: *mut u32, flag: u32);
     fn SRB_STATUS(srb_status: u8) -> u32;
-    fn TEST_FLAG(flags: u32, flag: u32) -> i32;
     fn PORT_ALLOCATED_SENSE(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> u8;
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
+}
+unsafe extern "system" {
+    fn SET_FLAG(flags: *mut u32, flag: u32);
+    fn TEST_FLAG(flags: u32, flag: u32) -> i32;
 }
 unsafe extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);

@@ -176,14 +176,16 @@ extern "system" {
     fn IopGetFileInformation(FileObject: PFILE_OBJECT, Length: ULONG, FileInformationClass: FILE_INFORMATION_CLASS, FileInformation: PVOID, ReturnedLength: *mut ULONG) -> NTSTATUS;
     fn IopCleanupFailedIrp(FileObject: PFILE_OBJECT, EventObject: *mut _KEVENT, LocalEvent: *mut _KEVENT) -> NTSTATUS;
     fn FsRtlPTeardownPerFileObjectContexts(FileObject: PFILE_OBJECT);
-    #[link_name = "IoGetDevObjExtension_shim"]
-    fn IoGetDevObjExtension(DeviceObject: PDEVICE_OBJECT) -> *mut ntkrnl_sys::ddk::_DEVOBJ_EXTENSION;
     #[link_name = "IopQueueIrpToThread_shim"]
     fn IopQueueIrpToThread(Irp: PIRP);
     #[link_name = "IopUnQueueIrpFromThread_shim"]
     fn IopUnQueueIrpFromThread(Irp: PIRP);
     static mut SeDefaultObjectMethod: *const core::ffi::c_void;
     static mut PsInitialSystemProcess: PVOID;
+}
+unsafe extern "C" {
+    #[link_name = "IoGetDevObjExtension_shim"]
+    fn IoGetDevObjExtension(DeviceObject: PDEVICE_OBJECT) -> *mut ntkrnl_sys::ddk::_DEVOBJ_EXTENSION;
 }
 
 extern "system" {
@@ -194,12 +196,14 @@ extern "system" {
 }
 // These are extern "C" in shim_exports.rs — must match.
 extern "C" {
-    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn KeLowerIrql(NewIrql: KIRQL);
     fn ProbeForReadLargeInteger(Address: *const LARGE_INTEGER) -> LARGE_INTEGER;
     fn ProbeForWriteHandle(Address: *mut HANDLE);
     fn ProbeForWriteIoStatusBlock(IoStatusBlock: PIO_STATUS_BLOCK);
     fn ObReferenceObject(Object: PVOID);
+}
+unsafe extern "system" {
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    fn KeLowerIrql(NewIrql: KIRQL);
 }
 
 // InterlockedExchange is fastcall on i386, cdecl on others

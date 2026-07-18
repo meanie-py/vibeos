@@ -5,7 +5,7 @@ use ntkrnl_sys::ddk::*;
 
 // IsEqualGUID — DDK inline (guiddef.h); 16-byte compare. No exported symbol.
 #[no_mangle]
-pub unsafe extern "C" fn IsEqualGUID(a: *const GUID, b: *const GUID) -> u8 {
+pub unsafe extern "system" fn IsEqualGUID(a: *const GUID, b: *const GUID) -> u8 {
     (core::slice::from_raw_parts(a as *const u8, 16) == core::slice::from_raw_parts(b as *const u8, 16)) as u8
 }
 
@@ -53,7 +53,7 @@ pub unsafe extern "C" fn InsertTailList(ListHead: *mut LIST_ENTRY, Entry: *mut L
 
 // ---- Ke inline ----
 #[no_mangle]
-pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
+pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
 
 // KeGetCurrentIrql: real export on i386 (KIRQL stdcall); inline on amd64 (cr8), arm64 (prcb).
 #[cfg(target_arch = "x86_64")]
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
 // ---- compiler intrinsics (no kernel export on i386) ----
 use core::sync::atomic::{AtomicI32, Ordering};
 #[no_mangle]
-pub unsafe extern "C" fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
+pub unsafe extern "system" fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
     (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
 }
 #[no_mangle]

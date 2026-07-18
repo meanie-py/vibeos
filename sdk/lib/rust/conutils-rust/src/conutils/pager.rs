@@ -48,6 +48,8 @@ extern "system" {
     fn SetLastError(dwErrCode: u32);
     fn GetConsoleOutputCP() -> u32;
     fn K32LoadStringW(hInstance: HINSTANCE, uID: u32, lpBuffer: PWSTR, cchBufferMax: i32) -> i32;
+}
+unsafe extern "C" {
     fn ConGetScreenInfo(screen: *mut CON_SCREEN, csbi: *mut CONSOLE_SCREEN_BUFFER_INFO) -> i32;
 }
 unsafe extern "C" {

@@ -22,7 +22,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
 }
 extern "C" {
@@ -172,11 +172,13 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     // Forward declarations for unknown symbols
     unsafe extern "system" {
         fn KeGetCurrentIrql() -> KIRQL;
-        fn RtlULongAdd(ul1: u32, ul2: u32, result: *mut u32) -> NTSTATUS;
         fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
             attributes: *mut WDF_OBJECT_ATTRIBUTES,
             context_type: *const core::ffi::c_void,
         ) -> ();
+    }
+    unsafe extern "C" {
+        fn RtlULongAdd(ul1: u32, ul2: u32, result: *mut u32) -> NTSTATUS;
     }
 
     // WPP tracing macro (compiles to a no-op); accepts the variadic call shapes

@@ -42,7 +42,7 @@ pub use crate::types::KSSTREAM_POINTER_STATE_KSSTREAM_POINTER_STATE_LOCKED as KS
 // FORCEINLINE DDK helpers (no real export) referenced as externs by the translation —
 // #[no_mangle] wrappers over the ntkrnl-sys inline impls (mirrors usbport-rust glue).
 #[no_mangle]
-pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) {
+pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) {
     *SpinLock = 0;
 }
 #[no_mangle]

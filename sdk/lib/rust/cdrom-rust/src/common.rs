@@ -115,18 +115,20 @@ unsafe extern "C" {
 unsafe extern "C" {
     fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
 }
 extern "system" {
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
-    fn RtlULongAdd(ul1: u32, ul2: u32, pulRes: *mut u32) -> NTSTATUS;
-    fn InterlockedIncrement(p: *mut i32) -> i32;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
-    fn WHICH_BIT(bps: u32, shift: *mut u8);
     fn KeGetCurrentIrql() -> KIRQL;
     static GUID_DEVINTERFACE_CDROM: GUID;
     static MOUNTDEV_MOUNTED_DEVICE_GUID: GUID;
+}
+unsafe extern "C" {
+    fn RtlULongAdd(ul1: u32, ul2: u32, pulRes: *mut u32) -> NTSTATUS;
+    fn InterlockedIncrement(p: *mut i32) -> i32;
+    fn WHICH_BIT(bps: u32, shift: *mut u8);
 }
 unsafe extern "C" {
     fn DvdSendKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, KeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
@@ -141,19 +143,21 @@ extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
-    fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
     fn WDF_REQUEST_SEND_OPTIONS_INIT(Options: *mut WDF_REQUEST_SEND_OPTIONS, Flags: u32);
     fn RtlInitUnicodeString(DestinationString: *mut UNICODE_STRING, SourceString: *const u16);
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
     static GUID_IO_CDROM_EXCLUSIVE_UNLOCK: GUID;
     static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void);
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: i32);
     fn PagedCode();
     fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32;
-    fn REVERSE_BYTES_SHORT(dest: *mut u16, src: *const u32);
     fn FileObjectGetContext(FileObject: WDFFILEOBJECT) -> *mut FILE_OBJECT_CONTEXT;
+}
+unsafe extern "C" {
+    fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
+    fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
+    fn REVERSE_BYTES_SHORT(dest: *mut u16, src: *const u32);
 }
 unsafe extern "C" {
     fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> i32;

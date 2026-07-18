@@ -3757,7 +3757,7 @@ pub unsafe extern "system" fn DriverEntry(
 // driver-internal cdecl decls (types_*.rs authority = extern "C").
 
 // ddk_shims-provided cdecl fns.
-unsafe extern "C" {
+unsafe extern "system" {
     fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32;
 }
 unsafe extern "C" {

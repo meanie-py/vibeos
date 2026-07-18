@@ -18,21 +18,25 @@ extern "C" {
 extern "system" {
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn TEST_FLAG(flags: u32, flag: u32) -> i32;
+}
+unsafe extern "C" {
     fn IS_SCSIOP_READWRITE(opCode: u8) -> i32;
     fn SECONDS_TO_100NS_UNITS(seconds: i32) -> i64;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     fn KeQueryTickCount(CurrentCount: *mut i64);
 }
 // C max() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
 #[inline] fn max(x: i64, y: i64) -> i64 { core::cmp::max(x, y) }
 extern "system" {
-    fn SRB_STATUS(status: u32) -> u32;
-    fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
     static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
+}
+unsafe extern "C" {
+    fn SRB_STATUS(status: u32) -> u32;
+    fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
 }
 unsafe extern "C" {
     fn PAGED_CODE();

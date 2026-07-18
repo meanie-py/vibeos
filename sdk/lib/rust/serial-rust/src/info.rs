@@ -10,8 +10,10 @@ use ntkrnl_sys::ddk::{FILE_POSITION_INFORMATION, FILE_STANDARD_INFORMATION, PDEV
 use core::ffi::c_void;
 
 extern "C" {
-    fn ForwardIrpAndForget(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn DbgPrintEx( ComponentId: u32, Level: u32, Format: *const i8, ... ) -> u32;
+}
+unsafe extern "system" {
+    fn ForwardIrpAndForget(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 
 #[no_mangle]

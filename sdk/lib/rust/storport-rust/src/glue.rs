@@ -147,7 +147,7 @@ pub static GUID_BUS_TYPE_ISAPNP: GUID = GUID {
 // Signature matches the C prototype: RtlAssert(expr, file, line, msg).
 // ============================================================================
 #[inline(always)]
-pub unsafe extern "C" fn RtlAssert(
+pub unsafe extern "system" fn RtlAssert(
     _FailedAssertion: PVOID,
     _FileName: PVOID,
     _LineNumber: ULONG,

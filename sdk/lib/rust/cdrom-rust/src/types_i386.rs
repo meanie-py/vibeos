@@ -49987,7 +49987,7 @@ unsafe extern "stdcall" {
 unsafe extern "stdcall" {
     pub fn DriverEvtCleanup(arg1: WDFOBJECT);
 }
-unsafe extern "stdcall" {
+unsafe extern "C" {
     pub fn DeviceEvtCleanup(arg1: WDFOBJECT);
 }
 unsafe extern "stdcall" {
@@ -50029,7 +50029,7 @@ unsafe extern "stdcall" {
 unsafe extern "stdcall" {
     pub fn SequentialQueueEvtCanceledOnQueue(arg1: WDFQUEUE, arg2: WDFREQUEST);
 }
-unsafe extern "stdcall" {
+unsafe extern "C" {
     pub fn RequestEvtCleanup(arg1: WDFOBJECT);
 }
 unsafe extern "stdcall" {

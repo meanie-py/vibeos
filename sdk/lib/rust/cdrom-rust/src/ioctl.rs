@@ -102,7 +102,6 @@ extern "C" {
     );
 }
 extern "system" {
-    fn REVERSE_BYTES(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
     static CLASSP_REG_SUBKEY_NAME: u16;
     static CLASSP_REG_REMOVAL_POLICY_VALUE_NAME: u16;
     fn RequestGetContext(request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
@@ -110,15 +109,18 @@ extern "system" {
     fn ScratchBuffer_PerformNextReadWrite( device_extension: *mut CDROM_DEVICE_EXTENSION, first: BOOLEAN, ) -> NTSTATUS;
     fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: WDFREQUEST, transferByteCount: u32, flag: i32, cdb: *mut CDB, cdbLen: u8) -> NTSTATUS;
-    fn PLAY_ACTIVE(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> *mut i32;
-    fn REVERSE_SHORT(p: *mut u16);
-    fn REVERSE_LONG(p: *mut u32);
     fn NT_ASSERT(condition: i32);
-    fn RtlULongAdd(a: u32, b: u32, result: *mut u32) -> i32;
-    fn RtlULongSub(a: u32, b: u32, result: *mut u32) -> i32;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn MmGetMdlVirtualAddress(Mdl: PMDL) -> *mut core::ffi::c_void;
     fn MmGetMdlByteCount(Mdl: PMDL) -> u32;
+}
+unsafe extern "C" {
+    fn REVERSE_BYTES(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
+    fn PLAY_ACTIVE(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> *mut i32;
+    fn REVERSE_SHORT(p: *mut u16);
+    fn REVERSE_LONG(p: *mut u32);
+    fn RtlULongAdd(a: u32, b: u32, result: *mut u32) -> i32;
+    fn RtlULongSub(a: u32, b: u32, result: *mut u32) -> i32;
     fn MSF_TO_LBA(m: u8, s: u8, f: u8) -> u32;
 }
 unsafe extern "C" {
@@ -136,26 +138,28 @@ unsafe extern "C" {
 extern "system" {
     fn RequestDummyCompletionRoutine( Request: WDFREQUEST, ioTarget: WDFIOTARGET, CompletionParams: *mut WDF_REQUEST_COMPLETION_PARAMS, CompletionContext: WDFCONTEXT, );
     fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataTransferLength: u32, AutoSense: u8, Request: WDFREQUEST, ) -> i32;
-    fn ValidChar(c: u8) -> i32;
     fn IoWriteErrorLogEntry(ElEntry: *mut IO_ERROR_LOG_PACKET);
     fn IoAllocateErrorLogEntry(IoObject: *mut core::ffi::c_void, EntrySize: u32) -> *mut IO_ERROR_LOG_PACKET;
     fn WDF_REQUEST_PARAMETERS_INIT(Parameters: *mut WDF_REQUEST_PARAMETERS);
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
-    fn CompareStorageDuids( Duid1: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER, Duid2: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER, ) -> i32;
-    fn TimeOutValueGetCapValue(timeout: u32, multiplier: u32) -> u32;
     fn KeGetCurrentIrql() -> u8;
     fn ExFreePool(Pool: *mut core::ffi::c_void);
     fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, transferSize: u32, bFlag: u8, Cdb: *const CDB, CdbLength: u32, TimeoutValue: u32, ) -> NTSTATUS;
     fn DeviceSetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubkeyName: *const u16, ValueName: *const u16, Value: u32, ) -> NTSTATUS;
-    fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
     fn FileObjectGetContext(FileObject: WDFFILEOBJECT) -> PFILE_OBJECT_CONTEXT;
     fn TEST_FLAG(flags: u32, bit: u32) -> bool;
-    fn REVERSE_BYTES_SHORT(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
     fn RequestSetupMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, supported: i32, ) -> i32;
     fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> u8;
     fn ScratchBuffer_ResetItems( device_extension: *mut CDROM_DEVICE_EXTENSION, free_mdl: i32, ) -> i32;
-    fn Int64ShrlMod32(value: i64, shift: u32) -> i64;
     fn DevicePickDvdRegion(Device: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    fn ValidChar(c: u8) -> i32;
+    fn CompareStorageDuids( Duid1: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER, Duid2: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER, ) -> i32;
+    fn TimeOutValueGetCapValue(timeout: u32, multiplier: u32) -> u32;
+    fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
+    fn REVERSE_BYTES_SHORT(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
+    fn Int64ShrlMod32(value: i64, shift: u32) -> i64;
 }
 unsafe extern "C" {
     fn RequestSend( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, ioTarget: WDFIOTARGET, sendOptionsFlags: ULONG, requestSent: *mut BOOLEAN, ) -> NTSTATUS;

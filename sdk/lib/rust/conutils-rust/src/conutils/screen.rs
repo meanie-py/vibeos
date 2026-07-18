@@ -11,16 +11,18 @@ pub struct CON_SCREEN {
 }
 
 extern "system" {
-    fn ConStreamGetOSHandle(Stream: *mut CON_STREAM) -> *mut c_void;
-    fn IsConsoleHandle(hOutput: *mut c_void) -> BOOL;
-    fn IsTTYHandle(hOutput: *mut c_void) -> BOOL;
-    fn ConPuts(Stream: *mut CON_STREAM, szText: *const u16) -> i32;
     fn GetConsoleScreenBufferInfo(hOutput: *mut c_void, lpcsbi: *mut CONSOLE_SCREEN_BUFFER_INFO) -> BOOL;
     fn FillConsoleOutputAttribute(hOutput: *mut c_void, wAttribute: u16, nLength: u32, dwWriteCoord: COORD, lpNumberOfAttrsWritten: *mut u32) -> BOOL;
     fn FillConsoleOutputCharacterW(hOutput: *mut c_void, cCharacter: u16, nLength: u32, dwWriteCoord: COORD, lpNumberOfCharsWritten: *mut u32) -> BOOL;
     fn SetConsoleCursorPosition(hOutput: *mut c_void, dwCursorPosition: COORD) -> BOOL;
     fn CreateFileW(lpFileName: *const u16, dwDesiredAccess: u32, dwShareMode: u32, lpSecurityAttributes: *mut c_void, dwCreationDisposition: u32, dwFlagsAndAttributes: u32, hTemplateFile: *mut c_void) -> *mut c_void;
     fn CloseHandle(hObject: *mut c_void) -> i32;
+}
+unsafe extern "C" {
+    fn ConStreamGetOSHandle(Stream: *mut CON_STREAM) -> *mut c_void;
+    fn IsConsoleHandle(hOutput: *mut c_void) -> BOOL;
+    fn IsTTYHandle(hOutput: *mut c_void) -> BOOL;
+    fn ConPuts(Stream: *mut CON_STREAM, szText: *const u16) -> i32;
 }
 unsafe extern "C" {
     fn ConStreamWrite(Stream: *mut CON_STREAM, Buffer: *const u16, nLength: u32) -> i32;

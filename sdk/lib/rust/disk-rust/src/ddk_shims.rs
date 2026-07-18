@@ -106,7 +106,7 @@ pub unsafe extern "C" fn RemoveHeadList(ListHead: *mut LIST_ENTRY) -> *mut LIST_
 
 // ---------- Ke inlines ----------
 #[no_mangle]
-pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
+pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
 // KeFlushIoBuffers is a no-op macro on x86/amd64 (cache-coherent DMA). arm64: QEMU virt
 // DMA is coherent too; a real-hardware cache-maintenance impl is owed (translation audit).
 #[no_mangle]
@@ -115,7 +115,7 @@ pub unsafe extern "C" fn KeFlushIoBuffers(_mdl: *mut c_void, _read: i32, _dma: i
 // ---------- compiler intrinsics ----------
 use core::sync::atomic::{AtomicI32, Ordering};
 #[no_mangle]
-pub unsafe extern "C" fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
+pub unsafe extern "system" fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
     (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
 }
 

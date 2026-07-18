@@ -43,8 +43,10 @@ extern "C" {
     fn DbgPrint(Format: *const i8, ...) -> u32;
     fn DPRINT(fmt: *const i8, ...);
     fn DPRINT_PNP(fmt: *const i8, ...);
-    fn USBD_ParseConfigurationDescriptorEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, StartPosition: *mut core::ffi::c_void, InterfaceNumber: i32, AlternateSetting: i32, InterfaceClass: i32, InterfaceSubClass: i32, InterfaceProtocol: i32, ) -> PUSB_INTERFACE_DESCRIPTOR;
     fn RtlStringCbPrintfW(pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ...) -> NTSTATUS;
+}
+unsafe extern "system" {
+    fn USBD_ParseConfigurationDescriptorEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, StartPosition: *mut core::ffi::c_void, InterfaceNumber: i32, AlternateSetting: i32, InterfaceClass: i32, InterfaceSubClass: i32, InterfaceProtocol: i32, ) -> PUSB_INTERFACE_DESCRIPTOR;
 }
 unsafe extern "system" {
     fn USBH_PdoInternalControl(PortExtension: PUSBHUB_PORT_PDO_EXTENSION, Irp: PIRP) -> NTSTATUS;

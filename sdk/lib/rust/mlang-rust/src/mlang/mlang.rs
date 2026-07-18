@@ -1804,7 +1804,6 @@ extern "system" {
     fn GetLocaleInfoW(locale: u32, lctype: u32, lplcdata: *mut u16, cchdata: i32) -> i32;
     fn LCMapStringW(locale: u32, dwmapflags: u32, lpsrcstr: *const u16, cchsrc: i32, lpdeststr: *mut u16, cchdest: i32) -> i32;
     fn lstrlenW(s: *const u16) -> i32;
-    fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
     fn EnterCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
     fn LeaveCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
     fn TranslateCharsetInfo(lpCs: *mut u32, lpCsInfo: *mut CHARSETINFO, dwFlags: u32) -> i32;
@@ -1821,20 +1820,17 @@ extern "system" {
     fn IsEqualGUID(rguid1: *const GUID, rguid2: *const GUID) -> u8;
     fn InterlockedIncrement(Addend: *mut i32) -> i32;
     fn InterlockedDecrement(Addend: *mut i32) -> i32;
-    fn __wine_unregister_resources(hInstance: HINSTANCE) -> HRESULT;
     fn debugstr_guid(guid: *const GUID) -> *const core::ffi::c_char;
     fn MultiByteToWideChar( CodePage: u32, dwFlags: u32, lpMultiByteStr: *const i8, cbMultiByte: i32, lpWideCharStr: *mut u16, cchWideChar: i32, ) -> i32;
     fn TlsSetValue(dwTlsIndex: u32, lpTlsValue: *mut core::ffi::c_void) -> i32;
     fn IsValidCodePage(codePage: u32) -> BOOL;
     fn EnumSystemLocalesW(lpLocaleEnumProc: Option<unsafe extern "C" fn(*const u16) -> i32>, dwFlags: u32) -> i32;
     fn GetFontUnicodeRanges(hdc: HDC, lpgs: *mut GLYPHSET) -> u32;
-    fn debugstr_an(s: *const i8, n: i32) -> *const i8;
     fn RegCreateKeyW(hKey: HKEY, lpSubKey: *const u16, phkResult: *mut HKEY) -> LSTATUS;
     fn RegSetValueExA(hKey: HKEY, lpValueName: *const i8, Reserved: u32, dwType: u32, lpData: *const u8, cbData: u32) -> LSTATUS;
     fn RegSetValueExW(hKey: HKEY, lpValueName: *const u16, Reserved: u32, dwType: u32, lpData: *const u8, cbData: u32) -> LSTATUS;
     fn RegCloseKey(hKey: HKEY) -> LSTATUS;
     fn TlsGetValue(dwTlsIndex: u32) -> *mut core::ffi::c_void;
-    fn debugstr_w(s: *const u16) -> *const i8;
     fn wine_dbgstr_w(s: *const u16) -> *const i8;
     fn HeapReAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void, dwBytes: usize) -> *mut core::ffi::c_void;
     fn SysAllocString(psz: *const u16) -> *mut u16;
@@ -1843,17 +1839,24 @@ extern "system" {
     fn lstrcmpiW(lpString1: *const u16, lpString2: *const u16) -> i32;
     fn lstrcpyW(lpString1: *mut u16, lpString2: *const u16) -> *mut u16;
     fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut i8, cbMultiByte: i32, lpDefaultChar: *const i8, lpUsedDefaultChar: *mut i32, ) -> i32;
-    fn debugstr_wn(s: *const u16, len: i32) -> *const i8;
-    fn min(a: LONG, b: LONG) -> LONG;
     fn GetTextCharsetInfo(hdc: HDC, lpFontSig: *mut FONTSIGNATURE, dwFlags: u32) -> u32;
     fn IsEqualIID(guid1: *const IID, guid2: *const IID) -> i32;
-    fn __wine_register_resources(hinstance: HINSTANCE) -> HRESULT;
     fn IStream_Stat( this: *mut IStream, pstatstg: *mut STATSTG, grfStatFlag: u32, ) -> i32;
     fn IStream_Read( this: *mut IStream, pv: *mut core::ffi::c_void, cb: u32, pcbRead: *mut u32, ) -> i32;
     fn IStream_Write( this: *mut IStream, pv: *const core::ffi::c_void, cb: u32, pcbWritten: *mut u32, ) -> i32;
-    fn debugstr_a(s: *const i8) -> *const i8;
     fn lstrlenA(lpString: *const i8) -> i32;
 }
+unsafe extern "C" {
+    fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
+    fn __wine_unregister_resources(hInstance: HINSTANCE) -> HRESULT;
+    fn debugstr_an(s: *const i8, n: i32) -> *const i8;
+    fn debugstr_w(s: *const u16) -> *const i8;
+    fn debugstr_wn(s: *const u16, len: i32) -> *const i8;
+    fn __wine_register_resources(hinstance: HINSTANCE) -> HRESULT;
+    fn debugstr_a(s: *const i8) -> *const i8;
+}
+// C min() is a macro, not an export — local wrapper (cdrom-rust pattern).
+#[inline] fn min(a: LONG, b: LONG) -> LONG { core::cmp::min(a, b) }
 
 extern "C" {
     fn TRACE(format: *const i8, ...);
@@ -2879,7 +2882,7 @@ unsafe extern "C" fn fnIMLangLineBreakConsole_BreakLineW(
     pcchLine: *mut i32,
     pcchSkip: *mut i32,
 ) -> i32 {
-    extern "system" {
+    extern "C" {
         fn debugstr_wn(pszSrc: *const u16, cchSrc: i32) -> *const i8;
     }
 
@@ -5704,6 +5707,8 @@ pub unsafe extern "system" fn ConvertINetString(
             dwFlags: u32,
             lpMem: *mut core::ffi::c_void,
         ) -> i32;
+    }
+    unsafe extern "C" {
         fn debugstr_a(s: *const i8) -> *const i8;
     }
 

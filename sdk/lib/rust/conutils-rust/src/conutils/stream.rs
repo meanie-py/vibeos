@@ -8,10 +8,12 @@ extern "C" {
     fn _get_osfhandle(fd: i32) -> *mut c_void;
 }
 extern "system" {
-    fn IsConsoleHandle(hConsole: *mut c_void) -> i32;
     fn InitializeCriticalSection(lpCriticalSection: *mut c_void);
     fn ConWrite(Stream: *mut CON_STREAM, szStr: *const u16, len: u32) -> i32;
     fn FlushFileBuffers(hFile: HANDLE) -> i32;
+}
+unsafe extern "C" {
+    fn IsConsoleHandle(hConsole: *mut c_void) -> i32;
     fn _open_osfhandle(osfhandle: isize, mode: i32) -> i32;
     fn _fdopen(fd: i32, mode: *const i8) -> *mut FILE;
 }

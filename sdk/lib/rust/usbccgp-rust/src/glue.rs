@@ -56,7 +56,7 @@ pub unsafe extern "C" fn IoSetCompletionRoutine(
     (*stk).Control = ctl;
 }
 #[no_mangle]
-pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) {
+pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) {
     *SpinLock = 0;
 }
 // ExAllocatePoolZero — allocate-and-zero (wdm.h inline, not exported here). stdcall `@12`.
@@ -68,7 +68,7 @@ pub unsafe extern "system" fn ExAllocatePoolZero(
 }
 // RtlAssert — debug-only, inert in retail; cdecl no-op.
 #[no_mangle]
-pub unsafe extern "C" fn RtlAssert(
+pub unsafe extern "system" fn RtlAssert(
     _failed_assertion: PVOID, _file_name: PVOID, _line_number: ULONG, _message: *mut ntkrnl_sys::ddk::CHAR,
 ) {
 }
@@ -113,8 +113,8 @@ pub unsafe extern "C" fn UsbBuildSelectInterfaceRequest(
 // an `extern static` decl for it into types.rs (usbbusif.h is allowlisted), so this provides
 // the BACKING definition only. Kept PRIVATE (no `pub`) so it does NOT enter glue's glob and
 // clash with the types.rs decl (E0659); #[no_mangle] still emits the symbol the decl binds to.
-// i386 resolves it from the import floor; amd64/arm64 need it -> cfg-gate to NOT(x86).
-#[cfg(not(target_arch = "x86"))]
+// No arch provides it externally (nm over build-i386: nothing defines it — the old
+// "i386 import floor" note was wrong) -> define everywhere.
 #[no_mangle]
 static USB_BUS_INTERFACE_USBC_CONFIGURATION_GUID: GUID = GUID {
     Data1: 0x893b6a96,

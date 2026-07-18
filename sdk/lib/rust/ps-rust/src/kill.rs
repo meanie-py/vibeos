@@ -87,7 +87,7 @@ extern "system" {
 extern "system" {
     fn PsGetCurrentThread() -> PETHREAD;
 }
-extern "C" {
+extern "system" {
     fn KeLowerIrql(irql: KIRQL);
 }
 extern "system" {

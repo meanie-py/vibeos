@@ -147,9 +147,10 @@ pub static USB_BUS_INTERFACE_USBDI_GUID: ntkrnl_sys::ddk::GUID = ntkrnl_sys::ddk
 // the real exports (avoids a duplicate-definition there). ----
 
 // ExAllocatePoolUninitialized — the non-zeroing pool alloc (wdm.h inline → ExAllocatePoolWithTag).
-#[cfg(not(target_arch = "x86"))]
+// No arch exports this (wdm.h inline; nm over build-i386 confirms) — provide it everywhere.
+// "system": ntkrnl-sys i386 declares it stdcall (@12 refs); identical to "C" on amd64/arm64.
 #[no_mangle]
-pub unsafe extern "C" fn ExAllocatePoolUninitialized(
+pub unsafe extern "system" fn ExAllocatePoolUninitialized(
     PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: ULONG,
 ) -> PVOID {
     ntkrnl_sys::ddk::ExAllocatePoolWithTag(PoolType, NumberOfBytes, Tag)
@@ -157,8 +158,9 @@ pub unsafe extern "C" fn ExAllocatePoolUninitialized(
 
 // IoCopyCurrentIrpStackLocationToNext — copy the current stack location to the next, up to
 // (excluding) CompletionRoutine, then clear the next Control (wdm.h FORCEINLINE). Mirrors
-// cdrom-rust's cross-arch offset_of body (NOT a hardcoded offset).
-#[cfg(not(target_arch = "x86"))]
+// cdrom-rust's cross-arch offset_of body (NOT a hardcoded offset). No arch exports this
+// (wdm.h FORCEINLINE; nm over build-i386 confirms) — provide it everywhere, cdecl per the
+// ntkrnl-sys i386 decl.
 #[no_mangle]
 pub unsafe extern "C" fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP) {
     let cur = IoGetCurrentIrpStackLocation(Irp);
@@ -358,10 +360,9 @@ pub unsafe extern "C" fn RtlStringCbCopyW(
 
 
 /// Fixed-arity twin of the `RtlStringCchPrintfW` C-variadic entry point — see
-/// `RtlStringCbPrintfW_v` above. The `#[cfg]` (i386 resolves the entry point from the
-/// import lib instead) is mirrored by an `#if !defined(__i386__)` around the C
-/// trampoline in `drivers/usb/usbstor/rust_varargs_shim.c` — keep the two in sync.
-#[cfg(not(target_arch = "x86"))]
+/// `RtlStringCbPrintfW_v` above. All arches: no import lib actually exports the entry
+/// point (nm over build-i386 confirms — the old "i386 resolves it from the import lib"
+/// note was wrong), so the C trampoline + this twin exist everywhere.
 #[no_mangle]
 pub unsafe extern "C" fn RtlStringCchPrintfW_v(
     Dst: *mut u16,
@@ -384,8 +385,8 @@ pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 {
 }
 
 // UsbBuildGetDescriptorRequest — usbdlib.h FORCEINLINE macro building a GET_DESCRIPTOR URB.
-// URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE = 0x000B (usb.h).
-#[cfg(not(target_arch = "x86"))]
+// URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE = 0x000B (usb.h). No arch exports it — provide
+// everywhere.
 #[no_mangle]
 pub unsafe extern "C" fn UsbBuildGetDescriptorRequest(
     Urb: PURB, Length: USHORT, DescriptorType: UCHAR, Index: UCHAR, LanguageId: USHORT,
