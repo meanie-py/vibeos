@@ -744,25 +744,50 @@ CMTEB descriptor **base** = TEB32 (TEB64+0x2000) on switch-in to any
 `Wow64Process` thread (Flags1/Flags2 preserved). Native threads untouched; amd64
 smoke boot+net green.
 
-*E3 — stage syswow64 + run hello32.exe to 0x600D on amd64. NEXT (owed).* The
-whole native code path (E0+E1+E2) is committed and green; E3 is the integration
-+ boot-debug rung, the amd64 mirror of arm64 M1→M3b:
-  - **Staging:** amd64 uses `ninja livecd` (not the arm64 `mkramdisk` ramdisk),
-    so the i386 `syswow64\{ntdll,kernel32,ntdll_vista}.dll` + `hello32.exe` (from
-    `build-i386` / build-hello-compute.sh) must be injected into `livecd.iso`
-    (post-build inject, or `add_cd_file FILE <abs path>` behind a `VIBEOS_WOW64`
-    cache var). No `\KnownDlls32`/hive entries exist → file-path redirection
-    fallback (already handled in the wow64.dll marshallers).
-  - **Launch hook:** a winlogon `TryStartWow64Hello` amd64 arm (mirror the arm64
-    one), gated on staging.
-  - **Debug ladder to expect:** first guest entry (KiUserApcDispatcher32 in
-    compat mode) exercising the E1 iretq + E2 fs base; then the same M2/M3a/M3b
-    class of issues the arm64 side hit (guest fault VEH dump via wow64.c's
-    `Wow64pDumpGuestHeap`, `Wow64Transition` publish, image `BTCpuNotify` — but
-    NotifyMap is a no-op here so that rung should be free). Verdict oracle:
-    `[FEX-WOW64C] ... 0x600D` on serial + hello32 exit 0x600D. Native x86 has no
-    JIT/TSO-atomics/RCpc pitfalls, so the arm64 M3b unaligned-LDAR class does not
-    apply.
+*E3 — hello32.exe 0x600D on amd64. DONE (2026-07-18, commit 0811e1c2ab0).* The
+first 32-bit binary the amd64 build ever ran: the real i386 ntdll32 loader
+(LdrInitializeThunk, ~200 syscalls, kernel32 DllMain PROCESS_ATTACH) executed in
+hardware compatibility mode through the E1 heaven's-gate, handed off to the image
+entry, and exited through wow64.c's verdict service with **0x600D**. Staging:
+`add_cd_file FILE` in `wow64cpu/CMakeLists.txt` injects the i386 syswow64 set
+from the sibling `build-i386`/`build-fex-hello` trees onto `livecd.iso` (the
+amd64 mirror of mkramdisk's VIBEOS_FEX staging; all-or-nothing, loud skip).
+Launch: winlogon `TryStartWow64Hello` widened to x86_64. One code fix from first
+boot to pass: **wow64cpu `BTCpuSetContext`** (the guest NtContinue at loader end)
+copies CONTEXT32 into the CPU-area WOW64_CONTEXT and sets a CPU-area+4 "resume
+replaced" flag so `Wow64CpuDispatch` resumes the new state instead of the
+return-to-stub fixup. As predicted, none of the arm64 JIT/TSO/RCpc pitfalls
+applied.
+
+*E4 — gui32 (win32k GDI) 0x600e on amd64. DONE (2026-07-18, commit f64d06e236e).*
+A 32-bit x86 app draws through the 64-bit win32k: gui32 opens a DISPLAY DC,
+creates a pattern brush, PatBlts a magenta rectangle (real NtGdi* handles),
+exits 0x600e (draw OK, GetPixel readback soft-mismatch, same verdict as arm64).
+The one native-only root cause: gdi32/user32's win32k client stubs do NOT use an
+exported `Wow64Transition` slot (unlike ntdll32) — they dispatch through a
+per-module `_KiIndirectSystemCall` (`mov edx,0x7FFE0300; jmp [edx]` =
+`&SharedUserData->SystemCall`). On arm64/FEX the JIT intercepts the syscall
+regardless of that pointer; on amd64 the guest literally `jmp`s to `[0x7FFE0300]`
+== 0 (KUSER_SHARED_DATA is one global page, can't hold the per-process BOP) →
+rip=0 in gdi32 DllMain. `Wow64pPatchTransitionSlot` (amd64-only) now scans each
+mapped guest module for that 7-byte dispatcher and rewrites it in place to jump
+straight to the process BOP. Also landed on the way: the M8 callback bridge's
+x86-64 setjmp/longjmp (`wow64_callback.c` was aarch64-only) + `BTCpuGetContext`.
+E0–E4 are on branch `wow64-amd64`; amd64 smoke green (hello32 0x600D + gui32
+0x600e run in every smoke as coverage).
+
+*E4b — testgui/doom (window creation + kernel→user callbacks) on amd64. NEXT
+(owed).* The window-creation path bugchecks win32k (0x1E) today, so testgui/doom
+are staged-as-closure but NOT launched (smoke stays green). Two roots seen on
+the doom boot: (1) **callback index 8 is unmarshalled** ("NEEDS 64->32
+MARSHALLER (len 98) — failing loud" in `wow64_callback.c`) — needs its 64→32
+argument marshaller; (2) **a 32-bit `NtUserGetClassInfo(0x1182)` faults win32k**
+(`win32k.sys+0x258EC`, AV) — a 32/64 marshaller gap that lets a bad guest
+pointer reach win32k (which, separately, should validate rather than bugcheck).
+These are the amd64 analogues of the arm64 M8/M9 USER-struct + callback rungs;
+the wow64win marshallers are arch-shared, so the fix is likely a small amd64
+delta (compat-mode arg shape) rather than new marshallers. Re-enable the
+testgui/doom `add_cd_file` + winlogon launch once green.
 
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored
