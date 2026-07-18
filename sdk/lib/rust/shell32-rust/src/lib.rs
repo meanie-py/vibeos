@@ -61,6 +61,7 @@ pub mod printer_folder;
 pub mod recycle_bin_cleaner;
 pub mod send_to_menu;
 pub mod shell_item;
+pub mod user_notification;
 
 // wine/ — wine-derived pure-C bodies. Wave 0: shellreg (SHReg* registry wrappers).
 // Wave 1: shpolicy, shellstring, clipboard.

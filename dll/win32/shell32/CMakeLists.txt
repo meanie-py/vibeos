@@ -77,7 +77,7 @@ list(APPEND SOURCE
     CDefViewBckgrndMenu.cpp
     stubs.cpp
     systray.cpp
-    CUserNotification.cpp
+    # CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
     CDefaultContextMenu.cpp
     # Hybrid cohab: COpenWithMenu activation/methods are Rust-owned; this file
     # retains COpenWithList, COpenWithDialog, exported helpers, and opaque bridges.

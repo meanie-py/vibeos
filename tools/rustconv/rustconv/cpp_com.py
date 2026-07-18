@@ -62,6 +62,7 @@ class PlainStateField:
     c_type: str
     name: str
     com_ptr_interface: str | None = None
+    owned_cstring: bool = False
     array_len: int | None = None
 
     @property
@@ -74,6 +75,12 @@ class PlainStateField:
     @property
     def assignment_helper(self) -> str | None:
         if self.com_ptr_interface is None:
+            return None
+        return f"cpp_com_assign_{self.name}"
+
+    @property
+    def string_assignment_helper(self) -> str | None:
+        if not self.owned_cstring:
             return None
         return f"cpp_com_assign_{self.name}"
 
@@ -411,6 +418,14 @@ def _parse_plain_state_field(
             c_type=f"{interface} *",
             name=name,
             com_ptr_interface=interface,
+        )
+    cstring = re.fullmatch(r"CStringW\s+([A-Za-z_]\w*)", text)
+    if cstring is not None:
+        return PlainStateField(
+            declaration=text,
+            c_type="CStringW",
+            name=cstring.group(1),
+            owned_cstring=True,
         )
     fixed_array = re.fullmatch(
         r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s+"
@@ -849,6 +864,7 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
 
 _RUST_SCALARS = {
     "void": "core::ffi::c_void",
+    "VOID": "()",
     "char": "i8",
     "unsigned char": "u8",
     "short": "i16",
@@ -890,7 +906,7 @@ def c_type_to_rust(c_type: str) -> str:
     return rust
 
 
-_CPP_COM_DEBUG_MACROS = {"ERR", "FIXME", "MESSAGE", "TRACE", "WARN", "pdump"}
+_CPP_COM_DEBUG_MACROS = {"ASSERT", "ERR", "FIXME", "MESSAGE", "TRACE", "WARN", "pdump"}
 _CPP_COM_LITERAL_WORDS = {"FALSE", "NULL", "TRUE"}
 _CPP_COM_TYPE_WORDS = {
     "BOOL",
@@ -1144,6 +1160,52 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         rust,
     )
     rust = re.sub(r"\bIsEqualIID\s*\(", "cpp_com_iid_equal(", rust)
+    if "SHCreateWorkerWindowW" in source and "WorkerWndProc" in source:
+        rust = re.sub(
+            r"([A-Za-z_]\w*WorkerWndProc)\s+as\s+unsafe\s+extern\s+"
+            r'"system"\s+fn\s*\(\.\.\.\)\s*->\s*LRESULT',
+            r"Some(\1)",
+            rust,
+        )
+        rust = rust.replace("Some(WorkerWndProc)", "Some(CUserNotification_WorkerWndProc)")
+        rust = rust.replace("return 0 as isize;", "return 0 as LRESULT;")
+        rust = rust.replace(
+            "(*this).m_hWorkerWnd = 0 as isize;",
+            "(*this).m_hWorkerWnd = core::ptr::null_mut();",
+        )
+        rust = re.sub(
+            r"(wParam\s*==\s*ID_[A-Za-z0-9_]+)\s+as\s+usize",
+            r"\1 as WPARAM",
+            rust,
+        )
+        rust = rust.replace(
+            "KillTimer(hWnd, wParam as isize)",
+            "KillTimer(hWnd, wParam as UINT_PTR)",
+        )
+    rust = re.sub(
+        r"\(\*this\)\.(m_[A-Za-z0-9_]+)\s+as\s+\*const\s+u16",
+        r"(*this).\1.as_ptr()",
+        rust,
+    )
+    rust = re.sub(
+        r"\(\*this\)\.(m_h[A-Za-z0-9_]+)\s*!=\s*0\b",
+        r"!(*this).\1.is_null()",
+        rust,
+    )
+    rust = re.sub(r"\bhIcon\s*!=\s*0\b", "!hIcon.is_null()", rust)
+    if "CUserNotification" in source:
+        rust = rust.replace("Some(WorkerWndProc)", "Some(CUserNotification_WorkerWndProc)")
+    rust = re.sub(
+        r"(SetTimer\([^;]*?),\s*(?:::)?core::ptr::null_mut\(\)\s*\)",
+        r"\1, None)",
+        rust,
+        flags=re.S,
+    )
+    rust = re.sub(
+        r"&nid\s+as\s+\*const\s+NOTIFYICONDATAW",
+        r"&mut nid",
+        rust,
+    )
     rust = re.sub(
         r"\bSHELL32_CompareDetails\s*\(\s*this\s*,",
         "SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface),",
@@ -1952,6 +2014,44 @@ _CPP_SUPPORT_EXTERNS = {
         "directory: LPCWSTR, startup: *const STARTUPINFOW, info: *mut PROCESS_INFORMATION) -> BOOL;"
     ),
     "DestroyIcon": "    fn DestroyIcon(icon: HICON) -> BOOL;",
+    "CopyIcon": "    fn CopyIcon(icon: HICON) -> HICON;",
+    "DestroyWindow": "    fn DestroyWindow(window: HWND) -> BOOL;",
+    "DefWindowProcW": (
+        "    fn DefWindowProcW(window: HWND, message: UINT, wparam: WPARAM, "
+        "lparam: LPARAM) -> LRESULT;"
+    ),
+    "DispatchMessageW": "    fn DispatchMessageW(message: *const MSG) -> LRESULT;",
+    "GetMessageW": (
+        "    fn GetMessageW(message: *mut MSG, window: HWND, first: UINT, last: UINT) -> BOOL;"
+    ),
+    "GetWindowLongPtrW": (
+        '    #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]\n'
+        "    fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;"
+    ),
+    "KillTimer": "    fn KillTimer(window: HWND, id: UINT_PTR) -> BOOL;",
+    "LoadIcon": (
+        '    #[link_name = "LoadIconW"]\n'
+        "    fn LoadIcon(instance: HINSTANCE, name: LPCWSTR) -> HICON;"
+    ),
+    "LoadIconW": "    fn LoadIconW(instance: HINSTANCE, name: LPCWSTR) -> HICON;",
+    "PlaySoundW": ("    fn PlaySoundW(sound: LPCWSTR, module: HANDLE, flags: DWORD) -> BOOL;"),
+    "PostQuitMessage": "    fn PostQuitMessage(exit_code: INT);",
+    "SetTimer": (
+        "    fn SetTimer(window: HWND, id: UINT_PTR, timeout: UINT, callback: "
+        'Option<unsafe extern "system" fn(HWND, UINT, UINT_PTR, DWORD)>) -> UINT_PTR;'
+    ),
+    "SetWindowLongPtrW": (
+        '    #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")]\n'
+        "    fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;"
+    ),
+    "SHCreateWorkerWindowW": (
+        "    fn SHCreateWorkerWindowW(callback: WNDPROC, parent: HWND, ex_style: DWORD, "
+        "style: DWORD, menu: HMENU, extra: LONG_PTR) -> HWND;"
+    ),
+    "Shell_NotifyIconW": (
+        "    fn Shell_NotifyIconW(message: DWORD, data: *mut NOTIFYICONDATAW) -> BOOL;"
+    ),
+    "TranslateMessage": "    fn TranslateMessage(message: *const MSG) -> BOOL;",
     "DrawIconEx": (
         "    fn DrawIconEx(dc: HDC, x: INT, y: INT, icon: HICON, width: INT, height: INT, "
         "step: UINT, brush: HANDLE, flags: UINT) -> BOOL;"
@@ -2240,12 +2340,21 @@ _CPP_SUPPORT_CONSTANTS = {
     "EVCCBF_LASTNOTIFICATION": ("DWORD", "0x0001"),
     "E_UNEXPECTED": ("HRESULT", "0x8000_FFFFu32 as HRESULT"),
     "EVCF_HASSETTINGS": ("DWORD", "0x0001"),
+    "IDI_ERROR": ("LPCWSTR", "32513usize as LPCWSTR"),
+    "IDI_INFORMATION": ("LPCWSTR", "32516usize as LPCWSTR"),
+    "IDI_WARNING": ("LPCWSTR", "32515usize as LPCWSTR"),
+    "IDI_WINLOGO": ("LPCWSTR", "32517usize as LPCWSTR"),
     "MAX_PATH": ("usize", "260"),
+    "NIN_BALLOONHIDE": ("DWORD", "WM_USER + 3"),
+    "NIN_BALLOONSHOW": ("DWORD", "WM_USER + 2"),
+    "NIN_BALLOONTIMEOUT": ("DWORD", "WM_USER + 4"),
+    "NIN_BALLOONUSERCLICK": ("DWORD", "WM_USER + 5"),
     "SEE_MASK_IDLIST": ("ULONG", "0x0000_0004"),
     "SHERB_NOCONFIRMATION": ("DWORD", "0x0000_0001"),
     "SHERB_NOPROGRESSUI": ("DWORD", "0x0000_0002"),
     "SHERB_NOSOUND": ("DWORD", "0x0000_0004"),
     "SW_SHOWNORMAL": ("INT", "1"),
+    "WM_TRAYNOTIFY": ("UINT", "WM_USER + 100"),
     "SFGAO_CANCOPY": ("SFGAOF", "0x0000_0001"),
     "SFGAO_CANLINK": ("SFGAOF", "0x0000_0004"),
     "SFGAO_CANRENAME": ("SFGAOF", "0x0000_0010"),
@@ -2543,7 +2652,7 @@ def render_cpp_support(
     definitions = dict(
         re.findall(
             r"^\s*#define\s+([A-Za-z_]\w*)\s+\(?\s*"
-            r"([0-9]+|0[xX][0-9A-Fa-f]+)\s*\)?\s*$",
+            r"([0-9]+|0[xX][0-9A-Fa-f]+)\s*\)?\s*(?://[^\n]*)?$",
             source,
             re.M,
         )
@@ -2687,6 +2796,46 @@ def render_cpp_support(
             "    pub pshf: *mut IShellFolder,\n"
             "    pub psvOuter: *mut core::ffi::c_void,\n"
             "    pub psfvcb: *mut core::ffi::c_void,\n"
+            "}"
+        )
+
+    if "NOTIFYICONDATAW" in used_words:
+        chunks.append(
+            "pub type WPARAM = UINT_PTR;\n"
+            "pub type LRESULT = LONG_PTR;\n"
+            "#[repr(C)]\n"
+            "pub struct MSG {\n"
+            "    pub hwnd: HWND, pub message: UINT, pub wParam: WPARAM,\n"
+            "    pub lParam: LPARAM, pub time: DWORD, pub pt: POINT,\n"
+            "}\n"
+            'pub type WNDPROC = Option<unsafe extern "system" fn(\n'
+            "    HWND, UINT, WPARAM, LPARAM,\n"
+            ") -> LRESULT>;\n"
+            "#[repr(C)]\n"
+            "pub struct NOTIFYICONDATAW {\n"
+            "    pub cbSize: DWORD, pub hWnd: HWND, pub uID: UINT, pub uFlags: UINT,\n"
+            "    pub uCallbackMessage: UINT, pub hIcon: HICON, pub szTip: [WCHAR; 128],\n"
+            "    pub dwState: DWORD, pub dwStateMask: DWORD, pub szInfo: [WCHAR; 256],\n"
+            "    pub uTimeout: UINT, pub szInfoTitle: [WCHAR; 64], pub dwInfoFlags: DWORD,\n"
+            "    pub guidItem: GUID, pub hBalloonIcon: HICON,\n"
+            "}\n"
+            "pub type PNOTIFYICONDATAW = *mut NOTIFYICONDATAW;\n"
+            "pub const NOTIFYICONDATAW_V3_SIZE: DWORD =\n"
+            "    core::mem::offset_of!(NOTIFYICONDATAW, hBalloonIcon) as DWORD;"
+        )
+
+    if "ASSERT" in used_words:
+        chunks.append("macro_rules! ASSERT { ($($arg:tt)*) => {{}}; }")
+
+    if "CUserNotification::WorkerWndProc" in source:
+        chunks.append(
+            'unsafe extern "system" fn CUserNotification_WorkerWndProc(\n'
+            "    window: HWND, message: UINT, wparam: WPARAM, lparam: LPARAM,\n"
+            ") -> LRESULT {\n"
+            "    let this = GetWindowLongPtrW(window, 0) as *mut CUserNotification;\n"
+            "    CUserNotification_WorkerWndProc_body(\n"
+            "        this, window, message, wparam, lparam,\n"
+            "    )\n"
             "}"
         )
 
@@ -2884,7 +3033,7 @@ def render_cpp_support(
             "    let len = lstrlenW(src) as usize;\n"
             "    if len >= capacity { *dst = 0; return E_FAIL; }\n"
             "    let bytes = (len + 1) * core::mem::size_of::<WCHAR>();\n"
-            "    let _ = memcpy(dst.cast(), src.cast(), bytes);\n"
+            "    let _ = memcpy(dst, src, bytes);\n"
             "    S_OK\n"
             "}"
         )
@@ -3034,6 +3183,11 @@ impl CStringW {
     }
     unsafe fn append_char(&mut self, ch: WCHAR) { self.append_ptr_len(core::ptr::addr_of!(ch), 1); }
     pub unsafe fn concat(&mut self, text: LPCWSTR) { self.append_ptr(text); }
+    pub unsafe fn assign(&mut self, text: LPCWSTR) {
+        self.len = 0;
+        if !self.buffer.is_null() { *self.buffer = 0; }
+        self.append_ptr(text);
+    }
     pub unsafe fn format(&mut self, format: LPCWSTR, arg: LPCWSTR) {
         let mut resource = [0u16; 256];
         let format = if (format as usize) <= 0xffff {
@@ -3281,6 +3435,26 @@ def _rewrite_com_ptr_state(
     return body, callees
 
 
+def _rewrite_owned_string_state(
+    body: str, class_name: str, state_fields: list[PlainStateField]
+) -> tuple[str, set[str]]:
+    """Make CStringW replacement assignment explicit before model translation."""
+    callees = set()
+    for state in state_fields:
+        helper = state.string_assignment_helper
+        if helper is None:
+            continue
+        qualified_helper = f"{class_name}_{helper}"
+        assignment = re.compile(
+            rf"(?<![\w.>])(?:this\s*->\s*)?{re.escape(state.name)}\s*=\s*([^;]+);"
+        )
+        body, count = assignment.subn(rf"{qualified_helper}(this, \1);", body)
+        if count:
+            callees.add(qualified_helper)
+        body = re.sub(rf"(?<![\w.>]){re.escape(state.name)}\b", f"this->{state.name}", body)
+    return body, callees
+
+
 def prepare_helper_closure(
     deps: list[FunctionDep],
     class_name: str,
@@ -3406,6 +3580,10 @@ def prepare_helper_closure(
     for dep in plan:
         body = _rewrite_wide_literals(dep.body_text)
         body, state_callees = _rewrite_com_ptr_state(body, class_name, state_fields or [])
+        body, string_state_callees = _rewrite_owned_string_state(
+            body, class_name, state_fields or []
+        )
+        state_callees |= string_state_callees
         local_targets: set[str] = set()
         spans = _named_call_spans(body, helper_names)
         definition_brace = body.find("{")
@@ -4021,7 +4199,12 @@ def audit_worker_body(
     for token, description in forbidden.items():
         if token in executable_rust:
             findings.append(f"worker emitted forbidden {description}: {token}")
-    if re.search(r"\bextern\s+", executable_rust):
+    abi_surface = re.sub(r"/\*.*?\*/|//[^\n]*", " ", rust, flags=re.S)
+    if re.search(
+        r'\bextern\s+"(?:C|system)"\s*\{|'
+        r'\b(?:pub\s+)?(?:unsafe\s+)?extern\s+"(?:C|system)"\s+fn\s+[A-Za-z_]\w*',
+        abi_surface,
+    ):
         findings.append('worker emitted forbidden ABI declaration: extern "')
     if re.search(r"(?m)\bgoto\s+[A-Za-z_]\w*\s*;|^\s*[A-Za-z_]\w*\s*:\s*$", executable_rust):
         findings.append("worker emitted raw C goto/label syntax")
@@ -4273,6 +4456,19 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             ]
         )
 
+    for state in cls.plain_state_fields():
+        if not state.owned_cstring:
+            continue
+        helper = f"{cls.name}_{state.string_assignment_helper}"
+        lines.extend(
+            [
+                f"unsafe fn {helper}(this: *mut {cls.name}, value: LPCWSTR) {{",
+                f"    (*this).{state.name}.assign(value);",
+                "}",
+                "",
+            ]
+        )
+
     for entry in layout_entries:
         iface = by_name[entry.interface]
         field_name = f"{entry.interface}_iface"
@@ -4358,6 +4554,8 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             lines.append(
                 f"        {cls.name}_{state.assignment_helper}(this, core::ptr::null_mut());"
             )
+        if state.owned_cstring:
+            lines.append(f"        core::ptr::drop_in_place(&mut (*this).{state.name});")
     lines.extend(
         [
             "        Shell32RustObjectUnlock();",
@@ -4407,7 +4605,8 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
         ]
     )
     for state in cls.plain_state_fields():
-        lines.append(f"        {state.name}: core::mem::zeroed(),")
+        value = "CStringW::new()" if state.owned_cstring else "core::mem::zeroed()"
+        lines.append(f"        {state.name}: {value},")
     lines.extend(
         [
             "    });",

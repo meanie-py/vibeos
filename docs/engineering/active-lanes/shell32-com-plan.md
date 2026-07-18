@@ -439,6 +439,22 @@ every later operation through an explicit ABI helper. Never invoke nonvirtual C+
 read C++ fields through that pointer. WIDL tag spellings such as `struct tagNMHDR *` are also
 normalized deterministically to valid Rust tag names before candidate assembly.
 
+## User-notification callback checkpoint (2026-07-17)
+
+`CUserNotification` is the first class in this lane with Rust-owned ATL `CStringW` state
+and a static Win32 worker-window callback. rustconv now constructs, assigns, and explicitly
+drops owned strings around the raw COM allocation; strips legacy `IN`/`OUT`/`OPTIONAL`
+parameter annotations before signature generation; and derives the callback adapter,
+`NOTIFYICONDATAW` layout, message types, constants, and imports deterministically. On i386,
+the generated imports bind `GetWindowLongPtrW`/`SetWindowLongPtrW` to their real
+`GetWindowLongW`/`SetWindowLongW` exports, matching the SDK macro alias.
+
+The unchanged paid workers reached zero synthetic diagnostics on i386, amd64, and arm64
+after compiler-directed substrate closure. The real i386 shell32 link then caught only the
+32-bit export alias above, which is now a reusable generator rule rather than a candidate
+patch. This is the preferred shape for callback-heavy classes: generate the ABI, callback,
+state lifecycle, SDK records, and imports; ask the model only for method control flow.
+
 ## Second monster checkpoint: complete substrate closure (2026-07-16)
 
 `CNewMenu.cpp` is the first giant class whose newly assembled module is compile-clean in the

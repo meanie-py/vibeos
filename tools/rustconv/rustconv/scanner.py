@@ -111,12 +111,13 @@ RE_SAL = re.compile(
     r"[A-Za-z0-9_]*_"  # rest of the SAL token, ending in '_'
     r"(?:\s*\([^()]*\))?"  # optional ( args ) — SAL args have no nesting
 )
+RE_LEGACY_SAL = re.compile(r"(?<![A-Za-z0-9_])(?:IN|OUT|OPTIONAL)(?![A-Za-z0-9_])")
 
 
 def _strip_sal(text: str) -> str:
     """Remove SAL annotations (no-op macros) so tree-sitter parses the function
     signatures of annotated Windows headers. Safe: only removes annotations."""
-    return RE_SAL.sub("", text)
+    return RE_LEGACY_SAL.sub("", RE_SAL.sub("", text))
 
 
 # Win32 calling-convention macros that tree-sitter-c CANNOT parse between the

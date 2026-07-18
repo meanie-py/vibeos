@@ -62,6 +62,15 @@ clustering and authority routing; the C++ frontend additionally owns ATL/COM dis
 - Cached workers are normalized on every assembly. Every deterministic normalization must
   therefore be idempotent; replay tests must cover both raw model spelling and already-fixed
   spelling.
+- SDK direction annotations (`IN`, `OUT`, `OPTIONAL`) are scanner syntax, not Rust types;
+  strip them before deriving a worker signature. Likewise, `*Ptr` Win32 header aliases must
+  resolve to the real pointer-width export names during scaffold generation, with i386 link
+  serving as the decoration oracle.
+- By-value `CStringW` class state has a generated construction/assignment/destruction
+  lifecycle. Do not reinterpret it as a pointer or ask a worker model to manage it.
+- A static window procedure is deterministic ABI scaffolding. Generate its exact `WNDPROC`
+  signature and object-recovery adapter, then translate only its body alongside ordinary
+  methods.
 - `CComPtr` copy construction owns an `AddRef`, including copies from parameters and members.
   The generated guard owns scope-exit `Release`; model-written guards and ambiguous
   `Attach`/`Detach` ownership remain hard failures.

@@ -38,3 +38,10 @@ C/C++ function-parameter arrays decay to pointers for both `name[]` and `name []
 declarator whitespace must never leak into a model prompt or generated Rust signature.
 Explicit C tag keywords in WIDL signatures are normalized too: `struct tagNMHDR *` becomes
 `*mut tagNMHDR`, never the invalid Rust spelling `*mut struct tagNMHDR`.
+
+Class state may include by-value `CStringW`; rustconv owns its construction, assignment, and
+destruction. Legacy SDK direction markers (`IN`, `OUT`, `OPTIONAL`) are stripped before
+signature derivation. For callback-heavy classes, static window procedures and their Win32
+ABI substrate are generated rather than modeled, including pointer-width export aliases
+such as `GetWindowLongPtrW` -> `GetWindowLongW` on i386. A body may use an
+`unsafe extern "system" fn(...)` callback type, but may not declare an ABI block or export.

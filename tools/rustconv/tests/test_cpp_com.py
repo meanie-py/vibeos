@@ -399,7 +399,7 @@ class CState :
     assert "CState_cpp_com_assign_m_site(this, core::ptr::null_mut())" in rust
 
 
-def test_unmapped_cpp_raii_state_still_fails_before_scaffold_generation(tmp_path: Path):
+def test_cstringw_object_state_has_deterministic_init_assignment_and_drop(tmp_path: Path):
     source = tmp_path / "CState.cpp"
     source.write_text(
         """
@@ -419,8 +419,24 @@ class CState :
     object_map = tmp_path / "shell32.cpp"
     object_map.write_text("OBJECT_ENTRY(CLSID_State, CState)\n")
     cls = analyze_class(source, "CState", object_map_source=object_map)
-    with pytest.raises(CppComError, match="not proven C scalar/pointer state"):
-        cls.require_supported()
+    cls.require_supported()
+    interfaces = [
+        InterfaceSpec(
+            "IFoo",
+            (
+                InterfaceMethod("QueryInterface", "HRESULT", (("IFoo *", "This"),)),
+                InterfaceMethod("AddRef", "ULONG", (("IFoo *", "This"),)),
+                InterfaceMethod("Release", "ULONG", (("IFoo *", "This"),)),
+            ),
+            "fixture.h",
+        )
+    ]
+    rust = render_class_scaffold(cls, interfaces)
+    assert "pub m_text: CStringW" in rust
+    assert "CState_cpp_com_assign_m_text" in rust
+    assert "(*this).m_text.assign(value)" in rust
+    assert "m_text: CStringW::new()" in rust
+    assert "core::ptr::drop_in_place(&mut (*this).m_text)" in rust
 
 
 def test_unknown_by_value_state_is_not_mislabeled_plain_c(tmp_path: Path):
@@ -981,6 +997,22 @@ def test_static_methods_and_destructor_debris_are_not_object_state():
     assert all(not field.startswith(("static ", "~", "#")) for field in notification.state_fields)
 
 
+def test_user_notification_support_uses_32_bit_window_long_exports():
+    rust = render_cpp_support(SHELL32 / "CUserNotification.cpp")
+    assert '#[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]' in rust
+    assert '#[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")]' in rust
+
+
+def test_cpp_scanner_strips_legacy_sal_direction_tokens(tmp_path: Path):
+    source = tmp_path / "annotated.cpp"
+    source.write_text(
+        "VOID CThing::Delay(IN HRESULT hRes, OUT DWORD *value OPTIONAL) { (void)hRes; }"
+    )
+    functions = scan_file(source, force_cpp=True).functions
+    assert len(functions) == 1
+    assert functions[0].params == [("HRESULT", "hRes"), ("DWORD *", "value")]
+
+
 def test_cpp_header_scan_extracts_inline_class_methods():
     scan = scan_file(SHELL32 / "folders" / "CMyDocsFolder.h", force_cpp=True)
     methods = {item.name for item in scan.functions if item.cpp_class == "CMyDocsFolder"}
@@ -1013,6 +1045,17 @@ def test_worker_audit_allows_vtable_calls_but_rejects_option_guessing():
     )
     findings = audit_worker_body(source, bad, "C_f_body")
     assert any("Option/panic ABI guess" in item for item in findings)
+
+
+def test_worker_audit_allows_function_pointer_types_but_rejects_extern_declarations():
+    source = "{ return register_callback(Worker); }"
+    good = (
+        'pub unsafe fn C_f_body() -> HRESULT { register_callback(Worker as unsafe extern '
+        '"system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT) }'
+    )
+    assert audit_worker_body(source, good, "C_f_body") == []
+    bad = 'pub unsafe fn C_f_body() { extern "system" { fn invented(); } }'
+    assert any("ABI declaration" in item for item in audit_worker_body(source, bad, "C_f_body"))
 
 
 def test_worker_audit_allows_query_interface_calls_but_rejects_implementation():

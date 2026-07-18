@@ -441,3 +441,17 @@ the C worker declares the same named field sequence; otherwise type declarations
 hard ABI reject. Conversely, a model-local definition of an SDK type explicitly used (but
 not declared) by the C snippet is removed so the generated/shared substrate stays the sole
 layout authority. These are audit-boundary changes, not compiler repair heuristics.
+
+By-value ATL `CStringW` class fields are also deterministic state, not opaque C++ owners.
+The scaffold initializes them with `CStringW::new`, routes source assignment through an
+owned helper, and calls `drop_in_place` before freeing the raw COM allocation. Static
+worker-window callbacks are generated adapters: they recover the Rust object pointer from
+window extra storage and invoke the translated body. Their `WNDPROC`, message records,
+notification-icon SDK layout, and FFI surface remain outside the model response. The FFI
+authority maps pointer-width header aliases to real symbols (notably the 32-bit
+`GetWindowLongW`/`SetWindowLongW` exports).
+
+The worker audit examines ABI declarations before declaration-only normalization can erase
+them. It permits `unsafe extern "system" fn(...)` as a function-pointer type, but rejects
+model-owned `extern` blocks and exported ABI functions. This keeps callback expressions
+legal without allowing a body worker to compete with deterministic module scaffolding.

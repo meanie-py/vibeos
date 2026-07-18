@@ -525,6 +525,23 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CUserNotification_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CUserNotificationRustEntry : public CUserNotification
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CUserNotification_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
@@ -559,7 +576,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_MergedFolder, CMergedFolder)
     OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandlerRustEntry)
     OBJECT_ENTRY(CLSID_QueryAssociations, CQueryAssociations)
-    OBJECT_ENTRY(CLSID_UserNotification, CUserNotification)
+    OBJECT_ENTRY(CLSID_UserNotification, CUserNotificationRustEntry)
 END_OBJECT_MAP()
 
 CShell32Module  gModule;
