@@ -12,14 +12,24 @@ add_rpc_files(client
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/srvsvc.idl
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/wkssvc.idl)
 
-# netapi32.dll — Rust cohabitation flip (PARTIAL: 14 of the 21 compiled src *.c → netapi32-rust).
-# The translated bodies come from libnetapi32_rust.a (sdk/lib/rust/netapi32-rust, DeepSeek-V4 +
-# c2rust, kept on disk per the never-delete rule); those 14 .c are commented out below. The 7
-# RPC-stub-heavy files (browser/dssetup/misc/netlogon/schedule/srvsvc/wksta_new) CANNOT be
-# c2rust-anchored, so they stay C and are OWED a pure-LLM translation pass — netapi32.dll links
-# both halves (no symbol overlap: verified disjoint). The MIDL *_c.c client stubs + netapi32_stubs.c
-# also stay C. `wine` still provides ros_dbg_log (the debug channel the Rust prelude declares
-# extern) + wine unicode; keep it linked.
+# netapi32.dll — Rust cohabitation flip (FULL: all 21 compiled src *.c → netapi32-rust).
+# The translated bodies come from libnetapi32_rust.a (sdk/lib/rust/netapi32-rust); every .c is
+# commented out below, none deleted (never-delete rule). Two translation passes: 14 files via
+# DeepSeek-V4 + c2rust anchoring, then the 7 RPC-stub files (browser/dssetup/misc/netlogon/
+# schedule/srvsvc/wksta_new) via pure LLM — c2rust cannot anchor a MIDL client.
+#
+# The 7 tail files needed their own bindgen type islands: their wire types come from the WIDL
+# *_c.h stubs, which do NOT coexist with the <lm.h> master header the other 14 use (both declare
+# AT_INFO/CONNECTION_INFO_*/SERVER_INFO_*/WKSTA_INFO_* — 377 names overlap). netapi32.h itself
+# never includes <lm.h>, only the narrow lmaccess/lmapibuf/lmerr trio, letting each *_c.h supply
+# its own; the islands mirror that. See gen_driver_types.sh netapi32-rpc / netapi32-browser and
+# field manual §9.106.
+#
+# STILL C (correctly): the WIDL-generated MIDL client stubs (*_c.c, built by add_rpc_files above)
+# and netapi32_stubs.c. The Rust declares those prototypes as imports (src/rpc_stubs.rs,
+# src/browser_stubs.rs) and defines the binding-handle callbacks + MIDL_user_allocate/free.
+# `wine` still provides ros_dbg_log (the debug channel the Rust prelude declares extern) + wine
+# unicode; keep it linked.
 set(NETAPI32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 if(ARCH STREQUAL "i386")
     set(NETAPI32_RUST_TARGET "i686-pc-windows-gnu")
@@ -55,26 +65,27 @@ add_custom_target(rust_netapi32 DEPENDS ${NETAPI32_RUST_LIB})
 # The 7 files below stay C (cannot c2rust-anchor; owe a pure-LLM pass).
 list(APPEND SOURCE
     # apibuf.c        (→ netapi32-rust src/netapi32/apibuf.rs)
-    browser.c
+    # browser.c       (→ netapi32-rust src/netapi32/browser.rs — I_Browserr* (own island: browser_c.h))
     # dfs.c           (→ netapi32-rust src/netapi32/dfs.rs)
     # display.c       (→ netapi32-rust src/netapi32/display.rs)
-    dssetup.c
+    # dssetup.c       (→ netapi32-rust src/netapi32/dssetup.rs — DsRoleGetPrimaryDomainInformation)
     # group_new.c     (→ netapi32-rust src/netapi32/group_new.rs)
     # local_group.c   (→ netapi32-rust src/netapi32/local_group.rs)
-    misc.c
+    # misc.c          (→ netapi32-rust src/netapi32/misc.rs — NetShutdown*/NetRemoteTOD (srvsvc+wkssvc))
     # nbcmdqueue.c    (→ netapi32-rust src/netapi32/nbcmdqueue.rs)
     # nbnamecache.c   (→ netapi32-rust src/netapi32/nbnamecache.rs)
     # nbt.c           (→ netapi32-rust src/netapi32/nbt.rs)
     # netapi32.c      (→ netapi32-rust src/netapi32/netapi32.rs — DllMain)
     # netbios.c       (→ netapi32-rust src/netapi32/netbios.rs)
-    netlogon.c
+    # netlogon.c      (→ netapi32-rust src/netapi32/netlogon.rs — NetrLogon*/DsGetDcName, the biggest tail unit)
     # obsolete.c      (→ netapi32-rust src/netapi32/obsolete.rs)
-    schedule.c
-    srvsvc.c
+    # schedule.c      (→ netapi32-rust src/netapi32/schedule.rs — NetSchedule* (atsvc))
+    # srvsvc.c        (→ netapi32-rust src/netapi32/srvsvc.rs — NetShare*/NetSession*/NetFile*)
     # user.c          (→ netapi32-rust src/netapi32/user.rs)
     # utils.c         (→ netapi32-rust src/netapi32/utils.rs)
     # wksta.c         (→ netapi32-rust src/netapi32/wksta.rs)
-    wksta_new.c)
+    # wksta_new.c     (→ netapi32-rust src/netapi32/wksta_new.rs — NetWkstaGetInfo/NetWkstaUserEnum)
+    )   # every .c is flipped; SOURCE stays declared (empty) so the add_library below is unchanged
 
 list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/netapi32_stubs.c)
