@@ -819,6 +819,60 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 -DUNICODE -D_UNICODE -DNTOS_MODE_USER )
     ;;
+  dnsapi)
+    # USERMODE DNS client API DLL (dll/win32/dnsapi) — DnsQuery/DnsRecordList*/DnsNameCompare/
+    # DnsExtractRecords + the adns-backed resolver. USERMODE=1: blocklist ntdll-sys, re-export
+    # the NT base types so they keep ONE identity with the modules.
+    #
+    # Type surface: windns.h (DNS_RECORD/DNS_STATUS/DNS_RRSET/IP4_ARRAY/DNS_HEADER/DNS_WIRE_*),
+    # reactos/windns_undoc.h (the ROS-private extras), adns.h (the 3rdparty async resolver —
+    # adns_state/adns_answer/adns_rr_*/adns_status/adns_rrtype; query.c/record.c drive it), and
+    # dnsrslvr_c.h (the SINGLE MIDL client interface: DNSRSLVR_HANDLE + R_Resolver* stubs, used
+    # only by rpc.c). BLOCKLIST_FUNCS=1: windns.h declares the DnsQuery*/DnsRecord* prototypes the
+    # translation #[no_mangle]-defines; adns_* + R_Resolver* stubs come from the linked
+    # adns staticlib / dnsrslvr_c.c (extern in prelude). wine/debug.h parsed-not-allowlisted (the
+    # __wine_debug_channel/ros_dbg_log shim lives in the crate prelude — the lsasrv/netapi32 pattern).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/dnsapi"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <windns.h>\n#include <reactos/windns_undoc.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <adns.h>\n#include <dnsrslvr_c.h>\n#include <wine/debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]windns\.h' --allowlist-file '.*[/\\]windns_undoc\.h'
+                  --allowlist-file '.*[/\\]adns\.h' --allowlist-file '.*[/\\]dnsrslvr_c\.h'
+                  --allowlist-file '.*dnsapi[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/dnsapi" -I"${SRC}/build-i386/dll/win32/dnsapi"
+                -I"${SRC}/sdk/lib/3rdparty/adns/src" -I"${SRC}/sdk/lib/3rdparty/adns/adns_win32" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -DNTOS_MODE_USER -DADNS_JGAA_WIN32 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  dhcpcsvc)
+    # USERMODE DHCP client service DLL (base/services/dhcpcsvc — loaded by services.exe). The
+    # DHCP client API (Dhcpc*/GetAdapterInfo) + the BSD-derived dhclient state machine (dhcp/).
+    # USERMODE=1: blocklist ntdll-sys, re-export NT base types.
+    #
+    # Type surface: rosdhcp.h is the master private header — it pulls dhcpcsdk.h (DhcpApi structs),
+    # rpc.h + dhcpcsvc_c.h/_s.h (the SINGLE MIDL interface, client+server), and dhcpd.h (the ISC
+    # dhclient universe: struct tree/hash_table/lease/iaddr/interface_info/packet/dhcp_packet +
+    # the option tables). dhcp.h/tree.h/hash.h are the dhcp/ local headers. BLOCKLIST_FUNCS=1:
+    # dhcpcsdk.h/dhcpd.h declare the Dhcpc*/dhclient prototypes the translation #[no_mangle]-defines;
+    # the R_Dhcp*/Client_/Server_ MIDL stubs come from dhcpcsvc_c.c (extern in prelude). wine/debug.h
+    # is NOT used here (ROS DPRINT); the debug shim (if any) surfaces in the grind.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/dhcpcsvc"
+    # rosdhcp.h is the master private header — it sets up the BSD typedefs (ssize_t/u_int8_t/
+    # u_int16_t/u_int32_t/caddr_t) THEN includes dhcpcsdk/rpc/dhcpcsvc_c/_s/dhcpd.h. Including
+    # dhcpd.h directly fails (its ssize_t/u_int*_t are undefined), so mirror the .c's PCH include.
+    WRAPPER_INC=$'#include <rosdhcp.h>'
+    ALLOW_FILES=( --allowlist-file '.*dhcpcsvc[/\\].*\.h' --allowlist-file '.*[/\\]dhcpd\.h'
+                  --allowlist-file '.*[/\\]dhcp\.h' --allowlist-file '.*[/\\]tree\.h'
+                  --allowlist-file '.*[/\\]hash\.h' --allowlist-file '.*[/\\]rosdhcp\.h'
+                  --allowlist-file '.*[/\\]dhcpcsdk\.h' --allowlist-file '.*[/\\]dhcpcsvc_c\.h'
+                  --allowlist-file '.*[/\\]dhcpcsvc_s\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/dhcpcsvc/include" -I"${SRC}/base/services/dhcpcsvc/dhcp"
+                -I"${SRC}/build-i386/base/services/dhcpcsvc" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -DNTOS_MODE_USER -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   iphlpapi)
     # USERMODE IP Helper API DLL (dll/win32/iphlpapi) — PARTIAL flip: only iphlpapi_main.c → Rust
     # (74 fns: Add/DeleteIPAddress, Get{IpAddr,IpForward,IpNet,If,Tcp,Udp}Table, GetNetworkParams,

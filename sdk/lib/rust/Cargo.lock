@@ -465,6 +465,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dnsapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "dnslib-rust"
 version = "0.1.0"
 dependencies = [

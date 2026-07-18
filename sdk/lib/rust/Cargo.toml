@@ -47,6 +47,7 @@ members = [
     "userenv-rust",
     "netapi32-rust",
     "iphlpapi-rust",
+    "dnsapi-rust",
     "access",
     "avltable",
     "bitmap",

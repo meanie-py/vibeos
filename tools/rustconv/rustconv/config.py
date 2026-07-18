@@ -1663,6 +1663,13 @@ def _dll_crate_from_path(posix: str):
     """For a path under dll/, return (crate_name, source_dir) using the convention
     dll/win32/<name>/ → <name>-rust (or dll/<name>/ → <name>-rust). Else None."""
     parts = posix.split("/")
+    # base/services/<name>/... → <name>-rust (system services follow the same crate
+    # convention as user DLLs; the source dir is base/services/<name>, so files in a
+    # deeper subdir like dhcpcsvc/dhcp/ still route to the <name> target).
+    if "base" in parts:
+        brest = parts[parts.index("base") + 1 :]
+        if len(brest) >= 2 and brest[0] == "services" and re.fullmatch(r"[A-Za-z0-9_]+", brest[1]):
+            return brest[1], REACTOS_ROOT.joinpath("base", "services", brest[1])
     if "dll" not in parts:
         return None
     rest = parts[parts.index("dll") + 1 :]
