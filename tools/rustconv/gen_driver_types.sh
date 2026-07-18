@@ -684,6 +684,141 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
+  mswsock)
+    # USERMODE Winsock service-provider DLL (dll/win32/mswsock) — the Microsoft WinSock
+    # extensions (AcceptEx/TransmitFile/GetAcceptExSockaddrs), the RNR/namespace-provider
+    # wrappers (Get/SetService*, NSP* via nspapi/svcguid), and the WSPStartup helper glue.
+    # Same USERMODE=1 treatment as ws2_32/wshtcpip: blocklist against ntdll-sys and re-export
+    # `pub use ntdll_sys::nt::*;` so NT base types keep ONE identity with `use ntdll_sys::nt::*`
+    # in the translated modules. Only the winsock/NSP/DNS structs go local.
+    #
+    # Type surface (from what the .c files pull on top of the windef/winbase PCH): winsock2 +
+    # ws2spi (SOCKET/WSAPROTOCOL_INFO/LPFN_*/SOCKADDR), mswsock (TRANSMIT_FILE_BUFFERS +
+    # the LPFN_ACCEPTEX/TRANSMITFILE fn-ptr typedefs), nspapi/svcguid (SERVICE_INFO/NS_*/
+    # the GUID service classes RNR uses), windns (DnsQuery types nsplookup consults), iptypes
+    # (IP_ADAPTER_INFO). A hand-invented sockaddr/WSAPROTOCOL_INFO is a silent wire-format bug
+    # (scan_magic_offsets) — GENERATE them.
+    #
+    # BLOCKLIST_FUNCS=1: ws2spi/mswsock/nspapi declare WSP*/NSP*/mswsock prototypes the
+    # translated modules define/call as their own externs (collide under the flat glob).
+    # CALLBACK_SYSTEM=1: LPFN_ACCEPTEX/LPWSPStartup/NSP dispatch fn-ptrs are stdcall on i386;
+    # a cdecl fn-ptr in a provider slot is a silent stack imbalance (the ws2_32 CALLBACK class).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    CALLBACK_SYSTEM=1
+    DRIVER_DIR="${SRC}/dll/win32/mswsock"
+    WRAPPER_INC=$'#include <winsock2.h>\n#include <ws2spi.h>\n#include <mswsock.h>\n#include <nspapi.h>\n#include <svcguid.h>\n#include <windns.h>\n#include <iptypes.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ws2spi\.h' --allowlist-file '.*[/\\]winsock2\.h'
+                  --allowlist-file '.*[/\\]winsock\.h' --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]ws2ipdef\.h' --allowlist-file '.*[/\\]ws2tcpip\.h'
+                  --allowlist-file '.*[/\\]mswsock\.h' --allowlist-file '.*[/\\]nspapi\.h'
+                  --allowlist-file '.*[/\\]svcguid\.h' --allowlist-file '.*[/\\]windns\.h'
+                  --allowlist-file '.*[/\\]iptypes\.h' --allowlist-file '.*[/\\]nsp_dns\.h' )
+    EXTRA_INC=( -I"${SRC}/sdk/include/reactos/winsock" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 -DLE )
+    ;;
+  ws2help)
+    # USERMODE Winsock 2 Helper DLL (dll/win32/ws2help) — the Wah* handle-context table,
+    # APC-helper, and notification-handle helpers that ws2_32/msafd use to map SOCKET handles
+    # to per-provider context (WahInsert/EnumerateHandleContexts, WahQueueUserApc, ...). Same
+    # USERMODE=1 treatment: blocklist against ntdll-sys and re-export `pub use ntdll_sys::nt::*;`
+    # so NT base types keep ONE identity with `use ntdll_sys::nt::*` in the translated modules.
+    #
+    # Local structs: WSH_EA_DATA/WAH_EA_DATA2 (wshdrv.h — the WS2IFSL driver EA blobs), the
+    # WAH handle-context table + WAH_HANDLE (ws2help.h), on top of the ws2spi/winsvc surface
+    # the precomp PCH pulls. BLOCKLIST_FUNCS=1: ws2help.h declares the Wah* prototypes the
+    # translation itself #[no_mangle]-defines. BLOCKLIST_VARS=1: the module keeps globals
+    # (GlobalHeap/pSDPipe/ghWriterEvent/Ws2helpInitialized). CALLBACK_SYSTEM=1: the APC/request
+    # routine fn-ptrs are stdcall on i386 (a cdecl fn-ptr in a dispatch slot is a silent stack
+    # imbalance — the ws2_32 CALLBACK class).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    BLOCKLIST_VARS=1
+    CALLBACK_SYSTEM=1
+    DRIVER_DIR="${SRC}/dll/win32/ws2help"
+    # Mirror precomp.h's include ORDER exactly: windef/winbase/winreg define WINAPI+DWORD
+    # BEFORE ws2help.h's `DWORD WINAPI Wah*()` prototypes (without them WINAPI is empty and the
+    # decls parse as returning a function type). INCL_WINSOCK_API_TYPEDEFS is a VER_DEF below.
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winsvc.h>\n#include <ws2spi.h>\n#include <ws2help.h>\n#include "wshdrv.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ws2help\.h' --allowlist-file '.*ws2help[/\\]wshdrv\.h'
+                  --allowlist-file '.*[/\\]ws2spi\.h' --allowlist-file '.*[/\\]winsock2\.h'
+                  --allowlist-file '.*[/\\]winsock\.h' --allowlist-file '.*[/\\]ws2def\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/ws2help" -I"${SRC}/sdk/include/reactos/winsock" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 -DINCL_WINSOCK_API_TYPEDEFS=1 )
+    ;;
+  userenv)
+    # USERMODE user-environment DLL (dll/win32/userenv) — user profiles (Load/UnloadUserProfile,
+    # Create/DeleteProfile), environment blocks (CreateEnvironmentBlock), group-policy path
+    # resolution, and per-user shell-folder / registry-hive setup. Loaded on the BOOT PATH by
+    # winlogon→userinit during profile load. USERMODE=1: blocklist against ntdll-sys and
+    # re-export `pub use ntdll_sys::nt::*;` so NT base types keep ONE identity with the modules.
+    #
+    # Local structs: DYN_FUNCS/DYN_MODULE (internal.h — the GetProcAddress-loaded fn tables for
+    # secur32/sfc/etc.), POLICY_VALUES (internal.h — gpolicy), PROFILEINFOA/W (userenv.h). Mirror
+    # precomp.h's include order so WINAPI/DWORD resolve before userenv.h's WINAPI prototypes.
+    # BLOCKLIST_FUNCS=1: userenv.h/internal.h declare the profile/environment prototypes the
+    # translation #[no_mangle]-defines. CALLBACK_SYSTEM=1: DYN_FUNCS holds stdcall Win32-API
+    # fn-ptrs (a cdecl fn-ptr slot is a silent i386 stack imbalance — the ws2_32 CALLBACK class).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    CALLBACK_SYSTEM=1
+    DRIVER_DIR="${SRC}/dll/win32/userenv"
+    # objbase.h (LPUNKNOWN) + ndk/rtlfuncs.h (PUNICODE_STRING) are pulled by precomp.h before
+    # internal.h — include them here in the same order or internal.h's fields won't resolve.
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winnls.h>\n#include <objbase.h>\n#include <ndk/rtlfuncs.h>\n#include <userenv.h>\n#include "internal.h"'
+    ALLOW_FILES=( --allowlist-file '.*userenv[/\\]internal\.h' --allowlist-file '.*[/\\]userenv\.h'
+                  --allowlist-file '.*userenv[/\\]resources\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/userenv" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 -DNTOS_MODE_USER -DWIN32_NO_STATUS
+               -D_INC_WINDOWS -DCOM_NO_WINDOWS_H )
+    ;;
+  netapi32)
+    # USERMODE LAN Manager API DLL (dll/win32/netapi32) — NetUser/Group/LocalGroup/Share/Server/
+    # Wksta/Dfs/Alert/Message APIs + the NetBIOS (nb30) surface. USERMODE=1: blocklist ntdll-sys,
+    # re-export `pub use ntdll_sys::nt::*;` so NT base types keep ONE identity with the modules.
+    #
+    # Type surface: <lm.h> is the LAN Manager master header — it pulls the whole lm* family
+    # (lmaccess/lmshare/lmserver/lmwksta/lmsvc/lmat/... → USER_INFO_*/GROUP_INFO_*/
+    # LOCALGROUP_INFO_*/SHARE_INFO_*/SERVER_INFO_*/WKSTA_INFO_*/AT_INFO/...) in one include.
+    # nb30 (NCB/NetBIOS), the local nbnamecache/netbios private structs. dfs.rs's one RPC call
+    # (NetrDfsAdd) + DFS_INFO come via the MIDL netdfs_c.h in the build dir (EXTRA_INC). A
+    # hand-invented *_INFO_* is a silent wire-format bug (scan_magic_offsets) — GENERATE them.
+    #
+    # BLOCKLIST_FUNCS=1: lm*/nb30 declare the Net*/Netbios prototypes the translation
+    # #[no_mangle]-defines. CALLBACK_SYSTEM=1: the enum/worker callback fn-ptrs are stdcall on
+    # i386 (a cdecl fn-ptr slot is a silent stack imbalance — the ws2_32 CALLBACK class).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    CALLBACK_SYSTEM=1
+    DRIVER_DIR="${SRC}/dll/win32/netapi32"
+    # Mirror netapi32.h's include surface: winsock2 (SOCKET/WSABUF/sockaddr_in used by user/nbt),
+    # <lm.h> (the whole LAN Manager family), nb30 (NCB), iphlpapi (MIB_*), ntsecapi+ntsam
+    # (LSA_UNICODE_STRING/SAM_HANDLE/USER_ALL_*/DOMAIN_* — user.rs/group_new drive the SAM/LSA
+    # surface), wine/debug.h (the __wine_debug_channel/__wine_debug_class/__WINE_DBCL_* the
+    # c2rust-expanded WINE_DEFAULT_DEBUG_CHANNEL/TRACE references), and the local private structs.
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winsock2.h>\n#include <lm.h>\n#include <nb30.h>\n#include <iphlpapi.h>\n#include <ntsecapi.h>\n#include <ndk/rtlfuncs.h>\n#include <ntsam.h>\n#include <wine/debug.h>\n#include "nbnamecache.h"\n#include "netbios.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]lm[a-z]*\.h' --allowlist-file '.*netapi32[/\\].*\.h'
+                  --allowlist-file '.*[/\\]nb30\.h' --allowlist-file '.*[/\\]netdfs_c\.h'
+                  --allowlist-file '.*[/\\]ntsecapi\.h' --allowlist-file '.*[/\\]ntsam\.h'
+                  --allowlist-file '.*[/\\]winsock2\.h' --allowlist-file '.*[/\\]winsock\.h'
+                  --allowlist-file '.*[/\\]ws2def\.h' --allowlist-file '.*[/\\]iphlpapi\.h' )
+    # wine/debug.h stays in WRAPPER_INC (for the parse) but is NOT allowlisted: the
+    # __wine_debug_channel/__wine_debug_class/__WINE_DBCL_*/ros_dbg_log shim is defined in the
+    # crate prelude (the lsasrv-rust pattern) so the c2rust-expanded TRACE/ERR path resolves
+    # to a release-inert channel + the real variadic ros_dbg_log at link.
+    # netdfs_c.h (MIDL client stub for dfs.rs's NetrDfsAdd + DFS_INFO) is generated into the
+    # build dir; the wire types are arch-independent so build-i386's copy serves all 3 arches.
+    EXTRA_INC=( -I"${SRC}/dll/win32/netapi32" -I"${SRC}/build-i386/dll/win32/netapi32" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 -DUNICODE -D_UNICODE -DNTOS_MODE_USER )
+    ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
     # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,
