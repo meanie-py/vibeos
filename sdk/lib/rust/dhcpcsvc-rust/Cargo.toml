@@ -1,0 +1,23 @@
+# dhcpcsvc-rust — Rust translation of base/services/dhcpcsvc (the DHCP client service DLL).
+# staticlib → libdhcpcsvc_rust.a, cohab-linked into the cmake-built dhcpcsvc.dll with the
+# translated .c files commented out (per-file flip, like the winsock-family crates).
+#
+# dhcpcsvc.dll (loaded by services.exe) is the DHCP client: the DhcpC* API surface + a
+# BSD-derived dhclient state machine (dhcp/) + a single MIDL interface (dhcpcsvc.idl,
+# Client_/Server_ prefixes). The rosdhcp/dhcpd/dhcpcsvc struct layouts are bindgen-GENERATED
+# per arch into `types` by tools/rustconv/gen_driver_types.sh (profile: dhcpcsvc), not
+# hand-transcribed. Translated with DeepSeek-reasoner (pure-LLM).
+[package]
+name = "dhcpcsvc-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "dhcpcsvc_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }

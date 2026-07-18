@@ -8973,3 +8973,177 @@ a ud2 cleanup.
 - `extern "system"` transmute call sites (`VirtFn`/`PhysFn`-style) are invisible
   to a decl-only ABI audit — grep `extern "system" fn(` transmutes when auditing
   a symbol's real calling convention.
+
+### 9.108 (SOLVED 2026-07-18) The "netapi32 MIDL dragon" was never an interface-vs-interface conflict — it was the `<lm.h>` MASTER header fighting the WIDL stubs, and the C build already showed the answer
+
+**Symptom.** The 7 RPC-stub `.c` in `dll/win32/netapi32` (browser, dssetup, misc, netlogon,
+schedule, srvsvc, wksta_new) were translated and banked, but integration was DEFERRED across
+two sessions because their bindgen types island refused to generate. One wrapper `#include`-ing
+all 7 WIDL client headers produced a wall of C redefinition errors:
+
+```
+netlogon_c.h:343 typedef redefinition with different types ('ULONG' vs 'LONG')
+srvsvc_c.h:655  redefinition of '_SERVER_INFO_100'   (also declared in browser_c.h)
+```
+
+The recorded diagnosis was "the 6 MIDL interfaces mutually redefine each other's wire types;
+needs a gen_driver_types *MIDL-client mode* — a per-interface pass plus a shared base-type
+blocklist." **That diagnosis was wrong**, and it is instructive *how* it was wrong: the
+conclusion ("they conflict with each other") was inferred from a single all-in-one failure
+without ever testing an interface on its own. Testing each one standalone took ~5 minutes and
+falsified it immediately — the conflicts were not between the stubs at all.
+
+**Root cause.** `<lm.h>` is the LAN Manager MASTER header: it pulls `lmat.h`/`lmshare.h`/
+`lmserver.h`/`lmwksta.h`, which declare `AT_INFO`/`CONNECTION_INFO_*`/`SERVER_INFO_*`/
+`WKSTA_INFO_*` — the very structs each `*_c.h` re-declares for the wire. The `netapi32`
+gen_driver_types profile included `<lm.h>` (correct for the 14 c2rust-anchored modules), so
+every MIDL header collided with it. Interface-vs-interface collisions exist but are RARE:
+of the 6 headers exactly ONE pair actually conflicts (`browser_c.h` vs `srvsvc_c.h`, both
+declaring `_SERVER_INFO_100`).
+
+**The oracle was sitting in the C the whole time.** `netapi32.h` — the master private header
+every one of these files includes — pointedly does NOT include `<lm.h>`. It includes only the
+narrow trio:
+
+```c
+#include <lmaccess.h>   /* netapi32.h — and NOT <lm.h> */
+#include <lmapibuf.h>
+#include <lmerr.h>
+```
+
+…and then each `.c` includes exactly ONE stub header (`misc.c` is the lone two-header TU:
+srvsvc + wkssvc). The C build never asks the compiler to accept the combination that was
+failing. **If a `.c` compiles, its include set is bindgen-able** — so the include set of a
+real translation unit is a GUARANTEED-legal island, and no amount of blocklist engineering is
+needed to find one.
+
+**Fix (what landed).** Mirror the C's include discipline instead of fighting the redefinitions:
+- `TYPES_STEM` env var in `tools/rustconv/gen_driver_types.sh` — a crate can now emit MORE THAN
+  ONE types island (`<stem>_<arch>.rs` + a `<stem>.rs` per-arch dispatcher). Reusable for any
+  DLL whose TUs have mutually incompatible include sets.
+- Two profiles: `netapi32-rpc` (srvsvc + wkssvc + atsvc + dssetup + netlogon → 225 structs,
+  serves 6 of the 7 modules) and `netapi32-browser` (browser_c.h + lmbrowsr/lmserver → 13).
+  Both use the narrow-lm base. `dsrole.h` is dropped from the rpc island — `dssetup_c.h`
+  re-declares `DSROLE_*`, and although `netlogon.c` includes `dsrole.h` it never references
+  those types.
+- Prelude split so the two universes stay separate without duplicating the non-type surface:
+  `prelude_common.rs` (wine-debug channel, CRT/winsock externs, transcribed consts, enum
+  bare-name aliases) + three thin per-island preludes globbing `prelude_common` plus their own
+  island. 377 type names overlap between `types` and `types_rpc`, so they must NEVER share a
+  glob scope.
+
+**Fallout to expect when you split an existing prelude (cost me two extra cycles).** Items that
+were LOCAL `pub const` definitions in the old prelude silently shadowed the types glob. Moving
+them into `prelude_common` turns that into glob-vs-glob → **E0659 ambiguous name** at every use
+site (229 of them here) in modules that were previously clean. An EXPLICIT `pub use` outranks
+any glob, so re-export the conflicting names in each per-island prelude to restore the old
+resolution. Two traps when computing that conflict list:
+- Scanning only `types_<arch>.rs` MISSES names the island re-exports transitively — `TRUE`/
+  `FALSE` arrive via `ntdll_sys::nt::*` and do not appear in the island file at all.
+- `cargo check --message-format short | grep 'src/.*\.rs'` counts WARNING lines too; a module
+  showing "1 error" may be entirely clean (here: `unnecessary unsafe block`). Filter on
+  `error\[E` before concluding a previously-green module regressed.
+
+**Transferable rules.**
+1. **A multi-header redefinition wall is a claim about the WRAPPER, not about the headers.**
+   Test each header standalone before theorizing about mutual conflict. One 5-minute matrix
+   beats a session of blocklist design — and beats a wrong entry in the notes that outlives
+   the session and defers the work again.
+2. **Take the include set from the real TU.** Do not hand-assemble a "reasonable-looking"
+   wrapper from master headers; open the `.c` and copy what it actually includes. A master
+   header (`lm.h`, `windows.h`, `ntddk.h`) is exactly the thing a MIDL/IDL-consuming TU avoids.
+3. **When a DLL's TUs genuinely disagree, give them separate islands** rather than forcing one
+   pass. The island count that mirrors the C is the correct one — here 2, not 1 and not 7.
+
+### 9.109 (2026-07-18) Four usermode-DLL integration bugs that a green `cargo check` cannot see — the assembler glob, the checker regex, the silent LLM skip, and MIDL symbol case
+
+Collected while integrating the winsock/net satellite DLLs (dnsapi full flip, dhcpcsvc,
+netapi32 tail). Each is invisible to `cargo check` and surfaces only at LINK or at the GATE —
+i.e. after you already believe the crate is done. Check all four before declaring a flip green.
+
+**1. The `.responses` assembly glob silently DROPS 3-digit files.** `rustconv translate` writes
+one `NN_FnName.rs` per function. A shell glob of `[0-9][0-9]_*.rs` matches 2-digit prefixes
+ONLY, so a file with ≥100 functions loses everything from `100_` on — with no error anywhere.
+This dropped 5 dnsapi stubs (101–105); the crate compiled fine and failed at link with 5
+undefined exports. Also note `ls | sort` is lexicographic (`10_` sorts before `9_`).
+Use a numeric sort over an unbounded glob: `ls "$d"/[0-9]*_*.rs | sort -t_ -k1.1 -n`.
+**Always assert the assembled function count equals the `.responses` file count.**
+
+**2. `verify_lost_exports` cannot see a ONE-LINE `#[no_mangle]`.** Its regex is
+`#\[no_mangle\]\s*\npub unsafe extern "[^"]+" fn (\w+)` — it REQUIRES a newline after the
+attribute. A subagent (or rustfmt on a short signature) collapsing it to
+`#[no_mangle] pub unsafe extern "system" fn Foo()` makes the export invisible to the checker,
+which then reports it as a NEW LOST export and fails `vibeos-cli check` — a false positive that
+looks exactly like a real dropped export. Keep `#[no_mangle]` on its own line. (Fixing the
+regex to tolerate both is owed; the one-line form is legal Rust and will recur.)
+
+**3. A translation model can silently SKIP a function entirely.** DeepSeek emitted no file at
+all for `DnsWinsRecordFlagForString` — no error, no stub, no partial. Nothing in the pipeline
+noticed; `cargo check` was green because nothing in-crate referenced it. It surfaced only as an
+undefined symbol at link (and would have been caught at the gate by `verify_lost_exports`).
+**Diff the `.spec` export list against the assembled `#[no_mangle]` set before building** — do
+not assume per-function fan-out produced one file per function.
+
+**4. MIDL `*_c.c` stubs reference UPPERCASE `MIDL_user_allocate`/`MIDL_user_free`.** The
+translated Rust defines the lowercase `midl_user_allocate`/`midl_user_free` that the rest of
+the DLL uses. On i386 the stubs want `_MIDL_user_allocate@4`/`_MIDL_user_free@4`. Add explicit
+uppercase `#[no_mangle] extern "system"` forwarders that call through to the lowercase pair.
+
+**And the arch-independent one that outranks all four:** when appending a hand-written export to
+match a `.spec`, **the `.spec` is ground truth for the i386 stdcall `@N` decoration**, not the C
+prototype — a `long` parameter contributes 4 bytes even where the C header declares `WORD`.
+Getting `@N` wrong links clean on amd64/arm64 and fails ONLY on i386.
+
+### 9.110 (2026-07-18) Four C-fidelity bug classes that survive a green `cargo check` AND a manual review — found only at link and by `vibeos-cli check`
+
+From the dhcpcsvc/netapi32 flips. Both crates were reported cargo-clean on all three targets by
+the agents that ground them — truthfully. Compilation says nothing about whether the Rust means
+what the C meant. Nine real bugs survived that green; the three below survived a hand review on
+top of it and were caught only by the lint gate. Check for all four before calling a flip done.
+
+**1. A vestigial `extern` in a header → the translation invents a global the C never had.**
+`dhcpd.h:398` declares `extern time_t cur_time;`. No TU in dhcpcsvc.dll DEFINES it — all EIGHT
+users declare their own `time_t cur_time;` LOCAL, which shadows it in C. The translation "helpfully"
+made them all reference the global, with a comment asserting `no local shadow`. That aliases eight
+independent stack values into one, corrupting the dispatch loop's lease timing.
+
+There is a nasty second-order effect that *pushes* a translation into this bug: bindgen emits the
+dead decl, and **Rust forbids a `let` binding that shadows an in-scope static (E0530)** — so the
+faithful translation is a compile error and "make it a global" is the path of least resistance.
+The fix is at the source: `--blocklist-item` the symbol (gen_driver_types `EXTRA_BL_ITEMS`) so
+nothing can bind to a global that does not exist. **Before trusting any `extern` a header
+declares, grep for its DEFINITION.** Undefined + referenced = link error (loud, fine); undefined +
+*locals of the same name* = silent semantic change.
+
+**2. `write_bytes`' count is in ELEMENTS; `memset`'s is in BYTES.**
+`core::ptr::write_bytes(p: *mut T, val, count)` writes `count * size_of::<T>()` bytes. So
+`write_bytes(arr.as_mut_ptr(), 0, size_of::<[T; N]>())` — the literal transcription of
+`memset(arr, 0, sizeof(arr))` — writes `sizeof(array) * sizeof(T)` bytes. In dhcpcsvc's
+`make_discover` that was a large stack overrun past two 256-entry arrays. **Always route a
+memset transcription through `as *mut u8`**, so the element count and the byte count coincide.
+`scan_silent_failures` flags this as `WRITE_BYTES_SIZEOF`.
+
+**3. A C debug macro that does NOT block, translated as `loop {}`.**
+`UNIMPLEMENTED` (reactos/debug.h) expands to `__NOTICE(WARNING, ...)` — a DbgPrint. The C falls
+straight through to the next statement. `DhcpNotifyConfigChange` was rendered as
+`DbgPrint(...); loop {}`, which hangs the calling thread forever instead of returning
+ERROR_SUCCESS. Related to §9.65 (never translate a C debug macro into an out-of-line no-op fn):
+**read what the macro expands to before translating it**, and never assume a name like
+UNIMPLEMENTED/FIXME/UNREACHABLE implies a trap. `scan_silent_failures` flags bare `loop {}` as
+`SILENT_LOOP`.
+
+**4. A C file-scope global defined in Rust without `#[no_mangle]`.**
+After a cohab flip, the `.c` that DEFINED a global is gone, so the Rust definition must emit the
+UNMANGLED C symbol — bindgen still DECLARES the global (from the header) and every cross-module
+reference binds to that decl. A plain `pub static mut` emits a mangled symbol and the decl goes
+unresolved. dhcpcsvc had 11 of these; only 4 failed the link (the referenced ones), the other 7
+were latent and would have broken on the next cross-module use. **Fix the class, not the four
+the linker happened to name:** intersect the island's `pub static mut` decls with the crate's
+own definitions and `#[no_mangle]` every match.
+
+**And the meta-lesson.** Each verification layer caught what the previous could not: `cargo check`
+(nothing on this list), the i386 LINK (classes 1 and 4 — decoration/undefined-symbol bugs are
+i386-first, since amd64/arm64 hide `@N` and case mismatches), hand review (the shadow structs and
+the `goto`-as-no-op paths), and `vibeos-cli check` (classes 2 and 3, plus a wrong error-code
+literal). **Run all four before declaring a flip green**, and treat a subagent's "0 errors on all
+targets" as a statement about compilation only.

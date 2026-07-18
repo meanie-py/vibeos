@@ -18,6 +18,13 @@
 #![allow(clippy::all)]
 
 pub mod types; // lm*/nb30 struct layouts (bindgen, per arch) + re-exported nt base types
+pub mod types_rpc; // MIDL wire types: srvsvc/wkssvc/atsvc/dssetup/netlogon (*_c.h, per arch)
+pub mod types_browser; // MIDL wire types: browser_c.h — its own island (redeclares SERVER_INFO_100)
+pub mod rpc_stubs; // MIDL client-stub PROTOTYPES for the types_rpc island (*_c.c stay C)
+pub mod browser_stubs; // MIDL client-stub PROTOTYPES for the types_browser island
+pub mod prelude_common; // island-agnostic half: wine-debug/CRT/winsock externs, consts, aliases
+pub mod prelude_rpc; // prelude_common + types_rpc  + rpc_stubs (srvsvc/wkssvc/atsvc/dssetup/netlogon)
+pub mod prelude_browser; // prelude_common + types_browser + browser_stubs (browser.rs only)
 pub mod prelude; // the ONE import surface: types glob + enum aliases + skipped consts + bridges
 
 // The 14 c2rust-anchored translation units. `netapi32` mirrors the C layout (dll/win32/netapi32/).
@@ -37,11 +44,19 @@ pub mod netapi32 {
     pub mod user; // NetUser* (accounts) — the biggest unit
     pub mod utils; // Netp*/wprint_* internal helpers
     pub mod wksta; // NetWksta*/NetWkstaTransportEnum
-    // NOTE: the 7 RPC-stub tail files (browser/dssetup/misc/netlogon/schedule/srvsvc/wksta_new)
-    // are translated+banked (tools/rustconv/.responses/, assembled copies in
-    // ~/vibeos-rust-staging/netapi32-tail-assembled/) but NOT yet integrated: they call
-    // self-contained MIDL client interfaces (*_c.h) whose mutually-conflicting wire types need a
-    // gen_driver_types "MIDL client mode" first. Tracked in the roadmap. C stays active meanwhile.
+
+    // The 7 RPC-stub tail units (pure-LLM translated — c2rust cannot anchor a MIDL client).
+    // Their wire types come from the *_c.h WIDL stubs, which do NOT coexist with the <lm.h>
+    // master header the `types` island above is built from (both declare AT_INFO/
+    // CONNECTION_INFO_*/SERVER_INFO_*/WKSTA_INFO_*). They therefore import `types_rpc` /
+    // `types_browser` instead — see the gen_driver_types.sh netapi32-rpc profile.
+    pub mod browser; // I_BrowserrQueryOtherDomains  (types_browser: browser_c.h)
+    pub mod dssetup; // DsRoleGetPrimaryDomainInformation
+    pub mod misc; // NetShutdown*/NetRemoteTOD/NetServer* (srvsvc + wkssvc)
+    pub mod netlogon; // NetrLogon*/DsGetDcName — the biggest tail unit
+    pub mod schedule; // NetSchedule* (atsvc)
+    pub mod srvsvc; // NetShare*/NetSession*/NetConnection*/NetFile*
+    pub mod wksta_new; // NetWkstaGetInfo/NetWkstaUserEnum (wkssvc)
 }
 
 // staticlib (libnetapi32_rust.a) needs a panic handler + eh personality (no_std cohab),
