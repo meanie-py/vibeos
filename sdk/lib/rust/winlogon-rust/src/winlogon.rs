@@ -711,13 +711,18 @@ unsafe fn TryStartWow64Probe() {
  * half-initialized and faults the kernel. Gate every guest spawn on the real
  * support layer, not just the guest exe, so a polluted ramdisk in a non-FEX
  * boot is an inert no-op (kept the standard smoke green — 2026-07-11). */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn Wow64SupportStaged() -> bool {
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
         return false;
     }
+    /* The per-arch CPU layer (the same selection wow64.c makes): FEX JIT on
+     * arm64, native heaven's-gate on amd64. */
+    #[cfg(target_arch = "aarch64")]
     wcscat(Path.as_mut_ptr(), wstr!("\\system32\\libwow64fex.dll").as_ptr());
+    #[cfg(target_arch = "x86_64")]
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\wow64cpu.dll").as_ptr());
     GetFileAttributesW(Path.as_ptr()) != 0xFFFF_FFFF
 }
 
@@ -725,8 +730,10 @@ unsafe fn Wow64SupportStaged() -> bool {
  * CreateProcessW front door. Unlike wow64probe (a native arm64 harness), this
  * exercises the actual WoW64 process bootstrap: kernel32 machine gate →
  * PspCreateProcess → PEB32/TEB32 → 64-bit ntdll loader wow64 branch →
- * wow64!Wow64LdrpInitialize. Verdict = [FEX-WOW64C] serial lines + 0x600D. */
-#[cfg(target_arch = "aarch64")]
+ * wow64!Wow64LdrpInitialize. Verdict = [FEX-WOW64C] serial lines + 0x600D.
+ * amd64 (Phase E): identical probe, but the CPU layer is the native wow64cpu
+ * heaven's-gate instead of FEX — same staging contract, same verdict. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Hello() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -785,7 +792,7 @@ unsafe fn TryStartWow64Hello() {
  * byte count ReadFile hands back IS IoStatusBlock.Information, which is 4 bytes
  * wide in the guest and 8 on the host. Silent no-op unless staged;
  * verdict = [file32] serial lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64File() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -843,7 +850,7 @@ unsafe fn TryStartWow64File() {
  * kernel-side IO_STATUS_BLOCK32 completion — OVERLAPPED.Internal/InternalHigh
  * ARE the guest IOSB32, and .Offset detects a stray 16-byte (64-bit layout)
  * write. Silent no-op unless staged; verdict = [async32] lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Async() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -900,7 +907,7 @@ unsafe fn TryStartWow64Async() {
  * a class, creates a REAL window, and pumps messages (forces user32 client
  * connect + kernel->user callbacks under wow64). Silent no-op unless staged;
  * verdict = [win32] serial lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Win32() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -963,7 +970,7 @@ unsafe fn TryStartWow64Win32() {
  * is the demo: the other GUI guests would materialise on top of its window and
  * occlude it (doomgeneric creates its window at CW_USEDEFAULT and never calls
  * SetForegroundWindow). Same rationale as DoomStaged() gating the notepad spawn. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn Wow64DoomStaged() -> bool {
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
@@ -977,7 +984,7 @@ unsafe fn Wow64DoomStaged() -> bool {
  * generated/manual marshallers no earlier guest touches — TBI against its own
  * TEB32, IOCP sentinel round-trip, monitor enumeration. Silent no-op unless
  * staged; verdict = [marshal32] serial lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Marshal() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent
@@ -1034,6 +1041,68 @@ unsafe fn TryStartWow64Marshal() {
     }
 }
 
+/* E5 — fault32.exe: guest-SEH verification. A hardware AV in guest code must
+ * dispatch into the guest's OWN 32-bit SEH with the LIVE faulting context
+ * (BTCpuResetToConsistentState flush + the VEH redirect), a software
+ * RaiseException must round-trip through the NtRaiseException marshaller, and
+ * OutputDebugStringA's DBG_PRINTEXCEPTION must be consumed, not dispatched.
+ * amd64-only launch: on arm64 the hardware-fault redirect into guest SEH is
+ * still owed (FEX's simulate loop owns fault recovery there). Silent no-op
+ * unless staged; verdict = [FAULT32] serial lines + exit 0x600D. */
+#[cfg(target_arch = "x86_64")]
+unsafe fn TryStartWow64Fault() {
+    if !Wow64SupportStaged() {
+        return; // CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\fault32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("fault32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] fault32.exe (i386 guest-SEH verify guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] fault32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(fault32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* M12 — THE NORTH STAR: x86 DOOM, under WoW64, on arm64.
  *
  * doomgeneric's Win32/GDI backend built for i386 (tools/doom/build.sh i386) —
@@ -1046,8 +1115,9 @@ unsafe fn TryStartWow64Marshal() {
  * Its import closure is EXACTLY the same 53 modules testgui needs — msvcrt,
  * user32, gdi32, kernel32 — so M11's closure work covers it with nothing added.
  *
- * Like every other guest: silent no-op unless staged (VIBEOS_FEX=1 image). */
-#[cfg(target_arch = "aarch64")]
+ * Like every other guest: silent no-op unless staged (VIBEOS_FEX=1 image).
+ * amd64 (E4): the same doom-i386.exe, but the CPU under it is real silicon. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Doom() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent
@@ -1215,7 +1285,7 @@ unsafe fn TryStartNativeTestGui() {
  *
  * Verdict: [TESTGUI] serial lines (wWinMain -> RegisterClassExW ->
  * CreateWindowExW -> WM_CREATE -> WM_PAINT) + a blue/green window. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64TestGui() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -1283,11 +1353,82 @@ unsafe fn TryStartWow64TestGui() {
     CloseHandle(Pi.hProcess);
 }
 
+/* E4c robustness: winmine.exe — a STOCK i386 OS applet (menus, WM_TIMER,
+ * dialog/menu resources, GetSystemMetrics-driven layout) that nobody wrote
+ * for the WoW64 harness. Same inverted verdict as testgui: still running
+ * after the wait = PASS (window up, pump alive); an exit = it died. Silent
+ * no-op unless syswow64\winmine.exe is staged. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartWow64WinMine() {
+    if !Wow64SupportStaged() {
+        return;
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\winmine.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("winmine.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    if CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    ) == 0
+    {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(winmine.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+        return;
+    }
+    DbgPrint(
+        b"[WINLOGON] winmine.exe (STOCK i386 OS applet) created (PID %lu) - watching\n\0"
+            .as_ptr() as *const i8,
+        Pi.dwProcessId,
+    );
+    const WAIT_TIMEOUT_: DWORD = 0x102;
+    if WaitForSingleObject(Pi.hProcess, 10_000) == WAIT_TIMEOUT_ {
+        DbgPrint(
+            b"[WINLOGON] winmine.exe still running after 10s = PASS (window up, pump \
+              alive) - leaving it up\n\0"
+                .as_ptr() as *const i8,
+        );
+    } else {
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] winmine.exe EXITED = 0x%lx (a stock applet should still be \
+              pumping)\n\0"
+                .as_ptr() as *const i8,
+            ExitCode,
+        );
+    }
+    CloseHandle(Pi.hThread);
+    CloseHandle(Pi.hProcess);
+}
+
 /* wow64win probe (M4): a real i386 GUI guest with kernel32+gdi32 imports that
  * draws on the host desktop through the win32k thunk table (direct display
  * DC, no user-mode callbacks). Same contract as hello32: silent no-op unless
  * staged; verdict = [gui32]/[GUEST32] serial lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Gui() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -2038,6 +2179,40 @@ pub unsafe extern "system" fn WinMain(
         }
 
         DbgPrint(b"[WINLOGON] ARM64: cmd.exe exited. Sleeping.\n\0".as_ptr() as *const i8);
+    }
+
+    /* WOW64 Phase E probes (amd64 native wow64cpu). E3/E4 rungs that PASS
+     * cleanly and run in every amd64 smoke as regression coverage:
+     *   hello32 (loader verdict -> 0x600D)
+     *   gui32   (win32k GDI thunk: draws the magenta rect -> 0x600e soft-pass)
+     * E4b: the window-creation + kernel->user-callback guests. testgui runs
+     * always (its window doubles as regression coverage for the callback
+     * marshallers); doom is the demo rung, same mutual-occlusion rule as
+     * arm64. See wow64-plan.md Phase E. */
+    #[cfg(target_arch = "x86_64")]
+    {
+        /* Full arm64-parity probe ladder (each is a silent no-op unless its
+         * guest is staged): loader → GDI → window/callbacks → file I/O →
+         * overlapped I/O → marshaller self-verify. */
+        TryStartWow64Hello();
+        TryStartWow64Gui();
+        TryStartWow64Win32();
+        TryStartWow64File();
+        TryStartWow64Async();
+        TryStartWow64Marshal();
+        /* E5: guest-SEH dispatch verify (fault + raise + ODS consumption). */
+        TryStartWow64Fault();
+        /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
+         * menus, timers, dialog resources. Launched BEFORE doom so doom's
+         * window (created last) stays the demo on top. */
+        TryStartWow64WinMine();
+        /* E4b: same mutual-occlusion rule as the arm64 ladder — when doom is
+         * staged it IS the demo GUI guest; testgui would materialise on top
+         * of its window. */
+        if !Wow64DoomStaged() {
+            TryStartWow64TestGui();
+        }
+        TryStartWow64Doom();
     }
 
     /* DOOM (opt-in, VIBEOS_DOOM=1) — x86 call site. On arm64 doom is spawned

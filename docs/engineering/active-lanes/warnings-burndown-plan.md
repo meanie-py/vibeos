@@ -563,7 +563,7 @@ byteswap fastcall, config CmpAssignSecurityDescriptor).
 User green-lit both owed lanes (scan_ud2 driver extension; bindgen "system"
 normalization). The scan_ud2 work immediately escalated: prototyping the binary
 driver sweep surfaced ~10 named residual ud2s, and root-causing them produced a
-**new detector** — `tools/scan_ir_mismatch.py` (§9.101) — that catches the whole
+**new detector** — `tools/scan_ir_mismatch.py` (§9.103) — that catches the whole
 §9.99 class pre-fold in dev IR. The full i386 workspace sweep: **346 findings
 across 44 crates** (refined to 250 true landmines once decl-vs-decl SIG was
 proven non-folding).
@@ -582,18 +582,18 @@ Fix batches (all deterministic, zero subagents):
   TRACE/FIXME/WARN/ERR (names too generic for the shared shim).
 - **Batch A2 (scripted def-authority SIG alignment):** align decls to the def's
   IR shape with primitive-only tokens (the Batch A source-text transplant died
-  on import-scope drift — see §9.101 recipe); compiler-driven cast repair +
+  on import-scope drift — see §9.102 recipe); compiler-driven cast repair +
   crate-revert convergence.
 
 Late-day closeout: Batch A2 (IR-shape decl morphs, byte-mode span-guarded cast
 repair) + hand-finish drove the driver fleet to ZERO unexpected binary ud2s.
-The last 5 survivors were a NEW class — provable-null-deref folds (§9.102):
+The last 5 survivors were a NEW class — provable-null-deref folds (§9.103):
 cdfs eager SEH-filter evaluation (both CdPerformVerify ud2s from one line) and
 win32k unguarded null-blind derefs (UserRedrawDesktop, NtGdiGetRealizationInfo)
 — all fixed with real guards, not baselines. Repair-tooling scars worth keeping:
 rustc spans are BYTES (a `§` in a comment corrupted 3 classpnp files via char
 offsets — stashed, guards added), and span-text verification before splicing is
-mandatory (§9.101).
+mandatory (§9.103).
 
 First-ever amd64/arm64 driver sweeps (gate leg 2) surfaced 15 more pre-existing
 latents: ExitProcess/Fatal* terminal spins classified EXPECTED (deliberate

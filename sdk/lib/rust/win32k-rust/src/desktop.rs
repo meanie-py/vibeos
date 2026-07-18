@@ -2255,7 +2255,7 @@ pub unsafe extern "stdcall" fn UserRedrawDesktop() {
     Window = UserGetDesktopWindow();
     // Null-guard: UserGetDesktopWindow provably returns null pre-desktop (its
     // inlined body shows LLVM the path), so the unguarded deref below folded
-    // both error branches into `ud2` (§9.102).
+    // both error branches into `ud2` (§9.103).
     if Window.is_null() {
         return;
     }
@@ -2280,7 +2280,7 @@ pub unsafe extern "C" fn UserRedrawDesktop() {
     let Rgn: PREGION;
 
     Window = UserGetDesktopWindow();
-    // Null-guard — see the x86 twin above (§9.102).
+    // Null-guard — see the x86 twin above (§9.103).
     if Window.is_null() {
         return;
     }

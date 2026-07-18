@@ -36,7 +36,21 @@
 #define ASYNC32_FAIL_POLLDATA   0xBADC /* eventless read: bad status/count after poll */
 #define ASYNC32_PASS            0x600D
 
-#define TARGET_PATH  "C:\\ReactOS\\syswow64\\hello32.exe"
+/* Derived from GetWindowsDirectoryA at runtime — the amd64 livecd's system
+ * volume is X:, the arm64 ramdisk's is C: (a hardcoded letter fails on one). */
+static char TARGET_PATH[MAX_PATH];
+
+static void BuildTargetPath(void)
+{
+    char win[MAX_PATH];
+    int i = 0, j = 0;
+    static const char Rest[] = "\\syswow64\\hello32.exe";
+    win[0] = 0;
+    GetWindowsDirectoryA(win, MAX_PATH - 32);
+    while (win[i]) { TARGET_PATH[i] = win[i]; i++; }
+    while (Rest[j]) TARGET_PATH[i++] = Rest[j++];
+    TARGET_PATH[i] = 0;
+}
 #define READ_OFFSET  64
 #define READ_LEN     512
 #define STATUS_PENDING_32 ((DWORD)0x00000103)
@@ -69,6 +83,7 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     BOOL ok;
 
     Report("[async32] start: overlapped ReadFile (M15b kernel-side IOSB32)\n");
+    BuildTargetPath();
 
     ev = CreateEventA(NULL, TRUE, FALSE, NULL);
     if (!ev || ev == INVALID_HANDLE_VALUE)

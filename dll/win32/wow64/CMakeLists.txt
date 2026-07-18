@@ -1,8 +1,8 @@
-# vibeos wow64.dll — Win10+-model WOW64 host layer skeleton (arm64-only today;
-# Phase E reuses on amd64). See docs/engineering/wow64-plan.md. The exports are
-# arch-gated in wow64.spec, so building this on x86 produces an empty-export
-# DLL; only ship it where it means something.
-if(ARCH STREQUAL "arm64")
+# vibeos wow64.dll — Win10+-model WOW64 host layer (arm64 via FEX, amd64 via
+# native wow64cpu — Phase E). See docs/engineering/wow64-plan.md. The exports
+# are arch-gated in wow64.spec, so building this on x86 produces an
+# empty-export DLL; only ship it where it means something.
+if(ARCH STREQUAL "arm64" OR ARCH STREQUAL "amd64")
 
 spec2def(wow64.dll wow64.spec ADD_IMPORTLIB)
 

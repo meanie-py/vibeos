@@ -246,7 +246,7 @@ pub unsafe extern "C" fn CdPerformVerify(
     // exception pointers, and _SEH2_GetExceptionInformation() returns null
     // here, so the eager call is a provable null-deref that LLVM folds into
     // `ud2` for every path reaching this line (both CdPerformVerify boot ud2s
-    // — field manual §9.102).
+    // — field manual §9.103).
     _SEH2_EXCEPT(0);
     if false {
         CdExceptionFilter(IrpContext, _SEH2_GetExceptionInformation());

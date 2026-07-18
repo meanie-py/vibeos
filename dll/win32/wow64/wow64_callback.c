@@ -53,9 +53,33 @@ static PVOID *Wow64pCbTlsSlot(VOID)
                      + WOW64_TLS_CBFRAME * sizeof(PVOID)) ;
 }
 
-/* ---- minimal aarch64 setjmp/longjmp (ntdll-only DLL: no CRT import) ------
- * Saves x19-x28, fp, lr, sp, d8-d15 -> 21 slots. Non-volatile only; exactly
- * what a longjmp from a deeper frame on the SAME host stack needs. */
+#ifdef _M_AMD64
+/* Native wow64cpu contract: the CPU-area (TlsSlots[WOW64_TLS_CPURESERVED]) has
+ * a "resume replaced" flag at +4 that BTCpuSetContext sets and the syscall
+ * dispatcher consumes to skip the return-to-stub fixup after a context-
+ * replacing service (NtContinue). The callback-return path below calls
+ * BTCpuSetContext to RESTORE the pre-callback guest state, which sets that flag
+ * too — but here the OUTER syscall (the one the callback interrupted) must
+ * still complete with its normal fixup. Clear the flag so the outer dispatch
+ * does not mistake this restore for an NtContinue. (No-op-costed on arm64,
+ * where FEX owns the resume model — hence the _M_AMD64 guard.) */
+#define WOW64_TLS_CPURESERVED_SLOT 1
+static void Wow64pClearCpuResumeFlag(void)
+{
+    PBYTE *Tls = (PBYTE *)((PBYTE)NtCurrentTeb() + WOW64_TEB_TLSSLOTS_OFFSET);
+    PBYTE CpuArea = Tls[WOW64_TLS_CPURESERVED_SLOT];
+    if (CpuArea)
+        *(volatile ULONG *)(CpuArea + 4) = 0;
+}
+#endif
+
+/* ---- minimal setjmp/longjmp (ntdll-only DLL: no CRT import) --------------
+ * Saves callee-saved state + the caller's SP/return address; exactly what a
+ * longjmp from a deeper frame on the SAME host stack needs. Two arch flavors:
+ * arm64 (x19-x28, fp, lr, sp, d8-d15 -> 21 slots) and amd64 (rbx/rbp/rdi/rsi/
+ * r12-r15, caller-rsp, retaddr, xmm6-xmm15 -> 30 slots). WOW64_CB_JMP_SLOTS
+ * sizes the buffer for the larger. */
+#ifdef _M_ARM64
 __attribute__((naked)) int Wow64pSetJmp(unsigned long long *Buf)
 {
     __asm__ volatile(
@@ -95,6 +119,72 @@ __attribute__((naked, noreturn)) void Wow64pLongJmp(unsigned long long *Buf, int
         "csinc w0, w0, wzr, ne\n"
         "ret\n");
 }
+#else /* _M_AMD64 — Windows x64 ABI: Buf in rcx, Val in rdx. Non-volatile GPRs
+       * at 0..63, caller rsp at 64, return address at 72, xmm6-xmm15 at
+       * 80..239 (movups: buffer need not be 16-aligned). Saving nonvol XMMs is
+       * belt-and-suspenders — the marshalling code is integer-only, but a
+       * compiler SSE spill into xmm6-15 across the setjmp would otherwise leak
+       * past the longjmp. */
+__attribute__((naked)) int Wow64pSetJmp(unsigned long long *Buf)
+{
+    __asm__ volatile(
+        "movq %rbx, 0(%rcx)\n"
+        "movq %rbp, 8(%rcx)\n"
+        "movq %rdi, 16(%rcx)\n"
+        "movq %rsi, 24(%rcx)\n"
+        "movq %r12, 32(%rcx)\n"
+        "movq %r13, 40(%rcx)\n"
+        "movq %r14, 48(%rcx)\n"
+        "movq %r15, 56(%rcx)\n"
+        "leaq 8(%rsp), %rax\n"      /* caller's rsp (after the call's push)   */
+        "movq %rax, 64(%rcx)\n"
+        "movq (%rsp), %rax\n"       /* return address                        */
+        "movq %rax, 72(%rcx)\n"
+        "movups %xmm6,  80(%rcx)\n"
+        "movups %xmm7,  96(%rcx)\n"
+        "movups %xmm8,  112(%rcx)\n"
+        "movups %xmm9,  128(%rcx)\n"
+        "movups %xmm10, 144(%rcx)\n"
+        "movups %xmm11, 160(%rcx)\n"
+        "movups %xmm12, 176(%rcx)\n"
+        "movups %xmm13, 192(%rcx)\n"
+        "movups %xmm14, 208(%rcx)\n"
+        "movups %xmm15, 224(%rcx)\n"
+        "xorl %eax, %eax\n"
+        "ret\n");
+}
+
+__attribute__((naked, noreturn)) void Wow64pLongJmp(unsigned long long *Buf, int Val)
+{
+    __asm__ volatile(
+        "movq 0(%rcx), %rbx\n"
+        "movq 8(%rcx), %rbp\n"
+        "movq 16(%rcx), %rdi\n"
+        "movq 24(%rcx), %rsi\n"
+        "movq 32(%rcx), %r12\n"
+        "movq 40(%rcx), %r13\n"
+        "movq 48(%rcx), %r14\n"
+        "movq 56(%rcx), %r15\n"
+        "movups 80(%rcx),  %xmm6\n"
+        "movups 96(%rcx),  %xmm7\n"
+        "movups 112(%rcx), %xmm8\n"
+        "movups 128(%rcx), %xmm9\n"
+        "movups 144(%rcx), %xmm10\n"
+        "movups 160(%rcx), %xmm11\n"
+        "movups 176(%rcx), %xmm12\n"
+        "movups 192(%rcx), %xmm13\n"
+        "movups 208(%rcx), %xmm14\n"
+        "movups 224(%rcx), %xmm15\n"
+        "movl %edx, %eax\n"         /* return Val (or 1 if Val==0)           */
+        "testl %eax, %eax\n"
+        "jne 1f\n"
+        "incl %eax\n"
+        "1:\n"
+        "movq 72(%rcx), %r8\n"      /* retaddr into a volatile scratch       */
+        "movq 64(%rcx), %rsp\n"     /* switch back to the caller's stack     */
+        "jmp *%r8\n");
+}
+#endif
 
 /* ---- WOW64_CONTEXT (i386 CONTEXT, matches wow64.c usage) ----------------- */
 typedef struct _WOW64_CB_CONTEXT {
@@ -121,7 +211,8 @@ typedef struct _WOW64_CB_FRAME {
     PVOID RetBuf;            /* 64-bit result to hand to the real NtCallbackReturn */
     ULONG RetLen;
     WOW64_CB_CONTEXT SavedCtx;
-    unsigned long long Jmp[21];
+    /* 21 slots on arm64, 30 on amd64 (10 nonvol XMMs); size for the larger. */
+    unsigned long long Jmp[32];
     UCHAR Buf64[1024];       /* translated 64-bit result storage */
 } WOW64_CB_FRAME;
 
@@ -323,6 +414,11 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                     for (i = 0; i < Blob; i++)
                         Buf[sizeof(*A32) + 48 + i] = ((const BYTE *)Arg)[sizeof(*A64) + 80 + i];
                     A32->lParamBufferSize = 48 + Blob;
+                    if (Wow64TraceSyscalls)
+                        DbgPrint("[WOW64CB] (NC)CREATE cs64 name=%08lx%08lx cls=%08lx%08lx blob=%lu -> cs32 name=%08lx cls=%08lx\n",
+                                 (ULONG)(C64[7] >> 32), (ULONG)C64[7],
+                                 (ULONG)(C64[8] >> 32), (ULONG)C64[8],
+                                 Blob, C32[9], C32[10]);
                     Wow64pEnterGuestCallback(&Frame, Index, Buf,
                                              sizeof(*A32) + 48 + Blob);
                     break;
@@ -422,6 +518,54 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                 Wow64pEnterGuestCallback(&Frame, Index, NULL, 0);
                 break;
 
+            case 8: /* CLIENTLOADLIBRARY: CLIENT_LOAD_LIBRARY_ARGUMENTS 40->24
+                     * + trailing string blob. Both UNICODE_STRING Buffers are
+                     * SELF-RELATIVE offsets from the struct base (win32k
+                     * builds them that way; guest user32 re-bases them at
+                     * +Argument), so the squeeze is: narrow both strings,
+                     * shift the offsets by the 16-byte header shrink, copy
+                     * the blob verbatim. */
+            {
+                typedef struct { USHORT Len; USHORT Max; ULONG _pad;
+                                 ULONGLONG Buf; } WOW64_CLL_US64;
+                typedef struct { USHORT Len; USHORT Max; ULONG Buf; } WOW64_CLL_US32;
+                typedef struct { WOW64_CLL_US64 Lib, Init;
+                                 ULONG Unload, ApiHook; } WOW64_CLL64; /* 40 */
+                typedef struct { WOW64_CLL_US32 Lib, Init;
+                                 ULONG Unload, ApiHook; } WOW64_CLL32; /* 24 */
+                const WOW64_CLL64 *A64 = (const WOW64_CLL64 *)Arg;
+                UCHAR *Buf = Frame.Buf64;
+                WOW64_CLL32 *A32 = (WOW64_CLL32 *)Buf;
+                const ULONG Shrink = sizeof(*A64) - sizeof(*A32);
+                ULONG Blob, i;
+
+                if (!Arg || Len < sizeof(*A64) ||
+                    Len - Shrink > sizeof(Frame.Buf64))
+                {
+                    DbgPrint("[WOW64CB] CLIENTLOADLIBRARY arg=%p len=%lu unusable\n",
+                             Arg, Len);
+                    break;
+                }
+                Blob = Len - sizeof(*A64);
+                A32->Lib.Len = A64->Lib.Len;
+                A32->Lib.Max = A64->Lib.Max;
+                A32->Lib.Buf = A64->Lib.Buf ? (ULONG)A64->Lib.Buf - Shrink : 0;
+                A32->Init.Len = A64->Init.Len;
+                A32->Init.Max = A64->Init.Max;
+                A32->Init.Buf = A64->Init.Buf ? (ULONG)A64->Init.Buf - Shrink : 0;
+                A32->Unload = A64->Unload;
+                A32->ApiHook = A64->ApiHook;
+                for (i = 0; i < Blob; i++)
+                    Buf[sizeof(*A32) + i] = ((const UCHAR *)Arg)[sizeof(*A64) + i];
+                if (Wow64TraceSyscalls)
+                    DbgPrint("[WOW64CB] CLIENTLOADLIBRARY lib=%.*S unload=%lu apihook=%lu\n",
+                             A32->Lib.Buf ? (int)(A32->Lib.Len / sizeof(WCHAR)) : 0,
+                             A32->Lib.Buf ? (PCWSTR)(Buf + A32->Lib.Buf) : L"",
+                             A32->Unload, A32->ApiHook);
+                Wow64pEnterGuestCallback(&Frame, Index, Buf, sizeof(*A32) + Blob);
+                break;
+            }
+
             case 3:  /* LOADDEFAULTCURSORS: arg = BOOL* (flat 4 bytes ok) */
             case 11: /* SETWNDICONS: no meaningful payload divergence */
             case 12: /* DELIVERUSERAPC */
@@ -448,6 +592,12 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
     Frame.SavedCtx.ContextFlags = WOW64_CB_CONTEXT_FULL | WOW64_CB_CONTEXT_EXTENDED;
     Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2, WOW64_CURRENT_PROCESS, NULL,
                           &Frame.SavedCtx);
+#ifdef _M_AMD64
+    /* The restore above set the native CPU-area REPLACED flag; the outer
+     * syscall that this callback interrupted must still do its normal
+     * return-to-stub fixup, so clear it before we hand control back. */
+    Wow64pClearCpuResumeFlag();
+#endif
     St = NtCallbackReturn(Frame.RetBuf, Frame.RetLen, Frame.Status);
     DbgPrint("[WOW64CB] FATAL: NtCallbackReturn(%p,%lu) => %08lx fell through\n",
              Frame.RetBuf, Frame.RetLen, St);
@@ -609,8 +759,30 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                     }
                 }
 
+                if (Wow64TraceSyscalls)
+                    DbgPrint("[WOW64CB] <- WINDOWPROC msg 0x%lx result=%08lx%08lx retlen=%lu "
+                             "(guest ret32: proc=%08lx ansi=%lu wnd=%08lx msg=%04lx lpbs=%ld len32=%lu)\n",
+                             (unsigned long)Frame->Msg,
+                             (ULONG)(A64->Result >> 32), (ULONG)A64->Result, N,
+                             A32->Proc, A32->IsAnsiProc, A32->Wnd, A32->Msg,
+                             (long)A32->lParamBufferSize, Len32);
                 Frame->RetBuf = A64;
                 Frame->RetLen = N;
+                break;
+            }
+
+            case 8: /* CLIENTLOADLIBRARY: guest user32 returns 4 bytes
+                     * (BOOL bResult declared sizeof(HINSTANCE)); win32k reads
+                     * ResultPointer as an 8-byte HMODULE — widen zero-extended
+                     * so the high half is never stale scratch. */
+            {
+                ULONGLONG R = (Len32 >= sizeof(ULONG))
+                                  ? *(const ULONG *)(ULONG_PTR)Result32 : 0;
+                ULONG i;
+                for (i = 0; i < sizeof(R); i++)
+                    Frame->Buf64[i] = ((const BYTE *)&R)[i];
+                Frame->RetBuf = Frame->Buf64;
+                Frame->RetLen = sizeof(R);
                 break;
             }
 

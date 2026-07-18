@@ -43,8 +43,10 @@ target_compile_definitions(ucrtbase_apitest PRIVATE USE_WINE_TODOS TEST_UCRTBASE
 
 target_link_libraries(ucrtbase_apitest ${PSEH_LIB} chkstk)
 if(NOT MSVC)
-    # Add this manually here, so it can link to ucrtbase.dll and vcstartup
-    target_link_libraries(ucrtbase_apitest -lgcc)
+    # Add this manually here, so it can link to ucrtbase.dll and vcstartup.
+    # Use the toolchain-aware target (gcc.cmake) — raw -lgcc doesn't exist on
+    # llvm-mingw, which ships compiler-rt builtins instead.
+    target_link_libraries(ucrtbase_apitest libgcc)
 endif()
 
 add_importlibs(ucrtbase_apitest ucrtbase kernel32 ntdll)

@@ -271,10 +271,12 @@ pub unsafe fn KeInvalidateTlbEntry(address: PVOID) {
     {
         core::arch::asm!("invlpg [{}]", in(reg) address, options(nostack, preserves_flags));
     }
-    // M3 SMP (amd64): targeted remote shootdown — remotes invlpg exactly
-    // this VA instead of a full cr3 reload (see KeFlushProcessTb note for
-    // why the remote round-trip is load-bearing at -smp 2).
-    #[cfg(all(feature = "smp", target_arch = "x86_64"))]
+    // M3 SMP (x86 both flavors): targeted remote shootdown — remotes invlpg
+    // exactly this VA instead of a full cr3 reload (see KeFlushProcessTb note
+    // for why the remote round-trip is load-bearing at -smp 2). Same symbol,
+    // two transports: amd64 = the 0xE1 descriptor protocol (ke/amd64/ipi.rs),
+    // i386 = the classic NT KiIpiSendPacket path (ke/i386/cpu.rs).
+    #[cfg(all(feature = "smp", any(target_arch = "x86", target_arch = "x86_64")))]
     {
         unsafe extern "C" { fn KiTbShootdownSingle(Address: u64); }
         KiTbShootdownSingle(address as u64);
@@ -314,11 +316,12 @@ pub unsafe fn KeFlushProcessTb() {
         core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, nomem));
         core::arch::asm!("mov cr3, {}", in(reg) cr3, options(nostack));
     }
-    // M3 SMP (amd64): the Rust callers of this primitive rely on it for
-    // mappings other CPUs may have cached (verified: removing the broadcast
-    // brings back the 0xF4/wild-RIP user corruption at -smp 2). The lazy-idle
-    // protocol in ke/amd64/ipi.rs makes this cheap while the other CPU idles.
-    #[cfg(all(feature = "smp", target_arch = "x86_64"))]
+    // M3 SMP (x86 both flavors): the Rust callers of this primitive rely on
+    // it for mappings other CPUs may have cached (verified: removing the
+    // broadcast brings back the 0xF4/wild-RIP user corruption at -smp 2).
+    // amd64's lazy-idle protocol (ke/amd64/ipi.rs) makes this cheap while the
+    // other CPU idles; i386 pays the packet round-trip (ke/i386/cpu.rs).
+    #[cfg(all(feature = "smp", any(target_arch = "x86", target_arch = "x86_64")))]
     {
         unsafe extern "C" { fn KiTbShootdownBroadcast(); }
         KiTbShootdownBroadcast();

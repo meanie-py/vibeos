@@ -1406,6 +1406,105 @@ static NTSTATUS Wow64Manual_NtContinue(ULONG *a)
                                  NULL, Ctx32);
 }
 
+/* E5 — NtRaiseException: dispatch a guest software raise into the guest's own
+ * 32-bit SEH. The flat thunk handed the 64-bit kernel the guest's 32-bit
+ * EXCEPTION_RECORD/CONTEXT to read at 64-bit layout — garbage. With no
+ * debugger attached a first-chance user raise comes straight back to user
+ * dispatch anyway, so skip the kernel round-trip: build the i386
+ * KiUserExceptionDispatcher frame on the guest stack below the raiser's Esp
+ * (Wow64pBuildGuestExceptionFrame, wow64.c) and point the CPU layer at it via
+ * BTCpuSetContext — works on both arches (amd64 REPLACED-flag resume, arm64
+ * FEX context reload). Second chance == the guest's dispatcher found no
+ * handler: terminate the process with the exception code, loudly.
+ *   NtRaiseException(ExceptionRecord, Context, FirstChance) */
+#define WOW64_CTX32_SIZE 0x2CC /* i386 CONTEXT (through ExtendedRegisters) */
+#define WOW64_CTX32_EIP  0xB8
+#define WOW64_CTX32_ESP  0xC4
+static NTSTATUS Wow64Manual_NtRaiseException(ULONG *a)
+{
+    extern LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
+    extern LONG (WINAPI *Wow64pBTCpuGetContext)(HANDLE, HANDLE, PVOID, PVOID);
+    extern PVOID Wow64pKiUserExceptionDispatcher32;
+    extern ULONG Wow64pBuildGuestExceptionFrame(const void *Rec32,
+                                                const void *Ctx32, ULONG Below);
+    extern NTSTATUS WINAPI NtTerminateProcess(HANDLE Process, LONG ExitStatus);
+    extern ULONG Wow64TraceSyscalls;
+    const BYTE *Rec32 = (const BYTE *)(ULONG_PTR)a[0];
+    const BYTE *Ctx32 = (const BYTE *)(ULONG_PTR)a[1];
+    ULONG FirstChance = a[2];
+    ULONG Resume[WOW64_CTX32_SIZE / 4];
+    ULONG Live[WOW64_CTX32_SIZE / 4];
+    ULONG Esp, i;
+
+    if (!Rec32 || !Ctx32 || (ULONG_PTR)Rec32 >= 0x80000000u ||
+        (ULONG_PTR)Ctx32 >= 0x80000000u)
+        return (NTSTATUS)0xC000000DL;
+
+    if (!FirstChance)
+    {
+        DbgPrint("[WOW64] second-chance exception %08lx eip=%08lx — unhandled in guest, terminating\n",
+                 *(const ULONG *)Rec32, *(const ULONG *)(Ctx32 + WOW64_CTX32_EIP));
+        NtTerminateProcess((HANDLE)(LONG_PTR)-1, (LONG)*(const ULONG *)Rec32);
+        return (NTSTATUS)0xC000000DL; /* not reached */
+    }
+
+    if (!Wow64pKiUserExceptionDispatcher32 || !Wow64pBTCpuSetContext ||
+        !Wow64pBTCpuGetContext)
+        return (NTSTATUS)0xC000000DL;
+
+    /* DBG_PRINTEXCEPTION(_WIDE)_C: natively the kernel's KD consumes these
+     * (that's how OutputDebugString "returns" with no debugger). We bypass the
+     * kernel, so consume them here the same way — print and resume at the
+     * captured context. Dispatching them to guest SEH instead would kill the
+     * process: the guest kernel32's __except is DUMMY_PSEH (never registers). */
+    {
+        ULONG Code = *(const ULONG *)Rec32;
+        const ULONG *Prm = (const ULONG *)(Rec32 + 0x14); /* ExceptionInformation */
+        if (Code == 0x40010006 /* DBG_PRINTEXCEPTION_C */ ||
+            Code == 0x4001000A /* DBG_PRINTEXCEPTION_WIDE_C */)
+        {
+            ULONG Len = Prm[0], Str = Prm[1];
+            if (Str && Str < 0x80000000u && Len && Len < 512)
+            {
+                if (Code == 0x40010006)
+                    DbgPrint("[GUEST32] %.*s", (int)Len,
+                             (const char *)(ULONG_PTR)Str);
+                else
+                    DbgPrint("[GUEST32] %.*ws", (int)Len,
+                             (const WCHAR *)(ULONG_PTR)Str);
+            }
+            for (i = 0; i < WOW64_CTX32_SIZE / 4; i++)
+                Resume[i] = ((const ULONG *)(ULONG_PTR)Ctx32)[i];
+            return Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2,
+                                         (HANDLE)(LONG_PTR)-1, NULL, Resume);
+        }
+    }
+
+    /* Frame placement: below the LIVE guest Esp (the syscall-stub esp from the
+     * CPU layer), NOT below the captured Ctx32->Esp — the raiser's frames (and
+     * the very Rec32/Ctx32 buffers being copied) live between the two. */
+    for (i = 0; i < WOW64_CTX32_SIZE / 4; i++)
+        Live[i] = 0;
+    if (Wow64pBTCpuGetContext((HANDLE)(LONG_PTR)-2, (HANDLE)(LONG_PTR)-1,
+                              NULL, Live) < 0)
+        return (NTSTATUS)0xC000000DL;
+    Esp = Wow64pBuildGuestExceptionFrame(Rec32, Ctx32,
+                                         Live[WOW64_CTX32_ESP / 4] - 0x40);
+    if (!Esp)
+        return (NTSTATUS)0xC000000DL;
+
+    if (Wow64TraceSyscalls)
+        DbgPrint("[WOW64] NtRaiseException %08lx eip=%08lx -> 32-bit SEH dispatch (esp=%08lx)\n",
+                 *(const ULONG *)Rec32, *(const ULONG *)(Ctx32 + WOW64_CTX32_EIP), Esp);
+
+    for (i = 0; i < WOW64_CTX32_SIZE / 4; i++)
+        Resume[i] = ((const ULONG *)(ULONG_PTR)Ctx32)[i];
+    Resume[WOW64_CTX32_EIP / 4] = (ULONG)(ULONG_PTR)Wow64pKiUserExceptionDispatcher32;
+    Resume[WOW64_CTX32_ESP / 4] = Esp;
+    return Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2, (HANDLE)(LONG_PTR)-1,
+                                 NULL, Resume);
+}
+
 /* ---- NtGdiOpenDCW (M4/wow64win) ----------------------------------------- *
  * The first win32k marshaller: gdi32's CreateDC path. The two UNICODE_STRING
  * args (device name, log address) widen 8->16 bytes; DEVMODEW is a flat
@@ -1706,6 +1805,138 @@ static NTSTATUS Wow64Manual_NtUserRegisterClassExWOW(ULONG *a)
 
     return (NTSTATUS)NtUserRegisterClassExWOW(&W64, CN64p, CV64p, M64p, a[4], a[5],
                                               (PVOID)(ULONG_PTR)a[6]);
+}
+
+/* ---- E4b: NtUserGetClassInfo --------------------------------------------- *
+ * user32 GetClassInfoExW/A — hit by the stock create-window path (doom/testgui
+ * probe their class before registering). The raw auto-thunk fed win32k the
+ * guest's 8-byte UNICODE_STRING32 as 16 bytes (the garbage Buffer half
+ * probe-raised C0000005 -> BUGCHECK 0x1E under DUMMY_PSEH on amd64; arm64 only
+ * ever survived by stack-garbage luck) and then let the kernel RtlCopyMemory an
+ * 80-byte WNDCLASSEXW over the guest's 48-byte struct — 32 bytes of guest
+ * stack corruption even on success. Same WC32/WC64 layouts as
+ * RegisterClassExWOW above, narrowed on the way OUT instead of widened IN. */
+static NTSTATUS Wow64Manual_NtUserGetClassInfo(ULONG *a)
+{
+    extern ULONG NtUserGetClassInfo(PVOID, PVOID, PVOID, PVOID, ULONG);
+    typedef struct { ULONG cbSize, style, lpfnWndProc; LONG cbClsExtra, cbWndExtra;
+                     ULONG hInstance, hIcon, hCursor, hbrBackground,
+                           lpszMenuName, lpszClassName, hIconSm; } WC32;
+    typedef struct { ULONG cbSize, style; ULONGLONG lpfnWndProc;
+                     LONG cbClsExtra, cbWndExtra;
+                     ULONGLONG hInstance, hIcon, hCursor, hbrBackground,
+                               lpszMenuName, lpszClassName, hIconSm; } WC64;
+    WOW64_UNICODE_STRING32_M *CN32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[1];
+    WC32 *W32 = (WC32 *)(ULONG_PTR)a[2];
+    ULONG *MenuName32 = (ULONG *)(ULONG_PTR)a[3];
+    WOW64_UNICODE_STRING64_M CN64;
+    PVOID CN64p = NULL;
+    WC64 W64;
+    ULONGLONG MenuName64 = 0;
+    ULONG Ret;
+
+    if (!W32)
+        return 0;
+    if (CN32)
+    {
+        /* Buffer may be a raw atom (< 0x10000) — zero-extension keeps it one. */
+        CN64.Length = CN32->Length; CN64.MaximumLength = CN32->MaximumLength;
+        CN64.__pad = 0; CN64.Buffer = CN32->Buffer;
+        CN64p = &CN64;
+    }
+    W64.cbSize = sizeof(W64);
+    W64.style = W32->style;
+    W64.lpfnWndProc = W32->lpfnWndProc;
+    W64.cbClsExtra = W32->cbClsExtra;
+    W64.cbWndExtra = W32->cbWndExtra;
+    W64.hInstance = W32->hInstance;
+    W64.hIcon = W32->hIcon;
+    W64.hCursor = W32->hCursor;
+    W64.hbrBackground = W32->hbrBackground;
+    W64.lpszMenuName = W32->lpszMenuName;
+    W64.lpszClassName = W32->lpszClassName;
+    W64.hIconSm = W32->hIconSm;
+
+    Ret = NtUserGetClassInfo((PVOID)(ULONG_PTR)a[0], CN64p, &W64, &MenuName64, a[4]);
+    if (Ret)
+    {
+        /* Narrow back. A class whose members came from 64-bit code (a system
+         * class wndproc, a >4GB menu-name mapping) cannot be represented for
+         * the guest — trace it loudly instead of silently truncating. */
+        if ((W64.lpfnWndProc | W64.lpszMenuName | W64.lpszClassName | MenuName64)
+            >> 32)
+            DbgPrint("[WOW64] NtUserGetClassInfo: 64-bit-only members "
+                     "(proc=%I64x menu=%I64x cls=%I64x pmenu=%I64x) TRUNCATED\n",
+                     W64.lpfnWndProc, W64.lpszMenuName, W64.lpszClassName,
+                     MenuName64);
+        W32->style = W64.style;
+        W32->lpfnWndProc = (ULONG)W64.lpfnWndProc;
+        W32->cbClsExtra = W64.cbClsExtra;
+        W32->cbWndExtra = W64.cbWndExtra;
+        W32->hInstance = (ULONG)W64.hInstance;
+        W32->hIcon = (ULONG)W64.hIcon;
+        W32->hCursor = (ULONG)W64.hCursor;
+        W32->hbrBackground = (ULONG)W64.hbrBackground;
+        W32->lpszMenuName = (ULONG)W64.lpszMenuName;
+        W32->lpszClassName = (ULONG)W64.lpszClassName;
+        W32->hIconSm = (ULONG)W64.hIconSm;
+        if (MenuName32)
+            *MenuName32 = (ULONG)MenuName64;
+    }
+    return (NTSTATUS)Ret;
+}
+
+/* ---- E4c: NtUserThunkedMenuItemInfo -------------------------------------- *
+ * winmine's menu bar. user32 InsertMenuItemW/SetMenuItemInfoW pack the item as
+ * MENUITEMINFOW (48 bytes on i386, 80 on the host — five pointer-width fields)
+ * plus the caption as a separate PUNICODE_STRING. The auto-thunk handed win32k
+ * the guest's 8-byte UNICODE_STRING32; its align-8 ProbeForRead raised
+ * STATUS_DATATYPE_MISALIGNMENT -> BUGCHECK 0x1E under DUMMY_PSEH. */
+static NTSTATUS Wow64Manual_NtUserThunkedMenuItemInfo(ULONG *a)
+{
+    extern ULONG NtUserThunkedMenuItemInfo(PVOID, ULONG, ULONG, ULONG, PVOID, PVOID);
+    typedef struct { ULONG cbSize, fMask, fType, fState, wID,
+                     hSubMenu, hbmpChecked, hbmpUnchecked,
+                     dwItemData, dwTypeData, cch, hbmpItem; } MII32; /* 48 */
+    typedef struct { ULONG cbSize, fMask, fType, fState, wID, __pad0;
+                     ULONGLONG hSubMenu, hbmpChecked, hbmpUnchecked,
+                               dwItemData, dwTypeData;
+                     ULONG cch, __pad1;
+                     ULONGLONG hbmpItem; } MII64; /* 80 */
+    const MII32 *M32 = (const MII32 *)(ULONG_PTR)a[4];
+    WOW64_UNICODE_STRING32_M *Cap32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[5];
+    MII64 M64;
+    WOW64_UNICODE_STRING64_M Cap64;
+    PVOID M64p = NULL, Cap64p = NULL;
+
+    if (M32)
+    {
+        M64.cbSize = sizeof(M64);
+        M64.fMask = M32->fMask;
+        M64.fType = M32->fType;
+        M64.fState = M32->fState;
+        M64.wID = M32->wID;
+        M64.__pad0 = 0;
+        M64.hSubMenu = M32->hSubMenu;
+        M64.hbmpChecked = M32->hbmpChecked;
+        M64.hbmpUnchecked = M32->hbmpUnchecked;
+        M64.dwItemData = M32->dwItemData;
+        M64.dwTypeData = M32->dwTypeData;
+        M64.cch = M32->cch;
+        M64.__pad1 = 0;
+        M64.hbmpItem = M32->hbmpItem;
+        M64p = &M64;
+    }
+    if (Cap32)
+    {
+        Cap64.Length = Cap32->Length;
+        Cap64.MaximumLength = Cap32->MaximumLength;
+        Cap64.__pad = 0;
+        Cap64.Buffer = Cap32->Buffer;
+        Cap64p = &Cap64;
+    }
+    return (NTSTATUS)NtUserThunkedMenuItemInfo((PVOID)(ULONG_PTR)a[0], a[1], a[2],
+                                               a[3], M64p, Cap64p);
 }
 
 static NTSTATUS Wow64Manual_NtUserCreateWindowEx(ULONG *a)
@@ -2639,6 +2870,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtConnectPort(Arguments);
     if (WOW64_IS("NtContinue"))
         return Wow64Manual_NtContinue(Arguments);
+    if (WOW64_IS("NtRaiseException"))
+        return Wow64Manual_NtRaiseException(Arguments);
     if (WOW64_IS("NtCreateDirectoryObject"))
         return Wow64pOpenByOa(NtCreateDirectoryObject, Arguments);
     if (WOW64_IS("NtCreateEvent"))
@@ -2655,6 +2888,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtQueryValueKey(Arguments);
     if (WOW64_IS("NtUserRegisterClassExWOW"))
         return Wow64Manual_NtUserRegisterClassExWOW(Arguments);
+    if (WOW64_IS("NtUserGetClassInfo"))
+        return Wow64Manual_NtUserGetClassInfo(Arguments);
+    if (WOW64_IS("NtUserThunkedMenuItemInfo"))
+        return Wow64Manual_NtUserThunkedMenuItemInfo(Arguments);
     if (WOW64_IS("NtUserCreateWindowEx"))
         return Wow64Manual_NtUserCreateWindowEx(Arguments);
     if (WOW64_IS("NtUserGetMessage"))

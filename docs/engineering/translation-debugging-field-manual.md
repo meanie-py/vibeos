@@ -503,6 +503,7 @@ green that means nothing.
 **Symptom:** enumeration processes element [0] then dies before [1]; csrss silently dies (no panic output) at i=1 → BUGCHECK 0x4C STATUS_SYSTEM_PROCESS_TERMINATED; amd64 silently corrupts/hangs (no bounds-check crash visible).
 **Root cause:** bindgen models C `T arr[ANYSIZE_ARRAY]`/`T arr[1]` as `arr: [T; 1]`. Rust `arr[i]` for i≥1 inserts a bounds check that panic-aborts under `panic="abort"`; C intentionally over-allocates so the memory is valid.
 **Fix:** use raw-pointer arithmetic — `arr.as_mut_ptr().add(i)` or `core::ptr::addr_of_mut!((*p).arr[0]).cast::<T>().add(i)`. Watch DEVICE_RELATIONS.Objects, CM_RESOURCE_LIST, IO_RESOURCE_REQUIREMENTS_LIST, KEY_VALUE_FULL_INFORMATION, CsrRootProcess.ServerData, **FILE_FULL_EA_INFORMATION.EaName** (`[CHAR;1]`, read the NUL terminator at `EaName[EaNameLength]`). Note: for `static mut FOO: [T;N]`, `addr_of_mut!(FOO).add(i)` strides by whole-array size — use `FOO.as_mut_ptr().add(i)`.
+**Variant — USERMODE DLL, LOUD `RUST PANIC` on serial (2026-07-18):** the same shape recurs in cohab-flipped *usermode* winsock/net DLLs, where the crate's own `[T;1]` type-def (not bindgen) models the C flex member. `ws2help-rust` `WSH_HANDLE_TABLE.SearchTables` + `WSH_HASH_TABLE.Handles` (`WahCreateHandleContextTable`/`WahInsertHandleContext` — the handle-context hash table) and `netapi32-rust` `MIB_IPADDRTABLE.table` (`NetBTAddNameToAddrTable` adapter enum) all indexed `field[i]` past the length-1 stub → `*** RUST PANIC in ws2help-rust at context.rs:182` → `NETTEST.EXE exit_status=0xe0525354` (the Rust-panic exception code), killing `test_usermode_winsock_roundtrip`. Deterministic on the flipping tree, so it *looks* like a gate `NET_FLAKE` (the classifier can't tell a regression from the timing flake — it just fails the retry too and ends red); the differential tell is that ONLY the DLL-flipping worktree fails net while every other lane passes. Same fix: `field.as_mut_ptr().add(i)`. The inconsistency was intra-file — sibling fns (`WahDestroyHandleContextTable`, `WahReferenceContextByHandle`) already used pointer arithmetic; only some sites used the `[..]` operator.
 **Variant — SILENT THREAD HANG (not a bugcheck), message went to debugcon not serial (2026-06-13):** `IoCheckEaBufferValidity` (iomgr/util.rs) translated C `Current->EaName[EaNameLength] != 0` literally → `(*Current).EaName[16]` on `[CHAR;1]` → `panic_bounds_check`. The kernel-rust panic handler (kernel-rust/src/lib.rs) writes `PANIC:<file>:<line>` to **debugcon port 0xe9** (the `-debugcon file:...` sink, NOT the COM/serial log) then `loop {}`. On QEMU's single vCPU the timer still preempts the spinning thread, so OTHER threads keep running — symptom looked like one operation wedging forever (here: opening `\Device\Tcp` WITH an EA buffer, the AFD/winsock path) while the rest of the system was live, with no message in the serial log. **Diagnosis when a single op wedges but the box stays alive: check the debugcon capture for `PANIC:`** before assuming a lock/IO-manager hang. Triggered the FIRST time any EA-based create ran (AFD/named-pipes); fixed kernel-wide by `*(*Current).EaName.as_ptr().add(EaNameLength as usize)`.
 **Source:** `feedback_bindgen_flexible_array_index.md`, `feedback_flexible_array.md`
 
@@ -8493,7 +8494,7 @@ high-image-base DLLs (winsrv.dll at 0x788xxxxx) print instruction addresses at
 column 0 — an address regex anchored `^\s+` silently skips the whole binary;
 (b) fastcall-decorated mangled names (`@_ZN...@16`) dodge `_ZN`-prefix mangling
 checks — strip `_` AND `@` before testing. Source-level twin:
-`tools/scan_ir_mismatch.py` (§9.101) catches the whole class pre-fold with
+`tools/scan_ir_mismatch.py` (§9.103) catches the whole class pre-fold with
 exact symbol names. Historical one-liner:
 `llvm-objdump -d <sys> | awk '/^[0-9a-f]+ </{fn=$2} /\tud2/{print fn}'` filtered
 for named non-intrinsic fns (skip `__ZN`/compiler_builtins/`___*`/panic/D0Ev
@@ -8525,8 +8526,86 @@ CDROM_TAG_MEDIA_CHANGE_DETECTION) named the owner immediately. NOTE: the
 `--tripwire SPECIALPOOL` channel did NOT reach the kernel on the windows-host
 backend (no `-fw_cfg` in the qemu cmdline, no `[TRIPWIRE]` ack) — harness gap,
 owed fix; don't assume an armed tripwire without the ack line.
+### 9.101 (FOUND+FIXED 2026-07-18, validation in flight) The i386 IPI-packet protocol trio — an EMPTY "wait for completion" block, a freeze request that corrupted its own state machine, and a scheduler-oracle mark with one uncovered promote site
 
-### 9.101 (TOOLED 2026-07-18) scan_ir_mismatch.py — the §9.99 class caught pre-fold, and the refined fold-truth model
+All three surfaced in one session, the first time the i386 `-smp 2` kernel ran a
+kmtest conformance sweep (which is also why none had bitten before: boot alone
+barely exercises these paths). Context: porting the amd64 single-VA TLB shootdown
+to i386 over the classic NT `KiIpiSendPacket` path (`KiTbShootdownSingle`/
+`KiTbShootdownBroadcast` in `ke/i386/cpu.rs`, dispatched from the
+`KeInvalidateTlbEntry`/`KeFlushProcessTb` inlines in `ntkrnl-sys/src/inline/mm.rs`).
+
+1. **The empty-wait-comment class.** `KeFlushEntireTb`'s SMP tail read
+   `if TargetAffinity != 0 { // Wait for IPI completion }` — a comment, an if, and
+   NO CODE. It scans as complete (the shape is there, the intent is named) but the
+   sender returned with its packet slots (`Prcb->WorkerRoutine`/`CurrentPacket`/
+   `TargetSet`) still live; the NEXT `KiIpiSendPacket` from that CPU could clobber
+   a packet an unserviced target hadn't read yet — the target then runs the NEW
+   worker with the NEW arguments (worker/VA swap-under-read), and a stale ack
+   corrupts the new packet's `TargetSet` bookkeeping. Fix: a real drain,
+   `KiIpiStallOnPacketTargets` (spin `Prcb->TargetSet != 0`, 0x101-subcoded loud
+   guard), used by `KeFlushEntireTb` and both new shootdown senders. **Grep for
+   the class:** `grep -rn "^\s*}\?\s*$" -B1` is useless — instead grep comments
+   that PROMISE synchronization (`[Ww]ait for`) and check the enclosing block has
+   any statements. A translated TODO that names its intent is the most
+   convincing-looking dead code there is.
+
+2. **IPI_FREEZE is a STATE, not a request bit** (the `KdSystemDebugControl -smp 2`
+   instant wedge: `[KMTEST:BEGIN KdSystemDebugControl]` then eternal silence, test
+   green on i386 UP and amd64 `-smp 2`). The freeze protocol
+   (`i386/freeze.rs::KxFreezeExecution`, ported from amd64) stages
+   `TargetPrcb->IpiFrozen = IPI_FROZEN_STATE_TARGET_FREEZE` (5) and then calls
+   `KiIpiSend(targets, IPI_FREEZE)`. But the i386/arm64 generic `KiIpiSend`
+   treated every request as a bit position and OR'd `1 << IPI_FREEZE` (0x10) into
+   `IpiFrozen` — turning the staged 5 into 0x15 — and `KiIpiServiceRoutine` had no
+   freeze branch at all (only APC/DPC/SYNCH bit tests), so the target never called
+   `KiProcessorFreezeHandler` and the owner spun forever on `!= FROZEN`. Root
+   difference vs amd64: there, freeze rides an NMI and never touches the request
+   field; on i386 both mechanisms share `Prcb->IpiFrozen` (ReactOS collapsed NT's
+   separate `RequestSummary` into it, and its i386 SMP was never finished so the
+   aliasing was never caught). Fix: `KiIpiSend` special-cases `IPI_FREEZE`
+   (ring targets, touch nothing), and `KiIpiServiceRoutine` dispatches
+   `KiProcessorFreezeHandler(TrapFrame, ExceptionFrame)` FIRST when
+   `IpiFrozen == IPI_FROZEN_STATE_TARGET_FREEZE` (guarded on a real TrapFrame —
+   the packet self-service path passes NULL and freeze never self-targets).
+   Residual accepted gaps, documented in-code: request-bit ops on `IpiFrozen`
+   can still alias freeze states in a kd-freeze window (real fix = separate
+   RequestSummary field), and a CPU parked at IPI_LEVEL can't take 0xE1 freeze
+   until it drops below (amd64 avoids via NMI; i386 has no NMI path yet).
+
+3. **An oracle is only as good as its unmark coverage** (the `[RQDEFER2]
+   DOUBLE-DEFER … caller_line=718 stale_by=718` serial spam saturating every i386
+   `-smp 2` boot). The §9.56 double-defer oracle marks a thread at
+   `KiInsertDeferredReadyList` and unmarks at promotion-to-Running. i386's
+   `KiDispatchInterrupt` standby promote (`Prcb->NextThread` pickup,
+   `thrdini.rs`) sets `State = Running` WITHOUT the unmark — the one site missed
+   (its amd64 twin in `ke/amd64/stubs.rs` has it). Every thread promoted there
+   kept its mark forever, so each later legitimate wake reported DOUBLE-DEFER
+   with a constant `stale_by`. **The tell that it's a stuck mark, not a real
+   double-defer:** same thread + same `caller_line` + same `stale_by` repeating
+   for the whole boot, `waitstatus=0x102` (a periodic timer waiter re-waking).
+   A real §9.56 event is one-shot and names two different wakers. **Rule: when
+   adding a lifecycle oracle, enumerate promote sites by grepping the state
+   ASSIGNMENT (`State = Running`), not by porting the site list from another
+   arch** — each arch has its own dispatch-interrupt/idle promote shape. Cost of
+   the miss: DbgPrint-per-wake serial overhead on every SMP run (a material part
+   of a 77-minute kmtest sweep) plus a dead oracle signal.
+
+Bonus, same session (first i386 rostests build ever attempted): clang's
+integrated assembler rejects `push offset sym` in GAS-Intel i386 asm
+("unsupported relocation type") — materialize via `lea eax, [sym]` + `push eax`
+(scratch reg), or patch the value into a placeholder stack slot after the
+register file is saved when NO register is free (`NtContinue.S`);
+`add_delay_importlibs` on the no-delayload fallback linked the regular importlib
+but not `delayimp`, so `__pfnDli*Hook2` variable references went undefined (fix:
+link `delayimp` unconditionally — static-lib pull-in makes it free); a raw
+`target_link_libraries(... -lgcc)` fails on llvm-mingw — use the toolchain-aware
+`libgcc` target (gcc.cmake maps it to compiler-rt); and the kmtest conformance
+flow needs only `ENABLE_ROSTESTS_KMTESTS=ON` — full `ENABLE_ROSTESTS=ON` drags
+the entire never-ported apitest/winetest estate into the livecd graph (the
+conformance verb's error message now says so).
+
+### 9.102 (TOOLED 2026-07-18) scan_ir_mismatch.py — the §9.99 class caught pre-fold, and the refined fold-truth model
 
 **The tool:** `tools/scan_ir_mismatch.py <deps>/*.ll [--check|--all]`. Emit dev
 IR (`RUSTFLAGS="--emit=llvm-ir" cargo build --workspace --target <triple>`, or
@@ -8580,9 +8659,9 @@ bring-up. That lore is now suspect: several "CGU bug" entries are plausibly
 §9.99 folds fed by these mismatches. ntoskrnl-rust/hal-rust fixes are owed as
 a reviewed-individually batch (hot-crate fence).
 
-### 9.102 (FIXED 2026-07-18) The OTHER ud2 class — provable-null-deref folds: DUMMY_PSEH eager filter evaluation + unguarded C null-blindness
+### 9.103 (FIXED 2026-07-18) The OTHER ud2 class — provable-null-deref folds: DUMMY_PSEH eager filter evaluation + unguarded C null-blindness
 
-**Symptom:** a named-fn `ud2` that SURVIVES every §9.99/§9.101 CC/signature fix
+**Symptom:** a named-fn `ud2` that SURVIVES every §9.99/§9.102 CC/signature fix
 — IR sweep clean, decls unified, and the trap is still there after rebuild.
 
 **Mechanism:** not a mismatch at all. In release builds, same-crate callees
@@ -8614,6 +8693,6 @@ shipped (both found closing out the 2026-07-18 driver sweep):
    the kernel code it is.
 
 **Triage order for any named-fn ud2:** (1) scan_ir_mismatch on the crate — CC/
-sig/VAR class (§9.99/§9.101); (2) if IR-clean, read the fold neighborhood for
+sig/VAR class (§9.99/§9.102); (2) if IR-clean, read the fold neighborhood for
 a provably-null deref: eager SEH filters, unguarded lock/lookup results, and
 remember sunk loads mask the true site (this section).

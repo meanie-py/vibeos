@@ -96,10 +96,12 @@ def conformance(args, repo: Path) -> int:
             # binaries would boot and then [KMTEST-SWEEP] launch FAILED. Point at
             # the one-time (cached) configure instead.
             print(
-                f"[conformance] build-{base} is not configured with ENABLE_ROSTESTS=ON — the "
-                f"kmtest binaries won't be staged.\n"
-                f"  fix (one-time, cmake-cached):\n"
-                f"    cd build-{base} && ../tools/canon-run.sh cmake -DENABLE_ROSTESTS=ON .\n"
+                f"[conformance] build-{base} has neither ENABLE_ROSTESTS nor "
+                f"ENABLE_ROSTESTS_KMTESTS — the kmtest binaries won't be staged.\n"
+                f"  fix (one-time, cmake-cached; KMTESTS-only is the fleet norm — full "
+                f"ENABLE_ROSTESTS drags every apitest/winetest into the livecd graph):\n"
+                f"    cd build-{base} && ../tools/canon-run.sh cmake "
+                f"-DENABLE_ROSTESTS_KMTESTS=ON .\n"
                 f"  then re-run this verb (or pass --no-build if media is already staged).",
                 file=sys.stderr,
             )

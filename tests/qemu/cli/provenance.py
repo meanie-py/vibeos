@@ -142,7 +142,16 @@ def _crate_for_stem(repo: Path, stem: str) -> Path | None:
 def _newest_rs_mtime(crate: Path) -> float:
     """Newest .rs mtime under a crate — its source-change signal. The cohab
     binary is relinked AFTER cargo rebuilds the rlib from these, so a fresh
-    build always leaves the binary newer than every .rs here."""
+    build always leaves the binary newer than every .rs here.
+
+    CAVEAT (why check A prefers _depinfo_rs_mtime when cargo's output exists):
+    this rglob counts ORPHAN .rs files — parked translations on disk that no
+    `mod` declaration reaches (e.g. explorer-rust's appbar.rs, folded into
+    traywnd.rs but kept per the never-delete-translations rule). Cargo
+    correctly ignores them, so a sweep that touches an orphan makes this
+    signal newer than cargo's output FOREVER — a false RED no rebuild can
+    clear (2026-07-18 arm64 gate). Cargo's dep-info is the authoritative
+    input list; fall back here only when it's unavailable."""
     newest = 0.0
     root = crate / "src" if (crate / "src").is_dir() else crate
     for p in root.rglob("*.rs"):
@@ -150,6 +159,57 @@ def _newest_rs_mtime(crate: Path) -> float:
             newest = max(newest, p.stat().st_mtime)
         except OSError:
             continue
+    return newest
+
+
+def _depinfo_rs_mtime(repo: Path, cargo_out: Path, crate: Path) -> float | None:
+    """Newest mtime of the CRATE'S OWN .rs inputs cargo ITSELF recorded for
+    this output — parsed from the make-style dep-info (.d) cargo writes beside
+    every artifact. Unlike the rglob it excludes ORPHAN .rs by construction
+    (files no `mod` reaches — parked translations cargo never compiles).
+
+    Scoped to the crate dir ON PURPOSE: the .d lists the full transitive
+    closure (ntkrnl-sys etc.), and comparing against that flags every cohab
+    crate as stale whenever a shared dep changes — TRUE in principle, but the
+    cohab custom commands' cmake GLOB deps only cover each crate's own src, so
+    the build graph cannot clear that staleness and the check would red every
+    gate unfixably (2026-07-18: 12 crates flagged after a tree-wide sweep
+    touched ntkrnl-sys). The cross-crate-deps graph gap is tracked separately;
+    this check keeps its original per-crate semantic, minus the orphans.
+
+    Paths inside are CANONICAL (/tmp/vibeos/..., the canon-run bind mount) and
+    must be remapped to the repo before stat'ing — the mount only exists
+    during a build. Returns None when the .d is missing or lists none of this
+    crate's .rs (caller falls back to the rglob)."""
+    from . import canon
+
+    d = cargo_out.with_suffix(".d")
+    try:
+        text = d.read_text()
+    except OSError:
+        return None
+    prefix = canon.CANON.rstrip("/") + "/"
+    crate_res = crate.resolve()
+    newest = None
+    for line in text.splitlines():
+        _target, sep, deps = line.partition(": ")
+        if not sep:
+            continue
+        # Escaped-space tolerant tokenization ("\ " inside a path).
+        for tok in deps.replace("\\ ", "\x00").split():
+            tok = tok.replace("\x00", " ")
+            if not tok.endswith(".rs"):
+                continue
+            if tok.startswith(prefix):
+                tok = str(repo / tok[len(prefix) :])
+            p = Path(tok)
+            try:
+                if not p.resolve().is_relative_to(crate_res):
+                    continue
+                mt = p.stat().st_mtime
+            except OSError:
+                continue
+            newest = mt if newest is None else max(newest, mt)
     return newest
 
 
@@ -269,12 +329,18 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
                 f"output is missing for this arch (cohab crate never compiled here)"
             )
             continue
-        if newest_rs and cargo_out is not None and cargo_out.stat().st_mtime < newest_rs:
-            reasons.append(
-                f"{rel}: stale — {crate.name} .rs is newer than cargo's own output "
-                f"({cargo_out.name}); the crate was not rebuilt (add to ninja_targets?)"
-            )
-            continue
+        if newest_rs and cargo_out is not None:
+            # Prefer cargo's own dep-info over the rglob: the rglob counts
+            # orphan .rs files cargo never compiles (see _newest_rs_mtime
+            # CAVEAT), which made this arm false-RED unfixably.
+            depinfo_rs = _depinfo_rs_mtime(repo, cargo_out, crate)
+            effective_rs = depinfo_rs if depinfo_rs is not None else newest_rs
+            if cargo_out.stat().st_mtime < effective_rs:
+                reasons.append(
+                    f"{rel}: stale — {crate.name} .rs is newer than cargo's own output "
+                    f"({cargo_out.name}); the crate was not rebuilt (add to ninja_targets?)"
+                )
+                continue
         # B. did the link consume the current staticlib?
         if copied is not None and artifact.stat().st_mtime < copied.stat().st_mtime:
             reasons.append(

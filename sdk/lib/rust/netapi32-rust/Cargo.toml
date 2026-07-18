@@ -1,0 +1,26 @@
+# netapi32-rust — Rust translation of dll/win32/netapi32 (the LAN Manager API DLL).
+# staticlib → libnetapi32_rust.a, cohab-linked into the cmake-built netapi32.dll with the
+# translated .c files commented out (per-file flip, like the winsock-family crates).
+#
+# netapi32 implements the Net* LAN Manager APIs (NetUser/Group/LocalGroup/Share/Server/Wksta/
+# Dfs/Alert/Message) + the NetBIOS (nb30) surface. The lm* struct layouts (USER_INFO_*/
+# GROUP_INFO_*/SHARE_INFO_*/... + NCB) are bindgen-GENERATED per arch into `types` by
+# tools/rustconv/gen_driver_types.sh (profile: netapi32), not hand-transcribed.
+#
+# Translated with DeepSeek-V4-pro + c2rust anchors (14/21 files; the 7 RPC-stub files —
+# browser/dssetup/misc/netlogon/schedule/srvsvc/wksta_new — cannot be c2rust-anchored and are
+# owed a pure-LLM pass, so netapi32.dll keeps those C bodies for now).
+[package]
+name = "netapi32-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "netapi32_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }

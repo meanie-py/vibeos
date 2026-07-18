@@ -1,0 +1,23 @@
+# userenv-rust — Rust translation of dll/win32/userenv (the user-environment DLL).
+# staticlib → libuserenv_rust.a, cohab-linked into the cmake-built userenv.dll with the
+# translated .c files commented out (per-file flip, like the winsock-family crates).
+#
+# userenv implements user profiles (Load/UnloadUserProfile, Create/DeleteProfile), environment
+# blocks (CreateEnvironmentBlock), group-policy path resolution, and per-user shell-folder /
+# registry-hive setup — loaded on the boot path by winlogon→userinit. The private structs
+# (DYN_FUNCS/DYN_MODULE/POLICY_VALUES, PROFILEINFO) are bindgen-GENERATED per arch into `types`
+# by tools/rustconv/gen_driver_types.sh (profile: userenv), not hand-transcribed.
+[package]
+name = "userenv-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "userenv_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }

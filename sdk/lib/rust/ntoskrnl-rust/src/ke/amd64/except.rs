@@ -264,7 +264,7 @@ unsafe fn KiDispatchExceptionToUser(
     _enable();
     
     let result = 'seh: {
-        if let Err(_) = (|| -> Result<(), NTSTATUS> {
+        if let Err(e) = (|| -> Result<(), NTSTATUS> {
             use ntkrnl_sys::probe::*;
             probe_user_buffer(
                 UserStack as *const core::ffi::c_void,
@@ -274,6 +274,14 @@ unsafe fn KiDispatchExceptionToUser(
             )?;
             Ok(())
         })() {
+            // Fail-loud: a rejected dispatch here IS the process death the
+            // second-chance block below reports as a bare [EXIT-THR] 0x80.
+            crate::dbg_print!(
+                b"[KI-EXC] user dispatch FAILED: exception-stack probe %p size 0x%lx status 0x%lx\n\0",
+                UserStack as usize,
+                core::mem::size_of::<KUSER_EXCEPTION_STACK>() as u32,
+                e as u32,
+            );
             break 'seh 0u8;
         }
 
@@ -289,6 +297,12 @@ unsafe fn KiDispatchExceptionToUser(
                 // FaultCode=2 (write, not present), Mode=UserMode(1)
                 let status = MmAccessFault(2, page as PVOID, 1i8, core::ptr::null_mut());
                 if status < 0 {
+                    // Fail-loud: see the probe-failure print above.
+                    crate::dbg_print!(
+                        b"[KI-EXC] user dispatch FAILED: pre-fault of stack page %p = 0x%lx\n\0",
+                        page,
+                        status as u32,
+                    );
                     break 'seh 0u8;
                 }
                 page += 0x1000;
@@ -565,8 +579,8 @@ pub unsafe extern "system" fn KiDispatchException(
             let mut pdesk: u64 = 0;
             let mut delta: u64 = 0;
             if !teb.is_null() && MmIsAddressValid(teb as _) != 0 {
-                pdesk = core::ptr::read_unaligned(teb.add(0x820) as *const u64);
-                delta = core::ptr::read_unaligned(teb.add(0x828) as *const u64);
+                pdesk = core::ptr::read_unaligned(teb.add(0x820) as *const u64); // nolint: magic-offset (CLIENTINFO.pDeskInfo @ TEB+0x820 — §9.41 diagnostic tripwire)
+                delta = core::ptr::read_unaligned(teb.add(0x828) as *const u64); // nolint: magic-offset (CLIENTINFO.ulClientDelta @ TEB+0x828 — §9.41 diagnostic tripwire)
             }
             crate::dbg_print!(
                 b"[KI-EXC] %s teb=%p code=0x%lx addr=%p rip=%p pci.pDeskInfo=%p pci.ulClientDelta=%p\n\0",

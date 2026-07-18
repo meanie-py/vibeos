@@ -778,6 +778,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "iphlpapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "kbdclass-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1240,10 +1248,26 @@ name = "msvcrt-sys"
 version = "0.1.0"
 
 [[package]]
+name = "mswsock-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "mup-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "netapi32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
  "panic-common",
 ]
 
@@ -2301,6 +2325,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "userenv-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "userinit-cargo"
 version = "0.1.0"
 dependencies = [
@@ -2499,6 +2531,14 @@ dependencies = [
 
 [[package]]
 name = "ws2_32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "ws2help-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",

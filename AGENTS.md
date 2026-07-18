@@ -307,7 +307,7 @@ Use `adrp + add :lo12: + ldr` (not `adrp + ldr :lo12:`) in assembly. The latter 
 LLD prepends `_` to PE export forwarder targets on i386. Workaround in FreeLDR (peloader.c) and ntoskrnl (sysldr.c): strip leading `_` from forwarder DLL name.
 
 ### GAS Intel Syntax on i386
-In GAS `.intel_syntax noprefix`, `mov eax, label` does a **memory load** (reads bytes at label), NOT an address load. Must use `lea eax, [label]` or `mov eax, offset label`.
+In GAS `.intel_syntax noprefix`, `mov eax, label` does a **memory load** (reads bytes at label), NOT an address load. Must use `lea eax, [label]` or `mov eax, offset label`. Also `push offset label` fails to assemble under clang's integrated assembler ("unsupported relocation type") — materialize via `lea eax, [label]` + `push eax` (field manual §9.101).
 
 ### Build System Architecture Conditionals
 Architecture checks use: `if(ARCH STREQUAL "arm64")` / `"amd64"` / `"i386"`. ARM64 uses UEFI-only boot. The `USE_DUMMY_PSEH` flag is set for all architectures when using llvm-mingw.
