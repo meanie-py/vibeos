@@ -1,0 +1,23 @@
+# dnsapi-rust — Rust translation of dll/win32/dnsapi (the Win32 DNS client API DLL).
+# staticlib → libdnsapi_rust.a, cohab-linked into the cmake-built dnsapi.dll with the translated
+# .c files commented out (per-file flip, like the winsock-family crates).
+#
+# dnsapi implements DnsQuery*/DnsRecordList*/DnsNameCompare/DnsExtractRecords etc. over the
+# 3rdparty `adns` async resolver (sdk/lib/3rdparty/adns) plus a single MIDL client interface
+# (dnsrslvr_c.h — the DNS Resolver service, used only by rpc.c). The windns/adns/dnsrslvr struct
+# layouts are bindgen-GENERATED per arch into `types` by tools/rustconv/gen_driver_types.sh
+# (profile: dnsapi), not hand-transcribed. Translated with DeepSeek-reasoner (pure-LLM).
+[package]
+name = "dnsapi-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "dnsapi_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
