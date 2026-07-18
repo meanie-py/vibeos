@@ -1132,3 +1132,35 @@ DUMMY_PSEH with its committed baseline.
   `-DKMT_I386_NATIVE_SEH=ON`. Once the kernel-mode frame-based dispatch is fixed, the i386 DUMMY_PSEH
   structural quarantine class (IoReadWrite + the kmtest_drv-hosted set, once kmtest_drv is likewise
   retargeted) can ratchet in — the same payoff native SEH gave amd64/arm64.
+
+### 2026-07-17 (evening) — §9.96 SLAIN: dropped `PAGE_NOACCESS` guard; MmSection + ZwMapViewOfSection ratchet back in on arm64
+
+**The arm64 ZwMapViewOfSection translation-fault storm (and the MmSection "wedge" with it) is
+FIXED.** Full writeup: field manual §9.96 (CLOSED). The short version: the Rust
+`MmNotPresentFaultSectionView` dropped the C's `if (Region->Protect & PAGE_NOACCESS) return
+STATUS_ACCESS_VIOLATION;` (ntoskrnl/mm/section.c:1640), so touching a NOACCESS section view fell
+through to `MmCreateVirtualMapping(..., PAGE_NOACCESS, ...)` → protection-mask `MM_NOACCESS(0x18)`
+→ `MmProtectToPteMask[0x18]==0` → PTE `pfn|0x441` = bits[1:0]=`0b01` = reserved-invalid at L3 →
+CPU faults while bit0-only `MMPTE.valid()` says present → `MmIsPagePresent` early-out returns
+SUCCESS → infinite re-fault (the GDB-captured storm). The malformed VALUE was the fingerprint that
+named the culprit statically — no writer-hunt boot was needed. On x86 the same dropped guard
+silently mapped NOACCESS views readable (wrong, non-fatal) — restored guard is C-faithful on all
+arches; amd64 + i386 sweeps came back byte-identical to baseline. Also added a fail-loud tripwire
+in arm64 `MmCreateVirtualMappingUnsafeEx`: composing `bits[1:0]==0b01` now bugchecks AT the store
+with a `[PAGE] BUG:` banner instead of storming later.
+
+**Ratchet state after the fix (arm64):** MmSection `OK 291/40/12` + ZwMapViewOfSection
+`OK 120/14/1` un-quarantined and baselined (stable 4/4 sweeps). Collateral baseline ratchets, all
+verified pre-existing or convergence (NOT fix regressions): ZwCreateSection `8/2→7/3`
+(deterministic 4/4 — its `FILE_SUPERSEDE` of `kmtest-MmSection.txt` now finds MmSection's leftover
+file, `FILE_SUPERSEDED` vs `FILE_CREATED`; identical counts to amd64/i386, where MmSection always
+ran); ExPools `14/4→13/5` low-watermark (the `_WIN64` 2GB `ExAllocatePoolWithQuotaTag` is
+borderline — flapped on 07-16 too); i386 FsRtlLegal `2504/24→2496/32` + IoDeviceObject
+`185/4→184/5` low-watermarks (both flapped before the fix; 2496/32 = arm64's value).
+
+**New exposure (registered, hunt owed):** with the section tests active, ~2/4 arm64 sweeps kill a
+LATER kmtest_.exe launch — `0xC000001D` on garbage instruction bytes inside image page
+`0x140007xxx` (IoReadWrite, NtSystemDebugControl) or `0xC0000005` at exit (IoDeviceObject). A
+shared image-section page corrupted under heavy map/unmap = the latent arm64 PFN/section-teardown
+family (same as the quarantined ZwAllocateVirtualMemory 0x4E). Roadmap registry entry added; the
+section tests stay active as the canary. This is the next monster.

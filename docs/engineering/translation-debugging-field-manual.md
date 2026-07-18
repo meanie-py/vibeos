@@ -8096,7 +8096,7 @@ pass=1566/fail=87 == UP baseline (was: ~60s strands within seconds of start, TIM
   + often unloadable), no hand-derived offsets. gdb data symbols need manual reloc:
   `llvm-nm <exe> | grep <sym>` → RVA + runtime kbase (add-symbol-file only maps .text).
 
-### 9.96 (ROOT-CAUSED, fix OWED 2026-07-17) An arm64 kmtest quarantine mislabeled "fastfat stub bugcheck" was actually a translation-fault STORM — `MmAccessFault` returns SUCCESS but leaves the section-view leaf PTE invalid, so a kernel `RtlCompareMemory` re-faults forever (HANG, no bugcheck)
+### 9.96 (CLOSED 2026-07-17 — root: a DROPPED `PAGE_NOACCESS` early-return in the Rust translation) An arm64 kmtest quarantine mislabeled "fastfat stub bugcheck" was actually a translation-fault STORM — `MmAccessFault` returns SUCCESS but leaves the section-view leaf PTE invalid, so a kernel `RtlCompareMemory` re-faults forever (HANG, no bugcheck)
 
 **Symptom.** arm64 `ZwMapViewOfSection` kmtest quarantined 2026-07-16 as "BUGCHECK 0x23 FAT_FILE_SYSTEM
 P1=0xdead0000 = fastfat STUB_BUGCHECK → translate the untranslated fastfat fn." That label was **wrong**.
@@ -8139,11 +8139,24 @@ without guaranteeing bit1: `arm64/page.rs:378` (`MmSetPageProtect`), `ARM3/helpe
 (`MI_MAKE_HARDWARE_PTE_USER`), `ARM3/pagfault.rs:1122` (transition→valid resolve). Each ORs `MmProtectToPteMask`
 whose non-zero entries carry `_B=0x402` (bit1+AF) — so the culprit is a path reaching one of these with a
 **zero/NOACCESS mask index** (or a bit1-clearing step), which set_valid + `MI_MAKE_ACCESSED_PAGE` then leaves at
-`0b01`. **FIX (owed, task #7): a fresh boot with a generic writer-side breakpoint (the fixed slot address
-varies per boot, so watch the writers, not `0xFFFFF680...2700`) to catch which builder emits the `0b01`
-descriptor, then make it set bits[1:0]=`0b11` for L3 pages; ×3-gate.** Do NOT globally change `MMPTE.valid()`
-to `&3==3` — L1/L2 *block* descriptors legitimately use `0b01`, and `valid()`/set_valid are shared with
-amd64/i386 where bit1 = R/W.
+`0b01`.
+
+**True root (CLOSED — found statically, no writer-hunt boot needed).** The malformed-value *signature* did the
+work: `0x441` = exactly `MiDetermineUserGlobalPteMask` (valid+accessed+user) with a **zero**
+`MmProtectToPteMask[idx]` contribution, and the only zero entries are the NOACCESS family. The writer is
+`MmCreateVirtualMapping(Process, PAddress, PAGE_NOACCESS, Page)` from the legacy section fault-in — reachable
+only because the Rust `MmNotPresentFaultSectionView` (mm/section.rs) **dropped the C's guard**
+(`ntoskrnl/mm/section.c:1640`): `if (Region->Protect & PAGE_NOACCESS) return STATUS_ACCESS_VIOLATION;` right
+after `MmFindRegion`. A touch on a NOACCESS section view fell through, allocated a page, and made a "hardware
+valid" PTE with mask index `MM_NOACCESS` → `pfn|0x441` → `0b01` at L3 → storm. On x86 the same composition
+happens to be a *valid present* PTE, so the identical dropped guard silently mapped NOACCESS views readable —
+wrong but non-fatal, which is why only arm64 hung. **Fix:** the guard restored verbatim + a fail-loud tripwire
+in arm64 `MmCreateVirtualMappingUnsafeEx` (`TempPte.Long & 3 == 1` → `KeBugCheck(MEMORY_MANAGEMENT)` with a
+`[PAGE] BUG:` banner) so any future zero-mask composition dies AT the store instead of storming. Cleared BOTH
+arm64 quarantines (`ZwMapViewOfSection` + `MmSection`, 4/4 stable sweeps); amd64/i386 sweeps byte-identical
+(behavior-neutral where SEH differs — i386 keeps its own quarantines, task #18). Do NOT globally change
+`MMPTE.valid()` to `&3==3` — L1/L2 *block* descriptors legitimately use `0b01`, and `valid()`/set_valid are
+shared with amd64/i386 where bit1 = R/W.
 
 **Reusable:** (a) A conformance quarantine note is a *hypothesis*, not ground truth — re-triage from a fresh
 repro before acting on an old label; "0xdead0000 stub bugcheck" here was a stale guess and the real bug was a
@@ -8160,4 +8173,15 @@ real translation, so it settles any software-PTE-vs-hardware disagreement instan
 raw 'monitor gva2gpa 0xADDR'`). (f) On arm64 a *valid L3 page* descriptor is bits[1:0]=`0b11`; bit0-alone
 (`0b01`) is reserved-invalid at L3 → the CPU faults while a bit0-only `.valid()` says "present." Read a
 known-good mapped page's PTE (`x/1gx` at `PTE_BASE + (va>>12)*8`, `PTE_BASE=0xFFFFF68000000000`) to learn the
-expected bit pattern before trusting a software validity predicate.
+expected bit pattern before trusting a software validity predicate. (g) **A malformed-PTE VALUE is a
+fingerprint — decode it against the builder macros before booting a writer-hunt.** `pfn|0x441` ≡ "user
+hardware-PTE base with a zero protection-mask entry" named the guilty caller (and the missing guard) from the
+armchair. (h) **Check the actual constant values before calling a translated `|=` a no-op**: ReactOS
+`MM_NOACCESS` is `0x18` (=`MM_ZERO_ACCESS|MM_WRITECOMBINE`), NOT 0 — so `ProtectMask |= MM_NOACCESS` in the
+WRITECOMBINE branch really does turn on WC bits, and `mask != MM_NOACCESS` guards correctly. Two "obvious
+bugs" evaporated on constant-check; the dropped early-return was the only real one. (i) **Un-quarantining
+heavy tests can expose *downstream* latent bugs**: with the section tests active, ~2/4 arm64 sweeps now kill a
+*later* kmtest_.exe launch with garbage instruction bytes inside the same image page (`0xC000001D` at
+`0x140007xxx`, or a `0xC0000005` at exit) — a shared image-section page corrupted under heavy map/unmap
+traffic, same latent family as the quarantined `ZwAllocateVirtualMemory` 0x4E PFN_LIST_CORRUPT. Registered as
+a known flake; hunt owed (task #7 family).

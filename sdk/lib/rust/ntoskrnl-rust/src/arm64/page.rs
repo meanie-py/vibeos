@@ -464,6 +464,16 @@ unsafe fn MmCreateVirtualMappingUnsafeEx(
 
     MI_MAKE_HARDWARE_PTE(&mut TempPte, PointerPte, ProtectionMask as ULONG_PTR, Page);
 
+    // bits[1:0]=0b01 is a reserved-invalid L3 descriptor on ARM64: the CPU
+    // translation-faults on it while MMPTE.valid() (bit0) reports present, so
+    // the fault path spins forever instead of bugchecking (§9.96). The only
+    // way to compose it here is MmProtectToPteMask[mask]==0 — a NOACCESS-family
+    // protection that should never reach a hardware-valid mapping.
+    if TempPte.Long & 3 == 1 {
+        PagePuts(b"[PAGE] BUG: malformed L3 descriptor (bits[1:0]=0b01) - NOACCESS protection reached MmCreateVirtualMapping\r\n");
+        KeBugCheck(MEMORY_MANAGEMENT);
+    }
+
     Pte = InterlockedExchangePte(PointerPte, TempPte.Long);
 
     if Pte != 0 {

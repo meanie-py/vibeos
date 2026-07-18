@@ -490,6 +490,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   true face root-caused & fixed (KiUserModeCallout callback-ERET IRQ-clobber, dropped-`cli`
   translation bug). Re-triage the residual from fresh evidence only — symbolicate the FIRST
   banner in a log, never the last.**
+- **arm64 kmtest-sweep late-run user-process corruption** (~2/4 sweeps since the §9.96
+  un-quarantine of MmSection/ZwMapViewOfSection, 2026-07-17) — a *later* kmtest_.exe launch
+  dies with `0xC000001D` on garbage instruction encodings inside its own image page
+  (`PC=0x140007xxx`, `[UEXC-KILL] Instr=` shows non-decodable bytes) or `0xC0000005` at
+  process exit; manifests as `IoReadWrite`/`NtSystemDebugControl`/`IoDeviceObject` NO-END /
+  FAIL-EXIT ratchet noise. A shared image-section page is being corrupted under the section
+  tests' heavy map/unmap traffic — same latent arm64 PFN/section-teardown family as the
+  quarantined `ZwAllocateVirtualMemory` 0x4E PFN_LIST_CORRUPT (task #7). The section tests
+  stay ACTIVE (they pass and are the canary); expect occasional ratchet flags on these
+  victims until the PFN bug is slain. Field manual §9.96(i).
 - **winlogon 0xC000021A→0x4C init race** (~3/20, all arches) — kernel32 `%wZ` races basesrv's
   CSR shared-section population. MITIGATED (snapshot validation + loud `snapshot CORRUPT`
   print); real fix owed: publish-last ordering in csrsrv/basesrv. §9.36.

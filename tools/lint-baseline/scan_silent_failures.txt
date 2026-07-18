@@ -1154,7 +1154,6 @@ sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:226: [UNWRAP] .unwrap() — pan
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:265: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:331: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:598: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/i386/thrdini.rs:321: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/traphdlr.rs:229: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/mm/balance.rs:173: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/mm/marea.rs:288: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1215,7 +1214,6 @@ sdk/lib/rust/pnpmgr-rust/src/pnpdma.rs:89: [UNWRAP] .unwrap() — panics on Err/
 sdk/lib/rust/pnpmgr-rust/src/pnpnotify.rs:152: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/po-rust/src/poshtdwn.rs:275: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/po-rust/src/power.rs:349: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ps-rust/src/kill.rs:818: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ps-rust/src/thread.rs:268: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ps-rust/src/win32.rs:107: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ps-rust/src/win32.rs:114: [UNWRAP] .unwrap() — panics on Err/None in kernel code
