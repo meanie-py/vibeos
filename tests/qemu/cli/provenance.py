@@ -153,6 +153,49 @@ def _newest_rs_mtime(crate: Path) -> float:
     return newest
 
 
+def _depinfo_newest_rs(cargo_out: Path, repo: Path) -> float | None:
+    """Newest mtime of the .rs files cargo ACTUALLY COMPILED into this
+    staticlib, from its dep-info (`lib<crate>.d` beside the .a).
+
+    The whole-crate glob above over-approximates: a BANKED-but-unwired
+    translation (.rs on disk with no `mod` declaring it — e.g. explorer-rust's
+    Tier C files) is invisible to cargo, so cargo is correctly "fresh" forever
+    while the glob says "source newer than output" forever — a false RED the
+    2026-07-18 master merge triggered by refreshing appbar.rs's mtime. The
+    dep-info lists exactly the sources the crate build consumed, so a dead
+    file can neither false-red nor mask a real edit to a live one.
+
+    Paths in the dep-info are canonical (/tmp/vibeos/... — builds run under
+    tools/canon-run.sh's bind mount), so map that prefix back onto the repo.
+    Returns None when the dep-info is absent/unreadable — caller falls back
+    to the conservative whole-crate glob."""
+    from . import canon
+
+    d = cargo_out.with_suffix(".d")
+    try:
+        text = d.read_text()
+    except OSError:
+        return None
+    prefix = canon.canon_path() + "/"
+    newest = 0.0
+    seen = False
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        _, _, deps = line.partition(":")
+        # cargo escapes spaces as '\ '; our tree has none — split plainly.
+        for dep in deps.split():
+            if not dep.endswith(".rs"):
+                continue
+            p = Path(repo / dep[len(prefix) :]) if dep.startswith(prefix) else Path(dep)
+            try:
+                newest = max(newest, p.stat().st_mtime)
+                seen = True
+            except OSError:
+                continue
+    return newest if seen else None
+
+
 def mkramdisk_required_rels(repo: Path) -> list[str]:
     """Build-relative paths of the arm64 ramdisk boot set, parsed from
     mkramdisk.sh's REQUIRED_FILES array (`"$BUILD_DIR/<rel>"`). This is the
@@ -269,12 +312,18 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
                 f"output is missing for this arch (cohab crate never compiled here)"
             )
             continue
-        if newest_rs and cargo_out is not None and cargo_out.stat().st_mtime < newest_rs:
-            reasons.append(
-                f"{rel}: stale — {crate.name} .rs is newer than cargo's own output "
-                f"({cargo_out.name}); the crate was not rebuilt (add to ninja_targets?)"
-            )
-            continue
+        if newest_rs and cargo_out is not None:
+            # Prefer the dep-info's compiled-source set over the whole-crate
+            # glob: banked-but-unwired .rs files (no `mod` — cargo never reads
+            # them) must not red a build cargo correctly considers fresh.
+            compiled_newest = _depinfo_newest_rs(cargo_out, repo)
+            effective_rs = compiled_newest if compiled_newest is not None else newest_rs
+            if cargo_out.stat().st_mtime < effective_rs:
+                reasons.append(
+                    f"{rel}: stale — {crate.name} .rs is newer than cargo's own output "
+                    f"({cargo_out.name}); the crate was not rebuilt (add to ninja_targets?)"
+                )
+                continue
         # B. did the link consume the current staticlib?
         if copied is not None and artifact.stat().st_mtime < copied.stat().st_mtime:
             reasons.append(
