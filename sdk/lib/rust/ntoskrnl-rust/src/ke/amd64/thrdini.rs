@@ -230,6 +230,27 @@ pub unsafe extern "system" fn KiSwapContextResume(
     (*Pcr).__bindgen_anon_1.NtTib.Self_ = (*NewThread).Teb as *mut ntkrnl_sys::ddk::_NT_TIB;
     if !(*NewThread).Teb.is_null() {
         __writemsr(MSR_GS_SWAP, (*NewThread).Teb as u64);
+
+        // WoW64 (Phase E, amd64): a 32-bit guest reads its TEB32 through
+        // `fs` (selector KGDT64_R3_CMTEB = 0x53). That descriptor's base is
+        // per-CPU and shared, so it must track the incoming thread's TEB32 on
+        // every switch. TEB32 lives at TEB64 + 0x2000 (MmCreateTeb's combined
+        // low region). Only the base bytes are rewritten — the boot GDT's
+        // 32-bit-data/ring-3 type flags (Flags1/Flags2) stay intact.
+        let eproc = NewProcess as *mut ntkrnl_sys::ddk::_EPROCESS;
+        if !(*eproc).Wow64Process.is_null() {
+            const WOW64_TEB32_OFFSET: usize = 0x2000;
+            const KGDT64_R3_CMTEB: usize = 0x50; // selector == GDT byte offset
+            let teb32 = (*NewThread).Teb as usize + WOW64_TEB32_OFFSET;
+            let gdt = (*Pcr).__bindgen_anon_1.__bindgen_anon_1.GdtBase as usize;
+            let cmteb = (gdt + KGDT64_R3_CMTEB) as *mut ntkrnl_sys::ddk::_KGDTENTRY64;
+            (*cmteb).__bindgen_anon_1.BaseLow = (teb32 & 0xFFFF) as u16;
+            (*cmteb).__bindgen_anon_1.__bindgen_anon_1.Bytes.BaseMiddle =
+                ((teb32 >> 16) & 0xFF) as u8;
+            (*cmteb).__bindgen_anon_1.__bindgen_anon_1.Bytes.BaseHigh =
+                ((teb32 >> 24) & 0xFF) as u8;
+            (*cmteb).__bindgen_anon_1.BaseUpper = 0; // TEB32 < 4GB
+        }
     }
 
     (*Pcr).ContextSwitches += 1;
