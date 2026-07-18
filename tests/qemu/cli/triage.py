@@ -87,6 +87,25 @@ KNOWN_FLAKES = [
     # (xdk/arm64/ke.h + ARM3/helpers.rs + the stack-bounds sites). An arm64 exit
     # hang now classifies HANG_TIMEOUT (still gate-retryable) — the honest signal,
     # no longer masked as an expected flake.
+    #
+    # arm64 ERESOURCE release-not-owned (thread-teardown family): the rare
+    # non-deterministic 0x3 — KeBugCheckEx(0x03, Resource, Thread, OwnerTable, 3)
+    # from ex-rust/src/resource.rs (owner-table scan miss on a SHARED resource;
+    # both live hits had OwnerTable == NULL, hence the P3=0 in the signature),
+    # firing around thread-exit rundown (`PspExitThread: about to call
+    # LpcExitThread` context) under load. Documented: roadmap "Known bugs &
+    # flakes" 2026-07-18 + the 2026-07-16 conformance-quest 0x3 entry (same
+    # param shape, pre-dating this entry by two days). Density measured
+    # 2026-07-18: 2/2 under 3-arch-parallel gate load, 0/3 solo arm64 —
+    # load-sensitive, and the raiser predates the tree that first showed it in
+    # a gate (the crates rebuilt that night are user-mode; no WoW64 guest had
+    # started in either hit). RETIRE on the ERESOURCE root fix (verify-gone).
+    {
+        "name": "arm64_eresource_notowned_0x3",
+        "when": "bugcheck",
+        "code": "0x00000003",
+        "any": ["0x0000000000000000, 0x0000000000000003)"],
+    },
 ]
 
 
