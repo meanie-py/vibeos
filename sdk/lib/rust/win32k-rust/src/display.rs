@@ -60,7 +60,7 @@ extern "system" {
 extern "C" {
     fn EngpUpdateGraphicsDeviceList() -> NTSTATUS;
     fn LDEVOBJ_bProbeAndCaptureDevmode(pGraphicsDevice: *mut core::ffi::c_void, pdm: PDEVMODEW, ppdmOut: *mut PDEVMODEW, bSearchClosest: u8) -> u8;
-    fn InitSysParams();
+    fn InitSysParams() -> BOOL;
 }
 
 // RtlInitEmptyUnicodeString is a macro (no NTAPI kernel symbol) — set fields

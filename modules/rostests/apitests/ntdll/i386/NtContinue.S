@@ -14,7 +14,10 @@ _continuePoint:
  push 0
  pushfd
  push cs
- push offset _continuePoint
+ // Eip slot — clang's integrated assembler can't emit the relocation for
+ // `push offset sym`, and no register is free here (the whole register file
+ // is being recorded). Push a placeholder; patched below once eax is saved.
+ push 0
  push ebp
 
  push eax
@@ -28,6 +31,10 @@ _continuePoint:
  push es
  push fs
  push gs
+
+ // Fill the Eip placeholder (5th push -> 11 pushes above it = [esp + 44])
+ lea eax, [_continuePoint]
+ mov [esp + HEX(02C)], eax
 
  // TODO: floating point state
  sub esp, 112

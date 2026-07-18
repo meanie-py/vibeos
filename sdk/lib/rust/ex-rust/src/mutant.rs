@@ -44,7 +44,7 @@ extern "system" {
     fn ObOpenObjectByName( object_attributes: POBJECT_ATTRIBUTES, object_type: POBJECT_TYPE, access_mode: KPROCESSOR_MODE, access_state: PVOID, desired_access: ACCESS_MASK, parse_context: PVOID, handle: PHANDLE, ) -> NTSTATUS;
 }
 extern "C" {
-    fn DefaultQueryInfoBufferCheck( info_class: ULONG, info_class_info: *const INFORMATION_CLASS_INFO, info_class_count: ULONG, flags: ULONG, info_buffer: PVOID, info_length: ULONG, return_length: *mut ULONG, previous_mode_ptr: PVOID, previous_mode: KPROCESSOR_MODE, ) -> NTSTATUS;
+    fn DefaultQueryInfoBufferCheck( info_class: u32, info_class_info: *const INFORMATION_CLASS_INFO, info_class_info_count: ULONG, flags: ULONG, info_buffer: PVOID, info_buffer_length: ULONG, return_length: *mut ULONG, handle_count: *mut ULONG, previous_mode: KPROCESSOR_MODE, ) -> NTSTATUS;
 }
 
 #[no_mangle]

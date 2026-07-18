@@ -12,7 +12,7 @@ const SecurityIdentification: SECURITY_IMPERSONATION_LEVEL = _SECURITY_IMPERSONA
 const SecurityDelegation: SECURITY_IMPERSONATION_LEVEL = _SECURITY_IMPERSONATION_LEVEL_SecurityDelegation;
 
 extern "C" {
-    fn SeQuerySubjectContextToken(SubjectContext: PSECURITY_SUBJECT_CONTEXT) -> PACCESS_TOKEN;
+    fn SeQuerySubjectContextToken(subject_context: *const _SECURITY_SUBJECT_CONTEXT) -> PTOKEN;
 }
 
 macro_rules! VALID_IMPERSONATION_LEVEL {
@@ -136,7 +136,7 @@ pub unsafe extern "system" fn SeCreateClientSecurityFromSubjectContext(
     let Token: PACCESS_TOKEN;
     let Status: NTSTATUS;
 
-    Token = SeQuerySubjectContextToken(SubjectContext);
+    Token = (SeQuerySubjectContextToken(SubjectContext)) as _;
     ObReferenceObject(Token as PVOID);
 
     Status = SepCreateClientSecurity(

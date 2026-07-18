@@ -106,7 +106,7 @@ extern "C" {
     fn ScmDeleteRegKey(hKey: HKEY, lpszSubKey: LPCWSTR) -> DWORD;
     fn ScmStartDriver(Service: PSERVICE) -> DWORD;
     fn ScmAcquireServiceStartLock(bExclusive: BOOL, Lock: *mut SC_RPC_LOCK) -> DWORD;
-    fn ScmReleaseServiceStartLock(Lock: *mut SC_RPC_LOCK);
+    fn ScmReleaseServiceStartLock(lpLock: LPSC_RPC_LOCK) -> DWORD;
     fn ScmLogEvent(dwEventId: DWORD, wType: WORD, wStrings: WORD, lpStrings: *mut LPCWSTR) -> DWORD;
     fn ScmWaitForLsa();
     fn SetSecurityServicesEvent();

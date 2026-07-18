@@ -63,7 +63,7 @@ extern "system" {
     pub fn ConioProcessKey(Console: PCONSRV_CONSOLE, msg: *mut tagMSG);
     pub fn ConioEffectiveCursorSize(Console: PCONSRV_CONSOLE, n: u32) -> u32;
     pub fn ConsoleOutputUnicodeToAnsiChar(Console: PCONSRV_CONSOLE, dChar: *mut i8, sWChar: *mut u16) -> u8;
-    pub fn RtlUnicodeStringToAnsiSize(Str: PUNICODE_STRING) -> u32;
+    pub fn RtlUnicodeStringToAnsiSize(SourceString: *const _UNICODE_STRING) -> u32;
 }
 
 // Win32 user32 helpers tuiterm.c relies on.

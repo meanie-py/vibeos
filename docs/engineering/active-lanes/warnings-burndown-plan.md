@@ -532,3 +532,28 @@ backend (no -fw_cfg on the qemu cmdline — harness gap).
 Pass C (TYPE/SIGN unification) is built + dry-run-validated (362 syms / 517
 rewrites / 49 crates, signal bucket 311 syms preserved): scratchpad ced_passc.py
 + ced_passc_repair.py; applies next.
+
+
+## 2026-07-18 (late) — Pass C landed; T2a campaign state
+
+Pass C (992af657162): 40 crates' in-crate decl signatures unified + 3 manual
+ARITY fixes, all-arch clean, i386 boots. amd64 clashing 1363→1303. The
+surviving ~1300 decomposes into exactly THREE root classes, none reachable by
+text-level tooling:
+1. **Import-scope resolution drift** (the bulk): identical decl TEXT resolving
+   to different types per module (each module's `use` set differs). Needs
+   resolution-aware rewriting (rust-analyzer/HIR) — a fully-qualified-path
+   rewriter would also collapse most of class 2.
+2. **Per-arch mirror pairs / CC strings**: root fix = bindgen fn-ptr ABI-string
+   normalization to `"system"` via the i386-twin projection (ntkrnl-sys,
+   NEEDS USER GREEN-LIGHT).
+3. **Real-signal residue**: BOOLEAN-size crossings, fn-ptr-vs-ptr params,
+   9 reverted usermode crates (advapi32/classpnp/cmlib/kernel32/lsasrv/msafd/
+   samsrv/secur32/user32 — their unification bounced off compile errors),
+   fastfat FsRtlNotifyFullChangeDirectory 7-variant knot. Reviewable set,
+   ~passc-signal.json (session 57d7315b scratchpad).
+
+Also owed from tonight: scan_ud2 driver extension (§9.99 has the recipe +
+KNOWN_DRIVER_UD2 candidates); SPECIALPOOL tripwire not plumbed on windows-host
+backend; kernel-island def-vs-bindgen audit (iomgr bootlog, se SepDump*,
+byteswap fastcall, config CmpAssignSecurityDescriptor).

@@ -52,7 +52,7 @@ extern "C" {
     fn ScmDeleteNamedPipeCriticalSection(); // database.rs
     fn ScmStartRpcServer(); // rpcserver.rs
     fn ScmAcquireServiceStartLock(IsServiceController: BOOL, lpLock: LPSC_RPC_LOCK) -> DWORD; // lock.rs
-    fn ScmReleaseServiceStartLock(lpLock: LPSC_RPC_LOCK) -> DWORD; // lock.rs
+    fn ScmReleaseServiceStartLock(lpLock: LPSC_RPC_LOCK) -> DWORD;
     // CRT cdecl, not in the winsrv glob.
     fn wcsstr(haystack: *const u16, needle: *const u16) -> *mut u16;
 }

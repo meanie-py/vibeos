@@ -21,17 +21,7 @@ extern "system" {
     fn KeInitializeSemaphore(Semaphore: PVOID, Count: LONG, Limit: LONG);
     fn PsGetCurrentProcessId() -> HANDLE;
     fn ObCloseHandle(Handle: HANDLE, AccessMode: KPROCESSOR_MODE) -> NTSTATUS;
-    fn ObCreateObject(
-        ProbeMode: KPROCESSOR_MODE,
-        ObjectType: PVOID,
-        ObjectAttributes: POBJECT_ATTRIBUTES,
-        AccessMode: KPROCESSOR_MODE,
-        Reserved: PVOID,
-        ObjectSize: ULONG,
-        PagedPoolCharge: ULONG,
-        NonPagedPoolCharge: ULONG,
-        Object: *mut PVOID,
-    ) -> NTSTATUS;
+    fn ObCreateObject( object_attributes_access_mode: KPROCESSOR_MODE, object_type: PVOID, object_attributes: PVOID, access_mode: KPROCESSOR_MODE, reserved: PVOID, object_body_size: ULONG, page_pool_charge: ULONG, non_paged_pool_charge: ULONG, object: *mut PVOID, ) -> NTSTATUS;
     fn ObInsertObject(
         Object: PVOID,
         PassedAccessState: PVOID,
@@ -193,7 +183,7 @@ pub unsafe extern "system" fn LpcpCreatePort(
     Status = ObCreateObject(
         PreviousMode,
         LpcPortObjectType,
-        ObjectAttributes,
+        (ObjectAttributes) as _,
         PreviousMode,
         core::ptr::null_mut(),
         core::mem::size_of::<LPCP_PORT_OBJECT>() as ULONG,

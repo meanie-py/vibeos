@@ -576,6 +576,16 @@ pub unsafe extern "system" fn KiDispatchInterrupt() {
         (*Prcb).CurrentThread = NewThread;
 
         (*NewThread).State = Running;
+
+        // §9.56 in-flight oracle: promotion-to-Running unmark. This standby
+        // promote was the ONE i386 site missing it — every deferred-ready
+        // thread promoted here kept its mark, and each later wake spammed
+        // [RQDEFER2] DOUBLE-DEFER with a stale_by naming KiReadyThread
+        // (the i386 -smp 2 serial-spam face, 2026-07-18). amd64 twin:
+        // ke/amd64/stubs.rs idle-loop promote.
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread as *mut _KTHREAD);
+
         (*OldThread).WaitReason = _KWAIT_REASON_WrDispatchInt as UCHAR;
 
         // NT MP (2k3 KiDispatchInterrupt): mark the outgoing thread

@@ -13,7 +13,7 @@ extern "system" {
     fn BooleanFlagOn(Flags: ULONG, SingleFlag: ULONG) -> BOOLEAN;
 }
 unsafe extern "C" {
-    fn USBSTOR_HandleExecuteSCSI(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
+    pub fn USBSTOR_HandleExecuteSCSI(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 
 // ASSERT_IRQL_EQUAL(x) == ASSERT(KeGetCurrentIrql() == (x)) per ReactOS <ntddk.h>.

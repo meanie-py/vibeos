@@ -551,10 +551,13 @@ function(add_delay_importlibs _module)
             target_link_libraries(${_module} lib${_basename}_delayed)
         endif()
     endforeach()
-    # Link the delay-load runtime helper (__delayLoadHelper2) whenever we delay-load
-    if(NOT (CMAKE_DLLTOOL_MACHINE AND (VIBEOS_NO_DELAYLOAD OR NOT VIBEOS_ENABLE_DELAYLOAD)))
-        target_link_libraries(${_module} delayimp)
-    endif()
+    # Link the delay-load runtime unconditionally — not just when delay-loading.
+    # Modules may reference the __pfnDli*Hook2 variables directly (delayimp.h
+    # declares them; dbghelp_apitest's pdb.c assigns the failure hook), and those
+    # data symbols are defined in delayimp. On the no-delayload fallback path the
+    # helper is never called and static-lib semantics pull in only the referenced
+    # hook-variable objects, so this costs nothing there.
+    target_link_libraries(${_module} delayimp)
 endfunction()
 
 if(NOT ARCH STREQUAL "i386")

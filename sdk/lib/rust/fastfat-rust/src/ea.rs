@@ -21,7 +21,7 @@ extern "system" {
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: *mut IRP, ExceptionCode: u32) -> NTSTATUS;
     fn _SEH2_TRY() -> i32;
     fn _SEH2_END();
-    fn _SEH2_GetExceptionInformation() -> *mut EXCEPTION_POINTERS;
+    fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void; // EXCEPTION_POINTERS* fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> BOOLEAN;
     fn _SEH2_GetExceptionCode() -> u32;
 }
 
@@ -433,7 +433,7 @@ pub unsafe extern "system" fn FatFsdSetEa(
             Status = FatCommonSetEa(IrpContext, (Irp).cast());
             _SEH2_END();
         } else {
-            let exception_info: *mut EXCEPTION_POINTERS = _SEH2_GetExceptionInformation();
+            let exception_info: *mut EXCEPTION_POINTERS = (_SEH2_GetExceptionInformation()) as _;
             let exception_code: u32 = _SEH2_GetExceptionCode();
             if FatExceptionFilter(IrpContext, exception_info) != 0 {
                 Status = FatProcessException(IrpContext, Irp, (exception_code as i32) as u32);

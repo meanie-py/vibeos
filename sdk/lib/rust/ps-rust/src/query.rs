@@ -158,7 +158,7 @@ extern "C" {
     fn PspSetProcessFlag(process: *mut _EPROCESS, flag: ULONG);
     fn PspClearProcessFlag(process: *mut _EPROCESS, flag: ULONG);
     fn PspSetCrossThreadFlag(thread: *mut _ETHREAD, flag: ULONG);
-    fn PspClearCrossThreadFlag(thread: *mut _ETHREAD, flag: ULONG);
+    fn PspClearCrossThreadFlag(Thread: PETHREAD, Flag: ULONG) -> LONG;
 }
 unsafe extern "system" {
     fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL);

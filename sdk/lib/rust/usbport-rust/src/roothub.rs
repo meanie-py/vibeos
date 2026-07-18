@@ -14,15 +14,15 @@ use core::ffi::c_void;
 
 extern "system" {
     fn USBPORT_FlushCancelList(Endpoint: PUSBPORT_ENDPOINT);
-    fn USBPORT_QueueDoneTransfer(Transfer: PUSBPORT_TRANSFER, USBDStatus: USBD_STATUS);
+    pub fn USBPORT_QueueDoneTransfer( Transfer: PUSBPORT_TRANSFER, USBDStatus: USBD_STATUS, ) -> BOOLEAN;
 }
 extern "system" {
     fn USBPORT_FindCompanionControllers( FdoDevice: PDEVICE_OBJECT, IsObtainList: i32, IsLockNotAcquired: i32, ) -> PDEVICE_RELATIONS;
     fn USBPORT_AddDeviceHandle(FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE);
-    fn USBPORT_OpenPipe( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
+    pub fn USBPORT_OpenPipe( FdoDevice: PDEVICE_OBJECT, DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, UsbdStatus: PUSBD_STATUS, ) -> NTSTATUS;
     fn USBPORT_HcQueueWakeDpc(FdoDevice: PDEVICE_OBJECT);
     fn USBPORT_InvalidateEndpointHandler( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, Type: ULONG, );
-    fn USBPORT_Wait(FdoDevice: PDEVICE_OBJECT, arg2: u32);
+    pub fn USBPORT_Wait(MiniPortExtension: PVOID, Milliseconds: ULONG) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -1033,7 +1033,7 @@ pub unsafe extern "system" fn USBPORT_RootHubPowerAndChirpAllCcPorts(FdoDevice: 
         Port += 1;
     }
 
-    USBPORT_Wait(FdoDevice, 10);
+    USBPORT_Wait((FdoDevice) as _, 10);
 
     CompanionControllersList = USBPORT_FindCompanionControllers(FdoDevice, 0, 1);
 
@@ -1074,7 +1074,7 @@ pub unsafe extern "system" fn USBPORT_RootHubPowerAndChirpAllCcPorts(FdoDevice: 
         );
     }
 
-    USBPORT_Wait(FdoDevice, 100);
+    USBPORT_Wait((FdoDevice) as _, 100);
 
     Port = 1;
     while Port <= NumPorts {

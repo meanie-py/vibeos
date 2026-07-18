@@ -19,7 +19,7 @@ extern "C" {
     fn USBSTOR_SyncUrbRequest(DeviceObject: PDEVICE_OBJECT, Urb: PURB) -> NTSTATUS;
     fn UsbBuildGetStatusRequest( Urb: PURB, Op: USHORT, Index: USHORT, TransferBuffer: PVOID, TransferBufferMDL: PVOID, Link: PVOID, );
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
-    fn USBSTOR_SendCSWRequest(FDODeviceExtension: PFDO_DEVICE_EXTENSION, Irp: PIRP);
+    pub fn USBSTOR_SendCSWRequest(FDODeviceExtension: PFDO_DEVICE_EXTENSION, Irp: PIRP) -> NTSTATUS;
     fn USBSTOR_ResetDevice( DeviceObject: PDEVICE_OBJECT, FDODeviceExtension: PFDO_DEVICE_EXTENSION, ) -> NTSTATUS;
     fn USBSTOR_QueueNextRequest(FdoDevice: PDEVICE_OBJECT);
 }
