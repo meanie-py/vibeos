@@ -50,6 +50,13 @@ NtUserGetClassName
 # GetKeyboardLayoutName (in/out).
 NtUserRegisterWindowMessage
 NtUserGetKeyboardLayoutName
+# E7: Enum{,Child,Thread}Windows -> NtUserBuildHwndList fills a caller HWND[] and
+# returns the count. The flat (ptr) auto-thunk let 64-bit win32k write 8-byte
+# HWNDs into the guest's sizeof(HWND)=4-byte-per-entry buffer -> 2x heap OVERRUN
+# that clobbered the adjacent block (calc's button-enum corrupted the guest heap;
+# surfaced as a NULL free-list Blink in RtlpRemoveFreeBlock minutes later). The
+# marshaller fills a host 64-bit scratch array, then narrows each handle back.
+NtUserBuildHwndList
 NtUserCreateWindowEx
 NtUserTranslateMessage
 NtUserBeginPaint

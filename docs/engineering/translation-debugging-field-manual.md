@@ -8774,3 +8774,76 @@ shipped (both found closing out the 2026-07-18 driver sweep):
 sig/VAR class (§9.99/§9.102); (2) if IR-clean, read the fold neighborhood for
 a provably-null deref: eager SEH filters, unguarded lock/lookup results, and
 remember sunk loads mask the true site (this section).
+
+### 9.104 (LAYER-1 FIXED, LAYER-2 = task #18 class, 2026-07-18) NtCreateSection 0x50 is a dropped ProbeForRead sitting on the arm64 exception-dispatch recursion — NOT a deep-MM bug
+
+**Symptom:** kmtest `NtCreateSection` BUGCHECK 0x50 (PAGE_FAULT_IN_NONPAGED_AREA,
+read). Quarantined 2026-07-11 (amd64 sweep 13); task #7 filed it as a "deep MM
+bug (param-capture path)." It is not.
+
+**Layer 1 — a dropped probe (FIXED, kept).** ReactOS C `NtCreateSection`
+(section.c:3177) captures the user `MaximumSize` via `ProbeForReadLargeInteger`
+inside `_SEH2_TRY` — validate range + ULONG alignment, *then* read. The Rust port
+(ARM3/section.rs:2132) had dropped the probe and did a raw `safe_maximum_size =
+*maximum_size`. The test deliberately passes a **bad kernel** `MaximumSize`
+pointer; the raw deref hits it → 0x50 at exactly that address. Fix = restore
+`ProbeForRead(maximum_size, size_of::<LARGE_INTEGER>(), size_of::<ULONG>())`
+before the deref (arch-neutral, shared file). This is the classic §9.96 "dropped
+guard" pattern; find it by diffing the faulting fn's user-param capture vs C.
+
+**Layer 2 — the deep root, unmasked by Layer 1 (task #18 class).** With the probe
+in, a bad pointer now RAISES `ExRaiseAccessViolation` (exintrin.rs:166) exactly as
+the C intends — but a GDB-bt at the resulting bugcheck shows a **recursive
+`KiSynchronousExceptionEntry` cascade** (dozens of nested frames,
+KiSynchronousExceptionHandler re-entering itself) ending in the 0x50. I.e. a
+software raise in the **syscall** path on arm64 is not cleanly caught — the
+dispatch fault-in-fault-handler recurses. This is the **same structural root as
+task #18 / the async-SEH quarantine cluster** (IoCreateFile, RtlExceptionKM):
+arm64 exception dispatch from a KiSvcDispatch frame doesn't catch a raise. So
+retire the "deep MM" framing for NtCreateSection — it is arm64-exception-dispatch,
+and **one dispatch fix clears NtCreateSection + the async-SEH cluster** together.
+
+**Method note:** the dropped probe MASKED the deeper bug — the raw deref 0x50 hid
+the fact that even the *correct* (probe-raising) path fails on arm64. Fixing a
+dropped guard often just advances the symptom to the real root; keep the correct
+fix and re-triage the new fault, don't assume the guard *was* the bug. GDB-bt at
+the halt (wait-for the `*** BUGCHECK` serial line so KeBugCheckEx has halted the
+CPU, then `inspect.sh --command bt`) is what exposed the recursion vs a flat 0x50.
+
+### 9.105 (FIXED 2026-07-18) WoW64 OUT handle/pointer-array not narrowed → 2× guest-heap overrun far from the write
+
+**Symptom:** a 32-bit guest under WoW64 (amd64/arm64 host) takes a first-chance
+AV *inside its own 32-bit ntdll* in `rtl_heap::heap::RtlpRemoveFreeBlock` — the
+`RemoveEntryList(&FreeEntry->FreeList)` unlink, `Blink->Flink = Flink`, with a
+**NULL (or garbage) `Blink`**. The crash is minutes of guest activity *after* the
+real corruption; the faulting "free block" is actually a *busy* allocation whose
+payload got misread as free-list links (its `FreeList.Flink` reads back as an
+HWND/pointer, not a heap address). Under DUMMY_PSEH this surfaces as an
+unhandled guest AV (E5 dispatch → SEH cascade → guest-stack overflow → exit
+0x80). Only *some* GUI apps hit it (calc did; notepad/sol/winmine didn't) —
+whoever enumerates windows/objects into a non-empty buffer.
+
+**Root:** a win32k/ntdll syscall that *fills a caller array of handles or
+pointers* is typed **flat (`ptr`)** in the .spec, so the wow64gen auto-thunk
+hands 64-bit win32k the guest buffer verbatim. The kernel writes **8-byte**
+entries; the guest (its user32/ntdll) sized the buffer at `sizeof(HANDLE)=4`·N.
+Result: an **exactly-2× overrun** that clobbers the adjacent heap block. First
+instance: **`NtUserBuildHwndList`** (behind `Enum{,Child,Thread}Windows`);
+calc's button enumeration corrupted the guest heap. **Native i386 is unaffected**
+(4-byte handles) — this is strictly a WoW64 marshalling gap.
+
+**The dispositive signature in a memory dump:** an array of `{VALUE:4, 0:4}`
+8-byte entries (little-endian: low dword = the real 32-bit handle, high dword =
+0) running *past* its heap block's end. That `{x, 0}` 8-byte stride = 64-bit
+values written into a 32-bit-per-entry buffer. (To read guest memory from the
+host wow64.dll, just deref the guest <4GB address directly — the low-4GB view is
+shared; the E5 fault hook can dump GPRs + a window around the faulting block.)
+
+**Fix:** a manual marshaller (manual-win32k.txt + wow64_manual.c) that gives the
+kernel a host 64-bit scratch array (N·8 B), then narrows each entry's low 32
+bits into the guest's 4-byte-per-entry buffer; a `ULONG` count slot is
+width-identical and flat-passes; the count-query call (`array==NULL`) passes
+through. **Owed sweep:** every flat-typed OUT handle/pointer *array* has this
+shape (`NtUserBuildNameList`/`BuildPropList`, `NtGdi*` handle arrays,
+`NtQueryDirectoryObject`, …) — silently fine until a guest passes a non-empty
+buffer. Add each with an array-narrowing marshaller as coverage reaches it.

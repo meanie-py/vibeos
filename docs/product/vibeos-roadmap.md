@@ -45,7 +45,7 @@ Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 fro
 
 | Batch | Top targets (native LOC) |
 |---|---|
-| **Winsock / net client** | ws2_32 (14K) ✅, wshtcpip ✅, ws2help ✅, mswsock ✅, wshirda ✅ — all **cohab-flipped to Rust** (2026-07-17/18, recipe in the wshtcpip commit); netapi32 ✅ *partial* (14/21 TUs flipped; 7 RPC-stub files owe a pure-LLM pass), iphlpapi ✅ *partial* (`iphlpapi_main.c` flipped; the ~10 `*_reactos.c` stay C). **Still C (owe translation — NOT banked):** dhcpcsvc (6.4K), dnsapi (3.2K, +adns/RPC — only superseded fragments in `.responses/`) |
+| **Winsock / net client** | ws2_32 (14K) ✅, wshtcpip ✅, ws2help ✅, mswsock ✅, wshirda ✅ — all **cohab-flipped to Rust** (2026-07-17/18, recipe in the wshtcpip commit); netapi32 ✅ *partial* (14/21 TUs flipped; 7 RPC-stub files owe a pure-LLM pass), iphlpapi ✅ *partial* (`iphlpapi_main.c` flipped; the ~10 `*_reactos.c` stay C), **dnsapi ✅** (2026-07-18, FULL flip — all 8 TUs; `adns` staticlib + the one `dnsrslvr` MIDL interface stay C). **In progress:** dhcpcsvc (6.4K — translated + banked, integration underway). netapi32's 7 RPC-stub tail owed (needs a gen_driver_types MIDL-client mode) |
 | **Setup / PnP / device** | devmgr (10K), netcfgx (9K), syssetup (9K), umpnpmgr (7K), newdev, msports |
 | **Control panels (`dll/cpl`)** | desk (11.5K), sysdm (7.9K), intl (5.2K), mmsys (3.8K), timedate, access, main, usrmgr, powercfg, input — ~15 CPLs, uniform shape, very batchable |
 | **Services (`base/services`)** | eventlog (3.5K), netshell (4.5K), svchost, wkssvc, dnsrslvr, audiosrv, wlansvc |
