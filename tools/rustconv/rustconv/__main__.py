@@ -358,8 +358,16 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str):
         return scan
     header_scan = scan_file(header, force_cpp=True)
     inline = [item for item in header_scan.functions if item.cpp_class == class_name]
-    existing = {item.name for item in scan.functions if item.cpp_class == class_name}
-    duplicate = sorted(item.name for item in inline if item.name in existing)
+    # A method is uniquely identified by (name, arity): C++ overloads that differ
+    # in parameter count are distinct methods, not duplicate bodies (e.g. a static
+    # inline `GetClassID()` helper in the header alongside the virtual
+    # `GetClassID(CLSID*)` defined out-of-line). Only a genuine same-name AND
+    # same-arity body present in BOTH header and impl is a real double-definition
+    # conflict; true overloads are resolved downstream by the arity-based binder.
+    existing = {
+        (item.name, len(item.params)) for item in scan.functions if item.cpp_class == class_name
+    }
+    duplicate = sorted(item.name for item in inline if (item.name, len(item.params)) in existing)
     if duplicate:
         raise CppComError(
             f"{class_name}: method body defined in both implementation and header: "
