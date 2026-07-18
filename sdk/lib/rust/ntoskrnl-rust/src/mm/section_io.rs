@@ -28,7 +28,7 @@ extern "system" {
 }
 
 extern "C" {
-    fn ObReferenceObject(Object: PVOID);
+    fn ObReferenceObject(Object: PVOID) -> isize;
 }
 
 // Match the canonical Windows DDK / WDM IRP flag bits (also defined locally in iomgr/iofunc.rs).

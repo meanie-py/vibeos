@@ -708,6 +708,40 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CMoveToMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CMoveToMenuRustEntry : public CMoveToMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CMoveToMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CCopyToMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CCopyToMenuRustEntry : public CCopyToMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CCopyToMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 extern "C" HRESULT WINAPI CDrvDefExt_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
@@ -750,8 +784,8 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_NewMenu, CNewMenuRustEntry)
     OBJECT_ENTRY(CLSID_SendToMenu, CSendToMenuRustEntry)
     OBJECT_ENTRY(CLSID_CopyAsPathMenu, CCopyAsPathMenuRustEntry)
-    OBJECT_ENTRY(CLSID_CopyToMenu, CCopyToMenu)
-    OBJECT_ENTRY(CLSID_MoveToMenu, CMoveToMenu)
+    OBJECT_ENTRY(CLSID_CopyToMenu, CCopyToMenuRustEntry)
+    OBJECT_ENTRY(CLSID_MoveToMenu, CMoveToMenuRustEntry)
     OBJECT_ENTRY(CLSID_StartMenu, CStartMenuDummy)
     OBJECT_ENTRY(CLSID_MenuBandSite, CMenuSite)
     OBJECT_ENTRY(CLSID_MenuBand, CMenuBandRustEntry)

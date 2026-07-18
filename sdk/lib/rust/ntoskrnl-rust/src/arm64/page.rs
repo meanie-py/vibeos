@@ -634,6 +634,8 @@ unsafe fn MmDeleteVirtualMappingEx(
     (OldPte.Long != 0) as BOOLEAN
 }
 
+// NTAPI/stdcall on x86 (extern "system"); no-op CC on arm64 but kept uniform with the i386 def
+// and the marea.rs VirtFn transmute-call. Do NOT flip to extern "C" (§9.99 ESP desync on i386).
 #[no_mangle]
 pub unsafe extern "system" fn MmDeleteVirtualMapping(
     Process: PEPROCESS,

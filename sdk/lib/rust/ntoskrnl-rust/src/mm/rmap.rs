@@ -29,7 +29,6 @@ use ntkrnl_sys::ddk::{
     MmCreatePageFileMapping,
     MmCreateVirtualMapping,
     MmDeletePageFileMapping,
-    MmDeleteVirtualMapping,
     MmDereferenceSegment,
     MmFindRegion,
     MmFreeSwapPage,
@@ -57,6 +56,11 @@ extern "system" {
     fn MmUnlockSectionSegment(Segment: PMM_SECTION_SEGMENT);
     fn MmGetPageEntrySectionSegment(Segment: PMM_SECTION_SEGMENT, Offset: *mut LARGE_INTEGER) -> ULONG_PTR;
     fn ObDereferenceObject(Object: PVOID);
+    // MmDeleteVirtualMapping is NTAPI/stdcall on i386 (@16), NOT the cdecl that bindgen's ddk
+    // decl implies. Declare it locally as "system" (matching the def + marea.rs/section.rs) —
+    // importing the ddk "C" version creates a same-crate CC disagreement that folds this crate's
+    // MmPageOutPhysicalAddress to a ud2 (§9.99) AND mismatches the stdcall def at the call below.
+    fn MmDeleteVirtualMapping(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID, WasDirty: *mut BOOLEAN, Page: *mut ntkrnl_sys::ddk::PFN_NUMBER) -> BOOLEAN;
 }
 extern "C" {
     fn ExAllocateFromNPagedLookasideList(Lookaside: *mut NPAGED_LOOKASIDE_LIST) -> PVOID;

@@ -2440,7 +2440,7 @@ mod ke_amd64_exports {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFillMemoryUlong(dest: ntkrnl_sys::base::PVOID, length: usize, pattern: ntkrnl_sys::base::ULONG) {
+    pub unsafe extern "system" fn RtlFillMemoryUlong(dest: ntkrnl_sys::base::PVOID, length: usize, pattern: ntkrnl_sys::base::ULONG) {
     let dest = opaque_ptr(dest);
         ntkrnl_sys::inline::ke_amd64::RtlFillMemoryUlong(dest, length, pattern)
     }
@@ -2488,7 +2488,7 @@ mod ke_i386_exports {
 
     #[no_mangle]
     #[inline(never)]
-    pub unsafe extern "C" fn RtlFillMemoryUlong(
+    pub unsafe extern "system" fn RtlFillMemoryUlong(
         dest: ntkrnl_sys::base::PVOID,
         length: usize,
         pattern: ntkrnl_sys::base::ULONG,

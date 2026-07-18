@@ -1548,24 +1548,24 @@ mod _force_shim_symbols {
             fn KiGetGdtEntry();
             fn KiSetGdtDescriptorBase();
             fn MiSynchronizeSystemPde();
-            fn RtlFillMemoryUlong();
         }
         unsafe extern "system" {
             fn KeLowerIrql();
             fn KeRaiseIrql();
+            fn RtlFillMemoryUlong();
         }
         #[used]
-        static REFS: [unsafe extern "system" fn(); 2] = [
+        static REFS: [unsafe extern "system" fn(); 3] = [
             KeLowerIrql,
             KeRaiseIrql,
+            RtlFillMemoryUlong,
         ];
         #[used]
-        static REFS_C: [unsafe extern "C" fn(); 5] = [
+        static REFS_C: [unsafe extern "C" fn(); 4] = [
             KeMemoryBarrier,
             KiGetGdtEntry,
             KiSetGdtDescriptorBase,
             MiSynchronizeSystemPde,
-            RtlFillMemoryUlong,
         ];
     }
 

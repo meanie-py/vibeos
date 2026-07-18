@@ -605,9 +605,63 @@ non-volatile KUSER_SHARED_DATA tick-capture retry loops folded to `b .` —
 would hang if the subpath runs; POTENTIAL REAL arm64 HANG CLASS, prioritize),
 JapaneseEra_Find, win32k EngInitializeSafeSemaphore.
 
-Owed from today: ntoskrnl-rust (13 def-authority findings incl. the Mm* cluster
-that plausibly explains several KNOWN_CGU_UD2 entries) + hal-rust (3) as a
-reviewed-individually batch; classpnp/disk Shape-2 VAR items (real fns with
+**2026-07-18 (later): the fenced reviewed batch is PAID.** Def-authority
+ret-drift / arg-width findings fixed individually (ntoskrnl-rust + hal-rust,
+plus a bonus thrdschd CONTAINING_RECORD) — scan_ir_mismatch clean.
+
+**CAUGHT BY THE GATE — a §9.99 fix in the WRONG DIRECTION (field manual §9.107).**
+The batch first "fixed" MmDeleteVirtualMapping by flipping it to cdecl "C"
+(trusting the no-NTAPI decl in internal/mm.h + bindgen). That is a boot-breaker:
+its real i386 ABI is stdcall (@16) — the def and the hot caller MmFreeMemoryArea
+reach it via a `type VirtFn = extern "system" fn(..)` transmute and call it
+stdcall, so a cdecl callee desyncs ESP → exec-at-0 → BUGCHECK 0x1E during driver
+init (i386-only, 3/3 deterministic; KTRAP_FRAME Eip=0 + pool-poison 0xbadb0d00 +
+return addr MmFreeMemoryArea+408 nailed it). REVERTED to extern "system" at all
+4 sites. The last live KNOWN_CGU_UD2 entry (MmPageOutPhysicalAddress) was a
+side-effect of the SAME symbol: mm/rmap.rs imported it from the bindgen ddk
+module (extern "C") while the def is stdcall → an intra-crate CC disagreement
+that folds MmPageOutPhysicalAddress to a cold-path ud2. FIXED AT ROOT by giving
+rmap.rs a LOCAL extern "system" decl (no ABI change) — kills the fold without
+the cdecl boot-breaker. i386 build ✓ scan_ud2, i386 smoke ×3 green. All ten
+KNOWN_CGU_UD2 entries verified 0-hit on i386/amd64/arm64 UP + amd64 ntkrnlmp SMP,
+and the whole allow-set is RETIRED from scan_ud2.py.
+
+Lesson banked: a missing NTAPI in a header is NOT proof of cdecl; when
+scan_ir_mismatch flags "def system vs decl C", make the DECL match the def
+(stdcall), not the def match the header — and a ud2 that vanishes when you
+change an ABI is a red flag (you moved the fold), not a win.
+
+The kernel32 arm64 time-fn spins were root-caused as
+the non-volatile KUSER_SHARED_DATA seqlock class (field manual §9.106) —
+read_volatile/write_volatile applied across kernel32/kernel32-vista/ke-inlines/
+ntdll/ntoskrnl clock+time, all 8 kernel32 spins verified dead by arm64
+re-sweep, KNOWN_DRIVER_UD2 kernel32 entry deleted. win32k
+EngInitializeSafeSemaphore (same class, wait-loop flavor) and user32
+SwitchWndProc_common ×2 (§9.103 null-blind deref of inlined GetWindowLongPtrW
+error return) fixed the same day; baseline entries removed after binary
+re-verification.
+
+**#14 (bindgen "system" normalization) — ATTEMPTED, DEFERRED 2026-07-18.** The
+green-lit generated-file normalizer (`tools/rustconv/normalize_bindgen_abi.py`,
+preserved in scratchpad `DEFER-*`) is sound and takes i386 clashing to ZERO
+(the arch with the real §9.99 ud2-fold risk). But applying it forces a
+consumer migration (every fn item / fn-ptr type that meets a normalized value
+must also be "system"), and that ripple is UNBOUNDED across the workspace ABI
+surface AND collides with genuinely-cdecl callback populations (ACPICA's
+`acpi_bus_*_handler`, CRT `rand_s`, driver `DRIVER_DISPATCH` indirection) that
+CANNOT be "system" without breaking i386 ABI. rustc keeps `extern "system"`
+and `extern "C"` nominally distinct for fn-pointer coercion even where
+machine-identical, so there is no partial landing: an arch is either fully
+normalized or fully un-normalized. i386 reached green; amd64/arm64 kept
+surfacing new cdecl-collision categories with no convergence. Reset to HEAD +
+re-applied only the solid #15/spin work. NEXT: redesign #14 as **i386-bindgen-
+only** (normalize just `bindgen_i386`/`types_i386` stdcall→system — kills the
+i386 clash + ud2 risk with ZERO consumer migration, since i386 hand-written is
+already all-"system"; leaves the harmless amd64/arm64 cosmetic clashes), OR a
+per-crate staged migration that hand-separates NTAPI from cdecl. Do NOT re-run
+the blanket amd64/arm64 projection.
+
+Still owed: classpnp/disk Shape-2 VAR items (real fns with
 drifted arity: CreateStorageRequestBlock, RtlStringCbPrintfW, sprintfW…) plus
 the revert-bounced decl files in fastfat/classpnp/cdrom/cabinet (landmines, not
 armed folds — IR count 250→~30); freeldr-rust IR emission fails for i686

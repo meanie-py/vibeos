@@ -373,7 +373,7 @@ unsafe fn BitScanReverse(index: *mut ULONG, mask: ULONG) -> UCHAR {
 
 // HAL registration helper — lives in pic_halinit.rs.
 unsafe extern "system" {
-    fn HalpRegisterVector(Flags: ULONG, BusVector: ULONG, SystemVector: ULONG, Irql: KIRQL);
+    fn HalpRegisterVector(Flags: UCHAR, BusVector: ULONG, SystemVector: ULONG, Irql: KIRQL);
     fn HalpInitializeLegacyPICs();
 }
 
@@ -449,7 +449,7 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
 
     unsafe {
         HalpRegisterVector(
-            IDT_INTERNAL,
+            IDT_INTERNAL as UCHAR,
             PRIMARY_VECTOR_BASE + PIC_CASCADE_IRQ,
             PRIMARY_VECTOR_BASE + PIC_CASCADE_IRQ,
             HIGH_LEVEL,
