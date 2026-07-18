@@ -48,6 +48,9 @@ set(_wow64_guests
     ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/winmine/winmine.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/calc/calc.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/notepad/notepad.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/solitaire/sol.exe
     ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe)
 set(_wow64_guest_ok TRUE)
 foreach(_f ${_wow64_guests})
@@ -64,6 +67,9 @@ if(_wow64_guest_ok)
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
                 ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe
                 ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/calc/calc.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/notepad/notepad.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/solitaire/sol.exe
         OUTPUT_VARIABLE _wow64_closure
         ERROR_VARIABLE _wow64_closure_err
         RESULT_VARIABLE _wow64_closure_rc)
@@ -89,6 +95,9 @@ if(_wow64_guest_ok)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/winmine/winmine.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/calc/calc.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/notepad/notepad.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/solitaire/sol.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe DESTINATION reactos/syswow64 NAME_ON_CD doom.exe FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad DESTINATION reactos/syswow64 FOR livecd)
 endif()

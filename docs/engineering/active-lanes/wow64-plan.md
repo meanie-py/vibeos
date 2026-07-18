@@ -938,6 +938,46 @@ Exit 0x600D; 0xBAF1..5 name the failing rung. Gotcha for future guests: the
 fs:[0] registration record MUST live on the thread stack —
 RtlDispatchException validates against the TEB stack limits.
 
+**Phase E6 — stock-binary robustness ladder on amd64 (2026-07-18).** Beyond the
+authored probe guests and winmine, the amd64 winlogon ladder now launches more
+unmodified stock i386 applets via a generic `TryStartWow64StockApp` helper
+(same inverted "still running after Ns = PASS" verdict). Results:
+
+* **notepad.exe — PASS.** Real window with a *working EDIT control* (the §9.67
+  GlobalLock/LocalLock fix carries through WoW64 — the M11-era "dies in
+  EDIT_LockBuffer" note is obsolete). Comdlg32/comctl32 in the closure.
+* **sol.exe (Solitaire) — PASS.** cardlib is a *static* C++ lib (not a runtime
+  cards.dll), so its import closure is already complete; heavy GDI + window.
+* **calc.exe — RESIDUAL (contained).** Reaches deep — window creation, child-
+  control subclassing (`SetWindowLong(GWLP_WNDPROC)`) — then takes a
+  first-chance AV *inside ntdll32* (`ntdll32+0x2c5bb`) that cascades into a
+  runaway i386-SEH loop calling a garbage handler at `eip=0x110`, ~0x420 of
+  guest stack per iteration, until the 64KB bootstrap GuestStack overflows →
+  clean csrss terminate (exit 0x80). Fully contained: the boot still reaches
+  desktop, notepad/sol/winmine pass, and doom renders (7,800+ blits) on the
+  same boot. E5 turned what would have been an immediate death into the
+  (visible) cascade, but the *root* is the ntdll32 AV, not E5. **Owed:** GDB
+  the first fault (symbolication tooling didn't resolve `ntdll32+0x2c5bb`
+  quickly); determine whether it's a shared native i386 bug (comctl32
+  subclass/SEH path — the EDIT-bug pattern) or a WoW64 marshaller feeding
+  garbage. Left in the ladder as the fail-loud oracle.
+
+**The UNICODE_STRING NtUser* marshaller class (E6).** calc flushed out a whole
+class the earlier guests never hit: `NtUser*` syscalls taking a
+`PUNICODE_STRING` that win32u.spec types *flat* (`ptr`), so the generated flat
+thunk hands 64-bit win32k the guest's 8-byte `UNICODE_STRING32` read as a
+16-byte `UNICODE_STRING64` — a garbage `Buffer` (kernel reads/writes through
+it) or an align-8 `ProbeForWrite` on the 4-aligned guest struct. Two bugchecked
+calc directly before the fix (`NtUserGetAtomName` → 0x1E via garbage Buffer;
+`NtUserGetClassName` → 0x80000002 DATATYPE_MISALIGNMENT → 0x1E), and two more
+(`NtUserRegisterWindowMessage`, `NtUserGetKeyboardLayoutName`) were added
+proactively — every GUI app hits them. All four are single-`UNICODE_STRING`
+in/out marshallers (widen US32→US64, Buffer zero-extended as a guest <4GB
+pointer, narrow Length back) in wow64_manual.c + manual-win32k.txt. This is the
+exact M17 "flat-typed divergent payload" trap; the remaining un-marshalled
+`PUNICODE_STRING` takers (FindWindowEx, EnumDisplayDevices, CreateDesktop,
+SetWindowsHookEx, …) are owed as apps reach them.
+
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored
   contributions upstream; we consume its binary contract only).

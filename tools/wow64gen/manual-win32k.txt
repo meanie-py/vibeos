@@ -38,6 +38,18 @@ NtUserGetClassInfo
 # E4c: winmine's menu bar — MENUITEMINFOW 48->80 + caption UNICODE_STRING
 # (auto-thunk's 8-byte US32 hit an align-8 ProbeForRead -> 0x80000002 -> 0x1E)
 NtUserThunkedMenuItemInfo
+# E6: calc's class-atom lookup — NtUserGetAtomName(ATOM, PUNICODE_STRING). The
+# win32u.spec (long ptr) flat thunk fed win32k a US32 as US64 (garbage Buffer,
+# kernel writes atom name through it) -> 0x1E. In/out US32<->US64 marshal.
+NtUserGetAtomName
+# E6: calc's class-name query — NtUserGetClassName(HWND, BOOL, PUNICODE_STRING).
+# Same US32<->US64 gap; 4-aligned US32 vs align-8 ProbeForWrite -> 0x80000002.
+NtUserGetClassName
+# E6: the single-PUNICODE_STRING NtUser* class, all flat-typed in win32u.spec
+# (same US32<->US64 gap any GUI app hits). RegisterWindowMessage (IN),
+# GetKeyboardLayoutName (in/out).
+NtUserRegisterWindowMessage
+NtUserGetKeyboardLayoutName
 NtUserCreateWindowEx
 NtUserTranslateMessage
 NtUserBeginPaint
