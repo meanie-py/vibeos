@@ -530,3 +530,42 @@ rebuilt in the same pass as the shell32/rshell link (cargo rewrites the archive 
 lld reads it → transient undefined-symbol link failures; a settled-lib relink succeeds). A
 temp-write + atomic-rename in the `add_custom_command`, or an explicit order-only barrier,
 would remove it.
+
+## rustconv enhancement backlog (from the 2026-07-17 4-class session)
+
+Footguns the subagent-stitch flow hit this session. The stitch method itself is the engine
+(it's how the port reached ~4M lines) — these are about filing down the sharp edges around it,
+NOT replacing it. Owner: whoever next picks up `tools/rustconv/` (paused here 2026-07-17 while
+it's aimed at the winsock C work; do not edit rustconv from this lane meanwhile — conflict
+risk). Priority-ordered:
+
+1. **Link-topology / shared-symbol preflight (highest leverage — this is what sank CMenuBand).**
+   The candidate oracle proves a module compiles *in isolation* but is blind to *who links the
+   object files that reference its exports*. `CMenuBand.cpp` lived in the shared `shellmenu`
+   OBJECT lib, compiled into BOTH `shell32.dll` and `rshell.dll`; the cutover only gave the
+   Rust class to shell32, so rshell failed to link. A preflight check — "for class C, which
+   final link targets pull the TU / the objects that call C's methods?" — would flag a
+   shared-infrastructure class BEFORE any spend or integration, and tell the agent it needs the
+   shared-staticlib pattern instead of the shell32-private RustEntry pattern. Cheap to build
+   from the CMake target graph; would have saved the whole CMenuBand round-trip.
+
+2. **ATL-inheritance / non-trivial-base substrate.** Preflight fails loud (correctly) on
+   `CWindowImpl<...>` (CMenuDeskBar), `IDispatchImpl<...>` (CShellDispatch), and shared base
+   classes (CMoveToMenu : CCopyMoveToMenu). The remaining shell32 tail is mostly these. A
+   deterministic inherited-layout mapper (compute the base vtable/field prefix from the base's
+   own translation or header) is the unlock for that whole cohort.
+
+3. **Callback/WNDPROC state substrate.** `CCopyToMenu` fails on a `WNDPROC m_fnOldWndProc`
+   member — the same shape `CUserNotification` solved with a static worker-window callback.
+   Generalize that solution into reusable substrate so window-subclassing classes stop failing
+   preflight.
+
+4. **Scanner false-positive on ctor-in-header-and-impl** (`CMenuSite`: "method body defined in
+   both implementation and header"). Looked like a cheap scanner fix — a class whose ctor is
+   declared in the header and defined in the .cpp trips a duplicate-body detector. Unblocks a
+   small (366-line) shared shellmenu class.
+
+Not a rustconv bug but adjacent (see build-race note in the CMenuBand section above): the
+`libshell32_rust.a` rebuild races the shell32/rshell link under `vibeos-cli`. Fix belongs in
+`dll/win32/shell32/CMakeLists.txt` (temp-write + atomic-rename in the staticlib custom
+command), not in rustconv — safe to do from this lane.
