@@ -4,7 +4,7 @@ CmSecurity OK pass=300 fail=89 skip=2 exit=0
 ExCallback OK pass=12 fail=1 skip=1 exit=0
 ExDoubleList OK pass=110 fail=36 skip=0 exit=0
 ExInterlocked OK pass=180 fail=0 skip=0 exit=0
-ExPools OK pass=14 fail=4 skip=0 exit=0
+ExPools OK pass=13 fail=5 skip=0 exit=0
 ExResource OK pass=399 fail=2 skip=0 exit=0
 ExSequencedList OK pass=0 fail=0 skip=0 exit=0
 ExSingleList OK pass=201 fail=51 skip=0 exit=0
@@ -36,6 +36,7 @@ KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=278 fail=45 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
 MmMdl OK pass=575 fail=0 skip=0 exit=0
+MmSection OK pass=291 fail=40 skip=12 exit=0
 NpfsConnect OK pass=679 fail=0 skip=0 exit=0
 NpfsCreate OK pass=351 fail=0 skip=0 exit=0
 NpfsReadWrite OK pass=7154 fail=0 skip=0 exit=0
@@ -61,7 +62,8 @@ RtlStrSafeKM OK pass=33 fail=0 skip=0 exit=0
 RtlUnicodeStringKM OK pass=16 fail=0 skip=0 exit=0
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
-ZwCreateSection OK pass=8 fail=2 skip=1 exit=0
+ZwCreateSection OK pass=7 fail=3 skip=1 exit=0
+ZwMapViewOfSection OK pass=120 fail=14 skip=1 exit=0
 ZwWaitForMultipleObjects OK pass=3 fail=1 skip=0 exit=0
 RtlCaptureContextKM NO-END pass=0 fail=0 skip=0 exit=1 errors=1
 FileAttributes OK pass=84 fail=0 skip=0 exit=0

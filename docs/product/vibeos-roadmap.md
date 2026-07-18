@@ -503,6 +503,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `[MSGINA] status dialog up` each boot + `[MSGINA] 9.12-TRIPWIRE … worker tid=N` on a hit.
   A hit leaves the worker wedged in win32k with the tid printed — dump its kernel stack
   (`inspect.sh dump-thread`) for the exact blocking site. Re-open only on a tripwire line.
+- **arm64 kmtest-sweep late-run user-process corruption** (~2/4 sweeps since the §9.96
+  un-quarantine of MmSection/ZwMapViewOfSection, 2026-07-17) — a *later* kmtest_.exe launch
+  dies with `0xC000001D` on garbage instruction encodings inside its own image page
+  (`PC=0x140007xxx`, `[UEXC-KILL] Instr=` shows non-decodable bytes) or `0xC0000005` at
+  process exit; manifests as `IoReadWrite`/`NtSystemDebugControl`/`IoDeviceObject` NO-END /
+  FAIL-EXIT ratchet noise. A shared image-section page is being corrupted under the section
+  tests' heavy map/unmap traffic — same latent arm64 PFN/section-teardown family as the
+  quarantined `ZwAllocateVirtualMemory` 0x4E PFN_LIST_CORRUPT (task #7). The section tests
+  stay ACTIVE (they pass and are the canary); expect occasional ratchet flags on these
+  victims until the PFN bug is slain. Field manual §9.96(i).
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

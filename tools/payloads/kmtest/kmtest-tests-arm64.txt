@@ -78,14 +78,12 @@ KeMutex
 KeSpinLock
 KeTimer
 MmMdl
-# QUARANTINED 2026-07-16 (re-triaged after the SEH-RESUME fix): NOT the SEH cluster and NOT
-# cleared. The fix stopped the old crash, but MmSection now WEDGES IN-KERNEL (no exit code; the
-# sweep drains to the launch_drain_secs budget; launches twice across re-autostart, never returns).
-# Passes on amd64, so arm64-specific — a hang in the Mm section-object test path (candidate: an
-# arm64 section-map/teardown wait that never completes). Like ExFastMutex it poisons the rest of
-# the run and must stay quarantined until the hang is triaged (GDB: break the wedge on the MmSection
-# create/map path; no faulting PC — it's a hang, not a crash).
-#MmSection
+# UN-QUARANTINED 2026-07-17 (§9.96 root fix): the wedge was the NOACCESS-view translation-fault
+# storm — MmNotPresentFaultSectionView dropped the C's `Region->Protect & PAGE_NOACCESS →
+# STATUS_ACCESS_VIOLATION` early-return, so a touch on a NOACCESS section view mapped the page
+# with protection-mask 0 → malformed 0b01 L3 descriptor → infinite re-fault (hang, no bugcheck).
+# Check restored in mm/section.rs + fail-loud tripwire in arm64 MmCreateVirtualMappingUnsafeEx.
+MmSection
 # QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode
 # 0x101, P3=tag 'KmRM' — MmAllocateMappingAddress/MmFreeMappingAddress reserved-mapping
 # path (Rust mdlsup.rs). Triage owed; quest doc has details.
@@ -160,26 +158,15 @@ SeQueryInfoToken
 # vs ReactOS C (mm/ARM3/pfnlist.c). Owed (task #7 family).
 #ZwAllocateVirtualMemory
 ZwCreateSection
-# QUARANTINED — RE-TRIAGED 2026-07-17 (GDB, §9.96): the 2026-07-16 "0x23/0xdead0000 fastfat
-# STUB_BUGCHECK" label is STALE/WRONG. Not a stub bugcheck — it's an IN-KERNEL HANG (sweep
-# INCOMPLETE, summary.json bugcheck=null). GDB bt-all-cpus/sample-pc: the CPU is stuck in a
-# translation-fault STORM — ELR_EL1=RtlCompareMemory's first `ldrb [source1]` (mem/lib.rs:24),
-# FAR_EL1=x8=source1=0x4e0000 (a low USER-VA section view), ESR_EL1=0x96000007 → EC 0x25
-# (data abort, current EL), DFSC 0x07 (translation fault, L3 = leaf PTE invalid). Caller is the
-# kmtest test driver (RtlCompareMemory of a mapped SEC_COMMIT view, len 200). arm64 never caches
-# faulting translations, and the trap.c handler's only non-bugchecking outcome is MmAccessFault
-# returning SUCCESS (ke/arm64/trap.c:343→346 `return`) → so MmAccessFault(0x4e0000) returns
-# STATUS_SUCCESS but leaves the L3 PTE invalid → ERET → re-fault forever (HANG, no bugcheck).
-# Root: the arm64 section-view demand-fault path (MmAccessFault → RosMM-VAD → MmNotPresentFault /
-# ARM3 proto pager) writes/reads the wrong leaf PTE slot — the §9.16 self-map / MiAddressToPte
-# offset class, residual in the section path. DEEP arm64 MM bug, almost certainly SHARED with the
-# MmSection hang (same section-view fault path). NOT a fastfat stub, NOT task #10. Fix owed as part
-# of the arm64 MM PFN/section family (task #7); pin the exact wrong-PTE slot with a GDB page-walk
-# of TTBR0→L3[0x4e0000] before touching the fault path. (Sibling latent bug found during this
-# triage & fixed: FatOpenExistingFcb called the snake_case stubs instead of the real in-file
-# FatSupersedeOrOverwriteFile/FatCheckSystemSecurityAccess — create.rs re-point — but that is NOT
-# this hang.)
-#ZwMapViewOfSection
+# UN-QUARANTINED 2026-07-17 (§9.96 root fix): the GDB-pinned translation-fault storm
+# (RtlCompareMemory on a mapped view, FAR=0x4e0000, DFSC 0x07, PTE=pfn|0x441 = malformed 0b01
+# L3 descriptor) traced to MmNotPresentFaultSectionView DROPPING the C's PAGE_NOACCESS
+# early-return: a NOACCESS-view touch fell through to MmCreateVirtualMapping(PAGE_NOACCESS) →
+# MmProtectToPteMask[0]==0 → bit0-only descriptor the CPU faults on while MMPTE.valid() calls
+# it present → MmAccessFault returns SUCCESS → ERET → re-fault forever. Check restored in
+# mm/section.rs; fail-loud tripwire added in arm64 MmCreateVirtualMappingUnsafeEx. Full recipe
+# + disproven hypotheses (fastfat stub, §9.16 self-map residual): field manual §9.96.
+ZwMapViewOfSection
 # UN-QUARANTINED 2026-07-17 (§9.93): NtWaitForMultipleObjects handle-array capture now goes through
 # the fault-tolerant KmProtectedCopyMemory on arm64 (validated HW-fault SEH). Same fix as amd64.
 ZwWaitForMultipleObjects
