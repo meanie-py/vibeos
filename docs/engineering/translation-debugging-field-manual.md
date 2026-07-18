@@ -8116,20 +8116,34 @@ so it auto-runs), `wait-for.sh` the test's start line, then:
   (=the faulting `ldrb`). `RtlCompareMemory` is a leaf, so **`x30` still holds the caller's return addr** — no
   frame-pointer walk needed (the `bt` past frame #1 was garbage: `#3 0x12`).
 
-**Root cause (by elimination — no page-walk needed to characterize).** arm64 **never caches faulting
-translations**, so a *persistent* DFSC-0x07 storm means the L3 PTE is genuinely still invalid on each retry.
-The trap handler (`ntoskrnl/ke/arm64/trap.c:305` data-abort case) calls `MmAccessFault` for DFSC 0x04/08/0c
-and has exactly two outcomes: `NT_SUCCESS` → `return` (ERET/resume), else `KiDispatchException(ACCESS_VIOLATION)`.
-A kernel-mode AV would **bugcheck** — but there's no bugcheck. Therefore `MmAccessFault(0x4e0000)` returns
-**STATUS_SUCCESS while leaving the leaf PTE invalid** → ERET → re-fault → **hang**. `0x4e0000` is a mapped
-`SEC_COMMIT` section view; `MmAccessFault` (`mm/mmfault.rs:190`) takes the user-address branch, `MiLocateVad`
-finds the view's (RosMM) VAD, and routes to the section demand-fault pager (`MmNotPresentFault` / ARM3 proto).
-That path writes/reads the **wrong leaf-PTE slot** — the same **§9.16 arm64 self-map / `MiAddressToPte`
-off-by-one-self-map-level class**, residual in the section-view path. **Almost certainly the same root as the
-`MmSection` in-kernel hang** (same section-view fault path). Fix is OWED under the arm64 MM PFN/section family
-(task #7); **pin the exact wrong slot first** with a GDB page-walk `TTBR0_EL1 → L0[0]→L1[0]→L2[2]→L3[0xE0]`
-for `0x4e0000` (confirm the real slot is invalid and find where the "valid" PTE actually landed) before
-touching the fault path — it's shared infra, every arm64 fault runs through it.
+**Root cause (fully pinned via GDB + QMP gva2gpa — supersedes the initial "self-map wrong-slot" guess).**
+The self-map is NOT wrong-slot: neighbor L3 slots (`0x4df000`,`0x4e1000`) read `0x0` correctly, so
+`MiAddressToPte(0x4e0000)` @ `0xFFFFF68000002700` genuinely IS `0x4e0000`'s L3 descriptor. It reads
+**`0x45c32441`**. Decode: PFN `0x45c32`, AF(bit10) set, AP(bit6) set, **bit0(Valid) set, bit1 CLEAR**. On
+arm64 a valid L3 *page* descriptor requires **bits[1:0]=`0b11`** — every known-good mapped user page reads
+`0x...4c3` (`0x461b74c3`,`0x461c04c3`,`0x43c8e4c3`); the PDE/PPE table descriptors likewise end in `3`. A
+descriptor with bits[1:0]=`0b01` at L3 is the *reserved/invalid* encoding → the CPU faults (QMP
+`gva2gpa 0x4e0000` = **Unmapped**, DFSC 0x07). BUT `MMPTE.valid()` (`ntkrnl-sys/src/mm.rs:310`) is
+`(self.Long & 1) != 0` — **bit0 only** — so it reports this malformed descriptor as *valid*. Chain confirmed
+by breakpoints: `MmAccessFault`(FaultCode=0,Addr=0x4e0000,KernelMode) returns **x0=0 (SUCCESS)**;
+`MmArmAccessFault` (ARM3) NOT hit and `MmCreateVirtualMapping` NOT hit → the fault takes the **early-out at
+`mm/section.rs:2203-2205`**: `if MmIsPagePresent(Process, Address) != 0 { return STATUS_SUCCESS; }`. arm64
+`MmIsPagePresent` (`arm64/page.rs:148`) walks `MiAddressToPxe/Ppe/Pde` (all valid) then returns
+`(*MiAddressToPte(Address)).valid()` = TRUE for the `0b01` descriptor → spurious present → early SUCCESS →
+ERET → re-fault → **hang**. **Same root almost certainly drives the `MmSection` hang** (same section-view path).
+
+**Bug = a malformed L3 descriptor written with bit0 but not bit1**, by a legacy/proto→hardware PTE builder that
+uses `set_valid(true)` (bit0 only, `mm.rs:315`) instead of the correct `MI_MAKE_HARDWARE_PTE` path (which bases
+on `MiDetermineUserGlobalPteMask` → bits[1:0]=`0b11` → the good `0x...4c3`). Candidate writers all set bit0
+without guaranteeing bit1: `arm64/page.rs:378` (`MmSetPageProtect`), `ARM3/helpers.rs:533`
+(`MI_MAKE_HARDWARE_PTE_USER`), `ARM3/pagfault.rs:1122` (transition→valid resolve). Each ORs `MmProtectToPteMask`
+whose non-zero entries carry `_B=0x402` (bit1+AF) — so the culprit is a path reaching one of these with a
+**zero/NOACCESS mask index** (or a bit1-clearing step), which set_valid + `MI_MAKE_ACCESSED_PAGE` then leaves at
+`0b01`. **FIX (owed, task #7): a fresh boot with a generic writer-side breakpoint (the fixed slot address
+varies per boot, so watch the writers, not `0xFFFFF680...2700`) to catch which builder emits the `0b01`
+descriptor, then make it set bits[1:0]=`0b11` for L3 pages; ×3-gate.** Do NOT globally change `MMPTE.valid()`
+to `&3==3` — L1/L2 *block* descriptors legitimately use `0b01`, and `valid()`/set_valid are shared with
+amd64/i386 where bit1 = R/W.
 
 **Reusable:** (a) A conformance quarantine note is a *hypothesis*, not ground truth — re-triage from a fresh
 repro before acting on an old label; "0xdead0000 stub bugcheck" here was a stale guess and the real bug was a
@@ -8141,3 +8155,9 @@ without validating the PTE** (arm64 doesn't cache faults, so a real re-fault mea
 while its sibling `FatOpenExistingFile` already called the **real in-file** `FatSupersedeOrOverwriteFile` /
 `FatCheckSystemSecurityAccess` (identical sigs) — re-pointed (free, no re-translation). Any supersede/overwrite
 of an *existing* FAT file through that path would have 0x23/0xdead0000'd; not the ZwMapViewOfSection hang.
+(e) **QMP `gva2gpa <va>` is the ground-truth oracle for "is this VA actually mapped?"** — it uses the CPU's
+real translation, so it settles any software-PTE-vs-hardware disagreement instantly (`inspect.sh $RUN --command
+raw 'monitor gva2gpa 0xADDR'`). (f) On arm64 a *valid L3 page* descriptor is bits[1:0]=`0b11`; bit0-alone
+(`0b01`) is reserved-invalid at L3 → the CPU faults while a bit0-only `.valid()` says "present." Read a
+known-good mapped page's PTE (`x/1gx` at `PTE_BASE + (va>>12)*8`, `PTE_BASE=0xFFFFF68000000000`) to learn the
+expected bit pattern before trusting a software validity predicate.
