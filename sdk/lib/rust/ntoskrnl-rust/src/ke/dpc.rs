@@ -592,6 +592,23 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
         (*Prcb).DpcRoutineActive = 0;
         (*Prcb).DpcInterruptRequested = 0;
 
+        // C dpc.c #ifdef CONFIG_SMP block (dropped in the original translation,
+        // when it was UP-dead code): drain deferred-ready threads accumulated by
+        // timer-expiration/DPC routines on THIS cpu before leaving. The idle
+        // loops' work-check tests DeferredReadyListHead but relies on THIS drain
+        // to empty it — without it an idle CPU re-enters hlt with runnable
+        // threads parked on its own deferred list until an unrelated cross-CPU
+        // wake happens to drain them (the -smp 2 KeGuardedMutex ~60s wake
+        // strands / kmtest TIMEOUT).
+        #[cfg(feature = "smp")]
+        if !(*Prcb).DeferredReadyListHead.Next.is_null() {
+            _enable();
+            let OldIrql = KeRaiseIrqlToSynchLevel();
+            KiProcessDeferredReadyList(Prcb);
+            KeLowerIrql(OldIrql);
+            _disable();
+        }
+
         if (*DpcData).DpcQueueDepth == 0 {
             break;
         }
@@ -718,6 +735,20 @@ pub unsafe extern "system" fn KiDispatchSoftwareIntArm64() {
         _disable();
         KiRetireDeviceDpcs(Prcb);
         _enable();
+    }
+
+    // Same CONFIG_SMP drain as KiRetireDpcList_body: timer expiration above
+    // unwaits threads onto THIS cpu's deferred-ready list; this softint body
+    // is the arm64 stand-in for x86's KiRetireDpcList-in-KiDispatchInterrupt,
+    // so it must drain too. Thread context at DISPATCH, IRQs enabled — the
+    // §9.19 exception-context wake hazard does not apply here (it DOES apply
+    // to KiRetireDeviceDpcs' IRQ-exit caller, which deliberately has no
+    // drain — its inserts are picked up here or at the idle loop's retire).
+    #[cfg(feature = "smp")]
+    if !(*Prcb).DeferredReadyListHead.Next.is_null() {
+        let OldIrql = KeRaiseIrqlToSynchLevel();
+        KiProcessDeferredReadyList(Prcb);
+        KeLowerIrql(OldIrql);
     }
 
     #[cfg(feature = "cswitchdep")]

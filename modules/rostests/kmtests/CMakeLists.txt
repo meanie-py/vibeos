@@ -32,12 +32,53 @@ include_directories(include)
 #
 set(KMT_NATIVE_SEH_SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/kmt_native_seh_shims.c)
 
+#
+# INDEPENDENT-ORACLE build: compile the fault-and-catch kmtest drivers with the
+# SAME clang retargeted to the -windows-msvc environment instead of the
+# project-default -windows-gnu (llvm-mingw). The point is a conformance oracle
+# built by a *different* toolchain environment than the OS-under-test, so a
+# blind spot shared by our clang-mingw toolchain can't hide a bug from the tests.
+# ON by default (this is the standard conformance build). Opt out with
+# -DKMT_MSVC_ENV=OFF for an apples-to-apples same-toolchain build.
+#
+# Proven on amd64/arm64 (2026-07-17): a clean drop-in relink — the retargeted
+# objects add ZERO new undefined refs, keep the same .pdata/.xdata SEH model
+# (table-based in both envs), and boot+sweep produce results identical to the
+# mingw build (only IoDeviceObject wobbles ±1, a pre-existing flaky assertion).
+# The real payoff is i386, where -windows-msvc unlocks the frame-based fs:[0] SEH
+# the gnu target refuses to lower (L__ehtable$ errors) — see the i386 branch.
+#
+option(KMT_MSVC_ENV "Build kmtest fault-catch drivers with the clang -windows-msvc env (independent conformance oracle)" ON)
+
+# i386 frame-based native SEH via -windows-msvc (SPIKE — default OFF).
+# Unlike amd64/arm64 (table-based SEH lowers in BOTH clang envs), i386's
+# frame-based fs:[0] __try/__except lowers ONLY under -windows-msvc (the gnu
+# target errors "L__ehtable$... can not be undefined"). So on i386, native SEH
+# is inseparable from the msvc-env retarget — hence its own coupled flag. The
+# lone runtime dep is _except_handler3 (in sdk/lib/crt/wine/except_i386.c). Kept
+# OFF by default so the standard i386 conformance build stays DUMMY_PSEH (with
+# its committed baseline) until this is validated end-to-end (link+boot+catch).
+option(KMT_I386_NATIVE_SEH "SPIKE: i386 kmtest drivers get frame-based native SEH via -windows-msvc" OFF)
+
 function(kmt_enable_native_seh _target)
     if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
         target_compile_definitions(${_target} PRIVATE _USE_NATIVE_SEH)
         # Out-of-line homes for FORCEINLINE SDK helpers clang won't inline into a
         # __try region. See kmt_native_seh_shims.c.
         target_sources(${_target} PRIVATE ${KMT_NATIVE_SEH_SHIMS})
+        # Retarget to the -windows-msvc env (see the KMT_MSVC_ENV option above).
+        if(KMT_MSVC_ENV)
+            if(ARCH STREQUAL "amd64")
+                target_compile_options(${_target} PRIVATE --target=x86_64-pc-windows-msvc)
+            elseif(ARCH STREQUAL "arm64")
+                target_compile_options(${_target} PRIVATE --target=aarch64-pc-windows-msvc)
+            endif()
+        endif()
+    elseif(ARCH STREQUAL "i386" AND KMT_I386_NATIVE_SEH)
+        # i386 native SEH is coupled to the msvc-env retarget (see KMT_I386_NATIVE_SEH).
+        target_compile_definitions(${_target} PRIVATE _USE_NATIVE_SEH)
+        target_sources(${_target} PRIVATE ${KMT_NATIVE_SEH_SHIMS})
+        target_compile_options(${_target} PRIVATE --target=i686-pc-windows-msvc)
     endif()
 endfunction()
 

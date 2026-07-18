@@ -108,6 +108,13 @@ pub unsafe extern "system" fn KiDpcInterruptHandler() {
         ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread);
         (*OldThread).WaitReason = KWAIT_REASON::_KWAIT_REASON_WrDispatchInt as u8;
 
+        // NT MP (2k3 KiDispatchInterrupt): mark the outgoing thread
+        // context-swap-busy BEFORE queueing it ready — without this, another
+        // CPU that picks it sails straight through ctxswitch.S's SwapBusy
+        // spin (flag never raised) and adopts a stack we're still running on.
+        // KiSwapContextInternal clears it once the old context is fully saved.
+        ntkrnl_sys::inline::ke::KiSetThreadSwapBusy(OldThread);
+
         KxQueueReadyThread(OldThread, Prcb);
 
         KiSwapContext(APC_LEVEL, OldThread);

@@ -791,12 +791,141 @@ on that spin, so boot-to-desktop *proves* the AP ran). The KeIpiGenericCall
 self-test now prints `worker ran on 0x1 == active set OK`. **This is i386 M5
 Phase B DONE — boot parity with amd64's M0–M3.**
 
-**NEXT (i386 M5 Phase C — AP schedules):** at `-smp 2` the AP is started + handshaked
-but its `KeActiveProcessors` bit is still 0 (self-test's active set = `0x1`), i.e.
-CPU 1 hasn't reached idle-loop scheduling yet. Bring the i386 AP to full
-schedule-participation: idle-loop `NextThread` lock + `ctxswitch.S` `SwapBusy`
-handshake (mirror the amd64 M3 work; land together per the M5 discipline note
-above), then prove it with the M3 CPU1-visibility counter and a `-smp 2` soak.
+**Phase B LANDED (2026-07-17):** merged origin/master (warnings-burndown lane, no SMP
+validation) + re-verified `-smp 1`/`-smp 2` boot on the merged tree + gate ×3 green
+(stamp `58d57943d8a7`) → pushed to origin `master` (`b095876cd3f`).
+
+## i386 M5 Phase C — AP schedules (2026-07-17, in progress)
+
+At `-smp 2` after Phase B the AP was *started + handshaked* but parked in a spin-stub
+(`ke/i386/kiinit.rs` `KiSystemStartup`, `if Cpu != 0 { … loop { YieldProcessor() } }`),
+so its `KeActiveProcessors` bit stayed 0 and it never reached the idle loop. Phase C
+flows the AP through the full per-CPU init, exactly as ReactOS does (the i386
+`KiInitializeKernel` is already AP-aware — `Number != 0` branches, sets Prcb
+CurrentThread/IdleThread, `KiIdleSummary`, clears `LoaderBlock->Prcb` as the handshake).
+Three changes:
+
+1. **Remove the M5a spin-stub** so the AP runs `KiGetMachineBootPointers` →
+   `Ki386InitializeTss` → `KiInitializePcr` → `KeInitExceptions` → freeze-lock →
+   `KeActiveProcessors` publish → `HalInitializeProcessor` → `KiSwitchToBootStack` →
+   `KiSystemStartupBootStack` → `KiInitializeKernel(AP)` → `KiIdleLoop`.
+2. **Freeze-lock release drop — found by disassembly BEFORE building** (the reusable
+   catch). `KiFreezeExecutionLock` (i386) is acquired in `KiSystemStartup`
+   (`InterlockedBitTestAndSet` bit 0) but the compiled kernel *never writes it back to
+   0* — `objdump -d ntkrnlmp.exe | grep 0x5f2014` shows only the acquire's `cmpl`/two
+   address-pushes, no store-0. amd64 releases it explicitly (`InterlockedAnd64(&lock,0)`,
+   `ke/amd64/../kiinit.c:566`); the i386 `KiSwitchToBootStack` asm translation (now a
+   Rust rlib symbol that just switches ESP + jmps `KiSystemStartupBootStack`) dropped the
+   upstream release. Latent while the AP parked *before* the acquire; a hard deadlock the
+   moment the AP flows the full path (AP spins forever at the acquire → P0's
+   `KeStartAllProcessors` handshake on `LoaderBlock->Prcb==0` never completes → whole
+   boot hangs). **Fix:** atomic `store(0, Release)` right after `KeNumberProcessors += 1`,
+   mirroring amd64's release point. (i386-only fatal; amd64/arm64 already release.)
+3. **§9.56 idle-loop lock discipline** ported to `ke/i386/thrdini.rs` `KiIdleLoop`
+   (was a lock-free consume + `_enable()`-first — inert until the AP scheduled). SMP now
+   consumes `NextThread` under `KiAcquirePrcbLock` with IRQs disabled, re-checks, promotes,
+   `rq_inflight_unmark`, releases, `sti`, `KfRaiseIrql(SYNCH)` for the swap — the idle
+   thread is never queued ready (no `KxQueueReadyThread`), so the lock is released
+   explicitly before `KiSwapContext`, same as amd64 `stubs.rs`. Plus a one-shot per-CPU
+   `[SMP] CPU%u scheduling live` marker (Phase C visibility). No `KiTbLazyIdleEnter/Exit`
+   on i386 — that's the separate i386-TLB-shootdown parity item.
+
+**Bringup progress (2026-07-17, greenfield — ReactOS's i386 AP `KiInitializeKernel`
+branch is a `/* FIXME */ "you are brave"` STUB, never implemented, so every step below
+was untested).** Removing the spin-stub exposed a cascade; each root-caused via GDB /
+QEMU `-d int` (full writeups in the field-manual candidate + `phasec-findings.md`). Five
+fixes, each moving the AP strictly further:
+4. **AP ran `ExpInitializeExecutive` at HIGH_LEVEL → 0xC2 BAD_POOL_CALLER** (Arg2=0x1f).
+   `KiInitializeKernel`'s `KeLowerIrql(APC_LEVEL)` is inside `if Number==0`. Fix: fill the
+   empty AP `else{}` with `KeLowerIrql(APC_LEVEL)` (mirrors arm64). Also unblocks the later
+   `KeRaiseIrql(DISPATCH)` (can't raise-to-lower from HIGH_LEVEL).
+5. **AP `HalInitSystem` deadlock** — AP's `ExpInitializeExecutive(Cpu!=0)` re-ran GLOBAL
+   Phase-1 HAL init → `MmAllocateContiguousMemory`→`MmMapIoSpace`→`KeFlushEntireTb`→TLB-flush
+   IPI to P0, but P0 spin-waits in the `KeStartAllProcessors` handshake with IPIs unserviced
+   → deadlock. Fix: gate the `HalInitSystem` call on the explicit `Cpu` arg in `ex-rust`
+   `ExpInitializeExecutive` (AP HAL is done by `HalInitializeProcessor`). **Reusable rule:
+   the AP MUST issue no cross-CPU IPI during init while P0 is in the handshake.**
+6. **AP idle-thread pointer** — `mproc.rs` set `LoaderBlock->Thread = &Prcb->IdleThread`
+   (address of the pointer FIELD in the PRCB), not the real KTHREAD `&APInfo->Thread`;
+   `KiInitializeKernel`→`KeInitializeThread` scribbled a KTHREAD onto the PRCB → garbage
+   `CurrentThread` → `(*Thread).Priority=0` faulted → double-fault (0x7F/8). Fix: point at
+   `&APInfo->Thread` (matches P0's `&KiInitialThread`).
+7. **AP IDT unwired for HAL vectors** — the AP's first clock IPI (0xd2, from P0's M3
+   self-test now reaching the active AP) hit `KiUnexpectedInterrupt210` → #PF@0x8048 → #DF.
+   `mproc.rs` copies P0's LIVE, fully-wired IDT, but `KiSystemStartup` re-copies the bare
+   `KiIdtDescriptor` template on top (HAL vectors → unexpected stubs) and the AP never
+   re-runs HAL wiring. Fix: gate BOTH the recopy block AND `KeInitExceptions` (the P0-only,
+   unguarded KiIdt Selector/ExtendedOffset flip that preps it) with `if Cpu == 0`.
+
+**STATE: the i386 AP now boots through its COMPLETE init and idles healthy in
+`KiIdleLoop`** (GDB `-smp 2`: CPU1 `[halted]` at `thrdini.rs:369`; CPU0 in the M3
+`KeIpiGenericCall` self-test). This is the core Phase-C achievement — the AP-init path
+works end-to-end.
+
+**Bugs 6–8 (2026-07-17): the 0xE1 wiring + two latent MP bugs it uncovered — i386
+`-smp 2` NOW BOOTS TO DESKTOP** (`[SMP] KeIpiGenericCall self-test: worker ran on 0x3` +
+`[SMP] CPU1 scheduling live` + shell ready, ~38 s).
+
+6. **Kernel IPI receive (0xE1) wired — the blocker.** i386 IDT[0xE1] was
+   `KiUnexpectedInterrupt225` on both CPUs (amd64 wires 0xE1→`KiIpiInterrupt` in the
+   KERNEL; i386 only ever had the send side). Fix exactly as planned: apictrap.S
+   `TRAP_ENTRY HalpIpiInterrupt` (i386 half only!) → fastcall
+   `HalpIpiInterruptHandler` (rtctimer.rs: `KiEnterInterruptTrap` →
+   `HalBeginSystemInterrupt(IPI_LEVEL=29, 0xE1)` → `KiIpiServiceRoutine(TrapFrame,
+   NULL)` → `KiEndInterrupt` + `KiEoiHelper`), wired in apic.rs
+   `HalpInitializePICs` i386 block (`HalpVectorToIndex[0xE1]=RESERVED` +
+   `register_interrupt_handler`). The AP inherits it via the mproc.rs live-IDT copy.
+   **amd64 must NOT wire this** — its kernel owns IDT[0xE1] (descriptor transport in
+   `ke/amd64/ipi.rs`); the HAL stub would clobber it. `KiIpiServiceRoutine` is an
+   ntoskrnl.spec stdcall export (i386/arm/arm64), so the HAL links it directly.
+7. **i386 `HalpClockIpiHandler` dropped `KiEndInterrupt`** (latent until an AP existed —
+   only APs receive the clock IPI). The C (rtctimer.c:226) closes the non-spurious path
+   with `KiEndInterrupt(Irql, TrapFrame)` = cli + `HalEndSystemInterrupt` (LAPIC EOI +
+   IRQL restore) + `KiEoiHelper`; the Rust closed with bare `KiEoiHelper`, so the AP's
+   FIRST clock IPI would leave soft-IRQL at CLOCK_LEVEL + an un-EOI'd ISR bit forever,
+   blocking every class≤0xD vector (clock/DPC/APC) on that AP.
+8. **i386 SwapBusy protocol was INVERTED — the post-wiring `-smp 2` 0x1E.** First run
+   past the self-test bugchecked 0x1E (`STATUS_IN_PAGE_ERROR`) at
+   `KiSwapContextExit+0x20` with OldThread = a STACK VA (0xf7a29c40): CPU1 resumed a
+   migrating thread while CPU0 was still executing on its stack, CPU1's frame pushes
+   scribbled CPU0's live locals (the affinity-bouncing SMP self-test thread made the
+   migration window hot — `[RQAFF]` prints of the same thread flipping setmember 1↔2
+   immediately precede the crash). Root: NT's MP protocol (2k3 i386 `SwapContext`) is
+   (a) SPIN until `NewThread->SwapBusy == 0` before adopting its stack, (b) clear
+   `OldThread->SwapBusy` only AFTER ESP leaves the old stack; our i386
+   `KiSwapContextEntry` had NO spin and cleared the NEW thread's flag (a lazy self-heal
+   that destroyed the guard). Fix: Acquire spin in `KiSwapContextEntry` (before
+   `KiSwitchThreads`, interrupts enabled so IPIs stay serviceable), Release clear of
+   `OldThread->SwapBusy` in `KiSwapContextExit` (after the DPC-active check, mirroring
+   amd64 thrdini.rs:271), plus `KiSetThreadSwapBusy(OldThread)` in i386
+   `KiDispatchInterrupt` before `KxQueueReadyThread` (NT does; without it the flag is
+   never raised on the preempt path). **Cross-arch bonus: amd64
+   `KiDpcInterruptHandler` had the SAME missing set-busy** (traphandler.rs — its
+   ctxswitch.S spin existed but the flag was never raised on this path), a prime
+   suspect for the open amd64 "kernel-stack teardown race" 0x1E (task-ledger Bug2).
+   Fixed identically. Audit of every other queue-current site came back covered
+   (wait paths, `KiQuantumEnd`, `NtYieldExecution` all call `KiSetThreadSwapBusy`;
+   arm64 has the full protocol in ctxswitch.S:159 + thrdini.rs:225 and has no
+   queue-current dispatch-interrupt path). The same audit closed §9.88 Bug 2
+   (amd64 kernel-stack teardown race, task #10): `PspReapRoutine`/`PspDeleteThread`
+   freed the dying thread's stack with NO wait for its final context swap —
+   `KeTerminateThread` queues the reaper entry while still running on that stack.
+   Fix: Acquire spin on `Tcb.SwapBusy` before `MmDeleteKernelStack` (all arches;
+   field manual §9.94).
+
+This also unblocks i386 TLB-shootdown-to-AP (same 0xE1 packet path — `KeFlushEntireTb`'s
+`KiFlushTargetEntireTb` packets now execute on the AP; single-VA remote flush remains the
+M-wave-2 parity item shared with amd64).
+
+**Phase C VALIDATION (2026-07-17, landed `b19871654ed`):** i386 `-smp 2` 19/19 boots to
+desktop (~40 s, up to 4 parallel) + `-smp 1` green; amd64 `-smp 2` 2/2 + net; arm64
+`-smp 2` 2/2 (reaper spin is cross-arch); full ×3 gate green.  **§9.88 Bug 2 closure
+evidence:** `conformance --arch amd64 --smp 2` sweep ran to completion — 86/87 tests,
+**MmMdl pass=575 fail=0, zero 0x1E** (was: boots died ~33–50% under this exact load).
+NEW SMP-vs-UP-baseline deltas from that sweep (wave-2 ledger, not boot-affecting):
+KeGuardedMutex TIMEOUT, KeSpinLock fail 2→31, KeIrql fail 0→3 — real MP semantic gaps
+to burn down when the SMP conformance baseline lane opens.
+
 GDB recipe that cracked Bug D (banked for Phase C): **`hbreak`** the suspect fn
 (a plain `break` at `--gdb-wait` reset is clobbered when freeldr copies the kernel
 over the `0xCC`), `add-symbol-file build-i386/ntoskrnl/ntkrnlmp/ntkrnlmp.exe
@@ -805,3 +934,21 @@ toolkit's `find-kbase`/`addr2sym` default to the UP binary), and **read the gdb
 port from `qemu/runs/<run-id>/manifest.json` (`gdb_port`), never hardcode 12001**
 — auto-alloc drifts across runs and a stale QEMU on the assumed port silently
 eats your breakpoints.
+
+**Wave-2 burn-down 1/3 (2026-07-17): KeGuardedMutex TIMEOUT ROOT-CAUSED + FIXED —
+translation-dropped `#ifdef CONFIG_SMP` deferred-ready drain in `KiRetireDpcList`**
+(field manual §9.95). An idle CPU re-entered `hlt` with runnable threads parked on its
+own `DeferredReadyListHead` — the idle loops check that list but rely on the retire
+loop's drain (the dropped block) to empty it; timer-driven wakes on an idle CPU
+stranded ~60s each until an unrelated cross-CPU wake drained them as a side effect.
+The census watchdog cracked it (owner `state=7` persisting across scans) + a live GDB
+catch (CPU1 halted, `DeferredHead` loaded, ReadySummary=0). Fix: restore the C block
+in `KiRetireDpcList_body` + the same drain in arm64's `KiDispatchSoftwareIntArm64`
+(both `cfg(smp)`; UP untouched). Validated: amd64 `-smp 2` conformance **87/87 ok,
+0 timeouts** (was 86/1), **IoDeviceObject delta also recovered**, sweep wall-clock
+**679s→348s** (the strands taxed every test's wakeups); i386 `-smp 2` smoke 3/3;
+arm64 `-smp 2` smoke 2/2. REMAINING wave-2 conformance deltas (real MP semantic
+gaps, next up): KeSpinLock pass 321→292/fail 2→31 (queued-lock handle `Lock`/`Next`
+not cleared MP-style — residues are a global lock pointer at byte-shifted offsets —
+plus `KmtIsMultiProcessorBuild` try-acquire semantics), KeIrql 131→128/fail 3,
+KeEvent pass dip 42733→42601.

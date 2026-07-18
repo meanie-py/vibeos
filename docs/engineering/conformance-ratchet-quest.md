@@ -1075,3 +1075,60 @@ netstack-TDI flake still costs ~1/6 boots as a launched=0 retry; and the two arm
 quarantines — task #10 (kernel-SEH, clears 8) and the fastfat stub (clears ZwMapViewOfSection) —
 are the real fixes that ratchet these back in. Baseline is report-only (not gating) per the M4
 design. The conformance verb build is unchanged; the kernel is identical to the landed user-APC fix.
+
+### 2026-07-17 — INDEPENDENT-ORACLE build: kmtest drivers compiled with the clang `-windows-msvc` env (standard on amd64/arm64); i386 spike found the real kernel gap
+
+**Motivation.** A conformance suite compiled by a *different* toolchain environment than the
+OS-under-test is a better oracle — a blind spot shared by our clang-mingw toolchain can't hide a
+bug from the tests. New knob: **`-DKMT_MSVC_ENV`** (default **ON**) retargets the 17 fault-and-catch
+kmtest drivers to `--target=<arch>-pc-windows-msvc` (same clang binary, msvc environment) instead of
+the project-default `-windows-gnu`. `kmt_enable_native_seh()` in `modules/rostests/kmtests/CMakeLists.txt`.
+
+**amd64/arm64 — clean drop-in, now the standard conformance build:**
+- Retargeted objects add **zero** new undefined refs vs mingw, keep the same `.pdata`/`.xdata`
+  table-based SEH model + `__C_specific_handler`, need **no** `__security_cookie` glue. Both arches
+  drop only `__imp_RtlAssert` (the `ASSERT` macro lowers differently under `_MSC_VER` — a genuine
+  oracle signal for the IoReadWrite assertion-debt count, task #8).
+- arm64 needed ONE trivial, provably-safe header fix: `sdk/include/vcruntime/mingw32/intrin_arm64.h`
+  guarded `#ifndef __GNUC__ → #error`; widened to `#if !defined(__GNUC__) && !defined(__clang__)`.
+  clang-mingw always defines `__GNUC__`, so the `#error` never fired for the normal build → no-op
+  there; it only lets the msvc-env clang (which defines `__clang__`, not `__GNUC__`) through. The x86
+  sibling shim was already clang-aware; arm/arm64/ppc still had the stale guard.
+- End-to-end boot+sweep clean on both: amd64 `launched=87 ok=87`; arm64 `76 OK/3 NO-END` (== baseline).
+  Conformance diff vs the mingw baseline is **identical except `IoDeviceObject`**, which wobbles **±1
+  assertion in OPPOSITE directions** across the two arch runs (amd64 −1 pass, arm64 +1 pass) ⇒ a
+  pre-existing **flaky** assertion in an already-partially-failing test, NOT a codegen divergence.
+- **Why so quiet:** amd64/arm64 already use identical table-based SEH in BOTH clang envs, so there is
+  no toolchain-shared blind spot for the independent build to expose there. The value was proving the
+  mechanism end-to-end (compile → drop-in link → boot → run), which de-risked the i386 application.
+
+**i386 SPIKE — toolchain WORKS, but the kernel-mode catch is a real gap (BUGCHECK 0x1E):**
+Coupled flag **`-DKMT_I386_NATIVE_SEH`** (default **OFF**) — on i386, frame-based `__try/__except`
+lowers ONLY under `-windows-msvc` (the gnu target errors `L__ehtable$_TestFastIoRead@32 can not be
+undefined`), so native SEH is inseparable from the retarget; kept off so the standard i386 build stays
+DUMMY_PSEH with its committed baseline.
+- ✅ **Compiles** — `--target=i686-pc-windows-msvc` lowers the frame-based SEH the gnu target refuses
+  (head-to-head confirmed: gnu → `L__ehtable$` errors, msvc → rc=0).
+- ✅ **Links** — the lone runtime dep is `__except_handler3`, resolved from `sdk/lib/crt/wine/except_i386.c`.
+  No `_except_handler4`, no `__security_cookie`.
+- ✅ **Driver registers correctly** — disasm shows the real `fs:[0]` chain manipulation
+  (`mov %fs:0x0,%ecx` / `mov %eax,%fs:0x0` link+unlink) + `__except_handler3` reference.
+- ❌ **Runtime catch FAILS** — un-quarantining `IoReadWrite` (a standalone-driver fault-and-catch)
+  and sweeping the retargeted i386 build gives `IoReadWrite CRASH … BUGCHECK=0x0000001E`: the
+  deliberate fault escapes to the kernel instead of hitting the driver's now-real `__except`.
+- **Where the gap is:** the i386 kernel dispatcher `RtlDispatchException`
+  (`sdk/lib/rust/rtl-except/src/i386/except.rs`) is **fully implemented** — it walks
+  `RtlpGetExceptionList()` (`fs:[0]`), iterates registration frames, invokes handlers. So the driver
+  registers and the dispatcher exists, yet the catch doesn't happen. Remaining gap is one of: (a)
+  the i386 trap/`KiDispatchException` path not routing a kernel-mode fault into this
+  `RtlDispatchException`, (b) a kernel-mode `fs:[0]` exception-list mismatch (KPCR
+  `NtTib.ExceptionList` vs what the dispatcher reads), or (c) wine's `_except_handler3` not being
+  kernel-safe. (There's also a `RtlIsValidHandler` TODO at except.rs:154, but skipping validation
+  would *permit* the handler, not block it.) **Pinning it = a GDB session on the IoReadWrite fault**
+  (break `KiDispatchException`/`RtlDispatchException`; confirm it's entered, that
+  `RtlpGetExceptionList()` returns the driver's record, and whether `__except_handler3` is called).
+- **Net:** this converts the old vague "i386 SEH is MSVC-env-only, needs PSEH_CLANG" blocker into a
+  *characterized, bounded kernel bug* — the toolchain half is solved and reproducible via
+  `-DKMT_I386_NATIVE_SEH=ON`. Once the kernel-mode frame-based dispatch is fixed, the i386 DUMMY_PSEH
+  structural quarantine class (IoReadWrite + the kmtest_drv-hosted set, once kmtest_drv is likewise
+  retargeted) can ratchet in — the same payoff native SEH gave amd64/arm64.

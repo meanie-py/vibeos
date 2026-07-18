@@ -31,6 +31,9 @@ ApicSpuriousService:
 TRAP_ENTRY HalpClockInterrupt, KI_PUSH_FAKE_ERROR_CODE
 TRAP_ENTRY HalpClockIpi, KI_PUSH_FAKE_ERROR_CODE
 TRAP_ENTRY HalpProfileInterrupt, KI_PUSH_FAKE_ERROR_CODE
+/* Kernel IPI (vector 0xE1) receive stub — i386 only: amd64 receives 0xE1 in
+   the kernel (KiIpiInterrupt).  Handler: rtctimer.rs HalpIpiInterruptHandler. */
+TRAP_ENTRY HalpIpiInterrupt, KI_PUSH_FAKE_ERROR_CODE
 /* HalpTrap0D (V86-mode #GP dispatch) removed with generic/bios.c — see trap.S. */
 TRAP_ENTRY HalpApcInterrupt, KI_PUSH_FAKE_ERROR_CODE
 TRAP_ENTRY HalpDispatchInterrupt, KI_PUSH_FAKE_ERROR_CODE
