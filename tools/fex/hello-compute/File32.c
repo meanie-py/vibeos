@@ -30,11 +30,42 @@
 #define FILE32_FAIL_FIND        0xBAD9
 #define FILE32_PASS             0x600D
 
-#define SELF_PATH  "C:\\ReactOS\\syswow64\\hello32.exe"
-#define TEMP_PATH  "C:\\ReactOS\\syswow64\\file32.tmp"
-#define FIND_GLOB  "C:\\ReactOS\\syswow64\\*"
-#define FIND_GLOB_W L"C:\\ReactOS\\syswow64\\*"
+/* Paths are derived from GetWindowsDirectory at runtime: the amd64 livecd's
+ * system volume is X:, the arm64 ramdisk's is C: — a hardcoded drive letter
+ * fails on one of them (it cost an 0xBAD1 on the first amd64 livecd run). */
+static char SELF_PATH[MAX_PATH], TEMP_PATH[MAX_PATH], FIND_GLOB[MAX_PATH];
+static WCHAR FIND_GLOB_W[MAX_PATH];
 #define FIND_WANT  "hello32.exe"
+
+static void PathJoinA(char *dst, const char *dir, const char *rest)
+{
+    int i = 0, j = 0;
+    while (dir[j]) dst[i++] = dir[j++];
+    dst[i++] = '\\';
+    j = 0;
+    while (rest[j]) dst[i++] = rest[j++];
+    dst[i] = 0;
+}
+
+static void BuildPaths(void)
+{
+    char win[MAX_PATH];
+    WCHAR winw[MAX_PATH];
+    int i, j;
+    win[0] = 0; winw[0] = 0;
+    GetWindowsDirectoryA(win, MAX_PATH - 32);
+    GetWindowsDirectoryW(winw, MAX_PATH - 32);
+    PathJoinA(SELF_PATH, win, "syswow64\\hello32.exe");
+    PathJoinA(TEMP_PATH, win, "syswow64\\file32.tmp");
+    PathJoinA(FIND_GLOB, win, "syswow64\\*");
+    i = 0; while (winw[i]) { FIND_GLOB_W[i] = winw[i]; i++; }
+    {
+        static const WCHAR Rest[] = L"\\syswow64\\*";
+        j = 0;
+        while (Rest[j]) FIND_GLOB_W[i++] = Rest[j++];
+        FIND_GLOB_W[i] = 0;
+    }
+}
 
 static void Report(const char *msg)
 {
@@ -81,7 +112,10 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     int i, found, nfound;
 
     /* ---- rung 1: open + size (NtOpenFile, NtQueryInformationFile) --------- */
-    Report("[file32] start: opening " SELF_PATH "\n");
+    BuildPaths();
+    Report("[file32] start: opening ");
+    Report(SELF_PATH);
+    Report("\n");
     h = CreateFileA(SELF_PATH, GENERIC_READ, FILE_SHARE_READ, NULL,
                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE)
@@ -164,6 +198,15 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
                     FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE)
     {
+        DWORD e = GetLastError();
+        if (e == 19 /* ERROR_WRITE_PROTECT */ || e == 5 /* ERROR_ACCESS_DENIED */)
+        {
+            /* The amd64 livecd's system volume is a CD: the write/round-trip
+             * rungs cannot run there. The arm64 ramdisk (writable) still
+             * exercises them, so skipping here loses no coverage. */
+            ReportHex("[file32] write rung SKIPPED (read-only volume), err =", e);
+            goto find_rung;
+        }
         Report("[file32] FAIL: CreateFileA(write) returned INVALID_HANDLE_VALUE\n");
         ExitProcess(FILE32_FAIL_WRITE);
     }
@@ -205,6 +248,7 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     Report("[file32] write+read-back round trip of 256 bytes matched\n");
 
     /* ---- rung 5: directory enumeration (NtQueryDirectoryFile) ------------- */
+find_rung:
     found = 0;
     find = FindFirstFileA(FIND_GLOB, &fd);
     if (find == INVALID_HANDLE_VALUE)

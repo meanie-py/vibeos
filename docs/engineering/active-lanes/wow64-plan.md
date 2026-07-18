@@ -818,12 +818,34 @@ Bonus hardening on the way: failure-branch `ERR()` prints in user32's
 result tracing behind `Wow64TraceSyscalls`, and `MmCreatePeb`/`MmCreateTeb`
 out-pointer writes converted to `write_volatile` (lint_kernel clean).
 
-*E4c owed (non-blocking):* uxtheme.dll not in closure (theme api hooks
-disabled); guest hardware-fault context flush (the CPU-area is fresh at
-syscall boundaries now, but a fault at an arbitrary guest instruction still
-reads stale values — the "[GUEST32] int-2d forwarding silent on amd64" gap);
-doom input on amd64 unverified (arm64 M14 did the input work; paths are
-arch-shared).
+*E4c — full probe-ladder parity + stock-binary robustness. **DONE
+2026-07-18.*** The amd64 ladder now runs every arm64 probe guest —
+hello32/gui32/win32/file32/async32/marshal32 all exit 0x600D — plus a NEW
+robustness rung: **winmine.exe, a stock i386 OS applet, runs alongside doom**
+(menus, WM_TIMER, LED counters all render; "still running after 10s" PASS).
+What it flushed out:
+
+* **`NtUserThunkedMenuItemInfo` marshaller** (winmine's menu bar): the
+  auto-thunk handed win32k the guest's 8-byte UNICODE_STRING32 caption; the
+  align-8 ProbeForRead raised STATUS_DATATYPE_MISALIGNMENT → BUGCHECK 0x1E
+  under DUMMY_PSEH. MENUITEMINFOW 48→80 + caption widen fixes it (this is the
+  exact "4-aligned WoW64 buffer into an align-8 probe" class the
+  `wow64_win32k.c` on-entry trace was built to catch — it named the syscall
+  on serial).
+* **file32/async32 hardcoded `C:\ReactOS\...`** — the amd64 livecd's system
+  volume is X: (arm64's ramdisk is C:), so both guests failed their open
+  rung. They now derive paths from `GetWindowsDirectory` at runtime, and
+  file32's write/round-trip rung SKIPs loudly on a read-only volume (the
+  livecd is a CD; the arm64 ramdisk still exercises the write path).
+
+*E4c owed (non-blocking):* guest 32-bit `GetWindowsDirectoryA` returns
+`\reactos` with NO drive letter on amd64 (rooted path still resolves, but the
+CSR/static-server-data marshalling that should carry `X:` is incomplete);
+uxtheme.dll not in closure (theme api hooks disabled); guest hardware-fault
+context flush (the CPU-area is fresh at syscall boundaries now, but a fault at
+an arbitrary guest instruction still reads stale values — the "[GUEST32]
+int-2d forwarding silent on amd64" gap); doom input on amd64 unverified (arm64
+M14 did the input work; paths are arch-shared).
 
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored

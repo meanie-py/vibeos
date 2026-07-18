@@ -1787,6 +1787,59 @@ static NTSTATUS Wow64Manual_NtUserGetClassInfo(ULONG *a)
     return (NTSTATUS)Ret;
 }
 
+/* ---- E4c: NtUserThunkedMenuItemInfo -------------------------------------- *
+ * winmine's menu bar. user32 InsertMenuItemW/SetMenuItemInfoW pack the item as
+ * MENUITEMINFOW (48 bytes on i386, 80 on the host — five pointer-width fields)
+ * plus the caption as a separate PUNICODE_STRING. The auto-thunk handed win32k
+ * the guest's 8-byte UNICODE_STRING32; its align-8 ProbeForRead raised
+ * STATUS_DATATYPE_MISALIGNMENT -> BUGCHECK 0x1E under DUMMY_PSEH. */
+static NTSTATUS Wow64Manual_NtUserThunkedMenuItemInfo(ULONG *a)
+{
+    extern ULONG NtUserThunkedMenuItemInfo(PVOID, ULONG, ULONG, ULONG, PVOID, PVOID);
+    typedef struct { ULONG cbSize, fMask, fType, fState, wID,
+                     hSubMenu, hbmpChecked, hbmpUnchecked,
+                     dwItemData, dwTypeData, cch, hbmpItem; } MII32; /* 48 */
+    typedef struct { ULONG cbSize, fMask, fType, fState, wID, __pad0;
+                     ULONGLONG hSubMenu, hbmpChecked, hbmpUnchecked,
+                               dwItemData, dwTypeData;
+                     ULONG cch, __pad1;
+                     ULONGLONG hbmpItem; } MII64; /* 80 */
+    const MII32 *M32 = (const MII32 *)(ULONG_PTR)a[4];
+    WOW64_UNICODE_STRING32_M *Cap32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[5];
+    MII64 M64;
+    WOW64_UNICODE_STRING64_M Cap64;
+    PVOID M64p = NULL, Cap64p = NULL;
+
+    if (M32)
+    {
+        M64.cbSize = sizeof(M64);
+        M64.fMask = M32->fMask;
+        M64.fType = M32->fType;
+        M64.fState = M32->fState;
+        M64.wID = M32->wID;
+        M64.__pad0 = 0;
+        M64.hSubMenu = M32->hSubMenu;
+        M64.hbmpChecked = M32->hbmpChecked;
+        M64.hbmpUnchecked = M32->hbmpUnchecked;
+        M64.dwItemData = M32->dwItemData;
+        M64.dwTypeData = M32->dwTypeData;
+        M64.cch = M32->cch;
+        M64.__pad1 = 0;
+        M64.hbmpItem = M32->hbmpItem;
+        M64p = &M64;
+    }
+    if (Cap32)
+    {
+        Cap64.Length = Cap32->Length;
+        Cap64.MaximumLength = Cap32->MaximumLength;
+        Cap64.__pad = 0;
+        Cap64.Buffer = Cap32->Buffer;
+        Cap64p = &Cap64;
+    }
+    return (NTSTATUS)NtUserThunkedMenuItemInfo((PVOID)(ULONG_PTR)a[0], a[1], a[2],
+                                               a[3], M64p, Cap64p);
+}
+
 static NTSTATUS Wow64Manual_NtUserCreateWindowEx(ULONG *a)
 {
     extern ULONGLONG NtUserCreateWindowEx(ULONG, PVOID, PVOID, PVOID, ULONG,
@@ -2736,6 +2789,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserRegisterClassExWOW(Arguments);
     if (WOW64_IS("NtUserGetClassInfo"))
         return Wow64Manual_NtUserGetClassInfo(Arguments);
+    if (WOW64_IS("NtUserThunkedMenuItemInfo"))
+        return Wow64Manual_NtUserThunkedMenuItemInfo(Arguments);
     if (WOW64_IS("NtUserCreateWindowEx"))
         return Wow64Manual_NtUserCreateWindowEx(Arguments);
     if (WOW64_IS("NtUserGetMessage"))

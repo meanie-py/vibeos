@@ -792,7 +792,7 @@ unsafe fn TryStartWow64Hello() {
  * byte count ReadFile hands back IS IoStatusBlock.Information, which is 4 bytes
  * wide in the guest and 8 on the host. Silent no-op unless staged;
  * verdict = [file32] serial lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64File() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -850,7 +850,7 @@ unsafe fn TryStartWow64File() {
  * kernel-side IO_STATUS_BLOCK32 completion — OVERLAPPED.Internal/InternalHigh
  * ARE the guest IOSB32, and .Offset detects a stray 16-byte (64-bit layout)
  * write. Silent no-op unless staged; verdict = [async32] lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Async() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -907,7 +907,7 @@ unsafe fn TryStartWow64Async() {
  * a class, creates a REAL window, and pumps messages (forces user32 client
  * connect + kernel->user callbacks under wow64). Silent no-op unless staged;
  * verdict = [win32] serial lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Win32() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent — don't spawn a guest that can't run
@@ -984,7 +984,7 @@ unsafe fn Wow64DoomStaged() -> bool {
  * generated/manual marshallers no earlier guest touches — TBI against its own
  * TEB32, IOCP sentinel round-trip, monitor enumeration. Silent no-op unless
  * staged; verdict = [marshal32] serial lines + exit 0x600D. */
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartWow64Marshal() {
     if !Wow64SupportStaged() {
         return; // FEX CPU layer absent
@@ -1283,6 +1283,77 @@ unsafe fn TryStartWow64TestGui() {
         DbgPrint(
             b"[WINLOGON] testgui.exe EXITED = 0x%lx (a stock GUI app should never exit; \
               it should still be pumping)\n\0"
+                .as_ptr() as *const i8,
+            ExitCode,
+        );
+    }
+    CloseHandle(Pi.hThread);
+    CloseHandle(Pi.hProcess);
+}
+
+/* E4c robustness: winmine.exe — a STOCK i386 OS applet (menus, WM_TIMER,
+ * dialog/menu resources, GetSystemMetrics-driven layout) that nobody wrote
+ * for the WoW64 harness. Same inverted verdict as testgui: still running
+ * after the wait = PASS (window up, pump alive); an exit = it died. Silent
+ * no-op unless syswow64\winmine.exe is staged. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartWow64WinMine() {
+    if !Wow64SupportStaged() {
+        return;
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\winmine.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("winmine.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    if CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    ) == 0
+    {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(winmine.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+        return;
+    }
+    DbgPrint(
+        b"[WINLOGON] winmine.exe (STOCK i386 OS applet) created (PID %lu) - watching\n\0"
+            .as_ptr() as *const i8,
+        Pi.dwProcessId,
+    );
+    const WAIT_TIMEOUT_: DWORD = 0x102;
+    if WaitForSingleObject(Pi.hProcess, 10_000) == WAIT_TIMEOUT_ {
+        DbgPrint(
+            b"[WINLOGON] winmine.exe still running after 10s = PASS (window up, pump \
+              alive) - leaving it up\n\0"
+                .as_ptr() as *const i8,
+        );
+    } else {
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] winmine.exe EXITED = 0x%lx (a stock applet should still be \
+              pumping)\n\0"
                 .as_ptr() as *const i8,
             ExitCode,
         );
@@ -2058,8 +2129,19 @@ pub unsafe extern "system" fn WinMain(
      * arm64. See wow64-plan.md Phase E. */
     #[cfg(target_arch = "x86_64")]
     {
+        /* Full arm64-parity probe ladder (each is a silent no-op unless its
+         * guest is staged): loader → GDI → window/callbacks → file I/O →
+         * overlapped I/O → marshaller self-verify. */
         TryStartWow64Hello();
         TryStartWow64Gui();
+        TryStartWow64Win32();
+        TryStartWow64File();
+        TryStartWow64Async();
+        TryStartWow64Marshal();
+        /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
+         * menus, timers, dialog resources. Launched BEFORE doom so doom's
+         * window (created last) stays the demo on top. */
+        TryStartWow64WinMine();
         /* E4b: same mutual-occlusion rule as the arm64 ladder — when doom is
          * staged it IS the demo GUI guest; testgui would materialise on top
          * of its window. */

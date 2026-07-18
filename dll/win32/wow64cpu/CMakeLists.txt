@@ -41,7 +41,12 @@ add_cd_file(TARGET wow64cpu DESTINATION reactos/system32 FOR all)
 set(_wow64_guests
     ${REACTOS_SOURCE_DIR}/build-fex-hello/hello32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/win32.exe
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/file32.exe
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/async32.exe
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/marshal32.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/winmine/winmine.exe
     ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe)
 set(_wow64_guest_ok TRUE)
 foreach(_f ${_wow64_guests})
@@ -76,7 +81,12 @@ if(_wow64_guest_ok)
     endforeach()
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/hello32.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/win32.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/file32.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/async32.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/marshal32.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/winmine/winmine.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe DESTINATION reactos/syswow64 NAME_ON_CD doom.exe FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad DESTINATION reactos/syswow64 FOR livecd)
 endif()

@@ -35,6 +35,9 @@ NtUserRegisterClassExWOW
 # (the auto-thunk's 80-byte kernel write corrupted 32 bytes of guest stack, and
 # its garbage UNICODE_STRING Buffer bugchecked amd64 0x1E)
 NtUserGetClassInfo
+# E4c: winmine's menu bar — MENUITEMINFOW 48->80 + caption UNICODE_STRING
+# (auto-thunk's 8-byte US32 hit an align-8 ProbeForRead -> 0x80000002 -> 0x1E)
+NtUserThunkedMenuItemInfo
 NtUserCreateWindowEx
 NtUserTranslateMessage
 NtUserBeginPaint
