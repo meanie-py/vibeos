@@ -1345,8 +1345,12 @@ pub unsafe extern "system" fn FatPrefetchPages(
 
 
 // ==== re-stitched (genuine drop, authoritative) ====
+// extern "system": no_mangle WITHOUT an extern ABI keeps the (unstable) Rust CC
+// while exporting the raw symbol — the crate's 8 extern "system" decls then fold
+// their i386 call sites to ud2 (2026-07-18 fastfat bomb set, FatSetFileSizeInDirent
+// & friends). The decl consensus is the ABI contract; match it.
 #[no_mangle]
-unsafe fn FatSetDirtyBcb(
+pub unsafe extern "system" fn FatSetDirtyBcb(
     mut IrpContext: *mut IRP_CONTEXT,
     Bcb: *mut core::ffi::c_void,
     Vcb: *mut VCB,

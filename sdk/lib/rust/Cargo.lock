@@ -245,6 +245,7 @@ dependencies = [
 name = "classpnp-rust"
 version = "0.1.0"
 dependencies = [
+ "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
 ]
@@ -458,6 +459,7 @@ dependencies = [
 name = "disk-rust"
 version = "0.1.0"
 dependencies = [
+ "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
 ]
@@ -469,6 +471,10 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
 ]
+
+[[package]]
+name = "drvtrace-shim"
+version = "0.1.0"
 
 [[package]]
 name = "dxg-rust"

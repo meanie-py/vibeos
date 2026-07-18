@@ -55,8 +55,11 @@ pub unsafe extern "C" fn IoSetCompletionRoutine(
     if InvokeOnCancel != 0 { ctl |= 0x20; }
     (*stk).Control = ctl;
 }
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[no_mangle]
-pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) {
+pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) {
     *SpinLock = 0;
 }
 // ExAllocatePoolZero — allocate-and-zero (wdm.h inline, not exported here). stdcall `@12`.

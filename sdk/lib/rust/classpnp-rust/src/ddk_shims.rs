@@ -186,18 +186,10 @@ use core::ffi::c_void;
 #[no_mangle] pub unsafe extern "system" fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdo: PVOID) -> u8 { 18 }
 
 // ============================ tracing / WPP / ETW (no-ops) ============================
-// TracePrint: error/warning levels forward the (raw) format string to the debug
-// serial so classpnp failure paths are not silent. Callsites are C-variadic; we
-// declare non-variadic and ignore the args (safe: extra args are caller-cleaned
-// on all our ABIs), so %-specifiers print literally — enough to identify the site.
-#[no_mangle] pub unsafe extern "C" fn TracePrint(lvl: u32, _flags: u32, fmt: *const i8) {
-    const TRACE_LEVEL_WARNING: u32 = 3; // ETW: 1=critical 2=error 3=warning
-    if lvl <= TRACE_LEVEL_WARNING && !fmt.is_null() {
-        unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
-        DbgPrint(c"[CLASSPNP] %s".as_ptr(), fmt);
-    }
-}
-#[no_mangle] pub unsafe extern "C" fn StorDebugPrint(_lvl: u32, _fmt: *const i8) {}
+// TracePrint / StorDebugPrint MOVED to the drvtrace-shim crate: the variadic
+// call sites + non-variadic defs are UB to LLVM inside one module (instcombine
+// folds the calls to ud2 — the 2026-07-18 classpnp bomb set); a separate crate
+// under lto=false is a separate LLVM module, which makes the pattern fold-proof.
 #[no_mangle] pub unsafe extern "C" fn WPP_INIT_TRACING(_drv: PVOID, _reg: PVOID) {}
 #[no_mangle] pub unsafe extern "C" fn WPP_CLEANUP(_drv: PVOID) {}
 const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
@@ -385,7 +377,10 @@ use core::sync::atomic::{AtomicI32, Ordering};
     (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
 }
 // KeInitializeSpinLock(lock) => *lock = 0
-#[no_mangle] pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
+// CC = ntkrnl-sys bindgen_i386 decl class ("C") — callers import that decl; a
+// mismatched shim def in the same crate folds every call to ud2 (this one took
+// out ClasspInitializeIdleTimer & friends, 2026-07-18 i386 bomb set).
+#[no_mangle] pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
 
 // ============================ real-export cdecl wrappers ============================
 // The translated callers declare these `extern "C"` (cdecl `_X`), but the kernel exports

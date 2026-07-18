@@ -339,8 +339,11 @@ pub unsafe extern "C" fn IoSetCancelRoutine(
 ) -> ntkrnl_sys::ddk::PDRIVER_CANCEL {
     ntkrnl_sys::inline::tier1::IoSetCancelRoutine(Irp, CancelRoutine)
 }
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[no_mangle]
-pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) {
+pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) {
     *SpinLock = 0;
 }
 // USBD_SUCCESS(Status) = ((USBD_STATUS)(Status) >= 0); USBD_ERROR = (< 0). Sign-tested as LONG.

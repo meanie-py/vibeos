@@ -52,8 +52,11 @@ pub unsafe extern "C" fn InsertTailList(ListHead: *mut LIST_ENTRY, Entry: *mut L
 }
 
 // ---- Ke inline ----
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[no_mangle]
-pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
+pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
 
 // KeGetCurrentIrql: real export on i386 (KIRQL stdcall); inline on amd64 (cr8), arm64 (prcb).
 #[cfg(target_arch = "x86_64")]
@@ -75,14 +78,24 @@ use core::sync::atomic::{AtomicI32, Ordering};
 pub unsafe extern "system" fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
     (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
 }
+// i386 does NOT get these defs: the kernel exports them fastcall
+// (@InterlockedExchange@8 etc., ntoskrnl.spec:323-326 — nm-proven in the import
+// lib) and mountmgr.rs declares them fastcall behind #[cfg(x86)]. A cdecl
+// no_mangle def here collides with that decl in the same LLVM module and folds
+// every i386 call site to ud2 (this bugchecked the boot at mountmgr's
+// DriverEntry, 0x1E/0xc000001d). 64-bit has no kernel export, so the local
+// atomic shims remain.
+#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
     (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
 }
+#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn InterlockedIncrement(Addend: *mut i32) -> i32 {
     (&*(Addend as *const AtomicI32)).fetch_add(1, Ordering::SeqCst) + 1
 }
+#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn InterlockedDecrement(Addend: *mut i32) -> i32 {
     (&*(Addend as *const AtomicI32)).fetch_sub(1, Ordering::SeqCst) - 1

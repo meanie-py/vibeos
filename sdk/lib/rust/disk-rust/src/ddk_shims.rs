@@ -30,8 +30,7 @@ pub unsafe extern "C" fn IoGetCurrentIrpStackLocation(
 
 // StorDebugPrint is a storage-tracing macro (storswtr.h) with no real symbol — no-op stub.
 // Callers invoke it variadic; a non-variadic cdecl stub is ABI-compatible (caller cleans up).
-#[no_mangle]
-pub unsafe extern "C" fn StorDebugPrint(_level: u32, _flags: u32, _fmt: *const i8) {}
+// StorDebugPrint MOVED to drvtrace-shim.
 
 // __int2c — DbgRaiseAssertionFailure intrinsic. The x86 definition lives in geometry.rs
 // (cfg-gated x86-only, empty stub); arm64 needs its own symbol: brk #0xF001 is the
@@ -105,8 +104,11 @@ pub unsafe extern "C" fn RemoveHeadList(ListHead: *mut LIST_ENTRY) -> *mut LIST_
 }
 
 // ---------- Ke inlines ----------
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[no_mangle]
-pub unsafe extern "system" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
+pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
 // KeFlushIoBuffers is a no-op macro on x86/amd64 (cache-coherent DMA). arm64: QEMU virt
 // DMA is coherent too; a real-hardware cache-maintenance impl is owed (translation audit).
 #[no_mangle]
@@ -171,13 +173,7 @@ pub unsafe extern "C" fn DiskDriverReinitialization(_drv: *mut c_void, _nothing:
 // ---------- tracing / WPP (callers are variadic cdecl — caller cleans up) ----------
 // Error/warning levels forward the raw format string to debug serial so disk.sys
 // failure paths aren't silent; %-specifiers print literally (identifies the site).
-#[no_mangle] pub unsafe extern "C" fn TracePrint(lvl: i32, _flags: u32, fmt: *const i8) {
-    const TRACE_LEVEL_WARNING: i32 = 3;
-    if lvl <= TRACE_LEVEL_WARNING && !fmt.is_null() {
-        unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
-        DbgPrint(c"[DISK] %s".as_ptr(), fmt);
-    }
-}
+// TracePrint MOVED to drvtrace-shim (fold-proof separate LLVM module — see that crate).
 #[no_mangle] pub unsafe extern "C" fn WPP_INIT_TRACING(_drv: PDRIVER_OBJECT, _reg: PUNICODE_STRING) {}
 
 // ---------- SRB_EX accessors (srbhelper.h inlines; logic mirrors classpnp srblib) ----------

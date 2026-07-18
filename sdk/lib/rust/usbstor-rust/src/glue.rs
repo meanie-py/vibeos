@@ -110,8 +110,11 @@ pub unsafe extern "system" fn BooleanFlagOn(Flags: ULONG, SingleFlag: ULONG) -> 
 }
 // RtlAssert — debug-only ntoskrnl helper, inert in retail; cdecl (`_RtlAssert`) per the
 // translation's declarations. No-op so the symbol resolves.
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[no_mangle]
-pub unsafe extern "C" fn RtlAssert(
+pub unsafe extern "system" fn RtlAssert(
     _failed_assertion: PVOID, _file_name: PVOID, _line_number: ULONG, _message: *mut ntkrnl_sys::ddk::CHAR,
 ) {
 }
@@ -376,9 +379,12 @@ pub unsafe extern "C" fn RtlStringCchPrintfW_v(
 }
 
 // KeGetCurrentIrql — amd64 reads CR8 (TPR). i386 exports it; arm64 didn't reference it here.
+// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
+// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
+// driver-fleet bomb class).
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 {
+pub unsafe extern "system" fn KeGetCurrentIrql() -> u8 {
     let irql: u64;
     core::arch::asm!("mov {}, cr8", out(reg) irql, options(nomem, nostack, preserves_flags));
     irql as u8

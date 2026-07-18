@@ -192,7 +192,7 @@ const CdromDetectionSupported: u32 = 2;
 
 // Pool / SRB constants (caller expected to provide correct values)
 const CDROM_TAG_MEDIA_CHANGE_DETECTION: u32 = 0x61436353; // 'CMCM'
-const SENSE_BUFFER_SIZE: usize = 18; // Example; actual value unknown
+const SENSE_BUFFER_SIZE: usize = 18; // classic SENSE_DATA size — matches the senseBuffer alloc
 const FDO_HACK_NO_ASYNCHRONOUS_NOTIFICATION: u64 = 0x40; // matches HackFlags (ULONG_PTR)  // was 0x20000 (LLM-invented); bindgen-correct
 const SRB_CLASS_FLAGS_LOW_PRIORITY: u32 = 0x10000000; // Unknown  // was 0x100 (LLM-invented); bindgen-correct
 const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x100; // Unknown  // was 0x200 (LLM-invented); bindgen-correct
@@ -806,7 +806,12 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
         buffer = (*info).SenseBuffer as *mut core::ffi::c_void;
 
         RtlZeroMemory(srb as *mut core::ffi::c_void, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
-        RtlZeroMemory(buffer as *mut core::ffi::c_void, 32); // SENSE_BUFFER_SIZE
+        // SENSE_BUFFER_SIZE is 18 (matching the 18-byte senseBuffer allocation) —
+        // the translated literal 32 zeroed 8 bytes PAST the 24-usable pool block,
+        // wiping the next pool header => deterministic BAD_POOL_HEADER 0x19/5 at a
+        // later free (2026-07-18 i386 boot bugcheck; forensics: [POOL] page walk,
+        // corrupted neighbor of the ScCa block).
+        RtlZeroMemory(buffer as *mut core::ffi::c_void, SENSE_BUFFER_SIZE);
 
         (*srb).QueueTag = 0; // SP_UNTAGGED
         (*srb).QueueAction = 0; // SRB_SIMPLE_TAG_REQUEST
@@ -816,7 +821,7 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
         (*srb).SrbStatus = 0;
         (*srb).ScsiStatus = 0;
         (*srb).OriginalRequest = irp as *mut core::ffi::c_void;
-        (*srb).SenseInfoBufferLength = 32; // SENSE_BUFFER_SIZE
+        (*srb).SenseInfoBufferLength = SENSE_BUFFER_SIZE as u8; // 18 — see above
 
         (*srb).SrbFlags = (*DeviceExtension).SrbFlags;
         (*srb).SrbFlags |= (*info).SrbFlags; // SET_FLAG expansion
