@@ -62,6 +62,36 @@ def _find_rust_factory(repo: Path, class_name: str) -> Path | None:
     return None
 
 
+def _rust_activation_adapter_owner(function: object, repo: Path) -> Path | None:
+    """Prove that a nested ATL creator is only an adapter to a Rust factory."""
+    if (
+        getattr(function, "cpp_class", None) != "_CreatorClass"
+        or getattr(function, "name", None) != "CreateInstance"
+    ):
+        return None
+    body = getattr(function, "body_text", "")
+    owners = set(re.findall(r"\b([A-Za-z_]\w*)_CreateInstance\s*\(", body))
+    if len(owners) != 1:
+        return None
+    return _find_rust_factory(repo, owners.pop())
+
+
+def _find_local_raii_owner(owners: tuple[Path, ...], class_name: str) -> Path | None:
+    marker = re.compile(rf"^// --local-raii {re.escape(class_name)}:", re.MULTILINE)
+    definition = re.compile(rf"^struct\s+{re.escape(class_name)}\b", re.MULTILINE)
+    matches: list[Path] = []
+    for owner in owners:
+        text = owner.read_text(encoding="utf-8", errors="replace")
+        if marker.search(text) and definition.search(text):
+            matches.append(owner)
+    if len(matches) > 1:
+        raise CppTuError(
+            f"{class_name}: ambiguous accepted --local-raii owners: "
+            + ", ".join(str(path) for path in matches)
+        )
+    return matches[0] if matches else None
+
+
 def analyze_translation_unit(source: Path, repo: Path) -> CppTuReport:
     source = source.resolve()
     repo = repo.resolve()
@@ -71,6 +101,8 @@ def analyze_translation_unit(source: Path, repo: Path) -> CppTuReport:
     classes: dict[str, list[str]] = {}
     free_functions: list[str] = []
     for function in scan.functions:
+        if _rust_activation_adapter_owner(function, repo) is not None:
+            continue
         if function.cpp_class:
             classes.setdefault(function.cpp_class, []).append(function.name)
         else:
@@ -83,8 +115,14 @@ def analyze_translation_unit(source: Path, repo: Path) -> CppTuReport:
         unextracted=tuple(scan.unextracted),
     )
     object_map = repo / "dll/win32/shell32/shell32.cpp"
+    factory_owners = {
+        class_name: owner
+        for class_name in classes
+        if (owner := _find_rust_factory(repo, class_name)) is not None
+    }
+    owner_paths = tuple(dict.fromkeys(factory_owners.values()))
     for class_name, methods in classes.items():
-        rust_owner = _find_rust_factory(repo, class_name)
+        rust_owner = factory_owners.get(class_name)
         if rust_owner is not None:
             report.classes.append(
                 TuClass(
@@ -92,6 +130,17 @@ def analyze_translation_unit(source: Path, repo: Path) -> CppTuReport:
                     methods=tuple(methods),
                     ownership="rust-owned",
                     rust_owner=rust_owner.relative_to(repo).as_posix(),
+                )
+            )
+            continue
+        local_raii_owner = _find_local_raii_owner(owner_paths, class_name)
+        if local_raii_owner is not None:
+            report.classes.append(
+                TuClass(
+                    name=class_name,
+                    methods=tuple(methods),
+                    ownership="rust-owned-local-raii",
+                    rust_owner=local_raii_owner.relative_to(repo).as_posix(),
                 )
             )
             continue

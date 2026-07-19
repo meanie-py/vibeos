@@ -39,3 +39,36 @@ def test_cpp_tu_peels_rust_owned_class_and_keeps_free_closure():
     assert cls.name == "CDropTargetHelper"
     assert cls.ownership == "rust-owned"
     assert cls.rust_owner == "sdk/lib/rust/shell32-rust/src/drop_target_helper.rs"
+
+
+def test_cpp_tu_accepts_proven_nested_atl_rust_factory_adapter():
+    report = analyze_translation_unit(SHELL32 / "CRecycleBinCleaner.cpp", REACTOS_ROOT)
+    assert report.ok
+    assert report.free_functions == ()
+    assert len(report.classes) == 1
+    cls = report.classes[0]
+    assert cls.name == "CRecycleBinCleaner"
+    assert cls.ownership == "rust-owned"
+    assert cls.rust_owner == "sdk/lib/rust/shell32-rust/src/recycle_bin_cleaner.rs"
+
+
+def test_cpp_tu_accepts_exact_local_raii_marker_in_discovered_owner():
+    report = analyze_translation_unit(SHELL32 / "dialogs/drvdefext.cpp", REACTOS_ROOT)
+    assert report.ok
+    assert [(cls.name, cls.ownership) for cls in report.classes] == [
+        ("CDrvDefExt", "rust-owned"),
+        ("CDrop", "rust-owned-local-raii"),
+    ]
+    assert report.free_functions == (
+        "GetDriveNameWithLetter",
+        "InitializeChkDskDialog",
+        "ChkdskCallback",
+        "ChkDskNow",
+        "ChkDskDlg",
+        "GetDriveTypeAndCharacteristics",
+        "IsDriveFloppyW",
+        "IsDriveFloppyA",
+        "IsValidDrivePath",
+        "SH_FormatByteSize_RustBridge",
+        "ChkDskDlg_RustBridge",
+    )

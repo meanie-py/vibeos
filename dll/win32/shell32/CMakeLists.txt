@@ -43,7 +43,6 @@ list(APPEND SOURCE
     # are Rust-owned (shell32-rust/src/drop_target_helper.rs).
     CEnumIDListBase.cpp
     CExtractIcon.cpp
-    CRecycleBinCleaner.cpp
     folders.cpp
     iconcache.cpp
     propsheet.cpp
@@ -57,7 +56,6 @@ list(APPEND SOURCE
     # constructed — object map uses CShellLinkRustEntry) and it retains the
     # free helpers PathFullyUnExpandEnvStringsW/ExtendedShortcutProc + statics.
     CShellLink.cpp
-    CFolderOptions.cpp
     folders/CDesktopFolder.cpp
     folders/CFSFolder.cpp
     # Hybrid cohab: CDrivesFolder activation/methods are Rust-owned

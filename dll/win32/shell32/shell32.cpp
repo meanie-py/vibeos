@@ -527,6 +527,27 @@ public:
     };
 };
 
+extern "C" const CLSID CLSID_RecycleBinCleaner;
+extern "C" HRESULT WINAPI CRecycleBinCleaner_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CRecycleBinCleanerRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CRecycleBinCleanerRustEntry, &CLSID_RecycleBinCleaner>
+{
+public:
+    DECLARE_REGISTRY_RESOURCEID(IDR_RECYCLEBINCLEANER)
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CRecycleBinCleaner_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 extern "C" HRESULT WINAPI CRecycleBin_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
@@ -867,6 +888,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_Printers, CPrinterFolderRustEntry)
     OBJECT_ENTRY(CLSID_AdminFolderShortcut, CAdminToolsFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellFldSetExt, CFolderOptionsRustEntry)
+    OBJECT_ENTRY(CLSID_RecycleBinCleaner, CRecycleBinCleanerRustEntry)
     OBJECT_ENTRY(CLSID_RecycleBin, CRecycleBinRustEntry)
     OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenuRustEntry)
     OBJECT_ENTRY(CLSID_NewMenu, CNewMenuRustEntry)

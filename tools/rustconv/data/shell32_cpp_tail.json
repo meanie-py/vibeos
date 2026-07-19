@@ -2,9 +2,7 @@
   "version": 1,
   "active": {
     "hybrid": [
-      "dll/win32/shell32/CRecycleBinCleaner.cpp",
       "dll/win32/shell32/CShellItem.cpp",
-      "dll/win32/shell32/CFolderOptions.cpp",
       "dll/win32/shell32/dialogs/drvdefext.cpp",
       "dll/win32/shell32/dialogs/filedefext.cpp",
       "dll/win32/shell32/folders/CDesktopFolder.cpp",
@@ -92,7 +90,9 @@
       "dll/win32/shell32/CDropTargetHelper.cpp",
       "dll/win32/shell32/CActiveDesktop.cpp",
       "dll/win32/shell32/droptargets/CexeDropHandler.cpp",
-      "dll/win32/shell32/CQueryAssociations.cpp"
+      "dll/win32/shell32/CQueryAssociations.cpp",
+      "dll/win32/shell32/CFolderOptions.cpp",
+      "dll/win32/shell32/CRecycleBinCleaner.cpp"
     ]
   }
 }

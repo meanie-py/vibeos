@@ -131,6 +131,20 @@ association-description helpers moved into the existing Rust module. The transla
 both lazy resource caches, localized `%s` placement, registry fallback ordering, and even
 the source's `RegLoadMUIStringW` character-count-versus-byte-count quirk.
 
+Third batch (2026-07-18): `CFolderOptions.cpp` and `CRecycleBinCleaner.cpp` left CMake,
+bringing the live inventory to 64 C++ TUs / 58,663 lines. Folder options now owns its three
+property-page additions and the global/DefView reset sequence in Rust; the dialog callbacks
+received stable C linkage at their canonical declarations, so no replacement bridge was
+added. The recycle-cleaner audit corrected three compile-clean support drifts: a fixed-size
+resource-string load, incorrect `StringCchCopyW` overflow behavior, and extra null hardening
+that changed a source fault into `E_INVALIDARG`. Its former `OBJECT_ENTRY_AUTO` registration
+is now an explicit metadata-only ObjectMap adapter to the Rust factory.
+
+Whole-TU preflight now recognizes only provable nested ATL adapters to existing Rust
+factories and exact tool-emitted `--local-raii` owners. This closes the false `_CreatorClass`
+rejection for the cleaner and the false COM/STGMEDIUM rejection for `drvdefext.cpp` without
+teaching the preflight to guess layouts.
+
 **Exit:** 19 source-list removals, their `*_RustBridge` declarations gone where no longer
 needed, shell32 + rshell links green, full gate ×3.
 
