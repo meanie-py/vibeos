@@ -970,9 +970,12 @@ extern "system" {
     fn GetFileAttributesExW(path: LPCWSTR, level: DWORD, data: LPVOID) -> BOOL;
     fn PathFindExtensionW(path: LPCWSTR) -> LPWSTR;
     fn PathFindFileNameW(path: LPCWSTR) -> LPWSTR;
+    #[link_name = "PathRemoveExtensionW"]
     fn PathRemoveExtension(path: LPWSTR) -> BOOL;
+    #[link_name = "PathRemoveArgsW"]
     fn PathRemoveArgs(path: LPWSTR);
     fn PathUnquoteSpacesW(path: LPWSTR);
+    #[link_name = "PathSearchAndQualifyW"]
     fn PathSearchAndQualify(path: LPCWSTR, out: LPWSTR, capacity: UINT) -> BOOL;
     fn PathFileExistsW(path: LPCWSTR) -> BOOL;
     fn PathIsDirectoryW(path: LPCWSTR) -> BOOL;
@@ -999,7 +1002,6 @@ extern "system" {
     fn GetDateFormatW(locale: DWORD, flags: DWORD, date: *const SYSTEMTIME, format: LPCWSTR, out: LPWSTR, capacity: INT) -> INT;
     fn GetTimeFormatW(locale: DWORD, flags: DWORD, time: *const SYSTEMTIME, format: LPCWSTR, out: LPWSTR, capacity: INT) -> INT;
     fn GetTickCount() -> DWORD;
-    fn InterlockedIncrement(value: *mut LONG) -> LONG;
     fn DragQueryFileW(drop: HDROP, file: UINT, path: LPWSTR, capacity: UINT) -> UINT;
     fn ReleaseStgMedium(medium: *mut STGMEDIUM);
     fn SHOpenWithDialog(parent: HWND, info: *const OPENASINFO) -> HRESULT;
@@ -1009,6 +1011,7 @@ extern "system" {
     fn PickIconDlg(parent: HWND, path: LPWSTR, capacity: UINT, index: *mut INT) -> BOOL;
     #[link_name = "DataObject_GetHIDACount_RustBridge"]
     fn DataObject_GetHIDACount(data: *mut IDataObject) -> HRESULT;
+    #[link_name = "SHELL32_GetDllFromRundll32CommandLine_RustBridge"]
     fn SHELL32_GetDllFromRundll32CommandLine(command: LPCWSTR, out: LPWSTR, capacity: UINT) -> HRESULT;
     #[link_name = "SHELL_DisplayNameOf_RustBridge"]
     fn SHELL_DisplayNameOf(folder: *mut IShellFolder, pidl: LPCITEMIDLIST, flags: DWORD, out: *mut LPWSTR) -> HRESULT;
@@ -1019,7 +1022,6 @@ extern "system" {
     fn GetPhysicalFileSize(path: LPCWSTR, size: *mut ULARGE_INTEGER) -> BOOL;
     fn SHAlloc(bytes: usize) -> LPVOID;
     fn lstrcmpW(left: LPCWSTR, right: LPCWSTR) -> INT;
-    fn towupper(ch: WCHAR) -> WCHAR;
     fn SHCreateThread(proc_: unsafe extern "system" fn(LPVOID) -> DWORD, data: LPVOID, flags: DWORD, callback: LPVOID) -> BOOL;
     #[link_name = "SH_CreatePropertySheetPage_RustBridge"]
     fn SH_CreatePropertySheetPage(id: WORD, proc_: DLGPROC, param: LPARAM, title: LPCWSTR) -> HPROPSHEETPAGE;
@@ -1076,8 +1078,16 @@ extern "C" {
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
     fn PathIsExeW(path: LPCWSTR) -> BOOL;
     fn _ILFreeaPidl(pidls: *mut LPITEMIDLIST, count: UINT);
+    fn towupper(ch: WCHAR) -> WCHAR;
     fn swprintf(buffer: LPWSTR, format: LPCWSTR, ...) -> INT;
     fn wsprintfW(buffer: LPWSTR, format: LPCWSTR, ...) -> INT;
+}
+
+#[inline]
+unsafe fn cpp_com_interlocked_increment(value: *mut LONG) -> LONG {
+    (&*(value.cast::<core::sync::atomic::AtomicI32>()))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        + 1
 }
 
 unsafe fn cpp_com_string_cb_printf_w(
@@ -2076,7 +2086,7 @@ pub unsafe fn CFileDefExt_GeneralPageProc_body(this: *mut CFileDefExt, hwndDlg: 
             return FALSE as INT_PTR;
         }
         WM_DESTROY => {
-            InterlockedIncrement(
+            cpp_com_interlocked_increment(
                 &(*pFileDefExt).m_Destroyed as *const _ as *mut core::ffi::c_long,
             );
         }
@@ -2360,7 +2370,7 @@ pub unsafe fn CFileDefExt_MultifilePageProc_body(this: *mut CFileDefExt, hwndDlg
             }
         }
         WM_DESTROY => {
-            InterlockedIncrement(&raw mut (*pFileDefExt).m_Destroyed);
+            cpp_com_interlocked_increment(&raw mut (*pFileDefExt).m_Destroyed);
         }
         WM_UPDATEDIRSTATS => {
             CFileDefExt_UpdateDirStatsResults_body(pFileDefExt);

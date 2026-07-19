@@ -1689,3 +1689,9 @@ extern "C" HPROPSHEETPAGE WINAPI SH_CreatePropertySheetPageEx_RustBridge(
 {
     return SH_CreatePropertySheetPageEx(id, proc, param, title, callback);
 }
+
+extern "C" HRESULT WINAPI SHELL32_GetDllFromRundll32CommandLine_RustBridge(
+    LPCWSTR command, LPWSTR out, UINT capacity)
+{
+    return SHELL32_GetDllFromRundll32CommandLine(command, out, capacity);
+}
