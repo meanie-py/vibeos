@@ -9,6 +9,13 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
+extern "C" HRESULT WINAPI CFolder_CreateFromPidl(
+    LPCITEMIDLIST pidl, REFIID riid, void **ppv)
+{
+    return ShellObjectCreatorInit<CFolder>(
+        const_cast<LPITEMIDLIST>(pidl), riid, ppv);
+}
+
 
 CFolder::CFolder()
 {
@@ -169,5 +176,4 @@ HRESULT STDMETHODCALLTYPE CFolder::DismissedWebViewBarricade()
     TRACE("(%p)\n", this);
     return E_NOTIMPL;
 }
-
 

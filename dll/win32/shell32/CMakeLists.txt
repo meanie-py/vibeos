@@ -28,6 +28,9 @@ list(APPEND SOURCE
     dialogs/dialogs.cpp
     dialogs/drive.cpp
     dialogs/drvdefext.cpp
+    # Hybrid cohab: CFileDefExt activation/methods are Rust-owned. This file retains
+    # the shared SH_FormatByteSize/SH_FormatFileSizeWithBytes helpers and source-local
+    # C++ helper symbols used by the Rust module; its class bodies are never activated.
     dialogs/filedefext.cpp
     dialogs/filetypes.cpp
     dialogs/folder_options.cpp
@@ -96,7 +99,8 @@ list(APPEND SOURCE
     # CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a
     CCopyMoveToMenu.cpp
     # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
-    CShellDispatch.cpp
+    # CShellDispatch.cpp — replaced by Rust (shell32-rust/src/shell_dispatch.rs);
+    # CShellDispatch_Constructor remains exported by the Rust module for CFolder/CDefViewDual.
     CFolder.cpp
     CFolderItems.cpp
     CFolderItemVerbs.cpp)
