@@ -368,6 +368,46 @@ def _trivial_cpp_body(body_text: str) -> bool:
     return ":" not in body_text[: match.start()].split(")")[-1]
 
 
+def _preamble_has_translatable_content(preamble_src: str) -> bool:
+    """True when a file-scope preamble holds anything a translation must carry over.
+
+    False ONLY for a preamble made up entirely of #include / #pragma once / comments —
+    i.e. one whose correct Rust rendering is genuinely the empty string, because the crate
+    prelude (not the per-file translation) resolves those includes.
+
+    This exists to keep "the model emitted nothing" distinguishable from "there was nothing
+    to emit". Those are indistinguishable downstream, so an all-includes preamble would
+    otherwise burn a call and then trip the empty-output hard-fail — after every function in
+    the file had already been paid for.
+
+    Conservative by construction: anything else at file scope (a typedef, struct, static,
+    #define, WINE_DEFAULT_DEBUG_CHANNEL, extern) returns True and takes the normal paid path.
+    Preamble content is what every file-scope struct/table rides on, so the bias must be
+    toward translating.
+    """
+    src = re.sub(r"/\*.*?\*/", " ", preamble_src, flags=re.S)  # block comments
+    src = re.sub(r"//[^\n]*", " ", src)  # line comments
+    for line in src.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^#\s*include\b", stripped):
+            continue
+        if re.match(r"^#\s*pragma\s+once\b", stripped):
+            continue
+        # A wine debug-channel declaration is owned by the CRATE PRELUDE in this project, not
+        # by the per-file translation (the lsasrv/netapi32 pattern: wine/debug.h is parsed but
+        # not allowlisted, and the prelude supplies the no-op TRACE/ERR/WARN/FIXME macros).
+        # So its correct per-file Rust rendering is empty too. Left in, it is also actively
+        # harmful: the model renders it NONDETERMINISTICALLY — one run emits nothing (→ the
+        # empty-output hard-fail), the next invents a __wine_debug_channel static that collides
+        # with the prelude's. wkssvc domain.c and rpcserver.c took one branch each, same input.
+        if re.match(r"^WINE_(DEFAULT|DECLARE)_DEBUG_CHANNEL\s*\(", stripped):
+            continue
+        return True  # any surviving token => real content
+    return False
+
+
 def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tuple = ()):
     """Merge source-owned in-class method definitions from the defining header.
 
@@ -2460,6 +2500,27 @@ def cmd_translate(args):
             if rustconv_target.name == "shell32"
             else (scan.preamble_text or scan.globals_text or "").strip()
         )
+        # A preamble that is nothing but #include / comments / #pragma once carries no
+        # file-scope C at all, so its CORRECT Rust translation is the empty string — the
+        # includes are resolved by the crate prelude, not per-file. Sending it costs a call
+        # and then trips the empty-output hard-fail below, because "model emitted nothing"
+        # and "there was nothing to emit" look identical from the outside. Decide it here,
+        # from the SOURCE, where the two are distinguishable.
+        #
+        # Deliberately conservative: ANY surviving token (a typedef, a static, a #define, a
+        # WINE_DEFAULT_DEBUG_CHANNEL) makes it non-vacuous and it goes to the model as before.
+        # This does not soften the hard-fail — a genuinely-failed non-empty preamble still
+        # raises. (Found on wkssvc domain.c/rpcserver.c, whose preamble is one #include: the
+        # model correctly returned nothing and the run died AFTER 38/38 paid functions.)
+        if preamble_src and not _preamble_has_translatable_content(preamble_src):
+            print(
+                f"  [preamble] {len(preamble_src)} C chars — no file-scope C to carry over "
+                "(includes/comments/debug-channel only), nothing to translate ($0)",
+                file=sys.stderr,
+            )
+            _record_preamble(preamble_src, "vacuous", stage="skipped")
+            preamble_src = ""
+
         pre_hit = None if (no_resume or not preamble_src) else cache.get(PREAMBLE_KEY, preamble_src)
         if pre_hit is not None:
             preamble_rust = pre_hit
