@@ -9147,3 +9147,52 @@ i386-first, since amd64/arm64 hide `@N` and case mismatches), hand review (the s
 the `goto`-as-no-op paths), and `vibeos-cli check` (classes 2 and 3, plus a wrong error-code
 literal). **Run all four before declaring a flip green**, and treat a subagent's "0 errors on all
 targets" as a statement about compilation only.
+
+### 9.111 (2026-07-18) `cargo check` is NOT validation — `unconditional_panic` only fires on `cargo build`, and it is the lint that catches C's legal one-past-the-end idiom
+
+**The gap.** Every translation grind up to this point (dnsapi, dhcpcsvc, netapi32) was declared
+done on "`cargo check` → 0 errors on all 3 targets". The iphlpapi flip proved that insufficient:
+`cargo check` passed clean on all three targets, and then `cargo build --release` failed:
+
+```
+error: this operation will panic at runtime
+   --> ifenum_reactos.rs:579
+    |   core::ptr::addr_of_mut!((*entry).wszName[MAX_INTERFACE_NAME_LEN])
+    |   index out of bounds: the length is 256 but the index is 256
+    = note: `#[deny(unconditional_panic)]` on by default
+```
+
+`unconditional_panic` is a **late** lint — it runs on optimized MIR, after const-propagation has
+proved the index constant. `cargo check` stops before that, so a *guaranteed* runtime panic is
+invisible to it. Anything validated by `check` alone has never been tested for this class.
+
+**Why the translation produced it (the real lesson).** The C is not a bug:
+
+```c
+memcpy( &entry->wszName[MAX_INTERFACE_NAME_LEN], &info.if_info, sizeof(info.if_info) );
+```
+
+`wszName` is `[WCHAR; 256]` and `MAX_INTERFACE_NAME_LEN` is 256, so `&arr[256]` is the
+ONE-PAST-THE-END address — explicitly legal in C (C99 6.5.6/8) and the idiomatic way to reach
+whatever follows the array inside the containing struct. Transliterated to Rust, `arr[256]` is
+an out-of-bounds *index*, which panics. The faithful lowering takes the address by pointer
+arithmetic instead:
+
+```rust
+(*entry).wszName.as_mut_ptr().add(MAX_INTERFACE_NAME_LEN)   // one-past-the-end, no indexing
+```
+
+**This is the same family as the flex-array bug (§9.107 item, "indexing a bindgen `[T;1]`") but
+strictly worse to find**, because the flex-array version has a *variable* index and so compiles
+silently and panics only at runtime on the second element, whereas this one has a *constant*
+index — which means the compiler CAN prove it, but only if you actually build.
+
+**Rules.**
+1. **A translated crate is not validated until it has been BUILT, not merely checked.** Run
+   `cargo build --release -p <crate> --target <t>` for all three targets before declaring a flip
+   done, and put that in every grind brief. `cargo check` remains the fast inner loop; it is not
+   the acceptance gate.
+2. **Grep every `[CONST]` index against the array's declared length** when the constant is a
+   `MAX_*_LEN`/`*_SIZE` name — C uses `&arr[N]` for the end pointer routinely.
+3. The full-arch `vibeos-cli gate` would also have caught it (it builds), but only after a
+   ~15-minute cycle; the per-crate build catches it in seconds. Cheapest oracle first.
