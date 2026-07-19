@@ -361,6 +361,7 @@ struct _MEMORY_SECTION_NAME {
 
 extern "system" {
     pub fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
+    pub fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     fn MmSetPageEntrySectionSegment(
         Segment: PVOID, Offset: *const u64, Entry: ULONG_PTR,
     ) -> NTSTATUS;
@@ -2130,7 +2131,17 @@ pub unsafe extern "system" fn NtCreateSection(
     }
     safe_maximum_size.QuadPart = 0;
     if previous_mode != 0i8 {
+        // Faithful to the C's ProbeForReadLargeInteger(MaximumSize) — validate the
+        // user pointer (range + ULONG alignment) BEFORE dereferencing it, so a bad
+        // pointer raises a catchable STATUS_ACCESS_VIOLATION instead of a raw kernel
+        // read fault (BUGCHECK 0x50). The port had dropped this probe. (conformance:
+        // kmtest NtCreateSection deliberately passes a bad MaximumSize.)
         if !maximum_size.is_null() {
+            ProbeForRead(
+                maximum_size as PVOID,
+                core::mem::size_of::<_LARGE_INTEGER>() as SIZE_T,
+                core::mem::size_of::<ULONG>() as ULONG,
+            );
             safe_maximum_size = *maximum_size;
         }
         ProbeForWriteHandle(section_handle);

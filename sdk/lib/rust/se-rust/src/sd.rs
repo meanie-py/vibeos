@@ -995,6 +995,23 @@ pub unsafe extern "system" fn SeAssignSecurityEx(
             Owner = (*(*Token).UserAndGroups.add((*Token).DefaultOwnerIndex as usize)).Sid;
         }
     }
+    if Owner.is_null() {
+        #[cfg(target_arch = "aarch64")]
+        {
+            // ARM64 maps the low page, so RtlLengthSid(NULL) can consume
+            // zero-page garbage instead of producing the access violation
+            // required after the subject context has been locked.
+            let invalid_address = usize::MAX;
+            core::arch::asm!(
+                "ldrb wzr, [{address}]",
+                address = in(reg) invalid_address,
+                options(nostack, readonly),
+            );
+            ntkrnl_sys::ex::ExRaiseStatus(
+                ntkrnl_sys::constants::STATUS_ACCESS_VIOLATION,
+            );
+        }
+    }
     OwnerLength = RtlLengthSid(Owner);
 
     if !ExplicitDescriptor.is_null() {

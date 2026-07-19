@@ -135,6 +135,25 @@ pub unsafe extern "system" fn RtlCaptureStackBackTrace(
     let mut Hash: u32 = 0;
     let mut i: u32;
 
+    /* i386 ONLY: a NULL BackTrace has nowhere to store frames. The C reference stored into
+     * it unguarded and relied on the caller's SEH to absorb the fault -- RtlStack's
+     * TestStackWalk4 deliberately calls RtlCaptureStackBackTrace(0, 5, NULL, NULL) inside
+     * _SEH2_TRY. That is the CORRECT behaviour and it still works on amd64/arm64, where the
+     * AV is raised and caught (baseline RtlStackKM = pass=35 fail=11); do NOT guard there,
+     * or the WS03 branch expecting STATUS_ACCESS_VIOLATION flips to a failure.
+     *
+     * On i386 that handler is DEAD under USE_DUMMY_PSEH (task #18: kernel-mode frame-based
+     * SEH does not catch a driver __except), so the NULL store AVs -> BUGCHECK 0x1E, which
+     * ABORTED THE ENTIRE kmtest sweep at test 52 and left 22 tests unevaluated. Bail
+     * explicitly here, mirroring the BackTraceHash null-check below and the same fix already
+     * applied to RtlWalkFrameChain(NULL, ...). RETIRE THIS cfg WHEN TASK #18 LANDS -- then
+     * i386 catches the AV like the other two arches and the guard becomes a divergence.
+     * See field manual 9.105. */
+    #[cfg(target_arch = "x86")]
+    if BackTrace.is_null() {
+        return 0;
+    }
+
     /* Skip a frame for the caller */
     FramesToSkip += 1;
 

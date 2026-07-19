@@ -8847,3 +8847,74 @@ through. **Owed sweep:** every flat-typed OUT handle/pointer *array* has this
 shape (`NtUserBuildNameList`/`BuildPropList`, `NtGdi*` handle arrays,
 `NtQueryDirectoryObject`, …) — silently fine until a guest passes a non-empty
 buffer. Add each with an array-narrowing marshaller as coverage reaches it.
+### 9.106 (FIXED 2026-07-18) The NULL-output-pointer class recurs one function over — RtlCaptureStackBackTrace(BackTrace=NULL) BUGCHECKs 0x1E and ABORTS the whole i386 kmtest sweep (52 → 74 tests)
+
+**Symptom.** i386 `RtlStackKM` = `CRASH pass=0`, BUGCHECK `0x1E (0xc0000005, PC=ntoskrnl+0xCA7xx, 0xf71xx894, 0x0)`.
+The crash killed the boot at test **52 of 74**, so **22 downstream tests never ran** and could not even be
+evaluated — including `RtlStack`, which had been quarantined purely as "UNVALIDATED, the RtlStackKM
+BUGCHECK aborted the sweep before it".
+
+**The quarantine note's stated root cause was WRONG**, and it cost real time. It claimed the i386
+`RtlWalkFrameChain` "over-walks its ebp chain and derefs an unmapped high address that the
+StackBegin/StackEnd bounds check let through". Bounded `DbgPrint` instrumentation inside the walk
+disproved that outright: every iteration validated (`MmIsAddressValid`=1 on both loads), `Stack` climbed
+monotonically, and the whole range sat inside one **mapped** stack page (`SB=f71828f4 SE=f7183000`, with
+successful reads at `f7182b78` on that same page). Four hypotheses died to that data — kernel
+frame-pointer omission (kernel builds `frame-pointer: always`), driver frame-pointer omission (i386 C
+builds `-fno-omit-frame-pointer`, gcc.cmake:308), a degenerate `RtlpCaptureStackLimits` else-branch, and
+"MmIsAddressValid is lying".
+
+**The smoking gun was an off-by-one in the trace, not an address.** One walk printed **`i=5`**. The test's
+own calls are `RtlWalkFrameChain(Frames, 5, 0)` and `(Frames, 4, 0)` — neither can reach `i=5`. Only a
+caller passing `Count >= 6` can, which fingerprints `RtlCaptureStackBackTrace`:
+`Count = FramesToCapture + FramesToSkip = 5 + (0+1) = 6`. From there the bug is visible by inspection:
+
+```rust
+// rtl-diag/src/exception.rs
+*BackTrace.offset(i as isize) = Frames[(FramesToSkip + i) as usize];   // UNGUARDED
+...
+if !BackTraceHash.is_null() { ... }                                    // guarded!
+```
+
+`RtlStack`'s `TestStackWalk4` deliberately calls `RtlCaptureStackBackTrace(0, 5, NULL, NULL)`. The C stored
+through the NULL and let the caller's SEH absorb it; that handler is **dead under USE_DUMMY_PSEH on i386**,
+so the NULL store AVs. Fix = bail on a NULL `BackTrace`, the same shape as the already-landed
+`RtlWalkFrameChain(NULL, ...)` fix. Result: `RtlStackKM` and `RtlStack` both `OK pass=39 fail=1`, sweep
+**74 launched / 70 OK / no BUGCHECK** (was 52/51/0x1E).
+
+**The fix is deliberately arch-gated to i386, and that matters.** Guarding on *all* arches measurably
+regressed amd64: `RtlStackKM` went `pass=35 fail=11` → `pass=34 fail=12`, exactly one assertion. On
+amd64/arm64 kernel SEH **works**, so the unguarded NULL store raises an AV that the test's `_SEH2_TRY`
+catches, `ExceptionStatus` becomes `STATUS_ACCESS_VIOLATION`, and the WS03 branch *passes* — that is the
+correct, faithful behaviour and the guard destroys it. So the guard is `#[cfg(target_arch = "x86")]`:
+apply the workaround only where SEH cannot save us, keep the faithful path everywhere it still works.
+**The cfg is explicitly self-retiring** — when task #18 (i386 kernel-mode frame-based SEH catching a
+driver `__except`) lands, i386 joins the other two arches and the guard becomes a divergence to delete.
+General rule: **before landing a DUMMY_PSEH workaround in a shared crate, check whether the arches with
+working SEH were relying on the faithful fault** — a "fix" that silences a real, correctly-caught
+exception is a regression on every arch that could already handle it.
+
+**Reusable lessons:**
+
+1. **The NULL-output-pointer class travels in families — when you fix one, audit its siblings.** This is
+   the *same* bug as the earlier `RtlWalkFrameChain(NULL)` fix, one function over in the same subsystem,
+   found months apart. **The asymmetry is the tell:** `RtlCaptureStackBackTrace` already null-checked
+   `BackTraceHash` and not `BackTrace`. Grep any `_SEH2_TRY`-derived translation for output stores where
+   *some* out-params are guarded and others aren't.
+2. **A sweep-aborting BUGCHECK is a coverage multiplier, not a single test.** Fixing one crash took i386
+   from 52 to 74 executed tests. Prioritize crashes that abort the harness over crashes that don't —
+   and never trust a quarantine reason of the form "unvalidated, an earlier crash aborted the sweep".
+3. **Decode BUGCHECK 0x1E params carefully — P3 is not always the fault address.** P3 here looked like one
+   (kernel-range, varied per boot), but its low bits were **identical across every run** (`...894`) while
+   only the page changed — that is a fixed frame offset, i.e. a **stack pointer**, not a data address. The
+   real faulting address was `P4 = 0x00000000`. Misreading P3 produced a long "how can a *mapped* page
+   fault?" paradox. Sanity check: if a candidate fault address lives in a page you just read successfully,
+   you are decoding the wrong parameter.
+4. **A wrong root cause in a quarantine note is worse than none.** Instrument before trusting an inherited
+   diagnosis; bounded `DbgPrint` beat several rounds of static reasoning here.
+
+**Harness gotchas that cost turns (both real):**
+- `qemu/<arch>_smoke_live.log` is **truncated by each subsequent boot**, so post-hoc grep silently loses the
+  crash. Use the debug toolkit — `RUN=$(bash qemu/start.sh i386)` → `qemu/runs/$RUN/serial.log` **persists**.
+- That serial log contains terminal escape bytes, so plain `grep` treats it as binary and prints **nothing**
+  (not an error). Always `grep -a` on serial logs.

@@ -369,11 +369,12 @@ unsafe fn ExpExpandResourceOwnerTable(Resource: PERESOURCE, LockHandle: PKLOCK_Q
             ExFreePoolWithTag(Owner as PVOID, TAG_RESOURCE_TABLE);
         }
 
-        let idx = if OldSize == 0 { 1u32 } else { OldSize };
-        kthread_set_resource_index(ExpGetCurrentKThread(), idx as u8);
-
-        ExAcquireResourceLock(Resource, LockHandle);
     }
+
+    let idx = if OldSize == 0 { 1u32 } else { OldSize };
+    kthread_set_resource_index(ExpGetCurrentKThread(), idx as u8);
+
+    ExAcquireResourceLock(Resource, LockHandle);
 }
 
 unsafe fn ExpFindFreeEntry(
