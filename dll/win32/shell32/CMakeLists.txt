@@ -48,7 +48,8 @@ list(APPEND SOURCE
     propsheet.cpp
     shell32.cpp
     utils.cpp
-    CShellItem.cpp
+    # CShellItem.cpp — CShellItem, CShellItemArray, SHCreateShellItem, and
+    # SHCreateShellItemArrayFromDataObject are Rust-owned.
     # Hybrid cohab: the CShellLink COM class is Rust-owned (shell32-rust/src/
     # shell_link.rs) — activation, all interfaces, and the C-linkage
     # IShellLink_ConstructFromPath/FromFile (the C++ bodies are #if 0'd). This

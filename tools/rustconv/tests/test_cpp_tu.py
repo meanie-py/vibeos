@@ -72,3 +72,10 @@ def test_cpp_tu_accepts_exact_local_raii_marker_in_discovered_owner():
         "SH_FormatByteSize_RustBridge",
         "ChkDskDlg_RustBridge",
     )
+
+
+def test_cpp_tu_does_not_treat_extern_factory_import_as_rust_ownership():
+    report = analyze_translation_unit(SHELL32 / "folders/CPrinterFolder.cpp", REACTOS_ROOT)
+    assert any(cls.name == "CPrinterFolder" and cls.ownership == "rust-owned" for cls in report.classes)
+    assert not any(cls.name == "CPrintersEnum" and cls.ownership == "rust-owned" for cls in report.classes)
+    assert any("CPrintersEnum" in item for item in report.unsupported)

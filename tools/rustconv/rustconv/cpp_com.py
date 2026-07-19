@@ -125,6 +125,10 @@ class CppComClass:
     # a private, non-aggregating 0-ref allocation followed by AddRef/QI/Release.
     # It proves internal activation but never authorizes an OBJECT_ENTRY adapter.
     internal_shell_object_creator: bool = False
+    # ShellObjectCreatorInit<T>(args..., riid, ppv) must initialize before QI.
+    # None is the ordinary creator; a tuple is the proved Initialize surface.
+    internal_initializer_params: tuple[tuple[str, str], ...] | None = None
+    stgmedium_lifecycle_fields: tuple[str, ...] = ()
     final_construct: bool = False
     method_names: list[str] = field(default_factory=list)
     base_classes: list[str] = field(default_factory=list)
@@ -178,6 +182,13 @@ class CppComClass:
             problems.append(
                 "no OBJECT_ENTRY activation found; internal COM-object construction is not mapped"
             )
+        for declaration in self.state_fields:
+            match = re.fullmatch(r"\s*STGMEDIUM\s+([A-Za-z_]\w*)\s*", declaration)
+            if match and match.group(1) not in self.stgmedium_lifecycle_fields:
+                problems.append(
+                    "bindgen-backed STGMEDIUM state lacks source-proven constructor/"
+                    f"destructor lifecycle: {declaration}"
+                )
         for declaration in self.state_fields:
             try:
                 _parse_plain_state_field(
@@ -432,7 +443,9 @@ def _state_fields(body: str) -> list[str]:
     return fields
 
 
-_POD_LEAF_TYPES = frozenset({"CLSID", "FILETIME", "GUID", "IID", "LARGE_INTEGER", "ULARGE_INTEGER"})
+_POD_LEAF_TYPES = frozenset(
+    {"CLSID", "FILETIME", "GUID", "IID", "LARGE_INTEGER", "STGMEDIUM", "ULARGE_INTEGER"}
+)
 _RUST_KEYWORDS = frozenset(
     {
         "as",
@@ -1050,9 +1063,70 @@ def analyze_class(
     resource = re.search(r"\bDECLARE_REGISTRY_RESOURCEID\s*\(\s*([^)\s]+)\s*\)", body)
     not_agg = bool(re.search(r"\bDECLARE_(?:CENTRAL_INSTANCE_)?NOT_AGGREGATABLE\s*\(", body))
     clsid = None
-    internal_shell_object_creator = bool(
-        re.search(rf"\bShellObjectCreator\s*<\s*{re.escape(class_name)}\s*>", source_text)
+    activation_re = re.compile(
+        rf"\bShellObjectCreator(?P<init>Init)?\s*<\s*{re.escape(class_name)}\s*>\s*\("
     )
+    masked_source = _masked_cpp(source_text)
+    activation_hits = list(activation_re.finditer(masked_source))
+    if len(activation_hits) > 1:
+        unsupported.append(
+            "multiple internal ShellObjectCreator activation sites need an explicit mapping"
+        )
+    internal_shell_object_creator = bool(activation_hits)
+    internal_initializer_params = None
+    if activation_hits and activation_hits[0].group("init"):
+        opening = masked_source.find("(", activation_hits[0].start())
+        closing = _matching_paren(masked_source, opening)
+        activation_args = _split_args(source_text[opening + 1 : closing])
+        initialize_hits = list(
+            re.finditer(r"\bHRESULT\s+Initialize\s*\((?P<params>[^()]*)\)", body)
+        )
+        if len(initialize_hits) != 1:
+            unsupported.append(
+                "ShellObjectCreatorInit requires exactly one source-proven HRESULT Initialize"
+            )
+        else:
+            params = tuple(
+                _parse_param(raw, index)
+                for index, raw in enumerate(_split_args(initialize_hits[0].group("params")))
+                if raw.strip() and raw.strip() != "void"
+            )
+            if len(activation_args) != len(params) + 2:
+                unsupported.append(
+                    "ShellObjectCreatorInit argument count does not match Initialize + riid/ppv"
+                )
+            else:
+                internal_initializer_params = params
+
+    stgmedium_lifecycle_fields: list[str] = []
+    stgmedium_fields = [
+        match.group(1)
+        for declaration in state_fields
+        if (match := re.fullmatch(r"\s*STGMEDIUM\s+([A-Za-z_]\w*)\s*", declaration))
+    ]
+    if stgmedium_fields:
+        from .scanner import scan_file
+
+        class_workers = [
+            worker for worker in scan_file(source).functions if worker.cpp_class == class_name
+        ]
+        constructors = [worker for worker in class_workers if worker.is_ctor]
+        destructors = [worker for worker in class_workers if worker.is_dtor]
+        for field_name in stgmedium_fields:
+            ctor_proven = any(
+                re.search(
+                    rf"\b{re.escape(field_name)}\.tymed\s*=\s*TYMED_NULL\b",
+                    worker.body_text,
+                )
+                for worker in constructors
+            )
+            dtor_proven = any(
+                "DestroyCIDA" in worker.body_text
+                and re.search(rf"\b{re.escape(field_name)}\b", worker.body_text)
+                for worker in destructors
+            )
+            if ctor_proven and dtor_proven:
+                stgmedium_lifecycle_fields.append(field_name)
     activation_sources = [source]
     if header != source:
         activation_sources.append(header)
@@ -1077,6 +1151,8 @@ def analyze_class(
         not_aggregatable=not_agg,
         object_map_clsid=clsid,
         internal_shell_object_creator=internal_shell_object_creator,
+        internal_initializer_params=internal_initializer_params,
+        stgmedium_lifecycle_fields=tuple(stgmedium_lifecycle_fields),
         final_construct=final_construct,
         method_names=method_names or [],
         base_classes=bases,
@@ -4237,6 +4313,28 @@ def apply_interface_method_signatures(
                 variants.append(method)
 
     out = []
+    helper_counts: dict[str, int] = {}
+
+    def bind_variant(
+        candidate: FunctionDep, candidates: list[InterfaceMethod]
+    ) -> list[tuple[int, InterfaceMethod]]:
+        source_shape = tuple(_abi_c_type_key(c_type) for c_type, _ in candidate.params)
+        matches = [
+            (index, method)
+            for index, method in enumerate(candidates)
+            if tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:])
+            == source_shape
+        ]
+        if len(matches) != 1:
+            same_arity = [
+                (index, method)
+                for index, method in enumerate(candidates)
+                if len(method.params) - 1 == len(candidate.params)
+            ]
+            if len(same_arity) == 1:
+                matches = same_arity
+        return matches
+
     for dep in deps:
         # A `static` class method (e.g. a `static inline GetClassID()` helper) has
         # no `this` and can never occupy a vtable slot, even when it shares a name
@@ -4250,21 +4348,26 @@ def apply_interface_method_signatures(
         if not variants:
             out.append(dep)
             continue
-        source_shape = tuple(_abi_c_type_key(c_type) for c_type, _ in dep.params)
-        matching = [
-            (index, method)
-            for index, method in enumerate(variants)
-            if tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:]) == source_shape
-        ]
+        matching = bind_variant(dep, variants)
         if len(matching) != 1:
-            same_arity = [
-                (index, method)
-                for index, method in enumerate(variants)
-                if len(method.params) - 1 == len(dep.params)
-            ]
-            if len(same_arity) == 1:
-                matching = same_arity
-        if len(matching) != 1:
+            # A non-static private overload may share a spelling with a COM
+            # method. It is a proved helper only when a sibling body uniquely
+            # binds the WIDL slot; reserve the canonical worker name for that
+            # sibling and give this helper a collision-free deterministic name.
+            sibling_binds = any(
+                other is not dep
+                and other.cpp_class == class_name
+                and other.cpp_method == dep.cpp_method
+                and not other.is_static
+                and len(bind_variant(other, variants)) == 1
+                for other in deps
+            )
+            if sibling_binds:
+                stem = f"{class_name}_{dep.cpp_method}_helper"
+                helper_counts[stem] = helper_counts.get(stem, 0) + 1
+                suffix = "" if helper_counts[stem] == 1 else f"_{helper_counts[stem]}"
+                out.append(replace(dep, name=stem + suffix))
+                continue
             choices = ", ".join(
                 "(" + ", ".join(c_type for c_type, _ in method.params[1:]) + ")"
                 for method in variants
@@ -5011,6 +5114,7 @@ def render_class_scaffold(
     )
 
     internal = allow_internal and cls.internal_shell_object_creator and not cls.object_map_clsid
+    internal_init = internal and cls.internal_initializer_params is not None
     activation_comment = (
         "// Internal activation: shellutils.h ShellObjectCreator<T> uses this "
         "non-aggregating factory."
@@ -5019,20 +5123,31 @@ def render_class_scaffold(
         f"{cls.name} in shell32.cpp.\n"
         "// The generated C++ adapter redirects ATL activation to this factory."
     )
-    factory_decl = (
-        f"pub unsafe fn {cls.name}_CreateInstance("
-        if internal
-        else f'#[no_mangle] pub unsafe extern "system" fn {cls.name}_CreateInstance('
+    factory_decl = f"pub unsafe fn {cls.name}_CreateInstance(" if internal else (
+        f'#[no_mangle] pub unsafe extern "system" fn {cls.name}_CreateInstance('
     )
+    factory_params = []
+    if internal_init:
+        factory_params.extend(
+            f"    {name}: {c_type_to_rust(c_type)},"
+            for c_type, name in cls.internal_initializer_params or ()
+        )
+    else:
+        factory_params.append("    outer: *mut IUnknown,")
+    factory_params.append("    riid: REFIID, ppv: *mut *mut core::ffi::c_void,")
     lines.extend(
         [
             activation_comment,
             factory_decl,
-            "    outer: *mut IUnknown, riid: REFIID, ppv: *mut *mut core::ffi::c_void,",
+            *factory_params,
             ") -> HRESULT {",
             "    if ppv.is_null() { return E_POINTER; }",
             "    *ppv = core::ptr::null_mut();",
-            "    if !outer.is_null() { return CLASS_E_NOAGGREGATION; }",
+            *(
+                []
+                if internal_init
+                else ["    if !outer.is_null() { return CLASS_E_NOAGGREGATION; }"]
+            ),
             f"    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, "
             f"core::mem::size_of::<{cls.name}>()) as *mut {cls.name};",
             "    if this.is_null() { return E_OUTOFMEMORY; }",
@@ -5070,6 +5185,23 @@ def render_class_scaffold(
                 "    }",
             ]
         )
+    if internal_init:
+        init_args = ", ".join(
+            name for _c_type, name in cls.internal_initializer_params or ()
+        )
+        lines.extend(
+            [
+                f"    let mut hr = {cls.name}_Initialize_body(this"
+                f"{', ' if init_args else ''}{init_args});",
+                "    if hr >= 0 {",
+                f"        hr = {cls.name}_QueryInterface(this, riid, ppv);",
+                "    }",
+                f"    {cls.name}_Release(this);",
+                "    hr",
+                "}",
+            ]
+        )
+        return "\n".join(lines)
     lines.extend(
         [
             f"    let hr = {cls.name}_QueryInterface(this, riid, ppv);",

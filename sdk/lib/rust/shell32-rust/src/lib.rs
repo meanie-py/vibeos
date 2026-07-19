@@ -74,6 +74,7 @@ pub mod recycle_bin;
 pub mod recycle_bin_cleaner;
 pub mod send_to_menu;
 pub mod shell_item;
+pub mod shell_item_array;
 pub mod shell_dispatch;
 pub mod shell_link;
 pub mod start_menu_dummy;

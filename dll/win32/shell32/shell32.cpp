@@ -360,9 +360,12 @@ public:
 extern "C" HRESULT WINAPI CShellItem_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
-class CShellItemRustEntry : public CShellItem
+class CShellItemRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CShellItemRustEntry, &CLSID_ShellItem>
 {
 public:
+    DECLARE_NO_REGISTRY()
     class _CreatorClass
     {
     public:

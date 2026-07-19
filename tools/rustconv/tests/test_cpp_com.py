@@ -325,6 +325,56 @@ def test_internal_scaffold_has_private_rust_factory_and_no_export_adapter():
     assert '#[no_mangle] pub unsafe extern "system" fn CEnumIDListBase_CreateInstance' not in rust
 
 
+def test_shell_item_array_internal_init_factory_sequence_and_stgmedium_lifecycle():
+    source = SHELL32 / "CShellItem.cpp"
+    cls = analyze_class(source, "CShellItemArray", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.internal_shell_object_creator
+    assert cls.internal_initializer_params == (("IDataObject *", "pdo"),)
+    assert cls.stgmedium_lifecycle_fields == ("m_Medium",)
+    assert {field.name: field.rust_type for field in cls.plain_state_fields()} == {
+        "m_pCIDA": "*mut CIDA",
+        "m_Medium": "STGMEDIUM",
+    }
+    cls.require_supported(allow_internal=True)
+    interface = parse_widl_interface(
+        discover_widl_header(REACTOS_ROOT, "amd64", interface="IShellItemArray"),
+        "IShellItemArray",
+    )
+    rust = render_class_scaffold(cls, [interface], allow_internal=True)
+    assert "pub unsafe fn CShellItemArray_CreateInstance(" in rust
+    assert "pdo: *mut IDataObject" in rust
+    assert "outer: *mut IUnknown" not in rust
+    initialize = rust.index("CShellItemArray_Initialize_body(this, pdo)")
+    query = rust.index("CShellItemArray_QueryInterface(this, riid, ppv)", initialize)
+    release = rust.index("CShellItemArray_Release(this)", query)
+    assert initialize < query < release
+    assert "if hr >= 0" in rust[initialize:query]
+
+
+def test_stgmedium_state_without_exact_lifecycle_fails_loud(tmp_path: Path):
+    source = tmp_path / "CBadMedium.cpp"
+    source.write_text(
+        """
+class CBadMedium : public CComCoClass<CBadMedium>,
+    public CComObjectRootEx<CComMultiThreadModelNoCS>, public IFoo {
+    STGMEDIUM m_medium;
+public:
+    CBadMedium() { m_medium.tymed = TYMED_NULL; }
+    ~CBadMedium() { }
+    DECLARE_NOT_AGGREGATABLE(CBadMedium)
+    BEGIN_COM_MAP(CBadMedium)
+        COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo)
+    END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_BadMedium, CBadMedium)\n")
+    cls = analyze_class(source, "CBadMedium", object_map_source=object_map)
+    with pytest.raises(CppComError, match="lacks source-proven constructor/destructor"):
+        cls.require_supported()
+
+
 @pytest.mark.parametrize(
     ("c_type", "rust_type"),
     [

@@ -50,7 +50,12 @@ class CppTuReport:
 
 
 def _find_rust_factory(repo: Path, class_name: str) -> Path | None:
-    pattern = re.compile(rf"\bfn\s+{re.escape(class_name)}_CreateInstance\s*\(")
+    pattern = re.compile(
+        rf"#\s*\[\s*no_mangle\s*\]\s*"
+        rf"pub\s+(?:unsafe\s+)?extern\s+\"(?:system|C)\"\s+fn\s+"
+        rf"{re.escape(class_name)}_CreateInstance\s*\(",
+        re.MULTILINE,
+    )
     rust_root = repo / "sdk/lib/rust"
     for crate in ("shell32-rust", "menuband-rust"):
         src = rust_root / crate / "src"

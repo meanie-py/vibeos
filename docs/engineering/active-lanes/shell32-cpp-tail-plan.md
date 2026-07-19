@@ -145,6 +145,17 @@ factories and exact tool-emitted `--local-raii` owners. This closes the false `_
 rejection for the cleaner and the false COM/STGMEDIUM rejection for `drvdefext.cpp` without
 teaching the preflight to guess layouts.
 
+Fourth batch (2026-07-18): `CShellItem.cpp` left CMake, bringing the measured live inventory to
+63 C++ TUs / 58,234 lines. The existing Rust `CShellItem` now owns the exported
+`SHCreateShellItem` PIDL/parent-folder construction path; the newly translated internal
+`CShellItemArray` owns its source-proven `ShellObjectCreatorInit` allocation, Initialize,
+QI, and release sequence plus the exported `SHCreateShellItemArrayFromDataObject` wrapper.
+Rustconv learned the exact internal-initializer contract, source-proven `STGMEDIUM`
+lifecycle, and overloaded helper-versus-WIDL-slot binding. The body audit removed an
+untranslated logging macro and repaired only deterministic support: existing CIDA bridges,
+HIDA offset accessors, `TYMED_NULL`, duplicate support declarations, and a typed null.
+The final full-module candidate oracle is clean on i386, amd64, and arm64.
+
 **Exit:** 19 source-list removals, their `*_RustBridge` declarations gone where no longer
 needed, shell32 + rshell links green, full gate ×3.
 
