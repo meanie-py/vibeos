@@ -69,6 +69,7 @@ pub mod new_menu;
 pub mod open_control_panel;
 pub mod open_with_menu;
 pub mod printer_folder;
+pub mod printers_enum;
 pub mod query_associations;
 pub mod recycle_bin;
 pub mod recycle_bin_cleaner;

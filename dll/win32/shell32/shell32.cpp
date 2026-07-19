@@ -465,9 +465,12 @@ public:
 extern "C" HRESULT WINAPI CPrinterFolder_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
-class CPrinterFolderRustEntry : public CPrinterFolder
+class CPrinterFolderRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CPrinterFolderRustEntry, &CLSID_Printers>
 {
 public:
+    DECLARE_REGISTRY_RESOURCEID(IDR_PRINTERS)
     class _CreatorClass
     {
     public:

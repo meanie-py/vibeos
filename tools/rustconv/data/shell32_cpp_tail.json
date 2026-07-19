@@ -7,7 +7,6 @@
       "dll/win32/shell32/folders/CDesktopFolder.cpp",
       "dll/win32/shell32/folders/CFSFolder.cpp",
       "dll/win32/shell32/folders/CDrivesFolder.cpp",
-      "dll/win32/shell32/folders/CPrinterFolder.cpp",
       "dll/win32/shell32/folders/CNetFolder.cpp",
       "dll/win32/shell32/folders/CControlPanelFolder.cpp",
       "dll/win32/shell32/folders/CRecycleBin.cpp",
@@ -92,7 +91,8 @@
       "dll/win32/shell32/CQueryAssociations.cpp",
       "dll/win32/shell32/CFolderOptions.cpp",
       "dll/win32/shell32/CRecycleBinCleaner.cpp",
-      "dll/win32/shell32/CShellItem.cpp"
+      "dll/win32/shell32/CShellItem.cpp",
+      "dll/win32/shell32/folders/CPrinterFolder.cpp"
     ]
   }
 }

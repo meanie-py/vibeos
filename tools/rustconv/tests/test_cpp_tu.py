@@ -1,6 +1,6 @@
 from rustconv.__main__ import _extend_cpp_class_scan
 from rustconv.config import REACTOS_ROOT
-from rustconv.cpp_tu import analyze_translation_unit
+from rustconv.cpp_tu import _find_rust_factory, analyze_translation_unit
 from rustconv.scanner import scan_file
 
 SHELL32 = REACTOS_ROOT / "dll/win32/shell32"
@@ -74,8 +74,16 @@ def test_cpp_tu_accepts_exact_local_raii_marker_in_discovered_owner():
     )
 
 
-def test_cpp_tu_does_not_treat_extern_factory_import_as_rust_ownership():
+def test_cpp_tu_finds_integrated_printers_enum_factory():
     report = analyze_translation_unit(SHELL32 / "folders/CPrinterFolder.cpp", REACTOS_ROOT)
     assert any(cls.name == "CPrinterFolder" and cls.ownership == "rust-owned" for cls in report.classes)
-    assert not any(cls.name == "CPrintersEnum" and cls.ownership == "rust-owned" for cls in report.classes)
-    assert any("CPrintersEnum" in item for item in report.unsupported)
+    assert any(cls.name == "CPrintersEnum" and cls.ownership == "rust-owned" for cls in report.classes)
+
+
+def test_cpp_tu_does_not_treat_extern_factory_import_as_rust_ownership(tmp_path):
+    source = tmp_path / "sdk/lib/rust/shell32-rust/src/import.rs"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        'extern "system" { fn CImported_CreateInstance(outer: *mut IUnknown); }\n'
+    )
+    assert _find_rust_factory(tmp_path, "CImported") is None

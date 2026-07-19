@@ -351,6 +351,25 @@ def test_shell_item_array_internal_init_factory_sequence_and_stgmedium_lifecycle
     assert "if hr >= 0" in rust[initialize:query]
 
 
+def test_internal_init_accepts_repeated_call_sites_and_winapi_initializer():
+    source = SHELL32 / "folders" / "CPrinterFolder.cpp"
+    cls = analyze_class(source, "CPrintersEnum", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.internal_shell_object_creator
+    assert cls.internal_initializer_params == (("HWND", "hwndOwner"), ("DWORD", "dwFlags"))
+    assert not cls.unsupported
+    cls.require_supported(allow_internal=True)
+    scan = _extend_cpp_class_scan(
+        scan_file(source), source, "CPrintersEnum", tuple(cls.local_base_classes)
+    )
+    inherited = {"Next", "Skip", "Reset", "Clone"}
+    assert inherited <= {item.name for item in scan.functions}
+    assert all(
+        item.cpp_class == "CPrintersEnum"
+        for item in scan.functions
+        if item.name in inherited
+    )
+
+
 def test_stgmedium_state_without_exact_lifecycle_fails_loud(tmp_path: Path):
     source = tmp_path / "CBadMedium.cpp"
     source.write_text(

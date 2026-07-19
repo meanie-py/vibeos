@@ -427,6 +427,12 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
         if base_header == header:
             continue
         scans.append(_scan_cpp_class_fragment(base_header, base))
+        # A concrete base commonly keeps declarations/state in Base.h and its
+        # inherited vtable bodies in the matching Base.cpp. Flatten both: the
+        # derived object publishes those slots and cannot omit their bodies.
+        base_impl = base_header.with_suffix(".cpp")
+        if base_impl.is_file() and base_impl.resolve() != source.resolve():
+            scans.append(scan_file(base_impl, force_cpp=True))
     for header_scan in scans:
         header_lines = header_scan.raw_source.splitlines()
 

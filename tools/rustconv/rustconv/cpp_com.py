@@ -1068,18 +1068,25 @@ def analyze_class(
     )
     masked_source = _masked_cpp(source_text)
     activation_hits = list(activation_re.finditer(masked_source))
-    if len(activation_hits) > 1:
+    activation_modes = {bool(hit.group("init")) for hit in activation_hits}
+    if len(activation_modes) > 1:
         unsupported.append(
-            "multiple internal ShellObjectCreator activation sites need an explicit mapping"
+            "mixed ShellObjectCreator/ShellObjectCreatorInit activation needs an explicit mapping"
         )
     internal_shell_object_creator = bool(activation_hits)
     internal_initializer_params = None
     if activation_hits and activation_hits[0].group("init"):
-        opening = masked_source.find("(", activation_hits[0].start())
-        closing = _matching_paren(masked_source, opening)
-        activation_args = _split_args(source_text[opening + 1 : closing])
+        activation_arg_lists = []
+        for activation_hit in activation_hits:
+            opening = masked_source.find("(", activation_hit.start())
+            closing = _matching_paren(masked_source, opening)
+            activation_arg_lists.append(_split_args(source_text[opening + 1 : closing]))
         initialize_hits = list(
-            re.finditer(r"\bHRESULT\s+Initialize\s*\((?P<params>[^()]*)\)", body)
+            re.finditer(
+                r"\bHRESULT\s+(?:(?:WINAPI|STDMETHODCALLTYPE|CALLBACK)\s+)?"
+                r"Initialize\s*\((?P<params>[^()]*)\)",
+                body,
+            )
         )
         if len(initialize_hits) != 1:
             unsupported.append(
@@ -1091,7 +1098,16 @@ def analyze_class(
                 for index, raw in enumerate(_split_args(initialize_hits[0].group("params")))
                 if raw.strip() and raw.strip() != "void"
             )
-            if len(activation_args) != len(params) + 2:
+
+            def effective_creator_arity(args: list[str]) -> int:
+                iid_ppv_tail = bool(
+                    args and re.fullmatch(r"\s*IID_PPV_ARG\s*\([^()]+\)\s*", args[-1], re.DOTALL)
+                )
+                return len(args) + int(iid_ppv_tail)
+
+            if any(
+                effective_creator_arity(args) != len(params) + 2 for args in activation_arg_lists
+            ):
                 unsupported.append(
                     "ShellObjectCreatorInit argument count does not match Initialize + riid/ppv"
                 )
@@ -4322,8 +4338,7 @@ def apply_interface_method_signatures(
         matches = [
             (index, method)
             for index, method in enumerate(candidates)
-            if tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:])
-            == source_shape
+            if tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:]) == source_shape
         ]
         if len(matches) != 1:
             same_arity = [
@@ -5123,8 +5138,10 @@ def render_class_scaffold(
         f"{cls.name} in shell32.cpp.\n"
         "// The generated C++ adapter redirects ATL activation to this factory."
     )
-    factory_decl = f"pub unsafe fn {cls.name}_CreateInstance(" if internal else (
-        f'#[no_mangle] pub unsafe extern "system" fn {cls.name}_CreateInstance('
+    factory_decl = (
+        f"pub unsafe fn {cls.name}_CreateInstance("
+        if internal
+        else (f'#[no_mangle] pub unsafe extern "system" fn {cls.name}_CreateInstance(')
     )
     factory_params = []
     if internal_init:
@@ -5186,9 +5203,7 @@ def render_class_scaffold(
             ]
         )
     if internal_init:
-        init_args = ", ".join(
-            name for _c_type, name in cls.internal_initializer_params or ()
-        )
+        init_args = ", ".join(name for _c_type, name in cls.internal_initializer_params or ())
         lines.extend(
             [
                 f"    let mut hr = {cls.name}_Initialize_body(this"

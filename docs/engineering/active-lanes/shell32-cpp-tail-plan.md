@@ -156,6 +156,19 @@ untranslated logging macro and repaired only deterministic support: existing CID
 HIDA offset accessors, `TYMED_NULL`, duplicate support declarations, and a typed null.
 The final full-module candidate oracle is clean on i386, amd64, and arm64.
 
+Fifth batch (2026-07-18): `folders/CPrinterFolder.cpp` left CMake, bringing the live
+inventory to 62 C++ TUs / 57,706 lines. Rustconv now accepts repeated same-mode
+`ShellObjectCreatorInit` sites, accounts for the exact `IID_PPV_ARG` two-argument macro,
+accepts `WINAPI Initialize`, and flattens a concrete base's matching `.cpp` bodies as well
+as its header/state. That produced a complete `CPrintersEnum` over the already-audited
+`CEnumIDListBase` list methods: six bodies came from exact translation memory, three were
+deterministic stubs, and four new DeepSeek workers cost $0.01. The candidate oracle is
+zero-diagnostic on all three architectures after exact ENUMLIST/Winspool substrate and
+packed-PIDL fixes. The TU's printer-icon helper moved into Rust, while the shared
+`SHELL32_CompareDetails` function received a canonical C/system ABI; four Rust folder
+modules now call it directly and the printer-owned bridge is retired. The real i386 image
+links with the TU absent.
+
 **Exit:** 19 source-list removals, their `*_RustBridge` declarations gone where no longer
 needed, shell32 + rshell links green, full gate ×3.
 
