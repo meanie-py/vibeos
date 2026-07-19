@@ -325,6 +325,218 @@ pub const IN6ADDR_SOLICITEDNODEMULTICASTPREFIX_LENGTH: u32 = 104;
 pub const IN6ADDR_V4MAPPEDPREFIX_LENGTH: u32 = 96;
 pub const IN6ADDR_6TO4PREFIX_LENGTH: u32 = 16;
 pub const IN6ADDR_TEREDOPREFIX_LENGTH: u32 = 32;
+pub const IF_TYPE_OTHER: u32 = 1;
+pub const IF_TYPE_REGULAR_1822: u32 = 2;
+pub const IF_TYPE_HDH_1822: u32 = 3;
+pub const IF_TYPE_DDN_X25: u32 = 4;
+pub const IF_TYPE_RFC877_X25: u32 = 5;
+pub const IF_TYPE_ETHERNET_CSMACD: u32 = 6;
+pub const IF_TYPE_IS088023_CSMACD: u32 = 7;
+pub const IF_TYPE_ISO88024_TOKENBUS: u32 = 8;
+pub const IF_TYPE_ISO88025_TOKENRING: u32 = 9;
+pub const IF_TYPE_ISO88026_MAN: u32 = 10;
+pub const IF_TYPE_STARLAN: u32 = 11;
+pub const IF_TYPE_PROTEON_10MBIT: u32 = 12;
+pub const IF_TYPE_PROTEON_80MBIT: u32 = 13;
+pub const IF_TYPE_HYPERCHANNEL: u32 = 14;
+pub const IF_TYPE_FDDI: u32 = 15;
+pub const IF_TYPE_LAP_B: u32 = 16;
+pub const IF_TYPE_SDLC: u32 = 17;
+pub const IF_TYPE_DS1: u32 = 18;
+pub const IF_TYPE_E1: u32 = 19;
+pub const IF_TYPE_BASIC_ISDN: u32 = 20;
+pub const IF_TYPE_PRIMARY_ISDN: u32 = 21;
+pub const IF_TYPE_PROP_POINT2POINT_SERIAL: u32 = 22;
+pub const IF_TYPE_PPP: u32 = 23;
+pub const IF_TYPE_SOFTWARE_LOOPBACK: u32 = 24;
+pub const IF_TYPE_EON: u32 = 25;
+pub const IF_TYPE_ETHERNET_3MBIT: u32 = 26;
+pub const IF_TYPE_NSIP: u32 = 27;
+pub const IF_TYPE_SLIP: u32 = 28;
+pub const IF_TYPE_ULTRA: u32 = 29;
+pub const IF_TYPE_DS3: u32 = 30;
+pub const IF_TYPE_SIP: u32 = 31;
+pub const IF_TYPE_FRAMERELAY: u32 = 32;
+pub const IF_TYPE_RS232: u32 = 33;
+pub const IF_TYPE_PARA: u32 = 34;
+pub const IF_TYPE_ARCNET: u32 = 35;
+pub const IF_TYPE_ARCNET_PLUS: u32 = 36;
+pub const IF_TYPE_ATM: u32 = 37;
+pub const IF_TYPE_MIO_X25: u32 = 38;
+pub const IF_TYPE_SONET: u32 = 39;
+pub const IF_TYPE_X25_PLE: u32 = 40;
+pub const IF_TYPE_ISO88022_LLC: u32 = 41;
+pub const IF_TYPE_LOCALTALK: u32 = 42;
+pub const IF_TYPE_SMDS_DXI: u32 = 43;
+pub const IF_TYPE_FRAMERELAY_SERVICE: u32 = 44;
+pub const IF_TYPE_V35: u32 = 45;
+pub const IF_TYPE_HSSI: u32 = 46;
+pub const IF_TYPE_HIPPI: u32 = 47;
+pub const IF_TYPE_MODEM: u32 = 48;
+pub const IF_TYPE_AAL5: u32 = 49;
+pub const IF_TYPE_SONET_PATH: u32 = 50;
+pub const IF_TYPE_SONET_VT: u32 = 51;
+pub const IF_TYPE_SMDS_ICIP: u32 = 52;
+pub const IF_TYPE_PROP_VIRTUAL: u32 = 53;
+pub const IF_TYPE_PROP_MULTIPLEXOR: u32 = 54;
+pub const IF_TYPE_IEEE80212: u32 = 55;
+pub const IF_TYPE_FIBRECHANNEL: u32 = 56;
+pub const IF_TYPE_HIPPIINTERFACE: u32 = 57;
+pub const IF_TYPE_FRAMERELAY_INTERCONNECT: u32 = 58;
+pub const IF_TYPE_AFLANE_8023: u32 = 59;
+pub const IF_TYPE_AFLANE_8025: u32 = 60;
+pub const IF_TYPE_CCTEMUL: u32 = 61;
+pub const IF_TYPE_FASTETHER: u32 = 62;
+pub const IF_TYPE_ISDN: u32 = 63;
+pub const IF_TYPE_V11: u32 = 64;
+pub const IF_TYPE_V36: u32 = 65;
+pub const IF_TYPE_G703_64K: u32 = 66;
+pub const IF_TYPE_G703_2MB: u32 = 67;
+pub const IF_TYPE_QLLC: u32 = 68;
+pub const IF_TYPE_FASTETHER_FX: u32 = 69;
+pub const IF_TYPE_CHANNEL: u32 = 70;
+pub const IF_TYPE_IEEE80211: u32 = 71;
+pub const IF_TYPE_IBM370PARCHAN: u32 = 72;
+pub const IF_TYPE_ESCON: u32 = 73;
+pub const IF_TYPE_DLSW: u32 = 74;
+pub const IF_TYPE_ISDN_S: u32 = 75;
+pub const IF_TYPE_ISDN_U: u32 = 76;
+pub const IF_TYPE_LAP_D: u32 = 77;
+pub const IF_TYPE_IPSWITCH: u32 = 78;
+pub const IF_TYPE_RSRB: u32 = 79;
+pub const IF_TYPE_ATM_LOGICAL: u32 = 80;
+pub const IF_TYPE_DS0: u32 = 81;
+pub const IF_TYPE_DS0_BUNDLE: u32 = 82;
+pub const IF_TYPE_BSC: u32 = 83;
+pub const IF_TYPE_ASYNC: u32 = 84;
+pub const IF_TYPE_CNR: u32 = 85;
+pub const IF_TYPE_ISO88025R_DTR: u32 = 86;
+pub const IF_TYPE_EPLRS: u32 = 87;
+pub const IF_TYPE_ARAP: u32 = 88;
+pub const IF_TYPE_PROP_CNLS: u32 = 89;
+pub const IF_TYPE_HOSTPAD: u32 = 90;
+pub const IF_TYPE_TERMPAD: u32 = 91;
+pub const IF_TYPE_FRAMERELAY_MPI: u32 = 92;
+pub const IF_TYPE_X213: u32 = 93;
+pub const IF_TYPE_ADSL: u32 = 94;
+pub const IF_TYPE_RADSL: u32 = 95;
+pub const IF_TYPE_SDSL: u32 = 96;
+pub const IF_TYPE_VDSL: u32 = 97;
+pub const IF_TYPE_ISO88025_CRFPRINT: u32 = 98;
+pub const IF_TYPE_MYRINET: u32 = 99;
+pub const IF_TYPE_VOICE_EM: u32 = 100;
+pub const IF_TYPE_VOICE_FXO: u32 = 101;
+pub const IF_TYPE_VOICE_FXS: u32 = 102;
+pub const IF_TYPE_VOICE_ENCAP: u32 = 103;
+pub const IF_TYPE_VOICE_OVERIP: u32 = 104;
+pub const IF_TYPE_ATM_DXI: u32 = 105;
+pub const IF_TYPE_ATM_FUNI: u32 = 106;
+pub const IF_TYPE_ATM_IMA: u32 = 107;
+pub const IF_TYPE_PPPMULTILINKBUNDLE: u32 = 108;
+pub const IF_TYPE_IPOVER_CDLC: u32 = 109;
+pub const IF_TYPE_IPOVER_CLAW: u32 = 110;
+pub const IF_TYPE_STACKTOSTACK: u32 = 111;
+pub const IF_TYPE_VIRTUALIPADDRESS: u32 = 112;
+pub const IF_TYPE_MPC: u32 = 113;
+pub const IF_TYPE_IPOVER_ATM: u32 = 114;
+pub const IF_TYPE_ISO88025_FIBER: u32 = 115;
+pub const IF_TYPE_TDLC: u32 = 116;
+pub const IF_TYPE_GIGABITETHERNET: u32 = 117;
+pub const IF_TYPE_HDLC: u32 = 118;
+pub const IF_TYPE_LAP_F: u32 = 119;
+pub const IF_TYPE_V37: u32 = 120;
+pub const IF_TYPE_X25_MLP: u32 = 121;
+pub const IF_TYPE_X25_HUNTGROUP: u32 = 122;
+pub const IF_TYPE_TRANSPHDLC: u32 = 123;
+pub const IF_TYPE_INTERLEAVE: u32 = 124;
+pub const IF_TYPE_FAST: u32 = 125;
+pub const IF_TYPE_IP: u32 = 126;
+pub const IF_TYPE_DOCSCABLE_MACLAYER: u32 = 127;
+pub const IF_TYPE_DOCSCABLE_DOWNSTREAM: u32 = 128;
+pub const IF_TYPE_DOCSCABLE_UPSTREAM: u32 = 129;
+pub const IF_TYPE_A12MPPSWITCH: u32 = 130;
+pub const IF_TYPE_TUNNEL: u32 = 131;
+pub const IF_TYPE_COFFEE: u32 = 132;
+pub const IF_TYPE_CES: u32 = 133;
+pub const IF_TYPE_ATM_SUBINTERFACE: u32 = 134;
+pub const IF_TYPE_L2_VLAN: u32 = 135;
+pub const IF_TYPE_L3_IPVLAN: u32 = 136;
+pub const IF_TYPE_L3_IPXVLAN: u32 = 137;
+pub const IF_TYPE_DIGITALPOWERLINE: u32 = 138;
+pub const IF_TYPE_MEDIAMAILOVERIP: u32 = 139;
+pub const IF_TYPE_DTM: u32 = 140;
+pub const IF_TYPE_DCN: u32 = 141;
+pub const IF_TYPE_IPFORWARD: u32 = 142;
+pub const IF_TYPE_MSDSL: u32 = 143;
+pub const IF_TYPE_IEEE1394: u32 = 144;
+pub const IF_TYPE_IF_GSN: u32 = 145;
+pub const IF_TYPE_DVBRCC_MACLAYER: u32 = 146;
+pub const IF_TYPE_DVBRCC_DOWNSTREAM: u32 = 147;
+pub const IF_TYPE_DVBRCC_UPSTREAM: u32 = 148;
+pub const IF_TYPE_ATM_VIRTUAL: u32 = 149;
+pub const IF_TYPE_MPLS_TUNNEL: u32 = 150;
+pub const IF_TYPE_SRP: u32 = 151;
+pub const IF_TYPE_VOICEOVERATM: u32 = 152;
+pub const IF_TYPE_VOICEOVERFRAMERELAY: u32 = 153;
+pub const IF_TYPE_IDSL: u32 = 154;
+pub const IF_TYPE_COMPOSITELINK: u32 = 155;
+pub const IF_TYPE_SS7_SIGLINK: u32 = 156;
+pub const IF_TYPE_PROP_WIRELESS_P2P: u32 = 157;
+pub const IF_TYPE_FR_FORWARD: u32 = 158;
+pub const IF_TYPE_RFC1483: u32 = 159;
+pub const IF_TYPE_USB: u32 = 160;
+pub const IF_TYPE_IEEE8023AD_LAG: u32 = 161;
+pub const IF_TYPE_BGP_POLICY_ACCOUNTING: u32 = 162;
+pub const IF_TYPE_FRF16_MFR_BUNDLE: u32 = 163;
+pub const IF_TYPE_H323_GATEKEEPER: u32 = 164;
+pub const IF_TYPE_H323_PROXY: u32 = 165;
+pub const IF_TYPE_MPLS: u32 = 166;
+pub const IF_TYPE_MF_SIGLINK: u32 = 167;
+pub const IF_TYPE_HDSL2: u32 = 168;
+pub const IF_TYPE_SHDSL: u32 = 169;
+pub const IF_TYPE_DS1_FDL: u32 = 170;
+pub const IF_TYPE_POS: u32 = 171;
+pub const IF_TYPE_DVB_ASI_IN: u32 = 172;
+pub const IF_TYPE_DVB_ASI_OUT: u32 = 173;
+pub const IF_TYPE_PLC: u32 = 175;
+pub const IF_TYPE_NFAS: u32 = 175;
+pub const IF_TYPE_TR008: u32 = 176;
+pub const IF_TYPE_GR303_RDT: u32 = 177;
+pub const IF_TYPE_GR303_IDT: u32 = 178;
+pub const IF_TYPE_ISUP: u32 = 179;
+pub const IF_TYPE_PROP_DOCS_WIRELESS_MACLAYER: u32 = 180;
+pub const IF_TYPE_PROP_DOCS_WIRELESS_DOWNSTREAM: u32 = 181;
+pub const IF_TYPE_PROP_DOCS_WIRELESS_UPSTREAM: u32 = 182;
+pub const IF_TYPE_HIPERLAN2: u32 = 183;
+pub const IF_TYPE_PROP_BWA_P2MP: u32 = 184;
+pub const IF_TYPE_SONET_OVERHEAD_CHANNEL: u32 = 185;
+pub const IF_TYPE_DIGITAL_WRAPPER_OVERHEAD_CHANNEL: u32 = 186;
+pub const IF_TYPE_AAL2: u32 = 187;
+pub const IF_TYPE_RADIO_MAC: u32 = 188;
+pub const IF_TYPE_ATM_RADIO: u32 = 189;
+pub const IF_TYPE_IMT: u32 = 190;
+pub const IF_TYPE_MVL: u32 = 191;
+pub const IF_TYPE_REACH_DSL: u32 = 192;
+pub const IF_TYPE_FR_DLCI_ENDPT: u32 = 193;
+pub const IF_TYPE_ATM_VCI_ENDPT: u32 = 194;
+pub const IF_TYPE_OPTICAL_CHANNEL: u32 = 195;
+pub const IF_TYPE_OPTICAL_TRANSPORT: u32 = 196;
+pub const IF_TYPE_IEEE80216_WANN: u32 = 237;
+pub const IF_TYPE_WWANPP: u32 = 243;
+pub const IF_TYPE_WWANPP2: u32 = 244;
+pub const MAX_IF_TYPE: u32 = 244;
+pub const MIB_IF_TYPE_OTHER: u32 = 1;
+pub const MIB_IF_TYPE_ETHERNET: u32 = 6;
+pub const MIB_IF_TYPE_TOKENRING: u32 = 9;
+pub const MIB_IF_TYPE_FDDI: u32 = 15;
+pub const MIB_IF_TYPE_PPP: u32 = 23;
+pub const MIB_IF_TYPE_LOOPBACK: u32 = 24;
+pub const MIB_IF_TYPE_SLIP: u32 = 28;
+pub const MIB_IF_ADMIN_STATUS_UP: u32 = 1;
+pub const MIB_IF_ADMIN_STATUS_DOWN: u32 = 2;
+pub const MIB_IF_ADMIN_STATUS_TESTING: u32 = 3;
+pub const MAXLEN_PHYSADDR: u32 = 8;
+pub const MAXLEN_IFDESCR: u32 = 256;
 pub const MIB_IPADDR_PRIMARY: u32 = 1;
 pub const MIB_IPADDR_DYNAMIC: u32 = 4;
 pub const MIB_IPADDR_DISCONNECTED: u32 = 8;
@@ -487,8 +699,25 @@ pub const AO_OPTION_RCV_HOPLIMIT: u32 = 36;
 pub const AO_OPTION_UNBIND: u32 = 37;
 pub const AO_OPTION_PROTECT: u32 = 38;
 pub const TCP_SOCKET_NODELAY: u32 = 1;
+pub const ERROR_BASE: u32 = 23000;
+pub const PFERROR_NO_PF_INTERFACE: u32 = 23000;
+pub const PFERROR_NO_FILTERS_GIVEN: u32 = 23001;
+pub const PFERROR_BUFFER_TOO_SMALL: u32 = 23002;
+pub const ERROR_IPV6_NOT_IMPLEMENTED: u32 = 23003;
+pub const FD_FLAGS_NOSYN: u32 = 1;
+pub const FD_FLAGS_ALLFLAGS: u32 = 1;
+pub const LB_SRC_ADDR_USE_SRCADDR_FLAG: u32 = 1;
+pub const LB_SRC_ADDR_USE_DSTADDR_FLAG: u32 = 2;
+pub const LB_DST_ADDR_USE_SRCADDR_FLAG: u32 = 4;
+pub const LB_DST_ADDR_USE_DSTADDR_FLAG: u32 = 8;
+pub const LB_SRC_MASK_LATE_FLAG: u32 = 16;
+pub const LB_DST_MASK_LATE_FLAG: u32 = 32;
 pub const MAX_INTERFACE_PHYSADDR: u32 = 8;
 pub const MAX_INTERFACE_DESCRIPTION: u32 = 256;
+pub const ETH_ALEN: u32 = 6;
+pub const IFENT_SOFTWARE_LOOPBACK: u32 = 24;
+pub const INDEX_IS_LOOPBACK: u32 = 8388608;
+pub const IFNAMSIZ: u32 = 32;
 pub type u_short = ::core::ffi::c_ushort;
 pub type ADDRESS_FAMILY = USHORT;
 #[repr(C)]
@@ -972,6 +1201,7 @@ pub struct in6_pktinfo {
 }
 pub type IN6_PKTINFO = in6_pktinfo;
 pub type PIN6_PKTINFO = *mut in6_pktinfo;
+pub type IFTYPE = ULONG;
 pub const _INTERNAL_IF_OPER_STATUS_IF_OPER_STATUS_NON_OPERATIONAL: _INTERNAL_IF_OPER_STATUS = 0;
 pub const _INTERNAL_IF_OPER_STATUS_IF_OPER_STATUS_UNREACHABLE: _INTERNAL_IF_OPER_STATUS = 1;
 pub const _INTERNAL_IF_OPER_STATUS_IF_OPER_STATUS_DISCONNECTED: _INTERNAL_IF_OPER_STATUS = 2;
@@ -1144,6 +1374,12 @@ pub const IF_OPER_STATUS_IfOperStatusNotPresent: IF_OPER_STATUS = 6;
 pub const IF_OPER_STATUS_IfOperStatusLowerLayerDown: IF_OPER_STATUS = 7;
 pub type IF_OPER_STATUS = ::core::ffi::c_uint;
 #[repr(C)]
+pub struct _MIB_IFNUMBER {
+    pub dwValue: DWORD,
+}
+pub type MIB_IFNUMBER = _MIB_IFNUMBER;
+pub type PMIB_IFNUMBER = *mut _MIB_IFNUMBER;
+#[repr(C)]
 pub struct _MIB_IFROW {
     pub wszName: [WCHAR; 256usize],
     pub dwIndex: DWORD,
@@ -1177,6 +1413,7 @@ pub struct _MIB_IFTABLE {
     pub dwNumEntries: DWORD,
     pub table: [MIB_IFROW; 1usize],
 }
+pub type MIB_IFTABLE = _MIB_IFTABLE;
 pub type PMIB_IFTABLE = *mut _MIB_IFTABLE;
 pub const NL_PREFIX_ORIGIN_IpPrefixOriginOther: NL_PREFIX_ORIGIN = 0;
 pub const NL_PREFIX_ORIGIN_IpPrefixOriginManual: NL_PREFIX_ORIGIN = 1;
@@ -3076,6 +3313,100 @@ pub struct IPInterfaceInfo {
     pub iii_addrlength: ULONG,
     pub iii_addr: [UCHAR; 1usize],
 }
+pub type FILTER_HANDLE = PVOID;
+pub type PFILTER_HANDLE = *mut PVOID;
+pub type INTERFACE_HANDLE = PVOID;
+pub type PINTERFACE_HANDLE = *mut PVOID;
+pub const _GlobalFilter_GF_FRAGMENTS: _GlobalFilter = 2;
+pub const _GlobalFilter_GF_STRONGHOST: _GlobalFilter = 8;
+pub const _GlobalFilter_GF_FRAGCACHE: _GlobalFilter = 9;
+pub type _GlobalFilter = ::core::ffi::c_uint;
+pub use self::_GlobalFilter as GLOBAL_FILTER;
+pub type PGLOBAL_FILTER = *mut _GlobalFilter;
+pub const _PfAddresType_PF_IPV4: _PfAddresType = 0;
+pub const _PfAddresType_PF_IPV6: _PfAddresType = 1;
+pub type _PfAddresType = ::core::ffi::c_uint;
+pub use self::_PfAddresType as PFADDRESSTYPE;
+pub type PPFADDRESSTYPE = *mut _PfAddresType;
+pub const _PfForwardAction_PF_ACTION_FORWARD: _PfForwardAction = 0;
+pub const _PfForwardAction_PF_ACTION_DROP: _PfForwardAction = 1;
+pub type _PfForwardAction = ::core::ffi::c_uint;
+pub use self::_PfForwardAction as PFFORWARD_ACTION;
+pub type PPFFORWARD_ACTION = *mut _PfForwardAction;
+pub const _PfFrameType_PFFT_FILTER: _PfFrameType = 1;
+pub const _PfFrameType_PFFT_FRAG: _PfFrameType = 2;
+pub const _PfFrameType_PFFT_SPOOF: _PfFrameType = 3;
+pub type _PfFrameType = ::core::ffi::c_uint;
+pub use self::_PfFrameType as PFFRAMETYPE;
+pub type PPFFRAMETYPE = *mut _PfFrameType;
+#[repr(C)]
+pub struct _pfLogFrame {
+    pub Timestamp: LARGE_INTEGER,
+    pub pfeTypeOfFrame: PFFRAMETYPE,
+    pub dwTotalSizeUsed: DWORD,
+    pub dwFilterRule: DWORD,
+    pub wSizeOfAdditionalData: WORD,
+    pub wSizeOfIpHeader: WORD,
+    pub dwInterfaceName: DWORD,
+    pub dwIPIndex: DWORD,
+    pub bPacketData: [BYTE; 1usize],
+}
+pub type PFLOGFRAME = _pfLogFrame;
+pub type PPFLOGFRAME = *mut _pfLogFrame;
+#[repr(C)]
+pub struct _PF_FILTER_DESCRIPTOR {
+    pub dwFilterFlags: DWORD,
+    pub dwRule: DWORD,
+    pub pfatType: PFADDRESSTYPE,
+    pub SrcAddr: PBYTE,
+    pub SrcMask: PBYTE,
+    pub DstAddr: PBYTE,
+    pub DstMask: PBYTE,
+    pub dwProtocol: DWORD,
+    pub fLateBound: DWORD,
+    pub wSrcPort: WORD,
+    pub wDstPort: WORD,
+    pub wSrcPortHighRange: WORD,
+    pub wDstPortHighRange: WORD,
+}
+pub type PF_FILTER_DESCRIPTOR = _PF_FILTER_DESCRIPTOR;
+pub type PPF_FILTER_DESCRIPTOR = *mut _PF_FILTER_DESCRIPTOR;
+#[repr(C)]
+pub struct _PF_FILTER_STATS {
+    pub dwNumPacketsFiltered: DWORD,
+    pub info: PF_FILTER_DESCRIPTOR,
+}
+pub type PF_FILTER_STATS = _PF_FILTER_STATS;
+pub type PPF_FILTER_STATS = *mut _PF_FILTER_STATS;
+#[repr(C)]
+pub struct _PF_INTERFACE_STATS {
+    pub pvDriverContext: PVOID,
+    pub dwFlags: DWORD,
+    pub dwInDrops: DWORD,
+    pub dwOutDrops: DWORD,
+    pub eaInAction: PFFORWARD_ACTION,
+    pub eaOutAction: PFFORWARD_ACTION,
+    pub dwNumInFilters: DWORD,
+    pub dwNumOutFilters: DWORD,
+    pub dwFrag: DWORD,
+    pub dwSpoof: DWORD,
+    pub dwReserved1: DWORD,
+    pub dwReserved2: DWORD,
+    pub liSYN: LARGE_INTEGER,
+    pub liTotalLogged: LARGE_INTEGER,
+    pub dwLostLogEntries: DWORD,
+    pub FilterInfo: [PF_FILTER_STATS; 1usize],
+}
+pub type PF_INTERFACE_STATS = _PF_INTERFACE_STATS;
+pub type PPF_INTERFACE_STATS = *mut _PF_INTERFACE_STATS;
+#[repr(C)]
+pub struct _PF_LATEBIND_INFO {
+    pub SrcAddr: PBYTE,
+    pub DstAddr: PBYTE,
+    pub Mask: PBYTE,
+}
+pub type PF_LATEBIND_INFO = _PF_LATEBIND_INFO;
+pub type PPF_LATEBIND_INFO = *mut _PF_LATEBIND_INFO;
 #[repr(C)]
 pub struct _IPHLP_RES_INFO {
     pub riCount: DWORD,
@@ -3110,3 +3441,70 @@ pub const _CLASS_TABLE_ClassModulePid: _CLASS_TABLE = 1;
 pub const _CLASS_TABLE_ClassModule: _CLASS_TABLE = 2;
 pub type _CLASS_TABLE = ::core::ffi::c_uint;
 pub use self::_CLASS_TABLE as CLASS_TABLE;
+#[repr(C)]
+pub struct _IPRouteEntry {
+    pub ire_dest: ULONG,
+    pub ire_index: ULONG,
+    pub ire_metric1: ULONG,
+    pub ire_metric2: ULONG,
+    pub ire_metric3: ULONG,
+    pub ire_metric4: ULONG,
+    pub ire_gw: ULONG,
+    pub ire_type: ULONG,
+    pub ire_proto: ULONG,
+    pub ire_age: ULONG,
+    pub ire_mask: ULONG,
+    pub ire_metric5: ULONG,
+    pub ire_info: ULONG,
+}
+pub type IPRouteEntry = _IPRouteEntry;
+pub type caddr_t = *mut ::core::ffi::c_char;
+#[repr(C)]
+pub struct _IFEntrySafelySized {
+    pub MaxSize: __BindgenUnionField<[CHAR; 229usize]>,
+    pub ent: __BindgenUnionField<IFEntry>,
+    pub bindgen_union_field: [u32; 58usize],
+}
+pub type IFEntrySafelySized = _IFEntrySafelySized;
+#[repr(C)]
+pub struct _TCP_REQUEST_SET_INFORMATION_EX_ROUTE_ENTRY {
+    pub MaxSize: __BindgenUnionField<[CHAR; 79usize]>,
+    pub Req: __BindgenUnionField<TCP_REQUEST_SET_INFORMATION_EX>,
+    pub bindgen_union_field: [u32; 20usize],
+}
+pub type TCP_REQUEST_SET_INFORMATION_EX_ROUTE_ENTRY = _TCP_REQUEST_SET_INFORMATION_EX_ROUTE_ENTRY;
+pub type PTCP_REQUEST_SET_INFORMATION_EX_ROUTE_ENTRY =
+    *mut _TCP_REQUEST_SET_INFORMATION_EX_ROUTE_ENTRY;
+#[repr(C)]
+pub struct _TCP_REQUEST_SET_INFORMATION_EX_ARP_ENTRY {
+    pub MaxSize: __BindgenUnionField<[CHAR; 51usize]>,
+    pub Req: __BindgenUnionField<TCP_REQUEST_SET_INFORMATION_EX>,
+    pub bindgen_union_field: [u32; 13usize],
+}
+pub type TCP_REQUEST_SET_INFORMATION_EX_ARP_ENTRY = _TCP_REQUEST_SET_INFORMATION_EX_ARP_ENTRY;
+pub type PTCP_REQUEST_SET_INFORMATION_EX_ARP_ENTRY = *mut _TCP_REQUEST_SET_INFORMATION_EX_ARP_ENTRY;
+#[repr(C)]
+pub struct _IFInfo {
+    pub entity_id: TDIEntityID,
+    pub if_info: IFEntrySafelySized,
+    pub ip_addr: IPAddrEntry,
+}
+pub type IFInfo = _IFInfo;
+#[repr(C)]
+pub struct _IP_SET_DATA {
+    pub NteContext: ULONG,
+    pub NewAddress: ULONG,
+    pub NewNetmask: ULONG,
+}
+pub type IP_SET_DATA = _IP_SET_DATA;
+pub type PIP_SET_DATA = *mut _IP_SET_DATA;
+pub const _IPHLPAddrType_IPAAddr: _IPHLPAddrType = 0;
+pub const _IPHLPAddrType_IPABcast: _IPHLPAddrType = 1;
+pub const _IPHLPAddrType_IPAMask: _IPHLPAddrType = 2;
+pub const _IPHLPAddrType_IFMtu: _IPHLPAddrType = 3;
+pub const _IPHLPAddrType_IFStatus: _IPHLPAddrType = 4;
+pub type _IPHLPAddrType = ::core::ffi::c_uint;
+pub use self::_IPHLPAddrType as IPHLPAddrType;
+pub type EnumNameServersFunc = ::core::option::Option<
+    unsafe extern "C" fn(Interface: PWCHAR, NameServer: PWCHAR, Data: PVOID),
+>;

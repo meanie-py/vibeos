@@ -8572,7 +8572,7 @@ high-image-base DLLs (winsrv.dll at 0x788xxxxx) print instruction addresses at
 column 0 — an address regex anchored `^\s+` silently skips the whole binary;
 (b) fastcall-decorated mangled names (`@_ZN...@16`) dodge `_ZN`-prefix mangling
 checks — strip `_` AND `@` before testing. Source-level twin:
-`tools/scan_ir_mismatch.py` (§9.103) catches the whole class pre-fold with
+`tools/scan_ir_mismatch.py` (§9.102) catches the whole class pre-fold with
 exact symbol names. Historical one-liner:
 `llvm-objdump -d <sys> | awk '/^[0-9a-f]+ </{fn=$2} /\tud2/{print fn}'` filtered
 for named non-intrinsic fns (skip `__ZN`/compiler_builtins/`___*`/panic/D0Ev
@@ -8847,7 +8847,7 @@ through. **Owed sweep:** every flat-typed OUT handle/pointer *array* has this
 shape (`NtUserBuildNameList`/`BuildPropList`, `NtGdi*` handle arrays,
 `NtQueryDirectoryObject`, …) — silently fine until a guest passes a non-empty
 buffer. Add each with an array-narrowing marshaller as coverage reaches it.
-### 9.106 (FIXED 2026-07-18) The NULL-output-pointer class recurs one function over — RtlCaptureStackBackTrace(BackTrace=NULL) BUGCHECKs 0x1E and ABORTS the whole i386 kmtest sweep (52 → 74 tests)
+### 9.105a (FIXED 2026-07-18) The NULL-output-pointer class recurs one function over — RtlCaptureStackBackTrace(BackTrace=NULL) BUGCHECKs 0x1E and ABORTS the whole i386 kmtest sweep (52 → 74 tests)
 
 **Symptom.** i386 `RtlStackKM` = `CRASH pass=0`, BUGCHECK `0x1E (0xc0000005, PC=ntoskrnl+0xCA7xx, 0xf71xx894, 0x0)`.
 The crash killed the boot at test **52 of 74**, so **22 downstream tests never ran** and could not even be
@@ -8918,3 +8918,352 @@ exception is a regression on every arch that could already handle it.
   crash. Use the debug toolkit — `RUN=$(bash qemu/start.sh i386)` → `qemu/runs/$RUN/serial.log` **persists**.
 - That serial log contains terminal escape bytes, so plain `grep` treats it as binary and prints **nothing**
   (not an error). Always `grep -a` on serial logs.
+### 9.106 (FIXED 2026-07-18) Non-volatile seqlock loops on KUSER_SHARED_DATA — the arm64 `b .` spin class (kernel32 time fns, EngInitializeSafeSemaphore) + the writer side
+
+**Symptom:** scan_ud2's arm64 driver sweep flags named exported functions whose
+body is (or contains) a branch-to-self spin: kernel32.dll
+`GetSystemTimeAsFileTime`/`GetLocalTime`/`GetSystemTime`/`FileTimeToLocalFileTime`/
+`LocalFileTimeToFileTime`/`SetLocalTime`/`GetTimeZoneInformation`/`JapaneseEra_Find`,
+win32k.sys `EngInitializeSafeSemaphore`. On x86 the same bug compiles to a
+`jmp self` — invisible to the ud2 scan, so the arm64 sweep is the only scanner
+that catches it. Boots green daily because the spin only arms on a cold subpath.
+
+**Root cause:** the KSYSTEM_TIME seqlock capture loop translated with PLAIN
+loads:
+
+```rust
+loop {
+    hi = (*SharedUserData).SystemTime.High1Time;   // plain load
+    lo = (*SharedUserData).SystemTime.LowPart;     // plain load
+    if hi == (*SharedUserData).SystemTime.High2Time { break; }  // plain load
+}
+```
+
+The C original reads C-`volatile` fields. In Rust these are ordinary loads of
+memory LLVM can prove the loop never writes -> LICM hoists all three out of the
+loop -> the condition becomes loop-invariant -> if the function is entered
+mid-update (High1 != High2 transiently), the residual loop is `b .` forever.
+Same shape with a different flavor: `while (*p).field.is_null() {}` waiting for
+ANOTHER THREAD's store (EngInitializeSafeSemaphore) — hoisted identically.
+`core::hint::spin_loop()` / an inlinable YieldProcessor shim is a CPU hint, NOT
+a compiler memory barrier — it does not save the loop. An out-of-line extern
+YieldProcessor call DOES accidentally save it (opaque call clobbers memory),
+which is why ntoskrnl's clock.rs loops never fired — luck, not semantics.
+
+**The runtime bug is real, not theoretical:** a user process calling
+GetSystemTimeAsFileTime at the wrong instant wedges forever — the classic
+unattributable once-a-week hang.
+
+**Writer side is the same class:** the seqlock write protocol (High1, Low,
+High2 in documented order — KiWriteSystemTime even carried a comment saying
+"Write order must be") was implemented with plain stores to DISJOINT fields,
+which LLVM may freely reorder/merge, silently breaking every reader's
+torn-read guard. An ordering requirement expressed with plain stores is the
+definition of what `write_volatile` is for.
+
+**Fix (2026-07-18, all sites):** `read_volatile`/`write_volatile` on every
+KUSER_SHARED_DATA / KeTickCount seqlock access: kernel32 time.rs (shared
+`read_ksystem_time()` helper, 7 loops), kernel32-vista GetTickCount64,
+ke-inlines' KeQuerySystemTime/KeQueryInterruptTime inlines, ntdll ldrinit
+cookie wait, ntoskrnl clock.rs readers (KeQuerySystemTime/KeQueryInterruptTime/
+KeQueryTickCount-i386) + KeSetSystemTime writer, ke/time.rs KiWriteSystemTime
+(both width paths), win32k EngInitializeSafeSemaphore wait loop. Verified by
+arm64 rebuild + re-sweep: all 8 kernel32 named spins gone (only Exit*/Fatal*
+terminal spins remain, which are classified EXPECTED_SPIN). The whole
+per-binary KNOWN_DRIVER_UD2 writeup set for kernel32 was deleted the same day.
+
+**Grep for recurrence:** any `High1Time`/`High2Time` or SharedUserData field
+access in a loop without `read_volatile`; any wait-on-another-thread's-store
+loop without volatile/atomic. When in doubt: SharedUserData is a
+concurrently-mutated MMIO-like page — treat every access as volatile.
+
+### 9.107 (FIXED 2026-07-18) A §9.99/§9.102 fix in the WRONG DIRECTION — `MmDeleteVirtualMapping` is stdcall on i386, and the no-NTAPI header LIES
+
+**The trap, in one line:** resolving a scan_ir_mismatch "def X vs decl system"
+disagreement by making everything match the C *header* (no-NTAPI ⇒ cdecl) —
+instead of the *def's real ABI + the actual call sites* — flipped a stdcall
+symbol to cdecl and detonated the i386 boot. The header is not the ground truth
+when the def and every live caller are stdcall.
+
+**Symptom:** i386 (only — amd64/arm64 green) BUGCHECK `0x1E (0xc0000005,
+0x00000000, <trapframe>, 0x00000000)` deterministically (3/3) during
+`IopInitializeSystemDrivers → PiEnumerateDevice`. `dump-trapframe` at P3:
+`Eip=0x00000000`, `Eax=0`, `DbgArgMark=0xbadb0d00` (pool poison), and a return
+address = `MmFreeMemoryArea@16 + 408` on the faulting stack. This is the classic
+i386 ESP-desync recipe (the "EIP = a small constant / stack-data value with
+`[esp]` not a return address ⇒ i386 stdcall/cdecl ABI mismatch" rule, §9 crash-
+hunting): **EIP=0/small-constant + pool poison ⇒ i386 stdcall/cdecl ESP desync**,
+hidden by LLD fuzzy `_foo`↔`_foo@N` linking (link stays green, crash at runtime).
+i386-ONLY is the tell: it's the only arch where cdecl≠stdcall.
+
+**Root cause:** `MmDeleteVirtualMapping` is declared in `internal/mm.h` WITHOUT
+`NTAPI` (looks cdecl) — but its real i386 ABI is **stdcall (`@16`)**: the Rust
+def, and the hot caller `MmFreeMemoryArea` (marea.rs), which reaches it through
+a `type VirtFn = unsafe extern "system" fn(..)` transmute and calls it as
+stdcall. The #15 batch trusted the header + bindgen (`bindgen_i386` emits
+`extern "C"`) and flipped the def + marea/section decls `"system"→"C"`. Now the
+`VirtFn` (stdcall) call invokes a cdecl callee: the 16 arg-bytes are cleaned by
+neither side (stdcall caller expects callee `ret 16`; cdecl callee does `ret 0`)
+→ ESP 16 bytes low → a later `ret` pops a data word → jump to 0. `marea.rs`
+already CARRIED THE WARNING three lines up: *"correct calling convention (NTAPI
+= extern "system") … bindgen declares some as extern "C", producing wrong i386
+symbol names (_Foo instead of _Foo@N)."* The fix ignored it.
+
+**Second-order:** the SAME symbol was the source of the one live `KNOWN_CGU_UD2`
+entry (`MmPageOutPhysicalAddress`, i386+ntkrnlmp). `mm/rmap.rs` (where
+MmPageOutPhysicalAddress lives) IMPORTED `MmDeleteVirtualMapping` from the
+bindgen `ddk` module (`extern "C"`) while the def is stdcall → an intra-crate
+cdecl-vs-stdcall disagreement that folds MmPageOutPhysicalAddress to a ud2
+(§9.99). Cold path (balance-manager only), so it never fired at boot → it sat in
+the allow-set as a tolerated latent. The cdecl flip *incidentally* silenced it
+(removed the disagreement) — which is how a boot-breaking change masqueraded as
+a ud2 cleanup.
+
+**Fix (the RIGHT direction — align to the def's ABI, not the header):**
+1. Revert `MmDeleteVirtualMapping` to `extern "system"` (stdcall) at all 4 sites
+   (i386/page.rs + arm64/page.rs defs, marea.rs + section.rs decl blocks).
+2. Kill the ud2 at ROOT without touching the ABI: give `rmap.rs` a LOCAL
+   `extern "system"` decl (matching marea/section) instead of the bindgen `ddk`
+   `extern "C"` import — the intra-crate CC now agrees, the fold is gone, and
+   `KNOWN_CGU_UD2` stays retired. Validated: i386 build ✓ scan_ud2 (ud2 gone),
+   i386 smoke ×3 green.
+
+**Rules banked:**
+- A missing `NTAPI` in a header is NOT proof of cdecl. On i386, verify against
+  (a) the def's `extern`, (b) every `type XxxFn = extern "…" fn` transmute call
+  site, and (c) the .spec (`@ stdcall …`). If they say stdcall, the header is the
+  liar — the fold-truth is stdcall (bindgen's `extern "C"` for it is WRONG; do
+  not chase it).
+- When scan_ir_mismatch flags "def system vs decl C", the fix is almost always
+  to make the DECL match the def (stdcall), NOT the def match the header. Flipping
+  the def is a boot-breaker on i386.
+- A ud2 that vanishes when you change an ABI is a RED FLAG, not a win: you likely
+  moved the fold, not fixed it. Root-cause the *disagreement* (usually a bindgen
+  `ddk` `extern "C"` import shadowed by a hand-written `extern "system"` decl in
+  the same crate) and fix it with a local `"system"` decl.
+- `extern "system"` transmute call sites (`VirtFn`/`PhysFn`-style) are invisible
+  to a decl-only ABI audit — grep `extern "system" fn(` transmutes when auditing
+  a symbol's real calling convention.
+
+### 9.108 (SOLVED 2026-07-18) The "netapi32 MIDL dragon" was never an interface-vs-interface conflict — it was the `<lm.h>` MASTER header fighting the WIDL stubs, and the C build already showed the answer
+
+**Symptom.** The 7 RPC-stub `.c` in `dll/win32/netapi32` (browser, dssetup, misc, netlogon,
+schedule, srvsvc, wksta_new) were translated and banked, but integration was DEFERRED across
+two sessions because their bindgen types island refused to generate. One wrapper `#include`-ing
+all 7 WIDL client headers produced a wall of C redefinition errors:
+
+```
+netlogon_c.h:343 typedef redefinition with different types ('ULONG' vs 'LONG')
+srvsvc_c.h:655  redefinition of '_SERVER_INFO_100'   (also declared in browser_c.h)
+```
+
+The recorded diagnosis was "the 6 MIDL interfaces mutually redefine each other's wire types;
+needs a gen_driver_types *MIDL-client mode* — a per-interface pass plus a shared base-type
+blocklist." **That diagnosis was wrong**, and it is instructive *how* it was wrong: the
+conclusion ("they conflict with each other") was inferred from a single all-in-one failure
+without ever testing an interface on its own. Testing each one standalone took ~5 minutes and
+falsified it immediately — the conflicts were not between the stubs at all.
+
+**Root cause.** `<lm.h>` is the LAN Manager MASTER header: it pulls `lmat.h`/`lmshare.h`/
+`lmserver.h`/`lmwksta.h`, which declare `AT_INFO`/`CONNECTION_INFO_*`/`SERVER_INFO_*`/
+`WKSTA_INFO_*` — the very structs each `*_c.h` re-declares for the wire. The `netapi32`
+gen_driver_types profile included `<lm.h>` (correct for the 14 c2rust-anchored modules), so
+every MIDL header collided with it. Interface-vs-interface collisions exist but are RARE:
+of the 6 headers exactly ONE pair actually conflicts (`browser_c.h` vs `srvsvc_c.h`, both
+declaring `_SERVER_INFO_100`).
+
+**The oracle was sitting in the C the whole time.** `netapi32.h` — the master private header
+every one of these files includes — pointedly does NOT include `<lm.h>`. It includes only the
+narrow trio:
+
+```c
+#include <lmaccess.h>   /* netapi32.h — and NOT <lm.h> */
+#include <lmapibuf.h>
+#include <lmerr.h>
+```
+
+…and then each `.c` includes exactly ONE stub header (`misc.c` is the lone two-header TU:
+srvsvc + wkssvc). The C build never asks the compiler to accept the combination that was
+failing. **If a `.c` compiles, its include set is bindgen-able** — so the include set of a
+real translation unit is a GUARANTEED-legal island, and no amount of blocklist engineering is
+needed to find one.
+
+**Fix (what landed).** Mirror the C's include discipline instead of fighting the redefinitions:
+- `TYPES_STEM` env var in `tools/rustconv/gen_driver_types.sh` — a crate can now emit MORE THAN
+  ONE types island (`<stem>_<arch>.rs` + a `<stem>.rs` per-arch dispatcher). Reusable for any
+  DLL whose TUs have mutually incompatible include sets.
+- Two profiles: `netapi32-rpc` (srvsvc + wkssvc + atsvc + dssetup + netlogon → 225 structs,
+  serves 6 of the 7 modules) and `netapi32-browser` (browser_c.h + lmbrowsr/lmserver → 13).
+  Both use the narrow-lm base. `dsrole.h` is dropped from the rpc island — `dssetup_c.h`
+  re-declares `DSROLE_*`, and although `netlogon.c` includes `dsrole.h` it never references
+  those types.
+- Prelude split so the two universes stay separate without duplicating the non-type surface:
+  `prelude_common.rs` (wine-debug channel, CRT/winsock externs, transcribed consts, enum
+  bare-name aliases) + three thin per-island preludes globbing `prelude_common` plus their own
+  island. 377 type names overlap between `types` and `types_rpc`, so they must NEVER share a
+  glob scope.
+
+**Fallout to expect when you split an existing prelude (cost me two extra cycles).** Items that
+were LOCAL `pub const` definitions in the old prelude silently shadowed the types glob. Moving
+them into `prelude_common` turns that into glob-vs-glob → **E0659 ambiguous name** at every use
+site (229 of them here) in modules that were previously clean. An EXPLICIT `pub use` outranks
+any glob, so re-export the conflicting names in each per-island prelude to restore the old
+resolution. Two traps when computing that conflict list:
+- Scanning only `types_<arch>.rs` MISSES names the island re-exports transitively — `TRUE`/
+  `FALSE` arrive via `ntdll_sys::nt::*` and do not appear in the island file at all.
+- `cargo check --message-format short | grep 'src/.*\.rs'` counts WARNING lines too; a module
+  showing "1 error" may be entirely clean (here: `unnecessary unsafe block`). Filter on
+  `error\[E` before concluding a previously-green module regressed.
+
+**Transferable rules.**
+1. **A multi-header redefinition wall is a claim about the WRAPPER, not about the headers.**
+   Test each header standalone before theorizing about mutual conflict. One 5-minute matrix
+   beats a session of blocklist design — and beats a wrong entry in the notes that outlives
+   the session and defers the work again.
+2. **Take the include set from the real TU.** Do not hand-assemble a "reasonable-looking"
+   wrapper from master headers; open the `.c` and copy what it actually includes. A master
+   header (`lm.h`, `windows.h`, `ntddk.h`) is exactly the thing a MIDL/IDL-consuming TU avoids.
+3. **When a DLL's TUs genuinely disagree, give them separate islands** rather than forcing one
+   pass. The island count that mirrors the C is the correct one — here 2, not 1 and not 7.
+
+### 9.109 (2026-07-18) Four usermode-DLL integration bugs that a green `cargo check` cannot see — the assembler glob, the checker regex, the silent LLM skip, and MIDL symbol case
+
+Collected while integrating the winsock/net satellite DLLs (dnsapi full flip, dhcpcsvc,
+netapi32 tail). Each is invisible to `cargo check` and surfaces only at LINK or at the GATE —
+i.e. after you already believe the crate is done. Check all four before declaring a flip green.
+
+**1. The `.responses` assembly glob silently DROPS 3-digit files.** `rustconv translate` writes
+one `NN_FnName.rs` per function. A shell glob of `[0-9][0-9]_*.rs` matches 2-digit prefixes
+ONLY, so a file with ≥100 functions loses everything from `100_` on — with no error anywhere.
+This dropped 5 dnsapi stubs (101–105); the crate compiled fine and failed at link with 5
+undefined exports. Also note `ls | sort` is lexicographic (`10_` sorts before `9_`).
+Use a numeric sort over an unbounded glob: `ls "$d"/[0-9]*_*.rs | sort -t_ -k1.1 -n`.
+**Always assert the assembled function count equals the `.responses` file count.**
+
+**2. `verify_lost_exports` cannot see a ONE-LINE `#[no_mangle]`.** Its regex is
+`#\[no_mangle\]\s*\npub unsafe extern "[^"]+" fn (\w+)` — it REQUIRES a newline after the
+attribute. A subagent (or rustfmt on a short signature) collapsing it to
+`#[no_mangle] pub unsafe extern "system" fn Foo()` makes the export invisible to the checker,
+which then reports it as a NEW LOST export and fails `vibeos-cli check` — a false positive that
+looks exactly like a real dropped export. Keep `#[no_mangle]` on its own line. (Fixing the
+regex to tolerate both is owed; the one-line form is legal Rust and will recur.)
+
+**3. A translation model can silently SKIP a function entirely.** DeepSeek emitted no file at
+all for `DnsWinsRecordFlagForString` — no error, no stub, no partial. Nothing in the pipeline
+noticed; `cargo check` was green because nothing in-crate referenced it. It surfaced only as an
+undefined symbol at link (and would have been caught at the gate by `verify_lost_exports`).
+**Diff the `.spec` export list against the assembled `#[no_mangle]` set before building** — do
+not assume per-function fan-out produced one file per function.
+
+**4. MIDL `*_c.c` stubs reference UPPERCASE `MIDL_user_allocate`/`MIDL_user_free`.** The
+translated Rust defines the lowercase `midl_user_allocate`/`midl_user_free` that the rest of
+the DLL uses. On i386 the stubs want `_MIDL_user_allocate@4`/`_MIDL_user_free@4`. Add explicit
+uppercase `#[no_mangle] extern "system"` forwarders that call through to the lowercase pair.
+
+**And the arch-independent one that outranks all four:** when appending a hand-written export to
+match a `.spec`, **the `.spec` is ground truth for the i386 stdcall `@N` decoration**, not the C
+prototype — a `long` parameter contributes 4 bytes even where the C header declares `WORD`.
+Getting `@N` wrong links clean on amd64/arm64 and fails ONLY on i386.
+
+### 9.110 (2026-07-18) Four C-fidelity bug classes that survive a green `cargo check` AND a manual review — found only at link and by `vibeos-cli check`
+
+From the dhcpcsvc/netapi32 flips. Both crates were reported cargo-clean on all three targets by
+the agents that ground them — truthfully. Compilation says nothing about whether the Rust means
+what the C meant. Nine real bugs survived that green; the three below survived a hand review on
+top of it and were caught only by the lint gate. Check for all four before calling a flip done.
+
+**1. A vestigial `extern` in a header → the translation invents a global the C never had.**
+`dhcpd.h:398` declares `extern time_t cur_time;`. No TU in dhcpcsvc.dll DEFINES it — all EIGHT
+users declare their own `time_t cur_time;` LOCAL, which shadows it in C. The translation "helpfully"
+made them all reference the global, with a comment asserting `no local shadow`. That aliases eight
+independent stack values into one, corrupting the dispatch loop's lease timing.
+
+There is a nasty second-order effect that *pushes* a translation into this bug: bindgen emits the
+dead decl, and **Rust forbids a `let` binding that shadows an in-scope static (E0530)** — so the
+faithful translation is a compile error and "make it a global" is the path of least resistance.
+The fix is at the source: `--blocklist-item` the symbol (gen_driver_types `EXTRA_BL_ITEMS`) so
+nothing can bind to a global that does not exist. **Before trusting any `extern` a header
+declares, grep for its DEFINITION.** Undefined + referenced = link error (loud, fine); undefined +
+*locals of the same name* = silent semantic change.
+
+**2. `write_bytes`' count is in ELEMENTS; `memset`'s is in BYTES.**
+`core::ptr::write_bytes(p: *mut T, val, count)` writes `count * size_of::<T>()` bytes. So
+`write_bytes(arr.as_mut_ptr(), 0, size_of::<[T; N]>())` — the literal transcription of
+`memset(arr, 0, sizeof(arr))` — writes `sizeof(array) * sizeof(T)` bytes. In dhcpcsvc's
+`make_discover` that was a large stack overrun past two 256-entry arrays. **Always route a
+memset transcription through `as *mut u8`**, so the element count and the byte count coincide.
+`scan_silent_failures` flags this as `WRITE_BYTES_SIZEOF`.
+
+**3. A C debug macro that does NOT block, translated as `loop {}`.**
+`UNIMPLEMENTED` (reactos/debug.h) expands to `__NOTICE(WARNING, ...)` — a DbgPrint. The C falls
+straight through to the next statement. `DhcpNotifyConfigChange` was rendered as
+`DbgPrint(...); loop {}`, which hangs the calling thread forever instead of returning
+ERROR_SUCCESS. Related to §9.65 (never translate a C debug macro into an out-of-line no-op fn):
+**read what the macro expands to before translating it**, and never assume a name like
+UNIMPLEMENTED/FIXME/UNREACHABLE implies a trap. `scan_silent_failures` flags bare `loop {}` as
+`SILENT_LOOP`.
+
+**4. A C file-scope global defined in Rust without `#[no_mangle]`.**
+After a cohab flip, the `.c` that DEFINED a global is gone, so the Rust definition must emit the
+UNMANGLED C symbol — bindgen still DECLARES the global (from the header) and every cross-module
+reference binds to that decl. A plain `pub static mut` emits a mangled symbol and the decl goes
+unresolved. dhcpcsvc had 11 of these; only 4 failed the link (the referenced ones), the other 7
+were latent and would have broken on the next cross-module use. **Fix the class, not the four
+the linker happened to name:** intersect the island's `pub static mut` decls with the crate's
+own definitions and `#[no_mangle]` every match.
+
+**And the meta-lesson.** Each verification layer caught what the previous could not: `cargo check`
+(nothing on this list), the i386 LINK (classes 1 and 4 — decoration/undefined-symbol bugs are
+i386-first, since amd64/arm64 hide `@N` and case mismatches), hand review (the shadow structs and
+the `goto`-as-no-op paths), and `vibeos-cli check` (classes 2 and 3, plus a wrong error-code
+literal). **Run all four before declaring a flip green**, and treat a subagent's "0 errors on all
+targets" as a statement about compilation only.
+
+### 9.111 (2026-07-18) `cargo check` is NOT validation — `unconditional_panic` only fires on `cargo build`, and it is the lint that catches C's legal one-past-the-end idiom
+
+**The gap.** Every translation grind up to this point (dnsapi, dhcpcsvc, netapi32) was declared
+done on "`cargo check` → 0 errors on all 3 targets". The iphlpapi flip proved that insufficient:
+`cargo check` passed clean on all three targets, and then `cargo build --release` failed:
+
+```
+error: this operation will panic at runtime
+   --> ifenum_reactos.rs:579
+    |   core::ptr::addr_of_mut!((*entry).wszName[MAX_INTERFACE_NAME_LEN])
+    |   index out of bounds: the length is 256 but the index is 256
+    = note: `#[deny(unconditional_panic)]` on by default
+```
+
+`unconditional_panic` is a **late** lint — it runs on optimized MIR, after const-propagation has
+proved the index constant. `cargo check` stops before that, so a *guaranteed* runtime panic is
+invisible to it. Anything validated by `check` alone has never been tested for this class.
+
+**Why the translation produced it (the real lesson).** The C is not a bug:
+
+```c
+memcpy( &entry->wszName[MAX_INTERFACE_NAME_LEN], &info.if_info, sizeof(info.if_info) );
+```
+
+`wszName` is `[WCHAR; 256]` and `MAX_INTERFACE_NAME_LEN` is 256, so `&arr[256]` is the
+ONE-PAST-THE-END address — explicitly legal in C (C99 6.5.6/8) and the idiomatic way to reach
+whatever follows the array inside the containing struct. Transliterated to Rust, `arr[256]` is
+an out-of-bounds *index*, which panics. The faithful lowering takes the address by pointer
+arithmetic instead:
+
+```rust
+(*entry).wszName.as_mut_ptr().add(MAX_INTERFACE_NAME_LEN)   // one-past-the-end, no indexing
+```
+
+**This is the same family as the flex-array bug (§9.107 item, "indexing a bindgen `[T;1]`") but
+strictly worse to find**, because the flex-array version has a *variable* index and so compiles
+silently and panics only at runtime on the second element, whereas this one has a *constant*
+index — which means the compiler CAN prove it, but only if you actually build.
+
+**Rules.**
+1. **A translated crate is not validated until it has been BUILT, not merely checked.** Run
+   `cargo build --release -p <crate> --target <t>` for all three targets before declaring a flip
+   done, and put that in every grind brief. `cargo check` remains the fast inner loop; it is not
+   the acceptance gate.
+2. **Grep every `[CONST]` index against the array's declared length** when the constant is a
+   `MAX_*_LEN`/`*_SIZE` name — C uses `&arr[N]` for the end pointer routinely.
+3. The full-arch `vibeos-cli gate` would also have caught it (it builds), but only after a
+   ~15-minute cycle; the per-crate build catches it in seconds. Cheapest oracle first.

@@ -7,6 +7,7 @@ use ntkrnl_sys::ddk::{
     KGATE,
     KPROCESSOR_MODE,
     KWAIT_BLOCK,
+    KWAIT_REASON,
     KeRaiseIrqlToSynchLevel,
     KiAcquireApcLockRaiseToSynch,
     KiAcquireDispatcherLockAtSynchLevel,
@@ -59,7 +60,7 @@ pub unsafe extern "C" fn KeInitializeGate(Gate: PKGATE) {
 #[no_mangle]
 pub unsafe extern "fastcall" fn KeWaitForGate(
     Gate: PKGATE,
-    WaitReason: u8,
+    WaitReason: KWAIT_REASON,
     WaitMode: KPROCESSOR_MODE,
 ) {
     KeWaitForGateImpl(Gate, WaitReason, WaitMode)
@@ -69,7 +70,7 @@ pub unsafe extern "fastcall" fn KeWaitForGate(
 #[no_mangle]
 pub unsafe extern "C" fn KeWaitForGate(
     Gate: PKGATE,
-    WaitReason: u8,
+    WaitReason: KWAIT_REASON,
     WaitMode: KPROCESSOR_MODE,
 ) {
     KeWaitForGateImpl(Gate, WaitReason, WaitMode)
@@ -77,7 +78,7 @@ pub unsafe extern "C" fn KeWaitForGate(
 
 unsafe fn KeWaitForGateImpl(
     Gate: PKGATE,
-    WaitReason: u8,
+    WaitReason: KWAIT_REASON,
     WaitMode: KPROCESSOR_MODE,
 ) {
     let mut ApcLock: KLOCK_QUEUE_HANDLE = core::mem::zeroed();
@@ -136,7 +137,7 @@ unsafe fn KeWaitForGateImpl(
             (*GateWaitBlock).Thread = Thread;
 
             *kt_WaitMode(Thread) = WaitMode;
-            (*Thread).WaitReason = WaitReason;
+            (*Thread).WaitReason = WaitReason as u8;
             *kt_WaitIrql(Thread) = ApcLock.OldIrql;
             *kt_State(Thread) = GateWait as u8;
             (*Thread).__bindgen_anon_2.GateObject = Gate;

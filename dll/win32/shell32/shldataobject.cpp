@@ -129,6 +129,27 @@ SHELL_DataObject_ILCloneFullItem_RustBridge(IDataObject *pDO, UINT Index)
     return SHELL_DataObject_ILCloneFullItem(pDO, Index);
 }
 
+/* Rust bridges for the Rust-owned CCopyToMenu/CMoveToMenu (shell32-rust
+ * copy_to_menu/move_to_menu). The Rust side rebuilds CDataObjectHIDA
+ * (shellutils.h) as a module-local RAII struct over the Create/Destroy pair. */
+extern "C" PIDLIST_ABSOLUTE WINAPI
+SHELL_CIDA_ILCloneFull_RustBridge(const CIDA *pCIDA, UINT Index)
+{
+    return SHELL_CIDA_ILCloneFull(pCIDA, Index);
+}
+
+extern "C" HRESULT WINAPI
+CDataObjectHIDA_CreateCIDA_RustBridge(IDataObject *pDataObject, CIDA **ppcida, STGMEDIUM *pmedium)
+{
+    return CDataObjectHIDA::CreateCIDA(pDataObject, ppcida, *pmedium);
+}
+
+extern "C" void WINAPI
+CDataObjectHIDA_DestroyCIDA_RustBridge(CIDA *pcida, STGMEDIUM *pmedium)
+{
+    CDataObjectHIDA::DestroyCIDA(pcida, *pmedium);
+}
+
 HRESULT SHELL_CloneDataObject(_In_ IDataObject *pDO, _Out_ IDataObject **ppDO)
 {
     *ppDO = NULL;

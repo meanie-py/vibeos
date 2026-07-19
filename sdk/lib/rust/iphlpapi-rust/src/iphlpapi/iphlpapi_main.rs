@@ -45,7 +45,7 @@ pub unsafe extern "system" fn AddIPAddress(
     NteContext: PULONG,
     NteInstance: PULONG,
 ) -> DWORD {
-    
+
     return RtlNtStatusToDosError(addIPAddress(
         Address,
         Netmask,
@@ -61,7 +61,7 @@ unsafe fn getInterfaceGatewayByIndex(index: DWORD) -> DWORD {
     if table.is_null() {
         return 0;
     }
-    
+
     let mut retVal: DWORD = 0;
     let mut ndx: DWORD = 0;
     while ndx < numRoutes {
@@ -72,7 +72,7 @@ unsafe fn getInterfaceGatewayByIndex(index: DWORD) -> DWORD {
         }
         ndx = ndx.wrapping_add(1);
     }
-    
+
     HeapFree(GetProcessHeap(), 0, table as PVOID);
     retVal
 }
@@ -84,8 +84,8 @@ pub unsafe extern "system" fn CreateIpForwardEntry(pRoute: PMIB_IPFORWARDROW) ->
 // ---- 05_CreateIpNetEntry.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn CreateIpNetEntry(pArpEntry: PMIB_IPNETROW) -> DWORD {
-    TRACE(b"pArpEntry %p\n\0".as_ptr(), pArpEntry);
-    FIXME(b":stub\n\0".as_ptr());
+    TRACE!((b"pArpEntry %p\n\0".as_ptr() as *const i8), pArpEntry);
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     return 0 as DWORD;
 }
 // ---- 06_CreateProxyArpEntry.rs ----
@@ -95,19 +95,19 @@ pub unsafe extern "system" fn CreateProxyArpEntry(
     dwMask: DWORD,
     dwIfIndex: DWORD,
 ) -> DWORD {
-    TRACE(
-        b"dwAddress 0x%08lx, dwMask 0x%08lx, dwIfIndex 0x%08lx\n\0".as_ptr(),
+    TRACE!(
+        (b"dwAddress 0x%08lx, dwMask 0x%08lx, dwIfIndex 0x%08lx\n\0".as_ptr() as *const i8),
         dwAddress,
         dwMask,
         dwIfIndex,
     );
-    FIXME(b":stub\n\0".as_ptr());
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     ERROR_NOT_SUPPORTED
 }
 // ---- 07_DeleteIPAddress.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn DeleteIPAddress(NTEContext: ULONG) -> DWORD {
-    
+
     RtlNtStatusToDosError(deleteIpAddress(NTEContext))
 }
 // ---- 08_DeleteIpForwardEntry.rs ----
@@ -118,8 +118,8 @@ pub unsafe extern "system" fn DeleteIpForwardEntry(pRoute: PMIB_IPFORWARDROW) ->
 // ---- 09_DeleteIpNetEntry.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn DeleteIpNetEntry(pArpEntry: PMIB_IPNETROW) -> DWORD {
-    TRACE(b"pArpEntry %p\n\0".as_ptr(), pArpEntry);
-    FIXME(b":stub\n\0".as_ptr());
+    TRACE!((b"pArpEntry %p\n\0".as_ptr() as *const i8), pArpEntry);
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     return 0 as DWORD;
 }
 // ---- 10_DeleteProxyArpEntry.rs ----
@@ -129,8 +129,8 @@ pub unsafe extern "system" fn DeleteProxyArpEntry(
     dwMask: DWORD,
     dwIfIndex: DWORD,
 ) -> DWORD {
-    TRACE(b"dwAddress 0x%08lx, dwMask 0x%08lx, dwIfIndex 0x%08lx\n\0".as_ptr(), dwAddress, dwMask, dwIfIndex);
-    FIXME(b":stub\n\0".as_ptr());
+    TRACE!((b"dwAddress 0x%08lx, dwMask 0x%08lx, dwIfIndex 0x%08lx\n\0".as_ptr() as *const i8), dwAddress, dwMask, dwIfIndex);
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     ERROR_NOT_SUPPORTED
 }
 // ---- 11_EnableRouter.rs ----
@@ -139,8 +139,8 @@ pub unsafe extern "system" fn EnableRouter(
     pHandle: *mut HANDLE,
     pOverlapped: *mut OVERLAPPED,
 ) -> DWORD {
-    TRACE(b"pHandle %p, pOverlapped %p\n\0".as_ptr(), pHandle, pOverlapped);
-    FIXME(b":stub\n\0".as_ptr());
+    TRACE!((b"pHandle %p, pOverlapped %p\n\0".as_ptr() as *const i8), pHandle, pOverlapped);
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     ERROR_NOT_SUPPORTED
 }
 // ---- 12_FlushIpNetTable.rs ----
@@ -184,8 +184,8 @@ pub unsafe extern "system" fn FlushIpNetTable(dwIfIndex: DWORD) -> DWORD {
 // ---- 13_GetAdapterIndex.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn GetAdapterIndex(AdapterName: LPWSTR, IfIndex: PULONG) -> DWORD {
-    TRACE(b"AdapterName %p, IfIndex %p\n\0".as_ptr(), AdapterName, IfIndex);
-    FIXME(b":stub\n\0".as_ptr());
+    TRACE!((b"AdapterName %p, IfIndex %p\n\0".as_ptr() as *const i8), AdapterName, IfIndex);
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     ERROR_NOT_SUPPORTED
 }
 // ---- 14_TcpTableSorter.rs ----
@@ -695,11 +695,11 @@ pub unsafe extern "system" fn GetExtendedUdpTable(
 
     match TableClass {
         UDP_TABLE_BASIC => {
-            let pOurUdpTable = getUdpTable(ClassBasic as ::core::ffi::c_int) as PMIB_UDPTABLE;
+            let pOurUdpTable = getUdpTable((ClassBasic as ::core::ffi::c_int as usize)) as PMIB_UDPTABLE;
             let pTheirUdpTable = pUdpTable as PMIB_UDPTABLE;
 
             if !pOurUdpTable.is_null() {
-                size = (core::mem::offset_of!(_MIB_UDPTABLE, table) + 
+                size = (core::mem::offset_of!(_MIB_UDPTABLE, table) +
                     (*pOurUdpTable).dwNumEntries as usize * core::mem::size_of::<MIB_UDPROW>()) as DWORD;
                 if size > *pdwSize || pTheirUdpTable.is_null() {
                     *pdwSize = size;
@@ -726,11 +726,11 @@ pub unsafe extern "system" fn GetExtendedUdpTable(
         }
 
         UDP_TABLE_OWNER_PID => {
-            let pOurUdpTable = getUdpTable(ClassModulePid as ::core::ffi::c_int) as PMIB_UDPTABLE_OWNER_PID;
+            let pOurUdpTable = getUdpTable((ClassModulePid as ::core::ffi::c_int as usize)) as PMIB_UDPTABLE_OWNER_PID;
             let pTheirUdpTable = pUdpTable as PMIB_UDPTABLE_OWNER_PID;
 
             if !pOurUdpTable.is_null() {
-                size = (core::mem::offset_of!(_MIB_UDPTABLE_OWNER_PID, table) + 
+                size = (core::mem::offset_of!(_MIB_UDPTABLE_OWNER_PID, table) +
                     (*pOurUdpTable).dwNumEntries as usize * core::mem::size_of::<MIB_UDPROW_OWNER_PID>()) as DWORD;
                 if size > *pdwSize || pTheirUdpTable.is_null() {
                     *pdwSize = size;
@@ -757,11 +757,11 @@ pub unsafe extern "system" fn GetExtendedUdpTable(
         }
 
         UDP_TABLE_OWNER_MODULE => {
-            let pOurUdpTable = getUdpTable(ClassModule as ::core::ffi::c_int) as PMIB_UDPTABLE_OWNER_MODULE;
+            let pOurUdpTable = getUdpTable((ClassModule as ::core::ffi::c_int as usize)) as PMIB_UDPTABLE_OWNER_MODULE;
             let pTheirUdpTable = pUdpTable as PMIB_UDPTABLE_OWNER_MODULE;
 
             if !pOurUdpTable.is_null() {
-                size = (core::mem::offset_of!(_MIB_UDPTABLE_OWNER_MODULE, table) + 
+                size = (core::mem::offset_of!(_MIB_UDPTABLE_OWNER_MODULE, table) +
                     (*pOurUdpTable).dwNumEntries as usize * core::mem::size_of::<MIB_UDPROW_OWNER_MODULE>()) as DWORD;
                 if size > *pdwSize || pTheirUdpTable.is_null() {
                     *pdwSize = size;
@@ -797,7 +797,7 @@ pub unsafe extern "system" fn GetExtendedUdpTable(
 // ---- 18_GetFriendlyIfIndex.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn GetFriendlyIfIndex(IfIndex: DWORD) -> DWORD {
-    TRACE(b"returning %ld\n\0".as_ptr(), IfIndex);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), IfIndex);
     IfIndex
 }
 // ---- 19_GetIcmpStatistics.rs ----
@@ -806,9 +806,9 @@ pub unsafe extern "system" fn GetIcmpStatistics(pStats: PMIB_ICMP) -> DWORD {
 
     let ret: DWORD;
 
-    TRACE(b"pStats %p\n\0".as_ptr(), pStats);
+    TRACE!((b"pStats %p\n\0".as_ptr() as *const i8), pStats);
     ret = getICMPStats(pStats);
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 20_GetIfEntry.rs ----
@@ -818,7 +818,7 @@ pub unsafe extern "system" fn GetIfEntry(pIfRow: PMIB_IFROW) -> DWORD {
     let mut ret: DWORD;
     let name: *const core::ffi::c_char;
 
-    TRACE(b"pIfRow %p\n\0".as_ptr(), pIfRow);
+    TRACE!((b"pIfRow %p\n\0".as_ptr() as *const i8), pIfRow);
     if pIfRow.is_null() {
         return ERROR_INVALID_PARAMETER;
     }
@@ -827,13 +827,13 @@ pub unsafe extern "system" fn GetIfEntry(pIfRow: PMIB_IFROW) -> DWORD {
     if !name.is_null() {
         ret = getInterfaceEntryByIndex((*pIfRow).dwIndex, pIfRow);
         if ret == NO_ERROR {
-            ret = getInterfaceStatsByName(name, pIfRow);
+            ret = getInterfaceStatsByName((name as *const u8), pIfRow);
         }
-        consumeInterfaceName(name);
+        consumeInterfaceName((name as *const u8));
     } else {
         ret = ERROR_INVALID_DATA;
     }
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 21_IfTableSorter.rs ----
@@ -865,13 +865,13 @@ pub unsafe extern "system" fn GetInterfaceInfo(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(b"pIfTable %p, dwOutBufLen %p\n\0".as_ptr(), pIfTable, dwOutBufLen);
+    TRACE!((b"pIfTable %p, dwOutBufLen %p\n\0".as_ptr() as *const i8), pIfTable, dwOutBufLen);
     if dwOutBufLen.is_null() {
         ret = ERROR_INVALID_PARAMETER;
     } else {
         let numNonLoopbackInterfaces: DWORD = getNumNonLoopbackInterfaces();
         let mut size: u32;
-        TRACE(b"numNonLoopbackInterfaces == 0x%x\n\0".as_ptr(), numNonLoopbackInterfaces);
+        TRACE!((b"numNonLoopbackInterfaces == 0x%x\n\0".as_ptr() as *const i8), numNonLoopbackInterfaces);
         size = (core::mem::size_of::<IP_INTERFACE_INFO>() as usize)
             .wrapping_add((numNonLoopbackInterfaces as usize)
                 .wrapping_mul(core::mem::size_of::<IP_ADAPTER_INDEX_MAP>() as usize)) as u32;
@@ -883,7 +883,7 @@ pub unsafe extern "system" fn GetInterfaceInfo(
             let table: *mut InterfaceIndexTable = getNonLoopbackInterfaceIndexTable();
 
             if !table.is_null() {
-                TRACE(b"table->numIndexes == 0x%x\n\0".as_ptr(), (*table).numIndexes);
+                TRACE!((b"table->numIndexes == 0x%x\n\0".as_ptr() as *const i8), (*table).numIndexes);
                 size = (core::mem::size_of::<IP_INTERFACE_INFO>() as usize)
                     .wrapping_add(((*table).numIndexes as usize)
                         .wrapping_mul(core::mem::size_of::<IP_ADAPTER_INDEX_MAP>() as usize)) as u32;
@@ -941,7 +941,7 @@ pub unsafe extern "system" fn GetInterfaceInfo(
                             assigner = assigner.offset(1);
                         }
                         *assigner = 0;
-                        consumeInterfaceName(name);
+                        consumeInterfaceName((name as *const u8));
                         (*pIfTable).NumAdapters += 1;
                         ndx = ndx.wrapping_add(1);
                     }
@@ -953,7 +953,7 @@ pub unsafe extern "system" fn GetInterfaceInfo(
             }
         }
     }
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 23_IpAddrTableSorter.rs ----
@@ -981,8 +981,8 @@ pub unsafe extern "system" fn GetIpAddrTable(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(
-        b"pIpAddrTable %p, pdwSize %p, bOrder %ld\n\0".as_ptr(),
+    TRACE!(
+        (b"pIpAddrTable %p, pdwSize %p, bOrder %ld\n\0".as_ptr() as *const i8),
         pIpAddrTable,
         pdwSize,
         bOrder as DWORD,
@@ -1049,7 +1049,7 @@ pub unsafe extern "system" fn GetIpAddrTable(
         }
     }
 
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 25_IpForwardTableSorter.rs ----
@@ -1084,8 +1084,8 @@ pub unsafe extern "system" fn GetIpForwardTable(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(
-        b"pIpForwardTable %p, pdwSize %p, bOrder %ld\n\0".as_ptr(),
+    TRACE!(
+        (b"pIpForwardTable %p, pdwSize %p, bOrder %ld\n\0".as_ptr() as *const i8),
         pIpForwardTable,
         pdwSize,
         bOrder as DWORD,
@@ -1161,7 +1161,7 @@ pub unsafe extern "system" fn GetIpForwardTable(
         }
     }
 
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     return ret;
 }
 // ---- 27_IpNetTableSorter.rs ----
@@ -1190,8 +1190,8 @@ pub unsafe extern "system" fn GetIpNetTable(
 
     let mut ret: DWORD = NO_ERROR;
 
-    TRACE(
-        b"pIpNetTable %p, pdwSize %p, bOrder %d\n\0".as_ptr(),
+    TRACE!(
+        (b"pIpNetTable %p, pdwSize %p, bOrder %d\n\0".as_ptr() as *const i8),
         pIpNetTable,
         pdwSize,
         bOrder as DWORD,
@@ -1248,7 +1248,7 @@ pub unsafe extern "system" fn GetIpNetTable(
         }
     }
 
-    TRACE(b"returning %d\n\0".as_ptr(), ret);
+    TRACE!((b"returning %d\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 29_GetIpStatisticsEx.rs ----
@@ -1269,10 +1269,10 @@ pub unsafe extern "system" fn GetIpStatisticsEx(pStats: PMIB_IPSTATS, dwFamily: 
         return ERROR_NOT_SUPPORTED;
     }
 
-    TRACE(b"pStats %p\n\0".as_ptr(), pStats);
+    TRACE!((b"pStats %p\n\0".as_ptr() as *const i8), pStats);
     ret = getIPStats(tcpFile, pStats);
     closeTcpFile(tcpFile);
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     return ret;
 }
 
@@ -1289,8 +1289,8 @@ pub unsafe extern "system" fn GetNetworkParams(
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut resInfo: PIPHLP_RES_INFO;
 
-    TRACE(b"pFixedInfo %p, pOutBufLen %p\n\0".as_ptr(), pFixedInfo, pOutBufLen);
-    
+    TRACE!((b"pFixedInfo %p, pOutBufLen %p\n\0".as_ptr() as *const i8), pFixedInfo, pOutBufLen);
+
     if pOutBufLen.is_null() {
         return ERROR_INVALID_PARAMETER;
     }
@@ -1366,7 +1366,7 @@ pub unsafe extern "system" fn GetNetworkParams(
         RegCloseKey(hKey);
     }
 
-    TRACE(b"GetComputerNameExA: %s\n\0".as_ptr(), core::ptr::addr_of_mut!((*pFixedInfo).DomainName));
+    TRACE!((b"GetComputerNameExA: %s\n\0".as_ptr() as *const i8), core::ptr::addr_of_mut!((*pFixedInfo).DomainName));
 
     if (*resInfo).riCount > 0 {
         CopyMemory(
@@ -1443,7 +1443,7 @@ pub unsafe extern "system" fn GetNetworkParams(
     disposeResInfo(resInfo);
 
     ret = NO_ERROR;
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
 
     return ret;
 }
@@ -1451,8 +1451,8 @@ pub unsafe extern "system" fn GetNetworkParams(
 #[no_mangle]
 pub unsafe extern "system" fn GetNumberOfInterfaces(pdwNumIf: PDWORD) -> DWORD {
 
-    TRACE(b"pdwNumIf %p\n\0".as_ptr(), pdwNumIf);
-    
+    TRACE!((b"pdwNumIf %p\n\0".as_ptr() as *const i8), pdwNumIf);
+
     let ret: DWORD;
     if pdwNumIf.is_null() {
         ret = ERROR_INVALID_PARAMETER;
@@ -1460,8 +1460,8 @@ pub unsafe extern "system" fn GetNumberOfInterfaces(pdwNumIf: PDWORD) -> DWORD {
         *pdwNumIf = getNumInterfaces();
         ret = NO_ERROR;
     }
-    
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 32_GetOwnerModuleFromPidEntry.rs ----
@@ -1899,10 +1899,10 @@ pub unsafe extern "system" fn GetTcpStatisticsEx(
         return ERROR_NOT_SUPPORTED;
     }
 
-    TRACE(b"pStats %p\n\0".as_ptr(), pStats);
+    TRACE!((b"pStats %p\n\0".as_ptr() as *const i8), pStats);
     ret = getTCPStats(tcpFile, pStats);
     closeTcpFile(tcpFile);
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 38_GetUdpStatisticsEx.rs ----
@@ -1926,10 +1926,10 @@ pub unsafe extern "system" fn GetUdpStatisticsEx(
         return ERROR_NOT_SUPPORTED;
     }
 
-    TRACE(b"pStats %p\n\0".as_ptr(), pStats);
+    TRACE!((b"pStats %p\n\0".as_ptr() as *const i8), pStats);
     ret = getUDPStats(tcpFile, pStats);
     closeTcpFile(tcpFile);
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 39_GetUniDirectionalAdapterInfo.rs ----
@@ -1938,8 +1938,8 @@ pub unsafe extern "system" fn GetUniDirectionalAdapterInfo(
     pIPIfInfo: PIP_UNIDIRECTIONAL_ADAPTER_ADDRESS,
     dwOutBufLen: PULONG,
 ) -> DWORD {
-    TRACE(
-        b"pIPIfInfo %p, dwOutBufLen %p\n\0".as_ptr(),
+    TRACE!(
+        (b"pIPIfInfo %p, dwOutBufLen %p\n\0".as_ptr() as *const i8),
         pIPIfInfo,
         dwOutBufLen,
     );
@@ -1993,21 +1993,21 @@ pub unsafe extern "system" fn NotifyAddrChange(
     Handle: PHANDLE,
     overlapped: LPOVERLAPPED,
 ) -> DWORD {
-    
-    FIXME(
-        b"(Handle %p, overlapped %p): stub\n\0".as_ptr(),
+
+    FIXME!(
+        (b"(Handle %p, overlapped %p): stub\n\0".as_ptr() as *const i8),
         Handle,
         overlapped,
     );
-    
+
     if !Handle.is_null() {
         *Handle = INVALID_HANDLE_VALUE as *mut core::ffi::c_void;
     }
-    
+
     if !overlapped.is_null() {
         (*(overlapped as *mut IO_STATUS_BLOCK)).__bindgen_anon_1.Status = STATUS_PENDING;
     }
-    
+
     ERROR_IO_PENDING
 }
 // ---- 43_NotifyRouteChange.rs ----
@@ -2016,8 +2016,8 @@ pub unsafe extern "system" fn NotifyRouteChange(
     Handle: PHANDLE,
     overlapped: LPOVERLAPPED,
 ) -> DWORD {
-    FIXME(
-        b"(Handle %p, overlapped %p): stub\n\0".as_ptr(),
+    FIXME!(
+        (b"(Handle %p, overlapped %p): stub\n\0".as_ptr() as *const i8),
         Handle,
         overlapped,
     );
@@ -2056,13 +2056,13 @@ pub unsafe extern "system" fn SendARP(
 // ---- 45_SetIfEntry.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetIfEntry(pIfRow: PMIB_IFROW) -> DWORD {
-    FIXME(b"(pIfRow %p): stub\n\0".as_ptr(), pIfRow);
+    FIXME!((b"(pIfRow %p): stub\n\0".as_ptr() as *const i8), pIfRow);
     ERROR_NOT_SUPPORTED
 }
 // ---- 46_SetIpForwardEntry.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetIpForwardEntry(pRoute: PMIB_IPFORWARDROW) -> DWORD {
-    
+
     setIpForwardEntry(pRoute)
 }
 // ---- 47_SetIpNetEntry.rs ----
@@ -2094,13 +2094,13 @@ pub unsafe extern "system" fn SetIpNetEntry(pArpEntry: PMIB_IPNETROW) -> DWORD {
         return ERROR_INVALID_PARAMETER;
     }
 
-    req.Req.ID.toi_class = INFO_CLASS_PROTOCOL;
-    req.Req.ID.toi_type = INFO_TYPE_PROVIDER;
-    req.Req.ID.toi_id = IP_MIB_ARPTABLE_ENTRY_ID;
-    req.Req.ID.toi_entity.tei_instance = id.tei_instance;
-    req.Req.ID.toi_entity.tei_entity = AT_ENTITY;
-    req.Req.BufferSize = core::mem::size_of::<MIB_IPNETROW>() as u32;
-    arpBuff = req.Req.Buffer.as_mut_ptr() as PMIB_IPNETROW;
+    req.Req.as_mut().ID.toi_class = INFO_CLASS_PROTOCOL;
+    req.Req.as_mut().ID.toi_type = INFO_TYPE_PROVIDER;
+    req.Req.as_mut().ID.toi_id = IP_MIB_ARPTABLE_ENTRY_ID;
+    req.Req.as_mut().ID.toi_entity.tei_instance = id.tei_instance;
+    req.Req.as_mut().ID.toi_entity.tei_entity = AT_ENTITY;
+    req.Req.as_mut().BufferSize = core::mem::size_of::<MIB_IPNETROW>() as u32;
+    arpBuff = req.Req.as_mut().Buffer.as_mut_ptr() as PMIB_IPNETROW;
 
     RtlCopyMemory(
         arpBuff as LPVOID,
@@ -2131,19 +2131,19 @@ pub unsafe extern "system" fn SetIpNetEntry(pArpEntry: PMIB_IPNETROW) -> DWORD {
 // ---- 48_SetIpStatistics.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetIpStatistics(pIpStats: PMIB_IPSTATS) -> DWORD {
-    FIXME(b"(pIpStats %p): stub\n\0".as_ptr(), pIpStats);
+    FIXME!((b"(pIpStats %p): stub\n\0".as_ptr() as *const i8), pIpStats);
     0
 }
 // ---- 49_SetIpTTL.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetIpTTL(nTTL: UINT) -> DWORD {
-    FIXME(b"(nTTL %d): stub\n\0".as_ptr(), nTTL);
+    FIXME!((b"(nTTL %d): stub\n\0".as_ptr() as *const i8), nTTL);
     0
 }
 // ---- 50_SetTcpEntry.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetTcpEntry(pTcpRow: PMIB_TCPROW) -> DWORD {
-    FIXME(b"(pTcpRow %p): stub\n\0".as_ptr(), pTcpRow);
+    FIXME!((b"(pTcpRow %p): stub\n\0".as_ptr() as *const i8), pTcpRow);
     0
 }
 // ---- 51_UnenableRouter.rs ----
@@ -2152,8 +2152,8 @@ pub unsafe extern "system" fn UnenableRouter(
     pOverlapped: *mut OVERLAPPED,
     lpdwEnableCount: LPDWORD,
 ) -> DWORD {
-    FIXME(
-        b"(pOverlapped %p, lpdwEnableCount %p): stub\n\0".as_ptr(),
+    FIXME!(
+        (b"(pOverlapped %p, lpdwEnableCount %p): stub\n\0".as_ptr() as *const i8),
         pOverlapped,
         lpdwEnableCount,
     );
@@ -2166,13 +2166,13 @@ pub unsafe extern "system" fn GetIpErrorString(
     Buffer: PWSTR,
     Size: PDWORD,
 ) -> DWORD {
-    FIXME(b":stub\n\0".as_ptr());
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     0u32
 }
 // ---- 53_GetAdapterOrderMap.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn GetAdapterOrderMap() -> PIP_ADAPTER_ORDER_MAP {
-    FIXME(b":stub\n\0".as_ptr());
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     core::ptr::null_mut()
 }
 // ---- 54_GetAdaptersAddresses.rs ----
@@ -2237,7 +2237,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
         i -= 1;
     }
 
-    TRACE(b"size: %d, requiredSize: %d\n\0".as_ptr(), *pOutBufLen, requiredSize);
+    TRACE!(b"size: %d, requiredSize: %d\n\0".as_ptr(), *pOutBufLen, requiredSize);
 
     if pAdapterAddresses.is_null() || *pOutBufLen < requiredSize {
         *pOutBufLen = requiredSize;
@@ -2325,7 +2325,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                     &ifInfo.ip_addr.iae_addr as *const _ as *const core::ffi::c_void,
                     core::mem::size_of_val(&ifInfo.ip_addr.iae_addr),
                 );
-                (*(*currentAddress).FirstUnicastAddress).Address.iSockaddrLength = 
+                (*(*currentAddress).FirstUnicastAddress).Address.iSockaddrLength =
                     (core::mem::size_of_val(&ifInfo.ip_addr.iae_addr) + core::mem::size_of::<USHORT>()) as i32;
                 (*(*currentAddress).FirstUnicastAddress).PrefixOrigin = IpPrefixOriginOther;
                 (*(*currentAddress).FirstUnicastAddress).SuffixOrigin = IpPrefixOriginOther;
@@ -2375,7 +2375,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
 // ---- 55_CancelIPChangeNotify.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn CancelIPChangeNotify(notifyOverlapped: LPOVERLAPPED) -> BOOL {
-    FIXME(b":stub\n\0".as_ptr());
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     0
 }
 // ---- 56_GetBestInterfaceEx.rs ----
@@ -2384,7 +2384,7 @@ pub unsafe extern "system" fn GetBestInterfaceEx(
     pDestAddr: *mut sockaddr,
     pdwBestIfIndex: PDWORD,
 ) -> DWORD {
-    FIXME(b":stub\n\0".as_ptr());
+    FIXME!((b":stub\n\0".as_ptr() as *const i8));
     return 0;
 }
 // ---- 57_NhpAllocateAndGetInterfaceInfoFromStack.rs ----
@@ -2399,7 +2399,7 @@ pub unsafe extern "system" fn NhpAllocateAndGetInterfaceInfoFromStack(
     hHeap: HANDLE,
     dwFlags: DWORD,
 ) -> DWORD {
-    FIXME(b":stub\n\0".as_ptr());
+    FIXME!(b":stub\n\0".as_ptr());
     0
 }
 // ---- 58_GetIcmpStatisticsEx.rs ----
@@ -2438,7 +2438,7 @@ pub unsafe extern "system" fn GetIcmpStatisticsEx(
 // ---- 59_SetIpForwardEntryToStack.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetIpForwardEntryToStack(pRoute: PMIB_IPFORWARDROW) -> DWORD {
-    FIXME(b"SetIpForwardEntryToStack() stub\n\0".as_ptr());
+    FIXME!((b"SetIpForwardEntryToStack() stub\n\0".as_ptr() as *const i8));
     0
 }
 // ---- 60_GetInterfaceNameInternal.rs ----
@@ -2472,7 +2472,7 @@ unsafe fn GetInterfaceNameInternal(
         return RtlNtStatusToDosError(result as i32) as u32;
     }
 
-    hr = StringCbPrintfW(
+    hr = StringCbPrintfW_1(
         szKeyName.as_mut_ptr(),
         core::mem::size_of::<[u16; 520]>(),
         b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0{\x004\0D\x003\x006\0E\09\x007\x002\0-\0E\x003\x002\x005\0-\x001\x001\0C\0E\0-\0B\0F\0C\x001\0-\x000\08\x000\x000\x002\0B\0E\x001\x000\x003\x001\08\0}\0\\\0%\0s\0\\\0C\0o\0n\0n\0e\0c\0t\0i\0o\0n\0\0\0".as_ptr() as *const u16,
@@ -2540,8 +2540,8 @@ pub unsafe extern "system" fn GetAdaptersInfo(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(b"pAdapterInfo %p, pOutBufLen %p\n\0".as_ptr(), pAdapterInfo, pOutBufLen);
-    
+    TRACE!((b"pAdapterInfo %p, pOutBufLen %p\n\0".as_ptr() as *const i8), pAdapterInfo, pOutBufLen);
+
     if pOutBufLen.is_null() {
         ret = ERROR_INVALID_PARAMETER;
     } else {
@@ -2608,7 +2608,7 @@ pub unsafe extern "system" fn GetAdaptersInfo(
                             }
                             RegCloseKey(hKey);
                         }
-                        TRACE(b"num of index is %lu\n\0".as_ptr(), (*table).numIndexes);
+                        TRACE!((b"num of index is %lu\n\0".as_ptr() as *const i8), (*table).numIndexes);
                         ndx = 0;
                         while ndx < (*table).numIndexes {
                             let ptr: PIP_ADAPTER_INFO = pAdapterInfo.offset(ndx as isize);
@@ -2627,7 +2627,7 @@ pub unsafe extern "system" fn GetAdaptersInfo(
                                 ifname,
                                 core::mem::size_of::<[u8; 260]>(),
                             );
-                            consumeInterfaceName(ifname);
+                            consumeInterfaceName((ifname as *const u8));
                             (*ptr).AdapterName[MAX_ADAPTER_NAME_LENGTH] = 0;
                             getInterfacePhysicalByIndex(
                                 *(core::ptr::addr_of_mut!((*table).indexes) as *mut DWORD).offset(ndx as isize),
@@ -2692,7 +2692,7 @@ pub unsafe extern "system" fn GetAdaptersInfo(
             ret = ERROR_NO_DATA;
         }
     }
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 62_AllocateAndGetTcpExTableFromStack.rs ----
@@ -2706,8 +2706,8 @@ pub unsafe extern "system" fn AllocateAndGetTcpExTableFromStack(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(
-        b"ppTcpTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx, family 0x%08lx\n\0".as_ptr(),
+    TRACE!(
+        (b"ppTcpTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx, family 0x%08lx\n\0".as_ptr() as *const i8),
         ppTcpTable,
         bOrder as DWORD,
         heap,
@@ -2746,7 +2746,7 @@ pub unsafe extern "system" fn AllocateAndGetTcpExTableFromStack(
         }
     }
 
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 63_AllocateAndGetTcpExTable2FromStack.rs ----
@@ -2906,8 +2906,8 @@ pub unsafe extern "system" fn GetIfTable(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(
-        b"pIfTable %p, pdwSize %p, bOrder %ld\n\0".as_ptr(),
+    TRACE!(
+        (b"pIfTable %p, pdwSize %p, bOrder %ld\n\0".as_ptr() as *const i8),
         pdwSize,
         pdwSize,
         bOrder as DWORD,
@@ -2919,8 +2919,8 @@ pub unsafe extern "system" fn GetIfTable(
         let numInterfaces: DWORD = getNumInterfaces();
         let mut size: ULONG;
 
-        TRACE(
-            b"GetIfTable: numInterfaces = %d\n\0".as_ptr(),
+        TRACE!(
+            (b"GetIfTable: numInterfaces = %d\n\0".as_ptr() as *const i8),
             numInterfaces as i32,
         );
 
@@ -2979,7 +2979,7 @@ pub unsafe extern "system" fn GetIfTable(
         }
     }
 
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     return ret;
 }
 // ---- 69_AllocateAndGetIpAddrTableFromStack.rs ----
@@ -2993,8 +2993,8 @@ pub unsafe extern "system" fn AllocateAndGetIpAddrTableFromStack(
 
     let mut ret: DWORD;
 
-    TRACE(
-        b"ppIpAddrTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx\n\0".as_ptr(),
+    TRACE!(
+        (b"ppIpAddrTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx\n\0".as_ptr() as *const i8),
         ppIpAddrTable,
         bOrder as DWORD,
         heap,
@@ -3018,7 +3018,7 @@ pub unsafe extern "system" fn AllocateAndGetIpAddrTableFromStack(
         }
     }
 
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 70_AllocateAndGetIpForwardTableFromStack.rs ----
@@ -3031,8 +3031,8 @@ pub unsafe extern "system" fn AllocateAndGetIpForwardTableFromStack(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(
-        b"ppIpForwardTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx\n\0".as_ptr(),
+    TRACE!(
+        (b"ppIpForwardTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx\n\0".as_ptr() as *const i8),
         ppIpForwardTable,
         bOrder as DWORD,
         heap,
@@ -3056,7 +3056,7 @@ pub unsafe extern "system" fn AllocateAndGetIpForwardTableFromStack(
         }
     }
 
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     return ret;
 }
 // ---- 71_AllocateAndGetIpNetTableFromStack.rs ----
@@ -3223,8 +3223,8 @@ pub unsafe extern "system" fn AllocateAndGetUdpTableFromStack(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(
-        b"ppUdpTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx\n\0".as_ptr(),
+    TRACE!(
+        (b"ppUdpTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx\n\0".as_ptr() as *const i8),
         ppUdpTable,
         bOrder as DWORD,
         heap,
@@ -3248,7 +3248,7 @@ pub unsafe extern "system" fn AllocateAndGetUdpTableFromStack(
         }
     }
 
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 81_AllocateAndGetIfTableFromStack.rs ----
@@ -3261,8 +3261,8 @@ pub unsafe extern "system" fn AllocateAndGetIfTableFromStack(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(
-        b"ppIfTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx\n\0".as_ptr(),
+    TRACE!(
+        (b"ppIfTable %p, bOrder %ld, heap 0x%p, flags 0x%08lx\n\0".as_ptr() as *const i8),
         ppIfTable,
         bOrder as DWORD,
         heap,
@@ -3286,7 +3286,7 @@ pub unsafe extern "system" fn AllocateAndGetIfTableFromStack(
         }
     }
 
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }
 // ---- 82_GetBestRoute.rs ----
@@ -3318,7 +3318,7 @@ pub unsafe extern "system" fn GetBestRoute(
 
         while ndx < (*table).dwNumEntries {
             let table_entry = (core::ptr::addr_of_mut!((*table).table) as *mut MIB_IPFORWARDROW).offset(ndx as isize);
-            
+
             if (dwDestAddr & (*table_entry).dwForwardMask)
                 == ((*table_entry).dwForwardDest & (*table_entry).dwForwardMask)
             {
@@ -3363,19 +3363,19 @@ pub unsafe extern "system" fn GetBestInterface(
 ) -> DWORD {
     let mut ret: DWORD;
 
-    TRACE(b"dwDestAddr 0x%08lx, pdwBestIfIndex %p\n\0".as_ptr(), dwDestAddr, pdwBestIfIndex);
-    
+    TRACE!((b"dwDestAddr 0x%08lx, pdwBestIfIndex %p\n\0".as_ptr() as *const i8), dwDestAddr, pdwBestIfIndex);
+
     if pdwBestIfIndex.is_null() {
         ret = ERROR_INVALID_PARAMETER;
     } else {
         let mut ipRow: MIB_IPFORWARDROW = core::mem::zeroed();
-        
+
         ret = GetBestRoute(dwDestAddr, 0, &mut ipRow);
         if ret == ERROR_SUCCESS {
             *pdwBestIfIndex = ipRow.dwForwardIfIndex;
         }
     }
-    
-    TRACE(b"returning %ld\n\0".as_ptr(), ret);
+
+    TRACE!((b"returning %ld\n\0".as_ptr() as *const i8), ret);
     ret
 }

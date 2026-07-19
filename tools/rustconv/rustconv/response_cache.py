@@ -56,16 +56,25 @@ class ResponseCache:
             except (OSError, ValueError):
                 self._manifest = {}
 
-    def get(self, name: str, body_text: str) -> str | None:
+    def get(self, name: str, body_text: str, contract: str = "") -> str | None:
         """Cached Rust for ``name`` IFF the C body hash still matches, else None.
 
         An EMPTY (or whitespace-only) cached file is treated as a MISS so that a
         previously-poisoned entry (an empty/truncated translation that an older
         pipeline wrongly cached as success) self-heals: the next run re-translates
         it instead of silently reusing nothing. See `put`.
+
+        ``contract`` is the deterministic-contract text the worker prompt carried
+        (fact/call seals, provided-RAII API). A stored entry whose contract hash
+        differs is a MISS — a pre-capability output must not replay after the
+        sealed contract changed (the CDrvDefExt --local-raii stale-replay bug).
+        Entries written before contract stamping (no "contract" key) still hit,
+        so previously banked paid work keeps its value.
         """
         entry = self._manifest.get(name)
         if not entry or entry.get("hash") != _hash(body_text):
+            return None
+        if "contract" in entry and entry["contract"] != _hash(contract or ""):
             return None
         f = self.dir / entry.get("file", "")
         if not f.exists():
@@ -78,7 +87,7 @@ class ResponseCache:
             return None
         return text
 
-    def put(self, name: str, body_text: str, rust: str) -> None:
+    def put(self, name: str, body_text: str, rust: str, contract: str = "") -> None:
         """Persist one function's Rust + record its body hash. Atomic-ish.
 
         Refuses to cache EMPTY/whitespace-only output: an empty translation is a
@@ -94,7 +103,11 @@ class ResponseCache:
         self.dir.mkdir(parents=True, exist_ok=True)
         fname = _safe_filename(name) + ".rs"
         (self.dir / fname).write_text(rust)
-        self._manifest[name] = {"file": fname, "hash": _hash(body_text)}
+        self._manifest[name] = {
+            "file": fname,
+            "hash": _hash(body_text),
+            "contract": _hash(contract or ""),
+        }
         tmp = self.manifest_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(self._manifest, indent=1, sort_keys=True))
         tmp.replace(self.manifest_path)

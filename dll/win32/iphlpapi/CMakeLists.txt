@@ -10,15 +10,21 @@ add_definitions(
     -DGetAdaptersAddressesV2
     -D_CRT_NO_POSIX_ERROR_CODES)
 
-# iphlpapi.dll — Rust cohabitation flip (PARTIAL: only iphlpapi_main.c → iphlpapi-rust).
-# The translated bodies (74 IP-Helper entry points + qsort *Sorter comparators) come from
-# libiphlpapi_rust.a (sdk/lib/rust/iphlpapi-rust, DeepSeek-V4 + c2rust, kept on disk per the
-# never-delete rule); iphlpapi_main.c is commented out below. The ~10 sibling *_reactos.c/icmp.c/
-# media.c/registry.c/address.c STAY C — iphlpapi_main.c calls into them via the local
-# ifenum/ipstats/route/resinfo/dhcp prototypes (no symbol overlap: the Rust provides ONLY
-# iphlpapi_main.c's exports). `wine` stays linked (ros_dbg_log, the debug channel the Rust
-# prelude declares extern); iphlpapi_rust_shims.c provides the no-op TRACE/FIXME/ERR/WARN +
-# __wine_dbch___default symbols the DeepSeek output references as bare symbols.
+# iphlpapi.dll — Rust cohabitation flip (FULL: all 11 compiled .c → iphlpapi-rust).
+# iphlpapi_main.c was c2rust-anchored (74 IP-Helper entry points); the other 10 are pure-LLM
+# (DeepSeek V4-pro), except iphlpapi_fakestubs.c whose 16 Pf* bodies are byte-identical stubs
+# and were transcribed by hand. Every .c is commented out below, none deleted (never-delete
+# rule); libiphlpapi_rust.a links FIRST so its #[no_mangle] bodies win.
+#
+# iphlpapi_rust_shims.c is GONE (it was: no-op TRACE/FIXME/ERR/WARN + __wine_dbch___default).
+# Those no-ops were out-of-line FUNCTIONS, which is the field-manual §9.65 hazard — an
+# out-of-line no-op is an optimization barrier that can uncloak a latent ABI mismatch into a
+# ud2. The 158 call sites are now `macro_rules!` no-ops in the crate prelude, and the wine
+# default debug channel is a Rust static with flags=0 (statically false at every c2rust-
+# expanded `if (*chan).flags & (1<<CLASS)` site — exactly the non-DBG C build).
+#
+# STILL C (correctly): only the generated iphlpapi_stubs.c. `wine` stays linked for
+# ros_dbg_log; tdilib supplies the TDI helper library.
 set(IPHLPAPI_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 if(ARCH STREQUAL "i386")
     set(IPHLPAPI_RUST_TARGET "i686-pc-windows-gnu")
@@ -48,30 +54,23 @@ add_custom_command(
 add_custom_target(rust_iphlpapi DEPENDS ${IPHLPAPI_RUST_LIB})
 
 list(APPEND SOURCE
-    address.c
-    dhcp_reactos.c
-    icmp.c
-    ifenum_reactos.c
-    ipstats_reactos.c
-    iphlpapi_reactos.c
+    # address.c            (→ iphlpapi-rust src/iphlpapi/address.rs — GetAdaptersAddresses + adapter/prefix enumeration)
+    # dhcp_reactos.c       (→ iphlpapi-rust src/iphlpapi/dhcp_reactos.rs)
+    # icmp.c               (→ iphlpapi-rust src/iphlpapi/icmp.rs — Icmp/Icmp6 CreateFile/SendEcho/ParseReplies)
+    # ifenum_reactos.c     (→ iphlpapi-rust src/iphlpapi/ifenum_reactos.rs — interface enumeration over TDI (40 fns))
+    # ipstats_reactos.c    (→ iphlpapi-rust src/iphlpapi/ipstats_reactos.rs — IP/TCP/UDP/ICMP stats + arp/route tables)
+    # iphlpapi_reactos.c   (→ iphlpapi-rust src/iphlpapi/iphlpapi_reactos.rs)
     # iphlpapi_main.c   (→ iphlpapi-rust src/iphlpapi/iphlpapi_main.rs — 74 fns, cohab-flipped)
-    media.c
-    registry.c
-    resinfo_reactos.c
-    route_reactos.c
+    # media.c              (→ iphlpapi-rust src/iphlpapi/media.rs)
+    # registry.c           (→ iphlpapi-rust src/iphlpapi/registry.rs)
+    # resinfo_reactos.c    (→ iphlpapi-rust src/iphlpapi/resinfo_reactos.rs)
+    # route_reactos.c      (→ iphlpapi-rust src/iphlpapi/route_reactos.rs)
     iphlpapi_private.h
     ${CMAKE_CURRENT_BINARY_DIR}/iphlpapi_stubs.c)
 
-# The no-op wine-debug symbol shim (freestanding C, no PCH — the Rust references TRACE/FIXME/
-# ERR/WARN + __wine_dbch___default as bare symbols; see iphlpapi_rust_shims.c).
-list(APPEND PCH_SKIP_SOURCE
-    iphlpapi_rust_shims.c)
-
 add_library(iphlpapi MODULE
     ${SOURCE}
-    ${PCH_SKIP_SOURCE}
     iphlpapi.rc
-    iphlpapi_fakestubs.c
     iphlpapi.spec
     ${CMAKE_CURRENT_BINARY_DIR}/iphlpapi.def)
 
@@ -82,5 +81,4 @@ add_dependencies(iphlpapi rust_iphlpapi)
 add_importlibs(iphlpapi dhcpcsvc advapi32 psapi ws2_32 msvcrt kernel32 ntdll)
 # add_pch kept for the remaining C files; iphlpapi_rust_shims.c is SKIPPED (freestanding, and the
 # PCH's wine/debug.h would macro-expand its no-op TRACE/FIXME/ERR/WARN definitions).
-add_pch(iphlpapi iphlpapi_private.h "${PCH_SKIP_SOURCE}")
 add_cd_file(TARGET iphlpapi DESTINATION reactos/system32 FOR all)

@@ -7,7 +7,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 
 extern "system" {
-    fn KeInvalidateAllCaches();
+    fn KeInvalidateAllCaches() -> BOOLEAN;
 }
 
 use ntkrnl_sys::ddk::{

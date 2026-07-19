@@ -42,7 +42,7 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "C" {
-    fn CONTAINING_RECORD(ptr: PVOID, ty: PVOID, field_offset: usize) -> PVOID;
+    fn CONTAINING_RECORD(ptr: PVOID, type_size: usize, field_offset: usize) -> PVOID;
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -145,7 +145,7 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
         while !probe.is_null() {
             let t = CONTAINING_RECORD(
                 probe as PVOID,
-                core::ptr::null_mut(),
+                0,
                 core::mem::offset_of!(_KTHREAD, __bindgen_anon_3),
             ) as PKTHREAD;
             n += 1;
@@ -206,7 +206,7 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
         }
         Thread = CONTAINING_RECORD(
             ListEntry as PVOID,
-            core::ptr::null_mut(),
+            0,
             core::mem::offset_of!(_KTHREAD, __bindgen_anon_3),
         ) as PKTHREAD;
         ListEntry = (*ListEntry).Next;

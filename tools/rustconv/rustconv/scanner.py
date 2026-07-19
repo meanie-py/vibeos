@@ -533,7 +533,7 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                 name = recovered.group("name")
                 is_dtor = name.startswith("~")
                 name = name.lstrip("~")
-                is_ctor = name == cpp_class.rpartition("::")[2]
+                is_ctor = not is_dtor and name == cpp_class.rpartition("::")[2]
 
                 raw_params = recovered.group("params").strip()
                 if raw_params and raw_params != "VOID":
@@ -688,7 +688,9 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                     cpp_class = owner
                     break
             anc = anc.parent
-        if cpp_class and name == cpp_class:
+        # A destructor_name declarator already stripped its `~` — the name now
+        # equals the class name, but it is NOT the constructor (CMenuSite FP).
+        if cpp_class and name == cpp_class and not is_dtor:
             is_ctor = True
 
     if return_type == "" and cpp_class is not None and not (is_ctor or is_dtor):

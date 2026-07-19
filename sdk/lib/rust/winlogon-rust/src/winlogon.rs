@@ -2297,6 +2297,62 @@ pub unsafe extern "system" fn WinMain(
             b"sol.exe\0".as_ptr() as *const i8,
             10_000,
         );
+        /* E8 robustness ladder: more stock i386 applets, each exercising NEW
+         * win32k/GDI surface a prior guest never reached:
+         *   charmap — EnumFontFamilies font-enumeration arrays + callback
+         *   mspaint — heavy GDI (regions/DIBs/brushes) + comdlg32 dialogs
+         *   regedit — treeview/listview common controls + registry-enum arrays
+         *   winver  — shell32 ShellAbout modal dialog
+         * Silent no-op unless staged. 8s watch keeps total ladder time bounded. */
+        TryStartWow64StockApp(
+            wstr!("charmap.exe").as_ptr(),
+            b"charmap.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("mspaint.exe").as_ptr(),
+            b"mspaint.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("regedit.exe").as_ptr(),
+            b"regedit.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("winver.exe").as_ptr(),
+            b"winver.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        /* E9 robustness ladder: taskmgr (listview + NtQuerySystemInformation
+         * process array), wordpad (richedit control), clipbrd (clipboard). */
+        TryStartWow64StockApp(
+            wstr!("taskmgr.exe").as_ptr(),
+            b"taskmgr.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("wordpad.exe").as_ptr(),
+            b"wordpad.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("clipbrd.exe").as_ptr(),
+            b"clipbrd.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        /* osk (NtUserSendInput path) + magnify (timer-driven screen-capture
+         * BitBlt from a NULL/screen DC — a distinct GDI surface). */
+        TryStartWow64StockApp(
+            wstr!("osk.exe").as_ptr(),
+            b"osk.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("magnify.exe").as_ptr(),
+            b"magnify.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
         /* E4b: same mutual-occlusion rule as the arm64 ladder — when doom is
          * staged it IS the demo GUI guest; testgui would materialise on top
          * of its window. */

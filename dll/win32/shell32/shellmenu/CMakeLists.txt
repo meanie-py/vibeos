@@ -23,7 +23,7 @@ list(APPEND SOURCE
 
 add_library(shellmenu OBJECT ${SOURCE})
 target_link_libraries(shellmenu PRIVATE atl_classes)
-add_dependencies(shellmenu xdk psdk)
+add_dependencies(shellmenu xdk psdk reactos_idls)
 
 # The libmenuband_rust.a build (CMenuBand's Rust replacement) is hoisted to the top-level
 # CMakeLists.txt (before add_subdirectory(base)) because BOTH shell32 and rshell link it and

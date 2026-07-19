@@ -809,8 +809,73 @@ HRESULT STDMETHODCALLTYPE CMergedFolder::QueryNameSpace2(ULONG, QUERYNAMESPACEIN
     return E_NOTIMPL;
 }
 
+/* ---- Rust cohab: CMergedFolder is Rust-owned (menuband-rust merged_folder.rs). ----
+ * The retained C++ companion CEnumMergedFolder is reached from Rust through the
+ * bridges below; its methods are plain non-virtual C++ (never vtable slots), so each
+ * needs an extern "C" shim. The C++ CMergedFolder class body above stays compiled but
+ * is dead: all activation routes to the Rust factory. */
+
+/* shellmenu.h macro-renames CMergedFolder_CreateInstance(riid, ppv) to
+ * RSHELL_CMergedFolder_CreateInstance in this configuration; drop the macro so the
+ * plain 3-arg name below binds to the Rust factory export. */
+#ifdef CMergedFolder_CreateInstance
+#undef CMergedFolder_CreateInstance
+#endif
+extern "C" HRESULT WINAPI CMergedFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, void **ppv);
+
+extern "C" {
+
+CEnumMergedFolder* WINAPI CEnumMergedFolder_CreateInstance_RustBridge(void)
+{
+    CComObject<CEnumMergedFolder> *obj = new CComObject<CEnumMergedFolder>();
+    /* Rust's generated m_EnumSource assign helper AddRef/Releases through a raw
+     * IUnknown* reinterpretation of this pointer; assert the IEnumIDList primary
+     * base really sits at offset 0 (Itanium ABI: CComObjectRootEx is
+     * non-polymorphic, so IEnumIDList is the primary base). */
+    if (reinterpret_cast<void*>(static_cast<IEnumIDList*>(obj)) !=
+        reinterpret_cast<void*>(obj))
+    {
+        ERR("CEnumMergedFolder layout: IEnumIDList is not the primary base!\n");
+    }
+    return obj;
+}
+
+HRESULT WINAPI CEnumMergedFolder_SetSources_RustBridge(
+    CEnumMergedFolder *obj, IShellFolder *userLocal, IShellFolder *allUsers)
+{
+    return obj->SetSources(userLocal, allUsers);
+}
+
+HRESULT WINAPI CEnumMergedFolder_Begin_RustBridge(
+    CEnumMergedFolder *obj, HWND hwndOwner, SHCONTF flags)
+{
+    return obj->Begin(hwndOwner, flags);
+}
+
+HRESULT WINAPI CEnumMergedFolder_FindByName_RustBridge(
+    CEnumMergedFolder *obj, HWND hwndOwner, LPCWSTR strParsingName, LocalPidlInfo *pinfo)
+{
+    return obj->FindByName(hwndOwner, strParsingName, pinfo);
+}
+
+HRESULT WINAPI CEnumMergedFolder_FindPidlInList_RustBridge(
+    CEnumMergedFolder *obj, HWND hwndOwner, LPCITEMIDLIST pcidl, LocalPidlInfo *pinfo)
+{
+    return obj->FindPidlInList(hwndOwner, pcidl, pinfo);
+}
+
+HRESULT WINAPI CEnumMergedFolder_QueryInterface_RustBridge(
+    CEnumMergedFolder *obj, REFIID riid, void **ppv)
+{
+    return obj->QueryInterface(riid, ppv);
+}
+
+} /* extern "C" */
+
 extern "C"
 HRESULT WINAPI RSHELL_CMergedFolder_CreateInstance(REFIID riid, LPVOID *ppv)
 {
-    return ShellObjectCreator<CMergedFolder>(riid, ppv);
+    /* Rust-owned activation (menuband-rust merged_folder.rs). */
+    return CMergedFolder_CreateInstance(NULL, riid, (void**)ppv);
 }

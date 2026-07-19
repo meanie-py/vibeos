@@ -22,7 +22,7 @@ extern "system" {
     fn MiReserveAlignedSystemPtes( NumberOfPtes: ULONG, SystemPtePoolType: MMSYSTEM_PTE_POOL_TYPE, Alignment: ULONG, ) -> PMMPTE;
     fn KeFlushEntireTb(Invalid: BOOLEAN, AllProcessors: BOOLEAN);
     fn RtlFillMemory(Destination: PVOID, Length: SIZE_T, Fill: UCHAR);
-    fn MiDeleteSystemPageableVm(StartingPte: PMMPTE, NumberOfPtes: PFN_NUMBER, Flags: ULONG, ResidentPages: *mut PFN_NUMBER);
+    fn MiDeleteSystemPageableVm(StartingPte: PMMPTE, NumberOfPtes: PFN_NUMBER, Flags: ULONG, ResidentPages: *mut PFN_NUMBER) -> ULONG;
 }
 
 const SystemPteSpace: MMSYSTEM_PTE_POOL_TYPE = 0;

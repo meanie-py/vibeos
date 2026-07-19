@@ -85,9 +85,11 @@ pub unsafe extern "system" fn KeSetSystemTime(
 
     KeQuerySystemTime(OldTime as *mut _);
 
-    (*SharedUserData).SystemTime.High2Time = (*NewTime).__bindgen_anon_1.HighPart;
-    (*SharedUserData).SystemTime.LowPart = (*NewTime).__bindgen_anon_1.LowPart;
-    (*SharedUserData).SystemTime.High1Time = (*NewTime).__bindgen_anon_1.HighPart;
+    // Volatile stores in protocol order (High2, Low, High1): plain stores to
+    // disjoint fields are reorderable, which breaks readers' torn-read guard.
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*SharedUserData).SystemTime.High2Time), (*NewTime).__bindgen_anon_1.HighPart);
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*SharedUserData).SystemTime.LowPart), (*NewTime).__bindgen_anon_1.LowPart);
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*SharedUserData).SystemTime.High1Time), (*NewTime).__bindgen_anon_1.HighPart);
 
     if !HalTime.is_null() {
         ExCmosClockIsSane = HalSetRealTimeClock(&mut TimeFields);
@@ -163,9 +165,9 @@ pub unsafe extern "system" fn KeQueryTimeIncrement() -> ULONG {
 pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
     let TickCount = opaque_ptr(TickCount);
     loop {
-        (*TickCount).__bindgen_anon_1.HighPart = KeTickCount.High1Time;
-        (*TickCount).__bindgen_anon_1.LowPart = KeTickCount.LowPart;
-        if (*TickCount).__bindgen_anon_1.HighPart == KeTickCount.High2Time {
+        (*TickCount).__bindgen_anon_1.HighPart = core::ptr::read_volatile(core::ptr::addr_of!(KeTickCount.High1Time));
+        (*TickCount).__bindgen_anon_1.LowPart = core::ptr::read_volatile(core::ptr::addr_of!(KeTickCount.LowPart));
+        if (*TickCount).__bindgen_anon_1.HighPart == core::ptr::read_volatile(core::ptr::addr_of!(KeTickCount.High2Time)) {
             break;
         }
         YieldProcessor();
@@ -188,9 +190,9 @@ pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
 pub unsafe extern "system" fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER) {
     let CurrentTime = opaque_ptr(CurrentTime);
     loop {
-        (*CurrentTime).__bindgen_anon_1.HighPart = (*SharedUserData).SystemTime.High1Time;
-        (*CurrentTime).__bindgen_anon_1.LowPart = (*SharedUserData).SystemTime.LowPart;
-        if (*CurrentTime).__bindgen_anon_1.HighPart == (*SharedUserData).SystemTime.High2Time {
+        (*CurrentTime).__bindgen_anon_1.HighPart = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).SystemTime.High1Time));
+        (*CurrentTime).__bindgen_anon_1.LowPart = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).SystemTime.LowPart));
+        if (*CurrentTime).__bindgen_anon_1.HighPart == core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).SystemTime.High2Time)) {
             break;
         }
         YieldProcessor();
@@ -205,9 +207,9 @@ pub unsafe extern "system" fn KeQueryInterruptTime() -> u64 {
     let mut CurrentTime: LARGE_INTEGER = core::mem::zeroed();
 
     loop {
-        CurrentTime.__bindgen_anon_1.HighPart = (*SharedUserData).InterruptTime.High1Time;
-        CurrentTime.__bindgen_anon_1.LowPart = (*SharedUserData).InterruptTime.LowPart;
-        if CurrentTime.__bindgen_anon_1.HighPart == (*SharedUserData).InterruptTime.High2Time {
+        CurrentTime.__bindgen_anon_1.HighPart = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).InterruptTime.High1Time));
+        CurrentTime.__bindgen_anon_1.LowPart = core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).InterruptTime.LowPart));
+        if CurrentTime.__bindgen_anon_1.HighPart == core::ptr::read_volatile(core::ptr::addr_of!((*SharedUserData).InterruptTime.High2Time)) {
             break;
         }
         YieldProcessor();
