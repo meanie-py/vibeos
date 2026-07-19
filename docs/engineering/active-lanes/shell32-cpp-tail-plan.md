@@ -120,6 +120,12 @@ because many activated class bodies are now dead, but the TU does not count as r
 the remaining live closure is Rust. `CShellLink.cpp` is intentionally deferred to the
 monolith wave: its retained helper surface is still 3.3K lines.
 
+First batch (2026-07-18): `CActiveDesktop.cpp` and
+`droptargets/CexeDropHandler.cpp` had no retained closure beyond their already-Rust-owned
+classes and left CMake after a full body audit. The executable drop handler audit caught and
+fixed one compile-clean drift: Rust had lost the C++ `cchRemaining > 3` guard when deciding
+whether to quote a filename containing spaces.
+
 **Exit:** 19 source-list removals, their `*_RustBridge` declarations gone where no longer
 needed, shell32 + rshell links green, full gate ×3.
 
@@ -259,10 +265,10 @@ CMake. Do not push without the resulting clean-tree stamp and explicit user appr
 | Shared libraries | 12 | 7,319 | shell32 + rshell consumers green |
 | Procedural leaf/support | 15 | 6,187 | whole TUs removed |
 | Monoliths/capstone | 10 | 23,889 | `shell32.cpp` removed last |
-| **Remaining total** | **69** | **60,160** | **zero live `.cpp` entries** |
+| **Remaining total** | **67** | **59,859** | **zero live `.cpp` entries** |
 
-Completed: 1 TU / 98 lines (`CDropTargetHelper.cpp`). The hybrid cohort now has 18 live
-files / 16,280 lines.
+Completed: 3 TUs / 399 lines (`CDropTargetHelper.cpp`, `CActiveDesktop.cpp`, and
+`droptargets/CexeDropHandler.cpp`). The hybrid cohort now has 16 live files / 15,979 lines.
 
 Update this table from the generated live-CMake inventory at every cohort gate. A decreasing
 LOC count is informative; the authoritative metric is the live TU count plus executable

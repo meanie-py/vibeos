@@ -2,7 +2,6 @@
   "version": 1,
   "active": {
     "hybrid": [
-      "dll/win32/shell32/CActiveDesktop.cpp",
       "dll/win32/shell32/CQueryAssociations.cpp",
       "dll/win32/shell32/CRecycleBinCleaner.cpp",
       "dll/win32/shell32/CShellItem.cpp",
@@ -16,7 +15,6 @@
       "dll/win32/shell32/folders/CNetFolder.cpp",
       "dll/win32/shell32/folders/CControlPanelFolder.cpp",
       "dll/win32/shell32/folders/CRecycleBin.cpp",
-      "dll/win32/shell32/droptargets/CexeDropHandler.cpp",
       "dll/win32/shell32/COpenWithMenu.cpp",
       "dll/win32/shell32/CCopyMoveToMenu.cpp",
       "dll/win32/shell32/shellmenu/CMergedFolder.cpp"
@@ -92,7 +90,9 @@
   },
   "removed": {
     "hybrid": [
-      "dll/win32/shell32/CDropTargetHelper.cpp"
+      "dll/win32/shell32/CDropTargetHelper.cpp",
+      "dll/win32/shell32/CActiveDesktop.cpp",
+      "dll/win32/shell32/droptargets/CexeDropHandler.cpp"
     ]
   }
 }

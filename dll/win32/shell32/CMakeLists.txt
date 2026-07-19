@@ -19,7 +19,7 @@ endif()
 
 list(APPEND SOURCE
     brfolder.cpp
-    CActiveDesktop.cpp
+    # CActiveDesktop.cpp — replaced by Rust (shell32-rust/src/active_desktop.rs).
     CActiveDesktop.h
     CIDLDataObj.cpp
     CQueryAssociations.cpp
@@ -77,7 +77,8 @@ list(APPEND SOURCE
     folders/CRecycleBin.cpp
     folders/CRecycleBinFolderViewCB.cpp
     folders/CRegFolder.cpp
-    droptargets/CexeDropHandler.cpp
+    # droptargets/CexeDropHandler.cpp — replaced by Rust
+    # (shell32-rust/src/exe_drop_handler.rs).
     droptargets/CFSDropTarget.cpp
     droptargets/CRecyclerDropTarget.cpp
     shldataobject.cpp
