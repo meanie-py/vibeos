@@ -740,9 +740,12 @@ public:
 extern "C" HRESULT WINAPI CMoveToMenu_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
-class CMoveToMenuRustEntry : public CMoveToMenu
+class CMoveToMenuRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CMoveToMenuRustEntry, &CLSID_MoveToMenu>
 {
 public:
+    DECLARE_REGISTRY_RESOURCEID(IDR_MOVETOMENU)
     class _CreatorClass
     {
     public:
@@ -757,9 +760,12 @@ public:
 extern "C" HRESULT WINAPI CCopyToMenu_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
-class CCopyToMenuRustEntry : public CCopyToMenu
+class CCopyToMenuRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CCopyToMenuRustEntry, &CLSID_CopyToMenu>
 {
 public:
+    DECLARE_REGISTRY_RESOURCEID(IDR_COPYTOMENU)
     class _CreatorClass
     {
     public:

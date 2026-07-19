@@ -100,7 +100,8 @@ list(APPEND SOURCE
     COpenWithMenu.cpp
     # CNewMenu.cpp — replaced by Rust (shell32-rust/src/new_menu.rs); cohab via libshell32_rust.a
     # CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a
-    CCopyMoveToMenu.cpp
+    # CCopyMoveToMenu.cpp — shared base, four file-local helpers/callbacks, and
+    # both CCopyToMenu/CMoveToMenu derived objects are Rust-owned.
     # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
     # CShellDispatch.cpp — replaced by Rust (shell32-rust/src/shell_dispatch.rs);
     # CShellDispatch_Constructor remains exported by the Rust module for CFolder/CDefViewDual.

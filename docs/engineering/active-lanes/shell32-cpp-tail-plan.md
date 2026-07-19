@@ -169,6 +169,15 @@ packed-PIDL fixes. The TU's printer-icon helper moved into Rust, while the share
 modules now call it directly and the printer-owned bridge is retired. The real i386 image
 links with the TU absent.
 
+Sixth batch (2026-07-19): `CCopyMoveToMenu.cpp` left CMake at zero additional model
+cost, bringing the live inventory to 61 C++ TUs / 57,312 lines. The earlier object-map
+translation had already duplicated the shared concrete-base implementation into the Rust
+`copy_to_menu` and `move_to_menu` owners, including `DoGetFileTitle`,
+`GetPreviousMenuItemInfo`, `WindowProc`, and `BrowseCallbackProc`; repository-wide symbol
+search confirms those file-local helpers have no outside C++ consumer. Both ObjectMap
+adapters are now metadata-only ATL registrations, so removing the TU cannot retain a C++
+vtable/constructor dependency.
+
 **Exit:** 19 source-list removals, their `*_RustBridge` declarations gone where no longer
 needed, shell32 + rshell links green, full gate ×3.
 
