@@ -899,14 +899,20 @@ case "$DRIVER" in
     USERMODE=1
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/dll/win32/iphlpapi"
-    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winnls.h>\n#include <ws2tcpip.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <iphlpapi.h>\n#include <iphlpapi_undoc.h>\n#include <tdiinfo.h>\n#include <tcpioctl.h>\n#include <tdilib.h>\n#include <wine/debug.h>\n#include "resinfo.h"\n#include "dhcp.h"\n#include "ifenum.h"\n#include "ipstats.h"\n#include "route.h"'
-    ALLOW_FILES=( --allowlist-file '.*[/\\]iphlpapi\.h' --allowlist-file '.*[/\\]iphlpapi_undoc\.h'
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winnls.h>\n#include <ws2tcpip.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <iphlpapi.h>\n#include <iphlpapi_undoc.h>\n#include <tdiinfo.h>\n#include <tcpioctl.h>\n#include <tdilib.h>\n#include <fltdefs.h>\n#include <wine/debug.h>\n#include "resinfo.h"\n#include "dhcp.h"\n#include "ifenum.h"\n#include "ipstats.h"\n#include "route.h"\n#include "iphlpapi_private.h"'
+    # fltdefs.h: INTERFACE_HANDLE / PF_FILTER_DESCRIPTOR / PFADDRESSTYPE / PFFORWARD_ACTION /
+    # PF_INTERFACE_STATS / PF_LATEBIND_INFO / GLOBAL_FILTER — the packet-filter surface the 16
+    # Pf* exports in iphlpapi_fakestubs.c take. Needed once the flip went FULL (the island was
+    # originally built for iphlpapi_main.c alone, which touches none of them).
+    ALLOW_FILES=( --allowlist-file '.*[/\\]fltdefs\.h'
+                  --allowlist-file '.*[/\\]iphlpapi\.h' --allowlist-file '.*[/\\]iphlpapi_undoc\.h'
                   --allowlist-file '.*[/\\]iprtrmib\.h' --allowlist-file '.*[/\\]ipexport\.h'
                   --allowlist-file '.*[/\\]iptypes\.h' --allowlist-file '.*[/\\]ipmib\.h'
                   --allowlist-file '.*[/\\]tcpmib\.h' --allowlist-file '.*[/\\]udpmib\.h'
                   --allowlist-file '.*[/\\]tdiinfo\.h' --allowlist-file '.*[/\\]tcpioctl\.h'
                   --allowlist-file '.*[/\\]tdilib\.h' --allowlist-file '.*iphlpapi[/\\].*\.h'
-                  --allowlist-file '.*[/\\]ws2def\.h' --allowlist-file '.*[/\\]ws2ipdef\.h' )
+                  --allowlist-file '.*[/\\]ws2def\.h' --allowlist-file '.*[/\\]ws2ipdef\.h'
+                  --allowlist-file '.*[/\\]ipifcons\.h' --allowlist-file '.*[/\\]ifmib\.h' )
     EXTRA_INC=( -I"${SRC}/dll/win32/iphlpapi" -I"${SRC}/dll/win32/dhcpcsvc/include"
                 -I"${SRC}/sdk/lib/tdilib" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400

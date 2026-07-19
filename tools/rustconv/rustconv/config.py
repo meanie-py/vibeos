@@ -1811,7 +1811,15 @@ DEEPSEEK_MODEL_REASONER = "deepseek-reasoner"
 # body in one call; 16384 still truncated it. 32768 fits both (DeepSeek reasoner
 # allows up to 64K output). The empty/truncation guards in batch_runner turn any
 # remaining overflow into a loud, retriable failure (never a silent drop).
-DEEPSEEK_MAX_TOKENS = 32768
+# 2026-07-18: 32768 was STILL not enough — the iphlpapi full-flip pass lost 3 file
+# preambles (media/icmp/address) and 2 large fns (IcmpParseReplies,
+# GetInterfacesList) to exactly this mode: finish_reason=stop with EMPTY content
+# and a 0-byte .partial, reasoning having eaten the whole budget before any code
+# was emitted. Raised to the reasoner's documented 64K ceiling. This is a CAP, not
+# a target — you are billed for tokens actually generated, so raising it costs
+# nothing on calls that already fit and simply stops truncating the ones that
+# don't. Override with DEEPSEEK_MAX_TOKENS for a one-off.
+DEEPSEEK_MAX_TOKENS = int(os.environ.get("DEEPSEEK_MAX_TOKENS", "65536"))
 
 # Default model per backend
 DEFAULT_MODELS = {
