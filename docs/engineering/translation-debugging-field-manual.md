@@ -659,6 +659,36 @@ Two adjacent defect classes, found together and best hunted together:
 **Oracle (gated):** `scan_silent_failures.py` shape `WRITE_BYTES_SIZEOF` — flags 3-arg `write_bytes` with `size_of` in the count unless the pointee is size-1 (`*mut u8/i8/CHAR`, `c_void`/`PVOID` — c_void is size 1 in Rust) or the count does element math (`/`). Wired into `vibeos-cli check` (0-NEW baseline).
 **Fix pattern:** byte-cast the pointer — `write_bytes(ptr as *mut u8, 0, size_of::<T>())` — never "fix" by dividing the count.
 
+**SECOND VARIANT — a VARIABLE byte count, which the gated oracle CANNOT see (wkssvc, 2026-07-19).**
+The same defect appears without any `size_of` in the count, so `WRITE_BYTES_SIZEOF` never fires:
+
+```rust
+let len_with_null = (*resp).UserName.Length as usize + 2;   // UNICODE_STRING.Length is BYTES
+(*p).wkui0_username = midl_user_allocate(len_with_null) as *mut u16;  // that many BYTES
+core::ptr::write_bytes((*p).wkui0_username, 0, len_with_null);        // 2x HEAP OVERRUN
+```
+
+The pointer is `*mut u16`, so the count is doubled — it zeroes twice the allocation. Found live
+at 4 sites in `NetrWkstaUserGetInfo` (plus 3 of the classic `size_of` form in the same function).
+**`UNICODE_STRING.Length`/`MaximumLength` are BYTE counts** — that is the trap; every
+`midl_user_allocate(cb)` / `HeapAlloc(cb)` paired with a WCHAR pointer is a candidate.
+
+**Why this variant cannot be linted today (measured, do not re-attempt naively).** An extra
+`scan_silent_failures.py` shape was written for it and then REVERTED, because a syntactic
+(tree-sitter) scanner has no type information: at the real call site the argument is
+`(*p_user_info_0).wkui0_username`, whose text contains no type at all, so any pointee-type test
+matches nothing. A text-based `*mut u16` test only fires where the cast is written explicitly —
+i.e. exactly where the author was already thinking about width — and it produced 14 findings
+across the workspace of which 12 were `copy_nonoverlapping` (typed pointer + element count is
+CORRECT there) and 1 was a chained `as *mut WCHAR as *mut u8`. Net: zero true positives, and a
+lint that catches nothing while looking like coverage is worse than none. Closing this properly
+needs field-type resolution against the bindgen island, not a syntax match.
+
+**So the standing mitigation is REVIEW, not tooling:** after any translated crate that allocates
+WCHAR buffers, grep `write_bytes` and check every site by hand — is the count elements or bytes,
+and does the pointee have size 1? `cargo build` cannot see it (no panic, just UB), and a green
+`vibeos-cli check` does not cover this variant.
+
 ### Kernel Rust emitting x87 (`fild/fistp`) for 64-bit atomics — imprecise 0xc0000092 BSOD blamed on an innocent function (i386 STOP 0x1E, 2026-07-06)
 **Symptom:** flaky i386 `STOP 0x1E (0xc0000092 …)` — STATUS_FLOAT_STACK_CHECK — with P2 pointing at a function with no floats in its source (flagship: `MiLockProcessWorkingSetUnsafe+0x87`). x87 faults are IMPRECISE: they fire at the *next* FP instruction executed, and the kernel doesn't own the FPU — the fault needs a user thread's dirty x87 state (full stack / pending unmasked exception) live at kernel entry, hence the flakiness.
 **Cause:** the i686 kernel target JSONs set `"rustc-abi": "x86-softfloat"` (ABI only) with `cpu=pentium` (no SSE) but never disabled x87 CODEGEN — LLVM lowers `AtomicU64` load/store via `fild/fistp` when x87 is available and SSE2 isn't. 2479 x87 instructions in ntoskrnl, each a probabilistic landmine.
@@ -9196,3 +9226,38 @@ index — which means the compiler CAN prove it, but only if you actually build.
    `MAX_*_LEN`/`*_SIZE` name — C uses `&arr[N]` for the end pointer routinely.
 3. The full-arch `vibeos-cli gate` would also have caught it (it builds), but only after a
    ~15-minute cycle; the per-crate build catches it in seconds. Cheapest oracle first.
+
+### 9.112 (2026-07-19) The catch-all-binding class recurs in USERMODE SERVICE crates — and the upstream cause is an INCOMPLETE BINDGEN ISLAND
+
+**Not a new bug class.** The "undefined constant in `match` pattern position silently becomes an
+irrefutable catch-all binding" defect is already covered three times above (win32k `WM_CTLCOLOR`
+2026-07-05; "Match arm with out-of-scope CONST"; "Undefined const in a `match` arm"), it caused a
+real BUGCHECK 0x1E, and it already has a **gated oracle**: `tools/verify_match_consts.py`, run by
+`vibeos-cli build` (baseline `tools/lint-baseline/verify_match_consts.txt`, currently empty = 0
+tolerated). Read that tool's docstring before re-deriving any of this.
+
+**What the Tier-2 services batch adds is the UPSTREAM CAUSE, and it is fixable in one place.**
+`browser`/`wlansvc` shipped `ServiceControlHandler` with catch-all arms because their bindgen
+island had no `SERVICE_CONTROL_*` — `winsvc.h` was not in their `gen_driver_types.sh` profile's
+`ALLOW_FILES`. `wkssvc`/`dnsrslvr`, whose islands were generated AFTER `winsvc.h`/`winreg.h` were
+allowlisted, resolved the same identifiers to real distinct consts (STOP=1, PAUSE=2, CONTINUE=3,
+INTERROGATE=4, SHUTDOWN=5) and were never exposed. Live effect of the bug: every control code
+(PAUSE/CONTINUE/INTERROGATE/SHUTDOWN) fell into the STOP arm — the service tears down its RPC
+listener and reports SERVICE_STOPPED to the SCM. Confirmed empirically, not by inspection:
+control code 2 dispatched into the STOP body.
+
+**The durable lesson: a bindgen island's COMPLETENESS is a correctness property, not a
+convenience.** Types missing from an island produce loud `E0412`s. Constants missing from an
+island produce loud `E0425`s *in value position* — but a SILENT catch-all in pattern position.
+So the same omission is half-loud, and the loud half is what misleads you: you fix the E0425s,
+conclude the file is understood, and never look at the `match`.
+
+**Prophylactic when adding a `gen_driver_types.sh` profile:** allowlist the header that owns the
+constants any translated `switch` dispatches on — for a service that is `winsvc.h`; more
+generally `winuser.h` (WM_*), `winerror.h`, the driver's IOCTL header. Cheaper and more durable
+than catching it downstream.
+
+**Timing trap that let it reach the build:** `verify_match_consts` runs at BUILD, not at
+`cargo check`. A per-crate grind loop that only ever runs `cargo check` never consults it. Either
+build once before declaring a crate done, or run the audit directly — and when auditing, COUNT
+the arms you examined: an audit that inspects zero arms "passes" vacuously.

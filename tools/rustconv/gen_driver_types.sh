@@ -919,6 +919,176 @@ case "$DRIVER" in
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_UNICODE -DNTOS_MODE_USER
                -DGetAdaptersAddressesV2 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  # ---- Tier-2 network SERVICES (base/services/*) ----------------------------------------
+  # All six below share the easy shape netapi32 did NOT have: ONE precomp.h per module that
+  # every TU includes, so ONE bindgen island each (no TYPES_STEM split). The island is built
+  # by mirroring that precomp.h's include set verbatim — the §9.108 lesson: a TU's own include
+  # set is a guaranteed-legal wrapper, a master header (<lm.h>) is not.
+  dnsrslvr)
+    # USERMODE DNS-resolver-cache service DLL (base/services/dnsrslvr, svchost-hosted). The
+    # server SIDE of the dnsrslvr.idl interface whose CLIENT half dnsapi already speaks — so
+    # this flip closes that MIDL loop (dnsapi's rpc.c calls R_Resolver*; those land here).
+    #
+    # Type surface: windns.h (DNS_RECORDW/DNS_STATUS/DNS_CACHE_ENTRY), reactos/windns_undoc.h,
+    # dnsrslvr_s.h (the generated MIDL SERVER stubs — DNSRSLVR_HANDLE + the R_Resolver*
+    # prototypes this module DEFINES), plus the precomp-local RESOLVER_CACHE/_ENTRY structs.
+    # BLOCKLIST_FUNCS=1: windns_undoc.h/dnsrslvr_s.h declare what the translation
+    # #[no_mangle]-defines. The MIDL-generated dnsrslvr_s.c stays C and links alongside.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/dnsrslvr"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <winreg.h>\n#include <winsvc.h>\n#include <windns.h>\n#include <windns_undoc.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <ndk/obfuncs.h>\n#include <dnsrslvr_s.h>\n#include <strsafe.h>\n#include "precomp.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]windns\.h' --allowlist-file '.*[/\\]windns_undoc\.h'
+                  --allowlist-file '.*[/\\]dnsrslvr_s\.h' --allowlist-file '.*dnsrslvr[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/dnsrslvr" -I"${SRC}/build-i386/base/services/dnsrslvr"
+                -I"${SRC}/sdk/include/reactos/idl" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -DNTOS_MODE_USER -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  wkssvc)
+    # USERMODE Workstation service DLL (base/services/wkssvc). Server side of wkssvc.idl —
+    # the half netapi32's NetWksta*/NetJoinDomain client stubs call, so this closes THAT loop.
+    #
+    # Type surface: lmcons/lmerr/lmjoin/lmserver (WKSTA_INFO_*/NETSETUP_JOIN_STATUS/
+    # NET_API_STATUS), ntsecapi.h + ntmsv1_0.h (the LSA logon-package surface domain.c uses),
+    # wkssvc_s.h (generated MIDL server stubs). NOTE this deliberately includes the four
+    # lm*.h leaves and NOT the <lm.h> master header — mirroring precomp.h exactly is what
+    # makes the island legal (§9.108). wine/debug.h is parsed but NOT allowlisted; the
+    # __wine_debug_channel shim lives in the crate prelude (lsasrv/netapi32 pattern).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/wkssvc"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winerror.h>\n#include <winreg.h>\n#include <winsvc.h>\n#include <lmcons.h>\n#include <lmerr.h>\n#include <lmjoin.h>\n#include <lmserver.h>\n#include <ntsecapi.h>\n#include <ntmsv1_0.h>\n#define NTOS_MODE_USER\n#include <ndk/exfuncs.h>\n#include <ndk/obfuncs.h>\n#include <ndk/psfuncs.h>\n#include <ndk/rtlfuncs.h>\n#include <ndk/sefuncs.h>\n#include <wkssvc_s.h>\n#include <wine/debug.h>\n#include "precomp.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]lmcons\.h' --allowlist-file '.*[/\\]lmjoin\.h'
+                  --allowlist-file '.*[/\\]lmserver\.h' --allowlist-file '.*[/\\]lmerr\.h'
+                  --allowlist-file '.*[/\\]ntmsv1_0\.h' --allowlist-file '.*[/\\]ntsecapi\.h'
+                  --allowlist-file '.*[/\\]wkssvc_s\.h' --allowlist-file '.*wkssvc[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/wkssvc" -I"${SRC}/build-i386/base/services/wkssvc"
+                -I"${SRC}/sdk/include/reactos/idl" )
+    # precomp.h is in WRAPPER_INC for its four WKSTA_*_PARMNUM #defines, but it ALSO carries
+    # `extern` declarations of the four service globals. Those four are DEFINED by the Rust
+    # translation itself (wkssvc.rs: VersionInfo/LsaHandle/LsaAuthenticationPackage; info.rs:
+    # WkstaInfo502) — the crate is now the only translation unit, so the C-era cross-TU extern
+    # is vestigial. Emitting it would put an `extern "C" { static mut X }` next to the crate's
+    # own `static mut X` and collide. Blocklist the decls, keep the definitions; the prelude
+    # re-exports them so every module still sees one identity. (Same shape as dhcpcsvc's
+    # cur_time, field manual §9.108 — a vestigial extern that survived its C linkage model.)
+    EXTRA_BL_ITEMS=( VersionInfo LsaHandle LsaAuthenticationPackage WkstaInfo502 )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -DNTOS_MODE_USER -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  browser)
+    # USERMODE Computer Browser service DLL (base/services/browser, svchost-hosted). Server
+    # side of browser.idl. Tiny (410 LOC): a service-control skeleton + the RPC listener.
+    #
+    # Type surface: reactos/svc.h (SVCHOST_GLOBAL_DATA — the svchost contract this DLL is
+    # loaded under) + browser_s.h. wine/debug.h parsed-not-allowlisted (prelude shim).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/browser"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winsvc.h>\n#include <svc.h>\n#include <browser_s.h>\n#include <wine/debug.h>'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]svc\.h' --allowlist-file '.*[/\\]browser_s\.h'
+                  --allowlist-file '.*services[/\\]browser[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/browser" -I"${SRC}/build-i386/base/services/browser"
+                -I"${SRC}/sdk/include/reactos/idl" )
+    # NOTE (2026-07-19): winsvc.h/winreg.h are allowlisted above so the island carries the
+    # SERVICE_*/HKEY surface — island completeness is a CORRECTNESS property here, not a
+    # convenience: an undefined SERVICE_CONTROL_* silently becomes a catch-all `match` binding
+    # (field manual §9.112). This crate was FIRST built before that allowlist existed, so its
+    # prelude.rs ALSO hand-declares that surface (verified byte-identical to the generated
+    # values). If you regenerate this island, DELETE the duplicated hand-declarations from
+    # prelude.rs or you will get conflicting definitions.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  wlansvc)
+    # USERMODE WLAN AutoConfig service EXE (base/services/wlansvc). Server side of wlansvc.idl
+    # — the half wlanapi.dll's client stubs call. An add_executable, not a DLL: the staticlib
+    # cohabs into the EXE link exactly the same way (the winlogon-rust pattern).
+    #
+    # Type surface: wlansvc_s.h (generated MIDL server stubs + the WLAN_* wire types) + the
+    # precomp-local WLANSVCHANDLE. Uses ROS DPRINT, not wine/debug.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/wlansvc"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winsvc.h>\n#include <wlansvc_s.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <ndk/obfuncs.h>\n#include "precomp.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]wlansvc_s\.h' --allowlist-file '.*[/\\]wlantypes\.h'
+                  --allowlist-file '.*wlansvc[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/wlansvc" -I"${SRC}/build-i386/base/services/wlansvc"
+                -I"${SRC}/sdk/include/reactos/idl" )
+    # NOTE (2026-07-19): winsvc.h/winreg.h are allowlisted above so the island carries the
+    # SERVICE_*/HKEY surface — island completeness is a CORRECTNESS property here, not a
+    # convenience: an undefined SERVICE_CONTROL_* silently becomes a catch-all `match` binding
+    # (field manual §9.112). This crate was FIRST built before that allowlist existed, so its
+    # prelude.rs ALSO hand-declares that surface (verified byte-identical to the generated
+    # values). If you regenerate this island, DELETE the duplicated hand-declarations from
+    # prelude.rs or you will get conflicting definitions.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -DNTOS_MODE_USER -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  tcpsvcs)
+    # USERMODE simple-TCP-services EXE (base/services/tcpsvcs) — the RFC 862/863/867/865/864
+    # quintet (echo/discard/daytime/qotd/chargen) behind one thread-per-service skeleton.
+    # A pure ws2_32 CLIENT of the winsock stack we just finished flipping, which makes it a
+    # useful end-to-end exercise of that stack rather than just more LOC.
+    #
+    # Type surface: winsock2.h (SOCKET/sockaddr_in/fd_set) + the local tcpsvcs.h (SERVICES).
+    # NO NDK — this module is pure Win32. BLOCKLIST_FUNCS=1: tcpsvcs.h declares the handlers
+    # the translation defines.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/tcpsvcs"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winsock2.h>\n#include <tchar.h>\n#include <strsafe.h>\n#include "tcpsvcs.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]winsock2\.h' --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]inaddr\.h' --allowlist-file '.*tcpsvcs[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/tcpsvcs" )
+    # NOTE (2026-07-19): winsvc.h/winreg.h are allowlisted above so the island carries the
+    # SERVICE_*/HKEY surface — island completeness is a CORRECTNESS property here, not a
+    # convenience: an undefined SERVICE_CONTROL_* silently becomes a catch-all `match` binding
+    # (field manual §9.112). This crate was FIRST built before that allowlist existed, so its
+    # prelude.rs ALSO hand-declares that surface (verified byte-identical to the generated
+    # values). If you regenerate this island, DELETE the duplicated hand-declarations from
+    # prelude.rs or you will get conflicting definitions.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  telnetd)
+    # USERMODE telnet daemon EXE (base/services/telnetd) — RFC 854 option negotiation + a
+    # child-process console pumped over pipes. Another ws2_32 client.
+    #
+    # Type surface: winsock2.h + wincon.h (the console/pipe plumbing) + the local telnetd.h
+    # (client_s / the IAC option macros) and syslog.h. ANSI module (no UNICODE define — the
+    # C build doesn't set it here), so the char-vs-wchar surface must match: do NOT add
+    # -DUNICODE or every TCHAR type in the island silently flips width.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/telnetd"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <wincon.h>\n#include <winsock2.h>\n#include <strsafe.h>\n#include "telnetd.h"\n#include "syslog.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]winsock2\.h' --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]inaddr\.h' --allowlist-file '.*telnetd[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/telnetd" )
+    # NOTE (2026-07-19): winsvc.h/winreg.h are allowlisted above so the island carries the
+    # SERVICE_*/HKEY surface — island completeness is a CORRECTNESS property here, not a
+    # convenience: an undefined SERVICE_CONTROL_* silently becomes a catch-all `match` binding
+    # (field manual §9.112). This crate was FIRST built before that allowlist existed, so its
+    # prelude.rs ALSO hand-declares that surface (verified byte-identical to the generated
+    # values). If you regenerate this island, DELETE the duplicated hand-declarations from
+    # prelude.rs or you will get conflicting definitions.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_CRT_SECURE_NO_WARNINGS -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
     # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,

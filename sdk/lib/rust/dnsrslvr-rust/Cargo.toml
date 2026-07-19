@@ -1,0 +1,22 @@
+# dnsrslvr-rust — Rust translation of base/services/dnsrslvr (the DNS Client / resolver-cache
+# service DLL, svchost-hosted). staticlib → libdnsrslvr_rust.a, cohab-linked into the
+# cmake-built dnsrslvr.dll with the translated .c commented out (per-file flip).
+#
+# This is the SERVER half of the dnsrslvr.idl interface whose CLIENT half dnsapi.dll already
+# speaks in Rust — so this flip closes that MIDL loop. The windns/windns_undoc/dnsrslvr_s
+# layouts are bindgen-GENERATED per arch into `types` by tools/rustconv/gen_driver_types.sh
+# (profile: dnsrslvr), not hand-transcribed.
+[package]
+name = "dnsrslvr-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "dnsrslvr_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
