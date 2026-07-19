@@ -298,6 +298,33 @@ def test_object_map_adapter_redirects_atl_creation():
     assert "Shell32RustObjectLock() { gModule.Lock(); }" in cpp
 
 
+def test_internal_shell_object_creator_proves_nonaggregated_private_activation():
+    source = SHELL32 / "CEnumIDListBase.cpp"
+    cls = analyze_class(
+        source,
+        "CEnumIDListBase",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    assert cls.internal_shell_object_creator
+    assert cls.object_map_clsid is None
+    cls.require_supported(allow_internal=True)
+    with pytest.raises(CppComError, match="no OBJECT_ENTRY activation"):
+        cls.require_supported()
+
+
+def test_internal_scaffold_has_private_rust_factory_and_no_export_adapter():
+    source = SHELL32 / "CEnumIDListBase.cpp"
+    cls = analyze_class(source, "CEnumIDListBase", object_map_source=SHELL32 / "shell32.cpp")
+    interface = parse_widl_interface(
+        discover_widl_header(REACTOS_ROOT, "amd64", interface="IEnumIDList"),
+        "IEnumIDList",
+    )
+    rust = render_class_scaffold(cls, [interface], allow_internal=True)
+    assert "Internal activation: shellutils.h ShellObjectCreator<T>" in rust
+    assert "pub unsafe fn CEnumIDListBase_CreateInstance(" in rust
+    assert '#[no_mangle] pub unsafe extern "system" fn CEnumIDListBase_CreateInstance' not in rust
+
+
 @pytest.mark.parametrize(
     ("c_type", "rust_type"),
     [
@@ -1015,7 +1042,8 @@ def test_legacy_shell_interfaces_keep_unnamed_params_and_comment_spelling():
     banner = parse_widl_interface(
         REACTOS_ROOT / "sdk/include/reactos/shlobj_undoc.h", "IBanneredBar"
     )
-    assert len(next(method for method in banner.methods if method.name == "SetIconSize").params) == 2
+    set_icon_size = next(method for method in banner.methods if method.name == "SetIconSize")
+    assert len(set_icon_size.params) == 2
 
 
 def test_zero_cost_cap_blocks_before_the_first_paid_call():

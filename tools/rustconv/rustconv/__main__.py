@@ -18,6 +18,7 @@ from . import (
     callout_annotate,
     candidate_oracle,
     cpp_com,
+    cpp_tu,
     dup_census,
     file_splitter,
     gdi_lock_inventory,
@@ -27,6 +28,7 @@ from . import (
     seh_rewrite,
     semantic_skeleton,
     semdiff,
+    shell32_tail_inventory,
     substrate_closure,
     switch_extract,
     user_lock_inventory,
@@ -347,6 +349,19 @@ def cmd_dup_census(args):
     dup_census.print_census(report, as_json=args.json)
 
 
+def cmd_shell32_tail_inventory(args):
+    """Ratchet the planned shell32 tail against the literal live CMake source lists."""
+    ledger = (
+        Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_tail_inventory.DEFAULT_LEDGER
+    )
+    if not ledger.is_absolute():
+        ledger = (Path.cwd() / ledger).resolve()
+    report = shell32_tail_inventory.check_inventory(REACTOS_ROOT, ledger)
+    shell32_tail_inventory.print_report(report, as_json=args.json)
+    if not report.ok:
+        sys.exit(1)
+
+
 def _trivial_cpp_body(body_text: str) -> bool:
     """True for an empty body with no init-list or an all-zero init-list."""
     match = re.search(r"\{(.*)\}\s*$", body_text, flags=re.S)
@@ -413,7 +428,21 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
             continue
         scans.append(_scan_cpp_class_fragment(base_header, base))
     for header_scan in scans:
-        inline = [item for item in header_scan.functions if item.cpp_class in wanted]
+        header_lines = header_scan.raw_source.splitlines()
+
+        def is_template_method(item, lines=header_lines) -> bool:
+            # A class-local function template is instantiated by whichever derived TU
+            # calls it; it is not an owned body of this concrete class TU. Pulling it
+            # into a class-atomic worker invents an unbound `T` (CEnumIDListBase's
+            # HasItemWithCLSIDImpl was the first tail pilot to expose this).
+            prefix = "\n".join(lines[max(0, item.line_start - 4) : item.line_start + 1])
+            return bool(re.search(r"\btemplate\s*<", prefix))
+
+        inline = [
+            item
+            for item in header_scan.functions
+            if item.cpp_class in wanted and not is_template_method(item)
+        ]
         # A method is uniquely identified by (name, arity): C++ overloads that differ
         # in parameter count are distinct methods, not duplicate bodies (e.g. a static
         # inline `GetClassID()` helper in the header alongside the virtual
@@ -569,6 +598,17 @@ def cmd_skeleton_check(args):
     semantic_skeleton.print_report(report, as_json=args.json)
 
 
+def cmd_cpp_tu(args):
+    """Fail-loud whole-C++-TU ownership/layout/activation preflight."""
+    source = Path(args.path)
+    if not source.is_absolute():
+        source = REACTOS_ROOT / source
+    report = cpp_tu.analyze_translation_unit(source, REACTOS_ROOT)
+    cpp_tu.print_report(report, as_json=args.json)
+    if not report.ok:
+        sys.exit(1)
+
+
 def cmd_cpp_com(args):
     """Prove and emit the deterministic ABI scaffold for one ATL COM class."""
     source = Path(args.path)
@@ -602,7 +642,7 @@ def cmd_cpp_com(args):
         object_map_source=object_map,
         method_names=[f.name for f in class_methods],
     )
-    cls.require_supported()
+    cls.require_supported(allow_internal=args.internal)
 
     if args.sdk_header:
         sdk_header = Path(args.sdk_header).resolve()
@@ -641,7 +681,7 @@ def cmd_cpp_com(args):
         return
 
     chunks = [render_interface(interface) for interface in interfaces]
-    chunks.append(render_class_scaffold(cls, interfaces))
+    chunks.append(render_class_scaffold(cls, interfaces, allow_internal=args.internal))
     output = "\n\n".join(chunks) + "\n"
     if args.output:
         out = Path(args.output)
@@ -651,6 +691,8 @@ def cmd_cpp_com(args):
     else:
         print(output, end="")
     if args.adapter_output:
+        if args.internal:
+            raise CppComError("--adapter-output is invalid for internal COM construction")
         adapter = Path(args.adapter_output)
         adapter.parent.mkdir(parents=True, exist_ok=True)
         adapter.write_text(render_object_map_adapter(cls) + "\n", encoding="utf-8")
@@ -1469,7 +1511,7 @@ def cmd_translate(args):
         cpp_com_cls.method_names.extend(
             f.name for f in scan.functions if f.cpp_class == args.class_name
         )
-        cpp_com_cls.require_supported()
+        cpp_com_cls.require_supported(allow_internal=getattr(args, "internal", False))
         if getattr(args, "sdk_header", None):
             sdk_header = Path(args.sdk_header).resolve()
             cpp_com_interfaces = [
@@ -2666,7 +2708,13 @@ def cmd_translate(args):
             if cpp_com_cls is None:
                 raise CppComError("internal error: shell32 COM preflight state was lost")
             deterministic = [render_interface(item) for item in cpp_com_interfaces]
-            deterministic.append(render_class_scaffold(cpp_com_cls, cpp_com_interfaces))
+            deterministic.append(
+                render_class_scaffold(
+                    cpp_com_cls,
+                    cpp_com_interfaces,
+                    allow_internal=getattr(args, "internal", False),
+                )
+            )
             support_selection = "\n".join(
                 [
                     cpp_com_cls.header.read_text(encoding="utf-8", errors="replace"),
@@ -3022,6 +3070,13 @@ def main():
     p.add_argument("--top", type=int, default=20, help="Largest groups to include (default 20)")
     p.add_argument("--json", action="store_true", help="Machine-readable report")
 
+    p = sub.add_parser(
+        "shell32-tail-inventory",
+        help="Check the zero-C++ lane ledger against shell32's live CMake source lists",
+    )
+    p.add_argument("--ledger", help="Override the shell32 tail TOML ledger")
+    p.add_argument("--json", action="store_true", help="Machine-readable report")
+
     # candidate-check — N isolated worker replacements, one cargo check per arch.
     p = sub.add_parser(
         "candidate-check",
@@ -3078,7 +3133,19 @@ def main():
     )
     p.add_argument("-o", "--output", help="Write combined deterministic Rust scaffold")
     p.add_argument("--adapter-output", help="Write the deterministic C++ object-map adapter")
+    p.add_argument(
+        "--internal",
+        action="store_true",
+        help="Allow exact internal ShellObjectCreator<T> activation; never emits an adapter",
+    )
     p.add_argument("--json", action="store_true", help="Print the proven class/interface IR")
+
+    p = sub.add_parser(
+        "cpp-tu",
+        help="Preflight every class method and free function in one shell32 C++ TU",
+    )
+    p.add_argument("path", help="C++ implementation file")
+    p.add_argument("--json", action="store_true", help="Machine-readable ownership/layout IR")
 
     # semdiff (C↔Rust semantic-divergence finder; from cdrom-port f29579d1119)
     p = sub.add_parser("semdiff", help="Find C↔Rust semantic/behavioral divergences (LLM)")
@@ -3384,6 +3451,11 @@ def main():
     )
     p.add_argument("--class", dest="class_name", help="Class selected by --cpp-com")
     p.add_argument(
+        "--internal",
+        action="store_true",
+        help="shell32 cpp-com: allow exact internal ShellObjectCreator<T> activation",
+    )
+    p.add_argument(
         "--seal-facts",
         dest="seal_facts",
         action="store_true",
@@ -3531,10 +3603,12 @@ def main():
     commands = {
         "scan": cmd_scan,
         "dup-census": cmd_dup_census,
+        "shell32-tail-inventory": cmd_shell32_tail_inventory,
         "candidate-check": cmd_candidate_check,
         "substrate-plan": cmd_substrate_plan,
         "skeleton-check": cmd_skeleton_check,
         "cpp-com": cmd_cpp_com,
+        "cpp-tu": cmd_cpp_tu,
         "resolve": cmd_resolve,
         "semdiff": cmd_semdiff,
         "prompt": cmd_prompt,

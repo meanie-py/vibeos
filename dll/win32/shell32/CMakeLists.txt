@@ -38,7 +38,8 @@ list(APPEND SOURCE
     dialogs/general.cpp
     dialogs/recycler_prop.cpp
     dialogs/view.cpp
-    CDropTargetHelper.cpp
+    # CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
+    # are Rust-owned (shell32-rust/src/drop_target_helper.rs).
     CEnumIDListBase.cpp
     CExtractIcon.cpp
     CRecycleBinCleaner.cpp

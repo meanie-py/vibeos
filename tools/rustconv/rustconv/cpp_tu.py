@@ -1,0 +1,140 @@
+"""Deterministic whole-translation-unit preflight for shell32 C++ tails."""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+from .cpp_com import CppComError, analyze_class
+from .scanner import scan_file
+
+
+class CppTuError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class TuClass:
+    name: str
+    methods: tuple[str, ...]
+    ownership: str
+    rust_owner: str | None = None
+    activation: str | None = None
+    interfaces: tuple[str, ...] = ()
+    state_fields: tuple[str, ...] = ()
+
+
+@dataclass
+class CppTuReport:
+    source: Path
+    functions: tuple[str, ...]
+    free_functions: tuple[str, ...]
+    classes: list[TuClass] = field(default_factory=list)
+    unextracted: tuple[str, ...] = ()
+    unsupported: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.unextracted and not self.unsupported
+
+    def to_dict(self) -> dict[str, object]:
+        data = asdict(self)
+        data["source"] = str(self.source)
+        data["ok"] = self.ok
+        return data
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True)
+
+
+def _find_rust_factory(repo: Path, class_name: str) -> Path | None:
+    pattern = re.compile(rf"\bfn\s+{re.escape(class_name)}_CreateInstance\s*\(")
+    rust_root = repo / "sdk/lib/rust"
+    for crate in ("shell32-rust", "menuband-rust"):
+        src = rust_root / crate / "src"
+        if not src.is_dir():
+            continue
+        for path in sorted(src.rglob("*.rs")):
+            if pattern.search(path.read_text(encoding="utf-8", errors="replace")):
+                return path
+    return None
+
+
+def analyze_translation_unit(source: Path, repo: Path) -> CppTuReport:
+    source = source.resolve()
+    repo = repo.resolve()
+    if not source.is_file() or source.suffix.lower() not in {".cpp", ".cc", ".cxx"}:
+        raise CppTuError(f"C++ source not found: {source}")
+    scan = scan_file(source)
+    classes: dict[str, list[str]] = {}
+    free_functions: list[str] = []
+    for function in scan.functions:
+        if function.cpp_class:
+            classes.setdefault(function.cpp_class, []).append(function.name)
+        else:
+            free_functions.append(function.name)
+
+    report = CppTuReport(
+        source=source,
+        functions=tuple(function.display_name for function in scan.functions),
+        free_functions=tuple(free_functions),
+        unextracted=tuple(scan.unextracted),
+    )
+    object_map = repo / "dll/win32/shell32/shell32.cpp"
+    for class_name, methods in classes.items():
+        rust_owner = _find_rust_factory(repo, class_name)
+        if rust_owner is not None:
+            report.classes.append(
+                TuClass(
+                    name=class_name,
+                    methods=tuple(methods),
+                    ownership="rust-owned",
+                    rust_owner=rust_owner.relative_to(repo).as_posix(),
+                )
+            )
+            continue
+        try:
+            cls = analyze_class(
+                source,
+                class_name,
+                object_map_source=object_map,
+                method_names=methods,
+            )
+            cls.require_supported(allow_internal=True)
+        except CppComError as exc:
+            report.unsupported.append(str(exc))
+            continue
+        activation = "object-map" if cls.object_map_clsid else "internal-shell-object-creator"
+        report.classes.append(
+            TuClass(
+                name=class_name,
+                methods=tuple(methods),
+                ownership="translate",
+                activation=activation,
+                interfaces=tuple(cls.interface_names()),
+                state_fields=tuple(cls.state_fields),
+            )
+        )
+    return report
+
+
+def print_report(report: CppTuReport, *, as_json: bool = False) -> None:
+    if as_json:
+        print(report.to_json())
+        return
+    print(
+        f"cpp-tu: {'PASS' if report.ok else 'FAIL'} — {report.source.name}: "
+        f"{len(report.functions)} functions, {len(report.classes)} classes, "
+        f"{len(report.free_functions)} free"
+    )
+    for cls in report.classes:
+        detail = cls.rust_owner or cls.activation or ""
+        print(f"  {cls.name}: {cls.ownership} ({len(cls.methods)} methods) {detail}".rstrip())
+    for name in report.free_functions:
+        print(f"  free: {name}")
+    for item in report.unextracted:
+        print(f"  UNEXTRACTED: {item}")
+    for item in report.unsupported:
+        print("  UNSUPPORTED: " + item.replace("\n", "\n    "))

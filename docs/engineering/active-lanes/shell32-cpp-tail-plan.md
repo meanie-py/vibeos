@@ -1,8 +1,9 @@
 # shell32 C++ tail → zero (lane plan)
 
-**Status:** PLANNED (2026-07-18). Starts after the activatable COM object map reached
-33/33 Rust-owned classes. This plan finishes the compiled C++ translation units before any
-attempt to make Cargo own the final `shell32.dll` link.
+**Status:** ACTIVE (2026-07-18). The activatable COM object map is 33/33 Rust-owned;
+Wave 0 tooling is green and the first complete TU has left CMake. This plan finishes the
+compiled C++ translation units before any attempt to make Cargo own the final `shell32.dll`
+link.
 
 ## Outcome and boundary
 
@@ -79,6 +80,21 @@ and several classes per TU. Add a fail-loud **C++ TU mode** before spending on t
 Pilot the mode on `CEnumIDListBase.cpp` plus one hybrid wrapper such as
 `CDropTargetHelper.cpp`. No bulk paid run is authorized until both go from dry-run preflight
 to full-module candidate-check green without guessed substrate.
+
+### Wave 0 checkpoint (2026-07-18)
+
+- The live-CMake inventory is a lint ratchet backed by
+  `tools/rustconv/data/shell32_cpp_tail.json`; it fails on unclassified, unexpectedly live,
+  absent, duplicate, or missing ledger entries.
+- `cpp-tu` proves the complete function/class closure before a paid request.
+  `ShellObjectCreator<T>` now has an explicit non-activatable creation mode, and
+  uninstantiated header templates are excluded rather than translated with an invented `T`.
+- `CEnumIDListBase.cpp` is candidate-check green on i386/amd64/arm64. It remains live because
+  eight compiled C++ enumerators inherit the base; its accepted Rust output is durable
+  substrate for that derived-object batch, not a premature source-list flip.
+- `CDropTargetHelper.cpp` is candidate-check green on all three architectures and is the
+  first TU removed. Its retained ordinal 751 wrapper is Rust-owned, including the exact
+  `BOOL`-to-`HRESULT` quirk, scoped site detach, and final `IDropTarget::Release`.
 
 ## Wave 1 — peel every hybrid TU (19 files, 16,378 lines)
 
@@ -243,7 +259,10 @@ CMake. Do not push without the resulting clean-tree stamp and explicit user appr
 | Shared libraries | 12 | 7,319 | shell32 + rshell consumers green |
 | Procedural leaf/support | 15 | 6,187 | whole TUs removed |
 | Monoliths/capstone | 10 | 23,889 | `shell32.cpp` removed last |
-| **Total** | **70** | **60,258** | **zero live `.cpp` entries** |
+| **Remaining total** | **69** | **60,160** | **zero live `.cpp` entries** |
+
+Completed: 1 TU / 98 lines (`CDropTargetHelper.cpp`). The hybrid cohort now has 18 live
+files / 16,280 lines.
 
 Update this table from the generated live-CMake inventory at every cohort gate. A decreasing
 LOC count is informative; the authoritative metric is the live TU count plus executable

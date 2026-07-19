@@ -121,6 +121,10 @@ class CppComClass:
     registry_resource: str | None = None
     not_aggregatable: bool = False
     object_map_clsid: str | None = None
+    # Exact shellutils.h `ShellObjectCreator<T>` construction uses `_CComObject<T>`:
+    # a private, non-aggregating 0-ref allocation followed by AddRef/QI/Release.
+    # It proves internal activation but never authorizes an OBJECT_ENTRY adapter.
+    internal_shell_object_creator: bool = False
     final_construct: bool = False
     method_names: list[str] = field(default_factory=list)
     base_classes: list[str] = field(default_factory=list)
@@ -161,15 +165,16 @@ class CppComClass:
             for item in self.state_fields
         ]
 
-    def require_supported(self) -> None:
+    def require_supported(self, *, allow_internal: bool = False) -> None:
         problems = list(self.unsupported)
         if not self.com_map:
             problems.append("no BEGIN_COM_MAP entries found")
-        if not self.not_aggregatable:
+        internal_ok = allow_internal and self.internal_shell_object_creator
+        if not self.not_aggregatable and not internal_ok:
             problems.append(
                 "aggregation policy is unsupported: DECLARE_NOT_AGGREGATABLE is required"
             )
-        if not self.object_map_clsid:
+        if not self.object_map_clsid and not internal_ok:
             problems.append(
                 "no OBJECT_ENTRY activation found; internal COM-object construction is not mapped"
             )
@@ -944,6 +949,7 @@ def analyze_class(
     method_names: list[str] | None = None,
 ) -> CppComClass:
     source = source.resolve()
+    source_text = source.read_text(encoding="utf-8", errors="replace")
     header = find_class_header(source, class_name)
     body = _find_class_text(header, class_name)
     state_fields = _state_fields(body)
@@ -1044,6 +1050,9 @@ def analyze_class(
     resource = re.search(r"\bDECLARE_REGISTRY_RESOURCEID\s*\(\s*([^)\s]+)\s*\)", body)
     not_agg = bool(re.search(r"\bDECLARE_(?:CENTRAL_INSTANCE_)?NOT_AGGREGATABLE\s*\(", body))
     clsid = None
+    internal_shell_object_creator = bool(
+        re.search(rf"\bShellObjectCreator\s*<\s*{re.escape(class_name)}\s*>", source_text)
+    )
     activation_sources = [source]
     if header != source:
         activation_sources.append(header)
@@ -1067,6 +1076,7 @@ def analyze_class(
         registry_resource=resource.group(1) if resource else None,
         not_aggregatable=not_agg,
         object_map_clsid=clsid,
+        internal_shell_object_creator=internal_shell_object_creator,
         final_construct=final_construct,
         method_names=method_names or [],
         base_classes=bases,
@@ -4732,9 +4742,14 @@ def render_interface(spec: InterfaceSpec) -> str:
     return "\n".join(lines)
 
 
-def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> str:
+def render_class_scaffold(
+    cls: CppComClass,
+    interfaces: list[InterfaceSpec],
+    *,
+    allow_internal: bool = False,
+) -> str:
     """Render the ABI-owned portion. Method worker bodies remain separate LLM output."""
-    cls.require_supported()
+    cls.require_supported(allow_internal=allow_internal)
     by_name = {item.name: item for item in interfaces}
     missing = [entry.interface for entry in cls.com_map if entry.interface not in by_name]
     if missing:
@@ -4995,12 +5010,24 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
         ]
     )
 
+    internal = allow_internal and cls.internal_shell_object_creator and not cls.object_map_clsid
+    activation_comment = (
+        "// Internal activation: shellutils.h ShellObjectCreator<T> uses this "
+        "non-aggregating factory."
+        if internal
+        else f"// Activation: {cls.object_map_clsid or '<not found>'} currently maps to "
+        f"{cls.name} in shell32.cpp.\n"
+        "// The generated C++ adapter redirects ATL activation to this factory."
+    )
+    factory_decl = (
+        f"pub unsafe fn {cls.name}_CreateInstance("
+        if internal
+        else f'#[no_mangle] pub unsafe extern "system" fn {cls.name}_CreateInstance('
+    )
     lines.extend(
         [
-            f"// Activation: {cls.object_map_clsid or '<not found>'} currently maps to "
-            f"{cls.name} in shell32.cpp.",
-            "// The generated C++ adapter redirects ATL activation to this factory.",
-            f'#[no_mangle] pub unsafe extern "system" fn {cls.name}_CreateInstance(',
+            activation_comment,
+            factory_decl,
             "    outer: *mut IUnknown, riid: REFIID, ppv: *mut *mut core::ffi::c_void,",
             ") -> HRESULT {",
             "    if ppv.is_null() { return E_POINTER; }",
