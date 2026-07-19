@@ -237,11 +237,26 @@ AddService = Tcpip, , tcpip_Service_Inst
 AddService = DHCP, , dhcp_Service_Inst
 AddService = Dnscache, , dns_Service_Inst
 
+; The TCP/IP driver is netstack.sys (smoltcp, Rust) — tcpip.sys was removed from the
+; build when netstack replaced it, and its sources are now deleted, so ServiceBinary
+; pointed at a binary that no longer exists.
+;
+; The service NAME stays "Tcpip" on purpose, it is not cosmetic:
+;   * [TCPIP_AddReg_Global.NT] binds Ndi\Service and Ndi\CoServices to "Tcpip";
+;   * dhcpcsvc reads AND writes SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\
+;     Interfaces (its whole lease store), and ws2_32 reads ...\Tcpip\Parameters —
+;     both by literal path. The tcpip_AddReg* sections below create that subtree.
+; Renaming the service would break the lease store; only the binary was stale.
+;
+; NOTE: this INF is applied by network SETUP, which the LiveCD never runs — netstack
+; self-registers at boot from drivers/network/netstack/netstack_reg.inf under its own
+; "netstack" service name. If setup is ever wired up, reconcile the two registrations
+; (one driver, two service names, would otherwise load twice).
 [tcpip_Service_Inst]
 ServiceType   = 1
 StartType     = 1
 ErrorControl  = 1
-ServiceBinary = %12%\tcpip.sys
+ServiceBinary = %12%\netstack.sys
 LoadOrderGroup = PNP_TDI
 AddReg = tcpip_AddReg_Parameters, tcpip_AddReg
 
