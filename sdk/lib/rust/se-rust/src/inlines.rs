@@ -15,6 +15,7 @@
 //! these wrappers is no longer load-bearing.
 
 use ntkrnl_sys::ddk::*;
+use ntkrnl_sys::constants::STATUS_ACCESS_VIOLATION;
 use ntkrnl_sys::opaque_ptr;
 
 // --- Security descriptor accessors (cdecl — no NTAPI in C shim) ---
@@ -76,7 +77,27 @@ pub unsafe extern "C" fn SepAcquireTokenLockExclusive(token: PVOID) {
 #[inline(never)]
 pub unsafe extern "C" fn SepAcquireTokenLockShared(token: PVOID) {
     let token = opaque_ptr(token);
-    ntkrnl_sys::inline::se::SepAcquireTokenLockShared(token as PTOKEN)
+    KeEnterCriticalRegion();
+    if token.is_null() {
+        #[cfg(target_arch = "aarch64")]
+        {
+            // The ARM64 low page is mapped, so the natural TOKEN field load at
+            // NULL does not raise the access violation expected by callers.
+            // Fault through an architecturally invalid address before any
+            // resource state is touched, preserving the C helper's contract.
+            let invalid_address = usize::MAX;
+            core::arch::asm!(
+                "ldrb wzr, [{address}]",
+                address = in(reg) invalid_address,
+                options(nostack, readonly),
+            );
+
+            // The load above cannot return, but retain a loud fallback if an
+            // emulator ever violates that architectural guarantee.
+            ntkrnl_sys::ex::ExRaiseStatus(STATUS_ACCESS_VIOLATION);
+        }
+    }
+    ExAcquireResourceSharedLite((*(token as PTOKEN)).TokenLock, 1u8);
 }
 
 #[no_mangle]

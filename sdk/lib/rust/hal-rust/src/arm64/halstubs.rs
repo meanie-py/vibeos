@@ -1258,7 +1258,7 @@ pub unsafe extern "system" fn KeTryToAcquireQueuedSpinLockRaiseToSynch(
 pub unsafe extern "system" fn ExAcquireFastMutex(FastMutex: ddk::PFAST_MUTEX) {
     unsafe {
         (*FastMutex).OldIrql = KfRaiseIrql(APC_LEVEL) as ddk::ULONG;
-        interlocked_decrement(&raw mut (*FastMutex).Count);
+        ddk::ExAcquireFastMutexUnsafe(FastMutex);
     }
 }
 
@@ -1266,7 +1266,7 @@ pub unsafe extern "system" fn ExAcquireFastMutex(FastMutex: ddk::PFAST_MUTEX) {
 pub unsafe extern "system" fn ExReleaseFastMutex(FastMutex: ddk::PFAST_MUTEX) {
     unsafe {
         let OldIrql = (*FastMutex).OldIrql as ddk::KIRQL;
-        interlocked_increment(&raw mut (*FastMutex).Count);
+        ddk::ExReleaseFastMutexUnsafe(FastMutex);
         KfLowerIrql(OldIrql);
     }
 }
@@ -1276,6 +1276,7 @@ pub unsafe extern "system" fn ExTryToAcquireFastMutex(FastMutex: ddk::PFAST_MUTE
     unsafe {
         (*FastMutex).OldIrql = KfRaiseIrql(APC_LEVEL) as ddk::ULONG;
         if interlocked_compare_exchange(&raw mut (*FastMutex).Count, 0, 1) == 1 {
+            (*FastMutex).Owner = ddk::KeGetCurrentThread();
             return TRUE;
         }
 
