@@ -2291,6 +2291,107 @@ static NTSTATUS Wow64Manual_NtUserUnregisterClass(ULONG *a)
                                            (PVOID)(ULONG_PTR)a[2]);
 }
 
+/* ---- E9: the flat-typed PUNICODE_STRING NtUser* sweep -------------------- *
+ * A whole class of NtUser* syscalls take one or two PUNICODE_STRINGs but are
+ * typed flat (ptr) in win32u.spec, so wow64gen emits a silent-wrong flat thunk:
+ * 64-bit win32k reads the guest's 8-byte UNICODE_STRING32 as a 16-byte US64,
+ * picks Buffer from the wrong offset (garbage) -> ProbeAndCapture* raw_move
+ * C0000005 -> BUGCHECK 0x1E. osk.exe hit NtUserFindWindowEx this way (same
+ * win32k raw_move PC as regedit's NtUserUnregisterClass). A spec-vs-prototype
+ * scan (win32u.spec ptr args vs the real ntuser.h PUNICODE_STRING) found the
+ * whole class; each is the same US32<->US64 widen (Wow64pUS32to64 handles NULL
+ * + the atom form). Non-US args flat-pass; OUT DEVMODEW/DISPLAY_DEVICEW are
+ * non-divergent (no pointers, identical 32/64) so the guest buffer passes
+ * straight through and the kernel writes the shared layout. Handle returns
+ * narrow to the guest's low 32 bits (all user handles are <4GB).
+ * The two members that ALSO carry a divergent struct — NtUserCreateDesktop
+ * (OBJECT_ATTRIBUTES) and NtUserGetIconInfo (ICONINFO HBITMAP widen) — are
+ * listed in manual-win32k.txt WITHOUT a dispatch entry, so they hit the loud
+ * WOW64_MANUAL_UNIMPL stub (a clean error, NOT a bugcheck) until a guest that
+ * needs them arrives with a marshaller to disprove. */
+static NTSTATUS Wow64Manual_NtUserFindWindowEx(ULONG *a)
+{
+    extern HANDLE NtUserFindWindowEx(PVOID, PVOID, PVOID, PVOID, ULONG);
+    WOW64_UNICODE_STRING64_M Cls64, Win64;
+    HANDLE Ret = NtUserFindWindowEx((PVOID)(ULONG_PTR)a[0], (PVOID)(ULONG_PTR)a[1],
+                                    Wow64pUS32to64(a[2], &Cls64),
+                                    Wow64pUS32to64(a[3], &Win64), a[4]);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserGetWOWClass(ULONG *a)
+{
+    extern PVOID NtUserGetWOWClass(PVOID, PVOID);
+    WOW64_UNICODE_STRING64_M N64;
+    PVOID Ret = NtUserGetWOWClass((PVOID)(ULONG_PTR)a[0], Wow64pUS32to64(a[1], &N64));
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserSetWindowsHookEx(ULONG *a)
+{
+    extern PVOID NtUserSetWindowsHookEx(PVOID, PVOID, ULONG, INT, PVOID, ULONG);
+    WOW64_UNICODE_STRING64_M N64;
+    PVOID Ret = NtUserSetWindowsHookEx((PVOID)(ULONG_PTR)a[0], Wow64pUS32to64(a[1], &N64),
+                                       a[2], (INT)a[3], (PVOID)(ULONG_PTR)a[4], a[5]);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserSetWinEventHook(ULONG *a)
+{
+    extern PVOID NtUserSetWinEventHook(ULONG, ULONG, PVOID, PVOID, PVOID, ULONG, ULONG, ULONG);
+    WOW64_UNICODE_STRING64_M N64;
+    PVOID Ret = NtUserSetWinEventHook(a[0], a[1], (PVOID)(ULONG_PTR)a[2],
+                                      Wow64pUS32to64(a[3], &N64), (PVOID)(ULONG_PTR)a[4],
+                                      a[5], a[6], a[7]);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserRegisterUserApiHook(ULONG *a)
+{
+    extern LONG NtUserRegisterUserApiHook(PVOID, PVOID, ULONG, ULONG);
+    WOW64_UNICODE_STRING64_M D64, F64;
+    return (NTSTATUS)NtUserRegisterUserApiHook(Wow64pUS32to64(a[0], &D64),
+                                               Wow64pUS32to64(a[1], &F64), a[2], a[3]);
+}
+
+static NTSTATUS Wow64Manual_NtUserDrawCaptionTemp(ULONG *a)
+{
+    extern LONG NtUserDrawCaptionTemp(PVOID, PVOID, PVOID, PVOID, PVOID, PVOID, ULONG);
+    WOW64_UNICODE_STRING64_M S64;
+    return (NTSTATUS)NtUserDrawCaptionTemp((PVOID)(ULONG_PTR)a[0], (PVOID)(ULONG_PTR)a[1],
+                                           (PVOID)(ULONG_PTR)a[2], (PVOID)(ULONG_PTR)a[3],
+                                           (PVOID)(ULONG_PTR)a[4], Wow64pUS32to64(a[5], &S64),
+                                           a[6]);
+}
+
+static NTSTATUS Wow64Manual_NtUserLoadKeyboardLayoutEx(ULONG *a)
+{
+    extern PVOID NtUserLoadKeyboardLayoutEx(PVOID, ULONG, PVOID, PVOID, PVOID, ULONG, ULONG);
+    WOW64_UNICODE_STRING64_M K64;
+    PVOID Ret = NtUserLoadKeyboardLayoutEx((PVOID)(ULONG_PTR)a[0], a[1], (PVOID)(ULONG_PTR)a[2],
+                                           (PVOID)(ULONG_PTR)a[3], Wow64pUS32to64(a[4], &K64),
+                                           a[5], a[6]);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserEnumDisplaySettings(ULONG *a)
+{
+    extern NTSTATUS NtUserEnumDisplaySettings(PVOID, ULONG, PVOID, ULONG);
+    WOW64_UNICODE_STRING64_M N64;
+    /* lpDevMode (a[2]) is DEVMODEW: no pointers, identical 32/64 -> flat pass. */
+    return NtUserEnumDisplaySettings(Wow64pUS32to64(a[0], &N64), a[1],
+                                     (PVOID)(ULONG_PTR)a[2], a[3]);
+}
+
+static NTSTATUS Wow64Manual_NtUserEnumDisplayDevices(ULONG *a)
+{
+    extern LONG NtUserEnumDisplayDevices(PVOID, ULONG, PVOID, ULONG);
+    WOW64_UNICODE_STRING64_M N64;
+    /* lpDisplayDevice (a[2]) is DISPLAY_DEVICEW: no pointers, identical 32/64. */
+    return (NTSTATUS)NtUserEnumDisplayDevices(Wow64pUS32to64(a[0], &N64), a[1],
+                                              (PVOID)(ULONG_PTR)a[2], a[3]);
+}
+
 /* NtUserFindExistingCursorIcon(pustrModule, pustrRsrc, param):
  * two UNICODE_STRINGs widen; param (FINDEXISTINGCURICONPARAM = 3 LONGs) is flat
  * and identical 32/64, so its guest pointer passes straight through. */
@@ -3083,6 +3184,24 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserGetKeyboardLayoutName(Arguments);
     if (WOW64_IS("NtUserUnregisterClass"))
         return Wow64Manual_NtUserUnregisterClass(Arguments);
+    if (WOW64_IS("NtUserFindWindowEx"))
+        return Wow64Manual_NtUserFindWindowEx(Arguments);
+    if (WOW64_IS("NtUserGetWOWClass"))
+        return Wow64Manual_NtUserGetWOWClass(Arguments);
+    if (WOW64_IS("NtUserSetWindowsHookEx"))
+        return Wow64Manual_NtUserSetWindowsHookEx(Arguments);
+    if (WOW64_IS("NtUserSetWinEventHook"))
+        return Wow64Manual_NtUserSetWinEventHook(Arguments);
+    if (WOW64_IS("NtUserRegisterUserApiHook"))
+        return Wow64Manual_NtUserRegisterUserApiHook(Arguments);
+    if (WOW64_IS("NtUserDrawCaptionTemp"))
+        return Wow64Manual_NtUserDrawCaptionTemp(Arguments);
+    if (WOW64_IS("NtUserLoadKeyboardLayoutEx"))
+        return Wow64Manual_NtUserLoadKeyboardLayoutEx(Arguments);
+    if (WOW64_IS("NtUserEnumDisplaySettings"))
+        return Wow64Manual_NtUserEnumDisplaySettings(Arguments);
+    if (WOW64_IS("NtUserEnumDisplayDevices"))
+        return Wow64Manual_NtUserEnumDisplayDevices(Arguments);
     if (WOW64_IS("NtUserBuildHwndList"))
         return Wow64Manual_NtUserBuildHwndList(Arguments);
     if (WOW64_IS("NtUserThunkedMenuItemInfo"))
