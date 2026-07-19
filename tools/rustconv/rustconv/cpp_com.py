@@ -140,6 +140,10 @@ class CppComClass:
     # (renamed at scan-extend time), and their virtual calls devirtualize onto our
     # overrides through the ordinary same-file arity binder.
     local_base_classes: list[str] = field(default_factory=list)
+    # Non-trivial concrete-base destructors run after the derived destructor,
+    # in C++ base-destruction order. Scan extension renames them into ordinary
+    # workers and records those worker names here for Release sequencing.
+    base_dtor_workers: list[str] = field(default_factory=list)
 
     def interface_names(self) -> list[str]:
         """Ordered, de-duplicated interfaces to materialize: QI'd (com_map) then
@@ -225,18 +229,28 @@ def _find_class_text(header: Path, class_name: str) -> str:
     raise CppComError(f"{class_name}: class definition not found in {header}")
 
 
-def _local_concrete_base(header: Path, base: str) -> tuple[str, list[str]] | None:
-    """Body + base list for a concrete non-template base defined in the SAME header.
+def _local_concrete_base(
+    source: Path, header: Path, base: str
+) -> tuple[Path, str, list[str]] | None:
+    """Header + body + bases for a deterministically flattenable concrete base.
 
-    This is the flattenable inherited-layout case (CCopyMoveToMenu). ATL templates
-    and out-of-header bases return None and stay a loud preflight failure.
+    Same-header bases are the common case (CCopyMoveToMenu), but shell32 also uses
+    small concrete SDK helpers such as CObjectWithSiteBase from shellutils.h.  A
+    non-template base with one unambiguous definition is equally provable; ATL
+    templates remain outside this path and fail loud.
     """
     if "<" in base:
         return None
     try:
-        return _find_class_text(header, base), _class_bases(header, base)
+        base_header = header if base in _class_names(header) else find_class_header(source, base)
+        return base_header, _find_class_text(base_header, base), _class_bases(base_header, base)
     except CppComError:
         return None
+
+
+def _class_names(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return {match.group("name") for match in _CLASS_HEAD.finditer(text)}
 
 
 def _state_field_name(declaration: str) -> str:
@@ -278,6 +292,17 @@ def find_class_header(source: Path, class_name: str) -> Path:
         shell32_root = next((p for p in source.parents if p.name == "shell32"), None)
         if shell32_root is not None and shell32_root != source.parent:
             hits = [header for header in sorted(shell32_root.rglob("*.h")) if defines(header)]
+    if not hits:
+        repo_root = next(
+            (parent for parent in source.parents if (parent / "sdk" / "include").is_dir()),
+            None,
+        )
+        if repo_root is not None:
+            include_root = repo_root / "sdk" / "include"
+            hits = [header for header in sorted(include_root.rglob("*.h")) if defines(header)]
+            if not hits:
+                atl_root = repo_root / "sdk" / "lib" / "atl"
+                hits = [header for header in sorted(atl_root.rglob("*.h")) if defines(header)]
     if not hits:
         raise CppComError(f"{class_name}: no defining C++ source/header found from {source}")
     if len(hits) > 1:
@@ -752,6 +777,28 @@ def _pod_definition(text: str, name: str) -> tuple[str, bool] | None:
     return None
 
 
+def _plain_member_class_definition(text: str, name: str) -> tuple[str, bool] | None:
+    """Return field-only layout for a non-polymorphic embedded C++ class.
+
+    Constructors, destructors, and ordinary methods do not affect object layout.
+    This deliberately accepts only an unbased class with no virtual methods; its
+    fields still pass the ordinary scalar/POD parser before the type is admitted.
+    """
+    match = next((item for item in _CLASS_HEAD.finditer(text) if item.group("name") == name), None)
+    if match is None:
+        return None
+    raw_bases = (match.group("bases") or "").lstrip(":").strip()
+    if raw_bases:
+        return None
+    body, _ = _balanced_block(text, match.end() - 1)
+    if re.search(r"\bvirtual\b", body):
+        return None
+    fields = _state_fields(body)
+    if not fields:
+        return None
+    return "; ".join(fields) + ";", False
+
+
 def _discover_pod_state_types(
     source: Path, header: Path, declarations: list[str]
 ) -> tuple[list[PodStateType], list[EnumStateType]]:
@@ -784,7 +831,15 @@ def _discover_pod_state_types(
     definitions: dict[str, tuple[str, bool]] = {}
     for name in dict.fromkeys(candidates):
         definition = next(
-            (found for text in local_texts if (found := _pod_definition(text, name)) is not None),
+            (
+                found
+                for text in local_texts
+                if (
+                    found := _pod_definition(text, name)
+                    or _plain_member_class_definition(text, name)
+                )
+                is not None
+            ),
             None,
         )
         if definition is None and repo_root is not None:
@@ -911,6 +966,39 @@ def analyze_class(
             or base in interfaces
         ):
             continue
+        # ATL's IDispatchImpl<T, ...> contributes T's already-mapped interface
+        # subobject plus one CComPtr<ITypeInfo> state field and five ordinary
+        # method bodies. The template arguments are compile-time ABI facts, so
+        # flatten that exact known template rather than treating it as opaque
+        # inherited state. Other ATL templates remain loud failures.
+        dispatch = re.fullmatch(
+            r"IDispatchImpl\s*<\s*(I[A-Za-z0-9_]+)\s*,\s*&IID_\1(?:\s*,.*)?\s*>",
+            base,
+        )
+        if dispatch is not None and dispatch.group(1) in interfaces:
+            template_name = "IDispatchImpl"
+            template_header = find_class_header(source, template_name)
+            template_body = _find_class_text(template_header, template_name)
+            template_fields = _state_fields(template_body)
+            state_fields = template_fields + state_fields
+            if template_name not in local_base_classes:
+                local_base_classes.append(template_name)
+            continue
+        # CWindowImpl's C++ thunk/message-map object layout is not carried into
+        # Rust. Rust-owned shellmenu classes use a direct Win32 WNDPROC with the
+        # owner pointer passed through CreateWindowEx; the only persistent base
+        # state visible to class bodies is CWindow::m_hWnd. Admit only the exact
+        # self/CWindow/traits form used by these classes. Window registration and
+        # message dispatch remain deterministic scaffold/substrate work, never a
+        # model-owned ABI guess.
+        window_impl = re.fullmatch(
+            rf"CWindowImpl\s*<\s*{re.escape(class_name)}\s*,\s*CWindow\s*,\s*"
+            r"([A-Za-z_]\w*)\s*>",
+            base,
+        )
+        if window_impl is not None:
+            state_fields = ["HWND m_hWnd", *state_fields]
+            continue
         # A real COM interface base that the class implements but does not QI-expose
         # (absent from the COM map) is materialized in the layout, not QueryInterface.
         if base not in layout_bases and _base_is_widl_interface(source, base):
@@ -919,11 +1007,11 @@ def analyze_class(
         # Concrete same-header base (CCopyMoveToMenu): flatten it into this
         # translation — its state precedes ours, its methods become ours (renamed at
         # scan-extend), and its OWN bases join the worklist for the same treatment.
-        local = _local_concrete_base(header, base)
+        local = _local_concrete_base(source, header, base)
         if local is not None:
             if base in local_base_classes:
                 continue
-            base_body, base_bases = local
+            _base_header, base_body, base_bases = local
             local_base_classes.append(base)
             base_fields = _state_fields(base_body)
             derived_names = {_state_field_name(decl) for decl in state_fields}
@@ -1028,6 +1116,11 @@ def _parse_param(text: str, index: int) -> tuple[str, str]:
         return text, f"arg{index}"
     c_type = match.group("type").strip()
     name = match.group("name")
+    if not c_type:
+        # Legacy DECLARE_INTERFACE_ surfaces commonly omit parameter names
+        # (`THIS_ DWORD`, `THIS_ REFIID,PVOID*`). A lone token is the type,
+        # not a parameter named DWORD with an empty type.
+        return text, f"arg{index}"
     while name.startswith("*"):
         c_type += " *"
         name = name[1:]
@@ -1061,10 +1154,11 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                 )
             )
     else:
+        legacy_text = re.sub(r"/\*.*?\*/|//[^\n]*", " ", text, flags=re.S)
         legacy = re.search(
             rf"DECLARE_INTERFACE_\s*\(\s*{re.escape(interface)}\s*,[^)]*\)\s*"
             r"\{(?P<body>.*?)\}\s*;",
-            text,
+            legacy_text,
             flags=re.S,
         )
         if legacy is None:
@@ -1072,7 +1166,7 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                 f"{interface}: neither {wanted} nor DECLARE_INTERFACE_ definition found in "
                 f"SDK header {header}"
             )
-        body = re.sub(r"/\*.*?\*/|//[^\n]*", " ", legacy.group("body"), flags=re.S)
+        body = legacy.group("body")
         for match in _DECLARE_METHOD.finditer(body):
             raw_params = match.group("params").strip()
             has_this = raw_params == "THIS" or raw_params.startswith("THIS_")
@@ -4866,6 +4960,8 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             f"        {cls.name}_dtor_body(this);",
         ]
     )
+    for worker in cls.base_dtor_workers:
+        lines.append(f"        {cls.name}_{worker}_body(this);")
     for state in cls.plain_state_fields():
         if state.assignment_helper is not None:
             lines.append(
