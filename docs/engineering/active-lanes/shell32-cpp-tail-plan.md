@@ -126,6 +126,11 @@ classes and left CMake after a full body audit. The executable drop handler audi
 fixed one compile-clean drift: Rust had lost the C++ `cchRemaining > 3` guard when deciding
 whether to quote a filename containing spaces.
 
+Second batch (2026-07-18): `CQueryAssociations.cpp` left CMake after its four retained
+association-description helpers moved into the existing Rust module. The translation keeps
+both lazy resource caches, localized `%s` placement, registry fallback ordering, and even
+the source's `RegLoadMUIStringW` character-count-versus-byte-count quirk.
+
 **Exit:** 19 source-list removals, their `*_RustBridge` declarations gone where no longer
 needed, shell32 + rshell links green, full gate ×3.
 
@@ -265,10 +270,11 @@ CMake. Do not push without the resulting clean-tree stamp and explicit user appr
 | Shared libraries | 12 | 7,319 | shell32 + rshell consumers green |
 | Procedural leaf/support | 15 | 6,187 | whole TUs removed |
 | Monoliths/capstone | 10 | 23,889 | `shell32.cpp` removed last |
-| **Remaining total** | **67** | **59,859** | **zero live `.cpp` entries** |
+| **Remaining total** | **66** | **59,025** | **zero live `.cpp` entries** |
 
-Completed: 3 TUs / 399 lines (`CDropTargetHelper.cpp`, `CActiveDesktop.cpp`, and
-`droptargets/CexeDropHandler.cpp`). The hybrid cohort now has 16 live files / 15,979 lines.
+Completed: 4 TUs / 1,233 lines (`CDropTargetHelper.cpp`, `CActiveDesktop.cpp`,
+`droptargets/CexeDropHandler.cpp`, and `CQueryAssociations.cpp`). The hybrid cohort now has
+15 live files / 15,145 lines.
 
 Update this table from the generated live-CMake inventory at every cohort gate. A decreasing
 LOC count is informative; the authoritative metric is the live TU count plus executable

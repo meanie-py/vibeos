@@ -22,7 +22,8 @@ list(APPEND SOURCE
     # CActiveDesktop.cpp — replaced by Rust (shell32-rust/src/active_desktop.rs).
     CActiveDesktop.h
     CIDLDataObj.cpp
-    CQueryAssociations.cpp
+    # CQueryAssociations.cpp — class plus association description helpers are Rust-owned
+    # (shell32-rust/src/query_associations.rs).
     changenotify.cpp
     debughlp.cpp
     dialogs/dialogs.cpp
