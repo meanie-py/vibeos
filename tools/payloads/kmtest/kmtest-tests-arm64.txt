@@ -22,7 +22,7 @@ ExDoubleList
 # through a bad function pointer into pool BEFORE any software raise — a distinct arm64 hard-
 # error-path bug, unrelated to RtlRestoreContext. The old "RtlRaiseStatus+0x44 cluster" label
 # was a masked face (§9.54). Separate triage owed (arm64 ExRaiseHardError/ExpRaiseHardError).
-#ExHardError
+ExHardError
 ExInterlocked
 ExPools
 # UN-QUARANTINED 2026-07-16: fixed by task #10 (arm64 kernel-mode SEH resume, §9.69).
@@ -215,10 +215,23 @@ RtlIntSafe
 RtlMemory
 RtlRegistry
 RtlSplayTree
-# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): NO-END exit=128 — the USER-MODE
-# twin of the quarantined RtlStackKM (RtlWalkFrameChain bounds via dead SEH). UM self-
-# crash (exit 128), no kernel BUGCHECK, sweep continues. Expected-fail (same class as
-# RtlStackKM); not an OS bug.
+# QUARANTINED (07-18 triage, re-test ATTEMPTED and INCONCLUSIVE 2026-07-24). NO-END: the
+# intentional NULL store raises STATUS_ACCESS_VIOLATION at ntdll+0x6E9C and dispatches, but
+# the RESUME branches to PC=0x1 (LR=kmtest_+0x101C0) and dies STATUS_ILLEGAL_INSTRUCTION.
+# Not the i386-only NULL guard (§9.105a), not stack bounds.
+#
+# OPEN LEAD, still owed: a garbage PC out of a resume is the exact signature of an unwind
+# that reloaded callee-saved registers from the wrong stack slots, and the save_next decoder
+# was doing precisely that at 32% of its sites — fixed 2026-07-24 (§9.113) but AFTER this
+# triage was written, so the two have never met. Un-quarantining is the test.
+#
+# That test was attempted on 2026-07-24 and could NOT be run to a verdict: TWO sweeps on
+# byte-identical media both died before reaching this line (run 1 BUGCHECK 0x50 in
+# PspCreateProcess at launch ~76; run 2 wedged the guest solid at NtSystemDebugControl after
+# 180s timeouts on IoDeviceObject + IoReadWrite). Both are faces of §9.98, which the arm64
+# sweep hits on ~40% of runs. Left quarantined rather than shipped un-quarantined on an
+# unobserved pass. Re-try after §9.98 is fixed — the sweep cannot arbitrate anything this
+# noisy, and that noise, not this test, is the real arm64 conformance blocker.
 #RtlStack
 RtlStrSafe
 RtlUnicodeString

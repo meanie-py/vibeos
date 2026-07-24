@@ -9332,3 +9332,78 @@ than catching it downstream.
 `cargo check`. A per-crate grind loop that only ever runs `cargo check` never consults it. Either
 build once before declaring a crate done, or run the audit directly — and when auditing, COUNT
 the arms you examined: an audit that inspects zero arms "passes" vacuously.
+
+### 9.113 (FIXED 2026-07-24) The arm64 `save_next` unwind code resolves FORWARD, not backward — a 32%-wrong decoder that silently mis-restores callee-saved registers
+
+**Symptom family (all arm64, all downstream of `RtlVirtualUnwind`):** a resume lands on a
+garbage PC (`PC=0x1`); an indirect branch goes "through a bad function pointer into nonpaged
+pool"; corruption appears with no identifiable writer. Nothing faults at the decode — the
+unwinder cheerfully reloads callee-saved registers from the *wrong stack slots* and the damage
+surfaces arbitrarily far away, in whatever code trusted x21–x28 after the unwind.
+
+**The encoding truth.** ARM64 `.xdata` unwind codes are stored in **reverse-prologue order**
+(the first code undoes the *last* prologue instruction). `save_next` (0xE6) means "the next
+non-volatile pair" in *prologue* order, i.e. the pair saved by the instruction *before* the base
+one. Reverse that and the rule falls out: **the explicit pair-save a `save_next` run hangs off
+of appears AFTER the whole run in the byte stream**, and each step back toward lower indices is
+one register pair higher and 16 bytes further up the frame:
+
+```
+prologue                          unwind codes (reverse order)
+  sub  sp, sp, #0x1b0               [0] e2 34   add_fp    sp = x29 - 416
+  stp  x19,x20,[sp,#0x150]          [2] 74      save_fplr x29,x30 @[sp+416]
+  stp  x21,x22,[sp,#0x160]          [3] e6      save_next   -> x27,x28 @+400  (ordinal 4)
+  stp  x23,x24,[sp,#0x170]          [4] e6      save_next   -> x25,x26 @+384  (ordinal 3)
+  stp  x25,x26,[sp,#0x180]          [5] e6      save_next   -> x23,x24 @+368  (ordinal 2)
+  stp  x27,x28,[sp,#0x190]          [6] e6      save_next   -> x21,x22 @+352  (ordinal 1)
+  stp  x29,x30,[sp,#0x1a0]          [7] c8 2a   save_regp x19,x20 @[sp+336]   <- THE BASE
+```
+
+**Why the wrong version survived two rounds of review.** The superseded decoder chained
+*backward* off the previously-decoded save (`last_reg-2`, `last_off-16`). That coincides with the
+truth whenever the preceding code is itself part of the same consecutive run — which is the
+common shape, including the example above. It breaks the moment a **non-adjacent single save**
+sits between. Real counterexample, `ntoskrnl 0x4014f0`:
+
+```
+  str x28,[sp,#0x140]   then save_next
+  backward chain from x28@320  ->  x26,x27 @ 304      <- what the decoder restored
+  prologue actually stores     ->  x21,x22 @ 304      <- the truth
+```
+
+x21/x22's saved values got loaded into x26/x27, and x21/x22 kept stale garbage. **1268 of 3945
+`save_next` sites (32%) across ntoskrnl + ntdll decoded wrong.**
+
+**The method — this is the reusable part.** Do not reason about a bit-level spec from memory,
+and do not accept "the new logic looks more correct than the old logic." A built binary contains
+*both the claim and the answer*: `.xdata` says which register is at which slot, and the prologue
+disassembly says which register is actually there. Diff them across every function and the
+argument ends. `tools/verify_arm64_unwind.py` does exactly that — 11,163 save sites checked
+against disassembled prologues, `--check` for CI. Any decoder that consumes producer-emitted
+metadata (unwind codes, debug info, relocation tables, PDB/xdata of any kind) admits this same
+whole-binary differential oracle, and it is worth far more than a handful of hand-written
+vectors. Reach for it *before* theorizing.
+
+**Corollary — a fix's RATIONALE can be wrong even when the fix is right, and that costs later.**
+Landing alongside this was a `KeInvalidateTlbEntry` change (`sdk/lib/rust/ntkrnl-sys/src/inline/mm.rs`):
+`tlbi vale1is` → `vae1is`, plus masking the TLBI register operand to bits 43:0. Both are correct.
+But the original comment attributed the observed arm64 movement to the ASID field, and on **this**
+target that is impossible:
+
+- TLBI's operand is three fields — bits 43:0 = VA[55:12], **47:44 = the FEAT_TTL level hint**,
+  63:48 = ASID. A sign-extended kernel VA >> 12 lands `0xF` in *both* the TTL and ASID fields
+  (`0xFFFFF800_00000000 >> 12 == 0x000FFFFF_80000000`), so the ASID story was only half of it.
+- ASID `0xF` cannot bite: every PTE in this port is **global** (`HARDWARE_PTE.NonGlobal` is never
+  set anywhere in the tree) and `TLBI VAE1IS` invalidates a global entry regardless of the ASID
+  operand.
+- TTL `0xF` cannot bite either: QEMU's `-cpu cortex-a72` is **ARMv8.0**, which has no FEAT_TTL,
+  so bits 47:44 are RES0.
+- And QEMU reconstructs the VA as `sextract64(value << 12, 0, 56)`, which *discards* bits 63:44
+  outright — so the masking is provably a no-op under our emulator either way.
+
+Keep the mask (it goes live on any ARMv8.4+ core, or the day we set `NonGlobal` for per-process
+ASIDs) and keep `vae1is` (a generic teardown-time primitive must invalidate cached *intermediate*
+table descriptors, not just the leaf). But do not attribute test movement to it. **When a comment
+explains a fix with the wrong mechanism, the next reader deletes the fix as dead code** — or
+worse, spends a day chasing a recurrence in the wrong subsystem. Write down what you *proved*,
+and mark separately what is hygiene.

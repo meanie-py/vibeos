@@ -159,6 +159,69 @@ fn unwind_code_len(b0: u8) -> usize {
     }
 }
 
+/// Resolve a `save_next` against the pair-save that precedes it in the
+/// *prologue*. Unwind codes are stored in reverse-prologue order, so that base
+/// pair appears later in the byte stream, after the whole `save_next` run.
+/// `ordinal` is one for the `save_next` nearest the base pair, two for the next
+/// pair, and so on.
+unsafe fn save_next_target(
+    codes: *const u8,
+    codes_len: usize,
+    mut base_index: usize,
+    ordinal: usize,
+    sp: ULONG64,
+) -> Option<(usize, ULONG64, bool)> {
+    while base_index < codes_len && *codes.add(base_index) == 0xE6 {
+        base_index += 1;
+    }
+    if base_index >= codes_len {
+        return None;
+    }
+
+    let b0 = *codes.add(base_index);
+    let (first, address, is_fp) = match b0 {
+        0x20..=0x3F => (19usize, sp, false),
+        0xC8..=0xCF => {
+            if base_index + 1 >= codes_len {
+                return None;
+            }
+            let b1 = *codes.add(base_index + 1);
+            let x = ((((b0 & 0x03) as usize) << 2) | (b1 >> 6) as usize) & 0x0F;
+            let z = (b1 & 0x3F) as ULONG64;
+            let address = if b0 & 0x04 != 0 { sp } else { sp + z * 8 };
+            (19 + x, address, false)
+        }
+        0xD8..=0xDB => {
+            if base_index + 1 >= codes_len {
+                return None;
+            }
+            let b1 = *codes.add(base_index + 1);
+            let x = (((b0 & 0x01) << 2) | (b1 >> 6)) as usize;
+            let z = (b1 & 0x3F) as ULONG64;
+            let address = if b0 & 0x02 != 0 { sp } else { sp + z * 8 };
+            (8 + x, address, true)
+        }
+        0xE7 => {
+            if base_index + 2 >= codes_len {
+                return None;
+            }
+            let b1 = *codes.add(base_index + 1);
+            let b2 = *codes.add(base_index + 2);
+            if (b1 >> 6) & 1 == 0 {
+                return None;
+            }
+            let first = (b1 & 0x1F) as usize;
+            let preindexed = (b1 >> 5) & 1 != 0;
+            let mode = (b2 >> 6) & 0x03;
+            let offset = (b2 & 0x3F) as ULONG64 * 16;
+            (first, if preindexed { sp } else { sp + offset }, mode != 0)
+        }
+        _ => return None,
+    };
+
+    Some((first + 2 * ordinal, address + 16 * ordinal as ULONG64, is_fp))
+}
+
 /// Result of an unwind: the SP delta model is folded into the mutated CONTEXT.
 /// Returns `true` on a clean `end`/`end_c`, `false` if the stream ran off.
 ///
@@ -173,17 +236,27 @@ unsafe fn interpret_codes(
     start: usize,
 ) -> bool {
     let mut i = start;
-    // save_next (0xE6) continuation state. save_next restores the register pair
-    // immediately BELOW the previous save, 16 bytes toward lower offset, and — being
-    // a plain (non-pre-indexed) stp/ldp — contributes ZERO to SP. So it needs the
-    // (lowest register, Sp-relative byte offset, bank) of the MOST RECENT save of ANY
-    // kind, not just pair saves: real code emits save_next right after save_fplr
-    // (KeWaitForSingleObject: x29@128 → x27x28@112 → …) and after a single save_reg
-    // (CRT shims: x23 → x21x22@off-16). Tracking only pair-saves and mutating SP by
-    // +16 per save_next was the §9.69 / KeMutex-SeInheritance wild-SP bug.
-    let mut last_reg: usize = 0;
-    let mut last_off: ULONG64 = 0;
-    let mut last_is_fp = false;
+    // save_next (0xE6) resolves FORWARD, not backward — see save_next_target.
+    // Codes are stored in reverse-prologue order, so the explicit pair-save a
+    // save_next run hangs off of appears AFTER the run in the byte stream, and
+    // each step back toward lower indices is one register pair HIGHER and 16
+    // bytes further up the frame. Being a plain (non-pre-indexed) stp/ldp, a
+    // save_next contributes ZERO to SP; mutating SP by +16 per save_next was
+    // the §9.69 / KeMutex-SeInheritance wild-SP bug.
+    //
+    // The superseded version chained backward off the previously-decoded save
+    // (last_reg-2, last_off-16). That coincides with the truth whenever the
+    // preceding code is itself part of the same consecutive run — which is the
+    // common shape, and why it survived two rounds of review — but it breaks
+    // the moment a NON-adjacent single save sits between. Real counterexample,
+    // ntoskrnl 0x4014f0: `str x28,[sp,#0x140]` then save_next; chaining back
+    // from x28@320 yields x26,x27@304, but the prologue actually stores
+    // x21,x22 there. That mis-restore is silent — wrong callee-saved values
+    // flow into the resumed context and surface later as a garbage indirect
+    // branch. It was wrong at 1268 of 3945 save_next sites (32%) across
+    // ntoskrnl+ntdll. `tools/verify_arm64_unwind.py` checks every save site in
+    // a built ARM64 PE against the disassembled prologue; keep it green. §9.113
+    //
     // Running SP cursor for the *offset-based* saves is just Context.Sp; the
     // pre-indexed / alloc codes mutate Context.Sp as they go.
     let mut guard = 0usize;
@@ -204,26 +277,17 @@ unsafe fn interpret_codes(
                 let z = (b0 & 0x1F) as ULONG64;
                 restore_int_pair(Context, Nv, 19, sp);
                 (*Context).Sp = sp + z * 8;
-                last_reg = 19;
-                last_off = 0; // pre-indexed frame alloc; save_next never follows it
-                last_is_fp = false;
             }
             // save_fplr: 01zzzzzz — load x29,lr from [sp + z*8]
             0x40..=0x7F => {
                 let z = (b0 & 0x3F) as ULONG64;
                 restore_int_pair(Context, Nv, 29, sp + z * 8);
-                last_reg = 29;
-                last_off = z * 8;
-                last_is_fp = false;
             }
             // save_fplr_x: 10zzzzzz — load x29,lr from [sp]; sp += (z+1)*8
             0x80..=0xBF => {
                 let z = (b0 & 0x3F) as ULONG64;
                 restore_int_pair(Context, Nv, 29, sp);
                 (*Context).Sp = sp + (z + 1) * 8;
-                last_reg = 29;
-                last_off = 0;
-                last_is_fp = false;
             }
             // alloc_m: 11000xxx xxxxxxxx — sp += x*16
             0xC0..=0xC7 => {
@@ -253,9 +317,6 @@ unsafe fn interpret_codes(
                     let z = (b1 & 0x1F) as ULONG64;
                     restore_fp_single(Context, Nv, 8 + x, sp);
                     (*Context).Sp = sp + (z + 1) * 8;
-                    last_reg = 8 + x;
-                    last_off = 0;
-                    last_is_fp = true;
                 } else {
                     if i + 1 >= codes_len {
                         return false;
@@ -267,9 +328,6 @@ unsafe fn interpret_codes(
                             let x = ((((b0 & 0x03) as usize) << 2) | (b1 >> 6) as usize) & 0x0F;
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_int_pair(Context, Nv, 19 + x, sp + z * 8);
-                            last_reg = 19 + x;
-                            last_off = z * 8;
-                            last_is_fp = false;
                         }
                         // save_regp_x: 110011xx xxzzzzzz
                         0xCC | 0xCE => {
@@ -277,18 +335,12 @@ unsafe fn interpret_codes(
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_int_pair(Context, Nv, 19 + x, sp);
                             (*Context).Sp = sp + (z + 1) * 8;
-                            last_reg = 19 + x;
-                            last_off = 0;
-                            last_is_fp = false;
                         }
                         // save_reg: 110100xx xxzzzzzz
                         0xD0 | 0xD2 => {
                             let x = ((((b0 & 0x03) as usize) << 2) | (b1 >> 6) as usize) & 0x0F;
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_int_single(Context, Nv, 19 + x, sp + z * 8);
-                            last_reg = 19 + x;
-                            last_off = z * 8;
-                            last_is_fp = false;
                         }
                         // save_reg_x: 1101010x xxxzzzzz  (4-bit reg: 1 bit in b0, 3 in
                         // b1>>5; 5-bit z. Was (<<2 | >>6) — dropped a reg bit for x>=4.)
@@ -297,9 +349,6 @@ unsafe fn interpret_codes(
                             let z = (b1 & 0x1F) as ULONG64;
                             restore_int_single(Context, Nv, 19 + x, sp);
                             (*Context).Sp = sp + (z + 1) * 8;
-                            last_reg = 19 + x;
-                            last_off = 0;
-                            last_is_fp = false;
                         }
                         // save_lrpair: 1101011x xxzzzzzz
                         0xD6 => {
@@ -307,18 +356,12 @@ unsafe fn interpret_codes(
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_int_single(Context, Nv, 19 + 2 * x, sp + z * 8);
                             restore_int_single(Context, Nv, 30, sp + z * 8 + 8);
-                            last_reg = 19 + 2 * x;
-                            last_off = z * 8;
-                            last_is_fp = false;
                         }
                         // save_fregp: 1101100x xxzzzzzz
                         0xD8 => {
                             let x = (((b0 & 0x01) << 2) | (b1 >> 6)) as usize;
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_fp_pair(Context, Nv, 8 + x, sp + z * 8);
-                            last_reg = 8 + x;
-                            last_off = z * 8;
-                            last_is_fp = true;
                         }
                         // save_fregp_x: 1101101x xxzzzzzz
                         0xDA => {
@@ -326,18 +369,12 @@ unsafe fn interpret_codes(
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_fp_pair(Context, Nv, 8 + x, sp);
                             (*Context).Sp = sp + (z + 1) * 8;
-                            last_reg = 8 + x;
-                            last_off = 0;
-                            last_is_fp = true;
                         }
                         // save_freg: 1101110x xxzzzzzz
                         0xDC => {
                             let x = (((b0 & 0x01) << 2) | (b1 >> 6)) as usize;
                             let z = (b1 & 0x3F) as ULONG64;
                             restore_fp_single(Context, Nv, 8 + x, sp + z * 8);
-                            last_reg = 8 + x;
-                            last_off = z * 8;
-                            last_is_fp = true;
                         }
                         _ => {}
                     }
@@ -371,21 +408,24 @@ unsafe fn interpret_codes(
             0xE4 | 0xE5 => {
                 return true;
             }
-            // save_next (0xE6) — restore the register pair immediately BELOW the
-            // previous save: regs (last_reg-2, last_reg-1) at [sp + (last_off-16)].
-            // It maps to a plain stp/ldp at a fixed offset, so it must NOT change SP
-            // (the old `+= 16` per save_next was the wild-SP root, §9.69/§9.92). The
-            // bank follows the previous save. sp is this frame's (unchanged) SP.
+            // save_next (0xE6) — the base pair is later in the unwind stream,
+            // because codes are stored in reverse-prologue order. Each preceding
+            // save_next restores the numerically next pair at the next stack slot.
+            // It is offset-based and therefore does not change SP.
             0xE6 => {
-                if last_reg >= 2 && last_off >= 16 {
-                    let off = last_off - 16;
-                    if last_is_fp {
-                        restore_fp_pair(Context, Nv, last_reg - 2, sp + off);
+                let mut run_end = i;
+                while run_end < codes_len && *codes.add(run_end) == 0xE6 {
+                    run_end += 1;
+                }
+                let ordinal = run_end - i;
+                if let Some((first, address, is_fp)) =
+                    save_next_target(codes, codes_len, run_end, ordinal, sp)
+                {
+                    if is_fp {
+                        restore_fp_pair(Context, Nv, first, address);
                     } else {
-                        restore_int_pair(Context, Nv, last_reg - 2, sp + off);
+                        restore_int_pair(Context, Nv, first, address);
                     }
-                    last_reg -= 2;
-                    last_off = off;
                 }
             }
             // save_any_reg: 3-byte general save — decode enough to restore + SP.
