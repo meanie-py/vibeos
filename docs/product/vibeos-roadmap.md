@@ -529,6 +529,15 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   passes a mask excluding all active CPUs; the probe did NOT fire on the 07-18 hit, so the
   bad mask reaches the scheduler by another route. Not in the gate's auto-retry flake list —
   consider adding once the signature is pinned.
+  **2026-07-24 — the search space CHANGED, re-read old evidence with care.** Until commit
+  `d3ca121cb09`, `KiSetAffinityThread` (ke/thrdschd.rs) raised **0x48**, not 0x3 — the
+  translation had invented the number (field manual §9.113). So every 0x3 observed BEFORE
+  that commit provably came from somewhere *other* than that site, and any 0x48 seen in the
+  old corpus was really this affinity check. From `d3ca121cb09` on, `KiSetAffinityThread` is
+  a live 0x3 candidate again, so a fresh hit is NOT necessarily the same bug as the historical
+  ones. Note the historical hits carry 4 non-zero parameters, which `KeBugCheck(code)` (all
+  params 0) cannot produce — so the raiser is a `KeBugCheckEx` site and the hunt should start
+  by enumerating those, not by re-reading the setter.
 - **KD continuation** (windbg handoff) — amd64 same-CPL `int 2Dh` resumed-context corruption;
   attach itself works. Low priority; also in the Check-back ledger.
 
