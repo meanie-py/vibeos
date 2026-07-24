@@ -1213,7 +1213,7 @@ pub unsafe extern "system" fn MmInitSectionImplementation() -> NTSTATUS {
         core::ptr::addr_of_mut!(MmSectionObjectType),
     );
     if !NT_SUCCESS(Status) {
-        KeBugCheckEx(
+        KeBugCheckEx( // nolint: bugcheck-code (0xDEAD0010 = deliberate diagnostic marker, not a stop code)
             0xDEAD0010,
             Status as _,
             ObjectTypeInitializer.Length as _,

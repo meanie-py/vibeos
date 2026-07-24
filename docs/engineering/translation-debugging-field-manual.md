@@ -9332,3 +9332,69 @@ than catching it downstream.
 `cargo check`. A per-crate grind loop that only ever runs `cargo check` never consults it. Either
 build once before declaring a crate done, or run the audit directly — and when auditing, COUNT
 the arms you examined: an audit that inspects zero arms "passes" vacuously.
+
+### 9.113 (FIXED 2026-07-24) The LLM INVENTED 59 kernel stop codes — `KeBugCheck(SYMBOL)` came back as `KeBugCheck(0xNN)` and ~80% of the numbers were wrong
+
+**Symptom (the one you'd actually hit):** a bugcheck fires and the stop-code line names a
+subsystem nobody has touched. You start the hunt in the wrong place. Worst case in-tree
+before the fix:
+
+| Call site | C original | value the LLM wrote | what that value MEANS |
+|---|---|---|---|
+| `ke/thrdschd.rs` `KiSetAffinityThread` | `INVALID_AFFINITY_SET` 0x3 | 0x48 | `CANCEL_STATE_IN_COMPLETED_IRP` — sends you into the IO manager |
+| `ke/wait.rs` `KeWaitForMultipleObjects` ×2 | `MAXIMUM_WAIT_OBJECTS_EXCEEDED` 0xC | 0x36 | `DEVICE_REFERENCE_COUNT_NOT_ZERO` |
+| `ke/i386/irqobj.rs` | `TRAP_CAUSE_UNKNOWN` 0x12 | 0x7F | `UNEXPECTED_KERNEL_MODE_TRAP` |
+| `ke/i386/usercall.rs` | `IRQL_GT_ZERO_AT_SYSTEM_SERVICE` 0x4A | 0x1A | `MEMORY_MANAGEMENT` — sends you into Mm |
+| `classpnp/class_part_c.rs` | `SCSI_DISK_DRIVER_INTERNAL` 0x2D | 0x52 | `MAILSLOT_FILE_SYSTEM` |
+| `ex/resource.rs` ×2 | `RESOURCE_NOT_OWNED` 0xE3 | 0x03 | `INVALID_AFFINITY_SET` — a *scheduler* code on an ERESOURCE bug |
+| `ex/work.rs` ×3 | `WORKER_THREAD_RETURNED_AT_BAD_IRQL` / `IMPERSONATING_WORKER_THREAD` / `WORKER_INVALID` | 0x6D/0x6E/0x6D | three different SESSION*_INITIALIZATION_FAILED codes |
+| `ex/init.rs` (24 sites) | the whole `*_INITIALIZATION_FAILED` family | shifted as a block | every boot-phase failure names the wrong phase |
+| `po/poshtdwn.rs` | `INTERNAL_POWER_ERROR` 0xA0 | 0xA0000003 | not a stop code at all |
+| `iomgr/file.rs` ×2 | `DRIVER_RETURNED_STATUS_REPARSE_FOR_VOLUME_OPEN` 0xF9 / `INVALID_CANCEL_OF_FILE_OPEN` 0xE8 | 0x126 / 0x12C | undefined codes |
+
+**Scale: 61 of ~115 translated stop codes were wrong.** Sweep the tree and you find the
+same hand everywhere — se, po, cc, fsrtl, config, classpnp, iomgr, ex, ke.
+
+**Why review slides right off it.** The numbers are *plausible*: right magnitude, valid
+hex, and **internally consistent** — `ex/init.rs`'s four session codes were `0x62,0x63,
+0x64,0x65` where the truth is `0x6D,0x6E,0x6F,0x70`. A consecutive run reads as
+"obviously transcribed from a table." It wasn't; the model generated a *fresh* consistent
+family. The subcode arguments (`Status, 1, 0, 0`) were carried over perfectly, which makes
+the line look faithful at a glance — the one token that came from the model's memory
+instead of the source is the one nobody checks.
+
+**Why NOTHING else catches it.** rustc sees a valid `ULONG`. The linker is happy. Every
+smoke test passes — the code is only read when the kernel is already dying, and by then
+nobody is diffing it against ReactOS. It is invisible until it costs you a debugging
+session, and then it costs you the *whole* session because the stop code actively lies.
+
+**How it was found:** not by a crash. During a routine `origin/master` merge I traced the
+open arm64 `0x3 INVALID_AFFINITY_SET` flake back to its raise site and found the Rust
+raising `0x48` — i.e. our kernel *cannot* produce the 0x3 that the registry blamed on it,
+so the real 0x3 comes from somewhere else entirely. Chasing that one discrepancy exposed
+the class. **Lesson: when a bugcheck's stop code doesn't match a raise site you can find
+in the source, doubt the CODE before you doubt the bug report.**
+
+**The fix (deterministic, no LLM):**
+1. `tools/gen_bugcodes.py` generates `ntkrnl_sys::bugcodes` — all 202 codes parsed from
+   `sdk/include/reactos/mc/bugcodes.mc`, cross-verified against the committed
+   `bugcodes.h` and HARD-FAILING if the two disagree.
+2. Every call site passes a named constant: `KeBugCheckEx(bugcodes::INVALID_AFFINITY_SET,
+   ...)`. Fully-qualified paths, so no `use` churn and no collisions.
+3. `tools/scan_bugcheck_codes.py` (wired into `vibeos-cli check`, **empty baseline**)
+   rejects any numeric literal in a `KeBugCheck`/`KeBugCheckEx` first argument. Deliberate
+   non-codes — our `0xDEAD00xx` markers, the `0x1000` PTE tripwire, the `DEFAULT_UNREACHABLE`
+   arms, and the three sites where upstream itself writes `KeBugCheck(0)` — carry
+   `// nolint: bugcheck-code (reason)`.
+
+This is the AGENTS.md substrate rule with a body count: **constants never go through the
+LLM.** Anything with a canonical numeric definition — stop codes, status values, IOCTLs,
+tags — must be generated from the header and referenced by name. The LLM's job is control
+flow, not arithmetic it can't verify.
+
+**Bonus bug found in the same sweep (a different class).** `config/cmsysini.rs`
+`CmpCloseKeyObject` translated C's `ASSERT(FALSE)` — a *debug-only* "this shouldn't happen
+yet" marker — into `KeBugCheck(0)`, an **unconditional fatal bugcheck in every build**,
+with the meaningless stop code 0. A live key body with a notify block would have killed
+the machine where NT just continues. When you see a bare `KeBugCheck` in translated code,
+check whether the C was an `ASSERT`: an assert is `debug_assert!`, never a bugcheck.

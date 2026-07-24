@@ -124,7 +124,7 @@ pub unsafe extern "system" fn KiInsertQueue(
                 );
                 if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
                 KeBugCheckEx(
-                    0x96,
+                    ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
                     Thread as ULONG_PTR,
                     ((0x60u64 << 40) | ((*kt_State(Thread)) as u64) << 8) as ULONG_PTR,
                     Queue as ULONG_PTR,
@@ -284,7 +284,7 @@ pub unsafe extern "system" fn KeRemoveQueue(
 
             if (*QueueEntry).Flink.is_null() || (*QueueEntry).Blink.is_null() {
                 KeBugCheckEx(
-                    0x96,
+                    ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
                     QueueEntry as ULONG_PTR,
                     Queue as ULONG_PTR,
                     0,

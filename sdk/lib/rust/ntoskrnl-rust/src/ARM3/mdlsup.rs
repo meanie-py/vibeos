@@ -568,7 +568,7 @@ pub unsafe extern "system" fn MmMapLockedPagesSpecifyCache(
                 return core::ptr::null_mut();
             }
 
-            KeBugCheckEx(0x0000003F, 0, PageCount as ULONG_PTR, 0, 0);
+            KeBugCheckEx(ntkrnl_sys::bugcodes::NO_MORE_SYSTEM_PTES, 0, PageCount as ULONG_PTR, 0, 0);
         }
 
         Base = (MiPteToAddress(PointerPte) as ULONG_PTR + (*Mdl).ByteOffset as ULONG_PTR) as PVOID;
