@@ -259,7 +259,7 @@ sdk/lib/rust/cmlib-rust/src/hivewrt.rs:341: [UNWRAP] .unwrap() — panics on Err
 sdk/lib/rust/cmlib-rust/src/hivewrt.rs:355: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/cmlib-rust/src/hivewrt.rs:366: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/config-rust/src/cmhook.rs:81: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/config-rust/src/cmsysini.rs:1926: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/config-rust/src/cmsysini.rs:1930: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/config-rust/src/ntapi.rs:1512: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/crt-startup-rust/src/rand_s.rs:63: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/csq-rust/src/csq.rs:115: [UNWRAP] .unwrap() — panics on Err/None in kernel code

@@ -7,7 +7,7 @@ never implemented an ARM64 unwinder), it runs in BOTH kernel and user mode, and
 a wrong decode does not fault -- it silently reloads callee-saved registers from
 the wrong stack slots, which surfaces much later as a garbage PC, a wild SP, or
 inexplicable corruption after a resume. It has been wrong three times already
-(field manual 9.69, 9.92, 9.113) and had no test.
+(field manual 9.69, 9.92, 9.114) and had no test.
 
 This is that test. It does NOT trust either the Rust decoder or a reading of the
 Microsoft spec. For every function in a built ARM64 PE it:

@@ -1845,7 +1845,7 @@ unsafe fn KiIpiStallOnPacketTargets(Prcb: ntkrnl_sys::ddk::PKPRCB, Subcode: ULON
         if guard > 4_000_000_000 {
             // nolint: silent-failure (loud unresponsive-processor bugcheck)
             KeBugCheckEx(
-                0x101,
+                ntkrnl_sys::bugcodes::CLOCK_WATCHDOG_TIMEOUT,
                 Subcode,
                 target_set.load(Ordering::SeqCst) as ULONG_PTR,
                 0,

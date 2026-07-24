@@ -538,7 +538,7 @@ pub unsafe extern "system" fn KeRaiseIrqlToSynchLevel() -> KIRQL {
     unsafe {
         if current_irql > SYNCH_LEVEL as KIRQL {
             KeBugCheckEx(
-                0x09, // IRQL_NOT_GREATER_OR_EQUAL
+                ntkrnl_sys::bugcodes::IRQL_NOT_GREATER_OR_EQUAL,
                 current_irql as usize,
                 SYNCH_LEVEL as usize,
                 0,

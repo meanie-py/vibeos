@@ -1295,7 +1295,7 @@ pub unsafe extern "system" fn IopParseDevice(
                 }
                 if (*OpenPacket).Override != 0 {
                     KeBugCheckEx(
-                        0x00000126,
+                        ntkrnl_sys::bugcodes::DRIVER_RETURNED_STATUS_REPARSE_FOR_VOLUME_OPEN,
                         CurrentDeviceObject as ULONG_PTR,
                         DeviceObject as ULONG_PTR,
                         CompleteName as ULONG_PTR,
@@ -3020,7 +3020,7 @@ pub unsafe extern "system" fn IoCancelFileOpen(
     let FileObject = opaque_ptr(FileObject);
     if (*FileObject).Flags & FO_HANDLE_CREATED != 0 {
         KeBugCheckEx(
-            0x0000012C,
+            ntkrnl_sys::bugcodes::INVALID_CANCEL_OF_FILE_OPEN,
             FileObject as ULONG_PTR,
             DeviceObject as ULONG_PTR,
             0,

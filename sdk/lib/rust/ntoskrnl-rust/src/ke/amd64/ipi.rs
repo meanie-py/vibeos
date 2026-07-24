@@ -181,7 +181,7 @@ unsafe fn KiGcServiceSelf(me: u64) {
                 guard += 1;
                 if guard > 4_000_000_000 {
                     // nolint: silent-failure (loud unresponsive-sender bugcheck)
-                    KeBugCheckEx(0x101, 6, me, 0, 0);
+                    KeBugCheckEx(ntkrnl_sys::bugcodes::CLOCK_WATCHDOG_TIMEOUT, 6, me, 0, 0);
                 }
             }
             let f: PKIPI_BROADCAST_WORKER = core::mem::transmute(fp);
@@ -293,7 +293,7 @@ unsafe fn ki_tb_shootdown(va: u64) {
         guard += 1;
         if guard > 4_000_000_000 {
             // nolint: silent-failure (loud unresponsive-processor bugcheck)
-            KeBugCheckEx(0x101, 1, 0, 0, 0);
+            KeBugCheckEx(ntkrnl_sys::bugcodes::CLOCK_WATCHDOG_TIMEOUT, 1, 0, 0, 0);
         }
     }
 
@@ -329,7 +329,7 @@ unsafe fn ki_tb_shootdown(va: u64) {
             guard += 1;
             if guard > 4_000_000_000 {
                 // nolint: silent-failure (loud unresponsive-processor bugcheck)
-                KeBugCheckEx(0x101, 2, awake, 0, 0);
+                KeBugCheckEx(ntkrnl_sys::bugcodes::CLOCK_WATCHDOG_TIMEOUT, 2, awake, 0, 0);
             }
         }
     }
@@ -383,7 +383,7 @@ pub unsafe extern "system" fn KeIpiGenericCall(
             guard += 1;
             if guard > 4_000_000_000 {
                 // nolint: silent-failure (loud unresponsive-processor bugcheck)
-                KeBugCheckEx(0x101, 3, 0, 0, 0);
+                KeBugCheckEx(ntkrnl_sys::bugcodes::CLOCK_WATCHDOG_TIMEOUT, 3, 0, 0, 0);
             }
         }
 
@@ -408,7 +408,7 @@ pub unsafe extern "system" fn KeIpiGenericCall(
                 guard += 1;
                 if guard > 4_000_000_000 {
                     // nolint: silent-failure (loud unresponsive-processor bugcheck)
-                    KeBugCheckEx(0x101, 4, targets, 0, 0);
+                    KeBugCheckEx(ntkrnl_sys::bugcodes::CLOCK_WATCHDOG_TIMEOUT, 4, targets, 0, 0);
                 }
             }
         }
@@ -425,7 +425,7 @@ pub unsafe extern "system" fn KeIpiGenericCall(
                 guard += 1;
                 if guard > 4_000_000_000 {
                     // nolint: silent-failure (loud unresponsive-processor bugcheck)
-                    KeBugCheckEx(0x101, 5, targets, 0, 0);
+                    KeBugCheckEx(ntkrnl_sys::bugcodes::CLOCK_WATCHDOG_TIMEOUT, 5, targets, 0, 0);
                 }
             }
         }

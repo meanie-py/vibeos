@@ -311,7 +311,7 @@ pub unsafe fn KeInvalidateTlbEntry(address: PVOID) {
         //     all. It is inert only because QEMU's `-cpu cortex-a72` is
         //     ARMv8.0 and has no FEAT_TTL, so bits 47:44 are RES0.
         // Both go live the moment we run on an ARMv8.4+ core or start setting
-        // NonGlobal for per-process ASIDs. Mask unconditionally. See 9.113.
+        // NonGlobal for per-process ASIDs. Mask unconditionally. See 9.114.
         let tlbi_arg = ((address as u64) >> 12) & ((1u64 << 44) - 1);
         core::arch::asm!(
             "dsb ishst",

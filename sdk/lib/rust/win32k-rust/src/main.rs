@@ -233,7 +233,7 @@ unsafe fn UserProcessCreate(Process: PEPROCESS) -> NTSTATUS {
                               _EVENT_TYPE_SynchronizationEvent,
                               0u8);
         } else {
-            KeBugCheck(0);
+            KeBugCheck(0); // nolint: bugcheck-code (faithful: upstream win32k main.c says KeBugCheck(0))
         }
 
         (*w32proc(ppiCurrent)).InputIdleEvent = Event;

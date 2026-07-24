@@ -255,7 +255,7 @@ unsafe fn interpret_codes(
     // flow into the resumed context and surface later as a garbage indirect
     // branch. It was wrong at 1268 of 3945 save_next sites (32%) across
     // ntoskrnl+ntdll. `tools/verify_arm64_unwind.py` checks every save site in
-    // a built ARM64 PE against the disassembled prologue; keep it green. §9.113
+    // a built ARM64 PE against the disassembled prologue; keep it green. §9.114
     //
     // Running SP cursor for the *offset-based* saves is just Context.Sp; the
     // pre-indexed / alloc codes mutate Context.Sp as they go.

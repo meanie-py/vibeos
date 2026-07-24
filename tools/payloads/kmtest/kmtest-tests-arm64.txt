@@ -222,7 +222,7 @@ RtlSplayTree
 #
 # OPEN LEAD, still owed: a garbage PC out of a resume is the exact signature of an unwind
 # that reloaded callee-saved registers from the wrong stack slots, and the save_next decoder
-# was doing precisely that at 32% of its sites — fixed 2026-07-24 (§9.113) but AFTER this
+# was doing precisely that at 32% of its sites — fixed 2026-07-24 (§9.114) but AFTER this
 # triage was written, so the two have never met. Un-quarantining is the test.
 #
 # That test was attempted on 2026-07-24 and could NOT be run to a verdict: TWO sweeps on

@@ -1101,7 +1101,7 @@ pub unsafe extern "system" fn IoAssignResources(
         DeviceNode = IopGetDeviceNode(DeviceObject);
         if !DeviceNode.is_null() && ((*DeviceNode).Flags & 0x400) == 0 {
             KeBugCheckEx(
-                0xCA,
+                ntkrnl_sys::bugcodes::PNP_DETECTED_FATAL_ERROR,
                 0x2,
                 DeviceObject as usize,
                 DriverObject as usize,
