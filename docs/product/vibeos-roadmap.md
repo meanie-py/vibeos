@@ -528,6 +528,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   devmgmt/msconfig/sndrec32/kbswitch stay staged with their winlogon launch held so the 21
   passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
   marker fires long before the ladder runs.
+- **C assertion macros lowered to UB / to a BUGCHECK — FIXED 2026-07-25** (§9.120).
+  Found by a fresh-eyes catalog sweep, not by a crash. `PAGED_CODE()`/`NT_ASSERT()` are
+  DIAGNOSTICS (KdPrint+RtlAssert under DBG, **nothing** in retail) and are never
+  `__assume(0)`; three translations had lowered them to `unreachable_unchecked()` (UB —
+  cdrom, fastfat) or to an unconditional retail `KeBugCheckEx` with an **invented** stop
+  code (classpnp, `0x35u32` = NO_MORE_IRP_STACK_LOCATIONS, unrelated to IRQL). All latent,
+  none had fired. **The §9.113 gate reported a clean 0 the whole time**: its regex required
+  the digits to be followed directly by `,`/`)`, so the Rust type suffix in `0x35u32` hid
+  the site from 2026-06-09 through the entire 07-24 sweep — *a lint that under-matches is
+  indistinguishable from one that passes.* Regex fixed; new gate
+  `tools/scan_assert_to_ub.py` (empty baseline) keeps the class at zero.
 - **arm64 0x1E / `[WAITDEP]` ALL-ONES residual — CLOSED 2026-07-17** (§9.92 item 4). The
   "~2 hits / 2 days" residual was the SAME netstack-TDI wait-block bug as §9.36 on the
   *synchronous*-completion path the 07-08 fix didn't cover (`IofCompleteRequestInner`'s
