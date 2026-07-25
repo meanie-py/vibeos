@@ -1442,7 +1442,14 @@ def _wide_char_unit(token: str) -> int:
 
 
 def _wide_literal_tokens(text: str) -> list[tuple[int, int, str]]:
-    """(start, end, token) for each wide literal, skipping narrow ones and comments."""
+    """(start, end, token) for each wide literal, skipping narrow ones and comments.
+
+    KNOWN GAP: C adjacent-literal concatenation is not folded. `REGSTR_PATH_EXPLORER
+    L"\\\\IconUnderline"` (general.cpp:104) lowers the `L"..."` half to a static and
+    leaves the macro beside it, which is not Rust syntax — it fails loudly at compile
+    rather than silently, but it does need the macro expanded and both halves folded
+    into one static before the pair can be lowered.
+    """
     out = []
     for start, end in _cpp_literal_spans(text):
         token = text[start:end]
