@@ -840,32 +840,104 @@ _KNOWN_UNDEFINED_SYMS = ("FONT_CACHE_PRESENT",)
 # drop the directive lines, lets the SEH parse with balanced braces.
 _KNOWN_DEFINED_TRUE_SYMS = ("DBG",)
 _PP_IF = re.compile(r"^[ \t]*#[ \t]*(if|ifdef|ifndef)\b[ \t]*(.*)$")
+# Bounded on purpose: an unanchored `[A-Za-z_]\w*` also matches the `x600` inside the
+# hex literal `0x600`, so `#if WINVER >= 0x600` had its literal rewritten to `00`.
+_PP_IDENT = re.compile(r"\b[A-Za-z_]\w*")
+
+# `target_compile_definitions(msvcrt_static PRIVATE _MSVCR_VER=0)` and
+# `add_definitions(-D_MSVCR_VER=0)`. Only object-like NAME[=VALUE] forms.
+_CMAKE_TGT_DEFS = re.compile(
+    r"target_compile_definitions\s*\(([^)]*)\)|add_definitions\s*\(([^)]*)\)", re.S
+)
+_CMAKE_DEF_ITEM = re.compile(
+    r"(?:^|\s)-?D?([A-Za-z_]\w*)(?:=(-?(?:0[xX][0-9a-fA-F]+|\d+)))?(?=\s|$)"
+)
+_CMAKE_SCOPE_WORDS = frozenset({"PRIVATE", "PUBLIC", "INTERFACE", "BEFORE"})
 
 
-def _eval_pp_cond(kw: str, expr: str) -> bool | None:
+def cmake_target_defines(source: Path) -> dict[str, str]:
+    """Integer object-like macros the module's own ``CMakeLists.txt`` puts on the compile line.
+
+    This is what makes ``#if _MSVCR_VER >= 80`` decidable. msvcrt builds every target with
+    ``_MSVCR_VER=0``, so those 284 conditionals across the module are not "conditional" at
+    all: the ``>=80/100/110/120/140`` arms are DEAD (translating them pays for code the C
+    never compiles and emits `#[no_mangle]` symbols the DLL does not have) and the ``==0``
+    arms are LIVE (dropping them silently deletes behaviour — the model turned one into
+    `#[cfg(0)]`, which neither compiles nor keeps the code).
+
+    Only integer values are taken, because only those can settle an ``#if``. A macro two
+    targets in the same file define DIFFERENTLY is dropped rather than picked between —
+    the same disagreement rule the typedef authority uses, and for the same reason: we are
+    not the preprocessor and must not pretend to resolve what the build genuinely splits.
+    """
+    cmake = source.parent / "CMakeLists.txt"
+    try:
+        text = cmake.read_text(errors="replace")
+    except OSError:
+        return {}
+    text = re.sub(r"#[^\n]*", "", text)  # CMake comments
+    seen: dict[str, set[str]] = {}
+    for match in _CMAKE_TGT_DEFS.finditer(text):
+        args = match.group(1) or match.group(2) or ""
+        for item in _CMAKE_DEF_ITEM.finditer(args):
+            name, value = item.group(1), item.group(2)
+            if name in _CMAKE_SCOPE_WORDS:
+                continue
+            if value is None:
+                # A bare `-DFOO` is 1 to the preprocessor, but a bare word in
+                # target_compile_definitions' arg list is just as likely the TARGET name.
+                # Only `NAME=VALUE` is unambiguous, so that is all we take.
+                continue
+            seen.setdefault(name, set()).add(value)
+    return {name: next(iter(vals)) for name, vals in seen.items() if len(vals) == 1}
+
+
+def _eval_pp_cond(kw: str, expr: str, defines: dict[str, str] | None = None) -> bool | None:
     """Resolve a preprocessor condition to True/False, or None if unknown."""
     expr = expr.split("//")[0].split("/*")[0].strip()
+    defines = defines or {}
     if kw == "if":
         v = {"0": False, "1": True}.get(expr)
         if v is not None:
             return v
         if expr in _KNOWN_DEFINED_TRUE_SYMS:  # bare `#if DBG` → DBG=1 in the build
             return True
+        # Build-fixed integer macros. EVERY identifier must be known -- INCLUDING the ones
+        # inside `defined(...)`. An expression mentioning one macro we know and one we do
+        # not is undecidable, and guessing the unknown one as 0 (what the .cpp-path
+        # evaluator does) drops live code.
+        #
+        # mathf.c is the case that proves it: `#if defined(__i386__) || (_MSVCR_VER > 0 &&
+        # _MSVCR_VER < 80)`. Exempting `defined()` from this check made `__i386__` fall to
+        # 0, the condition false, and TEN live float functions (sinf/cosf/tanf/...) vanish
+        # from the i386 build. Arch macros must stay verbatim regardless: one Rust file
+        # serves all three arches, so an arch conditional is `#[cfg(target_arch)]`'s job,
+        # never ours to fold away.
+        idents = set(_PP_IDENT.findall(expr)) - {"defined"}
+        if idents and idents <= defines.keys():
+            return _eval_c_const_expr(expr, defines)
         return None
     sym = expr.split()[0] if expr.split() else ""
     if sym in _KNOWN_UNDEFINED_SYMS:
         return kw == "ifndef"  # #ifndef UNDEF → True, #ifdef UNDEF → False
     if sym in _KNOWN_DEFINED_TRUE_SYMS:
         return kw == "ifdef"  # #ifdef DBG → True, #ifndef DBG → False
+    if sym in (defines or {}):
+        return kw == "ifdef"  # the build puts -DSYM on the command line
     return None
 
 
-def _resolve_known_preproc(text: str) -> str:
+def _resolve_known_preproc(text: str, defines: dict[str, str] | None = None) -> str:
     """Resolve body-internal `#if 0`/`#if 1` and `#if(n)def` of known-undefined
     feature macros — keep the live branch, drop the dead branch + the directive
     lines — so tree-sitter parses function bodies that contain them. Leaves any
     condition it cannot resolve verbatim; bails on `#elif`/nesting (handles only
-    a simple block with at most one `#else`)."""
+    a simple block with at most one `#else`).
+
+    *defines* adds the module's build-fixed integer macros (see
+    :func:`cmake_target_defines`), which is what settles msvcrt's `#if _MSVCR_VER`
+    family. Dropping a dead arm here removes its functions from the scan entirely, so
+    they are never extracted, never paid for, and never emitted."""
     lines = text.split("\n")
     out, i, n = [], 0, len(lines)
     while i < n:
@@ -874,7 +946,7 @@ def _resolve_known_preproc(text: str) -> str:
             out.append(lines[i])
             i += 1
             continue
-        cond = _eval_pp_cond(m.group(1), m.group(2))
+        cond = _eval_pp_cond(m.group(1), m.group(2), defines)
         if cond is None:
             out.append(lines[i])
             i += 1
@@ -1021,12 +1093,12 @@ def _eval_c_const_expr(expr: str, symbols: dict[str, str]):
             v = symbols.get(name)
             return f"({v})" if (v not in (None, "")) else "0"
 
-        new = re.sub(r"[A-Za-z_]\w*", _sub, expr)
+        new = _PP_IDENT.sub(_sub, expr)
         if new == expr:
             break
         expr = new
     # any leftover bare identifiers → undefined → 0
-    expr = re.sub(r"[A-Za-z_]\w*", "0", expr)
+    expr = _PP_IDENT.sub("0", expr)
     # strip integer suffixes (0x1FUL, 5L, ...)
     expr = re.sub(r"(\b0[xX][0-9a-fA-F]+|\b\d+)[uUlL]+", r"\1", expr)
     # C → Python operators
@@ -1124,9 +1196,17 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
         # break tree-sitter function extraction (uniata etc.). Macros preserved.
         raw = _resolve_pp_conditionals(path, raw)
         raw = _expand_inline_stdmethod(raw)
+    # The module's own -D flags. Empty for a target whose CMakeLists sets none, in which
+    # case every identifier-bearing `#if` stays undecidable and the scan is byte-identical
+    # to before -- so this cannot quietly change any module it does not apply to.
+    build_defines = cmake_target_defines(path)
     source_text = _normalize_callbacks(
         _blank_memmodel(
-            _strip_sal(_expand_csr_api(_resolve_known_preproc(_strip_known_off_ifdefs(raw))))
+            _strip_sal(
+                _expand_csr_api(
+                    _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                )
+            )
         )
     )
     source = source_text.encode("utf-8")
