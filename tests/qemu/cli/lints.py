@@ -94,12 +94,29 @@ _LOCATION = re.compile(r"^(?P<file>[^\s:]+):\d+(?::\d+)?:")
 # separator between `L` and the digits is optional. Requiring one matched only the
 # narrow findings and left the wide ones drifting.
 _EMBEDDED_LINE = re.compile(r"^(?P<indent>\s*)L\s*\d+\s")
+# Several scanners print a CLASS TAG before the location — `[C_MACRO] path:38: msg`
+# (verify_ffi, 159/160 baseline lines) and `[TYPED_PTR_HEX_ARITH] path:223: msg`
+# (scan_magic_offsets, 46/46). _LOCATION is start-anchored, so it never saw the path and
+# the drift immunity silently did not apply: a ONE-LINE comment added to fastfat's extern
+# block moved an unrelated finding 177 -> 178 and the merge queue rejected the batch as
+# LINT_FAIL (2026-07-25). The tag is semantic — a [C_MACRO] and a [FLEX_ARRAY] at the same
+# site are different findings — so it stays in the key; only line:col is dropped.
+_TAGGED_LOCATION = re.compile(r"^(?P<tags>\s*(?:\[[^\]]+\]\s*)+)(?P<file>[^\s:]+):\d+(?::\d+)?:")
+# verify_signatures puts the location LAST and in parens, after the symbol it is talking
+# about: `[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/.../stubs.rs:210)`.
+_TRAILING_LOCATION = re.compile(r"^(?P<head>.*)\((?P<file>[^\s:()]+):\d+(?::\d+)?\)\s*$")
 
 
 def _finding_key(line: str) -> str:
     m = _LOCATION.match(line)
     if m:
         return f"{m.group('file')}: {line[m.end() :].strip()}"
+    m = _TAGGED_LOCATION.match(line)
+    if m:
+        return f"{m.group('tags').strip()} {m.group('file')}: {line[m.end() :].strip()}"
+    m = _TRAILING_LOCATION.match(line)
+    if m:
+        return f"{m.group('head').strip()} ({m.group('file')})"
     m = _EMBEDDED_LINE.match(line)
     if m:
         return f"{m.group('indent')}L {line[m.end() :].strip()}"
