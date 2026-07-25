@@ -95,3 +95,5 @@ NtRemoveIoCompletion
 NtCreateIoCompletion
 NtOpenIoCompletion
 NtCreateThread
+NtGetContextThread
+NtSetContextThread

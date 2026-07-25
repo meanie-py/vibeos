@@ -1693,6 +1693,40 @@ only a per-thread WoW64 entry can provide. **Losing a thread beats losing the bo
 beats a convincing corpse.** Blast radius was *measured, not assumed*: exactly one call in a full
 boot, from one applet.
 
+### When the payload IS the CPU state, the CPU layer is the marshaller — not the kernel
+`NtGetContextThread`/`NtSetContextThread` carry the same un-widenable `_CONTEXT` as
+`NtCreateThread` above, and flat-thunking them is worse than usual in both directions: Get had
+the 64-bit kernel write a 1232-byte host `CONTEXT` into the guest's 716-byte (`0x2CC`) buffer —
+a >500-byte overflow of guest memory — while Set loaded the *native* thread's register file out
+of i386 fields read at host offsets. Both returned `STATUS_SUCCESS`.
+
+**The reflex is to refuse (as `NtCreateThread` does), and here that would have been wrong.** Ask
+first *who owns the data*: the 64-bit kernel has no notion of the guest's registers, so it was
+never a candidate — but the CPU layer already tracks them, and `BTCpuGet/SetContext` speak
+exactly the i386 `CONTEXT` the syscall carries. `NtContinue` and the callback bridge were already
+using those primitives. So the marshaller is real, and it is short. **Before writing a refusal,
+check whether some *other* layer already holds the state in the guest's own width.**
+
+Two traps, both from the amd64 CPU layer's contract (arm64's layer is FEX, which needs neither):
+- **A saved context can be internally inconsistent.** `wow64cpu.S` saves the live `Esp` — still
+  pointing at the stub's return address — but saves `Eip` as where the guest will *resume*.
+  `Wow64CpuDispatch` reconciles the pair with `Esp += 4` on the normal return, so a snapshot
+  handed to a guest must apply that itself or `Eip` and `Esp` disagree by one stack slot.
+- **Resuming a replaced context bypasses the return-value fixup.** `BTCpuSetContext` flags the
+  context as the state to resume, which skips `Wow64CpuDispatch`'s `Eax = result`, so the
+  syscall's own return value has to be planted by hand.
+
+Partial `ContextFlags` is the third: `BTCpuSetContext` installs the whole `SegGs..SegSs` window
+unconditionally, so a partial set must read the live context first and overlay only the requested
+groups. And since the CPU layer maintains no `FloatSave`/`Dr*`/`ExtendedRegisters`, a request for
+those gets those bits **cleared from the returned `ContextFlags`** — the API's own way to say
+"not supplied" — rather than a buffer that looks filled in and isn't.
+
+Cross-thread stays refused: `BTCpuGet/SetContext` ignore their `Thread` argument and act on the
+caller's CPU area, so answering a cross-thread query would return *the wrong thread's registers*
+— confidently. Identify "is this me" by comparing `TebBaseAddress`, not just by spotting the
+`(HANDLE)-2` pseudo-handle.
+
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a
 subsystem, not a marshaller** — WoW64 GUI needs a per-process 32-bit view of USER shared memory

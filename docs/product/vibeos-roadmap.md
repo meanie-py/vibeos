@@ -561,6 +561,25 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   corrupt thread; marshalling the structs alone would be *worse* (a more convincing corpse,
   still with no CPU-context setup — that needs the per-thread WoW64 entry #64 tracks). Blast
   radius measured: exactly one call in a full amd64 boot, from `osk.exe`.
+- **`NtGetContextThread`/`NtSetContextThread` flat thunks overflow guest memory / load the
+  native register file from i386 fields — MARSHALLED 2026-07-25** (task #63/E12). Same
+  un-widenable `_CONTEXT` as `NtCreateThread`, but the disposition is the opposite one: the
+  kernel could never answer these (it has no notion of guest registers), while the CPU layer
+  already tracks them and `BTCpuGet/SetContext` speak exactly this i386 `CONTEXT` — so they got
+  real marshallers, not a refusal. Get was writing a 1232-byte host `CONTEXT` into the guest's
+  716-byte buffer. Self-thread only (cross-thread refused loudly — it would confidently return
+  the *wrong* thread's registers); control/integer/segments only, with unsupported
+  `ContextFlags` bits cleared in the reply rather than left looking answered.
+  Verified by two new `fault32.exe` rungs — a canary behind the CONTEXT (the standing
+  negative control for the overrun) and a Get→Set Eip redirect, with `0x600D` moved
+  into the landing site so the exit code *only* means the redirect worked.
+  **Owed: arm64 has ZERO functional coverage of this.** The probe guests are staged
+  by `dll/win32/wow64cpu/CMakeLists.txt`, which is `if(ARCH STREQUAL "amd64")`, and
+  fault32's launcher is `#[cfg(target_arch = "x86_64")]` because its rung 1 (hardware
+  fault → guest SEH) is still owed on arm64. Rungs 4-5 are arch-neutral but trapped
+  behind rung 1 in one binary, so closing this means a separate ctx32 guest **plus**
+  an arm64 staging path. It matters because arm64's CPU layer is FEX, not
+  `wow64cpu.S`: exactly the `#ifndef _M_ARM64` branches that go untested.
 - **arm64 warm build can end with a STALE cohab DLL — OPEN, not reproduced** (2026-07-25,
   task #70). A gate's arm64 build shipped `kernel32.dll` linked 331ms *before* its own
   `libkernel32_rust.a`; `artifact-check` caught it and a plain warm rebuild fixed it with no

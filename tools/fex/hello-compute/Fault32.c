@@ -24,6 +24,18 @@
  *      natively (guest kernel32's __except is DUMMY_PSEH — if the print
  *      exception reached guest SEH it would land in OUR frame).
  *
+ *   4. GetThreadContext(GetCurrentThread()) must return the GUEST's registers,
+ *      into a buffer with a canary right behind it. While this syscall was
+ *      flat-thunked the 64-bit kernel wrote its OWN 1232-byte CONTEXT into the
+ *      guest's 716-byte one; the canary is the standing negative control for
+ *      that overrun, and Esp/Eip are range-checked against the live guest stack
+ *      so a host CONTEXT read at i386 offsets cannot pass either.
+ *   5. SetThreadContext(GetCurrentThread()) with CONTEXT_CONTROL must redirect
+ *      Eip — the classic self-directed context set. PASS is reaching the
+ *      landing site; returning from the call at all is the failure.
+ *      Rungs 4-5 exercise the NtGet/SetContextThread marshallers, which route
+ *      through the CPU layer (BTCpuGet/SetContext) rather than the kernel.
+ *
  * Verdict contract: exit 0x600D on PASS; distinct 0xBAFx names the failing
  * rung so serial alone triages ([WINLOGON] fault32.exe exit = 0x...).
  */
@@ -118,9 +130,35 @@ static void PopFrame(FAULT32_EXCREG *Reg)
     __asm__ __volatile__("movl %0, %%fs:0" : : "r"(Reg->Next) : "memory");
 }
 
+/* Rung 5's landing site. Reached ONLY by SetThreadContext redirecting Eip here,
+ * never by a call — so it must not return. Esp on arrival is whatever rung 4's
+ * GetThreadContext reported, which is inside the ntdll32/kernel32 frames BELOW
+ * ours: valid committed stack, so Say/ExitProcess can push there safely. */
+static __attribute__((noinline)) void Fault32Landed(void)
+{
+    Say("[FAULT32] rung5 PASS: SetThreadContext(self) redirected Eip\n");
+    Say("[FAULT32] ALL PASS\n");
+    ExitProcess(0x600D);
+}
+
+/* A CONTEXT with a tripwire immediately behind it. The i386 CONTEXT is 0x2CC
+ * bytes; the host's is 1232 (amd64) / 912 (arm64). While NtGetContextThread was
+ * flat-thunked, the 64-bit kernel wrote ITS CONTEXT into this 716-byte buffer —
+ * a >500-byte overrun straight past the end. This canary is the negative
+ * control for that bug: it fails if the overrun ever comes back. */
+typedef struct _FAULT32_CTXBUF
+{
+    CONTEXT Ctx;
+    ULONG   Canary[8];
+} FAULT32_CTXBUF;
+
+#define FAULT32_CANARY(i) (0xC0DE0000u + (ULONG)(i))
+
 int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 {
     FAULT32_EXCREG Reg; /* on-stack: see PushFrame note */
+    FAULT32_CTXBUF B;
+    ULONG MyEsp, i;
     ULONG Ret;
 
     Say("[FAULT32] start\n");
@@ -154,8 +192,37 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
         { PopFrame(&Reg); Say("[FAULT32] rung3 FAIL: DBG_PRINTEXCEPTION hit guest SEH\n"); ExitProcess(0xBAF5); }
     Say("[FAULT32] rung3 PASS: ODS consumed\n");
 
+    /* Rungs 4-5 need no handler, and rung 5 never returns here to pop it. */
     PopFrame(&Reg);
-    Say("[FAULT32] ALL PASS\n");
-    ExitProcess(0x600D);
+
+    /* -- Rung 4: GetThreadContext(self) -> real guest CONTEXT, no overrun ---- */
+    __asm__ __volatile__("movl %%esp, %0" : "=r"(MyEsp));
+    for (i = 0; i < 8; i++)
+        B.Canary[i] = FAULT32_CANARY(i);
+    B.Ctx.ContextFlags = CONTEXT_FULL; /* control | integer | segments */
+    if (!GetThreadContext(GetCurrentThread(), &B.Ctx))
+        { Say("[FAULT32] rung4 FAIL: GetThreadContext returned FALSE\n"); ExitProcess(0xBAF6); }
+    for (i = 0; i < 8; i++)
+        if (B.Canary[i] != FAULT32_CANARY(i))
+            { Say("[FAULT32] rung4 FAIL: CONTEXT overrun (host-width write)\n"); ExitProcess(0xBAF6); }
+    /* Esp must be a real guest stack address just below ours (the syscall is a
+     * few frames deeper), and Eip a real guest code address. A host CONTEXT
+     * reinterpreted at i386 offsets fails both. */
+    if (B.Ctx.Esp == 0 || B.Ctx.Esp >= MyEsp || (MyEsp - B.Ctx.Esp) > 0x4000)
+        { Say("[FAULT32] rung4 FAIL: implausible Esp\n"); ExitProcess(0xBAF7); }
+    if (B.Ctx.Eip == 0 || B.Ctx.Eip >= 0x80000000u)
+        { Say("[FAULT32] rung4 FAIL: implausible Eip\n"); ExitProcess(0xBAF7); }
+    if ((B.Ctx.ContextFlags & CONTEXT_CONTROL) != CONTEXT_CONTROL)
+        { Say("[FAULT32] rung4 FAIL: control state not reported\n"); ExitProcess(0xBAF7); }
+    Say("[FAULT32] rung4 PASS: guest CONTEXT read back, canary intact\n");
+
+    /* -- Rung 5: SetThreadContext(self) redirects Eip -- never returns -------- */
+    B.Ctx.ContextFlags = CONTEXT_CONTROL;
+    B.Ctx.Eip = (ULONG)(ULONG_PTR)&Fault32Landed;
+    SetThreadContext(GetCurrentThread(), &B.Ctx);
+
+    /* Reaching here at all means the redirect did not take effect. */
+    Say("[FAULT32] rung5 FAIL: SetThreadContext(self) did not redirect Eip\n");
+    ExitProcess(0xBAF8);
     return 0; /* not reached */
 }
