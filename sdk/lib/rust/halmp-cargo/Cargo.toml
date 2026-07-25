@@ -1,0 +1,40 @@
+# Cargo-driven `halmp.dll` link — the SMP HAL twin of `hal-cargo`.
+#
+# HAL sibling of `ntkrnlmp-cargo`, and built for the same reason: the MP flavor
+# ships as its OWN binary so one media carries both, and freeldr selects per
+# boot entry (`/HAL=halmp.dll`). Before this cell existed the HAL's UP/MP flavor
+# was a build-dir-global cmake cache var, so switching cost a reconfigure + full
+# relink (9m25s i386 / 12m22s amd64 warm) — the reason there was no MP gate leg.
+#
+# The link recipe is NOT duplicated here: `build.rs` is three lines over the
+# shared `hal-link` crate, which `hal-cargo` also drives. Only the `Flavor`
+# differs (hal-rust's `smp` feature + the output name). `src/main.rs` is shared
+# with hal-cargo the same way — it is a GC anchor for the HalInitSystem entry
+# plus the loud panic handler, identical for both flavors by construction.
+#
+# `i686-kernel.json` IS a copy (byte-identical to hal-cargo's): cmake's
+# add_cargo_module builds the i386 `--target` path as
+# `${workspace}/${crate}/i686-kernel.json`, so every cell must carry its own —
+# the established pattern across all 42 cargo cells.
+
+[package]
+name = "halmp-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "halmp"
+path = "../hal-cargo/src/main.rs"
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+# hal-rust is `crate-type = ["staticlib"]` — cargo can't link a staticlib
+# as a Rust dep, so build.rs invokes `cargo build -p hal-rust` manually
+# and emits the absolute path of the resulting libhal_rust.a as a link arg.
+# The `smp` feature makes that a DIFFERENT libhal_rust.a from hal-cargo's;
+# reactos-link keys its inner target dir on CARGO_PKG_NAME, so the two builds
+# get separate trees (`target/hal-cargo-hal_rust-rustlib` vs
+# `target/halmp-cargo-hal_rust-rustlib`) and never thrash each other's cache.
+
+[build-dependencies]
+hal-link = { path = "../hal-link" }

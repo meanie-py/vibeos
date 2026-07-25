@@ -118,11 +118,22 @@ def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
 # freeldr announces every image it loads; the kernel is the first one. Used to
 # prove WHICH kernel a `--smp` run actually booted (see _one_boot).
 _KERNEL_LOAD_RE = re.compile(r"\[FLDR\] load \S*[\\/](ntoskrnl\.exe|ntkrnlmp\.exe)", re.IGNORECASE)
+# …and WHICH HAL, from the same stamp. freeldr loads the file named by `/HAL=`
+# but registers it in the loader block as "hal.dll", so this serial line is the
+# only place the on-disk name is visible — nothing downstream can tell you which
+# flavor is running.
+_HAL_LOAD_RE = re.compile(r"\[FLDR\] load \S*[\\/](halmp\.dll|hal\.dll)", re.IGNORECASE)
 
 
 def _booted_kernel(text: str) -> str | None:
     """The kernel image freeldr loaded, from serial. None if not seen yet."""
     m = _KERNEL_LOAD_RE.search(text)
+    return m.group(1).lower() if m else None
+
+
+def _booted_hal(text: str) -> str | None:
+    """The HAL image freeldr loaded, from serial. None if not seen yet."""
+    m = _HAL_LOAD_RE.search(text)
     return m.group(1).lower() if m else None
 
 
@@ -142,6 +153,12 @@ def _smp_check(text: str, arch: str) -> dict | None:
          reached the desktop. test_smoke.py::test_milestones checks this, but the
          CLI smoke fast path does not run pytest, so `smoke --smp N` had no AP
          liveness check at all.
+
+    (2) is checked twice on purpose. The load-time name check fires first and on
+    every arch; the `UP HAL stub called` runtime marker below is the backstop for
+    a HAL that somehow IS the UP flavor under an MP name. Before halmp.dll
+    existed the name carried no information — the flavor was a cmake cache var
+    baked into a file always called hal.dll — so only the runtime marker existed.
     """
     smp = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
     if not smp.isdigit() or int(smp) < 1:
@@ -158,14 +175,27 @@ def _smp_check(text: str, arch: str) -> dict | None:
                 f"fix: ./vibeos-cli build --arch {arch} --smp-kernel",
             ],
         }
+    hal = _booted_hal(text)
+    if hal and hal != "halmp.dll":
+        return {
+            "classification": "SMP_UP_HAL",
+            "salient": [
+                f"--smp {n} loaded {hal}, not halmp.dll — the MP kernel is running "
+                "on the UP HAL, so HalStartNextProcessor is the FALSE stub and "
+                "this boot is silently 1 CPU",
+                "the boot entry is missing /HAL=halmp.dll (livecd.ini "
+                "[LiveCD_SMP], or mkramdisk.sh --smp on arm64)",
+            ],
+        }
     if "UP HAL stub called" in text:
         return {
             "classification": "SMP_UP_HAL",
             "salient": [
-                "MP kernel is running on a UP hal.dll — HalStartNextProcessor is "
+                "MP kernel is running on a UP HAL — HalStartNextProcessor is "
                 "the FALSE stub, so this boot is silently 1 CPU",
-                f"fix: ./vibeos-cli build --arch {arch} --smp-kernel (reconfigures "
-                "VIBEOS_SMP_DEFAULT_BOOT and rebuilds the SMP HAL)",
+                f"loaded HAL was {hal or 'not seen on serial'}, so the UP body is "
+                "wearing an MP name — check hal-rust's `smp` feature reached "
+                "halmp-cargo",
             ],
         }
     # Same requirement test_milestones enforces: one marker per AP, printed by

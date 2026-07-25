@@ -637,8 +637,13 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             "VIBEOS_LOCKDEP": bool(getattr(args, "lockdep", False)),
             "VIBEOS_CSWITCHDEP": bool(getattr(args, "cswitchdep", False)),
             # SMP bring-up media knob: livecd freeldr.ini defaults to the
-            # LiveCD_SMP (ntkrnlmp.exe) entry. Reconciled every build like the
-            # instrumentation flags so a plain build flips it back OFF.
+            # LiveCD_SMP entry (ntkrnlmp.exe + halmp.dll). Reconciled every build
+            # like the instrumentation flags so a plain build flips it back OFF.
+            # Since halmp.dll became its own cell this knob rewrites `DefaultOS=`
+            # and NOTHING ELSE — both kernels and both HALs are on every media
+            # regardless, so flipping it no longer relinks the HAL (it used to
+            # cost 9m25s i386 / 12m22s amd64 warm, which is why there has never
+            # been an MP gate leg).
             "VIBEOS_SMP_DEFAULT_BOOT": bool(getattr(args, "smp_kernel", False)),
             # i386 HAL flavor: APIC (LAPIC/IOAPIC/TPR) is the DEFAULT as of the
             # i386-apic-hal lane landing. The legacy 8259 PIC is the opt-out
@@ -854,9 +859,11 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         ramdisk = repo / "qemu" / "ramdisk.img"
         flag = "--refresh" if ramdisk.is_file() else ""
         cmd = ["bash", str(mk)] + ([flag] if flag else [])
-        # SMP media (smp-bringup-quest.md M5): stage ntkrnlmp.exe + boot-select it
-        # via /KERNEL=ntkrnlmp.exe. Opt-in with --smp-kernel; a plain build omits
-        # --smp so the ramdisk boots UP ntoskrnl.exe (default stays UP).
+        # SMP media (smp-bringup-quest.md M5): stage the MP PAIR (ntkrnlmp.exe +
+        # halmp.dll) and boot-select it via /KERNEL= /HAL=. Opt-in with
+        # --smp-kernel; a plain build omits --smp so the ramdisk boots the UP
+        # pair (default stays UP). arm64 stages a curated set rather than rolling
+        # a full CD, so the HAL twin has to be named here as well as built.
         if getattr(args, "smp_kernel", False):
             cmd.append("--smp")
         cp = run.run(cmd, cwd=repo, stage="mkramdisk", timeout=900)
