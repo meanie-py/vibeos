@@ -771,10 +771,18 @@ would have fired for whoever followed the documented loop:
    `EnumPickIconResourceProc`, **3 of the 4 sealed "calls" were not calls**. Diagnosis rule:
    *two different models failing the same function identically is a tool bug, not model
    capability* — deepseek and sonnet both failed iconcache's `SIC_IconAppend`/`SIC_Initialize`,
-   which is what redirected the search from the model to the seal. The `goto`-cleanup shape is a
-   second, independent trigger (Rust has no `goto`, so restructuring duplicates the cleanup block
-   and its tokens fire "not exactly once"). Note the blast radius: a rejected worker means the TU
-   assembles **no output at all**, so one bad function costs the whole file until re-run.
+   which is what redirected the search from the model to the seal.
+   **The general statement: the envelope assumes the Rust lowering preserves a 1:1 call-site
+   correspondence with the C, and every C++ construct that must be RESTRUCTURED breaks that
+   assumption.** Three independent triggers seen in one batch, so expect more: function-like
+   macros and functional-style casts (above); `goto`-cleanup (Rust has no `goto`, so the cleanup
+   block is duplicated and its tokens fire "not exactly once"); and ATL smart-pointer bodies
+   (`CComPtr<IShellFolder>`, where `BrFolder_NewFolder` lost **all 15** tokens at once). The
+   FACT envelope fails the same way — `BrFolder_OnContextMenu`/`OnInitDialog` dropped constants
+   for the same reason — so this is not call-specific. Note the blast radius: a rejected worker
+   means the TU assembles **no output at all**, so one bad function costs the whole file until
+   re-run. In this batch that was **5 of 11 completed TUs** (dialogs, iconcache, shlfolder,
+   drive, brfolder) — the dominant cost of the wave, not a tail case.
    `_EXCLUDED` is a hand-maintained denylist and cannot scale to the SDK's macro surface; the fix
    is a positive authority test (seal only a callee provably a real function). **Three candidate
    authorities were tested and all three are dead ends** — check before reaching for them again:
