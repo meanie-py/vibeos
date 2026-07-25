@@ -137,7 +137,13 @@ def walk_i386_sources(crate_src: str):
     """Every .rs in the crate that is actually compiled on i386, as (path, text).
 
     Shared by the scanner and `--fix` on purpose: a fixer that walked a different file set
-    than the scanner would either miss findings or edit files the gate never looks at."""
+    than the scanner would either miss findings or edit files the gate never looks at.
+
+    An `//! ORPHAN-BY-DESIGN:` file is not in any `mod` chain, so nothing compiles it and
+    its definitions cannot fold — the hazard this lint reports ("i386 UB-fold risk") does
+    not exist until the file is wired, and it re-fires the moment it is. Honouring the same
+    banner `scan_orphan_modules` defines keeps a parked translation from reporting a
+    conflict against the live declaration it is going to REPLACE at wiring time."""
     for root, dirs, files in os.walk(crate_src):
         # skip build dirs AND per-arch non-i386 source dirs (ke/arm64/, amd64/, …)
         dirs[:] = [d for d in dirs if d != "target" and not ARCH_FILE_RE.fullmatch(d)]
@@ -148,9 +154,12 @@ def walk_i386_sources(crate_src: str):
             path = os.path.join(root, fn)
             try:
                 with open(path, encoding="utf-8", errors="replace") as fh:
-                    yield path, fh.read()
+                    src = fh.read()
             except OSError:
                 continue
+            if "ORPHAN-BY-DESIGN:" in src[:2048]:
+                continue
+            yield path, src
 
 
 def scan_crate(crate_src: str) -> list[str]:

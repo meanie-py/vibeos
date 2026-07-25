@@ -107,6 +107,13 @@ pub mod folders;
 pub mod propsheet;
 pub mod systray;
 
+// Wave 5 is TRANSLATED AND PARKED, NOT YET WIRED. The assembled modules live at
+// shell32/*.rs and dialogs/*.rs; they still need substrate closure (a few hundred
+// SDK externs, constants and resource IDs) before they can compile. Wiring them in
+// this state would not expose a regression, it would introduce a build break for
+// every lane on the fleet, so they stay out of the crate graph until closure lands.
+// Do NOT delete these files to "clean up" — they are paid artifacts.
+
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     panic_common::panic_common(env!("CARGO_PKG_NAME"), info)

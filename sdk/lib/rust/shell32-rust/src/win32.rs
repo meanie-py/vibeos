@@ -1090,3 +1090,66 @@ impl IShellPropSheetExt {
 extern "C" {
     pub static IID_IShellPropSheetExt: IID;
 }
+
+// ---------------------------------------------------------------------------
+// OLE data-transfer substrate (objidl.h / ole2.h), and the HIDA clipboard
+// format the shell uses to move PIDL arrays through an IDataObject.
+// ---------------------------------------------------------------------------
+
+// STGMEDIUM/FORMATETC come from com-sys via types.rs; these are the remaining
+// spellings that substrate needs and shell32-rust had only as module-local copies.
+pub use crate::shell_item_array::CIDA;
+pub use com_sys::{CLIPFORMAT, DVTARGETDEVICE};
+
+/// shtypes.h. shellcom.rs carries only the non-U flavor.
+pub type PCUIDLIST_ABSOLUTE = LPCITEMIDLIST;
+
+/// objidl.h `TYMED`.
+pub const TYMED_NULL: DWORD = 0;
+pub const TYMED_HGLOBAL: DWORD = 1;
+/// wtypes.h `DVASPECT`.
+pub const DVASPECT_CONTENT: DWORD = 1;
+/// winerror.h.
+pub const E_UNEXPECTED: HRESULT = 0x8000FFFFu32 as HRESULT;
+
+extern "system" {
+    pub fn RegisterClipboardFormatW(lpszFormat: LPCWSTR) -> UINT;
+    pub fn GlobalLock(hMem: HGLOBAL) -> *mut c_void;
+    pub fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
+    pub fn ReleaseStgMedium(pmedium: *mut STGMEDIUM);
+}
+
+/// shlobj.h `CFSTR_SHELLIDLISTW` — "Shell IDList Array", registered lazily.
+///
+/// C++ caches this in `g_cfHIDA`, a `DECLSPEC_SELECTANY` global in shellutils.h,
+/// so every TU in a module shares one registration. This is that cache. A racing
+/// double-register is harmless: RegisterClipboardFormatW is idempotent per name
+/// and returns the same atom, so the worst case is one redundant call.
+static mut G_CF_HIDA: CLIPFORMAT = 0;
+
+pub unsafe fn hida_clipformat() -> CLIPFORMAT {
+    if G_CF_HIDA == 0 {
+        // L"Shell IDList Array"
+        const NAME: [WCHAR; 19] = [
+            0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0020, 0x0049, 0x0044, 0x004C, 0x0069, 0x0073,
+            0x0074, 0x0020, 0x0041, 0x0072, 0x0072, 0x0061, 0x0079, 0x0000,
+        ];
+        G_CF_HIDA = RegisterClipboardFormatW(NAME.as_ptr()) as CLIPFORMAT;
+    }
+    G_CF_HIDA
+}
+
+/// shlobj.h `HIDA_GetPIDLFolder` / `HIDA_GetPIDLItem` — static inlines with no
+/// exported symbol, so they are translated rather than imported.
+#[inline]
+pub unsafe fn HIDA_GetPIDLFolder(pida: *const CIDA) -> PCUIDLIST_ABSOLUTE {
+    (pida as *const u8).add((*pida).aoffset[0] as usize) as PCUIDLIST_ABSOLUTE
+}
+
+#[inline]
+pub unsafe fn HIDA_GetPIDLItem(pida: *const CIDA, i: usize) -> PCUIDLIST_RELATIVE {
+    // aoffset is a C flexible array member modelled as [UINT; 1], so index it through
+    // a raw pointer: `[i + 1]` bounds-check-panics for every i >= 0.
+    let aoffset = (*pida).aoffset.as_ptr();
+    (pida as *const u8).add(*aoffset.add(i + 1) as usize) as PCUIDLIST_RELATIVE
+}

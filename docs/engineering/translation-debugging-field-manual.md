@@ -796,6 +796,43 @@ would have fired for whoever followed the documented loop:
 3. **The resume cache banked un-unsealed Rust.** It guarded empty output but not sealed output, so
    a failed unseal cached its tokens and replayed them **for $0 forever**. Now refused on `put`
    and a MISS on `get`, so a poisoned cache self-heals.
+4. **Not every call-shaped thing lowers to a call.** Same root as (2), new source. The seal set is
+   `dep.callees`, and the call graph is lexical, so a **function-like macro** (`LOWORD`,
+   `IS_INTRESOURCE`) and a **C++ functional-style cast** (`PPICK_ICON_CONTEXT(lParam)`) enter it as
+   callees. Neither survives lowering — a macro expands inline, a cast becomes `as` — so the
+   envelope demands a call that structurally cannot exist and the worker is rejected. In
+   `EnumPickIconResourceProc`, **3 of the 4 sealed "calls" were not calls**. Diagnosis rule:
+   *two different models failing the same function identically is a tool bug, not model
+   capability* — deepseek and sonnet both failed iconcache's `SIC_IconAppend`/`SIC_Initialize`,
+   which is what redirected the search from the model to the seal.
+   **The general statement: the envelope assumes the Rust lowering preserves a 1:1 call-site
+   correspondence with the C, and every C++ construct that must be RESTRUCTURED breaks that
+   assumption.** Three independent triggers seen in one batch, so expect more: function-like
+   macros and functional-style casts (above); `goto`-cleanup (Rust has no `goto`, so the cleanup
+   block is duplicated and its tokens fire "not exactly once"); and ATL smart-pointer bodies
+   (`CComPtr<IShellFolder>`, where `BrFolder_NewFolder` lost **all 15** tokens at once). The
+   FACT envelope fails the same way — `BrFolder_OnContextMenu`/`OnInitDialog` dropped constants
+   for the same reason — so this is not call-specific. Note the blast radius: a rejected worker
+   means the TU assembles **no output at all**, so one bad function costs the whole file until
+   re-run. In this batch that was **7 of 12 completed TUs** (shlexec, shlfileop, dialogs,
+   brfolder, iconcache, drive, shlfolder) — the dominant cost of the wave, not a tail case.
+   `_EXCLUDED` is a hand-maintained denylist and cannot scale to the SDK's macro surface; the fix
+   is a positive authority test (seal only a callee provably a real function). **Three candidate
+   authorities were tested and all three are dead ends** — check before reaching for them again:
+   `catalog.functions` is target-internal (247 entries for shell32, holding neither the macros nor
+   `SendMessageW`/`HeapAlloc`, so it would suppress sealing entirely); `scan.defines` is
+   this-file-only and never sees an SDK macro; and `resolver.unresolved` lumps macros and real
+   externs together (282 entries, `LOWORD` and `SendMessageW` side by side). The authority has to
+   come from the **preprocessor's include closure** — a function-like `#define NAME(` visible to
+   the TU — which is the machinery `profile_derive` already builds for the bindgen island.
+   Also note before "just dropping `--seal-calls`" on an affected TU: the contract text is hashed
+   into the resume-cache key, so removing the flag MISSES every banked entry and re-pays the
+   whole file. **The same applies to FIXING this** — the contract lists the token set
+   (`Call tokens (N): …`), so any change to what gets sealed rewrites it and invalidates every
+   banked entry for the TU. Budget the repair as a full re-translate of each affected file, not
+   as "re-pay only the rejects": one shell32 wave left **226 accepted functions** banked behind
+   34 rejects, and they come back at full price, not free. shlfileop is the sharpest case —
+   69 of 73 functions translated cleanly and 4 rejects voided the file.
 
 > **The cache-key trap while fixing this: do NOT reword the contract text.** It is hashed into the
 > resume-cache key, so rewording invalidates every banked sealed entry and **re-charges for
@@ -1327,6 +1364,19 @@ blocker is almost never the shape — it is the missing authority. Read with its
 `[§9.120]`, where a regex **MISS** was mistaken for proof a class was absent (`0` reported for
 six weeks). **A pattern match is evidence about TEXT, never about SEMANTICS, in either
 direction. Demand a positive AND a negative control before believing a count.**
+
+A third direction of the same class: a regex can match a span that **is not a token at all**,
+because it cannot see what preceded it. Symptom — `translate --free-functions shlexec.cpp`
+refused the whole TU with `unsupported C wide character literal L':` quoting ~1,800 lines, and
+the literal it named does not exist in the file. Cause — `L'(?:\\.|[^'\\])+'` matched the
+trailing `L'` of `case 'L':` (a NARROW literal whose closing quote follows the letter L) and ran
+to the next apostrophe, which was in a comment reading `PIDL's`. Fix — scan, don't match:
+walk the source tracking comments and quoting and fold an `L` prefix into the span it belongs
+to, so `'L'` starts at the quote and `L':'` one character earlier. **Lexical boundaries are the
+one thing a regex structurally cannot find, because a token's start is defined by everything
+before it.** The same file had all three variants that break the naive pattern — a wide literal
+inside a comment, `L'` inside a narrow string, and the `case 'L':` — so treat one occurrence as
+proof the others are present too.
 
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the
