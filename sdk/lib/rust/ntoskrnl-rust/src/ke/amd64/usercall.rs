@@ -2,10 +2,12 @@ use crate::ke::ke_defs::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 
+use ntkrnl_sys::ps::PsGetCurrentProcess;
+
 use ntkrnl_sys::ddk::{
     _KTRAP_FRAME, PKTRAP_FRAME, PKEXCEPTION_FRAME, PKNORMAL_ROUTINE, PCONTEXT,
     PTEB, PKTHREAD, PKCALLOUT_FRAME, PEXCEPTION_REGISTRATION_RECORD,
-    PKIPCR, EXCEPTION_RECORD,
+    PKIPCR, EXCEPTION_RECORD, _EPROCESS,
     PGDI_BATCHFLUSH_ROUTINE,
     KeTrapFrameToContext, KiDispatchException, MmGrowKernelStack,
     KiGetUserModeStackAddress, KeGetPcr,
@@ -99,10 +101,27 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     Context = core::ptr::addr_of_mut!((*ApcFrame).Context);
 
     let mut exception_record: EXCEPTION_RECORD = core::mem::zeroed();
-    let mut exception_occurred = false;
+    // The C wraps everything below in `_SEH2_TRY`, and its `_SEH2_EXCEPT` runs
+    // `KiDispatchException`. The original translation kept the shape — a flag
+    // plus the `if` — but the `__try` became a BARE BLOCK and the handler body
+    // was dropped, so the flag was never assigned, the recovery path was dead
+    // code, and under DUMMY_PSEH the `ProbeForWrite` raise escaped as an
+    // unhandled kernel exception → BUGCHECK 0x1E (task #67).
+    //
+    // Fixed per dummy-pseh-verdict.md Tier 1: validate FIRST with the
+    // Result-returning probe, then run exactly what the C `__except` ran.
+    let mut exception_status: NTSTATUS = 0;
 
-    {
-        ProbeForWrite(ApcFrame as PVOID, core::mem::size_of::<UAPC_FRAME>(), 16u32);
+    'try_: {
+        if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
+            ApcFrame as *const core::ffi::c_void,
+            core::mem::size_of::<UAPC_FRAME>(),
+            16,
+            1i8,
+        ) {
+            exception_status = e;
+            break 'try_;
+        }
 
         (*Context).ContextFlags = CONTEXT_FULL | CONTEXT_DEBUG_REGISTERS;
         KeTrapFrameToContext(TrapFrame, ExceptionFrame, Context);
@@ -116,7 +135,22 @@ pub unsafe extern "system" fn KiInitializeUserApc(
         (*ApcFrame).MachineFrame.Rsp = (*TrapFrame).Rsp;
     }
 
-    if exception_occurred {
+    if exception_status != 0 {
+        // Fail LOUD. The observed trigger is `TrapFrame->Rsp == 0`, which makes
+        // ApcFrame `-sizeof(UAPC_FRAME)` — reporting Rsp keeps that root
+        // question visible instead of letting the recovery hide it.
+        let proc_ = PsGetCurrentProcess() as *mut _EPROCESS;
+        crate::dbg_print!(
+            b"[KI-APC] user APC frame REJECTED: image=%s Rsp=%p ApcFrame=%p size=0x%lx status=0x%lx\n\0",
+            (*proc_).ImageFileName.as_ptr(),
+            (*TrapFrame).Rsp as PVOID,
+            ApcFrame as PVOID,
+            core::mem::size_of::<UAPC_FRAME>() as u32,
+            exception_status as u32,
+        );
+        exception_record.ExceptionCode = exception_status;
+        exception_record.ExceptionFlags = 0;
+        exception_record.NumberParameters = 0;
         exception_record.ExceptionAddress = (*TrapFrame).Rip as PVOID;
         KiDispatchException(
             &mut exception_record,
