@@ -28,6 +28,7 @@ from . import (
     semdiff,
     substrate_closure,
     switch_extract,
+    trivial_c,
     user_lock_inventory,
 )
 from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
@@ -47,11 +48,11 @@ from .config import (
     BATCH_DISCOUNT,
     DEFAULT_MODELS,
     HAL_DIR,
-    RUST_DIR,
     MODEL_PRICING,
     NTOSKRNL_DIR,
     OUTPUT_CRATE,
     REACTOS_ROOT,
+    RUST_DIR,
     TARGETS,
     cost_usd,
     detect_target,
@@ -1918,6 +1919,16 @@ def cmd_translate(args):
                 if lowered is not None:
                     translated[dep.name] = lowered
                     deterministic_workers.add(dep.name)
+        else:
+            # Plain C: deterministically lower the trivial band for $0. Each lowering
+            # re-verifies itself against an INDEPENDENT tree-sitter oracle (control-free
+            # on both sides, identical ordered identifier sequence, equal constant
+            # multisets) and RAISES on disagreement rather than shipping — nobody reviews
+            # a free translation, so it has to prove itself. Anything it cannot prove
+            # returns None and is paid for as normal.
+            for name, lowering in trivial_c.lower_trivial_c_functions(sorted_deps).items():
+                translated[name] = lowering.rust
+                deterministic_workers.add(name)
         for dep in sorted_deps:
             if dep.name in deterministic_workers:
                 _record_outcome(dep, "deterministic", route="trivial_worker")
