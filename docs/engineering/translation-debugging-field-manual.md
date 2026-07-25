@@ -9398,3 +9398,84 @@ yet" marker — into `KeBugCheck(0)`, an **unconditional fatal bugcheck in every
 with the meaningless stop code 0. A live key body with a notify block would have killed
 the machine where NT just continues. When you see a bare `KeBugCheck` in translated code,
 check whether the C was an `ASSERT`: an assert is `debug_assert!`, never a bugcheck.
+
+### 9.114 (2026-07-24) Fact/call SEALING now works for plain C — the general prevention for §9.113, and it had been gated off for no technical reason
+
+§9.113 fixed ONE constant family (stop codes) after the fact. Sealing prevents the whole
+class before the model ever sees a value.
+
+**The gate.** `rustconv/__main__.py` carried
+`raise CppComError("--seal-facts/--seal-calls currently require shell32 --cpp-com")`.
+That was pure caution from the C++/COM spike, not a technical limit: `fact_seal.py` is a
+*lexical* transform (mask comments/literals, replace value occurrences with opaque tokens,
+restore exact spellings after). Dropped onto plain C untouched it already sealed
+`STATUS_SUCCESS`/`0x200`/`MAX_PACKET_SIZE` correctly and already left `NTSTATUS`, `PVOID`,
+`KIRQL`, `PDEVICE_OBJECT` and even `ULONG` inside `sizeof()` alone.
+
+**What that gate cost.** The ledger (`tools/rustconv/.responses/outcomes.jsonl`) records
+`seal_facts=False` on **all 1,076** entries of the winsock + Tier-2 service program — i.e.
+**13,503 unprotected symbolic-constant occurrences and 7,002 unprotected call
+occurrences** shipped. Two of the semantic bugs found by hand in that batch
+(`SERVICE_STOP_PENDING` written as the literal `4`, which is actually `RUNNING`; and the
+catch-all `match` bindings of §9.112) are exactly what sealing makes impossible.
+
+**Three value families, and only the first was covered.** `_SYMBOL_RE` is `[A-Z][A-Z0-9_]+`
+— ALL_CAPS only:
+1. ALL_CAPS `#define`s — already sealed.
+2. **CamelCase enum members** — `NonPagedPool`, `PagedPool`, `KernelMode`, `Executive`,
+   `NotificationEvent`, `MmNonCached`, the whole `Ndis*` vocabulary. 357 occurrences /
+   119 distinct names in the network DLLs + drivers. Picking the wrong sibling of a
+   `POOL_TYPE` or `KPROCESSOR_MODE` is invisible to rustc.
+3. **Mixed-case object-like `#define`s** — `NERR_Success`, `CmResourceTypePort`.
+
+Families 2 and 3 come from generated ground truth (`tools/rustconv/gen_enum_constants.py`
+→ `rustconv/ddk_enum_constants.py`, 6,391 names from 725 headers), staleness-gated in
+`vibeos-cli check-tooling`. Same pattern as `gen_bugcodes.py`: one definition site, derived
+mechanically, auditable.
+
+**The classifier that makes family 3 safe.** A mixed-case `#define` is sealed ONLY if its
+replacement text is a bare numeric literal — provably a value. Measured on the target
+corpus that selects 41 real constants and declines 180 occurrences that would have been
+**actively wrong** to seal:
+- `RpcTryExcept` / `RpcEndExcept` (114 occurrences) — SEH **control-flow** macros. Sealing
+  these mangles the try/except structure itself.
+- `LDAPControl`, `LDAPMod`, `IUnknown` — `#define`d **type** names.
+
+Without the numeric-RHS test, a naive "seal every known #define name" allowlist corrupts
+bodies. Name-shape heuristics are not enough; classify by what the macro EXPANDS TO.
+
+**Two design rules worth keeping (both learned by getting them wrong):**
+
+1. **Never seal STORAGE.** The contract tells the model a token is an opaque value to
+   reproduce; if it is really a local, parameter, or struct field, the model can no longer
+   read or assign it. So the C dialect refuses to seal a name declared in the body, a name
+   after `.`/`->` (28 real field accesses in the corpus, e.g. `Adapter->NdisReserved`),
+   or a name followed by `(`. Generic words that are *both* a real enum member and an
+   obvious variable (`Info`, `Status`, `Length`, `Buffer`, `Type`, …) are excluded from the
+   generated set by policy. A missed seal costs one paid call; a sealed variable corrupts
+   the body.
+2. **Over-seal a type, never under-seal a value.** An early revision excluded every
+   `sizeof(...)` operand to suppress type-name noise (~2.9% of sealed symbols were type
+   names). That silently un-protected `sizeof(UNICODE_NULL)` — a real ReactOS idiom where
+   the operand IS a value. The guard was deleted: restoring a type literally still yields
+   valid Rust (`size_of::<NDIS_REQUEST>()`), so the noise is *benign* while the missed
+   value is *harmful*. Net effect after removal: **+357 protected, −0 lost.**
+
+**Restoring a C spelling is only safe because bindgen matches it.** `pub const
+NonPagedPool: POOL_TYPE = 0;` — verified against ~4,000 existing usages in
+`sdk/lib/rust`. If that ever stops being true, unsealing produces uncompilable Rust
+(loud), not wrong values (silent).
+
+**The `cpp` dialect is FROZEN.** `seal_facts(dialect=...)` defaults to `"cpp"` and must stay
+byte-identical: the response cache keys on the sealed prompt, so *any* change renumbers
+tokens and silently re-bills every cached PAID shell32 worker. Proven with a
+committed-vs-working comparison over 129 real files, 0 divergences. Add protections to the
+`"c"` dialect only. (The cache is otherwise already safe here — `ResponseCache.get` hashes
+the contract text and treats a changed contract as a MISS, so a sealed run cannot replay
+unsealed output.)
+
+**Recipe:** pass `--seal-facts --seal-calls` to `rustconv translate` for any plain-C module.
+Dialect selection is automatic (`--cpp-com` → `cpp`, otherwise `c`). Verify a prompt with
+`--dry-run --prompt` before spending: the envelope sections list the token counts, and a
+`MAX_COMPUTERNAME_LENGTH + 1` array bound should appear as TWO tokens — that is what stops
+the model folding `38 + 1` into `39`.

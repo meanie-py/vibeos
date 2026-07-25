@@ -1423,10 +1423,15 @@ def cmd_translate(args):
     rustconv_target = resolve_target(args, target_path)
     print(f"Target: {rustconv_target.name}", file=sys.stderr)
 
-    if (getattr(args, "seal_facts", False) or getattr(args, "seal_calls", False)) and not (
-        rustconv_target.name == "shell32" and getattr(args, "cpp_com", False)
-    ):
-        raise CppComError("--seal-facts/--seal-calls currently require shell32 --cpp-com")
+    # Sealing dialect. shell32/--cpp-com keeps the FROZEN "cpp" dialect so its cached
+    # paid workers stay valid; everything else is plain C and gets the "c" dialect,
+    # which additionally protects CamelCase DDK enum constants (NonPagedPool,
+    # KernelMode, Executive, the Ndis* vocabulary) that the ALL_CAPS matcher misses.
+    # Sealing used to be gated to shell32 --cpp-com purely out of caution; the
+    # transform is lexical and language-neutral. Leaving it off for C shipped 13,503
+    # unprotected constant occurrences, the same class as the 61 invented kernel
+    # bugcheck codes (field manual §9.113).
+    seal_dialect = "cpp" if getattr(args, "cpp_com", False) else "c"
 
     cpp_com_cls = None
     cpp_com_interfaces = []
@@ -1710,15 +1715,14 @@ def cmd_translate(args):
             require_supported_worker_raii(sorted_deps, provided=set(local_raii_impls))
             cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
 
-        fact_seal_enabled = bool(
-            rustconv_target.name == "shell32" and getattr(args, "seal_facts", False)
-        )
-        call_seal_enabled = bool(
-            rustconv_target.name == "shell32" and getattr(args, "seal_calls", False)
-        )
+        fact_seal_enabled = bool(getattr(args, "seal_facts", False))
+        call_seal_enabled = bool(getattr(args, "seal_calls", False))
         model_bodies = {dep.name: strip_debug_statements(dep.body_text) for dep in sorted_deps}
         fact_seals = (
-            {dep.name: prepare_sealed_source(model_bodies[dep.name]) for dep in sorted_deps}
+            {
+                dep.name: prepare_sealed_source(model_bodies[dep.name], dialect=seal_dialect)
+                for dep in sorted_deps
+            }
             if fact_seal_enabled
             else {}
         )
@@ -3375,17 +3379,19 @@ def main():
         "--seal-facts",
         dest="seal_facts",
         action="store_true",
-        help="EXPERIMENTAL shell32 COM mode: lower HRESULT predicates and replace each "
-        "constant occurrence with an audited opaque token during the paid call. Uses a "
-        "separate response-cache namespace.",
+        help="Replace each constant occurrence with an audited opaque token during the "
+        "paid call, so the model never copies a value (and lower HRESULT predicates). "
+        "Works for plain C and for shell32 --cpp-com; the C dialect additionally protects "
+        "CamelCase DDK enum constants. Strongly recommended: leaving this off is how 61 "
+        "invented kernel bugcheck codes shipped (field manual 9.113).",
     )
     p.add_argument(
         "--seal-calls",
         dest="seal_calls",
         action="store_true",
-        help="EXPERIMENTAL shell32 COM mode: replace each known runtime callee occurrence "
-        "with an audited opaque token during the paid call. Uses a separate response-cache "
-        "namespace.",
+        help="Replace each known runtime callee occurrence with an audited opaque token "
+        "during the paid call, so a dropped, duplicated, or invented call fails loudly "
+        "instead of silently. Works for plain C and for shell32 --cpp-com.",
     )
     p.add_argument(
         "--sdk-header",
