@@ -64,6 +64,17 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
+**Wave 15 (2026-07-25) opens a SECOND track: whole-C-file rustconv translation.** Waves 1–14
+assemble a family at a time from `cnt-rust`'s difftest-pinned engines; wave 15 translates a
+`.c` outright into `msvcrt-crt-rust/src/msvcrt/<stem>.rs`, kept 1:1 with its source. First
+file: **`mbcs.c` — 3,624 lines, 175 `#[no_mangle]` exports, $0.95**, `cargo check` clean with
+zero warnings on all three arches. The two tracks coexist because the cohab rule is unchanged:
+whatever Rust defines wins by lld first-match and the C copy goes dead, so a partial file is a
+safe state and no CMake edit is needed. The crate gained `src/prelude.rs` (the standard
+`*-rust` import surface — every `extern` transcribed from a named C header, not inferred).
+**Export total not yet re-measured against the DLL** — do that from the export table as waves
+1–13 did, not by adding 175 to 240.
+
 **240 Rust-defined `msvcrt.dll` exports on all three arches** as of 2026-07-14 (waves 1–13: 209 hand-flipped wrappers; wave 14m: +45 libm exports assembled from cnt-rust's `cabi/math.rs` via the `cabi-math` feature — engine grading lives in cnt-difftest; wave 14a decided printf is a PORT and wave 14b DELIVERED it: printf.h's engine — 2,312 lines, bignum floats over the shared bnum.rs — graded 142 narrow + 30 wide rows byte-identical vs the genuine pf_printf_a; the DLL's stream-printf family (printf/fprintf/vfprintf) runs the Rust engine now, the sprintf-family shells await wave 14c's varargs trampolines. See the lane plan + field manual §9.83)
 (waves 1–13). Verified by parsing the DLL's export table: every flip lands in the Rust cluster,
 every deliberate refusal is still C (`memmove`, `strtok`, `_ecvt`/`_fcvt`/`_gcvt` — the

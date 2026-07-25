@@ -157,6 +157,26 @@ change stops the caller being dead-stripped.
 - **Before writing `extern { fn Foo }`, confirm `Foo` is a real out-of-line symbol** (`nm`, or
   grep for a definition), not a header macro.
 
+### A typedef that is ALREADY a pointer, given a second star
+The star lives in a header, so the model sees `_locale_t locale` as a bare type name and adds
+the indirection the parameter appears to lack — `locale: *mut _locale_t`, i.e. a
+`**localeinfo_struct` where the caller passes a `*localeinfo_struct`. On msvcrt's `mbcs.c` it
+did this in **73 of 77** locale-taking signatures.
+
+**The error is invisible at the ABI.** Both spellings are one machine pointer, so the signature
+links and the call passes identical bits; only the body's dereferences break, and only *some*
+of those are loud. It was caught here solely because `(*locale).mbcinfo` failed to typecheck —
+put the same mistake at a parameter the body merely forwards and it compiles, links, ships, and
+reads one indirection too deep forever. The same shape appears on **locals**
+(`let mbcinfo: *mut pthreadmbcinfo`), usually with a `.cast()` bolted on to make it build.
+
+**Fix:** `rustconv`'s `signature_fidelity` pass strips the invented star wherever the C declares
+the parameter with no `*`, `typedefs.py` proves that name a plain pointer from the TU's own
+include closure, and the Rust is exactly one star on *that same name*. Nothing else is touched:
+the same file had 46 parameters where the model's spelling merely disagreed with a mechanical
+mapping and the model was **right** (`size_t`/`usize`, `threadmbcinfo *`/`pthreadmbcinfo`).
+Locals are not covered — grep `\*mut <ptr typedef>` after a flip.
+
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
 `@KfRaiseIrql@4`), by **hal on arm64** (halstubs), and by **neither on amd64** — so routing a
@@ -815,11 +835,27 @@ N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
 - **`if (!Fn())` → `if !Fn() != 0`** — bitwise-NOT on an integer BOOLEAN makes the condition
-  **always true**.
+  **always true**. Recurs wherever a C macro yields an `int`: `if(!MSVCRT_CHECK_PMT(x))` is
+  `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
+  **silent** when it feeds an integer.
 - **C post-inc/dec rewritten with the wrong read order** (`x = y--` reading the post value).
 - **A C parameter reassignment translated as a block-local `let` SHADOW** — the new value dies
   at the block end.
 - **A guard condition swapped for a different nearby variable** — logic inverted per boot mode.
+- **A NULL guard De Morgan'd the wrong way.** `MSVCRT_CHECK_PMT(start && str)` came back as
+  `MSVCRT_CHECK_PMT!(start.is_null() || str.is_null())` — the *negation* of the C, so the guard
+  fired on VALID pointers and passed NULL through to the deref it exists to prevent. Compiles
+  clean. Read every translated parameter-validation guard against its C.
+- **A C `int` local holding a `size_t` return, kept `usize` in Rust — the error path goes DEAD.**
+  `int ch_len = mbrtowc(...)` is not sloppy C: the narrowing to `int` is what makes `mbrtowc`'s
+  `(size_t)-1` visible as `-1`, so `ch_len < 0` catches a decode failure. Translate the local as
+  `usize` and that branch is unreachable; `mbsrtowcs_s` walked past failures instead of
+  returning -1. rustc says **"comparison is useless due to type limits"** — treat that warning
+  as a defect report, never as noise.
+- **C integer promotion dropped at a mask.** `ch & 0xf8` promotes `char` to `int` first, so a
+  high-bit byte sign-extends and still matches `0xf0`; masking at `i8` width does not (and does
+  not even compile — `literal out of range`). Same class as the `BYTE`-returning `HIBYTE`/
+  `LOBYTE` macros, whose results C promotes to `int` before any arithmetic.
 - **A narrowing cast truncates a wider C operand**; **a u64 sentinel cast as i64 inverts a
   bounds check**.
 - **`_Analysis_assume_` translated as live code** → a NULL deref the annotation existed to

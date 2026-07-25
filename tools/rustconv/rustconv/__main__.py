@@ -33,6 +33,7 @@ from . import (
     substrate_closure,
     switch_extract,
     trivial_c,
+    typedefs,
     user_lock_inventory,
 )
 from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
@@ -645,6 +646,38 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
     rust = _unseal_worker(dep, rust, fact_seals, call_seals)
     rust = normalize_worker_body(rust, signature)
     return normalize_worker_semantics(dep.body_text, rust)
+
+
+def _unseal_plain_c(dep, rust: str, fact_seals, call_seals) -> str:
+    """Restore sealed constants and callees in a PLAIN-C model response.
+
+    Sealing is only half a mechanism. It hides every constant and callee behind an opaque
+    `__RUSTCONV_FACT_nnnn__` / `__RUSTCONV_CALL_nnnn__` token during the paid call so a
+    dropped or invented one fails loudly instead of silently; unsealing is what puts the
+    real names back. Until this existed, both `unseal_facts` and `unseal_calls` had exactly
+    one caller and it was gated on shell32 — so `--seal-facts --seal-calls` on plain C
+    assembled a file full of tokens that cannot compile. mbcs.c came out 902 tokens deep,
+    while AGENTS.md tells every agent to always pass both flags on a plain-C module.
+
+    Deliberately NOT the shell32 boundary: `normalize_worker_body` /
+    `normalize_worker_semantics` reshape a C++ COM worker onto a fixed signature and mean
+    nothing for a free function. Only the unseal itself is shared.
+
+    Raising is correct on an unresolvable token. That is precisely the event sealing exists
+    to surface, and a token shipped into the tree is a compile error at best and a silently
+    wrong constant at worst.
+    """
+    rust = scrub_comment_token_echoes(rust)
+    try:
+        calls = call_seals.get(dep.name)
+        if calls is not None:
+            rust = unseal_calls(rust, calls)
+        facts = fact_seals.get(dep.name)
+        if facts is not None:
+            rust = unseal_facts(rust, facts)
+    except (CallSealError, FactSealError) as error:
+        raise CppComError(f"{dep.name}: {error}") from error
+    return rust
 
 
 def cmd_candidate_check(args):
@@ -2045,6 +2078,17 @@ def cmd_translate(args):
                 else extract_call_graph(scan, spec_exports=file_res.exports)
             )
             local_names = {d.name for d in all_deps}
+            # The same $0 pass the real run does, so the plan says what you will actually
+            # PAY for rather than how many functions the file has. Free on mbcs.c is 76 of
+            # 192 — a dry-run that hid that would misprice the file by 40%.
+            preview: dict[str, str] = {}
+            if rustconv_target.name != "shell32":
+                preview = {
+                    name: low.shape
+                    for name, low in trivial_c.lower_trivial_c_functions(
+                        sorted_deps, typedefs.pointer_typedefs_for_source(c_file)
+                    ).items()
+                }
             for i, dep in enumerate(sorted_deps, 1):
                 exported = " [EXPORTED]" if dep.is_exported else ""
                 static = " [static]" if dep.is_static else ""
@@ -2053,7 +2097,20 @@ def cmd_translate(args):
                     f" → calls: {', '.join(sorted(local_callees))}" if local_callees else ""
                 )
                 seh = f" (SEH×{dep.seh_count})" if dep.seh_count else ""
-                print(f"    {i}. {dep.name}{exported}{static}{seh}{callee_info}", file=sys.stderr)
+                free = f"  [$0 {preview[dep.name]}]" if dep.name in preview else ""
+                print(
+                    f"    {i}. {dep.name}{exported}{static}{seh}{callee_info}{free}",
+                    file=sys.stderr,
+                )
+            if preview:
+                shapes = collections.Counter(preview.values())
+                detail = ", ".join(f"{n}× {s}" for s, n in shapes.most_common())
+                print(
+                    f"\n  Deterministic (no API call, $0): {len(preview)} of {len(sorted_deps)}"
+                    f"  —  {detail}",
+                    file=sys.stderr,
+                )
+                print(f"  PAID: {len(sorted_deps) - len(preview)} functions", file=sys.stderr)
 
             # Show estimated tokens for first function
             if sorted_deps:
@@ -2123,7 +2180,16 @@ def cmd_translate(args):
             # multisets) and RAISES on disagreement rather than shipping — nobody reviews
             # a free translation, so it has to prove itself. Anything it cannot prove
             # returns None and is paid for as normal.
-            for name, lowering in trivial_c.lower_trivial_c_functions(sorted_deps).items():
+            #
+            # The typedef pass runs first because it decides how much the lowering can
+            # reach: a literal NULL is only spellable at a position PROVEN to be a
+            # pointer, and the CRT's sentinel (`_locale_t`) hides its star in a header.
+            # Printed, not silent — a $0 layer quietly proving nothing would just bill
+            # the model instead, which is exactly the kind of degradation nobody notices.
+            ptr_typedefs = typedefs.pointer_typedefs_for_source(c_file)
+            print(typedefs.describe(ptr_typedefs, c_file))
+            lowerings = trivial_c.lower_trivial_c_functions(sorted_deps, ptr_typedefs)
+            for name, lowering in lowerings.items():
                 translated[name] = lowering.rust
                 deterministic_workers.add(name)
         for dep in sorted_deps:
@@ -2265,6 +2331,21 @@ def cmd_translate(args):
         # estimate = first-function prompt × function count (each call re-sends
         # context, so this is a floor, not a ceiling).
         paid_deps = [dep for dep in sorted_deps if dep.name not in deterministic_workers]
+        # Take the proven $0 band and stop, without an API key or a cent. The rest of the
+        # file assembles as normal (missing bodies are simply absent), so the free band can
+        # be integrated, gated and landed on its own before anyone decides to pay for the
+        # rest. Enforced at EVERY paid entry point below, not here: `paid_deps` only feeds
+        # the cost banner and the resume pre-pass, while the translation loops iterate
+        # `sorted_deps` — emptying this list looks like it disables paying and does not.
+        # (It did not. That mistake spent $0.90 on mbcs.c.)
+        deterministic_only = bool(getattr(args, "deterministic_only", False))
+        if deterministic_only:
+            print(
+                f"  --deterministic-only: keeping {len(deterministic_workers)} proven "
+                f"lowering(s), SKIPPING {len(paid_deps)} paid function(s) and the preamble",
+                file=sys.stderr,
+            )
+            paid_deps = []
         if translation_memory is not None and not no_resume:
             for dep in paid_deps:
                 if dep.cpp_class is None:
@@ -2355,7 +2436,7 @@ def cmd_translate(args):
         if conc > 1:
             todo = []
             for func_idx, dep in enumerate(sorted_deps, 1):
-                if dep.name in deterministic_workers:
+                if dep.name in deterministic_workers or deterministic_only:
                     continue
                 if not no_resume:
                     hit = cache.get(
@@ -2386,6 +2467,15 @@ def cmd_translate(args):
                             hit = None
                     elif hit is not None and is_cpp_source:
                         hit = normalize_cpp_idioms(dep.body_text, hit)
+                    if hit is not None and rustconv_target.name != "shell32":
+                        try:
+                            hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
+                        except CppComError as error:
+                            print(
+                                f"  [{func_idx}] {dep.name} CACHE REJECTED: {error}",
+                                file=sys.stderr,
+                            )
+                            hit = None
                     if hit is not None:
                         translated[dep.name] = hit
                         resumed += 1
@@ -2494,6 +2584,9 @@ def cmd_translate(args):
                                         f"{dp.name}: paid body failed deterministic audit:\n  - "
                                         + "\n  - ".join(findings)
                                     )
+                                body = r.rust_code
+                            else:
+                                body = _unseal_plain_c(dp, r.rust_code, fact_seals, call_seals)
                         except CppComError as error:
                             _record_outcome(
                                 dp,
@@ -2505,7 +2598,10 @@ def cmd_translate(args):
                             parallel_errors.append(str(error))
                             print(f"  [{fi}] {dp.name} AUDIT REJECT: {error}", file=sys.stderr)
                             continue
-                        translated[dp.name] = r.rust_code
+                        translated[dp.name] = body
+                        # The cache keeps the RAW sealed reply: it is what the model said,
+                        # and re-unsealing on resume re-checks the seal contract instead of
+                        # trusting a once-processed copy.
                         cache.put(
                             dp.name,
                             dp.body_text,
@@ -2581,6 +2677,10 @@ def cmd_translate(args):
                 print("DETERMINISTIC ($0)", file=sys.stderr)
                 continue
 
+            if deterministic_only:
+                print("SKIPPED (--deterministic-only)", file=sys.stderr)
+                continue
+
             if _cost_cap_reached(cost_cap, running_cost):
                 print(
                     f"COST CAP ${running_cost:.2f} ≥ ${cost_cap:.2f} (no call made)",
@@ -2615,6 +2715,15 @@ def cmd_translate(args):
                         hit = None
                 elif hit is not None and is_cpp_source:
                     hit = normalize_cpp_idioms(dep.body_text, hit)
+                if hit is not None and rustconv_target.name != "shell32":
+                    try:
+                        hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
+                    except CppComError as error:
+                        # The CACHED reply damaged the seal envelope. Reject the entry and
+                        # fall through to paying for it again -- shipping a body with a
+                        # dropped constant is the outcome sealing exists to prevent.
+                        print(f"CACHE REJECTED: {error}", file=sys.stderr)
+                        hit = None
                 if hit is not None:
                     translated[dep.name] = hit
                     resumed += 1
@@ -2700,6 +2809,9 @@ def cmd_translate(args):
                                 f"{dep.name}: paid body failed deterministic audit:\n  - "
                                 + "\n  - ".join(findings)
                             )
+                        body = result.rust_code
+                    else:
+                        body = _unseal_plain_c(dep, result.rust_code, fact_seals, call_seals)
                 except CppComError as error:
                     _record_outcome(
                         dep,
@@ -2714,8 +2826,8 @@ def cmd_translate(args):
                         file=sys.stderr,
                     )
                     continue
-                translated[dep.name] = result.rust_code
-                # Persist for cross-run resume the instant it returns.
+                translated[dep.name] = body
+                # Persist the RAW sealed reply for cross-run resume (see the parallel path).
                 cache.put(
                     dep.name,
                     dep.body_text,
@@ -2820,6 +2932,8 @@ def cmd_translate(args):
             resumed += 1
             _record_preamble(preamble_src, "cache_hit", cache_key=cache.dir.name)
             print("  [preamble] CACHED ($0)", file=sys.stderr)
+        elif preamble_src and deterministic_only:
+            print("  [preamble] SKIPPED (--deterministic-only)", file=sys.stderr)
         elif preamble_src and not capped:
             print(
                 f"  [preamble] {len(preamble_src)} C chars...", file=sys.stderr, end=" ", flush=True
@@ -3815,6 +3929,15 @@ def main():
         help="Fan out per-function calls N-at-a-time (DeepSeek + --mode "
         "mechanical ONLY; ignored otherwise). Default 1 (sequential). "
         "Try 5; pair with --cost-cap as the runaway brake.",
+    )
+    p.add_argument(
+        "--deterministic-only",
+        dest="deterministic_only",
+        action="store_true",
+        help="Assemble ONLY the functions that lower deterministically ($0, no API "
+        "call at all) and skip every paid one. The free band on a CRT file is "
+        "large (mbcs.c: 76 of 192) and is proven rather than reviewed, so it can "
+        "be integrated and gated on its own before deciding to pay for the rest.",
     )
     p.add_argument(
         "--no-resume",
