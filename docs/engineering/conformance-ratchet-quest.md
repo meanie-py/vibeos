@@ -1392,3 +1392,44 @@ For the record, `MmReservedMapping` is the middle case — its note is a genuine
 (`0x101`, pool tag `'KmRM'`, `MmAllocateMappingAddress` path) but today it faults `0x1E` inside
 the driver instead, so the mechanism itself moved. Worth re-triaging from scratch rather than
 from the note.
+
+### 2026-07-25 — arm64 `SeTokenFiltering` kills the VM SILENTLY, and I nearly discarded the evidence
+
+**Signature.** Two independent probe rounds, same shape:
+
+```
+[KMTEST:BEGIN SeTokenFiltering]
+(\modules\rostests\kmtests\kmtest_drv\kmtest_drv.c:377) DriverIoControl. Starting test SeTokenFiltering
+<serial goes completely silent — no further output, ever>
+```
+
+No `[KMTEST:END]`, **no BUGCHECK**, and the QEMU process is *gone* — `vibeos-cli ps` shows zero
+QEMUs host-wide while the harness keeps draining a dead VM for its full 5400s budget (task #34).
+The parser records `SeTokenFiltering INCOMPLETE`.
+
+**This is worse than a bugcheck, and easy to mis-file.** A bugcheck leaves a stop code, parameters
+and a PC. This leaves nothing — the machine simply stops existing. Any triage has to start from
+"which test was running", which is only knowable because the sweep announces `BEGIN` before each
+test.
+
+**The methodological mistake, recorded because it cut both ways.** On the first occurrence I
+unwedged the harness by killing the boot pid, then filed the result as *"CONTAMINATED — my
+artifact, not a real failure; must be re-tested; do NOT record it as a crasher."* That was wrong.
+The wedge was already in place before I touched anything (serial 29 minutes stale, zero QEMUs);
+my kill only ended a drain that had no VM behind it. The second round then reproduced the whole
+thing with no intervention at all.
+
+So the caution that correctly caught four *invented* crashers (the probe's attribution bug) also
+threw away one *real* one. Being too skeptical is not free — it just moves the error. The
+discriminating question is not "did I touch it?" but **"was the failure already determined before
+I touched it?"**, and the serial timestamps answered that in one command.
+
+**Hypothesis for the silent death** (untested): the guest reaches a clean VM shutdown rather than
+crashing — on arm64 a PSCI `SYSTEM_OFF`/reset terminates QEMU with no diagnostic, which fits
+"serial stops, process exits, no bugcheck" exactly. A reset path reached from token filtering
+would explain it. Worth confirming with `-no-reboot`/`-no-shutdown` plus QEMU exit-code capture
+before hunting in Se.
+
+**Practical:** exclude `SeTokenFiltering` from arm64 probe lists the way `TcpIpConnect` is
+excluded — both burn the full drain budget instead of failing fast, and one wedge can consume a
+whole probe run.
