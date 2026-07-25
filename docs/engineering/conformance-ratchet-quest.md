@@ -1323,3 +1323,38 @@ The test **asserts that it receives `STATUS_ACCESS_VIOLATION`** — the fault is
 test, and `+17` is the deref of the NULL `Dpc`. Two candidates predicted from the grep, two
 confirmed on inspection. Note what this implies for the ratchet: these tests cannot pass on i386
 by fixing kernel code, because the kernel is behaving correctly. They pass when `__try` works.
+
+### 2026-07-25 (later still) — a SHARED quarantine is not a SHARED root; the 3x estimate is an upper bound
+
+The structural finding earlier today — amd64's quarantine list is a strict subset of the other
+two, so 10 tests account for 30 of the 44 entries — is still true as *bookkeeping*. But the
+inference drawn from it ("each shared-core fix retires three entries") is an **upper bound**, and
+the first two shared-core tests probed both undercut it:
+
+| shared-core test | i386 | arm64 |
+|---|---|---|
+| `IoCreateFile` | **OK** `pass=45 fail=8 skip=1 exit=0` | **CRASH** `0x1E` (AV @ `0xfffff800421c960c`) |
+| `IoFilesystem` | **CRASH** `_ExFreePoolWithTag@8+829` (pool) | untested |
+| `NtCreateSection` | CRASH `0x50`, PC in **driver** range | CRASH `0x50`, PC in **kernel** range |
+
+`IoCreateFile` is the clean counterexample: quarantined on all three arches, yet it now passes on
+i386 while still crashing on arm64. Two arches, two different states, one quarantine entry each —
+so "quarantined everywhere" recorded three independent observations that happened to agree at the
+time, not one root cause.
+
+`NtCreateSection` is the ambiguous middle: same stop code and same read-fault shape on both
+arches, which is suggestive, but the faulting PC is in the kmtest **driver** on i386 and in the
+**kernel** on arm64. That is either one bug with two faces or two bugs, and the honest answer
+today is that we do not know.
+
+**How to use the subset finding, then.** It is a good *prioritisation* heuristic — the shared
+core is still where the entries are concentrated, and a shared root, where one exists, does pay
+3x. It is not evidence that a root is shared. Establish that per test, from per-arch verdicts,
+before budgeting a fix as a triple win. The cost of getting this backwards is planning a
+"clears 6 entries" fix that clears two.
+
+**Corollary for un-quarantining.** `IoCreateFile` passing on i386 is NOT sufficient to
+un-quarantine it there yet. `SeInheritance` was flipped because amd64's baseline supplied a
+control (`704433/14` vs the observed `704431/16`); `IoCreateFile` is quarantined on every arch,
+so no baseline exists to compare against, and a single clean run cannot rule out the
+intermittency that would poison the whole i386 sweep. It wants 2-3 confirming runs.
