@@ -517,6 +517,19 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   one shared root. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
+- **net suite `test_tdi_selftest_roundtrip` — flake rate measured 2026-07-24, and it is BAD
+  under host load.** 1 pass / 6 attempts in one evening while a sibling lane ran a full arm64
+  ninja (host load 4–6). The gate's `NET_FLAKE` auto-retry is 3 attempts, so at this rate a
+  green gate is roughly a coin flip. **Timing signature is the useful discriminator: a passing
+  run finishes in ~36s, a failing one burns ~122s and dies on the marker wait** — i.e. it is a
+  timeout, not a wrong result. TDI CONNECT reaches `ESTABLISHED` and the *engine-level* echo to
+  the very same guestfwd endpoint (`10.0.2.100:9999`) succeeds in the same boot, so the host
+  echo is alive and only the TDI pended-IRP completion misses its window. Ruled out as a code
+  regression: the merge of 2026-07-24 touched **no** netstack source (only `afd-rust`, which
+  this self-test bypasses by being the TDI client itself), and the self-test is kernel-mode on
+  its own system thread with no dependency on the usermode components. Owed: either give the
+  marker wait a load-proportional budget or make the poll worker's completion deterministic —
+  and stop treating 3 retries as sufficient cover.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

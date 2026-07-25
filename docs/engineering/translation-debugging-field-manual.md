@@ -9398,3 +9398,132 @@ yet" marker — into `KeBugCheck(0)`, an **unconditional fatal bugcheck in every
 with the meaningless stop code 0. A live key body with a notify block would have killed
 the machine where NT just continues. When you see a bare `KeBugCheck` in translated code,
 check whether the C was an `ASSERT`: an assert is `debug_assert!`, never a bugcheck.
+
+#### §9.113a (2026-07-24) The class GENERALIZES — 18 more invented constants, and `verify_constants.py` already had the machinery
+
+The §9.113 sweep only looked at numeric literals passed to `KeBugCheck*`. Running
+the same differential idea over **named constants** — `const NAME: T = V` in Rust vs
+`#define NAME V` in the C header — found 18 more, in code the first sweep never
+touched. **The tool for this already existed**: `verify_constants.py` (in the gate
+since long before) does exactly this cross-check. It missed them only because its
+header catalog didn't load the tables they came from. Extending a catalog beat
+writing a second tool:
+
+```python
+reactos_root / "sdk/include/psdk/ntiologc.h",      # IO_ERR_* / IO_WARNING_* error-log codes
+reactos_root / "sdk/include/reactos/exeformat.h",  # STATUS_ROS_EXEFMT_*
+reactos_root / ".../committed-headers/bugcodes.h", # hand-declared stop codes
+```
+
+**The one that was a real behavioral bug, not a mislabel.** `mm/section.rs` declared
+`STATUS_ROS_EXEFMT_UNKNOWN_FORMAT = 0xC000FFFE`; the real value (exeformat.h:72) is
+`0xA0100001`, and `mm/section_pe.rs` — the module that *produces* the status —
+had it right. So the two halves of one protocol disagreed across a module boundary:
+
+```rust
+Status = <PE loader returns 0xA0100001>
+if Status != STATUS_ROS_EXEFMT_UNKNOWN_FORMAT { break }   // always true -> retry loop dies
+if Status == STATUS_ROS_EXEFMT_UNKNOWN_FORMAT { Status = STATUS_INVALID_IMAGE_NOT_MZ }  // never fires
+```
+
+Opening a non-PE file as an image section therefore returned the raw internal
+`0xA0100001` instead of `STATUS_INVALID_IMAGE_NOT_MZ`. **This is the danger a wrong
+NTSTATUS carries that a wrong stop code does not: callers BRANCH on it.** A mislabeled
+bugcheck wastes a debugging session; a mislabeled status silently takes the wrong path.
+
+**Two self-incriminating comments** are worth knowing about, because grepping for them
+finds this class for free:
+- `classpnp/class.rs`: `const IO_WARNING_DISK_FIRMWARE_UPDATED: ULONG = 0x80040000 + 0x00000065; // guessed`
+- `cdrom/sense.rs`: `// real value (was fabricated 0xC0002001)` — someone already hit this by hand
+- `i8042prt`: `MANUALLY_INITIATED_CRASH = 0xDEADDEAD // ntddk.h:5612` — that is real NT's
+  `MANUALLY_INITIATED_CRASH1`, which ReactOS does not define, cited to **a header line that
+  does not exist**. A fabricated value with a fabricated citation reads more trustworthy
+  than a bare number; treat a precise-looking `// header.h:NNNN` as a claim to verify, not
+  as evidence.
+
+**Contradiction search is the cheapest detector.** Three of these were provable with no
+header at all — the same name carried two different values in the tree
+(`IO_ERR_NOT_READY` 0xC0040002 vs 0xC004000F, `IO_WARNING_IO_OPERATION_RETRIED`
+0x80040032 vs 0x80040099, `STATUS_ROS_EXEFMT_UNKNOWN_FORMAT` two ways). When each
+translated file re-declares its own private copy of a shared constant, disagreement
+between copies is a *proof* of a bug that needs no oracle. Grep for duplicate
+`const NAME` declarations with differing values before reaching for anything smarter.
+
+**Generalization to run on any new constant family:** (1) find the canonical C table;
+(2) flag values that exist in NO table — provably wrong, zero false positives (this
+caught 0x126/0x12C/0xA0000003/0x1000 in §9.113 and 0x2000001 here); (3) diff
+name-by-name against the header; (4) add the header to `verify_constants.py` so the
+gate holds it. Do NOT try to infer the intended constant positionally — see §9.113's
+method note on how both such heuristics mis-mapped real sites.
+
+#### §9.113b (2026-07-24) Making it systemic — and the NEGATIVE result: do NOT sweep every header
+
+§9.113a fixed 18 constants by adding three headers to `verify_constants.py`. That
+leaves the obvious question: **coverage still only grows after a bug teaches us to
+add a header.** Two ways to attack that were tried. One failed; record it so nobody
+burns the afternoon again.
+
+**FAILED: auto-discover the whole header tree.** Sweeping all 2216 `.h` files yields
+67535 unambiguous `#define`s (vs the curated catalog's ~5.7K) — and **486 mismatches,
+overwhelmingly false**. Names collide wildly across unrelated headers:
+
+| name | Rust | "C" the sweep found | why it's not a bug |
+|---|---|---|---|
+| `CONTEXT_SIZE` | 0x2CC | 0x10 | four unrelated `CONTEXT_SIZE`s in the tree |
+| `APIC_BASE` | 0xFFFFFFFFFFFE0000 | 0xFFFE0000 | amd64 VA vs the 32-bit definition |
+| `MAXLONGLONG` | 0x7FFF_FFFF_FFFF_FFFF | 0xFFFFFFFF | 64-bit value truncated by the sweep's own u32 mask |
+| `KF_SSSE3` | 0x00200000 | 0x0 | expression the parser couldn't evaluate |
+
+A same-name-different-value ambiguity rule only dropped 241 of them, because the
+usual case is a name defined in exactly ONE header that simply means something else
+there. **The curated catalog is curated for a reason** — precision is the product.
+
+**WORKED: a second, oracle-free checker.** `tools/scan_const_contradictions.py` asks
+a question that needs no header at all: *does our own tree spell one name two ways?*
+If `IO_ERR_NOT_READY` is 0xC0040002 in one file and 0xC004000F in another, one is
+wrong no matter what C says. This covers **every** constant family, including the
+ones no catalog knows about — which is exactly how the §9.113a set hid.
+
+The two compose into a loop that closes the coverage gap without the false positives:
+
+```
+scan_const_contradictions  →  "these N files disagree about NAME"   (no oracle, total coverage)
+        ↓ resolve NAME against its real C header by hand
+verify_constants + that header  →  gates the whole family forever   (oracle, precise)
+```
+
+First trip around that loop: the scanner flagged `UNICODE_STRING_MAX_BYTES` (8 copies
+right, 2 wrong — 0xFFFC and 0xFFFF vs the real 65534). **Both wrong copies were
+BOUNDS CHECKS**, one of them RPC server input validation in `services-rust`
+(`BufferSize > UNICODE_STRING_MAX_BYTES - sizeof(UNICODE_NULL)` admitted a buffer a
+byte larger than NT accepts). Fixing them and adding `xdk/ntbasedef.h` to the catalog
+closed the family.
+
+**False-positive classes both tools must handle** (all found the hard way, all now
+implemented):
+- **bindgen-generated files are correct BY CONSTRUCTION** — the value is copied from
+  the header, so it cannot be invented. They also legitimately disagree across crates:
+  uniata's private `uata_ctl.h` defines `ATA_FLAGS_DATA_IN` as 0x04 while `ntddscsi.h`
+  uses `(1<<1)`, and **both bindings are right**. Skip anything marked `@generated` /
+  `automatically generated by rust-bindgen`.
+- **`#[cfg(...)]`-gated declarations are the Rust spelling of the header's `#ifdef`.**
+  `MEMORY_ALLOCATION_ALIGNMENT` is 16/8 by `_WIN64`; `_MI_PAGING_LEVELS` is 2/4 by
+  pointer width. Only one is ever compiled, so a pair is not a contradiction — and a
+  flat catalog holding one of the two header values reports a mismatch on correct
+  code. Teaching BOTH tools to skip cfg-gated lines retired the hand-fed
+  `ARCH_DEPENDENT_CONSTANTS` list, which was growing one name per incident.
+- **Arch-suffixed paths** (`types_arm64.rs`, `hal/x86/…`) bucket per arch before
+  comparing, or every per-arch value flags its siblings.
+- **NTDDI-gated duplicates in ONE header**: `pstypes.h` defines `THREAD_ALL_ACCESS`
+  twice (0x1FFFFF and 0x1F03FF) by version. Both values are legitimate in-tree.
+
+**Stock is 715 declarations / ~200 names, baselined as debt** — the same shape as
+`scan_silent_failures`: the gate blocks NEW contradictions, and the baseline is the
+work queue. Ranked by how provable they are: IOCTL/`SRB_*`/status families first
+(one canonical value each), driver-local `TRACE_FLAG_*`/`IRP_CONTEXT_FLAG_*` scales
+last (often legitimately private — `// nolint: const-contradiction (reason)`).
+
+**The disease is the duplication, not the value.** A constant declared once and
+imported cannot disagree with itself; every baseline entry is a private copy that
+should become one shared definition. `ntkrnl_sys::bugcodes` is the worked example of
+the end state.

@@ -299,7 +299,7 @@ pub type PSLIST_ENTRY = *mut SLIST_ENTRY;
 
 pub const BAD_POOL_HEADER: ULONG = 0x19;
 pub const BAD_POOL_CALLER: ULONG = 0xC2;
-pub const MUST_SUCCEED_POOL_EMPTY: ULONG = 0xD6;
+pub const MUST_SUCCEED_POOL_EMPTY: ULONG = 0x41;
 pub const DRIVER_CORRUPTED_EXPOOL: ULONG = 0xC5;
 
 // ============================================================================

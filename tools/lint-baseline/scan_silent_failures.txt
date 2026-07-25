@@ -1320,7 +1320,7 @@ sdk/lib/rust/smss-csrss-rust/src/basesrv/nls.rs:772: [UNWRAP] .unwrap() — pani
 sdk/lib/rust/smss-csrss-rust/src/basesrv/nls.rs:774: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/smss-csrss-rust/src/basesrv/sndsntry.rs:56: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/smss-csrss-rust/src/basesrv/sndsntry.rs:64: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/smss-csrss-rust/src/csrlib/connect.rs:449: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/smss-csrss-rust/src/csrlib/connect.rs:450: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/smss-csrss-rust/src/csrsrv/api.rs:284: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/smss-csrss-rust/src/csrsrv/api.rs:397: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/smss-csrss-rust/src/csrsrv/api.rs:542: [UNWRAP] .unwrap() — panics on Err/None in kernel code

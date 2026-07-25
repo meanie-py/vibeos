@@ -567,7 +567,10 @@ pub unsafe extern "C" fn ScmConvertToBootPathName(CanonName: *mut wchar_t, Relat
     const ERROR_INVALID_ENVIRONMENT: DWORD = 1805;
     const HEAP_ZERO_MEMORY: DWORD = 0x00000008;
     const UNICODE_NULL: wchar_t = 0;
-    const UNICODE_STRING_MAX_BYTES: DWORD = 65535;
+    // ntbasedef.h: 65534. Was 65535 — this bounds-checks RPC input
+    // (`BufferSize > UNICODE_STRING_MAX_BYTES - sizeof(UNICODE_NULL)`), so the
+    // wrong value admitted a buffer one byte larger than NT accepts.
+    const UNICODE_STRING_MAX_BYTES: DWORD = 65534;
 
     let ServiceNameLen: usize;
     let mut ExpandedLen: usize;

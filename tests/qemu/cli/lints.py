@@ -316,6 +316,23 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # One constant name, two values, both ours (§9.113b). The ORACLE-FREE half of
+    # the invented-constant hunt: verify_constants needs the right C header in its
+    # catalog, and the 18 findings of 2026-07-24 hid precisely because theirs
+    # weren't in it. This needs no header — if our own tree spells one name two
+    # ways in one arch bucket, one of them is wrong regardless of what C says.
+    # (It found UNICODE_STRING_MAX_BYTES wrong in two BOUNDS CHECKS, one of them
+    # RPC input validation.) Stock is large and mixed with legitimately
+    # driver-local scales → baseline gates NEW only, and doubles as the
+    # hoist-to-one-definition work queue.
+    scc = repo / "tools" / "scan_const_contradictions.py"
+    specs.append(
+        (
+            "scan_const_contradictions",
+            [py, str(scc), "--lint"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Hand-encoded UTF-16 string literals decoded against their `// L"..."` intent
     # comment. The SERVICES_KEY class (2026-07-10): `static X: [u16; 33]` sized by
     # hand, one element short, silently dropped the last character -> services-rust

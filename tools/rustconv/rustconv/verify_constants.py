@@ -415,6 +415,29 @@ def build_c_catalog(reactos_root: Path, include_enums: bool = False) -> dict[str
         reactos_root / "sdk/include/ndk/cmtypes.h",
         reactos_root / "sdk/include/ndk/iotypes.h",
         reactos_root / "sdk/include/reactos/drivers/ntddrdsk.h",
+        # I/O error-log message codes (IO_ERR_* / IO_WARNING_* / IO_RECOVERED_*).
+        # These are typed NTSTATUS and handed to IoWriteErrorLogEntry, so a wrong
+        # value writes the WRONG message into the system event log. Added
+        # 2026-07-24 after the §9.113 sweep generalized: classpnp declared
+        # IO_ERR_NOT_READY = 0xC0040002 (real: 0xC004000F) and
+        # IO_WARNING_IO_OPERATION_RETRIED = 0x80040032 (real: 0x80040099) — proven
+        # invented because sibling files in the SAME crate had them right.
+        reactos_root / "sdk/include/psdk/ntiologc.h",
+        # STATUS_ROS_EXEFMT_* — ReactOS-internal statuses that cross a module
+        # boundary (section_pe.rs produces, section.rs compares). section.rs had
+        # an invented 0xC000FFFE vs the real 0xA0100001, so every comparison
+        # silently failed and a non-PE image section leaked the raw internal
+        # status instead of STATUS_INVALID_IMAGE_NOT_MZ.
+        reactos_root / "sdk/include/reactos/exeformat.h",
+        # Bugcheck stop codes. ntkrnl_sys::bugcodes is generated + self-verifying
+        # (tools/gen_bugcodes.py), but hand-declared copies still exist in
+        # ntkrnl-sys/src/mm.rs and friends; this keeps those honest too.
+        reactos_root / "sdk/lib/rust/reactos-link/committed-headers/bugcodes.h",
+        # Base NT typedefs/limits (UNICODE_STRING_MAX_BYTES, …). Found via
+        # scan_const_contradictions: 8 copies of UNICODE_STRING_MAX_BYTES were
+        # right and 2 were not (0xFFFC, 0xFFFF vs the real 65534) — and both wrong
+        # ones sit in BOUNDS CHECKS, including RPC server input validation.
+        reactos_root / "sdk/include/xdk/ntbasedef.h",
     ]
 
     define_re = re.compile(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$")
@@ -628,6 +651,26 @@ def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> li
         name, rust_val = parsed
 
         if name in ARCH_DEPENDENT_CONSTANTS:
+            continue
+
+        # `#[cfg(...)]`-gated declarations are the Rust spelling of the header's
+        # own `#ifdef` — e.g. MEMORY_ALLOCATION_ALIGNMENT is 16 under _WIN64 and
+        # 8 otherwise, and iomgr declares BOTH under target_pointer_width. The
+        # flat catalog can only hold one of the two header values, so comparing
+        # against a gated declaration reports a mismatch on correct code. Skipping
+        # them removes the whole false-positive class that ARCH_DEPENDENT_CONSTANTS
+        # was being hand-fed one name at a time.
+        gated = False
+        for back in range(1, 4):
+            if lineno - 1 - back < 0:
+                break
+            prev = lines[lineno - 1 - back].strip()
+            if prev.startswith("#[cfg("):
+                gated = True
+                break
+            if not (prev.startswith("//") or prev.startswith("#[")):
+                break
+        if gated:
             continue
 
         # Pool tags (`TAG_*`) are compared unreliably: the C catalog parses
