@@ -595,6 +595,15 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   corrupt thread; marshalling the structs alone would be *worse* (a more convincing corpse,
   still with no CPU-context setup — that needs the per-thread WoW64 entry #64 tracks). Blast
   radius measured: exactly one call in a full amd64 boot, from `osk.exe`.
+- **`NtUserInitializeClientPfnArrays` would poison the GLOBAL win32k callback table —
+  INTERCEPTED 2026-07-25** (task #63/E12). The one live divergence whose payload lands in
+  *global* kernel state, not the guest: win32k copies the caller's `PFNCLIENT` arrays (function
+  pointers, 4 bytes guest / 8 host) into `gpsi->apfnClient*`, shared by every process, so a
+  32-bit guest reaching that body is read at host width and installs garbage callbacks for
+  **native 64-bit processes too**. Never fired only because win32k early-outs on
+  `ClientPfnInit != 0` and native user32 always initializes first — ordering, not a guarantee.
+  Now returns SUCCESS from the thunk layer without calling the kernel (identical observable
+  behaviour to the early-out, minus the dependency). 4 calls/boot, one per WoW64 GUI process.
 - **OUT `PHANDLE` flat thunks: `NtOpenProcessTokenEx`/`NtOpenThreadTokenEx` — MARSHALLED
   2026-07-25** (task #63/E12). 12 calls per amd64 boot, failing two ways at once: the kernel's
   `probe_write_handle` is `probe_write_user::<PVOID>` (8-byte alignment) while a guest `HANDLE`
