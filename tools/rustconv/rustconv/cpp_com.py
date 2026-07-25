@@ -1367,6 +1367,8 @@ _INTEGER_LITERAL = re.compile(
     r"(?<![\w.])(?P<number>0[xX][0-9A-Fa-f]+|0[oO][0-7]+|\d+)"
     r"(?:[uUlL]+|[iu](?:8|16|32|64|128|size))?(?![\w.])"
 )
+
+
 def _cpp_literal_spans(text: str) -> list[tuple[int, int]]:
     """(start, end) of every real string/char literal, comments excluded.
 
