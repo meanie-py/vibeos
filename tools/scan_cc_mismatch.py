@@ -49,11 +49,9 @@ DECL_BLOCK_RE = re.compile(
 # on the effective name — otherwise a #[link_name] decl is compared against an
 # unrelated same-named definition (false positive), and a genuinely mismatched
 # retargeted pair is never compared at all (false negative).
-DECL_FN_RE = re.compile(
-    r'(?:#\[link_name\s*=\s*"(?P<link>[^"]+)"\]\s*)?\bfn\s+(?P<name>\w+)\s*\('
-)
+DECL_FN_RE = re.compile(r'(?:#\[link_name\s*=\s*"(?P<link>[^"]+)"\]\s*)?\bfn\s+(?P<name>\w+)\s*\(')
 DEF_RE = re.compile(
-    r'((?:#\[cfg[^\]]*\]\s*)*)'
+    r"((?:#\[cfg[^\]]*\]\s*)*)"
     r'(?:#\[no_mangle\]|#\[export_name\s*=\s*"(?P<export>[^"]+)"\])\s*'
     r'pub\s+unsafe\s+extern\s+"(\w+)"\s+fn\s+(\w+)'
 )
