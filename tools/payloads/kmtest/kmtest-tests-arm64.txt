@@ -135,13 +135,18 @@ RtlSplayTreeKM
 RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
-# QUARANTINED 2026-07-17 (§9.93): the SEH 0x1E escape IS fixed (ControlPc-1, like KeMutex — the
-# software raise is now caught), but with it fixed the test progresses further and hits a SEPARATE,
-# DEEPER bug: BUGCHECK 0xC2 (BAD_POOL_CALLER) in the SeInheritance token-inheritance path — a
-# genuine pool-misuse bug unmasked by the SEH fix, not the SEH cluster. Poisons the rest of the run
-# (unreapable), so it stays quarantined until the 0xC2 is triaged (repro with SPECIALPOOL / GDB on
-# the ExFreePool caller in the Se inherit path). Owed.
-#SeInheritance
+# UN-QUARANTINED 2026-07-25: re-probed and it PASSES — pass=704431 fail=16, against the amd64
+# baseline's pass=704433 fail=14 (a 2-in-704k delta, i.e. the same result on the arch where this
+# test was never broken). The 2026-07-17 note below described a REAL 0xC2 BAD_POOL_CALLER, which
+# something between then and now fixed; nobody re-ran it, so it sat quarantined after it had
+# stopped being broken. Found by tools/conformance_probe.py, which exists because that is the
+# default fate of a quarantine entry.
+#   (prior note, kept for the audit trail: "QUARANTINED 2026-07-17 (§9.93): the SEH 0x1E escape IS
+#   fixed (ControlPc-1, like KeMutex), but the test then progresses further and hits a SEPARATE,
+#   DEEPER bug: BUGCHECK 0xC2 (BAD_POOL_CALLER) in the token-inheritance path.")
+# NOTE the cross-arch split: SeInheritance still CRASHES on i386, at _SeAssignSecurityEx@36+61
+# (se-rust/src/sd.rs:923) — a DIFFERENT, still-open bug. Passing here says nothing about there.
+SeInheritance
 SeLogonSession
 SeQueryInfoToken
 # QUARANTINED 2026-07-11 (amd64 sweep 9): TIMEOUT at 180s — process wedges IN-KERNEL
