@@ -216,6 +216,23 @@ void *msvcrt_get_thread_data(void)
     return &subj_thread_data;
 }
 
+/* ── the SUBJECT's copy of the pinned MBCS fixture ─────────────────────────
+ *
+ * The Rust imports `get_mbcinfo` through msvcrt-sys, unmangled, so this is the
+ * definition it binds to.  The reference's copy lives in refimpl.c behind
+ * msvcrt_ref_get_mbcinfo and the two can never reach each other — which is the point:
+ * a graded function that mutates its mbcinfo shows up as a divergence between the two
+ * slots (mbcs_fixture_check) instead of silently changing what every later case is
+ * graded against. */
+static rl_threadmbcinfo subj_mbcinfo;
+
+rl_threadmbcinfo *mbcs_subj_slot(void) { return &subj_mbcinfo; }
+
+void *get_mbcinfo(void)
+{
+    return &subj_mbcinfo;
+}
+
 /* locale.c's "setlocale() has never been called" flag — NOT namespaced, so refimpl.c
  * owns the single definition and both sides branch on the same value. */
 extern int initial_locale;

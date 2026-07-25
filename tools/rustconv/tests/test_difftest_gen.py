@@ -104,6 +104,16 @@ def test_a_search_function_measures_against_its_INPUT(tmp_path):
     assert "(s_s.as_ptr(), s_r.as_ptr())" in emit_case(_case(plan, "f"))
 
 
+def test_a_locale_is_supplied_as_a_PAIR_not_shared(tmp_path):
+    """A `_locale_t` carries `mbcinfo`. One pointer handed to both sides would aim them
+    at the same fixture, so a function that wrongly mutates it would have the reference
+    read the mutated state and agree — hiding the bug two slots exist to catch."""
+    plan = _plan(tmp_path, "int f(unsigned int c, _locale_t l) { return c; }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "LOCALES.pairs()" in body
+    assert "f(c, l_s)" in body and "ref_f(c, l_r)" in body
+
+
 def test_base_preference_puts_an_output_buffer_first():
     assert base_kinds(BUF_OUT).index(BUF_OUT) < base_kinds(BUF_OUT).index(STR_IN)
 
@@ -149,6 +159,43 @@ def test_an_arch_conditional_body_is_refused(tmp_path):
         "int f(unsigned int c) {\n#if defined(_WIN64)\n  return 1;\n#else\n  return 2;\n#endif\n}\n",
     )
     assert [r.reason for r in plan.refusals] == ["arch-conditional body"]
+
+
+def test_a_version_guarded_body_is_refused(tmp_path):
+    """The reference TU compiles at _MSVCR_VER=0, so a body behind `#if _MSVCR_VER>=80`
+    has no `ref_*` symbol at all and its case would fail to LINK.
+
+    These tests scan a bare file with no compile database, which is the un-preprocessed
+    mode where the directives survive and the function reaches the plan. On a real repo
+    file the scanner preprocesses and drops it earlier; this is the backstop for when it
+    cannot.
+    """
+    plan = _plan(
+        tmp_path,
+        "int a(unsigned int c) { return c; }\n"
+        "#if _MSVCR_VER>=80\n"
+        "int b(unsigned int c) { return c; }\n"
+        "#endif\n"
+        "int d(unsigned int c) { return c; }\n",
+    )
+    assert {c.name for c in plan.cases} == {"a", "d"}
+    assert [r.function for r in plan.refusals] == ["b"]
+
+
+def test_a_nested_if_does_not_end_the_version_region(tmp_path):
+    """An ordinary `#if` inside the version block must not be mistaken for its `#endif`,
+    or every function after it silently comes back as gradeable."""
+    plan = _plan(
+        tmp_path,
+        "#if _MSVCR_VER>=80\n"
+        "#if defined(SOMETHING)\n"
+        "#endif\n"
+        "int b(unsigned int c) { return c; }\n"
+        "#endif\n"
+        "int d(unsigned int c) { return c; }\n",
+    )
+    assert {c.name for c in plan.cases} == {"d"}
+    assert [r.function for r in plan.refusals] == ["b"]
 
 
 def test_an_unsupported_parameter_is_refused_with_its_spelling(tmp_path):

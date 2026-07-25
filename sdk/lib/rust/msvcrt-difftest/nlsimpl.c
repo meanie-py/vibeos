@@ -337,6 +337,81 @@ unsigned int nls_codepage_at(int i)
 }
 
 /* ------------------------------------------------------------------ *
+ * The pinned fixture.
+ *
+ * Built by the reference's OWN create_mbcinfo.  A hand-written filler would be the
+ * §9.73 trap in its purest form: data handed to both sides can never be caught by a
+ * differential test, because a mistake makes both sides wrong the same way.  Letting
+ * the reference C build it means the only thing left to get right is the NLS beneath
+ * it — and that is what the probes above exist to check.
+ * ------------------------------------------------------------------ */
+
+/* mbcs.c's create_mbcinfo, after the prelude's rename.  Declared rather than included:
+ * this TU is compiled WITHOUT the rename prelude (it is the environment), so it must
+ * name the renamed symbol explicitly. */
+extern rl_threadmbcinfo *ref_create_mbcinfo(int cp, unsigned int lcid,
+                                            rl_threadmbcinfo *old);
+
+static rl_threadmbcinfo pristine;
+static int              pristine_valid;
+
+const rl_threadmbcinfo *mbcs_fixture_pristine(void)
+{
+    return pristine_valid ? &pristine : (const rl_threadmbcinfo *)0;
+}
+
+int mbcs_fixture_install(unsigned int cp)
+{
+    rl_threadmbcinfo *built;
+
+    /* The active codepage must be set BEFORE create_mbcinfo runs: it is what the
+     * LCID-only entry points (CompareStringA, LCMapStringW) consult, and
+     * create_mbcinfo calls LCMapStringW while building the case map. */
+    nls_set_active_codepage(cp);
+
+    built = ref_create_mbcinfo((int)cp, (unsigned int)-1, (rl_threadmbcinfo *)0);
+    if (!built) return -1;
+
+    pristine = *built;
+    pristine_valid = 1;
+    *mbcs_ref_slot()  = pristine;
+    *mbcs_subj_slot() = pristine;
+    return 0;
+}
+
+/* Did either side scribble on it?  The fixture is read-only state; a graded function
+ * that writes to it is a translation bug, and without this check it would not surface
+ * as a failure in that function — it would surface as a divergence in whichever
+ * unrelated case happened to run next. */
+int mbcs_fixture_check(void)
+{
+    if (!pristine_valid) return 0;
+    if (memcmp(mbcs_ref_slot(),  &pristine, sizeof(pristine)) != 0) return 1;
+    if (memcmp(mbcs_subj_slot(), &pristine, sizeof(pristine)) != 0) return 2;
+    return 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Odds and ends the mbcs.c reference TU imports.
+ * ------------------------------------------------------------------ */
+
+/* locale.c's, and it only ever has to not-crash here: the fixture slots are static
+ * storage, never malloc'd, so nothing this frees was ever allocated by us.
+ * create_mbcinfo's OWN return value IS malloc'd, and mbcs_fixture_install copies out of
+ * it and lets it go — one small leak per codepage, once, deliberately: freeing it would
+ * mean modelling msvcrt's refcount discipline for no gain in a process that exits. */
+void free_mbcinfo(rl_threadmbcinfo *mbcinfo) { (void)mbcinfo; }
+
+/* locale.c's global. mbcs.c reads it in _setmbcp (which is refused as a state mutator,
+ * but must still link). NULL is what msvcrt has before setlocale(). */
+void *MSVCRT_locale = 0;
+
+/* mbcs.c's create_mbcinfo bumps a refcount with this. Single-threaded harness, so the
+ * atomicity is not load-bearing — the RETURN VALUE is: it must be the INCREMENTED
+ * value, which is what the caller compares against. */
+int InterlockedIncrement(int volatile *addend) { return ++*addend; }
+
+/* ------------------------------------------------------------------ *
  * Wide classification and case mapping.
  *
  * create_mbcinfo asks GetStringTypeW/LCMapStringW about the wide form of every
