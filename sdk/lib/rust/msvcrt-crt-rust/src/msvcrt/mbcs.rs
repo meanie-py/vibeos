@@ -2280,11 +2280,22 @@ pub unsafe extern "C" fn _mbsnset_l(
 
     let mut str_ptr = str;
     let mut len = len;
-    while *str_ptr.offset(0) != 0
-        && *str_ptr.offset(1) != 0
-        && len > 0
-    {
-        len -= 1;
+    // C: `while (str[0] && str[1] && len--)`
+    //
+    // The post-decrement is INSIDE the condition and is reached only after both byte
+    // tests pass, so when len is 0 the loop exits having ALREADY wrapped it to
+    // SIZE_MAX. The `if (len && str[0])` below then sees a non-zero len and truncates.
+    // A `len > 0` guard with a separate `len -= 1` reads like the same loop and is not:
+    // it leaves len at 0, the truncation never fires, and the string keeps its tail.
+    loop {
+        if *str_ptr.offset(0) == 0 || *str_ptr.offset(1) == 0 {
+            break;
+        }
+        let before = len;
+        len = len.wrapping_sub(1);
+        if before == 0 {
+            break;
+        }
         *str_ptr = (c >> 8) as u8;
         str_ptr = str_ptr.offset(1);
         *str_ptr = (c & 0xff) as u8;
@@ -2632,28 +2643,33 @@ pub unsafe extern "C" fn _mbslwr_s_l(s: *mut u8, len: usize, locale: _locale_t) 
         mbcinfo = get_mbcinfo();
     }
 
+    // `s` and `len` are the C's own parameters, and the loops below MUTATE them — the
+    // two statements after the loops read what the loops left behind. Walking a local
+    // copy instead leaves the originals untouched, so `len` is never 0 (the buffer-too-
+    // small EINVAL becomes unreachable) and `*s = 0` writes the terminator at the START
+    // of the string rather than after the converted text.
+    let mut s = s;
+    let mut len = len;
+
     if (*mbcinfo).ismbcodepage != 0 {
         let mut c: u32;
-        let mut len_mut = len;
-        let mut s_mut = s;
-        while *s_mut != 0 && len_mut > 0 {
-            c = _mbctolower_l(_mbsnextc_l(s_mut, locale), locale);
+        while *s != 0 && len > 0 {
+            c = _mbctolower_l(_mbsnextc_l(s, locale), locale);
+            /* Note that I assume that the size of the character is unchanged */
             if c > 255 {
-                *s_mut = (c >> 8) as u8;
-                s_mut = s_mut.add(1);
+                *s = (c >> 8) as u8;
+                s = s.add(1);
                 c = c & 0xff;
             }
-            *s_mut = c as u8;
-            s_mut = s_mut.add(1);
-            len_mut -= 1;
+            *s = c as u8;
+            s = s.add(1);
+            len -= 1;
         }
     } else {
-        let mut len_mut = len;
-        let mut s_mut = s;
-        while *s_mut != 0 && len_mut > 0 {
-            *s_mut = _tolower_l(*s_mut as i32, locale) as u8;
-            s_mut = s_mut.add(1);
-            len_mut -= 1;
+        while *s != 0 && len > 0 {
+            *s = _tolower_l(*s as i32, locale) as u8;
+            s = s.add(1);
+            len -= 1;
         }
     }
 
@@ -2724,31 +2740,34 @@ pub unsafe extern "C" fn _mbsupr_s_l(s: *mut u8, len: usize, locale: _locale_t) 
         return (EINVAL) as i32;
     }
 
+    // Mutate the PARAMETERS, as the C does — the two statements after the loops read
+    // what the loops left behind. See the same note on `_mbslwr_s_l`.
+    //
+    // `get_mbcinfo()` rather than the `locale` argument is the C's own behaviour here,
+    // and it disagrees with its `_mbslwr_s_l` twin. Upstream inconsistency, faithfully
+    // reproduced — not ours to fix.
+    let mut s = s;
+    let mut len = len;
+
     if (*get_mbcinfo()).ismbcodepage != 0 {
         let mut c: u32;
-        let mut s_iter: *mut u8 = s;
-        let mut len_remaining: usize = len;
-        while *s_iter != 0 && len_remaining > 0 {
-            c = _mbctoupper_l(
-                _mbsnextc_l(s_iter, locale),
-                locale,
-            );
+        while *s != 0 && len > 0 {
+            c = _mbctoupper_l(_mbsnextc_l(s, locale), locale);
+            /* Note that I assume that the size of the character is unchanged */
             if c > 255 {
-                *s_iter = (c >> 8) as u8;
-                s_iter = s_iter.offset(1);
+                *s = (c >> 8) as u8;
+                s = s.offset(1);
                 c = c & 0xff;
             }
-            *s_iter = c as u8;
-            s_iter = s_iter.offset(1);
-            len_remaining -= 1;
+            *s = c as u8;
+            s = s.offset(1);
+            len -= 1;
         }
     } else {
-        let mut s_iter: *mut u8 = s;
-        let mut len_remaining: usize = len;
-        while *s_iter != 0 && len_remaining > 0 {
-            *s_iter = _toupper_l(*s_iter as i32, locale) as u8;
-            s_iter = s_iter.offset(1);
-            len_remaining -= 1;
+        while *s != 0 && len > 0 {
+            *s = _toupper_l(*s as i32, locale) as u8;
+            s = s.offset(1);
+            len -= 1;
         }
     }
 

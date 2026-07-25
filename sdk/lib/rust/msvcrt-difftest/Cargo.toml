@@ -95,3 +95,10 @@ harness = false
 name = "mbcs_fixture"
 path = "tests/mbcs_fixture.rs"
 harness = false
+
+# The generated mbcs cases. Runs AFTER mbcs_fixture, which is the gate that says the
+# state they are graded against is real.
+[[test]]
+name = "mbcs"
+path = "tests/mbcs.rs"
+harness = false
