@@ -1357,8 +1357,7 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
                 continue
             raw = data[open_paren + 1 : close].decode("utf-8", "replace")
             defined[match.group(1).decode("utf-8", "replace")] = [
-                part.split(":", 1)[1].strip() if ":" in part else ""
-                for part in _split_params(raw)
+                part.split(":", 1)[1].strip() if ":" in part else "" for part in _split_params(raw)
             ]
 
     found: dict[str, list[str] | None] = {}
