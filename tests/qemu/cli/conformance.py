@@ -79,12 +79,29 @@ def conformance(args, repo: Path) -> int:
     pytest_arch = _PYTEST_ARCH.get(raw, raw)  # amd64 -> amd64-uefi; passthrough if suffixed
     smp = args.smp or 0
 
+    if smp == 1 and getattr(args, "write_baseline", False):
+        # `--smp 1` ratchets against the UP baseline on purpose (below); letting it
+        # WRITE that file would overwrite the UP oracle with MP results and quietly
+        # destroy the only thing the collapse experiment is measured against.
+        print(
+            "[conformance] --smp 1 --write-baseline refused: the UP baseline must be "
+            f"produced by the UP kernel.\n  seed it with `--arch {base} --write-baseline` "
+            "(no --smp), or use --smp 2 for an MP-specific baseline.",
+            file=sys.stderr,
+        )
+        return 2
+
     parser = _load_parser(repo)
     run_dir = _run_dir(base)
     # SMP runs ratchet against their own baseline (kmtest-smp<N>.txt): MP kernels
     # legitimately diverge from UP (tests branch on KmtIsMultiProcessorBuild,
     # skip MP-fatal sections, expect SYNCH_LEVEL=IPI-2), so comparing an -smp
     # sweep against the UP baseline reports phantom regressions.
+    #
+    # `--smp 1` is the EXCEPTION and the point of the UP→smp1 collapse experiment
+    # (smp-bringup-quest.md "UP endgame"): MP kernel, ONE cpu, ratcheted against
+    # the UP baseline. Those two must agree test-for-test before the MP kernel can
+    # become the default, so the UP baseline is deliberately the right oracle here.
     baseline_name = f"{SUITE}-smp{smp}.txt" if smp > 1 else f"{SUITE}.txt"
     baseline_path = repo / "tools" / "conformance-baseline" / base / baseline_name
 
@@ -108,11 +125,15 @@ def conformance(args, repo: Path) -> int:
             return 2
         env = dict(os.environ, VIBEOS_PAYLOAD=SUITE)
         build_cmd = [str(repo / "vibeos-cli"), "build", "--arch", base]
-        if smp > 1:
-            build_cmd.append("--smp-kernel")  # -smp N>1 needs the ntkrnlmp media
+        if smp:
+            # ANY --smp N (including 1) means the ntkrnlmp media: at N=1 that is
+            # the whole experiment — "the MP kernel on one CPU" — and without
+            # --smp-kernel it would silently sweep the UP kernel instead and
+            # report a meaningless all-green.
+            build_cmd.append("--smp-kernel")
         print(
             f"[conformance] building {base} with VIBEOS_PAYLOAD={SUITE}"
-            f"{' --smp-kernel' if smp > 1 else ''} ..."
+            f"{' --smp-kernel' if smp else ''} ..."
         )
         bp = subprocess.run(build_cmd, cwd=str(repo), env=env)
         if bp.returncode != 0:
