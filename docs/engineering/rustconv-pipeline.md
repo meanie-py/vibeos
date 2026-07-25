@@ -67,15 +67,47 @@ hand-authored allowlist. Key behaviours:
   finding wldap32's real 2-island split.
 - `--emit profile` prints a paste-ready `gen_driver_types.sh` arm; `--scaffold-dir` writes the
   crate skeleton. ERROR findings are blocking; exit code is 1 when any fires.
+- **A module whose `.c` live in a sibling static-lib target needs `--target`.** msvcrt is the
+  case: the `msvcrt` MODULE target compiles only generated stubs and `.rc` while
+  `msvcrt_static` owns all 32 `.c`, so aiming at the module name used to report "compiles no
+  in-tree .c … an already-Rust-flipped module looks exactly like this". That inference is
+  wrong for every whole-archive **cohab** module, whose `.c` stay compiled forever and are
+  beaten at link by `#[no_mangle]` Rust. It now names the sibling and the exact re-run.
+- **A static-lib target has no `set_module_type()`**, so kernel-vs-usermode is unknowable from
+  the CMakeLists — pass `--usermode` / `--kernel`. (Those flags are new: the error had named
+  them for a while without the argparser defining them. A fail-loud whose remedy does not
+  exist is worse than no message; see `test_usermode_override_exists_for_a_target_with_no_set_module_type`.)
 
 **Stage 1 — the paid call, with both envelopes.** See the sealing note below; always
 `--seal-facts --seal-calls`. In the same run, `trivial_c.py` lowers the provable trivial band
-(empty / constant-return / param-return / forwarder / getter / setter, plus debug-only bodies)
-for **$0**, and each lowering re-verifies itself against an independent tree-sitter oracle —
-identical ordered identifier sequence and equal constant multisets — **raising** rather than
-shipping if the two disagree, because nobody reviews a free translation. Measured 9.0% of
-94,323 repo-wide functions; 41% on stub-heavy modules but ~0% on real driver code, so do not
-plan capacity around it.
+(empty / constant-return / param-return / forwarder / forwarder-with-null / getter / setter,
+plus debug-only bodies) for **$0**, and each lowering re-verifies itself against an independent
+tree-sitter oracle — identical ordered identifier sequence and equal constant multisets —
+**raising** rather than shipping if the two disagree, because nobody reviews a free
+translation. Measured 9.0% of 94,323 repo-wide functions; 41% on stub-heavy modules but ~0% on
+real driver code, so do not plan capacity around it.
+
+`forwarder_with_null` (2026-07-24) admits the CRT's dominant idiom — `X(args)` delegating to
+`X_l(args, NULL)` — by accepting literal `NULL` arguments *only* where the **same-TU** callee's
+already-parsed signature declares a pointer at that position. Arity must match the callee
+exactly (so a variadic or unknown callee is refused) and `0`/`FALSE` are not accepted, because
+`0` at an `int` position is just zero. The oracle rewrites both `NULL` and
+`core::ptr::null_mut()` to one sentinel before comparing, so checks 2–4 stay token-for-token
+rather than being relaxed; a `NULL` that moved, vanished, or displaced a real argument still
+perturbs the identifier sequence. (What the sentinel cannot distinguish is `null()` from
+`null_mut()` — a *type* error rustc catches at candidate-check, not a silent miscompile.)
+
+**Its real reach is smaller than the C looks, and the gap is the interesting part.** A text
+match for `return Callee(<params>, NULL);` finds 146 msvcrt functions (76 in mbcs.c alone).
+The shape lowers **11**. The difference is that the CRT spells the locale parameter
+`_locale_t` — a *typedef'd* pointer — so neither the type spelling (`"*" in type`) nor
+`c_type_to_rust` can prove pointerness, and `msvcrt-sys`'s bindgen island does not declare the
+alias either. Refusing is correct: admitting it would assume the very fact the shape exists to
+prove. **The lever, when someone wants those ~135: give the pipeline a typedef authority** —
+extend the module's bindgen island to carry its pointer typedefs, then have
+`_is_pointer_c_type` consult the island rather than the spelling. `test_trivial_c_forwarder_null.py::
+test_typedefd_pointer_is_refused_because_nothing_proves_it` pins the current refusal so that
+becomes a deliberate decision, not a silent behaviour change.
 
 **Stage 1.5 — `rustconv crate-repair <crate>-rust` (`crate_repair.py`).** Bounded deterministic
 repair over the whole-crate `cargo check --message-format=json`, run before paying anyone to
@@ -93,6 +125,40 @@ by shape for triage. Three properties worth knowing:
   proposals, because an `as u32` inferred from i386 is wrong on amd64/arm64 wherever the real
   parameter is `SIZE_T`/`ULONG_PTR`. The `flex_array_index` authority reads
   `types_<arch>.rs` — `types.rs` is only a `#[cfg]` dispatch stub.
+
+## `--target`: proven from the tree, or refused (2026-07-24)
+
+`--target <name>` for a `dll/win32/*` module not in `TARGETS` builds a Target via
+`config.make_user_dll_target`. That used to **assume** two things — output crate `<name>-rust`,
+substrate `ntdll-sys` — which are right for the winsock/net fleet and silently wrong for
+anything else. On msvcrt both were wrong at once: the crate is `msvcrt-crt-rust`, and it does
+not depend on ntdll-sys *at all*, so every `ntdll_sys::` path the model emitted was
+unresolvable by construction. Per the `crate_bindgen_files` contract that is not a no-op — the
+model invents a forward declaration that compiles, links, and is silently wrong; here that
+means a **guessed `threadmbcinfo`**, whose `mbctype[257]`/`mbcasemap[256]` every mbcs predicate
+indexes.
+
+Both are now derived, and raise `TargetResolveError` rather than guessing:
+
+- **Output crate.** `<name>-rust` if it exists. If it does not but crates matching `*<name>*-rust`
+  do, refuse and list them (`--output-crate`). If nothing resembles it, the module is genuinely
+  new and the conventional name is correct.
+- **Substrate.** Read the `*-sys` path dependency the output crate actually declares. Exactly
+  one → use it; none or several → refuse (`--sys-crate`). A new module with no Cargo.toml yet
+  keeps the ntdll-sys default. Every pre-existing user-DLL crate (ws2_32, iphlpapi, netapi32,
+  dnsapi, wkssvc) declares exactly `ntdll-sys`, so this returns their historical value
+  unchanged — `test_target_resolve.py` pins that.
+- **Umbrella.** Detected from the substrate's `lib.rs`: one `pub mod <x> { … }` (ntdll-sys →
+  `ntdll_sys::nt::*`) or a flat root `pub use bindgen_<arch>::*;` (msvcrt-sys →
+  `msvcrt_sys::*`). Flat is represented as `""`, which is **meaningfully different from `None`**:
+  `None` means "kernel target" and skips user-mode post-processing entirely, so `postprocess`
+  gates on `sys_umbrella is not None`, not on truthiness. Anything ambiguous raises.
+- **Prompt addendum.** `templates/system_prompt_<name>.md` when present, else the generic
+  `system_prompt_user.md`. `system_prompt_msvcrt.md` carries the CRT rules: substrate is
+  `msvcrt_sys` flat; never redeclare `threadlocinfo`/`threadmbcinfo` (arch-varying offsets —
+  `pcumap` is at 208 on i386, 336 elsewhere); read the real `pclmap`/`pcumap` rather than
+  hardcoding an ASCII fold; `_invalid_parameter` + `*_errno()` instead of `STATUS_*`; exports
+  are `cdecl` on every arch including i386.
 
 ## Key Files
 

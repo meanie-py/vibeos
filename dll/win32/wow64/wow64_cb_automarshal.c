@@ -128,20 +128,6 @@ void WowCbUp_tagMDINEXTMENU(const unsigned char *s, unsigned char *d)
     WowCbSx(d + 16, s + 8); /* hwndNext */
 }
 
-/* struct tagNCCALCSIZE_PARAMS: 32-bit 52b <-> 64-bit 56b */
-void WowCbDown_tagNCCALCSIZE_PARAMS(const unsigned char *s, unsigned char *d)
-{
-    WowCbZero(d, 52);
-    WowCbCpy(d + 0, s + 0, 48); /* rgrc */
-    WowCbNx(d + 48, s + 48); /* lppos */
-}
-
-void WowCbUp_tagNCCALCSIZE_PARAMS(const unsigned char *s, unsigned char *d)
-{
-    WowCbCpy(d + 0, s + 0, 48); /* rgrc */
-    /* lppos: kernel pointer preserved (guest value is scratch) */
-}
-
 /* struct _WINDOWPOS: 32-bit 28b <-> 64-bit 40b */
 void WowCbDown__WINDOWPOS(const unsigned char *s, unsigned char *d)
 {
@@ -164,6 +150,20 @@ void WowCbUp__WINDOWPOS(const unsigned char *s, unsigned char *d)
     WowCbCpy(d + 24, s + 16, 4); /* cx */
     WowCbCpy(d + 28, s + 20, 4); /* cy */
     WowCbCpy(d + 32, s + 24, 4); /* flags */
+}
+
+/* struct tagNCCALCSIZE_PARAMS: 32-bit 52b <-> 64-bit 56b */
+void WowCbDown_tagNCCALCSIZE_PARAMS(const unsigned char *s, unsigned char *d)
+{
+    WowCbZero(d, 52);
+    WowCbCpy(d + 0, s + 0, 48); /* rgrc */
+    WowCbNx(d + 48, s + 48); /* lppos */
+}
+
+void WowCbUp_tagNCCALCSIZE_PARAMS(const unsigned char *s, unsigned char *d)
+{
+    WowCbCpy(d + 0, s + 0, 48); /* rgrc */
+    /* lppos: kernel pointer preserved (guest value is scratch) */
 }
 
 /* struct tagCOPYDATASTRUCT: 32-bit 12b <-> 64-bit 24b */
@@ -195,6 +195,8 @@ static const WOW64_CB_MARSHAL Wow64CbMarshalTable[] = {
     { 0x002C /* WM_MEASUREITEM */, 24, 32, WowCbDown_tagMEASUREITEMSTRUCT, WowCbUp_tagMEASUREITEMSTRUCT },
     { 0x0053 /* WM_HELP */, 28, 40, WowCbDown_tagHELPINFO, WowCbUp_tagHELPINFO },
     { 0x0213 /* WM_NEXTMENU */, 12, 24, WowCbDown_tagMDINEXTMENU, WowCbUp_tagMDINEXTMENU },
+    { 0x0046 /* WM_WINDOWPOSCHANGING */, 28, 40, WowCbDown__WINDOWPOS, WowCbUp__WINDOWPOS },
+    { 0x0047 /* WM_WINDOWPOSCHANGED */, 28, 40, WowCbDown__WINDOWPOS, WowCbUp__WINDOWPOS },
 };
 
 const WOW64_CB_MARSHAL *Wow64CbFindMarshal(unsigned int Msg)

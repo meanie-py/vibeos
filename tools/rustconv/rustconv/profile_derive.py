@@ -271,6 +271,11 @@ class CMakeModule:
     rpc_interfaces: list[str] = field(default_factory=list)
     dead_sources: list[Path] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
+    # Set by --usermode/--kernel. A target with no set_module_type() cannot be
+    # classified from the CMakeLists at all — a static library shared between DLLs
+    # (msvcrt_static, feeding msvcrt.dll/msvcrt20.dll/msvcrt40.dll) never calls it,
+    # and it is exactly such a target that owns the C in a cohab module.
+    usermode_override: bool | None = None
 
     @property
     def compiled_tus(self) -> list[Path]:
@@ -288,10 +293,12 @@ class CMakeModule:
 
     @property
     def is_usermode(self) -> bool:
+        if self.usermode_override is not None:
+            return self.usermode_override
         if self.module_type is None:
             raise ProfileDeriveError(
                 f"{self.cmake}: no set_module_type() found for target {self.name!r}; cannot tell "
-                "kernel from usermode (USERMODE= in the profile). Pass --usermode/--kernel."
+                "kernel from usermode (USERMODE= in the profile). Pass --usermode or --kernel."
             )
         if self.module_type in KERNEL_MODULE_TYPES:
             return False
@@ -540,6 +547,44 @@ def _classify_entry(raw: str, module_dir: Path, cond: str | None) -> SourceEntry
     if low.endswith(".rc"):
         return SourceEntry(raw, (module_dir / raw).resolve(), "resource", cond)
     return SourceEntry(raw, None, "unknown", cond)
+
+
+def _targets_compiling_c(
+    cmake: Path, repo_root: Path, arch: str, exclude: str
+) -> list[tuple[str, int]]:
+    """Sibling targets in `cmake` that DO compile in-tree .c, as (name, count).
+
+    Best-effort: a target that fails to parse is simply not offered as a suggestion.
+    """
+    out: list[tuple[str, int]] = []
+    try:
+        names = sorted(_target_names(cmake))
+    except ProfileDeriveError:
+        return out
+    for name in names:
+        if name == exclude:
+            continue
+        try:
+            sibling = parse_cmakelists(cmake, repo_root, arch=arch, target=name)
+        except ProfileDeriveError:
+            continue
+        count = sum(1 for p in sibling.compiled_tus if p.is_file())
+        if count:
+            out.append((name, count))
+    out.sort(key=lambda item: -item[1])
+    return out
+
+
+def _target_names(cmake: Path) -> set[str]:
+    """Every add_library()/add_executable() target name in a CMakeLists."""
+    if not cmake.is_file():
+        raise ProfileDeriveError(f"no CMakeLists.txt at {cmake}")
+    text = _strip_cmake_comments(_read(cmake))
+    return {
+        m.group(2)
+        for m in re.finditer(r"\b(add_library|add_executable)\s*\(\s*([A-Za-z0-9_${}]+)", text)
+        if not m.group(2).startswith("$")
+    }
 
 
 def parse_cmakelists(
@@ -1476,6 +1521,7 @@ def derive(
     strict_unresolved: bool = True,
     use_compile_db: bool = True,
     extra_inc_dirs: tuple[Path, ...] = (),
+    usermode: bool | None = None,
 ) -> DerivedProfile:
     """Derive a full profile for the module at *module_dir*.
 
@@ -1487,9 +1533,26 @@ def derive(
     """
     module_dir = module_dir.resolve()
     module = parse_cmakelists(module_dir / "CMakeLists.txt", repo_root, arch=arch, target=target)
+    module.usermode_override = usermode
     findings = list(module.findings)
     tus = [p for p in module.compiled_tus if p.is_file()]
     if not tus:
+        # "No .c" has TWO causes and they need opposite responses. Before blaming a
+        # Rust flip, check whether a SIBLING target in the same CMakeLists compiles the
+        # C: a module whose sources live in a static lib the DLL links (msvcrt ->
+        # msvcrt_static) looks identical from the MODULE target, and telling that user
+        # to go read git history sends them the wrong way entirely. This also describes
+        # every whole-archive cohab module, where the .c stay compiled forever and the
+        # Rust wins at link — so "its .c are commented out" is not even true of them.
+        siblings = _targets_compiling_c(module.cmake, repo_root, arch, exclude=module.name)
+        if siblings:
+            listed = ", ".join(f"{n} ({c} .c)" for n, c in siblings)
+            raise ProfileDeriveError(
+                f"{module.cmake}: target {module.name!r} compiles no in-tree .c, but these "
+                f"targets in the same file do: {listed}.\n  The sources are probably in a "
+                f"static library this target links. Re-run with:\n\n"
+                f"    --target {siblings[0][0]}\n"
+            )
         raise ProfileDeriveError(
             f"{module.cmake}: target {module.name!r} compiles no in-tree .c — nothing to derive "
             "an island for. (An already-Rust-flipped module looks exactly like this: its .c are "
@@ -2321,6 +2384,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--scaffold-dir", type=Path, default=None, help="also write the crate skeleton")
     ap.add_argument("--force", action="store_true", help="scaffold may overwrite existing files")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--usermode",
+        dest="usermode",
+        action="store_true",
+        default=None,
+        help="target is user-mode (USERMODE=1). Needed for a target with no "
+        "set_module_type(), e.g. a static library shared between DLLs (msvcrt_static).",
+    )
+    mode.add_argument(
+        "--kernel", dest="usermode", action="store_false", help="target is kernel-mode (USERMODE=0)"
+    )
     args = ap.parse_args(argv)
 
     repo_root = (args.repo_root or _default_repo_root()).resolve()
@@ -2336,6 +2411,7 @@ def main(argv: list[str] | None = None) -> int:
             strict_unresolved=not args.allow_unresolved,
             use_compile_db=not args.no_compile_db,
             extra_inc_dirs=tuple(args.extra_inc),
+            usermode=args.usermode,
         )
     except ProfileDeriveError as exc:
         print(f"profile_derive: FAILED\n{exc}", file=sys.stderr)

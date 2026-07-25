@@ -615,3 +615,52 @@ def test_kernel_scaffold_depends_on_ntkrnl_sys(tmp_path):
     cargo = (out / "Cargo.toml").read_text()
     assert 'features = ["kernel"]' in cargo and "ntkrnl-sys" in cargo
     assert "USERMODE=0" in emit_profile(dp)
+
+
+# --------------------------------------------------------------------------- #
+# "no in-tree .c" has two causes; and a fail-loud must name a real flag
+# --------------------------------------------------------------------------- #
+
+
+def test_no_c_points_at_the_sibling_target_that_owns_the_sources(tmp_path):
+    """A cohab/static-lib module is NOT a Rust-flipped one, and must not be called one.
+
+    msvcrt is the real case: the `msvcrt` MODULE target compiles only generated stubs +
+    .rc, while `msvcrt_static` owns all 32 .c. Telling that user "an already-Rust-flipped
+    module looks exactly like this, go read git history" sends them the wrong way — and
+    is doubly wrong for a whole-archive cohab module, whose .c stay compiled forever.
+    """
+    cmake = (
+        "list(APPEND SOURCE main.c helper.c)\n"
+        "add_library(widget_static ${SOURCE})\n"
+        "add_library(widget MODULE widget.rc)\n"
+        "set_module_type(widget win32dll)\n"
+    )
+    root = _basic_module(tmp_path, cmake=cmake)
+    with pytest.raises(ProfileDeriveError) as e:
+        derive(_mod(tmp_path), root, target="widget")
+    msg = str(e.value)
+    assert "widget_static" in msg
+    assert "--target widget_static" in msg
+    assert "already-Rust-flipped" not in msg
+
+
+def test_usermode_override_exists_for_a_target_with_no_set_module_type(tmp_path):
+    """The error used to name `--usermode/--kernel`, which the argparser did not define.
+
+    A fail-loud whose remedy is fictional is worse than no message. A static library
+    shared between DLLs never calls set_module_type(), and it is exactly that target
+    which owns the C in a cohab module — so the flag has to exist.
+    """
+    cmake = "list(APPEND SOURCE main.c helper.c)\nadd_library(widget_static ${SOURCE})\n"
+    root = _basic_module(tmp_path, cmake=cmake)
+
+    with pytest.raises(ProfileDeriveError, match="--usermode or --kernel"):
+        emit_profile(derive(_mod(tmp_path), root, target="widget_static"))
+
+    assert "USERMODE=1" in emit_profile(
+        derive(_mod(tmp_path), root, target="widget_static", usermode=True)
+    )
+    assert "USERMODE=0" in emit_profile(
+        derive(_mod(tmp_path), root, target="widget_static", usermode=False)
+    )

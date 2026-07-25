@@ -65,12 +65,25 @@ pub unsafe extern "system" fn RtlRaiseStatus(mut Status: NTSTATUS) {
         // Print the first four text-like qwords: the scan starts inside this
         // fn's own (uninitialized) frame, so candidate #1 can be a stale local;
         // four candidates make the raiser unambiguous.
+        // The kernel-text window below (0xFFFFF800.. ..0xFFFFF8FF..) also
+        // contains kernel STACKS — amd64 kernel stacks sit at 0xFFFFF880`xxxxxxxx,
+        // the same range as driver text. So a raw range test happily reports a
+        // saved stack POINTER as the raise site, which is how a 2026-07-24 E13
+        // triage got "RtlRaiseStatus(0xC0000005) from fffff88004880500" and spent
+        // a while trying to symbolicate a stack address as win32k code. Reject
+        // anything within 1MB of the current rsp: kernel stacks are 16-24KB, so
+        // that window is comfortably inside the stack and cannot swallow a real
+        // driver text address.
+        let near_stack = |v: usize| -> bool {
+            let d = if v > rsp { v - rsp } else { rsp - v };
+            d < 0x10_0000
+        };
         let mut found: usize = 0;
         let mut printed = 0u32;
         let mut i = 0usize;
         while i < 0x400 && printed < 4 {
             let v = *((rsp + i * 8) as *const usize);
-            if v >= 0xFFFF_F800_0000_0000 && v < 0xFFFF_F8FF_FFFF_FFFF {
+            if v >= 0xFFFF_F800_0000_0000 && v < 0xFFFF_F8FF_FFFF_FFFF && !near_stack(v) {
                 if found == 0 {
                     found = v;
                 }
