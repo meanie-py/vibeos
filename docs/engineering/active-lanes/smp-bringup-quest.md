@@ -1101,3 +1101,53 @@ as a second output (`halmp-cargo` → `halmp.dll`, mirroring `ntoskrnl-cargo` �
 `/HAL=halmacpi.dll /KERNEL=ntkrnlmp.exe`. Then ONE media boots either flavor, an
 MP gate leg costs one extra boot instead of a rebuild, and the mis-pair class
 (0x79 on x86, silent-1-cpu on arm64) stops being reachable by construction.
+
+### Conformance at `-smp 1`: x86 PASSES, arm64 has a REAL blocker
+
+| arch  | result |
+|-------|--------|
+| i386  | 74 launched / 70 ok. Only delta vs the UP ratchet: **KeEvent 42733→42601** = the documented MP-skip (§9.97), exactly the value in `kmtest-smp2.txt`. Plus 2 NEW passes (RtlStack, RtlStackKM — absent from the UP baseline entirely). |
+| amd64 | 87 launched / **87 ok, 0 bad**. Deltas: KeEvent (same MP-skip), IoDeviceObject ±1 (known flicker, already in the smp2 baseline), and **ExHardError 30→24 / 0→6**. |
+| arm64 | **BUGCHECK 0x9 `IRQL_NOT_GREATER_OR_EQUAL` at the start of the KeSpinLock kmtest** — 34 tests in, sweep never completes. |
+
+**ExHardError is NOT ours — control-proven.** A UP-kernel sweep on the same tree reports the
+identical `pass 30 → 24 / fail 0 → 6`, so it regressed on master since the baselines were seeded
+(2026-07-17) and is orthogonal to the MP kernel. Registered in the roadmap's known-bugs registry.
+Subtracting it: **MP-at-one-cpu differs from today's UP kernel by exactly the two already-baselined
+MP-build deltas on both x86 arches.** That is the collapse criterion met on i386 + amd64.
+
+**arm64 0x9 — root-caused statically; it is the OWED arm64 SYNCH alignment coming due.**
+Bugcheck args `(lock, 0, 0, 0)` — arg2 is `KeGetCurrentIrql()` = **PASSIVE**, i.e. an
+`…AtDpcLevel` lock routine ran at IRQL 0. Three facts pin it:
+
+| source | arm64 `SYNCH_LEVEL` |
+|---|---|
+| `sdk/include/ndk/arm64/ketypes.h:29` — what **kmtest_drv compiles against** | `IPI_LEVEL - 2` = **12** |
+| our kernel `ke/ke_defs.rs:267` (the `aarch64` + `feature="smp"` arm) | **2** |
+| our arm64 HAL `hal-rust/src/arm64/halstubs.rs:23` | **2** (`DISPATCH_LEVEL`) |
+
+`KeSpinLock.c:384` is `SynchIrql = KmtIsMultiProcessorBuild ? IPI_LEVEL - 2 : DISPATCH_LEVEL`, so
+the test asks for 12 the moment it detects an MP build, while every raise-to-synch in our arm64
+kernel and HAL goes to 2 — and the several `…AtDpcLevel` IRQL asserts in `ke/spinlock.rs` are
+`#[cfg(any(debug_assertions, feature = "smp"))]` / `#[cfg(feature = "smp")]`, so they only *exist*
+in the MP kernel. Hence: MP-only, arm64-only, and it fires before the test emits a single result.
+
+**Correct the earlier note in this doc** ("ndk arm64 defines no MP SYNCH variant"): the arm64 ndk
+header defines `SYNCH_LEVEL` **only** as `IPI_LEVEL - 2` — it has no UP variant at all. The missing
+UP/MP variance is on OUR side, and our value (2) disagrees with the header in *both* flavors. UP
+merely masks it, because kmtest picks `DISPATCH_LEVEL` when it detects a UP build. `ke_defs.rs:258`'s
+comment ("unchanged on arm64") encodes the same wrong premise.
+
+**Fix is not a one-liner** — it is the §9.97 treatment applied to arm64: `ke_defs` arm64-smp arm →
+12, `halstubs.rs` SYNCH → 12 under `smp`, a `KiSynchIrql` export for arm64, AND the places this doc
+already records as assuming `SYNCH == DISPATCH` on arm64 (idle pinned at DISPATCH with no SYNCH
+raise around the swap; the M5b per-CPU softint dispatch). Needs its own `-smp 1` + `-smp 2` +
+conformance validation cycle. **This is the one hard blocker to UP:=smp1 on arm64;** x86 is clear.
+
+### Harness gap worth fixing (found the slow way)
+
+The arm64 bugcheck cost ~25 minutes of drain instead of an immediate verdict: the conformance
+sweep's wait loop (`test_payload.py::test_payload_launched`) does break early on `*** BUGCHECK`,
+but the run still burned to the outer timeout, and `conformance` reports neither a classification
+nor a symbolicated PC the way `smoke` does. A guest BUGCHECK mid-sweep should abort the verb loud
+with the stop code — same fail-loud shape as the three `--smp` checks above.
