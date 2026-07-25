@@ -1358,3 +1358,37 @@ un-quarantine it there yet. `SeInheritance` was flipped because amd64's baseline
 control (`704433/14` vs the observed `704431/16`); `IoCreateFile` is quarantined on every arch,
 so no baseline exists to compare against, and a single clean run cannot rule out the
 intermittency that would poison the whole i386 sweep. It wants 2-3 confirming runs.
+
+### 2026-07-25 — in fairness: some quarantine notes were exactly right
+
+Two entries today argued that recorded claims decay (§9.127's "symbol-poor" premise; the stale
+offsets). That is a real failure mode, but it is not the general case and the record should say
+so, because "distrust the notes" is as expensive a heuristic as "trust them".
+
+`RtlSplayTreeKM` re-probed today and reproduced its 2026-07-12 note **exactly**:
+
+```
+# QUARANTINED 2026-07-12: BUGCHECK 0x19 BAD_POOL_HEADER (not an AV — pool corruption on
+# free). Passes on amd64. Exercises the `splaytree` Rust crate — REAL-BUG candidate
+# (i386-specific splay corruption), not DUMMY_PSEH. Repro: SPECIALPOOL=* ...
+```
+
+Observed 13 days later: `*** BUGCHECK: 0x00000019 (0x00000005, 0xb0fbb7a8, 0xea, 0xb0fbb780)`.
+Same stop code, same class. The note also got the *classification* right in advance — it
+explicitly ruled out DUMMY_PSEH, which today's independent SEH-usage discriminator agrees with,
+and it named the correct next tool (special pool, since a pool-corruption bugcheck fires at the
+victim rather than the culprit — §9.18).
+
+**What actually distinguishes the durable notes from the rotten ones.** The notes that held up
+record a *stop code and a mechanism* (`0x19 BAD_POOL_HEADER`, "pool corruption on free",
+"exercises the splaytree crate"). The ones that rotted record a *coordinate or a tool claim*
+(`ntoskrnl.exe+0x8E3BD`; "offline index is symbol-poor"). Mechanism survives rebuilds; addresses
+and tooling assertions do not.
+
+So: when quarantining, write down the stop code, the subsystem and what you ruled out. Do not
+lean on an offset, and never record a tool limitation you have not just verified.
+
+For the record, `MmReservedMapping` is the middle case — its note is a genuine mechanism
+(`0x101`, pool tag `'KmRM'`, `MmAllocateMappingAddress` path) but today it faults `0x1E` inside
+the driver instead, so the mechanism itself moved. Worth re-triaging from scratch rather than
+from the note.
