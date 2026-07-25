@@ -457,6 +457,33 @@ per-package: `tools/rustconv/pyproject.toml`
 `tools/*.py` use the repo-root `pyproject.toml`. Policy is identical across all
 four so the surface lints under one standard.
 
+### `difftest [--only NAME[,NAME]]`
+Runs every **host differential harness** — the `*-difftest` crates, which compile
+the genuine ReactOS C as a host TU with its public symbols renamed `ref_*`, link
+that beside the shipping Rust, and fuzz the two for parity in one process. No
+QEMU, no `build-<arch>`; ~20s for the whole set on a warm target dir. This is the
+only oracle that grades a translation against *the code it replaced* rather than
+against someone's reading of it, so `gate` runs it and it gates the push stamp.
+
+Two invariants it enforces, both from real breakage:
+
+- **One cargo invocation per crate.** `cnt-difftest` pulls `cnt-rust` with
+  `features = ["cabi"]` and `msvcrt-difftest` deliberately does not (it grades
+  msvcrt-crt-rust's own wrappers). In one shared build, cargo's feature
+  unification switches `cabi` on for both and cnt-rust's 208 `#[no_mangle]`
+  shims collide with the wrappers — `duplicate symbol: mbtowc`. **`cargo test
+  --workspace` cannot run these and never could**; that is a large part of why
+  nothing ran them.
+- **Exit 0 with zero cases compared is a FAILURE.** Every crate emits
+  `test result: ok. 0 passed` for its empty lib/doc-test targets, so a harness
+  whose cases all vanished still exits 0. The stage reports `graded NOTHING` and
+  fails: a suite that cannot fail is worse than no suite, because green stops
+  anyone looking again.
+
+Crates are discovered from the `[workspace] members` list, never hardcoded — add
+`foo-difftest` to the workspace and it is covered. `--only` restricts the set and
+**refuses an unknown name** rather than silently grading a subset.
+
 ---
 
 ## The artifact contract (how to read results without flooding context)

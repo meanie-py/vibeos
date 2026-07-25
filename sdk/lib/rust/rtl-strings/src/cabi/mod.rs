@@ -658,11 +658,18 @@ pub unsafe extern "system" fn RtlAnsiStringToUnicodeString(
     (*dest).Length = length as u16 - 2;
     if alloc != 0 {
         let buf = rtl_alloc(length as usize, TAG_USTR) as *mut u16;
+        // Store Buffer UNCONDITIONALLY, then test it — the C writes the
+        // allocation result into the out-parameter and only then checks it, so
+        // a caller that gets STATUS_NO_MEMORY sees Buffer=NULL. Returning
+        // before the store instead leaves the caller's own stale pointer in
+        // place next to the Length/MaximumLength this function just
+        // overwrote: a string that looks live and aims at foreign memory.
+        // Same shape in all 11 converters here; rtl-difftest pins it.
+        (*dest).Buffer = buf;
         (*dest).MaximumLength = length as u16;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     }
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -698,11 +705,11 @@ pub unsafe extern "system" fn RtlUnicodeStringToAnsiString(
     let mut status = STATUS_SUCCESS;
     if alloc != 0 {
         let buf = rtl_alloc(length as usize, TAG_ASTR);
+        (*dest).Buffer = buf;
         (*dest).MaximumLength = length as u16;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     } else if (*dest).Length >= (*dest).MaximumLength {
         if (*dest).MaximumLength == 0 {
             return STATUS_BUFFER_OVERFLOW;
@@ -751,11 +758,11 @@ pub unsafe extern "system" fn RtlOemStringToUnicodeString(
     (*dest).Length = length as u16 - 2;
     if alloc != 0 {
         let buf = rtl_alloc(length as usize, TAG_USTR) as *mut u16;
+        (*dest).Buffer = buf;
         (*dest).MaximumLength = length as u16;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     }
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -783,11 +790,11 @@ pub unsafe extern "system" fn RtlUnicodeStringToOemString(
     (*dest).Length = length as u16 - 1;
     if alloc != 0 {
         let buf = rtl_alloc(length as usize, TAG_OSTR);
+        (*dest).Buffer = buf;
         (*dest).MaximumLength = length as u16;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     }
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -826,11 +833,11 @@ pub unsafe extern "system" fn RtlOemStringToCountedUnicodeString(
     (*dest).Length = length as u16;
     if alloc != 0 {
         let buf = rtl_alloc(length as usize, TAG_USTR) as *mut u16;
+        (*dest).Buffer = buf;
         (*dest).MaximumLength = length as u16;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     }
     if (*dest).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -864,11 +871,11 @@ pub unsafe extern "system" fn RtlUnicodeStringToCountedOemString(
     (*dest).Length = length as u16;
     if alloc != 0 {
         let buf = rtl_alloc(length as usize, TAG_OSTR);
+        (*dest).Buffer = buf;
         (*dest).MaximumLength = length as u16;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     }
     if (*dest).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -899,10 +906,10 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeString(
     if alloc != 0 {
         let buf = rtl_alloc((*src).Length as usize, TAG_USTR) as *mut u16;
         (*dest).MaximumLength = (*src).Length;
+        (*dest).Buffer = buf;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     }
     if (*src).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -933,11 +940,11 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToAnsiString(
     (*dest).Length = length as u16 - 1;
     if alloc != 0 {
         let buf = rtl_alloc(length as usize, TAG_ASTR);
+        (*dest).Buffer = buf;
         (*dest).MaximumLength = length as u16;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     } else if (*dest).Length >= (*dest).MaximumLength && (*dest).MaximumLength == 0 {
         return STATUS_BUFFER_OVERFLOW;
     }
@@ -971,11 +978,11 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToCountedOemString(
     (*dest).Length = length as u16;
     if alloc != 0 {
         let buf = rtl_alloc(length as usize, TAG_OSTR);
+        (*dest).Buffer = buf;
         (*dest).MaximumLength = length as u16;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     }
     if (*dest).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -1006,11 +1013,11 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToOemString(
     (*dest).Length = length as u16 - 1;
     if alloc != 0 {
         let buf = rtl_alloc(length as usize, TAG_OSTR);
+        (*dest).Buffer = buf;
         (*dest).MaximumLength = length as u16;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     }
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -1047,10 +1054,10 @@ pub unsafe extern "system" fn RtlDowncaseUnicodeString(
     if alloc != 0 {
         let buf = rtl_alloc((*src).Length as usize, TAG_USTR) as *mut u16;
         (*dest).MaximumLength = (*src).Length;
+        (*dest).Buffer = buf;
         if buf.is_null() {
             return STATUS_NO_MEMORY;
         }
-        (*dest).Buffer = buf;
     }
     if (*src).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;

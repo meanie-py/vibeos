@@ -944,8 +944,27 @@ N+1 as evidence that the fix for bug N was wrong.**
   `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
   **silent** when it feeds an integer.
 - **C post-inc/dec rewritten with the wrong read order** (`x = y--` reading the post value).
+- **A post-decrement INSIDE a loop condition — `while (a && b && len--)`.** The decrement is
+  part of the test, so the loop exits having *already* wrapped `len` to `SIZE_MAX`, and the
+  `if (len && ...)` epilogue that follows fires on that wrapped value. A Rust `while len > 0`
+  with a separate `len -= 1` reads like the same loop and is not: `len` stays 0 and the
+  epilogue never runs. `_mbsnset_l` silently dropped its truncation this way. Whenever a C loop
+  decrements in its condition, check what the code *after* the loop reads.
 - **A C parameter reassignment translated as a block-local `let` SHADOW** — the new value dies
-  at the block end.
+  at the block end. The same bug wearing a loop: **the C walks the PARAMETERS and the code after
+  the loop reads what the walk left behind.** `_mbslwr_s_l`/`_mbsupr_s_l` looped over `let mut
+  s = s` copies scoped inside a branch, so afterwards they tested the *original* `len` (making
+  the buffer-too-small `EINVAL` unreachable) and wrote the terminator at the *original* `s`,
+  i.e. the start of the string. `let mut s = s;` at function scope is the fix; the tell is any
+  statement after the loop that mentions a parameter the loop advanced.
+- **An out-parameter store made CONDITIONAL on success.** C's
+  `Dest->Buffer = alloc(...); if (!Dest->Buffer) return STATUS_NO_MEMORY;` stores the failure
+  into the caller's struct; the natural Rust — `let buf = alloc(); if buf.is_null() { return
+  ... } (*dest).Buffer = buf;` — returns *before* the store. The caller is then left holding
+  its own stale pointer beside the `Length`/`MaximumLength` the function just overwrote: a
+  string that looks live and aims at foreign memory. Eleven `Rtl*String` converters had it.
+  Whenever C assigns through an out-pointer and *then* tests what it assigned, the store is
+  part of the contract — keep the order.
 - **A guard condition swapped for a different nearby variable** — logic inverted per boot mode.
 - **A NULL guard De Morgan'd the wrong way.** `MSVCRT_CHECK_PMT(start && str)` came back as
   `MSVCRT_CHECK_PMT!(start.is_null() || str.is_null())` — the *negation* of the C, so the guard
@@ -1315,6 +1334,18 @@ bugs: **ambient state the reference holds fixed** (locale — grep a flip candid
 `get_locinfo` / `_l`-suffixed helpers / any read of process-global state), and **the reference
 TU is compiled for the HOST**, so target-conditional `#if`s are graded on the wrong arm.
 
+A third: **an out-parameter the harness only PARTIALLY compares.** rtl-difftest asserted
+`(Length, MaximumLength)` on the STRING converters but not `Buffer`, so an eleven-site
+divergence — the alloc-failure path storing nothing where the C stores NULL — was visible in
+exactly the one test that happened to compare all three fields. Ten of eleven sites were graded
+green by a suite that never looked at the field carrying the bug. **Compare the whole
+out-parameter, or write down which field you dropped and why.** Pointer values legitimately
+differ between the two sides, but `is_null()` does not — grade the property, not the address.
+
+And after fixing anything a harness caught, **re-break one site deliberately and confirm the
+suite goes red.** Widening an assertion is itself untested code: it is easy to add a field to a
+tuple that can never disagree, and the result reads exactly like a stronger test.
+
 ### Anything you define so the reference will LINK is part of the oracle `[§9.73]`
 A 20,000-case differential fuzzer said MATCH for four waves while **six shipped msvcrt functions
 were wrong** — because the harness's own convenience stubs for `_tolower_l` &c. graded the Rust
@@ -1326,6 +1357,16 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **A hand-typed CONSTANT in the refstub is an oracle that grades against a value Windows never
+  returns.** rtl-difftest's `refstub/rtl.h` carried
+  `#define STATUS_UNMAPPABLE_CHARACTER 0x80000016` — the real value is `0xC0000162`, the same
+  digits transposed. Both are negative, so `NT_SUCCESS` agrees and control flow is identical;
+  only the returned value differs, which is precisely what a differential test compares. It
+  read as a *Rust* bug for as long as nobody checked the reference's own header. Every constant
+  you re-declare so the reference will compile is un-sealed data — the same class as the 61
+  invented kernel stop codes `[§9.113]`, except no shipped-code scanner looks in a test's
+  private header. **Audit the whole block against the SDK, not just the one that got caught**
+  (16 constants, exactly 1 wrong); prefer including the real header over re-typing values.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,
@@ -1336,6 +1377,16 @@ symptom and leaves `pure` in place). **The tripwire matters more than the fix:**
 `ref_integrity.rs` is a test whose subject is *the oracle itself* — for each reference function
 whose C contains a guard, call it in a forked child with the input the guard exists for and
 assert it returns rather than faults.
+
+**The mirror image: the harness's own ENVIRONMENT binds to the subject.** A static definition
+beats the shared libc, and the code under test is full of `#[no_mangle]` CRT names. msvcrt-
+difftest's NLS layer called `iswalpha_l` to build its codepage tables; that resolved to the
+*subject's* Rust export, which called `GetStringTypeW`, which called back into the NLS layer —
+stack overflow on the first case. Anything the harness calls to CONSTRUCT the fixture must
+reach the host libc explicitly (`dlopen("libc.so.6")` + `dlsym`, resolved once and cached), not
+by name. Do not "fix" it by listing today's collisions: that shadow set grows with every file
+you translate, so an enumeration has an expiry date and the next collision presents as a
+mysterious hang, not a link error.
 
 ### Exercising a branch is not testing it `[§9.75]`
 A branch is only tested when its two sides can produce **different answers**. Planting a
