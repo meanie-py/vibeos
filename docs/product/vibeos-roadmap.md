@@ -509,7 +509,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   devmgmt/msconfig/sndrec32/kbswitch stay staged with their winlogon launch held so the 21
   passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
   marker fires long before the ladder runs.
-- **C assertion macros lowered to UB / to a BUGCHECK — FIXED 2026-07-25** (§9.119).
+- **C assertion macros lowered to UB / to a BUGCHECK — FIXED 2026-07-25** (§9.120).
   Found by a fresh-eyes catalog sweep, not by a crash. `PAGED_CODE()`/`NT_ASSERT()` are
   DIAGNOSTICS (KdPrint+RtlAssert under DBG, **nothing** in retail) and are never
   `__assume(0)`; three translations had lowered them to `unreachable_unchecked()` (UB —

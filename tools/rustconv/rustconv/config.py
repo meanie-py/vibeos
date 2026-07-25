@@ -1717,17 +1717,175 @@ def _find_dll_spec(name: str, source_dir: Path) -> Path | None:
     return cand if cand.is_file() else None
 
 
-def make_user_dll_target(name: str, source_dir: Path) -> "Target":
-    """A self-contained user-mode-DLL target (modeled on userinit/winlogon):
-    output to sdk/lib/rust/<name>-rust, ntdll_sys substrate (provides the NT/Rtl
-    types Wine code uses via winternl; Win32 APIs get forward-declared by the
-    mechanical prompt). Used for standalone dll/win32/* DLLs not in TARGETS."""
-    crate = RUST_DIR / f"{name}-rust"
+class TargetResolveError(RuntimeError):
+    """`--target <name>` could not be PROVEN against the tree.
+
+    Raised instead of falling back to the conventional guess. Every message names
+    an override flag that actually exists (`--output-crate` / `--sys-crate`) —
+    a fail-loud whose remedy is fictional is worse than no message at all.
+    """
+
+
+def _resolve_output_crate(name: str, override: str | None = None) -> tuple[Path, bool]:
+    """Which crate does this DLL's Rust live in? Returns (crate_dir, exists).
+
+    `<name>-rust` is the CONVENTION, not a law: msvcrt's bodies live in
+    `msvcrt-crt-rust` (the `-crt-` marks that it owns CRT bodies cohabiting a
+    DLL that also keeps its C). Guessing `msvcrt-rust` pointed the whole
+    pipeline at a crate that does not exist — assembly would have created a
+    phantom crate nothing links.
+
+    So: convention if it exists; an explicit override always wins; a NEW module
+    (no crate resembling the name at all) legitimately gets the conventional
+    name; and anything ambiguous RAISES rather than picking for you.
+    """
+    if override:
+        crate = Path(override)
+        if not crate.is_absolute():
+            crate = RUST_DIR / override
+        if not crate.is_dir():
+            raise TargetResolveError(f"--output-crate {override}: no such directory: {crate}")
+        return crate, True
+
+    conventional = RUST_DIR / f"{name}-rust"
+    if conventional.is_dir():
+        return conventional, True
+
+    # No conventional crate. Is there an unconventionally-named one for this DLL?
+    candidates = sorted(
+        p
+        for p in RUST_DIR.glob(f"*{name}*-rust")
+        if p.is_dir() and (p / "Cargo.toml").is_file()
+    )
+    if candidates:
+        listed = "\n    ".join(str(p.relative_to(RUST_DIR)) for p in candidates)
+        raise TargetResolveError(
+            f"--target {name}: the conventional crate `{name}-rust` does not exist, but these\n"
+            f"  crates in sdk/lib/rust/ look like they belong to this module:\n\n    {listed}\n\n"
+            f"  Refusing to guess — assembling into the wrong crate silently produces Rust that\n"
+            f"  nothing links. Pass the right one explicitly:\n\n"
+            f"    --output-crate {candidates[0].name}\n"
+        )
+    # Genuinely new module: the convention is correct, and the crate is created on assemble.
+    return conventional, False
+
+
+def _derive_sys_substrate(
+    crate: Path, crate_exists: bool, override: str | None = None
+) -> tuple[str, str | None, dict]:
+    """(sys_crate_ident, sys_umbrella, bindgen_files) proven from the tree.
+
+    The FFI substrate used to be hardcoded to ntdll-sys for every standalone DLL.
+    That is right for the winsock/net fleet — and wrong for any module carrying its
+    own `-sys` island. msvcrt's locale/thread state lives in `msvcrt-sys`
+    (a bindgen snapshot double-guarded by two compilers); `msvcrt-crt-rust` does not
+    even depend on ntdll-sys, so every `ntdll_sys::` path the model emitted was
+    unresolvable by construction — and per the `crate_bindgen_files` contract an
+    unresolved name is not a no-op: the model invents a forward declaration that
+    compiles, links, and is silently wrong. For msvcrt that means a GUESSED
+    `threadmbcinfo`, whose `mbctype[257]`/`mbcasemap[256]` every predicate indexes.
+
+    So read the dependency the crate actually declares. Every pre-existing
+    user-DLL crate (ws2_32, iphlpapi, netapi32, dnsapi, wkssvc, …) declares
+    exactly `ntdll-sys`, so this returns their historical value unchanged.
+    """
+    sys_name: str | None = override
+    if sys_name is None:
+        if not crate_exists:
+            # New module, no Cargo.toml to read: ntdll-sys is the right default for a
+            # standalone user-mode DLL (it is what the user-mode prompt addendum names).
+            sys_name = "ntdll-sys"
+        else:
+            cargo = crate / "Cargo.toml"
+            if not cargo.is_file():
+                raise TargetResolveError(f"{crate}: no Cargo.toml — cannot derive the FFI substrate")
+            deps = sorted(
+                set(re.findall(r"^\s*([A-Za-z0-9_-]+-sys)\s*=", cargo.read_text(), re.M))
+            )
+            if len(deps) == 1:
+                sys_name = deps[0]
+            elif not deps:
+                raise TargetResolveError(
+                    f"--target: {crate.name} declares no `*-sys` dependency, so there is no\n"
+                    f"  FFI substrate to translate against. Add the dependency, or name it:\n\n"
+                    f"    --sys-crate ntdll-sys\n"
+                )
+            else:
+                raise TargetResolveError(
+                    f"--target: {crate.name} declares several `*-sys` dependencies "
+                    f"({', '.join(deps)}).\n  Refusing to guess which one is the translation "
+                    f"substrate. Pick one:\n\n    --sys-crate {deps[0]}\n"
+                )
+
+    sys_dir = RUST_DIR / sys_name
+    if not sys_dir.is_dir():
+        raise TargetResolveError(f"--sys-crate {sys_name}: no such crate: {sys_dir}")
+
+    bindgen = {}
+    missing = []
+    for arch in ("i386", "amd64", "arm64"):
+        f = sys_dir / "src" / f"bindgen_{arch}.rs"
+        (bindgen.__setitem__(arch, f) if f.is_file() else missing.append(f))
+    if missing:
+        raise TargetResolveError(
+            f"--target: substrate crate `{sys_name}` is missing per-arch bindgen files:\n    "
+            + "\n    ".join(str(m) for m in missing)
+        )
+
+    return sys_name.replace("-", "_"), _detect_sys_umbrella(sys_dir, sys_name), bindgen
+
+
+def _detect_sys_umbrella(sys_dir: Path, sys_name: str) -> str:
+    """The module path the substrate re-exports its bindgen under.
+
+    Two shapes exist in-tree and both must work:
+      * `ntdll-sys`  — `pub mod nt { … }`, so imports collapse to `ntdll_sys::nt::*`.
+      * `msvcrt-sys` — flat `pub use bindgen_<arch>::*;` at the crate root, so they
+        collapse to `msvcrt_sys::*`.
+
+    Returns "" for the flat shape (see `collapse_sys_crate`: "" means *no umbrella
+    segment*, and is distinct from None, which means "not a user-mode target at all").
+    """
+    lib = sys_dir / "src" / "lib.rs"
+    if not lib.is_file():
+        raise TargetResolveError(f"--target: substrate crate `{sys_name}` has no src/lib.rs")
+    src = lib.read_text(errors="replace")
+    flat = bool(re.search(r"^pub use (?:self::)?bindgen_\w+::\*\s*;", src, re.M))
+    umbrellas = re.findall(r"^pub mod (\w+)\s*\{", src, re.M)
+    if flat and not umbrellas:
+        return ""
+    if len(umbrellas) == 1 and not flat:
+        return umbrellas[0]
+    raise TargetResolveError(
+        f"--target: cannot tell how `{sys_name}` re-exports its bindgen "
+        f"(root glob: {flat}; pub mod: {umbrellas or 'none'}).\n"
+        f"  Expected either one `pub mod <umbrella> {{ … }}` or a flat "
+        f"`pub use bindgen_<arch>::*;` at the crate root."
+    )
+
+
+def make_user_dll_target(
+    name: str,
+    source_dir: Path,
+    *,
+    output_crate: str | None = None,
+    sys_crate: str | None = None,
+) -> "Target":
+    """A self-contained user-mode-DLL target for a `dll/win32/*` module not in TARGETS.
+
+    Everything that used to be ASSUMED here is now PROVEN from the tree, or raises
+    `TargetResolveError` naming a real override flag: the output crate
+    (`_resolve_output_crate`) and the FFI substrate + its bindgen files and umbrella
+    (`_derive_sys_substrate`). Behaviour for every pre-existing target is unchanged —
+    they all follow the `<name>-rust` + `ntdll-sys` convention this used to hardcode.
+    """
+    crate, crate_exists = _resolve_output_crate(name, output_crate)
+    sys_ident, umbrella, bindgen_files = _derive_sys_substrate(crate, crate_exists, sys_crate)
     return Target(
         name=name,
         source_dir=source_dir,
         output_crate=crate,
-        bindgen_files=NTDLL_BINDGEN_FILES,
+        bindgen_files=bindgen_files,
         hal_bindgen_files={},
         spec_file=_find_dll_spec(name, source_dir),
         system_prompt=TEMPLATES_DIR / "system_prompt.md",
@@ -1735,11 +1893,18 @@ def make_user_dll_target(name: str, source_dir: Path) -> "Target":
         cmake_deps_file=None,
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
-        sys_crate="ntdll_sys",
-        sys_umbrella="nt",
-        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+        sys_crate=sys_ident,
+        sys_umbrella=umbrella,
+        system_prompt_addendum=_user_prompt_addendum(name),
         com_method_macro=_detect_com_method_macro(crate),
     )
+
+
+def _user_prompt_addendum(name: str) -> Path:
+    """Per-module prompt rules, when the module has idioms the generic user-mode
+    addendum does not cover (msvcrt: CRT locale/thread reach, errno discipline)."""
+    specific = TEMPLATES_DIR / f"system_prompt_{name}.md"
+    return specific if specific.is_file() else TEMPLATES_DIR / "system_prompt_user.md"
 
 
 def hal_cmake_for_c(c_path: Path) -> Path | None:

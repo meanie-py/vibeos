@@ -316,7 +316,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
-    # Sibling of the above, same root cause, different lowering (§9.119). C's
+    # Sibling of the above, same root cause, different lowering (§9.120). C's
     # PAGED_CODE/ASSERT/NT_ASSERT are DIAGNOSTICS — KdPrint+RtlAssert under DBG,
     # ((void)0) in retail — and never __assume(0). Translating one to
     # core::hint::unreachable_unchecked() makes it UB, licensing LLVM to delete

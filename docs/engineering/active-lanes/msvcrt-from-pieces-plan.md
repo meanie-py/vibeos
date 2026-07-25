@@ -1148,3 +1148,52 @@ retires wcs.c's whole printf instantiation.
 externs added to subjectimpl.c/refimpl.c (the reference's copies are namespaced
 `msvcrt_ref_*`; `_wctomb_l` forwards to the genuine `ref__wctomb_l` so both sides run ONE
 converter — the same wiring the DLL has, where the C still owns those symbols).
+
+## 2026-07-25 — rustconv made msvcrt-aware (4 changes, no translation landed)
+
+Before spending anything on the ~906 remaining exports, four pipeline changes. Detail lives in
+`rustconv-pipeline.md` (§`--target`, §deterministic-first stages) and field manual **§9.119**;
+this is the lane-facing summary.
+
+**The one that mattered was a silent-wrongness bug, not a cost one.** `--target msvcrt` fell
+through to the generic `make_user_dll_target`, which *assumed* output crate `<name>-rust` and
+substrate `ntdll-sys`. Both were wrong: the crate is `msvcrt-crt-rust`, and it does not depend
+on ntdll-sys at all — so every `ntdll_sys::` path the model emitted was unresolvable, and per
+rustconv's own `crate_bindgen_files` contract an unresolved name is not a no-op: the model
+invents a forward declaration that compiles, links, and is silently wrong. For mbcs.c that is a
+**guessed `threadmbcinfo`**, whose `mbctype[257]`/`mbcasemap[256]` every predicate indexes.
+Both facts are now derived from the tree (Cargo.toml `*-sys` dep; `<name>-rust` glob) and RAISE
+rather than guess, naming `--output-crate`/`--sys-crate`. All five pre-existing user-DLL targets
+resolve unchanged.
+
+**`system_prompt_msvcrt.md`** now auto-selects for this target: substrate is `msvcrt_sys` flat,
+never redeclare `threadlocinfo`/`threadmbcinfo`, read the real `pclmap`/`pcumap` instead of
+hardcoding an ASCII fold, `_invalid_parameter` + `*_errno()` rather than `STATUS_*`, exports are
+cdecl on every arch, plus the flex-array and memcpy traps this lane already ate.
+
+**`forwarder_with_null`** lowers the CRT's `X(args) → X_l(args, NULL)` idiom for $0 — but its
+real reach is **11 msvcrt functions, not the 146 a text match suggests**, because `_locale_t` is
+a *typedef'd* pointer nothing in the pipeline can currently prove. Refusing is correct; the
+lever for the other ~135 is a typedef authority in the bindgen island (§9.119). **Do not budget
+mbcs.c's 76 "free" forwarders — they are not free.**
+
+**`profile_derive` now works on msvcrt** (it used to call the module already-Rust-flipped, which
+is never true of a whole-archive cohab module, then name two flags that did not exist).
+`--target msvcrt_static --usermode` derives a clean **2-island** profile with **zero ERROR
+findings** — so msvcrt has no blocking §9.112 island gap, and the audit even force-added
+`minwinbase.h` for `EXCEPTION_ACCESS_VIOLATION` in a case label.
+
+### Live validation: `mathf.c` (~$0.01, staged only, NOT integrated)
+
+12 functions: **10 lowered DETERMINISTIC ($0)** by the plain forwarder shape, 2 paid. Confirms
+target/substrate resolution, prompt selection and sealing all reach a real msvcrt file. Two
+observations from the paid pair, both recoverable by the deterministic layers that exist for
+exactly this reason: the model emitted `extern "system"` for `exp2f` (spec-is-ground-truth ABI
+enforcement corrects it) and redundantly redeclared a sealed callee (documented as harmless).
+
+**Open, pre-existing, NOT ours — handed to the rustconv lane:** the **preamble** call returns
+empty for mathf.c (0-byte `00_preamble.partial`, `finish_reason=stop`, 1885 output tokens),
+reproducibly, so the file cannot stitch. The failure is loud and correct, but its message blames
+"reasoning consumed the 65536-token budget" — which cannot be true at 1885 tokens with a normal
+stop. Likely shape: a preamble that is *only* extern function declarations gives the model
+nothing it judges translatable. Any msvcrt import-lib shim file will hit it.
