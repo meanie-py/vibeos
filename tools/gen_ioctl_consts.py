@@ -34,9 +34,7 @@ REPO = Path(__file__).resolve().parent.parent
 SEARCH_ROOTS = ["sdk/include"]
 
 # `#define NAME value` — object-like only (no '(' straight after the name).
-RE_OBJ_DEFINE = re.compile(
-    r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+(.*?)[ \t]*$", re.M
-)
+RE_OBJ_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+(.*?)[ \t]*$", re.M)
 # `#define NAME(a, b) body` — function-like. Needed because the interesting
 # constants are rarely a bare CTL_CODE: winsock spells its IOCTLs
 # `_WSAIORW(IOC_WS2, 6)`, which expands to `(IOC_INOUT|(IOC_WS2)|(6))`. Expanding
@@ -100,9 +98,11 @@ def expand_call(name, argstr, functable):
     if len(args) != len(params):
         raise Unevaluable(f"{name} takes {len(params)} args, got {len(args)}")
     binding = dict(zip(params, args, strict=True))
-    return re.sub(r"\b([A-Za-z_]\w*)\b",
-                  lambda m: f"({binding[m.group(1)]})" if m.group(1) in binding else m.group(1),
-                  body)
+    return re.sub(
+        r"\b([A-Za-z_]\w*)\b",
+        lambda m: f"({binding[m.group(1)]})" if m.group(1) in binding else m.group(1),
+        body,
+    )
 
 
 def evaluate(expr, table, functable=None, depth=0):
@@ -132,8 +132,9 @@ def evaluate(expr, table, functable=None, depth=0):
     # a function-like macro invocation: expand and re-evaluate
     mc = RE_MACRO_CALL.match(e)
     if mc and mc.group(1) in functable:
-        return evaluate(expand_call(mc.group(1), mc.group(2), functable),
-                        table, functable, depth + 1)
+        return evaluate(
+            expand_call(mc.group(1), mc.group(2), functable), table, functable, depth + 1
+        )
 
     # general arithmetic: substitute symbols then hand to Python, which shares
     # C's semantics for the operators these headers actually use (<< | & + - * ~).
@@ -146,8 +147,8 @@ def evaluate(expr, table, functable=None, depth=0):
     )
     subbed = re.sub(r"\b(\d+)[uUlL]+\b", r"\1", subbed)
     try:
-        return int(eval(subbed, {"__builtins__": {}}, {}))  # noqa: S307
-    except Exception as exc:  # noqa: BLE001
+        return int(eval(subbed, {"__builtins__": {}}, {}))
+    except Exception as exc:
         raise Unevaluable(f"cannot evaluate {e!r} ({exc})") from exc
 
 
@@ -187,14 +188,22 @@ def ctl_code(dev, func, method, access):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("header", help="header owning the IOCTL defines (repo-relative or abs)")
-    ap.add_argument("--prefix", action="append", default=[],
-                    help="only transcribe names with this prefix (repeatable)")
+    ap.add_argument(
+        "--prefix",
+        action="append",
+        default=[],
+        help="only transcribe names with this prefix (repeatable)",
+    )
     ap.add_argument("--type", default="u32", help="Rust type for the emitted consts")
-    ap.add_argument("--check", metavar="RSFILE",
-                    help="verify RSFILE's existing consts against the header instead of emitting")
+    ap.add_argument(
+        "--check",
+        metavar="RSFILE",
+        help="verify RSFILE's existing consts against the header instead of emitting",
+    )
     args = ap.parse_args()
 
     hdr = Path(args.header)
@@ -205,7 +214,7 @@ def main():
 
     # Symbol table: the owning header first, then every SDK header for the
     # FILE_DEVICE_* / METHOD_* / IOC_* operands and the CTL_CODE / _WSAIO* macros.
-    table, functable = read_defines([hdr] + all_headers())
+    table, functable = read_defines([hdr, *all_headers()])
 
     hdr_only, _ = read_defines([hdr])
     out, failures, skipped = [], [], 0
@@ -236,8 +245,10 @@ def main():
             print(f"  {f}", file=sys.stderr)
         sys.exit(2)
     if not out:
-        sys.exit(f"FATAL: no evaluable macro defines matched in {hdr} "
-                 f"({skipped} non-numeric define(s) skipped)")
+        sys.exit(
+            f"FATAL: no evaluable macro defines matched in {hdr} "
+            f"({skipped} non-numeric define(s) skipped)"
+        )
 
     if args.check:
         rs = Path(args.check)

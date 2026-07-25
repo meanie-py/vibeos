@@ -20,6 +20,7 @@ Usage:
     scan_doc_sections.py [--lint] [paths...]      (default: the field manual)
 Exit 1 on any duplicate when --lint is passed.
 """
+
 from __future__ import annotations
 
 import re
@@ -61,9 +62,11 @@ def main(argv: list[str]) -> int:
                 dupes += 1
                 rel = doc.relative_to(REPO) if doc.is_relative_to(REPO) else doc
                 print(f"{rel}: DUPLICATE section {num} at lines {', '.join(map(str, lines))}")
-                print(f"    Two lanes picked {num} independently. Renumber the LATER one to the "
-                      f"next free number and fix its cross-references — surgically, not with a "
-                      f"blanket sed (the other lane's refs point at ITS section).")
+                print(
+                    f"    Two lanes picked {num} independently. Renumber the LATER one to the "
+                    f"next free number and fix its cross-references — surgically, not with a "
+                    f"blanket sed (the other lane's refs point at ITS section)."
+                )
 
     if dupes:
         print(f"\nTotal: {dupes} duplicate section number(s).")
