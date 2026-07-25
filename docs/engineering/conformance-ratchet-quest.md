@@ -1292,12 +1292,12 @@ Classifying every quarantined test by whether its source uses `_SEH2_TRY`:
 | `RtlIsValidOemCharacter` | 1 | task #18 — confirmed |
 | `ExHardError` | 2 | task #18 candidate |
 | `ExResource` | 1 | task #18 candidate |
-| `KeDpc` | 2 | task #18 candidate |
+| `KeDpc` | 2 | task #18 — **confirmed** |
 | `MmSection` | 2 | task #18 candidate |
 | `KeMutex` | 0 | distinct bug |
 | `ZwMapViewOfSection` | 0 | distinct bug |
 
-So **~5 of the 9 i386-only quarantines are one root**, and task #18 is the highest-value i386
+So **~5 of the 9 i386-only quarantines are one root** (2 confirmed, 3 by signature), and task #18 is the highest-value i386
 fix by a wide margin — it is worth roughly as much as the entire rest of the i386-only tail.
 
 **The discriminator needs both halves.** `IoFilesystem` and `RtlException` also use `_SEH2_TRY`,
@@ -1309,3 +1309,17 @@ look like it fixed more than it does.
 **Cost of this classification: one grep.** It was available on 2026-07-12 when these nine tests
 were quarantined with "triage owed". The blocker was never the difficulty — it was the recorded
 claim that triage needed a debugger (§9.127).
+
+**Second confirmation (same night).** `KeDpc` crashed at `_KeInitializeDpc@12+17`
+(`ke/dpc.rs:788`) and its test is unambiguous:
+
+```c
+_SEH2_TRY { KeInitializeDpc(NULL, NULL, NULL); }
+_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status = _SEH2_GetExceptionCode(); }
+ok_eq_hex(Status, STATUS_ACCESS_VIOLATION);
+```
+
+The test **asserts that it receives `STATUS_ACCESS_VIOLATION`** — the fault is the point of the
+test, and `+17` is the deref of the NULL `Dpc`. Two candidates predicted from the grep, two
+confirmed on inspection. Note what this implies for the ratchet: these tests cannot pass on i386
+by fixing kernel code, because the kernel is behaving correctly. They pass when `__try` works.
