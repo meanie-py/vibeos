@@ -1152,7 +1152,7 @@ converter — the same wiring the DLL has, where the C still owns those symbols)
 ## 2026-07-25 — rustconv made msvcrt-aware (4 changes, no translation landed)
 
 Before spending anything on the ~906 remaining exports, four pipeline changes. Detail lives in
-`rustconv-pipeline.md` (§`--target`, §deterministic-first stages) and field manual **§9.118**;
+`rustconv-pipeline.md` (§`--target`, §deterministic-first stages) and field manual **§9.119**;
 this is the lane-facing summary.
 
 **The one that mattered was a silent-wrongness bug, not a cost one.** `--target msvcrt` fell
@@ -1174,7 +1174,7 @@ cdecl on every arch, plus the flex-array and memcpy traps this lane already ate.
 **`forwarder_with_null`** lowers the CRT's `X(args) → X_l(args, NULL)` idiom for $0 — but its
 real reach is **11 msvcrt functions, not the 146 a text match suggests**, because `_locale_t` is
 a *typedef'd* pointer nothing in the pipeline can currently prove. Refusing is correct; the
-lever for the other ~135 is a typedef authority in the bindgen island (§9.118). **Do not budget
+lever for the other ~135 is a typedef authority in the bindgen island (§9.119). **Do not budget
 mbcs.c's 76 "free" forwarders — they are not free.**
 
 **`profile_derive` now works on msvcrt** (it used to call the module already-Rust-flipped, which
