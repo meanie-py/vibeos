@@ -83,11 +83,44 @@ def _finding_lines(out: str) -> set[str]:
 # hit at a different line is not. Lines with no `file:line:` prefix are compared verbatim,
 # exactly as before.
 _LOCATION = re.compile(r"^(?P<file>[^\s:]+):\d+(?::\d+)?:")
+# lint_kernel does not use a `file:line:` prefix — it prints a file HEADER and then indented
+# per-site lines that carry the line number INSIDE the message: `    L 309 RtlpCheckDeviceName():
+# *NameInvalid = ...`. So the prefix-stripper above cannot see it, and the drift immunity it
+# provides silently did not apply to this one scanner. Adding 4-line banners to 12 files
+# reported 35 "new" findings that were the same 35 sites (gate WARN, 2026-07-25). The function
+# name stays in the key, and _new_findings is a multiset, so two real hits still need two
+# baseline entries.
+# The number is RIGHT-ALIGNED (`L 309` at 3 digits, `L1062` at 4 — no space), so the
+# separator between `L` and the digits is optional. Requiring one matched only the
+# narrow findings and left the wide ones drifting.
+_EMBEDDED_LINE = re.compile(r"^(?P<indent>\s*)L\s*\d+\s")
+# Several scanners print a CLASS TAG before the location — `[C_MACRO] path:38: msg`
+# (verify_ffi, 159/160 baseline lines) and `[TYPED_PTR_HEX_ARITH] path:223: msg`
+# (scan_magic_offsets, 46/46). _LOCATION is start-anchored, so it never saw the path and
+# the drift immunity silently did not apply: a ONE-LINE comment added to fastfat's extern
+# block moved an unrelated finding 177 -> 178 and the merge queue rejected the batch as
+# LINT_FAIL (2026-07-25). The tag is semantic — a [C_MACRO] and a [FLEX_ARRAY] at the same
+# site are different findings — so it stays in the key; only line:col is dropped.
+_TAGGED_LOCATION = re.compile(r"^(?P<tags>\s*(?:\[[^\]]+\]\s*)+)(?P<file>[^\s:]+):\d+(?::\d+)?:")
+# verify_signatures puts the location LAST and in parens, after the symbol it is talking
+# about: `[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/.../stubs.rs:210)`.
+_TRAILING_LOCATION = re.compile(r"^(?P<head>.*)\((?P<file>[^\s:()]+):\d+(?::\d+)?\)\s*$")
 
 
 def _finding_key(line: str) -> str:
     m = _LOCATION.match(line)
-    return f"{m.group('file')}: {line[m.end() :].strip()}" if m else line
+    if m:
+        return f"{m.group('file')}: {line[m.end() :].strip()}"
+    m = _TAGGED_LOCATION.match(line)
+    if m:
+        return f"{m.group('tags').strip()} {m.group('file')}: {line[m.end() :].strip()}"
+    m = _TRAILING_LOCATION.match(line)
+    if m:
+        return f"{m.group('head').strip()} ({m.group('file')})"
+    m = _EMBEDDED_LINE.match(line)
+    if m:
+        return f"{m.group('indent')}L {line[m.end() :].strip()}"
+    return line
 
 
 def _new_findings(cur: set[str], base: set[str]) -> list[str]:
@@ -326,6 +359,27 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # handler = silent spin), and the POWNED paint-mask panic WAS an unwrap.
     # Stock is large (~2.1K, mostly unwraps) → baseline gates NEW only; the
     # baseline doubles as the fix-campaign work queue.
+    # A forward declaration whose PARAMETER COUNT differs from the definition it links to.
+    # The 2026-07-17 clashing_extern triage sorted ~1458 findings and called this bucket "the
+    # highest-value needles" — every other bucket is a spelling or width difference that some
+    # ABI makes harmless, but a different arg count is the caller and callee disagreeing about
+    # the shape of the call. It found classpnp's ScsiGetNextSenseDescriptorByType, whose 4th
+    # parameter was `found: *mut u8` while callers pass `typeList.len() as ULONG` there — a
+    # write to address 0x2, gated off only by IsDescriptorSenseDataFormat(). Baseline holds 6
+    # verified-benign entries (address-only forward decls + the SSDT's uniform 6-arg shape).
+    sea = repo / "tools" / "scan_extern_arity.py"
+    specs.append(("scan_extern_arity", [py, str(sea)] if sea.is_file() else ["MISSING"], "stdout"))
+    # Translated .rs that no `mod` chain reaches. cargo never opens such a file, so
+    # `cargo check` is green whatever is in it and every source gate here skips it —
+    # while grep still finds it, so the next reader takes a dead copy for the truth
+    # (classpnp's class_gap3.rs was "fixed" that way while the link kept failing).
+    # Parking a translation is legitimate; an UNDECLARED park is not, so the gate is
+    # satisfied by an `//! ORPHAN-BY-DESIGN: <reason>` banner in the file itself.
+    # Baseline EMPTY = strict: all 12 of today's orphans carry one.
+    som = repo / "tools" / "scan_orphan_modules.py"
+    specs.append(
+        ("scan_orphan_modules", [py, str(som)] if som.is_file() else ["MISSING"], "stdout")
+    )
     ssf = repo / "tools" / "scan_silent_failures.py"
     specs.append(
         (

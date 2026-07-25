@@ -305,6 +305,26 @@ def _land_queued(args, repo: Path) -> int:
             (s for s in queue.pending(repo) if s.lane == lane and s.tip == head),
             None,
         )
+        if getattr(args, "dry_run", False):
+            # `--dry-run` used to be honoured only on the `--direct` path, so the DEFAULT
+            # path — the one every agent reaches for — submitted for real while reporting
+            # itself as a plan. A dry run that performs the action is worse than no dry run
+            # at all: it teaches you the flag is safe right before it isn't.
+            depth = len(queue.pending(repo))
+            run.add(
+                Stage(
+                    "submit",
+                    status="skip",
+                    detail=(
+                        f"dry run: {lane} @ {head[:12]} is already queued as "
+                        f"{dup.seq[-24:]} — would NOT re-submit"
+                        if dup
+                        else f"dry run: would queue {lane} @ {head[:12]} at position {depth + 1}"
+                    ),
+                )
+            )
+            _report_queue(run)
+            return run.finalize(repo)
         if dup:
             sub = dup
             run.add(

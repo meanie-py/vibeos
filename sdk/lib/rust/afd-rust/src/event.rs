@@ -1,3 +1,7 @@
+//! ORPHAN-BY-DESIGN: `event.c` is not in afd's build — it is dead upstream
+//! (its `AfdRegisterEventHandlers` is called from nowhere). Translated and kept
+//! per the never-delete rule; see drivers/network/afd/CMakeLists.txt.
+//!
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;

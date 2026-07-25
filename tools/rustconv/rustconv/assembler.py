@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,9 @@ from .batch_runner import TranslationResult
 from .config import OUTPUT_CRATE, TARGETS, Target, hal_cmake_for_c
 from .crate_integrate import integrate
 from .postprocess import postprocess
+from .signature_fidelity import repair_signatures
+from .table_fidelity import repair_tables
+from .typedefs import pointer_typedefs_for_source
 
 if TYPE_CHECKING:
     from .scanner import ScanResult
@@ -82,6 +86,26 @@ def assemble_file(
         com_method_macro=target.com_method_macro,
         crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
     )
+
+    # Static data tables come from the C verbatim, not from the model's transcription of
+    # it. This is pure substrate closure applied to data: mbcs.c's tables came back with a
+    # wrong LENGTH on every run (the values were right each time), and a padded table that
+    # still compiles is silently wrong forever. See table_fidelity's docstring.
+    rust_code, table_findings = repair_tables(rust_code, c_source)
+    for finding in table_findings:
+        print(f"  [tables] {finding}", file=sys.stderr)
+
+    # Same argument one level up, applied to signatures: a typedef that is already a pointer
+    # must not be given a second star. The model added one to 73 of mbcs.c's 77 locale-taking
+    # parameters, and that error is invisible at the ABI (both spellings are one machine
+    # pointer) -- it only surfaces if some dereference in the body happens to be loud. See
+    # signature_fidelity's docstring for why the rule cannot fire on a benign re-spelling.
+    if scan is not None and c_source_path is not None:
+        rust_code, sig_findings = repair_signatures(
+            rust_code, scan, pointer_typedefs_for_source(c_source_path)
+        )
+        for finding in sig_findings:
+            print(f"  [signatures] {finding}", file=sys.stderr)
 
     # Land the file on the target crate's shared prelude (import-surface swap + drop the
     # extern decls the prelude already provides — see crate_integrate). No-op for a crate

@@ -96,6 +96,18 @@ ALLOWLIST_TYPES = [
     "tagLC_ID",
     "lconv",
     "__lc_time_data",
+    # Spellings the WHOLE-FILE translations use in their own signatures. bindgen only
+    # emits a type it reaches transitively, and what it reaches differs by ARCH: `BYTE`
+    # rode in on i386's CONTEXT and was simply absent from bindgen_amd64.rs, so a file
+    # naming it compiled on one arch and not another. Naming them here makes all three
+    # islands carry the same vocabulary.
+    "_locale_t",  # the CRT's locale sentinel -- see rustconv.typedefs
+    "size_t",
+    "mbstate_t",
+    "wint_t",
+    "CPINFO",
+    "BYTE",
+    "LPCSTR",
 ]
 
 # The fields we actually touch, and therefore the fields we GUARD.
@@ -131,6 +143,9 @@ GUARDED = [
 WRAPPER_SRC = """\
 /* msvcrt-sys bindgen wrapper -- see generate_bindings.py */
 #include <locale.h>
+#include <limits.h>
+#include <mbctype.h>
+#include <mbstring.h>
 #include "msvcrt.h"
 #include "winnls.h"
 """
@@ -252,7 +267,22 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # Keep the surface tight: we want the STATE structs, not all of win32.
         *sum((["--allowlist-type", t] for t in ALLOWLIST_TYPES), []),
         "--allowlist-function", "(get_locinfo|get_mbcinfo|msvcrt_get_thread_data)",
-        "--allowlist-var", "(_UPPER|_LOWER|_DIGIT|_SPACE|_PUNCT|_CONTROL|_BLANK|_HEX|_LEADBYTE|_ALPHA)",
+        # Constants the translations reference by NAME. A constant missing from the island
+        # does not fail loudly -- it becomes a catch-all `match` arm or an invented literal
+        # (field manual 9.112/9.113), which is why these are allowlisted rather than left
+        # to whatever bindgen happens to reach.
+        "--allowlist-var",
+        "("
+        # ctype1 bits (pre-existing)
+        "_UPPER|_LOWER|_DIGIT|_SPACE|_PUNCT|_CONTROL|_BLANK|_HEX|_LEADBYTE|_ALPHA"
+        # mbctype.h: the multibyte character classes mbcs.c dispatches on
+        "|_MBC_[A-Z]+|_MS|_MP|_M1|_M2|_SBUP|_SBLOW|_MB_CP_[A-Z]+"
+        # errno.h / limits.h / stdio.h / wchar.h
+        "|EINVAL|ERANGE|EILSEQ|EOF|WEOF|INT_MAX|STRUNCATE|_TRUNCATE|_NLSCMPERROR"
+        # winnls.h: the NLS calls the CRT delegates collation and case mapping to
+        "|CP_ACP|CP_UTF8|CSTR_EQUAL|NORM_IGNORECASE|MB_ERR_INVALID_CHARS"
+        "|LCMAP_[A-Z]+|LOCALE_[A-Z_]+|C1_[A-Z]+|C3_[A-Z]+|CT_CTYPE[0-9]"
+        ")",
         "--",
         "-ferror-limit=0",
         "-Wno-everything",

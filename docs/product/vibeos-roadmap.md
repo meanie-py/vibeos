@@ -33,7 +33,7 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
-- **⭐ Exported-symbol trampoline refactor** *(new; Size: M, mechanical)* — split every exported symbol into a snake_case **native `nt_foo()`** (plain Rust ABI, holds the logic) + a generated **`NtFoo` trampoline** that is the *only* place `extern "system"/"fastcall"/stdcall` lives. Done mechanically in Python across all ~1,700+ monolith exports (thousands fleet-wide). **This is the capstone of the ghost-tax "two copies of the truth" program**: internal callers hit the native fn, so there is no hand-written `extern` decl left to drift — it kills the ABI-mismatch bug class the crate-split flushes cross-crate, `scan_cc_mismatch` catches same-crate (316 baseline), and `verify_ffi` guards (161). Also the natural substrate for idiomation (§3) and for **generating** crate-split's cross-crate decls instead of hand-writing them — so do it *aware of* the crate-split.
+- **⭐ Exported-symbol trampoline refactor** *(new; Size: M, mechanical)* — split every exported symbol into a snake_case **native `nt_foo()`** (plain Rust ABI, holds the logic) + a generated **`NtFoo` trampoline** that is the *only* place `extern "system"/"fastcall"/stdcall` lives. Done mechanically in Python across all ~1,700+ monolith exports (thousands fleet-wide). **This is the capstone of the ghost-tax "two copies of the truth" program**: internal callers hit the native fn, so there is no hand-written `extern` decl left to drift — it kills the ABI-mismatch bug class the crate-split flushes cross-crate, `scan_cc_mismatch` catches same-crate (316 baseline), and `verify_ffi` guards (161). Also the natural substrate for idiomation (§3) and for **generating** crate-split's cross-crate decls instead of hand-writing them — so do it *aware of* the crate-split. **Re-scoped 2026-07-25 — Size is L-XL, not M: the real surface is 24,823 `#[no_mangle]` exports fleet-wide** (the ~1,700 figure was ntoskrnl-only, and is accurate for it; win32k alone is 3,788). It also cannot be an edit campaign over the decls that exist — it must GENERATE them from one authority and retype call sites in the same pass. Two shortcuts were probed and closed as dead ends (decl-follows-def bakes in wrong ABIs; `verify_ffi`'s 6 ABI findings are correctly baselined local shims, not bugs) — see the warnings-burndown lane plan, 2026-07-25, before restarting.
 - **msvcrt / ucrtbase from pieces** *(new; Size: M-L)* — the CRT floor is still ~581 `.c`. Rather than translate it from scratch, **assemble** the Rust CRT from what already exists — `cnt-rust` (libcntpr kernel CRT subset) + the 39-crate `rtl-rust` umbrella — and NT-ify the gaps. Displaces the last big userland C floor.
 - **ntoskrnl crate-split continuation** *(Size: M)* — debug + land **ex** (x86 hang, branch `ex-crate-split-x86-hang`), then split **ke** and **mm/ARM3**; then **win32k** (flat 257K single crate, textbook USER/GDI seam, `freetype` a free leaf — one coordinated pass in a quiet window). Detail + recipe: the crate-split plan.
 
@@ -479,6 +479,40 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **`mscms-rust` — being integrated on the `integration` lane, NOT a bug.** Surfaced
+  2026-07-25 when `scan_orphan_modules` learned to see ROOTLESS crates: 6 files / 4,782 lines
+  with no `Cargo.toml` and no `lib.rs`, which every source gate had been skipping silently
+  (`crate_root_of` walks up to the nearest Cargo.toml — for a crate with none that is the
+  *workspace* manifest, and the "unparseable crate → fail open" branch swallowed the lot).
+  Baselined in `tools/lint-baseline/scan_orphan_modules.txt`, and **the ROOTLESS finding
+  deliberately carries no line count** so their in-flight edits don't read as NEW findings.
+  The 6 baseline entries expire on their own the moment a `lib.rs` lands — delete them then.
+  Another lane owns these files; don't edit them from here.
+- **Tree-wide bindgen callback-slot normalization — SCOPED, OWED** (task #14). The tool exists
+  and is proven end-to-end on buslogic: `tools/rustconv/normalize_island_abi.py` spells callback
+  slots `extern "system"` across a crate's three islands, projecting from the i386 island (the
+  only one that still records which callbacks are stdcall). Applying it repo-wide would touch
+  **17,612 slots across 37 crates** and surfaces **86 E0308s in ntoskrnl alone** — every one a
+  real convention-spelling mismatch that is currently invisible, so it is a batch of its own,
+  not a rider. The payoff is measured: on buslogic it let 6 `transmute(f as usize)` callback
+  installs become plain `Some(f)`, and reverting a definition to `extern "C"` now fails to
+  compile instead of leaking 8 bytes per SRB. Remaining exposure is ~500 transmute-shaped
+  installs — dxg-rust 92, win32k `ntddraw_dxeng` 42, cdfs `cdinit` 33, winsrv console frontends
+  ~90, hal `bussupp`/`dma` 42, cdrom 20, scsiport 15. Full writeup: field manual, "A `transmute`
+  at a callback-install site erases the CALLING CONVENTION". Also owed: `gen_driver_types.sh`
+  should call the pass unconditionally and retire the `CALLBACK_SYSTEM=1` opt-in, whose blanket
+  `s/extern "C" fn/extern "system" fn/` is unsound on i386 (34 genuinely-cdecl slots).
+- **8 `scan_cc_mismatch` entries in `ntkrnl-sys/src/bindgen_i386.rs` — benign, baselined**
+  (`Ke386SanitizeFlags`, `Ke386SanitizeSeg`, `Ke{Query,Register}InterruptHandler`,
+  `KiFillTrapFrameDebug`, `KiGetThreadNpxArea`, `KiSetTebBase`, `KiUserTrap`). The island
+  declares them `extern "C"` (faithful — the C headers make them `FORCEINLINE` and
+  undecorated, i.e. cdecl); our out-of-line definitions and all **19** hand-written callers
+  across the i386 trap/interrupt/thread-init path consistently say `extern "system"`. Nothing
+  calls through the island decl, so the Rust side is self-consistent and safe. Flipping the 8
+  definitions to `"C"` was tried and reverted — it makes 19 call sites disagree in order to
+  match a declaration with no callers. Resolves naturally when task #14 normalizes bindgen
+  conventions.
+
 - **amd64 `ExHardError` 6 failures — OPEN, NOT SMP-related, regressed on master since
   2026-07-17** (found 2026-07-24 by the UP:=smp1 conformance experiment). `ExHardError.c:139-144`
   — the six `CheckHardError(0x40000009..0x4000000d, …)` cases that raise a hard error with an
@@ -561,6 +595,37 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   corrupt thread; marshalling the structs alone would be *worse* (a more convincing corpse,
   still with no CPU-context setup — that needs the per-thread WoW64 entry #64 tracks). Blast
   radius measured: exactly one call in a full amd64 boot, from `osk.exe`.
+- **OUT `PHANDLE` flat thunks: `NtOpenProcessTokenEx`/`NtOpenThreadTokenEx` — MARSHALLED
+  2026-07-25** (task #63/E12). 12 calls per amd64 boot, failing two ways at once: the kernel's
+  `probe_write_handle` is `probe_write_user::<PVOID>` (8-byte alignment) while a guest `HANDLE`
+  is 4-aligned, so a cell at ≡4 (mod 8) was rejected with a spurious
+  `STATUS_DATATYPE_MISALIGNMENT` and one at ≡0 passed and wrote 8 bytes over a 4-byte cell.
+  Verified in a boot log: `NtOpenThreadTokenEx` used to appear twice per logical open (first
+  `=> 80000002`), now once, `[manual]`, 1:1 with `NtOpenProcessTokenEx => 00000000`.
+  **Triage lesson worth more than the fix:** intersecting the audit baseline with the syscalls
+  a real boot dispatches collapses the queue — of 195 divergent syscalls only **4** are called
+  in a full boot, and of 41 out-scalar-widen findings only **2**. Burning the baseline down in
+  file order would have spent most of the effort on cold entries. The remaining 39 in this
+  class are real but unreached; they matter for arbitrary apps, as a tail not a queue.
+- **`NtGetContextThread`/`NtSetContextThread` flat thunks overflow guest memory / load the
+  native register file from i386 fields — MARSHALLED 2026-07-25** (task #63/E12). Same
+  un-widenable `_CONTEXT` as `NtCreateThread`, but the disposition is the opposite one: the
+  kernel could never answer these (it has no notion of guest registers), while the CPU layer
+  already tracks them and `BTCpuGet/SetContext` speak exactly this i386 `CONTEXT` — so they got
+  real marshallers, not a refusal. Get was writing a 1232-byte host `CONTEXT` into the guest's
+  716-byte buffer. Self-thread only (cross-thread refused loudly — it would confidently return
+  the *wrong* thread's registers); control/integer/segments only, with unsupported
+  `ContextFlags` bits cleared in the reply rather than left looking answered.
+  Verified by two new `fault32.exe` rungs — a canary behind the CONTEXT (the standing
+  negative control for the overrun) and a Get→Set Eip redirect, with `0x600D` moved
+  into the landing site so the exit code *only* means the redirect worked.
+  **Owed: arm64 has ZERO functional coverage of this.** The probe guests are staged
+  by `dll/win32/wow64cpu/CMakeLists.txt`, which is `if(ARCH STREQUAL "amd64")`, and
+  fault32's launcher is `#[cfg(target_arch = "x86_64")]` because its rung 1 (hardware
+  fault → guest SEH) is still owed on arm64. Rungs 4-5 are arch-neutral but trapped
+  behind rung 1 in one binary, so closing this means a separate ctx32 guest **plus**
+  an arm64 staging path. It matters because arm64's CPU layer is FEX, not
+  `wow64cpu.S`: exactly the `#ifndef _M_ARM64` branches that go untested.
 - **arm64 warm build can end with a STALE cohab DLL — OPEN, not reproduced** (2026-07-25,
   task #70). A gate's arm64 build shipped `kernel32.dll` linked 331ms *before* its own
   `libkernel32_rust.a`; `artifact-check` caught it and a plain warm rebuild fixed it with no

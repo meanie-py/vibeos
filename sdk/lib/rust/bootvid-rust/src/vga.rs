@@ -1,3 +1,8 @@
+//! ORPHAN-BY-DESIGN: the legacy i386/pc INT10h VGA path, removed with the BIOS
+//! prune — every arch now boots UEFI and drives the GOP linear framebuffer, so
+//! bootvid builds the lfb path only. The live `Vid*` exports come from bootvid.rs.
+//! Paired with the equally-parked bootdata.rs, which nothing else references.
+//!
 //! AI-translated from drivers/base/bootvid/ (vga); extern blocks
 //! stripped — header inlines/macros/FFI provided by crate::pc.
 

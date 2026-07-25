@@ -1,3 +1,8 @@
+//! ORPHAN-BY-DESIGN: `win32ss/gdi/eng/drvdbg.c` appears in no CMake source list,
+//! and nothing in the tree references `apfnDbgDrvFunctions` or any `DbgDrv*`
+//! entry — it is an upstream debug driver-wrapper shim that is not built. The 45
+//! exports here are therefore unreachable, not missing.
+//!
 use win32k_sys::win32k::*;
 
 use core::ffi::c_void;
