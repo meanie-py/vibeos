@@ -206,6 +206,30 @@ the prompt. Being the first caller of sealed non-COM translation surfaced three 
 
 **`--cpp-com --class` is still the only route for a COM class.** This does not replace it.
 
+Keying every COM branch off one flag also switched off the **C++ language** layer, which free
+functions still need (§9.126): wide literals, `IID_PPV_ARG`, and body-local RAII. Restored
+2026-07-25 — `--free-functions` now gets the same deterministic lowerings as the COM path plus
+a C++ prompt coda. **Always pass `-o ~/vibeos-rust-staging/...`** while anything is gating:
+`translate` otherwise assembles into the live crate `src/`, and the build's staleness check
+fails every cargo-linked binary (§9.127).
+
+### Wave 4 readiness (measured, not estimated)
+
+246 free functions vs 13 class methods across the 15 TUs, and **0 unextracted bodies** now that
+§9.123 is fixed. 12 of 15 are 100% free functions:
+
+| Route | TUs | Note |
+|---|--:|---|
+| `--free-functions`, ready now | 12 | `stubs.cpp` (66 fns) is the largest |
+| blocked on `--local-raii CDataObjectHIDA` | 3 | `shldataobject`, `dialogs/item_prop`, `shlfolder` |
+| also need `--cpp-com --class` for 13 methods | 3 | `changenotify`, `dialogs/item_prop`, `CDefViewUtil` |
+
+The RAII blocker is a *deliberate* pre-payment refusal (§9.126), not a defect. Writing the
+lowering is tractable and self-consistent: `CDataObjectHIDA`'s create/destroy already exist in
+`shell_item_array.rs` as externs onto the `_RustBridge` pair that `shldataobject.cpp` defines —
+once that TU is Rust, the bridge is Rust calling Rust and the C++ class is deletable. Doing it
+unblocks 6 shell32 TUs at once, which is the usual shape here: extend one mapper, unblock many.
+
 ## Where every remaining TU actually stands (cpp-tu sweep, 2026-07-25)
 
 `cpp-tu` is free. Run across all 63 live TUs: **29 pass closure preflight, 34 blocked**, and the

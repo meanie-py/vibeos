@@ -10478,3 +10478,71 @@ hand-audited before landing.
 **semdiff is a candidate generator, not a verdict.** Both findings were entirely plausible and
 wrong. Verify against the source before acting on one, and prefer giving the oracle the missing
 *authority* (prototypes, language rules) over loosening what it reports.
+
+### 9.126 (FIXED 2026-07-25) A mode flag turned off the LANGUAGE layer, not just the framework layer
+
+`translate --free-functions` (shell32) exists because a TU's classless functions do not need
+the COM scaffold — no vtable, no `this`, no state layout. It was implemented as
+`cpp_com_mode = target is shell32 and not free_functions`, and every COM branch was keyed off
+that one flag. Correct for the scaffold. But the same flag also gated everything that is about
+**C++ the language**, and a free function in a `.cpp` is still C++.
+
+Three lowerings vanished at once. All three were found by *running* the path on one 172-line
+TU, not by reading it:
+
+| C++ construct | What the COM path does | What free functions got | Cohort count |
+|---|---|---|---|
+| `L"text"` / `L'c'` | deterministic content-addressed `CPP_COM_WSTR_<hash>` statics | nothing — model invented `u"text\0"` | 75 |
+| `IID_PPV_ARG(T,&o)` | deterministic expansion to two ABI args | nothing — emitted verbatim | 15 |
+| `CDataObjectHIDA h(p);` | `require_supported_worker_raii` refuses pre-payment | nothing — model invented `::new()` | 12 |
+
+**Rust has no UTF-16 string literal.** That is why the first one matters more than it looks:
+there was no correct output available to the model, so the prompt was asking it to invent, and
+a confident invention is what you get. Any construct with *no* target-language spelling must be
+lowered deterministically before the prompt is built — it can never be a model responsibility.
+
+Two general lessons:
+
+- **When you add a flag meaning "not the X path", enumerate what else lives behind X.** Ours
+  bundled framework concerns (vtables, `this`) with language concerns (literals, macros, RAII)
+  under one boolean. Splitting the *call sites* is not enough; you have to split the *concepts*.
+- **An empty allowlist is a licence to invent, not a neutral default.** `_LOCAL_RAII_TYPES` held
+  exactly `{"CDrop"}`, so every other body-local C++ owner sailed through the "unsupported RAII"
+  gate and was silently handed to the model. Absence from a refusal list reads as "supported".
+  The fix costs 6 shell32 TUs a refusal until someone writes `--local-raii CDataObjectHIDA=…`,
+  which is the correct trade: a loud refusal beats a paid invention.
+
+Also: normalization now runs on **cache hits**, not just fresh responses. A body banked before
+a repair exists would otherwise replay the un-repaired text for $0 forever — the same
+self-healing shape as the still-sealed-output guard in §9.122. Because the wide-literal lowering
+happens *before* sealing, it is part of the cache key, so only the bodies that actually changed
+re-paid: 1 of 10 functions, $0.01.
+
+### 9.127 (2026-07-25) `translate` assembles into the LIVE crate `src/` — which fails a concurrent gate
+
+`rustconv translate` writes its stitched module straight into the target crate
+(`sdk/lib/rust/<crate>-rust/src/...`). Harmless alone. But `vibeos-cli build`'s staleness check
+compares every `.rs` under the crate against the cargo-linked binaries, so a translation
+performed while a gate/land is in flight fails the build for an unrelated reason:
+
+```
+build i386 — FAIL: BUILD_INCOMPLETE
+  > base/system/lsass/lsass.exe: stale — sdk/lib/rust/shell32-rust/src/shell32/shldataobject.rs
+    newer than the cargo-linked binary (cargo link not re-run; run `build`)
+```
+
+The file was **untracked and referenced by no `mod`**, so cargo would never compile it — the
+check is deliberately conservative and globs the crate's source tree. `git status` stays clean
+(a new file is untracked, and `land`/`gate` sample dirtiness with `--untracked-files=no`), so
+nothing warns you: the tree looks landable and the build fails ~10 minutes later.
+
+**Translate to staging while anything is gating:** `-o ~/vibeos-rust-staging/<lane>/<file>.rs`.
+Paid output is preserved regardless — `.responses/<ts>-<file>/` is the canonical archive and is
+written before assembly. Integrate into the crate only when you are ready to build.
+
+Cleanup after the aborted land is also instructive: killing the `land` process released the FIFO
+land lock (the queued lane took it within seconds), but its `gate` child was **reparented, not
+killed**, and kept 2 of the host's 4 build permits for a verdict already discarded. Kill by
+explicit pid after confirming ownership — `/proc/<pid>/cwd` and `vibeos-cli host-status` name the
+worktree. Two `ninja livecd` processes at the canonical `/tmp/vibeos/build-*` path belonged to a
+*sibling* lane that had just acquired the lock; a pattern kill would have destroyed their work.
