@@ -350,7 +350,7 @@ def test_negative_control_scanner_is_not_trigger_happy(ctl: Control, tmp_path: P
     Without this, 'catches the bug' is satisfiable by flagging everything.
     """
     root = _materialize(tmp_path, ctl.good)
-    rc, out = _run(ctl, root)
+    _rc, out = _run(ctl, root)
     findings = [ln for ln in out.splitlines() if str(root) in ln or "fixture/" in ln]
     assert not findings, (
         f"{ctl.name} flagged its known-GOOD fixture — false positive.\n"
@@ -366,7 +366,7 @@ def test_every_lint_is_accounted_for():
     have — looking complete while being blind.
     """
     sys.path.insert(0, str(REPO / "tests" / "qemu"))
-    from cli.lints import source_lint_specs  # noqa: PLC0415
+    from cli.lints import source_lint_specs
 
     gate = {name for name, _cmd, _ff in source_lint_specs(REPO)}
     covered = {c.name for c in CONTROLS}
@@ -382,7 +382,7 @@ def test_control_names_match_real_lints():
     """Guard against a control that silently tests nothing because the lint was
     renamed — a control pointed at a dead name is itself a liar."""
     sys.path.insert(0, str(REPO / "tests" / "qemu"))
-    from cli.lints import source_lint_specs  # noqa: PLC0415
+    from cli.lints import source_lint_specs
 
     gate = {name for name, _cmd, _ff in source_lint_specs(REPO)}
     stale = sorted({c.name for c in CONTROLS} - gate) + sorted(set(UNCOVERED) - gate)
