@@ -298,6 +298,19 @@ python -m rustconv dup-census dll/win32/shell32 --top 20
 known runtime callee occurrence with a unique exactly-once executable token. Either envelope
 fails loud before the normal body audit. Each mode has a separate response-cache suffix.
 
+**Sealing is NOT shell32-only any more (2026-07-24).** It works for any plain-C module —
+kernel drivers, Win32 DLLs, services — and you should pass `--seal-facts --seal-calls` by
+default. The dialect is selected automatically: `--cpp-com` keeps the **frozen** `cpp`
+behaviour (changing it renumbers tokens and silently re-bills every cached *paid* shell32
+worker), everything else gets the `c` dialect, which additionally protects **CamelCase DDK
+enum constants** (`NonPagedPool`, `KernelMode`, `Executive`, the `Ndis*` vocabulary) and
+**mixed-case numeric `#define`s** (`NERR_Success`) from generated ground truth
+(`gen_enum_constants.py` → `rustconv/ddk_enum_constants.py`, staleness-gated in
+`check-tooling`). The whole winsock + Tier-2 service program ran with sealing OFF and
+shipped 13,503 unprotected constant occurrences; do not repeat that. Rationale, the
+storage/type direction rules, and the numeric-replacement-text classifier that keeps SEH
+control-flow macros (`RpcTryExcept`) out of the envelope: field manual **§9.114**.
+
 `candidate-check` generates a durable synthetic `no_std` crate under
 `.responses/candidate-oracles/`, replaces exactly one worker per isolated module backed by
 an accepted shell32 base, and checks i386/amd64/arm64. `--repair` is deliberately bounded:

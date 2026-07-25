@@ -9474,6 +9474,33 @@ committed-vs-working comparison over 129 real files, 0 divergences. Add protecti
 the contract text and treats a changed contract as a MISS, so a sealed run cannot replay
 unsealed output.)
 
+**Audit of what already shipped (2026-07-24, unsealed): no invented constants found, but
+names ARE being lowered to magic numbers.** A differential check over 1,246 C/Rust function
+pairs (2,420 constants with header ground truth) produced no confirmed invented value. Three
+hand-verified samples:
+- `netapi32 NetpNetBiosStatusToApiStatus` — an 11-arm NetBIOS→API status table. Every `case
+  NRC_*:` became a bare integer (`9 =>`, `13 =>`, …) and **all 11 values are correct**.
+- `dnsapi DnsQuery_UTF8` — `DnsQuery_CodePage(CP_UTF8, …)` became `DnsQuery_CodePage(65001u32,
+  …)`. Correct value, lost name.
+- `iphlpapi GetAdaptersAddresses` — `KEY_READ`/`IF_TYPE_SOFTWARE_LOOPBACK` are present *by
+  name*; the apparent hits were an artifact of the audit script.
+
+So the shipped state is value-correct but **name-poor**, which is drift risk rather than a
+live bug. Two lessons about auditing this class: match Rust literals **with type suffixes**
+(`65001u32` — a `(?![\w.])` guard rejects the trailing `u` and manufactures false positives),
+and merge a function's body across **all** files before comparing (a name can be defined in
+two modules).
+
+**IMPORTANT INTERACTION — sealing makes bindgen-island completeness MORE critical.** The
+magic numbers in `match` arms are plausibly a deliberate dodge of §9.112: a bare constant
+name in *pattern* position is a fresh BINDING unless it resolves to a real const, so an
+unresolved name silently becomes a catch-all matching everything. Sealing restores the C
+spelling, so a sealed translation puts the NAME back in pattern position — which is correct
+and more readable, but only if that constant is in the crate's bindgen island. If it isn't,
+you have re-created the §9.112 catch-all bug. `tools/verify_match_consts.py` (gated) is the
+oracle for exactly this, and it must stay green on every sealed C flip. Net: seal, and treat
+an island gap as a hard failure rather than a warning.
+
 **Recipe:** pass `--seal-facts --seal-calls` to `rustconv translate` for any plain-C module.
 Dialect selection is automatic (`--cpp-com` → `cpp`, otherwise `c`). Verify a prompt with
 `--dry-run --prompt` before spending: the envelope sections list the token counts, and a
