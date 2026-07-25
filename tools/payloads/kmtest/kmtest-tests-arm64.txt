@@ -7,15 +7,18 @@
 CmSecurity
 ExCallback
 ExDoubleList
-# QUARANTINED 2026-07-16 (arm64 sweep 1, first end-to-end run after the user-APC fix §9.90):
-# TIMEOUT at 180s — wedges IN-KERNEL (kmtest_drv.c:454 KeWaitForSingleObject timed out! — the
-# usermode-callback worker's AWAIT_REQ returns STATUS_TIMEOUT because the kernel test never posts
-# a callback; support.c:52 BytesReturned assert is collateral). Passes on amd64+i386, so arm64-
-# specific. NOT the user-APC path (that's fixed). The `ExiAcquire/Release/TryToAcquireFastMutex
-# NOT FOUND` spam is benign — those fastcall variants are i386-only and the test skip()s them on
-# 64-bit. Like SeTokenFiltering/TcpIpConnect the kernel-stuck process is unreapable and poisons
-# the rest of the run, so it must stay quarantined until the hang is triaged. Triage owed.
-#ExFastMutex
+# UN-QUARANTINED 2026-07-25: re-probed and it now COMPLETES — OK pass=209 fail=10 skip=2 exit=0,
+# and the sweep carried on to the next test, so the 2026-07-16 "wedges in-kernel / unreapable /
+# poisons the rest of the run" behaviour is gone. Controls on BOTH other arches, where it was
+# never quarantined: amd64 OK 126/0/3, i386 OK 257/0/0. This was arm64's ONLY arch-specific
+# quarantine, so arm64 now has none.
+# CAVEAT worth keeping: fail=10 here vs fail=0 on amd64 and i386. The crash/hang is fixed but a
+# real arm64 behavioural divergence remains inside the test; enabling it records 209/10 as the
+# arm64 floor so any further drift is caught. Do not read fail=10 as "fine".
+#   (prior note, for the audit trail: "QUARANTINED 2026-07-16: TIMEOUT at 180s — wedges IN-KERNEL
+#   (kmtest_drv.c:454 KeWaitForSingleObject timed out!); the ExiAcquire/Release fastcall NOT FOUND
+#   spam is benign, those are i386-only and skip()ped on 64-bit.")
+ExFastMutex
 # QUARANTINED 2026-07-16 (re-triaged after the task #10 SEH-resume fix): NOT the SEH cluster.
 # BUGCHECK 0x1E P1=0xC000001D (STATUS_ILLEGAL_INSTRUCTION), PC=0xfffffa0006176c60 — a NONPAGED-
 # POOL address, executing garbage, with NO [RAISE] preceding it. So ExRaiseHardError branches
