@@ -746,6 +746,14 @@ _BLIND_DETAILS = ("not in dump", "unknown type", "unknown field type")
 AUDIT_TABLES: dict[str, dict] = {
     "win32k": {
         "gen": "dll/win32/wow64/wow64_win32k_thunks.gen.c",
+        # Checked-in inputs the table is a pure function of — see
+        # compute_thunk_table(). Must mirror dll/win32/wow64/CMakeLists.txt.
+        "spec": "win32ss/win32u/win32u.spec",
+        "sysfuncs": "win32ss/w32ksvc32.h",
+        "manual_lists": [
+            "tools/wow64gen/manual-win32k.txt",
+            "tools/wow64gen/automarshal-win32k.txt",
+        ],
         "headers": [
             "win32ss/include/ntuser.h",
             "sdk/include/psdk/ntgdi.h",
@@ -755,6 +763,9 @@ AUDIT_TABLES: dict[str, dict] = {
     },
     "ntdll": {
         "gen": "dll/win32/wow64/wow64_thunks.gen.c",
+        "spec": "dll/ntdll/def/ntdll.spec",
+        "sysfuncs": "ntoskrnl/include/sysfuncs.h",
+        "manual_lists": ["tools/wow64gen/manual.txt"],
         "headers": [
             "sdk/include/ndk/cmfuncs.h",
             "sdk/include/ndk/dbgkfuncs.h",
@@ -786,6 +797,66 @@ def load_thunk_table(gen_c: Path) -> dict[str, bool]:
         if m:
             out[m.group(1)] = m.group(2) != "0"
     return out
+
+
+def _load_wow64gen():
+    """Import the sibling generator as a module (it is a script, not a package)."""
+    import importlib.util
+
+    path = Path(__file__).with_name("wow64gen.py")
+    spec = importlib.util.spec_from_file_location("wow64gen", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("wow64gen", mod)  # dataclass annotations resolve via sys.modules
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def compute_thunk_table(cfg: dict, arch: str) -> dict[str, bool]:
+    """The thunk table derived from CHECKED-IN SOURCES, exactly as the build
+    derives it — same generator, same inputs as dll/win32/wow64/CMakeLists.txt.
+
+    Why not just read the generated .c: because that is a BUILD ARTIFACT, and a
+    lint whose findings depend on build state is not portable across worktrees.
+    Reading a stale artifact silently reports syscalls as unmarshalled that were
+    fixed commits ago — which is not a hypothetical: it cost another lane a
+    re-blessed baseline that accepted 33 already-fixed sites as debt (2026-07-24).
+    The table is a pure function of (.spec, sysfuncs.h, the manual lists), all of
+    which are checked in, so compute it and never go stale.
+    """
+    w = _load_wow64gen()
+    manual = w.load_manual_list(",".join(str(REPO / m) for m in cfg["manual_lists"]))
+    syscalls = w.parse_spec(str(REPO / cfg["spec"]), arch, manual)
+    table = w.order_by_sysfuncs(w.parse_sysfuncs(str(REPO / cfg["sysfuncs"])), syscalls)
+    return {sc.name: not sc.needs_manual for sc in table}
+
+
+def crosscheck_artifact(computed: dict[str, bool], gen_c: Path, tname: str) -> None:
+    """Compare the computed table against the BUILT one and fail loudly on any
+    divergence. The computed table is authoritative (never stale); the artifact
+    is what the running wow64.dll actually dispatches. They can only differ if
+    the build dir predates a manual-list change — i.e. someone is about to read
+    stale results — so say so instead of quietly picking one."""
+    built = load_thunk_table(gen_c)
+    if not built:
+        return
+    diffs = [
+        (n, computed[n], built[n]) for n in sorted(computed.keys() & built.keys())
+        if computed[n] != built[n]
+    ]
+    if not diffs:
+        return
+    lines = "\n".join(
+        f"    {n}: sources say {'FLAT' if c else 'marshalled'}, "
+        f"built table says {'FLAT' if b else 'marshalled'}"
+        for n, c, b in diffs[:12]
+    )
+    more = f"\n    ... and {len(diffs) - 12} more" if len(diffs) > 12 else ""
+    raise RuntimeError(
+        f"audit {tname}: the BUILT thunk table disagrees with the checked-in sources on "
+        f"{len(diffs)} syscall(s) — {gen_c} is STALE.\n{lines}{more}\n"
+        f"Rebuild before trusting this lint (`./vibeos-cli build --arch <a>`). Reporting "
+        f"stale findings here is how already-fixed sites get re-blessed into the baseline."
+    )
 
 
 def audit_verdict(cls: str, detail: str) -> str:
@@ -837,12 +908,17 @@ def cmd_audit(args) -> int:
     noproto: list[str] = []
     audited = 0
 
+    arch = "arm64" if b64.name.endswith("arm64") else "amd64"
+
     for tname in tables:
         cfg = AUDIT_TABLES[tname]
+        # The table comes from CHECKED-IN SOURCES, so this lint's findings do not
+        # depend on build freshness and its baseline is portable across lanes.
+        # The built artifact is still consulted — but only to prove it AGREES.
+        table = compute_thunk_table(cfg, arch)
         gen = b64 / cfg["gen"]
-        if not gen.is_file():
-            print(f"marshalgen audit: SKIP {tname} (no {cfg['gen']})", file=sys.stderr)
-            continue
+        if gen.is_file():
+            crosscheck_artifact(table, gen, tname)
 
         # A layout dump that fails HERE is coverage silently lost — the build
         # exists, so every finding this table would have produced just vanishes.
@@ -872,11 +948,11 @@ def cmd_audit(args) -> int:
         protos = extract_prototypes(
             "\n".join((REPO / h).read_text(errors="replace") for h in cfg["headers"]), r"Nt\w+"
         )
-        table = load_thunk_table(gen)
         print(
             f"marshalgen audit [{tname}]: {len(table)} entries, "
             f"{sum(table.values())} live flat thunks, {len(protos)} prototypes, "
-            f"{len(db32)}/{len(db64)} records",
+            f"{len(db32)}/{len(db64)} records "
+            f"(table from sources{', built table agrees' if gen.is_file() else ''})",
             file=sys.stderr,
         )
 

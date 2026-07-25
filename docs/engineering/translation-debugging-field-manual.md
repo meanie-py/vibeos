@@ -9671,6 +9671,57 @@ IDL arity, or ordinal table — the input describes the CALL, not the DATA. Ask 
 generator's type source *cannot express*, then write a check that crosses the emitted
 artifact against a source that can.
 
+### 9.115a (FIXED 2026-07-24) A lint that reads a BUILD ARTIFACT has a baseline that is not portable — a stale build dir made `marshalgen audit` re-report 33 already-fixed syscalls, and they were re-blessed as accepted debt
+
+**Symptom.** The smp-bringup lane merged master, ran a full gate, and `marshalgen audit`
+reported **324** findings against a committed baseline of **291** — so master looked red on
+that lint for every lane. They re-blessed the baseline to 324 (+33/-0) to unblock the push
+stamp, reasonably concluding the 33 were pre-existing debt (zero overlap with the files
+they touched; both build-amd64 and build-arm64 agreed on 324).
+
+**They were not debt. They were 33 params of the 16 syscalls E10 had just FIXED**, silently
+resurrected. Proof took one experiment: delete exactly those 16 names from
+`manual-win32k.txt`, regenerate, re-run → **324**, exactly. Put them back → **291**, byte-
+identical to the baseline.
+
+**Cause — the lint's ground truth was a build artifact.** `marshalgen audit` read
+`build-*/dll/win32/wow64/wow64_win32k_thunks.gen.c` to decide which syscalls production
+dispatches through a flat thunk. That file is *generated* from `manual-win32k.txt` +
+`win32u.spec` + `w32ksvc32.h`. A worktree whose build dir predates a manual-list change
+still lists the fixed syscalls as `wow64_thunk_*`, so the audit faithfully reported them as
+unmarshalled. Nothing errored; the number was just quietly wrong.
+
+**Why this is worse than an ordinary flake.** The output feeds a **checked-in baseline**.
+A silently-wrong reading doesn't just fail a run — it gets *committed*, converting fixed
+bugs into "accepted debt" that no longer gates. The failure mode is a lint that lies in the
+safe-looking direction.
+
+**Fix (two parts, both needed).**
+1. **Derive from checked-in sources.** The table is a pure function of the `.spec`,
+   `sysfuncs.h` and the manual lists — all committed. `compute_thunk_table()` now calls the
+   same `wow64gen` entry points the build calls, so the finding set depends on the tree
+   alone and the baseline is portable across worktrees.
+2. **Still read the artifact — but only to prove it AGREES.** `crosscheck_artifact()` diffs
+   computed-vs-built and HARD FAILS on any divergence, naming each syscall and which side
+   says what. A stale build dir is now a loud "rebuild first", which is the honest verdict:
+   the tool cannot know whether *you* are stale or the sources changed, so it refuses rather
+   than guessing.
+
+**The generalizable rule.** *Any lint whose output is baselined must be a pure function of
+checked-in state.* If it reads a build artifact, a generated header, a compiled binary or a
+cache, then its baseline is only valid for whoever last built — and cross-lane merges will
+either thrash it or, worse, quietly bless away real fixes. Where the artifact genuinely is
+the ground truth (`verify_svc_numbering` disassembles the built i386 stubs, and must), the
+lint has to detect staleness and fail loudly rather than report against it.
+
+**Cross-lane etiquette this validated.** The re-bless was the right *call* on the
+information available — it unblocked master and, because the tool gates NEW-vs-baseline, it
+kept all 33 visible in the baseline file instead of hiding them. What made it recoverable
+was the FYI naming specific symbols: `NtGdiCreateDIBSection` and `NtGdiAddEmbFontToDC` in
+that list are what exposed the diagnosis instantly, because they were on the fix list. When
+re-blessing another lane's baseline, always paste a few concrete finding lines — the owner
+can recognise their own symbols in seconds.
+
 ### 9.116 (2026-07-24) WoW64 SendMessage payloads: `g_MsgMemory` sizes the lParam struct with the HOST's `size_of`, so a 32-bit sender's buffer is over-read — BUGCHECK 0x1E at win32k's `raw_move`
 
 **Symptom.** A stock 32-bit applet under WoW64 BUGCHECKs the box:

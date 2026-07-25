@@ -216,3 +216,43 @@ def test_audit_skips_cleanly_without_a_build(tmp_path, monkeypatch):
         show_unknown = False
 
     assert mg.cmd_audit(A()) == 0
+
+
+def test_audit_table_comes_from_sources_not_the_build(tmp_path):
+    """The table must be derivable from CHECKED-IN inputs alone. If this ever
+    regresses to reading build-*/...gen.c, the lint's baseline stops being
+    portable and stale build dirs re-report already-fixed syscalls."""
+    repo = os.path.abspath(os.path.join(_HERE, "..", ".."))
+    cfg = mg.AUDIT_TABLES["win32k"]
+    for key in ("spec", "sysfuncs", "manual_lists"):
+        assert key in cfg, f"win32k audit config lost its {key} source"
+    if not os.path.exists(os.path.join(repo, cfg["spec"])):
+        return  # not a full checkout
+    table = mg.compute_thunk_table(cfg, "amd64")
+    assert len(table) > 500
+    # Names on the manual list must NOT be reported as live flat thunks.
+    assert table["NtGdiCreateDIBSection"] is False
+    assert table["NtUserGetAtomName"] is False
+    # ...and a plainly-scalar syscall still is one.
+    assert table["NtGdiAbortDoc"] is True
+
+
+def test_crosscheck_hard_fails_on_a_stale_built_table(tmp_path):
+    """A build dir predating a manual-list change must be a LOUD failure, not
+    stale findings. Reported by the smp-bringup lane 2026-07-24: a stale
+    artifact made the audit re-report 33 already-fixed sites, and they were
+    re-blessed into the baseline as accepted debt."""
+    gen = tmp_path / "t.gen.c"
+    gen.write_text(
+        '    { "NtFoo", wow64_thunk_NtFoo, 1 }, /* [0] */\n'
+        '    { "NtBar", 0, 2 }, /* [1] MANUAL: listed in --manual-list */\n'
+    )
+    # agreeing table -> silent
+    mg.crosscheck_artifact({"NtFoo": True, "NtBar": False}, gen, "win32k")
+    # sources say NtFoo is marshalled, the built table still flat-thunks it
+    try:
+        mg.crosscheck_artifact({"NtFoo": False, "NtBar": False}, gen, "win32k")
+    except RuntimeError as e:
+        assert "STALE" in str(e) and "NtFoo" in str(e)
+    else:
+        raise AssertionError("stale built table did not raise")
