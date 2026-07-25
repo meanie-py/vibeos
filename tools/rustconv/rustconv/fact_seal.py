@@ -274,8 +274,35 @@ def fact_contract(sealed: SealedSource) -> str:
     )
 
 
+_USE_OF_TOKEN_RE = re.compile(
+    r"^[ \t]*use\s+__RUSTCONV_(?:CALL|FACT)_[0-9]{4}__\s*;[ \t]*\n?", re.M
+)
+
+
+def drop_token_use_items(rust: str) -> str:
+    """Delete `use <seal-token>;` items a model wrote.
+
+    A seal token stands for a VALUE, so it can never be a path. Cheap models read
+    the token as an unresolved name and emit `use __RUSTCONV_FACT_0000__;`, which
+    unseals to `use MAX_PATH;` / `use 100;`; the assembler then hoists both to file
+    scope and the module does not parse.
+
+    Handled deterministically rather than by adding a rule to `fact_contract`,
+    because the contract text is hashed into the resume-cache key: rewording it
+    would invalidate 1,006 banked sealed entries and re-charge for translations we
+    already own. Deleting the item is also strictly safer than trusting a prompt —
+    if the `use` was the token's ONLY occurrence, the closed-set check below still
+    reports it missing and fails loudly.
+
+    The COM path never hit this: its helper contract already says "use its supplied
+    name directly", and normalize_worker_body strips model-authored items.
+    """
+    return _USE_OF_TOKEN_RE.sub("", rust)
+
+
 def unseal_facts(rust: str, sealed: SealedSource) -> str:
     """Verify the closed token set and restore exact original spellings."""
+    rust = drop_token_use_items(rust)
     expected = {fact.placeholder for fact in sealed.facts}
     present = _PLACEHOLDER_RE.findall(rust)
     unknown = sorted(set(present) - expected)
