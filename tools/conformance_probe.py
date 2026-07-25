@@ -146,10 +146,31 @@ def main(argv: list[str]) -> int:
             if not missing:
                 remaining = []
                 break
-            # First candidate with no verdict is the one that ended the run.
-            crashers.append(missing[0])
-            print(f"[probe]   TRUNCATED at {missing[0]} — dropping it and re-running")
-            remaining = missing[1:]
+            # WHICH test ended the run? Two different cases, and conflating them
+            # drops an innocent test with zero evidence against it:
+            #
+            #  (a) the last test that DID get a verdict crashed the box. The parser
+            #      records it as CRASH/INCOMPLETE, and the next test never ran. The
+            #      culprit is that test, not the first one without a verdict.
+            #  (b) a test died so hard it produced no parseable verdict at all. Then
+            #      the first candidate with no verdict really is the culprit.
+            #
+            # The first version of this only implemented (b), so on a boot logging
+            # "SeInheritance OK / ZwAllocateVirtualMemory CRASH" it blamed and dropped
+            # ExFastMutex — which had never executed. Four arm64 tests were recorded
+            # as crashers on that basis and none of them had run.
+            last_bad = next(
+                (t for t in reversed(got) if verdicts.get(t) in ("CRASH", "INCOMPLETE")), None
+            )
+            if last_bad is not None:
+                crashers.append(last_bad)
+                print(f"[probe]   ENDED BY {last_bad} ({verdicts[last_bad]}) — it has a verdict;")
+                print(f"[probe]   {len(missing)} test(s) after it never ran; still CANDIDATES")
+                remaining = missing
+            else:
+                crashers.append(missing[0])
+                print(f"[probe]   TRUNCATED at {missing[0]} (no verdict at all) — dropping it")
+                remaining = missing[1:]
     finally:
         restore()
 
