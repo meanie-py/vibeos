@@ -78,6 +78,15 @@ BUF_OUT = "BUF_OUT"  # `unsigned char *` / `char *` — written through
 WSTR_IN = "WSTR_IN"
 WBUF_OUT = "WBUF_OUT"
 VOID = "VOID"  # C `(void)`, which the scanner reports as one parameter
+#: A scalar written THROUGH a pointer: `int *` / `size_t *`, non-const. The whole `_s`
+#: family reports its result this way — `_mbccpy_s(dst, n, &copied, src)` returns only an
+#: errno_t, and *`copied`* is the answer. Grading the return alone would compare two
+#: `EINVAL`s and call it parity while the byte counts disagreed, which is why these were
+#: worth a kind rather than a refusal: the `_s` variants carry the richest error contracts
+#: in the CRT (EINVAL vs ERANGE vs success-with-truncation) and each contract is only
+#: observable in the out-scalar.
+INT_OUT = "INT_OUT"  # `int *`, `unsigned *`, `long *` — written through
+SIZE_OUT = "SIZE_OUT"  # `size_t *` — written through
 
 _INT_SCALARS = {"int", "unsigned int", "unsigned", "long", "unsigned long"}
 _SIZE_SCALARS = {"size_t", "unsigned __int64", "__int64"}
@@ -85,7 +94,9 @@ _NARROW_CHAR = {"unsigned char", "char"}
 _WIDE_CHAR = {"wchar_t", "unsigned short"}
 
 #: Kinds a generated case knows how to SUPPLY. A parameter outside this set is a refusal.
-SUPPLIABLE = frozenset({CHAR, UCHAR, SIZE, LOCALE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT})
+SUPPLIABLE = frozenset(
+    {CHAR, UCHAR, SIZE, LOCALE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT, INT_OUT, SIZE_OUT}
+)
 #: Kinds a generated case knows how to COMPARE as a return value.
 COMPARABLE = frozenset({CHAR, UCHAR, SIZE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT, VOID})
 
@@ -194,6 +205,14 @@ def classify_type(c_type: str) -> str:
         return STR_IN if is_const else BUF_OUT
     if stars == 1 and base in _WIDE_CHAR | {"wchar_t"}:
         return WSTR_IN if is_const else WBUF_OUT
+    if stars == 1 and not is_const and base in _SIZE_SCALARS:
+        return SIZE_OUT
+    if stars == 1 and not is_const and base in _INT_SCALARS:
+        # `const int *` deliberately falls through to a refusal: an INPUT array of ints is
+        # a different thing from a written-through result cell, and guessing which one a
+        # signature means is how a harness ends up supplying a 1-element array to a
+        # function that wanted 40.
+        return INT_OUT
     if stars == 1 and base == "_locale_t":
         # `_locale_t` is ALREADY a pointer; a starred one is a genuine `_locale_t *`.
         return f"?:{text}"
@@ -260,6 +279,13 @@ class Case:
     @property
     def out_buffers(self) -> tuple[int, ...]:
         return tuple(i for i, k in enumerate(self.param_kinds) if k in (BUF_OUT, WBUF_OUT))
+
+    @property
+    def out_scalars(self) -> tuple[int, ...]:
+        """Written-through result cells. For the `_s` family these carry the ANSWER —
+        grading only the returned errno_t would call two `EINVAL`s parity while the counts
+        they wrote disagreed."""
+        return tuple(i for i, k in enumerate(self.param_kinds) if k in (INT_OUT, SIZE_OUT))
 
 
 @dataclass
@@ -415,6 +441,8 @@ _RUST_TY = {
     BUF_OUT: "*mut u8",
     WSTR_IN: "*const u16",
     WBUF_OUT: "*mut u16",
+    INT_OUT: "*mut i32",
+    SIZE_OUT: "*mut usize",
     VOID: "()",
 }
 
@@ -614,6 +642,18 @@ def _bind(name: str, kind: str, exhaustive: bool, seeded: bool = False) -> _Bind
         # wchar-sized write and overrun it by 2x.
         acc = "wptr" if kind == WBUF_OUT else "ptr"
         return _Bind(None, f"{name}_s.{acc}()", f"{name}_r.{acc}()", "", setup=setup)
+    if kind in (INT_OUT, SIZE_OUT):
+        # Seeded with a SENTINEL, not zero. A function that fails to write its out-scalar
+        # and one that writes 0 are different behaviours, and zero-initialising makes them
+        # indistinguishable — both sides would "agree" on a value neither produced. The
+        # sentinel is odd and huge so it cannot be a plausible count or errno.
+        ty = "usize" if kind == SIZE_OUT else "i32"
+        sen = "0x5A5A_5A5A_5A5A_5A5Ausize" if kind == SIZE_OUT else "0x5A5A_5A5Ai32"
+        # Declared per-iteration inside the innermost loop for the same reason the out
+        # buffers are: a cell hoisted out keeps the previous iteration's value, so a
+        # skipped write silently inherits an answer that happens to be right.
+        setup = f"let (mut {name}_s, mut {name}_r): ({ty}, {ty}) = ({sen}, {sen});"
+        return _Bind(None, f"&mut {name}_s", f"&mut {name}_r", "", setup=setup)
     raise ValueError(f"no binding for kind {kind}")  # pragma: no cover - planner refuses first
 
 
@@ -740,6 +780,11 @@ def emit_case(case: Case) -> str:
         # is used only on failure.
         out.append(f"{pad}if !Guarded::same(&{n}_s, &{n}_r) {{")
         out.append(f'{pad}    panic!("{case.name}: {n} differs — {ctx}");')
+        out.append(pad + "}")
+    for i in case.out_scalars:
+        n = case.param_names[i]
+        out.append(f"{pad}if {n}_s != {n}_r {{")
+        out.append(f'{pad}    panic!("{case.name}: {n} = {{{n}_s}} vs ref {{{n}_r}} — {ctx}");')
         out.append(pad + "}")
     for _ in loops:
         depth -= 1

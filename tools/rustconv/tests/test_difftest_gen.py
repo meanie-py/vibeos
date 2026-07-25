@@ -13,6 +13,8 @@ import pytest
 from rustconv.difftest_gen import (
     BUF_OUT,
     CHAR,
+    INT_OUT,
+    SIZE_OUT,
     UCHAR,
     LOCALE,
     SIZE,
@@ -406,3 +408,66 @@ def test_two_independent_strings_are_left_alone(tmp_path):
     )
     body = emit_case(_case(plan, "f"))
     assert "offsets()" not in body
+
+
+# --- written-through result scalars (the `_s` family) ----------------------
+
+
+def test_a_written_through_scalar_is_a_supplied_kind():
+    """`_mbccpy_s(dst, n, &copied, src)` returns only an errno_t; `copied` IS the answer."""
+    assert classify_type("int *") == INT_OUT
+    assert classify_type("size_t *") == SIZE_OUT
+
+
+def test_a_CONST_scalar_pointer_stays_a_refusal():
+    """`const int *` is an INPUT array, not a result cell. Guessing which one a signature
+    means is how a harness supplies a 1-element array to a function that wanted 40."""
+    assert classify_type("const int *").startswith("?:")
+
+
+def test_an_out_scalar_is_COMPARED_not_just_supplied(tmp_path):
+    """Supplying the cell and never reading it back is the vacuous pass this kind exists to
+    avoid: two EINVALs compare equal while the counts written disagree."""
+    plan = _plan(tmp_path, "int f(const unsigned char *s, int *copied) { *copied = 1; return 0; }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "copied_s != copied_r" in body, "the written value must be compared"
+    assert "f(s_s.as_ptr(), &mut copied_s)" in body
+    assert "ref_f(s_r.as_ptr(), &mut copied_r)" in body
+
+
+def test_an_out_scalar_is_seeded_with_a_SENTINEL_not_zero(tmp_path):
+    """Zero-initialising makes "did not write" and "wrote 0" indistinguishable — both sides
+    would agree on a value neither produced."""
+    plan = _plan(tmp_path, "int f(const unsigned char *s, size_t *n) { *n = 1; return 0; }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "0x5A5A_5A5A_5A5A_5A5Ausize" in body
+    assert "= (0, 0)" not in body
+
+
+def test_each_side_gets_its_OWN_out_scalar(tmp_path):
+    """One shared cell would let a function that writes through it feed the reference the
+    subject's answer — the two-slot discipline the locale fixture already uses."""
+    plan = _plan(tmp_path, "int f(int *n) { *n = 1; return 0; }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "(mut n_s, mut n_r)" in body
+    assert "&mut n_s" in body and "&mut n_r" in body
+
+
+def test_an_out_scalar_cell_is_declared_INSIDE_the_loop(tmp_path):
+    """Hoisted out, a skipped write inherits the previous iteration's value — which is
+    exactly the bug (a missing write) the cell exists to detect."""
+    plan = _plan(
+        tmp_path,
+        "int f(const unsigned char *s, int *n) { *n = 1; return 0; }\n",
+    )
+    body = emit_case(_case(plan, "f"))
+    lines = body.splitlines()
+    decl = next(i for i, ln in enumerate(lines) if "mut n_s" in ln)
+    loop = next(i for i, ln in enumerate(lines) if "corpus.pairs()" in ln)
+    assert decl > loop, "the cell must be declared inside the corpus loop, not above it"
+
+
+def test_an_out_scalar_gets_the_right_extern_type(tmp_path):
+    plan = _plan(tmp_path, "int f(int *a, size_t *b) { *a = 1; *b = 2; return 0; }\n")
+    src = emit(plan, "m.c", total=1)
+    assert "a: *mut i32" in src and "b: *mut usize" in src
