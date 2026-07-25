@@ -2,7 +2,7 @@
   [ABI] sdk/lib/rust/cdrom-rust/src/common.rs:159: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/cdrom-rust/src/ioctl.rs:160: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/cdrom-rust/src/mmc.rs:45: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/classpnp-rust/src/classwmi.rs:928: IoWMIDeviceObjectToProviderId: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
+  [ABI] sdk/lib/rust/classpnp-rust/src/classwmi.rs:940: IoWMIDeviceObjectToProviderId: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/disk-rust/src/diskwmi.rs:54: KeFlushIoBuffers: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/cachesup.rs:170: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
@@ -12,8 +12,8 @@
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/strucsup.rs:84: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/verfysup.rs:149: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdrom-rust/src/cdrom.rs:213: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/classpnp-rust/src/class.rs:102: IoMarkIrpPending: IoMarkIrpPending is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/classpnp-rust/src/class.rs:89: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/classpnp-rust/src/class.rs:103: IoMarkIrpPending: IoMarkIrpPending is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/classpnp-rust/src/class.rs:90: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/classpnp-rust/src/shims.rs:21: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/classpnp-rust/src/shims.rs:23: IoMarkIrpPending: IoMarkIrpPending is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/config-rust/src/cmdelay.rs:54: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust

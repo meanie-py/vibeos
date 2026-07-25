@@ -178,6 +178,20 @@ Why it matters (all are real incidents, not hypotheticals):
    build` enforces the invariant mechanically: an `ISOLATION_FAIL` preflight refuses
    to build a tree that shares inodes (build-* at links>1; cargo target at links>2 —
    cargo hardlinks deps↔final internally).
+10. **Fleet isolation applies to READS too — never resolve generated artifacts from a
+    sibling worktree (2026-07-24).** `verify_signatures` / `verify_offsets` /
+    `verify_offsets_win32k` used to fall back to *any* sibling checkout carrying a
+    `build-*` dir, because `build-<arch>/` is gitignored and a fresh worktree lacks it.
+    That silently compared THIS tree's Rust against ANOTHER lane's C headers, at
+    another commit: `verify_signatures` picked `vibeos-conformance/build-amd64` and its
+    mismatch count moved **987 → 9 with no source change**. A lint whose verdict depends
+    on which sibling checkouts happen to exist is not a gate. Worse for the offset
+    verifiers, where a foreign header can green-light a real layout drift. Distinguish
+    the two artifact kinds: the **toolchain** (`.build-tools/llvm-mingw`, a pinned clang
+    binary, identical everywhere) may be shared; **generated headers** are source-derived
+    per-commit state and must come from THIS worktree or the tool HARD FAILS with
+    `fix: ./vibeos-cli build --arch <a>`. Same rule for any future artifact-consuming
+    check: shared = content-addressed and commit-independent; everything else is local.
 
 Build operational reality that interacts with the above: judge build success by
 **artifact existence** (`ls livecd.iso`), not reported exit code — `run_in_background`

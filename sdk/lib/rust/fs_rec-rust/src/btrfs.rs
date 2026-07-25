@@ -14,6 +14,7 @@ use core::ffi::c_void;
 use ntkrnl_sys::ddk::{PCSTR, RtlAssert, _LARGE_INTEGER__bindgen_ty_1};
 use ntkrnl_sys::driver_ddk::{DbgPrint};
 
+use crate::glue::{IRP_MN_LOAD_FILE_SYSTEM, IRP_MN_MOUNT_VOLUME};
 #[no_mangle]
 pub unsafe extern "system" fn FsRecIsBtrfsVolume(SuperBlock: PBTRFS_SUPER_BLOCK) -> BOOLEAN {
     if (*SuperBlock).magic == BTRFS_MAGIC {

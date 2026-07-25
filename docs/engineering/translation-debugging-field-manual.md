@@ -9332,3 +9332,57 @@ than catching it downstream.
 `cargo check`. A per-crate grind loop that only ever runs `cargo check` never consults it. Either
 build once before declaring a crate done, or run the audit directly — and when auditing, COUNT
 the arms you examined: an audit that inspects zero arms "passes" vacuously.
+
+#### 9.112a (2026-07-24) The oracle above reported ✓ 0 while 273 live catch-alls sat in the tree — TWO scope defects, and "the gate is green" was the misleading part
+
+The entry above says the class "already has a gated oracle … baseline currently empty = 0
+tolerated." That empty baseline was **false confidence**, not coverage. `vibeos-cli check` was
+genuinely reporting `✓ verify_match_consts` on a tree containing 273 HIGH-confidence catch-alls,
+including `serial.sys` routing *every* `IOCTL_SERIAL_*` to the CLEAR_STATS handler (37 dead arms)
+and `classpnp` (boot-loaded) mis-dispatching its SCSI sense-code and WMI paths (127). Two
+independent scope bugs, each sufficient alone:
+
+1. **Files scanned: `ntoskrnl-rust/src` only.** That was the tool's hardcoded default target and
+   nobody passed it anything else, so the entire driver fleet and every usermode DLL — precisely
+   where §9.112 says the class recurs — were never looked at. Fixed: default is now the whole
+   workspace.
+2. **Constant resolution: workspace-wide.** A name defined in *any* crate counted as resolvable
+   in *every* crate, so a genuine catch-all got filed LOW ("exists somewhere + this file has glob
+   imports → probably fine") and suppressed from the report. classpnp's `SCSI_ADSENSE_*` are
+   defined only in the unrelated `atapi-rust`, which classpnp does not depend on. Fixed:
+   resolution is scoped to each crate's own sources plus its transitive **path dependencies**.
+
+**The deeper lesson — "has a glob import" is not evidence a name resolves.** Translated code globs
+*specific* modules (`use ntkrnl_sys::ke::*;`, `use crate::shims::*;`), and the constant a dispatch
+arm needs usually lives in a module nobody globbed (`crate::types`). The tool now resolves each
+glob to its real module — following `#[path]`+`pub use types_arch::*` re-export chains — and only
+falls back to the lax rule when a glob target genuinely cannot be resolved (e.g. `ntkrnl_sys::nt`,
+which is declared inline in lib.rs with no `nt.rs` on disk). Getting that fallback backwards
+(treating an unreadable module as "resolved") manufactures confident false HIGHs; it must fail
+open, and be conservative about claiming a bug.
+
+**Validate a lint of this kind against rustc, not against itself.** The oracle is a
+`--force-warn` build: crate-level `#![allow(unused_variables, non_snake_case)]` is what hides the
+binding warnings, and `--force-warn` overrides crate-level allows where `-W` does not.
+
+```
+RUSTFLAGS="--force-warn unused_variables --force-warn non_snake_case" \
+  cargo check --workspace --target x86_64-pc-windows-gnu --keep-going --message-format short
+```
+
+Then keep only warnings whose identifier sits at a `match` arm line — a bound name there IS the
+catch-all. Cross-checking the static tool against that set drove it to **0 false positives / 5
+conservative false negatives** on 175 rustc-confirmed sites. Note rustc is a *subset* oracle, not
+ground truth: it cannot see `#[cfg]`-disabled arms (classpnp's `NTDDI_WINTRHESHOLD` firmware
+IOCTLs are latent catch-alls no build compiles), so tool-flagged sites rustc is silent about are
+not automatically false positives — check the `cfg` before dismissing one.
+
+**Fixing the arms is a real behaviour change, not a cleanup.** Restoring a constant makes the
+dispatcher actually dispatch, so every previously-dead arm starts executing. Expect a wave of
+`E0308 expected u8, found u32`: the scrutinee is the narrow C field while the bindgen constant is
+u32. Prefer **widening the scrutinee** (`match x as u32`) over minting `const FOO_U8: u8 = FOO as
+u8;` aliases — widening is lossless, whereas `as u8` silently truncates anything above 255 and can
+alias two arms onto the same value. But check the whole match first: where the *sibling* arms
+already use narrow constants from a `glue.rs` (scsiport's `SRB_STATUS_*`), the right fix is to
+import the missing name from that same module, not to widen. rustc's own message is the tell that
+the bug was real: *"`SRB_STATUS_DATA_OVERRUN` is interpreted as a constant, not a new binding."*

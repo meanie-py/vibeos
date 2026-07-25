@@ -666,3 +666,59 @@ drifted arity: CreateStorageRequestBlock, RtlStringCbPrintfW, sprintfW…) plus
 the revert-bounced decl files in fastfat/classpnp/cdrom/cabinet (landmines, not
 armed folds — IR count 250→~30); freeldr-rust IR emission fails for i686
 (rosload halstub mangled ud2 unexplored).
+
+## 2026-07-24 — the catch-all dispatch-arm sweep (task #16) + two gate-integrity fixes
+
+Post-merge regroup (24 commits of mainline: tier-2 services, iphlpapi/netapi32/dhcpcsvc
+full flips, shell32, wow64 E9, arm64 fast-mutex). Fresh amd64 census: **5,193 warnings /
+136 crates**. `unused_assignments` 1435 · `clashing_extern` 1269 · `unused_imports` 278 ·
+`static_mut_refs` 261 · `unused_unsafe` 255 · **`unreachable_patterns` 226** ·
+non_snake_case 235 · unexpected_cfgs 173.
+
+**`unreachable_patterns` turned out to be a live-bug class, not noise.** Full writeup:
+field manual **§9.112a**. Summary of what this lane did:
+
+- **The oracle was reporting ✓ 0 on a tree with 273 real hazards.** `verify_match_consts.py`
+  had two independent scope defects: it scanned **`ntoskrnl-rust/src` only** (the driver fleet
+  and every usermode DLL — where §9.112 says the class recurs — were never looked at), and it
+  resolved constants **workspace-wide** (a name defined in any crate counted as reachable from
+  every crate, so real catch-alls were filed LOW and suppressed).
+- **Tool rewritten** (`tools/verify_match_consts.py`): default scope = whole workspace;
+  resolution = each crate's own sources + transitive **path deps**; glob imports resolved to
+  their actual modules (following `#[path]` + `pub use types_arch::*` chains) instead of
+  "has a glob → probably fine"; unresolvable glob targets fail OPEN (lax), never closed.
+  `--workspace-scope` keeps the old laxer behaviour. Validated against a `--force-warn`
+  rustc oracle: **0 false positives, 5 conservative false negatives** on 175 confirmed sites.
+- **Shape A (constant exists in-crate, file never imports it) — 175 → 2, all fixed:**
+  classpnp 126, fs_rec 18, partmgr 16, pcix 10, scsiport 5. classpnp went from **140
+  `unreachable_patterns` and 127 catch-alls to ZERO**, clean ×3 targets. Notable: classpnp's
+  WMI dispatcher needed the five `IRP_MN_*` codes defined locally (they exist only in the
+  x86-only `ntkrnl_sys::hal_ddk`, and classpnp also builds arm64); `class.rs` was missing
+  `DeviceUsageTypeHibernation` from its import list, which killed the three arms after it.
+  The residual 2 are `#[cfg(feature = "NTDDI_WINTRHESHOLD")]`-gated firmware IOCTLs — latent,
+  no build compiles them, and their only known value in-tree is a `// typical` guess.
+- **Shape B (constant does not exist anywhere in the crate closure) — 271 owed, baselined.**
+  samsrv 121, serial 37, lsasrv 28, iphlpapi 17, dnsapi 17, scsiport 8, mscms 6, i8042prt 6,
+  dhcpcsvc 5, arm64input 5, ramdisk 4, pciidex 4, … These need the constants defined — the
+  §9.112 root fix (allowlist the header owning them in the crate's `gen_driver_types.sh`
+  profile), not an import edit. `serial.sys` is the headline: every `DeviceIoControl` currently
+  runs the `IOCTL_SERIAL_CLEAR_STATS` handler. **Baseline `verify_match_consts.txt` recorded at
+  273** — this is tracked debt, NOT acceptance; it is the next batch of this task.
+
+**Two gate-integrity fixes found on the way (both AGENTS.md "fail loud" violations):**
+- **`verify_signatures` reported 987 phantom NEW findings.** It needs generated headers from
+  `build-<arch>/`; this worktree has none, so it fell back to a sibling checkout — which only
+  had `build-arm64-cross`. With `-I <nonexistent>/build-amd64/ntoskrnl`, clang emits
+  implicit-int decls (`int KiSetProcessorType(VOID *)` for a `VOID f(VOID)`) and every export
+  looks mismatched. It degraded silently instead of failing.
+- **The sibling fallback itself is the deeper footgun** (user call, and it proved itself
+  immediately): making the search arch-aware made it pick `vibeos-conformance/build-amd64` —
+  another lane's tree at another commit — and the count moved **987 → 9 with no source
+  change**. Removed the sibling fallback for generated headers in `verify_signatures.py`,
+  `verify_offsets.py` and `verify_offsets_win32k.py`; all three now HARD FAIL with
+  `fix: ./vibeos-cli build --arch <a>`. The toolchain (`.build-tools`, a pinned clang binary)
+  fallback stays — it is commit-independent. Durable rule recorded as **AGENTS.md worktree
+  discipline #10**: fleet isolation applies to READS, not just writes.
+
+**Next in this task:** Shape B, biggest-first (samsrv 121, serial 37, lsasrv 28), via the
+bindgen-island allowlist fix rather than per-file imports.

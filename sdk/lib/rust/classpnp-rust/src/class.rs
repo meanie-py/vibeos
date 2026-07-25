@@ -21,6 +21,7 @@ use ntkrnl_sys::ddk::{
     _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectOrderlyRemoval as RemovalPolicyExpectOrderlyRemoval,
     _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectSurpriseRemoval as RemovalPolicyExpectSurpriseRemoval,
     _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypePaging as DeviceUsageTypePaging,
+    _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeHibernation as DeviceUsageTypeHibernation,
     _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeDumpFile as DeviceUsageTypeDumpFile,
     _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeBoot as DeviceUsageTypeBoot,
     _IO_PAGING_PRIORITY_IoPagingPriorityHigh as IoPagingPriorityHigh,

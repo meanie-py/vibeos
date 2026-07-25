@@ -14,6 +14,7 @@ use core::ffi::c_void;
 use ntkrnl_sys::ddk::{PCSTR, RtlAssert};
 use ntkrnl_sys::driver_ddk::{DbgPrint};
 
+use crate::glue::{IRP_MN_LOAD_FILE_SYSTEM, IRP_MN_MOUNT_VOLUME};
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: bool = true;
 #[no_mangle]

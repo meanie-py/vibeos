@@ -14,6 +14,7 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{PCSTR, RtlAssert};
 use ntkrnl_sys::driver_ddk::{DbgPrint};
+use crate::glue::{IRP_MN_LOAD_FILE_SYSTEM, IRP_MN_MOUNT_VOLUME};
 #[no_mangle]
 pub unsafe extern "system" fn FsRecIsFatVolume(
     PackedBootSector: PPACKED_BOOT_SECTOR,
