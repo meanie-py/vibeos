@@ -30,6 +30,7 @@
 #define CT_CTYPE1           0x0001
 #define CT_CTYPE3           0x0004
 #define WC_NO_BEST_FIT_CHARS 0x0400
+#define MB_ERR_INVALID_CHARS 0x0008
 #define ERROR_INSUFFICIENT_BUFFER 122
 
 /* Character-type bits.  mbcs.c reads exactly three: create_mbcinfo switches on
