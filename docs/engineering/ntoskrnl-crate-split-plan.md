@@ -165,6 +165,14 @@ crate-root `macro_rules!`, `grep -rl '<macro>!' src/<sub>`.
 
 ## What's left (the hard center)
 
+- **ex (41K) — DONE and integrated.** `ex-rust` is a workspace crate that `kernel-rust` depends
+  on (`Cargo.toml` + `extern crate ex_rust;`). The x86 boot hang described below was root-caused
+  and fixed — it was a `[T; 0]` extern-array declaration, where Rust bounds-checks the *declared*
+  length, so indexing through C's unsized-extern idiom panics at length 0 (field manual §9.35).
+  The history below is kept for the diagnosis; the parked state it describes is over.
+
+  <details><summary>Historical: the parked x86 hang</summary>
+
 - **ex (41K) — extracted, compiles/links ×3, arm64 BOOTS, but PARKED on an x86 boot hang.**
   i386 AND amd64 hang deterministically at `IopInitializeBuiltinDriver: ksecdd.sys`
   (preceded by `MmGetSystemRoutineAddress: 'RtlQueryModuleInformation' NOT FOUND`). NOT the
@@ -177,6 +185,9 @@ crate-root `macro_rules!`, `grep -rl '<macro>!' src/<sub>`.
   `KeServiceDescriptorTable[2]`, `KiProcessorBlock`, `KeNodeBlock`); (c) a symbol the
   `_force_sysinfo_symbols` deletion dropped that ksecdd/module-info needs. This is the one
   split that needs a debugging pass before it lands.
+
+  </details>
+
 - **ke (58K) — the hub.** Everything depends on it; it has no clean FFI perimeter *because*
   it IS the perimeter for everyone else. Break the back-edges (`ke↔ps`, `ke↔ARM3`) via FFI or
   a shared micro-crate; move shared inline fns/macros to `ntkrnl-sys`/`ntos-core` first. A

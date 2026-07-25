@@ -33,7 +33,9 @@ remnant — it's ~99% Rust as of the crate-split era; see the ledger below.)* Th
 still-C userland frontier is the **~140 ROS-native DLLs (~240K LOC)** + the **Wine-derived
 bucket (~154 DLLs, ~1.05M LOC)** catalogued in the roadmap's Phase 0 Tier 3.
 
-Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib/rust/`.
+Tree inventory (2026-07-25): **2,908 `.rs` files · 280 crates** under `sdk/lib/rust/`. Re-derive
+rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
+`find sdk/lib/rust -name Cargo.toml | wc -l`.
 
 ## Headline component ledger
 

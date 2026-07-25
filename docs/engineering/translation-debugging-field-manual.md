@@ -1340,16 +1340,56 @@ Four rules: per-processor Phase-1 loops must run **after** `KeStartAllProcessors
 interrupt stub's **handler** owns the IRQL protocol; **TLB-shootdown senders must poll-service,
 never just wait**; and skipping the round-trip for `hlt`ed CPUs (lazy-idle TLB) is a large win.
 
-### STILL OPEN: the `-smp 2` double-queue residual `[§9.56]`
-A real double-queue tears `DispatcherReadyListHead` — `KxQueueReadyThread` is called on a thread
-that is **already Ready**. Which call site issues the second queue is **not yet pinned**.
-- **The earlier "SwapBusy wait-side unimplemented" root cause is RETRACTED** — the amd64 run-side
-  spin already exists in `ctxswitch.S`; a `.rs`-only grep missed the assembly. **Grep the asm
-  too before declaring something unimplemented.**
-- **Ruled out** by a controlled `git stash` of the whole M3-tail delta (method worth reusing).
-- **`cswitchdep` is a repro AMPLIFIER, not a detector**, and a 453-boot scoped farm soak
-  reframed the rate. Suspect class: lost wakeup / device-I/O completion race under real
-  concurrency.
+### The ready-list tear: five refuted theories and the one real hole `[§9.56]`
+**FIXED** (all three arches; 0 occurrences across every post-fix boot). The long hunt is the
+lesson, so keep the shape: `Prcb->DispatcherReadyListHead[pri]` (8/9 observed) was found torn,
+with faces `0x1E` IN_PAGE_ERROR, `0x19` BAD_POOL_HEADER, `0xF4`, and silent wedges — ~0.9%
+organically, ~35% under the `cswitchdep` amplifier.
+
+**Root cause: `KiIdleLoop` read, nulled and promoted `Prcb->NextThread` LOCK-FREE**, inherited
+verbatim from ReactOS's never-validated `CONFIG_SMP` C (i386 *and* amd64 both lacked the
+acquire). `KiDeferredReadyThreadImpl`'s standby-displacement branch — correctly under the PRCB
+lock — read `NextThread = T` while the idle CPU concurrently promoted T to Running, then marked
+the *running* T DeferredReady and re-deferred it; T later requeued itself run-side while still on
+a drain chain, tearing the double links. **Every other promote site already held the lock; idle
+was the single hole.** Fix: acquire the PRCB lock, **re-check `NextThread` under it** (a
+displacement may have consumed it), promote, release, *then* `sti`.
+
+> **A field guarded by lock L at N−1 of N sites is not guarded.** Grep every reader and writer of
+> a scheduler field before concluding the locking is sound — and **treat every inherited
+> `CONFIG_SMP` primitive as unreviewed**, because upstream never ran it.
+
+**Five theories refuted with evidence first — do not re-derive them** (~40 min each):
+1. **SwapBusy wait-side unimplemented** — the amd64 run-side spin *already exists in assembly*
+   (`ctxswitch.S`), and a `.rs`-only grep missed it. **Grep the asm before declaring anything
+   unimplemented.** (i386 genuinely has no spin — a separate latent gap, not this bug.)
+2. **Double-queue on an already-Ready thread** — fired once, then later tears happened with the
+   guard **silent**, which proves **`State` is the WRONG PREDICATE**: a path can change `State`
+   without unlinking. This was the headline theory for weeks and it was wrong.
+3. **Union-alias clobber** — `KTHREAD.__bindgen_anon_3` really *is* a union, so
+   `KiInsertDeferredReadyList`'s `SwapListEntry.Next` write really *does* alias
+   `WaitListEntry.Flink`. Beautiful theory; a precise still-linked guard was silent. **It never
+   happens.**
+4. **Already-linked node re-inserted** — a state-independent linkage test ("do my neighbours
+   point back at me?") was silent.
+5. **Missing/wrong PRCB lock at a mutator** — audited; every mutator pairs with the correct
+   PRCB's lock, and the dispatcher lock is real too.
+
+**Two false oracles in one hunt, both of which cost real time:**
+- `cswitchdep` is a repro **AMPLIFIER, not a detector** — its violation output is noise under
+  `-smp N` (a single global held-count with no per-CPU separation mis-fires on most switches).
+  **It amplifies; it does not pin.**
+- The attribution table's own hash lied: `rq_inflight_mark()` CAS-inserted at the first empty
+  probe slot *before* finishing its 8-slot scan, so a legal re-mark created a duplicate twin that
+  later fired a false violation. **In an open-addressed probe table, insert-at-first-empty may
+  only happen after a full-window scan for the key** — and **a diagnostic that bugchecks must be
+  held to the same correctness bar as the kernel it polices.**
+
+**The method that finally worked:** stop adding tripwires and catch the corrupting *store*.
+Enriched forensics that named it — report *which* CPU's list a thread is wrongly linked into plus
+its state and owning PRCB, and dump the corrupted link *value* — turned "the list is torn" into a
+specific traceable invariant ("a Running `CurrentThread` is simultaneously linked in a ready
+list"), from which the upstream writer followed.
 
 ---
 
@@ -1830,7 +1870,7 @@ authoritative registry.
 
 | Bug | State |
 |---|---|
-| **`-smp 2` double-queue** tears `DispatcherReadyListHead` `[§9.56]` | Symptom confirmed; the call site issuing the second queue is not pinned. Earlier SwapBusy root cause **retracted**. |
+| **`-smp` `0xF4` boot-phase flake** (~2/20 soak), described as §9.56-class | Separate from the ready-list tear, which is **fixed** — see `active-lanes/smp-bringup-quest.md`. |
 | **arm64 physical-page reuse** — a frame backing a still-mapped user page is freed and re-handed-out `[§9.98]` | Characterized, two faces proven to be one root; ~40% of arm64 kmtest sweeps. Free-while-mapped tripwire negative. |
 | **arm64 user-mode SEH first-chance** — `RtlRaiseException` unimplemented | Needs a `#[naked]` capture stub. |
 | **`ExHardError`** pool illegal-instruction; **`MmSection`** in-kernel wedge `[§9.92]` | Distinct from the arm64 kernel-SEH cluster; both open. |
