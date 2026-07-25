@@ -10363,7 +10363,71 @@ does exactly that, and it is why it never touches the local `master` ref.
 > FIFO lock across fetch → merge → gate → push — is the sanctioned way. See AGENTS.md
 > §"Git and mainline" and `tests/qemu/cli/README.md` → `land`.
 
-### 9.122 (FIXED 2026-07-25) A capability nobody had run yet: sealed plain-C shipped raw tokens, and three guards were missing at once
+### 9.122 (2026-07-25) An oracle needs an oracle — every gate scanner now has a positive AND negative control, because a lint reporting `0` cannot tell you which `0` it means
+
+**The problem, stated precisely.** A scanner that prints `0 findings` is asserting one of two
+very different things and does not know which: *the tree is clean*, or *my matcher is dead*.
+For the twelve lints whose baseline is EMPTY those two outputs are **byte-identical**. The
+failure is therefore silent AND in the direction that looks like success — the worst possible
+combination, and the reason this class kept recurring:
+
+| incident | what went blind |
+|---|---|
+| §9.120 | `scan_bugcheck_codes` regex required digits followed directly by `,`/`)`; `0x35u32`'s type suffix broke it. Clean `0` for six weeks over a live bug. |
+| `test_verify_constants_ctlcode.py` | `verify_constants` never saw `CTL_CODE()` macros; a garbage IOCTL went unchecked and cost the arm64 ramdisk 0x64/0x23 grind. |
+| §9.115 | `marshalgen report` iterated the generator's own flagged set, inheriting its blind spot. |
+| §9.115a | `marshalgen audit` read a stale build artifact, so fixed bugs re-reported as debt. |
+
+**This is NOT a fail-loud problem, and treating it as one wastes the effort.** `lints.py`
+already distinguishes `NOCHECK` ("no sources") from `MISSING` ("tool absent → FAIL, coverage
+silently lost") — thoughtful, correct, and it does not help here at all. An under-matching
+regex has nothing to report as a failure: from the tool's own view it ran fine. **Failing loud
+requires detecting failure; this class is invisible to the tool itself.** What reaches it is an
+external oracle.
+
+**The fix: `tools/test_scanner_controls.py`.** A declarative table of
+(scanner, known-BAD fixture, known-GOOD fixture). The BAD one must produce a finding that
+*names the fixture path*; the GOOD one must produce none.
+
+- The **positive** control proves the matcher is ALIVE.
+- The **negative** control proves it is not merely trigger-happy — a scanner that flags
+  everything also "catches" every bug and is equally worthless.
+- `test_every_lint_is_accounted_for` fails on any gate lint that is in neither the control
+  table nor a documented-exemption list, so **coverage gaps are loud instead of absent**. A
+  coverage table that quietly omits entries would be this exact bug, one level up.
+
+**Validate the harness by BREAKING the scanner.** Restoring `scan_bugcheck_codes`' pre-fix
+regex makes its positive control fail with a clear message — so the harness demonstrably
+would have caught the six-week bug on day one. A control you have never seen fail is not
+known to be load-bearing. (My first attempt at that mutation silently did not apply — a bad
+escape in the replacement string — and reported "2 passed", which proved nothing. *Check that
+your check ran.*)
+
+**Two things the build of this harness itself flushed out**, both instances of the very class:
+
+1. **The harness was a liar on its first run.** The positive assertion accepted *any* non-empty
+   output, so `lint_kernel` "passed" on its own banner line — `No unprotected output pointer
+   writes found.` — while flagging nothing. Fixed to require a finding that references the
+   fixture path.
+2. **Two scanners take FILES, not directories** (`lint_kernel`, `scan_silent_failures`). Handed
+   a directory they scan nothing and print a clean bill of health for a tree they never opened.
+   That is a live footgun for anyone invoking them by hand.
+
+**Fixture-authoring rules learned the hard way.** Seed fixtures from REAL field-manual
+incidents, not from what the regex obviously handles — a control proves LIVENESS, never
+COMPLETENESS, and it would have caught `0x35u32` only because a suffixed literal is in the
+fixture. Match the scanner's actual trigger conditions: `scan_irql_balance` only counts
+`KeRaiseIrql` when the level is a *constant identifier*, so a fixture using `2u8` fails to fire
+and looks like blindness when it is a bad fixture. And pass `--no-cache` to anything that
+memoises by file hash, or a control can "pass" off a cache entry while the matcher never runs.
+
+**Coverage today:** 8 scanners with both controls, the rest carrying written exemptions
+(needs a build tree, needs the C header catalog, already has a dedicated suite). The two slow
+ones (`scan_irql_balance`, `scan_ob_refcount` build a whole-workspace call-graph summary,
+~50s each) are marked `slow`: a local run can `-m "not slow"` (0.5s), the gate runs everything.
+**Never default-skip a control** — that recreates the blind spot with extra steps.
+
+### 9.123 (FIXED 2026-07-25) A capability nobody had run yet: sealed plain-C shipped raw tokens, and three guards were missing at once
 
 `--seal-facts --seal-calls` was generalized from shell32/COM to plain C on 2026-07-24, and
 AGENTS.md now tells every plain-C module to **"always pass both."** Nothing had actually run
@@ -10408,7 +10472,7 @@ A test pins the contract text so nobody "improves" it later.
 ledger before trusting a documented workflow — `seal_facts=True` on zero non-shell32 entries was
 visible in one query and predicted all three bugs.
 
-### 9.123 (FIXED 2026-07-25) `EXTERN_C` cost us function bodies, on a 10-character cliff
+### 9.124 (FIXED 2026-07-25) `EXTERN_C` cost us function bodies, on a 10-character cliff
 
 `EXTERN_C` is winnt.h's `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter knows
 neither, so it parsed the macro as the return type and the real return type became a second
@@ -10436,7 +10500,7 @@ Same family as the `CONST` and `FAR`/`NEAR` normalisers beside it, and as the
 shrinking the translation plan.** When a scanner gap looks length- or name-dependent, suspect
 error recovery and fix the *input*, not the recovery.
 
-### 9.124 (2026-07-25) `cargo check` is not validation — the oracle has to BUILD
+### 9.125 (2026-07-25) `cargo check` is not validation — the oracle has to BUILD
 
 `candidate-check` ran `cargo check` once per arch and called that acceptance. `check` stops
 before codegen, and `unconditional_panic` is a MIR-level deny-by-default lint that only fires
@@ -10455,7 +10519,7 @@ A correct candidate of the same shape (`entries.as_ptr().add(i)`) still passes a
 so this is not over-strict. The report now records `cargo_mode`, so a green result says which
 pass produced it.
 
-### 9.125 (2026-07-25) semdiff judged Rust by C's rules — both false positives, same root
+### 9.126 (2026-07-25) semdiff judged Rust by C's rules — both false positives, same root
 
 The C↔Rust semantic-divergence oracle produced exactly two findings on landed, hand-audited
 code, and **both were false positives from applying C semantics to the Rust side**:
@@ -10479,7 +10543,7 @@ hand-audited before landing.
 wrong. Verify against the source before acting on one, and prefer giving the oracle the missing
 *authority* (prototypes, language rules) over loosening what it reports.
 
-### 9.126 (FIXED 2026-07-25) A mode flag turned off the LANGUAGE layer, not just the framework layer
+### 9.127 (FIXED 2026-07-25) A mode flag turned off the LANGUAGE layer, not just the framework layer
 
 `translate --free-functions` (shell32) exists because a TU's classless functions do not need
 the COM scaffold — no vtable, no `this`, no state layout. It was implemented as
@@ -10514,11 +10578,11 @@ Two general lessons:
 
 Also: normalization now runs on **cache hits**, not just fresh responses. A body banked before
 a repair exists would otherwise replay the un-repaired text for $0 forever — the same
-self-healing shape as the still-sealed-output guard in §9.122. Because the wide-literal lowering
+self-healing shape as the still-sealed-output guard in §9.123. Because the wide-literal lowering
 happens *before* sealing, it is part of the cache key, so only the bodies that actually changed
 re-paid: 1 of 10 functions, $0.01.
 
-### 9.127 (2026-07-25) `translate` assembles into the LIVE crate `src/` — which fails a concurrent gate
+### 9.128 (2026-07-25) `translate` assembles into the LIVE crate `src/` — which fails a concurrent gate
 
 `rustconv translate` writes its stitched module straight into the target crate
 (`sdk/lib/rust/<crate>-rust/src/...`). Harmless alone. But `vibeos-cli build`'s staleness check

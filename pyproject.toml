@@ -22,6 +22,9 @@ include = ["tests*"]
 [tool.pytest.ini_options]
 testpaths = ["tests/qemu"]
 timeout = 300
+markers = [
+    "slow: control whose scanner builds a whole-workspace summary (~50s/run)",
+]
 
 # --- dev tooling for the vibeos-cli tool surface ---------------------------
 # Covers the cli package (tests/qemu/cli) + the standalone tools/*.py scripts.
