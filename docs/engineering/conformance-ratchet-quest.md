@@ -1165,7 +1165,7 @@ shared image-section page corrupted under heavy map/unmap = the latent arm64 PFN
 family (same as the quarantined ZwAllocateVirtualMemory 0x4E). Roadmap registry entry added; the
 section tests stay active as the canary. This is the next monster.
 
-### 2026-07-24 — i386 pivot: the memcpy+0x40 cluster CLOSES on i386 via a Linux-style exception table, not SEH (field manual §9.121)
+### 2026-07-24 — i386 pivot: the memcpy+0x40 cluster CLOSES on i386 via a Linux-style exception table, not SEH (field manual §9.122)
 
 **i386 ratchet: 74 → 76 enabled, 23 → 21 quarantined.** `ObSymbolicLink` (OK 154/0) and
 `ZwWaitForMultipleObjects` (OK 4/0) un-quarantined; new baseline written after **4

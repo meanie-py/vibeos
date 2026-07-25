@@ -42,6 +42,7 @@ Usage:
 
 Exit 1 if any finding.
 """
+
 import re
 import sys
 from pathlib import Path

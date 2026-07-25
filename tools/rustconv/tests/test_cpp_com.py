@@ -38,6 +38,17 @@ from rustconv.stitcher import _generate_imports_from_resolve
 
 SHELL32 = REACTOS_ROOT / "dll" / "win32" / "shell32"
 
+# widl-GENERATED psdk headers only exist after a configured build (build-<arch>/sdk/include/
+# psdk); the reactos-private IDLs are committed and always resolvable. On a worktree with no
+# i386 build tree the "no flattened vtable definition found" failure is a MISSING BUILD, not
+# a code defect — so gate those cases explicitly instead of leaving `check-tooling` red for
+# everyone who hasn't built i386 here yet.
+GENERATED_PSDK_I386 = REACTOS_ROOT / "build-i386" / "sdk" / "include" / "psdk"
+needs_generated_psdk_i386 = pytest.mark.skipif(
+    not GENERATED_PSDK_I386.is_dir(),
+    reason=f"needs widl-generated headers in {GENERATED_PSDK_I386} (build i386 first)",
+)
+
 WIDL_HEADER = r"""
 typedef struct IDragSourceHelperVtbl {
     BEGIN_INTERFACE
@@ -240,6 +251,7 @@ def test_class_scaffold_owns_offsets_and_vtable_order(tmp_path: Path):
     assert "HEAP_ZERO_MEMORY" in rust
 
 
+@needs_generated_psdk_i386
 def test_class_scaffold_uses_one_slot_for_com_map_iid_aliases(tmp_path: Path):
     menu = analyze_class(
         SHELL32 / "shellmenu" / "CMenuBand.cpp",
@@ -260,6 +272,7 @@ def test_class_scaffold_uses_one_slot_for_com_map_iid_aliases(tmp_path: Path):
     assert "IID_IDeskBand" in rust
 
 
+@needs_generated_psdk_i386
 def test_class_scaffold_uses_derived_slot_for_mapped_base_interface():
     menu = analyze_class(
         SHELL32 / "COpenWithMenu.cpp",
@@ -581,6 +594,7 @@ def test_helper_worker_signature_has_no_invented_this_parameter():
     ) == ("pub unsafe fn GetParsingName_body(pidl: PCIDLIST_ABSOLUTE, Name: *mut PWSTR) -> HRESULT")
 
 
+@needs_generated_psdk_i386
 def test_interface_vtable_confirms_scanner_recovered_cpp_return_types():
     scan = scan_file(SHELL32 / "folders" / "CControlPanelFolder.cpp")
     deps = extract_call_graph(scan)

@@ -68,12 +68,41 @@ HOSTLOCK_DIR = Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-lock
 # Pool size = max concurrent TCG boots (a build grabs ALL of them → exclusive). 4 suits a
 # ~32-core box (≈4×4 vCPU boots leaves headroom); raise/lower via the env.
 DEFAULT_CPU_LEASES = max(1, int(os.environ.get("VIBEOS_HOST_CPU_LEASES", "4")))
-# SEPARATE pool for windows-host QEMU boots. Those run on the WINDOWS side (qemu.exe) — a
-# different scheduling domain from the WSL-side build — so a build's writer-takes-all
-# `cpuheavy` grant must NOT exclude them; the build leaves physical-core headroom via its
-# `-j` cap instead (VIBEOS_BUILD_CORE_RESERVE), and this pool throttles boot-vs-boot only.
-# native TCG boots (arm64) stay on `cpuheavy` because they DO share WSL cores with the build.
-DEFAULT_BOOT_LEASES = max(1, int(os.environ.get("VIBEOS_BOOT_CPU_LEASES", str(DEFAULT_CPU_LEASES))))
+
+
+def _derive_boot_leases() -> int:
+    """Default size of the `bootcpu` pool — how many windows-host QEMU boots run at once,
+    fleet-wide. SEPARATE from `cpuheavy`: these run on the WINDOWS side (qemu.exe), a
+    different scheduling domain from the WSL-side build, so a build's grant must NOT
+    exclude them (the build leaves core headroom via VIBEOS_BUILD_CORE_RESERVE instead).
+    native TCG boots (arm64 on the native backend) stay on `cpuheavy` — they DO share WSL
+    cores with a build. This pool throttles boot-vs-boot only.
+
+    SIZING (2026-07-25). This was a flat 4, inherited from the `cpuheavy` default — and 4
+    is EXACTLY one full gate's boot fan-out (i386 + amd64 + arm64 + the amd64 net lane).
+    So a single gating lane saturated the pool for the whole fleet and every other lane's
+    boots queued behind it end-to-end; add the gate's up-to-2 concurrent flake-retries and
+    even ONE lane oversubscribes its own pool. That queueing is a large part of what
+    "agents are constantly waiting on the gate" actually was.
+
+    What a boot really costs: the smoke guest is UNIPROCESSOR (`-smp` is passed only by the
+    SMP tests), i.e. one TCG vCPU thread + an iothread ≈ ~1.3 busy host threads, with
+    `-m 512M..1G`. On this box (16C/32T + 63 GB Windows-side; WSL sees 24 vCPU / 47 GB) the
+    old cap spent ~15% of the CPU and ~6% of the RAM — a 3× under-subscription.
+
+    So: cpu/3, floored at the historical 4 (never *fewer* boots than before on a small box)
+    and ceilinged at 12 (beyond that TCG boots start stealing from each other and from the
+    build, and `boot_timeout` headroom is finite). 24 vCPU → 8, which is also the design
+    requirement: the pool must fit ≥2 concurrent full gates or lanes serialize by
+    construction. Override with VIBEOS_BOOT_CPU_LEASES.
+    """
+    n = os.cpu_count() or 0
+    return max(4, min(12, n // 3))
+
+
+DEFAULT_BOOT_LEASES = max(
+    1, int(os.environ.get("VIBEOS_BOOT_CPU_LEASES", str(_derive_boot_leases())))
+)
 # Generous ceiling: a real cold build + queue is minutes; hitting an hour = a stuck holder.
 ACQUIRE_TIMEOUT = float(os.environ.get("VIBEOS_HOST_LOCK_TIMEOUT", "3600"))
 _POLL = 0.5
@@ -589,6 +618,92 @@ def build_dir_lock(build_dir: str | Path, **kw: object) -> Iterator[int | None]:
         release(fd)
 
 
+# ── the LAND lock (mutual exclusion over the whole land critical section) ────
+#
+# WHY (2026-07-25): the gate mints a push credential keyed to an exact TREE HASH, so the
+# window between "gate green" and "push accepted" is a RACE. Whoever pushes first wins;
+# every other in-flight lane's tree is now stale, its stamp is void, and it has to merge
+# and RE-GATE. The loser didn't just lose wall-clock — its gate was 3 builds + 4 boots of
+# fleet load that slowed everyone else's gate, which WIDENS the window that voided it. With
+# more active lanes than the host can gate at once, that's a congestion collapse; it
+# presents as "agents constantly waiting on the gate, racing to finish".
+#
+# FIX: landing is a critical section. `vibeos-cli land` holds this ONE lock across
+# fetch → merge → gate → push, so master cannot move under a gating lane: a green gate
+# ALWAYS lands, the fleet spends exactly ONE gate per landing instead of one per attempt,
+# and the queue is FIFO + visible instead of a lottery a patient lane loses indefinitely.
+#
+# It reuses the pool machinery with capacity 1 (`_may_attempt` then admits only the queue
+# head), so it inherits FIFO ordering and flock crash-safety for free.
+#
+# NOT gated on `enabled()`: the CPU pools are a *throughput* throttle you may switch off,
+# but this is a *correctness* lock. VIBEOS_LAND_LOCK=0 opts out (single-agent / rescue).
+LAND_LOCK_TIMEOUT = float(os.environ.get("VIBEOS_LAND_LOCK_TIMEOUT", "10800"))  # 3h
+
+
+class LandLockBusy(RuntimeError):
+    """Raised when the land lock can't be had inside the timeout. HARD failure by design:
+    landing unlocked would reintroduce the exact race this lock exists to remove."""
+
+
+def land_lock_enabled() -> bool:
+    return os.environ.get("VIBEOS_LAND_LOCK", "1").lower() not in ("0", "false", "no", "")
+
+
+def _land_lock_file() -> Path:
+    return HOSTLOCK_DIR / "land"
+
+
+def land_holder() -> dict:
+    """Metadata of the current land-lock holder ({} when free) — for the 'who is landing
+    right now' line, and to name the blocker when we give up waiting."""
+    p = _land_lock_file()
+    if not p.is_file() or not _is_held(p):
+        return {}
+    try:
+        return json.loads(p.read_text() or "{}")
+    except (OSError, ValueError):
+        return {}
+
+
+def land_queue() -> list[dict]:
+    """Live landers queued for the lock, oldest arrival first."""
+    return queue_status("land")
+
+
+@contextmanager
+def land_lock(kind: str, *, timeout: float = LAND_LOCK_TIMEOUT, **extra: object) -> Iterator[None]:
+    """Hold the fleet-wide landing lock for the duration of the block.
+
+    Raises LandLockBusy on timeout (naming the holder) — unlike the soft-failing CPU
+    pools, this one must never degrade to "proceed unlocked". A timeout here means a LIVE
+    holder has been landing for hours (the flock dies with its process, so there is no such
+    thing as a stale one): look at `vibeos-cli host-status` and deal with that holder."""
+    if not land_lock_enabled():
+        yield None
+        return
+    HOSTLOCK_DIR.mkdir(parents=True, exist_ok=True)
+    fd = _acquire_one(
+        [_land_lock_file()], timeout, _self_meta(kind, land=True, **extra), pool="land"
+    )
+    if fd is None:
+        h = land_holder()
+        who = (
+            f"pid={h.get('pid')} {h.get('kind', '?')} in {h.get('cwd', '?')}"
+            if h
+            else "unknown (it just released — retry)"
+        )
+        raise LandLockBusy(
+            f"land lock busy for {timeout:.0f}s — holder: {who}. "
+            "`vibeos-cli host-status` shows the queue; landing unlocked would re-open the "
+            "gate→push race, so this is a hard stop."
+        )
+    try:
+        yield None
+    finally:
+        release(fd)
+
+
 def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -627,6 +742,7 @@ def status() -> dict:
         "cpuheavy": [],
         "bootcpu": [],
         "builddir": [],
+        "land": [],
         "cpu_leases_total": DEFAULT_CPU_LEASES,
         "cpu_leases_held": 0,
         "boot_leases_total": DEFAULT_BOOT_LEASES,
@@ -661,11 +777,13 @@ def status() -> dict:
             out["bootcpu"].append(entry)
         elif p.name.startswith("builddir-"):
             out["builddir"].append(entry)
+        elif p.name == "land":
+            out["land"].append(entry)
     out["cpu_leases_total"] = DEFAULT_CPU_LEASES
     out["cpu_leases_held"] = sum(1 for e in out["cpuheavy"] if e["held"])
     out["boot_leases_total"] = DEFAULT_BOOT_LEASES
     out["boot_leases_held"] = sum(1 for e in out["bootcpu"] if e["held"])
-    out["queue"] = {p: queue_status(p) for p in ("cpuheavy", "bootcpu")}
+    out["queue"] = {p: queue_status(p) for p in ("land", "cpuheavy", "bootcpu")}
     return out
 
 
@@ -726,15 +844,28 @@ def render_status(st: dict) -> str:
     for e in (e for e in st["builddir"] if e["held"]):
         h = e["holder"]
         lines.append(f"  builddir : {h.get('build_dir', '?')}  (pid={h.get('pid', '?')})")
+    # The land lock: exactly one lane may be inside fetch→merge→gate→push at a time, so
+    # "who is landing right now" answers most of "why is master moving under me".
+    land_held = [e for e in st.get("land", []) if e["held"]]
+    if land_held:
+        h = land_held[0]["holder"]
+        dead = "" if land_held[0]["holder_alive"] else "  ⚠STALE(holder gone)"
+        lines.append(
+            f"  LANDING  : {h.get('kind', '?')!s:<14} pid={h.get('pid', '?')}{dead}  "
+            f"{h.get('cwd', '')}"
+        )
     # The queue, oldest first. Starvation used to be invisible — it read as "my build is
     # slow", not "I am 3rd in line behind 20 minutes of waiting" (field manual §9.84).
     for pool, waiters in (st.get("queue") or {}).items():
         for i, w in enumerate(waiters):
             head = "NEXT" if i == 0 else f"#{i + 1}  "
+            want = (
+                "to land"
+                if pool == "land"
+                else f"needs {w['need']} permit{'s' if w['need'] > 1 else ''}"
+            )
             lines.append(
-                f"  queued   : {head} {pool:<9} pid={w['pid']} "
-                f"needs {w['need']} permit{'s' if w['need'] > 1 else ''}, "
-                f"waiting {w['waited_s']:.0f}s"
+                f"  queued   : {head} {pool:<9} pid={w['pid']} {want}, waiting {w['waited_s']:.0f}s"
             )
     skewed = [
         e

@@ -527,7 +527,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the available fix and it is **no longer amd64-only** — that parenthetical was stale on BOTH
   counts: arm64 has shipped it since 2026-07-17 (the §9.93 `save_next` fix cleared the §9.69
   wedge; `ntoskrnl-cargo/build.rs` pushes `kmsafecopy.c` for aarch64), and i386 got it
-  2026-07-24 as an exception-table fault-fixup primitive (§9.121). **FIXED 2026-07-25:** both
+  2026-07-24 as an exception-table fault-fixup primitive (§9.122). **FIXED 2026-07-25:** both
   `_MmCopy{From,To}Caller` in `win32k-rust/src/copy.rs` now route through it on all three
   arches, and it is exported from `ntoskrnl.spec` because win32k.sys is a separate PE that
   cannot carry its own i386 copy (the extable keys on a link-time PC in the kernel's
@@ -581,7 +581,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   overwritten; heap face = unmapped → not-present). Disproven: rtl_heap translation bug (heap
   is faithful/victim), and the §9.96 section path (that fix works correctly). Same PFN family
   as `ZwAllocateVirtualMemory` 0x4E + `MmMapLockedPagesSpecifyCache` (task #7) — and as of
-  2026-07-25 that is no longer a guess, it is **the same check** (§9.122). Task #7's recorded
+  2026-07-25 that is no longer a guess, it is **the same check** (§9.123). Task #7's recorded
   "BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class, P1=0x401) in the Rust MDL-map path" was poisoned by
   §9.113: `0x1000` was an INVENTED stop code appearing at exactly four sites in the whole pre-fix
   kernel, all in `ARM3/virtual.rs`, subcodes `0x61940/0x61940/0x400/0x401`. So `P1=0x401`
@@ -615,7 +615,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `_EX_PUSH_LOCK_WAIT_BLOCK.WakeGate`, not session pool); not reproducing, likely closed by the
   §9.13 WS-pushlock fixes. Re-open only on a live recurrence → GDB watchpoint on the WakeGate byte.
 - **arm64 BUGCHECK 0x3 — IT IS `RESOURCE_NOT_OWNED`, NOT `INVALID_AFFINITY_SET`** (renamed
-  2026-07-25, field manual §9.122). Proved by enumeration, not inference: across the ENTIRE
+  2026-07-25, field manual §9.123). Proved by enumeration, not inference: across the ENTIRE
   pre-`d3ca121cb09` Rust kernel exactly **two** sites could raise stop code 3, both in
   `ex-rust/src/resource.rs` — `ExReleaseResourceForThreadLite` and `ExSetResourceOwnerPointer`,
   whose `RESOURCE_NOT_OWNED` (0xE3) the LLM had invented as `0x03` (§9.113). The only C raiser,

@@ -105,7 +105,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from tree_sitter import Node, Parser
@@ -675,12 +675,15 @@ def _forward_args(
         return None  # unknown or variadic callee: nothing to prove the NULL against
     spelled: list[str] = []
     remaining = list(names)
-    for arg, (param_type, _) in zip(args, callee_params):
+    # strict=True is provable here: the length mismatch returned None above.
+    for arg, (param_type, _) in zip(args, callee_params, strict=True):
         if arg == "NULL":
             if not _is_pointer_c_type(param_type):
                 return None  # NULL at a non-pointer position: not our shape
             spelled.append(
-                "core::ptr::null()" if _is_const_pointer_c_type(param_type) else "core::ptr::null_mut()"
+                "core::ptr::null()"
+                if _is_const_pointer_c_type(param_type)
+                else "core::ptr::null_mut()"
             )
             continue
         if not remaining or arg != remaining[0]:
@@ -698,7 +701,8 @@ def _match_shape(
     params: Sequence[tuple[str, str]],
     return_type: str,
     own_name: str,
-    siblings: dict[str, Sequence[tuple[str, str]]] | None = None,
+    # Mapping (covariant values), not dict — see lower_trivial_c_function.
+    siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
 ) -> tuple[str, str] | None:
     """Return ``(shape, rust_statements)`` for a recognized residual body."""
     names = [name for _, name in params]
@@ -812,7 +816,10 @@ def _render_item(
 
 def lower_trivial_c_function(
     dep: FunctionDep,
-    siblings: dict[str, Sequence[tuple[str, str]]] | None = None,
+    # Mapping, not dict: dict's value type is invariant, so a caller's
+    # dict[str, list[...]] (which is what _normalized_params builds) would not be
+    # assignable to dict[str, Sequence[...]].
+    siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
 ) -> TrivialLowering | None:
     """Lower one trivial C function to Rust for $0, or ``None`` to pay the model.
 
