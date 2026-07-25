@@ -1360,17 +1360,17 @@ def repair_crate(
         # in types_i386.rs), so the rule would contribute nothing while looking healthy.
         # Resolve the per-arch modules for the targets under analysis; an explicit
         # --types-module always wins.
-        candidates: list[Path] = []
+        types_paths: list[Path] = []
         if types_module == "types.rs":
-            candidates = [
+            types_paths = [
                 path
                 for path in (resolved_dir / "src" / f"types_{target}.rs" for target in targets)
                 if path.is_file()
             ]
-        if not candidates:
-            candidates = [resolved_dir / "src" / types_module]
+        if not types_paths:
+            types_paths = [resolved_dir / "src" / types_module]
 
-        present = [path for path in candidates if path.is_file()]
+        present = [path for path in types_paths if path.is_file()]
         if present:
             merged_fields: dict[str, str] = {}
             merged_ambiguous: set[str] = set()
@@ -1406,7 +1406,7 @@ def repair_crate(
                 "no_bindgen_types_module",
                 types_module,
                 0,
-                f"{', '.join(str(path) for path in candidates)} not found — the `[T; 1]` "
+                f"{', '.join(str(path) for path in types_paths)} not found — the `[T; 1]` "
                 "authority is unavailable, so the flexible-array rule is DISABLED for this "
                 "run (not guessed).",
             )
