@@ -1408,6 +1408,18 @@ stubs `get_locinfo()` as a static address. The new instrument counts calls:
 
 It found two more instances on its first run.
 
+**And a ratio is only load-robust if the two sides are INTERLEAVED.** "Same process, same
+data, same load" is not enough when each side gets its own consecutive window: `perf` ran
+three rounds of Rust and then three of C, so best-of-3 rejected only spikes shorter than one
+window — while the load a gate generates (three cold cross-builds, four booting QEMUs) stays
+hot for minutes. A spike covering all three Rust rounds and none of the C ones reports a 2×
+regression that does not exist, and it did, on the difftest stage's first automated gate.
+Round-robin the rounds (`rust, c, rust, c, …`) and take each side's best: a spike then lands
+on both sides of the same round, and the best round is the quietest one for both. Warm both
+sides before timing either. Generally: **a timing harness that was only ever run by hand on an
+idle host has never been tested under the conditions a gate creates** — wiring one into CI is
+itself a change to the instrument.
+
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
 **11**. Measuring a shape by its syntax measures an **upper bound, not a yield**, and the
