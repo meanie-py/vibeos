@@ -714,7 +714,11 @@ pub unsafe extern "system" fn CmpCloseKeyObject(
             return;
         }
 
-        KeBugCheck(0);
+        // C is `ASSERT(FALSE)` ("This shouldn't happen yet") — a DEBUG-ONLY
+        // marker. The translation turned it into an unconditional KeBugCheck(0),
+        // which would kill a release machine on a case NT just walks past, with
+        // the meaningless stop code 0 (UNDEFINED_BUG_CODE). Field manual §9.113.
+        debug_assert!(false, "CmpCloseKeyObject: key body still has a NotifyBlock");
     }
 }
 
@@ -1910,7 +1914,7 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
                     &mut ErrorResponse
                 );
 
-                KeBugCheckEx(0x74, 9, 0, i as usize, Status as usize);
+                KeBugCheckEx(ntkrnl_sys::bugcodes::BAD_SYSTEM_CONFIG_INFO, 9, 0, i as usize, Status as usize);
             }
 
             (*CmHive).FileHandles[HFILE_TYPE_ALTERNATE as usize] = AlternateHandle;
@@ -2033,7 +2037,7 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
         if NT_SUCCESS(status) {
             ZwClose(Thread);
         } else {
-            KeBugCheckEx(0x74, 9, 3, i as ULONG_PTR, status as ULONG_PTR);
+            KeBugCheckEx(ntkrnl_sys::bugcodes::BAD_SYSTEM_CONFIG_INFO, 9, 3, i as ULONG_PTR, status as ULONG_PTR);
         }
 
         i += 1;
@@ -2075,7 +2079,7 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
                 SecurityDescriptor,
             );
             if status != STATUS_SUCCESS {
-                KeBugCheckEx(0x73, 11, status as ULONG_PTR, i as ULONG_PTR, &mut RegName as *mut _ as ULONG_PTR);
+                KeBugCheckEx(ntkrnl_sys::bugcodes::CONFIG_LIST_FAILED, 11, status as ULONG_PTR, i as ULONG_PTR, &mut RegName as *mut _ as ULONG_PTR);
             }
 
             if (*(*(&raw const CmpMachineHiveList)).as_ptr().add(i as usize)).Allocate != 0 {

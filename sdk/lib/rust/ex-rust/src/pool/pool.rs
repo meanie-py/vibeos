@@ -1015,7 +1015,7 @@ pub unsafe extern "system" fn MmRaisePoolQuota(
             TRUE
         }
         _ => {
-            KeBugCheckEx(0, 0, 0, 0, 0);
+            KeBugCheckEx(0, 0, 0, 0, 0); // nolint: bugcheck-code (C is DEFAULT_UNREACHABLE — deliberate fail-loud on an impossible POOL_TYPE)
         }
     }
 }
@@ -1037,7 +1037,7 @@ pub unsafe extern "system" fn MmReturnPoolQuota(
             MmTotalPagedPoolQuota -= quota_to_return;
         }
         _ => {
-            KeBugCheckEx(0, 0, 0, 0, 0);
+            KeBugCheckEx(0, 0, 0, 0, 0); // nolint: bugcheck-code (C is DEFAULT_UNREACHABLE — deliberate fail-loud on an impossible POOL_TYPE)
         }
     }
 }

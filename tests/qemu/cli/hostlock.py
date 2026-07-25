@@ -38,10 +38,21 @@ Acquire order is always `cpuheavy` → `builddir`, and a build grabs the K permi
 (0,1,…) so two builds can't deadlock. Timeouts fail SOFT (warn + proceed unlocked) rather
 than wedge a build forever — a generous default ceiling means hitting it implies a stuck
 holder, not real contention.
+
+**Admission is FIFO.** Waiting for a pool means taking an arrival-ordered ticket; you may
+only attempt to grab permits once doing so cannot delay an earlier arrival. Without that
+the release-all-and-retry loop is order-blind and degenerates to LIFO under load — measured
+2026-07-24: three staggered waiters acquired in EXACTLY reverse arrival order, 3 runs out of
+3, and a real arm64 build sat queued 23 minutes while the permits it needed changed hands
+between two other worktrees. Tickets are flock'd files, so a waiter that dies drops out of
+the queue via the kernel, same as a permit holder (details at "FIFO admission" below).
+`vibeos-cli host-status` prints the queue — starvation used to be invisible, reading as
+"my build is slow" rather than "I am third in line". `VIBEOS_HOSTLOCK_FAIR=0` opts out.
 """
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -130,35 +141,175 @@ def looks_starved(output: str) -> bool:
     return WAIT_ANNOUNCE in output and ACQUIRED_ANNOUNCE not in output
 
 
-def _acquire_one(files: list[Path], timeout: float, meta: dict) -> int | None:
+# ── FIFO admission (fairness) ───────────────────────────────────────────────
+#
+# WHY: permit acquisition is "scan nonblocking, and on a shortfall release everything and
+# retry" (no hold-and-wait, so partial acquirers can't deadlock). That is deadlock-safe but
+# ORDER-BLIND: a waiter has no claim on the permits it is waiting for, so a lane that
+# arrives later can take them the instant a holder releases. A patient waiter can lose every
+# race indefinitely. OBSERVED 2026-07-24: an arm64 build queued 23 MINUTES while the permits
+# it needed changed hands between two other worktrees; it only got in when a lane finished
+# outright. It presents as "the build is slow", not "you are starved" — which is why
+# `looks_starved()` below exists at all (field manual §9.84 detects it AFTER the fact).
+#
+# FIX: an arrival-ordered ticket queue in front of the pool. A waiter registers a ticket and
+# may only attempt to take permits when doing so cannot delay anyone who arrived earlier.
+#
+# CRASH-SAFETY (the hard part — waiters die: Ctrl-C, OOM, a killed agent): a ticket is a FILE
+# ITS OWNER HOLDS AN FLOCK ON for the whole wait, so the kernel releases it on death exactly
+# like the permits themselves. A ticket whose flock can be taken by somebody else is by
+# definition an orphan, and the prober deletes it. No stale-lock sweeper, no pid liveness
+# guessing, no timestamp heuristics. The ticket is created under a dotted temp name, flocked,
+# and only THEN renamed into place, so a ticket is never visible before it is locked (which
+# would otherwise race the orphan reaper into deleting a live waiter's ticket).
+#
+# DEADLOCK: none added. Tickets are advisory ORDERING only — they gate when you *attempt*,
+# never what you hold. The permit scan underneath is still no-hold-and-wait.
+#
+# MIXED VERSIONS: every worktree runs its own copy of this file, so during a rollout an
+# old-code lane takes no ticket and still barges. That degrades to exactly today's behavior
+# (no deadlock, no lost permits) and self-corrects as lanes merge. Fairness holds among
+# ticket-takers. `VIBEOS_HOSTLOCK_FAIR=0` opts out entirely.
+
+
+def fair_enabled() -> bool:
+    """FIFO admission is on by default; `VIBEOS_HOSTLOCK_FAIR=0` restores the old
+    order-blind free-for-all (escape hatch if the queue itself ever misbehaves)."""
+    return os.environ.get("VIBEOS_HOSTLOCK_FAIR", "1").lower() not in ("0", "false", "no", "")
+
+
+def _queue_dir(pool: str) -> Path:
+    # Derived at CALL time: the tests monkeypatch HOSTLOCK_DIR.
+    return HOSTLOCK_DIR / f"queue-{pool}"
+
+
+def _ticket_take(pool: str, need: int) -> tuple[int, Path] | None:
+    """Register an arrival-ordered ticket for `need` permits. Returns (held fd, path), or
+    None if fairness is off. The fd must be held for the whole wait."""
+    if not fair_enabled():
+        return None
+    qd = _queue_dir(pool)
+    try:
+        qd.mkdir(parents=True, exist_ok=True)
+        # Wall clock (not monotonic): the ordering is compared ACROSS processes.
+        name = f"{time.time_ns():020d}-{os.getpid()}-{need}"
+        tmp = qd / f".tmp-{os.getpid()}-{time.time_ns()}"
+        fd = os.open(str(tmp), os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.rename(str(tmp), str(qd / name))  # atomic: visible ⇒ already locked
+        except OSError:
+            os.close(fd)
+            with contextlib.suppress(OSError):
+                tmp.unlink()
+            return None
+        return fd, qd / name
+    except OSError:
+        return None  # queue unusable → fall back to order-blind (never fail an acquire)
+
+
+def _ticket_drop(ticket: tuple[int, Path] | None) -> None:
+    if ticket is None:
+        return
+    fd, path = ticket
+    with contextlib.suppress(OSError):
+        path.unlink()
+    release(fd)
+
+
+def _permits_claimed_ahead(pool: str, me: Path | None) -> int:
+    """Permits claimed by live waiters that arrived BEFORE `me`, reaping orphans as it
+    goes. Returns 0 when fairness is off or the queue is unreadable — i.e. every failure
+    mode degrades to the old order-blind behavior rather than blocking an acquire."""
+    if me is None:
+        return 0
+    qd = _queue_dir(pool)
+    try:
+        names = sorted(p.name for p in qd.iterdir() if not p.name.startswith("."))
+    except OSError:
+        return 0
+    claimed = 0
+    for name in names:
+        if name >= me.name:  # sorted ⇒ everything from here on arrived after me
+            break
+        probe = qd / name
+        try:
+            pfd = os.open(str(probe), os.O_RDWR)
+        except OSError:
+            continue  # vanished under us — someone else reaped it
+        try:
+            try:
+                fcntl.flock(pfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                # Owner still holds it ⇒ a LIVE waiter ahead of us. Its `need` is the
+                # trailing field; treat an unparseable name as 1 permit rather than 0, so
+                # a malformed ticket can never be the reason we barge past someone.
+                try:
+                    claimed += int(name.rsplit("-", 1)[1])
+                except (IndexError, ValueError):
+                    claimed += 1
+                continue
+            # We took the lock ⇒ the owner is gone. Reap the orphan.
+            with contextlib.suppress(OSError):
+                probe.unlink()
+        finally:
+            os.close(pfd)
+    return claimed
+
+
+def _may_attempt(pool: str, me: Path | None, need: int, capacity: int) -> bool:
+    """True when taking `need` permits cannot delay an earlier arrival. The head of the
+    queue always passes (nothing is ahead of it), so the queue can never deadlock itself;
+    a later arrival may only backfill into permits nobody ahead of it is owed."""
+    if me is None:
+        return True
+    return need + _permits_claimed_ahead(pool, me) <= capacity
+
+
+def _acquire_one(
+    files: list[Path],
+    timeout: float,
+    meta: dict,
+    *,
+    pool: str | None = None,
+) -> int | None:
     """Try to grab ANY of `files` (an exclusive flock). Returns the held fd, or None on
-    timeout. Loops the candidate set so a lease of N permits picks the first free slot."""
+    timeout. Loops the candidate set so a lease of N permits picks the first free slot.
+
+    `pool` names the FIFO queue to arrive in (None = no queueing: correct for the
+    single-file `builddir` lock, which is mutual exclusion on one resource rather than a
+    contended pool, so ordering buys nothing)."""
     HOSTLOCK_DIR.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     deadline = t0 + timeout
     announced = False
-    while True:
-        for p in files:
-            fd = os.open(str(p), os.O_RDWR | os.O_CREAT, 0o644)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                os.close(fd)
-                continue
-            _write_meta(fd, meta)
-            if announced:
-                print(
-                    f"{ACQUIRED_ANNOUNCE} ({meta.get('kind', '?')}) "
-                    f"after {time.monotonic() - t0:.0f}s queued",
-                    flush=True,
-                )
-            return fd
-        if time.monotonic() >= deadline:
-            return None
-        if not announced:
-            print(f"{WAIT_ANNOUNCE} ({meta.get('kind', '?')})...", flush=True)
-            announced = True
-        time.sleep(_POLL)
+    ticket = _ticket_take(pool, 1) if pool else None
+    try:
+        while True:
+            if _may_attempt(pool or "", ticket[1] if ticket else None, 1, len(files)):
+                for p in files:
+                    fd = os.open(str(p), os.O_RDWR | os.O_CREAT, 0o644)
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except OSError:
+                        os.close(fd)
+                        continue
+                    _write_meta(fd, meta)
+                    if announced:
+                        print(
+                            f"{ACQUIRED_ANNOUNCE} ({meta.get('kind', '?')}) "
+                            f"after {time.monotonic() - t0:.0f}s queued",
+                            flush=True,
+                        )
+                    return fd
+            if time.monotonic() >= deadline:
+                return None
+            if not announced:
+                print(f"{WAIT_ANNOUNCE} ({meta.get('kind', '?')})...", flush=True)
+                announced = True
+            time.sleep(_POLL)
+    finally:
+        _ticket_drop(ticket)
 
 
 def release(fd: int | None) -> None:
@@ -195,7 +346,10 @@ def acquire_boot_lease(
     boot (they're different scheduling domains — Windows vs WSL). Throttles boot-vs-boot
     only. Returns the held fd or None on timeout."""
     return _acquire_one(
-        _boot_lease_files(leases), timeout, _self_meta(kind, boot_pool=True, **extra)
+        _boot_lease_files(leases),
+        timeout,
+        _self_meta(kind, boot_pool=True, **extra),
+        pool="bootcpu",
     )
 
 
@@ -208,7 +362,9 @@ def acquire_cpu_lease(
 ) -> int | None:
     """Acquire one CPU-heavy lease permit (default pool size 1). Returns the held fd or
     None on timeout. `kind` is a short tag for host-status (e.g. 'build:i386', 'boot:arm64')."""
-    return _acquire_one(_cpu_lease_files(leases), timeout, _self_meta(kind, **extra))
+    return _acquire_one(
+        _cpu_lease_files(leases), timeout, _self_meta(kind, **extra), pool="cpuheavy"
+    )
 
 
 def _max_builds() -> int:
@@ -239,33 +395,50 @@ def acquire_cpu_share(
     holder ever blocks, so two share-acquirers can't deadlock each other (and an
     old-protocol exclusive acquirer, which DOES hold-and-wait in slot order, still
     completes because share holders always finish and release). Returns the held fds,
-    or None on timeout."""
+    or None on timeout.
+
+    Admission is FIFO (see "FIFO admission" above): we take an arrival-ordered ticket and
+    only scan for permits once doing so cannot delay an earlier arrival. Without that, the
+    release-all-and-retry loop below is order-blind and a patient waiter can lose every
+    race — a build starved 23 minutes this way on 2026-07-24."""
     meta = _self_meta(kind, share=n, **extra)
     HOSTLOCK_DIR.mkdir(parents=True, exist_ok=True)
-    deadline = time.monotonic() + timeout
+    t0 = time.monotonic()
+    deadline = t0 + timeout
     announced = False
-    while True:
-        held: list[int] = []
-        for p in _cpu_lease_files(leases):
-            fd = os.open(str(p), os.O_RDWR | os.O_CREAT, 0o644)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                os.close(fd)
-                continue
-            _write_meta(fd, meta)
-            held.append(fd)
-            if len(held) == n:
-                return held
-        # Shortfall: release ALL (no hold-and-wait) and retry after a poll.
-        for h in held:
-            release(h)
-        if time.monotonic() >= deadline:
-            return None
-        if not announced:
-            print(f"[hostlock] waiting for {n} host CPU lease(s) ({kind})...")
-            announced = True
-        time.sleep(_POLL)
+    ticket = _ticket_take("cpuheavy", n)
+    try:
+        while True:
+            if _may_attempt("cpuheavy", ticket[1] if ticket else None, n, leases):
+                held: list[int] = []
+                for p in _cpu_lease_files(leases):
+                    fd = os.open(str(p), os.O_RDWR | os.O_CREAT, 0o644)
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except OSError:
+                        os.close(fd)
+                        continue
+                    _write_meta(fd, meta)
+                    held.append(fd)
+                    if len(held) == n:
+                        if announced:
+                            print(
+                                f"{ACQUIRED_ANNOUNCE} ({kind}, n={n}) "
+                                f"after {time.monotonic() - t0:.0f}s queued",
+                                flush=True,
+                            )
+                        return held
+                # Shortfall: release ALL (no hold-and-wait) and retry after a poll.
+                for h in held:
+                    release(h)
+            if time.monotonic() >= deadline:
+                return None
+            if not announced:
+                print(f"{WAIT_ANNOUNCE} ({kind}, n={n})...", flush=True)
+                announced = True
+            time.sleep(_POLL)
+    finally:
+        _ticket_drop(ticket)
 
 
 def acquire_cpu_exclusive(
@@ -462,6 +635,8 @@ def status() -> dict:
     if not HOSTLOCK_DIR.is_dir():
         return out  # no lock dir yet → nothing held (keys above stay at their defaults)
     for p in sorted(HOSTLOCK_DIR.glob("*")):
+        if p.is_dir():
+            continue  # queue-<pool>/ — reported separately via queue_status()
         held = _is_held(p)
         meta: dict = {}
         try:
@@ -490,7 +665,36 @@ def status() -> dict:
     out["cpu_leases_held"] = sum(1 for e in out["cpuheavy"] if e["held"])
     out["boot_leases_total"] = DEFAULT_BOOT_LEASES
     out["boot_leases_held"] = sum(1 for e in out["bootcpu"] if e["held"])
+    out["queue"] = {p: queue_status(p) for p in ("cpuheavy", "bootcpu")}
     return out
+
+
+def queue_status(pool: str) -> list[dict]:
+    """Live waiters for `pool`, oldest arrival first. Read-only: unlike
+    `_permits_claimed_ahead` this never reaps, so `host-status` can't perturb the queue
+    it is reporting on. Orphan tickets (owner died) are dropped from the view."""
+    qd = _queue_dir(pool)
+    waiters: list[dict] = []
+    try:
+        names = sorted(p.name for p in qd.iterdir() if not p.name.startswith("."))
+    except OSError:
+        return waiters
+    for name in names:
+        if not _is_held(qd / name):
+            continue  # orphan — the next acquirer reaps it
+        parts = name.split("-")
+        try:
+            waited = max(0.0, time.time() - int(parts[0]) / 1e9)
+        except (IndexError, ValueError):
+            waited = 0.0
+        waiters.append(
+            {
+                "pid": parts[1] if len(parts) > 1 else "?",
+                "need": int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1,
+                "waited_s": round(waited, 1),
+            }
+        )
+    return waiters
 
 
 def render_status(st: dict) -> str:
@@ -522,6 +726,16 @@ def render_status(st: dict) -> str:
     for e in (e for e in st["builddir"] if e["held"]):
         h = e["holder"]
         lines.append(f"  builddir : {h.get('build_dir', '?')}  (pid={h.get('pid', '?')})")
+    # The queue, oldest first. Starvation used to be invisible — it read as "my build is
+    # slow", not "I am 3rd in line behind 20 minutes of waiting" (field manual §9.84).
+    for pool, waiters in (st.get("queue") or {}).items():
+        for i, w in enumerate(waiters):
+            head = "NEXT" if i == 0 else f"#{i + 1}  "
+            lines.append(
+                f"  queued   : {head} {pool:<9} pid={w['pid']} "
+                f"needs {w['need']} permit{'s' if w['need'] > 1 else ''}, "
+                f"waiting {w['waited_s']:.0f}s"
+            )
     skewed = [
         e
         for pool in ("cpuheavy", "bootcpu", "builddir")

@@ -1220,7 +1220,7 @@ eventvwr reach the fault ~6 applets earlier than doom does, so auto-launching
 them would COST the coverage the ladder already has. Re-enabling that block is
 the regression test for E13. Tracked, not dropped.
 
-*Durable lesson (field manual §9.113):* when a generator's type source is
+*Durable lesson (field manual §9.115):* when a generator's type source is
 narrower than the truth (a `.spec` describing pointers but not pointees), the
 generator cannot flag what it cannot see, and **a report that iterates the
 generator's own flagged set inherits exactly that blind spot**. The check has to

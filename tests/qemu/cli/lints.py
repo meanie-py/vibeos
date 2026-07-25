@@ -302,6 +302,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Numeric bugcheck stop codes (§9.113). The LLM invented the number for 59 of
+    # ~75 translated `KeBugCheck(SYMBOL)` calls — plausible, internally consistent,
+    # and naming the wrong subsystem (INVALID_AFFINITY_SET -> an IRP bugcheck,
+    # IRQL_GT_ZERO_AT_SYSTEM_SERVICE -> MEMORY_MANAGEMENT). Nothing else can see it:
+    # rustc accepts any ULONG and the code is only read once the kernel is dying.
+    # Fix = ntkrnl_sys::bugcodes::NAME (tools/gen_bugcodes.py). Baseline is EMPTY.
+    sbc = repo / "tools" / "scan_bugcheck_codes.py"
+    specs.append(
+        (
+            "scan_bugcheck_codes",
+            [py, str(sbc), "--lint"] if sbc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Hand-encoded UTF-16 string literals decoded against their `// L"..."` intent
     # comment. The SERVICES_KEY class (2026-07-10): `static X: [u16; 33]` sized by
     # hand, one element short, silently dropped the last character -> services-rust

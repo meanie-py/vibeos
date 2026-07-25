@@ -145,7 +145,7 @@ unsafe fn KiExitInterrupt(TrapFrame: PKTRAP_FRAME, OldIrql: KIRQL, Spurious: BOO
 #[no_mangle]
 #[cfg(any(target_arch = "x86", target_arch = "arm"))]
 pub unsafe extern "C" fn KiUnexpectedInterrupt() -> ! {
-    KeBugCheck(0x7F);
+    KeBugCheck(ntkrnl_sys::bugcodes::TRAP_CAUSE_UNKNOWN);
 }
 
 #[cfg(target_arch = "x86")]

@@ -605,6 +605,15 @@ bash tools/verify_sacred_primitives.sh build-i386
 python3 tools/scan_magic_offsets.py                      # sweep sdk/lib/rust
 # Suppress a verified FP: // nolint: magic-offset (reason)
 
+# Numeric bugcheck STOP CODES (§9.113: the LLM invented the number for 61 of ~115
+# translated KeBugCheck(SYMBOL) calls — plausible, self-consistent, and naming the
+# WRONG subsystem, e.g. INVALID_AFFINITY_SET -> an IRP bugcheck. Invisible to rustc
+# and to every smoke test; it only bites once the kernel is already dying.)
+python3 tools/scan_bugcheck_codes.py                     # empty baseline — keep it at 0
+python3 tools/gen_bugcodes.py                            # regenerate ntkrnl_sys::bugcodes
+# Fix = KeBugCheckEx(ntkrnl_sys::bugcodes::NAME, ...); suppress a deliberate
+# non-code (debug marker, DEFAULT_UNREACHABLE) with // nolint: bugcheck-code (reason)
+
 # Boot coverage map: which functions a real boot EXERCISES (TCG plugin boot)
 tools/coverage/run.sh amd64        # -> per-function exercised set + the
                                    #    never-executed-rust.txt landmine registry

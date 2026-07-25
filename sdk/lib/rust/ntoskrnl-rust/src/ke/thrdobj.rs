@@ -276,7 +276,7 @@ unsafe fn KeReadyThread_impl(Thread: PKTHREAD) {
             );
             if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
             ntkrnl_sys::ddk::KeBugCheckEx(
-                0x96,
+                ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
                 Thread as ntkrnl_sys::ddk::ULONG_PTR,
                 ((0x62u64 << 40) | (st as u64) << 8) as ntkrnl_sys::ddk::ULONG_PTR,
                 0,
