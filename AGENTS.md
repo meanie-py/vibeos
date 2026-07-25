@@ -267,7 +267,7 @@ Shell **cwd persists between calls and drifts** — launch repo tools with an ex
 
 Sealing and the deterministic passes are **not shell32-only**. For any plain-C module (driver,
 Win32 DLL, service) run these in order — steps 1–3 cost **nothing**, and each closes a bug
-class the next cannot see. Rationale and measurements: field manual **§9.114**,
+class the next cannot see. Rationale and measurements: field manual **§9.117**,
 `docs/engineering/rustconv-pipeline.md`.
 
 1. **`python -m rustconv.profile_derive <module> --emit report`** — derives the bindgen island

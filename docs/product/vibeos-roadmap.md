@@ -479,6 +479,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **amd64 WoW64 `g_MsgMemory` SendMessage payload over-read — OPEN, reproduces on master**
+  (2026-07-24, §9.116, task E13). Every amd64 boot with the WoW64 applet ladder BUGCHECKs
+  `0x1E`/`C0000005` at `win32k+0x258EC` ~3.5 min in: `cnt_rust::cabi::raw_move` ←
+  `memcpy` ← `win32k_rust::message::g_MsgMemory` ← `co_IntDoSendMessage`. `g_MsgMemory`
+  (`win32k-rust/src/message.rs:407`) sizes pointer-lParam message payloads with the **host's**
+  `size_of::<T>()` (WINDOWPOS, DRAWITEMSTRUCT, MEASUREITEMSTRUCT, MINMAXINFO, …), so a
+  32-bit WoW64 sender's buffer is over-read. M15a/M16/M18 covered the *callback* direction
+  and `NtUserMessageCall`'s WINDOWPOS lParam; the **SendMessage** direction is uncovered.
+  **Confirmed pre-existing by control experiment** (pristine-master rebuild bugchecks
+  byte-identically). Timing-dependent — spider PASSed one boot and killed the next, so one
+  green boot is not evidence. Repro in seconds: launch `spider.exe` or `eventvwr.exe` from
+  `reactos/syswow64` (both staged; their winlogon auto-launch is held so the 12 earlier
+  ladder rungs keep reporting). Fix is win32k-side and needs payload *conversion*, not just
+  a smaller size — DRAWITEMSTRUCT/MEASUREITEMSTRUCT carry HWND/HDC/ULONG_PTR fields whose
+  offsets shift. Note the smoke gate stays GREEN through this: the boot marker fires long
+  before the ladder runs.
 - **arm64 0x1E / `[WAITDEP]` ALL-ONES residual — CLOSED 2026-07-17** (§9.92 item 4). The
   "~2 hits / 2 days" residual was the SAME netstack-TDI wait-block bug as §9.36 on the
   *synchronous*-completion path the 07-08 fix didn't cover (`IofCompleteRequestInner`'s
@@ -517,6 +533,19 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   one shared root. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
+- **net suite `test_tdi_selftest_roundtrip` — flake rate measured 2026-07-24, and it is BAD
+  under host load.** 1 pass / 6 attempts in one evening while a sibling lane ran a full arm64
+  ninja (host load 4–6). The gate's `NET_FLAKE` auto-retry is 3 attempts, so at this rate a
+  green gate is roughly a coin flip. **Timing signature is the useful discriminator: a passing
+  run finishes in ~36s, a failing one burns ~122s and dies on the marker wait** — i.e. it is a
+  timeout, not a wrong result. TDI CONNECT reaches `ESTABLISHED` and the *engine-level* echo to
+  the very same guestfwd endpoint (`10.0.2.100:9999`) succeeds in the same boot, so the host
+  echo is alive and only the TDI pended-IRP completion misses its window. Ruled out as a code
+  regression: the merge of 2026-07-24 touched **no** netstack source (only `afd-rust`, which
+  this self-test bypasses by being the TDI client itself), and the self-test is kernel-mode on
+  its own system thread with no dependency on the usermode components. Owed: either give the
+  marker wait a load-proportional budget or make the poll worker's completion deterministic —
+  and stop treating 3 retries as sufficient cover.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

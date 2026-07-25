@@ -287,7 +287,7 @@ const KdPacketReceived: KDSTATUS = 0;
 const KdPacketTimedOut: KDSTATUS = 1;
 const KdPacketNeedsResend: KDSTATUS = 2;
 
-const MANUALLY_INITIATED_CRASH: ULONG = 0xDEADDEAD;
+const MANUALLY_INITIATED_CRASH: ULONG = 0xE2;
 
 const SysDbgQueryVersion: ULONG = 0;
 const SysDbgReadVirtual: ULONG = 8;

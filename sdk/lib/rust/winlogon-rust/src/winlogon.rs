@@ -2353,6 +2353,29 @@ pub unsafe extern "system" fn WinMain(
             b"magnify.exe\0".as_ptr() as *const i8,
             8_000,
         );
+        /* E11 ladder — STAGED on the livecd but NOT auto-launched yet (E13).
+         * spider/eventvwr/devmgmt/msconfig/sndrec32/kbswitch were added here to
+         * reach surface no earlier guest touched. Two of them (spider, eventvwr)
+         * immediately found a REAL pre-existing bug and BUGCHECK the box:
+         * win32k's g_MsgMemory sizes SendMessage pointer-lParam payloads with
+         * the HOST's size_of::<T>(), so a 32-bit sender's buffer is over-read
+         * -> 0x1E/C0000005 at win32k+0x258EC (raw_move <- memcpy <- g_MsgMemory
+         * <- co_IntDoSendMessage). It is timing-dependent: spider PASSed one
+         * boot and killed the next.
+         *
+         * E13 is PRE-EXISTING, not something these applets introduced: a
+         * control boot of pristine master (this batch stashed out) BUGCHECKs
+         * with the byte-identical stack at the doom/testgui rung. So the reason
+         * to hold the block is NOT "don't make it worse" — it is to PRESERVE
+         * COVERAGE: spider/eventvwr reach the fault ~6 applets EARLIER than
+         * doom does, which would stop the twelve existing rungs from ever
+         * reporting. Holding keeps that regression coverage intact until E13
+         * lands. They stay STAGED (run any by hand to repro E13 in seconds);
+         * re-enabling this block is E13's regression test. Tracked, not silent.
+         *
+         * for app in [spider, eventvwr, devmgmt, msconfig, sndrec32, kbswitch]:
+         *     TryStartWow64StockApp(app, label, 8_000);
+         */
         /* E4b: same mutual-occlusion rule as the arm64 ladder — when doom is
          * staged it IS the demo GUI guest; testgui would materialise on top
          * of its window. */

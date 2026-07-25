@@ -399,6 +399,16 @@ python3 tools/gen_bugcodes.py                            # regenerate ntkrnl_sys
 # Fix = KeBugCheckEx(ntkrnl_sys::bugcodes::NAME, ...); suppress a deliberate
 # non-code (debug marker, DEFAULT_UNREACHABLE) with // nolint: bugcheck-code (reason)
 
+# INVENTED CONSTANTS, generally (§9.113a/b) — two checkers that compose. Use BOTH:
+#   verify_constants = precise oracle, but only sees headers in its curated catalog
+#   scan_const_contradictions = no oracle, total coverage: "our tree spells one name
+#   two ways, so one is wrong". Loop: contradictions finds the family -> resolve vs
+#   the real C header -> add that header to verify_constants' catalog -> gated forever.
+.venv/bin/python tools/rustconv/rustconv/verify_constants.py   # (--fix to auto-apply)
+python3 tools/scan_const_contradictions.py               # baseline = debt + work queue
+# DON'T "fix" coverage by sweeping all 2216 headers — tried, 486 findings, nearly all
+# false (cross-header name collisions). §9.113b has the evidence.
+
 # Boot coverage map: which functions a real boot EXERCISES (TCG plugin boot)
 tools/coverage/run.sh amd64        # -> per-function exercised set + the
                                    #    never-executed-rust.txt landmine registry

@@ -3,8 +3,9 @@
 Deep reference for the `tools/rustconv/` C-to-Rust translation pipeline: the
 pipeline stages, key files, post-processor rules, the probe-migration and
 Stage-3 design, and the Codex cross-model path. The high-level "what it is",
-the CLI command list, the money-warning, the cost table, and the static-analysis
-commands live in `AGENTS.md` → "rustconv — C-to-Rust Translation Pipeline".
+the CLI command list, the cost table, and the static-analysis commands live in
+`docs/engineering/agent-reference.md`; the money rules and the ordered plain-C loop
+live in `AGENTS.md`.
 
 ## Cost-efficient translation (read before spending API $)
 
@@ -359,7 +360,7 @@ enum constants** (`NonPagedPool`, `KernelMode`, `Executive`, the `Ndis*` vocabul
 `check-tooling`). The whole winsock + Tier-2 service program ran with sealing OFF and
 shipped 13,503 unprotected constant occurrences; do not repeat that. Rationale, the
 storage/type direction rules, and the numeric-replacement-text classifier that keeps SEH
-control-flow macros (`RpcTryExcept`) out of the envelope: field manual **§9.114**.
+control-flow macros (`RpcTryExcept`) out of the envelope: field manual **§9.117**.
 
 `candidate-check` generates a durable synthetic `no_std` crate under
 `.responses/candidate-oracles/`, replaces exactly one worker per isolated module backed by

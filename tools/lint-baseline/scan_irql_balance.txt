@@ -5,5 +5,5 @@ sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs:1252: IRQL_SLEEP_WHILE_HELD
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs:491: IRQL_LEAK_RETURN
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:1781: IRQL_LEAK_RETURN
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:1809: IRQL_LEAK_RETURN
-sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs:1309: IRQL_LEAK_RETURN
-sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs:1312: IRQL_LEAK_RETURN
+sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs:1314: IRQL_LEAK_RETURN
+sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs:1317: IRQL_LEAK_RETURN
