@@ -69,7 +69,7 @@
  * ntoskrnl-rust ke/i386/safecopy.rs as a Linux-extable-style fault-fixup primitive:
  * one `rep movsb` whose address is the sole key of an exception table, consulted by
  * KiTrap0EHandler after MmAccessFault declines. No exception dispatch, no
- * registration chain, no unwinder. Field manual §9.118. i386 is therefore NOT built
+ * registration chain, no unwinder. Field manual §9.119. i386 is therefore NOT built
  * into this file's c_shims list, and supplies its own KmSafeCopySelfTest twin so the
  * per-boot [KMSAFECOPY] oracle below covers all three arches.
  *

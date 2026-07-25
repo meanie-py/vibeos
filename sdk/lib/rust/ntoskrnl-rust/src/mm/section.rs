@@ -530,7 +530,12 @@ const STATUS_GUARD_PAGE_VIOLATION: NTSTATUS = 0x80000001_u32 as NTSTATUS;
 const STATUS_IMAGE_NOT_AT_BASE: NTSTATUS = 0x40000003_u32 as NTSTATUS;
 const STATUS_SECTION_PROTECTION: NTSTATUS = 0xC000004E_u32 as NTSTATUS;
 const STATUS_INVALID_IMAGE_NOT_MZ: NTSTATUS = 0xC000012F_u32 as NTSTATUS;
-const STATUS_ROS_EXEFMT_UNKNOWN_FORMAT: NTSTATUS = 0xC000FFFE_u32 as NTSTATUS;
+// sdk/include/reactos/exeformat.h:72. This was 0xC000FFFE — an invented value
+// (§9.113). section_pe.rs PRODUCES the real 0xA0100001, so both comparisons
+// below silently failed: the loader-retry loop always broke on the first pass,
+// and the `-> STATUS_INVALID_IMAGE_NOT_MZ` conversion never fired, leaking the
+// raw internal status to callers who open a non-PE file as an image section.
+const STATUS_ROS_EXEFMT_UNKNOWN_FORMAT: NTSTATUS = 0xA0100001_u32 as NTSTATUS;
 const STATUS_IN_PAGE_ERROR: NTSTATUS = 0xC0000006_u32 as NTSTATUS;
 const STATUS_INTEGER_OVERFLOW: NTSTATUS = 0xC0000095_u32 as NTSTATUS;
 const STATUS_INVALID_FILE_FOR_SECTION: NTSTATUS = 0xC0000020_u32 as NTSTATUS;

@@ -21,6 +21,7 @@ use ntkrnl_sys::ddk::{
     _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectOrderlyRemoval as RemovalPolicyExpectOrderlyRemoval,
     _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectSurpriseRemoval as RemovalPolicyExpectSurpriseRemoval,
     _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypePaging as DeviceUsageTypePaging,
+    _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeHibernation as DeviceUsageTypeHibernation,
     _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeDumpFile as DeviceUsageTypeDumpFile,
     _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeBoot as DeviceUsageTypeBoot,
     _IO_PAGING_PRIORITY_IoPagingPriorityHigh as IoPagingPriorityHigh,
@@ -2445,7 +2446,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     const SL_OVERRIDE_VERIFY_VOLUME: ULONG = 0x00000002; // guessed
     const IRP_PAGING_IO: ULONG = 0x00000002; // guessed
     const IOCTL_STORAGE_FIRMWARE_ACTIVATE: ULONG = 0x002DDC08; // typical
-    const IO_WARNING_DISK_FIRMWARE_UPDATED: ULONG = 0x80040000 + 0x00000065; // guessed
+    const IO_WARNING_DISK_FIRMWARE_UPDATED: ULONG = 0x4004009F;  // ntiologc.h
     const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016u32 as i32;
     const STATUS_SUCCESS: NTSTATUS = 0;
     const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003C_u32 as i32;

@@ -1310,11 +1310,21 @@ def _flat_arg_exprs(proto: Proto, db32) -> tuple[list[str], int] | None:
 # (offset-encoded strings).
 
 # (WM name, value, struct) — payload is exactly one struct; auto-dispatched.
+# E13: this table is now shared by BOTH directions — wow64_callback.c uses it
+# for the kernel->guest WINDOWPROC payload, and Wow64Manual_NtUserMessageCall
+# for the guest->kernel SendMessage lParam. Adding a row fixes both at once,
+# and they can no longer disagree about a layout.
 CB_TABLE_MESSAGES = [
     ("WM_DRAWITEM", 0x002B, "DRAWITEMSTRUCT"),
     ("WM_MEASUREITEM", 0x002C, "MEASUREITEMSTRUCT"),
     ("WM_HELP", 0x0053, "HELPINFO"),
     ("WM_NEXTMENU", 0x0213, "MDINEXTMENU"),
+    # E13: WINDOWPOS was an EXTRA struct only, so the Msg->pair lookup missed
+    # it and the callback direction fell through to the verbatim copy (40 host
+    # bytes into a buffer the guest reads as 28). M16 had hand-patched just the
+    # FNID_DEFWINDOWPROC leg of the OTHER direction; a table row covers both.
+    ("WM_WINDOWPOSCHANGING", 0x0046, "WINDOWPOS"),
+    ("WM_WINDOWPOSCHANGED", 0x0047, "WINDOWPOS"),
 ]
 # extra per-struct pairs exported for the hand-coded special layouts
 CB_EXTRA_STRUCTS = ["NCCALCSIZE_PARAMS", "WINDOWPOS", "COPYDATASTRUCT"]

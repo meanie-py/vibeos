@@ -7,12 +7,37 @@ identifier at least once, and rustconv restores the original spelling afterward.
 
 The transform is deliberately lexical.  It never touches comments, string/char
 literals, callable macro names, or declaration/cast type names.
+
+DIALECTS
+--------
+`seal_facts(dialect=...)` selects which value families are protected:
+
+* ``"cpp"`` (default) — the original shell32/COM behaviour, **frozen**.  Changing
+  what it seals changes the prompt, which changes the response-cache key, which
+  would silently invalidate every cached *paid* shell32 worker and re-bill it.
+  Do not "improve" this dialect; add to ``"c"`` instead.
+* ``"c"`` — plain C (kernel drivers, Win32 DLLs).  Adds two protections the
+  ALL_CAPS matcher cannot express:
+    1. **CamelCase enum constants** (`NonPagedPool`, `KernelMode`, `Executive`,
+       the `Ndis*` vocabulary) via the generated ground truth in
+       `ddk_enum_constants`.  Measured 345 otherwise-unprotected occurrences
+       across the network DLLs and drivers.  Safe to restore because bindgen
+       spells these identically to C (`pub const NonPagedPool: POOL_TYPE = 0;`).
+    2. A deliberate NON-feature: there is no `sizeof(TYPE)` exclusion.  Sealing a
+       type name is benign (restoring it literally still yields valid Rust, e.g.
+       `size_of::<NDIS_REQUEST>()`), whereas skipping `sizeof(UNICODE_NULL)` would
+       leave a real VALUE unprotected.  Over-seal a type, never under-seal a value.
+  It also refuses to seal any name *declared in the body being translated*:
+  sealing storage is the actively harmful direction, because the contract tells
+  the model the token is an opaque value when it is really a variable to read.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+
+from .ddk_enum_constants import DDK_ENUM_CONSTANTS
 
 
 class FactSealError(RuntimeError):
@@ -38,6 +63,16 @@ _INTEGER_RE = re.compile(
     r"(?:[uUlL]{0,3})(?![A-Za-z0-9_])"
 )
 _SYMBOL_RE = re.compile(r"\b[A-Z][A-Z0-9_]+\b")
+
+# Any capitalised identifier; only those present in DDK_ENUM_CONSTANTS are sealed,
+# so this pattern is a candidate filter, never an authority.  Disjoint from
+# _SYMBOL_RE by construction: the generated set excludes ALL_CAPS names.
+_CAMEL_RE = re.compile(r"\b[A-Z][A-Za-z0-9_]*\b")
+
+# `TYPE name;` / `TYPE *name = ...` / `TYPE name[8]` / `(TYPE name,` — the trailing
+# identifier is storage being introduced.  Used only to EXCLUDE names from sealing,
+# so over-matching costs a missed seal (safe) and never a sealed variable (unsafe).
+_DECLARATOR_RE = re.compile(r"\b[A-Za-z_]\w*\s+\**\s*([A-Za-z_]\w*)\s*(?=[;,=)\[])")
 
 # These are syntax/type/debug words rather than values.  Callable identifiers
 # are excluded independently, so HRESULT_FROM_WIN32(...) need not be listed.
@@ -138,10 +173,28 @@ def canonicalize_hresult_predicates(text: str) -> str:
             return text
 
 
-def seal_facts(text: str) -> SealedSource:
-    """Replace each value occurrence with a unique opaque identifier."""
+def _declared_names(masked: str) -> frozenset[str]:
+    """Identifiers this body introduces as storage (parameters and locals).
+
+    Sealing storage is the one actively harmful direction: the fact contract tells
+    the model the token is an opaque value to reproduce, when it is really a
+    variable it needs to read or assign.  A missed seal just costs a paid call.
+    """
+    return frozenset(match.group(1) for match in _DECLARATOR_RE.finditer(masked))
+
+
+def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
+    """Replace each value occurrence with a unique opaque identifier.
+
+    `dialect` selects the protected value families; see the module docstring.
+    ``"cpp"`` is frozen for response-cache compatibility.
+    """
+    if dialect not in ("c", "cpp"):
+        # Fail loud: a typo'd dialect must not silently fall back to weaker sealing.
+        raise ValueError(f"seal_facts: unknown dialect {dialect!r} (expected 'c' or 'cpp')")
     masked = _code_mask(text)
     spans: list[tuple[int, int, str]] = []
+    declared = _declared_names(masked) if dialect == "c" else frozenset()
 
     for match in _INTEGER_RE.finditer(masked):
         spans.append((match.start(), match.end(), "integer"))
@@ -169,7 +222,26 @@ def seal_facts(text: str) -> SealedSource:
             continue
         spans.append((match.start(), match.end(), "symbol"))
 
-    # No token can match both regexes, but sorting also makes numbering stable.
+    if dialect == "c":
+        for match in _CAMEL_RE.finditer(masked):
+            word = match.group(0)
+            # The generated ground truth is the ONLY authority for what is a value
+            # here; a capitalised identifier is otherwise far more likely to be a
+            # function, type, or variable.
+            if word not in DDK_ENUM_CONSTANTS or word in declared:
+                continue
+            tail = masked[match.end() :]
+            if tail.lstrip().startswith("("):  # callee, not a value
+                continue
+            before = masked[: match.start()].rstrip()
+            if before.endswith(".") or before.endswith("->"):  # struct field access
+                continue
+            if re.match(r"\s+\**\s*[A-Za-z_]\w*", tail):  # `Type name` declaration
+                continue
+            spans.append((match.start(), match.end(), "enum"))
+
+    # No token can match both patterns (the generated set excludes ALL_CAPS names),
+    # but sorting also makes numbering stable.
     spans.sort()
     facts: list[SealedFact] = []
     result = text
@@ -182,9 +254,9 @@ def seal_facts(text: str) -> SealedSource:
     return SealedSource(result, tuple(facts))
 
 
-def prepare_sealed_source(text: str) -> SealedSource:
+def prepare_sealed_source(text: str, *, dialect: str = "cpp") -> SealedSource:
     """Canonicalize deterministic macros, then seal the resulting facts."""
-    return seal_facts(canonicalize_hresult_predicates(text))
+    return seal_facts(canonicalize_hresult_predicates(text), dialect=dialect)
 
 
 def fact_contract(sealed: SealedSource) -> str:
@@ -222,7 +294,7 @@ def unseal_facts(rust: str, sealed: SealedSource) -> str:
             if fact.placeholder in missing_names:
                 by_original.setdefault((fact.original, fact.kind), []).append(fact)
         for (original, kind), facts in by_original.items():
-            if kind == "symbol":
+            if kind in ("symbol", "enum"):
                 pattern = re.compile(rf"\b{re.escape(original)}\b")
             else:
                 pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(original)}(?![A-Za-z0-9_])")

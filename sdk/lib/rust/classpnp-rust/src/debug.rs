@@ -9,7 +9,7 @@ use ntkrnl_sys::ddk::{KeInitializeSpinLock, KeQueryTimeIncrement, LARGE_INTEGER,
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{TRACE_LEVEL_ERROR, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING};
-use crate::types::{DBG_NUM_PACKET_LOG_ENTRIES, PCDB, PCLASS_PRIVATE_FDO_DATA, PFUNCTIONAL_DEVICE_EXTENSION, PSTORAGE_REQUEST_BLOCK_HEADER, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_DATA_OVERRUN, SRB_STATUS_INTERNAL_ERROR, SRB_STATUS_PENDING, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SUCCESS, TRANSFER_PACKET, _CLASS_DEBUG_LEVEL as CLASS_DEBUG_LEVEL, _CLASS_PRIVATE_FDO_DATA};
+use crate::types::{DBG_NUM_PACKET_LOG_ENTRIES, PCDB, PCLASS_PRIVATE_FDO_DATA, PFUNCTIONAL_DEVICE_EXTENSION, PSTORAGE_REQUEST_BLOCK_HEADER, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_DATA_OVERRUN, SRB_STATUS_INTERNAL_ERROR, SRB_STATUS_PENDING, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SUCCESS, TRANSFER_PACKET, _CLASS_DEBUG_LEVEL as CLASS_DEBUG_LEVEL, _CLASS_PRIVATE_FDO_DATA, SCSI_ADSENSE_COPY_PROTECTION_FAILURE, SCSI_ADSENSE_ILLEGAL_BLOCK, SCSI_ADSENSE_INVALID_MEDIA, SCSI_ADSENSE_LUN_NOT_READY, SCSI_ADSENSE_NO_SENSE, SCSI_ADSENSE_OPERATOR_REQUEST, SCSI_ADSENSE_POSITION_ERROR, SCSI_SENSEQ_AUTHENTICATION_FAILURE, SCSI_SENSEQ_BECOMING_READY, SCSI_SENSEQ_BEGINNING_OF_MEDIA_DETECTED, SCSI_SENSEQ_CAUSE_NOT_REPORTABLE, SCSI_SENSEQ_CLEANING_CARTRIDGE_INSTALLED, SCSI_SENSEQ_DESTINATION_FULL, SCSI_SENSEQ_END_OF_MEDIA_DETECTED, SCSI_SENSEQ_FILEMARK_DETECTED, SCSI_SENSEQ_FORMAT_IN_PROGRESS, SCSI_SENSEQ_ILLEGAL_ELEMENT_ADDR, SCSI_SENSEQ_INCOMPATIBLE_FORMAT, SCSI_SENSEQ_INCOMPATIBLE_MEDIA_INSTALLED, SCSI_SENSEQ_INIT_COMMAND_REQUIRED, SCSI_SENSEQ_KEY_NOT_ESTABLISHED, SCSI_SENSEQ_KEY_NOT_PRESENT, SCSI_SENSEQ_LOGICAL_UNIT_RESET_COUNT_ERROR, SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS, SCSI_SENSEQ_MANUAL_INTERVENTION_REQUIRED, SCSI_SENSEQ_MEDIA_CODE_MISMATCHED_TO_LOGICAL_UNIT, SCSI_SENSEQ_MEDIUM_REMOVAL, SCSI_SENSEQ_OPERATION_IN_PROGRESS, SCSI_SENSEQ_READ_OF_SCRAMBLED_SECTOR_WITHOUT_AUTHENTICATION, SCSI_SENSEQ_REBUILD_IN_PROGRESS, SCSI_SENSEQ_RECALCULATION_IN_PROGRESS, SCSI_SENSEQ_SETMARK_DETECTED, SCSI_SENSEQ_SOURCE_EMPTY, SCSI_SENSEQ_STATE_CHANGE_INPUT, SCSI_SENSEQ_UNKNOWN_FORMAT, SCSI_SENSEQ_WRITE_PROTECT_DISABLE, SCSI_SENSEQ_WRITE_PROTECT_ENABLE};
 use ntkrnl_sys::ddk::{PCSTR};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED};
@@ -526,8 +526,8 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
             core::ptr::addr_of_mut!(ad_sense_code_qual),
         ) != 0;
         if valid_sense {
-            match ad_sense_code {
-                SCSI_ADSENSE_LUN_NOT_READY => match ad_sense_code_qual {
+            match ad_sense_code as u32 {
+                SCSI_ADSENSE_LUN_NOT_READY => match ad_sense_code_qual as u32 {
                     SCSI_SENSEQ_CAUSE_NOT_REPORTABLE => {
                         ad_sense_code_qual_str = b"SCSI_SENSEQ_CAUSE_NOT_REPORTABLE\0".as_ptr() as PCHAR;
                     }
@@ -557,7 +557,7 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
                     }
                     _ => {}
                 },
-                SCSI_ADSENSE_NO_SENSE => match ad_sense_code_qual {
+                SCSI_ADSENSE_NO_SENSE => match ad_sense_code_qual as u32 {
                     SCSI_SENSEQ_FILEMARK_DETECTED => {
                         ad_sense_code_qual_str = b"SCSI_SENSEQ_FILEMARK_DETECTED\0".as_ptr() as PCHAR;
                     }
@@ -572,13 +572,13 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
                     }
                     _ => {}
                 },
-                SCSI_ADSENSE_ILLEGAL_BLOCK => match ad_sense_code_qual {
+                SCSI_ADSENSE_ILLEGAL_BLOCK => match ad_sense_code_qual as u32 {
                     SCSI_SENSEQ_ILLEGAL_ELEMENT_ADDR => {
                         ad_sense_code_qual_str = b"SCSI_SENSEQ_ILLEGAL_ELEMENT_ADDR\0".as_ptr() as PCHAR;
                     }
                     _ => {}
                 },
-                SCSI_ADSENSE_POSITION_ERROR => match ad_sense_code_qual {
+                SCSI_ADSENSE_POSITION_ERROR => match ad_sense_code_qual as u32 {
                     SCSI_SENSEQ_DESTINATION_FULL => {
                         ad_sense_code_qual_str = b"SCSI_SENSEQ_DESTINATION_FULL\0".as_ptr() as PCHAR;
                     }
@@ -587,7 +587,7 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
                     }
                     _ => {}
                 },
-                SCSI_ADSENSE_INVALID_MEDIA => match ad_sense_code_qual {
+                SCSI_ADSENSE_INVALID_MEDIA => match ad_sense_code_qual as u32 {
                     SCSI_SENSEQ_INCOMPATIBLE_MEDIA_INSTALLED => {
                         ad_sense_code_qual_str = b"SCSI_SENSEQ_INCOMPATIBLE_MEDIA_INSTALLED\0".as_ptr() as PCHAR;
                     }
@@ -602,7 +602,7 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
                     }
                     _ => {}
                 },
-                SCSI_ADSENSE_OPERATOR_REQUEST => match ad_sense_code_qual {
+                SCSI_ADSENSE_OPERATOR_REQUEST => match ad_sense_code_qual as u32 {
                     SCSI_SENSEQ_STATE_CHANGE_INPUT => {
                         ad_sense_code_qual_str = b"SCSI_SENSEQ_STATE_CHANGE_INPUT\0".as_ptr() as PCHAR;
                     }
@@ -617,7 +617,7 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
                     }
                     _ => {}
                 },
-                SCSI_ADSENSE_COPY_PROTECTION_FAILURE => match ad_sense_code_qual {
+                SCSI_ADSENSE_COPY_PROTECTION_FAILURE => match ad_sense_code_qual as u32 {
                     SCSI_SENSEQ_AUTHENTICATION_FAILURE => {
                         ad_sense_code_qual_str = b"SCSI_SENSEQ_AUTHENTICATION_FAILURE\0".as_ptr() as PCHAR;
                     }

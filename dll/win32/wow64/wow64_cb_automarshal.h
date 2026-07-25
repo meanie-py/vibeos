@@ -28,14 +28,14 @@ void WowCbDown_tagMDINEXTMENU(const unsigned char *s, unsigned char *d);
 void WowCbUp_tagMDINEXTMENU(const unsigned char *s, unsigned char *d);
 #define WOW64_CB_SIZE32_tagMDINEXTMENU 12
 #define WOW64_CB_SIZE64_tagMDINEXTMENU 24
-void WowCbDown_tagNCCALCSIZE_PARAMS(const unsigned char *s, unsigned char *d);
-void WowCbUp_tagNCCALCSIZE_PARAMS(const unsigned char *s, unsigned char *d);
-#define WOW64_CB_SIZE32_tagNCCALCSIZE_PARAMS 52
-#define WOW64_CB_SIZE64_tagNCCALCSIZE_PARAMS 56
 void WowCbDown__WINDOWPOS(const unsigned char *s, unsigned char *d);
 void WowCbUp__WINDOWPOS(const unsigned char *s, unsigned char *d);
 #define WOW64_CB_SIZE32__WINDOWPOS 28
 #define WOW64_CB_SIZE64__WINDOWPOS 40
+void WowCbDown_tagNCCALCSIZE_PARAMS(const unsigned char *s, unsigned char *d);
+void WowCbUp_tagNCCALCSIZE_PARAMS(const unsigned char *s, unsigned char *d);
+#define WOW64_CB_SIZE32_tagNCCALCSIZE_PARAMS 52
+#define WOW64_CB_SIZE64_tagNCCALCSIZE_PARAMS 56
 void WowCbDown_tagCOPYDATASTRUCT(const unsigned char *s, unsigned char *d);
 void WowCbUp_tagCOPYDATASTRUCT(const unsigned char *s, unsigned char *d);
 #define WOW64_CB_SIZE32_tagCOPYDATASTRUCT 12
