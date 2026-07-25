@@ -209,6 +209,12 @@ FIXED_WIDTH_PINS = {
     "__msvcrt_long": ("i32", "corecrt.h: the signed twin, same reasoning"),
     "ULONG": ("u32", "Win32 ULONG is 32-bit (LLP64)"),
     "DWORD": ("u32", "Win32 DWORD is 32-bit (LLP64)"),
+    # The signed twin of ULONG, and the one that was missing. It is the type of
+    # `threadmbcinfostruct.refcount` -- the FIRST member -- so on the LP64 host it
+    # pushed `mbctype[257]` (the lead-byte table all 160 graded mbcs functions read)
+    # from offset 28 to 32, and grew the struct by 8 bytes. Both sides of the harness
+    # would have read the same wrong bytes and agreed.
+    "LONG": ("i32", "Win32 LONG is 32-bit (LLP64)"),
 }
 
 

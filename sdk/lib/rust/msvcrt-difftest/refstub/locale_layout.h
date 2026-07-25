@@ -71,6 +71,43 @@ typedef struct threadlocaleinfostruct {
     struct __lc_time_data *lc_time_curr;
 } rl_threadlocinfo;
 
+/* threadmbcinfostruct, verbatim (dll/win32/msvcrt/msvcrt.h).
+ *
+ * This lives here, beside threadlocinfo, for exactly the reason at the top of this
+ * file — and it is the sharper case of it.  refstub/msvcrt.h used to carry a
+ * three-field version (refcount, mbcodepage, ismbcodepage), which was all string.c
+ * and wcs.c ever touch.  That was safe only because refimpl.c sets
+ * `locale->mbcinfo = NULL` and nothing dereferenced it.
+ *
+ * mbcs.c dereferences it on every call, and so does the shipping Rust — through
+ * msvcrt-sys's bindgen of the REAL struct, where `mbctype` starts at offset 28 and
+ * runs 257 bytes.  Against a 12-byte object that is a read 273 bytes past the end,
+ * inside the component whose entire job is to be a trustworthy oracle.  It would not
+ * crash; it would return whatever the allocator left there, differently on each run.
+ *
+ * `LONG` is 32-bit on Windows; `int` is exact on every target we build.
+ * ref_integrity asserts this layout against msvcrt-sys field by field. */
+typedef struct threadmbcinfostruct {
+    int             refcount;           /* LONG */
+    int             mbcodepage;
+    int             ismbcodepage;
+    int             mblcid;
+    unsigned short  mbulinfo[6];
+    unsigned char   mbctype[257];       /* NOTE 257, not 256: index is byte+1 */
+    unsigned char   mbcasemap[256];
+} rl_threadmbcinfo;
+
+/* `_locale_t`'s target — msvcrt-sys calls it `localeinfo_struct`.  Shared for the same
+ * reason as the two structs above: an explicit `_locale_t` argument is how all 80 of
+ * mbcs.c's `_l` entry points reach their MBCS state, so both sides must agree where
+ * `mbcinfo` sits.  The struct TAG stays `_locale_tstruct` because the reference TUs use
+ * that name as a type directly (wcs.c's `_wcsicmp_l` family declares
+ * `_locale_tstruct tmp = {0};` on the stack). */
+typedef struct _locale_tstruct {
+    struct threadlocaleinfostruct *locinfo;
+    struct threadmbcinfostruct    *mbcinfo;
+} rl_locale_t;
+
 /* MSVC's locale categories.  The host <locale.h> numbers these completely differently
  * (glibc: LC_CTYPE=0 … LC_ALL=6 … LC_IDENTIFICATION=12), and with lc_handle[] at its
  * real size of 6 a glibc LC_ALL(=6) would index one PAST the end.  These are what

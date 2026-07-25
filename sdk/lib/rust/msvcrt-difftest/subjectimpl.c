@@ -300,6 +300,25 @@ size_t subj_off_td_errno(void)    { return offsetof(subj_thread_data_t, thread_e
 size_t subj_off_locinfo_lconv(void)      { return offsetof(rl_threadlocinfo, lconv); }
 size_t subj_off_lconv_decimalpoint(void) { return offsetof(struct lconv, decimal_point); }
 
+/* ── mbcs: the MBCS state every mbcs.c entry point dereferences ─────────────
+ *
+ * These matter more than the locinfo offsets above, not less.  A `threadmbcinfo` is
+ * almost entirely two byte arrays, and `mbctype[]` IS the answer to "is this a lead
+ * byte" for all 160 graded functions — so a wrong offset here does not produce a
+ * plausible-but-wrong verdict, it produces a *stable* one: both sides read the same
+ * bytes past the end of the object and agree with each other perfectly, forever.
+ *
+ * The size check is not redundant with the offsets.  `mbcasemap` is last, so its
+ * offset is right even if the array is short; only sizeof catches a truncated tail. */
+size_t subj_off_mbcinfo_mbcodepage(void)   { return offsetof(rl_threadmbcinfo, mbcodepage); }
+size_t subj_off_mbcinfo_ismbcodepage(void) { return offsetof(rl_threadmbcinfo, ismbcodepage); }
+size_t subj_off_mbcinfo_mblcid(void)       { return offsetof(rl_threadmbcinfo, mblcid); }
+size_t subj_off_mbcinfo_mbulinfo(void)     { return offsetof(rl_threadmbcinfo, mbulinfo); }
+size_t subj_off_mbcinfo_mbctype(void)      { return offsetof(rl_threadmbcinfo, mbctype); }
+size_t subj_off_mbcinfo_mbcasemap(void)    { return offsetof(rl_threadmbcinfo, mbcasemap); }
+size_t subj_sizeof_mbcinfo(void)           { return sizeof(rl_threadmbcinfo); }
+size_t subj_off_locale_mbcinfo(void)       { return offsetof(rl_locale_t, mbcinfo); }
+
 /* ── wave 14b: the Rust printf ENGINE's environment ─────────────────────────
  *
  * msvcrt.dll's printf engine imports these from kernel32 / its own C.  The

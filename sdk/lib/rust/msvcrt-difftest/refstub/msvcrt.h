@@ -356,18 +356,15 @@ typedef struct threadlocaleinfostruct threadlocinfo, *pthreadlocinfo;
 #define LC_NUMERIC  RL_LC_NUMERIC
 #define LC_TIME     RL_LC_TIME
 
-typedef struct threadmbcinfostruct {
-    int             refcount;
-    int             mbcodepage;
-    int             ismbcodepage;
-} threadmbcinfo, *pthreadmbcinfo;
+/* The FULL struct, from locale_layout.h — see the note there.  This was a
+ * three-field abbreviation until mbcs.c became a reference TU; the shipping Rust
+ * has always read the real thing. */
+typedef rl_threadmbcinfo threadmbcinfo, *pthreadmbcinfo;
 
-typedef struct _locale_tstruct {
-    pthreadlocinfo  locinfo;
-    pthreadmbcinfo  mbcinfo;
-    /* the struct tag is ALSO a typedef name: wcs.c's _wcsicmp_l family
-     * declares `_locale_tstruct tmp = {0};` on the stack. */
-} _locale_tstruct, *_locale_t;
+/* Defined in locale_layout.h (both sides need the offset of `mbcinfo`).  The struct
+ * tag is ALSO a typedef name here: wcs.c's _wcsicmp_l family declares
+ * `_locale_tstruct tmp = {0};` on the stack. */
+typedef struct _locale_tstruct _locale_tstruct, *_locale_t;
 
 pthreadlocinfo CDECL get_locinfo(void);
 
