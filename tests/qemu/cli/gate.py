@@ -261,6 +261,8 @@ def _build_once(repo: Path, run: Run, arch: str, args) -> dict:
         cmd.append("--no-check")
     if getattr(args, "clean", False):
         cmd.append("--clean")
+    if getattr(args, "keep_going", False):
+        cmd.append("--keep-going")
     t0 = time.monotonic()
     cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
     return {

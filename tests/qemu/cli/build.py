@@ -207,6 +207,19 @@ def _collect_cache_stats(run: Run, cache: cachecfg.CacheEnv, env: dict) -> None:
             )
 
 
+def _ninja_keep_going(args=None) -> list[str]:
+    """`-k0` = don't stop at the first failure.
+
+    Why it matters (2026-07-25): three independent latent breaks were sitting on mainline, and
+    they were discovered ONE PER COLD BUILD — ninja halts at the first failing edge, so each
+    ~6-minute build revealed exactly one, and the next only appeared after the previous was
+    fixed. For a *verdict* build (the gate / the merge queue's batch) that is the wrong
+    trade: we want the whole failure set in one pass, even though the log is longer. Local
+    iteration keeps the default fail-fast, which is what you want when you are the one who
+    just broke it."""
+    return ["-k0"] if getattr(args, "keep_going", False) else []
+
+
 def _ninja_jobs() -> list[str]:
     """`-j N` cap on ninja parallelism. DEFAULT IS NOW UNCAPPED (reserve 0).
 
@@ -758,7 +771,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             header="cohab",
         )
     cp = run.run(
-        wrap(["ninja", *_ninja_jobs(), *targets, *cohab]),
+        wrap(["ninja", *_ninja_jobs(), *_ninja_keep_going(args), *targets, *cohab]),
         cwd=build_dir,
         env=build_env,
         stage="ninja",

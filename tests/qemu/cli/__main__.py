@@ -62,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     b.add_argument("--no-check", action="store_true", help="skip auto source-lints")
     b.add_argument(
+        "--keep-going",
+        action="store_true",
+        help="ninja -k0: report EVERY broken target, not just the first (verdict builds)",
+    )
+    b.add_argument(
         "--lockdep",
         action="store_true",
         help="sync-instrumentation §4: build ntoskrnl with the self-deadlock detector "
@@ -182,6 +187,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     g.add_argument("--no-build", action="store_true", help="smoke only (media must be current)")
     g.add_argument("--clean", action="store_true", help="cold builds (implies build)")
+    g.add_argument(
+        "--keep-going", action="store_true", help="ninja -k0 in each build: collect ALL failures"
+    )
     g.add_argument("--no-net", action="store_true", help="skip the amd64 net stage (default-on)")
     g.add_argument(
         "--no-lint",

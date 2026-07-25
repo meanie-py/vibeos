@@ -3580,3 +3580,43 @@ def test_queue_rejection_names_what_it_was_gated_against(queue_repo, monkeypatch
     assert len(landed) == 1 and len(rej) == 1, q_mod.results(repo, limit=20)
     assert "gated against master" in rej[0]["reason"]
     assert landed[0]["lane"] in rej[0]["reason"], "must name the neighbour that landed first"
+
+
+def test_queue_batch_gate_is_cold_and_collects_all_failures(monkeypatch, tmp_path):
+    """Warm builds hid THREE simultaneous mainline breaks: a crate that isn't recompiled can't
+    fail, and a .sys that isn't relinked can't fail to link. The batch gate must therefore be
+    cold AND use -k0, or it keeps certifying a tree that does not build from scratch."""
+    seen = {}
+
+    def _fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(q_mod.subprocess, "run", _fake_run)
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
+    q_mod.gate_batch(tmp_path, lambda m: None, retries=0)
+    assert "--clean" in seen["cmd"], seen["cmd"]
+    assert "--keep-going" in seen["cmd"], seen["cmd"]
+
+
+def test_queue_batch_gate_cold_can_be_opted_out(monkeypatch, tmp_path):
+    monkeypatch.setenv("VIBEOS_QUEUE_CLEAN", "0")
+    seen = {}
+
+    def _fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(q_mod.subprocess, "run", _fake_run)
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
+    q_mod.gate_batch(tmp_path, lambda m: None, retries=0)
+    assert "--clean" not in seen["cmd"]
+
+
+def test_build_keep_going_maps_to_ninja_k0():
+    """-k0 only for verdict builds: local iteration wants fail-fast, since you just broke it."""
+    from argparse import Namespace
+
+    assert build_mod._ninja_keep_going(Namespace(keep_going=True)) == ["-k0"]
+    assert build_mod._ninja_keep_going(Namespace(keep_going=False)) == []
+    assert build_mod._ninja_keep_going(None) == []

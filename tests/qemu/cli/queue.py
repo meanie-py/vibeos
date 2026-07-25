@@ -364,6 +364,24 @@ def gate_batch(wt: Path, log, *, retries: int = 2) -> tuple[bool, str, str, str]
     )
     root.mkdir(parents=True, exist_ok=True)
     cmd = [str(wt / "vibeos-cli"), "gate", "--retries", str(retries)]
+    # COLD + collect-everything, by default, for the batch gate (2026-07-25).
+    #
+    # Warm builds hid THREE independent breaks on mainline simultaneously — two E0659
+    # ambiguities and an undefined `___debugbreak` — because a crate that is not recompiled
+    # cannot fail, and a `.sys` that is not relinked cannot fail to link. Every lane's gate was
+    # green; mainline did not build from scratch on any arch.
+    #
+    # This is affordable precisely because the caches are content-addressed and live OUTSIDE the
+    # target dirs `--clean` nukes: a cold replay measured 100%/100% ccache/sccache hits, so the
+    # cost is cargo bookkeeping + linking, not recompilation. And a compile ERROR is never
+    # cached — the crate really must compile — which is exactly why cold catches this class.
+    # Amortized over a batch of N landings it is cheaper than N warm gates.
+    #
+    # `--keep-going` (ninja -k0) is the other half: the three breaks were found ONE PER BUILD
+    # because ninja halts at the first failing edge. A verdict build wants the whole failure set
+    # in one pass. VIBEOS_QUEUE_CLEAN=0 opts out if a batch ever needs to be fast over sure.
+    if os.environ.get("VIBEOS_QUEUE_CLEAN", "1").lower() not in ("0", "false", "no"):
+        cmd += ["--clean", "--keep-going"]
     cp = subprocess.run(
         cmd,
         cwd=str(wt),
