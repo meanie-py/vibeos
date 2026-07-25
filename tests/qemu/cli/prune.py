@@ -23,6 +23,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import queue  # INTEGRATION_DIRNAME — never auto-reclaim the merge train's tree
+
 # Same global lock dir vm.py / qemu/start.sh / qemu/ps use.
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
 
@@ -180,6 +182,12 @@ def classify(
     wtr = worktree.resolve()
     if wtr == current.resolve() and not allow_self:
         return "current worktree (use --self)"
+    # The merge queue's integration tree is idle BY DESIGN between batches, which is exactly
+    # the shape this command hunts — but its warm build dirs + cargo target are the reason a
+    # batch gates in minutes instead of an hour, and every landing in the fleet pays for a
+    # cold one. Never reclaim it automatically; `--self` from inside it still can.
+    if wtr.name == queue.INTEGRATION_DIRNAME and not allow_self:
+        return "merge-queue integration tree (its warm caches gate every batch)"
     if wtr in live_qemu:
         return "live QEMU running"
     if wtr in active_build:

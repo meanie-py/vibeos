@@ -141,13 +141,19 @@ already had one "brutal consolidation" of 40 docs down to 11.)
   — identical content from a divergent lineage collapses to a no-op. A genuine conflict is the
   rare real signal: resolve it and move on. If it didn't conflict, there was nothing to look at;
   stop narrating it. (The rewind incident was a `reset --hard` to a stale ref, **not** a merge.)
-- **Land with `./vibeos-cli land`, not gate-then-push by hand** (2026-07-25). It holds ONE
-  fleet-wide FIFO lock across fetch → merge `origin/master` → gate → push, so master cannot move
-  under a gating lane. Hand-rolling it is what made every lane race: the stamp is keyed to an
-  exact TREE, so whoever pushes first voids everyone else's gate and forces a re-gate — and each
-  wasted gate is 3 builds + 4 boots of fleet load that widens the window that voided it. `land`
-  also skips the gate when a fresh green stamp already covers the tree, so "I gated and nobody
-  raced me" costs seconds. `./vibeos-cli land-status` (or `host-status`) shows who holds it.
+- **Land with `./vibeos-cli land` — it is a MERGE QUEUE** (2026-07-25). `land` publishes your
+  lane tip to the queue and returns in ~2s; you do **not** merge master, do **not** gate, do
+  **not** wait. Whichever agent finds the land lock free becomes the *trainer*: it merges every
+  queued lane onto current master in a dedicated integration worktree, gates **once**, and
+  fast-forwards master to exactly the commit it gated. N ready lanes = ONE gate, zero blocked
+  agents. A conflict is bounced back to its lane (never resolved for you); a red batch splits
+  recursively so the culprit is rejected with its classification + artifact dir while the
+  innocent lanes still land. `./vibeos-cli land-status [--mine]` shows the trainer, the queue,
+  and your verdict. `land --direct` is the opt-out (single-lane: merge master → gate → push,
+  same lock) and `land --drain` forces a drain if the queue ever sits with no trainer.
+  Hand-rolling gate-then-push is what made every lane race: the stamp is keyed to an exact
+  TREE, so whoever pushes first voids everyone else's gate — and each wasted gate is 3 builds
+  + 4 boots of fleet load that widens the window that voided it.
 - **Never move the local `master` ref from a worktree that doesn't have it checked out** — no
   `branch -f master`, no `update-ref`, no `fetch origin master:master`. That leaves the OTHER
   worktree's index+files at the old tree, which resurfaces as a giant phantom staged revert (the
@@ -247,8 +253,8 @@ guide: `tests/qemu/cli/README.md`.
 ./vibeos-cli check                          # source lints, 0 NEW vs tools/lint-baseline/
 ./vibeos-cli check-tooling                  # ruff+pyright+pytest for OUR python
 ./vibeos-cli gate                           # build serial -> smoke all arches parallel -> retry known flakes
-./vibeos-cli land                           # THE way to land: FIFO lock -> merge master -> gate -> push
-./vibeos-cli land-status                    # who is landing right now + who is queued
+./vibeos-cli land                           # THE way to land: submit to the merge queue (train it if free)
+./vibeos-cli land-status --mine             # trainer + queue + MY verdict (landed / rejected + artifact)
 ./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
 ./vibeos-cli host-status                    # build/boot CPU leases + the land lock, across worktrees
 ./vibeos-cli debug  start amd64 --gdb       # GDB over the real (UEFI) boot

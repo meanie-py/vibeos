@@ -2897,6 +2897,11 @@ class _Args:
         self.no_push = False
         self.dry_run = False
         self.queue_timeout = 5
+        # `land` defaults to the merge-QUEUE path; these direct-path tests opt out
+        # explicitly (and test_land_default_path_submits_to_the_queue covers the default).
+        self.direct = True
+        self.drain = False
+        self.wait = False
         self.__dict__.update(kw)
 
 
@@ -3141,3 +3146,250 @@ def test_lint_baseline_compares_prefixless_findings_verbatim():
     base = {"MISMATCH: NtFoo stdcall vs cdecl"}
     assert lints._new_findings({"MISMATCH: NtFoo stdcall vs cdecl"}, base) == []
     assert lints._new_findings({"MISMATCH: NtBar stdcall vs cdecl"}, base) != []
+
+
+# --- the merge queue: submit / batch / split-attribution / reject channel ---
+
+from . import queue as q_mod  # noqa: E402
+
+
+@pytest.fixture
+def queue_repo(tmp_path: Path, monkeypatch):
+    """A clone with an `origin` and two lanes ready to submit."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True, capture_output=True)
+    seed = tmp_path / "seed"
+    _git_init_commit(seed, origin)
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path / "root"))
+    return seed, origin
+
+
+def _commit(repo: Path, name: str, body: str = "x\n") -> str:
+    (repo / name).write_text(body)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-qm", f"add {name}"], cwd=repo, check=True, capture_output=True
+    )
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_queue_submit_pins_the_tip_with_a_ref(queue_repo):
+    """The record must never be visible before the ref: a trainer that reads a submission
+    whose objects can be GC'd would fail to land work that was accepted."""
+    repo, _ = queue_repo
+    tip = _commit(repo, "mine.txt")
+    sub = q_mod.submit(repo)
+    assert sub.tip == tip
+    assert (
+        subprocess.run(
+            ["git", "rev-parse", "--verify", sub.ref], cwd=repo, capture_output=True, text=True
+        ).stdout.strip()
+        == tip
+    )
+    assert [s.seq for s in q_mod.pending(repo)] == [sub.seq]
+
+
+def test_queue_is_fifo_by_arrival(queue_repo):
+    repo, _ = queue_repo
+    _commit(repo, "a.txt")
+    first = q_mod.submit(repo, lane="lane-a")
+    _commit(repo, "b.txt")
+    second = q_mod.submit(repo, lane="lane-b")
+    assert [s.seq for s in q_mod.pending(repo)] == [first.seq, second.seq]
+
+
+def test_queue_resolve_always_leaves_a_verdict(queue_repo):
+    """A submission leaving the queue WITHOUT a result is the one unrecoverable outcome —
+    the agent can never learn what happened to its work."""
+    repo, _ = queue_repo
+    _commit(repo, "a.txt")
+    sub = q_mod.submit(repo)
+    q_mod.resolve(repo, sub, outcome="rejected", reason="nope", classification="GATE_RED")
+    assert q_mod.pending(repo) == []
+    recs = q_mod.results(repo)
+    assert len(recs) == 1 and recs[0]["outcome"] == "rejected" and recs[0]["seq"] == sub.seq
+    # the ref is released too, so the objects are collectable
+    assert not q_mod.git_ok(repo, "rev-parse", "--verify", sub.ref)
+
+
+def test_queue_conflicting_submission_is_bounced_not_resolved(queue_repo, monkeypatch):
+    """A conflict is the lane's intent to reconcile, never the trainer's to guess. The rest
+    of the batch must still proceed."""
+    repo, _origin = queue_repo
+    # lane A lands "shared.txt" on master directly
+    _commit(repo, "shared.txt", "master version\n")
+    subprocess.run(
+        ["git", "push", "-q", "origin", "master"], cwd=repo, check=True, capture_output=True
+    )
+    # a conflicting lane: same file, different content, branched from before
+    subprocess.run(
+        ["git", "checkout", "-q", "-b", "conflicting", "HEAD~1"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    _commit(repo, "shared.txt", "lane version\n")
+    bad = q_mod.submit(repo, lane="conflicting")
+    # an innocent lane touching a different file
+    subprocess.run(
+        ["git", "checkout", "-q", "-b", "innocent", "master"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    _commit(repo, "other.txt")
+    good = q_mod.submit(repo, lane="innocent")
+
+    wt = repo  # gate in-place for the unit test; the real trainer uses its own worktree
+    logs: list[str] = []
+    res = q_mod.build_batch(repo, wt, [bad, good], logs.append)
+    assert [s.seq for s in res.conflicted] == [bad.seq]
+    assert [s.seq for s in res.merged] == [good.seq]
+    assert any("CONFLICT" in m for m in logs)
+    assert not (repo / ".git" / "MERGE_HEAD").exists(), "left the tree mid-merge"
+
+
+def test_queue_red_batch_splits_and_spares_the_innocent(queue_repo, monkeypatch):
+    """The whole point of attribution: one bad submission must not reject its neighbours.
+    Gate says red iff the batch contains the culprit."""
+    repo, _ = queue_repo
+    subs = []
+    for lane in ("a", "b", "c", "d"):
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", f"l{lane}", "master"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        _commit(repo, f"{lane}.txt")
+        subs.append(q_mod.submit(repo, lane=f"lane-{lane}"))
+    culprit = subs[2]
+
+    gated: list[tuple[str, ...]] = []
+
+    def fake_build(repo_, wt_, batch, log):
+        return q_mod.BatchResult(ok=False, tip="t" * 40, merged=list(batch), conflicted=[])
+
+    def fake_gate(wt_, log, retries=2):
+        # red exactly when the culprit is in the current subset
+        subset = gated[-1]
+        ok = culprit.lane not in subset
+        return ok, "" if ok else "BUGCHECK", "/tmp/art", "smoke:amd64: BUGCHECK 0x50"
+
+    def tracking_build(repo_, wt_, batch, log):
+        gated.append(tuple(s.lane for s in batch))
+        return fake_build(repo_, wt_, batch, log)
+
+    monkeypatch.setattr(q_mod, "build_batch", tracking_build)
+    monkeypatch.setattr(q_mod, "gate_batch", fake_gate)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "")
+    monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
+
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    by_lane = {r["lane"]: r for r in q_mod.results(repo, limit=50)}
+    assert by_lane["lane-c"]["outcome"] == "rejected", by_lane["lane-c"]
+    assert by_lane["lane-c"]["classification"] == "BUGCHECK"
+    assert by_lane["lane-c"]["artifact"] == "/tmp/art"
+    for lane in ("lane-a", "lane-b", "lane-d"):
+        assert by_lane[lane]["outcome"] == "landed", (lane, by_lane[lane])
+    assert q_mod.pending(repo) == [], "every submission must leave the queue with a verdict"
+
+
+def test_queue_green_batch_lands_everything_in_one_gate(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    subs = []
+    for lane in ("a", "b", "c"):
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", f"g{lane}", "master"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        _commit(repo, f"g{lane}.txt")
+        subs.append(q_mod.submit(repo, lane=f"lane-{lane}"))
+    gates = []
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
+    )
+    monkeypatch.setattr(
+        q_mod, "gate_batch", lambda w, log, retries=2: (gates.append(1), True, "", "", "")[1:]
+    )
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "")
+    monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(gates) == 1, "3 landings must cost ONE gate"
+    assert all(r["outcome"] == "landed" for r in q_mod.results(repo, limit=50))
+
+
+def test_queue_trainer_election_is_the_land_lock(queue_repo, monkeypatch):
+    """No daemon: whoever finds the lock free trains. A second agent must NOT block."""
+    repo, _ = queue_repo
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: 0)
+    with hl_mod.land_lock("someone-else", timeout=1.0):
+        assert q_mod.try_become_trainer(repo, lambda m: None) is False
+    assert q_mod.try_become_trainer(repo, lambda m: None) is True
+
+
+def test_queue_already_landed_submission_needs_no_gate(queue_repo):
+    """Free landing: a tip already in master (it rode someone else's batch) must be resolved,
+    not re-gated."""
+    repo, _ = queue_repo
+    tip = _commit(repo, "landed.txt")
+    subprocess.run(
+        ["git", "push", "-q", "origin", "master"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(["git", "fetch", "-q", "origin"], cwd=repo, check=True, capture_output=True)
+    sub = q_mod.submit(repo, tip=tip)
+    assert q_mod.already_landed(repo, sub) is True
+
+
+def test_land_default_path_submits_to_the_queue(lane_repo, tmp_path, monkeypatch):
+    """`land` with no flags must go through the merge queue, not the direct path — the
+    direct path is the opt-out (`--direct`), because a fleet of agents landing directly is
+    the serialization this whole thing exists to remove."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(land_mod, "_land_direct", lambda *a: pytest.fail("took the direct path"))
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda repo, log, **k: drained.append(1) or 0)
+    rc = land_mod.land(_Args(direct=False), lane)
+    assert rc == 0, "submit should succeed"
+    assert drained == [1], "no other trainer existed, so we should have trained"
+
+
+def test_prune_never_reclaims_the_integration_tree(tmp_path):
+    """It is idle between batches — exactly prune's target shape — but its warm caches are
+    what make a batch gate in minutes, and EVERY landing in the fleet would pay for a cold
+    one."""
+    wt = tmp_path / q_mod.INTEGRATION_DIRNAME
+    reason = prune.classify(
+        wt,
+        current=tmp_path / "other",
+        live_qemu=set(),
+        active_build=set(),
+        allow_self=False,
+        min_age_hours=0,
+        now=0.0,
+        newest_mtime=None,
+    )
+    assert reason and "integration" in reason
+    # ...but --self from inside it still allows a deliberate reclaim
+    assert (
+        prune.classify(
+            wt,
+            current=wt,
+            live_qemu=set(),
+            active_build=set(),
+            allow_self=True,
+            min_age_hours=0,
+            now=0.0,
+            newest_mtime=None,
+        )
+        is None
+    )

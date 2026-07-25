@@ -1,8 +1,21 @@
-"""`vibeos-cli land` — land the current lane on master as ONE serialized critical section.
+"""`vibeos-cli land` — submit to the merge queue (default), or land one lane directly.
 
-THE PROBLEM IT REMOVES (2026-07-25). The land protocol was: merge origin/master → commit →
-`vibeos-cli gate` → `git push`. The gate mints a push credential keyed to an exact TREE
-HASH, so everything between "gate green" and "push accepted" is a RACE:
+TWO PATHS, and the default is the queue:
+
+  * **`land`** → `queue.py`: publish this lane's tip to the merge queue and, if no other
+    agent is already the trainer, become it and drain the queue. Returns as soon as the work
+    is either done (we trained) or in someone else's hands. N ready lanes cost ONE gate and
+    nobody blocks. Read queue.py's header for the train's design.
+  * **`land --direct`** → the serialized single-lane path documented below: merge
+    origin/master into THIS tree, gate it, push it, all under the same fleet-wide land lock.
+    Right when you are the only active agent, or when the queue itself needs bypassing.
+
+Both hold `hostlock.land_lock`, so they can never race each other.
+
+THE PROBLEM THE DIRECT PATH REMOVED (2026-07-25). Before it, landing was: merge
+origin/master → commit → `vibeos-cli gate` → `git push`. The gate mints a push credential
+keyed to an exact TREE HASH, so everything between "gate green" and "push accepted" is a
+RACE:
 
     lane A: ---- gate (6-20 min) ----> push ✓
     lane B: ---- gate (6-20 min) ----> push ✗ non-fast-forward
@@ -44,6 +57,9 @@ Two deliberate design points:
 
 The pre-push hook stays as the backstop: it still refuses a master update whose tree has no
 fresh green stamp, so a hand-rolled `git push` is no less safe than before.
+
+The direct path fixed the RACE but not the SERIALIZATION: throughput is one landing per
+gate, and every queued lane is a blocked agent. That is what the merge queue adds on top.
 """
 
 from __future__ import annotations
@@ -53,7 +69,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import hostlock
+from . import hostlock, queue
 from .artifacts import Run, Stage
 
 STAMP_MAX_AGE_S = 24 * 3600
@@ -224,7 +240,160 @@ def _report_queue(run: Run) -> None:
         )
 
 
+def _wait_for_verdict(repo: Path, seq: str, timeout: float, run: Run) -> dict | None:
+    """Poll the queue's result mailbox for OUR submission. Only used by `--wait`; the whole
+    point of the queue is that you don't have to."""
+    deadline = time.monotonic() + timeout
+    while True:
+        for rec in queue.results(repo, limit=200):
+            if rec.get("seq") == seq:
+                return rec
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(5)
+
+
+def _report_prior_results(repo: Path, lane: str, run: Run) -> None:
+    """Surface this lane's most recent verdict on submit. A rejection an agent never reads is
+    the same as a silent drop, and the agent that most needs to see it is the one that just
+    came back to submit again."""
+    prior = queue.results(repo, lane=lane, limit=1)
+    if not prior:
+        return
+    rec = prior[0]
+    if rec.get("outcome") == "rejected":
+        run.add(
+            Stage(
+                "prior",
+                status="warn",
+                detail=f"previous submission REJECTED ({rec.get('classification') or '?'})",
+                salient=[
+                    rec.get("reason", ""),
+                    f"artifact: {rec.get('artifact') or '(none)'}",
+                    f"tip: {rec.get('tip', '')[:12]}",
+                ],
+            )
+        )
+    else:
+        run.add(
+            Stage(
+                "prior",
+                status="ok",
+                detail=f"previous submission landed as {rec.get('landed_as', '')[:12]}",
+            )
+        )
+
+
+def _land_queued(args, repo: Path) -> int:
+    """The default landing path: submit to the merge queue, and become the trainer if no
+    other agent already is. Returns as soon as the work is either done (we trained) or in
+    somebody else's hands (they are training) — never blocks holding a worktree hostage."""
+    run = Run("land", "queue")
+    try:
+        _branch, head = _preflight(repo)
+        lane = queue.lane_id(repo)
+        _report_prior_results(repo, lane, run)
+        queue.git(repo, "fetch", "origin")
+        if queue.git_ok(repo, "merge-base", "--is-ancestor", head, "origin/master"):
+            run.add(
+                Stage("submit", status="skip", detail="HEAD already in master — nothing to land")
+            )
+            return run.finalize(repo)
+        dup = next(
+            (s for s in queue.pending(repo) if s.lane == lane and s.tip == head),
+            None,
+        )
+        if dup:
+            sub = dup
+            run.add(
+                Stage(
+                    "submit",
+                    status="ok",
+                    detail=f"already queued as {sub.seq[-24:]} (not re-submitted)",
+                )
+            )
+        else:
+            sub = queue.submit(repo, tip=head, lane=lane)
+            depth = len(queue.pending(repo))
+            run.add(
+                Stage(
+                    "submit",
+                    status="ok",
+                    detail=f"{lane} @ {head[:12]} queued (position {depth})",
+                )
+            )
+        trained = queue.try_become_trainer(
+            repo, lambda m: run.log(m, header="train"), retries=int(getattr(args, "retries", 2))
+        )
+        if trained:
+            run.add(Stage("train", status="ok", detail="drained the queue as trainer"))
+        else:
+            h = hostlock.land_holder()
+            run.add(
+                Stage(
+                    "train",
+                    status="skip",
+                    detail=f"another agent is training (pid {h.get('pid', '?')}) — "
+                    "your submission is in its queue",
+                )
+            )
+        rec = next((r for r in queue.results(repo, limit=200) if r.get("seq") == sub.seq), None)
+        if rec is None and getattr(args, "wait", False):
+            rec = _wait_for_verdict(repo, sub.seq, float(getattr(args, "wait_timeout", 3600)), run)
+        if rec is None:
+            run.add(
+                Stage(
+                    "verdict",
+                    status="ok",
+                    detail="still queued — `vibeos-cli land-status --mine` for the verdict",
+                )
+            )
+        elif rec.get("outcome") == "landed":
+            run.add(
+                Stage("verdict", status="ok", detail=f"LANDED as {rec.get('landed_as', '')[:12]}")
+            )
+        else:
+            run.classification = rec.get("classification") or "REJECTED"
+            run.add(
+                Stage(
+                    "verdict",
+                    status="fail",
+                    detail=f"REJECTED ({run.classification})",
+                    salient=[rec.get("reason", ""), f"artifact: {rec.get('artifact') or '(none)'}"],
+                )
+            )
+        run.extra["lane"] = lane
+        run.extra["seq"] = sub.seq
+        return run.finalize(repo)
+    except (queue.QueueError, LandAbort) as e:
+        run.classification = "LAND_ABORT"
+        run.add(Stage("land", status="fail", detail=str(e).splitlines()[0], salient=[str(e)]))
+        return run.finalize(repo)
+
+
 def land(args, repo: Path) -> int:
+    """`vibeos-cli land`. Queue path by default (see _land_queued); `--direct` keeps the
+    serialized single-lane path below, which is right when you are the only active agent or
+    when the queue itself needs bypassing."""
+    if getattr(args, "drain", False):
+        run = Run("land", "drain")
+        trained = queue.try_become_trainer(
+            repo, lambda m: run.log(m, header="train"), retries=int(getattr(args, "retries", 2))
+        )
+        run.add(
+            Stage(
+                "train",
+                status="ok" if trained else "skip",
+                detail="drained the queue" if trained else "another agent is already training",
+            )
+        )
+        return run.finalize(repo)
+    if not getattr(args, "direct", False):
+        return _land_queued(args, repo)
+    return _land_direct(args, repo)
+
+
+def _land_direct(args, repo: Path) -> int:
     run = Run("land", "master")
     try:
         branch, head = _preflight(repo)
@@ -302,22 +471,46 @@ def land(args, repo: Path) -> int:
 
 
 def cmd_land_status(args, repo: Path) -> int:
-    """`vibeos-cli land --status` equivalent, exposed for scripts: who holds the land lock
-    and who is queued, as JSON or one line each."""
+    """`vibeos-cli land-status` — the merge queue at a glance: who is training, what is
+    queued behind them, and recent verdicts (a rejected lane's triage pointer lives here)."""
     holder = hostlock.land_holder()
-    waiters = hostlock.land_queue()
+    subs = queue.pending(repo)
+    mine = queue.lane_id(repo) if getattr(args, "mine", False) else None
+    recent = queue.results(repo, lane=mine, limit=int(getattr(args, "limit", 8)))
     if getattr(args, "json", False):
-        print(json.dumps({"holder": holder, "queue": waiters}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "trainer": holder,
+                    "pending": [s.to_json() for s in subs],
+                    "lock_queue": hostlock.land_queue(),
+                    "results": recent,
+                },
+                indent=2,
+            )
+        )
         return 0
     if holder:
         print(
-            f"LANDING: pid={holder.get('pid')} {holder.get('kind', '?')} "
+            f"TRAINER: pid={holder.get('pid')} {holder.get('kind', '?')} "
             f"in {holder.get('cwd', '?')}"
         )
     else:
-        print("LANDING: free")
-    for i, w in enumerate(waiters):
-        print(f"  queued #{i + 1}: pid={w['pid']} waiting {w['waited_s']:.0f}s")
+        print("TRAINER: none" + (" — queue is NOT being drained" if subs else " (queue empty)"))
+    now = time.time()
+    for i, s in enumerate(subs):
+        waited = max(0, int(now - s.submitted_at))
+        print(f"  queued #{i + 1}: {s.lane} @ {s.tip[:12]}  ({waited // 60}m{waited % 60:02d}s)")
+    if not subs:
+        print("  queue: empty")
+    for rec in recent:
+        tag = "landed " if rec.get("outcome") == "landed" else "REJECTED"
+        extra = (
+            f" as {rec.get('landed_as', '')[:12]}"
+            if rec.get("outcome") == "landed"
+            else f" ({rec.get('classification') or '?'}) {rec.get('reason', '')[:70]}"
+        )
+        print(f"  {tag}: {rec.get('lane')} @ {rec.get('tip', '')[:12]}{extra}")
     return 0
 
 
