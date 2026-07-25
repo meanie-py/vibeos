@@ -1,6 +1,10 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// ---- winsvc.h control code; the crate's substrate does not carry it, so this arm
+// bound every control code the service handler was passed. ----
+const SERVICE_CONTROL_INTERROGATE: u32 = 0x00000004;
+
 // ---- file-scope preamble (translated) ----
 pub static ServiceName: [u16; 5] = [0x44, 0x48, 0x43, 0x50, 0];
 pub static mut ServiceStatusHandle: SERVICE_STATUS_HANDLE = core::ptr::null_mut();

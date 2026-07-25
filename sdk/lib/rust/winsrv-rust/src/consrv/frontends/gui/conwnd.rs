@@ -12,6 +12,11 @@ use super::super::input::ConioProcessKey;
 use super::super::super::coninput::ConioProcessInputEvent;
 use super::super::super::{wcslen, wcscat, wcschr, wcsncpy, memcmp};
 
+// ---- win32ss/user/winsrv/concfg/settings.h: #define WM_SETCONSOLEINFO (WM_USER + 201),
+// and winuser.h: #define WM_USER 1024. Private window messages live in a project header
+// no island covers, so the arm was a catch-all over every window message. ----
+const _WM_SETCONSOLEINFO: u32 = 1024 + 201;
+
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
 // potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
