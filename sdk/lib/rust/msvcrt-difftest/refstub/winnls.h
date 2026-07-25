@@ -28,8 +28,43 @@
 #define LOCALE_NAME_MAX_LENGTH 85
 
 #define CT_CTYPE1           0x0001
+#define CT_CTYPE3           0x0004
 #define WC_NO_BEST_FIT_CHARS 0x0400
 #define ERROR_INSUFFICIENT_BUFFER 122
+
+/* Character-type bits.  mbcs.c reads exactly three: create_mbcinfo switches on
+ * C1_UPPER/C1_LOWER to fill mbctype's _SBUP/_SBLOW and mbcasemap, and
+ * _ismbcsymbol_l tests C3_SYMBOL.  Values as in sdk/include/psdk/winnls.h. */
+#define C1_UPPER            0x0001
+#define C1_LOWER            0x0002
+#define C1_DIGIT            0x0004
+#define C1_SPACE            0x0008
+#define C1_PUNCT            0x0010
+#define C1_CNTRL            0x0020
+#define C1_BLANK            0x0040
+#define C1_XDIGIT           0x0080
+#define C1_ALPHA            0x0100
+#define C1_DEFINED          0x0200
+#define C3_SYMBOL           0x0008
+
+#define LOCALE_ALLOW_NEUTRAL_NAMES 0x08000000
+
+/* create_mbcinfo walks LeadByte[] as {start,end} pairs terminated by {0,0}. */
+#define MAX_LEADBYTES       12
+#define MAX_DEFAULTCHAR      2
+#define MSVCRT_DIFFTEST_HAVE_CPINFO
+typedef struct _cpinfo {
+    UINT MaxCharSize;
+    BYTE DefaultChar[MAX_DEFAULTCHAR];
+    BYTE LeadByte[MAX_LEADBYTES];
+} CPINFO;
+
+UINT WINAPI GetACP(void);
+UINT WINAPI GetOEMCP(void);
+BOOL WINAPI GetCPInfo(UINT cp, CPINFO *info);
+int  WINAPI MultiByteToWideChar(UINT cp, DWORD flags, const char *src, int srclen,
+                                wchar_t *dst, int dstlen);
+LCID WINAPI LocaleNameToLCID(const wchar_t *name, DWORD flags);
 
 int WINAPI CompareStringA(LCID lcid, DWORD flags, const char *str1, int len1,
                           const char *str2, int len2);

@@ -62,4 +62,16 @@ unsigned int nls_lcid_for_codepage(unsigned int cp);
 int          nls_codepage_count(void);
 unsigned int nls_codepage_at(int i);
 
+/* Wide classification / case mapping, from the host's Unicode tables under a per-call
+ * C.utf8 locale.  refimpl.c's GetStringTypeW and LCMapStringW delegate here for
+ * anything a DBCS codepage can produce — which is most of what create_mbcinfo asks
+ * about, since CP932's 0xA1-0xDF land at U+FF61-U+FF9F. */
+unsigned int   nls_towlower(unsigned int wc);
+unsigned int   nls_towupper(unsigned int wc);
+unsigned short nls_ctype1(unsigned int wc);   /* C1_UPPER | C1_LOWER | … */
+unsigned short nls_ctype3(unsigned int wc);   /* C3_SYMBOL */
+
+int nls_wide_to_mb(unsigned int cp, const unsigned short *src, int srclen,
+                   char *dst, int dstlen, const char *defchar, int *used);
+
 #endif /* MSVCRT_DIFFTEST_NLSIMPL_H */

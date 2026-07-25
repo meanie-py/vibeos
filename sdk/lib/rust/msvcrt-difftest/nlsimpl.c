@@ -32,12 +32,18 @@
  * there is exactly ONE copy that both sides call.
  */
 
+#define _GNU_SOURCE   /* newlocale / towlower_l / iswupper_l */
+
 #include <errno.h>
 #include <iconv.h>
+#include <locale.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <wctype.h>
 
+/* Host headers FIRST — nlsimpl.h remaps `wchar_t` to 16 bits for the Windows model,
+ * and no host header may be parsed under that remap. */
 #include "nlsimpl.h"
 
 /* ------------------------------------------------------------------ *
@@ -328,4 +334,135 @@ int nls_codepage_count(void) { return CP_COUNT; }
 unsigned int nls_codepage_at(int i)
 {
     return (i < 0 || i >= CP_COUNT) ? 0 : CP_TABLE[i].cp;
+}
+
+/* ------------------------------------------------------------------ *
+ * Wide classification and case mapping.
+ *
+ * create_mbcinfo asks GetStringTypeW/LCMapStringW about the wide form of every
+ * single-byte character, and for a DBCS codepage many of those land well above U+00FF
+ * (CP932's 0xA1-0xDF are halfwidth katakana at U+FF61-U+FF9F).  refimpl.c's model
+ * answers 0 for everything >= 256, which would leave `mbcasemap` empty and silently
+ * un-grade every case-mapping path in the file.
+ *
+ * A PER-CALL locale, never setlocale(): the harness's own locale modelling is a
+ * hand-built `threadlocinfo`, and the reference reads a host `struct lconv` through it
+ * (see subj_off_lconv_decimalpoint).  Moving the global locale underneath that would
+ * change what the float family sees, in a component whose job is to hold still.
+ * ------------------------------------------------------------------ */
+static locale_t wide_locale(void)
+{
+    static locale_t loc;
+    static int tried;
+    if (!tried)
+    {
+        tried = 1;
+        loc = newlocale(LC_CTYPE_MASK, "C.utf8", (locale_t)0);
+    }
+    return loc;
+}
+
+unsigned int nls_towlower(unsigned int wc)
+{
+    locale_t loc = wide_locale();
+    return loc ? (unsigned int)towlower_l((wint_t)wc, loc) : wc;
+}
+
+unsigned int nls_towupper(unsigned int wc)
+{
+    locale_t loc = wide_locale();
+    return loc ? (unsigned int)towupper_l((wint_t)wc, loc) : wc;
+}
+
+/* CT_CTYPE1.  Only C1_UPPER and C1_LOWER are load-bearing — they are what
+ * create_mbcinfo switches on to fill `mbctype`'s _SBUP/_SBLOW bits and `mbcasemap` —
+ * but the rest are cheap and keep the model honest for anything that reads them later. */
+unsigned short nls_ctype1(unsigned int wc)
+{
+    locale_t loc = wide_locale();
+    unsigned short r = 0;
+    wint_t c = (wint_t)wc;
+
+    if (!loc) return 0;
+    if (iswupper_l(c, loc))  r |= 0x0001;  /* C1_UPPER  */
+    if (iswlower_l(c, loc))  r |= 0x0002;  /* C1_LOWER  */
+    if (iswdigit_l(c, loc))  r |= 0x0004;  /* C1_DIGIT  */
+    if (iswspace_l(c, loc))  r |= 0x0008;  /* C1_SPACE  */
+    if (iswpunct_l(c, loc))  r |= 0x0010;  /* C1_PUNCT  */
+    if (iswcntrl_l(c, loc))  r |= 0x0020;  /* C1_CNTRL  */
+    if (iswblank_l(c, loc))  r |= 0x0040;  /* C1_BLANK  */
+    if (iswxdigit_l(c, loc)) r |= 0x0080;  /* C1_XDIGIT */
+    if (iswalpha_l(c, loc))  r |= 0x0100;  /* C1_ALPHA  */
+    if (r) r |= 0x0200;                    /* C1_DEFINED */
+    return r;
+}
+
+/* CT_CTYPE3.  mbcs.c reads exactly one bit of this — C3_SYMBOL, in `_ismbcsymbol_l`. */
+unsigned short nls_ctype3(unsigned int wc)
+{
+    locale_t loc = wide_locale();
+    if (!loc) return 0;
+    /* Win32 C3_SYMBOL is the math/currency/modifier/other-symbol classes; glibc spells
+     * that set `iswpunct && !iswalnum` minus the ASCII punctuation Windows counts as
+     * punctuation rather than symbol.  Close enough is the right target here: both
+     * sides read the same answer, so this grades _ismbcsymbol_l's LOGIC, not Windows'
+     * symbol table (the same bounded scope refimpl.c documents for its NLS stubs). */
+    return (unsigned short)(iswpunct_l((wint_t)wc, loc) && !iswalnum_l((wint_t)wc, loc)
+                            ? 0x0008 : 0);
+}
+
+/* The reverse conversion, for create_mbcinfo's second pass (wide case-mapped forms back
+ * to single bytes, which is how `mbcasemap` is filled). */
+int nls_wide_to_mb(unsigned int cp, const unsigned short *src, int srclen,
+                   char *dst, int dstlen, const char *defchar, int *used)
+{
+    iconv_t cd = cp_to_mb(cp);
+    int produced = 0, consumed = 0;
+
+    if (used) *used = 0;
+    if (cd == (iconv_t)-1)
+    {
+        int i;
+        for (i = 0; i < srclen && (!dstlen || i < dstlen); i++)
+        {
+            if (src[i] < 128) dst[i] = (char)src[i];
+            else { dst[i] = defchar ? *defchar : '?'; if (used) *used = 1; }
+        }
+        return i;
+    }
+
+    iconv(cd, NULL, NULL, NULL, NULL);
+    while (consumed < srclen)
+    {
+        char *in = (char *)(src + consumed);
+        size_t inleft = (size_t)(srclen - consumed) * sizeof(unsigned short);
+        char scratch[8];
+        char *out = scratch;
+        size_t outleft = sizeof(scratch);
+        size_t before = inleft;
+        size_t r;
+
+        errno = 0;
+        r = iconv(cd, &in, &inleft, &out, &outleft);
+        {
+            int got = (int)(sizeof(scratch) - outleft), j;
+            for (j = 0; j < got; j++)
+            {
+                if (dstlen && produced >= dstlen) return produced;
+                if (dstlen) dst[produced] = scratch[j];
+                produced++;
+            }
+            consumed += (int)((before - inleft) / sizeof(unsigned short));
+        }
+        if (r == (size_t)-1 && (errno == EILSEQ || errno == EINVAL))
+        {
+            if (dstlen && produced >= dstlen) return produced;
+            if (dstlen) dst[produced] = defchar ? *defchar : '?';
+            if (used) *used = 1;
+            produced++;
+            consumed++;
+            iconv(cd, NULL, NULL, NULL, NULL);
+        }
+    }
+    return produced;
 }
