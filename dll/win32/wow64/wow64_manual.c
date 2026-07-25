@@ -34,6 +34,11 @@ NTSTATUS WINAPI NtQueryInformationProcess(HANDLE ProcessHandle, ULONG InfoClass,
                                           PVOID Info, ULONG Len, PULONG RetLen);
 NTSTATUS WINAPI NtQueryInformationThread(HANDLE ThreadHandle, ULONG InfoClass,
                                          PVOID Info, ULONG Len, PULONG RetLen);
+NTSTATUS WINAPI NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK Access,
+                                     ULONG HandleAttributes, PHANDLE TokenHandle);
+NTSTATUS WINAPI NtOpenThreadTokenEx(HANDLE ThreadHandle, ACCESS_MASK Access,
+                                    BOOLEAN OpenAsSelf, ULONG HandleAttributes,
+                                    PHANDLE TokenHandle);
 NTSTATUS WINAPI NtQuerySystemInformation(ULONG InfoClass, PVOID Info, ULONG Len,
                                          PULONG RetLen);
 NTSTATUS WINAPI NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess,
@@ -3413,6 +3418,56 @@ static NTSTATUS Wow64Manual_NtUserEnumDisplayMonitors(ULONG *a)
 }
 
 /*
+ * NtOpenProcessTokenEx / NtOpenThreadTokenEx — an OUT PHANDLE is 4 bytes in the
+ * guest and 8 on the host, so the flat thunk handed the 64-bit kernel a 4-byte
+ * cell to write 8 bytes into. It failed TWO ways, chosen by the address, because
+ * the kernel's probe is itself width-typed (probe_write_handle is
+ * probe_write_user::<PVOID>, i.e. 8-byte alignment) while a guest HANDLE is only
+ * 4-aligned:
+ *   - cell at ≡4 (mod 8): rejected outright, STATUS_DATATYPE_MISALIGNMENT — a
+ *     status the guest's ABI says this call cannot return;
+ *   - cell at ≡0 (mod 8): probe passes, 8 bytes written. Little-endian keeps
+ *     this half quiet: the low dword lands correctly so the guest reads a valid
+ *     handle, while the high dword (and the probe's own NULL touch-test) zeroes
+ *     the adjacent 4 bytes — E7's class, surfacing far from the write.
+ * Measured 12 calls in one amd64 boot (8 + 4); the tell was NtOpenThreadTokenEx
+ * appearing TWICE per logical open, the first returning 0x80000002. Marshalling
+ * through a host-width local makes it 1:1.
+ *
+ * Narrowing the result is not a truncation risk: a WoW64 process's handles must
+ * fit in 32 bits by construction, or the guest could never name them at all.
+ *
+ * NtOpenProcessTokenEx(ProcessHandle, DesiredAccess, HandleAttributes, TokenHandle)
+ * NtOpenThreadTokenEx(ThreadHandle, DesiredAccess, OpenAsSelf, HandleAttributes,
+ *                     TokenHandle)
+ */
+static NTSTATUS Wow64Manual_NtOpenProcessTokenEx(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[3];
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    St = NtOpenProcessTokenEx((HANDLE)(LONG_PTR)(LONG)a[0], (ACCESS_MASK)a[1],
+                              a[2], &Handle);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtOpenThreadTokenEx(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[4];
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    St = NtOpenThreadTokenEx((HANDLE)(LONG_PTR)(LONG)a[0], (ACCESS_MASK)a[1],
+                             (BOOLEAN)(a[2] != 0), a[3], &Handle);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
+/*
  * NtGetContextThread / NtSetContextThread — an i386 CONTEXT is not widenable,
  * and the flat thunk did not try: it handed the guest's 32-bit CONTEXT pointer
  * to the 64-bit kernel to use at HOST layout. Get then wrote a 1232-byte amd64
@@ -3812,6 +3867,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64pOpenByCid(NtOpenThread, Arguments);
     if (WOW64_IS("NtCreateThread"))
         return Wow64Manual_NtCreateThread(Arguments);
+    if (WOW64_IS("NtOpenProcessTokenEx"))
+        return Wow64Manual_NtOpenProcessTokenEx(Arguments);
+    if (WOW64_IS("NtOpenThreadTokenEx"))
+        return Wow64Manual_NtOpenThreadTokenEx(Arguments);
     if (WOW64_IS("NtGetContextThread"))
         return Wow64Manual_NtGetContextThread(Arguments);
     if (WOW64_IS("NtSetContextThread"))
