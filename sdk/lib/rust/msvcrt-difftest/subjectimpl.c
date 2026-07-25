@@ -381,15 +381,15 @@ unsigned int _get_output_format(void)
     return 0;
 }
 
-/* Subject twin of refimpl's `_mbtowc_l` (the reference's copy is namespaced
- * msvcrt_ref__mbtowc_l by refstub/msvcrt.h, unreachable from here).  MUST stay
- * body-identical to refimpl.c's or every wide-conversion printf row
- * false-DIVERGEs: C locale, single-byte, 1:1 onto U+0000..U+00FF. */
-int _mbtowc_l(unsigned short *dst, const char *str, size_t n, void *locale)
-{
-    (void)locale;
-    if (!str || !n) return 0;
-    if (!*str) { if (dst) *dst = 0; return 0; }
-    if (dst) *dst = (unsigned short)(unsigned char)*str;
-    return 1;
-}
+/* `_mbtowc_l` USED to be a stub here — a C-locale 1:1 twin of the one in refimpl.c,
+ * required to stay body-identical to it or every wide-conversion printf row would
+ * false-DIVERGE.  Both stubs are gone.
+ *
+ * The SHIPPING RUST defines `_mbtowc_l` (msvcrt-crt-rust's mbcs.rs), and as of the mbcs
+ * TU the reference has the genuine C one as `ref__mbtowc_l`.  They are still twins —
+ * but now they are the REAL implementations rather than two matched fakes, so printf's
+ * wide conversion is graded against actual mb->wc behaviour instead of against an
+ * agreement we wrote ourselves.
+ *
+ * Keeping this would have been a duplicate-symbol link error the moment the Rust mbcs
+ * objects entered the link, which is how it was found. */

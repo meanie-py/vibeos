@@ -35,6 +35,7 @@
 #define _GNU_SOURCE   /* newlocale / towlower_l / iswupper_l */
 
 #include <errno.h>
+#include <stdlib.h>  /* abort() — libc_fn fails loud */
 #include <iconv.h>
 #include <locale.h>
 #include <stddef.h>
@@ -437,16 +438,77 @@ static locale_t wide_locale(void)
     return loc;
 }
 
+/* ── reach the REAL libc, not whatever the subject exports ──────────────────
+ *
+ * THIS IS LOAD-BEARING, and it took about ten seconds to prove it.
+ *
+ * The finished binary links these objects together with msvcrt-crt-rust's
+ * `#[no_mangle]` shims, and a static definition beats the shared libc. The Rust today
+ * exports `iswalpha_l`, `towlower` and `towupper`. So a plain `iswalpha_l(c, loc)` call
+ * here bound straight to the CODE UNDER TEST, which called `GetStringTypeW`, which
+ * called back into `nls_ctype1` — infinite recursion, stack overflow on the first case.
+ *
+ * That is the same hazard refstub/msvcrt.h's namespace block exists for, but a `#define`
+ * rename cannot fix it: the collision is at LINK time, and renaming would just ask glibc
+ * for a name it does not have. And the shadow set GROWS — `iswupper_l` is glibc's today
+ * only because nobody has translated it yet, so a fix that enumerates today's collisions
+ * is a fix with an expiry date.
+ *
+ * So: resolve through the dynamic loader, by name, out of libc itself. Whatever the
+ * subject defines, this reaches the genuine implementation.
+ */
+#include <dlfcn.h>
+
+static void *libc_fn(const char *name)
+{
+    static void *libc;
+    if (!libc)
+    {
+        /* NOLOAD: libc is already mapped; this just takes a handle to it. */
+        libc = dlopen("libc.so.6", RTLD_LAZY | RTLD_NOLOAD);
+        if (!libc) libc = RTLD_NEXT;
+    }
+    void *fn = dlsym(libc, name);
+    /* Fail loudly. A NULL here would otherwise become "this character is in no class",
+     * i.e. an empty mbcasemap and a green run that graded nothing. */
+    if (!fn)
+    {
+        fprintf(stderr,
+                "msvcrt-difftest: cannot resolve `%s` from libc — the NLS model cannot\n"
+                "classify characters, and every case would be graded against zeros.\n",
+                name);
+        abort();
+    }
+    return fn;
+}
+
+typedef wint_t (*host_towctrans_fn)(wint_t, locale_t);
+typedef int (*host_isw_fn)(wint_t, locale_t);
+
+#define HOST_ISW(name)                                                     \
+    ({                                                                     \
+        static host_isw_fn _fn;                                            \
+        if (!_fn) _fn = (host_isw_fn)libc_fn(#name);                       \
+        _fn;                                                               \
+    })
+
+#define HOST_TOW(name)                                                     \
+    ({                                                                     \
+        static host_towctrans_fn _fn;                                      \
+        if (!_fn) _fn = (host_towctrans_fn)libc_fn(#name);                 \
+        _fn;                                                               \
+    })
+
 unsigned int nls_towlower(unsigned int wc)
 {
     locale_t loc = wide_locale();
-    return loc ? (unsigned int)towlower_l((wint_t)wc, loc) : wc;
+    return loc ? (unsigned int)HOST_TOW(towlower_l)((wint_t)wc, loc) : wc;
 }
 
 unsigned int nls_towupper(unsigned int wc)
 {
     locale_t loc = wide_locale();
-    return loc ? (unsigned int)towupper_l((wint_t)wc, loc) : wc;
+    return loc ? (unsigned int)HOST_TOW(towupper_l)((wint_t)wc, loc) : wc;
 }
 
 /* CT_CTYPE1.  Only C1_UPPER and C1_LOWER are load-bearing — they are what
@@ -459,15 +521,15 @@ unsigned short nls_ctype1(unsigned int wc)
     wint_t c = (wint_t)wc;
 
     if (!loc) return 0;
-    if (iswupper_l(c, loc))  r |= 0x0001;  /* C1_UPPER  */
-    if (iswlower_l(c, loc))  r |= 0x0002;  /* C1_LOWER  */
-    if (iswdigit_l(c, loc))  r |= 0x0004;  /* C1_DIGIT  */
-    if (iswspace_l(c, loc))  r |= 0x0008;  /* C1_SPACE  */
-    if (iswpunct_l(c, loc))  r |= 0x0010;  /* C1_PUNCT  */
-    if (iswcntrl_l(c, loc))  r |= 0x0020;  /* C1_CNTRL  */
-    if (iswblank_l(c, loc))  r |= 0x0040;  /* C1_BLANK  */
-    if (iswxdigit_l(c, loc)) r |= 0x0080;  /* C1_XDIGIT */
-    if (iswalpha_l(c, loc))  r |= 0x0100;  /* C1_ALPHA  */
+    if (HOST_ISW(iswupper_l)(c, loc))  r |= 0x0001;  /* C1_UPPER  */
+    if (HOST_ISW(iswlower_l)(c, loc))  r |= 0x0002;  /* C1_LOWER  */
+    if (HOST_ISW(iswdigit_l)(c, loc))  r |= 0x0004;  /* C1_DIGIT  */
+    if (HOST_ISW(iswspace_l)(c, loc))  r |= 0x0008;  /* C1_SPACE  */
+    if (HOST_ISW(iswpunct_l)(c, loc))  r |= 0x0010;  /* C1_PUNCT  */
+    if (HOST_ISW(iswcntrl_l)(c, loc))  r |= 0x0020;  /* C1_CNTRL  */
+    if (HOST_ISW(iswblank_l)(c, loc))  r |= 0x0040;  /* C1_BLANK  */
+    if (HOST_ISW(iswxdigit_l)(c, loc)) r |= 0x0080;  /* C1_XDIGIT */
+    if (HOST_ISW(iswalpha_l)(c, loc))  r |= 0x0100;  /* C1_ALPHA  */
     if (r) r |= 0x0200;                    /* C1_DEFINED */
     return r;
 }
@@ -482,8 +544,10 @@ unsigned short nls_ctype3(unsigned int wc)
      * punctuation rather than symbol.  Close enough is the right target here: both
      * sides read the same answer, so this grades _ismbcsymbol_l's LOGIC, not Windows'
      * symbol table (the same bounded scope refimpl.c documents for its NLS stubs). */
-    return (unsigned short)(iswpunct_l((wint_t)wc, loc) && !iswalnum_l((wint_t)wc, loc)
-                            ? 0x0008 : 0);
+    return (unsigned short)(HOST_ISW(iswpunct_l)((wint_t)wc, loc)
+                                    && !HOST_ISW(iswalnum_l)((wint_t)wc, loc)
+                                ? 0x0008
+                                : 0);
 }
 
 /* The reverse conversion, for create_mbcinfo's second pass (wide case-mapped forms back
