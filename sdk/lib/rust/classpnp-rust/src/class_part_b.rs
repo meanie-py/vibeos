@@ -53,6 +53,15 @@ use ntkrnl_sys::ddk::{
     _DPFLTR_TYPE_DPFLTR_CLASSPNP_ID as DPFLTR_CLASSPNP_ID,
     _EVENT_TYPE_SynchronizationEvent,
 };
+
+
+// ---- ntddstor.h. class.rs has a function-local `IOCTL_STORAGE_FIRMWARE_ACTIVATE`
+// marked `// typical` — a guessed value (§9.113 shape). tools/gen_ioctl_consts.py
+// confirms the guess happens to be right, but a function-local const is invisible
+// here, so this arm bound every control code. Computed, crate-visible, provenanced. ----
+#[cfg(feature = "NTDDI_WINTRHESHOLD")]
+const IOCTL_STORAGE_FIRMWARE_ACTIVATE: u32 = 0x002ddc08; // CTL_CODE(IOCTL_STORAGE_BASE, 0x0702, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+
 // IO_COMPLETION_ROUTINE is a type alias for PIO_COMPLETION_ROUTINE in ntkrnl_sys::ddk
 use ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE as IO_COMPLETION_ROUTINE;
 use core::ffi::c_void;

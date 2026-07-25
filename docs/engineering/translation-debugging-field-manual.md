@@ -9387,6 +9387,119 @@ already use narrow constants from a `glue.rs` (scsiport's `SRB_STATUS_*`), the r
 import the missing name from that same module, not to widen. rustc's own message is the tell that
 the bug was real: *"`SRB_STATUS_DATA_OVERRUN` is interpreted as a constant, not a new binding."*
 
+#### 9.112b (2026-07-25) The 273 were mostly MY TOOL's false positives — and `unreachable_patterns` is the oracle that actually holds
+
+The §9.112a rewrite reported **273**. Fixing them one by one would have edited ~190 files that
+had nothing wrong with them. Before touching source, cross-check against rustc:
+
+```bash
+RUSTFLAGS="--force-warn unreachable_patterns" \
+  cargo check --workspace --target x86_64-pc-windows-gnu --keep-going --message-format short
+```
+
+samsrv (121 findings) and lsasrv (28) emitted **zero** unreachable patterns. They were fine.
+Four independent defects in the scanner, each of which reads as a plausible design choice:
+
+1. **Explicit `pub use … as Alias` re-exports were not harvested.** Only `pub use X::*` globs were
+   followed. But the house prelude pattern is exactly
+   `pub use samsrv_sys::{_DOMAIN_INFORMATION_CLASS_DomainPasswordInformation as
+   DomainPasswordInformation}` — written *precisely* to make these arms const patterns. The tool
+   reported the bug the prelude had already fixed. **-190.**
+2. **An attribute on the same line hid the import.** `#[allow(unused_imports)] use crate::glue::*;`
+   did not match a `^\s*use`-anchored regex. This is worse than an unresolved glob: an *unseen*
+   glob leaves `all_resolved` true, so the fail-open guard never fires and you get a CONFIDENT
+   HIGH. All 8 of scsiport's `SCSI_NOTIFICATION_TYPE` arms, aliased in `glue.rs` since the day it
+   was written. **-13.**
+3. **The enum-variant regex ate its own delimiter.** `(^|,)\s*(IDENT)\s*[,({=]` consumes the
+   trailing comma, so the next match has no anchor and **every other variant is dropped**.
+   `I8042_DEVICE_TYPE { Unknown, Keyboard, Mouse, PhysicalDeviceObject }` yielded Unknown and
+   Mouse but not Keyboard. Split on commas instead. **-6.**
+4. **Dead files were scanned as live.** dhcpcsvc keeps `dhcp/tree.rs`, a translation of upstream
+   source ReactOS never compiled, deliberately excluded in `lib.rs`. Walk the `mod` tree from
+   `lib.rs` and mark unreachable files ORPHAN. Two traps in that walk, both of which mark LIVE
+   files dead — the dangerous direction: several `mod`s on one line (win32k's
+   `pub mod dcstate; pub mod dcobjs; …`), and file modules nested in an INLINE module (wkssvc's
+   `pub mod wkssvc { pub mod domain; }` → `src/wkssvc/domain.rs`). Strip comments first or a
+   documented `// pub mod tree;` resurrects the dead file.
+
+**And rustc caught a class the tool could not see at all**: `_FSCTL_LOCK_VOLUME`. A leading
+underscore does *not* stop a bare identifier binding — it only silences `unused_variables`. So the
+underscored spelling is the MORE dangerous one, and an oracle built on `--force-warn
+unused_variables` (which is what validated §9.112a) is structurally blind to it. cdfs had 8 FSCTL
+dispatches dead behind one, and services/oleaut32/smss-csrss/winsrv the same shape.
+
+**Net: 273 reported → 88 rustc-confirmed → 0 live.** The lesson is not "the tool was bad" — it is
+that a scanner and a compiler fail differently, so **make the compiler the gate and the scanner
+the pre-build hint.** `unreachable_patterns` is precise, costs nothing (you are already
+compiling), and sees through every glob, alias and cfg the scanner has to approximate. Its one
+blind spot is code not compiled for the arch you checked (arm64input's 5 IOCTL arms), which is
+where the scanner earns its keep.
+
+Residual in-tree `unreachable_patterns` after this pass: **3**, all benign redundant `_ =>` arms
+after an exhaustive match on a real Rust enum (inbv ×2, kernel32 `find.rs` ×1). That is a small
+enough, well-understood residue to gate on.
+
+#### 9.112c (2026-07-25) Two deterministic transcribers, because the constants bindgen can never emit are the ones dispatchers match on
+
+`bindgen` cannot emit a function-like macro, and the entire DDK IOCTL surface is one:
+`#define IOCTL_SERIAL_CLR_DTR CTL_CODE(FILE_DEVICE_SERIAL_PORT, 10, METHOD_BUFFERED,
+FILE_ANY_ACCESS)`. No `--allowlist-file` will ever help — serial.sys's island *already* allowlists
+`ntddser.h`. So island completeness is the fix for enum members, and **transcription** is the fix
+for macros. Transcription by hand is how §9.113 happened, so compute instead:
+
+- `tools/gen_ioctl_consts.py <header> --prefix IOCTL_FOO_` — parses the `#define`s, expands the
+  macro chain generically (CTL_CODE, and winsock's `_WSAIORW(IOC_WS2,6)`), evaluates, emits Rust
+  consts with the C expression in a trailing comment. `--check <file.rs>` re-verifies committed
+  values against the header. It found the 9 existing `FSCTL_*` in `ntkrnl-sys/src/constants.rs`
+  and all 18 `IRP_MJ_*` already correct — and confirmed classpnp's hand-guessed
+  `IOCTL_STORAGE_FIRMWARE_ACTIVATE = 0x002DDC08 // typical` happens to be right.
+- `tools/gen_enum_consts.py <header> <tag> [--by-member] [--only A,B]` — walks an enum body with
+  C's implicit-increment rules. `--by-member` finds *anonymous* enums (icm.h's `BMFORMAT` has no
+  tag), and ambiguity is an error rather than a coin flip.
+
+Two traps these encode:
+
+- **Position-dependent enums differ between headers.** `SCSI_NOTIFICATION_TYPE` has
+  `CallDisableInterrupts`/`CallEnableInterrupts` at 4/5 in `srb.h` where `storport.h` has
+  `_obsolete1`/`_obsolete2`. Transcribing from the wrong header silently shifts values;
+  `--only` hard-fails when a requested member is not in *that* header.
+- **Never define a value-alias next to its sibling.** `IRP_MJ_SCSI` == `IRP_MJ_INTERNAL_DEVICE_CONTROL`
+  and `IRP_MJ_PNP_POWER` == `IRP_MJ_PNP`; defining both turns a live arm unreachable. The
+  IRP_MJ completion deliberately skips them.
+
+The live bugs this closed, for scale: **serial.sys** ran the `IOCTL_SERIAL_CLEAR_STATS` handler for
+*every* `DeviceIoControl` (37 arms); **cdfs** ran `CdLockVolume` for every volume FSCTL (8);
+**kernel32** ran the Ctrl-Close handler for Last-Close/Logoff/Shutdown (4); **i8042prt** took
+the keyboard path for a mouse.
+
+**A self-inflicted false-positive worth recording, because the mechanism is general.** An
+8-finding "nested `match` on `PropertyId`" report in classpnp was created BY MY OWN EDIT: a
+`const … ;` inserted inside a multi-line `use ntkrnl_sys::ddk::{ … };` list truncates the
+scanner's `use\s+([^;]+);` capture at that semicolon, so every name after the insertion point
+vanishes from the file's local scope — and all 8 were already imported there. Two lessons:
+an insertion helper that treats a line ending in `{` as a complete `use` statement will
+corrupt exactly the files with the longest import lists; and **rustc never flagged those 8**,
+which is the check that would have caught it before the edit rather than two gate cycles
+later. Trust the compiler over the scanner in both directions, not just when the scanner
+under-reports.
+
+**`cargo check --workspace` is NOT the build, and this bug class is exactly where the gap shows.**
+Restoring a dispatch is a type event: the new constant has to unify with the scrutinee, and the
+scrutinee is usually the narrow C field (`USHORT EntryIndex`, `LOWORD(*pFlags)`, `VARTYPE vt`)
+while a transcribed constant defaults to `u32`. A plain `cargo check -p <crate> --target …` passed
+oleaut32 and smss-csrss clean; the real build — which goes through the `*-cargo` wrapper with its
+own feature set — failed both with `E0308`, twice, one gate cycle each. Check the touched crates
+against **all three targets** before gating, and expect the gate to still be the authority.
+
+The two resolutions are not interchangeable (this is the §9.112a rule, now with worked examples):
+
+- **No narrow siblings in the match → widen the scrutinee.** `match (*req).EntryIndex as u32`,
+  `match LOWORD(*pFlags) as u32`. Lossless in every case.
+- **Siblings already carry a narrow type → join them, do not widen.** oleaut32's
+  `free_embedded_arraydesc` matches `VT_PTR | VT_SAFEARRAY` from `consts.rs` as `u16`; the fix for
+  `VT_CARRAY` is one more `pub const VT_CARRAY: u16 = 28;` next to them, not a cast on the
+  scrutinee that would orphan the family into two spellings.
+
 ### 9.113 (FIXED 2026-07-24) The LLM INVENTED 59 kernel stop codes — `KeBugCheck(SYMBOL)` came back as `KeBugCheck(0xNN)` and ~80% of the numbers were wrong
 
 **Symptom (the one you'd actually hit):** a bugcheck fires and the stop-code line names a

@@ -1,6 +1,14 @@
 use crate::prelude_rpc::*;
 use core::ffi::c_void;
 
+// ---- NTSTATUS codes from sdk/include/psdk/ntstatus.h that the netapi32 substrate
+// does not re-export. Without them these four arms were catch-all bindings, so every
+// NetpNtStatusToApiStatus() input returned the STATUS_INVALID_ACCOUNT_NAME mapping. ----
+pub const STATUS_INVALID_ACCOUNT_NAME: NTSTATUS = 0xC0000062u32 as NTSTATUS;
+pub const STATUS_USER_EXISTS: NTSTATUS = 0xC0000063u32 as NTSTATUS;
+pub const STATUS_GROUP_EXISTS: NTSTATUS = 0xC0000065u32 as NTSTATUS;
+pub const STATUS_PASSWORD_RESTRICTION: NTSTATUS = 0xC000006Cu32 as NTSTATUS;
+
 // ---- file-scope preamble (standard netapi32 wine-debug channel; TRACE/FIXME reference it) ----
 static mut __wine_dbch___default: *mut __wine_debug_channel =
     unsafe { &raw const __wine_dbch_netapi32 as *mut __wine_debug_channel };
