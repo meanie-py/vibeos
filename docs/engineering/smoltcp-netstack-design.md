@@ -4,7 +4,9 @@
 **Status:** **M0–M6 DONE + ON MAINLINE** (`c4911ea7c68`, master + continue-rust-port) — the
 C `tcpip`/`lwip` stack is removed; `netstack.sys` (smoltcp) is the whole stack, boot-green on
 all 3 arches. **Usermode winsock is now GREEN end-to-end** (ws2_32 → msafd → AFD → netstack →
-smoltcp → slirp; TCP + UDP, incl. real public-internet TCP; `test_net.py` **11/11** on amd64).
+smoltcp → slirp; TCP + UDP, incl. real public-internet TCP; `test_net.py` was **11/11** on amd64
+at the time of writing — the suite has since grown to **15** tests, so run it rather than
+trusting a count here).
 **M7 (arm64 net data path) — DATA PATH GREEN on arm64.** netstack.sys loads (on
 `netstack-arm64-m7`, `arm64-net` config), the new arm64-HAL ECAM enumerates the NIC, virtio +
 DMA work, and the **full smoltcp data path runs: ARP, DHCP, ICMP, DNS, outbound TCP, and both

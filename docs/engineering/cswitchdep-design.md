@@ -25,6 +25,15 @@ context on both sides of a switch and asserts the transition was legal, pinning
 any violation to the exact switch and the culprit PC that caused it, instead of
 letting it surface minutes later as an innocent-victim BUGCHECK.
 
+> **What it turned out to be in practice, on the hunt it was built for: a repro
+> AMPLIFIER, not a detector.** Under `-smp N` its violation output is noise — the
+> held-count accounting uses a single global counter with no per-CPU separation, so
+> it mis-fires on most switches. It raised the ready-list flake's reproduction rate
+> from ~0.9% to ~35%, which is what actually cracked that bug, but **the violation it
+> prints does not pin the culprit.** Treat a `cswitchdep` violation line as "run this
+> again under real forensics", never as an attribution. Per-CPU held-counts would be
+> needed before the design intent above holds under SMP.
+
 It is built to the **exact shape of lockdep**: a zero-init `.bss` side table
 (zero image cost when off), lock-free/allocation-free updates, link-name
 instrumentation taps, `returnaddress(0)`/`x30` culprit capture, a PASSIVE-level
