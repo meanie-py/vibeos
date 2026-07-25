@@ -84,6 +84,23 @@ pub const IRP_MJ_SYSTEM_CONTROL: u8 = 0x17;
 pub const IRP_MJ_PNP: u8 = 0x1b;
 // (moved to constants.rs to keep driver_ddk glob disjoint) pub const IRP_MJ_MAXIMUM_FUNCTION: u8 = 0x1b;
 
+// Remaining IRP_MJ_* from xdk/iotypes.h. The family was incomplete, which is
+// why cdfs's QUERY_VOLUME_INFORMATION / DIRECTORY_CONTROL arms were undefined
+// identifiers — i.e. silent catch-all bindings (§9.112a). Value-aliases
+// (IRP_MJ_SCSI, IRP_MJ_PNP_POWER) are deliberately NOT defined: a second name
+// for the same value turns a sibling arm unreachable.
+pub const IRP_MJ_QUERY_EA: u8 = 0x07;
+pub const IRP_MJ_SET_EA: u8 = 0x08;
+pub const IRP_MJ_QUERY_VOLUME_INFORMATION: u8 = 0x0a;
+pub const IRP_MJ_SET_VOLUME_INFORMATION: u8 = 0x0b;
+pub const IRP_MJ_DIRECTORY_CONTROL: u8 = 0x0c;
+pub const IRP_MJ_CREATE_MAILSLOT: u8 = 0x13;
+pub const IRP_MJ_QUERY_SECURITY: u8 = 0x14;
+pub const IRP_MJ_SET_SECURITY: u8 = 0x15;
+pub const IRP_MJ_DEVICE_CHANGE: u8 = 0x18;
+pub const IRP_MJ_QUERY_QUOTA: u8 = 0x19;
+pub const IRP_MJ_SET_QUOTA: u8 = 0x1a;
+
 // ============================================================================
 // IRP MinorFunction — IRP_MN_* (xdk/iotypes.h)
 // ============================================================================

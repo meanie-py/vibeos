@@ -7,6 +7,13 @@ use ntkrnl_sys::ddk::{_FSINFOCLASS_FileFsAttributeInformation as FileFsAttribute
 use crate::types::{FCB, IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
 use ntkrnl_sys::ddk::{FSRTL_ADVANCED_FCB_HEADER, PFILE_OBJECT};
 
+// ---- FileFsSectorSizeInformation is a Win8 addition absent from ReactOS's
+// ndk/iotypes.h FSINFOCLASS (which ends at FileFsDriverPathInformation = 9).
+// Value computed from sdk/include/wine/winternl.h, and gated to the same feature
+// as its arm so the two cannot drift apart. ----
+#[cfg(feature = "ntddi_win8")]
+const FileFsSectorSizeInformation: u32 = 11;
+
 // The C FCB's first member is an anonymous union { FSRTL_ADVANCED_FCB_HEADER Header; ... }
 // which bindgen collapsed to opaque storage (__bindgen_anon_1). Reinterpret it as the
 // real header so the C field accesses (Fcb->AllocationSize, ...) resolve.

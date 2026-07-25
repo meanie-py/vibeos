@@ -1,6 +1,11 @@
 use super::vdm_types::*;
 use ntdll_sys::nt::*;
 
+// ---- VDM_ENTRY_CODE (reactos/subsys/win/vdm.h). The translation names these with a leading underscore; nothing defined them, so `_VdmEntryUndo` bound every value and the other two arms were dead ----
+pub const _VdmEntryUndo: u32 = 0;
+pub const _VdmEntryUpdateProcess: u32 = 1;
+pub const _VdmEntryUpdateControlCHandler: u32 = 2;
+
 // CsrGetClientThread is a CSR macro (csrsrv.h: TEB->CsrClientThread), inlined
 // in C — NOT a real symbol. Re-translate as an inline (same as proc.rs).
 #[inline]
@@ -936,7 +941,7 @@ pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(
                 .offset(-(core::mem::offset_of!(_VDM_DOS_RECORD, Entry) as isize))
                 as PVDM_DOS_RECORD;
 
-            match (*UpdateVdmEntryRequest).EntryIndex {
+            match (*UpdateVdmEntryRequest).EntryIndex as u32 {
                 _VdmEntryUndo => {
                     NtClose((*DosRecord).ServerEvent);
                     (*DosRecord).ClientEvent = core::ptr::null_mut();
