@@ -1223,3 +1223,42 @@ also unusable on i386 (matches absolute constant symbols). Symbolicate by hand m
 **Next on i386:** task #18 is now the single root under the remaining i386-only
 quarantines, with a clean oracle (`IoReadWrite` + `-DKMT_I386_NATIVE_SEH=ON`) and its
 kernel-side confound removed.
+
+### 2026-07-25 — the quarantine debt is SHAPED: amd64's list is a strict SUBSET of the other two
+
+Before picking the next bug I ran set operations over the three per-arch sweep lists instead
+of reading them one at a time. The result reprioritises the whole remaining quest:
+
+| bucket | tests | entries | which |
+|---|---|---|---|
+| **shared core (all 3 arches)** | 10 | **30** | IoCreateFile, IoFilesystem, MmMapLockedPagesSpecifyCache, MmReservedMapping, NpfsFileInfo, NtCreateSection, RtlException, RtlExceptionKM, SeTokenFiltering, TcpIpConnect |
+| i386-only | 9 | 9 | ExHardError, ExResource, IoReadWrite, KeDpc, KeMutex, MmSection, RtlIsValidOemCharacter, RtlSplayTreeKM, ZwMapViewOfSection |
+| i386+arm64, **passes on amd64** | 2 | 4 | SeInheritance, ZwAllocateVirtualMemory |
+| arm64-only | 1 | 1 | ExFastMutex |
+| | | **44** | |
+
+**There are ZERO amd64-only quarantines.** amd64's entire list is the shared core, so the
+three arches are nested, not merely similar.
+
+Two consequences:
+
+1. **68% of the debt is ten tests, and each shared-core fix retires THREE entries.** The
+   instinct to attack i386 because it has the most quarantines (21) is backwards: those 9
+   i386-only entries pay 1x each, while the core pays 3x. Work the trunk before the tail.
+2. **`SeInheritance` and `ZwAllocateVirtualMemory` are quarantined on exactly the two arches
+   that had exception-path bugs, and pass on the one that did not.** Both of those bugs (arm64
+   kernel-SEH task #10, i386's missing fault-tolerant copy §9.123) are now FIXED. That is a
+   falsifiable prediction, not a vibe, and it costs one boot to test.
+
+**Two of the ten are not bugs at all.** `RtlException` and `RtlExceptionKM` are annotated
+in-list as expected-fail — "calls-only (no `-fasync-exceptions`), hardware faults in the
+guarded body escape … not an OS bug" and "crashes (exit 128) WITHOUT a kernel BUGCHECK and the
+sweep continues clean — the good harness-robustness outcome". They will never go green and
+they are 6 of the 44 entries. Counting them as debt overstates the real figure (38) and
+guarantees the ratchet can never reach zero. They want a separate expected-fail list.
+
+**Re-testing is now mechanised** (`tools/conformance_probe.py`). The reason quarantines rot is
+that a bugchecking test truncates the sweep, so enabling all 21 at once yields one verdict; the
+tool instead boots candidate-only lists ordered most-likely-fixed-first, harvests every verdict
+up to the crasher, drops it and repeats. Worst case one boot per crasher, best case one boot.
+It restores the committed list on every exit path, Ctrl-C included.
