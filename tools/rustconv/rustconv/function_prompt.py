@@ -44,8 +44,42 @@ as if they were already in scope. Don't put `ntkrnl_sys::ddk::` or
 """
 
 
+_FUNCTION_MODE_CPP_CODA = """
+
+---
+
+## The source is C++, not C
+
+These rules apply on top of everything above. The body you are given comes from a
+C++ translation unit, so it can contain constructs that plain C never has and that
+Rust has no direct spelling for. Guessing at one produces code that cannot compile.
+
+- **UTF-16 literals are already lowered.** `L"..."` and `L'x'` were replaced
+  deterministically before you saw the body: `CPP_COM_WSTR_<hash>.as_ptr()` for
+  strings and a `0x....u16` constant for chars. Preserve those expressions exactly.
+  Never write `u"..."`, `"...".encode_utf16()`, or a `&str` — Rust has no UTF-16
+  string literal, so any of those is a compile error or a silent encoding change.
+- **`IID_PPV_ARG(T, &out)` is a header macro, not a function.** It expands to TWO
+  ABI arguments (`REFIID, *mut *mut c_void`). Never emit a call to it.
+- **ATL smart pointers are ownership, not sugar.** `CComPtr<T>` / `CComHeapPtr<T>`
+  carry exact AddRef/Release (or free) pairs. Lower them to raw pointers only while
+  preserving both operations AND the control-flow point where the C++ destructor
+  would have run — including on every early return.
+- **Do not invent a Rust type for a C++ class you were not given.** If a body
+  constructs a file-local C++ object whose Rust lowering is not supplied in this
+  prompt, keep the symbolic name and let the deterministic layer resolve it; never
+  synthesize a `::new()` / `Drop` pair from imagination.
+- TRACE/WARN/ERR/FIXME-style logging is a macro or a compile-time no-op — never an
+  out-of-line no-op function.
+"""
+
+
 def load_function_system_prompt(
-    target: Target | None = None, mode: str = "idiomatic", *, cpp_com: bool = True
+    target: Target | None = None,
+    mode: str = "idiomatic",
+    *,
+    cpp_com: bool = True,
+    cpp_source: bool = False,
 ) -> str:
     """Load the system prompt for per-function translation.
 
@@ -74,11 +108,11 @@ def load_function_system_prompt(
         base = mech.read_text()
         if target.name == "hal":
             base += _FUNCTION_MODE_HAL_CODA
-        return base
+        return base + (_FUNCTION_MODE_CPP_CODA if cpp_source else "")
     if target.name == "hal":
         return target.system_prompt.read_text() + _FUNCTION_MODE_HAL_CODA
     path = TEMPLATES_DIR / "function_prompt.md"
-    return path.read_text()
+    return path.read_text() + (_FUNCTION_MODE_CPP_CODA if cpp_source else "")
 
 
 def _format_import_context(resolve: ResolveResult, target: Target | None = None) -> str:

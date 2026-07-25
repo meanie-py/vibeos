@@ -1409,6 +1409,125 @@ def _rewrite_wide_literals(text: str) -> str:
     return _CPP_WIDE_CHAR.sub(lambda match: f"0x{_wide_char_unit(match.group(0)):04X}u16", text)
 
 
+def rewrite_wide_literals(text: str) -> str:
+    """Public entry point for the deterministic UTF-16 literal lowering.
+
+    `L"x"` / `L'x'` are C++ syntax with NO Rust equivalent — Rust has no UTF-16
+    literal at all — so a model asked to translate one has nothing correct to
+    emit and invents something (`u"x"`, `"x".encode_utf16()`, a `&str` cast).
+    Lowering it here is deterministic, costs nothing, and is the same code path
+    the COM translator has always used; only the entry point is new.
+    """
+    return _rewrite_wide_literals(text)
+
+
+def normalize_cpp_idioms(source: str, rust: str, *, residual: bool = True) -> str:
+    """C++-generic model-output repairs — no class, no vtable, no `this` required.
+
+    `IID_PPV_ARG(T, &out)` is a *header macro* that expands one apparent C++
+    argument into two ABI arguments (`REFIID, void**`). It is not a callable
+    symbol, so emitting it verbatim never compiles. Split out of
+    :func:`normalize_worker_semantics` so the free-function path
+    (`translate --free-functions`) gets it too: that path has no COM scaffold,
+    but the C++ it translates uses the same macros.
+    """
+    rust = re.sub(
+        r"let\s+([A-Za-z_]\w*)\s*=\s*IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*;\s*"
+        r"let\s+([A-Za-z_]\w*)\s*=\s*&mut\s+(\(\*this\)\.[A-Za-z_]\w*|"
+        r"[A-Za-z_]\w*)\s*\)\s*;",
+        r"let \1 = core::ptr::addr_of!(IID_\2); "
+        r"let \3 = core::ptr::addr_of_mut!(\4).cast();",
+        rust,
+    )
+    iid_pair = re.search(
+        r"let\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)\s*=\s*"
+        r"IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*&mut\s+([A-Za-z_]\w*)\s*\)\s*;",
+        rust,
+    )
+    if iid_pair is not None:
+        iid_name, output_name, interface, output = iid_pair.groups()
+        rust = rust[: iid_pair.start()] + rust[iid_pair.end() :]
+        rust = re.sub(
+            rf"\b{re.escape(iid_name)}\s*,\s*{re.escape(output_name)}\b",
+            f"core::ptr::addr_of!(IID_{interface}), core::ptr::addr_of_mut!({output}).cast()",
+            rust,
+            count=1,
+        )
+    rust = re.sub(
+        r"\bIID_PPV_ARG\s*\(\s*(?:&IID_)?([A-Za-z_]\w*)\s*,\s*"
+        r"&mut\s+([A-Za-z_]\w*)(?:\s+as\s+[^,)]+(?:<[^>]+>)?)?\s*,?\s*\)",
+        r"core::ptr::addr_of!(IID_\1), core::ptr::addr_of_mut!(\2).cast()",
+        rust,
+    )
+    source_iid_args = re.findall(
+        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", source
+    )
+    for interface, output in source_iid_args:
+        rust = re.sub(
+            rf"\bIID_PPV_ARG\s*\(\s*{re.escape(output)}\s*\)",
+            f"core::ptr::addr_of!(IID_{interface}), {output}.cast()",
+            rust,
+        )
+    # The COM path has LATER rules that still need to see an intact IID_PPV_ARG —
+    # notably alias resolution (`let ppv = &mut (*this).inner;` … `(…, ppv)`), which
+    # recovers the real destination. So the catch-all must run after those, and
+    # normalize_worker_semantics applies it at its own end.
+    return _expand_residual_iid_ppv_arg(rust) if residual else rust
+
+
+def _expand_residual_iid_ppv_arg(rust: str) -> str:
+    """Catch-all for any `IID_PPV_ARG(T, expr)` the shape-specific rules above missed.
+
+    Those rules each pin one spelling of the second argument (`&mut x`, a bare
+    identifier, a `let` pair). A model that writes anything else — measured:
+    `IID_PPV_ARG(IShellFolder, spFolder as *mut *mut IShellFolder)` — slipped
+    through all of them and reached the module as a call to a macro, which is not
+    a symbol and cannot link. Splitting on the top-level comma handles every
+    spelling instead of enumerating them, so the failure mode is bounded.
+    """
+    out = []
+    i = 0
+    while True:
+        match = re.search(r"\bIID_PPV_ARG\s*\(", rust[i:])
+        if match is None:
+            out.append(rust[i:])
+            return "".join(out)
+        start = i + match.start()
+        cursor = i + match.end()  # just past the '('
+        depth, comma = 1, None
+        while cursor < len(rust) and depth:
+            char = rust[cursor]
+            if char in "([":
+                depth += 1
+            elif char in ")]":
+                depth -= 1
+            elif char == "," and depth == 1 and comma is None:
+                comma = cursor
+            cursor += 1
+        if depth or comma is None:  # unbalanced or one-argument — leave it alone
+            out.append(rust[i:cursor])
+            i = cursor
+            continue
+        interface = rust[i + match.end() : comma].strip()
+        value = rust[comma + 1 : cursor - 1].strip()
+        if not re.fullmatch(r"[A-Za-z_]\w*", interface):
+            out.append(rust[i:cursor])
+            i = cursor
+            continue
+        interface = interface.removeprefix("&IID_")
+        if value.startswith("&mut "):
+            # Already delimited by the macro's own parens — wrapping again would
+            # differ cosmetically from the shape-specific rules above for no gain.
+            value = f"core::ptr::addr_of_mut!({value[5:].strip()})"
+        elif value.startswith("&"):
+            value = f"core::ptr::addr_of!({value[1:].strip()})"
+        else:
+            value = f"({value})"
+        out.append(rust[i:start])
+        out.append(f"core::ptr::addr_of!(IID_{interface}), {value}.cast()")
+        i = cursor
+
+
 def render_wide_literal_statics(raw_deps: list[FunctionDep], plan: list[FunctionDep]) -> str:
     """Render only the UTF-16 literals referenced by the selected helper closure."""
     selected = set(
@@ -1900,44 +2019,7 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     # CComPtr object state is likewise represented by a raw pointer in the
     # generated owner. `.0` is a model artifact from an imagined Rust wrapper.
     rust = re.sub(r"(\(\*this\)\.[A-Za-z_]\w*)\.0\b", r"\1", rust)
-    # IID_PPV_ARG(T, &out) is a header macro, not a callable ABI symbol.
-    rust = re.sub(
-        r"let\s+([A-Za-z_]\w*)\s*=\s*IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*;\s*"
-        r"let\s+([A-Za-z_]\w*)\s*=\s*&mut\s+(\(\*this\)\.[A-Za-z_]\w*|"
-        r"[A-Za-z_]\w*)\s*\)\s*;",
-        r"let \1 = core::ptr::addr_of!(IID_\2); "
-        r"let \3 = core::ptr::addr_of_mut!(\4).cast();",
-        rust,
-    )
-    iid_pair = re.search(
-        r"let\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)\s*=\s*"
-        r"IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*&mut\s+([A-Za-z_]\w*)\s*\)\s*;",
-        rust,
-    )
-    if iid_pair is not None:
-        iid_name, output_name, interface, output = iid_pair.groups()
-        rust = rust[: iid_pair.start()] + rust[iid_pair.end() :]
-        rust = re.sub(
-            rf"\b{re.escape(iid_name)}\s*,\s*{re.escape(output_name)}\b",
-            f"core::ptr::addr_of!(IID_{interface}), core::ptr::addr_of_mut!({output}).cast()",
-            rust,
-            count=1,
-        )
-    rust = re.sub(
-        r"\bIID_PPV_ARG\s*\(\s*(?:&IID_)?([A-Za-z_]\w*)\s*,\s*"
-        r"&mut\s+([A-Za-z_]\w*)(?:\s+as\s+[^,)]+(?:<[^>]+>)?)?\s*,?\s*\)",
-        r"core::ptr::addr_of!(IID_\1), core::ptr::addr_of_mut!(\2).cast()",
-        rust,
-    )
-    source_iid_args = re.findall(
-        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", source
-    )
-    for interface, output in source_iid_args:
-        rust = re.sub(
-            rf"\bIID_PPV_ARG\s*\(\s*{re.escape(output)}\s*\)",
-            f"core::ptr::addr_of!(IID_{interface}), {output}.cast()",
-            rust,
-        )
+    rust = normalize_cpp_idioms(source, rust, residual=False)
     # C++ sibling calls have an implicit receiver. The prepared source names
     # every such worker explicitly, so receiver insertion is syntax-authoritative.
     owner = re.search(r"\b([A-Za-z_]\w*)::[~A-Za-z_]\w*\s*\(", source)
@@ -2444,7 +2526,9 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         r"cpp_com_SHSetStrRetW(\1, core::ptr::addr_of!((*\2).\3).cast::<WCHAR>())",
         rust,
     )
-    return rust
+    # Last, so the alias/receiver rules above have already recovered the real
+    # destination from any IID_PPV_ARG they understand.
+    return _expand_residual_iid_ppv_arg(rust)
 
 
 _CPP_SUPPORT_EXTERNS = {
@@ -4262,7 +4346,13 @@ def _abi_types_compatible(actual: str, expected: str) -> bool:
 # File-local C++ RAII structs known to appear as body locals in shell32 sources.
 # Each is a hard pre-payment reject unless the invocation supplies a hand-verified
 # Rust lowering via --local-raii NAME=path.rs (see provided_raii_contract).
-_LOCAL_RAII_TYPES = frozenset({"CDrop"})
+# Body-local C++ owners with no deterministic Rust lowering yet. Being ABSENT from
+# this set is not neutral: the model is then free to invent one, and it does —
+# `CDataObjectHIDA hida(pDO);` came back as `CDataObjectHIDA::new(pDO)`, a Rust type
+# that exists nowhere, in a run that reported success and charged for it. Listing a
+# type converts that into a refusal BEFORE payment that names `--local-raii`.
+# Measured cost of adding CDataObjectHIDA: 6 shell32 TUs refuse until lowered.
+_LOCAL_RAII_TYPES = frozenset({"CDrop", "CDataObjectHIDA"})
 
 
 def require_supported_worker_raii(deps: list, provided: frozenset | set = frozenset()) -> None:

@@ -71,6 +71,7 @@ from .cpp_com import (
     discover_widl_header,
     find_class_header,
     lower_trivial_worker,
+    normalize_cpp_idioms,
     normalize_worker_body,
     normalize_worker_semantics,
     parse_widl_interface,
@@ -82,6 +83,7 @@ from .cpp_com import (
     render_object_map_adapter,
     render_wide_literal_statics,
     require_supported_worker_raii,
+    rewrite_wide_literals,
     strip_debug_statements,
     worker_signature,
 )
@@ -1756,7 +1758,12 @@ def cmd_translate(args):
     # prepended inline (unchanged path).
     use_claude = model.startswith("claude-") or model.startswith("deepseek-")
     system_prompt = (
-        load_function_system_prompt(rustconv_target, mode=mode, cpp_com=cpp_com_mode)
+        load_function_system_prompt(
+            rustconv_target,
+            mode=mode,
+            cpp_com=cpp_com_mode,
+            cpp_source=is_cpp_source and not cpp_com_mode,
+        )
         if use_claude
         else ""
     )
@@ -1913,6 +1920,16 @@ def cmd_translate(args):
                     f"{c_file.name}: --free-functions found no classless function to translate "
                     f"({len(skipped)} class method(s) present). Use --cpp-com --class instead."
                 )
+            # These bodies are C++, so they carry C++ constructs that have no Rust
+            # spelling. The COM path lowers them deterministically before paying;
+            # routing free functions through the ordinary (plain-C) contract skipped
+            # that layer entirely, and the model duly invented `u"..."` — which is not
+            # Rust syntax — for every wide literal. Same code, same guarantees, $0.
+            require_supported_worker_raii(sorted_deps, provided=set(local_raii_impls))
+            sorted_deps = [
+                replace(dep, body_text=rewrite_wide_literals(dep.body_text)) for dep in sorted_deps
+            ]
+            cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
         elif cpp_com_mode:
             assert cpp_com_cls is not None
             sorted_deps = prepare_helper_closure(
@@ -2288,6 +2305,11 @@ def cmd_translate(args):
                     worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
                 ):
                     hit = None
+            elif hit is not None and is_cpp_source:
+                # A cached body predates (or was produced without) the C++ repairs;
+                # normalization is idempotent, so applying it here is free insurance
+                # against a stale entry replaying a raw IID_PPV_ARG forever.
+                hit = normalize_cpp_idioms(dep.body_text, hit)
             if hit is None:
                 pending_paid_deps.append(dep)
         if deterministic_workers:
@@ -2362,6 +2384,8 @@ def cmd_translate(args):
                                 file=sys.stderr,
                             )
                             hit = None
+                    elif hit is not None and is_cpp_source:
+                        hit = normalize_cpp_idioms(dep.body_text, hit)
                     if hit is not None:
                         translated[dep.name] = hit
                         resumed += 1
@@ -2448,6 +2472,8 @@ def cmd_translate(args):
                                 r.rust_code = _unseal_worker(
                                     dp, r.rust_code, fact_seals, call_seals
                                 )
+                                if is_cpp_source:
+                                    r.rust_code = normalize_cpp_idioms(dp.body_text, r.rust_code)
                             if cpp_com_mode:
                                 r.rust_code = _normalize_unseal_cpp_worker(
                                     dp, r.rust_code, fact_seals, call_seals
@@ -2587,6 +2613,8 @@ def cmd_translate(args):
                     if findings:
                         print("CACHE REJECTED: " + "; ".join(findings), file=sys.stderr)
                         hit = None
+                elif hit is not None and is_cpp_source:
+                    hit = normalize_cpp_idioms(dep.body_text, hit)
                 if hit is not None:
                     translated[dep.name] = hit
                     resumed += 1
@@ -2650,6 +2678,8 @@ def cmd_translate(args):
                         result.rust_code = _unseal_worker(
                             dep, result.rust_code, fact_seals, call_seals
                         )
+                        if is_cpp_source:
+                            result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
                     if cpp_com_mode:
                         result.rust_code = _normalize_unseal_cpp_worker(
                             dep, result.rust_code, fact_seals, call_seals
@@ -2948,6 +2978,10 @@ def cmd_translate(args):
                     "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
                 )
             stitched = "\n\n".join(deterministic) + "\n\n" + stitched
+        elif cpp_com_wide_statics:
+            # Free-function path: the bodies now reference CPP_COM_WSTR_* by name, so
+            # the statics have to be in the module or every reference dangles.
+            stitched = cpp_com_wide_statics + "\n\n" + stitched
 
         # COM vtbl tables, GENERATED — never asked of the model. `translate` is
         # function-granular, so file-scope `static const IXVtbl` tables fall to the
