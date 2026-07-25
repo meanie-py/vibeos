@@ -137,6 +137,46 @@ def extract_rust_functions(text: str) -> dict[str, RustFunction]:
     return out
 
 
+def _pair_functions(
+    c_functions: list[CFunction], rust_funcs: dict[str, RustFunction]
+) -> tuple[list[tuple[str, CFunction, RustFunction]], list[str]]:
+    """Pair each C/C++ function with the Rust fn that replaced it.
+
+    A C++ method `CFoo::Bar` is translated as a free `CFoo_Bar`, so matching on the
+    bare name alone pairs nothing for the COM corpus. Bare-name keying is also
+    lossy: a TU defining several classes has one `Release`/`AddRef`/`QueryInterface`
+    per class, and a {name: fn} dict silently keeps only the last — the pair list is
+    therefore built per C function, never through a bare-name dict.
+
+    The `--cpp-com` scaffold splits each method in two: `<Class>_<Iface>_<Method>` is
+    the DETERMINISTIC vtable thunk (generated, not worth diffing) and
+    `<Class>_<Method>_body` holds the model-written logic. The `_body` form is
+    therefore tried first, so the diff lands on the part a model actually wrote.
+    Constructors/destructors follow the same convention as `_ctor_body`/`_dtor_body`.
+
+    Returns (pairs, unpaired) where each pair is (display_name, c_fn, rust_fn) and
+    display_name is class-qualified so same-named methods stay distinguishable.
+    """
+    pairs: list[tuple[str, CFunction, RustFunction]] = []
+    unpaired: list[str] = []
+    for f in c_functions:
+        cls = getattr(f, "cpp_class", None)
+        candidates: list[str] = []
+        if cls:
+            if getattr(f, "is_ctor", False):
+                candidates += [f"{cls}_ctor_body", f"{cls}_ctor"]
+            elif getattr(f, "is_dtor", False):
+                candidates += [f"{cls}_dtor_body", f"{cls}_dtor"]
+            candidates += [f"{cls}_{f.name}_body", f"{cls}_{f.name}"]
+        candidates += [f"{f.name}_body", f.name]
+        hit = next((c for c in candidates if c in rust_funcs), None)
+        if hit is None:
+            unpaired.append(f.display_name)
+        else:
+            pairs.append((f.display_name, f, rust_funcs[hit]))
+    return pairs, unpaired
+
+
 def locate_rust_file(c_path: Path) -> Path | None:
     """Best-effort: find a .rs with the same stem under known crate src dirs."""
     stem = c_path.stem
@@ -248,19 +288,22 @@ class PairResult:
 
 
 def _resolve_model(model: str) -> tuple[str, str]:
-    """Return (backend, api_model_id)."""
-    aliases = {
-        "deepseek": ("deepseek", config.DEEPSEEK_MODEL_REASONER),
-        "deepseek-reasoner": ("deepseek", config.DEEPSEEK_MODEL_REASONER),
-        "deepseek-chat": ("deepseek", config.DEEPSEEK_MODEL_CHAT),
-        "v4": ("deepseek", config.DEEPSEEK_MODEL_REASONER),
-        "v4-pro": ("deepseek", "deepseek-reasoner"),
-        "sonnet": ("claude", config.CLAUDE_MODEL_SONNET),
-        "haiku": ("claude", config.CLAUDE_MODEL_HAIKU),
-        "opus": ("claude", "claude-opus-4-8"),
-    }
-    if model in aliases:
-        return aliases[model]
+    """Return (backend, api_model_id).
+
+    Model IDs come from the one canonical alias map (`__main__.MODEL_ALIASES`) that
+    the paid translate path already uses, rather than a second copy here — this
+    module's private copy had gone stale and resolved every deepseek alias to
+    `deepseek-reasoner`, which the provisioned key now rejects with a 400.
+    """
+    from .__main__ import MODEL_ALIASES
+
+    resolved = MODEL_ALIASES.get(model, model)
+    if resolved.startswith("claude"):
+        return ("claude", resolved)
+    if resolved.startswith("gemini"):
+        return ("gemini", resolved)
+    if resolved.startswith("deepseek"):
+        return ("deepseek", resolved)
     if model.startswith("deepseek"):
         return ("deepseek", model)
     if model.startswith("claude"):
@@ -423,19 +466,21 @@ def run(
         return 2
 
     scan = scan_file(c_path)
-    c_funcs: dict[str, CFunction] = {f.name: f for f in scan.functions}
     rust_funcs = extract_rust_functions(rs_path.read_text(errors="replace"))
 
-    names = [n for n in c_funcs if n in rust_funcs]
-    missing_rust = [n for n in c_funcs if n not in rust_funcs]
+    pairs, missing_rust = _pair_functions(scan.functions, rust_funcs)
     if only:
-        names = [n for n in names if n in only]
-    names.sort()
+        pairs = [p for p in pairs if p[0] in only or p[1].name in only]
+    pairs.sort(key=lambda p: p[0])
     if max_fns:
-        names = names[:max_fns]
+        pairs = pairs[:max_fns]
+
+    c_funcs = {disp: cf for disp, cf, _ in pairs}
+    rust_by_disp = {disp: rf for disp, _, rf in pairs}
+    names = [p[0] for p in pairs]
 
     print(
-        f"[semdiff] C={c_path.name} ({len(c_funcs)} fns)  "
+        f"[semdiff] C={c_path.name} ({len(scan.functions)} fns)  "
         f"Rust={rs_path.name} ({len(rust_funcs)} fns)"
     )
     print(
@@ -453,7 +498,7 @@ def run(
 
     def _work(name: str) -> PairResult:
         return diff_pair(
-            name, c_funcs[name].body_text, rust_funcs[name].body_text, model, use_cache
+            name, c_funcs[name].body_text, rust_by_disp[name].body_text, model, use_cache
         )
 
     with _cf.ThreadPoolExecutor(max_workers=max(1, workers)) as ex:

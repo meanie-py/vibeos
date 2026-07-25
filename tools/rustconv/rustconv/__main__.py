@@ -3233,7 +3233,7 @@ def main():
     p = sub.add_parser("semdiff", help="Find C↔Rust semantic/behavioral divergences (LLM)")
     p.add_argument("file", help="C source file (.c)")
     p.add_argument("--rust", default=None, help="Rust file (.rs); auto-located by stem if omitted")
-    p.add_argument("--model", default="deepseek-reasoner", help="Model (default deepseek-reasoner)")
+    p.add_argument("--model", default="deepseek", help="Model (default deepseek-v4-pro)")
     p.add_argument("--only", default=None, help="Comma-separated function names to diff")
     p.add_argument("--max-fns", type=int, default=None, help="Cap number of functions diffed")
     p.add_argument("--no-cache", action="store_true", help="Ignore per-pair response cache")
