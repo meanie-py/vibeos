@@ -11,6 +11,7 @@ pub mod ldt;
 pub mod mproc;
 pub mod mtrr;
 pub mod patpge;
+pub mod safecopy;
 pub mod thrdini;
 pub mod traphdlr;
 pub mod usercall;

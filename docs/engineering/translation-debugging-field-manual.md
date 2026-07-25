@@ -9663,3 +9663,100 @@ Pick the hold based on COVERAGE, not on blame. Here master already bugchecked at
 rung, so holding the new applets did not make anything safer — what it bought was that the
 twelve rungs *before* the new ones keep reporting every boot instead of being cut off six
 applets early.
+
+### 9.118 (FIXED 2026-07-24) i386 got a fault-tolerant kernel copy without fixing SEH — a Linux-style exception table is ~40 lines and needs no unwinder
+
+**Symptom.** Three i386 kmtest quarantines (`IoReadWrite`, `ObSymbolicLink`,
+`ZwWaitForMultipleObjects`) all BUGCHECK 0x1E at the identical PC, `ntoskrnl.exe+0x14C0`
+= `memcpy+0x40`. The same three passed on amd64. They had been quarantined since
+2026-07-11 as "i386-only, triage owed."
+
+**Why they were stuck.** They were not three bugs, they were one missing primitive.
+`ntkrnl_sys::probe::fault_tolerant_copy` is the DUMMY_PSEH replacement for a capture
+`memcpy` that in C sat inside `_SEH2_TRY`. amd64 and arm64 route it through
+`KmProtectedCopyMemory` (`ntoskrnl/kmsafecopy.c`), a native-SEH `__try` shim. i386 fell
+through to a bare `copy_nonoverlapping`, so a hostile pointer still crashed the kernel.
+The call sites were *already* converted — only the primitive was missing.
+
+The recorded close for i386 was "validate clang's frame-based i386 kernel SEH" (task
+#18). That is a real but murky problem: the driver registers a correct `fs:[0]` chain and
+`RtlDispatchException` is fully implemented, yet the catch does not happen. **Waiting on
+it was the mistake.** Both `kmsafecopy.c` and `probe.rs` already listed a second, entirely
+independent close, and nobody had costed it:
+
+> "The arch-neutral close for BOTH i386 and arm64 is a Linux-extable-style fault-fixup
+>  primitive (a table keyed by faulting PC, consulted in KiPageFault) — it needs no
+>  working SEH at all."
+
+It is about forty lines.
+
+**The mechanism** (`ntoskrnl-rust/src/ke/i386/safecopy.rs`). `KmProtectedCopyMemory` is
+`global_asm!` whose entire copy is one `rep movsb`, with the instruction's address
+exported as a symbol. `KiTrap0EHandler` compares the faulting `Eip` against that one
+address and, on a match, rewrites `Eip` to a fixup pad that returns 0:
+
+```
+_KmpProtectedCopyFaultPc:  rep movsb        <- the sole extable key
+                           mov eax, 1
+                           jmp done
+_KmpProtectedCopyFixup:    xor eax, eax     <- KiTrap0E redirects Eip here
+done:                      pop/pop/ret
+```
+
+Three properties make this the right shape, and each is load-bearing:
+
+- **`rep movsb` is ONE restartable instruction**, so the table has exactly one entry and
+  the lookup is an exact `Eip` compare, not a range. A hand-rolled byte loop would have
+  needed a range (and `kmsafecopy.c` already warns a byte loop is a throughput
+  regression on the I/O completion hot path — `rep movsb` is not one, the CPU and TCG
+  both move wide chunks internally).
+- **The check runs AFTER `MmAccessFault` has declined.** That preserves the amd64/arm64
+  semantics exactly: a valid-but-nonresident page is paged in and the copy proceeds;
+  only a genuinely invalid address reaches the fixup. This is why the rejected non-fix
+  stays rejected — an `MmIsAddressValid` pre-check cannot tell "invalid" from "paged
+  out" and would spuriously fail legitimate I/O under memory pressure.
+- **It cannot swallow a fault it does not own.** One exact PC, kernel-mode traps only;
+  every other fault raises exactly as before.
+
+**Result.** `[KMSAFECOPY] fault-tolerant copy: valid=1 moved=1 invalid_caught=1 (PASS)`
+on i386 — first time. The per-boot oracle in `kmsafecopy.c` now covers all three arches
+(the i386 twin lives in `safecopy.rs` because the C file's `__try` needs the msvc env).
+
+**The durable lessons:**
+
+1. **When a blocker has two independent closes recorded, cost BOTH before picking.**
+   This one sat quarantined for 13 days behind the harder of the two, and the easier one
+   was written down in two separate files the whole time. A documented alternative that
+   nobody has estimated is not a plan, it is a TODO.
+2. **A fix that moves a crash is a fix, even when the test still fails.** After this
+   change `IoReadWrite` still BUGCHECKs — but at `IoReadWrite_drv.sys+0x21E3`, not
+   `ntoskrnl.exe+0x14C0`. The fault left the kernel and landed in the test driver's own
+   deliberate-fault-inside-`_SEH2_TRY`. That is a *different root* (task #18, the driver
+   side) and the PC move is what proves the kernel side is closed. Judge by where the
+   crash is, not by whether the test went green.
+3. **"Needs SEH" is often "needs a fault to not be fatal."** Those are not the same
+   requirement. Exception dispatch is one implementation of the second; a PC-keyed fixup
+   table is another, and it has no dependency on unwind metadata, registration chains,
+   personality routines, or a working dispatcher.
+
+**Also found while reading that path** (separate, not the root): i386
+`RtlpGetStackLimits` (rtlk-rust `libsupp.rs`) stood in a hand-written
+`struct FX_SAVE_AREA { _opaque: [u8; 512] }` for a type that is **528** bytes on i386
+(`FXSAVE_FORMAT` is 520 with its `Align16Byte` tail, plus `NpxSavedCpu` + `Cr0NpxState`
+— `size_check_i386.rs:518`). `StackHigh` was 16 bytes too high, so
+`RtlDispatchException`'s "is this registration frame really on the stack?" bounds check
+— the guard against following a corrupt or hostile `fs:[0]` chain — accepted a 16-byte
+window past the true top of stack. A false-ACCEPT, so not the task-#18 root, but the
+exact `scan_magic_offsets` class: the fix is `size_of::<ntkrnl_sys::ddk::FX_SAVE_AREA>()`,
+never a literal.
+
+**Toolkit trap that cost a boot cycle:** on i386, `qemu/run-until.sh --break KeBugCheckEx`
+— the recipe printed in AGENTS.md — prints `Function "KeBugCheckEx" not defined.` and then
+times out with `BREAKPOINT NOT HIT`, which reads exactly like "the breakpoint never
+fired." It was never *set*. i386 symbols are stdcall-decorated and even
+`_KeBugCheckEx@20` did not resolve in that session; `find-kbase` also needed
+`kernel_runtime_base` hand-seeded into `qemu/runs/<id>/manifest.json`. `qemu/addr2sym.sh`
+is separately unusable on i386 (it matched `STATUS_UNWIND_CONSOLIDATE+5018868` for a
+`.text` address — it is matching absolute constant symbols). Until task #28 lands,
+symbolicate i386 by hand: the bugcheck banner prints `P2 = ntoskrnl.exe+0xRVA`, and
+`VA = 0x400000 + RVA` against `llvm-nm --numeric-sort build-i386/ntoskrnl/ntoskrnl.exe`.
