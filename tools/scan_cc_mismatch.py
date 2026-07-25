@@ -44,9 +44,18 @@ NORM_I386 = {
 DECL_BLOCK_RE = re.compile(
     r'((?:#\[cfg[^\]]*\]\s*)*)(?:unsafe\s+)?extern\s+"(\w+)"\s*\{([^}]*)\}', re.S
 )
-DECL_FN_RE = re.compile(r"\bfn\s+(\w+)\s*\(")
+# A declaration may be retargeted by #[link_name], and a definition renamed by
+# #[export_name]. The SYMBOL is what the linker pairs up, so capture both and key
+# on the effective name — otherwise a #[link_name] decl is compared against an
+# unrelated same-named definition (false positive), and a genuinely mismatched
+# retargeted pair is never compared at all (false negative).
+DECL_FN_RE = re.compile(
+    r'(?:#\[link_name\s*=\s*"(?P<link>[^"]+)"\]\s*)?\bfn\s+(?P<name>\w+)\s*\('
+)
 DEF_RE = re.compile(
-    r'((?:#\[cfg[^\]]*\]\s*)*)#\[no_mangle\]\s*pub\s+unsafe\s+extern\s+"(\w+)"\s+fn\s+(\w+)'
+    r'((?:#\[cfg[^\]]*\]\s*)*)'
+    r'(?:#\[no_mangle\]|#\[export_name\s*=\s*"(?P<export>[^"]+)"\])\s*'
+    r'pub\s+unsafe\s+extern\s+"(\w+)"\s+fn\s+(\w+)'
 )
 NOLINT_RE = re.compile(r"nolint:\s*cc-mismatch")
 
@@ -77,8 +86,9 @@ def scan_crate(crate_src: str) -> list[str]:
             except OSError:
                 continue
             for m in DEF_RE.finditer(src):
-                cfg, cc, name = m.groups()
-                defs[name].append((cc, cfg_excludes_i386(cfg)))
+                cfg, cc, name = m.group(1), m.group(3), m.group(4)
+                symbol = m.group("export") or name
+                defs[symbol].append((cc, cfg_excludes_i386(cfg)))
             src_lines = src.splitlines()
             for m in DECL_BLOCK_RE.finditer(src):
                 cfg, cc, body = m.groups()
@@ -90,7 +100,8 @@ def scan_crate(crate_src: str) -> list[str]:
                     decl_line = src_lines[line - 1] if line - 1 < len(src_lines) else ""
                     if NOLINT_RE.search(decl_line):
                         continue
-                    decls[d.group(1)].append((cc, path, line))
+                    symbol = d.group("link") or d.group("name")
+                    decls[symbol].append((cc, path, line))
     out = []
     for name, dd in decls.items():
         if name not in defs:

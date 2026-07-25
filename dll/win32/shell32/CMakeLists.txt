@@ -51,13 +51,18 @@ list(APPEND SOURCE
     utils.cpp
     # CShellItem.cpp — CShellItem, CShellItemArray, SHCreateShellItem, and
     # SHCreateShellItemArrayFromDataObject are Rust-owned.
-    # Hybrid cohab: the CShellLink COM class is Rust-owned (shell32-rust/src/
-    # shell_link.rs) — activation, all interfaces, and the C-linkage
-    # IShellLink_ConstructFromPath/FromFile (the C++ bodies are #if 0'd). This
-    # file stays compiled: its C++ class method bodies are dead (mangled, never
-    # constructed — object map uses CShellLinkRustEntry) and it retains the
-    # free helpers PathFullyUnExpandEnvStringsW/ExtendedShortcutProc + statics.
-    CShellLink.cpp
+    # CShellLink.cpp — removed. The COM class was already Rust-owned
+    # (shell32-rust/src/shell_link.rs): activation, all interfaces, and the
+    # C-linkage IShellLink_ConstructFromPath/FromFile. What kept the file
+    # compiled was believed to be its free helpers, but nothing referenced them:
+    # llvm-nm shows the object defining 273 symbols (including all 75 mangled
+    # CShellLink methods) with ZERO of them undefined in any other shell32 object
+    # or in libshell32_rust.a, and no shell32.spec export coming from it.
+    # PathFullyUnExpandEnvStringsW, named in the old note, is inside `#if 0`.
+    # CShellLinkRustEntry derives from CShellLink only to give ATL's OBJECT_ENTRY
+    # a _CreatorClass forwarding to the Rust factory; it is never instantiated, so
+    # no vtable is emitted — shell32.cpp.obj's only undefined CShellLink symbol is
+    # CShellLink_CreateInstance, the Rust one.
     folders/CDesktopFolder.cpp
     folders/CFSFolder.cpp
     # Hybrid cohab: CDrivesFolder activation/methods are Rust-owned

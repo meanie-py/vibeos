@@ -50,7 +50,6 @@
       "dll/win32/shell32/brfolder.cpp",
       "dll/win32/shell32/dialogs/filetypes.cpp",
       "dll/win32/shell32/utils.cpp",
-      "dll/win32/shell32/CShellLink.cpp",
       "dll/win32/shell32/shlexec.cpp",
       "dll/win32/shell32/shlfileop.cpp",
       "dll/win32/shell32/CDefView.cpp",
@@ -72,6 +71,9 @@
     ]
   },
   "removed": {
+    "dead_after_class_flip": [
+      "dll/win32/shell32/CShellLink.cpp"
+    ],
     "free_function_tu": [
       "dll/win32/shell32/debughlp.cpp",
       "dll/win32/shell32/dialogs/view.cpp",
