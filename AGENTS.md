@@ -145,7 +145,25 @@ already had one "brutal consolidation" of 40 docs down to 11.)
   first.
 - **Never `git checkout`/`restore` to discard.** Use `git stash push -m "<scope>: <msg>"`. The
   stash stack is **global across worktrees**, so `stash@{0}` is not stable — another agent can
-  push on top between your push and drop. Drop by message or captured hash, never by index.
+  push on top between your push and drop. Drop by message, never blindly by index.
+  Two traps that made this bite for real (2026-07-25, 1124 files applied from a sibling lane's
+  stash):
+  - **`git stash push <pathspec>` FAILS if any path is untracked** — and if you wrote `|| true`,
+    no stash is created and you never notice. A later bare `git stash pop` then takes whatever
+    is at `stash@{0}`, which is somebody else's. Pass `-u` when the pathspec includes new files,
+    and **check the push actually created an entry** before relying on it.
+  - **`git stash drop <sha>` does not work** — drop/apply need a `stash@{n}` *ref*, so "drop by
+    hash" is not executable advice. Do this instead: resolve the index by grepping the message,
+    then re-read the message at that ref and refuse unless it still matches, in ONE command:
+    ```
+    IDX=$(git stash list --format='%gd|%gs' | grep -F "<my msg>" | head -1 | cut -d'|' -f1)
+    MSG=$(git stash list --format='%gd|%gs' | grep -F "$IDX|" | cut -d'|' -f2-)
+    case "$MSG" in *"<my msg>"*) git stash drop "$IDX" ;; *) echo REFUSED ;; esac
+    ```
+  Recovery, if you do apply someone else's: a conflicted `pop` does **not** drop the entry, so
+  their work is safe. Back up your own uncommitted files, confirm your commits are pushed
+  (`git rev-list --left-right --count origin/master...HEAD` → `0` ahead), then `git reset --hard
+  HEAD` + `git clean -fd <your dirs>` and restore your backups.
 - **Landing a lane: just merge it like a human would.** `git merge <lane-tip>` → gate ×3 → land.
   Do **not** be clever about history: no per-commit cherry-picking for a tidy line, no pre-merge
   "lineage audits" hunting for already-landed surprises. Git's 3-way merge already handles that

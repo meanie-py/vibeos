@@ -74,8 +74,8 @@ def evaluate(expr, syms, depth=0):
     subbed = re.sub(r"\b([A-Za-z_]\w*)\b", lambda m: str(evaluate(m.group(1), syms, depth + 1)), e)
     subbed = re.sub(r"\b(\d+)[uUlL]+\b", r"\1", subbed)
     try:
-        return int(eval(subbed, {"__builtins__": {}}, {}))  # noqa: S307
-    except Exception as exc:  # noqa: BLE001
+        return int(eval(subbed, {"__builtins__": {}}, {}))
+    except Exception as exc:
         raise Unevaluable(f"cannot evaluate {e!r} ({exc})") from exc
 
 
@@ -152,8 +152,11 @@ def main():
         "tag",
         help="enum tag (e.g. _SCSI_NOTIFICATION_TYPE), or a member name with --by-member",
     )
-    ap.add_argument("--by-member", action="store_true",
-                    help="treat `tag` as a MEMBER name and find the enum containing it")
+    ap.add_argument(
+        "--by-member",
+        action="store_true",
+        help="treat `tag` as a MEMBER name and find the enum containing it",
+    )
     ap.add_argument("--type", default="u32")
     ap.add_argument("--only", help="comma-separated subset of members to emit")
     ap.add_argument("--check", metavar="RSFILE", help="verify RSFILE instead of emitting")
@@ -167,12 +170,15 @@ def main():
 
     text = strip_comments(hdr.read_text(encoding="utf-8", errors="replace"))
     try:
-        body = (find_enum_body_by_member(text, args.tag) if args.by_member
-                else find_enum_body(text, args.tag))
+        body = (
+            find_enum_body_by_member(text, args.tag)
+            if args.by_member
+            else find_enum_body(text, args.tag)
+        )
     except Unevaluable as exc:
         sys.exit(f"FATAL: {exc}")
     if body is None:
-        kind = "member of any enum" if args.by_member else "`enum %s`" % args.tag
+        kind = "member of any enum" if args.by_member else f"`enum {args.tag}`"
         sys.exit(f"FATAL: no {kind} named {args.tag} in {hdr}")
     try:
         members = parse_members(body)

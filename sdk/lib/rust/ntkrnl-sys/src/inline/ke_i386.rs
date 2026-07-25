@@ -100,7 +100,25 @@ core::arch::global_asm!(
     "  sti",
     "  ret",
 
-    // ___debugbreak@0
+    // ___debugbreak@0 — STDCALL-decorated ONLY, and that is deliberate.
+    //
+    // Consumers declare __debugbreak `extern "C"`, so on i386 they ask the linker
+    // for the CDECL name `___debugbreak`. It is tempting to "fix" the mismatch by
+    // also emitting `.globl ___debugbreak` here. DO NOT — it was tried, and it
+    // makes driver links worse, not better.
+    //
+    // This whole `global_asm!` is ONE object, and further down it carries the
+    // kernel-only trap trampolines (`call _KiDispatchExceptionFromTrapFrame@32`,
+    // `jmp @KiServiceExit2@4`, `jmp _KiSystemStartupBootStack@0`). Archive
+    // semantics pull an object in only to satisfy a symbol it DEFINES. Because no
+    // driver can resolve `___debugbreak` here, no driver drags this object — and
+    // therefore never inherits its ntoskrnl-internal references. Adding the cdecl
+    // label made ksecdd.sys pull the object and fail with four *new* undefined
+    // kernel symbols instead of one.
+    //
+    // A driver that needs __debugbreak defines it locally as an inline `int3` (see
+    // fltmgr-rust/src/glue.rs, scsiport-rust/src/inlines.rs, ksecdd-rust). An
+    // inline body needs no symbol at all, so it cannot pull anything.
     ".globl ___debugbreak@0",
     "___debugbreak@0:",
     "  int3",
