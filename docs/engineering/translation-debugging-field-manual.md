@@ -10822,13 +10822,22 @@ produces a confident wrong function and relocates the hunt (§9.124). The check 
 sound is a *semantic* control: each recorded address must resolve to a function whose name
 matches the test that crashed. It does, unanimously:
 
-| recorded address | resolves to | test that crashed |
+| **fresh** crash address | resolves to | test that crashed |
 |---|---|---|
-| `0x8054d7eb` | `_ExReinitializeResourceLite@4` | **ExResource** |
-| `0x804e2061` | `_KeInsertQueueDpc@12` | **KeDpc** |
-| `0x80563f3b` | `_MmCreateArm3Section@32` | **MmSection** |
+| `0x805510dd` | `_SeAssignSecurityEx@36` | **SeInheritance** |
+| `0x80529538` | `_RtlIsValidOemCharacter@4` | **RtlIsValidOemCharacter** |
+| `0x804e1ed1` | `_KeInitializeDpc@12` | **KeDpc** |
 
-Four independent addresses, four name matches. That is proof, not plausibility.
+Three fresh addresses, three exact name matches.
+
+**Use FRESH addresses for that control, not recorded ones — I got this wrong first.** The
+original version of this section offered the *stale* recorded addresses as the semantic proof,
+and that is unsound: they predate ~13 days of code motion. The counterexample is in this very
+set — `RtlIsValidOemCharacter`'s recorded address resolves today to
+`_RtlLookupAtomInAtomTable@12+152`, a different function in a different subsystem, and would
+have sent the hunt to the atom table. Some stale lookups still name-match (`0x804e2061` ->
+`_KeInsertQueueDpc` for KeDpc) and some do not; you cannot tell which without the fresh address,
+so a stale semantic match is corroboration at best and a trap at worst.
 
 **Caveat that matters.** Those addresses are from a 2026-07-12 build and code has since moved —
 `SeInheritance` was recorded at `+0x8E3BD` and reproduces today at `+0x8E0DD`. Function-level
