@@ -10784,3 +10784,67 @@ whether it is wrong: `git grep` the file's `#[cfg(` count answers it in one comm
 you do audit assert-lowering, check both directions — this file *preserved* the two genuine
 bugchecks (`MiDecrementReferenceCount` still raises subcode `7`, matching C), so "the translator
 mangles all bugchecks" would have been the wrong generalisation too.
+
+### 9.127 (2026-07-25) "The offline i386 index is symbol-poor" was FALSE — it resolves function + source line, and the missing piece was one `--reloc` value
+
+**The claim that blocked work.** Nine i386 kmtest quarantines recorded 2026-07-12 carry a note
+of the form:
+
+```
+# QUARANTINED (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x8E3BD. Passes on amd64.
+# Triage owed (live GDB; offline i386 index is symbol-poor).
+```
+
+So nine tests waited ~13 days for a GDB session nobody had time to set up. The premise was
+wrong. `qemu/addr2sym.sh` resolves i386 addresses to **function + source file + line**; it just
+needs `--reloc`, because the index holds FILE VAs and a bugcheck reports RUNTIME VAs.
+
+**Deriving the reloc without a debugger — and proving it.** The quarantine notes themselves
+record `ntoskrnl.exe+<offset> (<runtime addr>)` pairs, and each pair *is* an equation for the
+load base. Four of them agree exactly:
+
+```
+ntoskrnl+0x8a7eb @ 0x8054d7eb -> base 0x804c3000
+ntoskrnl+0x1f061 @ 0x804e2061 -> base 0x804c3000
+ntoskrnl+0x944ef @ 0x805574ef -> base 0x804c3000
+ntoskrnl+0xa0f3b @ 0x80563f3b -> base 0x804c3000
+```
+
+`ImageBase` is `0x400000`, so `--reloc = 0x804c3000 - 0x400000 = 0x800c3000`:
+
+```bash
+bash qemu/addr2sym.sh i386 --reloc 0x800c3000 0x805510dd
+# 0048e0dd  _SeAssignSecurityEx@36+61  sdk/lib/rust/se-rust/src/sd.rs:923
+```
+
+**Do not accept the base because one lookup "looks plausible"** — that is how a wrong base
+produces a confident wrong function and relocates the hunt (§9.124). The check that makes it
+sound is a *semantic* control: each recorded address must resolve to a function whose name
+matches the test that crashed. It does, unanimously:
+
+| recorded address | resolves to | test that crashed |
+|---|---|---|
+| `0x8054d7eb` | `_ExReinitializeResourceLite@4` | **ExResource** |
+| `0x804e2061` | `_KeInsertQueueDpc@12` | **KeDpc** |
+| `0x80563f3b` | `_MmCreateArm3Section@32` | **MmSection** |
+
+Four independent addresses, four name matches. That is proof, not plausibility.
+
+**Caveat that matters.** Those addresses are from a 2026-07-12 build and code has since moved —
+`SeInheritance` was recorded at `+0x8E3BD` and reproduces today at `+0x8E0DD`. Function-level
+answers survive that drift; exact offsets do not. **Symbolicate FRESH addresses** from a current
+run (`tools/conformance_probe.py` produces one per crashing test) rather than stale recorded
+ones, and treat any stale lookup as a lead to confirm.
+
+**arm64 does not have this luxury yet** — its kernel runtime base is never printed on serial and
+cannot be recovered from any recorded pair, so offline arm64 triage is still blocked on a
+one-line boot-time print of the base. Until then `inspect.sh symbolicate-pc` (online, via gdb)
+is the only route there.
+
+**The general lesson.** A recorded blocker is a claim, and claims decay. "Offline index is
+symbol-poor" was probably true of some earlier index and got copy-pasted into nine notes; by the
+time anyone read them it cost more than the five minutes it took to disprove. When a note tells
+you a tool cannot do something, spend the five minutes before believing it — and if it turns out
+false, fix the note so the next person does not pay again. (This is the same shape as the
+netapi32 "6 mutually-conflicting MIDL interfaces" blocker in §9.108, which deferred that work
+twice and was also a self-inflicted, untested inference.)
