@@ -244,7 +244,7 @@ struct AUTO_SCROLL_DATA {
 /// flag words (offset 0 and 28) bracketing the scalar members. Bit indices = SS_* above.
 #[repr(C)]
 #[derive(Copy, Clone)]
-struct SHELLSTATE {
+pub struct SHELLSTATE {
     w0: u32,             // 17 :1 flags + :15 pad
     dwWin95Unused: DWORD,
     uWin95Unused: UINT,
@@ -254,7 +254,7 @@ struct SHELLSTATE {
     uNotUsed: UINT,
     w1: u32,             // 7 :1 flags + fSpareFlags:9 + :15 pad
 }
-type LPSHELLSTATE = *mut SHELLSTATE;
+pub type LPSHELLSTATE = *mut SHELLSTATE;
 impl SHELLSTATE {
     #[inline]
     fn g0(&self, b: u32) -> BOOL {
@@ -317,12 +317,14 @@ struct REGSHELLSTATE {
 type PREGSHELLSTATE = *mut REGSHELLSTATE;
 
 /// CABINETSTATE (shlobj.h) — 12 bytes: cLength/nVersion, flags word, fMenuEnumFilter.
+/// `pub` so win32.rs can re-export it: the SDK spells the flags as bitfields, and this
+/// explicit flags word is the proven layout — do not generate a second one.
 #[repr(C)]
-struct CABINETSTATE {
-    cLength: WORD,
-    nVersion: WORD,
-    flags: u32,
-    fMenuEnumFilter: UINT,
+pub struct CABINETSTATE {
+    pub cLength: WORD,
+    pub nVersion: WORD,
+    pub flags: u32,
+    pub fMenuEnumFilter: UINT,
 }
 impl CABINETSTATE {
     #[inline]
