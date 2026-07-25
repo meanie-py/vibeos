@@ -186,7 +186,7 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
   security.c` + generated RPC.
-- **shell32 COM classes (81 `.cpp`, ~64K LOC) — 28 of 33 activatable classes Rust-owned.**
+- **shell32 activatable COM surface — 33 of 33 classes Rust-owned; compiled C++ tail is next.**
   Rust-owned activated classes now span `CDropTargetHelper`, `CActiveDesktop`,
   `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`, `CFontsFolder`,
   `CAdminToolsFolder`, `CMyDocsFolder`, `CNewMenu`, `CSendToMenu`, `CPrinterFolder`,
@@ -202,8 +202,8 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   history + the reusable integration playbook live in
   `docs/engineering/active-lanes/shell32-com-plan.md`. `CMenuBand` + `CMergedFolder` are
   shared-infrastructure (the `menuband-rust` staticlib linked by both shell32 and rshell).
-  The remaining 5 are capability-gated: CFileDefExt (CObjectWithSiteBase + embedded C++
-  member), CMenuSite/CMenuDeskBar (CWindowImpl window machinery), CShellDispatch (typelib).
+  The final five (`CFileDefExt`, `CShellDispatch`, `CMenuSite`, `CMenuDeskBar`, and the inline
+  `CStartMenuDummy`) landed on 2026-07-18. The activatable object map now has zero C++ entries.
   `CCopyAsPathMenu` was the first out-of-sample cheap-model
   class: two deterministic workers plus eight unchanged cached DeepSeek workers went from
   62 diagnostics per architecture to zero after deterministic support closure, then passed
@@ -223,15 +223,11 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   scalar-state pilot, `CCopyAsPathMenu` is the first object-field RAII-state pilot, and
   `CMyDocsFolder` is the first six-interface class with a deterministic `FinalConstruct`
   activation/failure-cleanup path.
-  The 9 remaining activatable classes are all capability-gated (no quick pipeline wins):
-  `CDrvDefExt` (preflight passes; translate blocks on a body-local custom-RAII struct — the most
-  tractable next class); `CFileDefExt`/`CShellDispatch`/`CMenuDeskBar`/`CMoveToMenu`/`CCopyToMenu`
-  (inherited-layout mapping for CObjectWithSiteBase/IDispatchImpl/CWindowImpl/shared bases — each
-  with a SECONDARY hard blocker: embedded C++ object member, typelib, window machinery, or a
-  `WNDPROC`); and `CMenuSite`/`CMergedFolder` (shared-`shellmenu` staticlib + a scanner FP / a WIDL
-  flattened-vtable gap). Custom/inherited base layouts, aggregatable classes, and body-local
-  custom-RAII remain loud preflight failures until their mappings are implemented — see the
-  lane doc's "Remaining activatable shell32 classes" table.
+  This does **not** mean the DLL is wholly Rust: the audited live CMake lists still compile 70
+  `.cpp` files (60,258 physical lines), including retained companions/bridges, private dynamic
+  objects, shared shellmenu/shelldesktop objects, procedural helpers, and monoliths such as
+  `CDefView.cpp`, `shlexec.cpp`, and `shlfileop.cpp`. The exhaustive zero-C++ plan and ledger are
+  in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

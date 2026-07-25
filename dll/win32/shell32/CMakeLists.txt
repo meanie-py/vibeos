@@ -19,15 +19,19 @@ endif()
 
 list(APPEND SOURCE
     brfolder.cpp
-    CActiveDesktop.cpp
+    # CActiveDesktop.cpp — replaced by Rust (shell32-rust/src/active_desktop.rs).
     CActiveDesktop.h
     CIDLDataObj.cpp
-    CQueryAssociations.cpp
+    # CQueryAssociations.cpp — class plus association description helpers are Rust-owned
+    # (shell32-rust/src/query_associations.rs).
     changenotify.cpp
     debughlp.cpp
     dialogs/dialogs.cpp
     dialogs/drive.cpp
     dialogs/drvdefext.cpp
+    # Hybrid cohab: CFileDefExt activation/methods are Rust-owned. This file retains
+    # the shared SH_FormatByteSize/SH_FormatFileSizeWithBytes helpers and source-local
+    # C++ helper symbols used by the Rust module; its class bodies are never activated.
     dialogs/filedefext.cpp
     dialogs/filetypes.cpp
     dialogs/folder_options.cpp
@@ -35,16 +39,17 @@ list(APPEND SOURCE
     dialogs/general.cpp
     dialogs/recycler_prop.cpp
     dialogs/view.cpp
-    CDropTargetHelper.cpp
+    # CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
+    # are Rust-owned (shell32-rust/src/drop_target_helper.rs).
     CEnumIDListBase.cpp
     CExtractIcon.cpp
-    CRecycleBinCleaner.cpp
     folders.cpp
     iconcache.cpp
     propsheet.cpp
     shell32.cpp
     utils.cpp
-    CShellItem.cpp
+    # CShellItem.cpp — CShellItem, CShellItemArray, SHCreateShellItem, and
+    # SHCreateShellItemArrayFromDataObject are Rust-owned.
     # Hybrid cohab: the CShellLink COM class is Rust-owned (shell32-rust/src/
     # shell_link.rs) — activation, all interfaces, and the C-linkage
     # IShellLink_ConstructFromPath/FromFile (the C++ bodies are #if 0'd). This
@@ -52,7 +57,6 @@ list(APPEND SOURCE
     # constructed — object map uses CShellLinkRustEntry) and it retains the
     # free helpers PathFullyUnExpandEnvStringsW/ExtendedShortcutProc + statics.
     CShellLink.cpp
-    CFolderOptions.cpp
     folders/CDesktopFolder.cpp
     folders/CFSFolder.cpp
     # Hybrid cohab: CDrivesFolder activation/methods are Rust-owned
@@ -63,7 +67,8 @@ list(APPEND SOURCE
     # folders/CMyDocsFolder.cpp — replaced by Rust (shell32-rust/src/my_docs_folder.rs); cohab via libshell32_rust.a
     # Hybrid cohab: CPrinterFolder activation/methods are Rust-owned; this file
     # retains CPrintersEnum and three explicit source-local Rust bridge helpers.
-    folders/CPrinterFolder.cpp
+    # folders/CPrinterFolder.cpp — CPrinterFolder, CPrintersEnum, and retained
+    # printer icon/PIDL helpers are Rust-owned.
     # folders/CAdminToolsFolder.cpp — replaced by Rust (shell32-rust/src/admin_tools_folder.rs); cohab via libshell32_rust.a
     # Hybrid cohab: CNetFolder activation/methods are Rust-owned; this file
     # retains network enumeration, context-menu callbacks, and explicit bridges.
@@ -73,7 +78,8 @@ list(APPEND SOURCE
     folders/CRecycleBin.cpp
     folders/CRecycleBinFolderViewCB.cpp
     folders/CRegFolder.cpp
-    droptargets/CexeDropHandler.cpp
+    # droptargets/CexeDropHandler.cpp — replaced by Rust
+    # (shell32-rust/src/exe_drop_handler.rs).
     droptargets/CFSDropTarget.cpp
     droptargets/CRecyclerDropTarget.cpp
     shldataobject.cpp
@@ -94,9 +100,11 @@ list(APPEND SOURCE
     COpenWithMenu.cpp
     # CNewMenu.cpp — replaced by Rust (shell32-rust/src/new_menu.rs); cohab via libshell32_rust.a
     # CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a
-    CCopyMoveToMenu.cpp
+    # CCopyMoveToMenu.cpp — shared base, four file-local helpers/callbacks, and
+    # both CCopyToMenu/CMoveToMenu derived objects are Rust-owned.
     # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
-    CShellDispatch.cpp
+    # CShellDispatch.cpp — replaced by Rust (shell32-rust/src/shell_dispatch.rs);
+    # CShellDispatch_Constructor remains exported by the Rust module for CFolder/CDefViewDual.
     CFolder.cpp
     CFolderItems.cpp
     CFolderItemVerbs.cpp)

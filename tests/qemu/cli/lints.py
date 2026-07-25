@@ -259,6 +259,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # drove this to zero and a concurrent lane re-introduced it the same day.
     ns = repo / "tools" / "scan_nightly_surface.py"
     specs.append(("scan_nightly_surface", [py, str(ns)] if ns.is_file() else ["MISSING"], "stdout"))
+    # shell32's zero-C++ lane has an exhaustive live-CMake ledger. A newly added
+    # source, a claimed removal that remains compiled, or an expected source that
+    # silently fell out of CMake is a hard mismatch rather than baseline debt.
+    sti = repo / "tools" / "rustconv" / "rustconv" / "shell32_tail_inventory.py"
+    specs.append(
+        (
+            "shell32_tail_inventory",
+            [py, str(sti), "--check"] if sti.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
     # here). tables + match_consts are clean today (empty baseline = strict);
     # signatures carries known dual-cfg-shim FPs, so the baseline gates NEW only.

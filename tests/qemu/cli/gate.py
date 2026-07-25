@@ -25,6 +25,10 @@ was serial was the *orchestrator* — i.e. the human. This driver removes that:
      command verbatim so there is ONE strict-check code path. A NEW finding
      (classification LINT_FAIL) blocks the push stamp; smokes still run so the
      matrix stays informative. Opt out with --no-lint.
+     `check-tooling` (OUR python: ruff/pyright/pytest over rustconv + cli +
+     tools) runs ONCE alongside — it is arch-independent and needs no build, so
+     it starts before the first build. A failure classifies TOOLING_FAIL and
+     blocks the stamp. It shares the --no-lint opt-out.
   3. flake-retries — a *documented* flake (KNOWN_FLAKE / FLAKY), an environment
      failure (LAUNCH_FAIL), or a contention-characterized HANG_TIMEOUT (serial
      still flowing at the deadline AND no kernel census/lockdep wedge
@@ -298,6 +302,34 @@ def _lint_once(repo: Path, arch: str, root: Path) -> dict:
     }
 
 
+def _tooling_once(repo: Path, root: Path) -> dict:
+    """Run `vibeos-cli check-tooling` once for the whole gate.
+
+    This is OUR Python (rustconv / vibeos-cli / tools/*.py): ruff, ruff-format,
+    pyright, the generated-file staleness checks, and the pytest suites. It is
+    arch-independent and needs no build artifacts, so it runs once and can start
+    before the first build rather than per-arch like `check --strict`.
+
+    It gates the push stamp for the same reason the strict lint does: without it
+    the gate is structurally blind to Python regressions, and master shipped
+    `check-tooling` red on two consecutive landings (a mutable-default-argument
+    sweep, then four pyright errors in the msvcrt `--target` work) because
+    nothing between the author and the stamp ever ran it.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    cmd = [str(repo / "vibeos-cli"), "check-tooling"]
+    env = dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root))
+    t0 = time.monotonic()
+    proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
+    dt = time.monotonic() - t0
+    salient = ""
+    for ln in (proc.stdout or "").splitlines():
+        if "\u2717" in ln or "FAIL" in ln:
+            salient = ln.strip()
+            break
+    return {"ok": proc.returncode == 0, "seconds": dt, "salient": salient, "exit": proc.returncode}
+
+
 def _resolve_arches(raw: str | None) -> list[str]:
     if not raw:
         return ["i386", "amd64", "arm64"]
@@ -466,6 +498,8 @@ def gate(args, repo: Path) -> int:
     lint_ok: dict[str, bool] = {}
     fut: dict = {}
     lfut: dict = {}
+    tooling_ok = True
+    tfut: dict = {}
 
     def _lane_once(lane: str, root: Path) -> dict:
         if lane == "net":
@@ -481,13 +515,18 @@ def gate(args, repo: Path) -> int:
         min(
             n_lanes * (1 + retries)
             + (len(arches) if do_lint else 0)
-            + (len(arches) if do_build else 0),
+            + (len(arches) if do_build else 0)
+            + (1 if do_lint else 0),  # check-tooling: one arch-independent worker
             20,
         )
         or 1
     )
 
     with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        # check-tooling needs no build artifacts, so start it immediately — it
+        # overlaps the first build instead of adding wall-clock.
+        if do_lint:
+            tfut[ex.submit(_tooling_once, repo, gate_root / "tooling")] = "tooling"
 
         def _launch_lanes(arch: str) -> None:
             """Submit an arch's post-build lanes (smoke [+ net] + lint) immediately."""
@@ -563,6 +602,26 @@ def gate(args, repo: Path) -> int:
                 if not r["ok"] and not run.classification:
                     run.classification = "LINT_FAIL"
 
+        def _collect_tooling() -> None:
+            nonlocal tooling_ok
+            for f in cf.as_completed(tfut):
+                r = f.result()
+                tooling_ok = r["ok"]
+                run.add(
+                    Stage(
+                        "tooling",
+                        seconds=r["seconds"],
+                        status="ok" if r["ok"] else "fail",
+                        detail="check-tooling clean"
+                        if r["ok"]
+                        else f"python tooling findings (exit {r['exit']})",
+                        salient=[] if r["ok"] else [r["salient"] or "check-tooling failed"],
+                    )
+                )
+                if not r["ok"] and not run.classification:
+                    run.classification = "TOOLING_FAIL"
+
+        _collect_tooling()  # concurrent with the in-flight smokes
         _collect_lints()  # concurrent with the in-flight smokes
         for f in cf.as_completed(fut):
             r = f.result()
@@ -641,6 +700,9 @@ def gate(args, repo: Path) -> int:
         # the results check above), so default True there and let those paths gate
         # on their own condition.
         and all(lint_ok.get(a, True) for a in requested)
+        # check-tooling is arch-independent and runs once; it defaults True under
+        # --no-lint, matching how lint_ok defaults above.
+        and tooling_ok
     )
     # Defense-in-depth: never mint the credential when ANY stage failed. all_ok
     # is computed over smoke + lint_ok only; this also catches any future stage

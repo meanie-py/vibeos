@@ -137,6 +137,46 @@ def extract_rust_functions(text: str) -> dict[str, RustFunction]:
     return out
 
 
+def _pair_functions(
+    c_functions: list[CFunction], rust_funcs: dict[str, RustFunction]
+) -> tuple[list[tuple[str, CFunction, RustFunction]], list[str]]:
+    """Pair each C/C++ function with the Rust fn that replaced it.
+
+    A C++ method `CFoo::Bar` is translated as a free `CFoo_Bar`, so matching on the
+    bare name alone pairs nothing for the COM corpus. Bare-name keying is also
+    lossy: a TU defining several classes has one `Release`/`AddRef`/`QueryInterface`
+    per class, and a {name: fn} dict silently keeps only the last — the pair list is
+    therefore built per C function, never through a bare-name dict.
+
+    The `--cpp-com` scaffold splits each method in two: `<Class>_<Iface>_<Method>` is
+    the DETERMINISTIC vtable thunk (generated, not worth diffing) and
+    `<Class>_<Method>_body` holds the model-written logic. The `_body` form is
+    therefore tried first, so the diff lands on the part a model actually wrote.
+    Constructors/destructors follow the same convention as `_ctor_body`/`_dtor_body`.
+
+    Returns (pairs, unpaired) where each pair is (display_name, c_fn, rust_fn) and
+    display_name is class-qualified so same-named methods stay distinguishable.
+    """
+    pairs: list[tuple[str, CFunction, RustFunction]] = []
+    unpaired: list[str] = []
+    for f in c_functions:
+        cls = getattr(f, "cpp_class", None)
+        candidates: list[str] = []
+        if cls:
+            if getattr(f, "is_ctor", False):
+                candidates += [f"{cls}_ctor_body", f"{cls}_ctor"]
+            elif getattr(f, "is_dtor", False):
+                candidates += [f"{cls}_dtor_body", f"{cls}_dtor"]
+            candidates += [f"{cls}_{f.name}_body", f"{cls}_{f.name}"]
+        candidates += [f"{f.name}_body", f.name]
+        hit = next((c for c in candidates if c in rust_funcs), None)
+        if hit is None:
+            unpaired.append(f.display_name)
+        else:
+            pairs.append((f.display_name, f, rust_funcs[hit]))
+    return pairs, unpaired
+
+
 def locate_rust_file(c_path: Path) -> Path | None:
     """Best-effort: find a .rs with the same stem under known crate src dirs."""
     stem = c_path.stem
@@ -186,6 +226,17 @@ REPORT divergences in these classes:
 - a call present in C but dropped in Rust (or vice-versa), especially
   Ke*/Ex*/Io*/Wdf* calls with side effects
 
+JUDGE RUST BY RUST'S RULES, NOT C'S. The two measured false positives so far both
+came from applying C semantics to the Rust side:
+- OPERATOR PRECEDENCE IS NOT C's. In Rust `&`/`|`/`^` bind TIGHTER than the
+  comparisons, so `flags & FLAG != 0` parses as `(flags & FLAG) != 0` — the
+  intended test, and the opposite of the classic C gotcha. It could not parse the
+  other way and still compile (`u32 & bool` is a type error), and this Rust is
+  known to compile. Never report a precedence divergence on `&`/`|` vs `==`/`!=`.
+- A `0` in C passed where the callee's prototype declares a POINTER is a null
+  pointer constant; `core::ptr::null_mut()` is its correct translation, not an ABI
+  mismatch. Use the CALLEE PROTOTYPES section as authoritative for argument types.
+
 IGNORE (do NOT report):
 - naming, formatting, comments, idiomatic rewrites that preserve behavior
 - `unsafe`, raw-pointer vs reference style, transmute used for FFI typing
@@ -223,12 +274,46 @@ Function: {name}
 
 ===== C =====
 {c_src}
-
+{prototypes}
 ===== RUST =====
 {rust_src}
 
 Report behavioral divergences as strict JSON.
 """
+
+PROTOTYPE_HEADER = """
+===== CALLEE PROTOTYPES (authoritative — from the Rust module's extern blocks) =====
+These are the REAL signatures of the functions this body calls. Judge argument
+types against THESE, not against a guess from the C spelling. In particular a C
+`0` passed where the prototype declares a POINTER is a null pointer constant, and
+`core::ptr::null_mut()` is its correct translation — not an ABI mismatch.
+{decls}
+"""
+
+# `extern "..." { fn Name(...) -> Ret; }` items, plus bare `fn Name(...);` lines
+# inside them. Captures the whole declaration so the model sees parameter types.
+_EXTERN_FN_RE = re.compile(r"^\s*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\s*\(", re.M)
+
+
+def extract_extern_prototypes(text: str) -> dict[str, str]:
+    """{callee: declaration} for every fn declared (no body) in `text`.
+
+    The false-positive class this exists to kill: semdiff saw the C
+    `SHQueryValueExW(hkey, name, 0, ...)` next to Rust `null_mut()` and reported a
+    CRITICAL "argument type mismatch — an 8-byte pointer where a 4-byte DWORD is
+    expected". The real prototype takes `LPDWORD`, so the Rust was correct and the
+    C `0` was a null pointer constant. The model could not know: it saw two bodies
+    and no signature. It is in the same file the Rust body came from.
+    """
+    out: dict[str, str] = {}
+    for match in _EXTERN_FN_RE.finditer(text):
+        # A declaration ends at the first `;` before any `{`.
+        tail = text[match.start() :]
+        semi, brace = tail.find(";"), tail.find("{")
+        if semi < 0 or (0 <= brace < semi):
+            continue  # has a body — a definition, not a prototype
+        out.setdefault(match.group(1), " ".join(tail[:semi].split()) + ";")
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -248,19 +333,22 @@ class PairResult:
 
 
 def _resolve_model(model: str) -> tuple[str, str]:
-    """Return (backend, api_model_id)."""
-    aliases = {
-        "deepseek": ("deepseek", config.DEEPSEEK_MODEL_REASONER),
-        "deepseek-reasoner": ("deepseek", config.DEEPSEEK_MODEL_REASONER),
-        "deepseek-chat": ("deepseek", config.DEEPSEEK_MODEL_CHAT),
-        "v4": ("deepseek", config.DEEPSEEK_MODEL_REASONER),
-        "v4-pro": ("deepseek", "deepseek-reasoner"),
-        "sonnet": ("claude", config.CLAUDE_MODEL_SONNET),
-        "haiku": ("claude", config.CLAUDE_MODEL_HAIKU),
-        "opus": ("claude", "claude-opus-4-8"),
-    }
-    if model in aliases:
-        return aliases[model]
+    """Return (backend, api_model_id).
+
+    Model IDs come from the one canonical alias map (`__main__.MODEL_ALIASES`) that
+    the paid translate path already uses, rather than a second copy here — this
+    module's private copy had gone stale and resolved every deepseek alias to
+    `deepseek-reasoner`, which the provisioned key now rejects with a 400.
+    """
+    from .__main__ import MODEL_ALIASES
+
+    resolved = MODEL_ALIASES.get(model, model)
+    if resolved.startswith("claude"):
+        return ("claude", resolved)
+    if resolved.startswith("gemini"):
+        return ("gemini", resolved)
+    if resolved.startswith("deepseek"):
+        return ("deepseek", resolved)
     if model.startswith("deepseek"):
         return ("deepseek", model)
     if model.startswith("claude"):
@@ -350,9 +438,15 @@ def _cache_dir() -> Path:
 
 
 def diff_pair(
-    name: str, c_src: str, rust_src: str, model: str, use_cache: bool = True
+    name: str,
+    c_src: str,
+    rust_src: str,
+    model: str,
+    use_cache: bool = True,
+    prototypes: str = "",
 ) -> PairResult:
-    key = _cache_key(name, c_src, rust_src, model)
+    # Prototypes are part of what the model is shown, so they belong in the key.
+    key = _cache_key(name, c_src, rust_src + prototypes, model)
     cache_path = _cache_dir() / f"{key}.json"
     if use_cache and cache_path.exists():
         try:
@@ -367,7 +461,7 @@ def diff_pair(
             pass
 
     backend, api_model = _resolve_model(model)
-    user = USER_TEMPLATE.format(name=name, c_src=c_src, rust_src=rust_src)
+    user = USER_TEMPLATE.format(name=name, c_src=c_src, rust_src=rust_src, prototypes=prototypes)
     try:
         if backend == "deepseek":
             text, it, ot = _call_deepseek(api_model, SYSTEM_PROMPT, user)
@@ -423,19 +517,23 @@ def run(
         return 2
 
     scan = scan_file(c_path)
-    c_funcs: dict[str, CFunction] = {f.name: f for f in scan.functions}
     rust_funcs = extract_rust_functions(rs_path.read_text(errors="replace"))
 
-    names = [n for n in c_funcs if n in rust_funcs]
-    missing_rust = [n for n in c_funcs if n not in rust_funcs]
+    prototype_index = extract_extern_prototypes(rs_path.read_text(errors="replace"))
+
+    pairs, missing_rust = _pair_functions(scan.functions, rust_funcs)
     if only:
-        names = [n for n in names if n in only]
-    names.sort()
+        pairs = [p for p in pairs if p[0] in only or p[1].name in only]
+    pairs.sort(key=lambda p: p[0])
     if max_fns:
-        names = names[:max_fns]
+        pairs = pairs[:max_fns]
+
+    c_funcs = {disp: cf for disp, cf, _ in pairs}
+    rust_by_disp = {disp: rf for disp, _, rf in pairs}
+    names = [p[0] for p in pairs]
 
     print(
-        f"[semdiff] C={c_path.name} ({len(c_funcs)} fns)  "
+        f"[semdiff] C={c_path.name} ({len(scan.functions)} fns)  "
         f"Rust={rs_path.name} ({len(rust_funcs)} fns)"
     )
     print(
@@ -452,8 +550,26 @@ def run(
     total = len(names)
 
     def _work(name: str) -> PairResult:
+        rust_body = rust_by_disp[name].body_text
+        # Only the callees this body actually names — the whole index would bury
+        # the signal and re-pay for tokens on every pair.
+        referenced = {
+            callee: decl
+            for callee, decl in prototype_index.items()
+            if re.search(rf"\b{re.escape(callee)}\s*\(", rust_body)
+        }
+        protos = (
+            PROTOTYPE_HEADER.format(decls="\n".join(referenced[k] for k in sorted(referenced)))
+            if referenced
+            else ""
+        )
         return diff_pair(
-            name, c_funcs[name].body_text, rust_funcs[name].body_text, model, use_cache
+            name,
+            c_funcs[name].body_text,
+            rust_body,
+            model,
+            use_cache,
+            prototypes=protos,
         )
 
     with _cf.ThreadPoolExecutor(max_workers=max(1, workers)) as ex:

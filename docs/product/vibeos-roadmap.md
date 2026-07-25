@@ -55,7 +55,7 @@ Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 fro
 
 **Wine-derived userland — ~154 DLLs, ~1.05M LOC (lower priority than Tier 2).** kernelbase (41K, `kernelbase/wine/`), comctl32, comdlg32, ole32, oleaut32, gdiplus, riched20, urlmon, wininet, mshtml, jscript/vbscript, msxml*, windowscodecs, crypt32, wldap32, rpcrt4, the whole `dll/directx/wine/` stack. Re-implementing these from *current* Wine via an LLM pipeline (§7b) beats translating the frozen fork — that's why they sit below the native queue.
 
-**Already translated (frontier boundary):** kernel/win32k, kernel32, ntdll, user32, gdi32, advapi32, secur32, shell32, msafd, mlang, mscms, version, cabinet + the boot/server spine (winsrv, smss-csrss, lsasrv, samsrv, msgina, services, winlogon, userinit, explorer) + the driver fleet.
+**Already translated (frontier boundary):** kernel/win32k, kernel32, ntdll, user32, gdi32, advapi32, secur32, shell32's complete activatable COM surface (its procedural C++ tail remains), msafd, mlang, mscms, version, cabinet + the boot/server spine (winsrv, smss-csrss, lsasrv, samsrv, msgina, services, winlogon, userinit, explorer) + the driver fleet.
 
 ### Tier 4 — Debt burndown (gated at the door; burn opportunistically)
 
@@ -512,15 +512,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Verified: old signature absent from the log entirely, **spider and eventvwr now PASS**
   (both are re-enabled in the winlogon ladder as the regression test), **21 applets + 7
   probe guests green on amd64**.
-- **`ProbeForWrite` raises unhandled in kernel mode → BUGCHECK 0x1E — OPEN** (2026-07-24,
-  task #67). Surfaced *because* E13 let the ladder run further than it ever had. Chain:
-  `ProbeForWrite+0x84` → `ExRaiseAccessViolation+0x14` → `RtlRaiseStatus(0xC0000005)` → no
-  handler under `USE_DUMMY_PSEH` → 0x1E. This is a **software raise**, not E13's hardware
-  fault in a memcpy — do not conflate them. Two instances: `doom` (dies after its window is
-  up and pumping; this rung was already red on master, where it died of E13 first) and
-  `devmgmt` (setupapi enumeration, first time ever reached). **Not caused by the E13 fix —
-  proved by control**: rebuilding with only the callback-direction change reverted
-  reproduces the chain byte-identically. Sibling of task #68 (win32k's
+- **`ProbeForWrite` raises unhandled in kernel mode → BUGCHECK 0x1E — FIXED 2026-07-25**
+  (task #67, §9.133). Chain was `ProbeForWrite+0x90` → `ExRaiseAccessViolation+0x14` →
+  `RtlRaiseStatus(0xC0000005)` → no handler under `USE_DUMMY_PSEH` → 0x1E. **The raise site
+  was `KiInitializeUserApc` (`ke/amd64/usercall.rs`), whose C `_SEH2_TRY`/`_SEH2_EXCEPT` had
+  been translated to a BARE BLOCK with the handler body dropped** — `exception_occurred` was
+  declared and tested but never assigned, so the recovery arm was provably dead code. Fixed
+  per dummy-pseh-verdict Tier 1 (validate-first `probe_user_buffer` + the C `__except` body
+  restored); `ke/i386/usercall.rs` already carried the identical conversion, so amd64 was
+  simply missed. Found by instrumenting the previously-undiagnosed ACCESS_VIOLATION arm of
+  the probe: `Addr=-1280 = -sizeof(UAPC_FRAME)` identified the caller by arithmetic alone,
+  and **refuted** the leading E12/wrong-width-marshal hypothesis in one boot.
+  **Neither doom nor devmgmt was the culprit — `osk.exe` was**; they were downstream victims
+  of the box-kill. Root of the bad pointer is the flat `NtCreateThread` thunk (§9.134, task
+  #64): it returns SUCCESS while building a thread with a zeroed trap frame. Verified same
+  boot command before → after: BUGCHECK 1→0, PROBE-AV 1→0, doom frames died→2022.
+  Still-relevant sibling is task #68 (win32k's
   `_MmCopyFromCaller`/`_MmCopyToCaller` copy user buffers unguarded — `SafeProbeFor*` is
   validate-only and does not touch-test, so any user process, 32- or 64-bit, can kill the
   box with a partially-unmapped buffer; `KmProtectedCopyMemory` is
@@ -535,6 +542,33 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   devmgmt/msconfig/sndrec32/kbswitch stay staged with their winlogon launch held so the 21
   passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
   marker fires long before the ladder runs.
+- **All 1962 Rust-kernel `debug_assert!` are compiled OUT, while the C `ASSERT` they were
+  translated from is LIVE — OPEN** (2026-07-25, task #72, §9.135). `debug_assert!` is gated on
+  `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
+  cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
+  `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of
+  §9.120** — there asserts were lowered to something *stronger* than C (UB / an invented
+  BUGCHECK), here to something *weaker* (nothing). Proof by execution, not inference:
+  `ke/amd64/usercall.rs:96` asserts `(SegCs & MODE_MASK) != 0` and a boot printed
+  `[KI-APC] ... SegCs=0x0` — a forbidden value walked straight past it, and had it fired it
+  would have caught #67/#71 at the source rather than as a bugcheck in another function.
+  Fix is `debug-assertions = true` **plus an explicit `overflow-checks = false`** (it defaults
+  to follow debug-assertions, and kernel-wide overflow panics are a separate, riskier change C
+  never had) — but MEASURE FIRST: 1962 assertions going live at once needs a triage batch.
+- **`NtCreateThread` flat thunk returns SUCCESS with a zeroed thread context — REFUSED LOUDLY
+  2026-07-25** (task #64, §9.134). Five divergent params incl. a `CONTEXT` whose field lists
+  don't correspond across widths. Now returns `STATUS_NOT_IMPLEMENTED` instead of a silently
+  corrupt thread; marshalling the structs alone would be *worse* (a more convincing corpse,
+  still with no CPU-context setup — that needs the per-thread WoW64 entry #64 tracks). Blast
+  radius measured: exactly one call in a full amd64 boot, from `osk.exe`.
+- **arm64 warm build can end with a STALE cohab DLL — OPEN, not reproduced** (2026-07-25,
+  task #70). A gate's arm64 build shipped `kernel32.dll` linked 331ms *before* its own
+  `libkernel32_rust.a`; `artifact-check` caught it and a plain warm rebuild fixed it with no
+  source change, so it was real staleness, not a flaky checker. Two hypotheses eliminated
+  (sccache stop-on-entry — already replaced by pinned per-worktree ports; and port collision
+  — all 11 worktrees hash distinct). Condition present at failure and absent from the repro:
+  concurrent sibling-lane builds. The ninja graph is correct, so it is an ordering violation,
+  not a missing edge.
 - **C assertion macros lowered to UB / to a BUGCHECK — FIXED 2026-07-25** (§9.120).
   Found by a fresh-eyes catalog sweep, not by a crash. `PAGED_CODE()`/`NT_ASSERT()` are
   DIAGNOSTICS (KdPrint+RtlAssert under DBG, **nothing** in retail) and are never
@@ -596,6 +630,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   result: it eliminates MiDeletePte as the reuse path. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
+  **2026-07-25 — the `[PFNMISMATCH]` probe was RUN, and its silence is now a measured result.**
+  A quarantine probe booted the arm64 candidates one list at a time (`tools/conformance_probe.py`).
+  THREE of this family crashed with a recorded verdict, and the detector fired **zero** times
+  across every boot: `NtCreateSection` → `0x50` PAGE_FAULT_IN_NONPAGED_AREA (read of
+  `0xffff800004544040` from PC `0xffff8000048595e0`), `ZwAllocateVirtualMemory` → `0x4E`
+  PFN_LIST_CORRUPT, `IoCreateFile` → `0x1E` (AV at `0xfffff800421c960c`, a driver-range PC).
+  (An earlier revision said FOUR and named `MmMapLockedPagesSpecifyCache` on no evidence — the
+  probe mis-attributed truncation and dropped it unrun, fixed in `fa0b294e3e4`.) **A round-2
+  probe with the fixed tool has now settled every one of those:**
+  `MmMapLockedPagesSpecifyCache` **CRASH** (own verdict — so the original claim was right, but
+  only by luck, and only now evidenced), `IoFilesystem` **CRASH**, `MmReservedMapping` **CRASH**,
+  `NpfsFileInfo` **CRASH**, `SeTokenFiltering` **INCOMPLETE** (it kills the VM outright — no
+  bugcheck, QEMU exits, see the quest doc), and `ExFastMutex` **OK** — un-quarantined, it was
+  arm64's last arch-specific entry. `[PFNMISMATCH]` still fired **zero** times across all of it.
+  The probe strings are compiled into this exact kernel (verified present in
+  `build-arm64/ntoskrnl/ntoskrnl.exe`, absent on i386/amd64), so this is genuine silence, not a
+  missing probe — which **confirms the entry's own prediction** that `MiDeletePte` is not the
+  reuse path. The `ZwAllocateVirtualMemory` crash is newly localised: `MiInsertStandbyListAtFrontImpl`
+  (`ARM3/pfnlist.rs`) subcode `0xAD`, params `(pfn=0x40006, ref=0, frame=0x4259f)`; `ref==0` rules
+  out the reference-count clause, so a page reaches the standby-list-front insert **without
+  `PrototypePte` set**. That guard is a mistranslated `ASSERT` (C no-ops it in retail) but must
+  NOT be silenced — `pfnlist.rs` is arch-generic and amd64 never trips it, so it is detecting the
+  real arm64 divergence (§9.136). Blocked on offline symbolication of the `0x50` PC: the kernel
+  runtime base is not printed on serial, so `addr2sym --reloc` cannot be used (task #33).
 - **net suite `test_tdi_selftest_roundtrip` — flake rate measured 2026-07-24, and it is BAD
   under host load.** 1 pass / 6 attempts in one evening while a sibling lane ran a full arm64
   ninja (host load 4–6). The gate's `NET_FLAKE` auto-retry is 3 attempts, so at this rate a

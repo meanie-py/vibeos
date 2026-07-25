@@ -521,6 +521,39 @@ pub struct IDataObjectVtbl {
     pub EnumDAdvise: usize,
 }
 
+/// IDropTarget (oleidl.h). All slots are typed because shell32 passes this interface
+/// across the shlwapi boundary and releases it locally.
+#[repr(C)]
+pub struct IDropTarget {
+    pub lpVtbl: *mut IDropTargetVtbl,
+}
+#[repr(C)]
+pub struct IDropTargetVtbl {
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IDropTarget, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IDropTarget) -> ULONG,
+    pub Release: unsafe extern "system" fn(*mut IDropTarget) -> ULONG,
+    pub DragEnter: unsafe extern "system" fn(
+        *mut IDropTarget,
+        *mut IDataObject,
+        DWORD,
+        POINTL,
+        *mut DWORD,
+    ) -> HRESULT,
+    pub DragOver: unsafe extern "system" fn(*mut IDropTarget, DWORD, POINTL, *mut DWORD) -> HRESULT,
+    pub DragLeave: unsafe extern "system" fn(*mut IDropTarget) -> HRESULT,
+    pub Drop: unsafe extern "system" fn(
+        *mut IDropTarget,
+        *mut IDataObject,
+        DWORD,
+        POINTL,
+        *mut DWORD,
+    ) -> HRESULT,
+}
+extern "C" {
+    pub static IID_IDropTarget: IID;
+}
+
 #[repr(C)]
 pub struct IPersistFolder2 {
     pub lpVtbl: *mut IPersistFolder2Vtbl,

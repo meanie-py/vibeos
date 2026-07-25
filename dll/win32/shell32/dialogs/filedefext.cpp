@@ -1641,3 +1641,57 @@ CFileDefExt::_CountFolderAndFilesThreadProc(LPVOID lpParameter)
     pThis->CountFolderAndFiles();
     return pThis->Release();
 }
+
+/* C-linkage bridge surface for the Rust-owned CFileDefExt object. The underlying
+ * helpers remain C++ or source-local implementation details. */
+extern "C" BOOL WINAPI PathIsDotOrDotDotW_RustBridge(LPCWSTR path)
+{
+    return PathIsDotOrDotDotW(path);
+}
+
+extern "C" HRESULT WINAPI SHELL_DisplayNameOf_RustBridge(
+    IShellFolder *folder, LPCITEMIDLIST pidl, DWORD flags, LPWSTR *out)
+{
+    return SHELL_DisplayNameOf(folder, pidl, flags, out);
+}
+
+extern "C" LPWSTR WINAPI SH_FormatFileSizeWithBytes_RustBridge(
+    const ULARGE_INTEGER *size, LPWSTR out, UINT capacity)
+{
+    return SH_FormatFileSizeWithBytes(const_cast<PULARGE_INTEGER>(size), out, capacity);
+}
+
+extern "C" BOOL WINAPI GetPhysicalFileSize_RustBridge(
+    LPCWSTR path, PULARGE_INTEGER size)
+{
+    return GetPhysicalFileSize(path, size);
+}
+
+extern "C" HRESULT WINAPI DataObject_GetHIDACount_RustBridge(IDataObject *data)
+{
+    return DataObject_GetHIDACount(data);
+}
+
+extern "C" LPITEMIDLIST *WINAPI _ILCopyCidaToaPidl_RustBridge(
+    LPITEMIDLIST *folder, const CIDA *cida)
+{
+    return _ILCopyCidaToaPidl(folder, cida);
+}
+
+extern "C" HPROPSHEETPAGE WINAPI SH_CreatePropertySheetPage_RustBridge(
+    WORD id, DLGPROC proc, LPARAM param, LPCWSTR title)
+{
+    return SH_CreatePropertySheetPage(id, proc, param, title);
+}
+
+extern "C" HPROPSHEETPAGE WINAPI SH_CreatePropertySheetPageEx_RustBridge(
+    WORD id, DLGPROC proc, LPARAM param, LPCWSTR title, LPFNPSPCALLBACK callback)
+{
+    return SH_CreatePropertySheetPageEx(id, proc, param, title, callback);
+}
+
+extern "C" HRESULT WINAPI SHELL32_GetDllFromRundll32CommandLine_RustBridge(
+    LPCWSTR command, LPWSTR out, UINT capacity)
+{
+    return SHELL32_GetDllFromRundll32CommandLine(command, out, capacity);
+}

@@ -691,15 +691,15 @@ extern "system" {
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
     fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
-    #[link_name = "CPrintersExtractIconW_RustBridge"] fn CPrintersExtractIconW_CreateInstane(pidl: LPCITEMIDLIST, riid: REFIID, out: *mut LPVOID) -> HRESULT;
     fn CPrintersEnum_CreateInstance(owner: HWND, flags: DWORD, out: *mut *mut IEnumIDList) -> HRESULT;
     fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
+    fn SHCreateDefaultExtractIcon(riid: REFIID, out: *mut LPVOID) -> HRESULT;
     fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
+    fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
 }
 
 extern "C" {
     fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
-    #[link_name = "CPrinterFolder_CompareDetails_RustBridge"] fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
 
@@ -720,6 +720,7 @@ extern "C" {
     static IID_IDropTarget: GUID;
     static IID_IExtractIconA: GUID;
     static IID_IExtractIconW: GUID;
+    static swShell32Name: WCHAR;
 }
 
 unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
@@ -760,6 +761,30 @@ extern "C" {
 use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
+
+unsafe fn CPrintersExtractIconW_CreateInstane(
+    _pidl: LPCITEMIDLIST,
+    riid: REFIID,
+    ppv: *mut LPVOID,
+) -> HRESULT {
+    let mut init_icon: *mut IDefaultExtractIconInit = core::ptr::null_mut();
+    let hr = SHCreateDefaultExtractIcon(
+        core::ptr::addr_of!(IID_IDefaultExtractIconInit),
+        core::ptr::addr_of_mut!(init_icon).cast(),
+    );
+    if hr < 0 {
+        return hr;
+    }
+
+    ((*(*init_icon).lpVtbl).SetNormalIcon)(
+        init_icon,
+        core::ptr::addr_of!(swShell32Name),
+        -(IDI_SHELL_PRINTER as i32),
+    );
+    let hr = ((*(*init_icon).lpVtbl).QueryInterface)(init_icon, riid, ppv);
+    ((*(*init_icon).lpVtbl).Release)(init_icon);
+    hr
+}
 
 pub unsafe fn CPrinterFolder_ctor_body(this: *mut CPrinterFolder) -> () {
     (*this).pidlRoot = core::ptr::null_mut();

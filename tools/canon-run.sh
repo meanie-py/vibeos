@@ -34,11 +34,19 @@
 # --------------------------------------------
 # sccache is client/server; the server resolves paths in the mount namespace it was
 # SPAWNED in. A server left over from a build in another worktree would resolve
-# /tmp/vibeos to THAT worktree and compile the wrong sources. So we stop any live
-# server on entry; the first rustc in this namespace auto-spawns a fresh one that
-# sees our mount. (Builds are host-exclusive via hostlock, so this is race-free.
-# A stale in-namespace server is harmless to non-canonical compiles — its namespace
-# still sees all real paths.)
+# /tmp/vibeos to THAT worktree and compile the wrong sources. How that is actually
+# handled is the PER-WORKTREE SERVER PORT block further down.
+#
+# CORRECTED 2026-07-25. This paragraph used to end: "So we stop any live server on
+# entry; the first rustc in this namespace auto-spawns a fresh one that sees our
+# mount. (Builds are host-exclusive via hostlock, so this is race-free.)" BOTH halves
+# are false today, and their combination is exactly what the 2026-07-07 phantom-build
+# incident cost. Stop-on-entry was REPLACED by the pinned per-worktree port below;
+# and builds are NOT host-exclusive — `hostlock._max_builds()` defaults to 2
+# (VIBEOS_MAX_CONCURRENT_BUILDS), which is why every build log announces `n=2`.
+# Kept and corrected rather than deleted: a stale comment asserting a safety property
+# that no longer holds is how the next reader rebuilds the wrong mental model, and
+# this one reads as a guarantee.
 #
 # USAGE
 #   tools/canon-run.sh <cmd> [args...]     # cwd is mapped into the canonical tree

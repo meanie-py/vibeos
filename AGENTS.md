@@ -371,7 +371,10 @@ real incidents.
    hits make it fast. The old `cp -a` + sed-repoint ceremony is RETIRED — **never symlink a
    build dir** (a reconfigure through the symlink corrupts main's tree) and never hand-copy one.
    Do copy the gitignored arm64 boot assets (`qemu/QEMU_EFI.fd`, `efivars.fd`) from main. Raw
-   ninja needs the mount: `../tools/canon-run.sh ninja <target>` from inside `build-<arch>/`.
+   ninja needs the mount: `bash ../tools/canon-run.sh ninja <target>` from inside
+   `build-<arch>/`. The `bash` is required — `canon-run.sh` is committed non-executable and
+   the CLI always invokes it as `["bash", …]` (`cli/canon.py`), so exec'ing it directly is
+   `Permission denied`.
 4. **`pip install -e` shadowing.** `python -m rustconv` resolves to the **main-repo** path baked
    into site-packages, not your worktree. Prefix `PYTHONPATH=$W/tools/rustconv:$PYTHONPATH` and
    verify with `python -c "import rustconv.__main__ as m; print(m.__file__)"`.

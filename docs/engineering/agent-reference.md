@@ -102,22 +102,22 @@ ninja iteration, prefix with the wrapper — **plain `ninja` in a build dir fail
 ```bash
 # ARM64
 cd build-arm64
-../tools/canon-run.sh ninja            # Build everything
-../tools/canon-run.sh ninja ntoskrnl   # Just the kernel
+bash ../tools/canon-run.sh ninja            # Build everything
+bash ../tools/canon-run.sh ninja ntoskrnl   # Just the kernel
 
 # amd64 / i386 (same pattern)
 cd build-amd64
-../tools/canon-run.sh ninja livecd     # Live CD ISO (livecd.iso)
-../tools/canon-run.sh ninja bootcd     # Boot CD ISO (bootcd.iso)
+bash ../tools/canon-run.sh ninja livecd     # Live CD ISO (livecd.iso)
+bash ../tools/canon-run.sh ninja bootcd     # Boot CD ISO (bootcd.iso)
 
 # Common patterns
-../tools/canon-run.sh ninja -k0        # Continue past errors
-../tools/canon-run.sh ninja <target>   # Any target — list: ... ninja -t targets all | grep <name>
+bash ../tools/canon-run.sh ninja -k0        # Continue past errors
+bash ../tools/canon-run.sh ninja <target>   # Any target — list: ... ninja -t targets all | grep <name>
 ```
 
 After modifying a `CMakeLists.txt` or `.cmake` file, re-run cmake before building:
 ```bash
-../tools/canon-run.sh cmake .          # Re-configure (from any build-*/ dir)
+bash ../tools/canon-run.sh cmake .          # Re-configure (from any build-*/ dir)
 ```
 
 ## Toolchain
@@ -254,7 +254,7 @@ cargo test -p slist-loom
 
 ```bash
 # 1. Build test kernel (canonical wrapper — see Build Commands)
-cd build-arm64 && ../tools/canon-run.sh sh -c 'cmake . -DREACTOS_TEST_KERNEL=ON && ninja ntoskrnl'
+cd build-arm64 && bash ../tools/canon-run.sh sh -c 'cmake . -DREACTOS_TEST_KERNEL=ON && ninja ntoskrnl'
 cd ..
 
 # 2. Update ramdisk
