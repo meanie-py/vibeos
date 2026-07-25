@@ -1,17 +1,8 @@
 {
-  "version": 1,
   "active": {
-    "hybrid": [
-      "dll/win32/shell32/dialogs/drvdefext.cpp",
-      "dll/win32/shell32/dialogs/filedefext.cpp",
-      "dll/win32/shell32/folders/CDesktopFolder.cpp",
-      "dll/win32/shell32/folders/CFSFolder.cpp",
-      "dll/win32/shell32/folders/CDrivesFolder.cpp",
-      "dll/win32/shell32/folders/CNetFolder.cpp",
-      "dll/win32/shell32/folders/CControlPanelFolder.cpp",
-      "dll/win32/shell32/folders/CRecycleBin.cpp",
-      "dll/win32/shell32/COpenWithMenu.cpp",
-      "dll/win32/shell32/shellmenu/CMergedFolder.cpp"
+    "c_tail": [
+      "dll/win32/shell32/shellrecyclebin/recyclebin.c",
+      "dll/win32/shell32/shellrecyclebin/guid.c"
     ],
     "dynamic": [
       "dll/win32/shell32/CIDLDataObj.cpp",
@@ -29,35 +20,29 @@
       "dll/win32/shell32/CFolderItems.cpp",
       "dll/win32/shell32/CFolderItemVerbs.cpp"
     ],
-    "shared": [
-      "dll/win32/shell32/shelldesktop/CChangeNotifyServer.cpp",
-      "dll/win32/shell32/shelldesktop/CDesktopBrowser.cpp",
-      "dll/win32/shell32/shelldesktop/CDirectoryWatcher.cpp",
-      "dll/win32/shell32/shelldesktop/CDirectoryList.cpp",
-      "dll/win32/shell32/shelldesktop/dde.cpp",
-      "dll/win32/shell32/shellmenu/CMenuFocusManager.cpp",
-      "dll/win32/shell32/shellmenu/CMenuToolbars.cpp",
-      "dll/win32/shell32/shellmenu/CStartMenu.cpp",
-      "dll/win32/shell32/shellrecyclebin/recyclebin_generic.cpp",
-      "dll/win32/shell32/shellrecyclebin/recyclebin_generic_enumerator.cpp",
-      "dll/win32/shell32/shellrecyclebin/recyclebin_v5.cpp",
-      "dll/win32/shell32/shellrecyclebin/recyclebin_v5_enumerator.cpp"
+    "hybrid": [
+      "dll/win32/shell32/dialogs/drvdefext.cpp",
+      "dll/win32/shell32/dialogs/filedefext.cpp",
+      "dll/win32/shell32/folders/CDesktopFolder.cpp",
+      "dll/win32/shell32/folders/CFSFolder.cpp",
+      "dll/win32/shell32/folders/CDrivesFolder.cpp",
+      "dll/win32/shell32/folders/CNetFolder.cpp",
+      "dll/win32/shell32/folders/CControlPanelFolder.cpp",
+      "dll/win32/shell32/folders/CRecycleBin.cpp",
+      "dll/win32/shell32/COpenWithMenu.cpp",
+      "dll/win32/shell32/shellmenu/CMergedFolder.cpp"
     ],
     "leaf": [
       "dll/win32/shell32/changenotify.cpp",
-      "dll/win32/shell32/debughlp.cpp",
       "dll/win32/shell32/dialogs/drive.cpp",
       "dll/win32/shell32/dialogs/folder_options.cpp",
       "dll/win32/shell32/dialogs/item_prop.cpp",
       "dll/win32/shell32/dialogs/general.cpp",
       "dll/win32/shell32/dialogs/recycler_prop.cpp",
-      "dll/win32/shell32/dialogs/view.cpp",
-      "dll/win32/shell32/folders.cpp",
       "dll/win32/shell32/propsheet.cpp",
       "dll/win32/shell32/shldataobject.cpp",
       "dll/win32/shell32/shlfolder.cpp",
       "dll/win32/shell32/stubs.cpp",
-      "dll/win32/shell32/systray.cpp",
       "dll/win32/shell32/CDefViewUtil.cpp"
     ],
     "monolith": [
@@ -72,17 +57,28 @@
       "dll/win32/shell32/CDefView.cpp",
       "dll/win32/shell32/shell32.cpp"
     ],
-    "c_tail": [
-      "dll/win32/shell32/shellrecyclebin/recyclebin.c",
-      "dll/win32/shell32/shellrecyclebin/guid.c"
-    ]
-  },
-  "sanctioned": {
-    "variadic_abi": [
-      "dll/win32/shell32/rust_varargs_shim.c"
+    "shared": [
+      "dll/win32/shell32/shelldesktop/CChangeNotifyServer.cpp",
+      "dll/win32/shell32/shelldesktop/CDesktopBrowser.cpp",
+      "dll/win32/shell32/shelldesktop/CDirectoryWatcher.cpp",
+      "dll/win32/shell32/shelldesktop/CDirectoryList.cpp",
+      "dll/win32/shell32/shelldesktop/dde.cpp",
+      "dll/win32/shell32/shellmenu/CMenuFocusManager.cpp",
+      "dll/win32/shell32/shellmenu/CMenuToolbars.cpp",
+      "dll/win32/shell32/shellmenu/CStartMenu.cpp",
+      "dll/win32/shell32/shellrecyclebin/recyclebin_generic.cpp",
+      "dll/win32/shell32/shellrecyclebin/recyclebin_generic_enumerator.cpp",
+      "dll/win32/shell32/shellrecyclebin/recyclebin_v5.cpp",
+      "dll/win32/shell32/shellrecyclebin/recyclebin_v5_enumerator.cpp"
     ]
   },
   "removed": {
+    "free_function_tu": [
+      "dll/win32/shell32/debughlp.cpp",
+      "dll/win32/shell32/dialogs/view.cpp",
+      "dll/win32/shell32/folders.cpp",
+      "dll/win32/shell32/systray.cpp"
+    ],
     "hybrid": [
       "dll/win32/shell32/CDropTargetHelper.cpp",
       "dll/win32/shell32/CActiveDesktop.cpp",
@@ -94,5 +90,11 @@
       "dll/win32/shell32/folders/CPrinterFolder.cpp",
       "dll/win32/shell32/CCopyMoveToMenu.cpp"
     ]
-  }
+  },
+  "sanctioned": {
+    "variadic_abi": [
+      "dll/win32/shell32/rust_varargs_shim.c"
+    ]
+  },
+  "version": 1
 }

@@ -246,7 +246,8 @@ public:
     END_MSG_MAP()
 };
 
-void PostCabinetMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
+/* Rust-owned (shell32-rust/src/dialogs/view.rs): C linkage for the cohab symbol. */
+EXTERN_C void PostCabinetMessage(UINT Msg, WPARAM wParam, LPARAM lParam);
 
 BOOL BindCtx_ContainsObject(_In_ IBindCtx *pBindCtx, _In_ LPCWSTR pszName);
 DWORD BindCtx_GetMode(_In_ IBindCtx *pbc, _In_ DWORD dwDefault);

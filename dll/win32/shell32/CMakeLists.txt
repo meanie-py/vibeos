@@ -25,7 +25,7 @@ list(APPEND SOURCE
     # CQueryAssociations.cpp — class plus association description helpers are Rust-owned
     # (shell32-rust/src/query_associations.rs).
     changenotify.cpp
-    debughlp.cpp
+    # debughlp.cpp — replaced by Rust (shell32-rust/src/debughlp.rs); cohab via libshell32_rust.a
     dialogs/dialogs.cpp
     dialogs/drive.cpp
     dialogs/drvdefext.cpp
@@ -38,12 +38,12 @@ list(APPEND SOURCE
     dialogs/item_prop.cpp
     dialogs/general.cpp
     dialogs/recycler_prop.cpp
-    dialogs/view.cpp
+    # dialogs/view.cpp — replaced by Rust (shell32-rust/src/dialogs/view.rs); cohab via libshell32_rust.a
     # CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
     # are Rust-owned (shell32-rust/src/drop_target_helper.rs).
     CEnumIDListBase.cpp
     CExtractIcon.cpp
-    folders.cpp
+    # folders.cpp — replaced by Rust (shell32-rust/src/folders.rs); cohab via libshell32_rust.a
     iconcache.cpp
     propsheet.cpp
     shell32.cpp
@@ -92,7 +92,7 @@ list(APPEND SOURCE
     CDefViewDual.cpp
     CDefViewBckgrndMenu.cpp
     stubs.cpp
-    systray.cpp
+    # systray.cpp — replaced by Rust (shell32-rust/src/systray.rs); cohab via libshell32_rust.a
     # CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
     CDefaultContextMenu.cpp
     # Hybrid cohab: COpenWithMenu activation/methods are Rust-owned; this file
