@@ -10168,3 +10168,112 @@ is separately unusable on i386 (it matched `STATUS_UNWIND_CONSOLIDATE+5018868` f
 `.text` address — it is matching absolute constant symbols). Until task #28 lands,
 symbolicate i386 by hand: the bugcheck banner prints `P2 = ntoskrnl.exe+0xRVA`, and
 `VA = 0x400000 + RVA` against `llvm-nm --numeric-sort build-i386/ntoskrnl/ntoskrnl.exe`.
+
+### 9.120 (2026-07-25) A wrong stop code doesn't just mislabel a crash — it relocates the HUNT. Two long-standing bugs were being chased in the wrong subsystem
+
+§9.113 fixed 61 invented `KeBugCheck` stop codes. The fix was correct and complete. What
+nobody did afterwards was **re-read the recorded evidence that those wrong numbers had
+produced** — and the bug registry had been quoting them for weeks. Two entries were pointing
+at the wrong subsystem entirely.
+
+The general method both cases use: **a bugcheck's PARAMETERS identify the raiser far more
+reliably than its stop code**, because the parameters are real values from the raising site
+while the code is just a constant the translation may have fabricated. Enumerate every site
+that could produce the observed code *in the tree as it stood when the hit was recorded*,
+then match on parameter shape and arity.
+
+**Case 1 — "arm64 BUGCHECK 0x3 INVALID_AFFINITY_SET" is `RESOURCE_NOT_OWNED`.**
+
+Enumerated over `d3ca121cb09^` (the tree at the time of the hits), the sites that could raise
+stop code 3 were:
+
+- exactly **two** in Rust, both `ex-rust/src/resource.rs` — `ExReleaseResourceForThreadLite`
+  and `ExSetResourceOwnerPointer`, whose `RESOURCE_NOT_OWNED` (0xE3) had come back from the
+  LLM as `0x03`;
+- exactly **one** in C, `ke/thrdschd.c`'s `KeBugCheck(INVALID_AFFINITY_SET)` — and
+  `KeBugCheck` passes **all four parameters as zero**.
+
+The recorded hit was `0x3 (0xfffffa0006343870, 0xfffffa0006221c00, 0, 3)`. Four non-zero
+parameters rules out the C site outright. The shape matches the Rust site exactly:
+
+```
+KeBugCheckEx(0x03, Resource, Thread, Resource->OwnerTable, 3)
+             ^^^^  ^pool ptr ^pool ptr  ^NULL              ^literal
+```
+
+Two plausible arm64 pool pointers, `OwnerTable == NULL`, and a literal trailing `3` that no
+affinity check has any reason to pass. Meanwhile `KiSetAffinityThread` was raising `0x48` at
+the time, so it **provably could not** have produced a 0x3.
+
+So the flake is a thread releasing an ERESOURCE it does not own. The Rust is a faithful
+translation (the C's `ASSERT(Owner != NULL)` is a retail no-op), so it is a real ownership
+bug, not a translation bug.
+
+The costly part: a `[AFFPROBE]` probe had been added to `KeSetSystemAffinityThread` to catch
+"whoever passes a mask excluding all active CPUs." It never fired, and that was written down
+as *"the bad mask reaches the scheduler by another route."* **There was never a bad mask.** A
+probe on the wrong subsystem produces silence, and silence reads exactly like a negative
+result — so it doesn't just fail to help, it manufactures false evidence. The probe is kept
+(post-§9.113 `KiSetAffinityThread` is a live 0x3 candidate again) but its comment now says
+what its silence does and does not prove.
+
+**Case 2 — task #7 (amd64) and task #19/§9.97 (arm64) are the same check, and arm64 had it
+disabled.**
+
+Task #7 read: *"BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class, P1=0x401) — MmMapLockedPagesSpecifyCache
+PTE/PFN accounting in the Rust MDL-map path."* Every clause after the parameters is wrong.
+`0x1000` is not a stop code at all (PFN_LIST_CORRUPT is 0x4E); it was an invented number, and
+in the entire pre-fix kernel it appeared at exactly **four** sites, all in `ARM3/virtual.rs`,
+with subcodes `0x61940 / 0x61940 / 0x400 / 0x401`. So `P1=0x401` uniquely identifies
+`MiDeletePte`'s PFN back-pointer check — different file, different subsystem, nothing to do
+with MDLs:
+
+```rust
+if ((*Pfn1).pte_address() as ULONG_PTR & !0x1) != PointerPte as ULONG_PTR {
+    KeBugCheckEx(MEMORY_MANAGEMENT, 0x401, PointerPte, PointerPte->Long, Pfn1->PteAddress);
+}
+```
+
+That check asserts the PFN database's back-pointer names the PTE being torn down — i.e. it
+fires precisely when a physical frame has been re-handed-out while still mapped. Which is
+§9.97's *proven* diagnosis, filed as a separate bug on a separate arch.
+
+And on arm64 that check is `#ifdef`'d out, replaced by a silent repair:
+
+```c
+#ifdef _M_ARM64
+    /* ARM64: PFN tracking mismatch — fix up PteAddress and continue.
+     * This can happen when pages are reused across session/process boundaries
+     * and the PFN database doesn't track the new PTE correctly. */
+    Pfn1->PteAddress = PointerPte;
+#else
+    KeBugCheckEx(MEMORY_MANAGEMENT, 0x401, ...);
+#endif
+```
+
+The workaround comment is a verbatim description of the bug it was hiding, written during
+Milestone-11 bring-up. **arm64 had been suppressing the one detector that fires at the moment
+of reuse** — while §9.97's "owed next step" was to go write a new free-while-mapped tripwire.
+One already existed, disabled, in the file the amd64 twin was bugchecking from.
+
+Fix: keep the repair (removing it converts a booting arch into a bugchecking one) but make it
+loud — a `[PFNMISMATCH]` line carrying the PTE, the stale back-pointer, the PTE value and the
+PFN index. Silence is a result too: it eliminates `MiDeletePte` as the reuse path for the cost
+of four trace calls.
+
+**Durable lessons:**
+
+1. **After fixing a class of bad data, re-audit everything derived FROM it.** §9.113 fixed the
+   codes; it did not fix the two registry entries, the task titles, or the instrumentation that
+   had been written on top of them. The fix and the fallout are separate pieces of work, and
+   the fallout is where the wasted debugging lives.
+2. **Parameters beat the stop code.** Params come from the raising site; a translated stop code
+   may be fiction. Enumerate candidate raisers *in the tree as of the hit* and match on arity
+   and shape — `KeBugCheck` (all-zero params) versus `KeBugCheckEx` alone eliminated a whole
+   subsystem here.
+3. **A probe aimed at the wrong subsystem is worse than no probe**, because its silence gets
+   recorded as a negative result. Before trusting "the probe never fired," prove the probe
+   could have fired.
+4. **A workaround comment that explains *when* the thing it suppresses would happen is a bug
+   report.** Grep for the `#ifdef <ARCH>`-plus-apology pattern; each one is a disabled detector,
+   and the apology usually names the bug someone else is still hunting.

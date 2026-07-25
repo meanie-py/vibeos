@@ -740,6 +740,16 @@
 @ fastcall -arch=i386,arm KiReleaseSpinLock(ptr)
 @ cdecl -arch=i386,arm KiUnexpectedInterrupt()
 @ stdcall -arch=i386 Kii386SpinOnSpinLock(ptr long)
+# vibeos-internal, not an NT API: the fault-tolerant kernel copy (returns 1 on
+# success, 0 if the copy faulted). Exported because win32k.sys is a separate PE
+# and needs it for _MmCopy{From,To}Caller — and it CANNOT carry its own copy on
+# i386, where the primitive is a fault-fixup whose exception table lives in the
+# kernel's KiTrap0EHandler and keys on a link-time PC (field manual §9.119).
+# amd64/arm64: the native-SEH shim in ntoskrnl/kmsafecopy.c. i386: the extable
+# primitive in ntoskrnl-rust ke/i386/safecopy.rs.
+# NOT `-private`: spec2def skips private exports when generating the IMPORT LIB
+# (spec2def.c:750), so win32k.sys would fail to link against it.
+@ cdecl KmProtectedCopyMemory(ptr ptr long)
 @ stdcall LdrAccessResource(ptr ptr ptr ptr)
 @ stdcall LdrEnumResources(ptr ptr long ptr ptr)
 @ stdcall LdrFindResourceDirectory_U(ptr ptr long ptr)
