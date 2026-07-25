@@ -2,6 +2,10 @@ use crate::types::*;
 use crate::glue::*;
 use core::ffi::c_void;
 
+// ---- SIO_* (ws2def.h) — computed by tools/gen_ioctl_consts.py through the _WSAIO* macro chain; a function-like macro is invisible to bindgen, so these arms were catch-all bindings (§9.112a) ----
+pub const SIO_ADDRESS_LIST_QUERY: u32 = 0x48000016; // _WSAIOR(IOC_WS2,22)
+pub const SIO_GET_EXTENSION_FUNCTION_POINTER: u32 = 0xc8000006; // _WSAIORW(IOC_WS2,6)
+
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
 // potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).

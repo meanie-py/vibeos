@@ -174,6 +174,7 @@ pub const VT_VOID: u16 = 24;  // VARTYPE
 // hand additions (values from com-sys VARENUM_/tagDESCKIND_ bindgen consts)
 pub const VT_HRESULT: u16 = 25;  // VARTYPE
 pub const VT_PTR: u16 = 26;  // VARTYPE
+pub const VT_CARRAY: u16 = 28;  // VARTYPE
 pub const VT_UINT_PTR: u16 = 38;  // VARTYPE
 pub const DESCKIND_FUNCDESC: u32 = 1;
 pub const DESCKIND_VARDESC: u32 = 2;

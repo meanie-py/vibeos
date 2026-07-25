@@ -159,12 +159,25 @@ already had one "brutal consolidation" of 40 docs down to 11.)
   — identical content from a divergent lineage collapses to a no-op. A genuine conflict is the
   rare real signal: resolve it and move on. If it didn't conflict, there was nothing to look at;
   stop narrating it. (The rewind incident was a `reset --hard` to a stale ref, **not** a merge.)
+- **Land with `./vibeos-cli land`, not gate-then-push by hand** (2026-07-25). It holds ONE
+  fleet-wide FIFO lock across fetch → merge `origin/master` → gate → push, so master cannot move
+  under a gating lane. Hand-rolling it is what made every lane race: the stamp is keyed to an
+  exact TREE, so whoever pushes first voids everyone else's gate and forces a re-gate — and each
+  wasted gate is 3 builds + 4 boots of fleet load that widens the window that voided it. `land`
+  also skips the gate when a fresh green stamp already covers the tree, so "I gated and nobody
+  raced me" costs seconds. `./vibeos-cli land-status` (or `host-status`) shows who holds it.
+- **Never move the local `master` ref from a worktree that doesn't have it checked out** — no
+  `branch -f master`, no `update-ref`, no `fetch origin master:master`. That leaves the OTHER
+  worktree's index+files at the old tree, which resurfaces as a giant phantom staged revert (the
+  main checkout was found on 2026-07-25 showing 61 commits of landed work as a 197K-line staged
+  deletion). Push the ref straight to origin (`git push origin HEAD:master`, which is what `land`
+  does); every worktree then picks it up with its own `git fetch && git merge origin/master`.
 
 **Landing is mechanized:** a green FULL `vibeos-cli gate` on a clean tree mints a push stamp
-(`$GIT_COMMON_DIR/vibeos-gate-stamp.json`); the `pre-push` hook refuses `master` updates whose
-tree doesn't match a fresh (<24h) stamp. Docs-only deltas pass automatically. Emergency
+(`$GIT_COMMON_DIR/vibeos-gate-stamps/<tree>.json`); the `pre-push` hook refuses `master` updates
+whose tree doesn't match a fresh (<24h) stamp. Docs-only deltas pass automatically. Emergency
 override `VIBEOS_SKIP_GATE_CHECK=1 git push` is loud — report every use. Partial-arch or
-dirty-tree gates never stamp.
+dirty-tree gates never stamp. The hook is the *backstop*; `land` is the front door.
 
 ### Smoke tests are the north star
 
@@ -252,7 +265,10 @@ guide: `tests/qemu/cli/README.md`.
 ./vibeos-cli check                          # source lints, 0 NEW vs tools/lint-baseline/
 ./vibeos-cli check-tooling                  # ruff+pyright+pytest for OUR python
 ./vibeos-cli gate                           # build serial -> smoke all arches parallel -> retry known flakes
+./vibeos-cli land                           # THE way to land: FIFO lock -> merge master -> gate -> push
+./vibeos-cli land-status                    # who is landing right now + who is queued
 ./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
+./vibeos-cli host-status                    # build/boot CPU leases + the land lock, across worktrees
 ./vibeos-cli debug  start amd64 --gdb       # GDB over the real (UEFI) boot
 ./vibeos-cli smoke  --arch amd64 --tripwire "SPECIALPOOL=Gla5"
 ./vibeos-cli farm   --arches amd64 --minutes 480   # overnight flake soak

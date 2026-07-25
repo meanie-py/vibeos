@@ -699,6 +699,16 @@ pub const _MOUSE_TYPE_Ps2pp: I8042_MOUSE_TYPE = I8042_MOUSE_TYPE::Ps2pp;
 pub const _MOUSE_TIMEOUT_STATE_Idle: TRANSMIT_STATE = TRANSMIT_STATE::Idle;
 pub const _MOUSE_TIMEOUT_STATE_SendingBytes: TRANSMIT_STATE = TRANSMIT_STATE::SendingBytes;
 
+// The translation also spells I8042_DEVICE_TYPE members with bindgen's
+// `_<ENUM>_<Variant>` prefix. Nothing defined those, so i8042prt.rs's
+// `_I8042_DEVICE_TYPE_Keyboard` arm bound EVERY device type and the Mouse arm
+// below it was dead — the FDO would have taken the keyboard path for a mouse.
+pub const _I8042_DEVICE_TYPE_Unknown: I8042_DEVICE_TYPE = I8042_DEVICE_TYPE::Unknown;
+pub const _I8042_DEVICE_TYPE_Keyboard: I8042_DEVICE_TYPE = I8042_DEVICE_TYPE::Keyboard;
+pub const _I8042_DEVICE_TYPE_Mouse: I8042_DEVICE_TYPE = I8042_DEVICE_TYPE::Mouse;
+pub const _I8042_DEVICE_TYPE_PhysicalDeviceObject: I8042_DEVICE_TYPE =
+    I8042_DEVICE_TYPE::PhysicalDeviceObject;
+
 // ============================================================================
 // i386 size cross-check vs the C build (ground truth from szprobe against the
 // real kernel build flags). A mismatch here = pool corruption at IoCreateDevice

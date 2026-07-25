@@ -65,7 +65,14 @@ LIVE_LOG_DIR = QEMU_DIR
 # spent queued is excluded from the 30-min lifetime cap: we acquire the slot
 # BEFORE recording the VM's start/deadline, so queue wait never shortens the
 # VM's allowed runtime.
-QEMU_MAX_CONCURRENT = int(os.environ.get("VIBEOS_QEMU_MAX_CONCURRENT", "10"))
+#
+# 10 → 16 (2026-07-25): this is the OUTER bound, and the real smoke throttle is the
+# hostlock `bootcpu` pool, which is now capacity-derived (8 on this 16C/32T box, was a flat
+# 4). At 10 an 8-boot fleet left only 2 slots for everything else — a `debug start`, a
+# `boot --until`, a farm worker — so interactive debugging queued behind other lanes' gates.
+# 16 uniprocessor TCG guests are ~16-21 busy host threads and ~16 GB, which this box has;
+# anything that actually needs protecting from oversubscription is protected by `bootcpu`.
+QEMU_MAX_CONCURRENT = int(os.environ.get("VIBEOS_QEMU_MAX_CONCURRENT", "16"))
 QEMU_QUEUE_TIMEOUT = float(os.environ.get("VIBEOS_QEMU_QUEUE_TIMEOUT", "1800"))
 SLOT_DIR = LOCK_DIR / "slots"
 
