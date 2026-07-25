@@ -1738,6 +1738,25 @@ only a per-thread WoW64 entry can provide. **Losing a thread beats losing the bo
 beats a convincing corpse.** Blast radius was *measured, not assumed*: exactly one call in a full
 boot, from one applet.
 
+### Ask where the payload LANDS: a divergence into global kernel state is a different bug
+Most WoW64 divergences corrupt the guest that caused them. `NtUserInitializeClientPfnArrays`
+does not: win32k `RtlCopyMemory`s the caller's `PFNCLIENT`/`PFNCLIENTWORKER` — arrays of
+function pointers, 4 bytes guest / 8 host — into **`gpsi->apfnClientA/W/Worker` and
+`aStoCidPfn`**, the *global* server info every process shares, and sets the global
+`hModClient`. A 32-bit guest reaching that body is read for the HOST struct size (~2× its own
+buffer) and installs pairwise-merged garbage as the **system-wide** client-callback table,
+breaking native 64-bit callbacks. **Same divergence class, categorically larger blast radius —
+so triage a finding by where the payload lands, not only by how the widths differ.**
+
+It has never fired, for one reason: win32k early-outs on `ClientPfnInit != 0`, and native
+user32 (csrss/winlogon) always wins that race long before a guest starts. **That is
+initialization order, not a guarantee, and "currently unreachable by luck" is worth a
+one-line intercept.** Fixed in the thunk layer, not win32k (the E13 rule), by returning
+`STATUS_SUCCESS` without calling the kernel — which is precisely what the early-out already
+produced, so observable behaviour is unchanged and the ordering dependency is gone. The guest
+loses nothing: 32-bit callbacks are dispatched by the WoW64 callback bridge through
+`Wow64pKiUserCallbackDispatcher32`, never through `gpsi`.
+
 ### An OUT `PHANDLE` divergence splits by ALIGNMENT — half silent overrun, half spurious failure
 A `HANDLE` out-param is 4 bytes in the guest and 8 on the host, so a flat thunk hands the 64-bit
 kernel a four-byte cell to write eight bytes into. The interesting part is that this does not
