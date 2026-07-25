@@ -781,8 +781,8 @@ would have fired for whoever followed the documented loop:
    FACT envelope fails the same way — `BrFolder_OnContextMenu`/`OnInitDialog` dropped constants
    for the same reason — so this is not call-specific. Note the blast radius: a rejected worker
    means the TU assembles **no output at all**, so one bad function costs the whole file until
-   re-run. In this batch that was **5 of 11 completed TUs** (dialogs, iconcache, shlfolder,
-   drive, brfolder) — the dominant cost of the wave, not a tail case.
+   re-run. In this batch that was **7 of 12 completed TUs** (shlexec, shlfileop, dialogs,
+   brfolder, iconcache, drive, shlfolder) — the dominant cost of the wave, not a tail case.
    `_EXCLUDED` is a hand-maintained denylist and cannot scale to the SDK's macro surface; the fix
    is a positive authority test (seal only a callee provably a real function). **Three candidate
    authorities were tested and all three are dead ends** — check before reaching for them again:
@@ -797,8 +797,9 @@ would have fired for whoever followed the documented loop:
    whole file. **The same applies to FIXING this** — the contract lists the token set
    (`Call tokens (N): …`), so any change to what gets sealed rewrites it and invalidates every
    banked entry for the TU. Budget the repair as a full re-translate of each affected file, not
-   as "re-pay only the rejects": one shell32 wave left **216 accepted functions** banked behind
-   ~25 rejects, and they come back at full price, not free.
+   as "re-pay only the rejects": one shell32 wave left **226 accepted functions** banked behind
+   34 rejects, and they come back at full price, not free. shlfileop is the sharpest case —
+   69 of 73 functions translated cleanly and 4 rejects voided the file.
 
 > **The cache-key trap while fixing this: do NOT reword the contract text.** It is hashed into the
 > resume-cache key, so rewording invalidates every banked sealed entry and **re-charges for
