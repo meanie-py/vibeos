@@ -347,6 +347,27 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The WoW64 flat-thunk blind spot. wow64gen types its thunks from the
+    # .spec, which says only "this arg is a pointer" — never what it points AT.
+    # When the real prototype takes a pointer to a payload whose 32- and 64-bit
+    # layouts differ, the generated FLAT thunk hands 64-bit win32k the guest's
+    # 32-bit struct and the kernel reads it with 64-bit eyes. Because such a
+    # call is never flagged NEEDS_MANUAL, `marshalgen report` cannot see it —
+    # so the class was found three times the expensive way instead, each as a
+    # live BUGCHECK 0x1E from a garbage UNICODE_STRING.Buffer (E6 GetAtomName /
+    # GetClassName, E8 UnregisterClass, E9 FindWindowEx), plus E7's HWND-array
+    # heap overrun. `marshalgen audit` cross-checks every LIVE flat thunk in
+    # the generated table against its real header prototype using clang's own
+    # 32/64 record layouts, so a new one is caught at build time instead of by
+    # the next applet to call it. Baseline gates NEW.
+    mga = repo / "tools" / "wow64gen" / "marshalgen.py"
+    specs.append(
+        (
+            "marshalgen_audit",
+            [py, str(mga), "audit"] if mga.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Same-crate extern-decl vs #[no_mangle]-def calling-convention drift: UB
     # that LLVM resolves by silently DELETING the calling branch on i386 (no
     # ud2, no link error — the desktop-icons U32AccelCacheLock bug, field

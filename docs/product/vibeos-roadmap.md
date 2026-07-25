@@ -479,6 +479,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **amd64 WoW64 `g_MsgMemory` SendMessage payload over-read — OPEN, reproduces on master**
+  (2026-07-24, §9.114, task E13). Every amd64 boot with the WoW64 applet ladder BUGCHECKs
+  `0x1E`/`C0000005` at `win32k+0x258EC` ~3.5 min in: `cnt_rust::cabi::raw_move` ←
+  `memcpy` ← `win32k_rust::message::g_MsgMemory` ← `co_IntDoSendMessage`. `g_MsgMemory`
+  (`win32k-rust/src/message.rs:407`) sizes pointer-lParam message payloads with the **host's**
+  `size_of::<T>()` (WINDOWPOS, DRAWITEMSTRUCT, MEASUREITEMSTRUCT, MINMAXINFO, …), so a
+  32-bit WoW64 sender's buffer is over-read. M15a/M16/M18 covered the *callback* direction
+  and `NtUserMessageCall`'s WINDOWPOS lParam; the **SendMessage** direction is uncovered.
+  **Confirmed pre-existing by control experiment** (pristine-master rebuild bugchecks
+  byte-identically). Timing-dependent — spider PASSed one boot and killed the next, so one
+  green boot is not evidence. Repro in seconds: launch `spider.exe` or `eventvwr.exe` from
+  `reactos/syswow64` (both staged; their winlogon auto-launch is held so the 12 earlier
+  ladder rungs keep reporting). Fix is win32k-side and needs payload *conversion*, not just
+  a smaller size — DRAWITEMSTRUCT/MEASUREITEMSTRUCT carry HWND/HDC/ULONG_PTR fields whose
+  offsets shift. Note the smoke gate stays GREEN through this: the boot marker fires long
+  before the ladder runs.
 - **arm64 0x1E / `[WAITDEP]` ALL-ONES residual — CLOSED 2026-07-17** (§9.92 item 4). The
   "~2 hits / 2 days" residual was the SAME netstack-TDI wait-block bug as §9.36 on the
   *synchronous*-completion path the 07-08 fix didn't cover (`IofCompleteRequestInner`'s

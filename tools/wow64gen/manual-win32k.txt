@@ -77,6 +77,46 @@ NtUserEnumDisplayDevices
 # the silent-wrong flat thunk. Add a marshaller when a guest reaches them.
 NtUserCreateDesktop
 NtUserGetIconInfo
+# E10: found MECHANICALLY by `marshalgen audit` (vibeos-cli check) instead of by
+# the next applet to bugcheck — it diffs every LIVE flat thunk in the generated
+# table against its real header prototype using clang's 32/64 record layouts.
+# These have marshallers in wow64_manual.c:
+#   NtGdiCreateDIBSection    PVOID *ppvBits -> the E7 overrun on a HOT path
+#                            (guest gdi32 passes a 4-byte &bmBits; the kernel
+#                            stored 8 bytes there on every DIB section).
+#   NtUserResolveDesktop     PUNICODE_STRING path + HWINSTA* OUT (both halves).
+#   NtUserOpenDesktop        \  OBJECT_ATTRIBUTES 24->48 with a nested
+#   NtUserOpenWindowStation   > UNICODE_STRING — reuses Wow64pMarshalOa, the
+#   NtUserCreateWindowStation/  helper the whole ntdll open family runs on.
+NtGdiCreateDIBSection
+#   NtUserTranslateAccelerator \  the rest of the MSG family (28 -> 48 bytes).
+#   NtUserCallMsgFilter         > The pump three were marshalled in M8; these
+#   NtUserRealInternalGetMessage/ three siblings were left flat and are all on
+#                                 ordinary app paths (accelerator tables, modal
+#                                 loops/MSGF_* hooks, user32's internal pump).
+NtUserTranslateAccelerator
+NtUserCallMsgFilter
+NtUserRealInternalGetMessage
+NtUserResolveDesktop
+NtUserOpenDesktop
+NtUserOpenWindowStation
+NtUserCreateWindowStation
+# E10, no dispatch entry: each carries a divergent struct no ladder guest
+# reaches, so per the M18 rule ("never ship a marshaller no guest can disprove")
+# they get the loud WOW64_MANUAL_UNIMPL stub — a clean error instead of the
+# silent-wrong flat thunk they had. A marshaller lands when a guest arrives.
+#   NtUserSetCursorContents  ICONINFO (HBITMAP fields widen; 20 -> 32 bytes)
+#   NtGdiAddEmbFontToDC      PVOID *pFontID OUT slot
+#   NtGdiFONTOBJ_cGetGlyphs  PVOID *ppvGlyph OUT slot (a driver DDI, not an app path)
+#   NtGdiDd*/NtGdiDvp*/NtGdiDxg*  DirectDraw/D3D HANDLE* + SIZE_T* OUT slots
+NtUserSetCursorContents
+NtGdiAddEmbFontToDC
+NtGdiFONTOBJ_cGetGlyphs
+NtGdiDdCreateD3DBuffer
+NtGdiDdCreateSurface
+NtGdiDvpAcquireNotification
+NtGdiDvpUpdateVideoPort
+NtGdiDxgGenericThunk
 # E7: Enum{,Child,Thread}Windows -> NtUserBuildHwndList fills a caller HWND[] and
 # returns the count. The flat (ptr) auto-thunk let 64-bit win32k write 8-byte
 # HWNDs into the guest's sizeof(HWND)=4-byte-per-entry buffer -> 2x heap OVERRUN

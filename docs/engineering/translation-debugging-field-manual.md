@@ -9332,3 +9332,144 @@ than catching it downstream.
 `cargo check`. A per-crate grind loop that only ever runs `cargo check` never consults it. Either
 build once before declaring a crate done, or run the audit directly — and when auditing, COUNT
 the arms you examined: an audit that inspects zero arms "passes" vacuously.
+
+### 9.113 (2026-07-24) A generator can only flag what its TYPE SOURCE can see — and a report that iterates the generator's own flagged set inherits the same blind spot
+
+**Symptom (three times, ~identical):** an unmodified stock i386 applet is added to the
+WoW64 ladder, boots, and BUGCHECKs `0x1E` with the fault PC inside win32k's
+`cnt_rust::cabi::raw_move`. Symbolication points at a different `NtUser*` each time —
+E6 `NtUserGetAtomName`/`GetClassName`, E8 `NtUserUnregisterClass` (regedit), E9
+`NtUserFindWindowEx` (osk). Every one is the same mechanism: 64-bit win32k read the
+guest's 8-byte `UNICODE_STRING32` as a 16-byte `UNICODE_STRING64`, picked `Buffer` up
+from the wrong offset, and copied a "string" from a wild address.
+
+**Root cause of the RECURRENCE (not of any one crash):** wow64gen types its thunks from
+`win32u.spec`/`ntdll.spec`. A `.spec` argument says only **"this is a pointer"** — never
+what it points AT:
+
+```
+@ stdcall NtUserUnregisterClass(ptr ptr ptr)      <- the generator's whole world
+NtUserUnregisterClass(PUNICODE_STRING, HINSTANCE, PCLSMENUNAME)   <- the truth
+```
+
+So the generator emits a flat thunk, never marks the call `WOW64_NEEDS_MANUAL`, and the
+name never enters the manual list. **`marshalgen report` iterates that manual list** — so
+the report could not see this class *by construction*. The tool built to audit marshalling
+was blind to precisely the syscalls most likely to be silently wrong, and stayed blind
+across three separate bugs, each found instead by a guest crashing the box.
+
+**The generalizable trap:** when a generator's input is *narrower* than the truth it
+encodes, its "needs attention" set is a claim about the INPUT, not about reality. Auditing
+that set measures the generator against itself and always passes. Two independent sources
+have to be crossed.
+
+**Fix — cross the generated artifact against the independent source of truth.**
+`marshalgen audit` (`tools/wow64gen/marshalgen.py`, wired into `vibeos-cli check`) takes:
+
+1. the **generated table** as ground truth for what production actually dispatches flat
+   (`{ "NtUserFoo", wow64_thunk_NtUserFoo, 2 }` = live flat thunk; `0` = a marshaller owns
+   it) — not the `.spec`, which is the very thing under suspicion;
+2. the **real header prototype** for each such name;
+3. **clang's own record layouts** for i686 and the host (`-fdump-record-layouts`), so the
+   32/64 divergence verdict is the compiler's, not a hand-maintained table.
+
+Any live flat thunk with a provably divergent param is a finding. On first run: 13 on the
+win32k table (all fixed → zero) and a large cold-path residual on the ntdll table
+(baselined as the work queue; the gate blocks NEW).
+
+**Two design points that make this kind of audit usable rather than noise:**
+
+* **Separate "provably divergent" from "I could not see the layout."** A struct missing
+  from the layout dump is a hole in the TOOL. Gating on it buries the real findings under
+  unresolved-typedef noise and trains people to ignore the check. Report the unknowns on
+  stderr with a count, gate only on proof. (`audit_verdict()`; `--show-unknown` lists them.)
+* **`SCALAR_WIDEN` flips severity depending on who's handling the call.** Inside a
+  marshalled stub, a `HWND *` / `PVOID *` out-slot is the easy case. Under a LIVE FLAT
+  THUNK it is a memory-corruption bug: the 64-bit kernel writes 8 bytes where the guest
+  reserved 4. That is exactly E7 (`NtUserBuildHwndList`'s 2× heap overrun, which surfaced
+  minutes later as a NULL free-list `Blink`) — and the audit immediately found the same
+  shape on a hotter path, `NtGdiCreateDIBSection`'s `PVOID *ppvBits`, where guest gdi32
+  passes a 4-byte stack local on *every* DIB-section allocation.
+
+**When a narrowed value cannot fit, FAIL — don't truncate.** `NtGdiCreateDIBSection`
+returns a mapped VA that is the guest's only handle on the bits. Silently truncating a
+mapping above 4GB hands the guest a pointer into nowhere and faults arbitrarily far away;
+the marshaller logs and fails the call instead, so the guest sees a clean
+`CreateDIBSection` failure. (Same principle as the rest of AGENTS.md's "fail loud, never
+silently degrade" — narrowing marshallers are a classic place to violate it by accident.)
+
+**Where to look for the same shape elsewhere:** any codegen driven by a `.spec`, `.def`,
+IDL arity, or ordinal table — the input describes the CALL, not the DATA. Ask what the
+generator's type source *cannot express*, then write a check that crosses the emitted
+artifact against a source that can.
+
+### 9.114 (2026-07-24) WoW64 SendMessage payloads: `g_MsgMemory` sizes the lParam struct with the HOST's `size_of`, so a 32-bit sender's buffer is over-read — BUGCHECK 0x1E at win32k's `raw_move`
+
+**Symptom.** A stock 32-bit applet under WoW64 BUGCHECKs the box:
+
+```
+0x1E / C0000005, TrapFrame.Rip = win32k+0x258EC
+  cnt_rust::cabi::raw_move+0x5c  <- memcpy+0xd
+  <- win32k_rust::message::g_MsgMemory+0x6c
+  <- win32k_rust::message::co_IntDoSendMessage+0x232
+```
+
+**Do not confuse this with §9.x's flat-typed-PUNICODE_STRING class**, even though the
+faulting PC is *identical* (`win32k+0x258EC`). That PC is just `raw_move`, the generic
+byte-copy every capture path funnels through — E6/E8/E9 reached it via
+`ProbeAndCaptureUnicodeStringOrAtom`, this reaches it via `g_MsgMemory`. **Symbolicate the
+CALLER, not the fault PC**; the two classes need completely different fixes, and the shared
+PC will send you to the wrong one. (`llvm-nm --numeric-sort --defined-only win32k.sys` +
+ImageBase 0x10000 — `qemu/build-index.sh` only indexes ntoskrnl.)
+
+**Cause.** `g_MsgMemory` (`sdk/lib/rust/win32k-rust/src/message.rs`) is the table telling
+win32k how many bytes a pointer-lParam message carries, so it can capture the payload
+across a thread/process boundary. Every entry sizes itself with the **host's**
+`size_of::<T>()`:
+
+```rust
+MSGMEMORY { Message: WM_WINDOWPOSCHANGING, Size: size_of::<WINDOWPOS>() as UINT, ... }
+MSGMEMORY { Message: WM_DRAWITEM,          Size: size_of::<DRAWITEMSTRUCT>() as UINT, ... }
+```
+
+A 32-bit WoW64 sender allocated the **i386** struct. win32k copies the **amd64/arm64** byte
+count out of it → reads past the end → AV. WINDOWPOS is 28 vs 40 bytes; DRAWITEMSTRUCT and
+MEASUREITEMSTRUCT are worse because they carry HWND/HDC/ULONG_PTR members whose *offsets*
+shift, so this needs real conversion, not just a smaller `Size`.
+
+**Why it survived so long.** M15a/M16/M18 marshalled the **callback** direction
+(kernel→user window proc) and `NtUserMessageCall`'s WINDOWPOS lParam. Both are the paths a
+guest hits when it *pumps* messages. This is the **SendMessage** direction —
+user→kernel→another window — and no guest reached it until applets with owner-drawn
+controls and cross-window sends (spider, eventvwr) joined the ladder.
+
+**Generalizable lesson — a size table is an ABI, and per-arch `size_of` is a per-*host*
+ABI.** Any kernel-side table that encodes "how big is this user payload" (message-memory
+tables, IOCTL length tables, IRP buffer sizes, callback argument blobs) is silently wrong
+for a guest of a different width. When a mixed-width client is possible, the width must be
+a *parameter* of the lookup, not baked in at compile time by the host's `size_of`.
+
+**Second lesson — timing-dependent means one green boot proves nothing.** spider PASSed on
+one boot and killed the box on the very next, same binary. Whether the fault fires depends
+on which owner-draw/positioning message happens to be sent and what follows the guest's
+buffer. A ladder rung that passes once is *not* evidence; re-run before believing it (and
+before recording it in a doc as green).
+
+**Prove pre-existing vs. introduced with a CONTROL, not with reasoning.** The fault PC here
+is shared with an older class, and the same change that surfaced it had touched three
+message-path syscalls — so "my code looks uninvolved" (0 calls to the new marshallers, 0
+UNIMPL hits) was suggestive but not evidence. `git stash push -m ...`, rebuild, boot: master
+BUGCHECKed with the byte-identical stack. That is a ~15-minute experiment that converts a
+guess into a fact, and it is always worth it before landing anything that *might* have made
+boots crash. (Stash, never `checkout`/`restore` — see AGENTS.md.)
+
+**Operational note.** When a new ladder rung finds a real, timing-dependent box-killer,
+keep the guest **staged** so the repro is one command away, but do **not** auto-launch it
+from winlogon until the bug is fixed — an intermittent bugcheck three minutes into every
+boot wrecks every other lane's debugging session. Hold the launch, file the task, and make
+re-enabling the launch the regression test. Holding it is not dropping it.
+
+Pick the hold based on COVERAGE, not on blame. Here master already bugchecked at a later
+rung, so holding the new applets did not make anything safer — what it bought was that the
+twelve rungs *before* the new ones keep reporting every boot instead of being cut off six
+applets early.
