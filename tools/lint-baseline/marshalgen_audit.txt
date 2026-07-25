@@ -79,9 +79,7 @@ FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(ObjectName) WIDENING -> struct _UNI
 FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(ObjectTypeName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtOpenProcessToken(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtOpenProcessTokenEx(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtOpenThreadToken(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtOpenThreadTokenEx(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtOpenTimer(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtOpenTimer(TimerHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtPrivilegeObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING

@@ -2791,6 +2791,49 @@ def test_staleness_c_source_change_is_stale(staleness_repo: Path):
     assert any("build source changed" in r for r in v.reasons), v.reasons
 
 
+def test_staleness_lint_baseline_change_is_not_stale(staleness_repo: Path):
+    """A lint baseline is accepted-findings bookkeeping, not a build input.
+
+    Counterpart to the .c/CMakeLists tests above: those pin that build-relevant edits
+    must NOT read as fresh; this pins the opposite error. tools/lint-baseline/*.txt is
+    only ever read by lints -- never compiled, never staged -- so counting it made the
+    documented build -> `check --update-baseline` -> smoke loop demand a second, no-op
+    rebuild every single time. The exclusion is deliberately narrow; the rest of tools/
+    carries real compiled sources, which the next test pins.
+
+    The file must be COMMITTED before the stamp: git_fingerprint folds untracked paths
+    in via `git status --porcelain`, which reports the path and not the content, so a
+    test that edits an untracked file passes no matter what the pathspec says.
+    """
+    bl = staleness_repo / "tools" / "lint-baseline"
+    bl.mkdir(parents=True, exist_ok=True)
+    (bl / "some_scanner.txt").write_text("accepted finding A\n")
+    _git(staleness_repo, "add", "-A")
+    _git(staleness_repo, "commit", "-qm", "baseline")
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (bl / "some_scanner.txt").write_text("accepted finding A\naccepted finding B\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.fresh and not v.stale, v.reasons
+
+
+def test_staleness_other_tools_source_still_stale(staleness_repo: Path):
+    """tools/ at large stays in the fingerprint -- it carries compiled sources."""
+    t = staleness_repo / "tools" / "libschily"
+    t.mkdir(parents=True, exist_ok=True)
+    (t / "helper.c").write_text("int h(void){return 1;}\n")
+    _git(staleness_repo, "add", "-A")
+    _git(staleness_repo, "commit", "-qm", "tools src")
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (t / "helper.c").write_text("int h(void){return 2;}\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+    assert any("build source changed" in r for r in v.reasons), v.reasons
+
+
 def test_staleness_cmake_change_is_stale(staleness_repo: Path):
     provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
         staleness_repo / "build-i386"

@@ -1738,6 +1738,38 @@ only a per-thread WoW64 entry can provide. **Losing a thread beats losing the bo
 beats a convincing corpse.** Blast radius was *measured, not assumed*: exactly one call in a full
 boot, from one applet.
 
+### An OUT `PHANDLE` divergence splits by ALIGNMENT — half silent overrun, half spurious failure
+A `HANDLE` out-param is 4 bytes in the guest and 8 on the host, so a flat thunk hands the 64-bit
+kernel a four-byte cell to write eight bytes into. The interesting part is that this does not
+fail one way, it fails **two ways, decided by the address**, because the host's own probe is
+width-dependent: `probe_write_handle` is `probe_write_user::<PVOID>`, so it demands 8-byte
+alignment, and a 32-bit guest's `HANDLE` is only 4-byte aligned.
+
+- Cell at ≡4 (mod 8): the kernel rejects the call outright with `STATUS_DATATYPE_MISALIGNMENT`
+  (`0x80000002`) — a status the guest's own ABI says cannot happen for this call.
+- Cell at ≡0 (mod 8): the probe passes and the kernel writes 8 bytes. Little-endian is what
+  makes this the quiet half: the low dword lands where the guest expects, so **the guest reads
+  a correct handle** while the high dword — and the probe's own NULL touch-test — zeroes the
+  adjacent four bytes.
+
+So the caller sees an intermittent, address-dependent failure *and* silent neighbour
+corruption from the same bug. `NtOpenProcessTokenEx` + `NtOpenThreadTokenEx` were doing this
+**12 times per amd64 boot**; the tell was `NtOpenThreadTokenEx` appearing *twice* per logical
+open, the first returning `0x80000002`. After marshalling into a host-width local it is 1:1.
+**Generalize the probe half: any host probe typed on a pointer-width value imposes host
+alignment on a guest buffer, so `STATUS_DATATYPE_MISALIGNMENT` from a WoW64 guest is a
+divergence signature, not a guest bug.**
+
+Narrowing on the way back is not a truncation risk and needs no guard: a WoW64 process's
+handles must fit in 32 bits by construction, or the guest could never name them.
+
+**The reusable part is the triage, not the fix.** The audit baseline is a list of *possible*
+divergences, and burning it down in file order wastes most of the effort — intersect it with
+the syscalls a real boot actually dispatches (`[WOW64] <Name>(0x…)` lines) and the priority
+collapses: of 195 divergent syscalls, **4** were called at all in a full boot, and of the 41
+out-scalar-widen findings only **2**. Cold entries still matter for arbitrary apps, but they
+are a tail to work through, not a queue to fear.
+
 ### When the payload IS the CPU state, the CPU layer is the marshaller — not the kernel
 `NtGetContextThread`/`NtSetContextThread` carry the same un-widenable `_CONTEXT` as
 `NtCreateThread` above, and flat-thunking them is worse than usual in both directions: Get had

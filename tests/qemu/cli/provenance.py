@@ -554,6 +554,14 @@ NON_BUILD_PATHSPEC = (
     ":(exclude)*.md",
     ":(exclude).github",
     ":(exclude).claude",
+    # tools/lint-baseline/ is accepted-findings bookkeeping: text files that only
+    # lints read, never compiled and never staged into media. Including them made
+    # the documented loop (build -> `check --update-baseline <tool>` -> smoke)
+    # ALWAYS report STALE_MEDIA and demand a second, no-op rebuild -- so the fix
+    # was to stop re-running the build, not to remember to reorder the steps.
+    # Deliberately narrow: the rest of tools/ carries real compiled sources
+    # (tools/libschily/*.c, tools/gen-delaylib.py) and stays in the fingerprint.
+    ":(exclude)tools/lint-baseline",
 )
 
 

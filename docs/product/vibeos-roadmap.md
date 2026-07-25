@@ -561,6 +561,18 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   corrupt thread; marshalling the structs alone would be *worse* (a more convincing corpse,
   still with no CPU-context setup — that needs the per-thread WoW64 entry #64 tracks). Blast
   radius measured: exactly one call in a full amd64 boot, from `osk.exe`.
+- **OUT `PHANDLE` flat thunks: `NtOpenProcessTokenEx`/`NtOpenThreadTokenEx` — MARSHALLED
+  2026-07-25** (task #63/E12). 12 calls per amd64 boot, failing two ways at once: the kernel's
+  `probe_write_handle` is `probe_write_user::<PVOID>` (8-byte alignment) while a guest `HANDLE`
+  is 4-aligned, so a cell at ≡4 (mod 8) was rejected with a spurious
+  `STATUS_DATATYPE_MISALIGNMENT` and one at ≡0 passed and wrote 8 bytes over a 4-byte cell.
+  Verified in a boot log: `NtOpenThreadTokenEx` used to appear twice per logical open (first
+  `=> 80000002`), now once, `[manual]`, 1:1 with `NtOpenProcessTokenEx => 00000000`.
+  **Triage lesson worth more than the fix:** intersecting the audit baseline with the syscalls
+  a real boot dispatches collapses the queue — of 195 divergent syscalls only **4** are called
+  in a full boot, and of 41 out-scalar-widen findings only **2**. Burning the baseline down in
+  file order would have spent most of the effort on cold entries. The remaining 39 in this
+  class are real but unreached; they matter for arbitrary apps, as a tail not a queue.
 - **`NtGetContextThread`/`NtSetContextThread` flat thunks overflow guest memory / load the
   native register file from i386 fields — MARSHALLED 2026-07-25** (task #63/E12). Same
   un-widenable `_CONTEXT` as `NtCreateThread`, but the disposition is the opposite one: the
