@@ -3410,6 +3410,32 @@ static NTSTATUS Wow64Manual_NtUserEnumDisplayMonitors(ULONG *a)
     return (NTSTATUS)Got;
 }
 
+/*
+ * NtCreateThread — FAIL LOUD. This is not a marshaller; it is a refusal.
+ *
+ * The flat thunk this replaces returned STATUS_SUCCESS while handing the 64-bit
+ * kernel an i386 CONTEXT/INITIAL_TEB/OBJECT_ATTRIBUTES/CLIENT_ID reinterpreted at
+ * host width (5 divergent params — see tools/lint-baseline/marshalgen_audit.txt).
+ * The kernel then built a thread whose trap frame was effectively zeroed, and the
+ * very first user APC to it computed (Rsp=0) - sizeof(UAPC_FRAME) and, before the
+ * #67 fix, BUGCHECKed the machine. Observed for real: osk.exe, the ONLY
+ * NtCreateThread in a whole amd64 boot, ~400 log lines before the fault.
+ *
+ * Marshalling the structs alone would NOT be enough and would re-hide the gap: a
+ * new 32-bit guest thread also needs its whole CPU context established the way
+ * process startup does, and wow64.dll has no per-thread entry at all (task #64).
+ * Until that exists, a clean STATUS_NOT_IMPLEMENTED at the boundary beats a
+ * successful call that corrupts a thread — losing a thread beats losing the box.
+ */
+static NTSTATUS Wow64Manual_NtCreateThread(ULONG *Arguments)
+{
+    (void)Arguments;
+    DbgPrint("[WOW64] NtCreateThread: REFUSED - 32-bit guest thread creation is "
+             "unimplemented (no per-thread WoW64 entry; task #64). Returning "
+             "STATUS_NOT_IMPLEMENTED instead of a silently corrupt thread.\n");
+    return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
+}
+
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
 {
     /* tiny hand strcmp to avoid a CRT dependency */
@@ -3583,6 +3609,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64pOpenByCid(NtOpenProcess, Arguments);
     if (WOW64_IS("NtOpenThread"))
         return Wow64pOpenByCid(NtOpenThread, Arguments);
+    if (WOW64_IS("NtCreateThread"))
+        return Wow64Manual_NtCreateThread(Arguments);
 
     /* M12: the rest of the IO_STATUS_BLOCK family. */
     if (WOW64_IS("NtCancelIoFile"))

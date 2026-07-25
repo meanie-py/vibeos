@@ -512,15 +512,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Verified: old signature absent from the log entirely, **spider and eventvwr now PASS**
   (both are re-enabled in the winlogon ladder as the regression test), **21 applets + 7
   probe guests green on amd64**.
-- **`ProbeForWrite` raises unhandled in kernel mode → BUGCHECK 0x1E — OPEN** (2026-07-24,
-  task #67). Surfaced *because* E13 let the ladder run further than it ever had. Chain:
-  `ProbeForWrite+0x84` → `ExRaiseAccessViolation+0x14` → `RtlRaiseStatus(0xC0000005)` → no
-  handler under `USE_DUMMY_PSEH` → 0x1E. This is a **software raise**, not E13's hardware
-  fault in a memcpy — do not conflate them. Two instances: `doom` (dies after its window is
-  up and pumping; this rung was already red on master, where it died of E13 first) and
-  `devmgmt` (setupapi enumeration, first time ever reached). **Not caused by the E13 fix —
-  proved by control**: rebuilding with only the callback-direction change reverted
-  reproduces the chain byte-identically. Sibling of task #68 (win32k's
+- **`ProbeForWrite` raises unhandled in kernel mode → BUGCHECK 0x1E — FIXED 2026-07-25**
+  (task #67, §9.133). Chain was `ProbeForWrite+0x90` → `ExRaiseAccessViolation+0x14` →
+  `RtlRaiseStatus(0xC0000005)` → no handler under `USE_DUMMY_PSEH` → 0x1E. **The raise site
+  was `KiInitializeUserApc` (`ke/amd64/usercall.rs`), whose C `_SEH2_TRY`/`_SEH2_EXCEPT` had
+  been translated to a BARE BLOCK with the handler body dropped** — `exception_occurred` was
+  declared and tested but never assigned, so the recovery arm was provably dead code. Fixed
+  per dummy-pseh-verdict Tier 1 (validate-first `probe_user_buffer` + the C `__except` body
+  restored); `ke/i386/usercall.rs` already carried the identical conversion, so amd64 was
+  simply missed. Found by instrumenting the previously-undiagnosed ACCESS_VIOLATION arm of
+  the probe: `Addr=-1280 = -sizeof(UAPC_FRAME)` identified the caller by arithmetic alone,
+  and **refuted** the leading E12/wrong-width-marshal hypothesis in one boot.
+  **Neither doom nor devmgmt was the culprit — `osk.exe` was**; they were downstream victims
+  of the box-kill. Root of the bad pointer is the flat `NtCreateThread` thunk (§9.134, task
+  #64): it returns SUCCESS while building a thread with a zeroed trap frame. Verified same
+  boot command before → after: BUGCHECK 1→0, PROBE-AV 1→0, doom frames died→2022.
+  Still-relevant sibling is task #68 (win32k's
   `_MmCopyFromCaller`/`_MmCopyToCaller` copy user buffers unguarded — `SafeProbeFor*` is
   validate-only and does not touch-test, so any user process, 32- or 64-bit, can kill the
   box with a partially-unmapped buffer; `KmProtectedCopyMemory` is
@@ -535,6 +542,33 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   devmgmt/msconfig/sndrec32/kbswitch stay staged with their winlogon launch held so the 21
   passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
   marker fires long before the ladder runs.
+- **All 1962 Rust-kernel `debug_assert!` are compiled OUT, while the C `ASSERT` they were
+  translated from is LIVE — OPEN** (2026-07-25, task #72, §9.135). `debug_assert!` is gated on
+  `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
+  cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
+  `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of
+  §9.120** — there asserts were lowered to something *stronger* than C (UB / an invented
+  BUGCHECK), here to something *weaker* (nothing). Proof by execution, not inference:
+  `ke/amd64/usercall.rs:96` asserts `(SegCs & MODE_MASK) != 0` and a boot printed
+  `[KI-APC] ... SegCs=0x0` — a forbidden value walked straight past it, and had it fired it
+  would have caught #67/#71 at the source rather than as a bugcheck in another function.
+  Fix is `debug-assertions = true` **plus an explicit `overflow-checks = false`** (it defaults
+  to follow debug-assertions, and kernel-wide overflow panics are a separate, riskier change C
+  never had) — but MEASURE FIRST: 1962 assertions going live at once needs a triage batch.
+- **`NtCreateThread` flat thunk returns SUCCESS with a zeroed thread context — REFUSED LOUDLY
+  2026-07-25** (task #64, §9.134). Five divergent params incl. a `CONTEXT` whose field lists
+  don't correspond across widths. Now returns `STATUS_NOT_IMPLEMENTED` instead of a silently
+  corrupt thread; marshalling the structs alone would be *worse* (a more convincing corpse,
+  still with no CPU-context setup — that needs the per-thread WoW64 entry #64 tracks). Blast
+  radius measured: exactly one call in a full amd64 boot, from `osk.exe`.
+- **arm64 warm build can end with a STALE cohab DLL — OPEN, not reproduced** (2026-07-25,
+  task #70). A gate's arm64 build shipped `kernel32.dll` linked 331ms *before* its own
+  `libkernel32_rust.a`; `artifact-check` caught it and a plain warm rebuild fixed it with no
+  source change, so it was real staleness, not a flaky checker. Two hypotheses eliminated
+  (sccache stop-on-entry — already replaced by pinned per-worktree ports; and port collision
+  — all 11 worktrees hash distinct). Condition present at failure and absent from the repro:
+  concurrent sibling-lane builds. The ninja graph is correct, so it is an ordering violation,
+  not a missing edge.
 - **C assertion macros lowered to UB / to a BUGCHECK — FIXED 2026-07-25** (§9.120).
   Found by a fresh-eyes catalog sweep, not by a crash. `PAGED_CODE()`/`NT_ASSERT()` are
   DIAGNOSTICS (KdPrint+RtlAssert under DBG, **nothing** in retail) and are never

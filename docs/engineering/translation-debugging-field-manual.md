@@ -10973,3 +10973,159 @@ killed**, and kept 2 of the host's 4 build permits for a verdict already discard
 explicit pid after confirming ownership — `/proc/<pid>/cwd` and `vibeos-cli host-status` name the
 worktree. Two `ninja livecd` processes at the canonical `/tmp/vibeos/build-*` path belonged to a
 *sibling* lane that had just acquired the lock; a pattern kill would have destroyed their work.
+
+### 9.133 (FIXED 2026-07-25) A `__try`/`__except` translated to a BARE BLOCK — the flag survived, the handler didn't, and under DUMMY_PSEH the raise killed the machine
+
+**Symptom.** `BUGCHECK 0x1E` / `C0000005`, minutes into an amd64 boot, with
+`ProbeForWrite → ExRaiseAccessViolation → RtlRaiseStatus` on the stack and no
+handler. Two 32-bit WoW64 applets (doom, devmgmt) appeared to be the trigger.
+
+**Neither applet was the trigger, and the bug was not where the stack said.**
+
+**The shape to recognise.** `ke/amd64/usercall.rs`, `KiInitializeUserApc`:
+
+```rust
+let mut exception_occurred = false;      // never assigned, anywhere
+
+{                                        // <- this was the C's _SEH2_TRY
+    ProbeForWrite(ApcFrame, size_of::<UAPC_FRAME>(), 16);
+    ...
+}
+
+if exception_occurred {                  // <- dead code, provably
+    KiDispatchException(&mut exception_record, ..., UserMode, TRUE);
+}
+```
+
+The C wraps the body in `_SEH2_TRY` and its `_SEH2_EXCEPT` calls
+`KiDispatchException`. The translation preserved the *silhouette* — a flag plus
+the `if` that reads it — while the `__try` degenerated to a bare block and the
+`__except` body evaporated. The result compiles, reads as if it handles the
+error, and cannot: nothing writes the flag, so the recovery arm is unreachable
+and the raise propagates out of the kernel.
+
+**This is worse than an obviously-missing handler**, because a reviewer skimming
+for "is the failure handled?" sees a handler. Grep for the tell instead: a
+`let mut <flag> = false` whose only other occurrence is an `if`.
+
+**Fix** (dummy-pseh-verdict.md Tier 1 — convert the raise contract at the
+callee): validate FIRST with the `Result`-returning `probe_user_buffer`, then run
+exactly what the C `__except` ran. Do not invent new control flow; the C's
+post-block statements stay where they are.
+
+```rust
+let mut exception_status: NTSTATUS = 0;
+'try_: {
+    if let Err(e) = probe_user_buffer(ApcFrame as *const _, size, 16, 1i8) {
+        exception_status = e;
+        break 'try_;
+    }
+    ...
+}
+if exception_status != 0 { /* the C __except body, verbatim */ }
+```
+
+The `'try_:` + `break` idiom is not invented here — `ke/i386/usercall.rs` already
+carried the identical conversion. **When one arch of a per-arch file is already
+converted and another isn't, that asymmetry is the bug report.** Check siblings
+first: i386 was correct, arm64's raising probe is `cfg(not(aarch64))` (dead
+there), amd64 was the only one left.
+
+**Two lessons about the hunt, both reusable:**
+
+1. **A raise with no diagnostic is a guessing game — instrument before fixing.**
+   `ProbeFor*`'s ACCESS_VIOLATION arm printed *nothing* (the misalignment arm had
+   a trace, and its caller-LR helper is aarch64-only), so a 0x1E gave you
+   `ProbeForWrite` on the stack and nothing about *what* was probed. One
+   `probe_av_trace` answered it in a single boot:
+
+   ```
+   [PROBE-AV-W] ABOVE-USERPROBE Addr=fffffffffffffb00 Len=1280 (0x500) Align=16
+   ```
+
+   `Addr` is exactly `-1280` = `-sizeof(UAPC_FRAME)`, i.e. `Rsp == 0` run through
+   `(Rsp - sizeof) & !15`. **Size and alignment identify the struct; the
+   arithmetic identifies the caller.** Report the two raise conditions *apart* —
+   `WRAP` (Length is garbage: the wrong-width 32→64 marshal shape) vs
+   `ABOVE-USERPROBE` (the pointer is wrong) — because they point at opposite bugs.
+
+2. **The instrument refuted the leading hypothesis, which is why it went in
+   first.** Both victims were 32-bit guests, so this looked like E12 (a flat thunk
+   passing a wrong-width `Length`). It wasn't, and one line of output settled it
+   before any code was written against the wrong theory.
+
+**The actual culprit was a third process.** `[KI-APC] ... image=osk.exe` — the
+on-screen keyboard. doom and devmgmt were downstream victims of the box-kill,
+which is why both looked guilty. *Before blaming the process that was running
+when the box died, check whether it merely outlived the one that killed it.*
+
+Same boot command, before → after: BUGCHECK `1 → 0`, PROBE-AV raises `1 → 0`,
+doom frames rendered `died → 2022`.
+
+**Why osk.exe had a blank trap frame** — `Rsp=0 Rip=0 SegCs=0x0` — is the flat
+`NtCreateThread` thunk (§9.134).
+
+### 9.134 (2026-07-25) The first observed consequence of an unmarshalled `NtCreateThread`: a thread created successfully, with a zeroed context
+
+`NtCreateThread` is a **live flat thunk** with five divergent params
+(`OBJECT_ATTRIBUTES`, `CLIENT_ID`, `INITIAL_TEB`, `CONTEXT` — whose field lists
+don't even correspond across widths — and a `PHANDLE`). A 32-bit guest calling
+`CreateThread` therefore hands the 64-bit kernel i386 structs reinterpreted at
+host width.
+
+**It returns `STATUS_SUCCESS`.** That is the whole danger of the class: the guest
+believes it has a thread, and the kernel believes it built one, and the trap
+frame is zeroed. Evidence from one amd64 boot:
+
+```
+line 81013  [WOW64] NtCreateThread(0x37) => 00000000     <- no [manual] tag = flat thunk
+line 81410  [KI-APC] ... image=osk.exe Rsp=0 Rip=0 SegCs=0x0 SegSs=0x3
+line 81412  [KI-EXC] osk.exe teb=...e9000 rip=0 pci.pDeskInfo=0 pci.ulClientDelta=0
+```
+
+The only `NtCreateThread` in the entire boot, ~400 lines before the fault, same
+process; a *second* thread (main threads log `teb=...ec000`) with no win32 client
+info because it never ran. `PspUserThreadStartup` then queues the routine
+`LdrInitializeThunk` user APC, `KiInitializeUserApc` computes
+`0 - sizeof(UAPC_FRAME)`, and before §9.133 that killed the machine.
+
+**Disposition: refuse, don't half-marshal.** `Wow64Manual_NtCreateThread` now
+returns `STATUS_NOT_IMPLEMENTED` loudly. Marshalling the five structs would be
+*worse than nothing* — it would produce a thread that looks even more plausible
+while still lacking the CPU-context setup a 32-bit guest thread needs, which only
+a per-thread WoW64 entry can provide, and wow64.dll has none. Losing a thread
+beats losing the box; a clean refusal beats a convincing corpse.
+
+*Blast radius was measured, not assumed*: exactly one call in a full boot, from
+one applet.
+
+### 9.135 (2026-07-25) Every Rust-kernel `debug_assert!` is compiled out — while the C `ASSERT` it was translated from is LIVE under `-DDBG=1`
+
+**1962** `debug_assert!` / `debug_assert_eq!` / `debug_assert_ne!` sites across
+`sdk/lib/rust` are dead code. `debug_assert!` is gated on
+`cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` sets
+`panic`/`opt-level`/`lto`/`codegen-units`/`debug` but **never**
+`debug-assertions`, so cargo's release default (off) applies — and every kernel
+crate builds `--release`. Meanwhile `CMakeLists.txt:233` sets `-DDBG=1`, so the C
+`ASSERT` these came from calls `RtlAssert` and fires loudly.
+
+**This is the mirror of §9.120.** There, C asserts were lowered to something
+*stronger* than C (UB via `unreachable_unchecked`, or an invented `KeBugCheckEx`).
+Here they are lowered to something *weaker* — nothing at all — despite `DBG=1`.
+Both come from reasoning about what the macro **means** instead of what it
+**compiles to in this build's configuration**.
+
+**Proof by execution, not inference.** `ke/amd64/usercall.rs:96` is
+`debug_assert!(((*TrapFrame).SegCs & MODE_MASK) != 0);` and a 2026-07-25 boot
+printed `[KI-APC] ... SegCs=0x0`. A value the assertion forbids walked straight
+past it. Had it been live it would have caught the blank trap frame **at its
+source**, instead of the failure surfacing later, in a different function, as an
+unhandled probe raise that bugchecked the machine (§9.133/§9.134).
+
+**Before flipping it** (`debug-assertions = true`, and `overflow-checks = false`
+*explicitly* — it defaults to follow `debug-assertions`, and kernel-wide
+arithmetic-overflow panics are a separate, much riskier change C never had):
+measure. 1962 assertions going live at once in a booting kernel will produce a
+batch to triage — some real bugs, some asserts that were mistranslated, some that
+are simply wrong for our configuration. Do it in a scratch build across all three
+arches, triage, then land the profile change *with* the fixes.
