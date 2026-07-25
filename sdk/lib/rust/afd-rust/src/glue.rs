@@ -65,7 +65,10 @@ pub const EVENT_ALL_ACCESS: u32 = 0x1F0003;
 // --- misc kernel consts only in ntkrnl-sys's hal bindgen, not ddk ----------
 pub const FO_NAMED_PIPE: u32 = 0x00000080;
 pub const FILE_DEVICE_NAMED_PIPE: u32 = 0x00000011;
-pub const IRP_MJ_QUERY_VOLUME_INFORMATION: u8 = 0x0a;
+// IRP_MJ_QUERY_VOLUME_INFORMATION was here as a local stand-in. `ntkrnl_sys::
+// driver_ddk` gained it (same value, 0x0a) in 6ae2ae1931d, and main.rs glob-imports
+// BOTH modules — two glob-imported definitions of one name is E0659 "ambiguous",
+// regardless of the values agreeing. Dropped the shadow so the DDK one is canonical.
 
 // --- MDL macros the C source uses (mm.h FORCEINLINE) -----------------------
 #[inline(always)]
