@@ -638,14 +638,24 @@ def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
         batches += 1
 
 
-def try_become_conductor(repo: Path, log, *, retries: int = 2) -> bool:
-    """Take the land lock if it is FREE and drain; otherwise return False immediately.
+def try_become_conductor(repo: Path, log, *, retries: int = 2, timeout: float = 0.0) -> bool:
+    """Take the land lock and drain. Returns False if the lock could not be had in `timeout`.
 
-    The election is the lock: no daemon, no leader file, no heartbeat. `timeout=0` is what
-    makes submitting non-blocking — an agent either becomes the conductor (and does the
-    fleet's work) or leaves, knowing a conductor already exists."""
+    The election is the lock: no daemon, no leader file, no heartbeat.
+
+    `timeout` is the whole subtlety. It was 0.0 unconditionally, so an agent that lost the
+    election left immediately — correct when the agent's own turn was on the line, but it left
+    an ORPHAN WINDOW: a submission whose only would-be conductor lost the election has nobody
+    to drain it, and it sits until the next submission elects someone. Observed within minutes
+    of shipping (a pre-queue lane held the lock via the direct path, and the submission waited).
+
+    Now that conducting is DETACHED, the spawned child has no reason to give up: nothing is
+    blocked by it waiting, so it queues on the lock's FIFO and drains when its turn comes. A
+    conductor that wakes to an empty queue exits in ~1s, so several waiters are cheap rather
+    than wasteful. Callers that genuinely cannot block (the inline-from-submit convenience path)
+    keep passing 0.0."""
     try:
-        with hostlock.land_lock(f"conductor:{lane_id(repo)}", timeout=0.0, repo=str(repo)):
+        with hostlock.land_lock(f"conductor:{lane_id(repo)}", timeout=timeout, repo=str(repo)):
             drain(repo, log, retries=retries)
         return True
     except hostlock.LandLockBusy:

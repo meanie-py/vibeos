@@ -411,9 +411,17 @@ def _conduct(repo: Path, run: Run, args) -> tuple[bool, str]:
     A detached conductor that loses the election just exits — the lock is the election, so
     spawning one speculatively costs a second of a subprocess and never double-conducts."""
     if getattr(args, "foreground", False):
+        # An explicit conduct request (`--drain`, which is also how the detached child runs)
+        # WAITS for the lock: closing the orphan window is the whole point, and nothing is
+        # blocked by it waiting. The inline-from-submit path keeps 0.0 — there, the agent's own
+        # turn is on the line, so losing the election must return immediately.
+        wait = hostlock.LAND_LOCK_TIMEOUT if getattr(args, "drain", False) else 0.0
         try:
             trained = queue.try_become_conductor(
-                repo, _conductor_log(run), retries=int(getattr(args, "retries", 2))
+                repo,
+                _conductor_log(run),
+                retries=int(getattr(args, "retries", 2)),
+                timeout=wait,
             )
         except queue.NoVerdict as e:
             run.classification = "BASE_RED"

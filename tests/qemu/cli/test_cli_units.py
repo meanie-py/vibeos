@@ -3659,3 +3659,37 @@ def test_queue_submit_keeps_a_DIVERGENT_tip_from_the_same_lane(queue_repo):
     _commit(repo, "d2.txt")
     second = q_mod.submit(repo, lane="lane-z")
     assert {s.seq for s in q_mod.pending(repo)} == {first.seq, second.seq}
+
+
+def test_queue_conductor_can_wait_for_its_turn(queue_repo, monkeypatch):
+    """The orphan window: a conductor that gives up instantly leaves a submission with nobody
+    to drain it (seen within minutes of shipping — a pre-queue lane held the lock via the direct
+    path). A DETACHED conductor has no reason to give up, so it must be able to wait."""
+    repo, _ = queue_repo
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: drained.append(1) or 0)
+    # lock held by "someone else" → a 0-timeout conductor bows out, a waiting one would block
+    with hl_mod.land_lock("other-lane", timeout=1.0):
+        assert q_mod.try_become_conductor(repo, lambda m: None, timeout=0.0) is False
+        assert q_mod.try_become_conductor(repo, lambda m: None, timeout=0.2) is False
+        assert drained == []
+    assert q_mod.try_become_conductor(repo, lambda m: None, timeout=1.0) is True
+    assert drained == [1]
+
+
+def test_land_drain_waits_but_submit_path_does_not(lane_repo, tmp_path, monkeypatch):
+    """`--drain` (the detached child) waits for the lock; the inline-from-submit convenience
+    path must not, because there the agent's own turn is on the line."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    seen = []
+    monkeypatch.setattr(
+        q_mod,
+        "try_become_conductor",
+        lambda repo, log, retries=2, timeout=0.0: seen.append(timeout) or True,
+    )
+    land_mod.land(_Args(direct=False, drain=True, foreground=True), lane)
+    assert seen[-1] == hl_mod.LAND_LOCK_TIMEOUT, seen
+    land_mod.land(_Args(direct=False, foreground=True), lane)
+    assert seen[-1] == 0.0, seen
