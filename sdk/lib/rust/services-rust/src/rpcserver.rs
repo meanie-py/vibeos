@@ -6241,21 +6241,21 @@ pub unsafe extern "system" fn RI_ScSendPnPMessage(
 
     /* Check if the control code is acceptable to the service */
     match dwControl {
-        _SERVICE_CONTROL_DEVICEEVENT => {}
+        SERVICE_CONTROL_DEVICEEVENT => {}
 
-        _SERVICE_CONTROL_HARDWAREPROFILECHANGE => {
+        SERVICE_CONTROL_HARDWAREPROFILECHANGE => {
             if (dwControlsAccepted & SERVICE_ACCEPT_HARDWAREPROFILECHANGE) == 0 {
                 return ERROR_INVALID_SERVICE_CONTROL;
             }
         }
 
-        _SERVICE_CONTROL_POWEREVENT => {
+        SERVICE_CONTROL_POWEREVENT => {
             if (dwControlsAccepted & SERVICE_ACCEPT_POWEREVENT) == 0 {
                 return ERROR_INVALID_SERVICE_CONTROL;
             }
         }
 
-        _SERVICE_CONTROL_SESSIONCHANGE => {
+        SERVICE_CONTROL_SESSIONCHANGE => {
             if (dwControlsAccepted & SERVICE_ACCEPT_SESSIONCHANGE) == 0 {
                 return ERROR_INVALID_SERVICE_CONTROL;
             }

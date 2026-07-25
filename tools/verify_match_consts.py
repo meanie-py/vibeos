@@ -60,7 +60,14 @@ from pathlib import Path
 # Identifier classification
 # ---------------------------------------------------------------------------
 
-CONSTISH = re.compile(r"^[A-Z][A-Za-z0-9_]*$")
+# Leading underscores are part of the class, not an exclusion from it. c2rust and
+# bindgen both emit `_FSCTL_LOCK_VOLUME`-style names, and `_NAME` in a match arm
+# binds exactly as `NAME` does — the underscore only silences `unused_variables`.
+# That makes the underscored form the MORE dangerous spelling and it is why an
+# oracle built on `--force-warn unused_variables` cannot see this variant at all:
+# cdfs's `_FSCTL_LOCK_VOLUME` arm swallowed the following 8 FSCTL dispatches with
+# no warning of any kind except `unreachable_patterns` on its victims.
+CONSTISH = re.compile(r"^_*[A-Z][A-Za-z0-9_]*$")
 
 # Prelude enum variants / unit types that are always in scope and are NOT the
 # undefined-const bug (they really do match by value). Never flag these.
@@ -134,15 +141,71 @@ def strip_line_comment(line: str) -> str:
 # ---------------------------------------------------------------------------
 
 RE_PUB_CONST = re.compile(
-    r"\b(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+(?:mut\s+)?([A-Z][A-Za-z0-9_]*)\b"
+    r"\b(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+(?:mut\s+)?(_*[A-Z][A-Za-z0-9_]*)\b"
 )
 
 
 ENUM_BODY = re.compile(r"enum\s+\w+[^{]*\{(.*?)\}", re.DOTALL)
 
+RE_PUB_USE_ITEM = re.compile(r"^[ \t]*(?:#\[[^\]]*\]\s*)*pub\s+use\s+([^;]+);", re.M)
+
+
+def pub_use_names(text):
+    """Names a module RE-EXPORTS by explicit `pub use` (as opposed to `pub use X::*`,
+    which is followed separately).
+
+    This is not a nicety: the house prelude pattern aliases bindgen's mangled enum
+    variants back to their bare C spelling —
+
+        pub use samsrv_sys::{
+            _DOMAIN_INFORMATION_CLASS_DomainPasswordInformation as DomainPasswordInformation,
+        };
+
+    — precisely so the translated `match` arms are const patterns rather than
+    irrefutable bindings. Not harvesting these made every such alias look
+    unreachable, i.e. the tool reported the bug the prelude already fixed.
+    """
+    names = set()
+    for m in RE_PUB_USE_ITEM.finditer(text):
+        clause = m.group(1)
+        for grp in re.finditer(r"\{([^}]*)\}", clause):
+            for tok in grp.group(1).split(","):
+                tok = tok.strip()
+                if not tok or "*" in tok:
+                    continue
+                # `A::B as C` re-exports under C; a bare `A::B` under B.
+                last = tok.split(" as ")[-1].split("::")[-1].strip()
+                if CONSTISH.match(last):
+                    names.add(last)
+        head = clause.split("{")[0]
+        if head.strip() and "*" not in head:
+            last = head.split(" as ")[-1].split("::")[-1].strip()
+            if CONSTISH.match(last):
+                names.add(last)
+    return names
+
+
+def _enum_variant_names(body):
+    """Variant names in an enum body.
+
+    Split on commas rather than scanning with a `(^|,)…[,(={]` regex: that
+    pattern CONSUMES the trailing comma, so the next match had no delimiter left
+    to anchor on and every OTHER variant was silently dropped. `I8042_DEVICE_TYPE
+    { Unknown, Keyboard, Mouse, PhysicalDeviceObject }` yielded Unknown and Mouse
+    but not Keyboard — so a correct `Keyboard =>` arm was reported as a HIGH
+    catch-all, in a file that glob-imports the enum's variants.
+    """
+    names = set()
+    for item in body.split(","):
+        m = re.match(r"^\s*(_*[A-Z][A-Za-z0-9_]*)\s*(?:[=({]|$)", item.strip() + "\n")
+        if m:
+            names.add(m.group(1))
+    return names
+
 
 def names_in_file(path):
-    """const/static names + enum-variant names defined in one .rs file."""
+    """const/static names, enum-variant names, and explicit `pub use` re-exports
+    visible from one .rs file."""
     consts = set()
     try:
         text = Path(path).read_text(encoding="utf-8", errors="replace")
@@ -151,9 +214,8 @@ def names_in_file(path):
     for m in RE_PUB_CONST.finditer(text):
         consts.add(m.group(1))
     for em in ENUM_BODY.finditer(text):
-        # crude: each variant token before ',' or '(' or '{' or '='
-        for vm in re.finditer(r"(^|,)\s*([A-Z][A-Za-z0-9_]*)\s*(?:[,({=]|$)", em.group(1)):
-            consts.add(vm.group(2))
+        consts |= _enum_variant_names(em.group(1))
+    consts |= pub_use_names(text)
     return consts
 
 
@@ -249,9 +311,20 @@ def crate_own_names(crate_dir, _cache={}):  # noqa: B006 — intentional memo ca
 # glob target cannot be resolved we fall back to the old lax behaviour for that
 # file, so sharpening can never manufacture a false HIGH.
 
-RE_GLOB_USE = re.compile(r"^\s*(?:pub\s+)?use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;", re.M)
+# A `use` may carry attributes on the SAME line — `#[allow(unused_imports)] use
+# crate::glue::*;` is the house style. Anchoring on `^\s*use` skipped those globs
+# entirely, and an UNSEEN glob is worse than an unresolved one: `all_resolved`
+# stayed True, so the fail-open guard never fired and the tool emitted a
+# CONFIDENT HIGH for names the glob really did bring in (all 8 of scsiport's
+# SCSI_NOTIFICATION_TYPE arms, which glue.rs has aliased since it was written).
+_ATTRS = r"(?:#\[[^\]]*\]\s*)*"
+RE_GLOB_USE = re.compile(
+    r"^\s*" + _ATTRS + r"(?:pub\s+)?use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;", re.M
+)
 RE_PATH_MOD = re.compile(r'#\[path\s*=\s*"([^"]+)"\]\s*(?:pub\s+)?mod\s+(\w+)\s*;')
-RE_PUB_USE_GLOB = re.compile(r"^\s*pub\s+use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;", re.M)
+RE_PUB_USE_GLOB = re.compile(
+    r"^\s*" + _ATTRS + r"pub\s+use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;", re.M
+)
 
 
 def _crate_dir_for_extern(crate_dir, extern_name):
@@ -444,8 +517,7 @@ def file_local_names(text: str):
 
     # local enum variants
     for em in re.finditer(r"enum\s+\w+[^{]*\{(.*?)\}", text, re.DOTALL):
-        for vm in re.finditer(r"(^|,)\s*([A-Z][A-Za-z0-9_]*)\s*(?:[,({=]|$)", em.group(1)):
-            names.add(vm.group(2))
+        names |= _enum_variant_names(em.group(1))
 
     # explicit `use` imports (capture identifiers, ignore globs but record presence)
     for um in re.finditer(r"\buse\s+([^;]+);", text):
@@ -478,7 +550,7 @@ def file_local_names(text: str):
                 names.add(cand0)
 
     # let bindings that shadow with a const-looking name (rare but real)
-    for lm in re.finditer(r"\blet\s+(?:mut\s+)?([A-Z][A-Za-z0-9_]*)\b", text):
+    for lm in re.finditer(r"\blet\s+(?:mut\s+)?(_*[A-Z][A-Za-z0-9_]*)\b", text):
         names.add(lm.group(1))
 
     return names, has_glob
@@ -643,6 +715,117 @@ def scan_file(path, universe, use_crate_scope=True):
     return findings
 
 
+# ---------------------------------------------------------------------------
+# Module-tree reachability
+# ---------------------------------------------------------------------------
+
+RE_MOD_ANY = re.compile(
+    r"(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?\bmod\s+(\w+)\s*([;{])"
+)
+
+
+def _decl_sites(text):
+    """[(module_name, [enclosing inline-module names])] for every `mod X;` in `text`.
+
+    Two shapes broke a line-anchored regex, and BOTH of them mark live files dead
+    (the dangerous direction — a hidden catch-all is the bug we are hunting):
+      * several declarations on one line — win32k's
+        `pub mod dcstate; pub mod dcobjs; pub mod dclife; pub mod dcutil;`
+      * file modules nested in an INLINE module — wkssvc's
+        `pub mod wkssvc { pub mod domain; ... }`, where `domain` lives at
+        src/wkssvc/domain.rs, not src/domain.rs.
+    So scan the whole text and track inline-module nesting by brace depth.
+    """
+    # Comments must go first: dhcpcsvc's lib.rs documents the exclusion as
+    # `// pub mod tree;`, and counting that as a declaration would resurrect the
+    # very dead file this function exists to recognise.
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    text = re.sub(r"//[^\n]*", "", text)
+    sites = []
+    stack = []            # [(name, depth_at_open)]
+    depth = 0
+    i = 0
+    while i < len(text):
+        m = RE_MOD_ANY.search(text, i)
+        upto = m.start() if m else len(text)
+        for c in text[i:upto]:
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                while stack and stack[-1][1] >= depth:
+                    stack.pop()
+        if not m:
+            break
+        if m.group(2) == ";":
+            sites.append((m.group(1), [s[0] for s in stack]))
+            i = m.end()
+        else:
+            depth += 1
+            stack.append((m.group(1), depth))
+            i = m.end()
+    return sites
+
+
+def crate_live_files(crate_dir, _cache={}):
+    """Every .rs REACHABLE from the crate root via `mod` declarations.
+
+    A file that no `mod` reaches is not compiled, so a catch-all arm inside it
+    cannot execute — reporting it as a live hazard is noise (dhcpcsvc keeps
+    `dhcp/tree.rs`, a translation of upstream-dead source, deliberately excluded
+    in lib.rs). The same computation is worth having in the other direction too:
+    an ORPHANED file that looks live to grep is its own bug — classpnp's
+    `class_gap3.rs`/`class_gap4.rs` are in no module tree, so edits to them
+    passed `cargo check` while the link still failed.
+    """
+    if crate_dir in _cache:
+        return _cache[crate_dir]
+    _cache[crate_dir] = set()
+    src = os.path.join(crate_dir, "src")
+    live, queue = set(), []
+    for n in ("lib.rs", "main.rs"):
+        f = os.path.join(src, n)
+        if os.path.exists(f):
+            queue.append((f, []))
+    while queue:
+        f, inline = queue.pop()
+        if f in live or not os.path.exists(f):
+            continue
+        live.add(f)
+        try:
+            text = Path(f).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        fdir = os.path.dirname(f)
+        stem = os.path.splitext(os.path.basename(f))[0]
+        base = fdir if stem in ("lib", "main", "mod") else os.path.join(fdir, stem)
+        for pm in RE_PATH_MOD.finditer(text):
+            queue.append((os.path.normpath(os.path.join(fdir, pm.group(1))), []))
+        for name, encl in _decl_sites(text):
+            d = os.path.join(base, *(inline + encl))
+            for cand in (os.path.join(d, name + ".rs"), os.path.join(d, name, "mod.rs")):
+                if os.path.exists(cand):
+                    queue.append((cand, []))
+                    break
+    _cache[crate_dir] = live
+    return live
+
+
+def is_live_file(path):
+    """False only when we positively established the crate's module tree and this
+    file is not in it. Unknown crate layout -> treat as live (fail open)."""
+    crate = crate_root_of(path)
+    if crate is None:
+        return True
+    live = crate_live_files(crate)
+    if not live:
+        return True
+    # Compare REAL paths: scan targets arrive relative, the module walk builds
+    # absolutes from crate_root_of(). Comparing the two spellings marked every
+    # file orphaned.
+    return os.path.realpath(path) in {os.path.realpath(x) for x in live}
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -663,6 +846,11 @@ def main():
         action="append",
         default=None,
         help="root(s) to harvest the const/enum-variant universe from (default: sdk/lib/rust)",
+    )
+    ap.add_argument(
+        "--include-orphan",
+        action="store_true",
+        help="also list findings in files no `mod` declaration reaches (dead source)",
     )
     ap.add_argument(
         "--include-low",
@@ -705,16 +893,31 @@ def main():
 
     all_findings = []
     for path in sorted(scan_files):
-        all_findings.extend(scan_file(path, universe, use_crate_scope=not args.workspace_scope))
+        fs = scan_file(path, universe, use_crate_scope=not args.workspace_scope)
+        if fs and not is_live_file(path):
+            for f in fs:
+                f["confidence"] = "ORPHAN"
+                f["why"] += " [in a file NO `mod` declaration reaches — not compiled]"
+        all_findings.extend(fs)
 
-    order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+    order = {"HIGH": 0, "MEDIUM": 1, "ORPHAN": 2, "LOW": 3}
     all_findings.sort(
         key=lambda f: (order[f["confidence"]], not f["followed_by_arms"], f["path"], f["line"])
     )
 
-    shown = [f for f in all_findings if args.include_low or f["confidence"] != "LOW"]
+    # ORPHAN is suppressed with LOW by default. A finding in a file no `mod`
+    # declaration reaches cannot execute, so listing it would spend this lint's
+    # STRICT (empty) baseline on non-actionable entries — and an empty baseline is
+    # the whole point: it fails on the first NEW live catch-all. `--include-orphan`
+    # lists them, which doubles as the orphaned-translation-file report.
+    hidden = {"LOW"} if args.include_low else {"LOW", "ORPHAN"}
+    if args.include_orphan:
+        hidden.discard("ORPHAN")
+    if args.include_low:
+        hidden.discard("LOW")
+    shown = [f for f in all_findings if f["confidence"] not in hidden]
 
-    counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    counts = {"HIGH": 0, "MEDIUM": 0, "ORPHAN": 0, "LOW": 0}
     for f in all_findings:
         counts[f["confidence"]] += 1
 
@@ -737,6 +940,7 @@ def main():
     print()
     print(
         f"SUMMARY: HIGH={counts['HIGH']}  MEDIUM={counts['MEDIUM']}  "
+        f"ORPHAN(dead file)={counts['ORPHAN']}  "
         f"LOW(likely-FP)={counts['LOW']}  shown={len(shown)}"
     )
 

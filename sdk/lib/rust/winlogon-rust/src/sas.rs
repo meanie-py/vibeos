@@ -13,6 +13,10 @@ use core::ffi::c_void;
 use core::ptr::{addr_of, addr_of_mut, null, null_mut};
 use winlogon_sys::nt::*;
 
+// ---- base/system/winlogon/resource.h control id; .rc resource ids are not in any
+// bindgen island, so this arm bound every WM_COMMAND control id (§9.112a). ----
+const IDC_BTNSHTDOWNCOMPUTER: u32 = 303;
+
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
 // potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
