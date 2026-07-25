@@ -323,7 +323,7 @@ def _land_queued(args, repo: Path) -> int:
                 )
             )
         trained = queue.try_become_trainer(
-            repo, lambda m: run.log(m, header="train"), retries=int(getattr(args, "retries", 2))
+            repo, _trainer_log(run), retries=int(getattr(args, "retries", 2))
         )
         if trained:
             run.add(Stage("train", status="ok", detail="drained the queue as trainer"))
@@ -365,10 +365,35 @@ def _land_queued(args, repo: Path) -> int:
         run.extra["lane"] = lane
         run.extra["seq"] = sub.seq
         return run.finalize(repo)
+    except queue.BaseRed as e:
+        # Our submission is still QUEUED and unjudged — say so, or the agent will assume its
+        # work was rejected and start "fixing" a bug that is on mainline.
+        run.classification = "BASE_RED"
+        run.add(
+            Stage(
+                "train",
+                status="fail",
+                detail="mainline itself is red — train halted, your submission is STILL QUEUED",
+                salient=[str(e)],
+            )
+        )
+        return run.finalize(repo)
     except (queue.QueueError, LandAbort) as e:
         run.classification = "LAND_ABORT"
         run.add(Stage("land", status="fail", detail=str(e).splitlines()[0], salient=[str(e)]))
         return run.finalize(repo)
+
+
+def _trainer_log(run: Run):
+    """Trainer progress goes to BOTH the run log and stdout. The trainer is doing the whole
+    fleet's work — 'batch of 3', 'gate RED', 'splitting 2/1' is exactly what a watching agent
+    needs, and it used to be buried in full.log until the drain exited."""
+
+    def _log(msg: str) -> None:
+        run.log(msg, header="train")
+        print(msg, flush=True)
+
+    return _log
 
 
 def land(args, repo: Path) -> int:
@@ -377,9 +402,14 @@ def land(args, repo: Path) -> int:
     when the queue itself needs bypassing."""
     if getattr(args, "drain", False):
         run = Run("land", "drain")
-        trained = queue.try_become_trainer(
-            repo, lambda m: run.log(m, header="train"), retries=int(getattr(args, "retries", 2))
-        )
+        try:
+            trained = queue.try_become_trainer(
+                repo, _trainer_log(run), retries=int(getattr(args, "retries", 2))
+            )
+        except queue.BaseRed as e:
+            run.classification = "BASE_RED"
+            run.add(Stage("train", status="fail", detail=str(e).splitlines()[0], salient=[str(e)]))
+            return run.finalize(repo)
         run.add(
             Stage(
                 "train",

@@ -3287,6 +3287,9 @@ def test_queue_red_batch_splits_and_spares_the_innocent(queue_repo, monkeypatch)
     monkeypatch.setattr(q_mod, "gate_batch", fake_gate)
     monkeypatch.setattr(q_mod, "git", lambda *a, **k: "")
     monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
+    # This scenario is "the base is fine, one lane is bad" — see
+    # test_queue_red_base_rejects_nobody for the other half.
+    monkeypatch.setattr(q_mod.BaseCheck, "is_green", lambda *a, **k: True)
 
     q_mod.land_subset(repo, repo, subs, lambda m: None)
     by_lane = {r["lane"]: r for r in q_mod.results(repo, limit=50)}
@@ -3393,3 +3396,94 @@ def test_prune_never_reclaims_the_integration_tree(tmp_path):
         )
         is None
     )
+
+
+def _safe_git(monkeypatch):
+    """Patch out only the MUTATING git verbs. Blanket-patching `queue.git` also breaks
+    `queue_dir()` (it resolves --git-common-dir), which silently points pending/results at
+    the wrong directory and makes every queue assertion vacuously true — that bit me once."""
+    real = q_mod.git
+    mutating = {"push", "reset", "clean", "fetch", "merge", "update-ref", "worktree"}
+
+    def safe(repo_, *args, **kw):
+        if args and args[0] in mutating:
+            return ""
+        return real(repo_, *args, **kw)
+
+    monkeypatch.setattr(q_mod, "git", safe)
+    monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
+
+
+def _two_queued(repo, prefix):
+    subs = []
+    for lane in ("a", "b"):
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", f"{prefix}{lane}", "master"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        _commit(repo, f"{prefix}{lane}.txt")
+        subs.append(q_mod.submit(repo, lane=f"lane-{lane}"))
+    return subs
+
+
+def test_queue_red_base_rejects_nobody_and_halts_the_train(queue_repo, monkeypatch):
+    """The first REAL batch got this wrong: mainline was red (fltmgr-rust failed to compile
+    for i386), the train split down to one submission per half and rejected BOTH — one of
+    them a docs-only change, which cannot break a build. A queue that blames the base's
+    breakage on whoever happens to be in the batch is worse than no queue."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "rb")
+    _safe_git(monkeypatch)
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="e" * 40, merged=list(b)),
+    )
+    # EVERYTHING is red, base included — the honest verdict is "not their fault".
+    monkeypatch.setattr(
+        q_mod, "gate_batch", lambda w, log, retries=2: (False, "BUILD_FAIL", "/tmp/a", "ninja")
+    )
+    with pytest.raises(q_mod.BaseRed) as ei:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert "origin/master itself fails the gate" in str(ei.value)
+    assert q_mod.results(repo, limit=20) == [], "rejected a lane for mainline's breakage"
+    assert len(q_mod.pending(repo)) == 2, "submissions must stay QUEUED — never judged"
+
+
+def test_queue_red_batch_with_green_base_rejects_the_guilty(queue_repo, monkeypatch):
+    """The mirror: base green ⇒ the submissions really are at fault and must be rejected."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "gb")
+    _safe_git(monkeypatch)
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
+    )
+    monkeypatch.setattr(
+        q_mod, "gate_batch", lambda w, log, retries=2: (False, "BUGCHECK", "/tmp/a", "boom")
+    )
+    monkeypatch.setattr(q_mod.BaseCheck, "is_green", lambda *a, **k: True)
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    recs = q_mod.results(repo, limit=20)
+    assert len(recs) == 2 and all(r["outcome"] == "rejected" for r in recs), recs
+    assert all(r["classification"] == "BUGCHECK" for r in recs)
+
+
+def test_queue_base_check_is_memoized(queue_repo, monkeypatch):
+    """A red batch must gate the base ONCE, not once per half — the base cannot change while
+    the trainer holds the land lock, and a full gate is minutes."""
+    repo, _ = queue_repo
+    _safe_git(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        q_mod,
+        "gate_batch",
+        lambda w, log, retries=2: (calls.append(1), (True, "", "", ""))[1],
+    )
+    base = q_mod.BaseCheck()
+    assert base.is_green(repo, repo, lambda m: None, retries=0) is True
+    assert base.is_green(repo, repo, lambda m: None, retries=0) is True
+    assert len(calls) == 1, f"base gated {len(calls)}x"

@@ -218,6 +218,14 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   the culprit is one submission — rejected with its classification + artifact
   dir. Innocent lanes still land. Batch cap `VIBEOS_QUEUE_BATCH` (default 4)
   bounds the worst-case bisect.
+- **Guilty or framed?** Before rejecting a lone submission, the trainer gates the
+  BASE alone (`origin/master`, nothing merged). If the base is red too, **nobody
+  is rejected**: the submissions stay queued, the train HALTS, and the verdict
+  says mainline is broken. This is not hypothetical — the very first real batch
+  hit it (mainline failed to compile `fltmgr-rust` for i386) and, without this
+  check, rejected a docs-only change for a build failure it could not have
+  caused. The base gate is lazy and memoized per drain, so a green batch never
+  pays for it.
 - **A batch is never presumed green from its parts.** Two individually-green
   lanes can be red *together*; the queue catches that before master, where today
   the second lane lands on the first without ever gating the combination.

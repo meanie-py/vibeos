@@ -351,13 +351,27 @@ def build_batch(repo: Path, wt: Path, subs: list[Submission], log) -> BatchResul
 
 def gate_batch(wt: Path, log, *, retries: int = 2) -> tuple[bool, str, str, str]:
     """Run the FULL gate in the integration tree. Returns (ok, classification, artifact,
-    salient). This is the only place a batch is judged — no batch is ever presumed green."""
-    root = Path(os.environ.get("VIBEOS_ARTIFACT_ROOT", "/tmp/vibeos-cli"))
+    salient). This is the only place a batch is judged — no batch is ever presumed green.
+
+    The gate gets its OWN artifact root. It used to inherit the shared /tmp/vibeos-cli and
+    the batch's artifact was then found by diffing that directory before/after — which
+    silently picked up a CONCURRENT lane's gate (2026-07-25: the first real batch reported
+    vibeos-fex's green gate as its own). Artifact provenance has to be by construction, not
+    by timing."""
+    root = (
+        Path(os.environ.get("VIBEOS_ARTIFACT_ROOT", "/tmp/vibeos-cli"))
+        / f"queue-batch-{time.time_ns():020d}"
+    )
+    root.mkdir(parents=True, exist_ok=True)
     cmd = [str(wt / "vibeos-cli"), "gate", "--retries", str(retries)]
-    before = set(root.glob("*-gate-*")) if root.is_dir() else set()
-    cp = subprocess.run(cmd, cwd=str(wt), capture_output=True, text=True)
-    after = set(root.glob("*-gate-*")) if root.is_dir() else set()
-    fresh = sorted(after - before)
+    cp = subprocess.run(
+        cmd,
+        cwd=str(wt),
+        capture_output=True,
+        text=True,
+        env=dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root)),
+    )
+    fresh = sorted(root.glob("*-gate-*"))
     artifact = str(fresh[-1]) if fresh else ""
     classification, salient = "", ""
     if artifact:
@@ -376,7 +390,56 @@ def gate_batch(wt: Path, log, *, retries: int = 2) -> tuple[bool, str, str, str]
     return ok, classification, artifact, salient
 
 
-def land_subset(repo: Path, wt: Path, subs: list[Submission], log, *, retries: int = 2) -> None:
+class BaseRed(QueueError):
+    """The BASE (origin/master with nothing merged) does not pass the gate. Nothing can land
+    on it, and no submission may be blamed for it."""
+
+
+class BaseCheck:
+    """Lazily-evaluated 'is origin/master itself green?', memoized for one drain.
+
+    WHY (2026-07-25, the first real batch): mainline was red — `fltmgr-rust` failed to
+    compile for i386 — and the train dutifully split the batch, reached one submission per
+    half, and REJECTED BOTH. One of them was a docs-only change, which cannot break a build.
+    A merge queue that blames the base's breakage on whoever happened to be in the batch is
+    worse than no queue: it teaches lanes to distrust their own verdicts.
+
+    Lazy on purpose: a green batch never pays for this. It is evaluated only when a lone
+    submission comes back red, which is exactly when 'guilty or framed?' has to be answered.
+    """
+
+    def __init__(self) -> None:
+        self.verdict: bool | None = None
+        self.artifact = ""
+        self.classification = ""
+        self.salient = ""
+
+    def is_green(self, repo: Path, wt: Path, log, *, retries: int) -> bool:
+        if self.verdict is not None:
+            return self.verdict
+        log("queue: a lone submission failed — gating the BASE alone to see who is at fault")
+        git(wt, "fetch", "origin")
+        git(wt, "reset", "--hard", "origin/master")
+        git(wt, "clean", "-fdq")
+        ok, cls, art, sal = gate_batch(wt, log, retries=retries)
+        self.verdict, self.classification, self.artifact, self.salient = ok, cls, art, sal
+        log(
+            "queue: BASE is GREEN — the submission really is the culprit"
+            if ok
+            else f"queue: BASE ITSELF IS RED ({cls}) — mainline is broken; no lane is at fault"
+        )
+        return ok
+
+
+def land_subset(
+    repo: Path,
+    wt: Path,
+    subs: list[Submission],
+    log,
+    *,
+    retries: int = 2,
+    base: BaseCheck | None = None,
+) -> None:
     """Gate `subs` as one batch; on red, split and recurse.
 
     Landing a green half IMMEDIATELY (rather than after the whole bisect) is deliberate: the
@@ -420,6 +483,17 @@ def land_subset(repo: Path, wt: Path, subs: list[Submission], log, *, retries: i
         return
     if len(subs) == 1:
         sub = subs[0]
+        # GUILTY OR FRAMED? A lone red submission is only the culprit if the BASE is green.
+        # Skipping this check is how the first real batch rejected a docs-only change for a
+        # build failure that was already on mainline.
+        base = base or BaseCheck()
+        if not base.is_green(repo, wt, log, retries=retries):
+            raise BaseRed(
+                f"origin/master itself fails the gate ({base.classification or 'red'}) — "
+                f"{base.salient or 'see the artifact'}. No submission was rejected (they are "
+                f"not at fault) and the train is halted: nothing can land on a red base. "
+                f"Artifact: {base.artifact or '(none)'}"
+            )
         log(f"queue: REJECTED {sub.lane} {sub.tip[:12]} — {classification or 'gate red'}")
         resolve(
             repo,
@@ -432,8 +506,9 @@ def land_subset(repo: Path, wt: Path, subs: list[Submission], log, *, retries: i
         return
     mid = len(subs) // 2
     log(f"queue: red batch of {len(subs)} — splitting {mid}/{len(subs) - mid} to find the culprit")
-    land_subset(repo, wt, subs[:mid], log, retries=retries)
-    land_subset(repo, wt, subs[mid:], log, retries=retries)
+    base = base or BaseCheck()  # shared across both halves: gate the base at most once
+    land_subset(repo, wt, subs[:mid], log, retries=retries, base=base)
+    land_subset(repo, wt, subs[mid:], log, retries=retries, base=base)
 
 
 def already_landed(repo: Path, sub: Submission) -> bool:
@@ -473,7 +548,14 @@ def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
             + ", ".join(f"{s.lane}@{s.tip[:8]}" for s in batch)
             + (f" ({len(fresh) - len(batch)} more queued)" if len(fresh) > len(batch) else "")
         )
-        land_subset(repo, wt, batch, log, retries=retries)
+        try:
+            land_subset(repo, wt, batch, log, retries=retries)
+        except BaseRed as e:
+            # Everything still queued STAYS queued — it was never judged. Halting is the
+            # only honest move: on a red base every batch would fail for a reason that has
+            # nothing to do with the lanes in it.
+            log(f"queue: TRAIN HALTED — {e}")
+            raise
         batches += 1
 
 
