@@ -1030,3 +1030,74 @@ sweep: ratchet holds, no regressions. amd64 post-change: `-smp 2` 2/2, `-smp 4`
 2/2. Separately: the 2026-07-14 `-smp 4` 0x4C c0000139 residual NO LONGER
 REPRODUCES (6/6 desktop) — killed by the intervening corruption fixes; task #14
 closed.
+
+## UP→smp1 collapse — the gating experiment (2026-07-24)
+
+Re-opening the "UP endgame" item above (decided 2026-07-10, never scheduled). The
+question the collapse turns on is narrow: **does the MP kernel on ONE cpu behave
+like the UP kernel?** If yes, `ntoskrnl.exe` becomes the MP kernel, the UP flavor
+retires, and the "worked-on-UP-broke-on-SMP" bug class stops existing.
+
+### Harness capability landed first (no default changed)
+
+Three false-green shapes had to be closed before any measurement could be trusted
+— an SMP run that isn't actually SMP looks *identical* to one that is, screenshot
+included:
+
+1. **`conformance --smp 1` was a no-op experiment.** `--smp-kernel` was appended
+   only when `N > 1`, so `--smp 1` swept the **UP** kernel and reported a
+   meaningless all-green. Now any `--smp N` builds MP media; `--smp 1`
+   deliberately ratchets against the **UP baseline** (`kmtest.txt`) because
+   MP-at-one-cpu matching UP test-for-test IS the collapse criterion.
+   `--smp 1 --write-baseline` is refused — it would overwrite the UP oracle with
+   MP results and destroy the only thing the experiment is measured against.
+2. **`smoke --smp N` never checked which kernel booted.** freeldr already
+   announces it (`[FLDR] load …\ntkrnlmp.exe`), so this is an assertion, not new
+   instrumentation → `UP_KERNEL_ON_SMP_RUN`. Verified by running it against UP
+   media: a boot that reached the desktop and would have been reported GREEN now
+   fails with the actionable fix line.
+3. **`smoke --smp N` had no AP-liveness check** — `test_smoke.py::test_milestones`
+   requires `[SMP] CPU<n> scheduling live` per AP, but the CLI smoke fast path
+   does not run pytest, so `smoke --smp 2` greened on the BSP's desktop alone.
+   Mirrored into the CLI path (`SMP_AP_NOT_SCHEDULING`), plus explicit detection
+   of the arm64 **MP-kernel-on-UP-hal.dll** trap (`SMP_UP_HAL`) — arm64 has no
+   MISMATCHED_HAL handshake, so that mis-pair boots to a desktop on 1 cpu and
+   looks perfect. All three live in `_smp_check()` (tests/qemu/cli/smoke.py).
+
+### Result: MP kernel at `-smp 1` boots to desktop on all three arches
+
+Same host, same session, UP numbers from the immediately-preceding gate:
+
+| arch  | UP    | MP @ `-smp 1` | note |
+|-------|-------|---------------|------|
+| i386  | 37.2s | **33.5s**     | `[SMP] KeIpiGenericCall self-test: worker ran on 0x1 == active set OK` |
+| amd64 | 38.6s | **~40s** (86.9s incl. the net suite, which also passed) | |
+| arm64 | 44.2s | **46.0s**     | no `UP HAL stub` marker — real SMP HAL |
+
+Each run is kernel-verified (`[FLDR] load …\ntkrnlmp.exe`). **No boot-time
+regression from running the MP kernel on one cpu** — the real spinlock bodies and
+the SYNCH_LEVEL raise on every context switch are inside the noise. That answers
+the "UP might be faster" objection at the boot level; conformance is the semantic
+half.
+
+### Structural blocker found: the media cannot carry both flavors
+
+`[LiveCD_SMP]` (`/KERNEL=ntkrnlmp.exe`) **already ships in every livecd.ini** —
+`VIBEOS_SMP_DEFAULT_BOOT` only rewrites `DefaultOS=`. And `ntkrnlmp.exe` is in the
+livecd file lists unconditionally, so **every default gate build already builds,
+links and stages the MP kernel on all three arches**; it is only never *booted*.
+What is NOT interchangeable is the HAL: `hal/halx86/CMakeLists.txt` says it
+outright — "There is exactly ONE hal.dll (the halacpi/halapic/halaacpi names are
+install aliases)" — and its UP/MP flavor is a build-dir-global cmake cache var
+(`VIBEOS_SMP_DEFAULT_BOOT` → `VIBEOS_SMP_HAL=1` → hal-cargo `smp` feature →
+`HalpBuildType` + `SYNCH_LEVEL`). So switching kernels costs a full reconfigure +
+relink (measured: **9m25s i386 / 12m22s amd64, warm**), which is what makes an
+MP gate leg expensive today.
+
+**Proposed fix, symmetric with what the kernel already does:** build the SMP HAL
+as a second output (`halmp-cargo` → `halmp.dll`, mirroring `ntoskrnl-cargo` →
+`ntkrnlmp-cargo`) and ship both. freeldr already supports the override —
+`winldr.c:719` parses `/HAL=`, and `[LiveCD_Macpi]` already uses
+`/HAL=halmacpi.dll /KERNEL=ntkrnlmp.exe`. Then ONE media boots either flavor, an
+MP gate leg costs one extra boot instead of a rebuild, and the mis-pair class
+(0x79 on x86, silent-1-cpu on arm64) stops being reachable by construction.
