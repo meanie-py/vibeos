@@ -29,11 +29,6 @@ FLAT-DIVERGENT: ntdll NtCreateProcess(ProcessHandle) SCALAR_WIDEN -> HANDLE: 4->
 FLAT-DIVERGENT: ntdll NtCreateProcessEx(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtCreateProcessEx(ProcessHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtCreateProfile(ProfileHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateThread(ClientId) WIDENING -> struct _CLIENT_ID
-FLAT-DIVERGENT: ntdll NtCreateThread(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtCreateThread(ThreadContext) SEMANTIC -> struct _CONTEXT: field lists differ across widths
-FLAT-DIVERGENT: ntdll NtCreateThread(ThreadHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateThread(UserStack) WIDENING -> struct _INITIAL_TEB
 FLAT-DIVERGENT: ntdll NtCreateTimer(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtCreateTimer(TimerHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtCreateToken(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
@@ -60,7 +55,6 @@ FLAT-DIVERGENT: ntdll NtFlushVirtualMemory(BaseAddress) SCALAR_WIDEN -> PVOID: 4
 FLAT-DIVERGENT: ntdll NtFlushVirtualMemory(IoStatus) SEMANTIC -> struct _IO_STATUS_BLOCK: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtFreeUserPhysicalPages(NumberOfPages) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtFreeUserPhysicalPages(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtGetContextThread(Context) SEMANTIC -> struct _CONTEXT: field lists differ across widths
 FLAT-DIVERGENT: ntdll NtGetPlugPlayEvent(Buffer) SEMANTIC -> struct _PLUGPLAY_EVENT_BLOCK: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtGetWriteWatch(EntriesInUserAddressArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtGetWriteWatch(UserAddressArray) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
@@ -114,7 +108,6 @@ FLAT-DIVERGENT: ntdll NtReplyWaitReplyPort(ReplyMessage) SEMANTIC -> struct _POR
 FLAT-DIVERGENT: ntdll NtRequestPort(LpcMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtRequestWaitReplyPort(LpcReply) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtRequestWaitReplyPort(LpcRequest) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
-FLAT-DIVERGENT: ntdll NtSetContextThread(Context) SEMANTIC -> struct _CONTEXT: field lists differ across widths
 FLAT-DIVERGENT: ntdll NtSetSystemEnvironmentValue(Value) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtSetSystemEnvironmentValue(VariableName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtSetSystemEnvironmentValueEx(VariableName) WIDENING -> struct _UNICODE_STRING
