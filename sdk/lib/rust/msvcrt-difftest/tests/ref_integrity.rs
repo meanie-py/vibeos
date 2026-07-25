@@ -195,6 +195,14 @@ fn locale_layout_agrees_with_msvcrt_sys() {
         fn subj_off_td_errno() -> usize;
         fn subj_off_locinfo_lconv() -> usize;
         fn subj_off_lconv_decimalpoint() -> usize;
+        fn subj_off_mbcinfo_mbcodepage() -> usize;
+        fn subj_off_mbcinfo_ismbcodepage() -> usize;
+        fn subj_off_mbcinfo_mblcid() -> usize;
+        fn subj_off_mbcinfo_mbulinfo() -> usize;
+        fn subj_off_mbcinfo_mbctype() -> usize;
+        fn subj_off_mbcinfo_mbcasemap() -> usize;
+        fn subj_sizeof_mbcinfo() -> usize;
+        fn subj_off_locale_mbcinfo() -> usize;
     }
 
     let checks: &[(&str, usize, usize)] = unsafe {
@@ -227,6 +235,33 @@ fn locale_layout_agrees_with_msvcrt_sys() {
             // nobody would guess. So: verified, not assumed.
             ("lconv.decimal_point",
              subj_off_lconv_decimalpoint(), offset_of!(sys::lconv, decimal_point)),
+            // ── mbcs (wave 15) ────────────────────────────────────────────────
+            // refstub carried a 3-field `threadmbcinfo` (refcount/mbcodepage/
+            // ismbcodepage) — everything string.c and wcs.c touch — and it was
+            // harmless only because refimpl.c left `locale->mbcinfo` NULL. Every
+            // mbcs.c entry point dereferences it, and the Rust has always read the
+            // real 541-byte layout through msvcrt-sys. `mbctype` at 28 against a
+            // 12-byte object is a read past the end that BOTH sides make
+            // identically — a permanent, stable, wrong MATCH.
+            ("threadmbcinfo.mbcodepage",
+             subj_off_mbcinfo_mbcodepage(), offset_of!(sys::threadmbcinfostruct, mbcodepage)),
+            ("threadmbcinfo.ismbcodepage",
+             subj_off_mbcinfo_ismbcodepage(), offset_of!(sys::threadmbcinfostruct, ismbcodepage)),
+            ("threadmbcinfo.mblcid",
+             subj_off_mbcinfo_mblcid(), offset_of!(sys::threadmbcinfostruct, mblcid)),
+            ("threadmbcinfo.mbulinfo",
+             subj_off_mbcinfo_mbulinfo(), offset_of!(sys::threadmbcinfostruct, mbulinfo)),
+            ("threadmbcinfo.mbctype",
+             subj_off_mbcinfo_mbctype(), offset_of!(sys::threadmbcinfostruct, mbctype)),
+            ("threadmbcinfo.mbcasemap",
+             subj_off_mbcinfo_mbcasemap(), offset_of!(sys::threadmbcinfostruct, mbcasemap)),
+            // sizeof, not just offsets: `mbcasemap` is the LAST member, so its offset
+            // is correct even if the array is short. Only this catches a truncated tail.
+            ("sizeof threadmbcinfo",
+             subj_sizeof_mbcinfo(), core::mem::size_of::<sys::threadmbcinfostruct>()),
+            // How every `_l` entry point reaches the state above.
+            ("_locale_t.mbcinfo",
+             subj_off_locale_mbcinfo(), offset_of!(sys::localeinfo_struct, mbcinfo)),
         ]
     };
 

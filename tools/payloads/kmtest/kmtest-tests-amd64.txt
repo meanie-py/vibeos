@@ -3,6 +3,21 @@
 # One name per line; kmtest-sweep.exe runs one kmtest_.exe process per test.
 # amd64 runs kmtest_drv with native SEH. Per-arch list (i386 diverges — it's
 # DUMMY_PSEH, a superset of these quarantines).
+#
+# FULLY RE-PROBED 2026-07-25 (tools/conformance_probe.py, one test per boot, so no
+# test's verdict depends on another's): all 9 quarantines still fail. ZERO
+# un-quarantine candidates — don't re-run this probe hoping for free wins, run it
+# after a fix that plausibly touches one of these roots.
+#
+# The amd64 quarantine set is the SHARED CORE: amd64 (9+TcpIpConnect) is a strict
+# subset of arm64 (11), which is a strict subset of i386 (21). Nothing is
+# amd64-only. So every fix here moves all three arches at once, and this is the
+# highest-leverage list in the repo to work from.
+#
+# 7 of the 9 notes below reproduced their recorded stop code EXACTLY, 15 days on.
+# The two that drifted are stamped inline (IoFilesystem, MmMapLockedPagesSpecifyCache)
+# — a note that records stop code + mechanism survives; one that records a symbol
+# offset or a source line does not.
 CmSecurity
 ExCallback
 ExDoubleList
@@ -31,6 +46,13 @@ IoEvent
 # QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
 # MiFindEmptyAddressRangeInTree+0x173 (Rust, ARM3/vadnode.rs:370). Triage owed — real
 # kernel-bug candidate in the VAD-tree range search. Quest doc has details.
+# STOP CODE MOVED 2026-07-25 (re-probed alone, one test per boot): now BUGCHECK 0x19
+# BAD_POOL_HEADER, not the 0x1E VAD-tree AV above. Still fails, so it stays quarantined,
+# but the vadnode.rs:370 lead is STALE — it cost a reader a wasted trip through that
+# function today. Note the convergence: NpfsFileInfo also stops 0x19 on this build, so
+# these two are now candidates for ONE shared pool-corruption root rather than two bugs.
+# Next step is --tripwire "SPECIALPOOL=*" to catch the corrupting store, not more
+# VAD-tree reading.
 #IoFilesystem
 IoInterrupt
 IoIrp
@@ -139,6 +161,10 @@ IoReadWrite
 # so the fault is in the Rust MDL-map PTE/PFN accounting (MmMapLockedPagesSpecifyCache),
 # NOT in its driver's SEH. Useful negative result: it cleanly separates the two causes.
 # Triage owed.
+# STOP CODE MOVED 2026-07-25 (re-probed alone, one test per boot): now BUGCHECK 0x1A
+# MEMORY_MANAGEMENT, not the 0x1000 PFN_LIST_CORRUPT-class above. Still fails, so it stays
+# quarantined — but task #7 is built on the PFN-back-pointer reading of that old code, and
+# that premise needs re-checking against 0x1A before more time goes into it.
 #MmMapLockedPagesSpecifyCache
 # STILL QUARANTINED (re-checked 2026-07-12): same negative result as
 # MmMapLockedPagesSpecifyCache above — native SEH did NOT save it. Its driver has 3

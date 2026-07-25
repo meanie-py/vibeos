@@ -1433,3 +1433,66 @@ before hunting in Se.
 **Practical:** exclude `SeTokenFiltering` from arm64 probe lists the way `TcpIpConnect` is
 excluded — both burn the full drain budget instead of failing fast, and one wedge can consume a
 whole probe run.
+
+### 2026-07-25 (later) — amd64 fully re-probed: 9/9 still broken, and the debt is a strict CHAIN
+
+The amd64 probe owed since the tool was written is **done, and it is a clean negative**: every
+one of the 9 amd64 quarantines (excluding `TcpIpConnect`, a documented hang) still fails. Zero
+un-quarantine candidates. Each test was booted **alone**, one per boot, so no verdict here
+depends on any other test's behaviour.
+
+| test | verdict | stop code | note recorded | |
+|---|---|---|---|---|
+| `NtCreateSection` | CRASH | `0x50` | `0x50` | ✓ |
+| `MmMapLockedPagesSpecifyCache` | CRASH | `0x1A` | `0x1000` PFN_LIST_CORRUPT P1=0x401 | **drifted** |
+| `IoCreateFile` | CRASH | `0x1E` | `0x1E` | ✓ |
+| `IoFilesystem` | CRASH | `0x19` | `0x1E` AV `MiFindEmptyAddressRangeInTree+0x173` | **drifted** |
+| `SeTokenFiltering` | TIMEOUT 234s | — | TIMEOUT | ✓ |
+| `MmReservedMapping` | CRASH | `0xDA` | `0xDA` SYSTEM_PTE_MISUSE | ✓ |
+| `NpfsFileInfo` | CRASH | `0x19` | `0x19` BAD_POOL_HEADER | ✓ |
+| `RtlException` | NO-END exit=128 | — | NO-END exit=128 | ✓ |
+| `RtlExceptionKM` | CRASH | `0x1E` | `0x1E` | ✓ |
+
+**The quarantine sets are strictly nested: amd64 ⊂ arm64 ⊂ i386.** arm64 is amd64 plus exactly
+one test (`ZwAllocateVirtualMemory`); i386 is amd64 plus eleven. *Nothing is amd64-only.* That
+makes amd64's list the **shared core** — the arch-independent bugs, where one fix moves all three
+arches — and it is the highest-leverage list to work from. It also means a clean amd64 probe
+result is the strongest possible evidence that there are no free un-quarantines anywhere: these
+same tests fail on the other two arches too.
+
+**On note durability — the fair version.** 7 of 9 notes reproduced their recorded stop code
+*exactly*, 15 days later. My earlier "notes decay" framing was too broad. The pattern is sharper
+than that: **a note that records a stop code and a mechanism survives; a note that records a
+symbol offset or a source line does not.** Both drifted entries misdirect concretely —
+`IoFilesystem`'s sent me reading `ARM3/vadnode.rs:370` for a bug that now presents as pool
+corruption, and `MmMapLockedPagesSpecifyCache`'s `0x1000` reading is the premise task #7 is built
+on, which needs re-checking against `0x1A` before more time goes into it.
+
+**A convergence worth chasing:** `IoFilesystem` and `NpfsFileInfo` now stop with the *same*
+`0x19` BAD_POOL_HEADER. Two tests, one stop code — plausibly ONE pool-corruption root rather than
+two bugs. The next move on both is `--tripwire "SPECIALPOOL=*"` to fault at the corrupting store,
+not more source reading.
+
+**The tool bug this exposed** (fixed, `7a10deea964`). Round 1 ran `SeTokenFiltering` ahead of four
+candidates and reported all four as validly re-tested. They were not: a TIMEOUT is an in-kernel
+wedge that does *not* end the boot, and the wedged process keeps `kmtest_drv`'s result buffer
+registered, so every later test cascade-fails `SET_RESULTBUFFER 0x5` and records a NO-END verdict
+about itself that is really a fact about the wedge. Because those look like verdicts, the
+"nothing missing → we're done" early-out accepted them. Re-probed with the wedge excluded, all
+four had real verdicts of their own.
+
+That is the **second** attribution bug in this tool, and the same mistake in a new costume:
+crediting a test with a verdict that says nothing about it. The first one invented four crashers
+out of tests that never executed; this one invented four clean re-tests. Both directions are now
+covered by controls (`tools/test_conformance_probe.py`) over a pure `split_at_wedge`.
+
+Note the asymmetry that makes NO-END deliberately *not* poisoning: it is how a usermode test
+self-crashes without taking the kernel down. The final boot proves the point — `RtlException`
+NO-END was followed by `RtlExceptionKM` earning a genuine CRASH, which a broader rule would have
+discarded.
+
+**Twice today I read "no QEMUs running" as a wedge and was wrong both times.** `conformance`
+front-loads a staging *build* before it boots, so a probe can sit for 15+ minutes holding a
+`cpuheavy` lease with no VM in sight — especially with the build broker at 4/4 and a merge-queue
+conductor gating. The check that actually discriminates is `host-status` (does it hold a build
+lease?) plus whether the run dir has a `full.log` yet — not `vibeos-cli ps` alone.
