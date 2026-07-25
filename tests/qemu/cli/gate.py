@@ -10,11 +10,12 @@ tests/qemu/vm.py:892-902) and the per-arch cap is bypassed (vm.py:1295-1299), so
 concurrent same-arch AND cross-arch boots are collision-safe. The only thing that
 was serial was the *orchestrator* — i.e. the human. This driver removes that:
 
-  1+2. builds + lanes, PIPELINED (F5, 2026-07-06) — builds run serially among
-     themselves (build-vs-build is the exclusive cpuheavy lease + shared-cache
-     thrash; amd64 first, since it feeds two lanes), but each arch's smoke, its
-     strict lint, and (for amd64) the net lane launch THE MOMENT its own build
-     lands rather than behind an all-arches barrier. Safe by hostlock design:
+  1+2. builds + lanes, PIPELINED (F5, 2026-07-06) — every arch's build is
+     submitted at once (they self-throttle on the broker's build share, default 2
+     concurrent fleet-wide; amd64 is submitted first, since it feeds two lanes),
+     and each arch's smoke, its strict lint, and (for amd64) the net lane launch
+     THE MOMENT its own build lands rather than behind an all-arches barrier.
+     Safe by hostlock design:
      windows-host boots run on the Windows scheduling domain (`bootcpu` pool)
      and coexist with the next WSL-side build (build ∥ boot is the documented
      contract). Opt out of builds with --no-build (all lanes launch at once).
@@ -36,9 +37,15 @@ was serial was the *orchestrator* — i.e. the human. This driver removes that:
      Exit 0 only if every arch is ultimately green.
 
 Concurrency is safe to over-submit: each smoke subprocess self-throttles on the
-host CPU-lease pool (hostlock, DEFAULT_CPU_LEASES=4) and the global QEMU cap
-(vm.py QEMU_MAX_CONCURRENT=10). The executor just needs enough workers to not
-re-serialize; the harness does the real throttling.
+host boot-CPU pool (hostlock `bootcpu`, capacity-derived — 8 on a 24-vCPU box)
+and the global QEMU cap (vm.py QEMU_MAX_CONCURRENT=16); each build self-throttles
+on the cpuheavy build share. The executor just needs enough workers to not
+re-serialize; the broker does the real throttling.
+
+A green FULL gate mints the push stamp for THE TREE IT GATED (sampled at start —
+see _write_gate_stamp). `vibeos-cli land` is the front door: it holds the fleet
+land lock across gate+push so master cannot move underneath, which is what makes
+a green gate always landable instead of a lottery ticket.
 """
 
 from __future__ import annotations
@@ -316,12 +323,36 @@ def _prune_stale_stamps(stamps_dir: Path, max_age_s: int = 24 * 3600) -> None:
             pass
 
 
-def _write_gate_stamp(run: Run, repo: Path, arches: list[str]) -> None:
+def _tree_state(repo: Path) -> tuple[str, bool]:
+    """(HEAD's tree hash, is-dirty) — sampled at gate START so the stamp can certify the
+    content the gate actually validated. See _write_gate_stamp."""
+
+    def _git(*a: str) -> str:
+        return subprocess.run(
+            ["git", *a], cwd=repo, capture_output=True, text=True, timeout=60
+        ).stdout.strip()
+
+    return (
+        _git("rev-parse", "HEAD^{tree}"),
+        bool(_git("status", "--porcelain", "--untracked-files=no")),
+    )
+
+
+def _write_gate_stamp(
+    run: Run, repo: Path, arches: list[str], gated: tuple[str, bool] | None = None
+) -> None:
     """T1.3 (mechanized North Star): a green FULL gate mints the push
     credential — the pre-push hook (tools/git-hooks/pre-push) refuses updates
     to master whose tree doesn't match a fresh green stamp. Only a CLEAN tree
     is stamped: a dirty tree gates content no commit will ever hash to.
-    Partial-arch gates never stamp (the North Star is all three)."""
+    Partial-arch gates never stamp (the North Star is all three).
+
+    `gated` is (tree, dirty) sampled at gate START. It must match the tree still checked
+    out at the end, because this function used to read HEAD's tree at stamp time and
+    certify THAT — so a commit made while the gate ran (an agent tidying up during a
+    20-minute gate) minted a credential for content nothing had built or booted
+    (2026-07-25). The stamp is a claim about what was validated; it must be exactly that
+    or nothing."""
     if not FULL_ARCH_SET.issubset(set(arches)):
         run.log("gate green but partial arch set — no push stamp minted", header="stamp")
         return
@@ -342,6 +373,30 @@ def _write_gate_stamp(run: Run, repo: Path, arches: list[str]) -> None:
             run.add(Stage("stamp", status="warn", detail="dirty tree — no push stamp"))
             return
         tree = _git("rev-parse", "HEAD^{tree}")
+        if gated is not None:
+            start_tree, start_dirty = gated
+            if start_dirty:
+                run.log(
+                    "gate green but the tree was DIRTY when the gate STARTED — what ran is "
+                    "not what any commit hashes to, so nothing here can be certified. "
+                    "Commit first, then gate.",
+                    header="stamp",
+                )
+                run.add(Stage("stamp", status="warn", detail="dirty at start — no push stamp"))
+                return
+            if start_tree and tree != start_tree:
+                run.log(
+                    f"gate green but the checkout MOVED during the gate "
+                    f"({start_tree[:12]} → {tree[:12]}) — the boots validated the old tree, "
+                    "so stamping the new one would certify content nothing built. "
+                    "Re-gate the tree you mean to push (`vibeos-cli land` holds the fleet "
+                    "land lock across gate+push precisely so this cannot happen).",
+                    header="stamp",
+                )
+                run.add(
+                    Stage("stamp", status="warn", detail="tree changed mid-gate — no push stamp")
+                )
+                return
         head = _git("rev-parse", "HEAD")
         common = Path(_git("rev-parse", "--git-common-dir"))
         if not common.is_absolute():
@@ -381,6 +436,9 @@ def gate(args, repo: Path) -> int:
     smoke_extra: list[str] = ["--no-net"]
 
     run = Run("gate", "+".join(arches))
+    # Sample the checkout BEFORE anything builds: the stamp must certify this tree, not
+    # whatever HEAD happens to be when the gate finishes (see _write_gate_stamp).
+    gated_state = _tree_state(repo)
     gate_root = run.dir
 
     # --- phases 1+1.5+2, PIPELINED (F5, 2026-07-06) ---
@@ -452,9 +510,7 @@ def gate(args, repo: Path) -> int:
                             seconds=r["seconds"],
                             status="fail",
                             detail="build failed",
-                            salient=[
-                                f"vibeos-cli build --arch {r['arch']} exited {r['exit']}"
-                            ],
+                            salient=[f"vibeos-cli build --arch {r['arch']} exited {r['exit']}"],
                         )
                     )
                     # a build failure is fatal for that arch; the others still build
@@ -589,7 +645,7 @@ def gate(args, repo: Path) -> int:
     # that fails the run (sets a fail Stage → verdict FAIL) without being wired
     # into all_ok — the stamp is the push credential, so err on the safe side.
     if all_ok and run.verdict != "FAIL":
-        _write_gate_stamp(run, repo, requested)
+        _write_gate_stamp(run, repo, requested, gated_state)
 
     run.extra["arches"] = arches
     run.extra["matrix"] = {

@@ -10188,3 +10188,64 @@ naturally onto `unreachable_unchecked()`. It will keep happening; the gate is th
 `ASSERT(x)` reads like "x must hold," which invites a hard failure. It compiles to nothing.
 
 > **Read with §9.119.** That entry is this one's mirror: there, a regex MATCH was mistaken for proof that a body was lowerable (146 text-shaped hits, 11 sound lowerings). Here, a regex MISS was mistaken for proof that a class was absent (`0` reported for six weeks). A pattern match is evidence about TEXT, never about SEMANTICS — in either direction. Whichever way you are reading it, the pattern owes you a positive and a negative control before you believe its count.
+
+### 9.121 (2026-07-25) A worktree showing a HUGE staged REVERT isn't your work — its branch ref was moved from ANOTHER worktree, and `git add -A` would land the revert
+
+**Symptom.** `git status` in a checkout you have not touched today reports hundreds or
+thousands of files under *"Changes to be committed"*, nothing unstaged, no untracked, and
+
+```
+$ git status -sb
+## master...origin/master [behind 61]
+$ git diff --cached --shortstat HEAD
+ 1123 files changed, 8869 insertions(+), 197524 deletions(-)
+```
+
+197K **deletions** staged. Spot-check a file and it is *removing* landed work — e.g. the
+whole `dnsapi.dll` Rust cohab block, as if someone had reverted the flip.
+
+**What it actually is.** Nobody reverted anything. The worktree's *files* are still at an
+older commit, while its *branch ref* was moved forward from a **different** worktree
+(`git branch -f master …`, `git update-ref`, `git fetch origin master:master`,
+`git push . <sha>:master`). Git compares index+worktree against the NEW `HEAD`, so every
+commit that landed in between shows up inverted, as a staged deletion. The index here was
+8 days stale and nobody had noticed.
+
+**Diagnose in three commands** — the point is to prove there is nothing unique to lose:
+
+```bash
+git reflog master -5      # "branch: Reset to HEAD" ⇒ moved from elsewhere.
+                          #   (HEAD's reflog is PER-WORKTREE, so it has no entry for the
+                          #    move and its HEAD@{0} disagrees with `git rev-parse HEAD` —
+                          #    that mismatch is itself the tell.)
+git diff --stat <HEAD@{0}-from-that-reflog>   # EMPTY ⇒ your files are EXACTLY that commit's
+                                              #   tree: zero local edits, all of it phantom.
+git merge-base --is-ancestor <that-commit> origin/master   # YES ⇒ it is already upstream.
+```
+
+**The trap.** `git add -A && git commit` (or `commit -a`) in that state creates a *real*
+revert commit of everything the fleet landed since — a mass regression with a plausible
+diff. And the obvious cleanup, `git checkout .` / `git restore`, is forbidden here
+(AGENTS.md: never discard with checkout/restore).
+
+**Fix.**
+
+```bash
+git stash push -m "main-wt: stale <date> worktree (== tree of <sha>, an ancestor of
+                   origin/master) resurfacing as a staged REVERT — nothing unique, safe to drop"
+git fetch && git merge origin/master        # fast-forward; files and ref agree again
+```
+
+The stash is cheap insurance, not a real save: the content is byte-identical to a commit
+that is already an ancestor of mainline, so it is recoverable from git forever regardless.
+
+**Prevention (now a rule).** Never move a branch ref from a worktree that does not have it
+checked out. Push straight to origin instead — `git push origin HEAD:master` — and let each
+worktree pick it up with its own `git fetch && git merge origin/master`. `vibeos-cli land`
+does exactly that, and it is why it never touches the local `master` ref.
+
+> **Read with the landing race.** The same session found the *reason* lanes reach for
+> ref-surgery at all: gate-then-push by hand is a race (the stamp is keyed to an exact tree,
+> so the first pusher voids everyone else's gate), and `vibeos-cli land` — one fleet-wide
+> FIFO lock across fetch → merge → gate → push — is the sanctioned way. See AGENTS.md
+> §"Git and mainline" and `tests/qemu/cli/README.md` → `land`.

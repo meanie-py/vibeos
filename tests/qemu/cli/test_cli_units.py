@@ -3058,3 +3058,49 @@ def test_gate_failed_build_skips_that_arch_but_others_still_smoke(tmp_path, monk
     assert not any(k.startswith("arm64:") for k in fake.calls), fake.calls
     assert any(k.startswith("i386:") for k in fake.calls), fake.calls
     assert any(k.startswith("amd64:") for k in fake.calls), fake.calls
+
+
+def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tiny_repo):
+    """The stamp is a claim about what was VALIDATED. It used to read HEAD's tree at stamp
+    time, so a commit landed during a 20-minute gate got a credential for content nothing
+    had built or booted."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+    )
+
+    def moved_tree(repo):
+        # gate start reports one tree; the repo's real HEAD tree is a different one
+        return ("0" * 40, False)
+
+    monkeypatch.setattr(gate_mod, "_tree_state", moved_tree)
+    rc = gate_mod.gate(_gate_args(no_net=True), tiny_repo)
+    assert rc == 0, "the gate itself is still green"
+    stamps = list((tiny_repo / ".git" / "vibeos-gate-stamps").glob("*.json"))
+    assert stamps == [], "stamped a tree the gate never validated"
+
+
+def test_gate_stamps_the_tree_it_gated(tmp_path, monkeypatch, tiny_repo):
+    """The must-pass half: an unchanged clean checkout still mints the credential."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+    )
+    rc = gate_mod.gate(_gate_args(no_net=True), tiny_repo)
+    assert rc == 0
+    tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=tiny_repo, capture_output=True, text=True
+    ).stdout.strip()
+    assert (tiny_repo / ".git" / "vibeos-gate-stamps" / f"{tree}.json").is_file()
+
+
+def test_gate_refuses_to_stamp_when_dirty_at_start(tmp_path, monkeypatch, tiny_repo):
+    """Gating a dirty tree validates content no commit hashes to — certify nothing."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+    )
+    real = gate_mod._tree_state(tiny_repo)
+    monkeypatch.setattr(gate_mod, "_tree_state", lambda repo: (real[0], True))
+    gate_mod.gate(_gate_args(no_net=True), tiny_repo)
+    assert not list((tiny_repo / ".git" / "vibeos-gate-stamps").glob("*.json"))
