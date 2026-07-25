@@ -9386,3 +9386,283 @@ alias two arms onto the same value. But check the whole match first: where the *
 already use narrow constants from a `glue.rs` (scsiport's `SRB_STATUS_*`), the right fix is to
 import the missing name from that same module, not to widen. rustc's own message is the tell that
 the bug was real: *"`SRB_STATUS_DATA_OVERRUN` is interpreted as a constant, not a new binding."*
+
+### 9.113 (FIXED 2026-07-24) The LLM INVENTED 59 kernel stop codes — `KeBugCheck(SYMBOL)` came back as `KeBugCheck(0xNN)` and ~80% of the numbers were wrong
+
+**Symptom (the one you'd actually hit):** a bugcheck fires and the stop-code line names a
+subsystem nobody has touched. You start the hunt in the wrong place. Worst case in-tree
+before the fix:
+
+| Call site | C original | value the LLM wrote | what that value MEANS |
+|---|---|---|---|
+| `ke/thrdschd.rs` `KiSetAffinityThread` | `INVALID_AFFINITY_SET` 0x3 | 0x48 | `CANCEL_STATE_IN_COMPLETED_IRP` — sends you into the IO manager |
+| `ke/wait.rs` `KeWaitForMultipleObjects` ×2 | `MAXIMUM_WAIT_OBJECTS_EXCEEDED` 0xC | 0x36 | `DEVICE_REFERENCE_COUNT_NOT_ZERO` |
+| `ke/i386/irqobj.rs` | `TRAP_CAUSE_UNKNOWN` 0x12 | 0x7F | `UNEXPECTED_KERNEL_MODE_TRAP` |
+| `ke/i386/usercall.rs` | `IRQL_GT_ZERO_AT_SYSTEM_SERVICE` 0x4A | 0x1A | `MEMORY_MANAGEMENT` — sends you into Mm |
+| `classpnp/class_part_c.rs` | `SCSI_DISK_DRIVER_INTERNAL` 0x2D | 0x52 | `MAILSLOT_FILE_SYSTEM` |
+| `ex/resource.rs` ×2 | `RESOURCE_NOT_OWNED` 0xE3 | 0x03 | `INVALID_AFFINITY_SET` — a *scheduler* code on an ERESOURCE bug |
+| `ex/work.rs` ×3 | `WORKER_THREAD_RETURNED_AT_BAD_IRQL` / `IMPERSONATING_WORKER_THREAD` / `WORKER_INVALID` | 0x6D/0x6E/0x6D | three different SESSION*_INITIALIZATION_FAILED codes |
+| `ex/init.rs` (24 sites) | the whole `*_INITIALIZATION_FAILED` family | shifted as a block | every boot-phase failure names the wrong phase |
+| `po/poshtdwn.rs` | `INTERNAL_POWER_ERROR` 0xA0 | 0xA0000003 | not a stop code at all |
+| `iomgr/file.rs` ×2 | `DRIVER_RETURNED_STATUS_REPARSE_FOR_VOLUME_OPEN` 0xF9 / `INVALID_CANCEL_OF_FILE_OPEN` 0xE8 | 0x126 / 0x12C | undefined codes |
+
+**Scale: 61 of ~115 translated stop codes were wrong.** Sweep the tree and you find the
+same hand everywhere — se, po, cc, fsrtl, config, classpnp, iomgr, ex, ke.
+
+**Why review slides right off it.** The numbers are *plausible*: right magnitude, valid
+hex, and **internally consistent** — `ex/init.rs`'s four session codes were `0x62,0x63,
+0x64,0x65` where the truth is `0x6D,0x6E,0x6F,0x70`. A consecutive run reads as
+"obviously transcribed from a table." It wasn't; the model generated a *fresh* consistent
+family. The subcode arguments (`Status, 1, 0, 0`) were carried over perfectly, which makes
+the line look faithful at a glance — the one token that came from the model's memory
+instead of the source is the one nobody checks.
+
+**Why NOTHING else catches it.** rustc sees a valid `ULONG`. The linker is happy. Every
+smoke test passes — the code is only read when the kernel is already dying, and by then
+nobody is diffing it against ReactOS. It is invisible until it costs you a debugging
+session, and then it costs you the *whole* session because the stop code actively lies.
+
+**How it was found:** not by a crash. During a routine `origin/master` merge I traced the
+open arm64 `0x3 INVALID_AFFINITY_SET` flake back to its raise site and found the Rust
+raising `0x48` — i.e. our kernel *cannot* produce the 0x3 that the registry blamed on it,
+so the real 0x3 comes from somewhere else entirely. Chasing that one discrepancy exposed
+the class. **Lesson: when a bugcheck's stop code doesn't match a raise site you can find
+in the source, doubt the CODE before you doubt the bug report.**
+
+**The fix (deterministic, no LLM):**
+1. `tools/gen_bugcodes.py` generates `ntkrnl_sys::bugcodes` — all 202 codes parsed from
+   `sdk/include/reactos/mc/bugcodes.mc`, cross-verified against the committed
+   `bugcodes.h` and HARD-FAILING if the two disagree.
+2. Every call site passes a named constant: `KeBugCheckEx(bugcodes::INVALID_AFFINITY_SET,
+   ...)`. Fully-qualified paths, so no `use` churn and no collisions.
+3. `tools/scan_bugcheck_codes.py` (wired into `vibeos-cli check`, **empty baseline**)
+   rejects any numeric literal in a `KeBugCheck`/`KeBugCheckEx` first argument. Deliberate
+   non-codes — our `0xDEAD00xx` markers, the `0x1000` PTE tripwire, the `DEFAULT_UNREACHABLE`
+   arms, and the three sites where upstream itself writes `KeBugCheck(0)` — carry
+   `// nolint: bugcheck-code (reason)`.
+
+This is the AGENTS.md substrate rule with a body count: **constants never go through the
+LLM.** Anything with a canonical numeric definition — stop codes, status values, IOCTLs,
+tags — must be generated from the header and referenced by name. The LLM's job is control
+flow, not arithmetic it can't verify.
+
+**Bonus bug found in the same sweep (a different class).** `config/cmsysini.rs`
+`CmpCloseKeyObject` translated C's `ASSERT(FALSE)` — a *debug-only* "this shouldn't happen
+yet" marker — into `KeBugCheck(0)`, an **unconditional fatal bugcheck in every build**,
+with the meaningless stop code 0. A live key body with a notify block would have killed
+the machine where NT just continues. When you see a bare `KeBugCheck` in translated code,
+check whether the C was an `ASSERT`: an assert is `debug_assert!`, never a bugcheck.
+### 9.114 (FIXED 2026-07-24) The arm64 `save_next` unwind code resolves FORWARD, not backward — a 32%-wrong decoder that silently mis-restores callee-saved registers
+
+**Symptom family (all arm64, all downstream of `RtlVirtualUnwind`):** a resume lands on a
+garbage PC (`PC=0x1`); an indirect branch goes "through a bad function pointer into nonpaged
+pool"; corruption appears with no identifiable writer. Nothing faults at the decode — the
+unwinder cheerfully reloads callee-saved registers from the *wrong stack slots* and the damage
+surfaces arbitrarily far away, in whatever code trusted x21–x28 after the unwind.
+
+**The encoding truth.** ARM64 `.xdata` unwind codes are stored in **reverse-prologue order**
+(the first code undoes the *last* prologue instruction). `save_next` (0xE6) means "the next
+non-volatile pair" in *prologue* order, i.e. the pair saved by the instruction *before* the base
+one. Reverse that and the rule falls out: **the explicit pair-save a `save_next` run hangs off
+of appears AFTER the whole run in the byte stream**, and each step back toward lower indices is
+one register pair higher and 16 bytes further up the frame:
+
+```
+prologue                          unwind codes (reverse order)
+  sub  sp, sp, #0x1b0               [0] e2 34   add_fp    sp = x29 - 416
+  stp  x19,x20,[sp,#0x150]          [2] 74      save_fplr x29,x30 @[sp+416]
+  stp  x21,x22,[sp,#0x160]          [3] e6      save_next   -> x27,x28 @+400  (ordinal 4)
+  stp  x23,x24,[sp,#0x170]          [4] e6      save_next   -> x25,x26 @+384  (ordinal 3)
+  stp  x25,x26,[sp,#0x180]          [5] e6      save_next   -> x23,x24 @+368  (ordinal 2)
+  stp  x27,x28,[sp,#0x190]          [6] e6      save_next   -> x21,x22 @+352  (ordinal 1)
+  stp  x29,x30,[sp,#0x1a0]          [7] c8 2a   save_regp x19,x20 @[sp+336]   <- THE BASE
+```
+
+**Why the wrong version survived two rounds of review.** The superseded decoder chained
+*backward* off the previously-decoded save (`last_reg-2`, `last_off-16`). That coincides with the
+truth whenever the preceding code is itself part of the same consecutive run — which is the
+common shape, including the example above. It breaks the moment a **non-adjacent single save**
+sits between. Real counterexample, `ntoskrnl 0x4014f0`:
+
+```
+  str x28,[sp,#0x140]   then save_next
+  backward chain from x28@320  ->  x26,x27 @ 304      <- what the decoder restored
+  prologue actually stores     ->  x21,x22 @ 304      <- the truth
+```
+
+x21/x22's saved values got loaded into x26/x27, and x21/x22 kept stale garbage. **1268 of 3945
+`save_next` sites (32%) across ntoskrnl + ntdll decoded wrong.**
+
+**The method — this is the reusable part.** Do not reason about a bit-level spec from memory,
+and do not accept "the new logic looks more correct than the old logic." A built binary contains
+*both the claim and the answer*: `.xdata` says which register is at which slot, and the prologue
+disassembly says which register is actually there. Diff them across every function and the
+argument ends. `tools/verify_arm64_unwind.py` does exactly that — 11,163 save sites checked
+against disassembled prologues, `--check` for CI. Any decoder that consumes producer-emitted
+metadata (unwind codes, debug info, relocation tables, PDB/xdata of any kind) admits this same
+whole-binary differential oracle, and it is worth far more than a handful of hand-written
+vectors. Reach for it *before* theorizing.
+
+**Corollary — a fix's RATIONALE can be wrong even when the fix is right, and that costs later.**
+Landing alongside this was a `KeInvalidateTlbEntry` change (`sdk/lib/rust/ntkrnl-sys/src/inline/mm.rs`):
+`tlbi vale1is` → `vae1is`, plus masking the TLBI register operand to bits 43:0. Both are correct.
+But the original comment attributed the observed arm64 movement to the ASID field, and on **this**
+target that is impossible:
+
+- TLBI's operand is three fields — bits 43:0 = VA[55:12], **47:44 = the FEAT_TTL level hint**,
+  63:48 = ASID. A sign-extended kernel VA >> 12 lands `0xF` in *both* the TTL and ASID fields
+  (`0xFFFFF800_00000000 >> 12 == 0x000FFFFF_80000000`), so the ASID story was only half of it.
+- ASID `0xF` cannot bite: every PTE in this port is **global** (`HARDWARE_PTE.NonGlobal` is never
+  set anywhere in the tree) and `TLBI VAE1IS` invalidates a global entry regardless of the ASID
+  operand.
+- TTL `0xF` cannot bite either: QEMU's `-cpu cortex-a72` is **ARMv8.0**, which has no FEAT_TTL,
+  so bits 47:44 are RES0.
+- And QEMU reconstructs the VA as `sextract64(value << 12, 0, 56)`, which *discards* bits 63:44
+  outright — so the masking is provably a no-op under our emulator either way.
+
+Keep the mask (it goes live on any ARMv8.4+ core, or the day we set `NonGlobal` for per-process
+ASIDs) and keep `vae1is` (a generic teardown-time primitive must invalidate cached *intermediate*
+table descriptors, not just the leaf). But do not attribute test movement to it. **When a comment
+explains a fix with the wrong mechanism, the next reader deletes the fix as dead code** — or
+worse, spends a day chasing a recurrence in the wrong subsystem. Write down what you *proved*,
+and mark separately what is hygiene.
+### 9.115 (2026-07-24) A generator can only flag what its TYPE SOURCE can see — and a report that iterates the generator's own flagged set inherits the same blind spot
+
+**Symptom (three times, ~identical):** an unmodified stock i386 applet is added to the
+WoW64 ladder, boots, and BUGCHECKs `0x1E` with the fault PC inside win32k's
+`cnt_rust::cabi::raw_move`. Symbolication points at a different `NtUser*` each time —
+E6 `NtUserGetAtomName`/`GetClassName`, E8 `NtUserUnregisterClass` (regedit), E9
+`NtUserFindWindowEx` (osk). Every one is the same mechanism: 64-bit win32k read the
+guest's 8-byte `UNICODE_STRING32` as a 16-byte `UNICODE_STRING64`, picked `Buffer` up
+from the wrong offset, and copied a "string" from a wild address.
+
+**Root cause of the RECURRENCE (not of any one crash):** wow64gen types its thunks from
+`win32u.spec`/`ntdll.spec`. A `.spec` argument says only **"this is a pointer"** — never
+what it points AT:
+
+```
+@ stdcall NtUserUnregisterClass(ptr ptr ptr)      <- the generator's whole world
+NtUserUnregisterClass(PUNICODE_STRING, HINSTANCE, PCLSMENUNAME)   <- the truth
+```
+
+So the generator emits a flat thunk, never marks the call `WOW64_NEEDS_MANUAL`, and the
+name never enters the manual list. **`marshalgen report` iterates that manual list** — so
+the report could not see this class *by construction*. The tool built to audit marshalling
+was blind to precisely the syscalls most likely to be silently wrong, and stayed blind
+across three separate bugs, each found instead by a guest crashing the box.
+
+**The generalizable trap:** when a generator's input is *narrower* than the truth it
+encodes, its "needs attention" set is a claim about the INPUT, not about reality. Auditing
+that set measures the generator against itself and always passes. Two independent sources
+have to be crossed.
+
+**Fix — cross the generated artifact against the independent source of truth.**
+`marshalgen audit` (`tools/wow64gen/marshalgen.py`, wired into `vibeos-cli check`) takes:
+
+1. the **generated table** as ground truth for what production actually dispatches flat
+   (`{ "NtUserFoo", wow64_thunk_NtUserFoo, 2 }` = live flat thunk; `0` = a marshaller owns
+   it) — not the `.spec`, which is the very thing under suspicion;
+2. the **real header prototype** for each such name;
+3. **clang's own record layouts** for i686 and the host (`-fdump-record-layouts`), so the
+   32/64 divergence verdict is the compiler's, not a hand-maintained table.
+
+Any live flat thunk with a provably divergent param is a finding. On first run: 13 on the
+win32k table (all fixed → zero) and a large cold-path residual on the ntdll table
+(baselined as the work queue; the gate blocks NEW).
+
+**Two design points that make this kind of audit usable rather than noise:**
+
+* **Separate "provably divergent" from "I could not see the layout."** A struct missing
+  from the layout dump is a hole in the TOOL. Gating on it buries the real findings under
+  unresolved-typedef noise and trains people to ignore the check. Report the unknowns on
+  stderr with a count, gate only on proof. (`audit_verdict()`; `--show-unknown` lists them.)
+* **`SCALAR_WIDEN` flips severity depending on who's handling the call.** Inside a
+  marshalled stub, a `HWND *` / `PVOID *` out-slot is the easy case. Under a LIVE FLAT
+  THUNK it is a memory-corruption bug: the 64-bit kernel writes 8 bytes where the guest
+  reserved 4. That is exactly E7 (`NtUserBuildHwndList`'s 2× heap overrun, which surfaced
+  minutes later as a NULL free-list `Blink`) — and the audit immediately found the same
+  shape on a hotter path, `NtGdiCreateDIBSection`'s `PVOID *ppvBits`, where guest gdi32
+  passes a 4-byte stack local on *every* DIB-section allocation.
+
+**When a narrowed value cannot fit, FAIL — don't truncate.** `NtGdiCreateDIBSection`
+returns a mapped VA that is the guest's only handle on the bits. Silently truncating a
+mapping above 4GB hands the guest a pointer into nowhere and faults arbitrarily far away;
+the marshaller logs and fails the call instead, so the guest sees a clean
+`CreateDIBSection` failure. (Same principle as the rest of AGENTS.md's "fail loud, never
+silently degrade" — narrowing marshallers are a classic place to violate it by accident.)
+
+**Where to look for the same shape elsewhere:** any codegen driven by a `.spec`, `.def`,
+IDL arity, or ordinal table — the input describes the CALL, not the DATA. Ask what the
+generator's type source *cannot express*, then write a check that crosses the emitted
+artifact against a source that can.
+
+### 9.116 (2026-07-24) WoW64 SendMessage payloads: `g_MsgMemory` sizes the lParam struct with the HOST's `size_of`, so a 32-bit sender's buffer is over-read — BUGCHECK 0x1E at win32k's `raw_move`
+
+**Symptom.** A stock 32-bit applet under WoW64 BUGCHECKs the box:
+
+```
+0x1E / C0000005, TrapFrame.Rip = win32k+0x258EC
+  cnt_rust::cabi::raw_move+0x5c  <- memcpy+0xd
+  <- win32k_rust::message::g_MsgMemory+0x6c
+  <- win32k_rust::message::co_IntDoSendMessage+0x232
+```
+
+**Do not confuse this with §9.x's flat-typed-PUNICODE_STRING class**, even though the
+faulting PC is *identical* (`win32k+0x258EC`). That PC is just `raw_move`, the generic
+byte-copy every capture path funnels through — E6/E8/E9 reached it via
+`ProbeAndCaptureUnicodeStringOrAtom`, this reaches it via `g_MsgMemory`. **Symbolicate the
+CALLER, not the fault PC**; the two classes need completely different fixes, and the shared
+PC will send you to the wrong one. (`llvm-nm --numeric-sort --defined-only win32k.sys` +
+ImageBase 0x10000 — `qemu/build-index.sh` only indexes ntoskrnl.)
+
+**Cause.** `g_MsgMemory` (`sdk/lib/rust/win32k-rust/src/message.rs`) is the table telling
+win32k how many bytes a pointer-lParam message carries, so it can capture the payload
+across a thread/process boundary. Every entry sizes itself with the **host's**
+`size_of::<T>()`:
+
+```rust
+MSGMEMORY { Message: WM_WINDOWPOSCHANGING, Size: size_of::<WINDOWPOS>() as UINT, ... }
+MSGMEMORY { Message: WM_DRAWITEM,          Size: size_of::<DRAWITEMSTRUCT>() as UINT, ... }
+```
+
+A 32-bit WoW64 sender allocated the **i386** struct. win32k copies the **amd64/arm64** byte
+count out of it → reads past the end → AV. WINDOWPOS is 28 vs 40 bytes; DRAWITEMSTRUCT and
+MEASUREITEMSTRUCT are worse because they carry HWND/HDC/ULONG_PTR members whose *offsets*
+shift, so this needs real conversion, not just a smaller `Size`.
+
+**Why it survived so long.** M15a/M16/M18 marshalled the **callback** direction
+(kernel→user window proc) and `NtUserMessageCall`'s WINDOWPOS lParam. Both are the paths a
+guest hits when it *pumps* messages. This is the **SendMessage** direction —
+user→kernel→another window — and no guest reached it until applets with owner-drawn
+controls and cross-window sends (spider, eventvwr) joined the ladder.
+
+**Generalizable lesson — a size table is an ABI, and per-arch `size_of` is a per-*host*
+ABI.** Any kernel-side table that encodes "how big is this user payload" (message-memory
+tables, IOCTL length tables, IRP buffer sizes, callback argument blobs) is silently wrong
+for a guest of a different width. When a mixed-width client is possible, the width must be
+a *parameter* of the lookup, not baked in at compile time by the host's `size_of`.
+
+**Second lesson — timing-dependent means one green boot proves nothing.** spider PASSed on
+one boot and killed the box on the very next, same binary. Whether the fault fires depends
+on which owner-draw/positioning message happens to be sent and what follows the guest's
+buffer. A ladder rung that passes once is *not* evidence; re-run before believing it (and
+before recording it in a doc as green).
+
+**Prove pre-existing vs. introduced with a CONTROL, not with reasoning.** The fault PC here
+is shared with an older class, and the same change that surfaced it had touched three
+message-path syscalls — so "my code looks uninvolved" (0 calls to the new marshallers, 0
+UNIMPL hits) was suggestive but not evidence. `git stash push -m ...`, rebuild, boot: master
+BUGCHECKed with the byte-identical stack. That is a ~15-minute experiment that converts a
+guess into a fact, and it is always worth it before landing anything that *might* have made
+boots crash. (Stash, never `checkout`/`restore` — see AGENTS.md.)
+
+**Operational note.** When a new ladder rung finds a real, timing-dependent box-killer,
+keep the guest **staged** so the repro is one command away, but do **not** auto-launch it
+from winlogon until the bug is fixed — an intermittent bugcheck three minutes into every
+boot wrecks every other lane's debugging session. Hold the launch, file the task, and make
+re-enabling the launch the regression test. Holding it is not dropping it.
+
+Pick the hold based on COVERAGE, not on blame. Here master already bugchecked at a later
+rung, so holding the new applets did not make anything safer — what it bought was that the
+twelve rungs *before* the new ones keep reporting every boot instead of being cut off six
+applets early.

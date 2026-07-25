@@ -341,7 +341,7 @@ pub unsafe extern "system" fn PopShutdownSystem(SystemAction: POWER_ACTION) {
         _ => {}
     }
 
-    KeBugCheckEx(0xA0000003, 5, 0, 0, 0);
+    KeBugCheckEx(ntkrnl_sys::bugcodes::INTERNAL_POWER_ERROR, 5, 0, 0, 0);
 }
 
 #[no_mangle]

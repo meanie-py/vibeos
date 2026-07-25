@@ -166,3 +166,53 @@ def test_real_ntdll_spec_generates_and_is_stable():
     c1 = w.emit_c(a, spec, "arm64", "-")
     c2 = w.emit_c(b, spec, "arm64", "-")
     assert c1 == c2  # re-runnable: identical output for identical input
+
+
+# --- marshalgen audit (E10): the flat-thunk blind-spot gate --------------------
+
+_mspec = importlib.util.spec_from_file_location("marshalgen", os.path.join(_HERE, "marshalgen.py"))
+mg = importlib.util.module_from_spec(_mspec)
+sys.modules["marshalgen"] = mg
+_mspec.loader.exec_module(mg)
+
+
+def test_thunk_table_separates_live_flat_thunks_from_stubs(tmp_path):
+    """The audit's ground truth is the GENERATED table, not the .spec: only an
+    entry that still names a wow64_thunk_* body is dispatched flat."""
+    gen = tmp_path / "t.gen.c"
+    gen.write_text(
+        'static const X Wow64ThunkTable[] = {\n'
+        '    { "NtGdiAbortDoc", wow64_thunk_NtGdiAbortDoc, 1 }, /* [0] */\n'
+        '    { "NtUserBeginPaint", 0, 2 }, /* [307] MANUAL: listed in --manual-list */\n'
+        '};\n'
+    )
+    table = mg.load_thunk_table(gen)
+    assert table == {"NtGdiAbortDoc": True, "NtUserBeginPaint": False}
+
+
+def test_audit_verdict_flags_divergence_but_not_tool_blindness():
+    # Proven layout divergence under a flat thunk -> the E6/E8/E9 bugcheck shape.
+    assert mg.audit_verdict("WIDENING", "-> UNICODE_STRING") == "DIVERGENT"
+    # Pointer to a 4->8 scalar (HWND*/PVOID*) -> the E7 guest-heap overrun.
+    assert mg.audit_verdict("SCALAR_WIDEN", "-> HWND: 4->8 scalar pointee") == "DIVERGENT"
+    # A struct marshalgen genuinely can't reason about is still a finding.
+    assert mg.audit_verdict("SEMANTIC", "union/bitfield with divergent layout") == "DIVERGENT"
+    # ...but "I couldn't SEE the layout" is a hole in the TOOL, not a claim
+    # about the syscall. Gating on it would bury the real findings in noise.
+    assert mg.audit_verdict("SEMANTIC", "-> FOO: layout not in dump (add header to TU?)") == "UNKNOWN"
+    assert mg.audit_verdict("SEMANTIC", "unknown type 'BAR'") == "UNKNOWN"
+    assert mg.audit_verdict("FLAT", "scalar") == "OK"
+    assert mg.audit_verdict("IDENTICAL", "") == "OK"
+
+
+def test_audit_skips_cleanly_without_a_build(tmp_path, monkeypatch):
+    """No build dirs must be a silent SKIP (rc 0), never a gate failure."""
+    monkeypatch.setattr(mg, "REPO", tmp_path)
+
+    class A:
+        build_dir = None
+        build_dir32 = None
+        table = "both"
+        show_unknown = False
+
+    assert mg.cmd_audit(A()) == 0

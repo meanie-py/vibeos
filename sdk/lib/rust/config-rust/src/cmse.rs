@@ -56,7 +56,7 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     Sid[3] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
 
     if Sid[0].is_null() || Sid[1].is_null() || Sid[2].is_null() || Sid[3].is_null() {
-        KeBugCheckEx(0x51, 11, 1, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 1, 0, 0);
     }
 
     Status = RtlInitializeSid(Sid[0], &WorldAuthority as *const _ as *mut _, 1);
@@ -64,7 +64,7 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     Status |= RtlInitializeSid(Sid[2], &NtAuthority as *const _ as *mut _, 1);
     Status |= RtlInitializeSid(Sid[3], &NtAuthority as *const _ as *mut _, 2);
     if !NT_SUCCESS(Status) {
-        KeBugCheckEx(0x51, 11, 2, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 2, 0, 0);
     }
 
     *RtlSubAuthoritySid(Sid[0], 0) = 0;
@@ -84,12 +84,12 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
 
     Acl = ExAllocatePoolWithTag(PagedPool, AclLength as usize, 0x44534D43u32) as PACL;
     if Acl.is_null() {
-        KeBugCheckEx(0x51, 11, 3, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 3, 0, 0);
     }
 
     Status = RtlCreateAcl(Acl, AclLength, 2);
     if !NT_SUCCESS(Status) {
-        KeBugCheckEx(0x51, 11, 4, Status as ULONG_PTR, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 4, Status as ULONG_PTR, 0);
     }
 
     Status = RtlAddAccessAllowedAce(Acl, 2, 0xF003F, Sid[2]);
@@ -97,7 +97,7 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     Status |= RtlAddAccessAllowedAce(Acl, 2, 0x20019, Sid[0]);
     Status |= RtlAddAccessAllowedAce(Acl, 2, 0x20019, Sid[1]);
     if !NT_SUCCESS(Status) {
-        KeBugCheckEx(0x51, 11, 5, Status as ULONG_PTR, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 5, Status as ULONG_PTR, 0);
     }
 
     Status = RtlGetAce(Acl, 0, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
@@ -115,7 +115,7 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
         0x44534D43u32,
     );
     if SecurityDescriptor.is_null() {
-        KeBugCheckEx(0x51, 11, 6, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 6, 0, 0);
     }
 
     AclCopy = (SecurityDescriptor as PISECURITY_DESCRIPTOR).offset(1) as PACL;
@@ -123,12 +123,12 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
 
     Status = RtlCreateSecurityDescriptor(SecurityDescriptor, 1);
     if !NT_SUCCESS(Status) {
-        KeBugCheckEx(0x51, 11, 7, Status as ULONG_PTR, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 7, Status as ULONG_PTR, 0);
     }
 
     Status = RtlSetDaclSecurityDescriptor(SecurityDescriptor, 1u8, AclCopy, 0u8);
     if !NT_SUCCESS(Status) {
-        KeBugCheckEx(0x51, 11, 8, Status as ULONG_PTR, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 8, Status as ULONG_PTR, 0);
     }
 
     i = 0;

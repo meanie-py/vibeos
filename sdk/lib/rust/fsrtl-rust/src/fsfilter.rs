@@ -30,7 +30,7 @@ pub unsafe extern "system" fn FsRtlCreateSectionForDataScan(
     let FileObject = opaque_ptr(FileObject);
     let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let MaximumSize = opaque_ptr(MaximumSize);
-    KeBugCheck(0x00000007);
+    KeBugCheck(ntkrnl_sys::bugcodes::FILE_SYSTEM);
     STATUS_NOT_IMPLEMENTED
 }
 

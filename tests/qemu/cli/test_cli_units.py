@@ -1597,6 +1597,106 @@ def test_hostlock_cpu_lease_pool_of_two(tmp_path, monkeypatch):
     hl_mod.release(b)
 
 
+# --- FIFO admission (fairness) ---------------------------------------------
+# The bug these cover: permit acquisition is order-blind, so a late arrival can take the
+# permits a long-waiting lane is queued for. A build starved 23 minutes this way on
+# 2026-07-24 while the permits changed hands between two OTHER worktrees.
+
+
+def _fake_ticket(tmp_path, pool: str, *, ns: int, pid: int, need: int):
+    """Plant a ticket held by a LIVE flock (a stand-in for another worktree's waiter).
+    Returns the held fd — closing it makes the ticket an orphan, as a death would."""
+    import fcntl as _f
+    import os as _o
+
+    qd = tmp_path / f"queue-{pool}"
+    qd.mkdir(parents=True, exist_ok=True)
+    p = qd / f"{ns:020d}-{pid}-{need}"
+    fd = _o.open(str(p), _o.O_RDWR | _o.O_CREAT, 0o644)
+    _f.flock(fd, _f.LOCK_EX | _f.LOCK_NB)
+    return fd
+
+
+def test_hostlock_fifo_waiter_ahead_blocks_barging(tmp_path, monkeypatch):
+    """A free permit is NOT taken by a latecomer when an earlier arrival is owed it."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    # Someone arrived first (ns=1) and needs both permits of a 2-permit pool.
+    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=2)
+    try:
+        # Pool is entirely free, but we arrive second → we must not barge.
+        assert hl_mod.acquire_cpu_share("late", n=1, leases=2, timeout=0.3) is None
+    finally:
+        os.close(ahead)  # the earlier waiter goes away
+    # Its ticket is now an orphan; the next acquirer reaps it and proceeds.
+    fds = hl_mod.acquire_cpu_share("late", n=1, leases=2, timeout=1.0)
+    assert fds is not None
+    hl_mod.release_all(fds)
+
+
+def test_hostlock_fifo_head_is_never_blocked_by_itself(tmp_path, monkeypatch):
+    """Head-of-queue always attempts — the queue must not deadlock the only waiter."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    fds = hl_mod.acquire_cpu_share("solo", n=2, leases=2, timeout=1.0)
+    assert fds is not None
+    hl_mod.release_all(fds)
+    # Ticket cleaned up on the way out — no residue to starve the next caller.
+    assert hl_mod.queue_status("cpuheavy") == []
+
+
+def test_hostlock_fifo_backfill_when_head_not_delayed(tmp_path, monkeypatch):
+    """A latecomer MAY use permits nobody ahead of it is owed (throughput preserved)."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=1)
+    try:
+        # 4 permits, one earlier waiter owed 1 → 3 spare, so our 2 fit without delaying it.
+        fds = hl_mod.acquire_cpu_share("late", n=2, leases=4, timeout=1.0)
+        assert fds is not None
+        hl_mod.release_all(fds)
+    finally:
+        os.close(ahead)
+
+
+def test_hostlock_fifo_orphan_ticket_is_reaped(tmp_path, monkeypatch):
+    """A waiter that DIES must not wedge the queue forever (kernel drops its flock)."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    dead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=4)
+    os.close(dead)  # simulate the owner dying mid-wait
+    assert hl_mod.queue_status("cpuheavy") == []  # not counted as a live waiter
+    fds = hl_mod.acquire_cpu_share("survivor", n=2, leases=4, timeout=1.0)
+    assert fds is not None
+    hl_mod.release_all(fds)
+    assert not list((tmp_path / "queue-cpuheavy").iterdir())  # orphan actually deleted
+
+
+def test_hostlock_fifo_can_be_disabled(tmp_path, monkeypatch):
+    """VIBEOS_HOSTLOCK_FAIR=0 restores the old order-blind behavior (escape hatch)."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOSTLOCK_FAIR", "0")
+    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=2)
+    try:
+        fds = hl_mod.acquire_cpu_share("barger", n=1, leases=2, timeout=0.5)
+        assert fds is not None  # barges past the earlier waiter, as before
+        hl_mod.release_all(fds)
+    finally:
+        os.close(ahead)
+
+
+def test_hostlock_queue_status_reports_waiters(tmp_path, monkeypatch):
+    """Starvation must be VISIBLE — it used to read as 'my build is slow' (§9.84)."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    a = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=111, need=2)
+    b = _fake_ticket(tmp_path, "cpuheavy", ns=2, pid=222, need=1)
+    try:
+        q = hl_mod.queue_status("cpuheavy")
+        assert [w["pid"] for w in q] == ["111", "222"]  # oldest arrival first
+        assert [w["need"] for w in q] == [2, 1]
+        rendered = hl_mod.render_status(hl_mod.status())
+        assert "queued" in rendered and "NEXT" in rendered and "pid=111" in rendered
+    finally:
+        os.close(a)
+        os.close(b)
+
+
 def test_hostlock_build_dir_same_blocks_different_ok(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     d1 = tmp_path / "build-amd64"

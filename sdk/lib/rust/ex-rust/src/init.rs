@@ -298,7 +298,7 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
         &mut ObjectAttributes,
     );
     if Status < 0 {
-        KeBugCheckEx(0x34, Status as ULONG_PTR, 1, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SYMBOLIC_INITIALIZATION_FAILED, Status as ULONG_PTR, 1, 0, 0);
     }
 
     NtClose(LinkHandle);
@@ -318,7 +318,7 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
         &mut ObjectAttributes,
     );
     if Status < 0 {
-        KeBugCheckEx(0x34, Status as ULONG_PTR, 2, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SYMBOLIC_INITIALIZATION_FAILED, Status as ULONG_PTR, 2, 0, 0);
     }
 
     ObCloseHandle(LinkHandle, 0i8);
@@ -326,7 +326,7 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
     RtlInitAnsiString(&mut AnsiName, b"\\SystemRoot\0".as_ptr() as *mut i8);
     Status = RtlAnsiStringToUnicodeString(&mut LinkName, &mut AnsiName, 1u8);
     if Status < 0 {
-        KeBugCheckEx(0x34, Status as ULONG_PTR, 3, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SYMBOLIC_INITIALIZATION_FAILED, Status as ULONG_PTR, 3, 0, 0);
     }
 
     InitializeObjectAttributes(
@@ -363,7 +363,7 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
     RtlInitString(&mut TargetString, Buffer.as_ptr() as *mut i8);
     Status = RtlAnsiStringToUnicodeString(&mut TargetName, &mut TargetString, 1u8);
     if Status < 0 {
-        KeBugCheckEx(0x34, Status as ULONG_PTR, 4, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SYMBOLIC_INITIALIZATION_FAILED, Status as ULONG_PTR, 4, 0, 0);
     }
 
     Status = NtCreateSymbolicLinkObject(
@@ -377,7 +377,7 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
     RtlFreeUnicodeString(&mut TargetName);
 
     if Status < 0 {
-        KeBugCheckEx(0x34, Status as ULONG_PTR, 5, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SYMBOLIC_INITIALIZATION_FAILED, Status as ULONG_PTR, 5, 0, 0);
     }
 
     ObCloseHandle(LinkHandle, 0i8);
@@ -414,7 +414,7 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
 
         ExpNlsTableBase = ExAllocatePoolWithTag(NonPagedPool, ExpNlsTableSize, 0x696C7452);
         if ExpNlsTableBase.is_null() {
-            KeBugCheck(0x31);
+            KeBugCheck(ntkrnl_sys::bugcodes::PHASE0_INITIALIZATION_FAILED);
         }
 
         if NlsTablesEncountered == 1 {
@@ -465,7 +465,7 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         core::ptr::null_mut(),
     );
     if Status < 0 {
-        KeBugCheckEx(0x5C, Status as ULONG_PTR, 1, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, Status as ULONG_PTR, 1, 0, 0);
     }
 
     Status = ObReferenceObjectByHandle(
@@ -478,7 +478,7 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     );
     ObCloseHandle(NlsSection, 0i8);
     if Status < 0 {
-        KeBugCheckEx(0x5C, Status as ULONG_PTR, 2, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, Status as ULONG_PTR, 2, 0, 0);
     }
 
     let mut NlsTableSizeForMap: ntkrnl_sys::ddk::ULONG_PTR = ExpNlsTableSize as ntkrnl_sys::ddk::ULONG_PTR;
@@ -489,7 +489,7 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     );
     ExpNlsTableSize = NlsTableSizeForMap as SIZE_T;
     if Status < 0 {
-        KeBugCheckEx(0x5C, Status as ULONG_PTR, 3, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, Status as ULONG_PTR, 3, 0, 0);
     }
 
     core::ptr::copy_nonoverlapping(
@@ -525,7 +525,7 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         PAGE_READWRITE,
     );
     if Status < 0 {
-        KeBugCheckEx(0x5C, Status as ULONG_PTR, 5, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, Status as ULONG_PTR, 5, 0, 0);
     }
 
     core::ptr::copy_nonoverlapping(
@@ -566,7 +566,7 @@ unsafe fn ExpLoadInitialProcess(
     Size = (params_size + env_size) as ntkrnl_sys::ddk::ULONG_PTR;
     ProcessParams = ExAllocatePoolWithTag(PagedPool, Size as usize, 0x50707345) as *mut RTL_USER_PROCESS_PARAMETERS; // 'EspP'
     if ProcessParams.is_null() {
-        KeBugCheckEx(0x62, 0xC0000017u32 as ULONG_PTR, 0, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SESSION1_INITIALIZATION_FAILED, 0xC0000017u32 as ULONG_PTR, 0, 0, 0);
     }
     core::ptr::write_bytes(ProcessParams as *mut u8, 0, Size as usize);
 
@@ -603,7 +603,7 @@ unsafe fn ExpLoadInitialProcess(
         ((NtInitialUserProcessBufferLength < 2) ||
          (NtInitialUserProcessBufferLength > (core::mem::size_of_val(&*(&raw const NtInitialUserProcessBuffer)) - 2) as ULONG)))
     {
-        KeBugCheckEx(0x63, 0xC000000D, NtInitialUserProcessBufferType as ULONG_PTR, NtInitialUserProcessBufferLength as ULONG_PTR, core::mem::size_of_val(&*(&raw const NtInitialUserProcessBuffer)));
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SESSION2_INITIALIZATION_FAILED, 0xC000000D, NtInitialUserProcessBufferType as ULONG_PTR, NtInitialUserProcessBufferLength as ULONG_PTR, core::mem::size_of_val(&*(&raw const NtInitialUserProcessBuffer)));
     }
 
     p = (*(&raw mut NtInitialUserProcessBuffer)).as_mut_ptr();
@@ -664,14 +664,14 @@ unsafe fn ExpLoadInitialProcess(
     if Status < 0 {
         RtlInitUnicodeString(&mut DebugString, w!("INIT: Unable to create Session Manager.").as_ptr() as *mut u16);
         ZwDisplayString(&mut DebugString);
-        KeBugCheckEx(0x64, Status as ULONG_PTR, 0, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SESSION3_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
     }
 
     Status = ZwResumeThread((*ProcessInformation).ThreadHandle, core::ptr::null_mut());
     if Status < 0 {
         RtlInitUnicodeString(&mut DebugString, w!("INIT: Unable to resume Session Manager.").as_ptr() as *mut u16);
         ZwDisplayString(&mut DebugString);
-        KeBugCheckEx(0x65, Status as ULONG_PTR, 0, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SESSION4_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
     }
 
     *ProcessParameters = ProcessParams;
@@ -758,7 +758,7 @@ pub unsafe extern "system" fn ExInitSystem() -> BOOLEAN {
         0 => ExpInitSystemPhase0(),
         1 => ExpInitSystemPhase1(),
         _ => {
-            KeBugCheck(0x6F);
+            KeBugCheck(ntkrnl_sys::bugcodes::UNEXPECTED_INITIALIZATION_CALL);
             0
         }
     }
@@ -887,7 +887,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
     if ExpIsLoaderValid(LoaderBlock) == 0 {
         KeBugCheckEx(
-            0x5D,
+            ntkrnl_sys::bugcodes::MISMATCHED_HAL,
             3,
             (*(*LoaderBlock).Extension).Size as ULONG_PTR,
             (*(*LoaderBlock).Extension).MajorVersion as ULONG_PTR,
@@ -943,7 +943,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
 
     if HalInitSystem(ExpInitializationPhase, LoaderBlock) == 0 {
-        KeBugCheck(0x61);
+        KeBugCheck(ntkrnl_sys::bugcodes::HAL_INITIALIZATION_FAILED);
     }
 
 
@@ -991,7 +991,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
     Status = RtlAnsiStringToUnicodeString(&raw mut NtSystemRoot, &mut AnsiPath, 0u8);
     if Status < 0 {
-        KeBugCheck(0x64);
+        KeBugCheck(ntkrnl_sys::bugcodes::SESSION3_INITIALIZATION_FAILED);
     }
 
     KiInitializeBugCheck();
@@ -1020,12 +1020,12 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
 
     if ExInitSystem() == 0 {
-        KeBugCheck(0x31);
+        KeBugCheck(ntkrnl_sys::bugcodes::PHASE0_INITIALIZATION_FAILED);
     }
 
 
     if MmArmInitSystem(0, LoaderBlock) == 0 {
-        KeBugCheck(0x31);
+        KeBugCheck(ntkrnl_sys::bugcodes::PHASE0_INITIALIZATION_FAILED);
     }
 
 
@@ -1083,13 +1083,13 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     }
 
     if Status < 0 {
-        KeBugCheckEx(0x5C, Status as ULONG_PTR, 0, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE0_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
     }
 
     RtlInitAnsiString(&mut CSDString, Buffer.as_ptr() as *mut i8);
     Status = RtlAnsiStringToUnicodeString(&raw mut CmCSDVersionString, &mut CSDString, 1u8);
     if Status < 0 {
-        KeBugCheckEx(0x31, Status as ULONG_PTR, 0, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE0_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
     }
 
     Status = crate::rtl_string_cb_printf_a!(
@@ -1098,14 +1098,14 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         b"5.2",
     );
     if Status < 0 {
-        KeBugCheckEx(0x31, Status as ULONG_PTR, 0, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE0_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
     }
 
     RtlCreateUnicodeStringFromAsciiz(&raw mut CmVersionString, VersionBuffer.as_ptr() as *mut i8);
 
     // Initialize Power Subsystem in Phase 0
     if PoInitSystem(0) == 0 {
-        KeBugCheck(0xA0); // INTERNAL_POWER_ERROR
+        KeBugCheck(ntkrnl_sys::bugcodes::INTERNAL_POWER_ERROR); // INTERNAL_POWER_ERROR
     }
 
     ExpInitializeHandleTables();
@@ -1123,19 +1123,19 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     }
 
     if ObInitSystem() == 0 {
-        KeBugCheck(0x5E);
+        KeBugCheck(ntkrnl_sys::bugcodes::OBJECT_INITIALIZATION_FAILED);
     }
 
     if SeInitSystem() == 0 {
-        KeBugCheck(0x66);
+        KeBugCheck(ntkrnl_sys::bugcodes::SECURITY_INITIALIZATION_FAILED);
     }
 
     if PsInitSystem(LoaderBlock) == 0 {
-        KeBugCheck(0x6B);
+        KeBugCheck(ntkrnl_sys::bugcodes::PROCESS_INITIALIZATION_FAILED);
     }
 
     if PpInitSystem() == 0 {
-        KeBugCheck(0xA6);
+        KeBugCheck(ntkrnl_sys::bugcodes::PP0_INITIALIZATION_FAILED);
     }
 
     DbgkInitialize();
@@ -1207,7 +1207,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InitBuffer = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<INIT_BUFFER>(), 0x74696E49) as *mut INIT_BUFFER;
     if InitBuffer.is_null() {
-        KeBugCheckEx(0x5C, 0xC0000017, 8, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0xC0000017, 8, 0, 0);
     }
 
     ExpInitializationPhase = 1;
@@ -1215,7 +1215,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     KeSetPriorityThread(KeGetCurrentThread() as ntkrnl_sys::ddk::PKTHREAD, 31);
 
     if HalInitSystem(1, LoaderBlock) == 0 {
-        KeBugCheck(0x62);
+        KeBugCheck(ntkrnl_sys::bugcodes::HAL1_INITIALIZATION_FAILED);
     }
 
     // Get the command line and upcase it
@@ -1271,7 +1271,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         }
         KeStartAllProcessors();
         if HalAllProcessorsStarted() == 0 {
-            KeBugCheck(0x61); // HAL1_INITIALIZATION_FAILED
+            KeBugCheck(ntkrnl_sys::bugcodes::HAL1_INITIALIZATION_FAILED); // HAL1_INITIALIZATION_FAILED
         }
 
         // M3 self-test: prove the KeIpiGenericCall rendezvous actually runs
@@ -1336,31 +1336,31 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
                     b"[SMP] KeIpiGenericCall self-test FAILED: ran 0x%llx vs active 0x%llx\n\0",
                     ran, active
                 );
-                KeBugCheckEx(0x5C, 0x4743, ran as usize, active as usize, 0); // 0x4743 = 'GC'
+                KeBugCheckEx(ntkrnl_sys::bugcodes::HAL_INITIALIZATION_FAILED, 0x4743, ran as usize, active as usize, 0); // 0x4743 = 'GC'
             }
         }
     }
 
     if ObInitSystem() == 0 {
-        KeBugCheck(0x5F);
+        KeBugCheck(ntkrnl_sys::bugcodes::OBJECT1_INITIALIZATION_FAILED);
     }
     if ExInitSystem() == 0 {
-        KeBugCheckEx(0x5C, 0, 0, 1, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 1, 0);
     }
     if KeInitSystem() == 0 {
-        KeBugCheckEx(0x5C, 0, 0, 2, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 2, 0);
     }
     #[cfg(target_arch = "x86")]
     {
     }
     if KdInitSystem(ExpInitializationPhase, KeLoaderBlock) == 0 {
-        KeBugCheckEx(0x5C, 0, 0, 3, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 3, 0);
     }
     #[cfg(target_arch = "x86")]
     {
     }
     if SeInitSystem() == 0 {
-        KeBugCheck(0x67);
+        KeBugCheck(ntkrnl_sys::bugcodes::SECURITY1_INITIALIZATION_FAILED);
     }
     #[cfg(target_arch = "x86")]
     {
@@ -1371,14 +1371,14 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     }
     Status = ExpCreateSystemRootLink(LoaderBlock);
     if Status < 0 {
-        KeBugCheckEx(0x34, Status as ULONG_PTR, 0, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SYMBOLIC_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
     }
     #[cfg(target_arch = "x86")]
     {
     }
 
     if MmInitSystem(1, LoaderBlock) == 0 {
-        KeBugCheck(0x6C);
+        KeBugCheck(ntkrnl_sys::bugcodes::MEMORY1_INITIALIZATION_FAILED);
     }
     // DBG: after MmInitSystem(1)
     #[cfg(target_arch = "x86")]
@@ -1426,11 +1426,11 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     ExpInitNls(LoaderBlock);
 
     if CcInitializeCacheManager() == 0 {
-        KeBugCheck(0x35);
+        KeBugCheck(ntkrnl_sys::bugcodes::CACHE_INITIALIZATION_FAILED);
     }
 
     if CmInitSystem1() == 0 {
-        KeBugCheck(0x36);
+        KeBugCheck(ntkrnl_sys::bugcodes::CONFIG_INITIALIZATION_FAILED);
     }
 
     CcPfInitializePrefetcher();
@@ -1510,7 +1510,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
 
     if FsRtlInitSystem() == 0 {
-        KeBugCheck(0x45);
+        KeBugCheck(ntkrnl_sys::bugcodes::FILE_INITIALIZATION_FAILED);
     }
 
     RtlInitializeRangeListPackage();
@@ -1520,13 +1520,13 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     KdDebuggerInitialize1(LoaderBlock);
 
     if PpInitSystem() == 0 {
-        KeBugCheck(0xA7);
+        KeBugCheck(ntkrnl_sys::bugcodes::PP1_INITIALIZATION_FAILED);
     }
 
     InbvUpdateProgressBar(20);
 
     if LpcInitSystem() == 0 {
-        KeBugCheck(0x6D);
+        KeBugCheck(ntkrnl_sys::bugcodes::LPC_INITIALIZATION_FAILED);
     }
 
     InbvUpdateProgressBar(25);
@@ -1541,7 +1541,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     if IoInitSucceeded == 0 {
         #[cfg(not(target_arch = "aarch64"))]
         {
-            KeBugCheck(0x6E);
+            KeBugCheck(ntkrnl_sys::bugcodes::IO1_INITIALIZATION_FAILED);
         }
     }
 
@@ -1555,7 +1555,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     }
 
     if PoInitSystem(1) == 0 {
-        KeBugCheck(0xA0);
+        KeBugCheck(ntkrnl_sys::bugcodes::INTERNAL_POWER_ERROR);
     }
 
     InbvUpdateProgressBar(90);
@@ -1563,7 +1563,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     if PsInitSystem(LoaderBlock) == 0 {
         #[cfg(not(target_arch = "aarch64"))]
         {
-            KeBugCheck(0x72);
+            KeBugCheck(ntkrnl_sys::bugcodes::PROCESS1_INITIALIZATION_FAILED);
         }
     }
 
@@ -1575,7 +1575,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     if SeRmInitPhase1() == 0 {
         #[cfg(not(target_arch = "aarch64"))]
         {
-            KeBugCheck(0x72);
+            KeBugCheck(ntkrnl_sys::bugcodes::PROCESS1_INITIALIZATION_FAILED);
         }
     }
 
@@ -1641,7 +1641,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     Timeout.QuadPart = -50000000i64;
     Status = ZwWaitForSingleObject((*ProcessInfo).ProcessHandle, 0u8, &mut Timeout);
     if Status == STATUS_SUCCESS {
-        KeBugCheck(0x6A);
+        KeBugCheck(ntkrnl_sys::bugcodes::SESSION5_INITIALIZATION_FAILED);
     }
 
     ZwClose((*ProcessInfo).ThreadHandle);

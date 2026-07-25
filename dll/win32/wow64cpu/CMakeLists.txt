@@ -60,6 +60,12 @@ set(_wow64_guests
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/clipbrd/clipbrd.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/osk/osk.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/magnify/magnify.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/spider/spider.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/eventvwr/eventvwr.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/devmgmt/devmgmt.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/msconfig/msconfig.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/sndrec32/sndrec32.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/kbswitch/kbswitch.exe
     ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe)
 set(_wow64_guest_ok TRUE)
 foreach(_f ${_wow64_guests})
@@ -88,6 +94,12 @@ if(_wow64_guest_ok)
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/clipbrd/clipbrd.exe
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/osk/osk.exe
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/magnify/magnify.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/spider/spider.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/eventvwr/eventvwr.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/devmgmt/devmgmt.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/msconfig/msconfig.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/sndrec32/sndrec32.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/kbswitch/kbswitch.exe
         OUTPUT_VARIABLE _wow64_closure
         ERROR_VARIABLE _wow64_closure_err
         RESULT_VARIABLE _wow64_closure_rc)
@@ -132,6 +144,21 @@ if(_wow64_guest_ok)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/clipbrd/clipbrd.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/osk/osk.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/magnify/magnify.exe DESTINATION reactos/syswow64 FOR livecd)
+    # E11 robustness ladder, chosen for surface no earlier guest reached:
+    #   spider    cardlib DIB blitting — the direct disproof rung for E10's
+    #             NtGdiCreateDIBSection marshaller (guest gdi32's 4-byte &bmBits)
+    #   eventvwr  listview + the event-log RPC client (first 32-bit guest to do
+    #             real RPC/LPC to a 64-bit service)
+    #   devmgmt   setupapi device enumeration + treeview
+    #   msconfig  comctl32 PROPERTY SHEETS / tab control (a new control family)
+    #   sndrec32  winmm/mmsystem (a new DLL family in the import closure)
+    #   kbswitch  shell tray notification icon (Shell_NotifyIcon IPC)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/spider/spider.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/eventvwr/eventvwr.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/devmgmt/devmgmt.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/msconfig/msconfig.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/sndrec32/sndrec32.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/kbswitch/kbswitch.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe DESTINATION reactos/syswow64 NAME_ON_CD doom.exe FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad DESTINATION reactos/syswow64 FOR livecd)
 endif()

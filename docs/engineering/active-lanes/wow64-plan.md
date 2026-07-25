@@ -1090,6 +1090,142 @@ the "silently wrong until a guest hits it, then a kernel bugcheck" hazard that b
 E6 (GetAtomName/GetClassName), E8 (UnregisterClass), and E9 (FindWindowEx) — is
 now closed across the win32k surface.
 
+**Phase E10 — `marshalgen audit`: the flat-thunk blind spot becomes a BUILD-TIME
+GATE (2026-07-24).** E6, E8 and E9 each found one member of the same class the
+expensive way — boot an applet, watch the box BUGCHECK, symbolicate, marshal one
+syscall. E8 named the reason that keeps happening and E9 hand-ran the fix once;
+E10 makes it mechanical.
+
+*Why the existing tooling could not see it.* wow64gen types its thunks from
+`win32u.spec` / `ntdll.spec`, and a `.spec` arg says only **"this is a pointer"**
+— never what it points AT. So a syscall whose real prototype takes a pointer to a
+divergent payload is never flagged `WOW64_NEEDS_MANUAL`, gets a flat thunk, and
+therefore **never enters the list `marshalgen report` iterates over**. The report
+is structurally incapable of finding the class most likely to be silently wrong.
+
+*The audit inverts the question.* Instead of "are the stubs we already flagged
+marshalled correctly?", `marshalgen audit` asks: **of every syscall production
+dispatches through a LIVE flat thunk, which have a prototype whose payload
+provably diverges 32↔64?** Ground truth is the GENERATED table (an entry is `0`
+when a hand/auto marshaller owns it, `wow64_thunk_<Name>` when the flat thunk is
+live), cross-checked against the real header prototype through clang's own
+`-fdump-record-layouts` for i686 and the host — the same layout engine M17
+already trusts. Two verdicts are kept apart on purpose: PROVEN divergence is a
+finding, while "marshalgen could not resolve that layout" is a hole in the TOOL,
+reported separately so it can be driven down instead of burying the real hits.
+Wired into `vibeos-cli check` beside `verify_svc_numbering`, baseline gates NEW.
+
+*What it found on the win32k table* (737 entries, 628 live flat thunks) — **16
+syscalls**, every one a latent repeat of a bug we already paid for. The clang
+layout diff caught far more than a regex over the headers would: it resolves
+**typedef'd** struct pointers (`LPMSG`, `PCOMBOBOXINFO`, `PGUITHREADINFO`, …)
+that a textual scan cannot see.
+
+* **`NtGdiCreateDIBSection`** — the E7 overrun shape on a **hot** path. Guest
+  gdi32 passes `&bmBits`, a **4-byte** stack local (`gdi32-rust/src/objects/
+  bitmap.rs`), and the flat thunk let 64-bit win32k store an **8-byte** `PVOID`
+  there, smashing the next 4 bytes of guest stack on *every* DIB section —
+  mspaint, magnify, any double-buffered app. Marshalled (host-width slot,
+  narrowed back). A mapping above 4GB is unrepresentable to the guest, so that
+  case now fails the call loudly instead of truncating the pointer.
+* **`NtUserResolveDesktop`** — both halves at once: `PUNICODE_STRING` path +
+  `HWINSTA*` OUT cell. **`NtUserOpenDesktop` / `NtUserOpenWindowStation` /
+  `NtUserCreateWindowStation`** — `OBJECT_ATTRIBUTES` (24→48 bytes, nested
+  `UNICODE_STRING`). All four marshalled, reusing `Wow64pMarshalOa` — the helper
+  the entire ntdll open family already runs on.
+* **The rest of the MSG family** — `tagMSG` is 28 bytes on i386 and 48 on the
+  host, and the pump three (Get/Peek/DispatchMessage) have been marshalled since
+  M8, but `NtUserTranslateAccelerator` (any app with an accelerator table),
+  `NtUserCallMsgFilter` (modal loops / `MSGF_*` hooks) and
+  `NtUserRealInternalGetMessage` were still flat. Same `Wow64pMsg32To64` pair.
+* **8 more** (`NtUserSetCursorContents`/ICONINFO, `NtGdiAddEmbFontToDC`,
+  `NtGdiFONTOBJ_cGetGlyphs`, the `NtGdiDd*`/`NtGdiDvp*`/`NtGdiDxg*` DirectDraw
+  handle-array calls) carry a divergent struct no ladder guest reaches, so per
+  the M18 rule they became loud `WOW64_MANUAL_UNIMPL` stubs — a clean error
+  instead of the silent-wrong flat thunk they had.
+
+**All 16 verified cleared** by re-running the audit against the rebuilt table.
+
+*What it found overall*: **294 divergent params across 201 live flat thunks**
+(win32k 165/120, ntdll 129/81), plus 140 unknown-layout (tool blind spots,
+reported but never gated) and 3 no-prototype. After the 16 fixes, **291 remain
+and are BASELINED** (`tools/lint-baseline/marshalgen_audit.txt`) as the visible
+work queue — the same treatment `scan_silent_failures` (~2.1K) and
+`scan_cc_mismatch` (~330) get. The gate blocks anything NEW. Burning the
+baseline down is E12; prefer `marshalgen gen` codegen over hand-written
+marshallers for the plain-WIDENING cases, and note that the driver DDI families
+(XLATEOBJ/STROBJ/PATHOBJ/FONTOBJ) are not guest-reachable at all.
+
+*What it found on the ntdll table* (296 entries, 230 live flat thunks) is a much
+larger cold-path residual — ~70 struct-divergent and ~44 pointer-to-handle
+params. That is the audit doing its job: the baseline captures it as a visible
+work queue (house pattern — `scan_silent_failures`, `scan_cc_mismatch`) and the
+gate blocks any NEW one, rather than pretending the surface is clean. One entry
+in it is not a line item but a **milestone**:
+
+* **`NtCreateThread` is an unmarshalled flat thunk** — `OBJECT_ATTRIBUTES` +
+  `PCONTEXT` + `PINITIAL_TEB` + `PHANDLE` + `PCLIENT_ID`, and an i386 `CONTEXT`
+  bears no resemblance to an amd64/arm64 one. There is no thread-creation path
+  in wow64.dll at all, so **a multithreaded 32-bit guest is unsupported today**
+  (our ladder applets simply never create a thread inside their launch window).
+  Fixing it is not a struct marshal — a new guest thread needs its whole CPU
+  context set up the way process startup does. Owed as its own milestone.
+
+**Phase E11 — six more stock applets; they immediately found E13 (2026-07-24).**
+Added **spider** (cardlib DIB blitting — the disproof rung for E10's
+`NtGdiCreateDIBSection` fix), **eventvwr** (listview + the first 32-bit guest to
+drive real RPC to a 64-bit service), **devmgmt** (setupapi enumeration),
+**msconfig** (comctl32 property sheets), **sndrec32** (winmm) and **kbswitch**
+(shell tray-icon IPC). All six are **STAGED on the livecd** (closure recomputed
+complete: 60 → 61 modules, one new DLL).
+
+*Result — the ladder did exactly its job, which this time means it found a bug
+rather than a clean sweep.* On a quiet host the twelve existing applets and all
+eight probe guests PASS (the earlier five "exits" were pure host-contention
+artifacts of a native-KVM boot taken while four builds and two gates were
+running — a re-run on an idle host was clean; AGENTS.md warns about exactly
+this). **spider PASSed on one boot and BUGCHECKed the next**, and eventvwr
+BUGCHECKed too — both with the identical stack:
+
+```
+0x1E / C0000005 at win32k+0x258EC
+  cnt_rust::cabi::raw_move <- memcpy <- win32k_rust::message::g_MsgMemory
+                                     <- co_IntDoSendMessage
+```
+
+That is **E13**, a real pre-existing gap this lane had never reached:
+`g_MsgMemory` (win32k-rust/src/message.rs:407) sizes SendMessage pointer-lParam
+payloads with the **host's** `size_of::<T>()` — MINMAXINFO, STYLESTRUCT,
+WINDOWPOS, RECT, MEASUREITEMSTRUCT, DRAWITEMSTRUCT, HELPINFO, MDINEXTMENU — so a
+32-bit sender's buffer is over-read. M15a/M16/M18 covered the **callback**
+direction (kernel→user) and `NtUserMessageCall`'s WINDOWPOS lParam; the
+**SendMessage** direction (user→kernel→window) was never covered. The fix is
+win32k-side and needs conversion, not just a size swap — DRAWITEMSTRUCT and
+MEASUREITEMSTRUCT carry HWND/HDC/ULONG_PTR fields that shift.
+
+*E13 is PRE-EXISTING — proved by control experiment, not inferred.* With this
+whole batch stashed out and amd64 rebuilt from pristine master, the boot
+BUGCHECKs with the **byte-identical** stack (same `win32k+0x258EC`, same
+`+0x2597D`/`+0x181B24`/`+0x6AC82` frames) at the doom/testgui rung, with the same
+12/12 applet PASS. So master's amd64 boot already dies ~3.5 minutes in today;
+E11 merely reaches the fault sooner. (Worth doing that control: the fault PC is
+shared with the E6/E8/E9 class and three of E10's own new marshallers are on
+message paths — "my code looks uninvolved" was not good enough to land on.)
+
+*Disposition:* the six applets stay staged (launch `spider.exe` or
+`eventvwr.exe` by hand to repro E13 in seconds) but their winlogon
+**auto-launch block is held back**, because auto-launching a timing-dependent
+box-killer would stop the twelve existing rungs from ever reporting — spider and
+eventvwr reach the fault ~6 applets earlier than doom does, so auto-launching
+them would COST the coverage the ladder already has. Re-enabling that block is
+the regression test for E13. Tracked, not dropped.
+
+*Durable lesson (field manual §9.115):* when a generator's type source is
+narrower than the truth (a `.spec` describing pointers but not pointees), the
+generator cannot flag what it cannot see, and **a report that iterates the
+generator's own flagged set inherits exactly that blind spot**. The check has to
+cross the artifact it generated against the independent source of truth.
+
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored
   contributions upstream; we consume its binary contract only).

@@ -1,0 +1,291 @@
+FLAT-DIVERGENT: ntdll NtAcceptConnectPort(ClientView) WIDENING -> struct _REMOTE_PORT_VIEW
+FLAT-DIVERGENT: ntdll NtAcceptConnectPort(ConnectionRequest) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtAcceptConnectPort(PortHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtAcceptConnectPort(ServerView) WIDENING -> struct _PORT_VIEW
+FLAT-DIVERGENT: ntdll NtAccessCheckAndAuditAlarm(ObjectName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtAccessCheckAndAuditAlarm(ObjectTypeName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtAccessCheckAndAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtAccessCheckByType(ObjectTypeList) WIDENING -> struct _OBJECT_TYPE_LIST
+FLAT-DIVERGENT: ntdll NtAccessCheckByTypeResultList(ObjectTypeList) WIDENING -> struct _OBJECT_TYPE_LIST
+FLAT-DIVERGENT: ntdll NtAdjustGroupsToken(NewState) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtAdjustGroupsToken(PreviousState) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtAllocateUserPhysicalPages(NumberOfPages) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtAllocateUserPhysicalPages(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtApphelpCacheControl(ServiceData) WIDENING -> struct _APPHELP_CACHE_SERVICE_LOOKUP
+FLAT-DIVERGENT: ntdll NtCloseObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtCompactKeys(KeyArray) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateDebugObject(DebugHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateDebugObject(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateEventPair(EventPairHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateEventPair(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateJobObject(JobHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateJobObject(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateJobSet(UserJobSet) WIDENING -> struct _JOB_SET_ARRAY
+FLAT-DIVERGENT: ntdll NtCreatePagingFile(FileName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtCreatePort(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreatePort(PortHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateProcess(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateProcess(ProcessHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateProcessEx(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateProcessEx(ProcessHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateProfile(ProfileHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateThread(ClientId) WIDENING -> struct _CLIENT_ID
+FLAT-DIVERGENT: ntdll NtCreateThread(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateThread(ThreadContext) SEMANTIC -> struct _CONTEXT: field lists differ across widths
+FLAT-DIVERGENT: ntdll NtCreateThread(ThreadHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateThread(UserStack) WIDENING -> struct _INITIAL_TEB
+FLAT-DIVERGENT: ntdll NtCreateTimer(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateTimer(TimerHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateToken(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateToken(TokenDefaultDacl) WIDENING -> struct _TOKEN_DEFAULT_DACL
+FLAT-DIVERGENT: ntdll NtCreateToken(TokenGroups) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateToken(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtCreateToken(TokenOwner) WIDENING -> struct _TOKEN_OWNER
+FLAT-DIVERGENT: ntdll NtCreateToken(TokenPrimaryGroup) WIDENING -> struct _TOKEN_PRIMARY_GROUP
+FLAT-DIVERGENT: ntdll NtCreateToken(TokenUser) WIDENING -> struct _TOKEN_USER
+FLAT-DIVERGENT: ntdll NtCreateWaitablePort(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtCreateWaitablePort(PortHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtDebugContinue(AppClientId) WIDENING -> struct _CLIENT_ID
+FLAT-DIVERGENT: ntdll NtDeleteFile(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtDeleteObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtDeleteValueKey(ValueName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtDisplayString(DisplayString) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtDuplicateObject(TargetHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtDuplicateToken(NewTokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtDuplicateToken(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtFilterToken(NewTokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtFilterToken(RestrictedSids) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtFilterToken(SidsToDisable) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtFlushVirtualMemory(BaseAddress) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtFlushVirtualMemory(IoStatus) SEMANTIC -> struct _IO_STATUS_BLOCK: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtFreeUserPhysicalPages(NumberOfPages) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtFreeUserPhysicalPages(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtGetContextThread(Context) SEMANTIC -> struct _CONTEXT: field lists differ across widths
+FLAT-DIVERGENT: ntdll NtGetPlugPlayEvent(Buffer) SEMANTIC -> struct _PLUGPLAY_EVENT_BLOCK: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtGetWriteWatch(EntriesInUserAddressArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtGetWriteWatch(UserAddressArray) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtImpersonateClientOfPort(ClientMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtListenPort(ConnectionRequest) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtLoadDriver(DriverServiceName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtLoadKey(FileObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtLoadKey(KeyObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtLoadKey2(FileObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtLoadKey2(KeyObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtLoadKeyEx(SourceFile) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtLoadKeyEx(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtLockVirtualMemory(BaseAddress) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtMapUserPhysicalPages(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtMapUserPhysicalPagesScatter(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtMapUserPhysicalPagesScatter(VirtualAddresses) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtOpenEventPair(EventPairHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtOpenEventPair(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtOpenJobObject(JobHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtOpenJobObject(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(ObjectName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(ObjectTypeName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtOpenProcessToken(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtOpenProcessTokenEx(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtOpenThreadToken(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtOpenThreadTokenEx(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtOpenTimer(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtOpenTimer(TimerHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtPrivilegeObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtPrivilegedServiceAuditAlarm(ServiceName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtPrivilegedServiceAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtQueryMultipleValueKey(ValueEntries) WIDENING -> struct _KEY_VALUE_ENTRY
+FLAT-DIVERGENT: ntdll NtQueryOpenSubKeys(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtQueryOpenSubKeysEx(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtQuerySystemEnvironmentValue(Name) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtQuerySystemEnvironmentValueEx(VariableName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtRaiseHardError(Parameters) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtReadRequestData(Message) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtRenameKey(NewName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtReplaceKey(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtReplaceKey(ReplacedObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtReplyPort(LpcReply) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtReplyWaitReceivePort(PortContext) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtReplyWaitReceivePort(ReceiveMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtReplyWaitReceivePort(ReplyMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtReplyWaitReceivePortEx(PortContext) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtReplyWaitReceivePortEx(ReceiveMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtReplyWaitReceivePortEx(ReplyMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtReplyWaitReplyPort(ReplyMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtRequestPort(LpcMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtRequestWaitReplyPort(LpcReply) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtRequestWaitReplyPort(LpcRequest) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtSetContextThread(Context) SEMANTIC -> struct _CONTEXT: field lists differ across widths
+FLAT-DIVERGENT: ntdll NtSetSystemEnvironmentValue(Value) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtSetSystemEnvironmentValue(VariableName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtSetSystemEnvironmentValueEx(VariableName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtSetValueKey(ValueName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtUnloadDriver(DriverServiceName) WIDENING -> struct _UNICODE_STRING
+FLAT-DIVERGENT: ntdll NtUnloadKey(KeyObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtUnloadKey2(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtUnloadKeyEx(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
+FLAT-DIVERGENT: ntdll NtUnlockVirtualMemory(BaseAddress) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtWaitForDebugEvent(StateChange) SEMANTIC -> struct _DBGUI_WAIT_STATE_CHANGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: ntdll NtWaitForMultipleObjects(Object) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
+FLAT-DIVERGENT: ntdll NtWriteRequestData(Message) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_DeleteRbrush(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_DeleteRbrush(pboB) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_hGetColorTransform(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_pvAllocRbrush(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_pvGetRbrush(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_ulGetBrushColor(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiConsoleTextOut(lpto) WIDENING -> struct _POLYTEXTW
+FLAT-DIVERGENT: win32k NtGdiD3dContextDestroy(pdcdd) WIDENING -> struct _D3DNTHAL_CONTEXTDESTROYDATA
+FLAT-DIVERGENT: win32k NtGdiD3dDrawPrimitives2(pded) SEMANTIC -> struct _D3DNTHAL_DRAWPRIMITIVES2DATA: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiD3dValidateTextureStageState(pData) WIDENING -> struct _D3DNTHAL_VALIDATETEXTURESTAGESTATEDATA
+FLAT-DIVERGENT: win32k NtGdiDdAddAttachedSurface(puAddAttachedSurfaceData) SEMANTIC -> struct _DD_ADDATTACHEDSURFACEDATA: field lpDDSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdAlphaBlt(puBltData) SEMANTIC -> struct _DD_BLTDATA: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdBeginMoCompFrame(puBeginFrameData) SEMANTIC -> struct _DD_BEGINMOCOMPFRAMEDATA: field lpDestSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdBlt(puBltData) SEMANTIC -> struct _DD_BLTDATA: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdCanCreateD3DBuffer(puCanCreateSurfaceData) SEMANTIC -> struct _DD_CANCREATESURFACEDATA: field lpDDSurfaceDesc: ptr to divergent struct _DDSURFACEDESC (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdCanCreateSurface(puCanCreateSurfaceData) SEMANTIC -> struct _DD_CANCREATESURFACEDATA: field lpDDSurfaceDesc: ptr to divergent struct _DDSURFACEDESC (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdColorControl(puColorControlData) SEMANTIC -> struct _DD_COLORCONTROLDATA: field lpDDSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdCreateMoComp(puCreateMoCompData) SEMANTIC -> struct _DD_CREATEMOCOMPDATA: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdCreateSurfaceObject(puSurfaceGlobal) SEMANTIC -> struct _DD_SURFACE_GLOBAL: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdCreateSurfaceObject(puSurfaceLocal) SEMANTIC -> struct _DD_SURFACE_LOCAL: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdCreateSurfaceObject(puSurfaceMore) SEMANTIC -> struct _DD_SURFACE_MORE: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdDestroyMoComp(puDestroyMoCompData) WIDENING -> struct _DD_DESTROYMOCOMPDATA
+FLAT-DIVERGENT: win32k NtGdiDdEndMoCompFrame(puEndFrameData) WIDENING -> struct _DD_ENDMOCOMPFRAMEDATA
+FLAT-DIVERGENT: win32k NtGdiDdFlip(puFlipData) SEMANTIC -> struct _DD_FLIPDATA: field lpSurfCurr: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdFlipToGDISurface(puFlipToGDISurfaceData) WIDENING -> struct _DD_FLIPTOGDISURFACEDATA
+FLAT-DIVERGENT: win32k NtGdiDdGetAvailDriverMemory(puGetAvailDriverMemoryData) WIDENING -> struct _DD_GETAVAILDRIVERMEMORYDATA
+FLAT-DIVERGENT: win32k NtGdiDdGetBltStatus(puGetBltStatusData) SEMANTIC -> struct _DD_GETBLTSTATUSDATA: field lpDDSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdGetDriverInfo(puGetDriverInfoData) WIDENING -> struct _DD_GETDRIVERINFODATA
+FLAT-DIVERGENT: win32k NtGdiDdGetDriverState(pdata) SEMANTIC -> struct _DD_GETDRIVERSTATEDATA: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdGetFlipStatus(puGetFlipStatusData) SEMANTIC -> struct _DD_GETFLIPSTATUSDATA: field lpDDSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdGetInternalMoCompInfo(puGetInternalData) SEMANTIC -> struct _DD_GETINTERNALMOCOMPDATA: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdGetMoCompBuffInfo(puGetBuffData) SEMANTIC -> struct _DD_GETMOCOMPCOMPBUFFDATA: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdGetMoCompFormats(puGetMoCompFormatsData) WIDENING -> struct _DD_GETMOCOMPFORMATSDATA
+FLAT-DIVERGENT: win32k NtGdiDdGetMoCompGuids(puGetMoCompGuidsData) WIDENING -> struct _DD_GETMOCOMPGUIDSDATA
+FLAT-DIVERGENT: win32k NtGdiDdGetScanLine(puGetScanLineData) WIDENING -> struct _DD_GETSCANLINEDATA
+FLAT-DIVERGENT: win32k NtGdiDdLock(puLockData) SEMANTIC -> struct _DD_LOCKDATA: field lpDDSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdLockD3D(puLockData) SEMANTIC -> struct _DD_LOCKDATA: field lpDDSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdQueryDirectDrawObject(pHalInfo) SEMANTIC -> struct _DD_HALINFO: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdQueryDirectDrawObject(puD3dBufferCallbacks) WIDENING -> struct _DD_D3DBUFCALLBACKS
+FLAT-DIVERGENT: win32k NtGdiDdQueryDirectDrawObject(puD3dCallbacks) WIDENING -> struct _D3DNTHAL_CALLBACKS
+FLAT-DIVERGENT: win32k NtGdiDdQueryDirectDrawObject(puD3dDriverData) SEMANTIC -> struct _D3DNTHAL_GLOBALDRIVERDATA: field lpTextureFormats: ptr to divergent struct _DDSURFACEDESC (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdQueryDirectDrawObject(puD3dTextureFormats) SEMANTIC -> struct _DDSURFACEDESC: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdQueryDirectDrawObject(puvmList) SEMANTIC -> struct _VIDEOMEMORY: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdQueryMoCompStatus(puQueryMoCompStatusData) SEMANTIC -> struct _DD_QUERYMOCOMPSTATUSDATA: field lpSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdRenderMoComp(puRenderMoCompData) SEMANTIC -> struct _DD_RENDERMOCOMPDATA: field lpBufferInfo: ptr to divergent struct _DDMOCOMPBUFFERINFO (field lpCompSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout))
+FLAT-DIVERGENT: win32k NtGdiDdSetColorKey(puSetColorKeyData) SEMANTIC -> struct _DD_SETCOLORKEYDATA: field lpDDSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdSetExclusiveMode(puSetExclusiveModeData) WIDENING -> struct _DD_SETEXCLUSIVEMODEDATA
+FLAT-DIVERGENT: win32k NtGdiDdSetOverlayPosition(puSetOverlayPositionData) SEMANTIC -> struct _DD_SETOVERLAYPOSITIONDATA: field lpDDSrcSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdUnlock(puUnlockData) SEMANTIC -> struct _DD_UNLOCKDATA: field lpDDSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdUnlockD3D(puUnlockData) SEMANTIC -> struct _DD_UNLOCKDATA: field lpDDSurface: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)
+FLAT-DIVERGENT: win32k NtGdiDdUpdateOverlay(puUpdateOverlayData) SEMANTIC -> struct _DD_UPDATEOVERLAYDATA: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiDdWaitForVerticalBlank(puWaitForVerticalBlankData) WIDENING -> struct _DD_WAITFORVERTICALBLANKDATA
+FLAT-DIVERGENT: win32k NtGdiDvpCanCreateVideoPort(puCanCreateVPortData) WIDENING -> struct _DD_CANCREATEVPORTDATA
+FLAT-DIVERGENT: win32k NtGdiDvpColorControl(puVPortColorData) SEMANTIC -> struct _DD_VPORTCOLORDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpCreateVideoPort(puCreateVPortData) SEMANTIC -> struct _DD_CREATEVPORTDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpDestroyVideoPort(puDestroyVPortData) SEMANTIC -> struct _DD_DESTROYVPORTDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpFlipVideoPort(puFlipVPortData) SEMANTIC -> struct _DD_FLIPVPORTDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpGetVideoPortBandwidth(puGetVPortBandwidthData) SEMANTIC -> struct _DD_GETVPORTBANDWIDTHDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpGetVideoPortConnectInfo(puGetVPortConnectData) WIDENING -> struct _DD_GETVPORTCONNECTDATA
+FLAT-DIVERGENT: win32k NtGdiDvpGetVideoPortField(puGetVPortFieldData) SEMANTIC -> struct _DD_GETVPORTFIELDDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpGetVideoPortFlipStatus(puGetVPortFlipStatusData) WIDENING -> struct _DD_GETVPORTFLIPSTATUSDATA
+FLAT-DIVERGENT: win32k NtGdiDvpGetVideoPortInputFormats(puGetVPortInputFormatData) SEMANTIC -> struct _DD_GETVPORTINPUTFORMATDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpGetVideoPortLine(puGetVPortLineData) SEMANTIC -> struct _DD_GETVPORTLINEDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpGetVideoPortOutputFormats(puGetVPortOutputFormatData) SEMANTIC -> struct _DD_GETVPORTOUTPUTFORMATDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpGetVideoSignalStatus(puGetVPortSignalData) SEMANTIC -> struct _DD_GETVPORTSIGNALDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiDvpWaitForVideoPortSync(puWaitForVPortSyncData) SEMANTIC -> struct _DD_WAITFORVPORTSYNCDATA: field lpVideoPort: ptr to divergent struct _DD_VIDEOPORT_LOCAL (field lpSurface: ptr to divergent struct _DD_SURFACE_INT (field lpLcl: ptr to divergent struct _DD_SURFACE_LOCAL (union/bitfield with divergent layout)))
+FLAT-DIVERGENT: win32k NtGdiEngAlphaBlend(psoDest) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngAlphaBlend(psoSrc) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngAlphaBlend(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiEngBitBlt(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngBitBlt(psoMask) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngBitBlt(psoSrc) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngBitBlt(psoTrg) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngBitBlt(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiEngCheckAbort(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngCopyBits(psoDst) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngCopyBits(psoSrc) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngCopyBits(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiEngEraseSurface(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngFillPath(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngFillPath(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngGradientFill(psoDest) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngGradientFill(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiEngLineTo(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngLineTo(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngPaint(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngPaint(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngPlgBlt(psoMsk) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngPlgBlt(psoSrc) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngPlgBlt(psoTrg) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngPlgBlt(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStretchBlt(psoDest) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStretchBlt(psoMask) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStretchBlt(psoSrc) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStretchBlt(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStretchBltROP(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStretchBltROP(psoMask) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStretchBltROP(psoSrc) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStretchBltROP(psoTrg) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStretchBltROP(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStrokeAndFillPath(pboFill) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStrokeAndFillPath(pboStroke) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStrokeAndFillPath(plineattrs) SEMANTIC -> struct _LINEATTRS: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiEngStrokeAndFillPath(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStrokePath(pbo) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngStrokePath(plineattrs) SEMANTIC -> struct _LINEATTRS: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiEngStrokePath(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngTextOut(pboFore) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngTextOut(pboOpaque) WIDENING -> struct _BRUSHOBJ
+FLAT-DIVERGENT: win32k NtGdiEngTextOut(pfo) WIDENING -> struct _FONTOBJ
+FLAT-DIVERGENT: win32k NtGdiEngTextOut(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngTextOut(pstro) SEMANTIC -> struct _STROBJ: field pgp: ptr to divergent struct _GLYPHPOS (field pgdf: ptr to divergent union _GLYPHDEF (union/bitfield with divergent layout))
+FLAT-DIVERGENT: win32k NtGdiEngTransparentBlt(psoDst) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngTransparentBlt(psoSrc) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiEngTransparentBlt(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiEngUnlockSurface(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiFONTOBJ_cGetAllGlyphHandles(pfo) WIDENING -> struct _FONTOBJ
+FLAT-DIVERGENT: win32k NtGdiFONTOBJ_pQueryGlyphAttrs(pfo) WIDENING -> struct _FONTOBJ
+FLAT-DIVERGENT: win32k NtGdiFONTOBJ_pfdg(pfo) WIDENING -> struct _FONTOBJ
+FLAT-DIVERGENT: win32k NtGdiFONTOBJ_pifi(pfo) WIDENING -> struct _FONTOBJ
+FLAT-DIVERGENT: win32k NtGdiFONTOBJ_pvTrueTypeFontFile(pfo) WIDENING -> struct _FONTOBJ
+FLAT-DIVERGENT: win32k NtGdiFONTOBJ_pxoGetXform(pfo) WIDENING -> struct _FONTOBJ
+FLAT-DIVERGENT: win32k NtGdiFONTOBJ_vGetInfo(pfo) WIDENING -> struct _FONTOBJ
+FLAT-DIVERGENT: win32k NtGdiGetCharacterPlacementW(pgcpw) WIDENING -> struct tagGCP_RESULTSW
+FLAT-DIVERGENT: win32k NtGdiGetOutlineTextMetricsInternalW(potmw) WIDENING -> struct _OUTLINETEXTMETRICW
+FLAT-DIVERGENT: win32k NtGdiPATHOBJ_bEnum(ppd) WIDENING -> struct _PATHDATA
+FLAT-DIVERGENT: win32k NtGdiPATHOBJ_vEnumStartClipLines(pla) SEMANTIC -> struct _LINEATTRS: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtGdiPATHOBJ_vEnumStartClipLines(pso) WIDENING -> struct _SURFOBJ
+FLAT-DIVERGENT: win32k NtGdiPolyPatBlt(pPoly) WIDENING -> struct _POLYPATBLT
+FLAT-DIVERGENT: win32k NtGdiPolyTextOutW(pptw) WIDENING -> struct _POLYTEXTW
+FLAT-DIVERGENT: win32k NtGdiResetDC(pDriverInfo2) WIDENING -> struct _DRIVER_INFO_2W
+FLAT-DIVERGENT: win32k NtGdiSTROBJ_bEnum(pstro) SEMANTIC -> struct _STROBJ: field pgp: ptr to divergent struct _GLYPHPOS (field pgdf: ptr to divergent union _GLYPHDEF (union/bitfield with divergent layout))
+FLAT-DIVERGENT: win32k NtGdiSTROBJ_bEnumPositionsOnly(pstro) SEMANTIC -> struct _STROBJ: field pgp: ptr to divergent struct _GLYPHPOS (field pgdf: ptr to divergent union _GLYPHDEF (union/bitfield with divergent layout))
+FLAT-DIVERGENT: win32k NtGdiSTROBJ_bGetAdvanceWidths(pstro) SEMANTIC -> struct _STROBJ: field pgp: ptr to divergent struct _GLYPHPOS (field pgdf: ptr to divergent union _GLYPHDEF (union/bitfield with divergent layout))
+FLAT-DIVERGENT: win32k NtGdiSTROBJ_dwGetCodePage(pstro) SEMANTIC -> struct _STROBJ: field pgp: ptr to divergent struct _GLYPHPOS (field pgdf: ptr to divergent union _GLYPHDEF (union/bitfield with divergent layout))
+FLAT-DIVERGENT: win32k NtGdiSTROBJ_vEnumStart(pstro) SEMANTIC -> struct _STROBJ: field pgp: ptr to divergent struct _GLYPHPOS (field pgdf: ptr to divergent union _GLYPHDEF (union/bitfield with divergent layout))
+FLAT-DIVERGENT: win32k NtGdiStartDoc(pdi) WIDENING -> struct _DOCINFOW
+FLAT-DIVERGENT: win32k NtGdiXLATEOBJ_cGetPalette(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiXLATEOBJ_hGetColorTransform(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtGdiXLATEOBJ_iXlate(pxlo) WIDENING -> struct _XLATEOBJ
+FLAT-DIVERGENT: win32k NtUserBuildHimcList(phList) SCALAR_WIDEN -> HIMC: 4->8 scalar pointee
+FLAT-DIVERGENT: win32k NtUserGetClipboardData(pgcd) SEMANTIC -> struct tagGETCLIPBDATA: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtUserGetComboBoxInfo(pcbi) WIDENING -> struct tagCOMBOBOXINFO
+FLAT-DIVERGENT: win32k NtUserGetCursorInfo(pci) WIDENING -> struct tagCURSORINFO
+FLAT-DIVERGENT: win32k NtUserGetGUIThreadInfo(lpgui) WIDENING -> struct tagGUITHREADINFO
+FLAT-DIVERGENT: win32k NtUserGetImeHotKey(lphKL) SCALAR_WIDEN -> HKL: 4->8 scalar pointee
+FLAT-DIVERGENT: win32k NtUserGetImeInfoEx(pImeInfoEx) SEMANTIC -> struct tagIMEINFOEX: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtUserGetKeyboardLayoutList(pHklBuff) SCALAR_WIDEN -> HKL: 4->8 scalar pointee
+FLAT-DIVERGENT: win32k NtUserGetMenuBarInfo(pmbi) SEMANTIC -> struct tagMENUBARINFO: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtUserGetMouseMovePointsEx(lppt) WIDENING -> struct tagMOUSEMOVEPOINT
+FLAT-DIVERGENT: win32k NtUserGetMouseMovePointsEx(lpptBuf) WIDENING -> struct tagMOUSEMOVEPOINT
+FLAT-DIVERGENT: win32k NtUserGetRawInputBuffer(pData) SEMANTIC -> struct tagRAWINPUT: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtUserGetRawInputDeviceList(pRawInputDeviceList) WIDENING -> struct tagRAWINPUTDEVICELIST
+FLAT-DIVERGENT: win32k NtUserGetRegisteredRawInputDevices(pRawInputDevices) WIDENING -> struct tagRAWINPUTDEVICE
+FLAT-DIVERGENT: win32k NtUserInitializeClientPfnArrays(pfnClientA) WIDENING -> struct _PFNCLIENT
+FLAT-DIVERGENT: win32k NtUserInitializeClientPfnArrays(pfnClientW) WIDENING -> struct _PFNCLIENT
+FLAT-DIVERGENT: win32k NtUserInitializeClientPfnArrays(pfnClientWorker) WIDENING -> struct _PFNCLIENTWORKER
+FLAT-DIVERGENT: win32k NtUserRegisterRawInputDevices(pRawInputDevices) WIDENING -> struct tagRAWINPUTDEVICE
+FLAT-DIVERGENT: win32k NtUserSendInput(pInput) SEMANTIC -> struct tagINPUT: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtUserSetImeInfoEx(pImeInfoEx) SEMANTIC -> struct tagIMEINFOEX: union/bitfield with divergent layout
+FLAT-DIVERGENT: win32k NtUserThunkedMenuInfo(lpcmi) WIDENING -> struct tagMENUINFO
+FLAT-DIVERGENT: win32k NtUserTrackMouseEvent(lpEventTrack) WIDENING -> struct tagTRACKMOUSEEVENT

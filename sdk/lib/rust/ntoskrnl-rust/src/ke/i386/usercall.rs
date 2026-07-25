@@ -295,14 +295,14 @@ pub unsafe extern "fastcall" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME)
     #[cfg(debug_assertions)]
     {
         if KeGetCurrentIrql() != 0 {
-            KeBugCheckEx(0x1A, 0, KeGetCurrentIrql() as ULONG_PTR, 0, 0);
+            KeBugCheckEx(ntkrnl_sys::bugcodes::IRQL_GT_ZERO_AT_SYSTEM_SERVICE, 0, KeGetCurrentIrql() as ULONG_PTR, 0, 0);
         }
 
         if (*(CurrentThread as *mut _KTHREAD)).ApcStateIndex != OriginalApcEnvironment
             || (*(CurrentThread as *mut _KTHREAD)).__bindgen_anon_4.CombinedApcDisable > 0
         {
             KeBugCheckEx(
-                0x1,
+                ntkrnl_sys::bugcodes::APC_INDEX_MISMATCH,
                 0,
                 (*(CurrentThread as *mut _KTHREAD)).ApcStateIndex as ULONG_PTR,
                 (*(CurrentThread as *mut _KTHREAD)).__bindgen_anon_4.CombinedApcDisable as ULONG_PTR,

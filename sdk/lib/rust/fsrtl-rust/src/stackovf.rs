@@ -123,7 +123,7 @@ unsafe extern "system" fn FsRtlWorkerThread(StartContext: PVOID) {
         let irql = KeGetCurrentIrql();
         if irql != PASSIVE_LEVEL {
             KeBugCheckEx(
-                0x0A,
+                ntkrnl_sys::bugcodes::IRQL_NOT_LESS_OR_EQUAL,
                 (*work_item).WorkerRoutine.unwrap() as ULONG_PTR,
                 irql as ULONG_PTR,
                 (*work_item).WorkerRoutine.unwrap() as ULONG_PTR,

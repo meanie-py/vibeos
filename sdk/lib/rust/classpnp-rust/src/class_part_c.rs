@@ -499,7 +499,7 @@ pub unsafe extern "C" fn ClasspReleaseQueue(
         ClasspAllocateReleaseQueueIrp(fdoExtension);
     }
     if (*(*fdoExtension).PrivateFdoData).ReleaseQueueIrpAllocated == 0 {
-        KeBugCheckEx(0x52, 0x12, Fdo as ULONG_PTR, 0x0, 0x0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::SCSI_DISK_DRIVER_INTERNAL, 0x12, Fdo as ULONG_PTR, 0x0, 0x0);
     }
 
     if ((*fdoExtension).ReleaseQueueInProgress != 0) && ReleaseQueueIrp.is_null() {

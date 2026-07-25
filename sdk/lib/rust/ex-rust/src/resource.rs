@@ -1150,7 +1150,7 @@ pub unsafe extern "system" fn ExReleaseResourceForThreadLite(
                 loop {
                     if entry >= Limit {
                         KeBugCheckEx(
-                            0x03,
+                            ntkrnl_sys::bugcodes::RESOURCE_NOT_OWNED,
                             Resource as ULONG_PTR,
                             Thread as ULONG_PTR,
                             (*Resource).OwnerTable as ULONG_PTR,
@@ -1228,7 +1228,7 @@ pub unsafe extern "system" fn ExSetResourceOwnerPointer(
 
         if Owner.is_null() {
             KeBugCheckEx(
-                0x03,
+                ntkrnl_sys::bugcodes::RESOURCE_NOT_OWNED,
                 Resource as ULONG_PTR,
                 Thread as ULONG_PTR,
                 (*Resource).OwnerTable as ULONG_PTR,

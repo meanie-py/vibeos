@@ -407,7 +407,7 @@ pub unsafe extern "system" fn SeInitSystem() -> BOOLEAN {
         0 => SepInitializationPhase0(),
         1 => SepInitializationPhase1(),
         _ => {
-            KeBugCheckEx(0x6F, 0, ExpInitializationPhase as ULONG_PTR, 0, 0);
+            KeBugCheckEx(ntkrnl_sys::bugcodes::UNEXPECTED_INITIALIZATION_CALL, 0, ExpInitializationPhase as ULONG_PTR, 0, 0);
             0u8
         }
     }
@@ -451,7 +451,7 @@ pub unsafe extern "system" fn SeDefaultObjectMethod(
             STATUS_SUCCESS
         }
         _ => {
-            KeBugCheckEx(0x7, 0, STATUS_INVALID_PARAMETER as ULONG_PTR, 0, 0);
+            KeBugCheckEx(ntkrnl_sys::bugcodes::SECURITY_SYSTEM, 0, STATUS_INVALID_PARAMETER as ULONG_PTR, 0, 0);
             STATUS_SUCCESS
         }
     }

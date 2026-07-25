@@ -260,7 +260,7 @@ unsafe fn KeSignalGateBoostPriorityImpl(Gate: PKGATE) {
                     );
                     if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
                     ntkrnl_sys::ddk::KeBugCheckEx(
-                        0x96,
+                        ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
                         WaitThread as ntkrnl_sys::ddk::ULONG_PTR,
                         ((0x5Fu64 << 40) | ((*kt_State(WaitThread)) as u64) << 8)
                             as ntkrnl_sys::ddk::ULONG_PTR,

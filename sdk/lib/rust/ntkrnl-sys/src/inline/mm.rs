@@ -281,20 +281,41 @@ pub unsafe fn KeInvalidateTlbEntry(address: PVOID) {
         unsafe extern "C" { fn KiTbShootdownSingle(Address: u64); }
         KiTbShootdownSingle(address as u64);
     }
-    // arm64: `vale1is` is INNER-SHAREABLE — the invalidate broadcasts to every
+    // arm64: `vae1is` is INNER-SHAREABLE — the invalidate broadcasts to every
     // core in hardware, so this single sequence IS the SMP shootdown (no IPI
     // protocol needed; the amd64 KiTbShootdownSingle machinery has no arm64
     // twin BY DESIGN — smp-bringup-quest.md M5d). The leading `dsb ishst`
     // publishes the caller's PTE store to remote table walkers BEFORE the
     // invalidate lands — without it a remote walk can refill from the stale
-    // PTE (TCG forgives this; real hardware does not). The trailing `dsb ish`
-    // completes only when every core has dropped the entry.
+    // PTE (TCG forgives this; real hardware does not). Use VAE, not the
+    // last-level-only VALE: this generic x86-semantic primitive is also used
+    // while page-table levels cascade out of existence, so cached intermediate
+    // descriptors must be invalidated too. The trailing `dsb ish` completes
+    // only when every core has dropped the entry.
     #[cfg(target_arch = "aarch64")]
     {
-        let tlbi_arg = (address as u64) >> 12;
+        // TLBI's register operand is NOT a raw shifted pointer. It is three
+        // fields: bits 43:0 = VA[55:12], bits 47:44 = the FEAT_TTL level hint,
+        // bits 63:48 = ASID. A sign-extended kernel VA (0xFFFFF800_00000000)
+        // shifted right by 12 is 0x000FFFFF_80000000, which lands 0xF in BOTH
+        // the TTL field and the ASID field. Mask to VA bits only.
+        //
+        // Neither stray field can bite on TODAY's target, and it is worth
+        // spelling out why so this mask does not get "optimized" away later:
+        //   - ASID 0xF is ignored because every PTE in this port is GLOBAL
+        //     (HARDWARE_PTE.NonGlobal is never set anywhere in the tree), and
+        //     TLBI VAE1IS invalidates a global entry whatever the ASID operand.
+        //   - TTL 0xF claims "64KB granule, level 3" — wrong for our 4KB
+        //     granule, and a TTL inconsistent with the real entry makes it
+        //     CONSTRAINED UNPREDICTABLE whether the entry is invalidated at
+        //     all. It is inert only because QEMU's `-cpu cortex-a72` is
+        //     ARMv8.0 and has no FEAT_TTL, so bits 47:44 are RES0.
+        // Both go live the moment we run on an ARMv8.4+ core or start setting
+        // NonGlobal for per-process ASIDs. Mask unconditionally. See 9.114.
+        let tlbi_arg = ((address as u64) >> 12) & ((1u64 << 44) - 1);
         core::arch::asm!(
             "dsb ishst",
-            "tlbi vale1is, {}",
+            "tlbi vae1is, {}",
             "dsb ish",
             "isb",
             in(reg) tlbi_arg,

@@ -1518,7 +1518,7 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
         );
         if RQ_ORACLE_ARMED {
         ddk::KeBugCheckEx(
-            0x96,
+            crate::bugcodes::INVALID_WORK_QUEUE_ITEM,
             thread as usize as _,
             ((0x59u64 << 40) | (caller_line << 8) | kt_state_read(thread) as u64) as _,
             __stale_by as u64 as _,
@@ -1580,7 +1580,7 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
             );
             if RQ_ORACLE_ARMED {
             ddk::KeBugCheckEx(
-                0x96,
+                crate::bugcodes::INVALID_WORK_QUEUE_ITEM,
                 thread as usize as _,
                 ((0x58u64 << 40) | (caller_line << 8) | kt_state_read(thread) as u64) as _,
                 prcb as usize as _,
@@ -2021,7 +2021,7 @@ pub unsafe fn ki_check_promote_not_linked(thread: ddk::PKTHREAD, site: u64) {
         );
         if RQ_ORACLE_ARMED {
         ddk::KeBugCheckEx(
-            0x96,
+            crate::bugcodes::INVALID_WORK_QUEUE_ITEM,
             thread as usize as _,
             ((0x55u64 << 40) | site) as _,
             kt_state_read(thread) as _,
@@ -2124,7 +2124,7 @@ pub unsafe fn ki_rq_integrity(prcb: ddk::PKPRCB, priority: u32, site: u64) {
             (*blink).Blink,
         );
         ddk::KeBugCheckEx(
-            0x96,
+            crate::bugcodes::INVALID_WORK_QUEUE_ITEM,
             prcb as usize as _,
             ((site << 8) | priority as u64) as _,
             bad_ptr as usize as _, // the corrupted link value (the fingerprint)
@@ -2161,7 +2161,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
             );
             if RQ_ORACLE_ARMED {
             ddk::KeBugCheckEx(
-                0x96,
+                crate::bugcodes::INVALID_WORK_QUEUE_ITEM,
                 thread as usize as _,
                 ((0x5Du64 << 40) | (caller_line << 8)
                     | (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u64) as _,
@@ -2238,7 +2238,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
             );
             if RQ_ORACLE_ARMED {
             ddk::KeBugCheckEx(
-                0x96,
+                crate::bugcodes::INVALID_WORK_QUEUE_ITEM,
                 thread as usize as _,
                 ((0x54u64 << 40) | (caller_line << 8) | priority_c as u64) as _,
                 kt_state_read(thread) as _, // the state that slipped past 0x52
@@ -2267,7 +2267,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
             if (*thread).Affinity == 0 {
                 if RQ_ORACLE_ARMED {
                 ddk::KeBugCheckEx(
-                    0x96,
+                    crate::bugcodes::INVALID_WORK_QUEUE_ITEM,
                     thread as usize as _,
                     (0x63u64 << 40) as _,
                     (*prcb).SetMember as _,
@@ -2338,7 +2338,7 @@ pub unsafe fn KiSelectReadyThread(priority: KPRIORITY, prcb: ddk::PKPRCB) -> ddk
             || (*list_entry).Blink != list_head as ddk::PLIST_ENTRY
         {
             ddk::KeBugCheckEx(
-                0x96, // marker: SMP ready-list/ReadySummary inconsistency (§9.56)
+                crate::bugcodes::INVALID_WORK_QUEUE_ITEM, // marker: SMP ready-list/ReadySummary inconsistency (§9.56)
                 prcb as usize as _,
                 high_priority as _,
                 (*prcb).ReadySummary as _,
