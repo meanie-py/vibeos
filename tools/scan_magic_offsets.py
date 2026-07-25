@@ -60,7 +60,9 @@ NOLINT_RE = re.compile(r"//\s*nolint(?::\s*magic-offset\b|\s*$|:?\s*\()")
 _SFX = r"(?:[ui](?:8|16|32|64|128|size))?"
 
 # B. `as usize + <literal>` later re-cast to a pointer on the same line
-B_RE = re.compile(r"as\s+usize\s*[+\-]\s*(0x[0-9A-Fa-f_]+|\d[\d_]{1,})" + _SFX + r"\b.*\bas\s+\*(?:const|mut)\b")
+B_RE = re.compile(
+    r"as\s+usize\s*[+\-]\s*(0x[0-9A-Fa-f_]+|\d[\d_]{1,})" + _SFX + r"\b.*\bas\s+\*(?:const|mut)\b"
+)
 # C. byte_add / byte_offset / byte_sub with a literal
 C_RE = re.compile(r"\.byte_(?:add|offset|sub)\s*\(\s*(0x[0-9A-Fa-f_]+|\d[\d_]*)" + _SFX + r"\b")
 # D. struct-pointer-recast-to-u8 byte arithmetic: hex/large-dec literal, or a

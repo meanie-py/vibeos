@@ -53,9 +53,7 @@ CALL_RE = re.compile(r"\bKeBugCheck(?:Ex)?\s*\(")
 # directly by `,` or `)`, so `KeBugCheckEx(0x35u32, ...)` in classpnp-rust hid
 # from this gate for six weeks while the scanner reported a clean 0. A lint that
 # under-matches reads exactly like a lint that passes — match the whole literal.
-NUM_RE = re.compile(
-    r"^\s*(0x[0-9A-Fa-f_]+|\d[\d_]*)(?:[ui](?:8|16|32|64|128|size))?\s*[,)]"
-)
+NUM_RE = re.compile(r"^\s*(0x[0-9A-Fa-f_]+|\d[\d_]*)(?:[ui](?:8|16|32|64|128|size))?\s*[,)]")
 
 
 def scan_file(path: Path) -> list[tuple[int, str, str]]:
