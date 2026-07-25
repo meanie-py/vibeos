@@ -9,11 +9,11 @@
     rust: fn NtSetLdtEntries(ULONG, u64, ULONG, u64) -> NTSTATUS
     rust: fn ObpSetHandleAttributes(*mut _HANDLE_TABLE_ENTRY, u32) -> BOOLEAN
   C prototypes: 5034 FunctionDecls, 4536 typedefs
-  exported Rust fns: 3358 (deduped twins)
-  exported fns checked : 3358
+  exported Rust fns: 3359 (deduped twins)
+  exported fns checked : 3359
   matched to a C proto : 2238
   mismatches           : 9  (3 shown, 6 LOW-suppressed)
-  no C proto (internal): 1120
+  no C proto (internal): 1121
   signature OK         : 2229
 === verify_signatures — arch=amd64 ===
 Dumping C AST (clang)...
