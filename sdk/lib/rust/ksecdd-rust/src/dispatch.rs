@@ -18,10 +18,27 @@ extern "system" {
     fn KsecEncryptMemory(Buffer: PVOID, Length: ULONG, Option: ULONG) -> NTSTATUS;
     fn KsecDecryptMemory(Buffer: PVOID, Length: ULONG, Option: ULONG) -> NTSTATUS;
 }
-// DbgPrint is cdecl-variadic; __debugbreak is the MSVC intrinsic (cdecl).
+// DbgPrint is cdecl-variadic and really is an import (ntoskrnl exports it).
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
-    fn __debugbreak();
+}
+
+// __debugbreak is an MSVC *intrinsic*, not an import. Declaring it `extern "C"` emitted a
+// reference to `___debugbreak` that nothing in ksecdd.sys's link provides — ksecdd.sys is its
+// own PE image, so the kernel-side global_asm in ntkrnl-sys is not in scope for it no matter
+// how the symbol is decorated (verified: aliasing it there changes nothing). Only a COLD build
+// catches this, because a `.sys` relinks only when its inputs change.
+//
+// Emit the instruction inline, which is what the intrinsic means and what sibling drivers
+// already do (`fltmgr-rust/src/glue.rs`, `scsiport-rust/src/inlines.rs`). Note this is also the
+// AGENTS.md rule about debug macros: an out-of-line no-op/stub for something that should be an
+// instruction is an optimization barrier that has uncloaked latent ABI mismatches into `ud2`.
+#[inline(always)]
+unsafe fn __debugbreak() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("int3");
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("brk #0xf000");
 }
 
 // ---- file-scope preamble (translated) ----
