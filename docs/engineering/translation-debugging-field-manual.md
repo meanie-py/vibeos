@@ -10631,3 +10631,89 @@ of four trace calls.
 4. **A workaround comment that explains *when* the thing it suppresses would happen is a bug
    report.** Grep for the `#ifdef <ARCH>`-plus-apology pattern; each one is a disabled detector,
    and the apology usually names the bug someone else is still hunting.
+
+### 9.125 (FIXED 2026-07-25) A WRONG symbol decoration can be load-bearing — "fixing" `___debugbreak@0` to also emit the cdecl name made the link worse, because the object it lives in carries kernel-only code
+
+**Symptom.** A cold i386 build fails linking a *driver*:
+
+```
+ld.lld: error: undefined symbol: ___debugbreak
+>>> referenced by drivers/crypto/ksecdd/libksecdd_rust.a
+```
+
+amd64 and arm64 link the same driver fine.
+
+**The bit that looks like an obvious bug.** The symbol is undefined and defined in the *same
+archive*, under two names:
+
+```
+i386  libksecdd_rust.a:   U ___debugbreak       <- what the caller asks for (cdecl)
+                          T ___debugbreak@0     <- what ntkrnl-sys emits (stdcall)
+amd64 libksecdd_rust.a:   U __debugbreak / T __debugbreak    <- names agree, links
+```
+
+`__debugbreak` is an MSVC **cdecl** intrinsic. Consumers declare it `extern "C"`, so the i386
+mangler asks for `___debugbreak`; `ntkrnl-sys`'s `ke_i386.rs` `global_asm!` only ever emitted
+`___debugbreak@0`. A whole-tree symbol dump confirms the mismatch is real and total — **3
+references to the cdecl name, 0 to the stdcall one**, i.e. the decorated symbol is dead and has
+never been called by anything. amd64/arm64 are immune because `.globl __debugbreak` needs no
+decoration, so the name a caller computes is the name that exists.
+
+So: emit the cdecl label too. Two labels on one `int3; ret` body, zero risk.
+
+**It is not zero risk, and this is the lesson.** ksecdd then failed with *four* undefined
+symbols instead of one:
+
+```
+ld.lld: error: undefined symbol: _KiDispatchExceptionFromTrapFrame@32
+ld.lld: error: undefined symbol: @KiServiceExit2@4
+ld.lld: error: undefined symbol: _KiSystemStartupBootStack@0
+ld.lld: error: undefined symbol: _HalVectorToIDTEntry@4
+```
+
+That entire `global_asm!` is **one object**, and further down it holds the kernel's trap
+trampolines:
+
+```
+"  call _KiDispatchExceptionFromTrapFrame@32",
+"  jmp @KiServiceExit2@4",
+"  jmp _KiSystemStartupBootStack@0",
+```
+
+Archive semantics: a member object is pulled into a link **only to satisfy a symbol it
+defines**. Because no driver could ever resolve `___debugbreak` there, no driver dragged that
+object in, and therefore no driver inherited its ntoskrnl-internal references. The *wrong*
+decoration was silently acting as the boundary between kernel-only asm and driver links.
+Correcting the name deleted that boundary.
+
+**Rule.** Before "fixing" a symbol-decoration mismatch, ask what else lives in the object that
+defines the symbol. A name nothing references is not automatically dead code — in a static
+archive it can be the only thing keeping an object out of a link. `nm <archive> | grep ' T '`
+on the defining object answers this in one command; the four kernel symbols above were all
+visible in `ke_i386.rs` by grep before the rebuild that proved it.
+
+**The correct fix** is the one the repo had already converged on twice and that I should have
+trusted: a driver needing `__debugbreak` **defines it locally** as an inline `int3`, because an
+inline body needs no symbol on any arch and so cannot pull a foreign object in.
+
+```rust
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+unsafe fn __debugbreak() { core::arch::asm!("int3") }
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn __debugbreak() { core::arch::asm!("brk #0") }
+```
+
+`fltmgr-rust/src/glue.rs` and `scsiport-rust/src/inlines.rs` both already did exactly this.
+When two independent crates have solved the same link error the same odd-looking way, that is
+evidence, not duplication — read it before designing a "more systemic" fix. The systemic-looking
+change (patch the substrate once for everyone) was the wrong one *because* the substrate object
+is kernel-only.
+
+**Also: cold-build breakage comes in LAYERS.** This was the fourth distinct failure found by
+successive cold builds of the same tree, each hidden behind the previous one — afd `E0659`,
+then fltmgr `E0659`, then this. A warm build reuses cached rlibs and never recompiles the
+broken crate, so `master` can sit red for days while every incremental build is green. Budget
+for "fix one, rebuild, find the next," and prefer `ninja -k 0` to collect a whole layer at once
+rather than one error per full rebuild.

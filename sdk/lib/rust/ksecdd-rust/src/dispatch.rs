@@ -18,10 +18,32 @@ extern "system" {
     fn KsecEncryptMemory(Buffer: PVOID, Length: ULONG, Option: ULONG) -> NTSTATUS;
     fn KsecDecryptMemory(Buffer: PVOID, Length: ULONG, Option: ULONG) -> NTSTATUS;
 }
-// DbgPrint is cdecl-variadic; __debugbreak is the MSVC intrinsic (cdecl).
+// DbgPrint is cdecl-variadic and is a genuine ntoskrnl export.
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
-    fn __debugbreak();
+}
+
+// __debugbreak is an MSVC *intrinsic*, not something anyone exports. Importing it
+// `extern "C"` emits a call to a symbol no driver can resolve: on i386 the cdecl
+// mangling asks for `___debugbreak`, and ksecdd.sys failed to link with exactly
+// that. ntkrnl-sys DOES emit an `int3` body in ke_i386.rs, but only under the
+// stdcall name `___debugbreak@0` — and that mismatch must NOT be "fixed" there,
+// because the same global_asm object carries ntoskrnl-internal trap trampolines
+// that a driver link cannot satisfy (tried it; ksecdd then failed on four kernel
+// symbols instead of one). See the comment in ke_i386.rs.
+//
+// So define it locally: an inline body needs no symbol on any arch and cannot
+// drag a foreign object in. Same shape as fltmgr-rust/src/glue.rs and
+// scsiport-rust/src/inlines.rs, which both hit this before ksecdd did.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+unsafe fn __debugbreak() {
+    core::arch::asm!("int3")
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn __debugbreak() {
+    core::arch::asm!("brk #0")
 }
 
 // ---- file-scope preamble (translated) ----
