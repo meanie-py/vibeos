@@ -18,32 +18,27 @@ extern "system" {
     fn KsecEncryptMemory(Buffer: PVOID, Length: ULONG, Option: ULONG) -> NTSTATUS;
     fn KsecDecryptMemory(Buffer: PVOID, Length: ULONG, Option: ULONG) -> NTSTATUS;
 }
-// DbgPrint is cdecl-variadic and is a genuine ntoskrnl export.
+// DbgPrint is cdecl-variadic and really is an import (ntoskrnl exports it).
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
 }
 
-// __debugbreak is an MSVC *intrinsic*, not something anyone exports. Importing it
-// `extern "C"` emits a call to a symbol no driver can resolve: on i386 the cdecl
-// mangling asks for `___debugbreak`, and ksecdd.sys failed to link with exactly
-// that. ntkrnl-sys DOES emit an `int3` body in ke_i386.rs, but only under the
-// stdcall name `___debugbreak@0` — and that mismatch must NOT be "fixed" there,
-// because the same global_asm object carries ntoskrnl-internal trap trampolines
-// that a driver link cannot satisfy (tried it; ksecdd then failed on four kernel
-// symbols instead of one). See the comment in ke_i386.rs.
+// __debugbreak is an MSVC *intrinsic*, not an import. Declaring it `extern "C"` emitted a
+// reference to `___debugbreak` that nothing in ksecdd.sys's link provides — ksecdd.sys is its
+// own PE image, so the kernel-side global_asm in ntkrnl-sys is not in scope for it no matter
+// how the symbol is decorated (verified: aliasing it there changes nothing). Only a COLD build
+// catches this, because a `.sys` relinks only when its inputs change.
 //
-// So define it locally: an inline body needs no symbol on any arch and cannot
-// drag a foreign object in. Same shape as fltmgr-rust/src/glue.rs and
-// scsiport-rust/src/inlines.rs, which both hit this before ksecdd did.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[inline]
+// Emit the instruction inline, which is what the intrinsic means and what sibling drivers
+// already do (`fltmgr-rust/src/glue.rs`, `scsiport-rust/src/inlines.rs`). Note this is also the
+// AGENTS.md rule about debug macros: an out-of-line no-op/stub for something that should be an
+// instruction is an optimization barrier that has uncloaked latent ABI mismatches into `ud2`.
+#[inline(always)]
 unsafe fn __debugbreak() {
-    core::arch::asm!("int3")
-}
-#[cfg(target_arch = "aarch64")]
-#[inline]
-unsafe fn __debugbreak() {
-    core::arch::asm!("brk #0")
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("int3");
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("brk #0xf000");
 }
 
 // ---- file-scope preamble (translated) ----
