@@ -663,19 +663,268 @@ WIN32K_TUS = [
     ("user32_stubs.c", "#include <user32.h>\n"),
     ("gdi32/wine/emfdc.c", "#include <precomp.h>\n"),
 ]
-# ndk umbrella for the ntdll surface
+# ndk umbrella for the ntdll surface. This MIRRORS dll/ntdll/include/ntdll.h's
+# real include set rather than inventing a wrapper: a hand-rolled `<ntdef.h>` +
+# `<ndk/ntndk.h>` pair walks straight into a redefinition wall (_FLOAT128,
+# _LARGE_INTEGER, _LUID...), which is a fact about the WRAPPER, not the headers
+# (field manual §9.108). NTOS_MODE_USER + WIN32_NO_STATUS are the two switches
+# that decide which declarations the NDK emits, so they are load-bearing.
 NTDLL_TU = (
-    "#include <ntdef.h>\n"
     "#define WIN32_NO_STATUS\n"
     "#include <windef.h>\n"
     "#include <winbase.h>\n"
-    "#include <ndk/ntndk.h>\n"
+    "#include <winreg.h>\n"
+    "#include <winuser.h>\n"
+    "#define NTOS_MODE_USER\n"
+    "#include <ndk/cmfuncs.h>\n"
+    "#include <ndk/exfuncs.h>\n"
+    "#include <ndk/iofuncs.h>\n"
+    "#include <ndk/kefuncs.h>\n"
+    "#include <ndk/ldrfuncs.h>\n"
+    "#include <ndk/mmfuncs.h>\n"
+    "#include <ndk/obfuncs.h>\n"
+    "#include <ndk/psfuncs.h>\n"
+    "#include <ndk/rtlfuncs.h>\n"
+    "#include <ndk/sefuncs.h>\n"
+    "#include <ndk/lpcfuncs.h>\n"
+    "#include <ndk/pofuncs.h>\n"
+    "#include <ndk/dbgkfuncs.h>\n"
+    "#include <ndk/umfuncs.h>\n"
 )
 
 
 def load_needs_manual(gen_c: Path) -> list[str]:
     txt = gen_c.read_text()
     return re.findall(r"/\* (\w+): WOW64_NEEDS_MANUAL", txt)
+
+
+# ---------------------------------------------------------------------------
+# 5a. Audit driver — the flat-thunk BLIND SPOT (E10)
+# ---------------------------------------------------------------------------
+#
+# `report` (above) classifies only syscalls ALREADY on the NEEDS_MANUAL list.
+# That makes it structurally blind to the class most likely to be silently
+# wrong: a syscall whose .spec types every arg flat (`ptr`/`long`) but whose
+# REAL prototype takes a pointer to a divergent payload. wow64gen sees only the
+# spec, so it emits a flat thunk and never stubs the call — the name never
+# enters NEEDS_MANUAL, so `report` never looks at it. Production then hands
+# 64-bit win32k the guest's 32-bit struct and the kernel reads/writes it with
+# 64-bit eyes.
+#
+# That is not theoretical. It is the same bug three times:
+#   E6  NtUserGetAtomName / NtUserGetClassName  (PUNICODE_STRING, spec `ptr`)
+#   E8  NtUserUnregisterClass                   (PUNICODE_STRING, spec `ptr`)
+#   E9  NtUserFindWindowEx                      (PUNICODE_STRING, spec `ptr`)
+# each a garbage `Buffer` picked up from the wrong offset -> C0000005 in
+# win32k's raw_move -> BUGCHECK 0x1E, and each found only because an applet
+# happened to reach it. E7 is the same shape one step out: NtUserBuildHwndList
+# fills a caller HWND[], and the flat thunk let the kernel write 8-byte handles
+# into 4-byte guest slots — a 2x heap overrun that surfaced minutes later.
+#
+# So this audit inverts `report`'s question. Instead of "are the stubs we
+# already flagged marshalled correctly?", it asks: **of every syscall
+# production dispatches through an AUTO flat thunk, which ones have a
+# prototype whose payload provably diverges 32<->64?** Those are latent
+# bugchecks waiting for the first guest to call them.
+#
+# Ground truth is the GENERATED table, not the spec: an entry is `0` when
+# wow64gen stubbed it (hand marshaller or auto-marshaller covers it) and
+# `wow64_thunk_<Name>` when the flat thunk is live. We audit exactly the
+# latter.
+
+# `{ "NtUserFoo", wow64_thunk_NtUserFoo, 2 }, /* [551] */`  vs the MANUAL form
+# `{ "NtUserBar", 0, 15 }, /* [342] MANUAL: ... */`
+_TABLE_ENTRY = re.compile(r'^\s*\{\s*"([^"]+)",\s*(\w+),\s*\d+\s*\},')
+
+# A SEMANTIC verdict that only means "marshalgen could not SEE this layout" is
+# a hole in the TOOL, not a claim about the syscall. Keep the two apart: the
+# gate fires on PROVEN divergence, and the blind spots are reported separately
+# so the unknown set can be driven down deliberately instead of drowning the
+# real findings.
+_BLIND_DETAILS = ("not in dump", "unknown type", "unknown field type")
+
+AUDIT_TABLES: dict[str, dict] = {
+    "win32k": {
+        "gen": "dll/win32/wow64/wow64_win32k_thunks.gen.c",
+        "headers": [
+            "win32ss/include/ntuser.h",
+            "sdk/include/psdk/ntgdi.h",
+            "win32ss/include/ntgdibad.h",
+        ],
+        "tus": WIN32K_TUS,
+    },
+    "ntdll": {
+        "gen": "dll/win32/wow64/wow64_thunks.gen.c",
+        "headers": [
+            "sdk/include/ndk/cmfuncs.h",
+            "sdk/include/ndk/dbgkfuncs.h",
+            "sdk/include/ndk/exfuncs.h",
+            "sdk/include/ndk/iofuncs.h",
+            "sdk/include/ndk/kdfuncs.h",
+            "sdk/include/ndk/kefuncs.h",
+            "sdk/include/ndk/lpcfuncs.h",
+            "sdk/include/ndk/mmfuncs.h",
+            "sdk/include/ndk/obfuncs.h",
+            "sdk/include/ndk/pofuncs.h",
+            "sdk/include/ndk/psfuncs.h",
+            "sdk/include/ndk/sefuncs.h",
+        ],
+        # ntdll is ~fully Rust-flipped; these two C stubs are what's left of it
+        # in compile_commands.json, and they carry the ntdll include paths the
+        # NDK umbrella needs. (If they ever go too, any TU that can `#include
+        # <ndk/ntndk.h>` works — the probe only borrows the flags.)
+        "tus": [("ntdll/rtl/rtl_um_rust_stub.c", NTDLL_TU)],
+    },
+}
+
+
+def load_thunk_table(gen_c: Path) -> dict[str, bool]:
+    """-> {syscall name: True if a LIVE auto flat thunk dispatches it}."""
+    out: dict[str, bool] = {}
+    for line in gen_c.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = _TABLE_ENTRY.match(line)
+        if m:
+            out[m.group(1)] = m.group(2) != "0"
+    return out
+
+
+def audit_verdict(cls: str, detail: str) -> str:
+    """classify_param() verdict -> DIVERGENT (a finding) | UNKNOWN | OK.
+
+    SCALAR_WIDEN counts as DIVERGENT here, unlike in `report`. In a marshalled
+    stub it is the easy case; under a LIVE FLAT THUNK a `HWND *` / `PVOID *`
+    out-slot means the 64-bit kernel writes 8 bytes where the guest reserved 4
+    — the E7 heap overrun.
+    """
+    if cls in ("FLAT", "IDENTICAL"):
+        return "OK"
+    if cls == "SEMANTIC" and any(b in detail for b in _BLIND_DETAILS):
+        return "UNKNOWN"
+    return "DIVERGENT"
+
+
+def _resolve_build(spec: str | None, candidates: tuple[str, ...]) -> Path | None:
+    """Absolute build dir that has a compile_commands.json, or None.
+
+    With no --build-dir the 64-bit side is probed (amd64 then arm64) so the
+    check works in an arm64-only or amd64-only checkout without a flag.
+    """
+    for cand in (spec,) if spec else candidates:
+        p = Path(cand)
+        p = p if p.is_absolute() else REPO / p
+        if (p / "compile_commands.json").is_file():
+            return p
+    return None
+
+
+def cmd_audit(args) -> int:
+    b64 = _resolve_build(args.build_dir, ("build-amd64", "build-arm64"))
+    b32 = _resolve_build(args.build_dir32, ("build-i386",))
+    if b64 is None or b32 is None:
+        which = "64-bit host" if b64 is None else "i386 guest"
+        print(
+            f"marshalgen audit: SKIP (no {which} build with compile_commands.json)",
+            file=sys.stderr,
+        )
+        return 0
+    if not CLANG.is_file():
+        print("marshalgen audit: SKIP (no clang in .build-tools)", file=sys.stderr)
+        return 0
+
+    tables = list(AUDIT_TABLES) if args.table == "both" else [args.table]
+    findings: list[str] = []
+    unknown: list[str] = []
+    noproto: list[str] = []
+    audited = 0
+
+    for tname in tables:
+        cfg = AUDIT_TABLES[tname]
+        gen = b64 / cfg["gen"]
+        if not gen.is_file():
+            print(f"marshalgen audit: SKIP {tname} (no {cfg['gen']})", file=sys.stderr)
+            continue
+
+        # A layout dump that fails HERE is coverage silently lost — the build
+        # exists, so every finding this table would have produced just vanishes.
+        # Let it raise: the check harness treats "nonzero exit, no findings" as
+        # the tool failing to run, which is the honest verdict.
+        db32: dict[str, Record] = {}
+        db64: dict[str, Record] = {}
+        for tu_suffix, tu_src in cfg["tus"]:
+            for db, bdir in ((db32, b32), (db64, b64)):
+                try:
+                    flags = extract_flags(bdir, tu_suffix)
+                except StopIteration:
+                    raise RuntimeError(
+                        f"audit {tname}: no TU matching '{tu_suffix}' in "
+                        f"{bdir}/compile_commands.json — the layout probe cannot run, so "
+                        f"this table would go UNCHECKED. Point cfg['tus'] at a TU that "
+                        f"still exists."
+                    ) from None
+                for k, v in dump_layouts(flags, tu_src).items():
+                    db.setdefault(k, v)
+        if not db32 or not db64:
+            raise RuntimeError(
+                f"audit {tname}: layout dump came back empty (32:{len(db32)} 64:{len(db64)}) "
+                f"— refusing to report a clean table from no data."
+            )
+
+        protos = extract_prototypes(
+            "\n".join((REPO / h).read_text(errors="replace") for h in cfg["headers"]), r"Nt\w+"
+        )
+        table = load_thunk_table(gen)
+        print(
+            f"marshalgen audit [{tname}]: {len(table)} entries, "
+            f"{sum(table.values())} live flat thunks, {len(protos)} prototypes, "
+            f"{len(db32)}/{len(db64)} records",
+            file=sys.stderr,
+        )
+
+        for name, is_auto in sorted(table.items()):
+            if not is_auto:
+                continue  # stubbed: a hand or auto marshaller owns it
+            p = protos.get(name)
+            if p is None:
+                noproto.append(f"{tname} {name}")
+                continue
+            audited += 1
+            for prm in p.params:
+                cls, det = classify_param(prm, db32, db64)
+                v = audit_verdict(cls, det)
+                line = f"{tname} {name}({prm.name}) {cls} {det}"
+                if v == "DIVERGENT":
+                    findings.append(line)
+                elif v == "UNKNOWN":
+                    unknown.append(line)
+
+    # Findings on STDOUT (the harness baselines these line-by-line); everything
+    # else on stderr so a clean run adds nothing to the gated set.
+    for line in findings:
+        print(f"FLAT-DIVERGENT: {line}")
+
+    print(
+        f"marshalgen audit: {audited} flat-thunked syscalls audited — "
+        f"{len(findings)} DIVERGENT, {len(unknown)} unknown-layout, "
+        f"{len(noproto)} no-prototype",
+        file=sys.stderr,
+    )
+    if args.show_unknown:
+        for line in unknown:
+            print(f"   unknown-layout: {line}", file=sys.stderr)
+        for line in noproto:
+            print(f"   no-prototype:   {line}", file=sys.stderr)
+    if findings:
+        print(
+            "\nEach line is a syscall production dispatches through a FLAT thunk "
+            "whose real prototype takes a payload that provably differs between "
+            "32- and 64-bit. The guest's struct reaches the 64-bit kernel unmarshalled.\n"
+            "Fix: add the name to tools/wow64gen/manual{,-win32k}.txt (which turns it "
+            "into a loud WOW64_MANUAL_UNIMPL stub — a clean error, never a bugcheck), "
+            "then write the marshaller in dll/win32/wow64/wow64_manual.c or let "
+            "`marshalgen gen` emit one.",
+            file=sys.stderr,
+        )
+    return 1 if findings else 0
 
 
 # ---------------------------------------------------------------------------
@@ -1422,6 +1671,15 @@ def main() -> int:
         default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,win32ss/include/ntgdibad.h",
     )
     rp.set_defaults(func=cmd_report)
+    ap_ = sub.add_parser(
+        "audit",
+        help="find LIVE flat thunks whose real prototype has a divergent payload",
+    )
+    ap_.add_argument("--build-dir", default=None, help="64-bit host build (probed if omitted)")
+    ap_.add_argument("--build-dir32", default=None)
+    ap_.add_argument("--table", default="both", choices=[*AUDIT_TABLES, "both"])
+    ap_.add_argument("--show-unknown", action="store_true")
+    ap_.set_defaults(func=cmd_audit)
     gp = sub.add_parser("gen")
     gp.add_argument("--build-dir", default="build-arm64")
     gp.add_argument("--build-dir32", default="build-i386")

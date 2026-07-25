@@ -22,7 +22,7 @@ ExDoubleList
 # through a bad function pointer into pool BEFORE any software raise — a distinct arm64 hard-
 # error-path bug, unrelated to RtlRestoreContext. The old "RtlRaiseStatus+0x44 cluster" label
 # was a masked face (§9.54). Separate triage owed (arm64 ExRaiseHardError/ExpRaiseHardError).
-#ExHardError
+ExHardError
 ExInterlocked
 ExPools
 # UN-QUARANTINED 2026-07-16: fixed by task #10 (arm64 kernel-mode SEH resume, §9.69).
@@ -215,11 +215,16 @@ RtlIntSafe
 RtlMemory
 RtlRegistry
 RtlSplayTree
-# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): NO-END exit=128 — the USER-MODE
-# twin of the quarantined RtlStackKM (RtlWalkFrameChain bounds via dead SEH). UM self-
-# crash (exit 128), no kernel BUGCHECK, sweep continues. Expected-fail (same class as
-# RtlStackKM); not an OS bug.
-#RtlStack
+# UN-QUARANTINED 2026-07-24 — FIXED by the save_next unwind decoder (§9.114), and the
+# quarantine note predicted it. The 07-18 triage read: NO-END, the intentional NULL store
+# raises STATUS_ACCESS_VIOLATION at ntdll+0x6E9C and dispatches, but the RESUME branches to
+# PC=0x1 (LR=kmtest_+0x101C0) and dies STATUS_ILLEGAL_INSTRUCTION. A garbage PC out of a
+# resume is the signature of an unwind that reloaded callee-saved registers from the WRONG
+# stack slots — and the arm64 save_next decoder was doing exactly that at 32% of its sites.
+# The decoder was fixed AFTER that triage was written, so the two had never met until now.
+# Verdict OK across 5/5 consecutive sweeps (pass=15 fail=25). The fail=25 is assertion debt,
+# not a crash — the ratchet keys on the VERDICT, and NO-END -> OK is the win here.
+RtlStack
 RtlStrSafe
 RtlUnicodeString
 TcpIpTdi
