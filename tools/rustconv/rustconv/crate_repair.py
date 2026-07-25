@@ -1325,14 +1325,42 @@ def _split_params(text: str) -> list[str]:
     return out
 
 
-def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
-    """``fn name -> [param type, ...]`` for every declaration in the crate.
+#: `#[no_mangle] pub .. fn NAME(` — a DEFINITION, in either the one-line or multi-line form.
+_RE_FN_DEF = re.compile(
+    rb"#\[no_mangle\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?"
+    rb'(?:extern\s+"[A-Za-z-]+"\s+)?fn\s+(\w+)\s*\('
+)
 
-    A name declared twice with DIFFERENT parameter types is dropped, not merged: the whole
-    point of this rule is that the callee's declaration is the authority, and two disagreeing
-    authorities are no authority. (``clashing_extern_declarations`` says that shape is real
-    here — 828 symbols carry it.)
+
+def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
+    """``fn name -> [param type, ...]``, preferring the DEFINITION over declarations.
+
+    A name declared twice with different parameter types is dropped, not merged: two
+    disagreeing authorities are no authority, and ``clashing_extern_declarations`` says the
+    shape is real here (828 symbols). That rule alone left 109 of 264 sites unresolvable —
+    by far the largest skip bucket — because forward declarations in this tree routinely
+    disagree with each other in spelling.
+
+    But when the crate DEFINES the name with ``#[no_mangle]``, the disagreement is settled:
+    that body is what the linker binds the call to, whatever the forward decls claim. So a
+    definition overrides, and only decl-vs-decl conflicts with no definition stay dropped.
+    (Same reasoning as verify_ffi's local-shim rule: an in-crate definition outranks an
+    external description of the symbol.)
     """
+    defined: dict[str, list[str]] = {}
+    for data in sources.values():
+        masked = _mask_lexical(data)
+        for match in _RE_FN_DEF.finditer(data):
+            open_paren = match.end() - 1
+            close = _match_forward(masked, open_paren)
+            if close is None:
+                continue
+            raw = data[open_paren + 1 : close].decode("utf-8", "replace")
+            defined[match.group(1).decode("utf-8", "replace")] = [
+                part.split(":", 1)[1].strip() if ":" in part else ""
+                for part in _split_params(raw)
+            ]
+
     found: dict[str, list[str] | None] = {}
     for data in sources.values():
         masked = _mask_lexical(data)
@@ -1354,7 +1382,9 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
                 found[name] = None
             else:
                 found[name] = params
-    return {k: v for k, v in found.items() if v is not None}
+    resolved = {k: v for k, v in found.items() if v is not None}
+    resolved.update(defined)  # the definition settles any decl-vs-decl disagreement
+    return resolved
 
 
 def propose_panicking_cast_edits(
