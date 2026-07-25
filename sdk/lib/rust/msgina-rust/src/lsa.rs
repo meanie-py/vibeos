@@ -239,7 +239,7 @@ pub unsafe extern "C" fn MyLogonUser(
     AllocateLocallyUniqueId(&mut LogonId);
     Status = RtlAllocateAndInitializeSid(
         &SECURITY_NT_AUTHORITY as *const _ as PSID_IDENTIFIER_AUTHORITY,
-        SECURITY_LOGON_IDS_RID_COUNT as UCHAR,
+        SECURITY_LOGON_IDS_RID_COUNT.try_into().unwrap(),
         SECURITY_LOGON_IDS_RID,
         LogonId.HighPart as ULONG,
         LogonId.LowPart as ULONG,

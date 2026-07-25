@@ -296,7 +296,7 @@ pub unsafe extern "system" fn RtlReadOutOfProcessMemoryStream(
         (*Stream).ProcessHandle,
         (*Stream).Current,
         Buffer,
-        (CopyLength as SIZE_T) as SIZE_T,
+        (CopyLength as SIZE_T).try_into().unwrap(),
         &mut LocalBytesRead as *mut SIZE_T as *mut _,
     );
 

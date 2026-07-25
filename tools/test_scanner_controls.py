@@ -197,7 +197,71 @@ pub unsafe fn balanced(cond: bool) -> u32 {
 }
 """
 
+# scan_orphan_modules. The BAD case is the class itself; the GOOD case is doing
+# double duty as a regression guard for the two walk defects that made the same
+# tool call LIVE code dead (2026-07-25) — the direction that HIDES bugs, since
+# verify_match_consts suppresses its findings in files this walk calls orphaned.
+_ORPHAN_BAD_LIB = """\
+pub mod live;
+"""
+_ORPHAN_BAD_LIVE = """\
+pub fn live_fn() -> u32 { 1 }
+"""
+_ORPHAN_BAD_ORPHAN = """\
+// Reached by no `mod` chain and carrying no banner — cargo never opens this file,
+// so `cargo check` is green whatever is in it (the classpnp class_gap3.rs trap).
+pub fn stranded() -> u32 { 2 }
+"""
+_ORPHAN_GOOD_LIB = """\
+// The freeldr shape: a `/*` inside a LINE comment. Stripping block comments
+// before line comments opens a phantom block comment here that swallows every
+// `mod` below it — 53 of freeldr's 87, i.e. 42,750 lines of live bootloader
+// reported as dead. (called from arch/*/multiboot.S asm)
+pub mod live;
+// `async` is a keyword since edition 2018, so ws2_32's translation of async.c
+// can only be spelled with a raw identifier. Not matching `r#` orphaned 1,941
+// live lines.
+pub mod r#async;
+
+/* The phantom comment above only reaches this far if something CLOSES it, and
+   that closer is what makes the bug bite: an unterminated `/*` is harmless
+   because the regex finds no match at all. A fixture without a later `*/`
+   therefore passes under BOTH the broken and the fixed stripper — verified,
+   and the reason this block is here rather than a tidier one-liner. */
+"""
+_ORPHAN_GOOD_ASYNC = """\
+pub fn async_fn() -> u32 { 3 }
+"""
+_ORPHAN_GOOD_ORPHAN = """\
+//! ORPHAN-BY-DESIGN: a park with its reason stated where the reader will see it.
+//! This is what satisfies the gate — not the absence of orphans.
+pub fn parked() -> u32 { 4 }
+"""
+_ORPHAN_CARGO = """\
+[package]
+name = "orphan-fixture"
+version = "0.0.0"
+edition = "2021"
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_orphan_modules",
+        script="tools/scan_orphan_modules.py",
+        bad={
+            "Cargo.toml": _ORPHAN_CARGO,
+            "src/lib.rs": _ORPHAN_BAD_LIB,
+            "src/live.rs": _ORPHAN_BAD_LIVE,
+            "src/orphan.rs": _ORPHAN_BAD_ORPHAN,
+        },
+        good={
+            "Cargo.toml": _ORPHAN_CARGO,
+            "src/lib.rs": _ORPHAN_GOOD_LIB,
+            "src/live.rs": _ORPHAN_BAD_LIVE,
+            "src/async.rs": _ORPHAN_GOOD_ASYNC,
+            "src/orphan.rs": _ORPHAN_GOOD_ORPHAN,
+        },
+    ),
     Control(
         name="scan_bugcheck_codes",
         script="tools/scan_bugcheck_codes.py",
@@ -350,7 +414,7 @@ def test_negative_control_scanner_is_not_trigger_happy(ctl: Control, tmp_path: P
     Without this, 'catches the bug' is satisfiable by flagging everything.
     """
     root = _materialize(tmp_path, ctl.good)
-    rc, out = _run(ctl, root)
+    _rc, out = _run(ctl, root)
     findings = [ln for ln in out.splitlines() if str(root) in ln or "fixture/" in ln]
     assert not findings, (
         f"{ctl.name} flagged its known-GOOD fixture — false positive.\n"
@@ -366,7 +430,7 @@ def test_every_lint_is_accounted_for():
     have — looking complete while being blind.
     """
     sys.path.insert(0, str(REPO / "tests" / "qemu"))
-    from cli.lints import source_lint_specs  # noqa: PLC0415
+    from cli.lints import source_lint_specs
 
     gate = {name for name, _cmd, _ff in source_lint_specs(REPO)}
     covered = {c.name for c in CONTROLS}
@@ -382,7 +446,7 @@ def test_control_names_match_real_lints():
     """Guard against a control that silently tests nothing because the lint was
     renamed — a control pointed at a dead name is itself a liar."""
     sys.path.insert(0, str(REPO / "tests" / "qemu"))
-    from cli.lints import source_lint_specs  # noqa: PLC0415
+    from cli.lints import source_lint_specs
 
     gate = {name for name, _cmd, _ff in source_lint_specs(REPO)}
     stale = sorted({c.name for c in CONTROLS} - gate) + sorted(set(UNCOVERED) - gate)

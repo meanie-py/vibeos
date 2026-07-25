@@ -83,11 +83,24 @@ def _finding_lines(out: str) -> set[str]:
 # hit at a different line is not. Lines with no `file:line:` prefix are compared verbatim,
 # exactly as before.
 _LOCATION = re.compile(r"^(?P<file>[^\s:]+):\d+(?::\d+)?:")
+# lint_kernel does not use a `file:line:` prefix — it prints a file HEADER and then indented
+# per-site lines that carry the line number INSIDE the message: `    L 309 RtlpCheckDeviceName():
+# *NameInvalid = ...`. So the prefix-stripper above cannot see it, and the drift immunity it
+# provides silently did not apply to this one scanner. Adding 4-line banners to 12 files
+# reported 35 "new" findings that were the same 35 sites (gate WARN, 2026-07-25). The function
+# name stays in the key, and _new_findings is a multiset, so two real hits still need two
+# baseline entries.
+_EMBEDDED_LINE = re.compile(r"^(?P<indent>\s*)L \d+ ")
 
 
 def _finding_key(line: str) -> str:
     m = _LOCATION.match(line)
-    return f"{m.group('file')}: {line[m.end() :].strip()}" if m else line
+    if m:
+        return f"{m.group('file')}: {line[m.end() :].strip()}"
+    m = _EMBEDDED_LINE.match(line)
+    if m:
+        return f"{m.group('indent')}L {line[m.end() :].strip()}"
+    return line
 
 
 def _new_findings(cur: set[str], base: set[str]) -> list[str]:

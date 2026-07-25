@@ -3159,7 +3159,7 @@ unsafe fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> INT {
         if (*Window).hrgnUpdate == HRGN_WINDOW {
             return NtGdiIntersectClipRect(hDC, 0, 0, 0, 0);
         } else {
-            let mut ret: INT = ERROR as INT;
+            let mut ret: INT = ERROR.try_into().unwrap();
             let hrgn = NtGdiCreateRectRgn(0, 0, 0, 0);
 
             if !hrgn.is_null() && GreGetDCPoint(hDC, GdiGetDCOrg, &mut pt as *mut _ as _ ) != 0 {
@@ -3196,7 +3196,7 @@ pub unsafe extern "stdcall" fn NtUserExcludeUpdateRgn(
     hDC: HDC,
     hWnd: HWND,
 ) -> INT {
-    let mut ret: INT = ERROR as INT;
+    let mut ret: INT = ERROR.try_into().unwrap();
     let pWnd: PWND;
 
     UserEnterExclusive();

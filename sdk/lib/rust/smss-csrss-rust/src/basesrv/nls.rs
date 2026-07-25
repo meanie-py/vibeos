@@ -250,7 +250,7 @@ pub unsafe extern "system" fn BaseSrvNLSInit(pNlsUserInfo: *mut NLS_USER_INFO) {
     pNlsRegUserInfo = pNlsUserInfo;
     RtlFillMemory(
         pNlsUserInfo as PVOID,
-        core::mem::size_of::<NLS_USER_INFO>() as SIZE_T,
+        core::mem::size_of::<NLS_USER_INFO>().try_into().unwrap(),
         0xFF,
     );
 

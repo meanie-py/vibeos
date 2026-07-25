@@ -1458,6 +1458,20 @@ def propose_panicking_cast_edits(
         if target is None or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", target):
             _skip("non_scalar_target", f"target type `{target}` is not a plain scalar name")
             continue
+        if target not in INT_PRIMITIVES:
+            # The cast is written in the CALLER's scope but the type name was read from the
+            # CALLEE's. An alias that resolves differently in the two therefore produces a
+            # well-formed cast to the wrong type. Real hit: rtl-misc spells `SIZE_T` = usize
+            # while ntkrnl-sys's amd64 bindgen declares NtReadVirtualMemory's parameter as
+            # u64 — and usize and u64 are DISTINCT types to rustc even at equal width, so
+            # `as SIZE_T` compiled in the caller and failed at the call (E0308, gate RED
+            # 2026-07-25). Only the primitives mean the same thing in every scope.
+            _skip(
+                "alias_target",
+                f"`{target}` is a type alias, not a primitive — it may resolve differently "
+                f"in this crate than in the callee's",
+            )
+            continue
         edits.append(
             Edit(
                 file_name=file_name,

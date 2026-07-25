@@ -3141,6 +3141,28 @@ def test_lint_baseline_still_flags_a_new_file_and_a_new_message():
     assert lints._new_findings({"a.sh:10:1: warning: Y unused. [SC2034]"}, base) != []
 
 
+def test_lint_baseline_ignores_drift_in_lint_kernels_embedded_line_number():
+    """lint_kernel carries the line number INSIDE the message, so the `file:line:` stripper
+    above never applied to it and it kept drifting (2026-07-25: adding 4-line banners to 12
+    files reported 35 "new" findings that were the same 35 sites). The scanner prints a file
+    header, then indented `L <n> Fn(): ...` lines."""
+    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
+    cur = {"    L 313 RtlpCheckDeviceName(): *NameInvalid = ..."}
+    assert lints._new_findings(cur, base) == []
+
+
+def test_lint_baseline_still_flags_an_extra_embedded_line_occurrence():
+    """The multiset half again — drift immunity must not swallow a genuinely new site."""
+    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
+    cur = {
+        "    L 313 RtlpCheckDeviceName(): *NameInvalid = ...",
+        "    L 480 RtlpCheckDeviceName(): *NameInvalid = ...",
+    }
+    assert len(lints._new_findings(cur, base)) == 1
+    # ...and a different function at a drifted line is still new.
+    assert lints._new_findings({"    L 313 RtlpOther(): *NameInvalid = ..."}, base) != []
+
+
 def test_lint_baseline_compares_prefixless_findings_verbatim():
     """Tools that don't emit `file:line:` (verify_* MISMATCH lines) keep exact matching."""
     base = {"MISMATCH: NtFoo stdcall vs cdecl"}
