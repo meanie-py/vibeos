@@ -52,8 +52,8 @@ boot path never touches (see `tools/coverage/` — the never-executed-rust regis
 W=~/Projects/os-playground/vibeos-conformance      # ALL paths $W-prefixed (worktree discipline!)
 cd $W && ./vibeos-cli build --arch amd64           # provision build dir (auto, cache-warm)
 cd $W/build-amd64
-../tools/canon-run.sh cmake -DENABLE_ROSTESTS=ON . # option is cached; sticks for later builds
-../tools/canon-run.sh ninja kmtest kmtest_drv      # start here, then widen
+bash ../tools/canon-run.sh cmake -DENABLE_ROSTESTS=ON . # option is cached; sticks for later builds
+bash ../tools/canon-run.sh ninja kmtest kmtest_drv      # start here, then widen
 ```
 
 ## Expected build hazards (from prior porting experience — see AGENTS.md)

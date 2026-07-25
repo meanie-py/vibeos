@@ -92,7 +92,7 @@ The unified front door is **`./vibeos-cli`** (build / smoke / check / gate / deb
 Raw ninja still works, but a canonical build dir must be entered through the mount wrapper (plain `cd build-<arch> && ninja` fails loudly by design — its baked paths only exist inside the mount):
 
 ```bash
-cd build-amd64 && ../tools/canon-run.sh ninja livecd
+cd build-amd64 && bash ../tools/canon-run.sh ninja livecd
 ```
 
 ## License
