@@ -83,32 +83,45 @@ const MAX_SLOWDOWN: f64 = 2.0;
 
 const SIZES: &[usize] = &[16, 4096, 1 << 20];
 
-fn bench(label: &str, n: usize, mut f: impl FnMut()) -> f64 {
-    // size the iteration count so every case does comparable total work
-    let iters = core::cmp::max(1, (1 << 26) / n);
-    // warm up (page-in, branch predictors, i-cache)
-    for _ in 0..core::cmp::min(iters, 64) {
+/// One timed round: MiB/s for `iters` calls of `f` over `n` bytes each.
+fn round(n: usize, iters: usize, f: &mut impl FnMut()) -> f64 {
+    let t = Instant::now();
+    for _ in 0..iters {
         f();
     }
-    // BEST-of-3, not mean: this runs on a shared host where other agents are
-    // building and booting QEMUs. A scheduler steal inflates a sample, and with
-    // a mean that lands as a phantom "regression" at the small sizes where call
-    // overhead already dominates. The minimum time is the least-contended
-    // sample, which is the one that reflects the code rather than the host.
-    let mut best = 0.0f64;
-    for _ in 0..3 {
-        let t = Instant::now();
-        for _ in 0..iters {
-            f();
-        }
-        let secs = t.elapsed().as_secs_f64();
-        let mbps = (iters * n) as f64 / secs / (1024.0 * 1024.0);
-        if mbps > best {
-            best = mbps;
-        }
+    (iters * n) as f64 / t.elapsed().as_secs_f64() / (1024.0 * 1024.0)
+}
+
+/// Bench the Rust body and the C body it replaced, INTERLEAVED, and return
+/// (rust MiB/s, C MiB/s) as the best round each achieved.
+///
+/// The interleave is the whole point, and it is what this file's header claims
+/// ("meaningful on a noisy shared host") but did not previously deliver. The
+/// earlier shape ran three consecutive rounds of Rust, then three of C. Best-of-3
+/// only rejects a spike SHORTER than one side's window — and the load this runs
+/// under is three cold cross-builds and four booting QEMUs, which stays hot for
+/// minutes. A spike covering all three Rust rounds and none of the C ones is
+/// reported as a 2x Rust regression, which is exactly how the difftest stage went
+/// red on its first gate with nothing wrong in the code.
+///
+/// Round-robin instead: rust, c, rust, c, rust, c. Now any spike lands on both
+/// sides of the same round, and taking each side's best picks the round where the
+/// host happened to be quietest — for both. The ratio survives; only the absolute
+/// numbers sag.
+fn bench_pair(n: usize, mut rust: impl FnMut(), mut c: impl FnMut()) -> (f64, f64) {
+    // size the iteration count so every case does comparable total work
+    let iters = core::cmp::max(1, (1 << 26) / n);
+    // warm up BOTH (page-in, branch predictors, i-cache) before either is timed
+    for _ in 0..core::cmp::min(iters, 64) {
+        rust();
+        c();
     }
-    let _ = label;
-    best
+    let (mut best_r, mut best_c) = (0.0f64, 0.0f64);
+    for _ in 0..3 {
+        best_r = best_r.max(round(n, iters, &mut rust));
+        best_c = best_c.max(round(n, iters, &mut c));
+    }
+    (best_r, best_c)
 }
 
 struct Row {
@@ -145,34 +158,30 @@ fn main() {
         let sp = src.as_ptr() as *const c_void;
 
         unsafe {
-            let r = bench("memset", n, || {
+            let (r, c) = bench_pair(n, || {
                 memset(dp, 0x41, n);
-            });
-            let c = bench("ref_memset", n, || {
+            }, || {
                 ref_memset(d2p, 0x41, n);
             });
             rows.push(Row { name: format!("memset/{n}"), rust: r, c });
 
-            let r = bench("memcpy", n, || {
+            let (r, c) = bench_pair(n, || {
                 memcpy(dp, sp, n);
-            });
-            let c = bench("ref_memcpy", n, || {
+            }, || {
                 ref_memcpy(d2p, sp, n);
             });
             rows.push(Row { name: format!("memcpy/{n}"), rust: r, c });
 
-            let r = bench("memcmp", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(memcmp(sp, sp, n));
-            });
-            let c = bench("ref_memcmp", n, || {
+            }, || {
                 core::hint::black_box(ref_memcmp(sp, sp, n));
             });
             rows.push(Row { name: format!("memcmp/{n}"), rust: r, c });
 
-            let r = bench("memchr", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(memchr(sp, 0xFF, n));
-            });
-            let c = bench("ref_memchr", n, || {
+            }, || {
                 core::hint::black_box(ref_memchr(sp, 0xFF, n));
             });
             rows.push(Row { name: format!("memchr/{n}"), rust: r, c });
@@ -181,10 +190,9 @@ fn main() {
             let mut s = vec![b'x'; n + 1];
             s[n] = 0;
             let strp = s.as_ptr();
-            let r = bench("strlen", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(strlen(strp));
-            });
-            let c = bench("ref_strlen", n, || {
+            }, || {
                 core::hint::black_box(ref_strlen(strp));
             });
             rows.push(Row { name: format!("strlen/{n}"), rust: r, c });
@@ -200,26 +208,23 @@ fn main() {
             let mut wd = vec![0u16; wn + 1];
             let wdp = wd.as_mut_ptr();
 
-            let r = bench("wcslen", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(wcslen(wsp));
-            });
-            let c = bench("ref_wcslen", n, || {
+            }, || {
                 core::hint::black_box(ref_wcslen(wsp));
             });
             rows.push(Row { name: format!("wcslen/{n}"), rust: r, c });
 
-            let r = bench("wcscpy", n, || {
+            let (r, c) = bench_pair(n, || {
                 wcscpy(wdp, wsp);
-            });
-            let c = bench("ref_wcscpy", n, || {
+            }, || {
                 ref_wcscpy(wdp, wsp);
             });
             rows.push(Row { name: format!("wcscpy/{n}"), rust: r, c });
 
-            let r = bench("wcscmp", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(wcscmp(wsp, wsp));
-            });
-            let c = bench("ref_wcscmp", n, || {
+            }, || {
                 core::hint::black_box(ref_wcscmp(wsp, wsp));
             });
             rows.push(Row { name: format!("wcscmp/{n}"), rust: r, c });
@@ -236,79 +241,70 @@ fn main() {
             // §9.63, restated: A PERF GATE ONLY DEFENDS WHAT IT BENCHES. Every time a
             // new family is flipped, it gets benched here — or the next per-character
             // TLS lookup ships, and we find out from a red gate instead of a red bar.
-            let r = bench("_stricmp", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(_stricmp(strp, strp));
-            });
-            let c = bench("ref__stricmp", n, || {
+            }, || {
                 core::hint::black_box(ref__stricmp(strp, strp));
             });
             rows.push(Row { name: format!("_stricmp/{n}"), rust: r, c });
 
-            let r = bench("_strnicmp", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(_strnicmp(strp, strp, n));
-            });
-            let c = bench("ref__strnicmp", n, || {
+            }, || {
                 core::hint::black_box(ref__strnicmp(strp, strp, n));
             });
             rows.push(Row { name: format!("_strnicmp/{n}"), rust: r, c });
 
-            let r = bench("_wcsicmp", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(_wcsicmp(wsp, wsp));
-            });
-            let c = bench("ref__wcsicmp", n, || {
+            }, || {
                 core::hint::black_box(ref__wcsicmp(wsp, wsp));
             });
             rows.push(Row { name: format!("_wcsicmp/{n}"), rust: r, c });
 
-            let r = bench("_wcsnicmp", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(_wcsnicmp(wsp, wsp, n));
-            });
-            let c = bench("ref__wcsnicmp", n, || {
+            }, || {
                 core::hint::black_box(ref__wcsnicmp(wsp, wsp, n));
             });
             rows.push(Row { name: format!("_wcsnicmp/{n}"), rust: r, c });
 
             // The scalar mappers, hammered n times — these are what the loops above
             // call per character, so a regression here multiplies through everything.
-            let r = bench("towlower", n, || {
+            let (r, c) = bench_pair(n, || {
                 for c in 0..n { core::hint::black_box(towlower((c & 0xFFFF) as u16)); }
-            });
-            let c = bench("ref_towlower", n, || {
+            }, || {
                 for c in 0..n { core::hint::black_box(ref_towlower((c & 0xFFFF) as u16)); }
             });
             rows.push(Row { name: format!("towlower/{n}"), rust: r, c });
 
-            let r = bench("tolower", n, || {
+            let (r, c) = bench_pair(n, || {
                 for c in 0..n { core::hint::black_box(tolower((c & 0xFF) as i32)); }
-            });
-            let c = bench("ref_tolower", n, || {
+            }, || {
                 for c in 0..n { core::hint::black_box(ref_tolower((c & 0xFF) as i32)); }
             });
             rows.push(Row { name: format!("tolower/{n}"), rust: r, c });
 
             // ── the compare/copy family (equal inputs: forces the full walk) ──
-            let r = bench("strcmp", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(strcmp(strp, strp));
-            });
-            let c = bench("ref_strcmp", n, || {
+            }, || {
                 core::hint::black_box(ref_strcmp(strp, strp));
             });
             rows.push(Row { name: format!("strcmp/{n}"), rust: r, c });
 
-            let r = bench("strncmp", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(strncmp(strp, strp, n));
-            });
-            let c = bench("ref_strncmp", n, || {
+            }, || {
                 core::hint::black_box(ref_strncmp(strp, strp, n));
             });
             rows.push(Row { name: format!("strncmp/{n}"), rust: r, c });
 
             let mut sd = vec![0u8; n + 1];
             let sdp = sd.as_mut_ptr();
-            let r = bench("strcpy", n, || {
+            let (r, c) = bench_pair(n, || {
                 strcpy(sdp, strp);
-            });
-            let c = bench("ref_strcpy", n, || {
+            }, || {
                 ref_strcpy(sdp, strp);
             });
             rows.push(Row { name: format!("strcpy/{n}"), rust: r, c });
@@ -317,21 +313,19 @@ fn main() {
             // which is what the C does too.
             let mut cd = vec![0u8; 2 * n + 2];
             let cdp = cd.as_mut_ptr();
-            let r = bench("strcat", n, || {
+            let (r, c) = bench_pair(n, || {
                 *cdp = 0;
                 strcat(cdp, strp);
-            });
-            let c = bench("ref_strcat", n, || {
+            }, || {
                 *cdp = 0;
                 ref_strcat(cdp, strp);
             });
             rows.push(Row { name: format!("strcat/{n}"), rust: r, c });
 
             // absent byte -> forces the full scan
-            let r = bench("strchr", n, || {
+            let (r, c) = bench_pair(n, || {
                 core::hint::black_box(strchr(strp, b'Z' as i32));
-            });
-            let c = bench("ref_strchr", n, || {
+            }, || {
                 core::hint::black_box(ref_strchr(strp, b'Z' as i32));
             });
             rows.push(Row { name: format!("strchr/{n}"), rust: r, c });
