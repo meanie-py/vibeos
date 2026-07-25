@@ -42,21 +42,53 @@ vibeos/                          # Git repo root (renamed from reactos/)
 
 `./vibeos-cli land` **submits** this lane's tip to the fleet's merge queue and returns in
 ~2s. You do not merge `master`, do not run the gate, and do not wait. Whichever agent finds
-the land lock free becomes the **trainer**: it merges every queued lane onto current
+the land lock free becomes the **conductor**: it merges every queued lane onto current
 `origin/master` in a dedicated integration worktree, runs the full 3-arch gate **once**, and
 fast-forwards `master` to exactly the commit it gated. N ready lanes therefore cost ONE gate.
 
 ```bash
 ./vibeos-cli land                  # submit (and train the batch if nobody else is)
-./vibeos-cli land-status --mine    # trainer + queue + MY verdict (landed / rejected + artifact)
+./vibeos-cli land-status --mine    # conductor + queue + MY verdict (landed / rejected + artifact)
 ./vibeos-cli land --direct         # opt out: gate and push this lane alone
 ./vibeos-cli land --drain          # train without submitting (orphan recovery)
 ```
 
-A merge conflict is **bounced back to you** with the conflicting paths — the trainer never
+A merge conflict is **bounced back to you** with the conflicting paths — the conductor never
 resolves it. A red batch **splits recursively**, so innocent lanes still land and the culprit
 is rejected with its gate classification plus its artifact dir. Full design:
 `tests/qemu/cli/README.md` → `land`, and the header of `tests/qemu/cli/queue.py`.
+
+## Discarding work safely — the stash, and why index numbers lie
+
+AGENTS.md forbids `git checkout`/`restore` for discarding. Stash instead. The trap is that the
+stash stack is **shared by every worktree**, so `stash@{0}` is whatever was pushed most
+recently anywhere — a bare `git stash pop` has applied a sibling lane's 1124 files into the
+wrong tree. Two consequences:
+
+**Pushing.** `git stash push <pathspec>` **fails outright if any listed path is untracked**, and
+paired with `|| true` it creates no entry while looking like it worked. Pass `-u` whenever the
+pathspec includes new files, then confirm the entry landed:
+
+```bash
+git stash push -u -m "mylane: <what and why>" -- <paths>
+git stash list | head -3          # your message must be at the top
+```
+
+**Dropping.** `git stash drop <sha>` does not work: drop and apply need a `stash@{n}` ref, so
+"drop by hash" is not executable advice. Resolve the index from the message, re-read the message
+at that ref, and refuse if it no longer matches — in one command, so nobody can push between the
+lookup and the drop:
+
+```bash
+IDX=$(git stash list --format='%gd|%gs' | grep -F "<my msg>" | head -1 | cut -d'|' -f1)
+MSG=$(git stash list --format='%gd|%gs' | grep -F "$IDX|" | cut -d'|' -f2-)
+case "$MSG" in *"<my msg>"*) git stash drop "$IDX" ;; *) echo REFUSED ;; esac
+```
+
+**Recovery, if you applied someone else's.** Their work is safe: a conflicted `pop` does not drop
+the entry. Back up your own uncommitted files, confirm your commits are pushed
+(`git rev-list --left-right --count origin/master...HEAD` shows `0` ahead), then
+`git reset --hard HEAD` plus `git clean -fd <your dirs>`, and restore your backups.
 
 ## Build Commands
 
