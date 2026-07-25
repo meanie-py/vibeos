@@ -233,6 +233,41 @@ reported **3,790** phantom findings against a true count of 15, and the identica
 `crate_repair`'s argument-index counter the same night. If you are counting top-level commas in
 Rust, assume `->` is there to ruin it.
 
+### A `transmute` at a callback-install site erases the CALLING CONVENTION
+Rust will not unify `extern "system" fn` with a literal `extern "stdcall" fn` (i386) or
+`extern "C" fn` (amd64/arm64) in a function-POINTER type, even though the ABI is identical on
+that arch. bindgen writes the literal, translations write the portable `system`, so assigning
+a translated callback into a bindgen slot is an E0308 — and the reflex fix is to transmute the
+address:
+
+```rust
+macro_rules! cb { ($f:expr) => { core::mem::transmute($f as usize) } }   // buslogic
+```
+
+That silences the *type*, which is the whole type — including the convention. buslogic's six
+SCSI miniport callbacks went into `PHW_*` slots this way while defined `extern "C"`; scsiport
+dereferences them as stdcall, so on i386 neither side pops the arguments and 8 bytes leak per
+SRB dispatch. The `cb!` comment even states the premise ("the bit pattern is identical; only
+the nominal Rust type differs") — true for the case in front of the author, and false the
+moment the definition's convention drifts. Same shape in cdrom via an explicit
+`transmute::<unsafe extern "C" fn(..), _>` into a WDF `EvtCleanupCallback`.
+
+**Fix the slot type, not the assignment.** `tools/rustconv/normalize_island_abi.py` spells
+callback slots `extern "system"` across a crate's three islands, projecting from the i386
+island — the *only* one that still records which callbacks are stdcall, because 64-bit has one
+convention and bindgen flattens every `NTAPI` to `extern "C"` (11,809 `stdcall` blocks on
+i386, ZERO on either twin). Then `Some(f)` assigns directly and rustc checks the convention:
+reverting one buslogic definition to `extern "C"` now fails with `expected "system" fn, found
+"C" fn` instead of shipping. Do NOT blanket-rewrite `extern "C" fn` → `system` on i386 — 34
+i386 callback slots are genuinely cdecl and that promotion is the same bug pointing the other
+way.
+
+Census of the remaining exposure, so it is not re-derived: ~500 transmute-shaped callback
+installs survive, led by dxg-rust (92), win32k-rust `ntddraw_dxeng` (42), cdfs `cdinit` (33),
+winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42), cdrom (20),
+scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
+ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
+
 ### Aggregates, arrays and unions across the FFI boundary
 - **`i64` substituted for a by-value `_LARGE_INTEGER`** — i386 cdecl lowers an 8-byte
   aggregate differently from a scalar `i64`; amd64 hides it. Mirror the union type exactly and

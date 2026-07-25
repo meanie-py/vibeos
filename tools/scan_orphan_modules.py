@@ -143,13 +143,17 @@ def main():
             f"nothing compiles; wire it up, or declare it with a "
             f"`//! {BANNER} <reason>` banner"
         )
+    # Deliberately NO per-file line count in this message. A rootless crate is usually one
+    # somebody is actively integrating, so its line counts move every commit — and a count
+    # inside the finding text is part of the baseline key, so each edit would read as a NEW
+    # finding and bounce their gate. The total goes in the SUMMARY, which is not baselined.
+    rootless_lines = 0
     for path, _ in rootless:
-        rel = os.path.relpath(path, repo)
         with open(path, encoding="utf-8", errors="replace") as fh:
-            n = sum(1 for _ in fh)
+            rootless_lines += sum(1 for _ in fh)
         print(
-            f"{rel}:1: [ROOTLESS] no crate root (lib.rs/main.rs) above this file — "
-            f"{n} lines that nothing compiles; scaffold the crate, or declare it "
+            f"{os.path.relpath(path, repo)}:1: [ROOTLESS] no crate root (lib.rs/main.rs) "
+            f"above this file — nothing compiles it; scaffold the crate, or declare it "
             f"with a `//! {BANNER} <reason>` banner"
         )
     if args.show_declared:
@@ -157,8 +161,8 @@ def main():
             print(f"{os.path.relpath(path, repo)}:1: [DECLARED] {reason}")
 
     print(
-        f"\nSUMMARY: undeclared-orphans={len(findings)}  rootless={len(rootless)}  "
-        f"declared={len(declared)}"
+        f"\nSUMMARY: undeclared-orphans={len(findings)}  "
+        f"rootless={len(rootless)} ({rootless_lines} lines)  declared={len(declared)}"
     )
     return 1 if (findings or rootless) else 0
 

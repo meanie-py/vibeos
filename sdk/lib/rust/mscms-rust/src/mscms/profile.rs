@@ -1,12 +1,3 @@
-//! ORPHAN-BY-DESIGN: mscms-rust is an UNINTEGRATED translation. The crate has no
-//! Cargo.toml, no lib.rs, and no CMake or workspace reference, so nothing compiles any
-//! of its 6 files (4,782 lines). Kept as paid artifact per AGENTS.md — a translated .rs
-//! is never deleted without explicit approval. To integrate: scaffold Cargo.toml +
-//! lib.rs, then expect a compile grind, because the translation is not merely unwired —
-//! profile.rs carries malformed items such as `#[no_mangle] #[no_mangle] #[no_mangle]
-//! pub unsafe extern "system" fn GetColorDirectoryW(..);` sitting INSIDE an
-//! `extern "C" {}` block, which is not valid Rust and which no gate could ever have
-//! reported while the crate was invisible. Tracked as owed in docs/product/vibeos-roadmap.md.
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 

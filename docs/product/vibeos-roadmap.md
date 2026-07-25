@@ -479,16 +479,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
-- **`mscms-rust` is an unintegrated translation — OWED, 4,782 lines, 6 files** (surfaced
-  2026-07-25 by teaching `scan_orphan_modules` to see ROOTLESS crates). No `Cargo.toml`, no
-  `lib.rs`, no CMake or workspace reference, so nothing compiles it and every source gate
-  skipped it silently — `crate_root_of` walks up to the nearest Cargo.toml, which for this
-  crate is the *workspace* manifest, and the "unparseable crate → fail open" branch then
-  swallowed it. Now declared with `ORPHAN-BY-DESIGN` banners so it is tracked rather than
-  invisible. Integrating it is not just scaffolding: `profile.rs` carries items like
-  `#[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn GetColorDirectoryW(..);`
-  **inside** an `extern "C" {}` block, which is not valid Rust — expect a compile grind. Kept
-  as paid artifact per AGENTS.md; do not delete without explicit approval.
+- **`mscms-rust` — being integrated on the `integration` lane, NOT a bug.** Surfaced
+  2026-07-25 when `scan_orphan_modules` learned to see ROOTLESS crates: 6 files / 4,782 lines
+  with no `Cargo.toml` and no `lib.rs`, which every source gate had been skipping silently
+  (`crate_root_of` walks up to the nearest Cargo.toml — for a crate with none that is the
+  *workspace* manifest, and the "unparseable crate → fail open" branch swallowed the lot).
+  Baselined in `tools/lint-baseline/scan_orphan_modules.txt`, and **the ROOTLESS finding
+  deliberately carries no line count** so their in-flight edits don't read as NEW findings.
+  The 6 baseline entries expire on their own the moment a `lib.rs` lands — delete them then.
+  Another lane owns these files; don't edit them from here.
+- **Tree-wide bindgen callback-slot normalization — SCOPED, OWED** (task #14). The tool exists
+  and is proven end-to-end on buslogic: `tools/rustconv/normalize_island_abi.py` spells callback
+  slots `extern "system"` across a crate's three islands, projecting from the i386 island (the
+  only one that still records which callbacks are stdcall). Applying it repo-wide would touch
+  **17,612 slots across 37 crates** and surfaces **86 E0308s in ntoskrnl alone** — every one a
+  real convention-spelling mismatch that is currently invisible, so it is a batch of its own,
+  not a rider. The payoff is measured: on buslogic it let 6 `transmute(f as usize)` callback
+  installs become plain `Some(f)`, and reverting a definition to `extern "C"` now fails to
+  compile instead of leaking 8 bytes per SRB. Remaining exposure is ~500 transmute-shaped
+  installs — dxg-rust 92, win32k `ntddraw_dxeng` 42, cdfs `cdinit` 33, winsrv console frontends
+  ~90, hal `bussupp`/`dma` 42, cdrom 20, scsiport 15. Full writeup: field manual, "A `transmute`
+  at a callback-install site erases the CALLING CONVENTION". Also owed: `gen_driver_types.sh`
+  should call the pass unconditionally and retire the `CALLBACK_SYSTEM=1` opt-in, whose blanket
+  `s/extern "C" fn/extern "system" fn/` is unsound on i386 (34 genuinely-cdecl slots).
 - **8 `scan_cc_mismatch` entries in `ntkrnl-sys/src/bindgen_i386.rs` — benign, baselined**
   (`Ke386SanitizeFlags`, `Ke386SanitizeSeg`, `Ke{Query,Register}InterruptHandler`,
   `KiFillTrapFrameDebug`, `KiGetThreadNpxArea`, `KiSetTebBase`, `KiUserTrap`). The island
