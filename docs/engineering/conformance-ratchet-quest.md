@@ -1262,3 +1262,50 @@ that a bugchecking test truncates the sweep, so enabling all 21 at once yields o
 tool instead boots candidate-only lists ordered most-likely-fixed-first, harvests every verdict
 up to the crasher, drops it and repeats. Worst case one boot per crasher, best case one boot.
 It restores the committed list on every exit path, Ctrl-C included.
+
+### 2026-07-25 (later) — the i386-only tail has ONE root, and it is task #18
+
+§9.127 unblocked offline i386 symbolication, so the i386 quarantines stopped being opaque. Two
+fresh crashes were traced the same night:
+
+| test | fresh PC | resolves to | root |
+|---|---|---|---|
+| `RtlIsValidOemCharacter` | `0x80529538` | `_RtlIsValidOemCharacter@4+8` (`rtl-strings/src/cabi/mod.rs:1939`) | **task #18** |
+| `SeInheritance` | `0x805510dd` | `_SeAssignSecurityEx@36+61` (`se-rust/src/sd.rs:923`) | distinct, open |
+
+`RtlIsValidOemCharacter` is conclusive. Its test ends with
+
+```c
+_SEH2_TRY { RtlIsValidOemCharacter(NULL); }
+_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status = _SEH2_GetExceptionCode(); }
+```
+
+— a **deliberate** NULL deref the `__except` is meant to catch. `+8` is `let mut c = *ch;`, the
+deref of that NULL parameter. amd64/arm64 catch it with native SEH; i386 under `DUMMY_PSEH` has a
+dead `__try`, so it escapes to `BUGCHECK 0x1E`. Nothing is wrong with the Rust.
+
+**That generalises, and it re-scopes task #18 from one test to the trunk of the i386 tail.**
+Classifying every quarantined test by whether its source uses `_SEH2_TRY`:
+
+| i386-ONLY quarantine | `_SEH2_TRY` | reading |
+|---|---|---|
+| `RtlIsValidOemCharacter` | 1 | task #18 — confirmed |
+| `ExHardError` | 2 | task #18 candidate |
+| `ExResource` | 1 | task #18 candidate |
+| `KeDpc` | 2 | task #18 candidate |
+| `MmSection` | 2 | task #18 candidate |
+| `KeMutex` | 0 | distinct bug |
+| `ZwMapViewOfSection` | 0 | distinct bug |
+
+So **~5 of the 9 i386-only quarantines are one root**, and task #18 is the highest-value i386
+fix by a wide margin — it is worth roughly as much as the entire rest of the i386-only tail.
+
+**The discriminator needs both halves.** `IoFilesystem` and `RtlException` also use `_SEH2_TRY`,
+but they are quarantined on ALL THREE arches — including the ones where SEH works — so their
+failures cannot be the dead-`__try` root. The signature is *i386-only* **and** *uses SEH*. Using
+SEH-usage alone would have swept two shared-core bugs into the wrong bucket and made task #18
+look like it fixed more than it does.
+
+**Cost of this classification: one grep.** It was available on 2026-07-12 when these nine tests
+were quarantined with "triage owed". The blocker was never the difficulty — it was the recorded
+claim that triage needed a debugger (§9.127).
