@@ -10362,3 +10362,65 @@ does exactly that, and it is why it never touches the local `master` ref.
 > so the first pusher voids everyone else's gate), and `vibeos-cli land` — one fleet-wide
 > FIFO lock across fetch → merge → gate → push — is the sanctioned way. See AGENTS.md
 > §"Git and mainline" and `tests/qemu/cli/README.md` → `land`.
+
+### 9.122 (FIXED 2026-07-25) Mainline carried THREE cold-build breaks at once while every lane's gate was green — a warm build cannot fail in a crate it does not recompile
+
+**The finding.** `origin/master` did not build from scratch. Not one regression — **three
+independent ones**, live simultaneously, every one committed through a green gate:
+
+| break | scope | why warm gating could not see it |
+|---|---|---|
+| `fltmgr-rust`: `IRP_MJ_CREATE_MAILSLOT` is ambiguous (`E0659`) | i386 | crate not recompiled ⇒ cannot fail |
+| `afd-rust`: `IRP_MJ_QUERY_VOLUME_INFORMATION` is ambiguous | **all 3 arches** | ninja halts at the first failing edge |
+| `ksecdd.sys`: undefined `___debugbreak` | i386 | a `.sys` relinks only when its inputs change |
+
+**The mechanism, and it is not subtle once stated.** A compiler cannot report an error in a
+translation unit it never compiles, and a linker cannot report an undefined symbol in an image
+it never links. Warm incremental builds skip both. Every lane's `build-*` dirs were warm, so
+every lane's gate was honestly green *about the work it actually did* — which was not the whole
+tree. AGENTS.md has warned "cargo incremental can mask regressions" for a long time; this is
+what that looks like when nobody does the cold build for weeks.
+
+**Two roots, both worth internalizing.**
+
+1. **The E0659 pair share a cause: a bindgen island grew a name a local shim already had.**
+   `6ae2ae1931d` added 11 `IRP_MJ_*` constants to `ntkrnl_sys::driver_ddk`. Two crates
+   glob-import *both* that island and their own `crate::glue::*`, and had hand-written copies of
+   those constants. Two different items under one name, reached by two globs, is `E0659` — and
+   **nothing in the failing crates changed**. A pre-existing use site simply became ambiguous.
+   Resolution: the island is the compiler-facing authority; delete the hand-written copy.
+2. **`__debugbreak` was declared `extern "C"` instead of emitted.** It is an MSVC *intrinsic*.
+   Declaring it produces a reference to `___debugbreak` that a driver's own PE link cannot
+   satisfy. Emit `int3` inline (`fltmgr-rust/src/glue.rs`, `scsiport-rust/src/inlines.rs` are the
+   pattern). Related: AGENTS.md's rule that an out-of-line stub for something that should be an
+   *instruction* is an optimization barrier that has uncloaked ABI mismatches into `ud2`.
+
+**SCAN THE NAMES, NOT THE IMPORT SHAPES.** My first blast-radius scan looked for files globbing
+both a local module and `driver_ddk`, then matched `^pub const` in that module. It produced **16
+false positives and missed `afd-rust`** — the hits were `pub use` re-exports of the *same* item,
+which is not ambiguous at all. The instrument that worked: take the constants the commit
+**added**, and find every *other* definition of those names in the workspace. That closed the
+class at exactly two crates, and correctly exonerated three more (`msfs`/`mup`/`npfs` keep their
+own copies but do **not** glob `driver_ddk`, and their use sites index `MajorFunction` without a
+cast — deleting their copies would have *broken* them, since the island spells these `u8` and
+they need `usize`).
+
+**Finding them one at a time is the other trap.** Because ninja stops at the first failing edge,
+each ~6-minute cold build revealed exactly ONE break, and the next appeared only after the
+previous was fixed. Three fix-and-rebuild rounds to learn a fact that one `ninja -k0` pass could
+have handed over at once.
+
+**THE MECHANISM (this is the durable part).** Rules did not prevent this and cannot; a warm gate
+is *structurally* blind here. So the merge queue's batch gate is now
+**`--clean --keep-going`** by default (`tests/qemu/cli/queue.py:gate_batch`):
+
+* cold, because only a real compile can fail — and a compile **error is never cached**, so
+  ccache/sccache do not blunt the check (they only make it affordable);
+* `-k0`, so a red verdict names *every* broken target in one pass;
+* affordable because a *batch* amortizes one gate over N landings. Measured on this box: a cold
+  i386 build is **16m15s** against ~2-3 min warm (~5-6×) even at ~100% cache hits — linking
+  ~5,000 targets and re-driving cargo over hundreds of crates is not free. "Affordable
+  amortized" is the honest claim; "nearly free" is not.
+
+> **If you are about to trust a green gate:** ask when that tree last built COLD. `vibeos-cli
+> build --arch X --clean --keep-going` is the question's answer, and it is the only one.

@@ -257,7 +257,9 @@ def _report_prior_results(repo: Path, lane: str, run: Run) -> None:
     """Surface this lane's most recent verdict on submit. A rejection an agent never reads is
     the same as a silent drop, and the agent that most needs to see it is the one that just
     came back to submit again."""
-    prior = queue.results(repo, lane=lane, limit=1)
+    # Skip supersessions: "your older tip was replaced by your newer one" is bookkeeping, not
+    # news, and surfacing it as the lane's headline verdict buries a real prior rejection.
+    prior = [r for r in queue.results(repo, lane=lane, limit=8) if r.get("outcome") != "superseded"]
     if not prior:
         return
     rec = prior[0]
@@ -575,7 +577,8 @@ def cmd_land_status(args, repo: Path) -> int:
     if not subs:
         print("  queue: empty")
     for rec in recent:
-        tag = "landed " if rec.get("outcome") == "landed" else "REJECTED"
+        outcome = rec.get("outcome")
+        tag = {"landed": "landed ", "superseded": "superseded"}.get(outcome, "REJECTED")
         extra = (
             f" as {rec.get('landed_as', '')[:12]}"
             if rec.get("outcome") == "landed"

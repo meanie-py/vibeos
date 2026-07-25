@@ -147,9 +147,30 @@ def lane_id(repo: Path) -> str:
 def submit(repo: Path, *, tip: str | None = None, lane: str | None = None) -> Submission:
     """Enqueue a lane tip. Writes the ref FIRST (so the objects are pinned before anything
     can observe the record) and only then the record — a conductor must never see a submission
-    whose tip could be GC'd."""
+    whose tip could be GC'd.
+
+    Idempotent per (lane, tip), and SUPERSEDES this lane's older pending tips that the new one
+    already contains. Both were observed in the first live batch: submitting the same canary tip
+    twice put it in the batch twice, and a lane's earlier tip sat alongside its own descendant.
+    Neither is unsafe (a descendant's merge subsumes its ancestor's), but they are noise, and a
+    superseded ancestor can be REJECTED by a split while its descendant lands — a verdict about
+    a commit the lane has already moved past. Deduping here rather than only in the CLI, because
+    the CLI is not the only caller."""
     tip = tip or git(repo, "rev-parse", "HEAD")
     lane = lane or lane_id(repo)
+    existing = [s for s in pending(repo) if s.lane == lane]
+    for prev in existing:
+        if prev.tip == tip:
+            return prev  # already queued, byte-identical — a no-op, not a second submission
+    for prev in existing:
+        # `prev.tip` is contained in the new tip ⇒ landing the new one lands it too.
+        if git_ok(repo, "merge-base", "--is-ancestor", prev.tip, tip):
+            resolve(
+                repo,
+                prev,
+                outcome="superseded",
+                reason=f"this lane submitted {tip[:12]}, which already contains it",
+            )
     seq = f"{time.time_ns():020d}-{lane.replace('/', '_').replace(' ', '_')}"
     sub = Submission(
         seq=seq,

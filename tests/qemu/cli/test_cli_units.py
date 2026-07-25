@@ -3620,3 +3620,42 @@ def test_build_keep_going_maps_to_ninja_k0():
     assert build_mod._ninja_keep_going(Namespace(keep_going=True)) == ["-k0"]
     assert build_mod._ninja_keep_going(Namespace(keep_going=False)) == []
     assert build_mod._ninja_keep_going(None) == []
+
+
+def test_queue_submit_is_idempotent_per_tip(queue_repo):
+    """Submitting the same (lane, tip) twice must be a no-op — the first live batch contained
+    the same canary tip twice because only the CLI path deduped, not submit() itself."""
+    repo, _ = queue_repo
+    _commit(repo, "dup.txt")
+    a = q_mod.submit(repo, lane="lane-x")
+    b = q_mod.submit(repo, lane="lane-x")
+    assert a.seq == b.seq
+    assert len(q_mod.pending(repo)) == 1
+
+
+def test_queue_submit_supersedes_this_lanes_older_tip(queue_repo):
+    """A lane's ancestor tip must not ride along beside its own descendant: harmless to merge,
+    but a split can REJECT the ancestor while the descendant lands — a verdict about a commit
+    the lane already moved past."""
+    repo, _ = queue_repo
+    old_tip = _commit(repo, "one.txt")
+    first = q_mod.submit(repo, lane="lane-y")
+    new_tip = _commit(repo, "two.txt")
+    second = q_mod.submit(repo, lane="lane-y")
+    assert [s.seq for s in q_mod.pending(repo)] == [second.seq], "ancestor still queued"
+    rec = next(r for r in q_mod.results(repo, limit=10) if r["seq"] == first.seq)
+    assert rec["outcome"] == "superseded" and new_tip[:12] in rec["reason"]
+    assert old_tip != new_tip
+
+
+def test_queue_submit_keeps_a_DIVERGENT_tip_from_the_same_lane(queue_repo):
+    """Only an ANCESTOR is superseded. A rewritten/divergent tip is a different proposal and
+    must stay queued on its own merits."""
+    repo, _ = queue_repo
+    subprocess.run(["git", "checkout", "-q", "-b", "div1", "master"], cwd=repo, capture_output=True)
+    _commit(repo, "d1.txt")
+    first = q_mod.submit(repo, lane="lane-z")
+    subprocess.run(["git", "checkout", "-q", "-b", "div2", "master"], cwd=repo, capture_output=True)
+    _commit(repo, "d2.txt")
+    second = q_mod.submit(repo, lane="lane-z")
+    assert {s.seq for s in q_mod.pending(repo)} == {first.seq, second.seq}
