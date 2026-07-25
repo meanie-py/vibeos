@@ -255,8 +255,14 @@ pub const IPI_FROZEN_STATE_OWNER: u32 = 4;
 
 // IRQ levels
 // HIGH_LEVEL and IPI_LEVEL are in ntkrnl_sys::constants (cfg-gated per arch)
-// UP kernel: SYNCH_LEVEL == DISPATCH_LEVEL; SMP: IPI_LEVEL - 2 on x86/amd64
-// (ndk asm.h/ketypes.h), unchanged on arm64 (no SMP variant in ndk).
+// UP kernel: SYNCH_LEVEL == DISPATCH_LEVEL; SMP: IPI_LEVEL - 2 on ALL THREE
+// arches — every ndk header has the same `#ifndef CONFIG_SMP` pair (i386
+// asm.h; amd64/arm64 ketypes.h). arm64 read 2 here until 2026-07-25 on the
+// premise that its ndk had no SMP variant; it does (ketypes.h:29), and kmtest
+// asks the running kernel (KmtIsMultiProcessorBuild) which one to expect.
+// 12 lands in the gap the arm64 IRQL↔GIC map already leaves free: above every
+// DIRQL (max 11) and below CLOCK_LEVEL(13), so a SYNCH section masks devices
+// but never the scheduler tick (hal-rust arm64/clock.rs gic_priority).
 #[cfg(not(feature = "smp"))]
 pub const SYNCH_LEVEL: u8 = 2;
 #[cfg(all(feature = "smp", target_arch = "x86"))]
@@ -264,7 +270,7 @@ pub const SYNCH_LEVEL: u8 = 0x1D - 2; // 27
 #[cfg(all(feature = "smp", target_arch = "x86_64"))]
 pub const SYNCH_LEVEL: u8 = 14 - 2; // 12
 #[cfg(all(feature = "smp", target_arch = "aarch64"))]
-pub const SYNCH_LEVEL: u8 = 2;
+pub const SYNCH_LEVEL: u8 = 14 - 2; // 12
 
 // Exported for ke_rust_shims.c's amd64 KeRaiseIrqlToSynchLevel CR8 shim (the
 // only out-of-line provider of that export on amd64) so the C side raises to

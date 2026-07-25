@@ -1132,17 +1132,118 @@ kernel and HAL goes to 2 — and the several `…AtDpcLevel` IRQL asserts in `ke
 `#[cfg(any(debug_assertions, feature = "smp"))]` / `#[cfg(feature = "smp")]`, so they only *exist*
 in the MP kernel. Hence: MP-only, arm64-only, and it fires before the test emits a single result.
 
-**Correct the earlier note in this doc** ("ndk arm64 defines no MP SYNCH variant"): the arm64 ndk
-header defines `SYNCH_LEVEL` **only** as `IPI_LEVEL - 2` — it has no UP variant at all. The missing
-UP/MP variance is on OUR side, and our value (2) disagrees with the header in *both* flavors. UP
-merely masks it, because kmtest picks `DISPATCH_LEVEL` when it detects a UP build. `ke_defs.rs:258`'s
-comment ("unchanged on arm64") encodes the same wrong premise.
+**Correct the earlier note in this doc** ("ndk arm64 defines no MP SYNCH variant"): `ketypes.h:27-31`
+carries the same `#ifndef CONFIG_SMP` pair as i386 and amd64 — UP `DISPATCH_LEVEL`, MP
+`IPI_LEVEL - 2`. All three arches vary. Our arm64 value (2) was right for UP and wrong for MP, and
+`ke_defs.rs:258`'s comment ("unchanged on arm64") encoded the wrong premise. *(A second correction:
+the paragraph above this one, written the same day, claimed the header has no UP variant at all —
+also wrong. Read the header, twice.)*
 
-**Fix is not a one-liner** — it is the §9.97 treatment applied to arm64: `ke_defs` arm64-smp arm →
-12, `halstubs.rs` SYNCH → 12 under `smp`, a `KiSynchIrql` export for arm64, AND the places this doc
-already records as assuming `SYNCH == DISPATCH` on arm64 (idle pinned at DISPATCH with no SYNCH
-raise around the swap; the M5b per-CPU softint dispatch). Needs its own `-smp 1` + `-smp 2` +
-conformance validation cycle. **This is the one hard blocker to UP:=smp1 on arm64;** x86 is clear.
+### …and the 0x9 was NOT the SYNCH bug. The BuildType constants were SWAPPED. (2026-07-25)
+
+The SYNCH misalignment above is real and is fixed below, but it was **not** what bugchecked. Under
+instrumentation (a temporary `spindiag` naming each of the 14 anonymous `0x9` sites — the banner
+carries no PC) the trip was:
+
+```
+[SPINDIAG] KeAcquireSpinLockAtDpcLevel irql=0 lock=0000000000000000 buildtype=2
+```
+
+`buildtype=2` on a kernel that was demonstrably running SMP (PSCI markers, `CPU 1 online`). The
+cause, `ke/arm64/kiinit.rs:55-56`:
+
+```rust
+const PRCB_BUILD_UNIPROCESSOR: USHORT = 1;   // ndk says 2
+const PRCB_BUILD_DEBUG:        USHORT = 2;   // ndk says 1
+```
+
+**The two constants were swapped**, against `ndk/arm64/ketypes.h:46-47` — where DEBUG=1 and
+UNIPROCESSOR=2 on *all three* arches. i386 and amd64 both had them right. So every arm64 boot ever
+published a `BuildType` meaning the opposite of what the source says it wrote:
+
+| kernel | wrote | published | kmtest read it as |
+|---|---|---|---|
+| arm64 UP  | `\|= UNIPROCESSOR`(1) | **1** | checked **MP** build |
+| arm64 MP  | (nothing)             | **0** | free **MP** build |
+| after fix, UP | `\|= UNIPROCESSOR`(2) `\|= DEBUG`(1) | **3** | checked UP ✓ |
+| after fix, MP | `\|= DEBUG`(1) | **1** | checked MP ✓ |
+
+Compounding it, arm64 gated `PRCB_BUILD_DEBUG` on `#[cfg(debug_assertions)]` — **off in
+`--release`, which is how the kernel is built.** i386 and amd64 both set it unconditionally and
+each carries a comment saying exactly that; arm64 never got the fix.
+
+The chain to the bugcheck: `BuildType` with no DEBUG bit ⇒ `KmtIsCheckedBuild == FALSE` ⇒
+`KeSpinLock.c:312`'s `(OriginalIrql >= DISPATCH_LEVEL || !KmtIsCheckedBuild)` opens the
+`AcquireNoRaise` block at **PASSIVE**, which is legal on a free build — real NT compiles those
+`ASSERT`s out. Our `KeAcquireSpinLockAtDpcLevel` (`spinlock.rs:118`) asserts **ungated**, so it
+bugchecks. It was never MP-specific: the arm64 **UP** kernel would have done the same, and the only
+reason we hadn't seen it is that nobody had run an arm64 UP kmtest sweep.
+
+**Why the lint didn't catch it.** `scan_const_contradictions` finds one name with two values, but
+buckets **by arch** — and `PRCB_BUILD_DEBUG` is 1/1/2 across i386/amd64/arm64, so no single bucket
+disagrees with itself. A constant that is arch-**invariant** in the C headers yet wrong in exactly
+one arch's bucket is structurally invisible to it. That is the gap; see the field manual entry.
+
+**Fix (all landed together, each validated):**
+
+1. `ke/arm64/kiinit.rs` — un-swap the constants; set `PRCB_BUILD_DEBUG` unconditionally.
+2. arm64 `SYNCH_LEVEL` 2 → 12 under `smp`, at all three definition sites (`ntkrnl-sys/inline/ke.rs`,
+   `ke/ke_defs.rs`, `hal-rust/arm64/halstubs.rs`). 12 lands in the gap the arm64 IRQL↔GIC map
+   already leaves free — above every DIRQL (max 11), below `CLOCK_LEVEL`(13) — so a SYNCH section
+   masks device lines but never the scheduler tick or an IPI. `gic_priority(12)=0x30` vs clock
+   `0x20` and IPI `0x10`. The cost is that a SYNCH raise/lower now leaves the no-MMIO software band
+   (two GIC PMR writes per pair) — correct, and the price of IRQL being hardware-real.
+3. `ke/arm64/thrdini.rs` — the idle loop now raises to SYNCH around `KiSwapContext` in both `smp`
+   branches, mirroring amd64. While SYNCH read DISPATCH the raise was a no-op, so it had been
+   skipped.
+4. `ke/cswitchdep.rs` — taps 1 and 2 compared the switch IRQL against `DISPATCH` outright, right
+   only by coincidence on UP; on **any** MP kernel every swap would have reported a violation. Now
+   `SWITCH_LEVEL` (= `SYNCH_LEVEL`). Not arm64-specific.
+
+**No `KiSynchIrql` export is needed for arm64** (the earlier fix list said otherwise):
+`ke_rust_shims.c` gates that shim `#elif defined(_M_AMD64)`, i386 goes through the HAL IAT, and
+arm64's `KeRaiseIrqlToSynchLevel` is a HAL export in `halstubs.rs`. Likewise no arm64 HAL build-type
+handshake exists to break — `buildtype.rs`/`MISMATCHED_HAL` is x86-only.
+
+**Result: arm64 MP boots to desktop green at both `-smp 1` and `-smp 2`, zero assert trips.**
+
+#### Conformance: arm64 now meets the collapse criterion, and UP got measurably better
+
+The sweep completes for the first time on an arm64 MP kernel — `launched=86 ok=83 sweep=done` in
+~70s, where it used to BUGCHECK 34 tests in. Run it on the UP kernel and you get **the same
+86/83**. Test-for-test, MP-at-one-CPU differs from UP by exactly three lines:
+
+| test | UP | MP@1cpu | what it is |
+|---|---|---|---|
+| `KeEvent` | 42733 | 42601 | the documented MP-skip (§9.97) — **the same value i386 and amd64 report** |
+| `IoDeviceObject` | 181/8 | 180/9 | the known ±1 flicker, already in the amd64 smp2 baseline |
+| `KeSpinLock` | 281/42 | **286/37** | MP passes *five more* — the `SynchIrql` rows working now |
+
+That is the same shape x86 showed, so **the collapse criterion is met on all three arches.**
+`ZwWaitForMultipleObjects` tripped `NO-END` (`0xC0000005`) on one of three sweeps and passed on the
+others — it is a known member of the hostile-user-pointer / `memcpy+0x40` cluster
+(`conformance-ratchet-quest.md`), not a new MP effect. A fourth run under a saturated host (another
+lane's 3-arch gate) launched only 76 of 86 with widespread timeouts: **conformance numbers taken
+while the host is busy are not comparable** — check `vibeos-cli ps` first.
+
+The BuildType fix also repaired the **UP** kernel, because the old arm64 UP baseline had been
+recorded by a kernel telling kmtest it was MP. Re-seeded (`--write-baseline`), improvements only:
+
+- `KeIrql` 125/3 → **128/0** — every failure was a `SynchIrql` expectation the UP kernel could
+  never satisfy while claiming to be MP.
+- `KeSpinLock` 278/45 → 281/42, `MmSection` 291/40 → 292/39, `IoDeviceObject` 180/9 → 181/8.
+- `KeEvent` 42601 → 42733 — the baseline had been storing the *MP* value for the UP kernel.
+- Four tests join the baseline: `ExFastMutex`, `ExHardError`, `SeInheritance`, `RtlStack`.
+
+**Bonus datum for the `ExHardError` bug (roadmap registry / task #18):** arm64 reports **24/6** —
+the identical split amd64 regressed to (30/0 → 24/6). The same six subtests fail on both arches, so
+that regression is arch-independent and lives in the shared `ex-rust`/`winsrv-rust` hard-error path,
+not in anything amd64-specific.
+
+**Also spotted, deliberately NOT changed here:** `ke/arm64/kiinit.rs`'s `KERNEL_STACK_SIZE = 0x6000`
+against `xdk/arm64/ke.h`'s `0xC000`. It is self-consistent (the `KiP0BootStackData` array and the
+top-of-stack computation use the same const), so it is a half-size boot stack rather than an
+overrun — but it is a real divergence and deserves its own change plus validation.
 
 ### Harness gap worth fixing (found the slow way)
 

@@ -683,6 +683,31 @@ the commented ones. **Prefer bindgen enums over local consts in new translations
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.
 
+### An arch-INVARIANT constant, wrong in exactly ONE arch's private copy
+`ke/arm64/kiinit.rs` declared `PRCB_BUILD_UNIPROCESSOR = 1` / `PRCB_BUILD_DEBUG = 2`. Every
+`ndk/*/ketypes.h` says DEBUG=1, UNIPROCESSOR=2 — **the two were swapped**, and i386 and amd64
+had them right. So arm64 published a `Prcb.BuildType` meaning the exact opposite of what the
+source reads like: the UP kernel announced "checked MP" and the MP kernel announced "free MP".
+
+Everything downstream believed it. `KmtIsCheckedBuild` was FALSE for the entire arm64 kmtest
+corpus, so every test silently took its *free-build* path; and because a free build is allowed
+to call `KeAcquireSpinLockAtDpcLevel` at PASSIVE (real NT compiles those `ASSERT`s out), the
+KeSpinLock test did exactly that and our ungated assert answered with BUGCHECK 0x9. It read as
+an SMP bug for a week — the MP kernel is simply where the smp-gated asserts live.
+
+**Why the lint was blind, and this is the transferable part.** `scan_const_contradictions` finds
+one name carrying two values, but buckets **by arch** — and the values were 1/1/2 across
+i386/amd64/arm64, so no single bucket disagreed with itself. *A constant that is arch-invariant
+in the C headers but wrong in exactly one arch's private copy is structurally invisible to an
+arch-bucketed scanner.* Two consequences: when a constant family is defined identically in all
+three `ndk/<arch>/` headers, a cross-arch disagreement between our copies is a **bug, not
+variance**; and per-arch translations of one shared header are the place to diff our copies
+against each other, not just against C.
+
+**A swapped PAIR also survives every sanity check that looks at one name at a time** — both
+values are present, both are plausible, both appear in the header. Only the *pairing* is wrong.
+Diff the whole family in one read.
+
 ### A hand-typed bit-flag literal that names the wrong member `[§9.86]`
 `DC_vPrepareDCsForBlit` tested `fs & 0x04` (**DC_CANCELED**) where the C tests
 **DC_DIRTY_RAO (0x10)** — so every GDI blit drew through a stale clip, and an app caching
@@ -698,6 +723,14 @@ The constants were always available via the bindgen glob; the literals were pure
 **five independent sites** → `-smp 2` `KeIrql` kmtest failures. Single source of truth per
 crate, runtime-reachable for drivers. Same family: any constant whose C value depends on a
 build flavour.
+
+A **sixth** site surfaced on arm64 in 2026-07: the `aarch64 + feature="smp"` arm still read
+`DISPATCH_LEVEL`, justified by a comment claiming "arm64's ndk has no SMP variant". It has one —
+`ndk/arm64/ketypes.h` carries the same `#ifndef CONFIG_SMP` pair as i386 and amd64. The comment
+was written from memory, propagated into three files, and then into the lane's quest doc as a
+recorded blocker. **When a comment asserts what a header says, open the header** — this is the
+same failure that once turned an untested inference about netapi32's MIDL wrappers into a
+blocker that deferred the work twice.
 
 ### An undefined constant in a `match` arm becomes an irrefutable CATCH-ALL
 **The most dangerous shape in this section**, because it is not an error: an unresolved name in

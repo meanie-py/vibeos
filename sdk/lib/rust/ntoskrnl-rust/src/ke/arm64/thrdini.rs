@@ -294,9 +294,10 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
             // NextThread it reads) — idle would promote T to Running while
             // the displacement sets T DeferredReady → double-link tear.
             // Re-check under the lock, promote + in-flight unmark, release,
-            // THEN unmask. (arm64 SMP SYNCH_LEVEL == DISPATCH_LEVEL and the
-            // idle loop is pinned at DISPATCH, so no SYNCH raise around the
-            // swap — amd64 raises to 12 here.)
+            // THEN unmask, and do the swap at SYNCH_LEVEL like amd64 (C:
+            // KfRaiseIrql(SYNCH_LEVEL) around KiSwapContext). arm64 SMP
+            // SYNCH_LEVEL is 12 as of 2026-07-25; while it read DISPATCH the
+            // raise was a no-op and this was skipped.
             #[cfg(feature = "smp")]
             {
                 ntkrnl_sys::inline::ke::KiAcquirePrcbLock(Prcb);
@@ -323,7 +324,11 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
 
                 core::arch::asm!("msr daifclr, #2");
 
+                // C: KfRaiseIrql(SYNCH_LEVEL) — do the swap at SYNCH_LEVEL.
+                crate::ke::ke_defs::KfRaiseIrql(crate::ke::ke_defs::SYNCH_LEVEL);
                 KiSwapContext(APC_LEVEL, OldThread);
+                // C: KeLowerIrql(DISPATCH_LEVEL) — the idle loop is pinned there.
+                crate::ke::ke_defs::KeLowerIrql(DISPATCH_LEVEL);
             }
         } else if (*Prcb).ReadySummary != 0 {
             #[cfg(not(feature = "smp"))]
@@ -360,7 +365,11 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
 
                 core::arch::asm!("msr daifclr, #2");
 
+                // C: KfRaiseIrql(SYNCH_LEVEL) — do the swap at SYNCH_LEVEL.
+                crate::ke::ke_defs::KfRaiseIrql(crate::ke::ke_defs::SYNCH_LEVEL);
                 KiSwapContext(APC_LEVEL, OldThread);
+                // C: KeLowerIrql(DISPATCH_LEVEL) — the idle loop is pinned there.
+                crate::ke::ke_defs::KeLowerIrql(DISPATCH_LEVEL);
             }
         } else {
             core::arch::asm!("wfe");

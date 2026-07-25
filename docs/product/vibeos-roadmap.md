@@ -527,8 +527,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   match a declaration with no callers. Resolves naturally when task #14 normalizes bindgen
   conventions.
 
-- **amd64 `ExHardError` 6 failures — OPEN, NOT SMP-related, regressed on master since
-  2026-07-17** (found 2026-07-24 by the UP:=smp1 conformance experiment). `ExHardError.c:139-144`
+- **`ExHardError` 6 failures — OPEN, NOT SMP-related, NOT amd64-specific, regressed on master
+  since 2026-07-17** (found 2026-07-24 by the UP:=smp1 conformance experiment; **arch scope
+  widened 2026-07-25** — arm64 reports the identical **24/6** split once its BuildType bug is
+  fixed and the test runs at all, so the same six subtests fail on both arches and the cause is
+  in the shared `ex-rust`/`winsrv-rust` hard-error path, not in anything amd64-specific. That
+  also kills the "it's an amd64 LPC-path change" framing below as the *whole* story.)
+  `ExHardError.c:139-144`
   — the six `CheckHardError(0x40000009..0x4000000d, …)` cases that raise a hard error with an
   **out-of-range `ValidResponseOptions`** (9, 10, 11, 12, `MAXULONG/2+1`, `MAXULONG`) and expect
   `ResponseReturnToCaller` (0). We return **1 = `ResponseNotHandled`** (the test's sentinel is 27,

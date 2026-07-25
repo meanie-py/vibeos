@@ -20,7 +20,16 @@ const ESUCCESS: ddk::ARC_STATUS = ddk::_ARC_CODES_ESUCCESS as ddk::ARC_STATUS;
 const PASSIVE_LEVEL: ddk::KIRQL = 0;
 const APC_LEVEL: ddk::KIRQL = 1;
 const DISPATCH_LEVEL: ddk::KIRQL = 2;
+/// IRQL the HAL synchronizes at — must agree with the kernel-side SYNCH_LEVEL
+/// (ntoskrnl-rust ke/ke_defs.rs, ntkrnl-sys inline/ke.rs) and with
+/// `ndk/arm64/ketypes.h:29`. UP: DISPATCH. MP: IPI_LEVEL(14) - 2 = 12, which
+/// sits above every DIRQL (max 11) and below CLOCK_LEVEL(13) — device lines
+/// masked, scheduler tick and IPIs still delivered. See arm64/clock.rs's
+/// IRQL↔GIC priority map; 12 is exactly the gap it already leaves free.
+#[cfg(not(feature = "smp"))]
 const SYNCH_LEVEL: ddk::KIRQL = DISPATCH_LEVEL;
+#[cfg(feature = "smp")]
+const SYNCH_LEVEL: ddk::KIRQL = 14 - 2;
 
 static mut HalpCurrentTimeIncrement: ddk::ULONG = 100000;
 static mut HalpNextTimeIncrement: ddk::ULONG = 100000;
