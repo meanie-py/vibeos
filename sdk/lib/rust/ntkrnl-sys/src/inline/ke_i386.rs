@@ -100,9 +100,23 @@ core::arch::global_asm!(
     "  sti",
     "  ret",
 
-    // ___debugbreak@0
+    // ___debugbreak — BOTH i386 decorations, deliberately.
+    //
+    // `__debugbreak` is an MSVC *intrinsic*, and the DDK spells it cdecl — so a Rust
+    // `extern "C" { fn __debugbreak(); }` emits a reference to `___debugbreak`, with no `@N`.
+    // Only the stdcall spelling `___debugbreak@0` existed here, so any cdecl caller failed to
+    // link — which is what broke ksecdd.sys on i386 (`ld.lld: undefined symbol:
+    // ___debugbreak`, referenced by ksecdd-rust/src/dispatch.rs). It surfaced only on a COLD
+    // build, because ksecdd.sys relinks only when its inputs change.
+    //
+    // Aliasing is sound here rather than a papering-over: the function takes NO ARGUMENTS, so
+    // stdcall and cdecl are byte-identical (there is nothing for the callee to pop). Both
+    // labels therefore name the same correct code. amd64 needs no equivalent — that target has
+    // one undecorated spelling for both conventions.
     ".globl ___debugbreak@0",
+    ".globl ___debugbreak",
     "___debugbreak@0:",
+    "___debugbreak:",
     "  int3",
     "  ret",
 
