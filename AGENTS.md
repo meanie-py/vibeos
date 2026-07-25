@@ -528,7 +528,40 @@ python -m rustconv trace-catalog                        # Generate debugcon trac
 python -m rustconv check                                # cargo check ×3 targets
 python -m rustconv candidate-check candidates.json --repair  # Batched x3 candidate oracle
 python -m rustconv substrate-plan path/to/report.json   # Cluster compiler roots by authority
+python -m rustconv crate-repair foo-rust --arches i386 amd64 arm64  # $0 deterministic repair
+python -m rustconv.profile_derive dll/win32/foo --emit report       # Derive bindgen island
 ```
+
+### Plain-C modules: the deterministic-first loop — DO THIS, it is all $0 (2026-07-24)
+
+Sealing and the deterministic passes are **no longer shell32-only**. For any plain-C module
+(driver, Win32 DLL, service) run these in order. Each step closes a bug class the next one
+cannot see, and steps 1–3 cost nothing:
+
+1. **`python -m rustconv.profile_derive <module> --emit report`** — derives the bindgen island
+   from the CMake source list + each TU's real include closure and audits every `case` label.
+   **Its ERROR findings are BLOCKING.** A constant missing from the island silently becomes a
+   catch-all `match` arm that swallows every case (§9.112 — this shipped a BUGCHECK 0x1E).
+   It also flags consts that live only in a *secondary* `-sys` island (e.g. rtl8139's
+   `CmResourceTypePort` is in `hal_bindgen_*.rs`, NOT `bindgen_*.rs`) — those need an explicit
+   `use ntkrnl_sys::hal_ddk`, and allowlisting the header does nothing.
+2. **`rustconv translate <file> --seal-facts --seal-calls`** — **always pass both.** Constants
+   and call occurrences then never go through the LLM; a dropped/invented one fails loudly
+   instead of silently. Running without them shipped 13,503 unprotected constant occurrences,
+   the same class as the 61 invented kernel stop codes (§9.113). Trivial bodies are lowered
+   deterministically for $0 in the same run (~9% repo-wide; 41% on stub-heavy modules, but
+   ~0% on real driver code — do not budget on it).
+3. **`rustconv crate-repair <crate>-rust --arches i386 amd64 arm64`** — bounded deterministic
+   repair of the whole-crate `cargo check`, run BEFORE paying anything to fix compile errors.
+   **Pass all three arches**: a numeric cast inferred from one bakes that arch's pointer width
+   and breaks the other two, so width-dependent casts are only applied on cross-target
+   agreement. It refuses rustc's `.try_into().unwrap()` suggestion by design (that turns C's
+   silent truncation into a panic in a live service).
+4. Cohab flip → `vibeos-cli gate`.
+
+Note the interaction: sealing restores constant NAMES into `match` patterns, so step 1 gets
+*more* important once you seal, not less. Rationale + measurements: field manual **§9.114**
+and `docs/engineering/rustconv-pipeline.md`.
 
 > **⚠️ `translate`/`submit` SPEND REAL MONEY — read this before running them.** Multiple agents have wasted >$100 by killing translations mid-run and losing the output. The rules:
 > - **NEVER Ctrl-C / kill a `translate` or `submit` mid-call to "adjust something."** Let it finish. `translate` makes one paid call **per function** — kill it at function 35/40 and you re-pay for all 35 on the retry. If you must change something, wait for it to finish, *then* re-run.
