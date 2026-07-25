@@ -66,6 +66,17 @@ transforming it. Finish the whole task.
 reach — fix it. The default is *do it*, not "want me to file a task?" Reserve true handoffs
 for work owned by another lane that you genuinely cannot do.
 
+**A wrapper script is a bug report against the tool.** If you catch yourself hand-rolling a
+shell wrapper, or *remembering a recipe*, to work around how a tool behaves — that is the
+detection event for a missing mechanism, and the fix is to change the tool, not to remember
+harder. Two from one session: every merge-queue drain went through a hand-written
+`nohup setsid drain.sh` because `land` blocked (now it conducts detached), and "never broad-kill
+QEMUs" had no safe command for months so agents kept reaching for `pkill` (now `vibeos-cli
+kill`). This is the rule whose job is to **delete other rules**: a rule in this file is a
+*deferred mechanization*, it costs context in every session for every agent forever, and each
+one is the scar of an incident that a tool could have made impossible. See
+`e5f532ad1aa` — "the footgun program" — for the precedent.
+
 **Don't idle waiting on another agent.** "Waiting on X's fix" is not a status; "working Y while
 X lands" is. If blocked, do another part of the task, route around the blocker (local
 shim/stub/cohab/alternate path), or just fix the blocker yourself — it is all one repo, you can
@@ -159,13 +170,19 @@ already had one "brutal consolidation" of 40 docs down to 11.)
   — identical content from a divergent lineage collapses to a no-op. A genuine conflict is the
   rare real signal: resolve it and move on. If it didn't conflict, there was nothing to look at;
   stop narrating it. (The rewind incident was a `reset --hard` to a stale ref, **not** a merge.)
-- **Land with `./vibeos-cli land`, not gate-then-push by hand** (2026-07-25). It holds ONE
-  fleet-wide FIFO lock across fetch → merge `origin/master` → gate → push, so master cannot move
-  under a gating lane. Hand-rolling it is what made every lane race: the stamp is keyed to an
-  exact TREE, so whoever pushes first voids everyone else's gate and forces a re-gate — and each
-  wasted gate is 3 builds + 4 boots of fleet load that widens the window that voided it. `land`
-  also skips the gate when a fresh green stamp already covers the tree, so "I gated and nobody
-  raced me" costs seconds. `./vibeos-cli land-status` (or `host-status`) shows who holds it.
+- **Land with `./vibeos-cli land` — it is a MERGE QUEUE** (2026-07-25). `land` publishes your
+  lane tip to the queue and returns in ~2s; you do **not** merge master, do **not** gate, do
+  **not** wait. Whichever agent finds the land lock free becomes the *conductor*: it merges every
+  queued lane onto current master in a dedicated integration worktree, gates **once**, and
+  fast-forwards master to exactly the commit it gated. N ready lanes = ONE gate, zero blocked
+  agents. A conflict is bounced back to its lane (never resolved for you); a red batch splits
+  recursively so the culprit is rejected with its classification + artifact dir while the
+  innocent lanes still land. `./vibeos-cli land-status [--mine]` shows the conductor, the queue,
+  and your verdict. `land --direct` is the opt-out (single-lane: merge master → gate → push,
+  same lock) and `land --drain` forces a drain if the queue ever sits with no conductor.
+  Hand-rolling gate-then-push is what made every lane race: the stamp is keyed to an exact
+  TREE, so whoever pushes first voids everyone else's gate — and each wasted gate is 3 builds
+  + 4 boots of fleet load that widens the window that voided it.
 - **Never move the local `master` ref from a worktree that doesn't have it checked out** — no
   `branch -f master`, no `update-ref`, no `fetch origin master:master`. That leaves the OTHER
   worktree's index+files at the old tree, which resurfaces as a giant phantom staged revert (the
@@ -210,10 +227,14 @@ mostly an Mm bug, field manual §9.16; arm64 boots ~40s now).
 `pkill -9 -f qemu`, `kill -9 -P <ppid>`, `pgrep -f "qemu/start.sh …" | kill -9` and friends
 routinely match an ancestor of *your own* shell — your `start.sh`, your bash, the harness pid —
 and SIGKILL your whole process tree. This has killed an agent mid-run at least twice (exit
-9 / exit 144). To stop a QEMU: find it with `qemu/ps` / `./vibeos-cli ps`, then kill by instance
-uid (`backend.py:kill_by_uid`, pgroup-scoped), or let the reaper handle it
-(`VIBEOS_QEMU_MAX_LIFETIME`). Every QEMU is pid/uid/pgroup-scoped precisely so you never need a
-broad match. If a boot "keeps respawning," find the launcher loop and stop *that*.
+9 / exit 144).
+
+**Use `./vibeos-cli kill`** (added 2026-07-25, because until then this rule had no tool and so
+was a rule you got to break). Select by pid from `ps`, by `--arch`, by `--stale` (owner gone) or
+`--overdue`; there is deliberately no name/regex selector, and it **refuses** a target that is
+one of our own ancestors. `--dry-run` first if unsure. Or just let the reaper handle it
+(`VIBEOS_QEMU_MAX_LIFETIME`). If a boot "keeps respawning," find the launcher loop and stop
+*that*.
 
 ### Money and paid artifacts
 
@@ -265,8 +286,8 @@ guide: `tests/qemu/cli/README.md`.
 ./vibeos-cli check                          # source lints, 0 NEW vs tools/lint-baseline/
 ./vibeos-cli check-tooling                  # ruff+pyright+pytest for OUR python
 ./vibeos-cli gate                           # build serial -> smoke all arches parallel -> retry known flakes
-./vibeos-cli land                           # THE way to land: FIFO lock -> merge master -> gate -> push
-./vibeos-cli land-status                    # who is landing right now + who is queued
+./vibeos-cli land                           # THE way to land: submit to the merge queue (train it if free)
+./vibeos-cli land-status --mine             # conductor + queue + MY verdict (landed / rejected + artifact)
 ./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
 ./vibeos-cli host-status                    # build/boot CPU leases + the land lock, across worktrees
 ./vibeos-cli debug  start amd64 --gdb       # GDB over the real (UEFI) boot

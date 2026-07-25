@@ -2937,6 +2937,11 @@ class _Args:
         self.no_push = False
         self.dry_run = False
         self.queue_timeout = 5
+        # `land` defaults to the merge-QUEUE path; these direct-path tests opt out
+        # explicitly (and test_land_default_path_submits_to_the_queue covers the default).
+        self.direct = True
+        self.drain = False
+        self.wait = False
         self.__dict__.update(kw)
 
 
@@ -3181,3 +3186,477 @@ def test_lint_baseline_compares_prefixless_findings_verbatim():
     base = {"MISMATCH: NtFoo stdcall vs cdecl"}
     assert lints._new_findings({"MISMATCH: NtFoo stdcall vs cdecl"}, base) == []
     assert lints._new_findings({"MISMATCH: NtBar stdcall vs cdecl"}, base) != []
+
+
+# --- the merge queue: submit / batch / split-attribution / reject channel ---
+
+from . import queue as q_mod  # noqa: E402
+
+
+@pytest.fixture
+def queue_repo(tmp_path: Path, monkeypatch):
+    """A clone with an `origin` and two lanes ready to submit."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True, capture_output=True)
+    seed = tmp_path / "seed"
+    _git_init_commit(seed, origin)
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path / "root"))
+    return seed, origin
+
+
+def _commit(repo: Path, name: str, body: str = "x\n") -> str:
+    (repo / name).write_text(body)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-qm", f"add {name}"], cwd=repo, check=True, capture_output=True
+    )
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_queue_submit_pins_the_tip_with_a_ref(queue_repo):
+    """The record must never be visible before the ref: a conductor that reads a submission
+    whose objects can be GC'd would fail to land work that was accepted."""
+    repo, _ = queue_repo
+    tip = _commit(repo, "mine.txt")
+    sub = q_mod.submit(repo)
+    assert sub.tip == tip
+    assert (
+        subprocess.run(
+            ["git", "rev-parse", "--verify", sub.ref], cwd=repo, capture_output=True, text=True
+        ).stdout.strip()
+        == tip
+    )
+    assert [s.seq for s in q_mod.pending(repo)] == [sub.seq]
+
+
+def test_queue_is_fifo_by_arrival(queue_repo):
+    repo, _ = queue_repo
+    _commit(repo, "a.txt")
+    first = q_mod.submit(repo, lane="lane-a")
+    _commit(repo, "b.txt")
+    second = q_mod.submit(repo, lane="lane-b")
+    assert [s.seq for s in q_mod.pending(repo)] == [first.seq, second.seq]
+
+
+def test_queue_resolve_always_leaves_a_verdict(queue_repo):
+    """A submission leaving the queue WITHOUT a result is the one unrecoverable outcome —
+    the agent can never learn what happened to its work."""
+    repo, _ = queue_repo
+    _commit(repo, "a.txt")
+    sub = q_mod.submit(repo)
+    q_mod.resolve(repo, sub, outcome="rejected", reason="nope", classification="GATE_RED")
+    assert q_mod.pending(repo) == []
+    recs = q_mod.results(repo)
+    assert len(recs) == 1 and recs[0]["outcome"] == "rejected" and recs[0]["seq"] == sub.seq
+    # the ref is released too, so the objects are collectable
+    assert not q_mod.git_ok(repo, "rev-parse", "--verify", sub.ref)
+
+
+def test_queue_conflicting_submission_is_bounced_not_resolved(queue_repo, monkeypatch):
+    """A conflict is the lane's intent to reconcile, never the conductor's to guess. The rest
+    of the batch must still proceed."""
+    repo, _origin = queue_repo
+    # lane A lands "shared.txt" on master directly
+    _commit(repo, "shared.txt", "master version\n")
+    subprocess.run(
+        ["git", "push", "-q", "origin", "master"], cwd=repo, check=True, capture_output=True
+    )
+    # a conflicting lane: same file, different content, branched from before
+    subprocess.run(
+        ["git", "checkout", "-q", "-b", "conflicting", "HEAD~1"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    _commit(repo, "shared.txt", "lane version\n")
+    bad = q_mod.submit(repo, lane="conflicting")
+    # an innocent lane touching a different file
+    subprocess.run(
+        ["git", "checkout", "-q", "-b", "innocent", "master"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    _commit(repo, "other.txt")
+    good = q_mod.submit(repo, lane="innocent")
+
+    wt = repo  # gate in-place for the unit test; the real conductor uses its own worktree
+    logs: list[str] = []
+    res = q_mod.build_batch(repo, wt, [bad, good], logs.append)
+    assert [s.seq for s in res.conflicted] == [bad.seq]
+    assert [s.seq for s in res.merged] == [good.seq]
+    assert any("CONFLICT" in m for m in logs)
+    assert not (repo / ".git" / "MERGE_HEAD").exists(), "left the tree mid-merge"
+
+
+def test_queue_red_batch_splits_and_spares_the_innocent(queue_repo, monkeypatch):
+    """The whole point of attribution: one bad submission must not reject its neighbours.
+    Gate says red iff the batch contains the culprit."""
+    repo, _ = queue_repo
+    subs = []
+    for lane in ("a", "b", "c", "d"):
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", f"l{lane}", "master"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        _commit(repo, f"{lane}.txt")
+        subs.append(q_mod.submit(repo, lane=f"lane-{lane}"))
+    culprit = subs[2]
+
+    gated: list[tuple[str, ...]] = []
+
+    def fake_build(repo_, wt_, batch, log):
+        return q_mod.BatchResult(ok=False, tip="t" * 40, merged=list(batch), conflicted=[])
+
+    def fake_gate(wt_, log, retries=2):
+        # red exactly when the culprit is in the current subset
+        subset = gated[-1]
+        ok = culprit.lane not in subset
+        return ok, "" if ok else "BUGCHECK", "/tmp/art", "smoke:amd64: BUGCHECK 0x50"
+
+    def tracking_build(repo_, wt_, batch, log):
+        gated.append(tuple(s.lane for s in batch))
+        return fake_build(repo_, wt_, batch, log)
+
+    monkeypatch.setattr(q_mod, "build_batch", tracking_build)
+    monkeypatch.setattr(q_mod, "gate_batch", fake_gate)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "")
+    monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
+    # This scenario is "the base is fine, one lane is bad" — see
+    # test_queue_red_base_rejects_nobody for the other half.
+    monkeypatch.setattr(q_mod.BaseCheck, "is_green", lambda *a, **k: True)
+
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    by_lane = {r["lane"]: r for r in q_mod.results(repo, limit=50)}
+    assert by_lane["lane-c"]["outcome"] == "rejected", by_lane["lane-c"]
+    assert by_lane["lane-c"]["classification"] == "BUGCHECK"
+    assert by_lane["lane-c"]["artifact"] == "/tmp/art"
+    for lane in ("lane-a", "lane-b", "lane-d"):
+        assert by_lane[lane]["outcome"] == "landed", (lane, by_lane[lane])
+    assert q_mod.pending(repo) == [], "every submission must leave the queue with a verdict"
+
+
+def test_queue_green_batch_lands_everything_in_one_gate(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    subs = []
+    for lane in ("a", "b", "c"):
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", f"g{lane}", "master"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        _commit(repo, f"g{lane}.txt")
+        subs.append(q_mod.submit(repo, lane=f"lane-{lane}"))
+    gates = []
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
+    )
+    monkeypatch.setattr(
+        q_mod, "gate_batch", lambda w, log, retries=2: (gates.append(1), True, "", "", "")[1:]
+    )
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "")
+    monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(gates) == 1, "3 landings must cost ONE gate"
+    assert all(r["outcome"] == "landed" for r in q_mod.results(repo, limit=50))
+
+
+def test_queue_conductor_election_is_the_land_lock(queue_repo, monkeypatch):
+    """No daemon: whoever finds the lock free trains. A second agent must NOT block."""
+    repo, _ = queue_repo
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: 0)
+    with hl_mod.land_lock("someone-else", timeout=1.0):
+        assert q_mod.try_become_conductor(repo, lambda m: None) is False
+    assert q_mod.try_become_conductor(repo, lambda m: None) is True
+
+
+def test_queue_already_landed_submission_needs_no_gate(queue_repo):
+    """Free landing: a tip already in master (it rode someone else's batch) must be resolved,
+    not re-gated."""
+    repo, _ = queue_repo
+    tip = _commit(repo, "landed.txt")
+    subprocess.run(
+        ["git", "push", "-q", "origin", "master"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(["git", "fetch", "-q", "origin"], cwd=repo, check=True, capture_output=True)
+    sub = q_mod.submit(repo, tip=tip)
+    assert q_mod.already_landed(repo, sub) is True
+
+
+def test_land_default_path_submits_to_the_queue(lane_repo, tmp_path, monkeypatch):
+    """`land` with no flags must go through the merge queue, not the direct path — the direct
+    path is the opt-out (`--direct`), because a fleet landing directly is the serialization
+    this exists to remove. And it must spawn the conductor DETACHED: the elected agent was the
+    last one still blocked on a gate (which is why every dev drain went through a hand-rolled
+    nohup wrapper)."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(land_mod, "_land_direct", lambda *a: pytest.fail("took the direct path"))
+    monkeypatch.setattr(
+        q_mod, "drain", lambda *a, **k: pytest.fail("conducted INLINE — must be detached")
+    )
+    spawned = []
+    monkeypatch.setattr(land_mod, "_spawn_detached", lambda argv, cwd, log: spawned.append(argv))
+    rc = land_mod.land(_Args(direct=False), lane)
+    assert rc == 0
+    assert len(spawned) == 1, spawned
+    assert spawned[0][1:] == ["land", "--drain", "--foreground"], spawned[0]
+    assert q_mod.pending(lane), "the submission itself must be queued"
+
+
+def test_land_foreground_conducts_inline(lane_repo, tmp_path, monkeypatch):
+    """--foreground is the escape hatch for watching a batch (and is what the detached
+    conductor runs as its own child)."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(
+        land_mod, "_spawn_detached", lambda *a: pytest.fail("spawned despite --foreground")
+    )
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda repo, log, **k: drained.append(1) or 0)
+    assert land_mod.land(_Args(direct=False, foreground=True), lane) == 0
+    assert drained == [1]
+
+
+def test_prune_never_reclaims_the_integration_tree(tmp_path):
+    """It is idle between batches — exactly prune's target shape — but its warm caches are
+    what make a batch gate in minutes, and EVERY landing in the fleet would pay for a cold
+    one."""
+    wt = tmp_path / q_mod.INTEGRATION_DIRNAME
+    reason = prune.classify(
+        wt,
+        current=tmp_path / "other",
+        live_qemu=set(),
+        active_build=set(),
+        allow_self=False,
+        min_age_hours=0,
+        now=0.0,
+        newest_mtime=None,
+    )
+    assert reason and "integration" in reason
+    # ...but --self from inside it still allows a deliberate reclaim
+    assert (
+        prune.classify(
+            wt,
+            current=wt,
+            live_qemu=set(),
+            active_build=set(),
+            allow_self=True,
+            min_age_hours=0,
+            now=0.0,
+            newest_mtime=None,
+        )
+        is None
+    )
+
+
+def _safe_git(monkeypatch):
+    """Patch out only the MUTATING git verbs. Blanket-patching `queue.git` also breaks
+    `queue_dir()` (it resolves --git-common-dir), which silently points pending/results at
+    the wrong directory and makes every queue assertion vacuously true — that bit me once."""
+    real = q_mod.git
+    mutating = {"push", "reset", "clean", "fetch", "merge", "update-ref", "worktree"}
+
+    def safe(repo_, *args, **kw):
+        if args and args[0] in mutating:
+            return ""
+        return real(repo_, *args, **kw)
+
+    monkeypatch.setattr(q_mod, "git", safe)
+    monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
+
+
+def _two_queued(repo, prefix):
+    subs = []
+    for lane in ("a", "b"):
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", f"{prefix}{lane}", "master"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        _commit(repo, f"{prefix}{lane}.txt")
+        subs.append(q_mod.submit(repo, lane=f"lane-{lane}"))
+    return subs
+
+
+def test_queue_red_base_rejects_nobody_and_halts_the_train(queue_repo, monkeypatch):
+    """The first REAL batch got this wrong: mainline was red (fltmgr-rust failed to compile
+    for i386), the train split down to one submission per half and rejected BOTH — one of
+    them a docs-only change, which cannot break a build. A queue that blames the base's
+    breakage on whoever happens to be in the batch is worse than no queue."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "rb")
+    _safe_git(monkeypatch)
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="e" * 40, merged=list(b)),
+    )
+    # EVERYTHING is red, base included — the honest verdict is "not their fault".
+    monkeypatch.setattr(
+        q_mod, "gate_batch", lambda w, log, retries=2: (False, "BUILD_FAIL", "/tmp/a", "ninja")
+    )
+    with pytest.raises(q_mod.BaseRed) as ei:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert "origin/master itself fails the gate" in str(ei.value)
+    assert q_mod.results(repo, limit=20) == [], "rejected a lane for mainline's breakage"
+    assert len(q_mod.pending(repo)) == 2, "submissions must stay QUEUED — never judged"
+
+
+def test_queue_red_batch_with_green_base_rejects_the_guilty(queue_repo, monkeypatch):
+    """The mirror: base green ⇒ the submissions really are at fault and must be rejected."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "gb")
+    _safe_git(monkeypatch)
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
+    )
+    monkeypatch.setattr(
+        q_mod, "gate_batch", lambda w, log, retries=2: (False, "BUGCHECK", "/tmp/a", "boom")
+    )
+    monkeypatch.setattr(q_mod.BaseCheck, "is_green", lambda *a, **k: True)
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    recs = q_mod.results(repo, limit=20)
+    assert len(recs) == 2 and all(r["outcome"] == "rejected" for r in recs), recs
+    assert all(r["classification"] == "BUGCHECK" for r in recs)
+
+
+def test_queue_base_check_is_memoized(queue_repo, monkeypatch):
+    """A red batch must gate the base ONCE, not once per half — the base cannot change while
+    the conductor holds the land lock, and a full gate is minutes."""
+    repo, _ = queue_repo
+    _safe_git(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        q_mod,
+        "gate_batch",
+        lambda w, log, retries=2: (calls.append(1), (True, "", "", ""))[1],
+    )
+    base = q_mod.BaseCheck()
+    assert base.is_green(repo, repo, lambda m: None, retries=0) is True
+    assert base.is_green(repo, repo, lambda m: None, retries=0) is True
+    assert len(calls) == 1, f"base gated {len(calls)}x"
+
+
+def test_queue_inconclusive_gate_requeues_instead_of_rejecting(queue_repo, monkeypatch):
+    """HOST_STARVED / LAUNCH_FAIL / a gate that died without a verdict say NOTHING about the
+    code. Rejecting a lane for one sends it hunting a bug that does not exist — the same error
+    as blaming a red base, which is why both halt instead."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "inc")
+    _safe_git(monkeypatch)
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="c" * 40, merged=list(b)),
+    )
+    gates = []
+    monkeypatch.setattr(
+        q_mod,
+        "gate_batch",
+        lambda w, log, retries=2: (gates.append(1), (False, "HOST_STARVED", "/tmp/a", "queued"))[1],
+    )
+    with pytest.raises(q_mod.Inconclusive):
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert q_mod.results(repo, limit=20) == [], "rejected a lane for an environment failure"
+    assert len(q_mod.pending(repo)) == 2
+    assert len(gates) == 1, "must NOT split — splitting re-discovers that the host is busy"
+
+
+def test_queue_empty_classification_is_inconclusive(queue_repo, monkeypatch):
+    """A gate that dies without writing a verdict is the LEAST conclusive outcome there is."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "noc")
+    _safe_git(monkeypatch)
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="b" * 40, merged=list(b)),
+    )
+    monkeypatch.setattr(q_mod, "gate_batch", lambda w, log, retries=2: (False, "", "", ""))
+    with pytest.raises(q_mod.Inconclusive):
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(q_mod.pending(repo)) == 2
+
+
+def test_queue_rejection_names_what_it_was_gated_against(queue_repo, monkeypatch):
+    """When an earlier half of the batch has already landed, 'red on this submission alone' is
+    misleading — the lane may be green against the master it branched from. The verdict has to
+    name the neighbour, or the lane hunts a phantom bug in its own diff."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "ctx")
+    _safe_git(monkeypatch)
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="a" * 40, merged=list(b)),
+    )
+    # full batch red; first half green (lands); second half red (genuinely rejected)
+    seen = []
+
+    def gate(w, log, retries=2):
+        seen.append(1)
+        ok = len(seen) == 2  # 1st = full batch (red), 2nd = first half (green), 3rd = second half
+        return (True, "", "", "") if ok else (False, "BUGCHECK", "/tmp/a", "boom")
+
+    monkeypatch.setattr(q_mod, "gate_batch", gate)
+    monkeypatch.setattr(q_mod.BaseCheck, "is_green", lambda *a, **k: True)
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    rej = [r for r in q_mod.results(repo, limit=20) if r["outcome"] == "rejected"]
+    landed = [r for r in q_mod.results(repo, limit=20) if r["outcome"] == "landed"]
+    assert len(landed) == 1 and len(rej) == 1, q_mod.results(repo, limit=20)
+    assert "gated against master" in rej[0]["reason"]
+    assert landed[0]["lane"] in rej[0]["reason"], "must name the neighbour that landed first"
+
+
+def test_queue_batch_gate_is_cold_and_collects_all_failures(monkeypatch, tmp_path):
+    """Warm builds hid THREE simultaneous mainline breaks: a crate that isn't recompiled can't
+    fail, and a .sys that isn't relinked can't fail to link. The batch gate must therefore be
+    cold AND use -k0, or it keeps certifying a tree that does not build from scratch."""
+    seen = {}
+
+    def _fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(q_mod.subprocess, "run", _fake_run)
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
+    q_mod.gate_batch(tmp_path, lambda m: None, retries=0)
+    assert "--clean" in seen["cmd"], seen["cmd"]
+    assert "--keep-going" in seen["cmd"], seen["cmd"]
+
+
+def test_queue_batch_gate_cold_can_be_opted_out(monkeypatch, tmp_path):
+    monkeypatch.setenv("VIBEOS_QUEUE_CLEAN", "0")
+    seen = {}
+
+    def _fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(q_mod.subprocess, "run", _fake_run)
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
+    q_mod.gate_batch(tmp_path, lambda m: None, retries=0)
+    assert "--clean" not in seen["cmd"]
+
+
+def test_build_keep_going_maps_to_ninja_k0():
+    """-k0 only for verdict builds: local iteration wants fail-fast, since you just broke it."""
+    from argparse import Namespace
+
+    assert build_mod._ninja_keep_going(Namespace(keep_going=True)) == ["-k0"]
+    assert build_mod._ninja_keep_going(Namespace(keep_going=False)) == []
+    assert build_mod._ninja_keep_going(None) == []
