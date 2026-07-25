@@ -292,7 +292,7 @@ _SYM_OFFSET = re.compile(r"\+(\d+)\b")
 
 # addr2sym's index holds FILE VAs; a bugcheck reports RUNTIME VAs. The difference
 # is `kernel_runtime_base - ImageBase`, and without it every kernel PC lands past
-# the end of the index (see §9.127).
+# the end of the index (see §9.137).
 #
 # i386: base 0x804c3000, ImageBase 0x400000 -> 0x800c3000. That base is not a
 # guess — four independently recorded `ntoskrnl+<off> (<addr>)` pairs from

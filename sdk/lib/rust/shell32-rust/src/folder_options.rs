@@ -1,8 +1,5 @@
-//! Rust-owned `CFolderOptions` COM identity and state.
-//!
-//! Property-page callbacks and the private `IBrowserService2` operation stay behind
-//! narrow C++ bridges: those surfaces depend on source-local dialog procedures and a
-//! very large inherited vtable, while the object's public ABI is deterministic.
+//! Rust-owned `CFolderOptions` COM identity, state, property pages, and default-view
+//! settings helpers.
 
 use crate::shellcom::*;
 use crate::types::*;
@@ -11,6 +8,75 @@ use core::ffi::c_void;
 pub type EXPPS = UINT;
 pub type LPFNSVADDPROPSHEETPAGE =
     Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
+pub type DLGPROC = unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR;
+pub type LPFNPSPCALLBACKW =
+    unsafe extern "system" fn(HWND, UINT, *mut PROPSHEETPAGEW) -> UINT;
+
+#[repr(C)]
+pub struct PROPSHEETPAGEW {
+    pub dwSize: DWORD,
+    pub dwFlags: DWORD,
+    pub hInstance: HINSTANCE,
+    pub pszTemplate: LPCWSTR,
+    pub hIcon: HANDLE,
+    pub pszTitle: LPCWSTR,
+    pub pfnDlgProc: Option<DLGPROC>,
+    pub lParam: LPARAM,
+    pub pfnCallback: Option<LPFNPSPCALLBACKW>,
+    pub pcRefParent: *mut UINT,
+    pub pszHeaderTitle: LPCWSTR,
+    pub pszHeaderSubTitle: LPCWSTR,
+    pub hActCtx: HANDLE,
+}
+
+#[repr(C)]
+struct IGlobalFolderSettings {
+    lpVtbl: *const IGlobalFolderSettingsVtbl,
+}
+
+#[repr(C)]
+struct IGlobalFolderSettingsVtbl {
+    QueryInterface: unsafe extern "system" fn(
+        *mut IGlobalFolderSettings,
+        REFIID,
+        *mut *mut c_void,
+    ) -> HRESULT,
+    AddRef: unsafe extern "system" fn(*mut IGlobalFolderSettings) -> ULONG,
+    Release: unsafe extern "system" fn(*mut IGlobalFolderSettings) -> ULONG,
+    Get: unsafe extern "system" fn(*mut IGlobalFolderSettings, *mut c_void, UINT) -> HRESULT,
+    Set: unsafe extern "system" fn(
+        *mut IGlobalFolderSettings,
+        *const c_void,
+        UINT,
+        UINT,
+    ) -> HRESULT,
+}
+
+#[repr(C)]
+struct IBrowserService2 {
+    lpVtbl: *const IBrowserService2Vtbl,
+}
+
+// shdeprecated.idl: IBrowserService contributes 30 methods after IUnknown;
+// IBrowserService2 then publishes WndProcBS followed by SetAsDefFolderSettings.
+#[repr(C)]
+struct IBrowserService2Vtbl {
+    QueryInterface:
+        unsafe extern "system" fn(*mut IBrowserService2, REFIID, *mut *mut c_void) -> HRESULT,
+    AddRef: unsafe extern "system" fn(*mut IBrowserService2) -> ULONG,
+    Release: unsafe extern "system" fn(*mut IBrowserService2) -> ULONG,
+    browser_service_methods: [usize; 30],
+    WndProcBS: usize,
+    SetAsDefFolderSettings: unsafe extern "system" fn(*mut IBrowserService2) -> HRESULT,
+}
+
+#[repr(C)]
+struct SFV_CREATE {
+    cbSize: UINT,
+    pshf: *mut IShellFolder,
+    psvOuter: *mut c_void,
+    psfvcb: *mut c_void,
+}
 
 #[repr(C)]
 pub struct IShellExtInit {
@@ -79,6 +145,25 @@ extern "C" {
     static IID_IShellExtInit: IID;
     static IID_IShellPropSheetExt: IID;
     static IID_IObjectWithSite: IID;
+    static IID_IGlobalFolderSettings: IID;
+    static CLSID_GlobalFolderSettings: CLSID;
+    static IID_IBrowserService2: IID;
+    static IID_IShellBrowser: IID;
+    static CGID_DefView: GUID;
+
+    fn SH_CreatePropertySheetPageEx(
+        dialog_id: WORD,
+        dlgproc: DLGPROC,
+        parameter: LPARAM,
+        title: LPCWSTR,
+        callback: Option<LPFNPSPCALLBACKW>,
+    ) -> HPROPSHEETPAGE;
+    fn SH_CreatePropertySheetPage(
+        dialog_id: WORD,
+        dlgproc: DLGPROC,
+        parameter: LPARAM,
+        title: LPCWSTR,
+    ) -> HPROPSHEETPAGE;
 }
 
 extern "system" {
@@ -89,17 +174,33 @@ extern "system" {
     fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
-
-    fn CFolderOptions_AddPages_CppBridge(
+    fn CoCreateInstance(
+        clsid: REFCLSID,
+        outer: *mut IUnknown,
+        context: DWORD,
+        riid: REFIID,
+        out: *mut *mut c_void,
+    ) -> HRESULT;
+    fn IUnknown_QueryService(
         object: *mut IUnknown,
-        add_page: LPFNSVADDPROPSHEETPAGE,
-        parameter: LPARAM,
+        service: REFGUID,
+        riid: REFIID,
+        out: *mut *mut c_void,
     ) -> HRESULT;
-    fn CFolderOptions_HandleDefFolderSettings_CppBridge(
-        site: *mut IUnknown,
-        action: i32,
+    fn IUnknown_Exec(
+        object: *mut IUnknown,
+        command_group: REFGUID,
+        command: DWORD,
+        options: DWORD,
+        input: *mut c_void,
+        output: *mut c_void,
     ) -> HRESULT;
-    fn CFolderOptions_ResetGlobalAndDefViewFolderSettings_CppBridge() -> HRESULT;
+    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
+    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IUnknown) -> HRESULT;
+    fn DestroyPropertySheetPage(page: HPROPSHEETPAGE) -> BOOL;
+    fn FolderOptionsGeneralDlg(_: HWND, _: UINT, _: WPARAM, _: LPARAM) -> INT_PTR;
+    fn FolderOptionsViewDlg(_: HWND, _: UINT, _: WPARAM, _: LPARAM) -> INT_PTR;
+    fn FolderOptionsFileTypesDlg(_: HWND, _: UINT, _: WPARAM, _: LPARAM) -> INT_PTR;
 }
 
 #[repr(C)]
@@ -114,6 +215,12 @@ pub struct CFolderOptions {
 const DFSA_QUERY: i32 = -1;
 const DFSA_RESET: i32 = 0;
 const DFSA_APPLY: i32 = 1;
+const CLSCTX_INPROC_SERVER: DWORD = 1;
+const DVCMDID_RESET_DEFAULTFOLDER_SETTINGS: DWORD = 1;
+const PSPCB_RELEASE: UINT = 1;
+const IDD_FOLDER_OPTIONS_GENERAL: WORD = 17;
+const IDD_FOLDER_OPTIONS_VIEW: WORD = 18;
+const IDD_FOLDER_OPTIONS_FILETYPES: WORD = 19;
 
 #[inline]
 unsafe fn iid_equal(left: REFIID, right: REFIID) -> bool {
@@ -208,7 +315,71 @@ unsafe extern "system" fn prop_add_pages(
     add_page: LPFNSVADDPROPSHEETPAGE,
     parameter: LPARAM,
 ) -> HRESULT {
-    CFolderOptions_AddPages_CppBridge(this.cast(), add_page, parameter)
+    unsafe extern "system" fn lifetime_callback(
+        _window: HWND,
+        message: UINT,
+        page: *mut PROPSHEETPAGEW,
+    ) -> UINT {
+        if message == PSPCB_RELEASE {
+            let object = (*page).lParam as *mut IUnknown;
+            ((*(*object).lpVtbl).Release)(object);
+        }
+        TRUE as UINT
+    }
+
+    unsafe fn add_property_page(
+        page: HPROPSHEETPAGE,
+        add_page: LPFNSVADDPROPSHEETPAGE,
+        parameter: LPARAM,
+    ) -> HRESULT {
+        if page.is_null() {
+            return E_FAIL;
+        }
+        if add_page.unwrap_unchecked()(page, parameter) != FALSE {
+            return S_OK;
+        }
+        DestroyPropertySheetPage(page);
+        E_FAIL
+    }
+
+    let object = this.cast::<IUnknown>();
+    let sheet_parameter = object as LPARAM;
+    let page = SH_CreatePropertySheetPageEx(
+        IDD_FOLDER_OPTIONS_GENERAL,
+        FolderOptionsGeneralDlg,
+        sheet_parameter,
+        core::ptr::null(),
+        Some(lifetime_callback),
+    );
+    let mut hr = add_property_page(page, add_page, parameter);
+    if hr < 0 {
+        return hr;
+    }
+
+    // The general page owns this reference until PSPCB_RELEASE.
+    ((*(*object).lpVtbl).AddRef)(object);
+
+    let page = SH_CreatePropertySheetPage(
+        IDD_FOLDER_OPTIONS_VIEW,
+        FolderOptionsViewDlg,
+        sheet_parameter,
+        core::ptr::null(),
+    );
+    if page.is_null() || add_page.unwrap_unchecked()(page, parameter) == FALSE {
+        return E_FAIL;
+    }
+
+    let page = SH_CreatePropertySheetPage(
+        IDD_FOLDER_OPTIONS_FILETYPES,
+        FolderOptionsFileTypesDlg,
+        sheet_parameter,
+        core::ptr::null(),
+    );
+    if page.is_null() || add_page.unwrap_unchecked()(page, parameter) == FALSE {
+        E_FAIL
+    } else {
+        S_OK
+    }
 }
 unsafe extern "system" fn prop_replace_page(
     _this: *mut IShellPropSheetExt,
@@ -346,6 +517,90 @@ pub unsafe extern "system" fn CFolderOptions_CreateInstance(
     hr
 }
 
+unsafe fn reset_global_folder_settings() -> HRESULT {
+    let mut settings = core::ptr::null_mut::<IGlobalFolderSettings>();
+    let mut hr = CoCreateInstance(
+        core::ptr::addr_of!(CLSID_GlobalFolderSettings),
+        core::ptr::null_mut(),
+        CLSCTX_INPROC_SERVER,
+        core::ptr::addr_of!(IID_IGlobalFolderSettings),
+        core::ptr::addr_of_mut!(settings).cast(),
+    );
+    if hr >= 0 {
+        hr = ((*(*settings).lpVtbl).Set)(settings, core::ptr::null(), 0, 0);
+        ((*(*settings).lpVtbl).Release)(settings);
+    }
+    hr
+}
+
+#[inline]
+unsafe fn exec_reset_def_view_folder_settings(object: *mut IUnknown) -> HRESULT {
+    IUnknown_Exec(
+        object,
+        core::ptr::addr_of!(CGID_DefView),
+        DVCMDID_RESET_DEFAULTFOLDER_SETTINGS,
+        0,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    )
+}
+
+unsafe fn reset_def_view_folder_settings() -> HRESULT {
+    let mut folder = core::ptr::null_mut::<IShellFolder>();
+    let mut hr = SHGetDesktopFolder(core::ptr::addr_of_mut!(folder));
+    if hr >= 0 {
+        let create = SFV_CREATE {
+            cbSize: core::mem::size_of::<SFV_CREATE>() as UINT,
+            pshf: folder,
+            psvOuter: core::ptr::null_mut(),
+            psfvcb: core::ptr::null_mut(),
+        };
+        let mut view = core::ptr::null_mut::<IUnknown>();
+        hr = SHCreateShellFolderView(core::ptr::addr_of!(create), core::ptr::addr_of_mut!(view));
+        if hr >= 0 {
+            hr = exec_reset_def_view_folder_settings(view);
+            if !view.is_null() {
+                ((*(*view).lpVtbl).Release)(view);
+            }
+        }
+        if !folder.is_null() {
+            ((*(*folder).lpVtbl).Release)(folder);
+        }
+    }
+    hr
+}
+
+unsafe fn reset_global_and_def_view_folder_settings() -> HRESULT {
+    // Match the source: the DefView result is intentionally ignored.
+    let _ = reset_def_view_folder_settings();
+    reset_global_folder_settings()
+}
+
+unsafe fn handle_def_folder_settings(site: *mut IUnknown, action: i32) -> HRESULT {
+    let mut browser = core::ptr::null_mut::<IBrowserService2>();
+    let mut hr = IUnknown_QueryService(
+        site,
+        core::ptr::addr_of!(IID_IShellBrowser),
+        core::ptr::addr_of!(IID_IBrowserService2),
+        core::ptr::addr_of_mut!(browser).cast(),
+    );
+    if hr >= 0 {
+        if action == DFSA_APPLY {
+            hr = ((*(*browser).lpVtbl).SetAsDefFolderSettings)(browser);
+        } else if action == DFSA_RESET {
+            // The command result is intentionally ignored by the C++ source.
+            let _ = exec_reset_def_view_folder_settings(browser.cast());
+        }
+        ((*(*browser).lpVtbl).Release)(browser);
+    }
+
+    if action == DFSA_RESET {
+        // Force a DefView reset even when the browser hosts a third-party view.
+        hr = reset_global_and_def_view_folder_settings();
+    }
+    hr
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn CFolderOptions_CanSetDefFolderSettings_RustBridge(
     object: *mut c_void,
@@ -354,7 +609,7 @@ pub unsafe extern "system" fn CFolderOptions_CanSetDefFolderSettings_RustBridge(
         return FALSE;
     }
     let this = object.cast::<CFolderOptions>();
-    (CFolderOptions_HandleDefFolderSettings_CppBridge((*this).m_pSite, DFSA_QUERY) >= 0) as BOOL
+    (handle_def_folder_settings((*this).m_pSite, DFSA_QUERY) >= 0) as BOOL
 }
 
 #[no_mangle]
@@ -366,7 +621,7 @@ pub unsafe extern "system" fn CFolderOptions_ApplyDefFolderSettings_RustBridge(
         return E_POINTER;
     }
     let this = object.cast::<CFolderOptions>();
-    CFolderOptions_HandleDefFolderSettings_CppBridge(
+    handle_def_folder_settings(
         (*this).m_pSite,
         if reset_to_default != FALSE {
             DFSA_RESET
@@ -379,5 +634,5 @@ pub unsafe extern "system" fn CFolderOptions_ApplyDefFolderSettings_RustBridge(
 #[no_mangle]
 pub unsafe extern "system" fn CFolderOptions_ResetGlobalAndDefViewFolderSettings_RustBridge(
 ) -> HRESULT {
-    CFolderOptions_ResetGlobalAndDefViewFolderSettings_CppBridge()
+    reset_global_and_def_view_folder_settings()
 }

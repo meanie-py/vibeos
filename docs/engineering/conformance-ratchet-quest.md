@@ -1265,7 +1265,7 @@ It restores the committed list on every exit path, Ctrl-C included.
 
 ### 2026-07-25 (later) — the i386-only tail has ONE root, and it is task #18
 
-§9.127 unblocked offline i386 symbolication, so the i386 quarantines stopped being opaque. Two
+§9.137 unblocked offline i386 symbolication, so the i386 quarantines stopped being opaque. Two
 fresh crashes were traced the same night:
 
 | test | fresh PC | resolves to | root |
@@ -1308,7 +1308,7 @@ look like it fixed more than it does.
 
 **Cost of this classification: one grep.** It was available on 2026-07-12 when these nine tests
 were quarantined with "triage owed". The blocker was never the difficulty — it was the recorded
-claim that triage needed a debugger (§9.127).
+claim that triage needed a debugger (§9.137).
 
 **Second confirmation (same night).** `KeDpc` crashed at `_KeInitializeDpc@12+17`
 (`ke/dpc.rs:788`) and its test is unambiguous:
@@ -1361,7 +1361,7 @@ intermittency that would poison the whole i386 sweep. It wants 2-3 confirming ru
 
 ### 2026-07-25 — in fairness: some quarantine notes were exactly right
 
-Two entries today argued that recorded claims decay (§9.127's "symbol-poor" premise; the stale
+Two entries today argued that recorded claims decay (§9.137's "symbol-poor" premise; the stale
 offsets). That is a real failure mode, but it is not the general case and the record should say
 so, because "distrust the notes" is as expensive a heuristic as "trust them".
 

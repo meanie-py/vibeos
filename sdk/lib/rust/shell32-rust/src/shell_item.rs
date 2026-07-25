@@ -318,23 +318,13 @@ pub unsafe extern "system" fn CShellItem_CreateInstance(
 // Deterministic C++ support closure selected from source identifiers.
 
 extern "system" {
+    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn ILFree(pidl: LPITEMIDLIST);
     fn ILRemoveLastID(pidl: LPITEMIDLIST) -> BOOL;
     fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
     fn SHGetNameFromIDList(pidl: PCIDLIST_ABSOLUTE, sigdn: SIGDN, name: *mut PWSTR) -> HRESULT;
-    fn SHCreateShellItem(
-        parent: PCIDLIST_ABSOLUTE,
-        folder: *mut IShellFolder,
-        child: LPCITEMIDLIST,
-        item: *mut *mut IShellItem,
-    ) -> HRESULT;
-    fn SHCreateShellItemArrayFromDataObject(
-        data: *mut IDataObject,
-        riid: REFIID,
-        out: *mut *mut core::ffi::c_void,
-    ) -> HRESULT;
 }
 
 extern "C" {
@@ -348,6 +338,7 @@ extern "C" {
     static BHID_SFViewObject: GUID;
     static CLSID_ShellItem: GUID;
     static IID_IDataObject: GUID;
+    static IID_IPersistFolder2: GUID;
     static IID_IShellFolder: GUID;
 }
 
@@ -377,6 +368,90 @@ use crate::types::*;
 use core::ffi::c_void;
 
 pub unsafe fn CShellItem_ctor_body(this: *mut CShellItem) -> () {}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHCreateShellItem(
+    mut pidlParent: PCIDLIST_ABSOLUTE,
+    psfParent: *mut IShellFolder,
+    pidl: PCUITEMID_CHILD,
+    ppsi: *mut *mut IShellItem,
+) -> HRESULT {
+    *ppsi = core::ptr::null_mut();
+
+    if pidl.is_null() {
+        return E_INVALIDARG;
+    }
+
+    let new_pidl: LPITEMIDLIST;
+    if !pidlParent.is_null() || !psfParent.is_null() {
+        let mut temp_parent: LPITEMIDLIST = core::ptr::null_mut();
+        if pidlParent.is_null() {
+            let mut ppf2_parent: *mut IPersistFolder2 = core::ptr::null_mut();
+            let hr = ((*(*psfParent).lpVtbl).QueryInterface)(
+                psfParent,
+                core::ptr::addr_of!(IID_IPersistFolder2),
+                core::ptr::addr_of_mut!(ppf2_parent).cast(),
+            );
+            if hr < 0 {
+                if !ppf2_parent.is_null() {
+                    ((*(*ppf2_parent).lpVtbl).Release)(ppf2_parent);
+                }
+                return E_NOINTERFACE;
+            }
+
+            let hr = ((*(*ppf2_parent).lpVtbl).GetCurFolder)(ppf2_parent, &mut temp_parent);
+            ((*(*ppf2_parent).lpVtbl).Release)(ppf2_parent);
+            if hr < 0 {
+                return E_NOINTERFACE;
+            }
+            pidlParent = temp_parent;
+        }
+
+        new_pidl = ILCombine(pidlParent, pidl);
+        ILFree(temp_parent);
+        if new_pidl.is_null() {
+            return E_OUTOFMEMORY;
+        }
+    } else {
+        new_pidl = ILClone(pidl);
+        if new_pidl.is_null() {
+            return E_OUTOFMEMORY;
+        }
+    }
+
+    let mut new_shell_item: *mut IShellItem = core::ptr::null_mut();
+    let mut hr = CShellItem_CreateInstance(
+        core::ptr::null_mut(),
+        core::ptr::addr_of!(IID_IShellItem),
+        core::ptr::addr_of_mut!(new_shell_item).cast(),
+    );
+    if hr < 0 {
+        ILFree(new_pidl);
+        return hr;
+    }
+
+    let mut new_persist_id_list: *mut IPersistIDList = core::ptr::null_mut();
+    hr = ((*(*new_shell_item).lpVtbl).QueryInterface)(
+        new_shell_item,
+        core::ptr::addr_of!(IID_IPersistIDList),
+        core::ptr::addr_of_mut!(new_persist_id_list).cast(),
+    );
+    if hr >= 0 {
+        hr = ((*(*new_persist_id_list).lpVtbl).SetIDList)(new_persist_id_list, new_pidl);
+    }
+    ILFree(new_pidl);
+
+    if !new_persist_id_list.is_null() {
+        ((*(*new_persist_id_list).lpVtbl).Release)(new_persist_id_list);
+    }
+    if hr < 0 {
+        ((*(*new_shell_item).lpVtbl).Release)(new_shell_item);
+        return hr;
+    }
+
+    *ppsi = new_shell_item;
+    hr
+}
 
 pub unsafe fn CShellItem_dtor_body(this: *mut CShellItem) -> () {
     ILFree((*this).m_pidl);

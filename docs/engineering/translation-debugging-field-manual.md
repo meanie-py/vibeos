@@ -10711,14 +10711,433 @@ evidence, not duplication — read it before designing a "more systemic" fix. Th
 change (patch the substrate once for everyone) was the wrong one *because* the substrate object
 is kernel-only.
 
-**Also: cold-build breakage comes in LAYERS.** This was the fourth distinct failure found by
+**Also: cold-build breakage comes in LAYERS** (and see §9.126, which independently found the same thing from mainline's side and enumerates all three breaks).  This was the fourth distinct failure found by
 successive cold builds of the same tree, each hidden behind the previous one — afd `E0659`,
 then fltmgr `E0659`, then this. A warm build reuses cached rlibs and never recompiles the
 broken crate, so `master` can sit red for days while every incremental build is green. Budget
 for "fix one, rebuild, find the next," and prefer `ninja -k 0` to collect a whole layer at once
 rather than one error per full rebuild.
 
-### 9.126 (2026-07-25) An ASSERT lowered to a BUGCHECK became an accidental ARCH-DIVERGENCE DETECTOR — do not silence it, and do not trust the stop code either
+### 9.126 (FIXED 2026-07-25) Mainline carried THREE cold-build breaks at once while every lane's gate was green — a warm build cannot fail in a crate it does not recompile
+
+**The finding.** `origin/master` did not build from scratch. Not one regression — **three
+independent ones**, live simultaneously, every one committed through a green gate:
+
+| break | scope | why warm gating could not see it |
+|---|---|---|
+| `fltmgr-rust`: `IRP_MJ_CREATE_MAILSLOT` is ambiguous (`E0659`) | i386 | crate not recompiled ⇒ cannot fail |
+| `afd-rust`: `IRP_MJ_QUERY_VOLUME_INFORMATION` is ambiguous | **all 3 arches** | ninja halts at the first failing edge |
+| `ksecdd.sys`: undefined `___debugbreak` | i386 | a `.sys` relinks only when its inputs change |
+
+**The mechanism, and it is not subtle once stated.** A compiler cannot report an error in a
+translation unit it never compiles, and a linker cannot report an undefined symbol in an image
+it never links. Warm incremental builds skip both. Every lane's `build-*` dirs were warm, so
+every lane's gate was honestly green *about the work it actually did* — which was not the whole
+tree. AGENTS.md has warned "cargo incremental can mask regressions" for a long time; this is
+what that looks like when nobody does the cold build for weeks.
+
+**Two roots, both worth internalizing.**
+
+1. **The E0659 pair share a cause: a bindgen island grew a name a local shim already had.**
+   `6ae2ae1931d` added 11 `IRP_MJ_*` constants to `ntkrnl_sys::driver_ddk`. Two crates
+   glob-import *both* that island and their own `crate::glue::*`, and had hand-written copies of
+   those constants. Two different items under one name, reached by two globs, is `E0659` — and
+   **nothing in the failing crates changed**. A pre-existing use site simply became ambiguous.
+   Resolution: the island is the compiler-facing authority; delete the hand-written copy.
+2. **`__debugbreak` was declared `extern "C"` instead of emitted.** It is an MSVC *intrinsic*.
+   Declaring it produces a reference to `___debugbreak` that a driver's own PE link cannot
+   satisfy. Emit `int3` inline (`fltmgr-rust/src/glue.rs`, `scsiport-rust/src/inlines.rs` are the
+   pattern). Related: AGENTS.md's rule that an out-of-line stub for something that should be an
+   *instruction* is an optimization barrier that has uncloaked ABI mismatches into `ud2`.
+
+**SCAN THE NAMES, NOT THE IMPORT SHAPES.** My first blast-radius scan looked for files globbing
+both a local module and `driver_ddk`, then matched `^pub const` in that module. It produced **16
+false positives and missed `afd-rust`** — the hits were `pub use` re-exports of the *same* item,
+which is not ambiguous at all. The instrument that worked: take the constants the commit
+**added**, and find every *other* definition of those names in the workspace. That closed the
+class at exactly two crates, and correctly exonerated three more (`msfs`/`mup`/`npfs` keep their
+own copies but do **not** glob `driver_ddk`, and their use sites index `MajorFunction` without a
+cast — deleting their copies would have *broken* them, since the island spells these `u8` and
+they need `usize`).
+
+**Finding them one at a time is the other trap.** Because ninja stops at the first failing edge,
+each ~6-minute cold build revealed exactly ONE break, and the next appeared only after the
+previous was fixed. Three fix-and-rebuild rounds to learn a fact that one `ninja -k0` pass could
+have handed over at once.
+
+**THE MECHANISM (this is the durable part).** Rules did not prevent this and cannot; a warm gate
+is *structurally* blind here. So the merge queue's batch gate is now
+**`--clean --keep-going`** by default (`tests/qemu/cli/queue.py:gate_batch`):
+
+* cold, because only a real compile can fail — and a compile **error is never cached**, so
+  ccache/sccache do not blunt the check (they only make it affordable);
+* `-k0`, so a red verdict names *every* broken target in one pass;
+* affordable because a *batch* amortizes one gate over N landings. Measured on this box: a cold
+  i386 build is **16m15s** against ~2-3 min warm (~5-6×) even at ~100% cache hits — linking
+  ~5,000 targets and re-driving cargo over hundreds of crates is not free. "Affordable
+  amortized" is the honest claim; "nearly free" is not.
+
+> **If you are about to trust a green gate:** ask when that tree last built COLD. `vibeos-cli
+> build --arch X --clean --keep-going` is the question's answer, and it is the only one.
+
+> **§9.125 corrects this entry's third break, and it is worth reading for the correction
+> itself.** I diagnosed `ksecdd`'s undefined `___debugbreak` as "the definition is not in
+> ksecdd.sys's link scope at any spelling" and reverted a symbol-alias attempt on that basis.
+> A whole-tree symbol dump says otherwise: `T ___debugbreak@0` **is** in `libksecdd_rust.a`,
+> so it was in scope — and aliasing it fails for a *better* reason, namely that pulling in the
+> object carrying that label drags kernel-only code with it and produces FOUR more undefined
+> symbols. Right fix (emit the intrinsic inline), wrong reason. Two lanes hit this break
+> independently and shipped the same fix within the hour, which is the real cost of a red
+> mainline: it is not one lane's problem, it is everyone's, simultaneously.
+
+### 9.127 (FIXED 2026-07-25) A capability nobody had run yet: sealed plain-C shipped raw tokens, and three guards were missing at once
+
+`--seal-facts --seal-calls` was generalized from shell32/COM to plain C on 2026-07-24, and
+AGENTS.md now tells every plain-C module to **"always pass both."** Nothing had actually run
+it: all 5,170 ledger entries with `seal_facts=True` are shell32, and no committed `.rs`
+contains a seal token. Being the first caller surfaced three defects in a row, each of which
+would have fired on the first module to follow the documented loop.
+
+**1. Unsealing was gated on the COM path.** Sealing is applied whenever the flags are set, but
+the only unseal call site lived inside `_normalize_unseal_cpp_worker`, which runs exclusively
+on the shell32 COM branch. A sealed plain-C translation therefore emitted raw
+`__RUSTCONV_FACT_nnnn__` / `__RUSTCONV_CALL_nnnn__` into the assembled module. Sealing is a
+lexical transform and language-neutral; **unsealing has to be too.** It is now `_unseal_worker`,
+applied on both paid paths, with the COM helper wrapping it in the normalizations that really
+are COM-specific.
+
+**2. A forward `extern` declaration counted as a call.** The call envelope demands each token
+exactly once — and the mechanical prompt *orders* a second occurrence: "emit a forward
+`extern "system" { fn Name(args...) -> Ret; }` block immediately above the function". So every
+sealed callee is named twice and every worker fails "not exactly once" (13 of 13 tokens on one
+`folders.cpp` function). Declaration spans are now excluded from the count **from both sides**:
+a declaration no longer creates a duplicate, and no longer satisfies the requirement either, so
+declaring a callee you never call is still a hard failure. The COM path never saw this because
+`normalize_worker_body` deletes model-authored extern blocks before unsealing; plain C keeps
+them, because they are how the assembler learns the signature.
+
+**3. The resume cache would bank un-unsealed Rust.** It guards empty output but not sealed
+output, so a run that failed to unseal cached its tokens and replayed them for **$0 forever**,
+re-assembling a module full of `__RUSTCONV_FACT_0000__`. This happened here and survived two
+runs before being noticed. Now refused on `put` (loud — it is our bug) and a MISS on `get`, so
+an already-poisoned cache self-heals, exactly like the empty-output case beside it.
+
+**The cache-key trap you will hit while fixing this.** The obvious fix for models writing
+`use __RUSTCONV_FACT_0000__;` (which unseals to `use MAX_PATH;` / `use 100;` and stops the
+module parsing) is to add a rule to `fact_contract`. **Do not.** The contract text is hashed
+into the resume-cache key: rewording it invalidates every banked sealed entry — 1,006 across 43
+namespaces here — and re-charges for translations already paid for. Handle it deterministically
+instead (`drop_token_use_items`), which is also strictly safer: if the `use` was the token's
+only occurrence, the closed-set check still fails loudly rather than laundering a lost constant.
+A test pins the contract text so nobody "improves" it later.
+
+**Generalization.** A capability that has never been exercised is not a capability. Grep the
+ledger before trusting a documented workflow — `seal_facts=True` on zero non-shell32 entries was
+visible in one query and predicted all three bugs.
+
+### 9.128 (FIXED 2026-07-25) `EXTERN_C` cost us function bodies, on a 10-character cliff
+
+`EXTERN_C` is winnt.h's `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter knows
+neither, so it parsed the macro as the return type and the real return type became a second
+type-identifier. Whether the function survived then came down to tree-sitter's **error
+recovery**, whose repair cost is sensitive to token **length**: with a pointer return type the
+body is recovered while the type name is ≤9 characters and **lost at ≥10**.
+
+    EXTERN_C FOOBAR*          -> extracted
+    EXTERN_C FILEDESCRIPTOR*  -> lost
+
+That is why shell32's `stubs.cpp` reported exactly 2 of 66 bodies unextractable —
+`GetFileDescriptor` and `SHGetShellFolderViewCB`, both pointer returns with names of 14 and 18
+characters, while every `VOID`/`BOOL` stub beside them parsed. `_gate_unextracted` was doing its
+job and refusing the file.
+
+**Expand the macro; never blank it.** Blanking looks equivalent and is strictly worse: with no
+linkage specifier, `FILEDESCRIPTOR* WINAPI Bar(...)` parses as an ambiguous declaration and
+yields ZERO `function_definition` nodes **and an empty `unextracted` list** — a silent drop,
+the one outcome the scanner exists to prevent. Measured: blanking recovered 1 of 3 bodies and
+reported 0 unextracted; expanding recovered 3 of 3. Differential over 500 real `.c`/`.cpp`
+files: 499 identical, 1 gained, 0 lost.
+
+Same family as the `CONST` and `FAR`/`NEAR` normalisers beside it, and as the
+`static struct module*` defect the msvcrt lane hit — **an unexpanded Win32 macro silently
+shrinking the translation plan.** When a scanner gap looks length- or name-dependent, suspect
+error recovery and fix the *input*, not the recovery.
+
+### 9.129 (2026-07-25) `cargo check` is not validation — the oracle has to BUILD
+
+`candidate-check` ran `cargo check` once per arch and called that acceptance. `check` stops
+before codegen, and `unconditional_panic` is a MIR-level deny-by-default lint that only fires
+during codegen — so a constant out-of-bounds index compiles "clean". That is exactly the
+bindgen flex-array shape (`[T; 1]` indexed past 0) the iphlpapi lane shipped twice.
+
+    cargo check -> exit 0, zero diagnostics
+    cargo build -> error: index out of bounds: the length is 1 but the index is 1
+
+and end-to-end through the oracle, on the same file:
+
+    --check-only -> candidate-check: 1/1 candidates compile on every arch
+    default      -> candidate-check: 0/1 ... unconditional_panic
+
+A correct candidate of the same shape (`entries.as_ptr().add(i)`) still passes all three arches,
+so this is not over-strict. The report now records `cargo_mode`, so a green result says which
+pass produced it.
+
+### 9.130 (2026-07-25) semdiff judged Rust by C's rules — both false positives, same root
+
+The C↔Rust semantic-divergence oracle produced exactly two findings on landed, hand-audited
+code, and **both were false positives from applying C semantics to the Rust side**:
+
+* **CRITICAL "argument type mismatch."** C `SHQueryValueExW(hkey, name, 0, ...)` beside Rust
+  `core::ptr::null_mut()` was read as an 8-byte pointer where a 4-byte `DWORD` belongs. The real
+  prototype takes `LPDWORD`, so the C `0` is a null pointer constant and the Rust is correct.
+  The model saw two bodies and no signature — while the signature sat in the very file the Rust
+  body came from. Fix: pass the `extern` declarations the body actually calls, labelled
+  authoritative for argument types.
+* **HIGH "inverted condition."** `flags & FLAG != 0` was reported as evaluating
+  `flags & (FLAG != 0)`. That is C's precedence. In Rust `&` binds **tighter** than the
+  comparisons, so it is `(flags & FLAG) != 0` — and the other parse could not compile at all,
+  since `u32 & bool` is a type error. Verified with rustc, not asserted.
+
+After both fixes the same file goes 1 critical + 0 high → **0 critical + 0 high**, leaving a
+benign overflow edge case and stripped debug logging — the right profile for code already
+hand-audited before landing.
+
+**semdiff is a candidate generator, not a verdict.** Both findings were entirely plausible and
+wrong. Verify against the source before acting on one, and prefer giving the oracle the missing
+*authority* (prototypes, language rules) over loosening what it reports.
+
+### 9.131 (FIXED 2026-07-25) A mode flag turned off the LANGUAGE layer, not just the framework layer
+
+`translate --free-functions` (shell32) exists because a TU's classless functions do not need
+the COM scaffold — no vtable, no `this`, no state layout. It was implemented as
+`cpp_com_mode = target is shell32 and not free_functions`, and every COM branch was keyed off
+that one flag. Correct for the scaffold. But the same flag also gated everything that is about
+**C++ the language**, and a free function in a `.cpp` is still C++.
+
+Three lowerings vanished at once. All three were found by *running* the path on one 172-line
+TU, not by reading it:
+
+| C++ construct | What the COM path does | What free functions got | Cohort count |
+|---|---|---|---|
+| `L"text"` / `L'c'` | deterministic content-addressed `CPP_COM_WSTR_<hash>` statics | nothing — model invented `u"text\0"` | 75 |
+| `IID_PPV_ARG(T,&o)` | deterministic expansion to two ABI args | nothing — emitted verbatim | 15 |
+| `CDataObjectHIDA h(p);` | `require_supported_worker_raii` refuses pre-payment | nothing — model invented `::new()` | 12 |
+
+**Rust has no UTF-16 string literal.** That is why the first one matters more than it looks:
+there was no correct output available to the model, so the prompt was asking it to invent, and
+a confident invention is what you get. Any construct with *no* target-language spelling must be
+lowered deterministically before the prompt is built — it can never be a model responsibility.
+
+Two general lessons:
+
+- **When you add a flag meaning "not the X path", enumerate what else lives behind X.** Ours
+  bundled framework concerns (vtables, `this`) with language concerns (literals, macros, RAII)
+  under one boolean. Splitting the *call sites* is not enough; you have to split the *concepts*.
+- **An empty allowlist is a licence to invent, not a neutral default.** `_LOCAL_RAII_TYPES` held
+  exactly `{"CDrop"}`, so every other body-local C++ owner sailed through the "unsupported RAII"
+  gate and was silently handed to the model. Absence from a refusal list reads as "supported".
+  The fix costs 6 shell32 TUs a refusal until someone writes `--local-raii CDataObjectHIDA=…`,
+  which is the correct trade: a loud refusal beats a paid invention.
+
+Also: normalization now runs on **cache hits**, not just fresh responses. A body banked before
+a repair exists would otherwise replay the un-repaired text for $0 forever — the same
+self-healing shape as the still-sealed-output guard in §9.127. Because the wide-literal lowering
+happens *before* sealing, it is part of the cache key, so only the bodies that actually changed
+re-paid: 1 of 10 functions, $0.01.
+
+### 9.132 (2026-07-25) `translate` assembles into the LIVE crate `src/` — which fails a concurrent gate
+
+`rustconv translate` writes its stitched module straight into the target crate
+(`sdk/lib/rust/<crate>-rust/src/...`). Harmless alone. But `vibeos-cli build`'s staleness check
+compares every `.rs` under the crate against the cargo-linked binaries, so a translation
+performed while a gate/land is in flight fails the build for an unrelated reason:
+
+```
+build i386 — FAIL: BUILD_INCOMPLETE
+  > base/system/lsass/lsass.exe: stale — sdk/lib/rust/shell32-rust/src/shell32/shldataobject.rs
+    newer than the cargo-linked binary (cargo link not re-run; run `build`)
+```
+
+The file was **untracked and referenced by no `mod`**, so cargo would never compile it — the
+check is deliberately conservative and globs the crate's source tree. `git status` stays clean
+(a new file is untracked, and `land`/`gate` sample dirtiness with `--untracked-files=no`), so
+nothing warns you: the tree looks landable and the build fails ~10 minutes later.
+
+**Translate to staging while anything is gating:** `-o ~/vibeos-rust-staging/<lane>/<file>.rs`.
+Paid output is preserved regardless — `.responses/<ts>-<file>/` is the canonical archive and is
+written before assembly. Integrate into the crate only when you are ready to build.
+
+Cleanup after the aborted land is also instructive: killing the `land` process released the FIFO
+land lock (the queued lane took it within seconds), but its `gate` child was **reparented, not
+killed**, and kept 2 of the host's 4 build permits for a verdict already discarded. Kill by
+explicit pid after confirming ownership — `/proc/<pid>/cwd` and `vibeos-cli host-status` name the
+worktree. Two `ninja livecd` processes at the canonical `/tmp/vibeos/build-*` path belonged to a
+*sibling* lane that had just acquired the lock; a pattern kill would have destroyed their work.
+
+### 9.133 (FIXED 2026-07-25) A `__try`/`__except` translated to a BARE BLOCK — the flag survived, the handler didn't, and under DUMMY_PSEH the raise killed the machine
+
+**Symptom.** `BUGCHECK 0x1E` / `C0000005`, minutes into an amd64 boot, with
+`ProbeForWrite → ExRaiseAccessViolation → RtlRaiseStatus` on the stack and no
+handler. Two 32-bit WoW64 applets (doom, devmgmt) appeared to be the trigger.
+
+**Neither applet was the trigger, and the bug was not where the stack said.**
+
+**The shape to recognise.** `ke/amd64/usercall.rs`, `KiInitializeUserApc`:
+
+```rust
+let mut exception_occurred = false;      // never assigned, anywhere
+
+{                                        // <- this was the C's _SEH2_TRY
+    ProbeForWrite(ApcFrame, size_of::<UAPC_FRAME>(), 16);
+    ...
+}
+
+if exception_occurred {                  // <- dead code, provably
+    KiDispatchException(&mut exception_record, ..., UserMode, TRUE);
+}
+```
+
+The C wraps the body in `_SEH2_TRY` and its `_SEH2_EXCEPT` calls
+`KiDispatchException`. The translation preserved the *silhouette* — a flag plus
+the `if` that reads it — while the `__try` degenerated to a bare block and the
+`__except` body evaporated. The result compiles, reads as if it handles the
+error, and cannot: nothing writes the flag, so the recovery arm is unreachable
+and the raise propagates out of the kernel.
+
+**This is worse than an obviously-missing handler**, because a reviewer skimming
+for "is the failure handled?" sees a handler. Grep for the tell instead: a
+`let mut <flag> = false` whose only other occurrence is an `if`.
+
+**Fix** (dummy-pseh-verdict.md Tier 1 — convert the raise contract at the
+callee): validate FIRST with the `Result`-returning `probe_user_buffer`, then run
+exactly what the C `__except` ran. Do not invent new control flow; the C's
+post-block statements stay where they are.
+
+```rust
+let mut exception_status: NTSTATUS = 0;
+'try_: {
+    if let Err(e) = probe_user_buffer(ApcFrame as *const _, size, 16, 1i8) {
+        exception_status = e;
+        break 'try_;
+    }
+    ...
+}
+if exception_status != 0 { /* the C __except body, verbatim */ }
+```
+
+The `'try_:` + `break` idiom is not invented here — `ke/i386/usercall.rs` already
+carried the identical conversion. **When one arch of a per-arch file is already
+converted and another isn't, that asymmetry is the bug report.** Check siblings
+first: i386 was correct, arm64's raising probe is `cfg(not(aarch64))` (dead
+there), amd64 was the only one left.
+
+**Two lessons about the hunt, both reusable:**
+
+1. **A raise with no diagnostic is a guessing game — instrument before fixing.**
+   `ProbeFor*`'s ACCESS_VIOLATION arm printed *nothing* (the misalignment arm had
+   a trace, and its caller-LR helper is aarch64-only), so a 0x1E gave you
+   `ProbeForWrite` on the stack and nothing about *what* was probed. One
+   `probe_av_trace` answered it in a single boot:
+
+   ```
+   [PROBE-AV-W] ABOVE-USERPROBE Addr=fffffffffffffb00 Len=1280 (0x500) Align=16
+   ```
+
+   `Addr` is exactly `-1280` = `-sizeof(UAPC_FRAME)`, i.e. `Rsp == 0` run through
+   `(Rsp - sizeof) & !15`. **Size and alignment identify the struct; the
+   arithmetic identifies the caller.** Report the two raise conditions *apart* —
+   `WRAP` (Length is garbage: the wrong-width 32→64 marshal shape) vs
+   `ABOVE-USERPROBE` (the pointer is wrong) — because they point at opposite bugs.
+
+2. **The instrument refuted the leading hypothesis, which is why it went in
+   first.** Both victims were 32-bit guests, so this looked like E12 (a flat thunk
+   passing a wrong-width `Length`). It wasn't, and one line of output settled it
+   before any code was written against the wrong theory.
+
+**The actual culprit was a third process.** `[KI-APC] ... image=osk.exe` — the
+on-screen keyboard. doom and devmgmt were downstream victims of the box-kill,
+which is why both looked guilty. *Before blaming the process that was running
+when the box died, check whether it merely outlived the one that killed it.*
+
+Same boot command, before → after: BUGCHECK `1 → 0`, PROBE-AV raises `1 → 0`,
+doom frames rendered `died → 2022`.
+
+**Why osk.exe had a blank trap frame** — `Rsp=0 Rip=0 SegCs=0x0` — is the flat
+`NtCreateThread` thunk (§9.134).
+
+### 9.134 (2026-07-25) The first observed consequence of an unmarshalled `NtCreateThread`: a thread created successfully, with a zeroed context
+
+`NtCreateThread` is a **live flat thunk** with five divergent params
+(`OBJECT_ATTRIBUTES`, `CLIENT_ID`, `INITIAL_TEB`, `CONTEXT` — whose field lists
+don't even correspond across widths — and a `PHANDLE`). A 32-bit guest calling
+`CreateThread` therefore hands the 64-bit kernel i386 structs reinterpreted at
+host width.
+
+**It returns `STATUS_SUCCESS`.** That is the whole danger of the class: the guest
+believes it has a thread, and the kernel believes it built one, and the trap
+frame is zeroed. Evidence from one amd64 boot:
+
+```
+line 81013  [WOW64] NtCreateThread(0x37) => 00000000     <- no [manual] tag = flat thunk
+line 81410  [KI-APC] ... image=osk.exe Rsp=0 Rip=0 SegCs=0x0 SegSs=0x3
+line 81412  [KI-EXC] osk.exe teb=...e9000 rip=0 pci.pDeskInfo=0 pci.ulClientDelta=0
+```
+
+The only `NtCreateThread` in the entire boot, ~400 lines before the fault, same
+process; a *second* thread (main threads log `teb=...ec000`) with no win32 client
+info because it never ran. `PspUserThreadStartup` then queues the routine
+`LdrInitializeThunk` user APC, `KiInitializeUserApc` computes
+`0 - sizeof(UAPC_FRAME)`, and before §9.133 that killed the machine.
+
+**Disposition: refuse, don't half-marshal.** `Wow64Manual_NtCreateThread` now
+returns `STATUS_NOT_IMPLEMENTED` loudly. Marshalling the five structs would be
+*worse than nothing* — it would produce a thread that looks even more plausible
+while still lacking the CPU-context setup a 32-bit guest thread needs, which only
+a per-thread WoW64 entry can provide, and wow64.dll has none. Losing a thread
+beats losing the box; a clean refusal beats a convincing corpse.
+
+*Blast radius was measured, not assumed*: exactly one call in a full boot, from
+one applet.
+
+### 9.135 (2026-07-25) Every Rust-kernel `debug_assert!` is compiled out — while the C `ASSERT` it was translated from is LIVE under `-DDBG=1`
+
+**1962** `debug_assert!` / `debug_assert_eq!` / `debug_assert_ne!` sites across
+`sdk/lib/rust` are dead code. `debug_assert!` is gated on
+`cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` sets
+`panic`/`opt-level`/`lto`/`codegen-units`/`debug` but **never**
+`debug-assertions`, so cargo's release default (off) applies — and every kernel
+crate builds `--release`. Meanwhile `CMakeLists.txt:233` sets `-DDBG=1`, so the C
+`ASSERT` these came from calls `RtlAssert` and fires loudly.
+
+**This is the mirror of §9.120.** There, C asserts were lowered to something
+*stronger* than C (UB via `unreachable_unchecked`, or an invented `KeBugCheckEx`).
+Here they are lowered to something *weaker* — nothing at all — despite `DBG=1`.
+Both come from reasoning about what the macro **means** instead of what it
+**compiles to in this build's configuration**.
+
+**Proof by execution, not inference.** `ke/amd64/usercall.rs:96` is
+`debug_assert!(((*TrapFrame).SegCs & MODE_MASK) != 0);` and a 2026-07-25 boot
+printed `[KI-APC] ... SegCs=0x0`. A value the assertion forbids walked straight
+past it. Had it been live it would have caught the blank trap frame **at its
+source**, instead of the failure surfacing later, in a different function, as an
+unhandled probe raise that bugchecked the machine (§9.133/§9.134).
+
+**Before flipping it** (`debug-assertions = true`, and `overflow-checks = false`
+*explicitly* — it defaults to follow `debug-assertions`, and kernel-wide
+arithmetic-overflow panics are a separate, much riskier change C never had):
+measure. 1962 assertions going live at once in a booting kernel will produce a
+batch to triage — some real bugs, some asserts that were mistranslated, some that
+are simply wrong for our configuration. Do it in a scratch build across all three
+arches, triage, then land the profile change *with* the fixes.
+
+### 9.136 (2026-07-25) An ASSERT lowered to a BUGCHECK became an accidental ARCH-DIVERGENCE DETECTOR — do not silence it, and do not trust the stop code either
+
+> **Read with §9.135, which is this bug's mirror image.** That section found 1962 Rust
+> `debug_assert!` sites compiled OUT while the C `ASSERT` they came from is LIVE under `-DDBG=1`.
+> This one found a C `ASSERT` lowered into a LIVE `KeBugCheckEx`. Same C construct, opposite
+> errors: one silently drops a diagnostic, the other promotes it to a machine stop with an
+> invented code. So "how did the translator handle `ASSERT`?" has no single answer — check the
+> direction per site, and do not let either fix become a blanket sweep.
 
 **How it surfaced.** Probing arm64's quarantined kmtests, `ZwAllocateVirtualMemory` bugchecked:
 
@@ -10785,7 +11204,7 @@ you do audit assert-lowering, check both directions — this file *preserved* th
 bugchecks (`MiDecrementReferenceCount` still raises subcode `7`, matching C), so "the translator
 mangles all bugchecks" would have been the wrong generalisation too.
 
-### 9.127 (2026-07-25) "The offline i386 index is symbol-poor" was FALSE — it resolves function + source line, and the missing piece was one `--reloc` value
+### 9.137 (2026-07-25) "The offline i386 index is symbol-poor" was FALSE — it resolves function + source line, and the missing piece was one `--reloc` value
 
 **The claim that blocked work.** Nine i386 kmtest quarantines recorded 2026-07-12 carry a note
 of the form:
@@ -10858,7 +11277,7 @@ false, fix the note so the next person does not pay again. (This is the same sha
 netapi32 "6 mutually-conflicting MIDL interfaces" blocker in §9.108, which deferred that work
 twice and was also a self-inflicted, untested inference.)
 
-#### 9.127a (2026-07-25) The same pair-derivation works for DRIVER bases — and it resolved the crash a kernel-only index cannot see
+#### 9.137a (2026-07-25) The same pair-derivation works for DRIVER bases — and it resolved the crash a kernel-only index cannot see
 
 §9.127 recovered the i386 *kernel* load base from recorded `ntoskrnl+<off> (<addr>)` pairs.
 Drivers need the same treatment and are the bigger blind spot: `qemu/symbols-<arch>.tsv` indexes
@@ -10908,3 +11327,4 @@ a recorded `<module>+<offset>` pair anywhere in the tracked notes, derive the ba
 it by checking that the resulting symbol is a real function in the module you expect. Failing
 that, the load bases have to come from the boot log — which is exactly why printing module
 base+size on serial is worth doing once (tasks #33, #35).
+

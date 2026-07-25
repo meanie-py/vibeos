@@ -2296,12 +2296,27 @@ def _lint_once_stub(ok: bool):
     return stub
 
 
+def _tooling_once_stub(ok: bool):
+    """Stand-in for gate._tooling_once (which shells `vibeos-cli check-tooling`)."""
+
+    def stub(repo, root):
+        return {
+            "ok": ok,
+            "seconds": 0.01,
+            "salient": "" if ok else "python tooling findings",
+            "exit": 0 if ok else 1,
+        }
+
+    return stub
+
+
 def test_gate_lint_failure_blocks_stamp_but_smokes_run(tmp_path, monkeypatch):
     """A NEW lint finding fails the gate and blocks the push stamp; smokes still
     run so the matrix stays informative (the landed T3 policy)."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     seen: list = []
     monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok(seen))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=False))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
@@ -2316,6 +2331,7 @@ def test_gate_lint_pass_proceeds_and_stamps(tmp_path, monkeypatch):
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
@@ -2324,16 +2340,40 @@ def test_gate_lint_pass_proceeds_and_stamps(tmp_path, monkeypatch):
     assert stamped, "a full green gate (lints + smokes) mints the push stamp"
 
 
+def test_gate_tooling_failure_blocks_stamp(tmp_path, monkeypatch):
+    """check-tooling (ruff/pyright/pytest over OUR python) gates the push stamp.
+
+    Regression test for the hole that let master ship `check-tooling` red on two
+    consecutive landings: the gate ran `check --strict` per arch but never ran
+    check-tooling, so nothing between the author and the stamp saw Python
+    regressions.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=False))
+    stamped: list = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
+    assert rc == 1, "a python tooling regression must fail the gate"
+    assert not stamped, "no push stamp when check-tooling is red"
+    assert fake.calls, "smokes still run so the matrix stays informative"
+
+
 def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
     """--no-lint bypasses the strict lint gate entirely (escape hatch)."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     called: list = []
+    tooled: list = []
     monkeypatch.setattr(gate_mod, "_lint_once", lambda *a, **k: called.append(1))
+    monkeypatch.setattr(gate_mod, "_tooling_once", lambda *a, **k: tooled.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=True), tmp_path)
     assert rc == 0
     assert not called, "--no-lint must not invoke the lint subprocess"
+    assert not tooled, "--no-lint must not invoke check-tooling either"
 
 
 # --- check --update-baseline: per-tool scoping (T2 item 1b) -----------------
@@ -3703,3 +3743,76 @@ def test_build_keep_going_maps_to_ninja_k0():
     assert build_mod._ninja_keep_going(Namespace(keep_going=True)) == ["-k0"]
     assert build_mod._ninja_keep_going(Namespace(keep_going=False)) == []
     assert build_mod._ninja_keep_going(None) == []
+
+
+def test_queue_submit_is_idempotent_per_tip(queue_repo):
+    """Submitting the same (lane, tip) twice must be a no-op — the first live batch contained
+    the same canary tip twice because only the CLI path deduped, not submit() itself."""
+    repo, _ = queue_repo
+    _commit(repo, "dup.txt")
+    a = q_mod.submit(repo, lane="lane-x")
+    b = q_mod.submit(repo, lane="lane-x")
+    assert a.seq == b.seq
+    assert len(q_mod.pending(repo)) == 1
+
+
+def test_queue_submit_supersedes_this_lanes_older_tip(queue_repo):
+    """A lane's ancestor tip must not ride along beside its own descendant: harmless to merge,
+    but a split can REJECT the ancestor while the descendant lands — a verdict about a commit
+    the lane already moved past."""
+    repo, _ = queue_repo
+    old_tip = _commit(repo, "one.txt")
+    first = q_mod.submit(repo, lane="lane-y")
+    new_tip = _commit(repo, "two.txt")
+    second = q_mod.submit(repo, lane="lane-y")
+    assert [s.seq for s in q_mod.pending(repo)] == [second.seq], "ancestor still queued"
+    rec = next(r for r in q_mod.results(repo, limit=10) if r["seq"] == first.seq)
+    assert rec["outcome"] == "superseded" and new_tip[:12] in rec["reason"]
+    assert old_tip != new_tip
+
+
+def test_queue_submit_keeps_a_DIVERGENT_tip_from_the_same_lane(queue_repo):
+    """Only an ANCESTOR is superseded. A rewritten/divergent tip is a different proposal and
+    must stay queued on its own merits."""
+    repo, _ = queue_repo
+    subprocess.run(["git", "checkout", "-q", "-b", "div1", "master"], cwd=repo, capture_output=True)
+    _commit(repo, "d1.txt")
+    first = q_mod.submit(repo, lane="lane-z")
+    subprocess.run(["git", "checkout", "-q", "-b", "div2", "master"], cwd=repo, capture_output=True)
+    _commit(repo, "d2.txt")
+    second = q_mod.submit(repo, lane="lane-z")
+    assert {s.seq for s in q_mod.pending(repo)} == {first.seq, second.seq}
+
+
+def test_queue_conductor_can_wait_for_its_turn(queue_repo, monkeypatch):
+    """The orphan window: a conductor that gives up instantly leaves a submission with nobody
+    to drain it (seen within minutes of shipping — a pre-queue lane held the lock via the direct
+    path). A DETACHED conductor has no reason to give up, so it must be able to wait."""
+    repo, _ = queue_repo
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: drained.append(1) or 0)
+    # lock held by "someone else" → a 0-timeout conductor bows out, a waiting one would block
+    with hl_mod.land_lock("other-lane", timeout=1.0):
+        assert q_mod.try_become_conductor(repo, lambda m: None, timeout=0.0) is False
+        assert q_mod.try_become_conductor(repo, lambda m: None, timeout=0.2) is False
+        assert drained == []
+    assert q_mod.try_become_conductor(repo, lambda m: None, timeout=1.0) is True
+    assert drained == [1]
+
+
+def test_land_drain_waits_but_submit_path_does_not(lane_repo, tmp_path, monkeypatch):
+    """`--drain` (the detached child) waits for the lock; the inline-from-submit convenience
+    path must not, because there the agent's own turn is on the line."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    seen = []
+    monkeypatch.setattr(
+        q_mod,
+        "try_become_conductor",
+        lambda repo, log, retries=2, timeout=0.0: seen.append(timeout) or True,
+    )
+    land_mod.land(_Args(direct=False, drain=True, foreground=True), lane)
+    assert seen[-1] == hl_mod.LAND_LOCK_TIMEOUT, seen
+    land_mod.land(_Args(direct=False, foreground=True), lane)
+    assert seen[-1] == 0.0, seen

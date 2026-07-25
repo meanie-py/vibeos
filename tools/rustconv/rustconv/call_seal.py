@@ -115,6 +115,42 @@ def scrub_comment_token_echoes(text: str) -> str:
     return "".join(out)
 
 
+def extern_declaration_spans(text: str) -> list[tuple[int, int]]:
+    """Character spans of `extern "..." { … }` DECLARATION blocks.
+
+    A forward declaration names a callee but does not call it, and the mechanical
+    prompt explicitly ORDERS one: "emit a forward `extern "system" { fn Name(args...)
+    -> Ret; }` block immediately above the function". So a correct mechanical
+    translation writes every sealed callee twice — once declared, once called — and
+    the "exactly once" duplicate check fails through no fault of the model.
+
+    The shell32 COM path never hit this because `normalize_worker_body` deletes
+    model-authored declaration-only extern blocks before unsealing. Plain C KEEPS
+    them (they are how the assembler learns the signature), so the extra occurrence
+    is sanctioned here instead — and only the extra one: a token must still appear
+    exactly once in executable code.
+
+    Only DECLARATION blocks count: a block whose `fn` items all end at `;`. An
+    `extern "C" { fn f() { … } }` with a body is not one.
+    """
+    spans: list[tuple[int, int]] = []
+    for match in re.finditer(r'\bextern\s*"[^"]*"\s*\{', text):
+        depth = 0
+        i = start = match.end() - 1
+        while i < len(text):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        end = min(i + 1, len(text))
+        if not re.search(r"\bfn\b[^;{]*\{", text[start:end]):
+            spans.append((start, end))
+    return spans
+
+
 def seal_calls(text: str, required_calls: set[str]) -> SealedCalls:
     """Replace each known runtime-callee occurrence with a unique token."""
     required = required_calls - _EXCLUDED
@@ -299,14 +335,22 @@ def unseal_calls(rust: str, sealed: SealedCalls) -> str:
         masked = _code_mask(rust)
         executable_tokens.add(missing_call.placeholder)
 
-    executable = _PLACEHOLDER_RE.findall(_code_mask(rust))
-    all_present = _PLACEHOLDER_RE.findall(rust)
+    # Occurrences inside a forward `extern "..." { … }` declaration are not calls. The
+    # mechanical contract REQUIRES those declarations, so they must not count toward
+    # "exactly once" — but they must not satisfy it either, or a model could declare a
+    # callee it never calls. Blank the declaration spans and judge both checks on
+    # what is left, so a token still has to appear exactly once in executable code.
+    exec_mask = list(_code_mask(rust))
+    for a, b in extern_declaration_spans(rust):
+        exec_mask[a:b] = " " * (b - a)
+    executable = _PLACEHOLDER_RE.findall("".join(exec_mask))
     missing = sorted(expected - set(executable))
     duplicates = sorted(
         token
         for token in expected
-        if all_present.count(token) > 1 and token not in allowed_duplicates
+        if executable.count(token) > 1 and token not in allowed_duplicates
     )
+    all_present = _PLACEHOLDER_RE.findall(rust)
     unknown = sorted(set(all_present) - expected)
     findings = []
     if missing:

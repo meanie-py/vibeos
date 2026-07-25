@@ -237,9 +237,13 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   first use and deliberately never auto-pruned: its warm build dirs + cargo target
   are why a batch gates in minutes, and every landing in the fleet would otherwise
   pay for a cold one.
-- `--drain` trains without submitting (recovers the microsecond-wide orphan window
-  where a submission arrives just as a conductor releases the lock). `--wait` blocks
-  for your own verdict if you'd rather not poll.
+- The spawned conductor **waits its turn** for the land lock rather than giving up, so
+  a submission always gets drained even when a pre-queue lane is holding the lock via
+  `--direct`. (It gave up instantly at first, which left submissions with no conductor
+  — observed within minutes of shipping.) Nothing is blocked by it waiting, and a
+  conductor that wakes to an empty queue exits in ~1s.
+- `--drain` conducts without submitting; `--foreground` conducts inline instead of
+  spawning; `--wait` blocks for your own verdict if you'd rather not poll.
 
 ### `land --direct` — the single-lane path
 One serialized critical section, under the same fleet-wide FIFO

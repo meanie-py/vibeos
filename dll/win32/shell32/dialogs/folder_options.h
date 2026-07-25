@@ -20,7 +20,7 @@
  */
 
 // IDD_FOLDER_OPTIONS_GENERAL
-INT_PTR
+EXTERN_C INT_PTR
 CALLBACK
 FolderOptionsGeneralDlg(
     HWND hwndDlg,
@@ -29,7 +29,7 @@ FolderOptionsGeneralDlg(
     LPARAM lParam);
 
 // IDD_FOLDER_OPTIONS_VIEW
-INT_PTR CALLBACK
+EXTERN_C INT_PTR CALLBACK
 FolderOptionsViewDlg(
     HWND    hwndDlg,
     UINT    uMsg,
@@ -37,7 +37,7 @@ FolderOptionsViewDlg(
     LPARAM  lParam);
 
 // IDD_FOLDER_OPTIONS_FILETYPES
-INT_PTR CALLBACK
+EXTERN_C INT_PTR CALLBACK
 FolderOptionsFileTypesDlg(
     HWND hwndDlg,
     UINT uMsg,

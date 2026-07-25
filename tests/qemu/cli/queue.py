@@ -147,9 +147,30 @@ def lane_id(repo: Path) -> str:
 def submit(repo: Path, *, tip: str | None = None, lane: str | None = None) -> Submission:
     """Enqueue a lane tip. Writes the ref FIRST (so the objects are pinned before anything
     can observe the record) and only then the record — a conductor must never see a submission
-    whose tip could be GC'd."""
+    whose tip could be GC'd.
+
+    Idempotent per (lane, tip), and SUPERSEDES this lane's older pending tips that the new one
+    already contains. Both were observed in the first live batch: submitting the same canary tip
+    twice put it in the batch twice, and a lane's earlier tip sat alongside its own descendant.
+    Neither is unsafe (a descendant's merge subsumes its ancestor's), but they are noise, and a
+    superseded ancestor can be REJECTED by a split while its descendant lands — a verdict about
+    a commit the lane has already moved past. Deduping here rather than only in the CLI, because
+    the CLI is not the only caller."""
     tip = tip or git(repo, "rev-parse", "HEAD")
     lane = lane or lane_id(repo)
+    existing = [s for s in pending(repo) if s.lane == lane]
+    for prev in existing:
+        if prev.tip == tip:
+            return prev  # already queued, byte-identical — a no-op, not a second submission
+    for prev in existing:
+        # `prev.tip` is contained in the new tip ⇒ landing the new one lands it too.
+        if git_ok(repo, "merge-base", "--is-ancestor", prev.tip, tip):
+            resolve(
+                repo,
+                prev,
+                outcome="superseded",
+                reason=f"this lane submitted {tip[:12]}, which already contains it",
+            )
     seq = f"{time.time_ns():020d}-{lane.replace('/', '_').replace(' ', '_')}"
     sub = Submission(
         seq=seq,
@@ -617,14 +638,24 @@ def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
         batches += 1
 
 
-def try_become_conductor(repo: Path, log, *, retries: int = 2) -> bool:
-    """Take the land lock if it is FREE and drain; otherwise return False immediately.
+def try_become_conductor(repo: Path, log, *, retries: int = 2, timeout: float = 0.0) -> bool:
+    """Take the land lock and drain. Returns False if the lock could not be had in `timeout`.
 
-    The election is the lock: no daemon, no leader file, no heartbeat. `timeout=0` is what
-    makes submitting non-blocking — an agent either becomes the conductor (and does the
-    fleet's work) or leaves, knowing a conductor already exists."""
+    The election is the lock: no daemon, no leader file, no heartbeat.
+
+    `timeout` is the whole subtlety. It was 0.0 unconditionally, so an agent that lost the
+    election left immediately — correct when the agent's own turn was on the line, but it left
+    an ORPHAN WINDOW: a submission whose only would-be conductor lost the election has nobody
+    to drain it, and it sits until the next submission elects someone. Observed within minutes
+    of shipping (a pre-queue lane held the lock via the direct path, and the submission waited).
+
+    Now that conducting is DETACHED, the spawned child has no reason to give up: nothing is
+    blocked by it waiting, so it queues on the lock's FIFO and drains when its turn comes. A
+    conductor that wakes to an empty queue exits in ~1s, so several waiters are cheap rather
+    than wasteful. Callers that genuinely cannot block (the inline-from-submit convenience path)
+    keep passing 0.0."""
     try:
-        with hostlock.land_lock(f"conductor:{lane_id(repo)}", timeout=0.0, repo=str(repo)):
+        with hostlock.land_lock(f"conductor:{lane_id(repo)}", timeout=timeout, repo=str(repo)):
             drain(repo, log, retries=retries)
         return True
     except hostlock.LandLockBusy:

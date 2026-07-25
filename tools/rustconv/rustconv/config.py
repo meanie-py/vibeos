@@ -1818,6 +1818,12 @@ def _derive_sys_substrate(
                     f"substrate. Pick one:\n\n    --sys-crate {deps[0]}\n"
                 )
 
+    if sys_name is None:
+        # Unreachable: every branch above either assigns sys_name or raises. Kept as a
+        # loud failure rather than an assert so a future edit that adds a fall-through
+        # path surfaces here instead of silently building `RUST_DIR / None`.
+        raise TargetResolveError("--target: could not derive the FFI substrate crate")
+
     sys_dir = RUST_DIR / sys_name
     if not sys_dir.is_dir():
         raise TargetResolveError(f"--sys-crate {sys_name}: no such crate: {sys_dir}")

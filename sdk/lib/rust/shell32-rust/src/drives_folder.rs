@@ -1221,13 +1221,13 @@ extern "system" {
     fn CoTaskMemFree(memory: LPVOID);
     fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
+    fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
 }
 
 extern "C" {
     fn HLM_GetIconW(index: UINT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
     fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;
     fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
-    #[link_name = "CPrinterFolder_CompareDetails_RustBridge"] fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
 

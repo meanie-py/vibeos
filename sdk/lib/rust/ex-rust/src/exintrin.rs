@@ -163,6 +163,7 @@ pub unsafe extern "system" fn ProbeForRead(
 
         let Last = Current.wrapping_add(Length).wrapping_sub(1);
         if Last < Current || Last >= MmUserProbeAddress as ULONG_PTR {
+            probe_av_trace(b"R\0", Current, Length, EffectiveAlignment, entry_lr);
             ExRaiseAccessViolation();
         }
     }
@@ -182,6 +183,44 @@ unsafe fn probe_entry_lr() -> usize {
     }
     #[cfg(not(target_arch = "aarch64"))]
     { 0 }
+}
+
+/// One-line trace before a probe raises ACCESS_VIOLATION. Same reasoning as
+/// `probe_misalign_trace`: under DUMMY_PSEH the raise is fatal, so without a
+/// breadcrumb all a `0x1E` gives you is `ProbeFor*` on the stack and nothing
+/// whatsoever about WHAT was probed.
+///
+/// The two raise conditions are reported APART on purpose, because they point at
+/// opposite bugs:
+///   * `WRAP` — `Address + Length` overflowed, i.e. **`Length` is garbage**. That
+///     is the shape a wrong-width 32→64 marshal produces: a 4-byte guest slot
+///     read as 8 picks up adjacent guest stack in the high half. Every 32-bit
+///     WoW64 guest pointer is below 4GB, so a WoW64 caller landing here is
+///     nearly always this.
+///   * `ABOVE-USERPROBE` — the range is sane but reaches kernel space, i.e. the
+///     **pointer** is wrong (or a real user/kernel confusion).
+///
+/// `caller` is only populated on aarch64 (`probe_entry_lr` reads x30); on amd64
+/// it prints 0 and the caller has to come from the `[RAISE]` stack dump that
+/// `RtlRaiseStatus` emits right after this.
+#[inline(never)]
+unsafe fn probe_av_trace(tag: &[u8], addr: ULONG_PTR, len: SIZE_T, align: ULONG, lr: usize) {
+    let wrapped = addr.wrapping_add(len).wrapping_sub(1) < addr;
+    crate::dbg_print!(
+        b"[PROBE-AV-%s] %s Addr=%p Len=%Iu (0x%Ix) Align=%lu UserProbe=%p caller=%p\n\0",
+        tag.as_ptr(),
+        if wrapped {
+            b"WRAP\0".as_ptr()
+        } else {
+            b"ABOVE-USERPROBE\0".as_ptr()
+        },
+        addr as PVOID,
+        len,
+        len,
+        align,
+        MmUserProbeAddress,
+        lr as PVOID,
+    );
 }
 
 #[inline(never)]
@@ -222,6 +261,7 @@ pub unsafe extern "system" fn ProbeForWrite(
 
         let mut Last = Current.wrapping_add(Length).wrapping_sub(1);
         if Last < Current || Last >= MmUserProbeAddress as ULONG_PTR {
+            probe_av_trace(b"W\0", Current, Length, Alignment, entry_lr);
             ExRaiseAccessViolation();
         }
 

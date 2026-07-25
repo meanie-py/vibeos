@@ -39,6 +39,8 @@ pub mod types;
 pub mod shellcom;
 
 pub mod menu_band;
+pub mod menu_desk_bar;
+pub mod menu_site;
 pub mod merged_folder;
 
 #[panic_handler]
