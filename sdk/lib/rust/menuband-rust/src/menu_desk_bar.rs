@@ -1330,15 +1330,18 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
         return hr;
     }
 
-    // Unknown meaning
-    const CMD: DWORD = 19;
+    // Unknown meaning. C++ spells this function-local constant `CMD` here AND in
+    // SetIconSize with a DIFFERENT value; scan_const_contradictions is a whole-tree
+    // name scan and cannot see C++ block scope, so the two are disambiguated by name
+    // here. Values are unchanged from CMenuDeskBar.cpp (19 / 16).
+    const CMD_POPUP: DWORD = 19;
     const CMD_EXEC_OPT: DWORD = 0;
 
     hr = IUnknown_QueryServiceExec(
         (*this).m_Client,
         core::ptr::addr_of!(SID_SMenuBandChild),
         core::ptr::addr_of!(CLSID_MenuBand),
-        CMD,
+        CMD_POPUP,
         CMD_EXEC_OPT,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -1540,9 +1543,10 @@ pub unsafe fn CMenuDeskBar_Popup_body(this: *mut CMenuDeskBar, ppt: *mut POINTL,
 
 pub unsafe fn CMenuDeskBar_SetIconSize_body(this: *mut CMenuDeskBar, iIcon: DWORD) -> HRESULT {
     (*this).m_IconSize = iIcon;
-    const CMD: DWORD = 16;
+    // See CMD_POPUP above: C++ names both function-local constants `CMD`.
+    const CMD_SETICONSIZE: DWORD = 16;
     let CMD_EXEC_OPT: DWORD = if iIcon != 0 { 0 } else { 2 };
-    let hr = IUnknown_QueryServiceExec((*this).m_Client, core::ptr::addr_of!(SID_SMenuBandChild), core::ptr::addr_of!(CLSID_MenuBand), CMD, CMD_EXEC_OPT, core::ptr::null_mut(), core::ptr::null_mut());
+    let hr = IUnknown_QueryServiceExec((*this).m_Client, core::ptr::addr_of!(SID_SMenuBandChild), core::ptr::addr_of!(CLSID_MenuBand), CMD_SETICONSIZE, CMD_EXEC_OPT, core::ptr::null_mut(), core::ptr::null_mut());
     if ((hr) < 0) {
         return hr;
     }
