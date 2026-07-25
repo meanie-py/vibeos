@@ -1,3 +1,7 @@
+//! ORPHAN-BY-DESIGN: translated Wave-5 TU, parked pending substrate closure.
+//! It still needs a few hundred SDK externs/constants/resource IDs resolved before
+//! it compiles; wiring it in this state would break the build for every lane rather
+//! than expose a regression. This is a PAID artifact — do not delete it to tidy up.
 use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
