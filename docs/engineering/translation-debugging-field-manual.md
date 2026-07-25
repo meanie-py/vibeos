@@ -10072,3 +10072,60 @@ case lied too: the boot-time `seh_poc` raise, whose raiser is in ntoskrnl (`ffff
 was also reported as `fffff880…`. **When a diagnostic is suspect, run it against the case
 whose answer you already know** — that comparison is what turned "this address is
 mysterious" into "this tool is broken."
+
+### 9.119 (FIXED 2026-07-25) C's assertion macros are DIAGNOSTICS, not control flow — three translations lowered them to UB or to a BUGCHECK with an invented code, and the gate that should have caught one of them under-matched
+
+A fresh-eyes sweep of the bug catalog (not a crash report — nothing had failed) turned
+up a class nobody had named. In C:
+
+| Macro | DBG build | Retail build |
+|---|---|---|
+| `PAGED_CODE()` (`xdk/kefuncs.h`) | `KdPrint` + `ASSERT(FALSE)` | `NOP_FUNCTION` |
+| `ASSERT(exp)` / `NT_ASSERT(exp)` (`ndk/rtlfuncs.h`) | `RtlAssert(...)` | `((void)0)` |
+
+**None of them is `__assume(0)`.** But `core::hint::unreachable_unchecked()` *is* — it is
+undefined behaviour, and telling LLVM a branch is unreachable licenses it to delete the
+guarding check and poison everything downstream. So lowering an assert to it is **strictly
+worse than the C in every build configuration**: retail C does nothing at all, retail Rust
+invokes UB.
+
+Three live sites, all latent (none had fired):
+
+* `cdrom-rust/src/common.rs` — `PAGED_CODE()` → `unreachable_unchecked()`.
+* `fastfat-rust/src/strucsup.rs` — `NT_ASSERT(Buffer != NULL)` → `unreachable_unchecked()`,
+  on the result of an allocation. The assert exists precisely to catch the case the
+  translation told the optimizer to assume away.
+* `classpnp-rust/src/class.rs` — `PAGED_CODE()` → `KeBugCheckEx(0x35u32, 0,0,0,0)`: a
+  DBG-only diagnostic escalated to an **unconditional retail BUGCHECK**, with an invented
+  stop code on top (0x35 is `NO_MORE_IRP_STACK_LOCATIONS`, nothing to do with IRQL — the
+  §9.113 class).
+
+**The gate that should have caught the third one reported a clean zero.**
+`scan_bugcheck_codes.py` matched `^\s*(0x[0-9A-Fa-f]+|\d+)\s*[,)]` — digits followed
+*directly* by `,` or `)`. The literal was `0x35u32`, and the Rust type suffix broke the
+match. It sat in the tree from 2026-06-09 through the entire §9.113 sweep on 2026-07-24.
+
+> **A lint that under-matches is indistinguishable from a lint that passes.** Both print
+> `0`. This is the same failure shape as §9.115a (a baseline computed from a stale build
+> artifact) and §9.115 (a report that iterates the generator's own flagged set): the check
+> was structurally unable to see the thing it existed to find, and its silence was read as
+> evidence of health. When you write a pattern-matching lint, **test it against a positive
+> case you construct on purpose** — `0x35u32` would have failed that test in one second.
+
+**Regression gate:** `tools/scan_assert_to_ub.py` (empty baseline, wired into
+`vibeos-cli check`). `unreachable_unchecked()` remains legitimate as the tail of a
+genuinely-noreturn call and as a faithful `DEFAULT_UNREACHABLE`; those carry
+`// nolint: assert-to-ub (reason)`. Writing that scanner produced its own instance of the
+same lesson — the first version's noreturn-context regex was `\b`-anchored, so it rejected
+the real call sites (`FatBugCheck`, `CdRaiseStatus`) because a driver prefix leaves no word
+boundary, and reported three false positives. **Match names as substrings when the codebase
+prefixes them.**
+
+**Why this class recurs and why a one-off fix was not enough.** `fastfat-rust/src/fatinit.rs`
+already carries a comment describing the *same* mistake being fixed in `__int2c` — someone
+hit it, fixed that instance, and moved on without generalizing. An LLM translating C sees
+`PAGED_CODE();` as a statement that must *do* something, and "this can't happen" maps
+naturally onto `unreachable_unchecked()`. It will keep happening; the gate is the answer.
+
+**When auditing a translated assert, ask what the C does in RETAIL, not what it means.**
+`ASSERT(x)` reads like "x must hold," which invites a hard failure. It compiles to nothing.
