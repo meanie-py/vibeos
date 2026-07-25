@@ -44,7 +44,9 @@ as if they were already in scope. Don't put `ntkrnl_sys::ddk::` or
 """
 
 
-def load_function_system_prompt(target: Target | None = None, mode: str = "idiomatic") -> str:
+def load_function_system_prompt(
+    target: Target | None = None, mode: str = "idiomatic", *, cpp_com: bool = True
+) -> str:
     """Load the system prompt for per-function translation.
 
     mode="mechanical" loads function_prompt_mechanical.md instead — a faithful-
@@ -57,10 +59,15 @@ def load_function_system_prompt(target: Target | None = None, mode: str = "idiom
     """
     if target is None:
         target = TARGETS["ntoskrnl"]
-    if target.name == "shell32":
+    if target.name == "shell32" and cpp_com:
         # C++ COM mode is body-only in BOTH styles. The deterministic cpp_com
         # layer owns every ABI artifact; using the generic mechanical/kernel
         # prompt here would tell the model to regenerate those artifacts.
+        #
+        # cpp_com=False is the free-function path (`translate --free-functions`):
+        # those deps have no class, no vtable and no generated scaffold, so the
+        # COM body prompt would be describing artifacts that do not exist for
+        # them. They take the ordinary mechanical/idiomatic contract below.
         return target.system_prompt.read_text()
     if mode == "mechanical":
         mech = TEMPLATES_DIR / "function_prompt_mechanical.md"
@@ -426,6 +433,8 @@ def build_file_context(
     scan: ScanResult,
     subsystem: str,
     target: Target | None = None,
+    *,
+    cpp_com: bool = True,
 ) -> str:
     """Per-file shared context — byte-stable across every function in the file.
 
@@ -448,7 +457,7 @@ def build_file_context(
         parts.append(gap_info)
     globals_info = (
         ""
-        if target is not None and target.name == "shell32"
+        if target is not None and target.name == "shell32" and cpp_com
         else _format_globals_context(scan.globals, scan.globals_text or scan.preamble_text)
     )
     if globals_info:
@@ -535,6 +544,7 @@ def build_function_prompt(
     include_shared: bool = True,
     c2rust_anchor: str | None = None,
     deterministic_contract: str = "",
+    cpp_com: bool = True,
 ) -> str:
     """Build a complete prompt for translating a single C function.
 
@@ -575,7 +585,10 @@ def build_function_prompt(
     # C++ method → free-function convention + class layout context
     if getattr(func, "cpp_class", None):
         parts.append(_format_method_context(func, scan, target=target))
-    elif target is not None and target.name == "shell32":
+    elif target is not None and target.name == "shell32" and cpp_com:
+        # The `<name>_body` worker contract describes the deterministic COM closure.
+        # A --free-functions dep has no closure and no generated wrapper, so it takes
+        # the ordinary contract instead of being told to rename itself.
         parts.append(_format_shell32_helper_context(func))
 
     # Export info
@@ -592,7 +605,7 @@ def build_function_prompt(
             parts.append(gap_info)
         globals_info = (
             ""
-            if target is not None and target.name == "shell32"
+            if target is not None and target.name == "shell32" and cpp_com
             else _format_globals_context(scan.globals, scan.globals_text or scan.preamble_text)
         )
         if globals_info:
