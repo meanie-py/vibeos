@@ -21,7 +21,9 @@ from rustconv.difftest_gen import (
     VOID,
     WSTR_IN,
     base_kinds,
+    case_fn,
     classify_type,
+    emit,
     emit_case,
     plan_file,
 )
@@ -181,7 +183,52 @@ def test_the_context_string_is_built_only_on_FAILURE(tmp_path):
     plan = _plan(tmp_path, "int f(unsigned int c) { return c; }\n")
     body = emit_case(_case(plan, "f"))
     assert "panic!(" in body
-    assert "let ctx = format!" not in body
+    assert "format!" not in body
+
+
+def test_no_format_is_built_per_iteration_even_for_an_out_buffer(tmp_path):
+    """The buffer comparison took an eagerly-formatted context string, which is the same
+    per-iteration cost spelled differently — and slipped past the check above."""
+    plan = _plan(tmp_path, "void f(unsigned char *dst, const unsigned char *src) { }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "Guarded::same(" in body
+    assert "format!" not in body
+
+
+# --------------------------------------------------------------------------- #
+# the emitted file must actually compile
+# --------------------------------------------------------------------------- #
+
+
+def test_a_case_is_not_named_after_the_symbol_it_calls(tmp_path):
+    """The extern block declares `fn f` at module scope. A case also called `f` is a
+    duplicate definition — and were it to compile, it would call ITSELF, grading nothing."""
+    plan = _plan(tmp_path, "int f(unsigned int c) { return c; }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "fn case_f()" in body
+    assert "\nfn f()" not in body and "pub fn f()" not in body
+
+
+def test_case_names_stay_distinct_when_the_c_names_differ_only_by_underscore():
+    """`_mbslen` and `mbslen` must not both become `case_mbslen`."""
+    assert case_fn("_mbslen") != case_fn("mbslen")
+
+
+def test_every_case_appears_in_the_runner(tmp_path):
+    """A case the runner does not call is dead code that reports nothing."""
+    plan = _plan(
+        tmp_path,
+        "int f(unsigned int c) { return c; }\nint g(unsigned int c) { return c; }\n",
+    )
+    text = emit(plan, "m.c", 2)
+    assert "pub fn run_all()" in text
+    for c in plan.cases:
+        assert f'("{c.name}", {case_fn(c.name)})' in text
+
+
+def test_the_extern_block_is_closed_on_its_own_line(tmp_path):
+    plan = _plan(tmp_path, "int f(unsigned int c) { return c; }\n")
+    assert ";}" not in emit(plan, "m.c", 1)
 
 
 def test_an_exhaustive_case_enumerates_the_whole_domain(tmp_path):

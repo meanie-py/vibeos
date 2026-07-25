@@ -425,8 +425,18 @@ def _verdict(case: Case, ctx: str) -> list[str]:
     ]
 
 
+def case_fn(name: str) -> str:
+    """The Rust name of the case for C function `name`.
+
+    Must not equal `name`: the extern block declares the C symbol at module scope.
+    A plain prefix keeps this injective — stripping the leading `_` would collide
+    `_mbslen` with a hypothetical `mbslen`.
+    """
+    return f"case_{name}"
+
+
 def emit_case(case: Case) -> str:
-    """One `#[test]` for one function."""
+    """One case function for one C function."""
     binds = [
         _bind(n, k, case.exhaustive)
         for n, k in zip(case.param_names, case.param_kinds, strict=True)
@@ -449,7 +459,10 @@ def emit_case(case: Case) -> str:
             base = hit
             break
 
-    out: list[str] = ["#[test]", f"fn {case.name}() {{"]
+    # `case_` prefix, NOT the bare C name: the extern block declares `fn _getmbcp` at
+    # module scope, so a case also called `_getmbcp` is a duplicate definition — and if
+    # it did compile it would call ITSELF.
+    out: list[str] = [f"pub fn {case_fn(case.name)}() {{"]
     if any(b.loop and "corpus" in b.loop for b in binds):
         out.append("    let corpus = Corpus::new();")
     out += ["    for &cp in CODEPAGES {", "        let _fix = MbcsFixture::install(cp);"]
@@ -471,7 +484,12 @@ def emit_case(case: Case) -> str:
     out += [pad + line for line in _verdict(case, ctx)]
     for i in case.out_buffers:
         n = case.param_names[i]
-        out.append(f'{pad}Guarded::assert_same(&{n}_s, &{n}_r, "{case.name}", &format!("{ctx}"));')
+        # `same()` + panic!, never `assert_same(&format!(..))`: the eager format! would
+        # run every iteration (millions, for an exhaustive case) to build a string that
+        # is used only on failure.
+        out.append(f"{pad}if !Guarded::same(&{n}_s, &{n}_r) {{")
+        out.append(f'{pad}    panic!("{case.name}: {n} differs — {ctx}");')
+        out.append(pad + "}")
     for _ in loops:
         depth -= 1
         out.append("    " * depth + "}")
@@ -486,7 +504,7 @@ def emit(plan: Plan, c_path: str, total: int) -> str:
             c_path=c_path, covered=len(plan.cases), total=total, refused=len(plan.refusals)
         ),
         _extern_decls(plan.cases),
-        "}\n",
+        "\n}\n",
     ]
     for tier, label in ((TIER_PURE, "host-only"), (TIER_NLS, "needs the NLS replay fixture")):
         group = [c for c in plan.cases if c.tier == tier]
@@ -496,4 +514,36 @@ def emit(plan: Plan, c_path: str, total: int) -> str:
         parts.extend(emit_case(c) + "\n" for c in group)
     parts.append("\n// ===== REFUSED — each needs a hand-written case " + "=" * 26 + "\n")
     parts.extend(f"//   {r}\n" for r in plan.refusals)
+    parts.append(_emit_runner(plan))
     return "".join(parts)
+
+
+def _emit_runner(plan: Plan) -> str:
+    """A plain `fn main()` runner — this crate is `harness = false`.
+
+    libtest is unusable here for the reason Cargo.toml documents: the shipping crate
+    exports `#[no_mangle]` shims that shadow glibc's, and libtest reads its
+    configuration through them before any case runs.
+    """
+    lines = [
+        "\n// ===== runner " + "=" * 58,
+        "//",
+        "// A plain `fn main()`, not `#[test]`: see Cargo.toml — libtest reads its config",
+        "// through the very libc surface this crate overrides.",
+        "",
+        "pub fn run_all() -> usize {",
+        "    let cases: &[(&str, fn())] = &[",
+    ]
+    lines += [f'        ("{c.name}", {case_fn(c.name)}),' for c in plan.cases]
+    lines += [
+        "    ];",
+        "    for (name, f) in cases {",
+        '        eprint!("  {name} ... ");',
+        "        f();",
+        '        eprintln!("ok");',
+        "    }",
+        "    cases.len()",
+        "}",
+        "",
+    ]
+    return "\n".join(lines)
