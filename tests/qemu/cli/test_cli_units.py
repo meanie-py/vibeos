@@ -552,6 +552,25 @@ def test_symbolicate_pc_refuses_an_absurd_offset(tmp_path, monkeypatch):
     assert "KTRAP_FRAME_LENGTH" not in out
 
 
+def test_symbolicate_pc_passes_reloc_for_i386_only(tmp_path):
+    # The index holds FILE VAs, a bugcheck reports RUNTIME VAs. Without --reloc
+    # every i386 kernel PC lands past the end of the index and the offset guard
+    # (correctly) declines — so the fix that stopped it LYING also made it unable
+    # to ANSWER until the reloc was wired through. arm64's base is unknown, so it
+    # must NOT get one and must keep declining.
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    # Echo the argv so the test can assert what was passed.
+    tool.write_text('#!/bin/sh\necho "ARGS:$*"\n')
+    serial = "*** BUGCHECK: 0x0000001E (0x1, 0x805148fd, 0x2, 0x0)\n"
+
+    out_i386 = triage.symbolicate_pc(tmp_path, "i386", serial)
+    assert "--reloc 0x800c3000" in out_i386, out_i386
+
+    out_arm64 = triage.symbolicate_pc(tmp_path, "arm64", serial)
+    assert "--reloc" not in out_arm64, out_arm64
+
+
 def test_symbolicate_pc_keeps_a_plausible_offset(tmp_path):
     tool = tmp_path / "qemu" / "addr2sym.sh"
     tool.parent.mkdir(parents=True)

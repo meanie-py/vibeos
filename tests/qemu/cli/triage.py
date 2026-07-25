@@ -290,6 +290,23 @@ _PC_PARAM_BY_CODE = {0x1E: 2, 0x50: 3, 0x8E: 3, 0x7E: 3, 0x0A: 4}
 _MAX_SANE_SYMBOL_OFFSET = 0x100000
 _SYM_OFFSET = re.compile(r"\+(\d+)\b")
 
+# addr2sym's index holds FILE VAs; a bugcheck reports RUNTIME VAs. The difference
+# is `kernel_runtime_base - ImageBase`, and without it every kernel PC lands past
+# the end of the index (see §9.127).
+#
+# i386: base 0x804c3000, ImageBase 0x400000 -> 0x800c3000. That base is not a
+# guess — four independently recorded `ntoskrnl+<off> (<addr>)` pairs from
+# 2026-07-12 and three fresh crashes from 2026-07-25 all agree on it exactly,
+# across 13 days of rebuilds.
+#
+# arm64/amd64: unknown. Their runtime base is never printed on serial and cannot
+# be recovered from a saved log, so they get no reloc and will simply decline.
+#
+# A stale hardcoded value CANNOT produce a wrong answer here: it would push every
+# lookup outside the index, the offset guard above fires, and the result is "no
+# symbol" rather than a confident lie. That is why hardcoding is acceptable.
+_RELOC_BY_ARCH = {"i386": "0x800c3000", "i386-uefi": "0x800c3000"}
+
 
 def faulting_pc(serial: str) -> str | None:
     """The faulting PC, preferring the BUGCHECK record over loose `PC=` text.
@@ -330,10 +347,13 @@ def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
     tool = repo / "qemu" / "addr2sym.sh"
     if not tool.is_file():
         return None
+    reloc = _RELOC_BY_ARCH.get(arch)
+    argv = ["bash", str(tool), arch]
+    if reloc:
+        argv += ["--reloc", reloc]
+    argv.append(pc)
     try:
-        cp = subprocess.run(
-            ["bash", str(tool), arch, pc], cwd=repo, capture_output=True, text=True, timeout=30
-        )
+        cp = subprocess.run(argv, cwd=repo, capture_output=True, text=True, timeout=30)
         out = cp.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
