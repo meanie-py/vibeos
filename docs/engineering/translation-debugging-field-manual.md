@@ -776,7 +776,17 @@ would have fired for whoever followed the documented loop:
    and its tokens fire "not exactly once"). Note the blast radius: a rejected worker means the TU
    assembles **no output at all**, so one bad function costs the whole file until re-run.
    `_EXCLUDED` is a hand-maintained denylist and cannot scale to the SDK's macro surface; the fix
-   is a positive authority test (seal only a callee that resolved to a real function declaration).
+   is a positive authority test (seal only a callee provably a real function). **Three candidate
+   authorities were tested and all three are dead ends** — check before reaching for them again:
+   `catalog.functions` is target-internal (247 entries for shell32, holding neither the macros nor
+   `SendMessageW`/`HeapAlloc`, so it would suppress sealing entirely); `scan.defines` is
+   this-file-only and never sees an SDK macro; and `resolver.unresolved` lumps macros and real
+   externs together (282 entries, `LOWORD` and `SendMessageW` side by side). The authority has to
+   come from the **preprocessor's include closure** — a function-like `#define NAME(` visible to
+   the TU — which is the machinery `profile_derive` already builds for the bindgen island.
+   Also note before "just dropping `--seal-calls`" on an affected TU: the contract text is hashed
+   into the resume-cache key, so removing the flag MISSES every banked entry and re-pays the
+   whole file.
 
 > **The cache-key trap while fixing this: do NOT reword the contract text.** It is hashed into the
 > resume-cache key, so rewording invalidates every banked sealed entry and **re-charges for
