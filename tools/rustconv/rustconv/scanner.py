@@ -1203,9 +1203,7 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     source_text = _normalize_callbacks(
         _blank_memmodel(
             _strip_sal(
-                _expand_csr_api(
-                    _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
-                )
+                _expand_csr_api(_resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines))
             )
         )
     )

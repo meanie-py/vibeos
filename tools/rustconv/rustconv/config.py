@@ -1753,9 +1753,7 @@ def _resolve_output_crate(name: str, override: str | None = None) -> tuple[Path,
 
     # No conventional crate. Is there an unconventionally-named one for this DLL?
     candidates = sorted(
-        p
-        for p in RUST_DIR.glob(f"*{name}*-rust")
-        if p.is_dir() and (p / "Cargo.toml").is_file()
+        p for p in RUST_DIR.glob(f"*{name}*-rust") if p.is_dir() and (p / "Cargo.toml").is_file()
     )
     if candidates:
         listed = "\n    ".join(str(p.relative_to(RUST_DIR)) for p in candidates)
@@ -1768,6 +1766,39 @@ def _resolve_output_crate(name: str, override: str | None = None) -> tuple[Path,
         )
     # Genuinely new module: the convention is correct, and the crate is created on assemble.
     return conventional, False
+
+
+def _resolve_sys_name(crate: Path, crate_exists: bool, override: str | None) -> str:
+    """The `*-sys` crate name: the override, the convention, or the crate's own Cargo.toml.
+
+    Every path returns a name or raises — there is no None outcome. That was already true
+    inline, but the type checker could not see it through the nested branches and read it
+    as a reachable None (routed by the fex lane as a possible real bug). It was not one;
+    extracting it is how the signature says so instead of a comment claiming it.
+    """
+    if override is not None:
+        return override
+    if not crate_exists:
+        # New module, no Cargo.toml to read: ntdll-sys is the right default for a
+        # standalone user-mode DLL (it is what the user-mode prompt addendum names).
+        return "ntdll-sys"
+    cargo = crate / "Cargo.toml"
+    if not cargo.is_file():
+        raise TargetResolveError(f"{crate}: no Cargo.toml — cannot derive the FFI substrate")
+    deps = sorted(set(re.findall(r"^\s*([A-Za-z0-9_-]+-sys)\s*=", cargo.read_text(), re.M)))
+    if len(deps) == 1:
+        return deps[0]
+    if not deps:
+        raise TargetResolveError(
+            f"--target: {crate.name} declares no `*-sys` dependency, so there is no\n"
+            f"  FFI substrate to translate against. Add the dependency, or name it:\n\n"
+            f"    --sys-crate ntdll-sys\n"
+        )
+    raise TargetResolveError(
+        f"--target: {crate.name} declares several `*-sys` dependencies "
+        f"({', '.join(deps)}).\n  Refusing to guess which one is the translation "
+        f"substrate. Pick one:\n\n    --sys-crate {deps[0]}\n"
+    )
 
 
 def _derive_sys_substrate(
@@ -1789,34 +1820,7 @@ def _derive_sys_substrate(
     user-DLL crate (ws2_32, iphlpapi, netapi32, dnsapi, wkssvc, …) declares
     exactly `ntdll-sys`, so this returns their historical value unchanged.
     """
-    sys_name: str | None = override
-    if sys_name is None:
-        if not crate_exists:
-            # New module, no Cargo.toml to read: ntdll-sys is the right default for a
-            # standalone user-mode DLL (it is what the user-mode prompt addendum names).
-            sys_name = "ntdll-sys"
-        else:
-            cargo = crate / "Cargo.toml"
-            if not cargo.is_file():
-                raise TargetResolveError(f"{crate}: no Cargo.toml — cannot derive the FFI substrate")
-            deps = sorted(
-                set(re.findall(r"^\s*([A-Za-z0-9_-]+-sys)\s*=", cargo.read_text(), re.M))
-            )
-            if len(deps) == 1:
-                sys_name = deps[0]
-            elif not deps:
-                raise TargetResolveError(
-                    f"--target: {crate.name} declares no `*-sys` dependency, so there is no\n"
-                    f"  FFI substrate to translate against. Add the dependency, or name it:\n\n"
-                    f"    --sys-crate ntdll-sys\n"
-                )
-            else:
-                raise TargetResolveError(
-                    f"--target: {crate.name} declares several `*-sys` dependencies "
-                    f"({', '.join(deps)}).\n  Refusing to guess which one is the translation "
-                    f"substrate. Pick one:\n\n    --sys-crate {deps[0]}\n"
-                )
-
+    sys_name = _resolve_sys_name(crate, crate_exists, override)
     sys_dir = RUST_DIR / sys_name
     if not sys_dir.is_dir():
         raise TargetResolveError(f"--sys-crate {sys_name}: no such crate: {sys_dir}")

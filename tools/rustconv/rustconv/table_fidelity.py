@@ -152,8 +152,7 @@ def repair_tables(rust: str, c_source: str) -> tuple[str, list[TableFinding]]:
         rows = [",".join(values[i : i + _PER_ROW]) for i in range(0, len(values), _PER_ROW)]
         rendered = "\n" + "\n".join(f"    {row}," for row in rows) + "\n"
         return (
-            f"{match.group('head')}{len(values)}{match.group('mid')}"
-            f"{rendered}{match.group('tail')}"
+            f"{match.group('head')}{len(values)}{match.group('mid')}{rendered}{match.group('tail')}"
         )
 
     return _RUST_ARRAY.sub(replace, rust), findings

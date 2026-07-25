@@ -719,7 +719,7 @@ def _match_shape(
     params: Sequence[tuple[str, str]],
     return_type: str,
     own_name: str,
-    siblings: dict[str, Sequence[tuple[str, str]]] | None = None,
+    siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
     pointer_typedefs: Mapping[str, str] | None = None,
 ) -> tuple[str, str] | None:
     """Return ``(shape, rust_statements)`` for a recognized residual body."""
@@ -836,7 +836,7 @@ def _render_item(
 
 def lower_trivial_c_function(
     dep: FunctionDep,
-    siblings: dict[str, Sequence[tuple[str, str]]] | None = None,
+    siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
     pointer_typedefs: Mapping[str, str] | None = None,
 ) -> TrivialLowering | None:
     """Lower one trivial C function to Rust for $0, or ``None`` to pay the model.

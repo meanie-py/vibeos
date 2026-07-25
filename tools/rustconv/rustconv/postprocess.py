@@ -2100,7 +2100,11 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str, crate_modul
         code = re.sub(rf"\b{re.escape(other)}::\w+::", pfx, code)
     # 2. Drop every `use <crate>::<umbrella>::(* | {…} | Name);` line
     #    (single- or multi-line braced list) — replaced by one glob.
-    _seg = f"{re.escape(sys_crate)}::{re.escape(sys_umbrella)}" if sys_umbrella else re.escape(sys_crate)
+    _seg = (
+        f"{re.escape(sys_crate)}::{re.escape(sys_umbrella)}"
+        if sys_umbrella
+        else re.escape(sys_crate)
+    )
     use_pat = re.compile(
         rf"^[ \t]*use\s+{_seg}::"
         r"(?:\*|\{[^}]*\}|\w+)\s*;[ \t]*\n",

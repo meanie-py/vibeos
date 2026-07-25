@@ -143,7 +143,10 @@ def _scan_header(text: str) -> tuple[dict[str, str | None], dict[str, str]]:
         for index in range(node.child_count):
             if node.field_name_for_child(index) != "declarator":
                 continue
-            parsed = _declarator(node.child(index), src)
+            child = node.child(index)
+            if child is None:  # pragma: no cover - the index came from child_count
+                continue
+            parsed = _declarator(child, src)
             if parsed is None:
                 continue
             name, stars = parsed
@@ -193,11 +196,13 @@ def pointer_typedefs(paths: Iterable[Path]) -> dict[str, str]:
         for name, underlying in file_aliases.items():
             aliases.setdefault(name, set()).add(underlying)
 
-    resolved = {
-        name: next(iter(spellings))
-        for name, spellings in verdicts.items()
-        if len(spellings) == 1 and next(iter(spellings)) is not None
-    }
+    resolved: dict[str, str] = {}
+    for name, spellings in verdicts.items():
+        if len(spellings) != 1:
+            continue  # defined inconsistently across the closure — refuse it
+        only = next(iter(spellings))
+        if only is not None:  # a proven NON-pointer is recorded, but is not an answer
+            resolved[name] = only
 
     # `typedef _locale_t handle_t;` is a pointer too. Iterate to a fixpoint rather than
     # once, so a chain of aliases resolves; an alias with two different underlying types,
@@ -253,6 +258,5 @@ def describe(found: Mapping[str, str], c_file: Path) -> str:
     if not found:
         return f"[typedefs] {c_file.name}: no pointer typedefs proven from the include closure"
     return (
-        f"[typedefs] {c_file.name}: {len(found)} pointer typedefs proven "
-        "(NULL is spellable there)"
+        f"[typedefs] {c_file.name}: {len(found)} pointer typedefs proven (NULL is spellable there)"
     )
