@@ -602,10 +602,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   across every boot: `NtCreateSection` → `0x50` PAGE_FAULT_IN_NONPAGED_AREA (read of
   `0xffff800004544040` from PC `0xffff8000048595e0`), `ZwAllocateVirtualMemory` → `0x4E`
   PFN_LIST_CORRUPT, `IoCreateFile` → `0x1E` (AV at `0xfffff800421c960c`, a driver-range PC).
-  (An earlier revision of this paragraph said FOUR and named `MmMapLockedPagesSpecifyCache`.
-  That was wrong: the probe tool mis-attributed the truncation and dropped it without it ever
-  running — fixed in `fa0b294e3e4`. Its status is UNKNOWN, not "crashes", and it is still owed a
-  run. `ExFastMutex`, `IoFilesystem` and `MmReservedMapping` were dropped the same way.)
+  (An earlier revision said FOUR and named `MmMapLockedPagesSpecifyCache` on no evidence — the
+  probe mis-attributed truncation and dropped it unrun, fixed in `fa0b294e3e4`.) **A round-2
+  probe with the fixed tool has now settled every one of those:**
+  `MmMapLockedPagesSpecifyCache` **CRASH** (own verdict — so the original claim was right, but
+  only by luck, and only now evidenced), `IoFilesystem` **CRASH**, `MmReservedMapping` **CRASH**,
+  `NpfsFileInfo` **CRASH**, `SeTokenFiltering` **INCOMPLETE** (it kills the VM outright — no
+  bugcheck, QEMU exits, see the quest doc), and `ExFastMutex` **OK** — un-quarantined, it was
+  arm64's last arch-specific entry. `[PFNMISMATCH]` still fired **zero** times across all of it.
   The probe strings are compiled into this exact kernel (verified present in
   `build-arm64/ntoskrnl/ntoskrnl.exe`, absent on i386/amd64), so this is genuine silence, not a
   missing probe — which **confirms the entry's own prediction** that `MiDeletePte` is not the
