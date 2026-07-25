@@ -85,7 +85,33 @@ def _params(data: bytes, masked: bytes, open_paren: int):
     return (
         data[open_paren + 1 : close - 1].decode("utf-8", "replace"),
         masked[open_paren + 1 : close - 1].decode("utf-8", "replace"),
+        _return_kind(masked, close),
     )
+
+
+def _return_kind(masked: bytes, after_params: int) -> str:
+    """'unit' or 'value' — whether the function returns anything at all.
+
+    DELIBERATELY NOT finer than this. A pointer-vs-scalar split looks far more useful —
+    returning a POINTER where the declaration promises a BOOLEAN means every non-null
+    result reads as TRUE, which is exactly how classpnp's ScsiGetSenseDescriptor sent
+    callers down the "descriptor found" branch. But it cannot be decided syntactically:
+    `PDWORD`, `PVOID` and `PIRP_CONTEXT` are pointer TYPEDEFS that a name-based classifier
+    files as scalars. Trying it produced 293 findings whose first three hand-checked samples
+    were ALL false (advapi32 `-> *mut DWORD` vs `-> PDWORD` is the same type twice), and a
+    checker that flags everything catches every bug the same way a broken clock is right.
+    That is the same lesson as the `SIZE_T` alias bug in crate_repair's panicking_cast the
+    same night: A TYPE NAME IS NOT A TYPE. Deciding it properly needs the bindgen islands,
+    which is a different tool.
+
+    unit-vs-value needs no type knowledge — it is the presence or absence of `->`.
+    """
+    tail = masked[after_params : after_params + 200].decode("utf-8", "replace")
+    tail = tail.split("{")[0].split(";")[0]
+    if "->" not in tail:
+        return "unit"
+    ret = tail.split("->", 1)[1].strip()
+    return "unit" if not ret or ret == "()" else "value"
 
 
 def scan(root):
@@ -136,7 +162,12 @@ def scan(root):
                     continue
                 a, b = nargs(sig[1]), nargs(dsig[1])
                 if a != b:
-                    findings.append((path, name, a, b, dpath))
+                    findings.append(("ARITY", path, name, a, b, dpath))
+                elif sig[2] == "value" and dsig[2] == "unit":
+                    # Only this DIRECTION is a hazard. Declared-unit/defined-value means the
+                    # caller simply ignores a result; declared-value/defined-unit means the
+                    # caller READS a register the callee never set.
+                    findings.append(("RETVOID", path, name, sig[2], dsig[2], dpath))
     return sorted(findings)
 
 
@@ -149,14 +180,22 @@ def main():
     findings = []
     for root in args.paths or [DEFAULT_ROOT]:
         findings += scan(root)
-    for path, name, a, b, dpath in findings:
+    for kind, path, name, a, b, dpath in findings:
         rel = os.path.relpath(path, REPO)
         drel = os.path.relpath(dpath, REPO)
-        print(
-            f"{rel}:1: [ARITY] {name}: declared with {a} parameter(s), defined with "
-            f"{b} in {drel} — the caller and callee disagree about the call shape"
-        )
-    print(f"\nSUMMARY: arity-mismatches={len(findings)}")
+        if kind == "ARITY":
+            print(
+                f"{rel}:1: [ARITY] {name}: declared with {a} parameter(s), defined with "
+                f"{b} in {drel} — the caller and callee disagree about the call shape"
+            )
+        else:
+            print(
+                f"{rel}:1: [RETVOID] {name}: declared as returning a value, defined as "
+                f"returning nothing in {drel} — the caller reads a register the callee "
+                f"never set"
+            )
+    n_arity = sum(1 for f in findings if f[0] == "ARITY")
+    print(f"\nSUMMARY: arity-mismatches={n_arity}  retvoid-mismatches={len(findings) - n_arity}")
     return 1 if findings else 0
 
 
