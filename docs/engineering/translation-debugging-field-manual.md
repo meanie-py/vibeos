@@ -10095,3 +10095,270 @@ Dialect selection is automatic (`--cpp-com` → `cpp`, otherwise `c`). Verify a 
 `--dry-run --prompt` before spending: the envelope sections list the token counts, and a
 `MAX_COMPUTERNAME_LENGTH + 1` array bound should appear as TWO tokens — that is what stops
 the model folding `38 + 1` into `39`.
+
+### 9.118 (FIXED 2026-07-24) The §9.116 fix belonged in the WoW64 THUNK layer, not in win32k — and `NtUserMessageCall` carried three divergences, one of them smashing guest stack on *every* SendMessage
+
+§9.116 diagnosed the `g_MsgMemory` over-read and concluded "the fix is win32k-side."
+**That conclusion was wrong, and the evidence that overturned it took one grep:** every
+call to `co_IntDoSendMessage` — the only consumer of `CopyMsgToKernelMem` /
+`CopyMsgToUserMem` — lives inside a single syscall, `NtUserMessageCall`. So the whole
+class sits on one thunk boundary, which is exactly where real Windows puts it (wow64win.dll
+owns message thunking; the kernel only ever sees host-width structs).
+
+Fixing it in win32k would have meant teaching the kernel to ask "is my caller 32-bit?" on a
+hot path, for a problem the thunk layer is *defined* to solve. **When a width bug looks like
+it needs kernel changes, first check whether the whole surface funnels through one thunk.**
+
+**Three divergences on that one syscall, not one.** Auditing the boundary properly (rather
+than just fixing the reported symptom) found two more, and the unreported one was worse:
+
+| Arg | i386 | host | Consequence |
+|---|---|---|---|
+| lParam payload (`g_MsgMemory` messages) | varies | varies | §9.116 over-read → BUGCHECK |
+| `ResultInfo` under `FNID_SENDMESSAGE` | `ULONG_PTR` = **4** | **8** | **every** SendMessage smashes 4 bytes of guest stack |
+| `ResultInfo` under `FNID_SENDMESSAGE{FF,WTOOPTION}` | `DOSENDMESSAGE` = **12** | **16** | over-read *and* over-write |
+
+The middle row had been live since the first 32-bit GUI guest: user32's `SendMessageW`
+passes `&Result` (an `LRESULT` stack local, 4 bytes on i386) and win32k stores
+`size_of::<ULONG_PTR>()` = 8 into it. It never crashed because the adjacent 4 bytes were
+usually dead stack — the E7 shape exactly, on a far hotter path. **A bug that corrupts a
+fixed small amount of stack on a universal path will not announce itself; it will show up
+later as somebody else's flake.**
+
+**Don't hand-write the converters when a generator already emits them.** The payload
+conversions were already generated for the *callback* direction
+(`wow64_cb_automarshal.c`, keyed by `Msg`, from clang record-layout diffs). Reusing that
+table for the SendMessage direction means the two directions cannot disagree about a
+layout, and adding a row now fixes both at once. That immediately paid: `WINDOWPOS` had
+been an "extra struct" with no `Msg`→pair row, so the callback direction had been copying
+40 host bytes into a buffer the guest reads as 28 — a bug nobody had filed, fixed by adding
+the row that the SendMessage side needed anyway.
+
+**Verify widths with the layout engine, never with arithmetic.** Driving marshalgen's own
+`dump_layouts`/`diff_struct` over the candidate structs is a ~20-line script and it both
+confirms the divergent ones and — just as important — proves which are **identical**:
+`MINMAXINFO` (5 POINTs), `RECT`, `STYLESTRUCT`, `DEV_BROADCAST_HDR` are the same at both
+widths, and "helpfully" marshalling one of those would have corrupted it.
+
+**Scope the marshalling by what the callee DOES with the arg, not by the arg's type.**
+`lParam` is only this message's payload for some FNIDs. It is deliberately *not* marshalled
+for `FNID_CALLWNDPROC`/`CALLWNDPROCRET` (repacked into a `CWPSTRUCT` the callback path
+marshals separately), nor for the async posts (`SENDNOTIFYMESSAGE`, `SENDMESSAGECALLBACK`)
+— **a host stack buffer handed to an async post is a use-after-return**, which is the kind
+of "fix" that trades a loud bug for a silent one.
+
+**Fail the call, don't pass the buffer.** `WM_NCCALCSIZE`/`WM_COPYDATA`/`WM_CREATE` embed a
+pointer or a packed string tail, so the flat table cannot express them. On the FNIDs that
+reach `g_MsgMemory` they now fail loudly with a named DbgPrint instead of flat-passing:
+losing a message beats losing the machine.
+
+**Fixing the box-killer moves the ladder to the NEXT bug — expect that, and don't read it
+as a regression.** With this landed, spider and eventvwr (the two applets that had been
+killing the box) PASS, and the ladder ran on into `devmgmt` and `doom`, which BUGCHECK 0x1E
+via a *different* chain — `ProbeForWrite` → `ExRaiseAccessViolation` → `RtlRaiseStatus`,
+unhandled. A control run (callback-direction change reverted, rebuilt, rebooted) reproduced
+that chain byte-identically, which is what proves it is not this fix's doing. **Two crashes
+at the same rung are not the same bug; symbolicate before assuming continuity.**
+
+### 9.118a (FIXED 2026-07-24) The `[RAISE]` crash-triage helper reported a STACK address as the raise site — its "kernel-text-looking" window also contains kernel stacks
+
+While triaging the above, `rtl-diag`'s unhandled-raise helper printed:
+
+```
+[RAISE] RtlRaiseStatus(0xC0000005) from fffff88004880500
+```
+
+and that address symbolicates to nothing sensible — because it is a **stack pointer**, not
+code. The helper scans the stack for "the first kernel-text-looking qword" using
+`v >= 0xFFFF_F800_0000_0000 && v < 0xFFFF_F8FF_FFFF_FFFF`. On amd64 that window covers
+ntoskrnl (`fffff800…`) and driver text (`fffff880…`) — **and kernel stacks, which also live
+at `fffff880…`**. So the very first candidate it finds is routinely a saved stack pointer in
+the helper's own frame.
+
+Fix: reject candidates within 1MB of the current `rsp`. Kernel stacks are 16–24KB, so the
+window sits safely inside the stack and cannot swallow a real driver text address. After
+the fix the same helper reports `fffff800004cacc4` — an actual code address.
+
+**A triage tool that lies costs more than no tool**, because its output is trusted at
+exactly the moment you have least other information. The tell here was that the *known-good*
+case lied too: the boot-time `seh_poc` raise, whose raiser is in ntoskrnl (`fffff800…`),
+was also reported as `fffff880…`. **When a diagnostic is suspect, run it against the case
+whose answer you already know** — that comparison is what turned "this address is
+mysterious" into "this tool is broken."
+
+---
+
+### 9.119 (2026-07-25) A TEXT-SHAPED match is not a PROOF — the same regex measured 146 lowerable CRT forwarders and the sound implementation lowered 11
+
+Chasing cheap yield in `trivial_c.py` I measured how many msvcrt functions are the CRT's
+`X(args) → X_l(args, NULL)` forwarder idiom. A regex over the parsed bodies — "callee is
+same-TU, arguments are the parameters in order plus a trailing `NULL`" — found **146 of 1792
+(76 in mbcs.c alone, 40% of that file)**. That number went into a plan as the cost lever.
+
+The sound implementation lowers **11**.
+
+The gap is one word in the shape's own precondition. Admitting a literal `NULL` is only safe if
+the callee's parameter at that position is **proven** to be a pointer — otherwise `NULL` at an
+`int` position lowers to `core::ptr::null_mut()` and you have invented a type. The CRT spells
+that parameter `_locale_t`, which is a *typedef'd* pointer:
+
+```c
+typedef struct _locale_tstruct *_locale_t;      /* the star is in the TYPEDEF */
+int CDECL _mbsncmp(const unsigned char *s, const unsigned char *c, size_t n)
+{ return _mbsncmp_l(s, c, n, NULL); }           /* param type spells no star */
+```
+
+So `"*" in type` says "not a pointer"; `c_type_to_rust("_locale_t")` returns the opaque alias
+`_locale_t`; and `msvcrt-sys`'s bindgen island covers `__thread_data`/`threadlocinfo` but does
+not declare the alias. **No authority in reach can prove it**, so the matcher refuses — which
+is correct, because admitting it would assume exactly the fact the shape exists to prove.
+
+Two durable lessons, and the second is the one that bites:
+
+1. **Measuring a shape by its syntax measures an upper bound, not a yield.** Every deterministic
+   lowering is `syntax ∧ proof`, and the proof side is invisible to the regex you used to size
+   the work. Quote such a number as "≤ N candidates", and re-measure through the real
+   implementation before it becomes a plan. I stated 146 as the lever in a strategy the user
+   was deciding on; the honest number was an order of magnitude smaller.
+2. **The blocker is almost never the shape — it is the missing authority.** The fix for the
+   other ~135 is *not* to loosen `forwarder_with_null`, and absolutely not to allowlist
+   `_locale_t`. It is to give the pipeline a **typedef authority**: carry the module's pointer
+   typedefs in its bindgen island (a generated, layout-guarded artifact) and have
+   `_is_pointer_c_type` consult the island instead of the spelling. That is the same move as
+   §9.112 — *make the deterministic substrate complete and everything downstream gets cheaper*
+   — and it generalizes to every `LPWSTR`/`HANDLE`/`P*` typedef in Win32 code, not just the CRT.
+
+`test_trivial_c_forwarder_null.py::test_typedefd_pointer_is_refused_because_nothing_proves_it`
+pins the refusal so that when someone does wire a typedef authority, this is a deliberate
+decision with a failing test, not a silent behaviour change.
+
+**Related trap in the same change (worth copying).** The oracle compares C and Rust
+token-for-token, and a null pointer is the one atom whose spellings cannot match: C's `NULL` is
+a single `null` node *and* an uppercase-constant occurrence, Rust's `core::ptr::null_mut()` is
+three identifiers *plus* an extra call node — so it perturbs the identifier-sequence, call-count
+and constant-multiset checks simultaneously. The wrong fix is to relax those three checks for
+everyone. The right one is to rewrite **both sides** to one sentinel before comparing, leaving
+every check intact: a `NULL` that moved position, was dropped, or displaced a real argument
+still fails. Symmetric canonicalization beats weakened comparison — and note the sentinel must
+fold the Rust `NULL` token too, since `constant_return` already lowered `return NULL;` that way
+(a pre-existing test caught the asymmetry immediately, which is the system working).
+
+### 9.120 (FIXED 2026-07-25) C's assertion macros are DIAGNOSTICS, not control flow — three translations lowered them to UB or to a BUGCHECK with an invented code, and the gate that should have caught one of them under-matched
+
+A fresh-eyes sweep of the bug catalog (not a crash report — nothing had failed) turned
+up a class nobody had named. In C:
+
+| Macro | DBG build | Retail build |
+|---|---|---|
+| `PAGED_CODE()` (`xdk/kefuncs.h`) | `KdPrint` + `ASSERT(FALSE)` | `NOP_FUNCTION` |
+| `ASSERT(exp)` / `NT_ASSERT(exp)` (`ndk/rtlfuncs.h`) | `RtlAssert(...)` | `((void)0)` |
+
+**None of them is `__assume(0)`.** But `core::hint::unreachable_unchecked()` *is* — it is
+undefined behaviour, and telling LLVM a branch is unreachable licenses it to delete the
+guarding check and poison everything downstream. So lowering an assert to it is **strictly
+worse than the C in every build configuration**: retail C does nothing at all, retail Rust
+invokes UB.
+
+Three live sites, all latent (none had fired):
+
+* `cdrom-rust/src/common.rs` — `PAGED_CODE()` → `unreachable_unchecked()`.
+* `fastfat-rust/src/strucsup.rs` — `NT_ASSERT(Buffer != NULL)` → `unreachable_unchecked()`,
+  on the result of an allocation. The assert exists precisely to catch the case the
+  translation told the optimizer to assume away.
+* `classpnp-rust/src/class.rs` — `PAGED_CODE()` → `KeBugCheckEx(0x35u32, 0,0,0,0)`: a
+  DBG-only diagnostic escalated to an **unconditional retail BUGCHECK**, with an invented
+  stop code on top (0x35 is `NO_MORE_IRP_STACK_LOCATIONS`, nothing to do with IRQL — the
+  §9.113 class).
+
+**The gate that should have caught the third one reported a clean zero.**
+`scan_bugcheck_codes.py` matched `^\s*(0x[0-9A-Fa-f]+|\d+)\s*[,)]` — digits followed
+*directly* by `,` or `)`. The literal was `0x35u32`, and the Rust type suffix broke the
+match. It sat in the tree from 2026-06-09 through the entire §9.113 sweep on 2026-07-24.
+
+> **A lint that under-matches is indistinguishable from a lint that passes.** Both print
+> `0`. This is the same failure shape as §9.115a (a baseline computed from a stale build
+> artifact) and §9.115 (a report that iterates the generator's own flagged set): the check
+> was structurally unable to see the thing it existed to find, and its silence was read as
+> evidence of health. When you write a pattern-matching lint, **test it against a positive
+> case you construct on purpose** — `0x35u32` would have failed that test in one second.
+
+**Regression gate:** `tools/scan_assert_to_ub.py` (empty baseline, wired into
+`vibeos-cli check`). `unreachable_unchecked()` remains legitimate as the tail of a
+genuinely-noreturn call and as a faithful `DEFAULT_UNREACHABLE`; those carry
+`// nolint: assert-to-ub (reason)`. Writing that scanner produced its own instance of the
+same lesson — the first version's noreturn-context regex was `\b`-anchored, so it rejected
+the real call sites (`FatBugCheck`, `CdRaiseStatus`) because a driver prefix leaves no word
+boundary, and reported three false positives. **Match names as substrings when the codebase
+prefixes them.**
+
+**Why this class recurs and why a one-off fix was not enough.** `fastfat-rust/src/fatinit.rs`
+already carries a comment describing the *same* mistake being fixed in `__int2c` — someone
+hit it, fixed that instance, and moved on without generalizing. An LLM translating C sees
+`PAGED_CODE();` as a statement that must *do* something, and "this can't happen" maps
+naturally onto `unreachable_unchecked()`. It will keep happening; the gate is the answer.
+
+**When auditing a translated assert, ask what the C does in RETAIL, not what it means.**
+`ASSERT(x)` reads like "x must hold," which invites a hard failure. It compiles to nothing.
+
+> **Read with §9.119.** That entry is this one's mirror: there, a regex MATCH was mistaken for proof that a body was lowerable (146 text-shaped hits, 11 sound lowerings). Here, a regex MISS was mistaken for proof that a class was absent (`0` reported for six weeks). A pattern match is evidence about TEXT, never about SEMANTICS — in either direction. Whichever way you are reading it, the pattern owes you a positive and a negative control before you believe its count.
+
+### 9.121 (2026-07-25) A worktree showing a HUGE staged REVERT isn't your work — its branch ref was moved from ANOTHER worktree, and `git add -A` would land the revert
+
+**Symptom.** `git status` in a checkout you have not touched today reports hundreds or
+thousands of files under *"Changes to be committed"*, nothing unstaged, no untracked, and
+
+```
+$ git status -sb
+## master...origin/master [behind 61]
+$ git diff --cached --shortstat HEAD
+ 1123 files changed, 8869 insertions(+), 197524 deletions(-)
+```
+
+197K **deletions** staged. Spot-check a file and it is *removing* landed work — e.g. the
+whole `dnsapi.dll` Rust cohab block, as if someone had reverted the flip.
+
+**What it actually is.** Nobody reverted anything. The worktree's *files* are still at an
+older commit, while its *branch ref* was moved forward from a **different** worktree
+(`git branch -f master …`, `git update-ref`, `git fetch origin master:master`,
+`git push . <sha>:master`). Git compares index+worktree against the NEW `HEAD`, so every
+commit that landed in between shows up inverted, as a staged deletion. The index here was
+8 days stale and nobody had noticed.
+
+**Diagnose in three commands** — the point is to prove there is nothing unique to lose:
+
+```bash
+git reflog master -5      # "branch: Reset to HEAD" ⇒ moved from elsewhere.
+                          #   (HEAD's reflog is PER-WORKTREE, so it has no entry for the
+                          #    move and its HEAD@{0} disagrees with `git rev-parse HEAD` —
+                          #    that mismatch is itself the tell.)
+git diff --stat <HEAD@{0}-from-that-reflog>   # EMPTY ⇒ your files are EXACTLY that commit's
+                                              #   tree: zero local edits, all of it phantom.
+git merge-base --is-ancestor <that-commit> origin/master   # YES ⇒ it is already upstream.
+```
+
+**The trap.** `git add -A && git commit` (or `commit -a`) in that state creates a *real*
+revert commit of everything the fleet landed since — a mass regression with a plausible
+diff. And the obvious cleanup, `git checkout .` / `git restore`, is forbidden here
+(AGENTS.md: never discard with checkout/restore).
+
+**Fix.**
+
+```bash
+git stash push -m "main-wt: stale <date> worktree (== tree of <sha>, an ancestor of
+                   origin/master) resurfacing as a staged REVERT — nothing unique, safe to drop"
+git fetch && git merge origin/master        # fast-forward; files and ref agree again
+```
+
+The stash is cheap insurance, not a real save: the content is byte-identical to a commit
+that is already an ancestor of mainline, so it is recoverable from git forever regardless.
+
+**Prevention (now a rule).** Never move a branch ref from a worktree that does not have it
+checked out. Push straight to origin instead — `git push origin HEAD:master` — and let each
+worktree pick it up with its own `git fetch && git merge origin/master`. `vibeos-cli land`
+does exactly that, and it is why it never touches the local `master` ref.
+
+> **Read with the landing race.** The same session found the *reason* lanes reach for
+> ref-surgery at all: gate-then-push by hand is a race (the stamp is keyed to an exact tree,
+> so the first pusher voids everyone else's gate), and `vibeos-cli land` — one fleet-wide
+> FIFO lock across fetch → merge → gate → push — is the sanctioned way. See AGENTS.md
+> §"Git and mainline" and `tests/qemu/cli/README.md` → `land`.

@@ -2071,8 +2071,14 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str, crate_modul
     ws2_32's `PWSSOCKET`/`TCATALOG`/`SOCKET_ERROR` live in ws2_32-rust's own generated
     `types` module, so collapsing them onto `ntdll_sys::nt` yields an unresolved-import
     wall at best, and at worst binds to a same-named-but-different NT symbol.
+
+    `sys_umbrella` may be `""` for a substrate that re-exports its bindgen FLAT at the
+    crate root (`msvcrt-sys`: `pub use bindgen_<arch>::*;`) rather than under a module
+    (`ntdll-sys`: `pub mod nt`). Then the target path is just `<sys_crate>::`. Note ""
+    is meaningfully different from None, which means "not a user-mode target" and skips
+    this pass entirely — see `postprocess`.
     """
-    pfx = f"{sys_crate}::{sys_umbrella}::"
+    pfx = f"{sys_crate}::{sys_umbrella}::" if sys_umbrella else f"{sys_crate}::"
     # 0. Crate-local bindgen island (gen_driver_types.sh) → `crate::<module>::`.
     #    MUST precede the blanket collapse in step 1.
     if crate_module:
@@ -2094,8 +2100,13 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str, crate_modul
         code = re.sub(rf"\b{re.escape(other)}::\w+::", pfx, code)
     # 2. Drop every `use <crate>::<umbrella>::(* | {…} | Name);` line
     #    (single- or multi-line braced list) — replaced by one glob.
+    _seg = (
+        f"{re.escape(sys_crate)}::{re.escape(sys_umbrella)}"
+        if sys_umbrella
+        else re.escape(sys_crate)
+    )
     use_pat = re.compile(
-        rf"^[ \t]*use\s+{re.escape(sys_crate)}::{re.escape(sys_umbrella)}::"
+        rf"^[ \t]*use\s+{_seg}::"
         r"(?:\*|\{[^}]*\}|\w+)\s*;[ \t]*\n",
         re.MULTILINE | re.DOTALL,
     )
@@ -2109,7 +2120,7 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str, crate_modul
             insert_at = i + 1
         else:
             break
-    glob = f"use {sys_crate}::{sys_umbrella}::*;"
+    glob = f"use {sys_crate}::{sys_umbrella}::*;" if sys_umbrella else f"use {sys_crate}::*;"
     if glob not in code:
         lines.insert(insert_at, glob)
     return "\n".join(lines)
@@ -2333,7 +2344,12 @@ def postprocess(
     # User-mode target: collapse the kernel-crate imports the kernel-
     # oriented prompt produced onto the user-mode substrate umbrella.
     # Last (after all import fixes have settled).
-    if sys_umbrella:
+    #
+    # `is not None` (not truthiness): "" is a REAL user-mode value meaning the
+    # substrate re-exports its bindgen flat at the crate root (msvcrt-sys), and
+    # such a target still needs every pass in this block — import-ABI enforcement,
+    # inline-redeclaration stripping, the rest. Only None (a kernel target) skips.
+    if sys_umbrella is not None:
         code = collapse_sys_crate(code, sys_crate, sys_umbrella, crate_module)
         # User-mode only: force every IMPORT into the extern block its exporting DLL's .spec
         # requires (CRT=cdecl, Win32=stdcall). The C source doesn't say which is which, so the

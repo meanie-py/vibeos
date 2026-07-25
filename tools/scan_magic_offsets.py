@@ -51,10 +51,20 @@ SKIP_FILE_RE = re.compile(
 
 NOLINT_RE = re.compile(r"//\s*nolint(?::\s*magic-offset\b|\s*$|:?\s*\()")
 
+# Rust integer literals may carry a type suffix (0x18usize, 24u32) and `_` digit
+# separators. A trailing `\b` after the digits does NOT tolerate that — `u` is a
+# word char, so `0x18usize` leaves no boundary and the shape silently MISSES.
+# This is the §9.119 lesson: scan_bugcheck_codes.py had the identical hole and
+# reported a clean 0 for six weeks while `KeBugCheckEx(0x35u32, ...)` sat in the
+# tree. No live escapee here today — fixed as a latent hole, not a live bug.
+_SFX = r"(?:[ui](?:8|16|32|64|128|size))?"
+
 # B. `as usize + <literal>` later re-cast to a pointer on the same line
-B_RE = re.compile(r"as\s+usize\s*[+\-]\s*(0x[0-9A-Fa-f]+|\d{2,})\b.*\bas\s+\*(?:const|mut)\b")
+B_RE = re.compile(
+    r"as\s+usize\s*[+\-]\s*(0x[0-9A-Fa-f_]+|\d[\d_]{1,})" + _SFX + r"\b.*\bas\s+\*(?:const|mut)\b"
+)
 # C. byte_add / byte_offset / byte_sub with a literal
-C_RE = re.compile(r"\.byte_(?:add|offset|sub)\s*\(\s*(0x[0-9A-Fa-f]+|\d+)\b")
+C_RE = re.compile(r"\.byte_(?:add|offset|sub)\s*\(\s*(0x[0-9A-Fa-f_]+|\d[\d_]*)" + _SFX + r"\b")
 # D. struct-pointer-recast-to-u8 byte arithmetic: hex/large-dec literal, or a
 #    SCREAMING_CASE const path (the pfn_offsets_extra::NEXT_LRU table shape).
 #    Lowercase args (`.add(i)`, `.add(len)`) are ordinary buffer indexing — skip.
@@ -68,7 +78,7 @@ D_RE = re.compile(
 #    (the TEB.GdiBatchCount-at-0x74 bug, field manual §9.41: real offset
 #    0x1740, flush never fired, GDI batch overflowed into CLIENTINFO). Buffer
 #    indexing essentially never uses hex literals; struct numerology does.
-E_RE = re.compile(r"\.\s*(?:add|offset|sub)\s*\(\s*0x[0-9A-Fa-f]+\b")
+E_RE = re.compile(r"\.\s*(?:add|offset|sub)\s*\(\s*0x[0-9A-Fa-f_]+" + _SFX + r"\b")
 
 SHAPES = (
     ("PTR_RECAST_ARITH", B_RE),

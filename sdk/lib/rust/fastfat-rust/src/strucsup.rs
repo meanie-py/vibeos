@@ -2331,9 +2331,22 @@ pub unsafe extern "system" fn FatEnsureStringBufferEnough(
             TAG_DYNAMIC_NAME_BUFFER,
         ) as *mut u8).cast();
 
-        // NT_ASSERT((*LocalString).Buffer != NULL);
+        // NT_ASSERT((*LocalString).Buffer != NULL) — in C an assert is
+        // ((void)0) in retail and RtlAssert under DBG; it is NEVER __assume(0).
+        // This had been translated to unreachable_unchecked(), i.e. UB, which
+        // lets LLVM assume the pointer is non-null and drop null checks on it
+        // downstream. FsRtlAllocatePoolWithTag raises on failure so the branch
+        // should be unreachable in practice — but "should be" is exactly what
+        // an assert exists to catch, so report it rather than assume it.
         if (*LocalString).Buffer.is_null() {
-            core::hint::unreachable_unchecked();
+            extern "C" {
+                fn DbgPrint(fmt: *const i8, ...) -> u32;
+            }
+            DbgPrint(
+                b"[FASTFAT] FatInitializeStringBuffer: allocation returned NULL (%u bytes)\n\0"
+                    .as_ptr() as *const i8,
+                DesiredBufferSize as u32,
+            );
         }
 
         (*LocalString).MaximumLength = DesiredBufferSize;

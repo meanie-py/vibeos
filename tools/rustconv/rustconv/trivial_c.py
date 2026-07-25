@@ -52,6 +52,24 @@ Accepted shapes, each with its precondition:
     *exactly* the parameters, in order, by name, unmodified. Any cast, reorder,
     literal, address-of, or arity change fails the identity check. Every
     parameter must be named.
+``forwarder_with_null``
+    ``return Other_l(a, b, c, NULL);`` — the ``forwarder`` above, plus literal
+    ``NULL`` arguments. This is THE dominant CRT idiom: the locale-aware runtime
+    is written as pairs, ``X(args)`` delegating to ``X_l(args, NULL)``, and it is
+    146 of msvcrt's 1792 functions (76 in mbcs.c alone — 40% of that file). Those
+    are exactly the calls where a model has nothing to add and everything to
+    subtly break: a reordered argument, a dropped ``NULL``, the wrong locale
+    sentinel.
+
+    Admitting a literal is only sound because the null is PROVEN, not assumed.
+    The callee must be defined in the SAME translation unit, so its parameter
+    list has already been parsed, and each ``NULL`` is accepted only where that
+    callee's parameter at that position is a pointer type — from the signature,
+    never inferred from the argument. Arity must match the callee exactly (so a
+    variadic or unknown callee is refused), and the non-``NULL`` arguments must
+    still be the parameters in order. ``0``/``FALSE`` are NOT accepted even
+    though C would coerce them: ``0`` at an ``int`` position is just zero, and
+    distinguishing the two costs more certainty than the shape is worth.
 ``getter``
     ``return p->field;`` / ``return s.field;`` on a single member of a parameter.
     ``->`` requires a single-star parameter type; ``.`` requires a non-pointer
@@ -87,7 +105,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from tree_sitter import Node, Parser
@@ -120,9 +138,21 @@ SHAPES = (
     "constant_return",
     "param_return",
     "forwarder",
+    "forwarder_with_null",
     "getter",
     "setter",
 )
+
+# The oracle compares C and Rust token-for-token, and a null pointer is the one
+# atom whose two spellings cannot match: C's `NULL` is a single `null` node (and
+# an uppercase-constant occurrence), while Rust needs `core::ptr::null_mut()` —
+# three identifiers and an extra call node. Rather than weaken checks 2/3/4 for
+# everyone, both sides are rewritten to this single sentinel before comparison.
+# It is deliberately lowercase so `_constants` stops counting it on the C side too,
+# which keeps the missing/invented constant invariant symmetric.
+_NULL_SENTINEL = "__rustconv_null"
+_RE_C_NULL = re.compile(r"(?<![A-Za-z0-9_])NULL(?![A-Za-z0-9_])")
+_RE_RUST_NULL = re.compile(r"core::ptr::null(?:_mut)?\(\)")
 
 # Debug channels that are MACROS in the C and no-op `macro_rules!` in the Rust
 # substrate (see e.g. `wkssvc-rust/src/prelude.rs`), so dropping the statement
@@ -616,11 +646,63 @@ def _member(base: str, op: str, field: str) -> str | None:
     return f"(*{rust_base}).{rust_field}" if op == "->" else f"{rust_base}.{rust_field}"
 
 
+def _is_pointer_c_type(c_type: str) -> bool:
+    return "*" in _normalize_c_type(c_type)
+
+
+def _is_const_pointer_c_type(c_type: str) -> bool:
+    """`const T *p` -> null(); `T *p` / `T *const p` -> null_mut().
+
+    Only a const applying to the POINTEE picks the const spelling, so the const
+    must appear before the star. (rustc is the backstop either way: a wrong
+    choice is a type error at candidate-check, not a silent miscompile.)
+    """
+    normalized = _normalize_c_type(c_type)
+    return "const" in normalized.split("*")[0].split()
+
+
+def _forward_args(
+    args: Sequence[str],
+    names: Sequence[str],
+    callee_params: Sequence[tuple[str, str]] | None,
+) -> list[str] | None:
+    """Rust spellings for a forwarder's arguments, or None if not provable.
+
+    Accepts the parameters in order, with literal `NULL` allowed ONLY at a position
+    the callee's own parsed signature declares a pointer.
+    """
+    if callee_params is None or len(args) != len(callee_params):
+        return None  # unknown or variadic callee: nothing to prove the NULL against
+    spelled: list[str] = []
+    remaining = list(names)
+    # strict=True is provable here: the length mismatch returned None above.
+    for arg, (param_type, _) in zip(args, callee_params, strict=True):
+        if arg == "NULL":
+            if not _is_pointer_c_type(param_type):
+                return None  # NULL at a non-pointer position: not our shape
+            spelled.append(
+                "core::ptr::null()"
+                if _is_const_pointer_c_type(param_type)
+                else "core::ptr::null_mut()"
+            )
+            continue
+        if not remaining or arg != remaining[0]:
+            return None  # reordered, substituted, or a non-parameter expression
+        remaining.pop(0)
+        rust_name = _rust_ident(arg)
+        if rust_name is None:
+            return None
+        spelled.append(rust_name)
+    return spelled if not remaining else None
+
+
 def _match_shape(
     residual: str,
     params: Sequence[tuple[str, str]],
     return_type: str,
     own_name: str,
+    # Mapping (covariant values), not dict — see lower_trivial_c_function.
+    siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
 ) -> tuple[str, str] | None:
     """Return ``(shape, rust_statements)`` for a recognized residual body."""
     names = [name for _, name in params]
@@ -656,13 +738,27 @@ def _match_shape(
             return None
         if match.group("ret") is None and not void:
             return None  # value-returning C function that never returns: UB, not a template.
-        if not all(names) or _split_top_level(args) != names:
+        if not all(names):
             return None
-        spelled = [_rust_ident(name) for name in [callee, *names]]
-        if any(item is None for item in spelled):
+        rust_callee = _rust_ident(callee)
+        if rust_callee is None:
             return None
-        call = f"{spelled[0]}({', '.join(item for item in spelled[1:] if item)})"
-        return "forwarder", (f"{call};" if void else call)
+        actual = _split_top_level(args)
+        if actual == names:
+            spelled = [_rust_ident(name) for name in names]
+            if any(item is None for item in spelled):
+                return None
+            call = f"{rust_callee}({', '.join(item for item in spelled if item)})"
+            return "forwarder", (f"{call};" if void else call)
+        # …the same forwarder, plus literal NULLs proven against the callee's own
+        # parsed signature (the CRT's X -> X_l(…, NULL) idiom). See the module docstring.
+        if "NULL" not in actual:
+            return None
+        spelled_args = _forward_args(actual, names, (siblings or {}).get(callee))
+        if spelled_args is None:
+            return None
+        call = f"{rust_callee}({', '.join(spelled_args)})"
+        return "forwarder_with_null", (f"{call};" if void else call)
 
     match = _RE_CONST_RETURN.fullmatch(residual)
     if match is not None:
@@ -718,7 +814,13 @@ def _render_item(
     return block("(\n    " + ",\n    ".join(bindings) + ",\n)")
 
 
-def lower_trivial_c_function(dep: FunctionDep) -> TrivialLowering | None:
+def lower_trivial_c_function(
+    dep: FunctionDep,
+    # Mapping, not dict: dict's value type is invariant, so a caller's
+    # dict[str, list[...]] (which is what _normalized_params builds) would not be
+    # assignable to dict[str, Sequence[...]].
+    siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
+) -> TrivialLowering | None:
     """Lower one trivial C function to Rust for $0, or ``None`` to pay the model.
 
     ``None`` is the correct, expected outcome for anything outside the proven
@@ -726,6 +828,11 @@ def lower_trivial_c_function(dep: FunctionDep) -> TrivialLowering | None:
     exclusions. The returned lowering has already been re-proved against the C by
     :func:`verify_trivial_lowering`; a disagreement raises
     :class:`TrivialLoweringError` rather than silently falling back.
+
+    ``siblings`` maps every same-TU function name to its parsed parameter list. It
+    is what lets ``forwarder_with_null`` PROVE a literal ``NULL`` sits at a pointer
+    position instead of assuming it; without it that shape is simply not offered,
+    so a caller with no sibling map degrades to the pre-existing behaviour.
     """
     if dep.cpp_class is not None:
         return None  # C++ methods belong to cpp_com.lower_trivial_worker.
@@ -750,7 +857,7 @@ def lower_trivial_c_function(dep: FunctionDep) -> TrivialLowering | None:
         # (The oracle found this on dbghelp's `native_load_module`.)
         return None
     params = _normalized_params(dep.params)
-    matched = _match_shape(residual, params, return_type, dep.name)
+    matched = _match_shape(residual, params, return_type, dep.name, siblings)
     if matched is None:
         return None
     bindings = _render_params(params)
@@ -781,10 +888,18 @@ def lower_trivial_c_function(dep: FunctionDep) -> TrivialLowering | None:
 
 
 def lower_trivial_c_functions(deps: Iterable[FunctionDep]) -> dict[str, TrivialLowering]:
-    """Lower every function in ``deps`` that is provably trivial."""
+    """Lower every function in ``deps`` that is provably trivial.
+
+    Builds the same-TU signature map once and hands it to every function, so
+    ``forwarder_with_null`` can check a literal ``NULL`` against the callee's real
+    parameter type. Only C++-free, non-class deps contribute (the C++ path belongs
+    to ``cpp_com``).
+    """
+    deps = list(deps)
+    siblings = {dep.name: _normalized_params(dep.params) for dep in deps if dep.cpp_class is None}
     lowered: dict[str, TrivialLowering] = {}
     for dep in deps:
-        lowering = lower_trivial_c_function(dep)
+        lowering = lower_trivial_c_function(dep, siblings)
         if lowering is not None:
             lowered[dep.name] = lowering
     return lowered
@@ -884,6 +999,15 @@ def verify_trivial_lowering(dep: FunctionDep, lowering: TrivialLowering) -> list
        ``512``) impossible to ship unnoticed.
     5. **The emitted item really defines this C function**, with the same arity.
 
+    A null pointer is the one atom whose two spellings cannot compare equal —
+    C's `NULL` is one `null` node and an uppercase constant, Rust's
+    `core::ptr::null_mut()` is three identifiers plus a call. Both sides are
+    rewritten to `_NULL_SENTINEL` before checks 2/3/4 so the comparison stays
+    token-for-token everywhere else: a `NULL` that moved position, was dropped,
+    or replaced a real argument still perturbs the identifier sequence. (The one
+    thing the sentinel cannot distinguish is `null()` from `null_mut()`, which is
+    a *type* error rustc catches at candidate-check, not a silent miscompile.)
+
     Returns a list of findings; empty means proven.
     """
     findings: list[str] = []
@@ -897,7 +1021,18 @@ def verify_trivial_lowering(dep: FunctionDep, lowering: TrivialLowering) -> list
     rust_parsed = _block_body(lowering.rust)
     if rust_parsed is None:
         return [*findings, "generated Rust has no function block"]
-    rust_block, rust_bytes, rust_inner = rust_parsed
+    _, _, rust_inner_raw = rust_parsed
+    # Canonicalize the one atom whose spellings cannot match (see the docstring).
+    # Re-parse from the rewritten text so the node offsets belong to what we compare.
+    # Both Rust spellings fold: `core::ptr::null_mut()` (forwarder_with_null) and a
+    # bare `NULL` token (constant_return, where the crate supplies the constant and
+    # the C spelling is copied through verbatim).
+    residual = _RE_C_NULL.sub(_NULL_SENTINEL, residual)
+    rust_inner = _RE_C_NULL.sub(_NULL_SENTINEL, _RE_RUST_NULL.sub(_NULL_SENTINEL, rust_inner_raw))
+    rust_canon = _block_body(f"fn {_PROBE}() {{{rust_inner}}}")
+    if rust_canon is None:
+        return [*findings, "generated Rust has no function block"]
+    rust_block, rust_bytes, rust_inner = rust_canon
     c_parsed = _c_probe(residual)
     if c_parsed is None:
         return [*findings, "residual C statements do not parse"]

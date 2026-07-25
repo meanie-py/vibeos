@@ -173,7 +173,12 @@ def resolve_target(args, path):
             # ...) → <name>-rust on the ntdll-sys user substrate. Only on the
             # explicit --target path; detect_target (rtl/cmlib routing) untouched.
             src = REACTOS_ROOT / "sdk" / "lib" / name
-        return make_user_dll_target(name, src)
+        return make_user_dll_target(
+            name,
+            src,
+            output_crate=getattr(args, "output_crate", None),
+            sys_crate=getattr(args, "sys_crate", None),
+        )
     return detect_target(path)
 
 
@@ -3415,6 +3420,17 @@ def main():
     p.add_argument("path", help="C file or directory (relative to ntoskrnl/ or absolute)")
     p.add_argument(
         "--target", help="Override target: a known target name or a dll/win32/<name> crate name"
+    )
+    p.add_argument(
+        "--output-crate",
+        help="Rust crate the translation is assembled into, when it is not the "
+        "conventional <target>-rust (e.g. msvcrt -> msvcrt-crt-rust). Named by the "
+        "TargetResolveError that refuses to guess.",
+    )
+    p.add_argument(
+        "--sys-crate",
+        help="FFI substrate crate to translate against (e.g. ntdll-sys, msvcrt-sys), when "
+        "the output crate declares none or several.",
     )
     p.add_argument(
         "-m",

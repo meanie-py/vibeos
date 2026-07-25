@@ -18,6 +18,7 @@ from . import farm as farm_mod
 from . import gate as gate_mod
 from . import gdbengine as gdb_mod
 from . import health as health_mod
+from . import land as land_mod
 from . import prune as prune_mod
 from . import repro as repro_mod
 from . import smoke as smoke_mod
@@ -187,6 +188,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip the strict scanner suite (default-on; blocks the stamp on NEW findings)",
     )
     g.set_defaults(fn=gate_mod.gate)
+
+    la = sub.add_parser(
+        "land",
+        help="serialized land: FIFO lock → fetch → merge master → gate → push (no gate races)",
+    )
+    la.add_argument(
+        "--retries",
+        type=int,
+        default=2,
+        help="gate flake-retries (passthrough; default 2)",
+    )
+    la.add_argument("--clean", action="store_true", help="cold builds in the gate")
+    la.add_argument(
+        "--no-push", action="store_true", help="do everything but the push (rehearse a landing)"
+    )
+    la.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="report the plan (merge needed? gate needed? who is landing) and exit",
+    )
+    la.add_argument(
+        "--queue-timeout",
+        type=float,
+        default=0,
+        help=f"seconds to wait for the land lock (default {hostlock.LAND_LOCK_TIMEOUT:.0f})",
+    )
+    la.set_defaults(fn=land_mod.land)
+
+    ls = sub.add_parser("land-status", help="who holds the land lock + who is queued behind it")
+    ls.add_argument("--json", action="store_true")
+    ls.set_defaults(fn=land_mod.cmd_land_status)
 
     f = sub.add_parser(
         "farm", help="flake farm: soak boots into a durable corpus (~/vibeos-flake-farm)"

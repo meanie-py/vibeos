@@ -24,7 +24,10 @@ QEMU_MAX_LIFETIME_SECONDS="${VIBEOS_QEMU_MAX_LIFETIME:-1800}"
 # worktrees/sessions. Enforced with a pool of flock'd slot files (below).
 # Mirrors tests/qemu/vm.py:QEMU_MAX_CONCURRENT. The cap exists so N parallel
 # smoke runs queue instead of all thrashing the host's KVM/RAM at once.
-QEMU_MAX_CONCURRENT="${VIBEOS_QEMU_MAX_CONCURRENT:-10}"
+# 10 -> 16 (2026-07-25) in lockstep with vm.py: the smoke throttle is the hostlock
+# `bootcpu` pool (capacity-derived, 8 here), and at 10 an 8-boot fleet starved interactive
+# `debug start` / `boot` of slots.
+QEMU_MAX_CONCURRENT="${VIBEOS_QEMU_MAX_CONCURRENT:-16}"
 # How long a launcher waits for a free slot before giving up.
 QEMU_QUEUE_TIMEOUT_SECONDS="${VIBEOS_QEMU_QUEUE_TIMEOUT:-1800}"
 # Slot-file pool lives alongside the run lockfiles. Files are persistent

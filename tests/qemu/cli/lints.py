@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 from .artifacts import Run, Stage
@@ -69,6 +70,39 @@ _SUMMARY_LINE = re.compile(
 
 def _finding_lines(out: str) -> set[str]:
     return {ln.rstrip() for ln in out.splitlines() if ln.strip() and not _SUMMARY_LINE.search(ln)}
+
+
+# Finding identity WITHOUT the line/column, so LINE DRIFT is not a new finding.
+# Same disease as the count-bearing summary lines above, one level deeper: the baseline
+# stored 'qemu/lib/common.sh:90:17: … SLOT_INDEX …', a 3-line COMMENT was inserted earlier
+# in the file, and the identical finding at :93:17 read as "1 new" → gate RED (2026-07-25).
+# There is nothing an author can do about that except re-bless the baseline, which re-blesses
+# whatever ELSE drifted in the same pass — so the mechanism actively teaches people to
+# launder findings. Compare on (file, message) instead, as a MULTISET so a genuinely
+# additional occurrence still counts: 2 hits where the baseline recorded 1 is NEW, the same
+# hit at a different line is not. Lines with no `file:line:` prefix are compared verbatim,
+# exactly as before.
+_LOCATION = re.compile(r"^(?P<file>[^\s:]+):\d+(?::\d+)?:")
+
+
+def _finding_key(line: str) -> str:
+    m = _LOCATION.match(line)
+    return f"{m.group('file')}: {line[m.end() :].strip()}" if m else line
+
+
+def _new_findings(cur: set[str], base: set[str]) -> list[str]:
+    """Current finding lines whose (file, message) is not covered by the baseline, keeping
+    the real line numbers for the report. Surplus occurrences of an already-baselined key
+    are reported too (that is what makes this a multiset and not just a set of keys)."""
+    budget = Counter(_finding_key(ln) for ln in base)
+    out: list[str] = []
+    for ln in sorted(cur):
+        k = _finding_key(ln)
+        if budget.get(k, 0) > 0:
+            budget[k] -= 1
+        else:
+            out.append(ln)
+    return out
 
 
 def _rel(text: str, repo: Path) -> str:
@@ -133,7 +167,7 @@ def _lint_stage(
     text = _rel(text, repo)
     base = _baseline(repo, name)
     cur = _finding_lines(text)
-    new = cur - base
+    new = _new_findings(cur, base)
     # The gate is NEW findings vs baseline — NOT the exit code. Tools like
     # shellcheck/verify_* exit nonzero whenever ANY finding exists, but those
     # are baselined/accepted; only new ones matter.
@@ -145,7 +179,7 @@ def _lint_stage(
                 exit=cp.returncode,
                 status=st,
                 detail=f"{len(new)} new",
-                salient=sorted(new)[:3],
+                salient=new[:3],
             )
         )
     if cur:
@@ -313,6 +347,24 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_bugcheck_codes",
             [py, str(sbc), "--lint"] if sbc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Sibling of the above, same root cause, different lowering (§9.120). C's
+    # PAGED_CODE/ASSERT/NT_ASSERT are DIAGNOSTICS — KdPrint+RtlAssert under DBG,
+    # ((void)0) in retail — and never __assume(0). Translating one to
+    # core::hint::unreachable_unchecked() makes it UB, licensing LLVM to delete
+    # the guarding check and poison what follows: strictly worse than the C in
+    # every build config, since retail C does nothing at all. Found live in
+    # cdrom (PAGED_CODE) and fastfat (NT_ASSERT on an allocation result), plus a
+    # third that had escalated to a BUGCHECK with an invented code in classpnp.
+    # Had already recurred once (see the fatinit.rs __int2c comment), which is
+    # why a gate and not another one-off fix. Baseline is EMPTY.
+    sau = repo / "tools" / "scan_assert_to_ub.py"
+    specs.append(
+        (
+            "scan_assert_to_ub",
+            [py, str(sau), "--lint"] if sau.is_file() else ["MISSING"],
             "stdout",
         )
     )
