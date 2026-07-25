@@ -9501,6 +9501,29 @@ you have re-created the §9.112 catch-all bug. `tools/verify_match_consts.py` (g
 oracle for exactly this, and it must stay green on every sealed C flip. Net: seal, and treat
 an island gap as a hard failure rather than a warning.
 
+**Island completeness is MECHANIZABLE — stop hand-authoring the allowlist.**
+`python -m rustconv.profile_derive <module> --emit report` derives the profile from the
+CMake source list + each TU's real include closure, and runs the §9.112 audit for you:
+every `case`-label identifier is attributed to the header / TU / `-sys` crate that defines
+it, and an owner that would have been excluded is FORCE-ADDED. On rtl8139 that is the whole
+`MiniportQueryInformation` switch — all 38 `OID_*` labels resolve only because `ntddndis.h`
+is force-added; at depth 3 the tiering would have dropped it.
+
+Two constant classes still escape a derived allowlist, and both are WARNs to act on:
+1. **A const living only in a SECONDARY `-sys` island.** rtl8139 `ndis.c:299,311` switches
+   on `CmResourceTypePort`/`CmResourceTypeInterrupt`. Those are absent from
+   `ntkrnl-sys/src/bindgen_i386.rs` (0 definitions) and exist only in
+   `hal_bindgen_i386.rs` (3). Allowlisting the header does nothing — the translation must
+   `use ntkrnl_sys::hal_ddk::…` explicitly or the name stays unresolved, i.e. a catch-all.
+2. **A base-header owner the `-sys` crate lacks.** Pulling in the base header to get one
+   constant drags a monster island; transcribe the constant into the crate prelude instead.
+
+Note how this compounds with sealing: an unsealed translation tends to lower
+`case NRC_NORES:` to `9 =>`, which is *accidentally* immune to §9.112. Sealing restores the
+name, which is correct and readable but only compiles-correctly if the constant resolves. So
+turning sealing on makes island completeness MORE critical — run `profile_derive` first and
+treat its ERROR findings as blocking.
+
 **Recipe:** pass `--seal-facts --seal-calls` to `rustconv translate` for any plain-C module.
 Dialect selection is automatic (`--cpp-com` → `cpp`, otherwise `c`). Verify a prompt with
 `--dry-run --prompt` before spending: the envelope sections list the token counts, and a
