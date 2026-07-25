@@ -1295,6 +1295,19 @@ blocker is almost never the shape — it is the missing authority. Read with its
 six weeks). **A pattern match is evidence about TEXT, never about SEMANTICS, in either
 direction. Demand a positive AND a negative control before believing a count.**
 
+A third direction of the same class: a regex can match a span that **is not a token at all**,
+because it cannot see what preceded it. Symptom — `translate --free-functions shlexec.cpp`
+refused the whole TU with `unsupported C wide character literal L':` quoting ~1,800 lines, and
+the literal it named does not exist in the file. Cause — `L'(?:\\.|[^'\\])+'` matched the
+trailing `L'` of `case 'L':` (a NARROW literal whose closing quote follows the letter L) and ran
+to the next apostrophe, which was in a comment reading `PIDL's`. Fix — scan, don't match:
+walk the source tracking comments and quoting and fold an `L` prefix into the span it belongs
+to, so `'L'` starts at the quote and `L':'` one character earlier. **Lexical boundaries are the
+one thing a regex structurally cannot find, because a token's start is defined by everything
+before it.** The same file had all three variants that break the naive pattern — a wide literal
+inside a comment, `L'` inside a narrow string, and the `case 'L':` — so treat one occurrence as
+proof the others are present too.
+
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the
 tree is clean" or "I did not look." **This is not a fail-loud problem** — the scanner ran fine.

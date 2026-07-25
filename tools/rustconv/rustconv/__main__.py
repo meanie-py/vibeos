@@ -1833,8 +1833,16 @@ def cmd_translate(args):
         raii_name, _, raii_path = spec_arg.partition("=")
         raii_name = raii_name.strip()
         raii_file = Path(raii_path.strip()).expanduser()
-        if not (rustconv_target.name == "shell32" and getattr(args, "cpp_com", False)):
-            raise CppComError("--local-raii currently requires shell32 --cpp-com")
+        # Both C++ paths hit body-local RAII and both run require_supported_worker_raii,
+        # so both need the escape hatch. Gating it to --cpp-com made the free-function
+        # path a dead end: `provided` was always empty there, so the refusal message
+        # named a flag that the same invocation would then reject (shlfolder.cpp /
+        # shldataobject.cpp / item_prop.cpp all stalled on CDataObjectHIDA this way).
+        if not (
+            rustconv_target.name == "shell32"
+            and (getattr(args, "cpp_com", False) or getattr(args, "free_functions", False))
+        ):
+            raise CppComError("--local-raii currently requires shell32 --cpp-com/--free-functions")
         if not raii_file.is_file():
             raise CppComError(f"--local-raii {raii_name}: no such file: {raii_file}")
         local_raii_impls[raii_name] = raii_file.read_text()
@@ -3092,10 +3100,20 @@ def cmd_translate(args):
                     "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
                 )
             stitched = "\n\n".join(deterministic) + "\n\n" + stitched
-        elif cpp_com_wide_statics:
-            # Free-function path: the bodies now reference CPP_COM_WSTR_* by name, so
-            # the statics have to be in the module or every reference dangles.
-            stitched = cpp_com_wide_statics + "\n\n" + stitched
+        elif free_functions:
+            # Free-function path: the bodies now reference CPP_COM_WSTR_* by name and
+            # call into the RAII lowering, so both have to be in the module or every
+            # reference dangles.
+            prelude = []
+            if cpp_com_wide_statics:
+                prelude.append(cpp_com_wide_statics)
+            for raii_name, raii_rust in local_raii_impls.items():
+                prelude.append(
+                    f"// --local-raii {raii_name}: hand-verified lowering (spliced verbatim; "
+                    "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
+                )
+            if prelude:
+                stitched = "\n\n".join(prelude) + "\n\n" + stitched
 
         # COM vtbl tables, GENERATED — never asked of the model. `translate` is
         # function-granular, so file-scope `static const IXVtbl` tables fall to the
