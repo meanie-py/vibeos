@@ -7,12 +7,12 @@
 //! Regenerate with:
 //!     python -m rustconv difftest-gen dll/win32/msvcrt/mbcs.c --out <this file>
 //!
-//! 164 of 175 functions are graded. The 11 refusals are listed at the
+//! 167 of 175 functions are graded. The 8 refusals are listed at the
 //! bottom of this file WITH THEIR REASON — a refusal is a function that still needs a
 //! hand-written case, not one that is known good.
 #![allow(non_snake_case)]
 
-use crate::fixture::{Corpus, Guarded, CODEPAGES, LOCALES, MbcsFixture};
+use crate::fixture::{Corpus, Guarded, CODEPAGES, LOCALES, MBSTATES, MbcsFixture};
 
 extern "C" {
     fn ___mb_cur_max_func() -> u32;
@@ -307,6 +307,8 @@ extern "C" {
     fn ref__mblen_l(str: *const u8, size: usize, locale: *mut core::ffi::c_void) -> u32;
     fn mblen(str: *const u8, size: usize) -> u32;
     fn ref_mblen(str: *const u8, size: usize) -> u32;
+    fn mbrlen(str: *const u8, len: usize, state: *mut i32) -> usize;
+    fn ref_mbrlen(str: *const u8, len: usize, state: *mut i32) -> usize;
     fn _mbstrlen_l(str: *const u8, locale: *mut core::ffi::c_void) -> usize;
     fn ref__mbstrlen_l(str: *const u8, locale: *mut core::ffi::c_void) -> usize;
     fn _mbstrlen(str: *const u8) -> usize;
@@ -315,6 +317,10 @@ extern "C" {
     fn ref__mbtowc_l(dst: *mut u16, str: *const u8, n: usize, locale: *mut core::ffi::c_void) -> u32;
     fn mbtowc(dst: *mut u16, str: *const u8, n: usize) -> u32;
     fn ref_mbtowc(dst: *mut u16, str: *const u8, n: usize) -> u32;
+    fn btowc(c: u32) -> u16;
+    fn ref_btowc(c: u32) -> u16;
+    fn mbrtowc(dst: *mut u16, str: *const u8, n: usize, state: *mut i32) -> usize;
+    fn ref_mbrtowc(dst: *mut u16, str: *const u8, n: usize, state: *mut i32) -> usize;
     fn _mbstowcs_l(wcstr: *mut u16, mbstr: *const u8, count: usize, locale: *mut core::ffi::c_void) -> usize;
     fn ref__mbstowcs_l(wcstr: *mut u16, mbstr: *const u8, count: usize, locale: *mut core::ffi::c_void) -> usize;
     fn mbstowcs(wcstr: *mut u16, mbstr: *const u8, count: usize) -> usize;
@@ -345,7 +351,7 @@ extern "C" {
     fn ref__ismbcl2(c: u32) -> u32;
 }
 
-// ===== host-only (110) ========================================
+// ===== host-only (111) ========================================
 pub fn case____mb_cur_max_func() {
     for &cp in CODEPAGES {
         let _fix = MbcsFixture::install(cp);
@@ -2104,6 +2110,27 @@ pub fn case_mblen() {
         }
     }
 }
+pub fn case_mbrlen() {
+    let corpus = Corpus::new();
+    for &cp in CODEPAGES {
+        let _fix = MbcsFixture::install(cp);
+        for (str_s, str_r) in corpus.pairs() {
+            for len in corpus.sizes() {
+                for state0 in MBSTATES {
+                    let (mut state_s, mut state_r): (i32, i32) = (state0, state0);
+                    let got = unsafe { mbrlen(str_s.as_ptr(), len, &mut state_s) };
+                    let want = unsafe { ref_mbrlen(str_r.as_ptr(), len, &mut state_r) };
+                    if got != want {
+                        panic!("mbrlen: got {got:?} ref {want:?} — cp={cp} str={str_s:?} len={len} state={state0:#x}");
+                    }
+                    if state_s != state_r {
+                        panic!("mbrlen: state = {state_s} vs ref {state_r} — cp={cp} str={str_s:?} len={len} state={state0:#x}");
+                    }
+                }
+            }
+        }
+    }
+}
 pub fn case__mbctohira_l() {
     for &cp in CODEPAGES {
         let _fix = MbcsFixture::install(cp);
@@ -2235,7 +2262,7 @@ pub fn case__ismbcl2() {
     }
 }
 
-// ===== needs the NLS replay fixture (54) ========================================
+// ===== needs the NLS replay fixture (56) ========================================
 pub fn case__mbctolower_l() {
     for &cp in CODEPAGES {
         let _fix = MbcsFixture::install(cp);
@@ -3040,6 +3067,43 @@ pub fn case_mbtowc() {
         }
     }
 }
+pub fn case_btowc() {
+    for &cp in CODEPAGES {
+        let _fix = MbcsFixture::install(cp);
+        for c in 0..=0xFFFFu32 {
+            let got = unsafe { btowc(c) };
+            let want = unsafe { ref_btowc(c) };
+            if got != want {
+                panic!("btowc: got {got:?} ref {want:?} — cp={cp} c={c:#06x}");
+            }
+        }
+    }
+}
+pub fn case_mbrtowc() {
+    let corpus = Corpus::new();
+    for &cp in CODEPAGES {
+        let _fix = MbcsFixture::install(cp);
+        for (str_s, str_r) in corpus.pairs() {
+            for n in corpus.sizes() {
+                for state0 in MBSTATES {
+                    let (mut dst_s, mut dst_r) = Guarded::pair();
+                    let (mut state_s, mut state_r): (i32, i32) = (state0, state0);
+                    let got = unsafe { mbrtowc(dst_s.wptr(), str_s.as_ptr(), n, &mut state_s) };
+                    let want = unsafe { ref_mbrtowc(dst_r.wptr(), str_r.as_ptr(), n, &mut state_r) };
+                    if got != want {
+                        panic!("mbrtowc: got {got:?} ref {want:?} — cp={cp} str={str_s:?} n={n} state={state0:#x}");
+                    }
+                    if !Guarded::same(&dst_s, &dst_r) {
+                        panic!("mbrtowc: dst differs — cp={cp} str={str_s:?} n={n} state={state0:#x}");
+                    }
+                    if state_s != state_r {
+                        panic!("mbrtowc: state = {state_s} vs ref {state_r} — cp={cp} str={str_s:?} n={n} state={state0:#x}");
+                    }
+                }
+            }
+        }
+    }
+}
 pub fn case__mbstowcs_l() {
     let corpus = Corpus::new();
     for &cp in CODEPAGES {
@@ -3140,11 +3204,8 @@ pub fn case__mbstowcs_s() {
 //   _setmbcp: mutates the pinned MBCS state
 //   _mbstok_s_l: unsupported parameter (?:unsigned char * *)
 //   _mbstok_s: unsupported parameter (?:unsigned char * *)
-//   mbrlen: unsupported parameter (?:mbstate_t *)
-//   btowc: unsupported return (?:wint_t)
-//   mbrtowc: unsupported parameter (?:mbstate_t *)
-//   mbsrtowcs: unsupported parameter (?:const char * *, ?:mbstate_t *)
-//   mbsrtowcs_s: unsupported parameter (?:const char * *, ?:mbstate_t *)
+//   mbsrtowcs: unsupported parameter (?:const char * *)
+//   mbsrtowcs_s: unsupported parameter (?:const char * *)
 
 // ===== runner ==========================================================
 //
@@ -3299,10 +3360,13 @@ pub fn run_all() -> usize {
         ("_mbspbrk", case__mbspbrk),
         ("_mblen_l", case__mblen_l),
         ("mblen", case_mblen),
+        ("mbrlen", case_mbrlen),
         ("_mbstrlen_l", case__mbstrlen_l),
         ("_mbstrlen", case__mbstrlen),
         ("_mbtowc_l", case__mbtowc_l),
         ("mbtowc", case_mbtowc),
+        ("btowc", case_btowc),
+        ("mbrtowc", case_mbrtowc),
         ("_mbstowcs_l", case__mbstowcs_l),
         ("mbstowcs", case_mbstowcs),
         ("_mbstowcs_s_l", case__mbstowcs_s_l),
