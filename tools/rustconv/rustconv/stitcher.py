@@ -355,9 +355,14 @@ def _generate_imports_from_resolve(
     if target.name == "shell32":
         # The C++ COM path uses the crate's hand-maintained Win32 substrate and
         # deterministic COM declarations. Never route it through ntkrnl_sys.
+        # win32 is the shared substrate the free-function TUs are translated
+        # against; without it every assembled module opens with a few hundred
+        # E0425/E0412 that are pure import, not missing facts. A local definition
+        # shadows a glob import, so this cannot disturb a module that has its own.
         return [
             "use crate::shellcom::*;",
             "use crate::types::*;",
+            "use crate::win32::*;",
             "use core::ffi::c_void;",
         ]
     is_hal = target.name == "hal"
