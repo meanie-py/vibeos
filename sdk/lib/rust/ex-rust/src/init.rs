@@ -1609,7 +1609,11 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     // on a real HARDWARE page fault being caught (KiPageFault -> MmAccessFault ->
     // KiDispatchException -> __except). Nothing was checking that end-to-end. Prints
     // `[KMSAFECOPY] ... (PASS)`; a FAIL means the copy is silently unprotected.
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // i386 included since 2026-07-24: its KmProtectedCopyMemory is the extable
+    // fault-fixup primitive (ntoskrnl-rust ke/i386/safecopy.rs), not the C
+    // __try shim, and it exports its own KmSafeCopySelfTest with the same
+    // contract — so the same boot oracle covers all three arches now.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "x86"))]
     {
         extern "C" {
             fn KmSafeCopySelfTest() -> i32;

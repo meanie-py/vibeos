@@ -513,7 +513,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   (both are re-enabled in the winlogon ladder as the regression test), **21 applets + 7
   probe guests green on amd64**.
 - **`ProbeForWrite` raises unhandled in kernel mode → BUGCHECK 0x1E — FIXED 2026-07-25**
-  (task #67, §9.123). Chain was `ProbeForWrite+0x90` → `ExRaiseAccessViolation+0x14` →
+  (task #67, §9.127). Chain was `ProbeForWrite+0x90` → `ExRaiseAccessViolation+0x14` →
   `RtlRaiseStatus(0xC0000005)` → no handler under `USE_DUMMY_PSEH` → 0x1E. **The raise site
   was `KiInitializeUserApc` (`ke/amd64/usercall.rs`), whose C `_SEH2_TRY`/`_SEH2_EXCEPT` had
   been translated to a BARE BLOCK with the handler body dropped** — `exception_occurred` was
@@ -524,19 +524,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the probe: `Addr=-1280 = -sizeof(UAPC_FRAME)` identified the caller by arithmetic alone,
   and **refuted** the leading E12/wrong-width-marshal hypothesis in one boot.
   **Neither doom nor devmgmt was the culprit — `osk.exe` was**; they were downstream victims
-  of the box-kill. Root of the bad pointer is the flat `NtCreateThread` thunk (§9.124, task
+  of the box-kill. Root of the bad pointer is the flat `NtCreateThread` thunk (§9.128, task
   #64): it returns SUCCESS while building a thread with a zeroed trap frame. Verified same
   boot command before → after: BUGCHECK 1→0, PROBE-AV 1→0, doom frames died→2022.
   Still-relevant sibling is task #68 (win32k's
   `_MmCopyFromCaller`/`_MmCopyToCaller` copy user buffers unguarded — `SafeProbeFor*` is
   validate-only and does not touch-test, so any user process, 32- or 64-bit, can kill the
-  box with a partially-unmapped buffer; `ntoskrnl/kmsafecopy.c KmProtectedCopyMemory` is
-  the available fix, **amd64 only** — arm64 was tried and rejected, it wedges, §9.69).
+  box with a partially-unmapped buffer; `KmProtectedCopyMemory` is
+  the available fix and it is **no longer amd64-only** — that parenthetical was stale on BOTH
+  counts: arm64 has shipped it since 2026-07-17 (the §9.93 `save_next` fix cleared the §9.69
+  wedge; `ntoskrnl-cargo/build.rs` pushes `kmsafecopy.c` for aarch64), and i386 got it
+  2026-07-24 as an exception-table fault-fixup primitive (§9.123). **FIXED 2026-07-25:** both
+  `_MmCopy{From,To}Caller` in `win32k-rust/src/copy.rs` now route through it on all three
+  arches, and it is exported from `ntoskrnl.spec` because win32k.sys is a separate PE that
+  cannot carry its own i386 copy (the extable keys on a link-time PC in the kernel's
+  `KiTrap0EHandler`). The probe deliberately stays validate-only.)
   devmgmt/msconfig/sndrec32/kbswitch stay staged with their winlogon launch held so the 21
   passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
   marker fires long before the ladder runs.
 - **All 1962 Rust-kernel `debug_assert!` are compiled OUT, while the C `ASSERT` they were
-  translated from is LIVE — OPEN** (2026-07-25, task #72, §9.125). `debug_assert!` is gated on
+  translated from is LIVE — OPEN** (2026-07-25, task #72, §9.129). `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of
@@ -549,7 +556,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   to follow debug-assertions, and kernel-wide overflow panics are a separate, riskier change C
   never had) — but MEASURE FIRST: 1962 assertions going live at once needs a triage batch.
 - **`NtCreateThread` flat thunk returns SUCCESS with a zeroed thread context — REFUSED LOUDLY
-  2026-07-25** (task #64, §9.124). Five divergent params incl. a `CONTEXT` whose field lists
+  2026-07-25** (task #64, §9.128). Five divergent params incl. a `CONTEXT` whose field lists
   don't correspond across widths. Now returns `STATUS_NOT_IMPLEMENTED` instead of a silently
   corrupt thread; marshalling the structs alone would be *worse* (a more convincing corpse,
   still with no CPU-context setup — that needs the per-thread WoW64 entry #64 tracks). Blast
@@ -607,8 +614,20 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   frame backing a still-mapped user page is freed/re-handed-out (image face = remapped-and-
   overwritten; heap face = unmapped → not-present). Disproven: rtl_heap translation bug (heap
   is faithful/victim), and the §9.96 section path (that fix works correctly). Same PFN family
-  as `ZwAllocateVirtualMemory` 0x4E + `MmMapLockedPagesSpecifyCache` 0x1000 (task #7), likely
-  one shared root. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
+  as `ZwAllocateVirtualMemory` 0x4E + `MmMapLockedPagesSpecifyCache` (task #7) — and as of
+  2026-07-25 that is no longer a guess, it is **the same check** (§9.124). Task #7's recorded
+  "BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class, P1=0x401) in the Rust MDL-map path" was poisoned by
+  §9.113: `0x1000` was an INVENTED stop code appearing at exactly four sites in the whole pre-fix
+  kernel, all in `ARM3/virtual.rs`, subcodes `0x61940/0x61940/0x400/0x401`. So `P1=0x401`
+  uniquely identifies `MiDeletePte`'s PFN back-pointer check — a different file and subsystem
+  from the note. That same check is `#ifdef`'d OUT on arm64 and replaced by a silent
+  `Pfn1->PteAddress = PointerPte` repair, added during Milestone-11 bring-up with the comment
+  "pages are reused across session/process boundaries and the PFN database doesn't track the new
+  PTE correctly" — a verbatim description of this bug. **arm64 has been suppressing the one
+  detector that fires AT the reuse.** 2026-07-25: the repair is kept (removing it turns a boot
+  into a bugcheck) but is now LOUD — a `[PFNMISMATCH]` line prints the PTE, the stale
+  back-pointer, the PTE value and the PFN index at the moment of divergence. Silence is also a
+  result: it eliminates MiDeletePte as the reuse path. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
 - **net suite `test_tdi_selftest_roundtrip` — flake rate measured 2026-07-24, and it is BAD
@@ -629,6 +648,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack
   `_EX_PUSH_LOCK_WAIT_BLOCK.WakeGate`, not session pool); not reproducing, likely closed by the
   §9.13 WS-pushlock fixes. Re-open only on a live recurrence → GDB watchpoint on the WakeGate byte.
+- **arm64 BUGCHECK 0x3 — IT IS `RESOURCE_NOT_OWNED`, NOT `INVALID_AFFINITY_SET`** (renamed
+  2026-07-25, field manual §9.124). Proved by enumeration, not inference: across the ENTIRE
+  pre-`d3ca121cb09` Rust kernel exactly **two** sites could raise stop code 3, both in
+  `ex-rust/src/resource.rs` — `ExReleaseResourceForThreadLite` and `ExSetResourceOwnerPointer`,
+  whose `RESOURCE_NOT_OWNED` (0xE3) the LLM had invented as `0x03` (§9.113). The only C raiser,
+  `KeBugCheck(INVALID_AFFINITY_SET)`, passes **all-zero** parameters. Every historical hit
+  carried FOUR non-zero ones, e.g. `0x3 (0xfffffa0006343870, 0xfffffa0006221c00, 0, 3)` —
+  which is `(Resource, Thread, Resource->OwnerTable, 3)` exactly, down to the literal trailing
+  `3`, with two plausible arm64 pool pointers and **OwnerTable == NULL**. So: a thread released
+  (or reassigned ownership of) an ERESOURCE it does not own, on a resource with no owner table.
+  The Rust is a faithful translation of the C here (the C's `ASSERT(Owner != NULL)` is a retail
+  no-op), so this is a real ownership bug, not a translation bug. **The `[AFFPROBE]`
+  instrumentation in `ke/thrdobj.rs` is aimed at the wrong subsystem and its silence is not
+  evidence** — comment updated in place. Hunt from the ERESOURCE side now. NOTE the search space
+  cuts both ways: from `d3ca121cb09` on, `KiSetAffinityThread` raises a real 0x3 again, so a
+  FRESH hit with all-zero params is a genuine affinity bug and a different animal.
+  *(Superseded entry, kept for its reasoning:)*
 - **arm64 BUGCHECK 0x3 (INVALID_AFFINITY_SET) — rare non-deterministic** (long-standing;
   latest hit 2026-07-18 during an arm64 smoke, mid service-autostart, no WoW64 involvement:
   `0x3 (0xfffffa0006343870, 0xfffffa0006221c00, 0, 3)`). `KeSetSystemAffinityThread` carries

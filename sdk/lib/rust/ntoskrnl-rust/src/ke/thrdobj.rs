@@ -1017,10 +1017,22 @@ pub unsafe extern "system" fn KeSetIdealProcessorThread(
 #[no_mangle]
 pub unsafe extern "system" fn KeSetSystemAffinityThread(Affinity: KAFFINITY) {
     // [AFFPROBE task#10] capture caller x30 FIRST (before PsGetCurrentThread's bl)
-    // so we can pin who passes an affinity excluding all active CPUs. ASSERT! is a
-    // no-op here, so a bad mask is silently accepted and only trips the scheduler's
-    // INVALID_AFFINITY_SET (0x3) later — probing the setter catches the root caller
-    // far more reliably than the rare non-deterministic bugcheck.
+    // so we can pin who passes an affinity excluding all active CPUs.
+    //
+    // 2026-07-25 — READ THIS BEFORE TRUSTING THIS PROBE'S SILENCE. It was added to
+    // hunt the "arm64 BUGCHECK 0x3 INVALID_AFFINITY_SET" flake, and it never fired.
+    // That was recorded as "the bad mask reaches the scheduler by another route."
+    // It is not: there was never a bad mask. Until commit d3ca121cb09 the ONLY two
+    // sites in the whole Rust kernel that could raise stop code 3 were in
+    // ex-rust/src/resource.rs (RESOURCE_NOT_OWNED, whose number the LLM had invented
+    // as 0x03 — field manual §9.113); KiSetAffinityThread was raising 0x48. The one
+    // C raiser, KeBugCheck(INVALID_AFFINITY_SET), passes all-zero parameters, and
+    // every historical hit carried FOUR non-zero ones matching
+    // ExReleaseResourceForThreadLite's (Resource, Thread, OwnerTable, 3) exactly.
+    // So the flake is an ERESOURCE ownership bug and this probe is aimed at the
+    // wrong subsystem. Kept (it is nearly free, and post-d3ca121cb09
+    // KiSetAffinityThread IS a live 0x3 candidate again) but its silence proves
+    // nothing about the historical hits. Full reasoning: field manual §9.124.
     #[cfg(target_arch = "aarch64")]
     let caller_lr: ULONG_PTR = {
         let lr: ULONG_PTR;

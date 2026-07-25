@@ -785,6 +785,15 @@ pub unsafe extern "fastcall" fn KiTrap0EHandler(TrapFrame: PKTRAP_FRAME) -> ! {
             KiEoiHelper(TrapFrame);
         }
     }
+    // Linux-extable-style fault fixup, the i386 stand-in for the amd64/arm64
+    // native-SEH fault-tolerant copy (ke/i386/safecopy.rs). MmAccessFault has
+    // already had its say above, so a valid-but-nonresident page was paged in and
+    // never reaches here — only a genuinely bad address does. If the faulting PC
+    // is the protected copy's `rep movsb`, redirect Eip to its fixup pad and
+    // resume; every other PC falls through and raises exactly as before.
+    if KiUserTrap(TrapFrame) == 0 && crate::ke::i386::safecopy::KiFixupProtectedCopy(TrapFrame) {
+        KiEoiHelper(TrapFrame);
+    }
     if status == STATUS_ACCESS_VIOLATION {
         KiDispatchException2Args(
             KI_EXCEPTION_ACCESS_VIOLATION,

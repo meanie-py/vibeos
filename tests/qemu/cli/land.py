@@ -257,7 +257,9 @@ def _report_prior_results(repo: Path, lane: str, run: Run) -> None:
     """Surface this lane's most recent verdict on submit. A rejection an agent never reads is
     the same as a silent drop, and the agent that most needs to see it is the one that just
     came back to submit again."""
-    prior = queue.results(repo, lane=lane, limit=1)
+    # Skip supersessions: "your older tip was replaced by your newer one" is bookkeeping, not
+    # news, and surfacing it as the lane's headline verdict buries a real prior rejection.
+    prior = [r for r in queue.results(repo, lane=lane, limit=8) if r.get("outcome") != "superseded"]
     if not prior:
         return
     rec = prior[0]
@@ -409,9 +411,17 @@ def _conduct(repo: Path, run: Run, args) -> tuple[bool, str]:
     A detached conductor that loses the election just exits — the lock is the election, so
     spawning one speculatively costs a second of a subprocess and never double-conducts."""
     if getattr(args, "foreground", False):
+        # An explicit conduct request (`--drain`, which is also how the detached child runs)
+        # WAITS for the lock: closing the orphan window is the whole point, and nothing is
+        # blocked by it waiting. The inline-from-submit path keeps 0.0 — there, the agent's own
+        # turn is on the line, so losing the election must return immediately.
+        wait = hostlock.LAND_LOCK_TIMEOUT if getattr(args, "drain", False) else 0.0
         try:
             trained = queue.try_become_conductor(
-                repo, _conductor_log(run), retries=int(getattr(args, "retries", 2))
+                repo,
+                _conductor_log(run),
+                retries=int(getattr(args, "retries", 2)),
+                timeout=wait,
             )
         except queue.NoVerdict as e:
             run.classification = "BASE_RED"
@@ -575,7 +585,8 @@ def cmd_land_status(args, repo: Path) -> int:
     if not subs:
         print("  queue: empty")
     for rec in recent:
-        tag = "landed " if rec.get("outcome") == "landed" else "REJECTED"
+        outcome = rec.get("outcome")
+        tag = {"landed": "landed ", "superseded": "superseded"}.get(outcome, "REJECTED")
         extra = (
             f" as {rec.get('landed_as', '')[:12]}"
             if rec.get("outcome") == "landed"

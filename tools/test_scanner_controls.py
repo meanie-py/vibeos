@@ -73,6 +73,48 @@ class Control:
 
 # ── fixtures, each seeded from a real incident ───────────────────────────────
 
+# Two lanes both appending `### 9.122` at the tail on the same day. This exact
+# shape has now happened six times; the merge that added this control WAS one.
+_DOC_SECTIONS_BAD = """\
+# Manual
+
+### 9.121 (2026-07-25) Something earlier
+
+Body.
+
+### 9.122 (2026-07-25) Lane A appended here
+
+Body.
+
+### 9.122 (2026-07-24) Lane B independently picked the same number
+
+Body.
+"""
+
+# The near-miss that broke this lint's FIRST regex: `9.6c`, `9.6c.1` and `9.6c.2`
+# are three DISTINCT sections, and a pattern stopping at the letter suffix reports
+# them as one triplicated number. The good fixture must contain the shape the
+# scanner is most likely to over-match, or "no false positives" is untested.
+_DOC_SECTIONS_GOOD = """\
+# Manual
+
+### 9.6c (2026-07-01) A lettered section
+
+Body.
+
+#### 9.6c.1 (2026-07-01) Its first sub-section
+
+Body.
+
+#### 9.6c.2 (2026-07-01) Its second sub-section
+
+Body.
+
+### 9.122 (2026-07-25) A uniquely numbered section
+
+Body.
+"""
+
 _BUGCHECK_BAD = """\
 #[no_mangle]
 pub unsafe extern "system" fn Boom() {
@@ -198,6 +240,15 @@ pub unsafe fn balanced(cond: bool) -> u32 {
 """
 
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_doc_sections",
+        script="tools/scan_doc_sections.py",
+        argv=["--lint"],
+        bad={"bad.md": _DOC_SECTIONS_BAD},
+        good={"good.md": _DOC_SECTIONS_GOOD},
+        pass_files=True,
+        file_suffix=".md",
+    ),
     Control(
         name="scan_bugcheck_codes",
         script="tools/scan_bugcheck_codes.py",

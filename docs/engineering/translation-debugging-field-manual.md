@@ -10362,7 +10362,6 @@ does exactly that, and it is why it never touches the local `master` ref.
 > so the first pusher voids everyone else's gate), and `vibeos-cli land` — one fleet-wide
 > FIFO lock across fetch → merge → gate → push — is the sanctioned way. See AGENTS.md
 > §"Git and mainline" and `tests/qemu/cli/README.md` → `land`.
-
 ### 9.122 (2026-07-25) An oracle needs an oracle — every gate scanner now has a positive AND negative control, because a lint reporting `0` cannot tell you which `0` it means
 
 **The problem, stated precisely.** A scanner that prints `0 findings` is asserting one of two
@@ -10427,7 +10426,371 @@ ones (`scan_irql_balance`, `scan_ob_refcount` build a whole-workspace call-graph
 ~50s each) are marked `slow`: a local run can `-m "not slow"` (0.5s), the gate runs everything.
 **Never default-skip a control** — that recreates the blind spot with extra steps.
 
-### 9.123 (FIXED 2026-07-25) A `__try`/`__except` translated to a BARE BLOCK — the flag survived, the handler didn't, and under DUMMY_PSEH the raise killed the machine
+### 9.123 (FIXED 2026-07-24) i386 got a fault-tolerant kernel copy without fixing SEH — a Linux-style exception table is ~40 lines and needs no unwinder
+
+**Symptom.** Three i386 kmtest quarantines (`IoReadWrite`, `ObSymbolicLink`,
+`ZwWaitForMultipleObjects`) all BUGCHECK 0x1E at the identical PC, `ntoskrnl.exe+0x14C0`
+= `memcpy+0x40`. The same three passed on amd64. They had been quarantined since
+2026-07-11 as "i386-only, triage owed."
+
+**Why they were stuck.** They were not three bugs, they were one missing primitive.
+`ntkrnl_sys::probe::fault_tolerant_copy` is the DUMMY_PSEH replacement for a capture
+`memcpy` that in C sat inside `_SEH2_TRY`. amd64 and arm64 route it through
+`KmProtectedCopyMemory` (`ntoskrnl/kmsafecopy.c`), a native-SEH `__try` shim. i386 fell
+through to a bare `copy_nonoverlapping`, so a hostile pointer still crashed the kernel.
+The call sites were *already* converted — only the primitive was missing.
+
+The recorded close for i386 was "validate clang's frame-based i386 kernel SEH" (task
+#18). That is a real but murky problem: the driver registers a correct `fs:[0]` chain and
+`RtlDispatchException` is fully implemented, yet the catch does not happen. **Waiting on
+it was the mistake.** Both `kmsafecopy.c` and `probe.rs` already listed a second, entirely
+independent close, and nobody had costed it:
+
+> "The arch-neutral close for BOTH i386 and arm64 is a Linux-extable-style fault-fixup
+>  primitive (a table keyed by faulting PC, consulted in KiPageFault) — it needs no
+>  working SEH at all."
+
+It is about forty lines.
+
+**The mechanism** (`ntoskrnl-rust/src/ke/i386/safecopy.rs`). `KmProtectedCopyMemory` is
+`global_asm!` whose entire copy is one `rep movsb`, with the instruction's address
+exported as a symbol. `KiTrap0EHandler` compares the faulting `Eip` against that one
+address and, on a match, rewrites `Eip` to a fixup pad that returns 0:
+
+```
+_KmpProtectedCopyFaultPc:  rep movsb        <- the sole extable key
+                           mov eax, 1
+                           jmp done
+_KmpProtectedCopyFixup:    xor eax, eax     <- KiTrap0E redirects Eip here
+done:                      pop/pop/ret
+```
+
+Three properties make this the right shape, and each is load-bearing:
+
+- **`rep movsb` is ONE restartable instruction**, so the table has exactly one entry and
+  the lookup is an exact `Eip` compare, not a range. A hand-rolled byte loop would have
+  needed a range (and `kmsafecopy.c` already warns a byte loop is a throughput
+  regression on the I/O completion hot path — `rep movsb` is not one, the CPU and TCG
+  both move wide chunks internally).
+- **The check runs AFTER `MmAccessFault` has declined.** That preserves the amd64/arm64
+  semantics exactly: a valid-but-nonresident page is paged in and the copy proceeds;
+  only a genuinely invalid address reaches the fixup. This is why the rejected non-fix
+  stays rejected — an `MmIsAddressValid` pre-check cannot tell "invalid" from "paged
+  out" and would spuriously fail legitimate I/O under memory pressure.
+- **It cannot swallow a fault it does not own.** One exact PC, kernel-mode traps only;
+  every other fault raises exactly as before.
+
+**Result.** `[KMSAFECOPY] fault-tolerant copy: valid=1 moved=1 invalid_caught=1 (PASS)`
+on i386 — first time. The per-boot oracle in `kmsafecopy.c` now covers all three arches
+(the i386 twin lives in `safecopy.rs` because the C file's `__try` needs the msvc env).
+
+**The durable lessons:**
+
+1. **When a blocker has two independent closes recorded, cost BOTH before picking.**
+   This one sat quarantined for 13 days behind the harder of the two, and the easier one
+   was written down in two separate files the whole time. A documented alternative that
+   nobody has estimated is not a plan, it is a TODO.
+2. **A fix that moves a crash is a fix, even when the test still fails.** After this
+   change `IoReadWrite` still BUGCHECKs — but at `IoReadWrite_drv.sys+0x21E3`, not
+   `ntoskrnl.exe+0x14C0`. The fault left the kernel and landed in the test driver's own
+   deliberate-fault-inside-`_SEH2_TRY`. That is a *different root* (task #18, the driver
+   side) and the PC move is what proves the kernel side is closed. Judge by where the
+   crash is, not by whether the test went green.
+3. **"Needs SEH" is often "needs a fault to not be fatal."** Those are not the same
+   requirement. Exception dispatch is one implementation of the second; a PC-keyed fixup
+   table is another, and it has no dependency on unwind metadata, registration chains,
+   personality routines, or a working dispatcher.
+
+**Also found while reading that path** (separate, not the root): i386
+`RtlpGetStackLimits` (rtlk-rust `libsupp.rs`) stood in a hand-written
+`struct FX_SAVE_AREA { _opaque: [u8; 512] }` for a type that is **528** bytes on i386
+(`FXSAVE_FORMAT` is 520 with its `Align16Byte` tail, plus `NpxSavedCpu` + `Cr0NpxState`
+— `size_check_i386.rs:518`). `StackHigh` was 16 bytes too high, so
+`RtlDispatchException`'s "is this registration frame really on the stack?" bounds check
+— the guard against following a corrupt or hostile `fs:[0]` chain — accepted a 16-byte
+window past the true top of stack. A false-ACCEPT, so not the task-#18 root, but the
+exact `scan_magic_offsets` class: the fix is `size_of::<ntkrnl_sys::ddk::FX_SAVE_AREA>()`,
+never a literal.
+
+**Toolkit trap that cost a boot cycle:** on i386, `qemu/run-until.sh --break KeBugCheckEx`
+— the recipe printed in AGENTS.md — prints `Function "KeBugCheckEx" not defined.` and then
+times out with `BREAKPOINT NOT HIT`, which reads exactly like "the breakpoint never
+fired." It was never *set*. i386 symbols are stdcall-decorated and even
+`_KeBugCheckEx@20` did not resolve in that session; `find-kbase` also needed
+`kernel_runtime_base` hand-seeded into `qemu/runs/<id>/manifest.json`. `qemu/addr2sym.sh`
+is separately unusable on i386 (it matched `STATUS_UNWIND_CONSOLIDATE+5018868` for a
+`.text` address — it is matching absolute constant symbols). Until task #28 lands,
+symbolicate i386 by hand: the bugcheck banner prints `P2 = ntoskrnl.exe+0xRVA`, and
+`VA = 0x400000 + RVA` against `llvm-nm --numeric-sort build-i386/ntoskrnl/ntoskrnl.exe`.
+
+### 9.124 (2026-07-25) A wrong stop code doesn't just mislabel a crash — it relocates the HUNT. Two long-standing bugs were being chased in the wrong subsystem
+
+§9.113 fixed 61 invented `KeBugCheck` stop codes. The fix was correct and complete. What
+nobody did afterwards was **re-read the recorded evidence that those wrong numbers had
+produced** — and the bug registry had been quoting them for weeks. Two entries were pointing
+at the wrong subsystem entirely.
+
+The general method both cases use: **a bugcheck's PARAMETERS identify the raiser far more
+reliably than its stop code**, because the parameters are real values from the raising site
+while the code is just a constant the translation may have fabricated. Enumerate every site
+that could produce the observed code *in the tree as it stood when the hit was recorded*,
+then match on parameter shape and arity.
+
+**Case 1 — "arm64 BUGCHECK 0x3 INVALID_AFFINITY_SET" is `RESOURCE_NOT_OWNED`.**
+
+Enumerated over `d3ca121cb09^` (the tree at the time of the hits), the sites that could raise
+stop code 3 were:
+
+- exactly **two** in Rust, both `ex-rust/src/resource.rs` — `ExReleaseResourceForThreadLite`
+  and `ExSetResourceOwnerPointer`, whose `RESOURCE_NOT_OWNED` (0xE3) had come back from the
+  LLM as `0x03`;
+- exactly **one** in C, `ke/thrdschd.c`'s `KeBugCheck(INVALID_AFFINITY_SET)` — and
+  `KeBugCheck` passes **all four parameters as zero**.
+
+The recorded hit was `0x3 (0xfffffa0006343870, 0xfffffa0006221c00, 0, 3)`. Four non-zero
+parameters rules out the C site outright. The shape matches the Rust site exactly:
+
+```
+KeBugCheckEx(0x03, Resource, Thread, Resource->OwnerTable, 3)
+             ^^^^  ^pool ptr ^pool ptr  ^NULL              ^literal
+```
+
+Two plausible arm64 pool pointers, `OwnerTable == NULL`, and a literal trailing `3` that no
+affinity check has any reason to pass. Meanwhile `KiSetAffinityThread` was raising `0x48` at
+the time, so it **provably could not** have produced a 0x3.
+
+So the flake is a thread releasing an ERESOURCE it does not own. The Rust is a faithful
+translation (the C's `ASSERT(Owner != NULL)` is a retail no-op), so it is a real ownership
+bug, not a translation bug.
+
+The costly part: a `[AFFPROBE]` probe had been added to `KeSetSystemAffinityThread` to catch
+"whoever passes a mask excluding all active CPUs." It never fired, and that was written down
+as *"the bad mask reaches the scheduler by another route."* **There was never a bad mask.** A
+probe on the wrong subsystem produces silence, and silence reads exactly like a negative
+result — so it doesn't just fail to help, it manufactures false evidence. The probe is kept
+(post-§9.113 `KiSetAffinityThread` is a live 0x3 candidate again) but its comment now says
+what its silence does and does not prove.
+
+**Case 2 — task #7 (amd64) and task #19/§9.97 (arm64) are the same check, and arm64 had it
+disabled.**
+
+Task #7 read: *"BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class, P1=0x401) — MmMapLockedPagesSpecifyCache
+PTE/PFN accounting in the Rust MDL-map path."* Every clause after the parameters is wrong.
+`0x1000` is not a stop code at all (PFN_LIST_CORRUPT is 0x4E); it was an invented number, and
+in the entire pre-fix kernel it appeared at exactly **four** sites, all in `ARM3/virtual.rs`,
+with subcodes `0x61940 / 0x61940 / 0x400 / 0x401`. So `P1=0x401` uniquely identifies
+`MiDeletePte`'s PFN back-pointer check — different file, different subsystem, nothing to do
+with MDLs:
+
+```rust
+if ((*Pfn1).pte_address() as ULONG_PTR & !0x1) != PointerPte as ULONG_PTR {
+    KeBugCheckEx(MEMORY_MANAGEMENT, 0x401, PointerPte, PointerPte->Long, Pfn1->PteAddress);
+}
+```
+
+That check asserts the PFN database's back-pointer names the PTE being torn down — i.e. it
+fires precisely when a physical frame has been re-handed-out while still mapped. Which is
+§9.97's *proven* diagnosis, filed as a separate bug on a separate arch.
+
+And on arm64 that check is `#ifdef`'d out, replaced by a silent repair:
+
+```c
+#ifdef _M_ARM64
+    /* ARM64: PFN tracking mismatch — fix up PteAddress and continue.
+     * This can happen when pages are reused across session/process boundaries
+     * and the PFN database doesn't track the new PTE correctly. */
+    Pfn1->PteAddress = PointerPte;
+#else
+    KeBugCheckEx(MEMORY_MANAGEMENT, 0x401, ...);
+#endif
+```
+
+The workaround comment is a verbatim description of the bug it was hiding, written during
+Milestone-11 bring-up. **arm64 had been suppressing the one detector that fires at the moment
+of reuse** — while §9.97's "owed next step" was to go write a new free-while-mapped tripwire.
+One already existed, disabled, in the file the amd64 twin was bugchecking from.
+
+Fix: keep the repair (removing it converts a booting arch into a bugchecking one) but make it
+loud — a `[PFNMISMATCH]` line carrying the PTE, the stale back-pointer, the PTE value and the
+PFN index. Silence is a result too: it eliminates `MiDeletePte` as the reuse path for the cost
+of four trace calls.
+
+**Durable lessons:**
+
+1. **After fixing a class of bad data, re-audit everything derived FROM it.** §9.113 fixed the
+   codes; it did not fix the two registry entries, the task titles, or the instrumentation that
+   had been written on top of them. The fix and the fallout are separate pieces of work, and
+   the fallout is where the wasted debugging lives.
+2. **Parameters beat the stop code.** Params come from the raising site; a translated stop code
+   may be fiction. Enumerate candidate raisers *in the tree as of the hit* and match on arity
+   and shape — `KeBugCheck` (all-zero params) versus `KeBugCheckEx` alone eliminated a whole
+   subsystem here.
+3. **A probe aimed at the wrong subsystem is worse than no probe**, because its silence gets
+   recorded as a negative result. Before trusting "the probe never fired," prove the probe
+   could have fired.
+4. **A workaround comment that explains *when* the thing it suppresses would happen is a bug
+   report.** Grep for the `#ifdef <ARCH>`-plus-apology pattern; each one is a disabled detector,
+   and the apology usually names the bug someone else is still hunting.
+
+### 9.125 (FIXED 2026-07-25) A WRONG symbol decoration can be load-bearing — "fixing" `___debugbreak@0` to also emit the cdecl name made the link worse, because the object it lives in carries kernel-only code
+
+**Symptom.** A cold i386 build fails linking a *driver*:
+
+```
+ld.lld: error: undefined symbol: ___debugbreak
+>>> referenced by drivers/crypto/ksecdd/libksecdd_rust.a
+```
+
+amd64 and arm64 link the same driver fine.
+
+**The bit that looks like an obvious bug.** The symbol is undefined and defined in the *same
+archive*, under two names:
+
+```
+i386  libksecdd_rust.a:   U ___debugbreak       <- what the caller asks for (cdecl)
+                          T ___debugbreak@0     <- what ntkrnl-sys emits (stdcall)
+amd64 libksecdd_rust.a:   U __debugbreak / T __debugbreak    <- names agree, links
+```
+
+`__debugbreak` is an MSVC **cdecl** intrinsic. Consumers declare it `extern "C"`, so the i386
+mangler asks for `___debugbreak`; `ntkrnl-sys`'s `ke_i386.rs` `global_asm!` only ever emitted
+`___debugbreak@0`. A whole-tree symbol dump confirms the mismatch is real and total — **3
+references to the cdecl name, 0 to the stdcall one**, i.e. the decorated symbol is dead and has
+never been called by anything. amd64/arm64 are immune because `.globl __debugbreak` needs no
+decoration, so the name a caller computes is the name that exists.
+
+So: emit the cdecl label too. Two labels on one `int3; ret` body, zero risk.
+
+**It is not zero risk, and this is the lesson.** ksecdd then failed with *four* undefined
+symbols instead of one:
+
+```
+ld.lld: error: undefined symbol: _KiDispatchExceptionFromTrapFrame@32
+ld.lld: error: undefined symbol: @KiServiceExit2@4
+ld.lld: error: undefined symbol: _KiSystemStartupBootStack@0
+ld.lld: error: undefined symbol: _HalVectorToIDTEntry@4
+```
+
+That entire `global_asm!` is **one object**, and further down it holds the kernel's trap
+trampolines:
+
+```
+"  call _KiDispatchExceptionFromTrapFrame@32",
+"  jmp @KiServiceExit2@4",
+"  jmp _KiSystemStartupBootStack@0",
+```
+
+Archive semantics: a member object is pulled into a link **only to satisfy a symbol it
+defines**. Because no driver could ever resolve `___debugbreak` there, no driver dragged that
+object in, and therefore no driver inherited its ntoskrnl-internal references. The *wrong*
+decoration was silently acting as the boundary between kernel-only asm and driver links.
+Correcting the name deleted that boundary.
+
+**Rule.** Before "fixing" a symbol-decoration mismatch, ask what else lives in the object that
+defines the symbol. A name nothing references is not automatically dead code — in a static
+archive it can be the only thing keeping an object out of a link. `nm <archive> | grep ' T '`
+on the defining object answers this in one command; the four kernel symbols above were all
+visible in `ke_i386.rs` by grep before the rebuild that proved it.
+
+**The correct fix** is the one the repo had already converged on twice and that I should have
+trusted: a driver needing `__debugbreak` **defines it locally** as an inline `int3`, because an
+inline body needs no symbol on any arch and so cannot pull a foreign object in.
+
+```rust
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+unsafe fn __debugbreak() { core::arch::asm!("int3") }
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn __debugbreak() { core::arch::asm!("brk #0") }
+```
+
+`fltmgr-rust/src/glue.rs` and `scsiport-rust/src/inlines.rs` both already did exactly this.
+When two independent crates have solved the same link error the same odd-looking way, that is
+evidence, not duplication — read it before designing a "more systemic" fix. The systemic-looking
+change (patch the substrate once for everyone) was the wrong one *because* the substrate object
+is kernel-only.
+
+**Also: cold-build breakage comes in LAYERS.** This was the fourth distinct failure found by
+successive cold builds of the same tree, each hidden behind the previous one — afd `E0659`,
+then fltmgr `E0659`, then this. A warm build reuses cached rlibs and never recompiles the
+broken crate, so `master` can sit red for days while every incremental build is green. Budget
+for "fix one, rebuild, find the next," and prefer `ninja -k 0` to collect a whole layer at once
+rather than one error per full rebuild.
+
+### 9.126 (FIXED 2026-07-25) Mainline carried THREE cold-build breaks at once while every lane's gate was green — a warm build cannot fail in a crate it does not recompile
+
+**The finding.** `origin/master` did not build from scratch. Not one regression — **three
+independent ones**, live simultaneously, every one committed through a green gate:
+
+| break | scope | why warm gating could not see it |
+|---|---|---|
+| `fltmgr-rust`: `IRP_MJ_CREATE_MAILSLOT` is ambiguous (`E0659`) | i386 | crate not recompiled ⇒ cannot fail |
+| `afd-rust`: `IRP_MJ_QUERY_VOLUME_INFORMATION` is ambiguous | **all 3 arches** | ninja halts at the first failing edge |
+| `ksecdd.sys`: undefined `___debugbreak` | i386 | a `.sys` relinks only when its inputs change |
+
+**The mechanism, and it is not subtle once stated.** A compiler cannot report an error in a
+translation unit it never compiles, and a linker cannot report an undefined symbol in an image
+it never links. Warm incremental builds skip both. Every lane's `build-*` dirs were warm, so
+every lane's gate was honestly green *about the work it actually did* — which was not the whole
+tree. AGENTS.md has warned "cargo incremental can mask regressions" for a long time; this is
+what that looks like when nobody does the cold build for weeks.
+
+**Two roots, both worth internalizing.**
+
+1. **The E0659 pair share a cause: a bindgen island grew a name a local shim already had.**
+   `6ae2ae1931d` added 11 `IRP_MJ_*` constants to `ntkrnl_sys::driver_ddk`. Two crates
+   glob-import *both* that island and their own `crate::glue::*`, and had hand-written copies of
+   those constants. Two different items under one name, reached by two globs, is `E0659` — and
+   **nothing in the failing crates changed**. A pre-existing use site simply became ambiguous.
+   Resolution: the island is the compiler-facing authority; delete the hand-written copy.
+2. **`__debugbreak` was declared `extern "C"` instead of emitted.** It is an MSVC *intrinsic*.
+   Declaring it produces a reference to `___debugbreak` that a driver's own PE link cannot
+   satisfy. Emit `int3` inline (`fltmgr-rust/src/glue.rs`, `scsiport-rust/src/inlines.rs` are the
+   pattern). Related: AGENTS.md's rule that an out-of-line stub for something that should be an
+   *instruction* is an optimization barrier that has uncloaked ABI mismatches into `ud2`.
+
+**SCAN THE NAMES, NOT THE IMPORT SHAPES.** My first blast-radius scan looked for files globbing
+both a local module and `driver_ddk`, then matched `^pub const` in that module. It produced **16
+false positives and missed `afd-rust`** — the hits were `pub use` re-exports of the *same* item,
+which is not ambiguous at all. The instrument that worked: take the constants the commit
+**added**, and find every *other* definition of those names in the workspace. That closed the
+class at exactly two crates, and correctly exonerated three more (`msfs`/`mup`/`npfs` keep their
+own copies but do **not** glob `driver_ddk`, and their use sites index `MajorFunction` without a
+cast — deleting their copies would have *broken* them, since the island spells these `u8` and
+they need `usize`).
+
+**Finding them one at a time is the other trap.** Because ninja stops at the first failing edge,
+each ~6-minute cold build revealed exactly ONE break, and the next appeared only after the
+previous was fixed. Three fix-and-rebuild rounds to learn a fact that one `ninja -k0` pass could
+have handed over at once.
+
+**THE MECHANISM (this is the durable part).** Rules did not prevent this and cannot; a warm gate
+is *structurally* blind here. So the merge queue's batch gate is now
+**`--clean --keep-going`** by default (`tests/qemu/cli/queue.py:gate_batch`):
+
+* cold, because only a real compile can fail — and a compile **error is never cached**, so
+  ccache/sccache do not blunt the check (they only make it affordable);
+* `-k0`, so a red verdict names *every* broken target in one pass;
+* affordable because a *batch* amortizes one gate over N landings. Measured on this box: a cold
+  i386 build is **16m15s** against ~2-3 min warm (~5-6×) even at ~100% cache hits — linking
+  ~5,000 targets and re-driving cargo over hundreds of crates is not free. "Affordable
+  amortized" is the honest claim; "nearly free" is not.
+
+> **If you are about to trust a green gate:** ask when that tree last built COLD. `vibeos-cli
+> build --arch X --clean --keep-going` is the question's answer, and it is the only one.
+
+> **§9.125 corrects this entry's third break, and it is worth reading for the correction
+> itself.** I diagnosed `ksecdd`'s undefined `___debugbreak` as "the definition is not in
+> ksecdd.sys's link scope at any spelling" and reverted a symbol-alias attempt on that basis.
+> A whole-tree symbol dump says otherwise: `T ___debugbreak@0` **is** in `libksecdd_rust.a`,
+> so it was in scope — and aliasing it fails for a *better* reason, namely that pulling in the
+> object carrying that label drags kernel-only code with it and produces FOUR more undefined
+> symbols. Right fix (emit the intrinsic inline), wrong reason. Two lanes hit this break
+> independently and shipped the same fix within the hour, which is the real cost of a red
+> mainline: it is not one lane's problem, it is everyone's, simultaneously.
+
+### 9.127 (FIXED 2026-07-25) A `__try`/`__except` translated to a BARE BLOCK — the flag survived, the handler didn't, and under DUMMY_PSEH the raise killed the machine
 
 **Symptom.** `BUGCHECK 0x1E` / `C0000005`, minutes into an amd64 boot, with
 `ProbeForWrite → ExRaiseAccessViolation → RtlRaiseStatus` on the stack and no
@@ -10516,9 +10879,9 @@ Same boot command, before → after: BUGCHECK `1 → 0`, PROBE-AV raises `1 → 
 doom frames rendered `died → 2022`.
 
 **Why osk.exe had a blank trap frame** — `Rsp=0 Rip=0 SegCs=0x0` — is the flat
-`NtCreateThread` thunk (§9.124).
+`NtCreateThread` thunk (§9.128).
 
-### 9.124 (2026-07-25) The first observed consequence of an unmarshalled `NtCreateThread`: a thread created successfully, with a zeroed context
+### 9.128 (2026-07-25) The first observed consequence of an unmarshalled `NtCreateThread`: a thread created successfully, with a zeroed context
 
 `NtCreateThread` is a **live flat thunk** with five divergent params
 (`OBJECT_ATTRIBUTES`, `CLIENT_ID`, `INITIAL_TEB`, `CONTEXT` — whose field lists
@@ -10540,7 +10903,7 @@ The only `NtCreateThread` in the entire boot, ~400 lines before the fault, same
 process; a *second* thread (main threads log `teb=...ec000`) with no win32 client
 info because it never ran. `PspUserThreadStartup` then queues the routine
 `LdrInitializeThunk` user APC, `KiInitializeUserApc` computes
-`0 - sizeof(UAPC_FRAME)`, and before §9.123 that killed the machine.
+`0 - sizeof(UAPC_FRAME)`, and before §9.127 that killed the machine.
 
 **Disposition: refuse, don't half-marshal.** `Wow64Manual_NtCreateThread` now
 returns `STATUS_NOT_IMPLEMENTED` loudly. Marshalling the five structs would be
@@ -10552,7 +10915,7 @@ beats losing the box; a clean refusal beats a convincing corpse.
 *Blast radius was measured, not assumed*: exactly one call in a full boot, from
 one applet.
 
-### 9.125 (2026-07-25) Every Rust-kernel `debug_assert!` is compiled out — while the C `ASSERT` it was translated from is LIVE under `-DDBG=1`
+### 9.129 (2026-07-25) Every Rust-kernel `debug_assert!` is compiled out — while the C `ASSERT` it was translated from is LIVE under `-DDBG=1`
 
 **1962** `debug_assert!` / `debug_assert_eq!` / `debug_assert_ne!` sites across
 `sdk/lib/rust` are dead code. `debug_assert!` is gated on
@@ -10573,7 +10936,7 @@ Both come from reasoning about what the macro **means** instead of what it
 printed `[KI-APC] ... SegCs=0x0`. A value the assertion forbids walked straight
 past it. Had it been live it would have caught the blank trap frame **at its
 source**, instead of the failure surfacing later, in a different function, as an
-unhandled probe raise that bugchecked the machine (§9.123/§9.124).
+unhandled probe raise that bugchecked the machine (§9.127/§9.128).
 
 **Before flipping it** (`debug-assertions = true`, and `overflow-checks = false`
 *explicitly* — it defaults to follow `debug-assertions`, and kernel-wide

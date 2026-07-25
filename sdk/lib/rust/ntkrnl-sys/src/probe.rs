@@ -294,7 +294,11 @@ pub unsafe fn probe_write_size_t(
 // arm64 added 2026-07-17: the arm64 kernel-mode HARDWARE-fault SEH path was
 // validated end-to-end (KmSafeCopySelfTest PASS after the .xdata save_next decoder
 // fix, §9.69/§9.93) — a real page fault in a callee now unwinds into the __except.
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// i386: NOT the C shim — the extable fault-fixup primitive in
+// ntoskrnl-rust ke/i386/safecopy.rs exports the same `KmProtectedCopyMemory`
+// symbol/ABI. Same contract (1 = copied, 0 = faulted), same MmAccessFault-first
+// semantics; no SEH involved at all. See that file for why.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "x86"))]
 extern "C" {
     fn KmProtectedCopyMemory(
         dst: *mut core::ffi::c_void,
@@ -324,16 +328,22 @@ extern "C" {
 /// now catches a genuine page fault at an unmapped VA (`invalid_caught=1`), where
 /// before it wedged the boot. Same MmAccessFault-first semantics as amd64.
 ///
-/// **i386: NO PROTECTION — this is a plain copy (status quo).** Stated
-/// plainly rather than faked, per the fail-loud rule. The obvious stand-in,
-/// an `MmIsAddressValid` per-page pre-check, is NOT a valid substitute: it cannot
-/// distinguish "invalid" from "valid but paged out", so on a hot path (e.g. the
-/// IRP completion copy-back) it would spuriously fail legitimate I/O with
-/// STATUS_ACCESS_VIOLATION under memory pressure — a subtly-wrong degradation far
-/// worse than the crash it papers over. Closing the i386 gap needs either
-/// (a) validating clang's frame-based i386 kernel SEH the way seh_poc.c validated
-/// amd64/arm64, or (b) a Linux-extable-style fault-fixup copy primitive the
-/// page-fault handler consults. OWED; the i386 equivalents stay quarantined.
+/// **i386: PROTECTED (2026-07-24) — but by fault fixup, not SEH.** i386 took
+/// option (b) of the two closes this comment used to list, because option (a)
+/// (frame-based kernel SEH) is still broken there — see task #18 and the
+/// 2026-07-17 spike. `ntoskrnl-rust ke/i386/safecopy.rs` exports the same
+/// `KmProtectedCopyMemory` symbol as a `rep movsb` whose address is the single
+/// key of a Linux-style exception table; `KiTrap0EHandler` consults it on a
+/// kernel-mode fault MmAccessFault declined and redirects `Eip` to a fixup pad.
+/// No exception dispatch, no registration chain, no unwinder. Same
+/// MmAccessFault-first semantics as amd64/arm64 (a valid-but-nonresident page is
+/// paged in and the copy proceeds), and the same per-boot `[KMSAFECOPY]` oracle.
+///
+/// The rejected non-fix stays rejected on every arch: an `MmIsAddressValid`
+/// per-page pre-check cannot distinguish "invalid" from "valid but paged out", so
+/// on a hot path (e.g. the IRP completion copy-back) it would spuriously fail
+/// legitimate I/O with STATUS_ACCESS_VIOLATION under memory pressure — a
+/// subtly-wrong degradation far worse than the crash it papers over.
 ///
 /// `length` must be > 0 (callers early-return on 0).
 #[inline]
@@ -342,14 +352,14 @@ unsafe fn fault_tolerant_copy(
     src: *const core::ffi::c_void,
     length: usize,
 ) -> Result<(), NTSTATUS> {
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "x86"))]
     {
         if KmProtectedCopyMemory(dst, src, length) == 0 {
             return Err(STATUS_ACCESS_VIOLATION);
         }
         Ok(())
     }
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "x86")))]
     {
         core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, length);
         Ok(())
