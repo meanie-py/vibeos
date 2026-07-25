@@ -187,14 +187,54 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   blanket HANG_TIMEOUT retry dated from the native-KVM contention era and let a
   ~50% service wedge pass a 3-attempt gate ~87% of the time.)
 - **Concurrency is safe to over-submit.** Each smoke is a `vibeos-cli smoke`
-  subprocess that self-throttles on the host CPU-lease pool (`hostlock`, 4
-  leases) and the global QEMU cap (10); the per-arch serialize cap is bypassed on
-  the default windows-host TCG backend, so same-arch retries run in parallel too.
+  subprocess that self-throttles on the host boot-CPU pool (`hostlock` `bootcpu`,
+  capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
+  (16); the per-arch serialize cap is bypassed on the default windows-host TCG
+  backend, so same-arch retries run in parallel too.
 - Exit 0 only if **every** arch is ultimately green. The summary carries a
   per-arch `matrix` (verdict / classification / attempts / recovered / run_dir);
   each arch's own `summary.json` lives under the gate's artifact dir.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
-  authorizes a push.
+  authorizes a push — but drive it through `land` (below), not by hand.
+
+### `land [--retries N] [--clean] [--no-push] [--dry-run] [--queue-timeout S]`
+**The way to land.** One serialized critical section, under a fleet-wide FIFO
+lock: `fetch → merge origin/master → gate → push HEAD:master`.
+
+Why it exists: the gate stamp is keyed to an exact **tree hash**, so gate-then-
+push by hand is a race. Whoever pushes first wins; every other in-flight lane's
+tree is now stale, its stamp is void, and it must merge and **re-gate** — and
+that wasted gate was 3 builds + 4 boots of *fleet* load, which lengthens
+everyone else's gate and widens the window that voided it. Past a couple of
+active lanes it's a congestion collapse: "everyone is always waiting on the gate
+and racing to finish". Holding the lock across gate+push removes the race
+outright:
+
+- a green gate **always** lands — nobody re-gates because someone else landed;
+- the fleet spends exactly **one gate per landing**, not one per attempt;
+- waiting is FIFO, bounded and visible (`land-status` / `host-status`) instead of
+  a lottery the most patient lane keeps losing;
+- the gate runs on the **final** tree — the one actually pushed.
+
+Details:
+- **Gate inside the lock; don't pre-gate.** A speculative gate is the thing that
+  used to get thrown away. If a fresh (<24h) green full-arch stamp already covers
+  the tree being pushed, `land` skips the gate, so the uncontended path is
+  seconds.
+- **Pushes `HEAD:master`** and never touches the local `master` ref — moving
+  `master` from a worktree that doesn't have it checked out leaves that worktree's
+  files at the old tree, i.e. a giant phantom staged revert (2026-07-25).
+- Refuses a dirty tree or detached HEAD (a dirty tree can't be stamped).
+- A conflicting merge is **aborted** and reported rather than resolved while
+  holding the fleet's lock.
+- The land lock **hard-fails** on timeout (`LandLockBusy`, naming the holder)
+  instead of the soft "proceed unlocked" the CPU pools use — proceeding unlocked
+  would reopen the very race. `VIBEOS_LAND_LOCK=0` opts out; the `pre-push` hook
+  is still the backstop either way.
+
+### `land-status [--json]`
+Who holds the land lock and who is queued behind it. Same data appears in
+`host-status` (as a `LANDING :` line plus the `land` queue).
 
 ### `boot --arch X --until M [--fail-on RE]`
 Raw fast boot, **no staleness gate**, but reuses smoke's *exact* arch-config so

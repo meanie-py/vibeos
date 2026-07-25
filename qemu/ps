@@ -30,7 +30,11 @@ from pathlib import Path
 
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
 SLOT_DIR = LOCK_DIR / "slots"
-MAX_CONCURRENT = int(os.environ.get("VIBEOS_QEMU_MAX_CONCURRENT", "10"))
+# Keep in lockstep with tests/qemu/vm.py:QEMU_MAX_CONCURRENT and
+# qemu/lib/common.sh:QEMU_MAX_CONCURRENT (10 -> 16 on 2026-07-25). A stale default here
+# doesn't throttle anything — it only misreports the denominator, which is worse: an agent
+# reading "8/10 slots" thinks the fleet is nearly full when it is half idle.
+MAX_CONCURRENT = int(os.environ.get("VIBEOS_QEMU_MAX_CONCURRENT", "16"))
 
 
 def pid_alive(pid: int) -> bool:

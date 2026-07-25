@@ -199,10 +199,7 @@ def crate_root_of(path):
         d = parent
 
 
-_CRATE_PATH_DEPS_CACHE: dict = {}
-
-
-def crate_path_deps(crate_dir, _cache=_CRATE_PATH_DEPS_CACHE):
+def crate_path_deps(crate_dir, _cache={}):  # noqa: B006 — intentional memo cache
     """Direct path-dependencies of a crate, as absolute dirs."""
     if crate_dir in _cache:
         return _cache[crate_dir]
@@ -222,10 +219,7 @@ def crate_path_deps(crate_dir, _cache=_CRATE_PATH_DEPS_CACHE):
     return deps
 
 
-_CRATE_OWN_NAMES_CACHE: dict = {}
-
-
-def crate_own_names(crate_dir, _cache=_CRATE_OWN_NAMES_CACHE):
+def crate_own_names(crate_dir, _cache={}):  # noqa: B006 — intentional memo cache
     """const/enum-variant names defined in one crate's own sources."""
     if crate_dir in _cache:
         return _cache[crate_dir]
@@ -412,10 +406,7 @@ def glob_scope(path, crate_dir):
     return names, all_resolved
 
 
-_CRATE_UNIVERSE_CACHE: dict = {}
-
-
-def crate_universe(crate_dir, _cache=_CRATE_UNIVERSE_CACHE):
+def crate_universe(crate_dir, _cache={}):  # noqa: B006 — intentional memo cache
     """Names reachable from a crate: its own sources + transitive path deps."""
     if crate_dir is None:
         return set()

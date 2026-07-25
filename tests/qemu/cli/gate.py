@@ -10,11 +10,12 @@ tests/qemu/vm.py:892-902) and the per-arch cap is bypassed (vm.py:1295-1299), so
 concurrent same-arch AND cross-arch boots are collision-safe. The only thing that
 was serial was the *orchestrator* — i.e. the human. This driver removes that:
 
-  1+2. builds + lanes, PIPELINED (F5, 2026-07-06) — builds run serially among
-     themselves (build-vs-build is the exclusive cpuheavy lease + shared-cache
-     thrash; amd64 first, since it feeds two lanes), but each arch's smoke, its
-     strict lint, and (for amd64) the net lane launch THE MOMENT its own build
-     lands rather than behind an all-arches barrier. Safe by hostlock design:
+  1+2. builds + lanes, PIPELINED (F5, 2026-07-06) — every arch's build is
+     submitted at once (they self-throttle on the broker's build share, default 2
+     concurrent fleet-wide; amd64 is submitted first, since it feeds two lanes),
+     and each arch's smoke, its strict lint, and (for amd64) the net lane launch
+     THE MOMENT its own build lands rather than behind an all-arches barrier.
+     Safe by hostlock design:
      windows-host boots run on the Windows scheduling domain (`bootcpu` pool)
      and coexist with the next WSL-side build (build ∥ boot is the documented
      contract). Opt out of builds with --no-build (all lanes launch at once).
@@ -40,9 +41,15 @@ was serial was the *orchestrator* — i.e. the human. This driver removes that:
      Exit 0 only if every arch is ultimately green.
 
 Concurrency is safe to over-submit: each smoke subprocess self-throttles on the
-host CPU-lease pool (hostlock, DEFAULT_CPU_LEASES=4) and the global QEMU cap
-(vm.py QEMU_MAX_CONCURRENT=10). The executor just needs enough workers to not
-re-serialize; the harness does the real throttling.
+host boot-CPU pool (hostlock `bootcpu`, capacity-derived — 8 on a 24-vCPU box)
+and the global QEMU cap (vm.py QEMU_MAX_CONCURRENT=16); each build self-throttles
+on the cpuheavy build share. The executor just needs enough workers to not
+re-serialize; the broker does the real throttling.
+
+A green FULL gate mints the push stamp for THE TREE IT GATED (sampled at start —
+see _write_gate_stamp). `vibeos-cli land` is the front door: it holds the fleet
+land lock across gate+push so master cannot move underneath, which is what makes
+a green gate always landable instead of a lottery ticket.
 """
 
 from __future__ import annotations
@@ -237,6 +244,37 @@ def _net_once(repo: Path, root: Path) -> dict:
     }
 
 
+def _build_once(repo: Path, run: Run, arch: str, args) -> dict:
+    """Build one arch as its own gate lane.
+
+    Submitted CONCURRENTLY for every arch (2026-07-25) instead of the old serial loop. The
+    serial loop predated `hostlock` commit 226733668e6: build-vs-build is no longer
+    exclusive — a build takes a ceil(K/max_builds) SHARE of the cpuheavy pool, so
+    VIBEOS_MAX_CONCURRENT_BUILDS (default 2) fleet-wide is already the sanctioned limit, and
+    the per-build-dir lock is what actually protects a build dir. Submitting all arches
+    therefore doesn't mean three cold builds fighting over the box: the broker admits two
+    (FIFO, arrival-ordered) and queues the third. It just stops the gate from being stricter
+    than the broker it delegates to — which matters now that `land` serializes gates, making
+    gate wall-clock the landing throughput limit.
+
+    `--no-check` is passed when the strict lint lanes run: that suite is the same scanners,
+    blocking, so the build's warn-only pass is pure duplication (~20-40s/arch).
+    """
+    cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
+    if not getattr(args, "no_lint", False):
+        cmd.append("--no-check")
+    if getattr(args, "clean", False):
+        cmd.append("--clean")
+    t0 = time.monotonic()
+    cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
+    return {
+        "arch": arch,
+        "ok": cp.returncode == 0,
+        "exit": cp.returncode,
+        "seconds": time.monotonic() - t0,
+    }
+
+
 def _lint_once(repo: Path, arch: str, root: Path) -> dict:
     """Run `vibeos-cli check --strict --arch <arch>` for one built arch. This is
     the T3 land-gate: the scanner suite (verify_*, lint_kernel, scan_ud2,
@@ -317,12 +355,36 @@ def _prune_stale_stamps(stamps_dir: Path, max_age_s: int = 24 * 3600) -> None:
             pass
 
 
-def _write_gate_stamp(run: Run, repo: Path, arches: list[str]) -> None:
+def _tree_state(repo: Path) -> tuple[str, bool]:
+    """(HEAD's tree hash, is-dirty) — sampled at gate START so the stamp can certify the
+    content the gate actually validated. See _write_gate_stamp."""
+
+    def _git(*a: str) -> str:
+        return subprocess.run(
+            ["git", *a], cwd=repo, capture_output=True, text=True, timeout=60
+        ).stdout.strip()
+
+    return (
+        _git("rev-parse", "HEAD^{tree}"),
+        bool(_git("status", "--porcelain", "--untracked-files=no")),
+    )
+
+
+def _write_gate_stamp(
+    run: Run, repo: Path, arches: list[str], gated: tuple[str, bool] | None = None
+) -> None:
     """T1.3 (mechanized North Star): a green FULL gate mints the push
     credential — the pre-push hook (tools/git-hooks/pre-push) refuses updates
     to master whose tree doesn't match a fresh green stamp. Only a CLEAN tree
     is stamped: a dirty tree gates content no commit will ever hash to.
-    Partial-arch gates never stamp (the North Star is all three)."""
+    Partial-arch gates never stamp (the North Star is all three).
+
+    `gated` is (tree, dirty) sampled at gate START. It must match the tree still checked
+    out at the end, because this function used to read HEAD's tree at stamp time and
+    certify THAT — so a commit made while the gate ran (an agent tidying up during a
+    20-minute gate) minted a credential for content nothing had built or booted
+    (2026-07-25). The stamp is a claim about what was validated; it must be exactly that
+    or nothing."""
     if not FULL_ARCH_SET.issubset(set(arches)):
         run.log("gate green but partial arch set — no push stamp minted", header="stamp")
         return
@@ -343,6 +405,30 @@ def _write_gate_stamp(run: Run, repo: Path, arches: list[str]) -> None:
             run.add(Stage("stamp", status="warn", detail="dirty tree — no push stamp"))
             return
         tree = _git("rev-parse", "HEAD^{tree}")
+        if gated is not None:
+            start_tree, start_dirty = gated
+            if start_dirty:
+                run.log(
+                    "gate green but the tree was DIRTY when the gate STARTED — what ran is "
+                    "not what any commit hashes to, so nothing here can be certified. "
+                    "Commit first, then gate.",
+                    header="stamp",
+                )
+                run.add(Stage("stamp", status="warn", detail="dirty at start — no push stamp"))
+                return
+            if start_tree and tree != start_tree:
+                run.log(
+                    f"gate green but the checkout MOVED during the gate "
+                    f"({start_tree[:12]} → {tree[:12]}) — the boots validated the old tree, "
+                    "so stamping the new one would certify content nothing built. "
+                    "Re-gate the tree you mean to push (`vibeos-cli land` holds the fleet "
+                    "land lock across gate+push precisely so this cannot happen).",
+                    header="stamp",
+                )
+                run.add(
+                    Stage("stamp", status="warn", detail="tree changed mid-gate — no push stamp")
+                )
+                return
         head = _git("rev-parse", "HEAD")
         common = Path(_git("rev-parse", "--git-common-dir"))
         if not common.is_absolute():
@@ -382,19 +468,23 @@ def gate(args, repo: Path) -> int:
     smoke_extra: list[str] = ["--no-net"]
 
     run = Run("gate", "+".join(arches))
+    # Sample the checkout BEFORE anything builds: the stamp must certify this tree, not
+    # whatever HEAD happens to be when the gate finishes (see _write_gate_stamp).
+    gated_state = _tree_state(repo)
     gate_root = run.dir
 
     # --- phases 1+1.5+2, PIPELINED (F5, 2026-07-06) ---
-    # Builds stay serial among THEMSELVES (build-vs-build is the exclusive
-    # cpuheavy lease + shared-cache thrash), but each arch's lint + smoke (+ the
-    # amd64 net lane) launch THE MOMENT its own build lands instead of waiting
-    # for the all-arches build barrier. This is safe by hostlock design:
-    # windows-host QEMU boots run on the WINDOWS scheduling domain and throttle
-    # on the separate `bootcpu` pool, so a boot coexists with the next WSL-side
-    # build (which leaves physical-core headroom via VIBEOS_BUILD_CORE_RESERVE)
-    # — build ∥ boot is the documented contract, build-vs-build is not.
-    # amd64 builds FIRST: it feeds two lanes (own smoke + net, the longest), so
-    # its lanes should start earliest. Modeled wall-clock (warm): ~390s → ~230s.
+    # Each arch's lint + smoke (+ the amd64 net lane) launch THE MOMENT its own build lands,
+    # instead of waiting for an all-arches build barrier. Safe by hostlock design:
+    # windows-host QEMU boots run on the WINDOWS scheduling domain and throttle on the
+    # separate `bootcpu` pool, so a boot coexists with a WSL-side build — build ∥ boot is
+    # the documented contract. amd64 goes first: it feeds two lanes (own smoke + net, the
+    # longest). Modeled wall-clock (warm): ~390s → ~230s.
+    #
+    # The BUILDS are submitted concurrently too (2026-07-25) and self-throttle on the
+    # broker's build share — see _build_once. They used to be a serial loop here, which was
+    # stricter than the broker (2 concurrent builds are sanctioned fleet-wide) and made the
+    # gate's build phase sum-of-arches for no reason.
     #
     # Lint (`check --strict`, T3) is source-only per arch → independent of the
     # build artifacts; it launches alongside the arch's smoke and gates the push
@@ -415,9 +505,20 @@ def gate(args, repo: Path) -> int:
         return _smoke_once(repo, lane, root, smoke_extra)
 
     # Workers: every lane's first pass can be in flight while retries queue, plus
-    # the (cheap, thread-blocking) lint runs share the same executor.
+    # the (cheap, thread-blocking) lint runs and the concurrent builds share the same
+    # executor. All of these BLOCK on subprocesses or on the host broker, so the worker
+    # count only has to be large enough not to re-serialize what the broker would allow.
     n_lanes = len(arches) + (1 if net_requested and "amd64" in arches else 0)
-    max_workers = min(n_lanes * (1 + retries) + (len(arches) if do_lint else 0) + 1, 16) or 1
+    max_workers = (
+        min(
+            n_lanes * (1 + retries)
+            + (len(arches) if do_lint else 0)
+            + (len(arches) if do_build else 0)
+            + (1 if do_lint else 0),  # check-tooling: one arch-independent worker
+            20,
+        )
+        or 1
+    )
 
     with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
         # check-tooling needs no build artifacts, so start it immediately — it
@@ -434,37 +535,35 @@ def gate(args, repo: Path) -> int:
                 lfut[ex.submit(_lint_once, repo, arch, gate_root / f"lint-{arch}")] = arch
 
         if do_build:
-            for arch in build_order:
-                bt0 = time.monotonic()
-                # --no-check: skip the build's warn-only source-lint arsenal
-                # (~20-40s per arch, serial). The strict lint lane runs the SAME
-                # suite blocking (`check --strict`), so the warn-only pass inside
-                # a gate build is pure duplication — the gate loses no coverage.
-                # Only safe when the lint lanes actually run: --no-lint keeps the
-                # in-build pass.
-                cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
-                if do_lint:
-                    cmd.append("--no-check")
-                if getattr(args, "clean", False):
-                    cmd.append("--clean")
-                cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
-                bdt = time.monotonic() - bt0
-                if cp.returncode != 0:
+            # Submit every arch's build at once and let the host broker decide how many
+            # run (see _build_once). amd64 is submitted FIRST so FIFO admission gives it
+            # the earliest permit — it feeds two lanes (own smoke + net, the longest).
+            bfut = {ex.submit(_build_once, repo, run, a, args): a for a in build_order}
+            for f in cf.as_completed(bfut):
+                r = f.result()
+                if not r["ok"]:
                     run.add(
                         Stage(
-                            f"build:{arch}",
-                            exit=cp.returncode,
-                            seconds=bdt,
+                            f"build:{r['arch']}",
+                            exit=r["exit"],
+                            seconds=r["seconds"],
                             status="fail",
                             detail="build failed",
-                            salient=[f"vibeos-cli build --arch {arch} exited {cp.returncode}"],
+                            salient=[f"vibeos-cli build --arch {r['arch']} exited {r['exit']}"],
                         )
                     )
-                    # a build failure is fatal for that arch; keep building the
-                    # rest so the matrix is complete, but this arch won't smoke.
+                    # a build failure is fatal for that arch; the others still build
+                    # and smoke so the matrix stays complete.
                 else:
-                    run.add(Stage(f"build:{arch}", seconds=bdt, status="ok", detail="built"))
-                    _launch_lanes(arch)  # pipeline: this arch smokes while the next builds
+                    run.add(
+                        Stage(
+                            f"build:{r['arch']}",
+                            seconds=r["seconds"],
+                            status="ok",
+                            detail="built",
+                        )
+                    )
+                    _launch_lanes(r["arch"])  # pipeline: smoke this arch while others build
             built = {
                 s.name.split(":", 1)[1]
                 for s in run.stages
@@ -608,7 +707,7 @@ def gate(args, repo: Path) -> int:
     # that fails the run (sets a fail Stage → verdict FAIL) without being wired
     # into all_ok — the stamp is the push credential, so err on the safe side.
     if all_ok and run.verdict != "FAIL":
-        _write_gate_stamp(run, repo, requested)
+        _write_gate_stamp(run, repo, requested, gated_state)
 
     run.extra["arches"] = arches
     run.extra["matrix"] = {

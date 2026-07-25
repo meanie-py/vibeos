@@ -201,7 +201,7 @@ function refuses rather than emitting an empty module. Every COM-machinery branc
 `cpp_com_mode`, so a `--free-functions` run takes the ordinary path: no scaffold, no
 `<name>_body` contract, no COM body audit, `abi_enforce` re-enabled, file globals restored to
 the prompt. Being the first caller of sealed non-COM translation surfaced three latent defects
-— field manual **§9.120** — plus the `EXTERN_C` scanner cliff (**§9.121**) that was costing
+— field manual **§9.122** — plus the `EXTERN_C` scanner cliff (**§9.123**) that was costing
 `stubs.cpp` 2 of its 66 bodies.
 
 **`--cpp-com --class` is still the only route for a COM class.** This does not replace it.
@@ -217,7 +217,7 @@ blockers cluster into five classes — not 34 individual problems:
 | custom/inherited base class | 11 | ATL templates (`CComObjectRootEx`, `IDispatchImpl`, `CWindowImpl`) |
 | no `OBJECT_ENTRY` activation | 5 | internal `ShellObjectCreator<T>` |
 | state field needs layout mapping | 4 | non-scalar/non-pointer members |
-| unextracted bodies | 5 | scanner coverage (one was §9.121) |
+| unextracted bodies | 5 | scanner coverage (one was §9.123) |
 
 "Closable" is not "translatable": a TU of pure free functions passes `cpp-tu` trivially and now
 routes via `--free-functions`, while a blocked class still needs its mapper. Extending one

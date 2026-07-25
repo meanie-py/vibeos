@@ -48,7 +48,12 @@ SKIP_FILE_RE = re.compile(r"(bindgen_[a-z0-9_]+\.rs$|/target/|/\.responses/|/tes
 NOLINT_RE = re.compile(r"//\s*nolint(?::\s*bugcheck-code\b|\s*$|:?\s*\()")
 
 CALL_RE = re.compile(r"\bKeBugCheck(?:Ex)?\s*\(")
-NUM_RE = re.compile(r"^\s*(0x[0-9A-Fa-f]+|\d+)\s*[,)]")
+# A Rust integer literal may carry a type suffix (0x35u32, 5usize, 0x1E_u32) and
+# `_` digit separators. The original pattern required the digits to be followed
+# directly by `,` or `)`, so `KeBugCheckEx(0x35u32, ...)` in classpnp-rust hid
+# from this gate for six weeks while the scanner reported a clean 0. A lint that
+# under-matches reads exactly like a lint that passes — match the whole literal.
+NUM_RE = re.compile(r"^\s*(0x[0-9A-Fa-f_]+|\d[\d_]*)(?:[ui](?:8|16|32|64|128|size))?\s*[,)]")
 
 
 def scan_file(path: Path) -> list[tuple[int, str, str]]:

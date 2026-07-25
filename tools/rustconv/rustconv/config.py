@@ -1801,7 +1801,10 @@ def _derive_sys_substrate(
                 )
             deps = sorted(set(re.findall(r"^\s*([A-Za-z0-9_-]+-sys)\s*=", cargo.read_text(), re.M)))
             if len(deps) == 1:
-                sys_name = deps[0]
+                # str(): re.findall is typed list[Any], and assigning Any to a
+                # `str | None` local leaves it `str | None` — the narrowing this
+                # function's whole tail depends on.
+                sys_name = str(deps[0])
             elif not deps:
                 raise TargetResolveError(
                     f"--target: {crate.name} declares no `*-sys` dependency, so there is no\n"

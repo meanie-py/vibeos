@@ -589,8 +589,19 @@ pub unsafe extern "system" fn ClassAddDevice(
     DriverObject: PDRIVER_OBJECT,
     PhysicalDeviceObject: PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    // PAGED_CODE() — a DBG-only KdPrint + ASSERT in C (NOP_FUNCTION in retail).
+    // The translation escalated it to an unconditional retail BUGCHECK with an
+    // INVENTED stop code: 0x35 is NO_MORE_IRP_STACK_LOCATIONS, which has nothing
+    // to do with IRQL (the §9.113 class). It evaded scan_bugcheck_codes.py for
+    // six weeks because the literal carried a Rust type suffix (`0x35u32`) and
+    // the scanner's regex required the digits to be followed directly by `,`.
     if KeGetCurrentIrql() > APC_LEVEL {
-        KeBugCheckEx(0x35u32, 0, 0, 0, 0);
+        DbgPrintEx(
+            DPFLTR_CLASSPNP_ID,
+            DPFLTR_INFO_LEVEL,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
+            KeGetCurrentIrql() as u32,
+        );
     }
     // Key MUST match ClassInitialize's IoAllocateDriverObjectExtension registration —
     // a literal `1` here returned NULL and AV'd on the first-ever ClassAddDevice call

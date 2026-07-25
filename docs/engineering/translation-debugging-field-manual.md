@@ -10130,7 +10130,127 @@ still fails. Symmetric canonicalization beats weakened comparison — and note t
 fold the Rust `NULL` token too, since `constant_return` already lowered `return NULL;` that way
 (a pre-existing test caught the asymmetry immediately, which is the system working).
 
-### 9.120 (FIXED 2026-07-25) A capability nobody had run yet: sealed plain-C shipped raw tokens, and three guards were missing at once
+### 9.120 (FIXED 2026-07-25) C's assertion macros are DIAGNOSTICS, not control flow — three translations lowered them to UB or to a BUGCHECK with an invented code, and the gate that should have caught one of them under-matched
+
+A fresh-eyes sweep of the bug catalog (not a crash report — nothing had failed) turned
+up a class nobody had named. In C:
+
+| Macro | DBG build | Retail build |
+|---|---|---|
+| `PAGED_CODE()` (`xdk/kefuncs.h`) | `KdPrint` + `ASSERT(FALSE)` | `NOP_FUNCTION` |
+| `ASSERT(exp)` / `NT_ASSERT(exp)` (`ndk/rtlfuncs.h`) | `RtlAssert(...)` | `((void)0)` |
+
+**None of them is `__assume(0)`.** But `core::hint::unreachable_unchecked()` *is* — it is
+undefined behaviour, and telling LLVM a branch is unreachable licenses it to delete the
+guarding check and poison everything downstream. So lowering an assert to it is **strictly
+worse than the C in every build configuration**: retail C does nothing at all, retail Rust
+invokes UB.
+
+Three live sites, all latent (none had fired):
+
+* `cdrom-rust/src/common.rs` — `PAGED_CODE()` → `unreachable_unchecked()`.
+* `fastfat-rust/src/strucsup.rs` — `NT_ASSERT(Buffer != NULL)` → `unreachable_unchecked()`,
+  on the result of an allocation. The assert exists precisely to catch the case the
+  translation told the optimizer to assume away.
+* `classpnp-rust/src/class.rs` — `PAGED_CODE()` → `KeBugCheckEx(0x35u32, 0,0,0,0)`: a
+  DBG-only diagnostic escalated to an **unconditional retail BUGCHECK**, with an invented
+  stop code on top (0x35 is `NO_MORE_IRP_STACK_LOCATIONS`, nothing to do with IRQL — the
+  §9.113 class).
+
+**The gate that should have caught the third one reported a clean zero.**
+`scan_bugcheck_codes.py` matched `^\s*(0x[0-9A-Fa-f]+|\d+)\s*[,)]` — digits followed
+*directly* by `,` or `)`. The literal was `0x35u32`, and the Rust type suffix broke the
+match. It sat in the tree from 2026-06-09 through the entire §9.113 sweep on 2026-07-24.
+
+> **A lint that under-matches is indistinguishable from a lint that passes.** Both print
+> `0`. This is the same failure shape as §9.115a (a baseline computed from a stale build
+> artifact) and §9.115 (a report that iterates the generator's own flagged set): the check
+> was structurally unable to see the thing it existed to find, and its silence was read as
+> evidence of health. When you write a pattern-matching lint, **test it against a positive
+> case you construct on purpose** — `0x35u32` would have failed that test in one second.
+
+**Regression gate:** `tools/scan_assert_to_ub.py` (empty baseline, wired into
+`vibeos-cli check`). `unreachable_unchecked()` remains legitimate as the tail of a
+genuinely-noreturn call and as a faithful `DEFAULT_UNREACHABLE`; those carry
+`// nolint: assert-to-ub (reason)`. Writing that scanner produced its own instance of the
+same lesson — the first version's noreturn-context regex was `\b`-anchored, so it rejected
+the real call sites (`FatBugCheck`, `CdRaiseStatus`) because a driver prefix leaves no word
+boundary, and reported three false positives. **Match names as substrings when the codebase
+prefixes them.**
+
+**Why this class recurs and why a one-off fix was not enough.** `fastfat-rust/src/fatinit.rs`
+already carries a comment describing the *same* mistake being fixed in `__int2c` — someone
+hit it, fixed that instance, and moved on without generalizing. An LLM translating C sees
+`PAGED_CODE();` as a statement that must *do* something, and "this can't happen" maps
+naturally onto `unreachable_unchecked()`. It will keep happening; the gate is the answer.
+
+**When auditing a translated assert, ask what the C does in RETAIL, not what it means.**
+`ASSERT(x)` reads like "x must hold," which invites a hard failure. It compiles to nothing.
+
+> **Read with §9.119.** That entry is this one's mirror: there, a regex MATCH was mistaken for proof that a body was lowerable (146 text-shaped hits, 11 sound lowerings). Here, a regex MISS was mistaken for proof that a class was absent (`0` reported for six weeks). A pattern match is evidence about TEXT, never about SEMANTICS — in either direction. Whichever way you are reading it, the pattern owes you a positive and a negative control before you believe its count.
+
+### 9.121 (2026-07-25) A worktree showing a HUGE staged REVERT isn't your work — its branch ref was moved from ANOTHER worktree, and `git add -A` would land the revert
+
+**Symptom.** `git status` in a checkout you have not touched today reports hundreds or
+thousands of files under *"Changes to be committed"*, nothing unstaged, no untracked, and
+
+```
+$ git status -sb
+## master...origin/master [behind 61]
+$ git diff --cached --shortstat HEAD
+ 1123 files changed, 8869 insertions(+), 197524 deletions(-)
+```
+
+197K **deletions** staged. Spot-check a file and it is *removing* landed work — e.g. the
+whole `dnsapi.dll` Rust cohab block, as if someone had reverted the flip.
+
+**What it actually is.** Nobody reverted anything. The worktree's *files* are still at an
+older commit, while its *branch ref* was moved forward from a **different** worktree
+(`git branch -f master …`, `git update-ref`, `git fetch origin master:master`,
+`git push . <sha>:master`). Git compares index+worktree against the NEW `HEAD`, so every
+commit that landed in between shows up inverted, as a staged deletion. The index here was
+8 days stale and nobody had noticed.
+
+**Diagnose in three commands** — the point is to prove there is nothing unique to lose:
+
+```bash
+git reflog master -5      # "branch: Reset to HEAD" ⇒ moved from elsewhere.
+                          #   (HEAD's reflog is PER-WORKTREE, so it has no entry for the
+                          #    move and its HEAD@{0} disagrees with `git rev-parse HEAD` —
+                          #    that mismatch is itself the tell.)
+git diff --stat <HEAD@{0}-from-that-reflog>   # EMPTY ⇒ your files are EXACTLY that commit's
+                                              #   tree: zero local edits, all of it phantom.
+git merge-base --is-ancestor <that-commit> origin/master   # YES ⇒ it is already upstream.
+```
+
+**The trap.** `git add -A && git commit` (or `commit -a`) in that state creates a *real*
+revert commit of everything the fleet landed since — a mass regression with a plausible
+diff. And the obvious cleanup, `git checkout .` / `git restore`, is forbidden here
+(AGENTS.md: never discard with checkout/restore).
+
+**Fix.**
+
+```bash
+git stash push -m "main-wt: stale <date> worktree (== tree of <sha>, an ancestor of
+                   origin/master) resurfacing as a staged REVERT — nothing unique, safe to drop"
+git fetch && git merge origin/master        # fast-forward; files and ref agree again
+```
+
+The stash is cheap insurance, not a real save: the content is byte-identical to a commit
+that is already an ancestor of mainline, so it is recoverable from git forever regardless.
+
+**Prevention (now a rule).** Never move a branch ref from a worktree that does not have it
+checked out. Push straight to origin instead — `git push origin HEAD:master` — and let each
+worktree pick it up with its own `git fetch && git merge origin/master`. `vibeos-cli land`
+does exactly that, and it is why it never touches the local `master` ref.
+
+> **Read with the landing race.** The same session found the *reason* lanes reach for
+> ref-surgery at all: gate-then-push by hand is a race (the stamp is keyed to an exact tree,
+> so the first pusher voids everyone else's gate), and `vibeos-cli land` — one fleet-wide
+> FIFO lock across fetch → merge → gate → push — is the sanctioned way. See AGENTS.md
+> §"Git and mainline" and `tests/qemu/cli/README.md` → `land`.
+
+### 9.122 (FIXED 2026-07-25) A capability nobody had run yet: sealed plain-C shipped raw tokens, and three guards were missing at once
 
 `--seal-facts --seal-calls` was generalized from shell32/COM to plain C on 2026-07-24, and
 AGENTS.md now tells every plain-C module to **"always pass both."** Nothing had actually run
@@ -10175,7 +10295,7 @@ A test pins the contract text so nobody "improves" it later.
 ledger before trusting a documented workflow — `seal_facts=True` on zero non-shell32 entries was
 visible in one query and predicted all three bugs.
 
-### 9.121 (FIXED 2026-07-25) `EXTERN_C` cost us function bodies, on a 10-character cliff
+### 9.123 (FIXED 2026-07-25) `EXTERN_C` cost us function bodies, on a 10-character cliff
 
 `EXTERN_C` is winnt.h's `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter knows
 neither, so it parsed the macro as the return type and the real return type became a second
@@ -10203,7 +10323,7 @@ Same family as the `CONST` and `FAR`/`NEAR` normalisers beside it, and as the
 shrinking the translation plan.** When a scanner gap looks length- or name-dependent, suspect
 error recovery and fix the *input*, not the recovery.
 
-### 9.122 (2026-07-25) `cargo check` is not validation — the oracle has to BUILD
+### 9.124 (2026-07-25) `cargo check` is not validation — the oracle has to BUILD
 
 `candidate-check` ran `cargo check` once per arch and called that acceptance. `check` stops
 before codegen, and `unconditional_panic` is a MIR-level deny-by-default lint that only fires
@@ -10222,7 +10342,7 @@ A correct candidate of the same shape (`entries.as_ptr().add(i)`) still passes a
 so this is not over-strict. The report now records `cargo_mode`, so a green result says which
 pass produced it.
 
-### 9.123 (2026-07-25) semdiff judged Rust by C's rules — both false positives, same root
+### 9.125 (2026-07-25) semdiff judged Rust by C's rules — both false positives, same root
 
 The C↔Rust semantic-divergence oracle produced exactly two findings on landed, hand-audited
 code, and **both were false positives from applying C semantics to the Rust side**:
