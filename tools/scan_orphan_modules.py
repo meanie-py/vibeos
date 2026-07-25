@@ -73,8 +73,17 @@ def banner_reason(path):
     return None
 
 
+def has_crate_root(crate_dir):
+    """Does this Cargo.toml directory actually carry a crate root? A workspace-only
+    manifest does not, and neither does a translation dump that was never scaffolded."""
+    src = os.path.join(crate_dir, "src")
+    return any(
+        os.path.exists(os.path.join(d, f)) for d in (src, crate_dir) for f in ("lib.rs", "main.rs")
+    )
+
+
 def scan(roots):
-    findings, declared = [], []
+    findings, declared, rootless = [], [], []
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
@@ -83,7 +92,21 @@ def scan(roots):
                     continue
                 path = os.path.join(dirpath, fn)
                 crate = crate_root_of(path)
-                if crate is None or crate_is_opaque(crate):
+                if crate is None or not has_crate_root(crate):
+                    # `crate_root_of` returns the nearest ancestor holding a Cargo.toml.
+                    # A directory of .rs with no Cargo.toml of its own therefore resolves
+                    # to the WORKSPACE manifest, whose crate_live_files() is empty, and
+                    # the "unparseable -> fail open" branch below then swallowed it. That
+                    # made the most complete kind of orphan the one kind this gate could
+                    # not see: mscms-rust is 6 files / 4,782 lines of paid translation
+                    # with no lib.rs and no Cargo.toml, and it reported clean for as long
+                    # as this gate has existed. Distinguish "crate root exists but we
+                    # could not parse it" (still fail open, below) from "there is no crate
+                    # root at all" (report). Same banner escape as any other orphan.
+                    reason = banner_reason(path)
+                    (declared if reason else rootless).append((path, reason))
+                    continue
+                if crate_is_opaque(crate):
                     continue
                 live = crate_live_files(crate)
                 if not live:  # unparseable crate -> fail open
@@ -92,7 +115,7 @@ def scan(roots):
                     continue
                 reason = banner_reason(path)
                 (declared if reason else findings).append((path, reason))
-    return findings, declared
+    return findings, declared, rootless
 
 
 def main():
@@ -109,7 +132,7 @@ def main():
 
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     roots = args.paths or [os.path.join(repo, "sdk", "lib", "rust")]
-    findings, declared = scan(roots)
+    findings, declared, rootless = scan(roots)
 
     for path, _ in findings:
         rel = os.path.relpath(path, repo)
@@ -120,12 +143,24 @@ def main():
             f"nothing compiles; wire it up, or declare it with a "
             f"`//! {BANNER} <reason>` banner"
         )
+    for path, _ in rootless:
+        rel = os.path.relpath(path, repo)
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            n = sum(1 for _ in fh)
+        print(
+            f"{rel}:1: [ROOTLESS] no crate root (lib.rs/main.rs) above this file — "
+            f"{n} lines that nothing compiles; scaffold the crate, or declare it "
+            f"with a `//! {BANNER} <reason>` banner"
+        )
     if args.show_declared:
         for path, reason in declared:
             print(f"{os.path.relpath(path, repo)}:1: [DECLARED] {reason}")
 
-    print(f"\nSUMMARY: undeclared-orphans={len(findings)}  declared={len(declared)}")
-    return 1 if findings else 0
+    print(
+        f"\nSUMMARY: undeclared-orphans={len(findings)}  rootless={len(rootless)}  "
+        f"declared={len(declared)}"
+    )
+    return 1 if (findings or rootless) else 0
 
 
 if __name__ == "__main__":

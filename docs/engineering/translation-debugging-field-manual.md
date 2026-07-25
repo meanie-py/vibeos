@@ -1234,6 +1234,38 @@ the harness fail. Two instances of the very class turned up while building it: t
 itself was a liar on its first run (the positive assertion accepted *any* non-empty output), and
 two scanners take FILES, not directories, so handed a directory they silently found nothing.
 
+### "Canonicalising" a mismatch can silence it by editing the EVIDENCE
+A lint that reports `X disagrees with Y` has no opinion about which side is wrong, so a
+mechanical pass that makes them agree will always turn it green — including by changing the
+side that was right. This lane did exactly that: a "full mechanical CC canon" pass
+(`e33a810c9ad`) aligned every `extern "X" { fn F; }` declaration to F's `#[no_mangle]`
+definition, and among the files it rewrote were two **generated bindgen islands**. bindgen's
+`extern "stdcall"` there was not a local opinion — it was the transcript of the C header's
+`NTAPI`. Flipping it to `extern "C"` silenced the finding on buslogic's 6 SCSI miniport
+callbacks and cdrom's 2 WDF cleanup callbacks, every one of which our Rust wrongly defined
+cdecl while the port driver / WDF calls them through a stdcall function pointer. The live
+count fell 305 → 16 and read as burndown progress.
+
+Three things generalise:
+
+- **Classify each side as OPINION or EVIDENCE before aligning them.** A hand-written decl
+  describing a symbol the crate itself defines is opinion; a generated island, a `.spec`, a C
+  header, a DDK function-pointer typedef are evidence. Never edit evidence to match code.
+  `scan_cc_mismatch --fix` now refuses to write any `types*.rs`/`bindgen*.rs` and reports
+  those as "the DEFINITION is the suspect side" instead.
+- **A `transmute` at the binding site removes the compiler from the argument.** buslogic
+  registers its callbacks with `cb!(F)` = `transmute(F as usize)`, so rustc never compares
+  `extern "C" fn` against the `extern "stdcall"` field it lands in. Wherever a fn pointer is
+  installed by transmute, a *source-level* convention check is the only thing that can see it.
+- **A finding count that drops without a corresponding fix is a question, not a result.**
+  Re-derive it from the C, not from the tree's internal agreement.
+
+The same pass's counterpart trap: an oracle can also be *falsely* consulted. `cfg_excludes_i386`
+only ever saw attributes directly preceding a definition, so `#[cfg(target_arch = "x86_64")]
+mod ke_amd64_exports { … }` made 8 amd64-only definitions look like i386 authority — and --fix
+used them to rewrite ntoskrnl's *correct* i386 decls. **A cfg'd-out definition is not evidence
+either**; the scanner now brace-matches per-arch modules.
+
 ### A generator can only flag what its TYPE SOURCE can see `[§9.115]`
 Three near-identical crashes: an unmodified stock i386 applet added to the suite kept dying,
 because wow64gen typed its thunks from a source narrower than the truth. **A report that

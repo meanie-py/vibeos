@@ -149,7 +149,7 @@ pub unsafe extern "system" fn DriverEntry(mut DriverObject: PVOID, mut Argument2
     return Status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn BT958HwFindAdapter(
+pub unsafe extern "system" fn BT958HwFindAdapter(
     HwDeviceExtension: PVOID,
     Context: PVOID,
     BusInformation: PVOID,
@@ -1317,7 +1317,7 @@ pub unsafe extern "C" fn BusLogic_InitializeCCB(mut CCB: PBuslogic_CCB_T) {
     (*CCB).AbortSrb = core::ptr::null_mut() as PVOID;
 }
 #[no_mangle]
-pub unsafe extern "C" fn BT958HwStartIO(
+pub unsafe extern "system" fn BT958HwStartIO(
     mut HwDeviceExtension: PVOID,
     mut Srb: PSCSI_REQUEST_BLOCK,
 ) -> BOOLEAN {
@@ -1750,7 +1750,7 @@ pub unsafe extern "C" fn BusLogic_QueueCommand(
     return 0 as ::core::ffi::c_int;
 }
 #[no_mangle]
-pub unsafe extern "C" fn BT958HwInterrupt(HwDeviceExtension: PVOID) -> BOOLEAN {
+pub unsafe extern "system" fn BT958HwInterrupt(HwDeviceExtension: PVOID) -> BOOLEAN {
     let deviceExtension: PHW_DEVICE_EXTENSION = HwDeviceExtension as PHW_DEVICE_EXTENSION;
     let HostAdapter: *mut BusLogic_HostAdapter_T = core::ptr::addr_of_mut!((*deviceExtension).hcs);
     let mut InterruptRegister: BusLogic_InterruptRegister_T = core::mem::zeroed();
@@ -2151,7 +2151,7 @@ pub unsafe extern "C" fn BusLogic_ComputeResultCode(
     return HostStatus;
 }
 #[no_mangle]
-pub unsafe extern "C" fn BT958HwResetBus(
+pub unsafe extern "system" fn BT958HwResetBus(
     HwDeviceExtension: PVOID,
     PathId: ULONG,
 ) -> BOOLEAN {
@@ -2272,7 +2272,7 @@ pub unsafe extern "C" fn BusLogic_SendBusDeviceReset(
     return Result;
 }
 #[no_mangle]
-pub unsafe extern "C" fn BT958HwInitialize(HwDeviceExtension: PVOID) -> BOOLEAN {
+pub unsafe extern "system" fn BT958HwInitialize(HwDeviceExtension: PVOID) -> BOOLEAN {
     let deviceExtension: PHW_DEVICE_EXTENSION = HwDeviceExtension as PHW_DEVICE_EXTENSION;
     let HostAdapter: *mut BusLogic_HostAdapter_T = core::ptr::addr_of_mut!((*deviceExtension).hcs);
     let mut Parameter: CHAR = 1 as CHAR;
@@ -2290,7 +2290,7 @@ pub unsafe extern "C" fn BT958HwInitialize(HwDeviceExtension: PVOID) -> BOOLEAN 
     return 1 as BOOLEAN;
 }
 #[no_mangle]
-pub unsafe extern "C" fn BT958HwAdapterControl(
+pub unsafe extern "system" fn BT958HwAdapterControl(
     HwDeviceExtension: PVOID,
     ControlType: SCSI_ADAPTER_CONTROL_TYPE,
     Parameters: PVOID,

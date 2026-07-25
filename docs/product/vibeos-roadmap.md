@@ -479,6 +479,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **`mscms-rust` is an unintegrated translation — OWED, 4,782 lines, 6 files** (surfaced
+  2026-07-25 by teaching `scan_orphan_modules` to see ROOTLESS crates). No `Cargo.toml`, no
+  `lib.rs`, no CMake or workspace reference, so nothing compiles it and every source gate
+  skipped it silently — `crate_root_of` walks up to the nearest Cargo.toml, which for this
+  crate is the *workspace* manifest, and the "unparseable crate → fail open" branch then
+  swallowed it. Now declared with `ORPHAN-BY-DESIGN` banners so it is tracked rather than
+  invisible. Integrating it is not just scaffolding: `profile.rs` carries items like
+  `#[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn GetColorDirectoryW(..);`
+  **inside** an `extern "C" {}` block, which is not valid Rust — expect a compile grind. Kept
+  as paid artifact per AGENTS.md; do not delete without explicit approval.
+- **8 `scan_cc_mismatch` entries in `ntkrnl-sys/src/bindgen_i386.rs` — benign, baselined**
+  (`Ke386SanitizeFlags`, `Ke386SanitizeSeg`, `Ke{Query,Register}InterruptHandler`,
+  `KiFillTrapFrameDebug`, `KiGetThreadNpxArea`, `KiSetTebBase`, `KiUserTrap`). The island
+  declares them `extern "C"` (faithful — the C headers make them `FORCEINLINE` and
+  undecorated, i.e. cdecl); our out-of-line definitions and all **19** hand-written callers
+  across the i386 trap/interrupt/thread-init path consistently say `extern "system"`. Nothing
+  calls through the island decl, so the Rust side is self-consistent and safe. Flipping the 8
+  definitions to `"C"` was tried and reverted — it makes 19 call sites disagree in order to
+  match a declaration with no callers. Resolves naturally when task #14 normalizes bindgen
+  conventions.
+
 - **amd64 `ExHardError` 6 failures — OPEN, NOT SMP-related, regressed on master since
   2026-07-17** (found 2026-07-24 by the UP:=smp1 conformance experiment). `ExHardError.c:139-144`
   — the six `CheckHardError(0x40000009..0x4000000d, …)` cases that raise a hard error with an
