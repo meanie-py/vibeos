@@ -3104,3 +3104,40 @@ def test_gate_refuses_to_stamp_when_dirty_at_start(tmp_path, monkeypatch, tiny_r
     monkeypatch.setattr(gate_mod, "_tree_state", lambda repo: (real[0], True))
     gate_mod.gate(_gate_args(no_net=True), tiny_repo)
     assert not list((tiny_repo / ".git" / "vibeos-gate-stamps").glob("*.json"))
+
+
+# --- lint baseline: line DRIFT is not a new finding, but a new OCCURRENCE is --
+
+
+def test_lint_baseline_ignores_pure_line_drift():
+    """Inserting a comment above a baselined finding moved it 90→93 and turned the gate RED
+    with '1 new' (2026-07-25). Nothing an author can do about that except re-bless the
+    baseline — which launders whatever else drifted in the same pass."""
+    base = {"qemu/lib/common.sh:90:17: warning: SLOT_INDEX appears unused. [SC2034]"}
+    cur = {"qemu/lib/common.sh:93:17: warning: SLOT_INDEX appears unused. [SC2034]"}
+    assert lints._new_findings(cur, base) == []
+
+
+def test_lint_baseline_still_flags_a_new_occurrence_of_a_baselined_message():
+    """The multiset half: the SAME message twice where the baseline recorded it once is a
+    genuinely new site and must stay red. A plain set-of-keys diff would mask it."""
+    base = {"a.sh:10:1: warning: X unused. [SC2034]"}
+    cur = {
+        "a.sh:12:1: warning: X unused. [SC2034]",
+        "a.sh:40:1: warning: X unused. [SC2034]",
+    }
+    new = lints._new_findings(cur, base)
+    assert len(new) == 1, new
+
+
+def test_lint_baseline_still_flags_a_new_file_and_a_new_message():
+    base = {"a.sh:10:1: warning: X unused. [SC2034]"}
+    assert lints._new_findings({"b.sh:10:1: warning: X unused. [SC2034]"}, base) != []
+    assert lints._new_findings({"a.sh:10:1: warning: Y unused. [SC2034]"}, base) != []
+
+
+def test_lint_baseline_compares_prefixless_findings_verbatim():
+    """Tools that don't emit `file:line:` (verify_* MISMATCH lines) keep exact matching."""
+    base = {"MISMATCH: NtFoo stdcall vs cdecl"}
+    assert lints._new_findings({"MISMATCH: NtFoo stdcall vs cdecl"}, base) == []
+    assert lints._new_findings({"MISMATCH: NtBar stdcall vs cdecl"}, base) != []
