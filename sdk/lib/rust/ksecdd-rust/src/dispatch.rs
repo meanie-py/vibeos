@@ -24,10 +24,18 @@ extern "C" {
 }
 
 // __debugbreak is an MSVC *intrinsic*, not an import. Declaring it `extern "C"` emitted a
-// reference to `___debugbreak` that nothing in ksecdd.sys's link provides — ksecdd.sys is its
-// own PE image, so the kernel-side global_asm in ntkrnl-sys is not in scope for it no matter
-// how the symbol is decorated (verified: aliasing it there changes nothing). Only a COLD build
-// catches this, because a `.sys` relinks only when its inputs change.
+// reference to `___debugbreak` (i386 cdecl mangling) while ntkrnl-sys's `ke_i386.rs`
+// `global_asm!` only ever emitted the stdcall spelling `___debugbreak@0` — so the i386 link of
+// ksecdd.sys failed while amd64/arm64, whose spelling needs no decoration, were fine.
+//
+// Do NOT "fix" that by also emitting the cdecl label: field manual §9.125 measured what
+// happens, and it is worse. The label IS reachable (`T ___debugbreak@0` sits in
+// libksecdd_rust.a), so aliasing it links the OBJECT that carries it — and that object carries
+// kernel-only code, which drags in four MORE undefined symbols. (An earlier commit of mine
+// tried exactly that and was reverted; my stated reason — "not in scope for a separate PE" —
+// was wrong, as their whole-tree symbol dump shows. Right conclusion, wrong argument.)
+//
+// Only a COLD build catches this at all, because a `.sys` relinks solely when its inputs change.
 //
 // Emit the instruction inline, which is what the intrinsic means and what sibling drivers
 // already do (`fltmgr-rust/src/glue.rs`, `scsiport-rust/src/inlines.rs`). Note this is also the
