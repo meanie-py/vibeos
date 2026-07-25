@@ -209,6 +209,16 @@ const LP32_LONG_SYMBOLS: &[(&str, &str)] = &[
         "size_t ref_wcstombs(char*, const wchar_t*, size_t);",
     ),
     ("wctomb", "int ref_wctomb(char*, wchar_t);"),
+    // ── mbcs.c, and exactly the <stdlib.h> story above ────────────────
+    // Both are declared in <stdlib.h>, which the refstub pulls BEFORE the 16-bit
+    // wchar_t remap, so glibc types their `wchar_t*` with the HOST's 32-bit one while
+    // mbcs.c defines them with the Windows 16-bit one. Without the two-step these are
+    // a conflicting-types error, which is how they were found.
+    ("mbtowc", "int ref_mbtowc(wchar_t*, const char*, size_t);"),
+    (
+        "mbstowcs",
+        "size_t ref_mbstowcs(wchar_t*, const char*, size_t);",
+    ),
 ];
 
 /// The 176 public symbols of `dll/win32/msvcrt/wcs.c` — the SECOND reference
@@ -525,6 +535,68 @@ fn exported_symbols(src: &str) -> Vec<String> {
     out
 }
 
+/// Every non-`static` function the TU DEFINES, by scanning for definitions rather than
+/// for `(MSVCRT.@)` banners.
+///
+/// The banner answers "what does msvcrt export", which is not the question the rename
+/// list is asking. The hazard is a symbol that lands under its PLAIN name inside the
+/// test binary, where the subject may also define it — and that set is what the TU
+/// DEFINES. The two differ: mbcs.c defines seven functions with no banner at all
+/// (`create_mbcinfo`, `_mbsncpy_s`, `_mbsncpy_s_l`, `_mbsnicmp_l`, `_mbsnset_l`,
+/// `_mbstowcs_s`, `___mb_cur_max_l_func`), and the shipping Rust `#[no_mangle]`-exports
+/// them. Renaming only the banner set leaves those as duplicate definitions — either a
+/// link error, or one side silently satisfying the other's internal calls.
+fn defined_symbols(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = src.as_bytes();
+    for (i, line) in src.lines().enumerate() {
+        // A definition starts at column 0 (msvcrt's house style) and is not `static`.
+        if line.starts_with([' ', '\t', '#', '/', '*', '}']) || line.trim().is_empty() {
+            continue;
+        }
+        if line.starts_with("static") || line.starts_with("typedef") {
+            continue;
+        }
+        let Some(open) = line.find('(') else { continue };
+        // The identifier immediately before '(' …
+        let head = &line[..open];
+        let name: String = head
+            .chars()
+            .rev()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        if name.is_empty() || name.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        // … and it is a DEFINITION only if a `{` follows the parameter list before any
+        // `;` — otherwise it is a prototype or a call.
+        let start = src.lines().take(i).map(|l| l.len() + 1).sum::<usize>() + open;
+        let mut depth = 0i32;
+        let mut is_def = false;
+        for &b in &bytes[start..] {
+            match b {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                b';' if depth == 0 => break,
+                b'{' if depth == 0 => {
+                    is_def = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if is_def {
+            out.push(name);
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// Does the TU actually DEFINE `name` (`... name ( ... ) {`), as opposed to only
 /// carrying its banner above an `#if`-disabled body?
 fn defines_symbol(src: &str, name: &str) -> bool {
@@ -577,7 +649,8 @@ fn main() {
     let wcs_c = msvcrt_dir.join("wcs.c");
     let ctype_c = msvcrt_dir.join("ctype.c");
     let locale_c = msvcrt_dir.join("locale.c");
-    for src in [&string_c, &wcs_c, &ctype_c, &locale_c] {
+    let mbcs_c = msvcrt_dir.join("mbcs.c");
+    for src in [&string_c, &wcs_c, &ctype_c, &locale_c, &mbcs_c] {
         assert!(
             src.is_file(),
             "msvcrt reference source not found: {}",
@@ -589,11 +662,53 @@ fn main() {
     // construction (see WCS_PUBLIC_SYMBOLS / CTYPE_PUBLIC_SYMBOLS) — assert it,
     // because an overlap would silently become a duplicate-symbol link error much
     // later.
+    // mbcs.c's 175 exports are DERIVED, not listed.
+    //
+    // The other three TUs carry hand-maintained lists plus a drift check that scrapes
+    // the C and fails the build when one falls behind. Scraping is the check, so for a
+    // new TU it may as well be the source: `exported_symbols` + `defines_symbol` are
+    // the same two functions the drift check already trusts, and a list that is derived
+    // cannot drift from the file it describes. (This is the difftest generator's own
+    // thesis — the harness's symbol inventory was its first hardcoding — applied to the
+    // harness that hosts it.)
+    let mbcs_src = fs::read_to_string(&mbcs_c).unwrap();
+    let mbcs_symbols: Vec<String> = defined_symbols(&mbcs_src)
+        .into_iter()
+        .filter(|name| !NAMESPACED_SYMBOLS.contains(&name.as_str()))
+        .collect();
+    assert!(
+        mbcs_symbols.len() > 150,
+        "mbcs.c scrape found only {} definitions — the scan is broken, and a short list \
+         would silently leave the rest un-renamed and colliding with the subject",
+        mbcs_symbols.len()
+    );
+    // The banner set must be a SUBSET of the definition set. If a banner names something
+    // the scan did not find, the scan has a hole — and a hole here is a plain symbol
+    // shared with the code under test, which is the one failure this list exists to
+    // prevent.
+    {
+        let defined: std::collections::HashSet<&str> =
+            mbcs_symbols.iter().map(String::as_str).collect();
+        let missed: Vec<String> = exported_symbols(&mbcs_src)
+            .into_iter()
+            .filter(|n| defines_symbol(&mbcs_src, n))
+            .filter(|n| !NAMESPACED_SYMBOLS.contains(&n.as_str()))
+            .filter(|n| !defined.contains(n.as_str()))
+            .collect();
+        assert!(
+            missed.is_empty(),
+            "mbcs.c exports these with (MSVCRT.@) and defines them, but the definition \
+             scan missed them — they would keep their plain names:\n    {}",
+            missed.join("\n    ")
+        );
+    }
+
     let all_symbols: Vec<&str> = PUBLIC_SYMBOLS
         .iter()
         .chain(WCS_PUBLIC_SYMBOLS.iter())
         .chain(CTYPE_PUBLIC_SYMBOLS.iter())
         .copied()
+        .chain(mbcs_symbols.iter().map(String::as_str))
         .collect();
     {
         let mut seen = std::collections::HashSet::new();
@@ -644,6 +759,34 @@ fn main() {
         ));
     }
     fs::write(out.join("cloc_tables.h"), &tables).unwrap();
+
+    // ── <mbctype.h> / <mbstring.h>: forward to the GENUINE headers ──────────
+    //
+    // mbcs.c includes these, and they must be the real ones: mbctype.h is where `_M1`,
+    // `_M2`, `_SBUP`, `_SBLOW`, `_MP` and `_MS` are DEFINED, and those flag bits are
+    // the entire content of a `threadmbcinfo`. Transcribing them into refstub would put
+    // the harness's idea of "lead byte" in a different file from msvcrt's, free to
+    // drift — and a drifted flag is invisible, because both sides read the same fixture
+    // and would read the same wrong bit.
+    //
+    // They cannot be reached by putting dll/win32/msvcrt/include on the include path:
+    // that directory also holds assert.h, ctype.h, stdlib.h &c., which would capture
+    // refstub/msvcrt.h's `#include <assert.h>` — and those MUST resolve to the host's.
+    // (Tried it; it fails immediately on msvcrt's own assert.h.) So: a one-line
+    // forwarder in OUT_DIR naming the real file absolutely, with refstub/corecrt.h
+    // standing in for the PSDK chain it would otherwise drag in.
+    for hdr in ["mbctype.h", "mbstring.h"] {
+        fs::write(
+            out.join(hdr),
+            format!(
+                "/* GENERATED by msvcrt-difftest/build.rs — forwards to the real header.\n\
+                 * See build.rs for why this is a forwarder and not a transcription. */\n\
+                 #include \"{}\"\n",
+                msvcrt_dir.join("include").join(hdr).display()
+            ),
+        )
+        .unwrap();
+    }
 
     // ── the generated rename prelude ────────────────────────────────
     let mut prelude = String::new();
@@ -811,6 +954,8 @@ fn main() {
     // DEFINES, and fail the build if one is missing from the lists. A hand-kept
     // list that nothing checks is a list that is already wrong.
     let mut undeclared: Vec<String> = Vec::new();
+    // mbcs.c is deliberately absent: its list is DERIVED by this same scrape a few
+    // dozen lines above, so checking it against itself would prove nothing.
     for (path, file) in [("string.c", &string_c), ("wcs.c", &wcs_c), ("ctype.c", &ctype_c)] {
         let src = fs::read_to_string(file).unwrap();
         for name in exported_symbols(&src) {
@@ -924,6 +1069,24 @@ fn main() {
         .opt_level(2)
         .file(manifest.join("subjectimpl.c"));
     subject_build.cargo_metadata(false);
+
+    // The codepage-aware NLS environment (iconv-backed) + the pinned MBCS fixture.
+    //
+    // Its own TU with NO refstub/msvcrt.h, like subjectimpl.c but for the opposite
+    // reason: it must see the HOST's <wctype.h>/<iconv.h> under the host's 32-bit
+    // wchar_t, and refstub/msvcrt.h remaps wchar_t to 16 bits. It reaches the shared
+    // struct layouts through locale_layout.h, which is deliberately namespace-free.
+    let mut nls_build = cc::Build::new();
+    nls_build
+        .include(&refstub)
+        .include(&out)
+        .warnings(false)
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .opt_level(2)
+        .file(manifest.join("nlsimpl.c"));
+    nls_build.cargo_metadata(false);
 
     // ── the printf PROBE unit: ReactOS `printf/streamout.c` as `so_*` ────
     //
@@ -1079,8 +1242,10 @@ fn main() {
     objects.extend(ref_tu(&string_c).compile_intermediates());
     objects.extend(ref_tu(&wcs_c).compile_intermediates());
     objects.extend(ref_tu(&ctype_c).compile_intermediates());
+    objects.extend(ref_tu(&mbcs_c).compile_intermediates());
     objects.extend(refimpl_build.compile_intermediates());
     objects.extend(subject_build.compile_intermediates());
+    objects.extend(nls_build.compile_intermediates());
     objects.extend(so_build.compile_intermediates());
     objects.extend(pfflat_build.compile_intermediates());
 
@@ -1116,6 +1281,9 @@ fn main() {
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("printf.h").display());
     println!("cargo:rerun-if-changed={}", manifest.join("refimpl.c").display());
     println!("cargo:rerun-if-changed={}", manifest.join("subjectimpl.c").display());
+    println!("cargo:rerun-if-changed={}", manifest.join("nlsimpl.c").display());
+    println!("cargo:rerun-if-changed={}", manifest.join("nlsimpl.h").display());
+    println!("cargo:rerun-if-changed={}", mbcs_c.display());
     println!("cargo:rerun-if-changed={}", refstub.display());
     println!("cargo:rerun-if-changed={}", refstub_printf.display());
     println!(

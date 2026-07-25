@@ -74,4 +74,29 @@ unsigned short nls_ctype3(unsigned int wc);   /* C3_SYMBOL */
 int nls_wide_to_mb(unsigned int cp, const unsigned short *src, int srclen,
                    char *dst, int dstlen, const char *defchar, int *used);
 
+/* ── the pinned MBCS fixture ────────────────────────────────────────────────
+ *
+ * Built by the REFERENCE's own create_mbcinfo (`ref_create_mbcinfo`), not by a
+ * hand-written filler.  That is the whole trick: the state every graded function is
+ * pinned against is produced by the very C those functions are graded against, so it
+ * cannot drift from them, and the only thing this file has to get right is the NLS
+ * underneath it.
+ *
+ * `mbcs_fixture_install` copies it into the reference's slot and the subject's slot —
+ * two separate copies, see the get_mbcinfo note in refstub/msvcrt.h.  `mbcs_fixture_
+ * check` reports whether either copy has drifted from the pristine one, which is how a
+ * graded function that MUTATES the shared state gets caught instead of quietly
+ * poisoning every later case.
+ */
+#include "locale_layout.h"
+
+int  mbcs_fixture_install(unsigned int cp);
+int  mbcs_fixture_check(void);          /* 0 = both copies still pristine */
+const rl_threadmbcinfo *mbcs_fixture_pristine(void);
+
+/* The two slots.  Defined in refimpl.c and subjectimpl.c respectively, because each
+ * must be reachable from its own side's `get_mbcinfo`. */
+extern rl_threadmbcinfo *mbcs_ref_slot(void);
+extern rl_threadmbcinfo *mbcs_subj_slot(void);
+
 #endif /* MSVCRT_DIFFTEST_NLSIMPL_H */

@@ -244,11 +244,53 @@ def _is_arch_guarded(fn: CFunction) -> bool:
     return _ARCH_GUARD.search(fn.body_text or "") is not None
 
 
+#: `#if _MSVCR_VER>=80` and friends.  The harness compiles the reference TU at
+#: `_MSVCR_VER=0` (msvcrt.dll's own version), so a body behind one of these is simply
+#: NOT THERE — unlike an arch guard, which selects between two bodies that both exist.
+_VER_GUARD = re.compile(r"^\s*#\s*if.*\b_MSVCR_VER\b")
+_VER_GUARD_END = re.compile(r"^\s*#\s*(endif|else|elif)\b")
+
+
+def version_guarded_lines(source: str) -> set[int]:
+    """1-based line numbers that sit inside a `#if _MSVCR_VER…` region.
+
+    A function defined in one has no `ref_*` symbol to compare against, so a case for it
+    would not merely grade the wrong thing — it would fail to LINK.
+
+    This is a BACKSTOP, not the primary defence. When the scanner can resolve a file's
+    include closure it preprocesses at `_MSVCR_VER=0` and such functions never reach the
+    plan at all; that is what happens for mbcs.c, whose `_mbsncpy_s`, `_mbsncpy_s_l` and
+    `___mb_cur_max_l_func` are behind `_MSVCR_VER>=80` and are correctly absent. On a
+    file scanned WITHOUT preprocessing (no compile database — the mode the unit tests
+    run in) the directives survive and the functions do reach the plan, and then this is
+    the only thing standing between them and a broken link.
+    """
+    inside: set[int] = set()
+    depth = 0  # nesting depth of ordinary #if inside a version region
+    active = False
+    for i, line in enumerate(source.splitlines(), start=1):
+        if not active:
+            if _VER_GUARD.match(line):
+                active, depth = True, 0
+            continue
+        if line.lstrip().startswith("#if"):
+            depth += 1
+        elif _VER_GUARD_END.match(line):
+            if depth:
+                depth -= 1
+            else:
+                active = False
+                continue
+        inside.add(i)
+    return inside
+
+
 def plan_file(scan: ScanResult, module: str) -> Plan:
     """Decide, per function, whether a differential case can be GENERATED — or refused."""
     plan = Plan(module=module)
     mutators = _reaches(scan, STATE_MUTATORS)
     nls = _reaches(scan, NLS_SURFACE)
+    ver_guarded = version_guarded_lines(scan.raw_source or "")
     for fn in scan.functions:
         if fn.is_static:
             continue  # internal linkage: no symbol to rename, nothing for a caller to grade
@@ -277,6 +319,14 @@ def plan_file(scan: ScanResult, module: str) -> Plan:
         ret = classify_type(fn.return_type)
         if ret not in COMPARABLE:
             plan.refusals.append(Refusal(fn.name, "unsupported return", ret))
+            continue
+        if fn.line_start in ver_guarded:
+            # Compiled out of the reference TU at _MSVCR_VER=0, so there is no `ref_*`
+            # symbol at all and a case here would fail to LINK. Only reachable when the
+            # file was scanned without preprocessing — see version_guarded_lines.
+            plan.refusals.append(
+                Refusal(fn.name, "body is behind #if _MSVCR_VER", "no reference symbol exists")
+            )
             continue
         if _is_arch_guarded(fn):
             # The reference TU is compiled for the HOST, so an arch arm the target takes is
@@ -374,7 +424,17 @@ def _bind(name: str, kind: str, exhaustive: bool) -> _Bind:
         dom = "0..=0xFFFFu32" if exhaustive else "Corpus::CHARS.iter().copied()"
         return _Bind(f"for {name} in {dom} {{", name, name, f"{name}={{{name}:#06x}}")
     if kind == LOCALE:
-        return _Bind(f"for &{name} in LOCALES {{", name, name, f"{name}={{{name}:?}}")
+        # A PAIR, like the buffers — not one pointer handed to both sides.
+        # A `_locale_t` carries `mbcinfo`, so a shared one would aim the reference and
+        # the subject at the SAME fixture: a function that wrongly mutates it would
+        # then have the reference read the mutated state and agree with it, hiding
+        # exactly the bug the two-slot fixture exists to catch.
+        return _Bind(
+            f"for ({name}_s, {name}_r) in LOCALES.pairs() {{",
+            f"{name}_s",
+            f"{name}_r",
+            f"{name}={{{name}_s:?}}",
+        )
     if kind == SIZE:
         return _Bind(f"for {name} in corpus.sizes() {{", name, name, f"{name}={{{name}}}")
     if kind in (STR_IN, WSTR_IN):

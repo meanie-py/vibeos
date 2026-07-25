@@ -85,3 +85,13 @@ harness = false
 [[test]]
 name = "hot_path"
 harness = false
+
+# The gate every mbcs verdict depends on. The 160 generated cases are all pinned
+# against one `threadmbcinfo`; if it comes back without lead bytes they still RUN,
+# both sides take the single-byte path, and the suite is green having graded none of
+# the DBCS logic. This asserts the fixture actually contains MBCS before any of that
+# is believed. `harness = false` for the same getenv reason as the rest.
+[[test]]
+name = "mbcs_fixture"
+path = "tests/mbcs_fixture.rs"
+harness = false

@@ -225,7 +225,9 @@ typedef long            LONG_PTR;
 #define GetProcessHeap             msvcrt_ref_GetProcessHeap
 #define HeapAlloc                  msvcrt_ref_HeapAlloc
 #define HeapFree                   msvcrt_ref_HeapFree
-#define _mbtowc_l                  msvcrt_ref__mbtowc_l
+/* _mbtowc_l left this namespace when mbcs.c became a reference TU: mbcs.c DEFINES
+ * it, so it is a reference EXPORT and the prelude renames it to ref__mbtowc_l.
+ * Same move _isspace_l/_tolower_l/_toupper_l made for ctype.c above. */
 #define _get_output_format         msvcrt_ref__get_output_format
 #define get_current_locale_noalloc msvcrt_ref_get_current_locale_noalloc
 #define free_locale_noalloc        msvcrt_ref_free_locale_noalloc
