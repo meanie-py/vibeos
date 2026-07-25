@@ -52,8 +52,14 @@ const PCR_MAJOR_VERSION: USHORT = 1;
 const PCR_MINOR_VERSION: USHORT = 1;
 const PRCB_MAJOR_VERSION: USHORT = 1;
 const PRCB_MINOR_VERSION: USHORT = 1;
-const PRCB_BUILD_UNIPROCESSOR: USHORT = 1;
-const PRCB_BUILD_DEBUG: USHORT = 2;
+// ndk/arm64/ketypes.h:46-47 — DEBUG is 1, UNIPROCESSOR is 2 (same on all three
+// arches). These two were SWAPPED here until 2026-07-25, so every arm64 boot
+// published a BuildType meaning the opposite of what it wrote: the UP kernel
+// told kmtest "MP, checked" and the MP kernel told it "UP, free". That is what
+// BUGCHECK 0x9 in the KeSpinLock kmtest was — a free-build claim lets the test
+// legitimately call `…AtDpcLevel` at PASSIVE, where our assert fires.
+const PRCB_BUILD_DEBUG: USHORT = 1;
+const PRCB_BUILD_UNIPROCESSOR: USHORT = 2;
 const KERNEL_STACK_SIZE: usize = 0x6000;
 const TIMER_TABLE_SIZE: usize = 512;
 
@@ -116,10 +122,15 @@ pub(crate) unsafe fn KiInitializePcr(
     {
         (*Pcr).Prcb.BuildType |= PRCB_BUILD_UNIPROCESSOR as UCHAR;
     }
-    #[cfg(debug_assertions)]
-    {
-        (*Pcr).Prcb.BuildType |= PRCB_BUILD_DEBUG as UCHAR;
-    }
+    // C kernel uses `#if DBG`, which is always TRUE in our Debug build (-DDBG=1).
+    // Rust `#[cfg(debug_assertions)]` is NOT set in --release mode, which is how
+    // the kernel is built — so gating on it published a FREE-build PRCB and left
+    // arm64 the odd arch out (i386/amd64 both set this bit unconditionally, with
+    // this same note). Two things rode on that: kmtest's `KmtIsCheckedBuild` was
+    // FALSE for the whole arm64 corpus (so every test took its free-build path),
+    // and on the MP kernel that let KeSpinLock call `…AtDpcLevel` at PASSIVE —
+    // legal on a free build, but our smp-gated asserts BUGCHECK 0x9 there.
+    (*Pcr).Prcb.BuildType |= PRCB_BUILD_DEBUG as UCHAR;
 
     (*Pcr).Prcb.Number = ProcessorNumber;
     (*Pcr).Prcb.SetMember = 1u64 << ProcessorNumber;
