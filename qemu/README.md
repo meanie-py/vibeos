@@ -61,8 +61,11 @@ The toolkit and the smoke harness share `/tmp/vibeos-qemu-locks/` to keep QEMUs
 from exhausting host KVM/RAM:
 
 - **Concurrency cap** — `slots/slot-NN` flock pool limits concurrent QEMUs to
-  `VIBEOS_QEMU_MAX_CONCURRENT` (default 10) across all worktrees; over the cap,
-  launchers queue.
+  `VIBEOS_QEMU_MAX_CONCURRENT` (default 16; was 10 until 2026-07-25) across all
+  worktrees; over the cap, launchers queue. This is the OUTER bound — the real
+  smoke throttle is the hostlock `bootcpu` pool (capacity-derived, 8 on a 24-vCPU
+  box). 10 was too tight once a single gate could hold 8 boots: it left 2 slots
+  for every interactive `debug start` / `boot` in the fleet.
 - **Per-arch sub-cap** — layered under the global cap: `slots/arch-<arch>-NN`
   serializes **same-arch** boots (`VIBEOS_QEMU_CAP_I386` / `_AMD64`, default 1;
   `_ARM64` default 0 = uncapped). Two i386 (or two amd64) KVM guests starve each

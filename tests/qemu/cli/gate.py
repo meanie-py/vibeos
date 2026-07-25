@@ -233,6 +233,37 @@ def _net_once(repo: Path, root: Path) -> dict:
     }
 
 
+def _build_once(repo: Path, run: Run, arch: str, args) -> dict:
+    """Build one arch as its own gate lane.
+
+    Submitted CONCURRENTLY for every arch (2026-07-25) instead of the old serial loop. The
+    serial loop predated `hostlock` commit 226733668e6: build-vs-build is no longer
+    exclusive — a build takes a ceil(K/max_builds) SHARE of the cpuheavy pool, so
+    VIBEOS_MAX_CONCURRENT_BUILDS (default 2) fleet-wide is already the sanctioned limit, and
+    the per-build-dir lock is what actually protects a build dir. Submitting all arches
+    therefore doesn't mean three cold builds fighting over the box: the broker admits two
+    (FIFO, arrival-ordered) and queues the third. It just stops the gate from being stricter
+    than the broker it delegates to — which matters now that `land` serializes gates, making
+    gate wall-clock the landing throughput limit.
+
+    `--no-check` is passed when the strict lint lanes run: that suite is the same scanners,
+    blocking, so the build's warn-only pass is pure duplication (~20-40s/arch).
+    """
+    cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
+    if not getattr(args, "no_lint", False):
+        cmd.append("--no-check")
+    if getattr(args, "clean", False):
+        cmd.append("--clean")
+    t0 = time.monotonic()
+    cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
+    return {
+        "arch": arch,
+        "ok": cp.returncode == 0,
+        "exit": cp.returncode,
+        "seconds": time.monotonic() - t0,
+    }
+
+
 def _lint_once(repo: Path, arch: str, root: Path) -> dict:
     """Run `vibeos-cli check --strict --arch <arch>` for one built arch. This is
     the T3 land-gate: the scanner suite (verify_*, lint_kernel, scan_ud2,
@@ -353,16 +384,17 @@ def gate(args, repo: Path) -> int:
     gate_root = run.dir
 
     # --- phases 1+1.5+2, PIPELINED (F5, 2026-07-06) ---
-    # Builds stay serial among THEMSELVES (build-vs-build is the exclusive
-    # cpuheavy lease + shared-cache thrash), but each arch's lint + smoke (+ the
-    # amd64 net lane) launch THE MOMENT its own build lands instead of waiting
-    # for the all-arches build barrier. This is safe by hostlock design:
-    # windows-host QEMU boots run on the WINDOWS scheduling domain and throttle
-    # on the separate `bootcpu` pool, so a boot coexists with the next WSL-side
-    # build (which leaves physical-core headroom via VIBEOS_BUILD_CORE_RESERVE)
-    # — build ∥ boot is the documented contract, build-vs-build is not.
-    # amd64 builds FIRST: it feeds two lanes (own smoke + net, the longest), so
-    # its lanes should start earliest. Modeled wall-clock (warm): ~390s → ~230s.
+    # Each arch's lint + smoke (+ the amd64 net lane) launch THE MOMENT its own build lands,
+    # instead of waiting for an all-arches build barrier. Safe by hostlock design:
+    # windows-host QEMU boots run on the WINDOWS scheduling domain and throttle on the
+    # separate `bootcpu` pool, so a boot coexists with a WSL-side build — build ∥ boot is
+    # the documented contract. amd64 goes first: it feeds two lanes (own smoke + net, the
+    # longest). Modeled wall-clock (warm): ~390s → ~230s.
+    #
+    # The BUILDS are submitted concurrently too (2026-07-25) and self-throttle on the
+    # broker's build share — see _build_once. They used to be a serial loop here, which was
+    # stricter than the broker (2 concurrent builds are sanctioned fleet-wide) and made the
+    # gate's build phase sum-of-arches for no reason.
     #
     # Lint (`check --strict`, T3) is source-only per arch → independent of the
     # build artifacts; it launches alongside the arch's smoke and gates the push
@@ -381,9 +413,19 @@ def gate(args, repo: Path) -> int:
         return _smoke_once(repo, lane, root, smoke_extra)
 
     # Workers: every lane's first pass can be in flight while retries queue, plus
-    # the (cheap, thread-blocking) lint runs share the same executor.
+    # the (cheap, thread-blocking) lint runs and the concurrent builds share the same
+    # executor. All of these BLOCK on subprocesses or on the host broker, so the worker
+    # count only has to be large enough not to re-serialize what the broker would allow.
     n_lanes = len(arches) + (1 if net_requested and "amd64" in arches else 0)
-    max_workers = min(n_lanes * (1 + retries) + (len(arches) if do_lint else 0), 16) or 1
+    max_workers = (
+        min(
+            n_lanes * (1 + retries)
+            + (len(arches) if do_lint else 0)
+            + (len(arches) if do_build else 0),
+            20,
+        )
+        or 1
+    )
 
     with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
 
@@ -396,37 +438,37 @@ def gate(args, repo: Path) -> int:
                 lfut[ex.submit(_lint_once, repo, arch, gate_root / f"lint-{arch}")] = arch
 
         if do_build:
-            for arch in build_order:
-                bt0 = time.monotonic()
-                # --no-check: skip the build's warn-only source-lint arsenal
-                # (~20-40s per arch, serial). The strict lint lane runs the SAME
-                # suite blocking (`check --strict`), so the warn-only pass inside
-                # a gate build is pure duplication — the gate loses no coverage.
-                # Only safe when the lint lanes actually run: --no-lint keeps the
-                # in-build pass.
-                cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
-                if do_lint:
-                    cmd.append("--no-check")
-                if getattr(args, "clean", False):
-                    cmd.append("--clean")
-                cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
-                bdt = time.monotonic() - bt0
-                if cp.returncode != 0:
+            # Submit every arch's build at once and let the host broker decide how many
+            # run (see _build_once). amd64 is submitted FIRST so FIFO admission gives it
+            # the earliest permit — it feeds two lanes (own smoke + net, the longest).
+            bfut = {ex.submit(_build_once, repo, run, a, args): a for a in build_order}
+            for f in cf.as_completed(bfut):
+                r = f.result()
+                if not r["ok"]:
                     run.add(
                         Stage(
-                            f"build:{arch}",
-                            exit=cp.returncode,
-                            seconds=bdt,
+                            f"build:{r['arch']}",
+                            exit=r["exit"],
+                            seconds=r["seconds"],
                             status="fail",
                             detail="build failed",
-                            salient=[f"vibeos-cli build --arch {arch} exited {cp.returncode}"],
+                            salient=[
+                                f"vibeos-cli build --arch {r['arch']} exited {r['exit']}"
+                            ],
                         )
                     )
-                    # a build failure is fatal for that arch; keep building the
-                    # rest so the matrix is complete, but this arch won't smoke.
+                    # a build failure is fatal for that arch; the others still build
+                    # and smoke so the matrix stays complete.
                 else:
-                    run.add(Stage(f"build:{arch}", seconds=bdt, status="ok", detail="built"))
-                    _launch_lanes(arch)  # pipeline: this arch smokes while the next builds
+                    run.add(
+                        Stage(
+                            f"build:{r['arch']}",
+                            seconds=r["seconds"],
+                            status="ok",
+                            detail="built",
+                        )
+                    )
+                    _launch_lanes(r["arch"])  # pipeline: smoke this arch while others build
             built = {
                 s.name.split(":", 1)[1]
                 for s in run.stages

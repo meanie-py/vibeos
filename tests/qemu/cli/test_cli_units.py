@@ -2717,3 +2717,344 @@ def test_staleness_doc_change_still_clean_diff(staleness_repo: Path):
     (staleness_repo / "notes.md").write_text("top-level markdown\n")
     v = provenance.check_staleness(staleness_repo, "i386")
     assert v.fresh and not v.stale, v.reasons
+
+
+# --- land: the serialized land critical section (kills the gate→push race) --
+
+from . import land as land_mod  # noqa: E402
+
+
+def test_boot_leases_scale_with_host_capacity(monkeypatch):
+    """The bootcpu pool was a flat 4 — EXACTLY one full gate's boot fan-out (3 arches +
+    net), so one gating lane saturated the fleet. It now derives from the host."""
+    for cpus, want in ((24, 8), (32, 10), (64, 12), (12, 4), (4, 4), (0, 4)):
+        monkeypatch.setattr(os, "cpu_count", lambda c=cpus: c)
+        assert hl_mod._derive_boot_leases() == want, cpus
+
+
+def test_land_lock_is_exclusive(tmp_path, monkeypatch):
+    """Two lanes must never be inside fetch→merge→gate→push at once — that window IS the
+    race, and the whole point is that master cannot move under a gating lane."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    with hl_mod.land_lock("land:a", timeout=1.0):
+        with pytest.raises(hl_mod.LandLockBusy) as ei, hl_mod.land_lock("land:b", timeout=0.3):
+            pass
+        # The error must NAME the blocker: "who is landing" is the first thing you ask.
+        assert "holder" in str(ei.value) and str(os.getpid()) in str(ei.value)
+    # Released on exit → the next lane gets in.
+    with hl_mod.land_lock("land:c", timeout=1.0):
+        pass
+
+
+def test_land_lock_is_fifo(tmp_path, monkeypatch):
+    """A patient lander must not lose to a latecomer (the LIFO degeneration §hostlock)."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    ahead = _fake_ticket(tmp_path, "land", ns=1, pid=999999, need=1)
+    try:
+        with pytest.raises(hl_mod.LandLockBusy), hl_mod.land_lock("land:latecomer", timeout=0.3):
+            pass
+    finally:
+        os.close(ahead)  # earlier waiter dies → its ticket is an orphan
+    with hl_mod.land_lock("land:latecomer", timeout=1.0):
+        pass
+
+
+def test_land_lock_never_silently_degrades(tmp_path, monkeypatch):
+    """The CPU pools warn-and-proceed on timeout; this one MUST NOT — proceeding unlocked
+    reopens the exact race it exists to close (fail loud, never silently degrade)."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    with (
+        hl_mod.land_lock("land:holder", timeout=1.0),
+        pytest.raises(hl_mod.LandLockBusy),
+        hl_mod.land_lock("land:other", timeout=0.2),
+    ):
+        raise AssertionError("must never reach the body")
+
+
+def test_land_lock_opt_out(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_LAND_LOCK", "0")
+    with (
+        hl_mod.land_lock("land:a", timeout=0.2),
+        hl_mod.land_lock("land:b", timeout=0.2),  # no-op, no exclusion
+    ):
+        pass
+
+
+def test_host_status_shows_who_is_landing(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    with hl_mod.land_lock("land:shell32-com", timeout=1.0):
+        h = hl_mod.land_holder()
+        assert h.get("kind") == "land:shell32-com" and h.get("pid") == os.getpid()
+        rendered = hl_mod.render_status(hl_mod.status())
+        assert "LANDING" in rendered and "land:shell32-com" in rendered
+    assert hl_mod.land_holder() == {}
+
+
+# --- land: stamp acceptance mirrors the pre-push hook ----------------------
+
+
+def _write_stamp(repo: Path, tree: str, *, age_s: float = 0, arches=("i386", "amd64", "arm64")):
+    d = repo / ".git" / "vibeos-gate-stamps"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{tree}.json").write_text(
+        json.dumps({"tree": tree, "time": time.time() - age_s, "arches": list(arches)})
+    )
+
+
+def test_fresh_full_stamp_accepts_exact_tree(tiny_repo: Path):
+    tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=tiny_repo, capture_output=True, text=True
+    ).stdout.strip()
+    _write_stamp(tiny_repo, tree)
+    assert land_mod.fresh_full_stamp(tiny_repo, tree) is not None
+
+
+def test_fresh_full_stamp_rejects_stale_partial_and_other_tree(tiny_repo: Path):
+    tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=tiny_repo, capture_output=True, text=True
+    ).stdout.strip()
+    _write_stamp(tiny_repo, tree, age_s=land_mod.STAMP_MAX_AGE_S + 60)
+    assert land_mod.fresh_full_stamp(tiny_repo, tree) is None, "24h-stale stamp accepted"
+    _write_stamp(tiny_repo, tree, arches=("i386", "amd64"))
+    assert land_mod.fresh_full_stamp(tiny_repo, tree) is None, "partial-arch stamp accepted"
+    _write_stamp(tiny_repo, tree)
+    assert land_mod.fresh_full_stamp(tiny_repo, "0" * 40) is None, "wrong-tree stamp accepted"
+
+
+# --- land: preflight + full flow -------------------------------------------
+
+
+def test_land_preflight_refuses_dirty_tree(tiny_repo: Path):
+    (tiny_repo / "a.txt").write_text("uncommitted\n")
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._preflight(tiny_repo)
+    assert "uncommitted" in str(ei.value)
+
+
+def test_land_preflight_refuses_detached_head(tiny_repo: Path):
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tiny_repo, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(["git", "checkout", "-q", head], cwd=tiny_repo, capture_output=True)
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._preflight(tiny_repo)
+    assert "detached HEAD" in str(ei.value)
+
+
+@pytest.fixture
+def lane_repo(tmp_path: Path):
+    """A clone with an `origin` whose master has ALREADY moved ahead — i.e. exactly the
+    state that used to void a lane's gate stamp and force a re-gate."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True, capture_output=True)
+    seed = tmp_path / "seed"
+    _git_init_commit(seed, origin)
+    lane = tmp_path / "lane"
+    subprocess.run(["git", "clone", "-q", str(origin), str(lane)], check=True, capture_output=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "config", k, v], cwd=lane, check=True, capture_output=True)
+    # our lane branch, one commit
+    subprocess.run(["git", "checkout", "-qb", "mylane"], cwd=lane, check=True, capture_output=True)
+    (lane / "mine.txt").write_text("lane work\n")
+    subprocess.run(["git", "add", "-A"], cwd=lane, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "lane work"], cwd=lane, check=True, capture_output=True)
+    # ANOTHER lane lands first
+    (seed / "theirs.txt").write_text("their work\n")
+    subprocess.run(["git", "add", "-A"], cwd=seed, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "their work"], cwd=seed, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "push", "-q", "origin", "master"], cwd=seed, check=True, capture_output=True
+    )
+    return lane, origin
+
+
+def _git_init_commit(path: Path, origin: Path) -> None:
+    path.mkdir()
+    for a in (
+        ["init", "-q", "-b", "master"],
+        ["config", "user.email", "t@t"],
+        ["config", "user.name", "t"],
+    ):
+        subprocess.run(["git", *a], cwd=path, check=True, capture_output=True)
+    (path / "base.txt").write_text("base\n")
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(origin)], cwd=path, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "push", "-q", "-u", "origin", "master"], cwd=path, check=True, capture_output=True
+    )
+
+
+class _Args:
+    def __init__(self, **kw):
+        self.retries = 2
+        self.clean = False
+        self.no_push = False
+        self.dry_run = False
+        self.queue_timeout = 5
+        self.__dict__.update(kw)
+
+
+def test_land_merges_master_then_gates_then_pushes_in_that_order(lane_repo, tmp_path, monkeypatch):
+    """The whole mechanism in one test: land merges the CURRENT origin/master, gates the
+    RESULT, and pushes — all inside the lock, so the gated tree is the pushed tree."""
+    lane, origin = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    order: list[str] = []
+
+    def fake_gate(repo, run, args):
+        order.append("gate")
+        # the tree being gated must already contain origin/master
+        remote = subprocess.run(
+            ["git", "rev-parse", "origin/master"], cwd=repo, capture_output=True, text=True
+        ).stdout.strip()
+        assert (
+            subprocess.run(
+                ["git", "merge-base", "--is-ancestor", remote, "HEAD"], cwd=repo
+            ).returncode
+            == 0
+        ), "gated a tree that does not contain origin/master — the race is back"
+
+    monkeypatch.setattr(land_mod, "_run_gate", fake_gate)
+    real_push = land_mod._push
+
+    def spy_push(repo, run, head):
+        order.append("push")
+        return real_push(repo, run, head)
+
+    monkeypatch.setattr(land_mod, "_push", spy_push)
+    assert land_mod.land(_Args(), lane) == 0, "land failed"
+    assert order == ["gate", "push"]
+    # origin/master now IS our lane tip, reached by fast-forward.
+    landed = subprocess.run(
+        ["git", "rev-parse", "master"], cwd=origin, capture_output=True, text=True
+    ).stdout.strip()
+    mine = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=lane, capture_output=True, text=True
+    ).stdout.strip()
+    assert landed == mine
+    # ...and the local `master` ref was NOT force-moved from this worktree (the phantom
+    # staged-revert footgun): only origin advanced.
+    local_master = subprocess.run(
+        ["git", "rev-parse", "master"], cwd=lane, capture_output=True, text=True
+    ).stdout.strip()
+    assert local_master != mine
+
+
+def test_land_skips_the_gate_when_a_fresh_stamp_already_covers_the_tree(
+    lane_repo, tmp_path, monkeypatch
+):
+    """The fast path: you gated, nobody raced you → landing costs seconds, not a re-gate."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    # bring the lane up to date ourselves, then stamp the resulting tree
+    subprocess.run(["git", "fetch", "-q", "origin"], cwd=lane, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "merge", "-q", "--no-edit", "origin/master"],
+        cwd=lane,
+        check=True,
+        capture_output=True,
+    )
+    tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=lane, capture_output=True, text=True
+    ).stdout.strip()
+    _write_stamp(lane, tree)
+    called = []
+    monkeypatch.setattr(land_mod, "_run_gate", lambda *a: called.append(1))
+    assert land_mod.land(_Args(), lane) == 0
+    assert called == [], "re-gated a tree that already had a fresh green stamp"
+
+
+def test_land_aborts_on_conflicting_merge_without_holding_the_lock_hostage(
+    lane_repo, tmp_path, monkeypatch
+):
+    """A conflict is the lane's problem to resolve — don't sit on the fleet's land lock
+    while a human thinks, and don't leave a half-merged tree behind."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    # make our lane touch the same file the other lane added, with different content
+    (lane / "theirs.txt").write_text("conflicting\n")
+    subprocess.run(["git", "add", "-A"], cwd=lane, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "conflict"], cwd=lane, check=True, capture_output=True)
+    monkeypatch.setattr(land_mod, "_run_gate", lambda *a: pytest.fail("gate ran on a conflict"))
+    assert land_mod.land(_Args(), lane) != 0
+    assert hl_mod.land_holder() == {}, "land lock still held after abort"
+    assert not (lane / ".git" / "MERGE_HEAD").exists(), "left a half-merged tree"
+
+
+# --- gate: the build phase submits arches concurrently (broker does the limiting) --
+
+
+def test_gate_builds_are_submitted_concurrently(tmp_path, monkeypatch):
+    """The gate used to build arches in a SERIAL loop, which was stricter than the broker it
+    delegates to (2 concurrent builds are sanctioned fleet-wide) and made the build phase
+    sum-of-arches. It matters more now that `land` serializes gates, so gate wall-clock IS
+    the landing throughput limit. Here: all three must be in flight together."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    live = 0
+    peak = 0
+    lock = threading.Lock()
+    barrier = threading.Barrier(3, timeout=10)
+
+    def fake_build(repo, run, arch, args):
+        nonlocal live, peak
+        with lock:
+            live += 1
+            peak = max(peak, live)
+        barrier.wait()  # deadlocks (and fails) if the phase is serial
+        with lock:
+            live -= 1
+        return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
+
+    monkeypatch.setattr(gate_mod, "_build_once", fake_build)
+    monkeypatch.setattr(
+        gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+    )
+    monkeypatch.setattr(
+        gate_mod,
+        "_net_once",
+        lambda repo, root: {
+            "arch": "net",
+            "verdict": "OK",
+            "classification": "",
+            "ok": True,
+            "retryable": False,
+            "seconds": 0.01,
+            "run_dir": str(root),
+            "salient": "",
+        },
+    )
+    rc = gate_mod.gate(_gate_args(no_build=False), tmp_path)
+    assert rc == 0
+    assert peak == 3, f"builds did not overlap (peak={peak})"
+
+
+def test_gate_failed_build_skips_that_arch_but_others_still_smoke(tmp_path, monkeypatch):
+    """A build failure is fatal for ITS arch only — the rest must still build+smoke so the
+    matrix is complete, and the failed arch must never be smoked on stale media."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        gate_mod,
+        "_build_once",
+        lambda repo, run, arch, args: {
+            "arch": arch,
+            "ok": arch != "arm64",
+            "exit": 0 if arch != "arm64" else 1,
+            "seconds": 0.01,
+        },
+    )
+    fake = _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(no_build=False, no_net=True), tmp_path)
+    assert rc == 1, "a build failure must fail the gate"
+    assert not any(k.startswith("arm64:") for k in fake.calls), fake.calls
+    assert any(k.startswith("i386:") for k in fake.calls), fake.calls
+    assert any(k.startswith("amd64:") for k in fake.calls), fake.calls
