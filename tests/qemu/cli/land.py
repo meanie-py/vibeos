@@ -3,7 +3,7 @@
 TWO PATHS, and the default is the queue:
 
   * **`land`** → `queue.py`: publish this lane's tip to the merge queue and, if no other
-    agent is already the trainer, become it and drain the queue. Returns as soon as the work
+    agent is already the conductor, become it and drain the queue. Returns as soon as the work
     is either done (we trained) or in someone else's hands. N ready lanes cost ONE gate and
     nobody blocks. Read queue.py's header for the train's design.
   * **`land --direct`** → the serialized single-lane path documented below: merge
@@ -285,7 +285,7 @@ def _report_prior_results(repo: Path, lane: str, run: Run) -> None:
 
 
 def _land_queued(args, repo: Path) -> int:
-    """The default landing path: submit to the merge queue, and become the trainer if no
+    """The default landing path: submit to the merge queue, and become the conductor if no
     other agent already is. Returns as soon as the work is either done (we trained) or in
     somebody else's hands (they are training) — never blocks holding a worktree hostage."""
     run = Run("land", "queue")
@@ -322,21 +322,7 @@ def _land_queued(args, repo: Path) -> int:
                     detail=f"{lane} @ {head[:12]} queued (position {depth})",
                 )
             )
-        trained = queue.try_become_trainer(
-            repo, _trainer_log(run), retries=int(getattr(args, "retries", 2))
-        )
-        if trained:
-            run.add(Stage("train", status="ok", detail="drained the queue as trainer"))
-        else:
-            h = hostlock.land_holder()
-            run.add(
-                Stage(
-                    "train",
-                    status="skip",
-                    detail=f"another agent is training (pid {h.get('pid', '?')}) — "
-                    "your submission is in its queue",
-                )
-            )
+        _conduct(repo, run, args)
         rec = next((r for r in queue.results(repo, limit=200) if r.get("seq") == sub.seq), None)
         if rec is None and getattr(args, "wait", False):
             rec = _wait_for_verdict(repo, sub.seq, float(getattr(args, "wait_timeout", 3600)), run)
@@ -365,7 +351,7 @@ def _land_queued(args, repo: Path) -> int:
         run.extra["lane"] = lane
         run.extra["seq"] = sub.seq
         return run.finalize(repo)
-    except queue.BaseRed as e:
+    except queue.NoVerdict as e:
         # Our submission is still QUEUED and unjudged — say so, or the agent will assume its
         # work was rejected and start "fixing" a bug that is on mainline.
         run.classification = "BASE_RED"
@@ -384,8 +370,8 @@ def _land_queued(args, repo: Path) -> int:
         return run.finalize(repo)
 
 
-def _trainer_log(run: Run):
-    """Trainer progress goes to BOTH the run log and stdout. The trainer is doing the whole
+def _conductor_log(run: Run):
+    """Conductor progress goes to BOTH the run log and stdout. The conductor is doing the whole
     fleet's work — 'batch of 3', 'gate RED', 'splitting 2/1' is exactly what a watching agent
     needs, and it used to be buried in full.log until the drain exited."""
 
@@ -396,27 +382,82 @@ def _trainer_log(run: Run):
     return _log
 
 
+def _spawn_detached(argv: list[str], cwd: Path, log_path: Path) -> None:
+    """Start `argv` in its OWN SESSION with output to `log_path`. Its own function so it is a
+    seam a test can replace — patching `subprocess.Popen` instead would also break
+    `subprocess.run`, which uses Popen as a context manager."""
+    with open(log_path, "w") as fh:
+        subprocess.Popen(
+            argv,
+            cwd=str(cwd),
+            stdout=fh,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,  # outlives this agent's turn
+        )
+
+
+def _conduct(repo: Path, run: Run, args) -> tuple[bool, str]:
+    """Drain the queue. DETACHED by default; returns (conducted_inline, note).
+
+    Why detached: the whole promise of the queue is that no agent waits on a gate, and the
+    ELECTED agent was the last one still waiting — its turn blocked for the length of a batch
+    even though its worktree was free. The tell was that every drain during development went
+    through a hand-rolled `nohup setsid drain.sh` wrapper; working around your own tool by
+    hand is a bug report against the tool (AGENTS.md). So `land` spawns the conductor in its
+    own session and returns in ~2s. `--foreground` keeps it inline when you want to watch.
+
+    A detached conductor that loses the election just exits — the lock is the election, so
+    spawning one speculatively costs a second of a subprocess and never double-conducts."""
+    if getattr(args, "foreground", False):
+        try:
+            trained = queue.try_become_conductor(
+                repo, _conductor_log(run), retries=int(getattr(args, "retries", 2))
+            )
+        except queue.NoVerdict as e:
+            run.classification = "BASE_RED"
+            run.add(
+                Stage(
+                    "conduct",
+                    status="fail",
+                    detail="mainline itself is red — train halted, submissions STILL QUEUED",
+                    salient=[str(e)],
+                )
+            )
+            return True, "base-red"
+        run.add(
+            Stage(
+                "conduct",
+                status="ok" if trained else "skip",
+                detail="drained the queue" if trained else "another agent is conducting",
+            )
+        )
+        return True, "inline"
+    log_path = run.dir / "conduct.log"
+    try:
+        _spawn_detached(
+            [str(repo / "vibeos-cli"), "land", "--drain", "--foreground"], repo, log_path
+        )
+    except OSError as e:
+        run.add(Stage("conduct", status="warn", detail=f"could not spawn a conductor: {e}"))
+        return False, ""
+    run.add(
+        Stage(
+            "conduct",
+            status="ok",
+            detail="conductor spawned (detached) — this agent is free",
+            salient=[f"progress: {log_path}", "verdict: vibeos-cli land-status --mine"],
+        )
+    )
+    return False, str(log_path)
+
+
 def land(args, repo: Path) -> int:
     """`vibeos-cli land`. Queue path by default (see _land_queued); `--direct` keeps the
     serialized single-lane path below, which is right when you are the only active agent or
     when the queue itself needs bypassing."""
     if getattr(args, "drain", False):
         run = Run("land", "drain")
-        try:
-            trained = queue.try_become_trainer(
-                repo, _trainer_log(run), retries=int(getattr(args, "retries", 2))
-            )
-        except queue.BaseRed as e:
-            run.classification = "BASE_RED"
-            run.add(Stage("train", status="fail", detail=str(e).splitlines()[0], salient=[str(e)]))
-            return run.finalize(repo)
-        run.add(
-            Stage(
-                "train",
-                status="ok" if trained else "skip",
-                detail="drained the queue" if trained else "another agent is already training",
-            )
-        )
+        _conduct(repo, run, args)
         return run.finalize(repo)
     if not getattr(args, "direct", False):
         return _land_queued(args, repo)
@@ -511,7 +552,7 @@ def cmd_land_status(args, repo: Path) -> int:
         print(
             json.dumps(
                 {
-                    "trainer": holder,
+                    "conductor": holder,
                     "pending": [s.to_json() for s in subs],
                     "lock_queue": hostlock.land_queue(),
                     "results": recent,
@@ -522,11 +563,11 @@ def cmd_land_status(args, repo: Path) -> int:
         return 0
     if holder:
         print(
-            f"TRAINER: pid={holder.get('pid')} {holder.get('kind', '?')} "
+            f"CONDUCTOR: pid={holder.get('pid')} {holder.get('kind', '?')} "
             f"in {holder.get('cwd', '?')}"
         )
     else:
-        print("TRAINER: none" + (" — queue is NOT being drained" if subs else " (queue empty)"))
+        print("CONDUCTOR: none" + (" — queue is NOT being drained" if subs else " (queue empty)"))
     now = time.time()
     for i, s in enumerate(subs):
         waited = max(0, int(now - s.submitted_at))

@@ -203,13 +203,13 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
    under `$GIT_COMMON_DIR/vibeos-queue/`) and returns in ~2s — you do **not**
    merge master, gate, or wait;
-2. if no other agent holds the land lock, *becomes the trainer*: merges every
+2. if no other agent holds the land lock, *becomes the conductor*: merges every
    queued lane onto current `origin/master` in a dedicated integration worktree,
    gates **once**, and fast-forwards master to exactly the commit it gated;
 3. writes a verdict per submission — `land-status --mine` (or your next `land`)
    shows it.
 
-**N ready lanes cost ONE gate, and no agent blocks.** The trainer is elected by
+**N ready lanes cost ONE gate, and no agent blocks.** The conductor is elected by
 the lock, so there is no daemon to supervise and nothing that can be "down".
 
 - **Conflicts are bounced, never resolved** — rejected with the conflicting
@@ -218,7 +218,7 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   the culprit is one submission — rejected with its classification + artifact
   dir. Innocent lanes still land. Batch cap `VIBEOS_QUEUE_BATCH` (default 4)
   bounds the worst-case bisect.
-- **Guilty or framed?** Before rejecting a lone submission, the trainer gates the
+- **Guilty or framed?** Before rejecting a lone submission, the conductor gates the
   BASE alone (`origin/master`, nothing merged). If the base is red too, **nobody
   is rejected**: the submissions stay queued, the train HALTS, and the verdict
   says mainline is broken. This is not hypothetical — the very first real batch
@@ -229,8 +229,8 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
 - **A batch is never presumed green from its parts.** Two individually-green
   lanes can be red *together*; the queue catches that before master, where today
   the second lane lands on the first without ever gating the combination.
-- **Crash-safe**: a submission is a ref + a JSON record; the trainer's claim is an
-  flock that dies with it. Kill a trainer mid-batch and its submissions are still
+- **Crash-safe**: a submission is a ref + a JSON record; the conductor's claim is an
+  flock that dies with it. Kill a conductor mid-batch and its submissions are still
   queued for the next one. A submission leaves the queue only when it has landed
   or been rejected — repeated work is possible, a silent drop is not.
 - The **integration worktree** (`$VIBEOS_ROOT/vibeos-integration`) is created on
@@ -238,7 +238,7 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   are why a batch gates in minutes, and every landing in the fleet would otherwise
   pay for a cold one.
 - `--drain` trains without submitting (recovers the microsecond-wide orphan window
-  where a submission arrives just as a trainer releases the lock). `--wait` blocks
+  where a submission arrives just as a conductor releases the lock). `--wait` blocks
   for your own verdict if you'd rather not poll.
 
 ### `land --direct` — the single-lane path
