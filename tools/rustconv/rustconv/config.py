@@ -1753,9 +1753,7 @@ def _resolve_output_crate(name: str, override: str | None = None) -> tuple[Path,
 
     # No conventional crate. Is there an unconventionally-named one for this DLL?
     candidates = sorted(
-        p
-        for p in RUST_DIR.glob(f"*{name}*-rust")
-        if p.is_dir() and (p / "Cargo.toml").is_file()
+        p for p in RUST_DIR.glob(f"*{name}*-rust") if p.is_dir() and (p / "Cargo.toml").is_file()
     )
     if candidates:
         listed = "\n    ".join(str(p.relative_to(RUST_DIR)) for p in candidates)
@@ -1798,10 +1796,10 @@ def _derive_sys_substrate(
         else:
             cargo = crate / "Cargo.toml"
             if not cargo.is_file():
-                raise TargetResolveError(f"{crate}: no Cargo.toml — cannot derive the FFI substrate")
-            deps = sorted(
-                set(re.findall(r"^\s*([A-Za-z0-9_-]+-sys)\s*=", cargo.read_text(), re.M))
-            )
+                raise TargetResolveError(
+                    f"{crate}: no Cargo.toml — cannot derive the FFI substrate"
+                )
+            deps = sorted(set(re.findall(r"^\s*([A-Za-z0-9_-]+-sys)\s*=", cargo.read_text(), re.M)))
             if len(deps) == 1:
                 sys_name = deps[0]
             elif not deps:
@@ -1816,6 +1814,12 @@ def _derive_sys_substrate(
                     f"({', '.join(deps)}).\n  Refusing to guess which one is the translation "
                     f"substrate. Pick one:\n\n    --sys-crate {deps[0]}\n"
                 )
+
+    if sys_name is None:
+        # Unreachable: every branch above either assigns sys_name or raises. Kept as a
+        # loud failure rather than an assert so a future edit that adds a fall-through
+        # path surfaces here instead of silently building `RUST_DIR / None`.
+        raise TargetResolveError("--target: could not derive the FFI substrate crate")
 
     sys_dir = RUST_DIR / sys_name
     if not sys_dir.is_dir():
