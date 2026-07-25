@@ -276,13 +276,20 @@ class the next cannot see. Rationale and measurements: field manual **§9.117**,
    catch-all `match` arm that swallows every case (§9.112 — this shipped a BUGCHECK 0x1E). It
    also flags constants living only in a *secondary* `-sys` island (rtl8139's
    `CmResourceTypePort` is in `hal_bindgen_*.rs`, not `bindgen_*.rs`) — those need an explicit
-   `use ntkrnl_sys::hal_ddk`; allowlisting the header does nothing.
+   `use ntkrnl_sys::hal_ddk`; allowlisting the header does nothing. If the module's `.c` live in
+   a sibling static-lib target (msvcrt → `msvcrt_static`) it names the target to pass to
+   `--target`; such a target has no `set_module_type()`, so add `--usermode`/`--kernel`.
 2. **`rustconv translate <file> --seal-facts --seal-calls`** — **always pass both.** Constants
    and call occurrences then never go through the LLM, and a dropped or invented one fails
    loudly instead of silently. Running without them shipped 13,503 unprotected constant
    occurrences, the same class as the 61 invented kernel stop codes (§9.113). Trivial bodies are
    lowered deterministically for $0 in the same run (~9% repo-wide; 41% on stub-heavy modules
    but ~0% on real driver code — don't budget on it). Preview free with `--dry-run --prompt`.
+   `--target` **proves** the output crate and FFI substrate against the tree instead of assuming
+   `<name>-rust` + `ntdll-sys`, and refuses rather than guessing — take the `--output-crate` /
+   `--sys-crate` it names (msvcrt: `--output-crate msvcrt-crt-rust`). Getting this wrong is not a
+   build error: an unresolved substrate name makes the model invent a forward declaration that
+   compiles, links, and is silently wrong.
 3. **`rustconv crate-repair <crate>-rust --arches i386 amd64 arm64`** — bounded deterministic
    repair of the whole-crate `cargo check`, before paying anything to fix compile errors. **Pass
    all three arches**: a numeric cast inferred from one bakes that arch's pointer width, so

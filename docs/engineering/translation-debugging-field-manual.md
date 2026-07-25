@@ -9982,3 +9982,60 @@ Dialect selection is automatic (`--cpp-com` → `cpp`, otherwise `c`). Verify a 
 `--dry-run --prompt` before spending: the envelope sections list the token counts, and a
 `MAX_COMPUTERNAME_LENGTH + 1` array bound should appear as TWO tokens — that is what stops
 the model folding `38 + 1` into `39`.
+
+---
+
+### 9.118 (2026-07-24) A TEXT-SHAPED match is not a PROOF — the same regex measured 146 lowerable CRT forwarders and the sound implementation lowered 11
+
+Chasing cheap yield in `trivial_c.py` I measured how many msvcrt functions are the CRT's
+`X(args) → X_l(args, NULL)` forwarder idiom. A regex over the parsed bodies — "callee is
+same-TU, arguments are the parameters in order plus a trailing `NULL`" — found **146 of 1792
+(76 in mbcs.c alone, 40% of that file)**. That number went into a plan as the cost lever.
+
+The sound implementation lowers **11**.
+
+The gap is one word in the shape's own precondition. Admitting a literal `NULL` is only safe if
+the callee's parameter at that position is **proven** to be a pointer — otherwise `NULL` at an
+`int` position lowers to `core::ptr::null_mut()` and you have invented a type. The CRT spells
+that parameter `_locale_t`, which is a *typedef'd* pointer:
+
+```c
+typedef struct _locale_tstruct *_locale_t;      /* the star is in the TYPEDEF */
+int CDECL _mbsncmp(const unsigned char *s, const unsigned char *c, size_t n)
+{ return _mbsncmp_l(s, c, n, NULL); }           /* param type spells no star */
+```
+
+So `"*" in type` says "not a pointer"; `c_type_to_rust("_locale_t")` returns the opaque alias
+`_locale_t`; and `msvcrt-sys`'s bindgen island covers `__thread_data`/`threadlocinfo` but does
+not declare the alias. **No authority in reach can prove it**, so the matcher refuses — which
+is correct, because admitting it would assume exactly the fact the shape exists to prove.
+
+Two durable lessons, and the second is the one that bites:
+
+1. **Measuring a shape by its syntax measures an upper bound, not a yield.** Every deterministic
+   lowering is `syntax ∧ proof`, and the proof side is invisible to the regex you used to size
+   the work. Quote such a number as "≤ N candidates", and re-measure through the real
+   implementation before it becomes a plan. I stated 146 as the lever in a strategy the user
+   was deciding on; the honest number was an order of magnitude smaller.
+2. **The blocker is almost never the shape — it is the missing authority.** The fix for the
+   other ~135 is *not* to loosen `forwarder_with_null`, and absolutely not to allowlist
+   `_locale_t`. It is to give the pipeline a **typedef authority**: carry the module's pointer
+   typedefs in its bindgen island (a generated, layout-guarded artifact) and have
+   `_is_pointer_c_type` consult the island instead of the spelling. That is the same move as
+   §9.112 — *make the deterministic substrate complete and everything downstream gets cheaper*
+   — and it generalizes to every `LPWSTR`/`HANDLE`/`P*` typedef in Win32 code, not just the CRT.
+
+`test_trivial_c_forwarder_null.py::test_typedefd_pointer_is_refused_because_nothing_proves_it`
+pins the refusal so that when someone does wire a typedef authority, this is a deliberate
+decision with a failing test, not a silent behaviour change.
+
+**Related trap in the same change (worth copying).** The oracle compares C and Rust
+token-for-token, and a null pointer is the one atom whose spellings cannot match: C's `NULL` is
+a single `null` node *and* an uppercase-constant occurrence, Rust's `core::ptr::null_mut()` is
+three identifiers *plus* an extra call node — so it perturbs the identifier-sequence, call-count
+and constant-multiset checks simultaneously. The wrong fix is to relax those three checks for
+everyone. The right one is to rewrite **both sides** to one sentinel before comparing, leaving
+every check intact: a `NULL` that moved position, was dropped, or displaced a real argument
+still fails. Symmetric canonicalization beats weakened comparison — and note the sentinel must
+fold the Rust `NULL` token too, since `constant_return` already lowered `return NULL;` that way
+(a pre-existing test caught the asymmetry immediately, which is the system working).
