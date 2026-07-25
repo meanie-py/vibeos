@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from rustconv.__main__ import _cost_cap_reached, _extend_cpp_class_scan, _trivial_cpp_body
 from rustconv.call_seal import seal_calls, unseal_calls
 from rustconv.callgraph import FunctionDep, extract_call_graph
 from rustconv.config import REACTOS_ROOT, TARGETS, detect_target
@@ -308,6 +309,102 @@ def test_object_map_adapter_redirects_atl_creation():
     assert "OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)" in cpp
     assert "#ifndef SHELL32_RUST_OBJECT_LOCK_BRIDGE_DEFINED" in cpp
     assert "Shell32RustObjectLock() { gModule.Lock(); }" in cpp
+
+
+def test_internal_shell_object_creator_proves_nonaggregated_private_activation():
+    source = SHELL32 / "CEnumIDListBase.cpp"
+    cls = analyze_class(
+        source,
+        "CEnumIDListBase",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    assert cls.internal_shell_object_creator
+    assert cls.object_map_clsid is None
+    cls.require_supported(allow_internal=True)
+    with pytest.raises(CppComError, match="no OBJECT_ENTRY activation"):
+        cls.require_supported()
+
+
+def test_internal_scaffold_has_private_rust_factory_and_no_export_adapter():
+    source = SHELL32 / "CEnumIDListBase.cpp"
+    cls = analyze_class(source, "CEnumIDListBase", object_map_source=SHELL32 / "shell32.cpp")
+    interface = parse_widl_interface(
+        discover_widl_header(REACTOS_ROOT, "amd64", interface="IEnumIDList"),
+        "IEnumIDList",
+    )
+    rust = render_class_scaffold(cls, [interface], allow_internal=True)
+    assert "Internal activation: shellutils.h ShellObjectCreator<T>" in rust
+    assert "pub unsafe fn CEnumIDListBase_CreateInstance(" in rust
+    assert '#[no_mangle] pub unsafe extern "system" fn CEnumIDListBase_CreateInstance' not in rust
+
+
+def test_shell_item_array_internal_init_factory_sequence_and_stgmedium_lifecycle():
+    source = SHELL32 / "CShellItem.cpp"
+    cls = analyze_class(source, "CShellItemArray", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.internal_shell_object_creator
+    assert cls.internal_initializer_params == (("IDataObject *", "pdo"),)
+    assert cls.stgmedium_lifecycle_fields == ("m_Medium",)
+    assert {field.name: field.rust_type for field in cls.plain_state_fields()} == {
+        "m_pCIDA": "*mut CIDA",
+        "m_Medium": "STGMEDIUM",
+    }
+    cls.require_supported(allow_internal=True)
+    interface = parse_widl_interface(
+        discover_widl_header(REACTOS_ROOT, "amd64", interface="IShellItemArray"),
+        "IShellItemArray",
+    )
+    rust = render_class_scaffold(cls, [interface], allow_internal=True)
+    assert "pub unsafe fn CShellItemArray_CreateInstance(" in rust
+    assert "pdo: *mut IDataObject" in rust
+    assert "outer: *mut IUnknown" not in rust
+    initialize = rust.index("CShellItemArray_Initialize_body(this, pdo)")
+    query = rust.index("CShellItemArray_QueryInterface(this, riid, ppv)", initialize)
+    release = rust.index("CShellItemArray_Release(this)", query)
+    assert initialize < query < release
+    assert "if hr >= 0" in rust[initialize:query]
+
+
+def test_internal_init_accepts_repeated_call_sites_and_winapi_initializer():
+    source = SHELL32 / "folders" / "CPrinterFolder.cpp"
+    cls = analyze_class(source, "CPrintersEnum", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.internal_shell_object_creator
+    assert cls.internal_initializer_params == (("HWND", "hwndOwner"), ("DWORD", "dwFlags"))
+    assert not cls.unsupported
+    cls.require_supported(allow_internal=True)
+    scan = _extend_cpp_class_scan(
+        scan_file(source), source, "CPrintersEnum", tuple(cls.local_base_classes)
+    )
+    inherited = {"Next", "Skip", "Reset", "Clone"}
+    assert inherited <= {item.name for item in scan.functions}
+    assert all(
+        item.cpp_class == "CPrintersEnum"
+        for item in scan.functions
+        if item.name in inherited
+    )
+
+
+def test_stgmedium_state_without_exact_lifecycle_fails_loud(tmp_path: Path):
+    source = tmp_path / "CBadMedium.cpp"
+    source.write_text(
+        """
+class CBadMedium : public CComCoClass<CBadMedium>,
+    public CComObjectRootEx<CComMultiThreadModelNoCS>, public IFoo {
+    STGMEDIUM m_medium;
+public:
+    CBadMedium() { m_medium.tymed = TYMED_NULL; }
+    ~CBadMedium() { }
+    DECLARE_NOT_AGGREGATABLE(CBadMedium)
+    BEGIN_COM_MAP(CBadMedium)
+        COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo)
+    END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_BadMedium, CBadMedium)\n")
+    cls = analyze_class(source, "CBadMedium", object_map_source=object_map)
+    with pytest.raises(CppComError, match="lacks source-proven constructor/destructor"):
+        cls.require_supported()
 
 
 @pytest.mark.parametrize(
@@ -966,14 +1063,81 @@ def test_concrete_local_base_is_flattened_with_inherited_state():
     assert cls.local_base_classes == ["CCopyMoveToMenu"]
     names = [_state_field_name(decl) for decl in cls.state_fields]
     assert "m_pidlFolder" in names and "m_fnOldWndProc" in names
-    # ATL template bases still fail loud — flattening is same-header concrete only.
+    # The one mechanically-known ATL state template is flattened too.
     dispatch = analyze_class(
         SHELL32 / "CShellDispatch.cpp",
         "CShellDispatch",
         object_map_source=SHELL32 / "shell32.cpp",
     )
-    with pytest.raises(CppComError, match="custom/inherited base class IDispatchImpl"):
-        dispatch.require_supported()
+    dispatch.require_supported()
+    assert dispatch.local_base_classes == ["IDispatchImpl"]
+    assert dispatch.state_fields == ["CComPtr<ITypeInfo> m_pTypeInfo"]
+
+
+def test_out_of_header_concrete_base_and_plain_member_class_layout_are_proven():
+    cls = analyze_class(
+        SHELL32 / "dialogs" / "filedefext.cpp",
+        "CFileDefExt",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    cls.require_supported()
+    assert cls.local_base_classes == ["CObjectWithSiteBase"]
+    assert cls.state_fields[0] == "IUnknown* m_pUnkSite"
+    version = next(item for item in cls.pod_state_types if item.name == "CFileVersionInfo")
+    assert [field.name for field in version.fields] == [
+        "m_pInfo",
+        "m_wLang",
+        "m_wCode",
+        "m_wszLang",
+    ]
+
+    scan = _extend_cpp_class_scan(
+        scan_file(SHELL32 / "dialogs" / "filedefext.cpp"),
+        SHELL32 / "dialogs" / "filedefext.cpp",
+        "CFileDefExt",
+        tuple(cls.local_base_classes),
+    )
+    base_dtor = next(item for item in scan.functions if item.name.endswith("_base_dtor"))
+    assert (base_dtor.cpp_class, base_dtor.name, base_dtor.return_type, base_dtor.is_dtor) == (
+        "CFileDefExt",
+        "CObjectWithSiteBase_base_dtor",
+        "void",
+        False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "name"),
+    [
+        (SHELL32 / "shellmenu" / "CMenuSite.cpp", "CMenuSite"),
+        (SHELL32 / "shellmenu" / "CMenuDeskBar.cpp", "CMenuDeskBar"),
+    ],
+)
+def test_shellmenu_window_impl_uses_rust_owned_hwnd_state(source: Path, name: str):
+    cls = analyze_class(source, name, object_map_source=SHELL32 / "shell32.cpp")
+    cls.require_supported()
+    assert cls.state_fields[0] == "HWND m_hWnd"
+
+
+def test_legacy_shell_interfaces_keep_unnamed_params_and_comment_spelling():
+    desk = parse_widl_interface(REACTOS_ROOT / "sdk/include/psdk/shlobj.h", "IDeskBarClient")
+    assert len(next(method for method in desk.methods if method.name == "GetSize").params) == 3
+    banner = parse_widl_interface(
+        REACTOS_ROOT / "sdk/include/reactos/shlobj_undoc.h", "IBanneredBar"
+    )
+    set_icon_size = next(method for method in banner.methods if method.name == "SetIconSize")
+    assert len(set_icon_size.params) == 2
+
+
+def test_zero_cost_cap_blocks_before_the_first_paid_call():
+    assert _cost_cap_reached(0.0, 0.0)
+    assert not _cost_cap_reached(None, 0.0)
+    assert not _cost_cap_reached(1.0, 0.99)
+
+
+def test_zero_only_cpp_initializer_list_is_deterministic():
+    assert _trivial_cpp_body("Thing::Thing() : ptr(NULL), count(0), ready(FALSE) {}")
+    assert not _trivial_cpp_body("Thing::Thing() : ptr(CreateThing()) {}")
 
 
 def test_final_construct_is_wired_before_query_interface():

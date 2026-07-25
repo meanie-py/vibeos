@@ -43,6 +43,15 @@ def _safe_filename(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.@-]", "_", name)
 
 
+# A sealed placeholder that survives into a cached entry is a harness bug, not a
+# translation: the run stored output it never unsealed. Such an entry then replays
+# for $0 on every later run and assembles a module full of `__RUSTCONV_FACT_0000__`,
+# which is not valid Rust. Treated exactly like the empty-output case below —
+# refused on `put` (loud: it is our bug) and a MISS on `get` (so an already-poisoned
+# cache self-heals instead of replaying forever).
+_SEAL_TOKEN_RE = re.compile(r"\b__RUSTCONV_(?:CALL|FACT)_[0-9]{4}__\b")
+
+
 class ResponseCache:
     """One directory per translated file; one .rs per function + a manifest."""
 
@@ -85,6 +94,8 @@ class ResponseCache:
             return None
         if not text.strip():
             return None
+        if _SEAL_TOKEN_RE.search(text):
+            return None  # poisoned by a pre-fix run: re-translate instead of replaying
         return text
 
     def put(self, name: str, body_text: str, rust: str, contract: str = "") -> None:
@@ -99,6 +110,14 @@ class ResponseCache:
             raise ValueError(
                 f"refusing to cache empty translation for {name!r} "
                 f"(empty output is a failure, not a result)"
+            )
+        leaked = sorted(set(_SEAL_TOKEN_RE.findall(rust)))
+        if leaked:
+            raise ValueError(
+                f"refusing to cache still-sealed translation for {name!r}: "
+                f"{', '.join(leaked[:6])}"
+                f"{' ...' if len(leaked) > 6 else ''}. The response was never unsealed — "
+                f"caching it would replay un-unsealed Rust for $0 on every later run."
             )
         self.dir.mkdir(parents=True, exist_ok=True)
         fname = _safe_filename(name) + ".rs"

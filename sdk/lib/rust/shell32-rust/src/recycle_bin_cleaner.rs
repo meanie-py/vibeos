@@ -271,6 +271,14 @@ unsafe fn cpp_com_iid_equal(left: REFIID, right: REFIID) -> bool {
 
 pub const IDR_RECYCLEBINCLEANER: UINT = 162;
 
+#[no_mangle]
+pub static CLSID_RecycleBinCleaner: GUID = GUID {
+    Data1: 0x5ef4af3a,
+    Data2: 0xf726,
+    Data3: 0x11d0,
+    Data4: [0xb8, 0xa2, 0x00, 0xc0, 0x4f, 0xc3, 0x09, 0xa4],
+};
+
 pub const IDS_RECYCLE_CLEANER_BUTTON_TEXT: UINT = 10293;
 
 pub const IDS_RECYCLE_CLEANER_DESCRIPTION: UINT = 10292;
@@ -327,11 +335,12 @@ extern "C" {
 
 #[inline]
 unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT {
-    if dst.is_null() || src.is_null() || capacity == 0 { return E_INVALIDARG; }
+    if capacity == 0 || capacity > i32::MAX as usize { return E_INVALIDARG; }
     let len = lstrlenW(src) as usize;
-    if len >= capacity { *dst = 0; return E_FAIL; }
-    let _ = memcpy(dst.cast(), src.cast(), (len + 1) * core::mem::size_of::<WCHAR>());
-    S_OK
+    let copied = core::cmp::min(len, capacity - 1);
+    let _ = memcpy(dst.cast(), src.cast(), copied * core::mem::size_of::<WCHAR>());
+    *dst.add(copied) = 0;
+    if len >= capacity { 0x8007007Au32 as HRESULT } else { S_OK }
 }
 
 extern "system" {
@@ -345,11 +354,24 @@ impl CStringW {
     pub const fn new() -> Self { Self { buffer: core::ptr::null_mut(), len: 0, capacity: 0 } }
     pub unsafe fn from_resource(id: UINT) -> Self {
         let mut value = Self::new();
-        let mut stack = [0u16; 256];
-        let count = LoadStringW(
-            GetModuleHandleW(core::ptr::null()), id, stack.as_mut_ptr(), stack.len() as INT,
-        );
-        if count > 0 { value.append_ptr_len(stack.as_ptr(), count as usize); }
+        let mut capacity = 256usize;
+        loop {
+            if capacity > i32::MAX as usize || !value.reserve(capacity) { break; }
+            let count = LoadStringW(
+                GetModuleHandleW(core::ptr::null()), id, value.buffer, capacity as INT,
+            );
+            if count <= 0 {
+                value.len = 0;
+                *value.buffer = 0;
+                break;
+            }
+            value.len = count as usize;
+            if value.len < capacity - 1 {
+                break;
+            }
+            let Some(next) = capacity.checked_mul(2) else { break };
+            capacity = next;
+        }
         value
     }
     pub fn as_ptr(&self) -> LPCWSTR {

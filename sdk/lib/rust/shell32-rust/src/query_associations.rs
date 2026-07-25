@@ -239,6 +239,9 @@ extern "system" {
     fn GetFileVersionInfoSizeW(lptstrFilename: LPCWSTR, lpdwHandle: LPDWORD) -> DWORD;
     fn GetFileVersionInfoW(lptstrFilename: LPCWSTR, dwHandle: DWORD, dwLen: DWORD, lpData: LPVOID) -> BOOL;
     fn VerQueryValueW(pBlock: LPCVOID, lpSubBlock: LPCWSTR, lplpBuffer: *mut LPVOID, puLen: *mut UINT) -> BOOL;
+    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
+    fn LCMapStringW(locale: DWORD, flags: DWORD, source: LPCWSTR, source_len: INT, destination: LPWSTR, destination_len: INT) -> INT;
+    fn StrTrimW(text: LPWSTR, trim_chars: LPCWSTR) -> BOOL;
     // ole32
     fn CLSIDFromString(lpsz: LPCOLESTR, pclsid: *mut CLSID) -> HRESULT;
 }
@@ -249,6 +252,7 @@ extern "C" {
     // shellole.rs; wine/unicode.h:64 maps sprintfW → _swprintf, the same export).
     fn swprintf(buffer: *mut WCHAR, format: *const WCHAR, ...) -> INT;
     fn wcscat(dst: LPWSTR, src: LPCWSTR) -> LPWSTR;
+    static mut shell32_hInstance: HINSTANCE;
 }
 
 // windef.h LOWORD/HIWORD
@@ -272,6 +276,188 @@ pub static CPP_COM_WSTR_89E3C2C9E5FD: [WCHAR; 7] = [0x0050, 0x0072, 0x006F, 0x00
 pub static CPP_COM_WSTR_A2E2913C930F: [WCHAR; 10] = [0x0045, 0x0064, 0x0069, 0x0074, 0x0046, 0x006C, 0x0061, 0x0067, 0x0073, 0x0000]; // L"EditFlags"
 pub static CPP_COM_WSTR_E01CFD69C238: [WCHAR; 9] = [0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0045, 0x0078, 0x005C, 0x0000]; // L"ShellEx\\"
 pub static CPP_COM_WSTR_EE89605B31B0: [WCHAR; 6] = [0x0073, 0x0068, 0x0065, 0x006C, 0x006C, 0x0000]; // L"shell"
+
+static mut DIRECTORY_DESCRIPTION_CACHE: [WCHAR; 33] = [0; 33];
+static mut ANY_FILE_FORMAT_CACHE: [WCHAR; 33] = [0; 33];
+static W_FRIENDLY_TYPE_NAME: [WCHAR; 17] = [
+    0x0046, 0x0072, 0x0069, 0x0065, 0x006E, 0x0064, 0x006C, 0x0079, 0x0054, 0x0079,
+    0x0070, 0x0065, 0x004E, 0x0061, 0x006D, 0x0065, 0,
+];
+static W_EMPTY: [WCHAR; 1] = [0];
+static W_TRIM_EMPTY_EXTENSION: [WCHAR; 3] = [0x0020, 0x002D, 0]; // L" -"
+
+const LOCALE_USER_DEFAULT: DWORD = 0x0400;
+const LCMAP_UPPERCASE: DWORD = 0x0200;
+const STRSAFE_E_INSUFFICIENT_BUFFER: HRESULT = 0x8007007Au32 as HRESULT;
+
+unsafe fn string_cch_copy_w(destination: LPWSTR, capacity: usize, source: LPCWSTR) -> HRESULT {
+    if destination.is_null() || source.is_null() || capacity == 0 {
+        return E_INVALIDARG;
+    }
+    let mut index = 0usize;
+    while *source.add(index) != 0 && index + 1 < capacity {
+        *destination.add(index) = *source.add(index);
+        index += 1;
+    }
+    *destination.add(index) = 0;
+    if *source.add(index) == 0 { S_OK } else { STRSAFE_E_INSUFFICIENT_BUFFER }
+}
+
+unsafe fn string_cch_format_one_w(
+    destination: LPWSTR,
+    capacity: usize,
+    format: LPCWSTR,
+    argument: LPCWSTR,
+) -> HRESULT {
+    if destination.is_null() || format.is_null() || capacity == 0 {
+        return E_INVALIDARG;
+    }
+    let mut out = 0usize;
+    let mut input = 0usize;
+    let mut status = S_OK;
+    while *format.add(input) != 0 {
+        let mut replacement = core::ptr::null();
+        if *format.add(input) == b'%' as WCHAR {
+            if *format.add(input + 1) == b's' as WCHAR {
+                replacement = argument;
+                input += 2;
+            } else if *format.add(input + 1) == b'l' as WCHAR
+                && *format.add(input + 2) == b's' as WCHAR
+            {
+                replacement = argument;
+                input += 3;
+            }
+        }
+        if !replacement.is_null() {
+            let mut at = 0usize;
+            while *replacement.add(at) != 0 {
+                if out + 1 >= capacity {
+                    status = STRSAFE_E_INSUFFICIENT_BUFFER;
+                    break;
+                }
+                *destination.add(out) = *replacement.add(at);
+                out += 1;
+                at += 1;
+            }
+            if status < 0 { break; }
+            continue;
+        }
+        if out + 1 >= capacity {
+            status = STRSAFE_E_INSUFFICIENT_BUFFER;
+            break;
+        }
+        *destination.add(out) = *format.add(input);
+        out += 1;
+        input += 1;
+    }
+    *destination.add(out) = 0;
+    status
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn SHELL32_AssocGetFSDirectoryDescription(
+    buffer: PWSTR,
+    capacity: UINT,
+) -> HRESULT {
+    if DIRECTORY_DESCRIPTION_CACHE[0] == 0 {
+        LoadStringW(
+            shell32_hInstance,
+            IDS_DIRECTORY,
+            DIRECTORY_DESCRIPTION_CACHE.as_mut_ptr(),
+            DIRECTORY_DESCRIPTION_CACHE.len() as INT,
+        );
+    }
+    string_cch_copy_w(buffer, capacity as usize, DIRECTORY_DESCRIPTION_CACHE.as_ptr())
+}
+
+unsafe fn get_extension_default_description(
+    extension: PCWSTR,
+    buffer: PWSTR,
+    capacity: UINT,
+) -> HRESULT {
+    if ANY_FILE_FORMAT_CACHE[0] == 0 {
+        LoadStringW(
+            shell32_hInstance,
+            IDS_ANY_FILE,
+            ANY_FILE_FORMAT_CACHE.as_mut_ptr(),
+            ANY_FILE_FORMAT_CACHE.len() as INT,
+        );
+    }
+    string_cch_format_one_w(
+        buffer,
+        capacity as usize,
+        ANY_FILE_FORMAT_CACHE.as_ptr(),
+        extension,
+    )
+}
+
+unsafe fn assoc_get_extension_description(
+    mut extension: PCWSTR,
+    buffer: PWSTR,
+    capacity: UINT,
+) -> HRESULT {
+    if *extension == 0 || (*extension.add(1) == 0 && *extension == b'.' as WCHAR) {
+        let result = get_extension_default_description(W_EMPTY.as_ptr(), buffer, capacity);
+        if result >= 0 {
+            StrTrimW(buffer, W_TRIM_EMPTY_EXTENSION.as_ptr());
+        }
+        return result;
+    }
+
+    let mut key: HKEY = core::ptr::null_mut();
+    let mut result = crate::wine::classes::HCR_GetProgIdKeyOfExtension(extension, &mut key, TRUE);
+    if result >= 0 {
+        let mut error = crate::vista::RegLoadMUIStringW(
+            key,
+            W_FRIENDLY_TYPE_NAME.as_ptr(),
+            buffer,
+            capacity,
+            core::ptr::null_mut(),
+            0,
+            core::ptr::null(),
+        );
+        if error != 0 && result == S_OK {
+            let mut bytes = capacity * core::mem::size_of::<WCHAR>() as DWORD;
+            error = RegGetValueW(
+                key,
+                core::ptr::null(),
+                core::ptr::null(),
+                RRF_RT_REG_SZ,
+                core::ptr::null_mut(),
+                buffer.cast(),
+                &mut bytes,
+            );
+        }
+        RegCloseKey(key);
+        if error == 0 {
+            return error;
+        }
+    }
+
+    let mut uppercase = [0u16; MAX_PATH + 33];
+    extension = extension.add(1);
+    if LCMapStringW(
+        LOCALE_USER_DEFAULT,
+        LCMAP_UPPERCASE,
+        extension,
+        -1,
+        uppercase.as_mut_ptr(),
+        uppercase.len() as INT,
+    ) != 0
+    {
+        extension = uppercase.as_ptr();
+    }
+    get_extension_default_description(extension, buffer, capacity)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn SHELL32_AssocGetFileDescription(
+    name: PCWSTR,
+    buffer: PWSTR,
+    capacity: UINT,
+) -> HRESULT {
+    assoc_get_extension_description(PathFindExtensionW(name), buffer, capacity)
+}
 
 // ── Method bodies ───────────────────────────────────────────────────────────────────────
 

@@ -2213,12 +2213,27 @@ def _lint_once_stub(ok: bool):
     return stub
 
 
+def _tooling_once_stub(ok: bool):
+    """Stand-in for gate._tooling_once (which shells `vibeos-cli check-tooling`)."""
+
+    def stub(repo, root):
+        return {
+            "ok": ok,
+            "seconds": 0.01,
+            "salient": "" if ok else "python tooling findings",
+            "exit": 0 if ok else 1,
+        }
+
+    return stub
+
+
 def test_gate_lint_failure_blocks_stamp_but_smokes_run(tmp_path, monkeypatch):
     """A NEW lint finding fails the gate and blocks the push stamp; smokes still
     run so the matrix stays informative (the landed T3 policy)."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     seen: list = []
     monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok(seen))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=False))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
@@ -2233,6 +2248,7 @@ def test_gate_lint_pass_proceeds_and_stamps(tmp_path, monkeypatch):
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
@@ -2241,16 +2257,40 @@ def test_gate_lint_pass_proceeds_and_stamps(tmp_path, monkeypatch):
     assert stamped, "a full green gate (lints + smokes) mints the push stamp"
 
 
+def test_gate_tooling_failure_blocks_stamp(tmp_path, monkeypatch):
+    """check-tooling (ruff/pyright/pytest over OUR python) gates the push stamp.
+
+    Regression test for the hole that let master ship `check-tooling` red on two
+    consecutive landings: the gate ran `check --strict` per arch but never ran
+    check-tooling, so nothing between the author and the stamp saw Python
+    regressions.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=False))
+    stamped: list = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
+    assert rc == 1, "a python tooling regression must fail the gate"
+    assert not stamped, "no push stamp when check-tooling is red"
+    assert fake.calls, "smokes still run so the matrix stays informative"
+
+
 def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
     """--no-lint bypasses the strict lint gate entirely (escape hatch)."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     called: list = []
+    tooled: list = []
     monkeypatch.setattr(gate_mod, "_lint_once", lambda *a, **k: called.append(1))
+    monkeypatch.setattr(gate_mod, "_tooling_once", lambda *a, **k: tooled.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=True), tmp_path)
     assert rc == 0
     assert not called, "--no-lint must not invoke the lint subprocess"
+    assert not tooled, "--no-lint must not invoke check-tooling either"
 
 
 # --- check --update-baseline: per-tool scoping (T2 item 1b) -----------------

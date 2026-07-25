@@ -585,10 +585,10 @@ def cmd_land_status(args, repo: Path) -> int:
     if not subs:
         print("  queue: empty")
     for rec in recent:
-        # `str(...)`: rec is untyped JSON, so `.get("outcome")` is `Unknown | None` and a
-        # None key is not a valid dict lookup (pyright reportCallIssue). A missing outcome
-        # falls through to REJECTED either way.
-        outcome = str(rec.get("outcome") or "")
+        # `or ""` keeps the key a str: a record with no outcome yet reads as
+        # REJECTED either way (a None key simply misses), but dict.get is typed
+        # for str keys and pyright rejects the Unknown | None that JSON gives back.
+        outcome = rec.get("outcome") or ""
         tag = {"landed": "landed ", "superseded": "superseded"}.get(outcome, "REJECTED")
         extra = (
             f" as {rec.get('landed_as', '')[:12]}"
