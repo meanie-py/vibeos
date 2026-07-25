@@ -1281,15 +1281,15 @@ callback-direction change reverted reproduced that chain byte-identically, which
 is what proves it is not E13's doing. devmgmt/msconfig/sndrec32/kbswitch stay
 staged with their launch held, on the same coverage argument as before.
 
-*Also fixed in passing (§9.117a):* `rtl-diag`'s `[RAISE]` helper reported a
+*Also fixed in passing (§9.118a):* `rtl-diag`'s `[RAISE]` helper reported a
 **stack** address as the raise site — its "kernel-text-looking" window
 (`0xFFFFF800..`–`0xFFFFF8FF..`) also covers kernel stacks. It now rejects
 candidates within 1MB of `rsp`. The tell was that the known-good `seh_poc` raise
 lied the same way.
 
-*Durable lessons:* field manual **§9.117** (fix width bugs at the thunk boundary,
+*Durable lessons:* field manual **§9.118** (fix width bugs at the thunk boundary,
 audit the whole boundary not just the reported arg, reuse the generator's table,
-verify widths with the layout engine) and **§9.117a** (a triage tool that lies
+verify widths with the layout engine) and **§9.118a** (a triage tool that lies
 costs more than no tool — validate it against a case whose answer you know).
 
 ## Ground rules

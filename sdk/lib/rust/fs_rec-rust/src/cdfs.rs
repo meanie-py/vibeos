@@ -13,6 +13,7 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{_DEVICE_OBJECT};
 
+use crate::glue::{IRP_MN_LOAD_FILE_SYSTEM, IRP_MN_MOUNT_VOLUME};
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 pub const VD_IDENTIFIER: [::core::ffi::c_char; 6] =

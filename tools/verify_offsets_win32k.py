@@ -98,14 +98,14 @@ def _find_build_repo() -> Path:
 
     if has_builds(REACTOS):
         return REACTOS
-    parent = REACTOS.parent
-    if parent.is_dir():
-        for sib in sorted(parent.iterdir()):
-            if sib == REACTOS or not sib.is_dir():
-                continue
-            if (sib / "ntoskrnl").is_dir() and has_builds(sib):
-                return sib
-    return REACTOS
+    # No sibling fallback — see verify_offsets.py for why borrowing another
+    # worktree's generated headers makes an offset check meaningless.
+    sys.exit(
+        f"FATAL: no build-<arch>/ in {REACTOS}. verify_offsets_win32k needs the\n"
+        f"generated headers from THIS worktree's build tree; a sibling worktree's\n"
+        f"tree is NOT a substitute (another lane's source at another commit).\n"
+        f"  fix: ./vibeos-cli build --arch <amd64|i386|arm64>"
+    )
 
 
 BUILD_REPO = _find_build_repo()

@@ -18,6 +18,18 @@ use crate::glue::{CLASS_TAG_WMI};
 use crate::glue::{TRACE_FLAG_WMI};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{NonPagedPoolNx};
+
+// WMI IRP minor function codes (sdk/include/xdk/iotypes.h). They are only in
+// ntkrnl_sys::hal_ddk, which is x86-only, and this crate also builds arm64 — so
+// define them here rather than take an arch-conditional dependency. Typed i32 to
+// match the `minorFunction as i32` scrutinee below; without these in scope each
+// dispatch arm parsed as a catch-all binding and every WMI request took the
+// IRP_MN_QUERY_ALL_DATA path.
+const IRP_MN_QUERY_ALL_DATA: i32 = 0x00;
+const IRP_MN_ENABLE_EVENTS: i32 = 0x04;
+const IRP_MN_DISABLE_EVENTS: i32 = 0x05;
+const IRP_MN_ENABLE_COLLECTION: i32 = 0x06;
+const IRP_MN_DISABLE_COLLECTION: i32 = 0x07;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{_GUID};
 use crate::shims::*;

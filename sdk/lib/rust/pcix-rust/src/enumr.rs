@@ -38,6 +38,8 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{CM_FULL_RESOURCE_DESCRIPTOR, _DEVICE_RELATIONS, _IO_RESOURCE_DESCRIPTOR, _IO_RESOURCE_REQUIREMENTS_LIST, _PCI_COMMON_HEADER};
 
+use crate::glue::{CmResourceTypeInterrupt, PCI_CAPABILITY_ID_AGP};
+use crate::types::{PCI_HACK_FIXUP_AFTER_CONFIGURATION, PCI_HACK_FIXUP_BEFORE_CONFIGURATION, PCI_HACK_FIXUP_BEFORE_UPDATE};
 // PCI macros from pci.h / iotypes.h, inlined as helpers.
 const PCI_MULTIFUNCTION: u8 = 0x80;
 #[inline(always)]

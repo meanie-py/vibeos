@@ -60,7 +60,7 @@ unsafe extern "C" {
 // --- C-side constants the bindgen catalog doesn't surface ----------------
 
 const TAG_BUS_HANDLER: u32 = u32::from_le_bytes(*b"BusH"); // 'BusH'
-const HAL_MEMORY_ALLOCATION: u32 = 0x2000001; // BUGCHECK code (see bugcodes.h)
+const HAL_MEMORY_ALLOCATION: u32 = 0xAC; // BUGCHECK code (see bugcodes.h)
 const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009A_u32 as NTSTATUS;
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001_u32 as NTSTATUS;

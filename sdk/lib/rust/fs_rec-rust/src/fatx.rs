@@ -14,6 +14,7 @@ use core::ffi::c_void;
 use ntkrnl_sys::ddk::{PCSTR, RtlAssert};
 use ntkrnl_sys::driver_ddk::{DbgPrint};
 
+use crate::glue::{IRP_MN_LOAD_FILE_SYSTEM, IRP_MN_MOUNT_VOLUME};
 // ---- file-scope preamble (translated) ----
 // pshpack1.h in fatx.c → 1-byte packed (Reserved at offset 14, total 4096 = 1 sector).
 // Without `packed`, repr(C) inserts 2 pad bytes after FatCount, misaligning Reserved/

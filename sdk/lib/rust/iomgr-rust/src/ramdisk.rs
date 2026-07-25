@@ -90,7 +90,7 @@ unsafe fn SharedUserData() -> *mut SharedUserDataStruct {
     KI_USER_SHARED_DATA as usize as *mut SharedUserDataStruct
 }
 
-const RAMDISK_BOOT_INITIALIZATION_FAILED: ULONG = 0x9C;
+const RAMDISK_BOOT_INITIALIZATION_FAILED: ULONG = 0xF8;
 const RD_NO_XIPROM_DESCRIPTOR: ULONG = 1;
 const RD_NO_RAMDISK_DRIVER: ULONG = 2;
 const RD_FSCTL_FAILED: ULONG = 3;

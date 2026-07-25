@@ -9333,6 +9333,60 @@ than catching it downstream.
 build once before declaring a crate done, or run the audit directly — and when auditing, COUNT
 the arms you examined: an audit that inspects zero arms "passes" vacuously.
 
+#### 9.112a (2026-07-24) The oracle above reported ✓ 0 while 273 live catch-alls sat in the tree — TWO scope defects, and "the gate is green" was the misleading part
+
+The entry above says the class "already has a gated oracle … baseline currently empty = 0
+tolerated." That empty baseline was **false confidence**, not coverage. `vibeos-cli check` was
+genuinely reporting `✓ verify_match_consts` on a tree containing 273 HIGH-confidence catch-alls,
+including `serial.sys` routing *every* `IOCTL_SERIAL_*` to the CLEAR_STATS handler (37 dead arms)
+and `classpnp` (boot-loaded) mis-dispatching its SCSI sense-code and WMI paths (127). Two
+independent scope bugs, each sufficient alone:
+
+1. **Files scanned: `ntoskrnl-rust/src` only.** That was the tool's hardcoded default target and
+   nobody passed it anything else, so the entire driver fleet and every usermode DLL — precisely
+   where §9.112 says the class recurs — were never looked at. Fixed: default is now the whole
+   workspace.
+2. **Constant resolution: workspace-wide.** A name defined in *any* crate counted as resolvable
+   in *every* crate, so a genuine catch-all got filed LOW ("exists somewhere + this file has glob
+   imports → probably fine") and suppressed from the report. classpnp's `SCSI_ADSENSE_*` are
+   defined only in the unrelated `atapi-rust`, which classpnp does not depend on. Fixed:
+   resolution is scoped to each crate's own sources plus its transitive **path dependencies**.
+
+**The deeper lesson — "has a glob import" is not evidence a name resolves.** Translated code globs
+*specific* modules (`use ntkrnl_sys::ke::*;`, `use crate::shims::*;`), and the constant a dispatch
+arm needs usually lives in a module nobody globbed (`crate::types`). The tool now resolves each
+glob to its real module — following `#[path]`+`pub use types_arch::*` re-export chains — and only
+falls back to the lax rule when a glob target genuinely cannot be resolved (e.g. `ntkrnl_sys::nt`,
+which is declared inline in lib.rs with no `nt.rs` on disk). Getting that fallback backwards
+(treating an unreadable module as "resolved") manufactures confident false HIGHs; it must fail
+open, and be conservative about claiming a bug.
+
+**Validate a lint of this kind against rustc, not against itself.** The oracle is a
+`--force-warn` build: crate-level `#![allow(unused_variables, non_snake_case)]` is what hides the
+binding warnings, and `--force-warn` overrides crate-level allows where `-W` does not.
+
+```
+RUSTFLAGS="--force-warn unused_variables --force-warn non_snake_case" \
+  cargo check --workspace --target x86_64-pc-windows-gnu --keep-going --message-format short
+```
+
+Then keep only warnings whose identifier sits at a `match` arm line — a bound name there IS the
+catch-all. Cross-checking the static tool against that set drove it to **0 false positives / 5
+conservative false negatives** on 175 rustc-confirmed sites. Note rustc is a *subset* oracle, not
+ground truth: it cannot see `#[cfg]`-disabled arms (classpnp's `NTDDI_WINTRHESHOLD` firmware
+IOCTLs are latent catch-alls no build compiles), so tool-flagged sites rustc is silent about are
+not automatically false positives — check the `cfg` before dismissing one.
+
+**Fixing the arms is a real behaviour change, not a cleanup.** Restoring a constant makes the
+dispatcher actually dispatch, so every previously-dead arm starts executing. Expect a wave of
+`E0308 expected u8, found u32`: the scrutinee is the narrow C field while the bindgen constant is
+u32. Prefer **widening the scrutinee** (`match x as u32`) over minting `const FOO_U8: u8 = FOO as
+u8;` aliases — widening is lossless, whereas `as u8` silently truncates anything above 255 and can
+alias two arms onto the same value. But check the whole match first: where the *sibling* arms
+already use narrow constants from a `glue.rs` (scsiport's `SRB_STATUS_*`), the right fix is to
+import the missing name from that same module, not to widen. rustc's own message is the tell that
+the bug was real: *"`SRB_STATUS_DATA_OVERRUN` is interpreted as a constant, not a new binding."*
+
 ### 9.113 (FIXED 2026-07-24) The LLM INVENTED 59 kernel stop codes — `KeBugCheck(SYMBOL)` came back as `KeBugCheck(0xNN)` and ~80% of the numbers were wrong
 
 **Symptom (the one you'd actually hit):** a bugcheck fires and the stop-code line names a
@@ -9398,6 +9452,135 @@ yet" marker — into `KeBugCheck(0)`, an **unconditional fatal bugcheck in every
 with the meaningless stop code 0. A live key body with a notify block would have killed
 the machine where NT just continues. When you see a bare `KeBugCheck` in translated code,
 check whether the C was an `ASSERT`: an assert is `debug_assert!`, never a bugcheck.
+#### §9.113a (2026-07-24) The class GENERALIZES — 18 more invented constants, and `verify_constants.py` already had the machinery
+
+The §9.114 sweep only looked at numeric literals passed to `KeBugCheck*`. Running
+the same differential idea over **named constants** — `const NAME: T = V` in Rust vs
+`#define NAME V` in the C header — found 18 more, in code the first sweep never
+touched. **The tool for this already existed**: `verify_constants.py` (in the gate
+since long before) does exactly this cross-check. It missed them only because its
+header catalog didn't load the tables they came from. Extending a catalog beat
+writing a second tool:
+
+```python
+reactos_root / "sdk/include/psdk/ntiologc.h",      # IO_ERR_* / IO_WARNING_* error-log codes
+reactos_root / "sdk/include/reactos/exeformat.h",  # STATUS_ROS_EXEFMT_*
+reactos_root / ".../committed-headers/bugcodes.h", # hand-declared stop codes
+```
+
+**The one that was a real behavioral bug, not a mislabel.** `mm/section.rs` declared
+`STATUS_ROS_EXEFMT_UNKNOWN_FORMAT = 0xC000FFFE`; the real value (exeformat.h:72) is
+`0xA0100001`, and `mm/section_pe.rs` — the module that *produces* the status —
+had it right. So the two halves of one protocol disagreed across a module boundary:
+
+```rust
+Status = <PE loader returns 0xA0100001>
+if Status != STATUS_ROS_EXEFMT_UNKNOWN_FORMAT { break }   // always true -> retry loop dies
+if Status == STATUS_ROS_EXEFMT_UNKNOWN_FORMAT { Status = STATUS_INVALID_IMAGE_NOT_MZ }  // never fires
+```
+
+Opening a non-PE file as an image section therefore returned the raw internal
+`0xA0100001` instead of `STATUS_INVALID_IMAGE_NOT_MZ`. **This is the danger a wrong
+NTSTATUS carries that a wrong stop code does not: callers BRANCH on it.** A mislabeled
+bugcheck wastes a debugging session; a mislabeled status silently takes the wrong path.
+
+**Two self-incriminating comments** are worth knowing about, because grepping for them
+finds this class for free:
+- `classpnp/class.rs`: `const IO_WARNING_DISK_FIRMWARE_UPDATED: ULONG = 0x80040000 + 0x00000065; // guessed`
+- `cdrom/sense.rs`: `// real value (was fabricated 0xC0002001)` — someone already hit this by hand
+- `i8042prt`: `MANUALLY_INITIATED_CRASH = 0xDEADDEAD // ntddk.h:5612` — that is real NT's
+  `MANUALLY_INITIATED_CRASH1`, which ReactOS does not define, cited to **a header line that
+  does not exist**. A fabricated value with a fabricated citation reads more trustworthy
+  than a bare number; treat a precise-looking `// header.h:NNNN` as a claim to verify, not
+  as evidence.
+
+**Contradiction search is the cheapest detector.** Three of these were provable with no
+header at all — the same name carried two different values in the tree
+(`IO_ERR_NOT_READY` 0xC0040002 vs 0xC004000F, `IO_WARNING_IO_OPERATION_RETRIED`
+0x80040032 vs 0x80040099, `STATUS_ROS_EXEFMT_UNKNOWN_FORMAT` two ways). When each
+translated file re-declares its own private copy of a shared constant, disagreement
+between copies is a *proof* of a bug that needs no oracle. Grep for duplicate
+`const NAME` declarations with differing values before reaching for anything smarter.
+
+**Generalization to run on any new constant family:** (1) find the canonical C table;
+(2) flag values that exist in NO table — provably wrong, zero false positives (this
+caught 0x126/0x12C/0xA0000003/0x1000 in §9.114 and 0x2000001 here); (3) diff
+name-by-name against the header; (4) add the header to `verify_constants.py` so the
+gate holds it. Do NOT try to infer the intended constant positionally — see §9.114's
+method note on how both such heuristics mis-mapped real sites.
+
+#### §9.113b (2026-07-24) Making it systemic — and the NEGATIVE result: do NOT sweep every header
+
+§9.113a fixed 18 constants by adding three headers to `verify_constants.py`. That
+leaves the obvious question: **coverage still only grows after a bug teaches us to
+add a header.** Two ways to attack that were tried. One failed; record it so nobody
+burns the afternoon again.
+
+**FAILED: auto-discover the whole header tree.** Sweeping all 2216 `.h` files yields
+67535 unambiguous `#define`s (vs the curated catalog's ~5.7K) — and **486 mismatches,
+overwhelmingly false**. Names collide wildly across unrelated headers:
+
+| name | Rust | "C" the sweep found | why it's not a bug |
+|---|---|---|---|
+| `CONTEXT_SIZE` | 0x2CC | 0x10 | four unrelated `CONTEXT_SIZE`s in the tree |
+| `APIC_BASE` | 0xFFFFFFFFFFFE0000 | 0xFFFE0000 | amd64 VA vs the 32-bit definition |
+| `MAXLONGLONG` | 0x7FFF_FFFF_FFFF_FFFF | 0xFFFFFFFF | 64-bit value truncated by the sweep's own u32 mask |
+| `KF_SSSE3` | 0x00200000 | 0x0 | expression the parser couldn't evaluate |
+
+A same-name-different-value ambiguity rule only dropped 241 of them, because the
+usual case is a name defined in exactly ONE header that simply means something else
+there. **The curated catalog is curated for a reason** — precision is the product.
+
+**WORKED: a second, oracle-free checker.** `tools/scan_const_contradictions.py` asks
+a question that needs no header at all: *does our own tree spell one name two ways?*
+If `IO_ERR_NOT_READY` is 0xC0040002 in one file and 0xC004000F in another, one is
+wrong no matter what C says. This covers **every** constant family, including the
+ones no catalog knows about — which is exactly how the §9.113a set hid.
+
+The two compose into a loop that closes the coverage gap without the false positives:
+
+```
+scan_const_contradictions  →  "these N files disagree about NAME"   (no oracle, total coverage)
+        ↓ resolve NAME against its real C header by hand
+verify_constants + that header  →  gates the whole family forever   (oracle, precise)
+```
+
+First trip around that loop: the scanner flagged `UNICODE_STRING_MAX_BYTES` (8 copies
+right, 2 wrong — 0xFFFC and 0xFFFF vs the real 65534). **Both wrong copies were
+BOUNDS CHECKS**, one of them RPC server input validation in `services-rust`
+(`BufferSize > UNICODE_STRING_MAX_BYTES - sizeof(UNICODE_NULL)` admitted a buffer a
+byte larger than NT accepts). Fixing them and adding `xdk/ntbasedef.h` to the catalog
+closed the family.
+
+**False-positive classes both tools must handle** (all found the hard way, all now
+implemented):
+- **bindgen-generated files are correct BY CONSTRUCTION** — the value is copied from
+  the header, so it cannot be invented. They also legitimately disagree across crates:
+  uniata's private `uata_ctl.h` defines `ATA_FLAGS_DATA_IN` as 0x04 while `ntddscsi.h`
+  uses `(1<<1)`, and **both bindings are right**. Skip anything marked `@generated` /
+  `automatically generated by rust-bindgen`.
+- **`#[cfg(...)]`-gated declarations are the Rust spelling of the header's `#ifdef`.**
+  `MEMORY_ALLOCATION_ALIGNMENT` is 16/8 by `_WIN64`; `_MI_PAGING_LEVELS` is 2/4 by
+  pointer width. Only one is ever compiled, so a pair is not a contradiction — and a
+  flat catalog holding one of the two header values reports a mismatch on correct
+  code. Teaching BOTH tools to skip cfg-gated lines retired the hand-fed
+  `ARCH_DEPENDENT_CONSTANTS` list, which was growing one name per incident.
+- **Arch-suffixed paths** (`types_arm64.rs`, `hal/x86/…`) bucket per arch before
+  comparing, or every per-arch value flags its siblings.
+- **NTDDI-gated duplicates in ONE header**: `pstypes.h` defines `THREAD_ALL_ACCESS`
+  twice (0x1FFFFF and 0x1F03FF) by version. Both values are legitimate in-tree.
+
+**Stock is 715 declarations / ~200 names, baselined as debt** — the same shape as
+`scan_silent_failures`: the gate blocks NEW contradictions, and the baseline is the
+work queue. Ranked by how provable they are: IOCTL/`SRB_*`/status families first
+(one canonical value each), driver-local `TRACE_FLAG_*`/`IRP_CONTEXT_FLAG_*` scales
+last (often legitimately private — `// nolint: const-contradiction (reason)`).
+
+**The disease is the duplication, not the value.** A constant declared once and
+imported cannot disagree with itself; every baseline entry is a private copy that
+should become one shared definition. `ntkrnl_sys::bugcodes` is the worked example of
+the end state.
+
 ### 9.114 (FIXED 2026-07-24) The arm64 `save_next` unwind code resolves FORWARD, not backward — a 32%-wrong decoder that silently mis-restores callee-saved registers
 
 **Symptom family (all arm64, all downstream of `RtlVirtualUnwind`):** a resume lands on a
@@ -9664,7 +9847,143 @@ rung, so holding the new applets did not make anything safer — what it bought 
 twelve rungs *before* the new ones keep reporting every boot instead of being cut off six
 applets early.
 
-### 9.117 (FIXED 2026-07-24) The §9.116 fix belonged in the WoW64 THUNK layer, not in win32k — and `NtUserMessageCall` carried three divergences, one of them smashing guest stack on *every* SendMessage
+
+### 9.117 (2026-07-24) Fact/call SEALING now works for plain C — the general prevention for §9.113, and it had been gated off for no technical reason
+
+*(Numbered 9.117 because §9.114–9.116 landed upstream while this was in flight. §9.113 and
+§9.113a/b are the DETECTION side of the same class — `verify_constants` + `scan_const_contradictions`
+find invented values already in the tree; sealing below stops them being generated at all.)*
+
+§9.113 fixed ONE constant family (stop codes) after the fact. Sealing prevents the whole
+class before the model ever sees a value.
+
+**The gate.** `rustconv/__main__.py` carried
+`raise CppComError("--seal-facts/--seal-calls currently require shell32 --cpp-com")`.
+That was pure caution from the C++/COM spike, not a technical limit: `fact_seal.py` is a
+*lexical* transform (mask comments/literals, replace value occurrences with opaque tokens,
+restore exact spellings after). Dropped onto plain C untouched it already sealed
+`STATUS_SUCCESS`/`0x200`/`MAX_PACKET_SIZE` correctly and already left `NTSTATUS`, `PVOID`,
+`KIRQL`, `PDEVICE_OBJECT` and even `ULONG` inside `sizeof()` alone.
+
+**What that gate cost.** The ledger (`tools/rustconv/.responses/outcomes.jsonl`) records
+`seal_facts=False` on **all 1,076** entries of the winsock + Tier-2 service program — i.e.
+**13,503 unprotected symbolic-constant occurrences and 7,002 unprotected call
+occurrences** shipped. Two of the semantic bugs found by hand in that batch
+(`SERVICE_STOP_PENDING` written as the literal `4`, which is actually `RUNNING`; and the
+catch-all `match` bindings of §9.112) are exactly what sealing makes impossible.
+
+**Three value families, and only the first was covered.** `_SYMBOL_RE` is `[A-Z][A-Z0-9_]+`
+— ALL_CAPS only:
+1. ALL_CAPS `#define`s — already sealed.
+2. **CamelCase enum members** — `NonPagedPool`, `PagedPool`, `KernelMode`, `Executive`,
+   `NotificationEvent`, `MmNonCached`, the whole `Ndis*` vocabulary. 357 occurrences /
+   119 distinct names in the network DLLs + drivers. Picking the wrong sibling of a
+   `POOL_TYPE` or `KPROCESSOR_MODE` is invisible to rustc.
+3. **Mixed-case object-like `#define`s** — `NERR_Success`, `CmResourceTypePort`.
+
+Families 2 and 3 come from generated ground truth (`tools/rustconv/gen_enum_constants.py`
+→ `rustconv/ddk_enum_constants.py`, 6,391 names from 725 headers), staleness-gated in
+`vibeos-cli check-tooling`. Same pattern as `gen_bugcodes.py`: one definition site, derived
+mechanically, auditable.
+
+**The classifier that makes family 3 safe.** A mixed-case `#define` is sealed ONLY if its
+replacement text is a bare numeric literal — provably a value. Measured on the target
+corpus that selects 41 real constants and declines 180 occurrences that would have been
+**actively wrong** to seal:
+- `RpcTryExcept` / `RpcEndExcept` (114 occurrences) — SEH **control-flow** macros. Sealing
+  these mangles the try/except structure itself.
+- `LDAPControl`, `LDAPMod`, `IUnknown` — `#define`d **type** names.
+
+Without the numeric-RHS test, a naive "seal every known #define name" allowlist corrupts
+bodies. Name-shape heuristics are not enough; classify by what the macro EXPANDS TO.
+
+**Two design rules worth keeping (both learned by getting them wrong):**
+
+1. **Never seal STORAGE.** The contract tells the model a token is an opaque value to
+   reproduce; if it is really a local, parameter, or struct field, the model can no longer
+   read or assign it. So the C dialect refuses to seal a name declared in the body, a name
+   after `.`/`->` (28 real field accesses in the corpus, e.g. `Adapter->NdisReserved`),
+   or a name followed by `(`. Generic words that are *both* a real enum member and an
+   obvious variable (`Info`, `Status`, `Length`, `Buffer`, `Type`, …) are excluded from the
+   generated set by policy. A missed seal costs one paid call; a sealed variable corrupts
+   the body.
+2. **Over-seal a type, never under-seal a value.** An early revision excluded every
+   `sizeof(...)` operand to suppress type-name noise (~2.9% of sealed symbols were type
+   names). That silently un-protected `sizeof(UNICODE_NULL)` — a real ReactOS idiom where
+   the operand IS a value. The guard was deleted: restoring a type literally still yields
+   valid Rust (`size_of::<NDIS_REQUEST>()`), so the noise is *benign* while the missed
+   value is *harmful*. Net effect after removal: **+357 protected, −0 lost.**
+
+**Restoring a C spelling is only safe because bindgen matches it.** `pub const
+NonPagedPool: POOL_TYPE = 0;` — verified against ~4,000 existing usages in
+`sdk/lib/rust`. If that ever stops being true, unsealing produces uncompilable Rust
+(loud), not wrong values (silent).
+
+**The `cpp` dialect is FROZEN.** `seal_facts(dialect=...)` defaults to `"cpp"` and must stay
+byte-identical: the response cache keys on the sealed prompt, so *any* change renumbers
+tokens and silently re-bills every cached PAID shell32 worker. Proven with a
+committed-vs-working comparison over 129 real files, 0 divergences. Add protections to the
+`"c"` dialect only. (The cache is otherwise already safe here — `ResponseCache.get` hashes
+the contract text and treats a changed contract as a MISS, so a sealed run cannot replay
+unsealed output.)
+
+**Audit of what already shipped (2026-07-24, unsealed): no invented constants found, but
+names ARE being lowered to magic numbers.** A differential check over 1,246 C/Rust function
+pairs (2,420 constants with header ground truth) produced no confirmed invented value. Three
+hand-verified samples:
+- `netapi32 NetpNetBiosStatusToApiStatus` — an 11-arm NetBIOS→API status table. Every `case
+  NRC_*:` became a bare integer (`9 =>`, `13 =>`, …) and **all 11 values are correct**.
+- `dnsapi DnsQuery_UTF8` — `DnsQuery_CodePage(CP_UTF8, …)` became `DnsQuery_CodePage(65001u32,
+  …)`. Correct value, lost name.
+- `iphlpapi GetAdaptersAddresses` — `KEY_READ`/`IF_TYPE_SOFTWARE_LOOPBACK` are present *by
+  name*; the apparent hits were an artifact of the audit script.
+
+So the shipped state is value-correct but **name-poor**, which is drift risk rather than a
+live bug. Two lessons about auditing this class: match Rust literals **with type suffixes**
+(`65001u32` — a `(?![\w.])` guard rejects the trailing `u` and manufactures false positives),
+and merge a function's body across **all** files before comparing (a name can be defined in
+two modules).
+
+**IMPORTANT INTERACTION — sealing makes bindgen-island completeness MORE critical.** The
+magic numbers in `match` arms are plausibly a deliberate dodge of §9.112: a bare constant
+name in *pattern* position is a fresh BINDING unless it resolves to a real const, so an
+unresolved name silently becomes a catch-all matching everything. Sealing restores the C
+spelling, so a sealed translation puts the NAME back in pattern position — which is correct
+and more readable, but only if that constant is in the crate's bindgen island. If it isn't,
+you have re-created the §9.112 catch-all bug. `tools/verify_match_consts.py` (gated) is the
+oracle for exactly this, and it must stay green on every sealed C flip. Net: seal, and treat
+an island gap as a hard failure rather than a warning.
+
+**Island completeness is MECHANIZABLE — stop hand-authoring the allowlist.**
+`python -m rustconv.profile_derive <module> --emit report` derives the profile from the
+CMake source list + each TU's real include closure, and runs the §9.112 audit for you:
+every `case`-label identifier is attributed to the header / TU / `-sys` crate that defines
+it, and an owner that would have been excluded is FORCE-ADDED. On rtl8139 that is the whole
+`MiniportQueryInformation` switch — all 38 `OID_*` labels resolve only because `ntddndis.h`
+is force-added; at depth 3 the tiering would have dropped it.
+
+Two constant classes still escape a derived allowlist, and both are WARNs to act on:
+1. **A const living only in a SECONDARY `-sys` island.** rtl8139 `ndis.c:299,311` switches
+   on `CmResourceTypePort`/`CmResourceTypeInterrupt`. Those are absent from
+   `ntkrnl-sys/src/bindgen_i386.rs` (0 definitions) and exist only in
+   `hal_bindgen_i386.rs` (3). Allowlisting the header does nothing — the translation must
+   `use ntkrnl_sys::hal_ddk::…` explicitly or the name stays unresolved, i.e. a catch-all.
+2. **A base-header owner the `-sys` crate lacks.** Pulling in the base header to get one
+   constant drags a monster island; transcribe the constant into the crate prelude instead.
+
+Note how this compounds with sealing: an unsealed translation tends to lower
+`case NRC_NORES:` to `9 =>`, which is *accidentally* immune to §9.112. Sealing restores the
+name, which is correct and readable but only compiles-correctly if the constant resolves. So
+turning sealing on makes island completeness MORE critical — run `profile_derive` first and
+treat its ERROR findings as blocking.
+
+**Recipe:** pass `--seal-facts --seal-calls` to `rustconv translate` for any plain-C module.
+Dialect selection is automatic (`--cpp-com` → `cpp`, otherwise `c`). Verify a prompt with
+`--dry-run --prompt` before spending: the envelope sections list the token counts, and a
+`MAX_COMPUTERNAME_LENGTH + 1` array bound should appear as TWO tokens — that is what stops
+the model folding `38 + 1` into `39`.
+
+### 9.118 (FIXED 2026-07-24) The §9.116 fix belonged in the WoW64 THUNK layer, not in win32k — and `NtUserMessageCall` carried three divergences, one of them smashing guest stack on *every* SendMessage
 
 §9.116 diagnosed the `g_MsgMemory` over-read and concluded "the fix is win32k-side."
 **That conclusion was wrong, and the evidence that overturned it took one grep:** every
@@ -9728,7 +10047,7 @@ unhandled. A control run (callback-direction change reverted, rebuilt, rebooted)
 that chain byte-identically, which is what proves it is not this fix's doing. **Two crashes
 at the same rung are not the same bug; symbolicate before assuming continuity.**
 
-### 9.117a (FIXED 2026-07-24) The `[RAISE]` crash-triage helper reported a STACK address as the raise site — its "kernel-text-looking" window also contains kernel stacks
+### 9.118a (FIXED 2026-07-24) The `[RAISE]` crash-triage helper reported a STACK address as the raise site — its "kernel-text-looking" window also contains kernel stacks
 
 While triaging the above, `rtl-diag`'s unhandled-raise helper printed:
 
