@@ -980,7 +980,7 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
-### The governing rule
+### The governing rule: a harness only falsifies what it varies
 > **A harness proves parity only across the axes it actually VARIES. Every axis it holds
 > CONSTANT is a silent assumption baked into every MATCH it prints.** `[§9.60]`
 
@@ -1292,7 +1292,7 @@ a diagnosis.**
 
 `-smp 2` does not usually find SMP bugs — it finds **UP assumptions** that were always wrong.
 
-### The governing rule
+### The governing rule: an IRQL raise is not a lock
 > **"On QEMU's single vCPU, DISPATCH_LEVEL is full mutual exclusion" is false the moment a
 > second CPU exists.** In any component a `-smp N` boot exercises, an IRQL raise is *not* a
 > lock. `[§9.55]`
