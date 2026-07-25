@@ -966,7 +966,7 @@ pub unsafe extern "C" fn CcRosRequestVacb(
 ) -> NTSTATUS {
     let vacb = opaque_ptr(vacb);
     if file_offset % VACB_MAPPING_GRANULARITY as i64 != 0 {
-        KeBugCheck(0x34);
+        KeBugCheck(ntkrnl_sys::bugcodes::CACHE_MANAGER);
     }
 
     CcRosGetVacb(shared_cache_map, file_offset, vacb)

@@ -751,7 +751,7 @@ unsafe fn MiResolveTransitionFault(
     #[cfg(target_arch = "x86_64")]
     {
         if Pfn1.is_null() {
-            KeBugCheckEx(
+            KeBugCheckEx( // nolint: bugcheck-code (0xDEAD0040 = deliberate NULL-PFN diagnostic marker, not a stop code)
                 0xDEAD0040,
                 FaultingAddress as ULONG_PTR,  // P1: what VA caused the fault
                 PointerPte as ULONG_PTR,       // P2: PTE address (self-map vs proto)
@@ -809,7 +809,7 @@ unsafe fn MiResolveTransitionFault(
                 || ((*DiagPpe).valid() as usize) == 0
                 || ((*DiagPde).valid() as usize) == 0
             {
-                KeBugCheckEx(
+                KeBugCheckEx( // nolint: bugcheck-code (0xDEAD0030 = deliberate proto-PTE diagnostic marker, not a stop code)
                     0xDEAD0030,
                     PointerToPteForProtoPage as ULONG_PTR,
                     PointerPte as ULONG_PTR,

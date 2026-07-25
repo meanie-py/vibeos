@@ -49,6 +49,15 @@ members = [
     "netapi32-rust",
     "iphlpapi-rust",
     "dnsapi-rust",
+    "dhcpcsvc-rust",
+    # Tier-2 network services (base/services/*). dnsrslvr + wkssvc are the SERVER halves of the
+    # MIDL interfaces dnsapi + netapi32 already speak as clients, so they close those loops.
+    "dnsrslvr-rust",
+    "wkssvc-rust",
+    "browser-rust",
+    "wlansvc-rust",
+    "tcpsvcs-rust",
+    "telnetd-rust",
     "access",
     "avltable",
     "bitmap",

@@ -659,6 +659,36 @@ Two adjacent defect classes, found together and best hunted together:
 **Oracle (gated):** `scan_silent_failures.py` shape `WRITE_BYTES_SIZEOF` — flags 3-arg `write_bytes` with `size_of` in the count unless the pointee is size-1 (`*mut u8/i8/CHAR`, `c_void`/`PVOID` — c_void is size 1 in Rust) or the count does element math (`/`). Wired into `vibeos-cli check` (0-NEW baseline).
 **Fix pattern:** byte-cast the pointer — `write_bytes(ptr as *mut u8, 0, size_of::<T>())` — never "fix" by dividing the count.
 
+**SECOND VARIANT — a VARIABLE byte count, which the gated oracle CANNOT see (wkssvc, 2026-07-19).**
+The same defect appears without any `size_of` in the count, so `WRITE_BYTES_SIZEOF` never fires:
+
+```rust
+let len_with_null = (*resp).UserName.Length as usize + 2;   // UNICODE_STRING.Length is BYTES
+(*p).wkui0_username = midl_user_allocate(len_with_null) as *mut u16;  // that many BYTES
+core::ptr::write_bytes((*p).wkui0_username, 0, len_with_null);        // 2x HEAP OVERRUN
+```
+
+The pointer is `*mut u16`, so the count is doubled — it zeroes twice the allocation. Found live
+at 4 sites in `NetrWkstaUserGetInfo` (plus 3 of the classic `size_of` form in the same function).
+**`UNICODE_STRING.Length`/`MaximumLength` are BYTE counts** — that is the trap; every
+`midl_user_allocate(cb)` / `HeapAlloc(cb)` paired with a WCHAR pointer is a candidate.
+
+**Why this variant cannot be linted today (measured, do not re-attempt naively).** An extra
+`scan_silent_failures.py` shape was written for it and then REVERTED, because a syntactic
+(tree-sitter) scanner has no type information: at the real call site the argument is
+`(*p_user_info_0).wkui0_username`, whose text contains no type at all, so any pointee-type test
+matches nothing. A text-based `*mut u16` test only fires where the cast is written explicitly —
+i.e. exactly where the author was already thinking about width — and it produced 14 findings
+across the workspace of which 12 were `copy_nonoverlapping` (typed pointer + element count is
+CORRECT there) and 1 was a chained `as *mut WCHAR as *mut u8`. Net: zero true positives, and a
+lint that catches nothing while looking like coverage is worse than none. Closing this properly
+needs field-type resolution against the bindgen island, not a syntax match.
+
+**So the standing mitigation is REVIEW, not tooling:** after any translated crate that allocates
+WCHAR buffers, grep `write_bytes` and check every site by hand — is the count elements or bytes,
+and does the pointee have size 1? `cargo build` cannot see it (no panic, just UB), and a green
+`vibeos-cli check` does not cover this variant.
+
 ### Kernel Rust emitting x87 (`fild/fistp`) for 64-bit atomics — imprecise 0xc0000092 BSOD blamed on an innocent function (i386 STOP 0x1E, 2026-07-06)
 **Symptom:** flaky i386 `STOP 0x1E (0xc0000092 …)` — STATUS_FLOAT_STACK_CHECK — with P2 pointing at a function with no floats in its source (flagship: `MiLockProcessWorkingSetUnsafe+0x87`). x87 faults are IMPRECISE: they fire at the *next* FP instruction executed, and the kernel doesn't own the FPU — the fault needs a user thread's dirty x87 state (full stack / pending unmasked exception) live at kernel entry, hence the flakiness.
 **Cause:** the i686 kernel target JSONs set `"rustc-abi": "x86-softfloat"` (ABI only) with `cpu=pentium` (no SSE) but never disabled x87 CODEGEN — LLVM lowers `AtomicU64` load/store via `fild/fistp` when x87 is available and SSE2 isn't. 2479 x87 instructions in ntoskrnl, each a probabilistic landmine.
@@ -8847,6 +8877,77 @@ through. **Owed sweep:** every flat-typed OUT handle/pointer *array* has this
 shape (`NtUserBuildNameList`/`BuildPropList`, `NtGdi*` handle arrays,
 `NtQueryDirectoryObject`, …) — silently fine until a guest passes a non-empty
 buffer. Add each with an array-narrowing marshaller as coverage reaches it.
+### 9.105a (FIXED 2026-07-18) The NULL-output-pointer class recurs one function over — RtlCaptureStackBackTrace(BackTrace=NULL) BUGCHECKs 0x1E and ABORTS the whole i386 kmtest sweep (52 → 74 tests)
+
+**Symptom.** i386 `RtlStackKM` = `CRASH pass=0`, BUGCHECK `0x1E (0xc0000005, PC=ntoskrnl+0xCA7xx, 0xf71xx894, 0x0)`.
+The crash killed the boot at test **52 of 74**, so **22 downstream tests never ran** and could not even be
+evaluated — including `RtlStack`, which had been quarantined purely as "UNVALIDATED, the RtlStackKM
+BUGCHECK aborted the sweep before it".
+
+**The quarantine note's stated root cause was WRONG**, and it cost real time. It claimed the i386
+`RtlWalkFrameChain` "over-walks its ebp chain and derefs an unmapped high address that the
+StackBegin/StackEnd bounds check let through". Bounded `DbgPrint` instrumentation inside the walk
+disproved that outright: every iteration validated (`MmIsAddressValid`=1 on both loads), `Stack` climbed
+monotonically, and the whole range sat inside one **mapped** stack page (`SB=f71828f4 SE=f7183000`, with
+successful reads at `f7182b78` on that same page). Four hypotheses died to that data — kernel
+frame-pointer omission (kernel builds `frame-pointer: always`), driver frame-pointer omission (i386 C
+builds `-fno-omit-frame-pointer`, gcc.cmake:308), a degenerate `RtlpCaptureStackLimits` else-branch, and
+"MmIsAddressValid is lying".
+
+**The smoking gun was an off-by-one in the trace, not an address.** One walk printed **`i=5`**. The test's
+own calls are `RtlWalkFrameChain(Frames, 5, 0)` and `(Frames, 4, 0)` — neither can reach `i=5`. Only a
+caller passing `Count >= 6` can, which fingerprints `RtlCaptureStackBackTrace`:
+`Count = FramesToCapture + FramesToSkip = 5 + (0+1) = 6`. From there the bug is visible by inspection:
+
+```rust
+// rtl-diag/src/exception.rs
+*BackTrace.offset(i as isize) = Frames[(FramesToSkip + i) as usize];   // UNGUARDED
+...
+if !BackTraceHash.is_null() { ... }                                    // guarded!
+```
+
+`RtlStack`'s `TestStackWalk4` deliberately calls `RtlCaptureStackBackTrace(0, 5, NULL, NULL)`. The C stored
+through the NULL and let the caller's SEH absorb it; that handler is **dead under USE_DUMMY_PSEH on i386**,
+so the NULL store AVs. Fix = bail on a NULL `BackTrace`, the same shape as the already-landed
+`RtlWalkFrameChain(NULL, ...)` fix. Result: `RtlStackKM` and `RtlStack` both `OK pass=39 fail=1`, sweep
+**74 launched / 70 OK / no BUGCHECK** (was 52/51/0x1E).
+
+**The fix is deliberately arch-gated to i386, and that matters.** Guarding on *all* arches measurably
+regressed amd64: `RtlStackKM` went `pass=35 fail=11` → `pass=34 fail=12`, exactly one assertion. On
+amd64/arm64 kernel SEH **works**, so the unguarded NULL store raises an AV that the test's `_SEH2_TRY`
+catches, `ExceptionStatus` becomes `STATUS_ACCESS_VIOLATION`, and the WS03 branch *passes* — that is the
+correct, faithful behaviour and the guard destroys it. So the guard is `#[cfg(target_arch = "x86")]`:
+apply the workaround only where SEH cannot save us, keep the faithful path everywhere it still works.
+**The cfg is explicitly self-retiring** — when task #18 (i386 kernel-mode frame-based SEH catching a
+driver `__except`) lands, i386 joins the other two arches and the guard becomes a divergence to delete.
+General rule: **before landing a DUMMY_PSEH workaround in a shared crate, check whether the arches with
+working SEH were relying on the faithful fault** — a "fix" that silences a real, correctly-caught
+exception is a regression on every arch that could already handle it.
+
+**Reusable lessons:**
+
+1. **The NULL-output-pointer class travels in families — when you fix one, audit its siblings.** This is
+   the *same* bug as the earlier `RtlWalkFrameChain(NULL)` fix, one function over in the same subsystem,
+   found months apart. **The asymmetry is the tell:** `RtlCaptureStackBackTrace` already null-checked
+   `BackTraceHash` and not `BackTrace`. Grep any `_SEH2_TRY`-derived translation for output stores where
+   *some* out-params are guarded and others aren't.
+2. **A sweep-aborting BUGCHECK is a coverage multiplier, not a single test.** Fixing one crash took i386
+   from 52 to 74 executed tests. Prioritize crashes that abort the harness over crashes that don't —
+   and never trust a quarantine reason of the form "unvalidated, an earlier crash aborted the sweep".
+3. **Decode BUGCHECK 0x1E params carefully — P3 is not always the fault address.** P3 here looked like one
+   (kernel-range, varied per boot), but its low bits were **identical across every run** (`...894`) while
+   only the page changed — that is a fixed frame offset, i.e. a **stack pointer**, not a data address. The
+   real faulting address was `P4 = 0x00000000`. Misreading P3 produced a long "how can a *mapped* page
+   fault?" paradox. Sanity check: if a candidate fault address lives in a page you just read successfully,
+   you are decoding the wrong parameter.
+4. **A wrong root cause in a quarantine note is worse than none.** Instrument before trusting an inherited
+   diagnosis; bounded `DbgPrint` beat several rounds of static reasoning here.
+
+**Harness gotchas that cost turns (both real):**
+- `qemu/<arch>_smoke_live.log` is **truncated by each subsequent boot**, so post-hoc grep silently loses the
+  crash. Use the debug toolkit — `RUN=$(bash qemu/start.sh i386)` → `qemu/runs/$RUN/serial.log` **persists**.
+- That serial log contains terminal escape bytes, so plain `grep` treats it as binary and prints **nothing**
+  (not an error). Always `grep -a` on serial logs.
 ### 9.106 (FIXED 2026-07-18) Non-volatile seqlock loops on KUSER_SHARED_DATA — the arm64 `b .` spin class (kernel32 time fns, EngInitializeSafeSemaphore) + the writer side
 
 **Symptom:** scan_ud2's arm64 driver sweep flags named exported functions whose
@@ -8973,3 +9074,327 @@ a ud2 cleanup.
 - `extern "system"` transmute call sites (`VirtFn`/`PhysFn`-style) are invisible
   to a decl-only ABI audit — grep `extern "system" fn(` transmutes when auditing
   a symbol's real calling convention.
+
+### 9.108 (SOLVED 2026-07-18) The "netapi32 MIDL dragon" was never an interface-vs-interface conflict — it was the `<lm.h>` MASTER header fighting the WIDL stubs, and the C build already showed the answer
+
+**Symptom.** The 7 RPC-stub `.c` in `dll/win32/netapi32` (browser, dssetup, misc, netlogon,
+schedule, srvsvc, wksta_new) were translated and banked, but integration was DEFERRED across
+two sessions because their bindgen types island refused to generate. One wrapper `#include`-ing
+all 7 WIDL client headers produced a wall of C redefinition errors:
+
+```
+netlogon_c.h:343 typedef redefinition with different types ('ULONG' vs 'LONG')
+srvsvc_c.h:655  redefinition of '_SERVER_INFO_100'   (also declared in browser_c.h)
+```
+
+The recorded diagnosis was "the 6 MIDL interfaces mutually redefine each other's wire types;
+needs a gen_driver_types *MIDL-client mode* — a per-interface pass plus a shared base-type
+blocklist." **That diagnosis was wrong**, and it is instructive *how* it was wrong: the
+conclusion ("they conflict with each other") was inferred from a single all-in-one failure
+without ever testing an interface on its own. Testing each one standalone took ~5 minutes and
+falsified it immediately — the conflicts were not between the stubs at all.
+
+**Root cause.** `<lm.h>` is the LAN Manager MASTER header: it pulls `lmat.h`/`lmshare.h`/
+`lmserver.h`/`lmwksta.h`, which declare `AT_INFO`/`CONNECTION_INFO_*`/`SERVER_INFO_*`/
+`WKSTA_INFO_*` — the very structs each `*_c.h` re-declares for the wire. The `netapi32`
+gen_driver_types profile included `<lm.h>` (correct for the 14 c2rust-anchored modules), so
+every MIDL header collided with it. Interface-vs-interface collisions exist but are RARE:
+of the 6 headers exactly ONE pair actually conflicts (`browser_c.h` vs `srvsvc_c.h`, both
+declaring `_SERVER_INFO_100`).
+
+**The oracle was sitting in the C the whole time.** `netapi32.h` — the master private header
+every one of these files includes — pointedly does NOT include `<lm.h>`. It includes only the
+narrow trio:
+
+```c
+#include <lmaccess.h>   /* netapi32.h — and NOT <lm.h> */
+#include <lmapibuf.h>
+#include <lmerr.h>
+```
+
+…and then each `.c` includes exactly ONE stub header (`misc.c` is the lone two-header TU:
+srvsvc + wkssvc). The C build never asks the compiler to accept the combination that was
+failing. **If a `.c` compiles, its include set is bindgen-able** — so the include set of a
+real translation unit is a GUARANTEED-legal island, and no amount of blocklist engineering is
+needed to find one.
+
+**Fix (what landed).** Mirror the C's include discipline instead of fighting the redefinitions:
+- `TYPES_STEM` env var in `tools/rustconv/gen_driver_types.sh` — a crate can now emit MORE THAN
+  ONE types island (`<stem>_<arch>.rs` + a `<stem>.rs` per-arch dispatcher). Reusable for any
+  DLL whose TUs have mutually incompatible include sets.
+- Two profiles: `netapi32-rpc` (srvsvc + wkssvc + atsvc + dssetup + netlogon → 225 structs,
+  serves 6 of the 7 modules) and `netapi32-browser` (browser_c.h + lmbrowsr/lmserver → 13).
+  Both use the narrow-lm base. `dsrole.h` is dropped from the rpc island — `dssetup_c.h`
+  re-declares `DSROLE_*`, and although `netlogon.c` includes `dsrole.h` it never references
+  those types.
+- Prelude split so the two universes stay separate without duplicating the non-type surface:
+  `prelude_common.rs` (wine-debug channel, CRT/winsock externs, transcribed consts, enum
+  bare-name aliases) + three thin per-island preludes globbing `prelude_common` plus their own
+  island. 377 type names overlap between `types` and `types_rpc`, so they must NEVER share a
+  glob scope.
+
+**Fallout to expect when you split an existing prelude (cost me two extra cycles).** Items that
+were LOCAL `pub const` definitions in the old prelude silently shadowed the types glob. Moving
+them into `prelude_common` turns that into glob-vs-glob → **E0659 ambiguous name** at every use
+site (229 of them here) in modules that were previously clean. An EXPLICIT `pub use` outranks
+any glob, so re-export the conflicting names in each per-island prelude to restore the old
+resolution. Two traps when computing that conflict list:
+- Scanning only `types_<arch>.rs` MISSES names the island re-exports transitively — `TRUE`/
+  `FALSE` arrive via `ntdll_sys::nt::*` and do not appear in the island file at all.
+- `cargo check --message-format short | grep 'src/.*\.rs'` counts WARNING lines too; a module
+  showing "1 error" may be entirely clean (here: `unnecessary unsafe block`). Filter on
+  `error\[E` before concluding a previously-green module regressed.
+
+**Transferable rules.**
+1. **A multi-header redefinition wall is a claim about the WRAPPER, not about the headers.**
+   Test each header standalone before theorizing about mutual conflict. One 5-minute matrix
+   beats a session of blocklist design — and beats a wrong entry in the notes that outlives
+   the session and defers the work again.
+2. **Take the include set from the real TU.** Do not hand-assemble a "reasonable-looking"
+   wrapper from master headers; open the `.c` and copy what it actually includes. A master
+   header (`lm.h`, `windows.h`, `ntddk.h`) is exactly the thing a MIDL/IDL-consuming TU avoids.
+3. **When a DLL's TUs genuinely disagree, give them separate islands** rather than forcing one
+   pass. The island count that mirrors the C is the correct one — here 2, not 1 and not 7.
+
+### 9.109 (2026-07-18) Four usermode-DLL integration bugs that a green `cargo check` cannot see — the assembler glob, the checker regex, the silent LLM skip, and MIDL symbol case
+
+Collected while integrating the winsock/net satellite DLLs (dnsapi full flip, dhcpcsvc,
+netapi32 tail). Each is invisible to `cargo check` and surfaces only at LINK or at the GATE —
+i.e. after you already believe the crate is done. Check all four before declaring a flip green.
+
+**1. The `.responses` assembly glob silently DROPS 3-digit files.** `rustconv translate` writes
+one `NN_FnName.rs` per function. A shell glob of `[0-9][0-9]_*.rs` matches 2-digit prefixes
+ONLY, so a file with ≥100 functions loses everything from `100_` on — with no error anywhere.
+This dropped 5 dnsapi stubs (101–105); the crate compiled fine and failed at link with 5
+undefined exports. Also note `ls | sort` is lexicographic (`10_` sorts before `9_`).
+Use a numeric sort over an unbounded glob: `ls "$d"/[0-9]*_*.rs | sort -t_ -k1.1 -n`.
+**Always assert the assembled function count equals the `.responses` file count.**
+
+**2. `verify_lost_exports` cannot see a ONE-LINE `#[no_mangle]`.** Its regex is
+`#\[no_mangle\]\s*\npub unsafe extern "[^"]+" fn (\w+)` — it REQUIRES a newline after the
+attribute. A subagent (or rustfmt on a short signature) collapsing it to
+`#[no_mangle] pub unsafe extern "system" fn Foo()` makes the export invisible to the checker,
+which then reports it as a NEW LOST export and fails `vibeos-cli check` — a false positive that
+looks exactly like a real dropped export. Keep `#[no_mangle]` on its own line. (Fixing the
+regex to tolerate both is owed; the one-line form is legal Rust and will recur.)
+
+**3. A translation model can silently SKIP a function entirely.** DeepSeek emitted no file at
+all for `DnsWinsRecordFlagForString` — no error, no stub, no partial. Nothing in the pipeline
+noticed; `cargo check` was green because nothing in-crate referenced it. It surfaced only as an
+undefined symbol at link (and would have been caught at the gate by `verify_lost_exports`).
+**Diff the `.spec` export list against the assembled `#[no_mangle]` set before building** — do
+not assume per-function fan-out produced one file per function.
+
+**4. MIDL `*_c.c` stubs reference UPPERCASE `MIDL_user_allocate`/`MIDL_user_free`.** The
+translated Rust defines the lowercase `midl_user_allocate`/`midl_user_free` that the rest of
+the DLL uses. On i386 the stubs want `_MIDL_user_allocate@4`/`_MIDL_user_free@4`. Add explicit
+uppercase `#[no_mangle] extern "system"` forwarders that call through to the lowercase pair.
+
+**And the arch-independent one that outranks all four:** when appending a hand-written export to
+match a `.spec`, **the `.spec` is ground truth for the i386 stdcall `@N` decoration**, not the C
+prototype — a `long` parameter contributes 4 bytes even where the C header declares `WORD`.
+Getting `@N` wrong links clean on amd64/arm64 and fails ONLY on i386.
+
+### 9.110 (2026-07-18) Four C-fidelity bug classes that survive a green `cargo check` AND a manual review — found only at link and by `vibeos-cli check`
+
+From the dhcpcsvc/netapi32 flips. Both crates were reported cargo-clean on all three targets by
+the agents that ground them — truthfully. Compilation says nothing about whether the Rust means
+what the C meant. Nine real bugs survived that green; the three below survived a hand review on
+top of it and were caught only by the lint gate. Check for all four before calling a flip done.
+
+**1. A vestigial `extern` in a header → the translation invents a global the C never had.**
+`dhcpd.h:398` declares `extern time_t cur_time;`. No TU in dhcpcsvc.dll DEFINES it — all EIGHT
+users declare their own `time_t cur_time;` LOCAL, which shadows it in C. The translation "helpfully"
+made them all reference the global, with a comment asserting `no local shadow`. That aliases eight
+independent stack values into one, corrupting the dispatch loop's lease timing.
+
+There is a nasty second-order effect that *pushes* a translation into this bug: bindgen emits the
+dead decl, and **Rust forbids a `let` binding that shadows an in-scope static (E0530)** — so the
+faithful translation is a compile error and "make it a global" is the path of least resistance.
+The fix is at the source: `--blocklist-item` the symbol (gen_driver_types `EXTRA_BL_ITEMS`) so
+nothing can bind to a global that does not exist. **Before trusting any `extern` a header
+declares, grep for its DEFINITION.** Undefined + referenced = link error (loud, fine); undefined +
+*locals of the same name* = silent semantic change.
+
+**2. `write_bytes`' count is in ELEMENTS; `memset`'s is in BYTES.**
+`core::ptr::write_bytes(p: *mut T, val, count)` writes `count * size_of::<T>()` bytes. So
+`write_bytes(arr.as_mut_ptr(), 0, size_of::<[T; N]>())` — the literal transcription of
+`memset(arr, 0, sizeof(arr))` — writes `sizeof(array) * sizeof(T)` bytes. In dhcpcsvc's
+`make_discover` that was a large stack overrun past two 256-entry arrays. **Always route a
+memset transcription through `as *mut u8`**, so the element count and the byte count coincide.
+`scan_silent_failures` flags this as `WRITE_BYTES_SIZEOF`.
+
+**3. A C debug macro that does NOT block, translated as `loop {}`.**
+`UNIMPLEMENTED` (reactos/debug.h) expands to `__NOTICE(WARNING, ...)` — a DbgPrint. The C falls
+straight through to the next statement. `DhcpNotifyConfigChange` was rendered as
+`DbgPrint(...); loop {}`, which hangs the calling thread forever instead of returning
+ERROR_SUCCESS. Related to §9.65 (never translate a C debug macro into an out-of-line no-op fn):
+**read what the macro expands to before translating it**, and never assume a name like
+UNIMPLEMENTED/FIXME/UNREACHABLE implies a trap. `scan_silent_failures` flags bare `loop {}` as
+`SILENT_LOOP`.
+
+**4. A C file-scope global defined in Rust without `#[no_mangle]`.**
+After a cohab flip, the `.c` that DEFINED a global is gone, so the Rust definition must emit the
+UNMANGLED C symbol — bindgen still DECLARES the global (from the header) and every cross-module
+reference binds to that decl. A plain `pub static mut` emits a mangled symbol and the decl goes
+unresolved. dhcpcsvc had 11 of these; only 4 failed the link (the referenced ones), the other 7
+were latent and would have broken on the next cross-module use. **Fix the class, not the four
+the linker happened to name:** intersect the island's `pub static mut` decls with the crate's
+own definitions and `#[no_mangle]` every match.
+
+**And the meta-lesson.** Each verification layer caught what the previous could not: `cargo check`
+(nothing on this list), the i386 LINK (classes 1 and 4 — decoration/undefined-symbol bugs are
+i386-first, since amd64/arm64 hide `@N` and case mismatches), hand review (the shadow structs and
+the `goto`-as-no-op paths), and `vibeos-cli check` (classes 2 and 3, plus a wrong error-code
+literal). **Run all four before declaring a flip green**, and treat a subagent's "0 errors on all
+targets" as a statement about compilation only.
+
+### 9.111 (2026-07-18) `cargo check` is NOT validation — `unconditional_panic` only fires on `cargo build`, and it is the lint that catches C's legal one-past-the-end idiom
+
+**The gap.** Every translation grind up to this point (dnsapi, dhcpcsvc, netapi32) was declared
+done on "`cargo check` → 0 errors on all 3 targets". The iphlpapi flip proved that insufficient:
+`cargo check` passed clean on all three targets, and then `cargo build --release` failed:
+
+```
+error: this operation will panic at runtime
+   --> ifenum_reactos.rs:579
+    |   core::ptr::addr_of_mut!((*entry).wszName[MAX_INTERFACE_NAME_LEN])
+    |   index out of bounds: the length is 256 but the index is 256
+    = note: `#[deny(unconditional_panic)]` on by default
+```
+
+`unconditional_panic` is a **late** lint — it runs on optimized MIR, after const-propagation has
+proved the index constant. `cargo check` stops before that, so a *guaranteed* runtime panic is
+invisible to it. Anything validated by `check` alone has never been tested for this class.
+
+**Why the translation produced it (the real lesson).** The C is not a bug:
+
+```c
+memcpy( &entry->wszName[MAX_INTERFACE_NAME_LEN], &info.if_info, sizeof(info.if_info) );
+```
+
+`wszName` is `[WCHAR; 256]` and `MAX_INTERFACE_NAME_LEN` is 256, so `&arr[256]` is the
+ONE-PAST-THE-END address — explicitly legal in C (C99 6.5.6/8) and the idiomatic way to reach
+whatever follows the array inside the containing struct. Transliterated to Rust, `arr[256]` is
+an out-of-bounds *index*, which panics. The faithful lowering takes the address by pointer
+arithmetic instead:
+
+```rust
+(*entry).wszName.as_mut_ptr().add(MAX_INTERFACE_NAME_LEN)   // one-past-the-end, no indexing
+```
+
+**This is the same family as the flex-array bug (§9.107 item, "indexing a bindgen `[T;1]`") but
+strictly worse to find**, because the flex-array version has a *variable* index and so compiles
+silently and panics only at runtime on the second element, whereas this one has a *constant*
+index — which means the compiler CAN prove it, but only if you actually build.
+
+**Rules.**
+1. **A translated crate is not validated until it has been BUILT, not merely checked.** Run
+   `cargo build --release -p <crate> --target <t>` for all three targets before declaring a flip
+   done, and put that in every grind brief. `cargo check` remains the fast inner loop; it is not
+   the acceptance gate.
+2. **Grep every `[CONST]` index against the array's declared length** when the constant is a
+   `MAX_*_LEN`/`*_SIZE` name — C uses `&arr[N]` for the end pointer routinely.
+3. The full-arch `vibeos-cli gate` would also have caught it (it builds), but only after a
+   ~15-minute cycle; the per-crate build catches it in seconds. Cheapest oracle first.
+
+### 9.112 (2026-07-19) The catch-all-binding class recurs in USERMODE SERVICE crates — and the upstream cause is an INCOMPLETE BINDGEN ISLAND
+
+**Not a new bug class.** The "undefined constant in `match` pattern position silently becomes an
+irrefutable catch-all binding" defect is already covered three times above (win32k `WM_CTLCOLOR`
+2026-07-05; "Match arm with out-of-scope CONST"; "Undefined const in a `match` arm"), it caused a
+real BUGCHECK 0x1E, and it already has a **gated oracle**: `tools/verify_match_consts.py`, run by
+`vibeos-cli build` (baseline `tools/lint-baseline/verify_match_consts.txt`, currently empty = 0
+tolerated). Read that tool's docstring before re-deriving any of this.
+
+**What the Tier-2 services batch adds is the UPSTREAM CAUSE, and it is fixable in one place.**
+`browser`/`wlansvc` shipped `ServiceControlHandler` with catch-all arms because their bindgen
+island had no `SERVICE_CONTROL_*` — `winsvc.h` was not in their `gen_driver_types.sh` profile's
+`ALLOW_FILES`. `wkssvc`/`dnsrslvr`, whose islands were generated AFTER `winsvc.h`/`winreg.h` were
+allowlisted, resolved the same identifiers to real distinct consts (STOP=1, PAUSE=2, CONTINUE=3,
+INTERROGATE=4, SHUTDOWN=5) and were never exposed. Live effect of the bug: every control code
+(PAUSE/CONTINUE/INTERROGATE/SHUTDOWN) fell into the STOP arm — the service tears down its RPC
+listener and reports SERVICE_STOPPED to the SCM. Confirmed empirically, not by inspection:
+control code 2 dispatched into the STOP body.
+
+**The durable lesson: a bindgen island's COMPLETENESS is a correctness property, not a
+convenience.** Types missing from an island produce loud `E0412`s. Constants missing from an
+island produce loud `E0425`s *in value position* — but a SILENT catch-all in pattern position.
+So the same omission is half-loud, and the loud half is what misleads you: you fix the E0425s,
+conclude the file is understood, and never look at the `match`.
+
+**Prophylactic when adding a `gen_driver_types.sh` profile:** allowlist the header that owns the
+constants any translated `switch` dispatches on — for a service that is `winsvc.h`; more
+generally `winuser.h` (WM_*), `winerror.h`, the driver's IOCTL header. Cheaper and more durable
+than catching it downstream.
+
+**Timing trap that let it reach the build:** `verify_match_consts` runs at BUILD, not at
+`cargo check`. A per-crate grind loop that only ever runs `cargo check` never consults it. Either
+build once before declaring a crate done, or run the audit directly — and when auditing, COUNT
+the arms you examined: an audit that inspects zero arms "passes" vacuously.
+
+### 9.113 (FIXED 2026-07-24) The LLM INVENTED 59 kernel stop codes — `KeBugCheck(SYMBOL)` came back as `KeBugCheck(0xNN)` and ~80% of the numbers were wrong
+
+**Symptom (the one you'd actually hit):** a bugcheck fires and the stop-code line names a
+subsystem nobody has touched. You start the hunt in the wrong place. Worst case in-tree
+before the fix:
+
+| Call site | C original | value the LLM wrote | what that value MEANS |
+|---|---|---|---|
+| `ke/thrdschd.rs` `KiSetAffinityThread` | `INVALID_AFFINITY_SET` 0x3 | 0x48 | `CANCEL_STATE_IN_COMPLETED_IRP` — sends you into the IO manager |
+| `ke/wait.rs` `KeWaitForMultipleObjects` ×2 | `MAXIMUM_WAIT_OBJECTS_EXCEEDED` 0xC | 0x36 | `DEVICE_REFERENCE_COUNT_NOT_ZERO` |
+| `ke/i386/irqobj.rs` | `TRAP_CAUSE_UNKNOWN` 0x12 | 0x7F | `UNEXPECTED_KERNEL_MODE_TRAP` |
+| `ke/i386/usercall.rs` | `IRQL_GT_ZERO_AT_SYSTEM_SERVICE` 0x4A | 0x1A | `MEMORY_MANAGEMENT` — sends you into Mm |
+| `classpnp/class_part_c.rs` | `SCSI_DISK_DRIVER_INTERNAL` 0x2D | 0x52 | `MAILSLOT_FILE_SYSTEM` |
+| `ex/resource.rs` ×2 | `RESOURCE_NOT_OWNED` 0xE3 | 0x03 | `INVALID_AFFINITY_SET` — a *scheduler* code on an ERESOURCE bug |
+| `ex/work.rs` ×3 | `WORKER_THREAD_RETURNED_AT_BAD_IRQL` / `IMPERSONATING_WORKER_THREAD` / `WORKER_INVALID` | 0x6D/0x6E/0x6D | three different SESSION*_INITIALIZATION_FAILED codes |
+| `ex/init.rs` (24 sites) | the whole `*_INITIALIZATION_FAILED` family | shifted as a block | every boot-phase failure names the wrong phase |
+| `po/poshtdwn.rs` | `INTERNAL_POWER_ERROR` 0xA0 | 0xA0000003 | not a stop code at all |
+| `iomgr/file.rs` ×2 | `DRIVER_RETURNED_STATUS_REPARSE_FOR_VOLUME_OPEN` 0xF9 / `INVALID_CANCEL_OF_FILE_OPEN` 0xE8 | 0x126 / 0x12C | undefined codes |
+
+**Scale: 61 of ~115 translated stop codes were wrong.** Sweep the tree and you find the
+same hand everywhere — se, po, cc, fsrtl, config, classpnp, iomgr, ex, ke.
+
+**Why review slides right off it.** The numbers are *plausible*: right magnitude, valid
+hex, and **internally consistent** — `ex/init.rs`'s four session codes were `0x62,0x63,
+0x64,0x65` where the truth is `0x6D,0x6E,0x6F,0x70`. A consecutive run reads as
+"obviously transcribed from a table." It wasn't; the model generated a *fresh* consistent
+family. The subcode arguments (`Status, 1, 0, 0`) were carried over perfectly, which makes
+the line look faithful at a glance — the one token that came from the model's memory
+instead of the source is the one nobody checks.
+
+**Why NOTHING else catches it.** rustc sees a valid `ULONG`. The linker is happy. Every
+smoke test passes — the code is only read when the kernel is already dying, and by then
+nobody is diffing it against ReactOS. It is invisible until it costs you a debugging
+session, and then it costs you the *whole* session because the stop code actively lies.
+
+**How it was found:** not by a crash. During a routine `origin/master` merge I traced the
+open arm64 `0x3 INVALID_AFFINITY_SET` flake back to its raise site and found the Rust
+raising `0x48` — i.e. our kernel *cannot* produce the 0x3 that the registry blamed on it,
+so the real 0x3 comes from somewhere else entirely. Chasing that one discrepancy exposed
+the class. **Lesson: when a bugcheck's stop code doesn't match a raise site you can find
+in the source, doubt the CODE before you doubt the bug report.**
+
+**The fix (deterministic, no LLM):**
+1. `tools/gen_bugcodes.py` generates `ntkrnl_sys::bugcodes` — all 202 codes parsed from
+   `sdk/include/reactos/mc/bugcodes.mc`, cross-verified against the committed
+   `bugcodes.h` and HARD-FAILING if the two disagree.
+2. Every call site passes a named constant: `KeBugCheckEx(bugcodes::INVALID_AFFINITY_SET,
+   ...)`. Fully-qualified paths, so no `use` churn and no collisions.
+3. `tools/scan_bugcheck_codes.py` (wired into `vibeos-cli check`, **empty baseline**)
+   rejects any numeric literal in a `KeBugCheck`/`KeBugCheckEx` first argument. Deliberate
+   non-codes — our `0xDEAD00xx` markers, the `0x1000` PTE tripwire, the `DEFAULT_UNREACHABLE`
+   arms, and the three sites where upstream itself writes `KeBugCheck(0)` — carry
+   `// nolint: bugcheck-code (reason)`.
+
+This is the AGENTS.md substrate rule with a body count: **constants never go through the
+LLM.** Anything with a canonical numeric definition — stop codes, status values, IOCTLs,
+tags — must be generated from the header and referenced by name. The LLM's job is control
+flow, not arithmetic it can't verify.
+
+**Bonus bug found in the same sweep (a different class).** `config/cmsysini.rs`
+`CmpCloseKeyObject` translated C's `ASSERT(FALSE)` — a *debug-only* "this shouldn't happen
+yet" marker — into `KeBugCheck(0)`, an **unconditional fatal bugcheck in every build**,
+with the meaningless stop code 0. A live key body with a notify block would have killed
+the machine where NT just continues. When you see a bare `KeBugCheck` in translated code,
+check whether the C was an `ASSERT`: an assert is `debug_assert!`, never a bugcheck.

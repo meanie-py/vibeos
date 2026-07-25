@@ -218,7 +218,7 @@ unsafe fn KiUnwaitThreadImpl(Thread: PKTHREAD, WaitStatus: isize, Increment: KPR
             );
             if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
             ntkrnl_sys::ddk::KeBugCheckEx(
-                0x96,
+                ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
                 Thread as ntkrnl_sys::ddk::ULONG_PTR,
                 ((0x5Eu64 << 40)
                     | ((*kt_State(Thread)) as u64) << 8
@@ -873,12 +873,12 @@ pub unsafe extern "system" fn KeWaitForMultipleObjects(
 
     let WaitBlockArray = if WaitBlockArray.is_null() {
         if Count as usize > THREAD_WAIT_OBJECTS {
-            KeBugCheck(0x36);
+            KeBugCheck(ntkrnl_sys::bugcodes::MAXIMUM_WAIT_OBJECTS_EXCEEDED);
         }
         kt_WaitBlock(Thread).as_mut_ptr()
     } else {
         if Count as usize > MAXIMUM_WAIT_OBJECTS {
-            KeBugCheck(0x36);
+            KeBugCheck(ntkrnl_sys::bugcodes::MAXIMUM_WAIT_OBJECTS_EXCEEDED);
         }
         WaitBlockArray
     };

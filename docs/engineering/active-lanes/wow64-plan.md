@@ -1051,6 +1051,45 @@ recomputed complete: 59 modules, no new DLL), launched through the generic
   ntuser.h/ntgdi.h prototype; flag any pointing at a divergent payload not on the
   manual list) — that would mechanically surface them all *before* a guest crashes.
 
+**Phase E9 — the flat-typed PUNICODE_STRING NtUser* sweep + more applets
+(2026-07-18).** Extended the ladder with five more stock i386 applets —
+**taskmgr** (listview + `NtQuerySystemInformation` process array), **wordpad**
+(richedit/riched20), **clipbrd** (clipboard), **osk** (on-screen keyboard),
+**magnify** (timer-driven screen-capture BitBlt). taskmgr/wordpad/clipbrd/magnify
+PASS on the first boot with zero new marshallers (the layer is robust across
+listview, richedit, clipboard, and screen-BitBlt surfaces); **osk BUGCHECKed
+0x1E** on `NtUserFindWindowEx` — the same `win32k+0x258EC` `raw_move` PC as
+regedit's E8 crash, the same flat-typed-PUNICODE_STRING trap.
+
+Rather than fix one syscall, this closed the **whole class** the E8 insight
+predicted. The spec-vs-prototype scan proposed there (every `NtUser*` `ptr` arg
+in win32u.spec whose real ntuser.h prototype is a `PUNICODE_STRING`, minus the
+manual list) found **11 uncovered members**, each a latent kernel BUGCHECK:
+
+* **9 pure US-widen** (the proven `Wow64pUS32to64` pattern — widen the US arg(s),
+  flat-pass the rest, narrow handle returns): `NtUserFindWindowEx` (2×US),
+  `NtUserGetWOWClass`, `NtUserSetWindowsHookEx`, `NtUserSetWinEventHook`,
+  `NtUserRegisterUserApiHook` (2×US), `NtUserDrawCaptionTemp`,
+  `NtUserLoadKeyboardLayoutEx`, `NtUserEnumDisplaySettings`,
+  `NtUserEnumDisplayDevices` (the last two also take a DEVMODEW/DISPLAY_DEVICEW
+  OUT struct — non-divergent, no pointers, identical 32/64, so the guest buffer
+  flat-passes). All in wow64_manual.c + manual-win32k.txt.
+* **2 that also carry a divergent struct** — `NtUserCreateDesktop`
+  (OBJECT_ATTRIBUTES) and `NtUserGetIconInfo` (ICONINFO HBITMAP widen) — are
+  listed in manual-win32k.txt **without** a dispatch entry, so they hit the loud
+  `WOW64_MANUAL_UNIMPL` stub (a clean error, **not** a bugcheck) instead of the
+  silent-wrong flat thunk. No ladder app reaches them; a marshaller lands when
+  one does. (This respects the M18 "don't ship a marshaller no guest can
+  disprove" rule — the 9 pure-US ones are instances of an already-verified
+  pattern, and osk verifies `NtUserFindWindowEx` directly.)
+
+*Result:* all **12 stock apps** (calc/notepad/sol/charmap/mspaint/regedit/winver/
+taskmgr/wordpad/clipbrd/osk/magnify) + all **8 probe guests** (hello32→fault32,
+winmine) green on one boot, zero faults. The flat-typed-PUNICODE_STRING class —
+the "silently wrong until a guest hits it, then a kernel bugcheck" hazard that bit
+E6 (GetAtomName/GetClassName), E8 (UnregisterClass), and E9 (FindWindowEx) — is
+now closed across the win32k surface.
+
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored
   contributions upstream; we consume its binary contract only).

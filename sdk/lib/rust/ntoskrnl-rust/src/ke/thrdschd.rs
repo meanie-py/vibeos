@@ -164,7 +164,7 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
                 );
                 if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
                 ntkrnl_sys::ddk::KeBugCheckEx(
-                    0x96,
+                    ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
                     t as ntkrnl_sys::ddk::ULONG_PTR,
                     ((0x5Cu64 << 40) | ((*kt_State(t)) as u64) << 8 | n as u64)
                         as ntkrnl_sys::ddk::ULONG_PTR,
@@ -195,7 +195,7 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
             if walk_count > 64 {
                 if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
                 ntkrnl_sys::ddk::KeBugCheckEx(
-                    0x96,
+                    ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
                     Prcb as ntkrnl_sys::ddk::ULONG_PTR,
                     (0x5Bu64 << 40) as ntkrnl_sys::ddk::ULONG_PTR,
                     ListEntry as ntkrnl_sys::ddk::ULONG_PTR,
@@ -270,7 +270,7 @@ unsafe fn KiSelectNextProcessor(Thread: PKTHREAD) -> ULONG {
     if PreferredSet == 0 {
         if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
         ntkrnl_sys::ddk::KeBugCheckEx(
-            0x96,
+            ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
             Thread as ntkrnl_sys::ddk::ULONG_PTR,
             (0x63u64 << 40 | 1) as ntkrnl_sys::ddk::ULONG_PTR,
             0,
@@ -508,7 +508,7 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
             );
             if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
             ntkrnl_sys::ddk::KeBugCheckEx(
-                0x96,
+                ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
                 Thread as ntkrnl_sys::ddk::ULONG_PTR,
                 ((0x5Au64 << 40)
                     | ((*kt_State(Thread)) as u64) << 8
@@ -659,7 +659,7 @@ unsafe fn KiSwapThreadImpl(
         if NextThread == CurrentThread {
             if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
             ntkrnl_sys::ddk::KeBugCheckEx(
-                0x96,
+                ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
                 CurrentThread as ntkrnl_sys::ddk::ULONG_PTR,
                 ((0x57u64 << 40)
                     | ((*kt_State(CurrentThread)) as u64) << 8
@@ -955,7 +955,7 @@ unsafe fn KiSetAffinityThread_impl(
     if ((Affinity & (*((*Thread).__bindgen_anon_1.ApcState.Process as *mut _KPROCESS)).Affinity) != Affinity)
         || (Affinity == 0)
     {
-        KeBugCheck(0x48);
+        KeBugCheck(ntkrnl_sys::bugcodes::INVALID_AFFINITY_SET);
     }
 
     (*Thread).UserAffinity = Affinity;

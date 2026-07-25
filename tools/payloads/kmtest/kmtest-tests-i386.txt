@@ -119,7 +119,17 @@ RtlRegistryKM
 # and derefs an unmapped high address that the StackBegin/StackEnd bounds check let through. Fixed +
 # passing on arm64+amd64 (they use RtlVirtualUnwind, not ebp-chaining); i386-specific ebp-walk bound
 # gap owed (GDB: break RtlWalkFrameChain on i386, dump Stack/StackBegin/StackEnd at the faulting read).
-#RtlStackKM
+# CLEARED 2026-07-18 (task #20): the ebp-walk theory above was WRONG. Instrumented boot proved the
+# walk is healthy (every frame validates, addresses climb monotonically inside the mapped stack page).
+# The real fault is a NULL deref in RtlCaptureStackBackTrace (rtl-diag/src/exception.rs): it null-checked
+# BackTraceHash but NOT BackTrace, and TestStackWalk4 calls RtlCaptureStackBackTrace(0, 5, NULL, NULL)
+# on purpose. The C relied on the caller's SEH to absorb that store; dead under DUMMY_PSEH on i386 ->
+# BUGCHECK 0x1E, which ABORTED THE WHOLE SWEEP at test 52 (22 tests never ran). Guarded the NULL
+# BackTrace (same fix shape as RtlWalkFrameChain(NULL), task #15), i386-GATED: amd64/arm64 catch that AV
+# correctly via working kernel SEH and must keep the faithful path (guarding all arches cost amd64 one
+# assertion, 35/11 -> 34/12). Now OK pass=39 fail=1; sweep runs all 74. Residual fail=1 = the WS03 branch
+# expecting the AV to be *caught* -> retires with task #18, which also retires the cfg.
+RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
 # QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x8E3BD. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
@@ -174,7 +184,10 @@ RtlSplayTree
 # i386 sweep before this UM twin ran. The ntdll NULL guard is in place, but i386 likely shares the
 # same real-frame ebp-walk bound gap as RtlStackKM, so hold it quarantined here until that's fixed.
 # (RtlStack passes on arm64+amd64 — RtlVirtualUnwind-based, not ebp-chaining.)
-#RtlStack
+# CLEARED 2026-07-18 (task #20): shares the RtlCaptureStackBackTrace NULL-BackTrace fix above. This
+# UM twin was never even *evaluated* before — the RtlStackKM BUGCHECK aborted the sweep ahead of it.
+# Now OK pass=39 fail=1.
+RtlStack
 RtlStrSafe
 RtlUnicodeString
 TcpIpTdi

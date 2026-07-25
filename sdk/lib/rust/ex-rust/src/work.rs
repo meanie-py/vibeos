@@ -183,7 +183,7 @@ unsafe fn ExpWorkerThreadEntryPoint_impl(Context: PVOID) {
 
             if KeGetCurrentIrql() != PASSIVE_LEVEL as u8 {
                 KeBugCheckEx(
-                    0x6D,
+                    ntkrnl_sys::bugcodes::WORKER_THREAD_RETURNED_AT_BAD_IRQL,
                     (*WorkItem).WorkerRoutine.unwrap() as ULONG_PTR,
                     KeGetCurrentIrql() as ULONG_PTR,
                     (*WorkItem).Parameter as ULONG_PTR,
@@ -193,7 +193,7 @@ unsafe fn ExpWorkerThreadEntryPoint_impl(Context: PVOID) {
 
             if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.ActiveImpersonationInfo() != 0 {
                 KeBugCheckEx(
-                    0x6E,
+                    ntkrnl_sys::bugcodes::IMPERSONATING_WORKER_THREAD,
                     (*WorkItem).WorkerRoutine.unwrap() as ULONG_PTR,
                     (*WorkItem).Parameter as ULONG_PTR,
                     WorkItem as ULONG_PTR,
@@ -456,7 +456,7 @@ pub unsafe extern "system" fn ExpInitializeWorkerThreads() {
     );
 
     if Status < 0 {
-        KeBugCheckEx(0x31, Status as ULONG_PTR, 0, 0, 0);
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
     }
 
     ObReferenceObjectByHandle(
@@ -545,7 +545,7 @@ pub unsafe extern "system" fn ExQueueWorkItem(
 
     if ((*WorkItem).WorkerRoutine.unwrap() as ULONG_PTR) < 0x7FFF0000 {
         KeBugCheckEx(
-            0x6D,
+            ntkrnl_sys::bugcodes::WORKER_INVALID,
             1,
             WorkItem as ULONG_PTR,
             (*WorkItem).WorkerRoutine.unwrap() as ULONG_PTR,

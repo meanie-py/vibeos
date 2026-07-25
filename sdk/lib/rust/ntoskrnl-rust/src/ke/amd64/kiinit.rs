@@ -404,7 +404,7 @@ pub unsafe extern "system" fn KiInitializeCpu(Pcr: PKIPCR) {
                 REQUIRED_FEATURE_BITS,
             );
         }
-        KeBugCheck(0);
+        KeBugCheck(0); // nolint: bugcheck-code (faithful: C kiinit.c says KeBugCheck(0))
     }
 
     (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_ALWAYSON as u8);

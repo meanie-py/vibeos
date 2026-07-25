@@ -369,11 +369,12 @@ unsafe fn ExpExpandResourceOwnerTable(Resource: PERESOURCE, LockHandle: PKLOCK_Q
             ExFreePoolWithTag(Owner as PVOID, TAG_RESOURCE_TABLE);
         }
 
-        let idx = if OldSize == 0 { 1u32 } else { OldSize };
-        kthread_set_resource_index(ExpGetCurrentKThread(), idx as u8);
-
-        ExAcquireResourceLock(Resource, LockHandle);
     }
+
+    let idx = if OldSize == 0 { 1u32 } else { OldSize };
+    kthread_set_resource_index(ExpGetCurrentKThread(), idx as u8);
+
+    ExAcquireResourceLock(Resource, LockHandle);
 }
 
 unsafe fn ExpFindFreeEntry(
@@ -1149,7 +1150,7 @@ pub unsafe extern "system" fn ExReleaseResourceForThreadLite(
                 loop {
                     if entry >= Limit {
                         KeBugCheckEx(
-                            0x03,
+                            ntkrnl_sys::bugcodes::RESOURCE_NOT_OWNED,
                             Resource as ULONG_PTR,
                             Thread as ULONG_PTR,
                             (*Resource).OwnerTable as ULONG_PTR,
@@ -1227,7 +1228,7 @@ pub unsafe extern "system" fn ExSetResourceOwnerPointer(
 
         if Owner.is_null() {
             KeBugCheckEx(
-                0x03,
+                ntkrnl_sys::bugcodes::RESOURCE_NOT_OWNED,
                 Resource as ULONG_PTR,
                 Thread as ULONG_PTR,
                 (*Resource).OwnerTable as ULONG_PTR,

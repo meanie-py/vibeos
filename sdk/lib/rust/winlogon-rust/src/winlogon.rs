@@ -2324,6 +2324,35 @@ pub unsafe extern "system" fn WinMain(
             b"winver.exe\0".as_ptr() as *const i8,
             8_000,
         );
+        /* E9 robustness ladder: taskmgr (listview + NtQuerySystemInformation
+         * process array), wordpad (richedit control), clipbrd (clipboard). */
+        TryStartWow64StockApp(
+            wstr!("taskmgr.exe").as_ptr(),
+            b"taskmgr.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("wordpad.exe").as_ptr(),
+            b"wordpad.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("clipbrd.exe").as_ptr(),
+            b"clipbrd.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        /* osk (NtUserSendInput path) + magnify (timer-driven screen-capture
+         * BitBlt from a NULL/screen DC — a distinct GDI surface). */
+        TryStartWow64StockApp(
+            wstr!("osk.exe").as_ptr(),
+            b"osk.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("magnify.exe").as_ptr(),
+            b"magnify.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
         /* E4b: same mutual-occlusion rule as the arm64 ladder — when doom is
          * staged it IS the demo GUI guest; testgui would materialise on top
          * of its window. */

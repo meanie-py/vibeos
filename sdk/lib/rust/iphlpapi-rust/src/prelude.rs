@@ -28,6 +28,22 @@ pub struct __wine_debug_channel {
     pub name: [c_char; 15],
 }
 pub const WINE_DBG_DEFAULT_FLAGS: c_uchar = 3;
+
+// The wine default debug channel, defined HERE in Rust rather than imported from a C shim.
+// iphlpapi_main.rs carries 10 c2rust-expanded sites of the inline form
+// `if (*__wine_dbch___default).flags & (1 << CLASS) { ros_dbg_log(...) }`; flags = 0 makes
+// every one of them statically false, which is exactly the non-DBG C build. Defining it in
+// Rust is what let iphlpapi_rust_shims.c be deleted (see the TRACE macros below).
+static mut __WINE_DBCH_DEFAULT_STORAGE: __wine_debug_channel = __wine_debug_channel {
+    flags: 0,
+    name: [
+        b'i' as c_char, b'p' as c_char, b'h' as c_char, b'l' as c_char, b'p' as c_char,
+        b'a' as c_char, b'p' as c_char, b'i' as c_char, 0, 0, 0, 0, 0, 0, 0,
+    ],
+};
+pub static mut __wine_dbch___default: *mut __wine_debug_channel =
+    unsafe { &raw mut __WINE_DBCH_DEFAULT_STORAGE };
+
 extern "C" {
     pub fn ros_dbg_log(
         cls: __wine_debug_class,
@@ -161,11 +177,8 @@ pub unsafe fn ZeroMemory(dst: *mut c_void, len: usize) {
 // `__wine_dbch___default` is the default channel pointer the inline form dereferences; the shim
 // also provides it, pointing at a flags=0 channel so the `if` is always false. ----
 extern "C" {
-    pub fn TRACE(fmt: *const u8, ...);
-    pub fn FIXME(fmt: *const u8, ...);
-    pub fn ERR(fmt: *const u8, ...);
-    pub fn WARN(fmt: *const u8, ...);
-    pub static mut __wine_dbch___default: *mut __wine_debug_channel;
+    // `const char *` in the C shim -> *const c_char (i8), matching the `as *const i8` the
+    // translation casts every format literal to.
 }
 
 // ---- 5. bridges added as the cargo-check grind revealed them. ----
@@ -233,10 +246,40 @@ pub const IOCTL_QUERY_IP_HW_ADDRESS: DWORD = 0x0012_003C; //      fn 15, METHOD_
 extern "C" {
     pub fn wcscpy(dest: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
     pub fn strncpy(dest: *mut c_char, src: *const c_char, n: usize) -> *mut c_char;
-    // strsafe StringCbPrintfW is WINAPIV(__cdecl) varargs — DECLARING a C-variadic is stable;
-    // the no-op-free real symbol comes from iphlpapi_rust_shims.c (via _vsnwprintf) at link.
-    pub fn StringCbPrintfW(pszDest: *mut WCHAR, cbDest: usize, pszFormat: *const WCHAR, ...)
-        -> HRESULT;
+    // _snwprintf: a REAL msvcrt export and variadic. Declaring and CALLING a C-variadic is
+    // stable Rust; only DEFINING one is not — which is the whole reason StringCbPrintfW gets
+    // the fixed-arity treatment just below.
+    pub fn _snwprintf(buffer: *mut WCHAR, count: usize, format: *const WCHAR, ...) -> c_int;
+}
+
+/// `StringCbPrintfW` — strsafe.h ships it ONLY as a `static inline`, so no linkable symbol
+/// exists anywhere, and it is variadic (`WINAPIV` = __cdecl), which stable Rust cannot DEFINE.
+/// It used to be supplied by a tiny C shim (iphlpapi_rust_shims.c); that file is gone now — it
+/// also carried out-of-line no-op TRACE/FIXME/ERR/WARN, which is the field-manual §9.65 ud2
+/// hazard, so keeping it alive purely for this one function was the wrong trade.
+///
+/// iphlpapi has exactly ONE call site (iphlpapi_main.c:3279) and it passes exactly ONE
+/// variadic argument (a `%s` WCHAR pointer), so a fixed-arity Rust fn reproduces it exactly
+/// with no variadic definition and no C. Semantics transcribed from the shim it replaces,
+/// which in turn follows strsafe: cbDest is a BYTE count, the result is ALWAYS
+/// null-terminated, and truncation is an error rather than a silent short write.
+#[inline]
+pub unsafe fn StringCbPrintfW_1(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszFormat: *const WCHAR,
+    arg1: *const WCHAR,
+) -> HRESULT {
+    let cch_dest = cbDest / core::mem::size_of::<WCHAR>();
+    if cch_dest == 0 {
+        return 0x8007_0057u32 as HRESULT; // STRSAFE_E_INVALID_PARAMETER
+    }
+    let r = _snwprintf(pszDest, cch_dest, pszFormat, arg1);
+    if r < 0 || (r as usize) >= cch_dest {
+        *pszDest.add(cch_dest - 1) = 0; // strsafe guarantees termination even on overflow
+        return 0x8007_007Au32 as HRESULT; // STRSAFE_E_INSUFFICIENT_BUFFER
+    }
+    0 // S_OK
 }
 
 // _BitScanForward is an MSVC INTRINSIC — no linkable symbol exists (the C compiler expands it
@@ -353,110 +396,194 @@ extern "system" {
     pub fn DhcpReleaseParameters(AdapterName: PWSTR) -> DWORD;
 }
 
-// 5j. iphlpapi sibling-C helpers (dll/win32/iphlpapi/*.c + sdk/lib/tdilib). These are
-// ReactOS-internal — no WINAPI in the headers, so cdecl (extern "C"). Signatures taken from
-// ifenum.h / ipstats.h / route.h / resinfo.h / dhcp.h / iphlpapi_private.h / tdilib.h.
+
+// 5j. tdilib (sdk/lib/tdilib) — the ONLY sibling-C left after the FULL flip. ReactOS-internal,
+// no WINAPI in tdilib.h, so cdecl (extern "C"). Signatures verbatim from sdk/lib/tdilib/tdilib.h.
 extern "C" {
-    // ifenum.h
-    pub fn interfaceMapInit();
-    pub fn interfaceMapFree();
-    pub fn getNumInterfaces() -> DWORD;
-    pub fn getNumNonLoopbackInterfaces() -> DWORD;
-    pub fn getInterfaceIndexTable() -> *mut InterfaceIndexTable;
-    pub fn getNonLoopbackInterfaceIndexTable() -> *mut InterfaceIndexTable;
-    pub fn getInterfaceNameByIndex(index: DWORD) -> *const c_char;
-    pub fn consumeInterfaceName(ifname: *const c_char);
-    pub fn getInterfaceIPAddrByIndex(index: DWORD) -> DWORD;
-    pub fn getInterfaceMaskByIndex(index: DWORD) -> DWORD;
-    pub fn getInterfaceBCastAddrByIndex(index: DWORD) -> DWORD;
-    pub fn getInterfacePhysicalByIndex(
-        index: DWORD,
-        len: *mut DWORD,
-        addr: *mut BYTE,
-        ty: *mut DWORD,
-    ) -> DWORD;
-    pub fn getInterfaceEntryByIndex(index: DWORD, entry: PMIB_IFROW) -> DWORD;
-    pub fn toIPAddressString(addr: c_uint, string: *mut c_char) -> *mut c_char;
-    pub fn addIPAddress(
-        Address: IPAddr,
-        Mask: IPMask,
-        IfIndex: DWORD,
-        NteContext: PULONG,
-        NteInstance: PULONG,
-    ) -> NTSTATUS;
-    pub fn deleteIpAddress(NteContext: ULONG) -> NTSTATUS;
-    // ipstats.h
-    pub fn getInterfaceStatsByName(name: *const c_char, entry: PMIB_IFROW) -> DWORD;
-    pub fn getICMPStats(stats: PMIB_ICMP) -> DWORD;
-    pub fn getIPStats(tcpFile: HANDLE, stats: PMIB_IPSTATS) -> DWORD;
-    pub fn getTCPStats(tcpFile: HANDLE, stats: *mut MIB_TCPSTATS) -> DWORD;
-    pub fn getUDPStats(tcpFile: HANDLE, stats: *mut MIB_UDPSTATS) -> DWORD;
-    pub fn getNumRoutes() -> DWORD;
-    pub fn getRouteTable() -> *mut RouteTable;
-    pub fn getNumArpEntries() -> DWORD;
-    pub fn getArpTable() -> PMIB_IPNETTABLE;
-    pub fn getTcpTable(class: DWORD) -> LPVOID;
-    pub fn getUdpTable(class: c_int) -> LPVOID;
-    // route.h
-    pub fn createIpForwardEntry(route: PMIB_IPFORWARDROW) -> DWORD;
-    pub fn setIpForwardEntry(route: PMIB_IPFORWARDROW) -> DWORD;
-    pub fn deleteIpForwardEntry(route: PMIB_IPFORWARDROW) -> DWORD;
-    // resinfo.h
-    pub fn getResInfo() -> PIPHLP_RES_INFO;
-    pub fn disposeResInfo(info: PIPHLP_RES_INFO);
-    // dhcp.h
-    pub fn getDhcpInfoForAdapter(index: DWORD, ptr: PIP_ADAPTER_INFO) -> DWORD;
-    // iphlpapi_private.h
-    pub fn getNthIpEntity(tcpFile: HANDLE, index: DWORD, ent: *mut TDIEntityID) -> NTSTATUS;
-    pub fn getIPAddrEntryForIf(
-        tcpFile: HANDLE,
-        name: *mut c_char,
-        index: DWORD,
-        ifInfo: *mut IFInfo,
-    ) -> NTSTATUS;
-    pub fn TCPSendIoctl(
-        hDevice: HANDLE,
-        dwIoControlCode: DWORD,
-        lpInBuffer: LPVOID,
-        pInBufferSize: PULONG,
-        lpOutBuffer: LPVOID,
-        pOutBufferSize: PULONG,
-    ) -> DWORD;
-    pub fn EnumNameServers(
-        RegHandle: HKEY,
-        Interface: LPWSTR,
-        Data: PVOID,
-        cb: Option<unsafe extern "C" fn(*mut WCHAR, *mut WCHAR, PVOID)>,
-    ) -> LSTATUS;
-    // sdk/lib/tdilib
-    pub fn openTcpFile(tcpFile: PHANDLE, access: ACCESS_MASK) -> NTSTATUS;
+    pub fn openTcpFile(tcpFile: PHANDLE, DesiredAccess: ACCESS_MASK) -> NTSTATUS;
     pub fn closeTcpFile(tcpFile: HANDLE);
+    pub fn tdiGetEntityIDSet(
+        tcpFile: HANDLE,
+        entitySet: *mut *mut TDIEntityID,
+        numEntities: PDWORD,
+    ) -> NTSTATUS;
+    pub fn tdiGetSetOfThings(
+        tcpFile: HANDLE,
+        toiClass: DWORD,
+        toiType: DWORD,
+        toiId: DWORD,
+        teiEntity: DWORD,
+        teiInstance: DWORD,
+        fixedPart: DWORD,
+        entrySize: DWORD,
+        tdiEntitySet: *mut PVOID,
+        numEntries: PDWORD,
+    ) -> NTSTATUS;
+    pub fn tdiFreeThingSet(things: PVOID);
 }
 
-// 5k. iphlpapi-private aggregate types bindgen didn't emit (dll/win32/iphlpapi/iphlpapi_private.h).
-// The C originals are unions sized by a CHAR MaxSize[...] alternative; the bindgen struct members
-// (IFEntry/TCP_REQUEST_SET_INFORMATION_EX) are not `Copy`, so a real Rust `union` is illegal here.
-// Modelled instead as a struct: the used arm first, then trailing bytes so the whole object is at
-// least as large as the C union — the sibling-C fills it in place and only the used arm is read.
-pub const MAX_ADAPTER_DESCRIPTION_LENGTH: usize = 128; // wine/iptypes.h
+// 5j-bis. INTRA-CRATE cross-module helpers. The FULL flip moved every sibling .c into this crate,
+// so these are Rust definitions in sibling modules — NOT externs. Re-exporting the real items
+// (instead of re-declaring them `extern "C"`) is deliberate: a re-declaration would link fine
+// against the `#[no_mangle]` symbol while silently permitting signature drift between the
+// declaration and the definition (the classic cross-rlib ABI trap). Re-exports make rustc
+// type-check every cross-module call against the true definition.
+pub use crate::iphlpapi::dhcp_reactos::getDhcpInfoForAdapter;
+pub use crate::iphlpapi::ifenum_reactos::{
+    addIPAddress, consumeInterfaceName, deleteIpAddress, getIPAddrEntryForIf,
+    getInterfaceBCastAddrByIndex, getInterfaceEntryByIndex, getInterfaceIPAddrByIndex,
+    getInterfaceIndexTable, getInterfaceMaskByIndex, getInterfaceNameByIndex,
+    getInterfacePhysicalByIndex, getNonLoopbackInterfaceIndexTable, getNumInterfaces,
+    getNumNonLoopbackInterfaces, hasArp, interfaceMapFree, interfaceMapInit, isInterface,
+    toIPAddressString,
+};
+pub use crate::iphlpapi::iphlpapi_reactos::TCPSendIoctl;
+pub use crate::iphlpapi::ipstats_reactos::{
+    getArpTable, getICMPStats, getIPStats, getInterfaceStatsByName, getNthIpEntity,
+    getNumArpEntries, getNumRoutes, getRouteTable, getTCPStats, getTcpTable, getUDPStats,
+    getUdpTable, tdiGetIpAddrsForIpEntity,
+};
+pub use crate::iphlpapi::resinfo_reactos::{disposeResInfo, EnumNameServers, getResInfo};
+pub use crate::iphlpapi::route_reactos::{
+    createIpForwardEntry, deleteIpForwardEntry, setIpForwardEntry,
+};
 
+// ---- 6. roots surfaced by the FULL-flip cargo grind. ----
+
+// 6a. CRT stdio. getICMPStats/getIPStats (ipstats_reactos.c:303,416) really do call
+// fopen("/proc/net/snmp")/fgets/fclose/_strnicmp — a Wine leftover ReactOS kept UNGUARDED (no
+// #ifdef). On Windows the fopen simply fails, the `if (fp)` block is skipped and the function
+// returns zeroed stats, so the calls are live code that must link. HexDump (ipstats_reactos.c:521)
+// likewise calls fprintf(stderr, ...). All are msvcrt exports.
 #[repr(C)]
-pub struct IFEntrySafelySized {
-    pub ent: IFEntry,
-    // C: CHAR MaxSize[sizeof(DWORD) + sizeof(IFEntry) + MAX_ADAPTER_DESCRIPTION_LENGTH + 1]
-    _tail: [u8; core::mem::size_of::<DWORD>() + MAX_ADAPTER_DESCRIPTION_LENGTH + 1],
+pub struct FILE {
+    _opaque: [u8; 0],
+}
+extern "C" {
+    // crt/stdio.h — `#define _iob __iob_func()`; stderr is `(&_iob[2])`.
+    pub fn __iob_func() -> *mut FILE;
+    pub fn fopen(filename: *const c_char, mode: *const c_char) -> *mut FILE;
+    pub fn fgets(buf: *mut c_char, n: c_int, stream: *mut FILE) -> *mut c_char;
+    pub fn fclose(stream: *mut FILE) -> c_int;
+    pub fn fprintf(stream: *mut FILE, fmt: *const c_char, ...) -> c_int;
+    pub fn snprintf(buf: *mut c_char, n: usize, fmt: *const c_char, ...) -> c_int;
+    pub fn calloc(num: usize, size: usize) -> *mut c_void;
+    pub fn mbstowcs(wcstr: *mut WCHAR, mbstr: *const c_char, count: usize) -> usize;
+    pub fn _strnicmp(a: *const c_char, b: *const c_char, n: usize) -> c_int;
+    pub fn wcschr(s: *const WCHAR, c: WCHAR) -> *mut WCHAR;
+}
+/// crt/stdio.h — `#define stderr (&_iob[2])`, with `_iob` = `__iob_func()`.
+#[inline]
+pub unsafe fn stderr() -> *mut FILE {
+    __iob_func().add(2)
 }
 
-#[repr(C)]
-pub struct IFInfo {
-    pub entity_id: TDIEntityID,
-    pub if_info: IFEntrySafelySized,
-    pub ip_addr: IPAddrEntry,
+// 6b. winsock (stdcall). inet_ntoa takes `struct in_addr` BY VALUE (winsock.h).
+extern "system" {
+    pub fn inet_ntoa(in_: in_addr) -> *mut c_char;
 }
 
-#[repr(C)]
-pub struct TCP_REQUEST_SET_INFORMATION_EX_ARP_ENTRY {
-    pub Req: TCP_REQUEST_SET_INFORMATION_EX,
-    // C: CHAR MaxSize[sizeof(TCP_REQUEST_SET_INFORMATION_EX) - 1 + sizeof(MIB_IPNETROW)]
-    _tail: [u8; core::mem::size_of::<MIB_IPNETROW>()],
+// 6c. kernel32 / advapi32 (stdcall) — the remaining Win32 calls.
+extern "system" {
+    pub fn CreateEventW(
+        lpEventAttributes: LPSECURITY_ATTRIBUTES,
+        bManualReset: BOOL,
+        bInitialState: BOOL,
+        lpName: LPCWSTR,
+    ) -> HANDLE;
+    pub fn RegEnumKeyExW(
+        hKey: HKEY,
+        dwIndex: DWORD,
+        lpName: LPWSTR,
+        lpcchName: LPDWORD,
+        lpReserved: LPDWORD,
+        lpClass: LPWSTR,
+        lpcchClass: LPDWORD,
+        lpftLastWriteTime: PFILETIME,
+    ) -> LSTATUS;
+    pub fn RegQueryInfoKeyW(
+        hKey: HKEY,
+        lpClass: LPWSTR,
+        lpcchClass: LPDWORD,
+        lpReserved: LPDWORD,
+        lpcSubKeys: LPDWORD,
+        lpcbMaxSubKeyLen: LPDWORD,
+        lpcbMaxClassLen: LPDWORD,
+        lpcValues: LPDWORD,
+        lpcbMaxValueNameLen: LPDWORD,
+        lpcbMaxValueLen: LPDWORD,
+        lpcbSecurityDescriptor: LPDWORD,
+        lpftLastWriteTime: PFILETIME,
+    ) -> LSTATUS;
 }
+
+// 6d. TDI IOCTLs — CTL_CODE cast-#defines, which bindgen skips. tcpioctl.h:
+//   `#define _TCP_CTL_CODE(Fn, Method, Access) CTL_CODE(FSCTL_TCP_BASE, Fn, Method, Access)`
+//   FSCTL_TCP_BASE = FILE_DEVICE_NETWORK = 0x12 (xdk/iotypes.h:68)
+//   CTL_CODE(t,f,m,a) = ((t)<<16) | ((a)<<14) | ((f)<<2) | (m)
+//   METHOD_BUFFERED = 0, FILE_ANY_ACCESS = 0, FILE_WRITE_ACCESS = 2 (psdk/winioctl.h:133-141)
+// (The same formula reproduces IOCTL_QUERY_IP_HW_ADDRESS/IOCTL_TCP_* transcribed in §5f above.)
+pub const IOCTL_ICMP_ECHO_REQUEST: DWORD = 0x0012_0000; // fn 0,  METHOD_BUFFERED, ANY
+pub const IOCTL_SET_IP_ADDRESS: DWORD = 0x0012_8038; //    fn 14, METHOD_BUFFERED, WRITE
+pub const IOCTL_DELETE_IP_ADDRESS: DWORD = 0x0012_8040; // fn 16, METHOD_BUFFERED, WRITE
+
+// 6e. consts bindgen didn't reach (ifmib.h is not on the include path from our wrapper).
+pub const MAX_INTERFACE_NAME_LEN: usize = 256; // psdk/ifmib.h:31 — `#define MAX_INTERFACE_NAME_LEN 256`
+
+// 6f. ipstats_reactos.c:721 local macro —
+//   `#define Add2Ptr(PTR, INC) (PVOID)((ULONG_PTR)(PTR) + (INC))`
+// Byte-granular pointer displacement; generic over the source pointer type so the call sites
+// keep the C's implicit `(PVOID)` result.
+#[inline]
+pub unsafe fn Add2Ptr<T>(ptr: *mut T, inc: usize) -> *mut c_void {
+    (ptr as *mut u8).add(inc) as *mut c_void
+}
+
+// 6g. enum bare-name aliases. bindgen names members `<Tag>_<Member>`; the C uses the bare member.
+// The translation additionally invented THREE more spellings for the one IPHLPAddrType enum
+// (`IPHLPAddrType_X`, `_IPHLP_ADDR_TYPE_X`, bare `X`) — all are aliased onto the single bindgen
+// constant so every spelling denotes the same value (iphlpapi_private.h:140-142).
+pub use crate::types::{
+    _IPHLPAddrType_IFMtu as IFMtu, _IPHLPAddrType_IFStatus as IFStatus,
+    _IPHLPAddrType_IPAAddr as IPAAddr, _IPHLPAddrType_IPABcast as IPABcast,
+    _IPHLPAddrType_IPAMask as IPAMask,
+};
+pub use crate::types::{
+    _IPHLPAddrType_IFMtu as IPHLPAddrType_IFMtu, _IPHLPAddrType_IFMtu as _IPHLP_ADDR_TYPE_IFMtu,
+    _IPHLPAddrType_IFStatus as IPHLPAddrType_IFStatus,
+    _IPHLPAddrType_IFStatus as _IPHLP_ADDR_TYPE_IFStatus,
+    _IPHLPAddrType_IPAAddr as IPHLPAddrType_IPAAddr,
+    _IPHLPAddrType_IPAAddr as _IPHLP_ADDR_TYPE_IPAAddr,
+    _IPHLPAddrType_IPABcast as IPHLPAddrType_IPABcast,
+    _IPHLPAddrType_IPABcast as _IPHLP_ADDR_TYPE_IPABcast,
+    _IPHLPAddrType_IPAMask as IPHLPAddrType_IPAMask,
+    _IPHLPAddrType_IPAMask as _IPHLP_ADDR_TYPE_IPAMask,
+};
+// ws2ipdef.h NL_SUFFIX_ORIGIN: the IP_ADAPTER_UNICAST_ADDRESS SuffixOrigin members are named
+// `NlsoOther`/`NlsoManual`/... but iptypes.h ALSO documents them as `IpSuffixOriginOther`/...
+// (the IP_SUFFIX_ORIGIN alias family). Same underlying enumerator — alias the spelling the
+// translation used onto the bindgen name.
+pub use crate::types::{
+    NL_SUFFIX_ORIGIN_NlsoDhcp as IpSuffixOriginDhcp,
+    NL_SUFFIX_ORIGIN_NlsoLinkLayerAddress as IpSuffixOriginLinkLayerAddress,
+    NL_SUFFIX_ORIGIN_NlsoManual as IpSuffixOriginManual,
+    NL_SUFFIX_ORIGIN_NlsoOther as IpSuffixOriginOther,
+    NL_SUFFIX_ORIGIN_NlsoWellKnown as IpSuffixOriginWellKnown,
+};
+
+// 6h. wine debug channels, MACRO form. The DeepSeek output calls these BOTH as functions
+// (`TRACE(fmt, ...)`, 158 sites — resolved by the extern "C" variadic block in §1-bis, which
+// links to the no-op shim in iphlpapi_rust_shims.c) AND as macros (`TRACE!(fmt, ...)`, 18
+// sites). Rust keeps macros and functions in separate namespaces, so both spellings can
+// coexist: these macro_rules simply forward to the already-declared variadic symbol.
+//
+// Note this does NOT introduce a new out-of-line no-op debug function (the field-manual §9.65
+// hazard — an out-of-line no-op is an optimization barrier that can uncloak a latent ABI
+// mismatch into a ud2). The single no-op lives in the C shim, exactly as for every other
+// wine-derived crate in the tree; these macros are pure syntax forwarding to it.
+macro_rules! TRACE { ($($arg:tt)*) => { () }; }
+macro_rules! ERR   { ($($arg:tt)*) => { () }; }
+macro_rules! WARN  { ($($arg:tt)*) => { () }; }
+macro_rules! FIXME { ($($arg:tt)*) => { () }; }
+// (no `use` here: a `use` would import the name in ALL namespaces and collide with the
+// same-named extern "C" fn above. Textual `#[macro_use]` scoping from lib.rs instead.)

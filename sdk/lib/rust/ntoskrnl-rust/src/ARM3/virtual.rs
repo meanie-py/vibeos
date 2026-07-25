@@ -348,7 +348,7 @@ pub unsafe extern "system" fn MiMakeSystemAddressValid(
         Status = MmAccessFault(0u32, PageTableVirtualAddress, 0i8, core::ptr::null_mut());
         if Status < 0 {
             KeBugCheckEx(
-                0x7A,
+                ntkrnl_sys::bugcodes::KERNEL_DATA_INPAGE_ERROR,
                 1,
                 Status as ULONG_PTR,
                 CurrentProcess as ULONG_PTR,
@@ -384,7 +384,7 @@ pub unsafe extern "system" fn MiMakeSystemAddressValidPfn(
         Status = MmAccessFault(0u32, VirtualAddress, 0i8, core::ptr::null_mut());
         if Status < 0 {
             KeBugCheckEx(
-                0x7A,
+                ntkrnl_sys::bugcodes::KERNEL_DATA_INPAGE_ERROR,
                 3,
                 Status as ULONG_PTR,
                 0,
@@ -516,7 +516,7 @@ pub unsafe extern "system" fn MiDeletePte(
                 let check_status = MiCheckPdeForPagedPool(VirtualAddress);
                 if check_status < 0 {
                     KeBugCheckEx(
-                        0x1000,
+                        ntkrnl_sys::bugcodes::MEMORY_MANAGEMENT,
                         0x61940,
                         PointerPte as ULONG_PTR,
                         (*PointerPte).Long,
@@ -527,7 +527,7 @@ pub unsafe extern "system" fn MiDeletePte(
             #[cfg(not(target_pointer_width = "32"))]
             {
                 KeBugCheckEx(
-                    0x1000,
+                    ntkrnl_sys::bugcodes::MEMORY_MANAGEMENT,
                     0x61940,
                     PointerPte as ULONG_PTR,
                     (*PointerPte).Long,
@@ -553,7 +553,7 @@ pub unsafe extern "system" fn MiDeletePte(
                 #[cfg(not(target_arch = "aarch64"))]
                 {
                     KeBugCheckEx(
-                        0x1000,
+                        ntkrnl_sys::bugcodes::MEMORY_MANAGEMENT,
                         0x400,
                         PointerPte as ULONG_PTR,
                         ProtoPteArg as ULONG_PTR,
@@ -573,7 +573,7 @@ pub unsafe extern "system" fn MiDeletePte(
         {
             if ((*Pfn1).pte_address() as ULONG_PTR & !0x1) != PointerPte as ULONG_PTR {
                 KeBugCheckEx(
-                    0x1000,
+                    ntkrnl_sys::bugcodes::MEMORY_MANAGEMENT,
                     0x401,
                     PointerPte as ULONG_PTR,
                     (*PointerPte).Long,

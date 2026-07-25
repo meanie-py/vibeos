@@ -870,6 +870,13 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]dhcpcsvc_s\.h' )
     EXTRA_INC=( -I"${SRC}/base/services/dhcpcsvc/include" -I"${SRC}/base/services/dhcpcsvc/dhcp"
                 -I"${SRC}/build-i386/base/services/dhcpcsvc" )
+    # dhcpd.h:398 declares `extern time_t cur_time;` but NO translation unit in this DLL defines
+    # it — every user (state_selecting/dhcpack/reset_adapter/bind_lease/dhcpoffer/send_discover/
+    # send_request/dispatch) declares its OWN `time_t cur_time;` local, which shadows it in C.
+    # Emitting the decl made the faithful translation impossible: Rust rejects a `let` that
+    # shadows an in-scope static (E0530), which pushed a translation pass into "it's a global"
+    # and aliased 8 independent stack values into one. Blocklist it. Field manual §9.108.
+    EXTRA_BL_ITEMS=( cur_time )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -DUNICODE -D_UNICODE -DNTOS_MODE_USER -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
@@ -892,19 +899,195 @@ case "$DRIVER" in
     USERMODE=1
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/dll/win32/iphlpapi"
-    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winnls.h>\n#include <ws2tcpip.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <iphlpapi.h>\n#include <iphlpapi_undoc.h>\n#include <tdiinfo.h>\n#include <tcpioctl.h>\n#include <tdilib.h>\n#include <wine/debug.h>\n#include "resinfo.h"\n#include "dhcp.h"\n#include "ifenum.h"\n#include "ipstats.h"\n#include "route.h"'
-    ALLOW_FILES=( --allowlist-file '.*[/\\]iphlpapi\.h' --allowlist-file '.*[/\\]iphlpapi_undoc\.h'
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winnls.h>\n#include <ws2tcpip.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <iphlpapi.h>\n#include <iphlpapi_undoc.h>\n#include <tdiinfo.h>\n#include <tcpioctl.h>\n#include <tdilib.h>\n#include <fltdefs.h>\n#include <wine/debug.h>\n#include "resinfo.h"\n#include "dhcp.h"\n#include "ifenum.h"\n#include "ipstats.h"\n#include "route.h"\n#include "iphlpapi_private.h"'
+    # fltdefs.h: INTERFACE_HANDLE / PF_FILTER_DESCRIPTOR / PFADDRESSTYPE / PFFORWARD_ACTION /
+    # PF_INTERFACE_STATS / PF_LATEBIND_INFO / GLOBAL_FILTER — the packet-filter surface the 16
+    # Pf* exports in iphlpapi_fakestubs.c take. Needed once the flip went FULL (the island was
+    # originally built for iphlpapi_main.c alone, which touches none of them).
+    ALLOW_FILES=( --allowlist-file '.*[/\\]fltdefs\.h'
+                  --allowlist-file '.*[/\\]iphlpapi\.h' --allowlist-file '.*[/\\]iphlpapi_undoc\.h'
                   --allowlist-file '.*[/\\]iprtrmib\.h' --allowlist-file '.*[/\\]ipexport\.h'
                   --allowlist-file '.*[/\\]iptypes\.h' --allowlist-file '.*[/\\]ipmib\.h'
                   --allowlist-file '.*[/\\]tcpmib\.h' --allowlist-file '.*[/\\]udpmib\.h'
                   --allowlist-file '.*[/\\]tdiinfo\.h' --allowlist-file '.*[/\\]tcpioctl\.h'
                   --allowlist-file '.*[/\\]tdilib\.h' --allowlist-file '.*iphlpapi[/\\].*\.h'
-                  --allowlist-file '.*[/\\]ws2def\.h' --allowlist-file '.*[/\\]ws2ipdef\.h' )
+                  --allowlist-file '.*[/\\]ws2def\.h' --allowlist-file '.*[/\\]ws2ipdef\.h'
+                  --allowlist-file '.*[/\\]ipifcons\.h' --allowlist-file '.*[/\\]ifmib\.h' )
     EXTRA_INC=( -I"${SRC}/dll/win32/iphlpapi" -I"${SRC}/dll/win32/dhcpcsvc/include"
                 -I"${SRC}/sdk/lib/tdilib" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_UNICODE -DNTOS_MODE_USER
                -DGetAdaptersAddressesV2 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  # ---- Tier-2 network SERVICES (base/services/*) ----------------------------------------
+  # All six below share the easy shape netapi32 did NOT have: ONE precomp.h per module that
+  # every TU includes, so ONE bindgen island each (no TYPES_STEM split). The island is built
+  # by mirroring that precomp.h's include set verbatim — the §9.108 lesson: a TU's own include
+  # set is a guaranteed-legal wrapper, a master header (<lm.h>) is not.
+  dnsrslvr)
+    # USERMODE DNS-resolver-cache service DLL (base/services/dnsrslvr, svchost-hosted). The
+    # server SIDE of the dnsrslvr.idl interface whose CLIENT half dnsapi already speaks — so
+    # this flip closes that MIDL loop (dnsapi's rpc.c calls R_Resolver*; those land here).
+    #
+    # Type surface: windns.h (DNS_RECORDW/DNS_STATUS/DNS_CACHE_ENTRY), reactos/windns_undoc.h,
+    # dnsrslvr_s.h (the generated MIDL SERVER stubs — DNSRSLVR_HANDLE + the R_Resolver*
+    # prototypes this module DEFINES), plus the precomp-local RESOLVER_CACHE/_ENTRY structs.
+    # BLOCKLIST_FUNCS=1: windns_undoc.h/dnsrslvr_s.h declare what the translation
+    # #[no_mangle]-defines. The MIDL-generated dnsrslvr_s.c stays C and links alongside.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/dnsrslvr"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <winreg.h>\n#include <winsvc.h>\n#include <windns.h>\n#include <windns_undoc.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <ndk/obfuncs.h>\n#include <dnsrslvr_s.h>\n#include <strsafe.h>\n#include "precomp.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]windns\.h' --allowlist-file '.*[/\\]windns_undoc\.h'
+                  --allowlist-file '.*[/\\]dnsrslvr_s\.h' --allowlist-file '.*dnsrslvr[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/dnsrslvr" -I"${SRC}/build-i386/base/services/dnsrslvr"
+                -I"${SRC}/sdk/include/reactos/idl" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -DNTOS_MODE_USER -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  wkssvc)
+    # USERMODE Workstation service DLL (base/services/wkssvc). Server side of wkssvc.idl —
+    # the half netapi32's NetWksta*/NetJoinDomain client stubs call, so this closes THAT loop.
+    #
+    # Type surface: lmcons/lmerr/lmjoin/lmserver (WKSTA_INFO_*/NETSETUP_JOIN_STATUS/
+    # NET_API_STATUS), ntsecapi.h + ntmsv1_0.h (the LSA logon-package surface domain.c uses),
+    # wkssvc_s.h (generated MIDL server stubs). NOTE this deliberately includes the four
+    # lm*.h leaves and NOT the <lm.h> master header — mirroring precomp.h exactly is what
+    # makes the island legal (§9.108). wine/debug.h is parsed but NOT allowlisted; the
+    # __wine_debug_channel shim lives in the crate prelude (lsasrv/netapi32 pattern).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/wkssvc"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winerror.h>\n#include <winreg.h>\n#include <winsvc.h>\n#include <lmcons.h>\n#include <lmerr.h>\n#include <lmjoin.h>\n#include <lmserver.h>\n#include <ntsecapi.h>\n#include <ntmsv1_0.h>\n#define NTOS_MODE_USER\n#include <ndk/exfuncs.h>\n#include <ndk/obfuncs.h>\n#include <ndk/psfuncs.h>\n#include <ndk/rtlfuncs.h>\n#include <ndk/sefuncs.h>\n#include <wkssvc_s.h>\n#include <wine/debug.h>\n#include "precomp.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]lmcons\.h' --allowlist-file '.*[/\\]lmjoin\.h'
+                  --allowlist-file '.*[/\\]lmserver\.h' --allowlist-file '.*[/\\]lmerr\.h'
+                  --allowlist-file '.*[/\\]ntmsv1_0\.h' --allowlist-file '.*[/\\]ntsecapi\.h'
+                  --allowlist-file '.*[/\\]wkssvc_s\.h' --allowlist-file '.*wkssvc[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/wkssvc" -I"${SRC}/build-i386/base/services/wkssvc"
+                -I"${SRC}/sdk/include/reactos/idl" )
+    # precomp.h is in WRAPPER_INC for its four WKSTA_*_PARMNUM #defines, but it ALSO carries
+    # `extern` declarations of the four service globals. Those four are DEFINED by the Rust
+    # translation itself (wkssvc.rs: VersionInfo/LsaHandle/LsaAuthenticationPackage; info.rs:
+    # WkstaInfo502) — the crate is now the only translation unit, so the C-era cross-TU extern
+    # is vestigial. Emitting it would put an `extern "C" { static mut X }` next to the crate's
+    # own `static mut X` and collide. Blocklist the decls, keep the definitions; the prelude
+    # re-exports them so every module still sees one identity. (Same shape as dhcpcsvc's
+    # cur_time, field manual §9.108 — a vestigial extern that survived its C linkage model.)
+    EXTRA_BL_ITEMS=( VersionInfo LsaHandle LsaAuthenticationPackage WkstaInfo502 )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -DNTOS_MODE_USER -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  browser)
+    # USERMODE Computer Browser service DLL (base/services/browser, svchost-hosted). Server
+    # side of browser.idl. Tiny (410 LOC): a service-control skeleton + the RPC listener.
+    #
+    # Type surface: reactos/svc.h (SVCHOST_GLOBAL_DATA — the svchost contract this DLL is
+    # loaded under) + browser_s.h. wine/debug.h parsed-not-allowlisted (prelude shim).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/browser"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winsvc.h>\n#include <svc.h>\n#include <browser_s.h>\n#include <wine/debug.h>'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]svc\.h' --allowlist-file '.*[/\\]browser_s\.h'
+                  --allowlist-file '.*services[/\\]browser[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/browser" -I"${SRC}/build-i386/base/services/browser"
+                -I"${SRC}/sdk/include/reactos/idl" )
+    # NOTE (2026-07-19): winsvc.h/winreg.h are allowlisted above so the island carries the
+    # SERVICE_*/HKEY surface — island completeness is a CORRECTNESS property here, not a
+    # convenience: an undefined SERVICE_CONTROL_* silently becomes a catch-all `match` binding
+    # (field manual §9.112). This crate was FIRST built before that allowlist existed, so its
+    # prelude.rs ALSO hand-declares that surface (verified byte-identical to the generated
+    # values). If you regenerate this island, DELETE the duplicated hand-declarations from
+    # prelude.rs or you will get conflicting definitions.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  wlansvc)
+    # USERMODE WLAN AutoConfig service EXE (base/services/wlansvc). Server side of wlansvc.idl
+    # — the half wlanapi.dll's client stubs call. An add_executable, not a DLL: the staticlib
+    # cohabs into the EXE link exactly the same way (the winlogon-rust pattern).
+    #
+    # Type surface: wlansvc_s.h (generated MIDL server stubs + the WLAN_* wire types) + the
+    # precomp-local WLANSVCHANDLE. Uses ROS DPRINT, not wine/debug.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/wlansvc"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winsvc.h>\n#include <wlansvc_s.h>\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <ndk/obfuncs.h>\n#include "precomp.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]wlansvc_s\.h' --allowlist-file '.*[/\\]wlantypes\.h'
+                  --allowlist-file '.*wlansvc[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/wlansvc" -I"${SRC}/build-i386/base/services/wlansvc"
+                -I"${SRC}/sdk/include/reactos/idl" )
+    # NOTE (2026-07-19): winsvc.h/winreg.h are allowlisted above so the island carries the
+    # SERVICE_*/HKEY surface — island completeness is a CORRECTNESS property here, not a
+    # convenience: an undefined SERVICE_CONTROL_* silently becomes a catch-all `match` binding
+    # (field manual §9.112). This crate was FIRST built before that allowlist existed, so its
+    # prelude.rs ALSO hand-declares that surface (verified byte-identical to the generated
+    # values). If you regenerate this island, DELETE the duplicated hand-declarations from
+    # prelude.rs or you will get conflicting definitions.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -DNTOS_MODE_USER -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  tcpsvcs)
+    # USERMODE simple-TCP-services EXE (base/services/tcpsvcs) — the RFC 862/863/867/865/864
+    # quintet (echo/discard/daytime/qotd/chargen) behind one thread-per-service skeleton.
+    # A pure ws2_32 CLIENT of the winsock stack we just finished flipping, which makes it a
+    # useful end-to-end exercise of that stack rather than just more LOC.
+    #
+    # Type surface: winsock2.h (SOCKET/sockaddr_in/fd_set) + the local tcpsvcs.h (SERVICES).
+    # NO NDK — this module is pure Win32. BLOCKLIST_FUNCS=1: tcpsvcs.h declares the handlers
+    # the translation defines.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/tcpsvcs"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <winsock2.h>\n#include <tchar.h>\n#include <strsafe.h>\n#include "tcpsvcs.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]winsock2\.h' --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]inaddr\.h' --allowlist-file '.*tcpsvcs[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/tcpsvcs" )
+    # NOTE (2026-07-19): winsvc.h/winreg.h are allowlisted above so the island carries the
+    # SERVICE_*/HKEY surface — island completeness is a CORRECTNESS property here, not a
+    # convenience: an undefined SERVICE_CONTROL_* silently becomes a catch-all `match` binding
+    # (field manual §9.112). This crate was FIRST built before that allowlist existed, so its
+    # prelude.rs ALSO hand-declares that surface (verified byte-identical to the generated
+    # values). If you regenerate this island, DELETE the duplicated hand-declarations from
+    # prelude.rs or you will get conflicting definitions.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  telnetd)
+    # USERMODE telnet daemon EXE (base/services/telnetd) — RFC 854 option negotiation + a
+    # child-process console pumped over pipes. Another ws2_32 client.
+    #
+    # Type surface: winsock2.h + wincon.h (the console/pipe plumbing) + the local telnetd.h
+    # (client_s / the IAC option macros) and syslog.h. ANSI module (no UNICODE define — the
+    # C build doesn't set it here), so the char-vs-wchar surface must match: do NOT add
+    # -DUNICODE or every TCHAR type in the island silently flips width.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/services/telnetd"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <wincon.h>\n#include <winsock2.h>\n#include <strsafe.h>\n#include "telnetd.h"\n#include "syslog.h"'
+    ALLOW_FILES=(
+                  --allowlist-file '.*[/\\]winsvc\.h' --allowlist-file '.*[/\\]winreg\.h'
+--allowlist-file '.*[/\\]winsock2\.h' --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]inaddr\.h' --allowlist-file '.*telnetd[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/telnetd" )
+    # NOTE (2026-07-19): winsvc.h/winreg.h are allowlisted above so the island carries the
+    # SERVICE_*/HKEY surface — island completeness is a CORRECTNESS property here, not a
+    # convenience: an undefined SERVICE_CONTROL_* silently becomes a catch-all `match` binding
+    # (field manual §9.112). This crate was FIRST built before that allowlist existed, so its
+    # prelude.rs ALSO hand-declares that surface (verified byte-identical to the generated
+    # values). If you regenerate this island, DELETE the duplicated hand-declarations from
+    # prelude.rs or you will get conflicting definitions.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_CRT_SECURE_NO_WARNINGS -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
@@ -1007,13 +1190,72 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]usbmport\.h' )
     VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
     ;;
+  netapi32-rpc|netapi32-browser)
+    # The netapi32 RPC-STUB TAIL (browser/dssetup/misc/netlogon/schedule/srvsvc/wksta_new) —
+    # the 7 files the c2rust-anchored pass could not take. Their types come from the WIDL
+    # *_c.h client stubs, which do NOT coexist with the `netapi32` profile's <lm.h>:
+    #
+    #   <lm.h> is the LAN Manager MASTER header — it pulls lmat/lmshare/lmserver/lmwksta,
+    #   which declare AT_INFO/CONNECTION_INFO_*/SERVER_INFO_*/WKSTA_INFO_* — the SAME structs
+    #   the IDL re-declares for the wire. netapi32.h itself never includes <lm.h>: it pulls
+    #   only lmaccess/lmapibuf/lmerr and lets each *_c.h supply its own wire types. Mirroring
+    #   that narrow include set is what makes these parse (verified: all 6 interfaces).
+    #
+    # Two islands, because two pairs are genuinely irreconcilable in one TU (the C never asks
+    # for either combination):
+    #   netapi32-rpc     → srvsvc + wkssvc + atsvc + dssetup + netlogon  (serves 6 of the 7
+    #                      modules; dsrole.h is NOT included — dssetup_c.h re-declares DSROLE_*
+    #                      and netlogon.c never references them despite including it)
+    #   netapi32-browser → browser_c.h + lmbrowsr/lmserver (browser_c.h re-declares
+    #                      _SERVER_INFO_100, which collides with srvsvc_c.h)
+    # BLOCKLIST_FUNCS=1: the *_c.h declare the Netr*/Netp* client prototypes the MIDL .c stubs
+    # define (those stay C) — bindgen must not re-emit them. USERMODE=1: one NT base identity.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    CALLBACK_SYSTEM=1
+    DRIVER_DIR="${SRC}/dll/win32/netapi32"
+    _NA32_BASE=$'#include <windef.h>\n#include <winbase.h>\n#include <winsock2.h>\n#include <lmaccess.h>\n#include <lmapibuf.h>\n#include <lmerr.h>\n#include <lmcons.h>\n#include <lmjoin.h>\n#include <ntsecapi.h>\n#include <nb30.h>\n#include <iphlpapi.h>\n#include <ndk/rtlfuncs.h>\n#include <ntsam.h>\n#include <wine/debug.h>\n#include <rpc.h>\n'
+    if [ "$DRIVER" = netapi32-browser ]; then
+      WRAPPER_INC="${_NA32_BASE}"$'#include <lmbrowsr.h>\n#include <lmserver.h>\n#include "browser_c.h"'
+    else
+      WRAPPER_INC="${_NA32_BASE}"$'#include <dsgetdc.h>\n#include "srvsvc_c.h"\n#include "wkssvc_c.h"\n#include "atsvc_c.h"\n#include "dssetup_c.h"\n#include "netlogon_c.h"'
+    fi
+    # The MIDL wire types (*_c.h) PLUS the narrow set of SUPPORTING headers the 7 tail modules
+    # actually name. The `.*_c\.h`-only allowlist was too tight: the tail C files reference
+    # RPC-runtime types (RPC_STATUS/RPC_WSTR), the LM error/const surface (NERR_*, LMSTR), the
+    # DsGetDcName types (DOMAIN_CONTROLLER_INFO*/DS_DOMAIN_TRUSTS*), the LSA policy-notify enum,
+    # and NETSETUP_JOIN_STATUS — none of which any *_c.h declares, so they resolved nowhere and
+    # cost ~40 E0412/E0425. They cannot be borrowed from the sibling `types` island either:
+    # these are SEPARATE Rust modules, so a name may legitimately exist in both (the islands
+    # exist because the two C include-sets are irreconcilable in ONE TU, not because the Rust
+    # names collide). Emitting them here is what gives the tail a resolvable, EXACT layout —
+    # hand-transcribing a struct layout is never allowed.
+    ALLOW_FILES=( --allowlist-file '.*_c\.h'
+                  --allowlist-file '.*[/\\]rpcdce\.h'   --allowlist-file '.*[/\\]rpcdcep\.h'
+                  --allowlist-file '.*[/\\]rpcndr\.h'   --allowlist-file '.*[/\\]lmcons\.h'
+                  --allowlist-file '.*[/\\]lmerr\.h'    --allowlist-file '.*[/\\]lmjoin\.h'
+                  --allowlist-file '.*[/\\]dsgetdc\.h'  --allowlist-file '.*[/\\]ntsecapi\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/netapi32" -I"${SRC}/build-i386/dll/win32/netapi32" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 -DUNICODE -D_UNICODE -DNTOS_MODE_USER )
+    # both islands live in the netapi32-rust crate
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/netapi32-rust/src}"
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
 # Output crate dir defaults to main repo; override with OUT_CRATE_DIR for a worktree.
 OUT_CRATE="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/${DRIVER}-rust/src}"
 mkdir -p "$OUT_CRATE"
-WRAPPER="/tmp/${DRIVER}_types_wrapper.h"
+# TYPES_STEM: emit the island as <stem>_<arch>.rs + <stem>.rs instead of types_<arch>.rs.
+# A crate needs MORE THAN ONE island when its C translation units have mutually
+# INCOMPATIBLE include sets — the netapi32 RPC tail is the worked example: srvsvc_c.h and
+# browser_c.h each declare _SERVER_INFO_100, and dssetup_c.h re-declares dsrole.h's DSROLE_*,
+# so no single bindgen pass can cover them. One island per compatible TU group mirrors what
+# the C build already proves legal (each .c compiles), instead of fighting the redefinitions.
+STEM="${TYPES_STEM:-types}"
+WRAPPER="/tmp/${DRIVER}_${STEM}_wrapper.h"
 printf '%s\n' "$WRAPPER_INC" > "$WRAPPER"
 
 run_arch() {
@@ -1023,7 +1265,7 @@ run_arch() {
   # build-*/sdk/include is generated.
   local ARCH="$1" TARGET="$2" ARCHDEF="$3" BUILD_DIR="${BUILD_ROOT:-${BUILD_DIR_BASE:-${SRC}}}/build-${1}"
   local NTK="${NTKRNL_SYS}/bindgen_${ARCH}.rs"
-  local RAW="/tmp/${DRIVER}_types_${ARCH}.rs"
+  local RAW="/tmp/${DRIVER}_${STEM}_${ARCH}.rs"
   echo "=== ${DRIVER} types: ${ARCH} (${TARGET}) ==="
 
   # Blocklist SOURCE + re-export glob: kernel drivers blocklist against the ntkrnl-sys
@@ -1048,7 +1290,7 @@ run_arch() {
   # keep a single identity and only driver-PRIVATE structs become local here. The
   # translated modules then get private structs from `crate::types` and kernel types
   # from `ntkrnl_sys::{ddk,driver_ddk,...}`.
-  local TYPELIST="/tmp/${DRIVER}_ntktypes_${ARCH}.txt"
+  local TYPELIST="/tmp/${DRIVER}_${STEM}_ntktypes_${ARCH}.txt"
   grep -hoE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "${BLSRCS[@]}" | awk '{print $3}' | sort -u > "$TYPELIST"
   # UNBLOCK: types the shared ntkrnl-sys bindgen leaves OPAQUE (e.g. `_SCSI_REQUEST_BLOCK
   # { _address: u8 }`) — keeping them blocklisted resolves the driver's field accesses to the
@@ -1087,6 +1329,14 @@ run_arch() {
   # BLOCKLIST_FUNCS: drop every function declaration (usermode wrappers re-declare the
   # WSP* prototypes the translation defines — see the msafd case). Kernel drivers keep
   # fns (e.g. afd's c_assert) so the default leaves FN_BL empty.
+  # EXTRA_BL_ITEMS: per-profile `--blocklist-item` entries. Use for a header symbol that is
+  # DECLARED but never DEFINED anywhere in the DLL (a vestigial `extern` the upstream project
+  # left behind). Emitting such a decl is actively harmful: cross-module code silently binds to
+  # a global that does not exist (undefined symbol at DLL link), and — worse — it makes the
+  # correct translation of a same-named C LOCAL illegal, because Rust forbids a `let` binding
+  # shadowing an in-scope static (E0530). See the dhcpcsvc `cur_time` case, field manual §9.108.
+  local ITEM_BL=()
+  for _it in "${EXTRA_BL_ITEMS[@]-}"; do [ -n "$_it" ] && ITEM_BL+=( --blocklist-item "$_it" ); done
   local FN_BL=()
   if [ "${BLOCKLIST_FUNCS:-0}" = 1 ]; then FN_BL=( --blocklist-function '.*' ); fi
   # BLOCKLIST_VARS: drop every extern `static` (global variable) declaration via a post-pass
@@ -1109,7 +1359,7 @@ run_arch() {
     --use-core --no-layout-tests --no-doc-comments \
     "${MACRO_ARGS[@]}" \
     "${ALLOW_FILES[@]}" \
-    "${BL[@]}" "${FN_BL[@]}" \
+    "${BL[@]}" "${FN_BL[@]}" "${ITEM_BL[@]}" \
     --raw-line '// @generated by tools/rustconv/gen_driver_types.sh — driver-private structs.' \
     --raw-line '#![allow(non_camel_case_types, non_snake_case, dead_code)]' \
     --raw-line '// base field types resolved via the sibling -sys glob below (kernel: private' \
@@ -1136,7 +1386,7 @@ run_arch() {
   # ("re-export of private item") which poisons the whole module → every private struct
   # becomes unreachable. Y (DEVICE_POWER_STATE, POOL_TYPE, ...) is a kernel type the
   # modules import from ddk/driver_ddk anyway, so dropping the alias here is safe.
-  local FINAL="${OUT_CRATE}/types_${ARCH}.rs"
+  local FINAL="${OUT_CRATE}/${STEM}_${ARCH}.rs"
   python3 -c '
 import sys, re
 raw, final = sys.argv[1], sys.argv[2]
@@ -1198,13 +1448,13 @@ run_arch i386  i686-pc-windows-gnu    '-D_M_IX86 -D__i386__ -D_X86_'
 run_arch amd64 x86_64-pc-windows-gnu  '-D_WIN64 -D_M_AMD64 -D__x86_64__ -D_AMD64_'
 run_arch arm64 aarch64-pc-windows-gnu '-D_WIN64 -D_M_ARM64 -D__aarch64__ -D__arm64__ -D_ARM64_'
 
-# types.rs dispatches to the per-arch module.
-cat > "${OUT_CRATE}/types.rs" <<'RS'
+# <stem>.rs dispatches to the per-arch module.
+cat > "${OUT_CRATE}/${STEM}.rs" <<RS
 //! Driver-private struct layouts (exact, bindgen-generated per arch).
 //! Generated by tools/rustconv/gen_driver_types.sh. Do not edit by hand.
-#[cfg(target_arch = "x86")]      #[path = "types_i386.rs"]  mod types_arch;
-#[cfg(target_arch = "x86_64")]   #[path = "types_amd64.rs"] mod types_arch;
-#[cfg(target_arch = "aarch64")]  #[path = "types_arm64.rs"] mod types_arch;
+#[cfg(target_arch = "x86")]      #[path = "${STEM}_i386.rs"]  mod types_arch;
+#[cfg(target_arch = "x86_64")]   #[path = "${STEM}_amd64.rs"] mod types_arch;
+#[cfg(target_arch = "aarch64")]  #[path = "${STEM}_arm64.rs"] mod types_arch;
 pub use types_arch::*;
 RS
-echo "=== wrote ${OUT_CRATE}/types.rs (per-arch dispatch) ==="
+echo "=== wrote ${OUT_CRATE}/${STEM}.rs (per-arch dispatch) ==="

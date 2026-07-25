@@ -158,6 +158,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "browser-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "buslogic-rust"
 version = "0.1.0"
 dependencies = [
@@ -456,6 +464,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dhcpcsvc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "disk-rust"
 version = "0.1.0"
 dependencies = [
@@ -474,6 +490,14 @@ dependencies = [
 
 [[package]]
 name = "dnslib-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "dnsrslvr-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
@@ -2115,6 +2139,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tcpsvcs-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "telnetd-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "thiserror"
 version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2521,6 +2561,22 @@ name = "winsrv-sys"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+]
+
+[[package]]
+name = "wkssvc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "wlansvc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
 ]
 
 [[package]]

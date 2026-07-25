@@ -55,6 +55,11 @@ set(_wow64_guests
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mspaint/mspaint.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/regedit/regedit.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/winver/winver.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/taskmgr/taskmgr.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/wordpad/wordpad.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/clipbrd/clipbrd.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/osk/osk.exe
+    ${REACTOS_SOURCE_DIR}/build-i386/base/applications/magnify/magnify.exe
     ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe)
 set(_wow64_guest_ok TRUE)
 foreach(_f ${_wow64_guests})
@@ -78,6 +83,11 @@ if(_wow64_guest_ok)
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mspaint/mspaint.exe
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/regedit/regedit.exe
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/winver/winver.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/taskmgr/taskmgr.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/wordpad/wordpad.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/clipbrd/clipbrd.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/osk/osk.exe
+                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/magnify/magnify.exe
         OUTPUT_VARIABLE _wow64_closure
         ERROR_VARIABLE _wow64_closure_err
         RESULT_VARIABLE _wow64_closure_rc)
@@ -114,6 +124,14 @@ if(_wow64_guest_ok)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mspaint/mspaint.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/regedit/regedit.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/winver/winver.exe DESTINATION reactos/syswow64 FOR livecd)
+    # E9 robustness ladder: taskmgr (listview + NtQuerySystemInformation process
+    # array), wordpad (richedit/riched20 — a new control library), clipbrd
+    # (clipboard format marshalling).
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/taskmgr/taskmgr.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/wordpad/wordpad.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/clipbrd/clipbrd.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/osk/osk.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/magnify/magnify.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe DESTINATION reactos/syswow64 NAME_ON_CD doom.exe FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad DESTINATION reactos/syswow64 FOR livecd)
 endif()

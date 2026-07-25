@@ -1198,7 +1198,7 @@ pub unsafe extern "C" fn KdbEnterDebuggerException(
                     core::ptr::null_mut(),
                 )) {
                     KdbPuts(b"Couldn't restore original instruction after INT3! Cannot continue execution.\n\0".as_ptr() as PCSTR);
-                    KeBugCheck(0);
+                    KeBugCheck(0); // nolint: bugcheck-code (faithful: C kdb.c says KeBugCheck(0) // FIXME: Proper bugcode!)
                 }
 
                 KeSetContextPc(Context, KeGetContextPc(Context).wrapping_sub(1));

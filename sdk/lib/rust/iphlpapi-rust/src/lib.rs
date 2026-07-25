@@ -16,12 +16,26 @@
 #![allow(clippy::all)]
 
 pub mod types; // IP_*/MIB_*/TDI struct layouts (bindgen, per arch) + re-exported nt base types
+#[macro_use]
 pub mod prelude; // the ONE import surface: types glob + skipped consts + wine-debug + bridges
 
-// The one c2rust-anchored translation unit (iphlpapi_main.c). `iphlpapi` mirrors the C layout.
+// All 11 translation units — FULL flip. `iphlpapi` mirrors the C layout (dll/win32/iphlpapi/).
+// iphlpapi_main.c was c2rust-anchored; the other 10 are pure-LLM (DeepSeek V4-pro), except
+// iphlpapi_fakestubs which is hand-written (16 identical stub bodies — see that file).
 #[allow(clippy::module_inception)]
 pub mod iphlpapi {
+    pub mod address; // GetAdaptersAddresses + the adapter/prefix enumeration core
+    pub mod dhcp_reactos; // the DHCP-lease query shim over dhcpcsvc
+    pub mod icmp; // Icmp/Icmp6 CreateFile/SendEcho/ParseReplies
+    pub mod ifenum_reactos; // interface enumeration over TDI (the largest unit, 40 fns)
+    pub mod iphlpapi_fakestubs; // the 16 Pf* packet-filter exports (hand-written)
     pub mod iphlpapi_main; // the 74 IP-Helper entry points + qsort *Sorter comparators
+    pub mod iphlpapi_reactos; // misc ROS-native helpers
+    pub mod ipstats_reactos; // IP/TCP/UDP/ICMP stats + the arp/route/tcp/udp tables via TDI
+    pub mod media; // DisableMediaSense/RestoreMediaSense
+    pub mod registry; // the Tcpip\Parameters registry helpers
+    pub mod resinfo_reactos; // resolver info (DNS server list)
+    pub mod route_reactos; // route table add/delete over TDI
 }
 
 // staticlib (libiphlpapi_rust.a) needs a panic handler + eh personality (no_std cohab),
