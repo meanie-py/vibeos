@@ -181,6 +181,59 @@ vtable/constructor dependency.
 **Exit:** 19 source-list removals, their `*_RustBridge` declarations gone where no longer
 needed, shell32 + rshell links green, full gate ×3.
 
+## Free functions now have a paid path (2026-07-25)
+
+`translate` refused every shell32 `.cpp` that was not `--cpp-com --class <Name>`. That was
+**policy, not capability**: the scanner already has an L2 "C-as-C++" tier (uniata, udfs)
+translating `.cpp` free functions through the same per-function path, and the seal / audit /
+cache / concurrency machinery is class-agnostic. The refusal left ~34K lines of shell32 free
+functions with no paid path at any price — `shlexec`, `shlfileop`, `utils`, `filetypes`,
+`dialogs`, `brfolder`, `iconcache`, `stubs`, `debughlp`, `shlfolder`, `drive`, `general`, `view`.
+
+```bash
+python -m rustconv --arch amd64 translate dll/win32/shell32/<file>.cpp \
+    --free-functions --mode mechanical -m deepseek --seal-facts --seal-calls \
+    --concurrency 4 --cost-cap 0.50 -o ~/vibeos-rust-staging/shell32-cpp-tail/<file>.rs
+```
+
+Class methods are **skipped and named** (never silently dropped); a TU with no classless
+function refuses rather than emitting an empty module. Every COM-machinery branch keys off
+`cpp_com_mode`, so a `--free-functions` run takes the ordinary path: no scaffold, no
+`<name>_body` contract, no COM body audit, `abi_enforce` re-enabled, file globals restored to
+the prompt. Being the first caller of sealed non-COM translation surfaced three latent defects
+— field manual **§9.120** — plus the `EXTERN_C` scanner cliff (**§9.121**) that was costing
+`stubs.cpp` 2 of its 66 bodies.
+
+**`--cpp-com --class` is still the only route for a COM class.** This does not replace it.
+
+## Where every remaining TU actually stands (cpp-tu sweep, 2026-07-25)
+
+`cpp-tu` is free. Run across all 63 live TUs: **29 pass closure preflight, 34 blocked**, and the
+blockers cluster into five classes — not 34 individual problems:
+
+| Blocker | TUs | Note |
+|---|--:|---|
+| no `BEGIN_COM_MAP` | 9 | the non-activatable scaffold Wave 2 names |
+| custom/inherited base class | 11 | ATL templates (`CComObjectRootEx`, `IDispatchImpl`, `CWindowImpl`) |
+| no `OBJECT_ENTRY` activation | 5 | internal `ShellObjectCreator<T>` |
+| state field needs layout mapping | 4 | non-scalar/non-pointer members |
+| unextracted bodies | 5 | scanner coverage (one was §9.121) |
+
+"Closable" is not "translatable": a TU of pure free functions passes `cpp-tu` trivially and now
+routes via `--free-functions`, while a blocked class still needs its mapper. Extending one
+mapper unblocks several TUs at once — that is the shape of the remaining work.
+
+## Cadence: one gate per COHORT, not per TU
+
+A full `vibeos-cli gate` is ~28 minutes. The first nine retirements were landed in seven
+commits, i.e. ~3.3 hours of gate time to retire nine files, while the network lanes were landing
+10–22 TUs per commit behind a single gate. Model spend is not the constraint and never was: the
+entire shell32 COM effort — 33 classes, 9 TU retirements, 5,170 ledger units — cost **$4.46**,
+with 85% of units never reaching a model (65% cache, 20% deterministic).
+
+So: translate a whole cohort into `~/vibeos-rust-staging/shell32-cpp-tail/`, integrate together,
+gate **once**. Reserve a per-TU gate for a change that actually touches the boot path.
+
 ## Wave 2 — private/dynamic object graph (14 files, 6,485 lines)
 
 These are COM-like or C++ object implementations constructed internally rather than through
