@@ -90,8 +90,14 @@ pub const FLT_OBFL_TYPE_FILTER: u32 = 0x2000000;
 // _FLT_FILTER_FLAGS (fltmgrint.h)
 pub const FLTFL_FILTERING_INITIATED: u32 = 2;
 
-// xdk/iotypes.h
-pub const IRP_MJ_CREATE_MAILSLOT: usize = 0x13;
+// IRP_MJ_CREATE_MAILSLOT (xdk/iotypes.h) used to be duplicated here. It now lives in the
+// authoritative bindgen island (ntkrnl_sys::driver_ddk, added 2026-07-25 by 6ae2ae1931d for
+// the match-arm sweep), and BOTH are glob-imported by Interface.rs — two different items
+// under one name is `error[E0659]: ambiguous`, which broke the i386 build of this crate on
+// mainline. Deleting the local copy rather than disambiguating the use site: the DDK island
+// is the compiler-facing authority and a hand-written duplicate of a header constant is
+// exactly the drift `verify_constants` exists to prevent. The sole use site casts
+// `as usize`, so the island's `u8` spelling is equivalent there.
 
 // FLT_ASSERT(c) — debug-assert macro; no-op in retail (NDEBUG), like NT_ASSERT.
 #[inline]

@@ -191,7 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     la = sub.add_parser(
         "land",
-        help="serialized land: FIFO lock → fetch → merge master → gate → push (no gate races)",
+        help="merge queue: submit your lane; train the batch if nobody else is",
     )
     la.add_argument(
         "--retries",
@@ -200,6 +200,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="gate flake-retries (passthrough; default 2)",
     )
     la.add_argument("--clean", action="store_true", help="cold builds in the gate")
+    la.add_argument(
+        "--direct",
+        action="store_true",
+        help="bypass the merge queue: merge master + gate + push this lane alone",
+    )
+    la.add_argument(
+        "--drain",
+        action="store_true",
+        help="don't submit; just train the queue if nobody else is (orphan recovery)",
+    )
+    la.add_argument("--wait", action="store_true", help="block until this submission's verdict")
+    la.add_argument(
+        "--wait-timeout", type=float, default=3600, help="seconds for --wait (default 3600)"
+    )
     la.add_argument(
         "--no-push", action="store_true", help="do everything but the push (rehearse a landing)"
     )
@@ -216,8 +230,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     la.set_defaults(fn=land_mod.land)
 
-    ls = sub.add_parser("land-status", help="who holds the land lock + who is queued behind it")
+    ls = sub.add_parser("land-status", help="merge queue: trainer, pending submissions, verdicts")
     ls.add_argument("--json", action="store_true")
+    ls.add_argument("--mine", action="store_true", help="only this lane's verdicts")
+    ls.add_argument("--limit", type=int, default=8, help="recent verdicts to show (default 8)")
     ls.set_defaults(fn=land_mod.cmd_land_status)
 
     f = sub.add_parser(
