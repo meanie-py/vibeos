@@ -630,11 +630,13 @@ pub use crate::wine::shellole::SHCoCreateInstance;
 
 // SHELL_DataObject_ILCloneFullItem — promoted from 3 module-local definition(s).
 extern "system" {
+    #[link_name = "SHELL_DataObject_ILCloneFullItem_RustBridge"]
     pub fn SHELL_DataObject_ILCloneFullItem(pDO: *mut IDataObject, Index: UINT) -> PIDLIST_ABSOLUTE;
 }
 
 // SHELL_ErrorBox — promoted from 1 module-local definition(s).
 extern "system" {
+    #[link_name = "SHELL_ErrorBox_RustBridge"]
     pub fn SHELL_ErrorBox(hwndOwner: HWND, Error: UINT) -> UINT;
 }
 
