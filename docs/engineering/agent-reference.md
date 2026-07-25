@@ -38,6 +38,26 @@ vibeos/                          # Git repo root (renamed from reactos/)
 └── tests/qemu/                  # Smoke test framework
 ```
 
+## Landing your work — the merge queue
+
+`./vibeos-cli land` **submits** this lane's tip to the fleet's merge queue and returns in
+~2s. You do not merge `master`, do not run the gate, and do not wait. Whichever agent finds
+the land lock free becomes the **trainer**: it merges every queued lane onto current
+`origin/master` in a dedicated integration worktree, runs the full 3-arch gate **once**, and
+fast-forwards `master` to exactly the commit it gated. N ready lanes therefore cost ONE gate.
+
+```bash
+./vibeos-cli land                  # submit (and train the batch if nobody else is)
+./vibeos-cli land-status --mine    # trainer + queue + MY verdict (landed / rejected + artifact)
+./vibeos-cli land --direct         # opt out: gate and push this lane alone
+./vibeos-cli land --drain          # train without submitting (orphan recovery)
+```
+
+A merge conflict is **bounced back to you** with the conflicting paths — the trainer never
+resolves it. A red batch **splits recursively**, so innocent lanes still land and the culprit
+is rejected with its gate classification plus its artifact dir. Full design:
+`tests/qemu/cli/README.md` → `land`, and the header of `tests/qemu/cli/queue.py`.
+
 ## Build Commands
 
 **Builds run at the CANONICAL PATH** (`/tmp/vibeos` — a per-build bind mount, see
