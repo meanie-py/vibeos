@@ -2353,27 +2353,47 @@ pub unsafe extern "system" fn WinMain(
             b"magnify.exe\0".as_ptr() as *const i8,
             8_000,
         );
-        /* E11 ladder — STAGED on the livecd but NOT auto-launched yet (E13).
-         * spider/eventvwr/devmgmt/msconfig/sndrec32/kbswitch were added here to
-         * reach surface no earlier guest touched. Two of them (spider, eventvwr)
-         * immediately found a REAL pre-existing bug and BUGCHECK the box:
-         * win32k's g_MsgMemory sizes SendMessage pointer-lParam payloads with
-         * the HOST's size_of::<T>(), so a 32-bit sender's buffer is over-read
-         * -> 0x1E/C0000005 at win32k+0x258EC (raw_move <- memcpy <- g_MsgMemory
-         * <- co_IntDoSendMessage). It is timing-dependent: spider PASSed one
-         * boot and killed the next.
+        /* E11 ladder — LIVE again as of E13 (2026-07-24). These six were staged
+         * but held back because two of them (spider, eventvwr) BUGCHECKed the
+         * box: win32k's g_MsgMemory sized SendMessage pointer-lParam payloads
+         * with the HOST's size_of::<T>(), over-reading a 32-bit sender's buffer
+         * -> 0x1E/C0000005 at win32k+0x258EC. E13 fixed that in the wow64 layer
+         * (Wow64Manual_NtUserMessageCall marshals the payload AND the ResultInfo
+         * out-slot), so this block is now exactly its regression test: spider
+         * and eventvwr reach the old fault ~6 applets earlier than doom does.
          *
-         * E13 is PRE-EXISTING, not something these applets introduced: a
-         * control boot of pristine master (this batch stashed out) BUGCHECKs
-         * with the byte-identical stack at the doom/testgui rung. So the reason
-         * to hold the block is NOT "don't make it worse" — it is to PRESERVE
-         * COVERAGE: spider/eventvwr reach the fault ~6 applets EARLIER than
-         * doom does, which would stop the twelve existing rungs from ever
-         * reporting. Holding keeps that regression coverage intact until E13
-         * lands. They stay STAGED (run any by hand to repro E13 in seconds);
-         * re-enabling this block is E13's regression test. Tracked, not silent.
+         * spider     — cardlib DIB blitting (also the disproof rung for E10's
+         *              NtGdiCreateDIBSection fix)
+         * eventvwr   — listview + the first 32-bit guest to drive real RPC to a
+         *              64-bit service; owner-draw is what found E13
+         * devmgmt    — setupapi device enumeration
+         * msconfig   — comctl32 property sheets
+         * sndrec32   — winmm
+         * kbswitch   — shell tray-icon IPC */
+        TryStartWow64StockApp(
+            wstr!("spider.exe").as_ptr(),
+            b"spider.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        TryStartWow64StockApp(
+            wstr!("eventvwr.exe").as_ptr(),
+            b"eventvwr.exe\0".as_ptr() as *const i8,
+            8_000,
+        );
+        /* devmgmt / msconfig / sndrec32 / kbswitch are STAGED but still held.
+         * With E13 fixed the ladder reached devmgmt for the FIRST time ever —
+         * and it BUGCHECKs 0x1E/C0000005 there (task #67). That is a NEW bug on
+         * newly-reachable surface, not an E13 regression: the old E13 signature
+         * (raw_move <- memcpy <- g_MsgMemory <- co_IntDoSendMessage) is now
+         * absent from the log entirely, and spider/eventvwr — the two that used
+         * to kill the box — both PASS.
          *
-         * for app in [spider, eventvwr, devmgmt, msconfig, sndrec32, kbswitch]:
+         * Same coverage argument as before: devmgmt sits ahead of testgui/doom,
+         * so auto-launching it would stop the sixteen rungs that now pass from
+         * ever reporting. Run `devmgmt.exe` from reactos\syswow64 by hand to
+         * repro. Re-enabling these four is #67's regression test.
+         *
+         * for app in [devmgmt, msconfig, sndrec32, kbswitch]:
          *     TryStartWow64StockApp(app, label, 8_000);
          */
         /* E4b: same mutual-occlusion rule as the arm64 ladder — when doom is

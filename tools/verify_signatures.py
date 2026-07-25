@@ -66,14 +66,20 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO = SCRIPT_DIR.parent  # tools/ -> repo root
 
 
-def _find_toolchain() -> tuple[Path, Path]:
-    """Return (clang_path, repo_with_build_dirs). Prefer this repo; fall back to
-    sibling vibeos checkouts that have .build-tools + build-<arch>/."""
+def _candidate_repos() -> list[Path]:
+    """This repo, then sibling vibeos checkouts carrying shared build infra."""
     candidates = [REPO]
     parent = REPO.parent
     for sib in sorted(parent.iterdir()) if parent.exists() else []:
         if sib != REPO and sib.is_dir() and (sib / ".build-tools").exists():
             candidates.append(sib)
+    return candidates
+
+
+def _find_toolchain() -> tuple[Path, Path]:
+    """Return (clang_path, repo_with_build_dirs). Prefer this repo; fall back to
+    sibling vibeos checkouts that have .build-tools + build-<arch>/."""
+    candidates = _candidate_repos()
     clang = None
     for c in candidates:
         cand = c / ".build-tools/llvm-mingw/bin/clang"
@@ -94,6 +100,34 @@ def _find_toolchain() -> tuple[Path, Path]:
     if build_repo is None:
         build_repo = REPO
     return clang, build_repo
+
+
+def resolve_build_repo(arch_name: str) -> Path:
+    """THIS repo's build-<arch_name>/ — the generated headers this tool needs.
+
+    Deliberately NO sibling fallback. The toolchain (a pinned clang binary) is
+    genuinely shared infrastructure, but these headers are generated from source
+    at a specific commit: reading another worktree's build tree compares THIS
+    tree's Rust against ANOTHER lane's C, so the verdict silently depends on which
+    sibling checkouts happen to exist and what state they are in. That is not a
+    gate. (Observed 2026-07-24: the arch-blind sibling search picked
+    vibeos-conformance/build-amd64 and the mismatch count moved 987 -> 9 without a
+    single source line changing.)
+
+    HARD FAIL when it is absent. Without the headers clang falls back to
+    implicit-int declarations (`int f(VOID *)` for a `VOID f(VOID)`) and EVERY
+    exported function looks mismatched — the silent degradation AGENTS.md forbids.
+    """
+    if (REPO / f"build-{arch_name}").is_dir():
+        return REPO
+    sys.exit(
+        f"FATAL: {REPO}/build-{arch_name} not found. verify_signatures needs the\n"
+        f"generated headers from THIS worktree's configured build tree; without\n"
+        f"them clang emits implicit-int declarations and every signature looks\n"
+        f"mismatched. A sibling worktree's build tree is NOT a substitute — it is\n"
+        f"another lane's source at another commit.\n"
+        f"  fix: ./vibeos-cli build --arch {arch_name}"
+    )
 
 
 CLANG, BUILD_REPO = _find_toolchain()
@@ -130,7 +164,7 @@ ARCHS = {
 
 
 def get_include_flags(arch_name: str) -> list[str]:
-    R = BUILD_REPO
+    R = resolve_build_repo(arch_name)
     build_dir = R / f"build-{arch_name}"
     flags = [
         "-I",
@@ -776,7 +810,7 @@ def main():
     arch = ARCHS[args.arch]
     print(f"=== verify_signatures — arch={args.arch} ===")
     print(f"clang:  {CLANG}")
-    print(f"headers: {BUILD_REPO}/build-{args.arch}")
+    print(f"headers: {resolve_build_repo(args.arch)}/build-{args.arch}")
     print(f"crates: {', '.join(str(c) for c in crate_dirs)}")
     print()
 

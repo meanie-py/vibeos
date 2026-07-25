@@ -1,0 +1,2437 @@
+#!/usr/bin/env python3
+"""Derive a ``gen_driver_types.sh`` bindgen-island profile from a module's REAL
+build inputs — its CMakeLists source list plus each compiled TU's own transitive
+include closure — instead of hand-reading ``precomp.h``.
+
+WHY THIS EXISTS
+===============
+Every C module we translate needs a per-module bindgen "island" of struct layouts
+and constants, driven by a hand-authored profile in ``tools/rustconv/gen_driver_types.sh``.
+Hand-authoring cost real debugging time twice, in two directions:
+
+1. **An INCOMPLETE island is a CORRECTNESS bug, not a compile error**
+   (field manual §9.112). A missing *type* is a loud ``E0412``. A missing
+   *constant* is loud only in VALUE position — in ``match`` PATTERN position a bare
+   unresolved identifier silently becomes a fresh irrefutable BINDING that matches
+   EVERYTHING, collapsing a C ``switch`` into its first arm. That shipped a real
+   BUGCHECK 0x1E, then recurred in ``browser``/``wlansvc`` (whose islands lacked
+   ``winsvc.h``, so every SERVICE_CONTROL_* fell into the STOP arm). So: the header
+   that owns a constant any translated ``switch`` dispatches on MUST be allowlisted.
+   ``tools/verify_match_consts.py`` is the gated oracle for the *symptom*; this
+   module attacks the *cause*, which is cheaper and durable.
+
+2. **A multi-header redefinition wall is a claim about YOUR WRAPPER, not about the
+   headers** (field manual §9.108). The recorded "6 mutually-conflicting MIDL
+   interfaces" blocker in ``netapi32`` was a misdiagnosis that deferred real work
+   twice: the actual conflict was the ``<lm.h>`` MASTER header versus the WIDL
+   stubs. The fix is to mirror each translation unit's REAL include set — *if a
+   ``.c`` compiles, its include set is bindgen-able* — and to split into separate
+   ``TYPES_STEM`` islands only for the rare pair that genuinely collides.
+
+Both failure modes are mechanizable, because the ground truth is already in the
+tree: the CMakeLists says which TUs are actually compiled (files can exist on disk
+and be dead source — last batch a translation paid for a file nobody compiles), and
+each TU's ``#include`` prologue says what its island may legally contain.
+
+Deriving the allowlist FROM the closure also buys a property the hand-written profiles
+have to remember by hand: ``--allowlist-file`` can only FILTER types bindgen actually
+parsed, never emit unreached ones (see the classpnp/disk/cdrom profile comments, which
+pull extra headers explicitly for exactly this reason). Every header this module
+allowlists is reachable from the emitted wrapper by construction.
+
+WHAT IT DOES NOT DO
+===================
+It is not a C preprocessor. The include walker is lexical and deliberately
+OVER-approximates (it follows both arms of a conditional), because for an allowlist
+the safe direction is "too many headers", never "too few". It never silently drops
+an include it cannot resolve: unresolved includes raise :class:`ProfileDeriveError`
+(``--allow-unresolved`` demotes them to loud findings) rather than producing a
+partial profile that looks complete.
+
+CLI
+===
+    python -m rustconv.profile_derive dll/win32/wlanapi            # report + profile
+    python -m rustconv.profile_derive dll/win32/wlanapi --emit profile
+    python -m rustconv.profile_derive drivers/network/dd/rtl8139 --emit json
+    python -m rustconv.profile_derive dll/win32/snmpapi --scaffold-dir /tmp/snmpapi-rust
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Errors + findings
+# ---------------------------------------------------------------------------
+
+
+class ProfileDeriveError(RuntimeError):
+    """A derivation could not be completed on inputs it cannot guess at.
+
+    Raised instead of emitting a partial profile: a profile that looks complete but
+    silently omits a header is exactly the §9.112 failure mode this module exists to
+    prevent (AGENTS.md "fail loud, never silently degrade").
+    """
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One reviewable observation. ``severity`` ∈ {error, warn, info}."""
+
+    severity: str
+    code: str
+    detail: str
+
+    def __str__(self) -> str:
+        mark = {"error": "✗", "warn": "!", "info": "·"}.get(self.severity, "?")
+        return f"  {mark} {self.severity.upper():5s} {self.code}: {self.detail}"
+
+
+# ---------------------------------------------------------------------------
+# Header classification policy
+# ---------------------------------------------------------------------------
+
+# Headers whose contents are ALREADY a single identity in the sibling -sys crate
+# (ntdll-sys for usermode, ntkrnl-sys for kernel), so allowlisting them would
+# re-emit a second local copy of the base platform. Mirrors what every hand-written
+# profile in gen_driver_types.sh does: blocklist the base, allowlist the domain.
+BASE_PLATFORM_HEADERS = frozenset(
+    {
+        # Win32 base
+        "windows.h",
+        "windef.h",
+        "winbase.h",
+        "winnt.h",
+        "wincon.h",
+        "winuser.h",
+        "wtypes.h",
+        "wtypesbase.h",
+        "basetsd.h",
+        "guiddef.h",
+        "specstrings.h",
+        "sal.h",
+        "excpt.h",
+        "poppack.h",
+        "pshpack1.h",
+        "pshpack2.h",
+        "pshpack4.h",
+        "pshpack8.h",
+        "winapifamily.h",
+        "apiset.h",
+        "concurrencysal.h",
+        # NT / kernel base
+        "ntdef.h",
+        "ntstatus.h",
+        "ntddk.h",
+        "wdm.h",
+        "ntifs.h",
+        "ntoskrnl.h",
+        "ntndk.h",
+        "ndk.h",
+        # debug channels — deliberately PARSED but never allowlisted; the no-op
+        # TRACE/ERR/WARN macros live in the crate prelude (field manual §9.65).
+        "debug.h",
+    }
+)
+
+# Pure CRT/toolchain headers. Resolved for the closure when present in-tree, but
+# never allowlisted and never an error when they resolve only inside the toolchain.
+CRT_HEADERS = frozenset(
+    {
+        "assert.h",
+        "ctype.h",
+        "errno.h",
+        "float.h",
+        "limits.h",
+        "locale.h",
+        "math.h",
+        "setjmp.h",
+        "signal.h",
+        "stdarg.h",
+        "stdbool.h",
+        "stddef.h",
+        "stdint.h",
+        "stdio.h",
+        "stdlib.h",
+        "string.h",
+        "time.h",
+        "wchar.h",
+        "wctype.h",
+        "intrin.h",
+        "immintrin.h",
+        "emmintrin.h",
+        "xmmintrin.h",
+        "malloc.h",
+        "memory.h",
+        "process.h",
+        "io.h",
+        "conio.h",
+        "direct.h",
+        "share.h",
+        "sys/stat.h",
+        "sys/types.h",
+        "sys/timeb.h",
+        "vadefs.h",
+        "crtdefs.h",
+        "corecrt.h",
+    }
+)
+
+# CMake module types that build usermode images (USERMODE=1 in gen_driver_types.sh);
+# everything else in VALID_MODULE_TYPES is kernel-side. From sdk/cmake/CMakeMacros.cmake.
+KERNEL_MODULE_TYPES = frozenset(
+    {"kernel", "kerneldll", "kernelmodedriver", "kmdfdriver", "wdmdriver"}
+)
+USERMODE_MODULE_TYPES = frozenset(
+    {"nativecui", "nativedll", "win32cui", "win32gui", "win32dll", "win32ocx", "cpl", "module"}
+)
+
+ARCHES = ("i386", "amd64", "arm64")
+
+_INCLUDE_RE = re.compile(r'^\s*#\s*include\s+(?:(<[^>]+>)|("[^"]+"))')
+_INCLUDE_MACRO_RE = re.compile(r"^\s*#\s*include\s+([A-Za-z_]\w*)")
+_DIRECTIVE_RE = re.compile(r"^\s*#\s*(\w+)")
+_COND_DIRECTIVES = frozenset({"if", "ifdef", "ifndef", "else", "elif", "endif"})
+
+
+# ---------------------------------------------------------------------------
+# Data model
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Include:
+    """One ``#include`` occurrence, as written."""
+
+    spelling: str  # "<ndis.h>" / "\"nic.h\"" — reproduced verbatim in the wrapper
+    name: str  # "ndis.h"
+    angled: bool
+    line: int
+    # Inside an ``#if``/``#ifdef`` (the file's own include guard does NOT count). A
+    # conditional include that fails to resolve is almost always a dead platform arm
+    # (``rpcmac.h``, ``intrin_mips.h``); an UNCONDITIONAL one that fails to resolve means
+    # our search path is wrong and the closure is genuinely incomplete.
+    conditional: bool = False
+
+
+@dataclass
+class HeaderRef:
+    """A header reached by the include walk, with the evidence for why it is in."""
+
+    path: Path
+    name: str
+    kind: str  # module | generated | idl | sdk | crt | toolchain
+    depth: int  # 1 = directly included by a TU
+    includers: list[str] = field(default_factory=list)
+    tus: set[str] = field(default_factory=set)
+
+
+@dataclass(frozen=True)
+class Unresolved:
+    """An include the walker could not resolve — never silently dropped."""
+
+    name: str
+    includer: str
+    line: int
+    reason: str
+    conditional: bool = False
+
+
+@dataclass
+class SourceEntry:
+    """One entry of a CMake target's source list."""
+
+    raw: str
+    path: Path | None  # None for generated (binary-dir) entries
+    kind: str  # tu | generated | header | resource | def | unknown
+    condition: str | None = None  # unresolved `if(...)` guard, if any
+
+
+@dataclass
+class CMakeModule:
+    """What the module's CMakeLists actually says is compiled."""
+
+    cmake: Path
+    module_dir: Path
+    name: str
+    target_kind: str  # library | executable
+    module_type: str | None
+    unicode: bool
+    entries: list[SourceEntry] = field(default_factory=list)
+    definitions: list[str] = field(default_factory=list)
+    removed_definitions: list[str] = field(default_factory=list)
+    include_dirs: list[Path] = field(default_factory=list)
+    pch_header: Path | None = None
+    rpc_interfaces: list[str] = field(default_factory=list)
+    dead_sources: list[Path] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
+    # Set by --usermode/--kernel. A target with no set_module_type() cannot be
+    # classified from the CMakeLists at all — a static library shared between DLLs
+    # (msvcrt_static, feeding msvcrt.dll/msvcrt20.dll/msvcrt40.dll) never calls it,
+    # and it is exactly such a target that owns the C in a cohab module.
+    usermode_override: bool | None = None
+
+    @property
+    def compiled_tus(self) -> list[Path]:
+        """In-tree TUs actually compiled — the translation surface."""
+        return [e.path for e in self.entries if e.kind == "tu" and e.path is not None]
+
+    @property
+    def generated_sources(self) -> list[str]:
+        """Binary-dir sources (MIDL/spec2def products). They stay C; never translate them."""
+        return [
+            e.raw.replace("${CMAKE_CURRENT_BINARY_DIR}/", "")
+            for e in self.entries
+            if e.kind == "generated"
+        ]
+
+    @property
+    def is_usermode(self) -> bool:
+        if self.usermode_override is not None:
+            return self.usermode_override
+        if self.module_type is None:
+            raise ProfileDeriveError(
+                f"{self.cmake}: no set_module_type() found for target {self.name!r}; cannot tell "
+                "kernel from usermode (USERMODE= in the profile). Pass --usermode or --kernel."
+            )
+        if self.module_type in KERNEL_MODULE_TYPES:
+            return False
+        if self.module_type in USERMODE_MODULE_TYPES:
+            return True
+        raise ProfileDeriveError(
+            f"{self.cmake}: unknown module type {self.module_type!r} for target {self.name!r}"
+        )
+
+
+@dataclass
+class IncludeEnv:
+    """Include search path, in the order the real compile uses it."""
+
+    repo_root: Path
+    arch: str
+    module_dir: Path
+    build_dir: Path | None
+    search: list[tuple[Path, str]] = field(default_factory=list)  # (dir, kind)
+
+    def classify(self, path: Path) -> str:
+        """Kind of a resolved header, by which search root owns it.
+
+        ``generated`` is deliberately scoped to the MODULE's own binary dir (its MIDL
+        ``*_c.h``/``*_s.h``). ``build-<arch>/sdk/include`` is NOT module-generated —
+        large parts of psdk (``winnt.h``, ``oaidl.h``, ``urlmon.h``, every WIDL product)
+        are configure-generated there, and treating those as module-adjacent bloats the
+        allowlist with the whole COM/OLE platform.
+        """
+        if _is_within(path, self.module_dir):
+            return "module"
+        if self.module_build_dir is not None and _is_within(path, self.module_build_dir):
+            return "generated"
+        parts = path.parts
+        if "idl" in parts:
+            return "idl"
+        if Path(path.name).name in CRT_HEADERS or "crt" in parts or "vcruntime" in parts:
+            return "crt"
+        return "sdk"
+
+    @property
+    def module_build_dir(self) -> Path | None:
+        if self.build_dir is None:
+            return None
+        return self.build_dir / self.module_dir.relative_to(self.repo_root)
+
+    def resolvable_by_name(self, path: Path, spelled: str) -> bool:
+        """True if ``#include <spelled>`` finds *path* from a standard search dir.
+
+        Guards against emitting a pointless ``-I`` for a SUBDIR-qualified spelling
+        (``sec_api/stdio_s.h``, ``psdk/winnt.h``) whose parent directory is not itself
+        on the search path — and never needs to be.
+        """
+        return any((d / spelled).resolve() == path for d, _ in self.search)
+
+
+@dataclass
+class Closure:
+    """The transitive include closure of one or more TUs."""
+
+    headers: dict[Path, HeaderRef] = field(default_factory=dict)
+    unresolved: list[Unresolved] = field(default_factory=list)
+    per_tu: dict[str, set[Path]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SwitchConst:
+    """An identifier used as a ``case`` label — the §9.112 hazard surface."""
+
+    ident: str
+    tu: str
+    line: int
+
+
+@dataclass
+class ConstOwner:
+    """Where a switch constant is defined, and whether the island will carry it."""
+
+    ident: str
+    owner: Path | None
+    owner_kind: str  # header | tu-local | sys-crate | UNOWNED
+    definition: str | None
+    macro_kind: str  # literal | expression | function-like | enum | n/a
+    allowlisted: bool = False
+    # Already exported by the sibling -sys crate (ntdll-sys / ntkrnl-sys): it resolves
+    # through that crate's glob, so its owning header needs NO allowlist entry. Checking
+    # this is what keeps `winerror.h`-sized headers out of a profile that does not need
+    # them, while still force-adding the ones the -sys crate genuinely lacks.
+    in_sys: bool = False
+    # which -sys island provides it: the primary `bindgen_<arch>`/`bindgen_common` (reachable
+    # through the glob the generated island re-exports) or a SECONDARY one such as
+    # `hal_bindgen_<arch>` (reachable only via its own module path, e.g. ntkrnl_sys::hal_ddk)
+    sys_source: str | None = None
+
+
+@dataclass
+class Island:
+    """One bindgen island: a group of TUs whose include sets are mutually legal.
+
+    Each island carries its OWN wrapper: the union of every TU's prologue would re-create
+    exactly the redefinition wall the split exists to avoid (§9.108).
+    """
+
+    stem: str
+    tus: list[str]
+    allow_files: list[str]
+    reason: str
+    wrapper_inc: list[str] = field(default_factory=list)
+    label: str = ""  # the DRIVER argument gen_driver_types.sh is invoked with
+
+
+@dataclass
+class DerivedProfile:
+    """Everything the integrator needs, plus the evidence for every decision."""
+
+    module: CMakeModule
+    env: IncludeEnv
+    closure: Closure
+    switch_consts: list[SwitchConst]
+    const_owners: list[ConstOwner]
+    islands: list[Island]
+    wrapper_inc: list[str]
+    allow_files: list[str]
+    extra_inc: list[str]
+    ver_defs: list[str]
+    allow_reasons: dict[str, str] = field(default_factory=dict)
+    excluded: dict[str, str] = field(default_factory=dict)
+    findings: list[Finding] = field(default_factory=list)
+    compile_db_used: Path | None = None
+
+    @property
+    def crate_name(self) -> str:
+        return f"{self.module.name}-rust"
+
+    @property
+    def errors(self) -> list[Finding]:
+        return [f for f in self.findings if f.severity == "error"]
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _rel(path: Path, root: Path) -> str:
+    return str(path.relative_to(root)) if _is_within(path, root) else str(path)
+
+
+def _hdr_regex(name: str) -> str:
+    """``ntddndis.h`` -> ``.*[/\\]ntddndis\\.h`` — the ALLOW_FILES spelling in use."""
+    return r".*[/\\]" + re.escape(name).replace("/", r"[/\\]")
+
+
+# ---------------------------------------------------------------------------
+# CMakeLists parsing — "which TUs are ACTUALLY compiled"
+# ---------------------------------------------------------------------------
+
+
+def _strip_cmake_comments(text: str) -> str:
+    out: list[str] = []
+    for line in text.splitlines():
+        in_str = False
+        cut = len(line)
+        for i, ch in enumerate(line):
+            if ch == '"':
+                in_str = not in_str
+            elif ch == "#" and not in_str:
+                cut = i
+                break
+        out.append(line[:cut])
+    return "\n".join(out)
+
+
+def _cmake_commands(text: str) -> list[tuple[str, str, int]]:
+    """Yield ``(command, raw-args, line)`` honouring nested parens and strings."""
+    cmds: list[tuple[str, str, int]] = []
+    i = 0
+    n = len(text)
+    name_re = re.compile(r"([A-Za-z_]\w*)\s*\(")
+    while i < n:
+        m = name_re.search(text, i)
+        if m is None:
+            break
+        depth = 1
+        j = m.end()
+        in_str = False
+        while j < n and depth:
+            ch = text[j]
+            if ch == '"':
+                in_str = not in_str
+            elif not in_str and ch == "(":
+                depth += 1
+            elif not in_str and ch == ")":
+                depth -= 1
+            j += 1
+        cmds.append((m.group(1).lower(), text[m.end() : j - 1], text.count("\n", 0, m.start()) + 1))
+        i = j
+    return cmds
+
+
+def _split_args(raw: str) -> list[str]:
+    return [a for a in re.split(r"\s+", raw.replace("\n", " ").strip()) if a]
+
+
+def _expand(value: str, vars_: dict[str, list[str]]) -> list[str]:
+    """Expand ``${VAR}`` (list-valued) with a depth cap; unknown vars stay literal."""
+    for _ in range(8):
+        m = re.search(r"\$\{(\w+)\}", value)
+        if m is None:
+            return [value.strip('"')] if value.strip('"') else []
+        var = m.group(1)
+        if var not in vars_:
+            return [value.strip('"')] if value.strip('"') else []
+        repl = vars_[var]
+        head, tail = value[: m.start()], value[m.end() :]
+        if len(repl) == 1:
+            value = head + repl[0] + tail
+            continue
+        return [x for r in repl for x in _expand(head + r + tail, vars_)]
+    return [value.strip('"')]
+
+
+def _classify_entry(raw: str, module_dir: Path, cond: str | None) -> SourceEntry:
+    low = raw.lower()
+    if "cmake_current_binary_dir" in low or low.startswith("${cmake_binary_dir}"):
+        kind = "generated"
+        if low.endswith(".def"):
+            kind = "def"
+        return SourceEntry(raw, None, kind, cond)
+    if low.endswith((".c", ".cpp", ".cc", ".cxx")):
+        return SourceEntry(raw, (module_dir / raw).resolve(), "tu", cond)
+    if low.endswith((".h", ".hpp")):
+        return SourceEntry(raw, (module_dir / raw).resolve(), "header", cond)
+    if low.endswith(".rc"):
+        return SourceEntry(raw, (module_dir / raw).resolve(), "resource", cond)
+    return SourceEntry(raw, None, "unknown", cond)
+
+
+def _targets_compiling_c(
+    cmake: Path, repo_root: Path, arch: str, exclude: str
+) -> list[tuple[str, int]]:
+    """Sibling targets in `cmake` that DO compile in-tree .c, as (name, count).
+
+    Best-effort: a target that fails to parse is simply not offered as a suggestion.
+    """
+    out: list[tuple[str, int]] = []
+    try:
+        names = sorted(_target_names(cmake))
+    except ProfileDeriveError:
+        return out
+    for name in names:
+        if name == exclude:
+            continue
+        try:
+            sibling = parse_cmakelists(cmake, repo_root, arch=arch, target=name)
+        except ProfileDeriveError:
+            continue
+        count = sum(1 for p in sibling.compiled_tus if p.is_file())
+        if count:
+            out.append((name, count))
+    out.sort(key=lambda item: -item[1])
+    return out
+
+
+def _target_names(cmake: Path) -> set[str]:
+    """Every add_library()/add_executable() target name in a CMakeLists."""
+    if not cmake.is_file():
+        raise ProfileDeriveError(f"no CMakeLists.txt at {cmake}")
+    text = _strip_cmake_comments(_read(cmake))
+    return {
+        m.group(2)
+        for m in re.finditer(r"\b(add_library|add_executable)\s*\(\s*([A-Za-z0-9_${}]+)", text)
+        if not m.group(2).startswith("$")
+    }
+
+
+def parse_cmakelists(
+    cmake: Path,
+    repo_root: Path,
+    arch: str = "i386",
+    target: str | None = None,
+) -> CMakeModule:
+    """Parse a module's CMakeLists into the set of TUs the build ACTUALLY compiles.
+
+    Only a tiny CMake subset is interpreted (``set``/``list(APPEND)``,
+    ``add_library``/``add_executable``, ``set_module_type``, ``add_definitions``,
+    ``remove_definitions``, ``include_directories``, ``add_pch``, ``add_rpc_files``).
+    ``if(ARCH STREQUAL "<a>")`` is resolved against *arch*; any OTHER conditional keeps
+    its sources but records the guard on the entry, so a conditional source can never
+    masquerade as unconditionally compiled.
+    """
+    if not cmake.is_file():
+        raise ProfileDeriveError(f"no CMakeLists.txt at {cmake}")
+    module_dir = cmake.parent
+    text = _strip_cmake_comments(_read(cmake))
+    vars_: dict[str, list[str]] = {
+        "CMAKE_CURRENT_SOURCE_DIR": [str(module_dir)],
+        "REACTOS_SOURCE_DIR": [str(repo_root)],
+        "CMAKE_SOURCE_DIR": [str(repo_root)],
+        "ARCH": [arch],
+    }
+    findings: list[Finding] = []
+    # (condition-text or None) stack; None = statically true.
+    cond_stack: list[str | None] = []
+    entries_by_var: dict[str, list[SourceEntry]] = {}
+    targets: dict[str, tuple[str, list[str]]] = {}
+    definitions: list[str] = []
+    per_target_defs: dict[str, list[str]] = {}
+    removed: list[str] = []
+    include_dirs: list[Path] = []
+    module_types: dict[str, tuple[str, bool]] = {}
+    pch: Path | None = None
+    rpc: list[str] = []
+
+    def cond() -> str | None:
+        live = [c for c in cond_stack if c]
+        return " && ".join(live) if live else None
+
+    for name, raw, _line in _cmake_commands(text):
+        args_raw = _split_args(raw)
+        if name == "if":
+            m = re.match(r'ARCH\s+STREQUAL\s+"?(\w+)"?', raw.strip())
+            if m:
+                cond_stack.append(None if m.group(1) == arch else "__dead__")
+            else:
+                cond_stack.append(raw.strip())
+            continue
+        if name in ("elseif", "else"):
+            if cond_stack:
+                cond_stack[-1] = raw.strip() or "else"
+            continue
+        if name == "endif":
+            if cond_stack:
+                cond_stack.pop()
+            continue
+        if cond_stack and "__dead__" in cond_stack:
+            continue  # a resolved-false ARCH branch: those sources are not compiled here
+        args = [x for a in args_raw for x in _expand(a, vars_)]
+        if name == "set" and args:
+            vars_[args_raw[0]] = args[1:]
+        elif name == "list" and len(args_raw) >= 2 and args_raw[0].upper() == "APPEND":
+            var = args_raw[1]
+            vals = [x for a in args_raw[2:] for x in _expand(a, vars_)]
+            vars_.setdefault(var, []).extend(vals)
+            entries_by_var.setdefault(var, []).extend(
+                _classify_entry(v, module_dir, cond()) for v in vals
+            )
+        elif name in ("add_library", "add_executable") and args_raw:
+            tgt = args[0]
+            srcs = [a for a in args_raw[1:] if a not in ("MODULE", "SHARED", "STATIC", "WIN32")]
+            targets[tgt] = ("library" if name == "add_library" else "executable", srcs)
+        elif name == "set_module_type" and len(args) >= 2:
+            module_types[args[0]] = (args[1], any(a.upper() == "UNICODE" for a in args[2:]))
+        elif name == "add_definitions":
+            definitions.extend(a for a in args if a.startswith("-D"))
+        elif name == "target_compile_definitions" and len(args) >= 2:
+            # `target_compile_definitions(disk PUBLIC _WIN32_WINNT=0x602 …)` — spelled WITHOUT
+            # the -D and per target. `disk` carries its whole Win8 version profile this way, so
+            # skipping it would silently derive the wrong struct layouts in a no-compile-db tree.
+            per_target_defs.setdefault(args[0], []).extend(
+                f"-D{a}" for a in args[1:] if a.upper() not in ("PUBLIC", "PRIVATE", "INTERFACE")
+            )
+        elif name == "remove_definitions":
+            removed.extend(a for a in args if a.startswith("-D"))
+        elif name == "include_directories":
+            include_dirs.extend(Path(a) for a in args if not a.startswith(("BEFORE", "AFTER")))
+        elif name == "add_pch" and len(args) >= 2:
+            pch = (module_dir / args[1]).resolve()
+        elif name == "add_rpc_files" and len(args) >= 2:
+            rpc.extend(args[1:])
+
+    if not targets:
+        raise ProfileDeriveError(f"{cmake}: no add_library()/add_executable() found")
+    if target is None:
+        if len(targets) == 1:
+            target = next(iter(targets))
+        elif module_dir.name in targets:
+            target = module_dir.name
+        else:
+            raise ProfileDeriveError(
+                f"{cmake}: {len(targets)} targets ({', '.join(sorted(targets))}); "
+                "pass --target to say which one owns the island"
+            )
+    if target not in targets:
+        raise ProfileDeriveError(f"{cmake}: no target {target!r} (have: {', '.join(targets)})")
+
+    target_kind, src_args = targets[target]
+    entries: list[SourceEntry] = []
+    seen: set[str] = set()
+    for a in src_args:
+        m = re.fullmatch(r"\$\{(\w+)\}", a)
+        expanded_entries = (
+            entries_by_var.get(m.group(1), []) if m else [_classify_entry(a, module_dir, None)]
+        )
+        if m and m.group(1) not in entries_by_var and m.group(1) in vars_:
+            expanded_entries = [_classify_entry(v, module_dir, None) for v in vars_[m.group(1)]]
+        for e in expanded_entries:
+            if e.raw in seen:
+                continue
+            seen.add(e.raw)
+            entries.append(e)
+
+    definitions.extend(per_target_defs.get(target, []))
+    mt = module_types.get(target)
+    module = CMakeModule(
+        cmake=cmake,
+        module_dir=module_dir,
+        name=target,
+        target_kind=target_kind,
+        module_type=mt[0] if mt else None,
+        unicode=bool(mt and mt[1]),
+        entries=entries,
+        definitions=definitions,
+        removed_definitions=removed,
+        include_dirs=include_dirs,
+        pch_header=pch,
+        rpc_interfaces=rpc,
+        findings=findings,
+    )
+
+    # Dead source: on disk, absent from the compiled list. Translating one of these
+    # is paid-for work that nobody links (it happened last batch).
+    compiled = {p.resolve() for p in module.compiled_tus}
+    for cand in sorted(module_dir.rglob("*.c")) + sorted(module_dir.rglob("*.cpp")):
+        if any(part in {"tests", "test", "build", ".git"} for part in cand.parts):
+            continue
+        if cand.resolve() not in compiled:
+            module.dead_sources.append(cand)
+    if module.dead_sources:
+        findings.append(
+            Finding(
+                "warn",
+                "DEAD_SOURCE",
+                f"{len(module.dead_sources)} .c on disk are NOT in the source list: nothing "
+                "compiles them, so do not pay to translate them (they are dead source, or "
+                "already Rust-flipped and kept per the never-delete rule): "
+                + ", ".join(_rel(p, repo_root) for p in module.dead_sources[:6]),
+            )
+        )
+    for e in entries:
+        if e.kind == "tu" and e.condition:
+            findings.append(
+                Finding(
+                    "warn",
+                    "CONDITIONAL_SOURCE",
+                    f"{e.raw} is compiled only under `{e.condition}` — confirm before translating",
+                )
+            )
+        if e.kind == "tu" and e.path is not None and not e.path.is_file():
+            findings.append(
+                Finding("error", "MISSING_SOURCE", f"{e.raw} is in the source list but not on disk")
+            )
+    return module
+
+
+# ---------------------------------------------------------------------------
+# Include closure
+# ---------------------------------------------------------------------------
+
+
+def build_include_env(
+    repo_root: Path,
+    module: CMakeModule,
+    arch: str = "i386",
+    extra_dirs: tuple[Path, ...] = (),
+) -> IncludeEnv:
+    """Assemble the include search path in the order the real compile uses it.
+
+    Order is taken from the module's actual compile command (see
+    ``build-<arch>/compile_commands.json``) and from ``gen_driver_types.sh``'s own
+    ``-I`` list, which is the proven-working one:
+
+      1. ``build-<arch>/<module rel path>``  — generated headers (MIDL ``*_c.h``/``*_s.h``)
+      2. the module's own directory (+ ``include/`` if it has one)
+      3. ``include_directories()`` from the module's CMakeLists (e.g. reactos/idl)
+      4. ``sdk/include`` and its psdk/ddk/ndk/reactos/crt/... children
+      5. ``build-<arch>/sdk/include*`` — the configure-time GENERATED xdk/mc headers
+      6. ``sdk/include/xdk`` as the fallback source of (5) when no build dir exists
+    """
+    build_dir = repo_root / f"build-{arch}"
+    if not build_dir.is_dir():
+        build_dir = None
+    search: list[tuple[Path, str]] = []
+    if build_dir is not None:
+        rel = module.module_dir.relative_to(repo_root)
+        search.append((build_dir / rel, "generated"))
+    search.append((module.module_dir, "module"))
+    if (module.module_dir / "include").is_dir():
+        search.append((module.module_dir / "include", "module"))
+    search.extend((d if d.is_absolute() else repo_root / d, "idl") for d in module.include_dirs)
+    search.extend((repo_root / p, "sdk") for p in _SDK_SEARCH)
+    if build_dir is not None:
+        search.extend((build_dir / p, "generated") for p in _BUILD_SEARCH)
+    else:
+        # xdk headers are GENERATED into build-*/sdk/include; without a build dir the
+        # source templates are the only stand-in. Say so (the report prints it).
+        search.append((repo_root / "sdk/include/xdk", "sdk"))
+    search.extend((d, "extra") for d in extra_dirs)
+    return IncludeEnv(
+        repo_root=repo_root,
+        arch=arch,
+        module_dir=module.module_dir,
+        build_dir=build_dir,
+        search=[(d, k) for d, k in search if d.is_dir()],
+    )
+
+
+_SDK_SEARCH = (
+    "sdk/include",
+    "sdk/include/crt",
+    "sdk/include/ddk",
+    "sdk/include/ndk",
+    "sdk/include/psdk",
+    "sdk/include/reactos",
+    "sdk/include/reactos/libs",
+    "sdk/include/reactos/drivers",
+    "sdk/include/vcruntime",
+    "sdk/include/winrt",
+    "sdk/include/dxsdk",
+    "sdk/lib/pseh/include",
+    "sdk/include/wine",
+)
+_BUILD_SEARCH = (
+    "sdk/include",
+    "sdk/include/psdk",
+    "sdk/include/ddk",
+    "sdk/include/dxsdk",
+    "sdk/include/reactos",
+    "sdk/include/reactos/mc",
+)
+
+
+# Macros whose truth value is FIXED for every build in this tree, so a branch guarded on
+# them is not "conditional", it is dead (or live) code. `__REACTOS__` is defined by the root
+# CMakeLists for every TU — and by gen_driver_types.sh's own bindgen invocation — which makes
+# the wine-derived `#ifndef __REACTOS__` idiom (a `case DLL_WINE_PREATTACH:` that ReactOS
+# never compiles) unambiguously dead. Reading those arms produced a FALSE §9.112 alarm, and a
+# checker that cries wolf gets ignored.
+KNOWN_DEFINED = frozenset({"__REACTOS__"})
+
+
+def _cond_truth(line: str) -> bool | None:
+    """``True``/``False`` when a preprocessor condition is fixed for this tree, else ``None``."""
+    m = re.match(r"^\s*#\s*(ifdef|ifndef|if)\b(.*)$", line)
+    if m is None:
+        return None
+    kind, rest = m.group(1), m.group(2).strip()
+    if kind in ("ifdef", "ifndef"):
+        sym = rest.split()[0] if rest.split() else ""
+        if sym in KNOWN_DEFINED:
+            return kind == "ifdef"
+        return None
+    if re.fullmatch(r"0+", rest):
+        return False
+    m2 = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", rest)
+    if m2 and m2.group(2) in KNOWN_DEFINED:
+        return m2.group(1) is None
+    return None
+
+
+def scan_includes(text: str) -> list[Include]:
+    """Every ``#include`` in a file, in order.
+
+    Over-approximating is the safe direction for an allowlist: an extra header makes the
+    island bigger, a missing one makes a ``switch`` silently collapse (§9.112). So BOTH arms
+    of an unknown conditional are kept. Three refinements keep it honest:
+
+    * a branch guarded on a fixed condition (``#if 0``, ``#ifndef __REACTOS__``, and the
+      ``#else`` of ``#ifdef __REACTOS__``) is genuinely dead and skipped — while its live
+      sibling arm is still walked, which a naive "skip to #endif" would lose;
+    * each include records whether it sits inside an UNKNOWN conditional, DISCOUNTING the
+      file's own include guard (otherwise every include in every header looks conditional).
+      Only an unconditional unresolved include means our search path is wrong;
+    * ``#include SOME_MACRO`` is reported by the caller, never skipped silently.
+    """
+    out: list[Include] = []
+    # frame = (dead, known) per open conditional
+    stack: list[tuple[bool, bool]] = []
+    guard_depth: int | None = None
+    lines = text.splitlines()
+    for n, line in enumerate(lines, 1):
+        d = _DIRECTIVE_RE.match(line)
+        if d:
+            directive = d.group(1)
+            if directive in ("if", "ifdef", "ifndef"):
+                truth = _cond_truth(line)
+                stack.append((truth is False, truth is not None))
+                if guard_depth is None and len(stack) == 1 and _looks_like_include_guard(lines, n):
+                    guard_depth = 1
+                continue
+            if directive in ("else", "elif") and stack:
+                dead, known = stack[-1]
+                if directive == "else" and known:
+                    stack[-1] = (not dead, True)  # the sibling arm of a FIXED condition
+                else:
+                    stack[-1] = (False, False)  # unknown -> keep walking (over-approximate)
+                continue
+            if directive == "endif":
+                if guard_depth is not None and len(stack) == guard_depth:
+                    guard_depth = None
+                if stack:
+                    stack.pop()
+                continue
+        if any(dead for dead, _ in stack):
+            continue
+        m = _INCLUDE_RE.match(line)
+        if m is None:
+            continue
+        spelling = m.group(1) or m.group(2)
+        unknown = sum(1 for _, known in stack if not known) - (1 if guard_depth is not None else 0)
+        out.append(
+            Include(spelling, spelling[1:-1], spelling.startswith("<"), n, conditional=unknown > 0)
+        )
+    return out
+
+
+def _looks_like_include_guard(lines: list[str], directive_line: int) -> bool:
+    """``#ifndef _FOO_H`` immediately followed by ``#define _FOO_H`` — the guard idiom."""
+    m = re.match(
+        r"^\s*#\s*(?:ifndef\s+(\w+)|if\s+!\s*defined\s*\(?\s*(\w+))", lines[directive_line - 1]
+    )
+    if m is None:
+        return False
+    sym = m.group(1) or m.group(2)
+    for line in lines[directive_line : directive_line + 3]:
+        if re.match(rf"^\s*#\s*define\s+{re.escape(sym)}\b", line):
+            return True
+    return False
+
+
+def scan_preamble(text: str) -> tuple[list[str], bool]:
+    """The TU's include PROLOGUE, verbatim, plus "had conditional directives".
+
+    Mirroring the real prologue (including its ``#define WIN32_NO_STATUS`` /
+    ``#define NTOS_MODE_USER`` ordering) is what makes a wrapper guaranteed-legal:
+    if the ``.c`` compiles, that exact sequence is bindgen-able (§9.108).
+    """
+    lines = text.splitlines()
+    end = 0
+    in_comment = False
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if in_comment:
+            if "*/" in s:
+                in_comment = False
+            continue
+        if s.startswith("/*") and "*/" not in s:
+            in_comment = True
+            continue
+        if not s or s.startswith(("//", "/*")):
+            continue
+        if s.startswith("#"):
+            if _INCLUDE_RE.match(line):
+                end = i + 1
+            continue
+        break  # first real code line ends the prologue
+    keep: list[str] = []
+    conditional = False
+    for line in lines[:end]:
+        d = _DIRECTIVE_RE.match(line)
+        if d is None:
+            continue
+        if d.group(1) in _COND_DIRECTIVES:
+            conditional = True
+            continue
+        if d.group(1) in ("include", "define", "undef"):
+            keep.append(line.strip())
+    return keep, conditional
+
+
+def resolve_include(inc: Include, includer: Path, env: IncludeEnv) -> Path | None:
+    """Resolve one include. Quoted form searches the includer's directory FIRST."""
+    cands: list[Path] = []
+    if not inc.angled:
+        cands.append(includer.parent / inc.name)
+    cands.extend(d / inc.name for d, _ in env.search)
+    for c in cands:
+        if c.is_file():
+            return c.resolve()
+    return None
+
+
+def walk_includes(tus: list[Path], env: IncludeEnv) -> Closure:
+    """BFS the include closure of *tus*. Unresolved includes are RECORDED, never dropped."""
+    closure = Closure()
+    unresolved: dict[tuple[str, str, int], Unresolved] = {}
+    for tu in tus:
+        tu_key = _rel(tu, env.repo_root)
+        reached: set[Path] = set()
+        queue: list[tuple[Path, int]] = [(tu, 0)]
+        seen_files = {tu.resolve()}
+        while queue:
+            cur, depth = queue.pop(0)
+            try:
+                text = _read(cur)
+            except OSError as exc:  # pragma: no cover - unreadable file
+                key = (cur.name, tu_key, 0)
+                unresolved[key] = Unresolved(cur.name, tu_key, 0, f"unreadable: {exc}")
+                continue
+            for inc in scan_includes(text):
+                target = resolve_include(inc, cur, env)
+                if target is None:
+                    reason = (
+                        "toolchain/CRT header (not in-tree)"
+                        if inc.name in CRT_HEADERS
+                        else "NOT FOUND on the include path"
+                    )
+                    if inc.conditional:
+                        reason += " [inside #if — probably a dead platform arm]"
+                    key = (inc.name, _rel(cur, env.repo_root), inc.line)
+                    unresolved[key] = Unresolved(
+                        inc.name,
+                        _rel(cur, env.repo_root),
+                        inc.line,
+                        reason,
+                        conditional=inc.conditional,
+                    )
+                    continue
+                ref = closure.headers.get(target)
+                if ref is None:
+                    ref = HeaderRef(
+                        path=target,
+                        name=inc.name,
+                        kind=env.classify(target),
+                        depth=depth + 1,
+                    )
+                    closure.headers[target] = ref
+                ref.depth = min(ref.depth, depth + 1)
+                includer = _rel(cur, env.repo_root)
+                if includer not in ref.includers:
+                    ref.includers.append(includer)
+                ref.tus.add(tu_key)
+                reached.add(target)
+                if target not in seen_files:
+                    seen_files.add(target)
+                    queue.append((target, depth + 1))
+            # macro-spelled includes (`#include SOME_MACRO`) cannot be walked lexically
+            for line_no, line in enumerate(text.splitlines(), 1):
+                if _INCLUDE_RE.match(line) or not line.lstrip().startswith("#"):
+                    continue
+                mm = _INCLUDE_MACRO_RE.match(line)
+                if mm:
+                    key = (mm.group(1), _rel(cur, env.repo_root), line_no)
+                    unresolved[key] = Unresolved(
+                        mm.group(1),
+                        _rel(cur, env.repo_root),
+                        line_no,
+                        "macro-spelled #include (needs a preprocessor)",
+                        conditional=True,
+                    )
+        closure.per_tu[tu_key] = reached
+    closure.unresolved = sorted(unresolved.values(), key=lambda u: (u.includer, u.line, u.name))
+    return closure
+
+
+# ---------------------------------------------------------------------------
+# The §9.112 hazard: constants a `switch` dispatches on
+# ---------------------------------------------------------------------------
+
+
+def find_switch_constants(tus: list[Path], repo_root: Path) -> list[SwitchConst]:
+    """Identifiers appearing in ``case`` labels, via tree-sitter (no regex guessing).
+
+    A hard dependency on purpose: a regex fallback would quietly miss arms, and a
+    missed arm is the exact silent-catch-all bug this check exists to prevent.
+    """
+    try:
+        from tree_sitter import Parser
+
+        from .scanner import C_LANG
+    except Exception as exc:  # pragma: no cover - env without tree-sitter
+        raise ProfileDeriveError(
+            "tree-sitter (tree_sitter + tree_sitter_c) is required for the switch-constant "
+            f"audit and could not be imported: {exc}. Install the rustconv requirements; "
+            "there is deliberately no regex fallback (it would miss arms silently)."
+        ) from exc
+
+    parser = Parser(C_LANG)
+    found: list[SwitchConst] = []
+    for tu in tus:
+        src = tu.read_bytes()
+        tree = parser.parse(src)
+        key = _rel(tu, repo_root)
+        stack = [tree.root_node]
+        while stack:
+            node = stack.pop()
+            stack.extend(node.children)
+            if node.type != "case_statement":
+                continue
+            value = node.child_by_field_name("value")
+            if value is None:
+                continue  # `default:`
+            if _in_dead_preproc_branch(node, src):
+                continue  # e.g. wine's `#ifndef __REACTOS__ case DLL_WINE_PREATTACH:`
+            inner = [value]
+            while inner:
+                v = inner.pop()
+                inner.extend(v.children)
+                if v.type == "identifier":
+                    text = src[v.start_byte : v.end_byte].decode("utf-8", "replace")
+                    found.append(SwitchConst(text, key, v.start_point[0] + 1))
+    # stable, de-duplicated by (ident, tu, line)
+    return sorted(set(found), key=lambda s: (s.tu, s.line, s.ident))
+
+
+def _in_dead_preproc_branch(node, src: bytes) -> bool:
+    """True if *node* sits in a preprocessor branch this tree never compiles.
+
+    Same fixed-truth rule as :func:`_cond_truth`, applied to the tree-sitter ancestor chain:
+    ``#ifndef __REACTOS__`` (and the ``#else`` of ``#ifdef __REACTOS__``) is dead code, so its
+    ``case`` labels must not be audited — that is where the false `DLL_WINE_PREATTACH` alarm
+    came from.
+    """
+    child = node
+    parent = node.parent
+    while parent is not None:
+        if parent.type in ("preproc_ifdef", "preproc_if"):
+            head = src[parent.start_byte : parent.start_byte + 200].decode("utf-8", "replace")
+            truth = _cond_truth(head.splitlines()[0] if head else "")
+            if truth is not None:
+                in_else = child.type in ("preproc_else", "preproc_elif")
+                if truth is bool(in_else):
+                    return True
+        child, parent = parent, parent.parent
+    return False
+
+
+_DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)(\(|[ \t]+)?([^\n]*)", re.M)
+_ENUM_RE = re.compile(r"\benum\b[^\{;]*\{")
+
+
+def _macro_kind(body: str) -> str:
+    """What bindgen can do with a ``#define`` body.
+
+    * ``literal``    — integer literal (possibly cast/parenthesised): emitted as a const
+    * ``expression`` — references other identifiers: bindgen MAY fail to fold it
+    """
+    core = re.sub(r"\(\s*(?:[A-Za-z_]\w*\s*)+\s*\)", "", body)  # drop casts
+    return "literal" if re.fullmatch(r"[-+~()\s0-9a-fA-FxXLlUu|&<>*/+]*", core) else "expression"
+
+
+def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str, tuple[str, str]]:
+    """``{name: (macro_kind, definition)}`` for the constants a header OWNS.
+
+    ``macro_kind`` ∈ {literal, expression, function-like, enum}. Pass *wanted* to search
+    only for specific identifiers — a single alternation regex over the whole text, which
+    is what makes auditing a 138-header closure cheap enough to run every time.
+
+    The alternation is anchored with ``\\b`` and ordered longest-first, because regex
+    alternation is first-match-wins: without it, ``TDI_ADDRESS_TYPE_IP`` swallows the
+    ``#define TDI_ADDRESS_TYPE_IPX`` line, `IPX` is reported UNOWNED, and the tool raises a
+    FALSE §9.112 alarm on a constant that is defined two lines from its sibling. (Found on
+    the real ``afd``/``tdihelpers`` closure, not in a unit test.)
+    """
+    text = _read(path)
+    out: dict[str, tuple[str, str]] = {}
+    if wanted is not None:
+        if not wanted:
+            return out
+        alt = "|".join(re.escape(w) for w in sorted(wanted, key=lambda w: (-len(w), w)))
+        for m in re.finditer(rf"^[ \t]*#[ \t]*define[ \t]+({alt})\b(\()?([^\n]*)", text, re.M):
+            name, paren, body = m.group(1), m.group(2), m.group(3).strip().rstrip("\\").strip()
+            out.setdefault(name, ("function-like", body) if paren else (_macro_kind(body), body))
+        # enum members: one per line, `NAME[= ...]` followed by `,` or the closing `}`. The
+        # separator match must cross a NEWLINE: the LAST member of an enum has no trailing
+        # comma and its `}` sits on the next line (`DomainDisplayServer` in ntsam.h), which a
+        # same-line-only pattern reports as UNOWNED — another false §9.112 alarm.
+        for m in re.finditer(rf"^[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M):
+            if "enum" in text:
+                out.setdefault(m.group(1), ("enum", m.group(0).strip()))
+        return out
+    for m in _DEFINE_RE.finditer(text):
+        name, sep, body = m.group(1), m.group(2), m.group(3).strip().rstrip("\\").strip()
+        out.setdefault(name, ("function-like", body) if sep == "(" else (_macro_kind(body), body))
+    for m in _ENUM_RE.finditer(text):
+        end = text.find("}", m.end())  # enum bodies carry no nested braces
+        if end < 0:
+            continue
+        for member in text[m.end() : end].split(","):
+            mm = re.match(r"\s*([A-Za-z_]\w*)", member)
+            if mm:
+                out.setdefault(mm.group(1), ("enum", member.strip()))
+    return out
+
+
+def sys_crate_consts(repo_root: Path, usermode: bool, arch: str = "i386") -> dict[str, str]:
+    """``{const name: providing file stem}`` for the sibling -sys crate's exports.
+
+    ``ntdll-sys`` for usermode, ``ntkrnl-sys`` for kernel — the same choice
+    ``gen_driver_types.sh`` makes for its blocklist source. EVERY bindgen island in the
+    crate is scanned, not just the primary one, and the provider is recorded: a const that
+    lives in a SECONDARY island (``hal_bindgen_<arch>.rs``) is reachable, but only through
+    that island's module path (``ntkrnl_sys::hal_ddk``) — not through the ``ddk`` glob the
+    generated island re-exports. Reporting the difference is what separates "already
+    covered" from "covered only if you add the right import".
+    """
+    crate = "ntdll-sys" if usermode else "ntkrnl-sys"
+    base = repo_root / "sdk/lib/rust" / crate / "src"
+    primary = {f"bindgen_{arch}", "bindgen_common"}
+    out: dict[str, str] = {}
+    if not base.is_dir():
+        return out
+    other_arches = tuple(f"_{a}" for a in ARCHES if a != arch)
+    files = sorted(base.glob("*bindgen*.rs"), key=lambda p: (p.stem not in primary, p.stem))
+    for f in files:
+        if f.stem.endswith(other_arches):
+            continue  # another arch's island
+        for name in re.findall(r"pub const (\w+)", _read(f)):
+            out.setdefault(name, f.stem)
+    return out
+
+
+def own_constants(
+    consts: list[SwitchConst],
+    closure: Closure,
+    tus: list[Path],
+    sys_consts: dict[str, str],
+) -> list[ConstOwner]:
+    """Attribute each switch constant to the header (or TU) that DEFINES it.
+
+    Search order is (depth, name) over the closure, so the nearest header wins — the same
+    "first match on the include path" intuition a human applies when reading precomp.h.
+    """
+    wanted = frozenset(c.ident for c in consts)
+    tu_local: dict[str, tuple[str, str]] = {}
+    for tu in tus:
+        tu_local.update(header_symbols(tu, wanted))
+    ordered = sorted(closure.headers.items(), key=lambda kv: (kv[1].depth, kv[1].name))
+    per_header: dict[Path, dict[str, tuple[str, str]]] = {}
+    remaining = set(wanted)
+    for path, _ref in ordered:
+        if not remaining:
+            break
+        syms = header_symbols(path, frozenset(remaining))
+        if syms:
+            per_header[path] = syms
+            remaining -= set(syms)
+    owners: list[ConstOwner] = []
+    for ident in sorted(wanted):
+        src = sys_consts.get(ident)
+        in_sys = src is not None
+        hit: tuple[Path, tuple[str, str]] | None = None
+        for path, syms in per_header.items():
+            if ident in syms:
+                hit = (path, syms[ident])
+                break
+        if hit is not None:
+            owners.append(
+                ConstOwner(
+                    ident, hit[0], "header", hit[1][1], hit[1][0], in_sys=in_sys, sys_source=src
+                )
+            )
+        elif ident in tu_local:
+            kind, body = tu_local[ident]
+            owners.append(
+                ConstOwner(ident, None, "tu-local", body, kind, in_sys=in_sys, sys_source=src)
+            )
+        elif in_sys:
+            owners.append(
+                ConstOwner(ident, None, "sys-crate", None, "n/a", in_sys=True, sys_source=src)
+            )
+        else:
+            owners.append(ConstOwner(ident, None, "UNOWNED", None, "n/a"))
+    return owners
+
+
+# ---------------------------------------------------------------------------
+# Genuine header conflicts -> TYPES_STEM split (§9.108)
+# ---------------------------------------------------------------------------
+
+_TYPEDEF_STRUCT_RE = re.compile(r"typedef\s+(?:struct|union|enum)\s+(\w+)?\s*\{")
+_STRUCT_DEF_RE = re.compile(r"^\s*(?:typedef\s+)?(?:struct|union)\s+(\w+)\s*\{", re.M)
+_TYPEDEF_NAME_RE = re.compile(r"\}\s*([A-Za-z_]\w*)\s*(?:,\s*\*?\w+\s*)*;")
+# `} DUMMYUNIONNAME;` is the Windows ANONYMOUS-aggregate macro closing an inline union FIELD,
+# not a type definition. Counting it as one made every header carrying an anonymous union
+# "conflict" with every other, and proposed a bogus 3-island TYPES_STEM split for wldap32.
+_ANON_AGGREGATE_NAMES = frozenset(
+    f"DUMMY{kind}NAME{suffix}"
+    for kind in ("UNION", "STRUCT")
+    for suffix in ("", *(str(n) for n in range(2, 10)))
+)
+
+
+def header_type_defs(path: Path) -> set[str]:
+    """Names a header DEFINES a body for (struct/union/enum + their typedef names)."""
+    text = _read(path)
+    names: set[str] = set()
+    for m in _TYPEDEF_STRUCT_RE.finditer(text):
+        if m.group(1):
+            names.add(m.group(1))
+    names.update(m.group(1) for m in _STRUCT_DEF_RE.finditer(text) if m.group(1))
+    names.update(m.group(1) for m in _TYPEDEF_NAME_RE.finditer(text))
+    return names - _ANON_AGGREGATE_NAMES
+
+
+def find_conflicts(closure: Closure, headers: list[Path]) -> list[tuple[str, Path, Path]]:
+    """Type names defined by two headers that NO SINGLE TU includes together.
+
+    Co-reachability is the false-positive filter and the whole §9.108 insight: if one
+    ``.c`` includes both headers and compiles, the pair is compatible by construction
+    (guarded re-definitions, ``#ifndef X_DEFINED``, …) and is not a conflict.
+    """
+    defs = {p: header_type_defs(p) for p in headers}
+    owner: dict[str, list[Path]] = {}
+    for p, names in defs.items():
+        for n in names:
+            owner.setdefault(n, []).append(p)
+    conflicts: list[tuple[str, Path, Path]] = []
+    for name, paths in sorted(owner.items()):
+        if len(paths) < 2:
+            continue
+        for i, a in enumerate(paths):
+            for b in paths[i + 1 :]:
+                if any(a in s and b in s for s in closure.per_tu.values()):
+                    continue  # co-reachable in a real TU -> proven compatible
+                conflicts.append((name, a, b))
+    return conflicts
+
+
+def group_tus(
+    closure: Closure, conflicts: list[tuple[str, Path, Path]]
+) -> list[tuple[str, list[str]]]:
+    """Greedily group TUs into conflict-free islands; one group = one TYPES_STEM."""
+    bad_pairs = {(a, b) for _, a, b in conflicts} | {(b, a) for _, a, b in conflicts}
+    groups: list[list[str]] = []
+    group_headers: list[set[Path]] = []
+    for tu in sorted(closure.per_tu):
+        hs = closure.per_tu[tu]
+        placed = False
+        for gi, gh in enumerate(group_headers):
+            if any((a, b) in bad_pairs for a in gh for b in hs):
+                continue
+            gh.update(hs)
+            groups[gi].append(tu)
+            placed = True
+            break
+        if not placed:
+            groups.append([tu])
+            group_headers.append(set(hs))
+    stems = ["types"] + [f"types_{i}" for i in range(1, len(groups))]
+    return list(zip(stems, groups, strict=True))
+
+
+# ---------------------------------------------------------------------------
+# compile_commands.json — the strongest available oracle when a build dir exists
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CompileDb:
+    """What the REAL compile command says, for the module and for the whole tree."""
+
+    path: Path
+    canon_root: str  # the canonical build prefix baked into the db (e.g. /tmp/vibeos)
+    module_defines: list[str]  # module-specific -D (tree-wide baseline subtracted)
+    module_files: set[Path]
+    include_dirs: list[Path]
+
+
+def _canon_prefix(sample: str, repo_root: Path) -> str | None:
+    """The canonical build prefix baked into a db path (``/tmp/vibeos``), or ``None``.
+
+    Found by walking the path's suffixes until one exists under *repo_root* — module
+    independent, so it also works for a module whose own sources are all commented out.
+    """
+    parts = Path(sample).parts
+    # i >= 2: a 1-component prefix would be "/" and remapping that would rewrite every path.
+    for i in range(2, len(parts)):
+        if (repo_root / Path(*parts[i:])).exists():
+            return str(Path(*parts[:i]))
+    return None
+
+
+def load_compile_db(repo_root: Path, module: CMakeModule, arch: str) -> CompileDb | None:
+    """Read ``build-<arch>/compile_commands.json``, or ``None`` when there is none.
+
+    Two things only the real command knows:
+
+    * the module's OWN ``-D`` set. It is isolated by INTERSECTING the define sets of
+      every entry in the db — that intersection is exactly the repo-wide
+      ``add_definitions()`` baseline (which ``gen_driver_types.sh`` supplies itself), so
+      subtracting it leaves precisely the module-specific macros (``NDIS50_MINIPORT``,
+      ``_WIN32_WINNT=0x600``, …). Self-calibrating, no denylist to rot.
+    * the module's extra ``-I`` set.
+
+    Build dirs bake the CANONICAL path (``/tmp/vibeos`` — the per-build bind mount), so
+    that prefix is remapped onto *repo_root* before any path is used.
+    """
+    db_path = repo_root / f"build-{arch}" / "compile_commands.json"
+    if not db_path.is_file():
+        return None
+    data = json.loads(_read(db_path))
+    if not data:
+        return None
+    canon: str | None = None
+    for e in data[:64]:  # a few samples: an entry may name a file this tree no longer has
+        canon = _canon_prefix(str(e.get("file", "")), repo_root)
+        if canon is not None:
+            break
+    if canon is None:
+        return None
+    # Entries belong to this module if the OBJECT they produce lands in its
+    # `CMakeFiles/<target>.dir/`. Matching the source path instead is wrong twice over:
+    # `afd` compiles ../tdihelpers/tdi.c, whose entry mentions "afd" nowhere (so a
+    # directory-substring match misses the module's real flags), AND that same tdi.c is
+    # compiled by `netio` too — with `-D_WIN32_WINNT=0x600` against afd's 0x502. Picking the
+    # wrong one silently changes every version-gated struct layout in the island.
+    want = {p.resolve() for p in module.compiled_tus}
+    obj_marker = f"CMakeFiles/{module.name}.dir/"
+    baseline: set[str] | None = None
+    mine: set[str] = set()
+    files: set[Path] = set()
+    incs: list[Path] = []
+    for e in data:
+        f = str(e.get("file", ""))
+        # C/C++ only. The .rc entries are llvm-rc/windres invocations carrying ~150
+        # -DLANGUAGE_* + -DRC_INVOKED, which say nothing about the C type surface.
+        if not f.lower().endswith((".c", ".cpp", ".cc", ".cxx")):
+            continue
+        cmd = str(e.get("command", ""))
+        defines = {t for t in cmd.split() if t.startswith("-D")}
+        baseline = defines if baseline is None else (baseline & defines)
+        local = Path(f.replace(canon, str(repo_root)))
+        objs = re.findall(r"-o\s+(\S+)", cmd)
+        if objs:
+            if not any(obj_marker in o for o in objs):
+                continue
+        elif local.resolve() not in want and not _is_within(local, module.module_dir):
+            continue  # no -o to attribute by: fall back to the source location
+        files.add(local)
+        mine |= defines
+        for t in cmd.split():
+            if t.startswith("-I"):
+                p = Path(t[2:].replace(canon, str(repo_root)))
+                if p not in incs:
+                    incs.append(p)
+    if not files:
+        return None
+    return CompileDb(
+        path=db_path,
+        canon_root=canon,
+        module_defines=sorted(mine - (baseline or set())),
+        module_files=files,
+        include_dirs=incs,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Derivation
+# ---------------------------------------------------------------------------
+
+
+_VERSION_MACROS = ("WINVER", "_WIN32_WINNT", "NTDDI_VERSION", "_WIN32_WINDOWS", "_WIN32_IE")
+# NTDDI for a given _WIN32_WINNT. 0x502 maps to WS03SP1 (not 0x05020000) deliberately: the
+# amd64 peb_teb.h ACTIVATION_CONTEXT_STACK layout needs SP1 — see the pcix/partmgr profiles.
+_NTDDI_FOR = {
+    "0x502": "0x05020400",
+    "0x600": "0x06000000",
+    "0x601": "0x06010000",
+    "0x602": "0x06020000",
+    "0x603": "0x06030000",
+}
+
+
+def _default_ver_defs(module: CMakeModule, db_defines: list[str] | None) -> list[str]:
+    """VER_DEFS mirroring the module's real compile, plus the bindgen-side extras.
+
+    Sources in increasing authority: the repo-wide baseline (root CMakeLists) → the
+    module's own ``add_definitions()`` → the module-specific ``-D`` isolated from
+    ``compile_commands.json``. ``remove_definitions`` needs no special case: a module that
+    removes then re-adds a macro (``snmpapi``: ``_WIN32_WINNT`` 0x502 → 0x600) is handled
+    by last-write-wins. ``gen_driver_types.sh`` supplies the arch defines,
+    ``__REACTOS__``, ``DBG`` and ``_USE_DUMMY_PSEH`` itself, so they stay out of here.
+    """
+    ver = {
+        "WINVER": "0x502",
+        "_WIN32_WINNT": "0x502",
+        "_WIN32_WINDOWS": "0x502",
+        "_WIN32_IE": "0x603",
+    }
+    extra: list[str] = []
+    set_by_module: set[str] = set()
+    for source in (module.definitions, db_defines or []):
+        for d in source:
+            name, _, val = d[2:].partition("=")
+            if name in _VERSION_MACROS:
+                if val:
+                    ver[name] = val
+                    set_by_module.add(name)
+            elif d not in extra:
+                extra.append(d)
+    if "_WIN32_WINNT" in set_by_module and "WINVER" not in set_by_module:
+        ver["WINVER"] = ver["_WIN32_WINNT"]  # WINVER tracks _WIN32_WINNT unless set apart
+    ver.setdefault("NTDDI_VERSION", _NTDDI_FOR.get(ver["_WIN32_WINNT"], "0x05020400"))
+    defs = [f"-D{name}={ver[name]}" for name in _VERSION_MACROS if name in ver]
+    defs += extra
+    if module.unicode:
+        defs += ["-DUNICODE", "-D_UNICODE"]
+    defs.append("-D_CRT_NO_POSIX_ERROR_CODES")  # bindgen-side: errno.h vs winerror.h
+    return defs
+
+
+def derive(
+    module_dir: Path,
+    repo_root: Path,
+    arch: str = "i386",
+    target: str | None = None,
+    strict_unresolved: bool = True,
+    use_compile_db: bool = True,
+    extra_inc_dirs: tuple[Path, ...] = (),
+    usermode: bool | None = None,
+) -> DerivedProfile:
+    """Derive a full profile for the module at *module_dir*.
+
+    Raises :class:`ProfileDeriveError` when an UNCONDITIONAL include cannot be resolved
+    (unless *strict_unresolved* is false) — a partial allowlist that looks complete is the
+    §9.112 bug, so it is never emitted silently. *extra_inc_dirs* is the escape hatch for a
+    module that includes from an unusual directory (``iphlpapi`` reaches into
+    ``dll/win32/dhcpcsvc/include``) when there is no compile db to learn it from.
+    """
+    module_dir = module_dir.resolve()
+    module = parse_cmakelists(module_dir / "CMakeLists.txt", repo_root, arch=arch, target=target)
+    module.usermode_override = usermode
+    findings = list(module.findings)
+    tus = [p for p in module.compiled_tus if p.is_file()]
+    if not tus:
+        # "No .c" has TWO causes and they need opposite responses. Before blaming a
+        # Rust flip, check whether a SIBLING target in the same CMakeLists compiles the
+        # C: a module whose sources live in a static lib the DLL links (msvcrt ->
+        # msvcrt_static) looks identical from the MODULE target, and telling that user
+        # to go read git history sends them the wrong way entirely. This also describes
+        # every whole-archive cohab module, where the .c stay compiled forever and the
+        # Rust wins at link — so "its .c are commented out" is not even true of them.
+        siblings = _targets_compiling_c(module.cmake, repo_root, arch, exclude=module.name)
+        if siblings:
+            listed = ", ".join(f"{n} ({c} .c)" for n, c in siblings)
+            raise ProfileDeriveError(
+                f"{module.cmake}: target {module.name!r} compiles no in-tree .c, but these "
+                f"targets in the same file do: {listed}.\n  The sources are probably in a "
+                f"static library this target links. Re-run with:\n\n"
+                f"    --target {siblings[0][0]}\n"
+            )
+        raise ProfileDeriveError(
+            f"{module.cmake}: target {module.name!r} compiles no in-tree .c — nothing to derive "
+            "an island for. (An already-Rust-flipped module looks exactly like this: its .c are "
+            "commented out of the source list. Use git to read the pre-flip CMakeLists if you "
+            "need to re-derive its profile.)"
+        )
+
+    # The compile db is loaded FIRST so its real `-I` list can seed the search path: it is the
+    # only place that knows a module reaching outside its own directory (afd includes
+    # ../tdihelpers/include). Without a db, that same case fails loudly and names the header —
+    # then --extra-inc is the explicit fix, chosen by a human rather than guessed here.
+    db = load_compile_db(repo_root, module, arch) if use_compile_db else None
+    env = build_include_env(
+        repo_root,
+        module,
+        arch=arch,
+        extra_dirs=tuple(extra_inc_dirs) + tuple(db.include_dirs if db else ()),
+    )
+    if env.build_dir is None:
+        findings.append(
+            Finding(
+                "warn",
+                "NO_BUILD_DIR",
+                f"build-{arch}/ is absent: GENERATED headers (MIDL *_c.h/*_s.h, xdk, mc) cannot "
+                "be resolved; the closure and the allowlist are incomplete by that much",
+            )
+        )
+    closure = walk_includes(tus, env)
+
+    # An UNCONDITIONAL unresolved include means our search path is wrong, so the closure —
+    # and therefore the allowlist — is genuinely incomplete: hard-fail. A CONDITIONAL one is
+    # nearly always a dead platform arm the real preprocessor never takes (rpcmac.h,
+    # intrin_mips.h), and a CRT/toolchain header lives outside the tree by design: those are
+    # reported as findings, never silently dropped.
+    hard_unresolved = [
+        u for u in closure.unresolved if u.name not in CRT_HEADERS and not u.conditional
+    ]
+    for u in closure.unresolved:
+        findings.append(
+            Finding(
+                "error" if u in hard_unresolved else ("warn" if not u.conditional else "info"),
+                "UNRESOLVED_INCLUDE",
+                f"{u.includer}:{u.line} #include {u.name} — {u.reason}",
+            )
+        )
+    if hard_unresolved and strict_unresolved:
+        listing = "\n".join(
+            f"    {u.includer}:{u.line}  {u.name}  ({u.reason})" for u in hard_unresolved[:20]
+        )
+        raise ProfileDeriveError(
+            f"{len(hard_unresolved)} unconditional include(s) could not be resolved for "
+            f"{module.name}; the include closure — and therefore the allowlist — would be "
+            f"incomplete:\n{listing}\n"
+            "  Fix the search path (build_include_env / --extra-inc) or pass "
+            "--allow-unresolved to proceed with these recorded as findings."
+        )
+
+    # ---- switch-constant audit (§9.112) ----
+    switch_consts = find_switch_constants(tus, repo_root)
+    sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch)
+    owners = own_constants(switch_consts, closure, tus, sys_consts)
+
+    # ---- allowlist decisions ----
+    # Tiering mirrors how a human reads precomp.h: the module's OWN headers, its generated
+    # MIDL headers, and the DOMAIN headers those name directly. It deliberately does NOT
+    # follow an SDK header's own fan-out — `<winbase.h>` alone reaches the whole Win32
+    # platform (synchapi/processthreadsapi/ioapiset/…), which the -sys crate already owns.
+    # Over-inclusion here is cheap (the type blocklist keeps one identity for anything the
+    # -sys crate has); UNDER-inclusion of a constant is the silent §9.112 bug, so const
+    # owners are force-added below regardless of tier.
+    allow_reasons: dict[str, str] = {}
+    # which TUs actually reach each allowlisted header — the per-island allowlist filter
+    allow_tus: dict[str, set[str]] = {}
+    excluded: dict[str, str] = {}
+    module_regex = _hdr_regex_dir(module.module_dir.name)
+    allow_reasons[module_regex] = f"module-local headers under {module.module_dir.name}/"
+    allow_tus[module_regex] = {_rel(p, repo_root) for p in tus}
+    module_code = {_rel(p, repo_root) for p in tus}
+    module_code |= {
+        _rel(p, repo_root) for p, r in closure.headers.items() if r.kind in ("module", "generated")
+    }
+    for ref in sorted(closure.headers.values(), key=lambda r: r.name):
+        rx = _hdr_regex(ref.name)
+        base = Path(ref.name).name
+        if ref.kind == "module":
+            continue  # covered by the directory regex
+        if ref.kind in ("crt", "toolchain"):
+            excluded[ref.name] = "CRT/toolchain header"
+            continue
+        if base in BASE_PLATFORM_HEADERS or ref.name.startswith(("ndk/", "wine/")):
+            excluded[ref.name] = "base platform / debug channel — supplied by the -sys crate"
+            continue
+        if ref.kind == "generated":
+            allow_reasons[rx] = (
+                f"the module's OWN generated header (MIDL/spec2def), via {ref.includers[0]}"
+            )
+            allow_tus.setdefault(rx, set()).update(ref.tus)
+            continue
+        named_by_module = sorted(set(ref.includers) & module_code)
+        if named_by_module:
+            allow_reasons[rx] = (
+                f"domain header named directly by the module's own code ({named_by_module[0]}), "
+                f"depth {ref.depth}"
+            )
+            allow_tus.setdefault(rx, set()).update(ref.tus)
+        else:
+            excluded[ref.name] = (
+                f"depth {ref.depth}, reached only through SDK headers ({ref.includers[0]}) — "
+                "promote if the island needs it"
+            )
+
+    # Force-add const owners: this is the §9.112 prophylactic, and it OVERRIDES the tier
+    # heuristic — an omitted const is a silent catch-all, not a compile error.
+    for o in owners:
+        if o.owner_kind != "header" or o.owner is None:
+            continue
+        ref = closure.headers[o.owner]
+        rx = _hdr_regex(ref.name)
+        if ref.kind == "module":
+            o.allowlisted = True
+            continue
+        if o.in_sys:
+            # already a const in ntdll-sys/ntkrnl-sys: it resolves through the crate glob,
+            # so its (often huge) owning header does NOT need to be allowlisted.
+            o.allowlisted = True
+            if o.sys_source not in (f"bindgen_{arch}", "bindgen_common"):
+                findings.append(
+                    Finding(
+                        "warn",
+                        "SWITCH_CONST_SECONDARY_ISLAND",
+                        f"`{o.ident}` ({ref.name}) exists in the -sys crate only in "
+                        f"{o.sys_source}.rs, NOT in the primary bindgen the generated island "
+                        "re-exports — the translation must import it from that island's module "
+                        "path explicitly (e.g. ntkrnl_sys::hal_ddk). Without that import it is "
+                        "still an unresolved name, i.e. still a silent catch-all (§9.112).",
+                    )
+                )
+            continue
+        if Path(ref.name).name in BASE_PLATFORM_HEADERS or ref.kind == "crt":
+            # Allowlisting a BASE header would re-emit the whole platform locally. The two
+            # sane fixes are hand-transcribing the constant into the prelude, or teaching the
+            # shared -sys bindgen about it. Say so instead of proposing a monster island.
+            findings.append(
+                Finding(
+                    "error",
+                    "SWITCH_CONST_IN_BASE_HEADER",
+                    f"`{o.ident}` is owned by the BASE header {ref.name} and is NOT in the -sys "
+                    f"crate ({'ntdll-sys' if module.is_usermode else 'ntkrnl-sys'}), so the "
+                    "island will not carry it and the match arm becomes a silent catch-all "
+                    "(§9.112). Fix by transcribing it into the crate prelude, or by adding its "
+                    f"owning enum/#define to the -sys bindgen — NOT by allowlisting {ref.name}, "
+                    "which would re-emit the whole platform.",
+                )
+            )
+            continue
+        if rx not in allow_reasons:
+            allow_reasons[rx] = (
+                f"OWNS switch constant {o.ident} (§9.112: an omitted const becomes a "
+                f"catch-all match arm) — depth {ref.depth}"
+            )
+            excluded.pop(ref.name, None)
+            allow_tus.setdefault(rx, set()).update(ref.tus)
+            findings.append(
+                Finding(
+                    "warn",
+                    "SWITCH_CONST_HEADER_ADDED",
+                    f"{ref.name} allowlisted because it owns `{o.ident}` "
+                    f"(used in a case label) — depth {ref.depth}, would have been excluded",
+                )
+            )
+        o.allowlisted = True
+        if o.macro_kind == "function-like":
+            findings.append(
+                Finding(
+                    "error",
+                    "SWITCH_CONST_NOT_BINDGENABLE",
+                    f"`{o.ident}` ({ref.name}) is a FUNCTION-LIKE macro: bindgen emits no "
+                    "constant for it, so the match arm will still be a catch-all binding — "
+                    "transcribe it into the prelude by hand",
+                )
+            )
+        elif o.macro_kind == "expression":
+            findings.append(
+                Finding(
+                    "info",
+                    "SWITCH_CONST_EXPRESSION",
+                    f"`{o.ident}` ({ref.name}) = {o.definition!r} is a macro EXPRESSION; "
+                    "bindgen may not fold it — verify it lands in the island",
+                )
+            )
+    for o in owners:
+        if o.owner_kind == "UNOWNED":
+            findings.append(
+                Finding(
+                    "error",
+                    "SWITCH_CONST_UNOWNED",
+                    f"`{o.ident}` is used in a case label but NO header in the include closure "
+                    "and no -sys crate defines it — the match arm WILL silently match "
+                    "everything (§9.112). Find its owner and add it to the wrapper.",
+                )
+            )
+        elif o.owner_kind == "tu-local":
+            findings.append(
+                Finding(
+                    "info",
+                    "SWITCH_CONST_TU_LOCAL",
+                    f"`{o.ident}` is defined in the .c itself ({o.macro_kind}) — the translation "
+                    "must carry it as a Rust const, no island change needed",
+                )
+            )
+
+    # ---- wrapper: mirror each TU's real prologue ----
+    wrapper: list[str] = []
+    for tu in tus:
+        lines, conditional = scan_preamble(_read(tu))
+        if conditional:
+            findings.append(
+                Finding(
+                    "info",
+                    "CONDITIONAL_PROLOGUE",
+                    f"{_rel(tu, repo_root)} has #if/#ifdef in its include prologue — the mirrored "
+                    "wrapper keeps both arms; review",
+                )
+            )
+        for line in lines:
+            if line not in wrapper:
+                wrapper.append(line)
+    if module.pch_header is not None:
+        pch_line = f'#include "{module.pch_header.name}"'
+        if pch_line not in wrapper:
+            wrapper.insert(0, pch_line)
+
+    # ---- islands / conflicts ----
+    conflicts = find_conflicts(closure, sorted(closure.headers))
+    allow_files = sorted(allow_reasons)
+    tu_by_key = {_rel(p, repo_root): p for p in tus}
+
+    def _wrapper_for(keys: list[str]) -> list[str]:
+        """Union of just THESE TUs' prologues, in first-seen order."""
+        lines: list[str] = []
+        for key in keys:
+            src = tu_by_key.get(key)
+            if src is None:
+                continue
+            for line in scan_preamble(_read(src))[0]:
+                if line not in lines:
+                    lines.append(line)
+        if module.pch_header is not None:
+            pch_line = f'#include "{module.pch_header.name}"'
+            if pch_line not in lines:
+                lines.insert(0, pch_line)
+        return lines
+
+    if conflicts:
+        groups = group_tus(closure, conflicts)
+        islands = [
+            Island(
+                stem=stem,
+                tus=group,
+                allow_files=[
+                    rx
+                    for rx in allow_files
+                    if allow_tus.get(rx, set()) & set(group) or rx == module_regex
+                ],
+                reason="TU group with a mutually-legal include set",
+                wrapper_inc=_wrapper_for(group),
+                label=module.name if i == 0 else f"{module.name}-{stem}",
+            )
+            for i, (stem, group) in enumerate(groups)
+        ]
+        for name, a, b in conflicts[:10]:
+            findings.append(
+                Finding(
+                    "warn",
+                    "HEADER_CONFLICT",
+                    f"{name} is defined by BOTH {a.name} and {b.name}, and no single TU includes "
+                    "both — split into TYPES_STEM islands (§9.108), do not hand-blocklist",
+                )
+            )
+        if len(islands) > 1:
+            findings.append(
+                Finding(
+                    "warn",
+                    "TYPES_STEM_SPLIT",
+                    f"{len(islands)} islands proposed: "
+                    + "; ".join(f"{i.stem}=[{', '.join(i.tus)}]" for i in islands),
+                )
+            )
+    else:
+        islands = [
+            Island(
+                "types",
+                sorted(closure.per_tu),
+                allow_files,
+                "one mutually-legal include set",
+                wrapper_inc=wrapper,
+                label=module.name,
+            )
+        ]
+
+    # ---- extra -I ----
+    extra_inc = [f'-I"${{SRC}}/{module.module_dir.relative_to(repo_root)}"']
+    if (module.module_dir / "include").is_dir():
+        extra_inc.append(f'-I"${{SRC}}/{module.module_dir.relative_to(repo_root)}/include"')
+    if env.build_dir is not None:
+        extra_inc.append(f'-I"${{SRC}}/build-{arch}/{module.module_dir.relative_to(repo_root)}"')
+    for d in module.include_dirs:
+        p = d if d.is_absolute() else repo_root / d
+        if p.is_dir() and _is_within(p, repo_root):
+            extra_inc.append(f'-I"${{SRC}}/{p.relative_to(repo_root)}"')
+    for d in extra_inc_dirs:
+        p = (d if d.is_absolute() else repo_root / d).resolve()
+        entry = (
+            f'-I"${{SRC}}/{p.relative_to(repo_root)}"' if _is_within(p, repo_root) else f'-I"{p}"'
+        )
+        if entry not in extra_inc:
+            extra_inc.append(entry)
+
+    db_defines: list[str] | None = None
+    db_path: Path | None = None
+    if db is not None:
+        db_path = db.path
+        db_defines = db.module_defines
+        # Compare only IN-TREE TUs: the db's build-dir entries are the generated sources
+        # (MIDL/spec2def products), which the source list carries as ${CMAKE_CURRENT_BINARY_DIR}.
+        db_tus = {p.resolve() for p in db.module_files if _is_within(p, module.module_dir)}
+        want = {p.resolve() for p in tus}
+        missing = want - db_tus
+        stale = db_tus - want
+        if missing:
+            findings.append(
+                Finding(
+                    "warn",
+                    "COMPILE_DB_DIVERGENCE",
+                    "in the CMakeLists source list but NOT in compile_commands.json (stale db, or "
+                    "the file is excluded): "
+                    + ", ".join(sorted(_rel(p, repo_root) for p in missing)),
+                )
+            )
+        if stale:
+            findings.append(
+                Finding(
+                    "warn",
+                    "COMPILE_DB_DIVERGENCE",
+                    "compiled per compile_commands.json but NOT in the parsed source list — the "
+                    "CMake parse missed a source: "
+                    + ", ".join(sorted(_rel(p, repo_root) for p in stale)),
+                )
+            )
+        for p in db.include_dirs:
+            if not _is_within(p, repo_root) or not p.is_dir():
+                continue
+            if not _is_within(p, module.module_dir) and p not in [d for d, _ in env.search]:
+                entry = f'-I"${{SRC}}/{p.relative_to(repo_root)}"'
+                if entry not in extra_inc:
+                    extra_inc.append(entry)
+    else:
+        findings.append(
+            Finding(
+                "info",
+                "NO_COMPILE_DB",
+                f"no build-{arch}/compile_commands.json — VER_DEFS come from the CMakeLists parse "
+                "plus the repo-wide defaults, not from the real compile command",
+            )
+        )
+
+    ver_defs = _default_ver_defs(module, db_defines)
+    if (
+        module.is_usermode
+        and any("ndk/" in w for w in wrapper)
+        and ("-DNTOS_MODE_USER" not in ver_defs)
+    ):
+        ver_defs.append("-DNTOS_MODE_USER")
+
+    return DerivedProfile(
+        module=module,
+        env=env,
+        closure=closure,
+        switch_consts=switch_consts,
+        const_owners=owners,
+        islands=islands,
+        wrapper_inc=wrapper,
+        allow_files=allow_files,
+        extra_inc=extra_inc,
+        ver_defs=ver_defs,
+        allow_reasons=allow_reasons,
+        excluded=excluded,
+        findings=findings,
+        compile_db_used=db_path,
+    )
+
+
+def _hdr_regex_dir(dirname: str) -> str:
+    """``wkssvc`` -> ``.*wkssvc[/\\].*\\.h`` — the module-local-directory ALLOW_FILES form."""
+    return r".*" + re.escape(dirname) + r"[/\\].*\.h"
+
+
+# ---------------------------------------------------------------------------
+# Emission — gen_driver_types.sh vocabulary
+# ---------------------------------------------------------------------------
+
+
+def emit_profile(dp: DerivedProfile) -> str:
+    """The ready-to-paste ``case`` arm for ``gen_driver_types.sh``.
+
+    Emitted (never patched in): the integrator owns that file.
+    """
+    m = dp.module
+    rel = m.module_dir.relative_to(dp.env.repo_root)
+    multi = len(dp.islands) > 1
+    wrapper = "\\n".join(dp.wrapper_inc)
+    out: list[str] = []
+    # Multi-island profiles use the netapi32 shape: ONE case arm matching every island label,
+    # branching WRAPPER_INC/ALLOW_FILES on $DRIVER, with OUT_CRATE_DIR pinned so all islands
+    # land in the same crate. TYPES_STEM comes from the env at invocation.
+    labels = "|".join(i.label for i in dp.islands) if multi else m.name
+    out.append(f"  {labels})")
+    out.append(
+        f"    # AUTO-DERIVED by rustconv.profile_derive on {date.today().isoformat()} from "
+        f"{rel}/CMakeLists.txt"
+    )
+    out.append(
+        f"    # ({len(m.compiled_tus)} compiled TU(s), {len(dp.closure.headers)} headers in the "
+        f"include closure, {len({c.ident for c in dp.switch_consts})} switch constant(s))."
+    )
+    out.append(
+        "    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c "
+        "compiles,"
+    )
+    out.append("    # that exact sequence is bindgen-able). Review the WHY notes in the report.")
+    out.append(f"    USERMODE={1 if m.is_usermode else 0}")
+    if m.is_usermode:
+        out.append("    BLOCKLIST_FUNCS=1")
+    out.append(f'    DRIVER_DIR="${{SRC}}/{rel}"')
+    if not multi:
+        out.append(f"    WRAPPER_INC=$'{wrapper}'")
+        out.extend(_allow_files_lines(dp.allow_files))
+    else:
+        out.append('    case "$DRIVER" in')
+        for isl in dp.islands:
+            out.append(f"      # island {isl.stem} — {len(isl.tus)} TU(s):")
+            line = "      #"
+            for tu in isl.tus:
+                leaf = Path(tu).name
+                if len(line) + len(leaf) > 92:
+                    out.append(line)
+                    line = "      #"
+                line += f" {leaf}"
+            out.append(line)
+            out.append(f"      {isl.label})")
+            out.append("        WRAPPER_INC=$'" + "\\n".join(isl.wrapper_inc) + "'")
+            out.extend("    " + line for line in _allow_files_lines(isl.allow_files))
+            out.append("        ;;")
+        out.append("    esac")
+    out.append("    EXTRA_INC=( " + " ".join(dp.extra_inc) + " )")
+    out.append("    VER_DEFS=( " + " ".join(dp.ver_defs) + " )")
+    if multi:
+        out.append(
+            f'    OUT_CRATE_DIR="${{OUT_CRATE_DIR:-${{SRC}}/sdk/lib/rust/{dp.crate_name}/src}}"'
+        )
+    out.append("    ;;")
+    if multi:
+        out.append("")
+        out.append("  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so")
+        out.append("  # generate one pass per group — all into the same crate:")
+        for isl in dp.islands:
+            stem_env = "" if isl.stem == "types" else f"TYPES_STEM={isl.stem} "
+            out.append(f"  #   {stem_env}gen_driver_types.sh {isl.label}")
+        out.append("  # Then dispatch them from the crate: one `mod <stem>;` per island, and each")
+        out.append("  # translated module imports from the island its own C include set belongs to")
+        out.append("  # (names legitimately overlap between islands — never glob both into scope).")
+    return "\n".join(out) + "\n"
+
+
+def _allow_files_lines(allow_files: list[str]) -> list[str]:
+    """``ALLOW_FILES=( --allowlist-file '…' … )`` in the shape the script's profiles use."""
+    lines = ["    ALLOW_FILES=( " + " ".join(f"--allowlist-file '{a}'" for a in allow_files[:2])]
+    lines += [f"                  --allowlist-file '{a}'" for a in allow_files[2:]]
+    lines[-1] = lines[-1] + " )"
+    return lines
+
+
+def emit_report(dp: DerivedProfile) -> str:
+    """The evidence: what was derived, and WHY each header is in or out."""
+    m = dp.module
+    root = dp.env.repo_root
+    L: list[str] = []
+    L.append(
+        f"=== profile_derive: {m.name} ({m.module_type}, "
+        f"{'USERMODE' if m.is_usermode else 'KERNEL'}) ==="
+    )
+    L.append(f"  cmake        : {_rel(m.cmake, root)}")
+    L.append(f"  arch         : {dp.env.arch}")
+    src_of_truth = (
+        "compile_commands.json + CMakeLists" if dp.compile_db_used else "CMakeLists parse only"
+    )
+    L.append(f"  include src  : {src_of_truth}")
+    L.append(f"  islands      : {len(dp.islands)} ({', '.join(i.stem for i in dp.islands)})")
+    L.append("")
+    L.append("--- compiled translation units (the translation surface) ---")
+    for e in m.entries:
+        if e.kind == "tu" and e.path is not None:
+            note = f"   [only under {e.condition}]" if e.condition else ""
+            L.append(f"  TU        {_rel(e.path, root)}{note}")
+    for g in m.generated_sources:
+        L.append(f"  GENERATED {g}   (stays C — MIDL/spec2def product)")
+    if m.pch_header:
+        L.append(f"  PCH       {_rel(m.pch_header, root)}")
+    for d in m.dead_sources:
+        L.append(
+            f"  DEAD      {_rel(d, root)}   (on disk, NOT compiled — dead source or already "
+            "Rust-flipped)"
+        )
+    L.append("")
+    L.append("--- include closure (why each header is in) ---")
+    deep = 0
+    for ref in sorted(dp.closure.headers.values(), key=lambda r: (r.depth, r.name)):
+        if ref.depth > 2 and ref.kind not in ("module", "generated"):
+            deep += 1
+            continue
+        L.append(
+            f"  d{ref.depth} {ref.kind:9s} {ref.name:28s} via {ref.includers[0]}"
+            + (f" (+{len(ref.includers) - 1} more)" if len(ref.includers) > 1 else "")
+        )
+    if deep:
+        L.append(f"  … +{deep} deeper SDK header(s) (depth >2) — see --emit json for the full list")
+    if dp.closure.unresolved:
+        L.append("")
+        L.append("--- UNRESOLVED includes (never silently dropped) ---")
+        for u in dp.closure.unresolved:
+            L.append(f"  {u.includer}:{u.line}  {u.name}  — {u.reason}")
+    L.append("")
+    L.append("--- ALLOW_FILES decisions ---")
+    for rx in dp.allow_files:
+        L.append(f"  + {rx}")
+        L.append(f"      {dp.allow_reasons[rx]}")
+    if dp.excluded:
+        buckets: dict[str, list[str]] = {}
+        for name, why in sorted(dp.excluded.items()):
+            buckets.setdefault(why.split("(")[0].split("—")[0].strip(), []).append(name)
+        L.append("  excluded (grouped by reason; --emit json lists every one):")
+        for why, names in sorted(buckets.items()):
+            L.append(
+                f"  - {why} [{len(names)}]: "
+                + ", ".join(names[:8])
+                + (" …" if len(names) > 8 else "")
+            )
+    L.append("")
+    L.append("--- switch-constant audit (field manual §9.112) ---")
+    if not dp.switch_consts:
+        L.append("  (no case labels with identifiers)")
+    used_at: dict[str, list[SwitchConst]] = {}
+    for c in dp.switch_consts:
+        used_at.setdefault(c.ident, []).append(c)
+    for o in dp.const_owners:
+        where = used_at.get(o.ident, [])
+        site = f"{where[0].tu}:{where[0].line}" if where else "?"
+        owner = o.owner.name if o.owner else o.owner_kind
+        mark = "✓" if (o.allowlisted or o.owner_kind in ("sys-crate", "tu-local")) else "✗"
+        how = "-sys glob" if o.in_sys else ("island" if o.allowlisted else o.owner_kind)
+        L.append(f"  {mark} {o.ident:38s} {owner:24s} [{o.macro_kind}] via {how:10s} {site}")
+    L.append("")
+    L.append("--- findings ---")
+    if not dp.findings:
+        L.append("  (none)")
+    for f in sorted(dp.findings, key=lambda f: ("error", "warn", "info").index(f.severity)):
+        L.append(str(f))
+    L.append("")
+    L.append("--- derived profile (paste into gen_driver_types.sh) ---")
+    L.append(emit_profile(dp))
+    return "\n".join(L)
+
+
+def to_json(dp: DerivedProfile) -> dict:
+    root = dp.env.repo_root
+    return {
+        "module": dp.module.name,
+        "cmake": _rel(dp.module.cmake, root),
+        "arch": dp.env.arch,
+        "module_type": dp.module.module_type,
+        "usermode": dp.module.is_usermode,
+        "crate": dp.crate_name,
+        "compiled_tus": [_rel(p, root) for p in dp.module.compiled_tus],
+        "generated_sources": dp.module.generated_sources,
+        "dead_sources": [_rel(p, root) for p in dp.module.dead_sources],
+        "closure": [
+            {
+                "name": r.name,
+                "path": _rel(p, root),
+                "kind": r.kind,
+                "depth": r.depth,
+                "includers": r.includers,
+            }
+            for p, r in sorted(dp.closure.headers.items(), key=lambda kv: kv[1].name)
+        ],
+        "unresolved": [
+            {"name": u.name, "includer": u.includer, "line": u.line, "reason": u.reason}
+            for u in dp.closure.unresolved
+        ],
+        "allow_files": {rx: dp.allow_reasons[rx] for rx in dp.allow_files},
+        "excluded": dp.excluded,
+        "wrapper_inc": dp.wrapper_inc,
+        "extra_inc": dp.extra_inc,
+        "ver_defs": dp.ver_defs,
+        "islands": [{"stem": i.stem, "tus": i.tus, "reason": i.reason} for i in dp.islands],
+        "switch_constants": [
+            {
+                "ident": o.ident,
+                "owner": _rel(o.owner, root) if o.owner else None,
+                "owner_kind": o.owner_kind,
+                "macro_kind": o.macro_kind,
+                "allowlisted": o.allowlisted,
+            }
+            for o in dp.const_owners
+        ],
+        "findings": [
+            {"severity": f.severity, "code": f.code, "detail": f.detail} for f in dp.findings
+        ],
+        "compile_db": _rel(dp.compile_db_used, root) if dp.compile_db_used else None,
+        "profile": emit_profile(dp),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Crate scaffold (shape copied from sdk/lib/rust/wkssvc-rust)
+# ---------------------------------------------------------------------------
+
+
+def scaffold_crate(dp: DerivedProfile, out_dir: Path, force: bool = False) -> list[Path]:
+    """Write the crate skeleton: Cargo.toml, lib.rs, prelude.rs, types.rs (+ island stubs).
+
+    Refuses to overwrite an existing file unless *force*: the per-arch island files are
+    ``gen_driver_types.sh`` output, and clobbering a real island with a placeholder is
+    exactly the silent-degradation this pipeline must never do.
+    """
+    m = dp.module
+    crate = dp.crate_name
+    lib = crate.replace("-", "_")
+    src = out_dir / "src"
+    src.mkdir(parents=True, exist_ok=True)
+    (src / m.name).mkdir(exist_ok=True)
+    written: list[Path] = []
+
+    def write(path: Path, text: str) -> None:
+        if path.exists() and not force:
+            raise ProfileDeriveError(f"refusing to overwrite {path} (pass force=True)")
+        path.write_text(text)
+        written.append(path)
+
+    deps = (
+        'panic-common = { path = "../panic-common", features = ["user"] }\n'
+        'ntdll-sys = { path = "../ntdll-sys" }\n'
+        if m.is_usermode
+        else 'panic-common = { path = "../panic-common", features = ["kernel"] }\n'
+        'ntkrnl-sys = { path = "../ntkrnl-sys" }\n'
+    )
+    write(
+        out_dir / "Cargo.toml",
+        f"""# {crate} — see src/lib.rs for the module map.
+[package]
+name = "{crate}"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "{lib}"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+{deps}""",
+    )
+
+    mods = []
+    for tu in m.compiled_tus:
+        mods.append(f"    pub mod {tu.stem};")
+    write(
+        src / "lib.rs",
+        f"""//! {m.name} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.
+//! staticlib → lib{lib}.a, cohab-linked into the cmake-built {m.name}
+//! ({"usermode" if m.is_usermode else "kernel-mode"} module type `{m.module_type}`).
+//!
+//! Module map mirrors the CMakeLists source list exactly — the {len(m.compiled_tus)} TU(s)
+//! the build actually compiles. Generated sources ({", ".join(m.generated_sources) or "none"})
+//! stay C and link alongside.
+#![cfg_attr(not(test), no_std)]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
+#![allow(unused_assignments, static_mut_refs)]
+#![allow(clippy::all)]
+
+pub mod types; // bindgen island, per arch (gen_driver_types.sh {m.name})
+#[macro_use]
+pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs
+
+#[allow(clippy::module_inception)]
+pub mod {m.name} {{
+{chr(10).join(mods)}
+}}
+
+// staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {{
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
+}}
+
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {{}}
+""",
+    )
+
+    reexport = "pub use ntdll_sys::nt::*;" if m.is_usermode else "use ntkrnl_sys::ddk::*;"
+    uses_wine = any("wine/debug.h" in w for w in dp.wrapper_inc)
+    debug_block = (
+        """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME). Kept as no-op MACROS, never
+// out-of-line fns: an out-of-line no-op is an optimization barrier that uncloaks latent
+// ABI mismatches into ud2 (field manual §9.65).
+#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
+pub use crate::{ERR, FIXME, TRACE, WARN};"""
+        if uses_wine
+        else """// reactos/debug.h DPRINT/DPRINT1 — no-op MACROS, never out-of-line fns
+// (field manual §9.65: an out-of-line no-op is an optimization barrier).
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
+pub use crate::{DPRINT, DPRINT1};"""
+    )
+    write(
+        src / "prelude.rs",
+        f"""//! {crate} prelude — the single import surface the translated modules use.
+//! Bridges the bindgen `types` island and the translated C. Anything bindgen leaves out
+//! (CRT, inlines, sibling-C externs, hand-transcribed consts) is declared here ONCE.
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+
+pub use crate::types::*;
+pub use core::ffi::{{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void}};
+pub use core::ptr::{{addr_of, addr_of_mut}};
+
+// ================= debug ======================================================================
+{debug_block}
+
+// ================= CRT ========================================================================
+// NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into
+// a call to the function itself → infinite self-recursion → silent hang. Import them (AGENTS.md).
+extern "C" {{
+    pub fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+    pub fn memset(dest: *mut c_void, c: c_int, n: usize) -> *mut c_void;
+    pub fn memmove(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+    pub fn memcmp(a: *const c_void, b: *const c_void, n: usize) -> c_int;
+}}
+
+// bindgen does not emit NULL (a macro) nor NT_SUCCESS (an inline).
+pub const NULL: *mut c_void = core::ptr::null_mut();
+#[inline(always)]
+pub fn NT_SUCCESS(s: NTSTATUS) -> bool {{
+    s >= 0
+}}
+
+// The island re-exports the base {"NT" if m.is_usermode else "kernel"} identity: {reexport}
+""",
+    )
+
+    write(
+        src / "types.rs",
+        """//! Module-private struct layouts (exact, bindgen-generated per arch).
+//! Generated by tools/rustconv/gen_driver_types.sh. Do not edit by hand.
+#[cfg(target_arch = "x86")]      #[path = "types_i386.rs"]  mod types_arch;
+#[cfg(target_arch = "x86_64")]   #[path = "types_amd64.rs"] mod types_arch;
+#[cfg(target_arch = "aarch64")]  #[path = "types_arm64.rs"] mod types_arch;
+pub use types_arch::*;
+""",
+    )
+    for arch in ARCHES:
+        island = src / f"types_{arch}.rs"
+        if island.exists():
+            continue  # a REAL island — never clobber it with a placeholder
+        island.write_text(
+            f"""// PLACEHOLDER — the real bindgen island has not been generated yet.
+// An empty island is a CORRECTNESS bug, not a missing convenience: constants absent from an
+// island become silent catch-all match arms (field manual §9.112). So this fails the build
+// loudly instead of compiling as an empty module.
+compile_error!(
+    "types_{arch}.rs is a placeholder: run tools/rustconv/gen_driver_types.sh {m.name} \\
+     (add the derived profile first) to generate the real island."
+);
+"""
+        )
+        written.append(island)
+    return written
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def _default_repo_root() -> Path:
+    from .config import REACTOS_ROOT
+
+    return Path(REACTOS_ROOT)
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="python -m rustconv.profile_derive",
+        description="Derive a gen_driver_types.sh island profile from a module's build inputs.",
+    )
+    ap.add_argument(
+        "module", help="module directory (holding CMakeLists.txt), abs or repo-relative"
+    )
+    ap.add_argument("--repo-root", type=Path, default=None)
+    ap.add_argument("--arch", default="i386", choices=ARCHES)
+    ap.add_argument("--target", default=None, help="CMake target, when the file has several")
+    ap.add_argument("--emit", default="report", choices=("report", "profile", "json"))
+    ap.add_argument("--allow-unresolved", action="store_true", help="demote unresolved to findings")
+    ap.add_argument("--no-compile-db", action="store_true", help="ignore compile_commands.json")
+    ap.add_argument(
+        "--extra-inc",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="extra include dir (repeatable) for a module that includes from an unusual path",
+    )
+    ap.add_argument("--scaffold-dir", type=Path, default=None, help="also write the crate skeleton")
+    ap.add_argument("--force", action="store_true", help="scaffold may overwrite existing files")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--usermode",
+        dest="usermode",
+        action="store_true",
+        default=None,
+        help="target is user-mode (USERMODE=1). Needed for a target with no "
+        "set_module_type(), e.g. a static library shared between DLLs (msvcrt_static).",
+    )
+    mode.add_argument(
+        "--kernel", dest="usermode", action="store_false", help="target is kernel-mode (USERMODE=0)"
+    )
+    args = ap.parse_args(argv)
+
+    repo_root = (args.repo_root or _default_repo_root()).resolve()
+    module_dir = Path(args.module)
+    if not module_dir.is_absolute():
+        module_dir = repo_root / module_dir
+    try:
+        dp = derive(
+            module_dir,
+            repo_root,
+            arch=args.arch,
+            target=args.target,
+            strict_unresolved=not args.allow_unresolved,
+            use_compile_db=not args.no_compile_db,
+            extra_inc_dirs=tuple(args.extra_inc),
+            usermode=args.usermode,
+        )
+    except ProfileDeriveError as exc:
+        print(f"profile_derive: FAILED\n{exc}", file=sys.stderr)
+        return 2
+
+    if args.emit == "profile":
+        print(emit_profile(dp), end="")
+    elif args.emit == "json":
+        print(json.dumps(to_json(dp), indent=2))
+    else:
+        print(emit_report(dp))
+
+    if args.scaffold_dir is not None:
+        written = scaffold_crate(dp, args.scaffold_dir, force=args.force)
+        print(f"\nscaffold: {len(written)} file(s) under {args.scaffold_dir}", file=sys.stderr)
+        for p in written:
+            print(f"  {p}", file=sys.stderr)
+
+    return 1 if dp.errors else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

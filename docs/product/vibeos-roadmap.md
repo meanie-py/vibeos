@@ -498,22 +498,36 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   trigger is elsewhere. Repro: `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after
   the build. i386 never runs this test (74-test list vs amd64's 87).
 
-- **amd64 WoW64 `g_MsgMemory` SendMessage payload over-read — OPEN, reproduces on master**
-  (2026-07-24, §9.116, task E13). Every amd64 boot with the WoW64 applet ladder BUGCHECKs
-  `0x1E`/`C0000005` at `win32k+0x258EC` ~3.5 min in: `cnt_rust::cabi::raw_move` ←
-  `memcpy` ← `win32k_rust::message::g_MsgMemory` ← `co_IntDoSendMessage`. `g_MsgMemory`
-  (`win32k-rust/src/message.rs:407`) sizes pointer-lParam message payloads with the **host's**
-  `size_of::<T>()` (WINDOWPOS, DRAWITEMSTRUCT, MEASUREITEMSTRUCT, MINMAXINFO, …), so a
-  32-bit WoW64 sender's buffer is over-read. M15a/M16/M18 covered the *callback* direction
-  and `NtUserMessageCall`'s WINDOWPOS lParam; the **SendMessage** direction is uncovered.
-  **Confirmed pre-existing by control experiment** (pristine-master rebuild bugchecks
-  byte-identically). Timing-dependent — spider PASSed one boot and killed the next, so one
-  green boot is not evidence. Repro in seconds: launch `spider.exe` or `eventvwr.exe` from
-  `reactos/syswow64` (both staged; their winlogon auto-launch is held so the 12 earlier
-  ladder rungs keep reporting). Fix is win32k-side and needs payload *conversion*, not just
-  a smaller size — DRAWITEMSTRUCT/MEASUREITEMSTRUCT carry HWND/HDC/ULONG_PTR fields whose
-  offsets shift. Note the smoke gate stays GREEN through this: the boot marker fires long
-  before the ladder runs.
+- **amd64 WoW64 `g_MsgMemory` SendMessage payload over-read — FIXED 2026-07-24**
+  (§9.116 diagnosis, §9.118 fix, task E13). Fixed in the **WoW64 thunk layer**, not win32k:
+  §9.116 had concluded "the fix is win32k-side", but every `co_IntDoSendMessage` call sits
+  inside one syscall, `NtUserMessageCall`, which is where real Windows thunks messages.
+  `Wow64Manual_NtUserMessageCall` now marshals the lParam payload through the **generated**
+  `wow64_cb_automarshal.c` table the callback direction already used, so the two directions
+  cannot disagree about a layout. Auditing that boundary found **two more** divergences on
+  the same syscall, one of them live since the first 32-bit GUI guest: `ResultInfo` under
+  `FNID_SENDMESSAGE` is a `ULONG_PTR` out-slot, so win32k stored **8** bytes into user32's
+  **4**-byte `LRESULT` local — a guest-stack smash on *every* SendMessage (the E7 shape on a
+  much hotter path); and `DOSENDMESSAGE` (12 vs 16) under `FNID_SENDMESSAGE{FF,WTOOPTION}`.
+  Verified: old signature absent from the log entirely, **spider and eventvwr now PASS**
+  (both are re-enabled in the winlogon ladder as the regression test), **21 applets + 7
+  probe guests green on amd64**.
+- **`ProbeForWrite` raises unhandled in kernel mode → BUGCHECK 0x1E — OPEN** (2026-07-24,
+  task #67). Surfaced *because* E13 let the ladder run further than it ever had. Chain:
+  `ProbeForWrite+0x84` → `ExRaiseAccessViolation+0x14` → `RtlRaiseStatus(0xC0000005)` → no
+  handler under `USE_DUMMY_PSEH` → 0x1E. This is a **software raise**, not E13's hardware
+  fault in a memcpy — do not conflate them. Two instances: `doom` (dies after its window is
+  up and pumping; this rung was already red on master, where it died of E13 first) and
+  `devmgmt` (setupapi enumeration, first time ever reached). **Not caused by the E13 fix —
+  proved by control**: rebuilding with only the callback-direction change reverted
+  reproduces the chain byte-identically. Sibling of task #68 (win32k's
+  `_MmCopyFromCaller`/`_MmCopyToCaller` copy user buffers unguarded — `SafeProbeFor*` is
+  validate-only and does not touch-test, so any user process, 32- or 64-bit, can kill the
+  box with a partially-unmapped buffer; `ntoskrnl/kmsafecopy.c KmProtectedCopyMemory` is
+  the available fix, **amd64 only** — arm64 was tried and rejected, it wedges, §9.69).
+  devmgmt/msconfig/sndrec32/kbswitch stay staged with their winlogon launch held so the 21
+  passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
+  marker fires long before the ladder runs.
 - **arm64 0x1E / `[WAITDEP]` ALL-ONES residual — CLOSED 2026-07-17** (§9.92 item 4). The
   "~2 hits / 2 days" residual was the SAME netstack-TDI wait-block bug as §9.36 on the
   *synchronous*-completion path the 07-08 fix didn't cover (`IofCompleteRequestInner`'s

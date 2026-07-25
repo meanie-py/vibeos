@@ -9333,6 +9333,60 @@ than catching it downstream.
 build once before declaring a crate done, or run the audit directly — and when auditing, COUNT
 the arms you examined: an audit that inspects zero arms "passes" vacuously.
 
+#### 9.112a (2026-07-24) The oracle above reported ✓ 0 while 273 live catch-alls sat in the tree — TWO scope defects, and "the gate is green" was the misleading part
+
+The entry above says the class "already has a gated oracle … baseline currently empty = 0
+tolerated." That empty baseline was **false confidence**, not coverage. `vibeos-cli check` was
+genuinely reporting `✓ verify_match_consts` on a tree containing 273 HIGH-confidence catch-alls,
+including `serial.sys` routing *every* `IOCTL_SERIAL_*` to the CLEAR_STATS handler (37 dead arms)
+and `classpnp` (boot-loaded) mis-dispatching its SCSI sense-code and WMI paths (127). Two
+independent scope bugs, each sufficient alone:
+
+1. **Files scanned: `ntoskrnl-rust/src` only.** That was the tool's hardcoded default target and
+   nobody passed it anything else, so the entire driver fleet and every usermode DLL — precisely
+   where §9.112 says the class recurs — were never looked at. Fixed: default is now the whole
+   workspace.
+2. **Constant resolution: workspace-wide.** A name defined in *any* crate counted as resolvable
+   in *every* crate, so a genuine catch-all got filed LOW ("exists somewhere + this file has glob
+   imports → probably fine") and suppressed from the report. classpnp's `SCSI_ADSENSE_*` are
+   defined only in the unrelated `atapi-rust`, which classpnp does not depend on. Fixed:
+   resolution is scoped to each crate's own sources plus its transitive **path dependencies**.
+
+**The deeper lesson — "has a glob import" is not evidence a name resolves.** Translated code globs
+*specific* modules (`use ntkrnl_sys::ke::*;`, `use crate::shims::*;`), and the constant a dispatch
+arm needs usually lives in a module nobody globbed (`crate::types`). The tool now resolves each
+glob to its real module — following `#[path]`+`pub use types_arch::*` re-export chains — and only
+falls back to the lax rule when a glob target genuinely cannot be resolved (e.g. `ntkrnl_sys::nt`,
+which is declared inline in lib.rs with no `nt.rs` on disk). Getting that fallback backwards
+(treating an unreadable module as "resolved") manufactures confident false HIGHs; it must fail
+open, and be conservative about claiming a bug.
+
+**Validate a lint of this kind against rustc, not against itself.** The oracle is a
+`--force-warn` build: crate-level `#![allow(unused_variables, non_snake_case)]` is what hides the
+binding warnings, and `--force-warn` overrides crate-level allows where `-W` does not.
+
+```
+RUSTFLAGS="--force-warn unused_variables --force-warn non_snake_case" \
+  cargo check --workspace --target x86_64-pc-windows-gnu --keep-going --message-format short
+```
+
+Then keep only warnings whose identifier sits at a `match` arm line — a bound name there IS the
+catch-all. Cross-checking the static tool against that set drove it to **0 false positives / 5
+conservative false negatives** on 175 rustc-confirmed sites. Note rustc is a *subset* oracle, not
+ground truth: it cannot see `#[cfg]`-disabled arms (classpnp's `NTDDI_WINTRHESHOLD` firmware
+IOCTLs are latent catch-alls no build compiles), so tool-flagged sites rustc is silent about are
+not automatically false positives — check the `cfg` before dismissing one.
+
+**Fixing the arms is a real behaviour change, not a cleanup.** Restoring a constant makes the
+dispatcher actually dispatch, so every previously-dead arm starts executing. Expect a wave of
+`E0308 expected u8, found u32`: the scrutinee is the narrow C field while the bindgen constant is
+u32. Prefer **widening the scrutinee** (`match x as u32`) over minting `const FOO_U8: u8 = FOO as
+u8;` aliases — widening is lossless, whereas `as u8` silently truncates anything above 255 and can
+alias two arms onto the same value. But check the whole match first: where the *sibling* arms
+already use narrow constants from a `glue.rs` (scsiport's `SRB_STATUS_*`), the right fix is to
+import the missing name from that same module, not to widen. rustc's own message is the tell that
+the bug was real: *"`SRB_STATUS_DATA_OVERRUN` is interpreted as a constant, not a new binding."*
+
 ### 9.113 (FIXED 2026-07-24) The LLM INVENTED 59 kernel stop codes — `KeBugCheck(SYMBOL)` came back as `KeBugCheck(0xNN)` and ~80% of the numbers were wrong
 
 **Symptom (the one you'd actually hit):** a bugcheck fires and the stop-code line names a
@@ -9792,3 +9846,286 @@ Pick the hold based on COVERAGE, not on blame. Here master already bugchecked at
 rung, so holding the new applets did not make anything safer — what it bought was that the
 twelve rungs *before* the new ones keep reporting every boot instead of being cut off six
 applets early.
+
+
+### 9.117 (2026-07-24) Fact/call SEALING now works for plain C — the general prevention for §9.113, and it had been gated off for no technical reason
+
+*(Numbered 9.117 because §9.114–9.116 landed upstream while this was in flight. §9.113 and
+§9.113a/b are the DETECTION side of the same class — `verify_constants` + `scan_const_contradictions`
+find invented values already in the tree; sealing below stops them being generated at all.)*
+
+§9.113 fixed ONE constant family (stop codes) after the fact. Sealing prevents the whole
+class before the model ever sees a value.
+
+**The gate.** `rustconv/__main__.py` carried
+`raise CppComError("--seal-facts/--seal-calls currently require shell32 --cpp-com")`.
+That was pure caution from the C++/COM spike, not a technical limit: `fact_seal.py` is a
+*lexical* transform (mask comments/literals, replace value occurrences with opaque tokens,
+restore exact spellings after). Dropped onto plain C untouched it already sealed
+`STATUS_SUCCESS`/`0x200`/`MAX_PACKET_SIZE` correctly and already left `NTSTATUS`, `PVOID`,
+`KIRQL`, `PDEVICE_OBJECT` and even `ULONG` inside `sizeof()` alone.
+
+**What that gate cost.** The ledger (`tools/rustconv/.responses/outcomes.jsonl`) records
+`seal_facts=False` on **all 1,076** entries of the winsock + Tier-2 service program — i.e.
+**13,503 unprotected symbolic-constant occurrences and 7,002 unprotected call
+occurrences** shipped. Two of the semantic bugs found by hand in that batch
+(`SERVICE_STOP_PENDING` written as the literal `4`, which is actually `RUNNING`; and the
+catch-all `match` bindings of §9.112) are exactly what sealing makes impossible.
+
+**Three value families, and only the first was covered.** `_SYMBOL_RE` is `[A-Z][A-Z0-9_]+`
+— ALL_CAPS only:
+1. ALL_CAPS `#define`s — already sealed.
+2. **CamelCase enum members** — `NonPagedPool`, `PagedPool`, `KernelMode`, `Executive`,
+   `NotificationEvent`, `MmNonCached`, the whole `Ndis*` vocabulary. 357 occurrences /
+   119 distinct names in the network DLLs + drivers. Picking the wrong sibling of a
+   `POOL_TYPE` or `KPROCESSOR_MODE` is invisible to rustc.
+3. **Mixed-case object-like `#define`s** — `NERR_Success`, `CmResourceTypePort`.
+
+Families 2 and 3 come from generated ground truth (`tools/rustconv/gen_enum_constants.py`
+→ `rustconv/ddk_enum_constants.py`, 6,391 names from 725 headers), staleness-gated in
+`vibeos-cli check-tooling`. Same pattern as `gen_bugcodes.py`: one definition site, derived
+mechanically, auditable.
+
+**The classifier that makes family 3 safe.** A mixed-case `#define` is sealed ONLY if its
+replacement text is a bare numeric literal — provably a value. Measured on the target
+corpus that selects 41 real constants and declines 180 occurrences that would have been
+**actively wrong** to seal:
+- `RpcTryExcept` / `RpcEndExcept` (114 occurrences) — SEH **control-flow** macros. Sealing
+  these mangles the try/except structure itself.
+- `LDAPControl`, `LDAPMod`, `IUnknown` — `#define`d **type** names.
+
+Without the numeric-RHS test, a naive "seal every known #define name" allowlist corrupts
+bodies. Name-shape heuristics are not enough; classify by what the macro EXPANDS TO.
+
+**Two design rules worth keeping (both learned by getting them wrong):**
+
+1. **Never seal STORAGE.** The contract tells the model a token is an opaque value to
+   reproduce; if it is really a local, parameter, or struct field, the model can no longer
+   read or assign it. So the C dialect refuses to seal a name declared in the body, a name
+   after `.`/`->` (28 real field accesses in the corpus, e.g. `Adapter->NdisReserved`),
+   or a name followed by `(`. Generic words that are *both* a real enum member and an
+   obvious variable (`Info`, `Status`, `Length`, `Buffer`, `Type`, …) are excluded from the
+   generated set by policy. A missed seal costs one paid call; a sealed variable corrupts
+   the body.
+2. **Over-seal a type, never under-seal a value.** An early revision excluded every
+   `sizeof(...)` operand to suppress type-name noise (~2.9% of sealed symbols were type
+   names). That silently un-protected `sizeof(UNICODE_NULL)` — a real ReactOS idiom where
+   the operand IS a value. The guard was deleted: restoring a type literally still yields
+   valid Rust (`size_of::<NDIS_REQUEST>()`), so the noise is *benign* while the missed
+   value is *harmful*. Net effect after removal: **+357 protected, −0 lost.**
+
+**Restoring a C spelling is only safe because bindgen matches it.** `pub const
+NonPagedPool: POOL_TYPE = 0;` — verified against ~4,000 existing usages in
+`sdk/lib/rust`. If that ever stops being true, unsealing produces uncompilable Rust
+(loud), not wrong values (silent).
+
+**The `cpp` dialect is FROZEN.** `seal_facts(dialect=...)` defaults to `"cpp"` and must stay
+byte-identical: the response cache keys on the sealed prompt, so *any* change renumbers
+tokens and silently re-bills every cached PAID shell32 worker. Proven with a
+committed-vs-working comparison over 129 real files, 0 divergences. Add protections to the
+`"c"` dialect only. (The cache is otherwise already safe here — `ResponseCache.get` hashes
+the contract text and treats a changed contract as a MISS, so a sealed run cannot replay
+unsealed output.)
+
+**Audit of what already shipped (2026-07-24, unsealed): no invented constants found, but
+names ARE being lowered to magic numbers.** A differential check over 1,246 C/Rust function
+pairs (2,420 constants with header ground truth) produced no confirmed invented value. Three
+hand-verified samples:
+- `netapi32 NetpNetBiosStatusToApiStatus` — an 11-arm NetBIOS→API status table. Every `case
+  NRC_*:` became a bare integer (`9 =>`, `13 =>`, …) and **all 11 values are correct**.
+- `dnsapi DnsQuery_UTF8` — `DnsQuery_CodePage(CP_UTF8, …)` became `DnsQuery_CodePage(65001u32,
+  …)`. Correct value, lost name.
+- `iphlpapi GetAdaptersAddresses` — `KEY_READ`/`IF_TYPE_SOFTWARE_LOOPBACK` are present *by
+  name*; the apparent hits were an artifact of the audit script.
+
+So the shipped state is value-correct but **name-poor**, which is drift risk rather than a
+live bug. Two lessons about auditing this class: match Rust literals **with type suffixes**
+(`65001u32` — a `(?![\w.])` guard rejects the trailing `u` and manufactures false positives),
+and merge a function's body across **all** files before comparing (a name can be defined in
+two modules).
+
+**IMPORTANT INTERACTION — sealing makes bindgen-island completeness MORE critical.** The
+magic numbers in `match` arms are plausibly a deliberate dodge of §9.112: a bare constant
+name in *pattern* position is a fresh BINDING unless it resolves to a real const, so an
+unresolved name silently becomes a catch-all matching everything. Sealing restores the C
+spelling, so a sealed translation puts the NAME back in pattern position — which is correct
+and more readable, but only if that constant is in the crate's bindgen island. If it isn't,
+you have re-created the §9.112 catch-all bug. `tools/verify_match_consts.py` (gated) is the
+oracle for exactly this, and it must stay green on every sealed C flip. Net: seal, and treat
+an island gap as a hard failure rather than a warning.
+
+**Island completeness is MECHANIZABLE — stop hand-authoring the allowlist.**
+`python -m rustconv.profile_derive <module> --emit report` derives the profile from the
+CMake source list + each TU's real include closure, and runs the §9.112 audit for you:
+every `case`-label identifier is attributed to the header / TU / `-sys` crate that defines
+it, and an owner that would have been excluded is FORCE-ADDED. On rtl8139 that is the whole
+`MiniportQueryInformation` switch — all 38 `OID_*` labels resolve only because `ntddndis.h`
+is force-added; at depth 3 the tiering would have dropped it.
+
+Two constant classes still escape a derived allowlist, and both are WARNs to act on:
+1. **A const living only in a SECONDARY `-sys` island.** rtl8139 `ndis.c:299,311` switches
+   on `CmResourceTypePort`/`CmResourceTypeInterrupt`. Those are absent from
+   `ntkrnl-sys/src/bindgen_i386.rs` (0 definitions) and exist only in
+   `hal_bindgen_i386.rs` (3). Allowlisting the header does nothing — the translation must
+   `use ntkrnl_sys::hal_ddk::…` explicitly or the name stays unresolved, i.e. a catch-all.
+2. **A base-header owner the `-sys` crate lacks.** Pulling in the base header to get one
+   constant drags a monster island; transcribe the constant into the crate prelude instead.
+
+Note how this compounds with sealing: an unsealed translation tends to lower
+`case NRC_NORES:` to `9 =>`, which is *accidentally* immune to §9.112. Sealing restores the
+name, which is correct and readable but only compiles-correctly if the constant resolves. So
+turning sealing on makes island completeness MORE critical — run `profile_derive` first and
+treat its ERROR findings as blocking.
+
+**Recipe:** pass `--seal-facts --seal-calls` to `rustconv translate` for any plain-C module.
+Dialect selection is automatic (`--cpp-com` → `cpp`, otherwise `c`). Verify a prompt with
+`--dry-run --prompt` before spending: the envelope sections list the token counts, and a
+`MAX_COMPUTERNAME_LENGTH + 1` array bound should appear as TWO tokens — that is what stops
+the model folding `38 + 1` into `39`.
+
+### 9.118 (FIXED 2026-07-24) The §9.116 fix belonged in the WoW64 THUNK layer, not in win32k — and `NtUserMessageCall` carried three divergences, one of them smashing guest stack on *every* SendMessage
+
+§9.116 diagnosed the `g_MsgMemory` over-read and concluded "the fix is win32k-side."
+**That conclusion was wrong, and the evidence that overturned it took one grep:** every
+call to `co_IntDoSendMessage` — the only consumer of `CopyMsgToKernelMem` /
+`CopyMsgToUserMem` — lives inside a single syscall, `NtUserMessageCall`. So the whole
+class sits on one thunk boundary, which is exactly where real Windows puts it (wow64win.dll
+owns message thunking; the kernel only ever sees host-width structs).
+
+Fixing it in win32k would have meant teaching the kernel to ask "is my caller 32-bit?" on a
+hot path, for a problem the thunk layer is *defined* to solve. **When a width bug looks like
+it needs kernel changes, first check whether the whole surface funnels through one thunk.**
+
+**Three divergences on that one syscall, not one.** Auditing the boundary properly (rather
+than just fixing the reported symptom) found two more, and the unreported one was worse:
+
+| Arg | i386 | host | Consequence |
+|---|---|---|---|
+| lParam payload (`g_MsgMemory` messages) | varies | varies | §9.116 over-read → BUGCHECK |
+| `ResultInfo` under `FNID_SENDMESSAGE` | `ULONG_PTR` = **4** | **8** | **every** SendMessage smashes 4 bytes of guest stack |
+| `ResultInfo` under `FNID_SENDMESSAGE{FF,WTOOPTION}` | `DOSENDMESSAGE` = **12** | **16** | over-read *and* over-write |
+
+The middle row had been live since the first 32-bit GUI guest: user32's `SendMessageW`
+passes `&Result` (an `LRESULT` stack local, 4 bytes on i386) and win32k stores
+`size_of::<ULONG_PTR>()` = 8 into it. It never crashed because the adjacent 4 bytes were
+usually dead stack — the E7 shape exactly, on a far hotter path. **A bug that corrupts a
+fixed small amount of stack on a universal path will not announce itself; it will show up
+later as somebody else's flake.**
+
+**Don't hand-write the converters when a generator already emits them.** The payload
+conversions were already generated for the *callback* direction
+(`wow64_cb_automarshal.c`, keyed by `Msg`, from clang record-layout diffs). Reusing that
+table for the SendMessage direction means the two directions cannot disagree about a
+layout, and adding a row now fixes both at once. That immediately paid: `WINDOWPOS` had
+been an "extra struct" with no `Msg`→pair row, so the callback direction had been copying
+40 host bytes into a buffer the guest reads as 28 — a bug nobody had filed, fixed by adding
+the row that the SendMessage side needed anyway.
+
+**Verify widths with the layout engine, never with arithmetic.** Driving marshalgen's own
+`dump_layouts`/`diff_struct` over the candidate structs is a ~20-line script and it both
+confirms the divergent ones and — just as important — proves which are **identical**:
+`MINMAXINFO` (5 POINTs), `RECT`, `STYLESTRUCT`, `DEV_BROADCAST_HDR` are the same at both
+widths, and "helpfully" marshalling one of those would have corrupted it.
+
+**Scope the marshalling by what the callee DOES with the arg, not by the arg's type.**
+`lParam` is only this message's payload for some FNIDs. It is deliberately *not* marshalled
+for `FNID_CALLWNDPROC`/`CALLWNDPROCRET` (repacked into a `CWPSTRUCT` the callback path
+marshals separately), nor for the async posts (`SENDNOTIFYMESSAGE`, `SENDMESSAGECALLBACK`)
+— **a host stack buffer handed to an async post is a use-after-return**, which is the kind
+of "fix" that trades a loud bug for a silent one.
+
+**Fail the call, don't pass the buffer.** `WM_NCCALCSIZE`/`WM_COPYDATA`/`WM_CREATE` embed a
+pointer or a packed string tail, so the flat table cannot express them. On the FNIDs that
+reach `g_MsgMemory` they now fail loudly with a named DbgPrint instead of flat-passing:
+losing a message beats losing the machine.
+
+**Fixing the box-killer moves the ladder to the NEXT bug — expect that, and don't read it
+as a regression.** With this landed, spider and eventvwr (the two applets that had been
+killing the box) PASS, and the ladder ran on into `devmgmt` and `doom`, which BUGCHECK 0x1E
+via a *different* chain — `ProbeForWrite` → `ExRaiseAccessViolation` → `RtlRaiseStatus`,
+unhandled. A control run (callback-direction change reverted, rebuilt, rebooted) reproduced
+that chain byte-identically, which is what proves it is not this fix's doing. **Two crashes
+at the same rung are not the same bug; symbolicate before assuming continuity.**
+
+### 9.118a (FIXED 2026-07-24) The `[RAISE]` crash-triage helper reported a STACK address as the raise site — its "kernel-text-looking" window also contains kernel stacks
+
+While triaging the above, `rtl-diag`'s unhandled-raise helper printed:
+
+```
+[RAISE] RtlRaiseStatus(0xC0000005) from fffff88004880500
+```
+
+and that address symbolicates to nothing sensible — because it is a **stack pointer**, not
+code. The helper scans the stack for "the first kernel-text-looking qword" using
+`v >= 0xFFFF_F800_0000_0000 && v < 0xFFFF_F8FF_FFFF_FFFF`. On amd64 that window covers
+ntoskrnl (`fffff800…`) and driver text (`fffff880…`) — **and kernel stacks, which also live
+at `fffff880…`**. So the very first candidate it finds is routinely a saved stack pointer in
+the helper's own frame.
+
+Fix: reject candidates within 1MB of the current `rsp`. Kernel stacks are 16–24KB, so the
+window sits safely inside the stack and cannot swallow a real driver text address. After
+the fix the same helper reports `fffff800004cacc4` — an actual code address.
+
+**A triage tool that lies costs more than no tool**, because its output is trusted at
+exactly the moment you have least other information. The tell here was that the *known-good*
+case lied too: the boot-time `seh_poc` raise, whose raiser is in ntoskrnl (`fffff800…`),
+was also reported as `fffff880…`. **When a diagnostic is suspect, run it against the case
+whose answer you already know** — that comparison is what turned "this address is
+mysterious" into "this tool is broken."
+
+---
+
+### 9.119 (2026-07-25) A TEXT-SHAPED match is not a PROOF — the same regex measured 146 lowerable CRT forwarders and the sound implementation lowered 11
+
+Chasing cheap yield in `trivial_c.py` I measured how many msvcrt functions are the CRT's
+`X(args) → X_l(args, NULL)` forwarder idiom. A regex over the parsed bodies — "callee is
+same-TU, arguments are the parameters in order plus a trailing `NULL`" — found **146 of 1792
+(76 in mbcs.c alone, 40% of that file)**. That number went into a plan as the cost lever.
+
+The sound implementation lowers **11**.
+
+The gap is one word in the shape's own precondition. Admitting a literal `NULL` is only safe if
+the callee's parameter at that position is **proven** to be a pointer — otherwise `NULL` at an
+`int` position lowers to `core::ptr::null_mut()` and you have invented a type. The CRT spells
+that parameter `_locale_t`, which is a *typedef'd* pointer:
+
+```c
+typedef struct _locale_tstruct *_locale_t;      /* the star is in the TYPEDEF */
+int CDECL _mbsncmp(const unsigned char *s, const unsigned char *c, size_t n)
+{ return _mbsncmp_l(s, c, n, NULL); }           /* param type spells no star */
+```
+
+So `"*" in type` says "not a pointer"; `c_type_to_rust("_locale_t")` returns the opaque alias
+`_locale_t`; and `msvcrt-sys`'s bindgen island covers `__thread_data`/`threadlocinfo` but does
+not declare the alias. **No authority in reach can prove it**, so the matcher refuses — which
+is correct, because admitting it would assume exactly the fact the shape exists to prove.
+
+Two durable lessons, and the second is the one that bites:
+
+1. **Measuring a shape by its syntax measures an upper bound, not a yield.** Every deterministic
+   lowering is `syntax ∧ proof`, and the proof side is invisible to the regex you used to size
+   the work. Quote such a number as "≤ N candidates", and re-measure through the real
+   implementation before it becomes a plan. I stated 146 as the lever in a strategy the user
+   was deciding on; the honest number was an order of magnitude smaller.
+2. **The blocker is almost never the shape — it is the missing authority.** The fix for the
+   other ~135 is *not* to loosen `forwarder_with_null`, and absolutely not to allowlist
+   `_locale_t`. It is to give the pipeline a **typedef authority**: carry the module's pointer
+   typedefs in its bindgen island (a generated, layout-guarded artifact) and have
+   `_is_pointer_c_type` consult the island instead of the spelling. That is the same move as
+   §9.112 — *make the deterministic substrate complete and everything downstream gets cheaper*
+   — and it generalizes to every `LPWSTR`/`HANDLE`/`P*` typedef in Win32 code, not just the CRT.
+
+`test_trivial_c_forwarder_null.py::test_typedefd_pointer_is_refused_because_nothing_proves_it`
+pins the refusal so that when someone does wire a typedef authority, this is a deliberate
+decision with a failing test, not a silent behaviour change.
+
+**Related trap in the same change (worth copying).** The oracle compares C and Rust
+token-for-token, and a null pointer is the one atom whose spellings cannot match: C's `NULL` is
+a single `null` node *and* an uppercase-constant occurrence, Rust's `core::ptr::null_mut()` is
+three identifiers *plus* an extra call node — so it perturbs the identifier-sequence, call-count
+and constant-multiset checks simultaneously. The wrong fix is to relax those three checks for
+everyone. The right one is to rewrite **both sides** to one sentinel before comparing, leaving
+every check intact: a `NULL` that moved position, was dropped, or displaced a real argument
+still fails. Symmetric canonicalization beats weakened comparison — and note the sentinel must
+fold the Rust `NULL` token too, since `constant_return` already lowered `return NULL;` that way
+(a pre-existing test caught the asymmetry immediately, which is the system working).

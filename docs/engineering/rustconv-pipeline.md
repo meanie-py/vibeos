@@ -3,8 +3,9 @@
 Deep reference for the `tools/rustconv/` C-to-Rust translation pipeline: the
 pipeline stages, key files, post-processor rules, the probe-migration and
 Stage-3 design, and the Codex cross-model path. The high-level "what it is",
-the CLI command list, the money-warning, the cost table, and the static-analysis
-commands live in `AGENTS.md` → "rustconv — C-to-Rust Translation Pipeline".
+the CLI command list, the cost table, and the static-analysis commands live in
+`docs/engineering/agent-reference.md`; the money rules and the ordered plain-C loop
+live in `AGENTS.md`.
 
 ## Cost-efficient translation (read before spending API $)
 
@@ -42,6 +43,122 @@ C source → [scanner] tree-sitter parse → [resolver] match vs ntkrnl-sys cata
 `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is
 ~70% useful for HAL — review before integrating (memory
 `feedback_rustconv_hal_target.md`).
+
+## The deterministic-first stages for plain C (2026-07-24)
+
+Three $0 stages wrap the paid call. They exist because each catches a class the others
+structurally cannot, and because everything deterministic must be closed *before* payment
+(the substrate-closure protocol). AGENTS.md carries the short recipe; this is the detail.
+
+**Stage 0 — `python -m rustconv.profile_derive <module>` (`profile_derive.py`).** Derives the
+bindgen island from the CMake source list plus each TU's real include closure, rather than a
+hand-authored allowlist. Key behaviours:
+- Only TUs **actually compiled** count; on-disk-but-unlisted `.c` is `DEAD_SOURCE` (a previous
+  batch paid to translate a file nobody compiles).
+- The allowlist is tiered — an SDK header reached *only* through other SDK headers is excluded
+  (`<winbase.h>` alone reaches all of Win32) — but a header that **owns a `case`-label
+  constant is force-added**, because an omitted constant becomes a silent catch-all match arm
+  (§9.112). On rtl8139 that single rule is what keeps all 38 `OID_*` labels resolving.
+- §9.108 header conflicts are detected by **co-reachability** (a type bodied by two headers
+  that no single TU includes together), which is the false-positive filter a naive
+  "these headers conflict" claim lacks. A real conflict emits one `TYPES_STEM` island per TU
+  group, each with its own wrapper — a union wrapper would rebuild the wall.
+- Validated by rediscovering the committed `afd` and `disk` profiles and by independently
+  finding wldap32's real 2-island split.
+- `--emit profile` prints a paste-ready `gen_driver_types.sh` arm; `--scaffold-dir` writes the
+  crate skeleton. ERROR findings are blocking; exit code is 1 when any fires.
+- **A module whose `.c` live in a sibling static-lib target needs `--target`.** msvcrt is the
+  case: the `msvcrt` MODULE target compiles only generated stubs and `.rc` while
+  `msvcrt_static` owns all 32 `.c`, so aiming at the module name used to report "compiles no
+  in-tree .c … an already-Rust-flipped module looks exactly like this". That inference is
+  wrong for every whole-archive **cohab** module, whose `.c` stay compiled forever and are
+  beaten at link by `#[no_mangle]` Rust. It now names the sibling and the exact re-run.
+- **A static-lib target has no `set_module_type()`**, so kernel-vs-usermode is unknowable from
+  the CMakeLists — pass `--usermode` / `--kernel`. (Those flags are new: the error had named
+  them for a while without the argparser defining them. A fail-loud whose remedy does not
+  exist is worse than no message; see `test_usermode_override_exists_for_a_target_with_no_set_module_type`.)
+
+**Stage 1 — the paid call, with both envelopes.** See the sealing note below; always
+`--seal-facts --seal-calls`. In the same run, `trivial_c.py` lowers the provable trivial band
+(empty / constant-return / param-return / forwarder / forwarder-with-null / getter / setter,
+plus debug-only bodies) for **$0**, and each lowering re-verifies itself against an independent
+tree-sitter oracle — identical ordered identifier sequence and equal constant multisets —
+**raising** rather than shipping if the two disagree, because nobody reviews a free
+translation. Measured 9.0% of 94,323 repo-wide functions; 41% on stub-heavy modules but ~0% on
+real driver code, so do not plan capacity around it.
+
+`forwarder_with_null` (2026-07-24) admits the CRT's dominant idiom — `X(args)` delegating to
+`X_l(args, NULL)` — by accepting literal `NULL` arguments *only* where the **same-TU** callee's
+already-parsed signature declares a pointer at that position. Arity must match the callee
+exactly (so a variadic or unknown callee is refused) and `0`/`FALSE` are not accepted, because
+`0` at an `int` position is just zero. The oracle rewrites both `NULL` and
+`core::ptr::null_mut()` to one sentinel before comparing, so checks 2–4 stay token-for-token
+rather than being relaxed; a `NULL` that moved, vanished, or displaced a real argument still
+perturbs the identifier sequence. (What the sentinel cannot distinguish is `null()` from
+`null_mut()` — a *type* error rustc catches at candidate-check, not a silent miscompile.)
+
+**Its real reach is smaller than the C looks, and the gap is the interesting part.** A text
+match for `return Callee(<params>, NULL);` finds 146 msvcrt functions (76 in mbcs.c alone).
+The shape lowers **11**. The difference is that the CRT spells the locale parameter
+`_locale_t` — a *typedef'd* pointer — so neither the type spelling (`"*" in type`) nor
+`c_type_to_rust` can prove pointerness, and `msvcrt-sys`'s bindgen island does not declare the
+alias either. Refusing is correct: admitting it would assume the very fact the shape exists to
+prove. **The lever, when someone wants those ~135: give the pipeline a typedef authority** —
+extend the module's bindgen island to carry its pointer typedefs, then have
+`_is_pointer_c_type` consult the island rather than the spelling. `test_trivial_c_forwarder_null.py::
+test_typedefd_pointer_is_refused_because_nothing_proves_it` pins the current refusal so that
+becomes a deliberate decision, not a silent behaviour change.
+
+**Stage 1.5 — `rustconv crate-repair <crate>-rust` (`crate_repair.py`).** Bounded deterministic
+repair over the whole-crate `cargo check --message-format=json`, run before paying anyone to
+fix compile errors. Four rules, each with a closed authority (`truncating_numeric_cast`,
+`flex_array_index`, `no_std_path`, `raw_pointer_cast`); everything else stays RED and bucketed
+by shape for triage. Three properties worth knowing:
+- It **refuses rustc's own `.try_into().unwrap()` suggestion** — that converts C's silent
+  truncation into a panic in a live service and trips `tools/scan_silent_failures.py`.
+- Span repairs are driven off the `expected X, found Y` **labels**, not the primary span: in
+  the "arguments to this function are incorrect" shape the primary span is the *callee* and
+  the fixable value spans are secondary, so a primary-span implementation silently misses
+  every multi-bad-argument call.
+- **Pass all three arches.** A cast whose target width equals the analysing target's pointer
+  width is applied only on cross-target agreement; otherwise it is withheld with both
+  proposals, because an `as u32` inferred from i386 is wrong on amd64/arm64 wherever the real
+  parameter is `SIZE_T`/`ULONG_PTR`. The `flex_array_index` authority reads
+  `types_<arch>.rs` — `types.rs` is only a `#[cfg]` dispatch stub.
+
+## `--target`: proven from the tree, or refused (2026-07-24)
+
+`--target <name>` for a `dll/win32/*` module not in `TARGETS` builds a Target via
+`config.make_user_dll_target`. That used to **assume** two things — output crate `<name>-rust`,
+substrate `ntdll-sys` — which are right for the winsock/net fleet and silently wrong for
+anything else. On msvcrt both were wrong at once: the crate is `msvcrt-crt-rust`, and it does
+not depend on ntdll-sys *at all*, so every `ntdll_sys::` path the model emitted was
+unresolvable by construction. Per the `crate_bindgen_files` contract that is not a no-op — the
+model invents a forward declaration that compiles, links, and is silently wrong; here that
+means a **guessed `threadmbcinfo`**, whose `mbctype[257]`/`mbcasemap[256]` every mbcs predicate
+indexes.
+
+Both are now derived, and raise `TargetResolveError` rather than guessing:
+
+- **Output crate.** `<name>-rust` if it exists. If it does not but crates matching `*<name>*-rust`
+  do, refuse and list them (`--output-crate`). If nothing resembles it, the module is genuinely
+  new and the conventional name is correct.
+- **Substrate.** Read the `*-sys` path dependency the output crate actually declares. Exactly
+  one → use it; none or several → refuse (`--sys-crate`). A new module with no Cargo.toml yet
+  keeps the ntdll-sys default. Every pre-existing user-DLL crate (ws2_32, iphlpapi, netapi32,
+  dnsapi, wkssvc) declares exactly `ntdll-sys`, so this returns their historical value
+  unchanged — `test_target_resolve.py` pins that.
+- **Umbrella.** Detected from the substrate's `lib.rs`: one `pub mod <x> { … }` (ntdll-sys →
+  `ntdll_sys::nt::*`) or a flat root `pub use bindgen_<arch>::*;` (msvcrt-sys →
+  `msvcrt_sys::*`). Flat is represented as `""`, which is **meaningfully different from `None`**:
+  `None` means "kernel target" and skips user-mode post-processing entirely, so `postprocess`
+  gates on `sys_umbrella is not None`, not on truthiness. Anything ambiguous raises.
+- **Prompt addendum.** `templates/system_prompt_<name>.md` when present, else the generic
+  `system_prompt_user.md`. `system_prompt_msvcrt.md` carries the CRT rules: substrate is
+  `msvcrt_sys` flat; never redeclare `threadlocinfo`/`threadmbcinfo` (arch-varying offsets —
+  `pcumap` is at 208 on i386, 336 elsewhere); read the real `pclmap`/`pcumap` rather than
+  hardcoding an ASCII fold; `_invalid_parameter` + `*_errno()` instead of `STATUS_*`; exports
+  are `cdecl` on every arch including i386.
 
 ## Key Files
 
@@ -297,6 +414,19 @@ python -m rustconv dup-census dll/win32/shell32 --top 20
 `--seal-facts` owns HRESULT predicates and constant occurrences. `--seal-calls` owns each
 known runtime callee occurrence with a unique exactly-once executable token. Either envelope
 fails loud before the normal body audit. Each mode has a separate response-cache suffix.
+
+**Sealing is NOT shell32-only any more (2026-07-24).** It works for any plain-C module —
+kernel drivers, Win32 DLLs, services — and you should pass `--seal-facts --seal-calls` by
+default. The dialect is selected automatically: `--cpp-com` keeps the **frozen** `cpp`
+behaviour (changing it renumbers tokens and silently re-bills every cached *paid* shell32
+worker), everything else gets the `c` dialect, which additionally protects **CamelCase DDK
+enum constants** (`NonPagedPool`, `KernelMode`, `Executive`, the `Ndis*` vocabulary) and
+**mixed-case numeric `#define`s** (`NERR_Success`) from generated ground truth
+(`gen_enum_constants.py` → `rustconv/ddk_enum_constants.py`, staleness-gated in
+`check-tooling`). The whole winsock + Tier-2 service program ran with sealing OFF and
+shipped 13,503 unprotected constant occurrences; do not repeat that. Rationale, the
+storage/type direction rules, and the numeric-replacement-text classifier that keeps SEH
+control-flow macros (`RpcTryExcept`) out of the envelope: field manual **§9.117**.
 
 `candidate-check` generates a durable synthetic `no_std` crate under
 `.responses/candidate-oracles/`, replaces exactly one worker per isolated module backed by

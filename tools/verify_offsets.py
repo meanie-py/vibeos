@@ -57,15 +57,16 @@ def _find_build_repo() -> Path:
 
     if has_builds(REACTOS):
         return REACTOS
-    # sibling repos (e.g. the main vibeos checkout next to this worktree)
-    parent = REACTOS.parent
-    if parent.is_dir():
-        for sib in sorted(parent.iterdir()):
-            if sib == REACTOS or not sib.is_dir():
-                continue
-            if (sib / "ntoskrnl").is_dir() and has_builds(sib):
-                return sib
-    return REACTOS  # nothing better — let the include errors surface
+    # Deliberately NO sibling fallback. These headers are generated from source at
+    # a specific commit, so borrowing another worktree's build tree checks THIS
+    # tree's Rust offsets against ANOTHER lane's C layouts — which can green-light
+    # a real offset drift or invent a phantom one. Fail loud instead.
+    sys.exit(
+        f"FATAL: no build-<arch>/ in {REACTOS}. verify_offsets needs the generated\n"
+        f"headers from THIS worktree's build tree; a sibling worktree's tree is NOT\n"
+        f"a substitute (another lane's source at another commit).\n"
+        f"  fix: ./vibeos-cli build --arch <amd64|i386|arm64>"
+    )
 
 
 BUILD_REPO = _find_build_repo()

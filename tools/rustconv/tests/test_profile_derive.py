@@ -1,0 +1,666 @@
+"""Tests for profile_derive — the bindgen-island profile deriver.
+
+Every case here is one of the two bug classes the module exists to prevent, or a false
+positive it produced while being calibrated against the real tree:
+
+* **§9.112** an incomplete island: a constant a ``switch`` dispatches on that the island
+  will not carry becomes a silent catch-all ``match`` arm. Detection cases below assert the
+  LOUD finding; the ``#ifndef __REACTOS__`` case asserts we do NOT cry wolf on dead code
+  (a false ``DLL_WINE_PREATTACH`` alarm on the real ``snmpapi`` is what motivated it).
+* **§9.108** mirroring each TU's real include set instead of a master header, and splitting
+  into ``TYPES_STEM`` islands only for a pair that genuinely collides.
+
+Fixtures are synthetic trees under ``tmp_path`` — no dependency on real repo paths, so the
+tests keep working in a worktree with no build dirs.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+from rustconv.profile_derive import (
+    ProfileDeriveError,
+    build_include_env,
+    derive,
+    emit_profile,
+    emit_report,
+    find_conflicts,
+    find_switch_constants,
+    header_symbols,
+    parse_cmakelists,
+    scaffold_crate,
+    scan_includes,
+    scan_preamble,
+    to_json,
+    walk_includes,
+)
+
+# ---------------------------------------------------------------------------
+# fixture builder
+# ---------------------------------------------------------------------------
+
+CMAKE_USERMODE = """
+include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl)
+spec2def(widget.dll widget.spec ADD_IMPORTLIB)
+
+list(APPEND SOURCE
+    main.c
+    helper.c
+    ${CMAKE_CURRENT_BINARY_DIR}/widget_c.c)
+
+add_library(widget MODULE ${SOURCE} widget.rc)
+set_module_type(widget win32dll UNICODE)
+add_importlibs(widget msvcrt kernel32 ntdll)
+"""
+
+
+def _tree(tmp_path: Path) -> Path:
+    """A minimal fake ReactOS tree: sdk include roots + one module dir."""
+    for d in ("sdk/include", "sdk/include/psdk", "sdk/include/ddk", "sdk/include/reactos/idl"):
+        (tmp_path / d).mkdir(parents=True, exist_ok=True)
+    (tmp_path / "dll/win32/widget").mkdir(parents=True, exist_ok=True)
+    return tmp_path
+
+
+def _mod(tmp_path: Path) -> Path:
+    return tmp_path / "dll/win32/widget"
+
+
+def _write(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path
+
+
+def _basic_module(tmp_path: Path, *, main_extra: str = "", cmake: str = CMAKE_USERMODE) -> Path:
+    """widget.dll: main.c + helper.c compiled, orphan.c dead on disk.
+
+    Include chain: main.c -> "precomp.h" -> <widget_defs.h> (psdk) -> <widget_base.h> (psdk)
+    """
+    root = _tree(tmp_path)
+    mod = _mod(tmp_path)
+    _write(mod / "CMakeLists.txt", cmake)
+    _write(
+        root / "sdk/include/psdk/widget_base.h",
+        "#ifndef _WIDGET_BASE_H\n#define _WIDGET_BASE_H\ntypedef struct _WBASE { int x; } WBASE;\n"
+        "#define WIDGET_BASE_OK 1\n#endif\n",
+    )
+    _write(
+        root / "sdk/include/psdk/widget_defs.h",
+        "#ifndef _WIDGET_DEFS_H\n#define _WIDGET_DEFS_H\n#include <widget_base.h>\n"
+        "#define WIDGET_MODE_FAST  1\n#define WIDGET_MODE_SLOW  2\n"
+        "#define WIDGET_MASK (WIDGET_MODE_FAST | WIDGET_MODE_SLOW)\n"
+        "#define WIDGET_CALC(x) ((x) + 1)\n#endif\n",
+    )
+    _write(mod / "precomp.h", "#include <widget_defs.h>\ntypedef struct _WPRIV { int y; } WPRIV;\n")
+    _write(
+        mod / "main.c",
+        '#define WIN32_NO_STATUS\n#include <stdarg.h>\n#include "precomp.h"\n\n'
+        "int dispatch(int mode)\n{\n"
+        "    switch (mode)\n    {\n"
+        "        case WIDGET_MODE_FAST: return 1;\n"
+        "        case WIDGET_MODE_SLOW: return 2;\n"
+        "        default: return 0;\n    }\n}\n" + main_extra,
+    )
+    _write(mod / "helper.c", '#include "precomp.h"\nint helper(void) { return 0; }\n')
+    _write(mod / "orphan.c", "int never_compiled(void) { return 1; }\n")
+    return root
+
+
+# ---------------------------------------------------------------------------
+# CMakeLists: which TUs are ACTUALLY compiled
+# ---------------------------------------------------------------------------
+
+
+def test_dead_source_is_excluded_and_reported(tmp_path):
+    """orphan.c exists on disk but is not in the source list — paying to translate it is
+    money spent on a file nobody links (it happened last batch)."""
+    root = _basic_module(tmp_path)
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+    assert [p.name for p in m.compiled_tus] == ["main.c", "helper.c"]
+    assert [p.name for p in m.dead_sources] == ["orphan.c"]
+    assert any(f.code == "DEAD_SOURCE" for f in m.findings)
+
+
+def test_generated_sources_are_kept_separate_from_translatable_ones(tmp_path):
+    root = _basic_module(tmp_path)
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+    assert m.generated_sources == ["widget_c.c"]  # MIDL product: stays C, never translated
+    assert all("widget_c.c" not in p.name for p in m.compiled_tus)
+
+
+def test_module_type_and_unicode_come_from_set_module_type(tmp_path):
+    root = _basic_module(tmp_path)
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+    assert m.module_type == "win32dll"
+    assert m.is_usermode is True
+    assert m.unicode is True
+
+
+def test_kernel_module_type_flips_usermode(tmp_path):
+    cmake = (
+        "add_definitions(-DNDIS50_MINIPORT)\n"
+        "list(APPEND SOURCE main.c helper.c)\n"
+        "add_library(widget MODULE ${SOURCE})\n"
+        "set_module_type(widget kernelmodedriver)\n"
+    )
+    root = _basic_module(tmp_path, cmake=cmake)
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+    assert m.is_usermode is False
+    assert "-DNDIS50_MINIPORT" in m.definitions
+
+
+def test_target_compile_definitions_are_picked_up(tmp_path):
+    """`disk` carries its whole Win8 version profile as target_compile_definitions (no -D,
+    per target). Missing it derives the wrong version-gated struct layouts."""
+    cmake = (
+        "list(APPEND SOURCE main.c helper.c)\n"
+        "add_library(widget MODULE ${SOURCE})\n"
+        "target_compile_definitions(widget PUBLIC DEBUG_USE_KDPRINT _WIN32_WINNT=0x602)\n"
+        "set_module_type(widget kernelmodedriver)\n"
+    )
+    root = _basic_module(tmp_path, cmake=cmake)
+    dp = derive(_mod(tmp_path), root)
+    assert "-DDEBUG_USE_KDPRINT" in dp.ver_defs
+    assert "-D_WIN32_WINNT=0x602" in dp.ver_defs
+    # WINVER tracks _WIN32_WINNT when the module bumps one and not the other
+    assert "-DWINVER=0x602" in dp.ver_defs
+    assert "-DNTDDI_VERSION=0x06020000" in dp.ver_defs
+
+
+def test_arch_conditional_sources_resolve_against_the_requested_arch(tmp_path):
+    cmake = (
+        "list(APPEND SOURCE main.c)\n"
+        'if(ARCH STREQUAL "i386")\n    list(APPEND SOURCE helper.c)\nendif()\n'
+        "add_library(widget MODULE ${SOURCE})\nset_module_type(widget win32dll)\n"
+    )
+    root = _basic_module(tmp_path, cmake=cmake)
+    i386 = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root, arch="i386")
+    amd64 = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root, arch="amd64")
+    assert [p.name for p in i386.compiled_tus] == ["main.c", "helper.c"]
+    assert [p.name for p in amd64.compiled_tus] == ["main.c"]
+
+
+def test_ambiguous_target_fails_loudly(tmp_path):
+    cmake = (
+        "list(APPEND SOURCE main.c)\n"
+        "add_library(alpha MODULE ${SOURCE})\nset_module_type(alpha win32dll)\n"
+        "add_library(beta MODULE ${SOURCE})\nset_module_type(beta win32dll)\n"
+    )
+    root = _basic_module(tmp_path, cmake=cmake)
+    with pytest.raises(ProfileDeriveError, match="pass --target"):
+        parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+
+
+def test_missing_cmakelists_fails_loudly(tmp_path):
+    with pytest.raises(ProfileDeriveError, match=re.escape("no CMakeLists.txt")):
+        parse_cmakelists(tmp_path / "nope/CMakeLists.txt", tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# include closure
+# ---------------------------------------------------------------------------
+
+
+def test_include_closure_follows_the_nested_chain(tmp_path):
+    root = _basic_module(tmp_path)
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+    env = build_include_env(root, m)
+    closure = walk_includes(m.compiled_tus, env)
+    names = {r.name for r in closure.headers.values()}
+    assert {"precomp.h", "widget_defs.h", "widget_base.h"} <= names
+    depths = {r.name: r.depth for r in closure.headers.values()}
+    assert depths["precomp.h"] == 1
+    assert depths["widget_defs.h"] == 2
+    assert depths["widget_base.h"] == 3
+    kinds = {r.name: r.kind for r in closure.headers.values()}
+    assert kinds["precomp.h"] == "module"
+    assert kinds["widget_defs.h"] == "sdk"
+
+
+def test_quoted_include_prefers_the_includers_own_directory(tmp_path):
+    """`#include "shared.h"` next to the TU must NOT resolve to the same-named SDK header."""
+    root = _basic_module(tmp_path)
+    _write(root / "sdk/include/psdk/shared.h", "#define WHICH 2\n")
+    _write(_mod(tmp_path) / "shared.h", "#define WHICH 1\n")
+    _write(_mod(tmp_path) / "helper.c", '#include "shared.h"\nint helper(void){return WHICH;}\n')
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+    env = build_include_env(root, m)
+    closure = walk_includes([_mod(tmp_path) / "helper.c"], env)
+    hit = next(p for p, r in closure.headers.items() if r.name == "shared.h")
+    assert hit == (_mod(tmp_path) / "shared.h").resolve()
+
+
+def test_unresolved_include_raises_loudly(tmp_path):
+    """Never emit a partial allowlist that looks complete (AGENTS.md: fail loud)."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c", "#include <nowhere_at_all.h>\nint helper(void){return 0;}\n"
+    )
+    with pytest.raises(ProfileDeriveError) as exc:
+        derive(_mod(tmp_path), root)
+    assert "nowhere_at_all.h" in str(exc.value)
+    assert "--allow-unresolved" in str(exc.value)
+
+
+def test_unresolved_include_can_be_demoted_to_a_finding(tmp_path):
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c", "#include <nowhere_at_all.h>\nint helper(void){return 0;}\n"
+    )
+    dp = derive(_mod(tmp_path), root, strict_unresolved=False)
+    codes = [(f.severity, f.code) for f in dp.findings]
+    assert ("error", "UNRESOLVED_INCLUDE") in codes
+    assert any("nowhere_at_all.h" in u.name for u in dp.closure.unresolved)
+
+
+def test_unresolved_include_inside_a_conditional_does_not_block(tmp_path):
+    """`#ifdef _MAC #include <rpcmac.h>` is a dead platform arm, not a broken search path."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\n#ifdef _SOME_OTHER_PLATFORM\n#include <mac_only.h>\n#endif\n'
+        "int helper(void){return 0;}\n",
+    )
+    dp = derive(_mod(tmp_path), root)  # strict: must NOT raise
+    assert any(u.name == "mac_only.h" and u.conditional for u in dp.closure.unresolved)
+    assert not any(f.code == "UNRESOLVED_INCLUDE" and f.severity == "error" for f in dp.findings)
+
+
+def test_if_zero_block_is_skipped_but_its_else_arm_is_not():
+    incs = scan_includes("#if 0\n#include <dead.h>\n#else\n#include <live.h>\n#endif\n")
+    assert [i.name for i in incs] == ["live.h"]
+
+
+def test_ifndef_reactos_is_dead_and_its_else_arm_is_live():
+    incs = scan_includes(
+        "#ifndef __REACTOS__\n#include <wine.h>\n#else\n#include <ros.h>\n#endif\n"
+    )
+    assert [i.name for i in incs] == ["ros.h"]
+
+
+def test_include_guard_does_not_mark_everything_conditional():
+    text = "#ifndef _X_H\n#define _X_H\n#include <real.h>\n#endif\n"
+    (inc,) = scan_includes(text)
+    assert inc.conditional is False
+
+
+def test_preamble_is_mirrored_verbatim_including_its_defines():
+    """§9.108: a TU's own prologue is a guaranteed-legal wrapper; a master header is not."""
+    lines, conditional = scan_preamble(
+        "/* c */\n#define WIN32_NO_STATUS\n#include <windef.h>\n"
+        '#include "precomp.h"\n\nint f(void) { return 0; }\n#include <late.h>\n'
+    )
+    assert lines == ["#define WIN32_NO_STATUS", "#include <windef.h>", '#include "precomp.h"']
+    assert conditional is False
+
+
+# ---------------------------------------------------------------------------
+# §9.112 — constants a switch dispatches on
+# ---------------------------------------------------------------------------
+
+
+def test_switch_constants_are_found_via_tree_sitter(tmp_path):
+    root = _basic_module(tmp_path)
+    consts = find_switch_constants([_mod(tmp_path) / "main.c"], root)
+    assert {c.ident for c in consts} == {"WIDGET_MODE_FAST", "WIDGET_MODE_SLOW"}
+
+
+def test_case_label_in_a_dead_reactos_branch_is_not_audited(tmp_path):
+    """The false `DLL_WINE_PREATTACH` alarm: wine's arm is inside `#ifndef __REACTOS__`."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\nint h(int r){ switch (r) {\n'
+        "#ifndef __REACTOS__\n    case WINE_ONLY_REASON: return -1;\n#endif\n"
+        "    case WIDGET_MODE_FAST: return 1;\n} return 0; }\n",
+    )
+    consts = find_switch_constants([_mod(tmp_path) / "helper.c"], root)
+    assert "WINE_ONLY_REASON" not in {c.ident for c in consts}
+    assert "WIDGET_MODE_FAST" in {c.ident for c in consts}
+
+
+def test_reachable_const_owner_is_force_added_to_the_allowlist(tmp_path):
+    """The §9.112 prophylactic: allowlist the header owning any switch constant."""
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    owners = {o.ident: o for o in dp.const_owners}
+    assert owners["WIDGET_MODE_FAST"].owner is not None
+    assert owners["WIDGET_MODE_FAST"].owner.name == "widget_defs.h"
+    assert owners["WIDGET_MODE_FAST"].allowlisted is True
+    assert any("widget_defs" in rx for rx in dp.allow_files)
+
+
+def test_unreachable_switch_constant_is_a_loud_finding(tmp_path):
+    """No header in the closure defines it -> the match arm silently matches EVERYTHING."""
+    root = _basic_module(tmp_path)
+    # WIDGET_MODE_TURBO lives in a header the module never includes
+    _write(root / "sdk/include/psdk/widget_extra.h", "#define WIDGET_MODE_TURBO 3\n")
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\nint h(int m){ switch (m) { case WIDGET_MODE_TURBO: return 3; } '
+        "return 0; }\n",
+    )
+    dp = derive(_mod(tmp_path), root)
+    bad = [f for f in dp.findings if f.code == "SWITCH_CONST_UNOWNED"]
+    assert len(bad) == 1
+    assert "WIDGET_MODE_TURBO" in bad[0].detail
+    assert bad[0].severity == "error"
+    assert dp.errors, "an unowned switch constant must make the run non-zero"
+
+
+def test_function_like_macro_in_a_case_label_is_an_error(tmp_path):
+    """bindgen emits no constant for a function-like macro, so allowlisting is not enough."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\nint h(int m){ switch (m) { case WIDGET_CALC: return 1; } '
+        "return 0; }\n",
+    )
+    dp = derive(_mod(tmp_path), root)
+    assert any(f.code == "SWITCH_CONST_NOT_BINDGENABLE" for f in dp.findings)
+
+
+def test_macro_expression_const_is_flagged_for_verification(tmp_path):
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\nint h(int m){ switch (m) { case WIDGET_MASK: return 1; } '
+        "return 0; }\n",
+    )
+    dp = derive(_mod(tmp_path), root)
+    assert any(f.code == "SWITCH_CONST_EXPRESSION" for f in dp.findings)
+
+
+def test_tu_local_const_needs_no_island_change(tmp_path):
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\n#define LOCAL_MODE 7\n'
+        "int h(int m){ switch (m) { case LOCAL_MODE: return 7; } return 0; }\n",
+    )
+    dp = derive(_mod(tmp_path), root)
+    owner = next(o for o in dp.const_owners if o.ident == "LOCAL_MODE")
+    assert owner.owner_kind == "tu-local"
+    assert any(f.code == "SWITCH_CONST_TU_LOCAL" for f in dp.findings)
+    assert not dp.errors
+
+
+def test_header_symbols_classifies_macro_kinds(tmp_path):
+    h = _write(
+        tmp_path / "h.h",
+        "#define LIT 0x10\n#define EXPR (LIT | 1)\n#define FN(x) ((x)+1)\n"
+        "enum _E { E_ONE = 1, E_TWO };\n",
+    )
+    syms = header_symbols(h)
+    assert syms["LIT"][0] == "literal"
+    assert syms["EXPR"][0] == "expression"
+    assert syms["FN"][0] == "function-like"
+    assert syms["E_ONE"][0] == "enum"
+    # the targeted (single-alternation) fast path must agree with the full scan
+    assert header_symbols(h, frozenset({"LIT", "FN"})).keys() == {"LIT", "FN"}
+
+
+def test_targeted_scan_is_not_fooled_by_a_prefix_identifier(tmp_path):
+    """Regression, found on the real afd/tdihelpers closure: alternation is first-match-wins,
+    so `TDI_ADDRESS_TYPE_IP` swallowed the `#define TDI_ADDRESS_TYPE_IPX` line and IPX was
+    reported UNOWNED — a FALSE §9.112 alarm on a constant defined two lines from its sibling.
+    """
+    h = _write(
+        tmp_path / "tdi.h",
+        "#define TDI_ADDRESS_TYPE_IP                 2\n"
+        "#define TDI_ADDRESS_TYPE_IPX                6\n",
+    )
+    syms = header_symbols(h, frozenset({"TDI_ADDRESS_TYPE_IP", "TDI_ADDRESS_TYPE_IPX"}))
+    assert syms["TDI_ADDRESS_TYPE_IP"] == ("literal", "2")
+    assert syms["TDI_ADDRESS_TYPE_IPX"] == ("literal", "6")
+
+
+# ---------------------------------------------------------------------------
+# §9.108 — genuine conflicts get separate islands, co-reachable ones do not
+# ---------------------------------------------------------------------------
+
+
+def test_anonymous_aggregate_macro_is_not_a_type_definition(tmp_path):
+    """Regression, found on the real wldap32 closure: `} DUMMYUNIONNAME;` closes an inline
+    union FIELD. Counting it as a type made every header with an anonymous union "conflict"
+    with every other one and proposed a bogus 3-island split."""
+    root = _basic_module(tmp_path)
+    body = (
+        "typedef struct _THING {\n    union {\n        int a;\n        long b;\n"
+        "    } DUMMYUNIONNAME;\n} THING;\n"
+    )
+    _write(root / "sdk/include/psdk/one.h", body)
+    _write(
+        root / "sdk/include/psdk/two.h",
+        body.replace("_THING", "_OTHER").replace("} THING", "} OTHER"),
+    )
+    _write(_mod(tmp_path) / "main.c", "#include <one.h>\nint main_fn(void){return 0;}\n")
+    _write(_mod(tmp_path) / "helper.c", "#include <two.h>\nint helper(void){return 0;}\n")
+    dp = derive(_mod(tmp_path), root)
+    assert len(dp.islands) == 1
+    assert not any(f.code == "HEADER_CONFLICT" for f in dp.findings)
+
+
+def test_last_enum_member_without_a_trailing_comma_is_still_found(tmp_path):
+    """Regression, found on the real samlib closure: ntsam.h's `DomainDisplayServer` is the
+    last enumerator, so its `}` is on the NEXT line — a same-line-only separator match
+    reported it UNOWNED, i.e. a false §9.112 alarm."""
+    h = _write(
+        tmp_path / "ntsam.h",
+        "typedef enum _DDI\n{\n    DomainDisplayUser = 1,\n    DomainDisplayGroup,\n"
+        "    DomainDisplayServer\n} DDI, *PDDI;\n",
+    )
+    syms = header_symbols(h, frozenset({"DomainDisplayServer", "DomainDisplayGroup"}))
+    assert syms["DomainDisplayServer"][0] == "enum"
+    assert syms["DomainDisplayGroup"][0] == "enum"
+
+
+def test_genuine_conflict_proposes_a_types_stem_split(tmp_path):
+    """Two MIDL-ish headers redeclaring the same struct, and no TU includes both."""
+    root = _basic_module(tmp_path)
+    _write(
+        root / "sdk/include/psdk/alpha_c.h",
+        "typedef struct _SERVER_INFO_100 { int a; } SERVER_INFO_100;\n",
+    )
+    _write(
+        root / "sdk/include/psdk/beta_c.h",
+        "typedef struct _SERVER_INFO_100 { long b; } SERVER_INFO_100;\n",
+    )
+    _write(_mod(tmp_path) / "main.c", "#include <alpha_c.h>\nint main_fn(void){return 0;}\n")
+    _write(_mod(tmp_path) / "helper.c", "#include <beta_c.h>\nint helper(void){return 0;}\n")
+    dp = derive(_mod(tmp_path), root)
+    assert len(dp.islands) == 2
+    assert {i.stem for i in dp.islands} == {"types", "types_1"}
+    assert any(f.code == "HEADER_CONFLICT" for f in dp.findings)
+    assert any(f.code == "TYPES_STEM_SPLIT" for f in dp.findings)
+    text = emit_profile(dp)
+    assert "TYPES_STEM=types_1" in text
+    # each island gets its OWN wrapper: emitting the UNION would rebuild the exact
+    # redefinition wall the split exists to avoid (§9.108)
+    wrappers = ["\n".join(i.wrapper_inc) for i in dp.islands]
+    assert sum("alpha_c.h" in w for w in wrappers) == 1
+    assert sum("beta_c.h" in w for w in wrappers) == 1
+    assert not any("alpha_c.h" in w and "beta_c.h" in w for w in wrappers)
+    assert 'case "$DRIVER" in' in text and "widget-types_1)" in text
+    assert "OUT_CRATE_DIR=" in text  # both islands land in the one crate (netapi32 shape)
+
+
+def test_co_reachable_headers_are_not_a_conflict(tmp_path):
+    """If one .c includes both and compiles, the pair is compatible by construction (§9.108)."""
+    root = _basic_module(tmp_path)
+    _write(
+        root / "sdk/include/psdk/a.h",
+        "#ifndef _T\n#define _T\ntypedef struct _T { int a; } T;\n#endif\n",
+    )
+    _write(
+        root / "sdk/include/psdk/b.h",
+        "#ifndef _T\n#define _T\ntypedef struct _T { int a; } T;\n#endif\n",
+    )
+    _write(
+        _mod(tmp_path) / "main.c", "#include <a.h>\n#include <b.h>\nint main_fn(void){return 0;}\n"
+    )
+    _write(_mod(tmp_path) / "helper.c", "#include <b.h>\nint helper(void){return 0;}\n")
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+    env = build_include_env(root, m)
+    closure = walk_includes(m.compiled_tus, env)
+    assert find_conflicts(closure, sorted(closure.headers)) == []
+
+
+# ---------------------------------------------------------------------------
+# emission
+# ---------------------------------------------------------------------------
+
+
+def test_emitted_profile_uses_gen_driver_types_vocabulary(tmp_path):
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    text = emit_profile(dp)
+    assert "  widget)" in text
+    assert "USERMODE=1" in text
+    assert "BLOCKLIST_FUNCS=1" in text
+    assert 'DRIVER_DIR="${SRC}/dll/win32/widget"' in text
+    assert "WRAPPER_INC=$'" in text
+    assert "#define WIN32_NO_STATUS" in text  # the TU's prologue, mirrored verbatim
+    assert "ALLOW_FILES=(" in text and text.rstrip().endswith(";;")
+    assert "--allowlist-file '.*widget[/\\\\].*\\.h'" in text
+    assert "-DUNICODE" in text and "-D_UNICODE" in text  # from set_module_type(... UNICODE)
+    assert "-DNTDDI_VERSION=" in text
+
+
+def test_report_and_json_carry_the_evidence(tmp_path):
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    report = emit_report(dp)
+    assert "orphan.c" in report  # dead source is visible
+    assert "switch-constant audit" in report
+    assert "precomp.h" in report
+    blob = to_json(dp)
+    assert blob["module"] == "widget"
+    assert blob["usermode"] is True
+    assert "dll/win32/widget/orphan.c" in blob["dead_sources"]
+    assert any(h["name"] == "widget_base.h" for h in blob["closure"])
+    assert blob["switch_constants"][0]["owner"].endswith("widget_defs.h")
+
+
+def test_no_build_dir_is_reported_not_hidden(tmp_path):
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    codes = {f.code for f in dp.findings}
+    assert "NO_BUILD_DIR" in codes  # generated MIDL headers cannot be resolved
+    assert "NO_COMPILE_DB" in codes  # VER_DEFS are heuristic, and the report says so
+
+
+# ---------------------------------------------------------------------------
+# crate scaffold
+# ---------------------------------------------------------------------------
+
+
+def test_scaffold_writes_the_crate_skeleton(tmp_path):
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    out = tmp_path / "widget-rust"
+    written = scaffold_crate(dp, out)
+    assert {p.relative_to(out).as_posix() for p in written} >= {
+        "Cargo.toml",
+        "src/lib.rs",
+        "src/prelude.rs",
+        "src/types.rs",
+        "src/types_i386.rs",
+        "src/types_amd64.rs",
+        "src/types_arm64.rs",
+    }
+    cargo = (out / "Cargo.toml").read_text()
+    assert 'name = "widget-rust"' in cargo
+    assert 'features = ["user"]' in cargo and "ntdll-sys" in cargo
+    lib = (out / "src/lib.rs").read_text()
+    assert "pub mod main;" in lib and "pub mod helper;" in lib
+    assert "#[panic_handler]" in lib and "rust_eh_personality" in lib
+    # an ungenerated island must FAIL the build loudly, never compile as an empty module
+    assert "compile_error!" in (out / "src/types_i386.rs").read_text()
+
+
+def test_scaffold_refuses_to_clobber(tmp_path):
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    out = tmp_path / "widget-rust"
+    scaffold_crate(dp, out)
+    with pytest.raises(ProfileDeriveError, match="refusing to overwrite"):
+        scaffold_crate(dp, out)
+
+
+def test_scaffold_never_replaces_a_real_island_with_a_placeholder(tmp_path):
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    out = tmp_path / "widget-rust"
+    (out / "src").mkdir(parents=True)
+    real = out / "src/types_i386.rs"
+    real.write_text("// a REAL gen_driver_types.sh island\npub struct WPRIV { pub y: i32 }\n")
+    scaffold_crate(dp, out)
+    assert "REAL gen_driver_types.sh island" in real.read_text()
+
+
+def test_kernel_scaffold_depends_on_ntkrnl_sys(tmp_path):
+    cmake = (
+        "list(APPEND SOURCE main.c helper.c)\n"
+        "add_library(widget MODULE ${SOURCE})\nset_module_type(widget kernelmodedriver)\n"
+    )
+    root = _basic_module(tmp_path, cmake=cmake)
+    dp = derive(_mod(tmp_path), root)
+    out = tmp_path / "widget-rust"
+    scaffold_crate(dp, out)
+    cargo = (out / "Cargo.toml").read_text()
+    assert 'features = ["kernel"]' in cargo and "ntkrnl-sys" in cargo
+    assert "USERMODE=0" in emit_profile(dp)
+
+
+# --------------------------------------------------------------------------- #
+# "no in-tree .c" has two causes; and a fail-loud must name a real flag
+# --------------------------------------------------------------------------- #
+
+
+def test_no_c_points_at_the_sibling_target_that_owns_the_sources(tmp_path):
+    """A cohab/static-lib module is NOT a Rust-flipped one, and must not be called one.
+
+    msvcrt is the real case: the `msvcrt` MODULE target compiles only generated stubs +
+    .rc, while `msvcrt_static` owns all 32 .c. Telling that user "an already-Rust-flipped
+    module looks exactly like this, go read git history" sends them the wrong way — and
+    is doubly wrong for a whole-archive cohab module, whose .c stay compiled forever.
+    """
+    cmake = (
+        "list(APPEND SOURCE main.c helper.c)\n"
+        "add_library(widget_static ${SOURCE})\n"
+        "add_library(widget MODULE widget.rc)\n"
+        "set_module_type(widget win32dll)\n"
+    )
+    root = _basic_module(tmp_path, cmake=cmake)
+    with pytest.raises(ProfileDeriveError) as e:
+        derive(_mod(tmp_path), root, target="widget")
+    msg = str(e.value)
+    assert "widget_static" in msg
+    assert "--target widget_static" in msg
+    assert "already-Rust-flipped" not in msg
+
+
+def test_usermode_override_exists_for_a_target_with_no_set_module_type(tmp_path):
+    """The error used to name `--usermode/--kernel`, which the argparser did not define.
+
+    A fail-loud whose remedy is fictional is worse than no message. A static library
+    shared between DLLs never calls set_module_type(), and it is exactly that target
+    which owns the C in a cohab module — so the flag has to exist.
+    """
+    cmake = "list(APPEND SOURCE main.c helper.c)\nadd_library(widget_static ${SOURCE})\n"
+    root = _basic_module(tmp_path, cmake=cmake)
+
+    with pytest.raises(ProfileDeriveError, match="--usermode or --kernel"):
+        emit_profile(derive(_mod(tmp_path), root, target="widget_static"))
+
+    assert "USERMODE=1" in emit_profile(
+        derive(_mod(tmp_path), root, target="widget_static", usermode=True)
+    )
+    assert "USERMODE=0" in emit_profile(
+        derive(_mod(tmp_path), root, target="widget_static", usermode=False)
+    )
