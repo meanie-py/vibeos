@@ -196,6 +196,13 @@ typedef long            LONG_PTR;
  * More importantly it would put the reference's own ctype implementation back in the
  * IMPORT namespace, where the harness cannot grade it. */
 #define get_locinfo             msvcrt_ref_get_locinfo
+/* Same story as get_locinfo, and for the same reason: mbcs.c IMPORTS this (locale.c
+ * defines it, and locale.c is parsed here, not compiled), and so does the shipping
+ * Rust — msvcrt-sys binds it as an extern. Namespaced, so the reference gets its OWN
+ * copy of the pinned fixture and the subject gets a separate one. Two copies rather
+ * than one shared: the fixture is read-only state, so a case that mutates it is a
+ * translation bug, and only separate storage can catch that. */
+#define get_mbcinfo             msvcrt_ref_get_mbcinfo
 #define msvcrt_get_thread_data  msvcrt_ref_get_thread_data
 /* CompareStringA / LCMapStringA / …W / GetStringTypeW / WideCharToMultiByte USED to be
  * namespaced here.  As of wave 11 they are SHARED — one definition (refimpl.c), called by
@@ -356,26 +363,34 @@ typedef struct threadlocaleinfostruct threadlocinfo, *pthreadlocinfo;
 #define LC_NUMERIC  RL_LC_NUMERIC
 #define LC_TIME     RL_LC_TIME
 
-typedef struct threadmbcinfostruct {
-    int             refcount;
-    int             mbcodepage;
-    int             ismbcodepage;
-} threadmbcinfo, *pthreadmbcinfo;
+/* The FULL struct, from locale_layout.h — see the note there.  This was a
+ * three-field abbreviation until mbcs.c became a reference TU; the shipping Rust
+ * has always read the real thing. */
+typedef rl_threadmbcinfo threadmbcinfo, *pthreadmbcinfo;
 
-typedef struct _locale_tstruct {
-    pthreadlocinfo  locinfo;
-    pthreadmbcinfo  mbcinfo;
-    /* the struct tag is ALSO a typedef name: wcs.c's _wcsicmp_l family
-     * declares `_locale_tstruct tmp = {0};` on the stack. */
-} _locale_tstruct, *_locale_t;
+/* Defined in locale_layout.h (both sides need the offset of `mbcinfo`).  The struct
+ * tag is ALSO a typedef name here: wcs.c's _wcsicmp_l family declares
+ * `_locale_tstruct tmp = {0};` on the stack. */
+typedef struct _locale_tstruct _locale_tstruct, *_locale_t;
 
 pthreadlocinfo CDECL get_locinfo(void);
 
-/* One cursor per reference TU: strtok (string.c) and wcstok (wcs.c). */
+/* One cursor per reference TU: strtok (string.c), wcstok (wcs.c), mbstok (mbcs.c).
+ * `locale_flags` / `mbcinfo` are what mbcs.c's _setmbcp reaches for. This is the
+ * REFERENCE's private thread data — refimpl.c returns it, and nothing else sees the
+ * layout — so it carries only the fields the reference TUs actually touch. (The
+ * SUBJECT's copy in subjectimpl.c is the one that has to match msvcrt-sys, and
+ * ref_integrity asserts that.) */
 typedef struct __thread_data {
     char           *strtok_next;
     wchar_t        *wcstok_next;
+    unsigned char  *mbstok_next;
+    int             locale_flags;
+    pthreadmbcinfo  mbcinfo;
 } thread_data_t;
+
+#define LOCALE_FREE    0x1
+#define LOCALE_THREAD  0x2
 
 extern thread_data_t * CDECL msvcrt_get_thread_data(void);
 
@@ -390,6 +405,68 @@ void  __cdecl _invalid_parameter(const wchar_t *expr, const wchar_t *func,
 int __cdecl _isspace_l(int c, _locale_t locale);
 int __cdecl _tolower_l(int c, _locale_t locale);
 int __cdecl _toupper_l(int c, _locale_t locale);
+
+/* ── what the mbcs.c reference TU imports ──────────────────────────────
+ *
+ * get_mbcinfo / free_mbcinfo / MSVCRT_locale live in locale.c, which this harness
+ * PARSES (for the case-mapping tables) but does not compile — so they are environment,
+ * supplied by refimpl.c and nlsimpl.c.  __crtLCMapStringA and locale_to_sname are
+ * shared, one definition each, for the reason the NLS note above gives.
+ *
+ * The string.c entry points below are declared, not imported: string.c IS a reference
+ * TU, so the prelude has already renamed them to ref_*, and these declarations exist
+ * only so mbcs.c's calls are prototyped.  Without them C's implicit-declaration rule
+ * invents `int f()` and truncates every returned pointer to 32 bits — the exact bug
+ * the -Werror=implicit-function-declaration tripwire was added for. */
+pthreadmbcinfo CDECL get_mbcinfo(void);
+void                 free_mbcinfo(pthreadmbcinfo);
+extern _locale_t     MSVCRT_locale;
+int  __cdecl __crtLCMapStringA(LCID, DWORD, const char*, int, char*, int,
+                               unsigned int, int);
+BOOL locale_to_sname(const char*, unsigned short*, BOOL*, wchar_t*);
+LONG WINAPI InterlockedIncrement(LONG volatile *addend);
+
+int   __cdecl _stricmp(const char*, const char*);
+int   __cdecl _strnicmp(const char*, const char*, size_t);
+char* __cdecl _strrev(char*);
+char* __cdecl _strset(char*, int);
+char* __cdecl _strnset(char*, int, size_t);
+int   __cdecl _strncoll_l(const char*, const char*, size_t, _locale_t);
+int   __cdecl _strnicoll_l(const char*, const char*, size_t, _locale_t);
+char* __cdecl strtok_s(char*, const char*, char**);
+
+/* ctype.c's `_l` predicates — also a reference TU, also already renamed by the
+ * prelude; these prototype mbcs.c's calls.  Note the leading underscore: the
+ * HOST has `iswdigit_l(wint_t, locale_t)` and these are msvcrt's own
+ * `_iswdigit_l(wint_t, _locale_t)`.  Different functions, and letting the host's
+ * be picked up implicitly is how a `_locale_t` becomes a glibc `locale_t`. */
+int __cdecl _iswalnum_l(wint_t, _locale_t);
+int __cdecl _iswalpha_l(wint_t, _locale_t);
+int __cdecl _iswdigit_l(wint_t, _locale_t);
+int __cdecl _iswgraph_l(wint_t, _locale_t);
+int __cdecl _iswlower_l(wint_t, _locale_t);
+int __cdecl _iswprint_l(wint_t, _locale_t);
+int __cdecl _iswpunct_l(wint_t, _locale_t);
+int __cdecl _iswupper_l(wint_t, _locale_t);
+int __cdecl _isprint_l(int, _locale_t);
+int __cdecl _isleadbyte_l(int, _locale_t);
+int __cdecl isleadbyte(int);
+
+/* winbase.h byte accessors, as mbcs.c spells them.  `uintptr_t` stands in for
+ * DWORD_PTR (refstub pulls <stdint.h> above); the cast only has to be wide enough
+ * to hold whatever integer or pointer-ish value the macro is handed. */
+#ifndef HIBYTE
+#define LOBYTE(w) ((BYTE)((uintptr_t)(w) & 0xFF))
+#define HIBYTE(w) ((BYTE)(((uintptr_t)(w) >> 8) & 0xFF))
+#endif
+
+/* msvcrt.h's own; the host has no such macro. */
+#ifndef min
+#define min(a,b) (((a) < (b)) ? (a) : (b))
+#endif
+#ifndef max
+#define max(a,b) (((a) > (b)) ? (a) : (b))
+#endif
 
 /* msvcrt.h's invalid-parameter macros, verbatim */
 #define MSVCRT_INVALID_PMT(x,err)   (*_errno() = (err), _invalid_parameter(NULL, NULL, NULL, 0, 0))
