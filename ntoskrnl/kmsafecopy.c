@@ -62,20 +62,22 @@
  * test that never actually faults proves nothing — assert BOTH that a valid copy
  * still succeeds AND that an invalid one is caught, or a no-op "protection" passes.
  *
- * i386: also UNPROTECTED — its frame-based SEH lowering is MSVC-env-only
- * (dummy-pseh-verdict.md §C). Plain copy_nonoverlapping; a bad user pointer still
- * bugchecks (see probe.rs). An honest, visible gap; the i386 twins of these crashers
- * stay quarantined until it closes. The arch-neutral close for BOTH i386 and arm64 is
- * a Linux-extable-style fault-fixup primitive (a table keyed by faulting PC, consulted
- * in KiPageFault) — it needs no working SEH at all.
+ * i386: PROTECTED since 2026-07-24, but NOT by this file — it took the OTHER close
+ * this comment used to merely list. Its frame-based SEH lowering is MSVC-env-only
+ * (dummy-pseh-verdict.md §C) AND the kernel-mode catch still does not work there
+ * (task #18), so i386 exports the same KmProtectedCopyMemory symbol/ABI from
+ * ntoskrnl-rust ke/i386/safecopy.rs as a Linux-extable-style fault-fixup primitive:
+ * one `rep movsb` whose address is the sole key of an exception table, consulted by
+ * KiTrap0EHandler after MmAccessFault declines. No exception dispatch, no
+ * registration chain, no unwinder. Field manual §9.123. i386 is therefore NOT built
+ * into this file's c_shims list, and supplies its own KmSafeCopySelfTest twin so the
+ * per-boot [KMSAFECOPY] oracle below covers all three arches.
  *
- * That gap is deliberately NOT papered over with an MmIsAddressValid pre-check:
- * MmIsAddressValid cannot distinguish "invalid" from "valid but paged out", so on
- * the I/O completion hot path it would spuriously fail legitimate I/O with
- * STATUS_ACCESS_VIOLATION under memory pressure. Silently degrading to a wrong
- * answer is worse than a loud unfixed gap (AGENTS.md: fail loud, never silently
- * degrade). The real close is native SEH on i386/arm64, or a Linux-extable-style
- * fault-fixup copy primitive.
+ * The rejected non-fix stays rejected on EVERY arch: an MmIsAddressValid pre-check
+ * cannot distinguish "invalid" from "valid but paged out", so on the I/O completion
+ * hot path it would spuriously fail legitimate I/O with STATUS_ACCESS_VIOLATION under
+ * memory pressure. Silently degrading to a wrong answer is worse than a loud unfixed
+ * gap (AGENTS.md: fail loud, never silently degrade).
  *
  * Returns 1 on success, 0 if the copy faulted (the Rust caller maps 0 ->
  * Err(STATUS_ACCESS_VIOLATION)).

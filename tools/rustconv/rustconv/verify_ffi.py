@@ -487,9 +487,9 @@ def _check_fn(
     local_defs=frozenset(),
 ):
     """
-    crate = crate_dir_of(rs_path)
-    local_defs = crate_local_definitions(crate) if crate else frozenset()
-Check a single extern fn declaration against spec/bindgen."""
+        crate = crate_dir_of(rs_path)
+        local_defs = crate_local_definitions(crate) if crate else frozenset()
+    Check a single extern fn declaration against spec/bindgen."""
     # Skip allowlisted
     if fn_name in CDECL_ALLOWLIST:
         return

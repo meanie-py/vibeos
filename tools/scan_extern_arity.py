@@ -42,10 +42,10 @@ import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rustconv"))
-from rustconv.crate_repair import _mask_lexical, _match_forward  # noqa: E402
+from rustconv.crate_repair import _mask_lexical, _match_forward
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rust_module_tree import crate_live_files, crate_root_of  # noqa: E402
+from rust_module_tree import crate_live_files, crate_root_of
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_ROOT = os.path.join(REPO, "sdk", "lib", "rust")

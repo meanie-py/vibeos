@@ -189,7 +189,11 @@ def crate_roots(crate_dir):
     return roots
 
 
-def crate_live_files(crate_dir, _cache={}):  # noqa: B006 — intentional memo cache
+def crate_live_files(crate_dir, _cache={}):  # noqa: B006 — deliberate memo cache
+    # The mutable default IS the cache: it is read and written across calls (see the
+    # `if crate_dir in _cache` below). Ruff's suggested fix (default None, init inside)
+    # would hand back a fresh dict per call and silently turn every hit into a full
+    # re-walk of the crate's module tree.
     """Every .rs REACHABLE from a crate root via `mod` / `#[path]` / `include!`.
 
     Empty set means "could not establish" — callers must fail open on it.

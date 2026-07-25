@@ -1,0 +1,11 @@
+    Two lanes picked 9.27 independently. Renumber the LATER one to the next free number and fix its cross-references — surgically, not with a blanket sed (the other lane's refs point at ITS section).
+    Two lanes picked 9.36 independently. Renumber the LATER one to the next free number and fix its cross-references — surgically, not with a blanket sed (the other lane's refs point at ITS section).
+    Two lanes picked 9.41 independently. Renumber the LATER one to the next free number and fix its cross-references — surgically, not with a blanket sed (the other lane's refs point at ITS section).
+    Two lanes picked 9.43 independently. Renumber the LATER one to the next free number and fix its cross-references — surgically, not with a blanket sed (the other lane's refs point at ITS section).
+    Two lanes picked 9.44 independently. Renumber the LATER one to the next free number and fix its cross-references — surgically, not with a blanket sed (the other lane's refs point at ITS section).
+Total: 5 duplicate section number(s).
+docs/engineering/translation-debugging-field-manual.md: DUPLICATE section 9.27 at lines 3223, 3381
+docs/engineering/translation-debugging-field-manual.md: DUPLICATE section 9.36 at lines 3641, 3889
+docs/engineering/translation-debugging-field-manual.md: DUPLICATE section 9.41 at lines 4051, 4108
+docs/engineering/translation-debugging-field-manual.md: DUPLICATE section 9.43 at lines 4211, 4292
+docs/engineering/translation-debugging-field-manual.md: DUPLICATE section 9.44 at lines 4256, 4331
