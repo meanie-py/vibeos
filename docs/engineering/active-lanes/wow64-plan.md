@@ -1905,11 +1905,11 @@ in before any fix.
 *Two bugs, stacked.* (1) `KiInitializeUserApc`'s C `_SEH2_TRY`/`_SEH2_EXCEPT` had
 been translated to a **bare block with the handler body dropped** — the
 `exception_occurred` flag was declared and tested but never assigned, so recovery
-was dead code and the raise escaped (§9.127; `ke/i386/usercall.rs` already carried
+was dead code and the raise escaped (§9.133; `ke/i386/usercall.rs` already carried
 the correct conversion, so amd64 was simply missed). (2) The reason `Rsp` was 0 at
 all: **`osk.exe` called `NtCreateThread` through the flat thunk, which returned
 `STATUS_SUCCESS` while the kernel built a thread with a zeroed trap frame**
-(§9.128) — the only `NtCreateThread` in the whole boot, ~400 log lines earlier,
+(§9.134) — the only `NtCreateThread` in the whole boot, ~400 log lines earlier,
 same process.
 
 *So the culprit was a third applet.* doom and devmgmt were downstream victims of
@@ -1927,7 +1927,7 @@ the existing process bootstrap: guest + APC stacks, TEB32 `NtTib` StackBase/Limi
 thread init", a per-thread entry the design already expects and we never built),
 a `WOW64_CONTEXT`, and the per-thread wow64cpu/FEX state.
 
-*Bonus find, filed not fixed (§9.129, task #72):* all **1962** Rust-kernel
+*Bonus find, filed not fixed (§9.135, task #72):* all **1962** Rust-kernel
 `debug_assert!` are compiled out — `[profile.release]` never sets
 `debug-assertions` — while the C `ASSERT` they came from is live under `-DDBG=1`.
 `usercall.rs:96` asserts `(SegCs & MODE_MASK) != 0`; the boot printed `SegCs=0x0`.

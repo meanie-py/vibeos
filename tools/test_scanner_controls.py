@@ -341,6 +341,12 @@ UNCOVERED: dict[str, str] = {
     "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
     "scan_inline_flag_literals": "needs the sdk/include header catalog to know the right value",
+    "shell32_tail_inventory": (
+        "not a pattern scanner: reconciles the four LIVE CMake source lists against the "
+        "ledger in tools/rustconv/data/shell32_cpp_tail.json. Its input is repo state, not "
+        "file content, so a fixture tree cannot exercise it — the real ratchet is that every "
+        "shell32 TU removal must update the ledger in the same commit or the gate fails."
+    ),
 }
 
 

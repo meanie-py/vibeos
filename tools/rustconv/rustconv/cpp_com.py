@@ -121,6 +121,14 @@ class CppComClass:
     registry_resource: str | None = None
     not_aggregatable: bool = False
     object_map_clsid: str | None = None
+    # Exact shellutils.h `ShellObjectCreator<T>` construction uses `_CComObject<T>`:
+    # a private, non-aggregating 0-ref allocation followed by AddRef/QI/Release.
+    # It proves internal activation but never authorizes an OBJECT_ENTRY adapter.
+    internal_shell_object_creator: bool = False
+    # ShellObjectCreatorInit<T>(args..., riid, ppv) must initialize before QI.
+    # None is the ordinary creator; a tuple is the proved Initialize surface.
+    internal_initializer_params: tuple[tuple[str, str], ...] | None = None
+    stgmedium_lifecycle_fields: tuple[str, ...] = ()
     final_construct: bool = False
     method_names: list[str] = field(default_factory=list)
     base_classes: list[str] = field(default_factory=list)
@@ -140,6 +148,10 @@ class CppComClass:
     # (renamed at scan-extend time), and their virtual calls devirtualize onto our
     # overrides through the ordinary same-file arity binder.
     local_base_classes: list[str] = field(default_factory=list)
+    # Non-trivial concrete-base destructors run after the derived destructor,
+    # in C++ base-destruction order. Scan extension renames them into ordinary
+    # workers and records those worker names here for Release sequencing.
+    base_dtor_workers: list[str] = field(default_factory=list)
 
     def interface_names(self) -> list[str]:
         """Ordered, de-duplicated interfaces to materialize: QI'd (com_map) then
@@ -157,18 +169,26 @@ class CppComClass:
             for item in self.state_fields
         ]
 
-    def require_supported(self) -> None:
+    def require_supported(self, *, allow_internal: bool = False) -> None:
         problems = list(self.unsupported)
         if not self.com_map:
             problems.append("no BEGIN_COM_MAP entries found")
-        if not self.not_aggregatable:
+        internal_ok = allow_internal and self.internal_shell_object_creator
+        if not self.not_aggregatable and not internal_ok:
             problems.append(
                 "aggregation policy is unsupported: DECLARE_NOT_AGGREGATABLE is required"
             )
-        if not self.object_map_clsid:
+        if not self.object_map_clsid and not internal_ok:
             problems.append(
                 "no OBJECT_ENTRY activation found; internal COM-object construction is not mapped"
             )
+        for declaration in self.state_fields:
+            match = re.fullmatch(r"\s*STGMEDIUM\s+([A-Za-z_]\w*)\s*", declaration)
+            if match and match.group(1) not in self.stgmedium_lifecycle_fields:
+                problems.append(
+                    "bindgen-backed STGMEDIUM state lacks source-proven constructor/"
+                    f"destructor lifecycle: {declaration}"
+                )
         for declaration in self.state_fields:
             try:
                 _parse_plain_state_field(
@@ -225,18 +245,28 @@ def _find_class_text(header: Path, class_name: str) -> str:
     raise CppComError(f"{class_name}: class definition not found in {header}")
 
 
-def _local_concrete_base(header: Path, base: str) -> tuple[str, list[str]] | None:
-    """Body + base list for a concrete non-template base defined in the SAME header.
+def _local_concrete_base(
+    source: Path, header: Path, base: str
+) -> tuple[Path, str, list[str]] | None:
+    """Header + body + bases for a deterministically flattenable concrete base.
 
-    This is the flattenable inherited-layout case (CCopyMoveToMenu). ATL templates
-    and out-of-header bases return None and stay a loud preflight failure.
+    Same-header bases are the common case (CCopyMoveToMenu), but shell32 also uses
+    small concrete SDK helpers such as CObjectWithSiteBase from shellutils.h.  A
+    non-template base with one unambiguous definition is equally provable; ATL
+    templates remain outside this path and fail loud.
     """
     if "<" in base:
         return None
     try:
-        return _find_class_text(header, base), _class_bases(header, base)
+        base_header = header if base in _class_names(header) else find_class_header(source, base)
+        return base_header, _find_class_text(base_header, base), _class_bases(base_header, base)
     except CppComError:
         return None
+
+
+def _class_names(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return {match.group("name") for match in _CLASS_HEAD.finditer(text)}
 
 
 def _state_field_name(declaration: str) -> str:
@@ -278,6 +308,17 @@ def find_class_header(source: Path, class_name: str) -> Path:
         shell32_root = next((p for p in source.parents if p.name == "shell32"), None)
         if shell32_root is not None and shell32_root != source.parent:
             hits = [header for header in sorted(shell32_root.rglob("*.h")) if defines(header)]
+    if not hits:
+        repo_root = next(
+            (parent for parent in source.parents if (parent / "sdk" / "include").is_dir()),
+            None,
+        )
+        if repo_root is not None:
+            include_root = repo_root / "sdk" / "include"
+            hits = [header for header in sorted(include_root.rglob("*.h")) if defines(header)]
+            if not hits:
+                atl_root = repo_root / "sdk" / "lib" / "atl"
+                hits = [header for header in sorted(atl_root.rglob("*.h")) if defines(header)]
     if not hits:
         raise CppComError(f"{class_name}: no defining C++ source/header found from {source}")
     if len(hits) > 1:
@@ -402,7 +443,9 @@ def _state_fields(body: str) -> list[str]:
     return fields
 
 
-_POD_LEAF_TYPES = frozenset({"CLSID", "FILETIME", "GUID", "IID", "LARGE_INTEGER", "ULARGE_INTEGER"})
+_POD_LEAF_TYPES = frozenset(
+    {"CLSID", "FILETIME", "GUID", "IID", "LARGE_INTEGER", "STGMEDIUM", "ULARGE_INTEGER"}
+)
 _RUST_KEYWORDS = frozenset(
     {
         "as",
@@ -752,6 +795,28 @@ def _pod_definition(text: str, name: str) -> tuple[str, bool] | None:
     return None
 
 
+def _plain_member_class_definition(text: str, name: str) -> tuple[str, bool] | None:
+    """Return field-only layout for a non-polymorphic embedded C++ class.
+
+    Constructors, destructors, and ordinary methods do not affect object layout.
+    This deliberately accepts only an unbased class with no virtual methods; its
+    fields still pass the ordinary scalar/POD parser before the type is admitted.
+    """
+    match = next((item for item in _CLASS_HEAD.finditer(text) if item.group("name") == name), None)
+    if match is None:
+        return None
+    raw_bases = (match.group("bases") or "").lstrip(":").strip()
+    if raw_bases:
+        return None
+    body, _ = _balanced_block(text, match.end() - 1)
+    if re.search(r"\bvirtual\b", body):
+        return None
+    fields = _state_fields(body)
+    if not fields:
+        return None
+    return "; ".join(fields) + ";", False
+
+
 def _discover_pod_state_types(
     source: Path, header: Path, declarations: list[str]
 ) -> tuple[list[PodStateType], list[EnumStateType]]:
@@ -784,7 +849,15 @@ def _discover_pod_state_types(
     definitions: dict[str, tuple[str, bool]] = {}
     for name in dict.fromkeys(candidates):
         definition = next(
-            (found for text in local_texts if (found := _pod_definition(text, name)) is not None),
+            (
+                found
+                for text in local_texts
+                if (
+                    found := _pod_definition(text, name)
+                    or _plain_member_class_definition(text, name)
+                )
+                is not None
+            ),
             None,
         )
         if definition is None and repo_root is not None:
@@ -889,6 +962,7 @@ def analyze_class(
     method_names: list[str] | None = None,
 ) -> CppComClass:
     source = source.resolve()
+    source_text = source.read_text(encoding="utf-8", errors="replace")
     header = find_class_header(source, class_name)
     body = _find_class_text(header, class_name)
     state_fields = _state_fields(body)
@@ -911,6 +985,39 @@ def analyze_class(
             or base in interfaces
         ):
             continue
+        # ATL's IDispatchImpl<T, ...> contributes T's already-mapped interface
+        # subobject plus one CComPtr<ITypeInfo> state field and five ordinary
+        # method bodies. The template arguments are compile-time ABI facts, so
+        # flatten that exact known template rather than treating it as opaque
+        # inherited state. Other ATL templates remain loud failures.
+        dispatch = re.fullmatch(
+            r"IDispatchImpl\s*<\s*(I[A-Za-z0-9_]+)\s*,\s*&IID_\1(?:\s*,.*)?\s*>",
+            base,
+        )
+        if dispatch is not None and dispatch.group(1) in interfaces:
+            template_name = "IDispatchImpl"
+            template_header = find_class_header(source, template_name)
+            template_body = _find_class_text(template_header, template_name)
+            template_fields = _state_fields(template_body)
+            state_fields = template_fields + state_fields
+            if template_name not in local_base_classes:
+                local_base_classes.append(template_name)
+            continue
+        # CWindowImpl's C++ thunk/message-map object layout is not carried into
+        # Rust. Rust-owned shellmenu classes use a direct Win32 WNDPROC with the
+        # owner pointer passed through CreateWindowEx; the only persistent base
+        # state visible to class bodies is CWindow::m_hWnd. Admit only the exact
+        # self/CWindow/traits form used by these classes. Window registration and
+        # message dispatch remain deterministic scaffold/substrate work, never a
+        # model-owned ABI guess.
+        window_impl = re.fullmatch(
+            rf"CWindowImpl\s*<\s*{re.escape(class_name)}\s*,\s*CWindow\s*,\s*"
+            r"([A-Za-z_]\w*)\s*>",
+            base,
+        )
+        if window_impl is not None:
+            state_fields = ["HWND m_hWnd", *state_fields]
+            continue
         # A real COM interface base that the class implements but does not QI-expose
         # (absent from the COM map) is materialized in the layout, not QueryInterface.
         if base not in layout_bases and _base_is_widl_interface(source, base):
@@ -919,11 +1026,11 @@ def analyze_class(
         # Concrete same-header base (CCopyMoveToMenu): flatten it into this
         # translation — its state precedes ours, its methods become ours (renamed at
         # scan-extend), and its OWN bases join the worklist for the same treatment.
-        local = _local_concrete_base(header, base)
+        local = _local_concrete_base(source, header, base)
         if local is not None:
             if base in local_base_classes:
                 continue
-            base_body, base_bases = local
+            _base_header, base_body, base_bases = local
             local_base_classes.append(base)
             base_fields = _state_fields(base_body)
             derived_names = {_state_field_name(decl) for decl in state_fields}
@@ -956,6 +1063,86 @@ def analyze_class(
     resource = re.search(r"\bDECLARE_REGISTRY_RESOURCEID\s*\(\s*([^)\s]+)\s*\)", body)
     not_agg = bool(re.search(r"\bDECLARE_(?:CENTRAL_INSTANCE_)?NOT_AGGREGATABLE\s*\(", body))
     clsid = None
+    activation_re = re.compile(
+        rf"\bShellObjectCreator(?P<init>Init)?\s*<\s*{re.escape(class_name)}\s*>\s*\("
+    )
+    masked_source = _masked_cpp(source_text)
+    activation_hits = list(activation_re.finditer(masked_source))
+    activation_modes = {bool(hit.group("init")) for hit in activation_hits}
+    if len(activation_modes) > 1:
+        unsupported.append(
+            "mixed ShellObjectCreator/ShellObjectCreatorInit activation needs an explicit mapping"
+        )
+    internal_shell_object_creator = bool(activation_hits)
+    internal_initializer_params = None
+    if activation_hits and activation_hits[0].group("init"):
+        activation_arg_lists = []
+        for activation_hit in activation_hits:
+            opening = masked_source.find("(", activation_hit.start())
+            closing = _matching_paren(masked_source, opening)
+            activation_arg_lists.append(_split_args(source_text[opening + 1 : closing]))
+        initialize_hits = list(
+            re.finditer(
+                r"\bHRESULT\s+(?:(?:WINAPI|STDMETHODCALLTYPE|CALLBACK)\s+)?"
+                r"Initialize\s*\((?P<params>[^()]*)\)",
+                body,
+            )
+        )
+        if len(initialize_hits) != 1:
+            unsupported.append(
+                "ShellObjectCreatorInit requires exactly one source-proven HRESULT Initialize"
+            )
+        else:
+            params = tuple(
+                _parse_param(raw, index)
+                for index, raw in enumerate(_split_args(initialize_hits[0].group("params")))
+                if raw.strip() and raw.strip() != "void"
+            )
+
+            def effective_creator_arity(args: list[str]) -> int:
+                iid_ppv_tail = bool(
+                    args and re.fullmatch(r"\s*IID_PPV_ARG\s*\([^()]+\)\s*", args[-1], re.DOTALL)
+                )
+                return len(args) + int(iid_ppv_tail)
+
+            if any(
+                effective_creator_arity(args) != len(params) + 2 for args in activation_arg_lists
+            ):
+                unsupported.append(
+                    "ShellObjectCreatorInit argument count does not match Initialize + riid/ppv"
+                )
+            else:
+                internal_initializer_params = params
+
+    stgmedium_lifecycle_fields: list[str] = []
+    stgmedium_fields = [
+        match.group(1)
+        for declaration in state_fields
+        if (match := re.fullmatch(r"\s*STGMEDIUM\s+([A-Za-z_]\w*)\s*", declaration))
+    ]
+    if stgmedium_fields:
+        from .scanner import scan_file
+
+        class_workers = [
+            worker for worker in scan_file(source).functions if worker.cpp_class == class_name
+        ]
+        constructors = [worker for worker in class_workers if worker.is_ctor]
+        destructors = [worker for worker in class_workers if worker.is_dtor]
+        for field_name in stgmedium_fields:
+            ctor_proven = any(
+                re.search(
+                    rf"\b{re.escape(field_name)}\.tymed\s*=\s*TYMED_NULL\b",
+                    worker.body_text,
+                )
+                for worker in constructors
+            )
+            dtor_proven = any(
+                "DestroyCIDA" in worker.body_text
+                and re.search(rf"\b{re.escape(field_name)}\b", worker.body_text)
+                for worker in destructors
+            )
+            if ctor_proven and dtor_proven:
+                stgmedium_lifecycle_fields.append(field_name)
     activation_sources = [source]
     if header != source:
         activation_sources.append(header)
@@ -979,6 +1166,9 @@ def analyze_class(
         registry_resource=resource.group(1) if resource else None,
         not_aggregatable=not_agg,
         object_map_clsid=clsid,
+        internal_shell_object_creator=internal_shell_object_creator,
+        internal_initializer_params=internal_initializer_params,
+        stgmedium_lifecycle_fields=tuple(stgmedium_lifecycle_fields),
         final_construct=final_construct,
         method_names=method_names or [],
         base_classes=bases,
@@ -1028,6 +1218,11 @@ def _parse_param(text: str, index: int) -> tuple[str, str]:
         return text, f"arg{index}"
     c_type = match.group("type").strip()
     name = match.group("name")
+    if not c_type:
+        # Legacy DECLARE_INTERFACE_ surfaces commonly omit parameter names
+        # (`THIS_ DWORD`, `THIS_ REFIID,PVOID*`). A lone token is the type,
+        # not a parameter named DWORD with an empty type.
+        return text, f"arg{index}"
     while name.startswith("*"):
         c_type += " *"
         name = name[1:]
@@ -1061,10 +1256,11 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                 )
             )
     else:
+        legacy_text = re.sub(r"/\*.*?\*/|//[^\n]*", " ", text, flags=re.S)
         legacy = re.search(
             rf"DECLARE_INTERFACE_\s*\(\s*{re.escape(interface)}\s*,[^)]*\)\s*"
             r"\{(?P<body>.*?)\}\s*;",
-            text,
+            legacy_text,
             flags=re.S,
         )
         if legacy is None:
@@ -1072,7 +1268,7 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                 f"{interface}: neither {wanted} nor DECLARE_INTERFACE_ definition found in "
                 f"SDK header {header}"
             )
-        body = re.sub(r"/\*.*?\*/|//[^\n]*", " ", legacy.group("body"), flags=re.S)
+        body = legacy.group("body")
         for match in _DECLARE_METHOD.finditer(body):
             raw_params = match.group("params").strip()
             has_this = raw_params == "THIS" or raw_params.startswith("THIS_")
@@ -1211,6 +1407,125 @@ def _rewrite_wide_literals(text: str) -> str:
         lambda match: f"{_wide_literal_name(match.group(0))}.as_ptr()", text
     )
     return _CPP_WIDE_CHAR.sub(lambda match: f"0x{_wide_char_unit(match.group(0)):04X}u16", text)
+
+
+def rewrite_wide_literals(text: str) -> str:
+    """Public entry point for the deterministic UTF-16 literal lowering.
+
+    `L"x"` / `L'x'` are C++ syntax with NO Rust equivalent — Rust has no UTF-16
+    literal at all — so a model asked to translate one has nothing correct to
+    emit and invents something (`u"x"`, `"x".encode_utf16()`, a `&str` cast).
+    Lowering it here is deterministic, costs nothing, and is the same code path
+    the COM translator has always used; only the entry point is new.
+    """
+    return _rewrite_wide_literals(text)
+
+
+def normalize_cpp_idioms(source: str, rust: str, *, residual: bool = True) -> str:
+    """C++-generic model-output repairs — no class, no vtable, no `this` required.
+
+    `IID_PPV_ARG(T, &out)` is a *header macro* that expands one apparent C++
+    argument into two ABI arguments (`REFIID, void**`). It is not a callable
+    symbol, so emitting it verbatim never compiles. Split out of
+    :func:`normalize_worker_semantics` so the free-function path
+    (`translate --free-functions`) gets it too: that path has no COM scaffold,
+    but the C++ it translates uses the same macros.
+    """
+    rust = re.sub(
+        r"let\s+([A-Za-z_]\w*)\s*=\s*IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*;\s*"
+        r"let\s+([A-Za-z_]\w*)\s*=\s*&mut\s+(\(\*this\)\.[A-Za-z_]\w*|"
+        r"[A-Za-z_]\w*)\s*\)\s*;",
+        r"let \1 = core::ptr::addr_of!(IID_\2); "
+        r"let \3 = core::ptr::addr_of_mut!(\4).cast();",
+        rust,
+    )
+    iid_pair = re.search(
+        r"let\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)\s*=\s*"
+        r"IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*&mut\s+([A-Za-z_]\w*)\s*\)\s*;",
+        rust,
+    )
+    if iid_pair is not None:
+        iid_name, output_name, interface, output = iid_pair.groups()
+        rust = rust[: iid_pair.start()] + rust[iid_pair.end() :]
+        rust = re.sub(
+            rf"\b{re.escape(iid_name)}\s*,\s*{re.escape(output_name)}\b",
+            f"core::ptr::addr_of!(IID_{interface}), core::ptr::addr_of_mut!({output}).cast()",
+            rust,
+            count=1,
+        )
+    rust = re.sub(
+        r"\bIID_PPV_ARG\s*\(\s*(?:&IID_)?([A-Za-z_]\w*)\s*,\s*"
+        r"&mut\s+([A-Za-z_]\w*)(?:\s+as\s+[^,)]+(?:<[^>]+>)?)?\s*,?\s*\)",
+        r"core::ptr::addr_of!(IID_\1), core::ptr::addr_of_mut!(\2).cast()",
+        rust,
+    )
+    source_iid_args = re.findall(
+        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", source
+    )
+    for interface, output in source_iid_args:
+        rust = re.sub(
+            rf"\bIID_PPV_ARG\s*\(\s*{re.escape(output)}\s*\)",
+            f"core::ptr::addr_of!(IID_{interface}), {output}.cast()",
+            rust,
+        )
+    # The COM path has LATER rules that still need to see an intact IID_PPV_ARG —
+    # notably alias resolution (`let ppv = &mut (*this).inner;` … `(…, ppv)`), which
+    # recovers the real destination. So the catch-all must run after those, and
+    # normalize_worker_semantics applies it at its own end.
+    return _expand_residual_iid_ppv_arg(rust) if residual else rust
+
+
+def _expand_residual_iid_ppv_arg(rust: str) -> str:
+    """Catch-all for any `IID_PPV_ARG(T, expr)` the shape-specific rules above missed.
+
+    Those rules each pin one spelling of the second argument (`&mut x`, a bare
+    identifier, a `let` pair). A model that writes anything else — measured:
+    `IID_PPV_ARG(IShellFolder, spFolder as *mut *mut IShellFolder)` — slipped
+    through all of them and reached the module as a call to a macro, which is not
+    a symbol and cannot link. Splitting on the top-level comma handles every
+    spelling instead of enumerating them, so the failure mode is bounded.
+    """
+    out = []
+    i = 0
+    while True:
+        match = re.search(r"\bIID_PPV_ARG\s*\(", rust[i:])
+        if match is None:
+            out.append(rust[i:])
+            return "".join(out)
+        start = i + match.start()
+        cursor = i + match.end()  # just past the '('
+        depth, comma = 1, None
+        while cursor < len(rust) and depth:
+            char = rust[cursor]
+            if char in "([":
+                depth += 1
+            elif char in ")]":
+                depth -= 1
+            elif char == "," and depth == 1 and comma is None:
+                comma = cursor
+            cursor += 1
+        if depth or comma is None:  # unbalanced or one-argument — leave it alone
+            out.append(rust[i:cursor])
+            i = cursor
+            continue
+        interface = rust[i + match.end() : comma].strip()
+        value = rust[comma + 1 : cursor - 1].strip()
+        if not re.fullmatch(r"[A-Za-z_]\w*", interface):
+            out.append(rust[i:cursor])
+            i = cursor
+            continue
+        interface = interface.removeprefix("&IID_")
+        if value.startswith("&mut "):
+            # Already delimited by the macro's own parens — wrapping again would
+            # differ cosmetically from the shape-specific rules above for no gain.
+            value = f"core::ptr::addr_of_mut!({value[5:].strip()})"
+        elif value.startswith("&"):
+            value = f"core::ptr::addr_of!({value[1:].strip()})"
+        else:
+            value = f"({value})"
+        out.append(rust[i:start])
+        out.append(f"core::ptr::addr_of!(IID_{interface}), {value}.cast()")
+        i = cursor
 
 
 def render_wide_literal_statics(raw_deps: list[FunctionDep], plan: list[FunctionDep]) -> str:
@@ -1704,44 +2019,7 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     # CComPtr object state is likewise represented by a raw pointer in the
     # generated owner. `.0` is a model artifact from an imagined Rust wrapper.
     rust = re.sub(r"(\(\*this\)\.[A-Za-z_]\w*)\.0\b", r"\1", rust)
-    # IID_PPV_ARG(T, &out) is a header macro, not a callable ABI symbol.
-    rust = re.sub(
-        r"let\s+([A-Za-z_]\w*)\s*=\s*IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*;\s*"
-        r"let\s+([A-Za-z_]\w*)\s*=\s*&mut\s+(\(\*this\)\.[A-Za-z_]\w*|"
-        r"[A-Za-z_]\w*)\s*\)\s*;",
-        r"let \1 = core::ptr::addr_of!(IID_\2); "
-        r"let \3 = core::ptr::addr_of_mut!(\4).cast();",
-        rust,
-    )
-    iid_pair = re.search(
-        r"let\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)\s*=\s*"
-        r"IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*&mut\s+([A-Za-z_]\w*)\s*\)\s*;",
-        rust,
-    )
-    if iid_pair is not None:
-        iid_name, output_name, interface, output = iid_pair.groups()
-        rust = rust[: iid_pair.start()] + rust[iid_pair.end() :]
-        rust = re.sub(
-            rf"\b{re.escape(iid_name)}\s*,\s*{re.escape(output_name)}\b",
-            f"core::ptr::addr_of!(IID_{interface}), core::ptr::addr_of_mut!({output}).cast()",
-            rust,
-            count=1,
-        )
-    rust = re.sub(
-        r"\bIID_PPV_ARG\s*\(\s*(?:&IID_)?([A-Za-z_]\w*)\s*,\s*"
-        r"&mut\s+([A-Za-z_]\w*)(?:\s+as\s+[^,)]+(?:<[^>]+>)?)?\s*,?\s*\)",
-        r"core::ptr::addr_of!(IID_\1), core::ptr::addr_of_mut!(\2).cast()",
-        rust,
-    )
-    source_iid_args = re.findall(
-        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", source
-    )
-    for interface, output in source_iid_args:
-        rust = re.sub(
-            rf"\bIID_PPV_ARG\s*\(\s*{re.escape(output)}\s*\)",
-            f"core::ptr::addr_of!(IID_{interface}), {output}.cast()",
-            rust,
-        )
+    rust = normalize_cpp_idioms(source, rust, residual=False)
     # C++ sibling calls have an implicit receiver. The prepared source names
     # every such worker explicitly, so receiver insertion is syntax-authoritative.
     owner = re.search(r"\b([A-Za-z_]\w*)::[~A-Za-z_]\w*\s*\(", source)
@@ -2248,7 +2526,9 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         r"cpp_com_SHSetStrRetW(\1, core::ptr::addr_of!((*\2).\3).cast::<WCHAR>())",
         rust,
     )
-    return rust
+    # Last, so the alias/receiver rules above have already recovered the real
+    # destination from any IID_PPV_ARG they understand.
+    return _expand_residual_iid_ppv_arg(rust)
 
 
 _CPP_SUPPORT_EXTERNS = {
@@ -4066,7 +4346,13 @@ def _abi_types_compatible(actual: str, expected: str) -> bool:
 # File-local C++ RAII structs known to appear as body locals in shell32 sources.
 # Each is a hard pre-payment reject unless the invocation supplies a hand-verified
 # Rust lowering via --local-raii NAME=path.rs (see provided_raii_contract).
-_LOCAL_RAII_TYPES = frozenset({"CDrop"})
+# Body-local C++ owners with no deterministic Rust lowering yet. Being ABSENT from
+# this set is not neutral: the model is then free to invent one, and it does —
+# `CDataObjectHIDA hida(pDO);` came back as `CDataObjectHIDA::new(pDO)`, a Rust type
+# that exists nowhere, in a run that reported success and charged for it. Listing a
+# type converts that into a refusal BEFORE payment that names `--local-raii`.
+# Measured cost of adding CDataObjectHIDA: 6 shell32 TUs refuse until lowered.
+_LOCAL_RAII_TYPES = frozenset({"CDrop", "CDataObjectHIDA"})
 
 
 def require_supported_worker_raii(deps: list, provided: frozenset | set = frozenset()) -> None:
@@ -4133,6 +4419,27 @@ def apply_interface_method_signatures(
                 variants.append(method)
 
     out = []
+    helper_counts: dict[str, int] = {}
+
+    def bind_variant(
+        candidate: FunctionDep, candidates: list[InterfaceMethod]
+    ) -> list[tuple[int, InterfaceMethod]]:
+        source_shape = tuple(_abi_c_type_key(c_type) for c_type, _ in candidate.params)
+        matches = [
+            (index, method)
+            for index, method in enumerate(candidates)
+            if tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:]) == source_shape
+        ]
+        if len(matches) != 1:
+            same_arity = [
+                (index, method)
+                for index, method in enumerate(candidates)
+                if len(method.params) - 1 == len(candidate.params)
+            ]
+            if len(same_arity) == 1:
+                matches = same_arity
+        return matches
+
     for dep in deps:
         # A `static` class method (e.g. a `static inline GetClassID()` helper) has
         # no `this` and can never occupy a vtable slot, even when it shares a name
@@ -4146,21 +4453,26 @@ def apply_interface_method_signatures(
         if not variants:
             out.append(dep)
             continue
-        source_shape = tuple(_abi_c_type_key(c_type) for c_type, _ in dep.params)
-        matching = [
-            (index, method)
-            for index, method in enumerate(variants)
-            if tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:]) == source_shape
-        ]
+        matching = bind_variant(dep, variants)
         if len(matching) != 1:
-            same_arity = [
-                (index, method)
-                for index, method in enumerate(variants)
-                if len(method.params) - 1 == len(dep.params)
-            ]
-            if len(same_arity) == 1:
-                matching = same_arity
-        if len(matching) != 1:
+            # A non-static private overload may share a spelling with a COM
+            # method. It is a proved helper only when a sibling body uniquely
+            # binds the WIDL slot; reserve the canonical worker name for that
+            # sibling and give this helper a collision-free deterministic name.
+            sibling_binds = any(
+                other is not dep
+                and other.cpp_class == class_name
+                and other.cpp_method == dep.cpp_method
+                and not other.is_static
+                and len(bind_variant(other, variants)) == 1
+                for other in deps
+            )
+            if sibling_binds:
+                stem = f"{class_name}_{dep.cpp_method}_helper"
+                helper_counts[stem] = helper_counts.get(stem, 0) + 1
+                suffix = "" if helper_counts[stem] == 1 else f"_{helper_counts[stem]}"
+                out.append(replace(dep, name=stem + suffix))
+                continue
             choices = ", ".join(
                 "(" + ", ".join(c_type for c_type, _ in method.params[1:]) + ")"
                 for method in variants
@@ -4638,9 +4950,14 @@ def render_interface(spec: InterfaceSpec) -> str:
     return "\n".join(lines)
 
 
-def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> str:
+def render_class_scaffold(
+    cls: CppComClass,
+    interfaces: list[InterfaceSpec],
+    *,
+    allow_internal: bool = False,
+) -> str:
     """Render the ABI-owned portion. Method worker bodies remain separate LLM output."""
-    cls.require_supported()
+    cls.require_supported(allow_internal=allow_internal)
     by_name = {item.name: item for item in interfaces}
     missing = [entry.interface for entry in cls.com_map if entry.interface not in by_name]
     if missing:
@@ -4866,6 +5183,8 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             f"        {cls.name}_dtor_body(this);",
         ]
     )
+    for worker in cls.base_dtor_workers:
+        lines.append(f"        {cls.name}_{worker}_body(this);")
     for state in cls.plain_state_fields():
         if state.assignment_helper is not None:
             lines.append(
@@ -4899,17 +5218,43 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
         ]
     )
 
+    internal = allow_internal and cls.internal_shell_object_creator and not cls.object_map_clsid
+    internal_init = internal and cls.internal_initializer_params is not None
+    activation_comment = (
+        "// Internal activation: shellutils.h ShellObjectCreator<T> uses this "
+        "non-aggregating factory."
+        if internal
+        else f"// Activation: {cls.object_map_clsid or '<not found>'} currently maps to "
+        f"{cls.name} in shell32.cpp.\n"
+        "// The generated C++ adapter redirects ATL activation to this factory."
+    )
+    factory_decl = (
+        f"pub unsafe fn {cls.name}_CreateInstance("
+        if internal
+        else (f'#[no_mangle] pub unsafe extern "system" fn {cls.name}_CreateInstance(')
+    )
+    factory_params = []
+    if internal_init:
+        factory_params.extend(
+            f"    {name}: {c_type_to_rust(c_type)},"
+            for c_type, name in cls.internal_initializer_params or ()
+        )
+    else:
+        factory_params.append("    outer: *mut IUnknown,")
+    factory_params.append("    riid: REFIID, ppv: *mut *mut core::ffi::c_void,")
     lines.extend(
         [
-            f"// Activation: {cls.object_map_clsid or '<not found>'} currently maps to "
-            f"{cls.name} in shell32.cpp.",
-            "// The generated C++ adapter redirects ATL activation to this factory.",
-            f'#[no_mangle] pub unsafe extern "system" fn {cls.name}_CreateInstance(',
-            "    outer: *mut IUnknown, riid: REFIID, ppv: *mut *mut core::ffi::c_void,",
+            activation_comment,
+            factory_decl,
+            *factory_params,
             ") -> HRESULT {",
             "    if ppv.is_null() { return E_POINTER; }",
             "    *ppv = core::ptr::null_mut();",
-            "    if !outer.is_null() { return CLASS_E_NOAGGREGATION; }",
+            *(
+                []
+                if internal_init
+                else ["    if !outer.is_null() { return CLASS_E_NOAGGREGATION; }"]
+            ),
             f"    let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, "
             f"core::mem::size_of::<{cls.name}>()) as *mut {cls.name};",
             "    if this.is_null() { return E_OUTOFMEMORY; }",
@@ -4947,6 +5292,21 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
                 "    }",
             ]
         )
+    if internal_init:
+        init_args = ", ".join(name for _c_type, name in cls.internal_initializer_params or ())
+        lines.extend(
+            [
+                f"    let mut hr = {cls.name}_Initialize_body(this"
+                f"{', ' if init_args else ''}{init_args});",
+                "    if hr >= 0 {",
+                f"        hr = {cls.name}_QueryInterface(this, riid, ppv);",
+                "    }",
+                f"    {cls.name}_Release(this);",
+                "    hr",
+                "}",
+            ]
+        )
+        return "\n".join(lines)
     lines.extend(
         [
             f"    let hr = {cls.name}_QueryInterface(this, riid, ppv);",

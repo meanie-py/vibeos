@@ -351,7 +351,24 @@ def _diagnostic(message: dict) -> dict:
     return diagnostic
 
 
-def run_oracle(manifest: Path, arches: list[str], repair: bool = False) -> dict:
+def run_oracle(
+    manifest: Path, arches: list[str], repair: bool = False, check_only: bool = False
+) -> dict:
+    """Compile every candidate against the real substrate, once per arch.
+
+    Runs `cargo build`, not `cargo check`. `check` stops before codegen, and the
+    deny-by-default `unconditional_panic` lint is a MIR-level check that only fires
+    during codegen — so `check` silently PASSES an out-of-bounds constant index.
+    That is not hypothetical: it is the bindgen flex-array shape (`[T; 1]` indexed
+    past 0) that the iphlpapi lane shipped twice, and the lesson recorded there is
+    "a translation is not validated until it has been BUILT, not merely checked."
+
+    Verified on this tree: a lib whose only defect is `(*a).addrs[1]` on a
+    `[u32; 1]` gives `cargo check` exit 0 with no diagnostics, and `cargo build`
+    "index out of bounds: the length is 1 but the index is 1".
+
+    check_only=True restores the faster, weaker pass for a quick iteration loop.
+    """
     candidates, types_path, shellcom_path = load_manifest(manifest)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     output = RUSTCONV_RESPONSES_DIR / "candidate-oracles" / timestamp
@@ -368,7 +385,7 @@ def run_oracle(manifest: Path, arches: list[str], repair: bool = False) -> dict:
         target = RUST_TARGETS.get(arch, arch)
         command = [
             "cargo",
-            "check",
+            "check" if check_only else "build",
             "--manifest-path",
             str(output / "Cargo.toml"),
             "--target",
@@ -441,6 +458,7 @@ def run_oracle(manifest: Path, arches: list[str], repair: bool = False) -> dict:
         "output": str(output),
         "commands": commands,
         "repair_enabled": repair,
+        "cargo_mode": "check" if check_only else "build",
         "repairs": repairs,
         "global_errors": global_errors,
         "results": results,

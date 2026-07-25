@@ -56,6 +56,8 @@ pub mod drives_folder;
 // Assembled at the C tree's path (dialogs/) by rustconv; keep that path stable for re-runs.
 #[path = "dialogs/drvdefext.rs"]
 pub mod drv_def_ext;
+#[path = "dialogs/filedefext.rs"]
+pub mod file_def_ext;
 pub mod drop_target_helper;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
@@ -67,12 +69,16 @@ pub mod new_menu;
 pub mod open_control_panel;
 pub mod open_with_menu;
 pub mod printer_folder;
+pub mod printers_enum;
 pub mod query_associations;
 pub mod recycle_bin;
 pub mod recycle_bin_cleaner;
 pub mod send_to_menu;
 pub mod shell_item;
+pub mod shell_item_array;
+pub mod shell_dispatch;
 pub mod shell_link;
+pub mod start_menu_dummy;
 pub mod user_notification;
 
 // wine/ — wine-derived pure-C bodies. Wave 0: shellreg (SHReg* registry wrappers).

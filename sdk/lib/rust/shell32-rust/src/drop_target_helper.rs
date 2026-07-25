@@ -74,7 +74,25 @@ extern "system" {
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
+    fn IUnknown_SetSite(object: *mut IUnknown, site: *mut IUnknown) -> HRESULT;
+    fn SHSimulateDrop(
+        drop_target: *mut IDropTarget,
+        data_object: *mut IDataObject,
+        key_state: DWORD,
+        point: *mut POINTL,
+        effect: *mut DWORD,
+    ) -> BOOL;
+    fn SH32_ExtCoCreateInstance(
+        class_name: LPCWSTR,
+        clsid: REFCLSID,
+        outer: *mut IUnknown,
+        class_context: DWORD,
+        riid: REFIID,
+        object: *mut *mut c_void,
+    ) -> HRESULT;
 }
+
+const CLSCTX_ALL: DWORD = 0x17;
 
 #[repr(C)]
 pub struct CDropTargetHelper {
@@ -301,6 +319,60 @@ pub unsafe extern "system" fn CDropTargetHelper_CreateInstance(
     let hr = query_interface(this, riid, ppv);
     release(this);
     hr
+}
+
+/// Mirrors CScopedSetObjectWithSite around the shlwapi drop helper.
+unsafe fn simulate_drop_with_site(
+    drop_target: *mut IDropTarget,
+    data_object: *mut IDataObject,
+    key_state: DWORD,
+    point: *mut POINTL,
+    effect: *mut DWORD,
+    site: *mut IUnknown,
+) -> HRESULT {
+    let guarded_object = if site.is_null() {
+        core::ptr::null_mut()
+    } else {
+        let object = drop_target.cast::<IUnknown>();
+        IUnknown_SetSite(object, site);
+        object
+    };
+
+    let result = SHSimulateDrop(drop_target, data_object, key_state, point, effect);
+    IUnknown_SetSite(guarded_object, core::ptr::null_mut());
+    result
+}
+
+/// Undocumented shell32 ordinal 751.
+#[no_mangle]
+pub unsafe extern "system" fn SHSimulateDropOnClsid(
+    clsid: REFCLSID,
+    site: *mut IUnknown,
+    data_object: *mut IDataObject,
+) -> HRESULT {
+    let mut drop_target: *mut IDropTarget = core::ptr::null_mut();
+    let result = SH32_ExtCoCreateInstance(
+        core::ptr::null(),
+        clsid,
+        core::ptr::null_mut(),
+        CLSCTX_ALL,
+        core::ptr::addr_of!(IID_IDropTarget),
+        core::ptr::addr_of_mut!(drop_target).cast(),
+    );
+    if result < 0 {
+        return result;
+    }
+
+    let result = simulate_drop_with_site(
+        drop_target,
+        data_object,
+        0,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        site,
+    );
+    ((*(*drop_target).lpVtbl).Release)(drop_target);
+    result
 }
 
 pub unsafe fn CDropTargetHelper_ctor_body(_this: *mut CDropTargetHelper) {}

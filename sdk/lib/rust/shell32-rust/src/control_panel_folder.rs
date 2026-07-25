@@ -738,12 +738,12 @@ extern "system" {
     fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
     fn SHGetSpecialFolderLocation(owner: HWND, csidl: INT, pidl: *mut LPITEMIDLIST) -> HRESULT;
     fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
+    fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
 }
 
 extern "C" {
     fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;
     fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
-    #[link_name = "CPrinterFolder_CompareDetails_RustBridge"] fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
 

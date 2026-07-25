@@ -55,7 +55,7 @@ Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 fro
 
 **Wine-derived userland — ~154 DLLs, ~1.05M LOC (lower priority than Tier 2).** kernelbase (41K, `kernelbase/wine/`), comctl32, comdlg32, ole32, oleaut32, gdiplus, riched20, urlmon, wininet, mshtml, jscript/vbscript, msxml*, windowscodecs, crypt32, wldap32, rpcrt4, the whole `dll/directx/wine/` stack. Re-implementing these from *current* Wine via an LLM pipeline (§7b) beats translating the frozen fork — that's why they sit below the native queue.
 
-**Already translated (frontier boundary):** kernel/win32k, kernel32, ntdll, user32, gdi32, advapi32, secur32, shell32, msafd, mlang, mscms, version, cabinet + the boot/server spine (winsrv, smss-csrss, lsasrv, samsrv, msgina, services, winlogon, userinit, explorer) + the driver fleet.
+**Already translated (frontier boundary):** kernel/win32k, kernel32, ntdll, user32, gdi32, advapi32, secur32, shell32's complete activatable COM surface (its procedural C++ tail remains), msafd, mlang, mscms, version, cabinet + the boot/server spine (winsrv, smss-csrss, lsasrv, samsrv, msgina, services, winlogon, userinit, explorer) + the driver fleet.
 
 ### Tier 4 — Debt burndown (gated at the door; burn opportunistically)
 
@@ -513,7 +513,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   (both are re-enabled in the winlogon ladder as the regression test), **21 applets + 7
   probe guests green on amd64**.
 - **`ProbeForWrite` raises unhandled in kernel mode → BUGCHECK 0x1E — FIXED 2026-07-25**
-  (task #67, §9.127). Chain was `ProbeForWrite+0x90` → `ExRaiseAccessViolation+0x14` →
+  (task #67, §9.133). Chain was `ProbeForWrite+0x90` → `ExRaiseAccessViolation+0x14` →
   `RtlRaiseStatus(0xC0000005)` → no handler under `USE_DUMMY_PSEH` → 0x1E. **The raise site
   was `KiInitializeUserApc` (`ke/amd64/usercall.rs`), whose C `_SEH2_TRY`/`_SEH2_EXCEPT` had
   been translated to a BARE BLOCK with the handler body dropped** — `exception_occurred` was
@@ -524,7 +524,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the probe: `Addr=-1280 = -sizeof(UAPC_FRAME)` identified the caller by arithmetic alone,
   and **refuted** the leading E12/wrong-width-marshal hypothesis in one boot.
   **Neither doom nor devmgmt was the culprit — `osk.exe` was**; they were downstream victims
-  of the box-kill. Root of the bad pointer is the flat `NtCreateThread` thunk (§9.128, task
+  of the box-kill. Root of the bad pointer is the flat `NtCreateThread` thunk (§9.134, task
   #64): it returns SUCCESS while building a thread with a zeroed trap frame. Verified same
   boot command before → after: BUGCHECK 1→0, PROBE-AV 1→0, doom frames died→2022.
   Still-relevant sibling is task #68 (win32k's
@@ -543,7 +543,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
   marker fires long before the ladder runs.
 - **All 1962 Rust-kernel `debug_assert!` are compiled OUT, while the C `ASSERT` they were
-  translated from is LIVE — OPEN** (2026-07-25, task #72, §9.129). `debug_assert!` is gated on
+  translated from is LIVE — OPEN** (2026-07-25, task #72, §9.135). `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of
@@ -556,7 +556,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   to follow debug-assertions, and kernel-wide overflow panics are a separate, riskier change C
   never had) — but MEASURE FIRST: 1962 assertions going live at once needs a triage batch.
 - **`NtCreateThread` flat thunk returns SUCCESS with a zeroed thread context — REFUSED LOUDLY
-  2026-07-25** (task #64, §9.128). Five divergent params incl. a `CONTEXT` whose field lists
+  2026-07-25** (task #64, §9.134). Five divergent params incl. a `CONTEXT` whose field lists
   don't correspond across widths. Now returns `STATUS_NOT_IMPLEMENTED` instead of a silently
   corrupt thread; marshalling the structs alone would be *worse* (a more convincing corpse,
   still with no CPU-context setup — that needs the per-thread WoW64 entry #64 tracks). Blast
