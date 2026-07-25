@@ -87,7 +87,7 @@ ObHandle
 ObQuery
 ObReference
 ObSecurity
-# UN-QUARANTINED 2026-07-24 (§9.122): fixed. Never an ob-rust bug — it was the missing
+# UN-QUARANTINED 2026-07-24 (§9.123): fixed. Never an ob-rust bug — it was the missing
 # i386 fault-tolerant copy. The capture memcpy that C ran inside _SEH2_TRY had no
 # protection on i386 (amd64/arm64 had the native-SEH KmProtectedCopyMemory shim; i386
 # fell through to a bare copy_nonoverlapping). Closed with a Linux-extable-style
@@ -149,7 +149,7 @@ SeQueryInfoToken
 ZwCreateSection
 # QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at kmtest_drv.sys+0x5ACF2. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
 #ZwMapViewOfSection
-# UN-QUARANTINED 2026-07-24 (§9.122): fixed by the same i386 extable fault-fixup copy as
+# UN-QUARANTINED 2026-07-24 (§9.123): fixed by the same i386 extable fault-fixup copy as
 # ObSymbolicLink above — the handle-array capture is the identical unprotected-memcpy
 # shape. OK pass=4 fail=0.
 ZwWaitForMultipleObjects
@@ -158,7 +158,7 @@ FileAttributes
 FindFile
 HidPDescription
 IoDeviceObject
-# STILL QUARANTINED but the ROOT MOVED 2026-07-24 (§9.122). It was the 3rd of the
+# STILL QUARANTINED but the ROOT MOVED 2026-07-24 (§9.123). It was the 3rd of the
 # memcpy+0x40 face; the i386 extable fault-fixup copy cleared the KERNEL half (its two
 # twins above now pass). The remaining fault is in the TEST DRIVER —
 # `IoReadWrite_drv.sys+0x21E3`, not ntoskrnl+0x14C0 — i.e. the driver's own deliberate

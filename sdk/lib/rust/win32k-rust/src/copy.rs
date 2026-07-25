@@ -10,7 +10,7 @@ extern "system" {
 // The fault-tolerant kernel copy, imported from ntoskrnl (cdecl; ntoskrnl.spec).
 // Returns 1 if the copy completed, 0 if it faulted. amd64/arm64: the native-SEH
 // shim in ntoskrnl/kmsafecopy.c. i386: the exception-table fault-fixup primitive
-// in ntoskrnl-rust ke/i386/safecopy.rs (field manual §9.122). All three arches
+// in ntoskrnl-rust ke/i386/safecopy.rs (field manual §9.123). All three arches
 // carry the per-boot `[KMSAFECOPY] … (PASS)` oracle proving it actually catches.
 extern "C" {
     fn KmProtectedCopyMemory(Dst: PVOID, Src: PVOID, Len: usize) -> i32;

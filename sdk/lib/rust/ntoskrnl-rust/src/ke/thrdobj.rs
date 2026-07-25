@@ -1032,7 +1032,7 @@ pub unsafe extern "system" fn KeSetSystemAffinityThread(Affinity: KAFFINITY) {
     // So the flake is an ERESOURCE ownership bug and this probe is aimed at the
     // wrong subsystem. Kept (it is nearly free, and post-d3ca121cb09
     // KiSetAffinityThread IS a live 0x3 candidate again) but its silence proves
-    // nothing about the historical hits. Full reasoning: field manual §9.123.
+    // nothing about the historical hits. Full reasoning: field manual §9.124.
     #[cfg(target_arch = "aarch64")]
     let caller_lr: ULONG_PTR = {
         let lr: ULONG_PTR;
