@@ -1806,17 +1806,17 @@ pub struct _SCSI_PNP_REQUEST_BLOCK {
 pub type SCSI_PNP_REQUEST_BLOCK = _SCSI_PNP_REQUEST_BLOCK;
 pub type PSCSI_PNP_REQUEST_BLOCK = *mut _SCSI_PNP_REQUEST_BLOCK;
 pub type PHW_INITIALIZE =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
 pub type PHW_STARTIO = ::core::option::Option<
-    unsafe extern "stdcall" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
 >;
 pub type PHW_INTERRUPT =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID) -> BOOLEAN>;
-pub type PHW_TIMER = ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+pub type PHW_TIMER = ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
 pub type PHW_DMA_STARTED =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
 pub type PHW_FIND_ADAPTER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         HwContext: PVOID,
         BusInformation: PVOID,
@@ -1826,17 +1826,17 @@ pub type PHW_FIND_ADAPTER = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PHW_RESET_BUS = ::core::option::Option<
-    unsafe extern "stdcall" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN,
 >;
 pub type PHW_ADAPTER_STATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         Context: PVOID,
         SaveState: BOOLEAN,
     ) -> BOOLEAN,
 >;
 pub type PHW_ADAPTER_CONTROL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         ControlType: SCSI_ADAPTER_CONTROL_TYPE,
         Parameters: PVOID,
@@ -37814,14 +37814,14 @@ pub struct _SCSIWMIGUIDREGINFO {
 pub type SCSIWMIGUIDREGINFO = _SCSIWMIGUIDREGINFO;
 pub type PSCSIWMIGUIDREGINFO = *mut _SCSIWMIGUIDREGINFO;
 pub type PSCSIWMI_QUERY_REGINFO = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceContext: PVOID,
         RequestContext: PSCSIWMI_REQUEST_CONTEXT,
         MofResourceName: *mut PWCHAR,
     ) -> UCHAR,
 >;
 pub type PSCSIWMI_QUERY_DATABLOCK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         DispatchContext: PSCSIWMI_REQUEST_CONTEXT,
         GuidIndex: ULONG,
@@ -37833,7 +37833,7 @@ pub type PSCSIWMI_QUERY_DATABLOCK = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PSCSIWMI_SET_DATABLOCK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceContext: PVOID,
         RequestContext: PSCSIWMI_REQUEST_CONTEXT,
         GuidIndex: ULONG,
@@ -37843,7 +37843,7 @@ pub type PSCSIWMI_SET_DATABLOCK = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PSCSIWMI_SET_DATAITEM = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceContext: PVOID,
         RequestContext: PSCSIWMI_REQUEST_CONTEXT,
         GuidIndex: ULONG,
@@ -37854,7 +37854,7 @@ pub type PSCSIWMI_SET_DATAITEM = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PSCSIWMI_EXECUTE_METHOD = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceContext: PVOID,
         RequestContext: PSCSIWMI_REQUEST_CONTEXT,
         GuidIndex: ULONG,
@@ -37871,7 +37871,7 @@ pub const _SCSIWMI_ENABLE_DISABLE_CONTROL_ScsiWmiDataBlockControl: _SCSIWMI_ENAB
 pub type _SCSIWMI_ENABLE_DISABLE_CONTROL = ::core::ffi::c_uint;
 pub use self::_SCSIWMI_ENABLE_DISABLE_CONTROL as SCSIWMI_ENABLE_DISABLE_CONTROL;
 pub type PSCSIWMI_FUNCTION_CONTROL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceContext: PVOID,
         RequestContext: PSCSIWMI_REQUEST_CONTEXT,
         GuidIndex: ULONG,
@@ -43223,7 +43223,7 @@ pub type PBusLogic_WmiExtendedSetupInformation_T = *mut BusLogic_WmiExtendedSetu
 unsafe extern "stdcall" {
     pub fn DriverEntry(DriverObject: PVOID, Argument2: PVOID) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "stdcall" {
     pub fn BT958HwFindAdapter(
         HwDeviceExtension: PVOID,
         Context: PVOID,
@@ -43233,19 +43233,19 @@ unsafe extern "C" {
         Again: PBOOLEAN,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "stdcall" {
     pub fn BT958HwInitialize(HwDeviceExtension: PVOID) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "stdcall" {
     pub fn BT958HwStartIO(HwDeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "stdcall" {
     pub fn BT958HwInterrupt(HwDeviceExtension: PVOID) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "stdcall" {
     pub fn BT958HwResetBus(HwDeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "stdcall" {
     pub fn BT958HwAdapterControl(
         HwDeviceExtension: PVOID,
         ControlType: SCSI_ADAPTER_CONTROL_TYPE,

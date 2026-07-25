@@ -56,7 +56,7 @@ Accepted shapes, each with its precondition:
     ``return Other_l(a, b, c, NULL);`` — the ``forwarder`` above, plus literal
     ``NULL`` arguments. This is THE dominant CRT idiom: the locale-aware runtime
     is written as pairs, ``X(args)`` delegating to ``X_l(args, NULL)``, and it is
-    146 of msvcrt's 1792 functions (76 in mbcs.c alone — 40% of that file). Those
+    145 of msvcrt's 1792 functions (76 in mbcs.c alone — 40% of that file). Those
     are exactly the calls where a model has nothing to add and everything to
     subtly break: a reordered argument, a dropped ``NULL``, the wrong locale
     sentinel.
@@ -65,7 +65,10 @@ Accepted shapes, each with its precondition:
     The callee must be defined in the SAME translation unit, so its parameter
     list has already been parsed, and each ``NULL`` is accepted only where that
     callee's parameter at that position is a pointer type — from the signature,
-    never inferred from the argument. Arity must match the callee exactly (so a
+    never inferred from the argument. "Is a pointer" reaches past the spelling:
+    the CRT's sentinel is ``_locale_t``, a typedef whose star lives in a header,
+    and until ``rustconv.typedefs`` proved those from the include closure every
+    one of those 145 refused. Arity must match the callee exactly (so a
     variadic or unknown callee is refused), and the non-``NULL`` arguments must
     still be the parameters in order. ``0``/``FALSE`` are NOT accepted even
     though C would coerce them: ``0`` at an ``int`` position is just zero, and
@@ -121,6 +124,7 @@ from .conventions import CONV_KEYWORDS, KW_TO_CONV
 from .cpp_com import c_type_to_rust
 from .scanner import CPP_LANG
 from .semantic_skeleton import RUST_LANG, extract_skeleton
+from .typedefs import NULL_CONST, NULL_MUT
 
 
 class TrivialLoweringError(RuntimeError):
@@ -646,10 +650,6 @@ def _member(base: str, op: str, field: str) -> str | None:
     return f"(*{rust_base}).{rust_field}" if op == "->" else f"{rust_base}.{rust_field}"
 
 
-def _is_pointer_c_type(c_type: str) -> bool:
-    return "*" in _normalize_c_type(c_type)
-
-
 def _is_const_pointer_c_type(c_type: str) -> bool:
     """`const T *p` -> null(); `T *p` / `T *const p` -> null_mut().
 
@@ -661,10 +661,31 @@ def _is_const_pointer_c_type(c_type: str) -> bool:
     return "const" in normalized.split("*")[0].split()
 
 
+def _null_spelling(c_type: str, pointer_typedefs: Mapping[str, str]) -> str | None:
+    """Rust `NULL` for a parameter of type *c_type*, or None if it is not provably a pointer.
+
+    Two sources, in order of directness. A star in the spelling proves itself. Otherwise
+    the name is looked up in *pointer_typedefs*, which `rustconv.typedefs` derives from the
+    TU's real header closure — that is what makes `_locale_t` (the CRT's `X`/`X_l` locale
+    sentinel, and 145 refused lowerings across msvcrt) spellable at all.
+
+    A qualifier on a typedef'd pointer binds to the POINTER, never the pointee -- `const
+    _locale_t` is a const pointer to mutable state -- so the typedef's own recorded spelling
+    decides and the qualifier is dropped. That is the opposite of the `const T *` case above,
+    which is why the two are not one code path.
+    """
+    normalized = _normalize_c_type(c_type)
+    if "*" in normalized:
+        return NULL_CONST if _is_const_pointer_c_type(normalized) else NULL_MUT
+    bare = " ".join(word for word in normalized.split() if word not in ("const", "volatile"))
+    return pointer_typedefs.get(bare)
+
+
 def _forward_args(
     args: Sequence[str],
     names: Sequence[str],
     callee_params: Sequence[tuple[str, str]] | None,
+    pointer_typedefs: Mapping[str, str],
 ) -> list[str] | None:
     """Rust spellings for a forwarder's arguments, or None if not provable.
 
@@ -678,13 +699,10 @@ def _forward_args(
     # strict=True is provable here: the length mismatch returned None above.
     for arg, (param_type, _) in zip(args, callee_params, strict=True):
         if arg == "NULL":
-            if not _is_pointer_c_type(param_type):
-                return None  # NULL at a non-pointer position: not our shape
-            spelled.append(
-                "core::ptr::null()"
-                if _is_const_pointer_c_type(param_type)
-                else "core::ptr::null_mut()"
-            )
+            null = _null_spelling(param_type, pointer_typedefs)
+            if null is None:
+                return None  # NULL at a position not provably a pointer: not our shape
+            spelled.append(null)
             continue
         if not remaining or arg != remaining[0]:
             return None  # reordered, substituted, or a non-parameter expression
@@ -703,6 +721,7 @@ def _match_shape(
     own_name: str,
     # Mapping (covariant values), not dict — see lower_trivial_c_function.
     siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
+    pointer_typedefs: Mapping[str, str] | None = None,
 ) -> tuple[str, str] | None:
     """Return ``(shape, rust_statements)`` for a recognized residual body."""
     names = [name for _, name in params]
@@ -754,7 +773,9 @@ def _match_shape(
         # parsed signature (the CRT's X -> X_l(…, NULL) idiom). See the module docstring.
         if "NULL" not in actual:
             return None
-        spelled_args = _forward_args(actual, names, (siblings or {}).get(callee))
+        spelled_args = _forward_args(
+            actual, names, (siblings or {}).get(callee), pointer_typedefs or {}
+        )
         if spelled_args is None:
             return None
         call = f"{rust_callee}({', '.join(spelled_args)})"
@@ -820,6 +841,7 @@ def lower_trivial_c_function(
     # dict[str, list[...]] (which is what _normalized_params builds) would not be
     # assignable to dict[str, Sequence[...]].
     siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
+    pointer_typedefs: Mapping[str, str] | None = None,
 ) -> TrivialLowering | None:
     """Lower one trivial C function to Rust for $0, or ``None`` to pay the model.
 
@@ -857,7 +879,7 @@ def lower_trivial_c_function(
         # (The oracle found this on dbghelp's `native_load_module`.)
         return None
     params = _normalized_params(dep.params)
-    matched = _match_shape(residual, params, return_type, dep.name, siblings)
+    matched = _match_shape(residual, params, return_type, dep.name, siblings, pointer_typedefs)
     if matched is None:
         return None
     bindings = _render_params(params)
@@ -887,19 +909,27 @@ def lower_trivial_c_function(
     return lowering
 
 
-def lower_trivial_c_functions(deps: Iterable[FunctionDep]) -> dict[str, TrivialLowering]:
+def lower_trivial_c_functions(
+    deps: Iterable[FunctionDep],
+    pointer_typedefs: Mapping[str, str] | None = None,
+) -> dict[str, TrivialLowering]:
     """Lower every function in ``deps`` that is provably trivial.
 
     Builds the same-TU signature map once and hands it to every function, so
     ``forwarder_with_null`` can check a literal ``NULL`` against the callee's real
     parameter type. Only C++-free, non-class deps contribute (the C++ path belongs
     to ``cpp_com``).
+
+    ``pointer_typedefs`` is :func:`rustconv.typedefs.pointer_typedefs_for_source`'s
+    verdict for this TU — the names a ``NULL`` may be spelled at even though their C
+    spelling carries no star. Omitting it is safe and simply lowers fewer functions;
+    on msvcrt it is the difference between 123 and 268.
     """
     deps = list(deps)
     siblings = {dep.name: _normalized_params(dep.params) for dep in deps if dep.cpp_class is None}
     lowered: dict[str, TrivialLowering] = {}
     for dep in deps:
-        lowering = lower_trivial_c_function(dep, siblings)
+        lowering = lower_trivial_c_function(dep, siblings, pointer_typedefs)
         if lowering is not None:
             lowered[dep.name] = lowering
     return lowered

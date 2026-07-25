@@ -577,3 +577,68 @@ def test_control_names_match_real_lints():
     gate = {name for name, _cmd, _ff in source_lint_specs(REPO)}
     stale = sorted({c.name for c in CONTROLS} - gate) + sorted(set(UNCOVERED) - gate)
     assert not stale, f"control/UNCOVERED entries name lints that no longer exist: {stale}"
+
+
+# ── scan_orphan_modules: the ROOTLESS class needs its own control ────────────
+# The table's positive control only requires SOME output line naming the fixture, so
+# folding a rootless file into the existing orphan fixture would have been satisfied by
+# the already-passing orphan hit — the harness would have "covered" the new class while
+# proving nothing about it. Hence a targeted pair.
+_ROOTLESS_WORKSPACE_CARGO = """\
+[workspace]
+members = ["real-rust"]
+"""
+_ROOTLESS_REAL_CARGO = """\
+[package]
+name = "real-rust"
+version = "0.0.0"
+edition = "2021"
+"""
+_ROOTLESS_DUMP = """\
+// mscms-rust's exact shape: a translation dumped under sdk/lib/rust/<name>/src with no
+// Cargo.toml of its own. `crate_root_of` walks up to the WORKSPACE manifest, whose
+// crate_live_files() is empty, and the "unparseable crate -> fail open" branch then
+// swallowed the whole directory. 4,782 lines reported clean for as long as the gate existed.
+pub fn never_compiled() -> u32 { 7 }
+"""
+_ROOTLESS_DUMP_BANNERED = "//! ORPHAN-BY-DESIGN: parked, unintegrated.\n" + _ROOTLESS_DUMP
+
+
+def _orphan_out(tmp_path: Path, files: dict) -> tuple[Path, str]:
+    root = _materialize(tmp_path, files)
+    ctl = next(c for c in CONTROLS if c.name == "scan_orphan_modules")
+    _rc, out = _run(ctl, root)
+    return root, out
+
+
+def test_rootless_crate_is_not_invisible(tmp_path: Path):
+    """A directory of .rs with NO crate root above it must be reported, not failed open."""
+    root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _ROOTLESS_WORKSPACE_CARGO,
+            "real-rust/Cargo.toml": _ROOTLESS_REAL_CARGO,
+            "real-rust/src/lib.rs": "pub fn ok() -> u32 { 1 }\n",
+            "dump-rust/src/dumped.rs": _ROOTLESS_DUMP,
+        },
+    )
+    hits = [ln for ln in out.splitlines() if "[ROOTLESS]" in ln and "dumped.rs" in ln]
+    assert hits, f"rootless dump was not reported.\n(root={root})\n--- output ---\n{out}"
+    # ...and the real crate beside it must NOT be swept up by the same rule. Match on the
+    # crate's PATH, not on "lib.rs" — the finding's own text says "no crate root
+    # (lib.rs/main.rs) above this file", so a substring test hits the message, not a hit.
+    assert not [ln for ln in out.splitlines() if "real-rust" in ln], out
+
+
+def test_rootless_crate_accepts_the_same_banner_escape(tmp_path: Path):
+    """Declaring it is the sanctioned move — the gate is 'no UNDECLARED orphans'."""
+    _root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _ROOTLESS_WORKSPACE_CARGO,
+            "real-rust/Cargo.toml": _ROOTLESS_REAL_CARGO,
+            "real-rust/src/lib.rs": "pub fn ok() -> u32 { 1 }\n",
+            "dump-rust/src/dumped.rs": _ROOTLESS_DUMP_BANNERED,
+        },
+    )
+    assert "[ROOTLESS]" not in out, out

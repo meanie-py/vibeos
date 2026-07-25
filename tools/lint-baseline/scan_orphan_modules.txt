@@ -1,0 +1,6 @@
+sdk/lib/rust/mscms-rust/src/mscms/handle.rs:1: [ROOTLESS] no crate root (lib.rs/main.rs) above this file — nothing compiles it; scaffold the crate, or declare it with a `//! ORPHAN-BY-DESIGN: <reason>` banner
+sdk/lib/rust/mscms-rust/src/mscms/icc.rs:1: [ROOTLESS] no crate root (lib.rs/main.rs) above this file — nothing compiles it; scaffold the crate, or declare it with a `//! ORPHAN-BY-DESIGN: <reason>` banner
+sdk/lib/rust/mscms-rust/src/mscms/mscms_main.rs:1: [ROOTLESS] no crate root (lib.rs/main.rs) above this file — nothing compiles it; scaffold the crate, or declare it with a `//! ORPHAN-BY-DESIGN: <reason>` banner
+sdk/lib/rust/mscms-rust/src/mscms/profile.rs:1: [ROOTLESS] no crate root (lib.rs/main.rs) above this file — nothing compiles it; scaffold the crate, or declare it with a `//! ORPHAN-BY-DESIGN: <reason>` banner
+sdk/lib/rust/mscms-rust/src/mscms/stub.rs:1: [ROOTLESS] no crate root (lib.rs/main.rs) above this file — nothing compiles it; scaffold the crate, or declare it with a `//! ORPHAN-BY-DESIGN: <reason>` banner
+sdk/lib/rust/mscms-rust/src/mscms/transform.rs:1: [ROOTLESS] no crate root (lib.rs/main.rs) above this file — nothing compiles it; scaffold the crate, or declare it with a `//! ORPHAN-BY-DESIGN: <reason>` banner

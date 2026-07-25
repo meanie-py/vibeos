@@ -157,6 +157,26 @@ change stops the caller being dead-stripped.
 - **Before writing `extern { fn Foo }`, confirm `Foo` is a real out-of-line symbol** (`nm`, or
   grep for a definition), not a header macro.
 
+### A typedef that is ALREADY a pointer, given a second star
+The star lives in a header, so the model sees `_locale_t locale` as a bare type name and adds
+the indirection the parameter appears to lack — `locale: *mut _locale_t`, i.e. a
+`**localeinfo_struct` where the caller passes a `*localeinfo_struct`. On msvcrt's `mbcs.c` it
+did this in **73 of 77** locale-taking signatures.
+
+**The error is invisible at the ABI.** Both spellings are one machine pointer, so the signature
+links and the call passes identical bits; only the body's dereferences break, and only *some*
+of those are loud. It was caught here solely because `(*locale).mbcinfo` failed to typecheck —
+put the same mistake at a parameter the body merely forwards and it compiles, links, ships, and
+reads one indirection too deep forever. The same shape appears on **locals**
+(`let mbcinfo: *mut pthreadmbcinfo`), usually with a `.cast()` bolted on to make it build.
+
+**Fix:** `rustconv`'s `signature_fidelity` pass strips the invented star wherever the C declares
+the parameter with no `*`, `typedefs.py` proves that name a plain pointer from the TU's own
+include closure, and the Rust is exactly one star on *that same name*. Nothing else is touched:
+the same file had 46 parameters where the model's spelling merely disagreed with a mechanical
+mapping and the model was **right** (`size_t`/`usize`, `threadmbcinfo *`/`pthreadmbcinfo`).
+Locals are not covered — grep `\*mut <ptr typedef>` after a flip.
+
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
 `@KfRaiseIrql@4`), by **hal on arm64** (halstubs), and by **neither on amd64** — so routing a
@@ -232,6 +252,41 @@ depth negative at the arrow, after which every top-level comma is invisible. Tha
 reported **3,790** phantom findings against a true count of 15, and the identical trap bit
 `crate_repair`'s argument-index counter the same night. If you are counting top-level commas in
 Rust, assume `->` is there to ruin it.
+
+### A `transmute` at a callback-install site erases the CALLING CONVENTION
+Rust will not unify `extern "system" fn` with a literal `extern "stdcall" fn` (i386) or
+`extern "C" fn` (amd64/arm64) in a function-POINTER type, even though the ABI is identical on
+that arch. bindgen writes the literal, translations write the portable `system`, so assigning
+a translated callback into a bindgen slot is an E0308 — and the reflex fix is to transmute the
+address:
+
+```rust
+macro_rules! cb { ($f:expr) => { core::mem::transmute($f as usize) } }   // buslogic
+```
+
+That silences the *type*, which is the whole type — including the convention. buslogic's six
+SCSI miniport callbacks went into `PHW_*` slots this way while defined `extern "C"`; scsiport
+dereferences them as stdcall, so on i386 neither side pops the arguments and 8 bytes leak per
+SRB dispatch. The `cb!` comment even states the premise ("the bit pattern is identical; only
+the nominal Rust type differs") — true for the case in front of the author, and false the
+moment the definition's convention drifts. Same shape in cdrom via an explicit
+`transmute::<unsafe extern "C" fn(..), _>` into a WDF `EvtCleanupCallback`.
+
+**Fix the slot type, not the assignment.** `tools/rustconv/normalize_island_abi.py` spells
+callback slots `extern "system"` across a crate's three islands, projecting from the i386
+island — the *only* one that still records which callbacks are stdcall, because 64-bit has one
+convention and bindgen flattens every `NTAPI` to `extern "C"` (11,809 `stdcall` blocks on
+i386, ZERO on either twin). Then `Some(f)` assigns directly and rustc checks the convention:
+reverting one buslogic definition to `extern "C"` now fails with `expected "system" fn, found
+"C" fn` instead of shipping. Do NOT blanket-rewrite `extern "C" fn` → `system` on i386 — 34
+i386 callback slots are genuinely cdecl and that promotion is the same bug pointing the other
+way.
+
+Census of the remaining exposure, so it is not re-derived: ~500 transmute-shaped callback
+installs survive, led by dxg-rust (92), win32k-rust `ntddraw_dxeng` (42), cdfs `cdinit` (33),
+winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42), cdrom (20),
+scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
+ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
 
 ### Aggregates, arrays and unions across the FFI boundary
 - **`i64` substituted for a by-value `_LARGE_INTEGER`** — i386 cdecl lowers an 8-byte
@@ -815,11 +870,27 @@ N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
 - **`if (!Fn())` → `if !Fn() != 0`** — bitwise-NOT on an integer BOOLEAN makes the condition
-  **always true**.
+  **always true**. Recurs wherever a C macro yields an `int`: `if(!MSVCRT_CHECK_PMT(x))` is
+  `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
+  **silent** when it feeds an integer.
 - **C post-inc/dec rewritten with the wrong read order** (`x = y--` reading the post value).
 - **A C parameter reassignment translated as a block-local `let` SHADOW** — the new value dies
   at the block end.
 - **A guard condition swapped for a different nearby variable** — logic inverted per boot mode.
+- **A NULL guard De Morgan'd the wrong way.** `MSVCRT_CHECK_PMT(start && str)` came back as
+  `MSVCRT_CHECK_PMT!(start.is_null() || str.is_null())` — the *negation* of the C, so the guard
+  fired on VALID pointers and passed NULL through to the deref it exists to prevent. Compiles
+  clean. Read every translated parameter-validation guard against its C.
+- **A C `int` local holding a `size_t` return, kept `usize` in Rust — the error path goes DEAD.**
+  `int ch_len = mbrtowc(...)` is not sloppy C: the narrowing to `int` is what makes `mbrtowc`'s
+  `(size_t)-1` visible as `-1`, so `ch_len < 0` catches a decode failure. Translate the local as
+  `usize` and that branch is unreachable; `mbsrtowcs_s` walked past failures instead of
+  returning -1. rustc says **"comparison is useless due to type limits"** — treat that warning
+  as a defect report, never as noise.
+- **C integer promotion dropped at a mask.** `ch & 0xf8` promotes `char` to `int` first, so a
+  high-bit byte sign-extends and still matches `0xf0`; masking at `i8` width does not (and does
+  not even compile — `literal out of range`). Same class as the `BYTE`-returning `HIBYTE`/
+  `LOBYTE` macros, whose results C promotes to `int` before any arithmetic.
 - **A narrowing cast truncates a wider C operand**; **a u64 sentinel cast as i64 inverts a
   bounds check**.
 - **`_Analysis_assume_` translated as live code** → a NULL deref the annotation existed to
@@ -1233,6 +1304,38 @@ flag). **Validate the harness by BREAKING the scanner** — restoring a pre-fix 
 the harness fail. Two instances of the very class turned up while building it: the harness
 itself was a liar on its first run (the positive assertion accepted *any* non-empty output), and
 two scanners take FILES, not directories, so handed a directory they silently found nothing.
+
+### "Canonicalising" a mismatch can silence it by editing the EVIDENCE
+A lint that reports `X disagrees with Y` has no opinion about which side is wrong, so a
+mechanical pass that makes them agree will always turn it green — including by changing the
+side that was right. This lane did exactly that: a "full mechanical CC canon" pass
+(`e33a810c9ad`) aligned every `extern "X" { fn F; }` declaration to F's `#[no_mangle]`
+definition, and among the files it rewrote were two **generated bindgen islands**. bindgen's
+`extern "stdcall"` there was not a local opinion — it was the transcript of the C header's
+`NTAPI`. Flipping it to `extern "C"` silenced the finding on buslogic's 6 SCSI miniport
+callbacks and cdrom's 2 WDF cleanup callbacks, every one of which our Rust wrongly defined
+cdecl while the port driver / WDF calls them through a stdcall function pointer. The live
+count fell 305 → 16 and read as burndown progress.
+
+Three things generalise:
+
+- **Classify each side as OPINION or EVIDENCE before aligning them.** A hand-written decl
+  describing a symbol the crate itself defines is opinion; a generated island, a `.spec`, a C
+  header, a DDK function-pointer typedef are evidence. Never edit evidence to match code.
+  `scan_cc_mismatch --fix` now refuses to write any `types*.rs`/`bindgen*.rs` and reports
+  those as "the DEFINITION is the suspect side" instead.
+- **A `transmute` at the binding site removes the compiler from the argument.** buslogic
+  registers its callbacks with `cb!(F)` = `transmute(F as usize)`, so rustc never compares
+  `extern "C" fn` against the `extern "stdcall"` field it lands in. Wherever a fn pointer is
+  installed by transmute, a *source-level* convention check is the only thing that can see it.
+- **A finding count that drops without a corresponding fix is a question, not a result.**
+  Re-derive it from the C, not from the tree's internal agreement.
+
+The same pass's counterpart trap: an oracle can also be *falsely* consulted. `cfg_excludes_i386`
+only ever saw attributes directly preceding a definition, so `#[cfg(target_arch = "x86_64")]
+mod ke_amd64_exports { … }` made 8 amd64-only definitions look like i386 authority — and --fix
+used them to rewrite ntoskrnl's *correct* i386 decls. **A cfg'd-out definition is not evidence
+either**; the scanner now brace-matches per-arch modules.
 
 ### A generator can only flag what its TYPE SOURCE can see `[§9.115]`
 Three near-identical crashes: an unmodified stock i386 applet added to the suite kept dying,

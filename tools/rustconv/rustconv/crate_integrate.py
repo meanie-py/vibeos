@@ -416,6 +416,66 @@ def provided_names(crate: Path) -> set[str]:
     return set(names)
 
 
+_MACRO_CACHE: dict[Path, frozenset[str]] = {}
+
+
+def prelude_macros(crate: Path) -> set[str]:
+    """Names the crate's prelude provides as `macro_rules!`, not as functions.
+
+    A C macro that MUST stay a macro in Rust — `MSVCRT_CHECK_PMT`, `HIBYTE`, `DPRINT` — is
+    spelled `NAME(args)` in the C and therefore comes back from the model spelled
+    `NAME(args)`, which is a plain call. That is the model reading the C correctly; which
+    names happen to be macros on the Rust side is a property of the PRELUDE, invisible from
+    the C, and so not the model's to know.
+    """
+    crate = Path(crate).resolve()
+    if crate in _MACRO_CACHE:
+        return set(_MACRO_CACHE[crate])
+    prelude = crate / "src" / "prelude.rs"
+    found: frozenset[str] = frozenset()
+    if prelude.is_file():
+        text = prelude.read_text(errors="replace")
+        found = frozenset(_RE_MACRO_RULES.findall(text))
+    _MACRO_CACHE[crate] = found
+    return set(found)
+
+
+#: `assembler.py` appends the whole translated `.c` as a trailing comment block under this
+#: banner. It is the 1:1 reference that makes the NEXT translation of the file land as a
+#: readable diff, so it must stay byte-identical to the C — a rewrite that reaches into it
+#: turns `if(!MSVCRT_CHECK_PMT(x))` into Rust-flavoured pseudo-C and destroys exactly that.
+#: Every other pass here edits `extern` blocks and `use` lines, which do not occur in the
+#: block; a bare-name substitution is the first one that can.
+_C_SOURCE_BANNER = "\n// ORIGINAL C SOURCE"
+
+
+def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str, list[str]]:
+    """Turn `NAME(args)` into `NAME!(args)` for every prelude macro. Returns (src, fixed).
+
+    Skips a name this file DEFINES as a real function: the prelude's macro would be shadowed
+    by the local item, so the plain call is already correct and adding `!` would break it.
+    Already-correct `NAME!(…)` sites are left alone, which is what makes this idempotent.
+    Never touches the appended original-C block — see `_C_SOURCE_BANNER`.
+    """
+    cut = src.find(_C_SOURCE_BANNER)
+    if cut != -1:
+        head, tail = src[:cut], src[cut:]
+        head, fixed = fix_macro_calls(head, macros, defined)
+        return head + tail, fixed
+
+    fixed: list[str] = []
+    for name in sorted(macros - defined):
+        # `(?!\s*!)` skips a call that is already a macro invocation — that alone makes this
+        # idempotent. The lookbehind is only `\w`, to stay off `other_NAME(`: excluding a
+        # preceding `!` too would silently skip `if !NAME(x)`, which is how C spells a
+        # boolean test and is 17 of mbcs.c's 42 `MSVCRT_CHECK_PMT` sites.
+        pattern = re.compile(rf"(?<!\w){re.escape(name)}(?!\s*!)\s*\(")
+        src, count = pattern.subn(f"{name}!(", src)
+        if count:
+            fixed.append(f"{name}×{count}")
+    return src, fixed
+
+
 # --------------------------------------------------------------------------------------
 # integrate
 # --------------------------------------------------------------------------------------
@@ -434,6 +494,7 @@ class Report:
     kept_unprovided: list[str] = field(default_factory=list)  # REPORT: verify each
     kept_statics: list[str] = field(default_factory=list)  # e.g. IID_* link symbols
     promoted_pub: list[str] = field(default_factory=list)
+    macro_calls_fixed: list[str] = field(default_factory=list)  # `NAME(x)` -> `NAME!(x)`
     blocks_removed: int = 0
 
     @property
@@ -444,6 +505,7 @@ class Report:
             or self.dropped_provided
             or self.dropped_self
             or self.promoted_pub
+            or self.macro_calls_fixed
         )
 
     def summary(self) -> str:
@@ -454,6 +516,7 @@ class Report:
             f"={len(self.kept_statics)} data-static  "
             f"?{len(self.kept_unprovided)} unprovided  "
             f"+{len(self.promoted_pub)} pub"
+            + (f"  !{','.join(self.macro_calls_fixed)}" if self.macro_calls_fixed else "")
         )
 
 
@@ -538,6 +601,10 @@ def integrate(
     # translates each function independently, so a caller translated before its callee can
     # get an `extern` decl for something defined in the very same file: a hard E0428.
     defined = defined_names(src, pub_only=False)
+
+    # A prelude macro is spelled as a plain call in the C, so it comes back as a plain call.
+    # Which names are macros is a fact about the PRELUDE, not about the C — see prelude_macros.
+    src, report.macro_calls_fixed = fix_macro_calls(src, prelude_macros(crate), defined)
 
     out, pos = [], 0
     for start, end, body, abi in extern_block_spans(src):

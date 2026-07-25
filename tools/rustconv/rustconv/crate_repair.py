@@ -671,6 +671,27 @@ def _conversion_hints(diagnostic: Mapping[str, Any]) -> dict[int, str]:
     return hints
 
 
+def _in_match_pattern(masked: bytes, end: int) -> bool:
+    """True when the span sits in a `match` arm PATTERN, where a cast is not grammatical.
+
+    rustc reports a constant arm whose type disagrees with the scrutinee exactly like any
+    other integer mismatch, so the cast rule fires and writes `(_MB_CP_SBCS) as i32 => {` —
+    which is not a pattern and does not parse. (Seen on msvcrt's `_setmbcp_l`, where bindgen
+    typed one member of a four-macro `#define` block `u32` because its value is 0 and the
+    other three `i32` because theirs are negative.)
+
+    Scans forward on the same line: a `=>` reached before any `;`, `{` or `}` means everything
+    to our left is a pattern. A one-line `match x { A => 1, B => 2 }` can trip this on an arm
+    BODY and decline a legitimate cast — the safe direction for a rule that never guesses.
+    """
+    for i in range(end, min(len(masked), end + 200)):
+        if masked[i : i + 2] == b"=>":
+            return True
+        if masked[i : i + 1] in (b"\n", b";", b"{", b"}"):
+            return False
+    return False
+
+
 def _numeric_cast_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -710,6 +731,11 @@ def _numeric_cast_rule(
             # Guard: a span followed by `(` is a CALLEE name (the primary span of the
             # "arguments to this function are incorrect" shape), not a value to cast.
             decline("callee_span", data[start:end].decode("utf-8", "replace"))
+            continue
+        if _in_match_pattern(masked, end):
+            # Guard: a cast is not a pattern. The type disagreement is real, but it has to be
+            # resolved where the constant is DECLARED, not at the arm.
+            decline("match_pattern", data[start:end].decode("utf-8", "replace"))
             continue
         text = data[start:end].decode("utf-8", "replace")
         if not _balanced(masked[start:end]):
@@ -784,6 +810,9 @@ def _pointer_cast_rule(
         masked = _mask_lexical(data)
         if _next_code_byte(masked, end) == b"(":
             decline("callee_span", data[start:end].decode("utf-8", "replace"))
+            continue
+        if _in_match_pattern(masked, end):
+            decline("match_pattern", data[start:end].decode("utf-8", "replace"))
             continue
         text = data[start:end].decode("utf-8", "replace")
         if not _balanced(masked[start:end]):
