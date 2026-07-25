@@ -1,3 +1,8 @@
+//! ORPHAN-BY-DESIGN: `ui/directui.c` is `#if 0` upstream; the freeldr
+//! CMakeLists records directui.rs as deliberately not wired. 12 of its 13
+//! exports (UiDisplayMenu, UiDrawBackdrop, …) are live in ui.rs; only
+//! UiMessageBox is unique to this file, and nothing calls it.
+//!
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{Depth, PCSTR};

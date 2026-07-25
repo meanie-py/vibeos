@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import struct
 import subprocess
@@ -3265,6 +3266,81 @@ def test_lint_baseline_still_flags_a_new_file_and_a_new_message():
     base = {"a.sh:10:1: warning: X unused. [SC2034]"}
     assert lints._new_findings({"b.sh:10:1: warning: X unused. [SC2034]"}, base) != []
     assert lints._new_findings({"a.sh:10:1: warning: Y unused. [SC2034]"}, base) != []
+
+
+def test_lint_baseline_ignores_drift_in_lint_kernels_embedded_line_number():
+    """lint_kernel carries the line number INSIDE the message, so the `file:line:` stripper
+    above never applied to it and it kept drifting (2026-07-25: adding 4-line banners to 12
+    files reported 35 "new" findings that were the same 35 sites). The scanner prints a file
+    header, then indented `L <n> Fn(): ...` lines."""
+    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
+    cur = {"    L 313 RtlpCheckDeviceName(): *NameInvalid = ..."}
+    assert lints._new_findings(cur, base) == []
+
+
+def test_lint_baseline_still_flags_an_extra_embedded_line_occurrence():
+    """The multiset half again — drift immunity must not swallow a genuinely new site."""
+    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
+    cur = {
+        "    L 313 RtlpCheckDeviceName(): *NameInvalid = ...",
+        "    L 480 RtlpCheckDeviceName(): *NameInvalid = ...",
+    }
+    assert len(lints._new_findings(cur, base)) == 1
+    # ...and a different function at a drifted line is still new.
+    assert lints._new_findings({"    L 313 RtlpOther(): *NameInvalid = ..."}, base) != []
+
+
+def test_lint_baseline_ignores_drift_behind_a_leading_class_tag():
+    """verify_ffi and scan_magic_offsets print `[TAG] path:line: msg`. _LOCATION is
+    start-anchored, so it never saw the path and 205 baseline lines were silently NOT
+    drift-immune — a one-line comment added to fastfat's extern block moved an unrelated
+    finding 177 -> 178 and the merge queue rejected the whole batch (2026-07-25)."""
+    base = {"  [C_MACRO] a/b.rs:177: IoGetCurrentIrpStackLocation: is a C macro"}
+    cur = {"  [C_MACRO] a/b.rs:178: IoGetCurrentIrpStackLocation: is a C macro"}
+    assert lints._new_findings(cur, base) == []
+    # The tag is part of the identity: same site, different class, is a NEW finding.
+    other_class = {"  [FLEX_ARRAY] a/b.rs:177: IoGetCurrentIrpStackLocation: is a C macro"}
+    assert lints._new_findings(other_class, base) != []
+    # ...and the multiset half still holds.
+    extra = {"  [C_MACRO] a/b.rs:900: IoGetCurrentIrpStackLocation: is a C macro"}
+    assert len(lints._new_findings(cur | extra, base)) == 1
+
+
+def test_lint_baseline_ignores_drift_in_a_trailing_parenthesized_location():
+    """verify_signatures puts the location last: `[MEDIUM] NtSetLdtEntries  (path:210)`."""
+    base = {"[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"}
+    drifted = {"[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:255)"}
+    assert lints._new_findings(drifted, base) == []
+    assert lints._new_findings({"[MEDIUM] NtOther  (sdk/lib/rust/x/stubs.rs:210)"}, base) != []
+    reclassified = {"[HIGH] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"}
+    assert lints._new_findings(reclassified, base) != []
+
+
+def test_every_baseline_line_is_immune_to_line_drift():
+    """The GUARD over the three fixes above. Each was found the same way — a lane's unrelated
+    edit shifted a line, the gate went red, and someone had to re-bless a baseline (which
+    launders whatever else drifted in the same pass). The failure is invisible at authorship
+    time: a new scanner with a novel output shape looks fine until it costs another lane a
+    gate. So assert the PROPERTY directly over every baseline we actually ship — perturbing a
+    finding's line number must never change its key. A scanner whose format this cannot parse
+    fails check-tooling here, where its author is standing, instead of a stranger's merge."""
+    # A location we are confident is a location: a real source extension, then digits.
+    loc = re.compile(r"(?P<f>[\w./+-]+\.(?:rs|c|h|py|md|txt|cmake|spec|toml|sh)):(?P<n>\d+)")
+    baselines = sorted((_conf_repo_root() / "tools" / "lint-baseline").glob("*.txt"))
+    assert baselines, "no lint baselines found — wrong REPO root?"
+    blind: list[str] = []
+    for path in baselines:
+        for line in path.read_text().splitlines():
+            m = loc.search(line)
+            if not line.strip() or not m:
+                continue
+            drifted = line[: m.start("n")] + str(int(m.group("n")) + 1000) + line[m.end("n") :]
+            if lints._finding_key(line) != lints._finding_key(drifted):
+                blind.append(f"{path.name}: {line[:110]}")
+    assert not blind, (
+        f"{len(blind)} baseline finding(s) carry a line number that _finding_key does not "
+        f"strip, so any edit above them reads as NEW:\n  " + "\n  ".join(blind[:10])
+    )
 
 
 def test_lint_baseline_compares_prefixless_findings_verbatim():

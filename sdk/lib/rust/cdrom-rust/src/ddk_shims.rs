@@ -322,8 +322,18 @@ pub unsafe extern "C" fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LO
 pub unsafe extern "C" fn DEVICE_TYPE_FROM_CTL_CODE(ControlCode: u32) -> u32 { (ControlCode >> 16) & 0xFFFF }
 // PORT_ALLOCATED_SENSE / RequestGetCurrentStackLocationFlags: diagnostic/flag accessors; the
 // conservative value (0 / no-flags) is safe — sense buffers aren't port-allocated in our path.
+// ARITY: the scsi.h macro is PORT_ALLOCATED_SENSE(devExt, srb) and both call sites pass two
+// arguments (autorun.rs:973, and the decls in autorun.rs/common.rs spell two). This shim took
+// ONE, so the callee bound `Srb` to the DeviceExtension. Harmless only because the body ignores
+// its parameter — but it is an arity mismatch in live driver code, and any future body would
+// have read the wrong pointer. Signature now matches the declarations.
 #[no_mangle]
-pub unsafe extern "C" fn PORT_ALLOCATED_SENSE(_Srb: PVOID) -> u8 { 0 }
+pub unsafe extern "C" fn PORT_ALLOCATED_SENSE(
+    _DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+    _Srb: *mut SCSI_REQUEST_BLOCK,
+) -> u8 {
+    0
+}
 #[no_mangle]
 pub unsafe extern "system" fn RequestGetCurrentStackLocationFlags(_Request: WDFREQUEST) -> u8 { 0 }
 // RtlStringCchPrintfW: ntstrsafe inline (no export). Stub returns STATUS_SUCCESS; building the

@@ -239,6 +239,106 @@ pub unsafe fn balanced(cond: bool) -> u32 {
 }
 """
 
+# scan_orphan_modules. The BAD case is the class itself; the GOOD case is doing
+# double duty as a regression guard for the two walk defects that made the same
+# tool call LIVE code dead (2026-07-25) — the direction that HIDES bugs, since
+# verify_match_consts suppresses its findings in files this walk calls orphaned.
+_ORPHAN_BAD_LIB = """\
+pub mod live;
+"""
+_ORPHAN_BAD_LIVE = """\
+pub fn live_fn() -> u32 { 1 }
+"""
+_ORPHAN_BAD_ORPHAN = """\
+// Reached by no `mod` chain and carrying no banner — cargo never opens this file,
+// so `cargo check` is green whatever is in it (the classpnp class_gap3.rs trap).
+pub fn stranded() -> u32 { 2 }
+"""
+_ORPHAN_GOOD_LIB = """\
+// The freeldr shape: a `/*` inside a LINE comment. Stripping block comments
+// before line comments opens a phantom block comment here that swallows every
+// `mod` below it — 53 of freeldr's 87, i.e. 42,750 lines of live bootloader
+// reported as dead. (called from arch/*/multiboot.S asm)
+pub mod live;
+// `async` is a keyword since edition 2018, so ws2_32's translation of async.c
+// can only be spelled with a raw identifier. Not matching `r#` orphaned 1,941
+// live lines.
+pub mod r#async;
+
+/* The phantom comment above only reaches this far if something CLOSES it, and
+   that closer is what makes the bug bite: an unterminated `/*` is harmless
+   because the regex finds no match at all. A fixture without a later `*/`
+   therefore passes under BOTH the broken and the fixed stripper — verified,
+   and the reason this block is here rather than a tidier one-liner. */
+"""
+_ORPHAN_GOOD_ASYNC = """\
+pub fn async_fn() -> u32 { 3 }
+"""
+_ORPHAN_GOOD_ORPHAN = """\
+//! ORPHAN-BY-DESIGN: a park with its reason stated where the reader will see it.
+//! This is what satisfies the gate — not the absence of orphans.
+pub fn parked() -> u32 { 4 }
+"""
+_ORPHAN_CARGO = """\
+[package]
+name = "orphan-fixture"
+version = "0.0.0"
+edition = "2021"
+"""
+
+# scan_extern_arity. BAD is the classpnp shape that wrote to address 0x2. GOOD carries the
+# two parse traps that produced wrong answers before the scanner was trusted: a comment
+# INSIDE a parameter list, and an `->` inside a generic (whose `>` drove the nesting depth
+# negative and hid every following top-level comma — 3,790 phantom findings).
+_ARITY_CARGO = """\
+[package]
+name = "arity-fixture"
+version = "0.0.0"
+edition = "2021"
+"""
+_ARITY_BAD_LIB = """\
+pub mod shim;
+pub mod caller;
+"""
+_ARITY_BAD_SHIM = """\
+#[no_mangle] pub unsafe extern "C" fn ScsiGetNextSenseDescriptorByType(
+    _buf: *mut u8, _len: u32, _ty: u8, found: *mut u8,
+) -> *mut u8 {
+    if !found.is_null() { *found = 0; }
+    core::ptr::null_mut()
+}
+"""
+_ARITY_BAD_CALLER = """\
+extern "C" {
+    fn ScsiGetNextSenseDescriptorByType(
+        start: *mut u8, start_len: u8, types: *const u8, type_count: u32,
+        out_type: *mut u8, out_buf: *mut *mut u8, out_len: *mut u8,
+    ) -> u8;
+}
+"""
+_ARITY_GOOD_LIB = """\
+pub mod shim;
+pub mod caller;
+"""
+_ARITY_GOOD_SHIM = """\
+#[no_mangle] pub unsafe extern "C" fn Matching(
+    _a: *mut u8,
+    _b: u8, // a comment INSIDE the parameter list — masked before counting
+    _cb: Option<unsafe extern "system" fn(u32) -> u32>,
+) -> u8 {
+    0
+}
+"""
+_ARITY_GOOD_CALLER = """\
+extern "C" {
+    fn Matching(
+        a: *mut u8,
+        b: u8, /* the other comment flavour, with an -> arrow in it */
+        cb: Option<unsafe extern "system" fn(u32) -> u32>,
+    ) -> u8;
+}
+"""
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_doc_sections",
@@ -248,6 +348,39 @@ CONTROLS: list[Control] = [
         good={"good.md": _DOC_SECTIONS_GOOD},
         pass_files=True,
         file_suffix=".md",
+    ),
+    Control(
+        name="scan_extern_arity",
+        script="tools/scan_extern_arity.py",
+        bad={
+            "Cargo.toml": _ARITY_CARGO,
+            "src/lib.rs": _ARITY_BAD_LIB,
+            "src/shim.rs": _ARITY_BAD_SHIM,
+            "src/caller.rs": _ARITY_BAD_CALLER,
+        },
+        good={
+            "Cargo.toml": _ARITY_CARGO,
+            "src/lib.rs": _ARITY_GOOD_LIB,
+            "src/shim.rs": _ARITY_GOOD_SHIM,
+            "src/caller.rs": _ARITY_GOOD_CALLER,
+        },
+    ),
+    Control(
+        name="scan_orphan_modules",
+        script="tools/scan_orphan_modules.py",
+        bad={
+            "Cargo.toml": _ORPHAN_CARGO,
+            "src/lib.rs": _ORPHAN_BAD_LIB,
+            "src/live.rs": _ORPHAN_BAD_LIVE,
+            "src/orphan.rs": _ORPHAN_BAD_ORPHAN,
+        },
+        good={
+            "Cargo.toml": _ORPHAN_CARGO,
+            "src/lib.rs": _ORPHAN_GOOD_LIB,
+            "src/live.rs": _ORPHAN_BAD_LIVE,
+            "src/async.rs": _ORPHAN_GOOD_ASYNC,
+            "src/orphan.rs": _ORPHAN_GOOD_ORPHAN,
+        },
     ),
     Control(
         name="scan_bugcheck_codes",

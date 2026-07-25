@@ -1,3 +1,6 @@
+//! ORPHAN-BY-DESIGN: a rustconv file-split gap artifact; its one export,
+//! ClassShutdownFlush, is defined live in class_part_d.rs. See class_gap3.rs.
+//!
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 

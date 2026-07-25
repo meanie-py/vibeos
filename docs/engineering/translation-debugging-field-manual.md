@@ -188,6 +188,51 @@ Same family, three positions, all silent on the arch where the widths happen to 
   narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
   and pointer typedefs.
 
+### Argument COUNT mismatches — the one clashing-extern bucket that is a real bug
+Same family as the widths above, one position further out: the decl and the definition
+disagree on how many parameters there are. `clashing_extern_declarations` carries ~1,458
+findings, and the 2026-07-17 triage sorted them — pointer-name and const/mut differences are
+ABI-identical noise, scalar widths are mostly benign return-register width, conventions are an
+i386-only hazard needing the C prototype to adjudicate — but it called a **different parameter
+count** "the highest-value needles" and left it unworked. It was right; `tools/scan_extern_arity.py`
+now gates it.
+
+classpnp declares and calls `ScsiGetNextSenseDescriptorByType(start, start_len, types,
+type_count, out_type, out_buf, out_len)` against a shim defined `(buf, len, ty, found: *mut u8)`.
+The 4th argument binds the caller's `typeList.len() as ULONG` — the literal **2** — to `found`,
+whose body is `if !found.is_null() { *found = 0; }`: a store to **address 0x2** at
+DISPATCH_LEVEL. It has never fired only because the block sits behind
+`IsDescriptorSenseDataFormat()` and our virtual devices answer fixed-format sense; a real drive
+returning descriptor sense bugchecks. Four siblings had the same shape less violently
+(`ScsiGetSenseDescriptor` returned a truthy *pointer* as a `BOOLEAN`, so callers took the
+"descriptor found" branch and read out-params the stub never wrote), plus cdrom's
+`PORT_ALLOCATED_SENSE` (called with 2, defined with 1) and classpnp's `EventDescCreate` (8 vs 0).
+A `VOID` function declared `-> BOOLEAN` is the same bug in the return position: fastfat's
+`FatEvaluateNameCase` fed an undefined return register into `r != 0 || CreateLfn != 0`, making
+"does this rename need LFN dirents?" effectively random.
+
+**Why nothing else caught it.** cdecl means the CALLER cleans the stack, so a wrong argument
+count neither corrupts the stack nor fails to link; rustc never compares the two signatures
+because the declaration is all the call site can see; and `verify_ffi`'s arity check compares
+against `ntoskrnl.spec`, which does not describe a crate-local shim. Only the crate's own decl
+against the crate's own definition sees it.
+
+**Three things that are NOT this bug**, baselined with reasons rather than "fixed": an
+**address-only forward decl** (`fn BaseThreadStartup();` exists so kernel32 can write
+`BaseThreadStartup as ULONG_PTR` into a new thread's `Rip` — never called through, so its arity
+claims nothing; same for freeldr's `PcFindPciBios`); a **uniform syscall-table shape** (the SSDT
+spells every entry `(_: usize, ...)` on purpose); and a decl in a file no `mod` chain reaches —
+dead code makes no calls, which is why freeldr's parked `directui.rs` drops out on its own.
+
+**Two parse traps that produced confidently wrong answers first**, both now in the GOOD control
+fixture so a regression surfaces as a false positive: count against comment-MASKED text
+(`RaiseOnError: u8, // BOOLEAN` contributes its own commas and `>`s), and **neutralise `->`
+before depth-tracking `<`/`>`** — `Option<unsafe extern "system" fn(usize) -> usize>` drives the
+depth negative at the arrow, after which every top-level comma is invisible. That one mistake
+reported **3,790** phantom findings against a true count of 15, and the identical trap bit
+`crate_repair`'s argument-index counter the same night. If you are counting top-level commas in
+Rust, assume `->` is there to ruin it.
+
 ### Aggregates, arrays and unions across the FFI boundary
 - **`i64` substituted for a by-value `_LARGE_INTEGER`** — i386 cdecl lowers an 8-byte
   aggregate differently from a scalar `i64`; amd64 hides it. Mirror the union type exactly and

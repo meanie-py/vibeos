@@ -1,3 +1,7 @@
+//! ORPHAN-BY-DESIGN: the kernel RTL takes its `Rtl*` path routines from
+//! rtl_misc/rtl_strings, not from here; lib.rs states there is no `mod path`
+//! anywhere. Kept as translated source only.
+//!
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;

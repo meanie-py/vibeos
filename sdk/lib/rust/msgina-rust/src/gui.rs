@@ -791,8 +791,8 @@ unsafe fn DoChangePassword(pgContext: *mut _GINA_CONTEXT, hwndDlg: HWND) -> BOOL
         ResourceMessageBox(pgContext,
                            hwndDlg,
                            MB_OK | MB_ICONEXCLAMATION,
-                           IDS_CHANGEPWDTITLE.try_into().unwrap(),
-                           IDS_NONMATCHINGPASSWORDS.try_into().unwrap());
+                           IDS_CHANGEPWDTITLE as u32,
+                           IDS_NONMATCHINGPASSWORDS as u32);
         'done: {
             SecureZeroMemory(OldPassword.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword1.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
@@ -970,8 +970,8 @@ unsafe fn DoChangePassword(pgContext: *mut _GINA_CONTEXT, hwndDlg: HWND) -> BOOL
     ResourceMessageBox(pgContext,
                        hwndDlg,
                        MB_OK | MB_ICONINFORMATION,
-                       IDS_CHANGEPWDTITLE.try_into().unwrap(),
-                       IDS_PASSWORDCHANGED.try_into().unwrap());
+                       IDS_CHANGEPWDTITLE as u32,
+                       IDS_PASSWORDCHANGED as u32);
 
     if wcscmp(UserName.as_ptr(), (*pgContext).UserName.as_ptr()) == 0
         && wcscmp(Domain.as_ptr(), (*pgContext).DomainName.as_ptr()) == 0
@@ -1313,8 +1313,8 @@ unsafe fn SecurityDialogProc(
                             pgContext,
                             hwndDlg,
                             MB_OKCANCEL | MB_ICONSTOP,
-                            IDS_EMERGENCYLOGOFFTITLE.try_into().unwrap(),
-                            IDS_EMERGENCYLOGOFF.try_into().unwrap(),
+                            IDS_EMERGENCYLOGOFFTITLE as u32,
+                            IDS_EMERGENCYLOGOFF as u32,
                         ) == IDOK.try_into().unwrap()
                         {
                             EndDialog(hwndDlg, WLX_SAS_ACTION_FORCE_LOGOFF as isize);
@@ -1330,8 +1330,8 @@ unsafe fn SecurityDialogProc(
                             pgContext,
                             hwndDlg,
                             MB_OKCANCEL | MB_ICONSTOP,
-                            IDS_EMERGENCYRESTARTTITLE.try_into().unwrap(),
-                            IDS_EMERGENCYRESTART.try_into().unwrap(),
+                            IDS_EMERGENCYRESTARTTITLE as u32,
+                            IDS_EMERGENCYRESTART as u32,
                         ) == IDOK.try_into().unwrap()
                         {
                             let mut Old: BOOLEAN = 0;
@@ -1426,8 +1426,8 @@ unsafe fn DoLogon(
                 pgContext,
                 hwndDlg,
                 MB_OK | MB_ICONEXCLAMATION,
-                IDS_LOGONTITLE.try_into().unwrap(),
-                IDS_LOGONWRONGUSERORPWD.try_into().unwrap(),
+                IDS_LOGONTITLE as u32,
+                IDS_LOGONWRONGUSERORPWD as u32,
             );
             break 'main 0;
         } else if status == STATUS_ACCOUNT_RESTRICTION {
@@ -1441,8 +1441,8 @@ unsafe fn DoLogon(
                     pgContext,
                     hwndDlg,
                     MB_OK | MB_ICONEXCLAMATION,
-                    IDS_LOGONTITLE.try_into().unwrap(),
-                    IDS_LOGONUSERDISABLED.try_into().unwrap(),
+                    IDS_LOGONTITLE as u32,
+                    IDS_LOGONUSERDISABLED as u32,
                 );
                 break 'main 0;
             } else if SubStatus == STATUS_ACCOUNT_LOCKED_OUT {
@@ -1451,8 +1451,8 @@ unsafe fn DoLogon(
                     pgContext,
                     hwndDlg,
                     MB_OK | MB_ICONERROR,
-                    IDS_LOGONTITLE.try_into().unwrap(),
-                    IDS_ACCOUNTLOCKED.try_into().unwrap(),
+                    IDS_LOGONTITLE as u32,
+                    IDS_ACCOUNTLOCKED as u32,
                 );
                 break 'main 0;
             } else if SubStatus == STATUS_PASSWORD_MUST_CHANGE
@@ -1463,16 +1463,16 @@ unsafe fn DoLogon(
                         pgContext,
                         hwndDlg,
                         MB_OK | MB_ICONSTOP,
-                        IDS_LOGONTITLE.try_into().unwrap(),
-                        IDS_PASSWORDMUSTCHANGE.try_into().unwrap(),
+                        IDS_LOGONTITLE as u32,
+                        IDS_PASSWORDMUSTCHANGE as u32,
                     );
                 } else {
                     ResourceMessageBox(
                         pgContext,
                         hwndDlg,
                         MB_OK | MB_ICONSTOP,
-                        IDS_LOGONTITLE.try_into().unwrap(),
-                        IDS_PASSWORDEXPIRED.try_into().unwrap(),
+                        IDS_LOGONTITLE as u32,
+                        IDS_PASSWORDEXPIRED as u32,
                     );
                 }
                 if OnChangePassword(hwndDlg, pgContext) == 0 {
@@ -1498,16 +1498,16 @@ unsafe fn DoLogon(
                     pgContext,
                     hwndDlg,
                     MB_OK | MB_ICONEXCLAMATION,
-                    IDS_LOGONTITLE.try_into().unwrap(),
-                    IDS_ACCOUNTEXPIRED.try_into().unwrap(),
+                    IDS_LOGONTITLE as u32,
+                    IDS_ACCOUNTEXPIRED as u32,
                 );
             } else if SubStatus == STATUS_INVALID_LOGON_HOURS {
                 ResourceMessageBox(
                     pgContext,
                     hwndDlg,
                     MB_OK | MB_ICONERROR,
-                    IDS_LOGONTITLE.try_into().unwrap(),
-                    IDS_INVALIDLOGONHOURS.try_into().unwrap(),
+                    IDS_LOGONTITLE as u32,
+                    IDS_INVALIDLOGONHOURS as u32,
                 );
                 break 'main 0;
             } else if SubStatus == STATUS_INVALID_WORKSTATION {
@@ -1515,8 +1515,8 @@ unsafe fn DoLogon(
                     pgContext,
                     hwndDlg,
                     MB_OK | MB_ICONERROR,
-                    IDS_LOGONTITLE.try_into().unwrap(),
-                    IDS_INVALIDWORKSTATION.try_into().unwrap(),
+                    IDS_LOGONTITLE as u32,
+                    IDS_INVALIDWORKSTATION as u32,
                 );
                 break 'main 0;
             } else {
@@ -1525,8 +1525,8 @@ unsafe fn DoLogon(
                     pgContext,
                     hwndDlg,
                     MB_OK | MB_ICONERROR,
-                    IDS_LOGONTITLE.try_into().unwrap(),
-                    IDS_ACCOUNTRESTRICTION.try_into().unwrap(),
+                    IDS_LOGONTITLE as u32,
+                    IDS_ACCOUNTRESTRICTION as u32,
                 );
                 break 'main 0;
             }
@@ -2064,7 +2064,7 @@ unsafe fn UnlockDialogProc(
         WM_COMMAND => {
             match LOWORD!(wParam) as u32 {
                 IDOK => {
-                    let mut result: i32 = WLX_SAS_ACTION_NONE.try_into().unwrap();
+                    let mut result: i32 = WLX_SAS_ACTION_NONE as i32;
                     if DoUnlock(hwndDlg, (*pDlgData).pgContext, &mut result) != 0 {
                         EndDialog(hwndDlg, (result as INT_PTR).try_into().unwrap());
                     } else {
