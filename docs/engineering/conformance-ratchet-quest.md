@@ -1164,3 +1164,62 @@ LATER kmtest_.exe launch — `0xC000001D` on garbage instruction bytes inside im
 shared image-section page corrupted under heavy map/unmap = the latent arm64 PFN/section-teardown
 family (same as the quarantined ZwAllocateVirtualMemory 0x4E). Roadmap registry entry added; the
 section tests stay active as the canary. This is the next monster.
+
+### 2026-07-24 — i386 pivot: the memcpy+0x40 cluster CLOSES on i386 via a Linux-style exception table, not SEH (field manual §9.123)
+
+**i386 ratchet: 74 → 76 enabled, 23 → 21 quarantined.** `ObSymbolicLink` (OK 154/0) and
+`ZwWaitForMultipleObjects` (OK 4/0) un-quarantined; new baseline written after **4
+consecutive identical sweeps** (`launched=76 ok=72 bad=4 sweep=done`, the 4 being the
+same pre-existing NO-ENDs, byte-identical to the old baseline's).
+
+**What actually blocked i386, and what did not.** The 13 i386-only quarantines are not 13
+bugs. Re-validating them against a current build (the recorded PCs were 12 days stale and
+symbolicated against a long-gone binary) split them cleanly into two roots:
+
+- **Root A — no fault-tolerant copy on i386** (task #5). `ObSymbolicLink`,
+  `ZwWaitForMultipleObjects`, `IoReadWrite` all crashed at the *identical* kernel PC,
+  `ntoskrnl.exe+0x14C0` = `memcpy+0x40`. The call sites were already routed through
+  `safe_copy_*`; only the i386 *primitive* was a bare `copy_nonoverlapping`. **CLOSED
+  today.**
+- **Root B — driver-side frame-based SEH** (task #18). `ExHardError` and `ExResource`
+  are the shape: the test deliberately passes a hostile pointer *expecting* the caller's
+  `__except` to convert the AV to `STATUS_ACCESS_VIOLATION`
+  (`ExInitializeResourceLite(NULL)` at ExResource.c:615; `ExRaiseHardError(..., mask=1,
+  {1234 / NULL})` at ExHardError.c:162-163). Under i386 DUMMY_PSEH the driver registers
+  no handler at all, so there is nothing for `RtlDispatchException` to find. Confirmed
+  from source + disassembly, not inferred. **Still open.**
+
+**The 2026-07-17 spike's oracle was mis-chosen.** It used `IoReadWrite` to characterise
+task #18 — but `IoReadWrite`'s i386 crash was Root A, in the kernel's own copy, which
+would fail there *regardless* of how well frame-based SEH worked. With `KMT_I386_NATIVE_SEH=ON`
+it still crashed at `memcpy+0x40`. So the spike's (a)/(b)/(c) narrowing was reasoning
+from a test that could not have passed either way. Post-fix, `IoReadWrite` crashes at
+**`IoReadWrite_drv.sys+0x21E3`** — the fault finally left the kernel and landed on the
+driver's own deliberate fault. *That* is the real task-#18 oracle; use it, not the old PC.
+
+**The fix, and why it did not need SEH.** Both `kmsafecopy.c` and `probe.rs` had listed a
+second close for years — "a Linux-extable-style fault-fixup primitive … it needs no
+working SEH at all" — and nobody had costed it. It is ~40 lines
+(`ntoskrnl-rust/src/ke/i386/safecopy.rs`): `KmProtectedCopyMemory` is `global_asm!` whose
+copy is a single `rep movsb`, its address exported as the sole key of an exception table;
+`KiTrap0EHandler` compares the faulting `Eip` and redirects to a fixup pad returning 0.
+It runs *after* `MmAccessFault` declines, so it keeps amd64's exact semantics (nonresident
+pages still page in; only genuinely bad addresses fix up), and it matches one exact PC so
+it cannot swallow a fault it does not own. Boot oracle now covers all three arches:
+`[KMSAFECOPY] fault-tolerant copy: valid=1 moved=1 invalid_caught=1 (PASS)` on i386.
+
+**Collateral bug fixed** (found reading the same dispatch path, not the root): i386
+`RtlpGetStackLimits` used a hand-written `[u8; 512]` for `FX_SAVE_AREA`, which is **528**
+bytes — `StackHigh` was 16 bytes too high, so `RtlDispatchException`'s registration-frame
+bounds check accepted a 16-byte window past the true top of stack. False-ACCEPT.
+
+**Toolkit gap registered (task #28):** `qemu/run-until.sh --break KeBugCheckEx` does not
+work on i386 — GDB reports the symbol undefined and the run then reports `BREAKPOINT NOT
+HIT`, which is indistinguishable from "the breakpoint never fired." `qemu/addr2sym.sh` is
+also unusable on i386 (matches absolute constant symbols). Symbolicate by hand meanwhile:
+`VA = 0x400000 + RVA` from the banner's `P2 = ntoskrnl.exe+0xRVA`, against
+`llvm-nm --numeric-sort build-i386/ntoskrnl/ntoskrnl.exe`.
+
+**Next on i386:** task #18 is now the single root under the remaining i386-only
+quarantines, with a clean oracle (`IoReadWrite` + `-DKMT_I386_NATIVE_SEH=ON`) and its
+kernel-side confound removed.

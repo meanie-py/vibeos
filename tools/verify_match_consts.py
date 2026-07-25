@@ -765,7 +765,11 @@ def _decl_sites(text):
     return sites
 
 
-def crate_live_files(crate_dir, _cache={}):  # noqa: B006 — intentional memo cache
+def crate_live_files(crate_dir, _cache={}):  # noqa: B006 — deliberate memo cache
+    # The mutable default IS the cache: it is read and written across calls
+    # (see the `if crate_dir in _cache` below). Ruff's suggested fix (default
+    # None, init inside) would hand back a fresh dict per call and silently
+    # turn every hit into a full re-walk of the crate's module tree.
     """Every .rs REACHABLE from the crate root via `mod` declarations.
 
     A file that no `mod` reaches is not compiled, so a catch-all arm inside it

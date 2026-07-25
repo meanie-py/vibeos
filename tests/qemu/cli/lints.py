@@ -353,6 +353,21 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # IRQL_GT_ZERO_AT_SYSTEM_SERVICE -> MEMORY_MANAGEMENT). Nothing else can see it:
     # rustc accepts any ULONG and the code is only read once the kernel is dying.
     # Fix = ntkrnl_sys::bugcodes::NAME (tools/gen_bugcodes.py). Baseline is EMPTY.
+    # Duplicate `### 9.NNN` section numbers in the field manual. Every lane appends
+    # at the tail, so same-day lanes pick the same number independently — three
+    # collisions in three days (§9.113, §9.118, §9.119+§9.120). Tail-vs-tail
+    # collisions surface as a merge conflict and get noticed; the dangerous case is
+    # an insertion that merges CLEANLY and silently duplicates a number, making every
+    # cross-reference to it ambiguous. Baseline holds the 5 historical dupes that
+    # proves it already happened (9.27/9.36/9.41/9.43/9.44); gate is 0 NEW.
+    sds = repo / "tools" / "scan_doc_sections.py"
+    specs.append(
+        (
+            "scan_doc_sections",
+            [py, str(sds), "--lint"] if sds.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sbc = repo / "tools" / "scan_bugcheck_codes.py"
     specs.append(
         (

@@ -598,17 +598,22 @@ pub unsafe extern "system" fn RtlpGetStackLimits(LowLimit: *mut ULONG_PTR, HighL
     *LowLimit = (*CurrentThread).StackLimit as ULONG_PTR;
     #[cfg(target_arch = "x86")]
     {
-        *HighLimit = ((*CurrentThread).InitialStack as ULONG_PTR) - core::mem::size_of::<FX_SAVE_AREA>();
+        // The i386 NPX save area sits at the top of the kernel stack, so the
+        // usable stack ends BELOW it. Size comes from the bindgen type, never a
+        // hand-written number: the local `[u8; 512]` stand-in this replaced was
+        // 16 bytes short (real FX_SAVE_AREA is 528 — FXSAVE_FORMAT is 520 with
+        // its Align16Byte tail, plus NpxSavedCpu + Cr0NpxState). That made
+        // StackHigh 16 bytes too high, so `RtlDispatchException`'s
+        // "is this registration frame really on the stack?" bounds check — the
+        // guard that stops a corrupt/hostile fs:[0] chain from being followed —
+        // accepted a 16-byte window past the true top of stack.
+        *HighLimit = ((*CurrentThread).InitialStack as ULONG_PTR)
+            - core::mem::size_of::<ntkrnl_sys::ddk::FX_SAVE_AREA>();
     }
     #[cfg(not(target_arch = "x86"))]
     {
         *HighLimit = (*CurrentThread).InitialStack as ULONG_PTR;
     }
-}
-
-#[repr(C)]
-struct FX_SAVE_AREA {
-    _opaque: [u8; 512],
 }
 
 #[no_mangle]
