@@ -391,6 +391,53 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
 - **`-sys` crate bindgen noise** — mostly under crate-root `#![allow]` already (low-value).
 - **Blanket-`#![allow]` peel** (task #9) — the durability endgame; still owed.
 
+## 2026-07-25 — orphaned modules gated; two Tier-2 trampoline shortcuts closed as dead ends
+
+**Landed.** `tools/scan_orphan_modules.py` (EMPTY baseline) + `tools/rust_module_tree.py`
+(one reachability walk, shared with `verify_match_consts`) + `crate-repair`'s new
+`panicking_cast` rule. Details in the commit; the durable lessons:
+
+- **An orphan `.rs` is a decoy, and the reason it is parked belongs IN THE FILE.** All 12
+  orphans in the tree were legitimate parks whose reasons existed — in a CMakeLists, a lane
+  doc, a commit message — just nowhere near the file, so the classpnp `class_gap3.rs` trap
+  (edits pass `cargo check` because cargo never opens the file; the link keeps failing) was
+  reachable for every one of them. Gate is "no UNDECLARED orphans": an
+  `//! ORPHAN-BY-DESIGN: <reason>` banner satisfies it.
+- **A reachability walk that fails toward "dead" hides bugs**, because `verify_match_consts`
+  SUPPRESSES findings in files it calls dead. Four defects fixed, all in that direction; the
+  worst was stripping block comments before line comments, so `/*` inside a `//` comment
+  (freeldr's `arch/*/multiboot.S`) opened a phantom block comment that ate 53 of 87 `mod`
+  declarations. 20+ crate roots carry that shape. Also: `mod r#async;`,
+  `#[cfg_attr(target_arch=.., path=..)]`, and Cargo.toml `[[bin]] path =` roots.
+
+**Tier-2 trampoline refactor — scoped, NOT started. Two shortcuts probed and both are wrong;
+do not re-probe them.**
+
+- Surface is **24,823 `#[no_mangle]` exports fleet-wide**, not the ~1,700 in the roadmap —
+  that figure was ntoskrnl-only (ntoskrnl-rust measures 1,877, so it was right about
+  ntoskrnl). win32k alone is 3,788. This is a program, not a task.
+- **Shortcut A — "make the same-crate extern decl's convention match its definition"
+  (`scan_cc_mismatch`, 305 baselined): WRONG DIRECTION.** buslogic's `BT958Hw*` are SCSI
+  miniport callbacks *declared* stdcall and *defined* `extern "C"`; on i386 the miniport ABI
+  is stdcall, so the DEFINITION is the wrong one. A decl-follows-def sweep would bake the bug
+  in. The authority is the C prototype / `.spec`, never the local def. (cdrom is 187 of the
+  305, and its 159 unique symbols are the crate-internal loose-forward-decl shape from
+  task #4 — those need call-site retyping, measured at 80 × E0308 on cdrom alone.)
+- **Shortcut B — "use `verify_ffi`'s `.spec` authority to fix the ABI findings": all 6 are
+  correctly baselined, none is a bug.** Each crate ships a LOCAL `#[no_mangle]` shim that the
+  linker resolves in preference to the kernel export, and each decl correctly matches its
+  local shim. cdrom defines its own `InterlockedCompareExchange`/`InterlockedIncrement`
+  (verified: real `AtomicI32` SeqCst bodies, not stubs) though ntoskrnl.spec exports them
+  `fastcall -arch=i386,arm`; classpnp and disk do the same for
+  `IoWMIDeviceObjectToProviderId` / `KeFlushIoBuffers`, whose spec entries do not even cover
+  i386. **`verify_ffi` compares a decl against the spec without checking for an in-crate
+  definition that outranks it** — worth teaching it, and worth knowing before anyone reads
+  those 6 lines as a work queue.
+- **So the refactor has to GENERATE decls from one authority and retype call sites in the
+  same pass** — it cannot be an edit campaign over the decls that exist. That matches the
+  roadmap's own framing (the trampoline as the substrate for generating crate-split's
+  cross-crate decls) and it wants a quiet fleet: 12 worktrees were active on 2026-07-25.
+
 ## Owed follow-ups
 
 - **`clashing_extern_declarations` Phase 2 (task #4) — the audit-heavy tail after the safe ABI-class
