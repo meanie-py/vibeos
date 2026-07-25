@@ -100,11 +100,17 @@ ObTypes
 PsNotify
 PsQuota
 RtlAvlTreeKM
-# QUARANTINED 2026-07-10 (amd64 sweep 7): BUGCHECK 0x1E — AV at a kmtest_drv PC.
-# PSEH-STRUCTURAL: the test deliberately faults inside __try; mingw native SEH is
-# calls-only (no -fasync-exceptions), hardware faults in the guarded body escape.
-# Expected-fail until async-exceptions story exists; not an OS bug.
-#RtlExceptionKM
+# WAS QUARANTINED 2026-07-10 (BUGCHECK 0x1E, "expected-fail until an async-exceptions
+# story exists; not an OS bug"). UN-QUARANTINED 2026-07-25: 33 pass / 0 fail.
+# The old note named the exact fix and then declared it unreachable — the missing
+# thing really was -fasync-exceptions, and turning it on is a two-line build change.
+# Clang's default is a CALLS-ONLY exception model: it assumes instructions can't
+# fault, so a __try whose body holds a faulting *instruction* rather than a *call*
+# gets an EMPTY scope table and -O2 then DELETES the __except as unreachable. This
+# test does `(void)*(volatile CHAR *)NULL` directly in the body, so its handler was
+# compiled out of existence and the AV escaped to the kernel. Measured: the flag adds
+# exactly 3 protected regions to RtlException.c — matching its 3 in-body fault sites.
+RtlExceptionKM
 RtlIntSafeKM
 RtlIsValidOemCharacter
 RtlMemoryKM
@@ -176,11 +182,24 @@ IoReadWrite
 NtSystemDebugControl
 PoIrp
 RtlAvlTree
-# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): NO-END exit=128 — the USER-MODE
-# twin of the quarantined RtlExceptionKM. Deliberately faults inside SEH; native SEH is
-# calls-only (no async exceptions) so the in-body AV escapes. As a UM process it self-
-# crashes (exit 128) WITHOUT a kernel BUGCHECK and the sweep continues clean — the good
-# harness-robustness outcome. Expected-fail (same class as RtlExceptionKM); not an OS bug.
+# QUARANTINED 2026-07-11: NO-END exit=128 — the USER-MODE twin of RtlExceptionKM.
+# RE-TRIAGED 2026-07-25 — the old "expected-fail, not an OS bug" reading is WRONG, and
+# this is now an amd64-ONLY defect with a much tighter boundary around it:
+#
+#   * The -fasync-exceptions fix that cleared RtlExceptionKM on both arches ALSO clears
+#     this test on arm64 (exit=0, 33 pass / 1 fail). amd64 alone still dies exit=128.
+#   * The scope table is provably present in the amd64 binary now (the flag adds 3
+#     protected regions to RtlException.c, matching its 3 in-body fault sites), so the
+#     handler EXISTS and codegen is no longer the problem.
+#   * kmtest_.exe itself is healthy under the msvc retarget — it hosted RtlExceptionKM
+#     in the same boot and exited 0.
+#   * Serial catches it faulting in a DLL, not at the NULL it meant to trap:
+#       [KI-EXC] KMTEST_.EXE code=0xc0000005 rip=000007ffb702f848
+#
+# So the remaining bug is in amd64 USER-MODE exception DISPATCH (ntdll
+# KiUserExceptionDispatcher / RtlDispatchException finding and running a table-based
+# handler), NOT in the toolchain and NOT in the test. arm64's dispatch does this
+# correctly, which makes arm64 the working oracle to diff against.
 #RtlException
 RtlIntSafe
 RtlMemory

@@ -117,11 +117,12 @@ ObTypes
 PsNotify
 PsQuota
 RtlAvlTreeKM
-# QUARANTINED 2026-07-10 (amd64 sweep 7): BUGCHECK 0x1E — AV at a kmtest_drv PC.
-# PSEH-STRUCTURAL: the test deliberately faults inside __try; mingw native SEH is
-# calls-only (no -fasync-exceptions), hardware faults in the guarded body escape.
-# Expected-fail until async-exceptions story exists; not an OS bug.
-#RtlExceptionKM
+# WAS QUARANTINED 2026-07-10 (BUGCHECK 0x1E, "expected-fail... not an OS bug").
+# UN-QUARANTINED 2026-07-25: 33 pass / 0 fail — identical to amd64, same fix.
+# Root was clang's CALLS-ONLY exception model deleting the __except around an
+# in-body fault; -fasync-exceptions (+ the msvc-env retarget it needs) restores the
+# scope table. See the amd64 list for the full write-up.
+RtlExceptionKM
 RtlIntSafeKM
 # QUARANTINED 2026-07-16 (still owed): UNVALIDATED after the SEH-RESUME fix — never launched in the
 # validating sweep because the MmSection wedge (above) poisoned the run before reaching it. May well
@@ -213,12 +214,23 @@ IoReadWrite
 NtSystemDebugControl
 PoIrp
 RtlAvlTree
-# QUARANTINED 2026-07-11 (amd64 sweep 14, post-merge): NO-END exit=128 — the USER-MODE
-# twin of the quarantined RtlExceptionKM. Deliberately faults inside SEH; native SEH is
-# calls-only (no async exceptions) so the in-body AV escapes. As a UM process it self-
-# crashes (exit 128) WITHOUT a kernel BUGCHECK and the sweep continues clean — the good
-# harness-robustness outcome. Expected-fail (same class as RtlExceptionKM); not an OS bug.
-#RtlException
+# WAS QUARANTINED 2026-07-11 (NO-END exit=128, the USER-MODE twin of RtlExceptionKM).
+# UN-QUARANTINED 2026-07-25 by the same -fasync-exceptions fix: now completes with
+# exit=0, 33 pass / 1 fail.
+#
+# The counts corroborate each other exactly: this and RtlExceptionKM share 33
+# assertions and both pass all 33. This test adds ONE more under `#ifdef KMT_USER_MODE`
+# (RtlException.c:162-171) — overflow the stack with _alloca in a loop and expect
+# STATUS_STACK_OVERFLOW — and that single extra assertion is the only failure:
+#
+#   RtlException.c:171: ExceptionStatus = 0xc0000005, expected 0xc00000fd
+#
+# So we deliver ACCESS_VIOLATION where Windows delivers STACK_OVERFLOW: our usermode
+# stack GUARD PAGE fault is not being converted. That is a genuine (small) OS bug,
+# now isolated and baselined rather than hidden behind a quarantine — which is the
+# whole point of enabling this test. NOTE amd64 does NOT get here: it still dies
+# NO-END exit=128 in usermode exception DISPATCH, a separate amd64-only bug.
+RtlException
 RtlIntSafe
 RtlMemory
 RtlRegistry
