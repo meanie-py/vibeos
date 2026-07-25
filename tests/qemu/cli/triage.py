@@ -266,13 +266,67 @@ def classify(
     return {"classification": "UNKNOWN", "salient": salient, "known_flake": None}
 
 
+# `*** BUGCHECK: 0xNN (0xP1, 0xP2, 0xP3, 0xP4)` — the authoritative crash record.
+_BUGCHECK_PARAMS = re.compile(
+    r"\*\*\*\s*BUGCHECK:\s*(0x[0-9A-Fa-f]+)\s*\("
+    r"\s*(0x[0-9A-Fa-f]+)\s*,\s*(0x[0-9A-Fa-f]+)\s*,"
+    r"\s*(0x[0-9A-Fa-f]+)\s*,\s*(0x[0-9A-Fa-f]+)\s*\)"
+)
+
+# Which bugcheck parameter holds the faulting INSTRUCTION pointer, 1-based.
+# Values are from the documented stop-code contracts, not guessed:
+#   0x1E KMODE_EXCEPTION_NOT_HANDLED    P2 = address the exception occurred at
+#   0x50 PAGE_FAULT_IN_NONPAGED_AREA    P3 = address that referenced memory
+#   0x8E KERNEL_MODE_EXCEPTION_NOT_HDLD P3 = address the exception occurred at
+#   0x7E SYSTEM_THREAD_EXCEPTION        P3 = exception-record address (best effort)
+#   0x0A IRQL_NOT_LESS_OR_EQUAL         P4 = address that referenced memory
+_PC_PARAM_BY_CODE = {0x1E: 2, 0x50: 3, 0x8E: 3, 0x7E: 3, 0x0A: 4}
+
+# No function is a megabyte long. A symbol match reported at a larger offset is
+# not a near miss, it is the index's last symbol matching an address that lies
+# outside every known range — which is exactly how this returned
+# `KTRAP_FRAME_LENGTH+8794868291436` for an arm64 fault and sent the hunt to the
+# wrong subsystem (§9.124). Refuse rather than answer.
+_MAX_SANE_SYMBOL_OFFSET = 0x100000
+_SYM_OFFSET = re.compile(r"\+(\d+)\b")
+
+
+def faulting_pc(serial: str) -> str | None:
+    """The faulting PC, preferring the BUGCHECK record over loose `PC=` text.
+
+    `_PC.search()` alone takes the FIRST `PC=`/`RIP=` anywhere in the log, which
+    on a serial log containing any earlier trace (a usermode fault dump, a probe
+    line) resolves something unrelated to the crash. The bugcheck parameters are
+    the authoritative record, so consult them first and take the LAST one — the
+    crash we are triaging is the one the boot died on, not the first it mentioned.
+    """
+    bc = _BUGCHECK_PARAMS.findall(serial)
+    if bc:
+        code_s, *params = bc[-1]
+        try:
+            idx = _PC_PARAM_BY_CODE.get(int(code_s, 16))
+        except ValueError:
+            idx = None
+        if idx is not None:
+            pc = params[idx - 1]
+            if int(pc, 16):  # a zeroed parameter carries no address
+                return pc
+    # Fall back to loose PC=/RIP= text, but take the LAST occurrence.
+    matches = _PC.findall(serial)
+    for groups in reversed(matches):
+        pc = next((g for g in groups if g), None)
+        if pc:
+            return pc
+    return None
+
+
 def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
     """Best-effort: resolve a faulting PC via the offline index. Skips silently
-    if the index/tool is missing (graceful degradation)."""
-    m = _PC.search(serial)
-    if not m:
+    if the index/tool is missing (graceful degradation), and REFUSES rather than
+    returning a match whose offset proves it is meaningless."""
+    pc = faulting_pc(serial)
+    if not pc:
         return None
-    pc = next(g for g in m.groups() if g)
     tool = repo / "qemu" / "addr2sym.sh"
     if not tool.is_file():
         return None
@@ -281,6 +335,14 @@ def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
             ["bash", str(tool), arch, pc], cwd=repo, capture_output=True, text=True, timeout=30
         )
         out = cp.stdout.strip()
-        return f"{pc} -> {out}" if out else None
     except (OSError, subprocess.SubprocessError):
         return None
+    if not out:
+        return None
+    off = _SYM_OFFSET.search(out)
+    if off and int(off.group(1)) > _MAX_SANE_SYMBOL_OFFSET:
+        # Common real cause: the PC is in a DRIVER (e.g. kmtest_drv.sys), whose
+        # symbols are not in the kernel index at all. Say so instead of naming
+        # whichever kernel symbol happened to sort below it.
+        return f"{pc} -> (no symbol: nearest is {int(off.group(1)):#x} away — outside any function)"
+    return f"{pc} -> {out}"
