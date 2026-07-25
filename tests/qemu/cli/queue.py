@@ -6,12 +6,12 @@ fixes both: N lanes ready become ONE gate, and nobody waits.
 
     lane A ── submit ─┐
     lane B ── submit ─┤                                  ┌─ A landed
-    lane C ── submit ─┴─▶ [trainer] merge onto master ─▶ gate ×1 ─┼─ B landed
+    lane C ── submit ─┴─▶ [conductor] merge onto master ─▶ gate ×1 ─┼─ B landed
                                   (FIFO, conflicts bounced)      └─ C landed
     (all three agents went back to work ~2s after submitting)
 
 THE FIVE THINGS THAT MAKE IT SAFE
-  1. **The pushed tree is always the gated tree.** The trainer merges onto current
+  1. **The pushed tree is always the gated tree.** The conductor merges onto current
      origin/master in a dedicated integration worktree, gates THAT, and fast-forwards master
      to exactly the commit it gated. Nothing is ever "presumed" green from its parts — a
      batch of two individually-green lanes can still be red together, and that is precisely
@@ -23,17 +23,17 @@ THE FIVE THINGS THAT MAKE IT SAFE
      green half IMMEDIATELY (so good work isn't held hostage by a neighbour), and recurse
      until the culprit is a single submission — which is then rejected with its
      classification and artifact dir, i.e. a triage pointer, not "try again".
-  4. **No daemon.** The trainer is whichever agent submitted and found the land lock free.
+  4. **No daemon.** The conductor is whichever agent submitted and found the land lock free.
      Exactly one agent gates at a time and it does the whole fleet's work. Nothing to
      supervise, nothing to restart, no process that can be "down".
   5. **Crash-safety is the kernel's job, as everywhere else here.** A submission is a REF
-     plus a JSON record on disk; the trainer's claim is an flock that dies with it. Kill a
-     trainer mid-batch and its submissions are still queued — the next trainer redoes them.
+     plus a JSON record on disk; the conductor's claim is an flock that dies with it. Kill a
+     conductor mid-batch and its submissions are still queued — the next conductor redoes them.
      A submission leaves the queue only when it has landed or been rejected, so the failure
      mode is repeated work, never a silent drop.
 
-ORPHAN WINDOW (the one honest wart): a submission arriving between the trainer's final
-empty-queue scan and its release of the lock has no trainer. It waits until the next
+ORPHAN WINDOW (the one honest wart): a submission arriving between the conductor's final
+empty-queue scan and its release of the lock has no conductor. It waits until the next
 submission elects one. Microseconds wide, self-healing, and `land-status` shows it as
 pending with nobody landing — so it is visible rather than mysterious. `land --drain` forces
 a drain if you ever see one sitting.
@@ -146,7 +146,7 @@ def lane_id(repo: Path) -> str:
 
 def submit(repo: Path, *, tip: str | None = None, lane: str | None = None) -> Submission:
     """Enqueue a lane tip. Writes the ref FIRST (so the objects are pinned before anything
-    can observe the record) and only then the record — a trainer must never see a submission
+    can observe the record) and only then the record — a conductor must never see a submission
     whose tip could be GC'd."""
     tip = tip or git(repo, "rev-parse", "HEAD")
     lane = lane or lane_id(repo)
@@ -264,10 +264,10 @@ def integration_path(repo: Path) -> Path:
 def ensure_integration_worktree(repo: Path) -> Path:
     """The dedicated tree the train builds in. Created on first use.
 
-    Dedicated, rather than gating in the trainer's own worktree, for two reasons: its
+    Dedicated, rather than gating in the conductor's own worktree, for two reasons: its
     ccache/sccache and build dirs stay HOT across every batch (so a batch gates as fast as
     the machine allows, and it is always the same tree, so no cache thrash from whichever
-    lane happens to be trainer), and no lane's checkout is ever disturbed by a train that
+    lane happens to be conductor), and no lane's checkout is ever disturbed by a train that
     dies mid-batch. Build dirs are position-independent here (everything builds at the
     canonical /tmp/vibeos mount), so this tree is exactly as buildable as any other."""
     path = integration_path(repo)
@@ -390,13 +390,34 @@ def gate_batch(wt: Path, log, *, retries: int = 2) -> tuple[bool, str, str, str]
     return ok, classification, artifact, salient
 
 
-class BaseRed(QueueError):
+class NoVerdict(QueueError):
+    """The train could not render a judgement about the submissions. They stay QUEUED and the
+    train halts. REJECT ONLY ON EVIDENCE is the whole rule; everything else is a requeue."""
+
+
+class BaseRed(NoVerdict):
     """The BASE (origin/master with nothing merged) does not pass the gate. Nothing can land
     on it, and no submission may be blamed for it."""
 
 
+class Inconclusive(NoVerdict):
+    """The gate failed for a reason that is not evidence about the code: the environment."""
+
+
+# A red gate with one of these classifications says nothing about the submission — the host
+# was starved, QEMU never launched, the suite hung on infrastructure. Rejecting a lane for one
+# is the same error as rejecting it for a broken base, and it is worse than useless: the lane
+# goes hunting a bug that does not exist. An EMPTY classification is included deliberately —
+# it means the gate died without writing a verdict, which is the least conclusive outcome there
+# is. Conclusive reds (BUILD_FAIL / LINT_FAIL / BUGCHECK / RUST_PANIC / FAIL_MARKER / ...) are
+# evidence and DO reject.
+INCONCLUSIVE = {"", "LAUNCH_FAIL", "HOST_STARVED", "NET_HANG"}
+
+
 class BaseCheck:
-    """Lazily-evaluated 'is origin/master itself green?', memoized for one drain.
+    """Per-drain context: the lazily-evaluated 'is origin/master itself green?' verdict,
+    memoized, plus the lanes this drain has already landed (so a later rejection can say what
+    it was actually gated against).
 
     WHY (2026-07-25, the first real batch): mainline was red — `fltmgr-rust` failed to
     compile for i386 — and the train dutifully split the batch, reached one submission per
@@ -413,6 +434,7 @@ class BaseCheck:
         self.artifact = ""
         self.classification = ""
         self.salient = ""
+        self.landed: list[str] = []  # lanes landed EARLIER in this same drain
 
     def is_green(self, repo: Path, wt: Path, log, *, retries: int) -> bool:
         if self.verdict is not None:
@@ -448,6 +470,7 @@ def land_subset(
     failure this queue exists to remove."""
     if not subs:
         return
+    base = base or BaseCheck()  # one per drain; shared down the whole split tree
     res = build_batch(repo, wt, subs, log)
     for sub in res.conflicted:
         resolve(
@@ -471,6 +494,7 @@ def land_subset(
             )
         git(wt, "push", "origin", f"{res.tip}:refs/heads/master")
         log(f"queue: LANDED {len(subs)} submission(s) as {res.tip[:12]}")
+        base.landed.extend(s.lane for s in subs)
         for sub in subs:
             resolve(
                 repo,
@@ -481,12 +505,18 @@ def land_subset(
                 batch=[s.lane for s in subs],
             )
         return
+    if classification in INCONCLUSIVE:
+        # Not evidence. Splitting would just burn gates re-discovering that the host is busy.
+        raise Inconclusive(
+            f"the gate could not render a verdict ({classification or 'no classification'}) — "
+            f"{salient or 'environment failure'}. {len(subs)} submission(s) stay QUEUED; "
+            f"nothing was rejected. Artifact: {artifact or '(none)'}"
+        )
     if len(subs) == 1:
         sub = subs[0]
         # GUILTY OR FRAMED? A lone red submission is only the culprit if the BASE is green.
         # Skipping this check is how the first real batch rejected a docs-only change for a
         # build failure that was already on mainline.
-        base = base or BaseCheck()
         if not base.is_green(repo, wt, log, retries=retries):
             raise BaseRed(
                 f"origin/master itself fails the gate ({base.classification or 'red'}) — "
@@ -495,18 +525,28 @@ def land_subset(
                 f"Artifact: {base.artifact or '(none)'}"
             )
         log(f"queue: REJECTED {sub.lane} {sub.tip[:12]} — {classification or 'gate red'}")
+        # Say what it was gated AGAINST. "red on this submission alone" is misleading when an
+        # earlier half of the same batch has already landed: the lane may be green against the
+        # master it branched from and red only against the one that now includes its neighbour.
+        # Without this the lane hunts a phantom bug in its own diff.
+        against = git(wt, "rev-parse", "origin/master", check=False)[:12] or "master"
+        note = f" (gated against master {against}"
+        note += (
+            f", which now includes this drain's earlier landing(s): {', '.join(base.landed)})"
+            if base.landed
+            else ")"
+        )
         resolve(
             repo,
             sub,
             outcome="rejected",
-            reason=salient or "the full gate was red on this submission alone",
+            reason=(salient or "the full gate was red on this submission alone") + note,
             classification=classification or "GATE_RED",
             artifact=artifact,
         )
         return
     mid = len(subs) // 2
     log(f"queue: red batch of {len(subs)} — splitting {mid}/{len(subs) - mid} to find the culprit")
-    base = base or BaseCheck()  # shared across both halves: gate the base at most once
     land_subset(repo, wt, subs[:mid], log, retries=retries, base=base)
     land_subset(repo, wt, subs[mid:], log, retries=retries, base=base)
 
@@ -521,7 +561,7 @@ def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
     """Process the queue until it is empty. CALLER MUST HOLD hostlock.land_lock.
 
     Loops rather than doing one batch: submissions that arrive while a batch gates are the
-    normal case (that's where batching comes from), and draining them in the same trainer
+    normal case (that's where batching comes from), and draining them in the same conductor
     saves an election.
     """
     wt = ensure_integration_worktree(repo)
@@ -550,23 +590,23 @@ def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
         )
         try:
             land_subset(repo, wt, batch, log, retries=retries)
-        except BaseRed as e:
-            # Everything still queued STAYS queued — it was never judged. Halting is the
-            # only honest move: on a red base every batch would fail for a reason that has
-            # nothing to do with the lanes in it.
+        except NoVerdict as e:
+            # Everything still queued STAYS queued — it was never judged. Halting is the only
+            # honest move: on a red base (or a starved host) every batch would fail for a
+            # reason that has nothing to do with the lanes in it.
             log(f"queue: TRAIN HALTED — {e}")
             raise
         batches += 1
 
 
-def try_become_trainer(repo: Path, log, *, retries: int = 2) -> bool:
+def try_become_conductor(repo: Path, log, *, retries: int = 2) -> bool:
     """Take the land lock if it is FREE and drain; otherwise return False immediately.
 
     The election is the lock: no daemon, no leader file, no heartbeat. `timeout=0` is what
-    makes submitting non-blocking — an agent either becomes the trainer (and does the
-    fleet's work) or leaves, knowing a trainer already exists."""
+    makes submitting non-blocking — an agent either becomes the conductor (and does the
+    fleet's work) or leaves, knowing a conductor already exists."""
     try:
-        with hostlock.land_lock(f"trainer:{lane_id(repo)}", timeout=0.0, repo=str(repo)):
+        with hostlock.land_lock(f"conductor:{lane_id(repo)}", timeout=0.0, repo=str(repo)):
             drain(repo, log, retries=retries)
         return True
     except hostlock.LandLockBusy:

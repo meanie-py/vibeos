@@ -18,6 +18,7 @@ from . import farm as farm_mod
 from . import gate as gate_mod
 from . import gdbengine as gdb_mod
 from . import health as health_mod
+from . import killvm as kill_mod
 from . import land as land_mod
 from . import prune as prune_mod
 from . import repro as repro_mod
@@ -210,6 +211,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="don't submit; just train the queue if nobody else is (orphan recovery)",
     )
+    la.add_argument(
+        "--foreground",
+        action="store_true",
+        help="conduct the batch inline instead of spawning a detached conductor",
+    )
     la.add_argument("--wait", action="store_true", help="block until this submission's verdict")
     la.add_argument(
         "--wait-timeout", type=float, default=3600, help="seconds for --wait (default 3600)"
@@ -230,7 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     la.set_defaults(fn=land_mod.land)
 
-    ls = sub.add_parser("land-status", help="merge queue: trainer, pending submissions, verdicts")
+    ls = sub.add_parser("land-status", help="merge queue: conductor, pending submissions, verdicts")
     ls.add_argument("--json", action="store_true")
     ls.add_argument("--mine", action="store_true", help="only this lane's verdicts")
     ls.add_argument("--limit", type=int, default=8, help="recent verdicts to show (default 8)")
@@ -381,6 +387,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="serial-drain budget in seconds (default 6000; the sweep's launch_drain_secs is 5400)",
     )
     cf.set_defaults(fn=conformance_mod.conformance)
+
+    kl = sub.add_parser(
+        "kill",
+        help="stop a QEMU SAFELY (uid/pid-scoped; refuses to kill our own ancestors)",
+    )
+    kl.add_argument("pids", nargs="*", type=int, help="qemu pid(s) from `vibeos-cli ps`")
+    kl.add_argument("--arch", help="every VM of this arch")
+    kl.add_argument("--stale", action="store_true", help="orphans: owning process is gone")
+    kl.add_argument("--overdue", action="store_true", help="past the lifetime deadline")
+    kl.add_argument("--all", action="store_true", help="every running VM (explicit, loud)")
+    kl.add_argument("--dry-run", action="store_true", help="print what would be killed")
+    kl.set_defaults(fn=kill_mod.cmd_kill)
 
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")
     ps.add_argument("--json", action="store_true")
