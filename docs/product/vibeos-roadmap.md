@@ -479,6 +479,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **amd64 `ExHardError` 6 failures — OPEN, NOT SMP-related, regressed on master since
+  2026-07-17** (found 2026-07-24 by the UP:=smp1 conformance experiment). `ExHardError.c:139-144`
+  — the six `CheckHardError(0x40000009..0x4000000d, …)` cases that raise a hard error with an
+  **out-of-range `ValidResponseOptions`** (9, 10, 11, 12, `MAXULONG/2+1`, `MAXULONG`) and expect
+  `ResponseReturnToCaller` (0). We return **1 = `ResponseNotHandled`** (the test's sentinel is 27,
+  so the kernel really writes the 1). **Control-proven not-MP:** the UP kernel on today's tree
+  reports the identical `pass 30 -> 24 / fail 0 -> 6`, and BOTH the amd64 UP and `smp2` baselines
+  (seeded 2026-07-17) record a clean `pass=30 fail=0`. Mechanism is visible but the *trigger*
+  commit is not yet identified: `winsrv-rust/src/usersrv/harderror.rs:1108-1115` sets
+  `Response = ResponseNotHandled` then **early-returns** for `ValidResponseOptions >
+  OptionCancelTryContinue`, and the kernel accepts that verbatim (`ex-rust/src/harderr.rs:214-229`
+  lists `ResponseNotHandled` as valid — faithful to `ntoskrnl/ex/harderr.c:262-276`, so NOT a
+  translation bug). Leading hypothesis: the hard error now REACHES usersrv where it previously
+  took the null-error-port path (`harderr.rs:170-172`, which returns 0) — i.e. a *consequence of
+  the LPC path coming alive*, exposing a real usersrv-vs-NT divergence. The only recent commits
+  touching either file are warning-hygiene sweeps (`2d9a1cca7c3` `&raw`, compile-checked), so the
+  trigger is elsewhere. Repro: `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after
+  the build. i386 never runs this test (74-test list vs amd64's 87).
+
 - **amd64 WoW64 `g_MsgMemory` SendMessage payload over-read — FIXED 2026-07-24**
   (§9.116 diagnosis, §9.118 fix, task E13). Fixed in the **WoW64 thunk layer**, not win32k:
   §9.116 had concluded "the fix is win32k-side", but every `co_IntDoSendMessage` call sits
@@ -508,7 +527,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the available fix and it is **no longer amd64-only** — that parenthetical was stale on BOTH
   counts: arm64 has shipped it since 2026-07-17 (the §9.93 `save_next` fix cleared the §9.69
   wedge; `ntoskrnl-cargo/build.rs` pushes `kmsafecopy.c` for aarch64), and i386 got it
-  2026-07-24 as an exception-table fault-fixup primitive (§9.119). **FIXED 2026-07-25:** both
+  2026-07-24 as an exception-table fault-fixup primitive (§9.121). **FIXED 2026-07-25:** both
   `_MmCopy{From,To}Caller` in `win32k-rust/src/copy.rs` now route through it on all three
   arches, and it is exported from `ntoskrnl.spec` because win32k.sys is a separate PE that
   cannot carry its own i386 copy (the extable keys on a link-time PC in the kernel's
@@ -516,6 +535,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   devmgmt/msconfig/sndrec32/kbswitch stay staged with their winlogon launch held so the 21
   passing rungs keep reporting. Note the smoke gate stays GREEN through this: the boot
   marker fires long before the ladder runs.
+- **C assertion macros lowered to UB / to a BUGCHECK — FIXED 2026-07-25** (§9.120).
+  Found by a fresh-eyes catalog sweep, not by a crash. `PAGED_CODE()`/`NT_ASSERT()` are
+  DIAGNOSTICS (KdPrint+RtlAssert under DBG, **nothing** in retail) and are never
+  `__assume(0)`; three translations had lowered them to `unreachable_unchecked()` (UB —
+  cdrom, fastfat) or to an unconditional retail `KeBugCheckEx` with an **invented** stop
+  code (classpnp, `0x35u32` = NO_MORE_IRP_STACK_LOCATIONS, unrelated to IRQL). All latent,
+  none had fired. **The §9.113 gate reported a clean 0 the whole time**: its regex required
+  the digits to be followed directly by `,`/`)`, so the Rust type suffix in `0x35u32` hid
+  the site from 2026-06-09 through the entire 07-24 sweep — *a lint that under-matches is
+  indistinguishable from one that passes.* Regex fixed; new gate
+  `tools/scan_assert_to_ub.py` (empty baseline) keeps the class at zero.
 - **arm64 0x1E / `[WAITDEP]` ALL-ONES residual — CLOSED 2026-07-17** (§9.92 item 4). The
   "~2 hits / 2 days" residual was the SAME netstack-TDI wait-block bug as §9.36 on the
   *synchronous*-completion path the 07-08 fix didn't cover (`IofCompleteRequestInner`'s
@@ -551,7 +581,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   overwritten; heap face = unmapped → not-present). Disproven: rtl_heap translation bug (heap
   is faithful/victim), and the §9.96 section path (that fix works correctly). Same PFN family
   as `ZwAllocateVirtualMemory` 0x4E + `MmMapLockedPagesSpecifyCache` (task #7) — and as of
-  2026-07-25 that is no longer a guess, it is **the same check** (§9.120). Task #7's recorded
+  2026-07-25 that is no longer a guess, it is **the same check** (§9.122). Task #7's recorded
   "BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class, P1=0x401) in the Rust MDL-map path" was poisoned by
   §9.113: `0x1000` was an INVENTED stop code appearing at exactly four sites in the whole pre-fix
   kernel, all in `ARM3/virtual.rs`, subcodes `0x61940/0x61940/0x400/0x401`. So `P1=0x401`
@@ -585,7 +615,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `_EX_PUSH_LOCK_WAIT_BLOCK.WakeGate`, not session pool); not reproducing, likely closed by the
   §9.13 WS-pushlock fixes. Re-open only on a live recurrence → GDB watchpoint on the WakeGate byte.
 - **arm64 BUGCHECK 0x3 — IT IS `RESOURCE_NOT_OWNED`, NOT `INVALID_AFFINITY_SET`** (renamed
-  2026-07-25, field manual §9.120). Proved by enumeration, not inference: across the ENTIRE
+  2026-07-25, field manual §9.122). Proved by enumeration, not inference: across the ENTIRE
   pre-`d3ca121cb09` Rust kernel exactly **two** sites could raise stop code 3, both in
   `ex-rust/src/resource.rs` — `ExReleaseResourceForThreadLite` and `ExSetResourceOwnerPointer`,
   whose `RESOURCE_NOT_OWNED` (0xE3) the LLM had invented as `0x03` (§9.113). The only C raiser,

@@ -145,7 +145,10 @@ pub unsafe extern "system" fn MmDbgCopyMemory(
         8 => {
             *(CopyDestination as PULONGLONG) = *(CopySource as *const ULONGLONG);
         }
-        _ => core::hint::unreachable_unchecked(),
+        // C is `/* Size is sanitized above */ DEFAULT_UNREACHABLE;` (mmdbg.c:276)
+        // — Size is validated to 1/2/4/8 before this switch, so this is a
+        // faithful translation of an intentional optimizer hint, not an assert.
+        _ => core::hint::unreachable_unchecked(), // nolint: assert-to-ub (C DEFAULT_UNREACHABLE, Size pre-validated)
     }
 
     if (Flags & MMDBG_COPY_PHYSICAL) != 0 {

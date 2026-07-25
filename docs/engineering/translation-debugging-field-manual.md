@@ -10072,7 +10072,123 @@ case lied too: the boot-time `seh_poc` raise, whose raiser is in ntoskrnl (`ffff
 was also reported as `fffff880…`. **When a diagnostic is suspect, run it against the case
 whose answer you already know** — that comparison is what turned "this address is
 mysterious" into "this tool is broken."
-### 9.119 (FIXED 2026-07-24) i386 got a fault-tolerant kernel copy without fixing SEH — a Linux-style exception table is ~40 lines and needs no unwinder
+
+---
+
+### 9.119 (2026-07-25) A TEXT-SHAPED match is not a PROOF — the same regex measured 146 lowerable CRT forwarders and the sound implementation lowered 11
+
+Chasing cheap yield in `trivial_c.py` I measured how many msvcrt functions are the CRT's
+`X(args) → X_l(args, NULL)` forwarder idiom. A regex over the parsed bodies — "callee is
+same-TU, arguments are the parameters in order plus a trailing `NULL`" — found **146 of 1792
+(76 in mbcs.c alone, 40% of that file)**. That number went into a plan as the cost lever.
+
+The sound implementation lowers **11**.
+
+The gap is one word in the shape's own precondition. Admitting a literal `NULL` is only safe if
+the callee's parameter at that position is **proven** to be a pointer — otherwise `NULL` at an
+`int` position lowers to `core::ptr::null_mut()` and you have invented a type. The CRT spells
+that parameter `_locale_t`, which is a *typedef'd* pointer:
+
+```c
+typedef struct _locale_tstruct *_locale_t;      /* the star is in the TYPEDEF */
+int CDECL _mbsncmp(const unsigned char *s, const unsigned char *c, size_t n)
+{ return _mbsncmp_l(s, c, n, NULL); }           /* param type spells no star */
+```
+
+So `"*" in type` says "not a pointer"; `c_type_to_rust("_locale_t")` returns the opaque alias
+`_locale_t`; and `msvcrt-sys`'s bindgen island covers `__thread_data`/`threadlocinfo` but does
+not declare the alias. **No authority in reach can prove it**, so the matcher refuses — which
+is correct, because admitting it would assume exactly the fact the shape exists to prove.
+
+Two durable lessons, and the second is the one that bites:
+
+1. **Measuring a shape by its syntax measures an upper bound, not a yield.** Every deterministic
+   lowering is `syntax ∧ proof`, and the proof side is invisible to the regex you used to size
+   the work. Quote such a number as "≤ N candidates", and re-measure through the real
+   implementation before it becomes a plan. I stated 146 as the lever in a strategy the user
+   was deciding on; the honest number was an order of magnitude smaller.
+2. **The blocker is almost never the shape — it is the missing authority.** The fix for the
+   other ~135 is *not* to loosen `forwarder_with_null`, and absolutely not to allowlist
+   `_locale_t`. It is to give the pipeline a **typedef authority**: carry the module's pointer
+   typedefs in its bindgen island (a generated, layout-guarded artifact) and have
+   `_is_pointer_c_type` consult the island instead of the spelling. That is the same move as
+   §9.112 — *make the deterministic substrate complete and everything downstream gets cheaper*
+   — and it generalizes to every `LPWSTR`/`HANDLE`/`P*` typedef in Win32 code, not just the CRT.
+
+`test_trivial_c_forwarder_null.py::test_typedefd_pointer_is_refused_because_nothing_proves_it`
+pins the refusal so that when someone does wire a typedef authority, this is a deliberate
+decision with a failing test, not a silent behaviour change.
+
+**Related trap in the same change (worth copying).** The oracle compares C and Rust
+token-for-token, and a null pointer is the one atom whose spellings cannot match: C's `NULL` is
+a single `null` node *and* an uppercase-constant occurrence, Rust's `core::ptr::null_mut()` is
+three identifiers *plus* an extra call node — so it perturbs the identifier-sequence, call-count
+and constant-multiset checks simultaneously. The wrong fix is to relax those three checks for
+everyone. The right one is to rewrite **both sides** to one sentinel before comparing, leaving
+every check intact: a `NULL` that moved position, was dropped, or displaced a real argument
+still fails. Symmetric canonicalization beats weakened comparison — and note the sentinel must
+fold the Rust `NULL` token too, since `constant_return` already lowered `return NULL;` that way
+(a pre-existing test caught the asymmetry immediately, which is the system working).
+
+### 9.120 (FIXED 2026-07-25) C's assertion macros are DIAGNOSTICS, not control flow — three translations lowered them to UB or to a BUGCHECK with an invented code, and the gate that should have caught one of them under-matched
+
+A fresh-eyes sweep of the bug catalog (not a crash report — nothing had failed) turned
+up a class nobody had named. In C:
+
+| Macro | DBG build | Retail build |
+|---|---|---|
+| `PAGED_CODE()` (`xdk/kefuncs.h`) | `KdPrint` + `ASSERT(FALSE)` | `NOP_FUNCTION` |
+| `ASSERT(exp)` / `NT_ASSERT(exp)` (`ndk/rtlfuncs.h`) | `RtlAssert(...)` | `((void)0)` |
+
+**None of them is `__assume(0)`.** But `core::hint::unreachable_unchecked()` *is* — it is
+undefined behaviour, and telling LLVM a branch is unreachable licenses it to delete the
+guarding check and poison everything downstream. So lowering an assert to it is **strictly
+worse than the C in every build configuration**: retail C does nothing at all, retail Rust
+invokes UB.
+
+Three live sites, all latent (none had fired):
+
+* `cdrom-rust/src/common.rs` — `PAGED_CODE()` → `unreachable_unchecked()`.
+* `fastfat-rust/src/strucsup.rs` — `NT_ASSERT(Buffer != NULL)` → `unreachable_unchecked()`,
+  on the result of an allocation. The assert exists precisely to catch the case the
+  translation told the optimizer to assume away.
+* `classpnp-rust/src/class.rs` — `PAGED_CODE()` → `KeBugCheckEx(0x35u32, 0,0,0,0)`: a
+  DBG-only diagnostic escalated to an **unconditional retail BUGCHECK**, with an invented
+  stop code on top (0x35 is `NO_MORE_IRP_STACK_LOCATIONS`, nothing to do with IRQL — the
+  §9.113 class).
+
+**The gate that should have caught the third one reported a clean zero.**
+`scan_bugcheck_codes.py` matched `^\s*(0x[0-9A-Fa-f]+|\d+)\s*[,)]` — digits followed
+*directly* by `,` or `)`. The literal was `0x35u32`, and the Rust type suffix broke the
+match. It sat in the tree from 2026-06-09 through the entire §9.113 sweep on 2026-07-24.
+
+> **A lint that under-matches is indistinguishable from a lint that passes.** Both print
+> `0`. This is the same failure shape as §9.115a (a baseline computed from a stale build
+> artifact) and §9.115 (a report that iterates the generator's own flagged set): the check
+> was structurally unable to see the thing it existed to find, and its silence was read as
+> evidence of health. When you write a pattern-matching lint, **test it against a positive
+> case you construct on purpose** — `0x35u32` would have failed that test in one second.
+
+**Regression gate:** `tools/scan_assert_to_ub.py` (empty baseline, wired into
+`vibeos-cli check`). `unreachable_unchecked()` remains legitimate as the tail of a
+genuinely-noreturn call and as a faithful `DEFAULT_UNREACHABLE`; those carry
+`// nolint: assert-to-ub (reason)`. Writing that scanner produced its own instance of the
+same lesson — the first version's noreturn-context regex was `\b`-anchored, so it rejected
+the real call sites (`FatBugCheck`, `CdRaiseStatus`) because a driver prefix leaves no word
+boundary, and reported three false positives. **Match names as substrings when the codebase
+prefixes them.**
+
+**Why this class recurs and why a one-off fix was not enough.** `fastfat-rust/src/fatinit.rs`
+already carries a comment describing the *same* mistake being fixed in `__int2c` — someone
+hit it, fixed that instance, and moved on without generalizing. An LLM translating C sees
+`PAGED_CODE();` as a statement that must *do* something, and "this can't happen" maps
+naturally onto `unreachable_unchecked()`. It will keep happening; the gate is the answer.
+
+**When auditing a translated assert, ask what the C does in RETAIL, not what it means.**
+`ASSERT(x)` reads like "x must hold," which invites a hard failure. It compiles to nothing.
+
+> **Read with §9.119.** That entry is this one's mirror: there, a regex MATCH was mistaken for proof that a body was lowerable (146 text-shaped hits, 11 sound lowerings). Here, a regex MISS was mistaken for proof that a class was absent (`0` reported for six weeks). A pattern match is evidence about TEXT, never about SEMANTICS — in either direction. Whichever way you are reading it, the pattern owes you a positive and a negative control before you believe its count.
+### 9.121 (FIXED 2026-07-24) i386 got a fault-tolerant kernel copy without fixing SEH — a Linux-style exception table is ~40 lines and needs no unwinder
 
 **Symptom.** Three i386 kmtest quarantines (`IoReadWrite`, `ObSymbolicLink`,
 `ZwWaitForMultipleObjects`) all BUGCHECK 0x1E at the identical PC, `ntoskrnl.exe+0x14C0`
@@ -10169,7 +10285,7 @@ is separately unusable on i386 (it matched `STATUS_UNWIND_CONSOLIDATE+5018868` f
 symbolicate i386 by hand: the bugcheck banner prints `P2 = ntoskrnl.exe+0xRVA`, and
 `VA = 0x400000 + RVA` against `llvm-nm --numeric-sort build-i386/ntoskrnl/ntoskrnl.exe`.
 
-### 9.120 (2026-07-25) A wrong stop code doesn't just mislabel a crash — it relocates the HUNT. Two long-standing bugs were being chased in the wrong subsystem
+### 9.122 (2026-07-25) A wrong stop code doesn't just mislabel a crash — it relocates the HUNT. Two long-standing bugs were being chased in the wrong subsystem
 
 §9.113 fixed 61 invented `KeBugCheck` stop codes. The fix was correct and complete. What
 nobody did afterwards was **re-read the recorded evidence that those wrong numbers had

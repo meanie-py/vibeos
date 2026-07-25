@@ -2542,9 +2542,19 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
     let mut setRestricted: bool = false;
     let mut localString: UNICODE_STRING = core::mem::zeroed();
 
-    // PAGED_CODE expansion: ensure IRQL <= APC_LEVEL (assert-like)
+    // PAGED_CODE() — DBG-only diagnostic in C (xdk/kefuncs.h: KdPrint + ASSERT
+    // under DBG, NOP_FUNCTION in retail). It was translated to
+    // unreachable_unchecked(), which is UB: an assertion became an optimizer
+    // ASSUMPTION, so LLVM is free to delete the IRQL check and poison whatever
+    // follows. Never lower an assert to UB — match the C diagnostic instead.
     if KeGetCurrentIrql() > APC_LEVEL {
-        core::hint::unreachable_unchecked();
+        extern "C" {
+            fn DbgPrint(fmt: *const i8, ...) -> u32;
+        }
+        DbgPrint(
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
+            KeGetCurrentIrql() as u32,
+        );
     }
 
     // Switch on InterfaceType

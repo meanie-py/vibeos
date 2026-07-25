@@ -316,6 +316,24 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Sibling of the above, same root cause, different lowering (§9.120). C's
+    # PAGED_CODE/ASSERT/NT_ASSERT are DIAGNOSTICS — KdPrint+RtlAssert under DBG,
+    # ((void)0) in retail — and never __assume(0). Translating one to
+    # core::hint::unreachable_unchecked() makes it UB, licensing LLVM to delete
+    # the guarding check and poison what follows: strictly worse than the C in
+    # every build config, since retail C does nothing at all. Found live in
+    # cdrom (PAGED_CODE) and fastfat (NT_ASSERT on an allocation result), plus a
+    # third that had escalated to a BUGCHECK with an invented code in classpnp.
+    # Had already recurred once (see the fatinit.rs __int2c comment), which is
+    # why a gate and not another one-off fix. Baseline is EMPTY.
+    sau = repo / "tools" / "scan_assert_to_ub.py"
+    specs.append(
+        (
+            "scan_assert_to_ub",
+            [py, str(sau), "--lint"] if sau.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # One constant name, two values, both ours (§9.113b). The ORACLE-FREE half of
     # the invented-constant hunt: verify_constants needs the right C header in its
     # catalog, and the 18 findings of 2026-07-24 hid precisely because theirs

@@ -115,6 +115,74 @@ def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
     return str(png)
 
 
+# freeldr announces every image it loads; the kernel is the first one. Used to
+# prove WHICH kernel a `--smp` run actually booted (see _one_boot).
+_KERNEL_LOAD_RE = re.compile(r"\[FLDR\] load \S*[\\/](ntoskrnl\.exe|ntkrnlmp\.exe)", re.IGNORECASE)
+
+
+def _booted_kernel(text: str) -> str | None:
+    """The kernel image freeldr loaded, from serial. None if not seen yet."""
+    m = _KERNEL_LOAD_RE.search(text)
+    return m.group(1).lower() if m else None
+
+
+def _smp_check(text: str, arch: str) -> dict | None:
+    """Prove an `--smp N` boot got the SMP it asked for. Returns a failure dict
+    or None.
+
+    An SMP run has three ways to look GREEN while being nothing of the kind, and
+    a desktop screenshot distinguishes none of them:
+      1. UP kernel — media built without --smp-kernel (freeldr picks the kernel,
+         so nothing else notices). x86 would 0x79 on a HAL mis-pair, but a plain
+         UP kernel + UP HAL is simply a normal UP boot.
+      2. MP kernel on a UP hal.dll — arm64 has no MISMATCHED_HAL handshake, so it
+         boots, HalStartNextProcessor is the FALSE stub, and it silently runs on
+         1 CPU (smp-bringup-quest.md M5c; cost a debug round already).
+      3. APs started but never scheduled — the boot marker only proves the BSP
+         reached the desktop. test_smoke.py::test_milestones checks this, but the
+         CLI smoke fast path does not run pytest, so `smoke --smp N` had no AP
+         liveness check at all.
+    """
+    smp = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
+    if not smp.isdigit() or int(smp) < 1:
+        return None
+    n = int(smp)
+
+    booted = _booted_kernel(text)
+    if booted and booted != "ntkrnlmp.exe":
+        return {
+            "classification": "UP_KERNEL_ON_SMP_RUN",
+            "salient": [
+                f"--smp {n} booted {booted}, not ntkrnlmp.exe — media was built "
+                "without --smp-kernel",
+                f"fix: ./vibeos-cli build --arch {arch} --smp-kernel",
+            ],
+        }
+    if "UP HAL stub called" in text:
+        return {
+            "classification": "SMP_UP_HAL",
+            "salient": [
+                "MP kernel is running on a UP hal.dll — HalStartNextProcessor is "
+                "the FALSE stub, so this boot is silently 1 CPU",
+                f"fix: ./vibeos-cli build --arch {arch} --smp-kernel (reconfigures "
+                "VIBEOS_SMP_DEFAULT_BOOT and rebuilds the SMP HAL)",
+            ],
+        }
+    # Same requirement test_milestones enforces: one marker per AP, printed by
+    # KiSmpNoteApSwitch on the AP's first non-idle context switch.
+    missing = [c for c in range(1, n) if f"CPU{c} scheduling live" not in text]
+    if missing:
+        return {
+            "classification": "SMP_AP_NOT_SCHEDULING",
+            "salient": [
+                f"-smp {n}: no `[SMP] CPU<n> scheduling live` for CPU "
+                + ", ".join(str(c) for c in missing),
+                "the BSP reached the desktop but that AP never ran a non-idle thread",
+            ],
+        }
+    return None
+
+
 def _one_boot(
     run: Run, repo: Path, arch: str, *, until: str, fail_on: str | None, idx: int, total: int
 ) -> dict:
@@ -175,6 +243,15 @@ def _one_boot(
         except Exception:
             pass
         if outcome == "reached":
+            # A green desktop does not prove an `--smp N` run actually got SMP.
+            smp_fail = _smp_check(text, arch)
+            if smp_fail is not None:
+                return {
+                    "ok": False,
+                    "outcome": "smp-check",
+                    **smp_fail,
+                    **({"screenshot": shot} if shot else {}),
+                }
             # Post-marker health: a BugCheck/panic during settle, a kernel panic
             # on debugcon, or a missing `shell ready` is a failure — the early
             # marker alone used to green all of these.
