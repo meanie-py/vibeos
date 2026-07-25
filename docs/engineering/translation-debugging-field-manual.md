@@ -10426,3 +10426,56 @@ memoises by file hash, or a control can "pass" off a cache entry while the match
 ones (`scan_irql_balance`, `scan_ob_refcount` build a whole-workspace call-graph summary,
 ~50s each) are marked `slow`: a local run can `-m "not slow"` (0.5s), the gate runs everything.
 **Never default-skip a control** — that recreates the blind spot with extra steps.
+
+### 9.123 — arity: the one clashing-extern bucket that is a real bug (2026-07-25)
+
+`clashing_extern_declarations` carries ~1,458 findings and the 2026-07-17 triage sorted them:
+pointer-name and const/mut differences are ABI-identical noise, scalar-width differences are
+mostly benign return-register width, and calling-convention differences are an i386-only hazard
+that needs the C prototype to adjudicate. It called one bucket "the highest-value needles" —
+**a different PARAMETER COUNT** — and left it unworked. It was right, and it is now gated by
+`tools/scan_extern_arity.py` (baseline: 6 verified-benign entries).
+
+**The find.** classpnp declares and calls
+
+```rust
+ScsiGetNextSenseDescriptorByType(start, start_len, types, type_count, out_type, out_buf, out_len)
+```
+
+against a shim defined as `(buf, len, ty, found: *mut u8)`. The 4th parameter binds the
+caller's `typeList.len() as ULONG` — the literal **2** — to `found`, and the body is
+`if !found.is_null() { *found = 0; }`. That is a store to **address 0x2** at DISPATCH_LEVEL.
+It has never fired only because the whole block sits behind `IsDescriptorSenseDataFormat()`
+and our virtual devices answer with fixed-format sense; a real drive returning descriptor
+sense bugchecks. Four siblings in the same file had the same shape less violently
+(`ScsiGetSenseDescriptor` returned a truthy pointer as a `BOOLEAN`, so callers took the
+"descriptor found" branch and then read out-parameters the stub never wrote), plus cdrom's
+`PORT_ALLOCATED_SENSE` (called with 2, defined with 1) and classpnp's `EventDescCreate`
+(called with 8, defined with 0).
+
+**Why nothing else caught it.** cdecl means the CALLER cleans the stack, so a wrong argument
+count neither corrupts the stack nor fails to link; rustc never compares the two signatures
+because the declaration is the only thing the call site can see; and `verify_ffi`'s arity check
+compares against `ntoskrnl.spec`, which does not describe a crate-local shim. The mismatch is
+visible only by comparing the crate's own decl against the crate's own definition.
+
+**Three things that are NOT this bug**, all of which appeared in the first run and are baselined
+with reasons rather than "fixed":
+
+- an **address-only forward decl** — `fn BaseThreadStartup();` exists so kernel32 can write
+  `BaseThreadStartup as ULONG_PTR` into a new thread's `Rip`. Never called through, so its arity
+  is not a claim about any call. Same for freeldr's `PcFindPciBios`.
+- a **uniform syscall-table shape** — the SSDT spells every entry `(_: usize, ...)` on purpose.
+- a decl in a file no `mod` chain reaches (§ the orphan gate) — dead code makes no calls. That
+  is why freeldr's parked `directui.rs` drops out on its own.
+
+**Two parse traps, both of which produced confidently wrong answers first** (they are in the
+GOOD control fixture so a regression shows up as a false positive):
+
+- **Count against comment-MASKED text.** `RaiseOnError: u8, // BOOLEAN` and
+  `Flag: u8, /* BOOLEAN -> 1 */` contribute their own commas and `>`s.
+- **Neutralise `->` before depth-tracking `<`/`>`.** `Option<unsafe extern "system" fn(usize)
+  -> usize>` drives the depth negative at the arrow, after which every top-level comma is
+  invisible. That one mistake reported **3,790** phantom findings; the true count is 15. The
+  identical trap bit `crate_repair`'s argument-index counter the same night — if you are
+  counting top-level commas in Rust, assume `->` is there to ruin it.

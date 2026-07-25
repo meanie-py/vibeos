@@ -209,6 +209,54 @@ def parse_bindgen(bindgen_path: Path) -> dict[str, dict]:
 # ── Rust File Scanner ────────────────────────────────────────────────
 
 
+# `\s*` between the attribute and `pub`, NOT `[^\n]*\n`: the shim files put the whole
+# thing on one line (`#[no_mangle] pub unsafe extern "C" fn InterlockedIncrement(..)`),
+# and requiring a newline missed every one of them — which is 4 of the 5 cases this
+# function exists to suppress.
+_LOCAL_DEF_RE = re.compile(
+    r"#\[no_mangle\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?"
+    r'(?:extern\s+"[A-Za-z-]+"\s+)?fn\s+(\w+)\s*[(<]'
+)
+
+
+def crate_local_definitions(crate_dir: Path, _cache={}) -> frozenset:  # noqa: B006 — memo cache
+    """Names this crate DEFINES with #[no_mangle], i.e. the ones the linker resolves
+    in-crate rather than to the kernel export.
+
+    Without this, the spec is applied as the authority to call sites it does not govern.
+    All 6 of the [ABI] findings in the 2026-07-25 baseline were this: cdrom ships its own
+    `InterlockedCompareExchange`/`InterlockedIncrement` (real AtomicI32 SeqCst bodies, not
+    stubs) though ntoskrnl.spec exports them `fastcall -arch=i386,arm`; classpnp defines
+    `IoWMIDeviceObjectToProviderId` and disk defines `KeFlushIoBuffers`, whose spec entries
+    do not even cover i386. In each case the local `extern "C"` decl correctly matches the
+    local shim, and "should be stdcall per ntoskrnl.spec" is advice that would BREAK the
+    link (an i386 `extern "system"` decl decorates the name `_Foo@N`, which the undecorated
+    shim does not export). Whether the shim ought to exist at all is a separate question and
+    a different report.
+    """
+    key = str(crate_dir)
+    if key in _cache:
+        return _cache[key]
+    names = set()
+    src = crate_dir / "src"
+    if src.is_dir():
+        for f in src.rglob("*.rs"):
+            try:
+                names.update(_LOCAL_DEF_RE.findall(f.read_text(encoding="utf-8", errors="replace")))
+            except OSError:
+                continue
+    _cache[key] = frozenset(names)
+    return _cache[key]
+
+
+def crate_dir_of(rs_path: Path) -> Path | None:
+    """Nearest ancestor holding a Cargo.toml."""
+    for parent in rs_path.resolve().parents:
+        if (parent / "Cargo.toml").is_file():
+            return parent
+    return None
+
+
 def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
     """Scan for ABI, param count, and C macro issues in extern blocks.
 
@@ -221,8 +269,12 @@ def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
     - spec param counts are i386 STACK SLOTS (LONGLONG/ULONGLONG/double = 2), so a
       spec-based arity check only flags rust_params > spec_slots (a definite bug);
       bindgen counts real args and is compared exactly.
+    - a name the crate DEFINES with #[no_mangle] links in-crate, so ntoskrnl.spec is not
+      the authority for its call sites (2026-07-25: that was all 6 [ABI] findings).
     """
     issues = []
+    crate = crate_dir_of(rs_path)
+    local_defs = crate_local_definitions(crate) if crate else frozenset()
 
     # kernel-rust/src/lib.rs is the symbol-force umbrella: zero-arg extern "C"
     # placeholder decls feeding `unsafe extern "C" fn()` arrays that pin symbols
@@ -348,6 +400,7 @@ def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
                             spec,
                             bindgen,
                             skip_abi=block_skips_x86,
+                            local_defs=local_defs,
                         )
                     current_conv = None
                 continue
@@ -413,6 +466,7 @@ def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
                 spec,
                 bindgen,
                 skip_abi=block_skips_x86,
+                local_defs=local_defs,
             )
             fn_buf = None
 
@@ -420,9 +474,22 @@ def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
 
 
 def _check_fn(
-    issues, rs_path, lineno, fn_name, rust_name, conv, param_count, spec, bindgen, skip_abi=False
+    issues,
+    rs_path,
+    lineno,
+    fn_name,
+    rust_name,
+    conv,
+    param_count,
+    spec,
+    bindgen,
+    skip_abi=False,
+    local_defs=frozenset(),
 ):
-    """Check a single extern fn declaration against spec/bindgen."""
+    """
+    crate = crate_dir_of(rs_path)
+    local_defs = crate_local_definitions(crate) if crate else frozenset()
+Check a single extern fn declaration against spec/bindgen."""
     # Skip allowlisted
     if fn_name in CDECL_ALLOWLIST:
         return
@@ -431,7 +498,9 @@ def _check_fn(
 
     # ABI check (suppressed for decls cfg-gated off i386 — stdcall/fastcall
     # are i386-isms; extern "C" is the same ABI on amd64/arm64)
-    if conv == "C" and not skip_abi:
+    # A name this crate DEFINES with #[no_mangle] links in-crate; the spec describes an
+    # export the linker will never reach for it, so it is not the authority here.
+    if conv == "C" and not skip_abi and fn_name not in local_defs:
         expected_conv = None
         source = None
         if fn_name in spec and spec[fn_name]["conv"] in ("stdcall", "fastcall"):

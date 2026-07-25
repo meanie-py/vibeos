@@ -90,7 +90,10 @@ _LOCATION = re.compile(r"^(?P<file>[^\s:]+):\d+(?::\d+)?:")
 # reported 35 "new" findings that were the same 35 sites (gate WARN, 2026-07-25). The function
 # name stays in the key, and _new_findings is a multiset, so two real hits still need two
 # baseline entries.
-_EMBEDDED_LINE = re.compile(r"^(?P<indent>\s*)L \d+ ")
+# The number is RIGHT-ALIGNED (`L 309` at 3 digits, `L1062` at 4 — no space), so the
+# separator between `L` and the digits is optional. Requiring one matched only the
+# narrow findings and left the wide ones drifting.
+_EMBEDDED_LINE = re.compile(r"^(?P<indent>\s*)L\s*\d+\s")
 
 
 def _finding_key(line: str) -> str:
@@ -328,6 +331,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # handler = silent spin), and the POWNED paint-mask panic WAS an unwrap.
     # Stock is large (~2.1K, mostly unwraps) → baseline gates NEW only; the
     # baseline doubles as the fix-campaign work queue.
+    # A forward declaration whose PARAMETER COUNT differs from the definition it links to.
+    # The 2026-07-17 clashing_extern triage sorted ~1458 findings and called this bucket "the
+    # highest-value needles" — every other bucket is a spelling or width difference that some
+    # ABI makes harmless, but a different arg count is the caller and callee disagreeing about
+    # the shape of the call. It found classpnp's ScsiGetNextSenseDescriptorByType, whose 4th
+    # parameter was `found: *mut u8` while callers pass `typeList.len() as ULONG` there — a
+    # write to address 0x2, gated off only by IsDescriptorSenseDataFormat(). Baseline holds 6
+    # verified-benign entries (address-only forward decls + the SSDT's uniform 6-arg shape).
+    sea = repo / "tools" / "scan_extern_arity.py"
+    specs.append(
+        ("scan_extern_arity", [py, str(sea)] if sea.is_file() else ["MISSING"], "stdout")
+    )
     # Translated .rs that no `mod` chain reaches. cargo never opens such a file, so
     # `cargo check` is green whatever is in it and every source gate here skips it —
     # while grep still finds it, so the next reader takes a dead copy for the truth

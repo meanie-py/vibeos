@@ -1,0 +1,6 @@
+sdk/lib/rust/freeldr-rust/src/machpc.rs:1: [ARITY] PcFindPciBios: declared with 0 parameter(s), defined with 1 in sdk/lib/rust/freeldr-rust/src/hwpci.rs — the caller and callee disagree about the call shape
+sdk/lib/rust/kernel32-rust/src/client/utils.rs:1: [ARITY] BaseProcessStartup: declared with 0 parameter(s), defined with 1 in sdk/lib/rust/kernel32-rust/src/proc_helpers.rs — the caller and callee disagree about the call shape
+sdk/lib/rust/kernel32-rust/src/client/utils.rs:1: [ARITY] BaseProcessStartup: declared with 0 parameter(s), defined with 1 in sdk/lib/rust/kernel32-rust/src/proc_helpers.rs — the caller and callee disagree about the call shape
+sdk/lib/rust/kernel32-rust/src/client/utils.rs:1: [ARITY] BaseThreadStartup: declared with 0 parameter(s), defined with 2 in sdk/lib/rust/kernel32-rust/src/client/thread.rs — the caller and callee disagree about the call shape
+sdk/lib/rust/kernel32-rust/src/client/utils.rs:1: [ARITY] BaseThreadStartup: declared with 0 parameter(s), defined with 2 in sdk/lib/rust/kernel32-rust/src/client/thread.rs — the caller and callee disagree about the call shape
+sdk/lib/rust/ntoskrnl-rust/src/ke/ssdt.rs:1: [ARITY] NtSetLdtEntries: declared with 6 parameter(s), defined with 4 in sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/stubs.rs — the caller and callee disagree about the call shape

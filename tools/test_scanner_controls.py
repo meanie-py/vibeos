@@ -244,7 +244,76 @@ version = "0.0.0"
 edition = "2021"
 """
 
+# scan_extern_arity. BAD is the classpnp shape that wrote to address 0x2. GOOD carries the
+# two parse traps that produced wrong answers before the scanner was trusted: a comment
+# INSIDE a parameter list, and an `->` inside a generic (whose `>` drove the nesting depth
+# negative and hid every following top-level comma — 3,790 phantom findings).
+_ARITY_CARGO = """\
+[package]
+name = "arity-fixture"
+version = "0.0.0"
+edition = "2021"
+"""
+_ARITY_BAD_LIB = """\
+pub mod shim;
+pub mod caller;
+"""
+_ARITY_BAD_SHIM = """\
+#[no_mangle] pub unsafe extern "C" fn ScsiGetNextSenseDescriptorByType(
+    _buf: *mut u8, _len: u32, _ty: u8, found: *mut u8,
+) -> *mut u8 {
+    if !found.is_null() { *found = 0; }
+    core::ptr::null_mut()
+}
+"""
+_ARITY_BAD_CALLER = """\
+extern "C" {
+    fn ScsiGetNextSenseDescriptorByType(
+        start: *mut u8, start_len: u8, types: *const u8, type_count: u32,
+        out_type: *mut u8, out_buf: *mut *mut u8, out_len: *mut u8,
+    ) -> u8;
+}
+"""
+_ARITY_GOOD_LIB = """\
+pub mod shim;
+pub mod caller;
+"""
+_ARITY_GOOD_SHIM = """\
+#[no_mangle] pub unsafe extern "C" fn Matching(
+    _a: *mut u8,
+    _b: u8, // a comment INSIDE the parameter list — masked before counting
+    _cb: Option<unsafe extern "system" fn(u32) -> u32>,
+) -> u8 {
+    0
+}
+"""
+_ARITY_GOOD_CALLER = """\
+extern "C" {
+    fn Matching(
+        a: *mut u8,
+        b: u8, /* the other comment flavour, with an -> arrow in it */
+        cb: Option<unsafe extern "system" fn(u32) -> u32>,
+    ) -> u8;
+}
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_extern_arity",
+        script="tools/scan_extern_arity.py",
+        bad={
+            "Cargo.toml": _ARITY_CARGO,
+            "src/lib.rs": _ARITY_BAD_LIB,
+            "src/shim.rs": _ARITY_BAD_SHIM,
+            "src/caller.rs": _ARITY_BAD_CALLER,
+        },
+        good={
+            "Cargo.toml": _ARITY_CARGO,
+            "src/lib.rs": _ARITY_GOOD_LIB,
+            "src/shim.rs": _ARITY_GOOD_SHIM,
+            "src/caller.rs": _ARITY_GOOD_CALLER,
+        },
+    ),
     Control(
         name="scan_orphan_modules",
         script="tools/scan_orphan_modules.py",

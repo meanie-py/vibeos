@@ -1,9 +1,3 @@
-  [ABI] sdk/lib/rust/cdrom-rust/src/common.rs:130: InterlockedIncrement: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/cdrom-rust/src/common.rs:159: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/cdrom-rust/src/ioctl.rs:160: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/cdrom-rust/src/mmc.rs:45: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/classpnp-rust/src/classwmi.rs:940: IoWMIDeviceObjectToProviderId: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/disk-rust/src/diskwmi.rs:54: KeFlushIoBuffers: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/cachesup.rs:170: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/close.rs:42: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
