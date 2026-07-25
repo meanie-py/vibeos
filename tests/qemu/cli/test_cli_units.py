@@ -565,9 +565,11 @@ def test_symbolicate_pc_passes_reloc_for_i386_only(tmp_path):
     serial = "*** BUGCHECK: 0x0000001E (0x1, 0x805148fd, 0x2, 0x0)\n"
 
     out_i386 = triage.symbolicate_pc(tmp_path, "i386", serial)
+    assert out_i386 is not None
     assert "--reloc 0x800c3000" in out_i386, out_i386
 
     out_arm64 = triage.symbolicate_pc(tmp_path, "arm64", serial)
+    assert out_arm64 is not None
     assert "--reloc" not in out_arm64, out_arm64
 
 
@@ -577,6 +579,7 @@ def test_symbolicate_pc_keeps_a_plausible_offset(tmp_path):
     tool.write_text("#!/bin/sh\necho 'deadbeef\tMiInsertStandbyListAtFront+40\t-'\n")
     serial = "*** BUGCHECK: 0x0000001E (0x1, 0xffff800004001234, 0x2, 0x0)\n"
     out = triage.symbolicate_pc(tmp_path, "arm64", serial)
+    assert out is not None
     assert "MiInsertStandbyListAtFront+40" in out
 
 
