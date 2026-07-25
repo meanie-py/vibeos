@@ -316,6 +316,23 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # One constant name, two values, both ours (§9.113b). The ORACLE-FREE half of
+    # the invented-constant hunt: verify_constants needs the right C header in its
+    # catalog, and the 18 findings of 2026-07-24 hid precisely because theirs
+    # weren't in it. This needs no header — if our own tree spells one name two
+    # ways in one arch bucket, one of them is wrong regardless of what C says.
+    # (It found UNICODE_STRING_MAX_BYTES wrong in two BOUNDS CHECKS, one of them
+    # RPC input validation.) Stock is large and mixed with legitimately
+    # driver-local scales → baseline gates NEW only, and doubles as the
+    # hoist-to-one-definition work queue.
+    scc = repo / "tools" / "scan_const_contradictions.py"
+    specs.append(
+        (
+            "scan_const_contradictions",
+            [py, str(scc), "--lint"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Hand-encoded UTF-16 string literals decoded against their `// L"..."` intent
     # comment. The SERVICES_KEY class (2026-07-10): `static X: [u16; 33]` sized by
     # hand, one element short, silently dropped the last character -> services-rust
@@ -374,6 +391,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # the generated table against its real header prototype using clang's own
     # 32/64 record layouts, so a new one is caught at build time instead of by
     # the next applet to call it. Baseline gates NEW.
+    #
+    # The table is derived from CHECKED-IN sources (.spec + sysfuncs.h + the
+    # manual lists), NOT from build-*/...gen.c, so this baseline is portable
+    # across worktrees; the built artifact is cross-checked and a divergence
+    # HARD FAILS as "stale build dir". That is not defensive coding: reading the
+    # artifact directly made a stale build re-report 33 already-FIXED syscalls,
+    # and another lane re-blessed them into the baseline as accepted debt
+    # (field manual §9.115a). A lint whose output gets committed must be a pure
+    # function of committed state.
     mga = repo / "tools" / "wow64gen" / "marshalgen.py"
     specs.append(
         (

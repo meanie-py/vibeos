@@ -317,7 +317,9 @@ pub const STATUS_MUTANT_LIMIT_EXCEEDED: i32 = 0xC000_0191u32 as i32;
 pub const STATUS_NO_YIELD_PERFORMED: i32 = 0x4000_0024u32 as i32;
 // STATUS_ACCESS_VIOLATION and STATUS_UNSUCCESSFUL are in ntkrnl_sys::constants
 pub const KMODE_EXCEPTION_NOT_HANDLED: u32 = 0x0000_001E;
-pub const KERNEL_MODE_EXCEPTION_NOT_HANDLED: u32 = 0x0000_001E;
+// 0x8E, NOT 0x1E — KMODE_EXCEPTION_NOT_HANDLED (above) is the 0x1E one. Both
+// names were declared 0x1E here; the second was invented (§9.113).
+pub const KERNEL_MODE_EXCEPTION_NOT_HANDLED: u32 = 0x0000_008E;
 
 // KF_ feature flags — from ndk/i386/ketypes.h (same on amd64)
 pub const KF_V86_VIS: u32 = 0x0000_0001;

@@ -13,6 +13,25 @@ export PYTHONPATH="$PWD/tools/rustconv${PYTHONPATH:+:$PYTHONPATH}"
 python -c 'import rustconv.__main__ as m; print(m.__file__)'
 ```
 
+The production-shaped **plain-C module** loop (driver / Win32 DLL / service) is:
+
+```bash
+# 1. Derive the bindgen island + audit every `case` label. ERROR findings are BLOCKING:
+#    a constant missing from the island becomes a silent catch-all match arm (§9.112).
+python -m rustconv.profile_derive drivers/network/dd/rtl8139 --emit report
+python -m rustconv.profile_derive drivers/network/dd/rtl8139 --emit profile   # paste into gen_driver_types.sh
+python -m rustconv.profile_derive drivers/network/dd/rtl8139 --scaffold-dir sdk/lib/rust/rtl8139-rust
+
+# 2. Translate with BOTH envelopes. Constants/calls never go through the model; trivial
+#    bodies are lowered deterministically for $0 in the same run. Preview free first.
+python -m rustconv translate drivers/network/dd/rtl8139/ndis.c --seal-facts --seal-calls --dry-run --prompt
+python -m rustconv translate drivers/network/dd/rtl8139/ndis.c --seal-facts --seal-calls
+
+# 3. Close the mechanical rustc roots for $0 BEFORE paying for any repair. All three arches:
+#    a numeric cast inferred from one bakes that arch's pointer width.
+python -m rustconv crate-repair rtl8139-rust --arches i386 amd64 arm64 --dry-run
+```
+
 The production-shaped shell32 loop is:
 
 ```bash

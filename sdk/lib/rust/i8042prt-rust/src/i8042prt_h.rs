@@ -640,7 +640,10 @@ pub const WHEELMOUSE_I8042_HARDWARE: u32 = 0x20; // FIXED 2026-07-05: was invent
 pub const MOUSE_I8042_HARDWARE: u32 = 0x02; // FIXED 2026-07-05: was invented 0x80; real value per ntddmou.h:98
 
 // ---- ntddk.h / kdfuncs.h: crash + debug-control ----
-pub const MANUALLY_INITIATED_CRASH: u32 = 0xDEADDEAD; // ntddk.h:5612
+// bugcodes.mc. Was 0xDEADDEAD (real NT's MANUALLY_INITIATED_CRASH1, which
+// ReactOS does not define) under a citation to an ntddk.h line that does not
+// exist — so Ctrl+ScrollLock crashed with a stop code the C never raises.
+pub const MANUALLY_INITIATED_CRASH: u32 = 0xE2;
 pub const DBG_STATUS_SYSRQ: u32 = 0x02; // kdfuncs.h:74
 
 // ---- winnt.h: registry access mask (NT5 value) ----
