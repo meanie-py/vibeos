@@ -10857,3 +10857,54 @@ you a tool cannot do something, spend the five minutes before believing it — a
 false, fix the note so the next person does not pay again. (This is the same shape as the
 netapi32 "6 mutually-conflicting MIDL interfaces" blocker in §9.108, which deferred that work
 twice and was also a self-inflicted, untested inference.)
+
+#### 9.127a (2026-07-25) The same pair-derivation works for DRIVER bases — and it resolved the crash a kernel-only index cannot see
+
+§9.127 recovered the i386 *kernel* load base from recorded `ntoskrnl+<off> (<addr>)` pairs.
+Drivers need the same treatment and are the bigger blind spot: `qemu/symbols-<arch>.tsv` indexes
+`ntoskrnl` only, so a bugcheck whose PC lands in a `.sys` resolves to whatever kernel symbol
+sorts below it — which is how `addr2sym` produced `STATUS_WAKE_SYSTEM+923526268`.
+
+Worked example. `IoReadWrite` bugchecked `0x1E` at PC `0xf6f031e3`, outside the kernel image.
+Task #18's record already named its oracle as *"crashes at `IoReadWrite_drv.sys+0x21E3`"*, so:
+
+```
+0xf6f031e3 - 0x21E3 = 0xf6f01000        <- page-aligned driver base
+```
+
+A page-aligned result from an arbitrary subtraction is a 1-in-4096 coincidence, so this is
+evidence — but **not** proof, and driver bases are weaker than the kernel's: the kernel loads at
+a fixed base while drivers are placed dynamically, so a base derived from one boot need not hold
+for another. Confirm it semantically before using it. Here:
+
+```bash
+llvm-objdump -p ioreadwrite_drv.sys | grep ImageBase     # 0x10000
+# file VA = ImageBase + RVA = 0x10000 + 0x21E3 = 0x121E3
+llvm-nm --numeric-sort ioreadwrite_drv.sys | grep ' [Tt] '   # -> _TestFastIoWrite@32 + 0x113
+```
+
+`_TestFastIoWrite` is a function that exists, in the driver that crashed, with a name matching
+the test. That is the semantic control, and it is what licenses the base — not the page
+alignment.
+
+**And the symbol settled the classification.** `TestFastIoWrite` is not a parameter-validation
+stub; it is real fast-I/O code:
+
+```c
+_SEH2_TRY { Status = TestCommonWrite(Buffer, Length, FileOffset->QuadPart, LockKey, IoStatus); }
+_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { IoStatus->Status = _SEH2_GetExceptionCode(); return FALSE; }
+```
+
+Fast I/O hands the driver a raw **user-mode** `Buffer`. Touching it can legitimately fault, and
+the driver does the correct thing by guarding it. Under i386 `DUMMY_PSEH` that guard is dead, so
+correct driver code bugchecks. This matters for scoping the dead-`__try` root: the other
+confirmed instances (`RtlIsValidOemCharacter`, `KeDpc`, `MmSection`) are tests deliberately
+passing NULL, which is easy to dismiss as "just test scaffolding". This one is not — it is the
+shape a *real* filesystem or filter driver has, so the missing SEH is a production defect, not a
+test-harness artifact.
+
+**Rule.** When a faulting PC lies outside the kernel image, do not stop at "no symbol". Look for
+a recorded `<module>+<offset>` pair anywhere in the tracked notes, derive the base, and confirm
+it by checking that the resulting symbol is a real function in the module you expect. Failing
+that, the load bases have to come from the boot log — which is exactly why printing module
+base+size on serial is worth doing once (tasks #33, #35).
