@@ -10789,3 +10789,187 @@ is *structurally* blind here. So the merge queue's batch gate is now
 > symbols. Right fix (emit the intrinsic inline), wrong reason. Two lanes hit this break
 > independently and shipped the same fix within the hour, which is the real cost of a red
 > mainline: it is not one lane's problem, it is everyone's, simultaneously.
+
+### 9.127 (FIXED 2026-07-25) A capability nobody had run yet: sealed plain-C shipped raw tokens, and three guards were missing at once
+
+`--seal-facts --seal-calls` was generalized from shell32/COM to plain C on 2026-07-24, and
+AGENTS.md now tells every plain-C module to **"always pass both."** Nothing had actually run
+it: all 5,170 ledger entries with `seal_facts=True` are shell32, and no committed `.rs`
+contains a seal token. Being the first caller surfaced three defects in a row, each of which
+would have fired on the first module to follow the documented loop.
+
+**1. Unsealing was gated on the COM path.** Sealing is applied whenever the flags are set, but
+the only unseal call site lived inside `_normalize_unseal_cpp_worker`, which runs exclusively
+on the shell32 COM branch. A sealed plain-C translation therefore emitted raw
+`__RUSTCONV_FACT_nnnn__` / `__RUSTCONV_CALL_nnnn__` into the assembled module. Sealing is a
+lexical transform and language-neutral; **unsealing has to be too.** It is now `_unseal_worker`,
+applied on both paid paths, with the COM helper wrapping it in the normalizations that really
+are COM-specific.
+
+**2. A forward `extern` declaration counted as a call.** The call envelope demands each token
+exactly once — and the mechanical prompt *orders* a second occurrence: "emit a forward
+`extern "system" { fn Name(args...) -> Ret; }` block immediately above the function". So every
+sealed callee is named twice and every worker fails "not exactly once" (13 of 13 tokens on one
+`folders.cpp` function). Declaration spans are now excluded from the count **from both sides**:
+a declaration no longer creates a duplicate, and no longer satisfies the requirement either, so
+declaring a callee you never call is still a hard failure. The COM path never saw this because
+`normalize_worker_body` deletes model-authored extern blocks before unsealing; plain C keeps
+them, because they are how the assembler learns the signature.
+
+**3. The resume cache would bank un-unsealed Rust.** It guards empty output but not sealed
+output, so a run that failed to unseal cached its tokens and replayed them for **$0 forever**,
+re-assembling a module full of `__RUSTCONV_FACT_0000__`. This happened here and survived two
+runs before being noticed. Now refused on `put` (loud — it is our bug) and a MISS on `get`, so
+an already-poisoned cache self-heals, exactly like the empty-output case beside it.
+
+**The cache-key trap you will hit while fixing this.** The obvious fix for models writing
+`use __RUSTCONV_FACT_0000__;` (which unseals to `use MAX_PATH;` / `use 100;` and stops the
+module parsing) is to add a rule to `fact_contract`. **Do not.** The contract text is hashed
+into the resume-cache key: rewording it invalidates every banked sealed entry — 1,006 across 43
+namespaces here — and re-charges for translations already paid for. Handle it deterministically
+instead (`drop_token_use_items`), which is also strictly safer: if the `use` was the token's
+only occurrence, the closed-set check still fails loudly rather than laundering a lost constant.
+A test pins the contract text so nobody "improves" it later.
+
+**Generalization.** A capability that has never been exercised is not a capability. Grep the
+ledger before trusting a documented workflow — `seal_facts=True` on zero non-shell32 entries was
+visible in one query and predicted all three bugs.
+
+### 9.128 (FIXED 2026-07-25) `EXTERN_C` cost us function bodies, on a 10-character cliff
+
+`EXTERN_C` is winnt.h's `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter knows
+neither, so it parsed the macro as the return type and the real return type became a second
+type-identifier. Whether the function survived then came down to tree-sitter's **error
+recovery**, whose repair cost is sensitive to token **length**: with a pointer return type the
+body is recovered while the type name is ≤9 characters and **lost at ≥10**.
+
+    EXTERN_C FOOBAR*          -> extracted
+    EXTERN_C FILEDESCRIPTOR*  -> lost
+
+That is why shell32's `stubs.cpp` reported exactly 2 of 66 bodies unextractable —
+`GetFileDescriptor` and `SHGetShellFolderViewCB`, both pointer returns with names of 14 and 18
+characters, while every `VOID`/`BOOL` stub beside them parsed. `_gate_unextracted` was doing its
+job and refusing the file.
+
+**Expand the macro; never blank it.** Blanking looks equivalent and is strictly worse: with no
+linkage specifier, `FILEDESCRIPTOR* WINAPI Bar(...)` parses as an ambiguous declaration and
+yields ZERO `function_definition` nodes **and an empty `unextracted` list** — a silent drop,
+the one outcome the scanner exists to prevent. Measured: blanking recovered 1 of 3 bodies and
+reported 0 unextracted; expanding recovered 3 of 3. Differential over 500 real `.c`/`.cpp`
+files: 499 identical, 1 gained, 0 lost.
+
+Same family as the `CONST` and `FAR`/`NEAR` normalisers beside it, and as the
+`static struct module*` defect the msvcrt lane hit — **an unexpanded Win32 macro silently
+shrinking the translation plan.** When a scanner gap looks length- or name-dependent, suspect
+error recovery and fix the *input*, not the recovery.
+
+### 9.129 (2026-07-25) `cargo check` is not validation — the oracle has to BUILD
+
+`candidate-check` ran `cargo check` once per arch and called that acceptance. `check` stops
+before codegen, and `unconditional_panic` is a MIR-level deny-by-default lint that only fires
+during codegen — so a constant out-of-bounds index compiles "clean". That is exactly the
+bindgen flex-array shape (`[T; 1]` indexed past 0) the iphlpapi lane shipped twice.
+
+    cargo check -> exit 0, zero diagnostics
+    cargo build -> error: index out of bounds: the length is 1 but the index is 1
+
+and end-to-end through the oracle, on the same file:
+
+    --check-only -> candidate-check: 1/1 candidates compile on every arch
+    default      -> candidate-check: 0/1 ... unconditional_panic
+
+A correct candidate of the same shape (`entries.as_ptr().add(i)`) still passes all three arches,
+so this is not over-strict. The report now records `cargo_mode`, so a green result says which
+pass produced it.
+
+### 9.130 (2026-07-25) semdiff judged Rust by C's rules — both false positives, same root
+
+The C↔Rust semantic-divergence oracle produced exactly two findings on landed, hand-audited
+code, and **both were false positives from applying C semantics to the Rust side**:
+
+* **CRITICAL "argument type mismatch."** C `SHQueryValueExW(hkey, name, 0, ...)` beside Rust
+  `core::ptr::null_mut()` was read as an 8-byte pointer where a 4-byte `DWORD` belongs. The real
+  prototype takes `LPDWORD`, so the C `0` is a null pointer constant and the Rust is correct.
+  The model saw two bodies and no signature — while the signature sat in the very file the Rust
+  body came from. Fix: pass the `extern` declarations the body actually calls, labelled
+  authoritative for argument types.
+* **HIGH "inverted condition."** `flags & FLAG != 0` was reported as evaluating
+  `flags & (FLAG != 0)`. That is C's precedence. In Rust `&` binds **tighter** than the
+  comparisons, so it is `(flags & FLAG) != 0` — and the other parse could not compile at all,
+  since `u32 & bool` is a type error. Verified with rustc, not asserted.
+
+After both fixes the same file goes 1 critical + 0 high → **0 critical + 0 high**, leaving a
+benign overflow edge case and stripped debug logging — the right profile for code already
+hand-audited before landing.
+
+**semdiff is a candidate generator, not a verdict.** Both findings were entirely plausible and
+wrong. Verify against the source before acting on one, and prefer giving the oracle the missing
+*authority* (prototypes, language rules) over loosening what it reports.
+
+### 9.131 (FIXED 2026-07-25) A mode flag turned off the LANGUAGE layer, not just the framework layer
+
+`translate --free-functions` (shell32) exists because a TU's classless functions do not need
+the COM scaffold — no vtable, no `this`, no state layout. It was implemented as
+`cpp_com_mode = target is shell32 and not free_functions`, and every COM branch was keyed off
+that one flag. Correct for the scaffold. But the same flag also gated everything that is about
+**C++ the language**, and a free function in a `.cpp` is still C++.
+
+Three lowerings vanished at once. All three were found by *running* the path on one 172-line
+TU, not by reading it:
+
+| C++ construct | What the COM path does | What free functions got | Cohort count |
+|---|---|---|---|
+| `L"text"` / `L'c'` | deterministic content-addressed `CPP_COM_WSTR_<hash>` statics | nothing — model invented `u"text\0"` | 75 |
+| `IID_PPV_ARG(T,&o)` | deterministic expansion to two ABI args | nothing — emitted verbatim | 15 |
+| `CDataObjectHIDA h(p);` | `require_supported_worker_raii` refuses pre-payment | nothing — model invented `::new()` | 12 |
+
+**Rust has no UTF-16 string literal.** That is why the first one matters more than it looks:
+there was no correct output available to the model, so the prompt was asking it to invent, and
+a confident invention is what you get. Any construct with *no* target-language spelling must be
+lowered deterministically before the prompt is built — it can never be a model responsibility.
+
+Two general lessons:
+
+- **When you add a flag meaning "not the X path", enumerate what else lives behind X.** Ours
+  bundled framework concerns (vtables, `this`) with language concerns (literals, macros, RAII)
+  under one boolean. Splitting the *call sites* is not enough; you have to split the *concepts*.
+- **An empty allowlist is a licence to invent, not a neutral default.** `_LOCAL_RAII_TYPES` held
+  exactly `{"CDrop"}`, so every other body-local C++ owner sailed through the "unsupported RAII"
+  gate and was silently handed to the model. Absence from a refusal list reads as "supported".
+  The fix costs 6 shell32 TUs a refusal until someone writes `--local-raii CDataObjectHIDA=…`,
+  which is the correct trade: a loud refusal beats a paid invention.
+
+Also: normalization now runs on **cache hits**, not just fresh responses. A body banked before
+a repair exists would otherwise replay the un-repaired text for $0 forever — the same
+self-healing shape as the still-sealed-output guard in §9.127. Because the wide-literal lowering
+happens *before* sealing, it is part of the cache key, so only the bodies that actually changed
+re-paid: 1 of 10 functions, $0.01.
+
+### 9.132 (2026-07-25) `translate` assembles into the LIVE crate `src/` — which fails a concurrent gate
+
+`rustconv translate` writes its stitched module straight into the target crate
+(`sdk/lib/rust/<crate>-rust/src/...`). Harmless alone. But `vibeos-cli build`'s staleness check
+compares every `.rs` under the crate against the cargo-linked binaries, so a translation
+performed while a gate/land is in flight fails the build for an unrelated reason:
+
+```
+build i386 — FAIL: BUILD_INCOMPLETE
+  > base/system/lsass/lsass.exe: stale — sdk/lib/rust/shell32-rust/src/shell32/shldataobject.rs
+    newer than the cargo-linked binary (cargo link not re-run; run `build`)
+```
+
+The file was **untracked and referenced by no `mod`**, so cargo would never compile it — the
+check is deliberately conservative and globs the crate's source tree. `git status` stays clean
+(a new file is untracked, and `land`/`gate` sample dirtiness with `--untracked-files=no`), so
+nothing warns you: the tree looks landable and the build fails ~10 minutes later.
+
+**Translate to staging while anything is gating:** `-o ~/vibeos-rust-staging/<lane>/<file>.rs`.
+Paid output is preserved regardless — `.responses/<ts>-<file>/` is the canonical archive and is
+written before assembly. Integrate into the crate only when you are ready to build.
+
+Cleanup after the aborted land is also instructive: killing the `land` process released the FIFO
+land lock (the queued lane took it within seconds), but its `gate` child was **reparented, not
+killed**, and kept 2 of the host's 4 build permits for a verdict already discarded. Kill by
+explicit pid after confirming ownership — `/proc/<pid>/cwd` and `vibeos-cli host-status` name the
+worktree. Two `ninja livecd` processes at the canonical `/tmp/vibeos/build-*` path belonged to a
+*sibling* lane that had just acquired the lock; a pattern kill would have destroyed their work.

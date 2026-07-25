@@ -439,11 +439,12 @@ unsafe fn drop_files(
         }
         let mut source = (drop as *mut u8).add((*drop).pFiles as usize) as LPWSTR;
         while *source != 0 {
+            let quote = !StrChrW(source, b' ' as WCHAR).is_null() && remaining > 3;
             append_argument(
                 &mut end,
                 &mut remaining,
                 source,
-                !StrChrW(source, b' ' as WCHAR).is_null(),
+                quote,
             );
             while *source != 0 {
                 source = source.add(1);
