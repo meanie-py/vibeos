@@ -479,6 +479,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **amd64 `ExHardError` 6 failures — OPEN, NOT SMP-related, regressed on master since
+  2026-07-17** (found 2026-07-24 by the UP:=smp1 conformance experiment). `ExHardError.c:139-144`
+  — the six `CheckHardError(0x40000009..0x4000000d, …)` cases that raise a hard error with an
+  **out-of-range `ValidResponseOptions`** (9, 10, 11, 12, `MAXULONG/2+1`, `MAXULONG`) and expect
+  `ResponseReturnToCaller` (0). We return **1 = `ResponseNotHandled`** (the test's sentinel is 27,
+  so the kernel really writes the 1). **Control-proven not-MP:** the UP kernel on today's tree
+  reports the identical `pass 30 -> 24 / fail 0 -> 6`, and BOTH the amd64 UP and `smp2` baselines
+  (seeded 2026-07-17) record a clean `pass=30 fail=0`. Mechanism is visible but the *trigger*
+  commit is not yet identified: `winsrv-rust/src/usersrv/harderror.rs:1108-1115` sets
+  `Response = ResponseNotHandled` then **early-returns** for `ValidResponseOptions >
+  OptionCancelTryContinue`, and the kernel accepts that verbatim (`ex-rust/src/harderr.rs:214-229`
+  lists `ResponseNotHandled` as valid — faithful to `ntoskrnl/ex/harderr.c:262-276`, so NOT a
+  translation bug). Leading hypothesis: the hard error now REACHES usersrv where it previously
+  took the null-error-port path (`harderr.rs:170-172`, which returns 0) — i.e. a *consequence of
+  the LPC path coming alive*, exposing a real usersrv-vs-NT divergence. The only recent commits
+  touching either file are warning-hygiene sweeps (`2d9a1cca7c3` `&raw`, compile-checked), so the
+  trigger is elsewhere. Repro: `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after
+  the build. i386 never runs this test (74-test list vs amd64's 87).
+
 - **amd64 WoW64 `g_MsgMemory` SendMessage payload over-read — OPEN, reproduces on master**
   (2026-07-24, §9.116, task E13). Every amd64 boot with the WoW64 applet ladder BUGCHECKs
   `0x1E`/`C0000005` at `win32k+0x258EC` ~3.5 min in: `cnt_rust::cabi::raw_move` ←
