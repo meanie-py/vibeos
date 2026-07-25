@@ -235,6 +235,8 @@ class CStartMenuDummy :
 {
 private:
     CStartMenuDummy();
+
+protected:
     virtual ~CStartMenuDummy();
 
 public:
@@ -358,9 +360,12 @@ public:
 extern "C" HRESULT WINAPI CShellItem_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
-class CShellItemRustEntry : public CShellItem
+class CShellItemRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CShellItemRustEntry, &CLSID_ShellItem>
 {
 public:
+    DECLARE_NO_REGISTRY()
     class _CreatorClass
     {
     public:
@@ -460,9 +465,12 @@ public:
 extern "C" HRESULT WINAPI CPrinterFolder_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
-class CPrinterFolderRustEntry : public CPrinterFolder
+class CPrinterFolderRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CPrinterFolderRustEntry, &CLSID_Printers>
 {
 public:
+    DECLARE_REGISTRY_RESOURCEID(IDR_PRINTERS)
     class _CreatorClass
     {
     public:
@@ -520,6 +528,27 @@ public:
         static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
         {
             return CFolderOptions_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" const CLSID CLSID_RecycleBinCleaner;
+extern "C" HRESULT WINAPI CRecycleBinCleaner_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CRecycleBinCleanerRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CRecycleBinCleanerRustEntry, &CLSID_RecycleBinCleaner>
+{
+public:
+    DECLARE_REGISTRY_RESOURCEID(IDR_RECYCLEBINCLEANER)
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CRecycleBinCleaner_CreateInstance(
                 static_cast<IUnknown *>(pv), riid, ppv);
         }
     };
@@ -711,9 +740,12 @@ public:
 extern "C" HRESULT WINAPI CMoveToMenu_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
-class CMoveToMenuRustEntry : public CMoveToMenu
+class CMoveToMenuRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CMoveToMenuRustEntry, &CLSID_MoveToMenu>
 {
 public:
+    DECLARE_REGISTRY_RESOURCEID(IDR_MOVETOMENU)
     class _CreatorClass
     {
     public:
@@ -728,9 +760,12 @@ public:
 extern "C" HRESULT WINAPI CCopyToMenu_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
-class CCopyToMenuRustEntry : public CCopyToMenu
+class CCopyToMenuRustEntry :
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public CComCoClass<CCopyToMenuRustEntry, &CLSID_CopyToMenu>
 {
 public:
+    DECLARE_REGISTRY_RESOURCEID(IDR_COPYTOMENU)
     class _CreatorClass
     {
     public:
@@ -759,17 +794,103 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CStartMenuDummy_CreateInstance(
+    void *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CStartMenuDummyRustEntry : public CStartMenuDummy
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CStartMenuDummy_CreateInstance(pv, riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CShellDispatch_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CShellDispatchRustEntry : public CShellDispatch
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CShellDispatch_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CFileDefExt_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CFileDefExtRustEntry : public CFileDefExt
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CFileDefExt_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+#undef CMenuSite_CreateInstance
+extern "C" HRESULT WINAPI CMenuSite_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CMenuSiteRustEntry : public CMenuSite
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CMenuSite_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+#undef CMenuDeskBar_CreateInstance
+extern "C" HRESULT WINAPI CMenuDeskBar_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CMenuDeskBarRustEntry : public CMenuDeskBar
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CMenuDeskBar_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
     OBJECT_ENTRY(CLSID_ShellFSFolder, CFSFolderRustEntry)
     OBJECT_ENTRY(CLSID_MyComputer, CDrivesFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellDesktop, CDesktopFolderRustEntry)
-    OBJECT_ENTRY(CLSID_ShellFileDefExt, CFileDefExt)
+    OBJECT_ENTRY(CLSID_ShellFileDefExt, CFileDefExtRustEntry)
     OBJECT_ENTRY(CLSID_ShellDrvDefExt, CDrvDefExtRustEntry)
     OBJECT_ENTRY(CLSID_ShellItem, CShellItemRustEntry)
     OBJECT_ENTRY(CLSID_ShellLink, CShellLinkRustEntry)
-    OBJECT_ENTRY(CLSID_Shell, CShellDispatch)
+    OBJECT_ENTRY(CLSID_Shell, CShellDispatchRustEntry)
     OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)
     OBJECT_ENTRY(CLSID_ControlPanel, CControlPanelFolderRustEntry)
     OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanelRustEntry)
@@ -779,6 +900,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_Printers, CPrinterFolderRustEntry)
     OBJECT_ENTRY(CLSID_AdminFolderShortcut, CAdminToolsFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellFldSetExt, CFolderOptionsRustEntry)
+    OBJECT_ENTRY(CLSID_RecycleBinCleaner, CRecycleBinCleanerRustEntry)
     OBJECT_ENTRY(CLSID_RecycleBin, CRecycleBinRustEntry)
     OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenuRustEntry)
     OBJECT_ENTRY(CLSID_NewMenu, CNewMenuRustEntry)
@@ -786,10 +908,10 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_CopyAsPathMenu, CCopyAsPathMenuRustEntry)
     OBJECT_ENTRY(CLSID_CopyToMenu, CCopyToMenuRustEntry)
     OBJECT_ENTRY(CLSID_MoveToMenu, CMoveToMenuRustEntry)
-    OBJECT_ENTRY(CLSID_StartMenu, CStartMenuDummy)
-    OBJECT_ENTRY(CLSID_MenuBandSite, CMenuSite)
+    OBJECT_ENTRY(CLSID_StartMenu, CStartMenuDummyRustEntry)
+    OBJECT_ENTRY(CLSID_MenuBandSite, CMenuSiteRustEntry)
     OBJECT_ENTRY(CLSID_MenuBand, CMenuBandRustEntry)
-    OBJECT_ENTRY(CLSID_MenuDeskBar, CMenuDeskBar)
+    OBJECT_ENTRY(CLSID_MenuDeskBar, CMenuDeskBarRustEntry)
     OBJECT_ENTRY(CLSID_MergedFolder, CMergedFolderRustEntry)
     OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandlerRustEntry)
     OBJECT_ENTRY(CLSID_QueryAssociations, CQueryAssociationsRustEntry)

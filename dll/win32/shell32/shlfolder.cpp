@@ -369,7 +369,7 @@ HRESULT SHELL32_CompareChildren(IShellFolder2* psf, LPARAM lParam, LPCITEMIDLIST
     return psf2->CompareIDs(lParam, nextpidl1, nextpidl2);
 }
 
-HRESULT SHELL32_CompareDetails(IShellFolder2* isf, LPARAM lParam, LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2)
+EXTERN_C HRESULT WINAPI SHELL32_CompareDetails(IShellFolder2* isf, LPARAM lParam, LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2)
 {
     SHELLDETAILS sd;
     WCHAR wszItem1[MAX_PATH], wszItem2[MAX_PATH];

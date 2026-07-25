@@ -696,7 +696,7 @@ def _forward_args(
         return None  # unknown or variadic callee: nothing to prove the NULL against
     spelled: list[str] = []
     remaining = list(names)
-    # strict is redundant after the length check above, and says so where it is free.
+    # strict=True is provable here: the length mismatch returned None above.
     for arg, (param_type, _) in zip(args, callee_params, strict=True):
         if arg == "NULL":
             null = _null_spelling(param_type, pointer_typedefs)
@@ -719,6 +719,7 @@ def _match_shape(
     params: Sequence[tuple[str, str]],
     return_type: str,
     own_name: str,
+    # Mapping (covariant values), not dict — see lower_trivial_c_function.
     siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
     pointer_typedefs: Mapping[str, str] | None = None,
 ) -> tuple[str, str] | None:
@@ -836,6 +837,9 @@ def _render_item(
 
 def lower_trivial_c_function(
     dep: FunctionDep,
+    # Mapping, not dict: dict's value type is invariant, so a caller's
+    # dict[str, list[...]] (which is what _normalized_params builds) would not be
+    # assignable to dict[str, Sequence[...]].
     siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
     pointer_typedefs: Mapping[str, str] | None = None,
 ) -> TrivialLowering | None:

@@ -565,8 +565,42 @@ pub unsafe extern "system" fn MiDeletePte(
 
         MI_ERASE_PTE(PointerPte);
     } else {
+        // The PFN back-pointer must name the PTE we are tearing down. x86 bugchecks
+        // here (MEMORY_MANAGEMENT/0x401); arm64 has silently REPAIRED the mismatch
+        // since the Milestone-11 session-space bring-up, with a comment conceding
+        // "pages are reused across session/process boundaries and the PFN database
+        // doesn't track the new PTE correctly" — which is a verbatim description of
+        // the §9.97 physical-page-reuse corruption (task #19). So arm64 has been
+        // suppressing the one detector that fires AT the reuse.
+        //
+        // Keep the repair (removing it would turn a boot into a bugcheck), but make
+        // it LOUD. A `[PFNMISMATCH]` line names the PTE and the stale back-pointer at
+        // the moment of divergence — the forensics the free-side and alloc-side
+        // tripwires in §9.97 both failed to produce. Silence is also a result: it
+        // eliminates MiDeletePte as the reuse path for a few lines of probe.
         #[cfg(target_arch = "aarch64")]
         {
+            if ((*Pfn1).pte_address() as ULONG_PTR & !0x1) != PointerPte as ULONG_PTR {
+                extern "C" {
+                    fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ULONG_PTR);
+                }
+                ARM64_UART_TRACE_HEX(
+                    b"[PFNMISMATCH] MiDeletePte PointerPte=\0".as_ptr(),
+                    PointerPte as ULONG_PTR,
+                );
+                ARM64_UART_TRACE_HEX(
+                    b"[PFNMISMATCH]   Pfn->PteAddress=\0".as_ptr(),
+                    (*Pfn1).pte_address() as ULONG_PTR,
+                );
+                ARM64_UART_TRACE_HEX(
+                    b"[PFNMISMATCH]   PTE.Long=\0".as_ptr(),
+                    (*PointerPte).Long as ULONG_PTR,
+                );
+                ARM64_UART_TRACE_HEX(
+                    b"[PFNMISMATCH]   PageFrameIndex=\0".as_ptr(),
+                    PageFrameIndex as ULONG_PTR,
+                );
+            }
             (*Pfn1).set_pte_address(PointerPte);
         }
         #[cfg(not(target_arch = "aarch64"))]

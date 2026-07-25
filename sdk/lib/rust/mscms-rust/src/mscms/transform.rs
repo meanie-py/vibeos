@@ -1,6 +1,14 @@
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
+// ---- BMFORMAT (icm.h) — values COMPUTED by tools/gen_enum_consts.py. The tail members are implicit increments off BM_XYZTRIPLETS=0x201 / BM_xXYZQUADS=0x301, which is exactly the kind of value nobody should hand-copy ----
+pub const BM_RGBTRIPLETS: u32 = 2;
+pub const BM_BGRTRIPLETS: u32 = 4;
+pub const BM_xRGBQUADS: u32 = 8;
+pub const BM_xBGRQUADS: u32 = 16;
+pub const BM_GRAY: u32 = 521;
+pub const BM_KYMCQUADS: u32 = 773;
+
 extern "C" {
     fn FIXME(format: *const i8, ...);
     fn TRACE(format: *const i8, ...);

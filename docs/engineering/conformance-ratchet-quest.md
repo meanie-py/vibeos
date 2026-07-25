@@ -52,8 +52,8 @@ boot path never touches (see `tools/coverage/` — the never-executed-rust regis
 W=~/Projects/os-playground/vibeos-conformance      # ALL paths $W-prefixed (worktree discipline!)
 cd $W && ./vibeos-cli build --arch amd64           # provision build dir (auto, cache-warm)
 cd $W/build-amd64
-../tools/canon-run.sh cmake -DENABLE_ROSTESTS=ON . # option is cached; sticks for later builds
-../tools/canon-run.sh ninja kmtest kmtest_drv      # start here, then widen
+bash ../tools/canon-run.sh cmake -DENABLE_ROSTESTS=ON . # option is cached; sticks for later builds
+bash ../tools/canon-run.sh ninja kmtest kmtest_drv      # start here, then widen
 ```
 
 ## Expected build hazards (from prior porting experience — see AGENTS.md)
@@ -1164,3 +1164,272 @@ LATER kmtest_.exe launch — `0xC000001D` on garbage instruction bytes inside im
 shared image-section page corrupted under heavy map/unmap = the latent arm64 PFN/section-teardown
 family (same as the quarantined ZwAllocateVirtualMemory 0x4E). Roadmap registry entry added; the
 section tests stay active as the canary. This is the next monster.
+
+### 2026-07-24 — i386 pivot: the memcpy+0x40 cluster CLOSES on i386 via a Linux-style exception table, not SEH (field manual §9.123)
+
+**i386 ratchet: 74 → 76 enabled, 23 → 21 quarantined.** `ObSymbolicLink` (OK 154/0) and
+`ZwWaitForMultipleObjects` (OK 4/0) un-quarantined; new baseline written after **4
+consecutive identical sweeps** (`launched=76 ok=72 bad=4 sweep=done`, the 4 being the
+same pre-existing NO-ENDs, byte-identical to the old baseline's).
+
+**What actually blocked i386, and what did not.** The 13 i386-only quarantines are not 13
+bugs. Re-validating them against a current build (the recorded PCs were 12 days stale and
+symbolicated against a long-gone binary) split them cleanly into two roots:
+
+- **Root A — no fault-tolerant copy on i386** (task #5). `ObSymbolicLink`,
+  `ZwWaitForMultipleObjects`, `IoReadWrite` all crashed at the *identical* kernel PC,
+  `ntoskrnl.exe+0x14C0` = `memcpy+0x40`. The call sites were already routed through
+  `safe_copy_*`; only the i386 *primitive* was a bare `copy_nonoverlapping`. **CLOSED
+  today.**
+- **Root B — driver-side frame-based SEH** (task #18). `ExHardError` and `ExResource`
+  are the shape: the test deliberately passes a hostile pointer *expecting* the caller's
+  `__except` to convert the AV to `STATUS_ACCESS_VIOLATION`
+  (`ExInitializeResourceLite(NULL)` at ExResource.c:615; `ExRaiseHardError(..., mask=1,
+  {1234 / NULL})` at ExHardError.c:162-163). Under i386 DUMMY_PSEH the driver registers
+  no handler at all, so there is nothing for `RtlDispatchException` to find. Confirmed
+  from source + disassembly, not inferred. **Still open.**
+
+**The 2026-07-17 spike's oracle was mis-chosen.** It used `IoReadWrite` to characterise
+task #18 — but `IoReadWrite`'s i386 crash was Root A, in the kernel's own copy, which
+would fail there *regardless* of how well frame-based SEH worked. With `KMT_I386_NATIVE_SEH=ON`
+it still crashed at `memcpy+0x40`. So the spike's (a)/(b)/(c) narrowing was reasoning
+from a test that could not have passed either way. Post-fix, `IoReadWrite` crashes at
+**`IoReadWrite_drv.sys+0x21E3`** — the fault finally left the kernel and landed on the
+driver's own deliberate fault. *That* is the real task-#18 oracle; use it, not the old PC.
+
+**The fix, and why it did not need SEH.** Both `kmsafecopy.c` and `probe.rs` had listed a
+second close for years — "a Linux-extable-style fault-fixup primitive … it needs no
+working SEH at all" — and nobody had costed it. It is ~40 lines
+(`ntoskrnl-rust/src/ke/i386/safecopy.rs`): `KmProtectedCopyMemory` is `global_asm!` whose
+copy is a single `rep movsb`, its address exported as the sole key of an exception table;
+`KiTrap0EHandler` compares the faulting `Eip` and redirects to a fixup pad returning 0.
+It runs *after* `MmAccessFault` declines, so it keeps amd64's exact semantics (nonresident
+pages still page in; only genuinely bad addresses fix up), and it matches one exact PC so
+it cannot swallow a fault it does not own. Boot oracle now covers all three arches:
+`[KMSAFECOPY] fault-tolerant copy: valid=1 moved=1 invalid_caught=1 (PASS)` on i386.
+
+**Collateral bug fixed** (found reading the same dispatch path, not the root): i386
+`RtlpGetStackLimits` used a hand-written `[u8; 512]` for `FX_SAVE_AREA`, which is **528**
+bytes — `StackHigh` was 16 bytes too high, so `RtlDispatchException`'s registration-frame
+bounds check accepted a 16-byte window past the true top of stack. False-ACCEPT.
+
+**Toolkit gap registered (task #28):** `qemu/run-until.sh --break KeBugCheckEx` does not
+work on i386 — GDB reports the symbol undefined and the run then reports `BREAKPOINT NOT
+HIT`, which is indistinguishable from "the breakpoint never fired." `qemu/addr2sym.sh` is
+also unusable on i386 (matches absolute constant symbols). Symbolicate by hand meanwhile:
+`VA = 0x400000 + RVA` from the banner's `P2 = ntoskrnl.exe+0xRVA`, against
+`llvm-nm --numeric-sort build-i386/ntoskrnl/ntoskrnl.exe`.
+
+**Next on i386:** task #18 is now the single root under the remaining i386-only
+quarantines, with a clean oracle (`IoReadWrite` + `-DKMT_I386_NATIVE_SEH=ON`) and its
+kernel-side confound removed.
+
+### 2026-07-25 — the quarantine debt is SHAPED: amd64's list is a strict SUBSET of the other two
+
+Before picking the next bug I ran set operations over the three per-arch sweep lists instead
+of reading them one at a time. The result reprioritises the whole remaining quest:
+
+| bucket | tests | entries | which |
+|---|---|---|---|
+| **shared core (all 3 arches)** | 10 | **30** | IoCreateFile, IoFilesystem, MmMapLockedPagesSpecifyCache, MmReservedMapping, NpfsFileInfo, NtCreateSection, RtlException, RtlExceptionKM, SeTokenFiltering, TcpIpConnect |
+| i386-only | 9 | 9 | ExHardError, ExResource, IoReadWrite, KeDpc, KeMutex, MmSection, RtlIsValidOemCharacter, RtlSplayTreeKM, ZwMapViewOfSection |
+| i386+arm64, **passes on amd64** | 2 | 4 | SeInheritance, ZwAllocateVirtualMemory |
+| arm64-only | 1 | 1 | ExFastMutex |
+| | | **44** | |
+
+**There are ZERO amd64-only quarantines.** amd64's entire list is the shared core, so the
+three arches are nested, not merely similar.
+
+Two consequences:
+
+1. **68% of the debt is ten tests, and each shared-core fix retires THREE entries.** The
+   instinct to attack i386 because it has the most quarantines (21) is backwards: those 9
+   i386-only entries pay 1x each, while the core pays 3x. Work the trunk before the tail.
+2. **`SeInheritance` and `ZwAllocateVirtualMemory` are quarantined on exactly the two arches
+   that had exception-path bugs, and pass on the one that did not.** Both of those bugs (arm64
+   kernel-SEH task #10, i386's missing fault-tolerant copy §9.123) are now FIXED. That is a
+   falsifiable prediction, not a vibe, and it costs one boot to test.
+
+**Two of the ten are not bugs at all.** `RtlException` and `RtlExceptionKM` are annotated
+in-list as expected-fail — "calls-only (no `-fasync-exceptions`), hardware faults in the
+guarded body escape … not an OS bug" and "crashes (exit 128) WITHOUT a kernel BUGCHECK and the
+sweep continues clean — the good harness-robustness outcome". They will never go green and
+they are 6 of the 44 entries. Counting them as debt overstates the real figure (38) and
+guarantees the ratchet can never reach zero. They want a separate expected-fail list.
+
+**Re-testing is now mechanised** (`tools/conformance_probe.py`). The reason quarantines rot is
+that a bugchecking test truncates the sweep, so enabling all 21 at once yields one verdict; the
+tool instead boots candidate-only lists ordered most-likely-fixed-first, harvests every verdict
+up to the crasher, drops it and repeats. Worst case one boot per crasher, best case one boot.
+It restores the committed list on every exit path, Ctrl-C included.
+
+### 2026-07-25 (later) — the i386-only tail has ONE root, and it is task #18
+
+§9.137 unblocked offline i386 symbolication, so the i386 quarantines stopped being opaque. Two
+fresh crashes were traced the same night:
+
+| test | fresh PC | resolves to | root |
+|---|---|---|---|
+| `RtlIsValidOemCharacter` | `0x80529538` | `_RtlIsValidOemCharacter@4+8` (`rtl-strings/src/cabi/mod.rs:1939`) | **task #18** |
+| `SeInheritance` | `0x805510dd` | `_SeAssignSecurityEx@36+61` (`se-rust/src/sd.rs:923`) | distinct, open |
+
+`RtlIsValidOemCharacter` is conclusive. Its test ends with
+
+```c
+_SEH2_TRY { RtlIsValidOemCharacter(NULL); }
+_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status = _SEH2_GetExceptionCode(); }
+```
+
+— a **deliberate** NULL deref the `__except` is meant to catch. `+8` is `let mut c = *ch;`, the
+deref of that NULL parameter. amd64/arm64 catch it with native SEH; i386 under `DUMMY_PSEH` has a
+dead `__try`, so it escapes to `BUGCHECK 0x1E`. Nothing is wrong with the Rust.
+
+**That generalises, and it re-scopes task #18 from one test to the trunk of the i386 tail.**
+Classifying every quarantined test by whether its source uses `_SEH2_TRY`:
+
+| i386-ONLY quarantine | `_SEH2_TRY` | reading |
+|---|---|---|
+| `RtlIsValidOemCharacter` | 1 | task #18 — confirmed |
+| `ExHardError` | 2 | task #18 candidate |
+| `ExResource` | 1 | task #18 candidate |
+| `KeDpc` | 2 | task #18 — **confirmed** |
+| `MmSection` | 2 | task #18 candidate |
+| `KeMutex` | 0 | distinct bug |
+| `ZwMapViewOfSection` | 0 | distinct bug |
+
+So **~5 of the 9 i386-only quarantines are one root** (2 confirmed, 3 by signature), and task #18 is the highest-value i386
+fix by a wide margin — it is worth roughly as much as the entire rest of the i386-only tail.
+
+**The discriminator needs both halves.** `IoFilesystem` and `RtlException` also use `_SEH2_TRY`,
+but they are quarantined on ALL THREE arches — including the ones where SEH works — so their
+failures cannot be the dead-`__try` root. The signature is *i386-only* **and** *uses SEH*. Using
+SEH-usage alone would have swept two shared-core bugs into the wrong bucket and made task #18
+look like it fixed more than it does.
+
+**Cost of this classification: one grep.** It was available on 2026-07-12 when these nine tests
+were quarantined with "triage owed". The blocker was never the difficulty — it was the recorded
+claim that triage needed a debugger (§9.137).
+
+**Second confirmation (same night).** `KeDpc` crashed at `_KeInitializeDpc@12+17`
+(`ke/dpc.rs:788`) and its test is unambiguous:
+
+```c
+_SEH2_TRY { KeInitializeDpc(NULL, NULL, NULL); }
+_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status = _SEH2_GetExceptionCode(); }
+ok_eq_hex(Status, STATUS_ACCESS_VIOLATION);
+```
+
+The test **asserts that it receives `STATUS_ACCESS_VIOLATION`** — the fault is the point of the
+test, and `+17` is the deref of the NULL `Dpc`. Two candidates predicted from the grep, two
+confirmed on inspection. Note what this implies for the ratchet: these tests cannot pass on i386
+by fixing kernel code, because the kernel is behaving correctly. They pass when `__try` works.
+
+### 2026-07-25 (later still) — a SHARED quarantine is not a SHARED root; the 3x estimate is an upper bound
+
+The structural finding earlier today — amd64's quarantine list is a strict subset of the other
+two, so 10 tests account for 30 of the 44 entries — is still true as *bookkeeping*. But the
+inference drawn from it ("each shared-core fix retires three entries") is an **upper bound**, and
+the first two shared-core tests probed both undercut it:
+
+| shared-core test | i386 | arm64 |
+|---|---|---|
+| `IoCreateFile` | **OK** `pass=45 fail=8 skip=1 exit=0` | **CRASH** `0x1E` (AV @ `0xfffff800421c960c`) |
+| `IoFilesystem` | **CRASH** `_ExFreePoolWithTag@8+829` (pool) | untested |
+| `NtCreateSection` | CRASH `0x50`, PC in **driver** range | CRASH `0x50`, PC in **kernel** range |
+
+`IoCreateFile` is the clean counterexample: quarantined on all three arches, yet it now passes on
+i386 while still crashing on arm64. Two arches, two different states, one quarantine entry each —
+so "quarantined everywhere" recorded three independent observations that happened to agree at the
+time, not one root cause.
+
+`NtCreateSection` is the ambiguous middle: same stop code and same read-fault shape on both
+arches, which is suggestive, but the faulting PC is in the kmtest **driver** on i386 and in the
+**kernel** on arm64. That is either one bug with two faces or two bugs, and the honest answer
+today is that we do not know.
+
+**How to use the subset finding, then.** It is a good *prioritisation* heuristic — the shared
+core is still where the entries are concentrated, and a shared root, where one exists, does pay
+3x. It is not evidence that a root is shared. Establish that per test, from per-arch verdicts,
+before budgeting a fix as a triple win. The cost of getting this backwards is planning a
+"clears 6 entries" fix that clears two.
+
+**Corollary for un-quarantining.** `IoCreateFile` passing on i386 is NOT sufficient to
+un-quarantine it there yet. `SeInheritance` was flipped because amd64's baseline supplied a
+control (`704433/14` vs the observed `704431/16`); `IoCreateFile` is quarantined on every arch,
+so no baseline exists to compare against, and a single clean run cannot rule out the
+intermittency that would poison the whole i386 sweep. It wants 2-3 confirming runs.
+
+### 2026-07-25 — in fairness: some quarantine notes were exactly right
+
+Two entries today argued that recorded claims decay (§9.137's "symbol-poor" premise; the stale
+offsets). That is a real failure mode, but it is not the general case and the record should say
+so, because "distrust the notes" is as expensive a heuristic as "trust them".
+
+`RtlSplayTreeKM` re-probed today and reproduced its 2026-07-12 note **exactly**:
+
+```
+# QUARANTINED 2026-07-12: BUGCHECK 0x19 BAD_POOL_HEADER (not an AV — pool corruption on
+# free). Passes on amd64. Exercises the `splaytree` Rust crate — REAL-BUG candidate
+# (i386-specific splay corruption), not DUMMY_PSEH. Repro: SPECIALPOOL=* ...
+```
+
+Observed 13 days later: `*** BUGCHECK: 0x00000019 (0x00000005, 0xb0fbb7a8, 0xea, 0xb0fbb780)`.
+Same stop code, same class. The note also got the *classification* right in advance — it
+explicitly ruled out DUMMY_PSEH, which today's independent SEH-usage discriminator agrees with,
+and it named the correct next tool (special pool, since a pool-corruption bugcheck fires at the
+victim rather than the culprit — §9.18).
+
+**What actually distinguishes the durable notes from the rotten ones.** The notes that held up
+record a *stop code and a mechanism* (`0x19 BAD_POOL_HEADER`, "pool corruption on free",
+"exercises the splaytree crate"). The ones that rotted record a *coordinate or a tool claim*
+(`ntoskrnl.exe+0x8E3BD`; "offline index is symbol-poor"). Mechanism survives rebuilds; addresses
+and tooling assertions do not.
+
+So: when quarantining, write down the stop code, the subsystem and what you ruled out. Do not
+lean on an offset, and never record a tool limitation you have not just verified.
+
+For the record, `MmReservedMapping` is the middle case — its note is a genuine mechanism
+(`0x101`, pool tag `'KmRM'`, `MmAllocateMappingAddress` path) but today it faults `0x1E` inside
+the driver instead, so the mechanism itself moved. Worth re-triaging from scratch rather than
+from the note.
+
+### 2026-07-25 — arm64 `SeTokenFiltering` kills the VM SILENTLY, and I nearly discarded the evidence
+
+**Signature.** Two independent probe rounds, same shape:
+
+```
+[KMTEST:BEGIN SeTokenFiltering]
+(\modules\rostests\kmtests\kmtest_drv\kmtest_drv.c:377) DriverIoControl. Starting test SeTokenFiltering
+<serial goes completely silent — no further output, ever>
+```
+
+No `[KMTEST:END]`, **no BUGCHECK**, and the QEMU process is *gone* — `vibeos-cli ps` shows zero
+QEMUs host-wide while the harness keeps draining a dead VM for its full 5400s budget (task #34).
+The parser records `SeTokenFiltering INCOMPLETE`.
+
+**This is worse than a bugcheck, and easy to mis-file.** A bugcheck leaves a stop code, parameters
+and a PC. This leaves nothing — the machine simply stops existing. Any triage has to start from
+"which test was running", which is only knowable because the sweep announces `BEGIN` before each
+test.
+
+**The methodological mistake, recorded because it cut both ways.** On the first occurrence I
+unwedged the harness by killing the boot pid, then filed the result as *"CONTAMINATED — my
+artifact, not a real failure; must be re-tested; do NOT record it as a crasher."* That was wrong.
+The wedge was already in place before I touched anything (serial 29 minutes stale, zero QEMUs);
+my kill only ended a drain that had no VM behind it. The second round then reproduced the whole
+thing with no intervention at all.
+
+So the caution that correctly caught four *invented* crashers (the probe's attribution bug) also
+threw away one *real* one. Being too skeptical is not free — it just moves the error. The
+discriminating question is not "did I touch it?" but **"was the failure already determined before
+I touched it?"**, and the serial timestamps answered that in one command.
+
+**Hypothesis for the silent death** (untested): the guest reaches a clean VM shutdown rather than
+crashing — on arm64 a PSCI `SYSTEM_OFF`/reset terminates QEMU with no diagnostic, which fits
+"serial stops, process exits, no bugcheck" exactly. A reset path reached from token filtering
+would explain it. Worth confirming with `-no-reboot`/`-no-shutdown` plus QEMU exit-code capture
+before hunting in Se.
+
+**Practical:** exclude `SeTokenFiltering` from arm64 probe lists the way `TcpIpConnect` is
+excluded — both burn the full drain budget instead of failing fast, and one wedge can consume a
+whole probe run.

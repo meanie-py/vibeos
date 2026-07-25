@@ -1,6 +1,13 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// ---- MSHCTX / VARENUM members (wtypes.idl), under the `_`-prefixed spelling the translation uses. Undefined here, so `_MSHCTX_LOCAL` matched every flag value ----
+pub const _MSHCTX_LOCAL: u32 = 0;
+pub const _MSHCTX_NOSHAREDMEM: u32 = 1;
+pub const _MSHCTX_DIFFERENTMACHINE: u32 = 2;
+pub const _MSHCTX_INPROC: u32 = 3;
+pub const _MSHCTX_CROSSCTX: u32 = 4;
+
 // WINAPI / __RPC_USER / STDMETHODCALLTYPE externs — stdcall on i386, so
 // extern "system" (was mis-declared extern "C" → referenced _Name instead of
 // _Name@N and failed the i386 link). CRT memcpy/memset come from the prelude.
@@ -78,7 +85,7 @@ unsafe fn dump_user_flags(pFlags: *const DWORD) {
     } else {
         TRACE!(b"MAKELONG(0x%04x, \0".as_ptr() as *const i8, HIWORD(*pFlags));
     }
-    match LOWORD(*pFlags) {
+    match LOWORD(*pFlags) as u32 {
         _MSHCTX_LOCAL => TRACE!(b"MSHCTX_LOCAL)\0".as_ptr() as *const i8),
         _MSHCTX_NOSHAREDMEM => TRACE!(b"MSHCTX_NOSHAREDMEM)\0".as_ptr() as *const i8),
         _MSHCTX_DIFFERENTMACHINE => TRACE!(b"MSHCTX_DIFFERENTMACHINE)\0".as_ptr() as *const i8),
@@ -1678,7 +1685,7 @@ unsafe fn free_embedded_arraydesc(adesc: *mut ARRAYDESC) {
             free_embedded_typedesc((*adesc).tdescElem.__bindgen_anon_1.lptdesc);
             CoTaskMemFree((*adesc).tdescElem.__bindgen_anon_1.lptdesc as LPVOID);
         }
-        _VT_CARRAY => {
+        VT_CARRAY => {
             free_embedded_arraydesc((*adesc).tdescElem.__bindgen_anon_1.lpadesc);
             CoTaskMemFree((*adesc).tdescElem.__bindgen_anon_1.lpadesc as LPVOID);
         }
@@ -1692,7 +1699,7 @@ unsafe fn free_embedded_typedesc(tdesc: *mut TYPEDESC) {
             free_embedded_typedesc((*tdesc).__bindgen_anon_1.lptdesc);
             CoTaskMemFree((*tdesc).__bindgen_anon_1.lptdesc as *mut core::ffi::c_void);
         }
-        _VT_CARRAY => {
+        VT_CARRAY => {
             free_embedded_arraydesc((*tdesc).__bindgen_anon_1.lpadesc);
             CoTaskMemFree((*tdesc).__bindgen_anon_1.lpadesc as *mut core::ffi::c_void);
         }

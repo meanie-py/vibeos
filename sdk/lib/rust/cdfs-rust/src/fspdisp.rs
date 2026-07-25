@@ -123,9 +123,9 @@ pub unsafe extern "system" fn CdFspDispatch(
 
                 IRP_MJ_SET_INFORMATION => CdCommonSetInfo(irp_context, irp),
 
-                _IRP_MJ_QUERY_VOLUME_INFORMATION => CdCommonQueryVolInfo(irp_context, irp),
+                IRP_MJ_QUERY_VOLUME_INFORMATION => CdCommonQueryVolInfo(irp_context, irp),
 
-                _IRP_MJ_DIRECTORY_CONTROL => CdCommonDirControl(irp_context, irp),
+                IRP_MJ_DIRECTORY_CONTROL => CdCommonDirControl(irp_context, irp),
 
                 IRP_MJ_FILE_SYSTEM_CONTROL => CdCommonFsControl(irp_context, irp),
 

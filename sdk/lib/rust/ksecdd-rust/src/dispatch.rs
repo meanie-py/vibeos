@@ -18,10 +18,35 @@ extern "system" {
     fn KsecEncryptMemory(Buffer: PVOID, Length: ULONG, Option: ULONG) -> NTSTATUS;
     fn KsecDecryptMemory(Buffer: PVOID, Length: ULONG, Option: ULONG) -> NTSTATUS;
 }
-// DbgPrint is cdecl-variadic; __debugbreak is the MSVC intrinsic (cdecl).
+// DbgPrint is cdecl-variadic and really is an import (ntoskrnl exports it).
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
-    fn __debugbreak();
+}
+
+// __debugbreak is an MSVC *intrinsic*, not an import. Declaring it `extern "C"` emitted a
+// reference to `___debugbreak` (i386 cdecl mangling) while ntkrnl-sys's `ke_i386.rs`
+// `global_asm!` only ever emitted the stdcall spelling `___debugbreak@0` — so the i386 link of
+// ksecdd.sys failed while amd64/arm64, whose spelling needs no decoration, were fine.
+//
+// Do NOT "fix" that by also emitting the cdecl label: field manual §9.125 measured what
+// happens, and it is worse. The label IS reachable (`T ___debugbreak@0` sits in
+// libksecdd_rust.a), so aliasing it links the OBJECT that carries it — and that object carries
+// kernel-only code, which drags in four MORE undefined symbols. (An earlier commit of mine
+// tried exactly that and was reverted; my stated reason — "not in scope for a separate PE" —
+// was wrong, as their whole-tree symbol dump shows. Right conclusion, wrong argument.)
+//
+// Only a COLD build catches this at all, because a `.sys` relinks solely when its inputs change.
+//
+// Emit the instruction inline, which is what the intrinsic means and what sibling drivers
+// already do (`fltmgr-rust/src/glue.rs`, `scsiport-rust/src/inlines.rs`). Note this is also the
+// AGENTS.md rule about debug macros: an out-of-line no-op/stub for something that should be an
+// instruction is an optimization barrier that has uncloaked latent ABI mismatches into `ud2`.
+#[inline(always)]
+unsafe fn __debugbreak() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("int3");
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("brk #0xf000");
 }
 
 // ---- file-scope preamble (translated) ----

@@ -1,6 +1,8 @@
 # shell32 COM/ATL C++ → Rust (lane: `shell32-com`)
 
-**Status:** OPEN (opened 2026-07-14). Worktree `vibeos-shell32-com`, branch `shell32-com`.
+**Status:** COMPLETE (opened 2026-07-14, closed 2026-07-18). All 33 activatable
+`shell32` object-map entries are Rust-owned. Worktree `vibeos-shell32-com`, branch
+`shell32-com`.
 **Experiment:** **Codex drives `rustconv`.** The OpenAI `codex` CLI is the *agent* operating
 the pipeline here — it runs `python -m rustconv translate/submit/...` — in the seat Claude
 normally occupies. rustconv is still the translator; the models it calls are unchanged. The
@@ -852,3 +854,59 @@ Sub-capabilities needed (in order):
    naming/signature machinery doesn't model yet. Member dtor (HeapFree if m_pInfo) must run in
    generated Release.
 Everything else about the class is standard (1643 LOC, property-sheet dialog procs like CDrvDefExt).
+
+## Final five LANDED — object map 28→33/33 Rust-owned (2026-07-18)
+
+`CFileDefExt`, `CShellDispatch`, `CMenuSite`, `CMenuDeskBar`, and the inline
+`CStartMenuDummy` are now Rust-owned. Every entry in `shell32.cpp`'s `ObjectMap` points at a
+`*RustEntry` adapter; there are **zero activatable C++ entries left**.
+
+The capability work in `998fc730bf5` closed the remaining deterministic preflight gaps:
+out-of-header concrete bases (`CObjectWithSiteBase`), plain embedded class state
+(`CFileVersionInfo`), exact `IDispatchImpl` flattening, the deliberately narrow
+`CWindowImpl` HWND substrate, non-trivial base/member destructor sequencing, zero-only
+initializers, and legacy `DECLARE_INTERFACE` parsing. It also made partial replay reasons
+visible and fixed `--cost-cap 0` so it blocks before parallel calls. The rustconv test suite
+and `vibeos-cli check-tooling` are green.
+
+Integration details:
+
+- `CFileDefExt` is a documented hybrid TU: Rust owns the activated COM object and its state;
+  the retained C++ file owns source-local property-page/helper machinery exposed through
+  narrow C ABI bridges. i386 caught the C++-mangling and calling-convention gaps that the
+  isolated candidate oracle cannot see.
+- `CMenuSite` and `CMenuDeskBar` live in `menuband-rust`, linked into both `shell32` and
+  `rshell`, following the existing shared-shellmenu pattern.
+- `CShellDispatch` is fully Rust-owned; the existing `CFolder` caller reaches its constructor
+  through an explicit bridge. `CStartMenuDummy` is a no-state Rust registration shim that
+  delegates to the existing start-menu implementation.
+
+The required body-by-body comparison caught behavior bugs that all compiled cleanly:
+
+- `CShellDispatch`: an inverted `BrowseForFolder` predicate, wrong `NameSpace` VARIANT/PIDL
+  handling, missing AddRefs, incorrect service indirection/result VARIANT writes, and wrong
+  typelib/IID/version constants.
+- `CFileDefExt`: lost `CFileVersionInfo` ownership/lifecycle, HIDA ownership mistakes, wrong
+  wide-pointer arithmetic and field widths, incorrect property-sheet userdata/apply handling,
+  and incomplete destructor order.
+- `CMenuSite`/`CMenuDeskBar`: destructive condition checks, double releases, incorrect COM
+  forwarding/window host state, lost `OnSelect` switch fallthrough, and incomplete
+  site/client/popup cleanup.
+
+Final clean-tree gate:
+
+```text
+gate i386+amd64+arm64 — OK (10m37s)
+build ×3, strict lint ×3, smoke ×3, net smoke, push stamp: all green
+i386 33.793s; amd64 38.394s; arm64 43.035s
+/tmp/vibeos-cli/20260718-201325-gate-i386+amd64+arm64/
+```
+
+All three screenshots were inspected. i386 and amd64 show the full desktop/taskbar; arm64
+is the expected shell-ready wallpaper capture before taskbar paint.
+
+Paid-output incident, retained for honesty: before the cost-cap fix, recovery accidentally
+regenerated `CMenuSite::SetDeskBarSite` (about $0.01) and launched three rejected
+`CMenuDeskBar` calls while invoked with `--cost-cap 0`. The rejected-call metadata does not
+contain exact token/cost totals. All streamed artifacts were preserved; nothing was killed
+or discarded. After the fix, the same replay stitched all 39 cached workers at 0 tokens/$0.

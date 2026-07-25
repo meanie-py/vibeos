@@ -66,6 +66,15 @@ transforming it. Finish the whole task.
 reach — fix it. The default is *do it*, not "want me to file a task?" Reserve true handoffs
 for work owned by another lane that you genuinely cannot do.
 
+**A wrapper script is a bug report against the tool.** If you catch yourself hand-rolling a
+shell wrapper, or *remembering a recipe*, to work around how a tool behaves — that is the
+detection event for a missing mechanism, and the fix is to change the tool, not to remember
+harder. A rule that has no command behind it is a rule you will break: agents reached for
+`pkill` for months because nothing safer existed. This is the rule whose job is to **delete
+other rules** — a rule here is a *deferred mechanization* that costs context in every session
+for every agent forever, and each one is the scar of an incident a tool could have made
+impossible. See `e5f532ad1aa` — "the footgun program" — for the precedent.
+
 **Don't idle waiting on another agent.** "Waiting on X's fix" is not a status; "working Y while
 X lands" is. If blocked, do another part of the task, route around the blocker (local
 shim/stub/cohab/alternate path), or just fix the blocker yourself — it is all one repo, you can
@@ -102,14 +111,13 @@ centralize the systemic roots *first*, and have agents write only to their own n
 `CMakeLists.txt`), the build, and the smoke runs, centrally.
 
 **Communication.** Be context-frugal but not anxious: batch independent tool calls, background
-long builds, keep status lines terse, skip recaps. It's a 1M-context model — don't
-over-checkpoint. When you finish, lead with the outcome: the first sentence should answer "what
+long builds, keep status lines terse, skip recaps. Context is ample — don't over-checkpoint.
+When you finish, lead with the outcome: the first sentence should answer "what
 happened" or "what did you find." Report faithfully — if tests fail, say so with the output; if
 a step was skipped, say that.
 
 **Written deliverables.** Match the length of docs you write to what the task needs: cover the
-substance, don't pad with filler sections, redundant summaries, or boilerplate. (This repo has
-already had one "brutal consolidation" of 40 docs down to 11.)
+substance, don't pad with filler sections, redundant summaries, or boilerplate.
 
 **Tone.** Keep it light — vibeos dev is fun; celebrate the wins.
 
@@ -133,29 +141,52 @@ already had one "brutal consolidation" of 40 docs down to 11.)
   via `tools/install-git-hooks.sh`); `git-guard: BLOCKED` means you were about to rewind — fetch
   first.
 - **Never `git checkout`/`restore` to discard.** Use `git stash push -m "<scope>: <msg>"`. The
-  stash stack is **global across worktrees**, so `stash@{0}` is not stable — another agent can
-  push on top between your push and drop. Drop by message or captured hash, never by index.
+  stash stack is **global across worktrees**, so `stash@{0}` is not stable and a bare
+  `git stash pop` can apply a sibling lane's work into your tree — it has applied 1124 files
+  before now. Identify a stash by its message, never by index; pass `-u` when the pathspec
+  includes untracked files (without it the push fails and silently creates no entry); and
+  confirm the entry exists before you rely on it. Exact commands, and the recovery if you do
+  apply someone else's: `docs/engineering/agent-reference.md`.
 - **Landing a lane: just merge it like a human would.** `git merge <lane-tip>` → gate ×3 → land.
   Do **not** be clever about history: no per-commit cherry-picking for a tidy line, no pre-merge
   "lineage audits" hunting for already-landed surprises. Git's 3-way merge already handles that
   — identical content from a divergent lineage collapses to a no-op. A genuine conflict is the
   rare real signal: resolve it and move on. If it didn't conflict, there was nothing to look at;
   stop narrating it. (The rewind incident was a `reset --hard` to a stale ref, **not** a merge.)
+- **Land with `./vibeos-cli land` — it is a MERGE QUEUE.** `land` publishes your
+  lane tip to the queue and returns in ~2s; you do **not** merge master, do **not** gate, do
+  **not** wait. Whichever agent finds the land lock free becomes the *conductor*: it merges every
+  queued lane onto current master in a dedicated integration worktree, gates **once**, and
+  fast-forwards master to exactly the commit it gated. N ready lanes = ONE gate, zero blocked
+  agents. A conflict is bounced back to its lane (never resolved for you); a red batch splits
+  recursively so the culprit is rejected with its classification + artifact dir while the
+  innocent lanes still land. `./vibeos-cli land-status [--mine]` shows the conductor, the queue,
+  and your verdict. `land --direct` is the opt-out (single-lane: merge master → gate → push,
+  same lock) and `land --drain` forces a drain if the queue ever sits with no conductor.
+  Hand-rolling gate-then-push is what made every lane race: the stamp is keyed to an exact
+  TREE, so whoever pushes first voids everyone else's gate — and each wasted gate is 3 builds
+  + 4 boots of fleet load that widens the window that voided it.
+- **Never move the local `master` ref from a worktree that doesn't have it checked out** — no
+  `branch -f master`, no `update-ref`, no `fetch origin master:master`. That leaves the OTHER
+  worktree's index+files at the old tree, which resurfaces as a giant phantom staged revert — a
+  checkout has shown 61 commits of landed work as a 197K-line staged deletion this way. Push
+  the ref straight to origin (`git push origin HEAD:master`, which is what `land`
+  does); every worktree then picks it up with its own `git fetch && git merge origin/master`.
 
 **Landing is mechanized:** a green FULL `vibeos-cli gate` on a clean tree mints a push stamp
-(`$GIT_COMMON_DIR/vibeos-gate-stamp.json`); the `pre-push` hook refuses `master` updates whose
-tree doesn't match a fresh (<24h) stamp. Docs-only deltas pass automatically. Emergency
+(`$GIT_COMMON_DIR/vibeos-gate-stamps/<tree>.json`); the `pre-push` hook refuses `master` updates
+whose tree doesn't match a fresh (<24h) stamp. Docs-only deltas pass automatically. Emergency
 override `VIBEOS_SKIP_GATE_CHECK=1 git push` is loud — report every use. Partial-arch or
-dirty-tree gates never stamp.
+dirty-tree gates never stamp. The hook is the *backstop*; `land` is the front door.
 
 ### Smoke tests are the north star
 
 `tests/qemu/test_smoke.py` is the **single source of truth** for whether the OS works. It boots
 each arch and verifies a graphical desktop: the marker is `[EXPLORER] _tWinMain entered` +
 `shell ready`, proving the whole chain (kernel → SMSS → csrss → win32k → winlogon →
-explorer.exe → desktop render). **All three arches use this same real marker** — "arm64 is
-idle-detection" is dead lore, as is "arm64 is slow because TCG" (the old 300-500s boots were
-mostly an Mm bug, field manual §9.16; arm64 boots ~40s now).
+explorer.exe → desktop render). **All three arches verify that same real marker**, and all three
+are fast: arm64 boots in about 40 seconds. Treat any claim that arm64 only idle-detects, or that
+it is inherently slow under TCG, as false.
 
 - **Never weaken a smoke test to make it pass.** If it fails, fix the OS.
 - **Never lower boot markers** (e.g. to "ksecdd.sys") to work around a regression.
@@ -179,10 +210,13 @@ mostly an Mm bug, field manual §9.16; arm64 boots ~40s now).
 `pkill -9 -f qemu`, `kill -9 -P <ppid>`, `pgrep -f "qemu/start.sh …" | kill -9` and friends
 routinely match an ancestor of *your own* shell — your `start.sh`, your bash, the harness pid —
 and SIGKILL your whole process tree. This has killed an agent mid-run at least twice (exit
-9 / exit 144). To stop a QEMU: find it with `qemu/ps` / `./vibeos-cli ps`, then kill by instance
-uid (`backend.py:kill_by_uid`, pgroup-scoped), or let the reaper handle it
-(`VIBEOS_QEMU_MAX_LIFETIME`). Every QEMU is pid/uid/pgroup-scoped precisely so you never need a
-broad match. If a boot "keeps respawning," find the launcher loop and stop *that*.
+9 / exit 144).
+
+**Use `./vibeos-cli kill`.** Select by pid from `ps`, by `--arch`, by `--stale` (owner gone) or
+`--overdue`; there is deliberately no name/regex selector, and it **refuses** a target that is
+one of our own ancestors. `--dry-run` first if unsure. Or just let the reaper handle it
+(`VIBEOS_QEMU_MAX_LIFETIME`). If a boot "keeps respawning," find the launcher loop and stop
+*that*.
 
 ### Money and paid artifacts
 
@@ -234,7 +268,10 @@ guide: `tests/qemu/cli/README.md`.
 ./vibeos-cli check                          # source lints, 0 NEW vs tools/lint-baseline/
 ./vibeos-cli check-tooling                  # ruff+pyright+pytest for OUR python
 ./vibeos-cli gate                           # build serial -> smoke all arches parallel -> retry known flakes
+./vibeos-cli land                           # THE way to land: submit to the merge queue (train it if free)
+./vibeos-cli land-status --mine             # conductor + queue + MY verdict (landed / rejected + artifact)
 ./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
+./vibeos-cli host-status                    # build/boot CPU leases + the land lock, across worktrees
 ./vibeos-cli debug  start amd64 --gdb       # GDB over the real (UEFI) boot
 ./vibeos-cli smoke  --arch amd64 --tripwire "SPECIALPOOL=Gla5"
 ./vibeos-cli farm   --arches amd64 --minutes 480   # overnight flake soak
@@ -334,7 +371,10 @@ real incidents.
    hits make it fast. The old `cp -a` + sed-repoint ceremony is RETIRED — **never symlink a
    build dir** (a reconfigure through the symlink corrupts main's tree) and never hand-copy one.
    Do copy the gitignored arm64 boot assets (`qemu/QEMU_EFI.fd`, `efivars.fd`) from main. Raw
-   ninja needs the mount: `../tools/canon-run.sh ninja <target>` from inside `build-<arch>/`.
+   ninja needs the mount: `bash ../tools/canon-run.sh ninja <target>` from inside
+   `build-<arch>/`. The `bash` is required — `canon-run.sh` is committed non-executable and
+   the CLI always invokes it as `["bash", …]` (`cli/canon.py`), so exec'ing it directly is
+   `Permission denied`.
 4. **`pip install -e` shadowing.** `python -m rustconv` resolves to the **main-repo** path baked
    into site-packages, not your worktree. Prefix `PYTHONPATH=$W/tools/rustconv:$PYTHONPATH` and
    verify with `python -c "import rustconv.__main__ as m; print(m.__file__)"`.
@@ -345,7 +385,7 @@ real incidents.
 6. **Cross-agent blocker** (root-caused but owned by another lane): commit your own work green
    and parked, then write a paste-ready handoff brief (symptom, symbols, oracle, what's needed)
    the user can route — not an `AskUserQuestion`.
-7. **Fleet isolation law** (2026-07-04 hardlink-dedup incident). A tool may NEVER mutate another
+7. **Fleet isolation law.** A tool may NEVER mutate another
    worktree's files — not even "safe" dedup of byte-identical content. Hardlinking live
    build/cargo trees failed BOTH ways: in-place writers (spec2def, `cmake -E copy`, ccache-miss
    clang) truncated shared inodes under a sibling's running `ld.lld` mmap (SIGBUS), and shared
@@ -357,9 +397,9 @@ real incidents.
    (root-level stamps reach every lane instantly; in-tree fixes propagate only at merge speed).
    `vibeos-cli build` enforces this with an `ISOLATION_FAIL` preflight that refuses a tree
    sharing inodes (build-* at links>1; cargo target at links>2 — cargo hardlinks deps↔final).
-8. **Fleet isolation applies to READS too** (2026-07-24). Never resolve *generated* artifacts
-   from a sibling worktree. `verify_signatures`/`verify_offsets`/`verify_offsets_win32k` used
-   to fall back to any sibling carrying a `build-*` dir (it's gitignored, so a fresh worktree
+8. **Fleet isolation applies to READS too.** Never resolve *generated* artifacts from a sibling
+   worktree. `verify_signatures`/`verify_offsets`/`verify_offsets_win32k` once fell back to any
+   sibling carrying a `build-*` dir (it's gitignored, so a fresh worktree
    lacks one) — silently checking THIS tree's Rust against ANOTHER lane's headers at another
    commit. `verify_signatures` picked `vibeos-conformance/build-amd64` and its mismatch count
    moved **987 → 9 with no source change**; for the offset verifiers a foreign header can
@@ -386,7 +426,7 @@ or status into memory, stop and put it in its committed home.
 
 | What you learned | Where it goes |
 |---|---|
-| A reusable bug / recipe / gotcha that will recur | `docs/engineering/translation-debugging-field-manual.md` (§1–8 translation bugs, §9 crash-hunting) |
+| A reusable bug / recipe / gotcha that will recur | `docs/engineering/translation-debugging-field-manual.md`, in the section its **symptom** belongs to (see below) |
 | Per-subsystem / driver / lib status | `docs/engineering/rust-port-status.md` (single source of truth for Rust-vs-C coverage) |
 | A roadmap / strategy / design | product: `docs/product/vibeos-roadmap.md`; engineering: `docs/engineering/*-roadmap.md` / `*-design.md` / `*-plan.md` / `*-quest.md` |
 | A cohab / cargo-cutover / link recipe | `docs/engineering/rust-in-kernel.md` |
@@ -397,6 +437,20 @@ or status into memory, stop and put it in its committed home.
 
 `MEMORY.md` should stay a tiny stub: start-here pointers and user-personal prefs — nothing
 reusable, nothing already here, no rotting status.
+
+**Writing to the field manual.** Many lanes edit it at once, so placement is what keeps merges
+clean: put an entry in the topical section its symptom belongs to, never at the end of the file.
+Appending at the tail makes every lane collide over one position, for no semantic reason.
+Identify an entry by its heading and don't number it — a sequential id has no coordination point
+when lanes write before they merge, so numbers collide and every reference to one turns
+ambiguous. Inline `[§9.N]` tags are frozen ids serving older cross-references, not a series to
+extend. When an entry for the class already exists, add a line to it instead of starting a new
+one, and keep the shape Symptom → Cause → Fix; the debugging narrative belongs in the commit
+message.
+
+In code comments, state the lesson in the comment itself. Cite the manual only when you are
+deliberately leaving detail out — a bare section tag beside a comment that already explains
+itself adds nothing and goes stale as soon as sections move.
 
 ---
 

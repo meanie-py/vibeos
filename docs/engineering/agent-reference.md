@@ -38,6 +38,58 @@ vibeos/                          # Git repo root (renamed from reactos/)
 └── tests/qemu/                  # Smoke test framework
 ```
 
+## Landing your work — the merge queue
+
+`./vibeos-cli land` **submits** this lane's tip to the fleet's merge queue and returns in
+~2s. You do not merge `master`, do not run the gate, and do not wait. Whichever agent finds
+the land lock free becomes the **conductor**: it merges every queued lane onto current
+`origin/master` in a dedicated integration worktree, runs the full 3-arch gate **once**, and
+fast-forwards `master` to exactly the commit it gated. N ready lanes therefore cost ONE gate.
+
+```bash
+./vibeos-cli land                  # submit (and train the batch if nobody else is)
+./vibeos-cli land-status --mine    # conductor + queue + MY verdict (landed / rejected + artifact)
+./vibeos-cli land --direct         # opt out: gate and push this lane alone
+./vibeos-cli land --drain          # train without submitting (orphan recovery)
+```
+
+A merge conflict is **bounced back to you** with the conflicting paths — the conductor never
+resolves it. A red batch **splits recursively**, so innocent lanes still land and the culprit
+is rejected with its gate classification plus its artifact dir. Full design:
+`tests/qemu/cli/README.md` → `land`, and the header of `tests/qemu/cli/queue.py`.
+
+## Discarding work safely — the stash, and why index numbers lie
+
+AGENTS.md forbids `git checkout`/`restore` for discarding. Stash instead. The trap is that the
+stash stack is **shared by every worktree**, so `stash@{0}` is whatever was pushed most
+recently anywhere — a bare `git stash pop` has applied a sibling lane's 1124 files into the
+wrong tree. Two consequences:
+
+**Pushing.** `git stash push <pathspec>` **fails outright if any listed path is untracked**, and
+paired with `|| true` it creates no entry while looking like it worked. Pass `-u` whenever the
+pathspec includes new files, then confirm the entry landed:
+
+```bash
+git stash push -u -m "mylane: <what and why>" -- <paths>
+git stash list | head -3          # your message must be at the top
+```
+
+**Dropping.** `git stash drop <sha>` does not work: drop and apply need a `stash@{n}` ref, so
+"drop by hash" is not executable advice. Resolve the index from the message, re-read the message
+at that ref, and refuse if it no longer matches — in one command, so nobody can push between the
+lookup and the drop:
+
+```bash
+IDX=$(git stash list --format='%gd|%gs' | grep -F "<my msg>" | head -1 | cut -d'|' -f1)
+MSG=$(git stash list --format='%gd|%gs' | grep -F "$IDX|" | cut -d'|' -f2-)
+case "$MSG" in *"<my msg>"*) git stash drop "$IDX" ;; *) echo REFUSED ;; esac
+```
+
+**Recovery, if you applied someone else's.** Their work is safe: a conflicted `pop` does not drop
+the entry. Back up your own uncommitted files, confirm your commits are pushed
+(`git rev-list --left-right --count origin/master...HEAD` shows `0` ahead), then
+`git reset --hard HEAD` plus `git clean -fd <your dirs>`, and restore your backups.
+
 ## Build Commands
 
 **Builds run at the CANONICAL PATH** (`/tmp/vibeos` — a per-build bind mount, see
@@ -50,22 +102,22 @@ ninja iteration, prefix with the wrapper — **plain `ninja` in a build dir fail
 ```bash
 # ARM64
 cd build-arm64
-../tools/canon-run.sh ninja            # Build everything
-../tools/canon-run.sh ninja ntoskrnl   # Just the kernel
+bash ../tools/canon-run.sh ninja            # Build everything
+bash ../tools/canon-run.sh ninja ntoskrnl   # Just the kernel
 
 # amd64 / i386 (same pattern)
 cd build-amd64
-../tools/canon-run.sh ninja livecd     # Live CD ISO (livecd.iso)
-../tools/canon-run.sh ninja bootcd     # Boot CD ISO (bootcd.iso)
+bash ../tools/canon-run.sh ninja livecd     # Live CD ISO (livecd.iso)
+bash ../tools/canon-run.sh ninja bootcd     # Boot CD ISO (bootcd.iso)
 
 # Common patterns
-../tools/canon-run.sh ninja -k0        # Continue past errors
-../tools/canon-run.sh ninja <target>   # Any target — list: ... ninja -t targets all | grep <name>
+bash ../tools/canon-run.sh ninja -k0        # Continue past errors
+bash ../tools/canon-run.sh ninja <target>   # Any target — list: ... ninja -t targets all | grep <name>
 ```
 
 After modifying a `CMakeLists.txt` or `.cmake` file, re-run cmake before building:
 ```bash
-../tools/canon-run.sh cmake .          # Re-configure (from any build-*/ dir)
+bash ../tools/canon-run.sh cmake .          # Re-configure (from any build-*/ dir)
 ```
 
 ## Toolchain
@@ -202,7 +254,7 @@ cargo test -p slist-loom
 
 ```bash
 # 1. Build test kernel (canonical wrapper — see Build Commands)
-cd build-arm64 && ../tools/canon-run.sh sh -c 'cmake . -DREACTOS_TEST_KERNEL=ON && ninja ntoskrnl'
+cd build-arm64 && bash ../tools/canon-run.sh sh -c 'cmake . -DREACTOS_TEST_KERNEL=ON && ninja ntoskrnl'
 cd ..
 
 # 2. Update ramdisk

@@ -722,3 +722,94 @@ field manual **§9.112a**. Summary of what this lane did:
 
 **Next in this task:** Shape B, biggest-first (samsrv 121, serial 37, lsasrv 28), via the
 bindgen-island allowlist fix rather than per-file imports.
+
+## 2026-07-25 — Shape B: 273 reported → 88 rustc-confirmed → 0 live
+
+Continuation of task #16. The headline is a correction: **most of the 273 were my own tool's
+false positives.** Cross-checking `verify_match_consts.py` against a rustc oracle
+(`RUSTFLAGS="--force-warn unreachable_patterns" cargo check --workspace`) BEFORE editing any
+source showed samsrv (121) and lsasrv (28) emitting zero unreachable patterns — they were fine.
+
+### Four scanner defects, all fixed (field manual §9.112b)
+
+| defect | effect | delta |
+|---|---|---|
+| explicit `pub use … as Alias` re-exports not harvested | reported the bug the prelude already fixed | -190 |
+| attribute on the same line hid the glob (`#[allow(unused_imports)] use crate::glue::*;`) | an *unseen* glob leaves `all_resolved` true → **confident** HIGH | -13 |
+| enum-variant regex consumed its own delimiter | every OTHER variant dropped (`Unknown` ✓ `Keyboard` ✗ `Mouse` ✓) | -6 |
+| dead files scanned as live | dhcpcsvc `dhcp/tree.rs` is upstream-dead, excluded in lib.rs | -6 → new ORPHAN class |
+
+And rustc caught a class the tool was structurally blind to: **`_FSCTL_LOCK_VOLUME`**. A leading
+underscore still binds — it only silences `unused_variables`, which is exactly the lint §9.112a's
+oracle was built on. cdfs had 8 FSCTL dispatches dead behind one.
+
+### The live bugs actually fixed (88 rustc-confirmed → 0)
+
+- **serial.sys** — all 37 `DeviceIoControl` arms dead behind `IOCTL_SERIAL_CLEAR_STATS`.
+- **cdfs** — 8 volume FSCTLs dead behind `_FSCTL_LOCK_VOLUME`; 2 more IRP_MJ arms in `fspdisp.rs`.
+- **classpnp** — the `IOCTL_STORAGE_FIRMWARE_ACTIVATE` arm (a function-local const in class.rs,
+  invisible here). NOT the 8 storage-property arms I first reported: those were already imported,
+  and the finding was an artifact of my own edit landing inside the multi-line `use` list (a
+  `const … ;` there truncates the scanner's import parse). rustc never flagged them.
+- **kernel32** — Ctrl-Close handler ran for Last-Close/Logoff/Shutdown.
+- **i8042prt** — the FDO took the keyboard path for a mouse.
+- **arm64input** (5), **oleaut32** (6), **services** (4), **netapi32** (4), **mscms** (6),
+  **smss-csrss** (3), **msafd** (2), **winsrv**, **winlogon**, **dhcpcsvc**, **cdfs volinfo**.
+
+### Two new deterministic transcribers (field manual §9.112c)
+
+`tools/gen_ioctl_consts.py` and `tools/gen_enum_consts.py`. Values are COMPUTED from the header,
+never hand-typed (§9.113), and both have a `--check` mode that re-verifies committed constants.
+That mode paid for itself immediately: it confirmed the 9 existing `FSCTL_*`, all 18 `IRP_MJ_*`,
+and classpnp's hand-guessed `// typical` firmware IOCTL are correct.
+
+Completed two incomplete constant families in `ntkrnl-sys` along the way (8 volume FSCTLs, 11
+IRP_MJ codes), deliberately skipping the value-aliases `IRP_MJ_SCSI` / `IRP_MJ_PNP_POWER` —
+defining a second name for the same value turns a sibling arm unreachable.
+
+### Oracle policy going forward
+
+**rustc is the gate, the scanner is the pre-build hint.** `unreachable_patterns` is precise, free
+(we are already compiling) and sees through every glob/alias/cfg the scanner must approximate. Its
+blind spot is code not compiled for the checked arch (arm64input's 5), which is where the scanner
+earns its keep. Residual in-tree `unreachable_patterns`: **3**, all benign redundant `_ =>` after
+an exhaustive match on a real Rust enum (inbv ×2, kernel32 `find.rs` ×1).
+
+`tools/lint-baseline/verify_match_consts.txt`: **273 → 27** (all 27 ORPHAN, dead-file entries),
+and since then **→ 0: the baseline is EMPTY and the gate is strict.** Zero live catch-alls remain.
+
+### Side finding: orphaned translated files
+
+The module-tree walk added for ORPHAN classification doubles as an orphan detector — files that
+grep as live but no `mod` reaches, so `cargo check` passes while the link still fails (the
+`class_gap3.rs` trap from the previous batch). Current set: classpnp `class_gap3.rs`/`class_gap4.rs`,
+dhcpcsvc `dhcp/tree.rs`, ws2_32 `src/async.rs`, win32k `bitblt_new.rs`/`drvdbg.rs`,
+ntoskrnl `ARM3/virtual.rs`/`global_barrier.rs`, afd `event.rs`. Not triaged in this batch.
+
+### Landing note: two gate cycles lost to a type gap
+
+`cargo check -p <crate> --target <t>` passed oleaut32 and smss-csrss; the real build failed both
+with `E0308`, because the `*-cargo` wrapper compiles them with a different feature set and the
+scrutinees are narrow C fields (`LOWORD(...)` → u16, `USHORT EntryIndex` → u16) while a
+transcribed constant defaults to `u32`. Fixed per the §9.112a rule: widen the scrutinee where the
+match has no narrow siblings (smss-csrss, oleaut32's MSHCTX), join the siblings where it does
+(oleaut32's `VT_CARRAY` → `consts.rs` as `u16`, next to `VT_PTR`). Verified all touched crates
+against all three targets afterwards. Recorded in the field manual under §9.112c.
+
+### Baseline delta: `scan_silent_failures` +78/-57, and only 57 of it is mine
+
+The gate runs `check --strict`, where NEW findings are fatal (a plain `check` shows them as ⚠ and
+still exits 0 — do not mistake a green standalone `check` for a green gate). Re-blessing this
+baseline needs the delta explained, so:
+
+- **57 are pure line shifts from this batch** — 36 msafd `dllmain.rs`, 17 winlogon `sas.rs`,
+  4 classpnp `class_part_b.rs`, each with a matching removal. Balanced +N/−N per file is the
+  established proof of a shift rather than a new finding.
+- **21 are PRE-EXISTING drift, not introduced here** (plus one non-finding count line the
+  baseline does not carry): msgina `shutdown.rs` 7 / `gui.rs` 5, explorer `appbar.rs` 3,
+  ks `api.rs` 2, kernel32 `client/heapmem.rs` + `client/debugger.rs`, win32k `drvdbg.rs`,
+  cdfs `deviosup.rs`. Verified by stashing this batch and re-running against a clean HEAD:
+  **22 added / 0 removed**, deterministic across two runs. They arrived with the mainline merge
+  and were never blessed. They are real `.unwrap()`/`.expect()` findings, so blessing them adds
+  them to the campaign work queue this baseline doubles as — but they are *not* this lane's work
+  and should not be read as such.

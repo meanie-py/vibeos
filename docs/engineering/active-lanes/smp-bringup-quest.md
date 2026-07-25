@@ -1030,3 +1030,124 @@ sweep: ratchet holds, no regressions. amd64 post-change: `-smp 2` 2/2, `-smp 4`
 2/2. Separately: the 2026-07-14 `-smp 4` 0x4C c0000139 residual NO LONGER
 REPRODUCES (6/6 desktop) — killed by the intervening corruption fixes; task #14
 closed.
+
+## UP→smp1 collapse — the gating experiment (2026-07-24)
+
+Re-opening the "UP endgame" item above (decided 2026-07-10, never scheduled). The
+question the collapse turns on is narrow: **does the MP kernel on ONE cpu behave
+like the UP kernel?** If yes, `ntoskrnl.exe` becomes the MP kernel, the UP flavor
+retires, and the "worked-on-UP-broke-on-SMP" bug class stops existing.
+
+### Harness capability landed first (no default changed)
+
+Three false-green shapes had to be closed before any measurement could be trusted
+— an SMP run that isn't actually SMP looks *identical* to one that is, screenshot
+included:
+
+1. **`conformance --smp 1` was a no-op experiment.** `--smp-kernel` was appended
+   only when `N > 1`, so `--smp 1` swept the **UP** kernel and reported a
+   meaningless all-green. Now any `--smp N` builds MP media; `--smp 1`
+   deliberately ratchets against the **UP baseline** (`kmtest.txt`) because
+   MP-at-one-cpu matching UP test-for-test IS the collapse criterion.
+   `--smp 1 --write-baseline` is refused — it would overwrite the UP oracle with
+   MP results and destroy the only thing the experiment is measured against.
+2. **`smoke --smp N` never checked which kernel booted.** freeldr already
+   announces it (`[FLDR] load …\ntkrnlmp.exe`), so this is an assertion, not new
+   instrumentation → `UP_KERNEL_ON_SMP_RUN`. Verified by running it against UP
+   media: a boot that reached the desktop and would have been reported GREEN now
+   fails with the actionable fix line.
+3. **`smoke --smp N` had no AP-liveness check** — `test_smoke.py::test_milestones`
+   requires `[SMP] CPU<n> scheduling live` per AP, but the CLI smoke fast path
+   does not run pytest, so `smoke --smp 2` greened on the BSP's desktop alone.
+   Mirrored into the CLI path (`SMP_AP_NOT_SCHEDULING`), plus explicit detection
+   of the arm64 **MP-kernel-on-UP-hal.dll** trap (`SMP_UP_HAL`) — arm64 has no
+   MISMATCHED_HAL handshake, so that mis-pair boots to a desktop on 1 cpu and
+   looks perfect. All three live in `_smp_check()` (tests/qemu/cli/smoke.py).
+
+### Result: MP kernel at `-smp 1` boots to desktop on all three arches
+
+Same host, same session, UP numbers from the immediately-preceding gate:
+
+| arch  | UP    | MP @ `-smp 1` | note |
+|-------|-------|---------------|------|
+| i386  | 37.2s | **33.5s**     | `[SMP] KeIpiGenericCall self-test: worker ran on 0x1 == active set OK` |
+| amd64 | 38.6s | **~40s** (86.9s incl. the net suite, which also passed) | |
+| arm64 | 44.2s | **46.0s**     | no `UP HAL stub` marker — real SMP HAL |
+
+Each run is kernel-verified (`[FLDR] load …\ntkrnlmp.exe`). **No boot-time
+regression from running the MP kernel on one cpu** — the real spinlock bodies and
+the SYNCH_LEVEL raise on every context switch are inside the noise. That answers
+the "UP might be faster" objection at the boot level; conformance is the semantic
+half.
+
+### Structural blocker found: the media cannot carry both flavors
+
+`[LiveCD_SMP]` (`/KERNEL=ntkrnlmp.exe`) **already ships in every livecd.ini** —
+`VIBEOS_SMP_DEFAULT_BOOT` only rewrites `DefaultOS=`. And `ntkrnlmp.exe` is in the
+livecd file lists unconditionally, so **every default gate build already builds,
+links and stages the MP kernel on all three arches**; it is only never *booted*.
+What is NOT interchangeable is the HAL: `hal/halx86/CMakeLists.txt` says it
+outright — "There is exactly ONE hal.dll (the halacpi/halapic/halaacpi names are
+install aliases)" — and its UP/MP flavor is a build-dir-global cmake cache var
+(`VIBEOS_SMP_DEFAULT_BOOT` → `VIBEOS_SMP_HAL=1` → hal-cargo `smp` feature →
+`HalpBuildType` + `SYNCH_LEVEL`). So switching kernels costs a full reconfigure +
+relink (measured: **9m25s i386 / 12m22s amd64, warm**), which is what makes an
+MP gate leg expensive today.
+
+**Proposed fix, symmetric with what the kernel already does:** build the SMP HAL
+as a second output (`halmp-cargo` → `halmp.dll`, mirroring `ntoskrnl-cargo` →
+`ntkrnlmp-cargo`) and ship both. freeldr already supports the override —
+`winldr.c:719` parses `/HAL=`, and `[LiveCD_Macpi]` already uses
+`/HAL=halmacpi.dll /KERNEL=ntkrnlmp.exe`. Then ONE media boots either flavor, an
+MP gate leg costs one extra boot instead of a rebuild, and the mis-pair class
+(0x79 on x86, silent-1-cpu on arm64) stops being reachable by construction.
+
+### Conformance at `-smp 1`: x86 PASSES, arm64 has a REAL blocker
+
+| arch  | result |
+|-------|--------|
+| i386  | 74 launched / 70 ok. Only delta vs the UP ratchet: **KeEvent 42733→42601** = the documented MP-skip (§9.97), exactly the value in `kmtest-smp2.txt`. Plus 2 NEW passes (RtlStack, RtlStackKM — absent from the UP baseline entirely). |
+| amd64 | 87 launched / **87 ok, 0 bad**. Deltas: KeEvent (same MP-skip), IoDeviceObject ±1 (known flicker, already in the smp2 baseline), and **ExHardError 30→24 / 0→6**. |
+| arm64 | **BUGCHECK 0x9 `IRQL_NOT_GREATER_OR_EQUAL` at the start of the KeSpinLock kmtest** — 34 tests in, sweep never completes. |
+
+**ExHardError is NOT ours — control-proven.** A UP-kernel sweep on the same tree reports the
+identical `pass 30 → 24 / fail 0 → 6`, so it regressed on master since the baselines were seeded
+(2026-07-17) and is orthogonal to the MP kernel. Registered in the roadmap's known-bugs registry.
+Subtracting it: **MP-at-one-cpu differs from today's UP kernel by exactly the two already-baselined
+MP-build deltas on both x86 arches.** That is the collapse criterion met on i386 + amd64.
+
+**arm64 0x9 — root-caused statically; it is the OWED arm64 SYNCH alignment coming due.**
+Bugcheck args `(lock, 0, 0, 0)` — arg2 is `KeGetCurrentIrql()` = **PASSIVE**, i.e. an
+`…AtDpcLevel` lock routine ran at IRQL 0. Three facts pin it:
+
+| source | arm64 `SYNCH_LEVEL` |
+|---|---|
+| `sdk/include/ndk/arm64/ketypes.h:29` — what **kmtest_drv compiles against** | `IPI_LEVEL - 2` = **12** |
+| our kernel `ke/ke_defs.rs:267` (the `aarch64` + `feature="smp"` arm) | **2** |
+| our arm64 HAL `hal-rust/src/arm64/halstubs.rs:23` | **2** (`DISPATCH_LEVEL`) |
+
+`KeSpinLock.c:384` is `SynchIrql = KmtIsMultiProcessorBuild ? IPI_LEVEL - 2 : DISPATCH_LEVEL`, so
+the test asks for 12 the moment it detects an MP build, while every raise-to-synch in our arm64
+kernel and HAL goes to 2 — and the several `…AtDpcLevel` IRQL asserts in `ke/spinlock.rs` are
+`#[cfg(any(debug_assertions, feature = "smp"))]` / `#[cfg(feature = "smp")]`, so they only *exist*
+in the MP kernel. Hence: MP-only, arm64-only, and it fires before the test emits a single result.
+
+**Correct the earlier note in this doc** ("ndk arm64 defines no MP SYNCH variant"): the arm64 ndk
+header defines `SYNCH_LEVEL` **only** as `IPI_LEVEL - 2` — it has no UP variant at all. The missing
+UP/MP variance is on OUR side, and our value (2) disagrees with the header in *both* flavors. UP
+merely masks it, because kmtest picks `DISPATCH_LEVEL` when it detects a UP build. `ke_defs.rs:258`'s
+comment ("unchanged on arm64") encodes the same wrong premise.
+
+**Fix is not a one-liner** — it is the §9.97 treatment applied to arm64: `ke_defs` arm64-smp arm →
+12, `halstubs.rs` SYNCH → 12 under `smp`, a `KiSynchIrql` export for arm64, AND the places this doc
+already records as assuming `SYNCH == DISPATCH` on arm64 (idle pinned at DISPATCH with no SYNCH
+raise around the swap; the M5b per-CPU softint dispatch). Needs its own `-smp 1` + `-smp 2` +
+conformance validation cycle. **This is the one hard blocker to UP:=smp1 on arm64;** x86 is clear.
+
+### Harness gap worth fixing (found the slow way)
+
+The arm64 bugcheck cost ~25 minutes of drain instead of an immediate verdict: the conformance
+sweep's wait loop (`test_payload.py::test_payload_launched`) does break early on `*** BUGCHECK`,
+but the run still burned to the outer timeout, and `conformance` reports neither a classification
+nor a symbolicated PC the way `smoke` does. A guest BUGCHECK mid-sweep should abort the verb loud
+with the stop code — same fail-loud shape as the three `--smp` checks above.

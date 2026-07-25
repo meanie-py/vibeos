@@ -1787,7 +1787,9 @@ def _resolve_sys_name(crate: Path, crate_exists: bool, override: str | None) -> 
         raise TargetResolveError(f"{crate}: no Cargo.toml — cannot derive the FFI substrate")
     deps = sorted(set(re.findall(r"^\s*([A-Za-z0-9_-]+-sys)\s*=", cargo.read_text(), re.M)))
     if len(deps) == 1:
-        return deps[0]
+        # str(): `re.findall` is typed `list[Any]`, so returning the element bare would
+        # launder Any through this signature rather than prove it.
+        return str(deps[0])
     if not deps:
         raise TargetResolveError(
             f"--target: {crate.name} declares no `*-sys` dependency, so there is no\n"

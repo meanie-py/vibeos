@@ -87,10 +87,13 @@ ObHandle
 ObQuery
 ObReference
 ObSecurity
-# QUARANTINED 2026-07-10 (amd64 sweep 6): BUGCHECK 0x1E — AV in memcpy+0x40, caller
-# in the symbolic-link path (ob-rust candidate: NtCreateSymbolicLinkObject/reparse
-# buffer copy with bad length/pointer). Triage owed.
-#ObSymbolicLink
+# UN-QUARANTINED 2026-07-24 (§9.123): fixed. Never an ob-rust bug — it was the missing
+# i386 fault-tolerant copy. The capture memcpy that C ran inside _SEH2_TRY had no
+# protection on i386 (amd64/arm64 had the native-SEH KmProtectedCopyMemory shim; i386
+# fell through to a bare copy_nonoverlapping). Closed with a Linux-extable-style
+# fault-fixup primitive instead of waiting on i386 kernel SEH — ke/i386/safecopy.rs.
+# OK pass=154 fail=0.
+ObSymbolicLink
 ObType
 ObTypes
 PsNotify
@@ -146,18 +149,21 @@ SeQueryInfoToken
 ZwCreateSection
 # QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at kmtest_drv.sys+0x5ACF2. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
 #ZwMapViewOfSection
-# QUARANTINED 2026-07-11 (amd64 sweep 10): BUGCHECK 0x1E — AV in memcpy+0x40 (same PC
-# as ObSymbolicLink's crash): NtWaitForMultipleObjects handle-array capture with hostile
-# params — the C capture relies on SEH probing (dead under DUMMY_PSEH). Triage owed.
-#ZwWaitForMultipleObjects
+# UN-QUARANTINED 2026-07-24 (§9.123): fixed by the same i386 extable fault-fixup copy as
+# ObSymbolicLink above — the handle-array capture is the identical unprotected-memcpy
+# shape. OK pass=4 fail=0.
+ZwWaitForMultipleObjects
 RtlCaptureContextKM
 FileAttributes
 FindFile
 HidPDescription
 IoDeviceObject
-# QUARANTINED 2026-07-11 (amd64 sweep 11): BUGCHECK 0x1E — AV in memcpy+0x40 (3rd of
-# this face, w/ ObSymbolicLink + ZwWaitForMultipleObjects): unprobed user-buffer copy on
-# the Io read/write path. Common root candidate w/ the other two. Triage owed.
+# STILL QUARANTINED but the ROOT MOVED 2026-07-24 (§9.123). It was the 3rd of the
+# memcpy+0x40 face; the i386 extable fault-fixup copy cleared the KERNEL half (its two
+# twins above now pass). The remaining fault is in the TEST DRIVER —
+# `IoReadWrite_drv.sys+0x21E3`, not ntoskrnl+0x14C0 — i.e. the driver's own deliberate
+# fault inside _SEH2_TRY, dead under i386 DUMMY_PSEH. That is task #18 (driver-side
+# frame-based SEH), a different root; do NOT re-triage this as a copy/Mm bug.
 #IoReadWrite
 # QUARANTINED 2026-07-11 (amd64 sweep 12): BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class,
 # P1=0x401) — MmMapLockedPagesSpecifyCache PTE/PFN accounting in the Rust MDL-map path.

@@ -14,9 +14,9 @@ list(APPEND SOURCE
     # compiled into BOTH shell32.dll and rshell.dll, so its Rust replacement is a standalone
     # staticlib (libmenuband_rust.a, built below) linked by both DLLs — not a shell32-rust
     # module. The retained CMenuToolbars/CMenuFocusManager companions call its Rust exports.
-    CMenuDeskBar.cpp
+    # CMenuDeskBar.cpp — replaced by menuband-rust/src/menu_desk_bar.rs
     CMenuFocusManager.cpp
-    CMenuSite.cpp
+    # CMenuSite.cpp — replaced by menuband-rust/src/menu_site.rs
     CMenuToolbars.cpp
     CMergedFolder.cpp
     CStartMenu.cpp)

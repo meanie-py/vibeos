@@ -6,6 +6,7 @@ import difflib
 import json
 import re
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -16,6 +17,8 @@ from pathlib import Path
 from . import (
     callout_annotate,
     candidate_oracle,
+    cpp_com,
+    cpp_tu,
     crate_repair,
     dup_census,
     file_splitter,
@@ -26,6 +29,7 @@ from . import (
     seh_rewrite,
     semantic_skeleton,
     semdiff,
+    shell32_tail_inventory,
     substrate_closure,
     switch_extract,
     trivial_c,
@@ -68,6 +72,7 @@ from .cpp_com import (
     discover_widl_header,
     find_class_header,
     lower_trivial_worker,
+    normalize_cpp_idioms,
     normalize_worker_body,
     normalize_worker_semantics,
     parse_widl_interface,
@@ -79,6 +84,7 @@ from .cpp_com import (
     render_object_map_adapter,
     render_wide_literal_statics,
     require_supported_worker_raii,
+    rewrite_wide_literals,
     strip_debug_statements,
     worker_signature,
 )
@@ -369,12 +375,58 @@ def cmd_dup_census(args):
     dup_census.print_census(report, as_json=args.json)
 
 
+def cmd_shell32_tail_inventory(args):
+    """Ratchet the planned shell32 tail against the literal live CMake source lists."""
+    ledger = (
+        Path(args.ledger) if args.ledger else REACTOS_ROOT / shell32_tail_inventory.DEFAULT_LEDGER
+    )
+    if not ledger.is_absolute():
+        ledger = (Path.cwd() / ledger).resolve()
+    report = shell32_tail_inventory.check_inventory(REACTOS_ROOT, ledger)
+    shell32_tail_inventory.print_report(report, as_json=args.json)
+    if not report.ok:
+        sys.exit(1)
+
+
 def _trivial_cpp_body(body_text: str) -> bool:
-    """True when a method definition has an empty body AND no member-init list."""
+    """True for an empty body with no init-list or an all-zero init-list."""
     match = re.search(r"\{(.*)\}\s*$", body_text, flags=re.S)
     if match is None or match.group(1).strip():
         return False
-    return ":" not in body_text[: match.start()].split(")")[-1]
+    opening = body_text.find("(")
+    closing = cpp_com._matching_paren(body_text, opening) if opening >= 0 else -1
+    tail = body_text[closing + 1 : match.start()].strip() if closing >= 0 else ""
+    if ":" not in tail:
+        return True
+    initializers = tail.split(":", 1)[1]
+    return all(
+        re.fullmatch(r"[A-Za-z_]\w*\s*\(\s*(?:NULL|nullptr|FALSE|0)\s*\)", item.strip())
+        for item in cpp_com._split_args(initializers)
+    )
+
+
+def _cost_cap_reached(cost_cap: float | None, running_cost: float) -> bool:
+    """True before a paid call when the configured run budget is exhausted."""
+    return cost_cap is not None and running_cost >= cost_cap
+
+
+def _scan_cpp_class_fragment(header: Path, class_name: str):
+    """Scan one class body without a surrounding header's preprocessor noise.
+
+    SDK C++ helpers often live under ``#ifdef __cplusplus``.  Whole-header
+    preprocessing correctly removes that branch for a C-oriented scan, but here
+    the caller has already selected a concrete C++ base.  Isolating its balanced
+    class body makes that explicit and keeps unrelated SDK inline functions out
+    of the paid closure.
+    """
+    body = cpp_com._find_class_text(header, class_name)
+    bases = cpp_com._class_bases(header, class_name)
+    base_clause = f" : {', '.join(bases)}" if bases else ""
+    fragment = f"class {class_name}{base_clause} {{\n{body}\n}};\n"
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".cpp", encoding="utf-8") as temp:
+        temp.write(fragment)
+        temp.flush()
+        return scan_file(Path(temp.name), force_cpp=True)
 
 
 def _preamble_has_translatable_content(preamble_src: str) -> bool:
@@ -433,9 +485,36 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
     """
     wanted = {class_name, *local_bases}
     header = find_class_header(source, class_name)
+    scans = []
     if header != source:
-        header_scan = scan_file(header, force_cpp=True)
-        inline = [item for item in header_scan.functions if item.cpp_class in wanted]
+        scans.append(scan_file(header, force_cpp=True))
+    for base in local_bases:
+        base_header = find_class_header(source, base)
+        if base_header == header:
+            continue
+        scans.append(_scan_cpp_class_fragment(base_header, base))
+        # A concrete base commonly keeps declarations/state in Base.h and its
+        # inherited vtable bodies in the matching Base.cpp. Flatten both: the
+        # derived object publishes those slots and cannot omit their bodies.
+        base_impl = base_header.with_suffix(".cpp")
+        if base_impl.is_file() and base_impl.resolve() != source.resolve():
+            scans.append(scan_file(base_impl, force_cpp=True))
+    for header_scan in scans:
+        header_lines = header_scan.raw_source.splitlines()
+
+        def is_template_method(item, lines=header_lines) -> bool:
+            # A class-local function template is instantiated by whichever derived TU
+            # calls it; it is not an owned body of this concrete class TU. Pulling it
+            # into a class-atomic worker invents an unbound `T` (CEnumIDListBase's
+            # HasItemWithCLSIDImpl was the first tail pilot to expose this).
+            prefix = "\n".join(lines[max(0, item.line_start - 4) : item.line_start + 1])
+            return bool(re.search(r"\btemplate\s*<", prefix))
+
+        inline = [
+            item
+            for item in header_scan.functions
+            if item.cpp_class in wanted and not is_template_method(item)
+        ]
         # A method is uniquely identified by (name, arity): C++ overloads that differ
         # in parameter count are distinct methods, not duplicate bodies (e.g. a static
         # inline `GetClassID()` helper in the header alongside the virtual
@@ -490,6 +569,19 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
                 ]
                 keep_pool = derived_special + base_special
                 survivors = [item for item in keep_pool if item not in trivial]
+                if is_dtor_kind:
+                    # C++ destruction is derived first, then concrete bases. Keep
+                    # the derived dtor as the scaffold's primary dtor worker and
+                    # turn each non-trivial base dtor into an explicitly sequenced
+                    # ordinary worker. (Zero-only/empty dtors disappear.)
+                    for item in trivial:
+                        scan.functions.remove(item)
+                    base_survivors = [item for item in base_special if item in survivors]
+                    for item in base_survivors:
+                        item.name = f"{item.cpp_class}_base_dtor"
+                        item.return_type = "void"
+                        item.is_dtor = False
+                    continue
                 if len(survivors) > 1:
                     raise CppComError(
                         f"{class_name}: both derived and base define a non-trivial {kind}; "
@@ -521,10 +613,18 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
     return scan
 
 
-def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
-    """Apply the deterministic shell32 worker boundary to a model response."""
-    signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
-    rust = normalize_worker_body(rust, signature)
+def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
+    """Undo fact/call sealing on a model response, verifying the closed envelope.
+
+    Target- and language-neutral: sealing is a lexical transform, so ANY translation
+    that was sealed must be unsealed, not just a shell32 COM worker. Keeping this
+    inside the COM-only helper meant a sealed plain-C run shipped raw
+    `__RUSTCONV_FACT_nnnn__` / `__RUSTCONV_CALL_nnnn__` tokens straight into the
+    assembled module — latent until now only because sealing for plain C landed
+    2026-07-24 and no paid plain-C run had used it yet (all 5,170 ledger entries
+    with seal_facts=True are shell32), while AGENTS.md tells every plain-C
+    translation to "always pass both".
+    """
     rust = scrub_comment_token_echoes(rust)
     try:
         calls = call_seals.get(dep.name)
@@ -536,6 +636,14 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
             rust = unseal_facts(rust, facts)
     except (CallSealError, FactSealError) as error:
         raise CppComError(f"{dep.name}: {error}") from error
+    return rust
+
+
+def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
+    """Apply the deterministic shell32 worker boundary to a model response."""
+    signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
+    rust = normalize_worker_body(rust, signature)
+    rust = _unseal_worker(dep, rust, fact_seals, call_seals)
     rust = normalize_worker_body(rust, signature)
     return normalize_worker_semantics(dep.body_text, rust)
 
@@ -578,7 +686,9 @@ def cmd_candidate_check(args):
     if not manifest.is_absolute():
         manifest = (Path.cwd() / manifest).resolve()
     arches = args.arches or ["i386", "amd64", "arm64"]
-    report = candidate_oracle.run_oracle(manifest, arches, repair=args.repair)
+    report = candidate_oracle.run_oracle(
+        manifest, arches, repair=args.repair, check_only=getattr(args, "check_only", False)
+    )
     candidate_oracle.print_report(report, as_json=args.json)
     if any(item["status"] != "ok" for item in report["results"]):
         sys.exit(1)
@@ -635,6 +745,17 @@ def cmd_skeleton_check(args):
     semantic_skeleton.print_report(report, as_json=args.json)
 
 
+def cmd_cpp_tu(args):
+    """Fail-loud whole-C++-TU ownership/layout/activation preflight."""
+    source = Path(args.path)
+    if not source.is_absolute():
+        source = REACTOS_ROOT / source
+    report = cpp_tu.analyze_translation_unit(source, REACTOS_ROOT)
+    cpp_tu.print_report(report, as_json=args.json)
+    if not report.ok:
+        sys.exit(1)
+
+
 def cmd_cpp_com(args):
     """Prove and emit the deterministic ABI scaffold for one ATL COM class."""
     source = Path(args.path)
@@ -668,7 +789,7 @@ def cmd_cpp_com(args):
         object_map_source=object_map,
         method_names=[f.name for f in class_methods],
     )
-    cls.require_supported()
+    cls.require_supported(allow_internal=args.internal)
 
     if args.sdk_header:
         sdk_header = Path(args.sdk_header).resolve()
@@ -707,7 +828,7 @@ def cmd_cpp_com(args):
         return
 
     chunks = [render_interface(interface) for interface in interfaces]
-    chunks.append(render_class_scaffold(cls, interfaces))
+    chunks.append(render_class_scaffold(cls, interfaces, allow_internal=args.internal))
     output = "\n\n".join(chunks) + "\n"
     if args.output:
         out = Path(args.output)
@@ -717,6 +838,8 @@ def cmd_cpp_com(args):
     else:
         print(output, end="")
     if args.adapter_output:
+        if args.internal:
+            raise CppComError("--adapter-output is invalid for internal COM construction")
         adapter = Path(args.adapter_output)
         adapter.parent.mkdir(parents=True, exist_ok=True)
         adapter.write_text(render_object_map_adapter(cls) + "\n", encoding="utf-8")
@@ -1497,15 +1620,39 @@ def cmd_translate(args):
     # transform is lexical and language-neutral. Leaving it off for C shipped 13,503
     # unprotected constant occurrences, the same class as the 61 invented kernel
     # bugcheck codes (field manual §9.113).
-    seal_dialect = "cpp" if getattr(args, "cpp_com", False) else "c"
+    #
+    # The dialect follows the SOURCE LANGUAGE, not the flag: a C++ TU translated via
+    # --free-functions is still C++, and handing it the C dialect would seal it under
+    # rules written for a different grammar.
+    free_functions = bool(getattr(args, "free_functions", False))
+    is_cpp_source = target_path.suffix.lower() in (".cpp", ".cc", ".cxx", ".c++")
+    seal_dialect = "cpp" if (getattr(args, "cpp_com", False) or is_cpp_source) else "c"
+
+    # Every COM-machinery branch below keys off THIS, not off the target name: the
+    # deterministic scaffold, the `<name>_body` worker audit, the interface renderer
+    # and the abi_enforce opt-out all exist to serve a translated COM class. A
+    # --free-functions run has no class, so it takes the ordinary per-function path
+    # that every other user-mode DLL uses.
+    cpp_com_mode = rustconv_target.name == "shell32" and not free_functions
 
     cpp_com_cls = None
     cpp_com_interfaces = []
-    if rustconv_target.name == "shell32":
+    if rustconv_target.name == "shell32" and free_functions:
+        if getattr(args, "cpp_com", False):
+            raise CppComError(
+                "--free-functions and --cpp-com are mutually exclusive: one translates the "
+                "TU's classless functions, the other one COM class after ABI preflight."
+            )
+        if target_path.is_dir():
+            raise CppComError(
+                "--free-functions accepts one C++ implementation file, not a directory"
+            )
+    elif rustconv_target.name == "shell32":
         if not getattr(args, "cpp_com", False) or not getattr(args, "class_name", None):
             raise CppComError(
-                "shell32 C++ translation is class-atomic: pass --cpp-com --class <Name>. "
-                "The paid body path is disabled until deterministic COM preflight succeeds."
+                "shell32 C++ translation is class-atomic: pass --cpp-com --class <Name> "
+                "for a COM class, or --free-functions for the TU's classless functions. "
+                "The paid class path is disabled until deterministic COM preflight succeeds."
             )
         if target_path.is_dir():
             raise CppComError("--cpp-com accepts one C++ implementation file, not a directory")
@@ -1527,6 +1674,11 @@ def cmd_translate(args):
             args.class_name,
             local_bases=tuple(cpp_com_cls.local_base_classes),
         )
+        cpp_com_cls.base_dtor_workers = [
+            f.name
+            for f in scan.functions
+            if f.cpp_class == args.class_name and f.name.endswith("_base_dtor")
+        ]
         if scan.unextracted:
             raise CppComError(
                 f"{target_path.name}: {len(scan.unextracted)} body/bodies remain unextractable; "
@@ -1535,7 +1687,7 @@ def cmd_translate(args):
         cpp_com_cls.method_names.extend(
             f.name for f in scan.functions if f.cpp_class == args.class_name
         )
-        cpp_com_cls.require_supported()
+        cpp_com_cls.require_supported(allow_internal=getattr(args, "internal", False))
         if getattr(args, "sdk_header", None):
             sdk_header = Path(args.sdk_header).resolve()
             cpp_com_interfaces = [
@@ -1638,7 +1790,16 @@ def cmd_translate(args):
     # (Claude cached block / DeepSeek system message). Gemini gets the rules
     # prepended inline (unchanged path).
     use_claude = model.startswith("claude-") or model.startswith("deepseek-")
-    system_prompt = load_function_system_prompt(rustconv_target, mode=mode) if use_claude else ""
+    system_prompt = (
+        load_function_system_prompt(
+            rustconv_target,
+            mode=mode,
+            cpp_com=cpp_com_mode,
+            cpp_source=is_cpp_source and not cpp_com_mode,
+        )
+        if use_claude
+        else ""
+    )
 
     # Concurrency: fan out per-function calls. ONLY for mechanical mode on DeepSeek —
     # mechanical functions are independent (each forward-declares its callees), and
@@ -1703,7 +1864,7 @@ def cmd_translate(args):
 
         capped = False  # set if --cost-cap is hit mid-file
         scan = scan_file(c_file)
-        if rustconv_target.name == "shell32":
+        if cpp_com_mode:
             scan = _extend_cpp_class_scan(
                 scan,
                 c_file,
@@ -1768,12 +1929,41 @@ def cmd_translate(args):
 
         # Extract call graph and topologically sort
         deps = extract_call_graph(scan, spec_exports=file_res.exports)
-        if rustconv_target.name == "shell32":
+        if cpp_com_mode:
             deps = apply_interface_method_signatures(deps, args.class_name, cpp_com_interfaces)
         sorted_deps = topological_sort(deps)
         cpp_com_wide_statics = ""
 
-        if rustconv_target.name == "shell32":
+        if rustconv_target.name == "shell32" and free_functions:
+            # Free functions only: a class method needs the deterministic COM scaffold
+            # (vtable slot, `this` recovery, state layout) that only --cpp-com builds.
+            # Name every skipped method rather than dropping it silently — an
+            # invisible omission is exactly how iphlpapi shipped 14 missing Pf*
+            # bodies from a run that exited 0.
+            skipped = sorted({dep.name for dep in sorted_deps if dep.cpp_class is not None})
+            sorted_deps = [dep for dep in sorted_deps if dep.cpp_class is None]
+            if skipped:
+                print(
+                    f"  [free-functions] skipping {len(skipped)} class method(s) — these need "
+                    f"--cpp-com --class: {', '.join(skipped)}",
+                    file=sys.stderr,
+                )
+            if not sorted_deps:
+                raise CppComError(
+                    f"{c_file.name}: --free-functions found no classless function to translate "
+                    f"({len(skipped)} class method(s) present). Use --cpp-com --class instead."
+                )
+            # These bodies are C++, so they carry C++ constructs that have no Rust
+            # spelling. The COM path lowers them deterministically before paying;
+            # routing free functions through the ordinary (plain-C) contract skipped
+            # that layer entirely, and the model duly invented `u"..."` — which is not
+            # Rust syntax — for every wide literal. Same code, same guarantees, $0.
+            require_supported_worker_raii(sorted_deps, provided=set(local_raii_impls))
+            sorted_deps = [
+                replace(dep, body_text=rewrite_wide_literals(dep.body_text)) for dep in sorted_deps
+            ]
+            cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
+        elif cpp_com_mode:
             assert cpp_com_cls is not None
             sorted_deps = prepare_helper_closure(
                 deps, args.class_name, cpp_com_cls.plain_state_fields()
@@ -1884,7 +2074,7 @@ def cmd_translate(args):
             print("\n  Translation order:", file=sys.stderr)
             all_deps = (
                 context_deps
-                if rustconv_target.name == "shell32"
+                if cpp_com_mode
                 else extract_call_graph(scan, spec_exports=file_res.exports)
             )
             local_names = {d.name for d in all_deps}
@@ -1935,6 +2125,7 @@ def cmd_translate(args):
                     file_res.exports,
                     target=rustconv_target,
                     deterministic_contract=deterministic_contracts[sorted_deps[0].name],
+                    cpp_com=cpp_com_mode,
                 )
                 if not use_claude:
                     prompt = system_prompt + "\n\n---\n\n" + prompt if system_prompt else prompt
@@ -1955,6 +2146,7 @@ def cmd_translate(args):
                     target=rustconv_target,
                     c2rust_anchor=c2rust_anchors.get(sorted_deps[0].name),
                     deterministic_contract=deterministic_contracts[sorted_deps[0].name],
+                    cpp_com=cpp_com_mode,
                 )
                 full = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
                 print(full)
@@ -1964,12 +2156,12 @@ def cmd_translate(args):
         # Translate function by function
         all_deps_for_context = (
             context_deps
-            if rustconv_target.name == "shell32"
+            if cpp_com_mode
             else extract_call_graph(scan, spec_exports=file_res.exports)
         )
         translated: dict[str, str] = {}
         deterministic_workers: set[str] = set()
-        if rustconv_target.name == "shell32":
+        if cpp_com_mode:
             for dep in sorted_deps:
                 signature = worker_signature(
                     dep.name,
@@ -2010,7 +2202,9 @@ def cmd_translate(args):
         # ONCE and sent as a second cached system block on every function call.
         # It's byte-identical across the file's N functions, so functions 2..N
         # read it from cache (~0.1x) instead of re-sending it uncached each call.
-        file_context = build_file_context(file_res, scan, subsystem, target=rustconv_target)
+        file_context = build_file_context(
+            file_res, scan, subsystem, target=rustconv_target, cpp_com=cpp_com_mode
+        )
 
         # Durable per-function resume cache → re-run the same command to resume a
         # killed/capped run for $0 (skip functions whose C body is unchanged).
@@ -2030,7 +2224,8 @@ def cmd_translate(args):
         # Every acceptance check is identical to a live response; incompatible,
         # truncated, or genuinely bad historical streams remain rejected.
         partial_replayed: set[str] = set()
-        if rustconv_target.name == "shell32" and not no_resume:
+        partial_rejects: dict[str, str] = {}
+        if cpp_com_mode and not no_resume:
             run_dirs = sorted(RESPONSES_DIR.glob(f"*-{c_file.name}"), reverse=True)
             for dep in sorted_deps:
                 if (
@@ -2058,8 +2253,11 @@ def cmd_translate(args):
                             f"{dep.name}_body",
                             worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
                         )
-                    except (CppComError, OSError):
+                    except (CppComError, OSError) as exc:
+                        partial_rejects.setdefault(dep.name, f"{candidate}: {exc}")
                         continue
+                    if findings:
+                        partial_rejects.setdefault(dep.name, f"{candidate}: {'; '.join(findings)}")
                     if not findings:
                         recovered = normalized
                         break
@@ -2078,11 +2276,17 @@ def cmd_translate(args):
                     "under the current deterministic audit ($0)",
                     file=sys.stderr,
                 )
+            for name, reason in sorted(partial_rejects.items()):
+                if name not in partial_replayed:
+                    print(
+                        f"  [cpp-com] paid partial still rejected: {name}: {reason}",
+                        file=sys.stderr,
+                    )
         translation_memory = None
         memory_seeded: set[str] = set()
         memory_identity: Callable[..., dict[str, object]] | None = None
         if (
-            rustconv_target.name == "shell32"
+            cpp_com_mode
             and cpp_com_cls is not None
             and mode == "mechanical"
             and fact_seal_enabled
@@ -2170,7 +2374,7 @@ def cmd_translate(args):
                 if no_resume
                 else cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
             )
-            if hit is not None and rustconv_target.name == "shell32":
+            if hit is not None and cpp_com_mode:
                 hit = normalize_worker_body(
                     hit, worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
                 )
@@ -2182,6 +2386,11 @@ def cmd_translate(args):
                     worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
                 ):
                     hit = None
+            elif hit is not None and is_cpp_source:
+                # A cached body predates (or was produced without) the C++ repairs;
+                # normalization is idempotent, so applying it here is free insurance
+                # against a stale entry replaying a raw IID_PPV_ARG forever.
+                hit = normalize_cpp_idioms(dep.body_text, hit)
             if hit is None:
                 pending_paid_deps.append(dep)
         if deterministic_workers:
@@ -2190,7 +2399,15 @@ def cmd_translate(args):
                 "deterministically ($0)",
                 file=sys.stderr,
             )
-        if archive is not None and pending_paid_deps:
+        cap_prevent_paid = bool(pending_paid_deps and _cost_cap_reached(cost_cap, running_cost))
+        if cap_prevent_paid:
+            capped = True
+            print(
+                f"  ⛔ COST CAP ${running_cost:.2f} ≥ ${cost_cap:.2f} "
+                "— refusing to start any paid calls",
+                file=sys.stderr,
+            )
+        if archive is not None and pending_paid_deps and not cap_prevent_paid:
             _fr0 = resolve_function(pending_paid_deps[0], catalog, file_res.exports, scan.defines)
             _p0 = build_function_prompt(
                 model_deps[pending_paid_deps[0].name],
@@ -2202,11 +2419,12 @@ def cmd_translate(args):
                 file_res.exports,
                 target=rustconv_target,
                 deterministic_contract=deterministic_contracts[pending_paid_deps[0].name],
+                cpp_com=cpp_com_mode,
             )
             _est_in = (estimate_tokens(_p0) + estimate_tokens(system_prompt)) * len(
                 pending_paid_deps
             )
-            preamble_calls = 0 if rustconv_target.name == "shell32" else 1
+            preamble_calls = 0 if cpp_com_mode else 1
             paid_invocation_banner(model, len(pending_paid_deps) + preamble_calls, _est_in, archive)
 
         # PARALLEL translate (mechanical + DeepSeek): fan out the paid per-function
@@ -2224,7 +2442,7 @@ def cmd_translate(args):
                     hit = cache.get(
                         dep.name, dep.body_text, deterministic_contracts.get(dep.name, "")
                     )
-                    if hit is not None and rustconv_target.name == "shell32":
+                    if hit is not None and cpp_com_mode:
                         hit = normalize_worker_body(
                             hit,
                             worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
@@ -2247,6 +2465,8 @@ def cmd_translate(args):
                                 file=sys.stderr,
                             )
                             hit = None
+                    elif hit is not None and is_cpp_source:
+                        hit = normalize_cpp_idioms(dep.body_text, hit)
                     if hit is not None and rustconv_target.name != "shell32":
                         try:
                             hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
@@ -2268,6 +2488,8 @@ def cmd_translate(args):
                 todo.append((func_idx, dep))
             ctx = dict(translated)  # static callee context (mechanical fns are independent)
             stop = threading.Event()
+            if cap_prevent_paid:
+                stop.set()
 
             # Bind the per-file loop vars as defaults so the closure captures this
             # iteration's values (B023): the executor joins within the iteration, so
@@ -2301,6 +2523,7 @@ def cmd_translate(args):
                     include_shared=False,
                     c2rust_anchor=c2rust_anchors.get(dp.name),
                     deterministic_contract=deterministic_contracts[dp.name],
+                    cpp_com=cpp_com_mode,
                 )
                 sk = ResponseSink(archive.stream_path(fi, dp.name)) if archive is not None else None
                 started = time.monotonic()
@@ -2334,7 +2557,14 @@ def cmd_translate(args):
                         continue  # skipped after cost cap
                     if r.success:
                         try:
-                            if rustconv_target.name == "shell32":
+                            if not cpp_com_mode:
+                                # Sealing is language-neutral; unsealing must be too.
+                                r.rust_code = _unseal_worker(
+                                    dp, r.rust_code, fact_seals, call_seals
+                                )
+                                if is_cpp_source:
+                                    r.rust_code = normalize_cpp_idioms(dp.body_text, r.rust_code)
+                            if cpp_com_mode:
                                 r.rust_code = _normalize_unseal_cpp_worker(
                                     dp, r.rust_code, fact_seals, call_seals
                                 )
@@ -2392,7 +2622,7 @@ def cmd_translate(args):
                         _record_outcome(
                             dp,
                             "generated",
-                            stage="body_audit" if rustconv_target.name == "shell32" else "api",
+                            stage="body_audit" if cpp_com_mode else "api",
                             artifact=str(artifact) if artifact is not None else None,
                             **_result_fields(r, elapsed_ms),
                         )
@@ -2451,11 +2681,19 @@ def cmd_translate(args):
                 print("SKIPPED (--deterministic-only)", file=sys.stderr)
                 continue
 
+            if _cost_cap_reached(cost_cap, running_cost):
+                print(
+                    f"COST CAP ${running_cost:.2f} ≥ ${cost_cap:.2f} (no call made)",
+                    file=sys.stderr,
+                )
+                capped = True
+                break
+
             # Resume: reuse a prior unchanged-body translation for free. It still
             # feeds `translated` (callee context for later functions).
             if not no_resume:
                 hit = cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
-                if hit is not None and rustconv_target.name == "shell32":
+                if hit is not None and cpp_com_mode:
                     hit = normalize_worker_body(
                         hit,
                         worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
@@ -2475,6 +2713,8 @@ def cmd_translate(args):
                     if findings:
                         print("CACHE REJECTED: " + "; ".join(findings), file=sys.stderr)
                         hit = None
+                elif hit is not None and is_cpp_source:
+                    hit = normalize_cpp_idioms(dep.body_text, hit)
                 if hit is not None and rustconv_target.name != "shell32":
                     try:
                         hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
@@ -2514,6 +2754,7 @@ def cmd_translate(args):
                 include_shared=False,
                 c2rust_anchor=c2rust_anchors.get(dep.name),
                 deterministic_contract=deterministic_contracts[dep.name],
+                cpp_com=cpp_com_mode,
             )
 
             # Stream this function's output straight to the durable archive.
@@ -2541,7 +2782,14 @@ def cmd_translate(args):
 
             if result.success:
                 try:
-                    if rustconv_target.name == "shell32":
+                    if not cpp_com_mode:
+                        # Sealing is language-neutral; unsealing must be too.
+                        result.rust_code = _unseal_worker(
+                            dep, result.rust_code, fact_seals, call_seals
+                        )
+                        if is_cpp_source:
+                            result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
+                    if cpp_com_mode:
                         result.rust_code = _normalize_unseal_cpp_worker(
                             dep, result.rust_code, fact_seals, call_seals
                         )
@@ -2614,7 +2862,7 @@ def cmd_translate(args):
                 _record_outcome(
                     dep,
                     "generated",
-                    stage="body_audit" if rustconv_target.name == "shell32" else "api",
+                    stage="body_audit" if cpp_com_mode else "api",
                     artifact=str(artifact) if artifact is not None else None,
                     **_result_fields(result, elapsed_ms),
                 )
@@ -2655,9 +2903,7 @@ def cmd_translate(args):
         # non-trivial preamble (most drivers) would not compile.
         preamble_rust = ""
         preamble_src = (
-            ""
-            if rustconv_target.name == "shell32"
-            else (scan.preamble_text or scan.globals_text or "").strip()
+            "" if cpp_com_mode else (scan.preamble_text or scan.globals_text or "").strip()
         )
         # A preamble that is nothing but #include / comments / #pragma once carries no
         # file-scope C at all, so its CORRECT Rust translation is the empty string — the
@@ -2811,11 +3057,17 @@ def cmd_translate(args):
         stitched = stitch_file(
             translated, sorted_deps, scan, file_res, target=rustconv_target, preamble=preamble_rust
         )
-        if rustconv_target.name == "shell32":
+        if cpp_com_mode:
             if cpp_com_cls is None:
                 raise CppComError("internal error: shell32 COM preflight state was lost")
             deterministic = [render_interface(item) for item in cpp_com_interfaces]
-            deterministic.append(render_class_scaffold(cpp_com_cls, cpp_com_interfaces))
+            deterministic.append(
+                render_class_scaffold(
+                    cpp_com_cls,
+                    cpp_com_interfaces,
+                    allow_internal=getattr(args, "internal", False),
+                )
+            )
             support_selection = "\n".join(
                 [
                     cpp_com_cls.header.read_text(encoding="utf-8", errors="replace"),
@@ -2840,6 +3092,10 @@ def cmd_translate(args):
                     "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
                 )
             stitched = "\n\n".join(deterministic) + "\n\n" + stitched
+        elif cpp_com_wide_statics:
+            # Free-function path: the bodies now reference CPP_COM_WSTR_* by name, so
+            # the statics have to be in the module or every reference dangles.
+            stitched = cpp_com_wide_statics + "\n\n" + stitched
 
         # COM vtbl tables, GENERATED — never asked of the model. `translate` is
         # function-granular, so file-scope `static const IXVtbl` tables fall to the
@@ -2867,7 +3123,7 @@ def cmd_translate(args):
             target_name=rustconv_target.name,
             sys_crate=rustconv_target.sys_crate,
             sys_umbrella=rustconv_target.sys_umbrella,
-            c_source_path=None if rustconv_target.name == "shell32" else c_file,
+            c_source_path=None if cpp_com_mode else c_file,
             com_method_macro=rustconv_target.com_method_macro,
             crate_module=(
                 getattr(rustconv_target, "crate_module", "")
@@ -3171,10 +3427,17 @@ def main():
     p.add_argument("--top", type=int, default=20, help="Largest groups to include (default 20)")
     p.add_argument("--json", action="store_true", help="Machine-readable report")
 
+    p = sub.add_parser(
+        "shell32-tail-inventory",
+        help="Check the zero-C++ lane ledger against shell32's live CMake source lists",
+    )
+    p.add_argument("--ledger", help="Override the shell32 tail TOML ledger")
+    p.add_argument("--json", action="store_true", help="Machine-readable report")
+
     # candidate-check — N isolated worker replacements, one cargo check per arch.
     p = sub.add_parser(
         "candidate-check",
-        help="Batch cargo-check candidate workers against the real shell32 substrate",
+        help="Batch cargo-BUILD candidate workers against the real shell32 substrate",
     )
     p.add_argument("manifest", help="JSON candidate/base/function manifest")
     p.add_argument(
@@ -3188,6 +3451,15 @@ def main():
         "--repair",
         action="store_true",
         help="Apply only deterministic base-authority worker repairs before checking",
+    )
+    p.add_argument(
+        "--check-only",
+        dest="check_only",
+        action="store_true",
+        help="Use `cargo check` instead of `cargo build` — FASTER but WEAKER: check "
+        "stops before codegen, so the deny-by-default unconditional_panic lint never "
+        "runs and a constant out-of-bounds index (the bindgen [T; 1] flex-array shape) "
+        "passes silently. Iteration only; never for acceptance.",
     )
 
     # crate-repair — deterministic Stage 1.5. Closes the MECHANICAL rustc roots of a freshly
@@ -3258,13 +3530,25 @@ def main():
     )
     p.add_argument("-o", "--output", help="Write combined deterministic Rust scaffold")
     p.add_argument("--adapter-output", help="Write the deterministic C++ object-map adapter")
+    p.add_argument(
+        "--internal",
+        action="store_true",
+        help="Allow exact internal ShellObjectCreator<T> activation; never emits an adapter",
+    )
     p.add_argument("--json", action="store_true", help="Print the proven class/interface IR")
+
+    p = sub.add_parser(
+        "cpp-tu",
+        help="Preflight every class method and free function in one shell32 C++ TU",
+    )
+    p.add_argument("path", help="C++ implementation file")
+    p.add_argument("--json", action="store_true", help="Machine-readable ownership/layout IR")
 
     # semdiff (C↔Rust semantic-divergence finder; from cdrom-port f29579d1119)
     p = sub.add_parser("semdiff", help="Find C↔Rust semantic/behavioral divergences (LLM)")
     p.add_argument("file", help="C source file (.c)")
     p.add_argument("--rust", default=None, help="Rust file (.rs); auto-located by stem if omitted")
-    p.add_argument("--model", default="deepseek-reasoner", help="Model (default deepseek-reasoner)")
+    p.add_argument("--model", default="deepseek", help="Model (default deepseek-v4-pro)")
     p.add_argument("--only", default=None, help="Comma-separated function names to diff")
     p.add_argument("--max-fns", type=int, default=None, help="Cap number of functions diffed")
     p.add_argument("--no-cache", action="store_true", help="Ignore per-pair response cache")
@@ -3575,6 +3859,19 @@ def main():
     )
     p.add_argument("--class", dest="class_name", help="Class selected by --cpp-com")
     p.add_argument(
+        "--free-functions",
+        dest="free_functions",
+        action="store_true",
+        help="shell32: translate the TU's FREE functions (no class, no vtable) through "
+        "the ordinary sealed per-function path. Class methods are skipped and listed by "
+        "name — they still need --cpp-com --class. Mutually exclusive with --cpp-com.",
+    )
+    p.add_argument(
+        "--internal",
+        action="store_true",
+        help="shell32 cpp-com: allow exact internal ShellObjectCreator<T> activation",
+    )
+    p.add_argument(
         "--seal-facts",
         dest="seal_facts",
         action="store_true",
@@ -3733,11 +4030,13 @@ def main():
     commands = {
         "scan": cmd_scan,
         "dup-census": cmd_dup_census,
+        "shell32-tail-inventory": cmd_shell32_tail_inventory,
         "candidate-check": cmd_candidate_check,
         "crate-repair": cmd_crate_repair,
         "substrate-plan": cmd_substrate_plan,
         "skeleton-check": cmd_skeleton_check,
         "cpp-com": cmd_cpp_com,
+        "cpp-tu": cmd_cpp_tu,
         "resolve": cmd_resolve,
         "semdiff": cmd_semdiff,
         "prompt": cmd_prompt,

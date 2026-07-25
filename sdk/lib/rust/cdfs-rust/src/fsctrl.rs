@@ -440,28 +440,28 @@ pub unsafe extern "C" fn CdUserFsctl(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP
         FSCTL_REQUEST_FILTER_OPLOCK => {
             Status = CdOplockRequest(IrpContext, Irp);
         }
-        _FSCTL_LOCK_VOLUME => {
+        FSCTL_LOCK_VOLUME => {
             Status = CdLockVolume(IrpContext, Irp);
         }
-        _FSCTL_UNLOCK_VOLUME => {
+        FSCTL_UNLOCK_VOLUME => {
             Status = CdUnlockVolume(IrpContext, Irp);
         }
-        _FSCTL_DISMOUNT_VOLUME => {
+        FSCTL_DISMOUNT_VOLUME => {
             Status = CdDismountVolume(IrpContext, Irp);
         }
-        _FSCTL_IS_VOLUME_DIRTY => {
+        FSCTL_IS_VOLUME_DIRTY => {
             Status = CdIsVolumeDirty(IrpContext, Irp);
         }
-        _FSCTL_IS_VOLUME_MOUNTED => {
+        FSCTL_IS_VOLUME_MOUNTED => {
             Status = CdIsVolumeMounted(IrpContext, Irp);
         }
-        _FSCTL_IS_PATHNAME_VALID => {
+        FSCTL_IS_PATHNAME_VALID => {
             Status = CdIsPathnameValid(IrpContext, Irp);
         }
-        _FSCTL_INVALIDATE_VOLUMES => {
+        FSCTL_INVALIDATE_VOLUMES => {
             Status = CdInvalidateVolumes(IrpContext, Irp);
         }
-        _FSCTL_ALLOW_EXTENDED_DASD_IO => {
+        FSCTL_ALLOW_EXTENDED_DASD_IO => {
             Status = CdAllowExtendedDasdIo(IrpContext, Irp);
         }
         _ => {

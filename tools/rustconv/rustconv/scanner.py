@@ -192,6 +192,21 @@ def _normalize_callbacks(text: str) -> str:
 # bit), so this is differential-oracle safe in the same way _normalize_callbacks is.
 RE_EMPTY_MEMMODEL = re.compile(r"\b(?:FAR|NEAR)\b")
 
+# `EXTERN_C` is winnt.h's `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter
+# does not know it, so it is parsed as a type name and the real return type becomes a second
+# type-identifier. The enclosing function then depends on tree-sitter's ERROR RECOVERY, whose
+# repair cost is length-sensitive: with a pointer return type the function is recovered while
+# the type name is <=9 characters and LOST at >=10 — `EXTERN_C FOOBAR*` extracts,
+# `EXTERN_C FILEDESCRIPTOR*` does not. That cliff is why shell32's stubs.cpp reported exactly
+# 2 of 66 bodies unextractable (GetFileDescriptor, SHGetShellFolderViewCB) — both pointer
+# returns, both names >=10 chars, while every VOID/BOOL stub beside them parsed.
+#
+# Substitute the macro's real expansion rather than blanking it. Blanking looks equivalent
+# and is NOT: `FILEDESCRIPTOR* WINAPI Bar(...)` with no linkage specifier parses as an
+# ambiguous declaration and yields ZERO function_definition nodes AND an EMPTY `unextracted`
+# list — a silent drop, the failure mode this scanner exists to prevent.
+RE_EXTERN_C = re.compile(r"\bEXTERN_C\b")
+
 # `CONST` is `#define CONST const` (winnt.h) — same macro, uppercase. tree-sitter-c does not
 # know it, so `CONST struct sockaddr *name` reads as TWO type-identifiers and the enclosing
 # function produces ZERO function_definition nodes: it is silently dropped from the plan.
@@ -245,6 +260,17 @@ def _blank_memmodel(text: str) -> str:
     """Blank the empty `FAR`/`NEAR` decorations and normalise `CONST` so tree-sitter can
     parse the params. Both are no-op/aliased Win32 macros with no ABI meaning."""
     return RE_UPPER_CONST.sub("const", RE_EMPTY_MEMMODEL.sub("", text))
+
+
+def _expand_extern_c(text: str, is_cpp: bool) -> str:
+    """Expand `EXTERN_C` to the linkage specifier it is #defined to.
+
+    See RE_EXTERN_C: leaving it as an unknown identifier makes extraction depend on
+    tree-sitter's length-sensitive error recovery, and deleting it silently drops the
+    function. The replacement is the macro's own definition, so it is exact — and it
+    preserves line numbers (same line, no newline added).
+    """
+    return RE_EXTERN_C.sub('extern "C"' if is_cpp else "extern", text)
 
 
 @dataclass
@@ -1202,8 +1228,13 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     build_defines = cmake_target_defines(path)
     source_text = _normalize_callbacks(
         _blank_memmodel(
-            _strip_sal(
-                _expand_csr_api(_resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines))
+            _expand_extern_c(
+                _strip_sal(
+                    _expand_csr_api(
+                        _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                    )
+                ),
+                is_cpp,
             )
         )
     )

@@ -71,7 +71,7 @@ provenance stamp.
   from every worktree. A missing `build-<arch>` is auto-provisioned (fresh
   configure, fast on cache hits); a legacy real-path one is auto-migrated (loud
   `canonize` stage, one-time full rebuild). Raw ninja against a canonical dir:
-  `../tools/canon-run.sh ninja <target>` from inside it.
+  `bash ../tools/canon-run.sh ninja <target>` from inside it.
 - **Warm by default** (incremental — fast iteration). `--clean` is *cold*: nukes
   **every** discovered rust target dir + every `lib*_rust.a`, then rebuilds. The
   stamp records which mode was used; warm builds are flagged because cargo
@@ -187,14 +187,105 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   blanket HANG_TIMEOUT retry dated from the native-KVM contention era and let a
   ~50% service wedge pass a 3-attempt gate ~87% of the time.)
 - **Concurrency is safe to over-submit.** Each smoke is a `vibeos-cli smoke`
-  subprocess that self-throttles on the host CPU-lease pool (`hostlock`, 4
-  leases) and the global QEMU cap (10); the per-arch serialize cap is bypassed on
-  the default windows-host TCG backend, so same-arch retries run in parallel too.
+  subprocess that self-throttles on the host boot-CPU pool (`hostlock` `bootcpu`,
+  capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
+  (16); the per-arch serialize cap is bypassed on the default windows-host TCG
+  backend, so same-arch retries run in parallel too.
 - Exit 0 only if **every** arch is ultimately green. The summary carries a
   per-arch `matrix` (verdict / classification / attempts / recovered / run_dir);
   each arch's own `summary.json` lives under the gate's artifact dir.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
-  authorizes a push.
+  authorizes a push — but drive it through `land` (below), not by hand.
+
+### `land [--direct] [--drain] [--wait] [--retries N] [--clean] [--no-push] [--dry-run]`
+**The way to land — it is a MERGE QUEUE.** With no flags, `land`:
+
+1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
+   under `$GIT_COMMON_DIR/vibeos-queue/`) and returns in ~2s — you do **not**
+   merge master, gate, or wait;
+2. if no other agent holds the land lock, *becomes the conductor*: merges every
+   queued lane onto current `origin/master` in a dedicated integration worktree,
+   gates **once**, and fast-forwards master to exactly the commit it gated;
+3. writes a verdict per submission — `land-status --mine` (or your next `land`)
+   shows it.
+
+**N ready lanes cost ONE gate, and no agent blocks.** The conductor is elected by
+the lock, so there is no daemon to supervise and nothing that can be "down".
+
+- **Conflicts are bounced, never resolved** — rejected with the conflicting
+  paths; the rest of the batch proceeds.
+- **A red batch splits recursively**, landing any green half immediately, until
+  the culprit is one submission — rejected with its classification + artifact
+  dir. Innocent lanes still land. Batch cap `VIBEOS_QUEUE_BATCH` (default 4)
+  bounds the worst-case bisect.
+- **Guilty or framed?** Before rejecting a lone submission, the conductor gates the
+  BASE alone (`origin/master`, nothing merged). If the base is red too, **nobody
+  is rejected**: the submissions stay queued, the train HALTS, and the verdict
+  says mainline is broken. This is not hypothetical — the very first real batch
+  hit it (mainline failed to compile `fltmgr-rust` for i386) and, without this
+  check, rejected a docs-only change for a build failure it could not have
+  caused. The base gate is lazy and memoized per drain, so a green batch never
+  pays for it.
+- **A batch is never presumed green from its parts.** Two individually-green
+  lanes can be red *together*; the queue catches that before master, where today
+  the second lane lands on the first without ever gating the combination.
+- **Crash-safe**: a submission is a ref + a JSON record; the conductor's claim is an
+  flock that dies with it. Kill a conductor mid-batch and its submissions are still
+  queued for the next one. A submission leaves the queue only when it has landed
+  or been rejected — repeated work is possible, a silent drop is not.
+- The **integration worktree** (`$VIBEOS_ROOT/vibeos-integration`) is created on
+  first use and deliberately never auto-pruned: its warm build dirs + cargo target
+  are why a batch gates in minutes, and every landing in the fleet would otherwise
+  pay for a cold one.
+- The spawned conductor **waits its turn** for the land lock rather than giving up, so
+  a submission always gets drained even when a pre-queue lane is holding the lock via
+  `--direct`. (It gave up instantly at first, which left submissions with no conductor
+  — observed within minutes of shipping.) Nothing is blocked by it waiting, and a
+  conductor that wakes to an empty queue exits in ~1s.
+- `--drain` conducts without submitting; `--foreground` conducts inline instead of
+  spawning; `--wait` blocks for your own verdict if you'd rather not poll.
+
+### `land --direct` — the single-lane path
+One serialized critical section, under the same fleet-wide FIFO
+lock: `fetch → merge origin/master → gate → push HEAD:master`. Right when you're
+the only active agent, or to bypass the queue.
+
+Why it exists: the gate stamp is keyed to an exact **tree hash**, so gate-then-
+push by hand is a race. Whoever pushes first wins; every other in-flight lane's
+tree is now stale, its stamp is void, and it must merge and **re-gate** — and
+that wasted gate was 3 builds + 4 boots of *fleet* load, which lengthens
+everyone else's gate and widens the window that voided it. Past a couple of
+active lanes it's a congestion collapse: "everyone is always waiting on the gate
+and racing to finish". Holding the lock across gate+push removes the race
+outright:
+
+- a green gate **always** lands — nobody re-gates because someone else landed;
+- the fleet spends exactly **one gate per landing**, not one per attempt;
+- waiting is FIFO, bounded and visible (`land-status` / `host-status`) instead of
+  a lottery the most patient lane keeps losing;
+- the gate runs on the **final** tree — the one actually pushed.
+
+Details:
+- **Gate inside the lock; don't pre-gate.** A speculative gate is the thing that
+  used to get thrown away. If a fresh (<24h) green full-arch stamp already covers
+  the tree being pushed, `land` skips the gate, so the uncontended path is
+  seconds.
+- **Pushes `HEAD:master`** and never touches the local `master` ref — moving
+  `master` from a worktree that doesn't have it checked out leaves that worktree's
+  files at the old tree, i.e. a giant phantom staged revert (2026-07-25).
+- Refuses a dirty tree or detached HEAD (a dirty tree can't be stamped).
+- A conflicting merge is **aborted** and reported rather than resolved while
+  holding the fleet's lock.
+- The land lock **hard-fails** on timeout (`LandLockBusy`, naming the holder)
+  instead of the soft "proceed unlocked" the CPU pools use — proceeding unlocked
+  would reopen the very race. `VIBEOS_LAND_LOCK=0` opts out; the `pre-push` hook
+  is still the backstop either way.
+
+### `land-status [--mine] [--limit N] [--json]`
+The merge queue at a glance: who is training, what is queued behind them (with
+wait times), and recent verdicts — a rejected lane's triage pointer lives here.
+`--mine` filters verdicts to this lane. The lock holder also appears in
+`host-status` as a `LANDING :` line plus the `land` queue.
 
 ### `boot --arch X --until M [--fail-on RE]`
 Raw fast boot, **no staleness gate**, but reuses smoke's *exact* arch-config so
