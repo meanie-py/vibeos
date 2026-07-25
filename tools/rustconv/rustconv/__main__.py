@@ -20,6 +20,7 @@ from . import (
     cpp_com,
     cpp_tu,
     crate_repair,
+    difftest_gen,
     dup_census,
     file_splitter,
     gdi_lock_inventory,
@@ -692,6 +693,34 @@ def cmd_candidate_check(args):
     candidate_oracle.print_report(report, as_json=args.json)
     if any(item["status"] != "ok" for item in report["results"]):
         sys.exit(1)
+
+
+def cmd_difftest_gen(args):
+    """Generate a differential harness for a whole translated C file, from its signatures.
+
+    The existing `msvcrt-difftest` proved the mechanism — compile the genuine `.c` as the
+    reference, rename its symbols to `ref_*`, assert parity in one process — but every
+    instrument is hand-written and its symbol list is hardcoded with a "regenerate if the C
+    changes" warning. That does not scale to a file-at-a-time translation track.
+
+    Prints the plan to stderr and writes the cases to `--out`. Refusals are part of the
+    OUTPUT, not a silent omission: a function this cannot grade still needs a hand-written
+    case, and it must be visible in the generated file rather than absent from it.
+    """
+    c_path = Path(args.c_file)
+    scan = scan_file(c_path)
+    plan = difftest_gen.plan_file(scan, c_path.stem)
+    total = len([f for f in scan.functions if not f.is_static])
+    print(plan.summary(), file=sys.stderr)
+    for refusal in plan.refusals:
+        print(f"  refused: {refusal}", file=sys.stderr)
+    text = difftest_gen.emit(plan, str(c_path), total)
+    if args.out:
+        Path(args.out).write_text(text)
+        print(f"  -> {args.out} ({len(text.splitlines())} lines)", file=sys.stderr)
+    else:
+        print(text)
+    return 0
 
 
 def cmd_crate_repair(args):
@@ -3462,6 +3491,14 @@ def main():
         "passes silently. Iteration only; never for acceptance.",
     )
 
+    # difftest-gen — derive a differential harness from the C's own signatures.
+    p = sub.add_parser(
+        "difftest-gen",
+        help="Generate a differential test harness for a translated C file (no LLM)",
+    )
+    p.add_argument("c_file", help="the translated C source, e.g. dll/win32/msvcrt/mbcs.c")
+    p.add_argument("--out", help="write the cases here (default: stdout)")
+
     # crate-repair — deterministic Stage 1.5. Closes the MECHANICAL rustc roots of a freshly
     # assembled crate for $0, before any paid repair pass, and leaves a bucketed RED residual.
     p = sub.add_parser(
@@ -4033,6 +4070,7 @@ def main():
         "shell32-tail-inventory": cmd_shell32_tail_inventory,
         "candidate-check": cmd_candidate_check,
         "crate-repair": cmd_crate_repair,
+        "difftest-gen": cmd_difftest_gen,
         "substrate-plan": cmd_substrate_plan,
         "skeleton-check": cmd_skeleton_check,
         "cpp-com": cmd_cpp_com,
