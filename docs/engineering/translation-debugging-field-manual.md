@@ -794,7 +794,11 @@ would have fired for whoever followed the documented loop:
    the TU — which is the machinery `profile_derive` already builds for the bindgen island.
    Also note before "just dropping `--seal-calls`" on an affected TU: the contract text is hashed
    into the resume-cache key, so removing the flag MISSES every banked entry and re-pays the
-   whole file.
+   whole file. **The same applies to FIXING this** — the contract lists the token set
+   (`Call tokens (N): …`), so any change to what gets sealed rewrites it and invalidates every
+   banked entry for the TU. Budget the repair as a full re-translate of each affected file, not
+   as "re-pay only the rejects": one shell32 wave left **216 accepted functions** banked behind
+   ~25 rejects, and they come back at full price, not free.
 
 > **The cache-key trap while fixing this: do NOT reword the contract text.** It is hashed into the
 > resume-cache key, so rewording invalidates every banked sealed entry and **re-charges for
