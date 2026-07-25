@@ -9,7 +9,7 @@ use ntkrnl_sys::ddk::{
     PTEB, PKTHREAD, PKCALLOUT_FRAME, PEXCEPTION_REGISTRATION_RECORD,
     PKIPCR, EXCEPTION_RECORD, _EPROCESS,
     PGDI_BATCHFLUSH_ROUTINE,
-    KeTrapFrameToContext, KiDispatchException, MmGrowKernelStack,
+    KeTrapFrameToContext, KiDispatchException, MmAccessFault, MmGrowKernelStack,
     KiGetUserModeStackAddress, KeGetPcr,
     KiCallUserMode, KiCallbackReturn,
 };
@@ -121,6 +121,27 @@ pub unsafe extern "system" fn KiInitializeUserApc(
         ) {
             exception_status = e;
             break 'try_;
+        }
+
+        // probe_user_buffer is validate-ONLY (range + alignment, no touch test),
+        // but the C's `__try` also covered the WRITES below — KeTrapFrameToContext
+        // and the P*Home/MachineFrame stores all land in user memory, and under
+        // DUMMY_PSEH a page fault there is just as unhandled as the probe raise
+        // was. Pre-fault each page, same pattern (and same reasoning) as
+        // KiDispatchExceptionToUser in ke/amd64/except.rs.
+        {
+            let start = ApcFrame as usize;
+            let end = start + core::mem::size_of::<UAPC_FRAME>();
+            let mut page = start & !0xFFF;
+            while page < end {
+                // FaultCode=2 (write, not present), Mode=UserMode(1)
+                let status = MmAccessFault(2, page as PVOID, 1i8, core::ptr::null_mut());
+                if status < 0 {
+                    exception_status = status;
+                    break 'try_;
+                }
+                page += 0x1000;
+            }
         }
 
         (*Context).ContextFlags = CONTEXT_FULL | CONTEXT_DEBUG_REGISTERS;
