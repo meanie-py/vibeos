@@ -178,7 +178,9 @@ IoReadWrite
 # __C_specific_handler), yet it still BUGCHECKs 0x50 PAGE_FAULT_IN_NONPAGED_AREA with the
 # SAME stop code as before the change — so this is a REAL kernel bug in the NtCreateSection
 # param-capture/validation path, not a dead-handler artifact. Triage owed.
-#NtCreateSection
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+NtCreateSection
 NtSystemDebugControl
 PoIrp
 RtlAvlTree
