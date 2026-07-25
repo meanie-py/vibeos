@@ -1496,3 +1496,82 @@ front-loads a staging *build* before it boots, so a probe can sit for 15+ minute
 `cpuheavy` lease with no VM in sight — especially with the build broker at 4/4 and a merge-queue
 conductor gating. The check that actually discriminates is `host-status` (does it hold a build
 lease?) plus whether the run dir has a `full.log` yet — not `vibeos-cli ps` alone.
+
+### 2026-07-25 (evening) — the biggest single movement yet: clang was DELETING our `__except` blocks
+
+**15 quarantines cleared across three arches** (i386 +13, amd64 +2, arm64 +2), from one
+toolchain defect that had been misfiled as "not an OS bug" for two weeks.
+
+**What was actually wrong.** Clang's default exception model is CALLS-ONLY: it assumes no
+instruction can fault, so a `__try` whose body holds a faulting *instruction* rather than a
+*call* gets an EMPTY scope table — and at `-O2` the `__except` block is then deleted outright
+as unreachable. The whole of
+
+```c
+__try { *(volatile int*)0 = 1; } __except(1){ return 2; }
+```
+
+compiles, on our pinned clang 19.1.7, to `movl $1, 0 / xorl %eax,%eax / retq`. **The handler is
+not weak or mis-registered. It is gone.** So the AV escaped to the kernel as BUGCHECK 0x1E —
+precisely the quarantined symptom. `-fasync-exceptions` restores a real scope table
+(`__C_specific_handler` on x64/arm64, `__except_handler3` + `fs:[0]` on i686). It is a no-op
+outside `-windows-msvc`, so it only bites where we retarget, and it is purely additive:
+callee-faults were covered either way, which is why anything worked at all.
+
+**The note that named its own fix.** `RtlExceptionKM`'s quarantine read: *"mingw native SEH is
+calls-only (no -fasync-exceptions) … Expected-fail until async-exceptions story exists; not an
+OS bug."* It identified the exact missing flag and concluded it was out of reach. It was two
+lines of CMake. **A correct diagnosis with a defeatist conclusion is worse than no diagnosis** —
+it closes the question. Prefer "untested hypothesis: try X" over "expected-fail until X exists".
+
+**i386 was the jackpot** (76 → 89 enabled). `KMT_I386_NATIVE_SEH` had sat as an OFF-by-default
+spike "until validated end-to-end". Validating it took one afternoon and one shim: retargeting
+to `-windows-msvc` left exactly ONE undefined symbol, `_InterlockedAddLargeStatistic`, because
+mingw supplies it as an `__INTRIN_INLINE` from a *gnu*-selected header. `_except_handler3`
+needed nothing — it resolves from `libpseh.a`'s `i386/seh.s`, a real implementation, and pseh
+precedes ntoskrnl on the link line.
+
+**The evidence that this is a fix and not a coincidence** — recovered i386 numbers match the
+other arches' committed baselines test-for-test:
+
+| test | i386 (recovered) | other arch |
+|---|---|---|
+| `KeMutex` | 1122/0 | 1122/0 arm64 |
+| `ExResource` | 399/2 | 399/2 arm64 |
+| `ExHardError` | 24/6 | 24/6 arm64 |
+| `KeDpc` | 316/0 | 316/0 arm64 |
+| `RtlIsValidOemCharacter` | 354/0 | 354/0 arm64 |
+| `IoReadWrite` | 16192/151 | 16192/151 arm64 |
+| `NtCreateSection` | 124/38 | 124/38 amd64 |
+
+A dead `__except` does not fail *selectively*. Restore the handler and these land exactly where
+the arches that always had real SEH have been reporting all along.
+
+**Two real OS bugs fell out**, both previously hidden *behind* the quarantine — which is the
+whole argument for enabling a test that still has failures:
+
+1. **Usermode stack guard-page fault reports the wrong status** (task #38). `RtlException`'s
+   single remaining failure on arm64 is the one assertion `RtlExceptionKM` lacks
+   (`#ifdef KMT_USER_MODE`): overflow the stack with `_alloca` and expect
+   `STATUS_STACK_OVERFLOW`. We deliver `0xc0000005`, not `0xc00000fd`. The 33/33 shared
+   assertions passing on both is what isolates it to that one line.
+2. **amd64 usermode exception DISPATCH** (task #37). `RtlException` completes on arm64 but dies
+   `exit=128` on amd64 and i386. Codegen is ruled out — the scope table is provably present —
+   and `kmtest_.exe` is healthy in the same boot. arm64 is the working oracle to diff against.
+
+**A correction to my own result from this morning.** Commit `8ed5287039b` reported "amd64 9/9
+still fail, ZERO un-quarantine candidates." That probe ran *before* this fix; `NtCreateSection`
+has since flipped to OK. The conclusion was true of the build it measured and wrong to carry
+forward — the same staleness trap that commit warned about in *other people's* notes. **A probe
+result is a fact about a BUILD, not about a test.** Re-probe after any fix that plausibly
+touches the mechanism, and date the claim.
+
+**What remains is now cleanly separated** — no SEH left in it:
+
+* `MmReservedMapping`, `MmMapLockedPagesSpecifyCache`, `IoFilesystem`, `NpfsFileInfo` crash on
+  every arch — genuine Mm/pool bugs. `IoFilesystem` and `NpfsFileInfo` share stop code 0x19
+  BAD_POOL_HEADER (task #36).
+* `RtlSplayTreeKM` (i386) — pool corruption, as its note always said.
+* `IoCreateFile` — now passes on i386, still crashes on amd64 and arm64.
+* `ZwAllocateVirtualMemory` — now passes on i386, still crashes on arm64.
+* `RtlException` (task #37), `SeTokenFiltering` / `TcpIpConnect` (in-kernel wedges).

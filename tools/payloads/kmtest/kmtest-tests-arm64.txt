@@ -210,7 +210,11 @@ IoReadWrite
 # So NtCreateSection is NOT a deep-MM bug (retire the task #7 framing) — it is the arm64 exception-
 # dispatch structural class, SAME ROOT as task #18 (IoCreateFile/RtlExceptionKM async-SEH). One
 # dispatch fix clears this + that cluster. Field manual §9.103.
-#NtCreateSection
+# UN-QUARANTINED 2026-07-25: re-probed alone after the native-SEH fixes (f4d0455be86,
+# d3b1c045c5d) and it now completes — 81 pass / 48 fail. Also recovered on i386 and
+# amd64 in the same round (both 124/38; the arm64 split differs, the verdict does not).
+# The note above is kept as the audit trail of what it used to do.
+NtCreateSection
 NtSystemDebugControl
 PoIrp
 RtlAvlTree
