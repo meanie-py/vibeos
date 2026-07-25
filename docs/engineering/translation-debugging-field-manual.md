@@ -10711,7 +10711,7 @@ evidence, not duplication — read it before designing a "more systemic" fix. Th
 change (patch the substrate once for everyone) was the wrong one *because* the substrate object
 is kernel-only.
 
-**Also: cold-build breakage comes in LAYERS.** This was the fourth distinct failure found by
+**Also: cold-build breakage comes in LAYERS** (and see §9.126, which independently found the same thing from mainline's side and enumerates all three breaks).  This was the fourth distinct failure found by
 successive cold builds of the same tree, each hidden behind the previous one — afd `E0659`,
 then fltmgr `E0659`, then this. A warm build reuses cached rlibs and never recompiles the
 broken crate, so `master` can sit red for days while every incremental build is green. Budget
@@ -11129,3 +11129,202 @@ measure. 1962 assertions going live at once in a booting kernel will produce a
 batch to triage — some real bugs, some asserts that were mistranslated, some that
 are simply wrong for our configuration. Do it in a scratch build across all three
 arches, triage, then land the profile change *with* the fixes.
+
+### 9.136 (2026-07-25) An ASSERT lowered to a BUGCHECK became an accidental ARCH-DIVERGENCE DETECTOR — do not silence it, and do not trust the stop code either
+
+> **Read with §9.135, which is this bug's mirror image.** That section found 1962 Rust
+> `debug_assert!` sites compiled OUT while the C `ASSERT` they came from is LIVE under `-DDBG=1`.
+> This one found a C `ASSERT` lowered into a LIVE `KeBugCheckEx`. Same C construct, opposite
+> errors: one silently drops a diagnostic, the other promotes it to a machine stop with an
+> invented code. So "how did the translator handle `ASSERT`?" has no single answer — check the
+> direction per site, and do not let either fix become a blanket sweep.
+
+**How it surfaced.** Probing arm64's quarantined kmtests, `ZwAllocateVirtualMemory` bugchecked:
+
+```
+*** BUGCHECK: 0x0000004E (0xad, 0x40006, 0x0, 0x4259f)
+```
+
+`0x4E` is `PFN_LIST_CORRUPT`. The raiser is `MiInsertStandbyListAtFrontImpl`
+(`ARM3/pfnlist.rs`), subcode `0xAD`, guarding:
+
+```rust
+if (*pfn1).must_be_cached() || (*pfn1).reference_count() != 0
+   || !(*pfn1).prototype_pte() || mmpfn_rom_pte(pfn1) { mi_pfn_corrupt(0xAD, ...); }
+```
+
+P3 is `reference_count = 0`, so that clause did not fire; the live one is
+`!prototype_pte()` (or `must_be_cached`/`rom`).
+
+**The C it came from does not bugcheck — in either build config.**
+
+```c
+ASSERT(Pfn1->u4.MustBeCached == 0);
+ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
+ASSERT(Pfn1->u3.e1.PrototypePte == 1);
+ASSERT(Pfn1->u3.e1.Rom != 1);
+```
+
+`sdk/include/reactos/debug.h` is unambiguous: `#if DBG && !defined(NASSERT)` → `RtlAssert`
+(a *print*), `#else` → `((VOID) 0)`. We build retail. So four diagnostics were lowered into a
+hard stop with an **invented** subcode — §9.120's class, a fourth instance, in a file that
+class had not been looked at. It is not isolated: `pfnlist.rs` carries ~26 `mi_pfn_corrupt`
+sites numbered `0xA0`–`0xB7`, a suspiciously contiguous block, while the C original has exactly
+**two** genuine `KeBugCheckEx(PFN_LIST_CORRUPT, ...)` calls.
+
+**But the fix is NOT to silence it, and that is the point of this entry.**
+
+`ARM3/pfnlist.rs` is **arch-generic** — one file, all three targets. amd64 runs this identical
+code and never trips `0xAD`; `SeInheritance`/`ZwAllocateVirtualMemory` are in the amd64 baseline
+as `OK`. arm64 trips it. A guard that fires on exactly one arch, from shared code, is not
+measuring the guard — it is measuring a **real arm64-specific PFN state divergence**: a page is
+reaching the standby-list-front insert without `PrototypePte` set.
+
+So the mistranslation accidentally built a detector for a genuine bug. Deleting it to "restore
+C fidelity" would convert a loud arm64 MM fault into upstream's silent continue, which is
+`AGENTS.md`'s never-hide-a-regression rule: *a red test pointing at a real bug beats a green one
+hiding it.*
+
+**Two separable defects, and they need opposite treatments:**
+
+1. **The arm64 PFN state bug** (real, keep hunting). Same family as the open arm64 PFN
+   back-pointer mismatch under section map/unmap — `MmMapLockedPagesSpecifyCache`,
+   `NtCreateSection` and now `ZwAllocateVirtualMemory` are all arm64 PFN-database integrity.
+   Treat them as ONE lead, not three.
+2. **The invented subcodes** (fidelity bug, fix separately). `0xA0`–`0xB7` are unattributable:
+   they appear in no ReactOS header and no Windows documentation, so a bugcheck cites a number
+   that greps to nothing but our own translation. That is exactly §9.113. Renumbering must NOT
+   happen while (1) is open — the codes are currently the only way to identify which assert
+   fired.
+
+**Rule.** When an assert-derived check fires on ONE arch from ARCH-GENERIC code, the finding is
+the arch divergence, not the assert. Establish whether the guard is shared before you decide
+whether it is wrong: `git grep` the file's `#[cfg(` count answers it in one command. And when
+you do audit assert-lowering, check both directions — this file *preserved* the two genuine
+bugchecks (`MiDecrementReferenceCount` still raises subcode `7`, matching C), so "the translator
+mangles all bugchecks" would have been the wrong generalisation too.
+
+### 9.137 (2026-07-25) "The offline i386 index is symbol-poor" was FALSE — it resolves function + source line, and the missing piece was one `--reloc` value
+
+**The claim that blocked work.** Nine i386 kmtest quarantines recorded 2026-07-12 carry a note
+of the form:
+
+```
+# QUARANTINED (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x8E3BD. Passes on amd64.
+# Triage owed (live GDB; offline i386 index is symbol-poor).
+```
+
+So nine tests waited ~13 days for a GDB session nobody had time to set up. The premise was
+wrong. `qemu/addr2sym.sh` resolves i386 addresses to **function + source file + line**; it just
+needs `--reloc`, because the index holds FILE VAs and a bugcheck reports RUNTIME VAs.
+
+**Deriving the reloc without a debugger — and proving it.** The quarantine notes themselves
+record `ntoskrnl.exe+<offset> (<runtime addr>)` pairs, and each pair *is* an equation for the
+load base. Four of them agree exactly:
+
+```
+ntoskrnl+0x8a7eb @ 0x8054d7eb -> base 0x804c3000
+ntoskrnl+0x1f061 @ 0x804e2061 -> base 0x804c3000
+ntoskrnl+0x944ef @ 0x805574ef -> base 0x804c3000
+ntoskrnl+0xa0f3b @ 0x80563f3b -> base 0x804c3000
+```
+
+`ImageBase` is `0x400000`, so `--reloc = 0x804c3000 - 0x400000 = 0x800c3000`:
+
+```bash
+bash qemu/addr2sym.sh i386 --reloc 0x800c3000 0x805510dd
+# 0048e0dd  _SeAssignSecurityEx@36+61  sdk/lib/rust/se-rust/src/sd.rs:923
+```
+
+**Do not accept the base because one lookup "looks plausible"** — that is how a wrong base
+produces a confident wrong function and relocates the hunt (§9.124). The check that makes it
+sound is a *semantic* control: each recorded address must resolve to a function whose name
+matches the test that crashed. It does, unanimously:
+
+| **fresh** crash address | resolves to | test that crashed |
+|---|---|---|
+| `0x805510dd` | `_SeAssignSecurityEx@36` | **SeInheritance** |
+| `0x80529538` | `_RtlIsValidOemCharacter@4` | **RtlIsValidOemCharacter** |
+| `0x804e1ed1` | `_KeInitializeDpc@12` | **KeDpc** |
+
+Three fresh addresses, three exact name matches.
+
+**Use FRESH addresses for that control, not recorded ones — I got this wrong first.** The
+original version of this section offered the *stale* recorded addresses as the semantic proof,
+and that is unsound: they predate ~13 days of code motion. The counterexample is in this very
+set — `RtlIsValidOemCharacter`'s recorded address resolves today to
+`_RtlLookupAtomInAtomTable@12+152`, a different function in a different subsystem, and would
+have sent the hunt to the atom table. Some stale lookups still name-match (`0x804e2061` ->
+`_KeInsertQueueDpc` for KeDpc) and some do not; you cannot tell which without the fresh address,
+so a stale semantic match is corroboration at best and a trap at worst.
+
+**Caveat that matters.** Those addresses are from a 2026-07-12 build and code has since moved —
+`SeInheritance` was recorded at `+0x8E3BD` and reproduces today at `+0x8E0DD`. Function-level
+answers survive that drift; exact offsets do not. **Symbolicate FRESH addresses** from a current
+run (`tools/conformance_probe.py` produces one per crashing test) rather than stale recorded
+ones, and treat any stale lookup as a lead to confirm.
+
+**arm64 does not have this luxury yet** — its kernel runtime base is never printed on serial and
+cannot be recovered from any recorded pair, so offline arm64 triage is still blocked on a
+one-line boot-time print of the base. Until then `inspect.sh symbolicate-pc` (online, via gdb)
+is the only route there.
+
+**The general lesson.** A recorded blocker is a claim, and claims decay. "Offline index is
+symbol-poor" was probably true of some earlier index and got copy-pasted into nine notes; by the
+time anyone read them it cost more than the five minutes it took to disprove. When a note tells
+you a tool cannot do something, spend the five minutes before believing it — and if it turns out
+false, fix the note so the next person does not pay again. (This is the same shape as the
+netapi32 "6 mutually-conflicting MIDL interfaces" blocker in §9.108, which deferred that work
+twice and was also a self-inflicted, untested inference.)
+
+#### 9.137a (2026-07-25) The same pair-derivation works for DRIVER bases — and it resolved the crash a kernel-only index cannot see
+
+§9.127 recovered the i386 *kernel* load base from recorded `ntoskrnl+<off> (<addr>)` pairs.
+Drivers need the same treatment and are the bigger blind spot: `qemu/symbols-<arch>.tsv` indexes
+`ntoskrnl` only, so a bugcheck whose PC lands in a `.sys` resolves to whatever kernel symbol
+sorts below it — which is how `addr2sym` produced `STATUS_WAKE_SYSTEM+923526268`.
+
+Worked example. `IoReadWrite` bugchecked `0x1E` at PC `0xf6f031e3`, outside the kernel image.
+Task #18's record already named its oracle as *"crashes at `IoReadWrite_drv.sys+0x21E3`"*, so:
+
+```
+0xf6f031e3 - 0x21E3 = 0xf6f01000        <- page-aligned driver base
+```
+
+A page-aligned result from an arbitrary subtraction is a 1-in-4096 coincidence, so this is
+evidence — but **not** proof, and driver bases are weaker than the kernel's: the kernel loads at
+a fixed base while drivers are placed dynamically, so a base derived from one boot need not hold
+for another. Confirm it semantically before using it. Here:
+
+```bash
+llvm-objdump -p ioreadwrite_drv.sys | grep ImageBase     # 0x10000
+# file VA = ImageBase + RVA = 0x10000 + 0x21E3 = 0x121E3
+llvm-nm --numeric-sort ioreadwrite_drv.sys | grep ' [Tt] '   # -> _TestFastIoWrite@32 + 0x113
+```
+
+`_TestFastIoWrite` is a function that exists, in the driver that crashed, with a name matching
+the test. That is the semantic control, and it is what licenses the base — not the page
+alignment.
+
+**And the symbol settled the classification.** `TestFastIoWrite` is not a parameter-validation
+stub; it is real fast-I/O code:
+
+```c
+_SEH2_TRY { Status = TestCommonWrite(Buffer, Length, FileOffset->QuadPart, LockKey, IoStatus); }
+_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { IoStatus->Status = _SEH2_GetExceptionCode(); return FALSE; }
+```
+
+Fast I/O hands the driver a raw **user-mode** `Buffer`. Touching it can legitimately fault, and
+the driver does the correct thing by guarding it. Under i386 `DUMMY_PSEH` that guard is dead, so
+correct driver code bugchecks. This matters for scoping the dead-`__try` root: the other
+confirmed instances (`RtlIsValidOemCharacter`, `KeDpc`, `MmSection`) are tests deliberately
+passing NULL, which is easy to dismiss as "just test scaffolding". This one is not — it is the
+shape a *real* filesystem or filter driver has, so the missing SEH is a production defect, not a
+test-harness artifact.
+
+**Rule.** When a faulting PC lies outside the kernel image, do not stop at "no symbol". Look for
+a recorded `<module>+<offset>` pair anywhere in the tracked notes, derive the base, and confirm
+it by checking that the resulting symbol is a real function in the module you expect. Failing
+that, the load bases have to come from the boot log — which is exactly why printing module
+base+size on serial is worth doing once (tasks #33, #35).
+

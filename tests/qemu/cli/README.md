@@ -71,7 +71,7 @@ provenance stamp.
   from every worktree. A missing `build-<arch>` is auto-provisioned (fresh
   configure, fast on cache hits); a legacy real-path one is auto-migrated (loud
   `canonize` stage, one-time full rebuild). Raw ninja against a canonical dir:
-  `../tools/canon-run.sh ninja <target>` from inside it.
+  `bash ../tools/canon-run.sh ninja <target>` from inside it.
 - **Warm by default** (incremental — fast iteration). `--clean` is *cold*: nukes
   **every** discovered rust target dir + every `lib*_rust.a`, then rebuilds. The
   stamp records which mode was used; warm builds are flagged because cargo
