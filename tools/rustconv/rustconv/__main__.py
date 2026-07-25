@@ -651,7 +651,9 @@ def cmd_candidate_check(args):
     if not manifest.is_absolute():
         manifest = (Path.cwd() / manifest).resolve()
     arches = args.arches or ["i386", "amd64", "arm64"]
-    report = candidate_oracle.run_oracle(manifest, arches, repair=args.repair)
+    report = candidate_oracle.run_oracle(
+        manifest, arches, repair=args.repair, check_only=getattr(args, "check_only", False)
+    )
     candidate_oracle.print_report(report, as_json=args.json)
     if any(item["status"] != "ok" for item in report["results"]):
         sys.exit(1)
@@ -3287,7 +3289,7 @@ def main():
     # candidate-check — N isolated worker replacements, one cargo check per arch.
     p = sub.add_parser(
         "candidate-check",
-        help="Batch cargo-check candidate workers against the real shell32 substrate",
+        help="Batch cargo-BUILD candidate workers against the real shell32 substrate",
     )
     p.add_argument("manifest", help="JSON candidate/base/function manifest")
     p.add_argument(
@@ -3301,6 +3303,15 @@ def main():
         "--repair",
         action="store_true",
         help="Apply only deterministic base-authority worker repairs before checking",
+    )
+    p.add_argument(
+        "--check-only",
+        dest="check_only",
+        action="store_true",
+        help="Use `cargo check` instead of `cargo build` — FASTER but WEAKER: check "
+        "stops before codegen, so the deny-by-default unconditional_panic lint never "
+        "runs and a constant out-of-bounds index (the bindgen [T; 1] flex-array shape) "
+        "passes silently. Iteration only; never for acceptance.",
     )
 
     # crate-repair — deterministic Stage 1.5. Closes the MECHANICAL rustc roots of a freshly
