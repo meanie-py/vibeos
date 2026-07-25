@@ -3000,74 +3000,216 @@ static NTSTATUS Wow64Manual_NtSetSystemInformation(ULONG *a)
                         "would let a guest corrupt kernel state");
 }
 
-/* M16 (task #43): NtUserMessageCall(hWnd, Msg, wParam, lParam, ResultInfo, FNID,
- * Ansi). For FNID_DEFWINDOWPROC + WM_WINDOWPOSCHANG*, lParam is a WINDOWPOS the
- * 64-bit win32k reads/writes as 40 bytes but the guest passes as 28 — the flat
- * thunk hands win32k a misaligned struct (fields shift past the two leading
- * handles), so DefWindowProc's size adjustment corrupts the window (collapses to
- * 0x0, WM_PAINT never fires). Marshal the payload 32<->64 for this (FNID,Msg);
- * every other message flat-passes exactly as the generated thunk did. See
- * docs/engineering/active-lanes/wow64-plan.md (M16) + user32 defwnd.c:783. */
-#define WOW64_MC_FNID_DEFWINDOWPROC   0x029E
-#define WOW64_MC_WM_WINDOWPOSCHANGING 0x0046
-#define WOW64_MC_WM_WINDOWPOSCHANGED  0x0047
-typedef struct { ULONG hwnd, hwndInsertAfter; LONG x, y, cx, cy; ULONG flags; }
-    WOW64_MC_WP32; /* 28 */
-typedef struct { ULONGLONG hwnd, hwndInsertAfter; LONG x, y, cx, cy; ULONG flags, __pad; }
-    WOW64_MC_WP64; /* 40 */
+/* ---- E13: NtUserMessageCall — the guest->kernel message boundary ---------
+ *
+ * NtUserMessageCall(hWnd, Msg, wParam, lParam, ResultInfo, FNID, Ansi) carries
+ * THREE independent 32/64 divergences, and all three were live:
+ *
+ *  1. The lParam payload. For the pointer-lParam messages in win32k's
+ *     g_MsgMemory table, co_IntDoSendMessage copies MsgMemorySize() bytes out
+ *     of the SENDER's buffer (CopyMsgToKernelMem) and back (CopyMsgToUserMem).
+ *     That size is the HOST's sizeof(), so a 32-bit sender's smaller struct is
+ *     over-READ on the way in — BUGCHECK 0x1E when it sits at the end of a page,
+ *     which is what eventvwr/spider hit — and over-WRITTEN on the way out.
+ *     M15a/M16/M18 had covered only the kernel->guest callback direction.
+ *
+ *  2. ResultInfo under FNID_SENDMESSAGE is a bare ULONG_PTR out-slot. The guest
+ *     hands over a 4-byte stack local (user32 SendMessageW's `LRESULT Result`)
+ *     and win32k stores sizeof(ULONG_PTR) = 8 into it: an UNCONDITIONAL 4-byte
+ *     guest-stack smash on every SendMessage a 32-bit guest ever makes. Same
+ *     shape as E7, on a hotter path.
+ *
+ *  3. ResultInfo under FNID_SENDMESSAGEFF / FNID_SENDMESSAGEWTOOPTION is a
+ *     DOSENDMESSAGE {UINT uFlags; UINT uTimeout; ULONG_PTR Result;} — 12 bytes
+ *     on i386, 16 on the host. win32k reads 16 from the 12-byte guest buffer,
+ *     then writes 16 back over it.
+ *
+ * Every size above is a clang record-layout fact (marshalgen's own engine), not
+ * arithmetic: DRAWITEMSTRUCT 48/64, MEASUREITEMSTRUCT 24/32, HELPINFO 28/40,
+ * MDINEXTMENU 12/24, WINDOWPOS 28/40, DOSENDMESSAGE 12/16. MINMAXINFO, RECT and
+ * STYLESTRUCT were checked the same way and are width-IDENTICAL — they need no
+ * marshalling, and assuming otherwise would corrupt them.
+ *
+ * The payload converters are GENERATED (wow64_cb_automarshal.c, keyed by Msg)
+ * and shared with the callback direction, so the two directions cannot drift
+ * apart. This subsumes M16's hand-written FNID_DEFWINDOWPROC/WINDOWPOS case,
+ * which is now just one row of that table.
+ */
+#include "wow64_cb_automarshal.h"
+
+/* Values from win32ss/include/ntuser.h ("FNID's for NtUserSetWindowFNID,
+ * NtUserMessageCall"). This TU is deliberately minimal (windef/winbase only),
+ * so they are restated here — check them against that header when touching. */
+#define WOW64_MC_FNID_SCROLLBAR            0x029A
+#define WOW64_MC_FNID_MENU                 0x029C
+#define WOW64_MC_FNID_DESKTOP              0x029D
+#define WOW64_MC_FNID_DEFWINDOWPROC        0x029E
+#define WOW64_MC_FNID_MESSAGEWND           0x029F
+#define WOW64_MC_FNID_SENDMESSAGE          0x02B1
+#define WOW64_MC_FNID_SENDMESSAGEFF        0x02B2
+#define WOW64_MC_FNID_SENDMESSAGEWTOOPTION 0x02B3
+
+/* Divergent pointer-lParam messages the flat table cannot express: an embedded
+ * guest pointer (NCCALCSIZE_PARAMS.lppos, COPYDATASTRUCT.lpData) or a packed
+ * string tail (CREATESTRUCTW). Marshalling these needs the pointee too. */
+#define WOW64_MC_WM_CREATE     0x0001
+#define WOW64_MC_WM_COPYDATA   0x004A
+#define WOW64_MC_WM_NCCREATE   0x0081
+#define WOW64_MC_WM_NCCALCSIZE 0x0083
+
+/* DOSENDMESSAGE (win32ss/include/ntuser.h) at both widths. */
+typedef struct { ULONG uFlags, uTimeout, Result; }            WOW64_MC_DSM32; /* 12 */
+typedef struct { ULONG uFlags, uTimeout; ULONGLONG Result; }  WOW64_MC_DSM64; /* 16 */
+
+/* Largest Size64 in the generated table; asserted at runtime below. */
+#define WOW64_MC_PAYLOAD64_MAX 64
 
 extern ULONG Wow64TraceSyscalls;
+
+/* FNIDs for which lParam IS this message's payload buffer and win32k consumes
+ * it synchronously — the SendMessage family (which copies it into pool around
+ * the send) and the server-side WndProcs (which read it in place). Deliberately
+ * NOT the hook FNIDs (CALLWNDPROC/CALLWNDPROCRET repack lParam into a CWPSTRUCT
+ * that the callback path marshals separately), NOT BROADCASTSYSTEMMESSAGE, and
+ * NOT the async posts (SENDNOTIFYMESSAGE / SENDMESSAGECALLBACK), where a host
+ * stack buffer would outlive this call. */
+static int Wow64pMcLParamIsPayload(ULONG FNID)
+{
+    return FNID == WOW64_MC_FNID_SENDMESSAGE ||
+           FNID == WOW64_MC_FNID_SENDMESSAGEFF ||
+           FNID == WOW64_MC_FNID_SENDMESSAGEWTOOPTION ||
+           FNID == WOW64_MC_FNID_DEFWINDOWPROC ||
+           FNID == WOW64_MC_FNID_SCROLLBAR ||
+           FNID == WOW64_MC_FNID_DESKTOP ||
+           FNID == WOW64_MC_FNID_MENU ||
+           FNID == WOW64_MC_FNID_MESSAGEWND;
+}
+
+/* Reaches co_IntDoSendMessage, i.e. win32k sizes the payload copy from
+ * g_MsgMemory using HOST widths. An unmarshallable divergent payload here is
+ * the box-killing over-read, so we refuse rather than let it through. */
+static int Wow64pMcGoesThroughMsgMemory(ULONG FNID)
+{
+    return FNID == WOW64_MC_FNID_SENDMESSAGE ||
+           FNID == WOW64_MC_FNID_SENDMESSAGEFF ||
+           FNID == WOW64_MC_FNID_SENDMESSAGEWTOOPTION;
+}
+
+static int Wow64pMcPayloadNeedsPointee(ULONG Msg)
+{
+    return Msg == WOW64_MC_WM_NCCALCSIZE || Msg == WOW64_MC_WM_COPYDATA ||
+           Msg == WOW64_MC_WM_CREATE || Msg == WOW64_MC_WM_NCCREATE;
+}
 
 static NTSTATUS Wow64Manual_NtUserMessageCall(ULONG *a)
 {
     extern NTSTATUS NtUserMessageCall(PVOID, ULONG_PTR, PVOID, PVOID, PVOID,
                                       ULONG_PTR, ULONG_PTR);
-    ULONG Msg = a[1];
+    ULONG Msg  = a[1];
+    ULONG lp32 = a[3];
+    ULONG ri32 = a[4];
     ULONG FNID = a[5];
+    const WOW64_CB_MARSHAL *Cbm = NULL;
+    unsigned char Payload64[WOW64_MC_PAYLOAD64_MAX];
+    WOW64_MC_DSM64 Dsm64;
+    ULONG_PTR Result64 = 0;
+    PVOID lParamArg = (PVOID)(LONG_PTR)(LONG)a[3];
+    PVOID ResultArg = (PVOID)(LONG_PTR)(LONG)a[4];
+    NTSTATUS St;
+    ULONG i;
 
-    if (FNID == WOW64_MC_FNID_DEFWINDOWPROC &&
-        (Msg == WOW64_MC_WM_WINDOWPOSCHANGING || Msg == WOW64_MC_WM_WINDOWPOSCHANGED) &&
-        a[3])
+    /* -- (1) lParam payload: guest 32-bit layout -> host 64-bit ------------ */
+    if (lp32 && Wow64pMcLParamIsPayload(FNID))
     {
-        WOW64_MC_WP32 *wp32 = (WOW64_MC_WP32 *)(ULONG_PTR)a[3];
-        WOW64_MC_WP64 wp64;
-        NTSTATUS St;
-        LONG in_cx = wp32->cx, in_cy = wp32->cy;
-        ULONG in_fl = wp32->flags;
-
-        /* 28 -> 40, per field. Handles sign-extend (real handles are small +ve
-         * and stay correct; HWND_TOPMOST/-NOTOPMOST sentinels widen correctly). */
-        wp64.hwnd = (ULONGLONG)(LONG_PTR)(LONG)wp32->hwnd;
-        wp64.hwndInsertAfter = (ULONGLONG)(LONG_PTR)(LONG)wp32->hwndInsertAfter;
-        wp64.x = wp32->x; wp64.y = wp32->y;
-        wp64.cx = wp32->cx; wp64.cy = wp32->cy;
-        wp64.flags = wp32->flags; wp64.__pad = 0;
-
-        St = NtUserMessageCall((PVOID)(LONG_PTR)(LONG)a[0], (ULONG_PTR)(LONG_PTR)(LONG)a[1],
-                               (PVOID)(LONG_PTR)(LONG)a[2], &wp64,
-                               (PVOID)(LONG_PTR)(LONG)a[4], (ULONG_PTR)(LONG_PTR)(LONG)a[5],
-                               (ULONG_PTR)(LONG_PTR)(LONG)a[6]);
-
-        /* 40 -> 28 back. Preserve the guest's original 64-bit-narrowed handles
-         * (win32k does not repoint them for this message). */
-        wp32->x = wp64.x; wp32->y = wp64.y;
-        wp32->cx = wp64.cx; wp32->cy = wp64.cy;
-        wp32->flags = wp64.flags;
-        wp32->hwndInsertAfter = (ULONG)wp64.hwndInsertAfter;
-
-        if (Wow64TraceSyscalls)
-            DbgPrint("[WOW64] NtUserMessageCall DWP WINDOWPOS marshalled "
-                     "(in cx=%ld cy=%ld fl=0x%lx -> out cx=%ld cy=%ld fl=0x%lx)\n",
-                     (long)in_cx, (long)in_cy, (unsigned long)in_fl,
-                     (long)wp32->cx, (long)wp32->cy, (unsigned long)wp32->flags);
-        return St;
+        Cbm = Wow64CbFindMarshal(Msg);
+        if (Cbm)
+        {
+            if (Cbm->Size64 > sizeof(Payload64))
+            {
+                /* Generated table outgrew the buffer — a codegen change, not a
+                 * guest input. Loud, never a silent truncation. */
+                DbgPrint("[WOW64] NtUserMessageCall: msg 0x%lx payload %lu > "
+                         "WOW64_MC_PAYLOAD64_MAX %u — raise it\n",
+                         (unsigned long)Msg, (unsigned long)Cbm->Size64,
+                         (unsigned)sizeof(Payload64));
+                return 0;
+            }
+            /* Up() writes only the fields it knows; padding it skips must not
+             * reach win32k as stack garbage. */
+            for (i = 0; i < Cbm->Size64; i++)
+                Payload64[i] = 0;
+            Cbm->Up((const unsigned char *)(ULONG_PTR)lp32, Payload64);
+            lParamArg = Payload64;
+        }
+        else if (Wow64pMcPayloadNeedsPointee(Msg) &&
+                 Wow64pMcGoesThroughMsgMemory(FNID))
+        {
+            /* win32k would size the copy from the host struct and read past the
+             * end of the guest's buffer. Failing the call loses the message;
+             * letting it through can lose the machine. */
+            DbgPrint("[WOW64] NtUserMessageCall: msg 0x%lx (FNID 0x%lx) has a "
+                     "divergent lParam payload with an embedded pointer and no "
+                     "marshaller — failing the call rather than over-reading "
+                     "the guest buffer\n",
+                     (unsigned long)Msg, (unsigned long)FNID);
+            return 0;
+        }
     }
 
-    /* Flat pass-through — byte-identical to the generated thunk. */
-    return NtUserMessageCall((PVOID)(LONG_PTR)(LONG)a[0], (ULONG_PTR)(LONG_PTR)(LONG)a[1],
-                             (PVOID)(LONG_PTR)(LONG)a[2], (PVOID)(LONG_PTR)(LONG)a[3],
-                             (PVOID)(LONG_PTR)(LONG)a[4], (ULONG_PTR)(LONG_PTR)(LONG)a[5],
-                             (ULONG_PTR)(LONG_PTR)(LONG)a[6]);
+    /* -- (2)/(3) ResultInfo out-slot --------------------------------------- */
+    if (ri32)
+    {
+        if (FNID == WOW64_MC_FNID_SENDMESSAGE)
+        {
+            ResultArg = &Result64;
+        }
+        else if (FNID == WOW64_MC_FNID_SENDMESSAGEFF ||
+                 FNID == WOW64_MC_FNID_SENDMESSAGEWTOOPTION)
+        {
+            const WOW64_MC_DSM32 *d32 = (const WOW64_MC_DSM32 *)(ULONG_PTR)ri32;
+            Dsm64.uFlags   = d32->uFlags;
+            Dsm64.uTimeout = d32->uTimeout;
+            Dsm64.Result   = d32->Result;
+            ResultArg = &Dsm64;
+        }
+    }
+
+    St = NtUserMessageCall((PVOID)(LONG_PTR)(LONG)a[0], (ULONG_PTR)(LONG_PTR)(LONG)a[1],
+                           (PVOID)(LONG_PTR)(LONG)a[2], lParamArg, ResultArg,
+                           (ULONG_PTR)(LONG_PTR)(LONG)a[5],
+                           (ULONG_PTR)(LONG_PTR)(LONG)a[6]);
+
+    /* -- copy back: host 64-bit -> guest 32-bit ---------------------------- */
+    if (Cbm)
+        Cbm->Down(Payload64, (unsigned char *)(ULONG_PTR)lp32);
+
+    if (ri32)
+    {
+        if (FNID == WOW64_MC_FNID_SENDMESSAGE)
+        {
+            *(ULONG *)(ULONG_PTR)ri32 = (ULONG)Result64;
+        }
+        else if (FNID == WOW64_MC_FNID_SENDMESSAGEFF ||
+                 FNID == WOW64_MC_FNID_SENDMESSAGEWTOOPTION)
+        {
+            WOW64_MC_DSM32 *d32 = (WOW64_MC_DSM32 *)(ULONG_PTR)ri32;
+            d32->uFlags   = Dsm64.uFlags;
+            d32->uTimeout = Dsm64.uTimeout;
+            d32->Result   = (ULONG)Dsm64.Result;
+        }
+    }
+
+    if (Wow64TraceSyscalls && ResultArg != (PVOID)(LONG_PTR)(LONG)a[4])
+        DbgPrint("[WOW64] NtUserMessageCall msg=0x%lx fnid=0x%lx result-slot %s\n",
+                 (unsigned long)Msg, (unsigned long)FNID,
+                 FNID == WOW64_MC_FNID_SENDMESSAGE ? "ULONG_PTR 8->4"
+                                                   : "DOSENDMESSAGE 16->12");
+    if (Wow64TraceSyscalls && Cbm)
+        DbgPrint("[WOW64] NtUserMessageCall msg=0x%lx fnid=0x%lx payload "
+                 "32<->64 (%u<->%u bytes)\n",
+                 (unsigned long)Msg, (unsigned long)FNID,
+                 (unsigned)Cbm->Size32, (unsigned)Cbm->Size64);
+    return St;
 }
 
 /* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */

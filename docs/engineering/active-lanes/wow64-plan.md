@@ -1226,6 +1226,72 @@ generator cannot flag what it cannot see, and **a report that iterates the
 generator's own flagged set inherits exactly that blind spot**. The check has to
 cross the artifact it generated against the independent source of truth.
 
+**Phase E13 — the `NtUserMessageCall` boundary: three divergences, one syscall
+(2026-07-24).** E11's ladder found a box-killer (§9.116): win32k's `g_MsgMemory`
+sizes SendMessage pointer-lParam payloads with the HOST's `size_of::<T>()`, so a
+32-bit sender's smaller struct is over-read — `0x1E`/`C0000005` at win32k's
+`raw_move`. E11 recorded it as "the fix is win32k-side"; **that was wrong**, and
+one grep overturned it: every `co_IntDoSendMessage` call — the only consumer of
+`CopyMsgToKernelMem`/`CopyMsgToUserMem` — is inside **`NtUserMessageCall`**. The
+whole class sits on one thunk boundary, which is where real Windows puts it
+(wow64win.dll owns message thunking; the kernel only ever sees host-width structs).
+
+*Auditing that boundary properly found three divergences, not one* — and the one
+nobody had reported was the worst:
+
+| Arg | i386 | host | Consequence |
+|---|---|---|---|
+| lParam payload (`g_MsgMemory` msgs) | varies | varies | over-read → BUGCHECK (the reported bug) |
+| `ResultInfo` / `FNID_SENDMESSAGE` | `ULONG_PTR` **4** | **8** | **every** SendMessage smashes 4 bytes of guest stack |
+| `ResultInfo` / `FNID_SENDMESSAGE{FF,WTOOPTION}` | `DOSENDMESSAGE` **12** | **16** | over-read *and* over-write |
+
+The middle row had been live since the first 32-bit GUI guest: user32's
+`SendMessageW` passes `&Result`, a 4-byte `LRESULT` local, and win32k stores 8
+bytes into it. It never crashed because the adjacent stack was usually dead — the
+E7 shape on a far hotter path.
+
+*Implementation.* `Wow64Manual_NtUserMessageCall` now marshals the payload through
+the **generated** `wow64_cb_automarshal.c` table (keyed by `Msg`, from clang
+record-layout diffs) that the callback direction already used, so the two
+directions cannot disagree about a layout. `WINDOWPOS` had been an "extra struct"
+with no `Msg`→pair row, so the **callback** direction had been copying 40 host
+bytes into a buffer the guest reads as 28 — an unfiled bug, fixed by adding the row
+the SendMessage side needed anyway. M16's hand-written `FNID_DEFWINDOWPROC`
+special case is now one row of that table.
+
+Widths were confirmed with marshalgen's own layout engine, not arithmetic —
+which also proved `MINMAXINFO`/`RECT`/`STYLESTRUCT`/`DEV_BROADCAST_HDR` are
+width-IDENTICAL, so "helpfully" marshalling one would have corrupted it.
+Marshalling is scoped by what the callee *does* with the arg: deliberately not
+`FNID_CALLWNDPROC*` (repacked into a `CWPSTRUCT` the callback path handles) and
+not the async posts (a host stack buffer handed to an async post is a
+use-after-return). `WM_NCCALCSIZE`/`WM_COPYDATA`/`WM_CREATE` embed a pointer or a
+packed tail; on the `g_MsgMemory` FNIDs they now **fail loudly** rather than
+flat-pass — losing a message beats losing the machine.
+
+*Result.* The old signature is **gone** from the log entirely; **spider and
+eventvwr — the two applets that had been killing the box — PASS**, and the E11
+block is re-enabled for them. **21 applets + 7 probe guests green on amd64.**
+
+*And the ladder immediately moved to the next bug*, which is exactly what it is
+for: `devmgmt` (never reached before) and `doom` now BUGCHECK 0x1E via a
+**different** chain — `ProbeForWrite` → `ExRaiseAccessViolation` →
+`RtlRaiseStatus`, unhandled under DUMMY_PSEH (task #67). A control run with the
+callback-direction change reverted reproduced that chain byte-identically, which
+is what proves it is not E13's doing. devmgmt/msconfig/sndrec32/kbswitch stay
+staged with their launch held, on the same coverage argument as before.
+
+*Also fixed in passing (§9.117a):* `rtl-diag`'s `[RAISE]` helper reported a
+**stack** address as the raise site — its "kernel-text-looking" window
+(`0xFFFFF800..`–`0xFFFFF8FF..`) also covers kernel stacks. It now rejects
+candidates within 1MB of `rsp`. The tell was that the known-good `seh_poc` raise
+lied the same way.
+
+*Durable lessons:* field manual **§9.117** (fix width bugs at the thunk boundary,
+audit the whole boundary not just the reported arg, reuse the generator's table,
+verify widths with the layout engine) and **§9.117a** (a triage tool that lies
+costs more than no tool — validate it against a case whose answer you know).
+
 ## Ground rules
 - FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored
   contributions upstream; we consume its binary contract only).

@@ -9663,3 +9663,93 @@ Pick the hold based on COVERAGE, not on blame. Here master already bugchecked at
 rung, so holding the new applets did not make anything safer — what it bought was that the
 twelve rungs *before* the new ones keep reporting every boot instead of being cut off six
 applets early.
+
+### 9.117 (FIXED 2026-07-24) The §9.116 fix belonged in the WoW64 THUNK layer, not in win32k — and `NtUserMessageCall` carried three divergences, one of them smashing guest stack on *every* SendMessage
+
+§9.116 diagnosed the `g_MsgMemory` over-read and concluded "the fix is win32k-side."
+**That conclusion was wrong, and the evidence that overturned it took one grep:** every
+call to `co_IntDoSendMessage` — the only consumer of `CopyMsgToKernelMem` /
+`CopyMsgToUserMem` — lives inside a single syscall, `NtUserMessageCall`. So the whole
+class sits on one thunk boundary, which is exactly where real Windows puts it (wow64win.dll
+owns message thunking; the kernel only ever sees host-width structs).
+
+Fixing it in win32k would have meant teaching the kernel to ask "is my caller 32-bit?" on a
+hot path, for a problem the thunk layer is *defined* to solve. **When a width bug looks like
+it needs kernel changes, first check whether the whole surface funnels through one thunk.**
+
+**Three divergences on that one syscall, not one.** Auditing the boundary properly (rather
+than just fixing the reported symptom) found two more, and the unreported one was worse:
+
+| Arg | i386 | host | Consequence |
+|---|---|---|---|
+| lParam payload (`g_MsgMemory` messages) | varies | varies | §9.116 over-read → BUGCHECK |
+| `ResultInfo` under `FNID_SENDMESSAGE` | `ULONG_PTR` = **4** | **8** | **every** SendMessage smashes 4 bytes of guest stack |
+| `ResultInfo` under `FNID_SENDMESSAGE{FF,WTOOPTION}` | `DOSENDMESSAGE` = **12** | **16** | over-read *and* over-write |
+
+The middle row had been live since the first 32-bit GUI guest: user32's `SendMessageW`
+passes `&Result` (an `LRESULT` stack local, 4 bytes on i386) and win32k stores
+`size_of::<ULONG_PTR>()` = 8 into it. It never crashed because the adjacent 4 bytes were
+usually dead stack — the E7 shape exactly, on a far hotter path. **A bug that corrupts a
+fixed small amount of stack on a universal path will not announce itself; it will show up
+later as somebody else's flake.**
+
+**Don't hand-write the converters when a generator already emits them.** The payload
+conversions were already generated for the *callback* direction
+(`wow64_cb_automarshal.c`, keyed by `Msg`, from clang record-layout diffs). Reusing that
+table for the SendMessage direction means the two directions cannot disagree about a
+layout, and adding a row now fixes both at once. That immediately paid: `WINDOWPOS` had
+been an "extra struct" with no `Msg`→pair row, so the callback direction had been copying
+40 host bytes into a buffer the guest reads as 28 — a bug nobody had filed, fixed by adding
+the row that the SendMessage side needed anyway.
+
+**Verify widths with the layout engine, never with arithmetic.** Driving marshalgen's own
+`dump_layouts`/`diff_struct` over the candidate structs is a ~20-line script and it both
+confirms the divergent ones and — just as important — proves which are **identical**:
+`MINMAXINFO` (5 POINTs), `RECT`, `STYLESTRUCT`, `DEV_BROADCAST_HDR` are the same at both
+widths, and "helpfully" marshalling one of those would have corrupted it.
+
+**Scope the marshalling by what the callee DOES with the arg, not by the arg's type.**
+`lParam` is only this message's payload for some FNIDs. It is deliberately *not* marshalled
+for `FNID_CALLWNDPROC`/`CALLWNDPROCRET` (repacked into a `CWPSTRUCT` the callback path
+marshals separately), nor for the async posts (`SENDNOTIFYMESSAGE`, `SENDMESSAGECALLBACK`)
+— **a host stack buffer handed to an async post is a use-after-return**, which is the kind
+of "fix" that trades a loud bug for a silent one.
+
+**Fail the call, don't pass the buffer.** `WM_NCCALCSIZE`/`WM_COPYDATA`/`WM_CREATE` embed a
+pointer or a packed string tail, so the flat table cannot express them. On the FNIDs that
+reach `g_MsgMemory` they now fail loudly with a named DbgPrint instead of flat-passing:
+losing a message beats losing the machine.
+
+**Fixing the box-killer moves the ladder to the NEXT bug — expect that, and don't read it
+as a regression.** With this landed, spider and eventvwr (the two applets that had been
+killing the box) PASS, and the ladder ran on into `devmgmt` and `doom`, which BUGCHECK 0x1E
+via a *different* chain — `ProbeForWrite` → `ExRaiseAccessViolation` → `RtlRaiseStatus`,
+unhandled. A control run (callback-direction change reverted, rebuilt, rebooted) reproduced
+that chain byte-identically, which is what proves it is not this fix's doing. **Two crashes
+at the same rung are not the same bug; symbolicate before assuming continuity.**
+
+### 9.117a (FIXED 2026-07-24) The `[RAISE]` crash-triage helper reported a STACK address as the raise site — its "kernel-text-looking" window also contains kernel stacks
+
+While triaging the above, `rtl-diag`'s unhandled-raise helper printed:
+
+```
+[RAISE] RtlRaiseStatus(0xC0000005) from fffff88004880500
+```
+
+and that address symbolicates to nothing sensible — because it is a **stack pointer**, not
+code. The helper scans the stack for "the first kernel-text-looking qword" using
+`v >= 0xFFFF_F800_0000_0000 && v < 0xFFFF_F8FF_FFFF_FFFF`. On amd64 that window covers
+ntoskrnl (`fffff800…`) and driver text (`fffff880…`) — **and kernel stacks, which also live
+at `fffff880…`**. So the very first candidate it finds is routinely a saved stack pointer in
+the helper's own frame.
+
+Fix: reject candidates within 1MB of the current `rsp`. Kernel stacks are 16–24KB, so the
+window sits safely inside the stack and cannot swallow a real driver text address. After
+the fix the same helper reports `fffff800004cacc4` — an actual code address.
+
+**A triage tool that lies costs more than no tool**, because its output is trusted at
+exactly the moment you have least other information. The tell here was that the *known-good*
+case lied too: the boot-time `seh_poc` raise, whose raiser is in ntoskrnl (`fffff800…`),
+was also reported as `fffff880…`. **When a diagnostic is suspect, run it against the case
+whose answer you already know** — that comparison is what turned "this address is
+mysterious" into "this tool is broken."
