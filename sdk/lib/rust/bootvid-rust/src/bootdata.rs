@@ -1,3 +1,6 @@
+//! ORPHAN-BY-DESIGN: VGA command streams for the parked vga.rs — the legacy
+//! i386/pc INT10h path removed with the BIOS prune. Referenced by nothing else.
+//!
 //! Translated from drivers/base/bootvid/i386/pc/bootdata.c —
 //! VGA command streams (EGA ATC init + 640x480 mode set).
 //! Mechanically transliterated; opcode/port symbols resolve via

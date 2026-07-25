@@ -2223,6 +2223,53 @@ SHELL_ErrorBox_RustBridge(HWND hwndOwner, UINT Error)
     return SHELL_ErrorBoxHelper(hwndOwner, Error);
 }
 
+/* shellutils.h defines this inline, so there is no symbol to import. */
+extern "C" HRESULT WINAPI
+DataObject_GetOffset_RustBridge(IDataObject *pDataObject, POINT *point)
+{
+    return DataObject_GetOffset(pDataObject, point);
+}
+
+/* CStubWindow32 is an ATL CWindowImpl<>, whose per-instance thunk and registered
+ * window class must have exactly ONE owner. utils.cpp and CDrivesFolder.cpp still
+ * use the class directly, so the Rust side gets a bridge rather than a second
+ * implementation that would register the same class name and split FindStubWindow.
+ *
+ * The pair is create/destroy: the object outlives the call because the thunk must
+ * stay alive as long as the window does, so Rust holds it as an opaque pointer and
+ * hands it back. On failure nothing is allocated and *ppStub stays NULL.
+ */
+extern "C" HRESULT WINAPI
+CStubWindow32_CreateStub_RustBridge(
+    UINT Type, LPCWSTR Path, const POINT *pPt, HWND *phWnd, void **ppStub)
+{
+    *phWnd = NULL;
+    *ppStub = NULL;
+    CStubWindow32 *pStub = new CStubWindow32();
+    if (!pStub)
+        return E_OUTOFMEMORY;
+    HRESULT hr = pStub->CreateStub(Type, Path, pPt);
+    if (FAILED(hr))
+    {
+        delete pStub;
+        return hr;
+    }
+    *phWnd = *pStub;
+    *ppStub = pStub;
+    return hr;
+}
+
+extern "C" void WINAPI
+CStubWindow32_DestroyStub_RustBridge(void *pStub)
+{
+    CStubWindow32 *p = static_cast<CStubWindow32 *>(pStub);
+    if (!p)
+        return;
+    if (p->m_hWnd)
+        p->DestroyWindow();
+    delete p;
+}
+
 extern "C" HRESULT WINAPI
 SHELL_CreateShell32DefaultExtractIcon_RustBridge(INT iconIndex, REFIID riid, LPVOID *ppvOut)
 {

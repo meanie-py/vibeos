@@ -137,12 +137,67 @@ use core::ffi::c_void;
     if buf.is_null() { return 0; } let c = (*(buf as *const u8)) & 0x7f; (c==0x70||c==0x71||c==0x72||c==0x73) as u8
 }
 #[no_mangle] pub unsafe extern "C" fn ScsiGetSenseErrorCode(buf: PVOID) -> u8 { if buf.is_null() {0} else {(*(buf as *const u8)) & 0x7f} }
-#[no_mangle] pub unsafe extern "C" fn ScsiGetTotalSenseByteCountIndicated(buf: PVOID) -> u8 {
-    if buf.is_null() {0} else { (*( (buf as *const u8).add(7) )).wrapping_add(8) }
+// ---- descriptor-format sense accessors -------------------------------------------------
+// These three took FEWER parameters than every declaration and call site in the crate, so
+// each argument bound to the wrong slot. `ScsiGetNextSenseDescriptorByType` was the live
+// hazard: its 4th parameter was `found: *mut u8` while callers pass `typeList.len() as
+// ULONG` (= 2) there, making `*found = 0` a write to ADDRESS 0x2 — a bugcheck at DISPATCH
+// on any device that answers with descriptor-format sense. It has not fired only because
+// `IsDescriptorSenseDataFormat()` gates the whole block and our virtual devices return
+// fixed-format sense. Found by tools/scan_extern_arity.py.
+//
+// Signatures now match the declarations exactly. The behaviour is deliberately the
+// conservative one — "no descriptor found", FALSE — rather than the old truthy return:
+// callers that got TRUE went on to read out-parameters this stub never wrote.
+#[no_mangle] pub unsafe extern "C" fn ScsiGetTotalSenseByteCountIndicated(
+    buf: PVOID,
+    _buf_len: UCHAR,
+    count: *mut UCHAR,
+) -> BOOLEAN {
+    if buf.is_null() || count.is_null() {
+        return 0;
+    }
+    *count = (*((buf as *const u8).add(7))).wrapping_add(8);
+    1
 }
-#[no_mangle] pub unsafe extern "C" fn ScsiGetSenseDescriptor(buf: PVOID) -> PVOID { if buf.is_null() {core::ptr::null_mut()} else {(buf as *mut u8).add(8) as PVOID} }
+#[no_mangle] pub unsafe extern "C" fn ScsiGetSenseDescriptor(
+    buf: PVOID,
+    _buf_len: UCHAR,
+    desc_buf: *mut PVOID,
+    desc_len: *mut UCHAR,
+) -> BOOLEAN {
+    if buf.is_null() || desc_buf.is_null() || desc_len.is_null() {
+        return 0;
+    }
+    // Descriptor list starts at byte 8 of a descriptor-format sense buffer; byte 7 is the
+    // additional-sense-length that bounds it.
+    *desc_buf = (buf as *mut u8).add(8) as PVOID;
+    *desc_len = *((buf as *const u8).add(7));
+    1
+}
 #[no_mangle] pub unsafe extern "C" fn ScsiGetSenseDescriptorLength(d: PVOID) -> u32 { if d.is_null() {0} else {(*((d as *const u8).add(1)) as u32).wrapping_add(2)} }
-#[no_mangle] pub unsafe extern "C" fn ScsiGetNextSenseDescriptorByType(buf: PVOID, len: u32, ty: u8, found: *mut u8) -> PVOID { if !found.is_null() {*found=0;} core::ptr::null_mut() }
+#[no_mangle] pub unsafe extern "C" fn ScsiGetNextSenseDescriptorByType(
+    _start: PVOID,
+    _start_len: UCHAR,
+    _types: *const UCHAR,
+    _type_count: ULONG,
+    out_type: *mut UCHAR,
+    out_buf: *mut PVOID,
+    out_len: *mut UCHAR,
+) -> BOOLEAN {
+    // Not implemented: report "no descriptor of that type", and leave the out-parameters
+    // in a defined state so the caller's loop terminates instead of walking a stale buffer.
+    if !out_type.is_null() {
+        *out_type = 0;
+    }
+    if !out_buf.is_null() {
+        *out_buf = core::ptr::null_mut();
+    }
+    if !out_len.is_null() {
+        *out_len = 0;
+    }
+    0
+}
 #[no_mangle] pub unsafe extern "C" fn ScsiValidateBlockCommandSenseDescriptor(d: PVOID, len: u32) -> u8 { 0 }
 #[no_mangle] pub unsafe extern "C" fn ScsiValidateInformationSenseDescriptor(d: PVOID, len: u32) -> u8 { 0 }
 #[no_mangle] pub unsafe extern "C" fn ScsiConvertToFixedSenseFormat(buf: PVOID, len: u32, out: PVOID, outlen: u32) -> u8 { 0 }
@@ -197,8 +252,11 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 // C debug.h: #define DBGGETIOCTLSTR(_ioctl) DbgGetIoctlStr(_ioctl) — string-table
 // lookup for trace text only; empty string is faithful to the other Dbg* stubs here.
 #[no_mangle] pub unsafe extern "C" fn DBGGETIOCTLSTR(_code: u32) -> *const i8 { EMPTY }
-#[no_mangle] pub unsafe extern "C" fn DbgGetSenseCodeStr(_a: u8, _b: u8) -> *const i8 { EMPTY }
-#[no_mangle] pub unsafe extern "C" fn DbgGetAdditionalSenseCodeStr(_a: u8, _b: u8) -> *const i8 { EMPTY }
+// Both are declared (debug.rs) and called with ONE argument — the SRB pointer — not two
+// bytes. Harmless while the body ignores its parameters, but the arity was still a
+// caller/callee disagreement; scan_extern_arity.py flagged it.
+#[no_mangle] pub unsafe extern "C" fn DbgGetSenseCodeStr(_srb: PVOID) -> *const i8 { EMPTY }
+#[no_mangle] pub unsafe extern "C" fn DbgGetAdditionalSenseCodeStr(_srb: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DbgGetSrbStatusStr(_s: u8) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DBGGETSCSIOPSTR(_s: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DBGGETSENSECODESTR(_s: PVOID) -> *const i8 { EMPTY }
@@ -210,7 +268,20 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "system" fn EtwRegister(a: PVOID, b: PVOID, c: PVOID, h: *mut u64) -> NTSTATUS { if !h.is_null() {*h=0;} 0 }
 #[no_mangle] pub unsafe extern "system" fn EtwUnregister(h: u64) -> NTSTATUS { 0 }
 #[no_mangle] pub unsafe extern "system" fn EtwWrite(h: u64, d: PVOID, a: PVOID, n: u32, dd: PVOID) -> NTSTATUS { 0 }
-#[no_mangle] pub unsafe extern "C" fn EventDescCreate() {}
+// Declared and called with 8 arguments (autorun.rs:61, :3303). The 0-parameter form was
+// benign — cdecl, and the body is empty — but the shape still disagreed with every caller.
+// Behaviour is unchanged: the ETW write this feeds is stubbed too.
+#[no_mangle] pub unsafe extern "C" fn EventDescCreate(
+    _EventDescriptor: PVOID,
+    _Id: u16,
+    _Version: u8,
+    _Channel: u8,
+    _Level: u8,
+    _Task: u16,
+    _Opcode: u8,
+    _Keyword: u64,
+) {
+}
 
 // ============================ Ex timer / lookaside (stubs) ============================
 #[no_mangle] pub unsafe extern "C" fn ExAllocateFromNPagedLookasideList(l: PVOID) -> PVOID { core::ptr::null_mut() }

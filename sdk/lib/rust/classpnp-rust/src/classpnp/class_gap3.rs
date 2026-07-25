@@ -1,3 +1,9 @@
+//! ORPHAN-BY-DESIGN: a rustconv file-split gap artifact. All 10 of its exports
+//! (ClassFreeOrReuseSrb, ClassRetrieveDeviceRelations, ClassLogThresholdEvent, …)
+//! are defined live in class_part_d.rs. Editing this file cannot affect the build
+//! — that trap cost a debugging session once: the edits passed `cargo check`
+//! (cargo never opens it) while the link kept failing.
+//!
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 

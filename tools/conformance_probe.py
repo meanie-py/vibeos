@@ -14,6 +14,19 @@ bugchecks the kernel therefore ends the run, and every test after it in the list
 produces no verdict at all. Enabling all 21 quarantined tests in one boot teaches
 you about exactly one of them.
 
+A ruinous test spoils the boot in one of TWO ways, and they need opposite
+handling:
+
+  * it CRASHES — the boot ends, the tests after it get no verdict, and the probe
+    re-queues them. Silence is the honest outcome here.
+  * it WEDGES IN-KERNEL (TIMEOUT) — the boot does NOT end. Draining continues,
+    but the wedged process never releases kmtest_drv's registered result buffer,
+    so every later test cascade-fails SET_RESULTBUFFER 0x5 and records a NO-END
+    verdict about itself that is really a fact about the wedge.
+
+The second is the dangerous one, because it produces confident-looking verdicts
+instead of silence. `split_at_wedge` voids them.
+
 THE STRATEGY. Run a probe list containing ONLY the candidates, ordered
 most-likely-fixed first. One boot yields verdicts for everything up to the first
 crasher. Drop that crasher, re-run. Worst case is one boot per crasher; best case
@@ -48,6 +61,30 @@ HEADER = """\
 # restoring; `git checkout` this path is NOT the fix — see the tool's docstring
 # and restore from git history.
 """
+
+# Verdicts that POISON every verdict recorded after them in the same boot.
+#
+# A CRASH ends the boot outright, so the tests after it simply get no verdict and
+# the probe already re-queues them. A TIMEOUT is the nastier case: it is an
+# IN-KERNEL WEDGE, the boot keeps draining, and the wedged process never releases
+# kmtest_drv's registered result buffer — so every LATER test cascade-fails
+# SET_RESULTBUFFER 0x5 and lands a NO-END verdict that says nothing about that
+# test. Those are contamination, not evidence.
+POISONING = {"TIMEOUT"}
+
+
+def split_at_wedge(got: list[str], verdicts: dict[str, str]) -> tuple[list[str], list[str]]:
+    """Split a boot's verdicts into (trustworthy, contaminated).
+
+    `got` is the tests that received a verdict, in list order. Everything up to
+    and including the first POISONING verdict is real; everything after it was
+    produced by a kernel already wedged by that test, and is not evidence about
+    the tests it names. With no wedge, all of `got` is trustworthy.
+    """
+    wedge_at = next((i for i, t in enumerate(got) if verdicts[t] in POISONING), None)
+    if wedge_at is None:
+        return got, []
+    return got[: wedge_at + 1], got[wedge_at + 1 :]
 
 
 def quarantined(arch: str) -> list[str]:
@@ -138,11 +175,32 @@ def main(argv: list[str]) -> int:
             verdicts, sweep = run_sweep(args.arch)
             got = [t for t in remaining if t in verdicts]
             missing = [t for t in remaining if t not in verdicts]
+
+            # Drop everything recorded AFTER an in-kernel wedge (see POISONING).
+            # Without this the probe banks the wedge's cascade as real results:
+            # amd64 round 1 booted SeTokenFiltering (TIMEOUT) ahead of four other
+            # candidates, which then reported NO-END purely because the wedged
+            # process still held the result buffer — and all four were summarised
+            # as validly re-tested. `missing` is empty in that boot, so the
+            # `if not missing` early-out below would have accepted the lot.
+            got, contaminated = split_at_wedge(got, verdicts)
+
             for t in got:
                 passed[t] = verdicts[t]
             print(f"[probe]   sweep={sweep}  verdicts={len(got)}  no-verdict={len(missing)}")
             for t in got:
                 print(f"[probe]     {t:32s} {verdicts[t]}")
+
+            if contaminated:
+                wedged = got[-1]
+                crashers.append(wedged)
+                print(f"[probe]   WEDGED BY {wedged} ({verdicts[wedged]}) — it holds the result")
+                print(f"[probe]   buffer, so the {len(contaminated)} verdict(s) after it are")
+                print("[probe]   CONTAMINATION, not evidence; still CANDIDATES")
+                keep = set(contaminated) | set(missing)
+                remaining = [t for t in remaining if t in keep]
+                continue
+
             if not missing:
                 remaining = []
                 break

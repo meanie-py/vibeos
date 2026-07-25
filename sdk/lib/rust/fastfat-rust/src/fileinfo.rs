@@ -98,7 +98,8 @@ extern "system" {
     fn FatIsFat32(Vcb: *mut VCB) -> BOOLEAN;
     fn FatDirectoryKey(Dcb: *mut DCB) -> u64;
     fn FatStringTo8dot3( IrpContext: *mut IRP_CONTEXT, OemName: *mut OEM_STRING, QueryTemplate: *mut OEM_STRING, );
-    fn FatEvaluateNameCase( IrpContext: *mut IRP_CONTEXT, Name: *const _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, ) -> BOOLEAN;
+    // VOID upstream and in namesup.rs — the answer comes back through CreateLfn.
+    fn FatEvaluateNameCase( IrpContext: *mut IRP_CONTEXT, Name: *const _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FAT_LFN_DIRENTS_NEEDED(Name: *const _UNICODE_STRING) -> u32;
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Ccb: *mut CCB, WildCards: u32, Flags: *mut u32, TargetDirent: *mut *mut DIRENT, TargetDirentBcb: *mut *mut PBCB, TargetDirentOffset: *mut u32, SecondDirent: *mut *mut DIRENT, TargetLfn: *mut _UNICODE_STRING, TargetOrigLfn: *mut _UNICODE_STRING, );
     static TAG_FILENAME_BUFFER: u32;
@@ -1945,14 +1946,20 @@ pub unsafe extern "system" fn FatSetRenameInfo(
         // Determine dirents required
         if NewOemName.Length == 0
             || {
-                let r = FatEvaluateNameCase(
+                // FatEvaluateNameCase returns VOID (namesup.rs:611, and VOID upstream) — its
+                // answer comes back through CreateLfn. The local extern decl claimed
+                // `-> BOOLEAN`, so `let r = ...` read whatever happened to be in the return
+                // register and `r != 0 ||` made this branch effectively RANDOM: it decides
+                // whether a rename allocates long-file-name dirents. Found by
+                // tools/scan_extern_arity.py; matches the C, which tests CreateLfn alone.
+                FatEvaluateNameCase(
                     IrpContext,
                     &NewNameCopy as *const UNICODE_STRING as *const _UNICODE_STRING,
                     &raw mut AllLowerComponent,
                     &raw mut AllLowerExtension,
                     &raw mut CreateLfn,
                 );
-                r != 0 || CreateLfn != 0
+                CreateLfn != 0
             }
         {
             DirentsRequired = FAT_LFN_DIRENTS_NEEDED(&NewNameCopy as *const UNICODE_STRING as *const _UNICODE_STRING) + 1;

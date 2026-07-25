@@ -366,8 +366,12 @@ extern "system" {
     fn StrCpyNW(pszDst: LPWSTR, pszSrc: LPCWSTR, cchMax: INT) -> LPWSTR; // @12
     fn StringFromGUID2(rguid: REFGUID, lpsz: LPWSTR, cchMax: INT) -> INT; // @12
     // shlwapi (undoc)
-    fn SHAnsiToUnicode(pszSrc: LPCSTR, pwszDst: LPWSTR, cwchBuf: INT) -> LPWSTR; // @12
-    fn SHUnicodeToAnsi(pwszSrc: LPCWSTR, pszDst: LPSTR, cchBuf: INT) -> LPSTR; // @12
+    // shlwapi_undoc.h: `DWORD SHAnsiToUnicode(...)` / `INT SHUnicodeToAnsi(...)`. These
+    // were declared returning LPWSTR/LPSTR, which on amd64/arm64 reads a 64-bit register
+    // the callee only set 32 bits of. Every call site here discards the result, so the
+    // bug was latent, but a future caller would have read garbage in the high half.
+    fn SHAnsiToUnicode(pszSrc: LPCSTR, pwszDst: LPWSTR, cwchBuf: INT) -> DWORD; // @12
+    fn SHUnicodeToAnsi(pwszSrc: LPCWSTR, pszDst: LPSTR, cchBuf: INT) -> INT; // @12
     fn SHExpandEnvironmentStringsForUserW(
         hToken: HANDLE,
         lpSrc: LPCWSTR,

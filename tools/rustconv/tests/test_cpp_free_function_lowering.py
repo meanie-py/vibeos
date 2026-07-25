@@ -170,3 +170,17 @@ def test_cpp_coda_is_appended_for_a_cpp_source():
     assert 'u"..."' in cpp
     assert "IID_PPV_ARG" in cpp
     assert "CComPtr" in cpp
+
+
+def test_residual_iid_ppv_arg_trailing_comma_is_not_a_tuple():
+    """A trailing comma inside the macro must not become a one-tuple.
+
+    `(expr,)` is a tuple, not a parenthesised expression. It survives the rewrite and
+    only fails later at `.cast()` with "no method named `cast` found for tuple" — seen
+    for real in shell32 folders.cpp.
+    """
+    out = normalize_cpp_idioms(
+        "", "CoCreateInstance(IID_PPV_ARG(IShellIconOverlayIdentifier, pOverlay,));"
+    )
+    assert ",)" not in out.replace("IID_IShellIconOverlayIdentifier), ", "")
+    assert "core::ptr::addr_of!(IID_IShellIconOverlayIdentifier), (pOverlay).cast()" in out

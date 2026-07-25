@@ -1,3 +1,9 @@
+//! ORPHAN-BY-DESIGN: `bitblt_new.c` sits under `if(USE_DIBLIB)` in
+//! win32ss/CMakeLists.txt, and that file sets `USE_DIBLIB FALSE` — so neither the
+//! C nor this translation is built. The live blt path is bitblt.rs (EngBitBlt,
+//! IntEngBitBlt, NtGdiEngBitBlt) + copybits.rs (EngCopyBits, IntEngCopyBits);
+//! wiring this file up would collide with all five.
+//!
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
 

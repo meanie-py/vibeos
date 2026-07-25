@@ -86,3 +86,23 @@
 # You must not rely on them having a particular line ending style!
 # Vendored FEX snapshot: preserve upstream bytes exactly (no EOL normalization)
 external/fex/** -text
+
+# NO `merge=union` HERE — the field manual was the obvious candidate and it was WRONG.
+#
+# The problem union was meant to solve was real: every lane appended a new numbered section
+# at the tail of the field manual, so every pair of concurrent lanes conflicted there on
+# content neither one touched (three hand-resolutions in one night, 2026-07-25). Union kept
+# both sides' lines and the merges went quiet.
+#
+# Then mainline consolidated the manual 13.4K -> 2.1K lines: topical sections, entries
+# identified by HEADING, the global counter retired. Union does not diff — it concatenates —
+# so against a restructuring merge it took both "before" and "after" and silently reverted
+# the entire consolidation, producing a 12.4K-line file that still passed `git merge` with no
+# conflict to look at. It was caught only because scan_doc_sections then reported 165 minted
+# section numbers.
+#
+# The durable lesson: union is only safe while a file's merges are *guaranteed* disjoint
+# appends, and nothing enforces that — one lane restructuring the file is enough to break the
+# guarantee, with no signal. The append-at-EOF collision is now fixed at the source instead:
+# entries go in the topical section their symptom belongs to, so two lanes rarely touch the
+# same region, and `tools/scan_doc_sections.py --lint` fails a newly minted number.

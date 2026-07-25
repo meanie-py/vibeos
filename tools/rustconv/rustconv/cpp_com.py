@@ -1509,7 +1509,11 @@ def _expand_residual_iid_ppv_arg(rust: str) -> str:
             i = cursor
             continue
         interface = rust[i + match.end() : comma].strip()
-        value = rust[comma + 1 : cursor - 1].strip()
+        # A trailing comma inside the macro is legal C and models do emit it. Left in,
+        # the paren-wrap below turns `(expr,)` into a one-TUPLE, which compiles as far as
+        # `.cast()` and then fails with "no method named `cast` found for tuple" —
+        # measured on shell32 folders.cpp.
+        value = rust[comma + 1 : cursor - 1].strip().rstrip(",").strip()
         if not re.fullmatch(r"[A-Za-z_]\w*", interface):
             out.append(rust[i:cursor])
             i = cursor

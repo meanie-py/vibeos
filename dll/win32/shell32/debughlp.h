@@ -21,9 +21,10 @@
 #ifndef __WINE_SHELL32_DEBUGHLP_H
 #define __WINE_SHELL32_DEBUGHLP_H
 
-extern void pdump (LPCITEMIDLIST pidl);
-extern void pdump_always (LPCITEMIDLIST pidl);
-extern BOOL pcheck (LPCITEMIDLIST pidl);
+/* Rust-owned (shell32-rust/src/debughlp.rs): C linkage so the cohab symbols match. */
+EXTERN_C void pdump (LPCITEMIDLIST pidl);
+EXTERN_C void pdump_always (LPCITEMIDLIST pidl);
+EXTERN_C BOOL pcheck (LPCITEMIDLIST pidl);
 #ifdef __cplusplus
 extern "C"
 #endif

@@ -157,6 +157,26 @@ change stops the caller being dead-stripped.
 - **Before writing `extern { fn Foo }`, confirm `Foo` is a real out-of-line symbol** (`nm`, or
   grep for a definition), not a header macro.
 
+### A typedef that is ALREADY a pointer, given a second star
+The star lives in a header, so the model sees `_locale_t locale` as a bare type name and adds
+the indirection the parameter appears to lack — `locale: *mut _locale_t`, i.e. a
+`**localeinfo_struct` where the caller passes a `*localeinfo_struct`. On msvcrt's `mbcs.c` it
+did this in **73 of 77** locale-taking signatures.
+
+**The error is invisible at the ABI.** Both spellings are one machine pointer, so the signature
+links and the call passes identical bits; only the body's dereferences break, and only *some*
+of those are loud. It was caught here solely because `(*locale).mbcinfo` failed to typecheck —
+put the same mistake at a parameter the body merely forwards and it compiles, links, ships, and
+reads one indirection too deep forever. The same shape appears on **locals**
+(`let mbcinfo: *mut pthreadmbcinfo`), usually with a `.cast()` bolted on to make it build.
+
+**Fix:** `rustconv`'s `signature_fidelity` pass strips the invented star wherever the C declares
+the parameter with no `*`, `typedefs.py` proves that name a plain pointer from the TU's own
+include closure, and the Rust is exactly one star on *that same name*. Nothing else is touched:
+the same file had 46 parameters where the model's spelling merely disagreed with a mechanical
+mapping and the model was **right** (`size_t`/`usize`, `threadmbcinfo *`/`pthreadmbcinfo`).
+Locals are not covered — grep `\*mut <ptr typedef>` after a flip.
+
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
 `@KfRaiseIrql@4`), by **hal on arm64** (halstubs), and by **neither on amd64** — so routing a
@@ -187,6 +207,86 @@ Same family, three positions, all silent on the arch where the widths happen to 
 - **Detector:** scan def-vs-decl per symbol for ANY return/param width mismatch, not just
   narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
   and pointer typedefs.
+
+### Argument COUNT mismatches — the one clashing-extern bucket that is a real bug
+Same family as the widths above, one position further out: the decl and the definition
+disagree on how many parameters there are. `clashing_extern_declarations` carries ~1,458
+findings, and the 2026-07-17 triage sorted them — pointer-name and const/mut differences are
+ABI-identical noise, scalar widths are mostly benign return-register width, conventions are an
+i386-only hazard needing the C prototype to adjudicate — but it called a **different parameter
+count** "the highest-value needles" and left it unworked. It was right; `tools/scan_extern_arity.py`
+now gates it.
+
+classpnp declares and calls `ScsiGetNextSenseDescriptorByType(start, start_len, types,
+type_count, out_type, out_buf, out_len)` against a shim defined `(buf, len, ty, found: *mut u8)`.
+The 4th argument binds the caller's `typeList.len() as ULONG` — the literal **2** — to `found`,
+whose body is `if !found.is_null() { *found = 0; }`: a store to **address 0x2** at
+DISPATCH_LEVEL. It has never fired only because the block sits behind
+`IsDescriptorSenseDataFormat()` and our virtual devices answer fixed-format sense; a real drive
+returning descriptor sense bugchecks. Four siblings had the same shape less violently
+(`ScsiGetSenseDescriptor` returned a truthy *pointer* as a `BOOLEAN`, so callers took the
+"descriptor found" branch and read out-params the stub never wrote), plus cdrom's
+`PORT_ALLOCATED_SENSE` (called with 2, defined with 1) and classpnp's `EventDescCreate` (8 vs 0).
+A `VOID` function declared `-> BOOLEAN` is the same bug in the return position: fastfat's
+`FatEvaluateNameCase` fed an undefined return register into `r != 0 || CreateLfn != 0`, making
+"does this rename need LFN dirents?" effectively random.
+
+**Why nothing else caught it.** cdecl means the CALLER cleans the stack, so a wrong argument
+count neither corrupts the stack nor fails to link; rustc never compares the two signatures
+because the declaration is all the call site can see; and `verify_ffi`'s arity check compares
+against `ntoskrnl.spec`, which does not describe a crate-local shim. Only the crate's own decl
+against the crate's own definition sees it.
+
+**Three things that are NOT this bug**, baselined with reasons rather than "fixed": an
+**address-only forward decl** (`fn BaseThreadStartup();` exists so kernel32 can write
+`BaseThreadStartup as ULONG_PTR` into a new thread's `Rip` — never called through, so its arity
+claims nothing; same for freeldr's `PcFindPciBios`); a **uniform syscall-table shape** (the SSDT
+spells every entry `(_: usize, ...)` on purpose); and a decl in a file no `mod` chain reaches —
+dead code makes no calls, which is why freeldr's parked `directui.rs` drops out on its own.
+
+**Two parse traps that produced confidently wrong answers first**, both now in the GOOD control
+fixture so a regression surfaces as a false positive: count against comment-MASKED text
+(`RaiseOnError: u8, // BOOLEAN` contributes its own commas and `>`s), and **neutralise `->`
+before depth-tracking `<`/`>`** — `Option<unsafe extern "system" fn(usize) -> usize>` drives the
+depth negative at the arrow, after which every top-level comma is invisible. That one mistake
+reported **3,790** phantom findings against a true count of 15, and the identical trap bit
+`crate_repair`'s argument-index counter the same night. If you are counting top-level commas in
+Rust, assume `->` is there to ruin it.
+
+### A `transmute` at a callback-install site erases the CALLING CONVENTION
+Rust will not unify `extern "system" fn` with a literal `extern "stdcall" fn` (i386) or
+`extern "C" fn` (amd64/arm64) in a function-POINTER type, even though the ABI is identical on
+that arch. bindgen writes the literal, translations write the portable `system`, so assigning
+a translated callback into a bindgen slot is an E0308 — and the reflex fix is to transmute the
+address:
+
+```rust
+macro_rules! cb { ($f:expr) => { core::mem::transmute($f as usize) } }   // buslogic
+```
+
+That silences the *type*, which is the whole type — including the convention. buslogic's six
+SCSI miniport callbacks went into `PHW_*` slots this way while defined `extern "C"`; scsiport
+dereferences them as stdcall, so on i386 neither side pops the arguments and 8 bytes leak per
+SRB dispatch. The `cb!` comment even states the premise ("the bit pattern is identical; only
+the nominal Rust type differs") — true for the case in front of the author, and false the
+moment the definition's convention drifts. Same shape in cdrom via an explicit
+`transmute::<unsafe extern "C" fn(..), _>` into a WDF `EvtCleanupCallback`.
+
+**Fix the slot type, not the assignment.** `tools/rustconv/normalize_island_abi.py` spells
+callback slots `extern "system"` across a crate's three islands, projecting from the i386
+island — the *only* one that still records which callbacks are stdcall, because 64-bit has one
+convention and bindgen flattens every `NTAPI` to `extern "C"` (11,809 `stdcall` blocks on
+i386, ZERO on either twin). Then `Some(f)` assigns directly and rustc checks the convention:
+reverting one buslogic definition to `extern "C"` now fails with `expected "system" fn, found
+"C" fn` instead of shipping. Do NOT blanket-rewrite `extern "C" fn` → `system` on i386 — 34
+i386 callback slots are genuinely cdecl and that promotion is the same bug pointing the other
+way.
+
+Census of the remaining exposure, so it is not re-derived: ~500 transmute-shaped callback
+installs survive, led by dxg-rust (92), win32k-rust `ntddraw_dxeng` (42), cdfs `cdinit` (33),
+winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42), cdrom (20),
+scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
+ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
 
 ### Aggregates, arrays and unions across the FFI boundary
 - **`i64` substituted for a by-value `_LARGE_INTEGER`** — i386 cdecl lowers an 8-byte
@@ -803,11 +903,27 @@ N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
 - **`if (!Fn())` → `if !Fn() != 0`** — bitwise-NOT on an integer BOOLEAN makes the condition
-  **always true**.
+  **always true**. Recurs wherever a C macro yields an `int`: `if(!MSVCRT_CHECK_PMT(x))` is
+  `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
+  **silent** when it feeds an integer.
 - **C post-inc/dec rewritten with the wrong read order** (`x = y--` reading the post value).
 - **A C parameter reassignment translated as a block-local `let` SHADOW** — the new value dies
   at the block end.
 - **A guard condition swapped for a different nearby variable** — logic inverted per boot mode.
+- **A NULL guard De Morgan'd the wrong way.** `MSVCRT_CHECK_PMT(start && str)` came back as
+  `MSVCRT_CHECK_PMT!(start.is_null() || str.is_null())` — the *negation* of the C, so the guard
+  fired on VALID pointers and passed NULL through to the deref it exists to prevent. Compiles
+  clean. Read every translated parameter-validation guard against its C.
+- **A C `int` local holding a `size_t` return, kept `usize` in Rust — the error path goes DEAD.**
+  `int ch_len = mbrtowc(...)` is not sloppy C: the narrowing to `int` is what makes `mbrtowc`'s
+  `(size_t)-1` visible as `-1`, so `ch_len < 0` catches a decode failure. Translate the local as
+  `usize` and that branch is unreachable; `mbsrtowcs_s` walked past failures instead of
+  returning -1. rustc says **"comparison is useless due to type limits"** — treat that warning
+  as a defect report, never as noise.
+- **C integer promotion dropped at a mask.** `ch & 0xf8` promotes `char` to `int` first, so a
+  high-bit byte sign-extends and still matches `0xf0`; masking at `i8` width does not (and does
+  not even compile — `literal out of range`). Same class as the `BYTE`-returning `HIBYTE`/
+  `LOBYTE` macros, whose results C promotes to `int` before any arithmetic.
 - **A narrowing cast truncates a wider C operand**; **a u64 sentinel cast as i64 inverts a
   bounds check**.
 - **`_Analysis_assume_` translated as live code** → a NULL deref the annotation existed to
@@ -1221,6 +1337,38 @@ flag). **Validate the harness by BREAKING the scanner** — restoring a pre-fix 
 the harness fail. Two instances of the very class turned up while building it: the harness
 itself was a liar on its first run (the positive assertion accepted *any* non-empty output), and
 two scanners take FILES, not directories, so handed a directory they silently found nothing.
+
+### "Canonicalising" a mismatch can silence it by editing the EVIDENCE
+A lint that reports `X disagrees with Y` has no opinion about which side is wrong, so a
+mechanical pass that makes them agree will always turn it green — including by changing the
+side that was right. This lane did exactly that: a "full mechanical CC canon" pass
+(`e33a810c9ad`) aligned every `extern "X" { fn F; }` declaration to F's `#[no_mangle]`
+definition, and among the files it rewrote were two **generated bindgen islands**. bindgen's
+`extern "stdcall"` there was not a local opinion — it was the transcript of the C header's
+`NTAPI`. Flipping it to `extern "C"` silenced the finding on buslogic's 6 SCSI miniport
+callbacks and cdrom's 2 WDF cleanup callbacks, every one of which our Rust wrongly defined
+cdecl while the port driver / WDF calls them through a stdcall function pointer. The live
+count fell 305 → 16 and read as burndown progress.
+
+Three things generalise:
+
+- **Classify each side as OPINION or EVIDENCE before aligning them.** A hand-written decl
+  describing a symbol the crate itself defines is opinion; a generated island, a `.spec`, a C
+  header, a DDK function-pointer typedef are evidence. Never edit evidence to match code.
+  `scan_cc_mismatch --fix` now refuses to write any `types*.rs`/`bindgen*.rs` and reports
+  those as "the DEFINITION is the suspect side" instead.
+- **A `transmute` at the binding site removes the compiler from the argument.** buslogic
+  registers its callbacks with `cb!(F)` = `transmute(F as usize)`, so rustc never compares
+  `extern "C" fn` against the `extern "stdcall"` field it lands in. Wherever a fn pointer is
+  installed by transmute, a *source-level* convention check is the only thing that can see it.
+- **A finding count that drops without a corresponding fix is a question, not a result.**
+  Re-derive it from the C, not from the tree's internal agreement.
+
+The same pass's counterpart trap: an oracle can also be *falsely* consulted. `cfg_excludes_i386`
+only ever saw attributes directly preceding a definition, so `#[cfg(target_arch = "x86_64")]
+mod ke_amd64_exports { … }` made 8 amd64-only definitions look like i386 authority — and --fix
+used them to rewrite ntoskrnl's *correct* i386 decls. **A cfg'd-out definition is not evidence
+either**; the scanner now brace-matches per-arch modules.
 
 ### A generator can only flag what its TYPE SOURCE can see `[§9.115]`
 Three near-identical crashes: an unmodified stock i386 applet added to the suite kept dying,
@@ -1725,6 +1873,91 @@ even more plausible while still lacking the CPU-context setup a 32-bit guest thr
 only a per-thread WoW64 entry can provide. **Losing a thread beats losing the box; a clean refusal
 beats a convincing corpse.** Blast radius was *measured, not assumed*: exactly one call in a full
 boot, from one applet.
+
+### Ask where the payload LANDS: a divergence into global kernel state is a different bug
+Most WoW64 divergences corrupt the guest that caused them. `NtUserInitializeClientPfnArrays`
+does not: win32k `RtlCopyMemory`s the caller's `PFNCLIENT`/`PFNCLIENTWORKER` — arrays of
+function pointers, 4 bytes guest / 8 host — into **`gpsi->apfnClientA/W/Worker` and
+`aStoCidPfn`**, the *global* server info every process shares, and sets the global
+`hModClient`. A 32-bit guest reaching that body is read for the HOST struct size (~2× its own
+buffer) and installs pairwise-merged garbage as the **system-wide** client-callback table,
+breaking native 64-bit callbacks. **Same divergence class, categorically larger blast radius —
+so triage a finding by where the payload lands, not only by how the widths differ.**
+
+It has never fired, for one reason: win32k early-outs on `ClientPfnInit != 0`, and native
+user32 (csrss/winlogon) always wins that race long before a guest starts. **That is
+initialization order, not a guarantee, and "currently unreachable by luck" is worth a
+one-line intercept.** Fixed in the thunk layer, not win32k (the E13 rule), by returning
+`STATUS_SUCCESS` without calling the kernel — which is precisely what the early-out already
+produced, so observable behaviour is unchanged and the ordering dependency is gone. The guest
+loses nothing: 32-bit callbacks are dispatched by the WoW64 callback bridge through
+`Wow64pKiUserCallbackDispatcher32`, never through `gpsi`.
+
+### An OUT `PHANDLE` divergence splits by ALIGNMENT — half silent overrun, half spurious failure
+A `HANDLE` out-param is 4 bytes in the guest and 8 on the host, so a flat thunk hands the 64-bit
+kernel a four-byte cell to write eight bytes into. The interesting part is that this does not
+fail one way, it fails **two ways, decided by the address**, because the host's own probe is
+width-dependent: `probe_write_handle` is `probe_write_user::<PVOID>`, so it demands 8-byte
+alignment, and a 32-bit guest's `HANDLE` is only 4-byte aligned.
+
+- Cell at ≡4 (mod 8): the kernel rejects the call outright with `STATUS_DATATYPE_MISALIGNMENT`
+  (`0x80000002`) — a status the guest's own ABI says cannot happen for this call.
+- Cell at ≡0 (mod 8): the probe passes and the kernel writes 8 bytes. Little-endian is what
+  makes this the quiet half: the low dword lands where the guest expects, so **the guest reads
+  a correct handle** while the high dword — and the probe's own NULL touch-test — zeroes the
+  adjacent four bytes.
+
+So the caller sees an intermittent, address-dependent failure *and* silent neighbour
+corruption from the same bug. `NtOpenProcessTokenEx` + `NtOpenThreadTokenEx` were doing this
+**12 times per amd64 boot**; the tell was `NtOpenThreadTokenEx` appearing *twice* per logical
+open, the first returning `0x80000002`. After marshalling into a host-width local it is 1:1.
+**Generalize the probe half: any host probe typed on a pointer-width value imposes host
+alignment on a guest buffer, so `STATUS_DATATYPE_MISALIGNMENT` from a WoW64 guest is a
+divergence signature, not a guest bug.**
+
+Narrowing on the way back is not a truncation risk and needs no guard: a WoW64 process's
+handles must fit in 32 bits by construction, or the guest could never name them.
+
+**The reusable part is the triage, not the fix.** The audit baseline is a list of *possible*
+divergences, and burning it down in file order wastes most of the effort — intersect it with
+the syscalls a real boot actually dispatches (`[WOW64] <Name>(0x…)` lines) and the priority
+collapses: of 195 divergent syscalls, **4** were called at all in a full boot, and of the 41
+out-scalar-widen findings only **2**. Cold entries still matter for arbitrary apps, but they
+are a tail to work through, not a queue to fear.
+
+### When the payload IS the CPU state, the CPU layer is the marshaller — not the kernel
+`NtGetContextThread`/`NtSetContextThread` carry the same un-widenable `_CONTEXT` as
+`NtCreateThread` above, and flat-thunking them is worse than usual in both directions: Get had
+the 64-bit kernel write a 1232-byte host `CONTEXT` into the guest's 716-byte (`0x2CC`) buffer —
+a >500-byte overflow of guest memory — while Set loaded the *native* thread's register file out
+of i386 fields read at host offsets. Both returned `STATUS_SUCCESS`.
+
+**The reflex is to refuse (as `NtCreateThread` does), and here that would have been wrong.** Ask
+first *who owns the data*: the 64-bit kernel has no notion of the guest's registers, so it was
+never a candidate — but the CPU layer already tracks them, and `BTCpuGet/SetContext` speak
+exactly the i386 `CONTEXT` the syscall carries. `NtContinue` and the callback bridge were already
+using those primitives. So the marshaller is real, and it is short. **Before writing a refusal,
+check whether some *other* layer already holds the state in the guest's own width.**
+
+Two traps, both from the amd64 CPU layer's contract (arm64's layer is FEX, which needs neither):
+- **A saved context can be internally inconsistent.** `wow64cpu.S` saves the live `Esp` — still
+  pointing at the stub's return address — but saves `Eip` as where the guest will *resume*.
+  `Wow64CpuDispatch` reconciles the pair with `Esp += 4` on the normal return, so a snapshot
+  handed to a guest must apply that itself or `Eip` and `Esp` disagree by one stack slot.
+- **Resuming a replaced context bypasses the return-value fixup.** `BTCpuSetContext` flags the
+  context as the state to resume, which skips `Wow64CpuDispatch`'s `Eax = result`, so the
+  syscall's own return value has to be planted by hand.
+
+Partial `ContextFlags` is the third: `BTCpuSetContext` installs the whole `SegGs..SegSs` window
+unconditionally, so a partial set must read the live context first and overlay only the requested
+groups. And since the CPU layer maintains no `FloatSave`/`Dr*`/`ExtendedRegisters`, a request for
+those gets those bits **cleared from the returned `ContextFlags`** — the API's own way to say
+"not supplied" — rather than a buffer that looks filled in and isn't.
+
+Cross-thread stays refused: `BTCpuGet/SetContext` ignore their `Thread` argument and act on the
+caller's CPU area, so answering a cross-thread query would return *the wrong thread's registers*
+— confidently. Identify "is this me" by comparing `TebBaseAddress`, not just by spotting the
+`(HANDLE)-2` pseudo-handle.
 
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a
