@@ -139,11 +139,18 @@ pub unsafe extern "system" fn KiInitializeUserApc(
         // Fail LOUD. The observed trigger is `TrapFrame->Rsp == 0`, which makes
         // ApcFrame `-sizeof(UAPC_FRAME)` — reporting Rsp keeps that root
         // question visible instead of letting the recovery hide it.
+        // SegCs is the discriminator for WHY Rsp is bad: KGDT64_R3_CMCODE|RPL
+        // (0x23) means a compat-mode WoW64 guest thread reached the 64-bit APC
+        // path, i.e. a routing bug; KGDT64_R3_CODE|RPL (0x33) means a genuine
+        // 64-bit thread whose user Rsp was never populated (task #71).
         let proc_ = PsGetCurrentProcess() as *mut _EPROCESS;
         crate::dbg_print!(
-            b"[KI-APC] user APC frame REJECTED: image=%s Rsp=%p ApcFrame=%p size=0x%lx status=0x%lx\n\0",
+            b"[KI-APC] user APC frame REJECTED: image=%s Rsp=%p Rip=%p SegCs=0x%lx SegSs=0x%lx ApcFrame=%p size=0x%lx status=0x%lx\n\0",
             (*proc_).ImageFileName.as_ptr(),
             (*TrapFrame).Rsp as PVOID,
+            (*TrapFrame).Rip as PVOID,
+            (*TrapFrame).SegCs as u32,
+            (*TrapFrame).SegSs as u32,
             ApcFrame as PVOID,
             core::mem::size_of::<UAPC_FRAME>() as u32,
             exception_status as u32,
