@@ -596,6 +596,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   result: it eliminates MiDeletePte as the reuse path. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
+  **2026-07-25 — the `[PFNMISMATCH]` probe was RUN, and its silence is now a measured result.**
+  A quarantine probe booted the arm64 candidates one list at a time (`tools/conformance_probe.py`).
+  Four of this family crashed and the detector fired **zero** times across all of them:
+  `NtCreateSection` → `0x50` PAGE_FAULT_IN_NONPAGED_AREA (read of `0xffff800004544040` from PC
+  `0xffff8000048595e0`), `MmMapLockedPagesSpecifyCache` → CRASH, `ZwAllocateVirtualMemory` →
+  `0x4E` PFN_LIST_CORRUPT, `IoCreateFile` → `0x1E` (AV at `0xfffff800421c960c`, a driver-range PC).
+  The probe strings are compiled into this exact kernel (verified present in
+  `build-arm64/ntoskrnl/ntoskrnl.exe`, absent on i386/amd64), so this is genuine silence, not a
+  missing probe — which **confirms the entry's own prediction** that `MiDeletePte` is not the
+  reuse path. The `ZwAllocateVirtualMemory` crash is newly localised: `MiInsertStandbyListAtFrontImpl`
+  (`ARM3/pfnlist.rs`) subcode `0xAD`, params `(pfn=0x40006, ref=0, frame=0x4259f)`; `ref==0` rules
+  out the reference-count clause, so a page reaches the standby-list-front insert **without
+  `PrototypePte` set**. That guard is a mistranslated `ASSERT` (C no-ops it in retail) but must
+  NOT be silenced — `pfnlist.rs` is arch-generic and amd64 never trips it, so it is detecting the
+  real arm64 divergence (§9.126). Blocked on offline symbolication of the `0x50` PC: the kernel
+  runtime base is not printed on serial, so `addr2sym --reloc` cannot be used (task #33).
 - **net suite `test_tdi_selftest_roundtrip` — flake rate measured 2026-07-24, and it is BAD
   under host load.** 1 pass / 6 attempts in one evening while a sibling lane ran a full arm64
   ninja (host load 4–6). The gate's `NET_FLAKE` auto-retry is 3 attempts, so at this rate a
