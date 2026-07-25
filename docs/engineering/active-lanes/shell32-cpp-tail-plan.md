@@ -201,22 +201,22 @@ function refuses rather than emitting an empty module. Every COM-machinery branc
 `cpp_com_mode`, so a `--free-functions` run takes the ordinary path: no scaffold, no
 `<name>_body` contract, no COM body audit, `abi_enforce` re-enabled, file globals restored to
 the prompt. Being the first caller of sealed non-COM translation surfaced three latent defects
-— field manual **§9.126** — plus the `EXTERN_C` scanner cliff (**§9.127**) that was costing
+— field manual **§9.127** — plus the `EXTERN_C` scanner cliff (**§9.128**) that was costing
 `stubs.cpp` 2 of its 66 bodies.
 
 **`--cpp-com --class` is still the only route for a COM class.** This does not replace it.
 
 Keying every COM branch off one flag also switched off the **C++ language** layer, which free
-functions still need (§9.130): wide literals, `IID_PPV_ARG`, and body-local RAII. Restored
+functions still need (§9.131): wide literals, `IID_PPV_ARG`, and body-local RAII. Restored
 2026-07-25 — `--free-functions` now gets the same deterministic lowerings as the COM path plus
 a C++ prompt coda. **Always pass `-o ~/vibeos-rust-staging/...`** while anything is gating:
 `translate` otherwise assembles into the live crate `src/`, and the build's staleness check
-fails every cargo-linked binary (§9.131).
+fails every cargo-linked binary (§9.132).
 
 ### Wave 4 readiness (measured, not estimated)
 
 246 free functions vs 13 class methods across the 15 TUs, and **0 unextracted bodies** now that
-§9.127 is fixed. 12 of 15 are 100% free functions:
+§9.128 is fixed. 12 of 15 are 100% free functions:
 
 | Route | TUs | Note |
 |---|--:|---|
@@ -224,7 +224,7 @@ fails every cargo-linked binary (§9.131).
 | blocked on `--local-raii CDataObjectHIDA` | 3 | `shldataobject`, `dialogs/item_prop`, `shlfolder` |
 | also need `--cpp-com --class` for 13 methods | 3 | `changenotify`, `dialogs/item_prop`, `CDefViewUtil` |
 
-The RAII blocker is a *deliberate* pre-payment refusal (§9.130), not a defect. Writing the
+The RAII blocker is a *deliberate* pre-payment refusal (§9.131), not a defect. Writing the
 lowering is tractable and self-consistent: `CDataObjectHIDA`'s create/destroy already exist in
 `shell_item_array.rs` as externs onto the `_RustBridge` pair that `shldataobject.cpp` defines —
 once that TU is Rust, the bridge is Rust calling Rust and the C++ class is deletable. Doing it
@@ -241,7 +241,7 @@ blockers cluster into five classes — not 34 individual problems:
 | custom/inherited base class | 11 | ATL templates (`CComObjectRootEx`, `IDispatchImpl`, `CWindowImpl`) |
 | no `OBJECT_ENTRY` activation | 5 | internal `ShellObjectCreator<T>` |
 | state field needs layout mapping | 4 | non-scalar/non-pointer members |
-| unextracted bodies | 5 | scanner coverage (one was §9.127) |
+| unextracted bodies | 5 | scanner coverage (one was §9.128) |
 
 "Closable" is not "translatable": a TU of pure free functions passes `cpp-tu` trivially and now
 routes via `--free-functions`, while a blocked class still needs its mapper. Extending one

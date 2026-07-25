@@ -10718,7 +10718,79 @@ broken crate, so `master` can sit red for days while every incremental build is 
 for "fix one, rebuild, find the next," and prefer `ninja -k 0` to collect a whole layer at once
 rather than one error per full rebuild.
 
-### 9.126 (FIXED 2026-07-25) A capability nobody had run yet: sealed plain-C shipped raw tokens, and three guards were missing at once
+### 9.126 (FIXED 2026-07-25) Mainline carried THREE cold-build breaks at once while every lane's gate was green — a warm build cannot fail in a crate it does not recompile
+
+**The finding.** `origin/master` did not build from scratch. Not one regression — **three
+independent ones**, live simultaneously, every one committed through a green gate:
+
+| break | scope | why warm gating could not see it |
+|---|---|---|
+| `fltmgr-rust`: `IRP_MJ_CREATE_MAILSLOT` is ambiguous (`E0659`) | i386 | crate not recompiled ⇒ cannot fail |
+| `afd-rust`: `IRP_MJ_QUERY_VOLUME_INFORMATION` is ambiguous | **all 3 arches** | ninja halts at the first failing edge |
+| `ksecdd.sys`: undefined `___debugbreak` | i386 | a `.sys` relinks only when its inputs change |
+
+**The mechanism, and it is not subtle once stated.** A compiler cannot report an error in a
+translation unit it never compiles, and a linker cannot report an undefined symbol in an image
+it never links. Warm incremental builds skip both. Every lane's `build-*` dirs were warm, so
+every lane's gate was honestly green *about the work it actually did* — which was not the whole
+tree. AGENTS.md has warned "cargo incremental can mask regressions" for a long time; this is
+what that looks like when nobody does the cold build for weeks.
+
+**Two roots, both worth internalizing.**
+
+1. **The E0659 pair share a cause: a bindgen island grew a name a local shim already had.**
+   `6ae2ae1931d` added 11 `IRP_MJ_*` constants to `ntkrnl_sys::driver_ddk`. Two crates
+   glob-import *both* that island and their own `crate::glue::*`, and had hand-written copies of
+   those constants. Two different items under one name, reached by two globs, is `E0659` — and
+   **nothing in the failing crates changed**. A pre-existing use site simply became ambiguous.
+   Resolution: the island is the compiler-facing authority; delete the hand-written copy.
+2. **`__debugbreak` was declared `extern "C"` instead of emitted.** It is an MSVC *intrinsic*.
+   Declaring it produces a reference to `___debugbreak` that a driver's own PE link cannot
+   satisfy. Emit `int3` inline (`fltmgr-rust/src/glue.rs`, `scsiport-rust/src/inlines.rs` are the
+   pattern). Related: AGENTS.md's rule that an out-of-line stub for something that should be an
+   *instruction* is an optimization barrier that has uncloaked ABI mismatches into `ud2`.
+
+**SCAN THE NAMES, NOT THE IMPORT SHAPES.** My first blast-radius scan looked for files globbing
+both a local module and `driver_ddk`, then matched `^pub const` in that module. It produced **16
+false positives and missed `afd-rust`** — the hits were `pub use` re-exports of the *same* item,
+which is not ambiguous at all. The instrument that worked: take the constants the commit
+**added**, and find every *other* definition of those names in the workspace. That closed the
+class at exactly two crates, and correctly exonerated three more (`msfs`/`mup`/`npfs` keep their
+own copies but do **not** glob `driver_ddk`, and their use sites index `MajorFunction` without a
+cast — deleting their copies would have *broken* them, since the island spells these `u8` and
+they need `usize`).
+
+**Finding them one at a time is the other trap.** Because ninja stops at the first failing edge,
+each ~6-minute cold build revealed exactly ONE break, and the next appeared only after the
+previous was fixed. Three fix-and-rebuild rounds to learn a fact that one `ninja -k0` pass could
+have handed over at once.
+
+**THE MECHANISM (this is the durable part).** Rules did not prevent this and cannot; a warm gate
+is *structurally* blind here. So the merge queue's batch gate is now
+**`--clean --keep-going`** by default (`tests/qemu/cli/queue.py:gate_batch`):
+
+* cold, because only a real compile can fail — and a compile **error is never cached**, so
+  ccache/sccache do not blunt the check (they only make it affordable);
+* `-k0`, so a red verdict names *every* broken target in one pass;
+* affordable because a *batch* amortizes one gate over N landings. Measured on this box: a cold
+  i386 build is **16m15s** against ~2-3 min warm (~5-6×) even at ~100% cache hits — linking
+  ~5,000 targets and re-driving cargo over hundreds of crates is not free. "Affordable
+  amortized" is the honest claim; "nearly free" is not.
+
+> **If you are about to trust a green gate:** ask when that tree last built COLD. `vibeos-cli
+> build --arch X --clean --keep-going` is the question's answer, and it is the only one.
+
+> **§9.125 corrects this entry's third break, and it is worth reading for the correction
+> itself.** I diagnosed `ksecdd`'s undefined `___debugbreak` as "the definition is not in
+> ksecdd.sys's link scope at any spelling" and reverted a symbol-alias attempt on that basis.
+> A whole-tree symbol dump says otherwise: `T ___debugbreak@0` **is** in `libksecdd_rust.a`,
+> so it was in scope — and aliasing it fails for a *better* reason, namely that pulling in the
+> object carrying that label drags kernel-only code with it and produces FOUR more undefined
+> symbols. Right fix (emit the intrinsic inline), wrong reason. Two lanes hit this break
+> independently and shipped the same fix within the hour, which is the real cost of a red
+> mainline: it is not one lane's problem, it is everyone's, simultaneously.
+
+### 9.127 (FIXED 2026-07-25) A capability nobody had run yet: sealed plain-C shipped raw tokens, and three guards were missing at once
 
 `--seal-facts --seal-calls` was generalized from shell32/COM to plain C on 2026-07-24, and
 AGENTS.md now tells every plain-C module to **"always pass both."** Nothing had actually run
@@ -10763,7 +10835,7 @@ A test pins the contract text so nobody "improves" it later.
 ledger before trusting a documented workflow — `seal_facts=True` on zero non-shell32 entries was
 visible in one query and predicted all three bugs.
 
-### 9.127 (FIXED 2026-07-25) `EXTERN_C` cost us function bodies, on a 10-character cliff
+### 9.128 (FIXED 2026-07-25) `EXTERN_C` cost us function bodies, on a 10-character cliff
 
 `EXTERN_C` is winnt.h's `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter knows
 neither, so it parsed the macro as the return type and the real return type became a second
@@ -10791,7 +10863,7 @@ Same family as the `CONST` and `FAR`/`NEAR` normalisers beside it, and as the
 shrinking the translation plan.** When a scanner gap looks length- or name-dependent, suspect
 error recovery and fix the *input*, not the recovery.
 
-### 9.128 (2026-07-25) `cargo check` is not validation — the oracle has to BUILD
+### 9.129 (2026-07-25) `cargo check` is not validation — the oracle has to BUILD
 
 `candidate-check` ran `cargo check` once per arch and called that acceptance. `check` stops
 before codegen, and `unconditional_panic` is a MIR-level deny-by-default lint that only fires
@@ -10810,7 +10882,7 @@ A correct candidate of the same shape (`entries.as_ptr().add(i)`) still passes a
 so this is not over-strict. The report now records `cargo_mode`, so a green result says which
 pass produced it.
 
-### 9.129 (2026-07-25) semdiff judged Rust by C's rules — both false positives, same root
+### 9.130 (2026-07-25) semdiff judged Rust by C's rules — both false positives, same root
 
 The C↔Rust semantic-divergence oracle produced exactly two findings on landed, hand-audited
 code, and **both were false positives from applying C semantics to the Rust side**:
@@ -10834,7 +10906,7 @@ hand-audited before landing.
 wrong. Verify against the source before acting on one, and prefer giving the oracle the missing
 *authority* (prototypes, language rules) over loosening what it reports.
 
-### 9.130 (FIXED 2026-07-25) A mode flag turned off the LANGUAGE layer, not just the framework layer
+### 9.131 (FIXED 2026-07-25) A mode flag turned off the LANGUAGE layer, not just the framework layer
 
 `translate --free-functions` (shell32) exists because a TU's classless functions do not need
 the COM scaffold — no vtable, no `this`, no state layout. It was implemented as
@@ -10869,11 +10941,11 @@ Two general lessons:
 
 Also: normalization now runs on **cache hits**, not just fresh responses. A body banked before
 a repair exists would otherwise replay the un-repaired text for $0 forever — the same
-self-healing shape as the still-sealed-output guard in §9.126. Because the wide-literal lowering
+self-healing shape as the still-sealed-output guard in §9.127. Because the wide-literal lowering
 happens *before* sealing, it is part of the cache key, so only the bodies that actually changed
 re-paid: 1 of 10 functions, $0.01.
 
-### 9.131 (2026-07-25) `translate` assembles into the LIVE crate `src/` — which fails a concurrent gate
+### 9.132 (2026-07-25) `translate` assembles into the LIVE crate `src/` — which fails a concurrent gate
 
 `rustconv translate` writes its stitched module straight into the target crate
 (`sdk/lib/rust/<crate>-rust/src/...`). Harmless alone. But `vibeos-cli build`'s staleness check
