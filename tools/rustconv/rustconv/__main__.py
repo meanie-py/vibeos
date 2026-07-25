@@ -19,6 +19,7 @@ from . import (
     candidate_oracle,
     cpp_com,
     cpp_tu,
+    crate_repair,
     dup_census,
     file_splitter,
     gdi_lock_inventory,
@@ -31,6 +32,7 @@ from . import (
     shell32_tail_inventory,
     substrate_closure,
     switch_extract,
+    trivial_c,
     user_lock_inventory,
 )
 from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
@@ -54,6 +56,7 @@ from .config import (
     NTOSKRNL_DIR,
     OUTPUT_CRATE,
     REACTOS_ROOT,
+    RUST_DIR,
     TARGETS,
     cost_usd,
     detect_target,
@@ -630,6 +633,31 @@ def cmd_candidate_check(args):
     report = candidate_oracle.run_oracle(manifest, arches, repair=args.repair)
     candidate_oracle.print_report(report, as_json=args.json)
     if any(item["status"] != "ok" for item in report["results"]):
+        sys.exit(1)
+
+
+def cmd_crate_repair(args):
+    """Close the mechanical rustc roots of a whole crate deterministically, for $0.
+
+    Runs BEFORE any paid repair pass: the same "substrate closure before payment"
+    discipline the candidate path already follows. Every applied edit records its
+    rule and authority, and a pointer-width-dependent cast is only applied when
+    >=2 targets independently propose the identical replacement — a cast inferred
+    from one arch bakes that arch's width and silently breaks the other two.
+    """
+    session = crate_repair.repair_crate(
+        args.crate,
+        root=RUST_DIR,
+        targets=args.arches,
+        rules=args.rules,
+        crate_dir=Path(args.crate_dir) if args.crate_dir else None,
+        types_module=args.types_module,
+        max_passes=args.max_passes,
+        allow_single_target_width=args.allow_single_target_width,
+        dry_run=args.dry_run,
+    )
+    crate_repair.print_session(session, as_json=args.json)
+    if session.status in ("regressed", "max_passes"):
         sys.exit(1)
 
 
@@ -1526,10 +1554,15 @@ def cmd_translate(args):
     rustconv_target = resolve_target(args, target_path)
     print(f"Target: {rustconv_target.name}", file=sys.stderr)
 
-    if (getattr(args, "seal_facts", False) or getattr(args, "seal_calls", False)) and not (
-        rustconv_target.name == "shell32" and getattr(args, "cpp_com", False)
-    ):
-        raise CppComError("--seal-facts/--seal-calls currently require shell32 --cpp-com")
+    # Sealing dialect. shell32/--cpp-com keeps the FROZEN "cpp" dialect so its cached
+    # paid workers stay valid; everything else is plain C and gets the "c" dialect,
+    # which additionally protects CamelCase DDK enum constants (NonPagedPool,
+    # KernelMode, Executive, the Ndis* vocabulary) that the ALL_CAPS matcher misses.
+    # Sealing used to be gated to shell32 --cpp-com purely out of caution; the
+    # transform is lexical and language-neutral. Leaving it off for C shipped 13,503
+    # unprotected constant occurrences, the same class as the 61 invented kernel
+    # bugcheck codes (field manual §9.113).
+    seal_dialect = "cpp" if getattr(args, "cpp_com", False) else "c"
 
     cpp_com_cls = None
     cpp_com_interfaces = []
@@ -1818,15 +1851,14 @@ def cmd_translate(args):
             require_supported_worker_raii(sorted_deps, provided=set(local_raii_impls))
             cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
 
-        fact_seal_enabled = bool(
-            rustconv_target.name == "shell32" and getattr(args, "seal_facts", False)
-        )
-        call_seal_enabled = bool(
-            rustconv_target.name == "shell32" and getattr(args, "seal_calls", False)
-        )
+        fact_seal_enabled = bool(getattr(args, "seal_facts", False))
+        call_seal_enabled = bool(getattr(args, "seal_calls", False))
         model_bodies = {dep.name: strip_debug_statements(dep.body_text) for dep in sorted_deps}
         fact_seals = (
-            {dep.name: prepare_sealed_source(model_bodies[dep.name]) for dep in sorted_deps}
+            {
+                dep.name: prepare_sealed_source(model_bodies[dep.name], dialect=seal_dialect)
+                for dep in sorted_deps
+            }
             if fact_seal_enabled
             else {}
         )
@@ -1995,6 +2027,16 @@ def cmd_translate(args):
                 if lowered is not None:
                     translated[dep.name] = lowered
                     deterministic_workers.add(dep.name)
+        else:
+            # Plain C: deterministically lower the trivial band for $0. Each lowering
+            # re-verifies itself against an INDEPENDENT tree-sitter oracle (control-free
+            # on both sides, identical ordered identifier sequence, equal constant
+            # multisets) and RAISES on disagreement rather than shipping — nobody reviews
+            # a free translation, so it has to prove itself. Anything it cannot prove
+            # returns None and is paid for as normal.
+            for name, lowering in trivial_c.lower_trivial_c_functions(sorted_deps).items():
+                translated[name] = lowering.rust
+                deterministic_workers.add(name)
         for dep in sorted_deps:
             if dep.name in deterministic_workers:
                 _record_outcome(dep, "deterministic", route="trivial_worker")
@@ -3178,6 +3220,37 @@ def main():
         help="Apply only deterministic base-authority worker repairs before checking",
     )
 
+    # crate-repair — deterministic Stage 1.5. Closes the MECHANICAL rustc roots of a freshly
+    # assembled crate for $0, before any paid repair pass, and leaves a bucketed RED residual.
+    p = sub.add_parser(
+        "crate-repair",
+        help="Bounded deterministic repair of a whole-crate cargo check (no LLM)",
+    )
+    p.add_argument("crate", help="cargo package name, e.g. wkssvc-rust")
+    p.add_argument(
+        "--arches",
+        nargs="+",
+        default=["i386", "amd64", "arm64"],
+        choices=["i386", "amd64", "arm64"],
+        help="Targets to analyse. >=2 required to apply a pointer-width-dependent cast",
+    )
+    p.add_argument(
+        "--rules",
+        nargs="+",
+        default=list(crate_repair.ALL_RULES),
+        choices=list(crate_repair.ALL_RULES),
+    )
+    p.add_argument("--crate-dir", help="Crate root (default <rust-workspace>/<crate>)")
+    p.add_argument("--types-module", default="types.rs", help="bindgen types module in src/")
+    p.add_argument("--max-passes", type=int, default=6)
+    p.add_argument("--dry-run", action="store_true", help="Report edits without writing")
+    p.add_argument(
+        "--allow-single-target-width",
+        action="store_true",
+        help="LOUD override: bake a pointer-width cast proven on ONE target only",
+    )
+    p.add_argument("--json", action="store_true", help="Machine-readable ledger")
+
     p = sub.add_parser(
         "substrate-plan",
         help="Cluster a candidate oracle report into canonical substrate authority roots",
@@ -3541,17 +3614,19 @@ def main():
         "--seal-facts",
         dest="seal_facts",
         action="store_true",
-        help="EXPERIMENTAL shell32 COM mode: lower HRESULT predicates and replace each "
-        "constant occurrence with an audited opaque token during the paid call. Uses a "
-        "separate response-cache namespace.",
+        help="Replace each constant occurrence with an audited opaque token during the "
+        "paid call, so the model never copies a value (and lower HRESULT predicates). "
+        "Works for plain C and for shell32 --cpp-com; the C dialect additionally protects "
+        "CamelCase DDK enum constants. Strongly recommended: leaving this off is how 61 "
+        "invented kernel bugcheck codes shipped (field manual 9.113).",
     )
     p.add_argument(
         "--seal-calls",
         dest="seal_calls",
         action="store_true",
-        help="EXPERIMENTAL shell32 COM mode: replace each known runtime callee occurrence "
-        "with an audited opaque token during the paid call. Uses a separate response-cache "
-        "namespace.",
+        help="Replace each known runtime callee occurrence with an audited opaque token "
+        "during the paid call, so a dropped, duplicated, or invented call fails loudly "
+        "instead of silently. Works for plain C and for shell32 --cpp-com.",
     )
     p.add_argument(
         "--sdk-header",
@@ -3687,6 +3762,7 @@ def main():
         "dup-census": cmd_dup_census,
         "shell32-tail-inventory": cmd_shell32_tail_inventory,
         "candidate-check": cmd_candidate_check,
+        "crate-repair": cmd_crate_repair,
         "substrate-plan": cmd_substrate_plan,
         "skeleton-check": cmd_skeleton_check,
         "cpp-com": cmd_cpp_com,
@@ -3720,7 +3796,7 @@ def main():
 
     try:
         commands[args.command](args)
-    except (ValueError, CppComError) as e:
+    except (ValueError, CppComError, crate_repair.RepairError) as e:
         # target auto-detect failure (unrecognized path) surfaces here as a clean
         # message instead of a traceback — tells the user to pass --target.
         print(str(e), file=sys.stderr)

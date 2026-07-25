@@ -2392,6 +2392,182 @@ static NTSTATUS Wow64Manual_NtUserEnumDisplayDevices(ULONG *a)
                                               (PVOID)(ULONG_PTR)a[2], a[3]);
 }
 
+/* ---- E10: the flat-thunk audit sweep ------------------------------------ *
+ * E6/E8/E9 each found one member of this class the expensive way — a guest
+ * called a syscall whose .spec types every arg flat, the flat thunk handed
+ * 64-bit win32k a 32-bit payload, and the box bugchecked. `marshalgen audit`
+ * (tools/wow64gen/marshalgen.py, wired into `vibeos-cli check`) now derives
+ * the whole class mechanically: it diffs every LIVE flat thunk in the
+ * generated table against its real header prototype using clang's own 32/64
+ * record layouts. These are the survivors it found. */
+
+/* NtGdiCreateDIBSection(hdc, hSectionApp, dwOffset, pbmi, iUsage, cjHeader,
+ *                       fl, dwColorSpace, PVOID *ppvBits)
+ * The E7 overrun shape, on a HOT path this time: guest gdi32 passes &bmBits —
+ * a 4-byte stack local (gdi32-rust/src/objects/bitmap.rs) — and the flat thunk
+ * let 64-bit win32k store an 8-byte PVOID there, smashing the 4 bytes that
+ * follow it on the guest stack. Every DIB section (mspaint, magnify, any
+ * double-buffered app) took that write. Give the kernel a host-width slot and
+ * narrow it back. pbmi is a BITMAPINFO — pointer-free, identical 32/64 — so it
+ * flat-passes, as does dwColorSpace (ULONG_PTR: one guest slot, zero-extended).
+ *
+ * The narrowed VA is the guest's only view of the mapping, so a bitmap mapped
+ * above 4GB cannot be represented at all. Truncating silently would hand the
+ * guest a pointer into nowhere and fault far from here, so fail the call
+ * loudly instead — the guest sees a clean CreateDIBSection failure. */
+static NTSTATUS Wow64Manual_NtGdiCreateDIBSection(ULONG *a)
+{
+    extern HANDLE NtGdiCreateDIBSection(HANDLE hdc, HANDLE hSectionApp, ULONG dwOffset,
+                                        PVOID pbmi, ULONG iUsage, ULONG cjHeader,
+                                        ULONG fl, ULONG_PTR dwColorSpace, PVOID *ppvBits);
+    extern LONG NtGdiDeleteObjectApp(PVOID hobj);
+    ULONG *pBits32 = (ULONG *)(ULONG_PTR)a[8];
+    PVOID Bits64 = NULL;
+    HANDLE Ret;
+
+    Ret = NtGdiCreateDIBSection((HANDLE)(ULONG_PTR)a[0], (HANDLE)(LONG_PTR)(LONG)a[1],
+                                a[2], (PVOID)(ULONG_PTR)a[3], a[4], a[5], a[6],
+                                (ULONG_PTR)a[7], pBits32 ? &Bits64 : NULL);
+    if (Ret && pBits32)
+    {
+        if ((ULONG_PTR)Bits64 >> 32)
+        {
+            /* Unrepresentable in the guest's 32-bit world — refuse rather than
+             * hand back a truncated pointer. */
+            DbgPrint("[WOW64]   NtGdiCreateDIBSection mapped bits at %p (above 4GB) — "
+                     "unrepresentable to a 32-bit guest; failing the call\n", Bits64);
+            NtGdiDeleteObjectApp((PVOID)Ret);
+            *pBits32 = 0;
+            return 0;
+        }
+        *pBits32 = (ULONG)(ULONG_PTR)Bits64;
+    }
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+/* The rest of the MSG family. `tagMSG` is 28 bytes on i386 and 48 on the host
+ * (HWND + ULONG_PTR wParam/lParam all widen), and the pump three —
+ * GetMessage/PeekMessage/DispatchMessage — have been marshalled since M8. The
+ * audit caught three siblings that were still flat, and every one of them is on
+ * an ordinary app path: TranslateAccelerator (any app with an accelerator
+ * table), CallMsgFilter (modal loops / MSGF_* hooks), RealInternalGetMessage
+ * (the internal pump user32 uses behind some dialogs). They reuse the same
+ * Wow64pMsg32To64 / Wow64pMsg64To32 pair. */
+static NTSTATUS Wow64Manual_NtUserTranslateAccelerator(ULONG *a)
+{
+    extern LONG NtUserTranslateAccelerator(PVOID Window, PVOID Table, PVOID Message);
+    WOW64_MSG32 *M32 = (WOW64_MSG32 *)(ULONG_PTR)a[2];
+    WOW64_MSG64 M64;
+
+    if (!M32)
+        return 0;
+    Wow64pMsg32To64(M32, &M64); /* IN only — the kernel reads, never writes */
+    return (NTSTATUS)NtUserTranslateAccelerator((PVOID)(ULONG_PTR)a[0],
+                                                (PVOID)(ULONG_PTR)a[1], &M64);
+}
+
+static NTSTATUS Wow64Manual_NtUserCallMsgFilter(ULONG *a)
+{
+    extern LONG NtUserCallMsgFilter(PVOID msg, LONG code);
+    WOW64_MSG32 *M32 = (WOW64_MSG32 *)(ULONG_PTR)a[0];
+    WOW64_MSG64 M64;
+    LONG Ret;
+
+    if (!M32)
+        return 0;
+    /* IN/OUT: a MSGF_* hook may rewrite the message before it is dispatched. */
+    Wow64pMsg32To64(M32, &M64);
+    Ret = NtUserCallMsgFilter(&M64, (LONG)a[1]);
+    Wow64pMsg64To32(&M64, M32);
+    return (NTSTATUS)Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserRealInternalGetMessage(ULONG *a)
+{
+    extern LONG NtUserRealInternalGetMessage(PVOID lpMsg, PVOID hWnd, ULONG Min,
+                                             ULONG Max, ULONG Remove, ULONG bGMSG);
+    WOW64_MSG32 *M32 = (WOW64_MSG32 *)(ULONG_PTR)a[0];
+    WOW64_MSG64 M64;
+    LONG Ret;
+
+    if (!M32)
+        return 0;
+    Ret = NtUserRealInternalGetMessage(&M64, (PVOID)(ULONG_PTR)a[1], a[2], a[3], a[4], a[5]);
+    if (Ret)
+        Wow64pMsg64To32(&M64, M32);
+    return (NTSTATUS)Ret;
+}
+
+/* NtUserResolveDesktop(ProcessHandle, PUNICODE_STRING DesktopPath, bInherit,
+ *                      HWINSTA *phWinSta) — BOTH halves of the class in one
+ * call: the path widens US32->US64, and the OUT window-station handle is a
+ * 4-byte guest cell the kernel would fill with 8 bytes. */
+static NTSTATUS Wow64Manual_NtUserResolveDesktop(ULONG *a)
+{
+    extern HANDLE NtUserResolveDesktop(HANDLE ProcessHandle, PVOID DesktopPath,
+                                       ULONG bInherit, PVOID phWinSta);
+    WOW64_UNICODE_STRING64_M Path64;
+    ULONG *pWinSta32 = (ULONG *)(ULONG_PTR)a[3];
+    HANDLE hWinSta = NULL;
+    HANDLE Ret;
+
+    Ret = NtUserResolveDesktop((HANDLE)(LONG_PTR)(LONG)a[0],
+                               Wow64pUS32to64(a[1], &Path64), a[2],
+                               pWinSta32 ? &hWinSta : NULL);
+    if (pWinSta32)
+        *pWinSta32 = (ULONG)(ULONG_PTR)hWinSta;
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+/* The USER OBJECT_ATTRIBUTES takers. OBJECT_ATTRIBUTES is 24 bytes on i386 and
+ * 48 on the host, with a nested UNICODE_STRING — the same shape the whole
+ * ntdll open family already marshals through Wow64pMarshalOa, so these reuse
+ * that proven helper rather than a new one. */
+static NTSTATUS Wow64Manual_NtUserOpenDesktop(ULONG *a)
+{
+    extern HANDLE NtUserOpenDesktop(PVOID ObjectAttributes, ULONG dwFlags, ACCESS_MASK Access);
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    HANDLE Ret;
+
+    if (!a[0])
+        return (NTSTATUS)(ULONG)(ULONG_PTR)NtUserOpenDesktop(NULL, a[1], a[2]);
+    Wow64pMarshalOa(&Oa64, &Uname64, a[0]);
+    Ret = NtUserOpenDesktop(&Oa64, a[1], a[2]);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserOpenWindowStation(ULONG *a)
+{
+    extern HANDLE NtUserOpenWindowStation(PVOID ObjectAttributes, ACCESS_MASK Access);
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    HANDLE Ret;
+
+    if (!a[0])
+        return (NTSTATUS)(ULONG)(ULONG_PTR)NtUserOpenWindowStation(NULL, a[1]);
+    Wow64pMarshalOa(&Oa64, &Uname64, a[0]);
+    Ret = NtUserOpenWindowStation(&Oa64, a[1]);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserCreateWindowStation(ULONG *a)
+{
+    extern HANDLE NtUserCreateWindowStation(PVOID ObjectAttributes, ACCESS_MASK Access,
+                                            ULONG Unknown2, ULONG Unknown3, ULONG Unknown4,
+                                            ULONG Unknown5, ULONG Unknown6);
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    HANDLE Ret;
+
+    if (!a[0])
+        return (NTSTATUS)(ULONG)(ULONG_PTR)NtUserCreateWindowStation(NULL, a[1], a[2], a[3],
+                                                                     a[4], a[5], a[6]);
+    Wow64pMarshalOa(&Oa64, &Uname64, a[0]);
+    Ret = NtUserCreateWindowStation(&Oa64, a[1], a[2], a[3], a[4], a[5], a[6]);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
 /* NtUserFindExistingCursorIcon(pustrModule, pustrRsrc, param):
  * two UNICODE_STRINGs widen; param (FINDEXISTINGCURICONPARAM = 3 LONGs) is flat
  * and identical 32/64, so its guest pointer passes straight through. */
@@ -3202,6 +3378,23 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserEnumDisplaySettings(Arguments);
     if (WOW64_IS("NtUserEnumDisplayDevices"))
         return Wow64Manual_NtUserEnumDisplayDevices(Arguments);
+    /* E10 (marshalgen audit) */
+    if (WOW64_IS("NtGdiCreateDIBSection"))
+        return Wow64Manual_NtGdiCreateDIBSection(Arguments);
+    if (WOW64_IS("NtUserTranslateAccelerator"))
+        return Wow64Manual_NtUserTranslateAccelerator(Arguments);
+    if (WOW64_IS("NtUserCallMsgFilter"))
+        return Wow64Manual_NtUserCallMsgFilter(Arguments);
+    if (WOW64_IS("NtUserRealInternalGetMessage"))
+        return Wow64Manual_NtUserRealInternalGetMessage(Arguments);
+    if (WOW64_IS("NtUserResolveDesktop"))
+        return Wow64Manual_NtUserResolveDesktop(Arguments);
+    if (WOW64_IS("NtUserOpenDesktop"))
+        return Wow64Manual_NtUserOpenDesktop(Arguments);
+    if (WOW64_IS("NtUserOpenWindowStation"))
+        return Wow64Manual_NtUserOpenWindowStation(Arguments);
+    if (WOW64_IS("NtUserCreateWindowStation"))
+        return Wow64Manual_NtUserCreateWindowStation(Arguments);
     if (WOW64_IS("NtUserBuildHwndList"))
         return Wow64Manual_NtUserBuildHwndList(Arguments);
     if (WOW64_IS("NtUserThunkedMenuItemInfo"))

@@ -100,7 +100,7 @@ use crate::glue::{min};
 use crate::glue::{CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE, IOCTL_SCSI_GET_ADDRESS, IO_WRN_FAILURE_PREDICTED, KEY_WRITE, NonPagedPoolNxCacheAligned, RTL_QUERY_REGISTRY_TYPECHECK, RTL_QUERY_REGISTRY_TYPECHECK_SHIFT, SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED, SCSI_SENSE_OPTIONS_NONE, SENSE_BUFFER_SIZE_EX, STATUS_IO_DEVICE_ERROR, STATUS_IO_TIMEOUT, STATUS_NONEXISTENT_SECTOR, TRACE_FLAG_GENERAL, TRACE_FLAG_IOCTL, TRACE_FLAG_MCN, TRACE_FLAG_WMI, TRACE_LEVEL_VERBOSE, VPB_MOUNTED, _MEDIA_LOCK_TYPE_SecureMediaLock as SecureMediaLock, max};
 use crate::guid::{GUID_IO_DEVICE_BECOMING_READY};
 use crate::srblib::{SrbGetDataTransferLength, SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSrbFlags, SrbGetSystemStatus, SrbSetScsiStatus};
-use crate::types::{CLASSP_REG_WRITE_CACHE_VALUE_NAME, CLASS_ERROR_LOG_DATA, CLASS_PRIVATE_COMMON_DATA, CLASS_SPECIAL_CAUSE_NOT_REPORTABLE_HACK, ClassCheckVerifyComplete, ClassCleanupMediaChangeDetection, ClassDeviceGetLBProvisioningResources, ClassDeviceProcessOffloadRead, ClassDeviceProcessOffloadWrite, ClassIoComplete, ClassNotifyFailurePredicted, ClassQueueCapacityChangedEventWorker, ClassQueueProvisioningTypeChangedEventWorker, ClassQueueResourceExhaustionEventWorker, ClassQueueThresholdEventWorker, ClassReadDriveCapacity, ClassSendEjectionNotification, ClassSendNotification, ClassSendStartUnit, ClassSetMediaChangeState, ClasspAccessAlignmentProperty, ClasspConvertToScsiRequestBlock, ClasspDeviceCopyOffloadProperty, ClasspDeviceGetLBAStatus, ClasspDeviceLBProvisioningProperty, ClasspDeviceMediaTypeProperty, ClasspDeviceSeekPenaltyProperty, ClasspDeviceTrimProcess, ClasspDeviceTrimProperty, ClasspDuidQueryProperty, ClasspInitializeRemoveTracking, ClasspMcnControl, ClasspPerfIncrementErrorCount, ClasspPersistentReserve, ClasspPriorityHint, ClasspQueueLogIOEventWithContextWorker, ClasspStorageEventNotification, ClasspUninitializeRemoveTracking, ClasspWriteCacheProperty, DEV_SAFE_START_UNIT, DestroyAllTransferPackets, FDO_HACK_NO_RESERVE6, IOCTL_SCSI_EXECUTE_NONE, IOCTL_STORAGE_BASE, IdlePowerFDOList, IdlePowerFDOListMutex, InitializeDictionary, MAXIMUM_RETRIES, MODE_DISCONNECT_PAGE, MODE_PARAMETER_HEADER, MODE_PARAMETER_HEADER10, MODE_SENSE_CURRENT_VALUES, _MEDIA_CHANGE_DETECTION_STATE_MediaPresent as MediaPresent, NOT_READY_RETRY_INTERVAL, NO_REMOVE, NUM_ERROR_LOG_ENTRIES, PCDB, PCLASS_DEV_INFO, PCLASS_DRIVER_EXTENSION, PCLASS_ERROR_LOG_DATA, PCLASS_PRIVATE_COMMON_DATA, PFIXED_SENSE_DATA, PHYSICAL_DEVICE_EXTENSION, PIDLE_POWER_FDO_LIST_ENTRY, PINQUIRYDATA, PMODE_DISCONNECT_PAGE, PMODE_PARAMETER_HEADER, PMODE_PARAMETER_HEADER10, PPHYSICAL_DEVICE_EXTENSION, PSCSI_SENSE_DESCRIPTOR_BLOCK_COMMAND, PSCSI_SENSE_DESCRIPTOR_INFORMATION, PSTORAGE_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK_HEADER, SCSIOP_INQUIRY, SCSIOP_MODE_SENSE, SCSIOP_MODE_SENSE10, SCSIOP_READ, SCSIOP_READ12, SCSIOP_READ16, SCSIOP_READ6, SCSIOP_RELEASE_UNIT, SCSIOP_RELEASE_UNIT10, SCSIOP_RESERVE_UNIT, SCSIOP_RESERVE_UNIT10, SCSIOP_TEST_UNIT_READY, SCSIOP_VERIFY, SCSIOP_VERIFY16, SCSIOP_WRITE, SCSIOP_WRITE12, SCSIOP_WRITE16, SCSIOP_WRITE6, SCSISTAT_BUSY, SCSISTAT_GOOD, SCSISTAT_RESERVATION_CONFLICT, SCSI_ADDRESS, SCSI_ADSENSE_DATA_TRANSFER_ERROR, SCSI_ADSENSE_INVALID_MEDIA, SCSI_ADSENSE_LOGICAL_UNIT_ERROR, SCSI_ADSENSE_LUN_COMMUNICATION, SCSI_ADSENSE_LUN_NOT_READY, SCSI_ADSENSE_REC_DATA_ECC, SCSI_ADSENSE_REC_DATA_NOECC, SCSI_ADSENSE_SEEK_ERROR, SCSI_ADSENSE_TRACK_ERROR, SCSI_ADSENSE_WRITE_PROTECT, SCSI_PASS_THROUGH, SCSI_SENSEQ_CAPACITY_DATA_CHANGED, SCSI_SENSEQ_INITIATOR_RESPONSE_TIMEOUT, SCSI_SENSEQ_INIT_COMMAND_REQUIRED, SCSI_SENSEQ_INQUIRY_DATA_CHANGED, SCSI_SENSEQ_MICROCODE_CHANGED, SCSI_SENSEQ_OPERATING_DEFINITION_CHANGED, SCSI_SENSEQ_TIMEOUT_ON_LOGICAL_UNIT, SCSI_SENSE_DESCRIPTOR_TYPE_BLOCK_COMMAND, SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION, SCSI_SESNEQ_COMM_CRC_ERROR, SENSE_DATA, SRB_CLASS_FLAGS_FREE_MDL, SRB_CLASS_FLAGS_LOW_PRIORITY, SRB_CLASS_FLAGS_PAGING, SRB_FLAGS_CLASS_DRIVER_RESERVED, SRB_FLAGS_DATA_IN, SRB_FLAGS_DATA_OUT, SRB_FLAGS_DONT_START_NEXT_PACKET, SRB_FLAGS_NO_QUEUE_FREEZE, SRB_FLAGS_QUEUE_ACTION_ENABLE, SRB_FUNCTION_CLAIM_DEVICE, SRB_FUNCTION_RELEASE_DEVICE, SRB_HEAD_OF_QUEUE_TAG_REQUEST, SRB_ORDERED_QUEUE_TAG_REQUEST, SRB_SIMPLE_TAG_REQUEST, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_COMMAND_TIMEOUT, SRB_STATUS_INTERNAL_ERROR, SRB_STATUS_INVALID_LUN, SRB_STATUS_INVALID_PATH_ID, SRB_STATUS_INVALID_TARGET_ID, SRB_STATUS_NO_DEVICE, SRB_STATUS_NO_HBA, SRB_STATUS_PARITY_ERROR, SRB_STATUS_SELECTION_TIMEOUT, SRB_STATUS_SUCCESS, SRB_STATUS_TIMEOUT, SRB_STATUS_UNEXPECTED_BUS_FREE, SRB_TYPE_SCSI_REQUEST_BLOCK, _MEDIA_CHANGE_DETECTION_STATE_MediaNotPresent as MediaNotPresent, _MEDIA_CHANGE_DETECTION_STATE_MediaUnavailable as MediaUnavailable};
+use crate::types::{CLASSP_REG_WRITE_CACHE_VALUE_NAME, CLASS_ERROR_LOG_DATA, CLASS_PRIVATE_COMMON_DATA, CLASS_SPECIAL_CAUSE_NOT_REPORTABLE_HACK, ClassCheckVerifyComplete, ClassCleanupMediaChangeDetection, ClassDeviceGetLBProvisioningResources, ClassIoComplete, ClassNotifyFailurePredicted, ClassQueueCapacityChangedEventWorker, ClassQueueProvisioningTypeChangedEventWorker, ClassQueueResourceExhaustionEventWorker, ClassQueueThresholdEventWorker, ClassReadDriveCapacity, ClassSendEjectionNotification, ClassSendNotification, ClassSendStartUnit, ClassSetMediaChangeState, ClasspAccessAlignmentProperty, ClasspConvertToScsiRequestBlock, ClasspDeviceCopyOffloadProperty, ClasspDeviceGetLBAStatus, ClasspDeviceLBProvisioningProperty, ClasspDeviceMediaTypeProperty, ClasspDeviceSeekPenaltyProperty, ClasspDeviceTrimProcess, ClasspDeviceTrimProperty, ClasspDuidQueryProperty, ClasspInitializeRemoveTracking, ClasspMcnControl, ClasspPerfIncrementErrorCount, ClasspPersistentReserve, ClasspPriorityHint, ClasspQueueLogIOEventWithContextWorker, ClasspStorageEventNotification, ClasspUninitializeRemoveTracking, ClasspWriteCacheProperty, DEV_SAFE_START_UNIT, DestroyAllTransferPackets, FDO_HACK_NO_RESERVE6, IOCTL_SCSI_EXECUTE_NONE, IOCTL_STORAGE_BASE, IdlePowerFDOList, IdlePowerFDOListMutex, InitializeDictionary, MAXIMUM_RETRIES, MODE_DISCONNECT_PAGE, MODE_PARAMETER_HEADER, MODE_PARAMETER_HEADER10, MODE_SENSE_CURRENT_VALUES, _MEDIA_CHANGE_DETECTION_STATE_MediaPresent as MediaPresent, NOT_READY_RETRY_INTERVAL, NO_REMOVE, NUM_ERROR_LOG_ENTRIES, PCDB, PCLASS_DEV_INFO, PCLASS_DRIVER_EXTENSION, PCLASS_ERROR_LOG_DATA, PCLASS_PRIVATE_COMMON_DATA, PFIXED_SENSE_DATA, PHYSICAL_DEVICE_EXTENSION, PIDLE_POWER_FDO_LIST_ENTRY, PINQUIRYDATA, PMODE_DISCONNECT_PAGE, PMODE_PARAMETER_HEADER, PMODE_PARAMETER_HEADER10, PPHYSICAL_DEVICE_EXTENSION, PSCSI_SENSE_DESCRIPTOR_BLOCK_COMMAND, PSCSI_SENSE_DESCRIPTOR_INFORMATION, PSTORAGE_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK_HEADER, SCSIOP_INQUIRY, SCSIOP_MODE_SENSE, SCSIOP_MODE_SENSE10, SCSIOP_READ, SCSIOP_READ12, SCSIOP_READ16, SCSIOP_READ6, SCSIOP_RELEASE_UNIT, SCSIOP_RELEASE_UNIT10, SCSIOP_RESERVE_UNIT, SCSIOP_RESERVE_UNIT10, SCSIOP_TEST_UNIT_READY, SCSIOP_VERIFY, SCSIOP_VERIFY16, SCSIOP_WRITE, SCSIOP_WRITE12, SCSIOP_WRITE16, SCSIOP_WRITE6, SCSISTAT_BUSY, SCSISTAT_GOOD, SCSISTAT_RESERVATION_CONFLICT, SCSI_ADDRESS, SCSI_ADSENSE_DATA_TRANSFER_ERROR, SCSI_ADSENSE_INVALID_MEDIA, SCSI_ADSENSE_LOGICAL_UNIT_ERROR, SCSI_ADSENSE_LUN_COMMUNICATION, SCSI_ADSENSE_LUN_NOT_READY, SCSI_ADSENSE_REC_DATA_ECC, SCSI_ADSENSE_REC_DATA_NOECC, SCSI_ADSENSE_SEEK_ERROR, SCSI_ADSENSE_TRACK_ERROR, SCSI_ADSENSE_WRITE_PROTECT, SCSI_PASS_THROUGH, SCSI_SENSEQ_CAPACITY_DATA_CHANGED, SCSI_SENSEQ_INITIATOR_RESPONSE_TIMEOUT, SCSI_SENSEQ_INIT_COMMAND_REQUIRED, SCSI_SENSEQ_INQUIRY_DATA_CHANGED, SCSI_SENSEQ_MICROCODE_CHANGED, SCSI_SENSEQ_OPERATING_DEFINITION_CHANGED, SCSI_SENSEQ_TIMEOUT_ON_LOGICAL_UNIT, SCSI_SENSE_DESCRIPTOR_TYPE_BLOCK_COMMAND, SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION, SCSI_SESNEQ_COMM_CRC_ERROR, SENSE_DATA, SRB_CLASS_FLAGS_FREE_MDL, SRB_CLASS_FLAGS_LOW_PRIORITY, SRB_CLASS_FLAGS_PAGING, SRB_FLAGS_CLASS_DRIVER_RESERVED, SRB_FLAGS_DATA_IN, SRB_FLAGS_DATA_OUT, SRB_FLAGS_DONT_START_NEXT_PACKET, SRB_FLAGS_NO_QUEUE_FREEZE, SRB_FLAGS_QUEUE_ACTION_ENABLE, SRB_FUNCTION_CLAIM_DEVICE, SRB_FUNCTION_RELEASE_DEVICE, SRB_HEAD_OF_QUEUE_TAG_REQUEST, SRB_ORDERED_QUEUE_TAG_REQUEST, SRB_SIMPLE_TAG_REQUEST, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_COMMAND_TIMEOUT, SRB_STATUS_INTERNAL_ERROR, SRB_STATUS_INVALID_LUN, SRB_STATUS_INVALID_PATH_ID, SRB_STATUS_INVALID_TARGET_ID, SRB_STATUS_NO_DEVICE, SRB_STATUS_NO_HBA, SRB_STATUS_PARITY_ERROR, SRB_STATUS_SELECTION_TIMEOUT, SRB_STATUS_SUCCESS, SRB_STATUS_TIMEOUT, SRB_STATUS_UNEXPECTED_BUS_FREE, SRB_TYPE_SCSI_REQUEST_BLOCK, _MEDIA_CHANGE_DETECTION_STATE_MediaNotPresent as MediaNotPresent, _MEDIA_CHANGE_DETECTION_STATE_MediaUnavailable as MediaUnavailable};
 use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, IO_STATUS_BLOCK, KPRIORITY, KPROCESSOR_MODE, OBJECT_ATTRIBUTES, PCSTR, PETHREAD, _EVENT_TYPE_NotificationEvent as NotificationEvent, _EVENT_TYPE_SynchronizationEvent as SynchronizationEvent, _KWAIT_REASON_Executive as Executive};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{DEVICE_EVENT_BECOMING_READY, MOUNTDEV_SUGGESTED_LINK_NAME, MOUNTDEV_UNIQUE_ID, PMOUNTDEV_SUGGESTED_LINK_NAME, PMOUNTDEV_UNIQUE_ID};
@@ -2086,7 +2086,7 @@ pub unsafe extern "system" fn ClassShutdownFlush(
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
 
-        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
+        ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as u8) as _);
 
         return STATUS_DEVICE_DOES_NOT_EXIST;
     }
@@ -2098,7 +2098,7 @@ pub unsafe extern "system" fn ClassShutdownFlush(
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_DEVICE_REQUEST;
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as CCHAR) as _);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as u8) as _);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
@@ -2108,4 +2108,76 @@ pub unsafe extern "system" fn ClassShutdownFlush(
 extern "system" {
     fn ClassAcquireChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
     fn ClassReleaseChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
+}
+
+// ---------------------------------------------------------------------------
+// ODX copy-offload entry points (class.c ClassDeviceProcessOffloadRead/Write).
+//
+// Never translated. Nothing noticed because the IOCTL_STORAGE_* dispatch arms
+// that call them sat below a catch-all binding arm, so the calls were
+// unreachable and the linker never demanded the symbols; restoring the dispatch
+// (field manual §9.112a) made them undefined at link. The leaf validator
+// (ClasspValidateOffloadSupported, above) was ported, but the token-transfer
+// machinery it hands off to (ClasspServicePopulateTokenTransferRequest /
+// ClasspServiceWriteUsingTokenTransferRequest and the ROD token pool) is still
+// extern-decl-only, so the feature genuinely does not exist in the Rust port.
+//
+// The validate-and-complete prologue is faithful to the C. Where the C would
+// enter the token path we complete with STATUS_NOT_SUPPORTED and say so on the
+// trace, rather than fabricate a token implementation. On every device we
+// actually run, ClasspValidateOffloadSupported already returns
+// STATUS_DEVICE_FEATURE_NOT_SUPPORTED (no BlockDeviceRODLimits VPD page), so the
+// truncated tail is unreachable in practice — but it fails LOUD if that ever
+// changes instead of silently doing the wrong thing.
+// OWED: port the ROD-token transfer path, then replace the tail here.
+
+#[no_mangle]
+pub unsafe extern "C" fn ClasspCompleteOffloadRequest(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    CompletionStatus: NTSTATUS,
+) {
+    (*Irp).IoStatus.__bindgen_anon_1.Status = CompletionStatus;
+    ClassReleaseRemoveLock(DeviceObject, Irp);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as u8);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ClassDeviceProcessOffloadRead(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    _Srb: PSCSI_REQUEST_BLOCK,
+) -> NTSTATUS {
+    let mut status = ClasspValidateOffloadSupported(DeviceObject, Irp);
+    if NT_SUCCESS(status) {
+        TracePrint!((
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_IOCTL,
+            b"ClassDeviceProcessOffloadRead (%p): ROD token transfer path is not ported to Rust.\n\0".as_ptr() as PCHAR,
+            DeviceObject,
+        ));
+        status = STATUS_NOT_SUPPORTED;
+    }
+    ClasspCompleteOffloadRequest(DeviceObject, Irp, status);
+    status
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ClassDeviceProcessOffloadWrite(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    _Srb: PSCSI_REQUEST_BLOCK,
+) -> NTSTATUS {
+    let mut status = ClasspValidateOffloadSupported(DeviceObject, Irp);
+    if NT_SUCCESS(status) {
+        TracePrint!((
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_IOCTL,
+            b"ClassDeviceProcessOffloadWrite (%p): ROD token transfer path is not ported to Rust.\n\0".as_ptr() as PCHAR,
+            DeviceObject,
+        ));
+        status = STATUS_NOT_SUPPORTED;
+    }
+    ClasspCompleteOffloadRequest(DeviceObject, Irp, status);
+    status
 }

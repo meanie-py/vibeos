@@ -28,6 +28,60 @@ unsafe fn srb_is_ex(srb: PSTORAGE_REQUEST_BLOCK) -> bool {
     (*srb).Function as u32 == SRB_FUNCTION_STORAGE_REQUEST_BLOCK
 }
 
+/// srbhelper.h `SrbGetAddress` — the extended SRB carries its STOR_ADDRESS inline at
+/// `AddressOffset` bytes from the SRB base.
+#[inline]
+unsafe fn srb_get_address(srb: PSTORAGE_REQUEST_BLOCK) -> PSTOR_ADDRESS {
+    if (*srb).Function as u32 != SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
+        return core::ptr::null_mut();
+    }
+    if (*srb).AddressOffset == 0 {
+        return core::ptr::null_mut();
+    }
+    (srb as *mut u8).add((*srb).AddressOffset as usize) as PSTOR_ADDRESS
+}
+
+/// srbhelper.h `SrbGetPathId`/`SrbGetTargetId`/`SrbGetLun` share one shape: read the BTL8
+/// triple out of the extended SRB's STOR_ADDRESS, else the classic SRB's flat field.
+/// `pick` selects which of the three the caller wants.
+#[inline]
+unsafe fn srb_get_btl8(srb: PSTORAGE_REQUEST_BLOCK, pick: u8) -> UCHAR {
+    let addr = srb_get_address(srb);
+    if addr.is_null() {
+        return 0;
+    }
+    if (*addr).Type as u32 != STOR_ADDRESS_TYPE_BTL8 {
+        return 0; // C asserts here; non-BTL8 addressing is not something we emit
+    }
+    let btl8 = addr as *mut STOR_ADDR_BTL8;
+    match pick {
+        0 => (*btl8).Path,
+        1 => (*btl8).Target,
+        _ => (*btl8).Lun,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn SrbGetPathId(Srb: PVOID) -> UCHAR {
+    let srb = Srb as PSTORAGE_REQUEST_BLOCK;
+    if srb_is_ex(srb) { srb_get_btl8(srb, 0) }
+    else { (*(Srb as PSCSI_REQUEST_BLOCK)).PathId }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn SrbGetTargetId(Srb: PVOID) -> UCHAR {
+    let srb = Srb as PSTORAGE_REQUEST_BLOCK;
+    if srb_is_ex(srb) { srb_get_btl8(srb, 1) }
+    else { (*(Srb as PSCSI_REQUEST_BLOCK)).TargetId }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn SrbGetLun(Srb: PVOID) -> UCHAR {
+    let srb = Srb as PSTORAGE_REQUEST_BLOCK;
+    if srb_is_ex(srb) { srb_get_btl8(srb, 2) }
+    else { (*(Srb as PSCSI_REQUEST_BLOCK)).Lun }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn SrbGetDataTransferLength(Srb: PVOID) -> ULONG {
     let srb = Srb as PSTORAGE_REQUEST_BLOCK;

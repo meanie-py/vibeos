@@ -18,6 +18,7 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{CM_FULL_RESOURCE_DESCRIPTOR, CM_PARTIAL_RESOURCE_DESCRIPTOR, PCSTR};
 
+use crate::glue::{CmResourceTypeBusNumber, CmResourceTypeInterrupt, CmResourceTypePort, CmResourceTypeMemory};
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 pub static mut PnpCodes: [PCHAR; 23] = [

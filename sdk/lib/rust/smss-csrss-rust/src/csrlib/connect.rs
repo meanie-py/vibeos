@@ -66,7 +66,8 @@ const SECURITY_NT_AUTHORITY: u64 = 5;
 const STATUS_NAME_TOO_LONG: NTSTATUS = 0xC0000106u32 as NTSTATUS;
 const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000Du32 as NTSTATUS;
 const STATUS_INVALID_IMAGE_FORMAT: NTSTATUS = 0xC000007Bu32 as NTSTATUS;
-const UNICODE_STRING_MAX_BYTES: usize = 0xFFFC;
+// ntbasedef.h: ((USHORT) 65534). Was 0xFFFC — the bound rejected 2 bytes early.
+const UNICODE_STRING_MAX_BYTES: usize = 0xFFFE;
 
 unsafe fn CsrpConnectToServer(ObjectDirectory: PCWSTR) -> NTSTATUS {
     let mut Status: NTSTATUS;

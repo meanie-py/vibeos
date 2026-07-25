@@ -57,8 +57,8 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE as IO_COMPLETION_ROUTINE;
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::glue::{DO_VERIFY_VOLUME, FILE_DEVICE_DISK, FILE_PORTABLE_DEVICE, IRP_MJ_SCSI, SL_OVERRIDE_VERIFY_VOLUME, SL_WRITE_THROUGH, STATUS_DEVICE_BUSY, STATUS_DEVICE_DOES_NOT_EXIST, STATUS_VERIFY_REQUIRED, TRACE_LEVEL_ERROR, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING};
-use crate::types::{CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED, CLASSP_REG_DISBALE_IDLE_POWER_NAME, CLASSP_REG_PERF_RESTORE_VALUE_NAME, CLASSP_REG_QERR_OVERRIDE_MODE, CLASSP_REG_REMOVAL_POLICY_VALUE_NAME, CLASSP_REG_SUBKEY_NAME, CLASSP_VOLUME_VERIFY_CHECKED, CLASS_DRIVER_EXTENSION, CLASS_INIT_DATA, CLASS_INTERPRET_SENSE_INFO2, CLASS_INTERPRET_SENSE_INFO2_MAXIMUM_HISTORY_COUNT, CLASS_MAX_INTERLEAVE_PER_CRITICAL_IO, CLASS_PERF_RESTORE_MINIMUM, CLASS_QUERY_WMI_REGINFO_EX_LIST, CLASS_SRB_SCSI_REQUEST_BLOCK, CLASS_SRB_STORAGE_REQUEST_BLOCK, CLASS_WORKING_SET, CLASS_WORKING_SET_MAXIMUM, COMMON_DEVICE_EXTENSION, COMPLETION_CONTEXT, ClassGlobalDispatch, ClassMinimalPowerHandler, ClasspPowerSettingCallback, ClasspRetryRequestDpc, ClasspScanForClassHacks, ClasspStartIo, ClasspUpdateDiskProperties, DEV_USE_16BYTE_CDB, FDO_HACK_NO_SYNC_CACHE, FUNCTIONAL_DEVICE_EXTENSION, MAX_TOKEN_LIST_IDENTIFIERS, NUM_IO_RETRIES, PCOMMON_DEVICE_EXTENSION, PFUNCTIONAL_DEVICE_EXTENSION, PREAD_CAPACITY_DATA_EX, PSCSI_REQUEST_BLOCK, PTRANSFER_PACKET, QERR_SET_ZERO_ALWAYS, QERR_SET_ZERO_ODX_OR_TP_ONLY, READ_CAPACITY_DATA, READ_CAPACITY_DATA_EX, REG_DISK_CLASS_CONTROL, REMOVE_PENDING, SCSIOP_START_STOP_UNIT, SCSI_REQUEST_BLOCK, SRB_FLAGS_DISABLE_AUTOSENSE, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FLAGS_FREE_SENSE_BUFFER, SRB_FLAGS_NO_DATA_TRANSFER, SRB_FUNCTION_EXECUTE_SCSI, SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_STATUS_QUEUE_FROZEN, SRB_TYPE_STORAGE_REQUEST_BLOCK, START_UNIT_TIMEOUT, STORAGE_ADDRESS_TYPE_BTL8, STORAGE_REQUEST_BLOCK, TRANSFER_PACKET, _CLASS_DEV_INFO, _CLASS_DRIVER_EXTENSION, _CLASS_FUNCTION_SUPPORT_INFO, _CLASS_INIT_DATA, _CLASS_PRIVATE_FDO_DATA, _COMMON_DEVICE_EXTENSION, _COMPLETION_CONTEXT, _FUNCTIONAL_DEVICE_EXTENSION, _SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as SrbExDataTypeScsiCdb16, _STORAGE_REQUEST_BLOCK};
+use crate::glue::{DO_VERIFY_VOLUME, FILE_DEVICE_DISK, FILE_PORTABLE_DEVICE, IRP_MJ_SCSI, SL_OVERRIDE_VERIFY_VOLUME, SL_WRITE_THROUGH, STATUS_DEVICE_BUSY, STATUS_DEVICE_DOES_NOT_EXIST, STATUS_VERIFY_REQUIRED, TRACE_LEVEL_ERROR, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING, IOCTL_STORAGE_FIRMWARE_GET_INFO};
+use crate::types::{CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED, CLASSP_REG_DISBALE_IDLE_POWER_NAME, CLASSP_REG_PERF_RESTORE_VALUE_NAME, CLASSP_REG_QERR_OVERRIDE_MODE, CLASSP_REG_REMOVAL_POLICY_VALUE_NAME, CLASSP_REG_SUBKEY_NAME, CLASSP_VOLUME_VERIFY_CHECKED, CLASS_DRIVER_EXTENSION, CLASS_INIT_DATA, CLASS_INTERPRET_SENSE_INFO2, CLASS_INTERPRET_SENSE_INFO2_MAXIMUM_HISTORY_COUNT, CLASS_MAX_INTERLEAVE_PER_CRITICAL_IO, CLASS_PERF_RESTORE_MINIMUM, CLASS_QUERY_WMI_REGINFO_EX_LIST, CLASS_SRB_SCSI_REQUEST_BLOCK, CLASS_SRB_STORAGE_REQUEST_BLOCK, CLASS_WORKING_SET, CLASS_WORKING_SET_MAXIMUM, COMMON_DEVICE_EXTENSION, COMPLETION_CONTEXT, ClassGlobalDispatch, ClassMinimalPowerHandler, ClasspPowerSettingCallback, ClasspRetryRequestDpc, ClasspScanForClassHacks, ClasspStartIo, ClasspUpdateDiskProperties, DEV_USE_16BYTE_CDB, FDO_HACK_NO_SYNC_CACHE, FUNCTIONAL_DEVICE_EXTENSION, MAX_TOKEN_LIST_IDENTIFIERS, NUM_IO_RETRIES, PCOMMON_DEVICE_EXTENSION, PFUNCTIONAL_DEVICE_EXTENSION, PREAD_CAPACITY_DATA_EX, PSCSI_REQUEST_BLOCK, PTRANSFER_PACKET, QERR_SET_ZERO_ALWAYS, QERR_SET_ZERO_ODX_OR_TP_ONLY, READ_CAPACITY_DATA, READ_CAPACITY_DATA_EX, REG_DISK_CLASS_CONTROL, REMOVE_PENDING, SCSIOP_START_STOP_UNIT, SCSI_REQUEST_BLOCK, SRB_FLAGS_DISABLE_AUTOSENSE, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FLAGS_FREE_SENSE_BUFFER, SRB_FLAGS_NO_DATA_TRANSFER, SRB_FUNCTION_EXECUTE_SCSI, SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_STATUS_QUEUE_FROZEN, SRB_TYPE_STORAGE_REQUEST_BLOCK, START_UNIT_TIMEOUT, STORAGE_ADDRESS_TYPE_BTL8, STORAGE_REQUEST_BLOCK, TRANSFER_PACKET, _CLASS_DEV_INFO, _CLASS_DRIVER_EXTENSION, _CLASS_FUNCTION_SUPPORT_INFO, _CLASS_INIT_DATA, _CLASS_PRIVATE_FDO_DATA, _COMMON_DEVICE_EXTENSION, _COMPLETION_CONTEXT, _FUNCTIONAL_DEVICE_EXTENSION, _SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as SrbExDataTypeScsiCdb16, _STORAGE_REQUEST_BLOCK, DeviceDsmAction_Allocation, DeviceDsmAction_OffloadRead, DeviceDsmAction_OffloadWrite, DeviceDsmAction_Trim, SCSIOP_SYNCHRONIZE_CACHE, SCSI_ADSENSE_BUS_RESET, SCSI_ADSENSE_COPY_PROTECTION_FAILURE, SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR, SCSI_ADSENSE_DATA_AREA, SCSI_ADSENSE_FAILURE_PREDICTION_THRESHOLD_EXCEEDED, SCSI_ADSENSE_ILLEGAL_BLOCK, SCSI_ADSENSE_ILLEGAL_COMMAND, SCSI_ADSENSE_INVALID_CDB, SCSI_ADSENSE_INVALID_FIELD_PARAMETER_LIST, SCSI_ADSENSE_INVALID_LUN, SCSI_ADSENSE_INVALID_TOKEN, SCSI_ADSENSE_LB_PROVISIONING, SCSI_ADSENSE_MEDIUM_CHANGED, SCSI_ADSENSE_MUSIC_AREA, SCSI_ADSENSE_NO_MEDIA_IN_DEVICE, SCSI_ADSENSE_NO_SENSE, SCSI_ADSENSE_OPERATING_CONDITIONS_CHANGED, SCSI_ADSENSE_OPERATOR_REQUEST, SCSI_ADSENSE_PARAMETERS_CHANGED, SCSI_ADSENSE_PARAMETER_LIST_LENGTH, SCSI_ADSENSE_RESOURCE_FAILURE, SCSI_ADSENSE_VOLUME_OVERFLOW, SCSI_SENSEQ_AUTHENTICATION_FAILURE, SCSI_SENSEQ_BECOMING_READY, SCSI_SENSEQ_CAUSE_NOT_REPORTABLE, SCSI_SENSEQ_CLEANING_CARTRIDGE_INSTALLED, SCSI_SENSEQ_DATA_UNDERRUN, SCSI_SENSEQ_FORMAT_IN_PROGRESS, SCSI_SENSEQ_INSUFFICIENT_RESOURCES, SCSI_SENSEQ_INVALID_RELEASE_OF_PERSISTENT_RESERVATION, SCSI_SENSEQ_KEY_NOT_ESTABLISHED, SCSI_SENSEQ_KEY_NOT_PRESENT, SCSI_SENSEQ_LOGICAL_UNIT_RESET_COUNT_ERROR, SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS, SCSI_SENSEQ_MANUAL_INTERVENTION_REQUIRED, SCSI_SENSEQ_MEDIA_CODE_MISMATCHED_TO_LOGICAL_UNIT, SCSI_SENSEQ_MEDIUM_REMOVAL, SCSI_SENSEQ_OPERATION_IN_PROGRESS, SCSI_SENSEQ_OPERATION_IS_IN_PROGRESS, SCSI_SENSEQ_READ_OF_SCRAMBLED_SECTOR_WITHOUT_AUTHENTICATION, SCSI_SENSEQ_SOFT_THRESHOLD_REACHED, SCSI_SENSEQ_SPACE_ALLOC_FAILED_WRITE_PROTECT, SCSI_SENSEQ_SPACE_ALLOC_IN_PROGRESS, SCSI_SENSEQ_TOO_MANY_SEGMENT_DESCRIPTORS, SCSI_SENSEQ_UNKNOWN_FORMAT, SCSI_SENSEQ_UNREACHABLE_TARGET, SCSI_SENSEQ_WRITE_PROTECT_DISABLE, SCSI_SENSEQ_WRITE_PROTECT_ENABLE, SCSI_SENSE_ABORTED_COMMAND, SCSI_SENSE_BLANK_CHECK, SCSI_SENSE_COPY_ABORTED, SCSI_SENSE_DATA_PROTECT, SCSI_SENSE_HARDWARE_ERROR, SCSI_SENSE_ILLEGAL_REQUEST, SCSI_SENSE_MEDIUM_ERROR, SCSI_SENSE_NOT_READY, SCSI_SENSE_NO_SENSE, SCSI_SENSE_RECOVERED_ERROR, SCSI_SENSE_UNIT_ATTENTION, SRB_STATUS_ABORTED, SRB_STATUS_BUS_RESET, SRB_STATUS_DATA_OVERRUN, SRB_STATUS_ERROR, SRB_STATUS_INVALID_REQUEST, SRB_STATUS_PHASE_SEQUENCE_FAILURE, SRB_STATUS_REQUEST_FLUSHED};
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, STORAGE_PROPERTY_ID, _DEVICE_OBJECT, _DEVICE_POWER_DESCRIPTOR, _DRIVER_OBJECT, _IO_PAGING_PRIORITY, _IO_PAGING_PRIORITY_IoPagingPriorityHigh, _IO_PAGING_PRIORITY_IoPagingPriorityInvalid, _IRP, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DPFLTR_INFO_LEVEL, FILE_DEVICE_CD_ROM, FILE_FLOPPY_DISKETTE, IO_WARNING_DISK_SURPRISE_REMOVED, IRP_PAGING_IO, SL_KEY_SPECIFIED, STATUS_DEVICE_NOT_READY, STATUS_FT_READ_FROM_COPY, STATUS_INTERNAL_ERROR, STATUS_MORE_PROCESSING_REQUIRED, WMIREG_ACTION_REGISTER};
@@ -187,8 +187,8 @@ const IO_RECOVERED_VIA_ECC: NTSTATUS      = 0x80040021u32 as i32;
 const IO_ERR_CONTROLLER_ERROR: NTSTATUS   = 0xC004000Bu32 as i32;
 const IO_ERR_BAD_BLOCK: NTSTATUS          = 0xC0040007u32 as i32;
 const IO_ERROR_IO_HARDWARE_ERROR: NTSTATUS = 0xC004009Au32 as i32;
-const IO_ERR_NOT_READY: NTSTATUS          = 0xC0040002u32 as i32;
-const IO_WARNING_IO_OPERATION_RETRIED: NTSTATUS = 0x80040032u32 as i32;
+const IO_ERR_NOT_READY: NTSTATUS          = 0xC004000Fu32 as i32;
+const IO_WARNING_IO_OPERATION_RETRIED: NTSTATUS = 0x80040099u32 as i32;
 // u8 aliases for match patterns (can't use (CONST as u8) in match arms)
 const SCSI_ADSENSE_TRACK_ERROR_U8: u8   = SCSI_ADSENSE_TRACK_ERROR as u8;
 const SCSI_ADSENSE_SEEK_ERROR_U8: u8    = SCSI_ADSENSE_SEEK_ERROR as u8;
@@ -2118,7 +2118,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     isIncorrectLengthValid = 1;
                 }
 
-                match senseKey {
+                match senseKey as u32 {
                     SCSI_SENSE_NO_SENSE => {
                         if isIncorrectLengthValid != 0 && incorrectLength != 0 {
                             TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Incorrect length detected.\n\0".as_ptr() as PCHAR);
@@ -2138,12 +2138,12 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         logError = 1;
                         uniqueId = 258;
 
-                        match addlSenseCode {
-                            SCSI_ADSENSE_TRACK_ERROR_U8 | SCSI_ADSENSE_SEEK_ERROR_U8 => {
+                        match addlSenseCode as u32 {
+                            SCSI_ADSENSE_TRACK_ERROR | SCSI_ADSENSE_SEEK_ERROR => {
                                 logStatus = IO_ERR_SEEK_ERROR;
                             }
 
-                            SCSI_ADSENSE_REC_DATA_NOECC_U8 | SCSI_ADSENSE_REC_DATA_ECC_U8 => {
+                            SCSI_ADSENSE_REC_DATA_NOECC | SCSI_ADSENSE_REC_DATA_ECC => {
                                 logStatus = IO_RECOVERED_VIA_ECC;
                             }
 
@@ -2189,13 +2189,13 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device not ready\n\0".as_ptr() as PCHAR);
                         *Status = STATUS_DEVICE_NOT_READY;
 
-                        match addlSenseCode {
-                            SCSI_ADSENSE_LUN_NOT_READY_U8 => {
+                        match addlSenseCode as u32 {
+                            SCSI_ADSENSE_LUN_NOT_READY => {
                                 TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Lun not ready\n\0".as_ptr() as PCHAR);
 
                                 retryInterval = NOT_READY_RETRY_INTERVAL;
 
-                                match addlSenseCodeQual {
+                                match addlSenseCodeQual as u32 {
                                     SCSI_SENSEQ_BECOMING_READY => {
                                         let mut notReady: DEVICE_EVENT_BECOMING_READY = core::mem::zeroed();
 
@@ -2277,7 +2277,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                         }
                                     }
 
-                                    SCSI_SENSEQ_INIT_COMMAND_REQUIRED_U8 | _ => {
+                                    SCSI_SENSEQ_INIT_COMMAND_REQUIRED | _ => {
                                         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Initializing command required\n\0".as_ptr() as PCHAR);
                                         retryInterval = 0;
                                         logRetryableError = 0;
@@ -2321,7 +2321,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         logStatus = IO_ERR_BAD_BLOCK;
 
                         if addlSenseCode == (SCSI_ADSENSE_INVALID_MEDIA) as u8 {
-                            match addlSenseCodeQual {
+                            match addlSenseCodeQual as u32 {
                                 SCSI_SENSEQ_UNKNOWN_FORMAT => {
                                     *Status = STATUS_UNRECOGNIZED_MEDIA;
 
@@ -2411,8 +2411,8 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         *Status = STATUS_INVALID_DEVICE_REQUEST;
                         retry = 0;
 
-                        match addlSenseCode {
-                            SCSI_ADSENSE_NO_SENSE => match addlSenseCodeQual {
+                        match addlSenseCode as u32 {
+                            SCSI_ADSENSE_NO_SENSE => match addlSenseCodeQual as u32 {
                                 SCSI_SENSEQ_OPERATION_IS_IN_PROGRESS => {
                                     if ClasspIsOffloadDataTransferCommand(cdb) != 0 {
                                         TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Duplicate List Identifier (command %x, parameter field offset 0x%016llx)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32, information);
@@ -2429,7 +2429,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 _ => {}
                             },
 
-                            SCSI_ADSENSE_LUN_COMMUNICATION_U8 => match addlSenseCodeQual {
+                            SCSI_ADSENSE_LUN_COMMUNICATION => match addlSenseCodeQual as u32 {
                                 SCSI_SENSEQ_UNREACHABLE_TARGET => {
                                     TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Source-Destination LUNs can't communicate (command %x)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
@@ -2438,7 +2438,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 _ => {}
                             },
 
-                            SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR => match addlSenseCodeQual {
+                            SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR => match addlSenseCodeQual as u32 {
                                 SCSI_SENSEQ_DATA_UNDERRUN => {
                                     TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Host specified a transfer length greater than what is represented by the token (considering the offset) [command %x]\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
@@ -2556,7 +2556,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             }
 
                             SCSI_ADSENSE_INVALID_FIELD_PARAMETER_LIST => {
-                                match addlSenseCodeQual {
+                                match addlSenseCodeQual as u32 {
                                     SCSI_SENSEQ_INVALID_RELEASE_OF_PERSISTENT_RESERVATION => {
                                         TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Alignment violation for command %x.\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
@@ -2601,7 +2601,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                                 *Status = STATUS_COPY_PROTECTION_FAILURE;
 
-                                match addlSenseCodeQual {
+                                match addlSenseCodeQual as u32 {
                                     SCSI_SENSEQ_AUTHENTICATION_FAILURE => {
                                         TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Authentication failure\n\0".as_ptr() as PCHAR);
                                         *Status = STATUS_CSS_AUTHENTICATION_FAILURE;
@@ -2653,7 +2653,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         );
                         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, b"ClassInterpretSenseInfo: Media change count for device %d incremented to %#lx\n\0".as_ptr() as PCHAR, (*fdoExtension).DeviceNumber, count);
 
-                        match addlSenseCode {
+                        match addlSenseCode as u32 {
                             SCSI_ADSENSE_MEDIUM_CHANGED => {
                                 logRetryableError = 0;
                                 TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, b"ClassInterpretSenseInfo: Media changed\n\0".as_ptr() as PCHAR);
@@ -2680,7 +2680,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 }
                             }
 
-                            SCSI_ADSENSE_LB_PROVISIONING => match addlSenseCodeQual {
+                            SCSI_ADSENSE_LB_PROVISIONING => match addlSenseCodeQual as u32 {
                                 SCSI_SENSEQ_SOFT_THRESHOLD_REACHED => {
                                     logRetryableError = 0;
                                     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device (%p) has hit a soft threshold.\n\0".as_ptr() as PCHAR, Fdo);
@@ -2727,7 +2727,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 }
                             }
 
-                            SCSI_ADSENSE_OPERATOR_REQUEST => match addlSenseCodeQual {
+                            SCSI_ADSENSE_OPERATOR_REQUEST => match addlSenseCodeQual as u32 {
                                 SCSI_SENSEQ_MEDIUM_REMOVAL => {
                                     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Ejection request received!\n\0".as_ptr() as PCHAR);
                                     ClassSendEjectionNotification(fdoExtension);
@@ -2798,7 +2798,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         retry = 0;
 
                         if addlSenseCode == (SCSI_ADSENSE_WRITE_PROTECT) as u8 {
-                            match addlSenseCodeQual {
+                            match addlSenseCodeQual as u32 {
                                 SCSI_SENSEQ_SPACE_ALLOC_FAILED_WRITE_PROTECT => {
                                     TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device's (%p) resources are exhausted.\n\0".as_ptr() as PCHAR, Fdo);
 
@@ -2825,8 +2825,8 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         *Status = STATUS_NO_DATA_DETECTED;
                     }
 
-                    SCSI_SENSE_COPY_ABORTED => match addlSenseCode {
-                        SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR => match addlSenseCodeQual {
+                    SCSI_SENSE_COPY_ABORTED => match addlSenseCode as u32 {
+                        SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR => match addlSenseCodeQual as u32 {
                             SCSI_SENSEQ_DATA_UNDERRUN => {
                                 TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Data transfer was truncated (command %x)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
@@ -2840,8 +2840,8 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                     SCSI_SENSE_ABORTED_COMMAND => {
                         if ClasspIsOffloadDataTransferCommand(cdb) != 0 {
-                            match addlSenseCode {
-                                SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR => match addlSenseCodeQual {
+                            match addlSenseCode as u32 {
+                                SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR => match addlSenseCodeQual as u32 {
                                     SCSI_SENSEQ_DATA_UNDERRUN => {
                                         TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Target has truncated the data transfer (command %x)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
@@ -2851,7 +2851,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                     _ => {}
                                 },
 
-                                SCSI_ADSENSE_RESOURCE_FAILURE => match addlSenseCodeQual {
+                                SCSI_ADSENSE_RESOURCE_FAILURE => match addlSenseCodeQual as u32 {
                                     SCSI_SENSEQ_INSUFFICIENT_RESOURCES => {
                                         TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Target has insufficient resources (command %x)\n\0".as_ptr() as PCHAR, Fdo, ((*cdb).CDB6GENERIC.as_ref().OperationCode) as i32);
 
@@ -2934,7 +2934,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
             TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Request sense info not valid. SrbStatus %2x\n\0".as_ptr() as PCHAR, (SRB_STATUS((*Srb).SrbStatus)) as i32);
             retry = 1;
 
-            match SRB_STATUS((*Srb).SrbStatus) {
+            match SRB_STATUS((*Srb).SrbStatus) as u32 {
                 SRB_STATUS_ABORTED => {
                     incrementErrorCount = 1;
                     *Status = STATUS_IO_TIMEOUT;
@@ -2957,16 +2957,16 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     retry = 0;
                 }
 
-                SRB_STATUS_INVALID_PATH_ID_U8
-                | SRB_STATUS_NO_DEVICE_U8
-                | SRB_STATUS_NO_HBA_U8
-                | SRB_STATUS_INVALID_LUN_U8
-                | SRB_STATUS_INVALID_TARGET_ID_U8 => {
+                SRB_STATUS_INVALID_PATH_ID
+                | SRB_STATUS_NO_DEVICE
+                | SRB_STATUS_NO_HBA
+                | SRB_STATUS_INVALID_LUN
+                | SRB_STATUS_INVALID_TARGET_ID => {
                     *Status = STATUS_NO_SUCH_DEVICE;
                     retry = 0;
                 }
 
-                SRB_STATUS_SELECTION_TIMEOUT_U8 => {
+                SRB_STATUS_SELECTION_TIMEOUT => {
                     logError = 1;
                     logStatus = IO_ERR_NOT_READY;
                     uniqueId = 260;
@@ -2974,12 +2974,12 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     retry = 0;
                 }
 
-                SRB_STATUS_TIMEOUT_U8 | SRB_STATUS_COMMAND_TIMEOUT_U8 => {
+                SRB_STATUS_TIMEOUT | SRB_STATUS_COMMAND_TIMEOUT => {
                     incrementErrorCount = 1;
                     *Status = STATUS_IO_TIMEOUT;
                 }
 
-                SRB_STATUS_PARITY_ERROR_U8 | SRB_STATUS_UNEXPECTED_BUS_FREE_U8 => {
+                SRB_STATUS_PARITY_ERROR | SRB_STATUS_UNEXPECTED_BUS_FREE => {
                     incrementErrorCount = 1;
                     *Status = STATUS_IO_DEVICE_ERROR;
                     logRetryableError = 0;
@@ -3269,8 +3269,8 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
         if logError != 0 {
             let cdb = SrbGetCdb((Srb).cast());
             if !cdb.is_null() {
-                match (*cdb).CDB10.as_ref().OperationCode {
-                    SCSIOP_TEST_UNIT_READY_U8 => {
+                match (*cdb).CDB10.as_ref().OperationCode as u32 {
+                    SCSIOP_TEST_UNIT_READY => {
                         if (*fdoData).LoggedTURFailureSinceLastIO != 0 {
                             logError = 0;
                         } else {

@@ -166,3 +166,93 @@ def test_real_ntdll_spec_generates_and_is_stable():
     c1 = w.emit_c(a, spec, "arm64", "-")
     c2 = w.emit_c(b, spec, "arm64", "-")
     assert c1 == c2  # re-runnable: identical output for identical input
+
+
+# --- marshalgen audit (E10): the flat-thunk blind-spot gate --------------------
+
+_mspec = importlib.util.spec_from_file_location("marshalgen", os.path.join(_HERE, "marshalgen.py"))
+mg = importlib.util.module_from_spec(_mspec)
+sys.modules["marshalgen"] = mg
+_mspec.loader.exec_module(mg)
+
+
+def test_thunk_table_separates_live_flat_thunks_from_stubs(tmp_path):
+    """The audit's ground truth is the GENERATED table, not the .spec: only an
+    entry that still names a wow64_thunk_* body is dispatched flat."""
+    gen = tmp_path / "t.gen.c"
+    gen.write_text(
+        'static const X Wow64ThunkTable[] = {\n'
+        '    { "NtGdiAbortDoc", wow64_thunk_NtGdiAbortDoc, 1 }, /* [0] */\n'
+        '    { "NtUserBeginPaint", 0, 2 }, /* [307] MANUAL: listed in --manual-list */\n'
+        '};\n'
+    )
+    table = mg.load_thunk_table(gen)
+    assert table == {"NtGdiAbortDoc": True, "NtUserBeginPaint": False}
+
+
+def test_audit_verdict_flags_divergence_but_not_tool_blindness():
+    # Proven layout divergence under a flat thunk -> the E6/E8/E9 bugcheck shape.
+    assert mg.audit_verdict("WIDENING", "-> UNICODE_STRING") == "DIVERGENT"
+    # Pointer to a 4->8 scalar (HWND*/PVOID*) -> the E7 guest-heap overrun.
+    assert mg.audit_verdict("SCALAR_WIDEN", "-> HWND: 4->8 scalar pointee") == "DIVERGENT"
+    # A struct marshalgen genuinely can't reason about is still a finding.
+    assert mg.audit_verdict("SEMANTIC", "union/bitfield with divergent layout") == "DIVERGENT"
+    # ...but "I couldn't SEE the layout" is a hole in the TOOL, not a claim
+    # about the syscall. Gating on it would bury the real findings in noise.
+    assert mg.audit_verdict("SEMANTIC", "-> FOO: layout not in dump (add header to TU?)") == "UNKNOWN"
+    assert mg.audit_verdict("SEMANTIC", "unknown type 'BAR'") == "UNKNOWN"
+    assert mg.audit_verdict("FLAT", "scalar") == "OK"
+    assert mg.audit_verdict("IDENTICAL", "") == "OK"
+
+
+def test_audit_skips_cleanly_without_a_build(tmp_path, monkeypatch):
+    """No build dirs must be a silent SKIP (rc 0), never a gate failure."""
+    monkeypatch.setattr(mg, "REPO", tmp_path)
+
+    class A:
+        build_dir = None
+        build_dir32 = None
+        table = "both"
+        show_unknown = False
+
+    assert mg.cmd_audit(A()) == 0
+
+
+def test_audit_table_comes_from_sources_not_the_build(tmp_path):
+    """The table must be derivable from CHECKED-IN inputs alone. If this ever
+    regresses to reading build-*/...gen.c, the lint's baseline stops being
+    portable and stale build dirs re-report already-fixed syscalls."""
+    repo = os.path.abspath(os.path.join(_HERE, "..", ".."))
+    cfg = mg.AUDIT_TABLES["win32k"]
+    for key in ("spec", "sysfuncs", "manual_lists"):
+        assert key in cfg, f"win32k audit config lost its {key} source"
+    if not os.path.exists(os.path.join(repo, cfg["spec"])):
+        return  # not a full checkout
+    table = mg.compute_thunk_table(cfg, "amd64")
+    assert len(table) > 500
+    # Names on the manual list must NOT be reported as live flat thunks.
+    assert table["NtGdiCreateDIBSection"] is False
+    assert table["NtUserGetAtomName"] is False
+    # ...and a plainly-scalar syscall still is one.
+    assert table["NtGdiAbortDoc"] is True
+
+
+def test_crosscheck_hard_fails_on_a_stale_built_table(tmp_path):
+    """A build dir predating a manual-list change must be a LOUD failure, not
+    stale findings. Reported by the smp-bringup lane 2026-07-24: a stale
+    artifact made the audit re-report 33 already-fixed sites, and they were
+    re-blessed into the baseline as accepted debt."""
+    gen = tmp_path / "t.gen.c"
+    gen.write_text(
+        '    { "NtFoo", wow64_thunk_NtFoo, 1 }, /* [0] */\n'
+        '    { "NtBar", 0, 2 }, /* [1] MANUAL: listed in --manual-list */\n'
+    )
+    # agreeing table -> silent
+    mg.crosscheck_artifact({"NtFoo": True, "NtBar": False}, gen, "win32k")
+    # sources say NtFoo is marshalled, the built table still flat-thunks it
+    try:
+        mg.crosscheck_artifact({"NtFoo": False, "NtBar": False}, gen, "win32k")
+    except RuntimeError as e:
+        assert "STALE" in str(e) and "NtFoo" in str(e)
+    else:
+        raise AssertionError("stale built table did not raise")

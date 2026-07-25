@@ -68,6 +68,18 @@ def check_tooling(args, repo: Path) -> int:
     if not args.no_types:
         for root in _PYRIGHT_ROOTS:
             checks.append((f"pyright:{root}", [_PYRIGHT, "--pythonpath", sys.executable, root], {}))
+    # 3b. Generated ground truth must match the headers it was derived from.
+    # `rustconv/ddk_enum_constants.py` is the value set that fact sealing protects;
+    # if an SDK header adds an enum constant and this goes stale, that constant
+    # silently goes back to being copied by the model — the invisible-to-rustc class
+    # that produced 61 invented kernel bugcheck codes (field manual §9.113).
+    checks.append(
+        (
+            "generated:ddk_enum_constants",
+            [sys.executable, "tools/rustconv/gen_enum_constants.py", "--check"],
+            {},
+        )
+    )
     # 4. pytest
     if not args.no_tests:
         for pkg, pp, target in _PYTEST_SUITES:
