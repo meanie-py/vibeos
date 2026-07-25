@@ -39,7 +39,6 @@
       "dll/win32/shell32/dialogs/item_prop.cpp",
       "dll/win32/shell32/dialogs/general.cpp",
       "dll/win32/shell32/dialogs/recycler_prop.cpp",
-      "dll/win32/shell32/propsheet.cpp",
       "dll/win32/shell32/shldataobject.cpp",
       "dll/win32/shell32/shlfolder.cpp",
       "dll/win32/shell32/stubs.cpp",
@@ -77,6 +76,7 @@
       "dll/win32/shell32/debughlp.cpp",
       "dll/win32/shell32/dialogs/view.cpp",
       "dll/win32/shell32/folders.cpp",
+      "dll/win32/shell32/propsheet.cpp",
       "dll/win32/shell32/systray.cpp"
     ],
     "hybrid": [

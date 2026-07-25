@@ -231,7 +231,7 @@ extern "C" {
     pub fn isprint(c: INT) -> INT;
 }
 
-pub type HPROPSHEETPAGE = HANDLE;
+// HPROPSHEETPAGE / SHFILEINFOW: types.rs is the authority; do not redeclare here.
 pub type PFILETIME = *mut FILETIME;
 pub type LPUNKNOWN = *mut IUnknown;
 pub type WNDENUMPROC = unsafe extern "system" fn(HWND, LPARAM) -> BOOL;
@@ -239,23 +239,57 @@ pub type WNDENUMPROC = unsafe extern "system" fn(HWND, LPARAM) -> BOOL;
 pub type LPFNPSPCALLBACKW =
     unsafe extern "system" fn(HWND, UINT, *mut PROPSHEETPAGEW) -> UINT;
 
-/// prsht.h `_PROPSHEETHEADERW`. Each anonymous union is one pointer-width slot.
+/// prsht.h `_PROPSHEETHEADERW`. Each anonymous union is one pointer-width slot; the
+/// members are named here as shell32 uses them (`phpage` over `ppsp`, `pStartPage`
+/// over `nStartPage`), with the alternates reachable as accessors below.
 #[repr(C)]
 pub struct PROPSHEETHEADERW {
     pub dwSize: DWORD,
     pub dwFlags: DWORD,
     pub hwndParent: HWND,
     pub hInstance: HINSTANCE,
-    pub hIcon: HICON,
+    pub hIcon: HICON,           // union { hIcon, pszIcon }
     pub pszCaption: LPCWSTR,
     pub nPages: UINT,
-    pub nStartPage: UINT,
-    pub ppsp: *const PROPSHEETPAGEW,
+    pub pStartPage: LPCWSTR,    // union { nStartPage, pStartPage }
+    pub phpage: *mut HPROPSHEETPAGE, // union { ppsp, phpage }
     pub pfnCallback: *mut c_void,
     pub hbmWatermark: HANDLE,
     pub hplWatermark: HANDLE,
     pub hbmHeader: HANDLE,
 }
+impl PROPSHEETHEADERW {
+    /// The `nStartPage` arm of the same union as `pStartPage`.
+    #[inline]
+    pub unsafe fn nStartPage(&self) -> UINT {
+        self.pStartPage as usize as UINT
+    }
+    #[inline]
+    pub unsafe fn set_nStartPage(&mut self, v: UINT) {
+        self.pStartPage = v as usize as LPCWSTR;
+    }
+    /// The `ppsp` arm of the same union as `phpage`.
+    #[inline]
+    pub unsafe fn ppsp(&self) -> *const PROPSHEETPAGEW {
+        self.phpage as *const PROPSHEETPAGEW
+    }
+}
+
+/// precomp.h defines this `extern inline`, so there is no symbol to import — it is
+/// translated here, and its address is taken as the AddPages callback.
+pub unsafe extern "system" fn AddPropSheetPageCallback(
+    hPage: HPROPSHEETPAGE,
+    lParam: LPARAM,
+) -> BOOL {
+    let pHeader = lParam as *mut PROPSHEETHEADERW;
+    if (*pHeader).nPages < MAX_PROPERTY_SHEET_PAGE {
+        *(*pHeader).phpage.add((*pHeader).nPages as usize) = hPage;
+        (*pHeader).nPages += 1;
+        return TRUE;
+    }
+    FALSE
+}
+
 pub type LPFNPSPCALLBACK = *mut c_void;
 
 // ---------------------------------------------------------------------------
@@ -910,3 +944,149 @@ pub const PSN_FIRST: UINT = 0u32.wrapping_sub(200);
 pub const PSN_APPLY: UINT = PSN_FIRST.wrapping_sub(2);
 
 pub const IDC_VIEW_RESTORE_DEFAULTS: DWORD = 0x36b4; // shresdef.h
+
+// utils.cpp bridges for CStubWindow32, an ATL CWindowImpl<> that the C++ still owns.
+// Paired: the object must outlive the call because its thunk lives as long as the
+// window, so it comes back as an opaque pointer and is released by the destroy half.
+extern "system" {
+    pub fn CStubWindow32_CreateStub_RustBridge(
+        Type: UINT,
+        Path: LPCWSTR,
+        pPt: *const POINT,
+        phWnd: *mut HWND,
+        ppStub: *mut *mut c_void,
+    ) -> HRESULT;
+    pub fn CStubWindow32_DestroyStub_RustBridge(pStub: *mut c_void);
+}
+
+/// precomp.h `CStubWindow32::TYPE_PROPERTYSHEET` (the enum starts at TYPE_FORMATDRIVE = 1).
+pub const CSTUBWINDOW32_TYPE_FORMATDRIVE: UINT = 1;
+pub const CSTUBWINDOW32_TYPE_PROPERTYSHEET: UINT = 2;
+
+// ---------------------------------------------------------------------------
+// Shell extension interfaces, promoted with their vtables (agreement-checked
+// across 10 modules; parameter names, line wrapping and path spellings are not
+// type identity, so only a real signature difference would fail).
+// ---------------------------------------------------------------------------
+
+// IShellBrowser — promoted from 9 module-local definition(s).
+#[repr(C)]
+pub struct IShellBrowser {
+    pub lpVtbl: *const IShellBrowserVtbl,
+}
+
+// IShellBrowserVtbl — promoted from 9 module-local definition(s).
+#[repr(C)]
+pub struct IShellBrowserVtbl {
+    pub QueryInterface: unsafe extern "system" fn(This: *mut IShellBrowser, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(This: *mut IShellBrowser) -> ULONG,
+    pub Release: unsafe extern "system" fn(This: *mut IShellBrowser) -> ULONG,
+    pub GetWindow: unsafe extern "system" fn(This: *mut IShellBrowser, phwnd: *mut HWND) -> HRESULT,
+    pub ContextSensitiveHelp: unsafe extern "system" fn(This: *mut IShellBrowser, fEnterMode: BOOL) -> HRESULT,
+    pub InsertMenusSB: unsafe extern "system" fn(This: *mut IShellBrowser, hmenuShared: HMENU, lpMenuWidths: LPOLEMENUGROUPWIDTHS) -> HRESULT,
+    pub SetMenuSB: unsafe extern "system" fn(This: *mut IShellBrowser, hmenuShared: HMENU, holemenuReserved: HOLEMENU, hwndActiveObject: HWND) -> HRESULT,
+    pub RemoveMenusSB: unsafe extern "system" fn(This: *mut IShellBrowser, hmenuShared: HMENU) -> HRESULT,
+    pub SetStatusTextSB: unsafe extern "system" fn(This: *mut IShellBrowser, pszStatusText: LPCOLESTR) -> HRESULT,
+    pub EnableModelessSB: unsafe extern "system" fn(This: *mut IShellBrowser, fEnable: BOOL) -> HRESULT,
+    pub TranslateAcceleratorSB: unsafe extern "system" fn(This: *mut IShellBrowser, pmsg: *mut MSG, wID: WORD) -> HRESULT,
+    pub BrowseObject: unsafe extern "system" fn(This: *mut IShellBrowser, pidl: PCUIDLIST_RELATIVE, wFlags: UINT) -> HRESULT,
+    pub GetViewStateStream: unsafe extern "system" fn(This: *mut IShellBrowser, grfMode: DWORD, ppStrm: *mut *mut IStream) -> HRESULT,
+    pub GetControlWindow: unsafe extern "system" fn(This: *mut IShellBrowser, id: UINT, phwnd: *mut HWND) -> HRESULT,
+    pub SendControlMsg: unsafe extern "system" fn(This: *mut IShellBrowser, id: UINT, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, pret: *mut LRESULT) -> HRESULT,
+    pub QueryActiveShellView: unsafe extern "system" fn(This: *mut IShellBrowser, ppshv: *mut *mut IShellView) -> HRESULT,
+    pub OnViewWindowActive: unsafe extern "system" fn(This: *mut IShellBrowser, pshv: *mut IShellView) -> HRESULT,
+    pub SetToolbarItems: unsafe extern "system" fn(This: *mut IShellBrowser, lpButtons: LPTBBUTTONSB, nButtons: UINT, uFlags: UINT) -> HRESULT,
+}
+
+// IShellExtInit — promoted from 11 module-local definition(s).
+#[repr(C)]
+pub struct IShellExtInit {
+    pub lpVtbl: *const IShellExtInitVtbl,
+}
+
+// IShellExtInitVtbl — promoted from 11 module-local definition(s).
+#[repr(C)]
+pub struct IShellExtInitVtbl {
+    pub QueryInterface: unsafe extern "system" fn(This: *mut IShellExtInit, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(This: *mut IShellExtInit) -> ULONG,
+    pub Release: unsafe extern "system" fn(This: *mut IShellExtInit) -> ULONG,
+    pub Initialize: unsafe extern "system" fn(This: *mut IShellExtInit, pidlFolder: PCIDLIST_ABSOLUTE, pdtobj: *mut IDataObject, hkeyProgID: HKEY) -> HRESULT,
+}
+
+// IShellPropSheetExt — promoted from 5 module-local definition(s).
+#[repr(C)]
+pub struct IShellPropSheetExt {
+    pub lpVtbl: *const IShellPropSheetExtVtbl,
+}
+
+// IShellPropSheetExtVtbl — promoted from 5 module-local definition(s).
+#[repr(C)]
+pub struct IShellPropSheetExtVtbl {
+    pub QueryInterface: unsafe extern "system" fn(This: *mut IShellPropSheetExt, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(This: *mut IShellPropSheetExt) -> ULONG,
+    pub Release: unsafe extern "system" fn(This: *mut IShellPropSheetExt) -> ULONG,
+    pub AddPages: unsafe extern "system" fn(This: *mut IShellPropSheetExt, pfnAddPage: LPFNSVADDPROPSHEETPAGE, lParam: LPARAM) -> HRESULT,
+    pub ReplacePage: unsafe extern "system" fn(This: *mut IShellPropSheetExt, uPageID: EXPPS, pfnReplaceWith: LPFNSVADDPROPSHEETPAGE, lParam: LPARAM) -> HRESULT,
+}
+
+
+/// shellapi.h: with UNICODE, `SHFILEINFO` is `SHFILEINFOW`.
+pub type SHFILEINFO = crate::types::SHFILEINFOW;
+
+// utils.cpp / CDefView.cpp helpers with no exported symbol of their own.
+extern "system" {
+    #[link_name = "DataObject_GetOffset_RustBridge"]
+    pub fn DataObject_GetOffset(pDO: *mut IDataObject, pt: *mut POINT) -> HRESULT;
+}
+
+// Referenced only by IShellBrowser's vtable slots, which this crate does not call.
+// Opaque records: the vtable layout is what matters, not these interiors.
+#[repr(C)]
+pub struct IShellView {
+    _opaque: [u8; 0],
+}
+pub type LPTBBUTTONSB = *mut c_void;
+pub type LPFNSVADDPROPSHEETPAGE = *mut c_void;
+pub type EXPPS = UINT;
+
+impl IUnknown {
+    #[inline]
+    pub unsafe fn QueryInterface(&mut self, riid: REFIID, ppv: *mut *mut c_void) -> HRESULT {
+        ((*self.lpVtbl).QueryInterface)(self, riid, ppv)
+    }
+    #[inline]
+    pub unsafe fn AddRef(&mut self) -> ULONG {
+        ((*self.lpVtbl).AddRef)(self)
+    }
+    #[inline]
+    pub unsafe fn Release(&mut self) -> ULONG {
+        ((*self.lpVtbl).Release)(self)
+    }
+}
+
+impl IShellExtInit {
+    #[inline]
+    pub unsafe fn Initialize(
+        &mut self,
+        pidlFolder: PCIDLIST_ABSOLUTE,
+        pdtobj: *mut IDataObject,
+        hkeyProgID: HKEY,
+    ) -> HRESULT {
+        ((*self.lpVtbl).Initialize)(self, pidlFolder, pdtobj, hkeyProgID)
+    }
+}
+
+impl IShellPropSheetExt {
+    #[inline]
+    pub unsafe fn AddPages(
+        &mut self,
+        pfnAddPage: LPFNSVADDPROPSHEETPAGE,
+        lParam: LPARAM,
+    ) -> HRESULT {
+        ((*self.lpVtbl).AddPages)(self, pfnAddPage, lParam)
+    }
+}
+
+extern "C" {
+    pub static IID_IShellPropSheetExt: IID;
+}

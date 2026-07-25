@@ -45,7 +45,8 @@ list(APPEND SOURCE
     CExtractIcon.cpp
     # folders.cpp — replaced by Rust (shell32-rust/src/folders.rs); cohab via libshell32_rust.a
     iconcache.cpp
-    propsheet.cpp
+    # propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches
+    #   CStubWindow32 via CStubWindow32_*_RustBridge in utils.cpp
     shell32.cpp
     utils.cpp
     # CShellItem.cpp — CShellItem, CShellItemArray, SHCreateShellItem, and

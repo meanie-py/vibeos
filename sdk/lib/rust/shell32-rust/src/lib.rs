@@ -99,13 +99,12 @@ pub mod win32;
 // Wave 4 free-function TUs: whole plain-C++ translation units with no COM class of their
 // own, translated with --free-functions once that path learned the C++ language layer.
 //
-// propsheet.cpp is translated and validated but NOT wired: two of its bodies take a
-// `CStubWindow32&`, an ATL CWindowImpl<> class in precomp.h that no Rust unit owns yet.
-// Per the substrate-closure stop rule, that is its own translation unit rather than a
-// guessed synthetic substrate. The paid output is parked at
-// ~/vibeos-rust-staging/shell32-cpp-tail/propsheet.rs — do not regenerate it.
+// propsheet.cpp reaches CStubWindow32 (an ATL CWindowImpl<> that utils.cpp and
+// CDrivesFolder.cpp still own) through a create/destroy bridge, so the class keeps a
+// single implementation and one registered window class.
 pub mod debughlp;
 pub mod folders;
+pub mod propsheet;
 pub mod systray;
 
 #[panic_handler]
