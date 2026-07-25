@@ -737,7 +737,7 @@ pub unsafe extern "system" fn WlxLoggedOnSAS(
     pReserved: PVOID,
 ) -> INT {
     let pgContext: PGINA_CONTEXT = pWlxContext as PGINA_CONTEXT;
-    let mut SasAction: INT = WLX_SAS_ACTION_NONE.try_into().unwrap();
+    let mut SasAction: INT = WLX_SAS_ACTION_NONE as INT;
 
     if (*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE as i32) != 0 {
         let __dbch: *mut __wine_debug_channel = __wine_dbch___default;

@@ -56,6 +56,12 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from rust_module_tree import (
+    RE_PATH_MOD,
+    is_live_file,
+)
+
 # ---------------------------------------------------------------------------
 # Identifier classification
 # ---------------------------------------------------------------------------
@@ -321,7 +327,6 @@ _ATTRS = r"(?:#\[[^\]]*\]\s*)*"
 RE_GLOB_USE = re.compile(
     r"^\s*" + _ATTRS + r"(?:pub\s+)?use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;", re.M
 )
-RE_PATH_MOD = re.compile(r'#\[path\s*=\s*"([^"]+)"\]\s*(?:pub\s+)?mod\s+(\w+)\s*;')
 RE_PUB_USE_GLOB = re.compile(
     r"^\s*" + _ATTRS + r"pub\s+use\s+([A-Za-z_][A-Za-z0-9_:]*)::\*\s*;", re.M
 )
@@ -716,116 +721,11 @@ def scan_file(path, universe, use_crate_scope=True):
 
 
 # ---------------------------------------------------------------------------
-# Module-tree reachability
+# Module-tree reachability  (shared: tools/rust_module_tree.py)
 # ---------------------------------------------------------------------------
-
-RE_MOD_ANY = re.compile(
-    r"(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?\bmod\s+(\w+)\s*([;{])"
-)
-
-
-def _decl_sites(text):
-    """[(module_name, [enclosing inline-module names])] for every `mod X;` in `text`.
-
-    Two shapes broke a line-anchored regex, and BOTH of them mark live files dead
-    (the dangerous direction — a hidden catch-all is the bug we are hunting):
-      * several declarations on one line — win32k's
-        `pub mod dcstate; pub mod dcobjs; pub mod dclife; pub mod dcutil;`
-      * file modules nested in an INLINE module — wkssvc's
-        `pub mod wkssvc { pub mod domain; ... }`, where `domain` lives at
-        src/wkssvc/domain.rs, not src/domain.rs.
-    So scan the whole text and track inline-module nesting by brace depth.
-    """
-    # Comments must go first: dhcpcsvc's lib.rs documents the exclusion as
-    # `// pub mod tree;`, and counting that as a declaration would resurrect the
-    # very dead file this function exists to recognise.
-    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
-    text = re.sub(r"//[^\n]*", "", text)
-    sites = []
-    stack = []            # [(name, depth_at_open)]
-    depth = 0
-    i = 0
-    while i < len(text):
-        m = RE_MOD_ANY.search(text, i)
-        upto = m.start() if m else len(text)
-        for c in text[i:upto]:
-            if c == "{":
-                depth += 1
-            elif c == "}":
-                depth -= 1
-                while stack and stack[-1][1] >= depth:
-                    stack.pop()
-        if not m:
-            break
-        if m.group(2) == ";":
-            sites.append((m.group(1), [s[0] for s in stack]))
-            i = m.end()
-        else:
-            depth += 1
-            stack.append((m.group(1), depth))
-            i = m.end()
-    return sites
-
-
-def crate_live_files(crate_dir, _cache={}):
-    """Every .rs REACHABLE from the crate root via `mod` declarations.
-
-    A file that no `mod` reaches is not compiled, so a catch-all arm inside it
-    cannot execute — reporting it as a live hazard is noise (dhcpcsvc keeps
-    `dhcp/tree.rs`, a translation of upstream-dead source, deliberately excluded
-    in lib.rs). The same computation is worth having in the other direction too:
-    an ORPHANED file that looks live to grep is its own bug — classpnp's
-    `class_gap3.rs`/`class_gap4.rs` are in no module tree, so edits to them
-    passed `cargo check` while the link still failed.
-    """
-    if crate_dir in _cache:
-        return _cache[crate_dir]
-    _cache[crate_dir] = set()
-    src = os.path.join(crate_dir, "src")
-    live, queue = set(), []
-    for n in ("lib.rs", "main.rs"):
-        f = os.path.join(src, n)
-        if os.path.exists(f):
-            queue.append((f, []))
-    while queue:
-        f, inline = queue.pop()
-        if f in live or not os.path.exists(f):
-            continue
-        live.add(f)
-        try:
-            text = Path(f).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        fdir = os.path.dirname(f)
-        stem = os.path.splitext(os.path.basename(f))[0]
-        base = fdir if stem in ("lib", "main", "mod") else os.path.join(fdir, stem)
-        for pm in RE_PATH_MOD.finditer(text):
-            queue.append((os.path.normpath(os.path.join(fdir, pm.group(1))), []))
-        for name, encl in _decl_sites(text):
-            d = os.path.join(base, *(inline + encl))
-            for cand in (os.path.join(d, name + ".rs"), os.path.join(d, name, "mod.rs")):
-                if os.path.exists(cand):
-                    queue.append((cand, []))
-                    break
-    _cache[crate_dir] = live
-    return live
-
-
-def is_live_file(path):
-    """False only when we positively established the crate's module tree and this
-    file is not in it. Unknown crate layout -> treat as live (fail open)."""
-    crate = crate_root_of(path)
-    if crate is None:
-        return True
-    live = crate_live_files(crate)
-    if not live:
-        return True
-    # Compare REAL paths: scan targets arrive relative, the module walk builds
-    # absolutes from crate_root_of(). Comparing the two spellings marked every
-    # file orphaned.
-    return os.path.realpath(path) in {os.path.realpath(x) for x in live}
-
-
+# scan_orphan_modules needs the identical answer in the other direction, and a
+# second copy of a reachability walk is the same two-copies-of-the-truth shape
+# this scanner exists to catch. Re-exported so callers keep the old names.
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter

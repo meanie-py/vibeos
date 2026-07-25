@@ -1451,7 +1451,7 @@ pub unsafe extern "system" fn ShellShutdownDialog(
     } else {
         let mut hKey: HKEY = core::ptr::null_mut();
         let key_path: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer").as_ptr() as PCWSTR;
-        let lRet: LONG = RegOpenKeyExW(HKEY_CURRENT_USER, key_path, 0, KEY_QUERY_VALUE, core::ptr::addr_of_mut!(hKey)).try_into().unwrap();
+        let lRet: LONG = RegOpenKeyExW(HKEY_CURRENT_USER, key_path, 0, KEY_QUERY_VALUE, core::ptr::addr_of_mut!(hKey)) as LONG;
         if lRet == ERROR_SUCCESS.try_into().unwrap() {
             let mut dwType: DWORD = 0;
             let mut cbData: DWORD = core::mem::size_of_val(&gContext.UserName) as DWORD;

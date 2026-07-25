@@ -288,10 +288,10 @@ pub(crate) unsafe extern "C" fn TUILoggedOutSAS(pgContext: PGINA_CONTEXT) -> i32
 
     TRACE!(b"TUILoggedOutSAS()\n\0".as_ptr() as *const i8);
 
-    if ReadString(IDS_ASKFORUSER.try_into().unwrap(), UserName.as_mut_ptr(), UserName.len() as u32, 1u8) == 0 {
+    if ReadString(IDS_ASKFORUSER as u32, UserName.as_mut_ptr(), UserName.len() as u32, 1u8) == 0 {
         return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
-    if ReadString(IDS_ASKFORPASSWORD.try_into().unwrap(), Password.as_mut_ptr(), Password.len() as u32, 0u8) == 0 {
+    if ReadString(IDS_ASKFORPASSWORD as u32, Password.as_mut_ptr(), Password.len() as u32, 0u8) == 0 {
         return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
 
@@ -333,11 +333,11 @@ pub(crate) unsafe extern "C" fn TUILockedSAS(pgContext: PGINA_CONTEXT) -> i32 {
         return WLX_SAS_ACTION_UNLOCK_WKSTA.try_into().unwrap();
     }
 
-    if ReadString(IDS_ASKFORUSER.try_into().unwrap(), UserName.as_mut_ptr(), 256u32, 1u8) == 0 {
+    if ReadString(IDS_ASKFORUSER as u32, UserName.as_mut_ptr(), 256u32, 1u8) == 0 {
         return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
 
-    if ReadString(IDS_ASKFORPASSWORD.try_into().unwrap(), Password.as_mut_ptr(), 256u32, 0u8) == 0 {
+    if ReadString(IDS_ASKFORPASSWORD as u32, Password.as_mut_ptr(), 256u32, 0u8) == 0 {
         return WLX_SAS_ACTION_NONE.try_into().unwrap();
     }
 

@@ -1,3 +1,7 @@
+//! ORPHAN-BY-DESIGN: translation of upstream-dead source. lib.rs carries the
+//! exclusion as a commented-out `// pub mod tree;` on purpose — do not wire it
+//! back up without checking why upstream stopped building it.
+//!
 use crate::prelude::*;
 use core::ffi::c_void;
 

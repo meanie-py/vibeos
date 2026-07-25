@@ -1368,7 +1368,7 @@ unsafe fn IntDispatchMessage_impl(pMsg: PMSG) -> LRESULT {
     if DoCallBack != 0 {
         retval = co_IntCallWindowProc(
             (*Window).lpfnWndProc,
-            (((*Window).Unicode() == 0) as BOOL).try_into().unwrap(),
+            (((*Window).Unicode() == 0) as BOOL) as BOOLEAN,
             (*pMsg).hwnd,
             (*pMsg).message,
             (*pMsg).wParam,
@@ -1453,7 +1453,7 @@ pub unsafe extern "system" fn co_IntPeekMessage(
         if ((ProcessMask & QS_POSTMESSAGE) != 0 || (ProcessMask & QS_HOTKEY) != 0)
             && MsqPeekMessage(
                 pti,
-                RemoveMessages.try_into().unwrap(),
+                RemoveMessages as BOOLEAN,
                 Window,
                 MsgFilterMin,
                 MsgFilterMax,
@@ -1587,7 +1587,7 @@ unsafe fn co_IntWaitMessage(
             Window,
             MsgFilterMin,
             MsgFilterMax,
-            MAKELONG(PM_NOREMOVE, GetWakeMask(MsgFilterMin, MsgFilterMax)).try_into().unwrap(),
+            MAKELONG(PM_NOREMOVE, GetWakeMask(MsgFilterMin, MsgFilterMax)) as UINT,
             &mut ExtraInfo,
             TRUE as BOOL,
         ) != 0
@@ -2171,7 +2171,7 @@ unsafe fn co_IntSendMessageTimeoutSingle(
 
             Result = co_IntCallWindowProc(
                 (*Window).lpfnWndProc,
-                (((*Window).Unicode() == 0) as BOOL).try_into().unwrap(),
+                (((*Window).Unicode() == 0) as BOOL) as BOOLEAN,
                 hWnd,
                 Msg,
                 wParam,
@@ -2209,8 +2209,8 @@ unsafe fn co_IntSendMessageTimeoutSingle(
                 wParam,
                 lParam,
                 uTimeout,
-                (uFlags & SMTO_BLOCK).try_into().unwrap(),
-                MSQ_NORMAL.try_into().unwrap(),
+                (uFlags & SMTO_BLOCK) as BOOL,
+                MSQ_NORMAL as INT,
                 uResult,
             );
             if !(Status == STATUS_TIMEOUT
@@ -2450,7 +2450,7 @@ unsafe fn co_IntSendMessageWithCallBack(
             if DoCallBack != 0 {
                 Result = co_IntCallWindowProc(
                     (*Window).lpfnWndProc,
-                    (((*Window).Unicode() == 0) as BOOL).try_into().unwrap(),
+                    (((*Window).Unicode() == 0) as BOOL) as BOOLEAN,
                     hWnd,
                     Msg,
                     wParam,
@@ -2470,7 +2470,7 @@ unsafe fn co_IntSendMessageWithCallBack(
                     hWnd,
                     Msg,
                     CompletionCallbackContext,
-                    Result.try_into().unwrap(),
+                    Result as LRESULT,
                 );
             }
         }
@@ -4728,7 +4728,7 @@ pub unsafe extern "stdcall" fn NtUserWaitForInputIdle(
             3,
             Handles.as_mut_ptr() as *mut *mut core::ffi::c_void,
             WaitAny,
-            (_KWAIT_REASON_UserRequest as i8).try_into().unwrap(),
+            (_KWAIT_REASON_UserRequest as i8) as KWAIT_REASON,
             1i32 as i8,
             0u8,
             if dwMilliseconds == INFINITE {
@@ -4871,7 +4871,7 @@ pub unsafe extern "C" fn NtUserWaitForInputIdle(
             3,
             Handles.as_mut_ptr() as *mut *mut core::ffi::c_void,
             WaitAny,
-            (_KWAIT_REASON_UserRequest as i8).try_into().unwrap(),
+            (_KWAIT_REASON_UserRequest as i8) as KWAIT_REASON,
             1i32 as i8,
             0u8,
             if dwMilliseconds == INFINITE {

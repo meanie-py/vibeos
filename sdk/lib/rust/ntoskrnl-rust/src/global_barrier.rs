@@ -1,3 +1,9 @@
+//! ORPHAN-BY-DESIGN: retired 2026-07-07. The anti-constant-folding barrier was
+//! found to be both unwired and dead-stripped, so it never did the job described
+//! below; the crate-split plan records the decision to skip it rather than wire
+//! it. Regenerating it (tools/gen_global_barrier.py) is only worth doing if a
+//! global is ever PROVEN to be constant-folded — measure before reviving.
+//!
 //! Auto-generated write barrier for all pub static mut globals.
 //!
 //! This function is NEVER CALLED — its purpose is to prevent LLVM from

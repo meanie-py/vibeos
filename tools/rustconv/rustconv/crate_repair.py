@@ -49,6 +49,7 @@ RULE_NUMERIC_CAST = "truncating_numeric_cast"
 RULE_NO_STD_PATH = "no_std_path"
 RULE_POINTER_CAST = "raw_pointer_cast"
 RULE_FLEX_ARRAY = "flex_array_index"
+RULE_PANICKING_CAST = "panicking_cast"
 
 #: Rules driven by rustc diagnostics.
 DIAGNOSTIC_RULES: tuple[str, ...] = (RULE_NUMERIC_CAST, RULE_NO_STD_PATH, RULE_POINTER_CAST)
@@ -56,7 +57,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (RULE_NUMERIC_CAST, RULE_NO_STD_PATH, RULE_P
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
 #: ``unconditional_panic`` lint that would catch a literal index does not even run under
 #: ``cargo check`` (verified on rustc 1.92 — check emits metadata only).
-SOURCE_RULES: tuple[str, ...] = (RULE_FLEX_ARRAY,)
+SOURCE_RULES: tuple[str, ...] = (RULE_FLEX_ARRAY, RULE_PANICKING_CAST)
 ALL_RULES: tuple[str, ...] = DIAGNOSTIC_RULES + SOURCE_RULES
 
 #: rustc suggestions we refuse on sight: they convert a silent C truncation/failure into a
@@ -1300,6 +1301,225 @@ def _file_reader(root: Path) -> FileReader:
     return read
 
 
+#: `fn NAME(params) [-> ret]` — extern-block decls and plain definitions alike. Bodies are
+#: irrelevant here; only the parameter list is read.
+_RE_FN_DECL = re.compile(rb"\bfn\s+(\w+)\s*(?:<[^>]*>)?\s*\(", re.S)
+_RE_TRY_INTO_UNWRAP = re.compile(rb"\.try_into\(\)\s*\.unwrap\(\)")
+
+
+def _split_params(text: str) -> list[str]:
+    """Top-level comma split of a parameter list (generics/tuples/fn-ptrs nest)."""
+    out, depth, cur = [], 0, []
+    for ch in text:
+        if ch in "<([":
+            depth += 1
+        elif ch in ">)]":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append("".join(cur).strip())
+            cur = []
+            continue
+        cur.append(ch)
+    if "".join(cur).strip():
+        out.append("".join(cur).strip())
+    return out
+
+
+def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
+    """``fn name -> [param type, ...]`` for every declaration in the crate.
+
+    A name declared twice with DIFFERENT parameter types is dropped, not merged: the whole
+    point of this rule is that the callee's declaration is the authority, and two disagreeing
+    authorities are no authority. (``clashing_extern_declarations`` says that shape is real
+    here — 828 symbols carry it.)
+    """
+    found: dict[str, list[str] | None] = {}
+    for data in sources.values():
+        masked = _mask_lexical(data)
+        for match in _RE_FN_DECL.finditer(masked):
+            open_paren = match.end() - 1
+            close = _match_forward(masked, open_paren)
+            if close is None:
+                continue
+            name = match.group(1).decode("utf-8", "replace")
+            raw = data[open_paren + 1 : close].decode("utf-8", "replace")
+            params = []
+            for part in _split_params(raw):
+                # `name: Type` -> Type; `&self`/`mut self` and `...` carry no type.
+                if ":" not in part:
+                    params.append("")
+                    continue
+                params.append(part.split(":", 1)[1].strip())
+            if name in found and found[name] != params:
+                found[name] = None
+            else:
+                found[name] = params
+    return {k: v for k, v in found.items() if v is not None}
+
+
+def propose_panicking_cast_edits(
+    file_name: str, data: bytes, signatures: Mapping[str, Sequence[str]]
+) -> tuple[list[Edit], list[Skipped]]:
+    """Replace ``X.try_into().unwrap()`` with ``X as <T>``, where <T> is READ OFF the callee.
+
+    C's implicit narrowing is silent; ``try_into().unwrap()`` makes it a panic. In a driver or
+    a live service that converts a benign truncation into a bugcheck or a dead service, which
+    is why ``crate-repair`` refuses to EMIT the shape (``PANICKING_SUGGESTIONS``). This rule
+    removes the ones already in the tree — 264 of them across 25 crates, none of which rustc
+    will ever complain about, because the code is perfectly well-typed. It is only wrong.
+
+    The target type is never inferred. It comes from one of two syntactic authorities:
+      * argument position — the callee's declared parameter type at that index;
+      * ``let name: T = ...`` — the ascription.
+    Anything else (a `return`, a tail expression, a generic parameter, a callee declared
+    inconsistently) is SKIPPED with the reason recorded. Guessing the width here would
+    reintroduce exactly the silent truncation the panic was hiding.
+    """
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    masked = _mask_lexical(data)
+    for match in _RE_TRY_INTO_UNWRAP.finditer(masked):
+        start, end = match.start(), match.end()
+        line = _line_of(data, start)
+
+        def _skip(reason: str, detail: str, line: int = line) -> None:
+            skipped.append(Skipped(RULE_PANICKING_CAST, reason, file_name, line, detail))
+
+        # Walk out to the nearest unclosed `(` — that is the enclosing call, if any.
+        depth, index, open_paren = 0, start - 1, None
+        while index >= 0:
+            char = masked[index : index + 1]
+            if char in b")]}":
+                depth += 1
+            elif char in b"([{":
+                if depth == 0:
+                    open_paren = index if char == b"(" else None
+                    break
+                depth -= 1
+            elif char == b";" and depth == 0:
+                break
+            index -= 1
+
+        target: str | None = None
+        authority = ""
+        if open_paren is not None:
+            head = masked[:open_paren].rstrip()
+            name_match = re.search(rb"(\w+)$", head)
+            callee = name_match.group(1).decode() if name_match else None
+            if callee and callee in signatures:
+                # `<`/`>` must NOT count as nesting: `if (CurrentOffset >= size_of::<T>())`
+                # is a comparison, and treating it as a bracket desynchronises the depth for
+                # the rest of the argument list — which silently shifts the argument index
+                # and would read the WRONG parameter's type off the callee.
+                arg_index = 0
+                depth = 0
+                for pos in range(open_paren + 1, start):
+                    char = masked[pos : pos + 1]
+                    if char in b"([{":
+                        depth += 1
+                    elif char in b")]}":
+                        depth -= 1
+                    elif char == b"," and depth == 0:
+                        arg_index += 1
+                params = signatures[callee]
+                if arg_index < len(params) and params[arg_index]:
+                    target = params[arg_index]
+                    authority = f"{callee}() parameter {arg_index}: `{target}`"
+                else:
+                    _skip(
+                        "callee_arity",
+                        f"{callee}() declares {len(params)} params; this is argument {arg_index}",
+                    )
+                    continue
+            else:
+                _skip(
+                    "callee_unresolved",
+                    f"no unambiguous `fn {callee}` declaration in this crate"
+                    if callee
+                    else "enclosing call has no simple callee name",
+                )
+                continue
+        else:
+            # Statement context: only a `let name: T =` ascription is an authority.
+            line_start = data.rfind(b"\n", 0, start) + 1
+            prefix = data[line_start:start].decode("utf-8", "replace")
+            ascription = re.match(r"\s*let\s+(?:mut\s+)?\w+\s*:\s*([^=]+?)\s*=", prefix)
+            if ascription:
+                target = ascription.group(1).strip()
+                authority = f"`let` ascription: `{target}`"
+            else:
+                _skip(
+                    "no_type_authority",
+                    "not an argument to a declared fn and no `let x: T =` ascription — "
+                    "the target width would have to be guessed",
+                )
+                continue
+
+        if target is None or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", target):
+            _skip("non_scalar_target", f"target type `{target}` is not a plain scalar name")
+            continue
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f" as {target}",
+                rule=RULE_PANICKING_CAST,
+                authority=authority,
+                original=data[start:end].decode("utf-8", "replace"),
+                line=line,
+            )
+        )
+    return edits, skipped
+
+
+_RE_CARGO_PATH_DEP = re.compile(r'path\s*=\s*"([^"]+)"')
+
+
+def _path_dep_dirs(crate_dir: Path) -> list[Path]:
+    """Sibling crates reachable by `path = "..."`, one level deep.
+
+    The callee is very often NOT in the crate being repaired: `RtlAllocateHeap` and friends
+    are declared in the `-sys` island next door. Harvesting only the crate's own sources left
+    85 of 264 sites unresolvable purely for want of looking one directory over.
+    """
+    cargo = crate_dir / "Cargo.toml"
+    if not cargo.is_file():
+        return []
+    out = []
+    for rel in _RE_CARGO_PATH_DEP.findall(cargo.read_text(encoding="utf-8", errors="replace")):
+        dep = (crate_dir / rel).resolve()
+        if (dep / "Cargo.toml").is_file():
+            out.append(dep)
+    return out
+
+
+def _panicking_cast_edits_for_crate(
+    crate_dir: Path, root: Path
+) -> tuple[list[Edit], list[Skipped]]:
+    sources: dict[str, bytes] = {}
+    for path in sorted((crate_dir / "src").rglob("*.rs")):
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            relative = path.as_posix()
+        sources[relative] = path.read_bytes()
+    # Declarations from dependencies are authority-only: they widen what we can resolve,
+    # they are never themselves edited (the edit loop only walks `sources`).
+    decl_sources = dict(sources)
+    for dep in _path_dep_dirs(crate_dir):
+        for path in sorted((dep / "src").rglob("*.rs")):
+            decl_sources[f"dep:{path}"] = path.read_bytes()
+    signatures = harvest_signatures(decl_sources)
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    for relative, data in sources.items():
+        file_edits, file_skipped = propose_panicking_cast_edits(relative, data, signatures)
+        edits.extend(file_edits)
+        skipped.extend(file_skipped)
+    return edits, skipped
+
+
 def _flex_edits_for_crate(
     crate_dir: Path, root: Path, decls: FlexArrayDecls
 ) -> tuple[list[Edit], list[Skipped]]:
@@ -1448,6 +1668,10 @@ def repair_crate(
             flex_edits, flex_skipped = _flex_edits_for_crate(resolved_dir, root, decls)
             candidates.extend(flex_edits)
             current.skipped.extend(flex_skipped)
+        if RULE_PANICKING_CAST in rules:
+            panic_edits, panic_skipped = _panicking_cast_edits_for_crate(resolved_dir, root)
+            candidates.extend(panic_edits)
+            current.skipped.extend(panic_skipped)
         selected, dropped = select_non_overlapping(candidates)
         current.skipped.extend(dropped)
         if not selected:

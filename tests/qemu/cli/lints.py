@@ -315,6 +315,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # handler = silent spin), and the POWNED paint-mask panic WAS an unwrap.
     # Stock is large (~2.1K, mostly unwraps) → baseline gates NEW only; the
     # baseline doubles as the fix-campaign work queue.
+    # Translated .rs that no `mod` chain reaches. cargo never opens such a file, so
+    # `cargo check` is green whatever is in it and every source gate here skips it —
+    # while grep still finds it, so the next reader takes a dead copy for the truth
+    # (classpnp's class_gap3.rs was "fixed" that way while the link kept failing).
+    # Parking a translation is legitimate; an UNDECLARED park is not, so the gate is
+    # satisfied by an `//! ORPHAN-BY-DESIGN: <reason>` banner in the file itself.
+    # Baseline EMPTY = strict: all 12 of today's orphans carry one.
+    som = repo / "tools" / "scan_orphan_modules.py"
+    specs.append(
+        ("scan_orphan_modules", [py, str(som)] if som.is_file() else ["MISSING"], "stdout")
+    )
     ssf = repo / "tools" / "scan_silent_failures.py"
     specs.append(
         (

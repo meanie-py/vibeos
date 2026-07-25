@@ -369,7 +369,7 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(ParameterValue: *mut i8)
     if RtlCreateHeap(
         HEAP_ZERO_MEMORY | HEAP_CLASS_7,
         CsrSrvSharedSectionHeap,
-        (CsrSrvSharedSectionSize as usize).try_into().unwrap(),
+        (CsrSrvSharedSectionSize as usize) as SIZE_T,
         PAGE_SIZE as SIZE_T,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
