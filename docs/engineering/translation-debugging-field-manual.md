@@ -10717,3 +10717,70 @@ then fltmgr `E0659`, then this. A warm build reuses cached rlibs and never recom
 broken crate, so `master` can sit red for days while every incremental build is green. Budget
 for "fix one, rebuild, find the next," and prefer `ninja -k 0` to collect a whole layer at once
 rather than one error per full rebuild.
+
+### 9.126 (2026-07-25) An ASSERT lowered to a BUGCHECK became an accidental ARCH-DIVERGENCE DETECTOR — do not silence it, and do not trust the stop code either
+
+**How it surfaced.** Probing arm64's quarantined kmtests, `ZwAllocateVirtualMemory` bugchecked:
+
+```
+*** BUGCHECK: 0x0000004E (0xad, 0x40006, 0x0, 0x4259f)
+```
+
+`0x4E` is `PFN_LIST_CORRUPT`. The raiser is `MiInsertStandbyListAtFrontImpl`
+(`ARM3/pfnlist.rs`), subcode `0xAD`, guarding:
+
+```rust
+if (*pfn1).must_be_cached() || (*pfn1).reference_count() != 0
+   || !(*pfn1).prototype_pte() || mmpfn_rom_pte(pfn1) { mi_pfn_corrupt(0xAD, ...); }
+```
+
+P3 is `reference_count = 0`, so that clause did not fire; the live one is
+`!prototype_pte()` (or `must_be_cached`/`rom`).
+
+**The C it came from does not bugcheck — in either build config.**
+
+```c
+ASSERT(Pfn1->u4.MustBeCached == 0);
+ASSERT(Pfn1->u3.e2.ReferenceCount == 0);
+ASSERT(Pfn1->u3.e1.PrototypePte == 1);
+ASSERT(Pfn1->u3.e1.Rom != 1);
+```
+
+`sdk/include/reactos/debug.h` is unambiguous: `#if DBG && !defined(NASSERT)` → `RtlAssert`
+(a *print*), `#else` → `((VOID) 0)`. We build retail. So four diagnostics were lowered into a
+hard stop with an **invented** subcode — §9.120's class, a fourth instance, in a file that
+class had not been looked at. It is not isolated: `pfnlist.rs` carries ~26 `mi_pfn_corrupt`
+sites numbered `0xA0`–`0xB7`, a suspiciously contiguous block, while the C original has exactly
+**two** genuine `KeBugCheckEx(PFN_LIST_CORRUPT, ...)` calls.
+
+**But the fix is NOT to silence it, and that is the point of this entry.**
+
+`ARM3/pfnlist.rs` is **arch-generic** — one file, all three targets. amd64 runs this identical
+code and never trips `0xAD`; `SeInheritance`/`ZwAllocateVirtualMemory` are in the amd64 baseline
+as `OK`. arm64 trips it. A guard that fires on exactly one arch, from shared code, is not
+measuring the guard — it is measuring a **real arm64-specific PFN state divergence**: a page is
+reaching the standby-list-front insert without `PrototypePte` set.
+
+So the mistranslation accidentally built a detector for a genuine bug. Deleting it to "restore
+C fidelity" would convert a loud arm64 MM fault into upstream's silent continue, which is
+`AGENTS.md`'s never-hide-a-regression rule: *a red test pointing at a real bug beats a green one
+hiding it.*
+
+**Two separable defects, and they need opposite treatments:**
+
+1. **The arm64 PFN state bug** (real, keep hunting). Same family as the open arm64 PFN
+   back-pointer mismatch under section map/unmap — `MmMapLockedPagesSpecifyCache`,
+   `NtCreateSection` and now `ZwAllocateVirtualMemory` are all arm64 PFN-database integrity.
+   Treat them as ONE lead, not three.
+2. **The invented subcodes** (fidelity bug, fix separately). `0xA0`–`0xB7` are unattributable:
+   they appear in no ReactOS header and no Windows documentation, so a bugcheck cites a number
+   that greps to nothing but our own translation. That is exactly §9.113. Renumbering must NOT
+   happen while (1) is open — the codes are currently the only way to identify which assert
+   fired.
+
+**Rule.** When an assert-derived check fires on ONE arch from ARCH-GENERIC code, the finding is
+the arch divergence, not the assert. Establish whether the guard is shared before you decide
+whether it is wrong: `git grep` the file's `#[cfg(` count answers it in one command. And when
+you do audit assert-lowering, check both directions — this file *preserved* the two genuine
+bugchecks (`MiDecrementReferenceCount` still raises subcode `7`, matching C), so "the translator
+mangles all bugchecks" would have been the wrong generalisation too.
