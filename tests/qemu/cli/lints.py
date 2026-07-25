@@ -390,13 +390,16 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # IRQL_GT_ZERO_AT_SYSTEM_SERVICE -> MEMORY_MANAGEMENT). Nothing else can see it:
     # rustc accepts any ULONG and the code is only read once the kernel is dying.
     # Fix = ntkrnl_sys::bugcodes::NAME (tools/gen_bugcodes.py). Baseline is EMPTY.
-    # Duplicate `### 9.NNN` section numbers in the field manual. Every lane appends
-    # at the tail, so same-day lanes pick the same number independently — three
-    # collisions in three days (§9.113, §9.118, §9.119+§9.120). Tail-vs-tail
-    # collisions surface as a merge conflict and get noticed; the dangerous case is
-    # an insertion that merges CLEANLY and silently duplicates a number, making every
-    # cross-reference to it ambiguous. Baseline holds the 5 historical dupes that
-    # proves it already happened (9.27/9.36/9.41/9.43/9.44); gate is 0 NEW.
+    # Field-manual section numbering. The `### 9.NNN` counter is RETIRED (2026-07-25):
+    # every lane appended at the tail, so (a) every merge conflicted on a purely
+    # positional collision, and (b) same-day lanes picked the same number independently
+    # — five collisions in one week, plus five pairs that merged CLEANLY and left a
+    # number meaning two different bugs (9.27/9.36/9.41/9.43/9.44), which nothing else
+    # can detect. Entries now live in the topical section their symptom belongs to and
+    # are titled by the symptom; surviving `§9.N` tokens are frozen inline tags so old
+    # cross-references still grep. The lint fails on a NEWLY MINTED number (field manual
+    # only — other docs may number their sections) and on any duplicate (any doc).
+    # Baseline is EMPTY: the 5 historical dupes were merged away in the refresh.
     sds = repo / "tools" / "scan_doc_sections.py"
     specs.append(
         (

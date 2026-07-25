@@ -822,8 +822,8 @@ blind spot is code not compiled for the checked arch (arm64input's 5), which is 
 earns its keep. Residual in-tree `unreachable_patterns`: **3**, all benign redundant `_ =>` after
 an exhaustive match on a real Rust enum (inbv ×2, kernel32 `find.rs` ×1).
 
-`tools/lint-baseline/verify_match_consts.txt`: **273 → 27**, and all 27 are ORPHAN (dead-file)
-entries. Zero live catch-alls remain.
+`tools/lint-baseline/verify_match_consts.txt`: **273 → 27** (all 27 ORPHAN, dead-file entries),
+and since then **→ 0: the baseline is EMPTY and the gate is strict.** Zero live catch-alls remain.
 
 ### Side finding: orphaned translated files
 

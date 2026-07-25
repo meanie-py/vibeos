@@ -1878,3 +1878,57 @@ assertion. Every future marshalgen batch should land with a marshal32 check that
 the value round-trips, not merely that the call returns success.
 
 Oracle arm64-20260714-183400: all SIX guests 0x600d. Commit 44e6ab10649.
+
+**Phase E14 — the ladder's next bug was NOT where the stack said, and the
+`NtCreateThread` ceiling drew first blood (2026-07-25).** E13 let the ladder run
+far enough to reach a `BUGCHECK 0x1E` whose stack read
+`ProbeForWrite → ExRaiseAccessViolation → RtlRaiseStatus`, attributed to doom and
+devmgmt (task #67).
+
+*The attribution was wrong on every axis, and one diagnostic settled it.* The
+ACCESS_VIOLATION arm of `ProbeFor*` printed **nothing** — the misalignment arm had
+a trace and its caller-LR helper is aarch64-only — so a 0x1E named the probe and
+nothing about what was probed. Adding `probe_av_trace` (reporting `WRAP` vs
+`ABOVE-USERPROBE` apart, because they point at opposite bugs) produced:
+
+```
+[PROBE-AV-W] ABOVE-USERPROBE Addr=fffffffffffffb00 Len=1280 (0x500) Align=16
+```
+
+`Addr` is exactly `-1280 = -sizeof(UAPC_FRAME)`, i.e. `Rsp == 0` through
+`(Rsp - sizeof) & !15`. **Size and alignment identified the struct; the arithmetic
+identified the caller** — `KiInitializeUserApc`, not anything on the reported
+stack. It also *refuted* the leading hypothesis (E12: a flat thunk passing a
+wrong-width `Length`) in a single boot, which is exactly why the instrument went
+in before any fix.
+
+*Two bugs, stacked.* (1) `KiInitializeUserApc`'s C `_SEH2_TRY`/`_SEH2_EXCEPT` had
+been translated to a **bare block with the handler body dropped** — the
+`exception_occurred` flag was declared and tested but never assigned, so recovery
+was dead code and the raise escaped (§9.133; `ke/i386/usercall.rs` already carried
+the correct conversion, so amd64 was simply missed). (2) The reason `Rsp` was 0 at
+all: **`osk.exe` called `NtCreateThread` through the flat thunk, which returned
+`STATUS_SUCCESS` while the kernel built a thread with a zeroed trap frame**
+(§9.134) — the only `NtCreateThread` in the whole boot, ~400 log lines earlier,
+same process.
+
+*So the culprit was a third applet.* doom and devmgmt were downstream victims of
+the box-kill; they merely outlived the process that killed it.
+
+*Result* (same boot command, before → after): BUGCHECK `1 → 0`, PROBE-AV raises
+`1 → 0`, doom frames rendered `died → 2022`.
+
+*Disposition on the thread gap:* `Wow64Manual_NtCreateThread` now **refuses**
+loudly with `STATUS_NOT_IMPLEMENTED`. Marshalling its five divergent structs would
+be *worse than nothing* — a more convincing corpse, still missing the CPU-context
+setup only a per-thread WoW64 entry provides. Task #64 carries the scope, read off
+the existing process bootstrap: guest + APC stacks, TEB32 `NtTib` StackBase/Limit
+(which `MmCreateTeb` deliberately leaves 0 for a WoW64 TEB — "set by wow64.dll at
+thread init", a per-thread entry the design already expects and we never built),
+a `WOW64_CONTEXT`, and the per-thread wow64cpu/FEX state.
+
+*Bonus find, filed not fixed (§9.135, task #72):* all **1962** Rust-kernel
+`debug_assert!` are compiled out — `[profile.release]` never sets
+`debug-assertions` — while the C `ASSERT` they came from is live under `-DDBG=1`.
+`usercall.rs:96` asserts `(SegCs & MODE_MASK) != 0`; the boot printed `SegCs=0x0`.
+That assertion, live, would have caught this at its source.

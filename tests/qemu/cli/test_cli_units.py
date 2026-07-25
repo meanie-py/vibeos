@@ -497,6 +497,92 @@ def test_triage_arm64_bugcheck_banner():
     assert r["bugcheck"] == "0x000000F4"
 
 
+def test_faulting_pc_prefers_bugcheck_over_earlier_pc_text():
+    # THE REGRESSION. symbolicate_pc used `_PC.search()`, which takes the FIRST
+    # `PC=`/`RIP=` anywhere in the log. A real arm64 conformance boot carried an
+    # earlier usermode trace, so the NtCreateSection 0x50 kernel fault was
+    # symbolicated from a 0x7FF... usermode address and answered
+    # `KTRAP_FRAME_LENGTH+8794868291436`. Confident + wrong relocates the hunt.
+    serial = (
+        "[FC] n=1 EC=0x25 FAR=0x700000000000 PC=0x000007ffb70018cc SP=0xffff8000055ceb20\n"
+        "[KMTEST-SWEEP] launch NtCreateSection\n"
+        "*** BUGCHECK: 0x00000050 (0xffff800004544040, 0x0000000000000000,"
+        " 0xffff8000048595e0, 0x0000000000000000)\n"
+    )
+    # 0x50 PAGE_FAULT_IN_NONPAGED_AREA: P3 is the address that referenced memory.
+    assert triage.faulting_pc(serial) == "0xffff8000048595e0"
+
+
+def test_faulting_pc_uses_p2_for_1e():
+    # 0x1E KMODE_EXCEPTION_NOT_HANDLED: P2 is where the exception occurred.
+    # Observed on arm64 IoCreateFile; P2 is a driver-range PC, P3 is not.
+    serial = (
+        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff800421c960c,"
+        " 0xffff80000480aca0, 0x0000000000000000)\n"
+    )
+    assert triage.faulting_pc(serial) == "0xfffff800421c960c"
+
+
+def test_faulting_pc_takes_the_LAST_bugcheck():
+    # A probe boot can log more than one crash; triage the one it died on.
+    serial = (
+        "*** BUGCHECK: 0x0000001E (0x1, 0x1111111111111111, 0x2, 0x0)\n"
+        "*** BUGCHECK: 0x0000001E (0x1, 0x2222222222222222, 0x2, 0x0)\n"
+    )
+    assert triage.faulting_pc(serial) == "0x2222222222222222"
+
+
+def test_faulting_pc_skips_zero_parameter():
+    # A zeroed parameter carries no address — fall back rather than report 0x0.
+    serial = "PC=0xffff800004001234\n*** BUGCHECK: 0x00000050 (0xa, 0x0, 0x0, 0x0)\n"
+    assert triage.faulting_pc(serial) == "0xffff800004001234"
+
+
+def test_symbolicate_pc_refuses_an_absurd_offset(tmp_path, monkeypatch):
+    # A match 8.79 TRILLION bytes into a symbol is not a near miss; it means the
+    # address is outside every known range. Returning it as an answer is worse
+    # than returning nothing.
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\necho 'deadbeef\tKTRAP_FRAME_LENGTH+8794868291436\t-'\n")
+    serial = "*** BUGCHECK: 0x0000001E (0x1, 0xffff800004001234, 0x2, 0x0)\n"
+    out = triage.symbolicate_pc(tmp_path, "arm64", serial)
+    assert out is not None
+    assert "no symbol" in out
+    assert "KTRAP_FRAME_LENGTH" not in out
+
+
+def test_symbolicate_pc_passes_reloc_for_i386_only(tmp_path):
+    # The index holds FILE VAs, a bugcheck reports RUNTIME VAs. Without --reloc
+    # every i386 kernel PC lands past the end of the index and the offset guard
+    # (correctly) declines — so the fix that stopped it LYING also made it unable
+    # to ANSWER until the reloc was wired through. arm64's base is unknown, so it
+    # must NOT get one and must keep declining.
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    # Echo the argv so the test can assert what was passed.
+    tool.write_text('#!/bin/sh\necho "ARGS:$*"\n')
+    serial = "*** BUGCHECK: 0x0000001E (0x1, 0x805148fd, 0x2, 0x0)\n"
+
+    out_i386 = triage.symbolicate_pc(tmp_path, "i386", serial)
+    assert out_i386 is not None
+    assert "--reloc 0x800c3000" in out_i386, out_i386
+
+    out_arm64 = triage.symbolicate_pc(tmp_path, "arm64", serial)
+    assert out_arm64 is not None
+    assert "--reloc" not in out_arm64, out_arm64
+
+
+def test_symbolicate_pc_keeps_a_plausible_offset(tmp_path):
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\necho 'deadbeef\tMiInsertStandbyListAtFront+40\t-'\n")
+    serial = "*** BUGCHECK: 0x0000001E (0x1, 0xffff800004001234, 0x2, 0x0)\n"
+    out = triage.symbolicate_pc(tmp_path, "arm64", serial)
+    assert out is not None
+    assert "MiInsertStandbyListAtFront+40" in out
+
+
 def test_triage_kernel_panic_via_debugcon():
     # kernel-mode Rust panic reaches debugcon 0xE9 only (serial goes silent) —
     # must classify RUST_PANIC (never retried), not HANG_TIMEOUT (retryable)

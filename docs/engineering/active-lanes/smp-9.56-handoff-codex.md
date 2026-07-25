@@ -1,7 +1,24 @@
 # §9.56 HANDOFF — the `-smp 2` ready-list corruption (amd64)
 
-**Status:** OPEN. Mechanism **reclassified** 2026-07-12 from "scheduler logic bug" to
-**"wild write / use-after-free; the ready list is a VICTIM."**
+> **RESOLVED — this handoff is closed; read it as history, not as a work item.** The hole was
+> found on 2026-07-13 (`466d66bf550`) and fixed on all three arches: **`KiIdleLoop` consumed
+> `Prcb->NextThread` LOCK-FREE**, inherited from ReactOS's never-validated `CONFIG_SMP` C. The
+> standby-displacement branch of `KiDeferredReadyThreadImpl` (correctly under the PRCB lock) read
+> `NextThread = T` while the idle CPU promoted T to Running, then re-deferred the *running* T →
+> the double-link tear. Every other promote site already held the lock; idle was the single hole.
+> Fix: acquire the PRCB lock, **re-check `NextThread` under it**, promote, release, then `sti`
+> (`ke/amd64/stubs.rs`, `ke/i386/thrdini.rs`, arm64 mirror). Zero occurrences post-fix.
+> The reusable rule: **a field guarded by lock L at N−1 of N sites is not guarded**, and treat
+> every inherited `CONFIG_SMP` primitive as unreviewed. Full writeup: field manual §9.56.
+>
+> The refuted-theory table below is still worth reading before touching this code — each entry
+> cost ~40 minutes to disprove, and theory 2 in particular ("a thread with `State == Ready` was
+> re-queued") was the headline explanation for weeks and is **wrong**: `State` is not a valid
+> proxy for list membership.
+
+**Status when written:** OPEN. Mechanism **reclassified** 2026-07-12 from "scheduler logic bug" to
+**"wild write / use-after-free; the ready list is a VICTIM."** (Partly right: the tear was indeed
+a victim of an upstream writer — but the writer was a scheduler locking hole, not a stray write.)
 **Branch:** `smp-bringup` (worktree `/home/curi/Projects/os-playground/vibeos-smp`).
 **Ruling doc:** field manual §9.56 (`docs/engineering/translation-debugging-field-manual.md`).
 **Quest log:** `docs/engineering/active-lanes/smp-bringup-quest.md`.

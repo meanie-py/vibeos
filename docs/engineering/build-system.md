@@ -21,7 +21,7 @@ Consequences you'll actually hit:
   real-path one (loud one-time `canonize` rebuild that repopulates the cache). The old
   `cp -a` + sed-repoint ceremony is **retired** — never symlink or hand-copy a build dir.
 - **Raw `cd build-<arch> && ninja` no longer works** — the baked paths only exist inside
-  the mount. Use `../tools/canon-run.sh ninja <target>` or `vibeos-cli build`. Plain
+  the mount. Use `bash ../tools/canon-run.sh ninja <target>` or `vibeos-cli build`. Plain
   `ninja` fails loudly by design.
 - Copy the gitignored arm64 boot assets (`qemu/QEMU_EFI.fd efivars.fd`) into a fresh
   worktree for smoke/debug; `boot.img`/`ramdisk.img` are rebuilt by the mkramdisk step.

@@ -117,7 +117,7 @@ def conformance(args, repo: Path) -> int:
                 f"ENABLE_ROSTESTS_KMTESTS — the kmtest binaries won't be staged.\n"
                 f"  fix (one-time, cmake-cached; KMTESTS-only is the fleet norm — full "
                 f"ENABLE_ROSTESTS drags every apitest/winetest into the livecd graph):\n"
-                f"    cd build-{base} && ../tools/canon-run.sh cmake "
+                f"    cd build-{base} && bash ../tools/canon-run.sh cmake "
                 f"-DENABLE_ROSTESTS_KMTESTS=ON .\n"
                 f"  then re-run this verb (or pass --no-build if media is already staged).",
                 file=sys.stderr,
