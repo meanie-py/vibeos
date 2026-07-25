@@ -37,6 +37,13 @@ _PYTEST_SUITES = [
     # resolved when it is blind — neither shows up in review or in its own output.
     (".", ".", "tools/test_verify_c_signatures.py"),
     (".", ".", "tools/test_scan_wide_literals.py"),
+    # Generalizes the two above from "this oracle has an oracle" to "every gate
+    # lint has one, or a written reason it doesn't". A scanner reporting 0 means
+    # nothing until something proves the matcher still fires: scan_bugcheck_codes
+    # printed a clean 0 for six weeks over a live KeBugCheckEx(0x35u32,...)
+    # (§9.120). Also fails on any gate lint that is in neither the control table
+    # nor the documented-exemption list, so coverage gaps stay loud.
+    (".", ".", "tools/test_scanner_controls.py"),
 ]
 
 
