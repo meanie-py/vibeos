@@ -763,6 +763,20 @@ would have fired for whoever followed the documented loop:
 3. **The resume cache banked un-unsealed Rust.** It guarded empty output but not sealed output, so
    a failed unseal cached its tokens and replayed them **for $0 forever**. Now refused on `put`
    and a MISS on `get`, so a poisoned cache self-heals.
+4. **Not every call-shaped thing lowers to a call.** Same root as (2), new source. The seal set is
+   `dep.callees`, and the call graph is lexical, so a **function-like macro** (`LOWORD`,
+   `IS_INTRESOURCE`) and a **C++ functional-style cast** (`PPICK_ICON_CONTEXT(lParam)`) enter it as
+   callees. Neither survives lowering — a macro expands inline, a cast becomes `as` — so the
+   envelope demands a call that structurally cannot exist and the worker is rejected. In
+   `EnumPickIconResourceProc`, **3 of the 4 sealed "calls" were not calls**. Diagnosis rule:
+   *two different models failing the same function identically is a tool bug, not model
+   capability* — deepseek and sonnet both failed iconcache's `SIC_IconAppend`/`SIC_Initialize`,
+   which is what redirected the search from the model to the seal. The `goto`-cleanup shape is a
+   second, independent trigger (Rust has no `goto`, so restructuring duplicates the cleanup block
+   and its tokens fire "not exactly once"). Note the blast radius: a rejected worker means the TU
+   assembles **no output at all**, so one bad function costs the whole file until re-run.
+   `_EXCLUDED` is a hand-maintained denylist and cannot scale to the SDK's macro surface; the fix
+   is a positive authority test (seal only a callee that resolved to a real function declaration).
 
 > **The cache-key trap while fixing this: do NOT reword the contract text.** It is hashed into the
 > resume-cache key, so rewording invalidates every banked sealed entry and **re-charges for
