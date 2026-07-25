@@ -58,6 +58,8 @@ pub mod drives_folder;
 pub mod drv_def_ext;
 #[path = "dialogs/filedefext.rs"]
 pub mod file_def_ext;
+#[path = "dialogs/view.rs"]
+pub mod dialogs_view;
 pub mod drop_target_helper;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
@@ -89,6 +91,28 @@ pub mod wine;
 // Wave 1: appbar (SHAppBarMessage), vista (RegLoadMUIString A/W).
 pub mod appbar;
 pub mod vista;
+
+// Shared Win32/shell substrate for the free-function TUs: SDK facts plus definitions
+// promoted out of modules that already proved them. See win32.rs.
+pub mod win32;
+
+// Wave 4 free-function TUs: whole plain-C++ translation units with no COM class of their
+// own, translated with --free-functions once that path learned the C++ language layer.
+//
+// propsheet.cpp reaches CStubWindow32 (an ATL CWindowImpl<> that utils.cpp and
+// CDrivesFolder.cpp still own) through a create/destroy bridge, so the class keeps a
+// single implementation and one registered window class.
+pub mod debughlp;
+pub mod folders;
+pub mod propsheet;
+pub mod systray;
+
+// Wave 5 is TRANSLATED AND PARKED, NOT YET WIRED. The assembled modules live at
+// shell32/*.rs and dialogs/*.rs; they still need substrate closure (a few hundred
+// SDK externs, constants and resource IDs) before they can compile. Wiring them in
+// this state would not expose a regression, it would introduce a build break for
+// every lane on the fleet, so they stay out of the crate graph until closure lands.
+// Do NOT delete these files to "clean up" — they are paid artifacts.
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

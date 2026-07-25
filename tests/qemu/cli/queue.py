@@ -450,7 +450,16 @@ class Inconclusive(NoVerdict):
 # it means the gate died without writing a verdict, which is the least conclusive outcome there
 # is. Conclusive reds (BUILD_FAIL / LINT_FAIL / BUGCHECK / RUST_PANIC / FAIL_MARKER / ...) are
 # evidence and DO reject.
-INCONCLUSIVE = {"", "LAUNCH_FAIL", "HOST_STARVED", "NET_HANG"}
+# BUILD_INCOMPLETE joined the set on 2026-07-25, and it is worth being precise about why,
+# because it looks conclusive. It means ninja exited 0 but a cohab PE is older than the
+# staticlib it links (`artifact-check`). Observed 5 times that day on arm64 — and the STALE
+# SET WAS DIFFERENT EVERY TIME (kernel32; version; shell32+usbport; advapi32+kernel32+
+# ws2_32+mouhid). A real missing dependency edge is not random, so this is a race or an
+# oracle false-positive, i.e. it says nothing about the submission. Until it is root-caused
+# it must not reject a lane. Note these were previously reaching the queue as "" — the gate
+# was dropping the child's classification entirely (see gate._child_classification), so this
+# entry changes the REASON the train halts, not whether it halts.
+INCONCLUSIVE = {"", "LAUNCH_FAIL", "HOST_STARVED", "NET_HANG", "BUILD_INCOMPLETE"}
 
 
 class BaseCheck:

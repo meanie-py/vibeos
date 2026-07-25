@@ -9,9 +9,9 @@
 //!
 //! Checks live in Phase 1:
 //! - **tap-1 entry** (`KiSwapThreadImpl`, before `KiSwapContext`): IRQL must be
-//!   exactly DISPATCH_LEVEL (UP kernel: SYNCH==DISPATCH). A thread arriving at
+//!   exactly SYNCH_LEVEL (== DISPATCH on the UP kernel). A thread arriving at
 //!   a voluntary wait at HIGH_LEVEL is the leaked-raise class (field manual
-//!   §9.24); arriving below DISPATCH is a broken caller. → `HIGH_IRQL_AT_SWITCH`
+//!   §9.24); arriving below it is a broken caller. → `HIGH_IRQL_AT_SWITCH`
 //! - **tap-1 exit** (after the caller's `KeLowerIrql(WaitIrql)`): live IRQL ==
 //!   WaitIrql. → `IRQL_UNBALANCED_SWITCH`
 //! - **tap 2** (`KiSwapContextResume`, post-swap on the new stack, amd64):
@@ -77,6 +77,11 @@ pub const KIND_USER_ENTRY_IRQL: u32 = 10;
 pub const KIND_USER_EXIT_IRQL: u32 = 11;
 
 const DISPATCH_LEVEL: u8 = 2;
+/// The IRQL a context switch runs at: SYNCH_LEVEL, which is DISPATCH on the UP
+/// kernel but IPI_LEVEL-2 on every MP one (i386 27, amd64/arm64 12). Taps 1 and
+/// 2 compared against DISPATCH outright, which is only right by coincidence on
+/// UP — on an MP kernel every single swap would have reported a violation.
+const SWITCH_LEVEL: u8 = crate::ke::ke_defs::SYNCH_LEVEL;
 /// _KTHREAD_STATE_Terminated (bindgen `_KTHREAD_STATE_Terminated == 4`).
 pub const STATE_TERMINATED: u8 = 4;
 
@@ -381,11 +386,11 @@ pub unsafe fn cswitch_suspend(old: usize, wait_irql: u8, terminating: bool, pc: 
 
     let irql = current_irql();
     VIBEOS_CSWITCHDEP.cpu.switch_irql.store(irql as u32, Relaxed);
-    // UP kernel: SYNCH_LEVEL == DISPATCH_LEVEL, so the switching level is
-    // exactly DISPATCH. >DISPATCH is the leaked-raise class (§9.24 lead:
-    // HIGH_LEVEL never lowered); <DISPATCH is a broken caller.
-    if irql != DISPATCH_LEVEL {
-        loud(KIND_HIGH_IRQL_AT_SWITCH, pc, old, 0, DISPATCH_LEVEL as u64, irql as u64);
+    // The switching level is SYNCH_LEVEL (== DISPATCH on UP). Above it is the
+    // leaked-raise class (§9.24 lead: HIGH_LEVEL never lowered); below it is a
+    // broken caller.
+    if irql != SWITCH_LEVEL {
+        loud(KIND_HIGH_IRQL_AT_SWITCH, pc, old, 0, SWITCH_LEVEL as u64, irql as u64);
     }
 
     // P2: no dispatch-level lock may be held across a voluntary wait,
@@ -464,10 +469,10 @@ pub unsafe fn cswitch_swap_resume(
 ) {
 
     // The swap machinery never changes IRQL: post-swap we must still be at the
-    // switching level (DISPATCH). The caller lowers to WaitIrql AFTER.
+    // switching level (SYNCH). The caller lowers to WaitIrql AFTER.
     let irql = current_irql();
-    if irql != DISPATCH_LEVEL {
-        loud(KIND_SWAP_IRQL, pc, old, new, DISPATCH_LEVEL as u64, irql as u64);
+    if irql != SWITCH_LEVEL {
+        loud(KIND_SWAP_IRQL, pc, old, new, SWITCH_LEVEL as u64, irql as u64);
     }
 
     if dpc_active {

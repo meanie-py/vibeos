@@ -488,6 +488,20 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   deliberately carries no line count** so their in-flight edits don't read as NEW findings.
   The 6 baseline entries expire on their own the moment a `lib.rs` lands — delete them then.
   Another lane owns these files; don't edit them from here.
+- **arm64 `BUILD_INCOMPLETE` — OPEN, recurring ~5×/day, halts the merge-queue train**
+  (2026-07-25). `artifact-check` reports a cohab PE older than the staticlib it links, after
+  ninja exited 0: *"libX_rust.a is newer than the built binary; the cohab staticlib changed
+  but X was never relinked"*. **The stale set is DIFFERENT every occurrence** — `kernel32`;
+  `version`; `shell32`+`usbport`; `advapi32`+`kernel32`+`ws2_32`+`mouhid` — and all four of
+  the last set ARE in the ninja target list, so "missing target" is not the explanation. A
+  real missing dependency edge is not random, so the leading hypothesis is
+  `provenance.check_staleness` racing cargo's unconditional staticlib rewrite (cargo re-emits
+  the `.a` and bumps its mtime even when content is unchanged, after ninja has already decided
+  the PE is up to date) — i.e. an oracle false-positive, the same family as field manual
+  §9.81 "the two staleness oracles, both were wrong". Test that first by comparing CONTENT
+  hashes rather than mtimes before touching the build graph. Until it is root-caused,
+  `BUILD_INCOMPLETE` is in `queue.INCONCLUSIVE` so it halts the train rather than rejecting an
+  innocent lane. Artifacts: `/tmp/vibeos-cli/queue-batch-*/2026*-build-arm64/summary.json`.
 - **Tree-wide bindgen callback-slot normalization — SCOPED, OWED** (task #14). The tool exists
   and is proven end-to-end on buslogic: `tools/rustconv/normalize_island_abi.py` spells callback
   slots `extern "system"` across a crate's three islands, projecting from the i386 island (the
@@ -513,8 +527,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   match a declaration with no callers. Resolves naturally when task #14 normalizes bindgen
   conventions.
 
-- **amd64 `ExHardError` 6 failures — OPEN, NOT SMP-related, regressed on master since
-  2026-07-17** (found 2026-07-24 by the UP:=smp1 conformance experiment). `ExHardError.c:139-144`
+- **`ExHardError` 6 failures — OPEN, NOT SMP-related, NOT amd64-specific, regressed on master
+  since 2026-07-17** (found 2026-07-24 by the UP:=smp1 conformance experiment; **arch scope
+  widened 2026-07-25** — arm64 reports the identical **24/6** split once its BuildType bug is
+  fixed and the test runs at all, so the same six subtests fail on both arches and the cause is
+  in the shared `ex-rust`/`winsrv-rust` hard-error path, not in anything amd64-specific. That
+  also kills the "it's an amd64 LPC-path change" framing below as the *whole* story.)
+  `ExHardError.c:139-144`
   — the six `CheckHardError(0x40000009..0x4000000d, …)` cases that raise a hard error with an
   **out-of-range `ValidResponseOptions`** (9, 10, 11, 12, `MAXULONG/2+1`, `MAXULONG`) and expect
   `ResponseReturnToCaller` (0). We return **1 = `ResponseNotHandled`** (the test's sentinel is 27,
@@ -595,6 +614,15 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   corrupt thread; marshalling the structs alone would be *worse* (a more convincing corpse,
   still with no CPU-context setup — that needs the per-thread WoW64 entry #64 tracks). Blast
   radius measured: exactly one call in a full amd64 boot, from `osk.exe`.
+- **`NtUserInitializeClientPfnArrays` would poison the GLOBAL win32k callback table —
+  INTERCEPTED 2026-07-25** (task #63/E12). The one live divergence whose payload lands in
+  *global* kernel state, not the guest: win32k copies the caller's `PFNCLIENT` arrays (function
+  pointers, 4 bytes guest / 8 host) into `gpsi->apfnClient*`, shared by every process, so a
+  32-bit guest reaching that body is read at host width and installs garbage callbacks for
+  **native 64-bit processes too**. Never fired only because win32k early-outs on
+  `ClientPfnInit != 0` and native user32 always initializes first — ordering, not a guarantee.
+  Now returns SUCCESS from the thunk layer without calling the kernel (identical observable
+  behaviour to the early-out, minus the dependency). 4 calls/boot, one per WoW64 GUI process.
 - **OUT `PHANDLE` flat thunks: `NtOpenProcessTokenEx`/`NtOpenThreadTokenEx` — MARSHALLED
   2026-07-25** (task #63/E12). 12 calls per amd64 boot, failing two ways at once: the kernel's
   `probe_write_handle` is `probe_write_user::<PVOID>` (8-byte alignment) while a guest `HANDLE`

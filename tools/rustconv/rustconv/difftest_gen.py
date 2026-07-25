@@ -52,6 +52,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .scanner import CFunction, ScanResult
 
 # --------------------------------------------------------------------------------------
@@ -61,6 +63,12 @@ if TYPE_CHECKING:
 #: An input character. For the MBCS family this is a 1-2 byte character, so the domain is
 #: `0..=0xFFFF` and the generated case ENUMERATES it rather than sampling.
 CHAR = "CHAR"
+#: A NARROW character — the C says `unsigned char`, so the domain is one byte and the
+#: extern must say `u8`. Declaring it `u32` like the MBCS `unsigned int` kind is an ABI
+#: lie: msvcrt's `_mbbtype(unsigned char c, int type)` and its Rust twin `(c: u8, …)`
+#: then disagree about how much of the register is the argument, and the case reports a
+#: divergence that is entirely the harness's own doing.
+UCHAR = "UCHAR"
 #: A byte count / length. Driven off the corpus string it accompanies, plus the edges.
 SIZE = "SIZE"
 #: The CRT locale sentinel. `_locale_t` is itself a pointer — see `rustconv.typedefs`.
@@ -71,15 +79,15 @@ WSTR_IN = "WSTR_IN"
 WBUF_OUT = "WBUF_OUT"
 VOID = "VOID"  # C `(void)`, which the scanner reports as one parameter
 
-_INT_SCALARS = {"int", "unsigned int", "unsigned", "long", "unsigned long", "unsigned char", "char"}
+_INT_SCALARS = {"int", "unsigned int", "unsigned", "long", "unsigned long"}
 _SIZE_SCALARS = {"size_t", "unsigned __int64", "__int64"}
 _NARROW_CHAR = {"unsigned char", "char"}
 _WIDE_CHAR = {"wchar_t", "unsigned short"}
 
 #: Kinds a generated case knows how to SUPPLY. A parameter outside this set is a refusal.
-SUPPLIABLE = frozenset({CHAR, SIZE, LOCALE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT})
+SUPPLIABLE = frozenset({CHAR, UCHAR, SIZE, LOCALE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT})
 #: Kinds a generated case knows how to COMPARE as a return value.
-COMPARABLE = frozenset({CHAR, SIZE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT, VOID})
+COMPARABLE = frozenset({CHAR, UCHAR, SIZE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT, VOID})
 
 #: `#if` guards that make the host reference a different function from the target's.
 #: The reference TU is compiled for the host (x86_64 linux), so a `_WIN64` arm is graded on
@@ -103,6 +111,35 @@ NLS_SURFACE = frozenset(
         "WideCharToMultiByte",
         "__crtLCMapStringA",
         "locale_to_sname",
+    }
+)
+
+#: Functions whose RETURN MAGNITUDE is arch-dependent by msvcrt's own design.
+#:
+#: string.c's `strcmp`/`strncmp` fork on `#if defined(_WIN64) || …`: the 64-bit arm
+#: clamps to -1/0/1, the i386 arm returns the raw unsigned byte difference. The harness
+#: compiles its reference for the HOST (where `_WIN64` is undefined, so it takes the
+#: i386 arm) and links Rust built for a 64-bit target (which clamps) — a mismatch
+#: msvcrt-difftest's own lib.rs documents and classify.rs handles by grading
+#: `strncmp_raw` directly.
+#:
+#: mbcs.c reaches them transitively: every comparison entry point falls through to
+#: `u_strcmp`/`u_strncmp` or `_strncoll_l` on a single-byte codepage. Both sides are
+#: CORRECT for their own arm, so only the SIGN is common ground — comparing magnitudes
+#: would report a divergence that is really the harness's inability to hold both arms
+#: at once.
+SIGN_ONLY_ROOTS = frozenset(
+    {
+        "strcmp",
+        "strncmp",
+        "u_strcmp",
+        "u_strncmp",
+        "u_strcasecmp",
+        "u_strncasecmp",
+        "_strcoll_l",
+        "_strncoll_l",
+        "_stricmp",
+        "_strnicmp",
     }
 )
 
@@ -148,6 +185,8 @@ def classify_type(c_type: str) -> str:
             return SIZE
         if base == "_locale_t":
             return LOCALE
+        if base in _NARROW_CHAR:
+            return UCHAR
         if base in _INT_SCALARS:
             return CHAR
         return f"?:{base}"
@@ -216,6 +255,7 @@ class Case:
     return_kind: str
     exhaustive: bool  # the whole input domain is enumerated, not sampled
     tier: str  # TIER_PURE | TIER_NLS
+    sign_only: bool = False  # magnitude is arch-dependent; see SIGN_ONLY_ROOTS
 
     @property
     def out_buffers(self) -> tuple[int, ...]:
@@ -244,11 +284,54 @@ def _is_arch_guarded(fn: CFunction) -> bool:
     return _ARCH_GUARD.search(fn.body_text or "") is not None
 
 
+#: `#if _MSVCR_VER>=80` and friends.  The harness compiles the reference TU at
+#: `_MSVCR_VER=0` (msvcrt.dll's own version), so a body behind one of these is simply
+#: NOT THERE — unlike an arch guard, which selects between two bodies that both exist.
+_VER_GUARD = re.compile(r"^\s*#\s*if.*\b_MSVCR_VER\b")
+_VER_GUARD_END = re.compile(r"^\s*#\s*(endif|else|elif)\b")
+
+
+def version_guarded_lines(source: str) -> set[int]:
+    """1-based line numbers that sit inside a `#if _MSVCR_VER…` region.
+
+    A function defined in one has no `ref_*` symbol to compare against, so a case for it
+    would not merely grade the wrong thing — it would fail to LINK.
+
+    This is a BACKSTOP, not the primary defence. When the scanner can resolve a file's
+    include closure it preprocesses at `_MSVCR_VER=0` and such functions never reach the
+    plan at all; that is what happens for mbcs.c, whose `_mbsncpy_s`, `_mbsncpy_s_l` and
+    `___mb_cur_max_l_func` are behind `_MSVCR_VER>=80` and are correctly absent. On a
+    file scanned WITHOUT preprocessing (no compile database — the mode the unit tests
+    run in) the directives survive and the functions do reach the plan, and then this is
+    the only thing standing between them and a broken link.
+    """
+    inside: set[int] = set()
+    depth = 0  # nesting depth of ordinary #if inside a version region
+    active = False
+    for i, line in enumerate(source.splitlines(), start=1):
+        if not active:
+            if _VER_GUARD.match(line):
+                active, depth = True, 0
+            continue
+        if line.lstrip().startswith("#if"):
+            depth += 1
+        elif _VER_GUARD_END.match(line):
+            if depth:
+                depth -= 1
+            else:
+                active = False
+                continue
+        inside.add(i)
+    return inside
+
+
 def plan_file(scan: ScanResult, module: str) -> Plan:
     """Decide, per function, whether a differential case can be GENERATED — or refused."""
     plan = Plan(module=module)
     mutators = _reaches(scan, STATE_MUTATORS)
     nls = _reaches(scan, NLS_SURFACE)
+    ver_guarded = version_guarded_lines(scan.raw_source or "")
+    sign_only = _reaches(scan, SIGN_ONLY_ROOTS)
     for fn in scan.functions:
         if fn.is_static:
             continue  # internal linkage: no symbol to rename, nothing for a caller to grade
@@ -278,6 +361,14 @@ def plan_file(scan: ScanResult, module: str) -> Plan:
         if ret not in COMPARABLE:
             plan.refusals.append(Refusal(fn.name, "unsupported return", ret))
             continue
+        if fn.line_start in ver_guarded:
+            # Compiled out of the reference TU at _MSVCR_VER=0, so there is no `ref_*`
+            # symbol at all and a case here would fail to LINK. Only reachable when the
+            # file was scanned without preprocessing — see version_guarded_lines.
+            plan.refusals.append(
+                Refusal(fn.name, "body is behind #if _MSVCR_VER", "no reference symbol exists")
+            )
+            continue
         if _is_arch_guarded(fn):
             # The reference TU is compiled for the HOST, so an arch arm the target takes is
             # not the arm being graded. Refuse rather than grade the wrong body.
@@ -297,12 +388,13 @@ def plan_file(scan: ScanResult, module: str) -> Plan:
             Case(
                 name=fn.name,
                 param_kinds=tuple(kinds),
-                param_names=tuple(n or f"a{i}" for i, (_, n) in enumerate(params)),
+                param_names=tuple(rust_ident(n) or f"a{i}" for i, (_, n) in enumerate(params)),
                 return_kind=ret,
                 # Enumerable exactly when every input is a bounded character and the rest is
                 # state we pin: no string corpus involved, so there is nothing to sample.
-                exhaustive=bool(kinds) and all(k in (CHAR, LOCALE) for k in kinds),
+                exhaustive=bool(kinds) and all(k in (CHAR, UCHAR, LOCALE) for k in kinds),
                 tier=TIER_NLS if fn.name in nls else TIER_PURE,
+                sign_only=fn.name in sign_only,
             )
         )
     return plan
@@ -317,6 +409,7 @@ def plan_file(scan: ScanResult, module: str) -> Plan:
 _RUST_TY = {
     CHAR: "u32",
     SIZE: "usize",
+    UCHAR: "u8",
     LOCALE: "*mut core::ffi::c_void",
     STR_IN: "*const u8",
     BUF_OUT: "*mut u8",
@@ -369,12 +462,132 @@ class _Bind:
     setup: str | None = None  # emitted INSIDE the innermost loop (fresh per iteration)
 
 
-def _bind(name: str, kind: str, exhaustive: bool) -> _Bind:
+#: Rust keywords that are legal C identifiers. `_mbbtype_l(int c, int type, …)` is the
+#: one that bites in mbcs.c, but the whole set is cheap to cover — a name that only
+#: shows up in one file's parameter list is exactly the sort of thing that surfaces as a
+#: syntax error in generated code months later.
+_RUST_KEYWORDS = frozenset(
+    [
+        "abstract",
+        "as",
+        "async",
+        "await",
+        "become",
+        "box",
+        "break",
+        "const",
+        "continue",
+        "crate",
+        "do",
+        "dyn",
+        "else",
+        "enum",
+        "extern",
+        "final",
+        "fn",
+        "for",
+        "if",
+        "impl",
+        "in",
+        "let",
+        "loop",
+        "macro",
+        "match",
+        "mod",
+        "move",
+        "mut",
+        "override",
+        "priv",
+        "pub",
+        "ref",
+        "return",
+        "self",
+        "static",
+        "struct",
+        "super",
+        "trait",
+        "true",
+        "false",
+        "try",
+        "type",
+        "typeof",
+        "union",
+        "unsafe",
+        "unsized",
+        "use",
+        "virtual",
+        "where",
+        "while",
+        "yield",
+    ]
+)
+
+
+def rust_ident(name: str) -> str:
+    """A C parameter name, made safe to use as a Rust binding.
+
+    Suffixed rather than raw-escaped: these names are pasted into failure messages and
+    loop headers as well as declarations, and `type_` reads better than `r#type` in a
+    panic string.
+    """
+    return f"{name}_" if name in _RUST_KEYWORDS else name
+
+
+def cursor_index(names: Sequence[str], kinds: Sequence[str]) -> int | None:
+    """Index of a parameter that must point INTO an earlier string parameter.
+
+    `_mbsdec_l(start, cur)`, `_ismbslead_l(start, str)` and friends take a string and a
+    CURSOR WITHIN IT. Supplying two independent corpus buffers violates the
+    precondition: the functions do pointer arithmetic between the two, so with unrelated
+    allocations the answer is whatever the heap layout happened to be. `_mbsdec_l`
+    reported "returned offset 18767 vs ref 122479" — two allocations' distance apart,
+    not a bug in the code.
+
+    msvcrt's convention names the base `start`, which is the only signal available; the
+    two-independent-strings case (`_mbscmp(str, cmp)`, `_mbsspn(string, set)`) is far
+    more common and correct as-is.
+    """
+    if len(kinds) >= 2 and kinds[0] == STR_IN and kinds[1] == STR_IN and names[0] == "start":
+        return 1
+    return None
+
+
+def mutates_in_place(kinds: Sequence[str]) -> bool:
+    """Is this function's out-buffer the SUBJECT of the operation rather than a sink?
+
+    `_mbslwr(s)` and `_mbsnbset(s, c, n)` take a `unsigned char*` they READ AND REWRITE.
+    Handed a blank buffer they see an empty string, do nothing, return the pointer, and
+    both sides agree — the case runs, passes, and grades nothing. `_mbsnbcpy(dst, src, n)`
+    is the opposite: `dst` is a sink and must start blank, or stale bytes from a previous
+    iteration mask a short write.
+
+    What separates them is whether the function has a source string to read FROM. If it
+    does, the buffer is a destination; if it does not, the buffer is the input and has to
+    be seeded.
+    """
+    return (BUF_OUT in kinds or WBUF_OUT in kinds) and not (STR_IN in kinds or WSTR_IN in kinds)
+
+
+def _bind(name: str, kind: str, exhaustive: bool, seeded: bool = False) -> _Bind:
     if kind == CHAR:
         dom = "0..=0xFFFFu32" if exhaustive else "Corpus::CHARS.iter().copied()"
         return _Bind(f"for {name} in {dom} {{", name, name, f"{name}={{{name}:#06x}}")
+    if kind == UCHAR:
+        # One byte, always enumerated: 256 values is nothing, and sampling a domain this
+        # small would be leaving coverage on the table for no saving.
+        return _Bind(f"for {name} in 0..=0xFFu8 {{", name, name, f"{name}={{{name}:#04x}}")
     if kind == LOCALE:
-        return _Bind(f"for &{name} in LOCALES {{", name, name, f"{name}={{{name}:?}}")
+        # A PAIR, like the buffers — not one pointer handed to both sides.
+        # A `_locale_t` carries `mbcinfo`, so a shared one would aim the reference and
+        # the subject at the SAME fixture: a function that wrongly mutates it would
+        # then have the reference read the mutated state and agree with it, hiding
+        # exactly the bug the two-slot fixture exists to catch.
+        return _Bind(
+            f"for ({name}_s, {name}_r) in LOCALES.pairs() {{",
+            f"{name}_s",
+            f"{name}_r",
+            f"{name}={{{name}_s:?}}",
+        )
     if kind == SIZE:
         return _Bind(f"for {name} in corpus.sizes() {{", name, name, f"{name}={{{name}}}")
     if kind in (STR_IN, WSTR_IN):
@@ -388,13 +601,19 @@ def _bind(name: str, kind: str, exhaustive: bool) -> _Bind:
         # Allocated INSIDE the innermost loop. A buffer hoisted out of the loops keeps the
         # previous iteration's bytes, so a short write leaves stale content that can mask the
         # very difference the out-buffer comparison exists to find.
-        return _Bind(
-            None,
-            f"{name}_s.ptr()",
-            f"{name}_r.ptr()",
-            "",
-            setup=f"let (mut {name}_s, mut {name}_r) = Guarded::pair();",
+        #
+        # `seeded` when the function has no source string, i.e. the buffer IS the input —
+        # see mutates_in_place(). A blank one would make `_mbslwr` fold an empty string.
+        setup = (
+            f"let (mut {name}_s, mut {name}_r) = Guarded::seeded(&seed);"
+            if seeded
+            else f"let (mut {name}_s, mut {name}_r) = Guarded::pair();"
         )
+        # A wide buffer is `*mut u16`, so it gets its own accessor rather than a cast at
+        # the call site — a cast would silently accept a byte-sized buffer for a
+        # wchar-sized write and overrun it by 2x.
+        acc = "wptr" if kind == WBUF_OUT else "ptr"
+        return _Bind(None, f"{name}_s.{acc}()", f"{name}_r.{acc}()", "", setup=setup)
     raise ValueError(f"no binding for kind {kind}")  # pragma: no cover - planner refuses first
 
 
@@ -418,6 +637,16 @@ def _verdict(case: Case, ctx: str) -> list[str]:
             f'    panic!("{case.name}: returned offset {{g}} vs ref {{w}} — {ctx}");',
             "}",
         ]
+    if case.sign_only:
+        # Only the SIGN is common ground — see SIGN_ONLY_ROOTS.
+        return [
+            "let g = (got as i32).signum();",
+            "let w = (want as i32).signum();",
+            "if g != w {",
+            f'    panic!("{case.name}: sign {{g}} vs ref {{w}} '
+            f'(got {{got:?}} ref {{want:?}}) — {ctx}");',
+            "}",
+        ]
     return [
         "if got != want {",
         f'    panic!("{case.name}: got {{got:?}} ref {{want:?}} — {ctx}");',
@@ -425,14 +654,43 @@ def _verdict(case: Case, ctx: str) -> list[str]:
     ]
 
 
+def case_fn(name: str) -> str:
+    """The Rust name of the case for C function `name`.
+
+    Must not equal `name`: the extern block declares the C symbol at module scope.
+    A plain prefix keeps this injective — stripping the leading `_` would collide
+    `_mbslen` with a hypothetical `mbslen`.
+    """
+    return f"case_{name}"
+
+
 def emit_case(case: Case) -> str:
-    """One `#[test]` for one function."""
+    """One case function for one C function."""
+    seeded = mutates_in_place(case.param_kinds)
     binds = [
-        _bind(n, k, case.exhaustive)
+        _bind(n, k, case.exhaustive, seeded=seeded)
         for n, k in zip(case.param_names, case.param_kinds, strict=True)
     ]
+    # A cursor is an OFFSET into the preceding string, not a second string — see
+    # cursor_index(). Both sides walk the same distance into their own copy.
+    ci = cursor_index(case.param_names, case.param_kinds)
+    if ci is not None:
+        base = case.param_names[0]
+        cur = case.param_names[ci]
+        binds[ci] = _Bind(
+            f"for {cur}_at in {base}_s.offsets() {{",
+            f"{base}_s.as_ptr().add({cur}_at)",
+            f"{base}_r.as_ptr().add({cur}_at)",
+            f"{cur}=+{{{cur}_at}}",
+        )
     loops = [b.loop for b in binds if b.loop]
+    if seeded:
+        # The seed loop is OUTERMOST of the value loops, so every other parameter is
+        # swept against every seed rather than against one.
+        loops.insert(0, "for seed in corpus.items() {")
     ctx = " ".join(["cp={cp}"] + [b.ctx for b in binds if b.ctx])
+    if seeded:
+        ctx += " seed={seed:?}"
 
     # See base_kinds: which argument the returned pointer points INTO.
     base = None
@@ -449,8 +707,14 @@ def emit_case(case: Case) -> str:
             base = hit
             break
 
-    out: list[str] = ["#[test]", f"fn {case.name}() {{"]
-    if any(b.loop and "corpus" in b.loop for b in binds):
+    # `case_` prefix, NOT the bare C name: the extern block declares `fn _getmbcp` at
+    # module scope, so a case also called `_getmbcp` is a duplicate definition — and if
+    # it did compile it would call ITSELF.
+    out: list[str] = [f"pub fn {case_fn(case.name)}() {{"]
+    # `loops`, not `binds`: the seed loop is synthesised above rather than coming from a
+    # parameter, and checking only the binds left a seeded case referring to a `corpus`
+    # it never declared.
+    if any("corpus" in loop for loop in loops):
         out.append("    let corpus = Corpus::new();")
     out += ["    for &cp in CODEPAGES {", "        let _fix = MbcsFixture::install(cp);"]
     depth = 2
@@ -471,7 +735,12 @@ def emit_case(case: Case) -> str:
     out += [pad + line for line in _verdict(case, ctx)]
     for i in case.out_buffers:
         n = case.param_names[i]
-        out.append(f'{pad}Guarded::assert_same(&{n}_s, &{n}_r, "{case.name}", &format!("{ctx}"));')
+        # `same()` + panic!, never `assert_same(&format!(..))`: the eager format! would
+        # run every iteration (millions, for an exhaustive case) to build a string that
+        # is used only on failure.
+        out.append(f"{pad}if !Guarded::same(&{n}_s, &{n}_r) {{")
+        out.append(f'{pad}    panic!("{case.name}: {n} differs — {ctx}");')
+        out.append(pad + "}")
     for _ in loops:
         depth -= 1
         out.append("    " * depth + "}")
@@ -486,7 +755,7 @@ def emit(plan: Plan, c_path: str, total: int) -> str:
             c_path=c_path, covered=len(plan.cases), total=total, refused=len(plan.refusals)
         ),
         _extern_decls(plan.cases),
-        "}\n",
+        "\n}\n",
     ]
     for tier, label in ((TIER_PURE, "host-only"), (TIER_NLS, "needs the NLS replay fixture")):
         group = [c for c in plan.cases if c.tier == tier]
@@ -496,4 +765,36 @@ def emit(plan: Plan, c_path: str, total: int) -> str:
         parts.extend(emit_case(c) + "\n" for c in group)
     parts.append("\n// ===== REFUSED — each needs a hand-written case " + "=" * 26 + "\n")
     parts.extend(f"//   {r}\n" for r in plan.refusals)
+    parts.append(_emit_runner(plan))
     return "".join(parts)
+
+
+def _emit_runner(plan: Plan) -> str:
+    """A plain `fn main()` runner — this crate is `harness = false`.
+
+    libtest is unusable here for the reason Cargo.toml documents: the shipping crate
+    exports `#[no_mangle]` shims that shadow glibc's, and libtest reads its
+    configuration through them before any case runs.
+    """
+    lines = [
+        "\n// ===== runner " + "=" * 58,
+        "//",
+        "// A plain `fn main()`, not `#[test]`: see Cargo.toml — libtest reads its config",
+        "// through the very libc surface this crate overrides.",
+        "",
+        "pub fn run_all() -> usize {",
+        "    let cases: &[(&str, fn())] = &[",
+    ]
+    lines += [f'        ("{c.name}", {case_fn(c.name)}),' for c in plan.cases]
+    lines += [
+        "    ];",
+        "    for (name, f) in cases {",
+        '        eprint!("  {name} ... ");',
+        "        f();",
+        '        eprintln!("ok");',
+        "    }",
+        "    cases.len()",
+        "}",
+        "",
+    ]
+    return "\n".join(lines)

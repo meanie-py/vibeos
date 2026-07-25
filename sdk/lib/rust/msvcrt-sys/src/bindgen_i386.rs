@@ -295,7 +295,10 @@ pub type ULONG_PTR = ::core::ffi::c_ulong;
 pub type PVOID = *mut ::core::ffi::c_void;
 pub type HANDLE = *mut ::core::ffi::c_void;
 pub type CHAR = ::core::ffi::c_char;
-pub type LONG = ::core::ffi::c_long;
+// PINNED by generate_bindings.py: Win32 LONG is 32-bit (LLP64).
+// bindgen spells this `c_ulong`/`c_long`, which is 64-bit on the linux host
+// that builds msvcrt-difftest -- see pin_fixed_width().
+pub type LONG = i32;
 pub type LPCSTR = *const CHAR;
 pub type WCHAR = wchar_t;
 pub type LCID = DWORD;

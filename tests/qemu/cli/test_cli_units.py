@@ -3938,3 +3938,44 @@ def test_land_drain_waits_but_submit_path_does_not(lane_repo, tmp_path, monkeypa
     assert seen[-1] == hl_mod.LAND_LOCK_TIMEOUT, seen
     land_mod.land(_Args(direct=False, foreground=True), lane)
     assert seen[-1] == 0.0, seen
+
+
+def test_gate_recovers_the_child_builds_own_classification(tmp_path: Path):
+    """A build failure the child fully understood was reaching the merge queue as `""`.
+
+    queue.INCONCLUSIVE contains `""` on purpose — it means "the gate died without writing a
+    verdict", the least conclusive outcome there is. So dropping the child's classification
+    made every named build failure indistinguishable from a host hiccup: the train halted,
+    rejected nobody, and re-gated the whole batch. Five times on 2026-07-25, each a full
+    3-build/4-boot cycle.
+    """
+    from . import gate as gate_mod
+
+    (tmp_path / "summary.json").write_text(json.dumps({"classification": "BUILD_INCOMPLETE"}))
+    stdout = f"build arm64  —  FAIL: BUILD_INCOMPLETE\nfull log:  {tmp_path}/full.log\n"
+    assert gate_mod._child_classification(stdout) == "BUILD_INCOMPLETE"
+
+
+def test_gate_classification_recovery_fails_safe(tmp_path: Path):
+    """Every failure path must yield "" — the old behaviour — never an exception. This runs
+    inside the gate's build loop, so raising here would take down a landing."""
+    from . import gate as gate_mod
+
+    assert gate_mod._child_classification("") == ""
+    assert gate_mod._child_classification("no artifact line at all") == ""
+    assert gate_mod._child_classification("full log:  /definitely/not/here/full.log") == ""
+    (tmp_path / "summary.json").write_text("{not json")
+    assert gate_mod._child_classification(f"full log:  {tmp_path}/full.log") == ""
+
+
+def test_build_incomplete_does_not_reject_a_lane():
+    """It means ninja exited 0 but a cohab PE is older than its staticlib — and the stale set
+    was DIFFERENT on all 5 occurrences (kernel32 / version / shell32+usbport /
+    advapi32+kernel32+ws2_32+mouhid). A real missing dependency edge is not random, so it says
+    nothing about the submission and must not bounce a lane until it is root-caused."""
+    from . import queue as queue_mod
+
+    assert "BUILD_INCOMPLETE" in queue_mod.INCONCLUSIVE
+    # ...while genuinely conclusive reds still reject.
+    for conclusive in ("BUILD_FAIL", "LINT_FAIL", "TOOLING_FAIL"):
+        assert conclusive not in queue_mod.INCONCLUSIVE

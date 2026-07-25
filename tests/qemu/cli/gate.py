@@ -57,6 +57,7 @@ from __future__ import annotations
 import concurrent.futures as cf
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -274,7 +275,31 @@ def _build_once(repo: Path, run: Run, arch: str, args) -> dict:
         "ok": cp.returncode == 0,
         "exit": cp.returncode,
         "seconds": time.monotonic() - t0,
+        "classification": _child_classification(cp.stdout or ""),
     }
+
+
+def _child_classification(stdout: str) -> str:
+    """The classification the child `vibeos-cli build` gave ITSELF, recovered from the
+    artifact dir it prints on its last line.
+
+    Without this the gate reports `classification: ""` for a build failure it fully
+    understands, and "" is in queue.INCONCLUSIVE *by design* — it means "no information".
+    So a build that failed for a named, reproducible reason was indistinguishable from a
+    host hiccup: the merge-queue train halted, rejected nobody, and re-gated the entire
+    batch. That happened 5 times on 2026-07-25 (all arm64 BUILD_INCOMPLETE), each costing a
+    full 3-build/4-boot gate cycle, and it is most of why the land queue reached 8 deep with
+    the oldest waiting 54 minutes. The halt itself is still correct for a genuine unknown;
+    what was wrong is calling a known failure unknown.
+    """
+    m = re.search(r"^full log:\s*(\S+)/full\.log\s*$", stdout, re.M)
+    if not m:
+        return ""
+    try:
+        summary = json.loads((Path(m.group(1)) / "summary.json").read_text())
+    except (OSError, ValueError):
+        return ""
+    return str(summary.get("classification") or "")
 
 
 def _lint_once(repo: Path, arch: str, root: Path) -> dict:
@@ -544,16 +569,28 @@ def gate(args, repo: Path) -> int:
             for f in cf.as_completed(bfut):
                 r = f.result()
                 if not r["ok"]:
+                    kind = r.get("classification") or ""
                     run.add(
                         Stage(
                             f"build:{r['arch']}",
                             exit=r["exit"],
                             seconds=r["seconds"],
                             status="fail",
-                            detail="build failed",
-                            salient=[f"vibeos-cli build --arch {r['arch']} exited {r['exit']}"],
+                            detail=f"build failed ({kind})" if kind else "build failed",
+                            salient=[
+                                f"vibeos-cli build --arch {r['arch']} exited {r['exit']}"
+                                + (f" — {kind}" if kind else "")
+                            ],
                         )
                     )
+                    # Carry the child's own verdict up. Only the FIRST failing arch sets it,
+                    # so a later arch cannot overwrite a more specific earlier reason; and it
+                    # is set even when other arches build fine, because the old code assigned
+                    # a classification only when EVERY arch failed (`if not arches` below) and
+                    # left it empty for a partial failure — which the queue reads as "no
+                    # information" and halts the whole train on. See _child_classification.
+                    if kind and not run.classification:
+                        run.classification = kind
                     # a build failure is fatal for that arch; the others still build
                     # and smoke so the matrix stays complete.
                 else:

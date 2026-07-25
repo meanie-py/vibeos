@@ -272,9 +272,6 @@ FLAT-DIVERGENT: win32k NtUserGetMouseMovePointsEx(lpptBuf) WIDENING -> struct ta
 FLAT-DIVERGENT: win32k NtUserGetRawInputBuffer(pData) SEMANTIC -> struct tagRAWINPUT: union/bitfield with divergent layout
 FLAT-DIVERGENT: win32k NtUserGetRawInputDeviceList(pRawInputDeviceList) WIDENING -> struct tagRAWINPUTDEVICELIST
 FLAT-DIVERGENT: win32k NtUserGetRegisteredRawInputDevices(pRawInputDevices) WIDENING -> struct tagRAWINPUTDEVICE
-FLAT-DIVERGENT: win32k NtUserInitializeClientPfnArrays(pfnClientA) WIDENING -> struct _PFNCLIENT
-FLAT-DIVERGENT: win32k NtUserInitializeClientPfnArrays(pfnClientW) WIDENING -> struct _PFNCLIENT
-FLAT-DIVERGENT: win32k NtUserInitializeClientPfnArrays(pfnClientWorker) WIDENING -> struct _PFNCLIENTWORKER
 FLAT-DIVERGENT: win32k NtUserRegisterRawInputDevices(pRawInputDevices) WIDENING -> struct tagRAWINPUTDEVICE
 FLAT-DIVERGENT: win32k NtUserSendInput(pInput) SEMANTIC -> struct tagINPUT: union/bitfield with divergent layout
 FLAT-DIVERGENT: win32k NtUserSetImeInfoEx(pImeInfoEx) SEMANTIC -> struct tagIMEINFOEX: union/bitfield with divergent layout

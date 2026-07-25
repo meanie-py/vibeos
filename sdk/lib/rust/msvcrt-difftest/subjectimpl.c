@@ -216,6 +216,23 @@ void *msvcrt_get_thread_data(void)
     return &subj_thread_data;
 }
 
+/* ── the SUBJECT's copy of the pinned MBCS fixture ─────────────────────────
+ *
+ * The Rust imports `get_mbcinfo` through msvcrt-sys, unmangled, so this is the
+ * definition it binds to.  The reference's copy lives in refimpl.c behind
+ * msvcrt_ref_get_mbcinfo and the two can never reach each other — which is the point:
+ * a graded function that mutates its mbcinfo shows up as a divergence between the two
+ * slots (mbcs_fixture_check) instead of silently changing what every later case is
+ * graded against. */
+static rl_threadmbcinfo subj_mbcinfo;
+
+rl_threadmbcinfo *mbcs_subj_slot(void) { return &subj_mbcinfo; }
+
+void *get_mbcinfo(void)
+{
+    return &subj_mbcinfo;
+}
+
 /* locale.c's "setlocale() has never been called" flag — NOT namespaced, so refimpl.c
  * owns the single definition and both sides branch on the same value. */
 extern int initial_locale;
@@ -300,6 +317,25 @@ size_t subj_off_td_errno(void)    { return offsetof(subj_thread_data_t, thread_e
 size_t subj_off_locinfo_lconv(void)      { return offsetof(rl_threadlocinfo, lconv); }
 size_t subj_off_lconv_decimalpoint(void) { return offsetof(struct lconv, decimal_point); }
 
+/* ── mbcs: the MBCS state every mbcs.c entry point dereferences ─────────────
+ *
+ * These matter more than the locinfo offsets above, not less.  A `threadmbcinfo` is
+ * almost entirely two byte arrays, and `mbctype[]` IS the answer to "is this a lead
+ * byte" for all 160 graded functions — so a wrong offset here does not produce a
+ * plausible-but-wrong verdict, it produces a *stable* one: both sides read the same
+ * bytes past the end of the object and agree with each other perfectly, forever.
+ *
+ * The size check is not redundant with the offsets.  `mbcasemap` is last, so its
+ * offset is right even if the array is short; only sizeof catches a truncated tail. */
+size_t subj_off_mbcinfo_mbcodepage(void)   { return offsetof(rl_threadmbcinfo, mbcodepage); }
+size_t subj_off_mbcinfo_ismbcodepage(void) { return offsetof(rl_threadmbcinfo, ismbcodepage); }
+size_t subj_off_mbcinfo_mblcid(void)       { return offsetof(rl_threadmbcinfo, mblcid); }
+size_t subj_off_mbcinfo_mbulinfo(void)     { return offsetof(rl_threadmbcinfo, mbulinfo); }
+size_t subj_off_mbcinfo_mbctype(void)      { return offsetof(rl_threadmbcinfo, mbctype); }
+size_t subj_off_mbcinfo_mbcasemap(void)    { return offsetof(rl_threadmbcinfo, mbcasemap); }
+size_t subj_sizeof_mbcinfo(void)           { return sizeof(rl_threadmbcinfo); }
+size_t subj_off_locale_mbcinfo(void)       { return offsetof(rl_locale_t, mbcinfo); }
+
 /* ── wave 14b: the Rust printf ENGINE's environment ─────────────────────────
  *
  * msvcrt.dll's printf engine imports these from kernel32 / its own C.  The
@@ -345,15 +381,15 @@ unsigned int _get_output_format(void)
     return 0;
 }
 
-/* Subject twin of refimpl's `_mbtowc_l` (the reference's copy is namespaced
- * msvcrt_ref__mbtowc_l by refstub/msvcrt.h, unreachable from here).  MUST stay
- * body-identical to refimpl.c's or every wide-conversion printf row
- * false-DIVERGEs: C locale, single-byte, 1:1 onto U+0000..U+00FF. */
-int _mbtowc_l(unsigned short *dst, const char *str, size_t n, void *locale)
-{
-    (void)locale;
-    if (!str || !n) return 0;
-    if (!*str) { if (dst) *dst = 0; return 0; }
-    if (dst) *dst = (unsigned short)(unsigned char)*str;
-    return 1;
-}
+/* `_mbtowc_l` USED to be a stub here — a C-locale 1:1 twin of the one in refimpl.c,
+ * required to stay body-identical to it or every wide-conversion printf row would
+ * false-DIVERGE.  Both stubs are gone.
+ *
+ * The SHIPPING RUST defines `_mbtowc_l` (msvcrt-crt-rust's mbcs.rs), and as of the mbcs
+ * TU the reference has the genuine C one as `ref__mbtowc_l`.  They are still twins —
+ * but now they are the REAL implementations rather than two matched fakes, so printf's
+ * wide conversion is graded against actual mb->wc behaviour instead of against an
+ * agreement we wrote ourselves.
+ *
+ * Keeping this would have been a duplicate-symbol link error the moment the Rust mbcs
+ * objects entered the link, which is how it was found. */

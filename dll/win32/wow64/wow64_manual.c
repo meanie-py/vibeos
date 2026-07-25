@@ -3418,6 +3418,50 @@ static NTSTATUS Wow64Manual_NtUserEnumDisplayMonitors(ULONG *a)
 }
 
 /*
+ * NtUserInitializeClientPfnArrays — INTERCEPT. The guest's user32 calls this once
+ * at process init with three PFNCLIENT/PFNCLIENTWORKER structs: arrays of
+ * FUNCTION POINTERS, 4 bytes each in the guest and 8 in the kernel.
+ *
+ * What makes this one different from the rest of the divergence family is the
+ * destination. win32k does not keep these per-process — it RtlCopyMemory's them
+ * into gpsi->apfnClientA/W/Worker and aStoCidPfn, the GLOBAL server info every
+ * process shares, and sets the global hModClient. So a 32-bit guest reaching
+ * that body would (a) be read for the HOST struct size, ~2x its own buffer, and
+ * (b) overwrite the SYSTEM-WIDE client-callback table with pairwise-merged
+ * garbage, breaking callbacks for native 64-bit processes too. A WoW64 process
+ * corrupting global kernel state is a different blast radius from one corrupting
+ * itself.
+ *
+ * Today it is harmless for exactly one reason: win32k early-outs on
+ * `ClientPfnInit != 0`, and native user32 (csrss/winlogon) always wins that race
+ * long before any guest starts. That is initialization ORDER, not a guarantee —
+ * so the call is intercepted here rather than left resting on it.
+ *
+ * Returning SUCCESS without calling the kernel preserves the observable
+ * behaviour exactly (the kernel's early-out already made it a no-op) and drops
+ * the ordering dependency. The guest needs nothing from it: 32-bit callbacks are
+ * dispatched by the WoW64 callback bridge through
+ * Wow64pKiUserCallbackDispatcher32, not through gpsi.
+ *   NtUserInitializeClientPfnArrays(pfnClientA, pfnClientW, pfnClientWorker, hmodUser)
+ */
+static NTSTATUS Wow64Manual_NtUserInitializeClientPfnArrays(ULONG *a)
+{
+    static int Announced;
+
+    (void)a;
+    if (!Announced)
+    {
+        Announced = 1;
+        DbgPrint("[WOW64] NtUserInitializeClientPfnArrays: INTERCEPTED - guest "
+                 "32-bit PFNCLIENT arrays are never installed into the GLOBAL "
+                 "gpsi callback table (they would be read at host width and "
+                 "corrupt it for native processes). Guest callbacks go through "
+                 "the WoW64 callback bridge.\n");
+    }
+    return 0; /* STATUS_SUCCESS — matches win32k's own ClientPfnInit early-out */
+}
+
+/*
  * NtOpenProcessTokenEx / NtOpenThreadTokenEx — an OUT PHANDLE is 4 bytes in the
  * guest and 8 on the host, so the flat thunk handed the 64-bit kernel a 4-byte
  * cell to write 8 bytes into. It failed TWO ways, chosen by the address, because
@@ -3867,6 +3911,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64pOpenByCid(NtOpenThread, Arguments);
     if (WOW64_IS("NtCreateThread"))
         return Wow64Manual_NtCreateThread(Arguments);
+    if (WOW64_IS("NtUserInitializeClientPfnArrays"))
+        return Wow64Manual_NtUserInitializeClientPfnArrays(Arguments);
     if (WOW64_IS("NtOpenProcessTokenEx"))
         return Wow64Manual_NtOpenProcessTokenEx(Arguments);
     if (WOW64_IS("NtOpenThreadTokenEx"))

@@ -683,6 +683,31 @@ the commented ones. **Prefer bindgen enums over local consts in new translations
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.
 
+### An arch-INVARIANT constant, wrong in exactly ONE arch's private copy
+`ke/arm64/kiinit.rs` declared `PRCB_BUILD_UNIPROCESSOR = 1` / `PRCB_BUILD_DEBUG = 2`. Every
+`ndk/*/ketypes.h` says DEBUG=1, UNIPROCESSOR=2 — **the two were swapped**, and i386 and amd64
+had them right. So arm64 published a `Prcb.BuildType` meaning the exact opposite of what the
+source reads like: the UP kernel announced "checked MP" and the MP kernel announced "free MP".
+
+Everything downstream believed it. `KmtIsCheckedBuild` was FALSE for the entire arm64 kmtest
+corpus, so every test silently took its *free-build* path; and because a free build is allowed
+to call `KeAcquireSpinLockAtDpcLevel` at PASSIVE (real NT compiles those `ASSERT`s out), the
+KeSpinLock test did exactly that and our ungated assert answered with BUGCHECK 0x9. It read as
+an SMP bug for a week — the MP kernel is simply where the smp-gated asserts live.
+
+**Why the lint was blind, and this is the transferable part.** `scan_const_contradictions` finds
+one name carrying two values, but buckets **by arch** — and the values were 1/1/2 across
+i386/amd64/arm64, so no single bucket disagreed with itself. *A constant that is arch-invariant
+in the C headers but wrong in exactly one arch's private copy is structurally invisible to an
+arch-bucketed scanner.* Two consequences: when a constant family is defined identically in all
+three `ndk/<arch>/` headers, a cross-arch disagreement between our copies is a **bug, not
+variance**; and per-arch translations of one shared header are the place to diff our copies
+against each other, not just against C.
+
+**A swapped PAIR also survives every sanity check that looks at one name at a time** — both
+values are present, both are plausible, both appear in the header. Only the *pairing* is wrong.
+Diff the whole family in one read.
+
 ### A hand-typed bit-flag literal that names the wrong member `[§9.86]`
 `DC_vPrepareDCsForBlit` tested `fs & 0x04` (**DC_CANCELED**) where the C tests
 **DC_DIRTY_RAO (0x10)** — so every GDI blit drew through a stale clip, and an app caching
@@ -698,6 +723,14 @@ The constants were always available via the bindgen glob; the literals were pure
 **five independent sites** → `-smp 2` `KeIrql` kmtest failures. Single source of truth per
 crate, runtime-reachable for drivers. Same family: any constant whose C value depends on a
 build flavour.
+
+A **sixth** site surfaced on arm64 in 2026-07: the `aarch64 + feature="smp"` arm still read
+`DISPATCH_LEVEL`, justified by a comment claiming "arm64's ndk has no SMP variant". It has one —
+`ndk/arm64/ketypes.h` carries the same `#ifndef CONFIG_SMP` pair as i386 and amd64. The comment
+was written from memory, propagated into three files, and then into the lane's quest doc as a
+recorded blocker. **When a comment asserts what a header says, open the header** — this is the
+same failure that once turned an untested inference about netapi32's MIDL wrappers into a
+blocker that deferred the work twice.
 
 ### An undefined constant in a `match` arm becomes an irrefutable CATCH-ALL
 **The most dangerous shape in this section**, because it is not an error: an unresolved name in
@@ -763,6 +796,43 @@ would have fired for whoever followed the documented loop:
 3. **The resume cache banked un-unsealed Rust.** It guarded empty output but not sealed output, so
    a failed unseal cached its tokens and replayed them **for $0 forever**. Now refused on `put`
    and a MISS on `get`, so a poisoned cache self-heals.
+4. **Not every call-shaped thing lowers to a call.** Same root as (2), new source. The seal set is
+   `dep.callees`, and the call graph is lexical, so a **function-like macro** (`LOWORD`,
+   `IS_INTRESOURCE`) and a **C++ functional-style cast** (`PPICK_ICON_CONTEXT(lParam)`) enter it as
+   callees. Neither survives lowering — a macro expands inline, a cast becomes `as` — so the
+   envelope demands a call that structurally cannot exist and the worker is rejected. In
+   `EnumPickIconResourceProc`, **3 of the 4 sealed "calls" were not calls**. Diagnosis rule:
+   *two different models failing the same function identically is a tool bug, not model
+   capability* — deepseek and sonnet both failed iconcache's `SIC_IconAppend`/`SIC_Initialize`,
+   which is what redirected the search from the model to the seal.
+   **The general statement: the envelope assumes the Rust lowering preserves a 1:1 call-site
+   correspondence with the C, and every C++ construct that must be RESTRUCTURED breaks that
+   assumption.** Three independent triggers seen in one batch, so expect more: function-like
+   macros and functional-style casts (above); `goto`-cleanup (Rust has no `goto`, so the cleanup
+   block is duplicated and its tokens fire "not exactly once"); and ATL smart-pointer bodies
+   (`CComPtr<IShellFolder>`, where `BrFolder_NewFolder` lost **all 15** tokens at once). The
+   FACT envelope fails the same way — `BrFolder_OnContextMenu`/`OnInitDialog` dropped constants
+   for the same reason — so this is not call-specific. Note the blast radius: a rejected worker
+   means the TU assembles **no output at all**, so one bad function costs the whole file until
+   re-run. In this batch that was **7 of 12 completed TUs** (shlexec, shlfileop, dialogs,
+   brfolder, iconcache, drive, shlfolder) — the dominant cost of the wave, not a tail case.
+   `_EXCLUDED` is a hand-maintained denylist and cannot scale to the SDK's macro surface; the fix
+   is a positive authority test (seal only a callee provably a real function). **Three candidate
+   authorities were tested and all three are dead ends** — check before reaching for them again:
+   `catalog.functions` is target-internal (247 entries for shell32, holding neither the macros nor
+   `SendMessageW`/`HeapAlloc`, so it would suppress sealing entirely); `scan.defines` is
+   this-file-only and never sees an SDK macro; and `resolver.unresolved` lumps macros and real
+   externs together (282 entries, `LOWORD` and `SendMessageW` side by side). The authority has to
+   come from the **preprocessor's include closure** — a function-like `#define NAME(` visible to
+   the TU — which is the machinery `profile_derive` already builds for the bindgen island.
+   Also note before "just dropping `--seal-calls`" on an affected TU: the contract text is hashed
+   into the resume-cache key, so removing the flag MISSES every banked entry and re-pays the
+   whole file. **The same applies to FIXING this** — the contract lists the token set
+   (`Call tokens (N): …`), so any change to what gets sealed rewrites it and invalidates every
+   banked entry for the TU. Budget the repair as a full re-translate of each affected file, not
+   as "re-pay only the rejects": one shell32 wave left **226 accepted functions** banked behind
+   34 rejects, and they come back at full price, not free. shlfileop is the sharpest case —
+   69 of 73 functions translated cleanly and 4 rejects voided the file.
 
 > **The cache-key trap while fixing this: do NOT reword the contract text.** It is hashed into the
 > resume-cache key, so rewording invalidates every banked sealed entry and **re-charges for
@@ -1294,6 +1364,19 @@ blocker is almost never the shape — it is the missing authority. Read with its
 `[§9.120]`, where a regex **MISS** was mistaken for proof a class was absent (`0` reported for
 six weeks). **A pattern match is evidence about TEXT, never about SEMANTICS, in either
 direction. Demand a positive AND a negative control before believing a count.**
+
+A third direction of the same class: a regex can match a span that **is not a token at all**,
+because it cannot see what preceded it. Symptom — `translate --free-functions shlexec.cpp`
+refused the whole TU with `unsupported C wide character literal L':` quoting ~1,800 lines, and
+the literal it named does not exist in the file. Cause — `L'(?:\\.|[^'\\])+'` matched the
+trailing `L'` of `case 'L':` (a NARROW literal whose closing quote follows the letter L) and ran
+to the next apostrophe, which was in a comment reading `PIDL's`. Fix — scan, don't match:
+walk the source tracking comments and quoting and fold an `L` prefix into the span it belongs
+to, so `'L'` starts at the quote and `L':'` one character earlier. **Lexical boundaries are the
+one thing a regex structurally cannot find, because a token's start is defined by everything
+before it.** The same file had all three variants that break the naive pattern — a wide literal
+inside a comment, `L'` inside a narrow string, and the `case 'L':` — so treat one occurrence as
+proof the others are present too.
 
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the
@@ -1840,6 +1923,25 @@ even more plausible while still lacking the CPU-context setup a 32-bit guest thr
 only a per-thread WoW64 entry can provide. **Losing a thread beats losing the box; a clean refusal
 beats a convincing corpse.** Blast radius was *measured, not assumed*: exactly one call in a full
 boot, from one applet.
+
+### Ask where the payload LANDS: a divergence into global kernel state is a different bug
+Most WoW64 divergences corrupt the guest that caused them. `NtUserInitializeClientPfnArrays`
+does not: win32k `RtlCopyMemory`s the caller's `PFNCLIENT`/`PFNCLIENTWORKER` — arrays of
+function pointers, 4 bytes guest / 8 host — into **`gpsi->apfnClientA/W/Worker` and
+`aStoCidPfn`**, the *global* server info every process shares, and sets the global
+`hModClient`. A 32-bit guest reaching that body is read for the HOST struct size (~2× its own
+buffer) and installs pairwise-merged garbage as the **system-wide** client-callback table,
+breaking native 64-bit callbacks. **Same divergence class, categorically larger blast radius —
+so triage a finding by where the payload lands, not only by how the widths differ.**
+
+It has never fired, for one reason: win32k early-outs on `ClientPfnInit != 0`, and native
+user32 (csrss/winlogon) always wins that race long before a guest starts. **That is
+initialization order, not a guarantee, and "currently unreachable by luck" is worth a
+one-line intercept.** Fixed in the thunk layer, not win32k (the E13 rule), by returning
+`STATUS_SUCCESS` without calling the kernel — which is precisely what the early-out already
+produced, so observable behaviour is unchanged and the ordering dependency is gone. The guest
+loses nothing: 32-bit callbacks are dispatched by the WoW64 callback bridge through
+`Wow64pKiUserCallbackDispatcher32`, never through `gpsi`.
 
 ### An OUT `PHANDLE` divergence splits by ALIGNMENT — half silent overrun, half spurious failure
 A `HANDLE` out-param is 4 bytes in the guest and 8 on the host, so a flat thunk hands the 64-bit

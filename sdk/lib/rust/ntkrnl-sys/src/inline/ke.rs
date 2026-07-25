@@ -739,9 +739,11 @@ pub const TIMER_TABLE_SIZE: u32 = 512;
 /// TIMER_WAIT_BLOCK — index of timer wait block in thread's WaitBlock array
 pub const TIMER_WAIT_BLOCK: usize = 3;
 
-/// SYNCH_LEVEL — UP kernel: DISPATCH_LEVEL (= 2). SMP kernel: IPI_LEVEL - 2
-/// on x86/amd64 (ndk asm.h/ketypes.h, NTDDI >= WS03); arm64's ndk has no SMP
-/// variant (stays DISPATCH_LEVEL).
+/// SYNCH_LEVEL — UP kernel: DISPATCH_LEVEL (= 2). SMP kernel: IPI_LEVEL - 2.
+/// Every arch's ndk header carries the same `#ifndef CONFIG_SMP` pair (i386
+/// asm.h; amd64/arm64 ketypes.h), so all three vary — an earlier note here
+/// claiming arm64 "has no SMP variant" was simply wrong, and the 2 it justified
+/// disagreed with `ndk/arm64/ketypes.h:29` on the MP kernel.
 #[cfg(not(feature = "smp"))]
 pub const SYNCH_LEVEL: KIRQL = 2; // DISPATCH_LEVEL
 #[cfg(all(feature = "smp", target_arch = "x86"))]
@@ -749,7 +751,7 @@ pub const SYNCH_LEVEL: KIRQL = 0x1D - 2; // IPI_LEVEL(0x1D) - 2 = 27
 #[cfg(all(feature = "smp", target_arch = "x86_64"))]
 pub const SYNCH_LEVEL: KIRQL = 14 - 2; // IPI_LEVEL(14) - 2 = 12
 #[cfg(all(feature = "smp", target_arch = "aarch64"))]
-pub const SYNCH_LEVEL: KIRQL = 2; // DISPATCH_LEVEL (no SMP variant in ndk)
+pub const SYNCH_LEVEL: KIRQL = 14 - 2; // IPI_LEVEL(14) - 2 = 12
 
 /// TIMER_OR_EVENT_TYPE — mask for dispatcher header type check
 pub const TIMER_OR_EVENT_TYPE: i32 = 0x7;
