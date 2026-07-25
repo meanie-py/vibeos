@@ -86,3 +86,18 @@
 # You must not rely on them having a particular line ending style!
 # Vendored FEX snapshot: preserve upstream bytes exactly (no EOL normalization)
 external/fex/** -text
+
+# Append-only knowledge files: take BOTH sides on conflict.
+#
+# Every lane appends a new numbered section at the tail of the field manual, so every
+# pair of concurrent lanes conflicts there — on content neither one touched. It has cost
+# three hand-resolutions in a single night (2026-07-25) and is the reason
+# tools/scan_doc_sections.py exists. `merge=union` keeps both sides' lines instead of
+# raising a conflict, which is exactly right for a file whose merges are disjoint appends.
+#
+# The one bad outcome union can produce here is two lanes picking the same section number,
+# and that is precisely what scan_doc_sections gates on — so the failure mode is a named
+# lint finding with a stated fix, not a merge nobody can resolve mechanically. Do NOT
+# extend this to files where lanes edit the same regions; union does not diff, it
+# concatenates, and there it would silently duplicate prose.
+docs/engineering/translation-debugging-field-manual.md merge=union
