@@ -226,6 +226,17 @@ REPORT divergences in these classes:
 - a call present in C but dropped in Rust (or vice-versa), especially
   Ke*/Ex*/Io*/Wdf* calls with side effects
 
+JUDGE RUST BY RUST'S RULES, NOT C'S. The two measured false positives so far both
+came from applying C semantics to the Rust side:
+- OPERATOR PRECEDENCE IS NOT C's. In Rust `&`/`|`/`^` bind TIGHTER than the
+  comparisons, so `flags & FLAG != 0` parses as `(flags & FLAG) != 0` — the
+  intended test, and the opposite of the classic C gotcha. It could not parse the
+  other way and still compile (`u32 & bool` is a type error), and this Rust is
+  known to compile. Never report a precedence divergence on `&`/`|` vs `==`/`!=`.
+- A `0` in C passed where the callee's prototype declares a POINTER is a null
+  pointer constant; `core::ptr::null_mut()` is its correct translation, not an ABI
+  mismatch. Use the CALLEE PROTOTYPES section as authoritative for argument types.
+
 IGNORE (do NOT report):
 - naming, formatting, comments, idiomatic rewrites that preserve behavior
 - `unsafe`, raw-pointer vs reference style, transmute used for FFI typing
@@ -263,12 +274,46 @@ Function: {name}
 
 ===== C =====
 {c_src}
-
+{prototypes}
 ===== RUST =====
 {rust_src}
 
 Report behavioral divergences as strict JSON.
 """
+
+PROTOTYPE_HEADER = """
+===== CALLEE PROTOTYPES (authoritative — from the Rust module's extern blocks) =====
+These are the REAL signatures of the functions this body calls. Judge argument
+types against THESE, not against a guess from the C spelling. In particular a C
+`0` passed where the prototype declares a POINTER is a null pointer constant, and
+`core::ptr::null_mut()` is its correct translation — not an ABI mismatch.
+{decls}
+"""
+
+# `extern "..." { fn Name(...) -> Ret; }` items, plus bare `fn Name(...);` lines
+# inside them. Captures the whole declaration so the model sees parameter types.
+_EXTERN_FN_RE = re.compile(r"^\s*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\s*\(", re.M)
+
+
+def extract_extern_prototypes(text: str) -> dict[str, str]:
+    """{callee: declaration} for every fn declared (no body) in `text`.
+
+    The false-positive class this exists to kill: semdiff saw the C
+    `SHQueryValueExW(hkey, name, 0, ...)` next to Rust `null_mut()` and reported a
+    CRITICAL "argument type mismatch — an 8-byte pointer where a 4-byte DWORD is
+    expected". The real prototype takes `LPDWORD`, so the Rust was correct and the
+    C `0` was a null pointer constant. The model could not know: it saw two bodies
+    and no signature. It is in the same file the Rust body came from.
+    """
+    out: dict[str, str] = {}
+    for match in _EXTERN_FN_RE.finditer(text):
+        # A declaration ends at the first `;` before any `{`.
+        tail = text[match.start() :]
+        semi, brace = tail.find(";"), tail.find("{")
+        if semi < 0 or (0 <= brace < semi):
+            continue  # has a body — a definition, not a prototype
+        out.setdefault(match.group(1), " ".join(tail[:semi].split()) + ";")
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -393,9 +438,15 @@ def _cache_dir() -> Path:
 
 
 def diff_pair(
-    name: str, c_src: str, rust_src: str, model: str, use_cache: bool = True
+    name: str,
+    c_src: str,
+    rust_src: str,
+    model: str,
+    use_cache: bool = True,
+    prototypes: str = "",
 ) -> PairResult:
-    key = _cache_key(name, c_src, rust_src, model)
+    # Prototypes are part of what the model is shown, so they belong in the key.
+    key = _cache_key(name, c_src, rust_src + prototypes, model)
     cache_path = _cache_dir() / f"{key}.json"
     if use_cache and cache_path.exists():
         try:
@@ -410,7 +461,7 @@ def diff_pair(
             pass
 
     backend, api_model = _resolve_model(model)
-    user = USER_TEMPLATE.format(name=name, c_src=c_src, rust_src=rust_src)
+    user = USER_TEMPLATE.format(name=name, c_src=c_src, rust_src=rust_src, prototypes=prototypes)
     try:
         if backend == "deepseek":
             text, it, ot = _call_deepseek(api_model, SYSTEM_PROMPT, user)
@@ -468,6 +519,8 @@ def run(
     scan = scan_file(c_path)
     rust_funcs = extract_rust_functions(rs_path.read_text(errors="replace"))
 
+    prototype_index = extract_extern_prototypes(rs_path.read_text(errors="replace"))
+
     pairs, missing_rust = _pair_functions(scan.functions, rust_funcs)
     if only:
         pairs = [p for p in pairs if p[0] in only or p[1].name in only]
@@ -497,8 +550,26 @@ def run(
     total = len(names)
 
     def _work(name: str) -> PairResult:
+        rust_body = rust_by_disp[name].body_text
+        # Only the callees this body actually names — the whole index would bury
+        # the signal and re-pay for tokens on every pair.
+        referenced = {
+            callee: decl
+            for callee, decl in prototype_index.items()
+            if re.search(rf"\b{re.escape(callee)}\s*\(", rust_body)
+        }
+        protos = (
+            PROTOTYPE_HEADER.format(decls="\n".join(referenced[k] for k in sorted(referenced)))
+            if referenced
+            else ""
+        )
         return diff_pair(
-            name, c_funcs[name].body_text, rust_by_disp[name].body_text, model, use_cache
+            name,
+            c_funcs[name].body_text,
+            rust_body,
+            model,
+            use_cache,
+            prototypes=protos,
         )
 
     with _cf.ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
