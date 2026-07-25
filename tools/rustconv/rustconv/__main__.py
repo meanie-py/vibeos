@@ -16,6 +16,7 @@ from pathlib import Path
 from . import (
     callout_annotate,
     candidate_oracle,
+    crate_repair,
     dup_census,
     file_splitter,
     gdi_lock_inventory,
@@ -46,6 +47,7 @@ from .config import (
     BATCH_DISCOUNT,
     DEFAULT_MODELS,
     HAL_DIR,
+    RUST_DIR,
     MODEL_PRICING,
     NTOSKRNL_DIR,
     OUTPUT_CRATE,
@@ -540,6 +542,31 @@ def cmd_candidate_check(args):
     report = candidate_oracle.run_oracle(manifest, arches, repair=args.repair)
     candidate_oracle.print_report(report, as_json=args.json)
     if any(item["status"] != "ok" for item in report["results"]):
+        sys.exit(1)
+
+
+def cmd_crate_repair(args):
+    """Close the mechanical rustc roots of a whole crate deterministically, for $0.
+
+    Runs BEFORE any paid repair pass: the same "substrate closure before payment"
+    discipline the candidate path already follows. Every applied edit records its
+    rule and authority, and a pointer-width-dependent cast is only applied when
+    >=2 targets independently propose the identical replacement — a cast inferred
+    from one arch bakes that arch's width and silently breaks the other two.
+    """
+    session = crate_repair.repair_crate(
+        args.crate,
+        root=RUST_DIR,
+        targets=args.arches,
+        rules=args.rules,
+        crate_dir=Path(args.crate_dir) if args.crate_dir else None,
+        types_module=args.types_module,
+        max_passes=args.max_passes,
+        allow_single_target_width=args.allow_single_target_width,
+        dry_run=args.dry_run,
+    )
+    crate_repair.print_session(session, as_json=args.json)
+    if session.status in ("regressed", "max_passes"):
         sys.exit(1)
 
 
@@ -3033,6 +3060,37 @@ def main():
         help="Apply only deterministic base-authority worker repairs before checking",
     )
 
+    # crate-repair — deterministic Stage 1.5. Closes the MECHANICAL rustc roots of a freshly
+    # assembled crate for $0, before any paid repair pass, and leaves a bucketed RED residual.
+    p = sub.add_parser(
+        "crate-repair",
+        help="Bounded deterministic repair of a whole-crate cargo check (no LLM)",
+    )
+    p.add_argument("crate", help="cargo package name, e.g. wkssvc-rust")
+    p.add_argument(
+        "--arches",
+        nargs="+",
+        default=["i386", "amd64", "arm64"],
+        choices=["i386", "amd64", "arm64"],
+        help="Targets to analyse. >=2 required to apply a pointer-width-dependent cast",
+    )
+    p.add_argument(
+        "--rules",
+        nargs="+",
+        default=list(crate_repair.ALL_RULES),
+        choices=list(crate_repair.ALL_RULES),
+    )
+    p.add_argument("--crate-dir", help="Crate root (default <rust-workspace>/<crate>)")
+    p.add_argument("--types-module", default="types.rs", help="bindgen types module in src/")
+    p.add_argument("--max-passes", type=int, default=6)
+    p.add_argument("--dry-run", action="store_true", help="Report edits without writing")
+    p.add_argument(
+        "--allow-single-target-width",
+        action="store_true",
+        help="LOUD override: bake a pointer-width cast proven on ONE target only",
+    )
+    p.add_argument("--json", action="store_true", help="Machine-readable ledger")
+
     p = sub.add_parser(
         "substrate-plan",
         help="Cluster a candidate oracle report into canonical substrate authority roots",
@@ -3526,6 +3584,7 @@ def main():
         "scan": cmd_scan,
         "dup-census": cmd_dup_census,
         "candidate-check": cmd_candidate_check,
+        "crate-repair": cmd_crate_repair,
         "substrate-plan": cmd_substrate_plan,
         "skeleton-check": cmd_skeleton_check,
         "cpp-com": cmd_cpp_com,
@@ -3558,7 +3617,7 @@ def main():
 
     try:
         commands[args.command](args)
-    except (ValueError, CppComError) as e:
+    except (ValueError, CppComError, crate_repair.RepairError) as e:
         # target auto-detect failure (unrecognized path) surfaces here as a clean
         # message instead of a traceback — tells the user to pass --target.
         print(str(e), file=sys.stderr)
