@@ -824,22 +824,61 @@ would have fired for whoever followed the documented loop:
    this-file-only and never sees an SDK macro; and `resolver.unresolved` lumps macros and real
    externs together (282 entries, `LOWORD` and `SendMessageW` side by side). The authority has to
    come from the **preprocessor's include closure** — a function-like `#define NAME(` visible to
-   the TU — which is the machinery `profile_derive` already builds for the bindgen island.
-   Also note before "just dropping `--seal-calls`" on an affected TU: the contract text is hashed
-   into the resume-cache key, so removing the flag MISSES every banked entry and re-pays the
-   whole file. **The same applies to FIXING this** — the contract lists the token set
-   (`Call tokens (N): …`), so any change to what gets sealed rewrites it and invalidates every
-   banked entry for the TU. Budget the repair as a full re-translate of each affected file, not
-   as "re-pay only the rejects": one shell32 wave left **226 accepted functions** banked behind
-   34 rejects, and they come back at full price, not free. shlfileop is the sharpest case —
-   69 of 73 functions translated cleanly and 4 rejects voided the file.
+   the TU.
 
-> **The cache-key trap while fixing this: do NOT reword the contract text.** It is hashed into the
-> resume-cache key, so rewording invalidates every banked sealed entry and **re-charges for
-> translations already paid for** (1,006 across 43 namespaces). Handle it deterministically
-> instead — and that is also safer, because if a lost token was a constant's only occurrence the
-> closed-set check still fails loudly rather than laundering it. A test pins the contract text so
-> nobody "improves" it later.
+**RESOLVED 2026-07-25 — all 7 blocked TUs assemble.** The authority is now
+`rustconv/macro_authority.py`: it replays the module's own `compile_commands.json` entry with
+`-E -dM` and takes every `#define NAME(`, unioned over built arches, and HARD FAILS with
+`./vibeos-cli build --arch i386` when no compile command exists — "seal everything anyway" is the
+degradation it exists to end. `_EXCLUDED` survives only as a floor for `sizeof` (a keyword, not a
+macro). Four more causes surfaced once the macro noise cleared, and the split matters because two
+of them were **ours**, not the model's:
+
+- **A C lexer was masking Rust output.** `_code_mask`/`_masked_cpp` existed in three byte-identical
+  private copies and every one treated `'cleanup:` as an opening char literal, blanking the text to
+  the next apostrophe. A faithful `SHFileOperationA` lowering (three `goto cleanup` → three
+  `'cleanup: loop`) had two call tokens fall inside the blanked regions and was reported
+  "missing" — the model had written them. Now one shared `rustconv/lex_mask.py`, where `'` +
+  identifier + `'` is a literal (C multi-character constants included) and `'` + identifier +
+  anything else is a Rust label or lifetime. This masker also feeds shell32 COM worker
+  normalization in four more places, so any `&'a` in model output was corrupting those too.
+- **`goto` has no 1:1 lowering.** Rust has no `goto`, so every lowering duplicates code, and *how
+  much* is not something the translation picks consistently: three consecutive paid responses gave
+  the label's tail inlined 4×, the same 3×, and a nested cascade duplicating the whole remainder.
+  A count-based budget (`#goto + 1`) was tried and the third shape walked through it, so the rule
+  is positional — from the earlier of the first `goto` and its target label, a token may repeat.
+  Only the DUPLICATE half is relaxed; `missing` and `invented` still fire.
+- **The contract told the model a lie.** "Do not duplicate" is false for a `goto` body, and the
+  models obeyed it: needing the cleanup tail on three paths and forbidden to repeat a token, they
+  MINTED NEW NUMBERS past the end of the list (`dde_connect` invented three, `SIC_IconAppend` two).
+  The contract now says repetition is expected when the body has `goto`, and never invent a number.
+- **A type is not a value.** The FACT seal was sealing symbols that are types, where Rust is
+  entitled to a different spelling: the parameter types of a body-local `extern RET Callee(TYPE);`
+  prototype (`InvokeOpenWith`, dead on four consecutive attempts) and the template argument of a
+  C++ named cast, `const_cast<LPWSTR>(strchrW(...))` (`dde_connect`). Both now skipped — the same
+  judgement the scanner already made for a C-style `(TYPE *)value` cast, and the same judgement
+  `seal_calls` already made about the callee name in that identical `extern` construct.
+
+**Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
+sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
+`--retry-rejects N` re-rolls a rejected worker under identical acceptance checks (each retry is
+billed); `iconcache` passed on attempt 3 and `shlexec` on attempt 2. Rejected replies are also
+kept now, at `.responses/<key>/__rejected__/<fn>.rs` — never replayed, never assembled. Before
+that the tool printed the verdict and dropped the evidence, which is the wrong half to keep: the
+verdict says the envelope broke, the reply says how. Every diagnosis above came from those files.
+
+> **Changing a seal rule no longer re-bills anything** (this reverses the earlier warning here to
+> never reword the contract). The contract's token enumeration and the envelope PROSE are now
+> normalized out of the resume-cache key: the enumeration is fully derived from (body, seal rules)
+> and the body is already in the key, and the envelopes are DETECTORS whose verdict is binary — a
+> banked entry passed, and its names were restored by rustconv at unseal time, not written by the
+> model. What each worker actually had hidden from it is stored separately and compared
+> DIRECTIONALLY: an entry sealed at least as tightly as this run wants is a hit, a looser one is a
+> miss. Genuine capability blocks (the `--local-raii` API) still demand an exact match, which is
+> the `CDrvDefExt` stale-replay bug and must not regress. Excluding one macro would otherwise have
+> re-billed 6,800 lines of accepted, already-unsealed Rust; instead shlfileop replayed 65 of 73
+> functions for $0. `translate --dry-run` now prints `Resume cache: N banked, M to buy`, so a
+> cache invalidation is visible BEFORE it charges rather than after.
 
 **A capability that has never been exercised is not a capability.** Grepping the ledger for
 `seal_facts=True` on any non-shell32 module returned zero rows, and that single query predicted
@@ -1257,6 +1296,25 @@ worktree.** `verify_signatures` once picked a sibling's `build-amd64` and its mi
 moved **987 → 9 with no source change**. A verdict that depends on which siblings exist is not
 a gate. Pinned *toolchains* may be shared (content-addressed); generated *headers* are
 per-commit state and must come from THIS worktree or the tool hard-fails.
+
+### A build-time flavor knob that keeps the SAME output name defeats every name-based check
+**Symptom:** a run is green and the screenshot is a full desktop, but the binary under test is
+not the flavor you think. **Cause:** a cmake cache var that changes what a binary *is* without
+changing what it is *called*. `VIBEOS_SMP_HAL=1` rebuilt the SMP HAL — into a file still named
+`hal.dll`. Nothing downstream can tell the flavors apart: freeldr registers whatever it loads
+as `hal.dll` in the loader block, the on-disk name is identical, and on arm64 there is no
+`MISMATCHED_HAL` handshake, so an MP kernel on the UP HAL boots to a desktop and silently runs
+on **one cpu** (`HalStartNextProcessor` is the FALSE stub). The only available assertion was a
+*negative* runtime marker ("did the UP stub get called?"), which only fires if the wrong code
+happens to execute. A build-dir-global knob also forces a full relink to switch (9m25s i386 /
+12m22s amd64 warm), so nobody runs both flavors routinely — the check that would catch it is
+the one you can't afford. **Fix: make the flavor the file name and ship both.**
+`halmp-cargo` → `halmp.dll` beside `hal.dll` (mirroring `ntoskrnl-cargo` → `ntkrnlmp-cargo`),
+selected per boot entry (`/HAL=`). The assertion becomes positive and load-time — "the
+`[FLDR] load` stamp names `halmp.dll`" — and the mis-pair stops being reachable. **Corollary
+for the second copy:** put the shared recipe in ONE place (here a `hal-link` crate both cells'
+`build.rs` call) — two hand-maintained link recipes for binaries that must be identical apart
+from one feature is the same single-copy-divergence class as a constant defined per-arch.
 
 ### Other staleness shapes
 - **Multi-copy staleness** `[§9.6]` — `rtl`/`heap` links into **both** `librtl.a` (ntoskrnl) and a

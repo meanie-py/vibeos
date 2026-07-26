@@ -38,6 +38,7 @@ import re
 from dataclasses import dataclass
 
 from .ddk_enum_constants import DDK_ENUM_CONSTANTS
+from .lex_mask import opens_a_literal
 
 
 class FactSealError(RuntimeError):
@@ -100,6 +101,42 @@ _NON_FACT_WORDS = {
 }
 
 
+_BLOCK_SCOPE_PROTOTYPE_RE = re.compile(r"\bextern\s+[^;{}=]*?\([^;{}]*\)\s*;")
+# A C++ NAMED cast's template argument is a type, exactly like the `(TYPE *)value`
+# C-style cast the symbol scanner already skips — the C-style form just happens to
+# be the only one it learned to recognise.
+_NAMED_CAST_RE = re.compile(
+    r"\b(?:const_cast|static_cast|reinterpret_cast|dynamic_cast)\s*<[^<>;{}]*>"
+)
+
+
+def _named_cast_spans(masked: str) -> list[tuple[int, int]]:
+    """Spans of `const_cast<LPWSTR>` and friends — the `<...>` is a TYPE.
+
+    `dde_connect` lost `const_cast<LPWSTR>(strchrW(p, ' '))` to this on every paid
+    attempt: Rust writes that as `x as LPWSTR`, or elides the alias entirely for
+    `*mut u16`, so a sealed type token there can vanish through no fault of the model.
+    """
+    return [(match.start(), match.end()) for match in _NAMED_CAST_RE.finditer(masked)]
+
+
+def _block_scope_prototype_spans(masked: str) -> list[tuple[int, int]]:
+    """Spans of a body-local `extern RET Callee(TYPE, TYPE);` forward declaration.
+
+    Its parameter types are ABI CONTEXT, not values — the same judgement `seal_calls`
+    already makes about the callee name in the very same construct. Sealing them
+    builds an envelope nothing can satisfy: a faithful lowering writes a Rust
+    `extern "system" { fn Callee(a: LPCWSTR, ...); }`, and Rust is entitled to spell
+    that type differently (`*const u16`), at which point the token is simply gone.
+    `InvokeOpenWith` failed this way on four consecutive paid attempts, and one
+    rejected worker assembles no file at all.
+
+    The values that sealing exists to protect — `SEE_MASK_NOCLOSEPROCESS` and its
+    kind (§9.113) — never appear in a prototype's type list, so nothing is lost.
+    """
+    return [(match.start(), match.end()) for match in _BLOCK_SCOPE_PROTOTYPE_RE.finditer(masked)]
+
+
 def _code_mask(text: str) -> str:
     """Return text with comments and literals blanked, preserving offsets."""
     out = list(text)
@@ -118,6 +155,8 @@ def _code_mask(text: str) -> str:
                 if out[pos] != "\n":
                     out[pos] = " "
             i = end
+        elif text[i] == "'" and not opens_a_literal(text, i):
+            i += 1  # Rust label/lifetime (`'cleanup:`) — opens nothing. See lex_mask.
         elif text[i] in ('"', "'"):
             quote = text[i]
             # Include a preceding L/u/U prefix in the literal mask.
@@ -195,6 +234,9 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     masked = _code_mask(text)
     spans: list[tuple[int, int, str]] = []
     declared = _declared_names(masked) if dialect == "c" else frozenset()
+    # Positions where a symbol is a TYPE, not a value. Both are the same judgement
+    # the scanner already makes for `(TYPE *)value`; neither can hold a constant.
+    type_spans = _block_scope_prototype_spans(masked) + _named_cast_spans(masked)
 
     for match in _INTEGER_RE.finditer(masked):
         spans.append((match.start(), match.end(), "integer"))
@@ -219,6 +261,8 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
         )
         declaration_type = bool(re.match(r"\s+\**\s*[A-Za-z_]\w*", tail))
         if cast_type or declaration_type:
+            continue
+        if any(a <= start < b for a, b in type_spans):
             continue
         spans.append((match.start(), match.end(), "symbol"))
 

@@ -31,4 +31,6 @@ panic-common = { path = "../panic-common", features = ["kernel"] }
 # and emits the absolute path of the resulting libhal_rust.a as a link arg.
 
 [build-dependencies]
-reactos-link = { path = "../reactos-link" }
+# The link recipe itself lives in `hal-link` (shared with `halmp-cargo`, the
+# SMP twin that produces halmp.dll) so the two flavors cannot drift.
+hal-link = { path = "../hal-link" }

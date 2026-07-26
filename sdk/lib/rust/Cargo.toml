@@ -168,6 +168,11 @@ members = [
     "mem",
     "network",
     "hal-cargo",
+    # halmp.dll — the SMP HAL twin (hal-rust `smp` feature), shipped alongside
+    # hal.dll so one media boots either flavor via freeldr's `/HAL=`. `hal-link`
+    # is the link recipe both HAL cells share.
+    "halmp-cargo",
+    "hal-link",
     "ntkrnl-sys",
     "ntdll-sys",
     "ntdll-rust",

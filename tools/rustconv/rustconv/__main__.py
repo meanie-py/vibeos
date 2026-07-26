@@ -104,6 +104,7 @@ from .function_prompt import (
     load_function_system_prompt,
 )
 from .function_resolver import resolve_function
+from .macro_authority import function_like_macros
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
 from .postprocess import postprocess
@@ -612,6 +613,63 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
             if item.cpp_class in local_bases:
                 item.cpp_class = class_name
     return scan
+
+
+def _cache_suffix(args, fact_seal_enabled: bool, call_seal_enabled: bool) -> str:
+    """Namespace the resume cache by the seals that were active when it was filled."""
+    cache_tag = getattr(args, "cache_tag", None)
+    suffix = f"__{cache_tag}" if cache_tag else ""
+    if fact_seal_enabled:
+        suffix += "__factseal_v1"
+    if call_seal_enabled:
+        suffix += "__callseal_v1"
+    return suffix
+
+
+def _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_enabled):
+    """Durable per-function resume cache → re-run to resume a killed/capped run for $0.
+
+    Skips every function whose C body is unchanged. Coexists with the sink archive
+    (per-run, kill-safe streaming); this one is the stable cross-run skip layer.
+    `--no-resume` forces fresh.
+    """
+    suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled)
+    return ResponseCache(f"{subsystem}__{c_file.stem}{suffix}")
+
+
+def _audit_paid_body(
+    dep,
+    result,
+    *,
+    cpp_com_mode: bool,
+    is_cpp_source: bool,
+    fact_seals,
+    call_seals,
+    target_name: str,
+) -> str:
+    """Unseal and audit one paid reply; raise `CppComError` if it fails.
+
+    Extracted so the sequential path can re-roll a rejected worker without
+    duplicating the acceptance criteria — a retry that checked anything less than
+    the first attempt would launder exactly the defects sealing exists to catch.
+
+    Mutates ``result.rust_code`` to the normalized/unsealed text, which is what the
+    caller banks: the cache must hold what was ACCEPTED, not the raw reply.
+    """
+    if not cpp_com_mode:
+        # Sealing is language-neutral; unsealing must be too.
+        result.rust_code = _unseal_worker(dep, result.rust_code, fact_seals, call_seals)
+        if is_cpp_source:
+            result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
+        return _unseal_plain_c(dep, result.rust_code, fact_seals, call_seals)
+    result.rust_code = _normalize_unseal_cpp_worker(dep, result.rust_code, fact_seals, call_seals)
+    signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
+    findings = audit_worker_body(dep.body_text, result.rust_code, f"{dep.name}_body", signature)
+    if findings:
+        raise CppComError(
+            f"{dep.name}: paid body failed deterministic audit:\n  - " + "\n  - ".join(findings)
+        )
+    return result.rust_code
 
 
 def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
@@ -2025,11 +2083,22 @@ def cmd_translate(args):
             else model_bodies[dep.name]
             for dep in sorted_deps
         }
+        # The seal must know which callee-shaped names are function-like MACROS: they
+        # have no 1:1 Rust call to carry a token, so sealing one makes the envelope
+        # unsatisfiable and one such worker voids the whole TU. Derived from the real
+        # preprocessor, and a HARD FAIL when unavailable — "seal everything anyway" is
+        # exactly the silent degradation this replaced.
+        seal_macros = (
+            function_like_macros(REACTOS_ROOT, c_file.resolve())
+            if call_seal_enabled
+            else frozenset()
+        )
         call_seals = (
             {
                 dep.name: seal_calls(
                     model_sources[dep.name],
                     set(dep.callees) | {f"{callee}_body" for callee in dep.callees},
+                    seal_macros,
                 )
                 for dep in sorted_deps
             }
@@ -2059,6 +2128,24 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+
+        # WHAT each worker had hidden from it, as names rather than token indices.
+        # The response cache compares this directionally: an entry sealed at least as
+        # tightly as this run wants is still sound, so tightening a seal rule (or
+        # excluding a macro from one) costs nothing already paid for.
+        sealed_names = {
+            dep.name: frozenset(
+                [f"call:{call.original}" for call in call_seals[dep.name].calls]
+                if dep.name in call_seals
+                else []
+            )
+            | frozenset(
+                [f"fact:{fact.original}" for fact in fact_seals[dep.name].facts]
+                if dep.name in fact_seals
+                else []
+            )
+            for dep in sorted_deps
+        }
 
         # `--fn` selects the paid/output unit, not its dependency knowledge.
         # Preserve the complete prepared closure for local-worker signatures.
@@ -2148,6 +2235,33 @@ def cmd_translate(args):
                     file=sys.stderr,
                 )
                 print(f"  PAID: {len(sorted_deps) - len(preview)} functions", file=sys.stderr)
+
+            # What is ALREADY BANKED. Without this the plan prices a re-run of a
+            # partly-translated file as if nothing had been paid for, and the only
+            # way to learn otherwise was to start spending. It also makes a cache
+            # invalidation visible BEFORE it re-bills: a seal or contract change
+            # that voids banked work shows up here as a collapsed hit count.
+            dry_cache = _open_response_cache(
+                args, subsystem, c_file, fact_seal_enabled, call_seal_enabled
+            )
+            banked = [
+                dep.name
+                for dep in sorted_deps
+                if dep.name not in preview
+                and dry_cache.get(
+                    dep.name,
+                    dep.body_text,
+                    deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
+                )
+                is not None
+            ]
+            unbanked = len(sorted_deps) - len(preview) - len(banked)
+            print(
+                f"  Resume cache: {len(banked)} banked ($0 replay), {unbanked} to buy"
+                f"   [{dry_cache.dir.name}]",
+                file=sys.stderr,
+            )
 
             # Show estimated tokens for first function
             if sorted_deps:
@@ -2243,17 +2357,8 @@ def cmd_translate(args):
             file_res, scan, subsystem, target=rustconv_target, cpp_com=cpp_com_mode
         )
 
-        # Durable per-function resume cache → re-run the same command to resume a
-        # killed/capped run for $0 (skip functions whose C body is unchanged).
-        # Coexists with the sink archive (which is per-run, kill-safe streaming);
-        # this one is the stable, cross-run skip layer. --no-resume forces fresh.
-        cache_tag = getattr(args, "cache_tag", None)
-        cache_suffix = f"__{cache_tag}" if cache_tag else ""
-        if fact_seal_enabled:
-            cache_suffix += "__factseal_v1"
-        if call_seal_enabled:
-            cache_suffix += "__callseal_v1"
-        cache = ResponseCache(f"{subsystem}__{c_file.stem}{cache_suffix}")
+        cache_suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled)
+        cache = _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_enabled)
 
         # A completed model stream can fail a deterministic audit and remain as
         # ``.partial``. When the harness improves, replay those already-paid bytes
@@ -2267,7 +2372,12 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if (
                     dep.name in deterministic_workers
-                    or cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                    or cache.get(
+                        dep.name,
+                        dep.body_text,
+                        deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
+                    )
                     is not None
                 ):
                     continue
@@ -2304,6 +2414,7 @@ def cmd_translate(args):
                         dep.body_text,
                         recovered,
                         deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
                     )
                     partial_replayed.add(dep.name)
                     _record_outcome(dep, "partial_replay", route="current_deterministic_audit")
@@ -2388,7 +2499,12 @@ def cmd_translate(args):
                 if dep.cpp_class is None:
                     continue
                 if (
-                    cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                    cache.get(
+                        dep.name,
+                        dep.body_text,
+                        deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
+                    )
                     is not None
                 ):
                     continue
@@ -2402,14 +2518,25 @@ def cmd_translate(args):
                 findings = audit_worker_body(dep.body_text, hit, f"{dep.name}_body", signature)
                 if findings:
                     continue
-                cache.put(dep.name, dep.body_text, hit, deterministic_contracts.get(dep.name, ""))
+                cache.put(
+                    dep.name,
+                    dep.body_text,
+                    hit,
+                    deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
+                )
                 memory_seeded.add(dep.name)
         pending_paid_deps = []
         for dep in paid_deps:
             hit = (
                 None
                 if no_resume
-                else cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                else cache.get(
+                    dep.name,
+                    dep.body_text,
+                    deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
+                )
             )
             if hit is not None and cpp_com_mode:
                 hit = normalize_worker_body(
@@ -2477,7 +2604,10 @@ def cmd_translate(args):
                     continue
                 if not no_resume:
                     hit = cache.get(
-                        dep.name, dep.body_text, deterministic_contracts.get(dep.name, "")
+                        dep.name,
+                        dep.body_text,
+                        deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
                     )
                     if hit is not None and cpp_com_mode:
                         hit = normalize_worker_body(
@@ -2632,6 +2762,7 @@ def cmd_translate(args):
                                 error=str(error),
                                 **_result_fields(r, elapsed_ms),
                             )
+                            cache.put_rejected(dp.name, r.rust_code, str(error))
                             parallel_errors.append(str(error))
                             print(f"  [{fi}] {dp.name} AUDIT REJECT: {error}", file=sys.stderr)
                             continue
@@ -2644,6 +2775,7 @@ def cmd_translate(args):
                             dp.body_text,
                             r.rust_code,
                             deterministic_contracts.get(dp.name, ""),
+                            sealed_names.get(dp.name),
                         )
                         if translation_memory is not None and dp.cpp_class is not None:
                             assert memory_identity is not None
@@ -2729,7 +2861,12 @@ def cmd_translate(args):
             # Resume: reuse a prior unchanged-body translation for free. It still
             # feeds `translated` (callee context for later functions).
             if not no_resume:
-                hit = cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                hit = cache.get(
+                    dep.name,
+                    dep.body_text,
+                    deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
+                )
                 if hit is not None and cpp_com_mode:
                     hit = normalize_worker_body(
                         hit,
@@ -2794,61 +2931,73 @@ def cmd_translate(args):
                 cpp_com=cpp_com_mode,
             )
 
-            # Stream this function's output straight to the durable archive.
-            sink = None
-            if archive is not None:
-                sink = ResponseSink(archive.stream_path(func_idx, dep.name))
-            started = time.monotonic()
-            try:
-                if use_claude:
-                    result = submit_single(
-                        user_prompt,
-                        model=model,
-                        system_prompt=system_prompt,
-                        file_context=file_context,
-                        sink=sink,
+            # A rejected worker assembles NOTHING for the whole file, so one
+            # single-token slip in function 63 of 73 throws away the other 72. The
+            # envelope failures that survive the deterministic fixes are sampling
+            # noise on the largest bodies — re-rolling the same function by hand
+            # converged 4 rejects → 2 → 1 on shlfileop — so do it here instead of
+            # leaving it as a recipe. Each attempt is a real paid call and is billed;
+            # only the LAST reject is reported.
+            attempts_allowed = 1 + max(0, int(getattr(args, "retry_rejects", 0) or 0))
+            body = None
+            reject_error: CppComError | None = None
+            for attempt in range(1, attempts_allowed + 1):
+                # Stream this function's output straight to the durable archive.
+                sink = None
+                if archive is not None:
+                    sink = ResponseSink(archive.stream_path(func_idx, dep.name))
+                started = time.monotonic()
+                try:
+                    if use_claude:
+                        result = submit_single(
+                            user_prompt,
+                            model=model,
+                            system_prompt=system_prompt,
+                            file_context=file_context,
+                            sink=sink,
+                        )
+                    else:
+                        prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
+                        full = (prefix + "\n\n---\n\n" + user_prompt) if prefix else user_prompt
+                        result = submit_single(full, model=model, sink=sink)
+                finally:
+                    if sink is not None:
+                        sink.close()
+                elapsed_ms = int((time.monotonic() - started) * 1000)
+                if not result.success:
+                    break
+                try:
+                    body = _audit_paid_body(
+                        dep,
+                        result,
+                        cpp_com_mode=cpp_com_mode,
+                        is_cpp_source=is_cpp_source,
+                        fact_seals=fact_seals,
+                        call_seals=call_seals,
+                        target_name=rustconv_target.name,
                     )
-                else:
-                    prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
-                    full_prompt = (prefix + "\n\n---\n\n" + user_prompt) if prefix else user_prompt
-                    result = submit_single(full_prompt, model=model, sink=sink)
-            finally:
-                if sink is not None:
-                    sink.close()
-            elapsed_ms = int((time.monotonic() - started) * 1000)
+                    reject_error = None
+                    break
+                except CppComError as error:
+                    reject_error = error
+                    cache.put_rejected(dep.name, result.rust_code, str(error))
+                    if attempt >= attempts_allowed:
+                        break
+                    print(
+                        f"  [{func_idx}] {dep.name} AUDIT REJECT "
+                        f"(attempt {attempt}/{attempts_allowed}, retrying): {error}",
+                        file=sys.stderr,
+                    )
+                    total_in += result.input_tokens
+                    total_out += result.output_tokens
+                    if archive is not None:
+                        running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
 
             if result.success:
                 try:
-                    if not cpp_com_mode:
-                        # Sealing is language-neutral; unsealing must be too.
-                        result.rust_code = _unseal_worker(
-                            dep, result.rust_code, fact_seals, call_seals
-                        )
-                        if is_cpp_source:
-                            result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
-                    if cpp_com_mode:
-                        result.rust_code = _normalize_unseal_cpp_worker(
-                            dep, result.rust_code, fact_seals, call_seals
-                        )
-                        findings = audit_worker_body(
-                            dep.body_text,
-                            result.rust_code,
-                            f"{dep.name}_body",
-                            worker_signature(
-                                dep.name,
-                                dep.cpp_class,
-                                dep.params,
-                                dep.return_type,
-                            ),
-                        )
-                        if findings:
-                            raise CppComError(
-                                f"{dep.name}: paid body failed deterministic audit:\n  - "
-                                + "\n  - ".join(findings)
-                            )
-                        body = result.rust_code
-                    else:
-                        body = _unseal_plain_c(dep, result.rust_code, fact_seals, call_seals)
+                    if reject_error is not None:
+                        raise reject_error
+                    assert body is not None
                 except CppComError as error:
                     _record_outcome(
                         dep,
@@ -2870,6 +3019,7 @@ def cmd_translate(args):
                     dep.body_text,
                     result.rust_code,
                     deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
                 )
                 if translation_memory is not None and dep.cpp_class is not None:
                     assert memory_identity is not None
@@ -3943,6 +4093,18 @@ def main():
         help="Replace each known runtime callee occurrence with an audited opaque token "
         "during the paid call, so a dropped, duplicated, or invented call fails loudly "
         "instead of silently. Works for plain C and for shell32 --cpp-com.",
+    )
+    p.add_argument(
+        "--retry-rejects",
+        dest="retry_rejects",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Re-roll a worker that fails the deterministic audit, up to N extra PAID "
+        "calls (default 0). One rejected worker assembles no file at all, so a single "
+        "token slip in one function throws away every other function in the TU; the "
+        "survivors after the deterministic fixes are sampling noise on the biggest "
+        "bodies. Each retry is billed and applies the identical acceptance checks.",
     )
     p.add_argument(
         "--sdk-header",

@@ -89,3 +89,27 @@ list(APPEND HAL_CARGO_EXTRA_DEPENDS
 add_cargo_kernel_dll(hal hal-cargo hal.dll
     BODY_CRATE hal-rust DESTINATION reactos/system32
     EXTRA_DEPENDS ${HAL_CARGO_EXTRA_DEPENDS})
+
+# ============================================================================
+# halmp.dll — the SMP HAL twin (hal-rust `smp` feature)
+# ============================================================================
+# Same recipe, same inputs, one cargo feature apart: halmp-cargo's build.rs is
+# three lines over the SHARED `hal-link` crate that hal-cargo also drives, so
+# the two flavors cannot drift. It pairs with ntkrnlmp.exe (HalpBuildType drops
+# PRCB_BUILD_UNIPROCESSOR, so the x86 MISMATCHED_HAL 0x79 handshake accepts the
+# MP kernel) and freeldr selects it per boot entry — livecd.ini `[LiveCD_SMP]`
+# passes `/HAL=halmp.dll`, and winldr.c registers whatever file it loads under
+# the name "hal.dll" in the loader block, so every import still resolves.
+#
+# Shipping both is what makes an MP gate leg affordable: switching flavors used
+# to mean a cmake reconfigure + full HAL relink (measured 9m25s i386 / 12m22s
+# amd64 warm) because the flavor was a build-dir-global cache var. Now it is one
+# extra boot off the same media, and the mis-pair class (0x79 on x86, silent
+# 1-cpu on arm64) is unreachable by construction.
+#
+# NO spec2def here: halmp.dll exports the identical hal.spec surface, and its
+# .def is self-hosted by the cargo link. The cmake ADD_IMPORTLIB above is what
+# ntoskrnl/ntkrnlmp link against, and there is only ever one of those.
+add_cargo_kernel_dll(halmp halmp-cargo halmp.dll
+    BODY_CRATE hal-rust DESTINATION reactos/system32
+    EXTRA_DEPENDS ${HAL_CARGO_EXTRA_DEPENDS})
