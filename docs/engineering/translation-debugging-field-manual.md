@@ -2242,6 +2242,35 @@ per-arch bugcheck.
 ### Cohab link-clean ≠ runtime-correct
 A clean cargo + ninja can still bugcheck mid-init. The link is a necessary gate, never a
 sufficient one — which is the whole reason smoke is the north star.
+
+### A cohab shim declared VOID SWALLOWS the real function's return value
+
+**Symptom.** Callers branch on a value the callee never delivered. Nothing warns: the C
+compiles, Rust compiles, the link resolves.
+
+**Cause (fastfat `FatAcquireExclusiveVcb`, all three arches).** `fatprocs.h` defines it as a
+macro over `FatAcquireExclusiveVcb_Real`, which returns `FINISHED` (`typedef BOOLEAN`) —
+"did I get the resource?". `rust_cohab_stub.c` forward-declared `_Real` as **`VOID`** and so
+the wrapper shim was `VOID` too; it called `_Real` and returned nothing. Every Rust caller
+that declared a return type was reading whatever survived in the return register across the
+shim's epilogue — right only by accident of codegen, and wrong the moment the register is
+touched. Live readers were `flush.rs`, `fileinfo.rs` and `volinfo.rs`, i.e. flush,
+set-file-info and volume-info.
+
+**The tell, and it is cheap to look for:** the crate disagreed with ITSELF. One symbol,
+eight `extern` declarations, four different return types (`void` ×4, `BOOLEAN` ×3,
+`NTSTATUS`, `i32`). `grep -rn "fn <Name>" <crate>/src` takes seconds and any disagreement is
+a bug in all but one of the sites. `volinfo`'s `i32` read four bytes of a one-byte return.
+
+**Fix.** Correct the forward declaration FIRST — a wrong prototype for the callee makes
+forwarding impossible in principle, so the shim's signature is a symptom, not the root. Then
+make the shim `return` the value, then normalize every Rust decl to the one true type.
+
+**Generalization.** A cohab shim's signature is part of the ABI contract and nothing checks
+it. When a shim exists only to fill in a macro, its return type must match the macro's
+expansion, not whatever the shim author happened to need that day. `verify_c_signatures`
+covers Rust-vs-C for declared prototypes; a shim that is *itself* mis-prototyped in C is
+outside that net.
 ---
 
 ## Mm, PFN & paging

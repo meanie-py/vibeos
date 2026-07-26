@@ -23,7 +23,10 @@ use crate::ddk_shims::{FsRtlNotifyVolumeEvent, IoIs32bitProcess, MOVE_FILE_DATA3
 // ntkrnl_sys, ULONG32 in fastfat) and friends in scope to silently shadow the
 // crate's own types — the class that already bit dirctrl.rs.
 use crate::glue::{FSRTL_VOLUME_UNLOCK, VPB_DIRECT_WRITES_ALLOWED, VPB_LOCKED};
-use crate::types::{IRP_CONTEXT_FLAG_DISABLE_POPUPS, VCB_STATE_FLAG_LOCKED};
+use crate::types::{
+    IRP_CONTEXT_FLAG_DISABLE_POPUPS, VCB_STATE_FLAG_LOCKED, VCB_STATE_FLAG_MOUNTED_DIRTY,
+    VCB_STATE_FLAG_VOLUME_DIRTY,
+};
 use crate::types::{BIOS_PARAMETER_BLOCK, CCB, DCB, DIRENT, FAT_BUG_CHECK_FSCTRL, FAT_DATA, FAT_ENTRY, FCB, FCB_CONDITION, FCB_STATE_DELETE_ON_CLOSE, IRP_CONTEXT, PACKED_BIOS_PARAMETER_BLOCK, PACKED_BOOT_SECTOR, PACKED_BOOT_SECTOR_EX, PBCB, PCCB, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VCB_CONDITION, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
 // Additional imports needed by FatMountVolume (translated from fsctrl.c)
 use ntkrnl_sys::ddk::ExReleaseResourceLite;
@@ -2589,8 +2592,6 @@ pub unsafe extern "system" fn FatLockVolumeInternal(
 ) -> NTSTATUS {
     const Flush: u32 = 1;
     const VolumeClean: i32 = 0;
-    const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 0x08;
-    const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x10;
     const STATUS_ACCESS_DENIED: NTSTATUS = 0xC0000022u32 as i32;
 
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -2803,7 +2804,6 @@ pub unsafe extern "system" fn FatUnlockVolume(IrpContext: PIRP_CONTEXT, Irp: PIR
 #[no_mangle]
 pub unsafe extern "system" fn FatDirtyVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
     // PAGED_CODE();
-    const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x10;
     const VolumeDirty: i32 = 1;
 
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);

@@ -145,7 +145,11 @@ extern NPAGED_LOOKASIDE_LIST FatEResourceLookasideList;
 
 /* Real functions from Rust (not macros) */
 extern BOOLEAN FatAcquireExclusiveFcb(PIRP_CONTEXT, PFCB);
-extern VOID    FatAcquireExclusiveVcb_Real(PIRP_CONTEXT, PVCB, BOOLEAN);
+/* BOOLEAN, not VOID. fatprocs.h:1455 declares it BOOLEAN and resrcsup.rs returns u8
+ * ("did I get the resource?"). THIS wrong prototype is the root of the discarded
+ * return value below: because the compiler was told _Real returns nothing, the
+ * FatAcquireExclusiveVcb shim could not forward an answer even in principle. */
+extern BOOLEAN FatAcquireExclusiveVcb_Real(PIRP_CONTEXT, PVCB, BOOLEAN);
 extern VOID    FatCompleteRequest_Real(PIRP_CONTEXT, PIRP, NTSTATUS);
 extern VOID    FatDeleteIrpContext_Real(PIRP_CONTEXT);
 
