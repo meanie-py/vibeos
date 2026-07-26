@@ -396,7 +396,73 @@ extern "C" {
 }
 """
 
+# msvcrt's printf `...` entry points are hand-transcribed from wcs.c into their own TU
+# (stable Rust cannot va_start; left in wcs.c clang re-inlines the C engine into them).
+# Nothing can grade them by execution — msvcrt's printf plumbing is only coherent where a
+# va_list IS a pointer, which no SysV host is — so this scanner IS the check, and a blind
+# one would be silent about a real printf bug. The BAD fixture is the exact class:
+# `_snprintf_s_l` with its `len` and `count` arguments swapped, which compiles, links,
+# boots, and truncates only for small counts.
+_SHIM_WCS = """\
+int WINAPIV _snprintf(char *str, size_t len, const char *format, ...)
+{
+    int retval;
+    va_list valist;
+    va_start(valist, format);
+    retval = vsnprintf(str, len, format, valist);
+    va_end(valist);
+    return retval;
+}
+
+int WINAPIV _snprintf_s_l(char *str, size_t len, size_t count,
+        const char *format, _locale_t locale, ...)
+{
+    int retval;
+    va_list valist;
+    va_start(valist, locale);
+    retval = _vsnprintf_s_l(str, len, count, format, locale, valist);
+    va_end(valist);
+    return retval;
+}
+"""
+
+_SHIM_GOOD = """\
+int WINAPIV _snprintf(char *str, size_t len, const char *format, ...)
+{
+    int retval;
+    va_list valist;
+    va_start(valist, format);
+    retval = _vsnprintf(str, len, format, valist);
+    va_end(valist);
+    return retval;
+}
+
+int WINAPIV _snprintf_s_l(char *str, size_t len, size_t count,
+        const char *format, _locale_t locale, ...)
+{
+    int retval;
+    va_list valist;
+    va_start(valist, locale);
+    retval = _vsnprintf_s_l(str, len, count, format, locale, valist);
+    va_end(valist);
+    return retval;
+}
+"""
+
+_SHIM_BAD = _SHIM_GOOD.replace("_vsnprintf_s_l(str, len, count,", "_vsnprintf_s_l(str, count, len,")
+
+# The macro the GOOD fixture relies on: wcs.c writes `vsnprintf`, the shim spells out
+# `_vsnprintf`, and that is only an identity while stdio.h says so.
+_SHIM_STDIO = "#define vsnprintf _vsnprintf\n"
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_varargs_shim_parity",
+        script="tools/scan_varargs_shim_parity.py",
+        argv=["--lint"],
+        bad={"wcs.c": _SHIM_WCS, "rust_varargs_shim.c": _SHIM_BAD, "stdio.h": _SHIM_STDIO},
+        good={"wcs.c": _SHIM_WCS, "rust_varargs_shim.c": _SHIM_GOOD, "stdio.h": _SHIM_STDIO},
+    ),
     Control(
         name="scan_doc_sections",
         script="tools/scan_doc_sections.py",

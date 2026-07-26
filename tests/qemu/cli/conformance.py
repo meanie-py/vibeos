@@ -32,8 +32,6 @@ import sys
 import time
 from pathlib import Path
 
-from . import artifacts
-
 SUITE = "kmtest"
 # base arch -> pytest arch (x86 boot the UEFI configs; arm64 is itself).
 _PYTEST_ARCH = {"i386": "i386-uefi", "amd64": "amd64-uefi"}
@@ -48,6 +46,55 @@ def _load_parser(repo: Path):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def baseline_coverage_refusal(results, base_map, *, force: bool) -> str | None:
+    """Refuse a `--write-baseline` that would DELETE tests from the ratchet floor.
+
+    A baseline is a floor, and `--write-baseline` replaces it wholesale with this
+    run's rows. So a sweep that launched fewer tests than the floor — a boot flake,
+    an early BUGCHECK, a drained-out timeout — silently removes the missing tests
+    from the floor, permanently, with no signal anywhere. That is the ratchet form
+    of "never weaken a test to make it pass", and catching it was a hand-check
+    before every re-seed.
+
+    Returns the refusal message, or None to proceed.
+    """
+    new_names = {r["name"] for r in results}
+    dropped = sorted(n for n in base_map if n not in new_names)
+    if not dropped or force:
+        return None
+    return (
+        f"[conformance] --write-baseline REFUSED: this sweep launched "
+        f"{len(results)} tests but the existing baseline has {len(base_map)}, and "
+        f"writing it would DELETE {len(dropped)} test(s) from the ratchet floor:\n"
+        + "".join(f"    {n}\n" for n in dropped)
+        + "  A short sweep is usually a boot flake or an early BUGCHECK, not a real "
+        "coverage change — re-run it.\n"
+        "  If the removal is intended (a test was retired), pass --force-baseline."
+    )
+
+
+def baseline_lowering_note(results, base_map) -> str | None:
+    """Say out loud which rows a `--write-baseline` is about to make worse.
+
+    Unlike coverage loss this is NOT refused: absorbing a known regression into the
+    floor is sometimes deliberate (i386 and arm64 both accepted ExHardError
+    30/0 -> 24/6 on purpose). It just must never happen silently.
+    """
+    worse = [
+        f"    {r['name']}: pass {b.get('pass')} -> {r.get('pass')}, "
+        f"fail {b.get('fail')} -> {r.get('fail')}"
+        for r in results
+        if (b := base_map.get(r["name"]))
+        and (r.get("fail", 0) > b.get("fail", 0) or r.get("pass", 0) < b.get("pass", 0))
+    ]
+    if not worse:
+        return None
+    return (
+        "[conformance] NOTE: --write-baseline is LOWERING the floor for "
+        f"{len(worse)} test(s) — accepting these as the new normal:\n" + "\n".join(worse)
+    )
 
 
 def _run_dir(arch: str) -> Path:
@@ -127,15 +174,25 @@ def conformance(args, repo: Path) -> int:
             return 2
         env = dict(os.environ, VIBEOS_PAYLOAD=SUITE)
         build_cmd = [str(repo / "vibeos-cli"), "build", "--arch", base]
-        if smp:
-            # ANY --smp N (including 1) means the ntkrnlmp media: at N=1 that is
-            # the whole experiment — "the MP kernel on one CPU" — and without
-            # --smp-kernel it would silently sweep the UP kernel instead and
-            # report a meaningless all-green.
+        # ANY --smp N (including 1) must sweep the ntkrnlmp media: at N=1 that is
+        # the whole experiment — "the MP kernel on one CPU" — and sweeping the UP
+        # kernel instead would report a meaningless all-green.
+        #
+        # On x86 that costs NOTHING now: the ISO already carries both kernels and
+        # both HALs plus a [LiveCD_SMP] entry, and vm.smp_selected_iso patches
+        # `DefaultOS=` inside a COPY of the media at boot time. --smp-kernel would
+        # only rewrite that same line via a cmake cache var — i.e. a reconfigure
+        # and an ISO re-roll to change 22 bytes we can change for free.
+        #
+        # arm64 still needs it: its boot.img is a hand-curated ramdisk that does
+        # not carry halmp.dll/ntkrnlmp.exe at all unless mkramdisk.sh --smp stages
+        # them, so there is nothing in the media to boot-select.
+        needs_smp_media_build = smp and base == "arm64"
+        if needs_smp_media_build:
             build_cmd.append("--smp-kernel")
         print(
             f"[conformance] building {base} with VIBEOS_PAYLOAD={SUITE}"
-            f"{' --smp-kernel' if smp else ''} ..."
+            f"{' --smp-kernel' if needs_smp_media_build else ''} ..."
         )
         bp = subprocess.run(build_cmd, cwd=str(repo), env=env)
         if bp.returncode != 0:
@@ -189,13 +246,56 @@ def conformance(args, repo: Path) -> int:
     if not log_path.is_file():
         print(f"[conformance] no serial log at {log_path} — did the guest boot?", file=sys.stderr)
         return 2
-    results, done_line, bugcheck = parser.parse(log_path.read_text(errors="replace"))
+    serial_text = log_path.read_text(errors="replace")
+    results, done_line, bugcheck = parser.parse(serial_text)
 
     lines = [parser.fmt(r) for r in results]
     ok = sum(1 for r in results if r["status"] == "OK")
     bad = sum(1 for r in results if r["status"] in parser.BAD)
     results_path = run_dir / f"{SUITE}-results.txt"
     results_path.write_text("\n".join(lines) + "\n")
+    # SAVE the serial into the run dir, and report the COPY. qemu/<arch>_smoke_live.log
+    # is the LIVE per-arch file: the next sweep of the same arch truncates it, so a
+    # summary.json pointing there hands you the *next* run's serial — or nothing.
+    # This destroyed the evidence for an arm64 -smp 1 BUGCHECK 0x1E that a following
+    # -smp 2 sweep overwrote seconds later, leaving only the stop code. The results
+    # file alone is not enough: a mid-sweep crash needs the faulting context, and the
+    # crash is exactly the case where you cannot just re-run and expect it back.
+    # Found independently a second time on the conformance-ratchet lane: an
+    # IoFilesystem BUGCHECK 0x19 printed a full [POOL] page dump + free ring, and a
+    # later boot of that arch had overwritten every byte before anyone read the run
+    # dir — the crash had to be re-collected with a fresh build+boot. Two lanes
+    # paying for the same lost evidence is what makes this worth a comment.
+    saved_serial = run_dir / f"{pytest_arch}_serial.log"
+    saved_serial.write_text(serial_text)
+
+    # An `--smp N` sweep that quietly swept the UP kernel is the false green this
+    # whole experiment exists to avoid, and it is INVISIBLE in the results — a UP
+    # sweep looks like a very good MP sweep. `smoke --smp N` asserts this
+    # (_smp_check), but conformance boots via pytest and never went through that
+    # path, so it had no such check at all. freeldr announces both, so this is an
+    # assertion on evidence we already captured, not new instrumentation.
+    if smp:
+        from .smoke import _booted_hal, _booted_kernel
+
+        booted_k, booted_h = _booted_kernel(serial_text), _booted_hal(serial_text)
+        wrong = [
+            f"{what}={got}"
+            for what, got, want in (
+                ("kernel", booted_k, "ntkrnlmp.exe"),
+                ("HAL", booted_h, "halmp.dll"),
+            )
+            if got and got != want
+        ]
+        if wrong:
+            print(
+                f"[conformance] --smp {smp} did NOT get the MP pair: {', '.join(wrong)}.\n"
+                f"  This sweep graded the UP kernel and its numbers mean nothing for the\n"
+                f"  collapse experiment. Serial: {saved_serial}",
+                file=sys.stderr,
+            )
+            return 2
+        print(f"[conformance] MP pair confirmed on serial: {booted_k} + {booted_h}")
 
     # --- 4. compare against baseline -----------------------------------------
     regressions: list[str] = []
@@ -211,6 +311,28 @@ def conformance(args, repo: Path) -> int:
 
     # --- 5. write baseline if asked ------------------------------------------
     if args.write_baseline:
+        # A baseline is a RATCHET FLOOR, and --write-baseline replaces it wholesale
+        # with this run's rows. So a sweep that launched fewer tests than the floor
+        # — a boot flake, an early BUGCHECK, a drained-out timeout — silently
+        # DELETES the missing tests from the floor, permanently, with no signal.
+        # That is the ratchet form of "never weaken a test to make it pass", and it
+        # is the exact hand-check that had to be done before every re-seed. Refuse
+        # instead, and name the tests that would vanish.
+        #
+        # Only COVERAGE LOSS is refused. A row whose numbers got worse is a
+        # judgement call the operator can legitimately accept (i386 and arm64 both
+        # deliberately absorbed ExHardError 30/0 -> 24/6), so those are printed
+        # loudly and allowed.
+        if have_baseline:
+            refusal = baseline_coverage_refusal(
+                results, base_map, force=getattr(args, "force_baseline", False)
+            )
+            if refusal:
+                print(refusal, file=sys.stderr)
+                return 2
+            note = baseline_lowering_note(results, base_map)
+            if note:
+                print(note)
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         smp_arg = f" --smp {smp}" if smp > 1 else ""
         baseline_path.write_text(
@@ -223,12 +345,6 @@ def conformance(args, repo: Path) -> int:
         print(f"[conformance] baseline written: {baseline_path}")
 
     # --- 6. summary.json ------------------------------------------------------
-    # Archive the serial BEFORE anything else boots this arch: log_path is the
-    # fixed qemu/<arch>_smoke_live.log, and the crash evidence a 0x19/0x1E run
-    # leaves there (pool page dumps, symbolicated PCs, the sweep's own trace) is
-    # the whole reason to keep a run dir.
-    serial_extra: dict = {}
-    artifacts.archive_serial(run_dir, log_path, serial_extra)
     summary = {
         "suite": SUITE,
         "arch": base,
@@ -245,7 +361,8 @@ def conformance(args, repo: Path) -> int:
         "regressions": regressions,
         "new_passes": new_passes,
         "results_file": str(results_path),
-        **serial_extra,
+        "serial_log": str(saved_serial),
+        "serial_log_live": str(log_path),  # truncated by the next same-arch sweep
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
@@ -259,6 +376,8 @@ def conformance(args, repo: Path) -> int:
     )
     print(f"  results:  {results_path}")
     print(f"  summary:  {run_dir / 'summary.json'}")
+    if bugcheck or bad:
+        print(f"  serial:   {saved_serial}")
 
     if not have_baseline:
         print(f"  no baseline at {baseline_path} — pass --write-baseline to seed it.")

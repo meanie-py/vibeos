@@ -63,6 +63,21 @@ members = [
     "wsock32-rust",
     "wlanapi-rust",
     "snmpapi-rust",
+    # Tier-3 batch B. samlib is the CLIENT half of sam.idl (server: samsrv), the same
+    # client/server pairing wlanapi-rust has with wlansvc-rust above.
+    "mprapi-rust",
+    "netid-rust",
+    "samlib-rust",
+    # Tier-3 batch C: the RAS (dial-up) client family. rasadhlp is the winsock NSP hook that
+    # triggers a dial attempt on a failed name resolution, so it rides on the ws2_32 surface
+    # translated above.
+    "rasapi32-rust",
+    "rasman-rust",
+    "rasdlg-rust",
+    "rasadhlp-rust",
+    # LDAP client. Two bindgen islands (`types` for the 19 winldap_private.h TUs,
+    # `types_1` for ber.c's <winldap.h>) — see the CMakeLists for why they cannot merge.
+    "wldap32-rust",
     "access",
     "avltable",
     "bitmap",

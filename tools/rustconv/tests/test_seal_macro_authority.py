@@ -77,3 +77,75 @@ def test_compile_entry_matches_the_whole_path_not_the_basename(tmp_path):
     other = tmp_path / "dll" / "win32" / "b" / "shell.c"
     assert _compile_entry(tmp_path, "i386", wanted) is not None
     assert _compile_entry(tmp_path, "i386", other) is None
+
+
+# ---------------------------------------------------------------------------
+# A header has no compile command of its own
+# ---------------------------------------------------------------------------
+
+
+def _db(tmp_path, entries):
+    build = tmp_path / "build-i386"
+    build.mkdir(exist_ok=True)
+    build.joinpath("compile_commands.json").write_text(json.dumps(entries))
+
+
+def test_a_header_borrows_the_macro_set_of_a_tu_that_includes_it(tmp_path):
+    """`static inline` helper headers are only translatable because of this.
+
+    wldap32.h is 62 marshalling helpers that every TU inlines a private copy of, so no
+    .c defines them and nothing in the module's compile db names the header — yet the
+    translated modules call them 300-odd times. A header's macro environment IS its
+    includers', so borrowing an includer's flags is exact, not a guess.
+    """
+    mod = tmp_path / "dll" / "win32" / "widget"
+    mod.mkdir(parents=True)
+    (mod / "widget.h").write_text("static inline int helper(void) { return 0; }\n")
+    (mod / "main.c").write_text('#include "widget.h"\nint go(void) { return helper(); }\n')
+    _db(
+        tmp_path,
+        [
+            {
+                "directory": "/tmp/vibeos/build-i386",
+                "file": "/tmp/vibeos/dll/win32/widget/main.c",
+                "command": "clang -DWIDGET_BUILD -c /tmp/vibeos/dll/win32/widget/main.c",
+            }
+        ],
+    )
+    from rustconv.macro_authority import _includer_entry
+
+    argv = _includer_entry(tmp_path, "i386", mod / "widget.h")
+    assert argv is not None and "-DWIDGET_BUILD" in argv
+
+
+def test_only_a_tu_in_the_headers_OWN_directory_counts(tmp_path):
+    """A module-private header is included by its own TUs; matching tree-wide would
+    hand it an arbitrary other module's flags."""
+    a = tmp_path / "dll" / "win32" / "a"
+    b = tmp_path / "dll" / "win32" / "b"
+    a.mkdir(parents=True)
+    b.mkdir(parents=True)
+    (a / "shared.h").write_text("static inline int helper(void) { return 0; }\n")
+    (b / "main.c").write_text('#include "shared.h"\nint go(void) { return helper(); }\n')
+    _db(
+        tmp_path,
+        [
+            {
+                "directory": "/tmp/vibeos/build-i386",
+                "file": "/tmp/vibeos/dll/win32/b/main.c",
+                "command": "clang -DB_MODULE -c /tmp/vibeos/dll/win32/b/main.c",
+            }
+        ],
+    )
+    from rustconv.macro_authority import _includer_entry
+
+    assert _includer_entry(tmp_path, "i386", a / "shared.h") is None
+
+
+def test_a_header_nobody_includes_still_fails_loud(tmp_path):
+    mod = tmp_path / "dll" / "win32" / "widget"
+    mod.mkdir(parents=True)
+    (mod / "orphan.h").write_text("static inline int helper(void) { return 0; }\n")
+    _db(tmp_path, [])
+    with pytest.raises(MacroAuthorityError, match="no compiled TU in its own directory"):
+        function_like_macros(tmp_path, mod / "orphan.h")

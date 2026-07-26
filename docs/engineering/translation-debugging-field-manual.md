@@ -208,6 +208,41 @@ Same family, three positions, all silent on the arch where the widths happen to 
   narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
   and pointer typedefs.
 
+### An `extern` declaration for a symbol YOUR OWN CRATE defines
+The worst version of a width mismatch, because both halves are yours and neither compiler nor
+gate can see it. `msvcrt-crt-rust/prelude.rs` declared the nine `_isw*_l` predicates as
+`fn(c: wint_t, l: _locale_t)`, and `wint_t` is `unsigned short` — but the crate **defines** all
+nine itself (the `isw!` macro), taking `u32`, because that is what `_iswctype_l` takes. Every
+call routed through the prelude therefore wrote 16 bits into an argument the callee read as 32,
+with the upper half undefined per the Windows x64 ABI. It survived only because rustc happens to
+zero-extend; nothing guarantees it, and no tool was watching. `scan_extern_arity` is structurally
+blind here — **the arity matches**; only the width is wrong, and that bucket was triaged as
+"mostly benign return-register width" (below), which is true for *returns* and false for
+arguments.
+
+Two tells that this had already been noticed and worked around rather than fixed, both worth
+recognising as a signature: `fpnum.rs` carried a private `_iswspace_l_shim(wc: u32, …)` whose
+only job was to call `crate::_iswspace_l` directly, and one `mbcs.rs` call site had an explicit
+`as u16` cast — a *truncation written to satisfy a declaration that was itself wrong*. When you
+find a local shim or a narrowing cast whose only purpose is to make a call typecheck, suspect the
+declaration, not the call.
+
+**Rule: never `extern`-declare a symbol your own crate defines — call it through `crate::`.** The
+declaration adds nothing (the definition is in scope) and silently opts out of the type checking
+that would otherwise be free. Where a prelude must declare it anyway (a shared block others
+import), the declaration has to be checked against the definition by hand, because rustc treats
+them as unrelated items.
+
+**Sibling failure: an `extern` naming a symbol THIS TREE does not export.** `cargo check` and
+`cargo build` both pass — an extern declaration is a promise to the linker, and the crate link
+never tests it — so the first thing that fails is the DLL link, an hour later. scanf's console
+source declared `__acrt_iob_func`, correctly citing `corecrt_wstdio.h` where `stdin` is
+`(__acrt_iob_func(0))`. But that is the UCRT header; this tree's `sdk/include/crt/stdio.h:92,98`
+says `#define _iob __iob_func()` / `#define stdin (&_iob[0])`, and msvcrt.spec exports
+`__iob_func`, not the UCRT spelling. **Cite the header this tree compiles, not the one the API is
+documented in, and confirm the name is in the `.spec`** — a one-grep check that costs seconds
+against a link failure that costs a full build.
+
 ### Argument COUNT mismatches — the one clashing-extern bucket that is a real bug
 Same family as the widths above, one position further out: the decl and the definition
 disagree on how many parameters there are. `clashing_extern_declarations` carries ~1,458
@@ -574,6 +609,26 @@ Three faces, all seen live:
   check the debugcon capture for `PANIC:` before suspecting a lock.**
 
 ### Wide/narrow literal sizing
+- **The `L` prefix is a width MARKER, not a character** — and the translation puts it in the
+  string. Three distinct manifestations in one batch (Tier 3), from the same C construct:
+  `L"%s.%s"` came back once UTF-16-encoded *including the L* (`b"L\0%\0s\0…"` — every full
+  computer name would have carried a stray leading "L"), once as raw ASCII bytes of the whole
+  spelling `L"%s.%s"` handed to a wide-string callee, and once as `L'\\'`, a wide CHARACTER
+  literal left verbatim (that one at least fails to parse: `prefix \`L\` is unknown`). Only the
+  third is caught by the compiler. **`scan_wide_literals.py` is blind to all of this**: it
+  diffs a `[u16; N]` array against the `// L"..."` intent comment above it, and assembled
+  translation output carries neither the array form nor the comment, so it reports a confident
+  `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
+  the crate's `w!()` macro.
+- **A `L"..."` inside a MACRO argument loses the width with nothing to catch it.** rasadhlp's
+  `RTL_CONSTANT_STRING(L"\\Device\\RasAcd")` came back as
+  `RTL_CONSTANT_STRING(b"\\Device\\RasAcd\0")` — a UNICODE_STRING whose Buffer is ANSI bytes.
+  It compiles (the macro takes anything), the Length/MaximumLength arithmetic is *right for
+  the wrong encoding*, and `NtCreateFile` then just fails to open the device at runtime. This
+  is the same L-drop class as above, but a fourth manifestation: the other three are visible
+  in the literal's own type, this one hides behind a macro that is happy either way. When a
+  crate defines an initializer macro, make it take an ASCII literal and widen it itself
+  (`w!()`), so passing bytes is not expressible.
 - **A hand-encoded `[u16; N]` one element short** silently drops the LAST character to make
   room for the NUL. `SERVICES_KEY [u16; 33]` spelled `…\Service` (no `s`), so `RCreateServiceW`
   opened a nonexistent parent key — invisible to boot, found only by a conformance sweep. The
@@ -616,6 +671,18 @@ Three faces, all seen live:
   cross-file ABI disagreement was systemic; the fix was a deterministic ABI overwrite pass, not
   per-site repair. **A redundant `*-sys` crate that re-bindgens types the parent master header
   already pulls** produces mass E0659 ambiguity.
+- **C FLATTENS an anonymous union; bindgen names it.** A tagged struct whose payload is an
+  anonymous `union { ... }` reads `Addr.Ip4Address` in the C and must read
+  `Addr.__bindgen_anon_1.Ip4Address` in Rust — the translation writes the C spelling every
+  time, and it is an E0609, so this one is loud. Two knobs make the result readable rather
+  than merely compiling: `gen_driver_types.sh`'s **`REAL_UNIONS=1`** (runs
+  `bindgen_unions_to_real.py`) turns bindgen's `__BindgenUnionField<T>` emulation into a real
+  Rust `union`, so the member access is a plain field rather than `.as_mut()` noise. It stays
+  OPT-IN: ~170 island files across the driver crates carry the emulation and their
+  translations call its accessor API, so flipping it on by default would rewrite all of them.
+  New usermode crates want it (dnsapi, snmpapi, rasadhlp). **Wire it into the profile, not
+  your fingers** — it was a remembered post-step, which is exactly how rasadhlp's islands came
+  out unconverted while samlib's (hand-run the day before) were fine.
 - **A crate with NO island is invisible to `verify_ffi`.** Its oracle is `ntoskrnl.spec` *and*
   `bindgen_<arch>.rs`; with no island there is nothing to compare against, so every hand-written
   extern block passes unchecked and the gate stays green. shell32-rust carried ~2.7K lines of
@@ -884,7 +951,7 @@ would have fired for whoever followed the documented loop:
 `-E -dM` and takes every `#define NAME(`, unioned over built arches, and HARD FAILS with
 `./vibeos-cli build --arch i386` when no compile command exists — "seal everything anyway" is the
 degradation it exists to end. `_EXCLUDED` survives only as a floor for `sizeof` (a keyword, not a
-macro). Four more causes surfaced once the macro noise cleared, and the split matters because two
+macro). Five more causes surfaced once the macro noise cleared, and the split matters because most
 of them were **ours**, not the model's:
 
 - **A C lexer was masking Rust output.** `_code_mask`/`_masked_cpp` existed in three byte-identical
@@ -911,6 +978,31 @@ of them were **ours**, not the model's:
   C++ named cast, `const_cast<LPWSTR>(strchrW(...))` (`dde_connect`). Both now skipped — the same
   judgement the scanner already made for a C-style `(TYPE *)value` cast, and the same judgement
   `seal_calls` already made about the callee name in that identical `extern` construct.
+- **Compiled is not executed** (found on plain C, Tier 3 — `rustconv/dead_regions.py`). The seal
+  walks raw C, so it also seals tokens in code the compiler emits but the build never enters, and
+  then DEMANDS them of a translation that is right to omit them. Two flavours, one class:
+  `#if`-disabled arms (snmpapi's `DllMain` — `DLL_WINE_PREATTACH` lives inside
+  `#ifndef __REACTOS__`), and **`RpcExcept`/`_SEH2_EXCEPT` bodies under `-D_USE_DUMMY_PSEH=1`**,
+  where `_SEH2_EXCEPT(x)` expands to `if (_SEH2_Volatile0 || (0 && (x)))` and `sdk/lib/pseh/dummy.c`
+  defines `int _SEH2_Volatile0 = 0;` and never assigns it. Nine wlanapi RPC clients referenced
+  `WlanRpcStatusToWinError`/`RpcExceptionCode` nowhere else and were rejected as damaged; 10 of 56
+  functions in the batch, all correct. Dead-region tokens are now **permitted, not demanded**, and
+  every accepted omission is PRINTED (`omitted in non-executed code: TOKEN=SPELLING`) — a
+  relaxation nobody can see is how a real deletion slips through later. The `invented` check is
+  untouched, so a value that never appeared in the C still fails inside a dead arm. Diagnosis rule
+  worth reusing: *before concluding the model deleted your error handling, check whether the C's
+  own handler is reachable in THIS build's flags* — read `compile_commands.json`, not the source.
+
+  **The mirror-image failure, and the envelope's blind spot.** The same dead handler can come
+  back as LIVE code, and the audit will PASS it. samlib shipped four of
+  `Status = I_RpcMapWin32Status(RpcExceptionCode());` emitted as straight-line code right after
+  the RPC call instead of inside `RpcExcept` — so it unconditionally overwrote the real status
+  with a mapped exception code, and two of the four then branch on `if !NT_SUCCESS(Status)`.
+  Both tokens are present, each exactly once, so the envelope is satisfied: **it verifies
+  presence and multiplicity, never control-flow POSITION.** (The identical shape in `SamConnect`
+  was caught only because its token count happened to come out wrong.) So a dead-region omission
+  is now checked, but a dead-region *relocation* is not — when reviewing a sealed RPC wrapper,
+  read where the handler landed, not just whether it is gone.
 
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
@@ -1388,6 +1480,40 @@ for the second copy:** put the shared recipe in ONE place (here a `hal-link` cra
 `build.rs` call) — two hand-maintained link recipes for binaries that must be identical apart
 from one feature is the same single-copy-divergence class as a constant defined per-arch.
 
+### A second ninja pass re-emits a shared cargo cell, stranding the first pass's binaries
+**Symptom:** `BUILD_INCOMPLETE` from `artifact-check`, intermittently, naming binaries nobody
+touched — `ws2_32.dll`, `fastfat.sys`, `ntoskrnl.exe` — as older than the cohab staticlib they
+link. Halted the merge train for ~an hour across four lanes.
+**Cause:** `build.py` runs each `ninja_targets_optional` entry as its OWN `ninja <target>`
+invocation, *after* the main pass. But an optional target shares cargo cells with the main
+graph: `ntkrnlmp` and `ntoskrnl` both build `-p kernel-rust` into one `CARGO_TARGET_DIR` and one
+copied `libkernel_rust.a`. So the optional pass re-emits an archive the main pass's binaries
+already consumed, and nothing relinks them, because the main pass is over. Measured on amd64:
+
+    libkernel_rust.a   02:08:11   <- re-emitted by `ninja ntkrnlmp`
+    ntkrnlmp.exe       02:08:23   <- linked against the new bytes
+    ntoskrnl.exe       00:27:35   <- 1h40m older than the archive it links
+
+`mkramdisk` then stages that stale kernel — the arm64 false-green shape this whole section
+exists for. Shipping both flavors under distinct names (entry above) fixed the *identity*
+problem and left this *ordering* one behind it.
+**Why every sighting is arm64:** `ninja_targets_optional` is non-empty for exactly one arch
+(`archcfg.py:205` — `arm64input`, `arm64vid`, `ntkrnlmp`, `halmp`, `kmtest_all`); i386 and amd64
+inherit the `()` default and so never run a second pass at all. If you see this on x86, the
+cause is something else. `kmtest_all` is the widest of the five and reaches cohab crates far
+outside the kernel, which is how `ws2_32.dll` and `fastfat.sys` — targets nobody had touched —
+came to be named in a BUILD_INCOMPLETE.
+**Fix:** a `ninja-reaffirm` pass over the same target list after the optional passes and
+**before** any staging step. No-op normally (~1s), a real relink when a cohab lib moved; it
+reports `relinked N` so a cell that re-emits on *every* build stays visible rather than being
+silently absorbed.
+**The triage hint was actively misleading, which is why it sat.** `provenance._lag` printed
+"SAME-RUN ORDERING, suspect a race not a stale edge" for any sub-2s gap. But the copy is
+`cmake -E copy_if_different`, so a fresh mtime means the **bytes really changed** — which a
+finished link cannot have seen. A sub-second gap here is the *opposite* of benign. **General
+rule: before calling an oracle's complaint a false positive, check what the write actually
+guarantees** — `copy` and `copy_if_different` differ precisely on whether mtime implies change.
+
 ### Other staleness shapes
 - **Multi-copy staleness** `[§9.6]` — `rtl`/`heap` links into **both** `librtl.a` (ntoskrnl) and a
   separate ntdll copy. An edit that "doesn't take" is a stale archive. `ar` never prunes, so
@@ -1401,6 +1527,12 @@ from one feature is the same single-copy-divergence class as a constant defined 
 - **Smoke "green ×3" lies when conftest nukes only `rust-kernel-target`** (there are five).
 - **New trace points produce nothing in serial** → stale `livecd.iso`.
 - **Smoke red right after a merge/handoff is usually a stale worktree, not a regression.**
+- **Don't run `rustconv translate` while a build is running in the same worktree.** The
+  staleness oracle compares every workspace `.rs` mtime against the cargo-linked binaries, so
+  a translation that lands `wldap32-rust/src/.../bind.rs` mid-build fails `artifact-check`
+  ("13min newer — a genuinely missed rebuild") on four unrelated exes. The oracle is right and
+  should not be loosened — it cannot know the new crate is not in the build graph yet — but it
+  costs you the whole build. Sequence the two, or translate in a different worktree.
 - **A reconstructed `build-arm64` dir → perpetual CMake reconfigure → permanent false
   `STALE_MEDIA`** `[§9.6e]`. Not a code signal. `mkramdisk.sh --refresh` also assumes a prior
   full build populated the media tree.
@@ -1464,6 +1596,29 @@ bugs: **ambient state the reference holds fixed** (locale — grep a flip candid
 `get_locinfo` / `_l`-suffixed helpers / any read of process-global state), and **the reference
 TU is compiled for the HOST**, so target-conditional `#if`s are graded on the wrong arm.
 
+**A stub that is merely INACCURATE can make a whole arm unreachable, and every row still says
+MATCH.** Wave 16 had to grade `_wctomb_s_l`'s insufficient-buffer path, whose entire trigger is
+`WideCharToMultiByte(...) == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER`. The harness's
+model of `WideCharToMultiByte` *truncated* where real kernel32 writes nothing, returns 0 and
+sets the error — so a single-character conversion could never return 0, and the arm was graded
+by nothing. A reachability probe measured it at **0 hits of 0** across 3 codepages × 9,363
+characters × 4 sizes, while every row over that family read MATCH. Note the shape: this is not a
+missing stub (which fails loudly at link) nor a wrong *value* (which a row would catch) — it is
+a stub whose ERROR MODEL differs from the real API, which is invisible precisely because the
+error is what never happens. **When a branch exists to handle a failure, instrument how often
+your harness actually produces that failure, and keep the probe.** Ours is permanent, so a
+future regression goes red and names its own cause.
+
+**And the converse: a preserved C quirk may be UNFALSIFIABLE, in which case a green row is not
+evidence you preserved it.** `wctob`'s `wchar < 0xff` looks like exactly the kind of
+off-by-one worth transcribing carefully, and the only input that could distinguish `<` from
+`<=` is U+00FF — where `<` returns `EOF` (-1) and `<=` returns `(signed char)0xFF`, also -1.
+Relaxing the comparison moves no row and *cannot*. The row is still worth having (it is
+exhaustive, and a control that returns the raw value instead of the signed char fails at once),
+but the commit message that credited it with pinning the comparison was wrong. **Run the
+perturbation before claiming a quirk is pinned**; "I transcribed it faithfully" and "a test would
+catch me if I hadn't" are different claims, and only the second needs a control to back it.
+
 A third: **an out-parameter the harness only PARTIALLY compares.** rtl-difftest asserted
 `(Length, MaximumLength)` on the STRING converters but not `Buffer`, so an eleven-site
 divergence — the alloc-failure path storing nothing where the C stores NULL — was visible in
@@ -1506,6 +1661,48 @@ allocation and read heap. It sat latent for as long as the allocations happened 
 surfaced as the subject and the reference disagreeing about two IDENTICAL strings, provoked by
 an unrelated pair of cases shifting the heap. Pad, then terminate — with two NULs, so
 termination does not depend on whether the walker's stride is one byte or two.
+
+### A verdict that blocks other people must carry its evidence
+Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks
+*can anyone check what it saw?* One night's merge-train stall produced five instances, so treat
+it as a class rather than five bugs.
+
+**Symptom:** a gate/land stage goes red with a one-line verdict and there is nothing to read —
+an empty run dir, an empty `salient`, a bare `exit 1`, or a number that is simply wrong.
+
+**Cause, in the five shapes seen:**
+1. **Captured and discarded.** `_smoke_once` ran the child with `capture_output=True` and kept
+   only `summary.json`. When the child died *before* writing one, the console — the only record
+   of why — was dropped. A lane was rejected on `smoke:arm64 FAIL` recorded as *exit 0, 1.6s,
+   empty run dir*, for a boot that takes ~40s. Nothing to read, nobody to blame.
+2. **A summary scraped by a marker search that misses.** `_tooling_once` looked for `FAIL`/`✗`
+   in stdout; ruff and pyright print neither, and tracebacks go to stderr. TOOLING_FAIL blocked
+   four lanes reading only "python tooling findings (exit 1)".
+3. **Someone else's artifact in your evidence directory.** A unit test's `Run()` landed in the
+   LIVE artifact tree, because `artifacts.ARTIFACT_ROOT` is resolved at *import* time and the
+   test's `monkeypatch.setenv` therefore did nothing. Under the gate's `check-tooling` stage
+   that planted a synthetic `verdict FAIL / classification BUGCHECK / duration_ms 0` where a
+   `find` turns it up first. It was read as the real verdict twice, once in a status report.
+4. **A shared artifact root with no owner field.** `VIBEOS_ARTIFACT_ROOT` defaults to
+   `/tmp/vibeos-cli` for *every* worktree, so `ls -dt /tmp/vibeos-cli/*-build-arm64 | head -1`
+   returns whichever lane started last. Another lane's green build was reported as this one's.
+5. **A counter that cannot say zero.** `_ninja_did_work` matched `^\[\d+/\d+\]`, which also
+   matches ninja's `[0/2] Re-checking globbed directories...` status pseudo-edge — so a pass
+   whose output was literally `ninja: no work to do.` reported "relinked 1 target(s)". Always
+   ≥1 breaks the signal in the direction that HIDES the condition it was written to expose.
+
+**Fix:** persist the child's console *unconditionally*, next to the verdict, before deciding
+anything (`smoke-console.log`, `check-tooling-console.log`, `difftest-console.log`). Give
+"the child produced no verdict at all" its own classification (`SMOKE_NO_SUMMARY`) instead of
+laundering it into a plain FAIL. Carry the real exit code into the `Stage`. Record the
+`worktree` in every `summary.json`. And when a marker scan finds nothing, fall back to the
+child's last non-empty line rather than printing a bare exit code.
+
+**Rules of thumb.** A stage powerful enough to redden the whole train has no business
+reporting without evidence. Test artifacts must never be able to reach a live artifact root —
+pin it in an autouse fixture so no individual test can get it wrong. And when a status line
+disagrees with the raw log, believe the log: every one of these was caught by reading the
+output the summary was derived from.
 
 ### Anything you define so the reference will LINK is part of the oracle `[§9.73]`
 A 20,000-case differential fuzzer said MATCH for four waves while **six shipped msvcrt functions
@@ -1583,6 +1780,30 @@ prelude only — applied to both, it SIGSEGVs somewhere unrelated to printf, bec
 `ref_create_mbcinfo` formats its codepage with `sprintf(buf, ".%d", cp)` and every mbcs case
 dies in the fixture. glibc's `vsnprintf` stays the `ref_` TU's formatter deliberately, and
 `".%d"` is a format both agree on exactly.
+
+**And the end of that road: some code CANNOT be graded on the host at all — say so instead of
+building a harness that appears to.** Both instantiations above are unusable for msvcrt's
+variadic printf shells (`sprintf`, `_snprintf`, `_swprintf`, … — the `...` entry points), and
+for opposite reasons. `pfflat_`'s flat `<stdarg.h>` makes `va_start` expand to
+`(char *)&last_named + sizeof(last_named)`, which is exactly right on i386 cdecl and on
+Windows and simply false on x86-64, where the variadic arguments arrive in registers and never
+touch that address. `ref_` has a correct `va_start`, but then hits the incoherence above: the
+shell hands `&valist` to the engine, which does `va_arg(*valist, T)` — an idiom that only
+type-checks where a `va_list` IS a pointer. **There is no host process in which a real
+`va_start` and msvcrt's engine agree**, so a differential test of these would be grading
+something other than what it names, which is worse than no test (a vacuous branch at least
+fails a perturbation; a mis-aimed one passes it). The reachable property is the one that
+actually carries the risk — 30 near-identical three-line bodies where a wrong delegate or a
+swapped `size`/`count` compiles, links, boots, and truncates only for small counts — and that
+is checkable exactly, at the source: `tools/scan_varargs_shim_parity.py` compares each shell to
+its wcs.c original, **deriving every tolerated rewrite from wcs.c's own one-line forwarders
+rather than asserting it** (the shim cannot call the file-static `vswprintf_p_l_opt`, so it
+names the exported wrappers; the scanner reads those wrappers and fails if they ever stop being
+the pass-`options=0` identities that make the substitution sound). It also caught the shim
+defining `_sprintf_p`/`_scwprintf_p`, which sit behind `#if _MSVCR_VER>=80` and exist at no
+vintage this DLL builds. General rule: **when the oracle is impossible, move the assertion to
+the property you can actually reach, and make the tool prove its own assumptions from the
+source.**
 
 **The host compiler also REWRITES the reference, which matters for a PERF oracle.** Same rule —
 trust the machine code — with a different consequence. msvcrt's `memset` is a plain loop in
@@ -1683,6 +1904,30 @@ before it.** The same file had all three variants that break the naive pattern �
 inside a comment, `L'` inside a narrow string, and the `case 'L':` — so treat one occurrence as
 proof the others are present too.
 
+### A symbolicator resolves against SOME binary — make sure it is the one that booted
+**Symptom:** a bugcheck PC resolves to a function that makes no sense at the crash site, or to a
+constant (`KTRAP_FRAME_LENGTH+13864` — an ABSOLUTE symbol 13KB away), or the tool declines
+entirely. **Two independent causes, and both lie quietly** because *some* symbol always sorts
+below any address:
+
+1. **Wrong binary.** `ntkrnlmp.exe` is a SEPARATE image from `ntoskrnl.exe` with its own layout
+   (9847 vs 9771 symbols on arm64), and every `--smp N` boot runs it — so an index built only
+   from the UP kernel misnames MP crashes. Build a per-flavor index and pick by what freeldr
+   announced (`[FLDR] load …\ntkrnlmp.exe`). A missing MP index must be a HARD ERROR, never a
+   fallback to the UP one: a wrong symbol is worse than no symbol because it reads like a right
+   one.
+2. **Wrong relocation.** The index holds file VAs (`RVA + PE ImageBase`, `0x400000` here), so a
+   runtime PC needs `runtime_base - ImageBase` subtracted, not `runtime_base`. Getting this
+   wrong pushes every lookup below the first real function.
+
+**Don't guess the base at all when the banner already resolved it.** The bugcheck prints
+`***   P2 = ntoskrnl.exe+0x3788` — that offset IS the RVA, so the index address is just
+`RVA + ImageBase`: no runtime base, no per-arch reloc table, immune to where the image landed.
+vibeos had hardcoded relocs for i386 only and a comment claiming arm64/amd64's base "cannot be
+recovered from a saved log" — it was on the next line. Until that was used, every arm64 bugcheck
+declined, and the one that mattered needed hand-computing to reach
+`KiSynchronousExceptionEntry+4`.
+
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the
 tree is clean" or "I did not look." **This is not a fail-loud problem** — the scanner ran fine.
@@ -1692,6 +1937,21 @@ flag). **Validate the harness by BREAKING the scanner** — restoring a pre-fix 
 the harness fail. Two instances of the very class turned up while building it: the harness
 itself was a liar on its first run (the positive assertion accepted *any* non-empty output), and
 two scanners take FILES, not directories, so handed a directory they silently found nothing.
+
+**An oracle built on a parse must check that the parse SUCCEEDED, or it reports the parser's
+debris as findings about your code.** `preamble_audit` mines top-level declarations, resting on
+"a top-level declaration is by construction never inside a function body" — true only while the
+parse works. tree-sitter recovers from a parameter list it cannot read by HOISTING the function
+body's statements to the root, so `WSAttemptAutodialAddr(IN CONST SOCKADDR FAR *Name)` made the
+locals `Ip`, `NetBios`, `AutodialAddress` (and the parameter `Name`) look like file-scope state
+the translation had dropped. All of them were present, as locals: five confident, specific,
+wrong findings — which is how an oracle stops being read, a worse outcome than not having it.
+Two fixes, and you want both: **reuse the parser normalizer the rest of the pipeline already
+has** (`FAR`/`NEAR` are `#define`d to nothing and are the usual trigger — the same macro once
+dropped `inet_addr` from a translation plan entirely), and then **refuse to mine a root that
+still holds a top-level ERROR**, reporting "not audited" instead of guessing. Note `has_error`
+is useless as that gate: it is true for nearly every real Windows TU because of macros inside
+bodies, which hoist nothing. A **top-level ERROR node** is the precise signal.
 
 **A shared regex is an API between lanes, and positional groups are how it breaks.** Mainline
 correctly taught `scan_cc_mismatch` to pair decls and defs on the *linker symbol*
@@ -1764,6 +2024,53 @@ layout"**, and derive from checked-in sources so the baseline is portable.
   oracle is comparing the table against the thing that actually calls into it —
   `verify_svc_numbering.py` disassembles the **real i386 `user32.dll`/`gdi32.dll` syscall
   stubs** out of the build. **Parsing a C header with a regex is parsing it wrong.**
+
+### A derived profile is a MODEL of the build, and every divergence is silent
+`profile_derive` reads a module's CMakeLists + compile-db and emits the bindgen profile. It is
+a *model* of how those TUs compile, and four separate places where the model quietly differed
+from the build all surfaced in one batch (wldap32, rasadhlp). The shape recurs, so check for
+it whenever a derived profile misbehaves — and note that three of the four fail LOUDLY at
+bindgen time only because a header happened to be missing; the same divergence with a header
+present is a silently-wrong island.
+
+- **Our search path is not the generator's `-I` set.** Any dir listed in `_SDK_SEARCH` was
+  omitted from `EXTRA_INC` on the assumption `gen_driver_types.sh` already passed it. For
+  `sdk/include/wine` and `sdk/include/winrt` that is false. wldap32's only `config.h` lives in
+  the former, so the derived profile could not generate at all. samlib had hit the same gap
+  from the *other* direction and was patched per-instance — a hand-added `LATE_INC` found by
+  header bisection. **A per-instance include fix is a bug report against the deriver.** The two
+  sets are now separate constants (`_GENERATOR_BASE_INC`), and must be kept in sync with the
+  bindgen invocation.
+- **`build-<arch>/sdk/...` from the compile db must never be emitted.** The generator passes
+  those as per-arch `${BUILD_DIR}`; echoing back the observed `build-i386/...` bakes one arch's
+  *generated* headers into a 3-arch generator — the cross-arch leak AGENTS.md forbids, and it
+  reads as correct because i386 is what we derive from.
+- **A guarded include was promoted to an unconditional one.** `scan_preamble` dropped the
+  `#ifdef`/`#endif` and KEPT the `#include` between them. wldap32 wraps OpenLDAP under
+  `#ifdef HAVE_LDAP_H`; ReactOS does not vendor it. **Wine's `config.h` is an authoritative
+  build-configuration oracle** — autoconf writes the off cases as `/* #undef HAVE_LDAP_H */`,
+  an assertion about *this* build, not a maybe — so guards on its 330 undefs are decidable and
+  the dead arm is dropped. Undecidable guards still keep both arms and warn.
+- **Check what the module COMPILES TO before paying to translate it.** wldap32 reads as an
+  8,625-line LDAP client. In this tree every entry point compiles to
+  `return WLDAP32_LDAP_NOT_SUPPORTED;` — 181 `#ifdef HAVE_LDAP` blocks across 19 of its 20 TUs
+  are disabled, because ReactOS does not vendor OpenLDAP. It is a **stub DLL**. Translating it
+  bought 162 functions of the arm the compiler throws away, emitted UNCONDITIONALLY (so
+  `ldap_addA` would marshal instead of returning NOT_SUPPORTED) and calling OpenLDAP symbols
+  that do not exist here (so it could not link). LOC is not a proxy for how much of a module is
+  real. `profile_derive` now emits **`MOSTLY_DEAD_BODIES`** before payment for any module with
+  ≥15% of its compiled lines inside a decidably-false `#ifdef`, naming the macro and block
+  count. Note the dead-region seal already *tolerated* omissions inside such a block — a
+  tolerance is not a warning, and the two are easy to confuse. The salvage is to gate the
+  translated bodies behind the same `#[cfg(feature = ...)]` the C uses, which keeps the paid
+  artifact and makes the Rust strictly better than the C.
+- **`add_pch()`'s SKIP list is load-bearing.** Its third argument names the TUs that must not
+  get the PCH, and they are skipped *precisely because they do not compile with it*. wldap32's
+  `ber.c` includes `<winldap.h>` while `precomp.h` pulls `"winldap_private.h"`; the two declare
+  ~30 `ldap_*` prototypes and `LDAPControlA`/`LDAPModA`/`LDAPSortKeyA`/`LDAPAPIInfoA` (+W)
+  incompatibly. Force-including the PCH into `ber.c`'s wrapper reproduced that conflict exactly
+  — and the conflict is also *why* the module needs two islands, so the CMakeLists was already
+  telling you where the island boundary goes.
 
 ### A parse/derive failure that silently falls back `[§9.72, §9.80]`
 - **A catastrophic-backtracking regex hung `postprocess`**, and the hang looked like the paid
@@ -1858,6 +2165,16 @@ symbols one way and undefined the other. That pair *is* the diagnostic.
 - **Don't `git rm` a tree named in a prune table** — verify the build graph first.
 - **Don't retranslate a `*_rust_shims.c` function** — a stale private Rust impl may exist.
 - **Provide DDK/driver MACROS and FORCEINLINEs from the real headers, not bugcheck stubs.**
+- **A header that DEFINES a variable loses its definer when you flip the last TU that included
+  it.** `nsp_dns.h` does not declare its six service GUIDs, it defines them —
+  `const GUID DECLSPEC_SELECTANY HostnameGuid = SVCID_HOSTNAME;` — COMDAT, so every including
+  TU emits a foldable copy. bindgen renders them as `extern static`, which is right while some
+  C still includes the header and wrong the moment none does: rasadhlp's `winsock.c` was that
+  TU, and flipping it left `undefined symbol: _HostnameGuid` at link. Strip them from the
+  island (`BLOCKLIST_VARS=1`) and define them in the crate. Grep a flipped module's headers for
+  `DECLSPEC_SELECTANY` / `__declspec(selectany)` / `static const` at file scope *before* the
+  link tells you. Build the values from the header's own macros rather than pasting bytes, so
+  they stay checkable.
 
 ### An incomplete flip breaks ONLY on a clean arm64 tree
 i386/amd64 keep working because the stale pre-flip `libX.a` (or a weak inline copy clang emits
@@ -2014,6 +2331,21 @@ a diagnosis.**
 
 netstack's TDI transport relied on it for its queue → the `-smp 2` "TDI dgram upcall TIMED OUT"
 NET_FLAKE. Fix: a real `KSPIN_LOCK` via `SpinLockGuard`. Second instance in the same commit.
+
+### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
+**Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
+log shows the boot still *talking* — arm64 `-smp 2` conformance reached
+`[WINLOGON] explorer.exe created (PID 216)` and was mid-SCM-startup when the 180s budget expired.
+**Cause:** the per-arch `boot_timeout` is sized against the *UP* boot (arm64: ~40s observed →
+180s budget). Under MTTCG every vCPU is its own host thread doing its own translation, and the
+guest genuinely does more work (AP bring-up, IPI round-trips, real spinlock contention), so
+wall-clock to any milestone grows roughly linearly in N — on an already-contended fleet host,
+more. **Fix:** `vm.smp_boot_timeout()` scales `boot_timeout` by N. Scale the CLOCK only —
+`hang_silence_seconds` is deliberately NOT scaled, because the silence watchdog is what actually
+catches a wedge, so a genuine MP hang still fails in ~120s instead of burning the stretched
+budget. Do not "fix" this by lowering the boot marker; the marker is what proves the desktop
+came up. Recompute the scale from a stashed UP value, not from the current one, or a config
+reused across a retry loop multiplies each time.
 
 ### Dropped `#ifdef CONFIG_SMP` blocks are TIME BOMBS, not dead code `[§9.95]`
 `KiRetireDpcList`'s SMP-only deferred-ready drain was dropped in translation, so **an idle CPU
@@ -2385,6 +2717,76 @@ returned); only the never-returning handoff remains.
 **Generalize: any "and then we never return" call must first perform the bookkeeping its caller
 would have done.** Grep the caller's tail before writing one. A flag that is only ever read by a
 code path you cannot yet exercise is the definition of a latent bug.
+
+### A per-arch `#[cfg]` on an address-space reservation = a TEB allocated on top of KUSER_SHARED_DATA
+Four concurrent 32-bit guest threads killed the whole WoW64 process with `0xC0000005`, faulting in
+the 64-bit `LdrInitializeThunk` before any guest code ran. The tempting read was "the CPU layer is
+not concurrency-safe". It was not. Exactly **one** thread's TEB was wrong, and the serial log named
+it without a rebuild:
+
+```
+Teb=0x000000007FFE0000
+Teb.StackBase =0x000000000FD4BC00   <- KUSER_SHARED_DATA.InterruptTime.LowPart
+Teb.StackLimit=0x90A70AA000000000   <- High2Time(0) | SystemTime.LowPart<<32
+Teb.Dealloc   =0x0000000001310000   <- correct (offset 0x1478 = page 2, a real page)
+```
+
+Those are not corrupt stack bounds, they are **the clock**. The TEB sat at
+`MM_SHARED_USER_DATA_VA` (0x7FFE0000), so everything below offset 0x1000 of it *was*
+KUSER_SHARED_DATA. WoW64 PEB32/TEB regions are capped at the 32-bit `MM_HIGHEST_USER_ADDRESS`
+(0x7FFEFFFF) so guest pointers can reach them, and they descend 0x3000 apart — the 5th thread
+landed on the shared page.
+
+Cause: `MiInsertSharedUserPageVad`, which reserves that page with a real VAD so the allocator
+knows it is taken, was `#[cfg(target_arch = "x86_64")]`. **amd64 had the reservation; arm64 did
+not.** That is why the same arch-neutral WoW64 code passed all nine rungs on amd64 and died on
+arm64. Fix: extend the `cfg` to `aarch64`. Plus a tripwire in `MiCreatePebOrTebCapped` rejecting
+any PEB/TEB VAD that straddles `MM_SHARED_USER_DATA_VA`, because the failure is otherwise silent
+until a loader crash N threads later.
+
+Two things disguised it as a concurrency bug. It needs five threads to reach the page, so it looks
+load-dependent. And it kills threads whose own TEB is **fine**: `MmCreateTeb` zeroes the new TEB,
+wiping the process-wide KUSER_SHARED_DATA that the guest's i386 ntdll — and our own `wow64.c`,
+which reads `NtSystemRoot` straight out of `0x7FFE0000+0x30` — depend on. The time fields refill
+within one timer tick, which is why the overlaid TEB reads back a *live* clock rather than zeros.
+
+Do **not** "fix" this by lowering the cap to `0x7FFEFFFF - 16 * PAGE_SIZE` (the native
+`MM_HIGHEST_VAD_ADDRESS` shape). Tried first, and it moved PEB32/TEB below 0x7FFE0000 and broke
+WoW64 bring-up outright — an untested address-layout change bought nothing the real reservation
+does not.
+
+**Generalize: an allocator only avoids what it has a record of, and a `cfg` is a place a record
+can be missing on one arch only.** When a bug reproduces on one arch and not another in
+arch-neutral code, diff the *cfg-gated setup* the two arches ran, not the code that crashed.
+
+### `ThreadZeroTlsCell` from a 32-bit guest zeroes the WRONG TEB — and wipes WoW64's own TLS
+A guest that had passed every threading rung still died at exit. The proximate crash was a NULL
+deref *inside* `Wow64pVeh` at `CpuArea+0xC0` and `+0xBC` — which are `WOW64_CONTEXT.Eax`/`.Ecx`,
+i.e. `TEB->TlsSlots[WOW64_TLS_CPURESERVED]` had become NULL on a thread that was still running
+guest code.
+
+Cause: `NtSetInformationThread(ThreadZeroTlsCell)` walks every thread in the process and does
+`Teb->TlsSlots[TlsIndex] = NULL` on the **64-bit** TEB. A 32-bit guest's TLS cells live in
+**TEB32**; TEB64's low slots belong to WoW64 itself (slot 1 is the per-thread guest register
+file). So a guest calling `TlsFree(1)` — perfectly ordinary cleanup — wiped wow64.dll's CPU-area
+pointer for *every* thread in the process. Fix: in a WoW64 process, zero `TEB32.TlsSlots`
+(0xE10) / `TEB32.TlsExpansionSlots` (0xF94) instead.
+
+Two lessons beyond the fix:
+
+- **A syscall can be "correctly implemented" and still be a WoW64 bug.** No marshalling was
+  missing here — the argument is a plain `ULONG` at the same offset in both worlds, so no
+  layout-diff tool flags it. What differs is *which structure the side effect lands in*. Audit
+  syscalls by the state they mutate, not just by their parameter layout.
+- **Never dereference the CPU area without a NULL check in an exception path.** `Wow64pVeh` and
+  `Wow64pPrepareForExceptionHook` both did `(WOW64_CONTEXT *)(CpuArea + 16)` unguarded. A VEH runs
+  on *any* thread, including one that never entered the guest or is past
+  `Wow64FreeThreadCpuArea` — and faulting inside the handler re-enters it and **buries the
+  original exception**, which is what hid this bug behind a bogus `libwow64fex` address for a
+  whole session. Declining is not enough on its own either: FEX's `BTCpuResetToConsistentState`
+  NtContinues back to the faulting instruction, so a handler that merely returns
+  `EXCEPTION_CONTINUE_SEARCH` turns the crash into a livelock (31,511 iterations). Guard, log,
+  and fix the cause.
 
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a

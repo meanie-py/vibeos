@@ -347,6 +347,14 @@ static VOID WINAPI Wow64pPrepareForExceptionHook(EXCEPTION_RECORD *R, CONTEXT *C
         Wow64pBTCpuResetToConsistentState(&Info); /* flush live guest -> CPU area */
 
     CpuArea = (PBYTE)Wow64pTlsSlots()[WOW64_TLS_CPURESERVED];
+    if (!CpuArea)
+    {
+        /* Same hazard as Wow64pVeh: no guest state means we cannot build a
+         * 32-bit exception frame, and reading C-> would fault inside the
+         * handler. Let the host death path report the real fault. */
+        DbgPrint("[FEX-WOW64C] guest fault with no CPU area on this thread — host path\n");
+        return;
+    }
     C = (WOW64_CONTEXT *)(CpuArea + 16);
 
     /* DBG_PRINTEXCEPTION(_WIDE)_C from a guest OutputDebugString: consume it
@@ -401,6 +409,16 @@ static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
     {
         PBYTE CpuArea = (PBYTE)Wow64pTlsSlots()[WOW64_TLS_CPURESERVED];
         WOW64_CONTEXT *C = (WOW64_CONTEXT *)(CpuArea + 16);
+        /* A VEH runs on ANY thread, including one with no guest state: a thread
+         * that never entered the guest, or one past Wow64FreeThreadCpuArea on
+         * its way out. Reading C-> then faults at C's own field offsets (Eax is
+         * CpuArea+0xC0) *inside the exception handler*, which re-enters the VEH
+         * and buries whatever the original exception was. Decline instead. */
+        if (!CpuArea)
+        {
+            DbgPrint("[FEX-WOW64C] VEH: breakpoint with no CPU area on this thread — declining\n");
+            return EXCEPTION_CONTINUE_SEARCH;
+        }
         if (C->Eax == 1 && C->Ecx && C->Ecx < 0x80000000u && C->Edx < 512)
             DbgPrint("[GUEST32] %.*s", (int)C->Edx, (const char *)(ULONG_PTR)C->Ecx);
         return EXCEPTION_CONTINUE_SEARCH;

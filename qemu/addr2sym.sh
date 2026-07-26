@@ -23,30 +23,47 @@ arch_validate "$ARCH"
 # online equivalent and finds this automatically; this flag is for offline
 # triage where you only have a hex address from a serial log.
 RELOC=0
-if [ "${1:-}" = "--reloc" ]; then
-    RELOC="${2:-}"
-    shift 2
-    [ -n "$RELOC" ] || die "--reloc requires an address argument"
+FLAVOR=""
+while :; do
+    case "${1:-}" in
+        --reloc)
+            RELOC="${2:-}"
+            shift 2
+            [ -n "$RELOC" ] || die "--reloc requires an address argument"
+            ;;
+        # --kernel-base <hex>: the value printed by the kernel's own
+        # "[KRNLBASE] ntoskrnl runtime base=<hex>" serial line. Pass it verbatim; we
+        # do the `- 0x400000` here so nobody has to remember which direction it goes.
+        # Doing that subtraction by hand is exactly the kind of remembered recipe
+        # that produces a confidently wrong base, and a wrong base relocates the hunt
+        # instead of failing loudly.
+        --kernel-base)
+            KBASE="${2:-}"
+            shift 2
+            [ -n "$KBASE" ] || die "--kernel-base requires an address argument"
+            [ "$RELOC" = "0" ] || die "pass --reloc OR --kernel-base, not both"
+            RELOC=$(python3 -c "import sys; print(format(int(sys.argv[1],16) - 0x400000, 'x'))" "$KBASE")
+            ;;
+        # --mp: resolve against ntkrnlmp.exe's index. An `--smp N` boot runs a
+        # DIFFERENT binary from ntoskrnl.exe, so the UP index names the wrong
+        # function for every MP crash — quietly, since some symbol always sorts
+        # below the address. Callers that know which kernel booted must say so.
+        --mp) FLAVOR="-mp"; shift ;;
+        *) break ;;
+    esac
+done
+
+[ "$#" -ge 1 ] || die "usage: addr2sym.sh <arch> [--reloc <hex> | --kernel-base <hex>] [--mp] <addr> [<addr>...]"
+
+INDEX="$QEMU_DIR/symbols-$ARCH$FLAVOR.tsv"
+if [ ! -f "$INDEX" ]; then
+    if [ -n "$FLAVOR" ]; then
+        # Never silently fall back to the UP index: a wrong symbol is worse than
+        # no symbol, because it reads exactly like a right one.
+        die "missing $INDEX — the MP kernel was not indexed. Build ntkrnlmp (./vibeos-cli build --arch $ARCH) then re-run build-index.sh $ARCH"
+    fi
+    die "missing $INDEX — run build-index.sh $ARCH first"
 fi
-
-# --kernel-base <hex>: the value printed by the kernel's own
-# "[KRNLBASE] ntoskrnl runtime base=<hex>" serial line. Pass it verbatim; we do
-# the `- 0x400000` here so nobody has to remember which direction it goes. Doing
-# that subtraction by hand is exactly the kind of remembered recipe that produces
-# a confidently wrong base, and a wrong base relocates the hunt (field manual
-# §9.124) instead of failing loudly.
-if [ "${1:-}" = "--kernel-base" ]; then
-    KBASE="${2:-}"
-    shift 2
-    [ -n "$KBASE" ] || die "--kernel-base requires an address argument"
-    [ "$RELOC" = "0" ] || die "pass --reloc OR --kernel-base, not both"
-    RELOC=$(python3 -c "import sys; print(format(int(sys.argv[1],16) - 0x400000, 'x'))" "$KBASE")
-fi
-
-[ "$#" -ge 1 ] || die "usage: addr2sym.sh <arch> [--reloc <hex> | --kernel-base <hex>] <addr> [<addr>...]"
-
-INDEX="$QEMU_DIR/symbols-$ARCH.tsv"
-[ -f "$INDEX" ] || die "missing $INDEX — run build-index.sh $ARCH first"
 
 # Lookup uses awk: linear scan with early exit when address exceeds target.
 # Index is sorted by lowercase fixed-width hex, so string compare == numeric

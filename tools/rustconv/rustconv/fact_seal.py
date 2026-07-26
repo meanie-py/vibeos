@@ -227,6 +227,26 @@ def _declared_names(masked: str) -> frozenset[str]:
     return frozenset(match.group(1) for match in _DECLARATOR_RE.finditer(masked))
 
 
+_ZERO_INIT_RE = re.compile(r"=\s*\{\s*(0)\s*\}")
+
+
+def _aggregate_zero_init_spans(masked: str) -> set[tuple[int, int]]:
+    """Spans of the `0` in a C aggregate zero-initializer `= {0}`.
+
+    `PROPSHEETPAGE psp = {0};` is SYNTAX, not a value: it says "all bytes zero", and the
+    faithful Rust lowerings (`core::mem::zeroed()`, `Default::default()`, a struct literal
+    naming every field) have nowhere to put the token. Demanding it rejects a correct
+    translation -- netid's `CreateNetIDPropertyPage` died exactly here, on output that was
+    otherwise perfect.
+
+    Same class the shell32 wave generalized: the envelope assumes the lowering preserves a
+    1:1 token correspondence with the C, and every construct that must be RESTRUCTURED breaks
+    that assumption. Narrow by design -- only the single-`0` form, which is unambiguous. A
+    `{0, 1}` or `{NULL}` initializer still seals, because there the values carry meaning.
+    """
+    return {match.span(1) for match in _ZERO_INIT_RE.finditer(masked)}
+
+
 def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     """Replace each value occurrence with a unique opaque identifier.
 
@@ -243,7 +263,10 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     # the scanner already makes for `(TYPE *)value`; neither can hold a constant.
     type_spans = _block_scope_prototype_spans(masked) + _named_cast_spans(masked)
 
+    zero_init = _aggregate_zero_init_spans(masked)
     for match in _INTEGER_RE.finditer(masked):
+        if (match.start(), match.end()) in zero_init:
+            continue
         spans.append((match.start(), match.end(), "integer"))
 
     for match in _SYMBOL_RE.finditer(masked):

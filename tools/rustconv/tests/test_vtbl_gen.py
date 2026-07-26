@@ -384,3 +384,41 @@ class TestResolverLayering:
         fields, origin = r.resolve("IUnknownVtbl")
         assert origin.startswith("com-sys/")
         assert [f.name for f in fields] == ["QueryInterface", "AddRef", "Release"]
+
+
+class TestModuleIslandAsFieldOrderSource:
+    """A module-PRIVATE COM interface lives in neither com-sys nor a sibling header.
+
+    netcfgx's `INetCfgBindingInterface` is declared `DECLARE_INTERFACE_(...)` in
+    sdk/include/psdk/netcfgx.h — so com-sys does not carry it, and the C file's own
+    directory does not either. The translation died with `VtblResolveError: cannot
+    resolve field order` on interfaces that were sitting, fully expanded, in the
+    module's own `types_<arch>.rs`: bindgen had already turned the DECLARE_INTERFACE_
+    macro into an exact struct, which a C-header regex cannot do reliably.
+    """
+
+    NETCFGX_C = REACTOS_ROOT / "dll" / "win32" / "netcfgx"
+    ISLAND_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "netcfgx-rust" / "src"
+
+    @pytest.mark.skipif(
+        not (ISLAND_DIR / "types_i386.rs").is_file(), reason="netcfgx island not generated"
+    )
+    def test_a_private_interface_resolves_from_the_modules_own_island(self):
+        c = self.NETCFGX_C / "netcfgbindinginterface_iface.c"
+        islands = sorted(self.ISLAND_DIR.glob("types*.rs"))
+        tables = {t.name: t for t in find_vtbl_tables(c, rust_sources=islands)}
+        t = tables["vt_NetCfgBindingInterface"]
+        assert t.type_name == "INetCfgBindingInterfaceVtbl"
+        assert t.origin.startswith("rust:types")
+        # IUnknown's three, then the interface's own
+        assert [s.field for s in t.slots][:3] == ["QueryInterface", "AddRef", "Release"]
+        assert len(t.slots) == 6
+
+    @pytest.mark.skipif(
+        not (ISLAND_DIR / "types_i386.rs").is_file(), reason="netcfgx island not generated"
+    )
+    def test_without_the_island_it_REFUSES_rather_than_guessing(self):
+        """The point of the resolver: no field order, no table. Never a guess."""
+        c = self.NETCFGX_C / "netcfgbindinginterface_iface.c"
+        with pytest.raises(VtblResolveError, match="cannot resolve field order"):
+            find_vtbl_tables(c, rust_sources=[], c_headers=[])
