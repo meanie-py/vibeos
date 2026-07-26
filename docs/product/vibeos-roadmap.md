@@ -993,6 +993,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   **Impact on the four faces is NOT established** — the NULL pointers were harmless on arm64,
   so this is a spurious failure made real-looking, not (yet) a known cause of B/C/D. What it
   does buy: the hatch means something again, and 26 boot milestones are now visible.
+- **`ex/init.c`'s whole 54-call `[EXP]`/`[PHASE1]` trace ladder was dropped in translation —
+  RESTORED 2026-07-26.** Ran the `io_trace` lesson tree-wide as a count-vs-count audit of every
+  cohab-flipped pair, and `ex/init.c` → `ex-rust/src/init.rs` came back **54 → 0**: not one of
+  its boot milestones survived, in the single file that owns Phase 1. That is why every arm64
+  soak log looks featureless — a hang anywhere in Phase 1 produced a bare `HANG_TIMEOUT` with no
+  way to name the step it died on. 40 sites restored via a `uart_trace!` **macro** (never a
+  no-op fn — see the field manual entry). Measured on a green 54s boot: **6 `[EXP]` + 26
+  `[PHASE1]`**, a complete ladder from `ExpInitializeExecutive entered` through
+  `IoInitSystem succeeded!` to `ExpLoadInitialProcess (SMSS)` / `[SMSS] Status=0x0`.
+  Three of the restored sites are the silent `#[cfg(not(target_arch = "aarch64"))]` bugcheck
+  suppressions (`IoInitSystem`, `PsInitSystem`, `SeRmInitPhase1` — same tolerate-and-continue
+  shape as `PsLocateSystemDll` above), and a fourth is worse: an arm64-only
+  `if IoInitSucceeded == 0 { ExpInitializationPhase += 1; free; return; }` that **abandons Phase 1
+  outright** — no smss, no desktop, and not one byte on the serial. That path presented as an
+  indistinguishable hang; it now announces itself.
+  The audit's other two shortfalls were judged and deliberately **left dropped**:
+  `mm/section.c` (32→0) and `ARM3/procsup.c` (33→10) lost per-page / per-process hot-path
+  forensics that would drown the serial. The one exception restored from section.c is
+  `MiGrabDataSection`'s rate-limited `INCREATE/INDELETE` spin probe — it fired **0 times** on the
+  green boot, so it costs nothing and only speaks when that loop is wedged.
+  **Noticed, not fixed (pre-existing, not this lane's change):** the arm64 serial carries
+  **1,116 `[PS]` lines / 243 KB per boot**, ~2,250 of them per-thread `PspCreateThread` /
+  `PspUserThreadStartup` traces that fire on *every* thread creation. Whether that volume
+  perturbs TCG boot timing is untested — flagging it as a candidate, not a claim.
 - **arm64 kmtest-sweep late-run user-process corruption** (~2/4 sweeps since the §9.96
   un-quarantine of MmSection/ZwMapViewOfSection, 2026-07-17; deeply characterized 2026-07-18,
   §9.97) — a *later* kmtest_.exe launch (77+ deep) dies with `0xC000001D` (executing garbage

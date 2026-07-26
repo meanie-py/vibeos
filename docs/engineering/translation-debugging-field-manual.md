@@ -1757,6 +1757,31 @@ the fix and **2** after. Two consequences worth generalizing:
   `smoke --require-probe`. Pass the string by pointer (`ARM64_UART_TRACE`), the form proven to
   reach the serial.
 
+**The worse sibling: the translation drops the trace ladder outright.** A no-op shim at least
+leaves the call sites visible. `ntoskrnl/ex/init.c` carries **54** live `ARM64_UART_TRACE` calls —
+a full `[EXP]`/`[PHASE1]` milestone ladder through `ExpInitializeExecutive` and
+`Phase1InitializationDiscard` — and its cohab-live `ex-rust/src/init.rs` carried **zero**. Every
+one was dropped, so arm64 had no Phase-1 visibility at all, in precisely the phase where it
+flakes; the boot log's silence read as "nothing to see." Debug output is not decoration and it is
+not covered by a signature check, a `cargo check`, or a green smoke — nothing downstream of the
+translation notices its absence.
+
+*Audit it mechanically, per cohab-flipped pair*, since eyeballing a 4,000-line file will not find
+an absence:
+```
+c=$(grep -c '^[^/]*ARM64_UART_TRACE' <file>.c)
+r=$(grep -c '^[^/]*\(ARM64_UART_TRACE\|uart_trace\|io_trace\)' <file>.rs)
+```
+Run tree-wide, the ratio is the finding: most flipped files preserve or exceed their ladder
+(`ke/arm64/stubs.c` 3→46, `ps/thread.c` 17→39), so a **0** or a large shortfall stands out at a
+glance. Judge each shortfall by *what kind* of trace was lost, though — restoring is not always
+right. `mm/section.c` (32→0) and `ARM3/procsup.c` (33→10) lost per-page and per-process hot-path
+forensics (`GetPageEntry`, `IoPageRead`, every step of `MmInitializeProcessAddressSpace`); bulk
+-restoring those would drown the serial and slow every boot. Restore **milestone ladders and
+failure reports**, plus any *rate-limited anomaly* probe (`MiGrabDataSection`'s
+`INCREATE/INDELETE` spin fires 1:1000 and only when wedged — exactly the hang diagnostic you
+want); leave unconditional hot-path tracing dropped.
+
 ### The governing rule: a harness only falsifies what it varies
 > **A harness proves parity only across the axes it actually VARIES. Every axis it holds
 > CONSTANT is a silent assumption baked into every MATCH it prints.** `[§9.60]`

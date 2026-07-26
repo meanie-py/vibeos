@@ -669,6 +669,12 @@ unsafe fn MmGetMdlPfnArray(mdl: *mut MDL) -> *mut PFN_NUMBER {
 unsafe fn MiGrabDataSection(SectionObjectPointer: PSECTION_OBJECT_POINTERS) -> PMM_SECTION_SEGMENT {
     let mut OldIrql = MiAcquirePfnLock();
     let mut Segment: PMM_SECTION_SEGMENT;
+    // Per-CALL, matching the C's local GrabSpinCount: a boot that spins here
+    // briefly a few times is normal, a boot WEDGED here is the thing we cannot
+    // currently see. Rate-limited 1:1000 because each turn of the loop already
+    // costs a KeDelayExecutionThread(TinyTime).
+    #[cfg(target_arch = "aarch64")]
+    let mut GrabSpinCount: u32 = 0;
 
     loop {
         Segment = (*SectionObjectPointer).DataSectionObject as PMM_SECTION_SEGMENT;
@@ -677,6 +683,17 @@ unsafe fn MiGrabDataSection(SectionObjectPointer: PSECTION_OBJECT_POINTERS) -> P
         }
 
         if (*Segment).SegFlags & (MM_SEGMENT_INCREATE | MM_SEGMENT_INDELETE) != 0 {
+            #[cfg(target_arch = "aarch64")]
+            {
+                if GrabSpinCount % 1000 == 0 {
+                    mm_guard_trip!(
+                        "section.MiGrabDataSection INCREATE/INDELETE spin", u32::MAX,
+                        "SegFlags" => (*Segment).SegFlags,
+                        "SpinCount" => GrabSpinCount,
+                    );
+                }
+                GrabSpinCount = GrabSpinCount.wrapping_add(1);
+            }
             MiReleasePfnLock(OldIrql);
             KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of!(TinyTime) as *mut _);
             OldIrql = MiAcquirePfnLock();

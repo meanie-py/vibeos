@@ -649,6 +649,7 @@ unsafe fn ExpLoadInitialProcess(
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
     SmssName = (*ProcessParams).ImagePathName;
+    uart_trace!("[SMSS] RtlCreateUserProcess...");
     Status = RtlCreateUserProcess(
         &mut SmssName,
         OBJ_CASE_INSENSITIVE,
@@ -661,6 +662,8 @@ unsafe fn ExpLoadInitialProcess(
         core::ptr::null_mut(),
         ProcessInformation,
     );
+    uart_trace!("[SMSS] RtlCreateUserProcess done");
+    uart_trace_hex!("[SMSS] Status=", Status as usize);
     if Status < 0 {
         RtlInitUnicodeString(&mut DebugString, w!("INIT: Unable to create Session Manager.").as_ptr() as *mut u16);
         ZwDisplayString(&mut DebugString);
@@ -884,8 +887,10 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     let mut RcEnd: *mut i8 = core::ptr::null_mut();
     let mut VersionBuffer: [u8; 65] = [0; 65];
 
+    uart_trace!("[EXP] ExpInitializeExecutive entered");
 
     if ExpIsLoaderValid(LoaderBlock) == 0 {
+        uart_trace!("[EXP] !!! ExpIsLoaderValid FAILED");
         KeBugCheckEx(
             ntkrnl_sys::bugcodes::MISMATCHED_HAL,
             3,
@@ -1027,7 +1032,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     if MmArmInitSystem(0, LoaderBlock) == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::PHASE0_INITIALIZATION_FAILED);
     }
-
+    uart_trace!("[EXP] MmArmInitSystem(0) done");
 
     ExpLoadBootSymbols(LoaderBlock);
 
@@ -1122,18 +1127,22 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         }
     }
 
+    uart_trace!("[EXP] ObInitSystem");
     if ObInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::OBJECT_INITIALIZATION_FAILED);
     }
 
+    uart_trace!("[EXP] SeInitSystem");
     if SeInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::SECURITY_INITIALIZATION_FAILED);
     }
 
+    uart_trace!("[EXP] PsInitSystem");
     if PsInitSystem(LoaderBlock) == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::PROCESS_INITIALIZATION_FAILED);
     }
 
+    uart_trace!("[EXP] PpInitSystem");
     if PpInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::PP0_INITIALIZATION_FAILED);
     }
@@ -1205,6 +1214,8 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     let mut ProcessParameters: *mut RTL_USER_PROCESS_PARAMETERS = core::ptr::null_mut();
     let IoInitSucceeded: BOOLEAN;
 
+    uart_trace!("[PHASE1] Phase1InitializationDiscard entered");
+
     InitBuffer = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<INIT_BUFFER>(), 0x74696E49) as *mut INIT_BUFFER;
     if InitBuffer.is_null() {
         KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0xC0000017, 8, 0, 0);
@@ -1214,6 +1225,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     KeSetPriorityThread(KeGetCurrentThread() as ntkrnl_sys::ddk::PKTHREAD, 31);
 
+    uart_trace!("[PHASE1] HalInitSystem(1)");
     if HalInitSystem(1, LoaderBlock) == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::HAL1_INITIALIZATION_FAILED);
     }
@@ -1341,24 +1353,29 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         }
     }
 
+    uart_trace!("[PHASE1] ObInitSystem");
     if ObInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::OBJECT1_INITIALIZATION_FAILED);
     }
+    uart_trace!("[PHASE1] ExInitSystem");
     if ExInitSystem() == 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 1, 0);
     }
+    uart_trace!("[PHASE1] KeInitSystem");
     if KeInitSystem() == 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 2, 0);
     }
     #[cfg(target_arch = "x86")]
     {
     }
+    uart_trace!("[PHASE1] KdInitSystem");
     if KdInitSystem(ExpInitializationPhase, KeLoaderBlock) == 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 3, 0);
     }
     #[cfg(target_arch = "x86")]
     {
     }
+    uart_trace!("[PHASE1] SeInitSystem");
     if SeInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::SECURITY1_INITIALIZATION_FAILED);
     }
@@ -1369,6 +1386,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     #[cfg(target_arch = "x86")]
     {
     }
+    uart_trace!("[PHASE1] ExpCreateSystemRootLink");
     Status = ExpCreateSystemRootLink(LoaderBlock);
     if Status < 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::SYMBOLIC_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
@@ -1377,6 +1395,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     {
     }
 
+    uart_trace!("[PHASE1] MmInitSystem(1)");
     if MmInitSystem(1, LoaderBlock) == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::MEMORY1_INITIALIZATION_FAILED);
     }
@@ -1395,7 +1414,9 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         UartPhys.QuadPart = 0x09000000;
         let KernelVa = MmMapIoSpace(UartPhys, PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR, MmNonCached);
         if !KernelVa.is_null() {
+            uart_trace!("[PHASE1] UART remapped to kernel VA");
             Arm64UartKernelBase = KernelVa;
+            uart_trace!("[PHASE1] UART now using kernel VA");
         }
     }
 
@@ -1423,16 +1444,20 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         }
     }
 
+    uart_trace!("[PHASE1] ExpInitNls");
     ExpInitNls(LoaderBlock);
 
+    uart_trace!("[PHASE1] CcInitializeCacheManager");
     if CcInitializeCacheManager() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::CACHE_INITIALIZATION_FAILED);
     }
 
+    uart_trace!("[PHASE1] CmInitSystem1");
     if CmInitSystem1() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::CONFIG_INITIALIZATION_FAILED);
     }
 
+    uart_trace!("[PHASE1] CcPfInitializePrefetcher");
     CcPfInitializePrefetcher();
 
     InbvUpdateProgressBar(15);
@@ -1509,6 +1534,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     }
 
 
+    uart_trace!("[PHASE1] FsRtlInitSystem");
     if FsRtlInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::FILE_INITIALIZATION_FAILED);
     }
@@ -1517,14 +1543,17 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     HalReportResourceUsage();
 
+    uart_trace!("[PHASE1] KdDebuggerInitialize1");
     KdDebuggerInitialize1(LoaderBlock);
 
+    uart_trace!("[PHASE1] PpInitSystem");
     if PpInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::PP1_INITIALIZATION_FAILED);
     }
 
     InbvUpdateProgressBar(20);
 
+    uart_trace!("[PHASE1] LpcInitSystem");
     if LpcInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::LPC_INITIALIZATION_FAILED);
     }
@@ -1537,12 +1566,19 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InbvSetProgressBarSubset(25, 75);
 
+    uart_trace!("[PHASE1] IoInitSystem");
     IoInitSucceeded = IoInitSystem(LoaderBlock);
     if IoInitSucceeded == 0 {
+        // arm64 deliberately carries on where every other arch bugchecks. That
+        // escape hatch is only defensible if it is LOUD: report it, or a genuine
+        // I/O-init failure is indistinguishable from a healthy boot.
+        uart_trace!("[PHASE1] IoInitSystem failed (continuing on ARM64)");
         #[cfg(not(target_arch = "aarch64"))]
         {
             KeBugCheck(ntkrnl_sys::bugcodes::IO1_INITIALIZATION_FAILED);
         }
+    } else {
+        uart_trace!("[PHASE1] IoInitSystem succeeded!");
     }
 
     InbvSetProgressBarSubset(0, 100);
@@ -1554,13 +1590,19 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         KeI386VdmInitialize();
     }
 
+    uart_trace!("[PHASE1] PoInitSystem");
     if PoInitSystem(1) == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::INTERNAL_POWER_ERROR);
     }
 
     InbvUpdateProgressBar(90);
 
+    uart_trace!("[PHASE1] PsInitSystem");
     if PsInitSystem(LoaderBlock) == 0 {
+        // Same arm64 escape hatch as IoInitSystem above, and it was firing on
+        // EVERY boot until the PspLookupKernelUserEntryPoints fix (three x86-only
+        // ntdll exports looked up unconditionally). Silent then; loud now.
+        uart_trace!("[PHASE1] PsInitSystem failed (continuing on ARM64)");
         #[cfg(not(target_arch = "aarch64"))]
         {
             KeBugCheck(ntkrnl_sys::bugcodes::PROCESS1_INITIALIZATION_FAILED);
@@ -1572,7 +1614,9 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     }
     MmFreeLoaderBlock(LoaderBlock);
 
+    uart_trace!("[PHASE1] SeRmInitPhase1");
     if SeRmInitPhase1() == 0 {
+        uart_trace!("[PHASE1] SeRmInitPhase1 failed (continuing on ARM64)");
         #[cfg(not(target_arch = "aarch64"))]
         {
             KeBugCheck(ntkrnl_sys::bugcodes::PROCESS1_INITIALIZATION_FAILED);
@@ -1621,13 +1665,19 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         KmSafeCopySelfTest();
     }
 
+    // arm64 gives up on smss here rather than bugchecking. Boot simply STOPS,
+    // with no desktop and — until now — not one byte on the serial saying why, so
+    // the run presented as a bare HANG_TIMEOUT with a healthy-looking log.
     #[cfg(target_arch = "aarch64")]
     if IoInitSucceeded == 0 {
+        uart_trace!("[PHASE1] *** ARM64 Phase 1 complete (no I/O). Entering idle. ***");
         ExpInitializationPhase += 1;
         ExFreePoolWithTag(InitBuffer as PVOID, 0x74696E49);
         return;
     }
+    uart_trace!("[PHASE1] ARM64: I/O init succeeded, proceeding to SMSS launch.");
 
+    uart_trace!("[PHASE1] ExpLoadInitialProcess (SMSS)");
     ProcessInfo = core::ptr::addr_of_mut!((*InitBuffer).ProcessInfo);
     ExpLoadInitialProcess(InitBuffer, &mut ProcessParameters, &mut Environment);
 
