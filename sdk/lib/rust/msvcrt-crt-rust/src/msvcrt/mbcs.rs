@@ -1807,7 +1807,7 @@ pub unsafe extern "C" fn _ismbbkana(c: u32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _ismbcdigit_l(ch: u32, locale: _locale_t) -> i32 {
-    return _iswdigit_l(msvcrt_mbc_to_wc_l(ch, locale), locale);
+    return _iswdigit_l(msvcrt_mbc_to_wc_l(ch, locale) as u32, locale);
 }
 
 #[no_mangle]
@@ -1817,7 +1817,7 @@ pub unsafe extern "C" fn _ismbcdigit(ch: u32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _ismbcgraph_l(ch: u32, locale: _locale_t) -> i32 {
-    return _iswgraph_l(msvcrt_mbc_to_wc_l(ch, locale), locale);
+    return _iswgraph_l(msvcrt_mbc_to_wc_l(ch, locale) as u32, locale);
 }
 
 #[no_mangle]
@@ -1827,7 +1827,7 @@ pub unsafe extern "C" fn _ismbcgraph(ch: u32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _ismbcalpha_l(ch: u32, locale: _locale_t) -> i32 {
-    return _iswalpha_l(msvcrt_mbc_to_wc_l(ch, locale), locale);
+    return _iswalpha_l(msvcrt_mbc_to_wc_l(ch, locale) as u32, locale);
 }
 
 #[no_mangle]
@@ -1837,7 +1837,7 @@ pub unsafe extern "C" fn _ismbcalpha(ch: u32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _ismbclower_l(ch: u32, locale: _locale_t) -> i32 {
-    return _iswlower_l(msvcrt_mbc_to_wc_l(ch, locale), locale);
+    return _iswlower_l(msvcrt_mbc_to_wc_l(ch, locale) as u32, locale);
 }
 
 #[no_mangle]
@@ -1847,7 +1847,7 @@ pub unsafe extern "C" fn _ismbclower(ch: u32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _ismbcupper_l(ch: u32, locale: _locale_t) -> i32 {
-    _iswupper_l(msvcrt_mbc_to_wc_l(ch, locale), locale)
+    _iswupper_l(msvcrt_mbc_to_wc_l(ch, locale) as u32, locale)
 }
 
 #[no_mangle]
@@ -1872,7 +1872,7 @@ pub unsafe extern "C" fn _ismbcsymbol(ch: u32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _ismbcalnum_l(ch: u32, locale: _locale_t) -> i32 {
-    return _iswalnum_l(msvcrt_mbc_to_wc_l(ch, locale) as u16, locale);
+    return _iswalnum_l(msvcrt_mbc_to_wc_l(ch, locale) as u32, locale);
 }
 
 #[no_mangle]
@@ -1882,7 +1882,7 @@ pub unsafe extern "C" fn _ismbcalnum(ch: u32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _ismbcspace_l(ch: u32, locale: _locale_t) -> i32 {
-    return _iswspace_l(msvcrt_mbc_to_wc_l(ch, locale), locale);
+    return _iswspace_l(msvcrt_mbc_to_wc_l(ch, locale) as u32, locale);
 }
 
 #[no_mangle]
@@ -1892,7 +1892,7 @@ pub unsafe extern "C" fn _ismbcspace(ch: u32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _ismbcprint_l(ch: u32, locale: _locale_t) -> i32 {
-    return _iswprint_l(msvcrt_mbc_to_wc_l(ch, locale), locale);
+    return _iswprint_l(msvcrt_mbc_to_wc_l(ch, locale) as u32, locale);
 }
 
 #[no_mangle]
@@ -1902,7 +1902,7 @@ pub unsafe extern "C" fn _ismbcprint(ch: u32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _ismbcpunct_l(ch: u32, locale: _locale_t) -> i32 {
-    return _iswpunct_l(msvcrt_mbc_to_wc_l(ch, locale), locale);
+    return _iswpunct_l(msvcrt_mbc_to_wc_l(ch, locale) as u32, locale);
 }
 
 #[no_mangle]

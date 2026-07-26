@@ -202,15 +202,24 @@ extern "C" {
     pub fn _isprint_l(c: c_int, l: _locale_t) -> c_int;
     pub fn isleadbyte(c: c_int) -> c_int;
     pub fn _isleadbyte_l(c: c_int, l: _locale_t) -> c_int;
-    pub fn _iswalnum_l(c: wint_t, l: _locale_t) -> c_int;
-    pub fn _iswalpha_l(c: wint_t, l: _locale_t) -> c_int;
-    pub fn _iswdigit_l(c: wint_t, l: _locale_t) -> c_int;
-    pub fn _iswgraph_l(c: wint_t, l: _locale_t) -> c_int;
-    pub fn _iswlower_l(c: wint_t, l: _locale_t) -> c_int;
-    pub fn _iswprint_l(c: wint_t, l: _locale_t) -> c_int;
-    pub fn _iswpunct_l(c: wint_t, l: _locale_t) -> c_int;
-    pub fn _iswspace_l(c: wint_t, l: _locale_t) -> c_int;
-    pub fn _iswupper_l(c: wint_t, l: _locale_t) -> c_int;
+    // `u32`, NOT `wint_t` — and that is not a style choice. This crate DEFINES all
+    // nine (the `isw!` macro in lib.rs), and it defines them taking `u32`, because
+    // that is what `_iswctype_l` takes. `wint_t` is `unsigned short`, so declaring
+    // them here as `wint_t` made every call through this block disagree with the
+    // definition it resolves to: the caller writes 16 bits and the callee reads 32,
+    // with the upper half undefined per the Windows x64 ABI. It has been benign only
+    // because rustc happens to zero-extend the argument. `fpnum.rs` had already
+    // noticed and routed around it with a private `u32` shim; `scan_extern_arity`
+    // cannot see it because the ARITY matches. Declaration now matches definition.
+    pub fn _iswalnum_l(c: u32, l: _locale_t) -> c_int;
+    pub fn _iswalpha_l(c: u32, l: _locale_t) -> c_int;
+    pub fn _iswdigit_l(c: u32, l: _locale_t) -> c_int;
+    pub fn _iswgraph_l(c: u32, l: _locale_t) -> c_int;
+    pub fn _iswlower_l(c: u32, l: _locale_t) -> c_int;
+    pub fn _iswprint_l(c: u32, l: _locale_t) -> c_int;
+    pub fn _iswpunct_l(c: u32, l: _locale_t) -> c_int;
+    pub fn _iswspace_l(c: u32, l: _locale_t) -> c_int;
+    pub fn _iswupper_l(c: u32, l: _locale_t) -> c_int;
 
     // mtdll.h:44/:45
     pub fn _lock(locknum: c_int);
