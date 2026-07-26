@@ -208,6 +208,31 @@ Same family, three positions, all silent on the arch where the widths happen to 
   narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
   and pointer typedefs.
 
+### An `extern` declaration for a symbol YOUR OWN CRATE defines
+The worst version of a width mismatch, because both halves are yours and neither compiler nor
+gate can see it. `msvcrt-crt-rust/prelude.rs` declared the nine `_isw*_l` predicates as
+`fn(c: wint_t, l: _locale_t)`, and `wint_t` is `unsigned short` — but the crate **defines** all
+nine itself (the `isw!` macro), taking `u32`, because that is what `_iswctype_l` takes. Every
+call routed through the prelude therefore wrote 16 bits into an argument the callee read as 32,
+with the upper half undefined per the Windows x64 ABI. It survived only because rustc happens to
+zero-extend; nothing guarantees it, and no tool was watching. `scan_extern_arity` is structurally
+blind here — **the arity matches**; only the width is wrong, and that bucket was triaged as
+"mostly benign return-register width" (below), which is true for *returns* and false for
+arguments.
+
+Two tells that this had already been noticed and worked around rather than fixed, both worth
+recognising as a signature: `fpnum.rs` carried a private `_iswspace_l_shim(wc: u32, …)` whose
+only job was to call `crate::_iswspace_l` directly, and one `mbcs.rs` call site had an explicit
+`as u16` cast — a *truncation written to satisfy a declaration that was itself wrong*. When you
+find a local shim or a narrowing cast whose only purpose is to make a call typecheck, suspect the
+declaration, not the call.
+
+**Rule: never `extern`-declare a symbol your own crate defines — call it through `crate::`.** The
+declaration adds nothing (the definition is in scope) and silently opts out of the type checking
+that would otherwise be free. Where a prelude must declare it anyway (a shared block others
+import), the declaration has to be checked against the definition by hand, because rustc treats
+them as unrelated items.
+
 ### Argument COUNT mismatches — the one clashing-extern bucket that is a real bug
 Same family as the widths above, one position further out: the decl and the definition
 disagree on how many parameters there are. `clashing_extern_declarations` carries ~1,458

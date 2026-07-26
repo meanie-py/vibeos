@@ -185,6 +185,16 @@ impl CharSrc for WStrSrc {
 
 // ── fpnum_double (string.c:365-477) ───────────────────────────────────────────
 
+/// The four-line `struct fpnum` literal `I10_OUTPUT` builds by hand before calling
+/// `fpnum_double`, exported for `string_l`. An adapter rather than `pub(crate)` on
+/// `FpNum`/`FpMod`/`fpnum_double`: the round mode is not a free choice — `I10_OUTPUT`
+/// is the only caller outside the parser and it always wants `FP_ROUND_EVEN`, so
+/// pinning it here keeps the enum private and the call site unable to get it wrong.
+pub(crate) fn ld80_fpnum_double(sign: i32, exp: i32, m: u64, d: &mut f64) -> i32 {
+    let mut num = fpnum(sign, exp, m, RoundEven);
+    fpnum_double(&mut num, d)
+}
+
 /// Assemble an IEEE-754 binary64 out of a parsed `fpnum`, applying the round mode.
 /// Returns 0, or `ERANGE` on overflow/underflow.
 fn fpnum_double(fp: &mut FpNum, d: &mut f64) -> i32 {
