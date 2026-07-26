@@ -166,6 +166,26 @@ by shape for triage. Three properties worth knowing:
   earlier pass while the x86 one was untouched), which is the shape to watch for: an
   error count that differs wildly per arch on the *same* function.
 
+**Stage 4 — `python -m rustconv.cfg_gate` (`cfg_gate.py`, 2026-07-26).** For a module whose C
+branches on a build-configuration `#ifdef` that is OFF in this tree. Run it after translation
+and before `crate-repair`: it is what makes the crate compile at all, and the casts
+`crate-repair` would otherwise chase live in code that this stage removes from the build.
+- **Guards are derived, not named.** `guards_for_module` intersects the macros the module tests
+  with the `/* #undef X */` set in wine's `config.h` — the same oracle Stage 0 uses. wldap32
+  branches on EIGHT, so a single hand-passed `--guard` would have left seven silently wrong.
+  Each maps to its own lowercase feature. `#elif defined(X)` arms are not in the `#ifdef` scan
+  and still need declaring by hand.
+- **The classification refuses more than it transforms, on purpose.** `#else` arms (the *other*
+  arm is what this build compiles) and guards nested inside a `switch` are reported, never
+  rewritten. That refusal is load-bearing: it is what surfaced wldap32's live §9.112 catch-all
+  in `map_error`.
+- **The off-arm's return value is LIFTED from the translated Rust**, not re-derived from the C
+  constant — fact sealing already audited that rendering, and a second opinion could disagree
+  silently. The twin copies the original's attributes so `#[no_mangle]` survives.
+- Interacts with `crate-repair`: prefer the semantic alias (`usize`) over a bindgen width alias
+  (`SIZE_T`) in any FFI signature the guarded code calls, or the repair pass is forced to bake
+  `as u32` on i386 and `as u64` on amd64/arm64 for one expression and correctly withholds both.
+
 ## `--target`: proven from the tree, or refused (2026-07-24)
 
 `--target <name>` for a `dll/win32/*` module not in `TARGETS` builds a Target via

@@ -2,7 +2,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-pub static WLDAP32_errormap: [ULONG; 97] = [
+pub static WLDAP32_errormap: [ULONG; 98] = [
     ERROR_SUCCESS,
     ERROR_OPEN_FAILED,
     ERROR_INVALID_LEVEL,
@@ -102,6 +102,15 @@ pub static WLDAP32_errormap: [ULONG; 97] = [
     ERROR_DS_GENERIC_ERROR,
     ERROR_DS_GENERIC_ERROR,
 ];
+// The C guards these `case` labels with `#ifdef HAVE_LDAP_H` INSIDE the switch, leaving
+// only `default: return error;` in this build (error.c:map_error). cfg_gate refuses a
+// guard nested in a switch, which is what surfaced the bug this replaces: every label
+// here is an OpenLDAP constant that only ldap.h defines, and an unresolved bare
+// identifier in PATTERN position is a binding, not a comparison -- so the first arm
+// matched everything and map_error returned WLDAP32_LDAP_SERVER_DOWN for every input.
+// Legal Rust, silent at runtime, and `cargo check` only whispered "unreachable pattern"
+// 16 times. Field manual §9.112.
+#[cfg(feature = "have_ldap_h")]
 #[no_mangle]
 pub unsafe extern "C" fn map_error(error: i32) -> u32 {
     match error {
@@ -123,6 +132,13 @@ pub unsafe extern "C" fn map_error(error: i32) -> u32 {
         LDAP_REFERRAL_LIMIT_EXCEEDED => WLDAP32_LDAP_REFERRAL_LIMIT_EXCEEDED,
         _ => error as u32,
     }
+}
+
+// What this build actually compiles: the switch's lone surviving `default`.
+#[cfg(not(feature = "have_ldap_h"))]
+#[no_mangle]
+pub unsafe extern "C" fn map_error(error: i32) -> u32 {
+    error as u32
 }
 
 #[no_mangle]
@@ -153,8 +169,19 @@ pub unsafe extern "C" fn ldap_err2stringW(err: ULONG) -> PWCHAR {
 
 #[no_mangle]
 pub unsafe extern "C" fn WLDAP32_ldap_perror(ld: *mut WLDAP32_LDAP, msg: PCHAR) {
-    // TRACE!( "(%p, %s)\n", ld, debugstr_a(msg) );
+    // TRACE!( "(%p, %s)\n", ld, debugstr_a!(msg) );
 }
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ldap_result2error(
+    ld: *mut WLDAP32_LDAP,
+    res: *mut WLDAP32_LDAPMessage,
+    free: ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn WLDAP32_ldap_result2error(
     ld: *mut WLDAP32_LDAP,
@@ -166,7 +193,7 @@ pub unsafe extern "C" fn WLDAP32_ldap_result2error(
     let mut error: i32 = 0;
 
     if ld.is_null() || res.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     ret = ldap_parse_result(
@@ -183,7 +210,7 @@ pub unsafe extern "C" fn WLDAP32_ldap_result2error(
     if ret == LDAP_SUCCESS {
         ret = error as ULONG;
     } else {
-        ret = !0u;
+        ret = !0u32;
     }
 
     ret
@@ -197,7 +224,7 @@ pub unsafe extern "C" fn LdapGetLastError() -> ULONG {
 
 #[no_mangle]
 pub unsafe extern "C" fn LdapMapErrorToWin32(err: ULONG) -> ULONG {
-    if err >= ARRAY_SIZE(WLDAP32_errormap) {
+    if err >= ARRAY_SIZE!(WLDAP32_errormap) {
         return ERROR_DS_GENERIC_ERROR;
     }
     WLDAP32_errormap[err as usize]
@@ -339,7 +366,7 @@ pub unsafe extern "C" fn LdapMapErrorToWin32(err: ULONG) -> ULONG {
 //  */
 // void CDECL WLDAP32_ldap_perror( WLDAP32_LDAP *ld, const PCHAR msg )
 // {
-//     TRACE( "(%p, %s)\n", ld, debugstr_a(msg) );
+//     TRACE( "(%p, %s)\n", ld, debugstr_a!(msg) );
 // }
 //
 // /***********************************************************************

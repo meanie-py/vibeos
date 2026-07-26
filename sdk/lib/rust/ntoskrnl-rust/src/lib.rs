@@ -35,6 +35,56 @@ pub use dbgprint_rust::{
     rtl_string_cb_printf_w, swprintf, wstr,
 };
 
+/// Announce an arm64-only MM invariant suppression, on the arm64 UART.
+///
+/// x86 hard-fails (`KeBugCheck(MEMORY_MANAGEMENT)`) at twelve points in the MM
+/// page-lifecycle paths where an invariant is already violated. arm64 replaces
+/// every one of them with a silent recovery — a `return STATUS_UNSUCCESSFUL`, a
+/// repair, a bare `return`. Each suppression was added to get a boot through
+/// bring-up, and together they mean **arm64 is deliberately not looking in the
+/// places x86 looks**, which is why the §9.97 physical-page-reuse corruption
+/// surfaces only as a distant victim (a bugcheck minutes later, a wedged gate)
+/// and never at the site.
+///
+/// Keep the recovery — removing one turns a boot into a bugcheck — but make it
+/// LOUD, so the next reproduction names its own culprit instead of leaving the
+/// reader to infer one. Prints are bounded per site: these sit on hot paths and
+/// an unbounded print would itself change the timing it is trying to observe.
+///
+/// Silence from an armed site is a real result: it eliminates that site.
+#[allow(unused_macros)]
+macro_rules! mm_guard_trip {
+    ($site:expr, $limit:expr $(, $label:expr => $val:expr)* $(,)?) => {{
+        #[cfg(target_arch = "aarch64")]
+        {
+            use core::sync::atomic::{AtomicU32, Ordering};
+            static HITS: AtomicU32 = AtomicU32::new(0);
+            let n = HITS.fetch_add(1, Ordering::Relaxed);
+            if n < $limit {
+                extern "C" {
+                    fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys::ddk::ULONG_PTR);
+                }
+                ARM64_UART_TRACE_HEX(
+                    concat!("[MMGUARD] ", $site, " hit#=\0").as_ptr(),
+                    (n + 1) as ntkrnl_sys::ddk::ULONG_PTR,
+                );
+                $(
+                    ARM64_UART_TRACE_HEX(
+                        concat!("[MMGUARD]   ", $label, "=\0").as_ptr(),
+                        ($val) as ntkrnl_sys::ddk::ULONG_PTR,
+                    );
+                )*
+                if n + 1 == $limit {
+                    ARM64_UART_TRACE_HEX(
+                        concat!("[MMGUARD] ", $site, " further hits suppressed after \0").as_ptr(),
+                        $limit as ntkrnl_sys::ddk::ULONG_PTR,
+                    );
+                }
+            }
+        }
+    }};
+}
+
 /// Cast an `extern "system"` function to the target callback ABI.
 ///
 /// On i386, DDK callback types use `extern "stdcall"`, while on amd64/arm64

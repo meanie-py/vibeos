@@ -145,6 +145,14 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
         Address = (*entry).Address;
 
         if ((Address as ULONG_PTR) & 0xFFF) != 0 {
+            // An rmap entry's Address must be page-aligned. Unaligned means the
+            // entry — or the list it came off — is already corrupt, which is the
+            // §9.97 signature read from the rmap side.
+            mm_guard_trip!(
+                "rmap.MmPageOutPhysicalAddress unaligned-rmap-Address", 8,
+                "Page" => Page, "Address" => Address as ULONG_PTR,
+                "Process" => Process as ULONG_PTR, "entry" => entry as ULONG_PTR,
+            );
             #[cfg(target_arch = "aarch64")]
             {
                 MiReleasePfnLock(OldIrql);
@@ -364,6 +372,13 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
                 return STATUS_SUCCESS;
             }
         } else {
+            // No section segment owns this page, yet it reached the page-out path
+            // as a section-backed page. x86 treats the contradiction as fatal.
+            mm_guard_trip!(
+                "rmap.MmPageOutPhysicalAddress no-segment-for-page", 8,
+                "Page" => Page, "Address" => Address as ULONG_PTR,
+                "Process" => Process as ULONG_PTR,
+            );
             #[cfg(target_arch = "aarch64")]
             {
                 if Process != PsInitialSystemProcess as PEPROCESS {
@@ -514,6 +529,18 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
         previous_entry = current_entry;
         current_entry = (*current_entry).Next;
     }
+    // Walked the whole rmap list and the (Process, Address) mapping we were told
+    // to delete is not in it. The caller believes this page is mapped there and
+    // the PFN database disagrees — so the page's mapping bookkeeping is ALREADY
+    // wrong at this point, and that is precisely the precondition for freeing a
+    // frame that is still mapped (§9.97). Of the twelve suppressions this is the
+    // one most likely to fire first on the reuse path; x86 bugchecks here.
+    mm_guard_trip!(
+        "rmap.MmDeleteRmap mapping-not-in-list", 8,
+        "Page" => Page, "Process" => Process as ULONG_PTR,
+        "Address" => Address as ULONG_PTR,
+        "listhead" => MmGetRmapListHeadPage(Page as _) as ULONG_PTR,
+    );
     #[cfg(target_arch = "aarch64")]
     {
         MiReleasePfnLock(OldIrql);

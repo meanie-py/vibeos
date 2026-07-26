@@ -6,11 +6,18 @@ use core::ffi::c_void;
 // This C file contains only function definitions, no types/constants/statics/tables.
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ldap_abandon(ld: *mut WLDAP32_LDAP, msgid: ULONG) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn WLDAP32_ldap_abandon(ld: *mut WLDAP32_LDAP, msgid: ULONG) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
     ret = map_error(ldap_abandon_ext(ld, msgid, core::ptr::null_mut(), core::ptr::null_mut()));
 
@@ -41,7 +48,7 @@ pub unsafe extern "C" fn ldap_check_filterA(ld: *mut WLDAP32_LDAP, filter: PCHAR
 
 #[no_mangle]
 pub unsafe extern "C" fn ldap_check_filterW(ld: *mut WLDAP32_LDAP, filter: LPWSTR) -> u32 {
-    debugstr_w(filter);
+    debugstr_w!(filter);
     if ld.is_null() {
         return WLDAP32_LDAP_PARAM_ERROR;
     }
@@ -55,6 +62,16 @@ pub unsafe extern "C" fn ldap_cleanup(instance: HANDLE) -> ULONG {
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ldap_count_entries(
+    ld: *mut WLDAP32_LDAP,
+    res: *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn WLDAP32_ldap_count_entries(
     ld: *mut WLDAP32_LDAP,
     res: *mut WLDAP32_LDAPMessage,
@@ -62,13 +79,23 @@ pub unsafe extern "C" fn WLDAP32_ldap_count_entries(
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
     ret = ldap_count_entries(ld, res);
 
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap_count_references"))]
+pub unsafe extern "C" fn WLDAP32_ldap_count_references(
+    ld: *mut WLDAP32_LDAP,
+    res: *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap_count_references")]
 #[no_mangle]
 pub unsafe extern "C" fn WLDAP32_ldap_count_references(
     ld: *mut WLDAP32_LDAP,
@@ -91,9 +118,9 @@ unsafe extern "C" fn get_escape_size(src: PCHAR, srclen: ULONG) -> ULONG {
         i = 0;
         while i < srclen {
             let c = *src.offset(i as isize);
-            if (c >= b'0' && c <= b'9') ||
-               (c >= b'A' && c <= b'Z') ||
-               (c >= b'a' && c <= b'z') {
+            if (c >= (b'0') as i8 && c <= (b'9') as i8) ||
+               (c >= (b'A') as i8 && c <= (b'Z') as i8) ||
+               (c >= (b'a') as i8 && c <= (b'z') as i8) {
                 size += 1;
             } else {
                 size += 3;
@@ -116,7 +143,7 @@ unsafe extern "C" fn escape_filter_element(src: PCHAR, srclen: ULONG, dst: PCHAR
             *d = *src.offset(i as isize);
             d = d.offset(1);
         } else {
-            d = d.offset(sprintf(d, fmt.as_ptr() as LPCSTR, *src.offset(i as isize) as u8) as isize);
+            d = d.offset(sprintf(d, fmt.as_ptr() as LPCSTR, *src.offset(i as isize) as c_int) as isize);
         }
         i += 1;
     }
@@ -164,6 +191,17 @@ pub unsafe extern "C" fn ldap_escape_filter_elementW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_first_attributeA(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+    ptr: *mut *mut WLDAP32_BerElement,
+) -> PCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_first_attributeA(
     ld: *mut WLDAP32_LDAP,
     entry: *mut WLDAP32_LDAPMessage,
@@ -182,6 +220,17 @@ pub unsafe extern "C" fn ldap_first_attributeA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_first_attributeW(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+    ptr: *mut *mut WLDAP32_BerElement,
+) -> PWCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_first_attributeW(
     ld: *mut WLDAP32_LDAP,
@@ -214,12 +263,30 @@ pub unsafe extern "C" fn ldap_memfreeW(block: PWCHAR) {
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ldap_msgfree(res: *mut WLDAP32_LDAPMessage) -> ULONG {
+    WLDAP32_LDAP_SUCCESS
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn WLDAP32_ldap_msgfree(res: *mut WLDAP32_LDAPMessage) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_SUCCESS;
     ldap_msgfree(res);
     return ret;
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_next_attributeA(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+    ptr: *mut WLDAP32_BerElement,
+) -> PCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_next_attributeA(
     ld: *mut WLDAP32_LDAP,
@@ -241,13 +308,24 @@ pub unsafe extern "C" fn ldap_next_attributeA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_next_attributeW(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+    ptr: *mut WLDAP32_BerElement,
+) -> LPWSTR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_next_attributeW(
     ld: *mut WLDAP32_LDAP,
     entry: *mut WLDAP32_LDAPMessage,
     ptr: *mut WLDAP32_BerElement,
 ) -> LPWSTR {
     let mut ret: LPWSTR = core::ptr::null_mut();
-    #[cfg(feature = "HAVE_LDAP")]
+    #[cfg(feature = "have_ldap")]
     {
         let retU: LPSTR;
 
@@ -262,6 +340,19 @@ pub unsafe extern "C" fn ldap_next_attributeW(
     ret
 }
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ldap_result(
+    ld: *mut WLDAP32_LDAP,
+    msgid: ULONG,
+    all: ULONG,
+    timeout: *mut l_timeval,
+    res: *mut *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn WLDAP32_ldap_result(
     ld: *mut WLDAP32_LDAP,
     msgid: ULONG,
@@ -271,8 +362,8 @@ pub unsafe extern "C" fn WLDAP32_ldap_result(
 ) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
 
-    if ld.is_null() || res.is_null() || msgid == !0u {
-        return !0u;
+    if ld.is_null() || res.is_null() || msgid == !0u32 {
+        return !0u32;
     }
     ret = ldap_result(ld, msgid, all, timeout as *mut timeval, res);
 
@@ -389,7 +480,7 @@ pub unsafe extern "C" fn LdapUTF8ToUnicode(
 //     ULONG ret;
 //     WCHAR *filterW = NULL;
 //
-//     TRACE( "(%p, %s)\n", ld, debugstr_a(filter) );
+//     TRACE( "(%p, %s)\n", ld, debugstr_a!(filter) );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
 //
@@ -419,7 +510,7 @@ pub unsafe extern "C" fn LdapUTF8ToUnicode(
 //  */
 // ULONG CDECL ldap_check_filterW( WLDAP32_LDAP *ld, PWCHAR filter )
 // {
-//     TRACE( "(%p, %s)\n", ld, debugstr_w(filter) );
+//     TRACE( "(%p, %s)\n", ld, debugstr_w!(filter) );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
 //     return WLDAP32_LDAP_SUCCESS; /* FIXME: do some checks */

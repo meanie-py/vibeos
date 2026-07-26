@@ -6,6 +6,15 @@ use core::ffi::c_void;
 // The C file contains only function definitions and HAVE_LDAP conditional blocks.
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ldap_count_values_len(
+    vals: *mut *mut WLDAP32_berval,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn WLDAP32_ldap_count_values_len(
     vals: *mut *mut WLDAP32_berval,
 ) -> ULONG {
@@ -14,6 +23,13 @@ pub unsafe extern "C" fn WLDAP32_ldap_count_values_len(
     return ret;
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_count_valuesA(vals: *mut PCHAR) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_count_valuesA(vals: *mut PCHAR) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
@@ -35,6 +51,13 @@ pub unsafe extern "C" fn ldap_count_valuesA(vals: *mut PCHAR) -> ULONG {
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_count_valuesW(vals: *mut PWCHAR) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_count_valuesW(vals: *mut PWCHAR) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
 
@@ -52,6 +75,7 @@ pub unsafe extern "C" fn ldap_count_valuesW(vals: *mut PWCHAR) -> ULONG {
 
     ret
 }
+#[cfg(feature = "have_ldap")]
 unsafe extern "C" fn bv2str(bv: *mut berval) -> *mut i8 {
     let mut str: *mut i8 = core::ptr::null_mut();
     let len: u32 = (*bv).bv_len;
@@ -66,6 +90,7 @@ unsafe extern "C" fn bv2str(bv: *mut berval) -> *mut i8 {
 
 #[no_mangle]
 pub unsafe extern "C" fn WLDAP32_ldap_value_free_len(vals: *mut *mut WLDAP32_berval) -> ULONG {
+    #[cfg(feature = "have_ldap")]
     ldap_value_free_len(vals as *mut *mut berval);
     return WLDAP32_LDAP_SUCCESS;
 }
@@ -222,7 +247,7 @@ pub unsafe extern "C" fn ldap_value_freeW(vals: *mut PWCHAR) -> ULONG {
 // #ifdef HAVE_LDAP
 //     WCHAR *attrW = NULL, **retW;
 //
-//     TRACE( "(%p, %p, %s)\n", ld, entry, debugstr_a(attr) );
+//     TRACE( "(%p, %p, %s)\n", ld, entry, debugstr_a!(attr) );
 //
 //     if (!ld || !entry || !attr) return NULL;
 //
@@ -310,7 +335,7 @@ pub unsafe extern "C" fn ldap_value_freeW(vals: *mut PWCHAR) -> ULONG {
 //     char *attrU = NULL, **retU;
 //     struct berval **bv;
 //
-//     TRACE( "(%p, %p, %s)\n", ld, entry, debugstr_w(attr) );
+//     TRACE( "(%p, %p, %s)\n", ld, entry, debugstr_w!(attr) );
 //
 //     if (!ld || !entry || !attr) return NULL;
 //
@@ -342,7 +367,7 @@ pub unsafe extern "C" fn ldap_value_freeW(vals: *mut PWCHAR) -> ULONG {
 //     WCHAR *attrW = NULL;
 //     struct WLDAP32_berval **ret;
 //
-//     TRACE( "(%p, %p, %s)\n", ld, message, debugstr_a(attr) );
+//     TRACE( "(%p, %p, %s)\n", ld, message, debugstr_a!(attr) );
 //
 //     if (!ld || !message || !attr) return NULL;
 //
@@ -385,7 +410,7 @@ pub unsafe extern "C" fn ldap_value_freeW(vals: *mut PWCHAR) -> ULONG {
 //     char *attrU = NULL;
 //     struct berval **ret;
 //
-//     TRACE( "(%p, %p, %s)\n", ld, message, debugstr_w(attr) );
+//     TRACE( "(%p, %p, %s)\n", ld, message, debugstr_w!(attr) );
 //
 //     if (!ld || !message || !attr) return NULL;
 //

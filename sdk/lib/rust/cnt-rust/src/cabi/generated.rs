@@ -520,8 +520,8 @@ mod m_strnicmp {
     /// preserved misfeature: as _stricmp + count-bounded; n==0 → 0 (while(remaining--!=0)); equal-NUL still breaks early within n
     #[no_mangle]
     pub unsafe extern "C" fn _strnicmp(_String1: *const u8, _String2: *const u8, _MaxCount: usize) -> i32 {
-        let _String1_s = cstr_slice(_String1);
-        let _String2_s = cstr_slice(_String2);
+        let _String1_s = cstr_slice_bounded(_String1, _MaxCount);
+        let _String2_s = cstr_slice_bounded(_String2, _MaxCount);
         crate::core_rs::string::ncmp_ci(_String1_s, _String2_s, _MaxCount)
     }
 
@@ -845,8 +845,8 @@ mod m_wcsnicmp {
     /// preserved misfeature: as _wcsicmp + count-bounded; n==0 → 0; equal-NUL breaks early within n
     #[no_mangle]
     pub unsafe extern "C" fn _wcsnicmp(_String1: *const u16, _String2: *const u16, _MaxCount: usize) -> i32 {
-        let _String1_s = wcstr_slice(_String1);
-        let _String2_s = wcstr_slice(_String2);
+        let _String1_s = wcstr_slice_bounded(_String1, _MaxCount);
+        let _String2_s = wcstr_slice_bounded(_String2, _MaxCount);
         crate::core_rs::wstring::ncmp_ci(_String1_s, _String2_s, _MaxCount)
     }
 

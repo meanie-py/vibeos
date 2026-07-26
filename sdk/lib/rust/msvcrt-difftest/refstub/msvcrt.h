@@ -389,6 +389,10 @@ typedef struct __thread_data {
     unsigned char  *mbstok_next;
     int             locale_flags;
     pthreadmbcinfo  mbcinfo;
+    /* file.c's tmpnam/_wtmpnam scratch — same slots as the real
+     * dll/win32/msvcrt/msvcrt.h, kept in field order. */
+    char                           *tmpnam_buffer;
+    wchar_t                        *wtmpnam_buffer;
 } thread_data_t;
 
 #define LOCALE_FREE    0x1

@@ -786,6 +786,23 @@ the commented ones. **Prefer bindgen enums over local consts in new translations
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.
 
+### A local `const` silently SHADOWS a glob import — no warning at either site
+`ARM3/special.rs` declared `const POOL_FLAG_SPECIAL_POOL: ULONG = 0x10` while
+`use ntkrnl_sys::mm::*` was already supplying the real `0x20` (`miarm.h:328`). `0x10` is
+`POOL_FLAG_CHECK_DEADLOCK`, so `MiInitializeSpecialPool` set the wrong bit forever and
+`ExAllocatePoolWithTag`'s `ExpPoolFlags & 0x20` test never fired: **special pool armed,
+initialised, printed `ACTIVE`, and routed not one allocation.** rustc warns about neither the
+shadowing nor the unused import. The same class by *type*: `fastfat-rust/src/dirctrl.rs` picks
+up a 64-bit `VBO` from an `ntkrnl_sys` glob where fastfat's own `VBO` is `ULONG32`
+(`fat.h:38`), so the C `FatLocateDirent` writes 4 bytes through a pointer Rust reads as 8 —
+surviving only because the `= 0` init leaves the high half clear on little-endian.
+
+**Never redeclare a name the crate already imports.** And the process half of the lesson:
+`scan_const_contradictions` had *already found* this one — it sat in the lint baseline, and
+nobody traced what the contradiction meant. **Baselining a constant contradiction defers a real
+bug; when the constant gates a diagnostic, baselining it disables the diagnostic.** Two
+unresolved neighbours still sit three lines away (`MI_HYPERSPACE_PTES` 0xFF vs 0x100).
+
 ### An arch-INVARIANT constant, wrong in exactly ONE arch's private copy
 `ke/arm64/kiinit.rs` declared `PRCB_BUILD_UNIPROCESSOR = 1` / `PRCB_BUILD_DEBUG = 2`. Every
 `ndk/*/ketypes.h` says DEBUG=1, UNIPROCESSOR=2 — **the two were swapped**, and i386 and amd64
@@ -872,6 +889,16 @@ between headers** (`SCSI_NOTIFICATION_TYPE`), and **never define a value-alias n
 sibling** (`IRP_MJ_SCSI` == `IRP_MJ_INTERNAL_DEVICE_CONTROL` — two names, one value, and a
 `match` cannot hold both). When widening a scrutinee: **no narrow siblings in the match → widen
 it** (`match (*req).EntryIndex as u32`); **siblings already narrow → join them, don't widen.**
+
+**A whole `switch` can be catch-all'd when its labels live in a header the build never
+includes.** wldap32's `map_error` matches 16 OpenLDAP codes that only `ldap.h` defines, and
+`config.h` says `/* #undef HAVE_LDAP_H */` — so *every* label was unresolved, the first arm
+bound everything, and the function returned `WLDAP32_LDAP_SERVER_DOWN` for every input. The
+tell was 16 `unreachable pattern` warnings in a row; nothing else fired. **N consecutive
+"unreachable pattern" warnings on one `match` means arm 1 is a binding — read it as an error.**
+Prophylactic beyond the island audit: if the C guards the `case` labels with an `#ifdef` that is
+off in this build, the arms must carry that guard in Rust too — see the build-configuration
+guard entry under *Dropped, degraded & silently-rewritten translation output*.
 
 ### Deterministic prevention: SEAL the facts `[§9.117]`
 `rustconv translate --seal-facts --seal-calls` takes constants and call occurrences **out of
@@ -1073,6 +1100,25 @@ recovery and fix the INPUT, not the recovery.**
   one legacy C body was never translated, so arm64 bugchecked **0x23 after the marker** during
   first-logon profile creation `[§9.45]`. A `FASTFAT_STUB_HIT: <fn>` line on serial is an
   *un-translated stub being called*, not a kernel bug — make every stub say its own name.
+- **A translated `extern fn` that names a C MACRO becomes a bugcheck stub.** The declaration is
+  an unchecked *claim* that a symbol exists: no symbol does, so the stub generator "resolves" it
+  into `KeBugCheckEx`. Rust compiles, the link succeeds, and the crash waits for the first caller.
+  `FatGenerateFileIdFromFcb` / `FatGenerateFileIdFromDirentAndOffset` (`fatprocs.h:3067`/`3078`)
+  and `SizeOfPackedEa` (`fat.h:738`) all shipped this way; the first fires on any
+  `FileInternalInformation` query. **Grep the headers for `#define <name>(` before trusting an
+  `extern` declaration** — and note this is the *inverse* of `[§9.53]` above: there a macro was
+  stubbed to a silent no-op, here a macro is stubbed to a loud crash. Same root, opposite failure.
+- **The reachable-stub set is computable — stop finding it one boot at a time.** Intersect the
+  names defined with a `STUB_BUGCHECK` body in `rust_cohab_stub.c` with the names any `*-rust`
+  module declares `fn <name>(`. That intersection is *unimplemented AND reachable*. fastfat: 109
+  stub-file functions, 19 bugcheck stubs, **all 19 reachable**, mostly FSCTL handlers — exactly
+  what a filesystem conformance test drives, so they surface one per boot as the test gets
+  further. Expect the queue to alternate between macros (implement inline) and genuinely
+  untranslated functions (`FatOpenVolume`, `create.c:2292`, ~290 lines — translate it).
+- **Only arm64 exercises fastfat.** arm64 boots a FAT32 ramdisk, so fastfat is its live system
+  volume; i386/amd64 boot a CDFS ISO and never enter it. An "arm64-only" filesystem crash is
+  usually *coverage*, not an arch bug — and conversely a fastfat stub is invisible on two of
+  three arches.
 - **A dual-implementation file ships the `#if !DBG` STUB branch** and the real body vanishes.
   **`#ifdef MACRO` mapped to `#[cfg(MACRO)]` is always the wrong branch.** **Arch-cfg branches
   flattened to the desktop path.** **A flip omitting a C `#define` redirect/HACK** compiles,
@@ -1084,6 +1130,45 @@ recovery and fix the INPUT, not the recovery.**
 - **`table_audit.py`** compares every file-scope C data table against the Rust; **`vtbl_gen.py`**
   generates COM vtbls from the C initializer plus bindgen; **`export_audit.py`** requires every
   `.spec` export to exist as a correctly-decorated `#[no_mangle]`. Use them; don't ask an LLM.
+
+### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
+
+**Symptom.** A Wine-derived module translates cleanly and then cannot compile at all: hundreds
+of `cannot find function` for an optional backend's API. wldap32 hit 1087 rustc errors, 778 of
+them `ldap_*`.
+
+**Cause.** `config.h` writes an off feature as `/* #undef HAVE_LDAP */` — an assertion about
+*this* build. The C therefore compiles `return WLDAP32_LDAP_NOT_SUPPORTED` for every entry
+point and never links a libldap. The translator renders the **whole** C, guarded arm included
+(correctly — that arm is what makes the Rust worth more than the C), so the output references
+a library that is not there. Two follow-on shapes, both silent: a `switch` whose labels all
+come from the absent header becomes a catch-all (see the CATCH-ALL entry), and a `static
+inline` helper block that the header gates gets emitted ungated.
+
+**Fix.** Do what the C does — keep both arms, let a cfg feature pick. `python -m
+rustconv.cfg_gate --c-dir <dir> --rust-dir <dir>` derives the boundary from the C and applies
+it; `--apply` writes. It emits a `#[cfg(not(feature=...))]` twin carrying a **copy of the
+attributes** (`#[no_mangle]` must survive with the feature off) whose body is the initializer
+*lifted from the translated Rust*, never re-derived from the C constant. **Never delete the
+guarded arm** — it is paid artifact, and it is the half that a future `HAVE_X=1` build needs.
+
+Three things that bite:
+- **Guards are plural.** wldap32 branches on EIGHT (`HAVE_LDAP`, `HAVE_LDAP_H`, and six
+  per-entry-point probes like `HAVE_LDAP_PARSE_SORT_CONTROL`), each `#undef`'d independently.
+  Gate on the obvious one alone and the other seven stay silently wrong. `cfg_gate` derives the
+  set by intersecting the macros the module tests with config.h's `#undef` set; `#elif
+  defined(X)` arms are NOT in that scan and need declaring by hand.
+- **`#else` means the other arm is the one that ships.** Gating the translated arm there
+  installs the wrong half. `cfg_gate` refuses these rather than guess.
+- **One spelling only.** wldap32 carried four in one crate — `feature = "HAVE_LDAP"`,
+  `feature = "have_ldap"`, bare `cfg(HAVE_LDAP)`, bare `cfg(have_ldap)`. All four are false
+  today, so nothing looked wrong; flipping the feature either way would have taken half the
+  crate the wrong direction. A bare `cfg(X)` is a custom cfg flag, *not* a feature.
+
+Declare every feature in `Cargo.toml`, and prefer the semantic alias over a bindgen width alias
+in FFI signatures (`heap_alloc(len: usize)`, not `SIZE_T`) — `crate-repair` will otherwise have
+to bake `as u32` on i386 and `as u64` on amd64/arm64 for the same expression, and rightly
+refuses.
 
 ### A `#include`-built table has a different ROW SET under the wrong preprocessor config
 The C does `static const T tbl[] = { #include "Data.h" };` where the rows are `#if`-guarded on
@@ -1379,6 +1464,18 @@ an `error[E0412]: cannot find ULONG`, but the `ninja` invocation was piped
   read the per-crate `Compiling <crate>` lines.
 - **After a probe that MUST appear on serial, verify the literal is in the binary before
   booting:** `strings <module> | grep -c '<my unique literal>'`. Zero = stop and fix the build.
+- **Verify it in the MEDIA YOU BOOT, not the module you built.** `strings build-<arch>/ntoskrnl/
+  ntoskrnl.exe` answers a different question than `strings <the .iso qemu opens>`, and only the
+  second one is the experiment. This cost a 12-round, ~9-hour arm64 soak on 2026-07-26: the media
+  was deliberately frozen for run-to-run comparability at 22:42, the two probes it was built to
+  exercise landed at 02:43, and every round then booted a kernel with **zero** `FREEMAPPED` and
+  **zero** `KSTACK` literals. The binary check passed; it was checking the wrong artifact. The
+  soak's face taxonomy survived (bugcheck operands and the census were in that media) but every
+  probe-derived conclusion was vacuous — and "the tripwire never fired" reads as evidence of
+  absence when it is really absence of the tripwire (§9.122).
+- **Freezing media and adding instrumentation are in direct tension** — a fixed image is what
+  makes rounds comparable, and it is also what silently locks out the probe you add at hour 3.
+  If you freeze, re-verify the frozen artifact after every probe commit, or re-cut the image.
 - **"Other edits in the crate shipped" does not prove YOUR file did** — cargo is per-file
   incremental and one file's error doesn't fail the archive.
 
@@ -1868,6 +1965,23 @@ before it.** The same file had all three variants that break the naive pattern �
 inside a comment, `L'` inside a narrow string, and the `case 'L':` — so treat one occurrence as
 proof the others are present too.
 
+**A NEARLY-right match is worse than none, because it fails as a SKIP.** Both of `cfg_gate`'s
+own shipped bugs were this, and neither raised anything:
+- **Byte offsets into a `str`.** tree-sitter reports *byte* spans; slicing a Python `str` with
+  them drifts one position per non-ASCII character already seen. A single em-dash in one file's
+  doc comment shifted every name after it by two — `bvarraydup` came out `arraydup(b` — which
+  then matched no entry in the lookup table, so **43 functions were silently skipped** instead
+  of failing. Work in `bytes` and decode spans; and assert the shape you expect (a name that is
+  not `str.isidentifier()` is now a hard error), because the *only* thing standing between a
+  corrupt extraction and a silent no-op is a check that the extraction looks right.
+- **Substring guard names.** `"ifdef HAVE_LDAP"` occurs inside `"ifdef HAVE_LDAP_PARSE_REFERENCE"`,
+  so a `str.count` saw two guarded regions where there was one and refused two ordinary
+  functions as too-complex-to-transform — again leaving them silently untransformed. Anchor
+  identifier matches with `\b`, and sort an alternation longest-first so it cannot prefix-match.
+
+**The tell for both: a tool that reports "skipped" rather than "failed" is making a claim it
+cannot support.** Count what you *transformed* and reconcile it against what you *found*.
+
 ### A symbolicator resolves against SOME binary — make sure it is the one that booted
 **Symptom:** a bugcheck PC resolves to a function that makes no sense at the crash site, or to a
 constant (`KTRAP_FRAME_LENGTH+13864` — an ABSOLUTE symbol 13KB away), or the tool declines
@@ -2194,6 +2308,35 @@ per-arch bugcheck.
 ### Cohab link-clean ≠ runtime-correct
 A clean cargo + ninja can still bugcheck mid-init. The link is a necessary gate, never a
 sufficient one — which is the whole reason smoke is the north star.
+
+### A cohab shim declared VOID SWALLOWS the real function's return value
+
+**Symptom.** Callers branch on a value the callee never delivered. Nothing warns: the C
+compiles, Rust compiles, the link resolves.
+
+**Cause (fastfat `FatAcquireExclusiveVcb`, all three arches).** `fatprocs.h` defines it as a
+macro over `FatAcquireExclusiveVcb_Real`, which returns `FINISHED` (`typedef BOOLEAN`) —
+"did I get the resource?". `rust_cohab_stub.c` forward-declared `_Real` as **`VOID`** and so
+the wrapper shim was `VOID` too; it called `_Real` and returned nothing. Every Rust caller
+that declared a return type was reading whatever survived in the return register across the
+shim's epilogue — right only by accident of codegen, and wrong the moment the register is
+touched. Live readers were `flush.rs`, `fileinfo.rs` and `volinfo.rs`, i.e. flush,
+set-file-info and volume-info.
+
+**The tell, and it is cheap to look for:** the crate disagreed with ITSELF. One symbol,
+eight `extern` declarations, four different return types (`void` ×4, `BOOLEAN` ×3,
+`NTSTATUS`, `i32`). `grep -rn "fn <Name>" <crate>/src` takes seconds and any disagreement is
+a bug in all but one of the sites. `volinfo`'s `i32` read four bytes of a one-byte return.
+
+**Fix.** Correct the forward declaration FIRST — a wrong prototype for the callee makes
+forwarding impossible in principle, so the shim's signature is a symptom, not the root. Then
+make the shim `return` the value, then normalize every Rust decl to the one true type.
+
+**Generalization.** A cohab shim's signature is part of the ABI contract and nothing checks
+it. When a shim exists only to fill in a macro, its return type must match the macro's
+expansion, not whatever the shim author happened to need that day. `verify_c_signatures`
+covers Rust-vs-C for declared prototypes; a shim that is *itself* mis-prototyped in C is
+outside that net.
 ---
 
 ## Mm, PFN & paging
@@ -3014,12 +3157,37 @@ per-boot over the fw_cfg channel — **no media rebuild**:
 `./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5"` (or `SPECIALPOOL=*`). For a rare
 flake use `farm` + `farm-report`, never a hand-rolled boot loop.
 
+**Require `special pool ACTIVE (routing verified)` on serial — `ACTIVE` alone used to be a lie.**
+Symptom: special pool armed, initialized, announced ACTIVE, and caught nothing; the stop code
+came back bit-identical to the un-armed run and the `[POOL]` page walk showed ordinary pool
+blocks. Cause: `ARM3/special.rs` declared a **local** `const POOL_FLAG_SPECIAL_POOL = 0x10`, which
+shadowed the correct `0x20` the file already glob-imports from `ntkrnl_sys::mm` — `0x10` is
+`POOL_FLAG_CHECK_DEADLOCK`, so `MiInitializeSpecialPool` set a bit that
+`ExAllocatePoolWithTag` never tests and **not one allocation was ever routed**. Fix: the local
+const is gone, and arming now allocates through the real `ExAllocatePoolWithTag` and checks
+`MmIsSpecialPoolAddress` before claiming anything. Two durable lessons: **never redeclare a
+constant the crate already imports** (a local `const` shadows a glob import silently, with no
+warning at either site), and **a selftest that bypasses the production path proves nothing about
+it** — `SPECIALPOOL_SELFTEST` called `MmAllocateSpecialPool` directly, so it stayed green through
+all of this while calling itself an "end-to-end detection proof". Any pre-fix conclusion of the
+form "special pool didn't catch it, so it isn't an overrun" is void; re-run it.
+
 ### Breakpoints and watchpoints require TCG
 **KVM fires neither gdb breakpoints nor hardware watchpoints** `[§9.1]`. Prepend `VIBEOS_NO_KVM=1` for
 i386 hunts. Do **not** switch the smoke backend to native KVM to "repro faster" — it hits the
 per-arch accelerator cap, so a parallel repro just queues.
 
 ### Symbolication
+- **The kernel now PRINTS its own runtime base — stop deriving it.** Every boot emits
+  `[KRNLBASE] ntoskrnl runtime base=0x...` from `MiInitializeLoadedModuleList`
+  (`ARM3/sysldr.rs`, right after `PsNtosImageBase` is taken from the loader block). Feed it
+  straight to `qemu/addr2sym.sh <arch> --kernel-base 0x<that value> <addr>`, which does the
+  `- 0x400000` itself so nobody has to remember the direction. This makes the whole *retained*
+  crash corpus symbolicable offline with no VM — previously a saved arm64 bugcheck was a bare
+  hex address unless a live VM was still around for `inspect.sh` to query. Measured stable
+  across boots on arm64 (`0xFFFFF80042190000` twice), so a base recorded once stays good for
+  that build. The derive-from-`module+offset`-pairs method below is now the *fallback*, for
+  logs predating this line.
 - **i386 Rust-in-ntoskrnl carries a `+0x291000` shift** `[§9.2]`. C: `file_VA = runtime - 0x7fe00000`.
   Rust: additionally `- 0x291000`. One-shot for both:
   `qemu/addr2sym.sh i386 --reloc 0x80091000 <addr>`.
@@ -3129,8 +3297,10 @@ introduced at any heap exit — it is an external stray write.**
   a stale slot. Fix: shims `call @Kf*Irql@4; ret 4` — clean their own frame.
 - **Ground-truth an inherited bug list before working it** `[§9.27-ground]`. Of "3 open corruption
   bugs": 2 did not reproduce, 1 was reframed. **And validate the tool first** — the
-  `SPECIALPOOL_SELFTEST=guard` run exists for exactly that. In the same pass, a plausible
-  IRQL-leak hypothesis was **disproven live**.
+  `SPECIALPOOL_SELFTEST=guard` run exists for exactly that, but note it exercises only the
+  detection machinery (it allocates via `MmAllocateSpecialPool` directly); the *routing* proof is
+  the `routing verified` line described in the tripwire section above. In the same pass, a
+  plausible IRQL-leak hypothesis was **disproven live**.
 
 ### x86 UEFI boot bring-up (OVMF)
 Three gotchas latent in the C, which surface only once you actually boot UEFI:
@@ -3170,6 +3340,39 @@ real net regression fails *some* tests with *varied* timings; starvation errors 
 identically. **Do not `--allow-stale`, do not re-gate** (it will starve again), and above all
 **never broad-kill QEMUs** — use `./vibeos-cli kill`. Starvation must be *visible*: it used to
 read as "my build is slow".
+
+### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
+
+**Symptom.** `test_queue_is_fifo_by_arrival` failed roughly 1 run in 80, only ever under
+parallel load, and passed 80/80 sequentially. The obvious readings — "clock granularity",
+"a racy test" — are both wrong, and either one would have been fixed by quieting the test.
+
+**Cause.** The merge queue orders submissions by a `seq` of `"<time_ns>-<lane>"` and relies on
+lexical order being arrival order. `time.time_ns()` is **CLOCK_REALTIME, which steps.** Under
+WSL2 the guest clock resyncs to the Windows host, and the captured failure shows a lane
+submitted 2.59 **seconds** in the past relative to one already on disk:
+
+```
+lane-a  01785085499633383341   submitted FIRST, larger
+lane-b  01785085497039700594   submitted SECOND, smaller by 2,593,682,747 ns
+```
+
+So the later arrival sorted first. The test was reporting a **live fairness bug in the thing
+that decides whose work lands** — a lane could silently jump the queue.
+
+**Fix.** Lamport-style bump in `queue._next_seq()`: keep wall-clock ns, but never hand out a
+value at or before the queue's current high-water mark. Scan **pending only, not results** — the
+invariant only has to hold among submissions competing for a conductor, and pending-only
+self-heals, whereas including results would pin every future seq to a bad value until the
+history was pruned if the clock ever jumped far *forward*.
+
+**Two generalizations worth more than the bug.** (1) Never derive ordering, elapsed time, or
+timeouts from `time.time()`/`time.time_ns()` — use `time.monotonic()` for durations, and for
+anything persisted across processes make the *stored state* the authority. (2) A 1-in-80
+failure is not a control. Reproduce it under the load that triggers it (8 workers × 25 runs
+here), then pin it with a test that **fakes the trigger deterministically** — the regression
+test steps the clock backwards by the exact observed 2,593,682,747 ns and fails against the
+old allocator with the live signature.
 
 ### Known-benign signals — do not chase these
 - **A screenshot that looks solid black (346-byte PNG) is NOT a boot failure.** More generally,

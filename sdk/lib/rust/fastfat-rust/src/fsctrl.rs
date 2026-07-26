@@ -18,6 +18,15 @@ use core::ptr::null_mut;
 use core::ptr;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlNotifyVolumeEvent, IoIs32bitProcess, MOVE_FILE_DATA32, PMOVE_FILE_DATA32, PMARK_HANDLE_INFO32, FsRtlAddLargeMcbEntry, FsRtlGetNextLargeMcbEntry, FsRtlInitializeLargeMcb, FsRtlLookupLargeMcbEntry, FsRtlNumberOfRunsInLargeMcb, FsRtlRemoveLargeMcbEntry, FsRtlUninitializeLargeMcb};
+// Needed by the FSCTL handlers translated at the end of this file. Imported by
+// EXPLICIT path rather than a glob: a glob here would put `VBO` (64-bit in
+// ntkrnl_sys, ULONG32 in fastfat) and friends in scope to silently shadow the
+// crate's own types — the class that already bit dirctrl.rs.
+use crate::glue::{FSRTL_VOLUME_UNLOCK, VPB_DIRECT_WRITES_ALLOWED, VPB_LOCKED};
+use crate::types::{
+    IRP_CONTEXT_FLAG_DISABLE_POPUPS, VCB_STATE_FLAG_LOCKED, VCB_STATE_FLAG_MOUNTED_DIRTY,
+    VCB_STATE_FLAG_VOLUME_DIRTY,
+};
 use crate::types::{BIOS_PARAMETER_BLOCK, CCB, DCB, DIRENT, FAT_BUG_CHECK_FSCTRL, FAT_DATA, FAT_ENTRY, FCB, FCB_CONDITION, FCB_STATE_DELETE_ON_CLOSE, IRP_CONTEXT, PACKED_BIOS_PARAMETER_BLOCK, PACKED_BOOT_SECTOR, PACKED_BOOT_SECTOR_EX, PBCB, PCCB, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VCB_CONDITION, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
 // Additional imports needed by FatMountVolume (translated from fsctrl.c)
 use ntkrnl_sys::ddk::ExReleaseResourceLite;
@@ -98,7 +107,7 @@ extern "system" {
     fn CcUninitializeCacheMap(FileObject: *mut FILE_OBJECT, TruncateSize: *const LARGE_INTEGER, UninitEvent: *mut c_void);
     fn CopyUchar4(dst: *mut u32, src: *const u8);
     fn ExFreePool(p: *mut c_void);
-    fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+    fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatBytesPerCluster(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatCheckDirtyBit(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -119,15 +128,22 @@ extern "system" {
     fn KeGetCurrentThread() -> *mut c_void;
     // RtlZeroMemory: imported via ntkrnl_sys::rtl::*
     fn _SEH2_AbnormalTermination() -> bool;
-    fn FatLockVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatUnlockVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
+    // FatLockVolume / FatLockVolumeInternal are DEFINED in Rust below.
+    // FatUnlockVolume, FatDirtyVolume, FatIsVolumeMounted, FatIsPathnameValid and
+    // FatQueryBpb are DEFINED in Rust below (each was a BUGCHECK stub).
+    //
+    // FatIsPathnameValid was declared here as `-> u8` while the C returns NTSTATUS,
+    // and the dispatch arm cast it back with `as i32`. That only ever worked because
+    // the function unconditionally returns STATUS_SUCCESS (0): any non-zero status
+    // would have been truncated to its low byte on the way out. The Rust definition
+    // returns NTSTATUS and the cast is gone.
     fn FatDismountVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatDirtyVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatIsVolumeDirty(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatIsVolumeMounted(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatIsPathnameValid(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> u8;
     fn FatQueryRetrievalPointers(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatQueryBpb(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
+    // verfysup.rs:484. Returns VOID — it FatRaiseStatus()es rather than reporting.
+    fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+    fn FatIsHandleCountZero(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
+    fn FatFspClose(Vcb: *mut VCB);
     fn FatGetStatistics(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatGetVolumeBitmap(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatGetRetrievalPointers(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
@@ -947,7 +963,7 @@ pub unsafe extern "system" fn FatUserFsCtrl(IrpContext: PIRP_CONTEXT, Irp: PIRP)
         FSCTL_MARK_VOLUME_DIRTY => FatDirtyVolume(IrpContext, Irp),
         FSCTL_IS_VOLUME_DIRTY => FatIsVolumeDirty(IrpContext, Irp),
         FSCTL_IS_VOLUME_MOUNTED => FatIsVolumeMounted(IrpContext, Irp),
-        FSCTL_IS_PATHNAME_VALID => FatIsPathnameValid(IrpContext, Irp) as i32,
+        FSCTL_IS_PATHNAME_VALID => FatIsPathnameValid(IrpContext, Irp),
         FSCTL_QUERY_RETRIEVAL_POINTERS => FatQueryRetrievalPointers(IrpContext, Irp),
         FSCTL_QUERY_FAT_BPB => FatQueryBpb(IrpContext, Irp),
         FSCTL_FILESYSTEM_GET_STATISTICS => FatGetStatistics(IrpContext, Irp),
@@ -2554,6 +2570,373 @@ pub unsafe extern "system" fn FatSetZeroOnDeallocate(
     return Status;
 }
 
+// ============================================================================
+// FSCTL handlers that were BUGCHECK STUBS until now.
+//
+// Each of these sat in rust_cohab_stub.c as `STUB_BUGCHECK()` while the dispatch
+// table above routed a live FSCTL straight at it — e.g. FSCTL_LOCK_VOLUME =>
+// FatLockVolume. Any usermode caller issuing one of those codes stopped the box.
+// They are ordered here as in fsctrl.c. See scan_bugcheck_stubs.py, which computes
+// this set instead of paying a build+boot per discovery.
+// ============================================================================
+
+/// `FatLockVolumeInternal` (`drivers/filesystems/fastfat/fsctrl.c:3440`).
+///
+/// Called by anyone wishing to protect the volume for a long duration (PnP is one
+/// such user). The volume must be held exclusive by the caller.
+#[no_mangle]
+pub unsafe extern "system" fn FatLockVolumeInternal(
+    IrpContext: PIRP_CONTEXT,
+    Vcb: *mut VCB,
+    FileObject: PFILE_OBJECT,
+) -> NTSTATUS {
+    const Flush: u32 = 1;
+    const VolumeClean: i32 = 0;
+    const STATUS_ACCESS_DENIED: NTSTATUS = 0xC0000022u32 as i32;
+
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut SavedIrql: u8 = 0;
+    // A caller-supplied FileObject is itself one of the Vpb references we expect to
+    // still be outstanding; a system lock (NULL) has none.
+    let RemainingUserReferences: u32 = if !FileObject.is_null() { 1 } else { 0 };
+    let ExpectedOpenCount: CLONG = RemainingUserReferences as CLONG;
+
+    NT_ASSERT(
+        (ExIsResourceAcquiredExclusiveLite(&raw mut (*Vcb).Resource as *mut _) != 0
+            && ExIsResourceAcquiredExclusiveLite(&raw mut FatData.Resource as *mut _) == 0)
+            as u32,
+    );
+
+    (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WAIT;
+
+    if FatIsHandleCountZero(IrpContext, Vcb) == 0 {
+        return STATUS_ACCESS_DENIED;
+    }
+
+    FatFlushFat(IrpContext, Vcb);
+
+    // Purge, drop the Vcb, wait out the lazy writer, re-acquire — TWICE. The second
+    // pass is not redundant: releasing the Vcb lets the first wait make progress, and
+    // work can be queued behind it, so the C does the whole dance again.
+    FatPurgeReferencedFileObjects(IrpContext, (*Vcb).RootDcb, Flush);
+    FatReleaseVcb(IrpContext, Vcb);
+    Status = CcWaitForCurrentLazyWriterActivity();
+    FatAcquireExclusiveVcb(IrpContext, Vcb);
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+
+    FatPurgeReferencedFileObjects(IrpContext, (*Vcb).RootDcb, Flush);
+    FatReleaseVcb(IrpContext, Vcb);
+    Status = CcWaitForCurrentLazyWriterActivity();
+    FatAcquireExclusiveVcb(IrpContext, Vcb);
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+
+    FatFspClose(Vcb);
+
+    IoAcquireVpbSpinLock(&raw mut SavedIrql);
+
+    if ((*(*Vcb).Vpb).Flags as u32 & VPB_LOCKED) == 0
+        && (*(*Vcb).Vpb).ReferenceCount <= (2 + RemainingUserReferences) as _
+        && (*Vcb).OpenFileCount == ExpectedOpenCount
+    {
+        (*(*Vcb).Vpb).Flags |= (VPB_LOCKED | VPB_DIRECT_WRITES_ALLOWED) as u16;
+        (*Vcb).VcbState |= VCB_STATE_FLAG_LOCKED;
+        (*Vcb).FileObjectWithVcbLocked = FileObject;
+    } else {
+        Status = STATUS_ACCESS_DENIED;
+    }
+
+    IoReleaseVpbSpinLock(SavedIrql);
+
+    // Having quiesced the volume, take the chance to mark it clean on disk.
+    if NT_SUCCESS(Status)
+        && ((*Vcb).VcbState & VCB_STATE_FLAG_VOLUME_DIRTY) != 0
+        && ((*Vcb).VcbState & VCB_STATE_FLAG_MOUNTED_DIRTY) == 0
+        && CcIsThereDirtyData((*Vcb).Vpb) == 0
+    {
+        FatMarkVolume(IrpContext, Vcb, VolumeClean);
+        (*Vcb).VcbState &= !VCB_STATE_FLAG_VOLUME_DIRTY;
+    }
+
+    NT_ASSERT((!NT_SUCCESS(Status) || (*Vcb).OpenFileCount == ExpectedOpenCount) as u32);
+
+    Status
+}
+
+/// `FatLockVolume` (`drivers/filesystems/fastfat/fsctrl.c:3237`) — FSCTL_LOCK_VOLUME.
+#[no_mangle]
+pub unsafe extern "system" fn FatLockVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    // PAGED_CODE();
+    const FSRTL_VOLUME_LOCK: u32 = 3;
+    const FSRTL_VOLUME_LOCK_FAILED: u32 = 4;
+
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    DebugTrace(1, Dbg, b"FatLockVolume...\n\0".as_ptr() as *const i8);
+
+    let mut Vcb: *mut VCB = core::ptr::null_mut();
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
+
+    if (FatDecodeFileObject(
+        (*IrpSp).FileObject,
+        &raw mut Vcb,
+        &raw mut Fcb,
+        &raw mut Ccb,
+    )) != UserVolumeOpen
+    {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if Ccb.is_null() || FlagOn((*Ccb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS) == 0 {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    // Announced BEFORE the attempt; the FAILED event below is the paired retraction.
+    FsRtlNotifyVolumeEvent((*IrpSp).FileObject, FSRTL_VOLUME_LOCK);
+
+    if FatAcquireExclusiveVcb(IrpContext, Vcb) == 0 {
+        DebugTrace(0, Dbg, b"Cannot acquire Vcb\n\0".as_ptr() as *const i8);
+        let Status = FatFsdPostRequest(IrpContext, Irp);
+        return Status;
+    }
+
+    let Status = FatLockVolumeInternal(IrpContext, Vcb, (*IrpSp).FileObject);
+
+    // ----- _SEH2_FINALLY (fsctrl.c:3336) -----
+    // Under USE_DUMMY_PSEH _SEH2_AbnormalTermination() is always FALSE, so both
+    // conditions collapse to their normal-path halves: the Vcb is always released,
+    // and the LOCK_FAILED event fires exactly when the status is a failure.
+    FatReleaseVcb(IrpContext, Vcb);
+    if !NT_SUCCESS(Status) {
+        FsRtlNotifyVolumeEvent((*IrpSp).FileObject, FSRTL_VOLUME_LOCK_FAILED);
+    }
+
+    (FatCompleteRequest)(IrpContext, Irp, Status);
+
+    DebugTrace(-1, Dbg, b"FatLockVolume -> %08lx\n\0".as_ptr() as *const i8);
+    Status
+}
+
+/// `FatUnlockVolumeInternal` (`drivers/filesystems/fastfat/fsctrl.c:3608`).
+///
+/// The volume must be held exclusive by the caller. Attempting to remove a system
+/// lock that did not exist is OK — that is the STATUS_NOT_LOCKED default.
+#[no_mangle]
+pub unsafe extern "system" fn FatUnlockVolumeInternal(
+    IrpContext: PIRP_CONTEXT,
+    Vcb: *mut VCB,
+    FileObject: PFILE_OBJECT,
+) -> NTSTATUS {
+    // "Attempting to remove a system lock that did not exist is OK" — so this is the
+    // DEFAULT, not an error path, and it is what the caller sees when the volume was
+    // not locked by this FileObject.
+    const STATUS_NOT_LOCKED: NTSTATUS = 0xC000002Au32 as i32;
+
+    let _ = IrpContext; // UNREFERENCED_PARAMETER
+    let mut SavedIrql: u8 = 0;
+    let mut Status: NTSTATUS = STATUS_NOT_LOCKED;
+
+    IoAcquireVpbSpinLock(&raw mut SavedIrql);
+
+    // Vpb->Flags is USHORT, so the mask is built in u32 and narrowed — matching
+    // the existing cleanup.rs:694 spelling of the same clear.
+    if ((*(*Vcb).Vpb).Flags as u32 & VPB_LOCKED) != 0 && FileObject == (*Vcb).FileObjectWithVcbLocked
+    {
+        (*(*Vcb).Vpb).Flags &= !((VPB_LOCKED | VPB_DIRECT_WRITES_ALLOWED) as u16);
+        (*Vcb).VcbState &= !VCB_STATE_FLAG_LOCKED;
+        (*Vcb).FileObjectWithVcbLocked = core::ptr::null_mut();
+
+        Status = STATUS_SUCCESS;
+    }
+
+    IoReleaseVpbSpinLock(SavedIrql);
+
+    Status
+}
+
+/// `FatUnlockVolume` (`drivers/filesystems/fastfat/fsctrl.c:3361`).
+#[no_mangle]
+pub unsafe extern "system" fn FatUnlockVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    // PAGED_CODE();
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    DebugTrace(1, Dbg, b"FatUnlockVolume...\n\0".as_ptr() as *const i8);
+
+    let mut Vcb: *mut VCB = core::ptr::null_mut();
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
+
+    if (FatDecodeFileObject)(
+        (*IrpSp).FileObject,
+        &raw mut Vcb,
+        &raw mut Fcb,
+        &raw mut Ccb,
+    ) != UserVolumeOpen
+    {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if Ccb.is_null() || FlagOn((*Ccb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS) == 0 {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let Status = FatUnlockVolumeInternal(IrpContext, Vcb, (*IrpSp).FileObject);
+
+    if NT_SUCCESS(Status) {
+        FsRtlNotifyVolumeEvent((*IrpSp).FileObject, FSRTL_VOLUME_UNLOCK);
+    }
+
+    (FatCompleteRequest)(IrpContext, Irp, Status);
+
+    DebugTrace(-1, Dbg, b"FatUnlockVolume -> %08lx\n\0".as_ptr() as *const i8);
+    Status
+}
+
+/// `FatDirtyVolume` (`drivers/filesystems/fastfat/fsctrl.c:3886`) — FSCTL_MARK_VOLUME_DIRTY.
+#[no_mangle]
+pub unsafe extern "system" fn FatDirtyVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    // PAGED_CODE();
+    const VolumeDirty: i32 = 1;
+
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    DebugTrace(1, Dbg, b"FatDirtyVolume...\n\0".as_ptr() as *const i8);
+
+    let mut Vcb: *mut VCB = core::ptr::null_mut();
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
+
+    if (FatDecodeFileObject)(
+        (*IrpSp).FileObject,
+        &raw mut Vcb,
+        &raw mut Fcb,
+        &raw mut Ccb,
+    ) != UserVolumeOpen
+    {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if Ccb.is_null() || FlagOn((*Ccb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS) == 0 {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    // Disable PopUps, we want to return any error.
+    (*IrpContext).Flags |= IRP_CONTEXT_FLAG_DISABLE_POPUPS;
+
+    // FatVerifyVcb does not return a status — it FatRaiseStatus()es on a bad or
+    // needs-verify Vcb, so there is deliberately nothing to check here.
+    FatVerifyVcb(IrpContext, Vcb);
+
+    (*Vcb).VcbState |= VCB_STATE_FLAG_MOUNTED_DIRTY;
+
+    FatMarkVolume(IrpContext, Vcb, VolumeDirty);
+
+    (FatCompleteRequest)(IrpContext, Irp, STATUS_SUCCESS);
+
+    DebugTrace(-1, Dbg, b"FatDirtyVolume -> STATUS_SUCCESS\n\0".as_ptr() as *const i8);
+    STATUS_SUCCESS
+}
+
+/// `FatIsVolumeMounted` (`drivers/filesystems/fastfat/fsctrl.c:4103`).
+#[no_mangle]
+pub unsafe extern "system" fn FatIsVolumeMounted(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    // PAGED_CODE();
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    let Status: NTSTATUS = STATUS_SUCCESS;
+
+    DebugTrace(1, Dbg, b"FatIsVolumeMounted...\n\0".as_ptr() as *const i8);
+
+    let mut Vcb: *mut VCB = core::ptr::null_mut();
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
+
+    // The C ignores the TYPE_OF_OPEN here and only asserts Vcb != NULL.
+    (FatDecodeFileObject)(
+        (*IrpSp).FileObject,
+        &raw mut Vcb,
+        &raw mut Fcb,
+        &raw mut Ccb,
+    );
+
+    NT_ASSERT(!Vcb.is_null() as u32);
+
+    // Disable PopUps, we want to return any error.
+    (*IrpContext).Flags |= IRP_CONTEXT_FLAG_DISABLE_POPUPS;
+
+    // Raises on a volume that needs verifying; that IS the answer this FSCTL gives.
+    FatVerifyVcb(IrpContext, Vcb);
+
+    (FatCompleteRequest)(IrpContext, Irp, Status);
+
+    DebugTrace(-1, Dbg, b"FatIsVolumeMounted -> %08lx\n\0".as_ptr() as *const i8);
+    Status
+}
+
+/// `FatIsPathnameValid` (`drivers/filesystems/fastfat/fsctrl.c:4175`).
+///
+/// Intentionally a no-op in the C, and required to be correct on a FALSE return —
+/// the previous FAT implementation violated that and could reject a createable
+/// pathname, so returning success unconditionally is the deliberate behaviour.
+#[no_mangle]
+pub unsafe extern "system" fn FatIsPathnameValid(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    // PAGED_CODE();
+    DebugTrace(1, Dbg, b"FatIsPathnameValid...\n\0".as_ptr() as *const i8);
+
+    (FatCompleteRequest)(IrpContext, Irp, STATUS_SUCCESS);
+
+    DebugTrace(-1, Dbg, b"FatIsPathnameValid -> %08lx\n\0".as_ptr() as *const i8);
+    STATUS_SUCCESS
+}
+
+/// `FatQueryBpb` (`drivers/filesystems/fastfat/fsctrl.c:4220`) — returns the first
+/// 0x24 bytes of sector 0.
+#[no_mangle]
+pub unsafe extern "system" fn FatQueryBpb(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    // PAGED_CODE();
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    DebugTrace(1, Dbg, b"FatQueryBpb...\n\0".as_ptr() as *const i8);
+
+    // Vcb is EMBEDDED in the volume device object, so this is a field address, not
+    // a decode of the file object.
+    let Vcb: *mut VCB = &raw mut (*((*IrpSp).DeviceObject as *mut VOLUME_DEVICE_OBJECT)).Vcb;
+
+    if (*Vcb).First0x24BytesOfBootSector.is_null() {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_DEVICE_REQUEST);
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    let BpbBuffer = (*Irp).AssociatedIrp.SystemBuffer as PFSCTL_QUERY_FAT_BPB_BUFFER;
+
+    // Length check AFTER the NULL check, exactly as the C orders them.
+    if ((*IrpSp).Parameters.FileSystemControl.OutputBufferLength as u32) < 0x24 {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_BUFFER_TOO_SMALL);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    RtlCopyMemory(
+        (*BpbBuffer).First0x24BytesOfBootSector.as_mut_ptr() as *mut c_void,
+        (*Vcb).First0x24BytesOfBootSector as *const c_void,
+        0x24,
+    );
+
+    (*Irp).IoStatus.Information = 0x24;
+
+    (FatCompleteRequest)(IrpContext, Irp, STATUS_SUCCESS);
+
+    DebugTrace(-1, Dbg, b"FatQueryBpb -> %08lx\n\0".as_ptr() as *const i8);
+    STATUS_SUCCESS
+}
 
 // ============================================================================
 // ORIGINAL C SOURCE

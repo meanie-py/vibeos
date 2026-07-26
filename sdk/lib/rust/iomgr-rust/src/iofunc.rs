@@ -2345,16 +2345,42 @@ pub unsafe extern "system" fn NtQueryInformationFile(
     let AllBuffer: PFILE_ALL_INFORMATION;
     let FastIoDispatch: PFAST_IO_DISPATCH;
 
+    // Class + length validation runs for EVERY caller, not just user mode.
+    //
+    // The C guarded the kernel-mode copy of these two checks behind `#if DBG`, and
+    // the translation dropped that arm — leaving kernel callers unvalidated. That is
+    // not a cosmetic gap: `Length` sizes the TAG_IOBUF system buffer below, so a
+    // kernel caller asking for FileAllInformation with Length=0 got a 0-byte pool
+    // block, and then the I/O manager wrote AccessInformation/ModeInformation/
+    // AlignmentInformation into it and the FSD wrote a FILE_BASIC_INFORMATION on top
+    // — smashing the next pool header with a FILETIME (BUGCHECK 0x19 subcode 5).
+    // Our own NtSetInformationFile already validates unconditionally; the two
+    // siblings disagreeing is what gave this away.
+    //
+    // Unconditional is also the honest reading of the C for this kernel: we build
+    // checked (HalpBuildType = PRCB_BUILD_DEBUG), so `#if DBG` is live here. We keep
+    // it unconditional rather than re-deriving DBG, because the C guards it for SPEED,
+    // not correctness — and the unguarded path corrupts pool. Its sibling
+    // NtSetInformationFile validates in every build for the same reason.
+    //
+    // KNOWN CONSEQUENCE, deliberately accepted: NpfsFileInfo.c:95 queries
+    // FileAllInformation with sizeof(FILE_ALL_INFORMATION)-4 and expects
+    // STATUS_BUFFER_OVERFLOW. On a checked build that is INFO_LENGTH_MISMATCH — real
+    // Windows and upstream ReactOS behave the same way, because the C table
+    // (ntoskrnl/include/internal/io_i.h) also uses sizeof(FILE_ALL_INFORMATION). The
+    // test is missing the `if (KmtIsCheckedBuild)` guard its IoFilesystem sibling has.
+    // That is a test-side gap; do NOT weaken this check to turn it green.
+    if (FileInformationClass as i32) < 0
+        || (FileInformationClass as u32) >= FileMaximumInformation
+        || c_array_get(&IopQueryOperationLength, FileInformationClass as usize) as ULONG == 0
+    {
+        return STATUS_INVALID_INFO_CLASS;
+    }
+    if Length < c_array_get(&IopQueryOperationLength, FileInformationClass as usize) as ULONG {
+        return STATUS_INFO_LENGTH_MISMATCH;
+    }
+
     if PreviousMode != 0i8 {
-        if (FileInformationClass as i32) < 0
-            || (FileInformationClass as u32) >= FileMaximumInformation
-            || c_array_get(&IopQueryOperationLength, FileInformationClass as usize) as ULONG == 0
-        {
-            return STATUS_INVALID_INFO_CLASS;
-        }
-        if Length < c_array_get(&IopQueryOperationLength, FileInformationClass as usize) as ULONG {
-            return STATUS_INFO_LENGTH_MISMATCH;
-        }
         if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),

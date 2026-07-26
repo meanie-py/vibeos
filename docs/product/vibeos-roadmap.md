@@ -997,6 +997,35 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   free-while-mapped. Same call as the `[PFNMISMATCH]` precedent — made loud, deliberately not
   fatal.
 
+  **It is not one suppressed detector — it is TWELVE, and eleven were still silent
+  (2026-07-26).** The `[PFNMISMATCH]` note above treats `MiDeletePte`'s back-pointer check as
+  *the* detector arm64 turned off. Enumerating the MM page-lifecycle paths mechanically says
+  otherwise: **12 sites** hard-fail on x86 with `KeBugCheck(MEMORY_MANAGEMENT)` and have an
+  arm64 arm that recovers silently instead (7 of them a bare `return STATUS_UNSUCCESSFUL`) —
+  `mm/rmap.rs` ×3, `mm/pagefile.rs` ×6, `mm/balance.rs`, `ARM3/virtual.rs` ×2. So arm64 is not
+  looking in twelve of the places x86 looks, all inside the subsystem this bug lives in, which
+  is the structural reason the corruption only ever surfaces as a distant victim.
+
+  All eleven remaining are now armed with `mm_guard_trip!` (`lib.rs`) — bounded prints, every
+  recovery kept, `[MMGUARD] <site> hit#=N` plus operands. **Silence from an armed site is a
+  result**: it eliminates that site. The one to read first is
+  **`rmap.MmDeleteRmap mapping-not-in-list`**: it means `MmDeleteRmap` walked the entire rmap
+  list and did not find the `(Process, Address)` mapping it was told to delete, i.e. the
+  caller believes the page is mapped there and the PFN database disagrees — *the* precondition
+  for freeing a still-mapped frame, arrived at from the rmap side instead of the PFN side.
+
+  **Also settled, and it redirects face C:** `ex-rust/src/pushlock.rs` was audited line-for-line
+  against the original C (the file embeds it as comments) and is a **faithful translation** —
+  `ExfWakePushLock`, `ExfReleasePushLock`, `ExfReleasePushLockExclusive` and the exclusive
+  acquire all match, including an inherited upstream livelock (a failed CAS never refreshes
+  `OldValue`) that does not fit face C anyway, since face C's thread is *parked*, not spinning.
+  Two apparent bugs were checked and are not bugs: `debug_assert!(!x != 0)` is a bitwise-not
+  that makes the assert always true (real, cosmetic, release-inert), and the spin loop's
+  `EX_PUSH_LOCK_WAITING` where the C says `EX_PUSH_LOCK_FLAGS_WAIT` — **different names, both
+  equal 2**. With the algorithm exonerated, HOLDER-STUCK points at a wait block made
+  unreachable by memory corruption, which is where face A already pointed. Do not re-audit the
+  pushlock; go to the `[MMGUARD]` output.
+
   **BOTH PROBES ARE NOW IMPLEMENTED AND IN THE SHIPPED KERNEL (2026-07-26).**
   - `[FREEMAPPED]` — `mm/freelist.rs` `MmDereferencePage`, at the TOP of the `rc - 1 == 0`
     branch exactly as pinned above, bounded at 32 prints plus a running total so it cannot
@@ -1010,9 +1039,21 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   not compile at all (`E0659` — `stubs.rs` glob-imports both `crate::ke::ke_defs` and
   `ntkrnl_sys::mm`, and both export a `KeGetCurrentThread`; take ke_defs', which returns
   PKTHREAD so the stack fields are reachable), and a soak would otherwise have run for hours
-  against a kernel with no probe in it.
+  against a kernel with no probe in it. **And then one did anyway** — the check was pointed at
+  the built module while the soak booted a frozen `.iso` cut four hours earlier (see the
+  retraction below). Checking the binary is necessary and not sufficient; check the media.
 
-  **THE HEADLINE FROM 9 INSTRUMENTED SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
+  > **RETRACTION (2026-07-26): the soak below was NOT instrumented — the probes were never in
+  > the media.** The image was frozen at 22:42 for run-to-run comparability; `[FREEMAPPED]` and
+  > `[KSTACK]` landed at 02:43, four hours later. `strings livecd-smp.iso | grep -c FREEMAPPED`
+  > = **0**, same for `KSTACK`. The §9.87 check was run against
+  > `build-arm64/ntoskrnl/ntoskrnl.exe` — the wrong artifact. What SURVIVES: the face taxonomy,
+  > the frequencies, and the `0x50` operand reading, all of which come from bugcheck operands and
+  > the census, and both of those *were* in that media. What is VACUOUS: every claim below
+  > phrased as "under the probes", and any reading of the tripwires' silence — nothing was
+  > listening. Re-run on freshly-cut media before treating a probe's silence as a result.
+
+  **THE HEADLINE FROM 9 SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
   on fixed media, `-smp 1`, same binary within each run:
 
   | face | n | signature |
@@ -1032,7 +1073,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Each face's evidence is below; the per-round data is in the soak ledgers, and the two
   reproducing serials are kept out of `/tmp` rotation.
 
-  **FIRST REPRODUCTION UNDER THE PROBES (2026-07-26), and it points hard at the STACK.**
+  **FIRST REPRODUCTION (2026-07-26) — no probe fired (see the retraction: none were in the
+  media), but the OPERANDS alone point hard at the STACK.**
   A 4-round `-smp 1` kmtest soak on fixed media reproduced once (rounds 1/3/4 clean or
   ratchet-noise; ~25%, in line with the prior base rate). Round 2 died at test **69 of 89, on
   `ZwWaitForMultipleObjects`** — immediately after the `ZwCreateSection` / `ZwMapViewOfSection`

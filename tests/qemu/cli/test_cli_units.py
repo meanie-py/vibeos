@@ -3693,6 +3693,45 @@ def test_queue_is_fifo_by_arrival(queue_repo):
     assert [s.seq for s in q_mod.pending(repo)] == [first.seq, second.seq]
 
 
+def test_queue_is_fifo_even_when_the_wall_clock_steps_BACKWARDS(monkeypatch, queue_repo):
+    """seq's numeric half is CLOCK_REALTIME, which steps. Observed live on WSL2 under
+    parallel load: a lane got a timestamp 2.59 SECONDS earlier than one already queued,
+    so it sorted first and jumped the queue. This pins the fix deterministically —
+    test_queue_is_fifo_by_arrival only caught it about 1 run in 80, which is a flake
+    report, not a control."""
+    repo, _ = queue_repo
+    real = q_mod.time.time_ns()
+    _commit(repo, "a.txt")
+    monkeypatch.setattr(q_mod.time, "time_ns", lambda: real)
+    first = q_mod.submit(repo, lane="lane-a")
+    # The clock jumps 2.59s into the past, exactly as the live failure did.
+    _commit(repo, "b.txt")
+    monkeypatch.setattr(q_mod.time, "time_ns", lambda: real - 2_593_682_747)
+    second = q_mod.submit(repo, lane="lane-b")
+
+    assert second.seq > first.seq, "a later arrival must never sort before an earlier one"
+    assert [s.seq for s in q_mod.pending(repo)] == [first.seq, second.seq]
+
+
+def test_queue_seq_returns_to_real_time_once_the_queue_drains(monkeypatch, queue_repo):
+    """The monotonic bump scans PENDING only, so a clock excursion cannot pin seqs
+    forever — drain the queue and the next submission is back on the real clock. That
+    self-healing is the reason results are deliberately not scanned."""
+    repo, _ = queue_repo
+    real = q_mod.time.time_ns()
+    _commit(repo, "a.txt")
+    # A wild forward jump (a decade) while one submission is queued.
+    monkeypatch.setattr(q_mod.time, "time_ns", lambda: real + 10 * 365 * 86_400 * 10**9)
+    stuck = q_mod.submit(repo, lane="lane-a")
+    q_mod.resolve(repo, stuck, outcome="landed", reason="done")
+    assert q_mod.pending(repo) == []
+
+    monkeypatch.setattr(q_mod.time, "time_ns", lambda: real)
+    _commit(repo, "b.txt")
+    after = q_mod.submit(repo, lane="lane-b")
+    assert int(after.seq.split("-", 1)[0]) == real
+
+
 def test_queue_resolve_always_leaves_a_verdict(queue_repo):
     """A submission leaving the queue WITHOUT a result is the one unrecoverable outcome —
     the agent can never learn what happened to its work."""
@@ -4230,6 +4269,45 @@ def test_build_incomplete_does_not_reject_a_lane():
         assert conclusive not in queue_mod.INCONCLUSIVE
 
 
+def test_archive_serial_copies_into_the_run_dir(tmp_path: Path):
+    """The point of the copy: the live path is a per-arch FIXED name that the next
+    boot truncates, so summary.json must point at a snapshot, not at that name."""
+    from .artifacts import archive_serial
+
+    live = tmp_path / "amd64-uefi_smoke_live.log"
+    live.write_text("[POOL] entry=ffff prev=2 size=4\nBUGCHECK 0x19\n")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    extra: dict = {}
+    archive_serial(run_dir, live, extra)
+
+    assert extra["serial_log"] == str(run_dir / "serial.log")
+    assert extra["live_log"] == str(live)
+    assert "BUGCHECK 0x19" in (run_dir / "serial.log").read_text()
+
+    # The whole bug, reproduced: the next boot of this arch truncates the live log.
+    live.write_text("")
+    assert "BUGCHECK 0x19" in (run_dir / "serial.log").read_text()
+
+
+def test_archive_serial_never_fails_a_run(tmp_path: Path):
+    """Build-only failures produce no serial at all; that is normal, not an error,
+    and this helper runs inside finalize() where raising would lose the summary."""
+    from .artifacts import archive_serial
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    extra: dict = {}
+    archive_serial(run_dir, None, extra)
+    assert extra == {}
+
+    extra = {}
+    archive_serial(run_dir, tmp_path / "never-booted.log", extra)
+    assert "serial_log" not in extra
+    assert not (run_dir / "serial.log").exists()
+
+
 # --- vibeos-cli difftest: the host rust-vs-C harnesses ----------------------
 
 
@@ -4489,6 +4567,36 @@ def test_ninja_did_work_counts_edges_not_just_dirtiness():
     assert build_mod._ninja_did_work("note: see [1/3] in the log\n") == 0
 
 
+def test_link_classifier_does_not_mistake_duplicate_symbol_WARNINGS_for_the_failure():
+    """This tree links with --allow-multiple-definition, so ld.lld emits
+    `warning: duplicate symbol` on every build. The classifier matched bare
+    "duplicate symbol"/"ld.lld:" before the rustc branch, so a compile error that
+    merely CO-OCCURRED with those warnings was reported as LINK_FAIL with three
+    warnings as its salient — and the real cause (error[E0308] in census.rs)
+    appeared nowhere in the summary. Verbatim shapes from that build."""
+    warns_plus_rustc = (
+        "ld.lld: warning: duplicate symbol: __udivti3\n"
+        "ld.lld: warning: duplicate symbol: __umodti3\n"
+        "error[E0308]: mismatched types\n"
+        "error: could not compile `ntoskrnl-rust` (lib) due to 2 previous errors\n"
+    )
+    cls, salient = build_mod._classify_build_failure(warns_plus_rustc, "")
+    assert cls == "CARGO_CHECK_FAIL"
+    assert any("E0308" in s for s in salient), salient
+
+    # a REAL undefined symbol still classifies as a link failure
+    real_undef = (
+        "ld.lld: warning: duplicate symbol: __udivti3\n"
+        "ld.lld: error: undefined symbol: MmArmAccessFault\n"
+    )
+    assert build_mod._classify_build_failure(real_undef, "")[0] == "LINK_FAIL"
+    # and so does a genuine duplicate-symbol ERROR
+    assert (
+        build_mod._classify_build_failure("ld.lld: error: duplicate symbol: foo", "")[0]
+        == "LINK_FAIL"
+    )
+
+
 def test_ninja_did_work_does_not_count_the_glob_recheck_pseudo_edge():
     """VERBATIM output from a real no-op re-affirm that still reported
     "relinked 1 target(s)". `[0/n]` is the CONFIGURE_DEPENDS glob re-check, a
@@ -4593,3 +4701,72 @@ def test_ladder_takes_the_last_verdict_per_guest():
 
     text = "[WINLOGON] hello32.exe exit = 0xbad1\n" + _ladder_log()
     assert ladder_mod.verdicts(text)["hello32"] == 0x600D
+
+
+# --- probe presence in the MEDIA (the 9-hour blind soak, 2026-07-26) --------
+
+
+def _fake_media(tmp_path, rel: str, body: bytes):
+    p = tmp_path / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(body)
+    return p
+
+
+def test_probe_present_in_media_reports_nothing_missing(tmp_path):
+    from tests.qemu.cli import provenance
+
+    _fake_media(
+        tmp_path, "build-i386/livecd.iso", b"\x00" * 100 + b"[MMGUARD] hi\x00" + b"\xff" * 50
+    )
+    assert provenance.probes_missing_from_media(tmp_path, "i386", ["[MMGUARD]"]) == []
+
+
+def test_probe_absent_from_media_is_reported_with_the_mtime_and_the_stakes(tmp_path):
+    """The exact 2026-07-26 failure: the literal is in the module but not the
+    image, and the old check looked at the module."""
+    from tests.qemu.cli import provenance
+
+    _fake_media(tmp_path, "build-i386/livecd.iso", b"a boot image with no probe in it")
+    reasons = provenance.probes_missing_from_media(tmp_path, "i386", ["[KSTACK]"])
+    assert len(reasons) == 1
+    assert "[KSTACK]" in reasons[0]
+    assert "0 times" in reasons[0]
+    # It must say WHY this matters, not just that a count was zero.
+    assert "silence would prove nothing" in reasons[0]
+
+
+def test_arm64_checks_the_ramdisk_too_not_just_the_outer_image(tmp_path):
+    """arm64's kernel lives in ramdisk.img; checking only boot.img would repeat
+    the same right-check-wrong-artifact mistake one level down."""
+    from tests.qemu.cli import provenance
+
+    _fake_media(tmp_path, "qemu/boot.img", b"[MMGUARD] present here")
+    _fake_media(tmp_path, "qemu/ramdisk.img", b"but absent in the ramdisk")
+    reasons = provenance.probes_missing_from_media(tmp_path, "arm64", ["[MMGUARD]"])
+    assert len(reasons) == 1
+    assert "ramdisk.img" in reasons[0]
+
+
+def test_probe_straddling_a_read_boundary_is_still_found(tmp_path):
+    """Streaming with no overlap would miss a literal split across chunks."""
+    from tests.qemu.cli import provenance
+
+    chunk = 8 << 20
+    body = b"\x00" * (chunk - 4) + b"[MMGUARD]" + b"\x00" * 16
+    _fake_media(tmp_path, "build-i386/livecd.iso", body)
+    assert provenance.probes_missing_from_media(tmp_path, "i386", ["[MMGUARD]"]) == []
+
+
+def test_missing_media_file_is_named_rather_than_silently_passing(tmp_path):
+    from tests.qemu.cli import provenance
+
+    reasons = provenance.probes_missing_from_media(tmp_path, "i386", ["[MMGUARD]"])
+    assert reasons and "does not exist" in reasons[0]
+
+
+def test_no_literals_requested_is_a_no_op_not_a_failure(tmp_path):
+    from tests.qemu.cli import provenance
+
+    assert provenance.probes_missing_from_media(tmp_path, "i386", []) == []
+    assert provenance.probes_missing_from_media(tmp_path, "i386", ["  "]) == []

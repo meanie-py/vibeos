@@ -145,6 +145,16 @@ def build_parser() -> argparse.ArgumentParser:
         "See ntoskrnl-rust src/tripwire.rs",
     )
     s.add_argument(
+        "--require-probe",
+        action="append",
+        metavar="LITERAL",
+        help="refuse to boot unless LITERAL is present in EVERY boot image "
+        "(repeatable). Use it whenever a run's conclusion depends on a probe "
+        "firing: checking `strings build-<arch>/…/ntoskrnl.exe` is the wrong "
+        "artifact, and a probe missing from the media makes its silence look "
+        "like evidence of absence. Field manual §9.87",
+    )
+    s.add_argument(
         "--smp",
         type=int,
         default=0,
@@ -279,6 +289,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--tripwire",
         default="",
         help="arm every boot, e.g. 'SPECIALPOOL=*' (see smoke --tripwire)",
+    )
+    f.add_argument(
+        "--require-probe",
+        action="append",
+        metavar="LITERAL",
+        help="refuse to start unless LITERAL is in every boot image (repeatable). "
+        "A soak is the expensive case: hours of boots against one frozen image, "
+        "where a missing probe wastes the whole run AND reads as a null result. "
+        "See smoke --require-probe",
     )
     f.add_argument("--allow-stale", action="store_true")
     f.set_defaults(fn=farm_mod.farm)

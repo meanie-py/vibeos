@@ -7,13 +7,20 @@ use core::ffi::c_void;
 // neither of which translate to Rust type/const declarations.
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_deleteA(ld: *mut WLDAP32_LDAP, dn: PCHAR) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_deleteA(ld: *mut WLDAP32_LDAP, dn: PCHAR) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
 
     let mut dnW: PWCHAR = core::ptr::null_mut();
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     if !dn.is_null() {
@@ -30,6 +37,13 @@ pub unsafe extern "C" fn ldap_deleteA(ld: *mut WLDAP32_LDAP, dn: PCHAR) -> ULONG
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_deleteW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_deleteW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
 
@@ -37,7 +51,7 @@ pub unsafe extern "C" fn ldap_deleteW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> ULON
     let mut msg: i32 = 0;
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     if !dn.is_null() {
@@ -58,7 +72,7 @@ pub unsafe extern "C" fn ldap_deleteW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> ULON
     if ret == LDAP_SUCCESS {
         ret = msg as ULONG;
     } else {
-        ret = !0u;
+        ret = !0u32;
     }
 
     strfreeU(dnU);
@@ -66,6 +80,19 @@ pub unsafe extern "C" fn ldap_deleteW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> ULON
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_delete_extA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_delete_extA(
     ld: *mut WLDAP32_LDAP,
@@ -115,6 +142,19 @@ pub unsafe extern "C" fn ldap_delete_extA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_delete_extW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_delete_extW(
     ld: *mut WLDAP32_LDAP,
@@ -172,6 +212,18 @@ pub unsafe extern "C" fn ldap_delete_extW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_delete_ext_sA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_delete_ext_sA(
     ld: *mut WLDAP32_LDAP,
     dn: PCHAR,
@@ -218,6 +270,18 @@ pub unsafe extern "C" fn ldap_delete_ext_sA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_delete_ext_sW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_delete_ext_sW(
     ld: *mut WLDAP32_LDAP,
@@ -271,6 +335,13 @@ pub unsafe extern "C" fn ldap_delete_ext_sW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_delete_sA(ld: *mut WLDAP32_LDAP, dn: PCHAR) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_delete_sA(ld: *mut WLDAP32_LDAP, dn: PCHAR) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
     let mut dnW: PWCHAR = core::ptr::null_mut();
@@ -292,6 +363,13 @@ pub unsafe extern "C" fn ldap_delete_sA(ld: *mut WLDAP32_LDAP, dn: PCHAR) -> ULO
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
@@ -373,7 +451,7 @@ pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> UL
 // #ifdef HAVE_LDAP
 //     WCHAR *dnW = NULL;
 //
-//     TRACE( "(%p, %s)\n", ld, debugstr_a(dn) );
+//     TRACE( "(%p, %s)\n", ld, debugstr_a!(dn) );
 //
 //     if (!ld) return ~0u;
 //
@@ -414,7 +492,7 @@ pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> UL
 //     char *dnU = NULL;
 //     int msg;
 //
-//     TRACE( "(%p, %s)\n", ld, debugstr_w(dn) );
+//     TRACE( "(%p, %s)\n", ld, debugstr_w!(dn) );
 //
 //     if (!ld) return ~0u;
 //
@@ -449,7 +527,7 @@ pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> UL
 //     WCHAR *dnW = NULL;
 //     LDAPControlW **serverctrlsW = NULL, **clientctrlsW = NULL;
 //
-//     TRACE( "(%p, %s, %p, %p, %p)\n", ld, debugstr_a(dn), serverctrls,
+//     TRACE( "(%p, %s, %p, %p, %p)\n", ld, debugstr_a!(dn), serverctrls,
 //            clientctrls, message );
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
@@ -510,7 +588,7 @@ pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> UL
 //     LDAPControl **serverctrlsU = NULL, **clientctrlsU = NULL;
 //     int dummy;
 //
-//     TRACE( "(%p, %s, %p, %p, %p)\n", ld, debugstr_w(dn), serverctrls,
+//     TRACE( "(%p, %s, %p, %p, %p)\n", ld, debugstr_w!(dn), serverctrls,
 //            clientctrls, message );
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
@@ -555,7 +633,7 @@ pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> UL
 //     WCHAR *dnW = NULL;
 //     LDAPControlW **serverctrlsW = NULL, **clientctrlsW = NULL;
 //
-//     TRACE( "(%p, %s, %p, %p)\n", ld, debugstr_a(dn), serverctrls,
+//     TRACE( "(%p, %s, %p, %p)\n", ld, debugstr_a!(dn), serverctrls,
 //            clientctrls );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
@@ -611,7 +689,7 @@ pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> UL
 //     char *dnU = NULL;
 //     LDAPControl **serverctrlsU = NULL, **clientctrlsU = NULL;
 //
-//     TRACE( "(%p, %s, %p, %p)\n", ld, debugstr_w(dn), serverctrls,
+//     TRACE( "(%p, %s, %p, %p)\n", ld, debugstr_w!(dn), serverctrls,
 //            clientctrls );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
@@ -651,7 +729,7 @@ pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> UL
 // #ifdef HAVE_LDAP
 //     WCHAR *dnW = NULL;
 //
-//     TRACE( "(%p, %s)\n", ld, debugstr_a(dn) );
+//     TRACE( "(%p, %s)\n", ld, debugstr_a!(dn) );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
 //
@@ -686,7 +764,7 @@ pub unsafe extern "C" fn ldap_delete_sW(ld: *mut WLDAP32_LDAP, dn: PWCHAR) -> UL
 // #ifdef HAVE_LDAP
 //     char *dnU = NULL;
 //
-//     TRACE( "(%p, %s)\n", ld, debugstr_w(dn) );
+//     TRACE( "(%p, %s)\n", ld, debugstr_w!(dn) );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
 //

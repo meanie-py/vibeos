@@ -2,9 +2,21 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-#[cfg(feature = "have_ldap")]
 pub const LDAP_MAXINT: i32 = 2147483647;
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_create_page_controlA(
+    ld: *mut WLDAP32_LDAP,
+    pagesize: ULONG,
+    cookie: *mut WLDAP32_berval,
+    critical: UCHAR,
+    control: *mut PLDAPControlA,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_create_page_controlA(
     ld: *mut WLDAP32_LDAP,
@@ -28,6 +40,7 @@ pub unsafe extern "C" fn ldap_create_page_controlA(
 
     ret
 }
+#[cfg(feature = "have_ldap")]
 unsafe extern "C" fn create_page_control(
     pagesize: ULONG,
     cookie: *mut WLDAP32_berval,
@@ -111,11 +124,17 @@ pub unsafe extern "C" fn ldap_create_page_controlW(
     critical: UCHAR,
     control: *mut PLDAPControlW,
 ) -> ULONG {
-    if ld.is_null() || control.is_null() || pagesize > LDAP_MAXINT {
-        return WLDAP32_LDAP_PARAM_ERROR;
+    #[cfg(feature = "have_ldap")]
+    {
+        if ld.is_null() || control.is_null() || pagesize > LDAP_MAXINT {
+            return WLDAP32_LDAP_PARAM_ERROR;
+        }
+        return create_page_control(pagesize, cookie, critical, control);
     }
-
-    return create_page_control(pagesize, cookie, critical, control);
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        WLDAP32_LDAP_NOT_SUPPORTED
+    }
 }
 
 #[no_mangle]
@@ -126,7 +145,7 @@ pub unsafe extern "C" fn ldap_get_next_page(
     message: *mut ULONG,
 ) -> ULONG {
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
     return WLDAP32_LDAP_NOT_SUPPORTED;
 }
@@ -141,11 +160,23 @@ pub unsafe extern "C" fn ldap_get_next_page_s(
     results: *mut *mut WLDAP32_LDAPMessage,
 ) -> ULONG {
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
     return WLDAP32_LDAP_NOT_SUPPORTED;
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_get_paged_count(
+    ld: *mut WLDAP32_LDAP,
+    search: PLDAPSearch,
+    count: *mut ULONG,
+    results: *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_get_paged_count(
     ld: *mut WLDAP32_LDAP,
@@ -162,6 +193,18 @@ pub unsafe extern "C" fn ldap_get_paged_count(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_parse_page_controlA(
+    ld: *mut WLDAP32_LDAP,
+    ctrls: *mut PLDAPControlA,
+    count: *mut ULONG,
+    cookie: *mut *mut WLDAP32_berval,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_parse_page_controlA(
     ld: *mut WLDAP32_LDAP,
@@ -188,6 +231,18 @@ pub unsafe extern "C" fn ldap_parse_page_controlA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_parse_page_controlW(
+    ld: *mut WLDAP32_LDAP,
+    ctrls: *mut PLDAPControlW,
+    count: *mut ULONG,
+    cookie: *mut *mut WLDAP32_berval,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_parse_page_controlW(
     ld: *mut WLDAP32_LDAP,
@@ -241,7 +296,7 @@ pub unsafe extern "C" fn ldap_search_abandon_page(
     search: PLDAPSearch,
 ) -> ULONG {
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
     return WLDAP32_LDAP_SUCCESS;
 }
@@ -260,7 +315,7 @@ pub unsafe extern "C" fn ldap_search_init_pageA(
     sizelimit: ULONG,
     sortkeys: *mut PLDAPSortKeyA,
 ) -> PLDAPSearch {
-    debugstr_a(dn);
+    debugstr_a!(dn);
     core::ptr::null_mut()
 }
 
@@ -560,8 +615,8 @@ pub unsafe extern "C" fn ldap_search_init_pageW(
 //     PCHAR filter, PCHAR attrs[], ULONG attrsonly, PLDAPControlA *serverctrls,
 //     PLDAPControlA *clientctrls, ULONG timelimit, ULONG sizelimit, PLDAPSortKeyA *sortkeys )
 // {
-//     FIXME( "(%p, %s, 0x%08x, %s, %p, 0x%08x)\n", ld, debugstr_a(dn),
-//            scope, debugstr_a(filter), attrs, attrsonly );
+//     FIXME( "(%p, %s, 0x%08x, %s, %p, 0x%08x)\n", ld, debugstr_a!(dn),
+//            scope, debugstr_a!(filter), attrs, attrsonly );
 //     return NULL;
 // }
 //
@@ -569,8 +624,8 @@ pub unsafe extern "C" fn ldap_search_init_pageW(
 //     PWCHAR filter, PWCHAR attrs[], ULONG attrsonly, PLDAPControlW *serverctrls,
 //     PLDAPControlW *clientctrls, ULONG timelimit, ULONG sizelimit, PLDAPSortKeyW *sortkeys )
 // {
-//     FIXME( "(%p, %s, 0x%08x, %s, %p, 0x%08x)\n", ld, debugstr_w(dn),
-//            scope, debugstr_w(filter), attrs, attrsonly );
+//     FIXME( "(%p, %s, 0x%08x, %s, %p, 0x%08x)\n", ld, debugstr_w!(dn),
+//            scope, debugstr_w!(filter), attrs, attrsonly );
 //     return NULL;
 // }
 //

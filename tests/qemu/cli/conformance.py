@@ -261,6 +261,11 @@ def conformance(args, repo: Path) -> int:
     # -smp 2 sweep overwrote seconds later, leaving only the stop code. The results
     # file alone is not enough: a mid-sweep crash needs the faulting context, and the
     # crash is exactly the case where you cannot just re-run and expect it back.
+    # Found independently a second time on the conformance-ratchet lane: an
+    # IoFilesystem BUGCHECK 0x19 printed a full [POOL] page dump + free ring, and a
+    # later boot of that arch had overwritten every byte before anyone read the run
+    # dir — the crash had to be re-collected with a fresh build+boot. Two lanes
+    # paying for the same lost evidence is what makes this worth a comment.
     saved_serial = run_dir / f"{pytest_arch}_serial.log"
     saved_serial.write_text(serial_text)
 

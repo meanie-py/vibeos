@@ -179,6 +179,7 @@ pub unsafe extern "system" fn MmShowOutOfSpaceMessagePagingFile() {
 #[no_mangle]
 pub unsafe extern "system" fn MmWriteToSwapPage(SwapEntry: SWAPENTRY, Page: PFN_NUMBER) -> NTSTATUS {
     if SwapEntry == 0 {
+        mm_guard_trip!("pagefile.MmWriteToSwapPage null-swap-entry", 8, "Page" => Page);
         #[cfg(target_arch = "aarch64")]
         {
             return STATUS_UNSUCCESSFUL;
@@ -196,6 +197,10 @@ pub unsafe extern "system" fn MmWriteToSwapPage(SwapEntry: SWAPENTRY, Page: PFN_
     if MmPagingFile[i].is_null() || (*(MmPagingFile[i] as *mut ntkrnl_sys::ddk::_MMPAGING_FILE)).FileObject.is_null() ||
         (*(*(MmPagingFile[i] as *mut ntkrnl_sys::ddk::_MMPAGING_FILE)).FileObject).DeviceObject.is_null()
     {
+        mm_guard_trip!(
+            "pagefile.MmWriteToSwapPage no-paging-file", 8,
+            "SwapEntry" => SwapEntry, "index" => i, "Page" => Page,
+        );
         #[cfg(target_arch = "aarch64")]
         {
             return STATUS_UNSUCCESSFUL;
@@ -258,6 +263,10 @@ pub unsafe extern "system" fn MiReadPageFile(
     PageFileOffset: ULONG_PTR,
 ) -> NTSTATUS {
     if PageFileOffset == 0 {
+        mm_guard_trip!(
+            "pagefile.MiReadPageFile null-offset", 8,
+            "Page" => Page, "PageFileIndex" => PageFileIndex,
+        );
         #[cfg(target_arch = "aarch64")]
         {
             return STATUS_UNSUCCESSFUL;
@@ -274,6 +283,10 @@ pub unsafe extern "system" fn MiReadPageFile(
     let paging_file = MmPagingFile[PageFileIndex as usize] as *mut ntkrnl_sys::ddk::_MMPAGING_FILE;
 
     if paging_file.is_null() || (*(paging_file as *mut ntkrnl_sys::ddk::_MMPAGING_FILE)).FileObject.is_null() || (*(*(paging_file as *mut ntkrnl_sys::ddk::_MMPAGING_FILE)).FileObject).DeviceObject.is_null() {
+        mm_guard_trip!(
+            "pagefile.MiReadPageFile no-paging-file", 8,
+            "PageFileIndex" => PageFileIndex, "offset" => PageFileOffset, "Page" => Page,
+        );
         #[cfg(target_arch = "aarch64")]
         {
             return STATUS_UNSUCCESSFUL;
@@ -347,6 +360,9 @@ pub unsafe extern "system" fn MmFreeSwapPage(Entry: SWAPENTRY) {
 
     let paging_file = MmPagingFile[i] as PMMPAGING_FILE;
     if paging_file.is_null() {
+        // Freeing a swap page into a paging file that isn't there — the swap
+        // entry outlived its file, so the entry is stale.
+        mm_guard_trip!("pagefile.MmFreeSwapPage no-paging-file", 8, "index" => i);
         #[cfg(target_arch = "aarch64")]
         {
             KeReleaseGuardedMutex(&mut MmPageFileCreationLock as *mut KGUARDED_MUTEX);
@@ -399,6 +415,10 @@ pub unsafe extern "system" fn MmAllocSwapPage() -> SWAPENTRY {
     }
 
     KeReleaseGuardedMutex(&mut MmPageFileCreationLock as *mut KGUARDED_MUTEX);
+    // No paging file had a free page. x86 calls that fatal; arm64 returns 0 and
+    // lets the caller cope. Arm it so a swap-exhaustion round is distinguishable
+    // from a corruption round rather than both reading as "the sweep stalled".
+    mm_guard_trip!("pagefile.MmAllocSwapPage swap-exhausted", 4);
     #[cfg(target_arch = "aarch64")]
     {
         return 0;

@@ -12,7 +12,7 @@ use ntkrnl_sys::ddk::{IRP};
 use crate::glue::{DEBUG_TRACE_PNP};
 
 extern "system" {
-    fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+    fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn FatUnlockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Something: *mut core::ffi::c_void) -> i32;
     fn FatFlushAndCleanVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Vcb: *mut VCB, Flags: i32);
     fn FatCheckForDismount(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Force: BOOLEAN,) -> BOOLEAN;

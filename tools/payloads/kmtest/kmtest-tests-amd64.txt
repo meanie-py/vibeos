@@ -53,7 +53,16 @@ IoEvent
 # these two are now candidates for ONE shared pool-corruption root rather than two bugs.
 # Next step is --tripwire "SPECIALPOOL=*" to catch the corrupting store, not more
 # VAD-tree reading.
-#IoFilesystem
+# UN-QUARANTINED 2026-07-26: the shared pool root is FIXED. NtQueryInformationFile
+# validated the info class and Length ONLY for user-mode callers (the C's kernel-mode
+# copy of those checks sits under #if DBG and the translation dropped it), so a kernel
+# FileAllInformation query with Length=0 got a 0-byte TAG_IOBUF block that the I/O
+# manager and the FSD then wrote past. The convergence guess above was right: ONE root,
+# both tests. Baseline OK pass=162 fail=142 skip=1 — i386 lands byte-identical, which is
+# what a shared-core fix should do. The 142 are the test not recognising CDFS (:153
+# "Unknown filesystem: CDFS", then :492 running its NTFS path table against a read-only
+# LiveCD); :198 and :242 are a real newly-visible cdfs bug (task #44).
+IoFilesystem
 IoInterrupt
 IoIrp
 IoMdl
@@ -84,7 +93,15 @@ NpfsCreate
 # QUARANTINED 2026-07-10 (amd64 sweep 5): BUGCHECK 0x19 BAD_POOL_HEADER subcode 5
 # (corrupt pool header on free) right at test start. Repro with
 # --tripwire "SPECIALPOOL=*" to catch the corrupting store. Triage owed.
-#NpfsFileInfo
+# UN-QUARANTINED 2026-07-26: same root as IoFilesystem — NtQueryInformationFile skipped
+# class+Length validation for kernel-mode callers. Baseline OK pass=50 fail=25 skip=0.
+# The 25 are EXPECTED and must not be "fixed" by weakening the check: NpfsFileInfo.c:95
+# queries FileAllInformation with sizeof(FILE_ALL_INFORMATION)-4 and wants
+# STATUS_BUFFER_OVERFLOW, but on a checked build that is INFO_LENGTH_MISMATCH — real
+# Windows and upstream ReactOS agree, because the C table (io_i.h) uses the same
+# sizeof(). The test is missing the `if (KmtIsCheckedBuild)` guard its IoFilesystem
+# sibling has; ~18 of the 25 cascade from that one line. Test-side gap, not ours.
+NpfsFileInfo
 NpfsReadWrite
 NpfsVolumeInfo
 ObHandle
