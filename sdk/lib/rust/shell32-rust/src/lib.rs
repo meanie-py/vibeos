@@ -96,6 +96,19 @@ pub mod vista;
 // promoted out of modules that already proved them. See win32.rs.
 pub mod win32;
 
+// The bindgen island — per-arch struct layouts and constants derived from shell32's REAL
+// include closure (tools/rustconv/gen_driver_types.sh shell32; profile from
+// rustconv.profile_derive). shell32-rust was the one substantial translated module with no
+// island, which is why `verify_ffi` — whose oracle is `bindgen_i386.rs` — could not see this
+// crate at all, and why it appears in none of the 40 crates the clashing-extern passes
+// converged. Declared but not yet globbed by any module: adopting it wholesale means retiring
+// the hand-written types.rs/shellcom.rs that 40 landed COM-class modules compile against, and
+// that is gated on the vtable-representation conflict documented in the generator's shell32
+// cell. Compiling it here proves all three per-arch islands build before anything depends on
+// them. Measured against the parked Wave-5 TUs: 49 of their 60 unresolved types resolve from
+// here plus ntdll-sys, versus 2,768 lines of hand-written substrate today.
+pub mod island;
+
 // Wave 4 free-function TUs: whole plain-C++ translation units with no COM class of their
 // own, translated with --free-functions once that path learned the C++ language layer.
 //
