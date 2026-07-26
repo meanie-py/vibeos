@@ -46,7 +46,12 @@ IoEvent
 # QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
 # MiFindEmptyAddressRangeInTree+0x173 (Rust, ARM3/vadnode.rs:370). Triage owed — real
 # kernel-bug candidate in the VAD-tree range search. Quest doc has details.
-#IoFilesystem
+# UN-QUARANTINED 2026-07-26: root was NOT the VAD tree (that lead was stale on amd64
+# too). NtQueryInformationFile validated info class + Length only for user-mode callers,
+# so a kernel FileAllInformation query with Length=0 got a 0-byte TAG_IOBUF block that
+# then got written past — BUGCHECK 0x19 subcode 5. Baseline OK pass=162 fail=142 skip=1,
+# byte-identical to amd64. See the amd64 list for what the 142 are.
+IoFilesystem
 IoInterrupt
 IoIrp
 IoMdl
@@ -92,7 +97,11 @@ NpfsCreate
 # QUARANTINED 2026-07-10 (amd64 sweep 5): BUGCHECK 0x19 BAD_POOL_HEADER subcode 5
 # (corrupt pool header on free) right at test start. Repro with
 # --tripwire "SPECIALPOOL=*" to catch the corrupting store. Triage owed.
-#NpfsFileInfo
+# UN-QUARANTINED 2026-07-26: same NtQueryInformationFile root as IoFilesystem.
+# Baseline OK pass=50 fail=25 skip=0, byte-identical to amd64. The 25 are expected —
+# NpfsFileInfo.c:95 wants BUFFER_OVERFLOW where a checked build correctly returns
+# INFO_LENGTH_MISMATCH; see the amd64 list. Do NOT weaken the check to green them.
+NpfsFileInfo
 NpfsReadWrite
 NpfsVolumeInfo
 ObHandle

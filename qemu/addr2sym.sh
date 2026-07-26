@@ -31,6 +31,19 @@ while :; do
             shift 2
             [ -n "$RELOC" ] || die "--reloc requires an address argument"
             ;;
+        # --kernel-base <hex>: the value printed by the kernel's own
+        # "[KRNLBASE] ntoskrnl runtime base=<hex>" serial line. Pass it verbatim; we
+        # do the `- 0x400000` here so nobody has to remember which direction it goes.
+        # Doing that subtraction by hand is exactly the kind of remembered recipe
+        # that produces a confidently wrong base, and a wrong base relocates the hunt
+        # instead of failing loudly.
+        --kernel-base)
+            KBASE="${2:-}"
+            shift 2
+            [ -n "$KBASE" ] || die "--kernel-base requires an address argument"
+            [ "$RELOC" = "0" ] || die "pass --reloc OR --kernel-base, not both"
+            RELOC=$(python3 -c "import sys; print(format(int(sys.argv[1],16) - 0x400000, 'x'))" "$KBASE")
+            ;;
         # --mp: resolve against ntkrnlmp.exe's index. An `--smp N` boot runs a
         # DIFFERENT binary from ntoskrnl.exe, so the UP index names the wrong
         # function for every MP crash — quietly, since some symbol always sorts
@@ -40,7 +53,7 @@ while :; do
     esac
 done
 
-[ "$#" -ge 1 ] || die "usage: addr2sym.sh <arch> [--reloc <hex>] [--mp] <addr> [<addr>...]"
+[ "$#" -ge 1 ] || die "usage: addr2sym.sh <arch> [--reloc <hex> | --kernel-base <hex>] [--mp] <addr> [<addr>...]"
 
 INDEX="$QEMU_DIR/symbols-$ARCH$FLAVOR.tsv"
 if [ ! -f "$INDEX" ]; then

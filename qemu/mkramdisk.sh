@@ -707,6 +707,28 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$THREAD32" ::/reactos/syswow64/thread32.exe
         fi
+        # fault32.exe — the E5/E18 guest-SEH guest (winlogon TryStartWow64Fault):
+        # a hardware AV caught by a raw fs:[0] handler with the LIVE faulting
+        # context, a RaiseException round-trip, and DBG_PRINTEXCEPTION
+        # consumption. On arm64 the fault arrives as a HOST fault inside FEX's
+        # JIT, so this exercises a completely different arrival path from
+        # amd64's compat-mode trap.
+        FAULT32="${VIBEOS_FAULT32_EXE:-$PROJECT_DIR/build-fex-hello/fault32.exe}"
+        if [ -f "$FAULT32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/fault32.exe (E18 guest-SEH guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$FAULT32" ::/reactos/syswow64/fault32.exe
+        fi
+        # selfmod32.exe — the E17 runtime-codegen guest (winlogon
+        # TryStartWow64Selfmod): the CPU layer's memory-notification contract.
+        # This one is arm64-FIRST by nature — a native host has nothing to
+        # invalidate, so FEX is the only place the contract does any work.
+        SELFMOD32="${VIBEOS_SELFMOD32_EXE:-$PROJECT_DIR/build-fex-hello/selfmod32.exe}"
+        if [ -f "$SELFMOD32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/selfmod32.exe (E17 codegen guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$SELFMOD32" ::/reactos/syswow64/selfmod32.exe
+        fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
         HELLO32="${VIBEOS_HELLO32_EXE:-$PROJECT_DIR/build-fex-hello/hello32.exe}"

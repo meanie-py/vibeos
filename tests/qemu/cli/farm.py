@@ -202,6 +202,20 @@ def farm(args, repo: Path) -> int:
             print(f"[farm] {arch}: STALE media — build first (or --allow-stale)")
             return 1
 
+    # Same for a soak whose whole point is a probe: check ONCE up front rather
+    # than per boot — the media is fixed for the run, and a farm is exactly the
+    # shape (hours of boots, one frozen image) that made this failure expensive.
+    require = [s for s in (getattr(args, "require_probe", None) or []) if s.strip()]
+    if require:
+        for arch in arches:
+            missing = provenance.probes_missing_from_media(repo, archcfg.base_arch(arch), require)
+            if missing:
+                print(f"[farm] {arch}: PROBE NOT IN MEDIA — refusing to spend the boots")
+                for m in missing:
+                    print(f"[farm]   {m}")
+                return 1
+        print(f"[farm] probe-check OK: {len(require)} literal(s) in every boot image")
+
     sha, dirty = _git_state(repo)
     print(
         f"[farm] arches={','.join(arches)} sha={sha}{' DIRTY' if dirty else ''}"

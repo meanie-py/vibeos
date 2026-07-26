@@ -19,7 +19,13 @@ from . import archcfg, cachecfg, canon, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
-_DUP = re.compile(r"duplicate symbol[:\s]+[`']?([@\w]+)", re.I)
+# ld.lld reports duplicate symbols as WARNINGS in this tree (the link runs
+# with --allow-multiple-definition), so anchoring on "error:" is what keeps
+# a warning from being read as the failure. Without the anchor a rustc
+# compile error that merely co-occurred with those warnings classified as
+# LINK_FAIL and listed three warnings as its salient — the real cause
+# (error[E0308] in census.rs) appeared nowhere in the summary.
+_DUP = re.compile(r"error:\s*duplicate symbol[:\s]+[`']?([@\w]+)", re.I)
 
 
 def _decoration_hint(sym: str) -> str:
@@ -66,7 +72,9 @@ def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
     # it must be matched before the generic cargo "error:" catch).
     undef = list(dict.fromkeys(_UNDEF.findall(blob)))
     dup = list(dict.fromkeys(_DUP.findall(blob)))
-    if undef or dup or "ld.lld:" in low or "duplicate symbol" in low:
+    # Require a real link ERROR, not merely ld.lld chatter: `ld.lld:` alone
+    # matches its warnings too, which is the same false-positive as _DUP above.
+    if undef or dup or "ld.lld: error" in low:
         sal = [_decoration_hint(s) for s in undef][:3]
         sal += [f"duplicate symbol: {s}" for s in dup][:3]
         return "LINK_FAIL", (sal or [ln.strip() for ln in blob.splitlines() if "ld.lld" in ln][:3])

@@ -16,7 +16,12 @@
 //!   SPECIALPOOL_UNDERRUNS=1   catch underruns instead of overruns.
 //!   SPECIALPOOL_SELFTEST=pattern|guard   deliberately corrupt one allocation
 //!                       after pool init and expect BUGCHECK 0xC1 (pattern) or
-//!                       0x50 (guard page) — end-to-end detection proof.
+//!                       0x50 (guard page) — proves the DETECTION machinery. It
+//!                       does not prove routing (it calls MmAllocateSpecialPool
+//!                       directly), which is why arming now always runs a routing
+//!                       probe through ExAllocatePoolWithTag first and says
+//!                       "routing verified" only when the allocation really landed
+//!                       in special pool.
 //!   CSWITCH_SELFTEST=1  prove cswitchdep barks (needs --cswitchdep build).
 //!   RUSTPANIC_SELFTEST=1  deliberate Rust panic!() at arm time — proves the
 //!                       shared panic handler (panic-common): expect the
@@ -33,6 +38,7 @@
 
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
+use ntkrnl_sys::mm::POOL_TYPE;
 
 // Same-crate globals — no FFI decls needed.
 // MmSpecialPoolTag: ex-rust global read across the crate boundary as a link symbol
@@ -44,6 +50,12 @@ use crate::ARM3::special::MmSpecialPoolCatchOverruns;
 
 extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
+}
+
+// ex-rust exports. `extern "system"` is load-bearing on i386 (stdcall, not cdecl).
+extern "system" {
+    fn ExAllocatePoolWithTag(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID;
+    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
 }
 
 /// Selftest mode parsed from the tripwire blob: 0 none, 1 pattern, 2 guard.
@@ -300,7 +312,9 @@ pub unsafe extern "system" fn VibeTripwireHasToken(needle: *const u8, len: usize
 /// Called right after MiInitializeSpecialPool. Reports arming outcome loudly and
 /// runs the destructive selftest when requested (expected result: BUGCHECK).
 pub unsafe fn vibe_tripwire_post_pool_init() {
-    use crate::ARM3::special::{MmAllocateSpecialPool, MmFreeSpecialPool, MmSpecialPoolStart};
+    use crate::ARM3::special::{
+        MmAllocateSpecialPool, MmFreeSpecialPool, MmIsSpecialPoolAddress, MmSpecialPoolStart,
+    };
 
     if MmSpecialPoolTag == 0 || MmSpecialPoolTag == u32::MAX {
         return;
@@ -311,7 +325,33 @@ pub unsafe fn vibe_tripwire_post_pool_init() {
         DbgPrint(b"[TRIPWIRE] ERROR: special pool armed but NOT initialized\n\0".as_ptr());
         return;
     }
-    DbgPrint(b"[TRIPWIRE] special pool ACTIVE\n\0".as_ptr());
+
+    // ROUTING CHECK — the one that matters, and the one whose absence let a dead
+    // tripwire ship. An initialized special pool proves nothing on its own: the
+    // production path is ExAllocatePoolWithTag consulting ExpPoolFlags, and when
+    // MiInitializeSpecialPool set the wrong flag bit, every allocation went to
+    // ordinary pool while this function still printed "ACTIVE". Anything that only
+    // calls MmAllocateSpecialPool directly is a component test wearing an
+    // end-to-end label. So: allocate the way a driver does, and ask where it landed.
+    let probe = ExAllocatePoolWithTag(0 /* NonPagedPool */, 64, u32::from_le_bytes(*b"Vibe"));
+    if probe.is_null() {
+        DbgPrint(b"[TRIPWIRE] ERROR: routing probe allocation failed\n\0".as_ptr());
+        return;
+    }
+    if MmIsSpecialPoolAddress(probe) == 0 {
+        // Loud and specific: armed, initialized, and NOT routing. Every corruption
+        // hunt run in this state silently produces a normal-pool boot.
+        DbgPrint(
+            b"[TRIPWIRE] ERROR: special pool NOT ROUTING - ExAllocatePoolWithTag returned\
+              \n[TRIPWIRE]        ordinary pool %p. Corruption hunting is DISABLED this boot.\n\0"
+                .as_ptr(),
+            probe,
+        );
+        ExFreePoolWithTag(probe, u32::from_le_bytes(*b"Vibe"));
+        return;
+    }
+    ExFreePoolWithTag(probe, u32::from_le_bytes(*b"Vibe"));
+    DbgPrint(b"[TRIPWIRE] special pool ACTIVE (routing verified)\n\0".as_ptr());
 
     match VIBE_SELFTEST {
         1 => {

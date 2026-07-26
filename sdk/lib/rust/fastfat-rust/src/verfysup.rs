@@ -73,7 +73,7 @@ extern "system" {
     fn NodeType(Fcb: PFCB) -> u32;
     fn UNREFERENCED_PARAMETER(x: *mut core::ffi::c_void);
     fn FatAcquireExclusiveGlobal(IrpContext: PIRP_CONTEXT);
-    fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
+    fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
     fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> u32;
     fn FatCheckForDismount( IrpContext: PIRP_CONTEXT, Vcb: PVCB, Force: BOOLEAN, ) -> BOOLEAN;
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);

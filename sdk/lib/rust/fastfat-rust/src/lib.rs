@@ -59,6 +59,7 @@ pub mod devctrl;
 pub mod deviosup;
 pub mod dirctrl;
 pub mod dirsup;
+pub mod fileid;    // fatprocs.h FatGenerateFileId* macros (were bugcheck stubs)
 pub mod dumpsup;
 pub mod ea;
 pub mod easup;
