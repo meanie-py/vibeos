@@ -4425,6 +4425,25 @@ def test_smoke_stage_with_a_real_verdict_is_untouched(tmp_path, monkeypatch):
 # --- an optional ninja pass can invalidate the main pass's output -----------
 
 
+def test_summary_records_which_worktree_the_run_belongs_to(tmp_path):
+    """VIBEOS_ARTIFACT_ROOT defaults to /tmp/vibeos-cli for EVERY worktree, so
+    every lane's run dirs interleave in one directory and picking "the newest
+    build-arm64 run" hands you whichever lane started last. That mis-attribution
+    already produced a wrong status report. The owner belongs in the artifact."""
+    repo = tmp_path / "vibeos-smp"
+    repo.mkdir()
+    run = Run("build", "arm64", ts=1700000000)
+    run.add(Stage("ninja", status="ok"))
+    run.finalize(repo)
+    summary = json.loads((run.dir / "summary.json").read_text())
+    assert summary["worktree"] == str(repo.resolve())
+
+    # ...and a run finalized without a repo says so rather than inventing one
+    run2 = Run("build", "arm64", ts=1700000001)
+    run2.finalize()
+    assert json.loads((run2.dir / "summary.json").read_text())["worktree"] is None
+
+
 def test_ninja_did_work_counts_edges_not_just_dirtiness():
     """`relinked N` is the interesting number: a re-affirm that keeps relinking
     the same cell every build is a wiring bug, not a hiccup it absorbed."""
