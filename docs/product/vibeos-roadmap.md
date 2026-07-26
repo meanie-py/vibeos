@@ -539,9 +539,38 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   compile instead of leaking 8 bytes per SRB. Remaining exposure is ~500 transmute-shaped
   installs — dxg-rust 92, win32k `ntddraw_dxeng` 42, cdfs `cdinit` 33, winsrv console frontends
   ~90, hal `bussupp`/`dma` 42, cdrom 20, scsiport 15. Full writeup: field manual, "A `transmute`
-  at a callback-install site erases the CALLING CONVENTION". Also owed: `gen_driver_types.sh`
-  should call the pass unconditionally and retire the `CALLBACK_SYSTEM=1` opt-in, whose blanket
-  `s/extern "C" fn/extern "system" fn/` is unsound on i386 (34 genuinely-cdecl slots).
+  at a callback-install site erases the CALLING CONVENTION".
+
+  **Generation is now wired (2026-07-26).** `gen_driver_types.sh` calls the pass
+  unconditionally after all three `run_arch` calls — placement is forced, since i386 is the
+  witness and a per-arch hook cannot see it — scoped by a new `--stem` so a run normalizes only
+  the islands it wrote (netapi32 carries `types`, `types_browser`, `types_rpc`; the old glob
+  would have rewritten all three). `CALLBACK_SYSTEM=1` is documented as superseded but NOT
+  removed: the projection keys on `Option<...>` aliases and struct fields, while the old sed is
+  a blanket rewrite that may be carrying fn-pointer shapes the projection does not match, so
+  dropping it could reintroduce E0308 in the seven crates that opt in. They compose safely (the
+  sed leaves no `stdcall` on i386, so the projection no-ops there). Retiring it means
+  regenerating those seven and fixing the fallout — still owed.
+
+  **The bug yield is measured, and it is small (2026-07-26).** The alarming part of this task
+  was never the 17,612 slots, it was not knowing how many hid a real convention bug. Audited
+  statically — no build needed, which matters because the E0308s were only ever a *detection
+  mechanism* for something checkable directly: **884 transmute-shaped installs plus 129 `cb!`
+  installs across the four crates that still define that macro (usbaudio, ks, usbhub, usbport),
+  yielding exactly ONE real bug.** `ApphelpShimCacheCompareRoutine` (ps-rust) was defined
+  `extern "C"` against four agreeing authorities — `NTAPI` in `ntoskrnl/ps/apphelp.c`, `NTAPI`
+  on `RTL_AVL_COMPARE_ROUTINE` in `ndk/rtltypes.h`, `extern "stdcall"` in bindgen's i386
+  transcript, and the two sibling routines passed to the *same* `RtlInitializeGenericTableAvl`
+  call. On i386 the AVL code expects the callee to pop 12 bytes; ours popped none, once per node
+  visited on every shim-cache lookup. Fixed.
+
+  The other seven candidates were false positives, and both classes are worth knowing because
+  they are what a careless mechanical pass would have corrupted: storahci's `PHW_DPC_ROUTINE`
+  and `PAHCI_COMPLETION_ROUTINE` are **genuinely cdecl** (undecorated in `storport.h` and the
+  driver's private header; bindgen's i386 island independently says `extern "C"`), and ks-rust's
+  four clock routines are a correct per-arch `fastcall`/`C` cfg split of a C `FASTCALL`. Both
+  vindicate the projection's rule that i386-says-`C` stays `C` — and both are exactly what
+  `CALLBACK_SYSTEM`'s blanket sed would have broken.
 - **8 `scan_cc_mismatch` entries in `ntkrnl-sys/src/bindgen_i386.rs` — benign, baselined**
   (`Ke386SanitizeFlags`, `Ke386SanitizeSeg`, `Ke{Query,Register}InterruptHandler`,
   `KiFillTrapFrameDebug`, `KiGetThreadNpxArea`, `KiSetTebBase`, `KiUserTrap`). The island

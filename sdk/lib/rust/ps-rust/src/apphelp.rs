@@ -171,7 +171,13 @@ unsafe fn ApphelpCacheQueryInfo(ImageHandle: HANDLE, Entry: PSHIM_CACHE_ENTRY) -
     status
 }
 
-unsafe extern "C" fn ApphelpShimCacheCompareRoutine(
+// NTAPI in the C (ntoskrnl/ps/apphelp.c) and stdcall in bindgen's i386 transcript of
+// PRTL_AVL_COMPARE_ROUTINE, like the Allocate/Free routines handed to the same
+// RtlInitializeGenericTableAvl call below. This was `extern "C"`: on i386 the AVL code
+// calls it expecting the callee to pop 12 bytes of arguments and ours popped none,
+// leaking that much stack per comparison — once per node visited on every cache lookup.
+// The transmute at the install site erased the type, so nothing could report it.
+unsafe extern "system" fn ApphelpShimCacheCompareRoutine(
     _Table: *mut _RTL_AVL_TABLE,
     FirstStruct: PVOID,
     SecondStruct: PVOID,

@@ -1643,6 +1643,19 @@ PYEOF
     # postprocess_bindgen.py does for the ntddk callback types) makes them unify on all arches.
     # BLOCKLIST_FUNCS drops all fn *declarations*, so every remaining `extern "X" fn` is a
     # fn-pointer TYPE -> a blanket rewrite is safe.
+    #
+    # SUPERSEDED, NOT YET RETIRED. normalize_island_abi.py (run once after all three arches)
+    # does this correctly: it projects from the i386 island per symbol, so a genuinely-cdecl
+    # callback keeps `C`. The blanket sed below cannot make that distinction and promotes
+    # every cdecl fn-pointer to stdcall ON i386 — an ABI break in the opposite direction,
+    # affecting 32 alias + 2 field types repo-wide.
+    #
+    # It still runs because retiring it is NOT provably safe from inspection: the sed also
+    # catches fn-pointer shapes the projection does not match (it keys on `Option<...>`
+    # aliases and struct fields), so dropping it could reintroduce E0308 in the seven crates
+    # that opt in. The two compose safely in the meantime — this leaves nothing spelled
+    # `stdcall` on i386, so the later projection finds no witness and is a no-op here.
+    # To retire: regenerate those seven crates without it, and fix what fails to build.
     sed -i -E 's/extern "stdcall" fn/extern "system" fn/g; s/extern "C" fn/extern "system" fn/g' "$FINAL"
   fi
   echo "  -> ${FINAL}  ($(grep -cE 'pub struct' "$FINAL") structs, $(wc -l <"$FINAL") lines)"
@@ -1651,6 +1664,20 @@ PYEOF
 run_arch i386  i686-pc-windows-gnu    '-D_M_IX86 -D__i386__ -D_X86_'
 run_arch amd64 x86_64-pc-windows-gnu  '-D_WIN64 -D_M_AMD64 -D__x86_64__ -D_AMD64_'
 run_arch arm64 aarch64-pc-windows-gnu '-D_WIN64 -D_M_ARM64 -D__aarch64__ -D__arm64__ -D_ARM64_'
+
+# Spell ABI-identical callback slots `extern "system"` across all three islands, projecting
+# from the i386 island. This runs HERE, after all three arches, because i386 is the witness:
+# amd64/arm64 have one calling convention so bindgen flattens every NTAPI to `extern "C"`
+# and the decoration is gone. It cannot live inside run_arch, which sees one arch at a time.
+#
+# Unconditional, and scoped to the stem this run just wrote. Without it a translation's
+# portable `extern "system" fn` will not unify with the island's literal `stdcall`/`C` in a
+# fn-POINTER type (E0308), and the standing workaround is to transmute the address — which
+# erases the calling convention along with the rest of the type. That is exactly how buslogic
+# shipped six SCSI miniport callbacks defined `extern "C"` into slots the port driver
+# dereferences as stdcall. Normalizing here makes `Some(f)` assignable directly, so the same
+# mistake is a compile error instead of 8 bytes of stack leaked per SRB dispatch.
+python3 "${SCRIPT_DIR}/normalize_island_abi.py" --stem "$STEM" --apply "$OUT_CRATE"
 
 # <stem>.rs dispatches to the per-arch module.
 cat > "${OUT_CRATE}/${STEM}.rs" <<RS

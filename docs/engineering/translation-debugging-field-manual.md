@@ -1622,6 +1622,27 @@ the harness fail. Two instances of the very class turned up while building it: t
 itself was a liar on its first run (the positive assertion accepted *any* non-empty output), and
 two scanners take FILES, not directories, so handed a directory they silently found nothing.
 
+**A shared regex is an API between lanes, and positional groups are how it breaks.** Mainline
+correctly taught `scan_cc_mismatch` to pair decls and defs on the *linker symbol*
+(`#[link_name]` / `#[export_name]`) instead of the Rust identifier, which added one capture
+group to each of two patterns. Every read in the *scanner* was updated; the `--fix` writer,
+added by a different lane, read the same patterns positionally and was not. Two silent failures
+fell out at once: `cfg, cc, name = m.groups()` started raising `ValueError`, and `d.group(1)`
+became the new `link_name` group — `None` for an ordinary decl — so the fixer classified every
+declaration as unnamed, relocated nothing, and exited reporting success. Fix the class, not the
+call sites: **name every group and read only by name**, so an added group cannot renumber a
+consumer you did not know existed.
+
+**A feature whose pattern does not match the tree's actual spelling is dead on arrival**, and
+it is invisible precisely because it reads as implemented. That same `#[link_name]` support
+allowed only whitespace between the attribute and `fn` — but every `#[link_name]` in this tree
+is spelled `#[link_name = "_wcsicmp"] pub fn wcsicmp(…)` (`rtl-actctx/src/shim.rs`,
+`ps-rust/src/kill.rs`). The `link` group was therefore always `None` and the pairing silently
+degraded to the identifier behaviour it was written to replace, tree-wide, with no finding
+count change to notice. When adding a pattern for a shape, grep the tree for that shape and
+assert the pattern matches what you find — a control fixture you wrote yourself only proves the
+regex matches *your idea* of the spelling.
+
 ### "Canonicalising" a mismatch can silence it by editing the EVIDENCE
 A lint that reports `X disagrees with Y` has no opinion about which side is wrong, so a
 mechanical pass that makes them agree will always turn it green — including by changing the
