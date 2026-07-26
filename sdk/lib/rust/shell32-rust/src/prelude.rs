@@ -53,6 +53,18 @@ pub use crate::island::*;
 // blocklists in favour of the `lpVtbl` shape, come from `shellcom` — and they are imported by
 // the TUs that need them, not blanket-exported here.
 
+// The COM interfaces, in the `lpVtbl` shape — the boundary the module header describes. The
+// island re-exports com-sys's versions of several of these, and com-sys is bindgen output, so
+// its vtable slots are `Option<fn>` while `shellcom`'s are raw fn pointers. One crate cannot
+// carry both shapes: a translated call through an `Option` slot is `E0618: expected function`,
+// and "just add `.unwrap()`" would put a PANIC on every COM call in a shipping DLL. Naming them
+// explicitly here beats the island's glob and puts the whole crate on the raw-pointer shape the
+// 40 landed COM modules already use.
+pub use crate::shellcom::{
+    IBindCtx, IBindCtxVtbl, IDataObject, IDataObjectVtbl, IEnumIDList, IEnumIDListVtbl,
+    IShellFolder, IShellFolder2, IShellFolder2Vtbl, IShellFolderVtbl, IUnknown, IUnknownVtbl,
+};
+
 // Accessor macros from `win32.rs`, but ONLY the ones whose signatures are type-neutral:
 // `ZeroMemory<T>`/`CopyMemory<T,U>` are generic over the pointee, and `LOWORD`/`HIWORD` take a
 // plain `DWORD`. Anything typed on `HWND`, `LPWSTR` or `LPARAM` is re-defined below against the
