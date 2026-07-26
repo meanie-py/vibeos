@@ -143,6 +143,40 @@ def test_smp_boot_timeout_does_not_compound_across_boots(monkeypatch, tmp_path: 
     assert cfg.boot_timeout == up * 2
 
 
+def _res(name: str, p: int = 10, f: int = 0, status: str = "OK") -> dict:
+    return {"name": name, "status": status, "pass": p, "fail": f, "skip": 0, "exit": 0}
+
+
+def test_write_baseline_refuses_to_delete_tests_from_the_floor():
+    """The ratchet form of "never weaken a test to make it pass": --write-baseline
+    replaces the floor wholesale, so a sweep cut short by a boot flake or an early
+    BUGCHECK would silently remove every test it never reached."""
+    base = {n: {"status": "OK", "pass": 10, "fail": 0} for n in ("A", "B", "C")}
+    short = [_res("A"), _res("B")]  # C never launched
+    msg = conformance_mod.baseline_coverage_refusal(short, base, force=False)
+    assert msg and "REFUSED" in msg and "    C\n" in msg
+    # a full sweep is fine
+    assert (
+        conformance_mod.baseline_coverage_refusal(
+            [_res("A"), _res("B"), _res("C")], base, force=False
+        )
+        is None
+    )
+    # ...and --force-baseline is the deliberate retire-a-test escape hatch
+    assert conformance_mod.baseline_coverage_refusal(short, base, force=True) is None
+
+
+def test_write_baseline_announces_a_lowered_floor_but_allows_it():
+    """Absorbing a known regression is sometimes deliberate (i386/arm64 both took
+    ExHardError 30/0 -> 24/6 on purpose) — it just must never be silent."""
+    base = {"ExHardError": {"status": "OK", "pass": 30, "fail": 0}}
+    note = conformance_mod.baseline_lowering_note([_res("ExHardError", 24, 6)], base)
+    assert note and "ExHardError: pass 30 -> 24, fail 0 -> 6" in note
+    # unchanged rows say nothing, and an IMPROVEMENT is not a lowering
+    assert conformance_mod.baseline_lowering_note([_res("ExHardError", 30, 0)], base) is None
+    assert conformance_mod.baseline_lowering_note([_res("ExHardError", 31, 0)], base) is None
+
+
 def test_run_raises_loudly_instead_of_returning_empty(tiny_repo: Path):
     """The BUILD_INCOMPLETE train-halter class: _run used to swallow BOTH a
     non-zero exit and any exception, returning "". That silently shifted the

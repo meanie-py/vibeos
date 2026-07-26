@@ -1402,3 +1402,56 @@ sweep's wait loop (`test_payload.py::test_payload_launched`) does break early on
 but the run still burned to the outer timeout, and `conformance` reports neither a classification
 nor a symbolicated PC the way `smoke` does. A guest BUGCHECK mid-sweep should abort the verb loud
 with the stop code — same fail-loud shape as the three `--smp` checks above.
+
+## arm64 clears its last conformance blocker: `-smp 2` sweeps end-to-end (2026-07-26)
+
+The BuildType fix landed and the arm64 `-smp 2` kmtest sweep — which had never once
+completed, dying at the KeSpinLock `0x9` 34 tests in — now **runs the whole corpus in 95
+seconds**: `launched=89 ok=86 bad=3 sweep=done`.
+
+Against the freshly-seeded arm64 UP baseline, all 89 rows present, no coverage loss, and
+**not one regression**:
+
+| test | UP baseline | `-smp 2` | reading |
+|---|---|---|---|
+| `KeSpinLock` | 281/42 | **286/37** | +5 — the SYNCH_LEVEL/BuildType alignment paying off |
+| `IoInterrupt` | 937/158 | **939/156** | +2 |
+| `ZwMapViewOfSection` | 120/14 | **121/13** | +1 |
+| `KeEvent` | 42733 | 42601 | the documented MP-skip (§9.97), expected |
+| `IoDeviceObject` | 181/8 | 180/9 | the known ±1 flicker, already in amd64's smp2 baseline |
+
+The three `bad` rows are byte-identical to the UP baseline's three (`HalPortIo`,
+`RtlCaptureContextKM`, `RtlCaptureContextUM`, all `NO-END`) — pre-existing, not MP.
+
+### Two harness bugs the run surfaced first
+
+**A UP-tuned `boot_timeout` reads a healthy `-smp N` boot as a wedge.** The first attempt
+failed the boot fixture at arm64's 180s with the log still *talking* — it had reached
+`[WINLOGON] explorer.exe created (PID 216)` and was mid-SCM startup. That budget is sized
+against a ~40s UP boot; under MTTCG each vCPU is its own host thread and the guest does more
+work, so wall-clock grows roughly linearly in N. `vm.smp_boot_timeout()` scales it. **Scale
+the clock, never the marker** — `hang_silence_seconds` is deliberately left alone, because
+the silence watchdog is what actually catches a wedge, so a genuine MP hang still fails in
+~120s instead of burning the stretched budget.
+
+**`--write-baseline` could silently delete tests from the ratchet floor.** It replaces the
+baseline wholesale with the run's rows, so a sweep cut short by a boot flake or an early
+BUGCHECK removes every test it never reached — permanently, with no signal. That is the
+ratchet form of "never weaken a test to make it pass", and catching it was a hand-check
+before every re-seed. Now `baseline_coverage_refusal()` refuses and names the tests that
+would vanish (`--force-baseline` is the deliberate retire-a-test escape hatch), and
+`baseline_lowering_note()` says out loud which rows a re-seed is making worse — that one is
+allowed, because absorbing a known regression is sometimes intended (i386 and arm64 both took
+`ExHardError` 30/0 → 24/6 on purpose).
+
+### The MP gate leg got cheap on x86, and conformance stopped rebuilding for it
+
+`conformance` no longer passes `--smp-kernel` on x86. Since `halmp.dll` became its own cell
+the ISO carries both kernels and both HALs plus a `[LiveCD_SMP]` entry, and
+`vm.smp_selected_iso()` patches `DefaultOS=` inside a *copy* of the media at boot time —
+so `--smp-kernel` would only rewrite that same line via a cmake cache var, i.e. a reconfigure
+and an ISO re-roll to change 22 bytes we change for free. Consequence worth having: **one x86
+build now serves the UP, `--smp 1` and `--smp 2` sweeps**, via `--no-build`. arm64 still needs
+the flag — its `boot.img` does not carry the MP pair at all unless `mkramdisk.sh --smp` stages
+it, so there is nothing in the media to boot-select. Closing that asymmetry (always stage the
+MP pair, patch the ini in the FAT image the same way) is the remaining follow-up.

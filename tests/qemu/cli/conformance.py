@@ -48,6 +48,55 @@ def _load_parser(repo: Path):
     return mod
 
 
+def baseline_coverage_refusal(results, base_map, *, force: bool) -> str | None:
+    """Refuse a `--write-baseline` that would DELETE tests from the ratchet floor.
+
+    A baseline is a floor, and `--write-baseline` replaces it wholesale with this
+    run's rows. So a sweep that launched fewer tests than the floor — a boot flake,
+    an early BUGCHECK, a drained-out timeout — silently removes the missing tests
+    from the floor, permanently, with no signal anywhere. That is the ratchet form
+    of "never weaken a test to make it pass", and catching it was a hand-check
+    before every re-seed.
+
+    Returns the refusal message, or None to proceed.
+    """
+    new_names = {r["name"] for r in results}
+    dropped = sorted(n for n in base_map if n not in new_names)
+    if not dropped or force:
+        return None
+    return (
+        f"[conformance] --write-baseline REFUSED: this sweep launched "
+        f"{len(results)} tests but the existing baseline has {len(base_map)}, and "
+        f"writing it would DELETE {len(dropped)} test(s) from the ratchet floor:\n"
+        + "".join(f"    {n}\n" for n in dropped)
+        + "  A short sweep is usually a boot flake or an early BUGCHECK, not a real "
+        "coverage change — re-run it.\n"
+        "  If the removal is intended (a test was retired), pass --force-baseline."
+    )
+
+
+def baseline_lowering_note(results, base_map) -> str | None:
+    """Say out loud which rows a `--write-baseline` is about to make worse.
+
+    Unlike coverage loss this is NOT refused: absorbing a known regression into the
+    floor is sometimes deliberate (i386 and arm64 both accepted ExHardError
+    30/0 -> 24/6 on purpose). It just must never happen silently.
+    """
+    worse = [
+        f"    {r['name']}: pass {b.get('pass')} -> {r.get('pass')}, "
+        f"fail {b.get('fail')} -> {r.get('fail')}"
+        for r in results
+        if (b := base_map.get(r["name"]))
+        and (r.get("fail", 0) > b.get("fail", 0) or r.get("pass", 0) < b.get("pass", 0))
+    ]
+    if not worse:
+        return None
+    return (
+        "[conformance] NOTE: --write-baseline is LOWERING the floor for "
+        f"{len(worse)} test(s) — accepting these as the new normal:\n" + "\n".join(worse)
+    )
+
+
 def _run_dir(arch: str) -> Path:
     ts = time.strftime("%Y%m%d-%H%M%S")
     d = Path("/tmp/vibeos-cli") / f"{ts}-conformance-{arch}"
@@ -197,13 +246,23 @@ def conformance(args, repo: Path) -> int:
     if not log_path.is_file():
         print(f"[conformance] no serial log at {log_path} — did the guest boot?", file=sys.stderr)
         return 2
-    results, done_line, bugcheck = parser.parse(log_path.read_text(errors="replace"))
+    serial_text = log_path.read_text(errors="replace")
+    results, done_line, bugcheck = parser.parse(serial_text)
 
     lines = [parser.fmt(r) for r in results]
     ok = sum(1 for r in results if r["status"] == "OK")
     bad = sum(1 for r in results if r["status"] in parser.BAD)
     results_path = run_dir / f"{SUITE}-results.txt"
     results_path.write_text("\n".join(lines) + "\n")
+    # SAVE the serial into the run dir, and report the COPY. qemu/<arch>_smoke_live.log
+    # is the LIVE per-arch file: the next sweep of the same arch truncates it, so a
+    # summary.json pointing there hands you the *next* run's serial — or nothing.
+    # This destroyed the evidence for an arm64 -smp 1 BUGCHECK 0x1E that a following
+    # -smp 2 sweep overwrote seconds later, leaving only the stop code. The results
+    # file alone is not enough: a mid-sweep crash needs the faulting context, and the
+    # crash is exactly the case where you cannot just re-run and expect it back.
+    saved_serial = run_dir / f"{pytest_arch}_serial.log"
+    saved_serial.write_text(serial_text)
 
     # --- 4. compare against baseline -----------------------------------------
     regressions: list[str] = []
@@ -219,6 +278,28 @@ def conformance(args, repo: Path) -> int:
 
     # --- 5. write baseline if asked ------------------------------------------
     if args.write_baseline:
+        # A baseline is a RATCHET FLOOR, and --write-baseline replaces it wholesale
+        # with this run's rows. So a sweep that launched fewer tests than the floor
+        # — a boot flake, an early BUGCHECK, a drained-out timeout — silently
+        # DELETES the missing tests from the floor, permanently, with no signal.
+        # That is the ratchet form of "never weaken a test to make it pass", and it
+        # is the exact hand-check that had to be done before every re-seed. Refuse
+        # instead, and name the tests that would vanish.
+        #
+        # Only COVERAGE LOSS is refused. A row whose numbers got worse is a
+        # judgement call the operator can legitimately accept (i386 and arm64 both
+        # deliberately absorbed ExHardError 30/0 -> 24/6), so those are printed
+        # loudly and allowed.
+        if have_baseline:
+            refusal = baseline_coverage_refusal(
+                results, base_map, force=getattr(args, "force_baseline", False)
+            )
+            if refusal:
+                print(refusal, file=sys.stderr)
+                return 2
+            note = baseline_lowering_note(results, base_map)
+            if note:
+                print(note)
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         smp_arg = f" --smp {smp}" if smp > 1 else ""
         baseline_path.write_text(
@@ -247,7 +328,8 @@ def conformance(args, repo: Path) -> int:
         "regressions": regressions,
         "new_passes": new_passes,
         "results_file": str(results_path),
-        "serial_log": str(log_path),
+        "serial_log": str(saved_serial),
+        "serial_log_live": str(log_path),  # truncated by the next same-arch sweep
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
@@ -261,6 +343,8 @@ def conformance(args, repo: Path) -> int:
     )
     print(f"  results:  {results_path}")
     print(f"  summary:  {run_dir / 'summary.json'}")
+    if bugcheck or bad:
+        print(f"  serial:   {saved_serial}")
 
     if not have_baseline:
         print(f"  no baseline at {baseline_path} — pass --write-baseline to seed it.")

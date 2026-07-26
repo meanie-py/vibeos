@@ -620,6 +620,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `992af657162` — 360 decl fixes + 38 shim-def bugs across 40 crates), which is precisely the
   change class that would repair a server reply that previously never landed.
 
+  **The BASELINES have already absorbed this on two arches, and amd64's is the odd one out.**
+  As of 2026-07-26 the UP baselines read: i386 `pass=24 fail=6`, arm64 `pass=24 fail=6`, amd64
+  `pass=30 fail=0`. The i386 and arm64 rows are freshly measured and accepted; amd64's is the
+  **untouched 2026-07-17 row** — `afc4aff8277` was an additive hand-edit (`amd64 | 1 +`, adding
+  only `NtCreateSection`), not a `--write-baseline` regeneration, so nothing re-measured
+  ExHardError there. (Do not read the file mtimes as evidence of a re-seed; they are checkout
+  timestamps. Read the diff.) Consequence: **amd64 will keep reporting a phantom ExHardError
+  regression until its UP baseline is re-seeded to 24/6** — the measured amd64 value has been
+  24/6 since 2026-07-24. Also note `i386 never runs this test` elsewhere in this entry is now
+  stale: the native-SEH quarantine clearance (i386 76 → 89) added it.
+
   One instrumented boot still settles path 1 vs path 3 definitively — log `PortHandle`, the
   `Status` from `LpcRequestWaitReplyPort`, and `Message.Response` immediately after the send.
   Note the six are the ONLY out-of-range cases outside the `InteractivePart1/2` guards (every
