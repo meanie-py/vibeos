@@ -110,8 +110,11 @@ extern "C" {
     // ZERO-extends into the engine's `int nch` and `WEOF` arrives as 65535, never -1.
     fn fgetwc(file: *mut FILE) -> u16;
     fn ungetwc(c: u16, file: *mut FILE) -> u16;
-    // include/corecrt_wstdio.h:48 — `#define stdin (__acrt_iob_func(0))`
-    fn __acrt_iob_func(index: u32) -> *mut FILE;
+    // THIS tree's `sdk/include/crt/stdio.h:92,98` — `#define _iob __iob_func()` and
+    // `#define stdin (&_iob[0])`, so `stdin` is just the array base. `__acrt_iob_func`
+    // is the UCRT spelling and msvcrt does not export it at `_MSVCR_VER=0`; using it
+    // linked the Rust fine and failed only at the DLL link. msvcrt.spec:221.
+    fn __iob_func() -> *mut FILE;
     // include/conio.h:21/:25
     fn _getch() -> i32;
     fn _ungetch(c: i32) -> i32;
@@ -465,7 +468,7 @@ impl Drop for FileGuard {
 struct ConsoleGuard;
 impl Drop for ConsoleGuard {
     fn drop(&mut self) {
-        unsafe { _unlock_file(__acrt_iob_func(0)) }
+        unsafe { _unlock_file(__iob_func()) }
     }
 }
 
@@ -542,7 +545,7 @@ macro_rules! console_source {
             type Guard = ConsoleGuard;
             const EOF: i32 = $eof;
             unsafe fn lock(&mut self) -> ConsoleGuard {
-                _lock_file(__acrt_iob_func(0));
+                _lock_file(__iob_func());
                 ConsoleGuard
             }
             unsafe fn getc(&mut self) -> i32 {

@@ -233,6 +233,16 @@ that would otherwise be free. Where a prelude must declare it anyway (a shared b
 import), the declaration has to be checked against the definition by hand, because rustc treats
 them as unrelated items.
 
+**Sibling failure: an `extern` naming a symbol THIS TREE does not export.** `cargo check` and
+`cargo build` both pass — an extern declaration is a promise to the linker, and the crate link
+never tests it — so the first thing that fails is the DLL link, an hour later. scanf's console
+source declared `__acrt_iob_func`, correctly citing `corecrt_wstdio.h` where `stdin` is
+`(__acrt_iob_func(0))`. But that is the UCRT header; this tree's `sdk/include/crt/stdio.h:92,98`
+says `#define _iob __iob_func()` / `#define stdin (&_iob[0])`, and msvcrt.spec exports
+`__iob_func`, not the UCRT spelling. **Cite the header this tree compiles, not the one the API is
+documented in, and confirm the name is in the `.spec`** — a one-grep check that costs seconds
+against a link failure that costs a full build.
+
 ### Argument COUNT mismatches — the one clashing-extern bucket that is a real bug
 Same family as the widths above, one position further out: the decl and the definition
 disagree on how many parameters there are. `clashing_extern_declarations` carries ~1,458
