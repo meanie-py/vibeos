@@ -1505,6 +1505,48 @@ surfaced as the subject and the reference disagreeing about two IDENTICAL string
 an unrelated pair of cases shifting the heap. Pad, then terminate — with two NULs, so
 termination does not depend on whether the walker's stride is one byte or two.
 
+### A verdict that blocks other people must carry its evidence
+Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks
+*can anyone check what it saw?* One night's merge-train stall produced five instances, so treat
+it as a class rather than five bugs.
+
+**Symptom:** a gate/land stage goes red with a one-line verdict and there is nothing to read —
+an empty run dir, an empty `salient`, a bare `exit 1`, or a number that is simply wrong.
+
+**Cause, in the five shapes seen:**
+1. **Captured and discarded.** `_smoke_once` ran the child with `capture_output=True` and kept
+   only `summary.json`. When the child died *before* writing one, the console — the only record
+   of why — was dropped. A lane was rejected on `smoke:arm64 FAIL` recorded as *exit 0, 1.6s,
+   empty run dir*, for a boot that takes ~40s. Nothing to read, nobody to blame.
+2. **A summary scraped by a marker search that misses.** `_tooling_once` looked for `FAIL`/`✗`
+   in stdout; ruff and pyright print neither, and tracebacks go to stderr. TOOLING_FAIL blocked
+   four lanes reading only "python tooling findings (exit 1)".
+3. **Someone else's artifact in your evidence directory.** A unit test's `Run()` landed in the
+   LIVE artifact tree, because `artifacts.ARTIFACT_ROOT` is resolved at *import* time and the
+   test's `monkeypatch.setenv` therefore did nothing. Under the gate's `check-tooling` stage
+   that planted a synthetic `verdict FAIL / classification BUGCHECK / duration_ms 0` where a
+   `find` turns it up first. It was read as the real verdict twice, once in a status report.
+4. **A shared artifact root with no owner field.** `VIBEOS_ARTIFACT_ROOT` defaults to
+   `/tmp/vibeos-cli` for *every* worktree, so `ls -dt /tmp/vibeos-cli/*-build-arm64 | head -1`
+   returns whichever lane started last. Another lane's green build was reported as this one's.
+5. **A counter that cannot say zero.** `_ninja_did_work` matched `^\[\d+/\d+\]`, which also
+   matches ninja's `[0/2] Re-checking globbed directories...` status pseudo-edge — so a pass
+   whose output was literally `ninja: no work to do.` reported "relinked 1 target(s)". Always
+   ≥1 breaks the signal in the direction that HIDES the condition it was written to expose.
+
+**Fix:** persist the child's console *unconditionally*, next to the verdict, before deciding
+anything (`smoke-console.log`, `check-tooling-console.log`, `difftest-console.log`). Give
+"the child produced no verdict at all" its own classification (`SMOKE_NO_SUMMARY`) instead of
+laundering it into a plain FAIL. Carry the real exit code into the `Stage`. Record the
+`worktree` in every `summary.json`. And when a marker scan finds nothing, fall back to the
+child's last non-empty line rather than printing a bare exit code.
+
+**Rules of thumb.** A stage powerful enough to redden the whole train has no business
+reporting without evidence. Test artifacts must never be able to reach a live artifact root —
+pin it in an autouse fixture so no individual test can get it wrong. And when a status line
+disagrees with the raw log, believe the log: every one of these was caught by reading the
+output the summary was derived from.
+
 ### Anything you define so the reference will LINK is part of the oracle `[§9.73]`
 A 20,000-case differential fuzzer said MATCH for four waves while **six shipped msvcrt functions
 were wrong** — because the harness's own convenience stubs for `_tolower_l` &c. graded the Rust
@@ -1735,48 +1777,6 @@ degraded to the identifier behaviour it was written to replace, tree-wide, with 
 count change to notice. When adding a pattern for a shape, grep the tree for that shape and
 assert the pattern matches what you find — a control fixture you wrote yourself only proves the
 regex matches *your idea* of the spelling.
-
-### A verdict that blocks other people must carry its evidence
-Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks
-*can anyone check what it saw?* One night's merge-train stall produced five instances, so treat
-it as a class rather than five bugs.
-
-**Symptom:** a gate/land stage goes red with a one-line verdict and there is nothing to read —
-an empty run dir, an empty `salient`, a bare `exit 1`, or a number that is simply wrong.
-
-**Cause, in the five shapes seen:**
-1. **Captured and discarded.** `_smoke_once` ran the child with `capture_output=True` and kept
-   only `summary.json`. When the child died *before* writing one, the console — the only record
-   of why — was dropped. A lane was rejected on `smoke:arm64 FAIL` recorded as *exit 0, 1.6s,
-   empty run dir*, for a boot that takes ~40s. Nothing to read, nobody to blame.
-2. **A summary scraped by a marker search that misses.** `_tooling_once` looked for `FAIL`/`✗`
-   in stdout; ruff and pyright print neither, and tracebacks go to stderr. TOOLING_FAIL blocked
-   four lanes reading only "python tooling findings (exit 1)".
-3. **Someone else's artifact in your evidence directory.** A unit test's `Run()` landed in the
-   LIVE artifact tree, because `artifacts.ARTIFACT_ROOT` is resolved at *import* time and the
-   test's `monkeypatch.setenv` therefore did nothing. Under the gate's `check-tooling` stage
-   that planted a synthetic `verdict FAIL / classification BUGCHECK / duration_ms 0` where a
-   `find` turns it up first. It was read as the real verdict twice, once in a status report.
-4. **A shared artifact root with no owner field.** `VIBEOS_ARTIFACT_ROOT` defaults to
-   `/tmp/vibeos-cli` for *every* worktree, so `ls -dt /tmp/vibeos-cli/*-build-arm64 | head -1`
-   returns whichever lane started last. Another lane's green build was reported as this one's.
-5. **A counter that cannot say zero.** `_ninja_did_work` matched `^\[\d+/\d+\]`, which also
-   matches ninja's `[0/2] Re-checking globbed directories...` status pseudo-edge — so a pass
-   whose output was literally `ninja: no work to do.` reported "relinked 1 target(s)". Always
-   ≥1 breaks the signal in the direction that HIDES the condition it was written to expose.
-
-**Fix:** persist the child's console *unconditionally*, next to the verdict, before deciding
-anything (`smoke-console.log`, `check-tooling-console.log`, `difftest-console.log`). Give
-"the child produced no verdict at all" its own classification (`SMOKE_NO_SUMMARY`) instead of
-laundering it into a plain FAIL. Carry the real exit code into the `Stage`. Record the
-`worktree` in every `summary.json`. And when a marker scan finds nothing, fall back to the
-child's last non-empty line rather than printing a bare exit code.
-
-**Rules of thumb.** A stage powerful enough to redden the whole train has no business
-reporting without evidence. Test artifacts must never be able to reach a live artifact root —
-pin it in an autouse fixture so no individual test can get it wrong. And when a status line
-disagrees with the raw log, believe the log: every one of these was caught by reading the
-output the summary was derived from.
 
 ### "Canonicalising" a mismatch can silence it by editing the EVIDENCE
 A lint that reports `X disagrees with Y` has no opinion about which side is wrong, so a
