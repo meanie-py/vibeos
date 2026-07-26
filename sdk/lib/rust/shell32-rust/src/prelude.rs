@@ -517,3 +517,53 @@ extern "system" {
     /// shlobj.h `void WINAPI SHFree(LPVOID)` — implemented in `wine/shellole.rs`.
     pub fn SHFree(pv: crate::island::LPVOID);
 }
+
+// ---------------------------------------------------------------------------------------------
+// OLE residue. `com-sys` supplies the STRUCTS (STGMEDIUM, FORMATETC, the interface family) and
+// the island re-exports them, but these four have no binding to inherit: TYMED and DVASPECT are
+// IDL enums that never reach a C header bindgen parses, E_UNEXPECTED is a cast macro, and REFIID
+// is `const IID&` in C++ / `const IID* const` in C — a spelling, not a type bindgen can emit.
+// Values read from the headers, not transcribed from another Rust file.
+// ---------------------------------------------------------------------------------------------
+
+/// guiddef.h:118 `#define REFIID const IID* __MIDL_CONST` (the C spelling; the C++ one is a
+/// reference, which has the same representation).
+pub type REFIID = *const com_sys::IID;
+pub type REFCLSID = *const com_sys::IID;
+pub use com_sys::{GUID, IID};
+
+/// objidl.idl:979-986 `enum TYMED`.
+pub const TYMED_NULL: crate::island::DWORD = 0;
+pub const TYMED_HGLOBAL: crate::island::DWORD = 1;
+pub const TYMED_FILE: crate::island::DWORD = 2;
+pub const TYMED_ISTREAM: crate::island::DWORD = 4;
+pub const TYMED_ISTORAGE: crate::island::DWORD = 8;
+pub const TYMED_GDI: crate::island::DWORD = 16;
+pub const TYMED_MFPICT: crate::island::DWORD = 32;
+pub const TYMED_ENHMF: crate::island::DWORD = 64;
+
+/// wtypes.idl:606 `enum DVASPECT`.
+pub const DVASPECT_CONTENT: crate::island::DWORD = 1;
+pub const DVASPECT_THUMBNAIL: crate::island::DWORD = 2;
+pub const DVASPECT_ICON: crate::island::DWORD = 4;
+pub const DVASPECT_DOCPRINT: crate::island::DWORD = 8;
+
+/// winerror.h:3528 `#define E_UNEXPECTED _HRESULT_TYPEDEF_(0x8000FFFF)`.
+pub const E_UNEXPECTED: crate::island::HRESULT = 0x8000FFFFu32 as crate::island::HRESULT;
+
+extern "C" {
+    /// The CRT entry points the DLL already imports. NEVER hand-write these — LLVM folds a
+    /// byte-loop implementation back into a call to itself.
+    pub fn memset(dst: *mut ::core::ffi::c_void, c: ::core::ffi::c_int, n: usize)
+        -> *mut ::core::ffi::c_void;
+    pub fn memcpy(dst: *mut ::core::ffi::c_void, src: *const ::core::ffi::c_void, n: usize)
+        -> *mut ::core::ffi::c_void;
+    pub fn wcscat(dst: crate::island::LPWSTR, src: crate::island::LPCWSTR)
+        -> crate::island::LPWSTR;
+    pub fn _wtoi(s: crate::island::LPCWSTR) -> ::core::ffi::c_int;
+    pub fn _wcsicmp(a: crate::island::LPCWSTR, b: crate::island::LPCWSTR) -> ::core::ffi::c_int;
+}
+
+/// wine's shell32 string shims are `#define`s onto the CRT wide entry points.
+pub use crate::island::{wcschr as strchrW, wcscmp as strcmpW, wcslen as strlenW};
+pub use wcscat as strcatW;

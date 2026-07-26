@@ -43,7 +43,44 @@ RULE_UNINIT = "uninit_local"
 RULE_MACRO_CALL = "macro_call_syntax"
 RULE_VARIADIC = "variadic_promotion"
 RULE_REF_AS_INT = "ref_as_int"
-ALL_RULES = (RULE_BITFIELD, RULE_UNINIT, RULE_MACRO_CALL, RULE_VARIADIC, RULE_REF_AS_INT)
+RULE_COM_CALL = "com_method_call"
+ALL_RULES = (
+    RULE_BITFIELD,
+    RULE_UNINIT,
+    RULE_MACRO_CALL,
+    RULE_VARIADIC,
+    RULE_REF_AS_INT,
+    RULE_COM_CALL,
+)
+
+#: `pub struct <Name>Vtbl {` — an interface rendered in the C `lpVtbl` idiom.
+_VTBL_STRUCT = re.compile(r"^pub struct (\w+)Vtbl\s*\{", re.M)
+
+
+def com_interfaces(*sources: str) -> frozenset[str]:
+    """Interface names that carry an `lpVtbl`, derived from the crate's own vtable module.
+
+    The COM rule is INERT without this: rewriting `x.M()` into a vtable dispatch is only
+    correct for an interface in that shape, and a translated crate also has ordinary Rust
+    structs whose methods rustc reports the same way.
+    """
+    names: set[str] = set()
+    for text in sources:
+        names.update(m.group(1) for m in _VTBL_STRUCT.finditer(text))
+    return frozenset(names)
+
+
+def _matching_open(data: bytes, close: int) -> int | None:
+    """Index of the `(` matching the `)` at ``close``."""
+    depth = 0
+    for i in range(close, -1, -1):
+        if data[i : i + 1] == b")":
+            depth += 1
+        elif data[i : i + 1] == b"(":
+            depth -= 1
+            if depth == 0:
+                return i
+    return None
 
 
 @dataclass(frozen=True)
@@ -77,14 +114,25 @@ def _primary(d):
     return next((s for s in (d.get("spans") or []) if s.get("is_primary")), None)
 
 
+def _next_code_byte(data: bytes, pos: int) -> bytes:
+    """The next byte that is not whitespace, or b'' at end of input."""
+    while pos < len(data) and data[pos : pos + 1] in (b" ", b"\t", b"\n", b"\r"):
+        pos += 1
+    return data[pos : pos + 1]
+
+
 def _line_bounds(data: bytes, offset: int) -> tuple[int, int]:
     start = data.rfind(b"\n", 0, offset) + 1
     end = data.find(b"\n", offset)
     return start, (len(data) if end < 0 else end)
 
 
-def propose(diagnostics, read_file, *, rules=ALL_RULES):
-    """PURE: rustc diagnostics + a file reader -> (edits, refusals)."""
+def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
+    """PURE: rustc diagnostics + a file reader -> (edits, refusals).
+
+    ``interfaces`` is the set of COM interface names carrying an `lpVtbl` (see
+    ``com_interfaces``); the COM rule does nothing without it.
+    """
     edits: dict[tuple, Edit] = {}
     refused: list[Refused] = []
     cache: dict[str, bytes | None] = {}
@@ -151,6 +199,61 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES):
                 f"`{name}` is a bindgen bitfield field, so the write goes through `set_{name}`",
             )
             continue
+
+        # --- COM method call written in C++ syntax -------------------------------------
+        if code == "E0599" and RULE_COM_CALL in rules and interfaces:
+            m = re.search(r"no method named `(\w+)` found for struct `([\w:]+)`", msg)
+            if m and m.group(2).rsplit("::", 1)[-1] in interfaces:
+                name, iface = m.group(1), m.group(2).rsplit("::", 1)[-1]
+                if data[bs:be].decode("utf-8", "replace") != name:
+                    refuse(RULE_COM_CALL, "span_is_not_the_method", name)
+                    continue
+                # The shape the translation emits is `(*RECV).Method(args)`. Anything else
+                # (a chained call, a field access, a `&` receiver) is refused: guessing the
+                # receiver here would splice a dispatch onto the wrong pointer.
+                dot = bs - 1
+                while dot > 0 and data[dot : dot + 1] in (b" ", b"\t", b"\n"):
+                    dot -= 1
+                if data[dot : dot + 1] != b".":
+                    refuse(RULE_COM_CALL, "receiver_not_dotted", name)
+                    continue
+                close = dot - 1
+                if data[close : close + 1] != b")":
+                    refuse(RULE_COM_CALL, "receiver_not_parenthesised", name)
+                    continue
+                open_ = _matching_open(data, close)
+                if open_ is None:
+                    refuse(RULE_COM_CALL, "unbalanced_receiver", name)
+                    continue
+                inner = data[open_ + 1 : close].decode("utf-8", "replace").strip()
+                if not inner.startswith("*"):
+                    refuse(RULE_COM_CALL, "receiver_not_a_deref", inner[:40])
+                    continue
+                recv = inner[1:].strip()
+                call = re.match(rb"[ \t\n]*\(", data[be:])
+                if not call:
+                    refuse(RULE_COM_CALL, "method_not_called", name)
+                    continue
+                arg_open = be + call.end() - 1
+                nxt = _next_code_byte(data, arg_open + 1)
+                if nxt == b")":
+                    sep = ""
+                else:
+                    # A multi-line argument list starts on the NEXT line, so a trailing space
+                    # after the comma is trailing whitespace — which `git diff --check` rejects
+                    # and the repo's own hooks treat as a defect.
+                    gap = data[arg_open + 1 :].split(nxt, 1)[0]
+                    sep = "," if b"\n" in gap else ", "
+                add(
+                    RULE_COM_CALL,
+                    open_,
+                    arg_open + 1,
+                    f"((*(*{recv}).lpVtbl).{name})({recv}{sep}",
+                    f"`{iface}` is a COM interface in the `lpVtbl` shape, so `{name}` is a "
+                    "vtable slot taking the interface pointer as its first argument, not a "
+                    "Rust method",
+                )
+                continue
 
         # --- uninitialised locals -----------------------------------------------------
         if code == "E0381" and RULE_UNINIT in rules:
@@ -283,13 +386,35 @@ def main():
     ap.add_argument("--root", type=Path, default=Path("sdk/lib/rust"))
     ap.add_argument("--passes", type=int, default=6)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--vtable-module",
+        action="append",
+        default=[],
+        help="path (relative to --root) of a module defining `<Iface>Vtbl` structs; enables "
+        "the COM rule",
+    )
     args = ap.parse_args()
     root = args.root.resolve()
+
+    sources = []
+    for rel in args.vtable_module:
+        p = root / rel
+        if not p.is_file():
+            print(f"error: --vtable-module {rel} not found under {root}", file=sys.stderr)
+            return 2
+        sources.append(p.read_text(errors="replace"))
+    ifaces = com_interfaces(*sources)
+    if args.vtable_module:
+        print(f"COM rule armed: {len(ifaces)} interfaces from {len(sources)} module(s)")
 
     for i in range(1, args.passes + 1):
         diags = cargo_check(args.crate, args.target, root)
         n_err = sum(1 for _ in _errors(diags))
-        edits, refused = propose(diags, lambda f: (root / f).read_bytes() if (root / f).is_file() else None)
+        edits, refused = propose(
+            diags,
+            lambda f: (root / f).read_bytes() if (root / f).is_file() else None,
+            interfaces=ifaces,
+        )
         edits, dropped = select_non_overlapping(edits)
         refused += dropped
         print(f"pass {i}: {n_err} errors, {len(edits)} edits, {len(refused)} refused")

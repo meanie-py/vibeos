@@ -252,7 +252,7 @@ pub unsafe extern "C" fn SHELL_GetDetailsOfColumnAsVariant(
     let mut vt = vt;
     if vt == (VT_EMPTY) as u16 {
         let mut state: SHCOLSTATEF = 0;
-        if ((*pSF).GetDefaultColumnState(Column, &mut state)) < 0 {
+        if (((*(*pSF).lpVtbl).GetDefaultColumnState)(pSF, Column, &mut state)) < 0 {
             state = SHCOLSTATE_TYPE_STR;
         }
         if (state & SHCOLSTATE_TYPEMASK) == SHCOLSTATE_TYPE_INT {
@@ -366,7 +366,7 @@ pub unsafe extern "C" fn SHELL32_ParseNextElement(
     let mut pidlTemp: LPITEMIDLIST = core::ptr::null_mut();
     let mut psfChild: *mut IShellFolder = core::ptr::null_mut();
 
-    hr = (*(psf as *mut IShellFolder2)).BindToObject(
+    hr = ((*(*(psf as *mut IShellFolder2)).lpVtbl).BindToObject)((psf as *mut IShellFolder2),
         pidlIn,
         pbc,
         &IID_IShellFolder,
@@ -376,10 +376,10 @@ pub unsafe extern "C" fn SHELL32_ParseNextElement(
         return hr;
     }
 
-    hr = (*psfChild).ParseDisplayName(hwndOwner, pbc, szNext, pEaten, &mut pidlOut, pdwAttributes);
+    hr = ((*(*psfChild).lpVtbl).ParseDisplayName)(psfChild, hwndOwner, pbc, szNext, pEaten, &mut pidlOut, pdwAttributes);
     if hr < 0 {
         if !psfChild.is_null() {
-            (*psfChild).Release();
+            ((*(*psfChild).lpVtbl).Release)(psfChild);
         }
         return hr;
     }
@@ -391,7 +391,7 @@ pub unsafe extern "C" fn SHELL32_ParseNextElement(
             ILFree(pidlOut);
         }
         if !psfChild.is_null() {
-            (*psfChild).Release();
+            ((*(*psfChild).lpVtbl).Release)(psfChild);
         }
         return hr;
     }
@@ -407,7 +407,7 @@ pub unsafe extern "C" fn SHELL32_ParseNextElement(
     *pidlInOut = pidlTemp;
 
     if !psfChild.is_null() {
-        (*psfChild).Release();
+        ((*(*psfChild).lpVtbl).Release)(psfChild);
     }
 
     S_OK
@@ -440,14 +440,14 @@ pub unsafe extern "C" fn SHELL32_CoCreateInitSF(
     let mut ppf3: *mut IPersistFolder3 = core::ptr::null_mut();
 
     if !ppfti.is_null()
-        && (*pShellFolder).QueryInterface(
+        && ((*(*pShellFolder).lpVtbl).QueryInterface)(pShellFolder,
             &IID_IPersistFolder3,
             &mut ppf3 as *mut *mut IPersistFolder3 as *mut *mut core::ffi::c_void,
         ) >= 0
     {
         (*ppf3).InitializeEx(core::ptr::null_mut(), pidlAbsolute, ppfti);
         (*ppf3).Release();
-    } else if (*pShellFolder).QueryInterface(
+    } else if ((*(*pShellFolder).lpVtbl).QueryInterface)(pShellFolder,
         &IID_IPersistFolder,
         &mut ppf as *mut *mut IPersistFolder as *mut *mut core::ffi::c_void,
     ) >= 0
@@ -457,8 +457,8 @@ pub unsafe extern "C" fn SHELL32_CoCreateInitSF(
     }
     ILFree(pidlAbsolute);
 
-    let result = (*pShellFolder).QueryInterface(riid, ppvOut);
-    (*pShellFolder).Release();
+    let result = ((*(*pShellFolder).lpVtbl).QueryInterface)(pShellFolder, (riid).cast(), ppvOut);
+    ((*(*pShellFolder).lpVtbl).Release)(pShellFolder);
     result
 }
 
@@ -505,12 +505,12 @@ pub unsafe extern "C" fn SHELL32_BindToSF(
     }
 
     if _ILIsPidlSimple(pidl) != 0 {
-        let result = (*psf).QueryInterface(riid, ppvOut);
-        (*psf).Release();
+        let result = ((*(*psf).lpVtbl).QueryInterface)(psf, (riid).cast(), ppvOut);
+        ((*(*psf).lpVtbl).Release)(psf);
         result
     } else {
-        let result = (*psf).BindToObject(ILGetNext(pidl), core::ptr::null_mut(), riid, ppvOut);
-        (*psf).Release();
+        let result = ((*(*psf).lpVtbl).BindToObject)(psf, ILGetNext(pidl), core::ptr::null_mut(), riid, ppvOut);
+        ((*(*psf).lpVtbl).Release)(psf);
         result
     }
 }
@@ -527,17 +527,17 @@ pub unsafe extern "C" fn SHELL32_GetDisplayNameOfChild(
     }
 
     let mut psfChild: *mut IShellFolder = core::ptr::null_mut();
-    let mut hr: HRESULT = (*psf).BindToObject(
+    let mut hr: HRESULT = ((*(*psf).lpVtbl).BindToObject)(psf,
         pidlFirst,
         core::ptr::null_mut(),
         &IShellFolder::uuidof(),
         &mut psfChild as *mut *mut IShellFolder as *mut *mut c_void,
     );
     if hr >= 0 {
-        hr = (*psfChild).GetDisplayNameOf(ILGetNext(pidl), dwFlags, strRet);
+        hr = ((*(*psfChild).lpVtbl).GetDisplayNameOf)(psfChild, ILGetNext(pidl), dwFlags, strRet);
     }
     if !psfChild.is_null() {
-        (*psfChild).Release();
+        ((*(*psfChild).lpVtbl).Release)(psfChild);
     }
     ILFree(pidlFirst);
 
@@ -560,14 +560,14 @@ pub unsafe extern "C" fn SHELL32_CompareChildren(psf: *mut IShellFolder2, lParam
     }
 
     let mut psf2: *mut IShellFolder = core::ptr::null_mut();
-    let hr = (*psf).BindToObject(firstpidl, 0, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(psf2).cast());
+    let hr = ((*(*psf).lpVtbl).BindToObject)(psf, firstpidl, 0, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(psf2).cast());
     ILFree(firstpidl);
     if hr < 0 {
         return MAKE_COMPARE_HRESULT!(0);
     }
 
-    let result = (*psf2).CompareIDs(lParam, nextpidl1, nextpidl2);
-    (*psf2).Release();
+    let result = ((*(*psf2).lpVtbl).CompareIDs)(psf2, (lParam) as isize, nextpidl1, nextpidl2);
+    ((*(*psf2).lpVtbl).Release)(psf2);
     result
 }
 
@@ -579,11 +579,11 @@ pub unsafe extern "system" fn SHELL32_CompareDetails(
     pidl2: LPCITEMIDLIST,
 ) -> HRESULT {
     let mut sd: SHELLDETAILS = core::mem::zeroed();
-    let mut wszItem1: [u16; MAX_PATH] = [0u16; MAX_PATH];
-    let mut wszItem2: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut wszItem1: [u16; (MAX_PATH) as usize] = [0u16; (MAX_PATH) as usize];
+    let mut wszItem2: [u16; (MAX_PATH) as usize] = [0u16; (MAX_PATH) as usize];
     let col: UINT = (LOWORD((lParam) as u32)) as u32;
 
-    let hres = (*isf).GetDetailsOf(pidl1 as _, col, &mut sd);
+    let hres = ((*(*isf).lpVtbl).GetDetailsOf)(isf, pidl1 as _, col, &mut sd);
     if hres < 0 {
         return MAKE_COMPARE_HRESULT!(1);
     }
@@ -593,7 +593,7 @@ pub unsafe extern "system" fn SHELL32_CompareDetails(
         return MAKE_COMPARE_HRESULT!(1);
     }
 
-    let hres = (*isf).GetDetailsOf(pidl2 as _, col, &mut sd);
+    let hres = ((*(*isf).lpVtbl).GetDetailsOf)(isf, pidl2 as _, col, &mut sd);
     if hres < 0 {
         return MAKE_COMPARE_HRESULT!(1);
     }
@@ -621,12 +621,12 @@ pub unsafe extern "C" fn CloseRegKeyArray(array: *mut HKEY, cKeys: u32) {
 #[no_mangle]
 pub unsafe extern "C" fn AddClassKeyToArray(szClass: *const u16, array: *mut HKEY, cKeys: *mut UINT) -> LSTATUS {
     if *cKeys >= 16 {
-        return ERROR_MORE_DATA;
+        return (ERROR_MORE_DATA) as i32;
     }
 
     let mut hkey: HKEY = core::mem::zeroed();
     let result = RegOpenKeyExW(HKEY_CLASSES_ROOT, szClass, 0, KEY_READ | KEY_QUERY_VALUE, &mut hkey);
-    if result == ERROR_SUCCESS {
+    if result == (ERROR_SUCCESS) as i32 {
         *(array.add(*cKeys as usize)) = hkey;
         *cKeys += 1;
     }
@@ -660,7 +660,7 @@ pub unsafe extern "C" fn AddFSClassKeysToArray(
     let pidl = *apidl.offset(0 as isize);
 
     if _ILIsValue(pidl) != 0 {
-        let mut buf = [0u16; MAX_PATH];
+        let mut buf = [0u16; (MAX_PATH) as usize];
         let name: *mut u16;
         let pFileData = _ILGetFileStructW(pidl);
         if !pFileData.is_null() {
@@ -671,7 +671,7 @@ pub unsafe extern "C" fn AddFSClassKeysToArray(
         }
         let extension = PathFindExtension(name);
         if !extension.is_null() {
-            let mut wszClass = [0u16; MAX_PATH];
+            let mut wszClass = [0u16; (MAX_PATH) as usize];
             let mut dwSize = core::mem::size_of_val(&wszClass) as u32;
             if RegGetValueW(
                 HKEY_CLASSES_ROOT,
@@ -681,9 +681,9 @@ pub unsafe extern "C" fn AddFSClassKeysToArray(
                 core::ptr::null_mut(),
                 (wszClass.as_mut_ptr()).cast(),
                 &mut dwSize,
-            ) != ERROR_SUCCESS
+            ) != (ERROR_SUCCESS) as i32
                 || *wszClass.as_ptr() == 0u16
-                || AddClassKeyToArray(wszClass.as_mut_ptr(), array, cKeys) != ERROR_SUCCESS
+                || AddClassKeyToArray(wszClass.as_mut_ptr(), array, cKeys) != (ERROR_SUCCESS) as i32
             {
                 AddClassKeyToArray(extension, array, cKeys);
                 if cidl == 1 {
@@ -706,7 +706,7 @@ pub unsafe extern "C" fn AddFSClassKeysToArray(
                 core::ptr::null_mut(),
                 (wszClass.as_mut_ptr()).cast(),
                 &mut dwSize,
-            ) == ERROR_SUCCESS
+            ) == (ERROR_SUCCESS) as i32
             {
                 swprintf(wszSFA, CPP_COM_WSTR_F38FD69158A5.as_ptr(), wszClass.as_mut_ptr());
                 AddClassKeyToArray(wszSFA, array, cKeys);
@@ -814,13 +814,13 @@ pub unsafe extern "system" fn SHOpenFolderAndSelectItems(
         return hr;
     }
 
-    let mut wszBuf: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut wszBuf: [u16; (MAX_PATH) as usize] = [0u16; (MAX_PATH) as usize];
     let hr = StrRetToBufW(core::ptr::addr_of!(strret), pidlItem, wszBuf.as_mut_ptr(), wszBuf.len() as u32);
     if FAILED_UNEXPECTEDLY!(hr) {
         return hr;
     }
 
-    let mut wszParams: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut wszParams: [u16; (MAX_PATH) as usize] = [0u16; (MAX_PATH) as usize];
     wcscpy(wszParams.as_mut_ptr(), CPP_COM_WSTR_84B1405B4E34.as_ptr());
     wcscat(wszParams.as_mut_ptr(), wszBuf.as_ptr());
 

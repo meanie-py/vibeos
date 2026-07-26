@@ -89,11 +89,11 @@ unsafe extern "C" fn SIC_GetSmallIconSize() -> i32 {
 }
 unsafe extern "C" fn SIC_GetIconBPP() -> i32 {
     let nDefaultBPP = SHGetCurColorRes();
-    let nIconBPP = SIC_GetMetricsValue(CPP_COM_WSTR_47678CDC8AAF.as_ptr(), nDefaultBPP);
+    let nIconBPP = SIC_GetMetricsValue(CPP_COM_WSTR_47678CDC8AAF.as_ptr(), (nDefaultBPP) as i32);
     if nIconBPP > 0 {
         nIconBPP
     } else {
-        nDefaultBPP
+        (nDefaultBPP) as i32
     }
 }
 #[cfg(target_arch = "x86")]
@@ -178,7 +178,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             break 'fail;
         }
 
-        if GetObjectW(TargetIconInfo.hbmColor, (core::mem::size_of::<BITMAP>()) as i32, (core::ptr::addr_of_mut!(TargetBitmapInfo)).cast()) == 0 {
+        if GetObjectW((TargetIconInfo.hbmColor).cast(), (core::mem::size_of::<BITMAP>()) as i32, (core::ptr::addr_of_mut!(TargetBitmapInfo)).cast()) == 0 {
             break 'fail;
         }
 
@@ -205,7 +205,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             break 'fail;
         }
 
-        if GetObjectW(ShortcutIconInfo.hbmColor, (core::mem::size_of::<BITMAP>()) as i32, (core::ptr::addr_of_mut!(ShortcutBitmapInfo)).cast()) == 0 {
+        if GetObjectW((ShortcutIconInfo.hbmColor).cast(), (core::mem::size_of::<BITMAP>()) as i32, (core::ptr::addr_of_mut!(ShortcutBitmapInfo)).cast()) == 0 {
             break 'fail;
         }
 
@@ -213,7 +213,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
         if ShortcutDC.is_null() {
             break 'fail;
         }
-        OldShortcutBitmap = SelectObject(ShortcutDC, ShortcutIconInfo.hbmMask) as HBITMAP;
+        OldShortcutBitmap = SelectObject(ShortcutDC, (ShortcutIconInfo.hbmMask).cast()) as HBITMAP;
         if OldShortcutBitmap.is_null() {
             break 'fail;
         }
@@ -222,7 +222,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
         if TargetDC.is_null() {
             break 'fail;
         }
-        OldTargetBitmap = SelectObject(TargetDC, TargetIconInfo.hbmMask) as HBITMAP;
+        OldTargetBitmap = SelectObject(TargetDC, (TargetIconInfo.hbmMask).cast()) as HBITMAP;
         if OldTargetBitmap.is_null() {
             break 'fail;
         }
@@ -260,7 +260,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
                 }
 
                 if GetDIBits(TargetDC, TargetIconInfo.hbmColor, 0,
-                                            TargetBitmapInfo.bmHeight, bits, lpbmi,
+                                            (TargetBitmapInfo.bmHeight) as u32, bits, lpbmi,
                                             DIB_RGB_COLORS) == 0 {
                     HeapFree(GetProcessHeap(), 0, bits);
                     break 'fail;
@@ -304,7 +304,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             (*lpbmi).bmiHeader.biBitCount = 32 as u16;
 
             if GetDIBits(TargetDC, ShortcutIconInfo.hbmColor, 0,
-                                        ShortcutBitmapInfo.bmHeight, bits, lpbmi,
+                                        (ShortcutBitmapInfo.bmHeight) as u32, bits, lpbmi,
                                         DIB_RGB_COLORS) == 0 {
                 HeapFree(GetProcessHeap(), 0, bits);
                 break 'fail;
@@ -329,7 +329,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             (*lpbmi).bmiHeader.biCompression = BI_RGB;
 
             if SetDIBits(TargetDC, ShortcutIconInfo.hbmColor, 0,
-                                        ShortcutBitmapInfo.bmHeight, bits, lpbmi,
+                                        (ShortcutBitmapInfo.bmHeight) as u32, bits, lpbmi,
                                         DIB_RGB_COLORS) == 0 {
                 HeapFree(GetProcessHeap(), 0, bits);
                 break 'fail;
@@ -337,8 +337,8 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             HeapFree(GetProcessHeap(), 0, bits);
         }
 
-        if SelectObject(ShortcutDC, ShortcutIconInfo.hbmColor).is_null()
-            || SelectObject(TargetDC, TargetIconInfo.hbmColor).is_null() {
+        if SelectObject(ShortcutDC, (ShortcutIconInfo.hbmColor).cast()).is_null()
+            || SelectObject(TargetDC, (TargetIconInfo.hbmColor).cast()).is_null() {
             break 'fail;
         }
         if MaskBlt(TargetDC, 0, 0,
@@ -349,45 +349,45 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             break 'fail;
         }
 
-        SelectObject(TargetDC, OldTargetBitmap);
+        SelectObject(TargetDC, (OldTargetBitmap).cast());
         DeleteDC(TargetDC);
-        SelectObject(ShortcutDC, OldShortcutBitmap);
+        SelectObject(ShortcutDC, (OldShortcutBitmap).cast());
         DeleteDC(ShortcutDC);
 
         TargetIcon = CreateIconIndirect(&TargetIconInfo);
 
-        DeleteObject(TargetIconInfo.hbmColor);
-        DeleteObject(TargetIconInfo.hbmMask);
-        DeleteObject(ShortcutIconInfo.hbmColor);
-        DeleteObject(ShortcutIconInfo.hbmMask);
+        DeleteObject((TargetIconInfo.hbmColor).cast());
+        DeleteObject((TargetIconInfo.hbmMask).cast());
+        DeleteObject((ShortcutIconInfo.hbmColor).cast());
+        DeleteObject((ShortcutIconInfo.hbmMask).cast());
         DestroyIcon(ShortcutIcon);
 
         return TargetIcon;
     }
 
     if !OldTargetBitmap.is_null() {
-        SelectObject(TargetDC, OldTargetBitmap);
+        SelectObject(TargetDC, (OldTargetBitmap).cast());
     }
     if !TargetDC.is_null() {
         DeleteDC(TargetDC);
     }
     if !OldShortcutBitmap.is_null() {
-        SelectObject(ShortcutDC, OldShortcutBitmap);
+        SelectObject(ShortcutDC, (OldShortcutBitmap).cast());
     }
     if !ShortcutDC.is_null() {
         DeleteDC(ShortcutDC);
     }
     if !TargetIconInfo.hbmColor.is_null() {
-        DeleteObject(TargetIconInfo.hbmColor);
+        DeleteObject((TargetIconInfo.hbmColor).cast());
     }
     if !TargetIconInfo.hbmMask.is_null() {
-        DeleteObject(TargetIconInfo.hbmMask);
+        DeleteObject((TargetIconInfo.hbmMask).cast());
     }
     if !ShortcutIconInfo.hbmColor.is_null() {
-        DeleteObject(ShortcutIconInfo.hbmColor);
+        DeleteObject((ShortcutIconInfo.hbmColor).cast());
     }
     if !ShortcutIconInfo.hbmMask.is_null() {
-        DeleteObject(ShortcutIconInfo.hbmMask);
+        DeleteObject((ShortcutIconInfo.hbmMask).cast());
     }
     if !ShortcutIcon.is_null() {
         DestroyIcon(ShortcutIcon);
@@ -581,7 +581,7 @@ pub unsafe extern "C" fn SIC_GetIconIndex(
         if index == INVALID_INDEX {
             ret = SIC_LoadIcon(sSourceFile, dwSourceIndex, dwFlags);
         } else {
-            ret = (*(DPA_GetPtr(sic_hdpa, index) as *mut SIC_ENTRY)).dwListIndex;
+            ret = ((*(DPA_GetPtr(sic_hdpa, (index) as i64) as *mut SIC_ENTRY)).dwListIndex) as i32;
         }
 
         LeaveCriticalSection(core::ptr::addr_of_mut!(SHELL32_SicCS));
@@ -1090,7 +1090,7 @@ pub unsafe extern "system" fn ExtractAssociatedIconW(hInst: HINSTANCE, lpIconPat
         }
 
         if GetModuleFileNameW(hInst, lpIconPath, (MAX_PATH) as u32) != 0 {
-            h_icon = LoadIconW(hInst, MAKEINTRESOURCEW((*lpi_icon) as i32));
+            h_icon = LoadIconW(hInst, MAKEINTRESOURCEW(((*lpi_icon) as i32) as u32));
         }
     }
 

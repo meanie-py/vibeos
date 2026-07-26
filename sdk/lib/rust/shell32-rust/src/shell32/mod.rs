@@ -19,8 +19,15 @@ pub mod stubs;
 // calls written in C++ syntax (`p->Release()`) instead of through the `lpVtbl` idiom the landed
 // COM modules use. Per-file counts after the swap, so the next lane can pick the cheapest:
 //
-//     shldataobject.rs   26     iconcache.rs       94     shlfolder.rs      112
+//     shldataobject.rs   20     iconcache.rs       68     shlfolder.rs       75
 //     shlfileop.rs      227     brfolder.rs       235     shlexec.rs        415
+//
+// The first three came down from 26/94/112 once island_adopt grew its COM-dispatch rule and
+// prelude.rs grew the OLE residue. Two further errors surface in prelude.rs itself when they
+// are wired: `FAILED_UNEXPECTEDLY` applied to a `()`-valued expression, a translation artifact
+// where C's `FAILED_UNEXPECTEDLY(hr = Call())` lost the inner assignment. These three are the
+// cheapest next targets and are no longer blocked on anything structural — what is left is the
+// long tail of ATL types and shell32-internal helpers, not a wall.
 //
 // Each carries an `//! ORPHAN-BY-DESIGN:` banner. PAID artifacts — do not delete them to tidy up.
 //

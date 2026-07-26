@@ -199,3 +199,115 @@ def test_apply_skips_an_edit_whose_span_went_stale(tmp_path):
     stale = IA.Edit("a.rs", 1, 0, 5, "HI", "goodbye", "r", "auth")
     assert IA.apply([stale], tmp_path) == 0
     assert (tmp_path / "a.rs").read_text() == "hello world\n"
+
+
+# --- COM method calls written in C++ syntax ---------------------------------------------------
+
+IFACES = frozenset({"IShellFolder", "IExtractIconW"})
+
+
+def com_diag(method, iface, file, line, s, e):
+    return diag(
+        "E0599",
+        f"no method named `{method}` found for struct `shellcom::{iface}`",
+        file, line, s, e,
+    )
+
+
+def test_com_interfaces_are_derived_from_the_vtbl_structs():
+    src = "pub struct IShellFolderVtbl {\n    pub Release: usize,\n}\npub struct NotAnIface {\n}\n"
+    assert IA.com_interfaces(src) == frozenset({"IShellFolder"})
+
+
+def test_nullary_com_call_becomes_a_vtable_dispatch():
+    src = "    (*psf).Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IShellFolder", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert refused == []
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert out == "    ((*(*psf).lpVtbl).Release)(psf);\n"
+
+
+def test_com_call_with_arguments_keeps_them_after_the_this_pointer():
+    src = "    let hr = (*ei).GetIconLocation(flags, buf, cch);\n"
+    s, e = at(src, "GetIconLocation")
+    edits, refused = IA.propose(
+        [com_diag("GetIconLocation", "IExtractIconW", "a.rs", 1, s, e)], reader(src),
+        interfaces=IFACES,
+    )
+    assert refused == []
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert out == "    let hr = ((*(*ei).lpVtbl).GetIconLocation)(ei, flags, buf, cch);\n"
+
+
+def test_com_call_on_a_compound_receiver_expression():
+    src = "    (*psf.as_raw()).Release();\n"
+    s, e = at(src, "Release")
+    edits, _ = IA.propose(
+        [com_diag("Release", "IShellFolder", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert out == "    ((*(*psf.as_raw()).lpVtbl).Release)(psf.as_raw());\n"
+
+
+def test_a_type_that_is_not_a_com_interface_is_left_alone():
+    """A translated crate has ordinary Rust structs; rustc reports those identically."""
+    src = "    (*thing).Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "SomePlainStruct", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert edits == [] and refused == []
+
+
+def test_the_rule_is_inert_without_an_interface_set():
+    src = "    (*psf).Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose([com_diag("Release", "IShellFolder", "a.rs", 1, s, e)], reader(src))
+    assert edits == [] and refused == []
+
+
+def test_non_deref_receiver_is_REFUSED():
+    """`psf.Release()` gives no pointer to pass as `this` — guessing one is how you dispatch
+    on the wrong object."""
+    src = "    psf.Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IShellFolder", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert edits == [] and refused[0].reason == "receiver_not_parenthesised"
+
+
+def test_parenthesised_but_not_a_deref_is_REFUSED():
+    src = "    (psf).Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IShellFolder", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert edits == [] and refused[0].reason == "receiver_not_a_deref"
+
+
+def test_method_not_called_is_REFUSED():
+    src = "    let f = (*psf).Release;\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IShellFolder", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert edits == [] and refused[0].reason == "method_not_called"
+
+
+def test_multiline_argument_list_does_not_get_trailing_whitespace():
+    """`git diff --check` rejects a trailing space, so the comma must not carry one when the
+    arguments start on the next line."""
+    src = "    let hr = (*psf).BindToObject(\n        pidl,\n        ctx,\n    );\n"
+    s, e = at(src, "BindToObject")
+    edits, refused = IA.propose(
+        [com_diag("BindToObject", "IShellFolder", "a.rs", 1, s, e)], reader(src),
+        interfaces=IFACES,
+    )
+    assert refused == []
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert not any(ln.rstrip() != ln for ln in out.split("\n")), out
+    assert out.startswith("    let hr = ((*(*psf).lpVtbl).BindToObject)(psf,\n        pidl,")
