@@ -101,3 +101,15 @@ NtOpenProcessTokenEx
 NtOpenThreadTokenEx
 NtWaitForMultipleObjects
 NtTerminateThread
+
+# --- E17: the CPU layer's memory-notification contract. A JIT host only
+#     decodes guest addresses it has been told are executable and caches
+#     translations keyed on guest address, so every change to the 32-bit
+#     address space has to be announced. These are ABI-flat (except the
+#     ULONG_PTR *ReturnSize on the Read/Write pair, which the flat thunk
+#     overwrote 8 bytes of) — they are here for the side effect. ---
+NtUnmapViewOfSection
+NtReadVirtualMemory
+NtWriteVirtualMemory
+NtFlushInstructionCache
+NtSetInformationProcess

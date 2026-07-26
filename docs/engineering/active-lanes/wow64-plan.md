@@ -2105,4 +2105,181 @@ the code that crashed.**
 
 *Not this bug after all, still owed on its own merits:* we wire only
 `BTCpuNotifyMapViewOfSection` of FEX's memory-notification contract, though it
-also exports `BTCpuNotifyMemoryAlloc`/`Free`/`Protect`/`Dirty`.
+also exports `BTCpuNotifyMemoryAlloc`/`Free`/`Protect`/`Dirty`. **Closed by E17
+below — and it was not a cache hint, it was a missing capability.**
+
+---
+
+**Phase E17 — the memory-notification contract: 32-bit guests can GENERATE CODE
+(2026-07-26, task #74).** E16 left this as tidy-up owed "on its own merits".
+Reading FEX's decoder first changed the estimate completely: `CheckRangeExecutable`
+(`FEXCore/Source/Interface/Core/Frontend.cpp`) **refuses to decode any guest
+address outside the executable set the CPU layer has been told about**, and that
+set is filled only by these notifications plus a one-time `VirtualQuery` sweep at
+`BTCpuProcessInit`. With just the map-view hook wired, images worked and
+**everything the guest allocated afterwards was un-executable** — ATL/MFC thunks,
+VB6/Delphi trampolines, packers, self-extractors, any JIT. Not slow: impossible.
+
+*The disguise is worth naming.* `wow64.c` already carried a comment instructing
+itself to "allocate every raw guest page first; pages created afterward are not
+visible until the full memory-notification contract is wired." A workaround that
+constrains allocation ORDER is a missing notification wearing a disguise — it
+holds exactly until something allocates outside your control, i.e. until the
+guest runs.
+
+Wired, with the pairing discipline the contract actually demands (`After` is a
+lock/unlock flag inside FEX, not a status report — an unmatched *Before*
+deadlocks the guest process): `BTCpuNotifyMemoryAlloc` / `MemoryProtect` /
+`MemoryFree` / `MemoryDirty` / `UnmapViewOfSection` / `ReadFile` /
+`FlushInstructionCache2` / `ProcessExecuteFlagsChange`, behind `Wow64Notify*`
+wrappers in the new `wow64_btcpu.h` so no call site touches a raw pointer. They
+resolve optionally and are published only *after* `BTCpuProcessInit` — the layer
+builds its address-space model there, so an earlier notification has nothing to
+land in. All notifications are gated on the target being the CURRENT process:
+the protect path really does reprotect pages, so a `VirtualAllocEx` range
+belonging to someone else would mutate our own pages at those addresses.
+
+Five syscalls became manual to carry the side effects — `NtUnmapViewOfSection`,
+`NtReadVirtualMemory`, `NtWriteVirtualMemory`, `NtFlushInstructionCache`,
+`NtSetInformationProcess`. The Read/Write pair had a **second, independent bug**
+the flat thunk was hiding: the trailing `*ReturnSize` is a `ULONG_PTR`, so the
+host wrote 8 bytes into the guest's 4-byte cell. `NtSetInformationProcess`
+intercepts only `ProcessExecuteFlags`, and forwards it: DEP has two enforcers
+here — the kernel owns the host page protections (which on a native compat-mode
+host ARE the guest's) and the CPU layer owns whether the emulator will run a page
+the host would. The kernel's verdict is the one the guest gets back.
+
+*Verification — `selfmod32.exe`, seven rungs, staged on BOTH arches.* Each
+isolates one notification, and most fail **silently wrong** rather than loudly,
+which is the whole reason the guest checks returned values instead of merely
+surviving: (1) execute code generated into a fresh RWX allocation — the only
+rung that dies rather than lying; (2) rewrite it + `FlushInstructionCache`;
+(3) write as data into an RW region then `VirtualProtect` to RX — the commonest
+real pattern and one the alloc notification structurally cannot cover;
+(4) free the page and take the same base back, so the next tenant does not
+inherit the previous tenant's translation; (5) `ReadFile` straight into live
+code memory, i.e. the kernel writing behind the layer's back; (6)
+`WriteProcessMemory` hot-patch, which exercises protect + dirty + flush together
+because kernel32 wraps the write in `NtProtectVirtualMemory`; (7) `NtWrite`/
+`NtReadVirtualMemory` called **directly**, with a canary immediately after the
+count cell.
+
+Rung 7 had to bypass kernel32 to mean anything, and noticing that mattered: the
+obvious version calls `WriteProcessMemory` with a canary, but kernel32 hands the
+syscall its **own** local `nSize` and copies the result out, so the 8-byte
+clobber lands in kernel32's stack frame where no caller-side canary can ever see
+it. A rung that cannot fail is worse than no rung.
+
+*amd64 is the CONTROL, not a second copy of the test.* `wow64cpu` exports none of
+these notifications — execution is native, there is nothing to invalidate — so
+amd64 runs the same guest with **0/8 entry points wired** and every rung must
+still pass. arm64 exercises the real contract; the serial line
+`memory-notification contract: N/8 entry points wired` states which mode a boot
+is in.
+
+*Running it found two KERNEL bugs, both pre-existing, neither in the new code.*
+This is the payoff of wiring a contract rather than stubbing it: the
+notifications drove code paths nothing had reached before.
+
+1. **FIXED — the PFN `CacheAttribute` was never initialised.** `MiInitializePfn`
+   (and the `AndMakePteValid` / `ForOtherProcess` variants) never set
+   `u3.e1.CacheAttribute`, faithfully to upstream ReactOS. `MiNonCached` **is
+   0**, so a page off the free list reads as *deliberately uncached* when nobody
+   ever decided anything — and `MiFlushTbAndCapture` consults it on **every**
+   protection change and force-ORs `MM_NOCACHE`. On x86 that is a perf loss,
+   which is why it survived for years; on arm64 `MM_NOCACHE` selects MAIR
+   AttrIndx 1 = **Device-nGnRnE**, where every unaligned access alignment-faults.
+   FEX write-protects RWX pages for SMC detection, un-protects on the write
+   fault, and the retried unaligned store then faulted forever with the PC
+   pinned — the rung-2 livelock. Now sets `MiCached`, as Windows does.
+
+   *It was not a selfmod32-only bug.* Across the arm64 WoW64 ladder `[ALIGN]`
+   went from **6–14 per boot to 0–1**, and the character changed: the faults it
+   removed were plain `str` on `PTE=…447` (Device), while the survivor is `ldar`
+   on `PTE=…4C3` (Normal) — an ordinary unaligned atomic, which is exactly the
+   case FEX's own handler exists to absorb.
+
+2. **FILED (task #76) — `MiDoPoolCopy` reports success without writing.** It
+   translated the C's `_SEH2_TRY/_SEH2_EXCEPT` as straight-line code, so
+   `Status` is initialised to `STATUS_SUCCESS` and never assigned anywhere in
+   the function; both `if Status >= 0 { copy }` guards always pass and the tail
+   unconditionally does `*ReturnSize = BufferSize`. Proven by rung 7: a write
+   onto a page FEX had trapped (`VirtualQuery` → `PAGE_EXECUTE_READ`) returned
+   `0x00000000` with 6 bytes written and the bytes unchanged. **Refusing that
+   write is correct** — the emulator's SMC trap is a real page protection and
+   the kernel honours it, which is precisely why `WriteProcessMemory` wraps its
+   write in `NtProtectVirtualMemory`. Reporting success is not. The real fix
+   needs probe/copy faults to be observable in translated Rust
+   (`dummy-pseh-verdict.md`), so `selfmod32` prints `rung7 BUG: …` on serial and
+   deliberately does **not** gate on it — a WoW64 ladder that goes red for an MM
+   bug stops being a WoW64 signal.
+
+*Durable lessons (field manual):* "On a JIT host, the CPU layer's memory
+notifications are a CAPABILITY, not a cache hint" and "An uninitialised PFN
+`CacheAttribute` turns every `VirtualProtect`ed page into DEVICE memory". Three
+transferable ones:
+
+- **A workaround that constrains ORDER is a missing notification in disguise.**
+- **A zero-valued enum member is not a default, it is an assertion** —
+  `MiNonCached == 0` made "uninitialised" and "the caller chose uncached"
+  indistinguishable, so every consumer believed a decision nobody made.
+- **A rung that cannot fail is worse than no rung.** Rung 7's obvious form calls
+  `WriteProcessMemory` with a canary — but kernel32 hands the syscall its *own*
+  local `nSize` and copies the result out, so the 8-byte clobber lands in
+  kernel32's frame where no caller-side canary can ever see it. Bypassing
+  kernel32 is what made it an oracle.
+
+---
+
+**Phase E18 — arm64 dispatches a guest hardware fault into the guest's own SEH
+(2026-07-26).** The last arm64 gap in the ladder, and the reason `fault32.exe`
+was amd64-only and `thread32.exe` rung 7 ran with an explicit `noseh` skip.
+Both are now closed: **arm64 `fault32.exe exit = 0x600D`**, and thread32 runs
+all nine rungs on both arches.
+
+*The work was small because the CPU layer already does the hard part; what was
+missing was on our side.* There is no compat-mode trap to catch on arm64 — a
+guest fault arrives as a **host** arm64 fault inside FEX's JIT, and
+`BTCpuResetToConsistentState` gets first refusal. When it can deal with the
+fault (SMC, overcommit, unaligned atomic, suspend) it `NtContinue`s and never
+returns. When it cannot, it hands the fault over *in guest terms* and returns:
+the guest register file is reconstructed into the CPU area (FEX calls
+`BTCpuSetContext` itself), the `EXCEPTION_RECORD` is rewritten to describe the
+guest fault, and the host `CONTEXT` is replaced with the one captured before
+JIT entry. So `Wow64pRedirectGuestFault` only has to build the i386
+`KiUserExceptionDispatcher` frame on the **guest** stack — reusing
+`Wow64pBuildGuestExceptionFrame` verbatim from E5 — point the guest context at
+the dispatcher, and return `EXCEPTION_CONTINUE_EXECUTION`. That resumes the
+host at the pre-JIT-entry context, i.e. back inside `BTCpuSimulate`, which
+re-enters the guest from the CPU area — now at the guest's own dispatcher, so
+its real `fs:[0]` chain runs.
+
+Two details that decide whether it works at all:
+
+- **Telling a handed-over guest fault from a genuine host one.** FEX always
+  rewrites `ExceptionAddress` to the guest `Eip` before it declines, and a
+  host-side fault it never touched still carries a host address. So the test is
+  `ExceptionAddress < 2GB && ExceptionAddress == CpuArea->Eip` — cheap, and it
+  cannot false-positive on a host fault.
+- **Breakpoints deliberately keep the pre-E18 behaviour.** That same
+  discriminator matches exactly the wrong one: FEX reports a DebugService
+  `int 2d` with `ExceptionAddress ==` the (already advanced) guest `Eip`, but a
+  genuine `int3` with `Eip - 1`. Redirecting on it would dispatch the guest
+  loader's own debug channel into SEH while still missing real breakpoints.
+  Guest `int3` dispatch is its own change, not a freebie.
+
+*Also settled:* `EXCEPTION_CONTINUE_EXECUTION` from a VEH **is** honoured on
+arm64 — `rtl-except/src/arm64/except.rs` calls
+`RtlCallVectoredExceptionHandlers` first and returns on a non-zero result.
+Worth stating because the amd64 hook exists precisely *because* that build's
+`RtlDispatchException` elides the vectored block, and it would be reasonable to
+assume the same here.
+
+*Verification:* the redirect fires exactly once for `fault32` rung 1 —
+`guest fault c0000005 eip=00401002 -> 32-bit SEH dispatch` — and the remaining
+rungs (RaiseException round-trip, `DBG_PRINTEXCEPTION` consumption,
+Get/SetThreadContext) reach the guest by their own paths, unchanged. amd64 is
+untouched: the whole redirect is `#ifdef _M_ARM64`, and amd64 keeps catching
+the real compat-mode fault in `Wow64pPrepareForExceptionHook`. Running the same
+guest on both arches is worth it precisely because the arrival paths share
+nothing.

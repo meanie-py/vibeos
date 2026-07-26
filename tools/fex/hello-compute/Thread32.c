@@ -107,13 +107,12 @@ static volatile DWORD g_SehHits;
 static volatile DWORD g_SehCode;
 static DWORD g_SkipSeh; /* set by the "noseh" argument — see StrHasNoSeh */
 
-/* arm64 does not yet redirect a hardware fault in guest code into the guest's
- * own 32-bit SEH (FEX's simulate loop owns fault recovery there; same reason
- * fault32.exe is amd64-only). That is a PRE-EXISTING gap unrelated to
- * threading, so rather than not running this guest on arm64 at all — which
- * would leave the whole per-thread entry untested on the FEX CPU layer — the
- * launcher passes "noseh" there and rung 7 reports itself SKIPPED. Drop the
- * argument once arm64 guest-SEH dispatch lands. */
+/* An escape hatch for a host whose CPU layer cannot yet dispatch a hardware
+ * fault into the guest's own 32-bit SEH: the launcher passes "noseh" and rung 7
+ * reports itself SKIPPED, so the rest of the per-thread entry still gets
+ * exercised instead of the whole guest being withheld. arm64 needed it until
+ * E18 landed the redirect; NO launcher passes it today. Kept because the next
+ * CPU layer to be brought up will want it. */
 static DWORD StrHasNoSeh(const char *s)
 {
     int i;

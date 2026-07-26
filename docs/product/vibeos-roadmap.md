@@ -479,6 +479,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **`NtWriteVirtualMemory` reports `STATUS_SUCCESS` + a full byte count while writing NOTHING —
+  OPEN** (2026-07-26, task #76, found by E17's `selfmod32.exe` rung 7). `MiDoPoolCopy`
+  (`ARM3/virtual.rs`) translated the C's `_SEH2_TRY/_SEH2_EXCEPT` as straight-line code:
+  `Status` is initialised to `STATUS_SUCCESS` and **never assigned anywhere in the function**,
+  so both `if Status >= 0 { copy }` guards always pass and the tail unconditionally does
+  `*ReturnSize = BufferSize`. Proven on arm64: a write to a page FEX had write-protected for
+  SMC detection (`VirtualQuery` → `PAGE_EXECUTE_READ`) returned `0x00000000` with 6 bytes
+  written and the target bytes unchanged. *Refusing* the write is correct — that is exactly why
+  `WriteProcessMemory` wraps it in `NtProtectVirtualMemory` — reporting success is not.
+  `MiDoMappedCopy` probably shares the shape. The real fix needs probe/copy faults to be
+  observable in translated Rust (`docs/engineering/dummy-pseh-verdict.md`;
+  `ntkrnl-sys/src/probe.rs` only range/alignment-checks today). `selfmod32` prints
+  `rung7 BUG: …` on serial but deliberately does **not** gate on it, so the WoW64 ladder stays
+  a WoW64 signal.
+- **PFN `CacheAttribute` was never initialised → `VirtualProtect` made private pages uncached —
+  FIXED 2026-07-26** (task #75, field manual "An uninitialised PFN `CacheAttribute`…").
+  `MiNonCached` is 0, so every page off the free list read as deliberately-uncached and
+  `MiFlushTbAndCapture` force-ORed `MM_NOCACHE` on every protection change. Harmless-ish on x86
+  (a perf loss); on arm64 `MM_NOCACHE` = MAIR AttrIndx 1 = Device-nGnRnE, where every unaligned
+  access alignment-faults — a livelock with the PC pinned. Upstream ReactOS has the same gap.
+  Fixed by setting `MiCached` in the three `MiInitializePfn*` paths, as Windows does. Very
+  likely also the source of the long-standing `[ALIGN] FAR=0x1D11Bxx / 0x7E0B377E` diagnostics
+  in other WoW64 guests, which FEX's unaligned handler had been absorbing.
 - **`mscms-rust` — being integrated on the `integration` lane, NOT a bug.** Surfaced
   2026-07-25 when `scan_orphan_modules` learned to see ROOTLESS crates: 6 files / 4,782 lines
   with no `Cargo.toml` and no `lib.rs`, which every source gate had been skipping silently
@@ -712,7 +735,40 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   differs, so no layout-diff tool would flag it.
   Still owed on its own merits (NOT this bug): we wire only `BTCpuNotifyMapViewOfSection` of
   FEX's memory-notification contract, though it exports `BTCpuNotifyMemoryAlloc`/`Free`/
-  `Protect`/`Dirty`.
+  `Protect`/`Dirty`. **→ closed by #74 below, and it was a missing capability, not tidy-up.**
+
+- **WoW64/FEX: a 32-bit guest could not execute code it generated at runtime — FIXED
+  2026-07-26** (task #74, wow64-plan Phase E17). wow64.dll wired one of the CPU layer's eight
+  memory notifications. FEX's decoder **refuses to translate any guest address outside the
+  executable set it has been told about** (`Frontend.cpp` `CheckRangeExecutable`), and that set
+  is filled only by those notifications plus a one-time address-space sweep at
+  `BTCpuProcessInit` — so images ran and **everything the guest allocated afterwards was
+  un-executable**: ATL/MFC thunks, VB6/Delphi trampolines, packers, self-extractors, any JIT.
+  Now wires `BTCpuNotifyMemoryAlloc`/`Protect`/`Free`/`Dirty`/`UnmapViewOfSection`/`ReadFile`/
+  `FlushInstructionCache2`/`ProcessExecuteFlagsChange`, with the Before/After pairing the
+  contract requires (`After` is a lock/unlock flag inside FEX, not a status report) and gated on
+  the target being the current process. Five syscalls became manual to carry the side effects;
+  `NtRead`/`NtWriteVirtualMemory` had a second, independent flat-thunk bug — the trailing
+  `*ReturnSize` is a `ULONG_PTR`, so the host wrote 8 bytes into the guest's 4-byte cell.
+  Verified by the new `selfmod32.exe` (7 rungs; most fail *silently wrong*, so it checks values,
+  not survival), with **amd64 as the control**: `wow64cpu` exports none of these, so the same
+  guest must pass there with 0/8 wired.
+
+- **WoW64/FEX: a guest hardware fault never reached the guest's own SEH on arm64 — FIXED
+  2026-07-26** (task #77, wow64-plan Phase E18). The last arm64 ladder gap: `fault32.exe` was
+  amd64-only and `thread32.exe` rung 7 ran behind an explicit `noseh` skip, both now dropped.
+  On arm64 a guest fault is a **host** fault inside FEX's JIT; when
+  `BTCpuResetToConsistentState` cannot handle it, it hands the fault back in guest terms
+  (registers reconstructed into the CPU area, `EXCEPTION_RECORD` rewritten with
+  `ExceptionAddress` = guest `Eip`, host `CONTEXT` replaced with the pre-JIT-entry one) and
+  returns — leaving wow64.dll to dispatch. `Wow64pRedirectGuestFault` builds the i386
+  `KiUserExceptionDispatcher` frame on the guest stack (E5's builder, verbatim), points the
+  guest context at it, and returns `EXCEPTION_CONTINUE_EXECUTION`, which resumes inside
+  `BTCpuSimulate` and re-enters the guest at its own dispatcher. Before it, the fault had
+  nowhere to go and the simulate loop re-faulted forever. Breakpoints deliberately keep the
+  pre-E18 behaviour — the discriminator matches `int 2d` DebugService, not a real `int3`.
+  **The arm64 WoW64 ladder is now 9/9** (hello32/win32/file32/async32/marshal32/fault32/
+  thread32/selfmod32 `0x600D`, gui32 `0x600E`).
 
 - **WoW64 probe guests are NOT staged on arm64 by default** (2026-07-25, noted while closing
   #64). `dll/win32/wow64cpu/CMakeLists.txt` (the amd64 livecd path) is entirely
@@ -919,9 +975,21 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   not compile at all (`E0659` — `stubs.rs` glob-imports both `crate::ke::ke_defs` and
   `ntkrnl_sys::mm`, and both export a `KeGetCurrentThread`; take ke_defs', which returns
   PKTHREAD so the stack fields are reachable), and a soak would otherwise have run for hours
-  against a kernel with no probe in it.
+  against a kernel with no probe in it. **And then one did anyway** — the check was pointed at
+  the built module while the soak booted a frozen `.iso` cut four hours earlier (see the
+  retraction below). Checking the binary is necessary and not sufficient; check the media.
 
-  **THE HEADLINE FROM 9 INSTRUMENTED SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
+  > **RETRACTION (2026-07-26): the soak below was NOT instrumented — the probes were never in
+  > the media.** The image was frozen at 22:42 for run-to-run comparability; `[FREEMAPPED]` and
+  > `[KSTACK]` landed at 02:43, four hours later. `strings livecd-smp.iso | grep -c FREEMAPPED`
+  > = **0**, same for `KSTACK`. The §9.87 check was run against
+  > `build-arm64/ntoskrnl/ntoskrnl.exe` — the wrong artifact. What SURVIVES: the face taxonomy,
+  > the frequencies, and the `0x50` operand reading, all of which come from bugcheck operands and
+  > the census, and both of those *were* in that media. What is VACUOUS: every claim below
+  > phrased as "under the probes", and any reading of the tripwires' silence — nothing was
+  > listening. Re-run on freshly-cut media before treating a probe's silence as a result.
+
+  **THE HEADLINE FROM 9 SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
   on fixed media, `-smp 1`, same binary within each run:
 
   | face | n | signature |
@@ -941,7 +1009,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Each face's evidence is below; the per-round data is in the soak ledgers, and the two
   reproducing serials are kept out of `/tmp` rotation.
 
-  **FIRST REPRODUCTION UNDER THE PROBES (2026-07-26), and it points hard at the STACK.**
+  **FIRST REPRODUCTION (2026-07-26) — no probe fired (see the retraction: none were in the
+  media), but the OPERANDS alone point hard at the STACK.**
   A 4-round `-smp 1` kmtest soak on fixed media reproduced once (rounds 1/3/4 clean or
   ratchet-noise; ~25%, in line with the prior base rate). Round 2 died at test **69 of 89, on
   `ZwWaitForMultipleObjects`** — immediately after the `ZwCreateSection` / `ZwMapViewOfSection`
