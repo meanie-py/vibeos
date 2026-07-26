@@ -23,6 +23,13 @@ use crate::ddk_shims::{FsRtlNotifyVolumeEvent, IoIs32bitProcess, MOVE_FILE_DATA3
 // ntkrnl_sys, ULONG32 in fastfat) and friends in scope to silently shadow the
 // crate's own types — the class that already bit dirctrl.rs.
 use crate::glue::{FSRTL_VOLUME_UNLOCK, VPB_DIRECT_WRITES_ALLOWED, VPB_LOCKED};
+// MmGetSystemAddressForMdlSafe is a DDK **MACRO** (mmfuncs.h:139), not a function:
+// it tests MdlFlags and either returns MappedSystemVa or calls
+// MmMapLockedPagesSpecifyCache. Declaring it `extern` produces an undefined symbol
+// at link — which is exactly what scan_bugcheck_stubs calls MACRO_AS_EXTERN, and
+// what I did here before the linker caught it. ntkrnl_sys carries the faithful
+// inline; use that.
+use ntkrnl_sys::driver_ddk::MmGetSystemAddressForMdlSafe;
 use crate::types::{
     CCB_FLAG_COMPLETE_DISMOUNT, FILE_SYSTEM_STATISTICS, IRP_CONTEXT_FLAG_DISABLE_POPUPS,
     VCB_STATE_FLAG_LOCKED, VCB_STATE_FLAG_MOUNTED_DIRTY, VCB_STATE_FLAG_VOLUME_DIRTY,
@@ -138,7 +145,6 @@ extern "system" {
     // would have been truncated to its low byte on the way out. The Rust definition
     // returns NTSTATUS and the cast is gone.
     fn FatQueryRetrievalPointers(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn MmGetSystemAddressForMdlSafe(Mdl: ntkrnl_sys::ddk::PMDL, Priority: u32) -> *mut c_void;
     // verfysup.rs:484. Returns VOID — it FatRaiseStatus()es rather than reporting.
     fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatIsHandleCountZero(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
