@@ -2642,3 +2642,27 @@ not its subject — file32 already established this precedent for its own write
 rungs) and rungs 6-7 still run. arm64 keeps full coverage of rung 5, so nothing
 was traded away. Both arches now report the whole ladder green: **9/9 on amd64
 and 9/9 on arm64.**
+
+*And the blind spot itself is closed, not just this instance of it.* Hand-typing
+`--until "<guest>.exe exit"` on two arches is precisely the "remembering a
+recipe" smell AGENTS.md calls a bug report against the tool — and the gap had
+already been written down once (the roadmap's `_MmCopyFromCaller` entry notes
+"the smoke gate stays GREEN through this: the boot marker fires long before the
+ladder runs") and still cost a day. So it is a flag now:
+
+```
+./vibeos-cli smoke --arch amd64 --ladder     # arm64 needs VIBEOS_FEX=1 media
+```
+
+It keeps draining serial after the desktop marker until all nine guests report,
+and **fails the boot** on a wrong or missing verdict. `tests/qemu/cli/ladder.py`
+owns the expected-verdict table (gui32 is `0x600E`, the rest `0x600D`; arm64-only
+extras like `wow64probe` are reported but not required, so the table stays the
+cross-arch *parity* claim rather than "whatever arm64 happens to stage"). A boot
+with nothing staged reports `LADDER_NOT_STAGED` **with the build recipe** — a
+staging mistake must not read as an OS regression. Seven unit tests pin the
+parser, including the selfmod32 `0xBAD9` case and the one that matters most:
+**a guest that never reports is a FAILURE, not a pass** — treating absence as
+success is the exact failure mode the check exists to prevent. The extra watch
+is bounded and strictly additive: with the flag off, the boot path is unchanged,
+so no other lane pays for it.

@@ -762,10 +762,15 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   exited `0xBAD9`. E17 verified it on arm64 and staged it for amd64 without watching it run
   there. The durable point is about the harness: **the probe ladder runs AFTER the desktop
   marker, and the ordinary smoke stops at that marker**, so any late-rung, single-arch
-  failure is invisible to `gate`. Seeing it needs
-  `smoke --arch <a> --until "<guest>.exe exit"`. Rung 5 now skips loudly with the errno on a
-  read-only volume (file32's existing precedent) and rungs 6-7 still run; arm64 keeps full
-  rung-5 coverage. Both ladders now 9/9.
+  failure is invisible to `gate`. Rung 5 now skips loudly with the errno on a read-only volume
+  (file32's existing precedent) and rungs 6-7 still run; arm64 keeps full rung-5 coverage. Both
+  ladders now 9/9. **Mechanised the same day so it cannot recur: `vibeos-cli smoke --arch X
+  --ladder`** drains serial past the desktop marker until all nine guests report and fails the
+  boot on a wrong or missing verdict (`tests/qemu/cli/ladder.py`, 7 unit tests including the
+  selfmod32 case). This blind spot had already been *written down* once — in the
+  `_MmCopyFromCaller` entry above, "the smoke gate stays GREEN through this: the boot marker
+  fires long before the ladder runs" — and still cost a day, which is the argument for a flag
+  over a note.
 
 - **WoW64/FEX: a 32-bit guest could not execute code it generated at runtime — FIXED
   2026-07-26** (task #74, wow64-plan Phase E17). wow64.dll wired one of the CPU layer's eight
