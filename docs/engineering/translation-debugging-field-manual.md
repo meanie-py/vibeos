@@ -873,6 +873,16 @@ sibling** (`IRP_MJ_SCSI` == `IRP_MJ_INTERNAL_DEVICE_CONTROL` — two names, one 
 `match` cannot hold both). When widening a scrutinee: **no narrow siblings in the match → widen
 it** (`match (*req).EntryIndex as u32`); **siblings already narrow → join them, don't widen.**
 
+**A whole `switch` can be catch-all'd when its labels live in a header the build never
+includes.** wldap32's `map_error` matches 16 OpenLDAP codes that only `ldap.h` defines, and
+`config.h` says `/* #undef HAVE_LDAP_H */` — so *every* label was unresolved, the first arm
+bound everything, and the function returned `WLDAP32_LDAP_SERVER_DOWN` for every input. The
+tell was 16 `unreachable pattern` warnings in a row; nothing else fired. **N consecutive
+"unreachable pattern" warnings on one `match` means arm 1 is a binding — read it as an error.**
+Prophylactic beyond the island audit: if the C guards the `case` labels with an `#ifdef` that is
+off in this build, the arms must carry that guard in Rust too — see the build-configuration
+guard entry under *Dropped, degraded & silently-rewritten translation output*.
+
 ### Deterministic prevention: SEAL the facts `[§9.117]`
 `rustconv translate --seal-facts --seal-calls` takes constants and call occurrences **out of
 the LLM's hands entirely** — a dropped or invented one then fails loudly instead of silently.
@@ -1084,6 +1094,45 @@ recovery and fix the INPUT, not the recovery.**
 - **`table_audit.py`** compares every file-scope C data table against the Rust; **`vtbl_gen.py`**
   generates COM vtbls from the C initializer plus bindgen; **`export_audit.py`** requires every
   `.spec` export to exist as a correctly-decorated `#[no_mangle]`. Use them; don't ask an LLM.
+
+### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
+
+**Symptom.** A Wine-derived module translates cleanly and then cannot compile at all: hundreds
+of `cannot find function` for an optional backend's API. wldap32 hit 1087 rustc errors, 778 of
+them `ldap_*`.
+
+**Cause.** `config.h` writes an off feature as `/* #undef HAVE_LDAP */` — an assertion about
+*this* build. The C therefore compiles `return WLDAP32_LDAP_NOT_SUPPORTED` for every entry
+point and never links a libldap. The translator renders the **whole** C, guarded arm included
+(correctly — that arm is what makes the Rust worth more than the C), so the output references
+a library that is not there. Two follow-on shapes, both silent: a `switch` whose labels all
+come from the absent header becomes a catch-all (see the CATCH-ALL entry), and a `static
+inline` helper block that the header gates gets emitted ungated.
+
+**Fix.** Do what the C does — keep both arms, let a cfg feature pick. `python -m
+rustconv.cfg_gate --c-dir <dir> --rust-dir <dir>` derives the boundary from the C and applies
+it; `--apply` writes. It emits a `#[cfg(not(feature=...))]` twin carrying a **copy of the
+attributes** (`#[no_mangle]` must survive with the feature off) whose body is the initializer
+*lifted from the translated Rust*, never re-derived from the C constant. **Never delete the
+guarded arm** — it is paid artifact, and it is the half that a future `HAVE_X=1` build needs.
+
+Three things that bite:
+- **Guards are plural.** wldap32 branches on EIGHT (`HAVE_LDAP`, `HAVE_LDAP_H`, and six
+  per-entry-point probes like `HAVE_LDAP_PARSE_SORT_CONTROL`), each `#undef`'d independently.
+  Gate on the obvious one alone and the other seven stay silently wrong. `cfg_gate` derives the
+  set by intersecting the macros the module tests with config.h's `#undef` set; `#elif
+  defined(X)` arms are NOT in that scan and need declaring by hand.
+- **`#else` means the other arm is the one that ships.** Gating the translated arm there
+  installs the wrong half. `cfg_gate` refuses these rather than guess.
+- **One spelling only.** wldap32 carried four in one crate — `feature = "HAVE_LDAP"`,
+  `feature = "have_ldap"`, bare `cfg(HAVE_LDAP)`, bare `cfg(have_ldap)`. All four are false
+  today, so nothing looked wrong; flipping the feature either way would have taken half the
+  crate the wrong direction. A bare `cfg(X)` is a custom cfg flag, *not* a feature.
+
+Declare every feature in `Cargo.toml`, and prefer the semantic alias over a bindgen width alias
+in FFI signatures (`heap_alloc(len: usize)`, not `SIZE_T`) — `crate-repair` will otherwise have
+to bake `as u32` on i386 and `as u64` on amd64/arm64 for the same expression, and rightly
+refuses.
 
 ### A `#include`-built table has a different ROW SET under the wrong preprocessor config
 The C does `static const T tbl[] = { #include "Data.h" };` where the rows are `#if`-guarded on
@@ -1867,6 +1916,23 @@ one thing a regex structurally cannot find, because a token's start is defined b
 before it.** The same file had all three variants that break the naive pattern — a wide literal
 inside a comment, `L'` inside a narrow string, and the `case 'L':` — so treat one occurrence as
 proof the others are present too.
+
+**A NEARLY-right match is worse than none, because it fails as a SKIP.** Both of `cfg_gate`'s
+own shipped bugs were this, and neither raised anything:
+- **Byte offsets into a `str`.** tree-sitter reports *byte* spans; slicing a Python `str` with
+  them drifts one position per non-ASCII character already seen. A single em-dash in one file's
+  doc comment shifted every name after it by two — `bvarraydup` came out `arraydup(b` — which
+  then matched no entry in the lookup table, so **43 functions were silently skipped** instead
+  of failing. Work in `bytes` and decode spans; and assert the shape you expect (a name that is
+  not `str.isidentifier()` is now a hard error), because the *only* thing standing between a
+  corrupt extraction and a silent no-op is a check that the extraction looks right.
+- **Substring guard names.** `"ifdef HAVE_LDAP"` occurs inside `"ifdef HAVE_LDAP_PARSE_REFERENCE"`,
+  so a `str.count` saw two guarded regions where there was one and refused two ordinary
+  functions as too-complex-to-transform — again leaving them silently untransformed. Anchor
+  identifier matches with `\b`, and sort an alternation longest-first so it cannot prefix-match.
+
+**The tell for both: a tool that reports "skipped" rather than "failed" is making a claim it
+cannot support.** Count what you *transformed* and reconcile it against what you *found*.
 
 ### A symbolicator resolves against SOME binary — make sure it is the one that booted
 **Symptom:** a bugcheck PC resolves to a function that makes no sense at the crash site, or to a
