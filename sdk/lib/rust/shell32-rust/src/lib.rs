@@ -42,6 +42,15 @@ macro_rules! MESSAGE {
 // Foundation: minimal Win32 type aliases (grows as waves land).
 pub mod types;
 
+// ATL smart pointers and containers — the shared substrate in front of the remaining
+// C++ TUs (CComPtr appears in 25 of the 38 still-C files). See its header for the three
+// invariants the translated call sites depend on.
+pub mod atl;
+
+// The C++ header inlines from shellutils.h / utils.h. They live in HEADERS, so no translated
+// TU carries their bodies, yet several TUs call them.
+pub mod shellutils;
+
 // Wave 4: canonical shared shell/COM types (PIDL on-disk format, STRRET, GUID family, COM
 // vtables) used by the PIDL core (pidl/shellpath/shellord). Promoted from pidl.rs.
 pub mod shellcom;

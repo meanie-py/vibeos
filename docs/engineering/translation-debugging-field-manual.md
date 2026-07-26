@@ -771,6 +771,42 @@ function was declared in a `.h`/`.cpp` without `extern "C"`, so every C++ caller
 *mangled* name that nothing now defines. Fix: put `EXTERN_C` on the declaration (this is what
 `dialogs/view.cpp`'s `PostCabinetMessage` got in `precomp.h` when it was flipped) — and at
 namespace scope, since a linkage specification is illegal inside a function body.
+**`llvm-nm --defined-only` on the TU's `.obj` tells you which exports need it BEFORE you flip**:
+an unmangled `_Name@N` is already `extern "C"`, a `__Z23Name...` is not. shldataobject.cpp had
+five of each, and the mangled four had live callers in three other TUs.
+
+**A C++ header inline is in NO translation unit, so no translated TU carries it.** Symptom: a
+freshly translated file has a cluster of unresolved names that are demonstrably not in its
+`.cpp` — `HIDA_GetPIDLFolder`, `DataObject_GetData`, `DestroyCIDA`. Cause: they are
+`static inline`/`inline` in a *header* (`sdk/include/reactos/shellutils.h`,
+`dll/win32/shell32/utils.h`); the C++ compiler inlines them into every TU, and rustconv
+translates only the `.cpp`. Fix: port the header once into its own module
+(`shell32-rust/src/shellutils.rs`) rather than per-TU — these are shared by at least four TUs.
+Check for this before assuming a name is a translation defect: `grep -l` the name across
+`sdk/include` and the module's own headers first.
+
+**Porting ATL's smart pointers: `Drop` IS the translation's missing destructor.** Symptom: a
+translated C++ TU declares `CComPtr<IShellFolder> p;` and never releases it — the translation
+left at most a `// Destructor for CComPtr<...> – call Release` comment and no code. Cause:
+rustconv does not lower C++ RAII. Fix: implement `Drop`, and the release-at-scope-exit is
+restored for every call site at once. Three constraints, all load-bearing, all measured from
+the emitted code (`shell32-rust/src/atl.rs`): the types must be **zeroable** (the translation
+emits `core::mem::zeroed()` as a default-constructor stand-in, so no `Vec`/`NonNull` field —
+a zeroed `Vec` is instant UB); the pointer types must be **`#[repr(transparent)]`** (the
+translation reproduces ATL's `operator&` as `&mut p as *mut _ as *mut *mut T`); and if a
+translation ever ALSO emits an explicit `.Release()`, delete the explicit call, never the
+`Drop`. `CComPtr::drop` may reach `Release` by casting `*mut T` to `*mut IUnknown` because
+every COM interface starts with a vtable whose slot 2 is `Release` — that is what ATL itself
+does, and it is only valid for interface `T`.
+
+**Rewriting a vtable dispatch: check whether `this` is already there.** Symptom: after a
+mechanical `(*(*p).lpVtbl).M(args)` → `((*(*p).lpVtbl).M)(p, args)` rewrite, rustc reports
+"takes 1 argument but 2 were supplied". Cause: the translation emits BOTH shapes — sometimes
+`(*(*p).lpVtbl).Release()` and sometimes `(*(*p).lpVtbl).Release(p)`, the second already
+carrying the interface pointer, so splicing one in yields `(...Release)(p, p)`. That compiles
+as far as arity checking and is caught only there; on a slot whose first two parameters happen
+to share a type it would not be caught at all. Fix: compare the first top-level argument
+against the receiver text and add nothing when they match (`island_adopt.py`'s `already_this`).
 
 ### Cross-DLL and shared-section layout
 Cross-DLL reads returning garbage *past* the writer's own init, with a hang ~7 DLLs later in an

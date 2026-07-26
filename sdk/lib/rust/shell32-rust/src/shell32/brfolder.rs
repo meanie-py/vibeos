@@ -116,7 +116,7 @@ unsafe extern "C" fn BrFolder_GetChildrenEnum(
     let pidlRef: PCUITEMID_CHILD = (*pItemData).pidlChild;
     let mut attrs: u32 = SFGAO_HASSUBFOLDER | SFGAO_FOLDER;
     let lpsf: *mut IShellFolder = (*pItemData).lpsfParent;
-    let mut hr: i32 = (*lpsf).GetAttributesOf(1, &pidlRef, &mut attrs);
+    let mut hr: i32 = ((*(*lpsf).lpVtbl).GetAttributesOf)(lpsf, 1, &pidlRef, &mut attrs);
     if FAILED_UNEXPECTEDLY!(hr) != 0 || (attrs & SFGAO_FOLDER) == 0 {
         return E_FAIL;
     }
@@ -125,27 +125,27 @@ unsafe extern "C" fn BrFolder_GetChildrenEnum(
     if _ILIsDesktop((*pItemData).pidlFull.m_pData) != 0 {
         hr = SHGetDesktopFolder(&mut psfChild);
     } else {
-        hr = (*lpsf).BindToObject(pidlRef, core::ptr::null_mut(), &IShellFolder::uuidof(), &mut psfChild as *mut *mut IShellFolder as *mut *mut core::ffi::c_void);
+        hr = ((*(*lpsf).lpVtbl).BindToObject)(lpsf, pidlRef, core::ptr::null_mut(), &IShellFolder::uuidof(), &mut psfChild as *mut *mut IShellFolder as *mut *mut core::ffi::c_void);
     }
     if FAILED_UNEXPECTEDLY!(hr) != 0 {
         if !psfChild.is_null() {
-            (*psfChild).Release();
+            ((*(*psfChild).lpVtbl).Release)(psfChild);
         }
         return E_FAIL;
     }
 
     let flags: u32 = BrowseFlagsToSHCONTF((*(*info).lpBrowseInfo).ulFlags);
-    hr = (*psfChild).EnumObjects((*info).hWnd, flags, &mut pEnumIL);
+    hr = ((*(*psfChild).lpVtbl).EnumObjects)(psfChild, (*info).hWnd, flags, &mut pEnumIL);
     if hr == S_OK {
-        if !pEnumIL.is_null() && ((*pEnumIL).Skip(1) != S_OK || (*pEnumIL).Reset() < 0) {
-            (*pEnumIL).Release();
+        if !pEnumIL.is_null() && (((*(*pEnumIL).lpVtbl).Skip)(pEnumIL, 1) != S_OK || ((*(*pEnumIL).lpVtbl).Reset)(pEnumIL) < 0) {
+            ((*(*pEnumIL).lpVtbl).Release)(pEnumIL);
             pEnumIL = core::ptr::null_mut();
         }
     }
 
     if pEnumIL.is_null() || (attrs & SFGAO_HASSUBFOLDER) == 0 {
         if !psfChild.is_null() {
-            (*psfChild).Release();
+            ((*(*psfChild).lpVtbl).Release)(psfChild);
         }
         return E_FAIL;
     }
@@ -153,11 +153,11 @@ unsafe extern "C" fn BrFolder_GetChildrenEnum(
     if !ppEnum.is_null() {
         *ppEnum = pEnumIL;
     } else if !pEnumIL.is_null() {
-        (*pEnumIL).Release();
+        ((*(*pEnumIL).lpVtbl).Release)(pEnumIL);
     }
 
     if !psfChild.is_null() {
-        (*psfChild).Release();
+        ((*(*psfChild).lpVtbl).Release)(psfChild);
     }
 
     S_OK
@@ -219,7 +219,7 @@ unsafe extern "C" fn BrFolder_GetName(
 ) -> i32 {
     let mut bSuccess: i32 = FALSE;
     let mut str: STRRET = core::mem::zeroed();
-    if FAILED_UNEXPECTEDLY!((*lpsf).GetDisplayNameOf(pidlChild, dwFlags, &mut str)) == 0 {
+    if FAILED_UNEXPECTEDLY!(((*(*lpsf).lpVtbl).GetDisplayNameOf)(lpsf, pidlChild, dwFlags, &mut str)) == 0 {
         bSuccess = StrRetToStrNW(lpFriendlyName, (MAX_PATH) as u32, &mut str, pidlChild);
     }
     bSuccess
@@ -234,11 +234,11 @@ unsafe extern "C" fn BrFolder_IsTreeItemInEnum(
         return FALSE;
     }
 
-    (*(*pEnum).lpVtbl).Reset(pEnum);
+    ((*(*pEnum).lpVtbl).Reset)(pEnum);
 
     let mut pidlTemp: *mut ITEMIDLIST_RELATIVE = core::ptr::null_mut();
     loop {
-        let hr = (*(*pEnum).lpVtbl).Next(
+        let hr = ((*(*pEnum).lpVtbl).Next)(
             pEnum,
             1,
             &mut pidlTemp,
@@ -530,7 +530,7 @@ unsafe extern "C" fn BrFolder_Treeview_Expand(info: *mut BrFolder, pnmtv: *mut N
     } else {
         lpsf2 = (*pItemData).lpsfParent;
         if !lpsf2.is_null() {
-            (*lpsf2).AddRef();
+            ((*(*lpsf2).lpVtbl).AddRef)(lpsf2);
         }
     }
 
@@ -544,7 +544,7 @@ unsafe extern "C" fn BrFolder_Treeview_Expand(info: *mut BrFolder, pnmtv: *mut N
     }
 
     if !lpsf2.is_null() {
-        (*lpsf2).Release();
+        ((*(*lpsf2).lpVtbl).Release)(lpsf2);
     }
 
     0
@@ -585,7 +585,7 @@ unsafe extern "C" fn BrFolder_Treeview_Rename(info: *mut BrFolder, pnmtv: *mut N
     let data = BrFolder_GetItemData(info, hItem);
 
     let mut newChild: PITEMID_CHILD;
-    let hr = (*(*data).lpsfParent.p).SetNameOf(
+    let hr = ((*(*(*data).lpsfParent.p).lpVtbl).SetNameOf)((*data).lpsfParent.p,
         (*info).hWnd,
         (*data).pidlChild,
         (*pnmtv).item.pszText,

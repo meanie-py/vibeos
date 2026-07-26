@@ -11,36 +11,39 @@ pub mod sdk_consts;
 
 pub mod stubs;
 
+/// `shldataobject.cpp`, flipped. Its four C++-mangled exports needed `EXTERN_C` in precomp.h
+/// first — see the comment there.
+pub mod shldataobject;
+
 // ---------------------------------------------------------------------------------------------
-// STILL PARKED — but no longer for want of substrate. The island closed that: the batch went
-// from 2,831 errors to 1,112 on the swap alone, and what remains in each file is the C++
-// SUBSTRATE the translation leaned on, which this crate has no equivalent for yet — ATL smart
-// pointers (`CComPtr`, `CComHeapPtr`), `CStringW`, `CSimpleArray`, and COM interface METHOD
-// calls written in C++ syntax (`p->Release()`) instead of through the `lpVtbl` idiom the landed
-// COM modules use. Per-file counts after the swap, so the next lane can pick the cheapest:
+// STILL PARKED. The C++ SUBSTRATE that blocked them is now largely built: `crate::atl` supplies
+// CComPtr/CHeapPtr/CComHeapPtr/CSimpleArray and `crate::shellutils` the shellutils.h/utils.h
+// header inlines, so what is left per file is ordinary integration work rather than a missing
+// foundation. Counts measured with all six wired, after the substrate landed:
 //
-//     shldataobject.rs   22     iconcache.rs       68     shlfolder.rs       75
-//     shlfileop.rs      227     brfolder.rs       235     shlexec.rs        415
+//     shlexec.rs   349     shlfileop.rs  227     iconcache.rs   68
+//     brfolder.rs  244     shlfolder.rs   70     shldataobject   0  <- flipped
 //
-// What is left in shldataobject is representative of all six, and none of it is structural:
-// shell32-internal helpers that live in the .cpp itself (`DataObject_GetData`, `DestroyCIDA`,
-// the `HIDA_*` macros), and the ATL container types. One more mechanical rule is visible and
-// worth adding before the next file: the translation also emits `(*(*p).lpVtbl).M(args)` —
-// the vtable deref written out but the call still a C++ method call — which wants the same
-// treatment as `(*p).M(args)`, i.e. `((*(*p).lpVtbl).M)(p, args)`.
+// Read those against the pre-substrate numbers (shldataobject 22, iconcache 68, shlfolder 75,
+// shlfileop 227, brfolder 235, shlexec 415) and note that brfolder went UP, 235 -> 244: making
+// the ATL types resolve does not only remove errors, it also un-masks the ones that were hiding
+// behind an unresolved name. A rising count on a file is progress, not regression.
 //
-// The first three came down from 26/94/112 once island_adopt grew its COM-dispatch rule and
-// prelude.rs grew the OLE residue. Two further errors surface in prelude.rs itself when they
-// are wired: `FAILED_UNEXPECTEDLY` applied to a `()`-valued expression, a translation artifact
-// where C's `FAILED_UNEXPECTEDLY(hr = Call())` lost the inner assignment. These three are the
-// cheapest next targets and are no longer blocked on anything structural — what is left is the
-// long tail of ATL types and shell32-internal helpers, not a wall.
+// What each still needs, in cheapest-first order:
+//
+//   * iconcache / shlfolder (~70 each) — cast and signature integration, no new substrate.
+//   * brfolder (244) — the same, at volume, plus TreeView_* macro residue for the prelude.
+//   * shlfileop / shlexec (227 / 349) — both additionally want `CStringW`, which `atl.rs`
+//     deliberately does NOT yet provide. Its measured surface is new()/Left/GetLength/IsEmpty/
+//     SetString/GetBuffer/ReleaseBuffer/as_ptr/`+=` plus 14 `Format` calls. `Format` is
+//     printf-variadic, and stable Rust cannot DEFINE a variadic fn — it needs a trampoline in
+//     `dll/win32/shell32/rust_varargs_shim.c`, the same mechanism ShellMessageBoxA already uses.
+//     Designing CStringW before that decision is made would be guesswork, so it waits.
 //
 // Each carries an `//! ORPHAN-BY-DESIGN:` banner. PAID artifacts — do not delete them to tidy up.
 //
 // pub mod brfolder;
 // pub mod iconcache;
-// pub mod shldataobject;
 // pub mod shlexec;
 // pub mod shlfileop;
 // pub mod shlfolder;

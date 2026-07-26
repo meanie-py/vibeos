@@ -88,7 +88,7 @@ list(APPEND SOURCE
     # (shell32-rust/src/exe_drop_handler.rs).
     droptargets/CFSDropTarget.cpp
     droptargets/CRecyclerDropTarget.cpp
-    shldataobject.cpp
+    # shldataobject.cpp — replaced by Rust (shell32-rust/src/shell32/shldataobject.rs); cohab via libshell32_rust.a
     shlexec.cpp
     shlfileop.cpp
     shlfolder.cpp

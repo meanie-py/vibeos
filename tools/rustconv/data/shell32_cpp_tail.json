@@ -37,7 +37,6 @@
       "dll/win32/shell32/dialogs/drive.cpp",
       "dll/win32/shell32/dialogs/folder_options.cpp",
       "dll/win32/shell32/dialogs/item_prop.cpp",
-      "dll/win32/shell32/shldataobject.cpp",
       "dll/win32/shell32/shlfolder.cpp",
       "dll/win32/shell32/CDefViewUtil.cpp"
     ],
@@ -78,6 +77,7 @@
       "dll/win32/shell32/dialogs/view.cpp",
       "dll/win32/shell32/folders.cpp",
       "dll/win32/shell32/propsheet.cpp",
+      "dll/win32/shell32/shldataobject.cpp",
       "dll/win32/shell32/stubs.cpp",
       "dll/win32/shell32/systray.cpp"
     ],

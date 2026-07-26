@@ -314,10 +314,14 @@ BOOL PathIsDosDevice(_In_ LPCWSTR pszName);
 HRESULT SHELL32_GetDllFromRundll32CommandLine(LPCWSTR pszCmd, LPWSTR pszOut, SIZE_T cchMax);
 HRESULT SHILAppend(_Inout_ LPITEMIDLIST pidl, _Inout_ LPITEMIDLIST *ppidl);
 
-HRESULT DataObject_GetHIDACount(IDataObject *pdo);
-PIDLIST_ABSOLUTE SHELL_CIDA_ILCloneFull(_In_ const CIDA *pCIDA, _In_ UINT Index);
-PIDLIST_ABSOLUTE SHELL_DataObject_ILCloneFullItem(_In_ IDataObject *pDO, _In_ UINT Index);
-HRESULT SHELL_CloneDataObject(_In_ IDataObject *pDO, _Out_ IDataObject **ppDO);
+// EXTERN_C because these four are defined in Rust (shell32-rust/src/shell32/shldataobject.rs).
+// Declared plain, C++ mangles them (_Z23DataObject_GetHIDACountP11IDataObject and friends) and
+// the C++ callers in item_prop.cpp / filedefext.cpp / CDesktopFolder.cpp then look for a name
+// no #[no_mangle] symbol can satisfy.
+EXTERN_C HRESULT DataObject_GetHIDACount(IDataObject *pdo);
+EXTERN_C PIDLIST_ABSOLUTE SHELL_CIDA_ILCloneFull(_In_ const CIDA *pCIDA, _In_ UINT Index);
+EXTERN_C PIDLIST_ABSOLUTE SHELL_DataObject_ILCloneFullItem(_In_ IDataObject *pDO, _In_ UINT Index);
+EXTERN_C HRESULT SHELL_CloneDataObject(_In_ IDataObject *pDO, _Out_ IDataObject **ppDO);
 
 EXTERN_C HRESULT
 IUnknown_InitializeCommand(

@@ -514,7 +514,10 @@ pub struct IDataObjectVtbl {
     pub GetDataHere: usize,
     pub QueryGetData: usize,
     pub GetCanonicalFormatEtc: usize,
-    pub SetData: usize,
+    // Typed for shellutils.h's DataObject_SetData. FORMATETC/STGMEDIUM stay `c_void` to match
+    // GetData above, so the one shape of this vtable serves both island and hand-written callers.
+    pub SetData:
+        unsafe extern "system" fn(*mut IDataObject, *mut c_void, *mut c_void, BOOL) -> HRESULT,
     pub EnumFormatEtc: usize,
     pub DAdvise: usize,
     pub DUnadvise: usize,

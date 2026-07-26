@@ -65,6 +65,22 @@ pub use crate::shellcom::{
     IShellFolder, IShellFolder2, IShellFolder2Vtbl, IShellFolderVtbl, IUnknown, IUnknownVtbl,
 };
 
+// ATL's smart pointers and containers. The translated TUs use these by their C++ names, and
+// `atl.rs` documents the three invariants those call sites lean on (zeroable, transparent,
+// Drop-as-destructor).
+pub use crate::atl::{
+    CComAllocator, CComHeapPtr, CComPtr, CCRTAllocator, CHeapPtr, CLocalAllocator, CSimpleArray,
+};
+
+// shellutils.h / utils.h header inlines. The explicit `use` deliberately shadows the island
+// glob for `CCidaChildArrayHelper`: bindgen renders the C++ class as a bare layout with no
+// constructor, and the translated call sites need the real one.
+pub use crate::shellutils::{
+    hida_clipformat, CCidaChildArrayHelper, DataObject_GetData, DataObject_GetOffset,
+    DataObject_SetData, DataObject_SetOffset, DestroyCIDA, HIDA_GetPIDLFolder, HIDA_GetPIDLItem,
+    ILIsSingle, ReleaseStgMedium, SHAlloc,
+};
+
 // Accessor macros from `win32.rs`, but ONLY the ones whose signatures are type-neutral:
 // `ZeroMemory<T>`/`CopyMemory<T,U>` are generic over the pointee, and `LOWORD`/`HIWORD` take a
 // plain `DWORD`. Anything typed on `HWND`, `LPWSTR` or `LPARAM` is re-defined below against the

@@ -2020,7 +2020,7 @@ unsafe extern "C" fn shellex_load_object_and_run(
         guid as *const GUID,
         core::ptr::null_mut(),
         CLSCTX_INPROC_SERVER,
-        &IID_IShellExtInit as *const GUID,
+        core::ptr::addr_of!(IID_IShellExtInit) as *const GUID,
         &mut obj as *mut *mut IShellExtInit as *mut *mut c_void,
     );
     if FAILED_UNEXPECTEDLY!(hr) {
@@ -2037,7 +2037,7 @@ unsafe extern "C" fn shellex_load_object_and_run(
 
     hr = (*obj).Initialize(core::ptr::null_mut(), dataobj, hkey);
     if FAILED_UNEXPECTEDLY!(hr) {
-        (*dataobj).Release();
+        ((*(*dataobj).lpVtbl).Release)(dataobj);
         (*obj).Release();
         CoUninitialize();
         return hr;
@@ -2048,7 +2048,7 @@ unsafe extern "C" fn shellex_load_object_and_run(
         &mut ows as *mut *mut IObjectWithSite as *mut *mut c_void,
     );
     if FAILED_UNEXPECTEDLY!(hr) {
-        (*dataobj).Release();
+        ((*(*dataobj).lpVtbl).Release)(dataobj);
         (*obj).Release();
         CoUninitialize();
         return hr;
@@ -2059,7 +2059,7 @@ unsafe extern "C" fn shellex_load_object_and_run(
     hr = shellex_run_context_menu_default(obj, sei);
 
     (*ows).Release();
-    (*dataobj).Release();
+    ((*(*dataobj).lpVtbl).Release)(dataobj);
     (*obj).Release();
     CoUninitialize();
 
@@ -2391,9 +2391,9 @@ unsafe extern "C" fn SHELL_InvokePidl(
     }
 
     let mut pCM: *mut IContextMenu = core::ptr::null_mut();
-    let hr = (*psfFolder).GetUIObjectOf(core::ptr::null_mut(), 1, &pidlLast, IID_NULL_PPV_ARG(IContextMenu, &mut pCM));
+    let hr = ((*(*psfFolder).lpVtbl).GetUIObjectOf)(psfFolder, core::ptr::null_mut(), 1, &pidlLast, IID_NULL_PPV_ARG(IContextMenu, &mut pCM));
     if FAILED_UNEXPECTEDLY!(hr) {
-        (*psfFolder).Release();
+        ((*(*psfFolder).lpVtbl).Release)(psfFolder);
         return FALSE;
     }
 
@@ -2415,7 +2415,7 @@ unsafe extern "C" fn SHELL_InvokePidl(
         if FAILED_UNEXPECTEDLY!(hr) {
             DestroyMenu(hMenu);
             (*pCM).Release();
-            (*psfFolder).Release();
+            ((*(*psfFolder).lpVtbl).Release)(psfFolder);
             return FALSE;
         }
 
@@ -2431,7 +2431,7 @@ unsafe extern "C" fn SHELL_InvokePidl(
 
     let result = if FAILED_UNEXPECTEDLY!(hr) { 0u8 } else { 1u8 };
     (*pCM).Release();
-    (*psfFolder).Release();
+    ((*(*psfFolder).lpVtbl).Release)(psfFolder);
     result
 }
 unsafe extern "C" fn SHELL_quote_and_execute(

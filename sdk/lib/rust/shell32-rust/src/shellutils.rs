@@ -1,0 +1,259 @@
+//! The C++ header inlines from `sdk/include/reactos/shellutils.h` and `dll/win32/shell32/utils.h`.
+//!
+//! These are `static inline` / `inline` helpers that live in HEADERS, not in any `.c`/`.cpp`.
+//! A translation unit that calls them therefore never carries their bodies: rustconv translates
+//! the TU, and every one of these comes out as an unresolved name. They are shared by at least
+//! `shldataobject.cpp`, `CShellItem.cpp`, `COpenWithMenu.cpp` and `wine/pidl.c`, so they belong
+//! in one module rather than being re-derived per TU.
+//!
+//! Everything here is a line-by-line port of the header, checked against it symbol by symbol.
+//! Where the C++ used a `DECLSPEC_SELECTANY` cached CLIPFORMAT global, the Rust keeps a `static
+//! mut` cache with the same lazy-register-once semantics — including the same benign race the
+//! C++ has (two threads may both call RegisterClipboardFormatW, which returns the same atom).
+
+use core::ffi::c_void;
+
+use crate::island::{
+    GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, RegisterClipboardFormatW, BOOL,
+    CIDA, CLIPFORMAT, FORMATETC, GHND, HRESULT, LPCITEMIDLIST, LPITEMIDLIST, PCUIDLIST_ABSOLUTE,
+    PCUIDLIST_RELATIVE, POINT, SIZE_T, STGMEDIUM, UINT,
+};
+use crate::prelude::{
+    CopyMemory, ILFindLastID, SHFree, DVASPECT_CONTENT, E_OUTOFMEMORY, E_UNEXPECTED, S_OK,
+    TRUE, TYMED_HGLOBAL, TYMED_NULL,
+};
+use crate::shellcom::IDataObject;
+
+/// `STG_E_INVALIDHANDLE` — winerror.h. Not in the island's include closure.
+pub const STG_E_INVALIDHANDLE: HRESULT = 0x8003_0006u32 as HRESULT;
+
+extern "system" {
+    /// ole32. Not in the island's closure because shell32's TUs reach it through ole2.h.
+    pub fn ReleaseStgMedium(pmedium: *mut STGMEDIUM);
+    /// shell32's own COM task allocator (`wine/shellole.rs`).
+    pub fn SHAlloc(cb: SIZE_T) -> *mut c_void;
+}
+
+/// `CFSTR_SHELLIDLISTW` = "Shell IDList Array" (shlobj.h CF_IDLIST).
+const CFSTR_SHELLIDLISTW: [u16; 19] = [
+    b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'I' as u16,
+    b'D' as u16, b'L' as u16, b'i' as u16, b's' as u16, b't' as u16, b' ' as u16, b'A' as u16,
+    b'r' as u16, b'r' as u16, b'a' as u16, b'y' as u16, 0,
+];
+
+/// `CFSTR_SHELLIDLISTOFFSETW` = "Shell Object Offsets" (shlobj.h CF_OBJECTPOSITIONS).
+const CFSTR_SHELLIDLISTOFFSETW: [u16; 21] = [
+    b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'O' as u16,
+    b'b' as u16, b'j' as u16, b'e' as u16, b'c' as u16, b't' as u16, b' ' as u16, b'O' as u16,
+    b'f' as u16, b'f' as u16, b's' as u16, b'e' as u16, b't' as u16, b's' as u16, 0,
+];
+
+/// `g_cfHIDA` — shellutils.h's DECLSPEC_SELECTANY cache of the registered HIDA format.
+static mut G_CF_HIDA: CLIPFORMAT = 0;
+/// `g_cfShellIdListOffsets` — the same, for the object-offsets format.
+static mut G_CF_SHELLIDLIST_OFFSETS: CLIPFORMAT = 0;
+
+/// The lazily-registered `CFSTR_SHELLIDLISTW` clipboard format.
+///
+/// The C++ inlines this as `if (g_cfHIDA == NULL) g_cfHIDA = RegisterClipboardFormatW(...)` at
+/// each use site; the translation calls it as a helper, so it is one here.
+pub unsafe fn hida_clipformat() -> CLIPFORMAT {
+    if G_CF_HIDA == 0 {
+        G_CF_HIDA = RegisterClipboardFormatW(CFSTR_SHELLIDLISTW.as_ptr()) as CLIPFORMAT;
+    }
+    G_CF_HIDA
+}
+
+/// The lazily-registered `CFSTR_SHELLIDLISTOFFSETW` clipboard format.
+pub unsafe fn shellidlist_offsets_clipformat() -> CLIPFORMAT {
+    if G_CF_SHELLIDLIST_OFFSETS == 0 {
+        G_CF_SHELLIDLIST_OFFSETS =
+            RegisterClipboardFormatW(CFSTR_SHELLIDLISTOFFSETW.as_ptr()) as CLIPFORMAT;
+    }
+    G_CF_SHELLIDLIST_OFFSETS
+}
+
+/// `ILIsSingle` — a PIDL with exactly one item ID.
+pub unsafe fn ILIsSingle(pidl: LPCITEMIDLIST) -> BOOL {
+    (pidl == ILFindLastID(pidl)) as BOOL
+}
+
+/// `HIDA_GetPIDLFolder(pida)` — the parent folder PIDL, at `aoffset[0]`.
+pub unsafe fn HIDA_GetPIDLFolder(pida: *const CIDA) -> PCUIDLIST_ABSOLUTE {
+    base_offset(pida, 0) as PCUIDLIST_ABSOLUTE
+}
+
+/// `HIDA_GetPIDLItem(pida, i)` — child item `i`, at `aoffset[i + 1]`.
+pub unsafe fn HIDA_GetPIDLItem(pida: *const CIDA, i: SIZE_T) -> PCUIDLIST_RELATIVE {
+    base_offset(pida, i as usize + 1) as PCUIDLIST_RELATIVE
+}
+
+/// `((LPBYTE)pida) + pida->aoffset[n]`, the shape both HIDA accessors share.
+///
+/// `aoffset` is a C flexible array member and `CIDA` is `#[repr(C, packed)]`, so this must walk
+/// it through `addr_of!` + `.add(n)`. Indexing a bindgen `[UINT; 1]` with `[n]` would
+/// bounds-check-panic for every n >= 1, and `.as_ptr()` on the field would take a reference to
+/// a packed field, which is unaligned and rejected.
+unsafe fn base_offset(pida: *const CIDA, n: usize) -> *const u8 {
+    let aoffset = core::ptr::addr_of!((*pida).aoffset) as *const UINT;
+    (pida as *const u8).add(core::ptr::read_unaligned(aoffset.add(n)) as usize)
+}
+
+/// `CDataObjectHIDA::DestroyCIDA` — unlock the HGLOBAL if it was locked, then release the medium.
+pub unsafe fn DestroyCIDA(pcida: *const CIDA, medium: *mut STGMEDIUM) {
+    if !pcida.is_null() {
+        GlobalUnlock((*medium).__bindgen_anon_1.hGlobal);
+    }
+    ReleaseStgMedium(medium);
+}
+
+/// `DataObject_GetData` — read a whole clipboard-format blob out of an IDataObject.
+///
+/// Faithful to the header, including that a blob LARGER than the caller's buffer is an
+/// `E_OUTOFMEMORY` rather than a truncating copy.
+pub unsafe fn DataObject_GetData(
+    pDataObject: *mut IDataObject,
+    clipformat: CLIPFORMAT,
+    pBuffer: *mut c_void,
+    dwBufferSize: SIZE_T,
+) -> HRESULT {
+    let mut fmt = FORMATETC {
+        cfFormat: clipformat,
+        ptd: core::ptr::null_mut(),
+        dwAspect: DVASPECT_CONTENT,
+        lindex: -1,
+        tymed: TYMED_HGLOBAL,
+    };
+    let mut medium: STGMEDIUM = core::mem::zeroed();
+    medium.tymed = TYMED_NULL;
+
+    let mut hr = ((*(*pDataObject).lpVtbl).GetData)(
+        pDataObject,
+        (&mut fmt as *mut FORMATETC).cast(),
+        (&mut medium as *mut STGMEDIUM).cast(),
+    );
+    if hr >= 0 {
+        let blob = GlobalLock(medium.__bindgen_anon_1.hGlobal);
+        if !blob.is_null() {
+            let size = GlobalSize(medium.__bindgen_anon_1.hGlobal);
+            if size <= dwBufferSize {
+                CopyMemory(pBuffer, blob, size as usize);
+                hr = S_OK;
+            } else {
+                hr = E_OUTOFMEMORY;
+            }
+            GlobalUnlock(medium.__bindgen_anon_1.hGlobal);
+        } else {
+            hr = STG_E_INVALIDHANDLE;
+        }
+        ReleaseStgMedium(&mut medium);
+    }
+    hr
+}
+
+/// `DataObject_SetData` — hand a blob to an IDataObject as an HGLOBAL medium.
+pub unsafe fn DataObject_SetData(
+    pDataObject: *mut IDataObject,
+    clipformat: CLIPFORMAT,
+    pBuffer: *mut c_void,
+    dwBufferSize: SIZE_T,
+) -> HRESULT {
+    let mut medium: STGMEDIUM = core::mem::zeroed();
+    medium.tymed = TYMED_HGLOBAL;
+    medium.__bindgen_anon_1.hGlobal = GlobalAlloc(GHND, dwBufferSize);
+    if medium.__bindgen_anon_1.hGlobal.is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    let mut hr = E_UNEXPECTED;
+    let blob = GlobalLock(medium.__bindgen_anon_1.hGlobal);
+    if !blob.is_null() {
+        CopyMemory(blob, pBuffer, dwBufferSize as usize);
+        GlobalUnlock(medium.__bindgen_anon_1.hGlobal);
+
+        let mut etc = FORMATETC {
+            cfFormat: clipformat,
+            ptd: core::ptr::null_mut(),
+            dwAspect: DVASPECT_CONTENT,
+            lindex: -1,
+            tymed: TYMED_HGLOBAL,
+        };
+        hr = ((*(*pDataObject).lpVtbl).SetData)(
+            pDataObject,
+            (&mut etc as *mut FORMATETC).cast(),
+            (&mut medium as *mut STGMEDIUM).cast(),
+            TRUE,
+        );
+    }
+
+    if hr < 0 {
+        GlobalFree(medium.__bindgen_anon_1.hGlobal);
+    }
+    hr
+}
+
+/// `DataObject_GetOffset` — the CF_OBJECTPOSITIONS point, zeroed first as the header does.
+pub unsafe fn DataObject_GetOffset(pDataObject: *mut IDataObject, point: *mut POINT) -> HRESULT {
+    let cf = shellidlist_offsets_clipformat();
+    (*point).x = 0;
+    (*point).y = 0;
+    DataObject_GetData(
+        pDataObject,
+        cf,
+        point as *mut c_void,
+        core::mem::size_of::<POINT>() as SIZE_T,
+    )
+}
+
+/// `DataObject_SetOffset` — publish the CF_OBJECTPOSITIONS point.
+pub unsafe fn DataObject_SetOffset(pDataObject: *mut IDataObject, point: *mut POINT) -> HRESULT {
+    let cf = shellidlist_offsets_clipformat();
+    DataObject_SetData(
+        pDataObject,
+        cf,
+        point as *mut c_void,
+        core::mem::size_of::<POINT>() as SIZE_T,
+    )
+}
+
+/// `CCidaChildArrayHelper` (utils.h) — a SHAlloc'd array of borrowed child PIDLs.
+///
+/// The items point INTO the CIDA and share its lifetime; the C++ header says so explicitly.
+/// Only the array itself is owned, and the destructor frees only that.
+pub struct CCidaChildArrayHelper {
+    pub m_hr: HRESULT,
+    pub m_array: *mut LPITEMIDLIST,
+}
+
+impl CCidaChildArrayHelper {
+    pub unsafe fn new(pCida: *const CIDA) -> Self {
+        let cidl = (*pCida).cidl;
+        let array = SHAlloc(
+            (cidl as SIZE_T).wrapping_mul(core::mem::size_of::<LPITEMIDLIST>() as SIZE_T),
+        ) as *mut LPITEMIDLIST;
+        if array.is_null() {
+            return Self { m_hr: E_OUTOFMEMORY, m_array: core::ptr::null_mut() };
+        }
+        let mut i: UINT = 0;
+        while i < cidl {
+            *array.add(i as usize) = HIDA_GetPIDLItem(pCida, i as SIZE_T) as LPITEMIDLIST;
+            i += 1;
+        }
+        Self { m_hr: S_OK, m_array: array }
+    }
+
+    pub fn hr(&self) -> HRESULT {
+        self.m_hr
+    }
+
+    pub fn GetItems(&self) -> *mut LPITEMIDLIST {
+        self.m_array
+    }
+}
+
+impl Drop for CCidaChildArrayHelper {
+    fn drop(&mut self) {
+        unsafe { SHFree(self.m_array as *mut _) };
+        self.m_array = core::ptr::null_mut();
+    }
+}

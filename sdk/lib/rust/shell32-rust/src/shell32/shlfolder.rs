@@ -201,7 +201,7 @@ pub unsafe extern "C" fn SHELL_MapSCIDToColumn(pSF: *mut IShellFolder2, pscid: *
     let mut i = 0;
     while i <= SHCIDS_COLUMNMASK {
         let mut scid: SHCOLUMNID = core::mem::zeroed();
-        let hr = (*(*pSF).lpVtbl).MapColumnToSCID(pSF, i, &mut scid);
+        let hr = ((*(*pSF).lpVtbl).MapColumnToSCID)(pSF, i, &mut scid);
         if hr < 0 {
             break;
         }
