@@ -929,7 +929,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   | clean / ratchet-noise | 6 | `sweep=done`, 85–86 ok of 89, ~75–130s |
   | **A — memory/stack** | 1 | `BUGCHECK 0x50`, died 69/89 on `ZwWaitForMultipleObjects`, 77s |
   | **B — sweep no-launch** | 1 | desktop reached, `launched=0`, 87min, **no** `CENSUS STUCK` |
-  | **C — lost gate wakeup** | 1 | `CENSUS STUCK … GateWait … sig=0`, 79/89, 12 bad, 78min |
+  | **C — holder-stuck** | 1 | `CENSUS … verdict=HOLDER-STUCK(no signal ever)`, 79/89, 12 bad, 78min |
 
   ~33% of rounds fail, spread over **three mechanisms that are demonstrably different** (B vs C
   disproven below; A is a bugcheck while B and C never crash at all). **This reframes the flip
@@ -962,7 +962,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Fact vs inference: the operands and the raise arm are measured; "a live stack lost a page" is
   the reading of them, and the `[KSTACK]` dump added below is what turns it into a fact.
 
-  **A FOURTH face — a LOST GATE WAKEUP, and this one the kernel's own instrumentation names.**
+  **A FOURTH face — HOLDER-STUCK, and the kernel's own classifier names it.**
   Soak run 2 round 4: `launched=79 ok=66 bad=12`, **no bugcheck**, 4674s (round 3 swept the same
   media in 75s — 62× faster). The sweep degraded into repeated per-test `TIMEOUT … (180s) -
   terminating` (NtSystemDebugControl, PoIrp, …) until the drain budget ran out. The cause is on
@@ -971,13 +971,20 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
       [CENSUS] STUCK kmtest_.exe pid=816 tid=812 GateWait obj=ffff8000049044e0 parked=1 sat=0 sig=0
       [FLIGHTREC]   no events for obj=ffff8000049044e0 in the last 16384
 
-  A thread parked on a gate that was never signalled, and the flight recorder saw **no activity
-  at all** on that object — i.e. a lost wakeup, not a slow one. That is a different bug from the
-  0x50/0x1E memory face; whether it shares a root cause is unknown. Likely lineage to chase
-  first: the §9.92 wait-block family (`[WAITDEP]` ALL-ONES / the synchronous-completion path),
-  which is closed but whose owed deeper root — arm64 self-targeted special-kernel-APC delivery
-  latency — is exactly this shape. Note `obj=ffff8000049044e0` sits in the same
-  `0xffff8000_04/05` VA family as the fault addresses, which is suggestive and nothing more.
+  **Read the verdict field, not the symptom.** `census.rs` classifies `sig == 0` as
+  `HOLDER-STUCK(no signal ever)` and reserves lost-wakeup for `signals >= parked` with the
+  waiter still parked. All 97 census lines in this run say HOLDER-STUCK. `synctrace_signal()` is
+  called at the TOP of `KeSignalGateBoostPriorityImpl`, before any lock, so it counts every
+  signal *intent* — `sig=0` therefore means **nobody ever called the signal**, not that a signal
+  was dropped. (An earlier revision of this entry called it a lost wakeup; that was the author
+  overwriting the instrumentation's own conclusion with a guess, and it points the investigation
+  in the opposite direction.)
+  So the gate primitives are NOT implicated: look at whatever owns that gate and was supposed to
+  complete. The `KeWaitForGate` / `KeSignalGateBoostPriority` pair in `ke/gate.rs` was read and
+  both sides take the dispatcher-object lock, re-check `SignalState`, and pop under the thread
+  lock — no window found. Only ONE thread is stuck, so the would-be signaller is not itself in
+  GateWait. Note `obj=ffff8000049044e0` sits in the same `0xffff8000_04/05` VA family as the
+  fault addresses, which is suggestive and nothing more.
 
   **B is NOT C — tested, not assumed.** The obvious unifying story ("the launcher itself parked
   on a gate, hence `launched=0`") is **wrong**: the no-launch round has **zero** `CENSUS STUCK`
