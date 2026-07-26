@@ -253,7 +253,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
                 let bits: *mut c_void = HeapAlloc(
                     GetProcessHeap(),
                     0,
-                    (TargetBitmapInfo.bmHeight * TargetBitmapInfo.bmWidthBytes) as usize,
+                    (TargetBitmapInfo.bmHeight * TargetBitmapInfo.bmWidthBytes) as SIZE_T,
                 );
                 if bits.is_null() {
                     break 'fail;
@@ -290,7 +290,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             let bits: *mut c_void = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (ShortcutBitmapInfo.bmHeight * ShortcutBitmapInfo.bmWidthBytes) as usize,
+                (ShortcutBitmapInfo.bmHeight * ShortcutBitmapInfo.bmWidthBytes) as SIZE_T,
             );
             if bits.is_null() {
                 break 'fail;
@@ -409,7 +409,7 @@ unsafe extern "C" fn SIC_IconAppend(
     let mut indexDPA: i32;
     let mut path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
-    lpsice = SHAlloc(core::mem::size_of::<SIC_ENTRY>()) as *mut SIC_ENTRY;
+    lpsice = SHAlloc(core::mem::size_of::<SIC_ENTRY>() as SIZE_T) as *mut SIC_ENTRY;
 
     GetFullPathNameW(
         sSourceFile,
@@ -420,7 +420,7 @@ unsafe extern "C" fn SIC_IconAppend(
     (*lpsice).sSourceFile = HeapAlloc(
         GetProcessHeap(),
         0,
-        (wcslen(path.as_ptr()) + 1) * core::mem::size_of::<u16>(),
+        ((wcslen(path.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as *mut u16;
     wcscpy((*lpsice).sSourceFile, path.as_ptr());
 
@@ -894,7 +894,7 @@ pub unsafe extern "system" fn Shell_GetCachedImageIndexA(
     let szTemp = HeapAlloc(
         GetProcessHeap(),
         0,
-        (len as usize) * core::mem::size_of::<u16>(),
+        ((len as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
     MultiByteToWideChar(
         CP_ACP,
@@ -979,7 +979,7 @@ pub unsafe extern "system" fn ExtractIconExA(
     let lpwstrFile = HeapAlloc(
         GetProcessHeap(),
         0,
-        (len as usize) * core::mem::size_of::<u16>(),
+        ((len as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as *mut u16;
     if !lpwstrFile.is_null() {
         MultiByteToWideChar(
@@ -1029,7 +1029,7 @@ pub unsafe extern "system" fn ExtractAssociatedIconA(
     let lpIconPathW: LPWSTR = HeapAlloc(
         GetProcessHeap(),
         0,
-        (MAX_PATH as usize) * core::mem::size_of::<u16>(),
+        ((MAX_PATH as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
 
     if !lpIconPathW.is_null() {
@@ -1126,7 +1126,7 @@ pub unsafe extern "system" fn ExtractAssociatedIconExA(
     let lpwstrFile: LPWSTR = HeapAlloc(
         GetProcessHeap(),
         0,
-        (len as usize).wrapping_mul(core::mem::size_of::<u16>()),
+        ((len as usize).wrapping_mul(core::mem::size_of::<u16>())) as SIZE_T,
     ) as LPWSTR;
     MultiByteToWideChar(
         CP_ACP,
@@ -1211,7 +1211,7 @@ pub unsafe extern "system" fn SHDefExtractIconA(
     let lpwstrFile = HeapAlloc(
         GetProcessHeap(),
         0,
-        (len * core::mem::size_of::<u16>() as i32) as usize,
+        (len * core::mem::size_of::<u16>() as i32) as SIZE_T,
     ) as *mut u16;
     MultiByteToWideChar(
         CP_ACP,

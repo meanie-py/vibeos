@@ -176,7 +176,7 @@ HRESULT
 SHELL32_ShowPropertiesDialog(IDataObject *pdtobj);
 HRESULT
 SHELL32_ShowFilesystemItemPropertiesDialogAsync(IDataObject *pDO);
-HRESULT
+EXTERN_C HRESULT
 SHELL32_ShowFilesystemItemsPropertiesDialogAsync(HWND hOwner, IDataObject *pDO);
 HRESULT
 SHELL32_ShowShellExtensionProperties(const CLSID *pClsid, IDataObject *pDO);
@@ -309,7 +309,7 @@ BindCtx_RegisterObjectParam(
     _Out_ LPBC *ppbc);
 
 BOOL PathIsDotOrDotDotW(_In_ LPCWSTR pszPath);
-BOOL PathIsValidElement(_In_ LPCWSTR pszPath);
+EXTERN_C BOOL PathIsValidElement(_In_ LPCWSTR pszPath);
 BOOL PathIsDosDevice(_In_ LPCWSTR pszName);
 HRESULT SHELL32_GetDllFromRundll32CommandLine(LPCWSTR pszCmd, LPWSTR pszOut, SIZE_T cchMax);
 HRESULT SHILAppend(_Inout_ LPITEMIDLIST pidl, _Inout_ LPITEMIDLIST *ppidl);

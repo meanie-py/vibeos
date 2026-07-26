@@ -21,18 +21,34 @@ pub mod shldataobject;
 // header inlines, so what is left per file is ordinary integration work rather than a missing
 // foundation. Counts measured with all six wired, after the substrate landed:
 //
-//     shlexec.rs   349     shlfileop.rs  227     iconcache.rs   68
-//     brfolder.rs  244     shlfolder.rs   70     shldataobject   0  <- flipped
+//     shlexec.rs   349     shlfileop.rs  227     iconcache.rs   59
+//     brfolder.rs  244     shlfolder.rs    0     shldataobject   0  <- flipped
 //
 // Read those against the pre-substrate numbers (shldataobject 22, iconcache 68, shlfolder 75,
 // shlfileop 227, brfolder 235, shlexec 415) and note that brfolder went UP, 235 -> 244: making
 // the ATL types resolve does not only remove errors, it also un-masks the ones that were hiding
 // behind an unresolved name. A rising count on a file is progress, not regression.
 //
+// SHLFOLDER COMPILES CLEAN on all three arches and is still parked, which is a DIFFERENT
+// blocker from the rest — read this before trying to flip it. `shlfolder.cpp` exports two
+// OVERLOADS of `SHELL32_CoCreateInitSF` (a 7-parameter and a 5-parameter form; see
+// `llvm-nm --defined-only` on the .obj), and several of its exports take C++ `const GUID&`
+// reference parameters. `EXTERN_C` cannot express an overload SET — one name, one symbol — and
+// the translation produced a single `SHELL32_CoCreateInitSF`, so the other overload's callers
+// would lose their definition. Meanwhile the Rust module's `#[no_mangle]` exports (SHCreateLinks,
+// SHELL32_CompareDetails, every `*_RustBridge`) collide with the .cpp's identical unmangled
+// symbols, so it cannot be left wired while the .cpp compiles either. The resolution is a HYBRID
+// cohab — retain the overload pair (and the reference-taking helpers) in C++, flip the rest —
+// which is a deliberate split, not a mechanical edit, and is owed rather than done.
+//
 // What each still needs, in cheapest-first order:
 //
-//   * iconcache / shlfolder (~70 each) — cast and signature integration, no new substrate.
-//   * brfolder (244) — the same, at volume, plus TreeView_* macro residue for the prelude.
+//   * iconcache (59) — cast and signature integration plus a handful of one-offs: a function-
+//     local `static int s_imgListIdx` the translation dropped, the nested-anon-union
+//     `RTL_CRITICAL_SECTION_DEBUG` initialiser, `IID_NULL_PPV_ARG` (a macro that expands to
+//     THREE arguments, so its call sites have to be rewritten rather than macro-ised), and
+//     `MAKEROP4`/`ImageList_AddIcon` for the prelude.
+//   * brfolder (244) — cast/signature integration at volume, plus TreeView_* macro residue.
 //   * shlfileop / shlexec (227 / 349) — both additionally want `CStringW`, which `atl.rs`
 //     deliberately does NOT yet provide. Its measured surface is new()/Left/GetLength/IsEmpty/
 //     SetString/GetBuffer/ReleaseBuffer/as_ptr/`+=` plus 14 `Format` calls. `Format` is

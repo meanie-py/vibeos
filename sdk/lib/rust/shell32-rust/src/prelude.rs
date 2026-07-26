@@ -62,7 +62,8 @@ pub use crate::island::*;
 // 40 landed COM modules already use.
 pub use crate::shellcom::{
     IBindCtx, IBindCtxVtbl, IDataObject, IDataObjectVtbl, IEnumIDList, IEnumIDListVtbl,
-    IShellFolder, IShellFolder2, IShellFolder2Vtbl, IShellFolderVtbl, IUnknown, IUnknownVtbl,
+    IPersistFolder, IPersistFolder3, IPersistFolder3Vtbl, IPersistFolderVtbl, IShellFolder,
+    IShellFolder2, IShellFolder2Vtbl, IShellFolderVtbl, IUnknown, IUnknownVtbl,
 };
 
 // ATL's smart pointers and containers. The translated TUs use these by their C++ names, and
@@ -88,7 +89,7 @@ pub use crate::shellutils::{
 // would re-open exactly the nominal split the module header warns about.
 pub use crate::win32::{CopyMemory, HIWORD, LOWORD, ZeroMemory};
 // Crate-root `#[macro_export]` macros — text substitution, so no types to split on.
-pub use crate::{FIELD_OFFSET, TRACE_ON, UNREFERENCED_PARAMETER, _countof};
+pub use crate::{FIELD_OFFSET, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR, V_VT, _countof};
 
 // shell32-internal helpers that already have a Rust home. These are shell32's own EXPORTS —
 // the island correctly omits them, because `BLOCKLIST_FUNCS_FROM_CRATE` drops every function
@@ -544,6 +545,202 @@ extern "system" {
     ) -> crate::island::BOOL;
     /// shlobj.h `void WINAPI SHFree(LPVOID)` — implemented in `wine/shellole.rs`.
     pub fn SHFree(pv: crate::island::LPVOID);
+    /// pidl.h — first-item clone, `#[no_mangle] extern "system"` in `wine/pidl.rs`.
+    pub fn ILCloneFirst(pidl: crate::island::LPCITEMIDLIST) -> crate::island::LPITEMIDLIST;
+}
+
+// The shell32-private `_IL*` family. Same reasoning as the block above — these ARE defined in
+// this crate (`wine/pidl.rs`), but against `crate::types` aliases, so they are declared rather
+// than imported. They are `extern "C"` (cdecl) there, not `extern "system"`; declaring the
+// wrong one links to a differently-decorated symbol on i386 and fails loudly.
+extern "C" {
+    pub fn _ILIsDesktop(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
+    pub fn _ILIsPidlSimple(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
+    pub fn _ILIsValue(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
+    pub fn _ILIsFolder(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
+    pub fn _ILIsDrive(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL;
+    pub fn _ILGetDepth(pidl: crate::island::LPCITEMIDLIST) -> crate::island::UINT;
+    pub fn _ILGetFileStructW(
+        pidl: crate::island::LPCITEMIDLIST,
+    ) -> *mut crate::island::FileStructW;
+    pub fn _ILSimpleGetTextW(
+        pidl: crate::island::LPCITEMIDLIST,
+        szOut: crate::island::LPWSTR,
+        uOutSize: crate::island::UINT,
+    ) -> crate::island::DWORD;
+    pub fn _ILCopyCidaToaPidl(
+        pidl: *mut crate::island::LPITEMIDLIST,
+        cida: *const crate::island::CIDA,
+    ) -> *mut crate::island::LPITEMIDLIST;
+}
+
+/// `shfldr.h` — combine and report allocation failure as an HRESULT. A C++ header inline, so it
+/// is in no translation unit and no translated TU carries it.
+#[inline]
+pub unsafe fn SHILCombine(
+    base: crate::island::LPCITEMIDLIST,
+    sub: crate::island::LPCITEMIDLIST,
+    ppOut: *mut crate::island::LPITEMIDLIST,
+) -> crate::island::HRESULT {
+    *ppOut = ILCombine(base, sub);
+    if (*ppOut).is_null() {
+        E_OUTOFMEMORY
+    } else {
+        S_OK
+    }
+}
+
+/// `pidl.h` — an empty PIDL and the desktop PIDL are the same thing (a bare terminator).
+#[inline]
+pub unsafe fn _ILIsEmpty(pidl: crate::island::LPCITEMIDLIST) -> crate::island::BOOL {
+    _ILIsDesktop(pidl)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Residue for the `shell32/` free-function TUs. Split by WHERE the definition lives, because
+// that decides whether a name can be declared or has to be written.
+// ---------------------------------------------------------------------------------------------
+
+extern "system" {
+    /// shlwapi/ole32/shell32 imports the island's include closure did not reach.
+    pub fn SHCoCreateInstance(
+        aclsid: crate::island::LPCWSTR,
+        clsid: *const com_sys::IID,
+        pUnkOuter: *mut crate::shellcom::IUnknown,
+        riid: REFIID,
+        ppv: *mut *mut ::core::ffi::c_void,
+    ) -> crate::island::HRESULT;
+    pub fn VariantChangeType(
+        dst: *mut crate::island::VARIANT,
+        src: *const crate::island::VARIANT,
+        flags: crate::island::USHORT,
+        vt: crate::island::VARTYPE,
+    ) -> crate::island::HRESULT;
+    pub fn ShellExecuteExW(info: *mut crate::island::SHELLEXECUTEINFOW) -> crate::island::BOOL;
+    /// shell32's own, implemented in `wine/pidl.rs`.
+    pub fn SHGetIDListFromObject(
+        punk: *mut crate::shellcom::IUnknown,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+    ) -> crate::island::HRESULT;
+    /// win32.rs helpers, declared here for the same crate::types-vs-island reason as ILFree.
+    pub fn SHELL_CreateSHDESCRIPTIONID(
+        pVar: *mut crate::island::VARIANT,
+        Id: crate::island::DWORD,
+        pCLSID: *const crate::island::GUID,
+    ) -> crate::island::HRESULT;
+    pub fn SHELL_CreateVariantBuffer(
+        pVar: *mut crate::island::VARIANT,
+        cb: crate::island::UINT,
+    ) -> crate::island::HRESULT;
+}
+
+extern "C" {
+    /// utils.cpp / propsheet-side C++, reachable only because precomp.h marks them EXTERN_C.
+    pub fn PathIsValidElement(pszPath: crate::island::LPCWSTR) -> crate::island::BOOL;
+    pub fn SHELL32_ShowFilesystemItemsPropertiesDialogAsync(
+        hOwner: crate::island::HWND,
+        pDO: *mut crate::shellcom::IDataObject,
+    ) -> crate::island::HRESULT;
+    /// `CFSFolder::CompareUiStrings` is a C++ STATIC MEMBER, so it has no callable name from
+    /// Rust; CFSFolder.cpp exports this extern "C" bridge for exactly that reason, and
+    /// `recycle_bin.rs` already goes through it.
+    pub fn CFSFolder_CompareUiStrings_RustBridge(
+        a: crate::island::LPCWSTR,
+        b: crate::island::LPCWSTR,
+        lParam: crate::island::LPARAM,
+    ) -> ::core::ffi::c_int;
+}
+
+/// shtypes.idl — STRRET carries an ANSI string inline in `cStr`.
+pub const STRRET_CSTR: crate::island::UINT = 2;
+/// shlobj.h — the parsing-name form of a display name.
+pub const SHGDN_FORPARSING: crate::island::DWORD = 0x8000;
+/// FMTID_SummaryInformation {F29F85E0-4FF9-1068-AB91-08002B27B3D9}.
+pub static FMTID_SummaryInformation: crate::island::GUID = crate::island::GUID {
+    Data1: 0xF29F_85E0,
+    Data2: 0x4FF9,
+    Data3: 0x1068,
+    Data4: [0xAB, 0x91, 0x08, 0x00, 0x2B, 0x27, 0xB3, 0xD9],
+};
+
+/// `strsafe.h` `StringCchCopyW` — an INLINE, so no symbol exists to import and it has to be
+/// written. Truncates and returns STRSAFE_E_INSUFFICIENT_BUFFER rather than overrunning.
+pub unsafe fn StringCchCopyW(
+    dst: crate::island::LPWSTR,
+    cchDest: usize,
+    src: crate::island::LPCWSTR,
+) -> crate::island::HRESULT {
+    StringCchCopyNW(dst, cchDest, src, usize::MAX)
+}
+
+/// `strsafe.h` `StringCchCopyNW` — copy at most `cchToCopy` chars, always NUL-terminating.
+pub unsafe fn StringCchCopyNW(
+    dst: crate::island::LPWSTR,
+    cchDest: usize,
+    src: crate::island::LPCWSTR,
+    cchToCopy: usize,
+) -> crate::island::HRESULT {
+    const STRSAFE_E_INVALID_PARAMETER: crate::island::HRESULT = 0x8007_0057u32 as _;
+    const STRSAFE_E_INSUFFICIENT_BUFFER: crate::island::HRESULT = 0x8007_007Au32 as _;
+    if dst.is_null() || cchDest == 0 {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    let mut i = 0usize;
+    if !src.is_null() {
+        while i < cchToCopy && i + 1 < cchDest && *src.add(i) != 0 {
+            *dst.add(i) = *src.add(i);
+            i += 1;
+        }
+    }
+    *dst.add(i) = 0;
+    // Truncated only if the source still had characters we were asked to copy.
+    if !src.is_null() && i < cchToCopy && *src.add(i) != 0 {
+        return STRSAFE_E_INSUFFICIENT_BUFFER;
+    }
+    S_OK
+}
+
+/// oaidl.h `V_VT(pvar)` — the discriminant of a VARIANT.
+#[macro_export]
+macro_rules! V_VT {
+    ($v:expr) => {
+        (*($v)).n1.n2.vt
+    };
+}
+
+/// oaidl.h `V_BSTR(pvar)`.
+#[macro_export]
+macro_rules! V_BSTR {
+    ($v:expr) => {
+        (*($v)).n1.n2.n3.bstrVal
+    };
+}
+
+/// shobjidl.h `IsEqualPropertyKey(a, b)` — same FMTID and same PID.
+#[inline]
+pub unsafe fn IsEqualPropertyKey(
+    a: *const crate::island::SHCOLUMNID,
+    b: *const crate::island::SHCOLUMNID,
+) -> bool {
+    // By POINTER, not by value: SHCOLUMNID is packed, so a field reference is unaligned, and
+    // the call sites hold it behind a raw pointer they cannot move out of.
+    core::ptr::read_unaligned(core::ptr::addr_of!((*a).pid))
+        == core::ptr::read_unaligned(core::ptr::addr_of!((*b).pid))
+        && IsEqualGUID(core::ptr::addr_of!((*a).fmtid), core::ptr::addr_of!((*b).fmtid))
+}
+
+/// guiddef.h `IsEqualGUID` — bindgen does not derive PartialEq for `_GUID`, and a byte compare
+/// is what the C macro does anyway.
+///
+/// Generic over the pointee on purpose. `ntdll-sys` and `com-sys` each emit their OWN `_GUID`,
+/// and rustc says so directly: "have similar names, but are actually distinct types". Pinning
+/// this to either one makes every call from the other side fail, and casting at each call site
+/// would just spread the choice around. A GUID is 16 bytes in every spelling, so compare bytes.
+#[inline]
+pub unsafe fn IsEqualGUID<A, B>(a: *const A, b: *const B) -> bool {
+    const GUID_BYTES: usize = 16;
+    core::slice::from_raw_parts(a as *const u8, GUID_BYTES)
+        == core::slice::from_raw_parts(b as *const u8, GUID_BYTES)
 }
 
 // ---------------------------------------------------------------------------------------------

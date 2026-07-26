@@ -440,7 +440,13 @@ pub struct IShellFolder2Vtbl {
     pub Release: unsafe extern "system" fn(*mut IShellFolder2) -> ULONG,
     pub ParseDisplayName: usize,
     pub EnumObjects: usize,
-    pub BindToObject: usize,
+    pub BindToObject: unsafe extern "system" fn(
+        *mut IShellFolder2,
+        LPCITEMIDLIST,
+        *mut IBindCtx,
+        REFIID,
+        *mut *mut c_void,
+    ) -> HRESULT,
     pub BindToStorage: usize,
     pub CompareIDs: usize,
     pub CreateViewObject: usize,
@@ -451,15 +457,22 @@ pub struct IShellFolder2Vtbl {
     pub GetDefaultSearchGUID: usize,
     pub EnumSearches: usize,
     pub GetDefaultColumn: usize,
-    pub GetDefaultColumnState: usize,
+    pub GetDefaultColumnState:
+        unsafe extern "system" fn(*mut IShellFolder2, UINT, *mut SHCOLSTATEF) -> HRESULT,
     pub GetDetailsEx: unsafe extern "system" fn(
         *mut IShellFolder2,
         LPCITEMIDLIST,
         *const SHCOLUMNID,
         *mut VARIANT,
     ) -> HRESULT,
-    pub GetDetailsOf: usize,
-    pub MapColumnToSCID: usize,
+    pub GetDetailsOf: unsafe extern "system" fn(
+        *mut IShellFolder2,
+        LPCITEMIDLIST,
+        UINT,
+        *mut SHELLDETAILS,
+    ) -> HRESULT,
+    pub MapColumnToSCID:
+        unsafe extern "system" fn(*mut IShellFolder2, UINT, *mut SHCOLUMNID) -> HRESULT,
 }
 
 #[repr(C)]
@@ -569,6 +582,52 @@ pub struct IPersistFolder2Vtbl {
     pub GetClassID: usize,
     pub Initialize: usize,
     pub GetCurFolder: unsafe extern "system" fn(*mut IPersistFolder2, *mut LPITEMIDLIST) -> HRESULT,
+}
+
+/// PERSIST_FOLDER_TARGET_INFO (shlobj.h) — crosses this ABI only by pointer, so an opaque
+/// pointee is exact here. Promote its fields before any body dereferences it.
+#[repr(C)]
+pub struct PERSIST_FOLDER_TARGET_INFO {
+    _opaque: [u8; 0],
+}
+
+// IPersistFolder / IPersistFolder3 in the `lpVtbl` shape. The island has bindgen's rendering of
+// both, but that one puts `Option<fn>` in every slot; keeping the crate on ONE vtable shape is
+// what lets a translated `p->Initialize(..)` become a plain dispatch instead of an `.unwrap()`.
+// Slot order is the inheritance chain: IUnknown, then IPersist::GetClassID, then each
+// derivation's own methods in declaration order.
+#[repr(C)]
+pub struct IPersistFolder {
+    pub lpVtbl: *mut IPersistFolderVtbl,
+}
+#[repr(C)]
+pub struct IPersistFolderVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IPersistFolder) -> ULONG,
+    pub GetClassID: usize,
+    pub Initialize: unsafe extern "system" fn(*mut IPersistFolder, LPCITEMIDLIST) -> HRESULT,
+}
+
+#[repr(C)]
+pub struct IPersistFolder3 {
+    pub lpVtbl: *mut IPersistFolder3Vtbl,
+}
+#[repr(C)]
+pub struct IPersistFolder3Vtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IPersistFolder3) -> ULONG,
+    pub GetClassID: usize,
+    pub Initialize: usize,
+    pub GetCurFolder: usize,
+    pub InitializeEx: unsafe extern "system" fn(
+        *mut IPersistFolder3,
+        *mut IBindCtx,
+        LPCITEMIDLIST,
+        *const PERSIST_FOLDER_TARGET_INFO,
+    ) -> HRESULT,
+    pub GetFolderTargetInfo: usize,
 }
 
 #[repr(C)]
