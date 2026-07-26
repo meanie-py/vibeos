@@ -616,6 +616,42 @@ Three faces, all seen live:
   cross-file ABI disagreement was systemic; the fix was a deterministic ABI overwrite pass, not
   per-site repair. **A redundant `*-sys` crate that re-bindgens types the parent master header
   already pulls** produces mass E0659 ambiguity.
+- **A crate with NO island is invisible to `verify_ffi`.** Its oracle is `ntoskrnl.spec` *and*
+  `bindgen_<arch>.rs`; with no island there is nothing to compare against, so every hand-written
+  extern block passes unchecked and the gate stays green. shell32-rust carried ~2.7K lines of
+  hand-written substrate for this reason and appears in NONE of the 40 crates the
+  clashing-extern passes converged — four real ABI disagreements survived in it until a semantic
+  declaration comparison went looking. "The lint is green" means nothing if the crate is not in
+  the lint's input set; check that before trusting it.
+
+### Adopting an island in a crate that already has hand-written substrate
+Measure first, and expect most of the hand-written surface to be redundant: on shell32,
+**73 of 90** items in `types.rs` and **117 of 156** in `shellcom.rs` were already provided by the
+island or `ntdll-sys` — including a `LARGE_INTEGER` hand-written as `{ QuadPart: i64 }` (a
+cartoon of a union) and the PIDL on-disk layouts, where a wrong offset corrupts data on disk.
+Compare every hand-written name against the island *and* the sibling `-sys` crates before
+deleting; the ones that survive are the ones bindgen structurally cannot emit — pointer-valued
+macros (`NULL`, `INVALID_HANDLE_VALUE`, `HKEY_CLASSES_ROOT`), cast-expression constants
+(`((HRESULT)0x80004005L)`), and function-like macros. Keep those in `<stem>_extra.rs`, which
+`gen_driver_types.sh` re-exports through the generated dispatch so regeneration cannot eat them.
+
+Two traps specific to this move:
+- **The island owns DATA LAYOUTS; com-sys / your vtable module owns COM ABI.** bindgen renders
+  COM interfaces from a C++ header as classes, while the translation calls through the C
+  `lpVtbl` idiom — let the island emit them and every call becomes `E0609: no field lpVtbl`
+  (~73 on shell32). Blocklist the interfaces with `EXTRA_BL_ITEMS` *and* re-export them with
+  `EXTRA_RAW_LINES`: blocklisting removes the definition, not the references, so without the
+  re-export the island fails E0412 on its own output.
+- **A `-x c++` cell emits broken aliases for class-template member typedefs** — bindgen
+  flattens them to non-generic aliases over unbound parameters (`pub type
+  ATL_CComEnum__CComEnumBase = u8<Base, T, Copy>;`). Blocklist by the **C++ qualified name**,
+  not bindgen's flattened Rust spelling. Do not "fix" this by dropping every alias carrying a
+  `<`: on shell32 that rule would have deleted 82 legitimate `Option<fn-ptr>` callbacks.
+
+Also: `profile_derive` mirrors each TU's include prologue verbatim, so a **quoted** include
+copied from a TU in a subdirectory (`#include "CFSFolder.h"` in `folders/CDesktopFolder.cpp`)
+breaks — a quoted include resolves against the *including file's* directory and the generated
+wrapper lives in `/tmp`. Use the path-qualified spelling the module's own `precomp.h` uses.
 
 ### Cross-DLL and shared-section layout
 Cross-DLL reads returning garbage *past* the writer's own init, with a hang ~7 DLLs later in an
@@ -1446,6 +1482,17 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **A branch reached by NO row is a case that cannot fail, and rows are cheap enough that you
+  will believe you covered it.** msvcrt's `_s` printf shells take their truncation branch only
+  when `ret < 0 || ret == len`, and their ERANGE arm inside it only when `count > sizeOfBuffer`.
+  A 33-row corpus varying the *format* and the *count* — but leaving the buffer generously
+  sized in every row — never entered the branch at all, so the arm that fires the
+  invalid-parameter handler, sets `errno`, and **zeroes the caller's whole buffer** was graded
+  by nothing. Halving its `memset` as a negative control moved zero rows; adding nine rows with
+  a small buffer made the same control fail eight. **The variable that unlocks a branch is not
+  always the one the function is named after** — here it was the buffer size, not the count or
+  the format. Perturb each arm and count the rows that move; an arm no row can reach is the
+  vacuous pass, and green stops anyone looking again.
 - **A hand-typed CONSTANT in the refstub is an oracle that grades against a value Windows never
   returns.** rtl-difftest's `refstub/rtl.h` carried
   `#define STATUS_UNMAPPABLE_CHARACTER 0x80000016` — the real value is `0xC0000162`, the same
@@ -1476,6 +1523,30 @@ reach the host libc explicitly (`dlopen("libc.so.6")` + `dlsym`, resolved once a
 by name. Do not "fix" it by listing today's collisions: that shadow set grows with every file
 you translate, so an enumeration has an expiry date and the next collision presents as a
 mysterious hang, not a link error.
+
+**A name the reference TU never DEFINES is quietly supplied by the host libc.** Renaming covers
+what a TU *defines*; it says nothing about what it *calls*. msvcrt's `wcs.c` calls plain
+`vsnprintf` from five entry points (`vsprintf`, `vsprintf_s`, `sprintf`, `sprintf_s`,
+`_snprintf`) and, at `_MSVCR_VER=0`, never defines it — the real build closes that with
+`stdio.h`'s `#define vsnprintf _vsnprintf`, but the harness's prelude had no such line, so the
+name was in no rename list, left the object undefined, and the linker satisfied it from
+**glibc**. Five reference entry points were grading the host libc while claiming to be msvcrt:
+no `%I64` conversions, `(nil)` for `%p`, two-digit exponents. **Check `nm --undefined-only` on
+every reference object for names your subject also implements** — an undefined symbol in a
+reference TU is a silent host-binding, not a link error. Then keep a canary row in the format
+the two disagree about (`%I64d`, which glibc prints literally) so a regression fails a row
+instead of moving the oracle.
+
+**But fixing it TU-by-TU, not globally: the same redirect can be right in one instantiation and
+fatal in another.** msvcrt-difftest compiles `wcs.c` twice — once under the host's SysV va_list
+(`ref_*`) and once under a flat `char*` `<stdarg.h>` (`pfflat_*`, which is the Windows model).
+`_vsnprintf` forwards `&valist` as a `va_list*`, coherent only where a va_list IS a plain
+pointer: correct for `pfflat_`, and an immediate fault for `ref_`, where `*valist` reinterprets
+the decayed pointer as the register-save-area tag struct. So the redirect belongs in the pfflat
+prelude only — applied to both, it SIGSEGVs somewhere unrelated to printf, because
+`ref_create_mbcinfo` formats its codepage with `sprintf(buf, ".%d", cp)` and every mbcs case
+dies in the fixture. glibc's `vsnprintf` stays the `ref_` TU's formatter deliberately, and
+`".%d"` is a format both agree on exactly.
 
 **The host compiler also REWRITES the reference, which matters for a PERF oracle.** Same rule —
 trust the machine code — with a different consequence. msvcrt's `memset` is a plain loop in
@@ -1609,6 +1680,27 @@ flag). **Validate the harness by BREAKING the scanner** — restoring a pre-fix 
 the harness fail. Two instances of the very class turned up while building it: the harness
 itself was a liar on its first run (the positive assertion accepted *any* non-empty output), and
 two scanners take FILES, not directories, so handed a directory they silently found nothing.
+
+**A shared regex is an API between lanes, and positional groups are how it breaks.** Mainline
+correctly taught `scan_cc_mismatch` to pair decls and defs on the *linker symbol*
+(`#[link_name]` / `#[export_name]`) instead of the Rust identifier, which added one capture
+group to each of two patterns. Every read in the *scanner* was updated; the `--fix` writer,
+added by a different lane, read the same patterns positionally and was not. Two silent failures
+fell out at once: `cfg, cc, name = m.groups()` started raising `ValueError`, and `d.group(1)`
+became the new `link_name` group — `None` for an ordinary decl — so the fixer classified every
+declaration as unnamed, relocated nothing, and exited reporting success. Fix the class, not the
+call sites: **name every group and read only by name**, so an added group cannot renumber a
+consumer you did not know existed.
+
+**A feature whose pattern does not match the tree's actual spelling is dead on arrival**, and
+it is invisible precisely because it reads as implemented. That same `#[link_name]` support
+allowed only whitespace between the attribute and `fn` — but every `#[link_name]` in this tree
+is spelled `#[link_name = "_wcsicmp"] pub fn wcsicmp(…)` (`rtl-actctx/src/shim.rs`,
+`ps-rust/src/kill.rs`). The `link` group was therefore always `None` and the pairing silently
+degraded to the identifier behaviour it was written to replace, tree-wide, with no finding
+count change to notice. When adding a pattern for a shape, grep the tree for that shape and
+assert the pattern matches what you find — a control fixture you wrote yourself only proves the
+regex matches *your idea* of the spelling.
 
 ### "Canonicalising" a mismatch can silence it by editing the EVIDENCE
 A lint that reports `X disagrees with Y` has no opinion about which side is wrong, so a

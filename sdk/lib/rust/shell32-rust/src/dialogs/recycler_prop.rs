@@ -17,6 +17,22 @@ use crate::types::*;
 use crate::win32::*;
 
 // ---- file-scope preamble (translated) ----
+
+/// `enum { WM_NEWDRIVESELECTED = WM_APP, WM_UPDATEDRIVESETTINGS };` — a FUNCTION-LOCAL enum in
+/// recycler_prop.cpp:282, dropped by the translation (it survives only as a comment further
+/// down) and hoisted to module scope here.
+///
+/// Restoring it is not cosmetic. Both names are `case` labels, and in Rust an unresolved
+/// identifier in PATTERN position is not an error — it is a fresh irrefutable BINDING that
+/// matches EVERY message, collapsing the whole dialog proc into its first arm (field manual
+/// §9.112, the class that shipped a BUGCHECK 0x1E). `rustconv.profile_derive`'s switch-constant
+/// audit reports these as SWITCH_CONST_UNOWNED because no header owns them — a TU-local enum
+/// cannot come from the island, so a module-scope const is the correct home. Same treatment as
+/// `WM_UPDATEDIRSTATS` in dialogs/filedefext.rs, whose C enum is identical in shape.
+pub const WM_APP: DWORD = 32768; // winuser.h:1924 `#define WM_APP 32768`
+pub const WM_NEWDRIVESELECTED: DWORD = WM_APP;
+pub const WM_UPDATEDRIVESETTINGS: DWORD = WM_APP + 1;
+
 #[repr(C)]
 pub struct DRIVE_ITEM_CONTEXT {
     pub FreeBytesAvailable: _ULARGE_INTEGER,
