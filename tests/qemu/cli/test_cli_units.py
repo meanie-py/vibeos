@@ -4425,6 +4425,36 @@ def test_smoke_stage_with_a_real_verdict_is_untouched(tmp_path, monkeypatch):
 # --- an optional ninja pass can invalidate the main pass's output -----------
 
 
+def test_tooling_and_difftest_keep_their_console_and_never_report_a_bare_exit(
+    tmp_path, monkeypatch
+):
+    """A gate stage that can turn the whole train red must leave something to
+    read. TOOLING_FAIL did not: its dir held only artifacts the pytest suites
+    happened to drop there, the gate's full.log never sees the subprocess, and
+    the salient is scraped by a marker search that misses whenever the tool does
+    not print the marker — ruff and pyright do not, and a traceback goes to
+    stderr. The train sat red with a bare 'exit 1' and nowhere to look."""
+
+    class _Proc:
+        returncode = 1
+        stdout = "ruff: 3 errors\nsomething went wrong\n"
+        stderr = "Traceback (most recent call last):\nAssertionError: boom\n"
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+
+    for fn, logname in (
+        (gate_mod._tooling_once, "check-tooling-console.log"),
+        (gate_mod._difftest_once, "difftest-console.log"),
+    ):
+        root = tmp_path / logname
+        r = fn(tmp_path, root)
+        assert r["ok"] is False and r["exit"] == 1
+        kept = (root / logname).read_text()
+        assert "ruff: 3 errors" in kept and "AssertionError: boom" in kept
+        # no marker in stdout -> the salient falls back to the child's last words
+        assert "exit 1" in r["salient"] and "AssertionError: boom" in r["salient"]
+
+
 def test_summary_records_which_worktree_the_run_belongs_to(tmp_path):
     """VIBEOS_ARTIFACT_ROOT defaults to /tmp/vibeos-cli for EVERY worktree, so
     every lane's run dirs interleave in one directory and picking "the newest

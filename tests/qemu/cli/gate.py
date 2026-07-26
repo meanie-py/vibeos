@@ -389,11 +389,29 @@ def _tooling_once(repo: Path, root: Path) -> dict:
     t0 = time.monotonic()
     proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
     dt = time.monotonic() - t0
+    # Persist the console. Without this a TOOLING_FAIL leaves NOTHING to read: the
+    # stage dir holds only whatever the pytest suites happened to drop there, the
+    # gate's own full.log never sees this subprocess, and the salient below is a
+    # single line scraped by a marker search that can miss. A red gate whose cause
+    # you cannot look up stalls the merge train for everyone.
+    console = (proc.stdout or "") + (("\n--- stderr ---\n" + proc.stderr) if proc.stderr else "")
+    try:
+        (root / "check-tooling-console.log").write_text(console)
+    except OSError:
+        pass
     salient = ""
     for ln in (proc.stdout or "").splitlines():
         if "\u2717" in ln or "FAIL" in ln:
             salient = ln.strip()
             break
+    if not salient and proc.returncode:
+        # The marker scan came up empty (ruff/pyright do not print \u2717, and a
+        # traceback goes to stderr) \u2014 fall back to the child's last words rather
+        # than reporting a bare "exit 1".
+        salient = (
+            f"exit {proc.returncode}: {_last_words(console)}  "
+            f"(full: {root / 'check-tooling-console.log'})"
+        )
     return {"ok": proc.returncode == 0, "seconds": dt, "salient": salient, "exit": proc.returncode}
 
 
@@ -417,11 +435,23 @@ def _difftest_once(repo: Path, root: Path) -> dict:
     t0 = time.monotonic()
     proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
     dt = time.monotonic() - t0
+    # Same evidence rule as _tooling_once: a marker-scraped salient is a summary,
+    # not a record. Keep the console so a red difftest can be diagnosed at all.
+    console = (proc.stdout or "") + (("\n--- stderr ---\n" + proc.stderr) if proc.stderr else "")
+    try:
+        (root / "difftest-console.log").write_text(console)
+    except OSError:
+        pass
     salient = ""
     for ln in (proc.stdout or "").splitlines():
         if ln.strip().startswith(">") or "✗" in ln:
             salient = ln.strip().lstrip("> ")
             break
+    if not salient and proc.returncode:
+        salient = (
+            f"exit {proc.returncode}: {_last_words(console)}  "
+            f"(full: {root / 'difftest-console.log'})"
+        )
     return {"ok": proc.returncode == 0, "seconds": dt, "salient": salient, "exit": proc.returncode}
 
 
