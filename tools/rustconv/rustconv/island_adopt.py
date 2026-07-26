@@ -155,10 +155,12 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
         if data is None:
             continue
 
-        def refuse(rule, reason, detail=""):
+        # The loop variables are bound as defaults on purpose: these close over the CURRENT
+        # diagnostic, and a late-binding closure would attribute an edit to a later file.
+        def refuse(rule, reason, detail="", *, fname=fname, line=line):
             refused.append(Refused(fname, line, rule, reason, detail))
 
-        def add(rule, start, end, repl, authority):
+        def add(rule, start, end, repl, authority, *, fname=fname, line=line, data=data):
             orig = data[start:end].decode("utf-8", "replace")
             edits.setdefault(
                 (fname, start, end, rule),
@@ -172,15 +174,19 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
                 refuse(RULE_BITFIELD, "unrecognised_message", msg[:70])
                 continue
             name = m.group(1)
-            if data[bs:be].decode("utf-8", "replace") != name:
-                refuse(RULE_BITFIELD, "span_is_not_the_field", data[bs:be].decode("utf-8", "replace"))
+            spanned = data[bs:be].decode("utf-8", "replace")
+            if spanned != name:
+                refuse(RULE_BITFIELD, "span_is_not_the_field", spanned)
                 continue
             tail = data[be:]
             assign = re.match(rb"[ \t]*=(?!=)", tail)
             if not assign:
                 add(
-                    RULE_BITFIELD, be, be, "()",
-                    f"`{name}` is a bindgen bitfield ACCESSOR on this struct, so the read is a call",
+                    RULE_BITFIELD,
+                    be,
+                    be,
+                    "()",
+                    f"`{name}` is a bindgen bitfield ACCESSOR here, so the read is a call",
                 )
                 continue
             # Assignment -> setter. The RHS must terminate on this line, or the argument we
@@ -195,7 +201,10 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
                 refuse(RULE_BITFIELD, "unbalanced_rhs", f"`{name} = {rhs[:40]}`")
                 continue
             add(
-                RULE_BITFIELD, bs, line_end, f"set_{name}({rhs[:-1].strip()});",
+                RULE_BITFIELD,
+                bs,
+                line_end,
+                f"set_{name}({rhs[:-1].strip()});",
                 f"`{name}` is a bindgen bitfield field, so the write goes through `set_{name}`",
             )
             continue
@@ -272,7 +281,9 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
                 continue
             ty = decl.group(2).decode()
             add(
-                RULE_UNINIT, decl.start(), decl.end(),
+                RULE_UNINIT,
+                decl.start(),
+                decl.end(),
                 f"{decl.group(1).decode()}let mut {name}: {ty} = core::mem::zeroed();",
                 "C declares this local and lets the callee fill it through a pointer; Rust "
                 "requires an initialiser before the address is taken",
@@ -292,7 +303,10 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
                 refuse(RULE_MACRO_CALL, "not_a_call", name)
                 continue
             add(
-                RULE_MACRO_CALL, be, be, "!",
+                RULE_MACRO_CALL,
+                be,
+                be,
+                "!",
                 f"`{name}` is a `macro_rules!`, so the call needs a `!`",
             )
             continue
@@ -304,7 +318,10 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
                 refuse(RULE_VARIADIC, "unrecognised_message", msg[:70])
                 continue
             add(
-                RULE_VARIADIC, be, be, " as ::core::ffi::c_int",
+                RULE_VARIADIC,
+                be,
+                be,
+                " as ::core::ffi::c_int",
                 f"C promotes a `{m.group(1)}` to `int` through `...`; Rust does not, so the "
                 "promotion is written out",
             )
@@ -319,7 +336,9 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
                 continue
             of = "addr_of_mut!" if m.group(1) else "addr_of!"
             add(
-                RULE_REF_AS_INT, bs, be,
+                RULE_REF_AS_INT,
+                bs,
+                be,
                 f"core::ptr::{of}({m.group(2)}) as {m.group(3)}",
                 "a reference cannot be cast to an integer; the address is taken first, without "
                 "creating a reference to the place",
@@ -366,7 +385,9 @@ def apply(edits, root: Path):
 def cargo_check(crate: str, target: str, root: Path):
     out = subprocess.run(
         ["cargo", "check", "-p", crate, "--target", target, "--message-format=json"],
-        cwd=root, capture_output=True, text=True,
+        cwd=root,
+        capture_output=True,
+        text=True,
     )
     diags = []
     for line in out.stdout.splitlines():
