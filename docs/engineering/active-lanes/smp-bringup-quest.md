@@ -1500,3 +1500,37 @@ amd64 landed on arm64's exact value with zero failures. That is `d3b1c045c5d`
 numbers. **Generalisable:** a falling assertion count is not evidence of lost coverage — it can
 mean the test stopped re-running a broken path. Coverage loss is the thing worth refusing
 (a test that never launched); count changes are the thing worth *showing* to a human.
+
+## Collapse criterion MET on all three arches (2026-07-26)
+
+i386 completed the same one-build / three-sweep pattern. Every arch's `--smp 1` run now differs
+from its UP baseline by **exactly the documented `KeEvent` MP-skip and nothing else**:
+
+| arch | `--smp 1` result | delta vs UP baseline |
+|---|---|---|
+| i386  | 89 launched, 86 ok, 3 bad, done | `KeEvent` 42733 → 42601 — only |
+| amd64 | 89 launched, **89 ok, 0 bad**, done | `KeEvent` 42733 → 42601 — only |
+| arm64 | 89 launched, done | `KeEvent` only, systematically; plus page-reuse flake noise |
+
+All x86 MP runs printed `MP pair confirmed on serial: ntkrnlmp.exe + halmp.dll`.
+
+Baselines re-seeded: **i386** (UP + smp2), **amd64** (UP + smp2). **arm64 deliberately NOT
+seeded** — see the page-reuse entry in the roadmap registry; a ratchet floor cannot come from a
+non-deterministic sweep.
+
+The i386 re-seed was pure improvement, no lowering note at all: `RtlUnicodeString`
+**NO-END → OK 77/0** (one fewer permanently-bad test) and `ExInterlocked` 718/120 → **922/52**.
+Its smp2 baseline went 72 → 89 rows with **zero tests dropped** — it had been stuck at the
+2026-07-18 shape, missing 17 tests the corpus had since gained, so it was silently not ratcheting
+them at all.
+
+### Remaining before the default can flip
+
+1. **arm64 late-run page-reuse / stack corruption** — the one real blocker. Non-determinism at
+   both `-smp 1` and `-smp 2`, so it is not an SMP defect; it blocks the arm64 baseline seed and
+   any trustworthy arm64 ratchet. First symbolicated kernel-side instance and the next
+   distinguishing test are in the roadmap entry.
+2. **BUILD_INCOMPLETE** (roadmap) — instrumented, awaiting an occurrence to name itself.
+
+`ExHardError` is NO LONGER on this list: the failure count proves the LPC round-trip succeeds,
+so the six are the OS becoming more correct, and all three UP baselines now record 24/6.
