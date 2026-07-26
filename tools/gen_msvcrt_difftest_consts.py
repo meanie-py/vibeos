@@ -53,6 +53,7 @@ BUILD_DIR = REPO / "build-amd64"
 
 # The headers whose constants we need, in the order file.c includes them.
 PROBE_INCLUDES = [
+    "errno.h",
     "fcntl.h",
     "share.h",
     "stdio.h",
@@ -62,6 +63,7 @@ PROBE_INCLUDES = [
     "io.h",
     '"windef.h"',
     '"winbase.h"',
+    '"winnls.h"',
     '"winternl.h"',
 ]
 
@@ -148,6 +150,7 @@ CONSTANTS: dict[str, list[str]] = {
         "FILE_CURRENT",
         "FILE_END",
         "FILE_TYPE_CHAR",
+        "FILE_TYPE_DISK",
         "FILE_TYPE_PIPE",
         "FILE_TYPE_UNKNOWN",
         "INVALID_FILE_ATTRIBUTES",
@@ -160,6 +163,10 @@ CONSTANTS: dict[str, list[str]] = {
         "STD_OUTPUT_HANDLE",
         "RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO",
     ],
+    "codepage conversion — msvcrt.h's get_aw_cp / convert_*_utf8 inlines": [
+        "CP_ACP",
+        "MB_PRECOMPOSED",
+    ],
     "Win32 error codes": [
         "ERROR_SUCCESS",
         "NO_ERROR",
@@ -169,11 +176,114 @@ CONSTANTS: dict[str, list[str]] = {
         "ERROR_INVALID_HANDLE",
         "ERROR_INVALID_PARAMETER",
     ],
+    # Every case label in errno.c's msvcrt_set_errno, which refimpl.c
+    # transcribes.  A missing one would not be a compile error in a `switch` —
+    # it would silently fall through to the `default: EINVAL` arm, which is
+    # §9.112's catch-all-match class wearing C clothes.
+    "Win32 error codes — errno.c's msvcrt_set_errno case labels": [
+        "ERROR_ALREADY_EXISTS",
+        "ERROR_ARENA_TRASHED",
+        "ERROR_BAD_DEVICE",
+        "ERROR_BAD_ENVIRONMENT",
+        "ERROR_BAD_FORMAT",
+        "ERROR_BAD_NETPATH",
+        "ERROR_BAD_NET_NAME",
+        "ERROR_BAD_PATHNAME",
+        "ERROR_BUSY",
+        "ERROR_CANNOT_MAKE",
+        "ERROR_CHILD_NOT_COMPLETE",
+        "ERROR_CURRENT_DIRECTORY",
+        "ERROR_DIR_NOT_EMPTY",
+        "ERROR_DISK_FULL",
+        "ERROR_DRIVE_LOCKED",
+        "ERROR_FAIL_I24",
+        "ERROR_FILENAME_EXCED_RANGE",
+        "ERROR_FILE_EXISTS",
+        "ERROR_INVALID_ACCESS",
+        "ERROR_INVALID_BLOCK",
+        "ERROR_INVALID_DRIVE",
+        "ERROR_IO_DEVICE",
+        "ERROR_LOCK_FAILED",
+        "ERROR_LOCK_VIOLATION",
+        "ERROR_MAX_THRDS_REACHED",
+        "ERROR_NESTING_NOT_ALLOWED",
+        "ERROR_NETWORK_ACCESS_DENIED",
+        "ERROR_NOT_ENOUGH_QUOTA",
+        "ERROR_NOT_LOCKED",
+        "ERROR_NO_MORE_FILES",
+        "ERROR_NO_PROC_SLOTS",
+        "ERROR_OUTOFMEMORY",
+        "ERROR_PATH_NOT_FOUND",
+        "ERROR_POSSIBLE_DEADLOCK",
+        "ERROR_SEEK_ON_DEVICE",
+        "ERROR_SHARING_VIOLATION",
+        "ERROR_TOO_MANY_OPEN_FILES",
+        "ERROR_WAIT_NO_CHILDREN",
+    ],
+    "Win32 error codes — raised by the POSIX-backed shims in refimpl.c": [
+        "ERROR_HANDLE_EOF",
+        "ERROR_NEGATIVE_SEEK",
+        "ERROR_NOT_ENOUGH_MEMORY",
+        "ERROR_NOT_SUPPORTED",
+        "ERROR_SEEK",
+        "ERROR_WRITE_FAULT",
+    ],
+    # msvcrt's own <errno.h>, NOT glibc's — see DISPLACE for why that matters.
+    "CRT errno values (msvcrt's errno.h; these DISPLACE the host's)": [
+        "E2BIG",
+        "EACCES",
+        "EAGAIN",
+        "EBADF",
+        "EBUSY",
+        "ECHILD",
+        "EDEADLK",
+        "EEXIST",
+        "EINVAL",
+        "EIO",
+        "EMFILE",
+        "ENODEV",
+        "ENOENT",
+        "ENOEXEC",
+        "ENOMEM",
+        "ENOSPC",
+        "ENOTEMPTY",
+        "EPIPE",
+    ],
     "NT enum constants — invisible to a -dM macro dump, hence the object probe": [
         "FileBasicInformation",
         "FileStandardInformation",
         "GetFileExInfoStandard",
     ],
+}
+
+# Names the HOST libc also defines, which must be #undef'd before ours lands.
+#
+# Not a formatting detail — it is the whole point for the errno family.  msvcrt
+# and glibc agree on most of <errno.h> and disagree on two of the values file.c
+# can actually produce: EDEADLK is 36 on msvcrt and 35 on glibc, ENOTEMPTY is
+# 41 and 39.  A reference TU that took glibc's would return the wrong errno from
+# every path that maps ERROR_POSSIBLE_DEADLOCK or ERROR_DIR_NOT_EMPTY, while
+# every other errno row kept passing — the §9.66 shape exactly.  Deriving them
+# from msvcrt's own headers and displacing glibc's is what makes that impossible.
+DISPLACE = {
+    "E2BIG",
+    "EACCES",
+    "EAGAIN",
+    "EBADF",
+    "EBUSY",
+    "ECHILD",
+    "EDEADLK",
+    "EEXIST",
+    "EINVAL",
+    "EIO",
+    "EMFILE",
+    "ENODEV",
+    "ENOENT",
+    "ENOEXEC",
+    "ENOMEM",
+    "ENOSPC",
+    "ENOTEMPTY",
+    "EPIPE",
 }
 
 # Constants whose value is a POINTER cast in the headers (`((HANDLE)(LONG_PTR)-1`)
@@ -550,6 +660,8 @@ def render(values: dict[str, int]) -> str:
             v = values[f"const:{n}"]
             lit = f"0x{v:08X}" if v > 9 or v < 0 else str(v)
             suffix = "u" if v > 0x7FFFFFFF else ""
+            if n in DISPLACE:
+                out.append(f"#undef  {n}")
             out.append(f"#define {n:<{width}} {lit}{suffix}")
         out.append("")
     out.append("/* Pointer-valued; not an integer initializer, so emitted verbatim. */")

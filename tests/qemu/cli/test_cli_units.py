@@ -4616,6 +4616,93 @@ def test_ninja_did_work_does_not_count_the_glob_recheck_pseudo_edge():
     )
 
 
+# --- WoW64 probe-ladder verdict check (smoke --ladder) ----------------------
+# The ladder runs AFTER the desktop marker, so the ordinary smoke stops watching
+# before it starts; these pin the parser that makes `--ladder` able to see it.
+
+
+def _ladder_log(overrides: dict | None = None, drop: set | None = None) -> str:
+    """A serial transcript with every ladder guest reporting PASS, minus `drop`,
+    with `overrides` applied. Line shape is verbatim from a real amd64 boot."""
+    from tests.qemu.cli import ladder as ladder_mod
+
+    out = []
+    for guest, code in ladder_mod.LADDER.items():
+        if drop and guest in drop:
+            continue
+        code = (overrides or {}).get(guest, code)
+        out.append(f"[WINLOGON] {guest}.exe exit = 0x{code:04x} (0x600D = PASS)")
+    return "\n".join(out) + "\n"
+
+
+def test_ladder_all_pass_is_clean():
+    from tests.qemu.cli import ladder as ladder_mod
+
+    assert ladder_mod.check(_ladder_log()) is None
+    assert ladder_mod.summary(_ladder_log()).startswith("9/9 guests PASS")
+
+
+def test_ladder_gui32_pass_code_is_600e_not_600d():
+    """gui32 is the GDI/draw rung and reports its own verdict code. Asserting a
+    blanket 0x600D would make the check permanently red for a healthy boot --
+    which is how a gate gets disabled."""
+    from tests.qemu.cli import ladder as ladder_mod
+
+    assert ladder_mod.LADDER["gui32"] == 0x600E
+    bad = ladder_mod.check(_ladder_log({"gui32": 0x600D}))
+    assert bad is not None and "gui32" in bad["salient"][0]
+
+
+def test_ladder_catches_the_selfmod32_amd64_regression():
+    """The real E19 finding: selfmod32 exited 0xBAD9 on amd64 for a day because
+    its rung-5 fixture writes to a read-only volume there, and no gate could
+    see it."""
+    from tests.qemu.cli import ladder as ladder_mod
+
+    res = ladder_mod.check(_ladder_log({"selfmod32": 0xBAD9}))
+    assert res is not None
+    assert res["classification"] == "LADDER_FAIL"
+    assert any("selfmod32" in s and "0xbad9" in s for s in res["salient"])
+
+
+def test_ladder_missing_guest_is_a_failure_not_a_pass():
+    """A guest that crashes or hangs emits NO verdict line. Treating absence as
+    success is the exact failure mode this check exists to prevent."""
+    from tests.qemu.cli import ladder as ladder_mod
+
+    res = ladder_mod.check(_ladder_log(drop={"thread32"}))
+    assert res is not None and res["classification"] == "LADDER_FAIL"
+    assert any("thread32" in s and "never reported" in s for s in res["salient"])
+
+
+def test_ladder_nothing_staged_reports_the_build_recipe_not_a_regression():
+    """Zero verdicts means the media has no guests staged (arm64 without
+    VIBEOS_FEX=1). That must read as 'you built it wrong', not 'the OS broke'."""
+    from tests.qemu.cli import ladder as ladder_mod
+
+    res = ladder_mod.check("[EXPLORER] _tWinMain entered\nshell ready\n")
+    assert res is not None and res["classification"] == "LADDER_NOT_STAGED"
+    assert any("VIBEOS_FEX=1" in s for s in res["salient"])
+
+
+def test_ladder_extra_arm64_guests_are_reported_but_not_required():
+    """arm64 also stages fexprobe/wow64probe. They must not be required (that
+    would make the table 'whatever arm64 happens to stage' instead of the
+    cross-arch parity claim) but they should be visible in the summary."""
+    from tests.qemu.cli import ladder as ladder_mod
+
+    text = _ladder_log() + "[WINLOGON] wow64probe.exe exit = 0x600d\n"
+    assert ladder_mod.check(text) is None
+    assert "wow64probe" in ladder_mod.summary(text)
+
+
+def test_ladder_takes_the_last_verdict_per_guest():
+    from tests.qemu.cli import ladder as ladder_mod
+
+    text = "[WINLOGON] hello32.exe exit = 0xbad1\n" + _ladder_log()
+    assert ladder_mod.verdicts(text)["hello32"] == 0x600D
+
+
 # --- probe presence in the MEDIA (the 9-hour blind soak, 2026-07-26) --------
 
 

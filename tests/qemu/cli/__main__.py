@@ -180,6 +180,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="legacy alias for --payload doom",
     )
+    s.add_argument(
+        "--ladder",
+        action="store_true",
+        help="after the desktop marker, keep draining serial until every WoW64 "
+        "probe guest reports, and FAIL the boot on a red rung. The ladder runs "
+        "after explorer, so a plain smoke/gate stops watching before it starts "
+        "and cannot see a red guest at all (selfmod32 was red on amd64 for a "
+        "day that way). Run it on BOTH 64-bit arches after touching a guest, "
+        "wow64.dll or a marshaller; arm64 needs media built with VIBEOS_FEX=1. "
+        "See tests/qemu/cli/ladder.py",
+    )
     s.set_defaults(fn=smoke_mod.smoke)
 
     g = sub.add_parser(

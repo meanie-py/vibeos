@@ -630,9 +630,8 @@ VOID FatUpdateIOCountersPCW(PVCB a, BOOLEAN b, ULONG_PTR c) { (void)a;(void)b;(v
  * FatSetEndOfFileInfo note below: this C object links BEFORE libfastfat_rust.a, so a
  * stub left here would silently SHADOW the real implementation and keep bugchecking.
  * (FatIsPathnameValid's stub lived further down and is removed there.) */
-NTSTATUS FatIsVolumeDirty(PIRP_CONTEXT a, PIRP b)      { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatDismountVolume(PIRP_CONTEXT a, PIRP b)     { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatGetStatistics(PIRP_CONTEXT a, PIRP b)      { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatIsVolumeDirty + FatGetStatistics -> now REAL in fastfat-rust fsctrl.rs; stubs
+ * removed so the Rust #[no_mangle] definitions win the first-match link. */
 NTSTATUS FatGetVolumeBitmap(PIRP_CONTEXT a, PIRP b)    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGetRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
@@ -646,7 +645,10 @@ NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_B
  * (create.c:2292), not a macro like the FatGenerateFileId* pair below. */
 /* FatOpenExistingDirectory -> now REAL in fastfat-rust create.rs (field manual §9.45); stub removed so the Rust symbol wins */
 /* FatLowLevelReadWrite -> rust_cohab_fat.c (real macro) */
-NTSTATUS FatPerformVerifyDiskRead(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatPerformVerifyDiskRead -> now REAL in fastfat-rust fsctrl.rs. Note the stub
+ * declared it NTSTATUS with SEVEN PVOID params; the real function returns BOOLEAN
+ * and takes six args. Nothing caught that because no C caller remains -- another
+ * reminder that a stub prototype is not evidence of the real signature. */
 /* FatGenerateFileIdFromFcb / FatGenerateFileIdFromDirentAndOffset -> now REAL in
  * fastfat-rust fileid.rs. These are MACROS in fatprocs.h, never functions; the
  * translation emitted extern fn declarations, which arrived here as unresolved

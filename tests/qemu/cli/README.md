@@ -99,7 +99,7 @@ provenance stamp.
 - arm64 automatically re-stages into `ramdisk.img`/`boot.img` (the trap that
   silently boots a stale kernel otherwise).
 
-### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net]`
+### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net] [--ladder]`
 **The verdict front door.** Staleness preflight, then boot the real media via
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
@@ -122,6 +122,20 @@ all included), then auto-triage on failure.
 - `--repeat N` runs N independent boots to characterize a flake; a partial pass
   (`0 < pass < N`) is reported `FLAKY` and counts as **FAIL** — a flake is a real
   signal, not green.
+- **`--ladder` — the WoW64 probe guests, which a plain smoke CANNOT see.** They
+  are spawned by winlogon *after* explorer, i.e. after the desktop marker this
+  boot already matched, so the ordinary `smoke`/`gate` stops watching before the
+  first guest runs. A guest can therefore be RED on one arch indefinitely with
+  every gate green — that is not hypothetical, `selfmod32.exe` exited `0xBAD9`
+  on amd64 for a day (read-only livecd volume vs. arm64's writable ramdisk) and
+  nothing reported it. `--ladder` keeps draining serial after the marker until
+  all nine guests report, and **fails the boot** on a wrong or missing verdict.
+  Run it on **both** 64-bit arches after touching a ladder guest, `wow64.dll`,
+  or a marshaller. arm64 needs media built with `VIBEOS_FEX=1`; a boot with no
+  guests staged is reported `LADDER_NOT_STAGED` with the build recipe rather
+  than as a regression. Expected-verdict table and rationale:
+  `tests/qemu/cli/ladder.py`. Bounded extra watch — with the flag off, the boot
+  path is unchanged.
 - `--until` overrides the success marker (default: the arch's boot marker
   `[EXPLORER] _tWinMain entered`, on **all three arches**); `--fail-on RE`
   aborts at the first match of a hard-failure regex.

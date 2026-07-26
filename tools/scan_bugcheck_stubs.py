@@ -53,6 +53,21 @@ paying a build+boot per entry to rediscover it is pure waste. Findings here are
 a WORK QUEUE, not necessarily breakage: a bugcheck stub on a path nothing
 reaches is fine until something reaches it. Baseline gates NEW ones.
 
+KNOWN LIMIT — this scanner only sees the DRIVER's own headers:
+`header_macros()` globs `<driver>/*.h`, so an `extern` declared for a **DDK**
+macro is invisible to it. Example met in the wild: `MmGetSystemAddressForMdlSafe`
+(`sdk/include/xdk/mmfuncs.h:139`) is a macro that tests `MdlFlags` and either
+returns `MappedSystemVa` or calls `MmMapLockedPagesSpecifyCache`; declaring it
+`extern` compiles fine and then fails at link with `undefined symbol`.
+
+That gap is tolerable, and deliberately not closed here, because the two cases
+have opposite failure modes. A DDK macro has no cohab stub to satisfy it, so the
+LINKER catches it immediately and loudly. The case this scanner exists for is the
+one where a stub DOES exist and silently turns the same mistake into a runtime
+bugcheck. If you are about to declare an `extern` for a DDK name, check for an
+existing faithful inline first — `ntkrnl_sys::driver_ddk` and
+`ntkrnl_sys::inline::*` already carry many of them.
+
 WHAT IS NOT A FINDING:
   - a stub whose body is a real implementation (returns a value, forwards a call)
   - a bugcheck stub NO Rust module declares — not linkable from the Rust side, so
@@ -193,6 +208,29 @@ def header_macros(driver_dir: Path, names: set[str]) -> set[str]:
     return out
 
 
+def in_nested_checkout(path: Path, root: Path) -> bool:
+    """True if `path` lives inside a git checkout nested under `root` — another
+    lane's worktree (agents create them at `.claude/worktrees/<lane>`), or a
+    stray nested clone.
+
+    This scanner is repo-wide by construction: it globs for `rust_cohab_stub.c`
+    ANYWHERE under the root, so without pruning it reads a sibling lane's tree,
+    at a different commit, and reports its stubs as findings here. That is the
+    READ side of the fleet-isolation law in AGENTS.md — a verdict that depends
+    on which nested checkouts happen to exist on this machine is not a gate.
+    (Observed: a `.claude/worktrees/fex-m4` checkout added 18 phantom fastfat
+    findings to an unrelated lane's `check`, all of them duplicates of the main
+    tree's already-baselined ones.)"""
+    p = path.parent
+    while p != root:
+        if (p / ".git").exists():
+            return True
+        if p.parent == p:  # walked out of the tree without meeting root
+            return False
+        p = p.parent
+    return False
+
+
 def main() -> int:
     # Optional scan root, so the control fixtures in tools/test_scanner_controls.py
     # can point this at a throwaway tree instead of the whole repo.
@@ -200,6 +238,8 @@ def main() -> int:
     rroot = rust_root(root)
     findings: list[str] = []
     for stub in sorted(root.glob("**/rust_cohab_stub.c")):
+        if in_nested_checkout(stub, root):
+            continue
         try:
             text = stub.read_text(errors="replace")
         except OSError:

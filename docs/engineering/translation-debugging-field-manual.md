@@ -1781,6 +1781,27 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### An arch-gated no-op trace fn discards the diagnostics on the arch that needs them
+`iomgr.rs` defined `io_trace` twice: a real one for x86, and
+`#[cfg(target_arch = "aarch64")] #[inline(always)] unsafe fn io_trace(_s: &[u8]) {}`. All 40 of
+its call sites are one-shot boot milestones and their `FAILED` reports — including
+`PsLocateSystemDll FAILED`, after which arm64 **continues booting on purpose**. So the one arch
+that tolerates the failure was also the one arch that could not report it, and the failure ran
+on every boot for months. LLVM additionally drops the now-unused byte strings, so the binary
+does not even contain the text: `"[IO] IopInitializeBootDrivers"` was **0** occurrences before
+the fix and **2** after. Two consequences worth generalizing:
+- **Grep for `_s: &[u8]) {}` / empty-bodied trace shims before concluding "the probe never
+  fired."** Absence of a trace is only evidence if the trace exists on that arch.
+- **An arch-gated tolerate-and-continue path needs LOUDER reporting than the arch that
+  bugchecks, not quieter.** Where x86 stops dead, the tolerant arch keeps running with the
+  damage — and if its report is a no-op, that hatch can never signal anything, so it becomes
+  permanently-on and worthless as a signal. (Compare: the arm64 MM suppressions, which kept
+  their recovery and gained a print.)
+- Do not treat a hand-rolled `for &ch in msg.iter() { *uart = ch }` loop as the fix — LLVM
+  unrolls it into immediate stores and the literal vanishes from the binary, which also defeats
+  `smoke --require-probe`. Pass the string by pointer (`ARM64_UART_TRACE`), the form proven to
+  reach the serial.
+
 ### The governing rule: a harness only falsifies what it varies
 > **A harness proves parity only across the axes it actually VARIES. Every axis it holds
 > CONSTANT is a silent assumption baked into every MATCH it prints.** `[§9.60]`
@@ -2831,10 +2852,17 @@ but not from the OS.
 **Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the
 ordinary smoke's success condition IS that marker — so it stops watching before the ladder runs.
 A late-rung, single-arch failure is structurally invisible to `vibeos-cli gate`.
-**Fix.** Run the ladder explicitly: `./vibeos-cli smoke --arch <a> --until "<guest>.exe exit"`,
-on **both** arches, whenever a guest changes. Concrete instance: `selfmod32`'s rung-5 fixture
+**Fix.** `./vibeos-cli smoke --arch <a> --ladder`, on **both** 64-bit arches, whenever a guest,
+`wow64.dll` or a marshaller changes. It drains serial past the marker until all nine guests
+report and fails the boot on a wrong or missing verdict; arm64 needs media built with
+`VIBEOS_FEX=1`, and a boot with nothing staged says so instead of reading as a regression.
+Table + rationale in `tests/qemu/cli/ladder.py`. Concrete instance: `selfmod32`'s rung-5 fixture
 writes under `%WINDIR%` — a writable ramdisk on arm64, a read-only CD on the amd64 livecd — so
-it exited `0xBAD9` there from the day it landed.
+it exited `0xBAD9` there from the day it landed, through every green gate.
+*(The flag exists because the hand-rolled `--until "<guest>.exe exit"` recipe is exactly the
+"remembering a recipe" smell AGENTS.md names as a bug report against the tool — and the same
+blind spot had already been written down once, in the roadmap's `_MmCopyFromCaller` entry, and
+still cost a day.)*
 **Also the general rule for fixtures:** when the environment cannot support a rung's *fixture*
 (not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
 than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.

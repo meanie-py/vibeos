@@ -599,6 +599,41 @@ fn defined_symbols(src: &str) -> Vec<String> {
 
 /// Does the TU actually DEFINE `name` (`... name ( ... ) {`), as opposed to only
 /// carrying its banner above an `#if`-disabled body?
+/// The externally-visible function symbols of a BUILT object, sorted.
+///
+/// Used for file.c instead of a source scrape.  A scrape has to model the C —
+/// the `#if _MSVCR_VER` arms, the 19 `#undef`s, the static/exported split — and
+/// file.c breaks every simplifying assumption the other five TUs allowed.  The
+/// object is the authority on what the compiler actually emitted, so it cannot
+/// disagree with the build the way a regex can.
+///
+/// THIS worktree's build dir only.  Resolving a sibling's would name symbols
+/// from another lane's commit — the fleet-isolation-applies-to-reads law, and
+/// the `verify_signatures` incident that established it.
+fn object_text_symbols(repo: &std::path::Path, obj: &PathBuf) -> Vec<String> {
+    let nm = repo.join(".build-tools/llvm-mingw/bin/llvm-nm");
+    assert!(
+        obj.is_file(),
+        "{} not built.\nfix: ./vibeos-cli build --arch amd64",
+        obj.display()
+    );
+    let out = std::process::Command::new(&nm)
+        .arg("--defined-only")
+        .arg(obj)
+        .output()
+        .unwrap_or_else(|e| panic!("failed to run {}: {e}", nm.display()));
+    let mut syms: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|ln| {
+            let p: Vec<&str> = ln.split_whitespace().collect();
+            (p.len() == 3 && p[1] == "T").then(|| p[2].split('@').next().unwrap().to_string())
+        })
+        .collect();
+    syms.sort();
+    syms.dedup();
+    syms
+}
+
 fn defines_symbol(src: &str, name: &str) -> bool {
     let mut from = 0;
     while let Some(i) = src[from..].find(name) {
@@ -1198,6 +1233,137 @@ fn main() {
     let scanf_tu_c = out.join("ref_scanf_tu.c");
     fs::write(&scanf_tu_c, &tu).unwrap();
 
+    // ══ reference TU #6 — dll/win32/msvcrt/file.c ═══════════════════════════════════
+    //
+    // file.c is 163 of msvcrt's remaining un-ported exports — 30% of what is left, in
+    // one file — and until now it could not be graded at all, because the difftest had
+    // no way to compile it for the host.
+    //
+    // Three things make it unlike the other five, and each is why a piece of substrate
+    // exists:
+    //
+    // 1. IT OWNS THE FILE LAYOUT.  file.c reads and writes `_ptr`/`_cnt`/`_base`/
+    //    `_flag`/`_file`/`_charbuf`/`_bufsiz`/`_tmpfname` directly, so msvcrt's
+    //    `struct _iobuf` is part of the contract under test — where the union prelude
+    //    would hand out glibc's `struct _IO_FILE`.  refstub/msvcrt_file_pre.h claims
+    //    glibc's guards and supplies msvcrt's, and it MUST be the first line of the
+    //    prelude (it works by pre-empting <stdio.h>), which is why the static half is
+    //    split in two around the union include.
+    //
+    // 2. ITS CONSTANTS AND LAYOUTS CANNOT BE HAND-WRITTEN.  Both generated:
+    //    tools/gen_msvcrt_difftest_consts.py derives every constant with the pinned
+    //    cross-compiler against msvcrt's REAL include set (msvcrt substitutes its own
+    //    CRT headers for sdk/include/crt, and `_IOMYBUF` differs between the
+    //    `_MSVCR_VER` arms), and emits a wall of _Static_assert proving the transcribed
+    //    layouts.  That guardian has already caught two live transcription bugs.
+    //
+    // 3. IT NEEDS AN OS.  file.c implements the stream layer and calls Win32 for the
+    //    bytes; fileimpl.c is that layer, on POSIX.  See its header for the rule that
+    //    governs it — a shim must model the API's ERROR behaviour, or the caller's
+    //    failure branch goes unreachable and its rows report MATCH while proving
+    //    nothing.
+    //
+    // The prelude rides the union one, and that is load-bearing rather than tidy:
+    // file.c calls 23 symbols owned by the other reference TUs, and four of them
+    // (`mbtowc`, `mbstowcs`, `wctomb`, `isleadbyte`) would otherwise bind to GLIBC and
+    // convert through the HOST locale instead of msvcrt's mbcinfo — a wrong oracle that
+    // links, runs, and says nothing.  Riding the union renames them ref_* so they
+    // resolve into the reference objects already in the archive.
+    let file_c = msvcrt_dir.join("file.c");
+    assert!(file_c.is_file(), "msvcrt reference source not found: {}", file_c.display());
+
+    // Public symbols come from the BUILT OBJECT, not a scrape: file.c's `#undef` wall
+    // and its static/exported split make the source ambiguous, and the object is the
+    // authority on what actually got emitted.
+    let file_obj = repo.join("build-amd64/dll/win32/msvcrt/CMakeFiles/msvcrt_static.dir/file.c.obj");
+    let file_symbols: Vec<String> = object_text_symbols(&repo, &file_obj);
+    assert!(
+        file_symbols.len() > 150,
+        "file.c object scrape found only {} symbols — a short list would leave the rest \
+         un-renamed and colliding with the subject",
+        file_symbols.len()
+    );
+
+    // The names the `#define` wall must NOT touch, generated alongside the prototypes.
+    // TWO classes, and the second is the dangerous one: a name that is also a struct tag
+    // (`_stat`) makes the wall rewrite the TYPE, which fails loudly — but a name the TU
+    // `#undef`s (file.c has 19) has its rename SILENTLY DELETED, and the function is then
+    // emitted under its true name, colliding with the subject or leaving ref_* undefined.
+    // Ten of file.c's symbols leaked exactly that way before this list existed.  Both get
+    // an asm label in msvcrt_file_protos.h instead, which renames at the object level
+    // where no `#undef` reaches.
+    let no_rename_txt = refstub.join("msvcrt_file_no_rename.txt");
+    let no_rename: std::collections::HashSet<String> = fs::read_to_string(&no_rename_txt)
+        .unwrap_or_else(|e| panic!("{}: {e}", no_rename_txt.display()))
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_string)
+        .collect();
+    for n in &no_rename {
+        assert!(
+            file_symbols.contains(n),
+            "msvcrt_file_no_rename.txt lists `{n}`, which file.c does not export — \
+             regenerate: python3 tools/gen_msvcrt_ref_protos.py file.c"
+        );
+    }
+    let file_wall: Vec<&String> = file_symbols.iter().filter(|s| !no_rename.contains(*s)).collect();
+
+    // Disjointness with the union, asserted rather than assumed: an overlap would be a
+    // duplicate-symbol link error a long way from its cause.
+    {
+        let taken: std::collections::HashSet<&str> = all_symbols
+            .iter()
+            .copied()
+            .chain(scanf_symbols.iter().map(String::as_str))
+            .collect();
+        let clash: Vec<&&String> = file_wall.iter().filter(|s| taken.contains(s.as_str())).collect();
+        assert!(
+            clash.is_empty(),
+            "file.c and another reference TU both define {clash:?} — one of them must \
+             stop being renamed into ref_*"
+        );
+    }
+
+    let mut fp = String::from(
+        "/* GENERATED by msvcrt-difftest/build.rs — do not edit.\n\
+         * Force-included at the top of the file.c reference TU ONLY. */\n\
+         #ifndef MSVCRT_REF_FILE_PRELUDE_H\n#define MSVCRT_REF_FILE_PRELUDE_H\n\n\
+         /* ═══ stage 0: msvcrt's FILE and fpos_t, before ANY host header. ══════════ */\n\
+         #include <msvcrt_file_pre.h>\n\n\
+         /* ═══ stage 1: hide file.c's own shells from glibc. ═══════════════════════\n\
+          * Same reason as the scanf TU: glibc macro-ises several of these (getc, putc,\n\
+          * feof, …) and __REDIRECTs others, and either would attach itself to the name\n\
+          * file.c is about to DEFINE. */\n",
+    );
+    for sym in &file_wall {
+        fp.push_str(&format!("#define {sym} msvcrt_ref_glibc_{sym}\n"));
+    }
+    fp.push_str(
+        "\n/* ═══ stage 2: the union prelude — sibling renames + the refstub. ════════\n\
+         * This is what makes file.c's 23 cross-TU calls resolve ref_* -> ref_* instead\n\
+         * of escaping to the host libc.  Four of them (mbtowc, mbstowcs, wctomb,\n\
+         * isleadbyte) would otherwise convert through the HOST locale. */\n\
+         #include \"ref_prelude.h\"\n\n\
+         /* ═══ stage 3: the types, the layout guardian, the constants. ════════════ */\n\
+         #include <msvcrt_file_prelude.h>\n\n\
+         /* ═══ stage 4: un-hide the shells and rename them for real. ══════════════ */\n",
+    );
+    for sym in &file_wall {
+        fp.push_str(&format!("#undef {sym}\n#define {sym} ref_{sym}\n"));
+    }
+    fp.push_str(
+        "\n/* ═══ stage 5: a prototype for every function file.c defines. ════════════\n\
+         * Placed AFTER the wall, so each is renamed alongside the definition it\n\
+         * describes.  Without them the 65 calls file.c places above their definitions\n\
+         * fall to C's implicit-declaration rule and become `int()` — every 64-bit\n\
+         * return silently truncated, in code that compiles and links. */\n\
+         #include <msvcrt_file_protos.h>\n\n\
+         #endif /* MSVCRT_REF_FILE_PRELUDE_H */\n",
+    );
+    let file_prelude_h = out.join("ref_file_prelude.h");
+    fs::write(&file_prelude_h, &fp).unwrap();
+
     // ── the reference TUs: the GENUINE string.c + wcs.c, renamed ────
     //
     // Both get the IDENTICAL flag set — the two -Werror= tripwires below are
@@ -1548,6 +1714,46 @@ fn main() {
         .cargo_metadata(false)
         .file(&scanf_tu_c);
 
+    // The file.c reference TU.  Same genuineness flags and tripwires as `ref_tu`, same
+    // reasons; its own out_dir only because cc keys intermediates on a hash of the
+    // source path and nothing else would collide.
+    let mut file_build = cc::Build::new();
+    file_build
+        .out_dir(out.join("file"))
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        .warnings(false)
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .flag("-fno-builtin")
+        .flag("-fno-tree-loop-distribute-patterns")
+        .flag("-ffp-contract=off")
+        .flag("-include")
+        .flag(file_prelude_h.to_str().unwrap())
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&file_c);
+
+    // The POSIX-backed Win32 layer underneath it.  Its OWN TU, without the rename
+    // prelude — like refimpl.c, and for the same reason: these must land under the
+    // plain names file.c calls.
+    let mut fileimpl_build = cc::Build::new();
+    fileimpl_build
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        .warnings(false)
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(manifest.join("fileimpl.c"));
+
     // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all the objects.
     let mut objects: Vec<PathBuf> = Vec::new();
     refimpl_build.cargo_metadata(false);
@@ -1563,6 +1769,8 @@ fn main() {
     objects.extend(so_build.compile_intermediates());
     objects.extend(pfflat_build.compile_intermediates());
     objects.extend(scanf_build.compile_intermediates());
+    objects.extend(file_build.compile_intermediates());
+    objects.extend(fileimpl_build.compile_intermediates());
 
     let archive = out.join("libmsvcrt_ref.a");
     let _ = fs::remove_file(&archive);
@@ -1601,6 +1809,8 @@ fn main() {
     println!("cargo:rerun-if-changed={}", manifest.join("perfctl.c").display());
     println!("cargo:rerun-if-changed={}", mbcs_c.display());
     println!("cargo:rerun-if-changed={}", scanf_c.display());
+    println!("cargo:rerun-if-changed={}", file_c.display());
+    println!("cargo:rerun-if-changed={}", manifest.join("fileimpl.c").display());
     // scanf.h is the TEMPLATE scanf.c instantiates 16 times — real logic, not a stub.
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("scanf.h").display());
     println!("cargo:rerun-if-changed={}", refstub.display());
