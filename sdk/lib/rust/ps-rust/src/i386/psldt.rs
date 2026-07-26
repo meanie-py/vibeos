@@ -19,7 +19,7 @@ extern "system" {
 #[no_mangle]
 pub unsafe extern "system" fn PspDeleteLdt(Process: PEPROCESS) {
     // FIXME — LdtInformation must be null as long as we don't implement VDMs.
-    debug_assert!((*Process).LdtInformation.is_null());
+    ntkrnl_sys::ASSERT!((*Process).LdtInformation.is_null());
 }
 
 #[no_mangle]
@@ -74,7 +74,7 @@ pub unsafe extern "system" fn PspQueryDescriptorThread(
         STATUS_SUCCESS
     } else {
         // LDT selectors only meaningful for VDM, which we don't implement.
-        debug_assert!((*(*Thread).ThreadsProcess).LdtInformation.is_null());
+        ntkrnl_sys::ASSERT!((*(*Thread).ThreadsProcess).LdtInformation.is_null());
         STATUS_NO_LDT
     }
 }

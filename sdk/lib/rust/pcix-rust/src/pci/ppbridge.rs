@@ -86,7 +86,7 @@ pub unsafe extern "system" fn PciBridgePrefetchMemoryLimit(pci_data: PPCI_COMMON
 
 #[no_mangle]
 pub unsafe extern "system" fn PciBridgeMemoryWorstCaseAlignment(Length: u32) -> u32 {
-    debug_assert!(Length != 0);
+    ntkrnl_sys::ASSERT!(Length != 0);
     let mut Alignment: u32 = 0x80000000;
     while (Length & Alignment) == 0 {
         Alignment >>= 1;
@@ -105,10 +105,8 @@ pub unsafe extern "system" fn PciBridgeIsSubtractiveDecode(Context: PPCI_CONFIGU
     let PdoExtension: PPCI_PDO_EXTENSION = (*Context).PdoExtension;
 
     /* Only valid for PCI-to-PCI bridges */
-    debug_assert!(
-        (*Current).BaseClass as u32 == PCI_CLASS_BRIDGE_DEV
-            && (*Current).SubClass as u32 == PCI_SUBCLASS_BR_PCI_TO_PCI
-    );
+    ntkrnl_sys::ASSERT!((*Current).BaseClass as u32 == PCI_CLASS_BRIDGE_DEV
+            && (*Current).SubClass as u32 == PCI_SUBCLASS_BR_PCI_TO_PCI);
 
     /* Check for hacks first, then check the ProgIf of the bridge */
     if ((*PdoExtension).HackFlags & PCI_HACK_SUBTRACTIVE_DECODE) == 0

@@ -1229,7 +1229,7 @@ pub unsafe extern "system" fn MmLoadSystemImage(
     // LoaderScan loop — restarts after section creation.
     loop {
         // Acquire the load lock.
-        debug_assert!(!lock_owned);
+        ntkrnl_sys::ASSERT!(!lock_owned);
         lock_owned = true;
         KeEnterCriticalRegion();
         KeWaitForSingleObject(
@@ -1483,7 +1483,7 @@ pub unsafe extern "system" fn MmLoadSystemImage(
         (*ldr_entry).Flags |= LDRP_DEBUG_SYMBOLS_LOADED;
     }
 
-    debug_assert!(section.is_null());
+    ntkrnl_sys::ASSERT!(section.is_null());
     MiEnablePagingOfDriver(ldr_entry);
 
     *module_object = ldr_entry as PVOID;

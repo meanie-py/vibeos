@@ -2283,7 +2283,7 @@ pub unsafe extern "system" fn FatAllocateCloseContext(
     #[cfg(debug_assertions)]
     {
         if !Vcb.is_null() {
-            debug_assert!(!(0 == (*Vcb).CloseContextCount)); // NT_ASSERT( 0 != Vcb->CloseContextCount)
+            ntkrnl_sys::ASSERT!(!(0 == (*Vcb).CloseContextCount)); // NT_ASSERT( 0 != Vcb->CloseContextCount)
             InterlockedDecrement(
                 core::ptr::addr_of_mut!((*Vcb).CloseContextCount) as *mut i32
             );

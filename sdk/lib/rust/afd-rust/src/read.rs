@@ -65,7 +65,7 @@ unsafe fn HandleReceiveComplete(FCB: PAFD_FCB, Status: NTSTATUS, Information: UL
     if (*FCB).TdiReceiveClosed != 0 {
     } else if Status == STATUS_SUCCESS {
         (*FCB).Recv.Content += Information as UINT;
-        debug_assert!((*FCB).Recv.Content <= (*FCB).Recv.Size);
+        ntkrnl_sys::ASSERT!((*FCB).Recv.Content <= (*FCB).Recv.Size);
 
         if Information == 0 {
             (*FCB).TdiReceiveClosed = 1u8;

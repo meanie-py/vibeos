@@ -1260,7 +1260,7 @@ pub unsafe extern "system" fn PcipGetFunctionLimits(Context: *mut _PCI_CONFIGURA
         }
     }
 
-    debug_assert!((*pdo_extension).Resources.is_null());
+    ntkrnl_sys::ASSERT!((*pdo_extension).Resources.is_null());
 
     let resources = ExAllocatePoolWithTag(
         NonPagedPool,

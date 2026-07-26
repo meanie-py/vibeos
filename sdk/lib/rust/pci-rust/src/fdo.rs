@@ -504,7 +504,7 @@ unsafe fn FdoStartDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
             b"[PCI] FdoStartDevice: no bus-number resource (root-seeded bridge?) - defaulting to bus 0\n\0"
                 .as_ptr() as *const i8,
         );
-        debug_assert!((*device_extension).State == dsStopped);
+        ntkrnl_sys::ASSERT!((*device_extension).State == dsStopped);
         (*device_extension).BusNumber = 0;
     } else {
         // AllocatedResources->List[0] — List is CM_FULL_RESOURCE_DESCRIPTOR[1].
@@ -516,7 +516,7 @@ unsafe fn FdoStartDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
             return STATUS_REVISION_MISMATCH;
         }
 
-        debug_assert!((*device_extension).State == dsStopped);
+        ntkrnl_sys::ASSERT!((*device_extension).State == dsStopped);
 
         // By default, use the bus number in the resource list header.
         (*device_extension).BusNumber = (*list0).BusNumber;
@@ -536,7 +536,7 @@ unsafe fn FdoStartDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
                     }
 
                     // Use this one instead.
-                    debug_assert!((*list0).BusNumber == bus.Start);
+                    ntkrnl_sys::ASSERT!((*list0).BusNumber == bus.Start);
                     (*device_extension).BusNumber = bus.Start;
                     found_bus_number = true;
                 }

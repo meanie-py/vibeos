@@ -285,7 +285,7 @@ pub unsafe extern "system" fn FatAddMcbEntry(
     Vbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as u32;
     Lbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as i64;
 
-    debug_assert!(SectorCount != 0);
+    ntkrnl_sys::ASSERT!(SectorCount != 0);
 
     if Mcb != &raw mut (*Vcb).DirtyFatMcb {
         #[cfg(debug_assertions)]
@@ -298,10 +298,8 @@ pub unsafe extern "system" fn FatAddMcbEntry(
                 &mut sparse_vbo,
                 &mut sparse_byte_count,
             );
-            debug_assert!(
-                non_sparse != 0
-                    || (sparse_vbo == Vbo && sparse_byte_count == SectorCount as i64)
-            );
+            ntkrnl_sys::ASSERT!(non_sparse != 0
+                    || (sparse_vbo == Vbo && sparse_byte_count == SectorCount as i64));
         }
     }
 
@@ -323,10 +321,8 @@ pub unsafe extern "system" fn FatAddMcbEntry(
                 &mut sparse_vbo,
                 &mut sparse_byte_count,
             );
-            debug_assert!(
-                non_sparse != 0
-                    || (sparse_vbo == Vbo && sparse_byte_count == SectorCount as i64)
-            );
+            ntkrnl_sys::ASSERT!(non_sparse != 0
+                    || (sparse_vbo == Vbo && sparse_byte_count == SectorCount as i64));
         }
     }
 
@@ -2159,7 +2155,7 @@ pub unsafe extern "system" fn FatFlushAndCleanVolume(
     // PAGED_CODE(); - no operation
 
     // NT_ASSERT(FatVcbAcquiredExclusive(IrpContext, Vcb));
-    debug_assert!(ExIsResourceAcquiredExclusiveLite(&raw mut (*Vcb).Resource) != 0);
+    ntkrnl_sys::ASSERT!(ExIsResourceAcquiredExclusiveLite(&raw mut (*Vcb).Resource) != 0);
 
     // There is no fail, flush everything.
     if FlushType != NoFlush {
@@ -2295,7 +2291,7 @@ pub unsafe extern "system" fn FatSetPurgeFailureMode(
                 (*fcb).PurgeFailureModeEnableCount += 1;
             } else {
                 // Original: ASSERT(FlagOn(SetPurgeInput->Flags, SET_PURGE_FAILURE_MODE_DISABLED));
-                debug_assert!((input_flags & SET_PURGE_FAILURE_MODE_DISABLED) != 0);
+                ntkrnl_sys::ASSERT!((input_flags & SET_PURGE_FAILURE_MODE_DISABLED) != 0);
 
                 if (*fcb).PurgeFailureModeEnableCount == 0 {
                     break STATUS_INVALID_PARAMETER;

@@ -312,7 +312,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                         (*DeviceExtension).Device as *const core::ffi::c_void,
                     );
 
-                    core::debug_assert!(CountOfSetBitsUChar((*info).Gesn.EventMask) != 1);
+                    ntkrnl_sys::ASSERT!(CountOfSetBitsUChar((*info).Gesn.EventMask) != 1);
 
                     (*info).Gesn.NoChangeEventMask |= OpChangeMask;
                     (*info).Gesn.EventMask &= !OpChangeMask;
@@ -1242,7 +1242,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
     let mut atapiResets: u32 = 0;
     let info: *mut MEDIA_CHANGE_DETECTION_INFO = (*DeviceExtension).MediaChangeDetectionInfo;
 
-    debug_assert!(!info.is_null(), "info != NULL");
+    ntkrnl_sys::ASSERT!(!info.is_null(), "info != NULL");
 
     // Read if we already know the abilities of the device
     DeviceGetParameter(
@@ -1328,10 +1328,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                 break;
             }
 
-            debug_assert!(
-                ((*info).MediaChangeSrb.SrbFlags & SRB_FLAGS_NO_QUEUE_FREEZE) != 0,
-                "SRB_FLAGS_NO_QUEUE_FREEZE not set"
-            );
+            ntkrnl_sys::ASSERT!(((*info).MediaChangeSrb.SrbFlags & SRB_FLAGS_NO_QUEUE_FREEZE) != 0, "SRB_FLAGS_NO_QUEUE_FREEZE not set");
 
             status = DeviceSendRequestSynchronously((*DeviceExtension).Device, (*info).MediaChangeRequest, 1);
 
@@ -2363,7 +2360,7 @@ pub unsafe extern "system" fn RequestMcnSyncIrpCompletion(
     }
     let _ = DeviceObject;
 
-    debug_assert!(Irp == (*info).MediaChangeSyncIrp);
+    ntkrnl_sys::ASSERT!(Irp == (*info).MediaChangeSyncIrp);
 
     ntkrnl_sys::ddk::IoReuseIrp((*info).MediaChangeSyncIrp, ntkrnl_sys::constants::STATUS_NOT_SUPPORTED);
 

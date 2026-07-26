@@ -49,7 +49,7 @@ unsafe extern "C" fn CompareRightDown(
     }
     else
     {
-        debug_assert!((*r1).bottom == (*r2).bottom);
+        ntkrnl_sys::ASSERT!((*r1).bottom == (*r2).bottom);
         if (*r1).left < (*r2).left
         {
             Cmp = -1;
@@ -60,7 +60,7 @@ unsafe extern "C" fn CompareRightDown(
         }
         else
         {
-            debug_assert!((*r1).right == (*r2).right);
+            ntkrnl_sys::ASSERT!((*r1).right == (*r2).right);
             Cmp = 0;
         }
     }
@@ -81,13 +81,13 @@ unsafe extern "C" fn CompareRightUp(
     } else if (*r2).bottom < (*r1).bottom {
         Cmp = -1;
     } else {
-        debug_assert_eq!((*r1).top, (*r2).top);
+        ntkrnl_sys::ASSERT!((*r1).top == (*r2).top);
         if (*r1).left < (*r2).left {
             Cmp = -1;
         } else if (*r2).left < (*r1).left {
             Cmp = 1;
         } else {
-            debug_assert_eq!((*r1).right, (*r2).right);
+            ntkrnl_sys::ASSERT!((*r1).right == (*r2).right);
             Cmp = 0;
         }
     }

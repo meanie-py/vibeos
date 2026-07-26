@@ -1291,11 +1291,11 @@ pub unsafe extern "C" fn CheckUnlockExtraBuffers(FCB: PAFD_FCB, IrpSp: PIO_STACK
                       (*IrpSp).Parameters.DeviceIoControl.IoControlCode == IOCTL_AFD_SEND_DATAGRAM {
                 return 0u8;
             } else {
-                debug_assert!(false);
+                ntkrnl_sys::ASSERT!(false);
                 return 0u8;
             }
         } else {
-            debug_assert!(false);
+            ntkrnl_sys::ASSERT!(false);
             return 0u8;
         }
     } else {
@@ -1315,7 +1315,7 @@ pub unsafe extern "C" fn CleanupPendingIrp(FCB: PAFD_FCB, Irp: PIRP, IrpSp: PIO_
         SendReq = GetLockedData(Irp, IrpSp) as PAFD_SEND_INFO;
         UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
     } else {
-        debug_assert!((*IrpSp).MajorFunction == IRP_MJ_DEVICE_CONTROL as u8);
+        ntkrnl_sys::ASSERT!((*IrpSp).MajorFunction == IRP_MJ_DEVICE_CONTROL as u8);
 
         if (*IrpSp).Parameters.DeviceIoControl.IoControlCode == IOCTL_AFD_RECV {
             RecvReq = GetLockedData(Irp, IrpSp) as PAFD_RECV_INFO;
@@ -1324,7 +1324,7 @@ pub unsafe extern "C" fn CleanupPendingIrp(FCB: PAFD_FCB, Irp: PIRP, IrpSp: PIO_
             SendReq = GetLockedData(Irp, IrpSp) as PAFD_SEND_INFO;
             UnlockBuffers((*SendReq).BufferArray, (*SendReq).BufferCount, CheckUnlockExtraBuffers(FCB, IrpSp) as i32);
         } else if (*IrpSp).Parameters.DeviceIoControl.IoControlCode == IOCTL_AFD_SELECT {
-            debug_assert!(!Poll.is_null());
+            ntkrnl_sys::ASSERT!(!Poll.is_null());
 
             PollReq = (*Irp).AssociatedIrp.SystemBuffer as PAFD_POLL_INFO;
             ZeroEvents(core::ptr::addr_of_mut!((*PollReq).Handles) as PAFD_HANDLE, (*PollReq).HandleCount);

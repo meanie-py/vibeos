@@ -110,7 +110,7 @@ pub static apfnDbgDrvFunctions: [PVOID; 91] = [
 ];
 
 unsafe fn DbgDrvReserved() {
-    debug_assert!(false);
+    ntkrnl_sys::ASSERT!(false);
 }
 
 #[no_mangle]
@@ -159,7 +159,7 @@ pub unsafe extern "system" fn DbgDrvDisablePDEV(
 {
     let ppdev = DbgLookupDHPDEV(dhpdev);
 
-    debug_assert!(!ppdev.is_null());
+    ntkrnl_sys::ASSERT!(!ppdev.is_null());
 
     ((*(*ppdev).pldev).pfn.DisablePDEV)(dhpdev);
 }
@@ -180,7 +180,7 @@ pub unsafe extern "system" fn DbgDrvDisableSurface(
 {
     let ppdev: PPDEVOBJ = DbgLookupDHPDEV(dhpdev);
 
-    debug_assert!(!ppdev.is_null());
+    ntkrnl_sys::ASSERT!(!ppdev.is_null());
 
     ((*(*ppdev).pldev).pfn.DisableSurface)(dhpdev);
 }
@@ -191,7 +191,7 @@ pub unsafe extern "system" fn DbgDrvAssertMode(
 ) -> BOOL {
     let ppdev: PPDEVOBJ = DbgLookupDHPDEV(dhpdev);
 
-    debug_assert!(!ppdev.is_null());
+    ntkrnl_sys::ASSERT!(!ppdev.is_null());
 
     ((*(*(*ppdev).pldev).pfn).AssertMode)(dhpdev, bEnable)
 }
@@ -219,7 +219,7 @@ pub unsafe extern "system" fn DbgDrvResetPDEV(
 
 #[no_mangle]
 pub unsafe extern "system" fn DbgDrvDisableDriver() {
-    debug_assert!(false);
+    ntkrnl_sys::ASSERT!(false);
 }
 
 #[no_mangle]
@@ -236,7 +236,7 @@ pub unsafe extern "system" fn DbgDrvCreateDeviceBitmap(
 pub unsafe extern "system" fn DbgDrvDeleteDeviceBitmap(
     dhsurf: DHSURF)
 {
-    debug_assert!(false);
+    ntkrnl_sys::ASSERT!(false);
 }
 
 #[no_mangle]
@@ -291,7 +291,7 @@ pub unsafe extern "system" fn DbgDrvFillPath(
     flOptions: FLONG,
 ) -> i32 {
     let ppdev = (*pso).hdev as PPDEVOBJ;
-    debug_assert!(false);
+    ntkrnl_sys::ASSERT!(false);
     0
 }
 
@@ -309,7 +309,7 @@ pub unsafe extern "system" fn DbgDrvStrokeAndFillPath(
     flOptions: FLONG,
 ) -> i32 {
     let ppdev: PPDEVOBJ = (*pso).hdev as PPDEVOBJ;
-    debug_assert!(false);
+    ntkrnl_sys::ASSERT!(false);
     0
 }
 
@@ -781,7 +781,7 @@ unsafe fn DbgDrvGetDirectDrawInfo(
 ) -> BOOL {
     let ppdev: PPDEVOBJ = DbgLookupDHPDEV(dhpdev);
 
-    debug_assert!(!ppdev.is_null());
+    ntkrnl_sys::ASSERT!(!ppdev.is_null());
 
     ((*(*ppdev).pldev).pfn.GetDirectDrawInfo.unwrap())(
         dhpdev,
@@ -812,7 +812,7 @@ pub unsafe extern "system" fn DbgDrvDisableDirectDraw(
 {
     let ppdev: PPDEVOBJ = DbgLookupDHPDEV(dhpdev);
 
-    debug_assert!(!ppdev.is_null());
+    ntkrnl_sys::ASSERT!(!ppdev.is_null());
 
     ((*(*ppdev).pldev).pfn.DisableDirectDraw)(dhpdev);
 }
@@ -820,7 +820,7 @@ pub unsafe extern "system" fn DbgDrvDisableDirectDraw(
 #[no_mangle]
 pub unsafe extern "system" fn DbgDrvQuerySpoolType(PDev: DHPDEV, SpoolType: LPWSTR) -> i32 {
     ERR(b"Obsolete driver function %s called!\n\0".as_ptr(), b"DbgDrvQuerySpoolType\0".as_ptr());
-    core::debug_assert!(false);
+    ntkrnl_sys::ASSERT!(false);
     0
 }
 
@@ -969,7 +969,7 @@ pub unsafe extern "system" fn DbgSynthesizeFont() {
 }
 
 unsafe extern "C" fn DbgGetSynthesizedFontFiles() {
-    debug_assert!(false);
+    ntkrnl_sys::ASSERT!(false);
 }
 
 #[no_mangle]

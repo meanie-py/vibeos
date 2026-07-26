@@ -895,7 +895,7 @@ pub unsafe extern "C" fn DeviceIsPlayActive(Device: WDFDEVICE) -> u8 {
     }
 
     // Allocate the required memory
-    debug_assert!(core::mem::size_of::<SUB_Q_CURRENT_POSITION>() >= core::mem::size_of::<CDROM_SUB_Q_DATA_FORMAT>());
+    ntkrnl_sys::ASSERT!(core::mem::size_of::<SUB_Q_CURRENT_POSITION>() >= core::mem::size_of::<CDROM_SUB_Q_DATA_FORMAT>());
     currentBuffer = ExAllocatePoolWithTag(
         NonPagedPoolNxCacheAligned,
         core::mem::size_of::<SUB_Q_CURRENT_POSITION>(),
@@ -4388,7 +4388,7 @@ pub unsafe extern "C" fn RequestHandleGetDriveGeometry(
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
     // PAGED_CODE() expansion: assert IRQL <= APC_LEVEL
-    debug_assert!(KeGetCurrentIrql() <= APC_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() <= APC_LEVEL);
 
     *DataLength = 0;
 
@@ -4436,7 +4436,7 @@ pub unsafe extern "C" fn RequestHandleGetDriveGeometry(
             }
             _ => {
                 // NT_ASSERT(FALSE)
-                debug_assert!(false);
+                ntkrnl_sys::ASSERT!(false);
             }
         }
     }
@@ -6143,10 +6143,10 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
         );
 
         if (*currentIrpStack).Parameters.DeviceIoControl.OutputBufferLength > 0 {
-            debug_assert!(!(*irp).MdlAddress.is_null());
+            ntkrnl_sys::ASSERT!(!(*irp).MdlAddress.is_null());
             outputVirtAddr = MmGetMdlVirtualAddress((*irp).MdlAddress);
             if (outputVirtAddr as usize) & (*(*DeviceExtension).AdapterDescriptor).AlignmentMask as usize != 0 {
-                debug_assert!(false);
+                ntkrnl_sys::ASSERT!(false);
                 *DataLength = 0;
                 status = STATUS_INVALID_PARAMETER;
             }
@@ -6256,7 +6256,7 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
                     (*cdb).READ_CD.as_mut().set_SubChannelSelection(1);
                 }
                 _ => {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                 }
             }
 

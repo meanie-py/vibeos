@@ -1078,7 +1078,7 @@ pub unsafe extern "C" fn AcpiOsSignal(Function: UINT32, _Info: *mut c_void) -> A
         _ => {}
     }
     // C: ASSERT(FALSE) — keep a hard stop so a fatal ACPI signal is not silent.
-    debug_assert!(false, "AcpiOsSignal");
+    ntkrnl_sys::ASSERT!(false, "AcpiOsSignal");
     AE_OK
 }
 

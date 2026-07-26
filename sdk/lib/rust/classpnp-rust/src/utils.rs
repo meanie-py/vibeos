@@ -1561,7 +1561,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
         if NT_SUCCESS(status) {
             (*(Srb as *mut _STORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
         } else {
-            debug_assert!(false, "Should not occur");
+            ntkrnl_sys::ASSERT!(false, "Should not occur");
         }
     } else {
         core::ptr::write_bytes(Srb as *mut u8, 0, core::mem::size_of::<_SCSI_REQUEST_BLOCK>());
@@ -2500,7 +2500,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
 
         // IRQL check.
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            core::debug_assert!(KeGetCurrentIrql() < DISPATCH_LEVEL);
+            ntkrnl_sys::ASSERT!(KeGetCurrentIrql() < DISPATCH_LEVEL);
             status = STATUS_INVALID_LEVEL;
             break 'trim_exit;
         }
@@ -2532,7 +2532,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
                     || status == STATUS_INVALID_PARAMETER_1
                 {
                     status = (*support_info).LBProvisioningData.CommandStatus;
-                    core::debug_assert!(status != (-1i32 as NTSTATUS));
+                    ntkrnl_sys::ASSERT!(status != (-1i32 as NTSTATUS));
                     (*support_info).LowerLayerSupport.TrimProperty = NotSupported;
                     if NT_SUCCESS(status) {
                         RtlZeroMemory(trimDescr as *mut core::ffi::c_void, length as usize);
@@ -2550,7 +2550,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
             }
             NotSupported => {
                 status = (*support_info).LBProvisioningData.CommandStatus;
-                core::debug_assert!(status != (-1i32 as NTSTATUS));
+                ntkrnl_sys::ASSERT!(status != (-1i32 as NTSTATUS));
                 if NT_SUCCESS(status) {
                     RtlZeroMemory(trimDescr as *mut core::ffi::c_void, length as usize);
                     (*trimDescr).Version = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as ULONG;

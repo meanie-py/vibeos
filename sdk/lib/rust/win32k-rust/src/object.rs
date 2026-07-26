@@ -1091,8 +1091,8 @@ pub unsafe extern "fastcall" fn UserDeleteObject(h: HANDLE, type_: HANDLE_TYPE) 
         return 0;
     }
 
-    debug_assert!((*((body as PHEAD))).cLockObj >= 1);
-    debug_assert!((*((body as PHEAD))).cLockObj < 0x10000);
+    ntkrnl_sys::ASSERT!((*((body as PHEAD))).cLockObj >= 1);
+    ntkrnl_sys::ASSERT!((*((body as PHEAD))).cLockObj < 0x10000);
 
     UserFreeHandle(gHandleTable, h)
 }
@@ -1106,8 +1106,8 @@ pub unsafe extern "C" fn UserDeleteObject(h: HANDLE, type_: HANDLE_TYPE) -> BOOL
         return 0;
     }
 
-    debug_assert!((*((body as PHEAD))).cLockObj >= 1);
-    debug_assert!((*((body as PHEAD))).cLockObj < 0x10000);
+    ntkrnl_sys::ASSERT!((*((body as PHEAD))).cLockObj >= 1);
+    ntkrnl_sys::ASSERT!((*((body as PHEAD))).cLockObj < 0x10000);
 
     UserFreeHandle(gHandleTable, h)
 }

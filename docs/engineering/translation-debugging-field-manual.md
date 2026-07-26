@@ -1110,6 +1110,20 @@ N+1 as evidence that the fix for bug N was wrong.**
   **always true**. Recurs wherever a C macro yields an `int`: `if(!MSVCRT_CHECK_PMT(x))` is
   `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
   **silent** when it feeds an integer.
+  **2026-07-26: gated — `scan_bitwise_not_bool.py`, baseline EMPTY.** Being *written down here*
+  was not enough; a sweep still found 8 live sites, and only 3 were assertions. The rest were
+  branches: classpnp's `ADJUST_FUA_FLAG` (`DEV_WRITE_CACHE && !DEV_POWER_PROTECTED &&
+  !CLASS_SPECIAL_FUA_NOT_SUPPORTED`) collapsed to its first term, forcing Force Unit Access onto
+  power-protected devices and onto devices that had explicitly reported FUA unsupported; an
+  always-true `||` arm disabled win32k's CJK line-break rule in word wrap; kernel32's
+  `DuplicateConsoleHandle` lost its `DUPLICATE_SAME_ACCESS` validation; and scsiport kept only
+  the null half of `ASSERT(Lun && !Lun->Common.IsFDO)`. Two idioms the scanner must NOT flag,
+  and both are everywhere: `x & !MASK != 0` (the unknown-flag test — genuinely bitwise) and the
+  macro bang in `offset_of!(T,f) == 0`. Missing them is not cosmetic — the first draft reported
+  **4710** sites, essentially all of them these two, which is worth exactly as much as no
+  scanner at all.
+  > A documented bug class with no gate is a bug class that recurs. The entry existed the whole
+  > time these eight shipped.
 - **C post-inc/dec rewritten with the wrong read order** (`x = y--` reading the post value).
 - **A post-decrement INSIDE a loop condition — `while (a && b && len--)`.** The decrement is
   part of the test, so the loop exits having *already* wrapped `len` to `SIZE_MAX`, and the
@@ -1327,7 +1341,16 @@ woke a latent panic** `[§9.57]`, arm64-only.
 
 **Check the direction PER SITE — this class errs both ways, and neither fix may be a blanket
 sweep.**
-- **Too weak** `[§9.135]`: **1962** `debug_assert!` sites across `sdk/lib/rust` are dead code.
+- **Too weak** `[§9.135]`: **490** `debug_assert!` sites across `sdk/lib/rust` are dead code.
+  (Recorded as 1962 until 2026-07-26. The real figure is 490 invocations — 454 in kernel crates,
+  36 in usermode. The inflation was **81% generated code**: bindgen emits 16 `debug_assert!`
+  bounds checks per `__BindgenBitfieldUnit` island, ×3 arches, ×~30 crates, plus 149
+  `cfg(debug_assertions)` gates and 8 comments that a substring grep counts as invocations.
+  **A generated file cannot be identified by its NAME** — `types_amd64.rs` IS bindgen output
+  while `winldr_amd64.rs` is hand-written freeldr source, and `bindgen_common.rs` is generated
+  but carries `//! Do not edit manually` instead of the bindgen banner. Key on content.
+  Same variable-stem trap as `[§9.122]`: the producer names islands from `TYPES_STEM`, so every
+  consumer that hardcodes a literal is wrong in one direction or the other.)
   `debug_assert!` is gated on `cfg(debug_assertions)`, the workspace `[profile.release]` never sets
   `debug-assertions`, and every kernel crate builds `--release` — while CMake sets `-DDBG=1`, so
   the C `ASSERT` these came from calls `RtlAssert` and fires loudly. Proven by execution, not

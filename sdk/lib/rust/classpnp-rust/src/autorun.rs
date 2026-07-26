@@ -348,7 +348,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
             (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         );
     }
-    debug_assert!(dataLength == 4, "dataLength == 4");
+    ntkrnl_sys::ASSERT!(dataLength == 4, "dataLength == 4");
     if (*(*Header).ClassEventData.as_ptr() as i32 & 0xf) == 0 {
         return status;
     }
@@ -370,10 +370,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                             .as_ptr() as PCHAR,
                         (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                     );
-                    debug_assert!(
-                        CountOfSetBitsUChar((*info).Gesn.EventMask) != 1,
-                        "CountOfSetBitsUChar(info->Gesn.EventMask) != 1"
-                    );
+                    ntkrnl_sys::ASSERT!(CountOfSetBitsUChar((*info).Gesn.EventMask) != 1, "CountOfSetBitsUChar(info->Gesn.EventMask) != 1");
                     (*info).Gesn.NoChangeEventMask |= OP_CHANGE_MASK;
                     (*info).Gesn.EventMask &= !OP_CHANGE_MASK;
                     (*info).Gesn.HackEventMask = 1u8;
@@ -460,7 +457,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                                 );
                                 srbPtr = srbEx as PSCSI_REQUEST_BLOCK;
                             } else {
-                                debug_assert!(0i32 == 0);
+                                ntkrnl_sys::ASSERT!(0i32 == 0);
                                 srb.CdbLength = 6u8;
                                 srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as USHORT;
                                 srb.SrbStatus =
@@ -3077,7 +3074,7 @@ pub unsafe extern "C" fn ClasspEnableTimer(
         fdoData = (*FdoExtension).PrivateFdoData;
     }
     if !fdoData.is_null() {
-        debug_assert!((*fdoData).TimerInitialized != 0);
+        ntkrnl_sys::ASSERT!((*fdoData).TimerInitialized != 0);
         if (*fdoData).TimerInitialized == 0 {
             let status = ClasspInitializeTimer(FdoExtension);
             if status < 0 {

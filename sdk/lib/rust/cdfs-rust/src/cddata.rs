@@ -378,7 +378,7 @@ pub unsafe extern "C" fn CdExceptionFilter(
     let mut TestStatus: i32 = 1; // TRUE
 
     // ASSERT_OPTIONAL_IRP_CONTEXT(IrpContext)
-    debug_assert!(!IrpContext.is_null());
+    ntkrnl_sys::ASSERT!(!IrpContext.is_null());
 
     let exception_record = (*ExceptionPointer).ExceptionRecord;
     ExceptionCode = (*exception_record).ExceptionCode;

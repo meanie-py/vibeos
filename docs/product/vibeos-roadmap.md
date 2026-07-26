@@ -487,11 +487,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   to `RtlAssert`: loud, non-fatal, matching C under `-DDBG=1`. Deliberately left alone: 599
   `size_of`/`offset_of` layout checks, 8 uniata `const _: () = {}` register-layout locks, and 4
   kdbg `#[cfg(test)]` asserts — all of which *should* be compile-time or fatal.
-  **Still owed:** the 1962 `debug_assert!` sites (field manual §9.135) and the two crates with a
-  local `macro_rules! ASSERT` expanding to `debug_assert!` (usbaudio, mouhid). That was parked on
-  "1962 assertions going live at once needs a per-arch triage pass"; with the macro it is a
-  mechanical substitution rather than a risk decision, because nothing becomes fatal.
-  Field manual, "`NT_ASSERT`/`ASSERT`/`PAGED_CODE` are DIAGNOSTICS".
+  **`debug_assert!` — DONE for kernel crates, 454 sites** (2026-07-26, `migrate_debug_assert.py`).
+  The population was never 1962: that counted bindgen boilerplate (16 `__BindgenBitfieldUnit`
+  bounds checks per island × 3 arches × ~30 crates), 149 `cfg(debug_assertions)` gates and 8
+  comments. **490** real invocations — 454 kernel, 36 usermode. Kernel is migrated to
+  `ntkrnl_sys::ASSERT!`; usermode needs an ntdll-side macro (`RtlAssert` is exported there too,
+  with `PCHAR` rather than `PSTR`) and is the remaining slice, along with the two crates whose
+  local `macro_rules! ASSERT` expands to `debug_assert!` (usbaudio, mouhid).
+  Two things made this safe rather than a risk decision: the shipping `RtlAssert` is **Rust**
+  (`rtl-diag/src/assert.rs` — `assert.c` is inert cohab source), and it prints only the first
+  **20** failures then returns, so no assertion can hang or flood the log however many go live.
+  Making them live immediately paid: `hidusb.sys` failed to link on amd64 because
+  `KeGetCurrentIrql` is HAL-exported on i386/arm/arm64 but a CR8 FORCEINLINE on amd64 — the C
+  `ASSERT` at `hidusb.c:410` had been dead in Rust, so nothing had ever referenced the symbol.
+  Field manual, "`NT_ASSERT`/`ASSERT`/`PAGED_CODE` are DIAGNOSTICS" + §9.135.
+- **`!x` translated as bitwise NOT — 8 sites, 5 of them live branches** (2026-07-26). C's `!` is
+  logical; Rust's `!` on an integer is bitwise, so `!(flags & FLAG) != 0` is true for every value
+  a flag test can produce — a constant condition that compiles clean and trips no rustc lint. The
+  class was *already in the field manual* and still shipped: classpnp's `ADJUST_FUA_FLAG`
+  collapsed to its first term (forcing Force Unit Access onto devices that had reported it
+  unsupported), an always-true `||` arm disabled win32k's CJK line-break rule, kernel32's
+  `DuplicateConsoleHandle` lost a validation arm, and scsiport kept only the null half of an
+  assert. Now gated: `scan_bitwise_not_bool.py`, baseline EMPTY, with controls covering the two
+  idioms it must never flag (`x & !MASK != 0`, and the macro bang in `offset_of!`) — a first
+  draft that missed those reported 4710 sites.
 - **`.try_into().unwrap()` — FIXED where it mattered; the rest is cosmetic** (2026-07-26).
   All 234 sites in the Rust tree were audited. Exactly one was reachable and it was a
   usermode-triggerable **kernel** panic: `handle_internal_message`'s `WM_ASYNC_SHOWWINDOW` arm

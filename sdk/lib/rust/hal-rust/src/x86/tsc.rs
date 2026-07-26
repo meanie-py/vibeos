@@ -326,7 +326,7 @@ pub unsafe extern "system" fn HalpCalibrateStallExecution() {
 pub unsafe extern "system" fn KeQueryPerformanceCounter(
     PerformanceFrequency: PLARGE_INTEGER,
 ) -> LARGE_INTEGER {
-    debug_assert!(HalpCpuClockFrequency.QuadPart != 0);
+    ntkrnl_sys::ASSERT!(HalpCpuClockFrequency.QuadPart != 0);
 
     if !PerformanceFrequency.is_null() {
         core::ptr::write_volatile(PerformanceFrequency, HalpCpuClockFrequency);
@@ -357,5 +357,5 @@ pub unsafe extern "system" fn HalCalibratePerformanceCounter(
     _Count: *mut i32, // volatile PLONG
     _NewCount: u64,
 ) {
-    debug_assert!(false, "HalCalibratePerformanceCounter UNIMPLEMENTED");
+    ntkrnl_sys::ASSERT!(false, "HalCalibratePerformanceCounter UNIMPLEMENTED");
 }

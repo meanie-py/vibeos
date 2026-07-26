@@ -544,7 +544,7 @@ extern "C" {
 pub unsafe extern "system" fn DriverEvtCleanup(Driver: WDFOBJECT) {
     let driver: WDFDRIVER = Driver as WDFDRIVER;
 
-    debug_assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
     TracePrint!(
         TRACE_LEVEL_INFORMATION,

@@ -1457,10 +1457,7 @@ pub unsafe extern "system" fn PciCanDisableDecodes(
 pub unsafe extern "system" fn PciClassifyDeviceType(
     PdoExtension: PPCI_PDO_EXTENSION,
 ) -> PCI_DEVICE_TYPES {
-    debug_assert_eq!(
-        (*PdoExtension).ExtensionType,
-        _PCI_SIGNATURE_PciPdoExtensionType as ULONG
-    );
+    ntkrnl_sys::ASSERT!((*PdoExtension).ExtensionType == _PCI_SIGNATURE_PciPdoExtensionType as ULONG);
     if (*PdoExtension).BaseClass as u32 != PCI_CLASS_BRIDGE_DEV {
         return _PCI_DEVICE_TYPES_PciTypeDevice;
     }

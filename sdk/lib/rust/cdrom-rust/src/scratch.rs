@@ -188,19 +188,17 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     }
 
     // validate max transfer already determined
-    debug_assert!(
-        (*DeviceExtension)
+    ntkrnl_sys::ASSERT!((*DeviceExtension)
             .DeviceAdditionalData
             .MaxPageAlignedTransferBytes
-            != 0
-    );
+            != 0);
 
     // validate no partially-saved state
-    debug_assert!((*DeviceExtension).ScratchContext.ScratchBuffer.is_null());
-    debug_assert!((*DeviceExtension).ScratchContext.ScratchBufferMdl.is_null());
-    debug_assert!((*DeviceExtension).ScratchContext.ScratchBufferSize == 0);
-    debug_assert!((*DeviceExtension).ScratchContext.ScratchRequest.is_null());
-    debug_assert!((*DeviceExtension).ScratchContext.PartialMdl.is_null());
+    ntkrnl_sys::ASSERT!((*DeviceExtension).ScratchContext.ScratchBuffer.is_null());
+    ntkrnl_sys::ASSERT!((*DeviceExtension).ScratchContext.ScratchBufferMdl.is_null());
+    ntkrnl_sys::ASSERT!((*DeviceExtension).ScratchContext.ScratchBufferSize == 0);
+    ntkrnl_sys::ASSERT!((*DeviceExtension).ScratchContext.ScratchRequest.is_null());
+    ntkrnl_sys::ASSERT!((*DeviceExtension).ScratchContext.PartialMdl.is_null());
 
     // limit the scratch buffer to between 4k and 64k (so data length fits into USHORT -- req'd for many commands)
     let max_transfer = (*DeviceExtension)
@@ -1153,7 +1151,7 @@ pub unsafe extern "C" fn ValidateSrbHistoryDataPresumptions(
                             j,
                             j,
                         );
-                        debug_assert!(false);
+                        ntkrnl_sys::ASSERT!(false);
                     } else if found_partially_compressed_item && ((*found).ClassDriverUse == 0xFF) {
                         CdromDbgPrintExHistory(
                             DPFLTR_CDROM_ID,
@@ -1169,7 +1167,7 @@ pub unsafe extern "C" fn ValidateSrbHistoryDataPresumptions(
                             j,
                             j,
                         );
-                        debug_assert!(false);
+                        ntkrnl_sys::ASSERT!(false);
                     }
 
                     if (*found).ClassDriverUse == 0 {

@@ -1854,9 +1854,7 @@ pub unsafe extern "system" fn MmCreateArm3Section(
         .set_WasPurged((*control_area).u.Flags.WasPurged() | kernel_call as ULONG);
 
     // Make sure the segment and the section are the same size, or the section is smaller
-    debug_assert!(
-        (*new_section).SizeOfSection.QuadPart as u64 <= (*new_section).Segment.read().SizeOfSegment
-    );
+    ntkrnl_sys::ASSERT!((*new_section).SizeOfSection.QuadPart as u64 <= (*new_section).Segment.read().SizeOfSegment);
 
     // Return the object and the creation status
     *section_object = new_section as PVOID;
