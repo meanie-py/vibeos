@@ -1404,6 +1404,37 @@ And after fixing anything a harness caught, **re-break one site deliberately and
 suite goes red.** Widening an assertion is itself untested code: it is easy to add a field to a
 tuple that can never disagree, and the result reads exactly like a stronger test.
 
+**An IN-OUT cursor needs its own cell per side, compared by offset — and NULL is not offset 0.**
+`_mbstok_s(str, delim, ctx, …)` and `mbsrtowcs(wcstr, pmbstr, …)` report where they stopped by
+writing a pointer back through a `char **`. Three ways to grade that wrong, in increasing
+subtlety: hand both sides ONE cell (the reference then resumes from wherever the subject left
+off and agrees by construction); compare the two pointers (they address separate copies, so
+they differ on every iteration); or map NULL to offset 0 (`mbsrtowcs` writes NULL to mean
+"consumed to the terminator" and a real position to mean "stopped here" — collapsing them grades
+two different outcomes as one). Offsets into each side's own base, with NULL as its own value.
+Also seed the buffer: a cursor over a mutable buffer means the call operates ON it, whatever
+else the signature looks like — `_mbstok_s`'s `delim` reads as a source string to a
+"has-a-source ⇒ the buffer is a destination" rule, which hands it a blank buffer, and both sides
+then tokenize an empty string and agree about nothing.
+
+**A zero-argument accessor returning a pointer has no input to measure against — grade the
+CONTENTS.** msvcrt's `__p_*` family (`__p__mbctype`, `__p___mb_cur_max`, a dozen more) hands
+back an interior pointer into CRT state, and each side reads its own fixture slot, so the
+addresses differ permanently. Dereference and compare, checking NULL-ness first and separately.
+For a table, get the length from `sizeof` on the struct mirror, never typed out: too small
+silently stops comparing the tail, too large reads past the struct, and **both are invisible in
+the verdict.**
+
+**Padding an input string is not enough — the padding needs a terminator.** msvcrt's MBCS
+walkers step past the NUL on a malformed string: `_mbscmp("ab\x82", "ab\x82")` under cp932 treats
+the trailing lead byte's terminator as its trail byte and advances TWO, resuming past the end.
+The corpus already padded both copies identically so the two sides would read the same bytes
+there — but the padding itself had no terminator, so a walker that consumed it left the
+allocation and read heap. It sat latent for as long as the allocations happened to agree, and
+surfaced as the subject and the reference disagreeing about two IDENTICAL strings, provoked by
+an unrelated pair of cases shifting the heap. Pad, then terminate — with two NULs, so
+termination does not depend on whether the walker's stride is one byte or two.
+
 ### Anything you define so the reference will LINK is part of the oracle `[§9.73]`
 A 20,000-case differential fuzzer said MATCH for four waves while **six shipped msvcrt functions
 were wrong** — because the harness's own convenience stubs for `_tolower_l` &c. graded the Rust

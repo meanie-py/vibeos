@@ -380,6 +380,19 @@ int mbcs_fixture_install(unsigned int cp)
     return 0;
 }
 
+/* How many bytes `__p__mbctype` hands back.
+ *
+ * From `sizeof`, never typed out: the case that grades that accessor compares the bytes
+ * behind the returned pointer, and a length constant transcribed into the harness is part
+ * of the oracle — too small and the tail of the table is never compared, too large and the
+ * comparison reads off the end of the struct.  This reads the mirror in locale_layout.h,
+ * which ref_integrity already asserts field-by-field against msvcrt-sys, so the number
+ * cannot drift away from the struct it describes. */
+size_t mbcs_mbctype_len(void)
+{
+    return sizeof(((rl_threadmbcinfo *)0)->mbctype);
+}
+
 /* Did either side scribble on it?  The fixture is read-only state; a graded function
  * that writes to it is a translation bug, and without this check it would not surface
  * as a failure in that function — it would surface as a divergence in whichever

@@ -18,17 +18,22 @@ from rustconv.difftest_gen import (
     MBSTATE,
     SIZE,
     SIZE_OUT,
+    STATE_INT,
     STR_IN,
+    STRCUR,
+    STRCUR_IN,
     TIER_NLS,
     TIER_PURE,
     UCHAR,
     VOID,
+    WBUF_OUT,
     WSTR_IN,
     base_kinds,
     case_fn,
     classify_type,
     emit,
     emit_case,
+    mutates_in_place,
     plan_file,
 )
 from rustconv.scanner import scan_file
@@ -205,10 +210,59 @@ def test_a_nested_if_does_not_end_the_version_region(tmp_path):
 
 def test_an_unsupported_parameter_is_refused_with_its_spelling(tmp_path):
     """A refusal must name the type, so the next person knows what to hand-write.
-    `const char **` is the pointer-to-pointer cursor family (`mbsrtowcs`, `_mbstok_s`):
-    each side needs a cell pointing into its OWN buffer, compared by offset."""
-    plan = _plan(tmp_path, "int f(const char **s) { return 0; }\n")
-    assert plan.refusals and "char *" in plan.refusals[0].detail
+
+    The specimen is a WIDE cursor. The narrow ones (`const char **`, `unsigned char **`)
+    used to live here and are now supported — see the STRCUR tests below — and `wchar_t **`
+    is the honest remaining gap in that family rather than a type invented to fail.
+    """
+    plan = _plan(tmp_path, "int f(wchar_t **s) { return 0; }\n")
+    assert plan.refusals and "wchar_t" in plan.refusals[0].detail
+
+
+def test_a_narrow_cursor_is_supplied_per_side_and_compared_by_offset(tmp_path):
+    """Each side gets its OWN cell, and the verdict is the offset each reached.
+
+    One shared cell would let the reference resume from wherever the subject left off and
+    agree with it by construction; comparing the raw pointers would report a divergence on
+    every iteration, since the two walk separate copies.
+    """
+    plan = _plan(tmp_path, "size_t f(wchar_t *d, const char **p, size_t n) { return 0; }\n")
+    (case,) = plan.cases
+    assert case.param_kinds == (WBUF_OUT, STRCUR_IN, SIZE)
+    assert case.cursors == (1,)
+    src = emit_case(case)
+    assert "&mut p_s" in src and "&mut p_r" in src
+    assert "p_s as isize - p_str_s.as_ptr() as isize" in src
+    # NULL is its own answer, not offset 0: `mbsrtowcs` writes NULL to mean "consumed to
+    # the terminator" and a position to mean "stopped here".
+    assert "if p_s.is_null() { -1 }" in src
+
+
+def test_a_cursor_over_a_mutable_buffer_seeds_it(tmp_path):
+    """`_mbstok_s(str, delim, ctx, …)` tokenizes `str` IN PLACE.
+
+    The delimiter set is a `const unsigned char *`, so the has-a-source-string rule would
+    call `str` a destination and hand it a blank buffer — both sides would then tokenize an
+    empty string, agree, and grade nothing.
+    """
+    kinds = [BUF_OUT, STR_IN, STRCUR]
+    assert mutates_in_place(kinds)
+    # …while a read-only cursor IS the source, so its wide sink stays blank.
+    assert not mutates_in_place([WBUF_OUT, STRCUR_IN, SIZE])
+
+
+def test_a_pointer_returned_by_a_zero_ARG_accessor_grades_the_contents(tmp_path):
+    """msvcrt's `__p_*` family points into CRT state, which each side has its own copy of.
+
+    There is no argument to measure an offset against — that is what refused them — so the
+    verdict is what the pointer points AT. The identical `int *` as a PARAMETER stays an
+    out-scalar, which is why this is decided from the whole signature rather than the type.
+    """
+    plan = _plan(tmp_path, "int *f(void) { return 0; }\nint g(int *out) { return 0; }\n")
+    by_name = {c.name: c for c in plan.cases}
+    assert by_name["f"].return_kind == STATE_INT
+    assert by_name["g"].param_kinds == (INT_OUT,)
+    assert "unsafe { *got } != unsafe { *want }" in emit_case(by_name["f"])
 
 
 def test_a_static_function_is_neither_covered_nor_refused(tmp_path):
