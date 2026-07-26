@@ -311,3 +311,130 @@ def test_multiline_argument_list_does_not_get_trailing_whitespace():
     out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
     assert not any(ln.rstrip() != ln for ln in out.split("\n")), out
     assert out.startswith("    let hr = ((*(*psf).lpVtbl).BindToObject)(psf,\n        pidl,")
+
+
+# --- the same call with the vtable deref already written out ----------------------------------
+#
+# rustc names the VTABLE struct in this shape, so the rule has to recover the interface pointer
+# from the receiver text rather than from the diagnostic.
+
+
+def test_call_through_a_written_out_vtbl_becomes_a_dispatch():
+    src = "    (*(*psf).lpVtbl).GetAttributesOf(cidl, apidl, rgf);\n"
+    s, e = at(src, "GetAttributesOf")
+    edits, refused = IA.propose(
+        [com_diag("GetAttributesOf", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src),
+        interfaces=IFACES,
+    )
+    assert refused == []
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert out == "    ((*(*psf).lpVtbl).GetAttributesOf)(psf, cidl, apidl, rgf);\n"
+
+
+def test_nullary_call_through_a_written_out_vtbl():
+    src = "    (*(*psf).lpVtbl).Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert refused == []
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert out == "    ((*(*psf).lpVtbl).Release)(psf);\n"
+
+
+def test_a_vtbl_struct_whose_interface_is_unknown_is_left_alone():
+    """`FooVtbl` only qualifies when `Foo` is a known interface — not on the suffix alone."""
+    src = "    (*(*p).lpVtbl).Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IUnrelatedVtbl", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert edits == [] and refused == []
+
+
+def test_vtbl_receiver_that_is_not_lpVtbl_is_REFUSED():
+    """A vtable reached by another name is not the `lpVtbl` idiom; the owner is unknown."""
+    src = "    (*(*psf).vtable).Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert edits == [] and refused[0].reason == "vtbl_receiver_not_lpVtbl"
+
+
+def test_vtbl_owner_that_is_not_a_deref_is_REFUSED():
+    """`(*slot.lpVtbl)` has no interface pointer to pass as `this`."""
+    src = "    (*slot.lpVtbl).Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert edits == [] and refused[0].reason == "vtbl_owner_not_parenthesised"
+
+
+def test_vtbl_owner_parenthesised_but_not_dereferenced_is_REFUSED():
+    src = "    (*(psf).lpVtbl).Release();\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert edits == [] and refused[0].reason == "vtbl_owner_not_a_deref"
+
+
+def test_written_out_vtbl_multiline_args_get_no_trailing_whitespace():
+    src = "    (*(*psf).lpVtbl).GetUIObjectOf(\n        cidl,\n    );\n"
+    s, e = at(src, "GetUIObjectOf")
+    edits, refused = IA.propose(
+        [com_diag("GetUIObjectOf", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src),
+        interfaces=IFACES,
+    )
+    assert refused == []
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert "psf,\n" in out and " \n" not in out
+
+
+def test_written_out_vtbl_that_already_passes_this_does_NOT_get_a_second_one():
+    """The bug this guard exists to not repeat: `(...Release)(p, p)` compiled, and only an
+    arity error two layers down said anything was wrong."""
+    src = "    (*(*spFolder).lpVtbl).Release(spFolder);\n"
+    s, e = at(src, "Release")
+    edits, refused = IA.propose(
+        [com_diag("Release", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    assert refused == []
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert out == "    ((*(*spFolder).lpVtbl).Release)(spFolder);\n"
+
+
+def test_written_out_vtbl_with_this_plus_more_args_keeps_the_rest():
+    src = "    (*(*psf).lpVtbl).GetAttributesOf(psf, cidl, apidl);\n"
+    s, e = at(src, "GetAttributesOf")
+    edits, refused = IA.propose(
+        [com_diag("GetAttributesOf", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src),
+        interfaces=IFACES,
+    )
+    assert refused == []
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert out == "    ((*(*psf).lpVtbl).GetAttributesOf)(psf, cidl, apidl);\n"
+
+
+def test_a_first_argument_that_merely_starts_with_the_object_is_not_mistaken_for_this():
+    """`psfChild` is not `psf`; the guard must compare the whole argument."""
+    src = "    (*(*psf).lpVtbl).Release(psfChild);\n"
+    s, e = at(src, "Release")
+    edits, _ = IA.propose(
+        [com_diag("Release", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src), interfaces=IFACES
+    )
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert out == "    ((*(*psf).lpVtbl).Release)(psf, psfChild);\n"
+
+
+def test_first_arg_stops_at_a_top_level_comma_not_one_inside_a_nested_call():
+    src = "    (*(*psf).lpVtbl).GetUIObjectOf(f(a, b), c);\n"
+    s, e = at(src, "GetUIObjectOf")
+    edits, _ = IA.propose(
+        [com_diag("GetUIObjectOf", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src),
+        interfaces=IFACES,
+    )
+    out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]
+    assert out == "    ((*(*psf).lpVtbl).GetUIObjectOf)(psf, f(a, b), c);\n"

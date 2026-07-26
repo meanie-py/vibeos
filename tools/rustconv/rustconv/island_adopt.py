@@ -121,6 +121,28 @@ def _next_code_byte(data: bytes, pos: int) -> bytes:
     return data[pos : pos + 1]
 
 
+def _first_arg(data: bytes, arg_open: int) -> str | None:
+    """Text of the first argument in the list opening at ``arg_open``, or None if empty.
+
+    Stops at the first TOP-LEVEL comma, so a nested call in argument one is not split.
+    """
+    depth = 0
+    i = arg_open + 1
+    while i < len(data):
+        ch = data[i : i + 1]
+        if ch in (b"(", b"[", b"{"):
+            depth += 1
+        elif ch in (b")", b"]", b"}"):
+            if depth == 0:
+                text = data[arg_open + 1 : i].decode("utf-8", "replace").strip()
+                return text or None
+            depth -= 1
+        elif ch == b"," and depth == 0:
+            return data[arg_open + 1 : i].decode("utf-8", "replace").strip() or None
+        i += 1
+    return None
+
+
 def _line_bounds(data: bytes, offset: int) -> tuple[int, int]:
     start = data.rfind(b"\n", 0, offset) + 1
     end = data.find(b"\n", offset)
@@ -212,8 +234,14 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
         # --- COM method call written in C++ syntax -------------------------------------
         if code == "E0599" and RULE_COM_CALL in rules and interfaces:
             m = re.search(r"no method named `(\w+)` found for struct `([\w:]+)`", msg)
-            if m and m.group(2).rsplit("::", 1)[-1] in interfaces:
-                name, iface = m.group(1), m.group(2).rsplit("::", 1)[-1]
+            struct = m.group(2).rsplit("::", 1)[-1] if m else ""
+            # Two shapes reach here. `IShellFolder` means the receiver is the interface
+            # pointer (`(*psf).Method(..)`); `IShellFolderVtbl` means the translation already
+            # wrote the vtable deref out (`(*(*psf).lpVtbl).Method(..)`) but left the call in
+            # C++ method syntax. Both want the same dispatch, from different starting text.
+            on_vtbl = struct.endswith("Vtbl") and struct[: -len("Vtbl")] in interfaces
+            if m and (struct in interfaces or on_vtbl):
+                name, iface = m.group(1), struct
                 if data[bs:be].decode("utf-8", "replace") != name:
                     refuse(RULE_COM_CALL, "span_is_not_the_method", name)
                     continue
@@ -239,13 +267,36 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
                     refuse(RULE_COM_CALL, "receiver_not_a_deref", inner[:40])
                     continue
                 recv = inner[1:].strip()
+                if on_vtbl:
+                    # `recv` is the VTABLE expression, `(*psf).lpVtbl`. Recover the interface
+                    # pointer from it — that is what the slot takes as its first argument, and
+                    # inventing it from anything but this text would dispatch on the wrong one.
+                    if not recv.endswith(".lpVtbl"):
+                        refuse(RULE_COM_CALL, "vtbl_receiver_not_lpVtbl", recv[:40])
+                        continue
+                    obj = recv[: -len(".lpVtbl")].strip()
+                    if not (obj.startswith("(") and obj.endswith(")")):
+                        refuse(RULE_COM_CALL, "vtbl_owner_not_parenthesised", obj[:40])
+                        continue
+                    obj = obj[1:-1].strip()
+                    if not obj.startswith("*"):
+                        refuse(RULE_COM_CALL, "vtbl_owner_not_a_deref", obj[:40])
+                        continue
+                    vtbl, obj = recv, obj[1:].strip()
+                else:
+                    vtbl, obj = f"(*{recv}).lpVtbl", recv
                 call = re.match(rb"[ \t\n]*\(", data[be:])
                 if not call:
                     refuse(RULE_COM_CALL, "method_not_called", name)
                     continue
                 arg_open = be + call.end() - 1
+                # When the vtable deref is already written out, the translation SOMETIMES also
+                # passed the interface pointer — `(*(*p).lpVtbl).Release(p)`. Splicing another
+                # one in produced `(...Release)(p, p)`, which compiled far enough to look fine
+                # and was caught only by an arity error. Detect it and add nothing.
+                already_this = on_vtbl and _first_arg(data, arg_open) == obj
                 nxt = _next_code_byte(data, arg_open + 1)
-                if nxt == b")":
+                if already_this or nxt == b")":
                     sep = ""
                 else:
                     # A multi-line argument list starts on the NEXT line, so a trailing space
@@ -253,11 +304,12 @@ def propose(diagnostics, read_file, *, rules=ALL_RULES, interfaces=frozenset()):
                     # and the repo's own hooks treat as a defect.
                     gap = data[arg_open + 1 :].split(nxt, 1)[0]
                     sep = "," if b"\n" in gap else ", "
+                this_arg = "" if already_this else obj
                 add(
                     RULE_COM_CALL,
                     open_,
                     arg_open + 1,
-                    f"((*(*{recv}).lpVtbl).{name})({recv}{sep}",
+                    f"((*{vtbl}).{name})({this_arg}{sep}",
                     f"`{iface}` is a COM interface in the `lpVtbl` shape, so `{name}` is a "
                     "vtable slot taking the interface pointer as its first argument, not a "
                     "Rust method",
