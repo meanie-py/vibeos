@@ -462,6 +462,26 @@ DWORD WINAPI GetLastError(void)
     return ref_last_error;
 }
 
+/* ...and the SAME storage under the plain name, for the SUBJECT.
+ *
+ * refstub/msvcrt.h:224 namespaces `GetLastError` so the reference can never reach into
+ * the code under test — correct everywhere else, wrong here. `WideCharToMultiByte` is
+ * deliberately NOT namespaced (kernel32 is shared environment, not code under test), so
+ * ONE converter serves both sides and it reports failure by writing `ref_last_error`. A
+ * private subject-side last-error would read 0 exactly where that shared converter had
+ * just set ERROR_INSUFFICIENT_BUFFER, and `_wctomb_s_l`'s insufficient-buffer arm is
+ * precisely that writer/reader pair. One writer, one reader — which is also what the real
+ * DLL has, last-error being a single TEB slot.
+ *
+ * wave 16's `_wctomb_s_l` (msvcrt-crt-rust/src/wcs_rest.rs) is the first flipped code to
+ * import it; before that nothing subject-side referenced it and the asymmetry was
+ * invisible. */
+#undef GetLastError
+DWORD WINAPI GetLastError(void)
+{
+    return ref_last_error;
+}
+
 /* ------------------------------------------------------------------ *
  * The wide ctype table — GONE as of wave 10, and this is the upgrade.
  *
@@ -522,17 +542,19 @@ unsigned int __cdecl _get_output_format(void)
  * would have gone on folding every byte 1:1 onto U+0000..U+00FF while mbcs.c did real
  * DBCS decoding, with the two disagreeing inside one process. */
 
-/* Unlike _mbtowc_l above, `_wctomb_l` IS defined by wcs.c — as ref__wctomb_l
- * (and pfflat__wctomb_l) under the rename preludes.  The SUBJECT (the Rust
- * printf engine, wave 14b) imports plain `_wctomb_l`, exactly as it will in
- * msvcrt.dll where the C converter still owns that symbol.  Forward to the
- * genuine compiled body so subject and reference run the SAME converter and
- * the printf rows grade the ENGINE, not the conversion. */
-int __cdecl ref__wctomb_l(char *dst, wchar_t ch, _locale_t locale);
-int __cdecl _wctomb_l(char *dst, wchar_t ch, _locale_t locale)
-{
-    return ref__wctomb_l(dst, ch, locale);
-}
+/* `_wctomb_l` USED to be forwarded from here to `ref__wctomb_l` — wave 14b, when the
+ * Rust printf engine imported a plain `_wctomb_l` that nothing on the subject side
+ * defined, and the C converter still owned that symbol inside msvcrt.dll.
+ *
+ * Wave 16 FLIPPED `_wctomb_l` (msvcrt-crt-rust/src/wcs_rest.rs), so this forwarder became
+ * a `duplicate symbol: _wctomb_l` that took EVERY test in this crate down — classify,
+ * printf_shells, perf, all of them.  It is the same transition `_mbtowc_l` made just
+ * above, and it fails the same loud way if only half of it is done.
+ *
+ * Deleting it is also the correct grading change, not just the linkable one: the subject
+ * now runs the SHIPPING Rust converter (which is what msvcrt.dll will run) while the
+ * reference runs the genuine `ref__wctomb_l`.  The printf rows stop being handed a shared
+ * converter — the §9.73 shape — and start grading it. */
 
 /* ------------------------------------------------------------------ *
  * MSVC intrinsic.  `_BitScanReverse(&i, mask)` → index of the highest set
@@ -726,7 +748,36 @@ int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int s
     if (nls_is_dbcs_codepage(page))
     {
         int used_i = 0;
-        int r = nls_wide_to_mb(page, src, n, dst, dstlen, defchar, &used_i);
+        int r;
+
+        /* Real kernel32 NEVER truncates: when the conversion does not fit it writes
+         * nothing, returns 0 and sets ERROR_INSUFFICIENT_BUFFER.  The model used to
+         * return the truncated count instead, and that one difference made a whole arm of
+         * msvcrt unreachable — `_wctomb_s_l`'s
+         *
+         *     if (!mblen && GetLastError() == ERROR_INSUFFICIENT_BUFFER) ... ERANGE
+         *
+         * needs a ZERO return for a single-character conversion, which a truncating model
+         * can never produce.  wave 16's reachability probe measured it: 0 hits across
+         * 3 codepages x 9363 characters x 4 sizes.  A branch a harness cannot reach is a
+         * branch it is not grading, however green the row looks.
+         *
+         * Scoped to the single-character conversions (`n == 1`) that this affects, so the
+         * multi-character passes create_mbcinfo makes keep their existing behaviour, and
+         * measured into a real buffer rather than a NULL one (the `cd == -1` fallback
+         * inside nls_wide_to_mb writes unconditionally when dstlen is 0). */
+        if (dstlen > 0 && n == 1)
+        {
+            char probe[8];
+            int need = nls_wide_to_mb(page, src, n, probe, (int)sizeof(probe), defchar, NULL);
+            if (need > dstlen)
+            {
+                ref_last_error = ERROR_INSUFFICIENT_BUFFER;
+                return 0;
+            }
+        }
+
+        r = nls_wide_to_mb(page, src, n, dst, dstlen, defchar, &used_i);
         if (used) *used = used_i ? TRUE : FALSE;
         return r;
     }
@@ -745,4 +796,79 @@ int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int s
         }
     }
     return n;
+}
+
+/* ==================================================================
+ * ntdll's bitmap — what `%[` builds its scanset in (scanf.h:622-689).
+ *
+ * The genuine RtlSetBits has NO range check outside an ASSERT that a release
+ * ntdll compiles out, and msvcrt hands it `*format` — a SIGNED char for the
+ * narrow engine.  `%[\x80]` therefore calls RtlSetBits(map, 0xFFFFFF80, 1) and
+ * writes roughly 128 MB below a 32-byte heap block.  That is undefined
+ * behaviour, not behaviour: there is nothing for a port to reproduce and
+ * nothing for a harness to compare.  tests/scanf.rs excludes bytes >= 0x80 from
+ * every NARROW scanset corpus and prints that exclusion.
+ *
+ * So this model CLAMPS instead of corrupting, and COUNTS every clamp.  The count
+ * is not decoration — it is what stops the exclusion from rotting.  If a corpus
+ * change ever starts feeding out-of-range indices, tests/scanf.rs asserts the
+ * counter is zero and fails, instead of quietly grading a wild write against a
+ * Rust that carefully avoids one.
+ *
+ * Everything else is the real algorithm, behaviourally verbatim from
+ * sdk/lib/rust/bitmap/src/ops.rs (the ntdll actually under this DLL): bit k
+ * lives in word k/32 at bit k%32, and BOTH range checks in RtlAreBitsSet /
+ * RtlAreBitsClear fail CLOSED — so an out-of-range character matches neither an
+ * ordinary nor an inverted scanset, and `are_bits_clear` is NOT the negation of
+ * `are_bits_set`.
+ *
+ * Named msvcrt_ref_* because the scanf prelude puts them in the reference's
+ * import namespace; the plain-named declarations in the generated winternl.h are
+ * included here only for RTL_BITMAP's layout and are never defined.
+ * ================================================================== */
+#include "winternl.h"
+
+static unsigned long ref_bitmap_oob_clamps;
+
+unsigned long msvcrt_ref_bitmap_oob_count(void) { return ref_bitmap_oob_clamps; }
+void          msvcrt_ref_bitmap_oob_reset(void) { ref_bitmap_oob_clamps = 0; }
+
+void msvcrt_ref_RtlInitializeBitMap(PRTL_BITMAP bm, ULONG *buffer, ULONG size)
+{
+    bm->SizeOfBitMap = size;
+    bm->Buffer = buffer;
+}
+
+void msvcrt_ref_RtlSetBits(PRTL_BITMAP bm, ULONG start, ULONG count)
+{
+    ULONG i;
+
+    if (count == 0) return;
+    if ((unsigned long long)start + count > (unsigned long long)bm->SizeOfBitMap)
+    {
+        ref_bitmap_oob_clamps++;   /* see the header comment — deliberately NOT silent */
+        return;
+    }
+    for (i = 0; i < count; i++)
+        bm->Buffer[(start + i) >> 5] |= 1u << ((start + i) & 31);
+}
+
+BOOL msvcrt_ref_RtlAreBitsSet(PRTL_BITMAP bm, ULONG start, ULONG length)
+{
+    ULONG i;
+
+    if (start + length > bm->SizeOfBitMap || start + length <= start) return FALSE;
+    for (i = 0; i < length; i++)
+        if (!(bm->Buffer[(start + i) >> 5] & (1u << ((start + i) & 31)))) return FALSE;
+    return TRUE;
+}
+
+BOOL msvcrt_ref_RtlAreBitsClear(PRTL_BITMAP bm, ULONG start, ULONG length)
+{
+    ULONG i;
+
+    if (start + length > bm->SizeOfBitMap || start + length <= start) return FALSE;
+    for (i = 0; i < length; i++)
+        if (bm->Buffer[(start + i) >> 5] & (1u << ((start + i) & 31))) return FALSE;
+    return TRUE;
 }

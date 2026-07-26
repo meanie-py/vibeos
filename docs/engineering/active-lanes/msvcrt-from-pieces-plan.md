@@ -1248,3 +1248,155 @@ invalid-parameter count.
    variable that unlocks a branch is not always the one the function is named after.
 
 **Measured after:** 431 of 1,165 non-stub amd64 exports Rust-backed (37%), up from 400.
+
+## Wave 14c part 2 (2026-07-26) — the 30 variadic shells, and an oracle that was impossible
+
+Part 1 flipped the 30 `va_list` entry points and left the `...` ones owed. They are now
+`dll/win32/msvcrt/rust_varargs_shim.c`: three-line `va_start` trampolines over the Rust
+engine, transcribed from wcs.c. Stable Rust cannot DEFINE a C-variadic (`c_variadic` is
+nightly), so this much stays C permanently — but it is the whole of what stays C. **Every
+printf byte that actually formats anything is Rust now.**
+
+**Two placement decisions, both load-bearing.** The shim is its own TU because left in wcs.c
+clang keeps IPA-specializing wcs.c's C engine into these bodies and the flip is silently
+undone — the same housemate rule that made part 1 necessary. And it is compiled into the
+**msvcrt MODULE target, not msvcrt_static**: module objects resolve before any archive
+member, so these definitions win first-match over wcs.o's copies. Inside msvcrt_static the
+winner would depend on member order within one archive.
+
+**Verified end to end on the built DLL, not inferred:** export `_snprintf` → RVA 0x1680 (the
+shim's block) → `callq` RVA 0x22570 = `_vsnprintf` → `T _vsnprintf` in
+`libmsvcrt_crt_cargo.a`. Same for `_swprintf`→`_vsnwprintf`, `_scprintf`→`_vscprintf`.
+wcs.o's copies sit dead at 0x9a2b0. wcs.c has no internal callers of its own shells, so every
+caller is cross-TU and routes through the shim.
+
+**The export count does not move, and that is honest** — 433/1087, unchanged. These 30 are C.
+What changed is which engine 30 exports *execute*, which is the thing the count was always a
+proxy for.
+
+**Grading: the differential is impossible, and the attempt is the lesson.** Field manual §9.66
+now carries it in full. Neither difftest instantiation can execute a variadic shell on this
+host — `pfflat_`'s flat `<stdarg.h>` makes `va_start` read `&format + 8` (right on i386 and
+Windows, false on x86-64 where the args are in registers), and `ref_`'s correct `va_start`
+then dies on the `va_arg(*valist, T)` idiom that only type-checks where a va_list IS a
+pointer. I built the harness before working that out and it SIGSEGV'd; the right move was to
+delete it rather than keep something that appeared to grade these. The reachable property is
+transcription fidelity, so `tools/scan_varargs_shim_parity.py` checks it at the source and
+**derives its rewrite rules from wcs.c's own forwarders instead of trusting my reading** —
+the shim can't call the file-static `vswprintf_p_l_opt`, so it names the exported wrappers,
+and the scanner reads those wrappers to confirm the substitution is still an identity. Four
+negative controls (swapped `INT_MAX`/`count`, wrong delegate, an ungated shell, a deleted
+shell) all fire. It caught one real defect before landing: the shim defined `_sprintf_p` and
+`_scwprintf_p`, which live behind `#if _MSVCR_VER>=80` and exist at no vintage this DLL
+builds — two symbols the C build never had, in no `.spec`. Both now carry wcs.c's own gate.
+
+### Next: the host-gradeable tier, then file.c
+
+Re-measured per file (nm over the linked Rust archive ∩ the spec, amd64): 433 of 1,087
+non-stub C exports Rust-backed, 654 left, and they split cleanly.
+
+**Host-gradeable, no OS state (~225):** `scanf.c` 39, `wcs.c` 32, `time.c` 60, `math.c` 30,
+`errno.c` ~15, `string.c` 17. The difftest oracle already grades this shape. Doing this tier
+takes coverage to roughly 60% with infrastructure that exists.
+
+**OS-coupled (~345):** `file.c` **170** — 26% of everything remaining, in one file — plus
+`dir.c` 49, `process.c` 43, `console.c` 20, `heap.c` 21, `locale.c` 20. These need a Win32
+shim substrate in the difftest that does not exist yet. That substrate is the long pole and
+deserves to be built deliberately, not discovered halfway through file.c.
+
+**`scanf.c` is the obvious next wave**: 39 exports in 820 LOC, the densest ratio left, and
+**zero Win32 calls**. It is a template — `scanf.h` (743 lines) `#include`d 16 times under
+combinations of `WIDE_SCANF`/`SECURE`/`STRING`/`STRING_LEN`/`CONSOLE` — so one Rust engine
+generic over (width, secure, source-kind) replaces ~9,600 lines of generated C. The FILE and
+CONSOLE variants differ only in their getc/ungetc callbacks (`fgetc`/`ungetc`/`_getch`), all
+of which stay C and are callable by extern. cnt-rust already has a difftest-graded scanf
+engine (`cnt_vsscanf` & co. over `cabi/scanf_trampoline.c`) to check the shape against — and
+its trampoline file is the same pattern this wave just established for printf.
+
+## Waves 15 + 16 (2026-07-26) — string.c and wcs.c FINISHED, scanf.c ported, 39% → 44%
+
+**483 of 1,087 non-stub C exports Rust-backed (44%)**, up from 433 (39%). `string.c` 91/91 and
+`wcs.c` 109/109 are now FULLY flipped, joining `mbcs.c` and `mathf.c`. Both were done by parallel
+subagents writing only their own new files into `~/vibeos-rust-staging/`, with every shared-file
+edit, build, grading run and gate done centrally — the pattern AGENTS.md prescribes, and it held
+up: 50 exports in one pass, `cargo check` clean on all three triples on first integration.
+
+**string.c's last 17 were mostly not new code.** Thirteen were bodies the crate already shipped
+with the locale hardwired to NULL, so the work was threading an explicit `_locale_t` through
+`strtoi64_contract`, `strtoui64_contract`, `strnicmp_core`, `strcase_s_core` and a newly extracted
+`memicmp_core`. `locinfo_of(NULL)` IS `get_locinfo()`, so every already-graded plain form is
+bit-identical afterwards. Genuinely new: `_strdup`, `_atoflt`, `I10_OUTPUT`.
+
+**wcs.c's last 29 needed 4 private callees my own scoping had missed** (`_wtoi_l`, `_wcstoul_l`,
+`wctomb_s`, `_wcstombs_l`) — flipping the callers without them would have left a split family with
+the C statics still live. Worth remembering when scoping a partial file: enumerate the CALLEES,
+not just the exports.
+
+**scanf.c: 16 template instantiations → one generic engine.** `scanf.h` (743 lines) is `#include`d
+sixteen times under WIDE_SCANF/SECURE/STRING/STRING_LEN/CONSOLE, generating ~9,600 lines of C.
+`scanf.rs` (1,514 lines) is one engine generic over `W: Width`, `S: Source` and
+`const SECURE: bool` — SECURE collapses to a const because the axis is exactly five
+`va_arg`-a-size sites and the non-secure build is byte-identical with `size == UINT_MAX`. The 40
+`...` shells are C trampolines in `rust_scanf_shim.c`; here the MODULE placement is not merely
+preferable but required, because scanf.c's engines are `static` and there is no symbol to
+first-match.
+
+### What the differentials caught that nothing else did
+
+**A real shipping bug in the scanf port.** `scanf.h` builds the float parser's context BEFORE the
+initial whitespace skip and re-assigns `ctx.file = file` AFTER it; the port snapshotted the cursor
+once and its doc comment called the second assignment "redundant". It is not — the skip moves the
+cursor between them, so `swscanf(L" 1.50", L"%g", &f)` yielded **11.5**, and a stale cursor could
+turn a valid parse into `ctx.err` → `return _EOF_RET`, reporting EOF on a successful conversion.
+**Invisible on 8 of the 16 instantiations** (FILE/CONSOLE contexts carry a `FILE*` or a ZST, which
+a cursor skip cannot move), so cargo check, the DLL link, the 3-arch build and the parity scanner
+all had nothing to say. The pass/fail split falling exactly along STRING-vs-stream is what
+identified it in one read.
+
+**An oracle arm reachable zero times.** `_wctomb_s_l`'s insufficient-buffer path is
+`WideCharToMultiByte(...) == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER`, and the harness
+modelled `WideCharToMultiByte` as TRUNCATING where real kernel32 writes nothing and returns 0 — so
+a single-character conversion could never return 0. Probe measured 0 hits of 0 across 3 codepages ×
+9,363 characters × 4 sizes, while every row over that family read MATCH. Not a missing stub (fails
+at link), not a wrong value (a row catches it): a stub whose ERROR MODEL differs from the real API,
+invisible precisely because the error never happens. Field manual has the class.
+
+**A quirk I claimed to have pinned and hadn't.** The wave 16 commit credited the harness with
+preserving `wctob`'s strict `< 0xff`. Unfalsifiable: the only distinguishing input is U+00FF, where
+`<` gives `EOF` (-1) and `<=` gives `(signed char)0xFF` — also -1. Run the perturbation before
+claiming a quirk is pinned.
+
+### Grading totals
+
+| harness | rows | cases | result |
+|---|---|---|---|
+| `tests/wave16.rs` | 122 | 1,999,680 | 122 MATCH, 0 DIVERGE, 0 UNEXERCISED |
+| `tests/scanf.rs` | 36 | 439,100 | 36 MATCH, 0 DIVERGE, 0 UNEXERCISED |
+
+18 negative controls across the two, 17 fired; the eighteenth is the `wctob` non-result above.
+`scan_varargs_shim_parity` now loops over PAIRS and covers both trampoline TUs — 70 shells, 0
+findings.
+
+### Also fixed in passing (pre-existing, in landed code)
+
+`prelude.rs` declared the nine `_isw*_l` predicates taking `wint_t` (16-bit) while this crate
+DEFINES them taking `u32` — 16 bits written into a 32-bit read, upper half undefined per the
+Windows x64 ABI, benign only because rustc happens to zero-extend. `scan_extern_arity` is blind
+because the ARITY matches. Two fingerprints that it had been worked around rather than fixed: a
+private `u32` shim in `fpnum.rs`, and an `as u16` truncation written purely to satisfy the wrong
+declaration.
+
+**Refuted, do not re-open:** the claim that wave 14m's Rust libm dropped `_matherr`/errno. Every
+`MSVCRT_*` wrapper calling `math_error` is unreferenced dead code and the exported `sqrt` was
+always `asm_sqrt` renamed by `-Dasm_sqrt=sqrt`. No regression; `_matherr` is unreachable through
+msvcrt's math exports by construction, before and after.
+
+### Next
+
+`file.c` is now **170 of the 604 remaining exports — 28%, in one file** — and is gated on a Win32
+shim substrate the difftest does not have. `time.c` (59) needs 12 new stubs including the
+`SystemTimeToTzSpecificLocalTime` DST engine, and would hit the same `_snprintf`→glibc oracle trap
+§9.66 documents. `math.c` (30) is mostly FPU-control state that is arch-specific and not
+host-gradeable; its 4 float↔string functions could flip by a cargo feature gate alone, with
+caveats (thread-local vs static buffers, locale `decimal_point`, the `float` feature being off on
+i386 by design).

@@ -375,7 +375,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--write-baseline",
         action="store_true",
         help="store this run's results as the new per-arch baseline "
-        "(tools/conformance-baseline/<arch>/kmtest.txt)",
+        "(tools/conformance-baseline/<arch>/kmtest.txt). Refuses if the sweep "
+        "launched fewer tests than the existing baseline — that would delete "
+        "them from the ratchet floor",
+    )
+    cf.add_argument(
+        "--force-baseline",
+        action="store_true",
+        help="with --write-baseline, allow dropping tests the existing baseline "
+        "has but this sweep never launched (only when a test was really retired)",
     )
     cf.add_argument(
         "--gate",

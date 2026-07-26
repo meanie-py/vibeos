@@ -233,3 +233,55 @@ class TestFalsePositiveSuppression:
         c = _c(tmp_path, "static const int Threshold = 5;\n")
         assert audit_preamble(c, "") != []
         assert audit_preamble(c, "", rust_full="pub const Threshold: i32 = 5;") == []
+
+
+# ---------------------------------------------------------------------------
+# Parse robustness: locals must never be reported as file-scope state
+# ---------------------------------------------------------------------------
+
+
+class TestUnparseableTopLevel:
+    """tree-sitter recovers from a bad parameter list by HOISTING the function
+    body's statements to the root, where every local looks like a file-scope
+    definition. rasadhlp/winsock.c reported its locals `Ip`, `NetBios`,
+    `AutodialAddress`, `Name` and `AutodialConnection` as dropped file-scope
+    state; all five were present in the translation, as locals. Five confident,
+    specific, wrong findings is how an oracle stops being read."""
+
+    SRC = (
+        "#include <foo.h>\n"
+        "BOOL\n"
+        "WINAPI\n"
+        "DoThing(IN CONST SOCKADDR FAR *Name,\n"
+        "        IN INT NameLength)\n"
+        "{\n"
+        "    PSOCKADDR_IN Ip = (PSOCKADDR_IN)Name;\n"
+        "    AUTODIAL_ADDR AutodialAddress;\n"
+        "    return Send(&AutodialAddress, Ip);\n"
+        "}\n"
+    )
+
+    def test_far_qualified_params_do_not_hoist_locals(self, tmp_path: Path):
+        c = tmp_path / "winsock.c"
+        c.write_text(self.SRC)
+        # the locals are NOT file-scope, so there is nothing to report and
+        # nothing to define in the preamble
+        assert preamble_decls(c) == []
+        assert audit_preamble(c, "", strict=True) == []
+
+    def test_real_file_scope_state_beside_a_far_param_is_still_caught(self, tmp_path: Path):
+        """The fix must restore coverage, not suppress the check."""
+        c = tmp_path / "winsock.c"
+        c.write_text("static const int RealGlobal = 7;\n" + self.SRC)
+        findings = audit_preamble(c, "")
+        assert len(findings) == 1
+        assert "MISSING file-scope definition 'RealGlobal'" in findings[0]
+
+    def test_a_genuinely_unparseable_top_level_says_so_instead_of_guessing(self, tmp_path: Path):
+        """Silence would read as 'audited, clean'. It must read as 'not audited'."""
+        c = tmp_path / "broken.c"
+        c.write_text("static int Real = 1;\n}\n)\n")
+        findings = audit_preamble(c, "")
+        assert len(findings) == 1
+        assert findings[0].startswith("PREAMBLE AUDIT INCOMPLETE")
+        assert "SKIPPED, not passed" in findings[0]

@@ -150,7 +150,19 @@ arch_validate() {
 
 # Paths derived from arch.
 arch_build_dir()      { echo "$VIBEOS_ROOT/build-$1"; }
-arch_kernel_image()   { echo "$VIBEOS_ROOT/build-$1/ntoskrnl/ntoskrnl.exe"; }
+# arch_kernel_image <arch> [flavor]  — flavor is "up" (default) or "mp".
+# An `--smp N` boot runs ntkrnlmp.exe, a SEPARATE binary with its own layout, so
+# symbolicating an MP crash against ntoskrnl.exe silently names the wrong
+# function (an arm64 -smp 1 BUGCHECK 0x1E at +0x3788 resolved to
+# "KTRAP_FRAME_LENGTH+13864" — a constant, 13KB away). Same address space, two
+# different images: pick by which one freeldr actually loaded.
+arch_kernel_image() {
+    if [ "${2:-up}" = "mp" ]; then
+        echo "$VIBEOS_ROOT/build-$1/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
+    else
+        echo "$VIBEOS_ROOT/build-$1/ntoskrnl/ntoskrnl.exe"
+    fi
+}
 
 # Rust target dir for an arch. Cargo writes here under `ntoskrnl/rust-kernel-target/`.
 arch_rust_target_dir() {

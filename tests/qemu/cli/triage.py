@@ -100,10 +100,17 @@ KNOWN_FLAKES = [
     # load-sensitive, and the raiser predates the tree that first showed it in
     # a gate (the crates rebuilt that night are user-mode; no WoW64 guest had
     # started in either hit). RETIRE on the ERESOURCE root fix (verify-gone).
+    # 2026-07-26: the stop code in this signature was STALE. The raiser's code was
+    # corrected 0x03 -> 0xE3 (RESOURCE_NOT_OWNED, its real value — the 0x03 was an
+    # LLM-invented constant, roadmap "arm64 BUGCHECK 0x3 — IT IS RESOURCE_NOT_OWNED"
+    # + field manual §9.124), so this entry matched nothing afterwards and every
+    # lane ate the flake as a fresh red. Keyed on 0xE3 now. Do NOT re-add 0x03: from
+    # d3ca121cb09 on, KiSetAffinityThread raises a genuine 0x03 with ALL-ZERO
+    # parameters, which is a different bug and must keep blocking.
     {
-        "name": "arm64_eresource_notowned_0x3",
+        "name": "arm64_eresource_notowned_0xe3",
         "when": "bugcheck",
-        "code": "0x00000003",
+        "code": "0x000000E3",
         "any": ["0x0000000000000000, 0x0000000000000003)"],
     },
 ]
@@ -307,6 +314,31 @@ _SYM_OFFSET = re.compile(r"\+(\d+)\b")
 # symbol" rather than a confident lie. That is why hardcoding is acceptable.
 _RELOC_BY_ARCH = {"i386": "0x800c3000", "i386-uefi": "0x800c3000"}
 
+# ...but for the arches above, none of that guessing is needed when the bugcheck
+# banner already resolved the module itself:
+#     ***   P2 = ntoskrnl.exe+0x3788
+# That offset IS the RVA, so the index address is just RVA + the PE ImageBase —
+# no runtime base, no reloc, immune to where the image happened to land. The
+# comment above ("arm64/amd64 ... cannot be recovered from a saved log") was
+# wrong: it is right there on the next line. Until this was used, every arm64
+# bugcheck declined to symbolicate, and the one that mattered — a -smp 1 0x1E —
+# needed hand-computing to reach `KiSynchronousExceptionEntry+4`.
+_MODULE_OFFSET = re.compile(r"^\*\*\*\s+P\d\s*=\s*(\S+?)\+0x([0-9a-fA-F]+)\s*$", re.MULTILINE)
+_PE_IMAGE_BASE = 0x400000
+
+
+def faulting_module_offset(serial: str) -> tuple[str, int] | None:
+    """(module, RVA) from the bugcheck banner's resolved parameter, or None.
+
+    Takes the LAST occurrence for the same reason `faulting_pc` does: the crash
+    being triaged is the one the boot died on.
+    """
+    hits = _MODULE_OFFSET.findall(serial)
+    if not hits:
+        return None
+    module, rva = hits[-1]
+    return module, int(rva, 16)
+
 
 def faulting_pc(serial: str) -> str | None:
     """The faulting PC, preferring the BUGCHECK record over loose `PC=` text.
@@ -347,10 +379,21 @@ def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
     tool = repo / "qemu" / "addr2sym.sh"
     if not tool.is_file():
         return None
-    reloc = _RELOC_BY_ARCH.get(arch)
+    # Prefer the banner's own module+RVA over a guessed reloc: it is exact, needs
+    # no runtime base, and works on the arches that have no reloc entry at all.
+    mod_off = faulting_module_offset(serial)
+    reloc = None if mod_off else _RELOC_BY_ARCH.get(arch)
+    if mod_off:
+        pc = hex(_PE_IMAGE_BASE + mod_off[1])
     argv = ["bash", str(tool), arch]
     if reloc:
         argv += ["--reloc", reloc]
+    # ntkrnlmp.exe is a different binary from ntoskrnl.exe, so an MP crash
+    # resolved against the UP index names the wrong function — and it does so
+    # silently, because some symbol always sorts below the address. freeldr
+    # announces which one it loaded, so read it off the serial we already have.
+    if "ntkrnlmp.exe" in serial:
+        argv.append("--mp")
     argv.append(pc)
     try:
         cp = subprocess.run(argv, cwd=repo, capture_output=True, text=True, timeout=30)

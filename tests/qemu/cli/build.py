@@ -220,6 +220,31 @@ def _ninja_keep_going(args=None) -> list[str]:
     return ["-k0"] if getattr(args, "keep_going", False) else []
 
 
+def _ninja_did_work(stdout: str) -> int:
+    """How many edges a ninja run actually executed, from its progress lines.
+
+    Used by the re-affirm pass to say whether the optional targets invalidated
+    anything. Counted rather than merely detected because "relinked 3" is the
+    interesting number: a persistently non-zero count means a cohab cell is being
+    rebuilt by two passes every single build, which is a wiring bug worth chasing,
+    not just a hiccup this pass absorbed.
+
+    Two things a naive `^\\[\\d+/\\d+\\]` count gets WRONG, both observed on a real
+    no-op re-affirm that nonetheless reported "relinked 1 target(s)":
+
+      [0/2] Re-checking globbed directories...
+      ninja: no work to do.
+
+    Nothing was rebuilt. `[0/...]` is a status pseudo-edge (the CONFIGURE_DEPENDS
+    glob re-check), not a completed edge — real edges start at [1/n]. And when
+    ninja says "no work to do" that is authoritative regardless of what it printed
+    above. An always->=1 count would have made this signal useless in exactly the
+    direction that hides the bug it exists to expose."""
+    if "ninja: no work to do." in stdout:
+        return 0
+    return len(re.findall(r"^\[([1-9]\d*)/\d+\]", stdout, re.MULTILINE))
+
+
 def _ninja_jobs() -> list[str]:
     """`-j N` cap on ninja parallelism. DEFAULT IS NOW UNCAPPED (reserve 0).
 
@@ -848,6 +873,54 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             )
         )
         return run.finalize(repo)
+
+    # --- re-affirm the main targets (the optional passes can invalidate them) ---
+    # An optional target shares cargo cells with the main graph: `ntkrnlmp` and
+    # `ntoskrnl` both build `-p kernel-rust` into ONE CARGO_TARGET_DIR and one
+    # copied `libkernel_rust.a`. So `ninja ntkrnlmp`, running as its own pass
+    # AFTER the main one, can re-emit that staticlib with new bytes — and nothing
+    # relinks ntoskrnl.exe, because the main pass is already over. Measured on
+    # amd64: libkernel_rust.a rebuilt at 02:08:11, ntkrnlmp.exe linked against it
+    # at 02:08:23, ntoskrnl.exe left at 00:27:35 — 1h40m older than the archive it
+    # links. That is a genuinely stale binary, and mkramdisk (below) would stage
+    # it, so this MUST run before the staging step, not after.
+    #
+    # One more `ninja` over the same target list closes it by construction: a
+    # no-op in the normal case (~1s), a real relink when a cohab lib moved. It is
+    # not a retry — a target that FAILED already returned above — so a non-zero
+    # exit here means the re-affirm itself broke something, and it fails the build.
+    cp = run.run(
+        wrap(["ninja", *_ninja_jobs(), *_ninja_keep_going(args), *targets, *cohab]),
+        cwd=build_dir,
+        env=build_env,
+        stage="ninja-reaffirm",
+        timeout=1800,
+    )
+    if cp.returncode != 0:
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        run.classification = cls
+        run.add(
+            Stage(
+                "ninja-reaffirm",
+                exit=cp.returncode,
+                status="fail",
+                detail=f"relink after the optional passes failed ({cls})",
+                salient=salient or ["see full log"],
+            )
+        )
+        return run.finalize(repo)
+    relinked = _ninja_did_work(cp.stdout or "")
+    run.add(
+        Stage(
+            "ninja-reaffirm",
+            status="ok",
+            detail=(
+                f"relinked {relinked} target(s) invalidated by the optional passes"
+                if relinked
+                else "no-op — optional passes invalidated nothing"
+            ),
+        )
+    )
 
     # --- cache hit-rate stats (also the determinism gauge) ---
     if caching and build_env is not None:
