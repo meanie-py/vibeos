@@ -921,6 +921,25 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   PKTHREAD so the stack fields are reachable), and a soak would otherwise have run for hours
   against a kernel with no probe in it.
 
+  **THE HEADLINE FROM 9 INSTRUMENTED SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
+  on fixed media, `-smp 1`, same binary within each run:
+
+  | face | n | signature |
+  |---|---|---|
+  | clean / ratchet-noise | 6 | `sweep=done`, 85–86 ok of 89, ~75–130s |
+  | **A — memory/stack** | 1 | `BUGCHECK 0x50`, died 69/89 on `ZwWaitForMultipleObjects`, 77s |
+  | **B — sweep no-launch** | 1 | desktop reached, `launched=0`, 87min, **no** `CENSUS STUCK` |
+  | **C — holder-stuck** | 1 | `CENSUS … verdict=HOLDER-STUCK(no signal ever)`, 79/89, 12 bad, 78min |
+
+  ~33% of rounds fail, spread over **three mechanisms that are demonstrably different** (B vs C
+  disproven below; A is a bugcheck while B and C never crash at all). **This reframes the flip
+  blocker:** "fix the arm64 flake" is not one fix, and a conformance baseline cannot be seeded
+  until each face is either fixed or the sweep is made robust to it. It also explains why the
+  historical notes read inconsistently — `ZwWaitForMultipleObjects NO-END`, `0xC0000005`,
+  `0x1E`, `0x50`, hangs — they were sightings of different bugs filed under one heading.
+  Each face's evidence is below; the per-round data is in the soak ledgers, and the two
+  reproducing serials are kept out of `/tmp` rotation.
+
   **FIRST REPRODUCTION UNDER THE PROBES (2026-07-26), and it points hard at the STACK.**
   A 4-round `-smp 1` kmtest soak on fixed media reproduced once (rounds 1/3/4 clean or
   ratchet-noise; ~25%, in line with the prior base rate). Round 2 died at test **69 of 89, on
@@ -942,6 +961,62 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   near relative of the already-fixed §9.94 reaper bug (a stack freed without the SwapBusy spin).
   Fact vs inference: the operands and the raise arm are measured; "a live stack lost a page" is
   the reading of them, and the `[KSTACK]` dump added below is what turns it into a fact.
+
+  **A FOURTH face — HOLDER-STUCK, and the kernel's own classifier names it.**
+  Soak run 2 round 4: `launched=79 ok=66 bad=12`, **no bugcheck**, 4674s (round 3 swept the same
+  media in 75s — 62× faster). The sweep degraded into repeated per-test `TIMEOUT … (180s) -
+  terminating` (NtSystemDebugControl, PoIrp, …) until the drain budget ran out. The cause is on
+  serial:
+
+      [CENSUS] STUCK kmtest_.exe pid=816 tid=812 GateWait obj=ffff8000049044e0 parked=1 sat=0 sig=0
+      [FLIGHTREC]   no events for obj=ffff8000049044e0 in the last 16384
+
+  **Read the verdict field, not the symptom.** `census.rs` classifies `sig == 0` as
+  `HOLDER-STUCK(no signal ever)` and reserves lost-wakeup for `signals >= parked` with the
+  waiter still parked. All 97 census lines in this run say HOLDER-STUCK. `synctrace_signal()` is
+  called at the TOP of `KeSignalGateBoostPriorityImpl`, before any lock, so it counts every
+  signal *intent* — `sig=0` therefore means **nobody ever called the signal**, not that a signal
+  was dropped. (An earlier revision of this entry called it a lost wakeup; that was the author
+  overwriting the instrumentation's own conclusion with a guess, and it points the investigation
+  in the opposite direction.)
+  So the gate primitives are NOT implicated: look at whatever owns that gate and was supposed to
+  complete. The `KeWaitForGate` / `KeSignalGateBoostPriority` pair in `ke/gate.rs` was read and
+  both sides take the dispatcher-object lock, re-check `SignalState`, and pop under the thread
+  lock — no window found. Only ONE thread is stuck, so the would-be signaller is not itself in
+  GateWait. Note `obj=ffff8000049044e0` sits in the same `0xffff8000_04/05` VA family as the
+  fault addresses, which is suggestive and nothing more.
+
+  **B is NOT C — tested, not assumed.** The obvious unifying story ("the launcher itself parked
+  on a gate, hence `launched=0`") is **wrong**: the no-launch round has **zero** `CENSUS STUCK`
+  lines, while the stalled round has them throughout. Two distinct faces.
+
+  **A THIRD observable face — "sweep no-launch" (1 occurrence, cause unknown).** Soak run 2
+  round 2: the guest **booted to desktop** (3 shell markers on serial) and then launched
+  **zero** of the 89 tests, draining the full 87-minute budget with `sweep_rc=1`, no bugcheck
+  and no probe hits. Serial ends mid-stream in netstack TDI teardown and `PspExitThread` churn.
+  Host load was ~10 with a single QEMU running, so this is **not** simple starvation, and the
+  same media had swept cleanly in round 1 and again in round 3. Recorded as an observable, not
+  a diagnosis: it may be this bug wearing a hang instead of a crash, or an independent harness
+  race. **Do not fold it into the crash faces without evidence** — and note the soak ledger
+  renders it identically to a crash (`NO-VERDICT`), so read `summary.json`'s `launched`/`bugcheck`
+  rather than the ledger line to tell them apart.
+
+  **ELIMINATED (2026-07-26): a create/delete size mismatch on the kernel stack.** Worth writing
+  down because the shape is suspicious and costs ~20 minutes to re-derive.
+  `MmCreateKernelStack` (`ARM3/procsup.rs:280`) *forces* `GuiStack = 1` on arm64 and commits
+  every page (`StackPages == StackPtes == BYTES_TO_PAGES(MmLargeStackSize)`), where x86 reserves
+  large but commits only `KERNEL_LARGE_STACK_COMMIT`. `MmDeleteKernelStack` (`:210`), by
+  contrast, takes `GuiStack` from its CALLER and sizes the unmap from it — so a caller passing 0
+  would unmap `KERNEL_STACK_SIZE` pages of an `MmLargeStackSize` allocation and hand
+  `MiReleaseSystemPtes` the wrong count. It would also take the dead-stack SList push, which on
+  arm64 nothing ever drains (create's pop lives in the `GuiStack == 0` branch that arm64 never
+  reaches). **All five call sites are nevertheless correct:** `thrdobj.rs:869/:895` and
+  `kill.rs:341/:472` pass the thread's own `LargeStack`, which `thrdobj.rs:846` sets to 1 on
+  arm64 next to the large `StackLimit`; and `win32.rs:103`'s hardcoded `MmDeleteKernelStack(old_stack, 0)`
+  is inside `#[cfg(not(target_arch = "aarch64"))]` — arm64 skips the stack switch entirely
+  because its stacks are already large. Both `kill.rs` sites also carry the §9.94 SwapBusy spin.
+  So arm64 stacks are fully committed at creation and torn down at the right size: whatever
+  removes the page, it is not this.
 
   **Reading the `[KSTACK]` numbers: implausible bounds may mean a MIS-MAPPED structure, not a
   corrupt stack.** The wow64-amd64 lane hit exactly that failure mode the same night
