@@ -632,7 +632,6 @@ VOID FatUpdateIOCountersPCW(PVCB a, BOOLEAN b, ULONG_PTR c) { (void)a;(void)b;(v
  * (FatIsPathnameValid's stub lived further down and is removed there.) */
 /* FatIsVolumeDirty + FatGetStatistics -> now REAL in fastfat-rust fsctrl.rs; stubs
  * removed so the Rust #[no_mangle] definitions win the first-match link. */
-NTSTATUS FatDismountVolume(PIRP_CONTEXT a, PIRP b)     { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGetVolumeBitmap(PIRP_CONTEXT a, PIRP b)    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGetRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }

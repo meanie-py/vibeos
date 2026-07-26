@@ -24,8 +24,9 @@ use crate::ddk_shims::{FsRtlNotifyVolumeEvent, IoIs32bitProcess, MOVE_FILE_DATA3
 // crate's own types — the class that already bit dirctrl.rs.
 use crate::glue::{FSRTL_VOLUME_UNLOCK, VPB_DIRECT_WRITES_ALLOWED, VPB_LOCKED};
 use crate::types::{
-    FILE_SYSTEM_STATISTICS, IRP_CONTEXT_FLAG_DISABLE_POPUPS, VCB_STATE_FLAG_LOCKED,
-    VCB_STATE_FLAG_MOUNTED_DIRTY, VCB_STATE_FLAG_VOLUME_DIRTY,
+    CCB_FLAG_COMPLETE_DISMOUNT, FILE_SYSTEM_STATISTICS, IRP_CONTEXT_FLAG_DISABLE_POPUPS,
+    VCB_STATE_FLAG_LOCKED, VCB_STATE_FLAG_MOUNTED_DIRTY, VCB_STATE_FLAG_VOLUME_DIRTY,
+    VCB_STATE_FLAG_VOLUME_DISMOUNTED,
 };
 use crate::types::{BIOS_PARAMETER_BLOCK, CCB, DCB, DIRENT, FAT_BUG_CHECK_FSCTRL, FAT_DATA, FAT_ENTRY, FCB, FCB_CONDITION, FCB_STATE_DELETE_ON_CLOSE, IRP_CONTEXT, PACKED_BIOS_PARAMETER_BLOCK, PACKED_BOOT_SECTOR, PACKED_BOOT_SECTOR_EX, PBCB, PCCB, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VCB_CONDITION, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
 // Additional imports needed by FatMountVolume (translated from fsctrl.c)
@@ -136,7 +137,6 @@ extern "system" {
     // the function unconditionally returns STATUS_SUCCESS (0): any non-zero status
     // would have been truncated to its low byte on the way out. The Rust definition
     // returns NTSTATUS and the cast is gone.
-    fn FatDismountVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatQueryRetrievalPointers(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn MmGetSystemAddressForMdlSafe(Mdl: ntkrnl_sys::ddk::PMDL, Priority: u32) -> *mut c_void;
     // verfysup.rs:484. Returns VOID — it FatRaiseStatus()es rather than reporting.
@@ -2901,6 +2901,111 @@ pub unsafe extern "system" fn FatIsPathnameValid(IrpContext: PIRP_CONTEXT, Irp: 
 
     DebugTrace(-1, Dbg, b"FatIsPathnameValid -> %08lx\n\0".as_ptr() as *const i8);
     STATUS_SUCCESS
+}
+
+/// `FatDismountVolume` (`drivers/filesystems/fastfat/fsctrl.c:3670`) — FSCTL_DISMOUNT_VOLUME.
+#[no_mangle]
+pub unsafe extern "system" fn FatDismountVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    const FSRTL_VOLUME_DISMOUNT: u32 = 1;
+    const FSRTL_VOLUME_DISMOUNT_FAILED: u32 = 2;
+    const FlushAndInvalidate: FAT_FLUSH_TYPE = 2; // fatprocs.h:1052 enum
+    const STATUS_ACCESS_DENIED: NTSTATUS = 0xC0000022u32 as i32;
+    const STATUS_VOLUME_DISMOUNTED: NTSTATUS = 0xC000026Eu32 as i32;
+
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut VcbHeld = false;
+    let mut SavedIrql: u8 = 0;
+
+    DebugTrace(1, Dbg, b"FatDismountVolume...\n\0".as_ptr() as *const i8);
+
+    let mut Vcb: *mut VCB = core::ptr::null_mut();
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
+
+    // The C reaches the shared `fn_return:` tail via goto for every check below
+    // EXCEPT the Ccb one, which completes and returns inline. Same observable
+    // behaviour; kept as written so a diff against fsctrl.c stays honest.
+    'fn_return: {
+        if (FatDecodeFileObject(
+            (*IrpSp).FileObject,
+            &raw mut Vcb,
+            &raw mut Fcb,
+            &raw mut Ccb,
+        )) != UserVolumeOpen
+        {
+            Status = STATUS_INVALID_PARAMETER;
+            break 'fn_return;
+        }
+
+        if Ccb.is_null() || FlagOn((*Ccb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS) == 0 {
+            (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        // Refuse to pull the volume out from under the boot or paging file.
+        if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE) != 0 {
+            Status = STATUS_ACCESS_DENIED;
+            break 'fn_return;
+        }
+
+        if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DISMOUNTED) != 0 {
+            Status = STATUS_VOLUME_DISMOUNTED;
+            break 'fn_return;
+        }
+
+        FsRtlNotifyVolumeEvent((*IrpSp).FileObject, FSRTL_VOLUME_DISMOUNT);
+
+        (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WAIT;
+
+        FatAcquireExclusiveGlobal(IrpContext);
+
+        'try_body: {
+            FatAcquireExclusiveVolume(IrpContext, Vcb);
+            VcbHeld = true;
+
+            // Re-test under the volume lock: the check before the acquire is only an
+            // optimization, and another dismount can have completed in between.
+            if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DISMOUNTED) != 0 {
+                Status = STATUS_VOLUME_DISMOUNTED;
+                break 'try_body; // try_return
+            }
+
+            FatFlushAndCleanVolume(IrpContext, Irp, Vcb, FlushAndInvalidate);
+
+            (*Ccb).Flags |= CCB_FLAG_COMPLETE_DISMOUNT;
+
+            FatSetVcbCondition(Vcb, VcbBad);
+            (*Vcb).VcbState |= VCB_STATE_FLAG_VOLUME_DISMOUNTED;
+
+            IoAcquireVpbSpinLock(&raw mut SavedIrql);
+            (*(*Vcb).Vpb).Flags |= VPB_DIRECT_WRITES_ALLOWED as u16;
+            IoReleaseVpbSpinLock(SavedIrql);
+
+            Status = STATUS_SUCCESS;
+        }
+
+        // ----- _SEH2_FINALLY (fsctrl.c:3841) -----
+        // The NTDDI_WIN8 FsRtlDismountComplete call is NOT translated: this tree
+        // targets 0x502, so it is #if'd out of the C too. AbnormalTermination() is
+        // always FALSE under DUMMY_PSEH, so the failure notify keeps only its
+        // status half.
+        if VcbHeld {
+            FatReleaseVolume(IrpContext, Vcb);
+        }
+        FatReleaseGlobal(IrpContext);
+
+        // An already-dismounted volume is NOT a dismount failure — hence the
+        // explicit exclusion rather than a plain !NT_SUCCESS test.
+        if !NT_SUCCESS(Status) && Status != STATUS_VOLUME_DISMOUNTED {
+            FsRtlNotifyVolumeEvent((*IrpSp).FileObject, FSRTL_VOLUME_DISMOUNT_FAILED);
+        }
+    }
+
+    (FatCompleteRequest)(IrpContext, Irp, Status);
+
+    DebugTrace(-1, Dbg, b"FatDismountVolume -> %08lx\n\0".as_ptr() as *const i8);
+    Status
 }
 
 /// `FatPerformVerifyDiskRead` (`drivers/filesystems/fastfat/fsctrl.c:4576`).
