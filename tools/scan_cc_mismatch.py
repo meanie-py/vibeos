@@ -67,22 +67,55 @@ NORM_I386 = {
     "thiscall": "thiscall",
 }
 
+# Every group in these four patterns is NAMED, and every read of them goes through
+# .group("...") — never .groups() or .group(N). Positional access is what broke this
+# file once already: adding the #[export_name] group to DEF_RE renumbered cc/name, so
+# `cfg, cc, name = m.groups()` began raising ValueError, and DECL_FN_RE's new #[link_name]
+# group turned the fixer's `d.group(1)` into None for every ordinary declaration — which
+# would have made --fix a SILENT no-op that still reported success. A scanner and a fixer
+# that read the same regex differently is the specific failure this guards against.
 # cfg prefix (0+ attributes), optionally followed by `unsafe`, then extern block
 DECL_BLOCK_RE = re.compile(
-    r'((?:#\[cfg[^\]]*\]\s*)*)(?:unsafe\s+)?extern\s+"(\w+)"\s*\{([^}]*)\}', re.S
+    r'(?P<cfg>(?:#\[cfg[^\]]*\]\s*)*)(?:unsafe\s+)?extern\s+"(?P<cc>\w+)"\s*\{(?P<body>[^}]*)\}',
+    re.S,
 )
 # A declaration may be retargeted by #[link_name], and a definition renamed by
 # #[export_name]. The SYMBOL is what the linker pairs up, so capture both and key
 # on the effective name — otherwise a #[link_name] decl is compared against an
 # unrelated same-named definition (false positive), and a genuinely mismatched
 # retargeted pair is never compared at all (false negative).
-DECL_FN_RE = re.compile(r'(?:#\[link_name\s*=\s*"(?P<link>[^"]+)"\]\s*)?\bfn\s+(?P<name>\w+)\s*\(')
+#
+# The visibility/`unsafe` run between the attribute and `fn` is NOT optional decoration:
+# every #[link_name] in this tree is spelled `#[link_name = "_wcsicmp"] pub fn wcsicmp(...)`
+# (rtl-actctx/src/shim.rs, ps-rust/src/kill.rs). A pattern that admits only `\s*` there
+# matches none of them, so the `link` group is always None and the retargeting support
+# silently degrades to identifier pairing — present in the source, dead in the tree.
+DECL_FN_RE = re.compile(
+    r'(?:#\[link_name\s*=\s*"(?P<link>[^"]+)"\]\s*)?'
+    r"(?:(?:pub(?:\([^)]*\))?|unsafe)\s+)*"
+    r"\bfn\s+(?P<name>\w+)\s*\("
+)
 DEF_RE = re.compile(
-    r"((?:#\[cfg[^\]]*\]\s*)*)"
+    r"(?P<cfg>(?:#\[cfg[^\]]*\]\s*)*)"
     r'(?:#\[no_mangle\]|#\[export_name\s*=\s*"(?P<export>[^"]+)"\])\s*'
-    r'pub\s+unsafe\s+extern\s+"(\w+)"\s+fn\s+(\w+)'
+    r'pub\s+unsafe\s+extern\s+"(?P<cc>\w+)"\s+fn\s+(?P<name>\w+)'
 )
 NOLINT_RE = re.compile(r"nolint:\s*cc-mismatch")
+
+
+def def_symbol(m: re.Match) -> str:
+    """The symbol the LINKER emits for a definition — #[export_name] outranks the identifier."""
+    return m.group("export") or m.group("name")
+
+
+def decl_symbol(d: re.Match) -> str:
+    """The symbol the LINKER resolves a declaration to — #[link_name] outranks the identifier.
+
+    Scanner and fixer MUST pair on the same symbol. When `crate_def_conventions` keyed on the
+    Rust identifier while `scan_crate` keyed on the symbol, --fix looked up a name the scanner
+    had never recorded and quietly relocated nothing."""
+    return d.group("link") or d.group("name")
+
 
 ARCH_FILE_RE = re.compile(r"(arm64|amd64|aarch64|x86_64)")
 
@@ -168,13 +201,11 @@ def scan_crate(crate_src: str) -> list[str]:
     for path, src in walk_i386_sources(crate_src):
         spans = excluded_spans(src)
         for m in DEF_RE.finditer(src):
-            cfg, cc, name = m.group(1), m.group(3), m.group(4)
-            # #[export_name] renames the emitted symbol; that is what the linker pairs on.
-            symbol = m.group("export") or name
-            defs[symbol].append((cc, cfg_excludes_i386(cfg) or in_spans(m.start(), spans)))
+            cfg, cc = m.group("cfg"), m.group("cc")
+            defs[def_symbol(m)].append((cc, cfg_excludes_i386(cfg) or in_spans(m.start(), spans)))
         src_lines = src.splitlines()
         for m in DECL_BLOCK_RE.finditer(src):
-            cfg, cc, body = m.groups()
+            cfg, cc, body = m.group("cfg"), m.group("cc"), m.group("body")
             if cfg_excludes_i386(cfg) or in_spans(m.start(), spans):
                 continue
             block_line = src.count("\n", 0, m.start())
@@ -183,12 +214,7 @@ def scan_crate(crate_src: str) -> list[str]:
                 decl_line = src_lines[line - 1] if line - 1 < len(src_lines) else ""
                 if NOLINT_RE.search(decl_line):
                     continue
-                # ...and #[link_name] retargets the declaration. Pairing on the Rust
-                # identifier instead compares a retargeted decl against an unrelated
-                # same-named definition (false positive) and never compares the pair it
-                # actually names (false negative).
-                symbol = d.group("link") or d.group("name")
-                decls[symbol].append((cc, path, line))
+                decls[decl_symbol(d)].append((cc, path, line))
     out = []
     for name, dd in decls.items():
         if name not in defs:
@@ -211,15 +237,17 @@ def scan_crate(crate_src: str) -> list[str]:
 
 def crate_def_conventions(crate_src: str) -> dict[str, set[str]]:
     """symbol -> the convention(s) its i386-compiled `#[no_mangle]` definitions are written
-    with, AS SPELLED (not i386-normalized) — the new block has to be spelled, not normalized."""
+    with, AS SPELLED (not i386-normalized) — the new block has to be spelled, not normalized.
+
+    Keyed by `def_symbol`, exactly as `scan_crate` keys its own `defs`: the fixer must look up
+    the same symbol the scanner reported on, or it silently finds nothing to move."""
     defs: dict[str, set[str]] = defaultdict(set)
     for path, src in walk_i386_sources(crate_src):
         del path
         spans = excluded_spans(src)
         for m in DEF_RE.finditer(src):
-            cfg, cc, name = m.groups()
-            if not cfg_excludes_i386(cfg) and not in_spans(m.start(), spans):
-                defs[name].add(cc)
+            if not cfg_excludes_i386(m.group("cfg")) and not in_spans(m.start(), spans):
+                defs[def_symbol(m)].add(m.group("cc"))
     return defs
 
 
@@ -271,13 +299,13 @@ def fix_file(path: str, defs: dict[str, set[str]]) -> list[str]:
     spans = excluded_spans(src)
     out, last = [], 0
     for m in DECL_BLOCK_RE.finditer(src):
-        cfg, cc, body = m.groups()
+        cfg, cc, body = m.group("cfg"), m.group("cc"), m.group("body")
         if cfg_excludes_i386(cfg) or in_spans(m.start(), spans):
             continue
         keep, relocate = [], defaultdict(list)
         for item in split_items(body):
             d = DECL_FN_RE.search(item)
-            name = d.group(1) if d else None
+            name = decl_symbol(d) if d else None
             spellings = defs.get(name or "", set())
             # Ambiguity is not something to guess at: a symbol whose i386 definitions
             # disagree with EACH OTHER, or which has no in-crate definition, is left alone
@@ -320,16 +348,17 @@ def fix_crate(crate_src: str) -> tuple[list[str], list[str]]:
         if ISLAND_RE.search(path.replace(os.sep, "/")):
             spans = excluded_spans(src)
             for m in DECL_BLOCK_RE.finditer(src):
-                cfg, cc, body = m.groups()
+                cfg, cc, body = m.group("cfg"), m.group("cc"), m.group("body")
                 if cfg_excludes_i386(cfg) or in_spans(m.start(), spans):
                     continue
                 for d in DECL_FN_RE.finditer(body):
-                    spellings = defs.get(d.group(1), set())
+                    symbol = decl_symbol(d)
+                    spellings = defs.get(symbol, set())
                     if spellings and NORM_I386.get(cc, cc) not in {
                         NORM_I386.get(s, s) for s in spellings
                     }:
                         refused.append(
-                            f"{os.path.relpath(path, REPO)}: {d.group(1)} — C says "
+                            f"{os.path.relpath(path, REPO)}: {symbol} — C says "
                             f"{cc!r}, our definition says {sorted(spellings)}; the "
                             f"DEFINITION is the suspect side. Not auto-fixed."
                         )

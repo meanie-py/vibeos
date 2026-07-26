@@ -31,3 +31,20 @@ add_cargo_kernel_dll(hal hal-cargo hal.dll
         memcmp
         ${CMAKE_CURRENT_SOURCE_DIR}/../hal.spec
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ntoskrnl.spec)
+
+# halmp.dll — the SMP HAL twin (hal-rust `smp` feature), paired with
+# ntkrnlmp.exe and selected by freeldr's `/HAL=halmp.dll` (livecd.ini
+# `[LiveCD_SMP]`). Same recipe one cargo feature apart — halmp-cargo's build.rs
+# is three lines over the SHARED `hal-link` crate hal-cargo also drives. See
+# hal/halx86/CMakeLists.txt for the full rationale.
+#
+# arm64 matters MORE than x86 here, not less: it has no MISMATCHED_HAL
+# handshake, so an MP kernel on the UP hal.dll boots to a desktop and silently
+# runs on one CPU (HalStartNextProcessor is the FALSE stub). Shipping the twin
+# and naming it in the boot entry removes that trap by construction.
+add_cargo_kernel_dll(halmp halmp-cargo halmp.dll
+    BODY_CRATE hal-rust DESTINATION reactos/system32
+    EXTRA_DEPENDS
+        memcmp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../hal.spec
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ntoskrnl.spec)

@@ -19,6 +19,7 @@ import pytest
 
 from tests.qemu import backend as be_mod
 from tests.qemu import qmp_client, serial_client
+from tests.qemu import vm as vm_mod
 
 from . import build as build_mod
 from . import config as config_mod
@@ -61,6 +62,152 @@ def test_git_fingerprint_immune_to_mtime(tiny_repo: Path):
     # touch bumps mtime but not content
     (tiny_repo / "a.txt").touch()
     assert provenance.git_fingerprint(tiny_repo) == fp1, "mtime churn must not change fingerprint"
+
+
+# --- freeldr boot-entry selection by in-place ISO patch --------------------
+#
+# The MP pair (ntkrnlmp.exe + halmp.dll) has always shipped on the same media as
+# the UP pair; only `DefaultOS=` inside freeldr.ini chose between them, and with
+# TimeOut=0 there is no menu to choose at. Rewriting that one line in a COPY of
+# the image replaces a cmake reconfigure + mkisofs repack (8m30s measured) with a
+# 0.15s copy — so an MP gate leg costs one extra boot. Byte-level, so a plain
+# bytes fixture exercises it exactly as a real ISO does.
+
+
+def _fake_iso(default_os: bytes = b"LiveCD_Debug", smp_section: bool = True) -> bytes:
+    body = b"\x00" * 64 + b"[FREELOADER]\r\nDefaultOS=" + default_os + b"\r\nTimeOut=0\r\n"
+    if smp_section:
+        body += b"[LiveCD_SMP]\r\nOptions=/KERNEL=ntkrnlmp.exe /HAL=halmp.dll\r\n"
+    return body + b"\x00" * 64
+
+
+def test_smp_iso_patch_is_equal_length_and_selects_the_mp_entry(tmp_path: Path):
+    src = tmp_path / "livecd.iso"
+    src.write_bytes(_fake_iso())
+    out = vm_mod.smp_selected_iso(src, tmp_path / "work")
+    assert out != src, "must not patch the build tree's media in place"
+    patched = out.read_bytes()
+    assert len(patched) == len(src.read_bytes()), "ISO9660 extents: length must not change"
+    assert b"DefaultOS=LiveCD_SMP\r\n\r\n" in patched
+    assert b"LiveCD_Debug" not in patched
+
+
+def test_smp_iso_patch_is_idempotent(tmp_path: Path):
+    """Media built with --smp-kernel already defaults to the MP entry; patching it
+    again must be a no-op that returns the original path, not a needless copy."""
+    src = tmp_path / "livecd.iso"
+    src.write_bytes(_fake_iso(default_os=b"LiveCD_SMP"))
+    assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
+
+
+def test_smp_iso_patch_raises_rather_than_booting_up_media(tmp_path: Path):
+    """Every failure path must raise. Silently returning the unpatched ISO would
+    boot the UP pair on an --smp run — exactly the false green _smp_check exists
+    to catch, and the reason this is not a best-effort helper."""
+    work = tmp_path / "work"
+    # no [LiveCD_SMP] section: media predates the halmp.dll twin
+    a = tmp_path / "a.iso"
+    a.write_bytes(_fake_iso(smp_section=False))
+    with pytest.raises(RuntimeError, match="LiveCD_SMP"):
+        vm_mod.smp_selected_iso(a, work)
+    # two DefaultOS= lines: cannot tell which one freeldr reads
+    b = tmp_path / "b.iso"
+    b.write_bytes(_fake_iso() + b"DefaultOS=LiveCD\r\n")
+    with pytest.raises(RuntimeError, match="exactly one"):
+        vm_mod.smp_selected_iso(b, work)
+    # value too short to overwrite in place
+    c = tmp_path / "c.iso"
+    c.write_bytes(_fake_iso(default_os=b"X"))
+    with pytest.raises(RuntimeError, match="shorter"):
+        vm_mod.smp_selected_iso(c, work)
+
+
+def test_run_raises_loudly_instead_of_returning_empty(tiny_repo: Path):
+    """The BUILD_INCOMPLETE train-halter class: _run used to swallow BOTH a
+    non-zero exit and any exception, returning "". That silently shifted the
+    fingerprint (false RED) or emptied cargo_module_rels (false GREEN), and left
+    no evidence either way. Any failure must now name the command, rc and stderr."""
+    with pytest.raises(provenance.ProvenanceError) as ei:
+        provenance._run(["git", "rev-parse", "--verify", "no-such-ref-xyz"], tiny_repo)
+    msg = str(ei.value)
+    assert "exited" in msg and "rev-parse" in msg, msg
+
+
+def test_run_tolerates_declared_nonzero_codes(tiny_repo: Path):
+    """`git grep` exits 1 for "no matches" — a real empty result, not a broken
+    oracle. Without ok_codes the loud version would reject every clean repo."""
+    assert provenance._run(["git", "grep", "-l", "zzz-absent"], tiny_repo, ok_codes=(0, 1)) == ""
+    with pytest.raises(provenance.ProvenanceError):
+        provenance._run(["git", "grep", "-l", "zzz-absent"], tiny_repo)
+
+
+def test_check_staleness_reports_oracle_failure_rather_than_raising(tmp_path: Path, monkeypatch):
+    """A broken oracle must be reported AS a broken oracle — not laundered into a
+    confident "source changed since build", and not escaping as a traceback."""
+    bd = tmp_path / "build-amd64"
+    bd.mkdir()
+    media = bd / "livecd.iso"
+    media.write_bytes(b"iso")
+    provenance.Stamp(
+        arch="amd64",
+        ts=1,
+        git_fingerprint="gf",
+        rust_src_hash="rs",
+        boot_media="build-amd64/livecd.iso",
+        boot_media_sha=provenance._sha256_file(media),
+        cold=True,
+    ).write(bd)
+    monkeypatch.setattr(
+        provenance,
+        "git_fingerprint",
+        lambda *a, **k: (_ for _ in ()).throw(provenance.ProvenanceError("git exploded")),
+    )
+    st = provenance.check_staleness(tmp_path, "amd64")
+    assert not st.fresh
+    assert any("provenance oracle FAILED" in r and "git exploded" in r for r in st.reasons), (
+        st.reasons
+    )
+
+
+def test_src_delta_names_a_head_move(tiny_repo: Path):
+    """ "build source changed" fires milliseconds after the same hash was stamped
+    and never said WHICH input moved. A merge landing under the build is the
+    interesting case and now says so by name."""
+    old_head = provenance.git_head(tiny_repo)
+    stamp = provenance.Stamp(
+        arch="amd64",
+        ts=1,
+        git_fingerprint="gf",
+        rust_src_hash="rs",
+        boot_media="x",
+        boot_media_sha="",
+        cold=True,
+        head_sha=old_head,
+    )
+    (tiny_repo / "b.txt").write_text("second\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "second")
+    delta = provenance._src_delta(tiny_repo, stamp)
+    assert "HEAD MOVED SINCE THE BUILD" in delta, delta
+    assert old_head[:12] in delta, delta
+
+
+def test_src_delta_flags_a_phantom_change(tiny_repo: Path):
+    """Fingerprint moved, HEAD did not, and nothing is modified => the ORACLE is
+    the suspect, not the tree. Saying that out loud is the whole point: this is
+    the shape that halted the merge train with no evidence."""
+    stamp = provenance.Stamp(
+        arch="amd64",
+        ts=1,
+        git_fingerprint="gf",
+        rust_src_hash="rs",
+        boot_media="x",
+        boot_media_sha="",
+        cold=True,
+        head_sha=provenance.git_head(tiny_repo),
+    )
+    delta = provenance._src_delta(tiny_repo, stamp)
+    assert "suspect the oracle" in delta, delta
 
 
 def test_path_scoped_fingerprint(tiny_repo: Path):
@@ -2314,6 +2461,20 @@ def _tooling_once_stub(ok: bool):
     return stub
 
 
+def _difftest_once_stub(ok: bool):
+    """Stand-in for gate._difftest_once (which shells `vibeos-cli difftest`)."""
+
+    def stub(repo, root):
+        return {
+            "ok": ok,
+            "seconds": 0.01,
+            "salient": "" if ok else "RtlFoo fields a=1",
+            "exit": 0 if ok else 1,
+        }
+
+    return stub
+
+
 def test_gate_lint_failure_blocks_stamp_but_smokes_run(tmp_path, monkeypatch):
     """A NEW lint finding fails the gate and blocks the push stamp; smokes still
     run so the matrix stays informative (the landed T3 policy)."""
@@ -2321,6 +2482,7 @@ def test_gate_lint_failure_blocks_stamp_but_smokes_run(tmp_path, monkeypatch):
     seen: list = []
     monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok(seen))
     monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=False))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
@@ -2336,6 +2498,7 @@ def test_gate_lint_pass_proceeds_and_stamps(tmp_path, monkeypatch):
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
@@ -2357,11 +2520,34 @@ def test_gate_tooling_failure_blocks_stamp(tmp_path, monkeypatch):
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=False))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
     assert rc == 1, "a python tooling regression must fail the gate"
     assert not stamped, "no push stamp when check-tooling is red"
+    assert fake.calls, "smokes still run so the matrix stays informative"
+
+
+def test_gate_difftest_failure_blocks_stamp(tmp_path, monkeypatch):
+    """A rust-vs-C divergence fails the gate and blocks the push stamp.
+
+    Same hole check-tooling had, one layer down: the difftests were reachable
+    only by typing `cargo test` in a crate dir, so `rtl-difftest` sat 2/87 red
+    on master with nothing between the author and the stamp ever running it.
+    One of those two was a real divergence in eleven `Rtl*String` converters.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=False))
+    stamped: list = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
+    assert rc == 1, "a rust-vs-C divergence must fail the gate"
+    assert not stamped, "no push stamp when a difftest is red"
     assert fake.calls, "smokes still run so the matrix stays informative"
 
 
@@ -2372,12 +2558,15 @@ def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     called: list = []
     tooled: list = []
+    diffed: list = []
     monkeypatch.setattr(gate_mod, "_lint_once", lambda *a, **k: called.append(1))
     monkeypatch.setattr(gate_mod, "_tooling_once", lambda *a, **k: tooled.append(1))
+    monkeypatch.setattr(gate_mod, "_difftest_once", lambda *a, **k: diffed.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=True), tmp_path)
     assert rc == 0
     assert not called, "--no-lint must not invoke the lint subprocess"
     assert not tooled, "--no-lint must not invoke check-tooling either"
+    assert not diffed, "--no-lint must not invoke the difftests either"
 
 
 # --- check --update-baseline: per-tool scoping (T2 item 1b) -----------------
@@ -3976,6 +4165,131 @@ def test_build_incomplete_does_not_reject_a_lane():
     from . import queue as queue_mod
 
     assert "BUILD_INCOMPLETE" in queue_mod.INCONCLUSIVE
-    # ...while genuinely conclusive reds still reject.
-    for conclusive in ("BUILD_FAIL", "LINT_FAIL", "TOOLING_FAIL"):
+    # ...while genuinely conclusive reds still reject. DIFFTEST_FAIL belongs here:
+    # a rust-vs-C divergence is deterministic and reproduces off any host, so it
+    # is evidence about the submission, not about the fleet.
+    for conclusive in ("BUILD_FAIL", "LINT_FAIL", "TOOLING_FAIL", "DIFFTEST_FAIL"):
         assert conclusive not in queue_mod.INCONCLUSIVE
+
+
+# --- vibeos-cli difftest: the host rust-vs-C harnesses ----------------------
+
+
+def test_difftest_discovers_crates_from_the_workspace(tmp_path: Path):
+    """Membership comes from the manifest, never a hardcoded list — a list is how
+    a harness goes missing when someone adds one."""
+    from . import difftest as difftest_mod
+
+    ws = tmp_path / "sdk" / "lib" / "rust"
+    ws.mkdir(parents=True)
+    (ws / "Cargo.toml").write_text(
+        '[workspace]\nmembers = [\n  "cnt-rust",\n  "cnt-difftest",\n'
+        '  "msvcrt-difftest",\n  "rtl-difftest",\n  "ntdll-sys",\n]\n'
+    )
+    assert difftest_mod.discover(tmp_path) == ["cnt-difftest", "msvcrt-difftest", "rtl-difftest"]
+
+
+def test_difftest_discovers_a_newly_added_harness(tmp_path: Path):
+    """The whole point of discovery: a crate nobody told the CLI about is covered
+    the moment it joins the workspace."""
+    from . import difftest as difftest_mod
+
+    ws = tmp_path / "sdk" / "lib" / "rust"
+    ws.mkdir(parents=True)
+    (ws / "Cargo.toml").write_text('[workspace]\nmembers = ["shell32-difftest", "cnt-rust"]\n')
+    assert difftest_mod.discover(tmp_path) == ["shell32-difftest"]
+
+
+def test_difftest_counts_cases_across_harness_dialects():
+    """Each crate reports its count differently; the gate needs one number."""
+    from . import difftest as difftest_mod
+
+    assert difftest_mod.graded("difftest result: ok. 81 passed; 0 failed") == 81
+    assert difftest_mod.graded("  160 mbcs cases passed") == 160
+    assert difftest_mod.graded("test result: ok. 87 passed; 0 failed; 0 ignored") == 87
+
+
+def test_difftest_a_harness_that_graded_nothing_is_a_FAILURE(tmp_path, monkeypatch):
+    """cargo exits 0 for a suite that compared nothing, and every crate emits
+    `test result: ok. 0 passed` for its empty lib/doc-test targets. Trusting the
+    exit code alone would report green over a harness whose cases all vanished —
+    the vacuous pass, which is worse than no harness because green stops anyone
+    looking again."""
+    from types import SimpleNamespace
+
+    from . import artifacts
+    from . import difftest as difftest_mod
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    run = artifacts.Run("difftest", "host")
+    monkeypatch.setattr(
+        run,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=0, stdout="test result: ok. 0 passed; 0 failed", stderr=""
+        ),
+    )
+    assert difftest_mod.run_difftests(tmp_path, run, ["cnt-difftest"]) is False
+    assert run.stages[0].status == "fail"
+    assert "NOTHING" in run.stages[0].detail
+
+
+def test_difftest_a_real_harness_run_is_green(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from . import artifacts
+    from . import difftest as difftest_mod
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    run = artifacts.Run("difftest", "host")
+    monkeypatch.setattr(
+        run,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=0, stdout="difftest result: ok. 81 passed; 0 failed", stderr=""
+        ),
+    )
+    assert difftest_mod.run_difftests(tmp_path, run, ["cnt-difftest"]) is True
+    assert run.stages[0].detail == "81 cases"
+
+
+def test_difftest_runs_one_cargo_invocation_per_crate(tmp_path, monkeypatch):
+    """NOT one `cargo test -p a -p b`. cnt-difftest pulls cnt-rust with the `cabi`
+    feature and msvcrt-difftest deliberately does not; unified into one build,
+    cnt-rust's 208 #[no_mangle] shims collide with msvcrt-crt-rust's wrappers
+    (`duplicate symbol: mbtowc`) and nothing links."""
+    from types import SimpleNamespace
+
+    from . import artifacts
+    from . import difftest as difftest_mod
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    run = artifacts.Run("difftest", "host")
+    seen: list[list[str]] = []
+
+    def _spy(cmd, **kw):
+        seen.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="difftest result: ok. 3 passed", stderr="")
+
+    monkeypatch.setattr(run, "run", _spy)
+    difftest_mod.run_difftests(tmp_path, run, ["cnt-difftest", "msvcrt-difftest"])
+    assert len(seen) == 2, "each harness gets its own cargo invocation"
+    for cmd in seen:
+        assert cmd.count("-p") == 1, f"one crate per invocation, got {cmd}"
+
+
+def test_difftest_salient_keeps_the_assertion_not_the_linker_line():
+    """A failed harness must surface the two values that disagreed."""
+    from . import difftest as difftest_mod
+
+    out = (
+        "     Running tests/diff.rs\n"
+        "test diff_rtl_uni_to_str ... FAILED\n"
+        "thread 'diff_rtl_uni_to_str' panicked at rtl-difftest/tests/diff.rs:901:17:\n"
+        "assertion `left == right` failed: RtlUnicodeStringToAnsiString fields a=1\n"
+        "  left: (6, 7, false)\n"
+        "  right: (6, 7, true)\n"
+    )
+    got = difftest_mod._salient(out)
+    assert any("RtlUnicodeStringToAnsiString" in ln for ln in got)
+    assert any(ln.startswith("left:") for ln in got)

@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <shell32|acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -57,6 +57,14 @@ USERMODE=0
 # itself #[no_mangle]-defines — emitting them here is redundant and risks name clashes under
 # the flat `use crate::types::*` glob. Default 0 = keep functions (kernel driver behaviour).
 BLOCKLIST_FUNCS=0
+# EXTRA_RAW_LINES: extra `--raw-line` entries injected at the TOP of each generated
+# <stem>_<arch>.rs, i.e. INSIDE the per-arch module. Needed whenever EXTRA_BL_ITEMS blocklists
+# a type that other emitted types still REFERENCE: blocklisting removes the definition, not the
+# uses, so without a re-export the island fails with E0412 on its own output. SYS_CRATES does
+# this automatically for a whole sibling -sys crate; this is the hook for borrowing a handful of
+# names from a hand-written module in the SAME crate (shell32 takes its COM interfaces from
+# crate::shellcom so they keep the `lpVtbl` shape the translation calls through).
+EXTRA_RAW_LINES=()
 case "$DRIVER" in
   acpi)
     # ACPI bus driver glue (buspdo.c/bus.c). Private structs live in acpisys.h
@@ -1231,6 +1239,147 @@ case "$DRIVER" in
                -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP
                -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
     ;;
+  shell32)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/shell32/CMakeLists.txt
+    # (43 compiled TUs, 299 headers in the include closure, 280 switch constants), then adjusted
+    # in three places — each noted below.
+    #
+    # WHY shell32 gets an island at all, this late: it is the one substantial translated module
+    # in the tree that never had one. Its substrate was hand-written instead (types.rs + win32.rs
+    # + a generated sdk_consts.rs, ~2.7K lines), which costs twice. First, a hand-written
+    # `#[repr(C)]` is a silent-corruption risk in a way a hand-written fn declaration is not: a
+    # wrong field offset compiles, links, and scribbles. Second — the reason this blocked for
+    # months — `verify_ffi` checks extern blocks against `bindgen_i386.rs`, so a crate with no
+    # island is INVISIBLE to the fleet's FFI oracle. shell32-rust appears in zero of the 40
+    # crates the clashing-extern passes converged (e33a810c9ad, 992af657162), and 4 real ABI
+    # disagreements survived in it until a semantic decl comparison went looking by hand.
+    USERMODE=1
+    # Emit the header function surface, minus the 552 functions the crate defines itself.
+    # See BLOCKLIST_FUNCS_FROM_CRATE for why the crate's `#[no_mangle]` set is the right
+    # discriminator and shell32.spec is not.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    # shell32 bridges TWO -sys crates: ntdll-sys for base Win32/NT types, and com-sys for the
+    # COM ABI. Without this the island re-emits its own IUnknown/VARIANT/FORMATETC/IID/ULONG
+    # from objbase.h etc., and every module that globs both sees an ambiguous name — 6,232
+    # E0659s on the first build, on 216 distinct names. Worse than the error count: a
+    # structurally-identical SECOND FORMATETC is a different Rust type, so the COM-class modules
+    # that hand com-sys-typed pointers across an interface boundary would stop type-checking
+    # against the very vtables they implement. Blocklisting keeps ONE identity.
+    SYS_CRATES=( "com-sys:com-sys/src" )
+    # Emitted as island_<arch>.rs / island.rs, NOT types_<arch>.rs: shell32-rust already has a
+    # hand-written types.rs + shellcom.rs that 40-odd LANDED COM-class modules compile against.
+    # Overwriting those is a separate, riskier change than adding the island — see the COM
+    # blocklist below for the design conflict that has to be settled first.
+    TYPES_STEM=island
+    # COM INTERFACES STAY WITH com-sys/shellcom, deliberately. bindgen renders shobjidl's
+    # interfaces as C++ classes; the whole translation (and com-sys, which exists for this) uses
+    # the C `lpVtbl` idiom — `(*(*This).lpVtbl).Method(...)`. Letting the island emit them makes
+    # every such call an E0609 `no field lpVtbl`, ~73 of them on the first build. The boundary
+    # that falls out is the right one and worth stating plainly: THE ISLAND OWNS DATA LAYOUTS,
+    # com-sys/shellcom OWN VTABLE ABI. Only interfaces that actually collide are listed.
+    EXTRA_BL_ITEMS=( IEnumIDList IEnumShellItems IFolderView IPersistFolder2 IPersistIDList
+                     IShellFolder IShellFolder2 IShellItem IShellItemArray
+                     # Member typedefs of the ATL class TEMPLATES CComEnum<> / CComEnumImpl<>.
+                     # bindgen flattens them to non-generic aliases over UNBOUND template
+                     # parameters — `pub type ATL_CComEnumImpl_enumeratorClass =
+                     # ATL_CComObject<Base>` and `pub type ATL_CComEnum__CComEnumBase =
+                     # u8<Base, T, Copy>` — neither of which compiles. Nothing in the
+                     # translation names them; the ATL headers are in the closure at all only
+                     # because precomp.h drags them in. Checked before widening this: the other
+                     # 82 aliases carrying type arguments are legitimate `Option<fn-ptr>`
+                     # callbacks, so "alias with a `<`" would have been the wrong rule.
+                     # NB: --blocklist-item matches the C++ QUALIFIED name, not bindgen's
+                     # flattened Rust spelling (ATL_CComEnumImpl_enumeratorClass).
+                     '.*CComEnum.*' )
+    # ...and re-export them, because other emitted types still reference these by pointer.
+    EXTRA_RAW_LINES=( 'pub use crate::shellcom::{IEnumIDList, IEnumShellItems, IFolderView, IPersistFolder2, IPersistIDList, IShellFolder, IShellFolder2, IShellItem, IShellItemArray};'
+                      # com-sys carries the enum TAGS (_APTTYPE/_APTTYPEQUALIFIER, from
+                      # objidl.h) but not these typedef aliases, which objbase.h declares —
+                      # and objbase.h's CoGetApartmentType takes them by pointer. Aliasing to
+                      # the com-sys tags keeps one identity rather than emitting a second enum.
+                      'pub type APTTYPE = com_sys::_APTTYPE;'
+                      'pub type APTTYPEQUALIFIER = com_sys::_APTTYPEQUALIFIER;' )
+    DRIVER_DIR="${SRC}/dll/win32/shell32"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <ui/layout.h> // Resizable window\n#include <compat_undoc.h> // RosGetProcessEffectiveVersion\n#include <process.h>\n#include <ndk/obfuncs.h> // For NtQueryObject\n#define _USE_MATH_DEFINES\n#include <math.h>\n#include <devguid.h>\n#define NTOS_MODE_USER\n#include <ndk/iofuncs.h>\n#include <ndk/obfuncs.h>\n#include <atlpath.h>\n#include <precomp.h>\n#include "shell32_version.h"\n#include <lmcons.h>\n#include <lmapibuf.h>\n#include <lmaccess.h>\n#include <lmserver.h>\n#include <secext.h>\n#include "folders/CFSFolder.h" // was "CFSFolder.h" in CDesktopFolder.cpp: a QUOTED include\n// resolves against the INCLUDING file'"'"'s directory, and this wrapper is generated into /tmp.\n#include <mmsystem.h>\n#include <ntquery.h>\n#include <winbase_undoc.h>\n#include <undocshell.h>\n#include <atlwin.h>\n#include <ui/rosctrls.h>\n#include <compat_undoc.h>\n#include <stdarg.h>\n#include <stddef.h>'
+    # precomp.h pulls ATL (atlbase/atlcom/atlstr/atlwin), so the parse needs C++. bindgen still
+    # emits the plain C structs; `strip_cpp_mangled_externs.py` runs automatically for -x c++
+    # cells and drops the `_Z`-mangled decls ATL/C++ member functions produce.
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    ALLOW_FILES=( --allowlist-file '.*[/\\]atlbase\.h' --allowlist-file '.*[/\\]atlcoll\.h'
+                  --allowlist-file '.*[/\\]atlcom\.h'
+                  --allowlist-file '.*[/\\]atlpath\.h'
+                  --allowlist-file '.*[/\\]atlsimpcoll\.h'
+                  --allowlist-file '.*[/\\]atlstr\.h'
+                  --allowlist-file '.*[/\\]atlwin\.h'
+                  --allowlist-file '.*[/\\]browseui_undoc\.h'
+                  --allowlist-file '.*[/\\]comctl32_undoc\.h'
+                  --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]commdlg\.h'
+                  --allowlist-file '.*[/\\]compat_undoc\.h'
+                  --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]ddeml\.h'
+                  --allowlist-file '.*[/\\]devguid\.h'
+                  --allowlist-file '.*[/\\]emptyvc\.h'
+                  --allowlist-file '.*[/\\]fmifs[/\\]fmifs\.h'
+                  --allowlist-file '.*[/\\]ishellfolder_helpers\.h'
+                  --allowlist-file '.*[/\\]lmaccess\.h'
+                  --allowlist-file '.*[/\\]lmapibuf\.h'
+                  --allowlist-file '.*[/\\]lmcons\.h'
+                  --allowlist-file '.*[/\\]lmserver\.h'
+                  --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*[/\\]ntquery\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]objsafe\.h'
+                  --allowlist-file '.*[/\\]powrprof\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]regstr\.h'
+                  --allowlist-file '.*[/\\]secext\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shellutils\.h'
+                  --allowlist-file '.*[/\\]shlguid\.h'
+                  --allowlist-file '.*[/\\]shlguid_undoc\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlobj_undoc\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shlwapi_undoc\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]shobjidl_undoc\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]ui[/\\]layout\.h'
+                  --allowlist-file '.*[/\\]ui[/\\]rosctrls\.h'
+                  --allowlist-file '.*[/\\]undocshell\.h'
+                  --allowlist-file '.*[/\\]userenv\.h'
+                  --allowlist-file '.*[/\\]uxtheme\.h'
+                  --allowlist-file '.*[/\\]winbase_undoc\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]wininet\.h'
+                  --allowlist-file '.*[/\\]winnetwk\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winver\.h'
+                  # winuser.h/winbase.h are "base platform", which profile_derive excludes
+                  # because their TYPES belong to ntdll-sys — and they still do: every type
+                  # ntdll-sys exports is blocklisted, so allowlisting these files adds their
+                  # FUNCTIONS only. Between them they own 38 of the imports the translated TUs
+                  # call (CreateDirectoryW, DrawTextW, EnterCriticalSection, GetAncestor, ...),
+                  # which no other allowlisted header declares.
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*shell32[/\\].*\.h' )
+    # The derived profile also proposed -I"${SRC}/build-i386/dll/win32/shell32". Dropped: that
+    # directory carries no headers, and baking ONE arch's build dir into a 3-arch generator is
+    # exactly the cross-arch header leak AGENTS.md forbids — BUILD_DIR below is already per-arch.
+    # sdk/lib/atl is on the include path for every ATL consumer (precomp.h:31 `#include
+    # <atlbase.h>`); the compile_commands entry gets it from the atl_classes link target, which
+    # the derived profile cannot see.
+    EXTRA_INC=( -I"${SRC}/dll/win32/shell32" -I"${SRC}/sdk/lib/atl" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SHELL32_ -D_WINE -D_DEBUG=1
+               -DUNICODE -D_UNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1
+               -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL
+               -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
     # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,
@@ -1481,6 +1630,24 @@ run_arch() {
   for _it in "${EXTRA_BL_ITEMS[@]-}"; do [ -n "$_it" ] && ITEM_BL+=( --blocklist-item "$_it" ); done
   local FN_BL=()
   if [ "${BLOCKLIST_FUNCS:-0}" = 1 ]; then FN_BL=( --blocklist-function '.*' ); fi
+  # BLOCKLIST_FUNCS_FROM_CRATE: emit the header function surface, MINUS every function the
+  # crate itself defines. A cohab crate needs both halves and they are not separable by hand:
+  # the island must declare what the module IMPORTS (CreateDirectoryW, DPA_Create, Dde*) but
+  # must NOT declare what the module DEFINES, or the definition and the declaration collide.
+  # The crate's own `#[no_mangle]` set is the exact discriminator, and it stays correct as
+  # translation proceeds. The DLL's .spec is NOT: on shell32 it names 438 exports while the
+  # crate defines 552 functions — only 271 in common. Filtering by the spec would miss 281
+  # internal cross-TU helpers (a clash each) and suppress 167 declarations the crate genuinely
+  # imports (an unresolved name each).
+  if [ "${BLOCKLIST_FUNCS_FROM_CRATE:-0}" = 1 ]; then
+    local CRATE_DEFS="/tmp/${DRIVER}_${STEM}_cratedefs.txt"
+    grep -rhA3 '#\[no_mangle\]' "${OUT_CRATE}" --include=*.rs 2>/dev/null \
+      | grep -oE '\bfn [A-Za-z_][A-Za-z0-9_]*' | sed 's/^fn //' | sort -u > "$CRATE_DEFS"
+    while IFS= read -r _fn; do [ -n "$_fn" ] && FN_BL+=( --blocklist-function "$_fn" ); done < "$CRATE_DEFS"
+    echo "  (blocklisting $(wc -l <"$CRATE_DEFS") functions the crate defines itself)"
+  fi
+  local RAW_EXTRA=()
+  for _rl in "${EXTRA_RAW_LINES[@]-}"; do [ -n "$_rl" ] && RAW_EXTRA+=( --raw-line "$_rl" ); done
   # BLOCKLIST_VARS: drop every extern `static` (global variable) declaration via a post-pass
   # (see below). Usermode DLLs (msafd) define their own module globals (SockEvent/GlobalHeap/
   # Upcalls/...) in the translation; bindgen re-emitting them as `pub static mut` collides
@@ -1507,7 +1674,7 @@ run_arch() {
     --raw-line '// base field types resolved via the sibling -sys glob below (kernel: private' \
     --raw-line '// ntkrnl_sys::ddk; usermode: public ntdll_sys::nt — see USERMODE in the script).' \
     --raw-line "$REEXPORT_LINE" \
-    "${SYS_USE[@]}" \
+    "${SYS_USE[@]}" "${RAW_EXTRA[@]}" \
     -o "$RAW" \
     -- -ferror-limit=0 -Wno-everything \
     -fms-extensions "${LANG_ARGS[@]}" \
@@ -1546,6 +1713,11 @@ open(final, "w").write("".join(out))
   # is re-bound with C linkage in the crate foundation). See strip_cpp_mangled_externs.py.
   if printf '%s\n' "${LANG_ARGS[@]}" | grep -q 'c++'; then
     python3 "$(dirname "$0")/strip_cpp_mangled_externs.py" "$FINAL" >/dev/null
+    # bindgen also emits an inherent `impl` of thin wrappers per C++ class, each calling the
+    # flattened member function. BLOCKLIST_FUNCS_FROM_CRATE removes those declarations (the
+    # translation defines them), which leaves the wrappers calling nothing. Bitfield-accessor
+    # impls are kept — see the tool.
+    python3 "$(dirname "$0")/strip_cpp_method_impls.py" "$FINAL" >/dev/null
   fi
   # MACRO_SIGNED post-pass: re-force the genuinely-DWORD/IN_ADDR high-bit consts back to u32.
   # Under --default-macro-constant-type signed these flip to negative i32 (same bits) but are
@@ -1581,6 +1753,19 @@ PYEOF
     # postprocess_bindgen.py does for the ntddk callback types) makes them unify on all arches.
     # BLOCKLIST_FUNCS drops all fn *declarations*, so every remaining `extern "X" fn` is a
     # fn-pointer TYPE -> a blanket rewrite is safe.
+    #
+    # SUPERSEDED, NOT YET RETIRED. normalize_island_abi.py (run once after all three arches)
+    # does this correctly: it projects from the i386 island per symbol, so a genuinely-cdecl
+    # callback keeps `C`. The blanket sed below cannot make that distinction and promotes
+    # every cdecl fn-pointer to stdcall ON i386 — an ABI break in the opposite direction,
+    # affecting 32 alias + 2 field types repo-wide.
+    #
+    # It still runs because retiring it is NOT provably safe from inspection: the sed also
+    # catches fn-pointer shapes the projection does not match (it keys on `Option<...>`
+    # aliases and struct fields), so dropping it could reintroduce E0308 in the seven crates
+    # that opt in. The two compose safely in the meantime — this leaves nothing spelled
+    # `stdcall` on i386, so the later projection finds no witness and is a no-op here.
+    # To retire: regenerate those seven crates without it, and fix what fails to build.
     sed -i -E 's/extern "stdcall" fn/extern "system" fn/g; s/extern "C" fn/extern "system" fn/g' "$FINAL"
   fi
   echo "  -> ${FINAL}  ($(grep -cE 'pub struct' "$FINAL") structs, $(wc -l <"$FINAL") lines)"
@@ -1589,6 +1774,20 @@ PYEOF
 run_arch i386  i686-pc-windows-gnu    '-D_M_IX86 -D__i386__ -D_X86_'
 run_arch amd64 x86_64-pc-windows-gnu  '-D_WIN64 -D_M_AMD64 -D__x86_64__ -D_AMD64_'
 run_arch arm64 aarch64-pc-windows-gnu '-D_WIN64 -D_M_ARM64 -D__aarch64__ -D__arm64__ -D_ARM64_'
+
+# Spell ABI-identical callback slots `extern "system"` across all three islands, projecting
+# from the i386 island. This runs HERE, after all three arches, because i386 is the witness:
+# amd64/arm64 have one calling convention so bindgen flattens every NTAPI to `extern "C"`
+# and the decoration is gone. It cannot live inside run_arch, which sees one arch at a time.
+#
+# Unconditional, and scoped to the stem this run just wrote. Without it a translation's
+# portable `extern "system" fn` will not unify with the island's literal `stdcall`/`C` in a
+# fn-POINTER type (E0308), and the standing workaround is to transmute the address — which
+# erases the calling convention along with the rest of the type. That is exactly how buslogic
+# shipped six SCSI miniport callbacks defined `extern "C"` into slots the port driver
+# dereferences as stdcall. Normalizing here makes `Some(f)` assignable directly, so the same
+# mistake is a compile error instead of 8 bytes of stack leaked per SRB dispatch.
+python3 "${SCRIPT_DIR}/normalize_island_abi.py" --stem "$STEM" --apply "$OUT_CRATE"
 
 # <stem>.rs dispatches to the per-arch module.
 cat > "${OUT_CRATE}/${STEM}.rs" <<RS
@@ -1599,4 +1798,18 @@ cat > "${OUT_CRATE}/${STEM}.rs" <<RS
 #[cfg(target_arch = "aarch64")]  #[path = "${STEM}_arm64.rs"] mod types_arch;
 pub use types_arch::*;
 RS
+# A crate may keep hand-written residue in <stem>_extra.rs, re-exported through the same
+# glob so `use crate::types::*` still reaches everything. This exists because bindgen
+# CANNOT emit two things a translated module still needs, and regenerating the island must
+# not eat them: pointer-valued macros (`#define NULL ((void*)0)`, INVALID_HANDLE_VALUE,
+# HKEY_CLASSES_ROOT) and cast-expression constants (`((HRESULT)0x80004001L)`) are macro
+# TEXT, not C declarations, so there is nothing in the header for bindgen to bind.
+# Regenerating does not touch <stem>_extra.rs; crates without one are unaffected.
+if [ -f "${OUT_CRATE}/${STEM}_extra.rs" ]; then
+  cat >> "${OUT_CRATE}/${STEM}.rs" <<RS
+#[path = "${STEM}_extra.rs"] mod types_extra;
+pub use types_extra::*;
+RS
+  echo "=== ${STEM}_extra.rs found — re-exported through ${STEM}.rs ==="
+fi
 echo "=== wrote ${OUT_CRATE}/${STEM}.rs (per-arch dispatch) ==="

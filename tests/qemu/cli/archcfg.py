@@ -179,10 +179,13 @@ _CFGS = {
             "mswsock",
             "nettest",
         ),
-        # ntkrnlmp = the arm64 SMP kernel (smp-bringup-quest.md M5). Built
-        # best-effort so `--smp-kernel` media has it to stage; mkramdisk only
-        # copies + boot-selects it when VIBEOS_SMP_DEFAULT_BOOT is set, so a
-        # normal arm64 build just builds it and ignores it (default stays UP).
+        # ntkrnlmp + halmp = the arm64 SMP PAIR (smp-bringup-quest.md M5): the MP
+        # kernel and its matching HAL (hal-rust `smp` feature). Built best-effort
+        # so `--smp-kernel` media has both to stage; mkramdisk only copies +
+        # boot-selects them when VIBEOS_SMP_DEFAULT_BOOT is set, so a normal
+        # arm64 build just builds them and ignores them (default stays UP).
+        # BOTH or neither: arm64 has no MISMATCHED_HAL handshake, so an MP kernel
+        # on the UP hal.dll boots to a desktop and silently runs on one cpu.
         # kmtest_all (kmtest_ .exe + the standalone *_drv.sys corpus) is the
         # `vibeos-cli conformance --arch arm64` payload; mkramdisk.sh stages it
         # to reactos/bin. It is the SAME stale-staged-binary trap as every entry
@@ -199,7 +202,7 @@ _CFGS = {
         # (Both are best-effort and INDEPENDENT: build.py runs one ninja per
         # optional target, so an absent kmtest_all can't take ntkrnlmp down with
         # it — which the old single batched `ninja a b c` would have done.)
-        ninja_targets_optional=("arm64input", "arm64vid", "ntkrnlmp", "kmtest_all"),
+        ninja_targets_optional=("arm64input", "arm64vid", "ntkrnlmp", "halmp", "kmtest_all"),
         needs_mkramdisk=True,
         boot_media_rel="qemu/boot.img",
         staged_bins_rel=(

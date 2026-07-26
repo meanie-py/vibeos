@@ -1,0 +1,17 @@
+# Shared HAL link recipe, used as a build-dependency by BOTH HAL cells:
+# `hal-cargo` (hal.dll, uniprocessor) and `halmp-cargo` (halmp.dll, SMP).
+#
+# Why a crate instead of two build.rs files: the two flavors differ by exactly
+# one cargo feature and the output name — everything else (per-arch entry point,
+# image base, asm set, CRT floor, spec2def, import lib, resource) MUST be
+# identical, and a silent divergence between them is a mis-paired HAL that boots
+# to a desktop and looks perfect. Keeping one body means the flavors cannot
+# drift; adding a link input to one arch automatically reaches both.
+
+[package]
+name = "hal-link"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+reactos-link = { path = "../reactos-link" }

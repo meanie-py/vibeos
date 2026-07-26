@@ -46,6 +46,7 @@ set(_wow64_guests
     ${REACTOS_SOURCE_DIR}/build-fex-hello/async32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/marshal32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/thread32.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/winmine/winmine.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/calc/calc.exe
@@ -123,6 +124,7 @@ if(_wow64_guest_ok)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/async32.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/marshal32.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe DESTINATION reactos/syswow64 FOR livecd)
+    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/thread32.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/winmine/winmine.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/calc/calc.exe DESTINATION reactos/syswow64 FOR livecd)

@@ -271,10 +271,17 @@ PROFILES
 # Copy system files
 echo "[*] Populating ramdisk..."
 RMC "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"                        ::/reactos/system32/ntoskrnl.exe
-# SMP kernel (M5): the ntkrnlmp.exe target lives in the ntkrnlmp/ subdir. Only
-# staged with --smp; freeldr.ini boot-select (below) points /KERNEL at it.
+# SMP PAIR (M5): ntkrnlmp.exe (lives in the ntkrnlmp/ subdir) + halmp.dll, the
+# hal-rust `smp` twin. Only staged with --smp; the freeldr.ini boot-select below
+# points /KERNEL and /HAL at them.
+#
+# Staging BOTH is mandatory on arm64, not a nicety: arm64 has no MISMATCHED_HAL
+# handshake, so ntkrnlmp.exe on the UP hal.dll boots to a full desktop and
+# silently runs on one cpu (HalStartNextProcessor is the FALSE stub). That trap
+# cost a debug round already — see smp-bringup-quest.md M5c.
 if [ -n "$SMP" ]; then
     RMC "$BUILD_DIR/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"           ::/reactos/system32/ntkrnlmp.exe
+    RMC "$BUILD_DIR/hal/halarm64/halmp.dll"                   ::/reactos/system32/halmp.dll
 fi
 RMC "$BUILD_DIR/hal/halarm64/hal.dll"                          ::/reactos/system32/hal.dll
 RMC "$BUILD_DIR/drivers/base/kdrosdbg/kdcom.dll"               ::/reactos/system32/kdcom.dll
@@ -689,6 +696,17 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$ASYNC32" ::/reactos/syswow64/async32.exe
         fi
+        # thread32.exe — the #64 threading guest (winlogon TryStartWow64Thread):
+        # the per-thread WoW64 entry, driven here through FEX's BTCpu contract
+        # rather than amd64's wow64cpu. Staging it on arm64 is the point — the
+        # per-thread CPU area and TEB32 stack bounds are arch-neutral code whose
+        # only other coverage is the amd64 CPU layer.
+        THREAD32="${VIBEOS_THREAD32_EXE:-$PROJECT_DIR/build-fex-hello/thread32.exe}"
+        if [ -f "$THREAD32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/thread32.exe (#64 threading guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$THREAD32" ::/reactos/syswow64/thread32.exe
+        fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
         HELLO32="${VIBEOS_HELLO32_EXE:-$PROJECT_DIR/build-fex-hello/hello32.exe}"
@@ -722,14 +740,14 @@ mmd -i "$BOOT_IMG" ::/EFI/BOOT
 # Copy bootloader
 mcopy -i "$BOOT_IMG" "$UEFILDR" ::/EFI/BOOT/BOOTAA64.EFI
 
-# Copy freeldr.ini — with --smp, boot-select the SMP kernel by injecting
-# /KERNEL=ntkrnlmp.exe into the [ReactOS_Arm64] Options (mirrors the x86
-# livecd.ini [LiveCD_SMP] entry). Default (no --smp) ships the file verbatim
-# so it boots UP ntoskrnl.exe.
+# Copy freeldr.ini — with --smp, boot-select the SMP PAIR by injecting
+# /KERNEL=ntkrnlmp.exe /HAL=halmp.dll into the [ReactOS_Arm64] Options (mirrors
+# the x86 livecd.ini [LiveCD_SMP] entry). Default (no --smp) ships the file
+# verbatim so it boots the UP pair (ntoskrnl.exe + hal.dll).
 if [ -n "$SMP" ]; then
     SMP_INI="$(mktemp)"
-    sed 's#^\(Options=\)#\1/KERNEL=ntkrnlmp.exe #' "$FREELDR_INI" > "$SMP_INI"
-    echo "[*] SMP: freeldr.ini -> /KERNEL=ntkrnlmp.exe"
+    sed 's#^\(Options=\)#\1/KERNEL=ntkrnlmp.exe /HAL=halmp.dll #' "$FREELDR_INI" > "$SMP_INI"
+    echo "[*] SMP: freeldr.ini -> /KERNEL=ntkrnlmp.exe /HAL=halmp.dll"
     mcopy -o -i "$BOOT_IMG" "$SMP_INI" ::/freeldr.ini
     rm -f "$SMP_INI"
 else

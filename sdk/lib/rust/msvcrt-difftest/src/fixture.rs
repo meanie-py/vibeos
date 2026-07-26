@@ -19,6 +19,7 @@ extern "C" {
     fn mbcs_fixture_check() -> i32;
     fn mbcs_ref_slot() -> *mut c_void;
     fn mbcs_subj_slot() -> *mut c_void;
+    fn mbcs_mbctype_len() -> usize;
     /// The reference's locinfo (namespaced) and the subject's (plain).
     fn msvcrt_ref_get_locinfo() -> *mut c_void;
     fn get_locinfo() -> *mut c_void;
@@ -31,6 +32,17 @@ extern "C" {
 /// reaches create_mbcinfo's built-in ASCII fallback (GetCPInfo deliberately fails for
 /// it — see nlsimpl.c).
 pub static CODEPAGES: &[u32] = &[932, 936, 949, 950, 1361, 1252, 20127];
+
+/// Initial `mbstate_t` values every restartable-conversion case sweeps.
+///
+/// msvcrt types `mbstate_t` as a plain `int` holding the pending LEAD BYTE, so 0 means
+/// "at a character boundary" and any other value means "resume this partial character".
+/// Sweeping only 0 would leave the resume path — the half of `mbrtowc`/`mbrlen` that has
+/// any state to get wrong — completely unreached, while the suite still reported a green
+/// per-function row. 0x81 and 0xE0 are lead bytes in every DBCS codepage here; 0xFF is
+/// not a lead byte in any of them, so it also grades the "stale state that cannot be
+/// completed" path both sides must reject the same way.
+pub static MBSTATES: [i32; 4] = [0, 0x81, 0xE0, 0xFF];
 
 /// Installs a codepage's `threadmbcinfo` on BOTH sides and, on the way out, checks
 /// neither side scribbled on it.
@@ -70,6 +82,44 @@ impl Drop for MbcsFixture {
             self.cp,
             if which == 1 { "REFERENCE" } else { "SUBJECT" }
         );
+    }
+}
+
+// ── pointers INTO the pinned state ────────────────────────────────────────────
+
+/// Compare what a `__p_*` accessor points AT, for the accessors that hand back a table.
+///
+/// msvcrt's `__p_*` family returns interior pointers to CRT state — `__p__mbctype()` is
+/// `get_mbcinfo()->mbctype`. Each side reads its OWN fixture slot, so the two addresses
+/// are different by construction and always will be; comparing the pointers would report
+/// a divergence on every iteration, and comparing nothing would grade nothing. The
+/// content behind them is the answer.
+///
+/// The length is asked of C (`sizeof` on the mirrored field), not written here. A
+/// transcribed length is part of the oracle: too small silently stops comparing the tail
+/// of the table, too large reads past the struct.
+///
+/// # Safety
+/// `a` and `b` must each point to at least `state_table_len(name)` readable bytes.
+pub unsafe fn state_table_same(name: &str, a: *const u8, b: *const u8) -> bool {
+    if a.is_null() || b.is_null() {
+        return a.is_null() && b.is_null();
+    }
+    let n = state_table_len(name);
+    core::slice::from_raw_parts(a, n) == core::slice::from_raw_parts(b, n)
+}
+
+/// How many bytes `name` points at. Unknown names HARD FAIL rather than defaulting to
+/// some plausible size — a wrong length here is invisible in the result, so guessing it
+/// would turn a graded case into a decorative one.
+pub fn state_table_len(name: &str) -> usize {
+    match name {
+        "__p__mbctype" => unsafe { mbcs_mbctype_len() },
+        _ => panic!(
+            "state_table_len: no length known for `{name}`. Add it next to the struct \
+             mirror it comes from (locale_layout.h) and export it by `sizeof`, rather \
+             than writing a number here — see this function's doc comment."
+        ),
     }
 }
 
@@ -357,5 +407,21 @@ fn with_nul(s: &[u8]) -> Vec<u8> {
     // Deliberately non-zero and not a lead byte in any codepage here, so a walker that
     // runs on does something observable rather than immediately re-terminating.
     v.extend(core::iter::repeat_n(0x5A, 16));
+    // …and then a terminator the run-on is guaranteed to LAND on, inside the allocation.
+    //
+    // Without this the padding only postponed the problem: a walker that consumed all 16
+    // filler bytes stepped off the end of the Vec and back into heap garbage, which is
+    // exactly the coin flip the padding exists to remove. `_mbscmp("ab\x82", "ab\x82")`
+    // under cp932 does it in four steps — a trailing lead byte makes msvcrt read the NUL
+    // as its trail byte and advance TWO, so the walk resumes past the terminator, runs
+    // the filler, and leaves the buffer. It sat latent until an unrelated pair of cases
+    // shifted the allocations, and then reported the subject and the reference
+    // disagreeing about two identical strings.
+    //
+    // Two, not one: 0x5A is not a lead byte in any codepage here, so a walker in the
+    // filler advances one byte at a time and one NUL would do — but a walker that
+    // advances TWO from the last filler byte would step straight over a single NUL and
+    // out again. Two makes termination independent of the stride.
+    v.extend([0, 0]);
     v
 }

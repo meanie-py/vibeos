@@ -689,19 +689,23 @@ function(add_cargo_module _target _crate _output)
     if(VIBEOS_CSWITCHDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
         list(APPEND _cargo_env VIBEOS_CSWITCHDEP=1)
     endif()
-    # SMP bring-up media (-DVIBEOS_SMP_DEFAULT_BOOT=ON, `vibeos-cli build
-    # --smp-kernel`): build the HAL with hal-rust's `smp` feature so its
-    # HalpBuildType accepts the MP kernel (MISMATCHED_HAL 0x79 handshake).
-    # Opt-in only — default media keeps the UP HAL.
-    if(VIBEOS_SMP_DEFAULT_BOOT AND _crate STREQUAL "hal-cargo")
-        list(APPEND _cargo_env VIBEOS_SMP_HAL=1)
-    endif()
+    # (The former VIBEOS_SMP_DEFAULT_BOOT → VIBEOS_SMP_HAL=1 env, which rebuilt
+    # hal.dll with hal-rust's `smp` feature, is RETIRED. The SMP HAL is now its
+    # own cell — halmp-cargo → halmp.dll, built unconditionally and shipped
+    # alongside hal.dll, selected at boot by livecd.ini's `/HAL=halmp.dll`.
+    # Two reasons it had to go: switching flavors through a build-dir-global
+    # cache var cost a reconfigure + full HAL relink (9m25s i386 / 12m22s amd64
+    # warm), which is why there was never an MP gate leg; and a `hal.dll` that
+    # is secretly an MP HAL passes every name-based check there is. The flavor
+    # is now the file name.)
     # i386 legacy PIC HAL escape hatch (-DVIBEOS_PIC_HAL=ON, `vibeos-cli build
     # --hal-pic`): build hal.dll with the 8259 PIC flavor instead of the DEFAULT
     # APIC flavor (LAPIC/IOAPIC/TPR). i386 only — amd64 hal is always APIC. A
-    # plain build (no env) is the APIC HAL; hal-cargo/build.rs treats the ABSENCE
-    # of VIBEOS_PIC_HAL as "build APIC".
-    if(VIBEOS_PIC_HAL AND _crate STREQUAL "hal-cargo")
+    # plain build (no env) is the APIC HAL; hal-link treats the ABSENCE of
+    # VIBEOS_PIC_HAL as "build APIC". BOTH HAL cells take it — the interrupt
+    # model is orthogonal to the UP/MP flavor, and letting the twins disagree
+    # about it would ship an APIC halmp.dll against a PIC hal.dll.
+    if(VIBEOS_PIC_HAL AND _crate MATCHES "^(hal-cargo|halmp-cargo)$")
         list(APPEND _cargo_env VIBEOS_PIC_HAL=1)
     endif()
 

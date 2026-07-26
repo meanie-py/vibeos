@@ -1279,7 +1279,7 @@ extern "system" {
     fn SHBrowseForFolder(lpbi: *mut BROWSEINFOW) -> PIDLIST_ABSOLUTE; // shell32.spec:274
     fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST; // shell32.spec:17
     fn ILIsEqual(pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> BOOL; // shell32.spec:20
-    fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: INT) -> INT; // shlwapi (shell_link.rs:5228 spelling)
+    fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: INT) -> DWORD; // shlwapi (shell_link.rs:5228 spelling)
     fn lstrcmpiA(lpString1: LPCSTR, lpString2: LPCSTR) -> INT; // kernel32
     fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT; // user32
     fn PostMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL; // user32

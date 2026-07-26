@@ -71,13 +71,24 @@ _FIELD = (
 _ANY = re.compile(r"pub struct (?P<s>\w+)|" + _ALIAS + "|" + _FIELD)
 
 
-def island_paths(crate_src: pathlib.Path) -> dict[str, list[pathlib.Path]]:
-    """arch -> the crate's island files for that arch."""
+def island_paths(crate_src: pathlib.Path, stem: str | None = None) -> dict[str, list[pathlib.Path]]:
+    """arch -> the crate's island files for that arch.
+
+    `stem` restricts the match to exactly `<stem>_<arch>.rs`. gen_driver_types.sh generates
+    ONE stem per invocation (`TYPES_STEM`, several islands per crate — netapi32 carries six),
+    so a generation run must normalize the three files it just wrote and nothing else.
+    Without this the pass would also rewrite a sibling stem that this run never regenerated,
+    which is a tool mutating output it does not own."""
+    pattern = (
+        rf"{re.escape(stem)}_({'|'.join(ARCHES)})\.rs$"
+        if stem
+        else rf"(?:{'|'.join(ISLAND_STEMS)})\w*_({'|'.join(ARCHES)})\.rs$"
+    )
     out: dict[str, list[pathlib.Path]] = {a: [] for a in ARCHES}
     for p in sorted(crate_src.rglob("*.rs")):
-        m = re.match(rf"({'|'.join(ISLAND_STEMS)})\w*_({'|'.join(ARCHES)})\.rs$", p.name)
+        m = re.match(pattern, p.name)
         if m:
-            out[m.group(2)].append(p)
+            out[m.group(1)].append(p)
     return out
 
 
@@ -118,8 +129,10 @@ def rewrite(text: str, keys: set[str], from_abi: str) -> tuple[str, int]:
     return text, n
 
 
-def normalize_crate(crate_src: pathlib.Path, apply: bool) -> tuple[int, list[str]]:
-    islands = island_paths(crate_src)
+def normalize_crate(
+    crate_src: pathlib.Path, apply: bool, stem: str | None = None
+) -> tuple[int, list[str]]:
+    islands = island_paths(crate_src, stem)
     if not islands["i386"]:
         return 0, []
     # The witness: everything the i386 island records as stdcall.
@@ -148,6 +161,10 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("crates", nargs="*", help="crate dirs (default: every sdk/lib/rust/*)")
     ap.add_argument("--apply", action="store_true", help="write (default: report only)")
+    ap.add_argument(
+        "--stem",
+        help="only normalize <stem>_<arch>.rs (gen_driver_types.sh writes one stem per run)",
+    )
     args = ap.parse_args(argv)
 
     repo = pathlib.Path(__file__).resolve().parents[2]
@@ -158,7 +175,7 @@ def main(argv: list[str]) -> int:
     grand = 0
     for c in crates:
         src = c / "src" if (c / "src").is_dir() else c
-        n, notes = normalize_crate(src, args.apply)
+        n, notes = normalize_crate(src, args.apply, args.stem)
         if n:
             print(f"{c.name}: {n}")
             print("\n".join(notes))

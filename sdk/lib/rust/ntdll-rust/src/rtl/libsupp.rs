@@ -255,15 +255,44 @@ pub unsafe extern "system" fn RtlpThrTebDeallocStackAddr(TebBase: PVOID) -> PVOI
     core::ptr::addr_of_mut!((*(TebBase as PTEB)).DeallocationStack) as PVOID
 }
 
-/// `RtlpThrImageStackReserve` — `((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackReserve`.
+/// True when `Headers` is a PE32 optional header rather than this build's
+/// native one.
+///
+/// A WoW64 process's image is a PE32 while this code is compiled 64-bit, so
+/// `IMAGE_OPTIONAL_HEADER32` packs SizeOfStackReserve/SizeOfStackCommit as
+/// adjacent 4-byte fields exactly where the 64-bit layout has a single 8-byte
+/// SizeOfStackReserve. Reading it at native width therefore returns
+/// `(SizeOfStackCommit << 32) | SizeOfStackReserve` — for a stock 1MB/4KB i386
+/// image that is a 16TB reserve, and `ZwAllocateVirtualMemory` rejects it with
+/// STATUS_INVALID_PARAMETER_4, failing every `RtlCreateUserThread` in the
+/// process. Only a WoW64 process reaches this, which is why it stayed hidden
+/// until 32-bit guests could create threads (task #64).
+///
+/// `Magic` sits at offset 0 of the optional header in both layouts, so reading
+/// it before choosing a layout is always safe.
+#[inline(always)]
+unsafe fn RtlpThrImageIsPe32(Headers: PVOID) -> bool {
+    (*(Headers as PIMAGE_NT_HEADERS32)).OptionalHeader.Magic as u32
+        == IMAGE_NT_OPTIONAL_HDR32_MAGIC
+}
+
+/// `RtlpThrImageStackReserve` — `((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackReserve`,
+/// read at the width the header itself declares (see [`RtlpThrImageIsPe32`]).
 #[no_mangle]
 pub unsafe extern "system" fn RtlpThrImageStackReserve(Headers: PVOID) -> SIZE_T {
+    if RtlpThrImageIsPe32(Headers) {
+        return (*(Headers as PIMAGE_NT_HEADERS32)).OptionalHeader.SizeOfStackReserve as SIZE_T;
+    }
     (*(Headers as PIMAGE_NT_HEADERS)).OptionalHeader.SizeOfStackReserve as SIZE_T
 }
 
-/// `RtlpThrImageStackCommit` — `((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackCommit`.
+/// `RtlpThrImageStackCommit` — `((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackCommit`,
+/// read at the width the header itself declares (see [`RtlpThrImageIsPe32`]).
 #[no_mangle]
 pub unsafe extern "system" fn RtlpThrImageStackCommit(Headers: PVOID) -> SIZE_T {
+    if RtlpThrImageIsPe32(Headers) {
+        return (*(Headers as PIMAGE_NT_HEADERS32)).OptionalHeader.SizeOfStackCommit as SIZE_T;
+    }
     (*(Headers as PIMAGE_NT_HEADERS)).OptionalHeader.SizeOfStackCommit as SIZE_T
 }
 

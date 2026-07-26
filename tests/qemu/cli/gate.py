@@ -355,6 +355,34 @@ def _tooling_once(repo: Path, root: Path) -> dict:
     return {"ok": proc.returncode == 0, "seconds": dt, "salient": salient, "exit": proc.returncode}
 
 
+def _difftest_once(repo: Path, root: Path) -> dict:
+    """Run every host differential harness once for the whole gate.
+
+    These grade the shipping Rust against the genuine C it replaced, in one
+    process, on the host — no QEMU, no build-<arch>, ~20s for the set. So they
+    run alongside check-tooling, before the first build finishes.
+
+    They gate the push stamp because the alternative was demonstrated: reachable
+    only by hand, `rtl-difftest` sat 2/87 red on master for long enough that the
+    breaking commit is no longer identifiable, and one of the two was a real
+    divergence in eleven `Rtl*String` converters. Smoke proves the OS boots;
+    these prove a translation still means what the C meant, which is a different
+    question and the one this project is actually answering.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    cmd = [str(repo / "vibeos-cli"), "difftest"]
+    env = dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root))
+    t0 = time.monotonic()
+    proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
+    dt = time.monotonic() - t0
+    salient = ""
+    for ln in (proc.stdout or "").splitlines():
+        if ln.strip().startswith(">") or "✗" in ln:
+            salient = ln.strip().lstrip("> ")
+            break
+    return {"ok": proc.returncode == 0, "seconds": dt, "salient": salient, "exit": proc.returncode}
+
+
 def _resolve_arches(raw: str | None) -> list[str]:
     if not raw:
         return ["i386", "amd64", "arm64"]
@@ -525,6 +553,8 @@ def gate(args, repo: Path) -> int:
     lfut: dict = {}
     tooling_ok = True
     tfut: dict = {}
+    difftest_ok = True
+    dfut: dict = {}
 
     def _lane_once(lane: str, root: Path) -> dict:
         if lane == "net":
@@ -541,7 +571,8 @@ def gate(args, repo: Path) -> int:
             n_lanes * (1 + retries)
             + (len(arches) if do_lint else 0)
             + (len(arches) if do_build else 0)
-            + (1 if do_lint else 0),  # check-tooling: one arch-independent worker
+            # check-tooling + difftest: two arch-independent workers
+            + (2 if do_lint else 0),
             20,
         )
         or 1
@@ -552,6 +583,9 @@ def gate(args, repo: Path) -> int:
         # overlaps the first build instead of adding wall-clock.
         if do_lint:
             tfut[ex.submit(_tooling_once, repo, gate_root / "tooling")] = "tooling"
+            # Same shape as check-tooling: host-only, needs no build artifacts,
+            # so it overlaps the first build rather than adding wall-clock.
+            dfut[ex.submit(_difftest_once, repo, gate_root / "difftest")] = "difftest"
 
         def _launch_lanes(arch: str) -> None:
             """Submit an arch's post-build lanes (smoke [+ net] + lint) immediately."""
@@ -658,7 +692,27 @@ def gate(args, repo: Path) -> int:
                 if not r["ok"] and not run.classification:
                     run.classification = "TOOLING_FAIL"
 
+        def _collect_difftest() -> None:
+            nonlocal difftest_ok
+            for f in cf.as_completed(dfut):
+                r = f.result()
+                difftest_ok = r["ok"]
+                run.add(
+                    Stage(
+                        "difftest",
+                        seconds=r["seconds"],
+                        status="ok" if r["ok"] else "fail",
+                        detail="difftest clean"
+                        if r["ok"]
+                        else f"rust-vs-C divergence (exit {r['exit']})",
+                        salient=[] if r["ok"] else [r["salient"] or "difftest failed"],
+                    )
+                )
+                if not r["ok"] and not run.classification:
+                    run.classification = "DIFFTEST_FAIL"
+
         _collect_tooling()  # concurrent with the in-flight smokes
+        _collect_difftest()  # concurrent with the in-flight smokes
         _collect_lints()  # concurrent with the in-flight smokes
         for f in cf.as_completed(fut):
             r = f.result()
@@ -740,6 +794,9 @@ def gate(args, repo: Path) -> int:
         # check-tooling is arch-independent and runs once; it defaults True under
         # --no-lint, matching how lint_ok defaults above.
         and tooling_ok
+        # Same contract for the host difftests: arch-independent, once per gate,
+        # True under --no-lint. A rust-vs-C divergence must not mint a stamp.
+        and difftest_ok
     )
     # Defense-in-depth: never mint the credential when ANY stage failed. all_ok
     # is computed over smoke + lint_ok only; this also catches any future stage
