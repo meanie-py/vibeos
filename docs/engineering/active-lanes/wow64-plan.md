@@ -140,7 +140,7 @@ Every service lands in one of four tiers:
 flat thunk over a divergent payload compiles, links, and silently truncates.
 `marshalgen audit` derives from checked-in sources which services provably
 diverge 32↔64 and **hard-fails the build** if a flat thunk covers one that is not
-in `tools/lint-baseline/marshalgen_audit.txt` (246 entries, being burned down).
+in `tools/lint-baseline/marshalgen_audit.txt` (209 entries, being burned down).
 It also hard-fails on a stale built table, so the audit cannot be quietly
 outrun.
 
@@ -253,13 +253,14 @@ cannot reach. Nearly every marshalling bug from E6 onward was found by one.
 - **Registry redirection** (`Wow6432Node`, `KEY_WOW64_32KEY/64KEY`) — task #66.
   Not merely missing: a 32-bit guest currently reads and writes the *native*
   hive, so it is a silent correctness bug, not a stubbed feature.
-- **The 246 remaining audit-baseline entries** — services whose payloads provably
+- **The 209 remaining audit-baseline entries** — services whose payloads provably
   diverge but that still flat-thunk. Each is a latent version of bugs already
-  paid for. E19 closed the pointer-width **out-cell** slice of these (the ones
-  that were actively corrupting guest memory); what is left is dominated by
-  win32k's kernel-graphics-driver surface (`SURFOBJ`/`BRUSHOBJ`/`XLATEOBJ`,
-  ~81 entries, unreachable from a user-mode guest), `PORT_MESSAGE` (the LPC
-  server side, which belongs with the CSR-32 layer), and `TOKEN_GROUPS`.
+  paid for. E19 closed the pointer-width **out-cell** slice (which was corrupting
+  guest memory) and E20 the bare **`PUNICODE_STRING`/`OBJECT_ATTRIBUTES`** slice
+  (which was bugchecking the box). What is left is dominated by win32k's
+  kernel-graphics-driver surface (`SURFOBJ`/`BRUSHOBJ`/`XLATEOBJ`, ~81 entries,
+  unreachable from a user-mode guest), `PORT_MESSAGE` (the LPC server side,
+  which belongs with the CSR-32 layer), and `TOKEN_GROUPS`.
 - **IOCTL embedded-pointer buffers** (task #42) and **guest `int3` dispatch**.
 
 ## Things that turned out to matter more than expected
@@ -2666,3 +2667,56 @@ parser, including the selfmod32 `0xBAD9` case and the one that matters most:
 success is the exact failure mode the check exists to prevent. The extra watch
 is bounded and strictly additive: with the flag off, the boot path is unchanged,
 so no other lane pays for it.
+
+**Phase E20 — every `RegSetValueEx` from a 32-bit guest BUGCHECKed the box
+(2026-07-26).** The second slice of the E10 audit baseline, and it turned out to
+be a **local denial of service**, not a correctness wart.
+
+`UNICODE_STRING` is 8 bytes in the guest — `{USHORT Length; USHORT
+MaximumLength; ULONG Buffer}` — and 16 on the host, because the pointer is
+8-aligned: `{USHORT Length; USHORT MaximumLength; ULONG pad; ULONGLONG Buffer}`.
+`Buffer` therefore lives at offset 4 in the guest and offset 8 on the host, so a
+flat thunk makes the kernel read the string pointer **from past the end of the
+guest's struct**. Not a truncation — a wholly unrelated address, assembled from
+whatever two words happened to follow. `Length` and `MaximumLength` share
+offsets, so they arrive intact and make the whole thing look plausible.
+
+`NtSetValueKey` was flat. `NtQueryValueKey`, one line away in the same table,
+was already marshalled. **Registry reads worked and registry writes killed the
+machine** — the same "fix the variant you happen to be looking at" pattern that
+left plain `NtOpenProcessToken` behind its `Ex` sibling in E19, which is the
+argument for driving this off the tool instead of off inspection.
+
+*The proof, in the order it was obtained.* The guest rung was written and run
+**against unfixed media first**, so the test is known to be able to see the bug:
+
+```
+[WOW64] NtCreateKey(0x2b) [manual] => 00000000
+[PROBE-AV-R] ABOVE-USERPROBE Addr=0040400000580056 Len=38 (0x26) Align=2
+[RAISE] RtlRaiseStatus(0xC0000005)
+*** BUGCHECK: 0x0000001E
+```
+
+Read the operands: `Len=38` is 19 WCHARs, exactly `"Wow64ValueNameProbe"`, so the
+lengths came through correctly and only `Buffer` is wrong —
+`0x0040400000580056` is two adjacent 32-bit guest words glued together. The
+address is above the user probe boundary, so `ProbeForRead` raises, in kernel
+mode, unhandled → `0x1E`. After the fix the same media reports
+`[marshal32] registry value-name round-trip verified (set/query/delete)` and the
+ladder is 9/9 on both arches.
+
+*Scope.* All 27 ntdll services whose only divergence is a bare
+`PUNICODE_STRING` or `OBJECT_ATTRIBUTES`: the registry value/rename calls, the
+hive load/unload/replace family, `NtDeleteFile`, `NtDisplayString`, the driver
+load/unload pair, the system-environment quartet, `NtCreatePagingFile`, and the
+six audit-alarm entry points. `PRIVILEGE_SET` and `GENERIC_MAPPING` pass through
+unmarshalled because they are pointer-free (LUIDs and ACCESS_MASKs) — which is
+what the audit says, and why they are not on the list. Baseline **246 → 209**,
+re-blessed with **+0 added**; the ntdll table is now 172 auto / 124 manual.
+
+*Rung design.* `marshal32` does a full round trip — set a value, read it back
+**by the same name**, delete it, confirm it is gone — because a wrong `Buffer`
+cannot survive that: either the set faults, or it lands under a garbage name and
+the query misses, or the delete removes nothing. Checking only that the set
+returned success would have passed on the broken build right up until the
+machine died.

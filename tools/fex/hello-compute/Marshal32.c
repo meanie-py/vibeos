@@ -50,11 +50,38 @@
 #define M32_FAIL_CELL_DUPCALL 0xBADE /* NtDuplicateObject failed outright */
 #define M32_FAIL_CELL_DUPOVR  0xBADF /* ...and overran its 4-byte handle cell */
 #define M32_FAIL_CELL_TMROVR  0xBAE0 /* NtCreateTimer overran (NULL-OA path) */
+#define M32_FAIL_REG_NTDLL    0xBAE1 /* couldn't resolve the registry syscalls */
+#define M32_FAIL_REG_CREATE   0xBAE2 /* NtCreateKey on the scratch key failed */
+#define M32_FAIL_REG_SET      0xBAE3 /* NtSetValueKey failed outright */
+#define M32_FAIL_REG_QUERY    0xBAE4 /* the value we just set cannot be found */
+#define M32_FAIL_REG_VALUE    0xBAE5 /* found, but wrong type/length/data */
+#define M32_FAIL_REG_DELETE   0xBAE6 /* NtDeleteValueKey did not remove it */
 #define M32_PASS              0x600D
 
 static void Report(const char *msg)
 {
     OutputDebugStringA(msg);
+}
+
+/* No CRT here, so hex formatting is hand-rolled (same shape as Selfmod32's). */
+static void ReportHex(const char *label, DWORD v)
+{
+    static const char Digits[] = "0123456789abcdef";
+    char buf[96];
+    int i = 0, n;
+    while (label[i] && i < 72)
+    {
+        buf[i] = label[i];
+        i++;
+    }
+    buf[i++] = ' ';
+    buf[i++] = '0';
+    buf[i++] = 'x';
+    for (n = 28; n >= 0; n -= 4)
+        buf[i++] = Digits[(v >> n) & 0xf];
+    buf[i++] = '\n';
+    buf[i] = 0;
+    OutputDebugStringA(buf);
 }
 
 /* --- check 1: NtQueryInformationThread(ThreadBasicInformation) ----------- */
@@ -275,6 +302,149 @@ static int CheckOutCellCanaries(void)
     return 0;
 }
 
+/* --- check 5: PUNICODE_STRING args on the registry write path (E20) ------ *
+ * UNICODE_STRING is 8 bytes in the guest {Length, MaximumLength, ULONG Buffer}
+ * and 16 on the host {Length, MaximumLength, pad, ULONGLONG Buffer}. Buffer
+ * therefore lives at offset 4 in the guest and offset 8 on the host, so a flat
+ * thunk makes the kernel read the value-name POINTER from past the end of the
+ * guest's struct — not a truncation, a wholly unrelated address.
+ *
+ * NtQueryValueKey was already marshalled while NtSetValueKey and
+ * NtDeleteValueKey next to it were not, so reads worked and writes did not.
+ * This drives all three through one round-trip: set a value, read it back BY
+ * THE SAME NAME, then delete it and confirm it is gone. A wrong Buffer cannot
+ * survive that -- either the set faults/errors, or it lands under a garbage
+ * name and the query misses. */
+
+typedef LONG(WINAPI *M32_CREATEKEY_FN)(PHANDLE, ULONG, VOID *, ULONG, PVOID, ULONG, PULONG);
+typedef LONG(WINAPI *M32_SETVAL_FN)(HANDLE, VOID *, ULONG, ULONG, PVOID, ULONG);
+typedef LONG(WINAPI *M32_QUERYVAL_FN)(HANDLE, VOID *, ULONG, PVOID, ULONG, PULONG);
+typedef LONG(WINAPI *M32_DELVAL_FN)(HANDLE, VOID *);
+
+typedef struct _M32_USTR {
+    USHORT Length;
+    USHORT MaximumLength;
+    WCHAR *Buffer;
+} M32_USTR;
+
+typedef struct _M32_OA {
+    ULONG Length;
+    HANDLE RootDirectory;
+    M32_USTR *ObjectName;
+    ULONG Attributes;
+    PVOID SecurityDescriptor;
+    PVOID SecurityQualityOfService;
+} M32_OA;
+
+typedef struct _M32_KVPI {
+    ULONG TitleIndex;
+    ULONG Type;
+    ULONG DataLength;
+    UCHAR Data[8];
+} M32_KVPI;
+
+static void M32InitUstr(M32_USTR *u, WCHAR *s)
+{
+    USHORT n = 0;
+    while (s[n])
+        n++;
+    u->Length = (USHORT)(n * sizeof(WCHAR));
+    u->MaximumLength = (USHORT)(u->Length + sizeof(WCHAR));
+    u->Buffer = s;
+}
+
+static int CheckRegistryValueNames(void)
+{
+    static WCHAR KeyPath[] = L"\\Registry\\Machine\\Software\\vibeos_marshal32";
+    static WCHAR ValName[] = L"Wow64ValueNameProbe";
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    M32_CREATEKEY_FN CreateKey;
+    M32_SETVAL_FN SetValue;
+    M32_QUERYVAL_FN QueryValue;
+    M32_DELVAL_FN DeleteValue;
+    M32_USTR uKey, uVal;
+    M32_OA oa;
+    M32_KVPI info;
+    HANDLE key = NULL;
+    ULONG disp = 0, got = 0;
+    DWORD data = 0x5CA11ED;
+    LONG st;
+
+    if (!nt)
+        return M32_FAIL_REG_NTDLL;
+    CreateKey = (M32_CREATEKEY_FN)GetProcAddress(nt, "NtCreateKey");
+    SetValue = (M32_SETVAL_FN)GetProcAddress(nt, "NtSetValueKey");
+    QueryValue = (M32_QUERYVAL_FN)GetProcAddress(nt, "NtQueryValueKey");
+    DeleteValue = (M32_DELVAL_FN)GetProcAddress(nt, "NtDeleteValueKey");
+    if (!CreateKey || !SetValue || !QueryValue || !DeleteValue)
+        return M32_FAIL_REG_NTDLL;
+
+    M32InitUstr(&uKey, KeyPath);
+    M32InitUstr(&uVal, ValName);
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &uKey;
+    oa.Attributes = 0x40; /* OBJ_CASE_INSENSITIVE */
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    /* Volatile: this is a probe, it must not survive the boot. */
+    st = CreateKey(&key, 0xF003F /* KEY_ALL_ACCESS */, &oa, 0, NULL,
+                   1 /* REG_OPTION_VOLATILE */, &disp);
+    if (st < 0)
+        return M32_FAIL_REG_CREATE;
+
+    st = SetValue(key, &uVal, 0, 4 /* REG_DWORD */, &data, sizeof(data));
+    if (st < 0)
+    {
+        ReportHex("[marshal32] reg: NtSetValueKey failed, status =", (DWORD)st);
+        CloseHandle(key);
+        return M32_FAIL_REG_SET;
+    }
+
+    info.Type = 0;
+    info.DataLength = 0;
+    st = QueryValue(key, &uVal, 2 /* KeyValuePartialInformation */, &info,
+                    sizeof(info), &got);
+    if (st < 0)
+    {
+        /* The classic signature of the bug: the set "succeeded" but the value
+         * is not there under the name we asked for. */
+        ReportHex("[marshal32] reg: value set but NOT FOUND, status =", (DWORD)st);
+        CloseHandle(key);
+        return M32_FAIL_REG_QUERY;
+    }
+    if (info.Type != 4 || info.DataLength != sizeof(data) ||
+        *(DWORD *)info.Data != data)
+    {
+        ReportHex("[marshal32] reg: wrong value came back, type =", info.Type);
+        CloseHandle(key);
+        return M32_FAIL_REG_VALUE;
+    }
+
+    st = DeleteValue(key, &uVal);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] reg: NtDeleteValueKey failed, status =", (DWORD)st);
+        CloseHandle(key);
+        return M32_FAIL_REG_DELETE;
+    }
+    /* ...and it must actually be gone, which proves the delete used OUR name
+     * and not a garbage one that happened to hit nothing. */
+    st = QueryValue(key, &uVal, 2, &info, sizeof(info), &got);
+    if (st >= 0)
+    {
+        Report("[marshal32] reg: value survived NtDeleteValueKey\n");
+        CloseHandle(key);
+        return M32_FAIL_REG_DELETE;
+    }
+    CloseHandle(key);
+
+    Report("[marshal32] registry value-name round-trip verified "
+           "(set/query/delete)\n");
+    return 0;
+}
+
 int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 {
     int rc;
@@ -293,7 +463,11 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     rc = CheckOutCellCanaries();
     if (rc) ExitProcess(rc);
 
-    Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells all verified\n");
+    rc = CheckRegistryValueNames();
+    if (rc) ExitProcess(rc);
+
+    Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells + reg-names "
+           "all verified\n");
     ExitProcess(M32_PASS);
     return 0;
 }
