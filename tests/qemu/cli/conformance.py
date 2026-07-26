@@ -264,6 +264,34 @@ def conformance(args, repo: Path) -> int:
     saved_serial = run_dir / f"{pytest_arch}_serial.log"
     saved_serial.write_text(serial_text)
 
+    # An `--smp N` sweep that quietly swept the UP kernel is the false green this
+    # whole experiment exists to avoid, and it is INVISIBLE in the results — a UP
+    # sweep looks like a very good MP sweep. `smoke --smp N` asserts this
+    # (_smp_check), but conformance boots via pytest and never went through that
+    # path, so it had no such check at all. freeldr announces both, so this is an
+    # assertion on evidence we already captured, not new instrumentation.
+    if smp:
+        from .smoke import _booted_hal, _booted_kernel
+
+        booted_k, booted_h = _booted_kernel(serial_text), _booted_hal(serial_text)
+        wrong = [
+            f"{what}={got}"
+            for what, got, want in (
+                ("kernel", booted_k, "ntkrnlmp.exe"),
+                ("HAL", booted_h, "halmp.dll"),
+            )
+            if got and got != want
+        ]
+        if wrong:
+            print(
+                f"[conformance] --smp {smp} did NOT get the MP pair: {', '.join(wrong)}.\n"
+                f"  This sweep graded the UP kernel and its numbers mean nothing for the\n"
+                f"  collapse experiment. Serial: {saved_serial}",
+                file=sys.stderr,
+            )
+            return 2
+        print(f"[conformance] MP pair confirmed on serial: {booted_k} + {booted_h}")
+
     # --- 4. compare against baseline -----------------------------------------
     regressions: list[str] = []
     new_passes: list[str] = []

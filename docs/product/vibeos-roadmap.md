@@ -848,6 +848,46 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   result: it eliminates MiDeletePte as the reuse path. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
+
+  **Tripwire site pinned down (2026-07-26), with the ordering trap that would have made it
+  always-NULL.** The free site is `mm/freelist.rs:391 MmDereferencePage` — the
+  `if rc - 1 == 0` branch, which ends in `MiInsertPageInFreeList(pfn)`. The check must go at the
+  **TOP of that branch**: `MmGetRmapListHeadPage` returns NULL unless `awe_allocation()` is set
+  (`freelist.rs:333`), and the branch clears `awe_allocation` two lines before the free — so a
+  tripwire placed anywhere after that reads NULL on every page and silently proves nothing.
+  Make it a LOUD PRINT, not an assert: `MmAllocPage` (`freelist.rs:428`) defensively clears
+  `rmap_list_head` on *allocation*, which is itself evidence that stale non-NULL heads survive
+  frees today, so a fatal assert would fire on benign leftovers as well as real
+  free-while-mapped. Same call as the `[PFNMISMATCH]` precedent — made loud, deliberately not
+  fatal.
+
+  **First symbolicated kernel-side instance (2026-07-26) — and it points at the STACK, not at
+  the page-reuse face.** `-smp 1` run F: `BUGCHECK 0x1E (0xC0000005, 0xfffff80042193788,
+  0xffff8000048e8e50, 0)`, `P2 = ntoskrnl.exe+0x3788` = **`KiSynchronousExceptionEntry+4`**
+  (`ntoskrnl/ke/arm64/trap.S:371`). `+0` is `sub sp, sp, #KTRAP_FRAME_LENGTH`; **`+4` is
+  `stp x0, x1, [sp, #TfX0]` — the FIRST store into the freshly-allocated trap frame** — and P3,
+  the faulting address, is `0xffff8000048e8e50`, a kernel-stack VA. So a synchronous exception
+  arrived and the handler prolog could not write the stack underneath it.
+
+  That has a named suspect already sitting in the quest doc, spotted and deliberately not
+  changed: **`ke/arm64/kiinit.rs`'s `KERNEL_STACK_SIZE = 0x6000` against `xdk/arm64/ke.h`'s
+  `0xC000`** — arm64 kernel stacks are HALF the size the headers declare. It is self-consistent
+  (the `KiP0BootStackData` array and the top-of-stack computation agree), so it was filed as a
+  divergence rather than an overrun — but a half-size stack is exactly what turns a deep
+  late-sweep call chain into a guard-page fault on the next trap entry, and it explains both the
+  late-run timing and the intermittency (it depends on the call depth reached). Distinguishing
+  test: log `StackBase`/`StackLimit` vs the faulting address at the 0x1E, or simply build with
+  `0xC000` and re-run the sweep. Note this is a DIFFERENT face from the proven user-mode
+  page-reuse corruption above (`0xC000001D` garbage `.text`, `0xC0000005` in ntdll heap init) —
+  do not assume one fix closes both.
+
+  **This is now the arm64 blocker for the MP-default flip** (2026-07-26): not because MP is
+  implicated — it is not — but because a ratchet floor cannot be seeded from a
+  non-deterministic sweep. Measured this session on arm64, all on the SAME media: `-smp 2` run
+  A clean (86 ok / 3 bad), `-smp 2` run C `ZwWaitForMultipleObjects` NO-END `exit=0xC0000005`,
+  `-smp 1` run B BUGCHECK `0x1E` at `FileAttributes` (71 in), `-smp 1` run D clean to the end
+  (89 launched). Both CPU counts, different victims each time — the registered signature, not
+  an SMP defect.
   **2026-07-25 — the `[PFNMISMATCH]` probe was RUN, and its silence is now a measured result.**
   A quarantine probe booted the arm64 candidates one list at a time (`tools/conformance_probe.py`).
   THREE of this family crashed with a recorded verdict, and the detector fired **zero** times

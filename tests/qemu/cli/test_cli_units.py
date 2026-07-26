@@ -4348,3 +4348,25 @@ def test_difftest_salient_keeps_the_assertion_not_the_linker_line():
     got = difftest_mod._salient(out)
     assert any("RtlUnicodeStringToAnsiString" in ln for ln in got)
     assert any(ln.startswith("left:") for ln in got)
+
+
+def test_faulting_module_offset_beats_a_guessed_reloc():
+    """The bugcheck banner resolves the module itself, so the RVA is right there.
+    arm64/amd64 have no _RELOC_BY_ARCH entry, so before this every one of their
+    bugchecks declined to symbolicate — including the -smp 1 0x1E that turned out
+    to be a fault on the FIRST store into the trap frame."""
+    serial = (
+        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff80042193788, "
+        "0xffff8000048e8e50, 0x0000000000000000)\n"
+        "***   P2 = ntoskrnl.exe+0x3788\n"
+    )
+    assert triage.faulting_module_offset(serial) == ("ntoskrnl.exe", 0x3788)
+    # a log with no resolved-module line falls back rather than inventing one
+    assert triage.faulting_module_offset("*** BUGCHECK: 0x0000007E (0,0,0,0)\n") is None
+
+
+def test_faulting_module_offset_takes_the_LAST_bugcheck():
+    """Same rule as faulting_pc: the crash being triaged is the one the boot died
+    on, not the first the log happens to mention."""
+    serial = "***   P2 = ntoskrnl.exe+0x1111\n***   P2 = ntoskrnl.exe+0x2222\n"
+    assert triage.faulting_module_offset(serial) == ("ntoskrnl.exe", 0x2222)
