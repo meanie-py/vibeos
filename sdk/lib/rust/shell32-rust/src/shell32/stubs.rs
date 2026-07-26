@@ -3,9 +3,7 @@
 //! it compiles; wiring it in this state would break the build for every lane rather
 //! than expose a regression. This is a PAID artifact — do not delete it to tidy up.
 use core::ffi::c_void;
-use crate::shellcom::*;
-use crate::types::*;
-use crate::win32::*;
+use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----

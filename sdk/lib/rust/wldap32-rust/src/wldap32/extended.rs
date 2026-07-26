@@ -15,6 +15,20 @@ pub unsafe extern "C" fn ldap_close_extended_op(ld: *mut WLDAP32_LDAP, msgid: UL
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_extended_operationA(
+    ld: *mut WLDAP32_LDAP,
+    oid: PCHAR,
+    data: *mut WLDAP32_berval,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_extended_operationA(
     ld: *mut WLDAP32_LDAP,
     oid: PCHAR,
@@ -65,6 +79,20 @@ pub unsafe extern "C" fn ldap_extended_operationA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_extended_operationW(
+    ld: *mut WLDAP32_LDAP,
+    oid: PWCHAR,
+    data: *mut WLDAP32_berval,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_extended_operationW(
     ld: *mut WLDAP32_LDAP,
@@ -122,6 +150,21 @@ pub unsafe extern "C" fn ldap_extended_operationW(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_extended_operation_sA(
+    ld: *mut WLDAP32_LDAP,
+    oid: PCHAR,
+    data: *mut WLDAP32_berval,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+    retoid: *mut PCHAR,
+    retdata: *mut *mut WLDAP32_berval,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_extended_operation_sA(
     ld: *mut WLDAP32_LDAP,
@@ -190,6 +233,21 @@ pub unsafe extern "C" fn ldap_extended_operation_sA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_extended_operation_sW(
+    ld: *mut WLDAP32_LDAP,
+    oid: PWCHAR,
+    data: *mut WLDAP32_berval,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+    retoid: *mut PWCHAR,
+    retdata: *mut *mut WLDAP32_berval,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_extended_operation_sW(
     ld: *mut WLDAP32_LDAP,
@@ -343,7 +401,7 @@ pub unsafe extern "C" fn ldap_extended_operation_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p, %p, %p, %p)\n", ld, debugstr_a(oid), data, serverctrls,
+//     TRACE( "(%p, %s, %p, %p, %p, %p)\n", ld, debugstr_a!(oid), data, serverctrls,
 //            clientctrls, message );
 //
 //     if (!ld || !message) return WLDAP32_LDAP_PARAM_ERROR;
@@ -407,7 +465,7 @@ pub unsafe extern "C" fn ldap_extended_operation_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p, %p, %p, %p)\n", ld, debugstr_w(oid), data, serverctrls,
+//     TRACE( "(%p, %s, %p, %p, %p, %p)\n", ld, debugstr_w!(oid), data, serverctrls,
 //            clientctrls, message );
 //
 //     if (!ld || !message) return WLDAP32_LDAP_PARAM_ERROR;
@@ -453,7 +511,7 @@ pub unsafe extern "C" fn ldap_extended_operation_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p, %p, %p, %p, %p)\n", ld, debugstr_a(oid), data, serverctrls,
+//     TRACE( "(%p, %s, %p, %p, %p, %p, %p)\n", ld, debugstr_a!(oid), data, serverctrls,
 //            clientctrls, retoid, retdata );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
@@ -524,7 +582,7 @@ pub unsafe extern "C" fn ldap_extended_operation_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p, %p, %p, %p, %p)\n", ld, debugstr_w(oid), data, serverctrls,
+//     TRACE( "(%p, %s, %p, %p, %p, %p, %p)\n", ld, debugstr_w!(oid), data, serverctrls,
 //            clientctrls, retoid, retdata );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;

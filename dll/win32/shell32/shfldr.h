@@ -208,6 +208,8 @@ HRESULT inline SHSetStrRet(LPSTRRET pStrRet, DWORD resId)
 
 #endif
 
-UINT SHELL_GetIconUnderlineFlags();
+// EXTERN_C: the definition is Rust now (shell32-rust/src/dialogs/general.rs), which emits the
+// plain symbol. Without this the C++ callers reference a mangled name that nothing defines.
+EXTERN_C UINT SHELL_GetIconUnderlineFlags();
 
 #endif /* _SHFLDR_H_ */

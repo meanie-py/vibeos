@@ -7,6 +7,20 @@ use core::ffi::c_void;
 // neither of which produce Rust declarations.
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_searchA(
+    ld: *mut WLDAP32_LDAP,
+    base: PCHAR,
+    scope: ULONG,
+    filter: PCHAR,
+    attrs: *mut PCHAR,
+    attrsonly: ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_searchA(
     ld: *mut WLDAP32_LDAP,
     base: PCHAR,
@@ -24,7 +38,7 @@ pub unsafe extern "C" fn ldap_searchA(
     ret = WLDAP32_LDAP_NO_MEMORY;
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     'exit: {
@@ -58,6 +72,20 @@ pub unsafe extern "C" fn ldap_searchA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_searchW(
+    ld: *mut WLDAP32_LDAP,
+    base: PWCHAR,
+    scope: ULONG,
+    filter: PWCHAR,
+    attrs: *mut PWCHAR,
+    attrsonly: ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_searchW(
     ld: *mut WLDAP32_LDAP,
     base: PWCHAR,
@@ -75,7 +103,7 @@ pub unsafe extern "C" fn ldap_searchW(
     ret = WLDAP32_LDAP_NO_MEMORY;
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     'exit: {
@@ -115,7 +143,7 @@ pub unsafe extern "C" fn ldap_searchW(
         if ret == LDAP_SUCCESS {
             ret = msg as ULONG;
         } else {
-            ret = !0u;
+            ret = !0u32;
         }
     }
 
@@ -126,6 +154,25 @@ pub unsafe extern "C" fn ldap_searchW(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_search_extA(
+    ld: *mut WLDAP32_LDAP,
+    base: PCHAR,
+    scope: ULONG,
+    filter: PCHAR,
+    attrs: *mut PCHAR,
+    attrsonly: ULONG,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+    timelimit: ULONG,
+    sizelimit: ULONG,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_search_extA(
     ld: *mut WLDAP32_LDAP,
@@ -210,6 +257,25 @@ pub unsafe extern "C" fn ldap_search_extA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_search_extW(
+    ld: *mut WLDAP32_LDAP,
+    base: PWCHAR,
+    scope: ULONG,
+    filter: PWCHAR,
+    attrs: *mut PWCHAR,
+    attrsonly: ULONG,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+    timelimit: ULONG,
+    sizelimit: ULONG,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_search_extW(
     ld: *mut WLDAP32_LDAP,
     base: PWCHAR,
@@ -236,7 +302,7 @@ pub unsafe extern "C" fn ldap_search_extW(
 
     'exit: {
         if ld.is_null() {
-            return !0u;
+            return !0u32;
         }
 
         if !base.is_null() {
@@ -300,6 +366,25 @@ pub unsafe extern "C" fn ldap_search_extW(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_search_ext_sA(
+    ld: *mut WLDAP32_LDAP,
+    base: PCHAR,
+    scope: ULONG,
+    filter: PCHAR,
+    attrs: *mut PCHAR,
+    attrsonly: ULONG,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+    timeout: *mut l_timeval,
+    sizelimit: ULONG,
+    res: *mut *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_search_ext_sA(
     ld: *mut WLDAP32_LDAP,
@@ -384,6 +469,25 @@ pub unsafe extern "C" fn ldap_search_ext_sA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_search_ext_sW(
+    ld: *mut WLDAP32_LDAP,
+    base: PWCHAR,
+    scope: ULONG,
+    filter: PWCHAR,
+    attrs: *mut PWCHAR,
+    attrsonly: ULONG,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+    timeout: *mut l_timeval,
+    sizelimit: ULONG,
+    res: *mut *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_search_ext_sW(
     ld: *mut WLDAP32_LDAP,
     base: PWCHAR,
@@ -467,6 +571,21 @@ pub unsafe extern "C" fn ldap_search_ext_sW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_search_sA(
+    ld: *mut WLDAP32_LDAP,
+    base: PCHAR,
+    scope: ULONG,
+    filter: PCHAR,
+    attrs: *mut PCHAR,
+    attrsonly: ULONG,
+    res: *mut *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_search_sA(
     ld: *mut WLDAP32_LDAP,
     base: PCHAR,
@@ -518,6 +637,21 @@ pub unsafe extern "C" fn ldap_search_sA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_search_sW(
+    ld: *mut WLDAP32_LDAP,
+    base: PWCHAR,
+    scope: ULONG,
+    filter: PWCHAR,
+    attrs: *mut PWCHAR,
+    attrsonly: ULONG,
+    res: *mut *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_search_sW(
     ld: *mut WLDAP32_LDAP,
@@ -584,6 +718,22 @@ pub unsafe extern "C" fn ldap_search_sW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_search_stA(
+    ld: *mut WLDAP32_LDAP,
+    base: PCHAR,
+    scope: ULONG,
+    filter: PCHAR,
+    attrs: *mut PCHAR,
+    attrsonly: ULONG,
+    timeout: *mut l_timeval,
+    res: *mut *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_search_stA(
     ld: *mut WLDAP32_LDAP,
     base: PCHAR,
@@ -637,6 +787,22 @@ pub unsafe extern "C" fn ldap_search_stA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_search_stW(
+    ld: *mut WLDAP32_LDAP,
+    base: PWCHAR,
+    scope: ULONG,
+    filter: PWCHAR,
+    attrs: *mut PWCHAR,
+    attrsonly: ULONG,
+    timeout: *mut l_timeval,
+    res: *mut *mut WLDAP32_LDAPMessage,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_search_stW(
     ld: *mut WLDAP32_LDAP,
@@ -759,8 +925,8 @@ pub unsafe extern "C" fn ldap_search_stW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x)\n", ld, debugstr_a(base),
-//            scope, debugstr_a(filter), attrs, attrsonly );
+//     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x)\n", ld, debugstr_a!(base),
+//            scope, debugstr_a!(filter), attrs, attrsonly );
 //
 //     if (!ld) return ~0u;
 //
@@ -821,8 +987,8 @@ pub unsafe extern "C" fn ldap_search_stW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x)\n", ld, debugstr_w(base),
-//            scope, debugstr_w(filter), attrs, attrsonly );
+//     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x)\n", ld, debugstr_w!(base),
+//            scope, debugstr_w!(filter), attrs, attrsonly );
 //
 //     if (!ld) return ~0u;
 //
@@ -873,7 +1039,7 @@ pub unsafe extern "C" fn ldap_search_stW(
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
 //     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p, %p, 0x%08x, 0x%08x, %p)\n",
-//            ld, debugstr_a(base), scope, debugstr_a(filter), attrs, attrsonly,
+//            ld, debugstr_a!(base), scope, debugstr_a!(filter), attrs, attrsonly,
 //            serverctrls, clientctrls, timelimit, sizelimit, message );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
@@ -955,7 +1121,7 @@ pub unsafe extern "C" fn ldap_search_stW(
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
 //     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p, %p, 0x%08x, 0x%08x, %p)\n",
-//            ld, debugstr_w(base), scope, debugstr_w(filter), attrs, attrsonly,
+//            ld, debugstr_w!(base), scope, debugstr_w!(filter), attrs, attrsonly,
 //            serverctrls, clientctrls, timelimit, sizelimit, message );
 //
 //     if (!ld) return ~0u;
@@ -1019,7 +1185,7 @@ pub unsafe extern "C" fn ldap_search_stW(
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
 //     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p, %p, %p, 0x%08x, %p)\n",
-//            ld, debugstr_a(base), scope, debugstr_a(filter), attrs, attrsonly,
+//            ld, debugstr_a!(base), scope, debugstr_a!(filter), attrs, attrsonly,
 //            serverctrls, clientctrls, timeout, sizelimit, res );
 //
 //     if (!ld || !res) return WLDAP32_LDAP_PARAM_ERROR;
@@ -1097,7 +1263,7 @@ pub unsafe extern "C" fn ldap_search_stW(
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
 //     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p, %p, %p, 0x%08x, %p)\n",
-//            ld, debugstr_w(base), scope, debugstr_w(filter), attrs, attrsonly,
+//            ld, debugstr_w!(base), scope, debugstr_w!(filter), attrs, attrsonly,
 //            serverctrls, clientctrls, timeout, sizelimit, res );
 //
 //     if (!ld || !res) return WLDAP32_LDAP_PARAM_ERROR;
@@ -1152,8 +1318,8 @@ pub unsafe extern "C" fn ldap_search_stW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p)\n", ld, debugstr_a(base),
-//            scope, debugstr_a(filter), attrs, attrsonly, res );
+//     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p)\n", ld, debugstr_a!(base),
+//            scope, debugstr_a!(filter), attrs, attrsonly, res );
 //
 //     if (!ld || !res) return WLDAP32_LDAP_PARAM_ERROR;
 //
@@ -1212,8 +1378,8 @@ pub unsafe extern "C" fn ldap_search_stW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p)\n", ld, debugstr_w(base),
-//            scope, debugstr_w(filter), attrs, attrsonly, res );
+//     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p)\n", ld, debugstr_w!(base),
+//            scope, debugstr_w!(filter), attrs, attrsonly, res );
 //
 //     if (!ld || !res) return WLDAP32_LDAP_PARAM_ERROR;
 //
@@ -1258,7 +1424,7 @@ pub unsafe extern "C" fn ldap_search_stW(
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
 //     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p, %p)\n", ld,
-//            debugstr_a(base), scope, debugstr_a(filter), attrs,
+//            debugstr_a!(base), scope, debugstr_a!(filter), attrs,
 //            attrsonly, timeout, res );
 //
 //     if (!ld || !res) return WLDAP32_LDAP_PARAM_ERROR;
@@ -1322,7 +1488,7 @@ pub unsafe extern "C" fn ldap_search_stW(
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
 //     TRACE( "(%p, %s, 0x%08x, %s, %p, 0x%08x, %p, %p)\n", ld,
-//            debugstr_w(base), scope, debugstr_w(filter), attrs,
+//            debugstr_w!(base), scope, debugstr_w!(filter), attrs,
 //            attrsonly, timeout, res );
 //
 //     if (!ld || !res) return WLDAP32_LDAP_PARAM_ERROR;

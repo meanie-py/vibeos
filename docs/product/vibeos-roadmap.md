@@ -528,6 +528,42 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   type, so it is a build-bound batch. Owed: a gate so new ones cannot land (`crate-repair`
   refuses to *generate* the pattern, but nothing stops one being hand-written). Field manual,
   "Semantic rewrites that flip meaning".
+- **`gate` races `marshalgen_audit` against a half-built `build-amd64` → spurious LINT_FAIL.**
+  Seen 2026-07-26 (`/tmp/vibeos-cli/20260726-021528-gate-*`): every build green, all four
+  smokes green, and `lint:i386` FAILED with *"the BUILT thunk table disagrees with the
+  checked-in sources … is STALE"*. It was not stale — `lint:i386` starts the moment
+  **build:i386** lands (gate.py pipelines per-arch lanes on purpose), and `marshalgen_audit`
+  reads `build-amd64`, whose build finished 19 minutes later. Re-running `check --arch i386`
+  afterwards: OK, 31/31, *"built table agrees"*. So the lint is right to hard-fail on a stale
+  artifact — the bug is that a lint reading ANOTHER arch's build dir is scheduled off THIS
+  arch's build. Costs a full 35-minute gate each time it hits, and the merge-queue conductor
+  runs the same suite. Fix is a scheduling one (run cross-arch lints after all builds, or gate
+  `marshalgen_audit` to the arch whose build dir it reads — wow64 is amd64-only, so the second
+  is also semantically right). Owner: whoever holds `tools/wow64gen/` + `tests/qemu/cli/`.
+
+- **`NtWriteVirtualMemory` reports `STATUS_SUCCESS` + a full byte count while writing NOTHING —
+  OPEN** (2026-07-26, task #76, found by E17's `selfmod32.exe` rung 7). `MiDoPoolCopy`
+  (`ARM3/virtual.rs`) translated the C's `_SEH2_TRY/_SEH2_EXCEPT` as straight-line code:
+  `Status` is initialised to `STATUS_SUCCESS` and **never assigned anywhere in the function**,
+  so both `if Status >= 0 { copy }` guards always pass and the tail unconditionally does
+  `*ReturnSize = BufferSize`. Proven on arm64: a write to a page FEX had write-protected for
+  SMC detection (`VirtualQuery` → `PAGE_EXECUTE_READ`) returned `0x00000000` with 6 bytes
+  written and the target bytes unchanged. *Refusing* the write is correct — that is exactly why
+  `WriteProcessMemory` wraps it in `NtProtectVirtualMemory` — reporting success is not.
+  `MiDoMappedCopy` probably shares the shape. The real fix needs probe/copy faults to be
+  observable in translated Rust (`docs/engineering/dummy-pseh-verdict.md`;
+  `ntkrnl-sys/src/probe.rs` only range/alignment-checks today). `selfmod32` prints
+  `rung7 BUG: …` on serial but deliberately does **not** gate on it, so the WoW64 ladder stays
+  a WoW64 signal.
+- **PFN `CacheAttribute` was never initialised → `VirtualProtect` made private pages uncached —
+  FIXED 2026-07-26** (task #75, field manual "An uninitialised PFN `CacheAttribute`…").
+  `MiNonCached` is 0, so every page off the free list read as deliberately-uncached and
+  `MiFlushTbAndCapture` force-ORed `MM_NOCACHE` on every protection change. Harmless-ish on x86
+  (a perf loss); on arm64 `MM_NOCACHE` = MAIR AttrIndx 1 = Device-nGnRnE, where every unaligned
+  access alignment-faults — a livelock with the PC pinned. Upstream ReactOS has the same gap.
+  Fixed by setting `MiCached` in the three `MiInitializePfn*` paths, as Windows does. Very
+  likely also the source of the long-standing `[ALIGN] FAR=0x1D11Bxx / 0x7E0B377E` diagnostics
+  in other WoW64 guests, which FEX's unaligned handler had been absorbing.
 - **`mscms-rust` — being integrated on the `integration` lane, NOT a bug.** Surfaced
   2026-07-25 when `scan_orphan_modules` learned to see ROOTLESS crates: 6 files / 4,782 lines
   with no `Cargo.toml` and no `lib.rs`, which every source gate had been skipping silently
@@ -773,7 +809,75 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   differs, so no layout-diff tool would flag it.
   Still owed on its own merits (NOT this bug): we wire only `BTCpuNotifyMapViewOfSection` of
   FEX's memory-notification contract, though it exports `BTCpuNotifyMemoryAlloc`/`Free`/
-  `Protect`/`Dirty`.
+  `Protect`/`Dirty`. **→ closed by #74 below, and it was a missing capability, not tidy-up.**
+
+- **WoW64: 19 syscalls wrote FOUR BYTES PAST a 32-bit guest's variable — FIXED 2026-07-26**
+  (wow64-plan Phase E19). Each takes a guest pointer to a cell the kernel fills with a
+  *pointer-sized* value (`HANDLE`, base address, region size). Flat-thunked, the guest's
+  4-byte cell went straight to a host kernel that stores 8, so every **successful** call
+  scribbled the next four bytes of guest memory — the adjacent local, or the next struct
+  field. `NtOpenProcessToken` was among them, so every `OpenProcessToken()` from a 32-bit
+  guest did it. Invisible because the call succeeds and returns the right value in the right
+  place; only the collateral write is wrong, so damage surfaces later and elsewhere (same
+  signature as the calc heap corruption and the `IO_STATUS_BLOCK` overflow). Found by mining
+  the `marshalgen audit` baseline rather than by reading code — a flat thunk over a divergent
+  payload *is* the absence of code. Tell that it must come from the tool: `NtOpenProcessTokenEx`
+  was already marshalled while plain `NtOpenProcessToken` beside it was not. Baseline 278 →
+  **246** (+0 added). Proof: `marshal32.exe`'s new out-cell rung (canary after the handle
+  cell, call required to succeed, canary `volatile` so the compiler cannot fold the check
+  away), green on both arches. **Still open:** the array-payload group (AWE, `NtGetWriteWatch`,
+  `NtCompactKeys`, `NtRaiseHardError`) — their kernel side returns `STATUS_NOT_IMPLEMENTED`
+  today, so nothing corrupts and no marshaller can be tested; and the five `SEMANTIC` cases
+  (`PORT_MESSAGE`, `TOKEN_GROUPS`), which belong with the CSR-LPC-32 layer.
+
+- **`selfmod32.exe` was RED on amd64 since E17 and the gate could not see it — FIXED
+  2026-07-26** (wow64-plan Phase E19). Its rung-5 fixture writes a scratch file under
+  `%WINDIR%`: a writable ramdisk on arm64, a **read-only CD** on the amd64 livecd, so it
+  exited `0xBAD9`. E17 verified it on arm64 and staged it for amd64 without watching it run
+  there. The durable point is about the harness: **the probe ladder runs AFTER the desktop
+  marker, and the ordinary smoke stops at that marker**, so any late-rung, single-arch
+  failure is invisible to `gate`. Rung 5 now skips loudly with the errno on a read-only volume
+  (file32's existing precedent) and rungs 6-7 still run; arm64 keeps full rung-5 coverage. Both
+  ladders now 9/9. **Mechanised the same day so it cannot recur: `vibeos-cli smoke --arch X
+  --ladder`** drains serial past the desktop marker until all nine guests report and fails the
+  boot on a wrong or missing verdict (`tests/qemu/cli/ladder.py`, 7 unit tests including the
+  selfmod32 case). This blind spot had already been *written down* once — in the
+  `_MmCopyFromCaller` entry above, "the smoke gate stays GREEN through this: the boot marker
+  fires long before the ladder runs" — and still cost a day, which is the argument for a flag
+  over a note.
+
+- **WoW64/FEX: a 32-bit guest could not execute code it generated at runtime — FIXED
+  2026-07-26** (task #74, wow64-plan Phase E17). wow64.dll wired one of the CPU layer's eight
+  memory notifications. FEX's decoder **refuses to translate any guest address outside the
+  executable set it has been told about** (`Frontend.cpp` `CheckRangeExecutable`), and that set
+  is filled only by those notifications plus a one-time address-space sweep at
+  `BTCpuProcessInit` — so images ran and **everything the guest allocated afterwards was
+  un-executable**: ATL/MFC thunks, VB6/Delphi trampolines, packers, self-extractors, any JIT.
+  Now wires `BTCpuNotifyMemoryAlloc`/`Protect`/`Free`/`Dirty`/`UnmapViewOfSection`/`ReadFile`/
+  `FlushInstructionCache2`/`ProcessExecuteFlagsChange`, with the Before/After pairing the
+  contract requires (`After` is a lock/unlock flag inside FEX, not a status report) and gated on
+  the target being the current process. Five syscalls became manual to carry the side effects;
+  `NtRead`/`NtWriteVirtualMemory` had a second, independent flat-thunk bug — the trailing
+  `*ReturnSize` is a `ULONG_PTR`, so the host wrote 8 bytes into the guest's 4-byte cell.
+  Verified by the new `selfmod32.exe` (7 rungs; most fail *silently wrong*, so it checks values,
+  not survival), with **amd64 as the control**: `wow64cpu` exports none of these, so the same
+  guest must pass there with 0/8 wired.
+
+- **WoW64/FEX: a guest hardware fault never reached the guest's own SEH on arm64 — FIXED
+  2026-07-26** (task #77, wow64-plan Phase E18). The last arm64 ladder gap: `fault32.exe` was
+  amd64-only and `thread32.exe` rung 7 ran behind an explicit `noseh` skip, both now dropped.
+  On arm64 a guest fault is a **host** fault inside FEX's JIT; when
+  `BTCpuResetToConsistentState` cannot handle it, it hands the fault back in guest terms
+  (registers reconstructed into the CPU area, `EXCEPTION_RECORD` rewritten with
+  `ExceptionAddress` = guest `Eip`, host `CONTEXT` replaced with the pre-JIT-entry one) and
+  returns — leaving wow64.dll to dispatch. `Wow64pRedirectGuestFault` builds the i386
+  `KiUserExceptionDispatcher` frame on the guest stack (E5's builder, verbatim), points the
+  guest context at it, and returns `EXCEPTION_CONTINUE_EXECUTION`, which resumes inside
+  `BTCpuSimulate` and re-enters the guest at its own dispatcher. Before it, the fault had
+  nowhere to go and the simulate loop re-faulted forever. Breakpoints deliberately keep the
+  pre-E18 behaviour — the discriminator matches `int 2d` DebugService, not a real `int3`.
+  **The arm64 WoW64 ladder is now 9/9** (hello32/win32/file32/async32/marshal32/fault32/
+  thread32/selfmod32 `0x600D`, gui32 `0x600E`).
 
 - **WoW64 probe guests are NOT staged on arm64 by default** (2026-07-25, noted while closing
   #64). `dll/win32/wow64cpu/CMakeLists.txt` (the amd64 livecd path) is entirely
@@ -928,6 +1032,28 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `[MSGINA] status dialog up` each boot + `[MSGINA] 9.12-TRIPWIRE … worker tid=N` on a hit.
   A hit leaves the worker wedged in win32k with the tid printed — dump its kernel stack
   (`inspect.sh dump-thread`) for the exact blocking site. Re-open only on a tripwire line.
+- **`PsLocateSystemDll` failed on EVERY arm64 boot, invisibly — FIXED 2026-07-26.** Found by
+  arming the arm64 silent-suppression family (below) and booting once. The serial said
+  `[PS] PsLocateSystemDll FAILED subcode=8 status=0xC000007A` on a **green** boot.
+  Subcode 8 is `PspLookupKernelUserEntryPoints`; `0xC000007A` is `STATUS_PROCEDURE_NOT_FOUND`.
+  Cause: it looked up `ExpInterlockedPopEntrySList{End,Fault,Resume}`, which `ntdll.spec`
+  declares **`-arch=i386` and `-arch=x86_64` only** — there is no arm64 row, and the built
+  arm64 `ntdll.dll` exports none of the three (0 occurrences, vs 3 each for the four
+  `Ki*Dispatcher`s looked up just above). They exist to fix up a fault inside the *x86*
+  user-mode SLIST pop; the sole consumer in the tree is `ke/i386/traphdlr.rs`, which already
+  NULL-guards. Fixed by gating the three lookups to the arches that export them.
+  **Why it went unseen for so long is the real lesson:** the failure is reported through
+  `iomgr`'s `io_trace`, which was `#[inline(always)] fn io_trace(_s: &[u8]) {}` on aarch64 —
+  a no-op, so all 40 of its boot-milestone and FAILED reports were discarded on the only arch
+  that needed them, and LLVM dropped the strings from the binary entirely
+  (`"[IO] IopInitializeBootDrivers"`: 0 occurrences before, 2 after). `IoInitSystem` then
+  *continued booting* ("continuing on ARM64"), so this escape hatch was **permanently**
+  exercised and could never have signalled a genuine system-DLL failure. `io_trace` now routes
+  to `ARM64_UART_TRACE`; 26 `[IO]` lines reach the serial where every prior soak log has zero.
+  Verified: the `FAILED` line is gone and `[IO] IoInitSystem returning TRUE` appears instead.
+  **Impact on the four faces is NOT established** — the NULL pointers were harmless on arm64,
+  so this is a spurious failure made real-looking, not (yet) a known cause of B/C/D. What it
+  does buy: the hatch means something again, and 26 boot milestones are now visible.
 - **arm64 kmtest-sweep late-run user-process corruption** (~2/4 sweeps since the §9.96
   un-quarantine of MmSection/ZwMapViewOfSection, 2026-07-17; deeply characterized 2026-07-18,
   §9.97) — a *later* kmtest_.exe launch (77+ deep) dies with `0xC000001D` (executing garbage
@@ -967,6 +1093,35 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   free-while-mapped. Same call as the `[PFNMISMATCH]` precedent — made loud, deliberately not
   fatal.
 
+  **It is not one suppressed detector — it is TWELVE, and eleven were still silent
+  (2026-07-26).** The `[PFNMISMATCH]` note above treats `MiDeletePte`'s back-pointer check as
+  *the* detector arm64 turned off. Enumerating the MM page-lifecycle paths mechanically says
+  otherwise: **12 sites** hard-fail on x86 with `KeBugCheck(MEMORY_MANAGEMENT)` and have an
+  arm64 arm that recovers silently instead (7 of them a bare `return STATUS_UNSUCCESSFUL`) —
+  `mm/rmap.rs` ×3, `mm/pagefile.rs` ×6, `mm/balance.rs`, `ARM3/virtual.rs` ×2. So arm64 is not
+  looking in twelve of the places x86 looks, all inside the subsystem this bug lives in, which
+  is the structural reason the corruption only ever surfaces as a distant victim.
+
+  All eleven remaining are now armed with `mm_guard_trip!` (`lib.rs`) — bounded prints, every
+  recovery kept, `[MMGUARD] <site> hit#=N` plus operands. **Silence from an armed site is a
+  result**: it eliminates that site. The one to read first is
+  **`rmap.MmDeleteRmap mapping-not-in-list`**: it means `MmDeleteRmap` walked the entire rmap
+  list and did not find the `(Process, Address)` mapping it was told to delete, i.e. the
+  caller believes the page is mapped there and the PFN database disagrees — *the* precondition
+  for freeing a still-mapped frame, arrived at from the rmap side instead of the PFN side.
+
+  **Also settled, and it redirects face C:** `ex-rust/src/pushlock.rs` was audited line-for-line
+  against the original C (the file embeds it as comments) and is a **faithful translation** —
+  `ExfWakePushLock`, `ExfReleasePushLock`, `ExfReleasePushLockExclusive` and the exclusive
+  acquire all match, including an inherited upstream livelock (a failed CAS never refreshes
+  `OldValue`) that does not fit face C anyway, since face C's thread is *parked*, not spinning.
+  Two apparent bugs were checked and are not bugs: `debug_assert!(!x != 0)` is a bitwise-not
+  that makes the assert always true (real, cosmetic, release-inert), and the spin loop's
+  `EX_PUSH_LOCK_WAITING` where the C says `EX_PUSH_LOCK_FLAGS_WAIT` — **different names, both
+  equal 2**. With the algorithm exonerated, HOLDER-STUCK points at a wait block made
+  unreachable by memory corruption, which is where face A already pointed. Do not re-audit the
+  pushlock; go to the `[MMGUARD]` output.
+
   **BOTH PROBES ARE NOW IMPLEMENTED AND IN THE SHIPPED KERNEL (2026-07-26).**
   - `[FREEMAPPED]` — `mm/freelist.rs` `MmDereferencePage`, at the TOP of the `rc - 1 == 0`
     branch exactly as pinned above, bounded at 32 prints plus a running total so it cannot
@@ -980,9 +1135,21 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   not compile at all (`E0659` — `stubs.rs` glob-imports both `crate::ke::ke_defs` and
   `ntkrnl_sys::mm`, and both export a `KeGetCurrentThread`; take ke_defs', which returns
   PKTHREAD so the stack fields are reachable), and a soak would otherwise have run for hours
-  against a kernel with no probe in it.
+  against a kernel with no probe in it. **And then one did anyway** — the check was pointed at
+  the built module while the soak booted a frozen `.iso` cut four hours earlier (see the
+  retraction below). Checking the binary is necessary and not sufficient; check the media.
 
-  **THE HEADLINE FROM 9 INSTRUMENTED SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
+  > **RETRACTION (2026-07-26): the soak below was NOT instrumented — the probes were never in
+  > the media.** The image was frozen at 22:42 for run-to-run comparability; `[FREEMAPPED]` and
+  > `[KSTACK]` landed at 02:43, four hours later. `strings livecd-smp.iso | grep -c FREEMAPPED`
+  > = **0**, same for `KSTACK`. The §9.87 check was run against
+  > `build-arm64/ntoskrnl/ntoskrnl.exe` — the wrong artifact. What SURVIVES: the face taxonomy,
+  > the frequencies, and the `0x50` operand reading, all of which come from bugcheck operands and
+  > the census, and both of those *were* in that media. What is VACUOUS: every claim below
+  > phrased as "under the probes", and any reading of the tripwires' silence — nothing was
+  > listening. Re-run on freshly-cut media before treating a probe's silence as a result.
+
+  **THE HEADLINE FROM 9 SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
   on fixed media, `-smp 1`, same binary within each run:
 
   | face | n | signature |
@@ -1002,7 +1169,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Each face's evidence is below; the per-round data is in the soak ledgers, and the two
   reproducing serials are kept out of `/tmp` rotation.
 
-  **FIRST REPRODUCTION UNDER THE PROBES (2026-07-26), and it points hard at the STACK.**
+  **FIRST REPRODUCTION (2026-07-26) — no probe fired (see the retraction: none were in the
+  media), but the OPERANDS alone point hard at the STACK.**
   A 4-round `-smp 1` kmtest soak on fixed media reproduced once (rounds 1/3/4 clean or
   ratchet-noise; ~25%, in line with the prior base rate). Round 2 died at test **69 of 89, on
   `ZwWaitForMultipleObjects`** — immediately after the `ZwCreateSection` / `ZwMapViewOfSection`

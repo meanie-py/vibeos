@@ -145,6 +145,16 @@ def build_parser() -> argparse.ArgumentParser:
         "See ntoskrnl-rust src/tripwire.rs",
     )
     s.add_argument(
+        "--require-probe",
+        action="append",
+        metavar="LITERAL",
+        help="refuse to boot unless LITERAL is present in EVERY boot image "
+        "(repeatable). Use it whenever a run's conclusion depends on a probe "
+        "firing: checking `strings build-<arch>/…/ntoskrnl.exe` is the wrong "
+        "artifact, and a probe missing from the media makes its silence look "
+        "like evidence of absence. Field manual §9.87",
+    )
+    s.add_argument(
         "--smp",
         type=int,
         default=0,
@@ -169,6 +179,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--doom",
         action="store_true",
         help="legacy alias for --payload doom",
+    )
+    s.add_argument(
+        "--ladder",
+        action="store_true",
+        help="after the desktop marker, keep draining serial until every WoW64 "
+        "probe guest reports, and FAIL the boot on a red rung. The ladder runs "
+        "after explorer, so a plain smoke/gate stops watching before it starts "
+        "and cannot see a red guest at all (selfmod32 was red on amd64 for a "
+        "day that way). Run it on BOTH 64-bit arches after touching a guest, "
+        "wow64.dll or a marshaller; arm64 needs media built with VIBEOS_FEX=1. "
+        "See tests/qemu/cli/ladder.py",
     )
     s.set_defaults(fn=smoke_mod.smoke)
 
@@ -273,6 +294,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--tripwire",
         default="",
         help="arm every boot, e.g. 'SPECIALPOOL=*' (see smoke --tripwire)",
+    )
+    f.add_argument(
+        "--require-probe",
+        action="append",
+        metavar="LITERAL",
+        help="refuse to start unless LITERAL is in every boot image (repeatable). "
+        "A soak is the expensive case: hours of boots against one frozen image, "
+        "where a missing probe wastes the whole run AND reads as a null result. "
+        "See smoke --require-probe",
     )
     f.add_argument("--allow-stale", action="store_true")
     f.set_defaults(fn=farm_mod.farm)

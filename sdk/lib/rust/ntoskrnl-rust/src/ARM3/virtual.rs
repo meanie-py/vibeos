@@ -550,6 +550,17 @@ pub unsafe extern "system" fn MiDeletePte(
             if (PAGE_ALIGN(VirtualAddress as usize) as PVOID != USER_SHARED_DATA as PVOID) ||
                 (MmHighestUserAddress as ULONG_PTR <= USER_SHARED_DATA)
             {
+                // Sibling of the 0x401 back-pointer check below (already loud as
+                // [PFNMISMATCH]): a user PTE whose prototype-PTE argument disagrees
+                // with the PFN's recorded PteAddress. Same reuse signature, same
+                // arm64 suppression, so arm it the same way.
+                mm_guard_trip!(
+                    "virtual.MiDeletePte proto-pte-mismatch(0x400)", 8,
+                    "PointerPte" => PointerPte as ULONG_PTR,
+                    "ProtoPteArg" => ProtoPteArg as ULONG_PTR,
+                    "Pfn->PteAddress" => (*Pfn1).pte_address() as ULONG_PTR,
+                    "VirtualAddress" => VirtualAddress as ULONG_PTR,
+                );
                 #[cfg(not(target_arch = "aarch64"))]
                 {
                     KeBugCheckEx(

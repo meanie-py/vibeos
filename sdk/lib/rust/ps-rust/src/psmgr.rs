@@ -200,28 +200,48 @@ unsafe fn PspLookupKernelUserEntryPoints() -> NTSTATUS {
         return status;
     }
 
-    status = PspLookupSystemDllEntryPoint(
-        b"ExpInterlockedPopEntrySListEnd\0".as_ptr() as PCSTR,
-        &raw mut KeUserPopEntrySListEnd,
-    );
-    if status < 0 {
-        return status;
-    }
+    // x86-ONLY, per ntdll.spec itself:
+    //     @ stdcall -arch=i386   ExpInterlockedPopEntrySListEnd()
+    //     @ stdcall -arch=x86_64 ExpInterlockedPopEntrySListEnd()
+    // There is no arm64 row, and the built arm64 ntdll.dll exports none of the
+    // three (measured: 0 occurrences, vs 3 each for the four dispatchers above).
+    // They exist to let the kernel fix up a fault *inside* the x86 user-mode
+    // SLIST pop, whose read-Next-then-CAS window arm64's LL/SC/LSE form does not
+    // have; the only consumer in the tree is ke/i386/traphdlr.rs.
+    //
+    // Looking them up unconditionally therefore failed on EVERY arm64 boot with
+    // STATUS_PROCEDURE_NOT_FOUND, and because this function returns early, that
+    // propagated out of PsLocateSystemDll as a whole-system-DLL-init failure.
+    // x86 would have bugchecked PROCESS1_INITIALIZATION_FAILED/8; arm64 swallowed
+    // it and booted on ("continuing on ARM64"), so the escape hatch was
+    // PERMANENTLY exercised and could never signal a real failure. Gating the
+    // lookups to the arches that export them makes arm64 return SUCCESS here, and
+    // restores that hatch to meaning something.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        status = PspLookupSystemDllEntryPoint(
+            b"ExpInterlockedPopEntrySListEnd\0".as_ptr() as PCSTR,
+            &raw mut KeUserPopEntrySListEnd,
+        );
+        if status < 0 {
+            return status;
+        }
 
-    status = PspLookupSystemDllEntryPoint(
-        b"ExpInterlockedPopEntrySListFault\0".as_ptr() as PCSTR,
-        &raw mut KeUserPopEntrySListFault,
-    );
-    if status < 0 {
-        return status;
-    }
+        status = PspLookupSystemDllEntryPoint(
+            b"ExpInterlockedPopEntrySListFault\0".as_ptr() as PCSTR,
+            &raw mut KeUserPopEntrySListFault,
+        );
+        if status < 0 {
+            return status;
+        }
 
-    status = PspLookupSystemDllEntryPoint(
-        b"ExpInterlockedPopEntrySListResume\0".as_ptr() as PCSTR,
-        &raw mut KeUserPopEntrySListResume,
-    );
-    if status < 0 {
-        return status;
+        status = PspLookupSystemDllEntryPoint(
+            b"ExpInterlockedPopEntrySListResume\0".as_ptr() as PCSTR,
+            &raw mut KeUserPopEntrySListResume,
+        );
+        if status < 0 {
+            return status;
+        }
     }
 
     #[cfg(target_arch = "x86")]
@@ -321,6 +341,15 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
     if status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
+            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/2 here; arm64 returns
+            // the status and IoInitSystem carries on booting ("continuing on ARM64").
+            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
+            // so a failure of the SYSTEM DLL setup has been completely silent on the
+            // one arch that tolerates it. Subcode 2 identifies the step.
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PsLocateSystemDll FAILED subcode=2 status=\0".as_ptr() as PCSTR,
+                status as ULONG_PTR,
+            );
             return status;
         }
         #[cfg(not(target_arch = "aarch64"))]
@@ -356,6 +385,15 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
     if status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
+            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/3 here; arm64 returns
+            // the status and IoInitSystem carries on booting ("continuing on ARM64").
+            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
+            // so a failure of the SYSTEM DLL setup has been completely silent on the
+            // one arch that tolerates it. Subcode 3 identifies the step.
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PsLocateSystemDll FAILED subcode=3 status=\0".as_ptr() as PCSTR,
+                status as ULONG_PTR,
+            );
             return status;
         }
         #[cfg(not(target_arch = "aarch64"))]
@@ -376,6 +414,15 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
     if status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
+            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/4 here; arm64 returns
+            // the status and IoInitSystem carries on booting ("continuing on ARM64").
+            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
+            // so a failure of the SYSTEM DLL setup has been completely silent on the
+            // one arch that tolerates it. Subcode 4 identifies the step.
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PsLocateSystemDll FAILED subcode=4 status=\0".as_ptr() as PCSTR,
+                status as ULONG_PTR,
+            );
             return status;
         }
         #[cfg(not(target_arch = "aarch64"))]
@@ -388,6 +435,15 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
     if status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
+            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/5 here; arm64 returns
+            // the status and IoInitSystem carries on booting ("continuing on ARM64").
+            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
+            // so a failure of the SYSTEM DLL setup has been completely silent on the
+            // one arch that tolerates it. Subcode 5 identifies the step.
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PsLocateSystemDll FAILED subcode=5 status=\0".as_ptr() as PCSTR,
+                status as ULONG_PTR,
+            );
             return status;
         }
         #[cfg(not(target_arch = "aarch64"))]
@@ -409,6 +465,15 @@ unsafe fn PspInitializeSystemDll() -> NTSTATUS {
     if status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
+            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/7 here; arm64 returns
+            // the status and IoInitSystem carries on booting ("continuing on ARM64").
+            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
+            // so a failure of the SYSTEM DLL setup has been completely silent on the
+            // one arch that tolerates it. Subcode 7 identifies the step.
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PsLocateSystemDll FAILED subcode=7 status=\0".as_ptr() as PCSTR,
+                status as ULONG_PTR,
+            );
             return status;
         }
         #[cfg(not(target_arch = "aarch64"))]
@@ -421,6 +486,15 @@ unsafe fn PspInitializeSystemDll() -> NTSTATUS {
     if status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
+            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/8 here; arm64 returns
+            // the status and IoInitSystem carries on booting ("continuing on ARM64").
+            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
+            // so a failure of the SYSTEM DLL setup has been completely silent on the
+            // one arch that tolerates it. Subcode 8 identifies the step.
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PsLocateSystemDll FAILED subcode=8 status=\0".as_ptr() as PCSTR,
+                status as ULONG_PTR,
+            );
             return status;
         }
         #[cfg(not(target_arch = "aarch64"))]

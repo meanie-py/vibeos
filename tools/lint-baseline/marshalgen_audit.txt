@@ -14,23 +14,8 @@ FLAT-DIVERGENT: ntdll NtAllocateUserPhysicalPages(UserPfnArray) SCALAR_WIDEN -> 
 FLAT-DIVERGENT: ntdll NtApphelpCacheControl(ServiceData) WIDENING -> struct _APPHELP_CACHE_SERVICE_LOOKUP
 FLAT-DIVERGENT: ntdll NtCloseObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtCompactKeys(KeyArray) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateDebugObject(DebugHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateDebugObject(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtCreateEventPair(EventPairHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateEventPair(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtCreateJobObject(JobHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateJobObject(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtCreateJobSet(UserJobSet) WIDENING -> struct _JOB_SET_ARRAY
 FLAT-DIVERGENT: ntdll NtCreatePagingFile(FileName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtCreatePort(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtCreatePort(PortHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateProcess(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtCreateProcess(ProcessHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateProcessEx(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtCreateProcessEx(ProcessHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateProfile(ProfileHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtCreateTimer(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtCreateTimer(TimerHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtCreateToken(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtCreateToken(TokenDefaultDacl) WIDENING -> struct _TOKEN_DEFAULT_DACL
 FLAT-DIVERGENT: ntdll NtCreateToken(TokenGroups) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
@@ -38,21 +23,14 @@ FLAT-DIVERGENT: ntdll NtCreateToken(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 sc
 FLAT-DIVERGENT: ntdll NtCreateToken(TokenOwner) WIDENING -> struct _TOKEN_OWNER
 FLAT-DIVERGENT: ntdll NtCreateToken(TokenPrimaryGroup) WIDENING -> struct _TOKEN_PRIMARY_GROUP
 FLAT-DIVERGENT: ntdll NtCreateToken(TokenUser) WIDENING -> struct _TOKEN_USER
-FLAT-DIVERGENT: ntdll NtCreateWaitablePort(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtCreateWaitablePort(PortHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtDebugContinue(AppClientId) WIDENING -> struct _CLIENT_ID
 FLAT-DIVERGENT: ntdll NtDeleteFile(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtDeleteObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtDeleteValueKey(ValueName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtDisplayString(DisplayString) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtDuplicateObject(TargetHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtDuplicateToken(NewTokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtDuplicateToken(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtFilterToken(NewTokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtFilterToken(RestrictedSids) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtFilterToken(SidsToDisable) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtFlushVirtualMemory(BaseAddress) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtFlushVirtualMemory(IoStatus) SEMANTIC -> struct _IO_STATUS_BLOCK: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtFreeUserPhysicalPages(NumberOfPages) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtFreeUserPhysicalPages(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtGetPlugPlayEvent(Buffer) SEMANTIC -> struct _PLUGPLAY_EVENT_BLOCK: union/bitfield with divergent layout
@@ -67,21 +45,12 @@ FLAT-DIVERGENT: ntdll NtLoadKey2(FileObjectAttributes) WIDENING -> struct _OBJEC
 FLAT-DIVERGENT: ntdll NtLoadKey2(KeyObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtLoadKeyEx(SourceFile) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtLoadKeyEx(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtLockVirtualMemory(BaseAddress) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtMapUserPhysicalPages(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtMapUserPhysicalPagesScatter(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtMapUserPhysicalPagesScatter(VirtualAddresses) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtOpenEventPair(EventPairHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtOpenEventPair(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtOpenJobObject(JobHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtOpenJobObject(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(ObjectName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(ObjectTypeName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtOpenProcessToken(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtOpenThreadToken(TokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtOpenTimer(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtOpenTimer(TimerHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtPrivilegeObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtPrivilegedServiceAuditAlarm(ServiceName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtPrivilegedServiceAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
@@ -114,7 +83,6 @@ FLAT-DIVERGENT: ntdll NtUnloadDriver(DriverServiceName) WIDENING -> struct _UNIC
 FLAT-DIVERGENT: ntdll NtUnloadKey(KeyObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtUnloadKey2(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtUnloadKeyEx(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtUnlockVirtualMemory(BaseAddress) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtWaitForDebugEvent(StateChange) SEMANTIC -> struct _DBGUI_WAIT_STATE_CHANGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtWriteRequestData(Message) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_DeleteRbrush(pbo) WIDENING -> struct _BRUSHOBJ

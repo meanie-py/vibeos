@@ -462,6 +462,15 @@ DWORD WINAPI GetLastError(void)
     return ref_last_error;
 }
 
+/* The writer, for fileimpl.c's POSIX-backed Win32 shims — which are the only
+ * thing that RAISES a last error rather than reporting one.  Kept here so the
+ * slot stays single-storage: see the long note below on why one writer and one
+ * reader is not a simplification but a requirement. */
+void msvcrt_ref_set_last_error(DWORD err)
+{
+    ref_last_error = err;
+}
+
 /* ...and the SAME storage under the plain name, for the SUBJECT.
  *
  * refstub/msvcrt.h:224 namespaces `GetLastError` so the reference can never reach into

@@ -36,8 +36,8 @@ list(APPEND SOURCE
     dialogs/filetypes.cpp
     dialogs/folder_options.cpp
     dialogs/item_prop.cpp
-    dialogs/general.cpp
-    dialogs/recycler_prop.cpp
+    # dialogs/general.cpp — replaced by Rust (shell32-rust/src/dialogs/general.rs); cohab via libshell32_rust.a
+    # dialogs/recycler_prop.cpp — replaced by Rust (shell32-rust/src/dialogs/recycler_prop.rs); cohab via libshell32_rust.a
     # dialogs/view.cpp — replaced by Rust (shell32-rust/src/dialogs/view.rs); cohab via libshell32_rust.a
     # CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
     # are Rust-owned (shell32-rust/src/drop_target_helper.rs).
@@ -88,7 +88,7 @@ list(APPEND SOURCE
     # (shell32-rust/src/exe_drop_handler.rs).
     droptargets/CFSDropTarget.cpp
     droptargets/CRecyclerDropTarget.cpp
-    shldataobject.cpp
+    # shldataobject.cpp — replaced by Rust (shell32-rust/src/shell32/shldataobject.rs); cohab via libshell32_rust.a
     shlexec.cpp
     shlfileop.cpp
     shlfolder.cpp
@@ -97,7 +97,7 @@ list(APPEND SOURCE
     CDefViewUtil.cpp
     CDefViewDual.cpp
     CDefViewBckgrndMenu.cpp
-    stubs.cpp
+    # stubs.cpp — replaced by Rust (shell32-rust/src/shell32/stubs.rs); cohab via libshell32_rust.a
     # systray.cpp — replaced by Rust (shell32-rust/src/systray.rs); cohab via libshell32_rust.a
     # CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
     CDefaultContextMenu.cpp

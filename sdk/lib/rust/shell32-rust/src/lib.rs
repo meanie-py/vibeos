@@ -42,6 +42,15 @@ macro_rules! MESSAGE {
 // Foundation: minimal Win32 type aliases (grows as waves land).
 pub mod types;
 
+// ATL smart pointers and containers — the shared substrate in front of the remaining
+// C++ TUs (CComPtr appears in 25 of the 38 still-C files). See its header for the three
+// invariants the translated call sites depend on.
+pub mod atl;
+
+// The C++ header inlines from shellutils.h / utils.h. They live in HEADERS, so no translated
+// TU carries their bodies, yet several TUs call them.
+pub mod shellutils;
+
 // Wave 4: canonical shared shell/COM types (PIDL on-disk format, STRRET, GUID family, COM
 // vtables) used by the PIDL core (pidl/shellpath/shellord). Promoted from pidl.rs.
 pub mod shellcom;
@@ -109,6 +118,10 @@ pub mod win32;
 // here plus ntdll-sys, versus 2,768 lines of hand-written substrate today.
 pub mod island;
 
+// Island-first substrate for translated TUs. See prelude.rs for why it REPLACES the
+// types/win32 globs rather than joining them.
+pub mod prelude;
+
 // Wave 4 free-function TUs: whole plain-C++ translation units with no COM class of their
 // own, translated with --free-functions once that path learned the C++ language layer.
 //
@@ -120,12 +133,18 @@ pub mod folders;
 pub mod propsheet;
 pub mod systray;
 
-// Wave 5 free-function TUs from the shell32 root: STILL PARKED, substrate closure in
-// progress. Constants, 148 promoted Win32 imports and the numeric-cast tail are done;
-// wiring them today leaves ~1,010 errors — 167 callables with no declaration anywhere
-// (shell32-internal helpers and C macros, which need judgment, not bulk generation),
-// 60 SDK record layouts, and the method/field tail. Wiring before those land would break
-// the build for every lane. Do NOT delete these files — they are paid artifacts.
+// Wave 5, first two leaves — LANDED, and the proof that the island-first recipe closes this
+// class. Both glob `crate::prelude` (the island) INSTEAD of `types`/`win32`; see prelude.rs.
+#[path = "dialogs/general.rs"]
+pub mod dialogs_general;
+#[path = "dialogs/recycler_prop.rs"]
+pub mod dialogs_recycler_prop;
+
+// Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
+pub mod shell32;
+// `stubs` is wired; the other six are parked on the C++ substrate, and shell32/mod.rs records
+// each one's remaining error count so the next lane can pick the cheapest. Do NOT delete the
+// parked files — they are paid artifacts.
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

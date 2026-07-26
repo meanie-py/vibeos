@@ -18,6 +18,7 @@ from pathlib import Path
 from ..vm import QemuVM, get_arch_config
 from . import archcfg, hostlock, provenance, triage
 from . import config as cli_config
+from . import ladder as ladder_mod
 from .artifacts import Run, Stage
 
 
@@ -223,7 +224,15 @@ def _smp_check(text: str, arch: str) -> dict | None:
 
 
 def _one_boot(
-    run: Run, repo: Path, arch: str, *, until: str, fail_on: str | None, idx: int, total: int
+    run: Run,
+    repo: Path,
+    arch: str,
+    *,
+    until: str,
+    fail_on: str | None,
+    idx: int,
+    total: int,
+    want_ladder: bool = False,
 ) -> dict:
     """A single independent boot. Returns {ok, outcome, classification, ...}.
     `arch` is the base arch (i386/amd64/arm64); the boot config is the vm_arch
@@ -274,6 +283,20 @@ def _one_boot(
             if settle_txt:
                 text += settle_txt
                 run.log(settle_txt[-4000:], header=f"{label} settle serial")
+        # --ladder: the WoW64 probe guests run AFTER explorer, i.e. after the
+        # marker this boot already matched, so without an explicit extra watch
+        # the gate cannot see them at all (ladder.py documents the two times
+        # that hid a real red rung). Bounded, and strictly additive: with the
+        # flag off not a byte of the boot path changes.
+        if want_ladder and outcome == "reached":
+            run.log(
+                f"draining up to {ladder_mod.LADDER_TIMEOUT_SECONDS:.0f}s for the WoW64 ladder",
+                header=label,
+            )
+            ladder_txt = ladder_mod.watch(vm)
+            if ladder_txt:
+                text += ladder_txt
+                run.log(ladder_txt[-8000:], header=f"{label} ladder serial")
         # Always capture a PNG screenshot (pass or fail), while the VM is alive.
         shot = _screenshot(vm, work, repo, arch)
         dbg_raw = ""
@@ -309,6 +332,16 @@ def _one_boot(
                 if shot:
                     post["screenshot"] = shot
                 return {"ok": False, "outcome": "post-marker", **post}
+            # A green desktop says nothing about the 32-bit guests, which is the
+            # whole point of --ladder: fail the boot on a red rung instead of
+            # letting it pass because explorer came up.
+            if want_ladder:
+                lad = ladder_mod.check(text)
+                if lad is not None:
+                    if shot:
+                        lad["screenshot"] = shot
+                    return {"ok": False, "outcome": "ladder", **lad}
+                run.log(f"ladder: {ladder_mod.summary(text)}", header=label)
             res = {"ok": True, "outcome": "reached", "classification": ""}
             ev = triage.wedge_evidence(text)
             if ev["census_stuck"] or ev["lockdep"] or ev["cswitch"]:
@@ -547,6 +580,31 @@ def smoke(args, repo: Path) -> int:
     else:
         run.add(Stage("staleness", status="ok", detail="current"))
 
+    # --- probe preflight (hard boundary) ---
+    # An instrumented run whose probe is not in the media is worse than no run:
+    # it spends the boots AND reads as evidence of absence. Fail before booting.
+    require = [s for s in (getattr(args, "require_probe", None) or []) if s.strip()]
+    if require:
+        missing = provenance.probes_missing_from_media(repo, arch, require)
+        if missing:
+            run.classification = "PROBE_NOT_IN_MEDIA"
+            run.add(
+                Stage(
+                    "probe-check",
+                    status="fail",
+                    detail=f"{len(missing)} of {len(require)} probe(s) absent",
+                    salient=[*missing, "rebuild so the probe reaches the media, then re-run"],
+                )
+            )
+            return run.finalize(repo)
+        run.add(
+            Stage(
+                "probe-check",
+                status="ok",
+                detail=f"{len(require)} probe(s) present in every boot image",
+            )
+        )
+
     total = max(1, int(getattr(args, "repeat", 1) or 1))
     until = getattr(args, "until", None) or ""
     fail_on = getattr(args, "fail_on", None)
@@ -567,7 +625,16 @@ def smoke(args, repo: Path) -> int:
 
     results = []
     for i in range(total):
-        r = _one_boot(run, repo, arch, until=until, fail_on=fail_on, idx=i, total=total)
+        r = _one_boot(
+            run,
+            repo,
+            arch,
+            until=until,
+            fail_on=fail_on,
+            idx=i,
+            total=total,
+            want_ladder=bool(getattr(args, "ladder", False)),
+        )
         results.append(r)
         status = "ok" if r["ok"] else "fail"
         detail = "reached" if r["ok"] else r.get("classification", r["outcome"])

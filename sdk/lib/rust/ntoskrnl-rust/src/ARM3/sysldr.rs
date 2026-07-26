@@ -969,6 +969,38 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
     ) as *mut LDR_DATA_TABLE_ENTRY;
     PsNtosImageBase = (*ldr_entry).DllBase as ULONG_PTR;
 
+    // Publish the kernel's RUNTIME base on serial. Offline triage needs it and had no
+    // way to get it: a BUGCHECK reports a runtime VA, the symbol index holds FILE VAs,
+    // and `qemu/addr2sym.sh --reloc <base - 0x400000>` bridges the two. Nothing printed
+    // it (freeldr logs "[FLDR] load ...\ntoskrnl.exe" with no address), so every saved
+    // arm64 crash log was a bare hex address unless a live VM was still around for
+    // inspect.sh to query over gdb. One line here makes the whole retained crash corpus
+    // symbolicable with no VM. Deliberately NOT guessed by trying candidate bases until
+    // a symbol looks plausible — a confident wrong base relocates the hunt (§9.124).
+    // arm64 is both the arch that needs this most and the one where DbgPrint is not
+    // dependable this early — so use the UART trace there, exactly as procsup.rs does.
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ULONG_PTR);
+            fn ARM64_UART_TRACE(msg: *const u8);
+        }
+        ARM64_UART_TRACE_HEX(b"[KRNLBASE] ntoskrnl runtime base=\0".as_ptr(), PsNtosImageBase);
+        // ARM64_UART_TRACE_HEX emits prefix + "0x" + digits and NO newline, so without
+        // this the line runs into whatever prints next.
+        ARM64_UART_TRACE(b"\n\0".as_ptr());
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        extern "C" {
+            fn DbgPrint(Format: *const i8, ...) -> u32;
+        }
+        DbgPrint(
+            b"[KRNLBASE] ntoskrnl runtime base=%p\n\0".as_ptr() as *const i8,
+            PsNtosImageBase as PVOID,
+        );
+    }
+
     /* Locate resource section, pool code, and system pte code */
     MiLocateKernelSections(ldr_entry);
 

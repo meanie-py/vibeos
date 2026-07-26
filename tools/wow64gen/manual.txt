@@ -101,3 +101,43 @@ NtOpenProcessTokenEx
 NtOpenThreadTokenEx
 NtWaitForMultipleObjects
 NtTerminateThread
+
+# --- E17: the CPU layer's memory-notification contract. A JIT host only
+#     decodes guest addresses it has been told are executable and caches
+#     translations keyed on guest address, so every change to the 32-bit
+#     address space has to be announced. These are ABI-flat (except the
+#     ULONG_PTR *ReturnSize on the Read/Write pair, which the flat thunk
+#     overwrote 8 bytes of) — they are here for the side effect. ---
+NtUnmapViewOfSection
+NtReadVirtualMemory
+NtWriteVirtualMemory
+NtFlushInstructionCache
+NtSetInformationProcess
+
+# --- E19: the out-cell class. Each of these takes a guest pointer to a cell
+#     the kernel fills with a POINTER-SIZED value (HANDLE, base address,
+#     region size). Flat-thunked, the kernel's 8-byte store ran four bytes
+#     past the 4-byte cell the guest declared — a successful call that
+#     silently corrupts whatever the guest put next to the variable.
+#     Sourced from `marshalgen audit`, not from memory: note that
+#     NtOpenProcessTokenEx/NtOpenThreadTokenEx above were already marshalled
+#     while the plain variants right here were not. ---
+NtOpenProcessToken
+NtOpenThreadToken
+NtDuplicateObject
+NtDuplicateToken
+NtCreateEventPair
+NtOpenEventPair
+NtCreateJobObject
+NtOpenJobObject
+NtOpenTimer
+NtCreateTimer
+NtCreateDebugObject
+NtCreatePort
+NtCreateWaitablePort
+NtCreateProcess
+NtCreateProcessEx
+NtCreateProfile
+NtLockVirtualMemory
+NtUnlockVirtualMemory
+NtFlushVirtualMemory

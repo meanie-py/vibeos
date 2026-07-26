@@ -20,6 +20,12 @@
  *      must return a non-empty rect (new NtUserGetMonitorInfo flat thunk),
  *      MonitorFromPoint(0,0) must return non-NULL (new flat thunk with a
  *      by-value POINT packed across the guest dword stack).
+ *   4. Out-cell canaries (E19): NtOpenProcessToken / NtDuplicateObject /
+ *      NtCreateTimer each fill a 4-byte guest HANDLE cell with a value the
+ *      64-bit kernel stores pointer-sized. A canary parked immediately after
+ *      the cell must survive — flat-thunked, the host's 8-byte store ate it.
+ *      Requires the calls to SUCCEED: a failing syscall writes nothing and
+ *      would pass this check while completely unmarshalled.
  *
  * Verdict contract: exit 0x600D on PASS; distinct 0xBADx names the failing
  * rung so serial alone triages ([WINLOGON] marshal32.exe exit = 0x...).
@@ -38,6 +44,12 @@
 #define M32_FAIL_MON_ENUM     0xBAD8 /* EnumDisplayMonitors: no callback */
 #define M32_FAIL_MON_INFO     0xBAD9 /* GetMonitorInfoA failed/empty rect */
 #define M32_FAIL_MON_FROMPT   0xBADA /* MonitorFromPoint returned NULL */
+#define M32_FAIL_CELL_NTDLL   0xBADB /* couldn't resolve the ntdll out-cell entries */
+#define M32_FAIL_CELL_TOKCALL 0xBADC /* NtOpenProcessToken failed outright */
+#define M32_FAIL_CELL_TOKOVR  0xBADD /* ...and overran its 4-byte handle cell */
+#define M32_FAIL_CELL_DUPCALL 0xBADE /* NtDuplicateObject failed outright */
+#define M32_FAIL_CELL_DUPOVR  0xBADF /* ...and overran its 4-byte handle cell */
+#define M32_FAIL_CELL_TMROVR  0xBAE0 /* NtCreateTimer overran (NULL-OA path) */
 #define M32_PASS              0x600D
 
 static void Report(const char *msg)
@@ -170,6 +182,99 @@ static int CheckMonitors(void)
     return 0;
 }
 
+/* --- check 4: the out-cell class (E19) ---------------------------------- *
+ * These syscalls take a guest pointer to a cell the kernel fills with a
+ * POINTER-SIZED value. On i386 that cell is 4 bytes; flat-thunked, the host's
+ * 64-bit store ran four bytes past it. So park a canary immediately after the
+ * handle and check it survived.
+ *
+ * Two properties make this a real test rather than a shape:
+ *   - the call must SUCCEED. A failing syscall writes nothing and would leave
+ *     the canary intact even completely unmarshalled, i.e. pass while broken.
+ *   - the canary is `volatile`. We only hand the callee `&cell.Handle`, so a
+ *     conforming compiler is entitled to assume the rest of the struct is
+ *     untouched and fold the comparison away — which is precisely the
+ *     optimisation that would delete the bug from the test but not the OS. */
+
+#define M32_CANARY 0xC0DEFACEu
+
+typedef struct _M32_HCELL {
+    HANDLE         Handle;  /* 4 bytes on i386 — exactly what got overrun */
+    volatile DWORD Canary;
+} M32_HCELL;
+
+typedef LONG (WINAPI *M32_OPT_FN)(HANDLE, ULONG, PHANDLE);
+typedef LONG (WINAPI *M32_DUP_FN)(HANDLE, HANDLE, HANDLE, PHANDLE, ULONG,
+                                  ULONG, ULONG);
+typedef LONG (WINAPI *M32_TMR_FN)(PHANDLE, ULONG, PVOID, ULONG);
+
+static int CheckOutCellCanaries(void)
+{
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    M32_OPT_FN OpenProcessToken;
+    M32_DUP_FN DuplicateObject;
+    M32_TMR_FN CreateTimer;
+    M32_HCELL cell;
+    HANDLE self = (HANDLE)(LONG_PTR)-1;   /* NtCurrentProcess pseudo-handle */
+    LONG st;
+
+    if (!nt)
+        return M32_FAIL_CELL_NTDLL;
+    OpenProcessToken = (M32_OPT_FN)GetProcAddress(nt, "NtOpenProcessToken");
+    DuplicateObject  = (M32_DUP_FN)GetProcAddress(nt, "NtDuplicateObject");
+    CreateTimer      = (M32_TMR_FN)GetProcAddress(nt, "NtCreateTimer");
+    if (!OpenProcessToken || !DuplicateObject)
+        return M32_FAIL_CELL_NTDLL;
+
+    /* A: NtOpenProcessToken — the one every security-aware app reaches, and
+     *    the one whose *Ex sibling was already marshalled. */
+    cell.Handle = NULL;
+    cell.Canary = M32_CANARY;
+    st = OpenProcessToken(self, TOKEN_QUERY, &cell.Handle);
+    if (st < 0)
+        return M32_FAIL_CELL_TOKCALL;
+    if (cell.Canary != M32_CANARY)
+        return M32_FAIL_CELL_TOKOVR;
+    CloseHandle(cell.Handle);
+
+    /* B: NtDuplicateObject — DuplicateHandle's syscall. */
+    cell.Handle = NULL;
+    cell.Canary = M32_CANARY;
+    st = DuplicateObject(self, GetCurrentThread(), self, &cell.Handle,
+                         0, 0, DUPLICATE_SAME_ACCESS);
+    if (st < 0)
+        return M32_FAIL_CELL_DUPCALL;
+    if (cell.Canary != M32_CANARY)
+        return M32_FAIL_CELL_DUPOVR;
+    CloseHandle(cell.Handle);
+
+    /* C: NtCreateTimer with a NULL ObjectAttributes — covers the _In_opt_ OA
+     *    path, which must reach the kernel as a real NULL and must not fault
+     *    inside the thunk. Only assert the canary if the call actually ran:
+     *    unlike A and B this one can legitimately be absent. */
+    if (CreateTimer)
+    {
+        cell.Handle = NULL;
+        cell.Canary = M32_CANARY;
+        st = CreateTimer(&cell.Handle, TIMER_ALL_ACCESS, NULL,
+                         1 /* SynchronizationTimer */);
+        if (st >= 0)
+        {
+            if (cell.Canary != M32_CANARY)
+                return M32_FAIL_CELL_TMROVR;
+            CloseHandle(cell.Handle);
+            Report("[marshal32] out-cell: timer (NULL OA) verified\n");
+        }
+        else
+        {
+            Report("[marshal32] out-cell: NtCreateTimer unavailable, skipped\n");
+        }
+    }
+
+    Report("[marshal32] out-cell canaries intact (token, duplicate)\n");
+    return 0;
+}
+
 int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 {
     int rc;
@@ -185,7 +290,10 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     rc = CheckMonitors();
     if (rc) ExitProcess(rc);
 
-    Report("[marshal32] PASS: TBI + IOCP + monitors all verified\n");
+    rc = CheckOutCellCanaries();
+    if (rc) ExitProcess(rc);
+
+    Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells all verified\n");
     ExitProcess(M32_PASS);
     return 0;
 }

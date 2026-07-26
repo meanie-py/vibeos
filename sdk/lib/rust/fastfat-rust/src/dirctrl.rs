@@ -45,7 +45,6 @@ extern "system" {
     fn FatAcquireSharedFcb( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, ) -> u8;
     fn FatBugCheck(arg1: u32, arg2: u32, arg3: u32);
     fn FatConvertToSharedFcb( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, );
-    fn FatGenerateFileIdFromDirentAndOffset( Dcb: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, Offset: VBO, ) -> i64;
     fn FatGetEaLength( IrpContext: *mut core::ffi::c_void, Vcb: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, EaSize: *mut u32, );
     fn FatIsNameShortOemValid( IrpContext: *mut core::ffi::c_void, OemString: OEM_STRING, ContainsWildCards: u8, AllowWildCards: u8, IsConstant: u8, ) -> u8;
     fn FatLocateDirent( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, Ccb: *mut core::ffi::c_void, CurrentVbo: u32, MatchFlags: *mut u32, Dirent: *mut *mut core::ffi::c_void, Bcb: *mut *mut core::ffi::c_void, NextVbo: *mut VBO, FileNameDos: *mut u8, LongFileName: *mut _UNICODE_STRING, OrigFileName: *mut _UNICODE_STRING, );
@@ -552,6 +551,12 @@ pub unsafe extern "system" fn FatQueryDirectory(
         }
 
         loop {
+            // NOTE: this `VBO` is NOT fastfat's. fastfat's VBO is ULONG32 (fat.h:38),
+            // but this module never imports crate::types::VBO — it picks one up from a
+            // `use ntkrnl_sys::*` glob, where it is 64-bit. FatLocateDirent below is a C
+            // function that writes 4 bytes through this pointer; the read-back only
+            // works because the `= 0` init leaves the high half clear on little-endian.
+            // The `as u32` at the FileId call sites is the C's own implicit narrowing.
             let mut NextVbo: VBO = 0;
             let mut FileNameLength: u32 = 0;
             let mut BytesRemainingInBuffer: u32 = 0;
@@ -816,12 +821,14 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     FIC_ID_BOTH_DIRECTORY => {
                         IdBothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_ID_BOTH_DIR_INFORMATION);
                         (*IdBothDirInfo).FileId.QuadPart =
-                            FatGenerateFileIdFromDirentAndOffset(Dcb as *mut c_void, Dirent as *mut c_void, NextVbo);
+                            crate::fileid::fat_generate_file_id_from_dirent_and_offset(
+                                Dcb, Dirent as *const c_void, NextVbo as u32);
                     }
                     FIC_ID_FULL_DIRECTORY => {
                         IdFullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_ID_FULL_DIR_INFORMATION);
                         (*IdFullDirInfo).FileId.QuadPart =
-                            FatGenerateFileIdFromDirentAndOffset(Dcb as *mut c_void, Dirent as *mut c_void, NextVbo);
+                            crate::fileid::fat_generate_file_id_from_dirent_and_offset(
+                                Dcb, Dirent as *const c_void, NextVbo as u32);
                     }
                     _ => {}
                 }

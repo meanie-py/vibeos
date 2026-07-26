@@ -819,6 +819,20 @@ pub unsafe extern "system" fn MiInitializePfn(
     (*pfn1).set_page_location((ActiveAndValid) as u16);
     (*pfn1).set_modified((Modified) != 0);
 
+    // CacheAttribute: the C (ours and upstream ReactOS) never sets it here, and
+    // MiNonCached is 0 — so a page coming off the free list reads as
+    // "deliberately uncached" when nobody ever decided anything. That is not
+    // cosmetic: MiFlushTbAndCapture consults this on EVERY protection change and
+    // force-ORs MM_NOCACHE onto the mask for a MiNonCached PFN, so a plain
+    // VirtualProtect on private memory silently rewrites the page as uncached.
+    // On x86 that costs performance; on arm64 MM_NOCACHE selects MAIR AttrIndx 1
+    // = Device-nGnRnE, where every UNALIGNED access alignment-faults — and a
+    // 32-bit guest whose emulator write-protects RWX pages for self-modifying
+    // code then re-executes the faulting unaligned store forever. Windows sets
+    // MiCached here; pages that really are uncached (MMIO) never come through
+    // this path — MmMapIoSpace and the MDL paths set the attribute explicitly.
+    (*pfn1).set_cache_attribute(MiCached);
+
     pointer_pte_pte = MiAddressToPte(PointerPte as PVOID);
     if ((*pointer_pte_pte).valid() as usize) == 0 {
         status = MiCheckPdeForPagedPool(PointerPte as *mut c_void);
@@ -859,6 +873,8 @@ pub unsafe extern "system" fn MiInitializePfnAndMakePteValid(
     (*pfn1).set_share_count((*pfn1).share_count().wrapping_add((1) as ULONG_PTR));
     (*pfn1).set_page_location((ActiveAndValid) as u16);
     (*pfn1).set_modified((1) != 0);
+    // Same reasoning as MiInitializePfn above: cached RAM, stated explicitly.
+    (*pfn1).set_cache_attribute(MiCached);
 
     pointer_pte_pte = MiAddressToPte(PointerPte as PVOID);
     if ((*pointer_pte_pte).valid() as usize) == 0 {
@@ -1102,6 +1118,8 @@ pub unsafe extern "system" fn MiInitializePfnForOtherProcess(
     (*pfn1).set_page_location((ActiveAndValid) as u16);
     (*pfn1).set_modified((1u8) != 0);
     mmpfn_set_in_page_error_u4(pfn1, (0u8) != 0);
+    // Same reasoning as MiInitializePfn above: cached RAM, stated explicitly.
+    (*pfn1).set_cache_attribute(MiCached);
 
     if PteFrame != 0 {
         (*pfn1).set_pte_frame((PteFrame) as PFN_NUMBER);

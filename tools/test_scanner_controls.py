@@ -73,6 +73,76 @@ class Control:
 
 # ── fixtures, each seeded from a real incident ───────────────────────────────
 
+# scan_bugcheck_stubs. Seeded from fastfat 2026-07-26: three boots, three stubs
+# (FatGenerateFileIdFromFcb -> FatOpenVolume -> ...), each a full build+boot to
+# discover something the tree already knew. The GOOD case pins the two ways this
+# scanner must NOT fire, both of which it got wrong on its first run:
+#   * a faithful wrapper for a bugcheck MACRO is a real implementation, not a stub
+#     (fastfat's FatBugCheck forwards A/B/C to KeBugCheckEx);
+#   * the STUB_BUGCHECK #define itself contains the marker, and must not be
+#     attributed to whatever function precedes it.
+_STUBS_HEADER = """\
+#define FooBugCheck(A,B,C) { KeBugCheckEx(0x23, __LINE__, A, B, C); }
+#define FooSizeOf(X,OUT)   { *(OUT) = sizeof(*(X)); }
+"""
+_STUBS_BAD_C = """\
+#define STUB_BUGCHECK() do { KeBugCheckEx(0x23, 0xDEAD0000, 0, 0, 0); } while(0)
+
+/* A real wrapper for the FooBugCheck macro — forwards its args. NOT a stub. */
+VOID FooBugCheck(ULONG_PTR A, ULONG_PTR B, ULONG_PTR C)
+{
+    KeBugCheckEx(0x23, 0x00010000 | (ULONG)(__LINE__), A, B, C);
+}
+
+/* Genuinely untranslated, and Rust declares it => reachable crash. */
+NTSTATUS FooDismount(PVOID a) { (void)a; STUB_BUGCHECK(); return 0; }
+
+/* A MACRO stubbed as a function: the extern decl can never resolve. */
+ULONG FooSizeOf(PVOID a, PVOID b) { (void)a;(void)b; STUB_BUGCHECK(); return 0; }
+
+/* Bugcheck stub that NO Rust module declares — unreachable, so not a finding. */
+NTSTATUS FooNeverCalled(PVOID a) { (void)a; STUB_BUGCHECK(); return 0; }
+
+/* Declared by Rust but never CALLED: the decl is what made this stub exist, and the
+   real function is already translated as FooOrphanReal. ORPHAN_DECL, not a crash. */
+NTSTATUS foo_orphan(PVOID a) { (void)a; STUB_BUGCHECK(); return 0; }
+"""
+_STUBS_BAD_RS = """\
+extern "system" {
+    fn FooDismount(a: *mut u8) -> i32;
+    fn FooSizeOf(a: *mut u8, b: *mut u32);
+    fn FooBugCheck(a: usize, b: usize, c: usize);
+    fn foo_orphan(a: *mut u8) -> i32;
+}
+
+// FooDismount is genuinely reachable: something calls it. This is the case that
+// separates a live crash from a dead declaration.
+pub unsafe fn caller(a: *mut u8) -> i32 {
+    // A commented-out call must NOT count as a call site — fastfat keeps the whole
+    // original C body commented beside each translation:  foo_orphan(a);
+    FooDismount(a)
+}
+"""
+_STUBS_GOOD_C = """\
+#define STUB_BUGCHECK() do { KeBugCheckEx(0x23, 0xDEAD0000, 0, 0, 0); } while(0)
+
+/* Real wrapper — still must not be flagged. */
+VOID FooBugCheck(ULONG_PTR A, ULONG_PTR B, ULONG_PTR C)
+{
+    KeBugCheckEx(0x23, 0x00010000 | (ULONG)(__LINE__), A, B, C);
+}
+
+/* Both former stubs are now real Rust; only unreachable ones remain here. */
+NTSTATUS FooNeverCalled(PVOID a) { (void)a; STUB_BUGCHECK(); return 0; }
+"""
+_STUBS_GOOD_RS = """\
+extern "system" {
+    fn FooBugCheck(a: usize, b: usize, c: usize);
+}
+#[no_mangle]
+pub unsafe extern "system" fn FooDismount(_a: *mut u8) -> i32 { 0 }
+"""
+
 # Two lanes both appending `### 9.122` at the tail on the same day. This exact
 # shape has now happened six times; the merge that added this control WAS one.
 _DOC_SECTIONS_BAD = """\
@@ -578,6 +648,20 @@ CONTROLS: list[Control] = [
         bad={"bad.rs": _OBREF_BAD},
         good={"good.rs": _OBREF_GOOD},
     ),
+    Control(
+        name="scan_bugcheck_stubs",
+        script="tools/scan_bugcheck_stubs.py",
+        bad={
+            "drivers/foo/rust_cohab_stub.c": _STUBS_BAD_C,
+            "drivers/foo/foo.h": _STUBS_HEADER,
+            "sdk/lib/rust/foo-rust/src/lib.rs": _STUBS_BAD_RS,
+        },
+        good={
+            "drivers/foo/rust_cohab_stub.c": _STUBS_GOOD_C,
+            "drivers/foo/foo.h": _STUBS_HEADER,
+            "sdk/lib/rust/foo-rust/src/lib.rs": _STUBS_GOOD_RS,
+        },
+    ),
 ]
 
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
@@ -874,3 +958,47 @@ def test_cc_mismatch_fixer_refuses_to_edit_a_generated_island(tmp_path: Path):
     assert not moved, f"--fix edited a generated island: {moved}"
     assert any("BT958HwStartIO" in r for r in refused), refused
     assert (src / "types_i386.rs").read_text() == before
+
+
+# --- scan_bugcheck_stubs: nested checkouts are ANOTHER lane's tree ----------
+
+
+def test_bugcheck_stubs_skips_a_nested_git_checkout(tmp_path: Path):
+    """The scanner globs `**/rust_cohab_stub.c`, so without pruning it reads any
+    worktree nested under the repo (agents create them at
+    `.claude/worktrees/<lane>`) and reports that lane's stubs, at that lane's
+    commit, as findings here.
+
+    Real incident 2026-07-26: a `.claude/worktrees/fex-m4` checkout added 18
+    phantom fastfat findings to an unrelated lane's `check`, failing the gate on
+    all three arches with duplicates of already-baselined findings. That is the
+    READ side of the fleet-isolation law -- a verdict that depends on which
+    nested checkouts happen to exist on this machine is not a gate.
+    """
+    root = _materialize(
+        tmp_path,
+        {
+            "drivers/foo/rust_cohab_stub.c": _STUBS_BAD_C,
+            "drivers/foo/foo.h": _STUBS_HEADER,
+            "sdk/lib/rust/foo-rust/src/lib.rs": _STUBS_BAD_RS,
+        },
+    )
+    cmd = [sys.executable, str(REPO / "tools/scan_bugcheck_stubs.py"), str(root)]
+    before = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
+    assert before.strip(), "fixture must produce findings, else this proves nothing"
+
+    # Same content again, but inside a nested checkout: must add NOTHING.
+    nested = root / ".claude" / "worktrees" / "sibling"
+    for rel in (
+        "drivers/foo/rust_cohab_stub.c",
+        "drivers/foo/foo.h",
+        "sdk/lib/rust/foo-rust/src/lib.rs",
+    ):
+        dst = nested / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text((root / rel).read_text())
+    (nested / ".git").write_text("gitdir: /elsewhere/.git/worktrees/sibling\n")
+
+    after = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
+    assert after == before, f"nested checkout leaked findings:\n{after}"
+    assert ".claude" not in after

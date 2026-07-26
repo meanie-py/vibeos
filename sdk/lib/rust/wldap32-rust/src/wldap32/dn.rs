@@ -7,9 +7,16 @@ use core::ffi::c_void;
 // which are translated separately.
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_dn2ufnA(dn: PCHAR) -> PCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_dn2ufnA(dn: PCHAR) -> PCHAR {
     let mut ret: PCHAR = core::ptr::null_mut();
-    #[cfg(feature = "HAVE_LDAP")]
+    #[cfg(feature = "have_ldap")]
     {
         let dnW: PWCHAR;
         let retW: PWCHAR;
@@ -29,9 +36,16 @@ pub unsafe extern "C" fn ldap_dn2ufnA(dn: PCHAR) -> PCHAR {
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_dn2ufnW(dn: PWCHAR) -> PWCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_dn2ufnW(dn: PWCHAR) -> PWCHAR {
     let mut ret: PWCHAR = core::ptr::null_mut();
-    #[cfg(feature = "HAVE_LDAP")]
+    #[cfg(feature = "have_ldap")]
     {
         let dnU: *mut i8 = strWtoU(dn);
         if dnU.is_null() {
@@ -47,6 +61,16 @@ pub unsafe extern "C" fn ldap_dn2ufnW(dn: PWCHAR) -> PWCHAR {
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_get_dnA(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+) -> PCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_get_dnA(
     ld: *mut WLDAP32_LDAP,
@@ -67,6 +91,16 @@ pub unsafe extern "C" fn ldap_get_dnA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_get_dnW(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+) -> PWCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_get_dnW(
     ld: *mut WLDAP32_LDAP,
     entry: *mut WLDAP32_LDAPMessage,
@@ -85,6 +119,13 @@ pub unsafe extern "C" fn ldap_get_dnW(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_ufn2dnA(ufn: PCHAR, dn: *mut PCHAR) -> ULONG {
+    WLDAP32_LDAP_SUCCESS
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_ufn2dnA(ufn: PCHAR, dn: *mut PCHAR) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_SUCCESS;
@@ -119,6 +160,13 @@ pub unsafe extern "C" fn ldap_ufn2dnA(ufn: PCHAR, dn: *mut PCHAR) -> ULONG {
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_ufn2dnW(ufn: PWCHAR, dn: *mut PWCHAR) -> ULONG {
+    WLDAP32_LDAP_SUCCESS
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_ufn2dnW(ufn: PWCHAR, dn: *mut PWCHAR) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_SUCCESS;
@@ -202,7 +250,7 @@ pub unsafe extern "C" fn ldap_ufn2dnW(ufn: PWCHAR, dn: *mut PWCHAR) -> ULONG {
 // #ifdef HAVE_LDAP
 //     WCHAR *dnW, *retW;
 //
-//     TRACE( "(%s)\n", debugstr_a(dn) );
+//     TRACE( "(%s)\n", debugstr_a!(dn) );
 //
 //     dnW = strAtoW( dn );
 //     if (!dnW) return NULL;
@@ -238,7 +286,7 @@ pub unsafe extern "C" fn ldap_ufn2dnW(ufn: PWCHAR, dn: *mut PWCHAR) -> ULONG {
 // #ifdef HAVE_LDAP
 //     char *dnU, *retU;
 //
-//     TRACE( "(%s)\n", debugstr_w(dn) );
+//     TRACE( "(%s)\n", debugstr_w!(dn) );
 //
 //     dnU = strWtoU( dn );
 //     if (!dnU) return NULL;
@@ -264,7 +312,7 @@ pub unsafe extern "C" fn ldap_ufn2dnW(ufn: PWCHAR, dn: *mut PWCHAR) -> ULONG {
 // #ifdef HAVE_LDAP
 //     WCHAR *dnW, **retW;
 //
-//     TRACE( "(%s, 0x%08x)\n", debugstr_a(dn), notypes );
+//     TRACE( "(%s, 0x%08x)\n", debugstr_a!(dn), notypes );
 //
 //     dnW = strAtoW( dn );
 //     if (!dnW) return NULL;
@@ -302,7 +350,7 @@ pub unsafe extern "C" fn ldap_ufn2dnW(ufn: PWCHAR, dn: *mut PWCHAR) -> ULONG {
 // #ifdef HAVE_LDAP
 //     char *dnU, **retU;
 //
-//     TRACE( "(%s, 0x%08x)\n", debugstr_w(dn), notypes );
+//     TRACE( "(%s, 0x%08x)\n", debugstr_w!(dn), notypes );
 //
 //     dnU = strWtoU( dn );
 //     if (!dnU) return NULL;
@@ -387,7 +435,7 @@ pub unsafe extern "C" fn ldap_ufn2dnW(ufn: PWCHAR, dn: *mut PWCHAR) -> ULONG {
 // #ifdef HAVE_LDAP
 //     PWCHAR ufnW = NULL, dnW = NULL;
 //
-//     TRACE( "(%s, %p)\n", debugstr_a(ufn), dn );
+//     TRACE( "(%s, %p)\n", debugstr_a!(ufn), dn );
 //
 //     if (!dn) return WLDAP32_LDAP_PARAM_ERROR;
 //
@@ -434,7 +482,7 @@ pub unsafe extern "C" fn ldap_ufn2dnW(ufn: PWCHAR, dn: *mut PWCHAR) -> ULONG {
 // #ifdef HAVE_LDAP
 //     char *ufnU = NULL;
 //
-//     TRACE( "(%s, %p)\n", debugstr_w(ufn), dn );
+//     TRACE( "(%s, %p)\n", debugstr_w!(ufn), dn );
 //
 //     if (!dn) return WLDAP32_LDAP_PARAM_ERROR;
 //
