@@ -3880,6 +3880,88 @@ def test_land_foreground_conducts_inline(lane_repo, tmp_path, monkeypatch):
     assert drained == [1]
 
 
+# --- land: the check-tooling preflight -------------------------------------
+#
+# The conductor runs check-tooling as part of the batched gate, so a lint failure there
+# bounces the WHOLE train for 3 builds + 4 boots of fleet load. On 2026-07-26 that cost
+# was paid for one line 101 characters long. These cover the preflight that moves the
+# identical verdict into the lane, where it costs ~40s.
+
+
+def _fake_cli(repo: Path, *, rc: int, out: str = "") -> None:
+    """Plant a stand-in `vibeos-cli` so the preflight runs its REAL subprocess path."""
+    p = repo / "vibeos-cli"
+    p.write_text(f"#!/bin/sh\ncat <<'XEOF'\n{out}\nXEOF\nexit {rc}\n")
+    p.chmod(0o755)
+
+
+def test_lint_preflight_blocks_a_red_check_tooling(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=1, out="  ✗ ruff:tools/*.py\n\nFAIL — 1/15 checks failed:")
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._lint_preflight(tiny_repo, Run("land", "t"), _Args())
+    # the failing check must be NAMED — "exit 1" alone sends you back to re-run it by hand
+    assert "ruff:tools/*.py" in str(ei.value)
+
+
+def test_lint_preflight_passes_a_green_check_tooling(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=0, out="OK — all 15 tooling checks passed.")
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args())  # must not raise
+    assert any(s.name == "lint" and s.status == "ok" for s in run.stages)
+
+
+def test_lint_preflight_fails_OPEN_when_it_cannot_run(tiny_repo: Path, tmp_path, monkeypatch):
+    """A broken preflight must never wedge the fleet's ability to land. No vibeos-cli here
+    at all, so the subprocess raises — that has to warn and continue, NOT abort. Only a
+    check that actually ran and returned nonzero may block."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    assert not (tiny_repo / "vibeos-cli").exists()
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args())  # must not raise
+    assert any(s.name == "lint" and s.status == "warn" for s in run.stages)
+
+
+def test_lint_preflight_honours_skip_lint(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=1, out="✗ everything")
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args(skip_lint=True))  # must not raise
+    assert any(s.name == "lint" and s.status == "skip" for s in run.stages)
+
+
+def test_red_lint_keeps_the_lane_OUT_of_the_queue(lane_repo, tmp_path, monkeypatch):
+    """The point of the whole thing: a red lane must not reach the batch at all. Checking
+    that _lint_preflight raises is not enough — what matters is that nothing was queued,
+    because a submission is what costs the fleet a gate."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(
+        land_mod, "_spawn_detached", lambda *a: pytest.fail("conducted despite a red lint")
+    )
+    _fake_cli(lane, rc=1, out="  ✗ pyright:tests/qemu/cli")
+    subprocess.run(["git", "add", "-A"], cwd=lane, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "cli"], cwd=lane, check=True, capture_output=True)
+    assert land_mod.land(_Args(direct=False), lane) != 0, "a red lint must fail the land"
+    assert not q_mod.pending(lane), "a lane that fails its own lint reached the queue"
+
+
+def test_green_lint_still_reaches_the_queue(lane_repo, tmp_path, monkeypatch):
+    """The negative control for the test above — proves it is the LINT VERDICT gating the
+    submission and not the fake CLI merely existing."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(land_mod, "_spawn_detached", lambda argv, cwd, log: None)
+    _fake_cli(lane, rc=0, out="OK")
+    subprocess.run(["git", "add", "-A"], cwd=lane, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "cli"], cwd=lane, check=True, capture_output=True)
+    assert land_mod.land(_Args(direct=False), lane) == 0
+    assert q_mod.pending(lane), "a green lane must still be queued"
+
+
 def test_prune_never_reclaims_the_integration_tree(tmp_path):
     """It is idle between batches — exactly prune's target shape — but its warm caches are
     what make a batch gate in minutes, and EVERY landing in the fleet would pay for a cold

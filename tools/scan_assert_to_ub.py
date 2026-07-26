@@ -166,7 +166,7 @@ def main() -> int:
         print(f"\n{len(findings)} site(s): {n_ub} lowered to UB, {n_hang} lowered to a hang")
         if n_ub:
             print("fix (ub):   emit the C diagnostic (DbgPrint) and continue, or return an error;")
-            print("            if it really tails a noreturn call: // nolint: assert-to-ub (reason)")
+            print("            if it tails a noreturn call: // nolint: assert-to-ub (reason)")
         if n_hang:
             print("fix (hang): call RtlAssert(cond, file, line!(), msg) — what C's ASSERT calls")
             print("            under DBG. It prints loudly and RETURNS, so control flow matches C.")
