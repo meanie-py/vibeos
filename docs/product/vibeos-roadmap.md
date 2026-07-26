@@ -943,6 +943,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Fact vs inference: the operands and the raise arm are measured; "a live stack lost a page" is
   the reading of them, and the `[KSTACK]` dump added below is what turns it into a fact.
 
+  **ELIMINATED (2026-07-26): a create/delete size mismatch on the kernel stack.** Worth writing
+  down because the shape is suspicious and costs ~20 minutes to re-derive.
+  `MmCreateKernelStack` (`ARM3/procsup.rs:280`) *forces* `GuiStack = 1` on arm64 and commits
+  every page (`StackPages == StackPtes == BYTES_TO_PAGES(MmLargeStackSize)`), where x86 reserves
+  large but commits only `KERNEL_LARGE_STACK_COMMIT`. `MmDeleteKernelStack` (`:210`), by
+  contrast, takes `GuiStack` from its CALLER and sizes the unmap from it — so a caller passing 0
+  would unmap `KERNEL_STACK_SIZE` pages of an `MmLargeStackSize` allocation and hand
+  `MiReleaseSystemPtes` the wrong count. It would also take the dead-stack SList push, which on
+  arm64 nothing ever drains (create's pop lives in the `GuiStack == 0` branch that arm64 never
+  reaches). **All five call sites are nevertheless correct:** `thrdobj.rs:869/:895` and
+  `kill.rs:341/:472` pass the thread's own `LargeStack`, which `thrdobj.rs:846` sets to 1 on
+  arm64 next to the large `StackLimit`; and `win32.rs:103`'s hardcoded `MmDeleteKernelStack(old_stack, 0)`
+  is inside `#[cfg(not(target_arch = "aarch64"))]` — arm64 skips the stack switch entirely
+  because its stacks are already large. Both `kill.rs` sites also carry the §9.94 SwapBusy spin.
+  So arm64 stacks are fully committed at creation and torn down at the right size: whatever
+  removes the page, it is not this.
+
   **Reading the `[KSTACK]` numbers: implausible bounds may mean a MIS-MAPPED structure, not a
   corrupt stack.** The wow64-amd64 lane hit exactly that failure mode the same night
   (`335f2009cd6`): a WoW64 thread's TEB landed on top of `KUSER_SHARED_DATA`, so
