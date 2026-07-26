@@ -1278,6 +1278,25 @@ moved **987 → 9 with no source change**. A verdict that depends on which sibli
 a gate. Pinned *toolchains* may be shared (content-addressed); generated *headers* are
 per-commit state and must come from THIS worktree or the tool hard-fails.
 
+### A build-time flavor knob that keeps the SAME output name defeats every name-based check
+**Symptom:** a run is green and the screenshot is a full desktop, but the binary under test is
+not the flavor you think. **Cause:** a cmake cache var that changes what a binary *is* without
+changing what it is *called*. `VIBEOS_SMP_HAL=1` rebuilt the SMP HAL — into a file still named
+`hal.dll`. Nothing downstream can tell the flavors apart: freeldr registers whatever it loads
+as `hal.dll` in the loader block, the on-disk name is identical, and on arm64 there is no
+`MISMATCHED_HAL` handshake, so an MP kernel on the UP HAL boots to a desktop and silently runs
+on **one cpu** (`HalStartNextProcessor` is the FALSE stub). The only available assertion was a
+*negative* runtime marker ("did the UP stub get called?"), which only fires if the wrong code
+happens to execute. A build-dir-global knob also forces a full relink to switch (9m25s i386 /
+12m22s amd64 warm), so nobody runs both flavors routinely — the check that would catch it is
+the one you can't afford. **Fix: make the flavor the file name and ship both.**
+`halmp-cargo` → `halmp.dll` beside `hal.dll` (mirroring `ntoskrnl-cargo` → `ntkrnlmp-cargo`),
+selected per boot entry (`/HAL=`). The assertion becomes positive and load-time — "the
+`[FLDR] load` stamp names `halmp.dll`" — and the mis-pair stops being reachable. **Corollary
+for the second copy:** put the shared recipe in ONE place (here a `hal-link` crate both cells'
+`build.rs` call) — two hand-maintained link recipes for binaries that must be identical apart
+from one feature is the same single-copy-divergence class as a constant defined per-arch.
+
 ### Other staleness shapes
 - **Multi-copy staleness** `[§9.6]` — `rtl`/`heap` links into **both** `librtl.a` (ntoskrnl) and a
   separate ntdll copy. An edit that "doesn't take" is a stale archive. `ar` never prunes, so

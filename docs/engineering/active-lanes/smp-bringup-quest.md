@@ -1102,6 +1102,122 @@ as a second output (`halmp-cargo` → `halmp.dll`, mirroring `ntoskrnl-cargo` �
 MP gate leg costs one extra boot instead of a rebuild, and the mis-pair class
 (0x79 on x86, silent-1-cpu on arm64) stops being reachable by construction.
 
+### …and DONE (2026-07-25). Both flavors now ship; `/HAL=` picks one per boot
+
+Built as proposed, user-approved as *"a separate entry, but not default until the
+rest of the bugs are fixed"* — so `DefaultOS` is untouched and every default boot
+is still the UP pair.
+
+**Why the loader needed nothing.** `winldr.c:780` is
+`LoadModule(LoaderBlock, DirPath, HalFileName, "hal.dll", LoaderHalCode, …)` —
+the 4th argument is the name the module is *registered* under in the loader
+block. So freeldr loads whatever `/HAL=` names and every import still resolves
+against `hal.dll`. This is not new machinery; it is the mechanism
+`[LiveCD_Aacpi]`'s `/HAL=halaacpi.dll` has always used. The one serial line that
+reveals which file was actually loaded is freeldr's own
+`[FLDR] load \reactos\system32\halmp.dll` stamp — nothing downstream of the
+loader can tell you the flavor, which is exactly why the smoke check below reads
+that line.
+
+**`halmp.dll` is the upstream name, and txtsetup.sif was already asking for it.**
+`boot/bootdata/txtsetup.sif` `[Files.x64_mp]` has always mapped
+`halmp.dll → hal.dll` for an MP install; the file simply never existed. The
+i386 `[Files.acpi_mp]` equivalent names `halmacpi.dll` (a *different* flavor
+axis — ACPI, not just MP), so it is untouched here.
+
+**One recipe, two cells — the flavors cannot drift.** The whole of
+`hal-cargo/build.rs` moved verbatim into a new `sdk/lib/rust/hal-link` crate
+parameterized by `Flavor::{Up,Mp}`; both cells' `build.rs` are now three lines
+over it, and `halmp-cargo` even shares `hal-cargo`'s `src/main.rs` (a GC anchor
+for `HalInitSystem` + the loud panic handler) via `[[bin]] path`. This was the
+whole point of the exercise: two hand-maintained link recipes for binaries that
+must be identical apart from one cargo feature is the same shape as the swapped
+`PRCB_BUILD_*` constants below — a single-copy divergence that no name-based
+check can see. The only genuine duplicate is `i686-kernel.json`, and that is
+forced: cmake builds the i386 `--target` path as
+`${workspace}/${crate}/i686-kernel.json`, so every one of the 42 cargo cells
+carries its own copy already.
+
+`reactos-link` keys its inner staticlib target dir on `CARGO_PKG_NAME`, so the
+two builds of `hal-rust` (with and without `smp`) land in
+`target/hal-cargo-hal_rust-rustlib` and `target/halmp-cargo-hal_rust-rustlib` and
+never thrash each other's cache — the same isolation `ntoskrnl-cargo` and
+`ntkrnlmp-cargo` already rely on for `kernel-rust`.
+
+**What changed, in full:**
+
+| file | change |
+|---|---|
+| `sdk/lib/rust/hal-link/` | NEW — the shared link recipe, `Flavor::{Up,Mp}` |
+| `sdk/lib/rust/halmp-cargo/` | NEW — 3-line `build.rs`, shared `main.rs`, own target json |
+| `hal/halx86`, `hal/halarm64` CMakeLists | second `add_cargo_kernel_dll(halmp …)`; no `spec2def` (identical export surface, `.def` self-hosted) |
+| `boot/bootdata/livecd.ini` | `[LiveCD_SMP]` += `/HAL=halmp.dll` |
+| `qemu/mkramdisk.sh` | `--smp` stages `halmp.dll` and injects `/HAL=` (arm64 stages a curated set, so the twin must be named as well as built) |
+| `sdk/cmake/gcc.cmake` | `VIBEOS_SMP_DEFAULT_BOOT → VIBEOS_SMP_HAL` RETIRED; `VIBEOS_PIC_HAL` now reaches **both** cells |
+| `tests/qemu/cli/smoke.py` | `_smp_check` asserts the loaded HAL *name* → `SMP_UP_HAL`, all three arches |
+| `archcfg.py`, `cargo_orchestrate.py` | `halmp` joins the arm64 optional targets + the cell list |
+
+**Two footguns closed, not one.** The obvious win is cost: `--smp-kernel` now
+rewrites `DefaultOS=` and nothing else, so flipping flavors no longer relinks the
+HAL. The subtler one is that `VIBEOS_SMP_HAL=1` used to produce a file named
+`hal.dll` containing an MP HAL — a binary that passes every name-based check
+while being the wrong thing. The flavor is now the file name, which is also what
+let the smoke check become a positive assertion (`loaded halmp.dll`) instead of
+the old negative one (the `UP HAL stub called` runtime marker, kept as a backstop
+for a UP body wearing an MP name).
+
+**Cost accepted:** every build now links `hal-rust` twice on every arch, whether
+or not the MP entry is booted. That is the same bargain `ntkrnlmp.exe` has always
+had, and it is the price of one media carrying both.
+
+#### Validation
+
+| arch | `hal.dll` | `halmp.dll` | `--smp 2` boot | freeldr loaded |
+|---|---|---|---|---|
+| i386 | 2,744,320 | 2,756,608 | green, 38s | `halmp.dll` + `ntkrnlmp.exe` |
+| amd64 | 868,352 | 880,640 | green + net, 1m53s | `halmp.dll` + `ntkrnlmp.exe` |
+| arm64 | 389,120 | 401,408 | green, 51s | `halmp.dll` + `ntkrnlmp.exe` (ramdisk) |
+
+Every arch's MP binary is the larger one, which is the right direction (real
+spinlock bodies, the SMP paths). amd64 `--smp 1` is green + net too, and the UP
+default is untouched — a plain smoke still reports `[FLDR] load …\hal.dll` +
+`…\ntoskrnl.exe`. Both x86 arches show
+`KeIpiGenericCall self-test: worker ran on 0x3 == active set OK`; arm64 adds
+`PSCI CPU_ON mpidr=…1`, `CPU 1 online`, `CPU1 clock tick live`, and
+`CPU1 scheduling live`. arm64's `opt:halmp` ninja target and the mkramdisk
+staging both report green in the build summary, so the twin is built AND staged
+on the arch that has no handshake to catch a mis-pair.
+
+The two PEs export the **identical 57 names** (parsed out of the export
+directories directly), which is the check that matters: `halmp.dll` is a drop-in
+for `hal.dll` by construction, not by inspection.
+
+**The relink really is gone, proven by mtime rather than by stopwatch.** After a
+plain build followed by a `--smp-kernel` build, `hal.dll` and `halmp.dll` still
+carry the *earlier* build's timestamps — the flavor flip relinked neither. The
+`--smp-kernel` build ran 34 ninja steps: the two kernel links and the ISO.
+
+**But "an MP gate leg costs one extra boot" — the claim made when this was
+proposed — is only HALF delivered, and the earlier note above overstated it.**
+The 9-12 minute HAL relink is gone. What remains is a cmake reconfigure + ISO
+repack (**8m30s measured on amd64**, dominated by the ~44 lints and mkisofs, not
+by compilation), because *which entry boots* is `DefaultOS=` inside the single
+generated `freeldr.ini` on the media. One media, one `freeldr.ini`, one default.
+So a gate cannot hold UP and MP media simultaneously today, and
+`vibeos-cli gate` is deliberately UNTOUCHED here.
+
+Reaching the real "one extra boot" needs a **second media** — `livecd-smp.iso`
+built alongside, its own `freeldr.ini` defaulting to `[LiveCD_SMP]` — so the gate
+boots either without reconfiguring anything. That is a separate change with a
+real cost (an extra mkisofs on every build) and is the natural predecessor to
+flipping the default. Not started.
+
+**Pre-existing cruft noticed, not touched:** `[LiveCD_Macpi]` passes
+`/HAL=halmacpi.dll`, which this tree has never built — that menu entry has always
+been dead. Harmless (`TimeOut=0`, so automated boots never see the menu), and
+`halmacpi` denotes the ACPI-MP flavor, a different axis from ours, so aliasing it
+to `halmp.dll` would be wrong rather than helpful.
+
 ### Conformance at `-smp 1`: x86 PASSES, arm64 has a REAL blocker
 
 | arch  | result |

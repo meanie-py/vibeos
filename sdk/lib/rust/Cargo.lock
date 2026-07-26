@@ -676,7 +676,14 @@ dependencies = [
 name = "hal-cargo"
 version = "0.1.0"
 dependencies = [
+ "hal-link",
  "panic-common",
+]
+
+[[package]]
+name = "hal-link"
+version = "0.1.0"
+dependencies = [
  "reactos-link",
 ]
 
@@ -685,6 +692,14 @@ name = "hal-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "halmp-cargo"
+version = "0.1.0"
+dependencies = [
+ "hal-link",
+ "panic-common",
 ]
 
 [[package]]

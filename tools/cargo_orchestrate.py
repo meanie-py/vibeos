@@ -101,6 +101,11 @@ CELLS: dict[str, Cell] = {
         # import-dep DLLs (hal/kdcom/bootvid) + the leaf drivers all qualify.
         # win32k joined 2026-06-21 (libwin32k_residue.a compiled in-cargo).
         Cell("hal", "hal-cargo", "hal.dll", "kerneldll"),
+        # halmp.dll = the same HAL body with hal-rust's `smp` feature, shipped
+        # alongside hal.dll so one media boots either flavor (freeldr `/HAL=`).
+        # Both cells drive the SHARED `hal-link` recipe, so they differ by
+        # exactly one cargo feature and the output name.
+        Cell("halmp", "halmp-cargo", "halmp.dll", "kerneldll"),
         # kdcom.dll has 4 alternative provider crates (kdcom/kdgdb/kdcom-serial/
         # kdrosdbg) selected by config; kdcom-cargo is the default the standard
         # build ships. The others are cmake-off-clean too (same shape).
