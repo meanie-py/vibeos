@@ -107,11 +107,11 @@ pub mod folders;
 pub mod propsheet;
 pub mod systray;
 
-// Wave 5 is TRANSLATED AND PARKED, NOT YET WIRED. The assembled modules live at
-// shell32/*.rs and dialogs/*.rs; they still need substrate closure (a few hundred
-// SDK externs, constants and resource IDs) before they can compile. Wiring them in
-// this state would not expose a regression, it would introduce a build break for
-// every lane on the fleet, so they stay out of the crate graph until closure lands.
+// Wave 5 free-function TUs from the shell32 root: STILL PARKED, substrate closure in
+// progress. `shell32/sdk_consts.rs` (382 compiler-verified constants) and the win32.rs
+// additions below it are done and durable; what remains is ~301 Win32 API prototypes,
+// 61 SDK record layouts, and the type-mismatch tail. Wiring the modules before those land
+// would not expose a regression, it would break the build for every lane on the fleet.
 // Do NOT delete these files to "clean up" — they are paid artifacts.
 
 #[panic_handler]

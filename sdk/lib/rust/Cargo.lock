@@ -2091,6 +2091,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "snmpapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "splaytree"
 version = "0.1.0"
 
@@ -2587,6 +2595,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wlanapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "wlansvc-rust"
 version = "0.1.0"
 dependencies = [
@@ -2633,6 +2649,14 @@ dependencies = [
 
 [[package]]
 name = "wshtcpip-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "wsock32-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",

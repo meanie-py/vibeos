@@ -488,20 +488,46 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   deliberately carries no line count** so their in-flight edits don't read as NEW findings.
   The 6 baseline entries expire on their own the moment a `lib.rs` lands — delete them then.
   Another lane owns these files; don't edit them from here.
-- **arm64 `BUILD_INCOMPLETE` — OPEN, recurring ~5×/day, halts the merge-queue train**
-  (2026-07-25). `artifact-check` reports a cohab PE older than the staticlib it links, after
-  ninja exited 0: *"libX_rust.a is newer than the built binary; the cohab staticlib changed
-  but X was never relinked"*. **The stale set is DIFFERENT every occurrence** — `kernel32`;
-  `version`; `shell32`+`usbport`; `advapi32`+`kernel32`+`ws2_32`+`mouhid` — and all four of
-  the last set ARE in the ninja target list, so "missing target" is not the explanation. A
-  real missing dependency edge is not random, so the leading hypothesis is
-  `provenance.check_staleness` racing cargo's unconditional staticlib rewrite (cargo re-emits
-  the `.a` and bumps its mtime even when content is unchanged, after ninja has already decided
-  the PE is up to date) — i.e. an oracle false-positive, the same family as field manual
-  §9.81 "the two staleness oracles, both were wrong". Test that first by comparing CONTENT
-  hashes rather than mtimes before touching the build graph. Until it is root-caused,
-  `BUILD_INCOMPLETE` is in `queue.INCONCLUSIVE` so it halts the train rather than rejecting an
-  innocent lane. Artifacts: `/tmp/vibeos-cli/queue-batch-*/2026*-build-arm64/summary.json`.
+- **`BUILD_INCOMPLETE` — OPEN, recurring ~5×/day, halts the merge-queue train; NOT arm64-only
+  and NOT one bug** (2026-07-25; **triaged + instrumented same day**, task #21). `artifact-check`
+  fails after ninja exited 0. Three archived occurrences are **three different oracles**:
+  - `20260725-021909-build-arm64` — *"libkernel32_rust.a is newer than the built binary"*:
+    `cohab_staleness_reasons` check B (artifact mtime vs the **copied** staticlib).
+  - `20260725-022237-build-i386` — *"shell32-rust/…/shldataobject.rs newer than the
+    cargo-linked binary"* ×4, for **lsass/services/smss/userinit**: `cargo_link_staleness_reasons`
+    compares every cargo-linked artifact against a **global newest-workspace-`.rs` watermark**
+    (`_newest_ws_src`). That `.rs` belongs to another lane and to a crate none of those four
+    exes link — so one lane's new file marks another lane's untouched binaries stale.
+  - `20260725-053107-build-arm64` — *"build source changed since build"*: `build_src_hash`
+    differs from a stamp written **milliseconds earlier in the same function**.
+
+  **Hypotheses tested and KILLED — do not re-run:** (a) *git calls hit the 120s timeout under
+  load* — `git diff HEAD` is 10 ms and `git status --porcelain` 60 ms over 37,587 tracked files;
+  (b) *`index.lock` contention fails the git calls* — held the lock and ran all three, every one
+  returned rc=0; (c) the **previously recorded leading hypothesis** (*cargo re-emits the `.a` and
+  bumps its mtime even when content is unchanged*) is aimed at the **wrong file** — check B
+  compares against the **copied** staticlib, which cmake `copy_if_different` only touches when
+  the bytes actually changed.
+
+  **Real defect found and FIXED regardless of trigger:** `provenance._run` swallowed *both*
+  failure modes — it caught `OSError`/`SubprocessError` returning `""` **and never checked
+  `returncode`**. All three git calls behind `git_fingerprint` went through it, as did the
+  `git grep` behind `cargo_module_rels`. So a degraded git call either shifted the fingerprint
+  (false RED = this bug) or emptied the cargo-cell list (false GREEN = the staleness net
+  silently off) — and logged nothing either way, which is why 5 occurrences a day left no
+  evidence. Now raises `ProvenanceError` naming command + rc + stderr; `check_staleness`
+  reports that as *"provenance oracle FAILED (verdict unknown, not stale)"* instead of
+  laundering it into a confident "source changed". `git grep`'s rc=1 "no matches" is declared
+  via `ok_codes`.
+
+  **The next occurrence self-diagnoses.** The stamp now records `head_sha`, so a HEAD move
+  under the build is named as such; the bare "source changed" reason now appends *what*
+  changed, and says **"suspect the oracle, not the tree"** when the fingerprint moved while
+  HEAD held still and nothing is modified. Both mtime verdicts now print the gap: **under ~2 s
+  = same-run ordering (a race, i.e. a false positive), minutes = a genuinely missed rebuild** —
+  the discriminator these messages never carried. Stays in `queue.INCONCLUSIVE` (halts the
+  train rather than rejecting an innocent lane) until an instrumented occurrence names the
+  cause. Artifacts: `/tmp/vibeos-cli/queue-batch-*/2026*-build-*/summary.json`.
 - **Tree-wide bindgen callback-slot normalization — SCOPED, OWED** (task #14). The tool exists
   and is proven end-to-end on buslogic: `tools/rustconv/normalize_island_abi.py` spells callback
   slots `extern "system"` across a crate's three islands, projecting from the i386 island (the

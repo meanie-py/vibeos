@@ -65,3 +65,44 @@ void RtlFillMemoryUlong(void *Destination, KMT_SIZE_T Length, KMT_ULONG Pattern)
 #endif /* __x86_64__ */
 
 #endif /* __x86_64__ || __aarch64__ */
+
+#if defined(__i386__)
+
+/*
+ * i386 under KMT_I386_NATIVE_SEH, which retargets to -windows-msvc.
+ *
+ * This is a DIFFERENT root cause from the block above, so it gets its own guard
+ * rather than widening that one: i386 resolves every other helper fine, and
+ * defining the rest here would only add redundant duplicates.
+ *
+ * `_InterlockedAddLargeStatistic` is provided by mingw as an __INTRIN_INLINE in
+ * sdk/include/vcruntime/mingw32/intrin_x86.h, but that header is selected by the
+ * *gnu* environment. Retargeted to -windows-msvc, the SDK expects MSVC to supply
+ * the intrinsic and emits a plain external call instead — leaving exactly one
+ * undefined symbol at ExInterlocked.c:326 (_TestInterlockedFunctional).
+ *
+ * The body replicates the mingw asm verbatim: a lock-prefixed 32-bit add to the
+ * low half with carry propagated into the high half. Deliberately NOT written as
+ * a 64-bit __atomic_fetch_add — on i386 that can lower to a libatomic call
+ * (__atomic_fetch_add_8), trading one undefined symbol for another in a kernel
+ * driver that links no such runtime. Two locked halves is also what the real
+ * intrinsic does; it is a statistic, not a synchronisation primitive.
+ */
+long _InterlockedAddLargeStatistic(volatile long long *Addend, long Value)
+{
+    __asm__ __volatile__
+    (
+        "lock; addl %[Value], %[Lo32];"
+        "jae 1f;"
+        "lock; adcl $0, %[Hi32];"
+        "1:;"
+        : [Lo32] "+m" (*((volatile long *)(Addend) + 0)),
+          [Hi32] "+m" (*((volatile long *)(Addend) + 1))
+        : [Value] "ir" (Value)
+        : "memory"
+    );
+
+    return Value;
+}
+
+#endif /* __i386__ */

@@ -19,6 +19,7 @@ use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
 use crate::win32::*;
+use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
 pub const FO_MASK: u32 = 0xF;
@@ -2070,7 +2071,7 @@ unsafe extern "C" fn rename_files(
         IsAttribDir((*feFrom).attributes),
     ) as HRESULT
 }
-only the Rust function, no markdown fencing.unsafe_ unsafe extern "C" fn check_flags(fFlags: FILEOP_FLAGS) {
+unsafe extern "C" fn check_flags(fFlags: FILEOP_FLAGS) {
     let wUnsupportedFlags: u16 = FOF_NO_CONNECTED_ELEMENTS
         | FOF_NOCOPYSECURITYATTRIBS
         | FOF_NORECURSEREPARSE

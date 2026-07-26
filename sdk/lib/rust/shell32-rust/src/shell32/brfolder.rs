@@ -11,6 +11,7 @@ use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
 use crate::win32::*;
+use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
 pub const SHV_CHANGE_NOTIFY: u32 = WM_USER + 0x1111;
@@ -277,13 +278,13 @@ unsafe extern "C" fn BrFolder_FindTreeItemOfAbsoluteItem(
     pidl: PCIDLIST_ABSOLUTE,
     mut hItem: HTREEITEM,
 ) -> HTREEITEM {
-    if if(hItem.is_null()) {
+    if hItem.is_null() {
         hItem = TreeView_GetRoot((*info).hwndTreeView);
     }
     while !pidl.is_null() && !hItem.is_null() {
         let pItemData = BrFolder_GetItemData(info, hItem);
         let pidlFull = (*pItemData).pidlFull.as_ptr();
-        if if(ILIsEqual(pidlFull, pidl)) {
+        if ILIsEqual(pidlFull, pidl) {
             return hItem;
         }
         let hChild = TreeView_GetChild((*info).hwndTreeView, hItem);
@@ -291,7 +292,7 @@ unsafe extern "C" fn BrFolder_FindTreeItemOfAbsoluteItem(
         if !hChild.is_null() {
             temp = BrFolder_FindTreeItemOfAbsoluteItem(info, pidl, hChild);
         }
-        if if(!hChild.is_null() && !temp.is_null()) {
+        if !hChild.is_null() && !temp.is_null() {
             return temp;
         }
         hItem = TreeView_GetNextSibling((*info).hwndTreeView, hItem);
@@ -677,7 +678,7 @@ unsafe extern "C" fn BrFolder_Treeview_Keydown(info: *mut BrFolder, keydown: *mu
         VK_DELETE => {
             BrFolder_Delete(info, hItem);
         }
-        b'R' as _ => {
+        0x52 /* b'R' */ => {
             if GetKeyState(VK_CONTROL) < 0 {
                 BrFolder_Refresh(info);
             }
@@ -1008,7 +1009,10 @@ unsafe extern "C" fn GetTreeViewItemContextMenuPos(hWnd: HWND, hItem: HTREEITEM,
     ClientToScreen(hWnd, ppt);
 }
 unsafe extern "C" fn BrFolder_OnContextMenu(info: *mut BrFolder, lParam: LPARAM) {
-    enum { IDC_TOGGLE = 1, ID_FIRSTCMD, ID_LASTCMD = 0xffff }
+    // C anonymous enum: successive values, so ID_FIRSTCMD is IDC_TOGGLE + 1.
+    const IDC_TOGGLE: UINT = 1;
+    const ID_FIRSTCMD: UINT = 2;
+    const ID_LASTCMD: UINT = 0xffff;
     let mut hSelected = TreeView_GetSelection((*info).hwndTreeView);
     let mut ici: CMINVOKECOMMANDINFOEX = core::mem::zeroed();
     ici.cbSize = core::mem::size_of::<CMINVOKECOMMANDINFOEX>() as u32;
