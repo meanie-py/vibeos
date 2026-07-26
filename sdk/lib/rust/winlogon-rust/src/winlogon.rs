@@ -1046,10 +1046,15 @@ unsafe fn TryStartWow64Marshal() {
  * (BTCpuResetToConsistentState flush + the VEH redirect), a software
  * RaiseException must round-trip through the NtRaiseException marshaller, and
  * OutputDebugStringA's DBG_PRINTEXCEPTION must be consumed, not dispatched.
- * amd64-only launch: on arm64 the hardware-fault redirect into guest SEH is
- * still owed (FEX's simulate loop owns fault recovery there). Silent no-op
- * unless staged; verdict = [FAULT32] serial lines + exit 0x600D. */
-#[cfg(target_arch = "x86_64")]
+ *
+ * Runs on BOTH arches as of E18. The two get there differently and that is the
+ * point: amd64 catches a real compat-mode fault in Wow64pPrepareForExceptionHook,
+ * while on arm64 the fault is a HOST fault inside FEX's JIT that the CPU layer
+ * hands back in guest terms, and wow64.dll's VEH builds the guest dispatcher
+ * frame. Same guest, same verdict, two completely different arrival paths —
+ * which is exactly what makes it worth running twice. Silent no-op unless
+ * staged; verdict = [FAULT32] serial lines + exit 0x600D. */
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 unsafe fn TryStartWow64Fault() {
     if !Wow64SupportStaged() {
         return; // CPU layer absent
@@ -1114,9 +1119,9 @@ unsafe fn TryStartWow64Fault() {
  *
  * Runs on BOTH arches — the per-thread entry is arch-neutral and arm64 drives
  * it through FEX's BTCpu contract, which is exactly the path that would
- * otherwise have no functional coverage. arm64 passes "noseh" because the
- * hardware-fault redirect into guest SEH is still owed there (pre-existing,
- * unrelated to threading — the same reason fault32.exe is amd64-only).
+ * otherwise have no functional coverage. All nine rungs run on both arches as
+ * of E18; arm64 used to pass "noseh" to skip rung 7 while the hardware-fault
+ * redirect into guest SEH was still owed there.
  * Silent no-op unless staged; verdict = [THREAD32] serial lines + exit 0x600D. */
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 unsafe fn TryStartWow64Thread() {
@@ -1132,9 +1137,8 @@ unsafe fn TryStartWow64Thread() {
         return; // not staged — silent no-op
     }
 
-    #[cfg(target_arch = "aarch64")]
-    let mut Line: [u16; 19] = wstr_arr!("thread32.exe noseh");
-    #[cfg(target_arch = "x86_64")]
+    /* E18 dropped the "noseh" argument: arm64 now redirects a hardware fault in
+     * guest code into the guest's own 32-bit SEH, so rung 7 runs on both. */
     let mut Line: [u16; 13] = wstr_arr!("thread32.exe");
     let mut Si: STARTUPINFOW = zeroed();
     let mut Pi: PROCESS_INFORMATION = zeroed();
@@ -2327,6 +2331,10 @@ pub unsafe extern "system" fn WinMain(
 
         /* M18: marshaller-verification guest (TBI/IOCP/monitors). */
         TryStartWow64Marshal();
+
+        /* E18: guest-SEH dispatch verify — a hardware AV in guest code must
+         * reach the guest's own fs:[0] handler. */
+        TryStartWow64Fault();
 
         /* #64: 32-bit guest threading, driven through FEX's BTCpu contract —
          * the arm64 side of the per-thread WoW64 entry. */

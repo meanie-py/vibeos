@@ -36,6 +36,7 @@ NtQueryInformationProcess(_In_ HANDLE ProcessHandle,
 /* ntdll-only DLL: no kernel32 import (a WoW64 process must not pull 64-bit
  * kernel32 through us — Win10 keeps it out of wow64 processes too). */
 #define WOW64_CURRENT_PROCESS ((HANDLE)(LONG_PTR)-1)
+#define WOW64_CURRENT_THREAD  ((HANDLE)(LONG_PTR)-2)
 
 /* Host program counter in the native CONTEXT (diagnostics only). */
 #ifdef _M_ARM64
@@ -562,6 +563,101 @@ static VOID WINAPI Wow64pPrepareForExceptionHook(EXCEPTION_RECORD *R, CONTEXT *C
 }
 #endif /* !_M_ARM64 */
 
+#ifdef _M_ARM64
+/*
+ * E18 — the arm64 guest-SEH redirect, the arm64 half of what E5 built for
+ * amd64. There is no compat-mode fault to catch here: a guest fault arrives as
+ * a HOST arm64 fault inside FEX's JIT, and the CPU layer gets first refusal
+ * through BTCpuResetToConsistentState. When it *can* deal with the fault (SMC,
+ * overcommit, unaligned atomic, suspend) it NtContinues and never comes back.
+ * When it cannot, it hands the fault over in guest terms and returns:
+ *
+ *   - the guest register file is reconstructed into the CPU area
+ *     (FEX calls BTCpuSetContext itself),
+ *   - the EXCEPTION_RECORD is rewritten to describe the GUEST fault, with
+ *     ExceptionAddress set to the guest Eip — which is what lets us tell a
+ *     handed-over guest fault from a genuine host-side one,
+ *   - and the host CONTEXT is replaced with the one captured before JIT entry.
+ *
+ * So the piece that was missing is small and entirely on our side: build the
+ * i386 KiUserExceptionDispatcher frame on the GUEST stack, point the guest
+ * context at the dispatcher, and let the host resume. Returning
+ * EXCEPTION_CONTINUE_EXECUTION resumes at that pre-JIT-entry context, i.e.
+ * back inside BTCpuSimulate, which re-enters the guest from the CPU area —
+ * now at the guest's own dispatcher, so its real fs:[0] SEH chain runs.
+ *
+ * Without this the fault has nowhere to go: the host dispatcher's
+ * swallow-and-continue path resumes the simulate loop with the guest context
+ * still pointing at the faulting instruction, which re-faults forever.
+ */
+static BOOLEAN Wow64pRedirectGuestFault(EXCEPTION_POINTERS *Info)
+{
+    PBYTE CpuArea = (PBYTE)Wow64pTlsSlots()[WOW64_TLS_CPURESERVED];
+    EXCEPTION_RECORD *R = Info->ExceptionRecord;
+    ULONG_PTR ExAddr = (ULONG_PTR)R->ExceptionAddress;
+    WOW64_CONTEXT *C;
+    WOW64_EXCEPTION_RECORD32 Rec32;
+    ULONG Esp, i, N;
+
+    /* Same hazard as the breakpoint path below: a VEH runs on ANY thread, and
+     * a thread with no guest state has no CPU area to read. */
+    if (!CpuArea || !Wow64pKiUserExceptionDispatcher32)
+        return FALSE;
+    C = (WOW64_CONTEXT *)(CpuArea + 16);
+
+    /* Ours only if the CPU layer has already restated the fault in guest
+     * terms. A host-side fault it declined to touch still carries a host
+     * ExceptionAddress, which cannot be both below 2GB and equal to the
+     * guest's Eip. */
+    if (ExAddr >= 0x80000000u || ExAddr != (ULONG_PTR)C->Eip)
+        return FALSE;
+
+    /* DBG_PRINTEXCEPTION_C from a guest OutputDebugString is a message, not a
+     * fault — consume it exactly like the amd64 hook does. */
+    if ((ULONG)R->ExceptionCode == 0x40010006 || (ULONG)R->ExceptionCode == 0x4001000A)
+        return FALSE;
+
+    Rec32.ExceptionCode    = (ULONG)R->ExceptionCode;
+    Rec32.ExceptionFlags   = R->ExceptionFlags;
+    Rec32.ExceptionRecord  = 0; /* no chain conversion */
+    Rec32.ExceptionAddress = C->Eip;
+    N = R->NumberParameters > 15 ? 15 : R->NumberParameters;
+    Rec32.NumberParameters = N;
+    for (i = 0; i < 15; i++)
+        Rec32.ExceptionInformation[i] =
+            i < N ? (ULONG)R->ExceptionInformation[i] : 0;
+
+    /* Frame goes on the GUEST stack, below the guest's faulting Esp. */
+    Esp = Wow64pBuildGuestExceptionFrame(&Rec32, C, C->Esp - 0x10);
+    if (!Esp)
+    {
+        DbgPrint("[FEX-WOW64C] guest fault %08lx eip=%08lx: guest-stack frame build FAILED (esp=%08lx) — host death path\n",
+                 Rec32.ExceptionCode, C->Eip, C->Esp);
+        return FALSE;
+    }
+
+    DbgPrint("[FEX-WOW64C] guest fault %08lx eip=%08lx -> 32-bit SEH dispatch (esp=%08lx)\n",
+             Rec32.ExceptionCode, C->Eip, Esp);
+    if (Rec32.ExceptionCode == 0xc0000005)
+        DbgPrint("[FEX-WOW64C]   AV rw=%lx addr=%08lx | eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx esi=%08lx edi=%08lx ebp=%08lx\n",
+                 Rec32.ExceptionInformation[0], Rec32.ExceptionInformation[1],
+                 C->Eax, C->Ebx, C->Ecx, C->Edx, C->Esi, C->Edi, C->Ebp);
+
+    C->Eip = (ULONG)(ULONG_PTR)Wow64pKiUserExceptionDispatcher32;
+    C->Esp = Esp;
+    C->EFlags &= ~0x400u; /* cld — the fault may have been mid-rep-movs */
+
+    /* Publish through the CPU layer rather than trusting the raw CPU-area
+     * write: the JIT keeps its own copy of the register file and reloads it
+     * from here on simulate re-entry (the same reason the NtContinue
+     * marshaller goes through BTCpuSetContext). Passing the CPU area itself is
+     * explicitly supported — FEX copies the input before flushing. */
+    if (Wow64pBTCpuSetContext)
+        Wow64pBTCpuSetContext(WOW64_CURRENT_THREAD, WOW64_CURRENT_PROCESS, NULL, C);
+    return TRUE;
+}
+#endif /* _M_ARM64 */
+
 static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
 {
     if (Wow64pBTCpuResetToConsistentState)
@@ -587,8 +683,20 @@ static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
         }
         if (C->Eax == 1 && C->Ecx && C->Ecx < 0x80000000u && C->Edx < 512)
             DbgPrint("[GUEST32] %.*s", (int)C->Edx, (const char *)(ULONG_PTR)C->Ecx);
+        /* Breakpoints keep the pre-E18 behaviour deliberately. FEX reports a
+         * DebugService `int 2d` with ExceptionAddress == the (already
+         * advanced) guest Eip but a genuine `int3` with Eip - 1, so the
+         * redirect's discriminator would match exactly the one that must NOT
+         * be dispatched — the loader's own debug channel — and miss the one
+         * that should be. Guest int3 dispatch is its own change. */
         return EXCEPTION_CONTINUE_SEARCH;
     }
+
+#ifdef _M_ARM64
+    /* E18: hand a guest fault to the guest's 32-bit SEH. */
+    if (Wow64pRedirectGuestFault(Info))
+        return EXCEPTION_CONTINUE_EXECUTION;
+#endif
 
     DbgPrint("[FEX-WOW64C] VEH: unhandled code=%08lx addr=%p pc=%p\n",
              Info->ExceptionRecord->ExceptionCode,

@@ -2228,3 +2228,58 @@ transferable ones:
   local `nSize` and copies the result out, so the 8-byte clobber lands in
   kernel32's frame where no caller-side canary can ever see it. Bypassing
   kernel32 is what made it an oracle.
+
+---
+
+**Phase E18 — arm64 dispatches a guest hardware fault into the guest's own SEH
+(2026-07-26).** The last arm64 gap in the ladder, and the reason `fault32.exe`
+was amd64-only and `thread32.exe` rung 7 ran with an explicit `noseh` skip.
+Both are now closed: **arm64 `fault32.exe exit = 0x600D`**, and thread32 runs
+all nine rungs on both arches.
+
+*The work was small because the CPU layer already does the hard part; what was
+missing was on our side.* There is no compat-mode trap to catch on arm64 — a
+guest fault arrives as a **host** arm64 fault inside FEX's JIT, and
+`BTCpuResetToConsistentState` gets first refusal. When it can deal with the
+fault (SMC, overcommit, unaligned atomic, suspend) it `NtContinue`s and never
+returns. When it cannot, it hands the fault over *in guest terms* and returns:
+the guest register file is reconstructed into the CPU area (FEX calls
+`BTCpuSetContext` itself), the `EXCEPTION_RECORD` is rewritten to describe the
+guest fault, and the host `CONTEXT` is replaced with the one captured before
+JIT entry. So `Wow64pRedirectGuestFault` only has to build the i386
+`KiUserExceptionDispatcher` frame on the **guest** stack — reusing
+`Wow64pBuildGuestExceptionFrame` verbatim from E5 — point the guest context at
+the dispatcher, and return `EXCEPTION_CONTINUE_EXECUTION`. That resumes the
+host at the pre-JIT-entry context, i.e. back inside `BTCpuSimulate`, which
+re-enters the guest from the CPU area — now at the guest's own dispatcher, so
+its real `fs:[0]` chain runs.
+
+Two details that decide whether it works at all:
+
+- **Telling a handed-over guest fault from a genuine host one.** FEX always
+  rewrites `ExceptionAddress` to the guest `Eip` before it declines, and a
+  host-side fault it never touched still carries a host address. So the test is
+  `ExceptionAddress < 2GB && ExceptionAddress == CpuArea->Eip` — cheap, and it
+  cannot false-positive on a host fault.
+- **Breakpoints deliberately keep the pre-E18 behaviour.** That same
+  discriminator matches exactly the wrong one: FEX reports a DebugService
+  `int 2d` with `ExceptionAddress ==` the (already advanced) guest `Eip`, but a
+  genuine `int3` with `Eip - 1`. Redirecting on it would dispatch the guest
+  loader's own debug channel into SEH while still missing real breakpoints.
+  Guest `int3` dispatch is its own change, not a freebie.
+
+*Also settled:* `EXCEPTION_CONTINUE_EXECUTION` from a VEH **is** honoured on
+arm64 — `rtl-except/src/arm64/except.rs` calls
+`RtlCallVectoredExceptionHandlers` first and returns on a non-zero result.
+Worth stating because the amd64 hook exists precisely *because* that build's
+`RtlDispatchException` elides the vectored block, and it would be reasonable to
+assume the same here.
+
+*Verification:* the redirect fires exactly once for `fault32` rung 1 —
+`guest fault c0000005 eip=00401002 -> 32-bit SEH dispatch` — and the remaining
+rungs (RaiseException round-trip, `DBG_PRINTEXCEPTION` consumption,
+Get/SetThreadContext) reach the guest by their own paths, unchanged. amd64 is
+untouched: the whole redirect is `#ifdef _M_ARM64`, and amd64 keeps catching
+the real compat-mode fault in `Wow64pPrepareForExceptionHook`. Running the same
+guest on both arches is worth it precisely because the arrival paths share
+nothing.
