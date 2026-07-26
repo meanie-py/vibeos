@@ -986,6 +986,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   GateWait. Note `obj=ffff8000049044e0` sits in the same `0xffff8000_04/05` VA family as the
   fault addresses, which is suggestive and nothing more.
 
+  **Face C's next step is a two-line diagnostic, and it is already half-instrumented.** The only
+  callers of `KeWaitForGate` in the tree are `ke/wait.rs:328` and **`ex-rust/src/pushlock.rs:487`
+  and `:631`** — so a thread in `GateWait` is, in practice, blocked on a pushlock
+  (`WrPushLock`), and the signaller that never ran is `pushlock.rs:198`'s
+  `KeSignalGateBoostPriority(&WaitBlock->WakeGate)`. That means **HOLDER-STUCK here reads as: a
+  pushlock holder never released, or released without waking.** Which pushlock is the question,
+  and it is the one thing the report omits:
+  - `gate.rs` accounts `synctrace_wait_park` under the **gate** address;
+  - `pushlock.rs` accounts `synctrace_pl_park` under the **pushlock** address, deliberately —
+    its own comment says "the wake gate is a per-wait stack object, useless as a key";
+  - `census.rs:176` prints only the gate address, so the pushlock identity is *recorded and
+    never surfaced*. The run's serial contains zero `WrPushLock` mentions for the stuck thread.
+
+  **Do this next:** when a stuck `GateWait` thread's `WaitReason` is `WrPushLock`, have the
+  census also print the pushlock address and *its* synctrace counters. That names the contended
+  lock instead of a stack-allocated gate, and turns "something never signalled" into "this lock
+  was held by that thread".
+
+  **Suggestive, unproven:** because `WaitBlock` lives on the waiter's stack, `obj=ffff8000049044e0`
+  IS a kernel-stack address — the same `0xffff8000_04/05` VA family as face A's fault addresses.
+  That is consistent with A and C sharing a root cause (a stack whose backing goes away would
+  also make a wake gate unreachable), and equally consistent with coincidence, since every kernel
+  stack lives in that range. Do not merge the faces on this alone.
+
   **B is NOT C — tested, not assumed.** The obvious unifying story ("the launcher itself parked
   on a gate, hence `launched=0`") is **wrong**: the no-launch round has **zero** `CENSUS STUCK`
   lines, while the stalled round has them throughout. Two distinct faces.
