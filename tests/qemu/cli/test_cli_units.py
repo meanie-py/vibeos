@@ -3693,6 +3693,45 @@ def test_queue_is_fifo_by_arrival(queue_repo):
     assert [s.seq for s in q_mod.pending(repo)] == [first.seq, second.seq]
 
 
+def test_queue_is_fifo_even_when_the_wall_clock_steps_BACKWARDS(monkeypatch, queue_repo):
+    """seq's numeric half is CLOCK_REALTIME, which steps. Observed live on WSL2 under
+    parallel load: a lane got a timestamp 2.59 SECONDS earlier than one already queued,
+    so it sorted first and jumped the queue. This pins the fix deterministically —
+    test_queue_is_fifo_by_arrival only caught it about 1 run in 80, which is a flake
+    report, not a control."""
+    repo, _ = queue_repo
+    real = q_mod.time.time_ns()
+    _commit(repo, "a.txt")
+    monkeypatch.setattr(q_mod.time, "time_ns", lambda: real)
+    first = q_mod.submit(repo, lane="lane-a")
+    # The clock jumps 2.59s into the past, exactly as the live failure did.
+    _commit(repo, "b.txt")
+    monkeypatch.setattr(q_mod.time, "time_ns", lambda: real - 2_593_682_747)
+    second = q_mod.submit(repo, lane="lane-b")
+
+    assert second.seq > first.seq, "a later arrival must never sort before an earlier one"
+    assert [s.seq for s in q_mod.pending(repo)] == [first.seq, second.seq]
+
+
+def test_queue_seq_returns_to_real_time_once_the_queue_drains(monkeypatch, queue_repo):
+    """The monotonic bump scans PENDING only, so a clock excursion cannot pin seqs
+    forever — drain the queue and the next submission is back on the real clock. That
+    self-healing is the reason results are deliberately not scanned."""
+    repo, _ = queue_repo
+    real = q_mod.time.time_ns()
+    _commit(repo, "a.txt")
+    # A wild forward jump (a decade) while one submission is queued.
+    monkeypatch.setattr(q_mod.time, "time_ns", lambda: real + 10 * 365 * 86_400 * 10**9)
+    stuck = q_mod.submit(repo, lane="lane-a")
+    q_mod.resolve(repo, stuck, outcome="landed", reason="done")
+    assert q_mod.pending(repo) == []
+
+    monkeypatch.setattr(q_mod.time, "time_ns", lambda: real)
+    _commit(repo, "b.txt")
+    after = q_mod.submit(repo, lane="lane-b")
+    assert int(after.seq.split("-", 1)[0]) == real
+
+
 def test_queue_resolve_always_leaves_a_verdict(queue_repo):
     """A submission leaving the queue WITHOUT a result is the one unrecoverable outcome —
     the agent can never learn what happened to its work."""

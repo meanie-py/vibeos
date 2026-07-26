@@ -3117,6 +3117,39 @@ identically. **Do not `--allow-stale`, do not re-gate** (it will starve again), 
 **never broad-kill QEMUs** — use `./vibeos-cli kill`. Starvation must be *visible*: it used to
 read as "my build is slow".
 
+### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
+
+**Symptom.** `test_queue_is_fifo_by_arrival` failed roughly 1 run in 80, only ever under
+parallel load, and passed 80/80 sequentially. The obvious readings — "clock granularity",
+"a racy test" — are both wrong, and either one would have been fixed by quieting the test.
+
+**Cause.** The merge queue orders submissions by a `seq` of `"<time_ns>-<lane>"` and relies on
+lexical order being arrival order. `time.time_ns()` is **CLOCK_REALTIME, which steps.** Under
+WSL2 the guest clock resyncs to the Windows host, and the captured failure shows a lane
+submitted 2.59 **seconds** in the past relative to one already on disk:
+
+```
+lane-a  01785085499633383341   submitted FIRST, larger
+lane-b  01785085497039700594   submitted SECOND, smaller by 2,593,682,747 ns
+```
+
+So the later arrival sorted first. The test was reporting a **live fairness bug in the thing
+that decides whose work lands** — a lane could silently jump the queue.
+
+**Fix.** Lamport-style bump in `queue._next_seq()`: keep wall-clock ns, but never hand out a
+value at or before the queue's current high-water mark. Scan **pending only, not results** — the
+invariant only has to hold among submissions competing for a conductor, and pending-only
+self-heals, whereas including results would pin every future seq to a bad value until the
+history was pruned if the clock ever jumped far *forward*.
+
+**Two generalizations worth more than the bug.** (1) Never derive ordering, elapsed time, or
+timeouts from `time.time()`/`time.time_ns()` — use `time.monotonic()` for durations, and for
+anything persisted across processes make the *stored state* the authority. (2) A 1-in-80
+failure is not a control. Reproduce it under the load that triggers it (8 workers × 25 runs
+here), then pin it with a test that **fakes the trigger deterministically** — the regression
+test steps the clock backwards by the exact observed 2,593,682,747 ns and fails against the
+old allocator with the live signature.
+
 ### Known-benign signals — do not chase these
 - **A screenshot that looks solid black (346-byte PNG) is NOT a boot failure.** More generally,
   the screenshot is captured **at** the marker, before the taskbar finishes rendering, so a green
