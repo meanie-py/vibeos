@@ -380,6 +380,77 @@ int mbcs_fixture_install(unsigned int cp)
     return 0;
 }
 
+/* How many bytes `__p__mbctype` hands back.
+ *
+ * From `sizeof`, never typed out: the case that grades that accessor compares the bytes
+ * behind the returned pointer, and a length constant transcribed into the harness is part
+ * of the oracle — too small and the tail of the table is never compared, too large and the
+ * comparison reads off the end of the struct.  This reads the mirror in locale_layout.h,
+ * which ref_integrity already asserts field-by-field against msvcrt-sys, so the number
+ * cannot drift away from the struct it describes. */
+size_t mbcs_mbctype_len(void)
+{
+    return sizeof(((rl_threadmbcinfo *)0)->mbctype);
+}
+
+/* Field-by-field diff of two freshly-built mbcinfos, for tests/mbcs_state.c's grading of
+ * `create_mbcinfo` — the one function in mbcs.c whose output every OTHER case is graded
+ * against, and which for that reason was itself graded nowhere: mbcs_fixture_install
+ * builds the pinned fixture from the REFERENCE's copy and hands it to both sides, so a
+ * wrong subject create_mbcinfo could not show up in any of them.
+ *
+ * Field-by-field rather than one memcmp because the answer has to be actionable: a whole
+ * struct that "differs" tells you nothing, and the arrays are where it will differ —
+ * `mbctype` is the lead/trail-byte classification the entire DBCS surface reads, and
+ * `mbcasemap` the case table.  Both report the first index that disagrees.
+ *
+ * Written here, beside the struct mirror, so it cannot drift out of step with the layout
+ * ref_integrity already checks against msvcrt-sys.  Returns 0 when identical. */
+int mbcinfo_diff(const rl_threadmbcinfo *a, const rl_threadmbcinfo *b, char *out, size_t n)
+{
+    size_t i;
+
+#define DIFF_SCALAR(f)                                                          \
+    do {                                                                        \
+        if (a->f != b->f) {                                                     \
+            snprintf(out, n, #f ": subject %d, reference %d", (int)a->f, (int)b->f); \
+            return 1;                                                           \
+        }                                                                       \
+    } while (0)
+
+    DIFF_SCALAR(refcount);
+    DIFF_SCALAR(mbcodepage);
+    DIFF_SCALAR(ismbcodepage);
+    DIFF_SCALAR(mblcid);
+#undef DIFF_SCALAR
+
+    /* mbulinfo is DELIBERATELY not compared: msvcrt never initialises it.
+     *
+     * create_mbcinfo does `malloc(sizeof *mbcinfo)` and then assigns fields individually —
+     * no memset — and `mbulinfo` is not one of the fields it assigns.  Nothing in the DLL
+     * ever reads it either; the only mention outside the struct declaration is a `{0}` in
+     * locale.c's static initialiser.  So on the reference side those twelve bytes are
+     * whatever the allocator last left there (this read 0xc880 on the first run), and on
+     * the subject side whatever Rust's allocation left.  Comparing them grades the
+     * allocator, not the translation, and would fail at random.
+     *
+     * Excluded rather than quietly memset on one side, which would manufacture an
+     * agreement neither implementation actually produces. */
+    for (i = 0; i < sizeof(a->mbctype); i++)
+        if (a->mbctype[i] != b->mbctype[i]) {
+            snprintf(out, n, "mbctype[%zu] (byte 0x%02x): subject 0x%02x, reference 0x%02x",
+                     i, (unsigned)(i ? i - 1 : 0), a->mbctype[i], b->mbctype[i]);
+            return 1;
+        }
+    for (i = 0; i < sizeof(a->mbcasemap); i++)
+        if (a->mbcasemap[i] != b->mbcasemap[i]) {
+            snprintf(out, n, "mbcasemap[%zu]: subject 0x%02x, reference 0x%02x",
+                     i, a->mbcasemap[i], b->mbcasemap[i]);
+            return 1;
+        }
+    return 0;
+}
+
 /* Did either side scribble on it?  The fixture is read-only state; a graded function
  * that writes to it is a translation bug, and without this check it would not surface
  * as a failure in that function — it would surface as a divergence in whichever

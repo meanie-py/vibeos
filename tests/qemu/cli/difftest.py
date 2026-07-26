@@ -99,6 +99,7 @@ def graded(out: str) -> int:
     pats = (
         r"difftest result: ok\. (\d+) passed",
         r"(\d+) mbcs cases passed",
+        r"(\d+) create_mbcinfo codepages passed",
         # (?<![a-z]) or "difftest result: ok. 81 passed" matches TWICE — the
         # libtest form is a literal substring of the difftest form, so cnt's 81
         # cases would report as 162.

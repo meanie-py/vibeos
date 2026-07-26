@@ -102,3 +102,12 @@ harness = false
 name = "mbcs"
 path = "tests/mbcs.rs"
 harness = false
+
+# `create_mbcinfo`, which the 173 generated cases structurally cannot grade: the fixture
+# they are all pinned against is built from the REFERENCE's copy and handed to both sides,
+# so the SUBJECT's never runs. Its own binary, so it is its own process and cannot disturb
+# that fixture. See tests/mbcs_state.rs.
+[[test]]
+name = "mbcs_state"
+path = "tests/mbcs_state.rs"
+harness = false
