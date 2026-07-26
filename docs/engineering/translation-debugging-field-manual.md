@@ -1833,6 +1833,19 @@ present is a silently-wrong island.
   build-configuration oracle** — autoconf writes the off cases as `/* #undef HAVE_LDAP_H */`,
   an assertion about *this* build, not a maybe — so guards on its 330 undefs are decidable and
   the dead arm is dropped. Undecidable guards still keep both arms and warn.
+- **Check what the module COMPILES TO before paying to translate it.** wldap32 reads as an
+  8,625-line LDAP client. In this tree every entry point compiles to
+  `return WLDAP32_LDAP_NOT_SUPPORTED;` — 181 `#ifdef HAVE_LDAP` blocks across 19 of its 20 TUs
+  are disabled, because ReactOS does not vendor OpenLDAP. It is a **stub DLL**. Translating it
+  bought 162 functions of the arm the compiler throws away, emitted UNCONDITIONALLY (so
+  `ldap_addA` would marshal instead of returning NOT_SUPPORTED) and calling OpenLDAP symbols
+  that do not exist here (so it could not link). LOC is not a proxy for how much of a module is
+  real. `profile_derive` now emits **`MOSTLY_DEAD_BODIES`** before payment for any module with
+  ≥15% of its compiled lines inside a decidably-false `#ifdef`, naming the macro and block
+  count. Note the dead-region seal already *tolerated* omissions inside such a block — a
+  tolerance is not a warning, and the two are easy to confuse. The salvage is to gate the
+  translated bodies behind the same `#[cfg(feature = ...)]` the C uses, which keeps the paid
+  artifact and makes the Rust strictly better than the C.
 - **`add_pch()`'s SKIP list is load-bearing.** Its third argument names the TUs that must not
   get the PCH, and they are skipped *precisely because they do not compile with it*. wldap32's
   `ber.c` includes `<winldap.h>` while `precomp.h` pulls `"winldap_private.h"`; the two declare
