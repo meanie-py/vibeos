@@ -897,6 +897,28 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   free-while-mapped. Same call as the `[PFNMISMATCH]` precedent — made loud, deliberately not
   fatal.
 
+  **BOTH PROBES ARE NOW IMPLEMENTED AND IN THE SHIPPED KERNEL (2026-07-26).**
+  - `[FREEMAPPED]` — `mm/freelist.rs` `MmDereferencePage`, at the TOP of the `rc - 1 == 0`
+    branch exactly as pinned above, bounded at 32 prints plus a running total so it cannot
+    bury the serial log it exists to inform.
+  - `[KSTACK]` — `ke/arm64/stubs.rs`, inside the existing `[KEXC]` kernel-mode-unhandled block,
+    so it costs nothing until the boot is already dying. Prints `SP`, `StackBase`, `StackLimit`,
+    `InitialStack`, `FaultVA` and `Arm64DumpPte(FaultVA)` — the three-way discriminator below.
+
+  Both were confirmed present with `strings ntoskrnl.exe | grep -c` **before** any boot
+  (field manual §9.87). That check earned itself immediately: the first `[KSTACK]` attempt did
+  not compile at all (`E0659` — `stubs.rs` glob-imports both `crate::ke::ke_defs` and
+  `ntkrnl_sys::mm`, and both export a `KeGetCurrentThread`; take ke_defs', which returns
+  PKTHREAD so the stack fields are reachable), and a soak would otherwise have run for hours
+  against a kernel with no probe in it.
+
+  **First measurement — a HEALTHY arm64 UP boot to desktop (59s) fires NOTHING:**
+  `FREEMAPPED 0`, `KSTACK 0`, `PFNMISMATCH 0`, `BUGCHECK 0`. That silence is a result, not a
+  non-event: the worry that benign stale rmap heads would make `[FREEMAPPED]` chatty (the
+  reason it is a print and not an assert) does **not** materialise on a normal boot, so the
+  probe is precise and any future hit is signal rather than noise. It also means a clean boot
+  cannot be used as evidence the probe works — only a run that reproduces the bug can.
+
   **First symbolicated kernel-side instance (2026-07-26) — and it points at the STACK, not at
   the page-reuse face.** `-smp 1` run F: `BUGCHECK 0x1E (0xC0000005, 0xfffff80042193788,
   0xffff8000048e8e50, 0)`, `P2 = ntoskrnl.exe+0x3788` = **`KiSynchronousExceptionEntry+4`**
