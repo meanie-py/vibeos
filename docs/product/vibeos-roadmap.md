@@ -943,6 +943,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Fact vs inference: the operands and the raise arm are measured; "a live stack lost a page" is
   the reading of them, and the `[KSTACK]` dump added below is what turns it into a fact.
 
+  **Reading the `[KSTACK]` numbers: implausible bounds may mean a MIS-MAPPED structure, not a
+  corrupt stack.** The wow64-amd64 lane hit exactly that failure mode the same night
+  (`335f2009cd6`): a WoW64 thread's TEB landed on top of `KUSER_SHARED_DATA`, so
+  `Teb.StackBase = 0x000000000FD4BC00` / `Teb.StackLimit = 0x90A70AA000000000` read back as
+  *the clock* — `InterruptTime.LowPart` and `High2Time | SystemTime.LowPart << 32`. Not corrupt
+  bounds; the wrong page. That was a user TEB and `[KSTACK]` reads the kernel `KTHREAD`, so it
+  is not the same bug — but the lesson transfers: if `StackBase`/`StackLimit` come back as
+  nonsense, first ask whether the structure we are reading is where we think it is, and only
+  then conclude the stack is damaged. Sanity check they bracket `InitialStack` and are
+  `KERNEL_STACK_SIZE` (0xC000 on arm64) apart before drawing any conclusion from them.
+
   **Two probe-coverage lessons from that run, both now fixed.**
   1. `[KSTACK]` printed nothing, because it lives in `stubs.rs`'s `[KEXC]`
      kernel-mode-*unhandled-exception* path, which ends in `0x1E`. A `0x50` is raised straight
