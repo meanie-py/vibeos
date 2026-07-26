@@ -87,6 +87,7 @@
 #define FILE_CURRENT                               1
 #define FILE_END                                   2
 #define FILE_TYPE_CHAR                             2
+#define FILE_TYPE_DISK                             1
 #define FILE_TYPE_PIPE                             3
 #define FILE_TYPE_UNKNOWN                          0
 #define INVALID_FILE_ATTRIBUTES                    0xFFFFFFFFu
@@ -99,6 +100,10 @@
 #define STD_OUTPUT_HANDLE                          0xFFFFFFF5u
 #define RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO 0x10000000
 
+/* codepage conversion — msvcrt.h's get_aw_cp / convert_*_utf8 inlines */
+#define CP_ACP         0
+#define MB_PRECOMPOSED 1
+
 /* Win32 error codes */
 #define ERROR_SUCCESS           0
 #define NO_ERROR                0
@@ -107,6 +112,92 @@
 #define ERROR_FILE_NOT_FOUND    2
 #define ERROR_INVALID_HANDLE    6
 #define ERROR_INVALID_PARAMETER 0x00000057
+
+/* Win32 error codes — errno.c's msvcrt_set_errno case labels */
+#define ERROR_ALREADY_EXISTS        0x000000B7
+#define ERROR_ARENA_TRASHED         7
+#define ERROR_BAD_DEVICE            0x000004B0
+#define ERROR_BAD_ENVIRONMENT       0x0000000A
+#define ERROR_BAD_FORMAT            0x0000000B
+#define ERROR_BAD_NETPATH           0x00000035
+#define ERROR_BAD_NET_NAME          0x00000043
+#define ERROR_BAD_PATHNAME          0x000000A1
+#define ERROR_BUSY                  0x000000AA
+#define ERROR_CANNOT_MAKE           0x00000052
+#define ERROR_CHILD_NOT_COMPLETE    0x00000081
+#define ERROR_CURRENT_DIRECTORY     0x00000010
+#define ERROR_DIR_NOT_EMPTY         0x00000091
+#define ERROR_DISK_FULL             0x00000070
+#define ERROR_DRIVE_LOCKED          0x0000006C
+#define ERROR_FAIL_I24              0x00000053
+#define ERROR_FILENAME_EXCED_RANGE  0x000000CE
+#define ERROR_FILE_EXISTS           0x00000050
+#define ERROR_INVALID_ACCESS        0x0000000C
+#define ERROR_INVALID_BLOCK         9
+#define ERROR_INVALID_DRIVE         0x0000000F
+#define ERROR_IO_DEVICE             0x0000045D
+#define ERROR_LOCK_FAILED           0x000000A7
+#define ERROR_LOCK_VIOLATION        0x00000021
+#define ERROR_MAX_THRDS_REACHED     0x000000A4
+#define ERROR_NESTING_NOT_ALLOWED   0x000000D7
+#define ERROR_NETWORK_ACCESS_DENIED 0x00000041
+#define ERROR_NOT_ENOUGH_QUOTA      0x00000718
+#define ERROR_NOT_LOCKED            0x0000009E
+#define ERROR_NO_MORE_FILES         0x00000012
+#define ERROR_NO_PROC_SLOTS         0x00000059
+#define ERROR_OUTOFMEMORY           0x0000000E
+#define ERROR_PATH_NOT_FOUND        3
+#define ERROR_POSSIBLE_DEADLOCK     0x0000046B
+#define ERROR_SEEK_ON_DEVICE        0x00000084
+#define ERROR_SHARING_VIOLATION     0x00000020
+#define ERROR_TOO_MANY_OPEN_FILES   4
+#define ERROR_WAIT_NO_CHILDREN      0x00000080
+
+/* Win32 error codes — raised by the POSIX-backed shims in refimpl.c */
+#define ERROR_HANDLE_EOF        0x00000026
+#define ERROR_NEGATIVE_SEEK     0x00000083
+#define ERROR_NOT_ENOUGH_MEMORY 8
+#define ERROR_NOT_SUPPORTED     0x00000032
+#define ERROR_SEEK              0x00000019
+#define ERROR_WRITE_FAULT       0x0000001D
+
+/* CRT errno values (msvcrt's errno.h; these DISPLACE the host's) */
+#undef  E2BIG
+#define E2BIG     7
+#undef  EACCES
+#define EACCES    0x0000000D
+#undef  EAGAIN
+#define EAGAIN    0x0000000B
+#undef  EBADF
+#define EBADF     9
+#undef  EBUSY
+#define EBUSY     0x00000010
+#undef  ECHILD
+#define ECHILD    0x0000000A
+#undef  EDEADLK
+#define EDEADLK   0x00000024
+#undef  EEXIST
+#define EEXIST    0x00000011
+#undef  EINVAL
+#define EINVAL    0x00000016
+#undef  EIO
+#define EIO       5
+#undef  EMFILE
+#define EMFILE    0x00000018
+#undef  ENODEV
+#define ENODEV    0x00000013
+#undef  ENOENT
+#define ENOENT    2
+#undef  ENOEXEC
+#define ENOEXEC   8
+#undef  ENOMEM
+#define ENOMEM    0x0000000C
+#undef  ENOSPC
+#define ENOSPC    0x0000001C
+#undef  ENOTEMPTY
+#define ENOTEMPTY 0x00000029
+#undef  EPIPE
+#define EPIPE     0x00000020
 
 /* NT enum constants — invisible to a -dM macro dump, hence the object probe */
 #define FileBasicInformation    4
