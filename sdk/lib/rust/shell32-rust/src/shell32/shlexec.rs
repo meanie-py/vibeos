@@ -49,6 +49,7 @@ use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
 use crate::win32::*;
+use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
 pub const SEE_MASK_CLASSALL: u32 = SEE_MASK_CLASSNAME | SEE_MASK_CLASSKEY;
@@ -369,14 +370,14 @@ unsafe extern "C" fn SHELL_ArgifyW(
         if *fmt_ptr == b'%' as u16 {
             fmt_ptr = fmt_ptr.add(1);
             match *fmt_ptr {
-                b'\0' as u16 | b'%' as u16 => {
+                0x00 /* b'\0' */ | 0x25 /* b'%' */ => {
                     used += 1;
                     if used < len {
                         *res = b'%' as u16;
                         res = res.add(1);
                     }
                 }
-                b'*' as u16 => {
+                0x2A /* b'*' */ => {
                     if !args_mut.is_null() {
                         if *fmt_ptr == b'*' as u16 {
                             used += 1;
@@ -394,7 +395,7 @@ unsafe extern "C" fn SHELL_ArgifyW(
                         }
                     }
                 }
-                b'~' as u16 | b'2' as u16..=b'9' as u16 => {
+                0x7E /* b'~' */ | 0x32 /* b'2' */..=0x39 /* b'9' */ => {
                     if *fmt_ptr == b'~' as u16 {
                         fmt_ptr = fmt_ptr.add(1);
                         tildeEffect = true;
@@ -420,7 +421,7 @@ unsafe extern "C" fn SHELL_ArgifyW(
                         }
                     }
                 }
-                b'1' as u16 => {
+                0x31 /* b'1' */ => {
                     if (done == 0 || *fmt_ptr == b'1' as u16) && !lpFile.is_null() {
                         let filelen = wcslen(lpFile);
                         used += filelen as u32;
@@ -431,7 +432,7 @@ unsafe extern "C" fn SHELL_ArgifyW(
                     }
                     found_p1 = TRUE;
                 }
-                b'l' as u16 | b'L' as u16 => {
+                0x6C /* b'l' */ | 0x4C /* b'L' */ => {
                     if !lpFile.is_null() {
                         let filelen_used = wcslen(lpFile);
                         used += filelen_used as u32;
@@ -442,7 +443,7 @@ unsafe extern "C" fn SHELL_ArgifyW(
                     }
                     found_p1 = TRUE;
                 }
-                b'w' as u16 | b'W' as u16 => {
+                0x77 /* b'w' */ | 0x57 /* b'W' */ => {
                     if !lpDir.is_null() {
                         let dirlen_used = wcslen(lpDir);
                         used += dirlen_used as u32;
@@ -452,7 +453,7 @@ unsafe extern "C" fn SHELL_ArgifyW(
                         }
                     }
                 }
-                b'v' as u16 | b'V' as u16 => {
+                0x76 /* b'v' */ | 0x56 /* b'V' */ => {
                     if !lpFile.is_null() {
                         let vlen_used = wcslen(lpFile);
                         used += vlen_used as u32;
@@ -470,7 +471,7 @@ unsafe extern "C" fn SHELL_ArgifyW(
                         }
                     }
                 }
-                b'i' as u16 | b'I' as u16 => {
+                0x69 /* b'i' */ | 0x49 /* b'I' */ => {
                     if !pidl.is_null() {
                         let mut chars: DWORD = 0;
                         let mut buf: [u16; 100 as usize] =

@@ -1153,3 +1153,114 @@ pub unsafe fn HIDA_GetPIDLItem(pida: *const CIDA, i: usize) -> PCUIDLIST_RELATIV
     let aoffset = (*pida).aoffset.as_ptr();
     (pida as *const u8).add(*aoffset.add(i + 1) as usize) as PCUIDLIST_RELATIVE
 }
+
+// ---------------------------------------------------------------------------
+// Substrate for the Wave-5 free-function TUs (shell32/*.rs).
+//
+// Same rule as the rest of this module: an item DEFINED by this crate is re-exported,
+// never re-declared `extern` — a second declaration is an unresolved duplicate rather
+// than a call to the real body.
+// ---------------------------------------------------------------------------
+
+pub use crate::shell_link::__SHCloneStrAtoW;
+pub use crate::wine::pidl::{
+    _ILCopyCidaToaPidl, _ILCreateDesktop, _ILGetDepth, _ILGetFileStructW, _ILIsDesktop,
+    _ILIsDrive, _ILIsFolder, _ILIsMyComputer, _ILIsPidlSimple, _ILIsValue, _ILSimpleGetTextW,
+};
+
+/// pidl.h:282 `static inline BOOL _ILIsEmpty(pidl) { return _ILIsDesktop(pidl); }`.
+#[inline]
+pub unsafe fn _ILIsEmpty(pidl: LPCITEMIDLIST) -> BOOL {
+    _ILIsDesktop(pidl)
+}
+
+// wine/unicode.h aliases the wide-string helpers straight onto the CRT; the names are
+// macros there, so they arrive in translated code as calls with no Rust definition.
+// Each one is the exact alias the header spells, quoted on the line above it.
+extern "C" {
+    pub fn wcsncpy(dst: *mut WCHAR, src: *const WCHAR, n: usize) -> *mut WCHAR;
+    pub fn wcsrchr(s: *const WCHAR, c: WCHAR) -> *mut WCHAR;
+    pub fn wcscat(dst: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
+    pub fn wcsstr(haystack: *const WCHAR, needle: *const WCHAR) -> *mut WCHAR;
+    pub fn _wcsnicmp(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> INT;
+    pub fn iswspace(c: INT) -> INT;
+    pub fn strcpy(dst: *mut CHAR, src: *const CHAR) -> *mut CHAR;
+    pub fn free(block: *mut c_void);
+    pub fn lstrlenA(s: *const CHAR) -> INT;
+}
+
+/// wine/unicode.h:34 `#define strlenW(s) wcslen((s))`
+#[inline]
+pub unsafe fn strlenW(s: *const WCHAR) -> usize {
+    wcslen(s)
+}
+/// wine/unicode.h:35 `#define strcpyW(d,s) wcscpy((d),(s))`
+#[inline]
+pub unsafe fn strcpyW(d: *mut WCHAR, s: *const WCHAR) -> *mut WCHAR {
+    wcscpy(d, s)
+}
+/// wine/unicode.h:36 `#define strcatW(d,s) wcscat((d),(s))`
+#[inline]
+pub unsafe fn strcatW(d: *mut WCHAR, s: *const WCHAR) -> *mut WCHAR {
+    wcscat(d, s)
+}
+/// wine/unicode.h:38 `#define strstrW(d,s) wcsstr((d),(s))`
+#[inline]
+pub unsafe fn strstrW(d: *const WCHAR, s: *const WCHAR) -> *mut WCHAR {
+    wcsstr(d, s)
+}
+/// wine/unicode.h:40 `#define strchrW(s,c) wcschr((s),(c))`
+#[inline]
+pub unsafe fn strchrW(s: *const WCHAR, c: WCHAR) -> *mut WCHAR {
+    wcschr(s, c)
+}
+/// wine/unicode.h:41 `#define strrchrW(s,c) wcsrchr((s),(c))`
+#[inline]
+pub unsafe fn strrchrW(s: *const WCHAR, c: WCHAR) -> *mut WCHAR {
+    wcsrchr(s, c)
+}
+/// wine/unicode.h:46 `#define strncmpiW(s1,s2,n) _wcsnicmp((s1),(s2),(n))`
+#[inline]
+pub unsafe fn strncmpiW(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> INT {
+    _wcsnicmp(s1, s2, n)
+}
+/// wine/unicode.h:58 `#define isspaceW(n) iswspace((n))`
+#[inline]
+pub unsafe fn isspaceW(c: WCHAR) -> INT {
+    iswspace(c as INT)
+}
+
+// windef.h `min`/`max` are function-like MACROS, so they must stay generic and inline —
+// an out-of-line no-op or a single-type fn would silently change which overload the
+// translated call resolves to.
+#[inline]
+pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+    if a <= b { a } else { b }
+}
+#[inline]
+pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+    if a >= b { a } else { b }
+}
+
+// SDK records the Wave-5 TUs need that a per-class module already proved. RE-EXPORTED,
+// not re-transcribed: a second copy of a layout is a second identity, and the two drift
+// silently. Promoting the definitions here outright is a separate sweep — see the header
+// note about local definitions shadowing this module's glob.
+pub use com_sys::{HFONT, SECURITY_ATTRIBUTES};
+pub use crate::admin_tools_folder::IPersistFolder;
+pub use crate::cfs_folder::{
+    CComHeapPtr, IMoniker, IPersistFolder3, IShellFolderViewCB, PERSIST_FOLDER_TARGET_INFO,
+    QCMINFO, WIN32_FIND_DATAW,
+};
+pub use crate::control_panel_folder::{IContextMenu, ITEMIDLIST_ABSOLUTE, SHELLEXECUTEINFOW};
+pub use crate::copy_to_menu::{BROWSEINFOW, IObjectWithSite, SHFILEOPSTRUCTW};
+pub use crate::drv_def_ext::HDROP;
+pub use crate::file_def_ext::OPENASINFO;
+pub use crate::new_menu::{PROCESS_INFORMATION, STARTUPINFOW};
+pub use crate::shell_dispatch::SHELLSTATE;
+pub use crate::shell_link::{
+    BITMAPINFO, BITMAPINFOHEADER, CMINVOKECOMMANDINFOEX, HIMAGELIST, HLOCAL, IExtractIconW,
+    RGBQUAD,
+};
+pub use crate::wine::shell32_main::{BITMAP, ICONINFO, PAINTSTRUCT};
+pub use crate::wine::shellstring::LPSTRRET;

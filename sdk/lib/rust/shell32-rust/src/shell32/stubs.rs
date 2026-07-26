@@ -6,6 +6,7 @@ use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
 use crate::win32::*;
+use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
 #[no_mangle]

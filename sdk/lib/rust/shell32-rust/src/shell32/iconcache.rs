@@ -14,6 +14,7 @@ use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
 use crate::win32::*;
+use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
 pub const INVALID_INDEX: i32 = -1;
@@ -171,197 +172,201 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
         return core::ptr::null_mut();
     }
 
-    if TargetIconInfo.hbmColor.is_null() {
-        goto fail;
-    }
-
-    if GetObjectW(TargetIconInfo.hbmColor, core::mem::size_of::<BITMAP>(), core::ptr::addr_of_mut!(TargetBitmapInfo)) == 0 {
-        goto fail;
-    }
-
-    if s_imgListIdx == -1 {
-        s_imgListIdx = SIC_LoadOverlayIcon(IDI_SHELL_SHORTCUT - 1);
-    }
-
-    if s_imgListIdx != -1 {
-        let idx = s_imgListIdx as c_int;
-        if large != 0 {
-            ShortcutIcon = ImageList_GetIcon(ShellBigIconList, idx, ILD_TRANSPARENT);
-        } else {
-            ShortcutIcon = ImageList_GetIcon(ShellSmallIconList, idx, ILD_TRANSPARENT);
+    // C `goto fail` is forward-only to a single cleanup label, so it lowers exactly
+    // to a labeled block: `break 'fail` leaves the block, the success path returns
+    // from inside it, and the epilogue below is the C `fail:` cleanup verbatim.
+    'fail: {
+        if TargetIconInfo.hbmColor.is_null() {
+            break 'fail;
         }
-    } else {
-        ShortcutIcon = core::ptr::null_mut();
-    }
 
-    if ShortcutIcon.is_null() || GetIconInfo(ShortcutIcon, core::ptr::addr_of_mut!(ShortcutIconInfo)) == 0 {
-        goto fail;
-    }
+        if GetObjectW(TargetIconInfo.hbmColor, core::mem::size_of::<BITMAP>(), core::ptr::addr_of_mut!(TargetBitmapInfo)) == 0 {
+            break 'fail;
+        }
 
-    if ShortcutIconInfo.hbmColor.is_null() {
-        goto fail;
-    }
+        if s_imgListIdx == -1 {
+            s_imgListIdx = SIC_LoadOverlayIcon(IDI_SHELL_SHORTCUT - 1);
+        }
 
-    if GetObjectW(ShortcutIconInfo.hbmColor, core::mem::size_of::<BITMAP>(), core::ptr::addr_of_mut!(ShortcutBitmapInfo)) == 0 {
-        goto fail;
-    }
-
-    ShortcutDC = CreateCompatibleDC(core::ptr::null_mut());
-    if ShortcutDC.is_null() {
-        goto fail;
-    }
-    OldShortcutBitmap = SelectObject(ShortcutDC, ShortcutIconInfo.hbmMask) as HBITMAP;
-    if OldShortcutBitmap.is_null() {
-        goto fail;
-    }
-
-    TargetDC = CreateCompatibleDC(core::ptr::null_mut());
-    if TargetDC.is_null() {
-        goto fail;
-    }
-    OldTargetBitmap = SelectObject(TargetDC, TargetIconInfo.hbmMask) as HBITMAP;
-    if OldTargetBitmap.is_null() {
-        goto fail;
-    }
-
-    if BitBlt(TargetDC, 0, 0,
-                               ShortcutBitmapInfo.bmWidth, ShortcutBitmapInfo.bmHeight,
-                               ShortcutDC, 0, 0,
-                               SRCAND) == 0 {
-        goto fail;
-    }
-
-    let mut add_alpha: BOOL = 0;
-    const BUFFER_SIZE: usize = core::mem::size_of::<BITMAPINFO>() + (256 as usize) * core::mem::size_of::<RGBQUAD>();
-    let mut buffer: [u8; BUFFER_SIZE] = [0u8; BUFFER_SIZE];
-    let lpbmi: *mut BITMAPINFO = buffer.as_mut_ptr() as *mut BITMAPINFO;
-
-    if ShortcutBitmapInfo.bmBitsPixel == 32 {
-        if TargetBitmapInfo.bmBitsPixel != 32 {
-            add_alpha = FALSE;
+        if s_imgListIdx != -1 {
+            let idx = s_imgListIdx as c_int;
+            if large != 0 {
+                ShortcutIcon = ImageList_GetIcon(ShellBigIconList, idx, ILD_TRANSPARENT);
+            } else {
+                ShortcutIcon = ImageList_GetIcon(ShellSmallIconList, idx, ILD_TRANSPARENT);
+            }
         } else {
-            ZeroMemory(buffer.as_mut_ptr() as *mut c_void, BUFFER_SIZE);
-            (*lpbmi).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
-            (*lpbmi).bmiHeader.biWidth = TargetBitmapInfo.bmWidth;
-            (*lpbmi).bmiHeader.biHeight = TargetBitmapInfo.bmHeight;
-            (*lpbmi).bmiHeader.biPlanes = 1 as u16;
-            (*lpbmi).bmiHeader.biBitCount = 32 as u16;
+            ShortcutIcon = core::ptr::null_mut();
+        }
+
+        if ShortcutIcon.is_null() || GetIconInfo(ShortcutIcon, core::ptr::addr_of_mut!(ShortcutIconInfo)) == 0 {
+            break 'fail;
+        }
+
+        if ShortcutIconInfo.hbmColor.is_null() {
+            break 'fail;
+        }
+
+        if GetObjectW(ShortcutIconInfo.hbmColor, core::mem::size_of::<BITMAP>(), core::ptr::addr_of_mut!(ShortcutBitmapInfo)) == 0 {
+            break 'fail;
+        }
+
+        ShortcutDC = CreateCompatibleDC(core::ptr::null_mut());
+        if ShortcutDC.is_null() {
+            break 'fail;
+        }
+        OldShortcutBitmap = SelectObject(ShortcutDC, ShortcutIconInfo.hbmMask) as HBITMAP;
+        if OldShortcutBitmap.is_null() {
+            break 'fail;
+        }
+
+        TargetDC = CreateCompatibleDC(core::ptr::null_mut());
+        if TargetDC.is_null() {
+            break 'fail;
+        }
+        OldTargetBitmap = SelectObject(TargetDC, TargetIconInfo.hbmMask) as HBITMAP;
+        if OldTargetBitmap.is_null() {
+            break 'fail;
+        }
+
+        if BitBlt(TargetDC, 0, 0,
+                                   ShortcutBitmapInfo.bmWidth, ShortcutBitmapInfo.bmHeight,
+                                   ShortcutDC, 0, 0,
+                                   SRCAND) == 0 {
+            break 'fail;
+        }
+
+        let mut add_alpha: BOOL = 0;
+        const BUFFER_SIZE: usize = core::mem::size_of::<BITMAPINFO>() + (256 as usize) * core::mem::size_of::<RGBQUAD>();
+        let mut buffer: [u8; BUFFER_SIZE] = [0u8; BUFFER_SIZE];
+        let lpbmi: *mut BITMAPINFO = buffer.as_mut_ptr() as *mut BITMAPINFO;
+
+        if ShortcutBitmapInfo.bmBitsPixel == 32 {
+            if TargetBitmapInfo.bmBitsPixel != 32 {
+                add_alpha = FALSE;
+            } else {
+                ZeroMemory(buffer.as_mut_ptr() as *mut c_void, BUFFER_SIZE);
+                (*lpbmi).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
+                (*lpbmi).bmiHeader.biWidth = TargetBitmapInfo.bmWidth;
+                (*lpbmi).bmiHeader.biHeight = TargetBitmapInfo.bmHeight;
+                (*lpbmi).bmiHeader.biPlanes = 1 as u16;
+                (*lpbmi).bmiHeader.biBitCount = 32 as u16;
+
+                let bits: *mut c_void = HeapAlloc(
+                    GetProcessHeap(),
+                    0,
+                    (TargetBitmapInfo.bmHeight * TargetBitmapInfo.bmWidthBytes) as usize,
+                );
+                if bits.is_null() {
+                    break 'fail;
+                }
+
+                if GetDIBits(TargetDC, TargetIconInfo.hbmColor, 0,
+                                            TargetBitmapInfo.bmHeight, bits, lpbmi,
+                                            DIB_RGB_COLORS) == 0 {
+                    HeapFree(GetProcessHeap(), 0, bits);
+                    break 'fail;
+                }
+
+                let mut pixel: *mut u32 = bits as *mut u32;
+                let mut j: i32 = 0;
+                let mut i: i32 = 0;
+                while i < TargetBitmapInfo.bmHeight {
+                    j = 0;
+                    while j < TargetBitmapInfo.bmWidth {
+                        add_alpha = ((*pixel & 0xFF000000) != 0) as i32;
+                        pixel = pixel.add(1);
+                        if add_alpha != 0 {
+                            break;
+                        }
+                        j += 1;
+                    }
+                    if add_alpha != 0 {
+                        break;
+                    }
+                    i += 1;
+                }
+                HeapFree(GetProcessHeap(), 0, bits);
+            }
 
             let bits: *mut c_void = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (TargetBitmapInfo.bmHeight * TargetBitmapInfo.bmWidthBytes) as usize,
+                (ShortcutBitmapInfo.bmHeight * ShortcutBitmapInfo.bmWidthBytes) as usize,
             );
             if bits.is_null() {
-                goto fail;
+                break 'fail;
             }
 
-            if GetDIBits(TargetDC, TargetIconInfo.hbmColor, 0,
-                                        TargetBitmapInfo.bmHeight, bits, lpbmi,
+            ZeroMemory(buffer.as_mut_ptr() as *mut c_void, BUFFER_SIZE);
+            (*lpbmi).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
+            (*lpbmi).bmiHeader.biWidth = ShortcutBitmapInfo.bmWidth;
+            (*lpbmi).bmiHeader.biHeight = ShortcutBitmapInfo.bmHeight;
+            (*lpbmi).bmiHeader.biPlanes = 1 as u16;
+            (*lpbmi).bmiHeader.biBitCount = 32 as u16;
+
+            if GetDIBits(TargetDC, ShortcutIconInfo.hbmColor, 0,
+                                        ShortcutBitmapInfo.bmHeight, bits, lpbmi,
                                         DIB_RGB_COLORS) == 0 {
                 HeapFree(GetProcessHeap(), 0, bits);
-                goto fail;
+                break 'fail;
             }
 
             let mut pixel: *mut u32 = bits as *mut u32;
-            let mut j: i32 = 0;
             let mut i: i32 = 0;
-            while i < TargetBitmapInfo.bmHeight {
-                j = 0;
-                while j < TargetBitmapInfo.bmWidth {
-                    add_alpha = ((*pixel & 0xFF000000) != 0) as i32;
-                    pixel = pixel.add(1);
+            while i < ShortcutBitmapInfo.bmHeight {
+                let mut j: i32 = 0;
+                while j < ShortcutBitmapInfo.bmWidth {
                     if add_alpha != 0 {
-                        break;
+                        *pixel |= 0xFF000000;
+                    } else {
+                        *pixel &= 0x00FFFFFF;
                     }
+                    pixel = pixel.add(1);
                     j += 1;
-                }
-                if add_alpha != 0 {
-                    break;
                 }
                 i += 1;
             }
-            HeapFree(GetProcessHeap(), 0, bits);
-        }
 
-        let bits: *mut c_void = HeapAlloc(
-            GetProcessHeap(),
-            0,
-            (ShortcutBitmapInfo.bmHeight * ShortcutBitmapInfo.bmWidthBytes) as usize,
-        );
-        if bits.is_null() {
-            goto fail;
-        }
+            (*lpbmi).bmiHeader.biCompression = BI_RGB;
 
-        ZeroMemory(buffer.as_mut_ptr() as *mut c_void, BUFFER_SIZE);
-        (*lpbmi).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
-        (*lpbmi).bmiHeader.biWidth = ShortcutBitmapInfo.bmWidth;
-        (*lpbmi).bmiHeader.biHeight = ShortcutBitmapInfo.bmHeight;
-        (*lpbmi).bmiHeader.biPlanes = 1 as u16;
-        (*lpbmi).bmiHeader.biBitCount = 32 as u16;
-
-        if GetDIBits(TargetDC, ShortcutIconInfo.hbmColor, 0,
-                                    ShortcutBitmapInfo.bmHeight, bits, lpbmi,
-                                    DIB_RGB_COLORS) == 0 {
-            HeapFree(GetProcessHeap(), 0, bits);
-            goto fail;
-        }
-
-        let mut pixel: *mut u32 = bits as *mut u32;
-        let mut i: i32 = 0;
-        while i < ShortcutBitmapInfo.bmHeight {
-            let mut j: i32 = 0;
-            while j < ShortcutBitmapInfo.bmWidth {
-                if add_alpha != 0 {
-                    *pixel |= 0xFF000000;
-                } else {
-                    *pixel &= 0x00FFFFFF;
-                }
-                pixel = pixel.add(1);
-                j += 1;
+            if SetDIBits(TargetDC, ShortcutIconInfo.hbmColor, 0,
+                                        ShortcutBitmapInfo.bmHeight, bits, lpbmi,
+                                        DIB_RGB_COLORS) == 0 {
+                HeapFree(GetProcessHeap(), 0, bits);
+                break 'fail;
             }
-            i += 1;
-        }
-
-        (*lpbmi).bmiHeader.biCompression = BI_RGB;
-
-        if SetDIBits(TargetDC, ShortcutIconInfo.hbmColor, 0,
-                                    ShortcutBitmapInfo.bmHeight, bits, lpbmi,
-                                    DIB_RGB_COLORS) == 0 {
             HeapFree(GetProcessHeap(), 0, bits);
-            goto fail;
         }
-        HeapFree(GetProcessHeap(), 0, bits);
+
+        if SelectObject(ShortcutDC, ShortcutIconInfo.hbmColor).is_null()
+            || SelectObject(TargetDC, TargetIconInfo.hbmColor).is_null() {
+            break 'fail;
+        }
+        if MaskBlt(TargetDC, 0, 0,
+                                   ShortcutBitmapInfo.bmWidth, ShortcutBitmapInfo.bmHeight,
+                                   ShortcutDC, 0, 0,
+                                   ShortcutIconInfo.hbmMask, 0, 0,
+                                   MAKEROP4(0xAA0000, SRCCOPY)) == 0 {
+            break 'fail;
+        }
+
+        SelectObject(TargetDC, OldTargetBitmap);
+        DeleteDC(TargetDC);
+        SelectObject(ShortcutDC, OldShortcutBitmap);
+        DeleteDC(ShortcutDC);
+
+        TargetIcon = CreateIconIndirect(&TargetIconInfo);
+
+        DeleteObject(TargetIconInfo.hbmColor);
+        DeleteObject(TargetIconInfo.hbmMask);
+        DeleteObject(ShortcutIconInfo.hbmColor);
+        DeleteObject(ShortcutIconInfo.hbmMask);
+        DestroyIcon(ShortcutIcon);
+
+        return TargetIcon;
     }
 
-    if SelectObject(ShortcutDC, ShortcutIconInfo.hbmColor).is_null()
-        || SelectObject(TargetDC, TargetIconInfo.hbmColor).is_null() {
-        goto fail;
-    }
-    if MaskBlt(TargetDC, 0, 0,
-                               ShortcutBitmapInfo.bmWidth, ShortcutBitmapInfo.bmHeight,
-                               ShortcutDC, 0, 0,
-                               ShortcutIconInfo.hbmMask, 0, 0,
-                               MAKEROP4(0xAA0000, SRCCOPY)) == 0 {
-        goto fail;
-    }
-
-    SelectObject(TargetDC, OldTargetBitmap);
-    DeleteDC(TargetDC);
-    SelectObject(ShortcutDC, OldShortcutBitmap);
-    DeleteDC(ShortcutDC);
-
-    TargetIcon = CreateIconIndirect(&TargetIconInfo);
-
-    DeleteObject(TargetIconInfo.hbmColor);
-    DeleteObject(TargetIconInfo.hbmMask);
-    DeleteObject(ShortcutIconInfo.hbmColor);
-    DeleteObject(ShortcutIconInfo.hbmMask);
-    DestroyIcon(ShortcutIcon);
-
-    return TargetIcon;
-
-fail:
     if !OldTargetBitmap.is_null() {
         SelectObject(TargetDC, OldTargetBitmap);
     }
