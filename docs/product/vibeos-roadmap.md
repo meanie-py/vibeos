@@ -479,6 +479,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **classpnp's `KeRaiseIrql`/`KeLowerIrql` shims call THEMSELVES — OPEN** (2026-07-26). In
+  `classpnp-rust/src/ddk_shims.rs`, the `#[no_mangle] extern "system" fn KeRaiseIrql` body
+  declares `extern "system" { fn KeRaiseIrql(..); }` and calls it. That extern binds to the
+  `#[no_mangle]` definition *in the same image* — itself — so it is infinite self-recursion,
+  which LLVM folds to a single `b .`. Verified in the arm64 binary:
+  `<KeRaiseIrql>: b 0x…d274 <KeRaiseIrql>`. Same family as the "never hand-write memcpy in
+  Rust" rule in AGENTS.md: a `#[no_mangle]` shim may never call the symbol it defines.
+  Per-arch truth (`hal.spec:84,86`, `ntoskrnl.spec:635`): i386 uses the `KfRaiseIrql`/
+  `KfLowerIrql` FASTCALL inlines (the shim's x86 branch is correct); **arm64 exports BOTH from
+  HAL**, so the shim should simply not exist there — defining it shadows the import and creates
+  the self-call; **amd64** exports neither `KeRaiseIrql` (a CR8 FORCEINLINE upstream) nor a
+  public `KeLowerIrql` (private, `KxLowerIrql`), so it needs a real CR8 body like the
+  `KeGetCurrentIrql` shim beside it. Latent on master since `e33a810c9ad` (this lane's own
+  clashing-extern Phase 2 — the self-call predates it; that commit only changed the ABI).
+  Reachable only if something calls these in classpnp; not fixed blind because it is boot-path
+  storage IRQL code that wants a smoke run. Owner: task #4.
+  > Found via `scan_ud2`'s driver sweep. The other 11 spins in the same report are **faithful**:
+  > upstream ReactOS really does write `UNIMPLEMENTED; while (TRUE);` in pcix's arbiter and
+  > power paths, so `loop {}` is correct there and must NOT be "fixed" — check the C before
+  > touching one (`ario_Initializer` has it commented out, `ario_Constructor` does not).
 - **Kernel asserts that hung the box — 92 FIXED, remaining work is mechanical** (2026-07-26).
   A Rust panic in kernel mode reaches a `#[panic_handler]` that prints to debugcon and loops
   forever: a silent hang, no bugcheck, no dump. Fixed in two passes — **31** spelled
