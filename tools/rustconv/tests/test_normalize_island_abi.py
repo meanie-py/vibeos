@@ -1,0 +1,199 @@
+"""Controls for normalize_island_abi.py.
+
+This pass is WRITE-CAPABLE (`--apply`) and runs inside gen_driver_types.sh on every
+generation, so a silent misbehaviour edits committed islands with nobody watching. It
+shipped with no tests at all; these exist so the two ways it can be quietly wrong are
+caught by CI rather than by a boot failure months later:
+
+  * skipping islands it should have swept (it hardcoded the stems `types`/`bindgen`, so
+    `hal_bindgen`, shell32's `island` and oleaut32's `win_sys` — 1,815 slots — were passed
+    over while the tool still printed a confident total), and
+  * promoting a genuinely-cdecl callback to stdcall, which is a real ABI break in the
+    direction the old CALLBACK_SYSTEM=1 sed used to cause.
+
+Both failure modes are invisible in the tool's own output, which is exactly why the
+assertions below check the changed TEXT and not just the reported count.
+"""
+
+import importlib.util
+from pathlib import Path
+
+_SPEC = importlib.util.spec_from_file_location(
+    "normalize_island_abi", Path(__file__).resolve().parents[1] / "normalize_island_abi.py"
+)
+NIA = importlib.util.module_from_spec(_SPEC)
+assert _SPEC.loader is not None
+_SPEC.loader.exec_module(NIA)
+
+
+# bindgen-shaped: an inline struct callback slot plus three aliases, one per rule.
+# The `Option<` and the `unsafe extern` land on separate lines the way bindgen wraps them.
+def _island(abi_stdcall: str) -> str:
+    """`abi_stdcall` is how THIS arch spells a stdcall callback: "stdcall" on i386, "C" on
+    the 64-bit twins where the decoration does not survive."""
+    return f"""\
+pub struct DRIVER_OBJECT {{
+    pub DriverUnload: ::core::option::Option<
+        unsafe extern "{abi_stdcall}" fn(DriverObject: *mut DRIVER_OBJECT),
+    >,
+    pub FastIoDetach: ::core::option::Option<
+        unsafe extern "C" fn(a: u32),
+    >,
+}}
+pub type PCALLBACK = ::core::option::Option<
+    unsafe extern "{abi_stdcall}" fn(ctx: *mut ::core::ffi::c_void),
+>;
+pub type PCDECL_PRINTF = ::core::option::Option<unsafe extern "C" fn(fmt: *const i8)>;
+"""
+
+
+def _crate(tmp_path: Path, stem: str = "types", extra: dict[str, str] | None = None) -> Path:
+    """A crate dir carrying one three-arch island under `stem`."""
+    src = tmp_path / "demo-rust" / "src"
+    src.mkdir(parents=True, exist_ok=True)
+    (src / f"{stem}_i386.rs").write_text(_island("stdcall"))
+    (src / f"{stem}_amd64.rs").write_text(_island("C"))
+    (src / f"{stem}_arm64.rs").write_text(_island("C"))
+    for name, text in (extra or {}).items():
+        (src / name).write_text(text)
+    return src
+
+
+def test_projects_stdcall_onto_the_twins_and_leaves_cdecl_alone():
+    """The three-way rule, checked on the text rather than the count."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        src = _crate(Path(td))
+        n, _ = NIA.normalize_crate(src, apply=True)
+        assert n == 6, f"expected 2 slots x 3 arches, got {n}"
+
+        for arch in ("i386", "amd64", "arm64"):
+            text = (src / f"types_{arch}.rs").read_text()
+            # i386-says-stdcall -> system, on every arch.
+            assert (
+                'pub DriverUnload: ::core::option::Option<\n        unsafe extern "system" fn'
+                in text
+            )
+            assert (
+                'pub type PCALLBACK = ::core::option::Option<\n    unsafe extern "system" fn'
+                in text
+            )
+            # i386-says-C -> genuinely cdecl -> untouched, on every arch. Promoting these is
+            # the ABI break in the opposite direction (storahci's PHW_DPC_ROUTINE is real).
+            assert 'pub FastIoDetach: ::core::option::Option<\n        unsafe extern "C" fn' in text
+            assert 'pub type PCDECL_PRINTF = ::core::option::Option<unsafe extern "C" fn' in text
+
+
+def test_fastcall_is_never_promoted():
+    """fastcall is NOT ABI-identical to stdcall — ks-rust's clock routines rely on this."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        src = _crate(Path(td))
+        for arch, abi in (("i386", "fastcall"), ("amd64", "C"), ("arm64", "C")):
+            p = src / f"types_{arch}.rs"
+            p.write_text(
+                p.read_text()
+                + f'pub type PFAST = ::core::option::Option<unsafe extern "{abi}" fn(x: u32)>;\n'
+            )
+        NIA.normalize_crate(src, apply=True)
+        assert (
+            'pub type PFAST = ::core::option::Option<unsafe extern "fastcall" fn'
+            in (src / "types_i386.rs").read_text()
+        )
+        # ...and the twins keep `C`, because the i386 witness never said stdcall for it.
+        assert (
+            'pub type PFAST = ::core::option::Option<unsafe extern "C" fn'
+            in (src / "types_amd64.rs").read_text()
+        )
+
+
+def test_discovers_an_arbitrary_stem():
+    """THE regression this file exists for: stems come from TYPES_STEM, not a fixed list.
+
+    shell32 landed its COM island as `island_<arch>.rs` and the tree-wide sweep silently
+    skipped all 342 of its slots, still printing a total as though it had covered the tree.
+    A stem the tool has never heard of must be swept by the default (no --stem) path."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        src = _crate(Path(td), stem="a_stem_nobody_hardcoded")
+        n, _ = NIA.normalize_crate(src, apply=True)
+        assert n == 6, f"an unknown stem must still be swept; got {n}"
+
+
+def test_stem_filter_leaves_sibling_stems_untouched():
+    """A generation run writes ONE stem and must not rewrite islands it did not produce."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        src = _crate(Path(td), stem="types")
+        for arch, abi in (("i386", "stdcall"), ("amd64", "C"), ("arm64", "C")):
+            (src / f"types_rpc_{arch}.rs").write_text(_island(abi))
+        before = (src / "types_rpc_i386.rs").read_text()
+
+        n, _ = NIA.normalize_crate(src, apply=True, stem="types")
+        assert n == 6, f"the targeted stem must still be normalized; got {n}"
+        assert (src / "types_rpc_i386.rs").read_text() == before, "sibling stem was rewritten"
+
+
+def test_witness_does_not_leak_across_stems():
+    """Each island is an independent bindgen run, so name correspondence holds only WITHIN a
+    stem. A stdcall entry in one island must not promote a same-named cdecl entry in another
+    — that projects across a boundary where the key means different things."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        src = _crate(Path(td), stem="types")  # PCALLBACK is stdcall on i386 here
+        # A second island whose PCALLBACK bindgen recorded as genuinely cdecl on i386.
+        cdecl = 'pub type PCALLBACK = ::core::option::Option<unsafe extern "C" fn(x: u32)>;\n'
+        for arch in ("i386", "amd64", "arm64"):
+            (src / f"types_other_{arch}.rs").write_text(cdecl)
+
+        NIA.normalize_crate(src, apply=True)
+        for arch in ("i386", "amd64", "arm64"):
+            assert (src / f"types_other_{arch}.rs").read_text() == cdecl, (
+                f"types_other_{arch} was promoted using the OTHER island's witness"
+            )
+
+
+def test_is_idempotent():
+    """Wired into generation, so it re-runs over already-normalized islands constantly."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        src = _crate(Path(td))
+        first, _ = NIA.normalize_crate(src, apply=True)
+        assert first == 6
+        snapshot = {p.name: p.read_text() for p in src.glob("*.rs")}
+        second, _ = NIA.normalize_crate(src, apply=True)
+        assert second == 0, f"second pass reported {second} changes; not idempotent"
+        assert {p.name: p.read_text() for p in src.glob("*.rs")} == snapshot
+
+
+def test_reports_without_writing_unless_apply():
+    """`--apply` is the only thing that may touch the tree."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        src = _crate(Path(td))
+        snapshot = {p.name: p.read_text() for p in src.glob("*.rs")}
+        n, notes = NIA.normalize_crate(src, apply=False)
+        assert n == 6 and notes, "dry run must still report what it would do"
+        assert {p.name: p.read_text() for p in src.glob("*.rs")} == snapshot
+
+
+def test_no_i386_witness_means_no_rewrite():
+    """The 64-bit islands alone carry no evidence — bindgen flattened the decoration away.
+    Guessing from them would rewrite every cdecl callback in the crate."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        src = tmp = Path(td) / "demo-rust" / "src"
+        tmp.mkdir(parents=True)
+        (src / "types_amd64.rs").write_text(_island("C"))
+        (src / "types_arm64.rs").write_text(_island("C"))
+        n, _ = NIA.normalize_crate(src, apply=True)
+        assert n == 0
+        assert 'unsafe extern "C" fn(DriverObject' in (src / "types_amd64.rs").read_text()

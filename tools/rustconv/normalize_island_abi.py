@@ -52,7 +52,18 @@ import re
 import sys
 
 ARCHES = ("i386", "amd64", "arm64")
-ISLAND_STEMS = ("types", "bindgen")
+
+# An island is `<stem>_<arch>.rs`, and the stem is whatever that crate's `TYPES_STEM` said —
+# it is NOT drawn from a fixed vocabulary. Discovering stems from the filenames rather than
+# listing them is the whole point: an earlier version hardcoded ("types", "bindgen"), and when
+# shell32 landed its COM island as TYPES_STEM=island the tree-wide sweep skipped 342 slots in
+# a 44k-line island without a word. A tool whose coverage silently depends on someone
+# remembering to extend a literal is a tool that reports a clean number for work it never did.
+# `\w+` is greedy and the arch is anchored at the end, so `types_rpc_i386.rs` -> stem
+# `types_rpc`. Over-matching a non-island (`size_check_i386.rs`) is harmless: the rewrite is
+# keyed on callback slots cross-checked against that same stem's i386 witness, so a file
+# carrying none is a no-op. Under-matching is the bug this shape exists to prevent.
+_ISLAND_FILE = re.compile(rf"^(?P<stem>\w+)_(?P<arch>{'|'.join(ARCHES)})\.rs$")
 
 # `pub type NAME = ::core::option::Option<unsafe extern "X" fn(...)`  (the `Option<` and
 # the `unsafe extern` routinely land on separate lines, hence the tolerant whitespace).
@@ -71,24 +82,29 @@ _FIELD = (
 _ANY = re.compile(r"pub struct (?P<s>\w+)|" + _ALIAS + "|" + _FIELD)
 
 
-def island_paths(crate_src: pathlib.Path, stem: str | None = None) -> dict[str, list[pathlib.Path]]:
-    """arch -> the crate's island files for that arch.
+def island_paths(
+    crate_src: pathlib.Path, stem: str | None = None
+) -> dict[str, dict[str, list[pathlib.Path]]]:
+    """stem -> arch -> the crate's island files.
 
-    `stem` restricts the match to exactly `<stem>_<arch>.rs`. gen_driver_types.sh generates
-    ONE stem per invocation (`TYPES_STEM`, several islands per crate — netapi32 carries six),
-    so a generation run must normalize the three files it just wrote and nothing else.
-    Without this the pass would also rewrite a sibling stem that this run never regenerated,
-    which is a tool mutating output it does not own."""
-    pattern = (
-        rf"{re.escape(stem)}_({'|'.join(ARCHES)})\.rs$"
-        if stem
-        else rf"(?:{'|'.join(ISLAND_STEMS)})\w*_({'|'.join(ARCHES)})\.rs$"
-    )
-    out: dict[str, list[pathlib.Path]] = {a: [] for a in ARCHES}
+    Grouping by stem is a correctness requirement, not tidiness. A crate can carry several
+    islands (netapi32 has `types`, `types_rpc`, `types_browser`) because its TUs have
+    mutually-irreconcilable header sets, and each is an INDEPENDENT bindgen run. Pooling them
+    into one witness set would let a stdcall entry in one island promote a same-named entry in
+    another that bindgen recorded as cdecl — projecting across a boundary where the
+    name correspondence this pass relies on does not hold. Within a stem the correspondence is
+    exact, because the three arches are the same bindgen invocation over the same headers.
+
+    `stem` restricts the result to exactly that one. gen_driver_types.sh writes ONE stem per
+    invocation, so a generation run must normalize the three files it just wrote and nothing
+    else — rewriting a sibling stem it never regenerated is a tool mutating output it does not
+    own."""
+    out: dict[str, dict[str, list[pathlib.Path]]] = {}
     for p in sorted(crate_src.rglob("*.rs")):
-        m = re.match(pattern, p.name)
-        if m:
-            out[m.group(1)].append(p)
+        m = _ISLAND_FILE.match(p.name)
+        if not m or (stem is not None and m.group("stem") != stem):
+            continue
+        out.setdefault(m.group("stem"), {a: [] for a in ARCHES})[m.group("arch")].append(p)
     return out
 
 
@@ -132,28 +148,30 @@ def rewrite(text: str, keys: set[str], from_abi: str) -> tuple[str, int]:
 def normalize_crate(
     crate_src: pathlib.Path, apply: bool, stem: str | None = None
 ) -> tuple[int, list[str]]:
-    islands = island_paths(crate_src, stem)
-    if not islands["i386"]:
-        return 0, []
-    # The witness: everything the i386 island records as stdcall.
-    stdcall: set[str] = set()
-    for p in islands["i386"]:
-        for key, abi in scan(p.read_text(errors="replace")).items():
-            if abi == "stdcall":
-                stdcall.add(key)
-    if not stdcall:
-        return 0, []
     total, notes = 0, []
-    for arch in ARCHES:
-        frm = "stdcall" if arch == "i386" else "C"
-        for p in islands[arch]:
-            text = p.read_text(errors="replace")
-            new, n = rewrite(text, stdcall, frm)
-            if n and apply:
-                p.write_text(new)
-            if n:
-                total += n
-                notes.append(f"    {p.relative_to(crate_src.parent.parent)}: {n} ({frm} -> system)")
+    for islands in island_paths(crate_src, stem).values():
+        if not islands["i386"]:
+            continue  # no i386 twin -> no witness -> nothing is knowable about this stem
+        # The witness: everything this stem's i386 island records as stdcall.
+        stdcall: set[str] = set()
+        for p in islands["i386"]:
+            for key, abi in scan(p.read_text(errors="replace")).items():
+                if abi == "stdcall":
+                    stdcall.add(key)
+        if not stdcall:
+            continue
+        for arch in ARCHES:
+            frm = "stdcall" if arch == "i386" else "C"
+            for p in islands[arch]:
+                text = p.read_text(errors="replace")
+                new, n = rewrite(text, stdcall, frm)
+                if n and apply:
+                    p.write_text(new)
+                if n:
+                    total += n
+                    notes.append(
+                        f"    {p.relative_to(crate_src.parent.parent)}: {n} ({frm} -> system)"
+                    )
     return total, notes
 
 

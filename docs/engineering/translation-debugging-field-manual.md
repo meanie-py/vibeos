@@ -1678,6 +1678,25 @@ count change to notice. When adding a pattern for a shape, grep the tree for tha
 assert the pattern matches what you find — a control fixture you wrote yourself only proves the
 regex matches *your idea* of the spelling.
 
+**Where the producer has a variable, the consumer must not have a literal.** `gen_driver_types.sh`
+names its bindgen island from `TYPES_STEM`, which is per-crate and arbitrary;
+`normalize_island_abi.py` swept for the stems it happened to know, `("types", "bindgen")`,
+anchored at the start of the filename. So it never saw `hal_bindgen_*.rs` — an island AGENTS.md
+names explicitly as load-bearing — and when shell32 landed its COM island as `TYPES_STEM=island`
+the sweep skipped it too. 1,815 slots across three stems, 10% of the tree, passed over while the
+tool printed a confident grand total. Nothing failed; the number was just quietly smaller than
+the truth, and the coupling that would have revealed it (`TYPES_STEM` ↔ the stem list) lives in
+two different files in two different languages. **Derive the vocabulary from the filesystem, not
+from a literal you must remember to extend.** Over-matching is the cheap direction here — a
+non-island `<name>_i386.rs` carries no callback slots, so sweeping it is a no-op — while
+under-matching is the silent one. The same asymmetry decides most discovery-vs-allowlist calls.
+
+Deriving stems also fixed a latent correctness bug the allowlist was hiding: the pass pooled one
+witness set across every island in a crate, so a `stdcall` entry in `types` could promote a
+same-named entry that `types_rpc` recorded as genuinely cdecl. Each island is an independent
+bindgen run over a different header set, so name correspondence holds *within* a stem and not
+across one. Grouping by stem is what makes the projection sound, not tidiness.
+
 ### "Canonicalising" a mismatch can silence it by editing the EVIDENCE
 A lint that reports `X disagrees with Y` has no opinion about which side is wrong, so a
 mechanical pass that makes them agree will always turn it green — including by changing the

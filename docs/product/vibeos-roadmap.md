@@ -571,6 +571,18 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   four clock routines are a correct per-arch `fastcall`/`C` cfg split of a C `FASTCALL`. Both
   vindicate the projection's rule that i386-says-`C` stays `C` — and both are exactly what
   `CALLBACK_SYSTEM`'s blanket sed would have broken.
+
+  **The sweep was under-counting by 10% (2026-07-26).** The pass looked for a hardcoded stem
+  list, `("types", "bindgen")`, but `gen_driver_types.sh` names islands from a per-crate
+  `TYPES_STEM` — so three stems were skipped in silence while the tool still printed a grand
+  total: `hal_bindgen` (ntkrnl-sys, 642), `island` (shell32-rust, 342 — landed the same day) and
+  `win_sys` (oleaut32-rust, 831). Stems are now discovered from the filenames, which also
+  removed a latent soundness bug: one witness set was pooled across every island in a crate, so
+  a `stdcall` entry in one could promote a same-named cdecl entry in another, projecting across
+  a boundary where the key means different things. Per-stem grouping lowered no crate's count.
+  **Tree-wide total: 17,717 → 19,532 slots / 39 crates.** The pass was also write-capable, wired
+  into generation, and had **zero tests**; it now has eight, each validated by breaking the tool
+  and confirming the intended control fires. Field manual, "An oracle needs an oracle".
 - **8 `scan_cc_mismatch` entries in `ntkrnl-sys/src/bindgen_i386.rs` — benign, baselined**
   (`Ke386SanitizeFlags`, `Ke386SanitizeSeg`, `Ke{Query,Register}InterruptHandler`,
   `KiFillTrapFrameDebug`, `KiGetThreadNpxArea`, `KiSetTebBase`, `KiUserTrap`). The island
