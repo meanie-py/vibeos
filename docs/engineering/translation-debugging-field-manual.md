@@ -1624,6 +1624,30 @@ prelude only — applied to both, it SIGSEGVs somewhere unrelated to printf, bec
 dies in the fixture. glibc's `vsnprintf` stays the `ref_` TU's formatter deliberately, and
 `".%d"` is a format both agree on exactly.
 
+**And the end of that road: some code CANNOT be graded on the host at all — say so instead of
+building a harness that appears to.** Both instantiations above are unusable for msvcrt's
+variadic printf shells (`sprintf`, `_snprintf`, `_swprintf`, … — the `...` entry points), and
+for opposite reasons. `pfflat_`'s flat `<stdarg.h>` makes `va_start` expand to
+`(char *)&last_named + sizeof(last_named)`, which is exactly right on i386 cdecl and on
+Windows and simply false on x86-64, where the variadic arguments arrive in registers and never
+touch that address. `ref_` has a correct `va_start`, but then hits the incoherence above: the
+shell hands `&valist` to the engine, which does `va_arg(*valist, T)` — an idiom that only
+type-checks where a `va_list` IS a pointer. **There is no host process in which a real
+`va_start` and msvcrt's engine agree**, so a differential test of these would be grading
+something other than what it names, which is worse than no test (a vacuous branch at least
+fails a perturbation; a mis-aimed one passes it). The reachable property is the one that
+actually carries the risk — 30 near-identical three-line bodies where a wrong delegate or a
+swapped `size`/`count` compiles, links, boots, and truncates only for small counts — and that
+is checkable exactly, at the source: `tools/scan_varargs_shim_parity.py` compares each shell to
+its wcs.c original, **deriving every tolerated rewrite from wcs.c's own one-line forwarders
+rather than asserting it** (the shim cannot call the file-static `vswprintf_p_l_opt`, so it
+names the exported wrappers; the scanner reads those wrappers and fails if they ever stop being
+the pass-`options=0` identities that make the substitution sound). It also caught the shim
+defining `_sprintf_p`/`_scwprintf_p`, which sit behind `#if _MSVCR_VER>=80` and exist at no
+vintage this DLL builds. General rule: **when the oracle is impossible, move the assertion to
+the property you can actually reach, and make the tool prove its own assumptions from the
+source.**
+
 **The host compiler also REWRITES the reference, which matters for a PERF oracle.** Same rule —
 trust the machine code — with a different consequence. msvcrt's `memset` is a plain loop in
 `string.c`, but cc idiom-recognizes it and emits its own size-dispatched expansion (four

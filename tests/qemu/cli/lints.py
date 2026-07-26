@@ -468,6 +468,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # msvcrt's printf `...` entry points are the one part of the family that cannot be
+    # Rust (stable has no va_start), so they are a hand transcription of wcs.c's shells
+    # in their own TU — their own TU because left in wcs.c clang keeps inlining wcs.c's
+    # C engine into them and the flip is silently undone. Nothing can grade them by
+    # execution: msvcrt's printf plumbing is only coherent where a va_list IS a pointer,
+    # which no SysV host is (see the scanner's header). So the transcription is checked
+    # at the source, and every tolerated rewrite is proven from wcs.c's own forwarders.
+    # Baseline is EMPTY and must stay so — a finding here is a live printf bug.
+    svsp = repo / "tools" / "scan_varargs_shim_parity.py"
+    specs.append(
+        (
+            "scan_varargs_shim_parity",
+            [py, str(svsp), "--lint"] if svsp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Hand-encoded UTF-16 string literals decoded against their `// L"..."` intent
     # comment. The SERVICES_KEY class (2026-07-10): `static X: [u16; 33]` sized by
     # hand, one element short, silently dropped the last character -> services-rust

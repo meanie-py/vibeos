@@ -89,6 +89,23 @@ the genuine `wcs.c`. The `...` shells (`sprintf`, `_snprintf`, `_swprintf`, …)
 concentrated: `file.c` 5,897 LOC (stdio, Phase D), `concurrency.c` 3,840 (C++), `scanf.c`'s 40
 exports (engine not ported), `math.c` 13 of 144 functions flipped.
 
+**Wave 14c part 2 (2026-07-26) — the 30 `...` shells, in `dll/win32/msvcrt/rust_varargs_shim.c`.**
+Stable Rust cannot DEFINE a C-variadic, so these stay C permanently as three-line `va_start`
+trampolines over the Rust engine — but that is now the *whole* of msvcrt's C printf: every byte
+that actually formats anything is Rust. Their own TU (in wcs.c clang re-inlines the C engine into
+them and undoes the flip) and compiled into the msvcrt **MODULE**, not `msvcrt_static`, so module
+objects beat archive members at first-match. Verified on the built DLL: export `_snprintf` → the
+shim's block → `callq _vsnprintf` → the Rust archive; wcs.o's copies sit dead. **The export total
+does not move — 431 — and that is honest**: these 30 are C. What moved is which engine 30 exports
+*execute*. Graded by `tools/scan_varargs_shim_parity.py` (in `vibeos-cli check`, baseline empty)
+rather than a difftest, because a differential is *impossible* here: neither instantiation can run
+a variadic shell on a SysV host (field manual §9.66). Four negative controls fire; it caught the
+shim defining `_sprintf_p`/`_scwprintf_p`, which are `#if _MSVCR_VER>=80` and exist at no vintage
+this DLL builds. **Next**: the ~225 host-gradeable exports (`scanf.c` 39 — 820 LOC, zero Win32,
+16 template instantiations collapsing to one generic Rust engine; then `time.c` 60, `wcs.c` 32,
+`math.c` 30), then `file.c`'s **170** — 26% of all remaining exports, gated on a Win32-shim
+difftest substrate that does not exist yet.
+
 **240 Rust-defined `msvcrt.dll` exports on all three arches** as of 2026-07-14 (waves 1–13: 209 hand-flipped wrappers; wave 14m: +45 libm exports assembled from cnt-rust's `cabi/math.rs` via the `cabi-math` feature — engine grading lives in cnt-difftest; wave 14a decided printf is a PORT and wave 14b DELIVERED it: printf.h's engine — 2,312 lines, bignum floats over the shared bnum.rs — graded 142 narrow + 30 wide rows byte-identical vs the genuine pf_printf_a; the DLL's stream-printf family (printf/fprintf/vfprintf) runs the Rust engine now, the sprintf-family shells await wave 14c's varargs trampolines. See the lane plan + field manual §9.83)
 (waves 1–13). Verified by parsing the DLL's export table: every flip lands in the Rust cluster,
 every deliberate refusal is still C (`memmove`, `strtok`, `_ecvt`/`_fcvt`/`_gcvt` — the
