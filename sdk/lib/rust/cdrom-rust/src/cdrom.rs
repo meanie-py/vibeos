@@ -692,7 +692,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 &mut attributes,
                 &CDROM_REQUEST_CONTEXT_TYPE_INFO,
             );
-            attributes.EvtCleanupCallback = core::mem::transmute::<unsafe extern "C" fn(*mut core::ffi::c_void), _>(RequestEvtCleanup);
+            attributes.EvtCleanupCallback = core::mem::transmute::<unsafe extern "system" fn(*mut core::ffi::c_void), _>(RequestEvtCleanup);
             WdfDeviceInitSetRequestAttributes(DeviceInit, &mut attributes);
         }
 
@@ -733,7 +733,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
             );
             attributes.SynchronizationScope = WdfSynchronizationScopeNone;
             attributes.ExecutionLevel = WdfExecutionLevelDispatch;
-            attributes.EvtCleanupCallback = core::mem::transmute::<unsafe extern "C" fn(*mut core::ffi::c_void), _>(DeviceEvtCleanup);
+            attributes.EvtCleanupCallback = core::mem::transmute::<unsafe extern "system" fn(*mut core::ffi::c_void), _>(DeviceEvtCleanup);
         }
 
         // 7. Device creation
@@ -1085,7 +1085,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceEvtCleanup(Device: WDFOBJECT) {
+pub unsafe extern "system" fn DeviceEvtCleanup(Device: WDFOBJECT) {
     // PAGED_CODE();
     PAGED_CODE();
 
@@ -3580,7 +3580,7 @@ pub unsafe extern "C" fn DeviceIsMmcUpdateRequired(Device: WDFDEVICE) -> u8 {
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
     // WDFREQUEST request = (WDFREQUEST)Request;  — parameter is already the right type.
     let requestContext = RequestGetContext(request);
     if (*requestContext).SyncRequired != 0 {

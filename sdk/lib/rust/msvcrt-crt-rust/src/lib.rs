@@ -3378,17 +3378,6 @@ extern "C" {
     /// `toupper`/`tolower` branch on it to take a hardcoded-ASCII fast path.
     static initial_locale: i32;
 
-    /// locale.c. Reached only from the `c >= 256` arms below.
-    fn __crtLCMapStringA(
-        lcid: u32,
-        mapflags: u32,
-        src: *const u8,
-        srclen: i32,
-        dst: *mut u8,
-        dstlen: i32,
-        codepage: u32,
-        xflag: i32,
-    ) -> i32;
 
 }
 
@@ -3623,9 +3612,9 @@ unsafe fn case_map_wide(c: i32, li: *mut sys::threadlocaleinfostruct, mapflag: u
     match __crtLCMapStringA(
         (*li).lc_handle[sys::LC_CTYPE],
         mapflag,
-        s.as_ptr(),
+        s.as_ptr() as *const i8,
         n as i32,
-        ret.as_mut_ptr(),
+        ret.as_mut_ptr() as *mut i8,
         2,
         (*li).lc_codepage,
         0,
@@ -3963,8 +3952,11 @@ const CSTR_EQUAL: i32 = 2;
 /// NOT `usize::MAX`.
 const XFRM_ERR: usize = 0x7FFF_FFFF;
 
+// `CompareStringA` comes from the prelude, declared from winnls.h. Keeping a second,
+// differently-spelled declaration here is what `clashing_extern_declarations` exists to catch.
+use crate::prelude::{CompareStringA, __crtLCMapStringA};
+
 extern "system" {
-    fn CompareStringA(lcid: u32, f: u32, s1: *const u8, l1: i32, s2: *const u8, l2: i32) -> i32;
     fn CompareStringW(lcid: u32, f: u32, s1: *const u16, l1: i32, s2: *const u16, l2: i32) -> i32;
     fn LCMapStringA(lcid: u32, f: u32, src: *const u8, sl: i32, dst: *mut u8, dl: i32) -> i32;
 }
@@ -3983,7 +3975,7 @@ pub unsafe extern "C" fn _strcoll_l(s1: *const u8, s2: *const u8, l: *mut core::
     if h == 0 {
         return strcmp(s1, s2);
     }
-    CompareStringA(h, SORT_STRINGSORT, s1, -1, s2, -1) - CSTR_EQUAL
+    CompareStringA(h, SORT_STRINGSORT, s1 as *const i8, -1, s2 as *const i8, -1) - CSTR_EQUAL
 }
 #[no_mangle]
 pub unsafe extern "C" fn strcoll(s1: *const u8, s2: *const u8) -> i32 {
@@ -3996,7 +3988,7 @@ pub unsafe extern "C" fn _stricoll_l(s1: *const u8, s2: *const u8, l: *mut core:
     if h == 0 {
         return _stricmp(s1, s2);
     }
-    CompareStringA(h, NORM_IGNORECASE, s1, -1, s2, -1) - CSTR_EQUAL
+    CompareStringA(h, NORM_IGNORECASE, s1 as *const i8, -1, s2 as *const i8, -1) - CSTR_EQUAL
 }
 #[no_mangle]
 pub unsafe extern "C" fn _stricoll(s1: *const u8, s2: *const u8) -> i32 {
@@ -4019,9 +4011,9 @@ pub unsafe extern "C" fn _strncoll_l(
     CompareStringA(
         h,
         SORT_STRINGSORT,
-        s1,
+        s1 as *const i8,
         strnlen(s1, count) as i32,
-        s2,
+        s2 as *const i8,
         strnlen(s2, count) as i32,
     ) - CSTR_EQUAL
 }
@@ -4044,9 +4036,9 @@ pub unsafe extern "C" fn _strnicoll_l(
     CompareStringA(
         h,
         NORM_IGNORECASE,
-        s1,
+        s1 as *const i8,
         strnlen(s1, count) as i32,
-        s2,
+        s2 as *const i8,
         strnlen(s2, count) as i32,
     ) - CSTR_EQUAL
 }
@@ -4348,3 +4340,7 @@ mod fpnum;
 // flips every printf-family export's machinery to Rust while the shells stay
 // C until a later varargs-shell wave.
 pub mod printf;
+
+// Wave 15 — whole-C-file rustconv translations (mbcs.c first). See src/msvcrt/mod.rs.
+pub mod prelude;
+mod msvcrt;

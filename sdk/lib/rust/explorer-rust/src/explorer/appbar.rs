@@ -1,3 +1,8 @@
+//! ORPHAN-BY-DESIGN: appbar.cpp was replaced by Rust folded into traywnd.rs —
+//! CAppBarManager is a base class of CTrayWindow and was translated with it, so
+//! the live code spells these as CTrayWindow methods rather than the 29
+//! CAppBarManager_* free functions here. See base/shell/explorer/CMakeLists.txt.
+//!
 use core::ffi::c_void;
 use explorer_sys::*;
 use explorer_sys::com::*;

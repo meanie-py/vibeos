@@ -8,8 +8,6 @@ there is no reviewer on the deterministic path at all.
 
 from __future__ import annotations
 
-import pytest
-
 from rustconv.callgraph import FunctionDep
 from rustconv.trivial_c import lower_trivial_c_function, lower_trivial_c_functions
 
@@ -61,23 +59,81 @@ def test_null_at_a_non_pointer_position_is_refused():
     assert lower_trivial_c_function(d, {"_mbschr_l": callee}) is None
 
 
-def test_typedefd_pointer_is_refused_because_nothing_proves_it():
-    """`_locale_t` IS a pointer, but neither the spelling nor the type mapper says so.
+LOCALE_CALLEE = [("const unsigned char*", "s"), ("unsigned int", "x"), ("_locale_t", "locale")]
 
-    This is the dominant CRT spelling and the reason this shape's real msvcrt reach is
-    11 functions rather than the ~146 a text-only match suggests. Refusing is correct:
-    admitting it would be assuming the very fact the shape is supposed to prove. Pinned
-    so that if a typedef authority is ever wired in, this test is the deliberate
-    decision point rather than a silent behaviour change.
-    """
-    callee = [("const unsigned char*", "s"), ("unsigned int", "x"), ("_locale_t", "locale")]
-    d = dep(
+
+def locale_forwarder():
+    return dep(
         "_mbschr",
         "unsigned char*",
         [("const unsigned char*", "s"), ("unsigned int", "x")],
         "return _mbschr_l(s, x, NULL);",
     )
-    assert lower_trivial_c_function(d, {"_mbschr_l": callee}) is None
+
+
+def test_typedefd_pointer_is_refused_when_nothing_proves_it():
+    """`_locale_t` IS a pointer, but with no authority passed, the spelling cannot say so.
+
+    Refusing is correct: admitting it would be assuming the very fact the shape is
+    supposed to prove. This is the fallback every caller gets for free, and it is why
+    omitting the authority costs lowerings and never buys a wrong one.
+    """
+    assert lower_trivial_c_function(locale_forwarder(), {"_mbschr_l": LOCALE_CALLEE}) is None
+
+
+def test_typedefd_pointer_lowers_once_the_authority_proves_it():
+    """The other half: `rustconv.typedefs` says `_locale_t` is a pointer, so NULL is spellable.
+
+    This is the dominant CRT spelling — 145 of msvcrt's functions, 76 in mbcs.c alone —
+    and the pair of tests above/below is the deliberate boundary between "proven" and
+    "assumed" that the whole deterministic path rests on.
+    """
+    low = lower_trivial_c_function(
+        locale_forwarder(), {"_mbschr_l": LOCALE_CALLEE}, {"_locale_t": "core::ptr::null_mut()"}
+    )
+    assert low is not None
+    assert low.shape == "forwarder_with_null"
+    assert "_mbschr_l(s, x, core::ptr::null_mut())" in low.rust
+
+
+def test_authority_for_an_unrelated_typedef_does_not_leak():
+    """Proving `HANDLE` says nothing about `_locale_t`."""
+    assert (
+        lower_trivial_c_function(
+            locale_forwarder(), {"_mbschr_l": LOCALE_CALLEE}, {"HANDLE": "core::ptr::null_mut()"}
+        )
+        is None
+    )
+
+
+def test_authority_does_not_override_a_non_pointer_position():
+    """An authority naming a type that is genuinely an int must still refuse.
+
+    The map is consulted only for names with no star; it can never promote a position
+    the callee declares as a scalar.
+    """
+    callee = [("const unsigned char*", "s"), ("unsigned int", "x"), ("int", "flags")]
+    assert (
+        lower_trivial_c_function(
+            locale_forwarder(), {"_mbschr_l": callee}, {"_locale_t": "core::ptr::null_mut()"}
+        )
+        is None
+    )
+
+
+def test_qualified_typedef_pointer_keeps_the_typedefs_own_spelling():
+    """`const _locale_t` is a const POINTER to mutable state -> still null_mut().
+
+    The opposite of `const char *`, where the const reaches the pointee. Getting this
+    backwards is a rustc type error rather than a miscompile, but the two cases are
+    genuinely different rules and the test says so.
+    """
+    callee = [("const unsigned char*", "s"), ("unsigned int", "x"), ("const _locale_t", "locale")]
+    low = lower_trivial_c_function(
+        locale_forwarder(), {"_mbschr_l": callee}, {"_locale_t": "core::ptr::null_mut()"}
+    )
+    assert low is not None
+    assert "core::ptr::null_mut()" in low.rust
 
 
 def test_unknown_callee_is_refused():

@@ -27,6 +27,10 @@
  */
 #include <msvcrt.h>
 #include <winnls.h>
+/* The codepage-aware half of the NLS environment. The five entry points below delegate
+ * to it whenever a DBCS codepage is in play; see nlsimpl.c for why that is mandatory
+ * rather than an improvement. */
+#include "nlsimpl.h"
 
 /* ------------------------------------------------------------------ *
  * Hijack-proof primitives (see the header comment).
@@ -187,6 +191,25 @@ pthreadlocinfo CDECL get_locinfo(void)
     return &ref_locinfo;
 }
 
+/* ── the REFERENCE's copy of the pinned MBCS fixture ───────────────────────
+ *
+ * Separate storage from the subject's (subjectimpl.c), for the reason the get_mbcinfo
+ * note in refstub/msvcrt.h gives: the fixture is read-only state, so a graded function
+ * that writes to it is a translation bug, and one shared copy could not tell the
+ * difference.  Filled by mbcs_fixture_install (nlsimpl.c) out of the reference's own
+ * create_mbcinfo.
+ *
+ * This is `get_mbcinfo` in the source and `msvcrt_ref_get_mbcinfo` after the namespace
+ * block above — the reference can never reach the subject's. */
+static rl_threadmbcinfo ref_mbcinfo;
+
+rl_threadmbcinfo *mbcs_ref_slot(void) { return &ref_mbcinfo; }
+
+pthreadmbcinfo CDECL get_mbcinfo(void)
+{
+    return &ref_mbcinfo;
+}
+
 /* ------------------------------------------------------------------ *
  * Per-thread CRT data.  string.c touches exactly one field (->strtok_next,
  * from strtok).  Real msvcrt keeps it in TLS; so do we — which also means
@@ -291,6 +314,32 @@ int WINAPI CompareStringA(LCID lcid, DWORD flags, const char *str1, int len1,
     int n = n1 < n2 ? n1 : n2;
 
     (void)lcid;
+
+    /* mbcs.c's _mbscoll / _mbsicoll family arrives here with MBCS strings. Comparing
+     * them byte-wise splits a double-byte character down the middle, and folding a
+     * TRAIL byte through an ASCII map corrupts it — so the collation family would be
+     * graded against a reference doing something no implementation does.
+     *
+     * The codepage comes from the installed fixture rather than the LCID: several
+     * codepages share one (949 and 1361 are both ko-KR), and every call site here
+     * reaches this through `mbcinfo->mblcid` anyway. */
+    if (nls_is_dbcs_codepage(nls_active_codepage()))
+    {
+        unsigned int cp = nls_active_codepage();
+        unsigned short w1[512], w2[512];
+        int m1 = MultiByteToWideChar(cp, 0, str1, n1, w1, 512);
+        int m2 = MultiByteToWideChar(cp, 0, str2, n2, w2, 512);
+        int m = m1 < m2 ? m1 : m2;
+        for (i = 0; i < m; i++)
+        {
+            unsigned int c1 = w1[i], c2 = w2[i];
+            if (fold) { c1 = nls_towupper(c1); c2 = nls_towupper(c2); }
+            if (c1 != c2) return c1 < c2 ? CSTR_LESS_THAN : CSTR_GREATER_THAN;
+        }
+        if (m1 == m2) return CSTR_EQUAL;
+        return m1 < m2 ? CSTR_LESS_THAN : CSTR_GREATER_THAN;
+    }
+
     for (i = 0; i < n; i++)
     {
         int c1 = (unsigned char)str1[i];
@@ -459,19 +508,19 @@ unsigned int __cdecl _get_output_format(void)
     return 0;
 }
 
-/* ------------------------------------------------------------------ *
- * The _l wide-ctype / conversion externals wcs.c calls but does NOT define.
- * C locale, ASCII, spelled out (see ref_ascii_* above).
- * ------------------------------------------------------------------ */
-int __cdecl _mbtowc_l(wchar_t *dst, const char *str, size_t n, _locale_t locale)
-{
-    (void)locale;
-    if (!str || !n) return 0;
-    if (!*str) { if (dst) *dst = 0; return 0; }
-    /* C locale: single-byte, 1:1 onto U+0000..U+00FF. */
-    if (dst) *dst = (wchar_t)(unsigned char)*str;
-    return 1;
-}
+/* `_mbtowc_l` USED to live here — a C-locale ASCII stub, because wcs.c called it and
+ * nothing defined it.  mbcs.c DEFINES it, so as of the mbcs TU it is a reference
+ * EXPORT, not an import: the prelude renames it to `ref__mbtowc_l` like every other
+ * one, and it left the msvcrt_ref_* namespace block above.
+ *
+ * This is the same transition `_isspace_l` / `_tolower_l` / `_toupper_l` made when
+ * ctype.c became a TU (see the note in the namespace block), and it fails the same
+ * loud way if only half of it is done: keeping the stub gave `duplicate symbol
+ * msvcrt_ref__mbtowc_l`, which is how it was found.
+ *
+ * Keeping the stub would have been worse than a link error if it had linked — wcs.c
+ * would have gone on folding every byte 1:1 onto U+0000..U+00FF while mbcs.c did real
+ * DBCS decoding, with the two disagreeing inside one process. */
 
 /* Unlike _mbtowc_l above, `_wctomb_l` IS defined by wcs.c — as ref__wctomb_l
  * (and pfflat__wctomb_l) under the rename preludes.  The SUBJECT (the Rust
@@ -557,6 +606,15 @@ int WINAPI LCMapStringW(LCID lcid, DWORD flags, const wchar_t *src, int srclen,
             if (flags & LCMAP_UPPERCASE)      c = nls_cumap[c];
             else if (flags & LCMAP_LOWERCASE) c = nls_clmap[c];
         }
+        else
+        {
+            /* create_mbcinfo case-maps the wide form of every single byte, and for a
+             * DBCS codepage most of those are above U+00FF (CP932's 0xA1-0xDF are
+             * halfwidth katakana at U+FF61-U+FF9F).  Leaving them unmapped, as this
+             * did, empties `mbcasemap` and un-grades every case path in mbcs.c. */
+            if (flags & LCMAP_UPPERCASE)      c = (wchar_t)nls_towupper(c);
+            else if (flags & LCMAP_LOWERCASE) c = (wchar_t)nls_towlower(c);
+        }
         dst[i] = c;
     }
     return n;
@@ -595,7 +653,28 @@ int CDECL __crtLCMapStringA(LCID lcid, DWORD mapflags, const char *src, int srcl
 {
     int i, n = ref_nls_len(src, srclen);
 
-    (void)lcid; (void)codepage; (void)xflag;
+    (void)lcid; (void)xflag;
+
+    /* mbcs.c's _mbctolower_l / _mbctoupper_l reach this with a TWO-BYTE DBCS character
+     * and switch on the returned count: 0 leaves the character unchanged, 1 means a
+     * single byte came back, anything else means two.  The byte-wise cloc map below
+     * cannot case-map a DBCS character at all, so both arms would return the input
+     * unchanged and the whole DBCS case family would grade as a no-op that agrees.
+     *
+     * Round-trip through the wide form instead, which is what Windows does. */
+    if (nls_is_dbcs_codepage(codepage))
+    {
+        unsigned short w[8];
+        int wn = MultiByteToWideChar(codepage, 0, src, n, w, 8);
+        int j;
+        for (j = 0; j < wn; j++)
+        {
+            if (mapflags & LCMAP_UPPERCASE)      w[j] = (unsigned short)nls_towupper(w[j]);
+            else if (mapflags & LCMAP_LOWERCASE) w[j] = (unsigned short)nls_towlower(w[j]);
+        }
+        return nls_wide_to_mb(codepage, w, wn, dst, dstlen, "?", 0);
+    }
+
     if (n > dstlen) n = dstlen;
     for (i = 0; i < n; i++)
     {
@@ -611,13 +690,24 @@ BOOL WINAPI GetStringTypeW(DWORD type, const wchar_t *src, int count, WORD *char
 {
     int i, n = ref_nls_wlen(src, count);
 
-    (void)type;
     /* Reads msvcrt's REAL wide ctype table (ctype.c), not the model this file used to
      * carry — see "The wide ctype table — GONE as of wave 10" above.  MSVCRT__pwctype
      * is namespaced, so this is the reference's own pointer; it is aimed at the same
-     * shared MSVCRT__wctype[] the subject's is. */
+     * shared MSVCRT__wctype[] the subject's is.
+     *
+     * Its RL_UPPER/RL_LOWER bits are 0x1/0x2, the same values as C1_UPPER/C1_LOWER, so
+     * the < 256 path already answers CT_CTYPE1 correctly and is left alone — it is what
+     * the existing ctype verdicts are graded against.  Above the byte range, and for
+     * CT_CTYPE3, the host's Unicode tables answer instead of a flat 0. */
     for (i = 0; i < n; i++)
-        chartype[i] = (WORD)(src[i] < 256 ? MSVCRT__pwctype[src[i]] : 0);
+    {
+        if (type == CT_CTYPE3)
+            chartype[i] = nls_ctype3(src[i]);
+        else if (src[i] < 256)
+            chartype[i] = (WORD)MSVCRT__pwctype[src[i]];
+        else
+            chartype[i] = nls_ctype1(src[i]);
+    }
     return TRUE;
 }
 
@@ -626,8 +716,21 @@ int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int s
 {
     int i, n = ref_nls_wlen(src, srclen);
 
-    (void)page; (void)flags;
+    (void)flags;
     if (used) *used = FALSE;
+
+    /* A DBCS codepage has a real answer for most of the BMP, and create_mbcinfo needs
+     * it: this is the pass that turns case-mapped wide forms back into the single bytes
+     * that fill `mbcasemap`.  The 1:1 model below would map U+FF71 to '?' and leave the
+     * table empty. */
+    if (nls_is_dbcs_codepage(page))
+    {
+        int used_i = 0;
+        int r = nls_wide_to_mb(page, src, n, dst, dstlen, defchar, &used_i);
+        if (used) *used = used_i ? TRUE : FALSE;
+        return r;
+    }
+
     if (!dstlen) return n;
     if (dstlen < n) { ref_last_error = ERROR_INSUFFICIENT_BUFFER; return 0; }
     for (i = 0; i < n; i++)

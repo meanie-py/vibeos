@@ -2210,7 +2210,7 @@ unsafe fn co_IntSendMessageTimeoutSingle(
                 lParam,
                 uTimeout,
                 (uFlags & SMTO_BLOCK).try_into().unwrap(),
-                MSQ_NORMAL.try_into().unwrap(),
+                MSQ_NORMAL as INT,
                 uResult,
             );
             if !(Status == STATUS_TIMEOUT

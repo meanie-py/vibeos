@@ -239,6 +239,106 @@ pub unsafe fn balanced(cond: bool) -> u32 {
 }
 """
 
+# scan_orphan_modules. The BAD case is the class itself; the GOOD case is doing
+# double duty as a regression guard for the two walk defects that made the same
+# tool call LIVE code dead (2026-07-25) — the direction that HIDES bugs, since
+# verify_match_consts suppresses its findings in files this walk calls orphaned.
+_ORPHAN_BAD_LIB = """\
+pub mod live;
+"""
+_ORPHAN_BAD_LIVE = """\
+pub fn live_fn() -> u32 { 1 }
+"""
+_ORPHAN_BAD_ORPHAN = """\
+// Reached by no `mod` chain and carrying no banner — cargo never opens this file,
+// so `cargo check` is green whatever is in it (the classpnp class_gap3.rs trap).
+pub fn stranded() -> u32 { 2 }
+"""
+_ORPHAN_GOOD_LIB = """\
+// The freeldr shape: a `/*` inside a LINE comment. Stripping block comments
+// before line comments opens a phantom block comment here that swallows every
+// `mod` below it — 53 of freeldr's 87, i.e. 42,750 lines of live bootloader
+// reported as dead. (called from arch/*/multiboot.S asm)
+pub mod live;
+// `async` is a keyword since edition 2018, so ws2_32's translation of async.c
+// can only be spelled with a raw identifier. Not matching `r#` orphaned 1,941
+// live lines.
+pub mod r#async;
+
+/* The phantom comment above only reaches this far if something CLOSES it, and
+   that closer is what makes the bug bite: an unterminated `/*` is harmless
+   because the regex finds no match at all. A fixture without a later `*/`
+   therefore passes under BOTH the broken and the fixed stripper — verified,
+   and the reason this block is here rather than a tidier one-liner. */
+"""
+_ORPHAN_GOOD_ASYNC = """\
+pub fn async_fn() -> u32 { 3 }
+"""
+_ORPHAN_GOOD_ORPHAN = """\
+//! ORPHAN-BY-DESIGN: a park with its reason stated where the reader will see it.
+//! This is what satisfies the gate — not the absence of orphans.
+pub fn parked() -> u32 { 4 }
+"""
+_ORPHAN_CARGO = """\
+[package]
+name = "orphan-fixture"
+version = "0.0.0"
+edition = "2021"
+"""
+
+# scan_extern_arity. BAD is the classpnp shape that wrote to address 0x2. GOOD carries the
+# two parse traps that produced wrong answers before the scanner was trusted: a comment
+# INSIDE a parameter list, and an `->` inside a generic (whose `>` drove the nesting depth
+# negative and hid every following top-level comma — 3,790 phantom findings).
+_ARITY_CARGO = """\
+[package]
+name = "arity-fixture"
+version = "0.0.0"
+edition = "2021"
+"""
+_ARITY_BAD_LIB = """\
+pub mod shim;
+pub mod caller;
+"""
+_ARITY_BAD_SHIM = """\
+#[no_mangle] pub unsafe extern "C" fn ScsiGetNextSenseDescriptorByType(
+    _buf: *mut u8, _len: u32, _ty: u8, found: *mut u8,
+) -> *mut u8 {
+    if !found.is_null() { *found = 0; }
+    core::ptr::null_mut()
+}
+"""
+_ARITY_BAD_CALLER = """\
+extern "C" {
+    fn ScsiGetNextSenseDescriptorByType(
+        start: *mut u8, start_len: u8, types: *const u8, type_count: u32,
+        out_type: *mut u8, out_buf: *mut *mut u8, out_len: *mut u8,
+    ) -> u8;
+}
+"""
+_ARITY_GOOD_LIB = """\
+pub mod shim;
+pub mod caller;
+"""
+_ARITY_GOOD_SHIM = """\
+#[no_mangle] pub unsafe extern "C" fn Matching(
+    _a: *mut u8,
+    _b: u8, // a comment INSIDE the parameter list — masked before counting
+    _cb: Option<unsafe extern "system" fn(u32) -> u32>,
+) -> u8 {
+    0
+}
+"""
+_ARITY_GOOD_CALLER = """\
+extern "C" {
+    fn Matching(
+        a: *mut u8,
+        b: u8, /* the other comment flavour, with an -> arrow in it */
+        cb: Option<unsafe extern "system" fn(u32) -> u32>,
+    ) -> u8;
+}
+"""
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_doc_sections",
@@ -248,6 +348,39 @@ CONTROLS: list[Control] = [
         good={"good.md": _DOC_SECTIONS_GOOD},
         pass_files=True,
         file_suffix=".md",
+    ),
+    Control(
+        name="scan_extern_arity",
+        script="tools/scan_extern_arity.py",
+        bad={
+            "Cargo.toml": _ARITY_CARGO,
+            "src/lib.rs": _ARITY_BAD_LIB,
+            "src/shim.rs": _ARITY_BAD_SHIM,
+            "src/caller.rs": _ARITY_BAD_CALLER,
+        },
+        good={
+            "Cargo.toml": _ARITY_CARGO,
+            "src/lib.rs": _ARITY_GOOD_LIB,
+            "src/shim.rs": _ARITY_GOOD_SHIM,
+            "src/caller.rs": _ARITY_GOOD_CALLER,
+        },
+    ),
+    Control(
+        name="scan_orphan_modules",
+        script="tools/scan_orphan_modules.py",
+        bad={
+            "Cargo.toml": _ORPHAN_CARGO,
+            "src/lib.rs": _ORPHAN_BAD_LIB,
+            "src/live.rs": _ORPHAN_BAD_LIVE,
+            "src/orphan.rs": _ORPHAN_BAD_ORPHAN,
+        },
+        good={
+            "Cargo.toml": _ORPHAN_CARGO,
+            "src/lib.rs": _ORPHAN_GOOD_LIB,
+            "src/live.rs": _ORPHAN_BAD_LIVE,
+            "src/async.rs": _ORPHAN_GOOD_ASYNC,
+            "src/orphan.rs": _ORPHAN_GOOD_ORPHAN,
+        },
     ),
     Control(
         name="scan_bugcheck_codes",
@@ -444,3 +577,68 @@ def test_control_names_match_real_lints():
     gate = {name for name, _cmd, _ff in source_lint_specs(REPO)}
     stale = sorted({c.name for c in CONTROLS} - gate) + sorted(set(UNCOVERED) - gate)
     assert not stale, f"control/UNCOVERED entries name lints that no longer exist: {stale}"
+
+
+# ── scan_orphan_modules: the ROOTLESS class needs its own control ────────────
+# The table's positive control only requires SOME output line naming the fixture, so
+# folding a rootless file into the existing orphan fixture would have been satisfied by
+# the already-passing orphan hit — the harness would have "covered" the new class while
+# proving nothing about it. Hence a targeted pair.
+_ROOTLESS_WORKSPACE_CARGO = """\
+[workspace]
+members = ["real-rust"]
+"""
+_ROOTLESS_REAL_CARGO = """\
+[package]
+name = "real-rust"
+version = "0.0.0"
+edition = "2021"
+"""
+_ROOTLESS_DUMP = """\
+// mscms-rust's exact shape: a translation dumped under sdk/lib/rust/<name>/src with no
+// Cargo.toml of its own. `crate_root_of` walks up to the WORKSPACE manifest, whose
+// crate_live_files() is empty, and the "unparseable crate -> fail open" branch then
+// swallowed the whole directory. 4,782 lines reported clean for as long as the gate existed.
+pub fn never_compiled() -> u32 { 7 }
+"""
+_ROOTLESS_DUMP_BANNERED = "//! ORPHAN-BY-DESIGN: parked, unintegrated.\n" + _ROOTLESS_DUMP
+
+
+def _orphan_out(tmp_path: Path, files: dict) -> tuple[Path, str]:
+    root = _materialize(tmp_path, files)
+    ctl = next(c for c in CONTROLS if c.name == "scan_orphan_modules")
+    _rc, out = _run(ctl, root)
+    return root, out
+
+
+def test_rootless_crate_is_not_invisible(tmp_path: Path):
+    """A directory of .rs with NO crate root above it must be reported, not failed open."""
+    root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _ROOTLESS_WORKSPACE_CARGO,
+            "real-rust/Cargo.toml": _ROOTLESS_REAL_CARGO,
+            "real-rust/src/lib.rs": "pub fn ok() -> u32 { 1 }\n",
+            "dump-rust/src/dumped.rs": _ROOTLESS_DUMP,
+        },
+    )
+    hits = [ln for ln in out.splitlines() if "[ROOTLESS]" in ln and "dumped.rs" in ln]
+    assert hits, f"rootless dump was not reported.\n(root={root})\n--- output ---\n{out}"
+    # ...and the real crate beside it must NOT be swept up by the same rule. Match on the
+    # crate's PATH, not on "lib.rs" — the finding's own text says "no crate root
+    # (lib.rs/main.rs) above this file", so a substring test hits the message, not a hit.
+    assert not [ln for ln in out.splitlines() if "real-rust" in ln], out
+
+
+def test_rootless_crate_accepts_the_same_banner_escape(tmp_path: Path):
+    """Declaring it is the sanctioned move — the gate is 'no UNDECLARED orphans'."""
+    _root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _ROOTLESS_WORKSPACE_CARGO,
+            "real-rust/Cargo.toml": _ROOTLESS_REAL_CARGO,
+            "real-rust/src/lib.rs": "pub fn ok() -> u32 { 1 }\n",
+            "dump-rust/src/dumped.rs": _ROOTLESS_DUMP_BANNERED,
+        },
+    )
+    assert "[ROOTLESS]" not in out, out

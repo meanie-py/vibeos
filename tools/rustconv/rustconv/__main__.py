@@ -20,6 +20,7 @@ from . import (
     cpp_com,
     cpp_tu,
     crate_repair,
+    difftest_gen,
     dup_census,
     file_splitter,
     gdi_lock_inventory,
@@ -33,6 +34,7 @@ from . import (
     substrate_closure,
     switch_extract,
     trivial_c,
+    typedefs,
     user_lock_inventory,
 )
 from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
@@ -102,6 +104,7 @@ from .function_prompt import (
     load_function_system_prompt,
 )
 from .function_resolver import resolve_function
+from .macro_authority import function_like_macros
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
 from .postprocess import postprocess
@@ -612,6 +615,63 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
     return scan
 
 
+def _cache_suffix(args, fact_seal_enabled: bool, call_seal_enabled: bool) -> str:
+    """Namespace the resume cache by the seals that were active when it was filled."""
+    cache_tag = getattr(args, "cache_tag", None)
+    suffix = f"__{cache_tag}" if cache_tag else ""
+    if fact_seal_enabled:
+        suffix += "__factseal_v1"
+    if call_seal_enabled:
+        suffix += "__callseal_v1"
+    return suffix
+
+
+def _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_enabled):
+    """Durable per-function resume cache → re-run to resume a killed/capped run for $0.
+
+    Skips every function whose C body is unchanged. Coexists with the sink archive
+    (per-run, kill-safe streaming); this one is the stable cross-run skip layer.
+    `--no-resume` forces fresh.
+    """
+    suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled)
+    return ResponseCache(f"{subsystem}__{c_file.stem}{suffix}")
+
+
+def _audit_paid_body(
+    dep,
+    result,
+    *,
+    cpp_com_mode: bool,
+    is_cpp_source: bool,
+    fact_seals,
+    call_seals,
+    target_name: str,
+) -> str:
+    """Unseal and audit one paid reply; raise `CppComError` if it fails.
+
+    Extracted so the sequential path can re-roll a rejected worker without
+    duplicating the acceptance criteria — a retry that checked anything less than
+    the first attempt would launder exactly the defects sealing exists to catch.
+
+    Mutates ``result.rust_code`` to the normalized/unsealed text, which is what the
+    caller banks: the cache must hold what was ACCEPTED, not the raw reply.
+    """
+    if not cpp_com_mode:
+        # Sealing is language-neutral; unsealing must be too.
+        result.rust_code = _unseal_worker(dep, result.rust_code, fact_seals, call_seals)
+        if is_cpp_source:
+            result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
+        return _unseal_plain_c(dep, result.rust_code, fact_seals, call_seals)
+    result.rust_code = _normalize_unseal_cpp_worker(dep, result.rust_code, fact_seals, call_seals)
+    signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
+    findings = audit_worker_body(dep.body_text, result.rust_code, f"{dep.name}_body", signature)
+    if findings:
+        raise CppComError(
+            f"{dep.name}: paid body failed deterministic audit:\n  - " + "\n  - ".join(findings)
+        )
+    return result.rust_code
+
+
 def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
     """Undo fact/call sealing on a model response, verifying the closed envelope.
 
@@ -653,6 +713,38 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
     return normalize_worker_semantics(dep.body_text, rust)
 
 
+def _unseal_plain_c(dep, rust: str, fact_seals, call_seals) -> str:
+    """Restore sealed constants and callees in a PLAIN-C model response.
+
+    Sealing is only half a mechanism. It hides every constant and callee behind an opaque
+    `__RUSTCONV_FACT_nnnn__` / `__RUSTCONV_CALL_nnnn__` token during the paid call so a
+    dropped or invented one fails loudly instead of silently; unsealing is what puts the
+    real names back. Until this existed, both `unseal_facts` and `unseal_calls` had exactly
+    one caller and it was gated on shell32 — so `--seal-facts --seal-calls` on plain C
+    assembled a file full of tokens that cannot compile. mbcs.c came out 902 tokens deep,
+    while AGENTS.md tells every agent to always pass both flags on a plain-C module.
+
+    Deliberately NOT the shell32 boundary: `normalize_worker_body` /
+    `normalize_worker_semantics` reshape a C++ COM worker onto a fixed signature and mean
+    nothing for a free function. Only the unseal itself is shared.
+
+    Raising is correct on an unresolvable token. That is precisely the event sealing exists
+    to surface, and a token shipped into the tree is a compile error at best and a silently
+    wrong constant at worst.
+    """
+    rust = scrub_comment_token_echoes(rust)
+    try:
+        calls = call_seals.get(dep.name)
+        if calls is not None:
+            rust = unseal_calls(rust, calls)
+        facts = fact_seals.get(dep.name)
+        if facts is not None:
+            rust = unseal_facts(rust, facts)
+    except (CallSealError, FactSealError) as error:
+        raise CppComError(f"{dep.name}: {error}") from error
+    return rust
+
+
 def cmd_candidate_check(args):
     """Batch-compile candidate workers against real target substrate."""
     manifest = Path(args.manifest)
@@ -665,6 +757,34 @@ def cmd_candidate_check(args):
     candidate_oracle.print_report(report, as_json=args.json)
     if any(item["status"] != "ok" for item in report["results"]):
         sys.exit(1)
+
+
+def cmd_difftest_gen(args):
+    """Generate a differential harness for a whole translated C file, from its signatures.
+
+    The existing `msvcrt-difftest` proved the mechanism — compile the genuine `.c` as the
+    reference, rename its symbols to `ref_*`, assert parity in one process — but every
+    instrument is hand-written and its symbol list is hardcoded with a "regenerate if the C
+    changes" warning. That does not scale to a file-at-a-time translation track.
+
+    Prints the plan to stderr and writes the cases to `--out`. Refusals are part of the
+    OUTPUT, not a silent omission: a function this cannot grade still needs a hand-written
+    case, and it must be visible in the generated file rather than absent from it.
+    """
+    c_path = Path(args.c_file)
+    scan = scan_file(c_path)
+    plan = difftest_gen.plan_file(scan, c_path.stem)
+    total = len([f for f in scan.functions if not f.is_static])
+    print(plan.summary(), file=sys.stderr)
+    for refusal in plan.refusals:
+        print(f"  refused: {refusal}", file=sys.stderr)
+    text = difftest_gen.emit(plan, str(c_path), total)
+    if args.out:
+        Path(args.out).write_text(text)
+        print(f"  -> {args.out} ({len(text.splitlines())} lines)", file=sys.stderr)
+    else:
+        print(text)
+    return 0
 
 
 def cmd_crate_repair(args):
@@ -1806,8 +1926,16 @@ def cmd_translate(args):
         raii_name, _, raii_path = spec_arg.partition("=")
         raii_name = raii_name.strip()
         raii_file = Path(raii_path.strip()).expanduser()
-        if not (rustconv_target.name == "shell32" and getattr(args, "cpp_com", False)):
-            raise CppComError("--local-raii currently requires shell32 --cpp-com")
+        # Both C++ paths hit body-local RAII and both run require_supported_worker_raii,
+        # so both need the escape hatch. Gating it to --cpp-com made the free-function
+        # path a dead end: `provided` was always empty there, so the refusal message
+        # named a flag that the same invocation would then reject (shlfolder.cpp /
+        # shldataobject.cpp / item_prop.cpp all stalled on CDataObjectHIDA this way).
+        if not (
+            rustconv_target.name == "shell32"
+            and (getattr(args, "cpp_com", False) or getattr(args, "free_functions", False))
+        ):
+            raise CppComError("--local-raii currently requires shell32 --cpp-com/--free-functions")
         if not raii_file.is_file():
             raise CppComError(f"--local-raii {raii_name}: no such file: {raii_file}")
         local_raii_impls[raii_name] = raii_file.read_text()
@@ -1961,11 +2089,22 @@ def cmd_translate(args):
             else model_bodies[dep.name]
             for dep in sorted_deps
         }
+        # The seal must know which callee-shaped names are function-like MACROS: they
+        # have no 1:1 Rust call to carry a token, so sealing one makes the envelope
+        # unsatisfiable and one such worker voids the whole TU. Derived from the real
+        # preprocessor, and a HARD FAIL when unavailable — "seal everything anyway" is
+        # exactly the silent degradation this replaced.
+        seal_macros = (
+            function_like_macros(REACTOS_ROOT, c_file.resolve())
+            if call_seal_enabled
+            else frozenset()
+        )
         call_seals = (
             {
                 dep.name: seal_calls(
                     model_sources[dep.name],
                     set(dep.callees) | {f"{callee}_body" for callee in dep.callees},
+                    seal_macros,
                 )
                 for dep in sorted_deps
             }
@@ -1995,6 +2134,24 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+
+        # WHAT each worker had hidden from it, as names rather than token indices.
+        # The response cache compares this directionally: an entry sealed at least as
+        # tightly as this run wants is still sound, so tightening a seal rule (or
+        # excluding a macro from one) costs nothing already paid for.
+        sealed_names = {
+            dep.name: frozenset(
+                [f"call:{call.original}" for call in call_seals[dep.name].calls]
+                if dep.name in call_seals
+                else []
+            )
+            | frozenset(
+                [f"fact:{fact.original}" for fact in fact_seals[dep.name].facts]
+                if dep.name in fact_seals
+                else []
+            )
+            for dep in sorted_deps
+        }
 
         # `--fn` selects the paid/output unit, not its dependency knowledge.
         # Preserve the complete prepared closure for local-worker signatures.
@@ -2051,6 +2208,17 @@ def cmd_translate(args):
                 else extract_call_graph(scan, spec_exports=file_res.exports)
             )
             local_names = {d.name for d in all_deps}
+            # The same $0 pass the real run does, so the plan says what you will actually
+            # PAY for rather than how many functions the file has. Free on mbcs.c is 76 of
+            # 192 — a dry-run that hid that would misprice the file by 40%.
+            preview: dict[str, str] = {}
+            if rustconv_target.name != "shell32":
+                preview = {
+                    name: low.shape
+                    for name, low in trivial_c.lower_trivial_c_functions(
+                        sorted_deps, typedefs.pointer_typedefs_for_source(c_file)
+                    ).items()
+                }
             for i, dep in enumerate(sorted_deps, 1):
                 exported = " [EXPORTED]" if dep.is_exported else ""
                 static = " [static]" if dep.is_static else ""
@@ -2059,7 +2227,47 @@ def cmd_translate(args):
                     f" → calls: {', '.join(sorted(local_callees))}" if local_callees else ""
                 )
                 seh = f" (SEH×{dep.seh_count})" if dep.seh_count else ""
-                print(f"    {i}. {dep.name}{exported}{static}{seh}{callee_info}", file=sys.stderr)
+                free = f"  [$0 {preview[dep.name]}]" if dep.name in preview else ""
+                print(
+                    f"    {i}. {dep.name}{exported}{static}{seh}{callee_info}{free}",
+                    file=sys.stderr,
+                )
+            if preview:
+                shapes = collections.Counter(preview.values())
+                detail = ", ".join(f"{n}× {s}" for s, n in shapes.most_common())
+                print(
+                    f"\n  Deterministic (no API call, $0): {len(preview)} of {len(sorted_deps)}"
+                    f"  —  {detail}",
+                    file=sys.stderr,
+                )
+                print(f"  PAID: {len(sorted_deps) - len(preview)} functions", file=sys.stderr)
+
+            # What is ALREADY BANKED. Without this the plan prices a re-run of a
+            # partly-translated file as if nothing had been paid for, and the only
+            # way to learn otherwise was to start spending. It also makes a cache
+            # invalidation visible BEFORE it re-bills: a seal or contract change
+            # that voids banked work shows up here as a collapsed hit count.
+            dry_cache = _open_response_cache(
+                args, subsystem, c_file, fact_seal_enabled, call_seal_enabled
+            )
+            banked = [
+                dep.name
+                for dep in sorted_deps
+                if dep.name not in preview
+                and dry_cache.get(
+                    dep.name,
+                    dep.body_text,
+                    deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
+                )
+                is not None
+            ]
+            unbanked = len(sorted_deps) - len(preview) - len(banked)
+            print(
+                f"  Resume cache: {len(banked)} banked ($0 replay), {unbanked} to buy"
+                f"   [{dry_cache.dir.name}]",
+                file=sys.stderr,
+            )
 
             # Show estimated tokens for first function
             if sorted_deps:
@@ -2129,7 +2337,16 @@ def cmd_translate(args):
             # multisets) and RAISES on disagreement rather than shipping — nobody reviews
             # a free translation, so it has to prove itself. Anything it cannot prove
             # returns None and is paid for as normal.
-            for name, lowering in trivial_c.lower_trivial_c_functions(sorted_deps).items():
+            #
+            # The typedef pass runs first because it decides how much the lowering can
+            # reach: a literal NULL is only spellable at a position PROVEN to be a
+            # pointer, and the CRT's sentinel (`_locale_t`) hides its star in a header.
+            # Printed, not silent — a $0 layer quietly proving nothing would just bill
+            # the model instead, which is exactly the kind of degradation nobody notices.
+            ptr_typedefs = typedefs.pointer_typedefs_for_source(c_file)
+            print(typedefs.describe(ptr_typedefs, c_file))
+            lowerings = trivial_c.lower_trivial_c_functions(sorted_deps, ptr_typedefs)
+            for name, lowering in lowerings.items():
                 translated[name] = lowering.rust
                 deterministic_workers.add(name)
         for dep in sorted_deps:
@@ -2146,17 +2363,8 @@ def cmd_translate(args):
             file_res, scan, subsystem, target=rustconv_target, cpp_com=cpp_com_mode
         )
 
-        # Durable per-function resume cache → re-run the same command to resume a
-        # killed/capped run for $0 (skip functions whose C body is unchanged).
-        # Coexists with the sink archive (which is per-run, kill-safe streaming);
-        # this one is the stable, cross-run skip layer. --no-resume forces fresh.
-        cache_tag = getattr(args, "cache_tag", None)
-        cache_suffix = f"__{cache_tag}" if cache_tag else ""
-        if fact_seal_enabled:
-            cache_suffix += "__factseal_v1"
-        if call_seal_enabled:
-            cache_suffix += "__callseal_v1"
-        cache = ResponseCache(f"{subsystem}__{c_file.stem}{cache_suffix}")
+        cache_suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled)
+        cache = _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_enabled)
 
         # A completed model stream can fail a deterministic audit and remain as
         # ``.partial``. When the harness improves, replay those already-paid bytes
@@ -2170,7 +2378,12 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if (
                     dep.name in deterministic_workers
-                    or cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                    or cache.get(
+                        dep.name,
+                        dep.body_text,
+                        deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
+                    )
                     is not None
                 ):
                     continue
@@ -2207,6 +2420,7 @@ def cmd_translate(args):
                         dep.body_text,
                         recovered,
                         deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
                     )
                     partial_replayed.add(dep.name)
                     _record_outcome(dep, "partial_replay", route="current_deterministic_audit")
@@ -2271,12 +2485,32 @@ def cmd_translate(args):
         # estimate = first-function prompt × function count (each call re-sends
         # context, so this is a floor, not a ceiling).
         paid_deps = [dep for dep in sorted_deps if dep.name not in deterministic_workers]
+        # Take the proven $0 band and stop, without an API key or a cent. The rest of the
+        # file assembles as normal (missing bodies are simply absent), so the free band can
+        # be integrated, gated and landed on its own before anyone decides to pay for the
+        # rest. Enforced at EVERY paid entry point below, not here: `paid_deps` only feeds
+        # the cost banner and the resume pre-pass, while the translation loops iterate
+        # `sorted_deps` — emptying this list looks like it disables paying and does not.
+        # (It did not. That mistake spent $0.90 on mbcs.c.)
+        deterministic_only = bool(getattr(args, "deterministic_only", False))
+        if deterministic_only:
+            print(
+                f"  --deterministic-only: keeping {len(deterministic_workers)} proven "
+                f"lowering(s), SKIPPING {len(paid_deps)} paid function(s) and the preamble",
+                file=sys.stderr,
+            )
+            paid_deps = []
         if translation_memory is not None and not no_resume:
             for dep in paid_deps:
                 if dep.cpp_class is None:
                     continue
                 if (
-                    cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                    cache.get(
+                        dep.name,
+                        dep.body_text,
+                        deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
+                    )
                     is not None
                 ):
                     continue
@@ -2290,14 +2524,25 @@ def cmd_translate(args):
                 findings = audit_worker_body(dep.body_text, hit, f"{dep.name}_body", signature)
                 if findings:
                     continue
-                cache.put(dep.name, dep.body_text, hit, deterministic_contracts.get(dep.name, ""))
+                cache.put(
+                    dep.name,
+                    dep.body_text,
+                    hit,
+                    deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
+                )
                 memory_seeded.add(dep.name)
         pending_paid_deps = []
         for dep in paid_deps:
             hit = (
                 None
                 if no_resume
-                else cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                else cache.get(
+                    dep.name,
+                    dep.body_text,
+                    deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
+                )
             )
             if hit is not None and cpp_com_mode:
                 hit = normalize_worker_body(
@@ -2361,11 +2606,14 @@ def cmd_translate(args):
         if conc > 1:
             todo = []
             for func_idx, dep in enumerate(sorted_deps, 1):
-                if dep.name in deterministic_workers:
+                if dep.name in deterministic_workers or deterministic_only:
                     continue
                 if not no_resume:
                     hit = cache.get(
-                        dep.name, dep.body_text, deterministic_contracts.get(dep.name, "")
+                        dep.name,
+                        dep.body_text,
+                        deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
                     )
                     if hit is not None and cpp_com_mode:
                         hit = normalize_worker_body(
@@ -2392,6 +2640,15 @@ def cmd_translate(args):
                             hit = None
                     elif hit is not None and is_cpp_source:
                         hit = normalize_cpp_idioms(dep.body_text, hit)
+                    if hit is not None and rustconv_target.name != "shell32":
+                        try:
+                            hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
+                        except CppComError as error:
+                            print(
+                                f"  [{func_idx}] {dep.name} CACHE REJECTED: {error}",
+                                file=sys.stderr,
+                            )
+                            hit = None
                     if hit is not None:
                         translated[dep.name] = hit
                         resumed += 1
@@ -2500,6 +2757,9 @@ def cmd_translate(args):
                                         f"{dp.name}: paid body failed deterministic audit:\n  - "
                                         + "\n  - ".join(findings)
                                     )
+                                body = r.rust_code
+                            else:
+                                body = _unseal_plain_c(dp, r.rust_code, fact_seals, call_seals)
                         except CppComError as error:
                             _record_outcome(
                                 dp,
@@ -2508,15 +2768,20 @@ def cmd_translate(args):
                                 error=str(error),
                                 **_result_fields(r, elapsed_ms),
                             )
+                            cache.put_rejected(dp.name, r.rust_code, str(error))
                             parallel_errors.append(str(error))
                             print(f"  [{fi}] {dp.name} AUDIT REJECT: {error}", file=sys.stderr)
                             continue
-                        translated[dp.name] = r.rust_code
+                        translated[dp.name] = body
+                        # The cache keeps the RAW sealed reply: it is what the model said,
+                        # and re-unsealing on resume re-checks the seal contract instead of
+                        # trusting a once-processed copy.
                         cache.put(
                             dp.name,
                             dp.body_text,
                             r.rust_code,
                             deterministic_contracts.get(dp.name, ""),
+                            sealed_names.get(dp.name),
                         )
                         if translation_memory is not None and dp.cpp_class is not None:
                             assert memory_identity is not None
@@ -2587,6 +2852,10 @@ def cmd_translate(args):
                 print("DETERMINISTIC ($0)", file=sys.stderr)
                 continue
 
+            if deterministic_only:
+                print("SKIPPED (--deterministic-only)", file=sys.stderr)
+                continue
+
             if _cost_cap_reached(cost_cap, running_cost):
                 print(
                     f"COST CAP ${running_cost:.2f} ≥ ${cost_cap:.2f} (no call made)",
@@ -2598,7 +2867,12 @@ def cmd_translate(args):
             # Resume: reuse a prior unchanged-body translation for free. It still
             # feeds `translated` (callee context for later functions).
             if not no_resume:
-                hit = cache.get(dep.name, dep.body_text, deterministic_contracts.get(dep.name, ""))
+                hit = cache.get(
+                    dep.name,
+                    dep.body_text,
+                    deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
+                )
                 if hit is not None and cpp_com_mode:
                     hit = normalize_worker_body(
                         hit,
@@ -2621,6 +2895,15 @@ def cmd_translate(args):
                         hit = None
                 elif hit is not None and is_cpp_source:
                     hit = normalize_cpp_idioms(dep.body_text, hit)
+                if hit is not None and rustconv_target.name != "shell32":
+                    try:
+                        hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
+                    except CppComError as error:
+                        # The CACHED reply damaged the seal envelope. Reject the entry and
+                        # fall through to paying for it again -- shipping a body with a
+                        # dropped constant is the outcome sealing exists to prevent.
+                        print(f"CACHE REJECTED: {error}", file=sys.stderr)
+                        hit = None
                 if hit is not None:
                     translated[dep.name] = hit
                     resumed += 1
@@ -2654,58 +2937,73 @@ def cmd_translate(args):
                 cpp_com=cpp_com_mode,
             )
 
-            # Stream this function's output straight to the durable archive.
-            sink = None
-            if archive is not None:
-                sink = ResponseSink(archive.stream_path(func_idx, dep.name))
-            started = time.monotonic()
-            try:
-                if use_claude:
-                    result = submit_single(
-                        user_prompt,
-                        model=model,
-                        system_prompt=system_prompt,
-                        file_context=file_context,
-                        sink=sink,
+            # A rejected worker assembles NOTHING for the whole file, so one
+            # single-token slip in function 63 of 73 throws away the other 72. The
+            # envelope failures that survive the deterministic fixes are sampling
+            # noise on the largest bodies — re-rolling the same function by hand
+            # converged 4 rejects → 2 → 1 on shlfileop — so do it here instead of
+            # leaving it as a recipe. Each attempt is a real paid call and is billed;
+            # only the LAST reject is reported.
+            attempts_allowed = 1 + max(0, int(getattr(args, "retry_rejects", 0) or 0))
+            body = None
+            reject_error: CppComError | None = None
+            for attempt in range(1, attempts_allowed + 1):
+                # Stream this function's output straight to the durable archive.
+                sink = None
+                if archive is not None:
+                    sink = ResponseSink(archive.stream_path(func_idx, dep.name))
+                started = time.monotonic()
+                try:
+                    if use_claude:
+                        result = submit_single(
+                            user_prompt,
+                            model=model,
+                            system_prompt=system_prompt,
+                            file_context=file_context,
+                            sink=sink,
+                        )
+                    else:
+                        prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
+                        full = (prefix + "\n\n---\n\n" + user_prompt) if prefix else user_prompt
+                        result = submit_single(full, model=model, sink=sink)
+                finally:
+                    if sink is not None:
+                        sink.close()
+                elapsed_ms = int((time.monotonic() - started) * 1000)
+                if not result.success:
+                    break
+                try:
+                    body = _audit_paid_body(
+                        dep,
+                        result,
+                        cpp_com_mode=cpp_com_mode,
+                        is_cpp_source=is_cpp_source,
+                        fact_seals=fact_seals,
+                        call_seals=call_seals,
+                        target_name=rustconv_target.name,
                     )
-                else:
-                    prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
-                    full_prompt = (prefix + "\n\n---\n\n" + user_prompt) if prefix else user_prompt
-                    result = submit_single(full_prompt, model=model, sink=sink)
-            finally:
-                if sink is not None:
-                    sink.close()
-            elapsed_ms = int((time.monotonic() - started) * 1000)
+                    reject_error = None
+                    break
+                except CppComError as error:
+                    reject_error = error
+                    cache.put_rejected(dep.name, result.rust_code, str(error))
+                    if attempt >= attempts_allowed:
+                        break
+                    print(
+                        f"  [{func_idx}] {dep.name} AUDIT REJECT "
+                        f"(attempt {attempt}/{attempts_allowed}, retrying): {error}",
+                        file=sys.stderr,
+                    )
+                    total_in += result.input_tokens
+                    total_out += result.output_tokens
+                    if archive is not None:
+                        running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
 
             if result.success:
                 try:
-                    if not cpp_com_mode:
-                        # Sealing is language-neutral; unsealing must be too.
-                        result.rust_code = _unseal_worker(
-                            dep, result.rust_code, fact_seals, call_seals
-                        )
-                        if is_cpp_source:
-                            result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
-                    if cpp_com_mode:
-                        result.rust_code = _normalize_unseal_cpp_worker(
-                            dep, result.rust_code, fact_seals, call_seals
-                        )
-                        findings = audit_worker_body(
-                            dep.body_text,
-                            result.rust_code,
-                            f"{dep.name}_body",
-                            worker_signature(
-                                dep.name,
-                                dep.cpp_class,
-                                dep.params,
-                                dep.return_type,
-                            ),
-                        )
-                        if findings:
-                            raise CppComError(
-                                f"{dep.name}: paid body failed deterministic audit:\n  - "
-                                + "\n  - ".join(findings)
-                            )
+                    if reject_error is not None:
+                        raise reject_error
+                    assert body is not None
                 except CppComError as error:
                     _record_outcome(
                         dep,
@@ -2720,13 +3018,14 @@ def cmd_translate(args):
                         file=sys.stderr,
                     )
                     continue
-                translated[dep.name] = result.rust_code
-                # Persist for cross-run resume the instant it returns.
+                translated[dep.name] = body
+                # Persist the RAW sealed reply for cross-run resume (see the parallel path).
                 cache.put(
                     dep.name,
                     dep.body_text,
                     result.rust_code,
                     deterministic_contracts.get(dep.name, ""),
+                    sealed_names.get(dep.name),
                 )
                 if translation_memory is not None and dep.cpp_class is not None:
                     assert memory_identity is not None
@@ -2826,6 +3125,8 @@ def cmd_translate(args):
             resumed += 1
             _record_preamble(preamble_src, "cache_hit", cache_key=cache.dir.name)
             print("  [preamble] CACHED ($0)", file=sys.stderr)
+        elif preamble_src and deterministic_only:
+            print("  [preamble] SKIPPED (--deterministic-only)", file=sys.stderr)
         elif preamble_src and not capped:
             print(
                 f"  [preamble] {len(preamble_src)} C chars...", file=sys.stderr, end=" ", flush=True
@@ -2984,10 +3285,20 @@ def cmd_translate(args):
                     "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
                 )
             stitched = "\n\n".join(deterministic) + "\n\n" + stitched
-        elif cpp_com_wide_statics:
-            # Free-function path: the bodies now reference CPP_COM_WSTR_* by name, so
-            # the statics have to be in the module or every reference dangles.
-            stitched = cpp_com_wide_statics + "\n\n" + stitched
+        elif free_functions:
+            # Free-function path: the bodies now reference CPP_COM_WSTR_* by name and
+            # call into the RAII lowering, so both have to be in the module or every
+            # reference dangles.
+            prelude = []
+            if cpp_com_wide_statics:
+                prelude.append(cpp_com_wide_statics)
+            for raii_name, raii_rust in local_raii_impls.items():
+                prelude.append(
+                    f"// --local-raii {raii_name}: hand-verified lowering (spliced verbatim; "
+                    "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
+                )
+            if prelude:
+                stitched = "\n\n".join(prelude) + "\n\n" + stitched
 
         # COM vtbl tables, GENERATED — never asked of the model. `translate` is
         # function-granular, so file-scope `static const IXVtbl` tables fall to the
@@ -3353,6 +3664,14 @@ def main():
         "runs and a constant out-of-bounds index (the bindgen [T; 1] flex-array shape) "
         "passes silently. Iteration only; never for acceptance.",
     )
+
+    # difftest-gen — derive a differential harness from the C's own signatures.
+    p = sub.add_parser(
+        "difftest-gen",
+        help="Generate a differential test harness for a translated C file (no LLM)",
+    )
+    p.add_argument("c_file", help="the translated C source, e.g. dll/win32/msvcrt/mbcs.c")
+    p.add_argument("--out", help="write the cases here (default: stdout)")
 
     # crate-repair — deterministic Stage 1.5. Closes the MECHANICAL rustc roots of a freshly
     # assembled crate for $0, before any paid repair pass, and leaves a bucketed RED residual.
@@ -3782,6 +4101,18 @@ def main():
         "instead of silently. Works for plain C and for shell32 --cpp-com.",
     )
     p.add_argument(
+        "--retry-rejects",
+        dest="retry_rejects",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Re-roll a worker that fails the deterministic audit, up to N extra PAID "
+        "calls (default 0). One rejected worker assembles no file at all, so a single "
+        "token slip in one function throws away every other function in the TU; the "
+        "survivors after the deterministic fixes are sampling noise on the biggest "
+        "bodies. Each retry is billed and applies the identical acceptance checks.",
+    )
+    p.add_argument(
         "--sdk-header",
         help="WIDL-generated C header used as COM vtable ground truth",
     )
@@ -3821,6 +4152,15 @@ def main():
         help="Fan out per-function calls N-at-a-time (DeepSeek + --mode "
         "mechanical ONLY; ignored otherwise). Default 1 (sequential). "
         "Try 5; pair with --cost-cap as the runaway brake.",
+    )
+    p.add_argument(
+        "--deterministic-only",
+        dest="deterministic_only",
+        action="store_true",
+        help="Assemble ONLY the functions that lower deterministically ($0, no API "
+        "call at all) and skip every paid one. The free band on a CRT file is "
+        "large (mbcs.c: 76 of 192) and is proven rather than reviewed, so it can "
+        "be integrated and gated on its own before deciding to pay for the rest.",
     )
     p.add_argument(
         "--no-resume",
@@ -3916,6 +4256,7 @@ def main():
         "shell32-tail-inventory": cmd_shell32_tail_inventory,
         "candidate-check": cmd_candidate_check,
         "crate-repair": cmd_crate_repair,
+        "difftest-gen": cmd_difftest_gen,
         "substrate-plan": cmd_substrate_plan,
         "skeleton-check": cmd_skeleton_check,
         "cpp-com": cmd_cpp_com,

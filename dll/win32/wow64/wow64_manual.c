@@ -32,6 +32,13 @@ NTSTATUS WINAPI NtQueryVirtualMemory(HANDLE ProcessHandle, PVOID BaseAddress,
                                      PSIZE_T ReturnLength);
 NTSTATUS WINAPI NtQueryInformationProcess(HANDLE ProcessHandle, ULONG InfoClass,
                                           PVOID Info, ULONG Len, PULONG RetLen);
+NTSTATUS WINAPI NtQueryInformationThread(HANDLE ThreadHandle, ULONG InfoClass,
+                                         PVOID Info, ULONG Len, PULONG RetLen);
+NTSTATUS WINAPI NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK Access,
+                                     ULONG HandleAttributes, PHANDLE TokenHandle);
+NTSTATUS WINAPI NtOpenThreadTokenEx(HANDLE ThreadHandle, ACCESS_MASK Access,
+                                    BOOLEAN OpenAsSelf, ULONG HandleAttributes,
+                                    PHANDLE TokenHandle);
 NTSTATUS WINAPI NtQuerySystemInformation(ULONG InfoClass, PVOID Info, ULONG Len,
                                          PULONG RetLen);
 NTSTATUS WINAPI NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess,
@@ -3411,6 +3418,299 @@ static NTSTATUS Wow64Manual_NtUserEnumDisplayMonitors(ULONG *a)
 }
 
 /*
+ * NtUserInitializeClientPfnArrays — INTERCEPT. The guest's user32 calls this once
+ * at process init with three PFNCLIENT/PFNCLIENTWORKER structs: arrays of
+ * FUNCTION POINTERS, 4 bytes each in the guest and 8 in the kernel.
+ *
+ * What makes this one different from the rest of the divergence family is the
+ * destination. win32k does not keep these per-process — it RtlCopyMemory's them
+ * into gpsi->apfnClientA/W/Worker and aStoCidPfn, the GLOBAL server info every
+ * process shares, and sets the global hModClient. So a 32-bit guest reaching
+ * that body would (a) be read for the HOST struct size, ~2x its own buffer, and
+ * (b) overwrite the SYSTEM-WIDE client-callback table with pairwise-merged
+ * garbage, breaking callbacks for native 64-bit processes too. A WoW64 process
+ * corrupting global kernel state is a different blast radius from one corrupting
+ * itself.
+ *
+ * Today it is harmless for exactly one reason: win32k early-outs on
+ * `ClientPfnInit != 0`, and native user32 (csrss/winlogon) always wins that race
+ * long before any guest starts. That is initialization ORDER, not a guarantee —
+ * so the call is intercepted here rather than left resting on it.
+ *
+ * Returning SUCCESS without calling the kernel preserves the observable
+ * behaviour exactly (the kernel's early-out already made it a no-op) and drops
+ * the ordering dependency. The guest needs nothing from it: 32-bit callbacks are
+ * dispatched by the WoW64 callback bridge through
+ * Wow64pKiUserCallbackDispatcher32, not through gpsi.
+ *   NtUserInitializeClientPfnArrays(pfnClientA, pfnClientW, pfnClientWorker, hmodUser)
+ */
+static NTSTATUS Wow64Manual_NtUserInitializeClientPfnArrays(ULONG *a)
+{
+    static int Announced;
+
+    (void)a;
+    if (!Announced)
+    {
+        Announced = 1;
+        DbgPrint("[WOW64] NtUserInitializeClientPfnArrays: INTERCEPTED - guest "
+                 "32-bit PFNCLIENT arrays are never installed into the GLOBAL "
+                 "gpsi callback table (they would be read at host width and "
+                 "corrupt it for native processes). Guest callbacks go through "
+                 "the WoW64 callback bridge.\n");
+    }
+    return 0; /* STATUS_SUCCESS — matches win32k's own ClientPfnInit early-out */
+}
+
+/*
+ * NtOpenProcessTokenEx / NtOpenThreadTokenEx — an OUT PHANDLE is 4 bytes in the
+ * guest and 8 on the host, so the flat thunk handed the 64-bit kernel a 4-byte
+ * cell to write 8 bytes into. It failed TWO ways, chosen by the address, because
+ * the kernel's probe is itself width-typed (probe_write_handle is
+ * probe_write_user::<PVOID>, i.e. 8-byte alignment) while a guest HANDLE is only
+ * 4-aligned:
+ *   - cell at ≡4 (mod 8): rejected outright, STATUS_DATATYPE_MISALIGNMENT — a
+ *     status the guest's ABI says this call cannot return;
+ *   - cell at ≡0 (mod 8): probe passes, 8 bytes written. Little-endian keeps
+ *     this half quiet: the low dword lands correctly so the guest reads a valid
+ *     handle, while the high dword (and the probe's own NULL touch-test) zeroes
+ *     the adjacent 4 bytes — E7's class, surfacing far from the write.
+ * Measured 12 calls in one amd64 boot (8 + 4); the tell was NtOpenThreadTokenEx
+ * appearing TWICE per logical open, the first returning 0x80000002. Marshalling
+ * through a host-width local makes it 1:1.
+ *
+ * Narrowing the result is not a truncation risk: a WoW64 process's handles must
+ * fit in 32 bits by construction, or the guest could never name them at all.
+ *
+ * NtOpenProcessTokenEx(ProcessHandle, DesiredAccess, HandleAttributes, TokenHandle)
+ * NtOpenThreadTokenEx(ThreadHandle, DesiredAccess, OpenAsSelf, HandleAttributes,
+ *                     TokenHandle)
+ */
+static NTSTATUS Wow64Manual_NtOpenProcessTokenEx(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[3];
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    St = NtOpenProcessTokenEx((HANDLE)(LONG_PTR)(LONG)a[0], (ACCESS_MASK)a[1],
+                              a[2], &Handle);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtOpenThreadTokenEx(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[4];
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    St = NtOpenThreadTokenEx((HANDLE)(LONG_PTR)(LONG)a[0], (ACCESS_MASK)a[1],
+                             (BOOLEAN)(a[2] != 0), a[3], &Handle);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
+/*
+ * NtGetContextThread / NtSetContextThread — an i386 CONTEXT is not widenable,
+ * and the flat thunk did not try: it handed the guest's 32-bit CONTEXT pointer
+ * to the 64-bit kernel to use at HOST layout. Get then wrote a 1232-byte amd64
+ * CONTEXT into a 716-byte (0x2CC) guest buffer — a >500-byte overflow of guest
+ * memory — and Set loaded the native thread's register file out of i386 fields
+ * read at the wrong offsets. Both are catastrophic; both returned SUCCESS.
+ *
+ * No kernel path can help, because the 64-bit kernel has no notion of the
+ * guest's registers. Guest CPU state lives in the CPU layer, and
+ * BTCpuGet/SetContext already speak exactly the i386 CONTEXT this syscall
+ * carries — the same primitives NtContinue and the callback bridge use. So
+ * these are real marshallers for the case that matters, not refusals.
+ *
+ * SELF-THREAD ONLY. BTCpuGet/SetContext ignore their Thread argument and act on
+ * the calling thread's CPU area; a cross-thread query needs a suspend handshake
+ * with the target's CPU layer (task #64). Cross-thread is REFUSED rather than
+ * silently answered with the caller's own registers — which is what makes this
+ * safe to add before #64 exists.
+ *
+ * Two amd64-only quirks, both consequences of wow64cpu.S's contract (arm64's
+ * CPU layer is FEX, which tracks full live guest state and needs neither):
+ *   - The saved Esp is the LIVE one, still pointing at the stub return address,
+ *     while the saved Eip is where the guest will RESUME. Wow64CpuDispatch
+ *     reconciles that pair with `Esp += 4` on the normal return, so a snapshot
+ *     handed to the guest has to apply it or Eip and Esp disagree by one slot.
+ *   - Only the SegGs..SegSs window is maintained. A request for FloatSave, Dr*
+ *     or ExtendedRegisters gets those bits CLEARED from the returned
+ *     ContextFlags — the API's own way of saying "not supplied" — plus a log
+ *     line, instead of handing back a buffer that looks filled in and isn't.
+ */
+#define WOW64_CTX32_SEG_LO      0x8C   /* SegGs, SegFs, SegEs, SegDs          */
+#define WOW64_CTX32_SEG_HI      0x98
+#define WOW64_CTX32_INT_LO      0x9C   /* Edi, Esi, Ebx, Edx, Ecx, Eax        */
+#define WOW64_CTX32_INT_HI      0xB0
+#define WOW64_CTX32_EAX         0xB0
+#define WOW64_CTX32_CTL_LO      0xB4   /* Ebp, Eip, SegCs, EFlags, Esp, SegSs */
+#define WOW64_CTX32_CTL_HI      0xC8
+
+#define WOW64_CTX32_ARCH        0x00010000u /* CONTEXT_i386                   */
+#define WOW64_CTX32_F_CONTROL   0x00000001u
+#define WOW64_CTX32_F_INTEGER   0x00000002u
+#define WOW64_CTX32_F_SEGMENTS  0x00000004u
+/* CONTEXT_FLOATING_POINT | CONTEXT_DEBUG_REGISTERS | CONTEXT_EXTENDED_REGISTERS */
+#define WOW64_CTX32_F_UNTRACKED 0x00000038u
+#define WOW64_CTX32_WANTS(f, g) \
+    (((f) & (WOW64_CTX32_ARCH | (g))) == (WOW64_CTX32_ARCH | (g)))
+
+/* The guest CONTEXT must lie wholly in the 32-bit user half and be aligned. */
+static int Wow64pCtx32Valid(ULONG Addr)
+{
+    return Addr >= 0x1000u && Addr < 0x80000000u && (Addr & 3) == 0 &&
+           (0x80000000u - Addr) >= WOW64_CTX32_SIZE;
+}
+
+/* The CPU-area context as the guest will observe it once this service returns
+ * (see the Esp/Eip note above). */
+static LONG Wow64pCpuGetContext32(PVOID Ctx32)
+{
+    extern LONG (WINAPI *Wow64pBTCpuGetContext)(HANDLE, HANDLE, PVOID, PVOID);
+    LONG St;
+
+    if (!Wow64pBTCpuGetContext)
+        return (LONG)0xC0000002L;
+    St = Wow64pBTCpuGetContext((HANDLE)(LONG_PTR)-2, WOW64_PROCESS_CURRENT,
+                               NULL, Ctx32);
+#ifndef _M_ARM64
+    if (St >= 0)
+        *(volatile ULONG *)((PBYTE)Ctx32 + WOW64_CTX32_ESP) += 4;
+#endif
+    return St;
+}
+
+/* THREAD_BASIC_INFORMATION prefix at host layout; only TebBaseAddress is read.
+ * Comparing TEB bases identifies the calling thread through a real handle, not
+ * just the (HANDLE)-2 pseudo-handle. */
+typedef struct _WOW64_THREAD_BASIC_INFO
+{
+    NTSTATUS  ExitStatus;
+    PVOID     TebBaseAddress;
+    ULONG_PTR UniqueProcess;
+    ULONG_PTR UniqueThread;
+    ULONG_PTR AffinityMask;
+    LONG      Priority;
+    LONG      BasePriority;
+} WOW64_THREAD_BASIC_INFO;
+
+static int Wow64pIsCurrentThread(ULONG Handle32)
+{
+    WOW64_THREAD_BASIC_INFO Self, Target;
+    HANDLE Thread = (HANDLE)(LONG_PTR)(LONG)Handle32;
+
+    if (Thread == (HANDLE)(LONG_PTR)-2)
+        return 1;
+    /* A handle without THREAD_QUERY_INFORMATION lands here as "not self" and is
+     * refused — a wrong answer would be worse than a refused one. */
+    if (NtQueryInformationThread((HANDLE)(LONG_PTR)-2, 0 /*ThreadBasicInformation*/,
+                                 &Self, sizeof(Self), NULL) < 0 ||
+        NtQueryInformationThread(Thread, 0, &Target, sizeof(Target), NULL) < 0)
+        return 0;
+    return Self.TebBaseAddress == Target.TebBaseAddress;
+}
+
+/*   NtGetContextThread(ThreadHandle, Context) */
+static NTSTATUS Wow64Manual_NtGetContextThread(ULONG *a)
+{
+    ULONG Ctx32 = a[1];
+    ULONG Want;
+    LONG St;
+
+    if (!Wow64pCtx32Valid(Ctx32))
+        return (NTSTATUS)0xC000000DL; /* STATUS_INVALID_PARAMETER */
+    if (!Wow64pIsCurrentThread(a[0]))
+    {
+        DbgPrint("[WOW64] NtGetContextThread: REFUSED - cross-thread query "
+                 "(handle %08lx). The CPU layer only exposes the CALLING "
+                 "thread's guest state (task #64).\n", a[0]);
+        return (NTSTATUS)0xC0000002L; /* STATUS_NOT_IMPLEMENTED */
+    }
+
+    Want = *(volatile ULONG *)(ULONG_PTR)Ctx32;
+    St = Wow64pCpuGetContext32((PVOID)(ULONG_PTR)Ctx32);
+    if (St < 0)
+        return (NTSTATUS)St;
+#ifndef _M_ARM64
+    if (Want & WOW64_CTX32_F_UNTRACKED)
+    {
+        DbgPrint("[WOW64] NtGetContextThread: ContextFlags %08lx asked for "
+                 "FP/Dr/extended state wow64cpu does not maintain; clearing "
+                 "those bits in the reply, fields left untouched.\n", Want);
+        Want &= ~WOW64_CTX32_F_UNTRACKED;
+    }
+#endif
+    *(volatile ULONG *)(ULONG_PTR)Ctx32 = Want;
+    return 0;
+}
+
+/*   NtSetContextThread(ThreadHandle, Context) */
+static NTSTATUS Wow64Manual_NtSetContextThread(ULONG *a)
+{
+    extern LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
+    ULONG Ctx32 = a[1];
+    const BYTE *Src;
+    BYTE Merged[WOW64_CTX32_SIZE];
+    ULONG Want, i;
+    LONG St;
+
+    if (!Wow64pCtx32Valid(Ctx32))
+        return (NTSTATUS)0xC000000DL;
+    if (!Wow64pBTCpuSetContext)
+        return (NTSTATUS)0xC0000002L;
+    if (!Wow64pIsCurrentThread(a[0]))
+    {
+        DbgPrint("[WOW64] NtSetContextThread: REFUSED - cross-thread set "
+                 "(handle %08lx). Installing it on the CALLING thread instead "
+                 "would corrupt the wrong thread (task #64).\n", a[0]);
+        return (NTSTATUS)0xC0000002L;
+    }
+
+    Src = (const BYTE *)(ULONG_PTR)Ctx32;
+    Want = *(const volatile ULONG *)(const void *)Src;
+
+    /* A partial ContextFlags must leave the unrequested groups ALONE, but
+     * BTCpuSetContext installs the whole SegGs..SegSs window unconditionally
+     * and flags it as the state to RESUME. So start from the live context and
+     * overlay only the groups the guest actually asked for. */
+    for (i = 0; i < WOW64_CTX32_SIZE; i++)
+        Merged[i] = 0;
+    *(ULONG *)Merged = Want;
+    St = Wow64pCpuGetContext32(Merged);
+    if (St < 0)
+        return (NTSTATUS)St;
+
+    if (WOW64_CTX32_WANTS(Want, WOW64_CTX32_F_SEGMENTS))
+        for (i = WOW64_CTX32_SEG_LO; i <= WOW64_CTX32_SEG_HI; i += 4)
+            *(ULONG *)(Merged + i) = *(const ULONG *)(Src + i);
+    if (WOW64_CTX32_WANTS(Want, WOW64_CTX32_F_INTEGER))
+        for (i = WOW64_CTX32_INT_LO; i <= WOW64_CTX32_INT_HI; i += 4)
+            *(ULONG *)(Merged + i) = *(const ULONG *)(Src + i);
+    else
+        /* Resuming a replaced context bypasses Wow64CpuDispatch's
+         * `Eax = result` fixup, so the return value has to be planted by hand.
+         * If the guest asked to set INTEGER state it chose its own Eax, and
+         * that wins — same as a real self-directed SetThreadContext. */
+        *(ULONG *)(Merged + WOW64_CTX32_EAX) = 0; /* STATUS_SUCCESS */
+    if (WOW64_CTX32_WANTS(Want, WOW64_CTX32_F_CONTROL))
+        for (i = WOW64_CTX32_CTL_LO; i <= WOW64_CTX32_CTL_HI; i += 4)
+            *(ULONG *)(Merged + i) = *(const ULONG *)(Src + i);
+#ifndef _M_ARM64
+    if (Want & WOW64_CTX32_F_UNTRACKED)
+        DbgPrint("[WOW64] NtSetContextThread: ContextFlags %08lx asked to set "
+                 "FP/Dr/extended state wow64cpu does not maintain; those groups "
+                 "were IGNORED (control/integer/segments applied).\n", Want);
+#endif
+
+    return (NTSTATUS)Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2,
+                                           WOW64_PROCESS_CURRENT, NULL, Merged);
+}
+
+/*
  * NtCreateThread — FAIL LOUD. This is not a marshaller; it is a refusal.
  *
  * The flat thunk this replaces returned STATUS_SUCCESS while handing the 64-bit
@@ -3611,6 +3911,16 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64pOpenByCid(NtOpenThread, Arguments);
     if (WOW64_IS("NtCreateThread"))
         return Wow64Manual_NtCreateThread(Arguments);
+    if (WOW64_IS("NtUserInitializeClientPfnArrays"))
+        return Wow64Manual_NtUserInitializeClientPfnArrays(Arguments);
+    if (WOW64_IS("NtOpenProcessTokenEx"))
+        return Wow64Manual_NtOpenProcessTokenEx(Arguments);
+    if (WOW64_IS("NtOpenThreadTokenEx"))
+        return Wow64Manual_NtOpenThreadTokenEx(Arguments);
+    if (WOW64_IS("NtGetContextThread"))
+        return Wow64Manual_NtGetContextThread(Arguments);
+    if (WOW64_IS("NtSetContextThread"))
+        return Wow64Manual_NtSetContextThread(Arguments);
 
     /* M12: the rest of the IO_STATUS_BLOCK family. */
     if (WOW64_IS("NtCancelIoFile"))

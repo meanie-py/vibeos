@@ -151,3 +151,13 @@ NtUserDefSetText
 # window (collapses to 0x0, no WM_PAINT). The manual thunk marshals the lParam
 # payload 32<->64 for this (FNID,Msg); every other message flat-passes as before.
 NtUserMessageCall
+
+# NtUserInitializeClientPfnArrays — INTERCEPT, not a marshaller. The guest's
+# PFNCLIENT/PFNCLIENTWORKER are arrays of function pointers (4 bytes guest, 8
+# host), and win32k copies them into the GLOBAL gpsi callback table, not per
+# process — so a guest reaching that body is read at host width AND corrupts
+# callbacks for native 64-bit processes. Harmless today only because win32k
+# early-outs on ClientPfnInit and native user32 always initializes first; that
+# is ordering, not a guarantee. wow64_manual.c returns SUCCESS without calling
+# the kernel, which is exactly what the early-out already produced.
+NtUserInitializeClientPfnArrays

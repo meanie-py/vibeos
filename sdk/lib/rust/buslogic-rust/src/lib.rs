@@ -9,15 +9,6 @@
 
 // Coerce an `extern "C"` Rust fn item into a bindgen NTAPI callback slot
 // (`Option<unsafe extern "stdcall" fn ...>` on i386; `extern "C"` on amd64/arm64).
-// The fn-pointer bit pattern is identical; only the nominal Rust type differs, and
-// `Some(f) as PHW_XXX` is an invalid Option→Option cast — so transmute the address.
-macro_rules! cb {
-    ($f:expr) => {
-        core::mem::transmute($f as usize)
-    };
-}
-pub(crate) use cb;
-
 pub mod types;
 pub mod glue;
 pub mod inlines;

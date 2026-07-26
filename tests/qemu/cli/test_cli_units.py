@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import struct
 import subprocess
@@ -2790,6 +2791,49 @@ def test_staleness_c_source_change_is_stale(staleness_repo: Path):
     assert any("build source changed" in r for r in v.reasons), v.reasons
 
 
+def test_staleness_lint_baseline_change_is_not_stale(staleness_repo: Path):
+    """A lint baseline is accepted-findings bookkeeping, not a build input.
+
+    Counterpart to the .c/CMakeLists tests above: those pin that build-relevant edits
+    must NOT read as fresh; this pins the opposite error. tools/lint-baseline/*.txt is
+    only ever read by lints -- never compiled, never staged -- so counting it made the
+    documented build -> `check --update-baseline` -> smoke loop demand a second, no-op
+    rebuild every single time. The exclusion is deliberately narrow; the rest of tools/
+    carries real compiled sources, which the next test pins.
+
+    The file must be COMMITTED before the stamp: git_fingerprint folds untracked paths
+    in via `git status --porcelain`, which reports the path and not the content, so a
+    test that edits an untracked file passes no matter what the pathspec says.
+    """
+    bl = staleness_repo / "tools" / "lint-baseline"
+    bl.mkdir(parents=True, exist_ok=True)
+    (bl / "some_scanner.txt").write_text("accepted finding A\n")
+    _git(staleness_repo, "add", "-A")
+    _git(staleness_repo, "commit", "-qm", "baseline")
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (bl / "some_scanner.txt").write_text("accepted finding A\naccepted finding B\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.fresh and not v.stale, v.reasons
+
+
+def test_staleness_other_tools_source_still_stale(staleness_repo: Path):
+    """tools/ at large stays in the fingerprint -- it carries compiled sources."""
+    t = staleness_repo / "tools" / "libschily"
+    t.mkdir(parents=True, exist_ok=True)
+    (t / "helper.c").write_text("int h(void){return 1;}\n")
+    _git(staleness_repo, "add", "-A")
+    _git(staleness_repo, "commit", "-qm", "tools src")
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (t / "helper.c").write_text("int h(void){return 2;}\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+    assert any("build source changed" in r for r in v.reasons), v.reasons
+
+
 def test_staleness_cmake_change_is_stale(staleness_repo: Path):
     provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
         staleness_repo / "build-i386"
@@ -3265,6 +3309,81 @@ def test_lint_baseline_still_flags_a_new_file_and_a_new_message():
     base = {"a.sh:10:1: warning: X unused. [SC2034]"}
     assert lints._new_findings({"b.sh:10:1: warning: X unused. [SC2034]"}, base) != []
     assert lints._new_findings({"a.sh:10:1: warning: Y unused. [SC2034]"}, base) != []
+
+
+def test_lint_baseline_ignores_drift_in_lint_kernels_embedded_line_number():
+    """lint_kernel carries the line number INSIDE the message, so the `file:line:` stripper
+    above never applied to it and it kept drifting (2026-07-25: adding 4-line banners to 12
+    files reported 35 "new" findings that were the same 35 sites). The scanner prints a file
+    header, then indented `L <n> Fn(): ...` lines."""
+    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
+    cur = {"    L 313 RtlpCheckDeviceName(): *NameInvalid = ..."}
+    assert lints._new_findings(cur, base) == []
+
+
+def test_lint_baseline_still_flags_an_extra_embedded_line_occurrence():
+    """The multiset half again — drift immunity must not swallow a genuinely new site."""
+    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
+    cur = {
+        "    L 313 RtlpCheckDeviceName(): *NameInvalid = ...",
+        "    L 480 RtlpCheckDeviceName(): *NameInvalid = ...",
+    }
+    assert len(lints._new_findings(cur, base)) == 1
+    # ...and a different function at a drifted line is still new.
+    assert lints._new_findings({"    L 313 RtlpOther(): *NameInvalid = ..."}, base) != []
+
+
+def test_lint_baseline_ignores_drift_behind_a_leading_class_tag():
+    """verify_ffi and scan_magic_offsets print `[TAG] path:line: msg`. _LOCATION is
+    start-anchored, so it never saw the path and 205 baseline lines were silently NOT
+    drift-immune — a one-line comment added to fastfat's extern block moved an unrelated
+    finding 177 -> 178 and the merge queue rejected the whole batch (2026-07-25)."""
+    base = {"  [C_MACRO] a/b.rs:177: IoGetCurrentIrpStackLocation: is a C macro"}
+    cur = {"  [C_MACRO] a/b.rs:178: IoGetCurrentIrpStackLocation: is a C macro"}
+    assert lints._new_findings(cur, base) == []
+    # The tag is part of the identity: same site, different class, is a NEW finding.
+    other_class = {"  [FLEX_ARRAY] a/b.rs:177: IoGetCurrentIrpStackLocation: is a C macro"}
+    assert lints._new_findings(other_class, base) != []
+    # ...and the multiset half still holds.
+    extra = {"  [C_MACRO] a/b.rs:900: IoGetCurrentIrpStackLocation: is a C macro"}
+    assert len(lints._new_findings(cur | extra, base)) == 1
+
+
+def test_lint_baseline_ignores_drift_in_a_trailing_parenthesized_location():
+    """verify_signatures puts the location last: `[MEDIUM] NtSetLdtEntries  (path:210)`."""
+    base = {"[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"}
+    drifted = {"[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:255)"}
+    assert lints._new_findings(drifted, base) == []
+    assert lints._new_findings({"[MEDIUM] NtOther  (sdk/lib/rust/x/stubs.rs:210)"}, base) != []
+    reclassified = {"[HIGH] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"}
+    assert lints._new_findings(reclassified, base) != []
+
+
+def test_every_baseline_line_is_immune_to_line_drift():
+    """The GUARD over the three fixes above. Each was found the same way — a lane's unrelated
+    edit shifted a line, the gate went red, and someone had to re-bless a baseline (which
+    launders whatever else drifted in the same pass). The failure is invisible at authorship
+    time: a new scanner with a novel output shape looks fine until it costs another lane a
+    gate. So assert the PROPERTY directly over every baseline we actually ship — perturbing a
+    finding's line number must never change its key. A scanner whose format this cannot parse
+    fails check-tooling here, where its author is standing, instead of a stranger's merge."""
+    # A location we are confident is a location: a real source extension, then digits.
+    loc = re.compile(r"(?P<f>[\w./+-]+\.(?:rs|c|h|py|md|txt|cmake|spec|toml|sh)):(?P<n>\d+)")
+    baselines = sorted((_conf_repo_root() / "tools" / "lint-baseline").glob("*.txt"))
+    assert baselines, "no lint baselines found — wrong REPO root?"
+    blind: list[str] = []
+    for path in baselines:
+        for line in path.read_text().splitlines():
+            m = loc.search(line)
+            if not line.strip() or not m:
+                continue
+            drifted = line[: m.start("n")] + str(int(m.group("n")) + 1000) + line[m.end("n") :]
+            if lints._finding_key(line) != lints._finding_key(drifted):
+                blind.append(f"{path.name}: {line[:110]}")
+    assert not blind, (
+        f"{len(blind)} baseline finding(s) carry a line number that _finding_key does not "
+        f"strip, so any edit above them reads as NEW:\n  " + "\n  ".join(blind[:10])
+    )
 
 
 def test_lint_baseline_compares_prefixless_findings_verbatim():
@@ -3819,3 +3938,44 @@ def test_land_drain_waits_but_submit_path_does_not(lane_repo, tmp_path, monkeypa
     assert seen[-1] == hl_mod.LAND_LOCK_TIMEOUT, seen
     land_mod.land(_Args(direct=False, foreground=True), lane)
     assert seen[-1] == 0.0, seen
+
+
+def test_gate_recovers_the_child_builds_own_classification(tmp_path: Path):
+    """A build failure the child fully understood was reaching the merge queue as `""`.
+
+    queue.INCONCLUSIVE contains `""` on purpose — it means "the gate died without writing a
+    verdict", the least conclusive outcome there is. So dropping the child's classification
+    made every named build failure indistinguishable from a host hiccup: the train halted,
+    rejected nobody, and re-gated the whole batch. Five times on 2026-07-25, each a full
+    3-build/4-boot cycle.
+    """
+    from . import gate as gate_mod
+
+    (tmp_path / "summary.json").write_text(json.dumps({"classification": "BUILD_INCOMPLETE"}))
+    stdout = f"build arm64  —  FAIL: BUILD_INCOMPLETE\nfull log:  {tmp_path}/full.log\n"
+    assert gate_mod._child_classification(stdout) == "BUILD_INCOMPLETE"
+
+
+def test_gate_classification_recovery_fails_safe(tmp_path: Path):
+    """Every failure path must yield "" — the old behaviour — never an exception. This runs
+    inside the gate's build loop, so raising here would take down a landing."""
+    from . import gate as gate_mod
+
+    assert gate_mod._child_classification("") == ""
+    assert gate_mod._child_classification("no artifact line at all") == ""
+    assert gate_mod._child_classification("full log:  /definitely/not/here/full.log") == ""
+    (tmp_path / "summary.json").write_text("{not json")
+    assert gate_mod._child_classification(f"full log:  {tmp_path}/full.log") == ""
+
+
+def test_build_incomplete_does_not_reject_a_lane():
+    """It means ninja exited 0 but a cohab PE is older than its staticlib — and the stale set
+    was DIFFERENT on all 5 occurrences (kernel32 / version / shell32+usbport /
+    advapi32+kernel32+ws2_32+mouhid). A real missing dependency edge is not random, so it says
+    nothing about the submission and must not bounce a lane until it is root-caused."""
+    from . import queue as queue_mod
+
+    assert "BUILD_INCOMPLETE" in queue_mod.INCONCLUSIVE
+    # ...while genuinely conclusive reds still reject.
+    for conclusive in ("BUILD_FAIL", "LINT_FAIL", "TOOLING_FAIL"):
+        assert conclusive not in queue_mod.INCONCLUSIVE

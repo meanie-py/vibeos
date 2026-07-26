@@ -29,6 +29,7 @@ from rustconv.cpp_com import (
     render_object_map_adapter,
     render_wide_literal_statics,
     require_supported_worker_raii,
+    rewrite_wide_literals,
     strip_debug_statements,
     worker_signature,
 )
@@ -676,6 +677,32 @@ def test_wide_character_literals_are_numeric_before_prompting():
     ]
     plan = prepare_helper_closure(roots, "C")
     assert "Find(0x0020u16)" in next(dep for dep in plan if dep.name == "C_f").body_text
+
+
+def test_narrow_char_literal_ending_in_L_does_not_open_a_wide_literal():
+    """`case 'L':` must stay narrow — the regex this replaced ran to the next `'`.
+
+    shlexec.cpp has `case 'L':` at line 400 and a comment reading "PIDL's" at
+    line 2482; `L'(?:\\.|[^'\\])+'` matched across all 1,800 lines between them
+    and the whole TU failed to translate.
+    """
+    assert rewrite_wide_literals("case 'L':") == "case 'L':"
+    assert rewrite_wide_literals("case 'L': if (p == L':') x;") == (
+        "case 'L': if (p == 0x003Au16) x;"
+    )
+
+
+def test_wide_literals_inside_comments_and_narrow_strings_are_left_alone():
+    assert rewrite_wide_literals("/* PIDL's and 'My Computer' */") == (
+        "/* PIDL's and 'My Computer' */"
+    )
+    assert rewrite_wide_literals('// a L"x" in a comment\n') == '// a L"x" in a comment\n'
+    assert rewrite_wide_literals("s = \"has L' inside\";") == "s = \"has L' inside\";"
+
+
+def test_escaped_quotes_inside_wide_char_literals():
+    assert rewrite_wide_literals(r"c == L'\''") == "c == 0x0027u16"
+    assert rewrite_wide_literals(r"c == L'\\'") == "c == 0x005Cu16"
 
 
 def test_helper_closure_keeps_same_file_external_functions_at_abi_boundary():

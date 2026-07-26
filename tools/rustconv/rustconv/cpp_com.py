@@ -24,6 +24,8 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .lex_mask import mask_code
+
 if TYPE_CHECKING:
     from .callgraph import FunctionDep
 
@@ -1367,8 +1369,49 @@ _INTEGER_LITERAL = re.compile(
     r"(?<![\w.])(?P<number>0[xX][0-9A-Fa-f]+|0[oO][0-7]+|\d+)"
     r"(?:[uUlL]+|[iu](?:8|16|32|64|128|size))?(?![\w.])"
 )
-_CPP_WIDE_LITERAL = re.compile(r'L"(?:\\.|[^"\\])*"')
-_CPP_WIDE_CHAR = re.compile(r"L'(?:\\.|[^'\\])+'")
+
+
+def _cpp_literal_spans(text: str) -> list[tuple[int, int]]:
+    """(start, end) of every real string/char literal, comments excluded.
+
+    A regex cannot find these. `case 'L':` closes a NARROW literal with the very
+    two characters that open a wide one, so `L'(?:\\.|[^'\\])+'` latches onto the
+    `L':` and runs to the next apostrophe — in shlexec.cpp that is 1,800 lines
+    away, inside a comment reading "PIDL's". A literal boundary only exists
+    relative to a scan that has already consumed everything before it, so scan.
+
+    An `L` prefix is folded into the span it belongs to, which is what makes the
+    narrow/wide distinction fall out: `'L'` starts at the quote, `L':'` starts one
+    character earlier.
+    """
+    spans: list[tuple[int, int]] = []
+    i, n = 0, len(text)
+    while i < n:
+        if text.startswith("//", i):
+            end = text.find("\n", i + 2)
+            i = n if end < 0 else end
+        elif text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+        elif text[i] in "\"'":
+            quote, start = text[i], i
+            if start >= 1 and text[start - 1] == "L":
+                prev = text[start - 2] if start >= 2 else ""
+                if not (prev.isalnum() or prev == "_"):
+                    start -= 1
+            i += 1
+            while i < n:
+                if text[i] == "\\":
+                    i += 2
+                    continue
+                if text[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            spans.append((start, i))
+        else:
+            i += 1
+    return spans
 
 
 def _wide_literal_units(token: str) -> tuple[int, ...]:
@@ -1402,11 +1445,35 @@ def _wide_char_unit(token: str) -> int:
     return encoded[0] | (encoded[1] << 8)
 
 
+def _wide_literal_tokens(text: str) -> list[tuple[int, int, str]]:
+    """(start, end, token) for each wide literal, skipping narrow ones and comments.
+
+    KNOWN GAP: C adjacent-literal concatenation is not folded. `REGSTR_PATH_EXPLORER
+    L"\\\\IconUnderline"` (general.cpp:104) lowers the `L"..."` half to a static and
+    leaves the macro beside it, which is not Rust syntax — it fails loudly at compile
+    rather than silently, but it does need the macro expanded and both halves folded
+    into one static before the pair can be lowered.
+    """
+    out = []
+    for start, end in _cpp_literal_spans(text):
+        token = text[start:end]
+        if token.startswith(('L"', "L'")):
+            out.append((start, end, token))
+    return out
+
+
 def _rewrite_wide_literals(text: str) -> str:
-    text = _CPP_WIDE_LITERAL.sub(
-        lambda match: f"{_wide_literal_name(match.group(0))}.as_ptr()", text
-    )
-    return _CPP_WIDE_CHAR.sub(lambda match: f"0x{_wide_char_unit(match.group(0)):04X}u16", text)
+    pieces, prev = [], 0
+    for start, end, token in _wide_literal_tokens(text):
+        if token.startswith('L"'):
+            replacement = f"{_wide_literal_name(token)}.as_ptr()"
+        else:
+            replacement = f"0x{_wide_char_unit(token):04X}u16"
+        pieces.append(text[prev:start])
+        pieces.append(replacement)
+        prev = end
+    pieces.append(text[prev:])
+    return "".join(pieces)
 
 
 def rewrite_wide_literals(text: str) -> str:
@@ -1509,7 +1576,11 @@ def _expand_residual_iid_ppv_arg(rust: str) -> str:
             i = cursor
             continue
         interface = rust[i + match.end() : comma].strip()
-        value = rust[comma + 1 : cursor - 1].strip()
+        # A trailing comma inside the macro is legal C and models do emit it. Left in,
+        # the paren-wrap below turns `(expr,)` into a one-TUPLE, which compiles as far as
+        # `.cast()` and then fails with "no method named `cast` found for tuple" —
+        # measured on shell32 folders.cpp.
+        value = rust[comma + 1 : cursor - 1].strip().rstrip(",").strip()
         if not re.fullmatch(r"[A-Za-z_]\w*", interface):
             out.append(rust[i:cursor])
             i = cursor
@@ -1535,8 +1606,9 @@ def render_wide_literal_statics(raw_deps: list[FunctionDep], plan: list[Function
     )
     by_name: dict[str, tuple[int, ...]] = {}
     for dep in raw_deps:
-        for match in _CPP_WIDE_LITERAL.finditer(dep.body_text):
-            token = match.group(0)
+        for _start, _end, token in _wide_literal_tokens(dep.body_text):
+            if not token.startswith('L"'):
+                continue
             name = _wide_literal_name(token)
             if name in selected:
                 by_name[name] = _wide_literal_units(token)
@@ -3793,43 +3865,10 @@ def worker_signature(
     return f"pub unsafe fn {name}_body({', '.join(rendered)}) -> {ret}"
 
 
-def _masked_cpp(text: str) -> str:
-    """Blank comments and literals while preserving byte/character offsets."""
-    out = list(text)
-    i = 0
-    while i < len(text):
-        if text.startswith("//", i):
-            end = text.find("\n", i + 2)
-            end = len(text) if end < 0 else end
-            for pos in range(i, end):
-                out[pos] = " "
-            i = end
-        elif text.startswith("/*", i):
-            end = text.find("*/", i + 2)
-            end = len(text) if end < 0 else end + 2
-            for pos in range(i, end):
-                if out[pos] != "\n":
-                    out[pos] = " "
-            i = end
-        elif text[i] in ('"', "'"):
-            quote = text[i]
-            i += 1
-            while i < len(text):
-                if text[i] == "\\":
-                    out[i] = " "
-                    if i + 1 < len(text):
-                        out[i + 1] = " "
-                    i += 2
-                    continue
-                if text[i] == quote:
-                    i += 1
-                    break
-                if out[i] != "\n":
-                    out[i] = " "
-                i += 1
-        else:
-            i += 1
-    return "".join(out)
+# Shared with call_seal/fact_seal. The private copy this replaced was a C lexer
+# applied to Rust in four places (worker-body normalization), where a `'cleanup:`
+# label or a `&'a` lifetime blanked everything to the next apostrophe. See lex_mask.
+_masked_cpp = mask_code
 
 
 def _matching_paren(text: str, opening: int) -> int:

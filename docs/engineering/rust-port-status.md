@@ -64,6 +64,17 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
+**Wave 15 (2026-07-25) opens a SECOND track: whole-C-file rustconv translation.** Waves 1–14
+assemble a family at a time from `cnt-rust`'s difftest-pinned engines; wave 15 translates a
+`.c` outright into `msvcrt-crt-rust/src/msvcrt/<stem>.rs`, kept 1:1 with its source. First
+file: **`mbcs.c` — 3,624 lines, 175 `#[no_mangle]` exports, $0.95**, `cargo check` clean with
+zero warnings on all three arches. The two tracks coexist because the cohab rule is unchanged:
+whatever Rust defines wins by lld first-match and the C copy goes dead, so a partial file is a
+safe state and no CMake edit is needed. The crate gained `src/prelude.rs` (the standard
+`*-rust` import surface — every `extern` transcribed from a named C header, not inferred).
+**Export total not yet re-measured against the DLL** — do that from the export table as waves
+1–13 did, not by adding 175 to 240.
+
 **240 Rust-defined `msvcrt.dll` exports on all three arches** as of 2026-07-14 (waves 1–13: 209 hand-flipped wrappers; wave 14m: +45 libm exports assembled from cnt-rust's `cabi/math.rs` via the `cabi-math` feature — engine grading lives in cnt-difftest; wave 14a decided printf is a PORT and wave 14b DELIVERED it: printf.h's engine — 2,312 lines, bignum floats over the shared bnum.rs — graded 142 narrow + 30 wide rows byte-identical vs the genuine pf_printf_a; the DLL's stream-printf family (printf/fprintf/vfprintf) runs the Rust engine now, the sprintf-family shells await wave 14c's varargs trampolines. See the lane plan + field manual §9.83)
 (waves 1–13). Verified by parsing the DLL's export table: every flip lands in the Rust cluster,
 every deliberate refusal is still C (`memmove`, `strtok`, `_ecvt`/`_fcvt`/`_gcvt` — the
@@ -228,6 +239,14 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   objects, shared shellmenu/shelldesktop objects, procedural helpers, and monoliths such as
   `CDefView.cpp`, `shlexec.cpp`, and `shlfileop.cpp`. The exhaustive zero-C++ plan and ledger are
   in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
+  **Free-function TUs: 7 translated and PARKED, not wired** (2026-07-25) —
+  `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache,shlfolder,stubs,
+  shldataobject}.rs`, 21,626 lines, each carrying an `//! ORPHAN-BY-DESIGN:` banner. Five of them
+  had been blocked behind seal defects that made the envelope unsatisfiable — a rejected worker
+  assembles *no* output, so 5 rejects were withholding ~19.8K lines of already-paid Rust; see the
+  field manual's `[§9.127]` RESOLVED note. They still need substrate closure (SDK externs, Win32
+  constants, resource IDs) before they compile, so the C++ tail count above is unchanged: nothing
+  is cohab-flipped yet. Paid artifacts — do not delete to tidy up.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions
