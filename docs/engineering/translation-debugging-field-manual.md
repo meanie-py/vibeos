@@ -616,6 +616,42 @@ Three faces, all seen live:
   cross-file ABI disagreement was systemic; the fix was a deterministic ABI overwrite pass, not
   per-site repair. **A redundant `*-sys` crate that re-bindgens types the parent master header
   already pulls** produces mass E0659 ambiguity.
+- **A crate with NO island is invisible to `verify_ffi`.** Its oracle is `ntoskrnl.spec` *and*
+  `bindgen_<arch>.rs`; with no island there is nothing to compare against, so every hand-written
+  extern block passes unchecked and the gate stays green. shell32-rust carried ~2.7K lines of
+  hand-written substrate for this reason and appears in NONE of the 40 crates the
+  clashing-extern passes converged — four real ABI disagreements survived in it until a semantic
+  declaration comparison went looking. "The lint is green" means nothing if the crate is not in
+  the lint's input set; check that before trusting it.
+
+### Adopting an island in a crate that already has hand-written substrate
+Measure first, and expect most of the hand-written surface to be redundant: on shell32,
+**73 of 90** items in `types.rs` and **117 of 156** in `shellcom.rs` were already provided by the
+island or `ntdll-sys` — including a `LARGE_INTEGER` hand-written as `{ QuadPart: i64 }` (a
+cartoon of a union) and the PIDL on-disk layouts, where a wrong offset corrupts data on disk.
+Compare every hand-written name against the island *and* the sibling `-sys` crates before
+deleting; the ones that survive are the ones bindgen structurally cannot emit — pointer-valued
+macros (`NULL`, `INVALID_HANDLE_VALUE`, `HKEY_CLASSES_ROOT`), cast-expression constants
+(`((HRESULT)0x80004005L)`), and function-like macros. Keep those in `<stem>_extra.rs`, which
+`gen_driver_types.sh` re-exports through the generated dispatch so regeneration cannot eat them.
+
+Two traps specific to this move:
+- **The island owns DATA LAYOUTS; com-sys / your vtable module owns COM ABI.** bindgen renders
+  COM interfaces from a C++ header as classes, while the translation calls through the C
+  `lpVtbl` idiom — let the island emit them and every call becomes `E0609: no field lpVtbl`
+  (~73 on shell32). Blocklist the interfaces with `EXTRA_BL_ITEMS` *and* re-export them with
+  `EXTRA_RAW_LINES`: blocklisting removes the definition, not the references, so without the
+  re-export the island fails E0412 on its own output.
+- **A `-x c++` cell emits broken aliases for class-template member typedefs** — bindgen
+  flattens them to non-generic aliases over unbound parameters (`pub type
+  ATL_CComEnum__CComEnumBase = u8<Base, T, Copy>;`). Blocklist by the **C++ qualified name**,
+  not bindgen's flattened Rust spelling. Do not "fix" this by dropping every alias carrying a
+  `<`: on shell32 that rule would have deleted 82 legitimate `Option<fn-ptr>` callbacks.
+
+Also: `profile_derive` mirrors each TU's include prologue verbatim, so a **quoted** include
+copied from a TU in a subdirectory (`#include "CFSFolder.h"` in `folders/CDesktopFolder.cpp`)
+breaks — a quoted include resolves against the *including file's* directory and the generated
+wrapper lives in `/tmp`. Use the path-qualified spelling the module's own `precomp.h` uses.
 
 ### Cross-DLL and shared-section layout
 Cross-DLL reads returning garbage *past* the writer's own init, with a hang ~7 DLLs later in an
