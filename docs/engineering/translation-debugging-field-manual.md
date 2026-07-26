@@ -2142,6 +2142,16 @@ collapses: of 195 divergent syscalls, **4** were called at all in a full boot, a
 out-scalar-widen findings only **2**. Cold entries still matter for arbitrary apps, but they
 are a tail to work through, not a queue to fear.
 
+**But "cold" is a property of today's capabilities, not of the syscall.** Landing a capability
+re-sorts the list under you: `NtWaitForMultipleObjects` sat in the baseline as a cold
+`SCALAR_WIDEN` entry — its wait ARRAY is 4-byte handles in the guest against the host's 8-byte
+ones — and went live the instant 32-bit guests could create threads, because
+`WaitForMultipleObjects` is how a threaded app joins its workers. It returned
+`STATUS_INVALID_HANDLE` on the first try. Single-object waits pass a handle *by value* and were
+never affected, which is exactly why nothing had noticed. So re-run the live-set intersection
+after every capability lands, and expect the newly-live entries to be the ones that capability
+depends on.
+
 ### When the payload IS the CPU state, the CPU layer is the marshaller — not the kernel
 `NtGetContextThread`/`NtSetContextThread` carry the same un-widenable `_CONTEXT` as
 `NtCreateThread` above, and flat-thunking them is worse than usual in both directions: Get had
@@ -2175,6 +2185,47 @@ Cross-thread stays refused: `BTCpuGet/SetContext` ignore their `Thread` argument
 caller's CPU area, so answering a cross-thread query would return *the wrong thread's registers*
 — confidently. Identify "is this me" by comparing `TebBaseAddress`, not just by spotting the
 `(HANDLE)-2` pseudo-handle.
+
+### In a WoW64 process the IMAGE is a PE32 — native code reading its headers must dispatch on `Magic`
+`PEB->ImageBaseAddress` in a WoW64 process points at the **32-bit** exe, but the ntdll reading it
+is built 64-bit, so `RtlImageNtHeader()` hands back a `PIMAGE_NT_HEADERS` that is the wrong
+layout. The failure is not a wild pointer — the headers are real — it is a *field read at the
+wrong width and offset*, which is far quieter.
+
+`IMAGE_OPTIONAL_HEADER32` packs `SizeOfStackReserve` and `SizeOfStackCommit` as adjacent 4-byte
+fields exactly where the 64-bit layout has one 8-byte `SizeOfStackReserve`. Reading at native
+width therefore returns `(SizeOfStackCommit << 32) | SizeOfStackReserve` — for a stock 1MB/4KB
+i386 image, **16 TB**. `RtlpCreateUserStack` fed that straight to `ZwAllocateVirtualMemory`,
+which rejected it with `STATUS_INVALID_PARAMETER_4`, so **every** `RtlCreateUserThread` in the
+process failed. Only a WoW64 process can reach this, which is why it survived until 32-bit
+guests could create threads at all.
+
+Fix: dispatch on `OptionalHeader.Magic` (`IMAGE_NT_OPTIONAL_HDR32_MAGIC`), never on the build's
+own pointer width. `Magic` is at offset 0 of the optional header in both layouts, so reading it
+first is always safe. **Generalize: in a WoW64 process, treat every PE structure reachable from
+the PEB as foreign-width until you have checked.** The 64-bit loader reading a 32-bit image's
+`IMAGE_TLS_DIRECTORY` `[§9.67]` is the same bug in a different field.
+
+### An init that never returns leaves its caller's completion flag unset — and only thread #2 notices
+`LdrpInitializeProcess` does not return in a WoW64 process: it loads wow64.dll and calls
+`Wow64LdrpInitialize`, which drives the guest and never comes back. So its caller's tail —
+`LdrpInLdrInit = 0` and `_InterlockedIncrement(&LdrpProcessInitialized)` — never runs, and
+`LdrpProcessInitialized` is stuck at **1** for the life of the process.
+
+Nothing notices while the guest is single-threaded. The moment a *second* thread starts, it
+enters `LdrpInitialize`'s
+`while _InterlockedCompareExchange(&LdrpProcessInitialized, 1, 0) == 1` gate — which means "some
+other thread is still initializing the process, wait for it" — and spins on `ZwDelayExecution`
+forever. The symptom is maximally unhelpful: a thread that is created successfully, resumes
+successfully, and then produces **no output at all**, because it never reaches its start routine.
+
+Fix: publish completion *before* the handoff, not after it. That is accurate rather than a
+workaround — process init genuinely is finished at that point (`LdrpRunInitializeRoutines` has
+returned); only the never-returning handoff remains.
+
+**Generalize: any "and then we never return" call must first perform the bookkeeping its caller
+would have done.** Grep the caller's tail before writing one. A flag that is only ever read by a
+code path you cannot yet exercise is the definition of a latent bug.
 
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a

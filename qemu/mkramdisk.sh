@@ -696,6 +696,17 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$ASYNC32" ::/reactos/syswow64/async32.exe
         fi
+        # thread32.exe — the #64 threading guest (winlogon TryStartWow64Thread):
+        # the per-thread WoW64 entry, driven here through FEX's BTCpu contract
+        # rather than amd64's wow64cpu. Staging it on arm64 is the point — the
+        # per-thread CPU area and TEB32 stack bounds are arch-neutral code whose
+        # only other coverage is the amd64 CPU layer.
+        THREAD32="${VIBEOS_THREAD32_EXE:-$PROJECT_DIR/build-fex-hello/thread32.exe}"
+        if [ -f "$THREAD32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/thread32.exe (#64 threading guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$THREAD32" ::/reactos/syswow64/thread32.exe
+        fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
         HELLO32="${VIBEOS_HELLO32_EXE:-$PROJECT_DIR/build-fex-hello/hello32.exe}"
