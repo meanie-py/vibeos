@@ -24,8 +24,8 @@ use crate::ddk_shims::{FsRtlNotifyVolumeEvent, IoIs32bitProcess, MOVE_FILE_DATA3
 // crate's own types — the class that already bit dirctrl.rs.
 use crate::glue::{FSRTL_VOLUME_UNLOCK, VPB_DIRECT_WRITES_ALLOWED, VPB_LOCKED};
 use crate::types::{
-    IRP_CONTEXT_FLAG_DISABLE_POPUPS, VCB_STATE_FLAG_LOCKED, VCB_STATE_FLAG_MOUNTED_DIRTY,
-    VCB_STATE_FLAG_VOLUME_DIRTY,
+    FILE_SYSTEM_STATISTICS, IRP_CONTEXT_FLAG_DISABLE_POPUPS, VCB_STATE_FLAG_LOCKED,
+    VCB_STATE_FLAG_MOUNTED_DIRTY, VCB_STATE_FLAG_VOLUME_DIRTY,
 };
 use crate::types::{BIOS_PARAMETER_BLOCK, CCB, DCB, DIRENT, FAT_BUG_CHECK_FSCTRL, FAT_DATA, FAT_ENTRY, FCB, FCB_CONDITION, FCB_STATE_DELETE_ON_CLOSE, IRP_CONTEXT, PACKED_BIOS_PARAMETER_BLOCK, PACKED_BOOT_SECTOR, PACKED_BOOT_SECTOR_EX, PBCB, PCCB, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VCB_CONDITION, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
 // Additional imports needed by FatMountVolume (translated from fsctrl.c)
@@ -138,13 +138,12 @@ extern "system" {
     // would have been truncated to its low byte on the way out. The Rust definition
     // returns NTSTATUS and the cast is gone.
     fn FatDismountVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatIsVolumeDirty(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatQueryRetrievalPointers(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
+    fn MmGetSystemAddressForMdlSafe(Mdl: ntkrnl_sys::ddk::PMDL, Priority: u32) -> *mut c_void;
     // verfysup.rs:484. Returns VOID — it FatRaiseStatus()es rather than reporting.
     fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatIsHandleCountZero(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
     fn FatFspClose(Vcb: *mut VCB);
-    fn FatGetStatistics(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatGetVolumeBitmap(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatGetRetrievalPointers(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatMarkHandle(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
@@ -2896,6 +2895,129 @@ pub unsafe extern "system" fn FatIsPathnameValid(IrpContext: PIRP_CONTEXT, Irp: 
 
     DebugTrace(-1, Dbg, b"FatIsPathnameValid -> %08lx\n\0".as_ptr() as *const i8);
     STATUS_SUCCESS
+}
+
+/// `FatIsVolumeDirty` (`drivers/filesystems/fastfat/fsctrl.c:3972`) — FSCTL_IS_VOLUME_DIRTY.
+#[no_mangle]
+pub unsafe extern "system" fn FatIsVolumeDirty(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    // PAGED_CODE();
+    const VOLUME_IS_DIRTY: u32 = 0x00000001; // iotypes.h:6454
+    const MdlMappingNoExecute: u32 = 0x40000000;
+    const LowPagePriority: u32 = 0;
+    const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as i32;
+    const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC00000E8u32 as i32;
+    const STATUS_VOLUME_DISMOUNTED: NTSTATUS = 0xC000026Eu32 as i32;
+
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    // The output buffer arrives either already mapped (SystemBuffer) or as an MDL.
+    // Order matters: SystemBuffer is checked FIRST, and only a request carrying
+    // neither is STATUS_INVALID_USER_BUFFER.
+    let VolumeState: *mut u32 = if !(*Irp).AssociatedIrp.SystemBuffer.is_null() {
+        (*Irp).AssociatedIrp.SystemBuffer as *mut u32
+    } else if !(*Irp).MdlAddress.is_null() {
+        let p = MmGetSystemAddressForMdlSafe(
+            (*Irp).MdlAddress,
+            LowPagePriority | MdlMappingNoExecute,
+        ) as *mut u32;
+        if p.is_null() {
+            (FatCompleteRequest)(IrpContext, Irp, STATUS_INSUFFICIENT_RESOURCES);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        p
+    } else {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_USER_BUFFER);
+        return STATUS_INVALID_USER_BUFFER;
+    };
+
+    if ((*IrpSp).Parameters.FileSystemControl.OutputBufferLength as usize)
+        < core::mem::size_of::<u32>()
+    {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let mut Vcb: *mut VCB = core::ptr::null_mut();
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
+
+    if (FatDecodeFileObject(
+        (*IrpSp).FileObject,
+        &raw mut Vcb,
+        &raw mut Fcb,
+        &raw mut Ccb,
+    )) != UserVolumeOpen
+    {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (*Vcb).VcbCondition != VcbGood {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_VOLUME_DISMOUNTED);
+        return STATUS_VOLUME_DISMOUNTED;
+    }
+
+    // Disable PopUps, we want to return any error.
+    (*IrpContext).Flags |= IRP_CONTEXT_FLAG_DISABLE_POPUPS;
+
+    FatVerifyVcb(IrpContext, Vcb);
+
+    // Note the C only ever SETS the bit — it never clears the caller's buffer first.
+    if ((*Vcb).VcbState & VCB_STATE_FLAG_MOUNTED_DIRTY) != 0 {
+        *VolumeState |= VOLUME_IS_DIRTY;
+    }
+
+    (*Irp).IoStatus.Information = core::mem::size_of::<u32>() as _;
+
+    (FatCompleteRequest)(IrpContext, Irp, STATUS_SUCCESS);
+    STATUS_SUCCESS
+}
+
+/// `FatGetStatistics` (`drivers/filesystems/fastfat/fsctrl.c:4899`) —
+/// FSCTL_FILESYSTEM_GET_STATISTICS. Returns the per-processor performance counters.
+#[no_mangle]
+pub unsafe extern "system" fn FatGetStatistics(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    // PAGED_CODE();
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    DebugTrace(1, Dbg, b"FatGetStatistics...\n\0".as_ptr() as *const i8);
+
+    let BufferLength = (*IrpSp).Parameters.FileSystemControl.OutputBufferLength as u32;
+    let Buffer = (*Irp).AssociatedIrp.SystemBuffer;
+
+    // Two different structs, deliberately: the floor is the COMMON header
+    // (FILESYSTEM_STATISTICS), while the full payload is one FILE_SYSTEM_STATISTICS
+    // per processor. Anything at least the header size is answerable, possibly
+    // truncated with STATUS_BUFFER_OVERFLOW.
+    if (BufferLength as usize) < core::mem::size_of::<FILESYSTEM_STATISTICS>() {
+        (FatCompleteRequest)(IrpContext, Irp, STATUS_BUFFER_TOO_SMALL);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    let StatsSize =
+        (core::mem::size_of::<FILE_SYSTEM_STATISTICS>() as u32).wrapping_mul(FatData.NumberProcessors);
+
+    let (BytesToCopy, Status): (u32, NTSTATUS) = if BufferLength < StatsSize {
+        (BufferLength, STATUS_BUFFER_OVERFLOW)
+    } else {
+        (StatsSize, STATUS_SUCCESS)
+    };
+
+    // Vcb is EMBEDDED in the volume device object.
+    let Vcb: *mut VCB = &raw mut (*((*IrpSp).DeviceObject as *mut VOLUME_DEVICE_OBJECT)).Vcb;
+
+    RtlCopyMemory(
+        Buffer as *mut c_void,
+        (*Vcb).Statistics as *const c_void,
+        BytesToCopy as usize,
+    );
+
+    (*Irp).IoStatus.Information = BytesToCopy as _;
+
+    (FatCompleteRequest)(IrpContext, Irp, Status);
+
+    DebugTrace(-1, Dbg, b"FatGetStatistics -> %08lx\n\0".as_ptr() as *const i8);
+    Status
 }
 
 /// `FatQueryBpb` (`drivers/filesystems/fastfat/fsctrl.c:4220`) — returns the first
