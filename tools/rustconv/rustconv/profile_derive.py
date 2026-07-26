@@ -59,8 +59,8 @@ CLI
 from __future__ import annotations
 
 import argparse
-import json
 import functools
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -769,6 +769,7 @@ def parse_cmakelists(
                 + ", ".join(_rel(p, repo_root) for p in module.dead_sources[:6]),
             )
         )
+    _audit_dead_bodies(module, repo_root, findings)
     for e in entries:
         if e.kind == "tu" and e.condition:
             findings.append(
@@ -1004,6 +1005,84 @@ def _guard_macro(line: str) -> tuple[str, bool] | None:
     return None
 
 
+_GUARD_OPEN_RE = re.compile(r"^\s*#\s*if(n?)def\s+([A-Za-z_]\w*)\s*$", re.M)
+
+
+def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
+    """Warn when most of a module's CODE sits in a decidably-FALSE `#ifdef`.
+
+    This is a PRE-PAYMENT check and it exists because skipping it cost real money.
+    wldap32 looks like an 8,625-line LDAP client; in this tree every one of its entry
+    points compiles to `return WLDAP32_LDAP_NOT_SUPPORTED;` because 181 `#ifdef HAVE_LDAP`
+    blocks across 19 of its 20 TUs are disabled — ReactOS does not vendor OpenLDAP. It is
+    a STUB DLL. Translating it bought 162 functions of the path the compiler throws away,
+    and the emitted Rust was worse than useless: unconditional, so it changed behaviour,
+    and calling OpenLDAP symbols that do not exist here, so it could never link.
+
+    The dead-region seal already tolerates an omission inside such a block, but tolerating
+    is not the same as telling you the module is a stub before you pay.
+    """
+    undefs = _wine_config_undefs(repo_root)
+    if not undefs:
+        return
+    total_lines = 0
+    dead_lines = 0
+    culprits: dict[str, int] = {}
+    for tu in module.compiled_tus:
+        try:
+            text = tu.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = text.splitlines()
+        total_lines += len(lines)
+        depth_dead = 0
+        stack: list[bool | None] = []
+        for line in lines:
+            m = _GUARD_OPEN_RE.match(line)
+            if m is not None:
+                macro = m.group(2)
+                dead = macro in undefs and m.group(1) != "n"
+                stack.append(dead)
+                if dead:
+                    depth_dead += 1
+                    culprits[macro] = culprits.get(macro, 0) + 1
+                continue
+            if re.match(r"^\s*#\s*else\s*$", line) and stack:
+                if stack[-1] is not None:
+                    if stack[-1]:
+                        depth_dead -= 1
+                    stack[-1] = not stack[-1]
+                    if stack[-1]:
+                        depth_dead += 1
+                continue
+            if re.match(r"^\s*#\s*endif\b", line) and stack:
+                if stack.pop():
+                    depth_dead -= 1
+                continue
+            if depth_dead > 0:
+                dead_lines += 1
+    if not total_lines or not culprits:
+        return
+    pct = 100 * dead_lines / total_lines
+    if pct < 15:
+        return
+    top = ", ".join(
+        f"{m} ({n} blocks)" for m, n in sorted(culprits.items(), key=lambda kv: -kv[1])[:3]
+    )
+    findings.append(
+        Finding(
+            "warn",
+            "MOSTLY_DEAD_BODIES",
+            f"{pct:.0f}% of this module's compiled lines are inside a decidably-FALSE "
+            f"#ifdef ({top}) — wine's config.h #undefs it, so the compiler throws that code "
+            "away and the real module is far smaller than it looks (often a pure stub). "
+            "PAYING TO TRANSLATE IT BUYS THE PATH THAT IS NOT BUILT, and the output is "
+            "unconditional Rust that changes behaviour and calls symbols this tree does not "
+            "have. Read what the module actually compiles to BEFORE translating.",
+        )
+    )
+
+
 _CONFIG_UNDEF_RE = re.compile(r"^\s*/\*\s*#\s*undef\s+([A-Za-z_]\w*)\s*\*/\s*$", re.M)
 
 
@@ -1023,7 +1102,9 @@ def _wine_config_undefs(repo_root: Path) -> frozenset[str]:
     return frozenset(_CONFIG_UNDEF_RE.findall(text))
 
 
-def scan_preamble(text: str, known_undefined: frozenset[str] = frozenset()) -> tuple[list[str], bool]:
+def scan_preamble(
+    text: str, known_undefined: frozenset[str] = frozenset()
+) -> tuple[list[str], bool]:
     """The TU's include PROLOGUE, verbatim, plus "had UNDECIDED conditional directives".
 
     Mirroring the real prologue (including its ``#define WIN32_NO_STATUS`` /
@@ -1071,8 +1152,8 @@ def scan_preamble(text: str, known_undefined: frozenset[str] = frozenset()) -> t
         if kind in ("ifdef", "ifndef", "if"):
             guard = _guard_macro(line)
             if guard is not None and guard[0] in known_undefined:
-                macro, wants_defined = guard
-                arms.append(wants_defined)  # dead when the arm wanted it DEFINED
+                # dead when the arm wanted it DEFINED
+                arms.append(guard[1])
             else:
                 conditional = True
                 arms.append(None)

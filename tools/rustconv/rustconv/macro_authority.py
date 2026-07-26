@@ -152,11 +152,7 @@ def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
         names |= set(_DEFINE_FN_LIKE.findall(_preprocess_defines(argv)))
         found.append(arch)
     if not found:
-        via = (
-            " and no compiled TU in its own directory #includes it"
-            if is_header
-            else ""
-        )
+        via = " and no compiled TU in its own directory #includes it" if is_header else ""
         raise MacroAuthorityError(
             f"no compile command for {source} in any build-<arch>/compile_commands.json "
             f"under {repo_root}{via}. The call seal needs the real function-like macro set; "

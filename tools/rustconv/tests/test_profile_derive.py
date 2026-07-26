@@ -835,13 +835,7 @@ class TestPrologueFidelity:
 
     def test_the_live_arm_of_a_decided_guard_is_kept(self, tmp_path: Path):
         undefs = frozenset({"HAVE_LDAP_H"})
-        src = (
-            "#ifdef HAVE_LDAP_H\n"
-            "#include <ldap.h>\n"
-            "#else\n"
-            '#include "fallback.h"\n'
-            "#endif\n"
-        )
+        src = '#ifdef HAVE_LDAP_H\n#include <ldap.h>\n#else\n#include "fallback.h"\n#endif\n'
         lines, _ = scan_preamble(src, undefs)
         assert lines == ['#include "fallback.h"']
 
@@ -865,3 +859,51 @@ class TestPrologueFidelity:
         dp = derive(_mod(tmp_path), root)
         assert (_mod(tmp_path) / "helper.c").resolve() in dp.module.pch_skip
         assert (_mod(tmp_path) / "main.c").resolve() not in dp.module.pch_skip
+
+
+class TestMostlyDeadBodies:
+    """A pre-PAYMENT check, and it exists because skipping it cost real money.
+
+    wldap32 looks like an 8,625-line LDAP client. In this tree every entry point
+    compiles to `return WLDAP32_LDAP_NOT_SUPPORTED;` — 181 `#ifdef HAVE_LDAP` blocks
+    across 19 of its 20 TUs are disabled because ReactOS does not vendor OpenLDAP.
+    Translating it bought 162 functions of the path the compiler throws away.
+    """
+
+    def _tree_with_config(self, tmp_path: Path, body: str):
+        root = _tree(tmp_path)
+        (root / "sdk/include/wine").mkdir(parents=True, exist_ok=True)
+        (root / "sdk/include/wine/config.h").write_text("/* #undef HAVE_LDAP */\n")
+        mod = _mod(tmp_path)
+        _write(mod / "CMakeLists.txt", CMAKE_USERMODE)
+        _write(mod / "precomp.h", "typedef struct _WPRIV { int y; } WPRIV;\n")
+        _write(mod / "main.c", '#include "precomp.h"\n' + body)
+        _write(mod / "helper.c", '#include "precomp.h"\nint helper(void) { return 0; }\n')
+        from rustconv.profile_derive import _wine_config_undefs
+
+        _wine_config_undefs.cache_clear()
+        return root
+
+    def test_a_module_that_is_mostly_a_disabled_ifdef_is_flagged(self, tmp_path: Path):
+        dead = "\n".join(f"    int x{i} = {i};" for i in range(60))
+        body = f"int go(void) {{\n    int ret = 0;\n#ifdef HAVE_LDAP\n{dead}\n#endif\n    return ret;\n}}\n"
+        root = self._tree_with_config(tmp_path, body)
+        dp = derive(_mod(tmp_path), root)
+        hits = [f for f in dp.findings if f.code == "MOSTLY_DEAD_BODIES"]
+        assert hits, [f.code for f in dp.findings]
+        assert "HAVE_LDAP" in hits[0].detail
+
+    def test_an_ordinary_module_is_not_flagged(self, tmp_path: Path):
+        live = "\n".join(f"    int x{i} = {i};" for i in range(60))
+        body = f"int go(void) {{\n{live}\n    return 0;\n}}\n"
+        root = self._tree_with_config(tmp_path, body)
+        dp = derive(_mod(tmp_path), root)
+        assert not [f for f in dp.findings if f.code == "MOSTLY_DEAD_BODIES"]
+
+    def test_the_LIVE_arm_of_an_ifndef_is_not_counted_dead(self, tmp_path: Path):
+        """`#ifndef HAVE_LDAP` over an undefined macro is the arm that IS compiled."""
+        live = "\n".join(f"    int x{i} = {i};" for i in range(60))
+        body = f"int go(void) {{\n#ifndef HAVE_LDAP\n{live}\n#endif\n    return 0;\n}}\n"
+        root = self._tree_with_config(tmp_path, body)
+        dp = derive(_mod(tmp_path), root)
+        assert not [f for f in dp.findings if f.code == "MOSTLY_DEAD_BODIES"]
