@@ -19,6 +19,16 @@ from pathlib import Path
 ARTIFACT_ROOT = Path(os.environ.get("VIBEOS_ARTIFACT_ROOT", "/tmp/vibeos-cli"))
 
 
+def _worktree_of(repo: Path) -> Path:
+    """Absolute path of the worktree a run belongs to, for summary.json's
+    `worktree` field. Plain resolve() — no git call, because finalize() runs on
+    every command including failures and must never itself fail or block."""
+    try:
+        return Path(repo).resolve()
+    except OSError:
+        return Path(repo)
+
+
 @dataclass
 class Stage:
     name: str
@@ -118,6 +128,15 @@ class Run:
             "run_id": self.dir.name,
             "command": self.command,
             "arch": self.arch,
+            # WHOSE run this is. VIBEOS_ARTIFACT_ROOT defaults to /tmp/vibeos-cli
+            # for EVERY worktree, so run dirs from all lanes interleave in one
+            # directory and `ls -dt /tmp/vibeos-cli/*-build-arm64 | head -1` hands
+            # you whichever lane happened to start last. That is the read half of
+            # the fleet-isolation law (AGENTS.md §8), and it has already produced a
+            # wrong status report: another lane's green arm64 build was read as
+            # this lane's. Attribution belonged in the artifact, not in a grep of
+            # full.log that every caller has to reinvent.
+            "worktree": str(_worktree_of(repo)) if repo else None,
             "verdict": self.verdict,
             "classification": self.classification,
             "duration_ms": int(dur * 1000),

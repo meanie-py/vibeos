@@ -19,6 +19,7 @@ import pytest
 
 from tests.qemu import backend as be_mod
 from tests.qemu import qmp_client, serial_client
+from tests.qemu import vm as vm_mod
 
 from . import build as build_mod
 from . import config as config_mod
@@ -61,6 +62,119 @@ def test_git_fingerprint_immune_to_mtime(tiny_repo: Path):
     # touch bumps mtime but not content
     (tiny_repo / "a.txt").touch()
     assert provenance.git_fingerprint(tiny_repo) == fp1, "mtime churn must not change fingerprint"
+
+
+# --- freeldr boot-entry selection by in-place ISO patch --------------------
+#
+# The MP pair (ntkrnlmp.exe + halmp.dll) has always shipped on the same media as
+# the UP pair; only `DefaultOS=` inside freeldr.ini chose between them, and with
+# TimeOut=0 there is no menu to choose at. Rewriting that one line in a COPY of
+# the image replaces a cmake reconfigure + mkisofs repack (8m30s measured) with a
+# 0.15s copy — so an MP gate leg costs one extra boot. Byte-level, so a plain
+# bytes fixture exercises it exactly as a real ISO does.
+
+
+def _fake_iso(default_os: bytes = b"LiveCD_Debug", smp_section: bool = True) -> bytes:
+    body = b"\x00" * 64 + b"[FREELOADER]\r\nDefaultOS=" + default_os + b"\r\nTimeOut=0\r\n"
+    if smp_section:
+        body += b"[LiveCD_SMP]\r\nOptions=/KERNEL=ntkrnlmp.exe /HAL=halmp.dll\r\n"
+    return body + b"\x00" * 64
+
+
+def test_smp_iso_patch_is_equal_length_and_selects_the_mp_entry(tmp_path: Path):
+    src = tmp_path / "livecd.iso"
+    src.write_bytes(_fake_iso())
+    out = vm_mod.smp_selected_iso(src, tmp_path / "work")
+    assert out != src, "must not patch the build tree's media in place"
+    patched = out.read_bytes()
+    assert len(patched) == len(src.read_bytes()), "ISO9660 extents: length must not change"
+    assert b"DefaultOS=LiveCD_SMP\r\n\r\n" in patched
+    assert b"LiveCD_Debug" not in patched
+
+
+def test_smp_iso_patch_is_idempotent(tmp_path: Path):
+    """Media built with --smp-kernel already defaults to the MP entry; patching it
+    again must be a no-op that returns the original path, not a needless copy."""
+    src = tmp_path / "livecd.iso"
+    src.write_bytes(_fake_iso(default_os=b"LiveCD_SMP"))
+    assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
+
+
+def test_smp_iso_patch_raises_rather_than_booting_up_media(tmp_path: Path):
+    """Every failure path must raise. Silently returning the unpatched ISO would
+    boot the UP pair on an --smp run — exactly the false green _smp_check exists
+    to catch, and the reason this is not a best-effort helper."""
+    work = tmp_path / "work"
+    # no [LiveCD_SMP] section: media predates the halmp.dll twin
+    a = tmp_path / "a.iso"
+    a.write_bytes(_fake_iso(smp_section=False))
+    with pytest.raises(RuntimeError, match="LiveCD_SMP"):
+        vm_mod.smp_selected_iso(a, work)
+    # two DefaultOS= lines: cannot tell which one freeldr reads
+    b = tmp_path / "b.iso"
+    b.write_bytes(_fake_iso() + b"DefaultOS=LiveCD\r\n")
+    with pytest.raises(RuntimeError, match="exactly one"):
+        vm_mod.smp_selected_iso(b, work)
+    # value too short to overwrite in place
+    c = tmp_path / "c.iso"
+    c.write_bytes(_fake_iso(default_os=b"X"))
+    with pytest.raises(RuntimeError, match="shorter"):
+        vm_mod.smp_selected_iso(c, work)
+
+
+def test_smp_boot_timeout_scales_the_clock_only_for_real_smp():
+    """A UP boot and -smp 1 must keep the tuned budget untouched; only a genuinely
+    multi-vCPU boot pays the MTTCG stretch."""
+    assert vm_mod.smp_boot_timeout(180.0, None) == 180.0
+    assert vm_mod.smp_boot_timeout(180.0, 1) == 180.0
+    assert vm_mod.smp_boot_timeout(180.0, 2) == 360.0
+    assert vm_mod.smp_boot_timeout(180.0, 4) == 720.0
+
+
+def test_smp_boot_timeout_does_not_compound_across_boots(monkeypatch, tmp_path: Path):
+    """Reusing one ArchConfig across VMs (a gate retry loop) must NOT multiply the
+    budget again each time — the scale is always recomputed from the stashed UP
+    value, so a wedge still fails at 2x, not 8x."""
+    monkeypatch.setenv("VIBEOS_QEMU_SMP", "2")
+    cfg = vm_mod.get_arch_config("arm64")
+    up = cfg.boot_timeout
+    for _ in range(3):
+        vm_mod.QemuVM(cfg, tmp_path / "w")
+    assert cfg.boot_timeout == up * 2
+
+
+def _res(name: str, p: int = 10, f: int = 0, status: str = "OK") -> dict:
+    return {"name": name, "status": status, "pass": p, "fail": f, "skip": 0, "exit": 0}
+
+
+def test_write_baseline_refuses_to_delete_tests_from_the_floor():
+    """The ratchet form of "never weaken a test to make it pass": --write-baseline
+    replaces the floor wholesale, so a sweep cut short by a boot flake or an early
+    BUGCHECK would silently remove every test it never reached."""
+    base = {n: {"status": "OK", "pass": 10, "fail": 0} for n in ("A", "B", "C")}
+    short = [_res("A"), _res("B")]  # C never launched
+    msg = conformance_mod.baseline_coverage_refusal(short, base, force=False)
+    assert msg and "REFUSED" in msg and "    C\n" in msg
+    # a full sweep is fine
+    assert (
+        conformance_mod.baseline_coverage_refusal(
+            [_res("A"), _res("B"), _res("C")], base, force=False
+        )
+        is None
+    )
+    # ...and --force-baseline is the deliberate retire-a-test escape hatch
+    assert conformance_mod.baseline_coverage_refusal(short, base, force=True) is None
+
+
+def test_write_baseline_announces_a_lowered_floor_but_allows_it():
+    """Absorbing a known regression is sometimes deliberate (i386/arm64 both took
+    ExHardError 30/0 -> 24/6 on purpose) — it just must never be silent."""
+    base = {"ExHardError": {"status": "OK", "pass": 30, "fail": 0}}
+    note = conformance_mod.baseline_lowering_note([_res("ExHardError", 24, 6)], base)
+    assert note and "ExHardError: pass 30 -> 24, fail 0 -> 6" in note
+    # unchanged rows say nothing, and an IMPROVEMENT is not a lowering
+    assert conformance_mod.baseline_lowering_note([_res("ExHardError", 30, 0)], base) is None
+    assert conformance_mod.baseline_lowering_note([_res("ExHardError", 31, 0)], base) is None
 
 
 def test_run_raises_loudly_instead_of_returning_empty(tiny_repo: Path):
@@ -129,7 +243,7 @@ def test_src_delta_names_a_head_move(tiny_repo: Path):
     _git(tiny_repo, "add", "-A")
     _git(tiny_repo, "commit", "-qm", "second")
     delta = provenance._src_delta(tiny_repo, stamp)
-    assert "HEAD MOVED UNDER THE BUILD" in delta, delta
+    assert "HEAD MOVED SINCE THE BUILD" in delta, delta
     assert old_head[:12] in delta, delta
 
 
@@ -754,8 +868,11 @@ def test_triage_post_boot_check():
 
 
 def test_run_summary_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
-    # re-import to pick up env? ARTIFACT_ROOT is module-level; build dir explicitly.
+    # setenv would do NOTHING here — artifacts.ARTIFACT_ROOT is resolved at import
+    # time, so this Run used to land in the live artifact tree and, under the
+    # gate's check-tooling stage, planted a fake FAIL/BUGCHECK summary.json that
+    # was twice mistaken for a real verdict. conftest's autouse
+    # _artifact_root_is_never_the_real_one now pins the root for every test.
     run = Run("smoke", "i386", ts=1700000000)
     run.add(Stage("staleness", status="ok"))
     run.add(Stage("boot", status="fail", detail="BUGCHECK", salient=["BugCheck 0x7E"]))
@@ -4234,3 +4351,158 @@ def test_difftest_salient_keeps_the_assertion_not_the_linker_line():
     got = difftest_mod._salient(out)
     assert any("RtlUnicodeStringToAnsiString" in ln for ln in got)
     assert any(ln.startswith("left:") for ln in got)
+
+
+def test_faulting_module_offset_beats_a_guessed_reloc():
+    """The bugcheck banner resolves the module itself, so the RVA is right there.
+    arm64/amd64 have no _RELOC_BY_ARCH entry, so before this every one of their
+    bugchecks declined to symbolicate — including the -smp 1 0x1E that turned out
+    to be a fault on the FIRST store into the trap frame."""
+    serial = (
+        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff80042193788, "
+        "0xffff8000048e8e50, 0x0000000000000000)\n"
+        "***   P2 = ntoskrnl.exe+0x3788\n"
+    )
+    assert triage.faulting_module_offset(serial) == ("ntoskrnl.exe", 0x3788)
+    # a log with no resolved-module line falls back rather than inventing one
+    assert triage.faulting_module_offset("*** BUGCHECK: 0x0000007E (0,0,0,0)\n") is None
+
+
+def test_faulting_module_offset_takes_the_LAST_bugcheck():
+    """Same rule as faulting_pc: the crash being triaged is the one the boot died
+    on, not the first the log happens to mention."""
+    serial = "***   P2 = ntoskrnl.exe+0x1111\n***   P2 = ntoskrnl.exe+0x2222\n"
+    assert triage.faulting_module_offset(serial) == ("ntoskrnl.exe", 0x2222)
+
+
+# --- the gate must never reject a lane without saying why -------------------
+
+
+def test_smoke_stage_that_dies_before_a_verdict_keeps_its_evidence(tmp_path, monkeypatch):
+    """A smoke that aborts before writing summary.json used to be recorded as a
+    bare `smoke:arm64 FAIL` with an empty salient, an empty run dir, and the
+    child's console thrown away -- which is exactly how a lane got rejected with
+    nothing to read. Name the condition, keep the output, carry the exit code."""
+
+    class _Proc:
+        returncode = 3
+        stdout = "staleness: refusing to boot\n"
+        stderr = "fatal: media older than the tree\n"
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    root = tmp_path / "smoke-arm64-a1"
+    r = gate_mod._smoke_once(tmp_path, "arm64", root, [])
+
+    assert r["ok"] is False
+    assert r["classification"] == "SMOKE_NO_SUMMARY"
+    assert r["exit"] == 3
+    # the console survives on disk AND the last line is quoted in the salient
+    assert (root / "smoke-console.log").read_text().count("staleness") == 1
+    assert "media older than the tree" in r["salient"]
+    assert "exited 3" in r["salient"]
+
+
+def test_smoke_stage_with_a_real_verdict_is_untouched(tmp_path, monkeypatch):
+    """The no-summary path must not swallow ordinary failures: a smoke that DID
+    render a verdict keeps that verdict and its own classification."""
+
+    class _Proc:
+        returncode = 1
+        stdout = "boot failed\n"
+        stderr = ""
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    root = tmp_path / "smoke-amd64-a1"
+    (root / "20260101-000000-smoke-amd64").mkdir(parents=True)
+    (root / "20260101-000000-smoke-amd64" / "summary.json").write_text(
+        json.dumps({"verdict": "FAIL", "classification": "BUGCHECK", "stages": []})
+    )
+    r = gate_mod._smoke_once(tmp_path, "amd64", root, [])
+    assert r["classification"] == "BUGCHECK"
+    assert r["exit"] == 1
+
+
+# --- an optional ninja pass can invalidate the main pass's output -----------
+
+
+def test_tooling_and_difftest_keep_their_console_and_never_report_a_bare_exit(
+    tmp_path, monkeypatch
+):
+    """A gate stage that can turn the whole train red must leave something to
+    read. TOOLING_FAIL did not: its dir held only artifacts the pytest suites
+    happened to drop there, the gate's full.log never sees the subprocess, and
+    the salient is scraped by a marker search that misses whenever the tool does
+    not print the marker — ruff and pyright do not, and a traceback goes to
+    stderr. The train sat red with a bare 'exit 1' and nowhere to look."""
+
+    class _Proc:
+        returncode = 1
+        stdout = "ruff: 3 errors\nsomething went wrong\n"
+        stderr = "Traceback (most recent call last):\nAssertionError: boom\n"
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+
+    for fn, logname in (
+        (gate_mod._tooling_once, "check-tooling-console.log"),
+        (gate_mod._difftest_once, "difftest-console.log"),
+    ):
+        root = tmp_path / logname
+        r = fn(tmp_path, root)
+        assert r["ok"] is False and r["exit"] == 1
+        kept = (root / logname).read_text()
+        assert "ruff: 3 errors" in kept and "AssertionError: boom" in kept
+        # no marker in stdout -> the salient falls back to the child's last words
+        assert "exit 1" in r["salient"] and "AssertionError: boom" in r["salient"]
+
+
+def test_summary_records_which_worktree_the_run_belongs_to(tmp_path):
+    """VIBEOS_ARTIFACT_ROOT defaults to /tmp/vibeos-cli for EVERY worktree, so
+    every lane's run dirs interleave in one directory and picking "the newest
+    build-arm64 run" hands you whichever lane started last. That mis-attribution
+    already produced a wrong status report. The owner belongs in the artifact."""
+    repo = tmp_path / "vibeos-smp"
+    repo.mkdir()
+    run = Run("build", "arm64", ts=1700000000)
+    run.add(Stage("ninja", status="ok"))
+    run.finalize(repo)
+    summary = json.loads((run.dir / "summary.json").read_text())
+    assert summary["worktree"] == str(repo.resolve())
+
+    # ...and a run finalized without a repo says so rather than inventing one
+    run2 = Run("build", "arm64", ts=1700000001)
+    run2.finalize()
+    assert json.loads((run2.dir / "summary.json").read_text())["worktree"] is None
+
+
+def test_ninja_did_work_counts_edges_not_just_dirtiness():
+    """`relinked N` is the interesting number: a re-affirm that keeps relinking
+    the same cell every build is a wiring bug, not a hiccup it absorbed."""
+    assert build_mod._ninja_did_work("ninja: no work to do.\n") == 0
+    assert (
+        build_mod._ninja_did_work(
+            "[1/3] Building kernel-rust\n[2/3] Linking ntoskrnl.exe\n[3/3] done\n"
+        )
+        == 3
+    )
+    # progress lines only count at the start of a line -- a compiler diagnostic
+    # that happens to quote one must not inflate the count
+    assert build_mod._ninja_did_work("note: see [1/3] in the log\n") == 0
+
+
+def test_ninja_did_work_does_not_count_the_glob_recheck_pseudo_edge():
+    """VERBATIM output from a real no-op re-affirm that still reported
+    "relinked 1 target(s)". `[0/n]` is the CONFIGURE_DEPENDS glob re-check, a
+    status line, not a completed edge -- real edges start at [1/n]. Counting it
+    made the number always >=1, which kills the signal in the direction that
+    HIDES the wiring bug the count exists to expose."""
+    real = "[0/2] Re-checking globbed directories...\nninja: no work to do.\n"
+    assert build_mod._ninja_did_work(real) == 0
+    # "no work to do" is authoritative even if progress lines preceded it
+    assert build_mod._ninja_did_work("[1/2] Building x\nninja: no work to do.\n") == 0
+    # a glob re-check followed by REAL work still counts only the real edges
+    assert (
+        build_mod._ninja_did_work(
+            "[0/2] Re-checking globbed directories...\n[1/1] Linking ntoskrnl.exe\n"
+        )
+        == 1
+    )

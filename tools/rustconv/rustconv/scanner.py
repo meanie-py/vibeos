@@ -218,6 +218,14 @@ RE_EXTERN_C = re.compile(r"\bEXTERN_C\b")
 # without. Only the .spec export audit caught it. Normalise to the lowercase keyword.
 RE_UPPER_CONST = re.compile(r"\bCONST\b")
 
+# `#define DECLSPEC_HIDDEN` (winnt_old.h:78) expands to NOTHING, but tree-sitter reads it
+# as a second type-identifier and fails the declaration it trails — and a failed top-level
+# declaration makes tree-sitter hoist the NEXT function's body to the root, where
+# preamble_audit reports its locals as dropped file-scope state. wldap32.h:28
+# (`ULONG map_error( int ) DECLSPEC_HIDDEN;`) is the live case; 168 files in the tree carry
+# the macro. Same no-ABI-meaning, blank-it-before-parsing rule as FAR/NEAR above.
+RE_EMPTY_ATTR = re.compile(r"\bDECLSPEC_HIDDEN\b")
+
 # ATL spells in-class COM method definitions as macro declarators:
 #
 #     STDMETHOD(QueryService)(REFGUID svc, REFIID riid, void **ppv) override
@@ -257,9 +265,10 @@ def _expand_inline_stdmethod(text: str) -> str:
 
 
 def _blank_memmodel(text: str) -> str:
-    """Blank the empty `FAR`/`NEAR` decorations and normalise `CONST` so tree-sitter can
-    parse the params. Both are no-op/aliased Win32 macros with no ABI meaning."""
-    return RE_UPPER_CONST.sub("const", RE_EMPTY_MEMMODEL.sub("", text))
+    """Blank the empty `FAR`/`NEAR`/`DECLSPEC_HIDDEN` decorations and normalise `CONST`
+    so tree-sitter can parse the declaration. All are no-op/aliased Win32 macros with no
+    ABI meaning, and each one tree-sitter does not know costs a whole declaration."""
+    return RE_UPPER_CONST.sub("const", RE_EMPTY_ATTR.sub("", RE_EMPTY_MEMMODEL.sub("", text)))
 
 
 def _expand_extern_c(text: str, is_cpp: bool) -> str:
@@ -509,17 +518,45 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
             # the qualified method name inside the function declarator:
             # `CNewMenu::ITEM *CNewMenu::LoadItem(...)`.
             return_type = text
+        elif (
+            child.type in ("struct_specifier", "union_specifier", "enum_specifier")
+            and return_type == ""
+        ):
+            # An ELABORATED type: `struct berval *bvdup(...)`. Neither a
+            # type_identifier nor an identifier, so the base type was dropped and
+            # bvdup's return type came out as bare `*` — a pointer to nothing.
+            # Take the tag with its keyword; the pointer stars are appended below.
+            name_node = child.child_by_field_name("name")
+            if name_node is not None:
+                kind = child.type.split("_", 1)[0]
+                return_type = f"{kind} {_extract_text(name_node, source)}"
         elif child.type == "function_declarator":
             declarator = child
         elif child.type == "pointer_declarator":
-            # Return type is a pointer
-            for sub in child.children:
-                if sub.type == "function_declarator":
-                    declarator = sub
-                    pointer_prefix = re.match(r"\s*(\*+)", text)
-                    stars = len(pointer_prefix.group(1)) if pointer_prefix else 0
-                    if stars:
-                        return_type = (return_type + " " + "*" * stars).strip()
+            # Return type is a pointer. tree-sitter NESTS one pointer_declarator per
+            # star, so `char **f(...)` is pointer_declarator(pointer_declarator(
+            # function_declarator)) and the function_declarator is a GRANDchild.
+            # Looking only at direct children silently dropped every T** function:
+            # 10 of wldap32.h's 62 marshalling helpers (strarrayWtoU, controlarrayAtoW,
+            # modarrayAtoW, …) were reported as unextractable "C++ methods" in a C
+            # header. They are `static inline`, so the .spec export cross-check could
+            # not catch it either — the run just translated 52 of 62 and said so in a
+            # warning. Descend instead, counting the stars as we go.
+            sub = child
+            stars = 0
+            while sub is not None and sub.type == "pointer_declarator":
+                stars += 1
+                sub = next(
+                    (
+                        c
+                        for c in sub.children
+                        if c.type in ("pointer_declarator", "function_declarator")
+                    ),
+                    None,
+                )
+            if sub is not None and sub.type == "function_declarator":
+                declarator = sub
+                return_type = (return_type + " " + "*" * stars).strip()
 
     cpp_class = None
     is_ctor = False

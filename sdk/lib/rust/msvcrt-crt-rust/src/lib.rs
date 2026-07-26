@@ -305,7 +305,7 @@ mod m_atoi64 {
     /// 19-digit run. `gen_num_str` now does. (§9.66)
     #[no_mangle]
     pub unsafe extern "C" fn _atoi64(nptr: *const u8) -> i64 {
-        crate::strtoi64_contract(nptr, core::ptr::null_mut(), 10)
+        crate::strtoi64_contract(nptr, core::ptr::null_mut(), 10, core::ptr::null_mut())
     }
 
 }
@@ -766,7 +766,7 @@ mod mstrtol {
     /// errno contract, and writing `*endptr` on a rejected base (§9.66).
     #[no_mangle]
     pub unsafe extern "C" fn strtol(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i32 {
-        let ret = crate::strtoi64_contract(nptr, endptr, base);
+        let ret = crate::strtoi64_contract(nptr, endptr, base, core::ptr::null_mut());
         if ret > i32::MAX as i64 {
             *crate::_errno() = crate::ERANGE;
             i32::MAX
@@ -799,7 +799,7 @@ mod mstrtoul {
     #[no_mangle]
     pub unsafe extern "C" fn strtoul(nptr: *const u8, end: *mut *mut u8, base: i32) -> u32 {
         const ULONG_MAX: i64 = 4294967295;
-        let ret = crate::strtoi64_contract(nptr, end, base);
+        let ret = crate::strtoi64_contract(nptr, end, base, core::ptr::null_mut());
         let v = if ret > ULONG_MAX {
             *crate::_errno() = crate::ERANGE;
             ULONG_MAX
@@ -1645,10 +1645,15 @@ unsafe fn check_pmt(cond: bool) -> bool {
 // diverge. That is Phase D (locale) and is recorded in the plan — it is not new
 // debt: the already-shipped `strtol`/`strtoul` carry exactly the same caveat.
 
-/// `_strtoi64_l` with the "C" locale: msvcrt's front door + engine + errno.
+/// `_strtoi64_l`: msvcrt's front door + engine + errno.
 /// Shared by `strtol`, `strtoul`, `_atoi64` (and `_strtoi64` once flipped).
 #[inline]
-unsafe fn strtoi64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64 {
+unsafe fn strtoi64_contract(
+    nptr: *const u8,
+    endptr: *mut *mut u8,
+    base: i32,
+    locale: *mut core::ffi::c_void,
+) -> i64 {
     if !check_pmt(!nptr.is_null()) {
         return 0;
     }
@@ -1688,7 +1693,7 @@ unsafe fn strtoi64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) ->
     // character (it hands `_isspace_l`/`_tolower_l` a NULL locale), which in the real DLL
     // is three Win32 calls PER DIGIT. `hot_path` measured 513 lookups parsing a 512-digit
     // number. Idempotent, so hoisting changes nothing observable.
-    let li = sys::get_locinfo();
+    let li = locinfo_of(locale);
     let p = nptr;
     let mut s = nptr;
     let mut base = base;
@@ -1781,7 +1786,12 @@ unsafe fn strtoi64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) ->
 ///
 /// Identical for ASCII digits; not identical for anything else.
 #[inline]
-unsafe fn strtoui64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> u64 {
+unsafe fn strtoui64_contract(
+    nptr: *const u8,
+    endptr: *mut *mut u8,
+    base: i32,
+    locale: *mut core::ffi::c_void,
+) -> u64 {
     if !check_pmt(!nptr.is_null()) {
         return 0;
     }
@@ -1792,7 +1802,7 @@ unsafe fn strtoui64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) -
         return 0;
     }
 
-    let li = sys::get_locinfo(); // ONCE — see strtoi64_contract
+    let li = locinfo_of(locale); // ONCE — see strtoi64_contract
     let p = nptr;
     let mut s = nptr;
     let mut base = base;
@@ -2386,7 +2396,7 @@ pub unsafe extern "C" fn _ultow_s(value: u32, str: *mut u16, size: usize, radix:
 
 #[no_mangle]
 pub unsafe extern "C" fn _strtoi64(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64 {
-    strtoi64_contract(nptr, endptr, base)
+    strtoi64_contract(nptr, endptr, base, core::ptr::null_mut())
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -2771,7 +2781,7 @@ pub unsafe extern "C" fn _strtoui64(nptr: *const u8, endptr: *mut *mut u8, base:
     // rather than msvcrt: the real engine skips whitespace with `_isspace_l` and folds
     // digits with `_tolower_l`, reading the LOCALE's tables — and, on a high-bit byte,
     // setting errno = EILSEQ. Delegate to the transcription.
-    strtoui64_contract(nptr, endptr, base)
+    strtoui64_contract(nptr, endptr, base, core::ptr::null_mut())
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -2814,9 +2824,14 @@ fn c_lower(c: i32) -> i32 {
     }
 }
 
-/// `_strnicmp_l(s1, s2, count, NULL)` — the C-locale path.
+/// `_strnicmp_l`.
 #[inline]
-unsafe fn strnicmp_core(s1: *const u8, s2: *const u8, mut count: usize) -> i32 {
+unsafe fn strnicmp_core(
+    s1: *const u8,
+    s2: *const u8,
+    mut count: usize,
+    locale: *mut core::ffi::c_void,
+) -> i32 {
     if count == 0 {
         return 0; // before the front door, per the C
     }
@@ -2824,7 +2839,7 @@ unsafe fn strnicmp_core(s1: *const u8, s2: *const u8, mut count: usize) -> i32 {
         return NLSCMPERROR;
     }
 
-    let li = sys::get_locinfo();
+    let li = locinfo_of(locale);
     let (mut p, mut q) = (s1 as *const i8, s2 as *const i8);
     let (mut c1, mut c2);
 
@@ -2874,26 +2889,28 @@ unsafe fn strnicmp_core(s1: *const u8, s2: *const u8, mut count: usize) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _strnicmp(s1: *const u8, s2: *const u8, count: usize) -> i32 {
-    strnicmp_core(s1, s2, count)
+    strnicmp_core(s1, s2, count, core::ptr::null_mut())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _stricmp(s1: *const u8, s2: *const u8) -> i32 {
-    strnicmp_core(s1, s2, i32::MAX as usize) // the C passes INT_MAX
+    // the C passes INT_MAX
+    strnicmp_core(s1, s2, i32::MAX as usize, core::ptr::null_mut())
 }
 
-/// `_memicmp_l(s1, s2, len, NULL)`.
+/// `_memicmp_l`.
 ///
 /// Note how this differs from `_strnicmp`: it folds through `_tolower_l`, which
 /// in the C locale passes non-ASCII (including NEGATIVE chars) straight through,
 /// and it returns that difference RAW — no `(unsigned char)` cast. So on high
 /// bytes the two functions return different numbers. They are not the same
 /// comparison with a different bound.
-#[no_mangle]
-pub unsafe extern "C" fn _memicmp(
+#[inline]
+unsafe fn memicmp_core(
     s1: *const core::ffi::c_void,
     s2: *const core::ffi::c_void,
     mut len: usize,
+    locale: *mut core::ffi::c_void,
 ) -> i32 {
     // `_MSVCR_VER == 0` -> this guard IS compiled in. It is hand-rolled rather
     // than CHECK_PMT, but it still fires the handler — and only when len != 0.
@@ -2910,7 +2927,7 @@ pub unsafe extern "C" fn _memicmp(
     // idempotent, so hoisting is behaviourally identical and strictly better; msvcrt's own
     // hot comparer (`_wcsicmp_l`) hoists too. Caught by `hot_path` (1024 lookups for a
     // 512-byte compare).
-    let li = sys::get_locinfo();
+    let li = locinfo_of(locale);
     let (mut p, mut q) = (s1 as *const i8, s2 as *const i8);
     let mut ret = 0i32;
     while len != 0 {
@@ -2936,12 +2953,26 @@ pub unsafe extern "C" fn _memicmp(
     ret
 }
 
-/// `_strlwr_s_l` / `_strupr_s_l` with the C locale.
+#[no_mangle]
+pub unsafe extern "C" fn _memicmp(
+    s1: *const core::ffi::c_void,
+    s2: *const core::ffi::c_void,
+    len: usize,
+) -> i32 {
+    memicmp_core(s1, s2, len, core::ptr::null_mut())
+}
+
+/// `_strlwr_s_l` / `_strupr_s_l`.
 ///
 /// The handler NEVER fires (hand-rolled `*_errno() = EINVAL`, the `_ultoa_s`
 /// shape). "No terminator inside len" is its own EINVAL and truncates dst to "".
 #[inline]
-unsafe fn strcase_s_core(str_: *mut u8, len: usize, upper: bool) -> i32 {
+unsafe fn strcase_s_core(
+    str_: *mut u8,
+    len: usize,
+    upper: bool,
+    locale: *mut core::ffi::c_void,
+) -> i32 {
     if str_.is_null() || len == 0 {
         *_errno() = EINVAL; // errno only — no handler
         return EINVAL;
@@ -2961,7 +2992,7 @@ unsafe fn strcase_s_core(str_: *mut u8, len: usize, upper: bool) -> i32 {
     // an inline ASCII fold in the "C" locale, `_tolower_l((unsigned char)*str, locale)`
     // otherwise. We shipped only the first half (wave 7), which is correct in the "C"
     // locale and wrong the moment setlocale is called. Both halves now.
-    let li = sys::get_locinfo();
+    let li = locinfo_of(locale);
     let mut p = str_;
 
     if (*li).lc_handle[sys::LC_CTYPE] == 0 {
@@ -2995,12 +3026,12 @@ unsafe fn strcase_s_core(str_: *mut u8, len: usize, upper: bool) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _strlwr_s(str_: *mut u8, len: usize) -> i32 {
-    strcase_s_core(str_, len, false)
+    strcase_s_core(str_, len, false, core::ptr::null_mut())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _strupr_s(str_: *mut u8, len: usize) -> i32 {
-    strcase_s_core(str_, len, true)
+    strcase_s_core(str_, len, true, core::ptr::null_mut())
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -4341,6 +4372,34 @@ mod fpnum;
 // C until a later varargs-shell wave.
 pub mod printf;
 
+// Wave 14c — the shells themselves. Flipping the engine's six symbols swung
+// file.c's stream family but NOT wcs.c's own shells: clang had already
+// IPA-specialized the same-TU engine into them, and intra-TU inlining never
+// consults the linker (symbol replacement flips a TU's CALLERS, not its
+// HOUSEMATES). These are the 31 `va_list`-taking entry points, transcribed;
+// the `...` ones are C va_start trampolines in msvcrt's rust_varargs_shim.c
+// because stable Rust cannot DEFINE a variadic. `pub` for the difftest.
+pub mod printf_shells;
+
+// Wave 16 — the last of wcs.c: the wide integer parsers and their clamps, the
+// case folders and comparers, and the whole wchar->multibyte family. Its own
+// module rather than more lib.rs because the wcstombs/wctomb group shares two
+// file-static helpers (`wcsrtombs_l`, `wcsrtombs_s_l`) that nothing else may see,
+// exactly as they are file-static in wcs.c.
+pub mod wcs_rest;
+
 // Wave 15 — whole-C-file rustconv translations (mbcs.c first). See src/msvcrt/mod.rs.
 pub mod prelude;
 mod msvcrt;
+
+// Wave 16 — string.c's remaining `_l` exports (plus `_strdup`, `_atoflt`, `I10_OUTPUT`).
+pub mod string_l;
+
+// Wave 16 — the scanf ENGINE. `dll/win32/msvcrt/scanf.h` is a template `#include`d 16
+// times from scanf.c under every WIDE_SCANF/SECURE/STRING/STRING_LEN/CONSOLE
+// combination; this is one generic engine over those same three axes, plus the 16
+// `v*scanf*_l` entry points the C keeps `static` and the four `__stdio_common_*` doors.
+// `%f` goes through wave 13's `fpnum_parse`/`fpnum_double`, the same bignum `strtod`
+// uses. The 40 `...` entry points cannot be Rust (no `va_start` on stable) and live in
+// `dll/win32/msvcrt/rust_scanf_shim.c`. `pub` for the difftest.
+pub mod scanf;

@@ -88,6 +88,102 @@ GDB_BIND_ERROR = "Could not open gdbserver"
 BIND_RACE_ERRORS = (HOSTFWD_BIND_ERROR, GDB_BIND_ERROR)
 HOSTFWD_LAUNCH_RETRIES = int(os.environ.get("VIBEOS_HOSTFWD_LAUNCH_RETRIES", "4"))
 
+# freeldr's boot-entry selector, as it appears verbatim inside the livecd ISO.
+# The x86 media has always carried BOTH flavors — [LiveCD_SMP] (/KERNEL=ntkrnlmp.exe
+# /HAL=halmp.dll) ships in every livecd.ini and all four binaries are staged — but
+# freeldr chooses from this one line and we set TimeOut=0, so no menu ever appears
+# to choose at. There is no boot-time channel to tell freeldr otherwise: -append
+# applies only to a direct `-kernel` Linux boot, not a UEFI CD boot of freeldr.
+_INI_DEFAULT_OS = b"DefaultOS="
+_INI_SMP_ENTRY = b"LiveCD_SMP"
+
+
+def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
+    """An ISO whose freeldr default entry is the MP pair, WITHOUT rebuilding media.
+
+    ISO9660 stores each file's bytes once, contiguously, with no per-file checksum,
+    and freeldr.ini is plain text — so flipping the default is an equal-length
+    in-place write of one line into a copy of the image. The alternative was a cmake
+    reconfigure + mkisofs repack (8m30s measured on amd64) or shipping a second
+    221 MB media; this is a 0.15s copy and a 22-byte poke.
+
+    Padding: `DefaultOS=LiveCD_SMP` is 20 bytes and the shipped
+    `DefaultOS=LiveCD_Debug` is 22, so the remainder becomes `\\r\\n` (a blank line
+    the INI parser ignores) plus `;` comment filler for any excess. A 1-byte
+    remainder cannot form a clean line terminator, so it raises rather than emitting
+    a lone CR.
+
+    Every failure path raises. Booting UP media on an `--smp` run is precisely the
+    false-green `_smp_check` exists to catch, and a silent fallback here would
+    manufacture exactly that."""
+    data = bytearray(iso.read_bytes())
+    hits = [i for i in range(len(data)) if data.startswith(_INI_DEFAULT_OS, i)]
+    if len(hits) != 1:
+        raise RuntimeError(
+            f"{iso}: expected exactly one {_INI_DEFAULT_OS.decode()} in the image, found "
+            f"{len(hits)} — freeldr.ini is not where this expects it; rebuild with "
+            "`build --smp-kernel` instead of patching"
+        )
+    start = hits[0]
+    end = start
+    while end < len(data) and data[end] not in (0x0D, 0x0A):
+        end += 1
+    old = bytes(data[start:end])
+    if old == _INI_DEFAULT_OS + _INI_SMP_ENTRY:
+        return iso  # media already defaults to the MP entry (built --smp-kernel)
+    if b"[" + _INI_SMP_ENTRY + b"]" not in data:
+        raise RuntimeError(
+            f"{iso}: no [{_INI_SMP_ENTRY.decode()}] section — this media predates the "
+            "halmp.dll twin and cannot boot the MP pair; rebuild it"
+        )
+    new = _INI_DEFAULT_OS + _INI_SMP_ENTRY
+    pad = len(old) - len(new)
+    if pad < 0:
+        raise RuntimeError(f"{iso}: {old!r} is shorter than {new!r}; cannot patch in place")
+    if pad == 1:
+        raise RuntimeError(f"{iso}: 1-byte remainder after {new!r} cannot terminate the line")
+    if pad:
+        new += b"\r\n" + b";" * (pad - 2)
+    assert len(new) == len(old)
+    data[start:end] = new
+    out = work_dir / iso.name
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(data)
+    return out
+
+
+def smp_count() -> int | None:
+    """The vCPU count this run asked for (VIBEOS_QEMU_SMP), or None for a UP boot."""
+    n = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
+    if not n:
+        return None
+    if not n.isdigit() or int(n) < 1:
+        raise ValueError(f"VIBEOS_QEMU_SMP must be a positive integer (got {n!r})")
+    return int(n)
+
+
+def _maybe_smp_iso(iso: Path, work_dir: Path) -> Path:
+    """`smp_selected_iso` when this run asked for SMP, else the media untouched."""
+    return smp_selected_iso(iso, work_dir) if smp_count() else iso
+
+
+def smp_boot_timeout(base: float, n: int | None) -> float:
+    """Scale a UP-tuned boot_timeout for an `-smp N` boot.
+
+    Under MTTCG every guest vCPU is a host thread doing its own translation and
+    execution, so N vCPUs on an already-contended host stretch the wall clock to
+    any given milestone roughly linearly — and the guest genuinely does more work
+    too (AP bring-up, IPI round-trips, real spinlock contention). arm64's 180s is
+    sized against a ~40s UP boot; at -smp 2 a healthy boot that had reached
+    `explorer.exe created` and was still emitting SCM output tripped it anyway.
+
+    This scales the CLOCK only. The boot marker is unchanged, and
+    `hang_silence_seconds` is deliberately NOT scaled: the silence watchdog is
+    what actually catches a wedge, so a genuine MP hang still fails in ~120s
+    instead of burning the whole stretched budget.
+    """
+    return base if not n or n < 2 else base * n
+
 
 def per_arch_cap(arch: str) -> int:
     """Same-arch concurrency sub-cap, layered under the global pool. Mirrors
@@ -372,7 +468,7 @@ class I386Config(ArchConfig):
     )
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = PROJECT_DIR / "build-i386" / "livecd.iso"
+        iso = _maybe_smp_iso(PROJECT_DIR / "build-i386" / "livecd.iso", work_dir)
         return [
             *self.machine_args,
             "-m",
@@ -401,7 +497,7 @@ class I386UefiConfig(I386Config):
     arch: str = "i386-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = PROJECT_DIR / "build-i386" / "livecd.iso"
+        iso = _maybe_smp_iso(PROJECT_DIR / "build-i386" / "livecd.iso", work_dir)
         ovmf_code = QEMU_DIR / "OVMF32_CODE.fd"
         ovmf_vars_src = QEMU_DIR / "OVMF32_VARS.fd"
         # The writable VARS pflash must be qcow2: QMP savevm refuses to
@@ -472,7 +568,7 @@ class Amd64Config(ArchConfig):
     )
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = PROJECT_DIR / "build-amd64" / "livecd.iso"
+        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
         return [
             *self.machine_args,
             "-m",
@@ -502,7 +598,7 @@ class Amd64UefiConfig(Amd64Config):
     arch: str = "amd64-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = PROJECT_DIR / "build-amd64" / "livecd.iso"
+        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
         ovmf_code = Path("/usr/share/OVMF/OVMF_CODE_4M.fd")
         ovmf_vars_src = Path("/usr/share/OVMF/OVMF_VARS_4M.fd")
         # Writable VARS pflash must be qcow2 for QMP savevm (raw is rejected).
@@ -773,6 +869,7 @@ class Arm64NetConfig(Arm64Config):
     Deliberately NOT the default arm64 smoke config: boot smoke keeps its
     meaning (no NIC), net is its own signal (tests/qemu/test_net.py).
     """
+
     arch: str = "arm64-net"
     ECHO_GUEST_PORT: int = 7777
     echo_hostfwd_port: int = 0
@@ -799,7 +896,8 @@ class Arm64NetConfig(Arm64Config):
             *super().qemu_args(work_dir),
             # Modern-only virtio (PCI\VEN_1AF4&DEV_1041), same contract as the
             # amd64 net config; attaches to the virt GPEX PCIe root bus.
-            "-device", "virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0",
+            "-device",
+            "virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0",
             "-netdev",
             f"user,id=net0,hostfwd=tcp:127.0.0.1:{self.echo_hostfwd_port}"
             f"-:{self.ECHO_GUEST_PORT}"
@@ -846,6 +944,17 @@ class QemuVM:
         gdb_wait: bool = False,
     ) -> None:
         self.config = config
+        # An -smp N boot is slower in wall-clock than the UP boot the timeout was
+        # sized against; scale the clock, never the marker. See smp_boot_timeout().
+        # Always recompute from the stashed UP value, never from the current one:
+        # a caller that reuses one config across boots (a gate retry) would
+        # otherwise multiply again on every VM and drift to an absurd budget.
+        if not hasattr(config, "_up_boot_timeout"):
+            config._up_boot_timeout = config.boot_timeout  # type: ignore[attr-defined]
+        self.config.boot_timeout = smp_boot_timeout(
+            config._up_boot_timeout,  # type: ignore[attr-defined]
+            smp_count(),
+        )
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -978,12 +1087,10 @@ class QemuVM:
         Opt-in only (SMP bring-up — docs/engineering/smp-bringup-quest.md);
         default configs stay UP. All backends exercise real concurrency
         (TCG multi-vCPU is MTTCG — real host threads)."""
-        n = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
-        if not n:
+        n = smp_count()
+        if n is None:
             return []
-        if not n.isdigit() or int(n) < 1:
-            raise ValueError(f"VIBEOS_QEMU_SMP must be a positive integer (got {n!r})")
-        return ["-smp", n]
+        return ["-smp", str(n)]
 
     def _extra_qemu_args(self) -> list[str]:
         """VIBEOS_QEMU_EXTRA_ARGS=<raw qemu args> appends arbitrary devices/options to
@@ -1157,8 +1264,7 @@ class QemuVM:
             echo_port = self._echo_server.server_address[1]
             echo_chardev = [
                 "-chardev",
-                f"socket,id={chardev_id},host={host},port={echo_port},"
-                "server=off,reconnect-ms=1000",
+                f"socket,id={chardev_id},host={host},port={echo_port},server=off,reconnect-ms=1000",
             ]
         return [
             win_bin,
@@ -1422,7 +1528,9 @@ class QemuVM:
         if self._backend == "windows-host":
             from . import backend as be
 
-            staging = self._win_staging or Path(self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+            staging = self._win_staging or Path(
+                self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu")
+            )
             staged = staging / f"screen-{path.name}"
             result = self.qmp.execute("screendump", filename=be.win_path(staged))
             time.sleep(0.5)

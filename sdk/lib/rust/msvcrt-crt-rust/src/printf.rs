@@ -311,8 +311,11 @@ fn slot_of(sz: usize) -> usize {
 
 /// One `va_arg(*cursor, T)`: unaligned little-endian read at the slot start,
 /// then advance by the rounded slot (covers 8-byte args on 4-byte i386 slots).
+///
+/// `pub(crate)` because `scanf.rs` needs the SAME cursor arithmetic — two copies of the
+/// slot rule is exactly the drift that makes a va_list read one slot off forever.
 #[inline]
-unsafe fn va_next<T: Copy>(cursor: &mut *mut u8) -> T {
+pub(crate) unsafe fn va_next<T: Copy>(cursor: &mut *mut u8) -> T {
     let v = core::ptr::read_unaligned(*cursor as *const T);
     *cursor = (*cursor).add(slot_of(core::mem::size_of::<T>()));
     v

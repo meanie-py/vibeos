@@ -1206,11 +1206,45 @@ generated `freeldr.ini` on the media. One media, one `freeldr.ini`, one default.
 So a gate cannot hold UP and MP media simultaneously today, and
 `vibeos-cli gate` is deliberately UNTOUCHED here.
 
-Reaching the real "one extra boot" needs a **second media** — `livecd-smp.iso`
-built alongside, its own `freeldr.ini` defaulting to `[LiveCD_SMP]` — so the gate
-boots either without reconfiguring anything. That is a separate change with a
-real cost (an extra mkisofs on every build) and is the natural predecessor to
-flipping the default. Not started.
+#### …and the second media turned out to be unnecessary. Patch the ini IN the ISO.
+
+The paragraph above (written hours earlier) proposed building a second
+`livecd-smp.iso` to escape the repack. **That was overbuilt.** The question
+"why can't it just be a freeldr flag on the same ISO?" has a better answer than
+either option, and the answer is measured:
+
+ISO9660 stores each file's bytes **once, contiguously, with no per-file
+checksum**, and `freeldr.ini` is plain text. So flipping the default entry is an
+**equal-length in-place write of one line** into a copy of the image:
+
+```
+occurrences of "DefaultOS=" in livecd.iso : exactly 1   (0x1a800e, plain text)
+DefaultOS=LiveCD_Debug    -> 22 bytes
+DefaultOS=LiveCD_SMP\r\n  -> 22 bytes   (the spare \r\n becomes a blank line)
+cp of the 221 MB ISO      -> 0.153s warm
+```
+
+`vm.py:smp_selected_iso()` does exactly that into the per-run work dir the
+harness already stages media through, so `--smp N` boots the MP pair off
+**unmodified UP-default media**. Every failure path RAISES — not exactly one
+`DefaultOS=`, no `[LiveCD_SMP]` section, a value too short to overwrite, or a
+1-byte remainder that cannot terminate the line. A silent fallback here would
+manufacture precisely the false-green `_smp_check` exists to catch.
+
+**Boot-proven end to end (amd64, 2026-07-25):** with `build-amd64/livecd.iso` on
+disk still reading `DefaultOS=LiveCD_Debug`, `smoke --arch amd64 --smp 2` gave
+`[FLDR] load …\halmp.dll` + `[FLDR] load …\ntkrnlmp.exe`,
+`[SMP] CPU1 scheduling live`, boot + net green in 2m26s. No rebuild, no
+reconfigure, no second media.
+
+So **an MP gate leg now genuinely costs one extra boot** — the claim originally
+made for the halmp.dll twin, walked back when the `DefaultOS=` repack surfaced,
+and now backed by measurement. What made it possible was still the twin: both
+HALs have to EXIST on the media before selecting between them can be a 22-byte
+poke.
+
+arm64 never had this problem — `mkramdisk` `mcopy`s the modified ini into
+`boot.img`, no repack — so this is purely an x86 ISO-packing artifact.
 
 **Pre-existing cruft noticed, not touched:** `[LiveCD_Macpi]` passes
 `/HAL=halmacpi.dll`, which this tree has never built — that menu entry has always
@@ -1368,3 +1402,135 @@ sweep's wait loop (`test_payload.py::test_payload_launched`) does break early on
 but the run still burned to the outer timeout, and `conformance` reports neither a classification
 nor a symbolicated PC the way `smoke` does. A guest BUGCHECK mid-sweep should abort the verb loud
 with the stop code — same fail-loud shape as the three `--smp` checks above.
+
+## arm64 clears its last conformance blocker: `-smp 2` sweeps end-to-end (2026-07-26)
+
+The BuildType fix landed and the arm64 `-smp 2` kmtest sweep — which had never once
+completed, dying at the KeSpinLock `0x9` 34 tests in — now **runs the whole corpus in 95
+seconds**: `launched=89 ok=86 bad=3 sweep=done`.
+
+Against the freshly-seeded arm64 UP baseline, all 89 rows present, no coverage loss, and
+**not one regression**:
+
+| test | UP baseline | `-smp 2` | reading |
+|---|---|---|---|
+| `KeSpinLock` | 281/42 | **286/37** | +5 — the SYNCH_LEVEL/BuildType alignment paying off |
+| `IoInterrupt` | 937/158 | **939/156** | +2 |
+| `ZwMapViewOfSection` | 120/14 | **121/13** | +1 |
+| `KeEvent` | 42733 | 42601 | the documented MP-skip (§9.97), expected |
+| `IoDeviceObject` | 181/8 | 180/9 | the known ±1 flicker, already in amd64's smp2 baseline |
+
+The three `bad` rows are byte-identical to the UP baseline's three (`HalPortIo`,
+`RtlCaptureContextKM`, `RtlCaptureContextUM`, all `NO-END`) — pre-existing, not MP.
+
+### Two harness bugs the run surfaced first
+
+**A UP-tuned `boot_timeout` reads a healthy `-smp N` boot as a wedge.** The first attempt
+failed the boot fixture at arm64's 180s with the log still *talking* — it had reached
+`[WINLOGON] explorer.exe created (PID 216)` and was mid-SCM startup. That budget is sized
+against a ~40s UP boot; under MTTCG each vCPU is its own host thread and the guest does more
+work, so wall-clock grows roughly linearly in N. `vm.smp_boot_timeout()` scales it. **Scale
+the clock, never the marker** — `hang_silence_seconds` is deliberately left alone, because
+the silence watchdog is what actually catches a wedge, so a genuine MP hang still fails in
+~120s instead of burning the stretched budget.
+
+**`--write-baseline` could silently delete tests from the ratchet floor.** It replaces the
+baseline wholesale with the run's rows, so a sweep cut short by a boot flake or an early
+BUGCHECK removes every test it never reached — permanently, with no signal. That is the
+ratchet form of "never weaken a test to make it pass", and catching it was a hand-check
+before every re-seed. Now `baseline_coverage_refusal()` refuses and names the tests that
+would vanish (`--force-baseline` is the deliberate retire-a-test escape hatch), and
+`baseline_lowering_note()` says out loud which rows a re-seed is making worse — that one is
+allowed, because absorbing a known regression is sometimes intended (i386 and arm64 both took
+`ExHardError` 30/0 → 24/6 on purpose).
+
+### The MP gate leg got cheap on x86, and conformance stopped rebuilding for it
+
+`conformance` no longer passes `--smp-kernel` on x86. Since `halmp.dll` became its own cell
+the ISO carries both kernels and both HALs plus a `[LiveCD_SMP]` entry, and
+`vm.smp_selected_iso()` patches `DefaultOS=` inside a *copy* of the media at boot time —
+so `--smp-kernel` would only rewrite that same line via a cmake cache var, i.e. a reconfigure
+and an ISO re-roll to change 22 bytes we change for free. Consequence worth having: **one x86
+build now serves the UP, `--smp 1` and `--smp 2` sweeps**, via `--no-build`. arm64 still needs
+the flag — its `boot.img` does not carry the MP pair at all unless `mkramdisk.sh --smp` stages
+it, so there is nothing in the media to boot-select. Closing that asymmetry (always stage the
+MP pair, patch the ini in the FAT image the same way) is the remaining follow-up.
+
+## amd64 collapse: CLEAN, once the UP baseline stopped lying (2026-07-26)
+
+Re-seeded amd64's UP baseline first, then ran the collapse gate against it. All three sweeps
+came off **one build** — the payoff from retiring `--smp-kernel` on x86 — and all three were
+`launched=89 ok=89 bad=0 sweep=done`.
+
+| run | verdict |
+|---|---|
+| UP (re-seed) | 89/89, 0 bad |
+| `--smp 1` | 89/89, 0 bad. **Single delta vs the UP baseline: `KeEvent` 42733 → 42601** — the documented MP-skip, and nothing else |
+| `--smp 2` (re-seed) | 89/89, 0 bad, plus 2 NEW passes (`RtlExceptionKM`, `NtCreateSection`) |
+
+`--smp 1` and `--smp 2` both printed `MP pair confirmed on serial: ntkrnlmp.exe + halmp.dll`
+— the new conformance assertion, which is the first time an x86 conformance sweep has *proved*
+it graded the MP kernel rather than assuming it.
+
+**The stale UP baseline was doing real damage.** amd64's `ExHardError` row was still the
+untouched 2026-07-17 `30/0` while the measured value had been `24/6` since 07-24, so every
+amd64 sweep reported a phantom regression that had to be mentally subtracted before the real
+signal was visible. Re-seeding is why the `--smp 1` line above is a single clean delta instead
+of three.
+
+### A pass-count DROP that was an improvement — why the guard announces instead of refusing
+
+The re-seed lowered three rows, and `baseline_lowering_note()` printed all three. Two were
+known (`ExHardError` 30/0 → 24/6; `IoDeviceObject` ±1 flicker). The third looked alarming:
+
+    ExInterlocked: pass 662 -> 180, fail 40 -> 0
+
+Total assertions 702 → 180 is a big drop, and a rule that refused count regressions would have
+blocked it. Cross-arch check says it is a **convergence, not a loss**:
+
+| arch | ExInterlocked | SEH path |
+|---|---|---|
+| amd64 (old baseline) | 662 / **40 fail** | pre-`-fasync-exceptions` |
+| amd64 (now) | 180 / **0 fail** | native SEH |
+| arm64 | 180 / **0 fail** | native SEH |
+| i386 | 718 / 120 fail | DUMMY_PSEH — a genuinely different path |
+
+amd64 landed on arm64's exact value with zero failures. That is `d3b1c045c5d`
+("clang was DELETING every `__except` around an in-body fault") reaching amd64's measured
+numbers. **Generalisable:** a falling assertion count is not evidence of lost coverage — it can
+mean the test stopped re-running a broken path. Coverage loss is the thing worth refusing
+(a test that never launched); count changes are the thing worth *showing* to a human.
+
+## Collapse criterion MET on all three arches (2026-07-26)
+
+i386 completed the same one-build / three-sweep pattern. Every arch's `--smp 1` run now differs
+from its UP baseline by **exactly the documented `KeEvent` MP-skip and nothing else**:
+
+| arch | `--smp 1` result | delta vs UP baseline |
+|---|---|---|
+| i386  | 89 launched, 86 ok, 3 bad, done | `KeEvent` 42733 → 42601 — only |
+| amd64 | 89 launched, **89 ok, 0 bad**, done | `KeEvent` 42733 → 42601 — only |
+| arm64 | 89 launched, done | `KeEvent` only, systematically; plus page-reuse flake noise |
+
+All x86 MP runs printed `MP pair confirmed on serial: ntkrnlmp.exe + halmp.dll`.
+
+Baselines re-seeded: **i386** (UP + smp2), **amd64** (UP + smp2). **arm64 deliberately NOT
+seeded** — see the page-reuse entry in the roadmap registry; a ratchet floor cannot come from a
+non-deterministic sweep.
+
+The i386 re-seed was pure improvement, no lowering note at all: `RtlUnicodeString`
+**NO-END → OK 77/0** (one fewer permanently-bad test) and `ExInterlocked` 718/120 → **922/52**.
+Its smp2 baseline went 72 → 89 rows with **zero tests dropped** — it had been stuck at the
+2026-07-18 shape, missing 17 tests the corpus had since gained, so it was silently not ratcheting
+them at all.
+
+### Remaining before the default can flip
+
+1. **arm64 late-run page-reuse / stack corruption** — the one real blocker. Non-determinism at
+   both `-smp 1` and `-smp 2`, so it is not an SMP defect; it blocks the arm64 baseline seed and
+   any trustworthy arm64 ratchet. First symbolicated kernel-side instance and the next
+   distinguishing test are in the roadmap entry.
+2. **BUILD_INCOMPLETE** (roadmap) — instrumented, awaiting an occurrence to name itself.
+
+`ExHardError` is NO LONGER on this list: the failure count proves the LPC round-trip succeeds,
+so the six are the OS becoming more correct, and all three UP baselines now record 24/6.

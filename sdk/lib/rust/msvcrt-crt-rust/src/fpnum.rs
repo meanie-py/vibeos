@@ -113,7 +113,10 @@ fn fpnum(sign: i32, exp: i32, m: u64, md: FpMod) -> FpNum {
 /// `WEOF`. msvcrt's `wint_t` is **16-bit**, so this is 0xFFFF — see wave 11.
 const WEOF: u16 = 0xFFFF;
 
-trait CharSrc {
+/// `pub(crate)` for `scanf.rs`: scanf's `%f` arm hands `fpnum_parse` its own
+/// `strtod_scanf_ctx` (scanf.h:151-196), which is a fourth implementation of this same
+/// get/unget pair — one that can also *fail* (`ctx.err`).
+pub(crate) trait CharSrc {
     /// # Safety
     /// The cursor must point into a NUL-terminated string.
     unsafe fn get(&mut self) -> u16;
@@ -184,6 +187,43 @@ impl CharSrc for WStrSrc {
 }
 
 // ── fpnum_double (string.c:365-477) ───────────────────────────────────────────
+
+/// The four-line `struct fpnum` literal `I10_OUTPUT` builds by hand before calling
+/// `fpnum_double`, exported for `string_l`. An adapter rather than `pub(crate)` on
+/// `FpNum`/`FpMod`/`fpnum_double`: the round mode is not a free choice — `I10_OUTPUT`
+/// is the only caller outside the parser and it always wants `FP_ROUND_EVEN`, so
+/// pinning it here keeps the enum private and the call site unable to get it wrong.
+pub(crate) fn ld80_fpnum_double(sign: i32, exp: i32, m: u64, d: &mut f64) -> i32 {
+    let mut num = fpnum(sign, exp, m, RoundEven);
+    fpnum_double(&mut num, d)
+}
+
+/// scanf.h:416-418 — the `%f` arm's two calls, as one adapter:
+///
+/// ```c
+/// fp = fpnum_parse(get, unget, &ctx, locinfo, FALSE);
+/// fpnum_double(&fp, &cur);
+/// ```
+///
+/// The `fpnum_double` return (ERANGE) is discarded exactly as the C discards it — scanf
+/// sets no errno for an out-of-range `%f`. An adapter rather than `pub(crate)` on the
+/// pair, for the same reason as `ld80_fpnum_double`: `FpNum`, `FpMod` and the round mode
+/// stay private and the call site cannot get the `ldouble` flag wrong (scanf always
+/// passes FALSE).
+///
+/// `cur` is an out-param, not a return: a Rust-ABI `-> f64` hard-errors on the no-SSE
+/// i386 target. See `strtod_helper`.
+///
+/// # Safety
+/// FFI: `locinfo` must be live, and `s`'s cursor valid.
+pub(crate) unsafe fn scanf_fpnum_double<S: CharSrc>(
+    s: &mut S,
+    locinfo: *mut sys::threadlocaleinfostruct,
+    cur: &mut f64,
+) {
+    let mut fp = fpnum_parse(s, locinfo, false);
+    fpnum_double(&mut fp, cur);
+}
 
 /// Assemble an IEEE-754 binary64 out of a parsed `fpnum`, applying the round mode.
 /// Returns 0, or `ERANGE` on overflow/underflow.

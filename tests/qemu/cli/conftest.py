@@ -12,3 +12,23 @@ import pytest
 @pytest.fixture(autouse=True)
 def restore_vm():
     yield
+
+
+@pytest.fixture(autouse=True)
+def _artifact_root_is_never_the_real_one(tmp_path, monkeypatch):
+    """No unit test may write into the LIVE artifact tree.
+
+    artifacts.ARTIFACT_ROOT is resolved from the environment at IMPORT time, so a
+    test that does `monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", ...)` changes
+    nothing and its Run() lands in the real root. Under `check-tooling` — which
+    the gate runs with VIBEOS_ARTIFACT_ROOT pointed at the gate's own tooling dir
+    — that meant test_run_summary_json deposited a synthetic
+    `20231114-171320-smoke-i386/summary.json` carrying verdict FAIL /
+    classification BUGCHECK directly into the gate's artifact tree. It is the
+    first summary.json a `find` turns up, it looks exactly like a real verdict,
+    and it has now twice been read as one, including in a report to the user.
+
+    Pinning the root per-test kills the whole class instead of the four call
+    sites that happened to hit it. Tests that patch ARTIFACT_ROOT themselves
+    still win: their monkeypatch applies after this one."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "artifacts")

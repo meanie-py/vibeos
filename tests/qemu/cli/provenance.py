@@ -390,20 +390,30 @@ def _lag(older: Path, newer: Path) -> str:
     artifact-older-than-input verdict happens, and the one fact these messages
     never carried.
 
-    A gap under a second or so means the two writes belong to the SAME ninja run
-    and merely landed in the wrong order (the link consumed the right bytes; the
-    input was rewritten just after) — an ordering race, i.e. a false positive.
     A gap of minutes or hours means the input really did change in an earlier
     run and nothing relinked — a missing dependency edge, i.e. a true positive.
-    Both currently print the identical sentence, which is why 5 occurrences a day
-    could not be triaged."""
+    Both used to print the identical sentence, which is why 5 occurrences a day
+    could not be triaged.
+
+    A SUB-SECOND gap was originally read as a harmless same-run ordering race.
+    That reading was wrong, and it cost the merge train ~an hour of BUILD_INCOMPLETE
+    before anyone chased it: the copy is `copy_if_different`, so a fresh mtime
+    means the BYTES CHANGED, which the already-finished link cannot have seen.
+    The real cause is build.py's post-main `ninja-optional:<target>` passes —
+    `ntkrnlmp` rebuilds `-p kernel-rust` into the same CARGO_TARGET_DIR and the
+    same copied `libkernel_rust.a` that `ntoskrnl` links, so the optional pass
+    re-emits the archive after the main pass has stopped relinking. Measured on
+    amd64: lib at 02:08:11, ntkrnlmp.exe at 02:08:23, ntoskrnl.exe still 00:27:35.
+    A `ninja-reaffirm` pass now closes that window; a sub-second gap surviving it
+    means a cell is re-emitting on EVERY pass, which is a wiring bug to chase."""
     try:
         d = newer.stat().st_mtime - older.stat().st_mtime
     except OSError:
         return ""
     if d < 2.0:
         return (
-            f" [input {d * 1000:.0f}ms newer — SAME-RUN ORDERING, suspect a race not a stale edge]"
+            f" [input {d * 1000:.0f}ms newer — bytes changed AFTER the link; a later pass "
+            f"(ninja-optional:*?) re-emitted this staticlib. NOT a benign ordering race]"
         )
     if d < 120.0:
         return f" [input {d:.1f}s newer]"
@@ -561,7 +571,12 @@ def cargo_link_staleness_reasons(repo: Path, arch: str) -> list[str]:
         if artifact.stat().st_mtime < newest:
             lag = newest - artifact.stat().st_mtime
             note = (
-                " [SAME-RUN ORDERING, suspect a race not a stale edge]"
+                # Source-vs-binary, so unlike _lag's staticlib comparison a
+                # sub-second gap really can be same-run ordering (a generated .rs
+                # rewritten while the build ran). Say "check", not "ignore" —
+                # calling a gap benign by default is what hid a real stale kernel.
+                " [<2s — possibly same-run ordering; confirm the binary is newer"
+                " than the SOURCE it compiled, not merely close]"
                 if lag < 2.0
                 else f" [{lag / 60:.0f}min newer — a genuinely missed rebuild]"
                 if lag >= 120.0
@@ -717,8 +732,8 @@ def _src_delta(repo: Path, stamp: Stamp) -> str:
         now_head = git_head(repo)
         if stamp.head_sha and now_head != stamp.head_sha:
             return (
-                f" — HEAD MOVED UNDER THE BUILD: {stamp.head_sha[:12]} -> {now_head[:12]} "
-                "(a merge/fetch landed mid-build; this is not a stale artifact)"
+                f" — HEAD MOVED SINCE THE BUILD: {stamp.head_sha[:12]} -> {now_head[:12]} "
+                "(a merge, fetch or local commit — NOT a stale artifact)"
             )
         names = _run(
             ["git", "diff", "--name-only", "HEAD", "--", ".", *NON_BUILD_PATHSPEC], repo

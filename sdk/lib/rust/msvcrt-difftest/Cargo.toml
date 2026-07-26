@@ -103,6 +103,16 @@ name = "mbcs"
 path = "tests/mbcs.rs"
 harness = false
 
+# Wave 14c — the 30 `va_list` printf ENTRY POINTS. printf_port grades the ENGINE and
+# cannot see what surrounds it: which options bits go in, how a size_t buffer size
+# truncates into the C's `int len`, which of ret<0 / ret==len decides a -1, whether the
+# -1 path zeroes the buffer or just terminates it, errno vs handler ordering. A shell
+# that got every one of those wrong would still pass printf_port perfectly.
+[[test]]
+name = "printf_shells"
+path = "tests/printf_shells.rs"
+harness = false
+
 # `create_mbcinfo`, which the 173 generated cases structurally cannot grade: the fixture
 # they are all pinned against is built from the REFERENCE's copy and handed to both sides,
 # so the SUBJECT's never runs. Its own binary, so it is its own process and cannot disturb
@@ -110,4 +120,23 @@ harness = false
 [[test]]
 name = "mbcs_state"
 path = "tests/mbcs_state.rs"
+harness = false
+
+# Wave 16 — the last 50 exports of string.c and wcs.c: the `_l` integer parsers and case
+# folders, `_strdup` / `_atoflt` / `I10_OUTPUT`, the wide integer engines, and the whole
+# wchar->multibyte family. Its own binary because it plants a non-zero `lc_codepage` on
+# BOTH sides (every WideCharToMultiByte arm in that family is unreachable otherwise) and
+# must not leave that state behind for another suite's rows.
+[[test]]
+name = "wave16"
+path = "tests/wave16.rs"
+harness = false
+
+# Wave 17 — the scanf ENGINE. `dll/win32/msvcrt/scanf.h` is a template scanf.c
+# instantiates 16 times; `msvcrt-crt-rust/src/scanf.rs` replaces all 16 with one generic
+# body. Its own binary because it DEFINES the model character source (`fgetc`/`fgetwc`/
+# `_getch` &c.) under the plain libc names, which no other suite may inherit.
+[[test]]
+name = "scanf"
+path = "tests/scanf.rs"
 harness = false
