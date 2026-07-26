@@ -943,6 +943,27 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Fact vs inference: the operands and the raise arm are measured; "a live stack lost a page" is
   the reading of them, and the `[KSTACK]` dump added below is what turns it into a fact.
 
+  **A FOURTH face — a LOST GATE WAKEUP, and this one the kernel's own instrumentation names.**
+  Soak run 2 round 4: `launched=79 ok=66 bad=12`, **no bugcheck**, 4674s (round 3 swept the same
+  media in 75s — 62× faster). The sweep degraded into repeated per-test `TIMEOUT … (180s) -
+  terminating` (NtSystemDebugControl, PoIrp, …) until the drain budget ran out. The cause is on
+  serial:
+
+      [CENSUS] STUCK kmtest_.exe pid=816 tid=812 GateWait obj=ffff8000049044e0 parked=1 sat=0 sig=0
+      [FLIGHTREC]   no events for obj=ffff8000049044e0 in the last 16384
+
+  A thread parked on a gate that was never signalled, and the flight recorder saw **no activity
+  at all** on that object — i.e. a lost wakeup, not a slow one. That is a different bug from the
+  0x50/0x1E memory face; whether it shares a root cause is unknown. Likely lineage to chase
+  first: the §9.92 wait-block family (`[WAITDEP]` ALL-ONES / the synchronous-completion path),
+  which is closed but whose owed deeper root — arm64 self-targeted special-kernel-APC delivery
+  latency — is exactly this shape. Note `obj=ffff8000049044e0` sits in the same
+  `0xffff8000_04/05` VA family as the fault addresses, which is suggestive and nothing more.
+
+  **B is NOT C — tested, not assumed.** The obvious unifying story ("the launcher itself parked
+  on a gate, hence `launched=0`") is **wrong**: the no-launch round has **zero** `CENSUS STUCK`
+  lines, while the stalled round has them throughout. Two distinct faces.
+
   **A THIRD observable face — "sweep no-launch" (1 occurrence, cause unknown).** Soak run 2
   round 2: the guest **booted to desktop** (3 shell markers on serial) and then launched
   **zero** of the 89 tests, draining the full 87-minute budget with `sweep_rc=1`, no bugcheck
