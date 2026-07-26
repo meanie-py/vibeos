@@ -2910,15 +2910,15 @@ pub unsafe extern "system" fn ClasspTimerTick(
     let fdo_extension = DeferredContext as PFUNCTIONAL_DEVICE_EXTENSION;
     let _ = (Dpc, SystemArgument1, SystemArgument2);
 
-    assert!(!fdo_extension.is_null());
+    ntkrnl_sys::ASSERT!(!fdo_extension.is_null());
 
     let common_extension = core::ptr::addr_of_mut!((*fdo_extension).__bindgen_anon_1.CommonExtension);
     let device_object = (*fdo_extension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject;
-    assert!((*common_extension).as_ref().__bindgen_anon_1.IsFdo() != 0u8);
+    ntkrnl_sys::ASSERT!((*common_extension).as_ref().__bindgen_anon_1.IsFdo() != 0u8);
 
     let is_removed = ClassAcquireRemoveLockR(device_object, ClasspTimerTick as *mut core::ffi::c_void as PIRP);
 
-    assert!(is_removed != REMOVE_COMPLETE);
+    ntkrnl_sys::ASSERT!(is_removed != REMOVE_COMPLETE);
 
     if is_removed == 0 {
         let info = (*fdo_extension).FailurePredictionInfo;
@@ -3475,9 +3475,9 @@ pub unsafe extern "C" fn ClasspFailurePredictionPeriodMissed(
     let mut missedPeriod: BOOLEAN = 0u8;
 
     // NT_ASSERT
-    assert!(!FdoExtension.is_null());
-    assert!(!(*FdoExtension).FailurePredictionInfo.is_null());
-    assert!(
+    ntkrnl_sys::ASSERT!(!FdoExtension.is_null());
+    ntkrnl_sys::ASSERT!(!(*FdoExtension).FailurePredictionInfo.is_null());
+    ntkrnl_sys::ASSERT!(
         (*(*FdoExtension).FailurePredictionInfo).Method as u32
             != _PREDICT_FAILURE_METHOD_FailurePredictionNone as u32
     );

@@ -479,18 +479,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
-- **73 hard `assert!` in kernel Rust still hang the box — OPEN, needs the shared `ASSERT!`
-  macro** (2026-07-26). A Rust panic in kernel mode reaches a `#[panic_handler]` that prints to
-  debugcon and loops forever, so it is a silent hang: no bugcheck, no dump. 31 sites spelled
-  `panic!`/`unreachable!` were fixed to `RtlAssert` and are gated by `scan_assert_to_ub.py`.
-  These 73 are the same defect spelled `assert!`, and are NOT gated yet on purpose — 73 baseline
-  entries would read as permission for a class we intend to fix. They are distinct from the 599
-  `size_of`/`offset_of` layout assertions in the same crates, which are benign and should stay.
-  Fix is a shared `macro_rules! ASSERT` expanding to `RtlAssert` (loud, non-fatal, matches C
-  under `-DDBG=1`), which also unblocks the parked 1962-site `debug_assert!` triage in field
-  manual §9.135 — that one is stuck precisely because a live `debug_assert!` hangs, and this
-  removes that. Needs a home reachable by all 116 `ntkrnl-sys` dependants, then a per-arch
-  measurement pass. Field manual, "`NT_ASSERT`/`ASSERT`/`PAGED_CODE` are DIAGNOSTICS".
+- **Kernel asserts that hung the box — 92 FIXED, remaining work is mechanical** (2026-07-26).
+  A Rust panic in kernel mode reaches a `#[panic_handler]` that prints to debugcon and loops
+  forever: a silent hang, no bugcheck, no dump. Fixed in two passes — **31** spelled
+  `panic!`/`unreachable!` (now gated by `scan_assert_to_ub.py`, baseline empty) and **61**
+  spelled `assert!`, migrated to the new `ntkrnl_sys::ASSERT!`/`NT_ASSERT!` macros which expand
+  to `RtlAssert`: loud, non-fatal, matching C under `-DDBG=1`. Deliberately left alone: 599
+  `size_of`/`offset_of` layout checks, 8 uniata `const _: () = {}` register-layout locks, and 4
+  kdbg `#[cfg(test)]` asserts — all of which *should* be compile-time or fatal.
+  **Still owed:** the 1962 `debug_assert!` sites (field manual §9.135) and the two crates with a
+  local `macro_rules! ASSERT` expanding to `debug_assert!` (usbaudio, mouhid). That was parked on
+  "1962 assertions going live at once needs a per-arch triage pass"; with the macro it is a
+  mechanical substitution rather than a risk decision, because nothing becomes fatal.
+  Field manual, "`NT_ASSERT`/`ASSERT`/`PAGED_CODE` are DIAGNOSTICS".
 - **`.try_into().unwrap()` — FIXED where it mattered; the rest is cosmetic** (2026-07-26).
   All 234 sites in the Rust tree were audited. Exactly one was reachable and it was a
   usermode-triggerable **kernel** panic: `handle_internal_message`'s `WM_ASYNC_SHOWWINDOW` arm

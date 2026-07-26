@@ -1998,7 +1998,7 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
         }
 
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            assert!(KeGetCurrentIrql() < DISPATCH_LEVEL);
+            ntkrnl_sys::ASSERT!(KeGetCurrentIrql() < DISPATCH_LEVEL);
             break 'block (STATUS_INVALID_LEVEL, 0usize);
         }
 
@@ -2017,7 +2017,7 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
 
         match (*(*fdoExtension).FunctionSupportInfo).LowerLayerSupport.SeekPenaltyProperty {
             Supported => {
-                assert!(false, "Supported case should be handled earlier");
+                ntkrnl_sys::ASSERT!(false, "Supported case should be handled earlier");
                 break 'block (STATUS_UNSUCCESSFUL, 0usize);
             }
             SupportUnknown => {
@@ -5750,8 +5750,8 @@ pub unsafe extern "C" fn ClasspPowerIdleDevice(DeviceObject: PDEVICE_OBJECT) -> 
 
     let fdo_extension = (*DeviceObject).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
 
-    assert!((*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0);
-    assert!((*(*fdo_extension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != 0);
+    ntkrnl_sys::ASSERT!((*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0);
+    ntkrnl_sys::ASSERT!((*(*fdo_extension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != 0);
 
     KeInitializeEvent(core::ptr::addr_of_mut!(event), 1, 0u8);
 

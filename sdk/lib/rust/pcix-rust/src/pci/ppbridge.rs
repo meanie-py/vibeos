@@ -364,7 +364,7 @@ pub unsafe extern "system" fn PPBridge_SaveLimits(Context: PPCI_CONFIGURATOR_CON
     i = 0;
     while i < PCI_TYPE1_ADDRESSES {
         if unsafe { PciCreateIoDescriptorFromBarLimit(limit.offset(i as isize), bar_array.offset(i as isize), 0u8) } != 0 {
-            assert!((i + 1) < PCI_TYPE1_ADDRESSES);
+            ntkrnl_sys::ASSERT!((i + 1) < PCI_TYPE1_ADDRESSES);
             i += 1;
             (*limit.offset(i as isize)).Type = CmResourceTypeNull as u8;
         }
@@ -385,8 +385,8 @@ pub unsafe extern "system" fn PPBridge_SaveLimits(Context: PPCI_CONFIGURATOR_CON
             (*limit_ptr).u.Port.MinimumAddress.QuadPart = 0;
 
             if i == 2 {
-                assert!((*working).u.type1.IOLimit != 0);
-                assert!((*working).u.type1.IOLimit & 0x0E == 0);
+                ntkrnl_sys::ASSERT!((*working).u.type1.IOLimit != 0);
+                ntkrnl_sys::ASSERT!((*working).u.type1.IOLimit & 0x0E == 0);
                 memory_limit.__bindgen_anon_1.LowPart = unsafe { PciBridgeIoLimit(working) };
                 (*limit_ptr).Type = CmResourceTypePort as u8;
                 (*limit_ptr).Flags = (CM_RESOURCE_PORT_WINDOW_DECODE | CM_RESOURCE_PORT_POSITIVE_DECODE) as u16;
@@ -395,7 +395,7 @@ pub unsafe extern "system" fn PPBridge_SaveLimits(Context: PPCI_CONFIGURATOR_CON
                 (*limit_ptr).u.Port.MaximumAddress = memory_limit;
                 (*limit_ptr).u.Port.Length = 0;
             } else if i == 3 {
-                assert!((*working).u.type1.MemoryLimit & 0xF == 0);
+                ntkrnl_sys::ASSERT!((*working).u.type1.MemoryLimit & 0xF == 0);
                 memory_limit.__bindgen_anon_1.LowPart = unsafe { PciBridgeMemoryLimit(working) };
                 (*limit_ptr).Type = CmResourceTypeMemory as u8;
                 (*limit_ptr).Flags = (CM_RESOURCE_MEMORY_READ_WRITE) as u16;

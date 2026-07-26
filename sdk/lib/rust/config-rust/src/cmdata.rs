@@ -582,7 +582,7 @@ pub unsafe extern "C" fn cm_build_control_vector() {
         while i < sl.len() {
             // Fail loud if a stale extern SubVector<N> pushed us past the table
             // (leaves one slot for the NULL terminator).
-            assert!(dst + 1 < CV_TOTAL);
+            ntkrnl_sys::ASSERT!(dst + 1 < CV_TOTAL);
             *cv.add(dst) = sl[i];
             i += 1;
             dst += 1;

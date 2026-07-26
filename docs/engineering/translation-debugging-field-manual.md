@@ -1278,28 +1278,40 @@ sweep.**
   across the 119 kernel-mode crates:
   - **1962 `debug_assert!` — dead** (§9.135 above).
   - **31 `panic!`/`unreachable!` — hang.** Fixed to `RtlAssert`; gated now.
-  - **73 hard `assert!` — hang, and still there.** These are *not* the layout checks: of 682
-    `assert!` in kernel crates, **599 are `size_of`/`offset_of`/`align_of`** structural
-    verification (compile-time-foldable, benign, and a good pattern — don't touch them) and 10
-    more are `const _: () = assert!(…)`. The remaining 73 are translated C asserts, and they
-    read exactly like it: `assert!(status >= 0, "NT_ASSERT")`,
-    `assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL)` (a `PAGED_CODE`),
-    `assert!(false, "Supported case should be handled earlier")` (an `ASSERT(FALSE)`), and a
-    run in `classpnp/power.rs` carrying the C expression verbatim as the panic message.
-  So whether a given C `ASSERT` currently does nothing, or hangs the box, depends on which
-  translation pass happened to touch it. That is the finding — not any individual site.
-- **`RtlAssert` is what unblocks the §9.135 flip.** That entry parks the 1962-site `debug_assert!`
-  problem on "1962 assertions going live at once needs a triage pass across all three arches",
-  and the reason that triage is scary is that a live `debug_assert!` *hangs*. A shared
-  `macro_rules! ASSERT { ($e:expr) => { if !$e { RtlAssert(stringify!($e), file!(), line!(), …) } } }`
-  removes the scary part: every assertion becomes loud and none becomes fatal, which is exactly
-  what the C does under `-DDBG=1`. `stringify!` also gives a better assertion string than the
-  hand-written ones (the 31 fixed sites had messages like "NT_ASSERT failed", which names
-  nothing). Two crates already define a local `macro_rules! ASSERT`, but both expand to
-  `debug_assert!` — i.e. they picked the dead direction. **Owed:** put the macro somewhere all
-  116 `ntkrnl-sys` dependants can reach, migrate the 73 + 1962, then measure per arch. Note
-  `RtlAssert` resolves in both kernel and bootloader links (ntoskrnl exports it; freeldr defines
-  its own), so the macro is viable in dual-built crates like cmlib.
+  - **61 hard `assert!` — hang.** Also fixed, via the shared macro below. These are *not* the
+    layout checks: of 682 `assert!` in kernel crates, **599 are `size_of`/`offset_of`/`align_of`**
+    structural verification (compile-time-foldable, benign, and a good pattern — don't touch
+    them). The 61 are translated C asserts and read exactly like it:
+    `assert!(status >= 0, "NT_ASSERT")`, `assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL)` (a
+    `PAGED_CODE`), `assert!(false, "Supported case should be handled earlier")` (an
+    `ASSERT(FALSE)`), and a run in `classpnp/power.rs` carrying the C expression verbatim as the
+    message.
+  So whether a given C `ASSERT` did nothing or hung the box depended on which translation pass
+  happened to touch it. That inconsistency was the finding — not any individual site.
+- **Separating the runtime asserts from the compile-time ones is the whole difficulty**, and a
+  keyword filter is not enough. `size_of`/`offset_of` catches most, but uniata's `regidx.rs`
+  holds eight `assert!(IDX_IO1_i_Status == 7)`-style register-layout locks inside a
+  `const _: () = { … }` whose opening line is far above — no layout keyword on the assert line
+  at all. Converting those is an E0015 (`cannot call non-const function in constants`), so the
+  compiler catches it, but only if you build every affected crate. **Track const-item nesting by
+  brace depth, not by inspecting the assert's own line**, and treat a build of each touched
+  crate as part of the change. Same for `#[cfg(test)] mod tests`: kdbg's disassembler tests use
+  `assert_eq!` and *should* panic — a test that continues past a failure is not a test.
+- **`ntkrnl_sys::ASSERT!` is the one spelling, and it unblocks the §9.135 flip.** §9.135 parks
+  the 1962-site `debug_assert!` problem on "1962 assertions going live at once needs a triage
+  pass across all three arches", and the reason that triage is frightening is that a live
+  `debug_assert!` *hangs*. `ntkrnl-sys` now exports
+  `macro_rules! ASSERT` (and `NT_ASSERT`), expanding to `if !$e { RtlAssert(stringify!($e),
+  file!(), line!(), …) }` — loud, non-fatal, exactly what C does under `-DDBG=1`. That removes
+  the scary part: the flip makes assertions *visible*, not *fatal*. `stringify!` also beats the
+  hand-written strings, several of which said only "NT_ASSERT failed", naming nothing.
+  A `macro_rules!` and not a fn, deliberately: an out-of-line no-op fn is an optimization barrier
+  that uncloaks latent ABI mismatches into `ud2`. `$crate::ddk::RtlAssert` resolves in both
+  kernel and bootloader links (ntoskrnl exports it; freeldr defines its own `#[no_mangle]` one),
+  so it works in dual-built crates — cmlib uses it from both `ntoskrnl.exe` and `rosload.exe`.
+  Two crates still define a local `macro_rules! ASSERT` expanding to `debug_assert!`
+  (usbaudio, mouhid) — i.e. the dead direction; migrating those and the 1962 is the remaining
+  work, and it is now a mechanical substitution rather than a risk decision.
 - Gate: `tools/scan_assert_to_ub.py`, empty baseline. **The gate that should have caught the
   third one reported a clean zero** — see the oracle section; a lint that under-matches is
   indistinguishable from a lint that passes. It looked only for `unreachable_unchecked`, so all

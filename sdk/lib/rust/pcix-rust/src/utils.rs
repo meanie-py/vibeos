@@ -1844,7 +1844,7 @@ pub unsafe extern "system" fn PciGetDeviceCapabilities(
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOT_SUPPORTED;
 
     let IoStackLocation = IoGetNextIrpStackLocation(Irp);
-    assert!(!IoStackLocation.is_null(), "IoStackLocation is null");
+    ntkrnl_sys::ASSERT!(!IoStackLocation.is_null(), "IoStackLocation is null");
 
     core::ptr::write_bytes(
         IoStackLocation as *mut u8,

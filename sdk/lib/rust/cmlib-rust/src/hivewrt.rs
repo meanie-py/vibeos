@@ -381,8 +381,8 @@ pub unsafe extern "system" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
     #[cfg(not(feature = "bldr"))]
     let HardErrors: u8;
 
-    assert!((*RegistryHive).ReadOnly == 0);
-    assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
 
     if (*RegistryHive).HiveFlags & HIVE_VOLATILE != 0 {
         DbgPrint(
@@ -475,9 +475,9 @@ pub unsafe extern "system" fn HvWriteHive(RegistryHive: *mut HHIVE) -> i32 {
 }
 #[no_mangle]
 pub unsafe extern "system" fn HvWriteAlternateHive(RegistryHive: *mut HHIVE) -> i32 {
-    core::assert!((*RegistryHive).ReadOnly == 0);
-    core::assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
-    core::assert!((*RegistryHive).Alternate != 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
+    ntkrnl_sys::ASSERT!((*RegistryHive).Alternate != 0);
     #[cfg(not(feature = "bldr"))]
     {
         { let _ts = core::ptr::addr_of_mut!((*(*RegistryHive).BaseBlock).TimeStamp); KeQuerySystemTime(_ts as *mut _) };

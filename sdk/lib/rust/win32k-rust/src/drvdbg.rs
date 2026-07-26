@@ -1055,7 +1055,7 @@ pub unsafe extern "system" fn DbgDrvSynchronizeSurface(
     fl: FLONG)
 {
     let ppdev = (*pso).hdev as PPDEVOBJ;
-    assert!(!ppdev.is_null());
+    ntkrnl_sys::ASSERT!(!ppdev.is_null());
 
     ((*(*ppdev).pldev).pfn.SynchronizeSurface)(pso, prcl, fl);
 }

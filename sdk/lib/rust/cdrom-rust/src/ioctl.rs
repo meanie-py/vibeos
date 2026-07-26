@@ -2363,7 +2363,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessQueryLockState(
         &mut exclusiveLockState as *mut _ as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
-    assert!(status >= 0, "NT_ASSERT");
+    ntkrnl_sys::ASSERT!(status >= 0, "NT_ASSERT");
 
     core::ptr::write_bytes(
         exclusiveLockState as *mut u8,
@@ -3548,7 +3548,7 @@ pub unsafe extern "system" fn RequestHandleScsiPassThrough(
         let request_context = RequestGetContext(Request);
         // NT_ASSERT(request_context->SyncRequired) in C
         // We expand NT_ASSERT as a plain assertion; SyncRequired is a bool field.
-        core::assert!((*request_context).SyncRequired != 0);
+        ntkrnl_sys::ASSERT!((*request_context).SyncRequired != 0);
     }
 
     // PAGED_CODE() expansion: assert IRQL <= APC_LEVEL
@@ -5649,7 +5649,7 @@ pub unsafe extern "C" fn RequestHandleLoadEjectMedia(
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
     // PAGED_CODE(); equivalent: ensure IRQL <= APC_LEVEL
-    assert!(ntkrnl_sys::ke::KeGetCurrentIrql() <= ntkrnl_sys::base::APC_LEVEL);
+    ntkrnl_sys::ASSERT!(ntkrnl_sys::ke::KeGetCurrentIrql() <= ntkrnl_sys::base::APC_LEVEL);
 
     *DataLength = 0;
 
@@ -6324,7 +6324,7 @@ pub unsafe extern "C" fn DeviceHandlePlayAudioMsf(
     let mut input_buffer: *mut CDROM_PLAY_AUDIO_MSF = core::ptr::null_mut();
 
     // PAGED_CODE();
-    assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
     *DataLength = 0;
 
