@@ -930,6 +930,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   | **A — memory/stack** | 1 | `BUGCHECK 0x50`, died 69/89 on `ZwWaitForMultipleObjects`, 77s |
   | **B — sweep no-launch** | 1 | desktop reached, `launched=0`, 87min, **no** `CENSUS STUCK` |
   | **C — holder-stuck** | 1 | `CENSUS … verdict=HOLDER-STUCK(no signal ever)`, 79/89, 12 bad, 78min |
+  | **D — invisible hang** | 1 | 77/89, 10 bad, 78min, repeated 180s test timeouts, **census sees NOTHING** |
 
   ~33% of rounds fail, spread over **three mechanisms that are demonstrably different** (B vs C
   disproven below; A is a bugcheck while B and C never crash at all). **This reframes the flip
@@ -985,6 +986,44 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   lock — no window found. Only ONE thread is stuck, so the would-be signaller is not itself in
   GateWait. Note `obj=ffff8000049044e0` sits in the same `0xffff8000_04/05` VA family as the
   fault addresses, which is suggestive and nothing more.
+
+  **A FIFTH face, D — a hang the instrumentation cannot see, which is itself the finding.**
+  Round 8: `launched=77 ok=66 bad=10`, no bugcheck, 4652s, degrading into repeated
+  `TIMEOUT … (180s) - terminating` (IoReadWrite, NtCreateSection, NtSystemDebugControl — the
+  §9.97 quarantine family). Superficially identical to face C, but the serial carries exactly
+  ONE census line: `[CENSUS] sync watchdog up (10s cadence, gate waits)` and **zero STUCK
+  reports**. So no thread was parked in `GateWait` at all, and whatever the tests are blocked on
+  is a primitive the watchdog does not observe — its own banner says *gate waits*.
+  **Do not read C's absence as health here:** a silent census means "not a gate wait", not
+  "nothing is stuck". That is the same not-looking-vs-looked-and-clean ambiguity §9.122 is about,
+  and it currently splits one symptom (a stalled sweep) across two very different diagnoses.
+  **Owed:** widen the census to report ANY thread stuck >N seconds with its `State` and
+  `WaitReason`, not only `GateWait`. Until then C and D can only be told apart by the presence
+  or absence of a STUCK line, which is a weak discriminator resting on the watchdog's coverage.
+
+  **Face C's next step is a two-line diagnostic, and it is already half-instrumented.** The only
+  callers of `KeWaitForGate` in the tree are `ke/wait.rs:328` and **`ex-rust/src/pushlock.rs:487`
+  and `:631`** — so a thread in `GateWait` is, in practice, blocked on a pushlock
+  (`WrPushLock`), and the signaller that never ran is `pushlock.rs:198`'s
+  `KeSignalGateBoostPriority(&WaitBlock->WakeGate)`. That means **HOLDER-STUCK here reads as: a
+  pushlock holder never released, or released without waking.** Which pushlock is the question,
+  and it is the one thing the report omits:
+  - `gate.rs` accounts `synctrace_wait_park` under the **gate** address;
+  - `pushlock.rs` accounts `synctrace_pl_park` under the **pushlock** address, deliberately —
+    its own comment says "the wake gate is a per-wait stack object, useless as a key";
+  - `census.rs:176` prints only the gate address, so the pushlock identity is *recorded and
+    never surfaced*. The run's serial contains zero `WrPushLock` mentions for the stuck thread.
+
+  **Do this next:** when a stuck `GateWait` thread's `WaitReason` is `WrPushLock`, have the
+  census also print the pushlock address and *its* synctrace counters. That names the contended
+  lock instead of a stack-allocated gate, and turns "something never signalled" into "this lock
+  was held by that thread".
+
+  **Suggestive, unproven:** because `WaitBlock` lives on the waiter's stack, `obj=ffff8000049044e0`
+  IS a kernel-stack address — the same `0xffff8000_04/05` VA family as face A's fault addresses.
+  That is consistent with A and C sharing a root cause (a stack whose backing goes away would
+  also make a wake gate unreachable), and equally consistent with coincidence, since every kernel
+  stack lives in that range. Do not merge the faces on this alone.
 
   **B is NOT C — tested, not assumed.** The obvious unifying story ("the launcher itself parked
   on a gate, hence `launched=0`") is **wrong**: the no-launch round has **zero** `CENSUS STUCK`
