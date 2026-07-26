@@ -1153,6 +1153,73 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000
                -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  mprapi)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/mprapi/CMakeLists.txt
+    # (1 compiled TU, 72 headers in the include closure, 1 switch constant).
+    #
+    # USERMODE RAS/router administration API (dll/win32/mprapi). Almost entirely stubs; the one
+    # switch constant is DLL_PROCESS_ATTACH, a winnt.h literal already reachable via the -sys glob.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/mprapi"
+    WRAPPER_INC=$'#include <stdarg.h>\n#include "windef.h"\n#include "winbase.h"\n#include "mprapi.h"\n#include "wine/debug.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]mprapi\.h' --allowlist-file '.*mprapi[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/mprapi" -I"${SRC}/build-i386/dll/win32/mprapi" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502
+               -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE
+               -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  netid)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/netid/CMakeLists.txt
+    # (1 compiled TU, 94 headers in the include closure, 16 switch constants).
+    #
+    # USERMODE "Computer Name" system-properties page (dll/win32/netid) — a PROPSHEETPAGE dialog,
+    # so most switch constants are prsht.h notification codes. PSN_APPLY and its siblings are
+    # macro EXPRESSIONS (`(PSN_FIRST - 2)`), not literals, and bindgen does not always fold those:
+    # CHECK types_<arch>.rs for every PSN_*, or a missing one becomes a catch-all `match` binding
+    # that swallows the other notifications (field manual §9.112). lmjoin.h carries the
+    # NetJoinDomain/NetGetJoinInformation surface the page drives.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/netid"
+    WRAPPER_INC=$'#define WIN32_NO_STATUS\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <winreg.h>\n#include <windns.h>\n#include <lm.h>\n#include <prsht.h>\n#include "resource.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]lm\.h' --allowlist-file '.*[/\\]lmjoin\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]windns\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*netid[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/netid" -I"${SRC}/build-i386/dll/win32/netid" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502
+               -D_WIN32_IE=0x603 -DUNICODE -D_UNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1
+               -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP
+               -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  samlib)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/samlib/CMakeLists.txt
+    # (2 compiled TUs, 172 headers in the include closure, 6 switch constants).
+    #
+    # USERMODE SAM client library (dll/win32/samlib) — the CLIENT half of sam.idl, whose server
+    # half lives in samsrv. sam_c.h is the generated MIDL client stub header and must be in the
+    # island (EXTRA_INC reaches sdk/include/reactos/idl for it); the generated sam_c.c stays C
+    # and supplies the _Sam* stubs the Rust imports, exactly as wlansvc_c.c does for wlanapi.
+    # NTOS_MODE_USER is required BEFORE <ndk/rtlfuncs.h> or the NDK exposes the kernel surface.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/samlib"
+    WRAPPER_INC=$'#include "precomp.h"\n#define NTOS_MODE_USER\n#include <ndk/rtlfuncs.h>\n#include <ntsam.h>\n#include <sam_c.h>\n#include <wine/debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ntsam\.h' --allowlist-file '.*[/\\]ole2\.h'
+                  --allowlist-file '.*[/\\]rpc\.h'
+                  --allowlist-file '.*[/\\]rpcndr\.h'
+                  --allowlist-file '.*[/\\]sam_c\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*samlib[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/samlib" -I"${SRC}/build-i386/dll/win32/samlib"
+                -I"${SRC}/sdk/include/reactos/idl" -I"${SRC}/sdk/include/wine" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502
+               -D_WIN32_IE=0x603 -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1
+               -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP
+               -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
     # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,
