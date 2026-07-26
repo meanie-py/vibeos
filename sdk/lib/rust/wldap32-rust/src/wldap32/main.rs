@@ -13,7 +13,7 @@ pub unsafe extern "system" fn DllMain(hinst: HINSTANCE, reason: u32, reserved: L
         }
         _ => {}
     }
-    TRUE
+    (TRUE) as i32
 }
 
 

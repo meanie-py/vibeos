@@ -6,12 +6,26 @@ use core::ffi::c_void;
 // The C code only contains conditional includes and a debug macro invocation.
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_control_freeA(control: *mut LDAPControlA) -> ULONG {
+    WLDAP32_LDAP_SUCCESS
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_control_freeA(control: *mut LDAPControlA) -> ULONG {
     let ret: ULONG = WLDAP32_LDAP_SUCCESS;
     controlfreeA(control);
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_control_freeW(control: *mut LDAPControlW) -> ULONG {
+    WLDAP32_LDAP_SUCCESS
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_control_freeW(control: *mut LDAPControlW) -> ULONG {
     let ret: ULONG = WLDAP32_LDAP_SUCCESS;
@@ -20,6 +34,13 @@ pub unsafe extern "C" fn ldap_control_freeW(control: *mut LDAPControlW) -> ULONG
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_controls_freeA(controls: *mut *mut LDAPControlA) -> ULONG {
+    WLDAP32_LDAP_SUCCESS
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_controls_freeA(controls: *mut *mut LDAPControlA) -> ULONG {
     let ret: ULONG = WLDAP32_LDAP_SUCCESS;
     controlarrayfreeA(controls);
@@ -27,12 +48,31 @@ pub unsafe extern "C" fn ldap_controls_freeA(controls: *mut *mut LDAPControlA) -
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_controls_freeW(controls: *mut *mut LDAPControlW) -> ULONG {
+    WLDAP32_LDAP_SUCCESS
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_controls_freeW(controls: *mut *mut LDAPControlW) -> ULONG {
     let ret: ULONG = WLDAP32_LDAP_SUCCESS;
     controlarrayfreeW(controls);
     return ret;
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_create_sort_controlA(
+    ld: *mut WLDAP32_LDAP,
+    sortkey: *mut PLDAPSortKeyA,
+    critical: UCHAR,
+    control: *mut PLDAPControlA,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_create_sort_controlA(
     ld: *mut WLDAP32_LDAP,
@@ -67,6 +107,18 @@ pub unsafe extern "C" fn ldap_create_sort_controlA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_create_sort_controlW(
+    ld: *mut WLDAP32_LDAP,
+    sortkey: *mut PLDAPSortKeyW,
+    critical: UCHAR,
+    control: *mut PLDAPControlW,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_create_sort_controlW(
     ld: *mut WLDAP32_LDAP,
@@ -107,6 +159,18 @@ pub unsafe extern "C" fn ldap_create_sort_controlW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_create_vlv_controlA(
+    ld: *mut WLDAP32_LDAP,
+    info: *mut WLDAP32_LDAPVLVInfo,
+    critical: UCHAR,
+    control: *mut *mut LDAPControlA,
+) -> INT {
+    (WLDAP32_LDAP_NOT_SUPPORTED) as i32
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_create_vlv_controlA(
     ld: *mut WLDAP32_LDAP,
     info: *mut WLDAP32_LDAPVLVInfo,
@@ -117,7 +181,7 @@ pub unsafe extern "C" fn ldap_create_vlv_controlA(
     let mut controlW: *mut LDAPControlW = core::ptr::null_mut();
 
     if ld.is_null() || control.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     ret = ldap_create_vlv_controlW(ld, info, critical, &mut controlW);
@@ -134,6 +198,18 @@ pub unsafe extern "C" fn ldap_create_vlv_controlA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_create_vlv_controlW(
+    ld: *mut WLDAP32_LDAP,
+    info: *mut WLDAP32_LDAPVLVInfo,
+    critical: UCHAR,
+    control: *mut *mut LDAPControlW,
+) -> INT {
+    (WLDAP32_LDAP_NOT_SUPPORTED) as i32
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_create_vlv_controlW(
     ld: *mut WLDAP32_LDAP,
     info: *mut WLDAP32_LDAPVLVInfo,
@@ -145,7 +221,7 @@ pub unsafe extern "C" fn ldap_create_vlv_controlW(
     let mut controlU: *mut LDAPControl = core::ptr::null_mut();
 
     if ld.is_null() || control.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     ret = map_error(ldap_create_vlv_control(
@@ -165,9 +241,9 @@ pub unsafe extern "C" fn ldap_create_vlv_controlW(
     ret
 }
 unsafe extern "C" fn bv_val_dup(src: *const WLDAP32_berval, dst: *mut WLDAP32_berval) {
-    (*dst).bv_val = heap_alloc((*src).bv_len);
+    (*dst).bv_val = (heap_alloc(((*src).bv_len) as usize)).cast();
     if !(*dst).bv_val.is_null() {
-        memcpy((*dst).bv_val, (*src).bv_val, (*src).bv_len);
+        memcpy((*dst).bv_val.cast(), (*src).bv_val.cast(), ((*src).bv_len) as usize);
         (*dst).bv_len = (*src).bv_len;
     } else {
         (*dst).bv_len = 0;

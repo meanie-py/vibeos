@@ -5,6 +5,17 @@ use core::ffi::c_void;
 // No file-scope declarations to translate from this preamble
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_modrdnA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    newdn: PCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_modrdnA(
     ld: *mut WLDAP32_LDAP,
     dn: PCHAR,
@@ -17,7 +28,7 @@ pub unsafe extern "C" fn ldap_modrdnA(
     ret = WLDAP32_LDAP_NO_MEMORY;
 
     if ld.is_null() || newdn.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     'exit: {
@@ -43,6 +54,17 @@ pub unsafe extern "C" fn ldap_modrdnA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_modrdnW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    newdn: PWCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_modrdnW(
     ld: *mut WLDAP32_LDAP,
     dn: PWCHAR,
@@ -57,7 +79,7 @@ pub unsafe extern "C" fn ldap_modrdnW(
 
     'exit: {
         if ld.is_null() || newdn.is_null() {
-            ret = !0u;
+            ret = !0u32;
             break 'exit;
         }
 
@@ -87,7 +109,7 @@ pub unsafe extern "C" fn ldap_modrdnW(
         if ret == LDAP_SUCCESS {
             ret = msg as ULONG;
         } else {
-            ret = !0u;
+            ret = !0u32;
         }
     }
 
@@ -97,6 +119,18 @@ pub unsafe extern "C" fn ldap_modrdnW(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_modrdn2A(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    newdn: PCHAR,
+    delete: INT,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_modrdn2A(
     ld: *mut WLDAP32_LDAP,
@@ -111,7 +145,7 @@ pub unsafe extern "C" fn ldap_modrdn2A(
     ret = WLDAP32_LDAP_NO_MEMORY;
 
     if ld.is_null() || newdn.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     'exit: loop {
@@ -138,6 +172,18 @@ pub unsafe extern "C" fn ldap_modrdn2A(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_modrdn2W(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    newdn: PWCHAR,
+    delete: INT,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_modrdn2W(
     ld: *mut WLDAP32_LDAP,
     dn: PWCHAR,
@@ -152,7 +198,7 @@ pub unsafe extern "C" fn ldap_modrdn2W(
     ret = WLDAP32_LDAP_NO_MEMORY;
 
     if ld.is_null() || newdn.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     'exit: {
@@ -182,7 +228,7 @@ pub unsafe extern "C" fn ldap_modrdn2W(
         if ret == LDAP_SUCCESS {
             ret = msg as ULONG;
         } else {
-            ret = !0u;
+            ret = !0u32;
         }
     }
 
@@ -192,6 +238,18 @@ pub unsafe extern "C" fn ldap_modrdn2W(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_modrdn2_sA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    newdn: PCHAR,
+    delete: INT,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_modrdn2_sA(
     ld: *mut WLDAP32_LDAP,
@@ -231,6 +289,18 @@ pub unsafe extern "C" fn ldap_modrdn2_sA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_modrdn2_sW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    newdn: PWCHAR,
+    delete: INT,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_modrdn2_sW(
     ld: *mut WLDAP32_LDAP,
@@ -279,6 +349,17 @@ pub unsafe extern "C" fn ldap_modrdn2_sW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_modrdn_sA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    newdn: PCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_modrdn_sA(
     ld: *mut WLDAP32_LDAP,
     dn: PCHAR,
@@ -316,6 +397,17 @@ pub unsafe extern "C" fn ldap_modrdn_sA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_modrdn_sW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    newdn: PWCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_modrdn_sW(
     ld: *mut WLDAP32_LDAP,
@@ -419,7 +511,7 @@ pub unsafe extern "C" fn ldap_modrdn_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s)\n", ld, debugstr_a(dn), debugstr_a(newdn) );
+//     TRACE( "(%p, %s, %s)\n", ld, debugstr_a!(dn), debugstr_a!(newdn) );
 //
 //     if (!ld || !newdn) return ~0u;
 //
@@ -469,7 +561,7 @@ pub unsafe extern "C" fn ldap_modrdn_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s)\n", ld, debugstr_w(dn), debugstr_w(newdn) );
+//     TRACE( "(%p, %s, %s)\n", ld, debugstr_w!(dn), debugstr_w!(newdn) );
 //
 //     if (!ld || !newdn) return ~0u;
 //
@@ -509,7 +601,7 @@ pub unsafe extern "C" fn ldap_modrdn_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p, 0x%02x)\n", ld, debugstr_a(dn), newdn, delete );
+//     TRACE( "(%p, %s, %p, 0x%02x)\n", ld, debugstr_a!(dn), newdn, delete );
 //
 //     if (!ld || !newdn) return ~0u;
 //
@@ -560,7 +652,7 @@ pub unsafe extern "C" fn ldap_modrdn_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p, 0x%02x)\n", ld, debugstr_w(dn), newdn, delete );
+//     TRACE( "(%p, %s, %p, 0x%02x)\n", ld, debugstr_w!(dn), newdn, delete );
 //
 //     if (!ld || !newdn) return ~0u;
 //
@@ -600,7 +692,7 @@ pub unsafe extern "C" fn ldap_modrdn_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p, 0x%02x)\n", ld, debugstr_a(dn), newdn, delete );
+//     TRACE( "(%p, %s, %p, 0x%02x)\n", ld, debugstr_a!(dn), newdn, delete );
 //
 //     if (!ld || !newdn) return WLDAP32_LDAP_PARAM_ERROR;
 //
@@ -645,7 +737,7 @@ pub unsafe extern "C" fn ldap_modrdn_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p, 0x%02x)\n", ld, debugstr_w(dn), newdn, delete );
+//     TRACE( "(%p, %s, %p, 0x%02x)\n", ld, debugstr_w!(dn), newdn, delete );
 //
 //     if (!ld || !newdn) return WLDAP32_LDAP_PARAM_ERROR;
 //
@@ -680,7 +772,7 @@ pub unsafe extern "C" fn ldap_modrdn_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p)\n", ld, debugstr_a(dn), newdn );
+//     TRACE( "(%p, %s, %p)\n", ld, debugstr_a!(dn), newdn );
 //
 //     if (!ld || !newdn) return WLDAP32_LDAP_PARAM_ERROR;
 //
@@ -724,7 +816,7 @@ pub unsafe extern "C" fn ldap_modrdn_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %p)\n", ld, debugstr_w(dn), newdn );
+//     TRACE( "(%p, %s, %p)\n", ld, debugstr_w!(dn), newdn );
 //
 //     if (!ld || !newdn) return WLDAP32_LDAP_PARAM_ERROR;
 //
