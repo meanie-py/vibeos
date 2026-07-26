@@ -603,6 +603,76 @@ def test_scaffold_never_replaces_a_real_island_with_a_placeholder(tmp_path):
     assert "REAL gen_driver_types.sh island" in real.read_text()
 
 
+def test_scaffold_runs_after_gen_driver_types(tmp_path):
+    """The two steps must be order-insensitive.
+
+    gen_driver_types.sh writes src/types.rs (the per-arch dispatch stub) as well as the
+    islands. It used to abort the whole scaffold — over a stub whose content is identical
+    either way — so a module whose island was generated first could not be scaffolded at all.
+    """
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    out = tmp_path / "widget-rust"
+    (out / "src").mkdir(parents=True)
+    dispatch = out / "src/types.rs"
+    dispatch.write_text('#[path = "types_i386.rs"] mod types_arch;\n')
+    for arch in ("i386", "amd64", "arm64"):
+        (out / f"src/types_{arch}.rs").write_text(f"// REAL island {arch}\n")
+
+    kept: list[Path] = []
+    written = scaffold_crate(dp, out, kept=kept)
+
+    # the crate skeleton still gets written...
+    assert {p.relative_to(out).as_posix() for p in written} >= {
+        "Cargo.toml",
+        "src/lib.rs",
+        "src/prelude.rs",
+    }
+    # ...and every gen_driver_types.sh output survives byte-for-byte, reported not silent
+    assert dispatch.read_text() == '#[path = "types_i386.rs"] mod types_arch;\n'
+    assert "REAL island arm64" in (out / "src/types_arm64.rs").read_text()
+    assert {p.relative_to(out).as_posix() for p in kept} == {
+        "src/types.rs",
+        "src/types_i386.rs",
+        "src/types_amd64.rs",
+        "src/types_arm64.rs",
+    }
+
+
+def test_a_refused_scaffold_writes_nothing_at_all(tmp_path):
+    """Atomicity: a refusal must not leave a partial crate behind.
+
+    It used to write Cargo.toml, lib.rs and prelude.rs and only THEN hit the conflict, so the
+    retry failed on Cargo.toml — the tool wedged against its own output, reporting it as a
+    pre-existing file the caller had to resolve.
+    """
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    out = tmp_path / "widget-rust"
+    (out / "src").mkdir(parents=True)
+    # a conflict on the LAST-planned kind of file, so anything non-atomic writes the earlier ones
+    (out / "src/lib.rs").write_text("// pre-existing\n")
+
+    with pytest.raises(ProfileDeriveError, match="refusing to overwrite"):
+        scaffold_crate(dp, out)
+
+    survivors = {p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()}
+    assert survivors == {"src/lib.rs"}
+    assert not (out / "Cargo.toml").exists()
+
+
+def test_scaffold_still_refuses_to_clobber_hand_written_files(tmp_path):
+    """The keep-existing carve-out is ONLY for gen_driver_types.sh's files."""
+    root = _basic_module(tmp_path)
+    dp = derive(_mod(tmp_path), root)
+    out = tmp_path / "widget-rust"
+    (out / "src").mkdir(parents=True)
+    (out / "src/prelude.rs").write_text("// hand-written substrate, do not lose\n")
+    with pytest.raises(ProfileDeriveError, match="refusing to overwrite"):
+        scaffold_crate(dp, out)
+    assert "hand-written substrate" in (out / "src/prelude.rs").read_text()
+
+
 def test_kernel_scaffold_depends_on_ntkrnl_sys(tmp_path):
     cmake = (
         "list(APPEND SOURCE main.c helper.c)\n"
@@ -664,3 +734,134 @@ def test_usermode_override_exists_for_a_target_with_no_set_module_type(tmp_path)
     assert "USERMODE=0" in emit_profile(
         derive(_mod(tmp_path), root, target="widget_static", usermode=False)
     )
+
+
+# ---------------------------------------------------------------------------
+# The generator's include set is not our search path
+# ---------------------------------------------------------------------------
+
+
+class TestGeneratorBaseIncludes:
+    """An -I we resolve through must be EMITTED unless gen_driver_types.sh already
+    passes it. Conflating the two produced a profile that could not generate:
+    wldap32 includes "config.h", which lives only in sdk/include/wine, and the
+    derived profile omitted that -I because our own search list mentions it —
+    bindgen then died with `'config.h' file not found`."""
+
+    def _db(self, tmp_path: Path, inc_dirs: list[str]) -> None:
+        import json
+
+        build = tmp_path / "build-i386"
+        build.mkdir(exist_ok=True)
+        incs = " ".join(f"-I/tmp/vibeos/{d}" for d in inc_dirs)
+        build.joinpath("compile_commands.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "directory": "/tmp/vibeos/build-i386",
+                        "file": f"/tmp/vibeos/dll/win32/widget/{stem}.c",
+                        "command": f"clang {incs} -c /tmp/vibeos/dll/win32/widget/{stem}.c",
+                    }
+                    for stem in ("main", "helper")
+                ]
+            )
+        )
+
+    def test_a_dir_the_generator_lacks_is_emitted(self, tmp_path: Path):
+        root = _basic_module(tmp_path)
+        (root / "sdk/include/wine").mkdir(parents=True, exist_ok=True)
+        # wine BEFORE sdk/include, exactly as wldap32's real command orders it
+        self._db(tmp_path, ["dll/win32/widget", "sdk/include/wine", "sdk/include"])
+        dp = derive(_mod(tmp_path), root)
+        assert any("sdk/include/wine" in e for e in dp.extra_inc), dp.extra_inc
+        assert not any("sdk/include/wine" in e for e in dp.late_inc)
+
+    def test_the_same_dir_ranked_late_goes_to_late_inc(self, tmp_path: Path):
+        """samlib's ordering: hoisting wine ahead of the SDK resolves <winioctl.h> to
+        the wine copy and collides with ndk/iotypes.h."""
+        root = _basic_module(tmp_path)
+        (root / "sdk/include/wine").mkdir(parents=True, exist_ok=True)
+        self._db(tmp_path, ["dll/win32/widget", "sdk/include", "sdk/include/wine"])
+        dp = derive(_mod(tmp_path), root)
+        assert any("sdk/include/wine" in e for e in dp.late_inc), dp.late_inc
+        assert not any("sdk/include/wine" in e for e in dp.extra_inc)
+
+    def test_a_dir_the_generator_already_passes_is_not_re_emitted(self, tmp_path: Path):
+        root = _basic_module(tmp_path)
+        self._db(tmp_path, ["dll/win32/widget", "sdk/include", "sdk/include/psdk"])
+        dp = derive(_mod(tmp_path), root)
+        both = dp.extra_inc + dp.late_inc
+        assert not any(e.endswith('/sdk/include"') for e in both), both
+        assert not any("sdk/include/psdk" in e for e in both), both
+
+    def test_the_build_dir_sdk_includes_never_bake_an_arch(self, tmp_path: Path):
+        """`${BUILD_DIR}/sdk/...` is per-arch in the generator. Emitting the observed
+        `build-i386/sdk/...` would grade all three arches against i386's generated
+        headers — the cross-arch leak AGENTS.md forbids."""
+        root = _basic_module(tmp_path)
+        (root / "build-i386/sdk/include/reactos/mc").mkdir(parents=True, exist_ok=True)
+        self._db(
+            tmp_path,
+            ["dll/win32/widget", "sdk/include", "build-i386/sdk/include/reactos/mc"],
+        )
+        dp = derive(_mod(tmp_path), root)
+        both = dp.extra_inc + dp.late_inc
+        assert not any("build-i386/sdk/" in e for e in both), both
+
+
+# ---------------------------------------------------------------------------
+# The wrapper must mirror what the TU ACTUALLY compiles with
+# ---------------------------------------------------------------------------
+
+
+class TestPrologueFidelity:
+    def test_a_config_h_undef_kills_the_guarded_include(self, tmp_path: Path):
+        """`#ifdef HAVE_LDAP_H / #include <ldap.h> / #endif` used to drop the guard and
+        KEEP the include, promoting a conditional include to an unconditional one.
+        ReactOS does not vendor OpenLDAP, so bindgen then died on a missing header."""
+        undefs = frozenset({"HAVE_LDAP_H"})
+        src = (
+            '#include "config.h"\n'
+            "#ifdef HAVE_LDAP_H\n"
+            "#include <ldap.h>\n"
+            "#endif\n"
+            '#include "windef.h"\n'
+            "int f(void) { return 0; }\n"
+        )
+        lines, conditional = scan_preamble(src, undefs)
+        assert "#include <ldap.h>" not in lines
+        assert lines == ['#include "config.h"', '#include "windef.h"']
+        assert not conditional  # decided, so nothing for the caller to review
+
+    def test_the_live_arm_of_a_decided_guard_is_kept(self, tmp_path: Path):
+        undefs = frozenset({"HAVE_LDAP_H"})
+        src = (
+            "#ifdef HAVE_LDAP_H\n"
+            "#include <ldap.h>\n"
+            "#else\n"
+            '#include "fallback.h"\n'
+            "#endif\n"
+        )
+        lines, _ = scan_preamble(src, undefs)
+        assert lines == ['#include "fallback.h"']
+
+    def test_an_undecidable_guard_still_keeps_both_arms_and_warns(self, tmp_path: Path):
+        src = "#ifdef SOME_UNKNOWN\n#include <a.h>\n#else\n#include <b.h>\n#endif\n"
+        lines, conditional = scan_preamble(src, frozenset())
+        assert lines == ["#include <a.h>", "#include <b.h>"]
+        assert conditional
+
+    def test_a_pch_skipped_tu_does_not_get_the_pch_in_its_wrapper(self, tmp_path: Path):
+        """wldap32's ber.c is add_pch()'s SKIP argument precisely because precomp.h's
+        headers conflict with its own — injecting it recreates the conflict."""
+        cmake = (
+            "list(APPEND SOURCE main.c helper.c)\n"
+            "list(APPEND PCH_SKIP_SOURCE helper.c)\n"
+            "add_library(widget MODULE ${SOURCE} ${PCH_SKIP_SOURCE})\n"
+            "set_module_type(widget win32dll)\n"
+            'add_pch(widget precomp.h "${PCH_SKIP_SOURCE}")\n'
+        )
+        root = _basic_module(tmp_path, cmake=cmake)
+        dp = derive(_mod(tmp_path), root)
+        assert (_mod(tmp_path) / "helper.c").resolve() in dp.module.pch_skip
+        assert (_mod(tmp_path) / "main.c").resolve() not in dp.module.pch_skip
