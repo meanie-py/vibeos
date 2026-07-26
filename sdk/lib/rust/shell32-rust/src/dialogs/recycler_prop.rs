@@ -12,9 +12,7 @@ pub static CPP_COM_WSTR_9AEB29CF1D78: [WCHAR; 9] = [0x0025, 0x0073, 0x0020, 0x00
 pub static CPP_COM_WSTR_C7A5956868FE: [WCHAR; 12] = [0x004D, 0x0061, 0x0078, 0x0043, 0x0061, 0x0070, 0x0061, 0x0063, 0x0069, 0x0074, 0x0079, 0x0000];
 
 use core::ffi::c_void;
-use crate::shellcom::*;
-use crate::types::*;
-use crate::win32::*;
+use crate::prelude::*;
 
 // ---- file-scope preamble (translated) ----
 
@@ -43,17 +41,17 @@ pub struct DRIVE_ITEM_CONTEXT {
 pub type PDRIVE_ITEM_CONTEXT = *mut DRIVE_ITEM_CONTEXT;
 unsafe extern "C" fn toggleNukeOnDeleteOption(hwndDlg: HWND, bEnable: BOOL) {
     if bEnable != 0 {
-        SendDlgItemMessage(hwndDlg, 14001, BM_SETCHECK, BST_UNCHECKED, 0);
-        EnableWindow(GetDlgItem(hwndDlg, 14002), FALSE);
-        SendDlgItemMessage(hwndDlg, 14003, BM_SETCHECK, BST_CHECKED, 0);
+        SendDlgItemMessage(hwndDlg, 14001, BM_SETCHECK, BST_UNCHECKED as WPARAM, 0);
+        EnableWindow(GetDlgItem(hwndDlg, 14002), (FALSE) as i32);
+        SendDlgItemMessage(hwndDlg, 14003, BM_SETCHECK, BST_CHECKED as WPARAM, 0);
     } else {
-        SendDlgItemMessage(hwndDlg, 14001, BM_SETCHECK, BST_CHECKED, 0);
-        EnableWindow(GetDlgItem(hwndDlg, 14002), TRUE);
-        SendDlgItemMessage(hwndDlg, 14003, BM_SETCHECK, BST_UNCHECKED, 0);
+        SendDlgItemMessage(hwndDlg, 14001, BM_SETCHECK, BST_CHECKED as WPARAM, 0);
+        EnableWindow(GetDlgItem(hwndDlg, 14002), (TRUE) as i32);
+        SendDlgItemMessage(hwndDlg, 14003, BM_SETCHECK, BST_UNCHECKED as WPARAM, 0);
     }
 
     // FIXME: Max capacity not implemented yet, disable for now (CORE-13743)
-    EnableWindow(GetDlgItem(hwndDlg, 14002), FALSE);
+    EnableWindow(GetDlgItem(hwndDlg, 14002), (FALSE) as i32);
 }
 unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
     let szDrive_static: *const u16 = CPP_COM_WSTR_7F8732C542BA.as_ptr();
@@ -63,17 +61,17 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
     let mut dwDrives: DWORD;
     let mut szName: [u16; 100 as usize] = [0; 100 as usize];
     let mut szVolume: [u16; 100 as usize] = [0; 100 as usize];
-    let mut MaxComponent: DWORD;
-    let mut Flags: DWORD;
-    let mut dwSerial: DWORD;
-    let mut lc: LVCOLUMNW;
+    let mut MaxComponent: DWORD = core::mem::zeroed();
+    let mut Flags: DWORD = core::mem::zeroed();
+    let mut dwSerial: DWORD = core::mem::zeroed();
+    let mut lc: LVCOLUMNW = core::mem::zeroed();
     let mut hDlgCtrl: HWND;
-    let mut li: LVITEMW;
+    let mut li: LVITEMW = core::mem::zeroed();
     let mut itemCount: INT;
-    let mut TotalNumberOfFreeBytes: ULARGE_INTEGER;
-    let mut TotalNumberOfBytes: ULARGE_INTEGER;
-    let mut FreeBytesAvailable: ULARGE_INTEGER;
-    let mut rect: RECT;
+    let mut TotalNumberOfFreeBytes: ULARGE_INTEGER = core::mem::zeroed();
+    let mut TotalNumberOfBytes: ULARGE_INTEGER = core::mem::zeroed();
+    let mut FreeBytesAvailable: ULARGE_INTEGER = core::mem::zeroed();
+    let mut rect: RECT = core::mem::zeroed();
     let mut columnSize: i32;
     let mut defIndex: i32 = 0;
     let mut dwSize: DWORD;
@@ -83,32 +81,32 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
 
     hDlgCtrl = GetDlgItem(hwndDlg, 14000);
 
-    if LoadStringW(shell32_hInstance, IDS_RECYCLEBIN_LOCATION, szVolume.as_mut_ptr(), _countof(&szVolume)) == 0 {
+    if LoadStringW(shell32_hInstance, IDS_RECYCLEBIN_LOCATION, szVolume.as_mut_ptr(), (_countof!(&szVolume)) as i32) == 0 {
         szVolume[0 as usize] = 0;
     }
 
     GetClientRect(hDlgCtrl, core::ptr::addr_of_mut!(rect));
 
-    ZeroMemory(core::ptr::addr_of_mut!(lc), core::mem::size_of_val(&lc) as DWORD);
+    ZeroMemory(core::ptr::addr_of_mut!(lc), (core::mem::size_of_val(&lc) as DWORD) as usize);
     lc.mask = LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM | LVCF_FMT;
 
     columnSize = 140;
     lc.iSubItem = 0;
-    lc.fmt = LVCFMT_FIXED_WIDTH;
+    lc.fmt = (LVCFMT_FIXED_WIDTH) as i32;
     lc.cx = columnSize;
-    lc.cchTextMax = wcslen(szVolume.as_ptr());
+    lc.cchTextMax = (wcslen(szVolume.as_ptr())) as i32;
     lc.pszText = szVolume.as_mut_ptr();
-    let _ = SendMessageW(hDlgCtrl, LVM_INSERTCOLUMNW, 0, &lc as *const _ as LPARAM);
+    let _ = SendMessageW(hDlgCtrl, LVM_INSERTCOLUMNW, 0, core::ptr::addr_of!(lc) as LPARAM);
 
-    if LoadStringW(shell32_hInstance, IDS_RECYCLEBIN_DISKSPACE, szVolume.as_mut_ptr(), _countof(&szVolume)) == 0 {
+    if LoadStringW(shell32_hInstance, IDS_RECYCLEBIN_DISKSPACE, szVolume.as_mut_ptr(), (_countof!(&szVolume)) as i32) == 0 {
         szVolume[0 as usize] = 0;
     }
 
     lc.iSubItem = 1;
     lc.cx = rect.right - rect.left - columnSize;
-    lc.cchTextMax = wcslen(szVolume.as_ptr());
+    lc.cchTextMax = (wcslen(szVolume.as_ptr())) as i32;
     lc.pszText = szVolume.as_mut_ptr();
-    let _ = SendMessageW(hDlgCtrl, LVM_INSERTCOLUMNW, 1, &lc as *const _ as LPARAM);
+    let _ = SendMessageW(hDlgCtrl, LVM_INSERTCOLUMNW, 1, core::ptr::addr_of!(lc) as LPARAM);
 
     dwDrives = GetLogicalDrives();
     itemCount = 0;
@@ -119,7 +117,7 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
                 if GetVolumeInformationW(
                     szDrive.as_ptr(),
                     szName.as_mut_ptr(),
-                    _countof(&szName),
+                    _countof!(&szName),
                     core::ptr::addr_of_mut!(dwSerial),
                     core::ptr::addr_of_mut!(MaxComponent),
                     core::ptr::addr_of_mut!(Flags),
@@ -135,14 +133,14 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
                     szVolume.as_mut_ptr(),
                     CPP_COM_WSTR_9AEB29CF1D78.as_ptr(),
                     szName.as_ptr(),
-                    szDrive[0 as usize],
+                    szDrive[0 as usize] as ::core::ffi::c_int,
                 );
-                ZeroMemory(core::ptr::addr_of_mut!(li), core::mem::size_of_val(&li) as DWORD);
+                ZeroMemory(core::ptr::addr_of_mut!(li), (core::mem::size_of_val(&li) as DWORD) as usize);
                 li.mask = LVIF_TEXT | LVIF_PARAM;
                 li.iSubItem = 0;
                 li.pszText = szVolume.as_mut_ptr();
                 li.iItem = itemCount;
-                SendMessageW(hDlgCtrl, LVM_INSERTITEMW, 0, &li as *const _ as LPARAM);
+                SendMessageW(hDlgCtrl, LVM_INSERTITEMW, 0, core::ptr::addr_of!(li) as LPARAM);
                 if GetDiskFreeSpaceExW(
                     szDrive.as_ptr(),
                     core::ptr::addr_of_mut!(FreeBytesAvailable),
@@ -150,11 +148,11 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
                     core::ptr::addr_of_mut!(TotalNumberOfFreeBytes),
                 ) != 0
                 {
-                    if StrFormatByteSizeW(TotalNumberOfFreeBytes.QuadPart, szVolume.as_mut_ptr(), _countof(&szVolume)) != 0 {
+                    if !StrFormatByteSizeW((TotalNumberOfFreeBytes.QuadPart) as i64, szVolume.as_mut_ptr(), _countof!(&szVolume)).is_null() {
                         pItem = HeapAlloc(
                             GetProcessHeap(),
                             HEAP_ZERO_MEMORY,
-                            core::mem::size_of::<DRIVE_ITEM_CONTEXT>() as LPARAM,
+                            core::mem::size_of::<DRIVE_ITEM_CONTEXT>() as SIZE_T,
                         ) as *mut DRIVE_ITEM_CONTEXT;
                         if pItem.is_null() == false {
                             (*pItem).FreeBytesAvailable = FreeBytesAvailable;
@@ -163,8 +161,8 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
                             swprintf(
                                 szName.as_mut_ptr(),
                                 CPP_COM_WSTR_4BF412C806D7.as_ptr(),
-                                LOWORD(dwSerial),
-                                HIWORD(dwSerial),
+                                LOWORD(dwSerial) as ::core::ffi::c_int,
+                                HIWORD(dwSerial) as ::core::ffi::c_int,
                             );
 
                             dwSize = core::mem::size_of::<DWORD>() as DWORD;
@@ -174,7 +172,7 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
                                 CPP_COM_WSTR_C7A5956868FE.as_ptr(),
                                 RRF_RT_DWORD,
                                 core::ptr::null_mut(),
-                                core::ptr::addr_of_mut!((*pItem).dwMaxCapacity),
+                                (core::ptr::addr_of_mut!((*pItem).dwMaxCapacity)).cast(),
                                 core::ptr::addr_of_mut!(dwSize),
                             ) != 0
                             {
@@ -197,7 +195,7 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
                                 CPP_COM_WSTR_604114ADC8B4.as_ptr(),
                                 RRF_RT_DWORD,
                                 core::ptr::null_mut(),
-                                core::ptr::addr_of_mut!((*pItem).dwNukeOnDelete),
+                                (core::ptr::addr_of_mut!((*pItem).dwNukeOnDelete)).cast(),
                                 core::ptr::addr_of_mut!(dwSize),
                             );
 
@@ -207,7 +205,7 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
                                 hDlgCtrl,
                                 LVM_SETITEMW,
                                 0,
-                                &li as *const _ as LPARAM,
+                                core::ptr::addr_of!(li) as LPARAM,
                             );
                             if szDrive[0 as usize] == DefaultDrive {
                                 defIndex = itemCount;
@@ -226,7 +224,7 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
                             hDlgCtrl,
                             LVM_SETITEMW,
                             0,
-                            &li as *const _ as LPARAM,
+                            core::ptr::addr_of!(li) as LPARAM,
                         );
                     }
                 }
@@ -244,20 +242,20 @@ unsafe extern "C" fn InitializeRecycleBinDlg(hwndDlg: HWND, DefaultDrive: u16) {
         pDefault = pFirst;
     }
     if !pDefault.is_null() {
-        toggleNukeOnDeleteOption(hwndDlg, (*pDefault).dwNukeOnDelete);
+        toggleNukeOnDeleteOption(hwndDlg, ((*pDefault).dwNukeOnDelete) as i32);
         SetDlgItemInt(
             hwndDlg,
             14002,
             (*pDefault).dwMaxCapacity,
-            FALSE,
+            (FALSE) as i32,
         );
     }
-    ZeroMemory(core::ptr::addr_of_mut!(li), core::mem::size_of_val(&li) as DWORD);
+    ZeroMemory(core::ptr::addr_of_mut!(li), (core::mem::size_of_val(&li) as DWORD) as usize);
     li.mask = LVIF_STATE;
     li.stateMask = (-(1 as i32)) as u32;
     li.state = LVIS_FOCUSED | LVIS_SELECTED;
     li.iItem = defIndex;
-    let _ = SendMessageW(hDlgCtrl, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
+    let _ = SendMessageW(hDlgCtrl, LVM_SETITEMW, 0, core::ptr::addr_of!(li) as LPARAM);
 }
 unsafe extern "C" fn StoreDriveSettings(hwndDlg: HWND) -> BOOL {
     let mut iCount: i32;
@@ -280,9 +278,9 @@ unsafe extern "C" fn StoreDriveSettings(hwndDlg: HWND) -> BOOL {
         core::ptr::null_mut(),
         &mut hKey,
         core::ptr::null_mut(),
-    ) != ERROR_SUCCESS
+    ) != (ERROR_SUCCESS) as i32
     {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     iCount = ListView_GetItemCount(hDlgCtrl);
@@ -300,15 +298,15 @@ unsafe extern "C" fn StoreDriveSettings(hwndDlg: HWND) -> BOOL {
             hDlgCtrl,
             LVM_GETITEMW,
             0,
-            core::ptr::addr_of_mut!(li) as super::LPARAM,
+            core::ptr::addr_of_mut!(li) as LPARAM,
         ) != 0
         {
             pItem = li.lParam as *mut DRIVE_ITEM_CONTEXT;
             swprintf(
                 szSerial.as_mut_ptr(),
                 CPP_COM_WSTR_9618E75FEC6D.as_ptr(),
-                LOWORD((*pItem).dwSerial),
-                HIWORD((*pItem).dwSerial),
+                LOWORD((*pItem).dwSerial) as ::core::ffi::c_int,
+                HIWORD((*pItem).dwSerial) as ::core::ffi::c_int,
             );
             if RegCreateKeyExW(
                 hKey,
@@ -320,7 +318,7 @@ unsafe extern "C" fn StoreDriveSettings(hwndDlg: HWND) -> BOOL {
                 core::ptr::null_mut(),
                 &mut hSubKey,
                 core::ptr::null_mut(),
-            ) == ERROR_SUCCESS
+            ) == (ERROR_SUCCESS) as i32
             {
                 dwSize = core::mem::size_of::<DWORD>() as DWORD;
                 RegSetValueExW(
@@ -347,13 +345,13 @@ unsafe extern "C" fn StoreDriveSettings(hwndDlg: HWND) -> BOOL {
     }
 
     RegCloseKey(hKey);
-    TRUE
+    (TRUE) as i32
 }
 unsafe extern "C" fn FreeDriveItemContext(hwndDlg: HWND) {
     let hDlgCtrl = GetDlgItem(hwndDlg, 14000);
     let iCount = ListView_GetItemCount(hDlgCtrl);
     let mut li: LVITEMW = core::mem::MaybeUninit::uninit().assume_init();
-    ZeroMemory(core::ptr::addr_of_mut!(li).cast(), core::mem::size_of::<LVITEMW>());
+    ZeroMemory(core::ptr::addr_of_mut!(li), core::mem::size_of::<LVITEMW>());
     li.mask = LVIF_PARAM;
     for iIndex in 0..iCount {
         li.iItem = iIndex;
@@ -365,19 +363,19 @@ unsafe extern "C" fn FreeDriveItemContext(hwndDlg: HWND) {
 unsafe extern "C" fn GetSelectedDriveItem(hwndDlg: HWND, li: *mut LVITEMW) -> i32 {
     let hDlgCtrl = GetDlgItem(hwndDlg, 14000);
     if hDlgCtrl.is_null() {
-        return -(core::mem::size_of::<1>() as i32);
+        return -1;
     }
     let iItemCount = ListView_GetItemCount(hDlgCtrl);
     if iItemCount == 0 {
-        return -(core::mem::size_of::<1>() as i32);
+        return -1;
     }
     ZeroMemory(li as *mut _, core::mem::size_of::<LVITEMW>());
     (*li).mask = LVIF_PARAM | LVIF_STATE;
     (*li).stateMask = (1 as u32).wrapping_neg();
     let mut iIndex = 0 as u32;
-    while iIndex < iItemCount {
-        (*li).iItem = iIndex;
-        let result = SendMessageW(hDlgCtrl, LVM_GETITEMW, 0, li as isize);
+    while iIndex < (iItemCount) as u32 {
+        (*li).iItem = (iIndex) as i32;
+        let result = SendMessageW(hDlgCtrl, LVM_GETITEMW, 0, li as LPARAM);
         if result != 0 {
             if (*li).state & LVIS_SELECTED != 0 {
                 return iIndex as i32;
@@ -385,208 +383,16 @@ unsafe extern "C" fn GetSelectedDriveItem(hwndDlg: HWND, li: *mut LVITEMW) -> i3
         }
         iIndex += 1;
     }
-    -(core::mem::size_of::<1>() as i32)
+    -1
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn RecycleBinDlg(
-    hwndDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> isize {
-    let _ = (WM_NEWDRIVESELECTED, WM_APP, WM_UPDATEDRIVESETTINGS);
-    let mut lppsn: *mut NMHDR = core::ptr::null_mut();
-    let mut lppl: *mut NMLISTVIEW = core::ptr::null_mut();
-    let mut li: LVITEMW = core::mem::zeroed();
-    let mut pItem: *mut DRIVE_ITEM_CONTEXT = core::ptr::null_mut();
-    let mut bSuccess: BOOL = 0;
-    let mut uResult: UINT = 0;
-    let mut page: *mut PROPSHEETPAGE = core::ptr::null_mut();
-    let mut dwStyle: u32 = 0;
-    let mut FreeBytesAvailable: ULARGE_INTEGER = core::mem::zeroed();
-
-    match uMsg {
-        WM_INITDIALOG => {
-            page = lParam as *mut PROPSHEETPAGE;
-            InitializeRecycleBinDlg(hwndDlg, (*page).lParam as u16);
-            SendDlgItemMessage(
-                hwndDlg,
-                14004,
-                BM_SETCHECK,
-                (!SHELL_GetSetting(SSF_NOCONFIRMRECYCLE, fNoConfirmRecycle)) as LPARAM,
-                0,
-            );
-            dwStyle = SendDlgItemMessage(
-                hwndDlg,
-                14000,
-                LVM_GETEXTENDEDLISTVIEWSTYLE,
-                0,
-                0,
-            ) as u32;
-            dwStyle |= LVS_EX_FULLROWSELECT;
-            SendDlgItemMessage(
-                hwndDlg,
-                14000,
-                LVM_SETEXTENDEDLISTVIEWSTYLE,
-                0,
-                dwStyle as LPARAM,
-            );
-            if GetDlgCtrlID(wParam as HWND) != 14000 {
-                SetFocus(GetDlgItem(hwndDlg, 14000));
-                return FALSE as isize;
-            }
-            return TRUE as isize;
-        }
-        WM_COMMAND => {
-            match LOWORD(wParam) {
-                14001 => {
-                    toggleNukeOnDeleteOption(hwndDlg, FALSE);
-                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-                }
-                14002 => {
-                    if HIWORD(wParam) == EN_CHANGE {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-                    }
-                }
-                14003 => {
-                    toggleNukeOnDeleteOption(hwndDlg, TRUE);
-                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-                }
-                14004 => {
-                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-                }
-                _ => {}
-            }
-        }
-        WM_NOTIFY => {
-            lppsn = lParam as *mut NMHDR;
-            lppl = lParam as *mut NMLISTVIEW;
-            if (*lppsn).code == PSN_APPLY {
-                let mut ss: SHELLSTATE = core::mem::zeroed();
-                ss.fNoConfirmRecycle = (SendDlgItemMessage(
-                    hwndDlg,
-                    14004,
-                    BM_GETCHECK,
-                    0,
-                    0,
-                ) == BST_UNCHECKED) as BOOL;
-                SHGetSetSettings(
-                    &mut ss as *mut SHELLSTATE,
-                    SSF_NOCONFIRMRECYCLE,
-                    TRUE,
-                );
-
-                if GetSelectedDriveItem(hwndDlg, &mut li as *mut LVITEMW) > -1 {
-                    SendMessage(
-                        hwndDlg,
-                        WM_UPDATEDRIVESETTINGS,
-                        0,
-                        li.lParam as u32,
-                    );
-                }
-                if StoreDriveSettings(hwndDlg) != 0 {
-                    SetWindowLongPtr(
-                        hwndDlg,
-                        DWLP_MSGRESULT,
-                        PSNRET_NOERROR,
-                    );
-                    return TRUE as isize;
-                }
-            } else if (*lppl).hdr.code == LVN_ITEMCHANGING {
-                ZeroMemory(&mut li as *mut LVITEMW, core::mem::size_of::<LVITEMW>());
-                li.mask = LVIF_PARAM;
-                li.iItem = (*lppl).iItem;
-                if SendMessageW((*lppl).hdr.hwndFrom, LVM_GETITEMW, 0, &mut li as LPARAM) == 0 {
-                    return TRUE as isize;
-                }
-
-                pItem = li.lParam as *mut DRIVE_ITEM_CONTEXT;
-                if pItem.is_null() {
-                    return TRUE as isize;
-                }
-
-                if ((*lppl).uOldState & LVIS_FOCUSED) == 0 && ((*lppl).uNewState & LVIS_FOCUSED) != 0 {
-                    PostMessage(
-                        hwndDlg,
-                        WM_NEWDRIVESELECTED,
-                        0,
-                        pItem as LPARAM,
-                    );
-                } else if ((*lppl).uOldState & LVIS_FOCUSED) != 0 && ((*lppl).uNewState & LVIS_FOCUSED) == 0 {
-                    SendMessage(
-                        hwndDlg,
-                        WM_UPDATEDRIVESETTINGS,
-                        0,
-                        pItem as LPARAM,
-                    );
-                }
-                return TRUE as isize;
-            }
-        }
-        WM_NEWDRIVESELECTED => {
-            if lParam != 0 {
-                pItem = lParam as *mut DRIVE_ITEM_CONTEXT;
-                toggleNukeOnDeleteOption(hwndDlg, (*pItem).dwNukeOnDelete as BOOL);
-                SetDlgItemInt(
-                    hwndDlg,
-                    14002,
-                    (*pItem).dwMaxCapacity as LPARAM,
-                    FALSE,
-                );
-            }
-        }
-        WM_UPDATEDRIVESETTINGS => {
-            if lParam != 0 {
-                pItem = lParam as *mut DRIVE_ITEM_CONTEXT;
-                uResult = GetDlgItemInt(
-                    hwndDlg,
-                    14002,
-                    &mut bSuccess as *mut BOOL,
-                    FALSE,
-                );
-                if bSuccess != 0 {
-                    FreeBytesAvailable = (*pItem).FreeBytesAvailable;
-                    FreeBytesAvailable.QuadPart = FreeBytesAvailable.QuadPart / (1024 * 1024);
-                    (*pItem).dwMaxCapacity = min(
-                        uResult,
-                        FreeBytesAvailable.__bindgen_anon_1.LowPart,
-                    ) as u32;
-                    SetDlgItemInt(
-                        hwndDlg,
-                        14002,
-                        (*pItem).dwMaxCapacity as LPARAM,
-                        FALSE,
-                    );
-                }
-                if SendDlgItemMessageW(
-                    hwndDlg,
-                    14003,
-                    BM_GETCHECK,
-                    0,
-                    0,
-                ) == BST_CHECKED {
-                    (*pItem).dwNukeOnDelete = TRUE;
-                } else {
-                    (*pItem).dwNukeOnDelete = FALSE;
-                }
-            }
-        }
-        WM_DESTROY => {
-            FreeDriveItemContext(hwndDlg);
-        }
-        _ => {}
-    }
-    FALSE as isize
-}
-
-#[cfg(not(target_arch = "x86"))]
-// DLGPROC is CALLBACK (__stdcall on i386), not cdecl.
+// DLGPROC is CALLBACK — `extern "system"` is stdcall on i386 and the C convention on
+// 64-bit, so ONE copy of this procedure is correct on all three arches.
 unsafe extern "system" fn RecycleBinDlg(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
     lParam: LPARAM,
-) -> isize {
+) -> INT_PTR {
     let _ = (WM_NEWDRIVESELECTED, WM_APP, WM_UPDATEDRIVESETTINGS);
     let mut lppsn: *mut NMHDR = core::ptr::null_mut();
     let mut lppl: *mut NMLISTVIEW = core::ptr::null_mut();
@@ -606,7 +412,7 @@ unsafe extern "system" fn RecycleBinDlg(
                 hwndDlg,
                 14004,
                 BM_SETCHECK,
-                (!SHELL_GetSetting(SSF_NOCONFIRMRECYCLE, fNoConfirmRecycle)) as LPARAM,
+                (!SHELL_GetSetting!(SSF_NOCONFIRMRECYCLE, fNoConfirmRecycle)) as WPARAM,
                 0,
             );
             dwStyle = SendDlgItemMessage(
@@ -626,18 +432,18 @@ unsafe extern "system" fn RecycleBinDlg(
             );
             if GetDlgCtrlID(wParam as HWND) != 14000 {
                 SetFocus(GetDlgItem(hwndDlg, 14000));
-                return FALSE as isize;
+                return FALSE as INT_PTR;
             }
-            return TRUE as isize;
+            return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD((wParam) as u32) {
                 14001 => {
                     toggleNukeOnDeleteOption(hwndDlg, FALSE);
                     PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
                 }
                 14002 => {
-                    if HIWORD(wParam) == EN_CHANGE {
+                    if HIWORD((wParam) as u32) == (EN_CHANGE) as u16 {
                         PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
                     }
                 }
@@ -654,15 +460,12 @@ unsafe extern "system" fn RecycleBinDlg(
         WM_NOTIFY => {
             lppsn = lParam as *mut NMHDR;
             lppl = lParam as *mut NMLISTVIEW;
-            if (*lppsn).code == PSN_APPLY {
+            if (*lppsn).code as i32 == PSN_APPLY {
                 let mut ss: SHELLSTATE = core::mem::zeroed();
-                ss.fNoConfirmRecycle = (SendDlgItemMessage(
-                    hwndDlg,
-                    14004,
-                    BM_GETCHECK,
-                    0,
-                    0,
-                ) == BST_UNCHECKED) as BOOL;
+                ss.set_fNoConfirmRecycle(
+                    (SendDlgItemMessage(hwndDlg, 14004, BM_GETCHECK, 0, 0)
+                        == BST_UNCHECKED as LRESULT) as BOOL,
+                );
                 SHGetSetSettings(
                     &mut ss as *mut SHELLSTATE,
                     SSF_NOCONFIRMRECYCLE,
@@ -674,28 +477,28 @@ unsafe extern "system" fn RecycleBinDlg(
                         hwndDlg,
                         WM_UPDATEDRIVESETTINGS,
                         0,
-                        li.lParam as u32,
+                        li.lParam as LONG_PTR,
                     );
                 }
                 if StoreDriveSettings(hwndDlg) != 0 {
                     SetWindowLongPtr(
                         hwndDlg,
-                        DWLP_MSGRESULT,
-                        PSNRET_NOERROR,
+                        DWLP_MSGRESULT as ::core::ffi::c_int,
+                        PSNRET_NOERROR as LONG_PTR,
                     );
-                    return TRUE as isize;
+                    return TRUE as INT_PTR;
                 }
-            } else if (*lppl).hdr.code == LVN_ITEMCHANGING {
+            } else if (*lppl).hdr.code as i32 == LVN_ITEMCHANGING {
                 ZeroMemory(&mut li as *mut LVITEMW, core::mem::size_of::<LVITEMW>());
                 li.mask = LVIF_PARAM;
                 li.iItem = (*lppl).iItem;
-                if SendMessageW((*lppl).hdr.hwndFrom, LVM_GETITEMW, 0, &mut li as LPARAM) == 0 {
-                    return TRUE as isize;
+                if SendMessageW((*lppl).hdr.hwndFrom, LVM_GETITEMW, 0, core::ptr::addr_of_mut!(li) as LPARAM) == 0 {
+                    return TRUE as INT_PTR;
                 }
 
                 pItem = li.lParam as *mut DRIVE_ITEM_CONTEXT;
                 if pItem.is_null() {
-                    return TRUE as isize;
+                    return TRUE as INT_PTR;
                 }
 
                 if ((*lppl).uOldState & LVIS_FOCUSED) == 0 && ((*lppl).uNewState & LVIS_FOCUSED) != 0 {
@@ -713,7 +516,7 @@ unsafe extern "system" fn RecycleBinDlg(
                         pItem as LPARAM,
                     );
                 }
-                return TRUE as isize;
+                return TRUE as INT_PTR;
             }
         }
         WM_NEWDRIVESELECTED => {
@@ -723,7 +526,7 @@ unsafe extern "system" fn RecycleBinDlg(
                 SetDlgItemInt(
                     hwndDlg,
                     14002,
-                    (*pItem).dwMaxCapacity as LPARAM,
+                    (*pItem).dwMaxCapacity as UINT,
                     FALSE,
                 );
             }
@@ -747,7 +550,7 @@ unsafe extern "system" fn RecycleBinDlg(
                     SetDlgItemInt(
                         hwndDlg,
                         14002,
-                        (*pItem).dwMaxCapacity as LPARAM,
+                        (*pItem).dwMaxCapacity as UINT,
                         FALSE,
                     );
                 }
@@ -757,10 +560,10 @@ unsafe extern "system" fn RecycleBinDlg(
                     BM_GETCHECK,
                     0,
                     0,
-                ) == BST_CHECKED {
-                    (*pItem).dwNukeOnDelete = TRUE;
+                ) == BST_CHECKED as LRESULT {
+                    (*pItem).dwNukeOnDelete = TRUE as u32;
                 } else {
-                    (*pItem).dwNukeOnDelete = FALSE;
+                    (*pItem).dwNukeOnDelete = FALSE as u32;
                 }
             }
         }
@@ -769,12 +572,12 @@ unsafe extern "system" fn RecycleBinDlg(
         }
         _ => {}
     }
-    FALSE as isize
+    FALSE as INT_PTR
 }
 #[no_mangle]
 pub unsafe extern "C" fn RecycleBin_AddPropSheetPages(pfnAddPage: LPFNSVADDPROPSHEETPAGE, lParam: LPARAM) -> HRESULT {
-    let hpsp = SH_CreatePropertySheetPage(IDD_RECYCLE_BIN_PROPERTIES, RecycleBinDlg, 0, core::ptr::null_mut());
-    AddPropSheetPage(hpsp, pfnAddPage, lParam)
+    let hpsp = SH_CreatePropertySheetPage((IDD_RECYCLE_BIN_PROPERTIES) as u16, Some(RecycleBinDlg), 0, core::ptr::null_mut());
+    AddPropSheetPage((hpsp).cast(), pfnAddPage, lParam)
 }
 
 #[no_mangle]
@@ -864,7 +667,7 @@ pub unsafe extern "system" fn RecycleBin_AddPropSheetPages_RustBridge(
 //
 //     hDlgCtrl = GetDlgItem(hwndDlg, 14000);
 //
-//     if (!LoadStringW(shell32_hInstance, IDS_RECYCLEBIN_LOCATION, szVolume, _countof(szVolume)))
+//     if (!LoadStringW(shell32_hInstance, IDS_RECYCLEBIN_LOCATION, szVolume, _countof!(szVolume)))
 //         szVolume[0] = 0;
 //
 //     GetClientRect(hDlgCtrl, &rect);
@@ -880,7 +683,7 @@ pub unsafe extern "system" fn RecycleBin_AddPropSheetPages_RustBridge(
 //     lc.pszText    = szVolume;
 //     (void)SendMessageW(hDlgCtrl, LVM_INSERTCOLUMNW, 0, (LPARAM)&lc);
 //
-//     if (!LoadStringW(shell32_hInstance, IDS_RECYCLEBIN_DISKSPACE, szVolume, _countof(szVolume)))
+//     if (!LoadStringW(shell32_hInstance, IDS_RECYCLEBIN_DISKSPACE, szVolume, _countof!(szVolume)))
 //         szVolume[0] = 0;
 //
 //     lc.iSubItem   = 1;
@@ -898,7 +701,7 @@ pub unsafe extern "system" fn RecycleBin_AddPropSheetPages_RustBridge(
 //             UINT Type = GetDriveTypeW(szDrive);
 //             if (Type == DRIVE_FIXED) //FIXME
 //             {
-//                 if (!GetVolumeInformationW(szDrive, szName, _countof(szName), &dwSerial, &MaxComponent, &Flags, NULL, 0))
+//                 if (!GetVolumeInformationW(szDrive, szName, _countof!(szName), &dwSerial, &MaxComponent, &Flags, NULL, 0))
 //                 {
 //                     szName[0] = 0;
 //                     dwSerial = -1;
@@ -913,7 +716,7 @@ pub unsafe extern "system" fn RecycleBin_AddPropSheetPages_RustBridge(
 //                 SendMessageW(hDlgCtrl, LVM_INSERTITEMW, 0, (LPARAM)&li);
 //                 if (GetDiskFreeSpaceExW(szDrive, &FreeBytesAvailable, &TotalNumberOfBytes, &TotalNumberOfFreeBytes))
 //                 {
-//                     if (StrFormatByteSizeW(TotalNumberOfFreeBytes.QuadPart, szVolume, _countof(szVolume)))
+//                     if (StrFormatByteSizeW(TotalNumberOfFreeBytes.QuadPart, szVolume, _countof!(szVolume)))
 //                     {
 //                         pItem = (DRIVE_ITEM_CONTEXT *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(DRIVE_ITEM_CONTEXT));
 //                         if (pItem)
@@ -1087,7 +890,7 @@ pub unsafe extern "system" fn RecycleBin_AddPropSheetPages_RustBridge(
 //         case WM_INITDIALOG:
 //             page = (PROPSHEETPAGE*)lParam;
 //             InitializeRecycleBinDlg(hwndDlg, (WCHAR)page->lParam);
-//             SendDlgItemMessage(hwndDlg, 14004, BM_SETCHECK, !SHELL_GetSetting(SSF_NOCONFIRMRECYCLE, fNoConfirmRecycle), 0);
+//             SendDlgItemMessage(hwndDlg, 14004, BM_SETCHECK, !SHELL_GetSetting!(SSF_NOCONFIRMRECYCLE, fNoConfirmRecycle), 0);
 //             dwStyle = (DWORD) SendDlgItemMessage(hwndDlg, 14000, LVM_GETEXTENDEDLISTVIEWSTYLE, 0, 0);
 //             dwStyle = dwStyle | LVS_EX_FULLROWSELECT;
 //             SendDlgItemMessage(hwndDlg, 14000, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, dwStyle);

@@ -358,14 +358,31 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   objects, shared shellmenu/shelldesktop objects, procedural helpers, and monoliths such as
   `CDefView.cpp`, `shlexec.cpp`, and `shlfileop.cpp`. The exhaustive zero-C++ plan and ledger are
   in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
-  **Free-function TUs: 7 translated and PARKED, not wired** (2026-07-25) —
-  `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache,shlfolder,stubs,
-  shldataobject}.rs`, 21,626 lines, each carrying an `//! ORPHAN-BY-DESIGN:` banner. Five of them
-  had been blocked behind seal defects that made the envelope unsatisfiable — a rejected worker
-  assembles *no* output, so 5 rejects were withholding ~19.8K lines of already-paid Rust; see the
-  field manual's `[§9.127]` RESOLVED note. They still need substrate closure (SDK externs, Win32
-  constants, resource IDs) before they compile, so the C++ tail count above is unchanged: nothing
-  is cohab-flipped yet. Paid artifacts — do not delete to tidy up.
+  **Free-function TUs — the island-first recipe is proven; 2 wired, 7 still parked** (2026-07-26).
+  `dialogs/general.cpp` and `dialogs/recycler_prop.cpp` are cohab-flipped and green on all three
+  arches: they are the first shell32 TUs to take their substrate from the **bindgen island**
+  (`crate::prelude`, which globs `crate::island`) rather than the hand-written
+  `types.rs`/`win32.rs`. That is the whole unlock — measured on these two files, globbing the
+  island *instead of* the hand-written substrate dropped unresolved names from **228 to 77**,
+  and the rest was a per-TU tail (bitfield accessors, C-uninitialised locals, variadic promotion,
+  nominal alias splits) rather than a substrate wall. Recipe and every trap: prelude.rs's module
+  header plus the field manual's "Adopting an island in a crate that already has hand-written
+  substrate".
+  **The C++ SUBSTRATE gate is now built** (2026-07-26). `stubs.cpp` and `shldataobject.cpp` are
+  also flipped, and the blocker behind the remaining five was one shared gap, not a per-file
+  tail: `CComPtr` appears in **25 of the 38** still-C TUs and `CComHeapPtr` in 19. Two new
+  modules close it — `shell32-rust/src/atl.rs` (CComPtr / CHeapPtr / CComHeapPtr / CSimpleArray
+  and the CRT/Local/COM allocator policies, with `Drop` restoring the destructors the
+  translation dropped) and `shell32-rust/src/shellutils.rs` (the `shellutils.h`/`utils.h` header
+  inlines, which live in no TU and so reach no translated file). Both are written against
+  *measured* usage in the emitted Rust; `atl.rs`'s header records the three invariants the call
+  sites depend on. Neither is shell32-specific in spirit — any ATL-using C++ module wants them.
+  Still parked: `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache,
+  shlfolder}.rs`, each carrying an `//! ORPHAN-BY-DESIGN:` banner. Post-substrate error counts
+  and what each still needs are in that directory's `mod.rs`; the short version is that
+  iconcache/shlfolder/brfolder are cast-and-signature integration with no new substrate, while
+  shlfileop/shlexec additionally want a `CStringW` whose `Format` is printf-variadic and so
+  needs a `rust_varargs_shim.c` trampoline. Paid artifacts — do not delete to tidy up.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

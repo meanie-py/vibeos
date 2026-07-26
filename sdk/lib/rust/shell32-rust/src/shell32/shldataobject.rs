@@ -62,7 +62,11 @@ impl CDataObjectHIDA {
             lindex: -1,
             tymed: TYMED_HGLOBAL,
         };
-        let hr = ((*(*pDataObject).lpVtbl).GetData)(pDataObject, &mut format, medium);
+        let hr = ((*(*pDataObject).lpVtbl).GetData)(
+            pDataObject,
+            (&mut format as *mut FORMATETC).cast(),
+            medium.cast(),
+        );
         if hr >= 0 {
             *ppcida = GlobalLock((*medium).__bindgen_anon_1.hGlobal) as *const CIDA;
             if !(*ppcida).is_null() {
@@ -101,9 +105,7 @@ impl Drop for CDataObjectHIDA {
 }
 
 use core::ffi::c_void;
-use crate::shellcom::*;
-use crate::types::*;
-use crate::win32::*;
+use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
@@ -116,7 +118,7 @@ pub struct DataObjectAttributes {
     pub dwAttributes: DWORD,
     pub cItems: UINT,
 }
-const _: () = assert!(core::mem::size_of::<DataObjectAttributes>() == 0xc);
+const _: () = assert!(core::mem::size_of::<DataObjectAttributes>() as SIZE_T == 0xc);
 pub static wine_dbg_channel_shell: &[u8] = b"shell\0";
 unsafe extern "C" fn _BindToObject(pidl: PCUIDLIST_ABSOLUTE, spFolder: &mut *mut IShellFolder) -> HRESULT {
     SHBindToObject(
@@ -137,13 +139,13 @@ pub unsafe extern "system" fn SHGetAttributesFromDataObject(
     let mut cItems: UINT = 0;
     let mut hr: HRESULT = S_OK;
 
-    if !g_DataObjectAttributes {
+    if g_DataObjectAttributes == 0 {
         g_DataObjectAttributes = RegisterClipboardFormatW(CPP_COM_WSTR_1F8E5DD3F506.as_ptr()) as CLIPFORMAT;
     }
 
     if !pDataObject.is_null() {
         let mut data: DataObjectAttributes = core::mem::zeroed();
-        if DataObject_GetData(pDataObject, g_DataObjectAttributes, &mut data as *mut _ as *mut c_void, core::mem::size_of::<DataObjectAttributes>()) < 0 {
+        if DataObject_GetData(pDataObject, g_DataObjectAttributes, &mut data as *mut _ as *mut c_void, core::mem::size_of::<DataObjectAttributes>() as SIZE_T) < 0 {
             memset(&mut data as *mut _ as *mut c_void, 0, core::mem::size_of::<DataObjectAttributes>());
         }
 
@@ -153,35 +155,35 @@ pub unsafe extern "system" fn SHGetAttributesFromDataObject(
             let hida = CDataObjectHIDA::new(pDataObject);
             let mut spFolder: *mut IShellFolder = core::ptr::null_mut();
 
-            if !FAILED_UNEXPECTEDLY(hr = hida.hr()) &&
-               !FAILED_UNEXPECTEDLY(hr = _BindToObject(HIDA_GetPIDLFolder(hida.as_ptr()), &mut spFolder))
+            if !FAILED_UNEXPECTEDLY!({ hr = hida.hr(); hr }) &&
+               !FAILED_UNEXPECTEDLY!({ hr = _BindToObject(HIDA_GetPIDLFolder(hida.as_ptr()), &mut spFolder); hr })
             {
                 let mut apidl = CSimpleArray::<PCUIDLIST_RELATIVE>::new();
                 let mut n: UINT = 0;
                 while n < (*hida.as_ptr()).cidl {
-                    apidl.Add(HIDA_GetPIDLItem(hida.as_ptr(), (n) as usize));
+                    apidl.Add(HIDA_GetPIDLItem(hida.as_ptr(), (n) as SIZE_T));
                     n += 1;
                 }
 
                 let mut rgfInOut = dwQueryAttributes;
-                hr = (*(*spFolder).lpVtbl).GetAttributesOf(
+                hr = ((*(*spFolder).lpVtbl).GetAttributesOf)(
                     spFolder,
-                    apidl.GetSize(),
-                    apidl.GetData(),
+                    apidl.GetSize() as u32,
+                    apidl.GetData() as *const _,
                     &mut rgfInOut,
                 );
-                if !FAILED_UNEXPECTEDLY(hr) {
+                if !FAILED_UNEXPECTEDLY!(hr) {
                     data.dwMask = dwQueryAttributes;
                     data.dwAttributes = rgfInOut & dwQueryAttributes;
-                    data.cItems = apidl.GetSize();
+                    data.cItems = apidl.GetSize() as u32;
 
-                    let hr2 = DataObject_SetData(pDataObject, g_DataObjectAttributes, &data as *const _ as *const c_void, core::mem::size_of::<DataObjectAttributes>());
-                    FAILED_UNEXPECTEDLY(hr2);
+                    let hr2 = DataObject_SetData(pDataObject, g_DataObjectAttributes, &mut data as *mut _ as *mut c_void, core::mem::size_of::<DataObjectAttributes>() as SIZE_T);
+                    FAILED_UNEXPECTEDLY!(hr2);
                 }
             }
 
             if !spFolder.is_null() {
-                (*(*spFolder).lpVtbl).Release(spFolder);
+                ((*(*spFolder).lpVtbl).Release)(spFolder);
             }
         }
 
@@ -214,7 +216,7 @@ pub unsafe extern "C" fn DataObject_GetHIDACount(pdo: *mut IDataObject) -> HRESU
 #[no_mangle]
 pub unsafe extern "C" fn SHELL_CIDA_ILCloneFull(pCIDA: *const CIDA, Index: u32) -> PIDLIST_ABSOLUTE {
     if Index < (*pCIDA).cidl {
-        return ILCombine(HIDA_GetPIDLFolder(pCIDA), HIDA_GetPIDLItem(pCIDA, (Index) as usize));
+        return ILCombine(HIDA_GetPIDLFolder(pCIDA), HIDA_GetPIDLItem(pCIDA, (Index) as SIZE_T));
     }
     core::ptr::null_mut()
 }
@@ -257,7 +259,7 @@ pub unsafe extern "system" fn CDataObjectHIDA_CreateCIDA_RustBridge(
     ppcida: *mut *const CIDA,
     pmedium: *mut STGMEDIUM,
 ) -> HRESULT {
-    CDataObjectHIDA::CreateCIDA(pDataObject, ppcida, core::ptr::read(pmedium))
+    CDataObjectHIDA::CreateCIDA(pDataObject, ppcida, pmedium)
 }
 
 #[no_mangle]
@@ -267,13 +269,13 @@ pub unsafe extern "system" fn CDataObjectHIDA_DestroyCIDA_RustBridge(
 ) {
     DestroyCIDA(pcida, &mut *pmedium);
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn SHELL_CloneDataObject(pDO: *mut IDataObject, ppDO: *mut *mut IDataObject) -> HRESULT {
+#[no_mangle]
+pub unsafe extern "C" fn SHELL_CloneDataObject(pDO: *mut IDataObject, ppDO: *mut *mut IDataObject) -> HRESULT {
     *ppDO = core::ptr::null_mut();
     let cida = CDataObjectHIDA::new(pDO);
     let mut hr = cida.hr();
     if hr >= 0 {
-        let items = CCidaChildArrayHelper::new(&cida);
+        let items = CCidaChildArrayHelper::new(cida.as_ptr());
         hr = items.hr();
         if hr < 0 {
             return hr;
@@ -281,14 +283,14 @@ pub unsafe extern "system" fn CDataObjectHIDA_DestroyCIDA_RustBridge(
         hr = SHCreateFileDataObject(
             HIDA_GetPIDLFolder(cida.as_ptr()),
             (*cida.as_ptr()).cidl,
-            items.GetItems(),
+            items.GetItems() as *const *const _,
             core::ptr::null_mut(),
-            ppDO,
+            ppDO.cast(),
         );
         if hr >= 0 {
             let mut pt: POINT = core::mem::zeroed();
             if DataObject_GetOffset(pDO, &mut pt) >= 0 {
-                DataObject_SetOffset(*ppDO, &pt);
+                DataObject_SetOffset(*ppDO, &mut pt);
             }
         }
     }
@@ -371,13 +373,13 @@ pub unsafe extern "system" fn CDataObjectHIDA_DestroyCIDA_RustBridge(
 //                 }
 //
 //                 SFGAOF rgfInOut = dwQueryAttributes;
-//                 hr = spFolder->GetAttributesOf(apidl.GetSize(), apidl.GetData(), &rgfInOut);
+//                 hr = spFolder->GetAttributesOf(apidl.GetSize() as u32, apidl.GetData(), &rgfInOut);
 //                 if (!FAILED_UNEXPECTEDLY(hr))
 //                 {
 //                     data.dwMask = dwQueryAttributes;
 //                     // Only store what we asked for
 //                     data.dwAttributes = rgfInOut & dwQueryAttributes;
-//                     data.cItems = apidl.GetSize();
+//                     data.cItems = apidl.GetSize() as u32;
 //
 //                     HRESULT hr2;
 //                     hr2 = DataObject_SetData(pDataObject, g_DataObjectAttributes, &data, sizeof(data));
