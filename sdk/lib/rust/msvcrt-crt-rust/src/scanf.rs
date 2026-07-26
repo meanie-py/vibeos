@@ -454,8 +454,12 @@ trait Source {
     fn consumed(&self) -> i32;
     fn add_consumed(&mut self, n: i32);
 
-    /// The `{locinfo, file, width}` initialiser's `file` member, plus the redundant
-    /// `#ifdef STRING ctx.file = file;` that follows it.
+    /// The `{locinfo, file, width}` initialiser's `file` member — and, called a SECOND
+    /// time after the whitespace skip, the `#ifdef STRING ctx.file = file;` that follows
+    /// it (scanf.h:409-411).
+    ///
+    /// Those two are NOT the same value and calling this once is a bug: the skip runs
+    /// between them and moves the string cursor. See the call site.
     fn fp_raw(&self) -> Self::Raw;
     /// `#ifdef STRING file = ctx.file;` — STRING **and** STRING_LEN (the latter is
     /// nested inside `#ifdef STRING`, so the guard holds for both).
@@ -1168,6 +1172,20 @@ where
                         break 'arm;
                     }
                     ctx.unget = nch;
+                    // `#ifdef STRING ctx.file = file;` (scanf.h:409-411) — STRING and
+                    // STRING_LEN both, the latter being nested inside the former's guard.
+                    //
+                    // NOT redundant with the `{locinfo, file, width}` initialiser: the
+                    // whitespace skip runs BETWEEN the two and has already moved the
+                    // string cursor. Without this re-read the float parser starts from
+                    // where the cursor was before the skip and re-consumes every
+                    // character it walked over, so `" 1.50"` parses as 11.5 and the
+                    // consumed count is one high.
+                    //
+                    // Unconditional here because the FILE and CONSOLE carriers are a
+                    // `FILE*` and a ZST, neither of which the skip can move — so the C's
+                    // `#ifdef STRING` has nothing to guard on those two.
+                    ctx.raw = src.fp_raw();
                     ctx.length = src.fp_clamp(ctx.length);
 
                     let mut cur = 0.0f64;

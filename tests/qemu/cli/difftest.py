@@ -102,6 +102,7 @@ def graded(out: str) -> int:
         r"(\d+) create_mbcinfo codepages passed",
         r"(\d+) printf shell rows passed",
         r"(\d+) wave16 cases passed",
+        r"(\d+) scanf cases passed",
         # (?<![a-z]) or "difftest result: ok. 81 passed" matches TWICE — the
         # libtest form is a literal substring of the difftest form, so cnt's 81
         # cases would report as 162.

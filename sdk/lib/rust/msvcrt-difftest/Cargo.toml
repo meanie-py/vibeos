@@ -131,3 +131,12 @@ harness = false
 name = "wave16"
 path = "tests/wave16.rs"
 harness = false
+
+# Wave 17 — the scanf ENGINE. `dll/win32/msvcrt/scanf.h` is a template scanf.c
+# instantiates 16 times; `msvcrt-crt-rust/src/scanf.rs` replaces all 16 with one generic
+# body. Its own binary because it DEFINES the model character source (`fgetc`/`fgetwc`/
+# `_getch` &c.) under the plain libc names, which no other suite may inherit.
+[[test]]
+name = "scanf"
+path = "tests/scanf.rs"
+harness = false

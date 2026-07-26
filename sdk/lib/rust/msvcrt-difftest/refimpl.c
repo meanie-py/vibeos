@@ -797,3 +797,78 @@ int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int s
     }
     return n;
 }
+
+/* ==================================================================
+ * ntdll's bitmap — what `%[` builds its scanset in (scanf.h:622-689).
+ *
+ * The genuine RtlSetBits has NO range check outside an ASSERT that a release
+ * ntdll compiles out, and msvcrt hands it `*format` — a SIGNED char for the
+ * narrow engine.  `%[\x80]` therefore calls RtlSetBits(map, 0xFFFFFF80, 1) and
+ * writes roughly 128 MB below a 32-byte heap block.  That is undefined
+ * behaviour, not behaviour: there is nothing for a port to reproduce and
+ * nothing for a harness to compare.  tests/scanf.rs excludes bytes >= 0x80 from
+ * every NARROW scanset corpus and prints that exclusion.
+ *
+ * So this model CLAMPS instead of corrupting, and COUNTS every clamp.  The count
+ * is not decoration — it is what stops the exclusion from rotting.  If a corpus
+ * change ever starts feeding out-of-range indices, tests/scanf.rs asserts the
+ * counter is zero and fails, instead of quietly grading a wild write against a
+ * Rust that carefully avoids one.
+ *
+ * Everything else is the real algorithm, behaviourally verbatim from
+ * sdk/lib/rust/bitmap/src/ops.rs (the ntdll actually under this DLL): bit k
+ * lives in word k/32 at bit k%32, and BOTH range checks in RtlAreBitsSet /
+ * RtlAreBitsClear fail CLOSED — so an out-of-range character matches neither an
+ * ordinary nor an inverted scanset, and `are_bits_clear` is NOT the negation of
+ * `are_bits_set`.
+ *
+ * Named msvcrt_ref_* because the scanf prelude puts them in the reference's
+ * import namespace; the plain-named declarations in the generated winternl.h are
+ * included here only for RTL_BITMAP's layout and are never defined.
+ * ================================================================== */
+#include "winternl.h"
+
+static unsigned long ref_bitmap_oob_clamps;
+
+unsigned long msvcrt_ref_bitmap_oob_count(void) { return ref_bitmap_oob_clamps; }
+void          msvcrt_ref_bitmap_oob_reset(void) { ref_bitmap_oob_clamps = 0; }
+
+void msvcrt_ref_RtlInitializeBitMap(PRTL_BITMAP bm, ULONG *buffer, ULONG size)
+{
+    bm->SizeOfBitMap = size;
+    bm->Buffer = buffer;
+}
+
+void msvcrt_ref_RtlSetBits(PRTL_BITMAP bm, ULONG start, ULONG count)
+{
+    ULONG i;
+
+    if (count == 0) return;
+    if ((unsigned long long)start + count > (unsigned long long)bm->SizeOfBitMap)
+    {
+        ref_bitmap_oob_clamps++;   /* see the header comment — deliberately NOT silent */
+        return;
+    }
+    for (i = 0; i < count; i++)
+        bm->Buffer[(start + i) >> 5] |= 1u << ((start + i) & 31);
+}
+
+BOOL msvcrt_ref_RtlAreBitsSet(PRTL_BITMAP bm, ULONG start, ULONG length)
+{
+    ULONG i;
+
+    if (start + length > bm->SizeOfBitMap || start + length <= start) return FALSE;
+    for (i = 0; i < length; i++)
+        if (!(bm->Buffer[(start + i) >> 5] & (1u << ((start + i) & 31)))) return FALSE;
+    return TRUE;
+}
+
+BOOL msvcrt_ref_RtlAreBitsClear(PRTL_BITMAP bm, ULONG start, ULONG length)
+{
+    ULONG i;
+
+    if (start + length > bm->SizeOfBitMap || start + length <= start) return FALSE;
+    for (i = 0; i < length; i++)
+        if (bm->Buffer[(start + i) >> 5] & (1u << ((start + i) & 31))) return FALSE;
+    return TRUE;
+}
