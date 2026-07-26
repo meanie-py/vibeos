@@ -585,6 +585,15 @@ Three faces, all seen live:
   translation output carries neither the array form nor the comment, so it reports a confident
   `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
   the crate's `w!()` macro.
+- **A `L"..."` inside a MACRO argument loses the width with nothing to catch it.** rasadhlp's
+  `RTL_CONSTANT_STRING(L"\\Device\\RasAcd")` came back as
+  `RTL_CONSTANT_STRING(b"\\Device\\RasAcd\0")` — a UNICODE_STRING whose Buffer is ANSI bytes.
+  It compiles (the macro takes anything), the Length/MaximumLength arithmetic is *right for
+  the wrong encoding*, and `NtCreateFile` then just fails to open the device at runtime. This
+  is the same L-drop class as above, but a fourth manifestation: the other three are visible
+  in the literal's own type, this one hides behind a macro that is happy either way. When a
+  crate defines an initializer macro, make it take an ASCII literal and widen it itself
+  (`w!()`), so passing bytes is not expressible.
 - **A hand-encoded `[u16; N]` one element short** silently drops the LAST character to make
   room for the NUL. `SERVICES_KEY [u16; 33]` spelled `…\Service` (no `s`), so `RCreateServiceW`
   opened a nonexistent parent key — invisible to boot, found only by a conformance sweep. The
@@ -627,6 +636,18 @@ Three faces, all seen live:
   cross-file ABI disagreement was systemic; the fix was a deterministic ABI overwrite pass, not
   per-site repair. **A redundant `*-sys` crate that re-bindgens types the parent master header
   already pulls** produces mass E0659 ambiguity.
+- **C FLATTENS an anonymous union; bindgen names it.** A tagged struct whose payload is an
+  anonymous `union { ... }` reads `Addr.Ip4Address` in the C and must read
+  `Addr.__bindgen_anon_1.Ip4Address` in Rust — the translation writes the C spelling every
+  time, and it is an E0609, so this one is loud. Two knobs make the result readable rather
+  than merely compiling: `gen_driver_types.sh`'s **`REAL_UNIONS=1`** (runs
+  `bindgen_unions_to_real.py`) turns bindgen's `__BindgenUnionField<T>` emulation into a real
+  Rust `union`, so the member access is a plain field rather than `.as_mut()` noise. It stays
+  OPT-IN: ~170 island files across the driver crates carry the emulation and their
+  translations call its accessor API, so flipping it on by default would rewrite all of them.
+  New usermode crates want it (dnsapi, snmpapi, rasadhlp). **Wire it into the profile, not
+  your fingers** — it was a remembered post-step, which is exactly how rasadhlp's islands came
+  out unconverted while samlib's (hand-run the day before) were fine.
 - **A crate with NO island is invisible to `verify_ffi`.** Its oracle is `ntoskrnl.spec` *and*
   `bindgen_<arch>.rs`; with no island there is nothing to compare against, so every hand-written
   extern block passes unchecked and the gate stays green. shell32-rust carried ~2.7K lines of
@@ -1693,6 +1714,21 @@ the harness fail. Two instances of the very class turned up while building it: t
 itself was a liar on its first run (the positive assertion accepted *any* non-empty output), and
 two scanners take FILES, not directories, so handed a directory they silently found nothing.
 
+**An oracle built on a parse must check that the parse SUCCEEDED, or it reports the parser's
+debris as findings about your code.** `preamble_audit` mines top-level declarations, resting on
+"a top-level declaration is by construction never inside a function body" — true only while the
+parse works. tree-sitter recovers from a parameter list it cannot read by HOISTING the function
+body's statements to the root, so `WSAttemptAutodialAddr(IN CONST SOCKADDR FAR *Name)` made the
+locals `Ip`, `NetBios`, `AutodialAddress` (and the parameter `Name`) look like file-scope state
+the translation had dropped. All of them were present, as locals: five confident, specific,
+wrong findings — which is how an oracle stops being read, a worse outcome than not having it.
+Two fixes, and you want both: **reuse the parser normalizer the rest of the pipeline already
+has** (`FAR`/`NEAR` are `#define`d to nothing and are the usual trigger — the same macro once
+dropped `inet_addr` from a translation plan entirely), and then **refuse to mine a root that
+still holds a top-level ERROR**, reporting "not audited" instead of guessing. Note `has_error`
+is useless as that gate: it is true for nearly every real Windows TU because of macros inside
+bodies, which hoist nothing. A **top-level ERROR node** is the precise signal.
+
 **A shared regex is an API between lanes, and positional groups are how it breaks.** Mainline
 correctly taught `scan_cc_mismatch` to pair decls and defs on the *linker symbol*
 (`#[link_name]` / `#[export_name]`) instead of the Rust identifier, which added one capture
@@ -1764,6 +1800,40 @@ layout"**, and derive from checked-in sources so the baseline is portable.
   oracle is comparing the table against the thing that actually calls into it —
   `verify_svc_numbering.py` disassembles the **real i386 `user32.dll`/`gdi32.dll` syscall
   stubs** out of the build. **Parsing a C header with a regex is parsing it wrong.**
+
+### A derived profile is a MODEL of the build, and every divergence is silent
+`profile_derive` reads a module's CMakeLists + compile-db and emits the bindgen profile. It is
+a *model* of how those TUs compile, and four separate places where the model quietly differed
+from the build all surfaced in one batch (wldap32, rasadhlp). The shape recurs, so check for
+it whenever a derived profile misbehaves — and note that three of the four fail LOUDLY at
+bindgen time only because a header happened to be missing; the same divergence with a header
+present is a silently-wrong island.
+
+- **Our search path is not the generator's `-I` set.** Any dir listed in `_SDK_SEARCH` was
+  omitted from `EXTRA_INC` on the assumption `gen_driver_types.sh` already passed it. For
+  `sdk/include/wine` and `sdk/include/winrt` that is false. wldap32's only `config.h` lives in
+  the former, so the derived profile could not generate at all. samlib had hit the same gap
+  from the *other* direction and was patched per-instance — a hand-added `LATE_INC` found by
+  header bisection. **A per-instance include fix is a bug report against the deriver.** The two
+  sets are now separate constants (`_GENERATOR_BASE_INC`), and must be kept in sync with the
+  bindgen invocation.
+- **`build-<arch>/sdk/...` from the compile db must never be emitted.** The generator passes
+  those as per-arch `${BUILD_DIR}`; echoing back the observed `build-i386/...` bakes one arch's
+  *generated* headers into a 3-arch generator — the cross-arch leak AGENTS.md forbids, and it
+  reads as correct because i386 is what we derive from.
+- **A guarded include was promoted to an unconditional one.** `scan_preamble` dropped the
+  `#ifdef`/`#endif` and KEPT the `#include` between them. wldap32 wraps OpenLDAP under
+  `#ifdef HAVE_LDAP_H`; ReactOS does not vendor it. **Wine's `config.h` is an authoritative
+  build-configuration oracle** — autoconf writes the off cases as `/* #undef HAVE_LDAP_H */`,
+  an assertion about *this* build, not a maybe — so guards on its 330 undefs are decidable and
+  the dead arm is dropped. Undecidable guards still keep both arms and warn.
+- **`add_pch()`'s SKIP list is load-bearing.** Its third argument names the TUs that must not
+  get the PCH, and they are skipped *precisely because they do not compile with it*. wldap32's
+  `ber.c` includes `<winldap.h>` while `precomp.h` pulls `"winldap_private.h"`; the two declare
+  ~30 `ldap_*` prototypes and `LDAPControlA`/`LDAPModA`/`LDAPSortKeyA`/`LDAPAPIInfoA` (+W)
+  incompatibly. Force-including the PCH into `ber.c`'s wrapper reproduced that conflict exactly
+  — and the conflict is also *why* the module needs two islands, so the CMakeLists was already
+  telling you where the island boundary goes.
 
 ### A parse/derive failure that silently falls back `[§9.72, §9.80]`
 - **A catastrophic-backtracking regex hung `postprocess`**, and the hang looked like the paid
@@ -1858,6 +1928,16 @@ symbols one way and undefined the other. That pair *is* the diagnostic.
 - **Don't `git rm` a tree named in a prune table** — verify the build graph first.
 - **Don't retranslate a `*_rust_shims.c` function** — a stale private Rust impl may exist.
 - **Provide DDK/driver MACROS and FORCEINLINEs from the real headers, not bugcheck stubs.**
+- **A header that DEFINES a variable loses its definer when you flip the last TU that included
+  it.** `nsp_dns.h` does not declare its six service GUIDs, it defines them —
+  `const GUID DECLSPEC_SELECTANY HostnameGuid = SVCID_HOSTNAME;` — COMDAT, so every including
+  TU emits a foldable copy. bindgen renders them as `extern static`, which is right while some
+  C still includes the header and wrong the moment none does: rasadhlp's `winsock.c` was that
+  TU, and flipping it left `undefined symbol: _HostnameGuid` at link. Strip them from the
+  island (`BLOCKLIST_VARS=1`) and define them in the crate. Grep a flipped module's headers for
+  `DECLSPEC_SELECTANY` / `__declspec(selectany)` / `static const` at file scope *before* the
+  link tells you. Build the values from the header's own macros rather than pasting bytes, so
+  they stay checkable.
 
 ### An incomplete flip breaks ONLY on a clean arm64 tree
 i386/amd64 keep working because the stale pre-flip `libX.a` (or a weak inline copy clang emits

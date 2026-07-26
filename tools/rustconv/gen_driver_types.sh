@@ -42,6 +42,19 @@ LATE_INC=()
 # HEADERS use C++ (default args, bool, anon unions — e.g. uniata) set `-x c++` so the
 # parse succeeds; bindgen still emits the plain structs.
 LANG_ARGS=()
+# REAL_UNIONS: rewrite bindgen's `__BindgenUnionField<T>` emulation into real Rust
+# `union`s (bindgen_unions_to_real.py). Without it a C anonymous union member reads
+# `p.__bindgen_anon_1.Field.as_mut()`; with it, `p.__bindgen_anon_1.Field` — which is
+# what a translation of the C (where the union is FLATTENED and the member is just
+# `p.Field`) actually needs.
+#
+# OPT-IN, and it stays opt-in: 170 island files across the driver crates carry the
+# emulation today and their translations call the `__BindgenUnionField` accessor API,
+# so flipping this on by default would rewrite all of them at once. New usermode
+# crates want it (dnsapi, snmpapi, rasadhlp); converting an existing crate is a
+# separate, per-crate change. It runs as a post-pass here rather than by hand — it was
+# a remembered step, which is how rasadhlp's islands silently came out unconverted.
+REAL_UNIONS=0
 # SYS_CRATES: extra sibling -sys crates whose bindgen types must ALSO be blocklisted
 # (kept a single identity) and re-exported. Format: "crate_name:src_subdir". Only ACPI
 # bridges two -sys crates (ntkrnl-sys + acpica-sys), so it's the only user today.
@@ -1239,6 +1252,145 @@ case "$DRIVER" in
                -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP
                -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
     ;;
+  rasapi32)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-26 from dll/win32/rasapi32/CMakeLists.txt
+    # (1 compiled TU, 69 headers in the include closure, 0 switch constants).
+    #
+    # USERMODE RAS (dial-up) client API (dll/win32/rasapi32). Wine-sourced; almost entirely
+    # ERROR_NOT_SUPPORTED stubs over the ras.h surface.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/rasapi32"
+    WRAPPER_INC=$'#include <stdarg.h>\n#include "windef.h"\n#include "winbase.h"\n#include "ras.h"\n#include "raserror.h"\n#include "wine/debug.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ras\.h' --allowlist-file '.*[/\\]raserror\.h'
+                  --allowlist-file '.*rasapi32[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/rasapi32" -I"${SRC}/build-i386/dll/win32/rasapi32" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502
+               -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE
+               -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  rasman)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-26 from dll/win32/rasman/CMakeLists.txt
+    # (1 compiled TU, 73 headers in the include closure, 1 switch constant).
+    #
+    # USERMODE RAS connection manager (dll/win32/rasman). The one switch constant is
+    # DLL_PROCESS_ATTACH, a winnt.h literal already reachable via the -sys glob.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/rasman"
+    WRAPPER_INC=$'#define WIN32_NO_STATUS\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <wine/debug.h>\n#include <rasshost.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]rasshost\.h' --allowlist-file '.*rasman[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/rasman" -I"${SRC}/build-i386/dll/win32/rasman" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502
+               -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE
+               -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  rasdlg)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-26 from dll/win32/rasdlg/CMakeLists.txt
+    # (1 compiled TU, 69 headers in the include closure, 1 switch constant).
+    #
+    # USERMODE RAS dialog UI (dll/win32/rasdlg). Same DLL_PROCESS_ATTACH note as rasman.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/rasdlg"
+    WRAPPER_INC=$'#define WIN32_NO_STATUS\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <wine/debug.h>\n#include <rasdlg.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]rasdlg\.h' --allowlist-file '.*rasdlg[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/rasdlg" -I"${SRC}/build-i386/dll/win32/rasdlg" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502
+               -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE
+               -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  rasadhlp)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-26 from dll/win32/rasadhlp/CMakeLists.txt
+    # (3 compiled TUs, 168 headers in the include closure, 2 switch constants).
+    #
+    # USERMODE RAS AutoDial helper (dll/win32/rasadhlp) — the winsock NSP hook that triggers a
+    # dial-up attempt on a failed name resolution, so it rides on the ws2_32 surface we already
+    # translated. LATE_INC was DERIVED, not hand-added: the CMakeLists' include_directories()
+    # puts sdk/include/reactos/winsock BELOW the standard SDK dirs, and hoisting it changes
+    # which winsock2.h an include resolves to (the samlib collision class).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/rasadhlp"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <ndk/iofuncs.h>\n#include <ndk/rtltypes.h>\n#include <winnls.h>\n#include <nsp_dns.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]nsp_dns\.h' --allowlist-file '.*[/\\]wininet\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winsock2\.h'
+                  --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]wsnetbs\.h'
+                  --allowlist-file '.*rasadhlp[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/rasadhlp" -I"${SRC}/build-i386/dll/win32/rasadhlp" )
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/winsock" )
+    # AUTODIAL_ADDR / AUTODIAL_CONN are tagged unions whose payload is an ANONYMOUS
+    # union, so every access in the C is a flattened `Addr.Ip4Address`.
+    REAL_UNIONS=1
+    # nsp_dns.h DEFINES its six service GUIDs in the header, `const GUID
+    # DECLSPEC_SELECTANY X = SVCID_...;` — COMDAT, so every TU that includes it emits a
+    # foldable copy. bindgen renders them as `extern static`, but winsock.c WAS the only
+    # definer and it is now Rust, so the externs resolve to nothing (undefined
+    # _HostnameGuid/_AddressGuid at link). Strip them; the crate defines them instead.
+    BLOCKLIST_VARS=1
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502
+               -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE
+               -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES
+               -DNTOS_MODE_USER )
+    ;;
+  wldap32|wldap32-types_1)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-26 from dll/win32/wldap32/CMakeLists.txt
+    # (20 compiled TU(s), 97 headers in the include closure, 64 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    # TWO ISLANDS, derived not guessed: ber.c includes <winldap.h> while the other 19 TUs
+    # include "winldap_private.h", and the two define LDAPControlA/LDAPModA/LDAPSortKeyA/
+    # LDAPAPIInfoA (+W) INCOMPATIBLY. No single TU includes both, so there is no legal merged
+    # island — the netapi32 lesson (§9.108): a multi-header redefinition wall is a claim about
+    # YOUR WRAPPER, not the headers. Generate both, never glob both into one scope:
+    #   gen_driver_types.sh wldap32
+    #   TYPES_STEM=types_1 gen_driver_types.sh wldap32-types_1
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/wldap32"
+    case "$DRIVER" in
+      # island types — 19 TU(s):
+      # add.c bind.c compare.c control.c delete.c dn.c error.c extended.c init.c main.c
+      # misc.c modify.c modrdn.c option.c page.c parse.c rename.c search.c value.c
+      wldap32)
+        # NB no <ldap.h>: it is guarded by `#ifdef HAVE_LDAP_H`, which wine's config.h
+        # `#undef`s for this tree — ReactOS does not vendor OpenLDAP. profile_derive now
+        # reads config.h and drops decidably-dead prologue arms.
+        WRAPPER_INC=$'#include "precomp.h"\n#include "config.h"\n#include "wine/port.h"\n#include <stdarg.h>\n#include "windef.h"\n#include "winbase.h"\n#include "winnls.h"\n#include "winldap_private.h"\n#include "wldap32.h"\n#include "wine/debug.h"\n#include "winuser.h"\n#include <stdio.h>\n#include "wine/winternl.h"\n#define LDAP_MAXINT  2147483647'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]config\.h' --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*wldap32[/\\].*\.h' )
+        ;;
+      # island types_1 — 1 TU(s):
+      # ber.c
+      wldap32-types_1)
+        # NO precomp.h: ber.c is wldap32's PCH_SKIP_SOURCE. precomp.h pulls
+        # "winldap_private.h" and ber.c includes <winldap.h>; the two declare ~30 ldap_*
+        # prototypes incompatibly, which is WHY the CMakeLists skips it — and why this is
+        # a separate island.
+        WRAPPER_INC=$'#include "config.h"\n#include <stdarg.h>\n#include "windef.h"\n#include "winbase.h"\n#include "winldap.h"\n#include "wine/debug.h"'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]config\.h' --allowlist-file '.*[/\\]winldap\.h'
+                      --allowlist-file '.*wldap32[/\\].*\.h' )
+        ;;
+    esac
+    # sdk/include/wine EARLY — this is a wine-sourced module and the real command ranks it
+    # ABOVE the SDK dirs (the opposite of samlib). It also owns the only config.h, so
+    # without it bindgen cannot even open the wrapper.
+    EXTRA_INC=( -I"${SRC}/dll/win32/wldap32" -I"${SRC}/build-i386/dll/win32/wldap32"
+                -I"${SRC}/sdk/include/wine" )
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP -D__WINESRC__ -D_CRT_NO_POSIX_ERROR_CODES )
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/wldap32-rust/src}"
+    ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh wldap32
+  #   TYPES_STEM=types_1 gen_driver_types.sh wldap32-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
   shell32)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/shell32/CMakeLists.txt
     # (43 compiled TUs, 299 headers in the include closure, 280 switch constants), then adjusted
@@ -1685,7 +1837,8 @@ run_arch() {
     -I"${SRC}/sdk/include/reactos/libs" -I"${SRC}/sdk/include/reactos/drivers" \
     -I"${SRC}/sdk/include/vcruntime" -I"${BUILD_DIR}/sdk/include" -I"${BUILD_DIR}/sdk/include/psdk" \
     -I"${BUILD_DIR}/sdk/include/ddk" -I"${BUILD_DIR}/sdk/include/reactos" \
-    -I"${BUILD_DIR}/sdk/include/reactos/mc" -I"${SRC}/sdk/include/dxsdk" \
+    -I"${BUILD_DIR}/sdk/include/reactos/mc" -I"${BUILD_DIR}/sdk/include/dxsdk" \
+    -I"${SRC}/sdk/include/dxsdk" \
     -I"${SRC}/sdk/lib/pseh/include" "${LATE_INC[@]}" \
     -isystem "${SRC}/sdk/include/crt" -isystem "${TOOLCHAIN}/lib/clang/19/include" \
     --target="${TARGET}"
@@ -1718,6 +1871,11 @@ open(final, "w").write("".join(out))
     # translation defines them), which leaves the wrappers calling nothing. Bitfield-accessor
     # impls are kept — see the tool.
     python3 "$(dirname "$0")/strip_cpp_method_impls.py" "$FINAL" >/dev/null
+  fi
+  if [ "${REAL_UNIONS:-0}" = 1 ]; then
+    # See REAL_UNIONS at the top. The tool hard-fails if the rewrite would lose a
+    # declaration or unbalance braces, so a silent truncation cannot ship.
+    python3 "$(dirname "$0")/bindgen_unions_to_real.py" "$FINAL" >/dev/null
   fi
   # MACRO_SIGNED post-pass: re-force the genuinely-DWORD/IN_ADDR high-bit consts back to u32.
   # Under --default-macro-constant-type signed these flip to negative i32 (same bits) but are
