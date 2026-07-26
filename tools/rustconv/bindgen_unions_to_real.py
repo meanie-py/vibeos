@@ -47,8 +47,22 @@ FIELD_START_RE = re.compile(r'^(?P<indent>\s*)pub \w+:')
 
 def _field_complete(buf: str) -> bool:
     """A struct/union field declaration is complete when angle brackets balance and
-    the statement is comma-terminated."""
-    return buf.count('<') == buf.count('>') and buf.rstrip().endswith(',')
+    the statement is comma-terminated.
+
+    The `->` of a function-pointer return type is NOT a closing angle bracket. Counting it
+    as one makes the tally permanently lopsided, so coalescing never terminates and swallows
+    the rest of the file into a single line. That silently TRUNCATED types_amd64.rs /
+    types_arm64.rs from 3301 lines to 1602 on a field bindgen had wrapped as
+
+        pub pfnAllocate:
+            ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut c_void>,
+
+    — the name alone on one line (so the buffer starts un-terminated) and a `->` on the
+    next. i386 wrapped the same field differently and was unaffected, which is exactly how
+    this hid: the per-arch islands disagreed rather than all failing.
+    """
+    angles = buf.replace('->', '')
+    return angles.count('<') == angles.count('>') and buf.rstrip().endswith(',')
 
 
 def coalesce_unionfields(lines):
@@ -174,11 +188,42 @@ def main(argv):
         with open(path) as f:
             src = f.read()
         dst = transform(src)
+        _assert_not_mangled(path, src, dst)
         with open(path, 'w') as f:
             f.write(dst)
         nu = dst.count('pub union ')
         print(f'{path}: {nu} unions after transform')
     return 0
+
+
+def _assert_not_mangled(path: str, src: str, dst: str) -> None:
+    """Refuse to write output that lost content or unbalanced the file.
+
+    This pass rewrites a GENERATED file in place, so a silent mangle is invisible until
+    something far away fails to compile — and it already shipped one: an unterminated
+    coalesce ate 1761 lines of types_amd64.rs, leaving a file that still looked plausible.
+    Both invariants are cheap and total: the transform only ever rewrites field lines and
+    inserts derives, so it must never drop a declaration, and its output must still be
+    brace-balanced. Fail loud (AGENTS.md) rather than hand back a truncated island.
+    """
+    for token in ('pub struct ', 'pub union ', 'pub type ', 'pub const '):
+        before, after = src.count(token), dst.count(token)
+        if token == 'pub struct ':
+            # structs legitimately become unions; only the SUM is conserved.
+            before += src.count('pub union ')
+            after += dst.count('pub union ')
+            token = 'pub struct+union '
+        if after < before:
+            raise SystemExit(
+                f'{path}: REFUSING to write — `{token}` count fell {before} -> {after}. '
+                f'The transform dropped declarations; the island would be silently '
+                f'incomplete. This is a bug in this script, not in the input.'
+            )
+    if dst.count('{') != dst.count('}'):
+        raise SystemExit(
+            f'{path}: REFUSING to write — output braces unbalanced '
+            f'({dst.count("{")} open vs {dst.count("}")} close).'
+        )
 
 
 if __name__ == '__main__':
