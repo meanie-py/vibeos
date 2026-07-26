@@ -336,7 +336,7 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # errno.h / limits.h / stdio.h / wchar.h
         "|EINVAL|ERANGE|EILSEQ|EOF|WEOF|INT_MAX|STRUNCATE|_TRUNCATE|_NLSCMPERROR"
         # winnls.h: the NLS calls the CRT delegates collation and case mapping to
-        "|CP_ACP|CP_UTF8|CSTR_EQUAL|NORM_IGNORECASE|MB_ERR_INVALID_CHARS"
+        "|CP_ACP|CP_UTF8|CSTR_EQUAL|NORM_IGNORECASE|MB_[A-Z_]+"
         "|LCMAP_[A-Z]+|LOCALE_[A-Z_]+|C1_[A-Z]+|C3_[A-Z]+|CT_CTYPE[0-9]"
         # ── file.c ──────────────────────────────────────────────────────────
         # fcntl.h / share.h / sys/locking.h / sys/stat.h / stdio.h. `_IOMYBUF` is

@@ -234,9 +234,9 @@ unsafe extern "C" fn msvcrt_stat64_to_stat32i64(buf64: *const _stat64, buf: *mut
     (*buf).st_gid = (*buf64).st_gid;
     (*buf).st_rdev = (*buf64).st_rdev;
     (*buf).st_size = (*buf64).st_size;
-    (*buf).st_atime = (*buf64).st_atime;
-    (*buf).st_mtime = (*buf64).st_mtime;
-    (*buf).st_ctime = (*buf64).st_ctime;
+    (*buf).st_atime = ((*buf64).st_atime) as i32;
+    (*buf).st_mtime = ((*buf64).st_mtime) as i32;
+    (*buf).st_ctime = ((*buf64).st_ctime) as i32;
 }
 unsafe extern "C" fn time_to_filetime(time: __time64_t, ft: *mut FILETIME) {
     let secs_1601_to_1970: __int64 = ((369 * 365 + 89) * 86400 as __int64);
@@ -247,14 +247,14 @@ unsafe extern "C" fn time_to_filetime(time: __time64_t, ft: *mut FILETIME) {
 }
 unsafe extern "C" fn get_ioinfo_nolock(fd: i32) -> *mut ioinfo {
     let mut ret: *mut ioinfo = core::ptr::null_mut();
-    if fd >= 0 && fd < MSVCRT_MAX_FILES {
-        ret = MSVCRT___pioinfo[(fd / MSVCRT_FD_BLOCK_SIZE) as usize];
+    if fd >= 0 && fd < (MSVCRT_MAX_FILES) as i32 {
+        ret = MSVCRT___pioinfo[(fd / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize];
     }
     if ret.is_null() {
         return core::ptr::addr_of_mut!(MSVCRT___badioinfo);
     }
 
-    ret.offset((fd % MSVCRT_FD_BLOCK_SIZE) as isize)
+    ret.offset((fd % (MSVCRT_FD_BLOCK_SIZE) as i32) as isize)
 }
 unsafe extern "C" fn init_ioinfo_cs(info: *mut ioinfo) {
     if ioinfo_is_crit_init(info) == 0 {
@@ -279,18 +279,18 @@ unsafe extern "C" fn alloc_pioinfo_block(fd: i32) -> u8 {
     let block: *mut ioinfo;
     let i: i32;
 
-    if fd < 0 || fd >= MSVCRT_MAX_FILES {
+    if fd < 0 || fd >= (MSVCRT_MAX_FILES) as i32 {
         *_errno() = ENFILE;
         return FALSE;
     }
 
     block = calloc(MSVCRT_FD_BLOCK_SIZE, core::mem::size_of::<ioinfo>()) as *mut ioinfo;
     if block.is_null() {
-        *_errno() = ENOMEM;
+        *_errno() = (ENOMEM) as i32;
         return FALSE;
     }
     i = 0;
-    while i < MSVCRT_FD_BLOCK_SIZE {
+    while i < (MSVCRT_FD_BLOCK_SIZE) as i32 {
         (*block.offset(i as isize)).handle = INVALID_HANDLE_VALUE;
         if ioinfo_is_crit_init(block.offset(i as isize)) != 0 {
             InitializeCriticalSection(core::ptr::addr_of_mut!((*block.offset(i as isize)).crit));
@@ -298,14 +298,14 @@ unsafe extern "C" fn alloc_pioinfo_block(fd: i32) -> u8 {
         i = i + 1;
     }
     if InterlockedCompareExchangePointer(
-        core::ptr::addr_of_mut!(MSVCRT___pioinfo[(fd / MSVCRT_FD_BLOCK_SIZE) as usize]) as *mut *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!(MSVCRT___pioinfo[(fd / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize]) as *mut *mut core::ffi::c_void,
         block as *mut core::ffi::c_void,
         core::ptr::null_mut()
     ) != block as *mut core::ffi::c_void
     {
         if ioinfo_is_crit_init(block.offset(0 as isize)) != 0 {
             i = 0;
-            while i < MSVCRT_FD_BLOCK_SIZE {
+            while i < (MSVCRT_FD_BLOCK_SIZE) as i32 {
                 DeleteCriticalSection(core::ptr::addr_of_mut!((*block.offset(i as isize)).crit));
                 i = i + 1;
             }
@@ -331,7 +331,7 @@ unsafe extern "C" fn get_ioinfo_alloc(fd: *mut i32) -> *mut ioinfo {
 
     *fd = -1;
     i = 0;
-    while i < MSVCRT_MAX_FILES {
+    while i < (MSVCRT_MAX_FILES) as i32 {
         let mut info: *mut ioinfo = get_ioinfo_nolock(i);
 
         if info == core::ptr::addr_of_mut!(MSVCRT___badioinfo) {
@@ -372,21 +372,21 @@ unsafe extern "C" fn msvcrt_get_file(i: i32) -> *mut FILE {
         return iob_get_file(i);
     }
 
-    ret = MSVCRT_fstream[(i / MSVCRT_FD_BLOCK_SIZE) as usize];
+    ret = MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize];
     if ret.is_null() {
-        MSVCRT_fstream[(i / MSVCRT_FD_BLOCK_SIZE) as usize] = calloc(
+        MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize] = calloc(
             MSVCRT_FD_BLOCK_SIZE,
             core::mem::size_of::<file_crit>(),
         ) as *mut file_crit;
-        if MSVCRT_fstream[(i / MSVCRT_FD_BLOCK_SIZE) as usize].is_null() {
-            *_errno() = ENOMEM;
+        if MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize].is_null() {
+            *_errno() = (ENOMEM) as i32;
             return core::ptr::null_mut();
         }
 
-        ret = MSVCRT_fstream[(i / MSVCRT_FD_BLOCK_SIZE) as usize]
-            .offset((i % MSVCRT_FD_BLOCK_SIZE) as isize);
+        ret = MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize]
+            .offset((i % (MSVCRT_FD_BLOCK_SIZE) as i32) as isize);
     } else {
-        ret = ret.offset((i % MSVCRT_FD_BLOCK_SIZE) as isize);
+        ret = ret.offset((i % (MSVCRT_FD_BLOCK_SIZE) as i32) as isize);
     }
 
     core::ptr::addr_of_mut!((*ret).file)
@@ -418,10 +418,10 @@ unsafe extern "C" fn msvcrt_free_fd(fd: i32) {
 unsafe extern "C" fn msvcrt_set_fd(fdinfo: *mut ioinfo, hand: HANDLE, flag: i32) {
     (*fdinfo).handle = hand;
     (*fdinfo).wxflag = WX_OPEN | (flag as u8 & (WX_DONTINHERIT | WX_APPEND | WX_TEXT | WX_PIPE | WX_TTY));
-    (*fdinfo).lookahead[0] = b'\n' as i8;
-    (*fdinfo).lookahead[1] = b'\n' as i8;
-    (*fdinfo).lookahead[2] = b'\n' as i8;
-    ioinfo_set_unicode(fdinfo, FALSE);
+    (*fdinfo).lookahead[0] = (b'\n' as i8) as u8;
+    (*fdinfo).lookahead[1] = (b'\n' as i8) as u8;
+    (*fdinfo).lookahead[2] = (b'\n' as i8) as u8;
+    ioinfo_set_unicode(fdinfo, (FALSE) as i32);
     ioinfo_set_textmode(fdinfo, TEXTMODE_ANSI);
 
     if hand != MSVCRT_NO_CONSOLE {
@@ -475,14 +475,14 @@ unsafe extern "C" fn msvcrt_alloc_fp() -> *mut FILE {
 unsafe extern "C" fn msvcrt_init_fp(file: *mut FILE, fd: i32, stream_flags: u32) -> i32 {
     if (*get_ioinfo_nolock(fd)).wxflag & WX_OPEN == 0 {
         *__doserrno() = 0;
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
         return -1;
     }
     (*file)._ptr = core::ptr::null_mut();
     (*file)._base = core::ptr::null_mut();
     (*file)._cnt = 0;
     (*file)._file = fd;
-    (*file)._flag = stream_flags;
+    (*file)._flag = (stream_flags) as i32;
     (*file)._tmpfname = core::ptr::null_mut();
 
     0
@@ -495,7 +495,7 @@ pub unsafe extern "C" fn msvcrt_create_io_inherit_block(size: *mut u16, block: *
     let mut handle_ptr: *mut HANDLE;
     let mut fdinfo: *mut ioinfo;
 
-    last_fd = MSVCRT_MAX_FILES - 1;
+    last_fd = (MSVCRT_MAX_FILES - 1) as i32;
     while last_fd >= 0 {
         if (*get_ioinfo_nolock(last_fd)).handle != INVALID_HANDLE_VALUE {
             break;
@@ -547,7 +547,7 @@ pub unsafe extern "C" fn msvcrt_init_io() {
         handle_ptr = wxflag_ptr.add(count as usize) as *mut HANDLE;
 
         count = min!(count, (si.cbReserved2 as u32 - core::mem::size_of::<u32>() as u32) / (core::mem::size_of::<HANDLE>() as u32 + 1));
-        count = min!(count, MSVCRT_MAX_FILES);
+        count = min!(count, (MSVCRT_MAX_FILES) as u32);
         i = 0;
         while i < count as i32 {
             if (*wxflag_ptr & WX_OPEN) != 0 && GetFileType(*handle_ptr) != FILE_TYPE_UNKNOWN {
@@ -567,16 +567,16 @@ pub unsafe extern "C" fn msvcrt_init_io() {
     fdinfo = get_ioinfo_alloc_fd(STDIN_FILENO);
     if ((*fdinfo).wxflag & WX_OPEN) == 0 || (*fdinfo).handle == INVALID_HANDLE_VALUE {
         let mut h: HANDLE = GetStdHandle(STD_INPUT_HANDLE);
-        let mut flags: u32 = WX_OPEN | WX_TEXT;
+        let mut flags: u32 = (WX_OPEN | WX_TEXT) as u32;
         let type_: u32 = GetFileType(h);
 
         if type_ == FILE_TYPE_UNKNOWN {
             h = MSVCRT_NO_CONSOLE;
-            flags |= WX_TTY;
+            flags |= (WX_TTY) as u32;
         } else if (type_ & 0xf) == FILE_TYPE_CHAR {
-            flags |= WX_TTY;
+            flags |= (WX_TTY) as u32;
         } else if (type_ & 0xf) == FILE_TYPE_PIPE {
-            flags |= WX_PIPE;
+            flags |= (WX_PIPE) as u32;
         }
 
         msvcrt_set_fd(fdinfo, h, flags as i32);
@@ -586,16 +586,16 @@ pub unsafe extern "C" fn msvcrt_init_io() {
     fdinfo = get_ioinfo_alloc_fd(STDOUT_FILENO);
     if ((*fdinfo).wxflag & WX_OPEN) == 0 || (*fdinfo).handle == INVALID_HANDLE_VALUE {
         let mut h: HANDLE = GetStdHandle(STD_OUTPUT_HANDLE);
-        let mut flags: u32 = WX_OPEN | WX_TEXT;
+        let mut flags: u32 = (WX_OPEN | WX_TEXT) as u32;
         let type_: u32 = GetFileType(h);
 
         if type_ == FILE_TYPE_UNKNOWN {
             h = MSVCRT_NO_CONSOLE;
-            flags |= WX_TTY;
+            flags |= (WX_TTY) as u32;
         } else if (type_ & 0xf) == FILE_TYPE_CHAR {
-            flags |= WX_TTY;
+            flags |= (WX_TTY) as u32;
         } else if (type_ & 0xf) == FILE_TYPE_PIPE {
-            flags |= WX_PIPE;
+            flags |= (WX_PIPE) as u32;
         }
 
         msvcrt_set_fd(fdinfo, h, flags as i32);
@@ -605,16 +605,16 @@ pub unsafe extern "C" fn msvcrt_init_io() {
     fdinfo = get_ioinfo_alloc_fd(STDERR_FILENO);
     if ((*fdinfo).wxflag & WX_OPEN) == 0 || (*fdinfo).handle == INVALID_HANDLE_VALUE {
         let mut h: HANDLE = GetStdHandle(STD_ERROR_HANDLE);
-        let mut flags: u32 = WX_OPEN | WX_TEXT;
+        let mut flags: u32 = (WX_OPEN | WX_TEXT) as u32;
         let type_: u32 = GetFileType(h);
 
         if type_ == FILE_TYPE_UNKNOWN {
             h = MSVCRT_NO_CONSOLE;
-            flags |= WX_TTY;
+            flags |= (WX_TTY) as u32;
         } else if (type_ & 0xf) == FILE_TYPE_CHAR {
-            flags |= WX_TTY;
+            flags |= (WX_TTY) as u32;
         } else if (type_ & 0xf) == FILE_TYPE_PIPE {
-            flags |= WX_PIPE;
+            flags |= (WX_PIPE) as u32;
         }
 
         msvcrt_set_fd(fdinfo, h, flags as i32);
@@ -632,7 +632,7 @@ pub unsafe extern "C" fn msvcrt_init_io() {
             i
         };
         (*f)._tmpfname = core::ptr::null_mut();
-        (*f)._flag = if i == 0 { _IOREAD } else { _IOWRT };
+        (*f)._flag = if i == 0 { (_IOREAD) as i32 } else { (_IOWRT) as i32 };
 
         if !cs.is_null() {
             InitializeCriticalSectionEx(cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO);
@@ -645,14 +645,14 @@ pub unsafe extern "C" fn msvcrt_init_io() {
 unsafe extern "C" fn msvcrt_flush_buffer(file: *mut FILE) -> i32 {
     let mut ret = 0;
 
-    if ((*file)._flag & (_IOREAD | _IOWRT)) == _IOWRT &&
-            ((*file)._flag & (_IOMYBUF | MSVCRT__USERBUF)) != 0 {
+    if ((*file)._flag & ((_IOREAD | _IOWRT)) as i32) == (_IOWRT) as i32 &&
+            ((*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32) != 0 {
         let cnt = (*file)._ptr.offset_from((*file)._base) as i32;
         if cnt > 0 && _write((*file)._file, (*file)._base as *const core::ffi::c_void, cnt as u32) != cnt {
-            (*file)._flag |= _IOERR;
+            (*file)._flag |= (_IOERR) as i32;
             ret = EOF;
-        } else if ((*file)._flag & _IORW) != 0 {
-            (*file)._flag &= !_IOWRT;
+        } else if ((*file)._flag & (_IORW) as i32) != 0 {
+            (*file)._flag &= (!_IOWRT) as i32;
         }
     }
 
@@ -669,27 +669,27 @@ unsafe extern "C" fn msvcrt_alloc_buffer(file: *mut FILE) -> i32 {
     if ((*file)._file == STDOUT_FILENO || (*file)._file == STDERR_FILENO)
         && _isatty((*file)._file) != 0
     {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     (*file)._base = calloc(1, MSVCRT_INTERNAL_BUFSIZ) as *mut i8;
     if !(*file)._base.is_null() {
-        (*file)._bufsiz = MSVCRT_INTERNAL_BUFSIZ;
-        (*file)._flag |= _IOMYBUF;
+        (*file)._bufsiz = (MSVCRT_INTERNAL_BUFSIZ) as i32;
+        (*file)._flag |= (_IOMYBUF) as i32;
     } else {
         (*file)._base = core::ptr::addr_of_mut!((*file)._charbuf) as *mut i8;
         (*file)._bufsiz = 2;
-        (*file)._flag |= MSVCRT__NOBUF;
+        (*file)._flag |= (MSVCRT__NOBUF) as i32;
     }
     (*file)._ptr = (*file)._base;
     (*file)._cnt = 0;
     TRUE
 }
 unsafe extern "C" fn add_std_buffer(file: *mut FILE) -> u8 {
-    static mut buffers: [[i8; BUFSIZ]; 2] = [[0; BUFSIZ]; 2];
+    static mut buffers: [[i8; (BUFSIZ) as usize]; 2] = [[0; (BUFSIZ) as usize]; 2];
 
     if ((*file)._file != STDOUT_FILENO && (*file)._file != STDERR_FILENO)
-        || ((*file)._flag & (MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF)) != 0
+        || ((*file)._flag & ((MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF)) as i32) != 0
         || _isatty((*file)._file) == 0
     {
         return FALSE;
@@ -703,9 +703,9 @@ unsafe extern "C" fn add_std_buffer(file: *mut FILE) -> u8 {
 
     (*file)._ptr = buffers[buffer_index].as_mut_ptr();
     (*file)._base = buffers[buffer_index].as_mut_ptr();
-    (*file)._bufsiz = BUFSIZ;
-    (*file)._cnt = BUFSIZ;
-    (*file)._flag |= MSVCRT__USERBUF;
+    (*file)._bufsiz = (BUFSIZ) as i32;
+    (*file)._cnt = (BUFSIZ) as i32;
+    (*file)._flag |= (MSVCRT__USERBUF) as i32;
     TRUE
 }
 unsafe extern "C" fn remove_std_buffer(file: *mut FILE) {
@@ -714,7 +714,7 @@ unsafe extern "C" fn remove_std_buffer(file: *mut FILE) {
     (*file)._base = core::ptr::null_mut();
     (*file)._bufsiz = 0;
     (*file)._cnt = 0;
-    (*file)._flag &= !MSVCRT__USERBUF;
+    (*file)._flag &= (!MSVCRT__USERBUF) as i32;
 }
 unsafe extern "C" fn msvcrt_int_to_base32(num: i32, str: PCHAR) -> i32 {
     let mut p: PCHAR;
@@ -783,7 +783,7 @@ pub unsafe extern "C" fn _access(filename: *const i8, mode: i32) -> i32 {
         }
     }
     ret = _waccess(filenameW, mode);
-    free(filenameW);
+    free((filenameW).cast());
     return ret;
 }
 
@@ -807,11 +807,11 @@ pub unsafe extern "C" fn _waccess(filename: *const wchar_t, mode: i32) -> i32 {
     let attr: u32 = GetFileAttributesW(filename);
 
     if filename.is_null() || attr == INVALID_FILE_ATTRIBUTES {
-        msvcrt_set_errno(GetLastError());
+        msvcrt_set_errno((GetLastError()) as i32);
         return -1;
     }
     if (attr & FILE_ATTRIBUTE_READONLY) != 0 && (mode & MSVCRT_W_OK) != 0 {
-        msvcrt_set_errno(ERROR_ACCESS_DENIED);
+        msvcrt_set_errno((ERROR_ACCESS_DENIED) as i32);
         return -1;
     }
     0
@@ -844,7 +844,7 @@ pub unsafe extern "C" fn _chmod(path: *const i8, flags: i32) -> i32 {
         }
     }
     ret = _wchmod(pathW, flags);
-    free(pathW);
+    free((pathW).cast());
     return ret;
 }
 
@@ -853,7 +853,7 @@ pub unsafe extern "C" fn _wchmod(path: *const wchar_t, flags: i32) -> i32 {
     let oldFlags: u32 = GetFileAttributesW(path);
 
     if oldFlags != INVALID_FILE_ATTRIBUTES {
-        let newFlags: u32 = if (flags & _S_IWRITE) != 0 {
+        let newFlags: u32 = if (flags & (_S_IWRITE) as i32) != 0 {
             oldFlags & !FILE_ATTRIBUTE_READONLY
         } else {
             oldFlags | FILE_ATTRIBUTE_READONLY
@@ -863,7 +863,7 @@ pub unsafe extern "C" fn _wchmod(path: *const wchar_t, flags: i32) -> i32 {
             return 0;
         }
     }
-    msvcrt_set_errno(GetLastError());
+    msvcrt_set_errno((GetLastError()) as i32);
     return -1;
 }
 
@@ -888,7 +888,7 @@ pub unsafe extern "C" fn _wunlink(path: *const wchar_t) -> i32 {
     if DeleteFileW(path) != 0 {
         return 0;
     }
-    msvcrt_set_errno(GetLastError());
+    msvcrt_set_errno((GetLastError()) as i32);
     return -1;
 }
 
@@ -903,7 +903,7 @@ pub unsafe extern "C" fn _commit(fd: i32) -> i32 {
         if GetLastError() == ERROR_INVALID_HANDLE {
             ret = 0;
         } else {
-            msvcrt_set_errno(GetLastError());
+            msvcrt_set_errno((GetLastError()) as i32);
             ret = -1;
         }
     } else {
@@ -937,7 +937,7 @@ unsafe extern "C" fn msvcrt_flush_all_buffers(mask: i32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _flushall() -> i32 {
-    msvcrt_flush_all_buffers(_IOWRT | _IOREAD)
+    msvcrt_flush_all_buffers((_IOWRT | _IOREAD) as i32)
 }
 
 #[no_mangle]
@@ -945,7 +945,7 @@ pub unsafe extern "C" fn fflush(file: *mut FILE) -> i32 {
     let ret: i32;
 
     if file.is_null() {
-        msvcrt_flush_all_buffers(_IOWRT);
+        msvcrt_flush_all_buffers((_IOWRT) as i32);
         ret = 0;
     } else {
         _lock_file(file);
@@ -960,12 +960,12 @@ pub unsafe extern "C" fn _fflush_nolock(file: *mut FILE) -> i32 {
     let res: i32;
 
     if file.is_null() {
-        msvcrt_flush_all_buffers(_IOWRT);
+        msvcrt_flush_all_buffers((_IOWRT) as i32);
         return 0;
     }
 
     res = msvcrt_flush_buffer(file);
-    if res == 0 && ((*file)._flag & MSVCRT__IOCOMMIT) != 0 {
+    if res == 0 && ((*file)._flag & (MSVCRT__IOCOMMIT) as i32) != 0 {
         if _commit((*file)._file) != 0 {
             return EOF;
         } else {
@@ -981,9 +981,9 @@ pub unsafe extern "C" fn _close(fd: i32) -> i32 {
     let ret: i32;
 
     if fd == MSVCRT_NO_CONSOLE_FD {
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
         ret = -1;
-    } else if MSVCRT_CHECK_PMT_ERR!(((*info).wxflag & WX_OPEN) as i32, EBADF) == 0 {
+    } else if MSVCRT_CHECK_PMT_ERR!(((*info).wxflag & WX_OPEN) as i32, (EBADF) as i32) == 0 {
         ret = -1;
     } else if fd == STDOUT_FILENO && (*info).handle == (*get_ioinfo_nolock(2i32)).handle {
         msvcrt_free_fd(fd);
@@ -995,7 +995,7 @@ pub unsafe extern "C" fn _close(fd: i32) -> i32 {
         ret = if CloseHandle((*info).handle) != 0 { 0 } else { -1 };
         msvcrt_free_fd(fd);
         if ret != 0 {
-            msvcrt_set_errno(GetLastError());
+            msvcrt_set_errno((GetLastError()) as i32);
         }
     }
     release_ioinfo(info);
@@ -1017,7 +1017,7 @@ pub unsafe extern "C" fn _dup2(od: i32, nd: i32) -> i32 {
     }
 
     if info_nd == core::ptr::addr_of_mut!(MSVCRT___badioinfo) {
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
         ret = -1;
     } else if (*info_od).wxflag & WX_OPEN != 0 {
         let mut handle: HANDLE = core::ptr::null_mut();
@@ -1042,10 +1042,10 @@ pub unsafe extern "C" fn _dup2(od: i32, nd: i32) -> i32 {
             ret = 0;
         } else {
             ret = -1;
-            msvcrt_set_errno(GetLastError());
+            msvcrt_set_errno((GetLastError()) as i32);
         }
     } else {
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
         ret = -1;
     }
 
@@ -1149,7 +1149,7 @@ pub unsafe extern "C" fn msvcrt_free_io() {
         }
 
         j = 0;
-        while j < MSVCRT_FD_BLOCK_SIZE {
+        while j < (MSVCRT_FD_BLOCK_SIZE) as i32 {
             if ioinfo_is_crit_init(core::ptr::addr_of_mut!((*MSVCRT___pioinfo[i as usize].offset(j as isize)))) != 0 {
                 DeleteCriticalSection(core::ptr::addr_of_mut!((*MSVCRT___pioinfo[i as usize].offset(j as isize)).crit));
             }
@@ -1184,14 +1184,14 @@ pub unsafe extern "C" fn _lseeki64(fd: i32, offset: __int64, whence: i32) -> __i
     let mut ofs: LARGE_INTEGER = core::mem::zeroed();
 
     if (*info).handle == INVALID_HANDLE_VALUE {
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
         release_ioinfo(info);
         return -1;
     }
 
     if whence < 0 || whence > 2 {
         release_ioinfo(info);
-        *_errno() = EINVAL;
+        *_errno() = (EINVAL) as i32;
         return -1;
     }
 
@@ -1209,13 +1209,13 @@ pub unsafe extern "C" fn _lseeki64(fd: i32, offset: __int64, whence: i32) -> __i
         return *(*(&mut ofs as *mut LARGE_INTEGER as *mut __int64));
     }
     release_ioinfo(info);
-    msvcrt_set_errno(GetLastError());
+    msvcrt_set_errno((GetLastError()) as i32);
     return -1;
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _lseek(fd: i32, offset: __msvcrt_long, whence: i32) -> __msvcrt_long {
-    _lseeki64(fd, offset, whence)
+    (_lseeki64(fd, (offset) as i64, whence)) as i32
 }
 
 #[no_mangle]
@@ -1251,18 +1251,18 @@ pub unsafe extern "C" fn _locking(fd: i32, mode: i32, nbytes: __msvcrt_long) -> 
 
     if mode < 0 || mode > 4 {
         release_ioinfo(info);
-        *_errno() = EINVAL;
+        *_errno() = (EINVAL) as i32;
         return -1;
     }
 
     cur_locn = SetFilePointer((*info).handle, 0L, core::ptr::null_mut(), FILE_CURRENT);
     if cur_locn == INVALID_SET_FILE_POINTER {
         release_ioinfo(info);
-        *_errno() = EINVAL;
+        *_errno() = (EINVAL) as i32;
         return -1;
     }
 
-    if mode == _LK_LOCK || mode == _LK_RLCK {
+    if mode == (_LK_LOCK) as i32 || mode == (_LK_RLCK) as i32 {
         let mut nretry: i32 = 10;
         ret = 1;
         while nretry > 0 {
@@ -1273,7 +1273,7 @@ pub unsafe extern "C" fn _locking(fd: i32, mode: i32, nbytes: __msvcrt_long) -> 
             }
             Sleep(1);
         }
-    } else if mode == _LK_UNLCK {
+    } else if mode == (_LK_UNLCK) as i32 {
         ret = UnlockFile((*info).handle, cur_locn, 0L, nbytes, 0L);
     } else {
         ret = LockFile((*info).handle, cur_locn, 0L, nbytes, 0L);
@@ -1302,16 +1302,16 @@ pub unsafe extern "C" fn _fseeki64(FILE: *mut FILE, offset: __int64, whence: i32
 pub unsafe extern "C" fn _fseeki64_nolock(FILE: *mut FILE, mut offset: __int64, mut whence: i32) -> i32 {
     let ret: i32;
 
-    if whence == SEEK_CUR && (*FILE)._flag & _IOREAD != 0 {
-        whence = SEEK_SET;
+    if whence == (SEEK_CUR) as i32 && (*FILE)._flag & (_IOREAD) as i32 != 0 {
+        whence = (SEEK_SET) as i32;
         offset += _ftelli64_nolock(FILE);
     }
 
     msvcrt_flush_buffer(FILE);
-    if (*FILE)._flag & _IORW != 0 {
-        (*FILE)._flag &= !(_IOREAD | _IOWRT);
+    if (*FILE)._flag & (_IORW) as i32 != 0 {
+        (*FILE)._flag &= (!(_IOREAD | _IOWRT)) as i32;
     }
-    (*FILE)._flag &= !_IOEOF;
+    (*FILE)._flag &= (!_IOEOF) as i32;
     ret = if _lseeki64((*FILE)._file, offset, whence) == -1 {
         -1
     } else {
@@ -1323,7 +1323,7 @@ pub unsafe extern "C" fn _fseeki64_nolock(FILE: *mut FILE, mut offset: __int64, 
 
 #[no_mangle]
 pub unsafe extern "C" fn fseek(file: *mut FILE, offset: __msvcrt_long, whence: i32) -> i32 {
-    _fseeki64(file, offset, whence)
+    _fseeki64(file, (offset) as i64, whence)
 }
 
 #[no_mangle]
@@ -1332,7 +1332,7 @@ pub unsafe extern "C" fn _fseek_nolock(
     offset: __msvcrt_long,
     whence: i32,
 ) -> i32 {
-    _fseeki64_nolock(file, offset, whence)
+    _fseeki64_nolock(file, (offset) as i64, whence)
 }
 
 #[no_mangle]
@@ -1340,25 +1340,25 @@ pub unsafe extern "C" fn _chsize_s(fd: i32, size: __int64) -> i32 {
     let mut info: *mut ioinfo;
     let mut cur: __int64;
     let mut pos: __int64;
-    let mut ret: BOOL = FALSE;
+    let mut ret: BOOL = (FALSE) as i32;
 
     if MSVCRT_CHECK_PMT!(size >= 0) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     info = get_ioinfo(fd);
     if (*info).handle != INVALID_HANDLE_VALUE {
-        cur = _lseeki64(fd, 0, SEEK_CUR);
+        cur = _lseeki64(fd, 0, (SEEK_CUR) as i32);
         if cur >= 0 {
-            pos = _lseeki64(fd, size, SEEK_SET);
+            pos = _lseeki64(fd, size, (SEEK_SET) as i32);
             if pos >= 0 {
                 ret = SetEndOfFile((*info).handle);
                 if ret == 0 {
-                    msvcrt_set_errno(GetLastError());
+                    msvcrt_set_errno((GetLastError()) as i32);
                 }
             }
 
-            _lseeki64(fd, cur, SEEK_SET);
+            _lseeki64(fd, cur, (SEEK_SET) as i32);
         }
     }
 
@@ -1382,18 +1382,18 @@ pub unsafe extern "C" fn _chsize(fd: i32, size: __msvcrt_long) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn clearerr(file: *mut FILE) {
     _lock_file(file);
-    (*file)._flag &= !(_IOERR | _IOEOF);
+    (*file)._flag &= (!(_IOERR | _IOEOF)) as i32;
     _unlock_file(file);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn clearerr_s(file: *mut FILE) -> i32 {
     if MSVCRT_CHECK_PMT!(file != core::ptr::null_mut()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     _lock_file(file);
-    (*file)._flag &= !(_IOERR | _IOEOF);
+    (*file)._flag &= (!(_IOERR | _IOEOF)) as i32;
     _unlock_file(file);
     return 0;
 }
@@ -1401,7 +1401,7 @@ pub unsafe extern "C" fn clearerr_s(file: *mut FILE) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn rewind(file: *mut FILE) {
     _lock_file(file);
-    _fseek_nolock(file, 0L, SEEK_SET);
+    _fseek_nolock(file, 0L, (SEEK_SET) as i32);
     clearerr(file);
     _unlock_file(file);
 }
@@ -1416,21 +1416,21 @@ unsafe extern "C" fn msvcrt_get_flags(mode: *const wchar_t, open_flags: *mut i32
     match *mode {
         'R' as wchar_t | 'r' as wchar_t => {
             mode = mode.offset(1);
-            *open_flags = if plus != 0 { _O_RDWR } else { _O_RDONLY };
-            *stream_flags = if plus != 0 { _IORW } else { _IOREAD };
+            *open_flags = if plus != 0 { (_O_RDWR) as i32 } else { (_O_RDONLY) as i32 };
+            *stream_flags = if plus != 0 { (_IORW) as i32 } else { (_IOREAD) as i32 };
         }
         'W' as wchar_t | 'w' as wchar_t => {
             mode = mode.offset(1);
-            *open_flags = _O_CREAT | _O_TRUNC | if plus != 0 { _O_RDWR } else { _O_WRONLY };
-            *stream_flags = if plus != 0 { _IORW } else { _IOWRT };
+            *open_flags = (_O_CREAT | _O_TRUNC | if plus != 0 { _O_RDWR } else { _O_WRONLY }) as i32;
+            *stream_flags = if plus != 0 { (_IORW) as i32 } else { (_IOWRT) as i32 };
         }
         'A' as wchar_t | 'a' as wchar_t => {
             mode = mode.offset(1);
-            *open_flags = _O_CREAT | _O_APPEND | if plus != 0 { _O_RDWR } else { _O_WRONLY };
-            *stream_flags = if plus != 0 { _IORW } else { _IOWRT };
+            *open_flags = (_O_CREAT | _O_APPEND | if plus != 0 { _O_RDWR } else { _O_WRONLY }) as i32;
+            *stream_flags = if plus != 0 { (_IORW) as i32 } else { (_IOWRT) as i32 };
         }
         _ => {
-            MSVCRT_INVALID_PMT!(0, EINVAL);
+            MSVCRT_INVALID_PMT!(0, (EINVAL) as i32);
             return -1;
         }
     }
@@ -1441,47 +1441,47 @@ unsafe extern "C" fn msvcrt_get_flags(mode: *const wchar_t, open_flags: *mut i32
         match *mode {
             'B' as wchar_t | 'b' as wchar_t => {
                 mode = mode.offset(1);
-                *open_flags |= _O_BINARY;
-                *open_flags &= !_O_TEXT;
+                *open_flags |= (_O_BINARY) as i32;
+                *open_flags &= (!_O_TEXT) as i32;
             }
             't' as wchar_t => {
                 mode = mode.offset(1);
-                *open_flags |= _O_TEXT;
-                *open_flags &= !_O_BINARY;
+                *open_flags |= (_O_TEXT) as i32;
+                *open_flags &= (!_O_BINARY) as i32;
             }
             'D' as wchar_t => {
                 mode = mode.offset(1);
-                *open_flags |= _O_TEMPORARY;
+                *open_flags |= (_O_TEMPORARY) as i32;
             }
             'T' as wchar_t => {
                 mode = mode.offset(1);
-                *open_flags |= _O_SHORT_LIVED;
+                *open_flags |= (_O_SHORT_LIVED) as i32;
             }
             'c' as wchar_t => {
                 mode = mode.offset(1);
-                *stream_flags |= MSVCRT__IOCOMMIT;
+                *stream_flags |= (MSVCRT__IOCOMMIT) as i32;
             }
             'n' as wchar_t => {
                 mode = mode.offset(1);
-                *stream_flags &= !MSVCRT__IOCOMMIT;
+                *stream_flags &= (!MSVCRT__IOCOMMIT) as i32;
             }
             'N' as wchar_t => {
                 mode = mode.offset(1);
-                *open_flags |= _O_NOINHERIT;
+                *open_flags |= (_O_NOINHERIT) as i32;
             }
             '+' as wchar_t | ' ' as wchar_t | 'a' as wchar_t | 'w' as wchar_t => {
                 mode = mode.offset(1);
             }
             'S' as wchar_t => {
                 mode = mode.offset(1);
-                if (*open_flags & _O_RANDOM) == 0 {
-                    *open_flags |= _O_SEQUENTIAL;
+                if (*open_flags & (_O_RANDOM) as i32) == 0 {
+                    *open_flags |= (_O_SEQUENTIAL) as i32;
                 }
             }
             'R' as wchar_t => {
                 mode = mode.offset(1);
-                if (*open_flags & _O_SEQUENTIAL) == 0 {
-                    *open_flags |= _O_RANDOM;
+                if (*open_flags & (_O_SEQUENTIAL) as i32) == 0 {
+                    *open_flags |= (_O_RANDOM) as i32;
                 }
             }
             _ => {
@@ -1512,16 +1512,16 @@ unsafe extern "C" fn msvcrt_get_flags(mode: *const wchar_t, open_flags: *mut i32
         }
 
         if _wcsnicmp(b"utf-8\0".as_ptr() as *const wchar_t, mode, 5) == 0 {
-            *open_flags |= _O_U8TEXT;
+            *open_flags |= (_O_U8TEXT) as i32;
             mode = mode.offset(5);
         } else if _wcsnicmp(b"utf-16le\0".as_ptr() as *const wchar_t, mode, 8) == 0 {
-            *open_flags |= _O_U16TEXT;
+            *open_flags |= (_O_U16TEXT) as i32;
             mode = mode.offset(8);
         } else if _wcsnicmp(b"unicode\0".as_ptr() as *const wchar_t, mode, 7) == 0 {
-            *open_flags |= _O_WTEXT;
+            *open_flags |= (_O_WTEXT) as i32;
             mode = mode.offset(7);
         } else {
-            MSVCRT_INVALID_PMT!(0, EINVAL);
+            MSVCRT_INVALID_PMT!(0, (EINVAL) as i32);
             return -1;
         }
 
@@ -1581,12 +1581,12 @@ pub unsafe extern "C" fn _wfdopen(fd: i32, mode: *const wchar_t) -> *mut FILE {
 
 #[no_mangle]
 pub unsafe extern "C" fn _filelength(fd: i32) -> __msvcrt_long {
-    let curPos = _lseek(fd, 0, SEEK_CUR);
+    let curPos = _lseek(fd, 0, (SEEK_CUR) as i32);
     if curPos != -1 {
-        let endPos = _lseek(fd, 0, SEEK_END);
+        let endPos = _lseek(fd, 0, (SEEK_END) as i32);
         if endPos != -1 {
             if endPos != curPos {
-                _lseek(fd, curPos, SEEK_SET);
+                _lseek(fd, curPos, (SEEK_SET) as i32);
             }
             return endPos;
         }
@@ -1596,12 +1596,12 @@ pub unsafe extern "C" fn _filelength(fd: i32) -> __msvcrt_long {
 
 #[no_mangle]
 pub unsafe extern "C" fn _filelengthi64(fd: i32) -> __int64 {
-    let curPos = _lseeki64(fd, 0, SEEK_CUR);
+    let curPos = _lseeki64(fd, 0, (SEEK_CUR) as i32);
     if curPos != -1 {
-        let endPos = _lseeki64(fd, 0, SEEK_END);
+        let endPos = _lseeki64(fd, 0, (SEEK_END) as i32);
         if endPos != -1 {
             if endPos != curPos {
-                _lseeki64(fd, curPos, SEEK_SET);
+                _lseeki64(fd, curPos, (SEEK_SET) as i32);
             }
             return endPos;
         }
@@ -1627,7 +1627,7 @@ pub unsafe extern "C" fn _fstat64(fd: i32, buf: *mut _stat64) -> i32 {
     }
 
     if buf.is_null() {
-        msvcrt_set_errno(ERROR_INVALID_PARAMETER);
+        msvcrt_set_errno((ERROR_INVALID_PARAMETER) as i32);
         release_ioinfo(info);
         return -1;
     }
@@ -1655,7 +1655,7 @@ pub unsafe extern "C" fn _fstat64(fd: i32, buf: *mut _stat64) -> i32 {
             status = NtQueryInformationFile((*info).handle, &mut io, &mut std_info as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<FILE_STANDARD_INFORMATION>() as u32, FileStandardInformation);
         }
         if status != 0 {
-            msvcrt_set_errno(ERROR_INVALID_PARAMETER);
+            msvcrt_set_errno((ERROR_INVALID_PARAMETER) as i32);
             release_ioinfo(info);
             return -1;
         }
@@ -1739,7 +1739,7 @@ pub unsafe extern "C" fn _futime64(fd: i32, t: *mut __utimbuf64) -> i32 {
 
     if SetFileTime((*info).handle, core::ptr::null_mut(), &at, &wt) == 0 {
         release_ioinfo(info);
-        msvcrt_set_errno(GetLastError());
+        msvcrt_set_errno((GetLastError()) as i32);
         return -1;
     }
     release_ioinfo(info);
@@ -1750,8 +1750,8 @@ pub unsafe extern "C" fn _futime64(fd: i32, t: *mut __utimbuf64) -> i32 {
 pub unsafe extern "C" fn _futime32(fd: i32, t: *mut __utimbuf32) -> i32 {
     if !t.is_null() {
         let mut t64: __utimbuf64 = core::mem::zeroed();
-        t64.actime = (*t).actime;
-        t64.modtime = (*t).modtime;
+        t64.actime = ((*t).actime) as i64;
+        t64.modtime = ((*t).modtime) as i64;
         return _futime64(fd, &mut t64);
     } else {
         return _futime64(fd, core::ptr::null_mut());
@@ -1763,7 +1763,7 @@ pub unsafe extern "C" fn _get_osfhandle(fd: i32) -> isize {
     let hand: HANDLE = (*get_ioinfo_nolock(fd)).handle;
 
     if hand == INVALID_HANDLE_VALUE {
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
     }
     hand as isize
 }
@@ -1777,7 +1777,7 @@ pub unsafe extern "C" fn _mktemp_s(pattern: *mut u8, size: usize) -> i32 {
     let mut pathW: *mut wchar_t;
 
     if MSVCRT_CHECK_PMT!((pattern != core::ptr::null_mut()) as i32) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     len = 0;
@@ -1792,13 +1792,13 @@ pub unsafe extern "C" fn _mktemp_s(pattern: *mut u8, size: usize) -> i32 {
         if size != 0 {
             *pattern.offset(0 as isize) = 0;
         }
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     xno = 1;
     while xno <= 6 {
         if MSVCRT_CHECK_PMT!((*pattern.offset((len - xno) as isize) == b'X') as i32) == 0 {
-            return EINVAL;
+            return (EINVAL) as i32;
         }
         xno += 1;
     }
@@ -1829,8 +1829,8 @@ pub unsafe extern "C" fn _mktemp_s(pattern: *mut u8, size: usize) -> i32 {
     free(pathW as *mut core::ffi::c_void);
 
     *pattern.offset(0 as isize) = 0;
-    *_errno() = EEXIST;
-    return EEXIST;
+    *_errno() = (EEXIST) as i32;
+    return (EEXIST) as i32;
 }
 
 #[no_mangle]
@@ -1886,7 +1886,7 @@ pub unsafe extern "C" fn _mktemp(pattern: *mut i8) -> *mut i8 {
         letter = letter.wrapping_add(1);
         if GetFileAttributesW(pathW) == INVALID_FILE_ATTRIBUTES {
             *pattern_ptr = *p as i8;
-            free(pathW);
+            free((pathW).cast());
             return retVal;
         }
         if letter > b'z' {
@@ -1894,7 +1894,7 @@ pub unsafe extern "C" fn _mktemp(pattern: *mut i8) -> *mut i8 {
         }
     }
 
-    free(pathW);
+    free((pathW).cast());
     core::ptr::null_mut()
 }
 
@@ -1905,7 +1905,7 @@ pub unsafe extern "C" fn _wmktemp_s(pattern: *mut wchar_t, size: usize) -> i32 {
     let mut id: u32;
 
     if MSVCRT_CHECK_PMT!(pattern != core::ptr::null_mut()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     len = 0;
@@ -1920,13 +1920,13 @@ pub unsafe extern "C" fn _wmktemp_s(pattern: *mut wchar_t, size: usize) -> i32 {
         if size != 0 {
             *pattern.add(0 as usize) = 0;
         }
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     xno = 1;
     while xno <= 6 {
         if MSVCRT_CHECK_PMT!(*pattern.add((len - xno) as usize) == 'X' as wchar_t) == 0 {
-            return EINVAL;
+            return (EINVAL) as i32;
         }
         xno += 1;
     }
@@ -1948,8 +1948,8 @@ pub unsafe extern "C" fn _wmktemp_s(pattern: *mut wchar_t, size: usize) -> i32 {
     }
 
     *pattern.add(0 as usize) = 0;
-    *_errno() = EEXIST;
-    return EEXIST;
+    *_errno() = (EEXIST) as i32;
+    return (EEXIST) as i32;
 }
 
 #[no_mangle]
@@ -2019,7 +2019,7 @@ unsafe extern "C" fn split_oflags(oflags: u32) -> u32 {
     } else {
         let mut fmode: i32 = 0;
         _get_fmode(core::ptr::addr_of_mut!(fmode));
-        if (fmode & _O_BINARY) == 0 {
+        if (fmode & (_O_BINARY) as i32) == 0 {
             wxflags |= WX_TEXT;
         }
     }
@@ -2034,7 +2034,7 @@ unsafe extern "C" fn split_oflags(oflags: u32) -> u32 {
         ERR!(b":unsupported oflags %#x\n\0".as_ptr() as PCHAR, unsupp);
     }
 
-    wxflags
+    (wxflags) as u32
 }
 
 #[no_mangle]
@@ -2045,12 +2045,12 @@ pub unsafe extern "C" fn _pipe(pfds: *mut i32, psize: u32, textmode: i32) -> i32
     let mut writeHandle: HANDLE = core::ptr::null_mut();
 
     if pfds.is_null() {
-        *_errno() = EINVAL;
+        *_errno() = (EINVAL) as i32;
         return -1;
     }
 
     sa.nLength = SECURITY_ATTRIBUTES;
-    sa.bInheritHandle = if (textmode & _O_NOINHERIT) != 0 { 0 } else { 1 };
+    sa.bInheritHandle = if (textmode & (_O_NOINHERIT) as i32) != 0 { 0 } else { 1 };
     sa.lpSecurityDescriptor = core::ptr::null_mut();
 
     if CreatePipe(
@@ -2062,25 +2062,25 @@ pub unsafe extern "C" fn _pipe(pfds: *mut i32, psize: u32, textmode: i32) -> i32
         let wxflags: u32 = split_oflags(textmode as u32);
         let mut fd: i32;
 
-        fd = msvcrt_alloc_fd(readHandle, (wxflags | WX_PIPE) as i32);
+        fd = msvcrt_alloc_fd(readHandle, (wxflags | (WX_PIPE) as u32) as i32);
         if fd != -1 {
             *pfds.offset(0 as isize) = fd;
-            fd = msvcrt_alloc_fd(writeHandle, (wxflags | WX_PIPE) as i32);
+            fd = msvcrt_alloc_fd(writeHandle, (wxflags | (WX_PIPE) as u32) as i32);
             if fd != -1 {
                 *pfds.offset(1 as isize) = fd;
                 ret = 0;
             } else {
                 _close(*pfds.offset(0 as isize));
                 CloseHandle(writeHandle);
-                *_errno() = EMFILE;
+                *_errno() = (EMFILE) as i32;
             }
         } else {
             CloseHandle(readHandle);
             CloseHandle(writeHandle);
-            *_errno() = EMFILE;
+            *_errno() = (EMFILE) as i32;
         }
     } else {
-        msvcrt_set_errno(GetLastError());
+        msvcrt_set_errno((GetLastError()) as i32);
     }
 
     ret
@@ -2107,7 +2107,7 @@ unsafe extern "C" fn check_bom(h: HANDLE, mut oflags: i32, seek: BOOL) -> i32 {
             core::mem::size_of_val(&utf8_bom),
         ) == 0
     {
-        oflags = (oflags & !(_O_WTEXT | _O_U16TEXT)) | _O_U8TEXT;
+        oflags = (oflags & (!(_O_WTEXT | _O_U16TEXT)) as i32) | (_O_U8TEXT) as i32;
     } else if r >= core::mem::size_of_val(&utf16_bom) as u32
         && memcmp(
             bom.as_ptr() as *const core::ffi::c_void,
@@ -2118,7 +2118,7 @@ unsafe extern "C" fn check_bom(h: HANDLE, mut oflags: i32, seek: BOOL) -> i32 {
         if seek != 0 && r > 2 {
             SetFilePointer(h, 2, core::ptr::null_mut(), FILE_BEGIN);
         }
-        oflags = (oflags & !(_O_WTEXT | _O_U8TEXT)) | _O_U16TEXT;
+        oflags = (oflags & (!(_O_WTEXT | _O_U8TEXT)) as i32) | (_O_U16TEXT) as i32;
     } else if seek != 0 {
         SetFilePointer(h, 0, core::ptr::null_mut(), FILE_BEGIN);
     }
@@ -2144,35 +2144,35 @@ pub unsafe extern "C" fn _wsopen_dispatch(
     let hand: HANDLE;
 
     if !MSVCRT_CHECK_PMT!(fd != core::ptr::null_mut()) {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     *fd = -1;
     if !MSVCRT_CHECK_PMT!(path != core::ptr::null()) {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     wxflag = split_oflags(oflags as u32) as i32;
-    match oflags & (_O_RDONLY | _O_WRONLY | _O_RDWR) {
+    match oflags & ((_O_RDONLY | _O_WRONLY | _O_RDWR)) as i32 {
         _O_RDONLY => access |= GENERIC_READ,
         _O_WRONLY => access |= GENERIC_WRITE,
         _O_RDWR => access |= GENERIC_WRITE | GENERIC_READ,
         _ => {}
     }
 
-    if (oflags & _O_CREAT) != 0 {
-        if secure != 0 && !MSVCRT_CHECK_PMT!((pmode & !(_S_IREAD | _S_IWRITE)) == 0) {
-            return EINVAL;
+    if (oflags & (_O_CREAT) as i32) != 0 {
+        if secure != 0 && !MSVCRT_CHECK_PMT!((pmode & (!(_S_IREAD | _S_IWRITE)) as i32) == 0) {
+            return (EINVAL) as i32;
         }
 
-        if (oflags & _O_EXCL) != 0 {
+        if (oflags & (_O_EXCL) as i32) != 0 {
             creation = CREATE_NEW;
-        } else if (oflags & _O_TRUNC) != 0 {
+        } else if (oflags & (_O_TRUNC) as i32) != 0 {
             creation = CREATE_ALWAYS;
         } else {
             creation = OPEN_ALWAYS;
         }
     } else {
-        if (oflags & _O_TRUNC) != 0 {
+        if (oflags & (_O_TRUNC) as i32) != 0 {
             creation = TRUNCATE_EXISTING;
         } else {
             creation = OPEN_EXISTING;
@@ -2193,39 +2193,39 @@ pub unsafe extern "C" fn _wsopen_dispatch(
             sharing = FILE_SHARE_READ | FILE_SHARE_WRITE;
         }
         _ => {
-            return EINVAL;
+            return (EINVAL) as i32;
         }
     }
 
-    if (pmode & !MSVCRT_umask & _S_IWRITE) == 0 {
+    if (pmode & !MSVCRT_umask & (_S_IWRITE) as i32) == 0 {
         attrib = FILE_ATTRIBUTE_READONLY;
     } else {
         attrib = FILE_ATTRIBUTE_NORMAL;
     }
 
     let mut attrib = attrib;
-    if (oflags & _O_TEMPORARY) != 0 {
+    if (oflags & (_O_TEMPORARY) as i32) != 0 {
         attrib |= FILE_FLAG_DELETE_ON_CLOSE;
         access |= DELETE;
         sharing |= FILE_SHARE_DELETE;
     }
 
-    if (oflags & _O_RANDOM) != 0 {
+    if (oflags & (_O_RANDOM) as i32) != 0 {
         attrib |= FILE_FLAG_RANDOM_ACCESS;
     }
-    if (oflags & _O_SEQUENTIAL) != 0 {
+    if (oflags & (_O_SEQUENTIAL) as i32) != 0 {
         attrib |= FILE_FLAG_SEQUENTIAL_SCAN;
     }
-    if (oflags & _O_SHORT_LIVED) != 0 {
+    if (oflags & (_O_SHORT_LIVED) as i32) != 0 {
         attrib |= FILE_ATTRIBUTE_TEMPORARY;
     }
 
     sa.nLength = core::mem::size_of::<SECURITY_ATTRIBUTES>() as u32;
     sa.lpSecurityDescriptor = core::ptr::null_mut();
-    sa.bInheritHandle = if (oflags & _O_NOINHERIT) != 0 { 0 } else { 1 };
+    sa.bInheritHandle = if (oflags & (_O_NOINHERIT) as i32) != 0 { 0 } else { 1 };
 
     let mut oflags = oflags;
-    if ((oflags & (_O_WTEXT | _O_U16TEXT | _O_U8TEXT)) != 0)
+    if ((oflags & ((_O_WTEXT | _O_U16TEXT | _O_U8TEXT)) as i32) != 0)
         && (creation == OPEN_ALWAYS || creation == OPEN_EXISTING)
         && ((access & GENERIC_READ) == 0)
     {
@@ -2239,18 +2239,18 @@ pub unsafe extern "C" fn _wsopen_dispatch(
             0,
         );
         if hand != INVALID_HANDLE_VALUE {
-            oflags = check_bom(hand, oflags, FALSE);
+            oflags = check_bom(hand, oflags, (FALSE) as i32);
             CloseHandle(hand);
         }
     }
 
     hand = CreateFileW(path, access, sharing, &mut sa, creation, attrib, 0);
     if hand == INVALID_HANDLE_VALUE {
-        msvcrt_set_errno(GetLastError());
+        msvcrt_set_errno((GetLastError()) as i32);
         return *_errno();
     }
 
-    if (oflags & (_O_WTEXT | _O_U16TEXT | _O_U8TEXT)) != 0 {
+    if (oflags & ((_O_WTEXT | _O_U16TEXT | _O_U8TEXT)) as i32) != 0 {
         let mut size = LARGE_INTEGER {
             QuadPart: 0,
         };
@@ -2268,7 +2268,7 @@ pub unsafe extern "C" fn _wsopen_dispatch(
                 || ((creation == OPEN_EXISTING || creation == OPEN_ALWAYS)
                     && size.QuadPart == 0))
         {
-            if (oflags & _O_U8TEXT) != 0 {
+            if (oflags & (_O_U8TEXT) as i32) != 0 {
                 let mut written = 0;
                 let mut tmp: DWORD = 0;
 
@@ -2285,7 +2285,7 @@ pub unsafe extern "C" fn _wsopen_dispatch(
                 }
                 if written != core::mem::size_of_val(&utf8_bom) as u32 {
                     CloseHandle(hand);
-                    msvcrt_set_errno(GetLastError());
+                    msvcrt_set_errno((GetLastError()) as i32);
                     return *_errno();
                 }
             } else {
@@ -2305,10 +2305,10 @@ pub unsafe extern "C" fn _wsopen_dispatch(
                 }
                 if written != core::mem::size_of_val(&utf16_bom) as u32 {
                     CloseHandle(hand);
-                    msvcrt_set_errno(GetLastError());
+                    msvcrt_set_errno((GetLastError()) as i32);
                     return *_errno();
                 }
-                oflags |= _O_U16TEXT;
+                oflags |= (_O_U16TEXT) as i32;
             }
         } else if (access & GENERIC_READ) != 0 {
             oflags = check_bom(hand, oflags, TRUE);
@@ -2317,9 +2317,9 @@ pub unsafe extern "C" fn _wsopen_dispatch(
 
     type_ = GetFileType(hand);
     if type_ == FILE_TYPE_CHAR {
-        wxflag |= WX_TTY;
+        wxflag |= (WX_TTY) as i32;
     } else if type_ == FILE_TYPE_PIPE {
-        wxflag |= WX_PIPE;
+        wxflag |= (WX_PIPE) as i32;
     }
 
     *fd = msvcrt_alloc_fd(hand, wxflag);
@@ -2327,13 +2327,13 @@ pub unsafe extern "C" fn _wsopen_dispatch(
         return *_errno();
     }
 
-    if (oflags & _O_WTEXT) != 0 {
+    if (oflags & (_O_WTEXT) as i32) != 0 {
         ioinfo_set_unicode(get_ioinfo_nolock(*fd), TRUE);
     }
 
-    if (oflags & _O_U16TEXT) != 0 {
+    if (oflags & (_O_U16TEXT) as i32) != 0 {
         ioinfo_set_textmode(get_ioinfo_nolock(*fd), TEXTMODE_UTF16LE);
-    } else if (oflags & _O_U8TEXT) != 0 {
+    } else if (oflags & (_O_U8TEXT) as i32) != 0 {
         ioinfo_set_textmode(get_ioinfo_nolock(*fd), TEXTMODE_UTF8);
     }
 
@@ -2356,7 +2356,7 @@ pub unsafe extern "C" fn _wsopen(path: *const wchar_t, oflags: i32, shflags: i32
     let pmode: i32;
     let mut fd: i32 = 0;
 
-    if (oflags & _O_CREAT) != 0 {
+    if (oflags & (_O_CREAT) as i32) != 0 {
         let mut ap: va_list = core::mem::zeroed();
         va_start(core::ptr::addr_of_mut!(ap), shflags);
         pmode = va_arg(core::ptr::addr_of_mut!(ap), core::mem::size_of::<i32>());
@@ -2384,7 +2384,7 @@ pub unsafe extern "C" fn _sopen_dispatch(
     let ret: i32;
 
     if MSVCRT_CHECK_PMT!(fd != core::ptr::null_mut()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     *fd = -1;
     if path != core::ptr::null() && {
@@ -2395,7 +2395,7 @@ pub unsafe extern "C" fn _sopen_dispatch(
     }
 
     ret = _wsopen_dispatch(pathW, oflags, shflags, pmode, fd, secure);
-    free(pathW);
+    free((pathW).cast());
     ret
 }
 
@@ -2415,7 +2415,7 @@ pub unsafe extern "C" fn _sopen(path: *const i8, oflags: i32, shflags: i32, mut 
     let pmode: i32;
     let mut fd: i32 = 0;
 
-    if (oflags & _O_CREAT) != 0 {
+    if (oflags & (_O_CREAT) as i32) != 0 {
         let mut ap: 0;
 
         va_start(ap, shflags);
@@ -2436,40 +2436,40 @@ pub unsafe extern "C" fn _sopen(path: *const i8, oflags: i32, shflags: i32, mut 
 pub unsafe extern "C" fn _open(path: *const i8, flags: i32, mut args: ...) -> i32 {
     let mut ap = args;
 
-    if (flags & _O_CREAT) != 0 {
+    if (flags & (_O_CREAT) as i32) != 0 {
         let pmode: i32;
         va_start(ap, flags);
         pmode = va_arg(ap, i32);
         va_end(ap);
-        return _sopen(path, flags, _SH_DENYNO, pmode);
+        return _sopen(path, flags, (_SH_DENYNO) as i32, pmode);
     } else {
-        return _sopen(path, flags, _SH_DENYNO);
+        return _sopen(path, flags, (_SH_DENYNO) as i32);
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _wopen(path: *const wchar_t, flags: i32, mut args: ...) -> i32 {
-    if flags & _O_CREAT != 0 {
+    if flags & (_O_CREAT) as i32 != 0 {
         let pmode: i32;
         va_start(args, flags);
         pmode = va_arg(args, i32);
         va_end(args);
-        return _wsopen(path, flags, _SH_DENYNO, pmode);
+        return _wsopen(path, flags, (_SH_DENYNO) as i32, pmode);
     } else {
-        return _wsopen(path, flags, _SH_DENYNO);
+        return _wsopen(path, flags, (_SH_DENYNO) as i32);
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _creat(path: *const i8, pmode: i32) -> i32 {
     let flags = _O_CREAT | _O_TRUNC | _O_RDWR;
-    _open(path, flags, pmode)
+    _open(path, (flags) as i32, pmode)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _wcreat(path: *const wchar_t, pmode: i32) -> i32 {
     let flags = _O_CREAT | _O_TRUNC | _O_RDWR;
-    _wopen(path, flags, pmode)
+    _wopen(path, (flags) as i32, pmode)
 }
 
 #[no_mangle]
@@ -2477,20 +2477,20 @@ pub unsafe extern "C" fn _open_osfhandle(handle: isize, mut oflags: i32) -> i32 
     let mut flags: u32;
     let fd: i32;
 
-    if (oflags & (_O_BINARY | _O_TEXT)) == 0 {
-        oflags |= _O_BINARY;
+    if (oflags & ((_O_BINARY | _O_TEXT)) as i32) == 0 {
+        oflags |= (_O_BINARY) as i32;
     }
 
     flags = GetFileType(handle as HANDLE);
     if flags == FILE_TYPE_UNKNOWN && GetLastError() != NO_ERROR {
-        msvcrt_set_errno(GetLastError());
+        msvcrt_set_errno((GetLastError()) as i32);
         return -1;
     }
 
     if flags == FILE_TYPE_CHAR {
-        flags = WX_TTY;
+        flags = (WX_TTY) as u32;
     } else if flags == FILE_TYPE_PIPE {
-        flags = WX_PIPE;
+        flags = (WX_PIPE) as u32;
     } else {
         flags = 0;
     }
@@ -2565,20 +2565,20 @@ unsafe extern "C" fn read_utf8(fdinfo: *mut ioinfo, buf: *mut wchar_t, count: u3
         }
     }
 
-    if (*fdinfo).lookahead[0] != b'\n' as i8 {
-        *readbuf.add(pos as usize) = (*fdinfo).lookahead[0];
+    if (*fdinfo).lookahead[0] != (b'\n' as i8) as u8 {
+        *readbuf.add(pos as usize) = ((*fdinfo).lookahead[0]) as i8;
         pos += 1;
-        (*fdinfo).lookahead[0] = b'\n' as i8;
+        (*fdinfo).lookahead[0] = (b'\n' as i8) as u8;
 
-        if (*fdinfo).lookahead[1] != b'\n' as i8 {
-            *readbuf.add(pos as usize) = (*fdinfo).lookahead[1];
+        if (*fdinfo).lookahead[1] != (b'\n' as i8) as u8 {
+            *readbuf.add(pos as usize) = ((*fdinfo).lookahead[1]) as i8;
             pos += 1;
-            (*fdinfo).lookahead[1] = b'\n' as i8;
+            (*fdinfo).lookahead[1] = (b'\n' as i8) as u8;
 
-            if (*fdinfo).lookahead[2] != b'\n' as i8 {
-                *readbuf.add(pos as usize) = (*fdinfo).lookahead[2];
+            if (*fdinfo).lookahead[2] != (b'\n' as i8) as u8 {
+                *readbuf.add(pos as usize) = ((*fdinfo).lookahead[2]) as i8;
                 pos += 1;
-                (*fdinfo).lookahead[2] = b'\n' as i8;
+                (*fdinfo).lookahead[2] = (b'\n' as i8) as u8;
             }
         }
     }
@@ -2589,9 +2589,9 @@ unsafe extern "C" fn read_utf8(fdinfo: *mut ioinfo, buf: *mut wchar_t, count: u3
                 (*fdinfo).wxflag |= WX_ATEOF;
                 return 0;
             } else {
-                msvcrt_set_errno(GetLastError());
+                msvcrt_set_errno((GetLastError()) as i32);
                 if GetLastError() == ERROR_ACCESS_DENIED {
-                    *_errno() = EBADF;
+                    *_errno() = (EBADF) as i32;
                 }
                 return -1;
             }
@@ -2628,7 +2628,7 @@ unsafe extern "C" fn read_utf8(fdinfo: *mut ioinfo, buf: *mut wchar_t, count: u3
             } else {
                 *buf.add(0) = b'\r' as wchar_t;
                 if ((*fdinfo).wxflag & (WX_PIPE | WX_TTY)) != 0 {
-                    (*fdinfo).lookahead[0] = lookahead;
+                    (*fdinfo).lookahead[0] = (lookahead) as u8;
                 } else {
                     SetFilePointer((*fdinfo).handle, -1, core::ptr::null_mut(), FILE_CURRENT);
                 }
@@ -2636,9 +2636,9 @@ unsafe extern "C" fn read_utf8(fdinfo: *mut ioinfo, buf: *mut wchar_t, count: u3
             return 2;
         }
 
-        num_read = MultiByteToWideChar(CP_UTF8, 0, readbuf, pos as i32, buf, count as i32);
+        num_read = (MultiByteToWideChar(CP_UTF8, 0, readbuf, pos as i32, buf, count as i32)) as u32;
         if num_read == 0 {
-            msvcrt_set_errno(GetLastError());
+            msvcrt_set_errno((GetLastError()) as i32);
             return -1;
         }
 
@@ -2655,9 +2655,9 @@ unsafe extern "C" fn read_utf8(fdinfo: *mut ioinfo, buf: *mut wchar_t, count: u3
             }
             return 0;
         } else {
-            msvcrt_set_errno(GetLastError());
+            msvcrt_set_errno((GetLastError()) as i32);
             if GetLastError() == ERROR_ACCESS_DENIED {
-                *_errno() = EBADF;
+                *_errno() = (EBADF) as i32;
             }
             if readbuf != min_buf.as_mut_ptr() {
                 free(readbuf as *mut core::ffi::c_void);
@@ -2693,13 +2693,13 @@ unsafe extern "C" fn read_utf8(fdinfo: *mut ioinfo, buf: *mut wchar_t, count: u3
 
     if ((*fdinfo).wxflag & (WX_PIPE | WX_TTY)) != 0 {
         if i < pos {
-            (*fdinfo).lookahead[0] = *readbuf.add(i as usize);
+            (*fdinfo).lookahead[0] = (*readbuf.add(i as usize)) as u8;
         }
         if i + 1 < pos {
-            (*fdinfo).lookahead[1] = *readbuf.add((i + 1) as usize);
+            (*fdinfo).lookahead[1] = (*readbuf.add((i + 1) as usize)) as u8;
         }
         if i + 2 < pos {
-            (*fdinfo).lookahead[2] = *readbuf.add((i + 2) as usize);
+            (*fdinfo).lookahead[2] = (*readbuf.add((i + 2) as usize)) as u8;
         }
     } else if i < pos {
         SetFilePointer((*fdinfo).handle, (i as i32) - (pos as i32), core::ptr::null_mut(), FILE_CURRENT);
@@ -2715,7 +2715,7 @@ unsafe extern "C" fn read_utf8(fdinfo: *mut ioinfo, buf: *mut wchar_t, count: u3
         }
 
         if *readbuf.add(i as usize) == b'\r' as i8 && i + 1 == pos {
-            if (*fdinfo).lookahead[0] != b'\n' as i8 || ReadFile(hand, &mut lookahead as *mut i8 as *mut core::ffi::c_void, 1, &mut num_read, core::ptr::null_mut()) == 0 || num_read == 0 {
+            if (*fdinfo).lookahead[0] != (b'\n' as i8) as u8 || ReadFile(hand, &mut lookahead as *mut i8 as *mut core::ffi::c_void, 1, &mut num_read, core::ptr::null_mut()) == 0 || num_read == 0 {
                 *readbuf.add(j as usize) = b'\r' as i8;
                 j += 1;
             } else if lookahead == b'\n' as i8 && j == 0 {
@@ -2728,7 +2728,7 @@ unsafe extern "C" fn read_utf8(fdinfo: *mut ioinfo, buf: *mut wchar_t, count: u3
                 }
 
                 if ((*fdinfo).wxflag & (WX_PIPE | WX_TTY)) != 0 {
-                    (*fdinfo).lookahead[0] = lookahead;
+                    (*fdinfo).lookahead[0] = (lookahead) as u8;
                 } else {
                     SetFilePointer((*fdinfo).handle, -1, core::ptr::null_mut(), FILE_CURRENT);
                 }
@@ -2741,9 +2741,9 @@ unsafe extern "C" fn read_utf8(fdinfo: *mut ioinfo, buf: *mut wchar_t, count: u3
     }
     pos = j;
 
-    num_read = MultiByteToWideChar(CP_UTF8, 0, readbuf, pos as i32, buf, count as i32);
+    num_read = (MultiByteToWideChar(CP_UTF8, 0, readbuf, pos as i32, buf, count as i32)) as u32;
     if num_read == 0 {
-        msvcrt_set_errno(GetLastError());
+        msvcrt_set_errno((GetLastError()) as i32);
         if readbuf != min_buf.as_mut_ptr() {
             free(readbuf as *mut core::ffi::c_void);
         }
@@ -2779,13 +2779,13 @@ unsafe extern "C" fn read_i(fd: i32, fdinfo: *mut ioinfo, buf: *mut core::ffi::c
     }
 
     if (*fdinfo).handle == INVALID_HANDLE_VALUE {
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
         return -1;
     }
 
     utf16 = if ioinfo_get_textmode(fdinfo) == TEXTMODE_UTF16LE { 1 } else { 0 };
     if ioinfo_get_textmode(fdinfo) != TEXTMODE_ANSI && count & 1 != 0 {
-        *_errno() = EINVAL;
+        *_errno() = (EINVAL) as i32;
         return -1;
     }
 
@@ -2899,9 +2899,9 @@ unsafe extern "C" fn read_i(fd: i32, fdinfo: *mut ioinfo, buf: *mut core::ffi::c
             (*fdinfo).wxflag |= WX_ATEOF;
             return 0;
         } else {
-            msvcrt_set_errno(GetLastError());
+            msvcrt_set_errno((GetLastError()) as i32);
             if GetLastError() == ERROR_ACCESS_DENIED {
-                *_errno() = EBADF;
+                *_errno() = (EBADF) as i32;
             }
             return -1;
         }
@@ -2923,7 +2923,7 @@ pub unsafe extern "C" fn _read(fd: i32, buf: *mut core::ffi::c_void, count: u32)
     let num_read: i32;
 
     if fd == MSVCRT_NO_CONSOLE_FD {
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
         return -1;
     }
 
@@ -2946,36 +2946,36 @@ pub unsafe extern "C" fn _setmode(fd: i32, mode: i32) -> i32 {
         ret = _O_WTEXT;
     }
 
-    if mode != _O_TEXT && mode != _O_BINARY && mode != _O_WTEXT
-        && mode != _O_U16TEXT && mode != _O_U8TEXT {
-        *_errno() = EINVAL;
+    if mode != (_O_TEXT) as i32 && mode != (_O_BINARY) as i32 && mode != (_O_WTEXT) as i32
+        && mode != (_O_U16TEXT) as i32 && mode != (_O_U8TEXT) as i32 {
+        *_errno() = (EINVAL) as i32;
         release_ioinfo(info);
         return -1;
     }
 
     if info == core::ptr::addr_of_mut!(MSVCRT___badioinfo) {
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
         return EOF;
     }
 
-    if mode == _O_BINARY {
+    if mode == (_O_BINARY) as i32 {
         (*info).wxflag &= !WX_TEXT;
         ioinfo_set_textmode(info, TEXTMODE_ANSI);
         release_ioinfo(info);
-        return ret;
+        return (ret) as i32;
     }
 
     (*info).wxflag |= WX_TEXT;
-    if mode == _O_TEXT {
+    if mode == (_O_TEXT) as i32 {
         ioinfo_set_textmode(info, TEXTMODE_ANSI);
-    } else if mode == _O_U8TEXT {
+    } else if mode == (_O_U8TEXT) as i32 {
         ioinfo_set_textmode(info, TEXTMODE_UTF8);
     } else {
         ioinfo_set_textmode(info, TEXTMODE_UTF16LE);
     }
 
     release_ioinfo(info);
-    ret
+    (ret) as i32
 }
 
 #[no_mangle]
@@ -2990,7 +2990,7 @@ pub unsafe extern "C" fn _stat64(path: *const i8, buf: *mut _stat64) -> i32 {
         }
     }
     ret = _wstat64(pathW, buf);
-    free(pathW);
+    free((pathW).cast());
     return ret;
 }
 
@@ -3018,7 +3018,7 @@ pub unsafe extern "C" fn _stat(path: *const i8, buf: *mut _stat) -> i32 {
 pub unsafe extern "C" fn _wstat64(path: *const wchar_t, buf: *mut _stat64) -> i32 {
     let mut dw: u32 = 0;
     let mut hfi: WIN32_FILE_ATTRIBUTE_DATA = core::mem::zeroed();
-    let mut mode: u16 = ALL_S_IREAD;
+    let mut mode: u16 = (ALL_S_IREAD) as u16;
     let mut plen: i32;
 
     plen = wcslen(path);
@@ -3027,7 +3027,7 @@ pub unsafe extern "C" fn _wstat64(path: *const wchar_t, buf: *mut _stat64) -> i3
     }
 
     if plen == 2 && *path.offset(1 as isize) == ':' as wchar_t {
-        *_errno() = ENOENT;
+        *_errno() = (ENOENT) as i32;
         return -1;
     }
 
@@ -3035,12 +3035,12 @@ pub unsafe extern "C" fn _wstat64(path: *const wchar_t, buf: *mut _stat64) -> i3
         && *path.offset((plen - 2) as isize) != ':' as wchar_t
         && (*path.offset((plen - 1) as isize) == '\\' as wchar_t
             || *path.offset((plen - 1) as isize) == '/' as wchar_t) {
-        *_errno() = ENOENT;
+        *_errno() = (ENOENT) as i32;
         return -1;
     }
 
     if GetFileAttributesExW(path, GetFileExInfoStandard, &mut hfi) == 0 {
-        *_errno() = ENOENT;
+        *_errno() = (ENOENT) as i32;
         return -1;
     }
 
@@ -3055,21 +3055,21 @@ pub unsafe extern "C" fn _wstat64(path: *const wchar_t, buf: *mut _stat64) -> i3
     }
 
     if hfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
-        mode |= _S_IFDIR | ALL_S_IEXEC;
+        mode |= (_S_IFDIR | ALL_S_IEXEC) as u16;
     } else {
-        mode |= _S_IFREG;
+        mode |= (_S_IFREG) as u16;
         if plen > 6 && *path.offset((plen - 4) as isize) == '.' as wchar_t {
             let ext: u64 = towlower(*path.offset((plen - 1) as isize) as wint_t) as u64
                 | ((towlower(*path.offset((plen - 2) as isize) as wint_t) as u64) << 16)
                 | ((towlower(*path.offset((plen - 3) as isize) as wint_t) as u64) << 32);
             if ext == WCEXE || ext == WCBAT || ext == WCCMD || ext == WCCOM {
-                mode |= ALL_S_IEXEC;
+                mode |= (ALL_S_IEXEC) as u16;
             }
         }
     }
 
     if hfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY == 0 {
-        mode |= ALL_S_IWRITE;
+        mode |= (ALL_S_IWRITE) as u16;
     }
 
     (*buf).st_mode = mode;
@@ -3105,12 +3105,12 @@ pub unsafe extern "C" fn _wstat(path: *const wchar_t, buf: *mut _stat) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _tell(fd: i32) -> __msvcrt_long {
-    _lseek(fd, 0, SEEK_CUR)
+    _lseek(fd, 0, (SEEK_CUR) as i32)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _telli64(fd: i32) -> __int64 {
-    _lseeki64(fd, 0, SEEK_CUR)
+    _lseeki64(fd, 0, (SEEK_CUR) as i32)
 }
 
 #[no_mangle]
@@ -3129,21 +3129,21 @@ pub unsafe extern "C" fn _tempnam(dir: *const i8, prefix: *const i8) -> *mut i8 
     if !prefix.is_null() {
         prefixW = wstrdupa_utf8(prefix);
         if prefixW.is_null() {
-            free(dirW);
+            free((dirW).cast());
             return core::ptr::null_mut();
         }
     }
     retW = _wtempnam(dirW, prefixW);
-    free(dirW);
-    free(prefixW);
+    free((dirW).cast());
+    free((prefixW).cast());
     ret = astrdupw_utf8(retW);
-    free(retW);
+    free((retW).cast());
     return ret;
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _wtempnam(dir: *const wchar_t, prefix: *const wchar_t) -> *mut wchar_t {
-    let mut tmpbuf: [wchar_t; MAX_PATH] = [0; MAX_PATH];
+    let mut tmpbuf: [wchar_t; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let tmp_dir = _wgetenv(b"TMP\0".as_ptr() as *const wchar_t);
     let dir = if !tmp_dir.is_null() { tmp_dir } else { dir };
 
@@ -3164,7 +3164,7 @@ pub unsafe extern "C" fn _umask(umask: i32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _utime64(path: *const i8, t: *mut __utimbuf64) -> i32 {
-    let fd = _open(path, _O_WRONLY | _O_BINARY);
+    let fd = _open(path, (_O_WRONLY | _O_BINARY) as i32);
 
     if fd > 0 {
         let retVal = _futime64(fd, t);
@@ -3178,8 +3178,8 @@ pub unsafe extern "C" fn _utime64(path: *const i8, t: *mut __utimbuf64) -> i32 {
 pub unsafe extern "C" fn _utime32(path: *const i8, t: *mut __utimbuf32) -> i32 {
     if !t.is_null() {
         let mut t64: __utimbuf64 = core::mem::zeroed();
-        t64.actime = (*t).actime;
-        t64.modtime = (*t).modtime;
+        t64.actime = ((*t).actime) as i64;
+        t64.modtime = ((*t).modtime) as i64;
         return _utime64(path, &mut t64);
     } else {
         return _utime64(path, core::ptr::null_mut());
@@ -3188,7 +3188,7 @@ pub unsafe extern "C" fn _utime32(path: *const i8, t: *mut __utimbuf32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _wutime64(path: *const wchar_t, t: *mut __utimbuf64) -> i32 {
-    let fd = _wopen(path, _O_WRONLY | _O_BINARY);
+    let fd = _wopen(path, (_O_WRONLY | _O_BINARY) as i32);
 
     if fd > 0 {
         let retVal = _futime64(fd, t);
@@ -3202,8 +3202,8 @@ pub unsafe extern "C" fn _wutime64(path: *const wchar_t, t: *mut __utimbuf64) ->
 pub unsafe extern "C" fn _wutime32(path: *const wchar_t, t: *mut __utimbuf32) -> i32 {
     if !t.is_null() {
         let mut t64: __utimbuf64 = core::mem::zeroed();
-        t64.actime = (*t).actime;
-        t64.modtime = (*t).modtime;
+        t64.actime = ((*t).actime) as i64;
+        t64.modtime = ((*t).modtime) as i64;
         _wutime64(path, &mut t64)
     } else {
         _wutime64(path, core::ptr::null_mut())
@@ -3216,31 +3216,31 @@ pub unsafe extern "C" fn _write(fd: i32, buf: *const core::ffi::c_void, count: u
     let hand = (*info).handle;
     let mut num_written: u32 = 0;
     let mut i: u32;
-    let mut console: i32 = FALSE;
+    let mut console: i32 = (FALSE) as i32;
 
     if hand == INVALID_HANDLE_VALUE || fd == MSVCRT_NO_CONSOLE_FD {
-        *_errno() = EBADF;
+        *_errno() = (EBADF) as i32;
         release_ioinfo(info);
         return -1;
     }
 
     if ioinfo_get_textmode(info) != TEXTMODE_ANSI && (count & 1) != 0 {
-        *_errno() = EINVAL;
+        *_errno() = (EINVAL) as i32;
         release_ioinfo(info);
         return -1;
     }
 
     if ((*info).wxflag & WX_APPEND) != 0 {
-        _lseek(fd, 0, FILE_END);
+        _lseek(fd, 0, (FILE_END) as i32);
     }
 
     if ((*info).wxflag & WX_TEXT) == 0 {
         if WriteFile(hand, buf, count, &mut num_written, core::ptr::null_mut()) == 0
             || num_written != count
         {
-            msvcrt_set_errno(GetLastError());
+            msvcrt_set_errno((GetLastError()) as i32);
             if GetLastError() == ERROR_ACCESS_DENIED {
-                *_errno() = EBADF;
+                *_errno() = (EBADF) as i32;
             }
             num_written = (-1) as u32;
         }
@@ -3267,13 +3267,13 @@ pub unsafe extern "C" fn _write(fd: i32, buf: *const core::ffi::c_void, count: u
                 && j < (core::mem::size_of_val(&conv) - 1) as u32
                 && len < (core::mem::size_of_val(&lfbuf) - 1) / core::mem::size_of::<u16>()
             {
-                if isleadbyte(*s.add(i as usize) as u32) != 0 {
+                if isleadbyte((*s.add(i as usize) as u32) as i32) != 0 {
                     *conv.as_mut_ptr().add(j as usize) = *s.add(i as usize);
                     j += 1;
                     i += 1;
 
                     if i == count {
-                        *_errno() = EINVAL;
+                        *_errno() = (EINVAL) as i32;
                         release_ioinfo(info);
                         return -1;
                     }
@@ -3290,7 +3290,7 @@ pub unsafe extern "C" fn _write(fd: i32, buf: *const core::ffi::c_void, count: u
 
             len = mbstowcs(lfbuf.as_mut_ptr() as *mut u16, conv.as_ptr() as *const i8, len);
             if len == (-1) as usize {
-                msvcrt_set_errno(GetLastError());
+                msvcrt_set_errno((GetLastError()) as i32);
                 release_ioinfo(info);
                 return -1;
             }
@@ -3349,7 +3349,7 @@ pub unsafe extern "C" fn _write(fd: i32, buf: *const core::ffi::c_void, count: u
                 core::ptr::null_mut(),
             ) as u32;
             if j == 0 {
-                msvcrt_set_errno(GetLastError());
+                msvcrt_set_errno((GetLastError()) as i32);
                 release_ioinfo(info);
                 return -1;
             }
@@ -3365,9 +3365,9 @@ pub unsafe extern "C" fn _write(fd: i32, buf: *const core::ffi::c_void, count: u
         }
 
         if num_written != j {
-            msvcrt_set_errno(GetLastError());
+            msvcrt_set_errno((GetLastError()) as i32);
             if GetLastError() == ERROR_ACCESS_DENIED {
-                *_errno() = EBADF;
+                *_errno() = (EBADF) as i32;
             }
             release_ioinfo(info);
             return -1;
@@ -3389,7 +3389,7 @@ pub unsafe extern "C" fn _putw(val: i32, file: *mut FILE) -> i32 {
         return val;
     }
 
-    (*file)._flag |= _IOERR;
+    (*file)._flag |= (_IOERR) as i32;
     _unlock_file(file);
     return EOF;
 }
@@ -3417,26 +3417,26 @@ pub unsafe extern "C" fn _fclose_nolock(file: *mut FILE) -> i32 {
         return EOF;
     }
 
-    if ((*file)._flag & (_IOREAD | _IOWRT | _IORW)) == 0 {
+    if ((*file)._flag & ((_IOREAD | _IOWRT | _IORW)) as i32) == 0 {
         (*file)._flag = 0;
         return EOF;
     }
 
     flag = (*file)._flag;
-    free((*file)._tmpfname);
+    free(((*file)._tmpfname).cast());
     (*file)._tmpfname = core::ptr::null_mut();
 
-    if ((*file)._flag & _IOWRT) != 0 {
+    if ((*file)._flag & (_IOWRT) as i32) != 0 {
         _fflush_nolock(file);
     }
-    if ((*file)._flag & _IOMYBUF) != 0 {
-        free((*file)._base);
+    if ((*file)._flag & (_IOMYBUF) as i32) != 0 {
+        free(((*file)._base).cast());
     }
 
     r = _close((*file)._file);
     (*file)._flag = 0;
 
-    if (r == -1) || ((flag & _IOERR) != 0) {
+    if (r == -1) || ((flag & (_IOERR) as i32) != 0) {
         EOF
     } else {
         0
@@ -3445,46 +3445,46 @@ pub unsafe extern "C" fn _fclose_nolock(file: *mut FILE) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn feof(file: *mut FILE) -> i32 {
-    ((*file)._flag & _IOEOF) as i32
+    ((*file)._flag & (_IOEOF) as i32) as i32
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn ferror(file: *mut FILE) -> i32 {
-    ((*file)._flag & _IOERR) as i32
+    ((*file)._flag & (_IOERR) as i32) as i32
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _filbuf(file: *mut FILE) -> i32 {
     let mut c: u8 = 0;
 
-    if (*file)._flag & _IOSTRG != 0 {
+    if (*file)._flag & (_IOSTRG) as i32 != 0 {
         return EOF;
     }
 
-    if (*file)._flag & (MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF) == 0 {
+    if (*file)._flag & ((MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF)) as i32 == 0 {
         msvcrt_alloc_buffer(file);
     }
 
-    if (*file)._flag & _IOREAD == 0 {
-        if (*file)._flag & _IORW != 0 {
-            (*file)._flag |= _IOREAD;
+    if (*file)._flag & (_IOREAD) as i32 == 0 {
+        if (*file)._flag & (_IORW) as i32 != 0 {
+            (*file)._flag |= (_IOREAD) as i32;
         } else {
             return EOF;
         }
     }
 
-    if (*file)._flag & (_IOMYBUF | MSVCRT__USERBUF) == 0 {
+    if (*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32 == 0 {
         let r = _read((*file)._file, &mut c as *mut u8 as *mut core::ffi::c_void, 1);
         if r != 1 {
-            (*file)._flag |= if r == 0 { _IOEOF } else { _IOERR };
+            (*file)._flag |= (if r == 0 { _IOEOF } else { _IOERR }) as i32;
             return EOF;
         }
 
         return c as i32;
     } else {
-        (*file)._cnt = _read((*file)._file, (*file)._base, (*file)._bufsiz);
+        (*file)._cnt = _read((*file)._file, ((*file)._base).cast(), ((*file)._bufsiz) as u32);
         if (*file)._cnt <= 0 {
-            (*file)._flag |= if (*file)._cnt == 0 { _IOEOF } else { _IOERR };
+            (*file)._flag |= (if (*file)._cnt == 0 { _IOEOF } else { _IOERR }) as i32;
             (*file)._cnt = 0;
             return EOF;
         }
@@ -3628,7 +3628,7 @@ pub unsafe extern "C" fn _getw(file: *mut FILE) -> i32 {
     while j < core::mem::size_of::<i32>() as u32 {
         k = _fgetc_nolock(file);
         if k == EOF {
-            (*file)._flag |= _IOEOF;
+            (*file)._flag |= (_IOEOF) as i32;
             _unlock_file(file);
             return EOF;
         }
@@ -3692,29 +3692,29 @@ pub unsafe extern "C" fn fgetws(s: *mut wchar_t, size: i32, file: *mut FILE) -> 
 
 #[no_mangle]
 pub unsafe extern "C" fn _flsbuf(c: i32, file: *mut FILE) -> i32 {
-    if (*file)._flag & (MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF) == 0 {
+    if (*file)._flag & ((MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF)) as i32 == 0 {
         msvcrt_alloc_buffer(file);
     }
 
-    if (*file)._flag & _IOWRT == 0 {
-        if (*file)._flag & _IORW == 0 {
-            (*file)._flag |= _IOERR;
-            *_errno() = EBADF;
+    if (*file)._flag & (_IOWRT) as i32 == 0 {
+        if (*file)._flag & (_IORW) as i32 == 0 {
+            (*file)._flag |= (_IOERR) as i32;
+            *_errno() = (EBADF) as i32;
             return EOF;
         }
-        (*file)._flag |= _IOWRT;
+        (*file)._flag |= (_IOWRT) as i32;
     }
-    if (*file)._flag & _IOREAD != 0 {
-        if (*file)._flag & _IOEOF == 0 {
-            (*file)._flag |= _IOERR;
+    if (*file)._flag & (_IOREAD) as i32 != 0 {
+        if (*file)._flag & (_IOEOF) as i32 == 0 {
+            (*file)._flag |= (_IOERR) as i32;
             return EOF;
         }
         (*file)._cnt = 0;
         (*file)._ptr = (*file)._base;
-        (*file)._flag &= !(_IOREAD | _IOEOF);
+        (*file)._flag &= (!(_IOREAD | _IOEOF)) as i32;
     }
 
-    if (*file)._flag & (_IOMYBUF | MSVCRT__USERBUF) != 0 {
+    if (*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32 != 0 {
         let mut res = 0;
 
         if (*file)._cnt <= 0 {
@@ -3722,10 +3722,10 @@ pub unsafe extern "C" fn _flsbuf(c: i32, file: *mut FILE) -> i32 {
             if res != 0 {
                 return res;
             }
-            (*file)._flag |= _IOWRT;
+            (*file)._flag |= (_IOWRT) as i32;
             (*file)._cnt = (*file)._bufsiz;
         }
-        *(*file)._ptr = c as u8;
+        *(*file)._ptr = (c as u8) as i8;
         (*file)._ptr = (*file)._ptr.offset(1);
         (*file)._cnt -= 1;
         return c & 0xff;
@@ -3737,7 +3737,7 @@ pub unsafe extern "C" fn _flsbuf(c: i32, file: *mut FILE) -> i32 {
         if len == 1 {
             return c & 0xff;
         }
-        (*file)._flag |= _IOERR;
+        (*file)._flag |= (_IOERR) as i32;
         return EOF;
     }
 }
@@ -3765,7 +3765,7 @@ pub unsafe extern "C" fn _fwrite_nolock(ptr: *const core::ffi::c_void, size: usi
 
     while wrcnt != 0 {
         if (*file)._cnt < 0 {
-            (*file)._flag |= _IOERR;
+            (*file)._flag |= (_IOERR) as i32;
             break;
         } else if (*file)._cnt != 0 {
             let pcnt: i32 = if (*file)._cnt > wrcnt as i32 { wrcnt as i32 } else { (*file)._cnt };
@@ -3775,16 +3775,16 @@ pub unsafe extern "C" fn _fwrite_nolock(ptr: *const core::ffi::c_void, size: usi
             written += pcnt;
             wrcnt = wrcnt.wrapping_sub(pcnt as usize);
             ptr_offset = ptr_offset.offset(pcnt as isize);
-        } else if ((*file)._flag & MSVCRT__NOBUF) != 0
-            || (((*file)._flag & (_IOMYBUF | MSVCRT__USERBUF)) != 0 && wrcnt >= (*file)._bufsiz as usize)
-            || (((*file)._flag & (_IOMYBUF | MSVCRT__USERBUF)) == 0 && wrcnt >= MSVCRT_INTERNAL_BUFSIZ) {
+        } else if ((*file)._flag & (MSVCRT__NOBUF) as i32) != 0
+            || (((*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32) != 0 && wrcnt >= (*file)._bufsiz as usize)
+            || (((*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32) == 0 && wrcnt >= MSVCRT_INTERNAL_BUFSIZ) {
             let pcnt: usize;
             let bufsiz: i32;
 
-            if ((*file)._flag & MSVCRT__NOBUF) != 0 {
+            if ((*file)._flag & (MSVCRT__NOBUF) as i32) != 0 {
                 bufsiz = 1;
-            } else if ((*file)._flag & (_IOMYBUF | MSVCRT__USERBUF)) == 0 {
-                bufsiz = MSVCRT_INTERNAL_BUFSIZ;
+            } else if ((*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32) == 0 {
+                bufsiz = (MSVCRT_INTERNAL_BUFSIZ) as i32;
             } else {
                 bufsiz = (*file)._bufsiz;
             }
@@ -3796,7 +3796,7 @@ pub unsafe extern "C" fn _fwrite_nolock(ptr: *const core::ffi::c_void, size: usi
             }
 
             if _write((*file)._file, ptr_offset as *const core::ffi::c_void, pcnt as u32) <= 0 {
-                (*file)._flag |= _IOERR;
+                (*file)._flag |= (_IOERR) as i32;
                 break;
             }
             written = written.wrapping_add(pcnt as i32);
@@ -3874,7 +3874,7 @@ pub unsafe extern "C" fn _wfsopen(path: *const wchar_t, mode: *const wchar_t, sh
         file = core::ptr::null_mut();
     } else {
         file = msvcrt_alloc_fp();
-        if !file.is_null() && msvcrt_init_fp(file, fd, stream_flags) != -1 {
+        if !file.is_null() && msvcrt_init_fp(file, fd, (stream_flags) as u32) != -1 {
             TRACE!(b":fd (%d) mode (%s) FILE* (%p)\n\0".as_ptr() as *const i8, fd, debugstr_w(mode), file);
         } else if !file.is_null() {
             (*file)._flag = 0;
@@ -3904,21 +3904,21 @@ pub unsafe extern "C" fn _fsopen(path: *const i8, mode: *const i8, share: i32) -
     if !mode.is_null() {
         modeW = wstrdupa_utf8(mode);
         if modeW.is_null() {
-            free(pathW);
+            free((pathW).cast());
             return core::ptr::null_mut();
         }
     }
 
     ret = _wfsopen(pathW, modeW, share);
 
-    free(pathW);
-    free(modeW);
+    free((pathW).cast());
+    free((modeW).cast());
     ret
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn fopen(path: *const i8, mode: *const i8) -> *mut FILE {
-    _fsopen(path, mode, _SH_DENYNO)
+    _fsopen(path, mode, (_SH_DENYNO) as i32)
 }
 
 #[no_mangle]
@@ -3928,13 +3928,13 @@ pub unsafe extern "C" fn fopen_s(
     mode: *const i8,
 ) -> i32 {
     if MSVCRT_CHECK_PMT!(pFile != core::ptr::null_mut()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(filename != core::ptr::null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(mode != core::ptr::null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     *pFile = fopen(filename, mode);
@@ -3947,7 +3947,7 @@ pub unsafe extern "C" fn fopen_s(
 
 #[no_mangle]
 pub unsafe extern "C" fn _wfopen(path: *const wchar_t, mode: *const wchar_t) -> *mut FILE {
-    _wfsopen(path, mode, _SH_DENYNO)
+    _wfsopen(path, mode, (_SH_DENYNO) as i32)
 }
 
 #[no_mangle]
@@ -3957,13 +3957,13 @@ pub unsafe extern "C" fn _wfopen_s(
     mode: *const wchar_t,
 ) -> i32 {
     if MSVCRT_CHECK_PMT!(pFile as *const core::ffi::c_void != core::ptr::null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(filename as *const core::ffi::c_void != core::ptr::null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(mode as *const core::ffi::c_void != core::ptr::null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     *pFile = _wfopen(filename, mode);
@@ -3989,7 +3989,7 @@ pub unsafe extern "C" fn _fputc_nolock(c: i32, file: *mut FILE) -> i32 {
     let res: i32;
 
     if (*file)._cnt > 0 {
-        *(*file)._ptr = c as u8;
+        *(*file)._ptr = (c as u8) as i8;
         (*file)._ptr = (*file)._ptr.offset(1);
         (*file)._cnt -= 1;
         if c == '\n' as i32 {
@@ -4053,16 +4053,16 @@ pub unsafe extern "C" fn _fread_nolock(
         read = read.wrapping_add(pcnt);
         rcnt = rcnt.wrapping_sub(pcnt);
         ptr = (ptr as *mut u8).add(pcnt) as *mut core::ffi::c_void;
-    } else if (*file)._flag & _IOREAD == 0 {
-        if (*file)._flag & _IORW != 0 {
-            (*file)._flag |= _IOREAD;
+    } else if (*file)._flag & (_IOREAD) as i32 == 0 {
+        if (*file)._flag & (_IORW) as i32 != 0 {
+            (*file)._flag |= (_IOREAD) as i32;
         } else {
             return 0;
         }
     }
 
     if rcnt > 0
-        && (*file)._flag & (MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF) == 0
+        && (*file)._flag & ((MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF)) as i32 == 0
     {
         msvcrt_alloc_buffer(file);
     }
@@ -4071,7 +4071,7 @@ pub unsafe extern "C" fn _fread_nolock(
         let i: i32;
         if (*file)._cnt == 0
             && rcnt < (*file)._bufsiz as usize
-            && ((*file)._flag & (_IOMYBUF | MSVCRT__USERBUF)) != 0
+            && ((*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32) != 0
         {
             i = _read((*file)._file, (*file)._base as *mut core::ffi::c_void, (*file)._bufsiz as u32);
             (*file)._ptr = (*file)._base;
@@ -4088,16 +4088,16 @@ pub unsafe extern "C" fn _fread_nolock(
 
             if actual_i > 0 && actual_i < (*file)._cnt {
                 (*get_ioinfo_nolock((*file)._file)).wxflag &= !WX_ATEOF;
-                (*file)._flag &= !_IOEOF;
+                (*file)._flag &= (!_IOEOF) as i32;
             }
             if actual_i > 0 {
                 memcpy(ptr, (*file)._ptr as *const core::ffi::c_void, actual_i as usize);
                 (*file)._cnt -= actual_i;
                 (*file)._ptr = (*file)._ptr.add(actual_i as usize);
             }
-        } else if rcnt > INT_MAX {
+        } else if rcnt > (INT_MAX) as usize {
             i = _read((*file)._file, ptr, INT_MAX);
-        } else if rcnt < (if (*file)._bufsiz != 0 { (*file)._bufsiz } else { MSVCRT_INTERNAL_BUFSIZ }) as usize {
+        } else if rcnt < (if (*file)._bufsiz != 0 { (*file)._bufsiz } else { (MSVCRT_INTERNAL_BUFSIZ) as i32 }) as usize {
             i = _read((*file)._file, ptr, rcnt as u32);
         } else {
             let bufsize = if (*file)._bufsiz != 0 {
@@ -4113,9 +4113,9 @@ pub unsafe extern "C" fn _fread_nolock(
         ptr = (ptr as *mut u8).add(i as usize) as *mut core::ffi::c_void;
 
         if (*get_ioinfo_nolock((*file)._file)).wxflag & WX_ATEOF != 0 {
-            (*file)._flag |= _IOEOF;
+            (*file)._flag |= (_IOEOF) as i32;
         } else if i == -1 {
-            (*file)._flag |= _IOERR;
+            (*file)._flag |= (_IOERR) as i32;
             pread = 0;
             rcnt = 0;
         }
@@ -4161,16 +4161,16 @@ pub unsafe extern "C" fn _wfreopen_s(
     file: *mut FILE,
 ) -> i32 {
     if MSVCRT_CHECK_PMT!(!pFile.is_null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(!path.is_null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(!mode.is_null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(!file.is_null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     *pFile = _wfreopen(path, mode, file);
@@ -4196,15 +4196,15 @@ pub unsafe extern "C" fn freopen(path: *const i8, mode: *const i8, file: *mut FI
     if !mode.is_null() {
         modeW = msvcrt_wstrdupa(mode);
         if modeW.is_null() {
-            free(pathW);
+            free((pathW).cast());
             return core::ptr::null_mut();
         }
     }
 
     ret = _wfreopen(pathW, modeW, file);
 
-    free(pathW);
-    free(modeW);
+    free((pathW).cast());
+    free((modeW).cast());
     ret
 }
 
@@ -4216,16 +4216,16 @@ pub unsafe extern "C" fn freopen_s(
     file: *mut FILE,
 ) -> i32 {
     if MSVCRT_CHECK_PMT!(!pFile.is_null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(!path.is_null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(!mode.is_null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
     if MSVCRT_CHECK_PMT!(!file.is_null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     *pFile = freopen(path, mode, file);
@@ -4260,8 +4260,8 @@ pub unsafe extern "C" fn _ftelli64_nolock(file: *mut FILE) -> __int64 {
     if pos == -1 {
         return -1;
     }
-    if (*file)._flag & (_IOMYBUF | MSVCRT__USERBUF) != 0 {
-        if (*file)._flag & _IOWRT != 0 {
+    if (*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32 != 0 {
+        if (*file)._flag & (_IOWRT) as i32 != 0 {
             pos += ((*file)._ptr as isize - (*file)._base as isize) as __int64;
 
             if (*get_ioinfo_nolock((*file)._file)).wxflag & WX_TEXT != 0 {
@@ -4276,7 +4276,7 @@ pub unsafe extern "C" fn _ftelli64_nolock(file: *mut FILE) -> __int64 {
                 }
             }
         } else if (*file)._cnt == 0 {
-        } else if _lseeki64((*file)._file, 0, SEEK_END) == pos {
+        } else if _lseeki64((*file)._file, 0, (SEEK_END) as i32) == pos {
             let mut i: i32;
 
             pos -= (*file)._cnt as __int64;
@@ -4292,7 +4292,7 @@ pub unsafe extern "C" fn _ftelli64_nolock(file: *mut FILE) -> __int64 {
         } else {
             let mut p: *mut i8;
 
-            if _lseeki64((*file)._file, pos, SEEK_SET) != pos {
+            if _lseeki64((*file)._file, pos, (SEEK_SET) as i32) != pos {
                 return -1;
             }
 
@@ -4320,7 +4320,7 @@ pub unsafe extern "C" fn _ftelli64_nolock(file: *mut FILE) -> __int64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn ftell(file: *mut FILE) -> __msvcrt_long {
-    _ftelli64(file)
+    (_ftelli64(file)) as i32
 }
 
 #[no_mangle]
@@ -4372,7 +4372,7 @@ pub unsafe extern "C" fn fputws(s: *const wchar_t, file: *mut FILE) -> i32 {
                 remove_std_buffer(file);
             }
             _unlock_file(file);
-            return WEOF;
+            return (WEOF) as i32;
         }
         i += 1;
     }
@@ -4443,8 +4443,8 @@ pub unsafe extern "C" fn _getws(buf: *mut wchar_t) -> *mut wchar_t {
 
     _lock_file(stdin);
     cc = _fgetwc_nolock(stdin);
-    while cc != WEOF && cc != '\n' as i32 {
-        if cc != '\r' as i32 {
+    while cc != WEOF && cc != ('\n' as i32) as u16 {
+        if cc != ('\r' as i32) as u16 {
             *buf = cc as wchar_t;
             buf = buf.offset(1);
         }
@@ -4497,10 +4497,10 @@ pub unsafe extern "C" fn _putws(s: *const wchar_t) -> i32 {
     _lock_file(stdout);
     ret = fputws(s, stdout);
     if ret >= 0 {
-        ret = _fputwc_nolock('\n' as wint_t, stdout);
+        ret = (_fputwc_nolock('\n' as wint_t, stdout)) as i32;
     }
     _unlock_file(stdout);
-    if ret >= 0 { 0 } else { WEOF }
+    if ret >= 0 { 0 } else { (WEOF) as i32 }
 }
 
 #[no_mangle]
@@ -4523,12 +4523,12 @@ pub unsafe extern "C" fn rename(oldpath: *const i8, newpath: *const i8) -> i32 {
         return -1;
     }
     if !newpath.is_null() && { newpathW = wstrdupa_utf8(newpath); newpathW.is_null() } {
-        free(oldpathW);
+        free((oldpathW).cast());
         return -1;
     }
     ret = _wrename(oldpathW, newpathW);
-    free(oldpathW);
-    free(newpathW);
+    free((oldpathW).cast());
+    free((newpathW).cast());
     ret
 }
 
@@ -4537,7 +4537,7 @@ pub unsafe extern "C" fn _wrename(oldpath: *const wchar_t, newpath: *const wchar
     if MoveFileExW(oldpath, newpath, MOVEFILE_COPY_ALLOWED) != 0 {
         return 0;
     }
-    msvcrt_set_errno(GetLastError());
+    msvcrt_set_errno((GetLastError()) as i32);
     return -1;
 }
 
@@ -4546,34 +4546,34 @@ pub unsafe extern "C" fn setvbuf(file: *mut FILE, buf: *mut i8, mode: i32, size:
     if MSVCRT_CHECK_PMT!(file != core::ptr::null_mut()) == 0 {
         return -1;
     }
-    if MSVCRT_CHECK_PMT!(mode == _IONBF || mode == _IOFBF || mode == _IOLBF) == 0 {
+    if MSVCRT_CHECK_PMT!(mode == (_IONBF) as i32 || mode == (_IOFBF) as i32 || mode == (_IOLBF) as i32) == 0 {
         return -1;
     }
-    if MSVCRT_CHECK_PMT!(mode == _IONBF || (size >= 2 && size <= INT_MAX)) == 0 {
+    if MSVCRT_CHECK_PMT!(mode == (_IONBF) as i32 || (size >= 2 && size <= (INT_MAX) as usize)) == 0 {
         return -1;
     }
 
     _lock_file(file);
 
     _fflush_nolock(file);
-    if (*file)._flag & _IOMYBUF != 0 {
+    if (*file)._flag & (_IOMYBUF) as i32 != 0 {
         free((*file)._base as *mut core::ffi::c_void);
     }
-    (*file)._flag &= !(MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF);
+    (*file)._flag &= (!(MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF)) as i32;
     (*file)._cnt = 0;
 
-    if mode == _IONBF {
-        (*file)._flag |= MSVCRT__NOBUF;
+    if mode == (_IONBF) as i32 {
+        (*file)._flag |= (MSVCRT__NOBUF) as i32;
         (*file)._base = core::ptr::addr_of_mut!((*file)._charbuf) as *mut i8;
         (*file)._ptr = (*file)._base;
         (*file)._bufsiz = 2;
     } else if buf != core::ptr::null_mut() {
         (*file)._base = buf;
         (*file)._ptr = buf;
-        (*file)._flag |= MSVCRT__USERBUF;
+        (*file)._flag |= (MSVCRT__USERBUF) as i32;
         (*file)._bufsiz = size as i32;
     } else {
-        (*file)._base = malloc(size);
+        (*file)._base = (malloc(size)).cast();
         (*file)._ptr = (*file)._base;
         if (*file)._base == core::ptr::null_mut() {
             (*file)._bufsiz = 0;
@@ -4581,7 +4581,7 @@ pub unsafe extern "C" fn setvbuf(file: *mut FILE, buf: *mut i8, mode: i32, size:
             return -1;
         }
 
-        (*file)._flag |= _IOMYBUF;
+        (*file)._flag |= (_IOMYBUF) as i32;
         (*file)._bufsiz = size as i32;
     }
     _unlock_file(file);
@@ -4590,7 +4590,7 @@ pub unsafe extern "C" fn setvbuf(file: *mut FILE, buf: *mut i8, mode: i32, size:
 
 #[no_mangle]
 pub unsafe extern "C" fn setbuf(file: *mut FILE, buf: *mut i8) {
-    setvbuf(file, buf, if !buf.is_null() { _IOFBF } else { _IONBF }, BUFSIZ);
+    setvbuf(file, buf, if !buf.is_null() { (_IOFBF) as i32 } else { (_IONBF) as i32 }, (BUFSIZ) as usize);
 }
 unsafe extern "C" fn tmpnam_helper(s: PCHAR, size: usize, tmpnam_unique: *mut LONG, tmp_max: i32) -> i32 {
     let mut tmpstr: [i8; 8] = [0; 8];
@@ -4598,15 +4598,15 @@ unsafe extern "C" fn tmpnam_helper(s: PCHAR, size: usize, tmpnam_unique: *mut LO
     let mut digits: i32;
 
     if MSVCRT_CHECK_PMT!(s != core::ptr::null_mut()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     if size < 3 {
         if size != 0 {
             *s = 0;
         }
-        *_errno() = ERANGE;
-        return ERANGE;
+        *_errno() = (ERANGE) as i32;
+        return (ERANGE) as i32;
     }
     *p = b'\\' as i8;
     p = p.offset(1);
@@ -4616,8 +4616,8 @@ unsafe extern "C" fn tmpnam_helper(s: PCHAR, size: usize, tmpnam_unique: *mut LO
     digits = msvcrt_int_to_base32(GetCurrentProcessId() as i32, tmpstr.as_mut_ptr());
     if digits + 1 > size as i32 {
         *s = 0;
-        *_errno() = ERANGE;
-        return ERANGE;
+        *_errno() = (ERANGE) as i32;
+        return (ERANGE) as i32;
     }
     memcpy(p as *mut core::ffi::c_void, tmpstr.as_ptr() as *const core::ffi::c_void, (digits as usize) * core::mem::size_of_val(&tmpstr[0]));
     p = p.offset(digits as isize);
@@ -4639,8 +4639,8 @@ unsafe extern "C" fn tmpnam_helper(s: PCHAR, size: usize, tmpnam_unique: *mut LO
         digits = msvcrt_int_to_base32(digits, tmpstr.as_mut_ptr());
         if digits + 1 > size as i32 {
             *s = 0;
-            *_errno() = ERANGE;
-            return ERANGE;
+            *_errno() = (ERANGE) as i32;
+            return (ERANGE) as i32;
         }
         memcpy(p as *mut core::ffi::c_void, tmpstr.as_ptr() as *const core::ffi::c_void, (digits as usize) * core::mem::size_of_val(&tmpstr[0]));
         *p.offset(digits as isize) = 0;
@@ -4657,7 +4657,7 @@ unsafe extern "C" fn tmpnam_helper(s: PCHAR, size: usize, tmpnam_unique: *mut LO
 
 #[no_mangle]
 pub unsafe extern "C" fn tmpnam_s(s: PCHAR, size: usize) -> i32 {
-    return tmpnam_helper(s, size, core::ptr::addr_of_mut!(tmpnam_s_unique), TMP_MAX_S);
+    return tmpnam_helper(s, size, core::ptr::addr_of_mut!(tmpnam_s_unique), (TMP_MAX_S) as i32);
 }
 
 #[no_mangle]
@@ -4666,12 +4666,12 @@ pub unsafe extern "C" fn tmpnam(s: PCHAR) -> PCHAR {
     if s.is_null() {
         let data: *mut thread_data_t = msvcrt_get_thread_data();
         if (*data).tmpnam_buffer.is_null() {
-            (*data).tmpnam_buffer = malloc(MAX_PATH) as PCHAR;
+            (*data).tmpnam_buffer = malloc((MAX_PATH) as usize) as PCHAR;
         }
         s = (*data).tmpnam_buffer;
     }
 
-    if tmpnam_helper(s, -(1 as isize) as usize, core::ptr::addr_of_mut!(tmpnam_unique), TMP_MAX) != 0 {
+    if tmpnam_helper(s, -(1 as isize) as usize, core::ptr::addr_of_mut!(tmpnam_unique), (TMP_MAX) as i32) != 0 {
         core::ptr::null_mut()
     } else {
         s
@@ -4683,15 +4683,15 @@ unsafe extern "C" fn wtmpnam_helper(s: *mut wchar_t, size: usize, tmpnam_unique:
     let mut digits: i32;
 
     if MSVCRT_CHECK_PMT!(s != core::ptr::null_mut()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     if size < 3 {
         if size != 0 {
             *s = 0;
         }
-        *_errno() = ERANGE;
-        return ERANGE;
+        *_errno() = (ERANGE) as i32;
+        return (ERANGE) as i32;
     }
     *p = '\\' as wchar_t;
     p = p.offset(1);
@@ -4701,8 +4701,8 @@ unsafe extern "C" fn wtmpnam_helper(s: *mut wchar_t, size: usize, tmpnam_unique:
     digits = msvcrt_int_to_base32_w(GetCurrentProcessId(), tmpstr.as_mut_ptr());
     if (digits + 1) as usize > size {
         *s = 0;
-        *_errno() = ERANGE;
-        return ERANGE;
+        *_errno() = (ERANGE) as i32;
+        return (ERANGE) as i32;
     }
     memcpy(p as *mut core::ffi::c_void, tmpstr.as_ptr() as *const core::ffi::c_void, (digits as usize) * core::mem::size_of::<wchar_t>());
     p = p.offset(digits as isize);
@@ -4724,8 +4724,8 @@ unsafe extern "C" fn wtmpnam_helper(s: *mut wchar_t, size: usize, tmpnam_unique:
         digits = msvcrt_int_to_base32_w(digits, tmpstr.as_mut_ptr());
         if (digits + 1) as usize > size {
             *s = 0;
-            *_errno() = ERANGE;
-            return ERANGE;
+            *_errno() = (ERANGE) as i32;
+            return (ERANGE) as i32;
         }
         memcpy(p as *mut core::ffi::c_void, tmpstr.as_ptr() as *const core::ffi::c_void, (digits as usize) * core::mem::size_of::<wchar_t>());
         *p.offset(digits as isize) = 0;
@@ -4743,7 +4743,7 @@ unsafe extern "C" fn wtmpnam_helper(s: *mut wchar_t, size: usize, tmpnam_unique:
 
 #[no_mangle]
 pub unsafe extern "C" fn _wtmpnam_s(s: *mut wchar_t, size: usize) -> i32 {
-    wtmpnam_helper(s, size, core::ptr::addr_of_mut!(tmpnam_s_unique), TMP_MAX_S)
+    wtmpnam_helper(s, size, core::ptr::addr_of_mut!(tmpnam_s_unique), (TMP_MAX_S) as i32)
 }
 
 #[no_mangle]
@@ -4751,14 +4751,14 @@ pub unsafe extern "C" fn _wtmpnam(s: *mut wchar_t) -> *mut wchar_t {
     let s = if s.is_null() {
         let data = msvcrt_get_thread_data();
         if (*data).wtmpnam_buffer.is_null() {
-            (*data).wtmpnam_buffer = malloc(core::mem::size_of::<[wchar_t; MAX_PATH]>()) as *mut wchar_t;
+            (*data).wtmpnam_buffer = malloc(core::mem::size_of::<[wchar_t; (MAX_PATH) as usize]>()) as *mut wchar_t;
         }
         (*data).wtmpnam_buffer
     } else {
         s
     };
 
-    if wtmpnam_helper(s, -1 as usize, core::ptr::addr_of_mut!(tmpnam_unique), TMP_MAX) != 0 {
+    if wtmpnam_helper(s, -1 as usize, core::ptr::addr_of_mut!(tmpnam_unique), (TMP_MAX) as i32) != 0 {
         core::ptr::null_mut()
     } else {
         s
@@ -4772,7 +4772,7 @@ pub unsafe extern "C" fn tmpfile() -> *mut FILE {
     let mut file: *mut FILE = core::ptr::null_mut();
 
     LOCK_FILES();
-    fd = _open(filename, _O_CREAT | _O_BINARY | _O_RDWR | _O_TEMPORARY,
+    fd = _open(filename, (_O_CREAT | _O_BINARY | _O_RDWR | _O_TEMPORARY) as i32,
             _S_IREAD | _S_IWRITE);
     if fd != -1 && { file = msvcrt_alloc_fp(); !file.is_null() }
     {
@@ -4789,7 +4789,7 @@ pub unsafe extern "C" fn tmpfile() -> *mut FILE {
     if fd != -1 && file.is_null() {
         _close(fd);
     }
-    free(filename);
+    free((filename).cast());
     UNLOCK_FILES();
     file
 }
@@ -4797,7 +4797,7 @@ pub unsafe extern "C" fn tmpfile() -> *mut FILE {
 #[no_mangle]
 pub unsafe extern "C" fn tmpfile_s(file: *mut *mut FILE) -> i32 {
     if MSVCRT_CHECK_PMT!(!file.is_null()) == 0 {
-        return EINVAL;
+        return (EINVAL) as i32;
     }
 
     *file = tmpfile();
@@ -4810,24 +4810,24 @@ unsafe extern "C" fn puts_clbk_file_w(file: *mut core::ffi::c_void, len: i32, st
     let mut i: i32;
     let ret: i32;
 
-    _lock_file(file);
+    _lock_file((file).cast());
 
     if ((*get_ioinfo_nolock((*(file as *mut FILE))._file)).wxflag & WX_TEXT) == 0 {
         ret = _fwrite_nolock(str as *const core::ffi::c_void, core::mem::size_of::<wchar_t>(), len as usize, file as *mut FILE) as i32;
-        _unlock_file(file);
+        _unlock_file((file).cast());
         return ret;
     }
 
     i = 0;
     while i < len {
         if _fputwc_nolock(*str.offset(i as isize), file as *mut FILE) == WEOF {
-            _unlock_file(file);
+            _unlock_file((file).cast());
             return -1;
         }
         i += 1;
     }
 
-    _unlock_file(file);
+    _unlock_file((file).cast());
     return len;
 }
 unsafe extern "C" fn vfprintf_helper(options: u32, file: *mut FILE, format: *const i8,
@@ -4844,7 +4844,7 @@ unsafe extern "C" fn vfprintf_helper(options: u32, file: *mut FILE, format: *con
         ret = create_positional_ctx_a(args_ctx.as_mut_ptr(), format, valist);
         if ret < 0 {
             _invalid_parameter(core::ptr::null(), core::ptr::null(), core::ptr::null(), 0, 0);
-            *_errno() = EINVAL;
+            *_errno() = (EINVAL) as i32;
             return ret;
         } else if ret == 0 {
             options &= !MSVCRT_PRINTF_POSITIONAL_PARAMS;
@@ -4897,7 +4897,7 @@ unsafe extern "C" fn vfwprintf_helper(
                 0,
                 0,
             );
-            *_errno() = EINVAL;
+            *_errno() = (EINVAL) as i32;
             return ret;
         } else if ret == 0 {
             options &= !MSVCRT_PRINTF_POSITIONAL_PARAMS;
@@ -5106,7 +5106,7 @@ pub unsafe extern "C" fn _fprintf_l(
     let mut valist: __va_list_tag = core::mem::zeroed();
     let res: i32;
     va_start(&mut valist as *mut _ as *mut core::ffi::c_void, locale);
-    res = _vfprintf_l(file, format, locale, &mut valist);
+    res = _vfprintf_l(file, format, (locale).cast(), &mut valist);
     va_end(&mut valist as *mut _ as *mut core::ffi::c_void);
     res
 }
@@ -5131,7 +5131,7 @@ pub unsafe extern "C" fn _fprintf_p_l(
     let mut valist: __va_list_tag = core::mem::zeroed();
     let res: i32;
     va_start(&mut valist, args);
-    res = _vfprintf_p_l(file, format, locale, &mut valist);
+    res = _vfprintf_p_l(file, format, (locale).cast(), &mut valist);
     va_end(&mut valist);
     res
 }
@@ -5146,7 +5146,7 @@ pub unsafe extern "C" fn _fprintf_s_l(
     let mut valist: *mut __va_list_tag = core::ptr::null_mut();
     let res: i32;
     va_start(valist, locale);
-    res = _vfprintf_s_l(file, format, locale, valist);
+    res = _vfprintf_s_l(file, format, (locale).cast(), valist);
     va_end(valist);
     res
 }
@@ -5267,12 +5267,12 @@ pub unsafe extern "C" fn _ungetc_nolock(c: i32, file: *mut FILE) -> i32 {
         return EOF;
     }
 
-    if c == EOF || ((*file)._flag & _IOREAD == 0 &&
-            ((*file)._flag & _IORW == 0 || (*file)._flag & _IOWRT != 0)) {
+    if c == EOF || ((*file)._flag & (_IOREAD) as i32 == 0 &&
+            ((*file)._flag & (_IORW) as i32 == 0 || (*file)._flag & (_IOWRT) as i32 != 0)) {
         return EOF;
     }
 
-    if ((*file)._flag & (MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF) == 0
+    if ((*file)._flag & ((MSVCRT__NOBUF | _IOMYBUF | MSVCRT__USERBUF)) as i32 == 0
             && msvcrt_alloc_buffer(file) != 0)
             || ((*file)._cnt == 0 && (*file)._ptr == (*file)._base) {
         (*file)._ptr = (*file)._ptr.offset(1);
@@ -5280,17 +5280,17 @@ pub unsafe extern "C" fn _ungetc_nolock(c: i32, file: *mut FILE) -> i32 {
 
     if (*file)._ptr > (*file)._base {
         (*file)._ptr = (*file)._ptr.offset(-1);
-        if (*file)._flag & _IOSTRG != 0 {
-            if *(*file)._ptr != c as u8 {
+        if (*file)._flag & (_IOSTRG) as i32 != 0 {
+            if *(*file)._ptr != (c as u8) as i8 {
                 (*file)._ptr = (*file)._ptr.offset(1);
                 return EOF;
             }
         } else {
-            *(*file)._ptr = c as u8;
+            *(*file)._ptr = (c as u8) as i8;
         }
         (*file)._cnt += 1;
-        (*file)._flag &= !(_IOERR | _IOEOF);
-        (*file)._flag |= _IOREAD;
+        (*file)._flag &= (!(_IOERR | _IOEOF)) as i32;
+        (*file)._flag |= (_IOREAD) as i32;
         return c;
     }
 
@@ -5380,7 +5380,7 @@ pub unsafe extern "C" fn _getmaxstdio() -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn _setmaxstdio(newmax: i32) -> i32 {
     if newmax < _IOB_ENTRIES as i32
-        || newmax > MSVCRT_MAX_FILES
+        || newmax > (MSVCRT_MAX_FILES) as i32
         || newmax < MSVCRT_stream_idx
     {
         return -1;
