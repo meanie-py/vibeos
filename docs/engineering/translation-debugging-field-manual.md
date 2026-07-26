@@ -1887,6 +1887,21 @@ a diagnosis.**
 netstack's TDI transport relied on it for its queue → the `-smp 2` "TDI dgram upcall TIMED OUT"
 NET_FLAKE. Fix: a real `KSPIN_LOCK` via `SpinLockGuard`. Second instance in the same commit.
 
+### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
+**Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
+log shows the boot still *talking* — arm64 `-smp 2` conformance reached
+`[WINLOGON] explorer.exe created (PID 216)` and was mid-SCM-startup when the 180s budget expired.
+**Cause:** the per-arch `boot_timeout` is sized against the *UP* boot (arm64: ~40s observed →
+180s budget). Under MTTCG every vCPU is its own host thread doing its own translation, and the
+guest genuinely does more work (AP bring-up, IPI round-trips, real spinlock contention), so
+wall-clock to any milestone grows roughly linearly in N — on an already-contended fleet host,
+more. **Fix:** `vm.smp_boot_timeout()` scales `boot_timeout` by N. Scale the CLOCK only —
+`hang_silence_seconds` is deliberately NOT scaled, because the silence watchdog is what actually
+catches a wedge, so a genuine MP hang still fails in ~120s instead of burning the stretched
+budget. Do not "fix" this by lowering the boot marker; the marker is what proves the desktop
+came up. Recompute the scale from a stashed UP value, not from the current one, or a config
+reused across a retry loop multiplies each time.
+
 ### Dropped `#ifdef CONFIG_SMP` blocks are TIME BOMBS, not dead code `[§9.95]`
 `KiRetireDpcList`'s SMP-only deferred-ready drain was dropped in translation, so **an idle CPU
 re-HLTs with runnable threads parked on its own `DeferredReadyListHead`** → `KeGuardedMutex`

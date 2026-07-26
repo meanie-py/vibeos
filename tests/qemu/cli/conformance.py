@@ -125,15 +125,25 @@ def conformance(args, repo: Path) -> int:
             return 2
         env = dict(os.environ, VIBEOS_PAYLOAD=SUITE)
         build_cmd = [str(repo / "vibeos-cli"), "build", "--arch", base]
-        if smp:
-            # ANY --smp N (including 1) means the ntkrnlmp media: at N=1 that is
-            # the whole experiment — "the MP kernel on one CPU" — and without
-            # --smp-kernel it would silently sweep the UP kernel instead and
-            # report a meaningless all-green.
+        # ANY --smp N (including 1) must sweep the ntkrnlmp media: at N=1 that is
+        # the whole experiment — "the MP kernel on one CPU" — and sweeping the UP
+        # kernel instead would report a meaningless all-green.
+        #
+        # On x86 that costs NOTHING now: the ISO already carries both kernels and
+        # both HALs plus a [LiveCD_SMP] entry, and vm.smp_selected_iso patches
+        # `DefaultOS=` inside a COPY of the media at boot time. --smp-kernel would
+        # only rewrite that same line via a cmake cache var — i.e. a reconfigure
+        # and an ISO re-roll to change 22 bytes we can change for free.
+        #
+        # arm64 still needs it: its boot.img is a hand-curated ramdisk that does
+        # not carry halmp.dll/ntkrnlmp.exe at all unless mkramdisk.sh --smp stages
+        # them, so there is nothing in the media to boot-select.
+        needs_smp_media_build = smp and base == "arm64"
+        if needs_smp_media_build:
             build_cmd.append("--smp-kernel")
         print(
             f"[conformance] building {base} with VIBEOS_PAYLOAD={SUITE}"
-            f"{' --smp-kernel' if smp else ''} ..."
+            f"{' --smp-kernel' if needs_smp_media_build else ''} ..."
         )
         bp = subprocess.run(build_cmd, cwd=str(repo), env=env)
         if bp.returncode != 0:

@@ -122,6 +122,27 @@ def test_smp_iso_patch_raises_rather_than_booting_up_media(tmp_path: Path):
         vm_mod.smp_selected_iso(c, work)
 
 
+def test_smp_boot_timeout_scales_the_clock_only_for_real_smp():
+    """A UP boot and -smp 1 must keep the tuned budget untouched; only a genuinely
+    multi-vCPU boot pays the MTTCG stretch."""
+    assert vm_mod.smp_boot_timeout(180.0, None) == 180.0
+    assert vm_mod.smp_boot_timeout(180.0, 1) == 180.0
+    assert vm_mod.smp_boot_timeout(180.0, 2) == 360.0
+    assert vm_mod.smp_boot_timeout(180.0, 4) == 720.0
+
+
+def test_smp_boot_timeout_does_not_compound_across_boots(monkeypatch, tmp_path: Path):
+    """Reusing one ArchConfig across VMs (a gate retry loop) must NOT multiply the
+    budget again each time — the scale is always recomputed from the stashed UP
+    value, so a wedge still fails at 2x, not 8x."""
+    monkeypatch.setenv("VIBEOS_QEMU_SMP", "2")
+    cfg = vm_mod.get_arch_config("arm64")
+    up = cfg.boot_timeout
+    for _ in range(3):
+        vm_mod.QemuVM(cfg, tmp_path / "w")
+    assert cfg.boot_timeout == up * 2
+
+
 def test_run_raises_loudly_instead_of_returning_empty(tiny_repo: Path):
     """The BUILD_INCOMPLETE train-halter class: _run used to swallow BOTH a
     non-zero exit and any exception, returning "". That silently shifted the

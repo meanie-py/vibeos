@@ -585,17 +585,47 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   - No duplicate-symbol trap: `ntos.cmake:69` has the C `ex/harderr.c` commented out (cohab
     flipped) and the Rust owns `#[no_mangle] ExpDefaultErrorPort` — exactly one symbol.
 
-  So the **only** code path that yields `ResponseReturnToCaller` (0) is the null-error-port
-  early return at `ex-rust/src/harderr.rs:170-172`, and the six expectations therefore encode
-  *"no error port is connected"*. The failures are the faithful consequence of the LPC error
-  port having come alive — the question is no longer "which translation is wrong" but "should
-  the port be answering these, and what does real NT return when it does". Note the six are the
-  ONLY out-of-range cases outside the `InteractivePart1/2` guards (every case that would pop a
-  message box is gated off on ROS), so they are the only ones whose answer the sweep sees.
-  Next step is unchanged in shape but now confirmatory rather than exploratory: one instrumented
-  boot logging `PortHandle` at `harderr.rs:150` for these six calls. Repro:
-  `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after the build. i386 never runs
-  this test (74-test list vs amd64's 87).
+  **THIRD HALF ALSO RULED OUT, and the "only one path yields 0" claim above was wrong
+  (2026-07-26).** The `PortHandle` computation itself (`ex-rust/src/harderr.rs:145-167`) is
+  byte-faithful to `ntoskrnl/ex/harderr.c:155-181` — same `DefaultHardErrorProcessing &
+  SEM_FAILCRITICALERRORS || ErrorStatus & HARDERROR_OVERRIDE_ERRORMODE` gate, same
+  ExceptionPort→ExpDefaultErrorPort fallback, same two `PortHandle = NULL` overrides. All three
+  halves of the translation are now checked; none diverges.
+
+  There are in fact **three** paths that write `ResponseReturnToCaller`, not one
+  (`harderr.c:210`, `:280`, `:284`):
+  1. `PortHandle == NULL` — early return, no LPC at all.
+  2. `LpcRequestWaitReplyPort` **fails** — kernel writes 0 and returns the failure status.
+  3. LPC succeeds but the reply's `Response` is **not one of the 11 accepted values**, so the
+     kernel clamps it to 0 (`harderr.c:262-276`) — i.e. the server never wrote `Response`.
+
+  **The failure COUNT discriminates.** `CheckHardError` asserts twice per case
+  (`ok_eq_hex(Status, STATUS_SUCCESS)` *and* `ok_eq_ulong(Response, ...)`), and we see exactly
+  **6 failures across 6 cases** — one assertion each. So `Status` is `STATUS_SUCCESS` and path 2
+  is ruled out *today*; the 2026-07-17 baseline passed BOTH assertions, so path 2 is ruled out
+  *then* as well. **A broken LPC was never the explanation in either direction.** The baseline's
+  clean pass was path 1 or path 3, both of which mean the port round-trip was not delivering a
+  valid server answer. Today winsrv writes `ResponseNotHandled` (1), which *is* in the accept
+  list, so the kernel passes it through unclamped.
+
+  **This reframes the entry: the six failures are the OS getting MORE correct, and #18 is NOT a
+  flip blocker.** Current behaviour is exactly what both the C and the Rust winsrv specify. The
+  residual divergence is upstream ReactOS vs Windows — the test is calibrated on Windows, whose
+  csrss answers `ResponseReturnToCaller` for out-of-range `ValidResponseOptions` where ROS's
+  `UserServerHardError` answers `ResponseNotHandled` — and it only became observable once our
+  dispatch started delivering the reply. Trigger commit still unnamed; the 2026-07-17 winsrv
+  harderror commit (`b8185deb011`) is mechanical `mut`/unused-import noise and is NOT it, and
+  the 2026-07-16 LPC reply-lifetime fix (`ce89f8d6af1`) predates the clean baseline. The
+  remaining suspects are the 07-18 calling-convention canon passes (`e33a810c9ad`,
+  `992af657162` — 360 decl fixes + 38 shim-def bugs across 40 crates), which is precisely the
+  change class that would repair a server reply that previously never landed.
+
+  One instrumented boot still settles path 1 vs path 3 definitively — log `PortHandle`, the
+  `Status` from `LpcRequestWaitReplyPort`, and `Message.Response` immediately after the send.
+  Note the six are the ONLY out-of-range cases outside the `InteractivePart1/2` guards (every
+  case that would pop a message box is gated off on ROS), so they are the only ones whose answer
+  the sweep sees. Repro: `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after the
+  build. i386 never runs this test (74-test list vs amd64's 87).
 
 - **WoW64: 32-bit guests could not create THREADS — FIXED on amd64, PARTIAL on arm64,
   2026-07-25** (task #64, wow64-plan Phase E15). wow64.dll had no per-thread entry at all:
