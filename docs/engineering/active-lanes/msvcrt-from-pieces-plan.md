@@ -1400,3 +1400,75 @@ shim substrate the difftest does not have. `time.c` (59) needs 12 new stubs incl
 host-gradeable; its 4 float↔string functions could flip by a cargo feature gate alone, with
 caveats (thread-local vs static buffers, locale `decimal_point`, the `float` feature being off on
 i386 by design).
+
+## The file.c reference-TU substrate (2026-07-26)
+
+`file.c` is **163 of the 537 remaining exports — 30%, in one file**, and it could not be
+graded because the difftest had no way to compile it for the host. This is that substrate.
+It is **not yet wired into build.rs**: the compile half is done and proved, the link half
+(a POSIX-backed Win32 shim) is not, and an unlinkable reference TU in the crate would break
+a gate for no benefit. Nothing is hidden — the pieces are committed and the remaining
+surface is enumerated below.
+
+### Why file.c needed its own prelude
+
+It reads and writes `FILE`'s members directly (`_ptr`/`_cnt`/`_base`/`_flag`/`_file`/
+`_charbuf`/`_bufsiz`/`_tmpfname`), so msvcrt's `struct _iobuf` **layout is part of the
+contract under test**, where the shared `ref_prelude.h` hands out glibc's `struct _IO_FILE`.
+scanf.c already set the precedent that a TU with its own type model gets its own prelude.
+
+### Derive the constants; transcribe the layouts and PROVE them
+
+`tools/gen_msvcrt_difftest_consts.py` computes all **86 constants** with the pinned
+cross-compiler reading msvcrt's real headers, and emits **147 `_Static_assert`s** the host
+compiler checks against the transcribed layouts. Two traps make hand-transcription unsafe,
+and both are live:
+
+* **msvcrt substitutes its own CRT headers.** `dll/win32/msvcrt/CMakeLists.txt` *removes*
+  `sdk/include/crt` from the include path and adds `dll/win32/msvcrt/include`. Harvesting
+  from `sdk/include/crt` reads headers the build never sees — the §9.66 class.
+* **`_MSVCR_VER` selects between two definitions of the same name.** `_IOMYBUF` is `0x0040`
+  in msvcrt.h's `>=140` block and `0x0008` in the header the build reaches.
+
+The layout guardian earned itself immediately, on its own author: the first draft of
+`msvcrt_file_prelude.h` took `FILE`'s field order from msvcrt.h's `_MSVCR_VER >= 140` block
+(`_ptr, _base, _cnt, …`) when at `_MSVCR_VER=0` it comes from `corecrt_wstdio.h`
+(`_ptr, _cnt, _base, …`). **`_cnt` and `_base` are swapped** — every `_cnt` read would have
+returned a pointer's low half, and no test would have named the cause. The second catch was
+`RTL_CRITICAL_SECTION_DEBUG.Spare`, transcribed as `DWORD[2]` where the real header has
+`ULONG_PTR[1]`; file.c stores a string *address* there, so a 32-bit element made the
+initializer a truncating conversion the compiler refuses.
+
+### A rename wall cannot be a `#define` wall
+
+`tools/gen_msvcrt_ref_protos.py` derives a prototype for **all 189** of file.c's public
+symbols from their own definitions — without them, the 65 calls file.c places above their
+definitions fall to C's implicit-declaration rule and become `int()`, silently truncating
+every 64-bit return. It also emits the list of symbols the `#define <n> ref_<n>` wall
+**must skip**, because two classes cannot be renamed that way:
+
+| class | what happens | how loud |
+|---|---|---|
+| the name is also a **struct tag** (`_stat`) | the wall rewrites the TYPE; `struct ref__stat` does not exist | compile error |
+| the TU **`#undef`s** it (file.c has 19) | the rename is silently DELETED and the function keeps its true name | **nothing** |
+
+The second leaked **10 of 189 symbols** before it was handled. Both take an asm label on the
+declaration instead, which renames the symbol at the object level where no `#undef` reaches.
+
+### Status and what remains
+
+`file.c` compiles to a **118 KB reference object, 0 errors, 189 of 189 symbols renamed,
+0 leaks**, with the harness's `-Werror=implicit-function-declaration` tripwire armed.
+`./vibeos-cli difftest` and all 15 tooling checks pass.
+
+The link surface is **50 imports**, enumerated and stable:
+
+* **39 Win32/NT** needing POSIX-backed shims in `refimpl.c` — dominated by `CreateFileW`,
+  `ReadFile`, `WriteFile`, `SetFilePointer`, `CloseHandle`, `GetFileType`,
+  `GetFileAttributesW`, plus the critical-section and interlocked families.
+* **11 msvcrt-internal** from sibling TUs (`msvcrt_set_errno`, `_wgetenv`, `wstrdupa_utf8`, …).
+
+Owed with the shim: wiring build.rs (rename wall + the skiplist), and a drift gate for the
+three generated headers. The gate wants an **input-hash** check rather than `--check` in
+`vibeos-cli check` — re-deriving needs `build-amd64` and the cross-toolchain, which a
+source-lint pass cannot assume, so a naive wiring would fire spuriously.
