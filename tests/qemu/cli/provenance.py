@@ -717,8 +717,8 @@ def _src_delta(repo: Path, stamp: Stamp) -> str:
         now_head = git_head(repo)
         if stamp.head_sha and now_head != stamp.head_sha:
             return (
-                f" — HEAD MOVED UNDER THE BUILD: {stamp.head_sha[:12]} -> {now_head[:12]} "
-                "(a merge/fetch landed mid-build; this is not a stale artifact)"
+                f" — HEAD MOVED SINCE THE BUILD: {stamp.head_sha[:12]} -> {now_head[:12]} "
+                "(a merge, fetch or local commit — NOT a stale artifact)"
             )
         names = _run(
             ["git", "diff", "--name-only", "HEAD", "--", ".", *NON_BUILD_PATHSPEC], repo

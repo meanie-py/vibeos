@@ -19,6 +19,7 @@ import pytest
 
 from tests.qemu import backend as be_mod
 from tests.qemu import qmp_client, serial_client
+from tests.qemu import vm as vm_mod
 
 from . import build as build_mod
 from . import config as config_mod
@@ -61,6 +62,64 @@ def test_git_fingerprint_immune_to_mtime(tiny_repo: Path):
     # touch bumps mtime but not content
     (tiny_repo / "a.txt").touch()
     assert provenance.git_fingerprint(tiny_repo) == fp1, "mtime churn must not change fingerprint"
+
+
+# --- freeldr boot-entry selection by in-place ISO patch --------------------
+#
+# The MP pair (ntkrnlmp.exe + halmp.dll) has always shipped on the same media as
+# the UP pair; only `DefaultOS=` inside freeldr.ini chose between them, and with
+# TimeOut=0 there is no menu to choose at. Rewriting that one line in a COPY of
+# the image replaces a cmake reconfigure + mkisofs repack (8m30s measured) with a
+# 0.15s copy — so an MP gate leg costs one extra boot. Byte-level, so a plain
+# bytes fixture exercises it exactly as a real ISO does.
+
+
+def _fake_iso(default_os: bytes = b"LiveCD_Debug", smp_section: bool = True) -> bytes:
+    body = b"\x00" * 64 + b"[FREELOADER]\r\nDefaultOS=" + default_os + b"\r\nTimeOut=0\r\n"
+    if smp_section:
+        body += b"[LiveCD_SMP]\r\nOptions=/KERNEL=ntkrnlmp.exe /HAL=halmp.dll\r\n"
+    return body + b"\x00" * 64
+
+
+def test_smp_iso_patch_is_equal_length_and_selects_the_mp_entry(tmp_path: Path):
+    src = tmp_path / "livecd.iso"
+    src.write_bytes(_fake_iso())
+    out = vm_mod.smp_selected_iso(src, tmp_path / "work")
+    assert out != src, "must not patch the build tree's media in place"
+    patched = out.read_bytes()
+    assert len(patched) == len(src.read_bytes()), "ISO9660 extents: length must not change"
+    assert b"DefaultOS=LiveCD_SMP\r\n\r\n" in patched
+    assert b"LiveCD_Debug" not in patched
+
+
+def test_smp_iso_patch_is_idempotent(tmp_path: Path):
+    """Media built with --smp-kernel already defaults to the MP entry; patching it
+    again must be a no-op that returns the original path, not a needless copy."""
+    src = tmp_path / "livecd.iso"
+    src.write_bytes(_fake_iso(default_os=b"LiveCD_SMP"))
+    assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
+
+
+def test_smp_iso_patch_raises_rather_than_booting_up_media(tmp_path: Path):
+    """Every failure path must raise. Silently returning the unpatched ISO would
+    boot the UP pair on an --smp run — exactly the false green _smp_check exists
+    to catch, and the reason this is not a best-effort helper."""
+    work = tmp_path / "work"
+    # no [LiveCD_SMP] section: media predates the halmp.dll twin
+    a = tmp_path / "a.iso"
+    a.write_bytes(_fake_iso(smp_section=False))
+    with pytest.raises(RuntimeError, match="LiveCD_SMP"):
+        vm_mod.smp_selected_iso(a, work)
+    # two DefaultOS= lines: cannot tell which one freeldr reads
+    b = tmp_path / "b.iso"
+    b.write_bytes(_fake_iso() + b"DefaultOS=LiveCD\r\n")
+    with pytest.raises(RuntimeError, match="exactly one"):
+        vm_mod.smp_selected_iso(b, work)
+    # value too short to overwrite in place
+    c = tmp_path / "c.iso"
+    c.write_bytes(_fake_iso(default_os=b"X"))
+    with pytest.raises(RuntimeError, match="shorter"):
+        vm_mod.smp_selected_iso(c, work)
 
 
 def test_run_raises_loudly_instead_of_returning_empty(tiny_repo: Path):
@@ -129,7 +188,7 @@ def test_src_delta_names_a_head_move(tiny_repo: Path):
     _git(tiny_repo, "add", "-A")
     _git(tiny_repo, "commit", "-qm", "second")
     delta = provenance._src_delta(tiny_repo, stamp)
-    assert "HEAD MOVED UNDER THE BUILD" in delta, delta
+    assert "HEAD MOVED SINCE THE BUILD" in delta, delta
     assert old_head[:12] in delta, delta
 
 

@@ -1206,11 +1206,45 @@ generated `freeldr.ini` on the media. One media, one `freeldr.ini`, one default.
 So a gate cannot hold UP and MP media simultaneously today, and
 `vibeos-cli gate` is deliberately UNTOUCHED here.
 
-Reaching the real "one extra boot" needs a **second media** — `livecd-smp.iso`
-built alongside, its own `freeldr.ini` defaulting to `[LiveCD_SMP]` — so the gate
-boots either without reconfiguring anything. That is a separate change with a
-real cost (an extra mkisofs on every build) and is the natural predecessor to
-flipping the default. Not started.
+#### …and the second media turned out to be unnecessary. Patch the ini IN the ISO.
+
+The paragraph above (written hours earlier) proposed building a second
+`livecd-smp.iso` to escape the repack. **That was overbuilt.** The question
+"why can't it just be a freeldr flag on the same ISO?" has a better answer than
+either option, and the answer is measured:
+
+ISO9660 stores each file's bytes **once, contiguously, with no per-file
+checksum**, and `freeldr.ini` is plain text. So flipping the default entry is an
+**equal-length in-place write of one line** into a copy of the image:
+
+```
+occurrences of "DefaultOS=" in livecd.iso : exactly 1   (0x1a800e, plain text)
+DefaultOS=LiveCD_Debug    -> 22 bytes
+DefaultOS=LiveCD_SMP\r\n  -> 22 bytes   (the spare \r\n becomes a blank line)
+cp of the 221 MB ISO      -> 0.153s warm
+```
+
+`vm.py:smp_selected_iso()` does exactly that into the per-run work dir the
+harness already stages media through, so `--smp N` boots the MP pair off
+**unmodified UP-default media**. Every failure path RAISES — not exactly one
+`DefaultOS=`, no `[LiveCD_SMP]` section, a value too short to overwrite, or a
+1-byte remainder that cannot terminate the line. A silent fallback here would
+manufacture precisely the false-green `_smp_check` exists to catch.
+
+**Boot-proven end to end (amd64, 2026-07-25):** with `build-amd64/livecd.iso` on
+disk still reading `DefaultOS=LiveCD_Debug`, `smoke --arch amd64 --smp 2` gave
+`[FLDR] load …\halmp.dll` + `[FLDR] load …\ntkrnlmp.exe`,
+`[SMP] CPU1 scheduling live`, boot + net green in 2m26s. No rebuild, no
+reconfigure, no second media.
+
+So **an MP gate leg now genuinely costs one extra boot** — the claim originally
+made for the halmp.dll twin, walked back when the `DefaultOS=` repack surfaced,
+and now backed by measurement. What made it possible was still the twin: both
+HALs have to EXIST on the media before selecting between them can be a 22-byte
+poke.
+
+arm64 never had this problem — `mkramdisk` `mcopy`s the modified ini into
+`boot.img`, no repack — so this is purely an x86 ISO-packing artifact.
 
 **Pre-existing cruft noticed, not touched:** `[LiveCD_Macpi]` passes
 `/HAL=halmacpi.dll`, which this tree has never built — that menu entry has always
