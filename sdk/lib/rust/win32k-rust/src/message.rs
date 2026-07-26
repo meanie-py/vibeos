@@ -1205,7 +1205,15 @@ unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam:
 
     match msg {
         WM_ASYNC_SHOWWINDOW => {
-            return co_WinPosShowWindow(pWnd, wparam.try_into().unwrap()).into();
+            // The C is `co_WinPosShowWindow(pWnd, wparam)` — an implicit narrowing
+            // conversion, and the truncation is load-bearing. `NtUserShowWindowAsync` takes
+            // nCmdShow as a LONG straight from usermode and range-checks only the TOP of it
+            // (`> SW_MAX`), so a negative value passes and reaches here sign-extended:
+            // -1 becomes 0xFFFF_FFFF_FFFF_FFFF as a 64-bit WPARAM. C truncates that back to
+            // -1 and round-trips; `try_into().unwrap()` panicked instead, which is an
+            // unprivileged ShowWindow(hwnd, -1) away from taking down win32k. `as` is both
+            // faithful to the C and the only spelling that cannot fault.
+            return co_WinPosShowWindow(pWnd, wparam as INT).into();
         }
         WM_ASYNC_SETWINDOWPOS => {
             let winpos = lparam as PWINDOWPOS;

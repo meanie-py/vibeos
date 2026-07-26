@@ -1057,6 +1057,25 @@ N+1 as evidence that the fix for bug N was wrong.**
   `LOBYTE` macros, whose results C promotes to `int` before any arithmetic.
 - **A narrowing cast truncates a wider C operand**; **a u64 sentinel cast as i64 inverts a
   bounds check**.
+- **C's implicit narrowing translated as `.try_into().unwrap()` — a PANIC where C round-tripped.**
+  The inverse of the `mbrtowc` bullet above: there the narrowing was load-bearing and got
+  dropped; here it is load-bearing and got replaced with an assertion. `co_WinPosShowWindow(pWnd,
+  wparam)` narrows a 64-bit `WPARAM` to `INT`, and that truncation is how a negative `nCmdShow`
+  survives the round trip — `NtUserShowWindowAsync` takes it as a `LONG` straight from usermode
+  and range-checks only the TOP (`> SW_MAX`), so `-1` passes, sign-extends into the WPARAM as
+  `0xFFFF_FFFF_FFFF_FFFF`, and C truncates it back to `-1`. `wparam.try_into().unwrap()` instead
+  **panics inside win32k**, making an unprivileged `ShowWindow(hwnd, -1)` a kernel DoS. Whenever
+  a value crosses the usermode boundary as a `WPARAM`/`LPARAM`/handle-width integer and is then
+  narrowed, the C truncation is the contract: write `as`. `crate-repair` already refuses to
+  *generate* this suggestion; the ones in the tree predate that rule.
+  **Audit result (2026-07-26), so nobody re-derives it:** all 234 `.try_into().unwrap()` sites
+  were checked and this was the only reachable one. 146 have compile-time-constant receivers
+  (`ERROR_SUCCESS`, `IDOK`, `WLX_SAS_ACTION_NONE`, `size_of::<T>()`) and cannot fail; the two
+  largest runtime families are same-width identity conversions — allocation sizes reaching
+  `RtlAllocateHeap`'s `SIZE_T` (`= ULONG_PTR`, pointer-width on every arch) via an `as usize`
+  receiver, and message arguments reaching hand-written externs declared `wParam: usize` /
+  `lParam: isize`. The population is cosmetic noise around one real bug, so treat it as
+  mechanical cleanup and not as a backlog of live panics.
 - **`_Analysis_assume_` translated as live code** → a NULL deref the annotation existed to
   assume away.
 - **A facility-status return convention confused** — `return 0` where SUCCESS is a nonzero

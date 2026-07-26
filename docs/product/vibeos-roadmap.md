@@ -479,6 +479,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **`.try_into().unwrap()` — FIXED where it mattered; the rest is cosmetic** (2026-07-26).
+  All 234 sites in the Rust tree were audited. Exactly one was reachable and it was a
+  usermode-triggerable **kernel** panic: `handle_internal_message`'s `WM_ASYNC_SHOWWINDOW` arm
+  (`win32k-rust/src/message.rs`) narrowed a 64-bit `WPARAM` to `INT` with `.unwrap()`.
+  `NtUserShowWindowAsync` takes `nCmdShow` as a `LONG` straight from usermode and range-checks
+  only the top (`> SW_MAX`), so `ShowWindow(hwnd, -1)` sign-extends to
+  `0xFFFF_FFFF_FFFF_FFFF` and panics in win32k. The C — recovered from history, the file was
+  retired in `8d3c33ee41e` — is `co_WinPosShowWindow(pWnd, wparam)`, whose implicit truncation
+  round-trips `-1` correctly. Fixed to `wparam as INT`.
+  The other 233 cannot fail: 146 have compile-time-constant receivers, and the two big runtime
+  families are same-width identity conversions (allocation sizes into `RtlAllocateHeap`'s
+  `SIZE_T = ULONG_PTR`; message args into externs declared `wParam: usize` / `lParam: isize`).
+  **So task #19 is mechanical cleanup, not a backlog of live panics** — worth doing for the
+  named-anti-pattern reason, but it needs the compiler as the per-site oracle for the target
+  type, so it is a build-bound batch. Owed: a gate so new ones cannot land (`crate-repair`
+  refuses to *generate* the pattern, but nothing stops one being hand-written). Field manual,
+  "Semantic rewrites that flip meaning".
 - **`mscms-rust` — being integrated on the `integration` lane, NOT a bug.** Surfaced
   2026-07-25 when `scan_orphan_modules` learned to see ROOTLESS crates: 6 files / 4,782 lines
   with no `Cargo.toml` and no `lib.rs`, which every source gate had been skipping silently
