@@ -58,6 +58,11 @@ members = [
     "wlansvc-rust",
     "tcpsvcs-rust",
     "telnetd-rust",
+    # Tier-3 network client DLLs (dll/win32/*). wlanapi is the CLIENT half of wlansvc.idl,
+    # whose server half is wlansvc-rust above, so it closes that loop the same way.
+    "wsock32-rust",
+    "wlanapi-rust",
+    "snmpapi-rust",
     "access",
     "avltable",
     "bitmap",

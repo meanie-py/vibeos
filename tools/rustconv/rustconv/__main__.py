@@ -685,16 +685,22 @@ def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
     translation to "always pass both".
     """
     rust = scrub_comment_token_echoes(rust)
+    # Sealed tokens the model omitted that live only in code the build never executes
+    # (`#if`-disabled arms, DUMMY_PSEH except-blocks). Accepted, but printed: relaxing a
+    # guarantee silently is the failure mode sealing exists to prevent (dead_regions.py).
+    dead_omissions: list[str] = []
     try:
         calls = call_seals.get(dep.name)
         if calls is not None:
-            rust = unseal_calls(rust, calls)
+            rust = unseal_calls(rust, calls, dead_omissions=dead_omissions)
         facts = fact_seals.get(dep.name)
         if facts is not None:
             rust = canonicalize_hresult_predicates(rust)
-            rust = unseal_facts(rust, facts)
+            rust = unseal_facts(rust, facts, dead_omissions=dead_omissions)
     except (CallSealError, FactSealError) as error:
         raise CppComError(f"{dep.name}: {error}") from error
+    if dead_omissions:
+        print(f"    [{dep.name}] omitted in non-executed code: {', '.join(dead_omissions)}")
     return rust
 
 

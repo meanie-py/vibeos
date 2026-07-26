@@ -453,6 +453,80 @@ def _next_code_byte(masked: bytes, pos: int) -> bytes:
     return masked[pos : pos + 1]
 
 
+def _in_match_pattern(masked: bytes, end: int) -> bool:
+    """True when the span ending at ``end`` sits in match-arm PATTERN position.
+
+    Rust forbids expressions in patterns, so wrapping such a span in `(x) as u32` turns a
+    compiling match into `error: expected a pattern, found an expression` -- and it fires on
+    exactly the constants that most want repairing, because a `match` on a C status code is
+    where narrow-vs-wide integer mismatches surface. Two lanes hit this independently:
+    wlanapi's `WlanRpcStatusToWinError` lost all 5 of its arms, and msvcrt's `_setmbcp_l`
+    lost its dispatch when bindgen typed one member of a four-macro `#define` block `u32`
+    (its value is 0) and the other three `i32` (theirs are negative), splitting a family
+    that is all `int` in C.
+
+    The correct repair is to widen the SCRUTINEE and leave the patterns as names -- which
+    also keeps them auditable under the catch-all-binding rule (field manual §9.112) -- or
+    to fix the type where the constant is DECLARED. Either way, declining here is not a
+    lost fix, it is the right shape.
+
+    Scans forward for `=>` before any of `; { } ,`. The scrutinee itself stops at `{` and is
+    therefore NOT reported -- casting it is legal and often the fix.
+
+    A span inside brackets is resolved by stepping out of them first: `foo(A, b);` and
+    `(A, 0) => v` are indistinguishable at the comma, and only differ in what follows the
+    closing paren. `<`/`>` are deliberately NOT treated as brackets -- they are comparison
+    operators far more often than generic delimiters in this position.
+    """
+    pos = _after_enclosing_group(masked, end)
+    depth = 0
+    while pos < len(masked):
+        char = masked[pos : pos + 1]
+        if char in (b"(", b"["):
+            depth += 1
+        elif char in (b")", b"]"):
+            depth -= 1  # may go negative: we left a group that opened before the span
+        elif depth <= 0:
+            if char == b"=" and masked[pos + 1 : pos + 2] == b">":
+                return True
+            if char in (b";", b"{", b"}", b","):
+                return False
+        pos += 1
+    return False
+
+
+def _after_enclosing_group(masked: bytes, end: int) -> int:
+    """Byte just past the innermost bracket group that encloses ``end``, else ``end``."""
+    depth = 0
+    pos = end - 1
+    while pos >= 0:
+        char = masked[pos : pos + 1]
+        if char in (b")", b"]"):
+            depth += 1
+        elif char in (b"(", b"["):
+            if depth == 0:
+                closer = _matching_closer(masked, pos)
+                return end if closer is None else closer + 1
+            depth -= 1
+        elif char in (b";", b"{", b"}") and depth == 0:
+            break
+        pos -= 1
+    return end
+
+
+def _matching_closer(masked: bytes, opening: int) -> int | None:
+    depth = 0
+    for pos in range(opening, len(masked)):
+        char = masked[pos : pos + 1]
+        if char in (b"(", b"["):
+            depth += 1
+        elif char in (b")", b"]"):
+            depth -= 1
+            if depth == 0:
+                return pos
+    return None
+
+
 # NOTE: no `^` — `Pattern.match(data, pos)` already anchors at pos, whereas `^` would demand the
 # start of the string/line and silently never fire mid-expression.
 _ASSIGN_AHEAD = re.compile(rb"\s*(?:[-+*/%^&|]|<<|>>)?=(?!=)")
@@ -671,27 +745,6 @@ def _conversion_hints(diagnostic: Mapping[str, Any]) -> dict[int, str]:
     return hints
 
 
-def _in_match_pattern(masked: bytes, end: int) -> bool:
-    """True when the span sits in a `match` arm PATTERN, where a cast is not grammatical.
-
-    rustc reports a constant arm whose type disagrees with the scrutinee exactly like any
-    other integer mismatch, so the cast rule fires and writes `(_MB_CP_SBCS) as i32 => {` —
-    which is not a pattern and does not parse. (Seen on msvcrt's `_setmbcp_l`, where bindgen
-    typed one member of a four-macro `#define` block `u32` because its value is 0 and the
-    other three `i32` because theirs are negative.)
-
-    Scans forward on the same line: a `=>` reached before any `;`, `{` or `}` means everything
-    to our left is a pattern. A one-line `match x { A => 1, B => 2 }` can trip this on an arm
-    BODY and decline a legitimate cast — the safe direction for a rule that never guesses.
-    """
-    for i in range(end, min(len(masked), end + 200)):
-        if masked[i : i + 2] == b"=>":
-            return True
-        if masked[i : i + 1] in (b"\n", b";", b"{", b"}"):
-            return False
-    return False
-
-
 def _numeric_cast_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -733,8 +786,9 @@ def _numeric_cast_rule(
             decline("callee_span", data[start:end].decode("utf-8", "replace"))
             continue
         if _in_match_pattern(masked, end):
-            # Guard: a cast is not a pattern. The type disagreement is real, but it has to be
-            # resolved where the constant is DECLARED, not at the arm.
+            # Guard: a cast is an expression, and Rust forbids expressions in patterns. The
+            # type disagreement is real, but it has to be resolved where the constant is
+            # DECLARED, or by widening the scrutinee -- never at the arm.
             decline("match_pattern", data[start:end].decode("utf-8", "replace"))
             continue
         text = data[start:end].decode("utf-8", "replace")
