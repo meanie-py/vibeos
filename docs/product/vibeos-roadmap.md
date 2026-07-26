@@ -943,6 +943,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Fact vs inference: the operands and the raise arm are measured; "a live stack lost a page" is
   the reading of them, and the `[KSTACK]` dump added below is what turns it into a fact.
 
+  **A THIRD observable face — "sweep no-launch" (1 occurrence, cause unknown).** Soak run 2
+  round 2: the guest **booted to desktop** (3 shell markers on serial) and then launched
+  **zero** of the 89 tests, draining the full 87-minute budget with `sweep_rc=1`, no bugcheck
+  and no probe hits. Serial ends mid-stream in netstack TDI teardown and `PspExitThread` churn.
+  Host load was ~10 with a single QEMU running, so this is **not** simple starvation, and the
+  same media had swept cleanly in round 1 and again in round 3. Recorded as an observable, not
+  a diagnosis: it may be this bug wearing a hang instead of a crash, or an independent harness
+  race. **Do not fold it into the crash faces without evidence** — and note the soak ledger
+  renders it identically to a crash (`NO-VERDICT`), so read `summary.json`'s `launched`/`bugcheck`
+  rather than the ledger line to tell them apart.
+
   **ELIMINATED (2026-07-26): a create/delete size mismatch on the kernel stack.** Worth writing
   down because the shape is suspicious and costs ~20 minutes to re-derive.
   `MmCreateKernelStack` (`ARM3/procsup.rs:280`) *forces* `GuiStack = 1` on arm64 and commits
