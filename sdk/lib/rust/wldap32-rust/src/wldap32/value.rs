@@ -71,13 +71,13 @@ pub unsafe extern "C" fn WLDAP32_ldap_value_free_len(vals: *mut *mut WLDAP32_ber
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ldap_value_freeA(vals: PCHAR) -> ULONG {
+pub unsafe extern "C" fn ldap_value_freeA(vals: *mut PCHAR) -> ULONG {
     strarrayfreeA(vals);
     return WLDAP32_LDAP_SUCCESS;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ldap_value_freeW(vals: PWCHAR) -> ULONG {
+pub unsafe extern "C" fn ldap_value_freeW(vals: *mut PWCHAR) -> ULONG {
     strarrayfreeW(vals);
     return WLDAP32_LDAP_SUCCESS;
 }
