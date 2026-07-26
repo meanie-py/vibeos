@@ -2015,6 +2015,32 @@ list"), from which the upstream writer followed.
 - **arm64 user-mode SEH never delivers first-chance** — `RtlRaiseException` is unimplemented for
   arm64 (OPEN; needs a `#[naked]` capture stub).
 
+### An uninitialised PFN `CacheAttribute` turns every `VirtualProtect`ed page into DEVICE memory
+`MiInitializePfn` (and the `AndMakePteValid` / `ForOtherProcess` variants) never set
+`u3.e1.CacheAttribute` — faithfully, because upstream ReactOS's C doesn't either. **`MiNonCached`
+is 0**, so a page coming off the free list reads as *deliberately uncached* when nobody ever
+decided anything. `MiFlushTbAndCapture` consults that field on **every protection change** and
+force-ORs `MM_NOCACHE` onto the mask for a `MiNonCached` PFN, so a plain `VirtualProtect` on
+private memory silently rewrites the page uncached.
+
+On x86 that costs only performance, which is why it survived for years. On arm64 `MM_NOCACHE`
+selects MAIR **AttrIndx 1 = Device-nGnRnE**, where *every unaligned access alignment-faults* —
+and unaligned stores are completely ordinary in x86 code an emulator is translating. The fix is
+to set `MiCached` in the three init paths, which is what Windows does; genuinely uncached pages
+(MMIO) never come through them — `MmMapIoSpace` and the MDL paths set the attribute explicitly.
+
+Two recognition rules fall out of it:
+
+- **A zero-valued enum member is not a default, it is an assertion.** `MiNonCached == 0` means
+  "uninitialised" and "the caller chose uncached" are the same bit pattern, so every consumer
+  believes a decision that was never made. Suspect this whenever a field is only ever *read*.
+- **Decode the PTE, don't trust the protection.** `[ALIGN] FAR=… PTE=… MAIR=…` gives you the
+  answer directly: `AttrIndx = PTE[4:2]`, index it into `MAIR_EL1` (ours is `0x004400FF`:
+  0=Normal-WB, 1=Device-nGnRnE, 2=Normal-NC). A page that is *architecturally* Normal but
+  *mapped* Device faults on exactly the accesses Normal memory permits, so the symptom looks
+  like a CPU bug rather than a mapping bug. The tell is a fault that **repeats at a pinned PC**:
+  the handler un-protects, resumes, and the same unaligned store faults again forever.
+
 ### arm64 bring-up bugs worth recognising again
 - **PSTATE.DAIF is NOT per-thread state** `[§9.19]` — `KiSwapContext` doesn't save/restore it, so
   a context switch **leaked exception-entry DAIF into a new thread** → boot wedges with the
@@ -2216,6 +2242,44 @@ Cross-thread stays refused: `BTCpuGet/SetContext` ignore their `Thread` argument
 caller's CPU area, so answering a cross-thread query would return *the wrong thread's registers*
 — confidently. Identify "is this me" by comparing `TebBaseAddress`, not just by spotting the
 `(HANDLE)-2` pseudo-handle.
+
+### On a JIT host, the CPU layer's memory notifications are a CAPABILITY, not a cache hint
+The `BTCpuNotify*` family reads like invalidation bookkeeping you could skip and merely run slow.
+It is not. FEX's decoder **refuses to translate any guest address outside the executable set it
+has been told about** (`Frontend.cpp` `CheckRangeExecutable` → `HitNonExecutableRange`), and that
+set is populated *only* by these notifications plus a one-time `VirtualQuery` sweep of the whole
+address space at `BTCpuProcessInit`. So wiring `BTCpuNotifyMapViewOfSection` alone — which is
+where this lane sat for eight phases — covers images and **nothing the guest allocates
+afterwards**: a 32-bit guest could not execute `VirtualAlloc`'d code at all. That is ATL/MFC
+thunks, VB6/Delphi trampolines, packers, self-extractors and every JIT, i.e. a large fraction of
+real 32-bit binaries, failing on a path no image-based test can reach.
+
+The one-time sweep is why bring-up got away with it, and it is also a trap: `wow64.c` had grown a
+comment telling itself to *"allocate every raw guest page first; pages created afterward are not
+visible"*. **A workaround that constrains allocation ORDER is a missing notification wearing a
+disguise** — it holds exactly until something allocates outside your control, i.e. until the
+guest runs.
+
+Three properties of the contract that bite if you skim it:
+
+- **`After` is a lock/unlock flag, not a status report.** `BTCpuNotifyMemoryAlloc`/`Protect`/
+  `Free`/`Unmap`/`ReadFile` take an internal mutex when `After=FALSE` and release it when
+  `After=TRUE`. Call them immediately either side of the host syscall with **no early return,
+  goto or longjmp in between**: an unmatched *Before* deadlocks the whole guest process, an
+  unmatched *After* unlocks a mutex nobody holds. Anything that reads like a scope guard should
+  be written as one.
+- **Notify for the CURRENT process only.** The layer's model describes *this* address space, and
+  the protect path really does reprotect pages — hand it a `VirtualAllocEx` range belonging to
+  another process and it mutates your own pages at those addresses. Test the handle, don't
+  assume `(HANDLE)-1`.
+- **The failure mode is a plausible wrong answer, not a crash.** Free-then-reallocate at the same
+  base, or rewrite-then-`FlushInstructionCache`, silently execute the *previous* tenant's
+  translation. A probe guest that only checks "did it survive" scores those as passes; check
+  returned VALUES.
+
+Coverage note: on a native CPU layer (amd64's `wow64cpu`) none of these exist, execution is
+direct, and there is nothing to invalidate — so amd64 is the **control** for such a test, not a
+second copy of it. Every rung must pass there with 0/8 entry points wired.
 
 ### In a WoW64 process the IMAGE is a PE32 — native code reading its headers must dispatch on `Magic`
 `PEB->ImageBaseAddress` in a WoW64 process points at the **32-bit** exe, but the ntdll reading it

@@ -1175,6 +1175,75 @@ unsafe fn TryStartWow64Thread() {
     }
 }
 
+/* E17 — selfmod32.exe: RUNTIME CODE GENERATION by a 32-bit guest. wow64.dll
+ * wired exactly one of the CPU layer's memory notifications (map-view), which
+ * covers images and nothing else. On a JIT host that is a missing capability,
+ * not a missing optimisation: FEX refuses to decode any guest address outside
+ * the executable set it was told about, and caches translations by guest
+ * address. So a guest could not run VirtualAlloc'd code at all — ATL/MFC
+ * thunks, packers, self-extractors, any JIT — and where it could, it ran
+ * whatever it had generated before. The stale-translation rungs return the
+ * PREVIOUS constant rather than crashing, which is why this needs a guest that
+ * checks values instead of one that merely survives.
+ *
+ * amd64 is the control, not a second copy of the test: wow64cpu exports none of
+ * these notifications (execution there is native, nothing to invalidate), so
+ * every rung must pass with 0/8 wired. arm64 exercises the real contract.
+ * Silent no-op unless staged; verdict = [selfmod32] serial lines + exit 0x600D. */
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+unsafe fn TryStartWow64Selfmod() {
+    if !Wow64SupportStaged() {
+        return; // CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\selfmod32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 14] = wstr_arr!("selfmod32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] selfmod32.exe (i386 codegen guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 90_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] selfmod32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(selfmod32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* M12 — THE NORTH STAR: x86 DOOM, under WoW64, on arm64.
  *
  * doomgeneric's Win32/GDI backend built for i386 (tools/doom/build.sh i386) —
@@ -2263,6 +2332,10 @@ pub unsafe extern "system" fn WinMain(
          * the arm64 side of the per-thread WoW64 entry. */
         TryStartWow64Thread();
 
+        /* E17: runtime code generation — the CPU layer's memory-notification
+         * contract. Most rungs fail silently wrong, not loudly. */
+        TryStartWow64Selfmod();
+
         /* The testgui pair never exits, so it would sit on top of DOOM's window.
          * When the WoW64 doom is staged, DOOM is the demo — skip them. */
         if !Wow64DoomStaged() {
@@ -2355,6 +2428,9 @@ pub unsafe extern "system" fn WinMain(
         /* #64: 32-bit guest threading — create/join, TLS, per-thread SEH,
          * 4 concurrent threads. */
         TryStartWow64Thread();
+        /* E17: the guest generates, rewrites, recycles and hot-patches its
+         * own code. */
+        TryStartWow64Selfmod();
         /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
          * menus, timers, dialog resources. Launched BEFORE doom so doom's
          * window (created last) stays the demo on top. */

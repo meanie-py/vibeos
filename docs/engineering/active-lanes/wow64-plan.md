@@ -2105,4 +2105,79 @@ the code that crashed.**
 
 *Not this bug after all, still owed on its own merits:* we wire only
 `BTCpuNotifyMapViewOfSection` of FEX's memory-notification contract, though it
-also exports `BTCpuNotifyMemoryAlloc`/`Free`/`Protect`/`Dirty`.
+also exports `BTCpuNotifyMemoryAlloc`/`Free`/`Protect`/`Dirty`. **Closed by E17
+below — and it was not a cache hint, it was a missing capability.**
+
+---
+
+**Phase E17 — the memory-notification contract: 32-bit guests can GENERATE CODE
+(2026-07-26, task #74).** E16 left this as tidy-up owed "on its own merits".
+Reading FEX's decoder first changed the estimate completely: `CheckRangeExecutable`
+(`FEXCore/Source/Interface/Core/Frontend.cpp`) **refuses to decode any guest
+address outside the executable set the CPU layer has been told about**, and that
+set is filled only by these notifications plus a one-time `VirtualQuery` sweep at
+`BTCpuProcessInit`. With just the map-view hook wired, images worked and
+**everything the guest allocated afterwards was un-executable** — ATL/MFC thunks,
+VB6/Delphi trampolines, packers, self-extractors, any JIT. Not slow: impossible.
+
+*The disguise is worth naming.* `wow64.c` already carried a comment instructing
+itself to "allocate every raw guest page first; pages created afterward are not
+visible until the full memory-notification contract is wired." A workaround that
+constrains allocation ORDER is a missing notification wearing a disguise — it
+holds exactly until something allocates outside your control, i.e. until the
+guest runs.
+
+Wired, with the pairing discipline the contract actually demands (`After` is a
+lock/unlock flag inside FEX, not a status report — an unmatched *Before*
+deadlocks the guest process): `BTCpuNotifyMemoryAlloc` / `MemoryProtect` /
+`MemoryFree` / `MemoryDirty` / `UnmapViewOfSection` / `ReadFile` /
+`FlushInstructionCache2` / `ProcessExecuteFlagsChange`, behind `Wow64Notify*`
+wrappers in the new `wow64_btcpu.h` so no call site touches a raw pointer. They
+resolve optionally and are published only *after* `BTCpuProcessInit` — the layer
+builds its address-space model there, so an earlier notification has nothing to
+land in. All notifications are gated on the target being the CURRENT process:
+the protect path really does reprotect pages, so a `VirtualAllocEx` range
+belonging to someone else would mutate our own pages at those addresses.
+
+Five syscalls became manual to carry the side effects — `NtUnmapViewOfSection`,
+`NtReadVirtualMemory`, `NtWriteVirtualMemory`, `NtFlushInstructionCache`,
+`NtSetInformationProcess`. The Read/Write pair had a **second, independent bug**
+the flat thunk was hiding: the trailing `*ReturnSize` is a `ULONG_PTR`, so the
+host wrote 8 bytes into the guest's 4-byte cell. `NtSetInformationProcess`
+intercepts only `ProcessExecuteFlags`, and forwards it: DEP has two enforcers
+here — the kernel owns the host page protections (which on a native compat-mode
+host ARE the guest's) and the CPU layer owns whether the emulator will run a page
+the host would. The kernel's verdict is the one the guest gets back.
+
+*Verification — `selfmod32.exe`, seven rungs, staged on BOTH arches.* Each
+isolates one notification, and most fail **silently wrong** rather than loudly,
+which is the whole reason the guest checks returned values instead of merely
+surviving: (1) execute code generated into a fresh RWX allocation — the only
+rung that dies rather than lying; (2) rewrite it + `FlushInstructionCache`;
+(3) write as data into an RW region then `VirtualProtect` to RX — the commonest
+real pattern and one the alloc notification structurally cannot cover;
+(4) free the page and take the same base back, so the next tenant does not
+inherit the previous tenant's translation; (5) `ReadFile` straight into live
+code memory, i.e. the kernel writing behind the layer's back; (6)
+`WriteProcessMemory` hot-patch, which exercises protect + dirty + flush together
+because kernel32 wraps the write in `NtProtectVirtualMemory`; (7) `NtWrite`/
+`NtReadVirtualMemory` called **directly**, with a canary immediately after the
+count cell.
+
+Rung 7 had to bypass kernel32 to mean anything, and noticing that mattered: the
+obvious version calls `WriteProcessMemory` with a canary, but kernel32 hands the
+syscall its **own** local `nSize` and copies the result out, so the 8-byte
+clobber lands in kernel32's stack frame where no caller-side canary can ever see
+it. A rung that cannot fail is worse than no rung.
+
+*amd64 is the CONTROL, not a second copy of the test.* `wow64cpu` exports none of
+these notifications — execution is native, there is nothing to invalidate — so
+amd64 runs the same guest with **0/8 entry points wired** and every rung must
+still pass. arm64 exercises the real contract; the serial line
+`memory-notification contract: N/8 entry points wired` states which mode a boot
+is in.
+
+*Durable lesson (field manual, WoW64 section):* "On a JIT host, the CPU layer's
+memory notifications are a CAPABILITY, not a cache hint" — plus the transferable
+one: **a workaround that constrains ORDER is a missing notification in
+disguise.**

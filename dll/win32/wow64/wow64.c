@@ -15,6 +15,7 @@
 #include <windef.h>
 #include <winbase.h>
 #include <stdint.h>
+#include "wow64_btcpu.h"
 
 ULONG
 WINAPI
@@ -166,6 +167,8 @@ typedef struct _WOW64INFO_FEX {
     USHORT EmulatedMachineType;
 } WOW64INFO_FEX;
 
+static WOW64INFO_FEX Wow64pWow64Info;
+
 static PVOID *Wow64pTlsSlots(VOID)
 {
     return (PVOID *)((PBYTE)NtCurrentTeb() + WOW64_TEB_TLSSLOTS_OFFSET);
@@ -202,6 +205,170 @@ void Wow64pInstallUserCallbackTable(void);
 PVOID Wow64pBopCode;
 static ULONG_PTR Wow64pPeb32;  /* set in Wow64LdrpInitialize, for VEH diagnostics */
 
+/* ---- the rest of the CPU layer's memory-notification contract ------------ *
+ * See wow64_btcpu.h for why these matter and why the Before/After pairing is
+ * load-bearing. All optional: a CPU layer that emulates nothing (amd64's native
+ * wow64cpu) leaves them NULL and every wrapper below becomes a no-op. */
+static VOID (WINAPI *Wow64pBTCpuNotifyMemoryAlloc)(PVOID, SIZE_T, ULONG, ULONG, BOOL, ULONG);
+static VOID (WINAPI *Wow64pBTCpuNotifyMemoryProtect)(PVOID, SIZE_T, ULONG, BOOL, ULONG);
+static VOID (WINAPI *Wow64pBTCpuNotifyMemoryFree)(PVOID, SIZE_T, ULONG, BOOL, ULONG);
+static VOID (WINAPI *Wow64pBTCpuNotifyMemoryDirty)(PVOID, SIZE_T);
+static VOID (WINAPI *Wow64pBTCpuNotifyUnmapViewOfSection)(PVOID, BOOL, ULONG);
+static VOID (WINAPI *Wow64pBTCpuNotifyReadFile)(HANDLE, PVOID, SIZE_T, BOOL, LONG);
+static VOID (WINAPI *Wow64pBTCpuNotifyProcessExecuteFlagsChange)(ULONG);
+static VOID (WINAPI *Wow64pBTCpuFlushInstructionCache2)(const void *, SIZE_T);
+
+/* ProcessBasicInformation, enough of it to read UniqueProcessId. */
+typedef struct _WOW64_PROCESS_BASIC_INFORMATION {
+    LONG ExitStatus;
+    PVOID PebBaseAddress;
+    ULONG_PTR AffinityMask;
+    LONG BasePriority;
+    ULONG_PTR UniqueProcessId;
+    ULONG_PTR InheritedFromUniqueProcessId;
+} WOW64_PROCESS_BASIC_INFORMATION;
+
+BOOLEAN Wow64IsCurrentProcess(HANDLE Process)
+{
+    static ULONG_PTR SelfPid;   /* 0 until the first non-pseudo-handle query */
+    WOW64_PROCESS_BASIC_INFORMATION Pbi;
+
+    if (Process == WOW64_CURRENT_PROCESS)
+        return TRUE;
+    if (!Process)
+        return FALSE;
+
+    if (!SelfPid)
+    {
+        if (NtQueryInformationProcess(WOW64_CURRENT_PROCESS, 0 /* Basic */,
+                                      &Pbi, sizeof(Pbi), NULL) < 0)
+            return FALSE;
+        SelfPid = Pbi.UniqueProcessId;
+    }
+    if (NtQueryInformationProcess(Process, 0 /* Basic */, &Pbi, sizeof(Pbi),
+                                  NULL) < 0)
+        return FALSE;
+    return (BOOLEAN)(Pbi.UniqueProcessId == SelfPid);
+}
+
+VOID Wow64NotifyAllocBefore(PVOID Base, SIZE_T Size, ULONG Type, ULONG Protect)
+{
+    if (Wow64pBTCpuNotifyMemoryAlloc)
+        Wow64pBTCpuNotifyMemoryAlloc(Base, Size, Type, Protect, FALSE, 0);
+}
+
+VOID Wow64NotifyAllocAfter(PVOID Base, SIZE_T Size, ULONG Type, ULONG Protect,
+                           LONG Status)
+{
+    if (Wow64pBTCpuNotifyMemoryAlloc)
+        Wow64pBTCpuNotifyMemoryAlloc(Base, Size, Type, Protect, TRUE, Status);
+}
+
+VOID Wow64NotifyProtectBefore(PVOID Base, SIZE_T Size, ULONG NewProtect)
+{
+    if (Wow64pBTCpuNotifyMemoryProtect)
+        Wow64pBTCpuNotifyMemoryProtect(Base, Size, NewProtect, FALSE, 0);
+}
+
+VOID Wow64NotifyProtectAfter(PVOID Base, SIZE_T Size, ULONG NewProtect,
+                             LONG Status)
+{
+    if (Wow64pBTCpuNotifyMemoryProtect)
+        Wow64pBTCpuNotifyMemoryProtect(Base, Size, NewProtect, TRUE, Status);
+}
+
+VOID Wow64NotifyFreeBefore(PVOID Base, SIZE_T Size, ULONG FreeType)
+{
+    if (Wow64pBTCpuNotifyMemoryFree)
+        Wow64pBTCpuNotifyMemoryFree(Base, Size, FreeType, FALSE, 0);
+}
+
+VOID Wow64NotifyFreeAfter(PVOID Base, SIZE_T Size, ULONG FreeType,
+                          LONG Status)
+{
+    if (Wow64pBTCpuNotifyMemoryFree)
+        Wow64pBTCpuNotifyMemoryFree(Base, Size, FreeType, TRUE, Status);
+}
+
+VOID Wow64NotifyUnmapBefore(PVOID Base)
+{
+    if (Wow64pBTCpuNotifyUnmapViewOfSection)
+        Wow64pBTCpuNotifyUnmapViewOfSection(Base, FALSE, 0);
+}
+
+VOID Wow64NotifyUnmapAfter(PVOID Base, LONG Status)
+{
+    if (Wow64pBTCpuNotifyUnmapViewOfSection)
+        Wow64pBTCpuNotifyUnmapViewOfSection(Base, TRUE, Status);
+}
+
+VOID Wow64NotifyReadFileBefore(HANDLE File, PVOID Buffer, SIZE_T Length)
+{
+    if (Wow64pBTCpuNotifyReadFile)
+        Wow64pBTCpuNotifyReadFile(File, Buffer, Length, FALSE, 0);
+}
+
+VOID Wow64NotifyReadFileAfter(HANDLE File, PVOID Buffer, SIZE_T Length,
+                              LONG Status)
+{
+    if (Wow64pBTCpuNotifyReadFile)
+        Wow64pBTCpuNotifyReadFile(File, Buffer, Length, TRUE, Status);
+}
+
+VOID Wow64NotifyMemoryDirty(PVOID Base, SIZE_T Size)
+{
+    if (Wow64pBTCpuNotifyMemoryDirty)
+        Wow64pBTCpuNotifyMemoryDirty(Base, Size);
+}
+
+VOID Wow64NotifyFlushInstructionCache(PVOID Base, SIZE_T Size)
+{
+    if (Wow64pBTCpuFlushInstructionCache2)
+        Wow64pBTCpuFlushInstructionCache2(Base, Size);
+}
+
+VOID Wow64SetExecuteFlags(ULONG Flags)
+{
+    Wow64pWow64Info.Wow64ExecuteFlags = Flags;
+    if (Wow64pBTCpuNotifyProcessExecuteFlagsChange)
+        Wow64pBTCpuNotifyProcessExecuteFlagsChange(Flags);
+}
+
+VOID Wow64pResolveNotifyContract(PVOID CpuDll)
+{
+    WOW64_ANSI_STRING ProcName;
+    ULONG Wired = 0;
+
+#define WOW64_RESOLVE_OPT(var, name)                                          \
+    do {                                                                      \
+        PVOID Addr = NULL;                                                    \
+        RtlInitAnsiString(&ProcName, name);                                   \
+        if (LdrGetProcedureAddress(CpuDll, &ProcName, 0, &Addr) >= 0 && Addr) \
+        {                                                                     \
+            *(PVOID *)&(var) = Addr;                                          \
+            Wired++;                                                          \
+        }                                                                     \
+    } while (0)
+
+    WOW64_RESOLVE_OPT(Wow64pBTCpuNotifyMemoryAlloc, "BTCpuNotifyMemoryAlloc");
+    WOW64_RESOLVE_OPT(Wow64pBTCpuNotifyMemoryProtect, "BTCpuNotifyMemoryProtect");
+    WOW64_RESOLVE_OPT(Wow64pBTCpuNotifyMemoryFree, "BTCpuNotifyMemoryFree");
+    WOW64_RESOLVE_OPT(Wow64pBTCpuNotifyMemoryDirty, "BTCpuNotifyMemoryDirty");
+    WOW64_RESOLVE_OPT(Wow64pBTCpuNotifyUnmapViewOfSection, "BTCpuNotifyUnmapViewOfSection");
+    WOW64_RESOLVE_OPT(Wow64pBTCpuNotifyReadFile, "BTCpuNotifyReadFile");
+    WOW64_RESOLVE_OPT(Wow64pBTCpuNotifyProcessExecuteFlagsChange,
+                      "BTCpuNotifyProcessExecuteFlagsChange");
+    WOW64_RESOLVE_OPT(Wow64pBTCpuFlushInstructionCache2, "BTCpuFlushInstructionCache2");
+#undef WOW64_RESOLVE_OPT
+
+    /* 0 is a legitimate answer, not a defect: a native CPU layer executes the
+     * guest directly and has no translation cache to keep honest. Report the
+     * count either way so a JIT layer that silently stopped exporting one of
+     * these is visible on serial instead of showing up as stale guest code. */
+    DbgPrint("[FEX-WOW64C] memory-notification contract: %lu/8 entry points wired "
+             "(0 = native CPU layer, nothing to invalidate)\n", Wired);
+}
+
 /* ---- #64: process-once state that the PER-THREAD entry also needs -------
  * Wow64LdrpInitialize used to be process-init and first-thread-init fused
  * together, and it kept the genuinely per-thread pieces (the CPU area, the
@@ -210,7 +377,6 @@ static ULONG_PTR Wow64pPeb32;  /* set in Wow64LdrpInitialize, for VEH diagnostic
  * which is the register file the CPU layer reads and rewrites on every mode
  * switch. These are the values that really are process-wide, hoisted so the
  * split-out thread entry can reach them. */
-static WOW64INFO_FEX Wow64pWow64Info;
 static PVOID Wow64pKiUserApcDispatcher32;
 static PVOID Wow64pLdrInitThunk32;
 static VOID (WINAPI *Wow64pBTCpuThreadInit)(VOID);
@@ -1340,6 +1506,9 @@ Wow64LdrpInitialize(PVOID Context)
     Wow64pBuildProcessParams32(Peb32);
 
     BTCpuProcessInit();
+    /* Only now: the CPU layer built its address-space model inside ProcessInit,
+     * so a notification delivered before this point has nothing to land in. */
+    Wow64pResolveNotifyContract(Fex);
     Bop = BTCpuGetBopCode();
     Wow64pBopCode = Bop;
     DbgPrint("[FEX-WOW64C] BTCpuProcessInit OK — BOP=%p CpuFlags=%lx\n",
