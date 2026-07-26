@@ -155,7 +155,7 @@ pub unsafe extern "system" fn SheShortenPathA(
     let mut szPath = [0u16; MAX_PATH as usize];
     MultiByteToWideChar(CP_ACP, 0, lpPath, -1, szPath.as_mut_ptr(), (szPath.len() - 1) as c_int);
     let ret = SheShortenPathW(szPath.as_mut_ptr(), bShorten);
-    WideCharToMultiByte(CP_ACP, 0, szPath.as_ptr(), -1, lpPath, MAX_PATH, core::ptr::null_mut(), core::ptr::null_mut());
+    WideCharToMultiByte(CP_ACP, 0, szPath.as_ptr(), -1, lpPath, (MAX_PATH) as i32, core::ptr::null_mut(), core::ptr::null_mut());
     ret
 }
 #[no_mangle]

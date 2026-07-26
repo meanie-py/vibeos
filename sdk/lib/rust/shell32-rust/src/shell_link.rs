@@ -5225,7 +5225,7 @@ extern "system" {
     fn SHAutoComplete(edit: HWND, flags: DWORD) -> HRESULT;
     #[link_name = "SHExpandEnvironmentStringsW"]
     fn Win32SHExpandEnvironmentStringsW(src: LPCWSTR, dst: LPWSTR, cch: DWORD) -> DWORD;
-    fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: INT) -> INT;
+    fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: INT) -> DWORD;
     fn SHAddDataBlock(list: *mut LPDBLIST, item: *const DATABLOCK_HEADER) -> BOOL;
     fn SHRemoveDataBlock(list: *mut LPDBLIST, signature: DWORD) -> BOOL;
     fn SHFindDataBlock(list: LPDBLIST, signature: DWORD) -> *mut DATABLOCK_HEADER;

@@ -943,7 +943,7 @@ extern "system" {
     #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")] fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
     fn ExtractIconExW(file: LPCWSTR, index: INT, large: *mut HICON, small: *mut HICON, icons: UINT) -> UINT;
-    fn GetSystemMetrics(index: UINT) -> INT;
+    fn GetSystemMetrics(index: INT) -> INT;
     fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
     fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
     fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
@@ -974,7 +974,7 @@ extern "system" {
     fn PathRemoveExtension(path: LPWSTR) -> BOOL;
     #[link_name = "PathRemoveArgsW"]
     fn PathRemoveArgs(path: LPWSTR);
-    fn PathUnquoteSpacesW(path: LPWSTR);
+    fn PathUnquoteSpacesW(path: LPWSTR) -> BOOL;
     #[link_name = "PathSearchAndQualifyW"]
     fn PathSearchAndQualify(path: LPCWSTR, out: LPWSTR, capacity: UINT) -> BOOL;
     fn PathFileExistsW(path: LPCWSTR) -> BOOL;
@@ -1529,8 +1529,8 @@ pub unsafe fn CFileDefExt_InitOpensWithField_body(this: *mut CFileDefExt, hwndDl
                 let mut rcDescr: RECT = core::mem::zeroed();
                 GetWindowRect(hIconCtrl, &mut rcIcon as *mut _);
 
-                let sm_cxicon = GetSystemMetrics(SM_CXSMICON);
-                let sm_cyicon = GetSystemMetrics(SM_CYSMICON);
+                let sm_cxicon = GetSystemMetrics((SM_CXSMICON) as i32);
+                let sm_cyicon = GetSystemMetrics((SM_CYSMICON) as i32);
                 rcIcon.right = rcIcon.left + sm_cxicon;
                 rcIcon.bottom = rcIcon.top + sm_cyicon;
 
