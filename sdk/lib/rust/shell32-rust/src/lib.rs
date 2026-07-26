@@ -108,11 +108,11 @@ pub mod propsheet;
 pub mod systray;
 
 // Wave 5 free-function TUs from the shell32 root: STILL PARKED, substrate closure in
-// progress. `shell32/sdk_consts.rs` (382 compiler-verified constants) and the win32.rs
-// additions below it are done and durable; what remains is ~301 Win32 API prototypes,
-// 61 SDK record layouts, and the type-mismatch tail. Wiring the modules before those land
-// would not expose a regression, it would break the build for every lane on the fleet.
-// Do NOT delete these files to "clean up" — they are paid artifacts.
+// progress. Constants, 148 promoted Win32 imports and the numeric-cast tail are done;
+// wiring them today leaves ~1,010 errors — 167 callables with no declaration anywhere
+// (shell32-internal helpers and C macros, which need judgment, not bulk generation),
+// 60 SDK record layouts, and the method/field tail. Wiring before those land would break
+// the build for every lane. Do NOT delete these files — they are paid artifacts.
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

@@ -79,13 +79,13 @@ unsafe extern "C" fn SIC_GetMetricsValue(pszValueName: PCWSTR, nDefaultValue: i3
     _wtoi(szValue.as_ptr() as PCWSTR)
 }
 unsafe extern "C" fn SIC_GetLargeIconSize() -> i32 {
-    let nDefaultSize: i32 = GetSystemMetrics(SM_CXICON);
+    let nDefaultSize: i32 = GetSystemMetrics((SM_CXICON) as i32);
     let nIconSize: i32 = SIC_GetMetricsValue(CPP_COM_WSTR_88409267423F.as_ptr(), nDefaultSize);
     if nIconSize > 0 { nIconSize } else { nDefaultSize }
 }
 unsafe extern "C" fn SIC_GetSmallIconSize() -> i32 {
     // NOTE: Shell icon size is always square
-    let nDefaultSize = GetSystemMetrics(SM_CXSMICON);
+    let nDefaultSize = GetSystemMetrics((SM_CXSMICON) as i32);
     let nIconSize = SIC_GetMetricsValue(CPP_COM_WSTR_2C74F66573C9.as_ptr(), nDefaultSize);
     if nIconSize > 0 { nIconSize } else { nDefaultSize }
 }
@@ -180,12 +180,12 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             break 'fail;
         }
 
-        if GetObjectW(TargetIconInfo.hbmColor, core::mem::size_of::<BITMAP>(), core::ptr::addr_of_mut!(TargetBitmapInfo)) == 0 {
+        if GetObjectW(TargetIconInfo.hbmColor, (core::mem::size_of::<BITMAP>()) as i32, (core::ptr::addr_of_mut!(TargetBitmapInfo)).cast()) == 0 {
             break 'fail;
         }
 
         if s_imgListIdx == -1 {
-            s_imgListIdx = SIC_LoadOverlayIcon(IDI_SHELL_SHORTCUT - 1);
+            s_imgListIdx = SIC_LoadOverlayIcon((IDI_SHELL_SHORTCUT - 1) as i32);
         }
 
         if s_imgListIdx != -1 {
@@ -207,7 +207,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             break 'fail;
         }
 
-        if GetObjectW(ShortcutIconInfo.hbmColor, core::mem::size_of::<BITMAP>(), core::ptr::addr_of_mut!(ShortcutBitmapInfo)) == 0 {
+        if GetObjectW(ShortcutIconInfo.hbmColor, (core::mem::size_of::<BITMAP>()) as i32, (core::ptr::addr_of_mut!(ShortcutBitmapInfo)).cast()) == 0 {
             break 'fail;
         }
 
@@ -415,7 +415,7 @@ unsafe extern "C" fn SIC_IconAppend(
 
     GetFullPathNameW(
         sSourceFile,
-        MAX_PATH,
+        (MAX_PATH) as u32,
         path.as_mut_ptr(),
         core::ptr::null_mut(),
     );
@@ -555,12 +555,12 @@ pub unsafe extern "C" fn SIC_GetIconIndex(
 
         GetFullPathNameW(
             sSourceFile,
-            MAX_PATH,
+            (MAX_PATH) as u32,
             path.as_mut_ptr(),
             core::ptr::null_mut(),
         );
         sice.sSourceFile = path.as_mut_ptr();
-        sice.dwSourceIndex = dwSourceIndex;
+        sice.dwSourceIndex = (dwSourceIndex) as u32;
         sice.dwFlags = dwFlags;
 
         if sic_hdpa.is_null() {
@@ -649,9 +649,9 @@ pub unsafe extern "C" fn SIC_Initialize() -> i32 {
                 if hLg.is_null() {
                     result = result;
                 } else {
-                    if SIC_IconAppend(swShell32Name, IDI_SHELL_DOCUMENT - 1, hSm, hLg, 0) == INVALID_INDEX {
+                    if SIC_IconAppend(swShell32Name, (IDI_SHELL_DOCUMENT - 1) as i32, hSm, hLg, 0) == INVALID_INDEX {
                         result = result;
-                    } else if SIC_IconAppend(swShell32Name, -IDI_SHELL_DOCUMENT, hSm, hLg, 0) == INVALID_INDEX {
+                    } else if SIC_IconAppend(swShell32Name, (-IDI_SHELL_DOCUMENT) as i32, hSm, hLg, 0) == INVALID_INDEX {
                         result = result;
                     } else {
                         result = TRUE;
@@ -910,7 +910,7 @@ pub unsafe extern "system" fn Shell_GetCachedImageIndexA(
     HeapFree(
         GetProcessHeap(),
         0,
-        szTemp,
+        (szTemp).cast(),
     );
     ret
 }
@@ -942,7 +942,7 @@ pub unsafe extern "system" fn Shell_GetCachedImageIndex(
     nIndex: INT,
     bSimulateDoc: UINT,
 ) -> INT {
-    Shell_GetCachedImageIndexAW(szPath, nIndex, bSimulateDoc)
+    Shell_GetCachedImageIndexAW((szPath).cast(), nIndex, (bSimulateDoc) as i32)
 }
 
 #[no_mangle]
@@ -1002,7 +1002,7 @@ pub unsafe extern "system" fn ExtractIconExA(
         HeapFree(
             GetProcessHeap(),
             0,
-            lpwstrFile,
+            (lpwstrFile).cast(),
         );
     }
     ret
@@ -1050,11 +1050,11 @@ pub unsafe extern "system" fn ExtractAssociatedIconA(
             lpIconPathW,
             -1,
             lpIconPath,
-            MAX_PATH,
+            (MAX_PATH) as i32,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
         );
-        HeapFree(GetProcessHeap(), 0, lpIconPathW);
+        HeapFree(GetProcessHeap(), 0, (lpIconPathW).cast());
     }
     hIcon
 }
@@ -1091,7 +1091,7 @@ pub unsafe extern "system" fn ExtractAssociatedIconW(hInst: HINSTANCE, lpIconPat
             *lpi_icon = 6;
         }
 
-        if GetModuleFileNameW(hInst, lpIconPath, MAX_PATH) != 0 {
+        if GetModuleFileNameW(hInst, lpIconPath, (MAX_PATH) as u32) != 0 {
             h_icon = LoadIconW(hInst, MAKEINTRESOURCEW((*lpi_icon) as i32));
         }
     }
@@ -1139,7 +1139,7 @@ pub unsafe extern "system" fn ExtractAssociatedIconExA(
         len,
     );
     let ret = ExtractAssociatedIconExW(hInst, lpwstrFile, lpiIconIdx, lpiIconId);
-    HeapFree(GetProcessHeap(), 0, lpwstrFile);
+    HeapFree(GetProcessHeap(), 0, (lpwstrFile).cast());
     ret
 }
 
@@ -1156,8 +1156,8 @@ pub unsafe extern "system" fn SHDefExtractIconW(
 
     let nIconSize = if nIconSize == 0 {
         MAKELONG(
-            GetSystemMetrics(SM_CXICON),
-            GetSystemMetrics(SM_CXSMICON),
+            GetSystemMetrics((SM_CXICON) as i32),
+            GetSystemMetrics((SM_CXSMICON) as i32),
         )
     } else {
         nIconSize
@@ -1213,7 +1213,7 @@ pub unsafe extern "system" fn SHDefExtractIconA(
     let lpwstrFile = HeapAlloc(
         GetProcessHeap(),
         0,
-        len * core::mem::size_of::<u16>() as i32,
+        (len * core::mem::size_of::<u16>() as i32) as usize,
     ) as *mut u16;
     MultiByteToWideChar(
         CP_ACP,
@@ -1234,7 +1234,7 @@ pub unsafe extern "system" fn SHDefExtractIconA(
     HeapFree(
         GetProcessHeap(),
         0,
-        lpwstrFile,
+        (lpwstrFile).cast(),
     );
     ret
 }

@@ -690,7 +690,7 @@ extern "system" {
     fn DeleteDC(dc: HDC) -> BOOL;
     fn FillRect(dc: HDC, rect: *const RECT, brush: HANDLE) -> INT;
     fn SetRect(rect: *mut RECT, left: INT, top: INT, right: INT, bottom: INT) -> BOOL;
-    fn GetSystemMetrics(index: UINT) -> INT;
+    fn GetSystemMetrics(index: INT) -> INT;
     #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
     fn RegCloseKey(key: HKEY) -> LONG;
     #[link_name = "RegCreateKeyExW"] fn RegCreateKeyEx(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
@@ -880,8 +880,8 @@ pub unsafe fn COpenWithMenu_IconToBitmap_body(this: *mut COpenWithMenu, hIcon: H
         &raw mut rc,
         0,
         0,
-        GetSystemMetrics(SM_CXMENUCHECK),
-        GetSystemMetrics(SM_CYMENUCHECK),
+        GetSystemMetrics((SM_CXMENUCHECK) as i32),
+        GetSystemMetrics((SM_CYMENUCHECK) as i32),
     );
     hbm = CreateCompatibleBitmap(hdcScr, rc.right, rc.bottom);
     ReleaseDC(core::ptr::null_mut(), hdcScr);
