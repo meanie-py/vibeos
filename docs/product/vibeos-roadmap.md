@@ -869,17 +869,24 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the faulting address, is `0xffff8000048e8e50`, a kernel-stack VA. So a synchronous exception
   arrived and the handler prolog could not write the stack underneath it.
 
-  That has a named suspect already sitting in the quest doc, spotted and deliberately not
-  changed: **`ke/arm64/kiinit.rs`'s `KERNEL_STACK_SIZE = 0x6000` against `xdk/arm64/ke.h`'s
-  `0xC000`** — arm64 kernel stacks are HALF the size the headers declare. It is self-consistent
-  (the `KiP0BootStackData` array and the top-of-stack computation agree), so it was filed as a
-  divergence rather than an overrun — but a half-size stack is exactly what turns a deep
-  late-sweep call chain into a guard-page fault on the next trap entry, and it explains both the
-  late-run timing and the intermittency (it depends on the call depth reached). Distinguishing
-  test: log `StackBase`/`StackLimit` vs the faulting address at the 0x1E, or simply build with
-  `0xC000` and re-run the sweep. Note this is a DIFFERENT face from the proven user-mode
-  page-reuse corruption above (`0xC000001D` garbage `.text`, `0xC0000005` in ntdll heap init) —
-  do not assume one fix closes both.
+  A stack-exhaustion suspect exists but is **NARROWER than it first looks — check the scope
+  before chasing it.** `ke/arm64/kiinit.rs:63` has a file-local `KERNEL_STACK_SIZE = 0x6000`
+  against `xdk/arm64/ke.h:49`'s `0xC000`, and the quest doc flags it. But it governs ONLY the
+  two static P0 arrays it is declared next to — `KiP0BootStackData` and
+  `KiP0DoubleFaultStackData`. **Per-thread kernel stacks are NOT half-size:**
+  `ARM3/helpers.rs:400` defines arm64 `KERNEL_STACK_SIZE = 0xC000` and that is what
+  `MmCreateKernelStack` (`ARM3/procsup.rs:200`) allocates from. So a kmtest thread taking an
+  exception is on a correct 48KB stack, and the half-size const can only be implicated for a
+  fault taken while running on **CPU0's boot/idle stack** — possible for an interrupt-time
+  exception, but not the default explanation.
+
+  Distinguishing test, in order: log `StackBase`/`StackLimit` of the current thread against P3
+  at the 0x1E — that says in one boot whether the faulting SP was even inside a thread stack, an
+  idle/P0 stack, or neither (the last would point back at the page-reuse face rather than
+  exhaustion). Only if it lands in the P0 range is rebuilding with `0xC000` worth a sweep. Note
+  this is a DIFFERENT face from the proven user-mode page-reuse corruption above
+  (`0xC000001D` garbage `.text`, `0xC0000005` in ntdll heap init) — do not assume one fix
+  closes both.
 
   **This is now the arm64 blocker for the MP-default flip** (2026-07-26): not because MP is
   implicated — it is not — but because a ratchet floor cannot be seeded from a
