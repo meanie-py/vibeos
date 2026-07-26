@@ -100,10 +100,17 @@ KNOWN_FLAKES = [
     # load-sensitive, and the raiser predates the tree that first showed it in
     # a gate (the crates rebuilt that night are user-mode; no WoW64 guest had
     # started in either hit). RETIRE on the ERESOURCE root fix (verify-gone).
+    # 2026-07-26: the stop code in this signature was STALE. The raiser's code was
+    # corrected 0x03 -> 0xE3 (RESOURCE_NOT_OWNED, its real value — the 0x03 was an
+    # LLM-invented constant, roadmap "arm64 BUGCHECK 0x3 — IT IS RESOURCE_NOT_OWNED"
+    # + field manual §9.124), so this entry matched nothing afterwards and every
+    # lane ate the flake as a fresh red. Keyed on 0xE3 now. Do NOT re-add 0x03: from
+    # d3ca121cb09 on, KiSetAffinityThread raises a genuine 0x03 with ALL-ZERO
+    # parameters, which is a different bug and must keep blocking.
     {
-        "name": "arm64_eresource_notowned_0x3",
+        "name": "arm64_eresource_notowned_0xe3",
         "when": "bugcheck",
-        "code": "0x00000003",
+        "code": "0x000000E3",
         "any": ["0x0000000000000000, 0x0000000000000003)"],
     },
 ]

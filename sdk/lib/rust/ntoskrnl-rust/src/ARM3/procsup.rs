@@ -40,6 +40,15 @@ pub static mut MmMaximumDeadKernelStacks: ULONG = 5;
 pub static mut MmDeadStackSListHead: SLIST_HEADER = unsafe { core::mem::zeroed() };
 static mut MmRotatingUniprocessorNumber: ULONG = 0;
 
+/// VAD ceiling for a WoW64 process's 32-bit-reachable PEB32/TEB region: the
+/// 32-bit `MM_HIGHEST_USER_ADDRESS`, so guest pointers can reach both.
+///
+/// This range CONTAINS `MM_SHARED_USER_DATA_VA` (KUSER_SHARED_DATA, 0x7FFE0000),
+/// which is safe only because `MiInsertSharedUserPageVad` reserves that page with
+/// a real VAD at process init — the VAD allocator has no other way to know the
+/// page is taken. Do not assume the ceiling alone protects it.
+const MM_HIGHEST_VAD_ADDRESS_WOW64: ULONG_PTR = 0x7FFE_FFFF;
+
 unsafe fn MiCreatePebOrTeb(
     Process: PEPROCESS,
     Size: ULONG,
@@ -130,6 +139,30 @@ unsafe fn MiCreatePebOrTebCapped(
         Status = STATUS_NO_MEMORY;
         PsReturnProcessNonPagedPoolQuota(Process as *mut c_void, core::mem::size_of::<_MMVAD_LONG>());
         return Status;
+    }
+
+    // Tripwire for a PEB/TEB placed on top of KUSER_SHARED_DATA. That is only
+    // possible if this process never got MiInsertSharedUserPageVad's reservation
+    // — arm64 lacked it, and the 5th WoW64 thread's TEB duly landed on
+    // 0x7FFE0000, where the structure's first page IS the shared page: it read
+    // back as the clock, MmCreateTeb's zeroing wiped the page for the WHOLE
+    // process, and everything died later in the loader. Refuse at the point of
+    // the mistake rather than N threads downstream.
+    // The VAD is already in the tree at this point, so it is owned by the
+    // process's address-space teardown — do NOT unwind it here. Failing the
+    // creation is enough: the caller aborts, and the leaked VAD dies with the
+    // process. Hand-unwinding a just-inserted VAD would need the same lock
+    // ordering MmDeleteTeb uses, which is not worth the bugcheck risk on a path
+    // that the cap above makes unreachable.
+    let Base = *BaseAddress;
+    if Base < (MM_SHARED_USER_DATA_VA + PAGE_SIZE as ULONG_PTR)
+        && (Base + Size as ULONG_PTR) > MM_SHARED_USER_DATA_VA
+    {
+        MiWow64TraceHex(
+            b"[MM] BUG: PEB/TEB VAD overlaps KUSER_SHARED_DATA at \0".as_ptr() as *const i8,
+            Base,
+        );
+        return STATUS_CONFLICTING_ADDRESSES;
     }
 
     STATUS_SUCCESS
@@ -535,7 +568,7 @@ pub unsafe extern "system" fn MmCreatePeb(
         Status = MiCreatePebOrTebCapped(
             Process,
             core::mem::size_of::<_PEB32>() as ULONG,
-            0x7FFE_FFFF,
+            MM_HIGHEST_VAD_ADDRESS_WOW64,
             &mut Peb32Base,
         );
         if Status < 0 {
@@ -650,7 +683,7 @@ pub unsafe extern "system" fn MmCreateTeb(
             Status = MiCreatePebOrTebCapped(
                 Process,
                 (WOW64_TEB32_OFFSET + ROUND_TO_PAGES(core::mem::size_of::<ntkrnl_sys::ddk::_TEB32>())) as ULONG,
-                0x7FFE_FFFF,
+                MM_HIGHEST_VAD_ADDRESS_WOW64,
                 &mut Teb as *mut PTEB as PULONG_PTR,
             );
         }
@@ -736,7 +769,11 @@ pub unsafe extern "system" fn MmCreateTeb(
     Status
 }
 
-#[cfg(target_arch = "x86_64")]
+/// Reserve `MM_SHARED_USER_DATA_VA` with a real VAD so the VAD allocator knows
+/// the page is taken. Without it nothing in the tree marks 0x7FFE0000, and a
+/// top-down allocation capped at the 32-bit ceiling — i.e. every WoW64 PEB32/TEB
+/// — will eventually be placed right on top of KUSER_SHARED_DATA.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 unsafe fn MiInsertSharedUserPageVad(Process: PEPROCESS) -> NTSTATUS {
     let Vad: PMMVAD_LONG;
     let mut BaseAddress: ULONG_PTR;
@@ -906,7 +943,7 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
     #[cfg(target_arch = "aarch64")]
     ARM64_UART_TRACE_HEX(b"[MM] InitProcAS: IRQL after WS unlock=\0".as_ptr() as *const i8, KeGetCurrentIrql() as ULONG_PTR);
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         Status = MiInsertSharedUserPageVad(Process);
         if Status < 0 {

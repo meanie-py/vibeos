@@ -2258,6 +2258,76 @@ returned); only the never-returning handoff remains.
 would have done.** Grep the caller's tail before writing one. A flag that is only ever read by a
 code path you cannot yet exercise is the definition of a latent bug.
 
+### A per-arch `#[cfg]` on an address-space reservation = a TEB allocated on top of KUSER_SHARED_DATA
+Four concurrent 32-bit guest threads killed the whole WoW64 process with `0xC0000005`, faulting in
+the 64-bit `LdrInitializeThunk` before any guest code ran. The tempting read was "the CPU layer is
+not concurrency-safe". It was not. Exactly **one** thread's TEB was wrong, and the serial log named
+it without a rebuild:
+
+```
+Teb=0x000000007FFE0000
+Teb.StackBase =0x000000000FD4BC00   <- KUSER_SHARED_DATA.InterruptTime.LowPart
+Teb.StackLimit=0x90A70AA000000000   <- High2Time(0) | SystemTime.LowPart<<32
+Teb.Dealloc   =0x0000000001310000   <- correct (offset 0x1478 = page 2, a real page)
+```
+
+Those are not corrupt stack bounds, they are **the clock**. The TEB sat at
+`MM_SHARED_USER_DATA_VA` (0x7FFE0000), so everything below offset 0x1000 of it *was*
+KUSER_SHARED_DATA. WoW64 PEB32/TEB regions are capped at the 32-bit `MM_HIGHEST_USER_ADDRESS`
+(0x7FFEFFFF) so guest pointers can reach them, and they descend 0x3000 apart — the 5th thread
+landed on the shared page.
+
+Cause: `MiInsertSharedUserPageVad`, which reserves that page with a real VAD so the allocator
+knows it is taken, was `#[cfg(target_arch = "x86_64")]`. **amd64 had the reservation; arm64 did
+not.** That is why the same arch-neutral WoW64 code passed all nine rungs on amd64 and died on
+arm64. Fix: extend the `cfg` to `aarch64`. Plus a tripwire in `MiCreatePebOrTebCapped` rejecting
+any PEB/TEB VAD that straddles `MM_SHARED_USER_DATA_VA`, because the failure is otherwise silent
+until a loader crash N threads later.
+
+Two things disguised it as a concurrency bug. It needs five threads to reach the page, so it looks
+load-dependent. And it kills threads whose own TEB is **fine**: `MmCreateTeb` zeroes the new TEB,
+wiping the process-wide KUSER_SHARED_DATA that the guest's i386 ntdll — and our own `wow64.c`,
+which reads `NtSystemRoot` straight out of `0x7FFE0000+0x30` — depend on. The time fields refill
+within one timer tick, which is why the overlaid TEB reads back a *live* clock rather than zeros.
+
+Do **not** "fix" this by lowering the cap to `0x7FFEFFFF - 16 * PAGE_SIZE` (the native
+`MM_HIGHEST_VAD_ADDRESS` shape). Tried first, and it moved PEB32/TEB below 0x7FFE0000 and broke
+WoW64 bring-up outright — an untested address-layout change bought nothing the real reservation
+does not.
+
+**Generalize: an allocator only avoids what it has a record of, and a `cfg` is a place a record
+can be missing on one arch only.** When a bug reproduces on one arch and not another in
+arch-neutral code, diff the *cfg-gated setup* the two arches ran, not the code that crashed.
+
+### `ThreadZeroTlsCell` from a 32-bit guest zeroes the WRONG TEB — and wipes WoW64's own TLS
+A guest that had passed every threading rung still died at exit. The proximate crash was a NULL
+deref *inside* `Wow64pVeh` at `CpuArea+0xC0` and `+0xBC` — which are `WOW64_CONTEXT.Eax`/`.Ecx`,
+i.e. `TEB->TlsSlots[WOW64_TLS_CPURESERVED]` had become NULL on a thread that was still running
+guest code.
+
+Cause: `NtSetInformationThread(ThreadZeroTlsCell)` walks every thread in the process and does
+`Teb->TlsSlots[TlsIndex] = NULL` on the **64-bit** TEB. A 32-bit guest's TLS cells live in
+**TEB32**; TEB64's low slots belong to WoW64 itself (slot 1 is the per-thread guest register
+file). So a guest calling `TlsFree(1)` — perfectly ordinary cleanup — wiped wow64.dll's CPU-area
+pointer for *every* thread in the process. Fix: in a WoW64 process, zero `TEB32.TlsSlots`
+(0xE10) / `TEB32.TlsExpansionSlots` (0xF94) instead.
+
+Two lessons beyond the fix:
+
+- **A syscall can be "correctly implemented" and still be a WoW64 bug.** No marshalling was
+  missing here — the argument is a plain `ULONG` at the same offset in both worlds, so no
+  layout-diff tool flags it. What differs is *which structure the side effect lands in*. Audit
+  syscalls by the state they mutate, not just by their parameter layout.
+- **Never dereference the CPU area without a NULL check in an exception path.** `Wow64pVeh` and
+  `Wow64pPrepareForExceptionHook` both did `(WOW64_CONTEXT *)(CpuArea + 16)` unguarded. A VEH runs
+  on *any* thread, including one that never entered the guest or is past
+  `Wow64FreeThreadCpuArea` — and faulting inside the handler re-enters it and **buries the
+  original exception**, which is what hid this bug behind a bogus `libwow64fex` address for a
+  whole session. Declining is not enough on its own either: FEX's `BTCpuResetToConsistentState`
+  NtContinues back to the faulting instruction, so a handler that merely returns
+  `EXCEPTION_CONTINUE_SEARCH` turns the crash into a livelock (31,511 iterations). Guard, log,
+  and fix the cause.
+
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a
 subsystem, not a marshaller** — WoW64 GUI needs a per-process 32-bit view of USER shared memory
