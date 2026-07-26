@@ -508,7 +508,7 @@ fuzz_domain  = ["both empty", "equal same case", "equal diff case", "differ pre-
 [symbols._strnicmp]
 c_signature  = "int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)"
 family       = "string"
-slice_pattern = "nul_in"
+slice_pattern = "nul_in_n"
 core_fn      = "string::ncmp_ci"
 return_collapse = "i32_cmp_n"
 inout_effects = "none (read-only)"
@@ -530,7 +530,7 @@ fuzz_domain  = ["equal same/diff case", "differ pre/post fold", ">=0x80 and >0xF
 [symbols._wcsnicmp]
 c_signature  = "int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)"
 family       = "wstring"
-slice_pattern = "wnul_in"
+slice_pattern = "wnul_in_n"
 core_fn      = "wstring::ncmp_ci"
 return_collapse = "i32_cmp_n"
 inout_effects = "none (read-only)"

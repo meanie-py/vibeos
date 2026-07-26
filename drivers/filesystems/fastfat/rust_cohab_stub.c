@@ -474,7 +474,9 @@ ULONG SizeOfFullEa(PFILE_FULL_EA_INFORMATION Ea)
                    Ea->EaNameLength + 1 + Ea->EaValueLength);
 }
 
-ULONG SizeOfPackedEa(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); return 0; }
+/* SizeOfPackedEa -> now REAL in fastfat-rust easup.rs (shares ea.rs's inline form).
+ * Another MACRO (fat.h:738) that reached here as an unresolved symbol and got
+ * "resolved" into a bugcheck — armed on any EA-bearing FAT file. Task #45. */
 
 BOOLEAN GetcbList(PVOID x) { (void)x; return FALSE; }
 
@@ -623,13 +625,18 @@ NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_B
  * bugcheck stub is removed so the Rust #[no_mangle] definition is the sole symbol
  * (lld --allow-multiple-definition is first-match, and this C obj links BEFORE
  * libfastfat_rust.a — leaving the stub here would shadow the real impl). */
-NTSTATUS FatOpenVolume(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatOpenVolume -> now REAL in fastfat-rust create.rs (task #47); stub removed so the
+ * Rust #[no_mangle] definition is the sole symbol. It is a genuine ~290-line function
+ * (create.c:2292), not a macro like the FatGenerateFileId* pair below. */
 /* FatOpenExistingDirectory -> now REAL in fastfat-rust create.rs (field manual §9.45); stub removed so the Rust symbol wins */
 /* FatLowLevelReadWrite -> rust_cohab_fat.c (real macro) */
 NTSTATUS FatPerformVerifyDiskRead(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatGenerateFileIdFromFcb(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatGenerateFileIdFromDirentAndOffset(PDCB a, PDIRENT b, ULONG c, PULONGLONG d)
-    { (void)a;(void)b;(void)c;(void)d; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatGenerateFileIdFromFcb / FatGenerateFileIdFromDirentAndOffset -> now REAL in
+ * fastfat-rust fileid.rs. These are MACROS in fatprocs.h, never functions; the
+ * translation emitted extern fn declarations, which arrived here as unresolved
+ * symbols and got "fixed" into a bugcheck. arm64 (FAT32 ramdisk = system volume)
+ * stopped 0x23 0xdead0000 in FatGenerateFileIdFromFcb on any
+ * FileInternalInformation query. Rust calls its own helpers now — no symbol. */
 /* FatReadDirent -> rust_cohab_fat.c (real dirsup.c macro) */
 NTSTATUS fat_check_system_security_access(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS fat_supersede_or_overwrite_file(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6, PVOID a7, PVOID a8) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6;(void)a7;(void)a8; STUB_BUGCHECK(); return STATUS_SUCCESS; }

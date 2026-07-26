@@ -275,7 +275,7 @@
   "_strnicmp": {
     "c_signature": "int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)",
     "family": "string",
-    "slice_pattern": "nul_in",
+    "slice_pattern": "nul_in_n",
     "return_collapse": "i32_cmp_n",
     "reference": "sdk/lib/crt/string/_strnicmp_nt.c",
     "fuzz_domain": [
@@ -499,7 +499,7 @@
   "_wcsnicmp": {
     "c_signature": "int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)",
     "family": "wstring",
-    "slice_pattern": "wnul_in",
+    "slice_pattern": "wnul_in_n",
     "return_collapse": "i32_cmp_n",
     "reference": "sdk/lib/crt/wstring/_wcsnicmp_nt.c",
     "fuzz_domain": [

@@ -26,7 +26,12 @@ extern "system" {
 }
 
 const SystemPteSpace: MMSYSTEM_PTE_POOL_TYPE = 0;
-const POOL_FLAG_SPECIAL_POOL: ULONG = 0x10;
+// POOL_FLAG_SPECIAL_POOL comes from `ntkrnl_sys::mm` (0x20, miarm.h:328). A local
+// const here USED to say 0x10 — that is POOL_FLAG_CHECK_DEADLOCK — and being local
+// it silently shadowed the glob-imported real one. MiInitializeSpecialPool then set
+// the wrong bit forever, so ExAllocatePoolWithTag's `ExpPoolFlags & 0x20` test never
+// fired: special pool armed, initialized, printed "ACTIVE", and routed not one
+// allocation. Never redeclare a constant that the crate already imports.
 const PTE_PER_PAGE: usize = PAGE_SIZE / core::mem::size_of::<MMPTE>();
 const SPECIAL_POOL_PAGED_PTE: ULONG_PTR = 0x2000;
 const SPECIAL_POOL_NONPAGED_PTE: ULONG_PTR = 0x4000;

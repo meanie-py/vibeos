@@ -55,7 +55,7 @@ extern "system" {
 //  SizeOfPackedEa macro (fat.h): 1 flags + 1 namelen + 2 valuelen + name + null + value.
 //  EaValueLength is an unaligned [UCHAR;2], read little-endian (GetEaValueLength).
 #[inline]
-unsafe fn SizeOfPackedEaInline(ea: *const PACKED_EA) -> u32 {
+pub(crate) unsafe fn SizeOfPackedEaInline(ea: *const PACKED_EA) -> u32 {
     let nl = (*ea).EaNameLength as u32;
     let dl = (*ea).EaValueLength[0] as u32 | (((*ea).EaValueLength[1] as u32) << 8);
     1 + 1 + 2 + nl + 1 + dl

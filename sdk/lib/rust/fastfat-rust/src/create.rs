@@ -134,7 +134,7 @@ extern "system" {
     fn FatIsNameShortOemValid( IrpContext: *mut IRP_CONTEXT, Name: OEM_STRING, a: BOOLEAN, b: BOOLEAN, c: BOOLEAN, ) -> BOOLEAN;
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Ccb: *mut CCB, Flags: u32, MatchFlags: *mut u32, Dirent: *mut *mut DIRENT, Bcb: *mut *mut BCB, DirentByteOffset: *mut u32, FileNameOpenedDos: *mut BOOLEAN, Lfn: *mut _UNICODE_STRING, OrigLfn: *mut _UNICODE_STRING, );
     // FatOpenExistingDirectory now DEFINED in Rust below (was a BUGCHECK stub) — §9.45.
-    fn FatOpenVolume( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Vcb: *mut VCB, DesiredAccess: *mut ACCESS_MASK, ShareAccess: u16, CreateDisposition: u32, ) -> _IO_STATUS_BLOCK;
+    // FatOpenVolume now DEFINED in Rust below (was a BUGCHECK stub) — see task #47.
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn MmDoesFileHaveUserWritableReferences(SectionObjectPointers: *const SECTION_OBJECT_POINTERS) -> BOOLEAN;
@@ -1469,6 +1469,258 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
 
     DebugTrace(-1, 0 /* Dbg */, b"FatOpenExistingDcb -> Iosb.__bindgen_anon_1.Status = %08lx\n\0".as_ptr() as *const i8, Iosb.__bindgen_anon_1.Status);
 
+    Iosb
+}
+
+// Callees of FatOpenVolume below that this module did not already declare. All are
+// real Rust definitions elsewhere in the crate (strucsup/flush/filobsup/verfysup/
+// acchksup) — none is a bugcheck stub; signatures copied from those definitions.
+extern "system" {
+    fn FatIsHandleCountZero(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
+    fn FatFlushFat(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> NTSTATUS;
+    fn FatPurgeReferencedFileObjects(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Flags: u32);
+    fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FlushType: u32) -> NTSTATUS;
+    fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, VolumeState: i32);
+    fn FatToggleMediaEjectDisable(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, PreventRemoval: u8) -> i32;
+    fn FatExplicitDeviceAccessGranted(
+        IrpContext: *mut IRP_CONTEXT,
+        DeviceObject: PDEVICE_OBJECT,
+        AccessState: PACCESS_STATE,
+        ProcessorMode: KPROCESSOR_MODE,
+    ) -> NTSTATUS;
+}
+
+// FAT_FLUSH_TYPE (fatprocs.h:1052) and the FatMarkVolume state, as verfysup.rs and
+// flush.rs spell them. Local because this module never imported either enum.
+const Flush: u32 = 1;
+const VolumeClean: i32 = 0;
+
+// VcbState bits, from the per-arch bindgen layouts (identical in all three).
+// This module had never needed one before FatOpenVolume.
+use crate::types::{
+    VCB_STATE_FLAG_BOOT_OR_PAGING_FILE, VCB_STATE_FLAG_LOCKED, VCB_STATE_FLAG_MOUNTED_DIRTY,
+    VCB_STATE_FLAG_REMOVABLE_MEDIA, VCB_STATE_FLAG_VOLUME_DIRTY,
+};
+
+/// Open the volume itself for DASD access (`\Device\HarddiskVolumeN` opened
+/// directly, rather than a file on it). Faithful translation of the legacy C
+/// `FatOpenVolume` (`drivers/filesystems/fastfat/create.c:2292`).
+///
+/// Previously an un-translated hard stub that `KeBugCheckEx(0x23, 0xDEAD0000)`'d
+/// on entry. arm64 is the arch that hits it, because arm64 boots a FAT32 ramdisk
+/// (fastfat IS its system volume) while i386/amd64 boot a CDFS ISO and never enter
+/// fastfat at all — the kmtest `IoFilesystem` test opens the volume directly and
+/// stopped here the moment the BAD_POOL_HEADER root above it was fixed. Task #47.
+///
+/// UNLIKE most `_SEH2_FINALLY` blocks in this file, the unwind below is NOT dead
+/// code under DUMMY_PSEH: the C runs it on
+/// `_SEH2_AbnormalTermination() || !NT_SUCCESS(Status)`, so every ordinary failure
+/// return still has to undo its share access, counts and volume lock.
+#[no_mangle]
+pub unsafe extern "system" fn FatOpenVolume(
+    IrpContext: *mut IRP_CONTEXT,
+    FileObject: *mut FILE_OBJECT,
+    Vcb: *mut VCB,
+    DesiredAccess: *mut ACCESS_MASK,
+    ShareAccess: u16,
+    CreateDisposition: u32,
+) -> _IO_STATUS_BLOCK {
+    let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
+    // The C leaves Status uninitialised. Every path that reaches try_exit assigns
+    // it, so SUCCESS here is not observable — it only keeps the FINALLY test below
+    // well-defined if someone later adds a path that does not.
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut CleanedVolume: bool = false;
+
+    // The C's abnormal-termination bookkeeping locals.
+    let mut UnwindShareAccess: bool = false;
+    let mut UnwindCcb: *mut CCB = core::ptr::null_mut();
+    let mut UnwindCounts: bool = false;
+    let mut UnwindVolumeLock: bool = false;
+
+    let ShareAccess: u32 = ShareAccess as u32;
+
+    PAGED_CODE();
+    DebugTrace(1, 0 /* Dbg */, b"FatOpenVolume...\n\0".as_ptr() as *const i8);
+
+    let abnormal_termination = false;
+    'try_body: {
+        // Check for proper desired access and rights.
+        if CreateDisposition != FILE_OPEN && CreateDisposition != FILE_OPEN_IF {
+            Status = STATUS_ACCESS_DENIED;
+            break 'try_body; // try_return
+        }
+
+        // If the user will not share write or delete, try to lock the volume.
+        if FlagOn(ShareAccess, FILE_SHARE_WRITE) == 0
+            && FlagOn(ShareAccess, FILE_SHARE_DELETE) == 0
+        {
+            // The C has an `#if (NTDDI_VERSION >= NTDDI_VISTA)` block here that
+            // clears FILE_SHARE_READ for a writer once
+            // FsRtlAreVolumeStartupApplicationsComplete() returns TRUE. That block
+            // is compiled OUT in this tree — the function has no definition
+            // anywhere, so the C would not link if it were live — and is therefore
+            // deliberately not translated.
+
+            // Quick check for handles on an exclusive open.
+            if FlagOn(ShareAccess, FILE_SHARE_READ) == 0
+                && FatIsHandleCountZero(IrpContext, Vcb) == 0
+            {
+                Status = STATUS_SHARING_VIOLATION;
+                break 'try_body; // try_return
+            }
+
+            // Force Mm to get rid of its referenced file objects.
+            FatFlushFat(IrpContext, Vcb);
+            FatPurgeReferencedFileObjects(IrpContext, (*Vcb).RootDcb, Flush);
+
+            // Without share-read, deny if anyone has the volume open at all;
+            // with it, allow existing readonly opens but deny further ones.
+            if FlagOn(ShareAccess, FILE_SHARE_READ) == 0 {
+                if (*Vcb).OpenFileCount != 0 {
+                    Status = STATUS_SHARING_VIOLATION;
+                    break 'try_body; // try_return
+                }
+            } else if (*Vcb).ReadOnlyCount != (*Vcb).OpenFileCount {
+                Status = STATUS_SHARING_VIOLATION;
+                break 'try_body; // try_return
+            }
+
+            // Lock the volume.
+            (*Vcb).VcbState |= VCB_STATE_FLAG_LOCKED;
+            (*Vcb).FileObjectWithVcbLocked = FileObject;
+            UnwindVolumeLock = true;
+
+            CleanedVolume = true;
+        } else if FlagOn(
+            *DesiredAccess,
+            FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA,
+        ) != 0
+        {
+            // Flush the volume and let ourselves push the clean bit out if
+            // everything worked.
+            if NT_SUCCESS(FatFlushVolume(IrpContext, Vcb, Flush)) != 0 {
+                CleanedVolume = true;
+            }
+        }
+
+        // Clean the volume if we believe it safe and reasonable.
+        if CleanedVolume
+            && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DIRTY) != 0
+            && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_MOUNTED_DIRTY) == 0
+            && CcIsThereDirtyData((*Vcb).Vpb) == 0
+        {
+            // Cancel any pending clean volumes.
+            KeCancelTimer(core::ptr::addr_of_mut!((*Vcb).CleanVolumeTimer));
+            KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc));
+
+            FatMarkVolume(IrpContext, Vcb, VolumeClean);
+            ClearFlag(core::ptr::addr_of_mut!((*Vcb).VcbState), VCB_STATE_FLAG_VOLUME_DIRTY);
+
+            // Unlock the volume if it is removable.
+            if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0
+                && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE) == 0
+            {
+                FatToggleMediaEjectDisable(IrpContext, Vcb, 0 /* FALSE */);
+            }
+        }
+
+        // If the volume is already open by someone, check the share access.
+        if (*Vcb).DirectAccessOpenCount > 0 {
+            Status = IoCheckShareAccess(
+                *DesiredAccess,
+                ShareAccess,
+                FileObject,
+                core::ptr::addr_of_mut!((*Vcb).ShareAccess),
+                1, /* TRUE — update */
+            );
+            if NT_SUCCESS(Status) == 0 {
+                break 'try_body; // try_return( NOTHING )
+            }
+        } else {
+            IoSetShareAccess(
+                *DesiredAccess,
+                ShareAccess,
+                FileObject,
+                core::ptr::addr_of_mut!((*Vcb).ShareAccess),
+            );
+        }
+        UnwindShareAccess = true;
+
+        // Set up the context and section object pointers, and update counts.
+        UnwindCcb = FatCreateCcb(IrpContext);
+        // FatSetFileObject's 3rd param is typed *mut FCB in this module's declaration,
+        // but the C takes a PVOID that is an FCB/DCB/VCB depending on the open type —
+        // here it is genuinely the VCB, matching UserVolumeOpen.
+        // UserVolumeOpen is the bindgen _TYPE_OF_OPEN (u32); this module's declaration
+        // of FatSetFileObject takes the open type as i32, as its siblings' local
+        // consts do (UserDirectoryOpen: i32 = 3). Value 4 — a plain cast, never
+        // try_into().unwrap(), which would put a panic on a filesystem open path.
+        FatSetFileObject(FileObject, UserVolumeOpen as i32, Vcb as *mut FCB, UnwindCcb);
+
+        (*FileObject).SectionObjectPointer =
+            core::ptr::addr_of_mut!((*Vcb).SectionObjectPointers) as *mut _;
+
+        (*Vcb).DirectAccessOpenCount += 1;
+        (*Vcb).OpenFileCount += 1;
+        if IsFileObjectReadOnly(FileObject) != 0 {
+            (*Vcb).ReadOnlyCount += 1;
+        }
+        UnwindCounts = true;
+        (*FileObject).Flags |= FO_NO_INTERMEDIATE_BUFFERING;
+
+        // The open will succeed from here, so note whether the user is getting
+        // explicit access to the device — if not, we deny modifying FSCTLs to it.
+        let IrpSp = IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp);
+        Status = FatExplicitDeviceAccessGranted(
+            IrpContext,
+            (*(*Vcb).Vpb).RealDevice,
+            (*(*IrpSp).Parameters.Create.SecurityContext).AccessState,
+            if FlagOn(((*IrpSp).Flags) as u32, SL_FORCE_ACCESS_CHECK) != 0 {
+                1i8 /* UserMode */
+            } else {
+                (*(*IrpContext).OriginatingIrp).RequestorMode
+            } as KPROCESSOR_MODE,
+        );
+
+        if NT_SUCCESS(Status) != 0 {
+            SetFlag(core::ptr::addr_of_mut!((*UnwindCcb).Flags), CCB_FLAG_MANAGE_VOLUME_ACCESS);
+        }
+
+        // The access-granted probe above is advisory: the C overwrites its status
+        // unconditionally, so a denial only costs the CCB flag, not the open.
+        Status = STATUS_SUCCESS;
+        Iosb.Information = FILE_OPENED as _;
+    } // end 'try_body
+
+    // _SEH2_FINALLY — live on any failure status, see the doc comment.
+    if abnormal_termination || NT_SUCCESS(Status) == 0 {
+        if UnwindCounts {
+            (*Vcb).DirectAccessOpenCount -= 1;
+            (*Vcb).OpenFileCount -= 1;
+            if IsFileObjectReadOnly(FileObject) != 0 {
+                (*Vcb).ReadOnlyCount -= 1;
+            }
+        }
+        if !UnwindCcb.is_null() {
+            FatDeleteCcb(IrpContext, &mut UnwindCcb);
+        }
+        if UnwindShareAccess {
+            IoRemoveShareAccess(FileObject, core::ptr::addr_of_mut!((*Vcb).ShareAccess));
+        }
+        if UnwindVolumeLock {
+            (*Vcb).VcbState &= !VCB_STATE_FLAG_LOCKED;
+        }
+    }
+
+    DebugTrace(
+        -1,
+        0, /* Dbg */
+        b"FatOpenVolume -> Iosb.Status = %08lx\n\0".as_ptr() as *const i8,
+        Status,
+    );
+
+    Iosb.__bindgen_anon_1.Status = Status;
     Iosb
 }
 

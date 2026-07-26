@@ -22,6 +22,7 @@ HalPortIo NO-END pass=0 fail=0 skip=0 exit=1 errors=1
 HalSystemInfo OK pass=0 fail=2 skip=1 exit=0
 IoDeviceInterface OK pass=2 fail=0 skip=40 exit=0
 IoEvent OK pass=92 fail=0 skip=0 exit=0
+IoFilesystem OK pass=318 fail=4 skip=1 exit=0
 IoInterrupt OK pass=937 fail=158 skip=0 exit=0
 IoIrp OK pass=22 fail=0 skip=0 exit=0
 IoMdl OK pass=11 fail=0 skip=0 exit=0
@@ -41,6 +42,7 @@ MmMdl OK pass=575 fail=0 skip=0 exit=0
 MmSection OK pass=292 fail=39 skip=12 exit=0
 NpfsConnect OK pass=679 fail=0 skip=0 exit=0
 NpfsCreate OK pass=351 fail=0 skip=0 exit=0
+NpfsFileInfo OK pass=50 fail=25 skip=0 exit=0
 NpfsReadWrite OK pass=7154 fail=0 skip=0 exit=0
 NpfsVolumeInfo OK pass=63 fail=0 skip=0 exit=0
 ObHandle OK pass=351 fail=0 skip=0 exit=0
