@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from migrate_debug_assert import convert, is_generated, split_args  # noqa: E402
+from migrate_debug_assert import convert, is_generated, split_args
 
 
 def one(src):
@@ -106,7 +106,7 @@ def test_format_args_are_refused_not_silently_dropped():
 
 
 def test_non_literal_message_is_refused():
-    out, n, skipped = one("debug_assert!(x, msg_var);")
+    _out, n, skipped = one("debug_assert!(x, msg_var);")
     assert n == 0 and skipped and "not a literal" in skipped[0]
 
 

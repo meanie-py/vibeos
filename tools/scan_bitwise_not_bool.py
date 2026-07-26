@@ -92,7 +92,7 @@ def scan_line(line: str) -> bool:
             elif depth == 0 and line[j : j + 2] in ("!=", "=="):
                 rest = line[j + 2 :].lstrip()
                 # `!= 0` only — `!= 0x10` or `!= 01` is a different comparison.
-                if rest.startswith("0") and not rest[1:2].isdigit() and not rest[:2].lower() == "0x":
+                if rest.startswith("0") and not rest[1:2].isdigit() and rest[:2].lower() != "0x":
                     return True
                 break
             elif depth == 0 and (c in "&|" or line[j : j + 2] in ("<<", ">>")):

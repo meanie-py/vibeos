@@ -245,8 +245,10 @@ def main() -> int:
             if args.apply:
                 p.write_text(new)
 
-    print(f"{'converted' if args.apply else 'convertible'}: {total_done} site(s) "
-          f"in {touched} file(s) across {len(kern)} kernel crate(s)")
+    print(
+        f"{'converted' if args.apply else 'convertible'}: {total_done} site(s) "
+        f"in {touched} file(s) across {len(kern)} kernel crate(s)"
+    )
     if skip_report:
         print(f"\nSKIPPED {total_skipped} (left as debug_assert!, nothing dropped silently):")
         for s in skip_report:
