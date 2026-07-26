@@ -966,6 +966,28 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `[MSGINA] status dialog up` each boot + `[MSGINA] 9.12-TRIPWIRE … worker tid=N` on a hit.
   A hit leaves the worker wedged in win32k with the tid printed — dump its kernel stack
   (`inspect.sh dump-thread`) for the exact blocking site. Re-open only on a tripwire line.
+- **`PsLocateSystemDll` failed on EVERY arm64 boot, invisibly — FIXED 2026-07-26.** Found by
+  arming the arm64 silent-suppression family (below) and booting once. The serial said
+  `[PS] PsLocateSystemDll FAILED subcode=8 status=0xC000007A` on a **green** boot.
+  Subcode 8 is `PspLookupKernelUserEntryPoints`; `0xC000007A` is `STATUS_PROCEDURE_NOT_FOUND`.
+  Cause: it looked up `ExpInterlockedPopEntrySList{End,Fault,Resume}`, which `ntdll.spec`
+  declares **`-arch=i386` and `-arch=x86_64` only** — there is no arm64 row, and the built
+  arm64 `ntdll.dll` exports none of the three (0 occurrences, vs 3 each for the four
+  `Ki*Dispatcher`s looked up just above). They exist to fix up a fault inside the *x86*
+  user-mode SLIST pop; the sole consumer in the tree is `ke/i386/traphdlr.rs`, which already
+  NULL-guards. Fixed by gating the three lookups to the arches that export them.
+  **Why it went unseen for so long is the real lesson:** the failure is reported through
+  `iomgr`'s `io_trace`, which was `#[inline(always)] fn io_trace(_s: &[u8]) {}` on aarch64 —
+  a no-op, so all 40 of its boot-milestone and FAILED reports were discarded on the only arch
+  that needed them, and LLVM dropped the strings from the binary entirely
+  (`"[IO] IopInitializeBootDrivers"`: 0 occurrences before, 2 after). `IoInitSystem` then
+  *continued booting* ("continuing on ARM64"), so this escape hatch was **permanently**
+  exercised and could never have signalled a genuine system-DLL failure. `io_trace` now routes
+  to `ARM64_UART_TRACE`; 26 `[IO]` lines reach the serial where every prior soak log has zero.
+  Verified: the `FAILED` line is gone and `[IO] IoInitSystem returning TRUE` appears instead.
+  **Impact on the four faces is NOT established** — the NULL pointers were harmless on arm64,
+  so this is a spurious failure made real-looking, not (yet) a known cause of B/C/D. What it
+  does buy: the hatch means something again, and 26 boot milestones are now visible.
 - **arm64 kmtest-sweep late-run user-process corruption** (~2/4 sweeps since the §9.96
   un-quarantine of MmSection/ZwMapViewOfSection, 2026-07-17; deeply characterized 2026-07-18,
   §9.97) — a *later* kmtest_.exe launch (77+ deep) dies with `0xC000001D` (executing garbage

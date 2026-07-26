@@ -1736,6 +1736,27 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### An arch-gated no-op trace fn discards the diagnostics on the arch that needs them
+`iomgr.rs` defined `io_trace` twice: a real one for x86, and
+`#[cfg(target_arch = "aarch64")] #[inline(always)] unsafe fn io_trace(_s: &[u8]) {}`. All 40 of
+its call sites are one-shot boot milestones and their `FAILED` reports — including
+`PsLocateSystemDll FAILED`, after which arm64 **continues booting on purpose**. So the one arch
+that tolerates the failure was also the one arch that could not report it, and the failure ran
+on every boot for months. LLVM additionally drops the now-unused byte strings, so the binary
+does not even contain the text: `"[IO] IopInitializeBootDrivers"` was **0** occurrences before
+the fix and **2** after. Two consequences worth generalizing:
+- **Grep for `_s: &[u8]) {}` / empty-bodied trace shims before concluding "the probe never
+  fired."** Absence of a trace is only evidence if the trace exists on that arch.
+- **An arch-gated tolerate-and-continue path needs LOUDER reporting than the arch that
+  bugchecks, not quieter.** Where x86 stops dead, the tolerant arch keeps running with the
+  damage — and if its report is a no-op, that hatch can never signal anything, so it becomes
+  permanently-on and worthless as a signal. (Compare: the arm64 MM suppressions, which kept
+  their recovery and gained a print.)
+- Do not treat a hand-rolled `for &ch in msg.iter() { *uart = ch }` loop as the fix — LLVM
+  unrolls it into immediate stores and the literal vanishes from the binary, which also defeats
+  `smoke --require-probe`. Pass the string by pointer (`ARM64_UART_TRACE`), the form proven to
+  reach the serial.
+
 ### The governing rule: a harness only falsifies what it varies
 > **A harness proves parity only across the axes it actually VARIES. Every axis it holds
 > CONSTANT is a silent assumption baked into every MATCH it prints.** `[§9.60]`

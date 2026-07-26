@@ -892,6 +892,22 @@ def _check_staleness(repo: Path, arch: str) -> Staleness:
 # `arm64` deliberately checks BOTH boot.img and ramdisk.img: the kernel lives in
 # the ramdisk, and checking only the outer image would reproduce the same
 # right-check-wrong-artifact mistake one level down.
+#
+# KNOWN LIMIT — this checks for a literal in the image, so it only sees probes
+# whose text actually survives into .rdata. That covers the normal forms
+# (`ARM64_UART_TRACE*(b"…".as_ptr())`, `dbg_print!`), which pass the string by
+# pointer. It does NOT cover a hand-rolled byte loop:
+#
+#     let msg = b"[IO] PsLocateSystemDll\r\n";
+#     for &ch in msg.iter() { *uart = ch as ULONG; }
+#
+# LLVM unrolls that into immediate stores and the string never appears in the
+# binary at all, so this check reports it MISSING while it executes fine.
+# Measured on iomgr.rs 2026-07-26: "[IO] PsLocateSystemDll" -> 0 hits in a media
+# image that contains the code. A missing verdict on a loop-written probe is a
+# false alarm; rewrite the probe to pass a pointer (which is better anyway —
+# that is the form proven to reach the serial) rather than trusting either
+# answer.
 
 #: Extra media that must ALSO carry the literal, beyond `boot_media_rel`.
 _EXTRA_MEDIA: dict[str, tuple[str, ...]] = {"arm64": ("qemu/ramdisk.img",)}

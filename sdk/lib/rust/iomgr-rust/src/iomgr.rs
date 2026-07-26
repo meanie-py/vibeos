@@ -14,9 +14,31 @@ unsafe fn io_trace(s: &[u8]) {
     crate::dbg_print!(b"%s\0", s.as_ptr() as *const i8);
 }
 
+// aarch64 used to discard these entirely. All 40 call sites are one-shot BOOT
+// milestones (IopInitializeBootDrivers, IopCreateArcNames, IopMarkBootPartition,
+// …) plus their FAILED reports — none is per-IRP — so there is no hot path to
+// protect, and dropping them cost real diagnostic ability: `PsLocateSystemDll
+// FAILED` is reported through this function, and on arm64 IoInitSystem then
+// CONTINUES BOOTING ("continuing on ARM64"). A failure to map the system DLL was
+// therefore completely silent on the one arch that tolerates it, which is a
+// candidate mechanism for the sweep-launches-nothing face.
+//
+// Route to ARM64_UART_TRACE — the mechanism proven to reach the serial (a soak
+// log carries 7449 [PS] lines emitted this way). The nearby hand-rolled
+// `for &ch in msg.iter() { *uart = ch }` loops are NOT equivalent: LLVM unrolls
+// them into immediate stores, so their text does not even appear in the binary.
 #[cfg(target_arch = "aarch64")]
-#[inline(always)]
-unsafe fn io_trace(_s: &[u8]) {}
+#[inline(never)]
+unsafe fn io_trace(s: &[u8]) {
+    extern "C" {
+        fn ARM64_UART_TRACE(msg: *const i8);
+    }
+    // Call sites all pass NUL-terminated byte strings; guard anyway so a future
+    // caller that forgets cannot walk off the end.
+    if s.last() == Some(&0) {
+        ARM64_UART_TRACE(s.as_ptr() as *const i8);
+    }
+}
 
 use ntkrnl_sys::ddk::{
     ANSI_STRING,
@@ -633,6 +655,10 @@ unsafe fn IopMarkBootPartition(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN 
     if Status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
+            // x86 bugchecks INACCESSIBLE_BOOT_DEVICE unless in WinPE mode; arm64
+            // just returns failure. Name it — a boot device that could not be
+            // opened cascades into failures nowhere near here.
+            io_trace(b"[IO] IopMarkBootPartition: ZwOpenFile FAILED\r\n\0");
             RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceName));
             return 0u8;
         }
