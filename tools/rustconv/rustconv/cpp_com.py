@@ -2811,9 +2811,11 @@ _CPP_SUPPORT_EXTERNS = {
     ),
     "ShellExecuteExW": "    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;",
     "ILGetNext": "    fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;",
-    "SHELL32_CoCreateInitSF": (
+    # Renamed from a SHELL32_CoCreateInitSF overload when shlfolder.cpp flipped to Rust; see
+    # the Shell32RustCoCreateInitSF emitter below for why the trampoline outlived the overload.
+    "SHELL32_CoCreateInitSFWithCsidl": (
         '    #[link_name = "Shell32RustCoCreateInitSF"]\n'
-        "    fn SHELL32_CoCreateInitSF(root: LPCITEMIDLIST, clsid: *const GUID, "
+        "    fn SHELL32_CoCreateInitSFWithCsidl(root: LPCITEMIDLIST, clsid: *const GUID, "
         "csidl: INT, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;"
     ),
     "InsertMenuItemW": (
@@ -5412,7 +5414,12 @@ def render_object_map_adapter(cls: CppComClass) -> str:
                 "}",
             ]
         )
-    if "SHELL32_CoCreateInitSF" in source:
+    if "SHELL32_CoCreateInitSFWithCsidl" in source:
+        # The csidl form used to be a second OVERLOAD of SHELL32_CoCreateInitSF, which Rust
+        # cannot name — hence this trampoline. shlfolder is Rust now, so shfldr.h renamed it
+        # and made both forms EXTERN_C; the trampoline stays only because the five already
+        # translated folder classes declare it `extern "system"` (it is WINAPI, the renamed
+        # function is cdecl), and repointing them is an ABI change for no functional gain.
         lines.extend(
             [
                 "",
@@ -5420,7 +5427,7 @@ def render_object_map_adapter(cls: CppComClass) -> str:
                 "    LPCITEMIDLIST pidlRoot, const GUID *clsid, INT csidl,",
                 "    REFIID riid, LPVOID *ppvOut)",
                 "{",
-                "    return SHELL32_CoCreateInitSF(pidlRoot, clsid, csidl, riid, ppvOut);",
+                "    return SHELL32_CoCreateInitSFWithCsidl(pidlRoot, clsid, csidl, riid, ppvOut);",
                 "}",
             ]
         )

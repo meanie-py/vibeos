@@ -52,7 +52,7 @@ HRESULT CMyDocsFolder::EnsureFolder()
         return S_OK;
 
 
-    HRESULT hr = SHELL32_CoCreateInitSF(m_pidlInner,
+    HRESULT hr = SHELL32_CoCreateInitSFWithCsidl(m_pidlInner,
                                         &CLSID_ShellFSFolder,
                                         CSIDL_PERSONAL,
                                         IID_PPV_ARG(IShellFolder2, &m_pisfInner));
