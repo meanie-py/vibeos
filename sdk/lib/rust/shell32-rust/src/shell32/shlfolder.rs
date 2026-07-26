@@ -121,6 +121,7 @@ use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
 use crate::win32::*;
+use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations to emit from this preamble.
@@ -128,9 +129,8 @@ use crate::win32::*;
 // SHOpenFolderAndSelectItems, and various _RustBridge wrappers), which
 // will be translated separately. There are no struct definitions,
 // constants, enums, or static tables to extract.
-pub(crate) #[no_mangle]
-pub(crate) #[no_mangle]
-pub(crate) pub unsafe extern "C" fn SHELL_GetDefaultFolderEnumSHCONTF() -> SHCONTF {
+#[no_mangle]
+pub unsafe extern "C" fn SHELL_GetDefaultFolderEnumSHCONTF() -> SHCONTF {
     let mut flags: SHCONTF = SHCONTF_FOLDERS | SHCONTF_NONFOLDERS;
     let mut ss: SHELLSTATE = core::mem::zeroed();
     SHGetSetSettings(core::ptr::addr_of_mut!(ss), SSF_SHOWALLOBJECTS | SSF_SHOWSUPERHIDDEN, FALSE);
