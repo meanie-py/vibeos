@@ -94,7 +94,6 @@ extern "system" {
     fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, length: u32) -> u8;
     fn FatVerifyIndexIsValid(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32);
     fn FatReservedBytes(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
-    fn FatPerformVerifyDiskRead( IrpContext: PIRP_CONTEXT, Vcb: *mut VCB, Buffer: *mut core::ffi::c_void, Lbo: LBO, NumberOfBytesToRead: u32, ReturnOnError: i32, ) -> i32;
     fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FsRtlLookupLastLargeMcbEntryAndIndex(Mcb: *mut LARGE_MCB, LargeVbn: *mut LONGLONG, LargeLbn: *mut LONGLONG, Index: *mut ULONG) -> u8;
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
@@ -177,6 +176,13 @@ const NonPagedPoolNx: u32 = 512; // NonPagedPoolNx = 0x200
 const NonPagedPoolNxCacheAligned: u32 = 516; // NonPagedPoolNxCacheAligned
 const TAG_ENTRY_LOOKUP_BUFFER: u32 = 0x4C746146;
 
+// fastfat's real LBO is LONGLONG (fat.h:34, and crate::types::LBO = LONGLONG), i.e.
+// SIGNED. This local alias is unsigned. Same width, so unlike the VBO divergence in
+// dirctrl.rs (4 bytes vs 8 — real corruption) this one is benign for every value a
+// disk byte-offset actually takes, and the call sites in this file are written
+// against the u64 spelling. Left as-is deliberately rather than churned late; it is
+// recorded with its sibling on the VBO task. Do NOT copy this pattern: a per-file
+// `type` alias that disagrees with crate::types is invisible at every use site.
 type LBO = u64;
 
 // Constants (values taken from Windows SDK definitions)
@@ -2895,6 +2901,102 @@ pub unsafe extern "system" fn FatIsPathnameValid(IrpContext: PIRP_CONTEXT, Irp: 
 
     DebugTrace(-1, Dbg, b"FatIsPathnameValid -> %08lx\n\0".as_ptr() as *const i8);
     STATUS_SUCCESS
+}
+
+/// `FatPerformVerifyDiskRead` (`drivers/filesystems/fastfat/fsctrl.c:4576`).
+///
+/// Reads a byte range straight off the disk, bypassing the cache and the regular I/O
+/// path, and **overriding the device's verify-volume flag** — that override is the
+/// whole point of the function, which is why it builds the IRP by hand.
+///
+/// Returns TRUE on success. `ReturnOnError` chooses between reporting a failure and
+/// raising it.
+#[no_mangle]
+pub unsafe extern "system" fn FatPerformVerifyDiskRead(
+    IrpContext: PIRP_CONTEXT,
+    Vcb: *mut VCB,
+    Buffer: *mut c_void,
+    Lbo: LBO,
+    NumberOfBytesToRead: u32,
+    ReturnOnError: i32,
+) -> i32 {
+    // PAGED_CODE();
+    const IRP_MJ_READ: u8 = 0x03;
+    const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02;
+    const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as i32;
+    const STATUS_INVALID_PARAMETER_C: NTSTATUS = 0xC000000Du32 as i32;
+    const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016u32 as i32;
+    const STATUS_PENDING: NTSTATUS = 0x00000103;
+    const KernelMode: i8 = 0;
+
+    DebugTrace(
+        0,
+        Dbg,
+        b"FatPerformVerifyDiskRead, Lbo = %08lx\n\0".as_ptr() as *const i8,
+    );
+
+    let mut Event: KEVENT = core::mem::zeroed();
+    let mut Iosb: IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut ByteOffset: LARGE_INTEGER = core::mem::zeroed();
+
+    KeInitializeEvent(
+        &raw mut Event,
+        _EVENT_TYPE_NotificationEvent,
+        0, /* FALSE */
+    );
+
+    ByteOffset.QuadPart = Lbo as i64;
+
+    let Irp = IoBuildSynchronousFsdRequest(
+        IRP_MJ_READ as u32,
+        (*Vcb).TargetDeviceObject,
+        Buffer,
+        NumberOfBytesToRead,
+        &raw mut ByteOffset,
+        &raw mut Event,
+        &raw mut Iosb,
+    );
+
+    if Irp.is_null() {
+        FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
+    }
+
+    // THE point of this routine: tell the disk driver to service the read even though
+    // the volume is flagged as needing verification.
+    (*IoGetNextIrpStackLocation(Irp)).Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+
+    let mut Status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
+
+    if Status == STATUS_PENDING {
+        KeWaitForSingleObject(
+            &raw mut Event as *mut c_void,
+            _KWAIT_REASON_Executive,
+            KernelMode,
+            0, /* FALSE */
+            core::ptr::null_mut(),
+        );
+        Status = Iosb.__bindgen_anon_1.Status;
+    }
+
+    // The override above is exactly what makes this assertion meaningful: having
+    // suppressed verify, the driver must never come back asking for one.
+    NT_ASSERT((Status != STATUS_VERIFY_REQUIRED) as u32);
+
+    // STATUS_INVALID_PARAMETER is reported as a plain FALSE regardless of
+    // ReturnOnError — a read past the end of a small volume is not exceptional.
+    if Status == STATUS_INVALID_PARAMETER_C {
+        return 0;
+    }
+
+    if !NT_SUCCESS(Status) {
+        if ReturnOnError != 0 {
+            return 0;
+        } else {
+            FatNormalizeAndRaiseStatus(IrpContext, Status);
+        }
+    }
+
+    1 /* TRUE */
 }
 
 /// `FatIsVolumeDirty` (`drivers/filesystems/fastfat/fsctrl.c:3972`) — FSCTL_IS_VOLUME_DIRTY.
