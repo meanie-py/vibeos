@@ -1575,3 +1575,47 @@ touches the mechanism, and date the claim.
 * `IoCreateFile` — now passes on i386, still crashes on amd64 and arm64.
 * `ZwAllocateVirtualMemory` — now passes on i386, still crashes on arm64.
 * `RtlException` (task #37), `SeTokenFiltering` / `TcpIpConnect` (in-kernel wedges).
+
+### 2026-07-25 (night) — a false-RED gate: probe runs leave the PAYLOAD in the boot media
+
+The gate failed `smoke:arm64` with BUGCHECK 0x19, **deterministically, 3/3** — on a branch
+whose entire diff was kmtest build files, conformance lists, and docs. Nothing in the boot path.
+
+**It was not a code regression. The arm64 boot media was still running my last probe's kmtest
+sweep.** The serial log says so outright:
+
+```
+[EXPLORER] startup: runCmd OK (PID 340): X:\...\StartUp\KMTEST~1.EXE
+[KMTEST-SWEEP] start list=X:\reactos\bin\kmtest-tests.txt
+[KMTEST-SWEEP] launch NpfsFileInfo        <- the probe's leftover 1-test list
+```
+
+`NpfsFileInfo` is a known 0x19 BAD_POOL_HEADER crasher and was the last candidate of the last
+arm64 probe. So a *plain* smoke booted it and bugchecked, every time.
+
+**Mechanism.** `vibeos-cli conformance` builds with `VIBEOS_PAYLOAD=kmtest`, which grafts the
+sweep into the All Users StartUp folder and stages `kmtest-tests.txt` into the image. The
+payload *stamp* (`build-<arch>/payload-selection.json`) is correctly cleared back to
+`{"payloads": []}` by a later plain build — the 2026-07-07 doom-clobber guard works. But
+clearing the selection does not **remove** what a previous payload build already installed, and
+`mkramdisk.sh` has a fast path that skips image re-creation. So `qemu/ramdisk.img` /
+`qemu/boot.img` keep the payload indefinitely. Filed as task #39.
+
+**Getting to that answer required a real control, and my reasoning-from-the-diff was not
+enough.** I was confident the failure could not be mine — the change surface genuinely does not
+touch the kernel — and I was *wrong about the conclusion* even though the reasoning was sound,
+because the contamination came from the probe TOOL rather than the committed diff. What settled
+it in both directions:
+
+* a worktree at plain `origin/master`, built and smoked: **3/3 PASS** → it *is* my tree;
+* deleting `qemu/{boot,ramdisk}.img` and rebuilding **my** tree: **3/3 PASS**, zero KMTEST in
+  the log → it is not my *code*.
+
+Two runs, opposite conclusions, and only together do they identify the culprit. "My diff can't
+have caused this" is a hypothesis, not a result — and the state a tool leaves behind is part of
+your tree even when it is not part of your diff.
+
+**Practical, until #39 lands:** after any `conformance`/probe run on an arch, delete
+`qemu/boot.img` and `qemu/ramdisk.img` (both gitignored, both regenerated) before trusting a
+plain smoke or gate on that arch. Watch for `[KMTEST-SWEEP]` in a smoke serial log — in a plain
+smoke it should never appear.
