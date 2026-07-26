@@ -462,6 +462,29 @@ DWORD WINAPI GetLastError(void)
     return ref_last_error;
 }
 
+/* ...and the SAME last-error under its plain name, for the subject.
+ *
+ * The refstub namespaces `GetLastError` (refstub/msvcrt.h) so the reference can
+ * never reach into the code under test, which is right for almost everything.
+ * It is wrong here, and the asymmetry is the reason: `WideCharToMultiByte` a few
+ * hundred lines below is NOT namespaced — both sides call the one converter —
+ * and it reports failure by writing `ref_last_error`. Give the subject its own
+ * private last-error and it would call the shared converter, have it set
+ * ERROR_INSUFFICIENT_BUFFER, then read a different variable and see 0.
+ *
+ * Wave 16 made that reachable: `_wctomb_s_l` is Rust now, and its whole
+ * insufficient-buffer path is `WideCharToMultiByte(...) == 0 && GetLastError()
+ * == ERROR_INSUFFICIENT_BUFFER`. One writer, one reader — which is also what the
+ * DLL has, where last-error is one slot in the TEB.
+ *
+ * `#undef` rather than a second variable: the definition above already emitted
+ * `msvcrt_ref_GetLastError`, so this adds the plain alias beside it. */
+#undef GetLastError
+DWORD WINAPI GetLastError(void)
+{
+    return ref_last_error;
+}
+
 /* ------------------------------------------------------------------ *
  * The wide ctype table — GONE as of wave 10, and this is the upgrade.
  *
@@ -522,17 +545,24 @@ unsigned int __cdecl _get_output_format(void)
  * would have gone on folding every byte 1:1 onto U+0000..U+00FF while mbcs.c did real
  * DBCS decoding, with the two disagreeing inside one process. */
 
-/* Unlike _mbtowc_l above, `_wctomb_l` IS defined by wcs.c — as ref__wctomb_l
- * (and pfflat__wctomb_l) under the rename preludes.  The SUBJECT (the Rust
- * printf engine, wave 14b) imports plain `_wctomb_l`, exactly as it will in
- * msvcrt.dll where the C converter still owns that symbol.  Forward to the
- * genuine compiled body so subject and reference run the SAME converter and
- * the printf rows grade the ENGINE, not the conversion. */
-int __cdecl ref__wctomb_l(char *dst, wchar_t ch, _locale_t locale);
-int __cdecl _wctomb_l(char *dst, wchar_t ch, _locale_t locale)
-{
-    return ref__wctomb_l(dst, ch, locale);
-}
+/* `_wctomb_l` USED to be forwarded from here to the genuine `ref__wctomb_l`,
+ * because the subject (the Rust printf engine, wave 14b) imported the plain
+ * symbol and nothing on the subject side defined it — the same shape it had in
+ * msvcrt.dll, where the C converter still owned it.  Wave 16 translated it, so
+ * the subject now DEFINES `_wctomb_l` and the forwarder became a duplicate
+ * symbol; the link error is how that transition announces itself, which is the
+ * behaviour we want from this file.
+ *
+ * The forwarder is deliberately NOT replaced with a namespaced stub.  Its whole
+ * purpose was to make both sides run ONE converter so the printf rows graded the
+ * ENGINE and not the conversion; now that the subject has its own, the printf
+ * wide rows legitimately grade engine AND conversion together, and
+ * `_wctomb_l`/`_wctomb_s_l` are graded head-to-head against `ref_*` in their own
+ * right.  If the Rust converter ever diverges, BOTH suites should notice — that
+ * is more coverage than the forwarder allowed, not less.
+ *
+ * (Contrast `_mbtowc_l` above, which wcs.c does NOT define and which therefore
+ * still needs its namespaced stub.) */
 
 /* ------------------------------------------------------------------ *
  * MSVC intrinsic.  `_BitScanReverse(&i, mask)` → index of the highest set
