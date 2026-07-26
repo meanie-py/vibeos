@@ -1455,3 +1455,48 @@ build now serves the UP, `--smp 1` and `--smp 2` sweeps**, via `--no-build`. arm
 the flag — its `boot.img` does not carry the MP pair at all unless `mkramdisk.sh --smp` stages
 it, so there is nothing in the media to boot-select. Closing that asymmetry (always stage the
 MP pair, patch the ini in the FAT image the same way) is the remaining follow-up.
+
+## amd64 collapse: CLEAN, once the UP baseline stopped lying (2026-07-26)
+
+Re-seeded amd64's UP baseline first, then ran the collapse gate against it. All three sweeps
+came off **one build** — the payoff from retiring `--smp-kernel` on x86 — and all three were
+`launched=89 ok=89 bad=0 sweep=done`.
+
+| run | verdict |
+|---|---|
+| UP (re-seed) | 89/89, 0 bad |
+| `--smp 1` | 89/89, 0 bad. **Single delta vs the UP baseline: `KeEvent` 42733 → 42601** — the documented MP-skip, and nothing else |
+| `--smp 2` (re-seed) | 89/89, 0 bad, plus 2 NEW passes (`RtlExceptionKM`, `NtCreateSection`) |
+
+`--smp 1` and `--smp 2` both printed `MP pair confirmed on serial: ntkrnlmp.exe + halmp.dll`
+— the new conformance assertion, which is the first time an x86 conformance sweep has *proved*
+it graded the MP kernel rather than assuming it.
+
+**The stale UP baseline was doing real damage.** amd64's `ExHardError` row was still the
+untouched 2026-07-17 `30/0` while the measured value had been `24/6` since 07-24, so every
+amd64 sweep reported a phantom regression that had to be mentally subtracted before the real
+signal was visible. Re-seeding is why the `--smp 1` line above is a single clean delta instead
+of three.
+
+### A pass-count DROP that was an improvement — why the guard announces instead of refusing
+
+The re-seed lowered three rows, and `baseline_lowering_note()` printed all three. Two were
+known (`ExHardError` 30/0 → 24/6; `IoDeviceObject` ±1 flicker). The third looked alarming:
+
+    ExInterlocked: pass 662 -> 180, fail 40 -> 0
+
+Total assertions 702 → 180 is a big drop, and a rule that refused count regressions would have
+blocked it. Cross-arch check says it is a **convergence, not a loss**:
+
+| arch | ExInterlocked | SEH path |
+|---|---|---|
+| amd64 (old baseline) | 662 / **40 fail** | pre-`-fasync-exceptions` |
+| amd64 (now) | 180 / **0 fail** | native SEH |
+| arm64 | 180 / **0 fail** | native SEH |
+| i386 | 718 / 120 fail | DUMMY_PSEH — a genuinely different path |
+
+amd64 landed on arm64's exact value with zero failures. That is `d3b1c045c5d`
+("clang was DELETING every `__except` around an in-body fault") reaching amd64's measured
+numbers. **Generalisable:** a falling assertion count is not evidence of lost coverage — it can
+mean the test stopped re-running a broken path. Coverage loss is the thing worth refusing
+(a test that never launched); count changes are the thing worth *showing* to a human.
