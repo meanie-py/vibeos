@@ -2177,7 +2177,54 @@ still pass. arm64 exercises the real contract; the serial line
 `memory-notification contract: N/8 entry points wired` states which mode a boot
 is in.
 
-*Durable lesson (field manual, WoW64 section):* "On a JIT host, the CPU layer's
-memory notifications are a CAPABILITY, not a cache hint" — plus the transferable
-one: **a workaround that constrains ORDER is a missing notification in
-disguise.**
+*Running it found two KERNEL bugs, both pre-existing, neither in the new code.*
+This is the payoff of wiring a contract rather than stubbing it: the
+notifications drove code paths nothing had reached before.
+
+1. **FIXED — the PFN `CacheAttribute` was never initialised.** `MiInitializePfn`
+   (and the `AndMakePteValid` / `ForOtherProcess` variants) never set
+   `u3.e1.CacheAttribute`, faithfully to upstream ReactOS. `MiNonCached` **is
+   0**, so a page off the free list reads as *deliberately uncached* when nobody
+   ever decided anything — and `MiFlushTbAndCapture` consults it on **every**
+   protection change and force-ORs `MM_NOCACHE`. On x86 that is a perf loss,
+   which is why it survived for years; on arm64 `MM_NOCACHE` selects MAIR
+   AttrIndx 1 = **Device-nGnRnE**, where every unaligned access alignment-faults.
+   FEX write-protects RWX pages for SMC detection, un-protects on the write
+   fault, and the retried unaligned store then faulted forever with the PC
+   pinned — the rung-2 livelock. Now sets `MiCached`, as Windows does.
+
+   *It was not a selfmod32-only bug.* Across the arm64 WoW64 ladder `[ALIGN]`
+   went from **6–14 per boot to 0–1**, and the character changed: the faults it
+   removed were plain `str` on `PTE=…447` (Device), while the survivor is `ldar`
+   on `PTE=…4C3` (Normal) — an ordinary unaligned atomic, which is exactly the
+   case FEX's own handler exists to absorb.
+
+2. **FILED (task #76) — `MiDoPoolCopy` reports success without writing.** It
+   translated the C's `_SEH2_TRY/_SEH2_EXCEPT` as straight-line code, so
+   `Status` is initialised to `STATUS_SUCCESS` and never assigned anywhere in
+   the function; both `if Status >= 0 { copy }` guards always pass and the tail
+   unconditionally does `*ReturnSize = BufferSize`. Proven by rung 7: a write
+   onto a page FEX had trapped (`VirtualQuery` → `PAGE_EXECUTE_READ`) returned
+   `0x00000000` with 6 bytes written and the bytes unchanged. **Refusing that
+   write is correct** — the emulator's SMC trap is a real page protection and
+   the kernel honours it, which is precisely why `WriteProcessMemory` wraps its
+   write in `NtProtectVirtualMemory`. Reporting success is not. The real fix
+   needs probe/copy faults to be observable in translated Rust
+   (`dummy-pseh-verdict.md`), so `selfmod32` prints `rung7 BUG: …` on serial and
+   deliberately does **not** gate on it — a WoW64 ladder that goes red for an MM
+   bug stops being a WoW64 signal.
+
+*Durable lessons (field manual):* "On a JIT host, the CPU layer's memory
+notifications are a CAPABILITY, not a cache hint" and "An uninitialised PFN
+`CacheAttribute` turns every `VirtualProtect`ed page into DEVICE memory". Three
+transferable ones:
+
+- **A workaround that constrains ORDER is a missing notification in disguise.**
+- **A zero-valued enum member is not a default, it is an assertion** —
+  `MiNonCached == 0` made "uninitialised" and "the caller chose uncached"
+  indistinguishable, so every consumer believed a decision nobody made.
+- **A rung that cannot fail is worse than no rung.** Rung 7's obvious form calls
+  `WriteProcessMemory` with a canary — but kernel32 hands the syscall its *own*
+  local `nSize` and copies the result out, so the 8-byte clobber lands in
+  kernel32's frame where no caller-side canary can ever see it. Bypassing
+  kernel32 is what made it an oracle.

@@ -2041,6 +2041,15 @@ Two recognition rules fall out of it:
   like a CPU bug rather than a mapping bug. The tell is a fault that **repeats at a pinned PC**:
   the handler un-protects, resumes, and the same unaligned store faults again forever.
 
+**The opcode tells you which of the two you have, and this is the whole triage.** An unaligned
+`ldar`/`stlr`/`ldxr` faults on *any* memory type — that is an ordinary unaligned ATOMIC (x86
+permits them, AArch64 does not) and the emulator's own handler is supposed to absorb it. An
+unaligned **plain** `ldr`/`str` faulting means the page is Device, full stop, because Normal
+memory permits it. Measured across the arm64 WoW64 ladder: before the fix, 6–14 `[ALIGN]` per
+boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 0–1 per boot,
+`PTE=…4C3` (AttrIndx 0) with `OPC=0x88DFFE85` — `ldar`, absorbed and the run passes. So the
+whole class collapsed to the one case that is *supposed* to happen.
+
 ### arm64 bring-up bugs worth recognising again
 - **PSTATE.DAIF is NOT per-thread state** `[§9.19]` — `KiSwapContext` doesn't save/restore it, so
   a context switch **leaked exception-entry DAIF into a new thread** → boot wedges with the
