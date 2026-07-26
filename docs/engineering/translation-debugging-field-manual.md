@@ -1388,6 +1388,19 @@ by name. Do not "fix" it by listing today's collisions: that shadow set grows wi
 you translate, so an enumeration has an expiry date and the next collision presents as a
 mysterious hang, not a link error.
 
+**The host compiler also REWRITES the reference, which matters for a PERF oracle.** Same rule —
+trust the machine code — with a different consequence. msvcrt's `memset` is a plain loop in
+`string.c`, but cc idiom-recognizes it and emits its own size-dispatched expansion (four
+overlapping 8-byte stores for `n` in 16..32); `ref_memcpy` next to it survives untouched as a
+tailcall to the hand-rolled `msvcrt_ref_memmove`. So one row of a rust-vs-C perf table is racing
+a compiler's best effort and the row beside it is racing a byte loop, from one reference TU
+compiled one way. For a BEHAVIOUR oracle this is harmless (the rewrite is semantics-preserving,
+which is the whole point). For a THROUGHPUT oracle it silently changes what the number means, and
+it is invisible in the C. Disassemble each `ref_*` you bench before you believe its ratio, and
+say in the harness which rows compare against the C-as-written and which against the
+C-as-the-compiler-rewrote-it. `#pragma function(...)` in the ReactOS source does NOT protect you
+— it is MSVC-only and cc ignores it.
+
 ### Exercising a branch is not testing it `[§9.75]`
 A branch is only tested when its two sides can produce **different answers**. Planting a
 non-zero locale handle made msvcrt take path 2 — and still proved nothing, because path 2 folded
@@ -1419,6 +1432,39 @@ on both sides of the same round, and the best round is the quietest one for both
 sides before timing either. Generally: **a timing harness that was only ever run by hand on an
 idle host has never been tested under the conditions a gate creates** — wiring one into CI is
 itself a change to the instrument.
+
+**Interleaving was necessary and NOT sufficient.** The same gate went red again on the next run,
+on a different case, and the rest of the fix is three more things — each of which failed to be
+enough on its own:
+
+- **Round LENGTH beats round count.** Best-of-K only reports the peak if some round dodges every
+  interruption, and at ~18 ms a round essentially never does (the scheduler tick alone is 4 ms),
+  so best-of-3 was reporting the *mean* while claiming the peak. Splitting the SAME total work
+  into 9 short rounds — no extra wall time — moved `strcat/16` from a stable 1.71× to 0.95× and
+  `memset/16` from 1.81× to 1.37×. Those "regressions" were the estimator.
+- **A fixed threshold must clear the instrument's own noise floor, and the only honest floor is a
+  MEASURED one.** At n=16 a call to a CRT primitive costs ~13 cycles end to end, so the reading
+  is mostly code layout: taking the shipping `strcat` and *deleting two null checks* — strictly
+  less work — read **1.65× slower** at n=16 and 1.82× at n=64, but 1.03× at n=4096. A 2.0× bar
+  sits inside that. Bench **identical twins** — the same source through the same compiler,
+  compiled into two symbols at two addresses — at every size, and scale the bar by how far from
+  1.00× they land. The twins must be **same-language**: a Rust-vs-C twin reads 1.28–1.43× at
+  large n, where per-call effects are noise, because that is rustc-vs-cc codegen — the thing the
+  harness *exists to measure*. Folding it into the error bar inflates the bar to ~2.8× everywhere
+  and quietly retires the gate. Keep the twins in separate TUs (gcc's `-fipa-icf` folds identical
+  functions within one TU at `-O2`) and **assert their addresses differ** — a merged pair reads a
+  vacuous, permanent 1.00× while measuring nothing.
+- **A calibrated bar still cannot see a BURST**, because the calibration is one snapshot and the
+  burst is not. At load 21 the bar widened correctly to 2.81× at n=16 and `memset/16` still read
+  3.41×: its Rust rounds had been hit 3.9× while its C rounds took only 1.6×. Nothing measured
+  once distinguishes that from a real regression — so **require the failure to REPRODUCE**. A slow
+  body is slow in every pass; a burst has to hit the same case on the same side N times running.
+  Costs nothing on a green run, since extra passes happen only after something already failed.
+
+Verified in both directions, which is the part worth copying: under synthetic load 31 a flagged
+case cleared on pass 2 and the run passed, and a deliberately-slowed body (four redundant scans
+in `strchr`) failed all three passes at all three sizes. **A gate that has only ever been proven
+to pass is half-tested** — perturb something and watch it fail before you trust it.
 
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
