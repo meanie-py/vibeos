@@ -19,6 +19,34 @@ from pathlib import Path
 ARTIFACT_ROOT = Path(os.environ.get("VIBEOS_ARTIFACT_ROOT", "/tmp/vibeos-cli"))
 
 
+def archive_serial(run_dir: Path, live_log: str | Path | None, extra: dict) -> None:
+    """Copy the boot's serial log into the run dir, and repoint `serial_log` at
+    the copy.
+
+    `qemu/<arch>_smoke_live.log` is a FIXED path that every boot of that arch
+    truncates, so a summary.json pointing there describes whatever booted last,
+    not this run. That is silent evidence loss and it is not hypothetical: an
+    IoFilesystem BUGCHECK 0x19 printed a full [POOL] page dump + free ring to
+    serial, and by the time anyone read the run dir a later boot had overwritten
+    every byte of it — the crash had to be re-collected with a fresh build+boot.
+
+    Cheap enough to do unconditionally (serial logs run ~100KB), and never fatal:
+    a run that produced no serial at all is normal (build-only failures).
+    """
+    if not live_log:
+        return
+    src = Path(live_log)
+    extra["live_log"] = str(src)
+    if not src.is_file():
+        return
+    dst = run_dir / "serial.log"
+    try:
+        dst.write_bytes(src.read_bytes())
+    except OSError:
+        return
+    extra["serial_log"] = str(dst)
+
+
 @dataclass
 class Stage:
     name: str
@@ -114,6 +142,7 @@ class Run:
     # --- finalize: write summary.json, print bounded summary --------------
     def finalize(self, repo: Path | None = None) -> int:
         dur = time.monotonic() - self.start
+        archive_serial(self.dir, self.extra.get("live_log"), self.extra)
         summary = {
             "run_id": self.dir.name,
             "command": self.command,

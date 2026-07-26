@@ -2212,6 +2212,21 @@ per-boot over the fw_cfg channel — **no media rebuild**:
 `./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5"` (or `SPECIALPOOL=*`). For a rare
 flake use `farm` + `farm-report`, never a hand-rolled boot loop.
 
+**Require `special pool ACTIVE (routing verified)` on serial — `ACTIVE` alone used to be a lie.**
+Symptom: special pool armed, initialized, announced ACTIVE, and caught nothing; the stop code
+came back bit-identical to the un-armed run and the `[POOL]` page walk showed ordinary pool
+blocks. Cause: `ARM3/special.rs` declared a **local** `const POOL_FLAG_SPECIAL_POOL = 0x10`, which
+shadowed the correct `0x20` the file already glob-imports from `ntkrnl_sys::mm` — `0x10` is
+`POOL_FLAG_CHECK_DEADLOCK`, so `MiInitializeSpecialPool` set a bit that
+`ExAllocatePoolWithTag` never tests and **not one allocation was ever routed**. Fix: the local
+const is gone, and arming now allocates through the real `ExAllocatePoolWithTag` and checks
+`MmIsSpecialPoolAddress` before claiming anything. Two durable lessons: **never redeclare a
+constant the crate already imports** (a local `const` shadows a glob import silently, with no
+warning at either site), and **a selftest that bypasses the production path proves nothing about
+it** — `SPECIALPOOL_SELFTEST` called `MmAllocateSpecialPool` directly, so it stayed green through
+all of this while calling itself an "end-to-end detection proof". Any pre-fix conclusion of the
+form "special pool didn't catch it, so it isn't an overrun" is void; re-run it.
+
 ### Breakpoints and watchpoints require TCG
 **KVM fires neither gdb breakpoints nor hardware watchpoints** `[§9.1]`. Prepend `VIBEOS_NO_KVM=1` for
 i386 hunts. Do **not** switch the smoke backend to native KVM to "repro faster" — it hits the
@@ -2327,8 +2342,10 @@ introduced at any heap exit — it is an external stray write.**
   a stale slot. Fix: shims `call @Kf*Irql@4; ret 4` — clean their own frame.
 - **Ground-truth an inherited bug list before working it** `[§9.27-ground]`. Of "3 open corruption
   bugs": 2 did not reproduce, 1 was reframed. **And validate the tool first** — the
-  `SPECIALPOOL_SELFTEST=guard` run exists for exactly that. In the same pass, a plausible
-  IRQL-leak hypothesis was **disproven live**.
+  `SPECIALPOOL_SELFTEST=guard` run exists for exactly that, but note it exercises only the
+  detection machinery (it allocates via `MmAllocateSpecialPool` directly); the *routing* proof is
+  the `routing verified` line described in the tripwire section above. In the same pass, a
+  plausible IRQL-leak hypothesis was **disproven live**.
 
 ### x86 UEFI boot bring-up (OVMF)
 Three gotchas latent in the C, which surface only once you actually boot UEFI:

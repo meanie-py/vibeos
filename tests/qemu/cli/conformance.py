@@ -32,6 +32,8 @@ import sys
 import time
 from pathlib import Path
 
+from . import artifacts
+
 SUITE = "kmtest"
 # base arch -> pytest arch (x86 boot the UEFI configs; arm64 is itself).
 _PYTEST_ARCH = {"i386": "i386-uefi", "amd64": "amd64-uefi"}
@@ -221,6 +223,12 @@ def conformance(args, repo: Path) -> int:
         print(f"[conformance] baseline written: {baseline_path}")
 
     # --- 6. summary.json ------------------------------------------------------
+    # Archive the serial BEFORE anything else boots this arch: log_path is the
+    # fixed qemu/<arch>_smoke_live.log, and the crash evidence a 0x19/0x1E run
+    # leaves there (pool page dumps, symbolicated PCs, the sweep's own trace) is
+    # the whole reason to keep a run dir.
+    serial_extra: dict = {}
+    artifacts.archive_serial(run_dir, log_path, serial_extra)
     summary = {
         "suite": SUITE,
         "arch": base,
@@ -237,7 +245,7 @@ def conformance(args, repo: Path) -> int:
         "regressions": regressions,
         "new_passes": new_passes,
         "results_file": str(results_path),
-        "serial_log": str(log_path),
+        **serial_extra,
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 

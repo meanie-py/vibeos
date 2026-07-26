@@ -136,7 +136,6 @@ extern "system" {
 }
 extern "system" {
     fn KeGetCurrentIrql() -> u8;
-    fn FatGenerateFileIdFromFcb(fcb: PFCB) -> LARGE_INTEGER;
     fn UNREFERENCED_PARAMETER(param: *mut ());
     fn NT_ASSERT(condition: i32);
     fn ClearFlag(flags: *mut u32, flag: u32);
@@ -309,7 +308,9 @@ pub unsafe extern "system" fn FatQueryInternalInfo(
     DebugTrace(1, Dbg, b"FatQueryInternalInfo...\n\0".as_ptr() as *const i8, 0);
 
     {
-        (*Buffer).IndexNumber = FatGenerateFileIdFromFcb(Fcb);
+        (*Buffer).IndexNumber = LARGE_INTEGER {
+            QuadPart: crate::fileid::fat_generate_file_id_from_fcb(Fcb),
+        };
         *Length -= core::mem::size_of::<FILE_INTERNAL_INFORMATION>() as i32;
     }
 

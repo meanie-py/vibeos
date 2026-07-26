@@ -3979,3 +3979,42 @@ def test_build_incomplete_does_not_reject_a_lane():
     # ...while genuinely conclusive reds still reject.
     for conclusive in ("BUILD_FAIL", "LINT_FAIL", "TOOLING_FAIL"):
         assert conclusive not in queue_mod.INCONCLUSIVE
+
+
+def test_archive_serial_copies_into_the_run_dir(tmp_path: Path):
+    """The point of the copy: the live path is a per-arch FIXED name that the next
+    boot truncates, so summary.json must point at a snapshot, not at that name."""
+    from .artifacts import archive_serial
+
+    live = tmp_path / "amd64-uefi_smoke_live.log"
+    live.write_text("[POOL] entry=ffff prev=2 size=4\nBUGCHECK 0x19\n")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    extra: dict = {}
+    archive_serial(run_dir, live, extra)
+
+    assert extra["serial_log"] == str(run_dir / "serial.log")
+    assert extra["live_log"] == str(live)
+    assert "BUGCHECK 0x19" in (run_dir / "serial.log").read_text()
+
+    # The whole bug, reproduced: the next boot of this arch truncates the live log.
+    live.write_text("")
+    assert "BUGCHECK 0x19" in (run_dir / "serial.log").read_text()
+
+
+def test_archive_serial_never_fails_a_run(tmp_path: Path):
+    """Build-only failures produce no serial at all; that is normal, not an error,
+    and this helper runs inside finalize() where raising would lose the summary."""
+    from .artifacts import archive_serial
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    extra: dict = {}
+    archive_serial(run_dir, None, extra)
+    assert extra == {}
+
+    extra = {}
+    archive_serial(run_dir, tmp_path / "never-booted.log", extra)
+    assert "serial_log" not in extra
+    assert not (run_dir / "serial.log").exists()
