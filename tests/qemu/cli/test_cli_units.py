@@ -4487,3 +4487,22 @@ def test_ninja_did_work_counts_edges_not_just_dirtiness():
     # progress lines only count at the start of a line -- a compiler diagnostic
     # that happens to quote one must not inflate the count
     assert build_mod._ninja_did_work("note: see [1/3] in the log\n") == 0
+
+
+def test_ninja_did_work_does_not_count_the_glob_recheck_pseudo_edge():
+    """VERBATIM output from a real no-op re-affirm that still reported
+    "relinked 1 target(s)". `[0/n]` is the CONFIGURE_DEPENDS glob re-check, a
+    status line, not a completed edge -- real edges start at [1/n]. Counting it
+    made the number always >=1, which kills the signal in the direction that
+    HIDES the wiring bug the count exists to expose."""
+    real = "[0/2] Re-checking globbed directories...\nninja: no work to do.\n"
+    assert build_mod._ninja_did_work(real) == 0
+    # "no work to do" is authoritative even if progress lines preceded it
+    assert build_mod._ninja_did_work("[1/2] Building x\nninja: no work to do.\n") == 0
+    # a glob re-check followed by REAL work still counts only the real edges
+    assert (
+        build_mod._ninja_did_work(
+            "[0/2] Re-checking globbed directories...\n[1/1] Linking ntoskrnl.exe\n"
+        )
+        == 1
+    )

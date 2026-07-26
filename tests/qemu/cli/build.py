@@ -227,8 +227,22 @@ def _ninja_did_work(stdout: str) -> int:
     anything. Counted rather than merely detected because "relinked 3" is the
     interesting number: a persistently non-zero count means a cohab cell is being
     rebuilt by two passes every single build, which is a wiring bug worth chasing,
-    not just a hiccup this pass absorbed. `ninja: no work to do.` yields 0."""
-    return len(re.findall(r"^\[\d+/\d+\]", stdout, re.MULTILINE))
+    not just a hiccup this pass absorbed.
+
+    Two things a naive `^\\[\\d+/\\d+\\]` count gets WRONG, both observed on a real
+    no-op re-affirm that nonetheless reported "relinked 1 target(s)":
+
+      [0/2] Re-checking globbed directories...
+      ninja: no work to do.
+
+    Nothing was rebuilt. `[0/...]` is a status pseudo-edge (the CONFIGURE_DEPENDS
+    glob re-check), not a completed edge — real edges start at [1/n]. And when
+    ninja says "no work to do" that is authoritative regardless of what it printed
+    above. An always->=1 count would have made this signal useless in exactly the
+    direction that hides the bug it exists to expose."""
+    if "ninja: no work to do." in stdout:
+        return 0
+    return len(re.findall(r"^\[([1-9]\d*)/\d+\]", stdout, re.MULTILINE))
 
 
 def _ninja_jobs() -> list[str]:
