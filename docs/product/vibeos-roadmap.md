@@ -621,12 +621,19 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   ExceptionPort→ExpDefaultErrorPort fallback, same two `PortHandle = NULL` overrides. All three
   halves of the translation are now checked; none diverges.
 
-  There are in fact **three** paths that write `ResponseReturnToCaller`, not one
-  (`harderr.c:210`, `:280`, `:284`):
-  1. `PortHandle == NULL` — early return, no LPC at all.
-  2. `LpcRequestWaitReplyPort` **fails** — kernel writes 0 and returns the failure status.
-  3. LPC succeeds but the reply's `Response` is **not one of the 11 accepted values**, so the
-     kernel clamps it to 0 (`harderr.c:262-276`) — i.e. the server never wrote `Response`.
+  There are in fact **four** paths that write `ResponseReturnToCaller`, not one. **Cite the
+  RUST line numbers when instrumenting** — `ntos.cmake:69` has `ex/harderr.c` commented out
+  (noted above), so the C file is inert dead source and a probe added to it fires never. Earlier
+  revisions of this entry listed only `harderr.c:210/:280/:284`, which is exactly the trap
+  AGENTS.md warns about. Live sites, all in `sdk/lib/rust/ex-rust/src/harderr.rs`:
+  1. `:171` — `PortHandle == NULL` — early return, no LPC at all.
+  2. `:231` — `LpcRequestWaitReplyPort` **fails** — kernel writes 0, returns the failure status.
+  3. `:226` — LPC succeeds but the reply's `Response` is **not one of the 11 accepted values**,
+     so the kernel clamps it to 0 — i.e. the server never wrote `Response`.
+  4. `:185` — `Process == ExpDefaultErrorPortProcess && ErrorStatus < 0`, which routes to
+     `ExpSystemErrorHandler` and then answers 0. Not previously listed here; unlikely for a
+     kmtest driver (the default error port process is csrss) but it is a real fourth writer, so
+     an instrumented boot must distinguish it rather than assume three-way.
 
   **The failure COUNT discriminates.** `CheckHardError` asserts twice per case
   (`ok_eq_hex(Status, STATUS_SUCCESS)` *and* `ok_eq_ulong(Response, ...)`), and we see exactly
