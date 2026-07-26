@@ -436,6 +436,15 @@ unsafe fn MiBalancerThreadInner() {
                 }
 
                 if initial_target != 0 && initial_target == old_target {
+                    // The balancer made a full pass and freed nothing, so it is
+                    // wedged against a target it cannot meet. x86 declares
+                    // NO_PAGES_AVAILABLE; arm64 just leaves the loop and carries on
+                    // short of pages — which is one way a sweep degrades into
+                    // "everything times out" with no bugcheck (faces B/D).
+                    mm_guard_trip!(
+                        "balance.MiBalancerThread no-progress", 4,
+                        "target" => initial_target,
+                    );
                     #[cfg(target_arch = "aarch64")]
                     {
                         break;
