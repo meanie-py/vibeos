@@ -551,6 +551,12 @@ pub unsafe extern "system" fn FatQueryDirectory(
         }
 
         loop {
+            // NOTE: this `VBO` is NOT fastfat's. fastfat's VBO is ULONG32 (fat.h:38),
+            // but this module never imports crate::types::VBO — it picks one up from a
+            // `use ntkrnl_sys::*` glob, where it is 64-bit. FatLocateDirent below is a C
+            // function that writes 4 bytes through this pointer; the read-back only
+            // works because the `= 0` init leaves the high half clear on little-endian.
+            // The `as u32` at the FileId call sites is the C's own implicit narrowing.
             let mut NextVbo: VBO = 0;
             let mut FileNameLength: u32 = 0;
             let mut BytesRemainingInBuffer: u32 = 0;
@@ -816,13 +822,13 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         IdBothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_ID_BOTH_DIR_INFORMATION);
                         (*IdBothDirInfo).FileId.QuadPart =
                             crate::fileid::fat_generate_file_id_from_dirent_and_offset(
-                                Dcb, Dirent as *const c_void, NextVbo);
+                                Dcb, Dirent as *const c_void, NextVbo as u32);
                     }
                     FIC_ID_FULL_DIRECTORY => {
                         IdFullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_ID_FULL_DIR_INFORMATION);
                         (*IdFullDirInfo).FileId.QuadPart =
                             crate::fileid::fat_generate_file_id_from_dirent_and_offset(
-                                Dcb, Dirent as *const c_void, NextVbo);
+                                Dcb, Dirent as *const c_void, NextVbo as u32);
                     }
                     _ => {}
                 }

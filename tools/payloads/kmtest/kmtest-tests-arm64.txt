@@ -54,7 +54,26 @@ IoEvent
 # QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
 # MiFindEmptyAddressRangeInTree+0x173 (Rust, ARM3/vadnode.rs:370). Triage owed — real
 # kernel-bug candidate in the VAD-tree range search. Quest doc has details.
-#IoFilesystem
+# STOP CODE MOVED 2026-07-26, and the VAD-tree lead above is STALE on every arch.
+# The 0x19 root (NtQueryInformationFile skipping class+Length validation for kernel-mode
+# callers) is FIXED and cleared this test on i386 and amd64 — both now OK 162/142/1.
+# arm64 stays quarantined for a DIFFERENT, newly-uncovered reason: it stops
+#   BUGCHECK 0x23 (0xdead0000) — FASTFAT_STUB_HIT: FatOpenVolume
+# FatOpenVolume (create.c:2292, ~290 lines) was never translated; fastfat-rust declares
+# it extern and the cohab stub generator filled the hole with KeBugCheckEx. arm64 is the
+# only arch that reaches it because arm64 boots a FAT32 ramdisk (fastfat IS its system
+# volume) while i386/amd64 boot a CDFS ISO and never enter fastfat at all.
+# Owner: task #47 — NOW FIXED TOO (FatOpenVolume hand-translated into create.rs), so this
+# test is enabled below.
+#
+# UN-QUARANTINED 2026-07-26. Baseline OK pass=318 fail=4 skip=1 exit=0.
+# Note the numbers vs the other arches (162/142): arm64 scores FAR better here, and that is
+# the point — arm64 boots a FAT32 ramdisk, so the test recognises its filesystem and runs its
+# real path, while i386/amd64 boot a CDFS ISO and the test bails at ":153 Unknown filesystem:
+# CDFS" then runs an NTFS path table against read-only media. **arm64 is the only arch where
+# IoFilesystem meaningfully executes.** Treat fail=4 as the arm64 floor; do not "reconcile" it
+# against the amd64 142, they are measuring different things.
+IoFilesystem
 IoInterrupt
 IoIrp
 IoMdl
@@ -100,7 +119,11 @@ NpfsCreate
 # QUARANTINED 2026-07-10 (amd64 sweep 5): BUGCHECK 0x19 BAD_POOL_HEADER subcode 5
 # (corrupt pool header on free) right at test start. Repro with
 # --tripwire "SPECIALPOOL=*" to catch the corrupting store. Triage owed.
-#NpfsFileInfo
+# UN-QUARANTINED 2026-07-26: the NtQueryInformationFile kernel-mode validation gap is
+# fixed; re-probed alone on arm64 and it COMPLETES (OK). npfs is arch-neutral, so this
+# tracks i386/amd64 — see the amd64 list for why the fail count is expected and must not
+# be "fixed" by weakening the check.
+NpfsFileInfo
 NpfsReadWrite
 NpfsVolumeInfo
 ObHandle

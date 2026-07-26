@@ -719,6 +719,23 @@ the commented ones. **Prefer bindgen enums over local consts in new translations
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.
 
+### A local `const` silently SHADOWS a glob import — no warning at either site
+`ARM3/special.rs` declared `const POOL_FLAG_SPECIAL_POOL: ULONG = 0x10` while
+`use ntkrnl_sys::mm::*` was already supplying the real `0x20` (`miarm.h:328`). `0x10` is
+`POOL_FLAG_CHECK_DEADLOCK`, so `MiInitializeSpecialPool` set the wrong bit forever and
+`ExAllocatePoolWithTag`'s `ExpPoolFlags & 0x20` test never fired: **special pool armed,
+initialised, printed `ACTIVE`, and routed not one allocation.** rustc warns about neither the
+shadowing nor the unused import. The same class by *type*: `fastfat-rust/src/dirctrl.rs` picks
+up a 64-bit `VBO` from an `ntkrnl_sys` glob where fastfat's own `VBO` is `ULONG32`
+(`fat.h:38`), so the C `FatLocateDirent` writes 4 bytes through a pointer Rust reads as 8 —
+surviving only because the `= 0` init leaves the high half clear on little-endian.
+
+**Never redeclare a name the crate already imports.** And the process half of the lesson:
+`scan_const_contradictions` had *already found* this one — it sat in the lint baseline, and
+nobody traced what the contradiction meant. **Baselining a constant contradiction defers a real
+bug; when the constant gates a diagnostic, baselining it disables the diagnostic.** Two
+unresolved neighbours still sit three lines away (`MI_HYPERSPACE_PTES` 0xFF vs 0x100).
+
 ### An arch-INVARIANT constant, wrong in exactly ONE arch's private copy
 `ke/arm64/kiinit.rs` declared `PRCB_BUILD_UNIPROCESSOR = 1` / `PRCB_BUILD_DEBUG = 2`. Every
 `ndk/*/ketypes.h` says DEBUG=1, UNIPROCESSOR=2 — **the two were swapped**, and i386 and amd64
@@ -981,6 +998,25 @@ recovery and fix the INPUT, not the recovery.**
   one legacy C body was never translated, so arm64 bugchecked **0x23 after the marker** during
   first-logon profile creation `[§9.45]`. A `FASTFAT_STUB_HIT: <fn>` line on serial is an
   *un-translated stub being called*, not a kernel bug — make every stub say its own name.
+- **A translated `extern fn` that names a C MACRO becomes a bugcheck stub.** The declaration is
+  an unchecked *claim* that a symbol exists: no symbol does, so the stub generator "resolves" it
+  into `KeBugCheckEx`. Rust compiles, the link succeeds, and the crash waits for the first caller.
+  `FatGenerateFileIdFromFcb` / `FatGenerateFileIdFromDirentAndOffset` (`fatprocs.h:3067`/`3078`)
+  and `SizeOfPackedEa` (`fat.h:738`) all shipped this way; the first fires on any
+  `FileInternalInformation` query. **Grep the headers for `#define <name>(` before trusting an
+  `extern` declaration** — and note this is the *inverse* of `[§9.53]` above: there a macro was
+  stubbed to a silent no-op, here a macro is stubbed to a loud crash. Same root, opposite failure.
+- **The reachable-stub set is computable — stop finding it one boot at a time.** Intersect the
+  names defined with a `STUB_BUGCHECK` body in `rust_cohab_stub.c` with the names any `*-rust`
+  module declares `fn <name>(`. That intersection is *unimplemented AND reachable*. fastfat: 109
+  stub-file functions, 19 bugcheck stubs, **all 19 reachable**, mostly FSCTL handlers — exactly
+  what a filesystem conformance test drives, so they surface one per boot as the test gets
+  further. Expect the queue to alternate between macros (implement inline) and genuinely
+  untranslated functions (`FatOpenVolume`, `create.c:2292`, ~290 lines — translate it).
+- **Only arm64 exercises fastfat.** arm64 boots a FAT32 ramdisk, so fastfat is its live system
+  volume; i386/amd64 boot a CDFS ISO and never enter it. An "arm64-only" filesystem crash is
+  usually *coverage*, not an arch bug — and conversely a fastfat stub is invisible on two of
+  three arches.
 - **A dual-implementation file ships the `#if !DBG` STUB branch** and the real body vanishes.
   **`#ifdef MACRO` mapped to `#[cfg(MACRO)]` is always the wrong branch.** **Arch-cfg branches
   flattened to the desktop path.** **A flip omitting a C `#define` redirect/HACK** compiles,

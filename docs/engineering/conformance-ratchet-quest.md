@@ -1619,3 +1619,73 @@ your tree even when it is not part of your diff.
 `qemu/boot.img` and `qemu/ramdisk.img` (both gitignored, both regenerated) before trusting a
 plain smoke or gate on that arch. Watch for `[KMTEST-SWEEP]` in a smoke serial log — in a plain
 smoke it should never appear.
+
+---
+
+### 2026-07-26 — the 0x19 pair falls to ONE root, and arm64 uncovers a second bug behind it
+
+**`IoFilesystem` + `NpfsFileInfo` shared a single root, and it was not memory corruption in the
+usual sense.** `NtQueryInformationFile` (`iomgr-rust/src/iofunc.rs`) validated the info class and
+the caller's `Length` only under `if (PreviousMode != KernelMode)`. The C guards a kernel-mode
+copy of those two checks behind `#if DBG`, and the translation dropped that arm. `Length` sizes
+the `TAG_IOBUF` system buffer, so a kernel `FileAllInformation` query with `Length=0` got a
+0-byte pool block; the I/O manager then wrote Access/Mode/AlignmentInformation into it and the
+FSD wrote a `FILE_BASIC_INFORMATION` on top, smashing the next block's header with a FILETIME
+(the observed `0x01dd1ca3`) → **0x19 subcode 5 POOL_SIZE_OR_INDEX_MISMATCH**.
+
+The decisive control was *internal, not experimental*: our own `NtSetInformationFile` validates
+unconditionally, and the C confirms that asymmetry is deliberate upstream — the setter's
+kernel-mode branch is a plain `else`, and the query's `#if DBG` is the only one in the entire
+file. Two siblings disagreeing about the same invariant is a strong bug smell; chase it before
+building repro harnesses.
+
+Result, and note the shape of the evidence:
+
+| arch | IoFilesystem | NpfsFileInfo |
+|---|---|---|
+| i386 | OK pass=162 fail=142 skip=1 | OK pass=50 fail=25 |
+| amd64 | OK pass=162 fail=142 skip=1 | OK pass=50 fail=25 |
+| arm64 | still CRASH — different bug, below | OK |
+
+**i386 and amd64 landed byte-identical.** That is the signature a shared-core fix should
+produce, and it is much stronger evidence than either arch alone: a coincidence does not
+reproduce a 142 *and* a 25 simultaneously on two independent architectures.
+
+**The VAD-tree lead in the 2026-07-10 entries above was stale on every arch** — nobody re-probed
+it after the stop code moved, and it cost at least one reader a wasted trip through
+`MiFindEmptyAddressRangeInTree`. The list notes now carry the real cause.
+
+**Then arm64 revealed what the pool bug had been hiding.** With 0x19 fixed, `IoFilesystem` got
+further and stopped `0x23 (0xdead0000)` — `FASTFAT_STUB_HIT: FatGenerateFileIdFromFcb`. That is
+a *macro* (`fatprocs.h:3067`), never a function: the translation emitted an `extern fn` for it,
+no symbol existed, and the cohab stub generator "resolved" it into `KeBugCheckEx`. Fixed (with
+its enumeration twin, and `SizeOfPackedEa` of the same class) in `fastfat-rust/src/fileid.rs`.
+The **next** boot then stopped in `FatOpenVolume` — this one a genuine ~290-line untranslated
+function (`create.c:2292`), now hand-translated into `create.rs`.
+
+**Only arm64 exercises fastfat at all** (FAT32 ramdisk = its live system volume; i386/amd64 boot
+a CDFS ISO). So an "arm64-only" filesystem crash here is usually *coverage*, not an arch bug.
+
+**The stub queue is computable, and we should stop paying one boot per entry.** Intersecting
+`STUB_BUGCHECK` bodies in `rust_cohab_stub.c` with names any `*-rust` module declares gives
+"unimplemented AND reachable": fastfat has **19, all reachable**, mostly FSCTL handlers — i.e.
+precisely what a filesystem conformance test drives next. Task #45 tracks mechanizing that as a
+build-time warning.
+
+**Two tools that were supposed to catch this were themselves broken**, which is the part worth
+remembering:
+
+* **Special pool never engaged.** `ARM3/special.rs` had a local
+  `const POOL_FLAG_SPECIAL_POOL = 0x10` (that value is `POOL_FLAG_CHECK_DEADLOCK`) silently
+  shadowing the glob-imported real `0x20`. The tripwire armed, initialised, printed `ACTIVE`,
+  and routed **zero** allocations. Worse: `scan_const_contradictions` had already *found* this
+  contradiction — it was sitting in the lint baseline, and nobody traced the consequence.
+  Baselining a contradiction about a flag that gates a diagnostic disables the diagnostic. The
+  tripwire now allocates a probe through `ExAllocatePoolWithTag` and only claims
+  `ACTIVE (routing verified)` if `MmIsSpecialPoolAddress` agrees.
+* **The conformance run dir kept no serial log** — it pointed at the *live* per-arch path, which
+  the next boot of that arch truncates. A 0x19 with a full `[POOL]` page dump was destroyed that
+  way before it could be read. `artifacts.archive_serial()` now snapshots it into the run dir.
+
+Both were fixed *before* the hunt could finish, and both had been silently useless for some
+time. **When a diagnostic reports itself healthy, check that it exercises its own output path.**

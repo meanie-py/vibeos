@@ -474,7 +474,9 @@ ULONG SizeOfFullEa(PFILE_FULL_EA_INFORMATION Ea)
                    Ea->EaNameLength + 1 + Ea->EaValueLength);
 }
 
-ULONG SizeOfPackedEa(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); return 0; }
+/* SizeOfPackedEa -> now REAL in fastfat-rust easup.rs (shares ea.rs's inline form).
+ * Another MACRO (fat.h:738) that reached here as an unresolved symbol and got
+ * "resolved" into a bugcheck — armed on any EA-bearing FAT file. Task #45. */
 
 BOOLEAN GetcbList(PVOID x) { (void)x; return FALSE; }
 
@@ -623,7 +625,9 @@ NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_B
  * bugcheck stub is removed so the Rust #[no_mangle] definition is the sole symbol
  * (lld --allow-multiple-definition is first-match, and this C obj links BEFORE
  * libfastfat_rust.a — leaving the stub here would shadow the real impl). */
-NTSTATUS FatOpenVolume(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatOpenVolume -> now REAL in fastfat-rust create.rs (task #47); stub removed so the
+ * Rust #[no_mangle] definition is the sole symbol. It is a genuine ~290-line function
+ * (create.c:2292), not a macro like the FatGenerateFileId* pair below. */
 /* FatOpenExistingDirectory -> now REAL in fastfat-rust create.rs (field manual §9.45); stub removed so the Rust symbol wins */
 /* FatLowLevelReadWrite -> rust_cohab_fat.c (real macro) */
 NTSTATUS FatPerformVerifyDiskRead(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6; STUB_BUGCHECK(); return STATUS_SUCCESS; }

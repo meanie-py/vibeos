@@ -16,12 +16,22 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlU
 
 extern "system" {
     } extern "C" { fn DebugTrace(severity: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn SizeOfPackedEa(ea: *const PACKED_EA, out_size: *mut u32);
     fn UNREFERENCED_PARAMETER(ptr: *mut core::ffi::c_void);
     fn PAGED_CODE();
     fn Fat8dot3ToString( irp_context: *mut IRP_CONTEXT, dirent: *const DIRENT, flag: i32, filename: *mut OEM_STRING, );
     fn FatUnpinBcb(irp_context: *mut IRP_CONTEXT, bcb: *mut *mut core::ffi::c_void);
     fn FatReleaseFcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB);
+}
+
+/// `SizeOfPackedEa` (`fat.h:738`) is a MACRO, never a function. The `extern` that used
+/// to sit in the block above therefore became an unresolved symbol, and the cohab stub
+/// generator filled it with `KeBugCheckEx(0x23, 0xDEAD0000)` — armed on any EA-bearing
+/// FAT file. Same class as the FatGenerateFileId* pair (create/fileid). `ea.rs` already
+/// had the macro right, so share it rather than keep a second copy; the out-param shape
+/// is preserved so the call sites below are untouched.
+#[inline]
+unsafe fn SizeOfPackedEa(ea: *const PACKED_EA, out_size: *mut u32) {
+    *out_size = crate::ea::SizeOfPackedEaInline(ea);
 }
 extern "system" {
     fn PagedCode();
