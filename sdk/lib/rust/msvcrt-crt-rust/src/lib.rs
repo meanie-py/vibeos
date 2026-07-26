@@ -4341,6 +4341,15 @@ mod fpnum;
 // C until a later varargs-shell wave.
 pub mod printf;
 
+// Wave 14c — the shells themselves. Flipping the engine's six symbols swung
+// file.c's stream family but NOT wcs.c's own shells: clang had already
+// IPA-specialized the same-TU engine into them, and intra-TU inlining never
+// consults the linker (symbol replacement flips a TU's CALLERS, not its
+// HOUSEMATES). These are the 31 `va_list`-taking entry points, transcribed;
+// the `...` ones are C va_start trampolines in msvcrt's rust_varargs_shim.c
+// because stable Rust cannot DEFINE a variadic. `pub` for the difftest.
+pub mod printf_shells;
+
 // Wave 15 — whole-C-file rustconv translations (mbcs.c first). See src/msvcrt/mod.rs.
 pub mod prelude;
 mod msvcrt;

@@ -1482,6 +1482,17 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **A branch reached by NO row is a case that cannot fail, and rows are cheap enough that you
+  will believe you covered it.** msvcrt's `_s` printf shells take their truncation branch only
+  when `ret < 0 || ret == len`, and their ERANGE arm inside it only when `count > sizeOfBuffer`.
+  A 33-row corpus varying the *format* and the *count* — but leaving the buffer generously
+  sized in every row — never entered the branch at all, so the arm that fires the
+  invalid-parameter handler, sets `errno`, and **zeroes the caller's whole buffer** was graded
+  by nothing. Halving its `memset` as a negative control moved zero rows; adding nine rows with
+  a small buffer made the same control fail eight. **The variable that unlocks a branch is not
+  always the one the function is named after** — here it was the buffer size, not the count or
+  the format. Perturb each arm and count the rows that move; an arm no row can reach is the
+  vacuous pass, and green stops anyone looking again.
 - **A hand-typed CONSTANT in the refstub is an oracle that grades against a value Windows never
   returns.** rtl-difftest's `refstub/rtl.h` carried
   `#define STATUS_UNMAPPABLE_CHARACTER 0x80000016` — the real value is `0xC0000162`, the same
@@ -1512,6 +1523,30 @@ reach the host libc explicitly (`dlopen("libc.so.6")` + `dlsym`, resolved once a
 by name. Do not "fix" it by listing today's collisions: that shadow set grows with every file
 you translate, so an enumeration has an expiry date and the next collision presents as a
 mysterious hang, not a link error.
+
+**A name the reference TU never DEFINES is quietly supplied by the host libc.** Renaming covers
+what a TU *defines*; it says nothing about what it *calls*. msvcrt's `wcs.c` calls plain
+`vsnprintf` from five entry points (`vsprintf`, `vsprintf_s`, `sprintf`, `sprintf_s`,
+`_snprintf`) and, at `_MSVCR_VER=0`, never defines it — the real build closes that with
+`stdio.h`'s `#define vsnprintf _vsnprintf`, but the harness's prelude had no such line, so the
+name was in no rename list, left the object undefined, and the linker satisfied it from
+**glibc**. Five reference entry points were grading the host libc while claiming to be msvcrt:
+no `%I64` conversions, `(nil)` for `%p`, two-digit exponents. **Check `nm --undefined-only` on
+every reference object for names your subject also implements** — an undefined symbol in a
+reference TU is a silent host-binding, not a link error. Then keep a canary row in the format
+the two disagree about (`%I64d`, which glibc prints literally) so a regression fails a row
+instead of moving the oracle.
+
+**But fixing it TU-by-TU, not globally: the same redirect can be right in one instantiation and
+fatal in another.** msvcrt-difftest compiles `wcs.c` twice — once under the host's SysV va_list
+(`ref_*`) and once under a flat `char*` `<stdarg.h>` (`pfflat_*`, which is the Windows model).
+`_vsnprintf` forwards `&valist` as a `va_list*`, coherent only where a va_list IS a plain
+pointer: correct for `pfflat_`, and an immediate fault for `ref_`, where `*valist` reinterprets
+the decayed pointer as the register-save-area tag struct. So the redirect belongs in the pfflat
+prelude only — applied to both, it SIGSEGVs somewhere unrelated to printf, because
+`ref_create_mbcinfo` formats its codepage with `sprintf(buf, ".%d", cp)` and every mbcs case
+dies in the fixture. glibc's `vsnprintf` stays the `ref_` TU's formatter deliberately, and
+`".%d"` is a format both agree on exactly.
 
 **The host compiler also REWRITES the reference, which matters for a PERF oracle.** Same rule —
 trust the machine code — with a different consequence. msvcrt's `memset` is a plain loop in
