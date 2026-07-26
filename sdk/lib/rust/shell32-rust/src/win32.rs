@@ -148,7 +148,7 @@ macro_rules! TRACE_ON {
 #[macro_export]
 macro_rules! _countof {
     ($a:expr) => {
-        ($a).len()
+        (($a).len()) as u32
     };
 }
 #[macro_export]
@@ -1152,4 +1152,295 @@ pub unsafe fn HIDA_GetPIDLItem(pida: *const CIDA, i: usize) -> PCUIDLIST_RELATIV
     // a raw pointer: `[i + 1]` bounds-check-panics for every i >= 0.
     let aoffset = (*pida).aoffset.as_ptr();
     (pida as *const u8).add(*aoffset.add(i + 1) as usize) as PCUIDLIST_RELATIVE
+}
+
+// ---------------------------------------------------------------------------
+// Substrate for the Wave-5 free-function TUs (shell32/*.rs).
+//
+// Same rule as the rest of this module: an item DEFINED by this crate is re-exported,
+// never re-declared `extern` — a second declaration is an unresolved duplicate rather
+// than a call to the real body.
+// ---------------------------------------------------------------------------
+
+pub use crate::shell_link::__SHCloneStrAtoW;
+pub use crate::wine::pidl::{
+    _ILCopyCidaToaPidl, _ILCreateDesktop, _ILGetDepth, _ILGetFileStructW, _ILIsDesktop,
+    _ILIsDrive, _ILIsFolder, _ILIsMyComputer, _ILIsPidlSimple, _ILIsValue, _ILSimpleGetTextW,
+};
+
+/// pidl.h:282 `static inline BOOL _ILIsEmpty(pidl) { return _ILIsDesktop(pidl); }`.
+#[inline]
+pub unsafe fn _ILIsEmpty(pidl: LPCITEMIDLIST) -> BOOL {
+    _ILIsDesktop(pidl)
+}
+
+// wine/unicode.h aliases the wide-string helpers straight onto the CRT; the names are
+// macros there, so they arrive in translated code as calls with no Rust definition.
+// Each one is the exact alias the header spells, quoted on the line above it.
+extern "C" {
+    pub fn wcsncpy(dst: *mut WCHAR, src: *const WCHAR, n: usize) -> *mut WCHAR;
+    pub fn wcsrchr(s: *const WCHAR, c: WCHAR) -> *mut WCHAR;
+    pub fn wcscat(dst: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
+    pub fn wcsstr(haystack: *const WCHAR, needle: *const WCHAR) -> *mut WCHAR;
+    pub fn _wcsnicmp(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> INT;
+    pub fn iswspace(c: INT) -> INT;
+    pub fn strcpy(dst: *mut CHAR, src: *const CHAR) -> *mut CHAR;
+    pub fn free(block: *mut c_void);
+    pub fn lstrlenA(s: *const CHAR) -> INT;
+}
+
+/// wine/unicode.h:34 `#define strlenW(s) wcslen((s))`
+#[inline]
+pub unsafe fn strlenW(s: *const WCHAR) -> usize {
+    wcslen(s)
+}
+/// wine/unicode.h:35 `#define strcpyW(d,s) wcscpy((d),(s))`
+#[inline]
+pub unsafe fn strcpyW(d: *mut WCHAR, s: *const WCHAR) -> *mut WCHAR {
+    wcscpy(d, s)
+}
+/// wine/unicode.h:36 `#define strcatW(d,s) wcscat((d),(s))`
+#[inline]
+pub unsafe fn strcatW(d: *mut WCHAR, s: *const WCHAR) -> *mut WCHAR {
+    wcscat(d, s)
+}
+/// wine/unicode.h:38 `#define strstrW(d,s) wcsstr((d),(s))`
+#[inline]
+pub unsafe fn strstrW(d: *const WCHAR, s: *const WCHAR) -> *mut WCHAR {
+    wcsstr(d, s)
+}
+/// wine/unicode.h:40 `#define strchrW(s,c) wcschr((s),(c))`
+#[inline]
+pub unsafe fn strchrW(s: *const WCHAR, c: WCHAR) -> *mut WCHAR {
+    wcschr(s, c)
+}
+/// wine/unicode.h:41 `#define strrchrW(s,c) wcsrchr((s),(c))`
+#[inline]
+pub unsafe fn strrchrW(s: *const WCHAR, c: WCHAR) -> *mut WCHAR {
+    wcsrchr(s, c)
+}
+/// wine/unicode.h:46 `#define strncmpiW(s1,s2,n) _wcsnicmp((s1),(s2),(n))`
+#[inline]
+pub unsafe fn strncmpiW(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> INT {
+    _wcsnicmp(s1, s2, n)
+}
+/// wine/unicode.h:58 `#define isspaceW(n) iswspace((n))`
+#[inline]
+pub unsafe fn isspaceW(c: WCHAR) -> INT {
+    iswspace(c as INT)
+}
+
+// windef.h `min`/`max` are function-like MACROS, so they must stay generic and inline —
+// an out-of-line no-op or a single-type fn would silently change which overload the
+// translated call resolves to.
+#[inline]
+pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+    if a <= b { a } else { b }
+}
+#[inline]
+pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+    if a >= b { a } else { b }
+}
+
+// SDK records the Wave-5 TUs need that a per-class module already proved. RE-EXPORTED,
+// not re-transcribed: a second copy of a layout is a second identity, and the two drift
+// silently. Promoting the definitions here outright is a separate sweep — see the header
+// note about local definitions shadowing this module's glob.
+pub use com_sys::{HFONT, SECURITY_ATTRIBUTES};
+pub use crate::admin_tools_folder::IPersistFolder;
+pub use crate::cfs_folder::{
+    CComHeapPtr, IMoniker, IPersistFolder3, IShellFolderViewCB, PERSIST_FOLDER_TARGET_INFO,
+    QCMINFO, WIN32_FIND_DATAW,
+};
+pub use crate::control_panel_folder::{IContextMenu, ITEMIDLIST_ABSOLUTE, SHELLEXECUTEINFOW};
+pub use crate::copy_to_menu::{BROWSEINFOW, IObjectWithSite, SHFILEOPSTRUCTW};
+pub use crate::drv_def_ext::HDROP;
+pub use crate::file_def_ext::OPENASINFO;
+pub use crate::new_menu::{PROCESS_INFORMATION, STARTUPINFOW};
+pub use crate::shell_dispatch::SHELLSTATE;
+pub use crate::shell_link::{
+    BITMAPINFO, BITMAPINFOHEADER, CMINVOKECOMMANDINFOEX, HIMAGELIST, HLOCAL, IExtractIconW,
+    RGBQUAD,
+};
+pub use crate::wine::shell32_main::{BITMAP, ICONINFO, PAINTSTRUCT};
+pub use crate::wine::shellstring::LPSTRRET;
+
+// Base types the promoted declarations reference. Aliases of types this crate already
+// has, so they are declared here rather than re-exported from whichever module happened
+// to spell them first; `LPTPMPARAMS` is a real pointer type owned by wine::shlmenu.
+pub type HGDIOBJ = HANDLE; // windef.h
+pub type HMODULE = HANDLE; // minwindef.h
+pub type SHORT = i16; // winnt.h
+pub use core::ffi::c_int;
+pub use crate::wine::shlmenu::LPTPMPARAMS;
+
+// ---------------------------------------------------------------------------
+// Win32/shell imports promoted here by `rustconv.extern_promote`. Each was already
+// declared in one or more sibling modules; promotion required every copy to agree
+// SEMANTICALLY (ABI + parameter TYPES + return type, after resolving type aliases —
+// parameter names are not ABI, and `LPWSTR`/`*mut u16` are one type).
+//
+// Four names did NOT agree, and were adjudicated against their headers rather than
+// picked: SHAnsiToUnicode (one module had it returning a POINTER; shlwapi_undoc.h:264
+// says DWORD, and its one call site discards the value, so nothing was miscompiled),
+// PathUnquoteSpacesW (one had it returning nothing; shlwapi.h:395 says BOOL), plus
+// GetSystemMetrics and HLM_GetIconW (UINT vs INT first parameter; winuser.h:4904 and
+// shell32_main.h:79 both say int). Those six files were corrected in place.
+//
+// Module-local copies stay for now — a local declaration shadows a glob import, so this
+// is additive. Retiring them is the separate sweep the header note mentions.
+// ---------------------------------------------------------------------------
+
+extern "C" {
+    pub fn HCR_GetProgIdKeyOfExtension(szExtension: LPCWSTR, phKey: PHKEY, AllowFallback: BOOL) -> HRESULT;
+    pub fn HLM_GetIconW(index: INT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
+    pub fn PathIsExeW(path: LPCWSTR) -> BOOL;
+    pub fn SHBindToObject(psf: *mut IShellFolder, pidl: LPCITEMIDLIST, riid: REFIID, ppvObj: *mut *mut core::ffi::c_void) -> HRESULT;
+    pub fn SHELL_GetUIObjectOfAbsoluteItem(owner: HWND, pidl: PCIDLIST_ABSOLUTE, riid: REFIID, out: *mut LPVOID) -> HRESULT;
+    pub fn _wcsicmp(left: LPCWSTR, right: LPCWSTR) -> INT;
+    pub fn _wtoi(str: *const WCHAR) -> INT;
+    pub fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
+    pub fn memset(dst: *mut core::ffi::c_void, value: INT, bytes: usize) -> *mut core::ffi::c_void;
+    pub fn swprintf(buffer: *mut WCHAR, format: *const WCHAR, ...) -> INT;
+}
+
+extern "system" {
+    pub fn BeginPaint(hWnd: HWND, lpPaint: *mut PAINTSTRUCT) -> HDC;
+    pub fn BitBlt(hdc: HDC, x: INT, y: INT, cx: INT, cy: INT, hdcSrc: HDC, x1: INT, y1: INT, rop: DWORD) -> BOOL;
+    pub fn CloseHandle(hObject: HANDLE) -> BOOL;
+    pub fn CoTaskMemFree(memory: LPVOID);
+    pub fn CoUninitialize();
+    pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
+    pub fn CreateIconIndirect(piconinfo: *mut ICONINFO) -> HICON;
+    pub fn CreateMenu() -> HMENU;
+    pub fn CreatePopupMenu() -> HMENU;
+    pub fn CreateProcessW(app: LPCWSTR, command: LPWSTR, process_attrs: LPCVOID, thread_attrs: LPCVOID, inherit: BOOL, flags: DWORD, environment: LPCVOID, directory: LPCWSTR, startup: *const STARTUPINFOW, info: *mut PROCESS_INFORMATION) -> BOOL;
+    pub fn DeleteDC(hdc: HDC) -> BOOL;
+    pub fn DeleteFileW(path: LPCWSTR) -> BOOL;
+    pub fn DeleteObject(object: HGDIOBJ) -> BOOL;
+    pub fn DestroyIcon(icon: HICON) -> BOOL;
+    pub fn DestroyMenu(hMenu: HMENU) -> BOOL;
+    pub fn DialogBoxParamW(instance: HINSTANCE, template: LPCWSTR, parent: HWND, dlgproc: DLGPROC, lparam: LPARAM) -> INT_PTR;
+    pub fn EndDialog(hDlg: HWND, nResult: INT_PTR) -> BOOL;
+    pub fn EndPaint(hWnd: HWND, lpPaint: *const PAINTSTRUCT) -> BOOL;
+    pub fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: LPWSTR, nSize: DWORD) -> DWORD;
+    pub fn FindClose(hFindFile: HANDLE) -> BOOL;
+    pub fn FindExecutableW(file: LPCWSTR, directory: LPCWSTR, result: LPWSTR) -> HINSTANCE;
+    pub fn FindFirstFileW(lpFileName: LPCWSTR, lpFindFileData: *mut WIN32_FIND_DATAW) -> HANDLE;
+    pub fn FindNextFileW(find: HANDLE, data: *mut WIN32_FIND_DATAW) -> BOOL;
+    pub fn GetBinaryTypeW(lpApplicationName: LPCWSTR, lpBinaryType: LPDWORD) -> BOOL;
+    pub fn GetClientRect(window: HWND, rect: *mut RECT) -> BOOL;
+    pub fn GetCurrentDirectoryW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD;
+    pub fn GetDC(window: HWND) -> HDC;
+    pub fn GetDlgItemTextW(hDlg: HWND, nIDDlgItem: INT, lpString: LPWSTR, cchMax: INT) -> UINT;
+    pub fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT;
+    pub fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD;
+    pub fn GetFullPathNameW(name: LPCWSTR, len: DWORD, buf: LPWSTR, part: *mut LPWSTR) -> DWORD;
+    pub fn GetIconInfo(hIcon: HICON, piconinfo: *mut ICONINFO) -> BOOL;
+    pub fn GetKeyState(vk: c_int) -> SHORT;
+    pub fn GetLastError() -> DWORD;
+    pub fn GetMenuDefaultItem(menu: HMENU, by_position: UINT, flags: UINT) -> UINT;
+    pub fn GetMenuItemCount(hMenu: HMENU) -> INT;
+    pub fn GetMenuItemInfoW(hMenu: HMENU, item: UINT, fByPosition: BOOL, lpmii: *mut MENUITEMINFOW) -> BOOL;
+    pub fn GetModuleFileNameW(hModule: HMODULE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
+    pub fn GetObjectW(h: HGDIOBJ, c: INT, pv: LPVOID) -> INT;
+    pub fn GetShellWindow() -> HWND;
+    pub fn GetShortPathNameW(lpszLongPath: LPCWSTR, lpszShortPath: LPWSTR, cchBuffer: DWORD) -> DWORD;
+    pub fn GetSystemMetrics(nIndex: INT) -> INT;
+    pub fn GetTickCount() -> DWORD;
+    pub fn GetVersion() -> DWORD;
+    pub fn GetWindowRect(window: HWND, rect: *mut RECT) -> BOOL;
+    pub fn GetWindowsDirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
+    pub fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
+    pub fn HeapReAlloc(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID, dwBytes: SIZE_T) -> LPVOID;
+    pub fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
+    pub fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
+    pub fn ILCreateFromPathW(pszPath: LPCWSTR) -> LPITEMIDLIST;
+    pub fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
+    pub fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;
+    pub fn ILGetSize(pidl: LPCITEMIDLIST) -> UINT;
+    pub fn ILIsEqual(pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> BOOL;
+    pub fn ILRemoveLastID(pidl: LPITEMIDLIST) -> BOOL;
+    pub fn ImageList_Create(cx: INT, cy: INT, flags: UINT, initial: INT, grow: INT) -> HIMAGELIST;
+    pub fn ImageList_Destroy(himl: HIMAGELIST) -> BOOL;
+    pub fn ImageList_GetIcon(himl: HIMAGELIST, index: INT, flags: UINT) -> HICON;
+    pub fn LoadIconW(hInstance: HINSTANCE, lpIconName: LPCWSTR) -> HICON;
+    pub fn LoadImageW(instance: HINSTANCE, name: LPCWSTR, image_type: UINT, cx: INT, cy: INT, flags: UINT) -> HANDLE;
+    pub fn LocalAlloc(uFlags: UINT, uBytes: SIZE_T) -> HLOCAL;
+    pub fn LocalFree(hMem: HANDLE) -> HANDLE;
+    pub fn MapWindowPoints(from: HWND, to: HWND, points: *mut POINT, count: UINT) -> INT;
+    pub fn MessageBeep(t: UINT) -> BOOL;
+    pub fn MoveFileW(old: LPCWSTR, new: LPCWSTR) -> BOOL;
+    pub fn PathAddBackslashW(pszPath: LPWSTR) -> LPWSTR;
+    pub fn PathAddExtensionW(pszPath: LPWSTR, pszExt: LPCWSTR) -> BOOL;
+    pub fn PathAppendW(pszPath: LPWSTR, pszMore: LPCWSTR) -> BOOL;
+    pub fn PathCombineW(lpszDest: LPWSTR, lpszDir: LPCWSTR, lpszFile: LPCWSTR) -> LPWSTR;
+    pub fn PathCreateFromUrlW(pszUrl: LPCWSTR, pszPath: LPWSTR, pcchPath: *mut DWORD, dwFlags: DWORD) -> HRESULT;
+    pub fn PathFileExistsW(pszPath: LPCWSTR) -> BOOL;
+    pub fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR;
+    pub fn PathFindFileNameW(pszPath: LPCWSTR) -> LPWSTR;
+    pub fn PathFindOnPathExW(pszPath: LPWSTR, ppszOtherDirs: *const LPCWSTR, dwWhich: DWORD) -> BOOL;
+    pub fn PathFindOnPathW(pszPath: LPWSTR, ppszOtherDirs: *const LPCWSTR) -> BOOL;
+    pub fn PathGetArgsW(path: LPCWSTR) -> LPWSTR;
+    pub fn PathGetDriveNumberW(path: LPCWSTR) -> INT;
+    pub fn PathIsDirectoryW(pszPath: LPCWSTR) -> BOOL;
+    pub fn PathIsRelativeW(pszPath: LPCWSTR) -> BOOL;
+    pub fn PathIsURLW(pszPath: LPCWSTR) -> BOOL;
+    pub fn PathRemoveArgsW(path: LPWSTR);
+    pub fn PathRemoveFileSpecW(pszPath: LPWSTR) -> BOOL;
+    pub fn PathResolveW(path: LPWSTR, dirs: *mut LPCWSTR, flags: DWORD) -> BOOL;
+    pub fn PathStripToRootW(pszPath: LPWSTR) -> BOOL;
+    pub fn PathUnquoteSpacesW(path: LPWSTR) -> BOOL;
+    pub fn PathYetAnotherMakeUniqueName(buffer: LPWSTR, path: LPCWSTR, short: LPCWSTR, long: LPCWSTR) -> BOOL;
+    pub fn PrivateExtractIconsW(szFileName: LPCWSTR, nIconIndex: INT, cxIcon: INT, cyIcon: INT, phicon: *mut HICON, piconid: *mut UINT, nIcons: UINT, flags: UINT) -> UINT;
+    pub fn RegOpenKeyW(hKey: HKEY, lpSubKey: LPCWSTR, phkResult: PHKEY) -> LONG;
+    pub fn RegQueryValueW(hKey: HKEY, lpSubKey: LPCWSTR, lpData: LPWSTR, lpcbData: *mut LONG) -> LONG;
+    pub fn ReleaseDC(window: HWND, dc: HDC) -> INT;
+    pub fn SH32_InvokeOpenWith(path: PCWSTR, info: LPCMINVOKECOMMANDINFO, process: *mut HANDLE) -> HRESULT;
+    pub fn SHAlloc(bytes: SIZE_T) -> LPVOID;
+    pub fn SHAllocShared(pvData: LPCVOID, dwSize: DWORD, dwProcessId: DWORD) -> HANDLE;
+    pub fn SHAnsiToUnicode(pszSrc: LPCSTR, pwszDst: LPWSTR, cwchBuf: INT) -> DWORD;
+    pub fn SHAutoComplete(edit: HWND, flags: DWORD) -> HRESULT;
+    pub fn SHBindToParent(pidl: PCIDLIST_ABSOLUTE, riid: REFIID, ppv: *mut *mut core::ffi::c_void, ppidlLast: *mut PCUITEMID_CHILD) -> HRESULT;
+    pub fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
+    pub fn SHCloneSpecialIDList(hwnd: HWND, csidl: INT, create: BOOL) -> PIDLIST_ABSOLUTE;
+    pub fn SHELL_CreateSHDESCRIPTIONID(pVar: *mut VARIANT, Id: DWORD, pCLSID: *const CLSID) -> HRESULT;
+    pub fn SHELL_CreateVariantBuffer(pVar: *mut VARIANT, cb: UINT) -> HRESULT;
+    pub fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
+    pub fn SHGetFolderLocation(hwndOwner: HWND, nFolder: INT, hToken: HANDLE, dwReserved: DWORD, ppidl: *mut LPITEMIDLIST) -> HRESULT;
+    pub fn SHGetNameAndFlagsW(pidl: LPCITEMIDLIST, flags: DWORD, text: LPWSTR, cch: UINT, attributes: *mut DWORD) -> HRESULT;
+    pub fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: *mut u16) -> i32;
+    pub fn SHGetValueW(hkey: HKEY, pszSubKey: LPCWSTR, pszValue: LPCWSTR, pdwType: LPDWORD, pvData: PVOID, pcbData: LPDWORD) -> DWORD;
+    pub fn SHILAppend(pidl: LPITEMIDLIST, ppidl: *mut LPITEMIDLIST) -> HRESULT;
+    pub fn SHLockShared(hData: HANDLE, dwProcessId: DWORD) -> PVOID;
+    pub fn SHOpenWithDialog(parent: HWND, info: *const OPENASINFO) -> HRESULT;
+    pub fn SHUnlockShared(pvData: PVOID) -> BOOL;
+    pub fn SearchPathW(lpPath: LPCWSTR, lpFileName: LPCWSTR, lpExtension: LPCWSTR, nBufferLength: DWORD, lpBuffer: LPWSTR, lpFilePart: *mut LPWSTR) -> DWORD;
+    pub fn SelectObject(dc: HDC, object: HGDIOBJ) -> HGDIOBJ;
+    pub fn SendDlgItemMessageW(hDlg: HWND, nIDDlgItem: INT, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+    pub fn SetDlgItemTextW(hDlg: HWND, nIDDlgItem: INT, lpString: LPCWSTR) -> BOOL;
+    pub fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
+    pub fn SetLastError(dwErrCode: DWORD);
+    pub fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF;
+    pub fn SetWindowTextW(hWnd: HWND, lpString: LPCWSTR) -> BOOL;
+    pub fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
+    pub fn Shell_GetImageLists(lpBigList: *mut HIMAGELIST, lpSmallList: *mut HIMAGELIST) -> BOOL;
+    pub fn ShowWindow(window: HWND, command: INT) -> BOOL;
+    pub fn StrChrW(start: LPCWSTR, character: WCHAR) -> LPWSTR;
+    pub fn StrCmpIW(psz1: LPCWSTR, psz2: LPCWSTR) -> INT;
+    pub fn StrCpyNW(pszDst: LPWSTR, pszSrc: LPCWSTR, cchMax: INT) -> LPWSTR;
+    pub fn StrDupW(lpsz: LPCWSTR) -> LPWSTR;
+    pub fn StrPBrkW(psz: LPCWSTR, pszSet: LPCWSTR) -> LPWSTR;
+    pub fn StrRetToBufW(psr: *mut STRRET, pidl: LPCITEMIDLIST, pszBuf: LPWSTR, cchBuf: UINT) -> HRESULT;
+    pub fn StrRetToStrNW(pszBuf: LPWSTR, cchBuf: UINT, pstr: *mut STRRET, pidl: LPCITEMIDLIST) -> BOOL;
+    pub fn StrTrimW(psz: LPWSTR, pszTrimChars: LPCWSTR) -> BOOL;
+    pub fn StringFromGUID2(rguid: REFGUID, lpsz: LPWSTR, cchMax: INT) -> INT;
+    pub fn TrackPopupMenuEx(hMenu: HMENU, uFlags: UINT, x: INT, y: INT, hwnd: HWND, lptpm: LPTPMPARAMS) -> BOOL;
+    pub fn UrlIsW(pszUrl: LPCWSTR, UrlIs: DWORD) -> BOOL;
+    pub fn VariantChangeType(dst: *mut VARIANT, src: *const VARIANT, flags: USHORT, vt: VARTYPE) -> HRESULT;
+    pub fn _InsertMenuItemW(hmenu: HMENU, indexMenu: UINT, fByPosition: BOOL, wID: UINT, fType: UINT, dwTypeData: LPCWSTR, fState: UINT) -> BOOL;
+    pub fn lstrcatW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
+    pub fn lstrcmpiW(left: LPCWSTR, right: LPCWSTR) -> INT;
+    pub fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
+    pub fn lstrlenW(lpString: LPCWSTR) -> INT;
 }

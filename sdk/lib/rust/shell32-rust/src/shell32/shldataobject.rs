@@ -104,6 +104,7 @@ use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
 use crate::win32::*;
+use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
 pub static mut g_DataObjectAttributes: CLIPFORMAT = 0;
@@ -158,7 +159,7 @@ pub unsafe extern "system" fn SHGetAttributesFromDataObject(
                 let mut apidl = CSimpleArray::<PCUIDLIST_RELATIVE>::new();
                 let mut n: UINT = 0;
                 while n < (*hida.as_ptr()).cidl {
-                    apidl.Add(HIDA_GetPIDLItem(hida.as_ptr(), n));
+                    apidl.Add(HIDA_GetPIDLItem(hida.as_ptr(), (n) as usize));
                     n += 1;
                 }
 
@@ -213,7 +214,7 @@ pub unsafe extern "C" fn DataObject_GetHIDACount(pdo: *mut IDataObject) -> HRESU
 #[no_mangle]
 pub unsafe extern "C" fn SHELL_CIDA_ILCloneFull(pCIDA: *const CIDA, Index: u32) -> PIDLIST_ABSOLUTE {
     if Index < (*pCIDA).cidl {
-        return ILCombine(HIDA_GetPIDLFolder(pCIDA), HIDA_GetPIDLItem(pCIDA, Index));
+        return ILCombine(HIDA_GetPIDLFolder(pCIDA), HIDA_GetPIDLItem(pCIDA, (Index) as usize));
     }
     core::ptr::null_mut()
 }

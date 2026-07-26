@@ -597,6 +597,44 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after the build. i386 never runs
   this test (74-test list vs amd64's 87).
 
+- **WoW64: 32-bit guests could not create THREADS — FIXED on amd64, PARTIAL on arm64,
+  2026-07-25** (task #64, wow64-plan Phase E15). wow64.dll had no per-thread entry at all:
+  `Wow64LdrpInitialize` fused process-init with first-thread-init and kept the per-thread CPU
+  area (the guest register file) in function-local `static`s. The kernel side was already
+  correct per-thread and needed no changes. Four PRE-EXISTING bugs each independently blocked
+  it, all of the "can only exist while the capability is missing" kind:
+  (1) `RtlpThrImageStackReserve` read the WoW64 process's **PE32** image at native width, so
+  `SizeOfStackReserve` came back as `(commit<<32)|reserve` = **16 TB** and every
+  `RtlCreateUserThread` failed `STATUS_INVALID_PARAMETER_4`;
+  (2) `LdrpProcessInitialized` never left 1 because `LdrpInitializeProcess` never returns in a
+  WoW64 process, so every later thread spun forever in the loader's wait — a thread that
+  created and resumed cleanly and then printed nothing;
+  (3) `CreateRemoteThread`'s csrss notify always failed (the guest runs CSR-less by design) and
+  the cleanup path tore down a perfectly good thread;
+  (4) `NtWaitForMultipleObjects` was a flat thunk whose handle ARRAY is 4-byte guest / 8-byte
+  host — a *cold* audit-baseline entry that went live the instant threads existed (279 → 278).
+  Verified by `thread32.exe`: 9 rungs incl. TLS and guest SEH on the new thread and 4
+  concurrent threads. amd64 `0x600d`, all 8 probe guests green.
+
+- **WoW64/FEX: four CONCURRENT guest threads AV on arm64 — OPEN** (2026-07-25, task #73,
+  wow64-plan Phase E15). arm64 passes rungs 1-6 of `thread32.exe` (single guest thread creates,
+  runs, joins, TLS works), then `0xC0000005` on the 4-concurrent-thread rung. All four threads
+  are created and resumed but only two reach the print between `BTCpuThreadInit()` and
+  `BTCpuSimulate()`, with two repeated fault PCs inside libwow64fex
+  (`0x7FFFB43F0A50`, `0x7FFFB43F08AC`) — i.e. FEX's per-thread bring-up under concurrent entry,
+  not stack visibility. amd64's `wow64cpu` is unaffected (`BTCpuThreadInit` is a no-op there).
+  Related gap worth closing on its own merits: we wire only `BTCpuNotifyMapViewOfSection` of
+  FEX's memory-notification contract, though it exports `BTCpuNotifyMemoryAlloc`/`Free`/
+  `Protect`/`Dirty`. The probe stays enabled and red — it runs last in the arm64 ladder, so it
+  costs no coverage. **Does not affect the boot: arm64 smoke is `✓ boot`.**
+
+- **WoW64 probe guests are NOT staged on arm64 by default** (2026-07-25, noted while closing
+  #64). `dll/win32/wow64cpu/CMakeLists.txt` (the amd64 livecd path) is entirely
+  `if(ARCH STREQUAL "amd64")`; arm64 stages from `qemu/mkramdisk.sh` and only under an opt-in
+  `VIBEOS_FEX=1`. So a default `./vibeos-cli build --arch arm64` carries a minimal, possibly
+  weeks-stale syswow64 set and the arm64 gate exercises almost no WoW64. Use
+  `VIBEOS_FEX=1 ./vibeos-cli build --arch arm64` when the WoW64 ladder matters.
+
 - **amd64 WoW64 `g_MsgMemory` SendMessage payload over-read — FIXED 2026-07-24**
   (§9.116 diagnosis, §9.118 fix, task E13). Fixed in the **WoW64 thunk layer**, not win32k:
   §9.116 had concluded "the fix is win32k-side", but every `co_IntDoSendMessage` call sits

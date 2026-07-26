@@ -853,7 +853,13 @@ fn diff_rtl_str_to_uni() {
                     sr = rf(&mut dr, &ss, a);
                 }
                 assert_eq!(sc, sr, "{name} ret sl={sl} ml={ml} a={a}");
-                assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
+                // Buffer.is_null() is part of the contract, not decoration: on the
+                // alloc-failure edge the C stores NULL into the out-parameter, and a
+                // port that returns before that store leaves the caller's stale
+                // pointer beside a freshly-written Length. Comparing only the two
+                // lengths cannot see it — that is how it hid in 10 of 11 converters.
+                assert_eq!((dc.Length, dc.MaximumLength, dc.Buffer.is_null()),
+                           (dr.Length, dr.MaximumLength, dr.Buffer.is_null()),
                     "{name} fields sl={sl} ml={ml} a={a}");
                 assert_eq!(bc, br, "{name} buf sl={sl} ml={ml} a={a}");
             }
@@ -892,7 +898,8 @@ fn diff_rtl_uni_to_str() {
                     sr = rf(&mut dr, &ss, a);
                 }
                 assert_eq!(sc, sr, "{name} ret su={su} ml={ml} a={a} {sv:?}");
-                assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
+                assert_eq!((dc.Length, dc.MaximumLength, dc.Buffer.is_null()),
+                           (dr.Length, dr.MaximumLength, dr.Buffer.is_null()),
                     "{name} fields su={su} ml={ml} a={a}");
                 assert_eq!(bc, br, "{name} buf su={su} ml={ml} a={a} {sv:?}");
             }
@@ -921,7 +928,8 @@ fn diff_rtl_upcase_unicode_string() {
                 sr = ref_RtlUpcaseUnicodeString(&mut dr, &ss, a);
             }
             assert_eq!(sc, sr, "RtlUpcaseUnicodeString ret su={su} ml={ml} a={a}");
-            assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
+            assert_eq!((dc.Length, dc.MaximumLength, dc.Buffer.is_null()),
+                       (dr.Length, dr.MaximumLength, dr.Buffer.is_null()),
                 "RtlUpcaseUnicodeString fields su={su} ml={ml} a={a}");
             assert_eq!(bc, br, "RtlUpcaseUnicodeString buf su={su} ml={ml} a={a}");
         }
@@ -975,7 +983,8 @@ fn diff_rtl_downcase_unicode_string() {
                 sr = ref_RtlDowncaseUnicodeString(&mut dr, &ss, a);
             }
             assert_eq!(sc, sr, "RtlDowncaseUnicodeString ret su={su} ml={ml} a={a}");
-            assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
+            assert_eq!((dc.Length, dc.MaximumLength, dc.Buffer.is_null()),
+                       (dr.Length, dr.MaximumLength, dr.Buffer.is_null()),
                 "RtlDowncaseUnicodeString fields su={su} ml={ml} a={a}");
             assert_eq!(bc, br, "RtlDowncaseUnicodeString buf su={su} ml={ml} a={a}");
         }

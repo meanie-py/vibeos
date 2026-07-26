@@ -108,6 +108,24 @@ LONG WINAPI NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID *BaseAddress,
 LONG WINAPI NtFlushInstructionCache(HANDLE ProcessHandle, PVOID BaseAddress,
                                     SIZE_T Length);
 
+typedef struct _WOW64_CLIENT_ID {
+    HANDLE UniqueProcess;
+    HANDLE UniqueThread;
+} WOW64_CLIENT_ID;
+
+/* #64: real 32-bit guest thread creation. RtlCreateUserThread builds the
+ * NATIVE thread (native stack + native start context); the guest's own
+ * 32-bit stack came from the guest's BaseCreateStack and arrives in the
+ * INITIAL_TEB32 the marshaller hands us. */
+LONG WINAPI RtlCreateUserThread(HANDLE ProcessHandle, PVOID SecurityDescriptor,
+                                BOOLEAN CreateSuspended, ULONG StackZeroBits,
+                                SIZE_T StackReserve, SIZE_T StackCommit,
+                                PVOID StartAddress, PVOID Parameter,
+                                PHANDLE ThreadHandle, WOW64_CLIENT_ID *ClientId);
+PVOID WINAPI RtlAllocateHeap(PVOID HeapHandle, ULONG Flags, SIZE_T Size);
+BOOLEAN WINAPI RtlFreeHeap(PVOID HeapHandle, ULONG Flags, PVOID BaseAddress);
+VOID WINAPI RtlExitUserThread(LONG Status);
+
 /* wow64_thunks.c — the wow64gen-generated 32->64 syscall thunk table. */
 LONG Wow64DispatchSystemService(ULONG ServiceNumber, PULONG Arguments);
 
@@ -183,6 +201,29 @@ void Wow64pInstallUserCallbackTable(void);
  * maps via Wow64pPatchTransitionSlot. */
 PVOID Wow64pBopCode;
 static ULONG_PTR Wow64pPeb32;  /* set in Wow64LdrpInitialize, for VEH diagnostics */
+
+/* ---- #64: process-once state that the PER-THREAD entry also needs -------
+ * Wow64LdrpInitialize used to be process-init and first-thread-init fused
+ * together, and it kept the genuinely per-thread pieces (the CPU area, the
+ * run CONTEXT) in function-local `static`s — exactly one thread's worth of
+ * storage. A second guest thread would have run on the first one's CPU area,
+ * which is the register file the CPU layer reads and rewrites on every mode
+ * switch. These are the values that really are process-wide, hoisted so the
+ * split-out thread entry can reach them. */
+static WOW64INFO_FEX Wow64pWow64Info;
+static PVOID Wow64pKiUserApcDispatcher32;
+static PVOID Wow64pLdrInitThunk32;
+static VOID (WINAPI *Wow64pBTCpuThreadInit)(VOID);
+
+/* PEB64->ProcessHeap, for the per-thread CPU area. TEB64
+ * ProcessEnvironmentBlock is at +0x60 and PEB64.ProcessHeap at +0x30 on both
+ * 64-bit targets; this DLL deliberately imports ntdll only, so there is no
+ * RtlGetProcessHeap to call. */
+static PVOID Wow64pProcessHeap(VOID)
+{
+    PBYTE Peb = *(PBYTE *)((PBYTE)NtCurrentTeb() + 0x60);
+    return Peb ? *(PVOID *)(Peb + 0x30) : NULL;
+}
 
 /* M3b heap diagnostic: dump the guest process heap state at an unhandled fault.
  * FEX shares the host address space, so we read the 32-bit heap directly. The
@@ -843,6 +884,273 @@ Wow64SystemServiceEx(ULONG ServiceNumber, PULONG Arguments)
 }
 
 /*
+ * ---- #64: the PER-THREAD WoW64 entry ------------------------------------
+ *
+ * The kernel already does its half for every thread, not just the first:
+ * MmCreateTeb keys the combined TEB64+TEB32 low region off
+ * EPROCESS.Wow64Process, and on amd64 KiSwapContextInternal re-bases the
+ * KGDT64_R3_CMTEB descriptor from the incoming thread's TEB on every context
+ * switch. The gap was entirely on this side — wow64.dll had no per-thread
+ * entry at all, so a guest thread would have had no CPU area, no TEB32 stack
+ * bounds and no BTCpuThreadInit.
+ *
+ * Note the deliberate asymmetry with the initial thread: that one enters
+ * through the guest loader's APC frame (LdrInitializeThunk, which runs the
+ * 32-bit LdrpInitializeProcess), whereas a later thread's 32-bit process is
+ * already initialized and enters directly at the CONTEXT the guest asked for.
+ */
+
+#define WOW64_HEAP_ZERO_MEMORY 0x00000008
+
+/*
+ * Install this thread's CPU area: the WOW64_CPURESERVED header plus a
+ * 16-aligned WOW64_CONTEXT. That CONTEXT is the register file the CPU layer
+ * enters the guest with and rewrites on every mode switch, so sharing one
+ * between threads corrupts both. It used to be a function-local `static`,
+ * i.e. exactly one thread's worth of storage.
+ *
+ * The heap base is stashed in the alignment slack immediately below the
+ * returned area so the teardown can free it without a second TLS slot.
+ */
+static WOW64_CONTEXT *Wow64pInstallCpuArea(VOID)
+{
+    PBYTE Buf, CpuArea;
+
+    Buf = (PBYTE)RtlAllocateHeap(Wow64pProcessHeap(), WOW64_HEAP_ZERO_MEMORY,
+                                 sizeof(PVOID) + 16 + 16 + sizeof(WOW64_CONTEXT));
+    if (!Buf)
+    {
+        DbgPrint("[FEX-WOW64C] FAIL: per-thread CPU area allocation failed\n");
+        return NULL;
+    }
+    CpuArea = (PBYTE)(((ULONG_PTR)Buf + sizeof(PVOID) + 15) & ~(ULONG_PTR)15);
+    ((PVOID *)CpuArea)[-1] = Buf;
+    *(USHORT *)(CpuArea + 2) = WOW64_MACHINE_I386; /* WOW64_CPURESERVED.Machine */
+    Wow64pTlsSlots()[WOW64_TLS_CPURESERVED] = CpuArea;
+    return (WOW64_CONTEXT *)(CpuArea + 16);
+}
+
+/*
+ * Wow64FreeThreadCpuArea — release this thread's CPU area.
+ * Called from the NtTerminateThread marshaller (wow64_manual.c) when a guest
+ * thread terminates itself, which is the only moment we still have control:
+ * the kernel call below it never returns, and heap memory is not reclaimed by
+ * thread exit. Safe there because the CPU layer is not running — we are
+ * host-side inside a syscall the guest made.
+ */
+VOID Wow64FreeThreadCpuArea(VOID)
+{
+    PBYTE CpuArea = (PBYTE)Wow64pTlsSlots()[WOW64_TLS_CPURESERVED];
+    if (!CpuArea)
+        return;
+    Wow64pTlsSlots()[WOW64_TLS_CPURESERVED] = NULL;
+    RtlFreeHeap(Wow64pProcessHeap(), 0, ((PVOID *)CpuArea)[-1]);
+}
+
+/*
+ * Build the i386 CONTEXT a WoW64 thread starts from.
+ *
+ * The guest supplies Eip/Esp (and, for a thread, Eax/Ebx) but its segment
+ * selectors must NOT be used: kernel32's BaseInitializeContext fills in the
+ * native i386 GDT values (CS 0x18, DS/ES/SS 0x20, FS 0x38) because on a real
+ * i386 that is what they are. Under WoW64 the guest runs in compat mode
+ * against the 64-bit GDT, where the ring-3 32-bit selectors are CS 0x23,
+ * SS/DS/ES 0x2B and FS 0x53 (KGDT64_R3_CMTEB). Copying the guest's values
+ * verbatim would load descriptors that mean something else entirely.
+ * EFlags is refused for the same reason: BaseInitializeContext asks for
+ * IOPL 3 (0x3000), which user mode cannot be granted.
+ */
+static VOID Wow64pInitStartContext(WOW64_CONTEXT *Ctx, ULONG Eip, ULONG Esp)
+{
+    PBYTE XSave;
+    ULONG i;
+
+    for (i = 0; i < sizeof(*Ctx); i++)
+        ((PBYTE)Ctx)[i] = 0;
+
+    Ctx->ContextFlags = WOW64_CONTEXT_FULL | WOW64_CONTEXT_EXTENDED_REGISTERS;
+    Ctx->Eip = Eip;
+    Ctx->Esp = Esp;
+    Ctx->EFlags = 0x202;
+    Ctx->SegCs = 0x23;
+    Ctx->SegSs = 0x2B;
+    Ctx->SegDs = 0x2B;
+    Ctx->SegEs = 0x2B;
+    Ctx->SegFs = 0x53;
+    Ctx->SegGs = 0x2B;
+    XSave = (PBYTE)Ctx->ExtendedRegisters;
+    *(USHORT *)(XSave + 0x00) = 0x027F;    /* FCW   */
+    *(ULONG *)(XSave + 0x18) = 0x00001F80; /* MXCSR */
+}
+
+/*
+ * Wow64pThreadInit — install per-thread state and enter the guest.
+ * Returns only on failure; on success BTCpuSimulate owns the thread.
+ *
+ * StackBase/StackLimit are the GUEST's 32-bit stack bounds. i386
+ * RtlDispatchException validates every fs:[0] SEH record against TEB32's
+ * NtTib bounds, and MmCreateTeb deliberately leaves them zero ("set by
+ * wow64.dll at thread init"), so without this every guest SEH handler on the
+ * new thread is rejected and faults die second-chance.
+ */
+static VOID Wow64pThreadInit(const WOW64_CONTEXT *Start,
+                             ULONG StackBase, ULONG StackLimit,
+                             const char *What)
+{
+    PBYTE Teb = (PBYTE)NtCurrentTeb();
+    LONG WowTebOffset = *(LONG *)(Teb + WOW64_TEB_WOWTEBOFFSET);
+    PBYTE Teb32 = WowTebOffset ? Teb + WowTebOffset : NULL;
+    WOW64_CONTEXT *Ctx;
+
+    if (!Teb32)
+    {
+        DbgPrint("[FEX-WOW64C] FAIL: %s has no TEB32 (WowTebOffset=0)\n", What);
+        return;
+    }
+
+    /* The WOW64INFO *data* is process-wide, but the TLS slot pointing at it
+     * is per-thread — the CPU layer reads it on whichever thread it runs. */
+    Wow64pTlsSlots()[WOW64_TLS_WOW64INFO] = &Wow64pWow64Info;
+
+    Ctx = Wow64pInstallCpuArea();
+    if (!Ctx)
+        return;
+    *Ctx = *Start;
+
+    *(ULONG *)(Teb32 + 0x04) = StackBase;  /* NtTib.StackBase (high) */
+    *(ULONG *)(Teb32 + 0x08) = StackLimit; /* NtTib.StackLimit (low) */
+
+    Wow64pBTCpuThreadInit();
+
+    DbgPrint("[FEX-WOW64C] %s: entering guest eip=%08lx esp=%08lx stack=%08lx..%08lx\n",
+             What, Ctx->Eip, Ctx->Esp, StackLimit, StackBase);
+    Wow64pBTCpuSimulate();
+}
+
+/* What the NtCreateThread marshaller hands the new native thread: allocated
+ * by the creating thread, consumed and freed by the created one. */
+typedef struct _WOW64_THREAD_SEED {
+    ULONG Eip;        /* guest thread entry — kernel32's BaseThreadStartupThunk */
+    ULONG Esp;
+    ULONG Eax;        /* guest thread routine, per BaseInitializeContext */
+    ULONG Ebx;        /* guest thread parameter */
+    ULONG StackBase;
+    ULONG StackLimit;
+} WOW64_THREAD_SEED;
+
+/*
+ * Build the guest loader's APC frame (KiUserApcDispatcher ABI) below FrameTop,
+ * carrying RunCtx as the context to resume:
+ *   [E+0]=LdrInitializeThunk [E+4]=&CONTEXT [E+8,+12]=SysArgs
+ *   [E+16..]=CONTEXT [E+16+CAS..]=SEH scratch
+ * Entry is Eip=KiUserApcDispatcher32, Esp=E; the loader runs on the stack
+ * below E and NtContinues to RunCtx when it is done.
+ *
+ * SystemArgument1 is the ntdll32 base for the INITIAL thread only — that is
+ * the contract LdrpInitializeProcess reads it under
+ * (LdrpAllocateDataTableEntry(SystemArgument1)), and 0 there made the loader
+ * call RtlImageNtHeader(NULL) and near-null-write. A later thread takes the
+ * LdrpInitializeThread branch instead, which never looks at it.
+ */
+static ULONG Wow64pBuildLoaderApcFrame(PBYTE FrameTop,
+                                       const WOW64_CONTEXT *RunCtx,
+                                       PVOID SystemArgument1)
+{
+    ULONG CAS = (ULONG)((sizeof(WOW64_CONTEXT) + 3) & ~3u);
+    ULONG E = (ULONG)(ULONG_PTR)(FrameTop - (16 + CAS + 8));
+    ULONG i;
+
+    E &= ~15u;
+    *(ULONG *)(ULONG_PTR)(E + 0)  = (ULONG)(ULONG_PTR)Wow64pLdrInitThunk32;
+    *(ULONG *)(ULONG_PTR)(E + 4)  = E + 16; /* NormalContext = &CONTEXT */
+    *(ULONG *)(ULONG_PTR)(E + 8)  = (ULONG)(ULONG_PTR)SystemArgument1;
+    *(ULONG *)(ULONG_PTR)(E + 12) = 0;
+    for (i = 0; i < sizeof(WOW64_CONTEXT); i++)
+        *(PBYTE)(ULONG_PTR)(E + 16 + i) = ((const BYTE *)RunCtx)[i];
+    return E;
+}
+
+static ULONG WINAPI Wow64pGuestThreadStart(PVOID Parameter)
+{
+    WOW64_THREAD_SEED Seed = *(WOW64_THREAD_SEED *)Parameter;
+    WOW64_CONTEXT RunCtx, StartCtx;
+    ULONG ApcEsp;
+
+    RtlFreeHeap(Wow64pProcessHeap(), 0, Parameter);
+
+    /* What the thread runs once the 32-bit loader has initialized it: the
+     * entry kernel32 asked for, on the stack kernel32 allocated for it. */
+    Wow64pInitStartContext(&RunCtx, Seed.Eip, Seed.Esp);
+    RunCtx.Eax = Seed.Eax;
+    RunCtx.Ebx = Seed.Ebx;
+
+    /* Route through the guest loader exactly like the initial thread does, so
+     * the new thread gets LdrpInitializeThread — TLS slot allocation and
+     * DLL_THREAD_ATTACH for every loaded 32-bit DLL. Entering RunCtx directly
+     * would skip both, and a guest that uses TLS would read a slot array that
+     * was never allocated. The frame goes at the top of the guest's OWN stack
+     * (kernel32's BaseCreateStack allocated it before the syscall); the loader
+     * unwinds off it before NtContinue-ing to RunCtx. */
+    ApcEsp = Wow64pBuildLoaderApcFrame((PBYTE)(ULONG_PTR)Seed.Esp, &RunCtx, NULL);
+    Wow64pInitStartContext(&StartCtx,
+                           (ULONG)(ULONG_PTR)Wow64pKiUserApcDispatcher32, ApcEsp);
+
+    Wow64pThreadInit(&StartCtx, Seed.StackBase, Seed.StackLimit, "guest thread");
+
+    /* Only reached if the entry failed outright — kill this thread, not the
+     * process: the rest of the guest is still healthy. */
+    DbgPrint("[FEX-WOW64C] guest thread: entry failed, exiting thread\n");
+    RtlExitUserThread((LONG)0xC0000001L);
+    return 0;
+}
+
+/*
+ * Wow64CreateGuestThread — create a native thread that runs 32-bit guest code.
+ * Called by the NtCreateThread marshaller with the fields it pulled out of the
+ * guest's CONTEXT32/INITIAL_TEB32. The guest's own 32-bit stack was already
+ * allocated by the guest (kernel32's BaseCreateStack), so we allocate only the
+ * NATIVE stack here — RtlCreateUserThread's default.
+ */
+LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
+                            ULONG StackBase, ULONG StackLimit,
+                            BOOLEAN CreateSuspended,
+                            HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId)
+{
+    WOW64_THREAD_SEED *Seed;
+    LONG Status;
+
+    if (!Wow64pBTCpuThreadInit || !Wow64pBTCpuSimulate)
+    {
+        DbgPrint("[FEX-WOW64C] Wow64CreateGuestThread: no CPU layer\n");
+        return (LONG)0xC0000001L; /* STATUS_UNSUCCESSFUL */
+    }
+
+    Seed = (WOW64_THREAD_SEED *)RtlAllocateHeap(Wow64pProcessHeap(),
+                                                WOW64_HEAP_ZERO_MEMORY,
+                                                sizeof(*Seed));
+    if (!Seed)
+        return (LONG)0xC0000017L; /* STATUS_NO_MEMORY */
+
+    Seed->Eip = Eip;
+    Seed->Esp = Esp;
+    Seed->Eax = Eax;
+    Seed->Ebx = Ebx;
+    Seed->StackBase = StackBase;
+    Seed->StackLimit = StackLimit;
+
+    Status = RtlCreateUserThread(WOW64_CURRENT_PROCESS, NULL, CreateSuspended,
+                                 0, 0, 0, (PVOID)Wow64pGuestThreadStart, Seed,
+                                 ThreadHandle, ClientId);
+    if (Status < 0)
+    {
+        DbgPrint("[FEX-WOW64C] Wow64CreateGuestThread: RtlCreateUserThread %08lx\n",
+                 Status);
+        RtlFreeHeap(Wow64pProcessHeap(), 0, Seed);
+    }
+    return Status;
+}
+
+/*
  * Wow64LdrpInitialize — the thread handoff from the 64-bit ntdll loader.
  * For a WoW64 process, LdrpInitializeProcess (ntdll-rust ldrinit.rs) skips the
  * i386 image entirely, loads this DLL, and calls here with the initial thread
@@ -879,11 +1187,6 @@ Wow64LdrpInitialize(PVOID Context)
     PVOID (WINAPI *BTCpuGetBopCode)(VOID);
     VOID (WINAPI *BTCpuSimulate)(VOID);
     LONG (WINAPI *BTCpuNotifyMapViewOfSection)(PVOID, PVOID, PVOID, SIZE_T, ULONG, ULONG);
-    static WOW64INFO_FEX Wow64Info;
-    static UCHAR CpuAreaBuf[16 + sizeof(WOW64_CONTEXT) + 16];
-    PBYTE CpuArea;
-    WOW64_CONTEXT *Wow64Ctx;
-    PBYTE XSave;
     LONG Status;
 
     DbgPrint("[FEX-WOW64C] Wow64LdrpInitialize: 64-bit loader handed the thread over (Context=%p)\n",
@@ -940,10 +1243,10 @@ Wow64LdrpInitialize(PVOID Context)
     /* -- WOW64INFO + environment landmine (Logging::Init formats
      *    getenv("LOCALAPPDATA") unchecked; default it before the CPU dll's
      *    mini-CRT snapshots the PEB environment) --------------------------- */
-    Wow64Info.NativeSystemPageSize = 0x1000;
-    Wow64Info.NativeMachineType = WOW64_NATIVE_MACHINE;
-    Wow64Info.EmulatedMachineType = WOW64_MACHINE_I386;
-    Wow64pTlsSlots()[WOW64_TLS_WOW64INFO] = &Wow64Info;
+    Wow64pWow64Info.NativeSystemPageSize = 0x1000;
+    Wow64pWow64Info.NativeMachineType = WOW64_NATIVE_MACHINE;
+    Wow64pWow64Info.EmulatedMachineType = WOW64_MACHINE_I386;
+    Wow64pTlsSlots()[WOW64_TLS_WOW64INFO] = &Wow64pWow64Info;
 
     {
         WOW64_UNICODE_STRING EnvName, EnvValue;
@@ -994,6 +1297,7 @@ Wow64LdrpInitialize(PVOID Context)
         Wow64pBTCpuGetContext = (LONG (WINAPI *)(HANDLE, HANDLE, PVOID, PVOID))Addr;
     }
     Wow64pBTCpuSimulate = BTCpuSimulate;
+    Wow64pBTCpuThreadInit = BTCpuThreadInit; /* #64: the per-thread entry needs it */
     {
         PVOID Addr = NULL;
         RtlInitAnsiString(&ProcName, "BTCpuResetToConsistentState");
@@ -1021,7 +1325,7 @@ Wow64LdrpInitialize(PVOID Context)
     Bop = BTCpuGetBopCode();
     Wow64pBopCode = Bop;
     DbgPrint("[FEX-WOW64C] BTCpuProcessInit OK — BOP=%p CpuFlags=%lx\n",
-             Bop, Wow64Info.CpuFlags);
+             Bop, Wow64pWow64Info.CpuFlags);
     if ((ULONG_PTR)Bop >= 0x80000000u)
     {
         DbgPrint("[FEX-WOW64C] FAIL: BOP above 2GB\n");
@@ -1064,6 +1368,10 @@ Wow64LdrpInitialize(PVOID Context)
     /* -- Resolve the guest ntdll32 loader entrypoints (M3b) ---------------- */
     KiUserApcDispatcher32 = Wow64pFindExport32(Ntdll32, "KiUserApcDispatcher");
     LdrInitThunk32 = Wow64pFindExport32(Ntdll32, "LdrInitializeThunk");
+    /* #64: a guest thread routes through the same pair, so hoist them out of
+     * this frame — Wow64pGuestThreadStart runs long after it is gone. */
+    Wow64pKiUserApcDispatcher32 = KiUserApcDispatcher32;
+    Wow64pLdrInitThunk32 = LdrInitThunk32;
     /* M8: kernel->user callbacks re-enter the guest through its own 32-bit
      * callback dispatcher; the 64-bit PEB table points at our bridge. */
     Wow64pKiUserCallbackDispatcher32 =
@@ -1155,78 +1463,33 @@ Wow64LdrpInitialize(PVOID Context)
     GuestEsp -= 4;
     *(ULONG *)(ULONG_PTR)GuestEsp = (ULONG)(ULONG_PTR)ExitStub; /* ret addr */
 
-    /* E5: TEB32 NtTib stack bounds (i386 NT_TIB: StackBase +0x04, StackLimit
-     * +0x08). i386 RtlDispatchException validates every fs:[0] SEH record
-     * against these — the kernel's MmCreateTeb leaves them 0 for a WoW64 TEB
-     * ("set by wow64.dll at thread init"), so without this every guest SEH
-     * handler is rejected and faults silently second-chance. The guest image
-     * entry runs on GuestStack. */
-    *(ULONG *)(Teb32 + 0x04) = (ULONG)(ULONG_PTR)GuestStack + 0x10000; /* StackBase (high) */
-    *(ULONG *)(Teb32 + 0x08) = (ULONG)(ULONG_PTR)GuestStack;           /* StackLimit (low) */
-
     /* -- Inner "run" CONTEXT32: what the guest executes AFTER the loader
      *    finishes (LdrInitializeThunk ends by NtContinue-ing to this). It is
      *    the i386 image entry on the run stack, returning to the exit stub. -- */
     {
-        static WOW64_CONTEXT RunCtx;
-        RunCtx.ContextFlags = WOW64_CONTEXT_FULL | WOW64_CONTEXT_EXTENDED_REGISTERS;
-        RunCtx.Eip = ImageBase32 + EntryRva;
-        RunCtx.Esp = GuestEsp;
-        RunCtx.EFlags = 0x202;
-        RunCtx.SegCs = 0x23; RunCtx.SegSs = 0x2B; RunCtx.SegDs = 0x2B;
-        RunCtx.SegEs = 0x2B; RunCtx.SegFs = 0x53; RunCtx.SegGs = 0x2B;
-        *(USHORT *)((PBYTE)RunCtx.ExtendedRegisters + 0x00) = 0x027F; /* FCW   */
-        *(ULONG *)((PBYTE)RunCtx.ExtendedRegisters + 0x18) = 0x00001F80; /* MXCSR */
+        WOW64_CONTEXT RunCtx, StartCtx;
 
-        /* -- Loader APC frame on the loader stack (KiUserApcDispatcher ABI):
-         *    [E+0]=LdrInitializeThunk [E+4]=&CONTEXT [E+8,+12]=SysArgs
-         *    [E+16..]=CONTEXT [E+16+CAS..]=SEH scratch. Entry Eip=dispatcher,
-         *    Esp=E; the loader runs on the stack below E, then NtContinues to
-         *    RunCtx (the image entry). ---------------------------------------- */
-        {
-            ULONG CAS = (ULONG)((sizeof(WOW64_CONTEXT) + 3) & ~3u);
-            PBYTE FrameTop = (PBYTE)ApcStack + 0x40000 - 0x100;
-            ULONG E = (ULONG)(ULONG_PTR)(FrameTop - (16 + CAS + 8));
-            E &= ~15u;
-            *(ULONG *)(ULONG_PTR)(E + 0)  = (ULONG)(ULONG_PTR)LdrInitThunk32;
-            *(ULONG *)(ULONG_PTR)(E + 4)  = E + 16; /* NormalContext = &CONTEXT */
-            /* SystemArgument1 = ntdll32 base: the initial-thread APC contract —
-             * LdrpInitializeProcess builds ntdll's LDR_DATA_TABLE_ENTRY from it
-             * (LdrpAllocateDataTableEntry(SystemArgument1)). 0 here made the
-             * loader call RtlImageNtHeader(NULL) and near-null-write. */
-            *(ULONG *)(ULONG_PTR)(E + 8)  = (ULONG)(ULONG_PTR)Ntdll32;
-            *(ULONG *)(ULONG_PTR)(E + 12) = 0;
-            for (ULONG i = 0; i < sizeof(WOW64_CONTEXT); i++)
-                *(PBYTE)(ULONG_PTR)(E + 16 + i) = ((PBYTE)&RunCtx)[i];
-            ApcEsp = E;
-        }
+        Wow64pInitStartContext(&RunCtx, ImageBase32 + EntryRva, GuestEsp);
+
+        /* The loader APC frame goes on the dedicated loader stack for the
+         * INITIAL thread (the image entry's own stack is separate here); a
+         * guest thread builds the same frame on the stack kernel32 gave it. */
+        ApcEsp = Wow64pBuildLoaderApcFrame((PBYTE)ApcStack + 0x40000 - 0x100,
+                                           &RunCtx, Ntdll32);
+        Wow64pInitStartContext(&StartCtx,
+                               (ULONG)(ULONG_PTR)KiUserApcDispatcher32, ApcEsp);
+
+        DbgPrint("[FEX-WOW64C] entering BTCpuSimulate via loader (apcDisp=%08lx esp=%08lx LdrInit=%p runEip=%08lx exit=%p)\n",
+                 StartCtx.Eip, StartCtx.Esp, LdrInitThunk32,
+                 ImageBase32 + EntryRva, ExitStub);
+
+        /* The guest image entry runs on GuestStack — those are the bounds
+         * i386 RtlDispatchException validates fs:[0] SEH records against. */
+        Wow64pThreadInit(&StartCtx,
+                         (ULONG)(ULONG_PTR)GuestStack + 0x10000,
+                         (ULONG)(ULONG_PTR)GuestStack,
+                         "initial thread");
     }
-
-    /* -- CPU area (WOW64_CPURESERVED + 16-aligned WOW64_CONTEXT): the CONTEXT
-     *    the JIT enters — the loader dispatcher, NOT the image entry. -------- */
-    CpuArea = (PBYTE)(((ULONG_PTR)CpuAreaBuf + 15) & ~(ULONG_PTR)15);
-    *(USHORT *)(CpuArea + 2) = WOW64_MACHINE_I386; /* WOW64_CPURESERVED.Machine */
-    Wow64Ctx = (WOW64_CONTEXT *)(CpuArea + 16);
-    Wow64Ctx->ContextFlags = WOW64_CONTEXT_FULL | WOW64_CONTEXT_EXTENDED_REGISTERS;
-    Wow64Ctx->Eip = (ULONG)(ULONG_PTR)KiUserApcDispatcher32;
-    Wow64Ctx->Esp = ApcEsp;
-    Wow64Ctx->EFlags = 0x202;
-    Wow64Ctx->SegCs = 0x23;
-    Wow64Ctx->SegSs = 0x2B;
-    Wow64Ctx->SegDs = 0x2B;
-    Wow64Ctx->SegEs = 0x2B;
-    Wow64Ctx->SegFs = 0x53;
-    Wow64Ctx->SegGs = 0x2B;
-    XSave = (PBYTE)Wow64Ctx->ExtendedRegisters;
-    *(USHORT *)(XSave + 0x00) = 0x027F;     /* FCW   */
-    *(ULONG *)(XSave + 0x18) = 0x00001F80;  /* MXCSR */
-    Wow64pTlsSlots()[WOW64_TLS_CPURESERVED] = CpuArea;
-
-    BTCpuThreadInit();
-
-    DbgPrint("[FEX-WOW64C] entering BTCpuSimulate via loader (apcDisp=%08lx esp=%08lx LdrInit=%p runEip=%08lx exit=%p)\n",
-             Wow64Ctx->Eip, Wow64Ctx->Esp, LdrInitThunk32, ImageBase32 + EntryRva, ExitStub);
-    BTCpuSimulate();
 
     DbgPrint("[FEX-WOW64C] FAIL: BTCpuSimulate returned\n");
     NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);

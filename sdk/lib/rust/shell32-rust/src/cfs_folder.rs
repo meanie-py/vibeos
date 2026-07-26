@@ -1275,7 +1275,7 @@ extern "system" {
 }
 
 extern "C" {
-    fn HLM_GetIconW(index: UINT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
+    fn HLM_GetIconW(index: INT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
     fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
     fn _wcsicmp(left: LPCWSTR, right: LPCWSTR) -> INT;

@@ -17,18 +17,19 @@ include_directories(include)
 # — the kernel was innocent in all three.
 #
 # pseh2.h's _USE_NATIVE_SEH branch outranks the global _USE_DUMMY_PSEH define and maps
-# _SEH2_TRY straight to __try. Coverage of a *hardware* fault relies on clang's
-# calls-only contract (dummy-pseh-verdict.md §C): the fault must happen in a CALLEE of
-# the __try body, so the return address lands inside the scope table. That holds here for
-# free — clang refuses to inline any callee into a __try region (the same funclet-EH
-# restriction that makes the shims TU below necessary), so the deref stays a real call.
+# _SEH2_TRY straight to __try. That is necessary but NOT sufficient: clang's default
+# calls-only contract only covers a fault in a CALLEE of the __try body (the return
+# address lands inside the scope table), which holds for free because clang refuses to
+# inline into a __try region. A fault by a bare INSTRUCTION in the body was still
+# uncovered — clang emitted an empty scope table and -O2 deleted the handler — until
+# -fasync-exceptions was added below (2026-07-25).
 #
 # Applied to ALL standalone drivers, not just the three that fault today: the invariant
 # is "kmtest drivers get real SEH wherever clang lowers it", which keeps the next
 # SEH-using test from silently inheriting a dead handler.
 #
-# i386 stays dummy-PSEH — its SEH lowering is MSVC-env-only (dummy-pseh-verdict.md §C).
-# Those buckets remain baselined per-arch.
+# i386 gets this too as of 2026-07-25: its SEH lowering is MSVC-env-only, and the msvc
+# retarget is now on for all three arches. See the i386 note below.
 #
 set(KMT_NATIVE_SEH_SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/kmt_native_seh_shims.c)
 
@@ -50,15 +51,60 @@ set(KMT_NATIVE_SEH_SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/kmt_native_seh_shims.c)
 #
 option(KMT_MSVC_ENV "Build kmtest fault-catch drivers with the clang -windows-msvc env (independent conformance oracle)" ON)
 
-# i386 frame-based native SEH via -windows-msvc (SPIKE — default OFF).
-# Unlike amd64/arm64 (table-based SEH lowers in BOTH clang envs), i386's
-# frame-based fs:[0] __try/__except lowers ONLY under -windows-msvc (the gnu
-# target errors "L__ehtable$... can not be undefined"). So on i386, native SEH
-# is inseparable from the msvc-env retarget — hence its own coupled flag. The
-# lone runtime dep is _except_handler3 (in sdk/lib/crt/wine/except_i386.c). Kept
-# OFF by default so the standard i386 conformance build stays DUMMY_PSEH (with
-# its committed baseline) until this is validated end-to-end (link+boot+catch).
-option(KMT_I386_NATIVE_SEH "SPIKE: i386 kmtest drivers get frame-based native SEH via -windows-msvc" OFF)
+# i386 frame-based native SEH via -windows-msvc.
+# Unlike amd64/arm64 (table-based SEH lowers in BOTH clang envs), i386's frame-based
+# fs:[0] __try/__except lowers ONLY under -windows-msvc — the gnu target errors
+# "L__ehtable$... can not be undefined". So on i386, native SEH is inseparable from
+# the msvc-env retarget. _except_handler3 resolves from libpseh.a (i386/seh.s, a real
+# implementation — NOT the dummy.c stub in the same archive; pseh precedes ntoskrnl on
+# the link line, and ntoskrnl also exports one).
+#
+# VALIDATED 2026-07-25 and therefore NO LONGER AN OPTION. It was `option(... OFF)`
+# pending "validated end-to-end (link+boot+catch)"; all three now hold — it links with
+# one shim (_InterlockedAddLargeStatistic, see kmt_native_seh_shims.c), boots, and
+# catches: IoReadWrite went CRASH -> OK 16192 pass (matching arm64's baseline exactly)
+# and RtlExceptionKM CRASH -> OK 33/0.
+#
+# Deliberately NOT left as an option(): option() defers to any value already in
+# CMakeCache.txt, so every EXISTING build-i386 in the fleet would keep OFF while the
+# checked-in conformance baseline assumes ON — i.e. a false regression that depends on
+# how old your build dir is. i386 now follows the same rule as amd64/arm64: native SEH
+# is unconditional, and KMT_MSVC_ENV is the single opt-out for the whole msvc retarget.
+
+# ASYNCHRONOUS (hardware-fault) SEH coverage — the msvc-env retarget and
+# -fasync-exceptions, always together, because neither is any use without the other.
+#
+# Clang's DEFAULT contract is CALLS-ONLY: it assumes no instruction can fault, so a
+# __try whose body contains a faulting *instruction* rather than a *call* gets an
+# EMPTY scope table — and at -O2 the __except block is then deleted outright as
+# unreachable. Measured on our pinned clang 19.1.7 with
+# `__try { *(volatile int*)0 = 1; } __except(1){ return 2; }`:
+#
+#   {x86_64,aarch64,i686}-pc-windows-msvc, no flag  -> handler DELETED; the function
+#                                                      is literally store/xor/ret
+#   ... same + -fasync-exceptions                   -> real handler: __C_specific_handler
+#                                                      + .seh_handlerdata scope table
+#                                                      (x64/arm64), or __except_handler3
+#                                                      + fs:[0] frame chain (i686)
+#   any *-windows-gnu, either way                   -> flag is a NO-OP (unused-argument
+#                                                      warning); in-body faults stay dead
+#
+# A fault in a CALLEE is covered with or without the flag — that is why the existing
+# drivers work at all, since clang refuses to inline into a __try region and the fault
+# therefore lands at a return address inside the scope table. Tests that fault DIRECTLY
+# in the body — RtlException/RtlExceptionKM do `(void)*(volatile CHAR *)NULL` — get no
+# handler without this, which is a dead __except, an unhandled AV, and BUGCHECK 0x1E.
+#
+# The flag does nothing outside -windows-msvc, so it is applied ONLY where we retarget.
+function(kmt_msvc_seh_env _target)
+    if(ARCH STREQUAL "amd64")
+        target_compile_options(${_target} PRIVATE --target=x86_64-pc-windows-msvc -fasync-exceptions)
+    elseif(ARCH STREQUAL "arm64")
+        target_compile_options(${_target} PRIVATE --target=aarch64-pc-windows-msvc -fasync-exceptions)
+    elseif(ARCH STREQUAL "i386")
+        target_compile_options(${_target} PRIVATE --target=i686-pc-windows-msvc -fasync-exceptions)
+    endif()
+endfunction()
 
 function(kmt_enable_native_seh _target)
     if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
@@ -68,17 +114,13 @@ function(kmt_enable_native_seh _target)
         target_sources(${_target} PRIVATE ${KMT_NATIVE_SEH_SHIMS})
         # Retarget to the -windows-msvc env (see the KMT_MSVC_ENV option above).
         if(KMT_MSVC_ENV)
-            if(ARCH STREQUAL "amd64")
-                target_compile_options(${_target} PRIVATE --target=x86_64-pc-windows-msvc)
-            elseif(ARCH STREQUAL "arm64")
-                target_compile_options(${_target} PRIVATE --target=aarch64-pc-windows-msvc)
-            endif()
+            kmt_msvc_seh_env(${_target})
         endif()
-    elseif(ARCH STREQUAL "i386" AND KMT_I386_NATIVE_SEH)
-        # i386 native SEH is coupled to the msvc-env retarget (see KMT_I386_NATIVE_SEH).
+    elseif(ARCH STREQUAL "i386" AND KMT_MSVC_ENV)
+        # i386 native SEH is inseparable from the msvc-env retarget (see the note above).
         target_compile_definitions(${_target} PRIVATE _USE_NATIVE_SEH)
         target_sources(${_target} PRIVATE ${KMT_NATIVE_SEH_SHIMS})
-        target_compile_options(${_target} PRIVATE --target=i686-pc-windows-msvc)
+        kmt_msvc_seh_env(${_target})
     endif()
 endfunction()
 
@@ -224,6 +266,18 @@ set_module_type(kmtest_drv kernelmodedriver)
 # bucket there, baselined per-arch.
 if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
     target_compile_definitions(kmtest_drv PRIVATE _USE_NATIVE_SEH)
+    # kmtest_drv hosts RtlExceptionKM, which faults DIRECTLY in the __try body
+    # ((void)*(volatile CHAR *)NULL). Without the msvc env + -fasync-exceptions that
+    # __except is compiled away entirely and the AV escapes as BUGCHECK 0x1E — which
+    # is exactly the quarantine we carried for it. The 17 standalone helper drivers
+    # already got this via kmt_enable_native_seh; this target never did.
+    if(KMT_MSVC_ENV)
+        kmt_msvc_seh_env(kmtest_drv)
+    endif()
+elseif(ARCH STREQUAL "i386" AND KMT_MSVC_ENV)
+    target_compile_definitions(kmtest_drv PRIVATE _USE_NATIVE_SEH)
+    target_sources(kmtest_drv PRIVATE ${KMT_NATIVE_SEH_SHIMS})
+    kmt_msvc_seh_env(kmtest_drv)
 endif()
 target_link_libraries(kmtest_drv kmtest_printf chkstk memcmp ntoskrnl_vista ${PSEH_LIB})
 add_importlibs(kmtest_drv ntoskrnl hal)
@@ -283,6 +337,15 @@ set_module_type(kmtest win32cui)
 if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
     # Same native-SEH opt-in as kmtest_drv above (user-mode dispatch proven by sehtest)
     target_compile_definitions(kmtest PRIVATE _USE_NATIVE_SEH)
+    # RtlException is the USER-MODE twin of RtlExceptionKM and faults the same way,
+    # in-body — so it needs the same async-exception coverage. It self-crashes
+    # (NO-END exit=128) rather than bugchecking, but the cause is identical.
+    if(KMT_MSVC_ENV)
+        kmt_msvc_seh_env(kmtest)
+    endif()
+elseif(ARCH STREQUAL "i386" AND KMT_MSVC_ENV)
+    target_compile_definitions(kmtest PRIVATE _USE_NATIVE_SEH)
+    kmt_msvc_seh_env(kmtest)
 endif()
 target_link_libraries(kmtest ${PSEH_LIB})
 add_importlibs(kmtest fltlib advapi32 ws2_32 msvcrt kernel32 ntdll)

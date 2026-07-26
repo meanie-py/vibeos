@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .dead_regions import dead_region_spans, in_dead_region
+from .lex_mask import comment_spans, mask_code
+
 
 class CallSealError(RuntimeError):
     pass
@@ -14,6 +17,10 @@ class CallSealError(RuntimeError):
 class SealedCall:
     placeholder: str
     original: str
+    # This call site sits in code the build never executes -- overwhelmingly a
+    # DUMMY_PSEH `RpcExcept` handler. Defaults False so anything not proven dead stays
+    # required. See dead_regions.py.
+    dead: bool = False
 
 
 @dataclass(frozen=True)
@@ -23,6 +30,12 @@ class SealedCalls:
 
 
 _PLACEHOLDER_RE = re.compile(r"\b__RUSTCONV_CALL_[0-9]{4}__\b")
+# Superseded by `macro_authority.function_like_macros`, which derives this set from
+# the real preprocessor instead of remembering it. Kept as a floor for the two cases
+# the preprocessor cannot name: `sizeof` is a KEYWORD, not a macro, and the debug
+# macros are stripped from the body before sealing anyway. Everything else here is a
+# function-like macro the derived set already covers — see that module for why a
+# macro can never satisfy the "exactly once as a called identifier" envelope.
 _EXCLUDED = {
     "TRACE",
     "WARN",
@@ -39,74 +52,16 @@ _PURE_REUSABLE_CALLS = {"strlen", "wcslen"}
 _ANY_SEAL_TOKEN_RE = re.compile(r"\b__RUSTCONV_(?:CALL|FACT)_[0-9]{4}__\b")
 
 
-def _code_mask(text: str) -> str:
-    out = list(text)
-    i = 0
-    while i < len(text):
-        if text.startswith("//", i):
-            end = text.find("\n", i + 2)
-            end = len(text) if end < 0 else end
-            for pos in range(i, end):
-                out[pos] = " "
-            i = end
-        elif text.startswith("/*", i):
-            end = text.find("*/", i + 2)
-            end = len(text) if end < 0 else end + 2
-            for pos in range(i, end):
-                if out[pos] != "\n":
-                    out[pos] = " "
-            i = end
-        elif text[i] in ('"', "'"):
-            quote = text[i]
-            i += 1
-            while i < len(text):
-                if text[i] == "\\":
-                    out[i] = " "
-                    if i + 1 < len(text):
-                        out[i + 1] = " "
-                    i += 2
-                    continue
-                if text[i] == quote:
-                    i += 1
-                    break
-                if out[i] != "\n":
-                    out[i] = " "
-                i += 1
-        else:
-            i += 1
-    return "".join(out)
+# Shared with fact_seal and cpp_com. It masks Rust as well as C++, which the three
+# private copies it replaced did not: each treated `'cleanup:` as an open char
+# literal and blanked the body to the next apostrophe. See `lex_mask`.
+_code_mask = mask_code
 
 
 def scrub_comment_token_echoes(text: str) -> str:
     """Neutralize seal tokens repeated only in model-authored comments."""
     out = list(text)
-    comment = [False] * len(text)
-    i = 0
-    while i < len(text):
-        if text.startswith("//", i):
-            end = text.find("\n", i + 2)
-            end = len(text) if end < 0 else end
-            for pos in range(i, end):
-                comment[pos] = True
-            i = end
-        elif text.startswith("/*", i):
-            end = text.find("*/", i + 2)
-            end = len(text) if end < 0 else end + 2
-            for pos in range(i, end):
-                comment[pos] = True
-            i = end
-        elif text[i] in ('"', "'"):
-            quote = text[i]
-            i += 1
-            while i < len(text):
-                if text[i] == "\\":
-                    i += 2
-                    continue
-                i += 1
-                if text[i - 1] == quote:
-                    break
-        else:
-            i += 1
+    comment = comment_spans(text)
     for match in _ANY_SEAL_TOKEN_RE.finditer(text):
         if all(comment[match.start() : match.end()]):
             out[match.start() : match.end()] = "COMMENT_TOKEN_ECHO".ljust(
@@ -151,9 +106,19 @@ def extern_declaration_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def seal_calls(text: str, required_calls: set[str]) -> SealedCalls:
-    """Replace each known runtime-callee occurrence with a unique token."""
-    required = required_calls - _EXCLUDED
+def seal_calls(
+    text: str,
+    required_calls: set[str],
+    function_like_macros: frozenset[str] = frozenset(),
+) -> SealedCalls:
+    """Replace each known runtime-callee occurrence with a unique token.
+
+    ``function_like_macros`` names every `#define NAME(...)` visible to the TU (see
+    `macro_authority`). Those are excluded: a macro occurrence has no 1:1 Rust call
+    to carry the token, so sealing one makes the envelope unsatisfiable while
+    protecting nothing — the macro's name is not in the output to begin with.
+    """
+    required = required_calls - _EXCLUDED - function_like_macros
     if not required:
         return SealedCalls(text, ())
     masked = _code_mask(text)
@@ -181,31 +146,128 @@ def seal_calls(text: str, required_calls: set[str]) -> SealedCalls:
             continue
         spans.append((match.start(1), match.end(1), name))
 
+    dead_spans = dead_region_spans(text, masked)
     result = text
     calls = []
     for index, (start, end, original) in reversed(list(enumerate(spans))):
         placeholder = f"__RUSTCONV_CALL_{index:04d}__"
-        calls.append(SealedCall(placeholder, original))
+        calls.append(SealedCall(placeholder, original, in_dead_region(dead_spans, start, end)))
         result = result[:start] + placeholder + result[end:]
     calls.reverse()
     return SealedCalls(result, tuple(calls))
+
+
+_GOTO_RE = re.compile(r"\bgoto\s+([A-Za-z_]\w*)\s*;")
+_LABEL_RE = re.compile(r"(?m)^[ \t]*([A-Za-z_]\w*)[ \t]*:(?!:)")
+
+
+def _name_satisfies(token: str, sealed: SealedCalls, replicable: set[str], exec_text: str) -> bool:
+    """Whether a token's own callee NAME, written out in call position, stands in.
+
+    Only inside the `goto` replication region, where occurrence identity is already
+    conceded (see `_replicable_after_goto`). Duplicating the cleanup tail makes the
+    tail's tokens ambiguous, and a model that has just written the same block four
+    times routinely stops threading opaque tokens through it and writes what the
+    callee-context block told it the callee is called:
+
+        HeapFree(GetProcessHeap(), 0, nFileOp.pFrom as *mut c_void)
+
+    That is not a dropped call, which is the only thing `missing` exists to catch —
+    and it is character-for-character what unsealing would have produced anyway, so
+    accepting it changes no output byte. A name the model INVENTED still fails: it
+    would not match `original`. Outside the region, "exactly once" is untouched.
+    """
+    if token not in replicable:
+        return False
+    original = next((call.original for call in sealed.calls if call.placeholder == token), None)
+    if not original:
+        return False
+    return re.search(rf"(?<!fn )\b{re.escape(original)}\s*\(", exec_text) is not None
+
+
+def _replicable_after_goto(sealed: SealedCalls) -> set[str]:
+    """Tokens a structured lowering of C `goto` may legitimately write more than once.
+
+    Rust has no `goto`, so every lowering DUPLICATES code, and how much is not a
+    property the translation is free to choose consistently. Three consecutive paid
+    responses for the same two functions produced three different faithful shapes:
+
+      * the label's tail inlined at each jump site (`SHFileOperationA`, 4 copies);
+      * the same, 3 copies (`SHELL32_FileOperation`);
+      * a nested cascade duplicating the WHOLE remainder per path — which replicates
+        calls that sit nowhere near the label.
+
+    A count-based budget was tried first (`#goto + 1`, tail only) and the third shape
+    walked straight through it. So the rule is positional, not numeric: from the point
+    where duplication can begin — the earlier of the first `goto` and its target label,
+    which also covers the backwards retry-loop idiom — a token may repeat.
+
+    "Exactly once" survives everywhere else, which is most bodies. And this weakens
+    only the DUPLICATE half of the envelope: `missing` still catches a dropped or
+    commented-out call, and `invented` still catches a hallucinated token — that half
+    caught three invented FACT tokens on the very run this was written for.
+
+    Residual risk, stated plainly: inside the replication region this cannot tell "the
+    same call on N distinct exit paths" (correct) from "the same call twice on one
+    path" (a double free). Neither could the old check — it rejected the whole TU
+    either way, and one rejected worker assembles no file at all.
+    """
+    masked = _code_mask(sealed.text)
+    gotos = _GOTO_RE.findall(masked)
+    if not gotos:
+        return set()
+    first = _GOTO_RE.search(masked)
+    assert first is not None
+    start = first.start()
+    targets = set(gotos)
+    for match in _LABEL_RE.finditer(masked):
+        # `case X:` / `default:` / a ternary are not jump targets.
+        if match.group(1) in targets:
+            start = min(start, match.start())
+    # Positions are taken in the SEALED text, where each placeholder is unique; a
+    # pre-seal offset diverges as soon as a token replaces a shorter name.
+    return {
+        call.placeholder for call in sealed.calls if sealed.text.find(call.placeholder) >= start
+    }
 
 
 def call_contract(sealed: SealedCalls) -> str:
     if not sealed.calls:
         return ""
     tokens = ", ".join(call.placeholder for call in sealed.calls)
+    # "Do not duplicate" is a lie when the C body uses `goto`, and the models paid to
+    # obey it acted accordingly: needing the cleanup tail on three paths and forbidden
+    # to repeat a token, they MINTED NEW NUMBERS past the end of the list
+    # (`dde_connect` invented three, `SIC_IconAppend` two). Saying what is actually
+    # true costs nothing and removes the incentive.
+    if _GOTO_RE.search(_code_mask(sealed.text)):
+        rule = (
+            "Preserve EACH token as the called function/method identifier in executable "
+            "Rust. This body uses `goto`, which Rust has no equivalent for, so a faithful "
+            "lowering may need the same call on more than one path: where that happens, "
+            "REPEAT the identical token — repetition is expected here. Never invent a token "
+            "number that is not listed below; the list is complete."
+        )
+    else:
+        rule = (
+            "Preserve EACH token exactly once as the called function/method identifier in "
+            "executable Rust. Do not duplicate one."
+        )
     return (
         "\n## Deterministic call envelope\n"
         "Each identifier below is one opaque runtime callee occurrence owned by rustconv. "
-        "Preserve EACH token exactly once as the called function/method identifier in "
-        "executable Rust. Do not rename, define, merge, duplicate, move into a comment, "
-        "or omit one; rustconv restores the callee names after your response.\n"
+        f"{rule} Do not rename, define, merge, move into a comment, or omit one; rustconv "
+        "restores the callee names after your response.\n"
         f"Call tokens ({len(sealed.calls)}): {tokens}\n"
     )
 
 
-def unseal_calls(rust: str, sealed: SealedCalls) -> str:
+def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | None = None) -> str:
+    """Verify the closed call set and restore the callee names.
+
+    `dead_omissions`, when given, collects `TOKEN=CALLEE` for each sealed call the model
+    omitted that lives only in non-executed code -- accepted, but reported.
+    """
     rust = scrub_comment_token_echoes(rust)
     expected = {call.placeholder for call in sealed.calls}
     masked = _code_mask(rust)
@@ -344,11 +406,32 @@ def unseal_calls(rust: str, sealed: SealedCalls) -> str:
     for a, b in extern_declaration_spans(rust):
         exec_mask[a:b] = " " * (b - a)
     executable = _PLACEHOLDER_RE.findall("".join(exec_mask))
-    missing = sorted(expected - set(executable))
+    replicable = _replicable_after_goto(sealed)
+    exec_text = "".join(exec_mask)
+    absent = {
+        token
+        for token in expected - set(executable)
+        if not _name_satisfies(token, sealed, replicable, exec_text)
+    }
+    # Of what is genuinely absent, call sites the build never ENTERS are permitted to be
+    # absent rather than demanded -- see dead_regions.py. Orthogonal to `_name_satisfies`
+    # above, which concerns a call the model wrote by NAME instead of by token: that one is
+    # present-but-unsealed, this one is legitimately gone. Both are reported, never silent.
+    optional = {call.placeholder for call in sealed.calls if call.dead}
+    omitted_dead = absent & optional
+    if omitted_dead and dead_omissions is not None:
+        dead_omissions.extend(
+            f"{call.placeholder}={call.original}"
+            for call in sealed.calls
+            if call.placeholder in omitted_dead
+        )
+    missing = sorted(absent - optional)
     duplicates = sorted(
         token
         for token in expected
-        if executable.count(token) > 1 and token not in allowed_duplicates
+        if executable.count(token) > 1
+        and token not in allowed_duplicates
+        and token not in replicable
     )
     all_present = _PLACEHOLDER_RE.findall(rust)
     unknown = sorted(set(all_present) - expected)

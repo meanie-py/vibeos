@@ -13,13 +13,17 @@ ExFastMutex
 # DUMMY_PSEH-structural candidate on the ExRaiseHardError path — the test's
 # deliberate fault escapes the dead in-kernel __try. Triage owed; quarantine to
 # un-mask the rest of the i386 sweep.
-#ExHardError
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+ExHardError
 ExInterlocked
 ExPools
 # QUARANTINED 2026-07-12 (i386 sweep 2): BUGCHECK 0x1E (0xc0000005) at
 # ntoskrnl.exe+0x8A7EB (0x8054d7eb). Passes on amd64. i386-only — real-bug-vs-
 # DUMMY_PSEH triage owed (needs live GDB; offline i386 index is symbol-poor).
-#ExResource
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+ExResource
 ExSequencedList
 ExSingleList
 ExUuid
@@ -34,7 +38,9 @@ HalPortIo
 HalSystemInfo
 # QUARANTINED 2026-07-10 (amd64 sweep 1): BUGCHECK 0x1E — RtlRaiseStatus(0xC0000005)
 # from kmtest_drv PC, escapes __try (calls-only native-SEH coverage). Quest doc has triage.
-#IoCreateFile
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+IoCreateFile
 IoDeviceInterface
 IoEvent
 # QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
@@ -55,7 +61,9 @@ KeDeviceQueue
 # QUARANTINED 2026-07-12 (i386 sweep 3): BUGCHECK 0x1E (0xc0000005) at
 # ntoskrnl.exe+0x1F061 (0x804e2061). Passes on amd64. i386-only DPC-path crash;
 # real-bug-vs-DUMMY_PSEH triage owed (live GDB).
-#KeDpc
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+KeDpc
 KeEvent
 KeFloatPointState
 KeGuardedMutex
@@ -63,14 +71,18 @@ KeIrql
 # QUARANTINED 2026-07-12 (i386 sweep 4): BUGCHECK 0x1E but exception 0xC0000191
 # (not the usual 0xC0000005 AV) at ntoskrnl.exe+0x944EF (0x805574ef). Passes on
 # amd64. i386-only; distinct fault type from the AV crashers — triage owed (GDB).
-#KeMutex
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+KeMutex
 KeSpinLock
 KeTimer
 MmMdl
 # QUARANTINED 2026-07-12 (i386 sweep 5): BUGCHECK 0x1E (0xc0000005) at
 # ntoskrnl.exe+0xA0F3B (0x80563f3b). Passes on amd64 (71/13/4). i386-only Mm
 # section-path crash; triage owed (GDB).
-#MmSection
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+MmSection
 # QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode
 # 0x101, P3=tag 'KmRM' — MmAllocateMappingAddress/MmFreeMappingAddress reserved-mapping
 # path (Rust mdlsup.rs). Triage owed; quest doc has details.
@@ -103,10 +115,14 @@ RtlAvlTreeKM
 # PSEH-STRUCTURAL: the test deliberately faults inside __try; mingw native SEH is
 # calls-only (no -fasync-exceptions), hardware faults in the guarded body escape.
 # Expected-fail until async-exceptions story exists; not an OS bug.
-#RtlExceptionKM
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+RtlExceptionKM
 RtlIntSafeKM
 # QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x66868. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
-#RtlIsValidOemCharacter
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+RtlIsValidOemCharacter
 RtlMemoryKM
 RtlRangeList
 RtlRegistryKM
@@ -136,7 +152,9 @@ RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
 # QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x8E3BD. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
-#SeInheritance
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+SeInheritance
 SeLogonSession
 SeQueryInfoToken
 # QUARANTINED 2026-07-11 (amd64 sweep 9): TIMEOUT at 180s — process wedges IN-KERNEL
@@ -145,10 +163,14 @@ SeQueryInfoToken
 # whole rest of the run — must stay quarantined until the hang is triaged.
 #SeTokenFiltering
 # QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x14E4. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
-#ZwAllocateVirtualMemory
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+ZwAllocateVirtualMemory
 ZwCreateSection
 # QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at kmtest_drv.sys+0x5ACF2. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
-#ZwMapViewOfSection
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+ZwMapViewOfSection
 # UN-QUARANTINED 2026-07-24 (§9.123): fixed by the same i386 extable fault-fixup copy as
 # ObSymbolicLink above — the handle-array capture is the identical unprotected-memcpy
 # shape. OK pass=4 fail=0.
@@ -164,7 +186,9 @@ IoDeviceObject
 # `IoReadWrite_drv.sys+0x21E3`, not ntoskrnl+0x14C0 — i.e. the driver's own deliberate
 # fault inside _SEH2_TRY, dead under i386 DUMMY_PSEH. That is task #18 (driver-side
 # frame-based SEH), a different root; do NOT re-triage this as a copy/Mm bug.
-#IoReadWrite
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+IoReadWrite
 # QUARANTINED 2026-07-11 (amd64 sweep 12): BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class,
 # P1=0x401) — MmMapLockedPagesSpecifyCache PTE/PFN accounting in the Rust MDL-map path.
 # Triage owed.
@@ -172,7 +196,9 @@ IoDeviceObject
 # QUARANTINED 2026-07-11 (amd64 sweep 13): BUGCHECK 0x50 PAGE_FAULT_IN_NONPAGED_AREA
 # (read at fffff880045ae040) — NtCreateSection param-capture/validation path
 # (candidate: unprobed SECTION params under DUMMY_PSEH). Triage owed.
-#NtCreateSection
+# UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
+# d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
+NtCreateSection
 NtSystemDebugControl
 PoIrp
 RtlAvlTree

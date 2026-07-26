@@ -1932,3 +1932,137 @@ a `WOW64_CONTEXT`, and the per-thread wow64cpu/FEX state.
 `debug-assertions` — while the C `ASSERT` they came from is live under `-DDBG=1`.
 `usercall.rs:96` asserts `(SegCs & MODE_MASK) != 0`; the boot printed `SegCs=0x0`.
 That assertion, live, would have caught this at its source.
+
+**Phase E15 — 32-bit guests can create THREADS (2026-07-25, task #64).** E14 left
+`NtCreateThread` as a loud `STATUS_NOT_IMPLEMENTED` refusal, which is the right
+place to stop but not a place to stay: essentially every real Win32 binary
+creates a thread, so "runs single-threaded toys" was the honest description of
+the port. This closes it.
+
+*The kernel needed no changes at all, which was worth checking first.*
+`MmCreateTeb` keys the combined TEB64+TEB32 low region off
+`EPROCESS.Wow64Process` — per **thread**, not per first-thread — and amd64's
+`KiSwapContextInternal` re-bases the `KGDT64_R3_CMTEB` descriptor from the
+incoming thread's TEB on every context switch. Both were already right. The
+entire gap was in wow64.dll, which had no per-thread entry: `Wow64LdrpInitialize`
+was process-init and first-thread-init fused into one function, and it kept the
+genuinely per-thread pieces — the CPU area holding the guest register file, the
+run `CONTEXT` — in function-local `static`s. That is exactly one thread's worth
+of storage; a second guest thread would have run on the first one's registers.
+`MmCreateTeb` even carries the comment "Guest stack bounds are set by wow64.dll
+at thread init", i.e. the design had been waiting for this entry all along.
+
+*The marshaller does not marshal the CONTEXT — it reads it.* The 64-bit kernel
+cannot build a 32-bit thread, so widening the guest's five structs would have
+produced a more convincing corpse. What it *can* build is a native thread, so
+`Wow64Manual_NtCreateThread` reads the guest's `CONTEXT32` as the description it
+is (i386 `BaseInitializeContext`: `Eip` = kernel32's `BaseThreadStartupThunk`,
+`Eax` = the thread routine, `Ebx` = its parameter, `Esp` = the guest stack the
+guest already allocated in `BaseCreateStack`), takes the guest stack bounds from
+`INITIAL_TEB32`, and calls `RtlCreateUserThread` with a native start routine
+that establishes the guest side. Two fields must **not** be taken from the guest:
+`BaseInitializeContext` fills in the native i386 GDT selectors (CS `0x18`, DS/ES/SS
+`0x20`, FS `0x38`) because on a real i386 that is what they are, while compat mode
+needs `0x23`/`0x2B`/`0x53`; and it asks for `EFlags` IOPL 3, which user mode cannot
+have. New threads then enter through the guest's **own** `LdrInitializeThunk` (the
+same APC-frame shape the initial thread uses, built on the guest's own stack), so
+`LdrpInitializeThread` runs and the thread gets TLS slots and `DLL_THREAD_ATTACH`.
+Cross-process creation stays refused — it needs the *target's* wow64.dll.
+
+*Four PRE-EXISTING bugs stood between here and a working thread, each sufficient
+on its own.* None were in the new code; all four are the kind that can only exist
+while a capability is missing:
+
+1. **`RtlpThrImageStackReserve` read a PE32 image at native width.** A WoW64
+   process's image is 32-bit, so `SizeOfStackReserve`/`SizeOfStackCommit` are
+   adjacent 4-byte fields where the 64-bit layout has one 8-byte field: the read
+   returned `(commit << 32) | reserve` = **16 TB**, and `ZwAllocateVirtualMemory`
+   rejected it with `STATUS_INVALID_PARAMETER_4`. Every `RtlCreateUserThread` in
+   every WoW64 process failed. Fixed by dispatching on `OptionalHeader.Magic`.
+   (The `.c` is cohab-dead — the live copy is `ntdll-rust/src/rtl/libsupp.rs`.)
+2. **`LdrpProcessInitialized` never left 1.** `LdrpInitializeProcess` does not
+   return in a WoW64 process, so its caller's `_InterlockedIncrement` never ran,
+   and every later thread spun forever in `LdrpInitialize`'s "another thread is
+   still initializing" wait. The symptom was a thread that created and resumed
+   cleanly and then printed **nothing**. Fixed by publishing completion before
+   the handoff.
+3. **`CreateRemoteThread`'s csrss notify.** A WoW64 guest runs with no CSRSS
+   connection at all (`WOW64: Continuing without CSRSS connection` — csrss
+   refuses the 32-bit `CSR_API_CONNECTINFO`), so the notify handed
+   `NtRequestWaitReplyPort` a port that was never connected, the kernel returned
+   `STATUS_INVALID_PARAMETER`, and the cleanup path tore down an otherwise
+   perfectly built thread → `ERROR_INVALID_PARAMETER` from every `CreateThread`.
+   Now tolerated for exactly the case DllMain already documents, and only that
+   case; the real fix remains the deferred CSR-LPC-32 layer.
+4. **`NtWaitForMultipleObjects` was a flat thunk.** Its wait ARRAY is 4-byte
+   handles guest-side against the host's 8-byte ones → `STATUS_INVALID_HANDLE`.
+   It had been sitting in the audit baseline as a *cold* `SCALAR_WIDEN` entry and
+   went live the moment threads existed. Baseline 279 → 278.
+
+*Also:* `NtTerminateThread` is now intercepted so a self-terminating guest thread
+releases its CPU area — the guest's exit path kills the native thread outright,
+so there is no native `DLL_THREAD_DETACH` to hook and the area would leak per
+thread for the life of the process.
+
+*Verification — `thread32.exe`, staged on BOTH arches.* Nine rungs, each chosen
+to fail loudly for one specific missing piece rather than all riding one code
+path: create/join, the thread parameter (`CONTEXT32.Ebx`), the exit code, a
+distinct TID, **TLS** (proves the guest loader's per-thread init ran, not a
+direct jump to the entry), **guest SEH on the new thread** (proves TEB32's
+`NtTib` stack bounds were set — i386 `RtlDispatchException` validates every
+`fs:[0]` record against them and silently skips out-of-stack ones), and **four
+concurrent threads** verified by result and by distinct stacks, yielding between
+rounds so every `Sleep(0)` is a full 32→64→32 mode switch through that thread's
+own CPU area. **amd64: `thread32.exe exit = 0x600d`, all nine rungs, and all 8
+probe guests still green.**
+
+**arm64 is PARTIAL, and that is the finding the coverage was for.** The same
+guest runs through FEX's BTCpu contract (rung 7 skipped via an explicit `noseh`
+argument — the hardware-fault redirect into guest SEH is still owed on arm64,
+pre-existing and unrelated to threading, the same reason `fault32.exe` is
+amd64-only). **Rungs 1-6 PASS**: a 32-bit guest thread is created, runs, joins,
+returns its exit code, has its own TID, and has working TLS — so the per-thread
+entry, the CPU area and the TEB32 stack bounds are all correct on FEX too. Rung
+8 — *four concurrent* guest threads — dies with `0xC0000005` (task #73).
+
+The failure is characterized, not a mystery: all four threads are created and
+resumed, but only **two** reach the `entering guest` print, which sits between
+`BTCpuThreadInit()` and `BTCpuSimulate()`. So two threads fault inside
+`BTCpuThreadInit` itself and the other two inside `BTCpuSimulate`, at two
+repeated PCs inside libwow64fex (`0x7FFFB43F0A50`, `0x7FFFB43F08AC`) plus a
+guest-side AV. That points at FEX's per-thread bring-up under concurrent entry,
+not at stack visibility — our four stacks are distinct and the single-threaded
+case works. amd64's `wow64cpu` has no such issue: its `BTCpuThreadInit` is a
+no-op and its CPU area comes straight from the per-thread TLS slot.
+
+Worth noting before anyone debugs it: **we wire only `BTCpuNotifyMapViewOfSection`
+of FEX's memory-notification contract**, though it also exports
+`BTCpuNotifyMemoryAlloc`/`Free`/`Protect`/`Dirty`. wow64.c's own bootstrap
+comment already says pages created after `BTCpuProcessInit` are not visible to
+FEX until that contract is wired, and a new thread's guest stack is by definition
+allocated late. It is a genuine gap to close either way; it is *not* obviously
+this bug (the first worker thread runs fine on an equally late stack), so close
+the contract on its own merits rather than as a speculative fix.
+
+*The probe stays enabled and red on arm64* — it runs LAST in the arm64 ladder,
+so it costs no coverage (every earlier guest has already reported), and a
+standing red that goes green when fixed is worth more than a silent skip.
+
+*This also closed the arm64 coverage debt E-phase had been carrying:* the amd64
+livecd stages probe guests from `dll/win32/wow64cpu/CMakeLists.txt`, which is
+entirely `if(ARCH STREQUAL "amd64")`, while arm64 stages from
+`qemu/mkramdisk.sh`. The per-thread entry is arch-neutral code whose only other
+exercise is amd64's `wow64cpu`, so staging it on arm64 is the point, not a bonus.
+
+*Durable lessons (field manual, WoW64 section):* "In a WoW64 process the IMAGE is
+a PE32 — native code reading its headers must dispatch on `Magic`" and "An init
+that never returns leaves its caller's completion flag unset — and only thread #2
+notices". Plus an addendum to the live-set triage rule: **"cold" is a property of
+today's capabilities, not of the syscall** — landing a capability re-sorts the
+baseline under you, and the newly-live entries are precisely the ones that
+capability depends on.
+
+*Still owed after E15:* guest **processes** (`CreateProcess` from a guest) and
+cross-process `CreateRemoteThread`, both of which need the CSR-LPC-32 layer;
+`NtCreateThreadEx` (nothing in our i386 kernel32 calls it yet — `CreateThread`
+goes straight to `NtCreateThread`).

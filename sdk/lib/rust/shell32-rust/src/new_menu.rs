@@ -935,7 +935,7 @@ extern "system" {
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
     fn ExtractIconExW(file: LPCWSTR, index: INT, large: *mut HICON, small: *mut HICON, icons: UINT) -> UINT;
     fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
-    fn GetSystemMetrics(index: UINT) -> INT;
+    fn GetSystemMetrics(index: INT) -> INT;
     fn IUnknown_QueryService(object: *mut IUnknown, service: REFGUID, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
     #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
     fn MessageBoxW(owner: HWND, text: LPCWSTR, caption: LPCWSTR, kind: UINT) -> INT;
@@ -962,7 +962,7 @@ extern "system" {
 }
 
 extern "C" {
-    fn HLM_GetIconW(index: UINT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
+    fn HLM_GetIconW(index: INT, destination: LPWSTR, length: DWORD, icon_index: *mut INT) -> BOOL;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
     fn malloc(bytes: usize) -> *mut ();
     fn wcsstr(haystack: LPCWSTR, needle: LPCWSTR) -> LPWSTR;
@@ -2116,9 +2116,9 @@ pub unsafe fn CNewMenu_HandleMenuMsg2_body(this: *mut CNewMenu, uMsg: UINT, wPar
                 // break out of switch
             } else {
                 if ((*lpmis).itemWidth as UINT)
-                    < (GetSystemMetrics(SM_CXMENUCHECK) as UINT)
+                    < (GetSystemMetrics((SM_CXMENUCHECK) as i32) as UINT)
                 {
-                    (*lpmis).itemWidth = GetSystemMetrics(SM_CXMENUCHECK) as UINT;
+                    (*lpmis).itemWidth = GetSystemMetrics((SM_CXMENUCHECK) as i32) as UINT;
                 }
                 if (*lpmis).itemHeight < 16 {
                     (*lpmis).itemHeight = 16;
@@ -2175,15 +2175,15 @@ pub unsafe fn CNewMenu_HandleMenuMsg2_body(this: *mut CNewMenu, uMsg: UINT, wPar
 }
 
 pub unsafe fn CNewMenu_Initialize_body(this: *mut CNewMenu, pidlFolder: PCIDLIST_ABSOLUTE, pdtobj: *mut IDataObject, hkeyProgID: HKEY) -> HRESULT {
-    let cx: i32 = GetSystemMetrics(SM_CXSMICON);
-    let cy: i32 = GetSystemMetrics(SM_CYSMICON);
+    let cx: i32 = GetSystemMetrics((SM_CXSMICON) as i32);
+    let cy: i32 = GetSystemMetrics((SM_CYSMICON) as i32);
     let mut wszIconPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut icon_idx: i32 = 0;
 
     (*this).m_pidlFolder = ILClone(pidlFolder);
 
     if HLM_GetIconW(
-        IDI_SHELL_FOLDER - 1,
+        (IDI_SHELL_FOLDER - 1) as i32,
         wszIconPath.as_mut_ptr(),
         wszIconPath.len() as u32,
         &mut icon_idx,
@@ -2209,7 +2209,7 @@ pub unsafe fn CNewMenu_Initialize_body(this: *mut CNewMenu, pidlFolder: PCIDLIST
     }
 
     if HLM_GetIconW(
-        IDI_SHELL_SHORTCUT - 1,
+        (IDI_SHELL_SHORTCUT - 1) as i32,
         wszIconPath.as_mut_ptr(),
         wszIconPath.len() as u32,
         &mut icon_idx,

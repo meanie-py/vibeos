@@ -126,6 +126,9 @@ NTSTATUS WINAPI NtQueryDirectoryFile(HANDLE File, HANDLE Event, PVOID ApcRoutine
                                      PVOID FileName, BOOLEAN RestartScan);
 NTSTATUS WINAPI NtWaitForSingleObject(HANDLE Object, BOOLEAN Alertable,
                                       PLARGE_INTEGER Timeout);
+NTSTATUS WINAPI NtWaitForMultipleObjects(ULONG Count, HANDLE Objects[],
+                                         ULONG WaitType, BOOLEAN Alertable,
+                                         PLARGE_INTEGER Timeout);
 
 /* M12: the rest of the declared-manual queue. Every one of these was a loud
  * WOW64_MANUAL_UNIMPL stub; a stock app trips them the moment it does anything
@@ -3546,6 +3549,7 @@ static NTSTATUS Wow64Manual_NtOpenThreadTokenEx(ULONG *a)
 #define WOW64_CTX32_SEG_HI      0x98
 #define WOW64_CTX32_INT_LO      0x9C   /* Edi, Esi, Ebx, Edx, Ecx, Eax        */
 #define WOW64_CTX32_INT_HI      0xB0
+#define WOW64_CTX32_EBX         0xA4
 #define WOW64_CTX32_EAX         0xB0
 #define WOW64_CTX32_CTL_LO      0xB4   /* Ebp, Eip, SegCs, EFlags, Esp, SegSs */
 #define WOW64_CTX32_CTL_HI      0xC8
@@ -3711,29 +3715,171 @@ static NTSTATUS Wow64Manual_NtSetContextThread(ULONG *a)
 }
 
 /*
- * NtCreateThread — FAIL LOUD. This is not a marshaller; it is a refusal.
+ * NtWaitForMultipleObjects — the wait ARRAY is 4-byte handles in the guest and
+ * 8-byte on the host, so the flat thunk had the kernel read every handle from
+ * the wrong offset and reject the call with STATUS_INVALID_HANDLE (c0000008).
+ *
+ * It was in the audit baseline as a cold SCALAR_WIDEN entry and became live the
+ * moment 32-bit guests could create threads: WaitForMultipleObjects is how a
+ * threaded app joins its workers (task #64 found it this way). Single-object
+ * waits pass a handle by value and were never affected, which is why nothing
+ * noticed until now.
+ */
+#define WOW64_MAXIMUM_WAIT_OBJECTS 64
+
+static NTSTATUS Wow64Manual_NtWaitForMultipleObjects(ULONG *a)
+{
+    ULONG Count = a[0];
+    const ULONG *Handles32 = (const ULONG *)(ULONG_PTR)a[1];
+    HANDLE Handles64[WOW64_MAXIMUM_WAIT_OBJECTS];
+    ULONG i;
+
+    /* The kernel enforces the same ceiling; matching its status keeps the
+     * guest's error path identical to a native one. */
+    if (Count == 0 || Count > WOW64_MAXIMUM_WAIT_OBJECTS)
+        return (NTSTATUS)0xC00000EFL; /* STATUS_INVALID_PARAMETER_1 */
+    if (!Handles32)
+        return (NTSTATUS)0xC00000F0L; /* STATUS_INVALID_PARAMETER_2 */
+
+    for (i = 0; i < Count; i++)
+        Handles64[i] = (HANDLE)(LONG_PTR)(LONG)Handles32[i];
+
+    return NtWaitForMultipleObjects(Count, Handles64, a[2],
+                                    (BOOLEAN)(a[3] & 0xFF),
+                                    (PLARGE_INTEGER)(ULONG_PTR)a[4]);
+}
+
+/* i386 INITIAL_TEB: five 4-byte pointers — PreviousStackBase,
+ * PreviousStackLimit, StackBase, StackLimit, AllocatedStackBase. */
+#define WOW64_ITEB32_STACKBASE  0x08
+#define WOW64_ITEB32_STACKLIMIT 0x0C
+
+/* wow64.c — #64: creates a NATIVE thread that runs 32-bit guest code, and
+ * establishes the per-thread WoW64 state on it (CPU area, TEB32 NtTib stack
+ * bounds, BTCpuThreadInit) before entering the guest through its own loader. */
+typedef struct _WOW64_CLIENT_ID {
+    HANDLE UniqueProcess;
+    HANDLE UniqueThread;
+} WOW64_CLIENT_ID;
+
+LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
+                            ULONG StackBase, ULONG StackLimit,
+                            BOOLEAN CreateSuspended,
+                            HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId);
+VOID Wow64FreeThreadCpuArea(VOID);
+NTSTATUS WINAPI NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
+VOID WINAPI RtlExitUserThread(NTSTATUS Status);
+
+/*
+ * NtTerminateThread — pass-through, except that a thread terminating ITSELF is
+ * the last moment wow64.dll holds control on it: the kernel call never returns,
+ * and heap memory is not reclaimed by thread exit. Without this, every guest
+ * thread leaks its CPU area (WOW64_CPURESERVED + a WOW64_CONTEXT) for the life
+ * of the process. The guest's own exit path lands here — i386
+ * RtlExitUserThread ends in NtTerminateThread(NULL, status) — and there is no
+ * native DLL_THREAD_DETACH to hook, because that call kills the native thread
+ * outright without running the 64-bit loader's shutdown.
+ */
+static NTSTATUS Wow64Manual_NtTerminateThread(ULONG *a)
+{
+    HANDLE Thread = (HANDLE)(LONG_PTR)(LONG)a[0];
+    NTSTATUS St;
+
+    /* Terminating some OTHER thread: nothing of ours on this one to release,
+     * and we must not touch the target's CPU area from here (it may be mid
+     * mode-switch). Its area is released when it runs its own exit path. */
+    if (Thread && Thread != (HANDLE)(LONG_PTR)-2)
+        return NtTerminateThread(Thread, (NTSTATUS)a[1]);
+
+    /* Safe to free here: we are host-side inside the guest's own syscall, so
+     * the CPU layer is not reading the area, and control never comes back. */
+    Wow64FreeThreadCpuArea();
+    St = NtTerminateThread(Thread, (NTSTATUS)a[1]);
+
+    /* Returned from a self-terminate. The CPU area is gone, so returning into
+     * the dispatcher would have it write the syscall result into freed memory.
+     * Say so and make sure the thread dies instead of limping on. */
+    DbgPrint("[WOW64] NtTerminateThread: self-terminate returned %08lx - forcing "
+             "thread exit (CPU area already released)\n", St);
+    RtlExitUserThread(St);
+    return St;
+}
+
+/*
+ * NtCreateThread — #64: real 32-bit guest thread creation.
  *
  * The flat thunk this replaces returned STATUS_SUCCESS while handing the 64-bit
  * kernel an i386 CONTEXT/INITIAL_TEB/OBJECT_ATTRIBUTES/CLIENT_ID reinterpreted at
- * host width (5 divergent params — see tools/lint-baseline/marshalgen_audit.txt).
- * The kernel then built a thread whose trap frame was effectively zeroed, and the
- * very first user APC to it computed (Rsp=0) - sizeof(UAPC_FRAME) and, before the
- * #67 fix, BUGCHECKed the machine. Observed for real: osk.exe, the ONLY
- * NtCreateThread in a whole amd64 boot, ~400 log lines before the fault.
+ * host width (5 divergent params). The kernel then built a thread whose trap
+ * frame was effectively zeroed, and the very first user APC to it computed
+ * (Rsp=0) - sizeof(UAPC_FRAME) and, before the #67 fix, BUGCHECKed the machine.
+ * Observed for real: osk.exe, the ONLY NtCreateThread in a whole amd64 boot.
  *
- * Marshalling the structs alone would NOT be enough and would re-hide the gap: a
- * new 32-bit guest thread also needs its whole CPU context established the way
- * process startup does, and wow64.dll has no per-thread entry at all (task #64).
- * Until that exists, a clean STATUS_NOT_IMPLEMENTED at the boundary beats a
- * successful call that corrupts a thread — losing a thread beats losing the box.
+ * Marshalling the five structs would NOT have been enough, which is why this
+ * spent a while as a loud refusal: the host kernel cannot build a 32-bit thread
+ * at all. What it CAN build is a native thread, which is what we do — the guest
+ * side of it is then established by wow64.dll's per-thread entry, exactly as
+ * process startup establishes the initial thread.
+ *
+ * So the guest's CONTEXT32 is not marshalled to a host CONTEXT; it is READ as
+ * the description of a guest thread it is:
+ *   Eip = kernel32's BaseThreadStartupThunk, Esp = the guest stack it already
+ *   allocated in BaseCreateStack, Eax = the thread routine, Ebx = its parameter
+ * (kernel32!BaseInitializeContext, i386 branch). INITIAL_TEB32 carries the
+ * guest stack bounds that TEB32's NtTib needs.
  */
-static NTSTATUS Wow64Manual_NtCreateThread(ULONG *Arguments)
+static NTSTATUS Wow64Manual_NtCreateThread(ULONG *a)
 {
-    (void)Arguments;
-    DbgPrint("[WOW64] NtCreateThread: REFUSED - 32-bit guest thread creation is "
-             "unimplemented (no per-thread WoW64 entry; task #64). Returning "
-             "STATUS_NOT_IMPLEMENTED instead of a silently corrupt thread.\n");
-    return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
+    ULONG *Handle32   = (ULONG *)(ULONG_PTR)a[0];
+    ULONG *ClientId32 = (ULONG *)(ULONG_PTR)a[4];
+    PBYTE  Ctx32      = (PBYTE)(ULONG_PTR)a[5];
+    PBYTE  ITeb32     = (PBYTE)(ULONG_PTR)a[6];
+    HANDLE Thread = NULL;
+    WOW64_CLIENT_ID Cid = { NULL, NULL };
+    NTSTATUS St;
+
+    /* Cross-process creation (CreateRemoteThread into a different process)
+     * would need the TARGET's wow64.dll to run the per-thread entry, and there
+     * is no cross-process channel yet (Wow64ProcessPendingCrossProcessItems is
+     * still empty). Refuse rather than create a thread nobody will initialize —
+     * that is the exact shape of the bug this replaced. */
+    if ((HANDLE)(LONG_PTR)(LONG)a[3] != (HANDLE)(LONG_PTR)-1)
+    {
+        DbgPrint("[WOW64] NtCreateThread: REFUSED - cross-process creation "
+                 "(ProcessHandle=%08lx) has no per-thread entry in the target "
+                 "(task #64).\n", a[3]);
+        return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
+    }
+
+    if (!Ctx32 || !ITeb32)
+        return (NTSTATUS)0xC000000D; /* STATUS_INVALID_PARAMETER */
+
+    St = Wow64CreateGuestThread(*(ULONG *)(Ctx32 + WOW64_CTX32_EIP),
+                                *(ULONG *)(Ctx32 + WOW64_CTX32_ESP),
+                                *(ULONG *)(Ctx32 + WOW64_CTX32_EAX),
+                                *(ULONG *)(Ctx32 + WOW64_CTX32_EBX),
+                                *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKBASE),
+                                *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKLIMIT),
+                                (BOOLEAN)(a[7] & 0xFF),
+                                &Thread, &Cid);
+    if (St < 0)
+        return St;
+
+    if (Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Thread;
+    if (ClientId32)
+    {
+        /* CLIENT_ID32: two 4-byte ids, against the host's two 8-byte ones. */
+        ClientId32[0] = (ULONG)(ULONG_PTR)Cid.UniqueProcess;
+        ClientId32[1] = (ULONG)(ULONG_PTR)Cid.UniqueThread;
+    }
+    DbgPrint("[WOW64] NtCreateThread: guest thread tid=%lx eip=%08lx esp=%08lx "
+             "routine=%08lx suspended=%lu\n",
+             (ULONG)(ULONG_PTR)Cid.UniqueThread,
+             *(ULONG *)(Ctx32 + WOW64_CTX32_EIP),
+             *(ULONG *)(Ctx32 + WOW64_CTX32_ESP),
+             *(ULONG *)(Ctx32 + WOW64_CTX32_EAX), a[7] & 0xFF);
+    return St;
 }
 
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
@@ -3911,6 +4057,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64pOpenByCid(NtOpenThread, Arguments);
     if (WOW64_IS("NtCreateThread"))
         return Wow64Manual_NtCreateThread(Arguments);
+    if (WOW64_IS("NtWaitForMultipleObjects"))
+        return Wow64Manual_NtWaitForMultipleObjects(Arguments);
+    if (WOW64_IS("NtTerminateThread"))
+        return Wow64Manual_NtTerminateThread(Arguments);
     if (WOW64_IS("NtUserInitializeClientPfnArrays"))
         return Wow64Manual_NtUserInitializeClientPfnArrays(Arguments);
     if (WOW64_IS("NtOpenProcessTokenEx"))

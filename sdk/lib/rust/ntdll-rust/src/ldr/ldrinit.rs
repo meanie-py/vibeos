@@ -2642,6 +2642,25 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         }
         let Wow64LdrpInitialize: unsafe extern "system" fn(PCONTEXT) =
             core::mem::transmute(Wow64InitAddr);
+
+        /* Publish process-init completion BEFORE handing the thread over.
+         *
+         * Wow64LdrpInitialize never returns — it drives the guest from here —
+         * so our caller's `LdrpInLdrInit = 0` + `_InterlockedIncrement(
+         * &LdrpProcessInitialized)` never run, and LdrpProcessInitialized is
+         * left at 1 forever. Any LATER thread then enters LdrpInitialize's
+         * `while _InterlockedCompareExchange(&LdrpProcessInitialized, 1, 0)
+         * == 1` wait and spins on ZwDelayExecution for the lifetime of the
+         * process, never reaching its start routine. That is invisible while a
+         * WoW64 guest is single-threaded, and it is exactly what made every
+         * created guest thread hang silently (task #64).
+         *
+         * Publishing here is accurate, not a workaround: the 64-bit loader
+         * HAS finished process init at this point (LdrpRunInitializeRoutines
+         * returned just above); all that remains is the handoff itself. */
+        LdrpInLdrInit = 0u8;
+        _InterlockedIncrement(core::ptr::addr_of_mut!(LdrpProcessInitialized));
+
         Wow64LdrpInitialize(Context);
         DbgPrint(b"[LDR] WoW64: Wow64LdrpInitialize RETURNED\n\0".as_ptr() as *const i8);
         return STATUS_INVALID_IMAGE_FORMAT;

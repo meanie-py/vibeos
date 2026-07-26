@@ -78,6 +78,61 @@ BUF_OUT = "BUF_OUT"  # `unsigned char *` / `char *` — written through
 WSTR_IN = "WSTR_IN"
 WBUF_OUT = "WBUF_OUT"
 VOID = "VOID"  # C `(void)`, which the scanner reports as one parameter
+#: A scalar written THROUGH a pointer: `int *` / `size_t *`, non-const. The whole `_s`
+#: family reports its result this way — `_mbccpy_s(dst, n, &copied, src)` returns only an
+#: errno_t, and *`copied`* is the answer. Grading the return alone would compare two
+#: `EINVAL`s and call it parity while the byte counts disagreed, which is why these were
+#: worth a kind rather than a refusal: the `_s` variants carry the richest error contracts
+#: in the CRT (EINVAL vs ERANGE vs success-with-truncation) and each contract is only
+#: observable in the out-scalar.
+INT_OUT = "INT_OUT"  # `int *`, `unsigned *`, `long *` — written through
+SIZE_OUT = "SIZE_OUT"  # `size_t *` — written through
+#: A `wint_t` return. MSVC's is 16-bit (so `WEOF == 0xFFFF`) where glibc's is 32-bit;
+#: the refstub pins the MSVC spelling, so the extern must say `u16` or the two sides
+#: disagree about how much of the register is the answer — the UCHAR lesson again.
+WINT = "WINT"
+#: `mbstate_t *` — the restartable conversions' partial-character state. IN-OUT, which is
+#: why it cannot reuse INT_OUT even though msvcrt types it `int`: a sentinel seed would
+#: feed the conversion a garbage *input* state. It is seeded from a swept set of real
+#: initial states and compared afterwards.
+MBSTATE = "MBSTATE"
+#: `char **` / `unsigned char **` — an IN-OUT CURSOR the callee advances through a string.
+#: `_mbstok_s(str, delim, ctx, locale)` keeps its tokenizer position in `*ctx`; `mbsrtowcs(
+#: wcstr, pmbstr, count, state)` reports how far it consumed by writing `*pmbstr`.
+#:
+#: It cannot be one shared cell handed to both sides, and it cannot be compared as a
+#: pointer. Each side walks its OWN copy of the string, so the two raw pointers are always
+#: different and always will be — the comparison is the OFFSET each ended up at, exactly as
+#: `_returns_interior_pointer` already does for a returned interior pointer. Handing both
+#: sides one cell would be worse than useless: the reference would resume from wherever the
+#: subject left off and agree with it by construction.
+#:
+#: Split by the constness of the POINTED-TO characters, which is the one signal that says
+#: whether the cursor's string is the subject of the call or merely its input:
+#:   * `unsigned char **` — `_mbstok_s` tokenizes the buffer IN PLACE, overwriting delimiters
+#:     with NULs (`*(*ctx)++ = 0`). The buffer is the subject and must be seeded, and its
+#:     CONTENTS have to be compared afterwards or a wrongly-placed NUL goes unnoticed.
+#:   * `const char **` — `mbsrtowcs` only reads through it; the output goes to a separate
+#:     wide sink. Nothing to seed, nothing extra to compare beyond where it stopped.
+#: Their Rust spellings differ too (`*mut *mut u8` vs `*mut *const u8`), and the extern
+#: block has to match the shipping definition or the two disagree about the argument.
+STRCUR = "STRCUR"  # `unsigned char **` — cursor into a buffer the callee rewrites
+STRCUR_IN = "STRCUR_IN"  # `const char **` — cursor into a source the callee only reads
+#: A RETURN that points into the CRT's own state rather than into anything the case
+#: supplied — msvcrt's `__p_*` family (`__p__mbctype`, `__p___mb_cur_max`, `__p__fmode`,
+#: `__p__daylight`, … a dozen of them across the DLL). They take no arguments at all, so
+#: `_returns_interior_pointer`'s "offset from the input base" has no base to work from,
+#: and that is what refused them: there IS no input.
+#:
+#: Each side reads its own fixture slot, so the two addresses differ by construction and
+#: always will. Compare what they point AT. Two shapes, split by pointee:
+#:   * a scalar cell (`int *`) — dereference and compare.
+#:   * a table (`unsigned char *`) — compare the bytes, with the length asked of C by
+#:     `sizeof` on the mirrored struct field. Never transcribe that length: too small and
+#:     the tail of the table is silently never compared, too large and the read runs off
+#:     the struct. Both failures are invisible in the verdict.
+STATE_INT = "STATE_INT"  # `int *` / `unsigned *` / `long *` into CRT state
+STATE_TABLE = "STATE_TABLE"  # `unsigned char *` into a CRT state table
 
 _INT_SCALARS = {"int", "unsigned int", "unsigned", "long", "unsigned long"}
 _SIZE_SCALARS = {"size_t", "unsigned __int64", "__int64"}
@@ -85,9 +140,27 @@ _NARROW_CHAR = {"unsigned char", "char"}
 _WIDE_CHAR = {"wchar_t", "unsigned short"}
 
 #: Kinds a generated case knows how to SUPPLY. A parameter outside this set is a refusal.
-SUPPLIABLE = frozenset({CHAR, UCHAR, SIZE, LOCALE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT})
+SUPPLIABLE = frozenset(
+    {
+        CHAR,
+        UCHAR,
+        SIZE,
+        LOCALE,
+        STR_IN,
+        BUF_OUT,
+        WSTR_IN,
+        WBUF_OUT,
+        INT_OUT,
+        SIZE_OUT,
+        MBSTATE,
+        STRCUR,
+        STRCUR_IN,
+    }
+)
 #: Kinds a generated case knows how to COMPARE as a return value.
-COMPARABLE = frozenset({CHAR, UCHAR, SIZE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT, VOID})
+COMPARABLE = frozenset(
+    {CHAR, UCHAR, SIZE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT, VOID, WINT, STATE_INT, STATE_TABLE}
+)
 
 #: `#if` guards that make the host reference a different function from the target's.
 #: The reference TU is compiled for the host (x86_64 linux), so a `_WIN64` arm is graded on
@@ -149,6 +222,16 @@ SIGN_ONLY_ROOTS = frozenset(
 #: invalidates the fixture for every case that follows it in the same process.
 STATE_MUTATORS = frozenset({"create_mbcinfo", "free_mbcinfo", "_lock", "_unlock", "malloc", "free"})
 
+#: Refused here, but graded SOMEWHERE — so the refusal list points at it instead of telling
+#: the next reader to write a case that already exists.
+#:
+#: `create_mbcinfo` earns its own binary rather than a note. It builds the very fixture the
+#: generated cases are pinned against, and `mbcs_fixture_install` builds that fixture from
+#: the REFERENCE's copy for BOTH sides — so no generated case can ever run the subject's,
+#: and a wrong one would pass all 173 of them. Its own process, so calling it cannot
+#: disturb the fixture the other binary depends on. It found a divergence on its first run.
+GRADED_ELSEWHERE = {"create_mbcinfo": "tests/mbcs_state.rs, in its own process"}
+
 TIER_PURE = "pure"  # host-only: reads the pinned fixture, calls nothing else
 TIER_NLS = "nls-replay"  # needs the recorded Win32 NLS answers
 
@@ -181,6 +264,8 @@ def classify_type(c_type: str) -> str:
     if stars == 0:
         if base == "void":
             return VOID
+        if base == "wint_t":
+            return WINT
         if base in _SIZE_SCALARS:
             return SIZE
         if base == "_locale_t":
@@ -194,6 +279,25 @@ def classify_type(c_type: str) -> str:
         return STR_IN if is_const else BUF_OUT
     if stars == 1 and base in _WIDE_CHAR | {"wchar_t"}:
         return WSTR_IN if is_const else WBUF_OUT
+    if stars == 1 and base == "mbstate_t":
+        # BEFORE the _INT_SCALARS arm below would ever see it. msvcrt types mbstate_t as
+        # `int`, so resolving the typedef first would classify it INT_OUT and seed it with
+        # the not-written sentinel — handing the conversion a garbage partial-character
+        # state and grading whatever fell out.
+        return MBSTATE
+    if stars == 1 and not is_const and base in _SIZE_SCALARS:
+        return SIZE_OUT
+    if stars == 2 and base in _NARROW_CHAR:
+        # The const sits on the CHARACTERS, not on the cell — both forms are written
+        # through. What it distinguishes is whether the cursor's string is the SUBJECT of
+        # the call (`_mbstok_s` rewrites it) or merely its input (`mbsrtowcs` reads it).
+        return STRCUR_IN if is_const else STRCUR
+    if stars == 1 and not is_const and base in _INT_SCALARS:
+        # `const int *` deliberately falls through to a refusal: an INPUT array of ints is
+        # a different thing from a written-through result cell, and guessing which one a
+        # signature means is how a harness ends up supplying a 1-element array to a
+        # function that wanted 40.
+        return INT_OUT
     if stars == 1 and base == "_locale_t":
         # `_locale_t` is ALREADY a pointer; a starred one is a genuine `_locale_t *`.
         return f"?:{text}"
@@ -260,6 +364,21 @@ class Case:
     @property
     def out_buffers(self) -> tuple[int, ...]:
         return tuple(i for i, k in enumerate(self.param_kinds) if k in (BUF_OUT, WBUF_OUT))
+
+    @property
+    def out_scalars(self) -> tuple[int, ...]:
+        """Written-through cells to compare after the call. For the `_s` family these carry
+        the ANSWER — grading only the returned errno_t would call two `EINVAL`s parity while
+        the counts they wrote disagreed. `mbstate_t` is here too: it is an in-out, and the
+        state left behind is the whole point of a restartable conversion."""
+        return tuple(i for i, k in enumerate(self.param_kinds) if k in (INT_OUT, SIZE_OUT, MBSTATE))
+
+    @property
+    def cursors(self) -> tuple[int, ...]:
+        """Cursor cells to compare by OFFSET after the call — never by value. Each side
+        walks its own copy of the string, so the raw pointers differ by construction and an
+        equality test would report a divergence on every single iteration."""
+        return tuple(i for i, k in enumerate(self.param_kinds) if k in (STRCUR, STRCUR_IN))
 
 
 @dataclass
@@ -343,7 +462,9 @@ def plan_file(scan: ScanResult, module: str) -> Plan:
             # far worse than not grading it, because the corruption reports as a DIVERGENCE
             # in an innocent function. `_setmbcp` is the one that matters; grade it on its
             # own, in its own process, by hand.
-            plan.refusals.append(Refusal(fn.name, "mutates the pinned MBCS state"))
+            plan.refusals.append(
+                Refusal(fn.name, "mutates the pinned MBCS state", GRADED_ELSEWHERE.get(fn.name, ""))
+            )
             continue
 
         kinds = [classify_type(t) for t, _ in fn.params]
@@ -358,6 +479,17 @@ def plan_file(scan: ScanResult, module: str) -> Plan:
             plan.refusals.append(Refusal(fn.name, "unsupported parameter", ", ".join(bad)))
             continue
         ret = classify_type(fn.return_type)
+        # A pointer returned by a function that takes NO arguments cannot point into
+        # anything the case supplied — there is nothing to supply. It points into the CRT's
+        # own state, which both sides have their own copy of, so the answer is the contents
+        # rather than the address. Reclassifying here rather than in classify_type keeps
+        # that inference where the whole signature is visible: the identical `int *` as a
+        # PARAMETER is an out-scalar and must stay one.
+        if not kinds:
+            if ret in (INT_OUT, SIZE_OUT):
+                ret = STATE_INT
+            elif ret == BUF_OUT:
+                ret = STATE_TABLE
         if ret not in COMPARABLE:
             plan.refusals.append(Refusal(fn.name, "unsupported return", ret))
             continue
@@ -415,6 +547,14 @@ _RUST_TY = {
     BUF_OUT: "*mut u8",
     WSTR_IN: "*const u16",
     WBUF_OUT: "*mut u16",
+    INT_OUT: "*mut i32",
+    SIZE_OUT: "*mut usize",
+    MBSTATE: "*mut i32",
+    STRCUR: "*mut *mut u8",
+    STRCUR_IN: "*mut *const u8",
+    STATE_INT: "*mut i32",
+    STATE_TABLE: "*mut u8",
+    WINT: "u16",
     VOID: "()",
 }
 
@@ -432,7 +572,9 @@ _PROLOGUE = """//! GENERATED by `rustconv difftest-gen` from `{c_path}` — do n
 //! hand-written case, not one that is known good.
 #![allow(non_snake_case)]
 
-use crate::fixture::{{Corpus, Guarded, CODEPAGES, LOCALES, MbcsFixture}};
+use crate::fixture::{{
+    state_table_same, Corpus, Guarded, CODEPAGES, LOCALES, MBSTATES, MbcsFixture,
+}};
 
 extern "C" {{
 """
@@ -564,8 +706,22 @@ def mutates_in_place(kinds: Sequence[str]) -> bool:
     What separates them is whether the function has a source string to read FROM. If it
     does, the buffer is a destination; if it does not, the buffer is the input and has to
     be seeded.
+
+    A narrow CURSOR overrides that reading. `_mbstok_s(str, delim, ctx, locale)` has a
+    `const unsigned char *` — so the rule above calls `str` a destination and hands it a
+    blank buffer — but `delim` is a delimiter SET, not a source to copy from, and `str` is
+    the string being tokenized in place. Blank, both sides tokenize an empty string,
+    return NULL, agree, and the case grades nothing while reporting a pass. A function
+    that keeps a cursor into a mutable buffer is operating ON that buffer, by definition.
     """
-    return (BUF_OUT in kinds or WBUF_OUT in kinds) and not (STR_IN in kinds or WSTR_IN in kinds)
+    if STRCUR in kinds and BUF_OUT in kinds:
+        return True
+    # A read-only cursor IS a source string — it is how `mbsrtowcs(wcstr, pmbstr, …)` names
+    # the thing it converts FROM. Without it here the rule sees a lone `wchar_t *` with
+    # nothing to read, calls the wide sink an in-place subject, and seeds it: stale content
+    # in a destination is exactly what masks a short write.
+    has_source = STR_IN in kinds or WSTR_IN in kinds or STRCUR_IN in kinds
+    return (BUF_OUT in kinds or WBUF_OUT in kinds) and not has_source
 
 
 def _bind(name: str, kind: str, exhaustive: bool, seeded: bool = False) -> _Bind:
@@ -614,6 +770,37 @@ def _bind(name: str, kind: str, exhaustive: bool, seeded: bool = False) -> _Bind
         # wchar-sized write and overrun it by 2x.
         acc = "wptr" if kind == WBUF_OUT else "ptr"
         return _Bind(None, f"{name}_s.{acc}()", f"{name}_r.{acc}()", "", setup=setup)
+    if kind in (INT_OUT, SIZE_OUT):
+        # Seeded with a SENTINEL, not zero. A function that fails to write its out-scalar
+        # and one that writes 0 are different behaviours, and zero-initialising makes them
+        # indistinguishable — both sides would "agree" on a value neither produced. The
+        # sentinel is odd and huge so it cannot be a plausible count or errno.
+        ty = "usize" if kind == SIZE_OUT else "i32"
+        sen = "0x5A5A_5A5A_5A5A_5A5Ausize" if kind == SIZE_OUT else "0x5A5A_5A5Ai32"
+        # Declared per-iteration inside the innermost loop for the same reason the out
+        # buffers are: a cell hoisted out keeps the previous iteration's value, so a
+        # skipped write silently inherits an answer that happens to be right.
+        setup = f"let (mut {name}_s, mut {name}_r): ({ty}, {ty}) = ({sen}, {sen});"
+        return _Bind(None, f"&mut {name}_s", f"&mut {name}_r", "", setup=setup)
+    if kind == MBSTATE:
+        # SWEPT, not just zeroed. Zero is the initial conversion state, and seeding only
+        # zero leaves the entire resume-a-partial-character path unreachable — which is the
+        # half of a restartable conversion that has any state to get wrong. MBSTATES also
+        # carries a lead byte, so `mbrtowc` is actually asked to finish a character.
+        # Each side gets its own cell: the call writes back through it.
+        return _Bind(
+            f"for {name}0 in MBSTATES {{",
+            f"&mut {name}_s",
+            f"&mut {name}_r",
+            f"{name}={{{name}0:#x}}",
+            setup=f"let (mut {name}_s, mut {name}_r): (i32, i32) = ({name}0, {name}0);",
+        )
+    if kind in (STRCUR, STRCUR_IN):
+        # Placeholder. A cursor binds to a SIBLING parameter — the buffer it walks, and the
+        # base its offset is measured from — and `_bind` is handed one parameter at a time
+        # with no view of the rest. emit_case rewrites every one of these entries; nothing
+        # downstream ever sees this value.
+        return _Bind(None, "", "", "")
     raise ValueError(f"no binding for kind {kind}")  # pragma: no cover - planner refuses first
 
 
@@ -635,6 +822,27 @@ def _verdict(case: Case, ctx: str) -> list[str]:
             "let w = if want.is_null() { -1 } else { want as isize - ref_base as isize };",
             "if g != w {",
             f'    panic!("{case.name}: returned offset {{g}} vs ref {{w}} — {ctx}");',
+            "}",
+        ]
+    if case.return_kind in (STATE_INT, STATE_TABLE):
+        # Both sides read their OWN fixture slot, so the addresses differ by construction —
+        # the contents are the answer. NULL-ness is compared first and separately: two NULLs
+        # are a legitimate match, but dereferencing to "compare" them would be a fault, and
+        # treating one NULL as equal to a zeroed cell would grade a missing accessor as a
+        # working one.
+        deref = (
+            "unsafe { *got } != unsafe { *want }"
+            if case.return_kind == STATE_INT
+            else f'!unsafe {{ state_table_same("{case.name}", got, want) }}'
+        )
+        return [
+            "if got.is_null() != want.is_null() {",
+            f'    panic!("{case.name}: returned {{}} vs ref {{}} — {ctx}",',
+            '           if got.is_null() { "NULL" } else { "non-NULL" },',
+            '           if want.is_null() { "NULL" } else { "non-NULL" });',
+            "}",
+            f"if !got.is_null() && {deref} {{",
+            f'    panic!("{case.name}: state behind the returned pointer differs — {ctx}");',
             "}",
         ]
     if case.sign_only:
@@ -683,6 +891,38 @@ def emit_case(case: Case) -> str:
             f"{base}_r.as_ptr().add({cur}_at)",
             f"{cur}=+{{{cur}_at}}",
         )
+    # A cursor cell, and the base each side measures its cursor against. STRCUR aims at the
+    # mutable buffer the call rewrites; STRCUR_IN owns its own corpus string, because the
+    # only other string in those signatures is the WIDE sink the conversion writes to.
+    cur_bases: dict[int, tuple[str, str]] = {}
+    for i, k in enumerate(case.param_kinds):
+        if k not in (STRCUR, STRCUR_IN):
+            continue
+        n = case.param_names[i]
+        if k == STRCUR:
+            j = next((x for x, kk in enumerate(case.param_kinds) if kk == BUF_OUT), None)
+            if j is None:  # pragma: no cover - planner refuses first
+                raise ValueError(f"{case.name}: {n} is a cursor with no buffer to walk")
+            b = case.param_names[j]
+            sub, ref = f"{b}_s.ptr()", f"{b}_r.ptr()"
+            binds[i] = _Bind(
+                None,
+                f"&mut {n}_s",
+                f"&mut {n}_r",
+                "",
+                setup=f"let (mut {n}_s, mut {n}_r) = ({sub}, {ref});",
+            )
+        else:
+            sub, ref = f"{n}_str_s.as_ptr()", f"{n}_str_r.as_ptr()"
+            binds[i] = _Bind(
+                f"for ({n}_str_s, {n}_str_r) in corpus.pairs() {{",
+                f"&mut {n}_s",
+                f"&mut {n}_r",
+                f"{n}={{{n}_str_s:?}}",
+                setup=f"let (mut {n}_s, mut {n}_r) = ({sub}, {ref});",
+            )
+        cur_bases[i] = (sub, ref)
+
     loops = [b.loop for b in binds if b.loop]
     if seeded:
         # The seed loop is OUTERMOST of the value loops, so every other parameter is
@@ -740,6 +980,31 @@ def emit_case(case: Case) -> str:
         # is used only on failure.
         out.append(f"{pad}if !Guarded::same(&{n}_s, &{n}_r) {{")
         out.append(f'{pad}    panic!("{case.name}: {n} differs — {ctx}");')
+        out.append(pad + "}")
+    for i in case.out_scalars:
+        n = case.param_names[i]
+        out.append(f"{pad}if {n}_s != {n}_r {{")
+        out.append(f'{pad}    panic!("{case.name}: {n} = {{{n}_s}} vs ref {{{n}_r}} — {ctx}");')
+        out.append(pad + "}")
+    for i in case.cursors:
+        n = case.param_names[i]
+        sub, ref = cur_bases[i]
+        # By OFFSET, and NULL is its own answer rather than offset 0: `mbsrtowcs` writes
+        # NULL through the cursor to mean "consumed to the terminator" and a real position
+        # to mean "stopped here", and collapsing the two would grade those as the same
+        # outcome. -1 is unreachable as an offset, so it can stand for NULL.
+        out.append(f"{pad}let ({n}_go, {n}_wo) = (")
+        out.append(
+            f"{pad}    if {n}_s.is_null() {{ -1 }} else {{ {n}_s as isize - {sub} as isize }},"
+        )
+        out.append(
+            f"{pad}    if {n}_r.is_null() {{ -1 }} else {{ {n}_r as isize - {ref} as isize }},"
+        )
+        out.append(f"{pad});")
+        out.append(f"{pad}if {n}_go != {n}_wo {{")
+        out.append(
+            f'{pad}    panic!("{case.name}: {n} at offset {{{n}_go}} vs ref {{{n}_wo}} — {ctx}");'
+        )
         out.append(pad + "}")
     for _ in loops:
         depth -= 1

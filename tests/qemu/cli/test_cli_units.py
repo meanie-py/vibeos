@@ -2461,6 +2461,20 @@ def _tooling_once_stub(ok: bool):
     return stub
 
 
+def _difftest_once_stub(ok: bool):
+    """Stand-in for gate._difftest_once (which shells `vibeos-cli difftest`)."""
+
+    def stub(repo, root):
+        return {
+            "ok": ok,
+            "seconds": 0.01,
+            "salient": "" if ok else "RtlFoo fields a=1",
+            "exit": 0 if ok else 1,
+        }
+
+    return stub
+
+
 def test_gate_lint_failure_blocks_stamp_but_smokes_run(tmp_path, monkeypatch):
     """A NEW lint finding fails the gate and blocks the push stamp; smokes still
     run so the matrix stays informative (the landed T3 policy)."""
@@ -2468,6 +2482,7 @@ def test_gate_lint_failure_blocks_stamp_but_smokes_run(tmp_path, monkeypatch):
     seen: list = []
     monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok(seen))
     monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=False))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
@@ -2483,6 +2498,7 @@ def test_gate_lint_pass_proceeds_and_stamps(tmp_path, monkeypatch):
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
@@ -2504,11 +2520,34 @@ def test_gate_tooling_failure_blocks_stamp(tmp_path, monkeypatch):
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=False))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
     assert rc == 1, "a python tooling regression must fail the gate"
     assert not stamped, "no push stamp when check-tooling is red"
+    assert fake.calls, "smokes still run so the matrix stays informative"
+
+
+def test_gate_difftest_failure_blocks_stamp(tmp_path, monkeypatch):
+    """A rust-vs-C divergence fails the gate and blocks the push stamp.
+
+    Same hole check-tooling had, one layer down: the difftests were reachable
+    only by typing `cargo test` in a crate dir, so `rtl-difftest` sat 2/87 red
+    on master with nothing between the author and the stamp ever running it.
+    One of those two was a real divergence in eleven `Rtl*String` converters.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=False))
+    stamped: list = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
+    assert rc == 1, "a rust-vs-C divergence must fail the gate"
+    assert not stamped, "no push stamp when a difftest is red"
     assert fake.calls, "smokes still run so the matrix stays informative"
 
 
@@ -2519,12 +2558,15 @@ def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
     called: list = []
     tooled: list = []
+    diffed: list = []
     monkeypatch.setattr(gate_mod, "_lint_once", lambda *a, **k: called.append(1))
     monkeypatch.setattr(gate_mod, "_tooling_once", lambda *a, **k: tooled.append(1))
+    monkeypatch.setattr(gate_mod, "_difftest_once", lambda *a, **k: diffed.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=True), tmp_path)
     assert rc == 0
     assert not called, "--no-lint must not invoke the lint subprocess"
     assert not tooled, "--no-lint must not invoke check-tooling either"
+    assert not diffed, "--no-lint must not invoke the difftests either"
 
 
 # --- check --update-baseline: per-tool scoping (T2 item 1b) -----------------
@@ -4123,6 +4165,131 @@ def test_build_incomplete_does_not_reject_a_lane():
     from . import queue as queue_mod
 
     assert "BUILD_INCOMPLETE" in queue_mod.INCONCLUSIVE
-    # ...while genuinely conclusive reds still reject.
-    for conclusive in ("BUILD_FAIL", "LINT_FAIL", "TOOLING_FAIL"):
+    # ...while genuinely conclusive reds still reject. DIFFTEST_FAIL belongs here:
+    # a rust-vs-C divergence is deterministic and reproduces off any host, so it
+    # is evidence about the submission, not about the fleet.
+    for conclusive in ("BUILD_FAIL", "LINT_FAIL", "TOOLING_FAIL", "DIFFTEST_FAIL"):
         assert conclusive not in queue_mod.INCONCLUSIVE
+
+
+# --- vibeos-cli difftest: the host rust-vs-C harnesses ----------------------
+
+
+def test_difftest_discovers_crates_from_the_workspace(tmp_path: Path):
+    """Membership comes from the manifest, never a hardcoded list — a list is how
+    a harness goes missing when someone adds one."""
+    from . import difftest as difftest_mod
+
+    ws = tmp_path / "sdk" / "lib" / "rust"
+    ws.mkdir(parents=True)
+    (ws / "Cargo.toml").write_text(
+        '[workspace]\nmembers = [\n  "cnt-rust",\n  "cnt-difftest",\n'
+        '  "msvcrt-difftest",\n  "rtl-difftest",\n  "ntdll-sys",\n]\n'
+    )
+    assert difftest_mod.discover(tmp_path) == ["cnt-difftest", "msvcrt-difftest", "rtl-difftest"]
+
+
+def test_difftest_discovers_a_newly_added_harness(tmp_path: Path):
+    """The whole point of discovery: a crate nobody told the CLI about is covered
+    the moment it joins the workspace."""
+    from . import difftest as difftest_mod
+
+    ws = tmp_path / "sdk" / "lib" / "rust"
+    ws.mkdir(parents=True)
+    (ws / "Cargo.toml").write_text('[workspace]\nmembers = ["shell32-difftest", "cnt-rust"]\n')
+    assert difftest_mod.discover(tmp_path) == ["shell32-difftest"]
+
+
+def test_difftest_counts_cases_across_harness_dialects():
+    """Each crate reports its count differently; the gate needs one number."""
+    from . import difftest as difftest_mod
+
+    assert difftest_mod.graded("difftest result: ok. 81 passed; 0 failed") == 81
+    assert difftest_mod.graded("  160 mbcs cases passed") == 160
+    assert difftest_mod.graded("test result: ok. 87 passed; 0 failed; 0 ignored") == 87
+
+
+def test_difftest_a_harness_that_graded_nothing_is_a_FAILURE(tmp_path, monkeypatch):
+    """cargo exits 0 for a suite that compared nothing, and every crate emits
+    `test result: ok. 0 passed` for its empty lib/doc-test targets. Trusting the
+    exit code alone would report green over a harness whose cases all vanished —
+    the vacuous pass, which is worse than no harness because green stops anyone
+    looking again."""
+    from types import SimpleNamespace
+
+    from . import artifacts
+    from . import difftest as difftest_mod
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    run = artifacts.Run("difftest", "host")
+    monkeypatch.setattr(
+        run,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=0, stdout="test result: ok. 0 passed; 0 failed", stderr=""
+        ),
+    )
+    assert difftest_mod.run_difftests(tmp_path, run, ["cnt-difftest"]) is False
+    assert run.stages[0].status == "fail"
+    assert "NOTHING" in run.stages[0].detail
+
+
+def test_difftest_a_real_harness_run_is_green(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from . import artifacts
+    from . import difftest as difftest_mod
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    run = artifacts.Run("difftest", "host")
+    monkeypatch.setattr(
+        run,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=0, stdout="difftest result: ok. 81 passed; 0 failed", stderr=""
+        ),
+    )
+    assert difftest_mod.run_difftests(tmp_path, run, ["cnt-difftest"]) is True
+    assert run.stages[0].detail == "81 cases"
+
+
+def test_difftest_runs_one_cargo_invocation_per_crate(tmp_path, monkeypatch):
+    """NOT one `cargo test -p a -p b`. cnt-difftest pulls cnt-rust with the `cabi`
+    feature and msvcrt-difftest deliberately does not; unified into one build,
+    cnt-rust's 208 #[no_mangle] shims collide with msvcrt-crt-rust's wrappers
+    (`duplicate symbol: mbtowc`) and nothing links."""
+    from types import SimpleNamespace
+
+    from . import artifacts
+    from . import difftest as difftest_mod
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    run = artifacts.Run("difftest", "host")
+    seen: list[list[str]] = []
+
+    def _spy(cmd, **kw):
+        seen.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="difftest result: ok. 3 passed", stderr="")
+
+    monkeypatch.setattr(run, "run", _spy)
+    difftest_mod.run_difftests(tmp_path, run, ["cnt-difftest", "msvcrt-difftest"])
+    assert len(seen) == 2, "each harness gets its own cargo invocation"
+    for cmd in seen:
+        assert cmd.count("-p") == 1, f"one crate per invocation, got {cmd}"
+
+
+def test_difftest_salient_keeps_the_assertion_not_the_linker_line():
+    """A failed harness must surface the two values that disagreed."""
+    from . import difftest as difftest_mod
+
+    out = (
+        "     Running tests/diff.rs\n"
+        "test diff_rtl_uni_to_str ... FAILED\n"
+        "thread 'diff_rtl_uni_to_str' panicked at rtl-difftest/tests/diff.rs:901:17:\n"
+        "assertion `left == right` failed: RtlUnicodeStringToAnsiString fields a=1\n"
+        "  left: (6, 7, false)\n"
+        "  right: (6, 7, true)\n"
+    )
+    got = difftest_mod._salient(out)
+    assert any("RtlUnicodeStringToAnsiString" in ln for ln in got)
+    assert any(ln.startswith("left:") for ln in got)

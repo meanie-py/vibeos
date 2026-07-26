@@ -1089,6 +1089,70 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -D_CRT_SECURE_NO_WARNINGS -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  wsock32)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/wsock32/CMakeLists.txt
+    # (1 compiled TU, 54 headers in the include closure, 0 switch constants).
+    #
+    # USERMODE WinSock 1.1 compatibility DLL (dll/win32/wsock32). Almost the whole module is
+    # `.spec` forwarders to mswsock/ws2_32 that spec2def turns into thunks; the only real C is
+    # a DllMain that returns TRUE. The island is correspondingly tiny — windef.h only.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/wsock32"
+    WRAPPER_INC=$'#include <windef.h>'
+    ALLOW_FILES=( --allowlist-file '.*wsock32[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/wsock32" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  wlanapi)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/wlanapi/CMakeLists.txt
+    # (2 compiled TUs, 138 headers in the include closure, 5 switch constants).
+    #
+    # USERMODE WLAN client API DLL (dll/win32/wlanapi) — the client half of wlansvc.idl, whose
+    # server half is the `wlansvc)` profile above. RPC client stubs come from the generated
+    # wlansvc_c.h, which is why rpc.h/rpcndr.h/ole2.h are allowlisted: main.c names them
+    # directly through that generated header, so their types must be island-local.
+    #
+    # The 5 switch constants are all RPC_* from winerror.h and resolve through the -sys glob.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/wlanapi"
+    WRAPPER_INC=$'#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <wlansvc_c.h>\n#include <wine/debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ole2\.h' --allowlist-file '.*[/\\]rpc\.h'
+                  --allowlist-file '.*[/\\]rpcndr\.h'
+                  --allowlist-file '.*[/\\]wlansvc_c\.h'
+                  --allowlist-file '.*wlanapi[/\\].*\.h' )
+    # build-i386 for the generated wlansvc_c.h: ARCH is a local of the per-arch generate
+    # function and is unset here in the case table, and the MIDL wire types are
+    # arch-independent, so i386's copy serves all 3 (same convention as netapi32/dnsapi).
+    EXTRA_INC=( -I"${SRC}/dll/win32/wlanapi" -I"${SRC}/build-i386/dll/win32/wlanapi"
+                -I"${SRC}/sdk/include/reactos/idl" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  snmpapi)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/snmpapi/CMakeLists.txt
+    # (1 compiled TU, 138 headers in the include closure, 14 switch constants).
+    #
+    # USERMODE SNMP utility API DLL (dll/win32/snmpapi) — SnmpUtil* octet-string/OID/varbind
+    # helpers. Note the CMakeLists RAISES _WIN32_WINNT to 0x600 (it removes the 0x502 default),
+    # so VER_DEFS must follow or the island is built against a different SDK surface than the C.
+    #
+    # 13 of the 14 switch constants are ASN_* from snmp.h, and every one is a macro EXPRESSION
+    # (`(ASN_UNIVERSAL | ASN_PRIMITIVE | 0x03)`), not a literal — bindgen does not always fold
+    # those. snmp.h is allowlisted so they land in the island, and the generated types_<arch>.rs
+    # must be CHECKED for them: an ASN_* that fails to appear becomes a catch-all `match`
+    # binding that swallows every other tag (field manual §9.112).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/snmpapi"
+    WRAPPER_INC=$'#include <stdio.h>\n#include <stdarg.h>\n#include "windef.h"\n#include "winbase.h"\n#include "snmp.h"\n#include "wine/debug.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]snmp\.h' --allowlist-file '.*snmpapi[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/snmpapi" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000
+               -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
     # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,

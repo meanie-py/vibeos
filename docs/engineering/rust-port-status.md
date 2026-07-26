@@ -96,7 +96,7 @@ twins), and the **bignum float parser** (`strtod` `_strtod_l` `atof`
 `_atof_l` `_atoflt_l` `_atodbl` `_atodbl_l` `wcstod` `_wcstod_l` `_wtof` `_wtof_l` `_atoldbl`
 `_atoldbl_l` `__STRINGTOLD` `__STRINGTOLD_L`).
 
-**The method is the product.** Nothing flips without a differential proof. Six orthogonal
+**The method is the product.** Nothing flips without a differential proof. Nine orthogonal
 harnesses (`sdk/lib/rust/msvcrt-difftest/`), each negative-controlled:
 
 | harness | asks | blind to |
@@ -107,6 +107,26 @@ harnesses (`sdk/lib/rust/msvcrt-difftest/`), each negative-controlled:
 | `hot_path` | a per-element loop doing per-element **environment lookups**? (counts `get_locinfo()` at n=8 vs n=512 — the cost no *ratio* can see, §9.76) | values, access |
 | `ref_integrity` | **is the oracle itself honest?** (see §9.66 — glibc's attributes had been deleting the reference C's guards; also cross-checks every `msvcrt-sys` layout offset subject-vs-bindgen) | the subject |
 | `link` | do the shipping symbols actually **resolve** to the Rust bodies? | everything else |
+| `mbcs_fixture` | is the **DBCS state** the mbcs cases are graded against actually multi-byte? (asserts non-zero lead/trail bytes per codepage — without it every case takes the single-byte path and the suite grades none of the DBCS logic) | the subject |
+| `mbcs` | **173 of 175** generated cases over `mbcs.c` on **7 codepages** (932/936/949/950/1361 DBCS + 1252/20127 single-byte), enumerating each function's whole input domain rather than sampling | speed, access; `create_mbcinfo` |
+| `mbcs_state` | does the SUBJECT's **`create_mbcinfo`** build the same tables? Its own process, because every `mbcs` case is pinned against a fixture built from the *reference's* copy — so the subject's never runs there and a wrong one passes all 173 | everything the fixture holds still |
+
+`mbcs.c` was graded on 2026-07-24 and the first run found **three real bugs** in the shipping
+Rust: `_mbsnset_l` dropped its truncation (C's `while (a && b && len--)` wraps `len` to
+`SIZE_MAX` on exit, and the epilogue reads that), and `_mbslwr_s_l`/`_mbsupr_s_l` walked *copies*
+of their parameters — so the buffer-too-small `EINVAL` was unreachable and the terminator landed
+at the start of the string. Both classes are in the field manual under "Semantic rewrites that
+flip meaning". Coverage then went 160 -> 167 -> **173 of 175** as the generator learned the
+`_s` out-scalars, the restartable `mbstate_t` sweep, the `char **` cursors (`_mbstok_s`,
+`mbsrtowcs`) and the `__p_*` state accessors. `create_mbcinfo` is graded separately by
+`mbcs_state` — and diverged on its first run, which is what a fixture built from one side
+cannot show you. **`_setmbcp` is the last ungraded function**: it installs through
+`MSVCRT_locale->mbcinfo`, which the harness defines as NULL, so grading it means modelling
+`MSVCRT_locale` and the thread-data `locale_flags` on both sides rather than writing a case.
+
+All host harnesses now run under **`vibeos-cli difftest`**, which `gate` invokes and which gates
+the push stamp — see `tests/qemu/cli/README.md`. They were previously reachable only by typing
+`cargo test` in a crate dir, and `rtl-difftest` sat 2/87 red on master as a result.
 
 **What it has refused to flip, and why** — these are the interesting entries:
 - **`strtod`-from-`cnt-rust`** — cnt-rust's float parser is the ReactOS naive accumulator;
@@ -239,6 +259,14 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   objects, shared shellmenu/shelldesktop objects, procedural helpers, and monoliths such as
   `CDefView.cpp`, `shlexec.cpp`, and `shlfileop.cpp`. The exhaustive zero-C++ plan and ledger are
   in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
+  **Free-function TUs: 7 translated and PARKED, not wired** (2026-07-25) —
+  `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache,shlfolder,stubs,
+  shldataobject}.rs`, 21,626 lines, each carrying an `//! ORPHAN-BY-DESIGN:` banner. Five of them
+  had been blocked behind seal defects that made the envelope unsatisfiable — a rejected worker
+  assembles *no* output, so 5 rejects were withholding ~19.8K lines of already-paid Rust; see the
+  field manual's `[§9.127]` RESOLVED note. They still need substrate closure (SDK externs, Win32
+  constants, resource IDs) before they compile, so the C++ tail count above is unchanged: nothing
+  is cohab-flipped yet. Paid artifacts — do not delete to tidy up.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

@@ -107,12 +107,12 @@ pub mod folders;
 pub mod propsheet;
 pub mod systray;
 
-// Wave 5 is TRANSLATED AND PARKED, NOT YET WIRED. The assembled modules live at
-// shell32/*.rs and dialogs/*.rs; they still need substrate closure (a few hundred
-// SDK externs, constants and resource IDs) before they can compile. Wiring them in
-// this state would not expose a regression, it would introduce a build break for
-// every lane on the fleet, so they stay out of the crate graph until closure lands.
-// Do NOT delete these files to "clean up" — they are paid artifacts.
+// Wave 5 free-function TUs from the shell32 root: STILL PARKED, substrate closure in
+// progress. Constants, 148 promoted Win32 imports and the numeric-cast tail are done;
+// wiring them today leaves ~1,010 errors — 167 callables with no declaration anywhere
+// (shell32-internal helpers and C macros, which need judgment, not bulk generation),
+// 60 SDK record layouts, and the method/field tail. Wiring before those land would break
+// the build for every lane. Do NOT delete these files — they are paid artifacts.
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
