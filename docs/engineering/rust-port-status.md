@@ -134,6 +134,23 @@ undefined per the Windows x64 ABI, benign only because rustc happens to zero-ext
 `scan_extern_arity` cannot see it: the arity matches. Field manual carries the class under
 ABI/FFI — never `extern`-declare a symbol your own crate defines.
 
+**Wave 15 (2026-07-26) — `scanf.c`: 16 template instantiations collapse to ONE Rust engine.**
+`scanf.h` (743 lines) is `#include`d sixteen times under WIDE_SCANF/SECURE/STRING/STRING_LEN/
+CONSOLE, generating ~9,600 lines of C; `msvcrt-crt-rust/src/scanf.rs` (1,514 lines) is one engine
+generic over `W: Width`, `S: Source` and `const SECURE: bool`, calling the crate's existing Rust
+`fpnum_parse`/`fpnum_double` so `%f` is correctly rounded and shares the bignum with strtod and
+printf. The 40 `...` shells are C trampolines in `rust_scanf_shim.c` — and here the MODULE
+placement is REQUIRED, not merely preferable: scanf.c's 16 engines are `static`, so there is no
+symbol for a Rust engine to win by first-match.
+
+Graded by `tests/scanf.rs` — **36 rows, 439,100 cases, 0 DIVERGE, 0 UNEXERCISED**, nine controls,
+nine fired. It found a **real shipping bug**: the port snapshotted the float parser's cursor once,
+where scanf.h re-assigns `ctx.file = file` AFTER the whitespace skip, so `swscanf(L" 1.50",
+L"%g", &f)` returned **11.5** and a stale cursor could turn a valid parse into an EOF return.
+Invisible on 8 of the 16 instantiations (FILE/CONSOLE contexts carry a `FILE*` or a ZST, which a
+cursor skip cannot move), so nothing else — cargo check, the DLL link, the 3-arch build, the
+parity scanner — could see it.
+
 **Wave 14c part 2 (2026-07-26) — the 30 `...` shells, in `dll/win32/msvcrt/rust_varargs_shim.c`.**
 Stable Rust cannot DEFINE a C-variadic, so these stay C permanently as three-line `va_start`
 trampolines over the Rust engine — but that is now the *whole* of msvcrt's C printf: every byte
