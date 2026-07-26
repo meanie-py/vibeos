@@ -65,6 +65,24 @@ hand-authored allowlist. Key behaviours:
   group, each with its own wrapper — a union wrapper would rebuild the wall.
 - Validated by rediscovering the committed `afd` and `disk` profiles and by independently
   finding wldap32's real 2-island split.
+- **The emitted `-I` set is what `gen_driver_types.sh` LACKS, not what we searched.** The two
+  are separate constants (`_SDK_SEARCH` vs `_GENERATOR_BASE_INC`) because they genuinely
+  differ — `sdk/include/wine` and `sdk/include/winrt` are ours only. Keep the latter in sync
+  with the bindgen invocation. Dirs are bucketed EARLY (`EXTRA_INC`) or LATE (`LATE_INC`) by
+  the real command's own ordering, since an alternate surface hoisted above the SDK changes
+  which header a bare `#include <x.h>` resolves to: wldap32 needs wine EARLY (it owns the only
+  `config.h`), samlib needs it LATE (its `winioctl.h` collides with `ndk/iotypes.h`). Observed
+  `build-<arch>/sdk/...` dirs are dropped entirely — the generator passes those per-arch as
+  `${BUILD_DIR}`, and echoing one back would bake i386's generated headers into all three.
+- **Prologue guards are evaluated where they are decidable.** Wine's `config.h` is an
+  authoritative build-configuration oracle (autoconf's `/* #undef HAVE_LDAP_H */` asserts this
+  build), so a guarded include under one of its ~330 undefs is dropped rather than mirrored.
+  Previously the `#ifdef` was discarded and the `#include` kept, promoting it to unconditional
+  — wldap32 then asked for OpenLDAP's `<ldap.h>`, which this tree does not vendor.
+  Undecidable guards still keep both arms and emit `CONDITIONAL_PROLOGUE`.
+- **`add_pch()`'s SKIP argument is honoured.** Those TUs do not compile with the PCH, and are
+  skipped precisely because it conflicts with their own headers — wldap32's `ber.c` is both
+  the PCH-skipped TU and the reason the module needs two islands.
 - `--emit profile` prints a paste-ready `gen_driver_types.sh` arm; `--scaffold-dir` writes the
   crate skeleton. ERROR findings are blocking; exit code is 1 when any fires.
 - **A module whose `.c` live in a sibling static-lib target needs `--target`.** msvcrt is the
@@ -125,6 +143,28 @@ by shape for triage. Three properties worth knowing:
   proposals, because an `as u32` inferred from i386 is wrong on amd64/arm64 wherever the real
   parameter is `SIZE_T`/`ULONG_PTR`. The `flex_array_index` authority reads
   `types_<arch>.rs` — `types.rs` is only a `#[cfg]` dispatch stub.
+- **It will not cast a `match` PATTERN** (`_in_match_pattern`). Rust forbids expressions in
+  patterns, so `(RPC_S_INVALID_BINDING) as i32 =>` is `expected a pattern, found an expression`
+  — and rustc reports a mistyped arm exactly like any other integer mismatch, so the rule aimed
+  straight at `match`-on-status-code, which is where narrow-vs-wide mismatches actually surface.
+  Two lanes hit it in one week: wlanapi's `WlanRpcStatusToWinError` lost all 5 arms, msvcrt's
+  `_setmbcp_l` lost its dispatch (bindgen split a four-macro `#define` family into `u32`/`i32` on
+  sign). The correct repair is to **widen the scrutinee** (`match Status as u32`) or fix the type
+  where the constant is DECLARED — never at the arm — which also keeps the arms auditable as
+  names under the catch-all-binding rule (field manual §9.112). Detection is not line-local: a
+  wrapped or-pattern puts the `=>` on a later line, and `foo(A, b)` vs `(A, 0) => v` are
+  indistinguishable at the comma until you step out of the enclosing bracket group.
+- **It cannot repair a `#[cfg]`-dual'd body — KNOWN GAP.** `abi_enforce` renders an internal
+  `system` fn as an x86 `stdcall` copy plus a non-x86 `C` copy (rustc will not unify
+  `extern "system"` with `extern "stdcall"` at the *type* level on i686, so a `system` fn
+  cannot sit in a `stdcall` vtbl/callback slot — the dual is correct and must not be collapsed
+  to `extern "system"`). But each copy compiles on exactly ONE target, so the cross-target
+  agreement rule can never be satisfied and every cast in it is withheld forever. Inside an
+  arch-gated branch, baking that arch's width is correct *by construction* — that is the
+  premise the rule is missing. netid hit this on 38 casts across its three dialog procs, and
+  the two copies had already DIVERGED (the non-x86 one carrying `(TRUE) as i64` from an
+  earlier pass while the x86 one was untouched), which is the shape to watch for: an
+  error count that differs wildly per arch on the *same* function.
 
 ## `--target`: proven from the tree, or refused (2026-07-24)
 

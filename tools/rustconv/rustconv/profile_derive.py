@@ -59,6 +59,7 @@ CLI
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import sys
@@ -268,6 +269,9 @@ class CMakeModule:
     removed_definitions: list[str] = field(default_factory=list)
     include_dirs: list[Path] = field(default_factory=list)
     pch_header: Path | None = None
+    # TUs add_pch() explicitly EXCLUDES — they do not compile with the PCH, so a wrapper
+    # that force-includes it reproduces exactly the conflict the skip list avoids.
+    pch_skip: set[Path] = field(default_factory=set)
     rpc_interfaces: list[str] = field(default_factory=list)
     dead_sources: list[Path] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
@@ -424,6 +428,12 @@ class DerivedProfile:
     allow_files: list[str]
     extra_inc: list[str]
     ver_defs: list[str]
+    # Include dirs the REAL compile lists AFTER the standard SDK dirs. They must stay after
+    # them in the island build too: `sdk/include/wine` carries an alternate surface for
+    # headers the PSDK also owns (winioctl.h defines _FILE_FS_*_INFORMATION, which
+    # ndk/iotypes.h then redefines), so hoisting it early silently swaps which definition the
+    # island is built against. samlib: 23 redefinition errors when early, 0 when late.
+    late_inc: list[str] = field(default_factory=list)
     allow_reasons: dict[str, str] = field(default_factory=dict)
     excluded: dict[str, str] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
@@ -623,6 +633,7 @@ def parse_cmakelists(
     include_dirs: list[Path] = []
     module_types: dict[str, tuple[str, bool]] = {}
     pch: Path | None = None
+    pch_skip: set[Path] = set()
     rpc: list[str] = []
 
     def cond() -> str | None:
@@ -679,6 +690,13 @@ def parse_cmakelists(
             include_dirs.extend(Path(a) for a in args if not a.startswith(("BEFORE", "AFTER")))
         elif name == "add_pch" and len(args) >= 2:
             pch = (module_dir / args[1]).resolve()
+            # add_pch(<target> <header> <SKIP-list>): the third argument names the TUs
+            # that must NOT get the PCH — and they are skipped precisely because they do
+            # not COMPILE with it. wldap32's ber.c is the case: it includes <winldap.h>
+            # while precomp.h pulls "winldap_private.h", and the two declare 30-odd ldap_*
+            # prototypes incompatibly. Injecting the PCH into its wrapper reproduces that
+            # conflict exactly, so the skip list is load-bearing, not cosmetic.
+            pch_skip.update((module_dir / a).resolve() for a in args[2:] if a.endswith(".c"))
         elif name == "add_rpc_files" and len(args) >= 2:
             rpc.extend(args[1:])
 
@@ -727,6 +745,7 @@ def parse_cmakelists(
         removed_definitions=removed,
         include_dirs=include_dirs,
         pch_header=pch,
+        pch_skip=pch_skip,
         rpc_interfaces=rpc,
         findings=findings,
     )
@@ -750,6 +769,7 @@ def parse_cmakelists(
                 + ", ".join(_rel(p, repo_root) for p in module.dead_sources[:6]),
             )
         )
+    _audit_dead_bodies(module, repo_root, findings)
     for e in entries:
         if e.kind == "tu" and e.condition:
             findings.append(
@@ -841,6 +861,35 @@ _BUILD_SEARCH = (
     "sdk/include/reactos",
     "sdk/include/reactos/mc",
 )
+
+# The -I set gen_driver_types.sh ALREADY passes to bindgen. An include dir we resolve
+# through must be emitted into EXTRA_INC/LATE_INC unless it is in here.
+#
+# This is deliberately NOT `_SDK_SEARCH`. _SDK_SEARCH is where WE look to resolve a
+# header; this is what the GENERATOR looks in. They differ, and treating them as one
+# emits a profile that cannot generate: wldap32 includes "config.h", which lives only in
+# sdk/include/wine, and the derived profile omitted that -I because _SDK_SEARCH lists it
+# — bindgen then died with `'config.h' file not found`. samlib hit the same gap from the
+# other side and was patched per-instance (a hand-added LATE_INC after a header bisect);
+# that was the symptom, this is the cause. Keep in sync with the bindgen invocation.
+_GENERATOR_BASE_INC = frozenset(
+    {
+        "sdk/include",
+        "sdk/include/ddk",
+        "sdk/include/ndk",
+        "sdk/include/psdk",
+        "sdk/include/xdk",
+        "sdk/include/reactos",
+        "sdk/include/reactos/libs",
+        "sdk/include/reactos/drivers",
+        "sdk/include/vcruntime",
+        "sdk/include/dxsdk",
+        "sdk/lib/pseh/include",
+        "sdk/include/crt",  # passed as -isystem
+    }
+)
+# `build-<arch>/sdk/...` — the generator passes these as `${BUILD_DIR}/sdk/...`, per arch.
+_BUILD_SDK_RE = re.compile(r"^build-[^/]+/sdk/")
 
 
 # Macros whose truth value is FIXED for every build in this tree, so a branch guarded on
@@ -941,12 +990,136 @@ def _looks_like_include_guard(lines: list[str], directive_line: int) -> bool:
     return False
 
 
-def scan_preamble(text: str) -> tuple[list[str], bool]:
-    """The TU's include PROLOGUE, verbatim, plus "had conditional directives".
+_IFDEF_RE = re.compile(r"^\s*#\s*if(n?)def\s+([A-Za-z_]\w*)")
+_IF_DEFINED_RE = re.compile(r"^\s*#\s*if\s+(!?)\s*defined\s*\(?\s*([A-Za-z_]\w*)\s*\)?\s*$")
+
+
+def _guard_macro(line: str) -> tuple[str, bool] | None:
+    """(macro, wants_defined) for a single-macro `#ifdef`/`#ifndef`/`#if defined(X)`."""
+    m = _IFDEF_RE.match(line)
+    if m is not None:
+        return m.group(2), m.group(1) != "n"
+    m = _IF_DEFINED_RE.match(line)
+    if m is not None:
+        return m.group(2), m.group(1) != "!"
+    return None
+
+
+_GUARD_OPEN_RE = re.compile(r"^\s*#\s*if(n?)def\s+([A-Za-z_]\w*)\s*$", re.M)
+
+
+def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
+    """Warn when most of a module's CODE sits in a decidably-FALSE `#ifdef`.
+
+    This is a PRE-PAYMENT check and it exists because skipping it cost real money.
+    wldap32 looks like an 8,625-line LDAP client; in this tree every one of its entry
+    points compiles to `return WLDAP32_LDAP_NOT_SUPPORTED;` because 181 `#ifdef HAVE_LDAP`
+    blocks across 19 of its 20 TUs are disabled — ReactOS does not vendor OpenLDAP. It is
+    a STUB DLL. Translating it bought 162 functions of the path the compiler throws away,
+    and the emitted Rust was worse than useless: unconditional, so it changed behaviour,
+    and calling OpenLDAP symbols that do not exist here, so it could never link.
+
+    The dead-region seal already tolerates an omission inside such a block, but tolerating
+    is not the same as telling you the module is a stub before you pay.
+    """
+    undefs = _wine_config_undefs(repo_root)
+    if not undefs:
+        return
+    total_lines = 0
+    dead_lines = 0
+    culprits: dict[str, int] = {}
+    for tu in module.compiled_tus:
+        try:
+            text = tu.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = text.splitlines()
+        total_lines += len(lines)
+        depth_dead = 0
+        stack: list[bool | None] = []
+        for line in lines:
+            m = _GUARD_OPEN_RE.match(line)
+            if m is not None:
+                macro = m.group(2)
+                dead = macro in undefs and m.group(1) != "n"
+                stack.append(dead)
+                if dead:
+                    depth_dead += 1
+                    culprits[macro] = culprits.get(macro, 0) + 1
+                continue
+            if re.match(r"^\s*#\s*else\s*$", line) and stack:
+                if stack[-1] is not None:
+                    if stack[-1]:
+                        depth_dead -= 1
+                    stack[-1] = not stack[-1]
+                    if stack[-1]:
+                        depth_dead += 1
+                continue
+            if re.match(r"^\s*#\s*endif\b", line) and stack:
+                if stack.pop():
+                    depth_dead -= 1
+                continue
+            if depth_dead > 0:
+                dead_lines += 1
+    if not total_lines or not culprits:
+        return
+    pct = 100 * dead_lines / total_lines
+    if pct < 15:
+        return
+    top = ", ".join(
+        f"{m} ({n} blocks)" for m, n in sorted(culprits.items(), key=lambda kv: -kv[1])[:3]
+    )
+    findings.append(
+        Finding(
+            "warn",
+            "MOSTLY_DEAD_BODIES",
+            f"{pct:.0f}% of this module's compiled lines are inside a decidably-FALSE "
+            f"#ifdef ({top}) — wine's config.h #undefs it, so the compiler throws that code "
+            "away and the real module is far smaller than it looks (often a pure stub). "
+            "PAYING TO TRANSLATE IT BUYS THE PATH THAT IS NOT BUILT, and the output is "
+            "unconditional Rust that changes behaviour and calls symbols this tree does not "
+            "have. Read what the module actually compiles to BEFORE translating.",
+        )
+    )
+
+
+_CONFIG_UNDEF_RE = re.compile(r"^\s*/\*\s*#\s*undef\s+([A-Za-z_]\w*)\s*\*/\s*$", re.M)
+
+
+@functools.lru_cache(maxsize=4)
+def _wine_config_undefs(repo_root: Path) -> frozenset[str]:
+    """Macros wine's config.h explicitly leaves UNDEFINED for this tree.
+
+    autoconf writes the off cases as `/* #undef HAVE_LDAP_H */`, which is an assertion
+    about THIS build, not a maybe — every wine-sourced module's `#ifdef HAVE_*` prologue
+    guard is decidable from it.
+    """
+    cfg = repo_root / "sdk" / "include" / "wine" / "config.h"
+    try:
+        text = cfg.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return frozenset()
+    return frozenset(_CONFIG_UNDEF_RE.findall(text))
+
+
+def scan_preamble(
+    text: str, known_undefined: frozenset[str] = frozenset()
+) -> tuple[list[str], bool]:
+    """The TU's include PROLOGUE, verbatim, plus "had UNDECIDED conditional directives".
 
     Mirroring the real prologue (including its ``#define WIN32_NO_STATUS`` /
     ``#define NTOS_MODE_USER`` ordering) is what makes a wrapper guaranteed-legal:
     if the ``.c`` compiles, that exact sequence is bindgen-able (§9.108).
+
+    Guarded includes are the exception, and it is not cosmetic: this used to drop the
+    `#ifdef`/`#endif` while KEEPING the include between them, promoting a conditional
+    include to an unconditional one. wldap32 wraps OpenLDAP under `#ifdef HAVE_LDAP_H`,
+    which wine's config.h `#undef`s for this tree — the mirrored wrapper therefore asked
+    for a header that does not exist here and bindgen died on it.
+
+    *known_undefined* is the decidable set (in practice wine's config.h `#undef` list).
+    A guard on a macro in it is resolved and the dead arm dropped; a guard we cannot
+    decide keeps BOTH arms as before and sets the "conditional" flag so the caller warns.
     """
     lines = text.splitlines()
     end = 0
@@ -969,14 +1142,38 @@ def scan_preamble(text: str) -> tuple[list[str], bool]:
         break  # first real code line ends the prologue
     keep: list[str] = []
     conditional = False
+    # stack of "this arm is dead" flags; None = undecided (keep both arms, as before)
+    arms: list[bool | None] = []
     for line in lines[:end]:
         d = _DIRECTIVE_RE.match(line)
         if d is None:
             continue
-        if d.group(1) in _COND_DIRECTIVES:
-            conditional = True
+        kind = d.group(1)
+        if kind in ("ifdef", "ifndef", "if"):
+            guard = _guard_macro(line)
+            if guard is not None and guard[0] in known_undefined:
+                # dead when the arm wanted it DEFINED
+                arms.append(guard[1])
+            else:
+                conditional = True
+                arms.append(None)
             continue
-        if d.group(1) in ("include", "define", "undef"):
+        if kind in ("elif",):
+            conditional = True
+            if arms:
+                arms[-1] = None
+            continue
+        if kind == "else":
+            if arms and arms[-1] is not None:
+                arms[-1] = not arms[-1]
+            continue
+        if kind == "endif":
+            if arms:
+                arms.pop()
+            continue
+        if any(a for a in arms):
+            continue  # inside a decidably-dead arm
+        if kind in ("include", "define", "undef"):
             keep.append(line.strip())
     return keep, conditional
 
@@ -1765,9 +1962,10 @@ def derive(
             )
 
     # ---- wrapper: mirror each TU's real prologue ----
+    known_undefined = _wine_config_undefs(repo_root)
     wrapper: list[str] = []
     for tu in tus:
-        lines, conditional = scan_preamble(_read(tu))
+        lines, conditional = scan_preamble(_read(tu), known_undefined)
         if conditional:
             findings.append(
                 Finding(
@@ -1780,7 +1978,7 @@ def derive(
         for line in lines:
             if line not in wrapper:
                 wrapper.append(line)
-    if module.pch_header is not None:
+    if module.pch_header is not None and any(t not in module.pch_skip for t in tus):
         pch_line = f'#include "{module.pch_header.name}"'
         if pch_line not in wrapper:
             wrapper.insert(0, pch_line)
@@ -1797,10 +1995,14 @@ def derive(
             src = tu_by_key.get(key)
             if src is None:
                 continue
-            for line in scan_preamble(_read(src))[0]:
+            for line in scan_preamble(_read(src), known_undefined)[0]:
                 if line not in lines:
                     lines.append(line)
-        if module.pch_header is not None:
+        # Only if a TU in THIS island actually compiles with the PCH. wldap32 splits
+        # exactly along that line: ber.c is the PCH-skipped TU and it is also the one
+        # whose headers conflict with precomp.h's.
+        srcs = [tu_by_key[k] for k in keys if k in tu_by_key]
+        if module.pch_header is not None and any(s not in module.pch_skip for s in srcs):
             pch_line = f'#include "{module.pch_header.name}"'
             if pch_line not in lines:
                 lines.insert(0, pch_line)
@@ -1863,6 +2065,7 @@ def derive(
         p = d if d.is_absolute() else repo_root / d
         if p.is_dir() and _is_within(p, repo_root):
             extra_inc.append(f'-I"${{SRC}}/{p.relative_to(repo_root)}"')
+    late_inc: list[str] = []
     for d in extra_inc_dirs:
         p = (d if d.is_absolute() else repo_root / d).resolve()
         entry = (
@@ -1905,10 +2108,44 @@ def derive(
         for p in db.include_dirs:
             if not _is_within(p, repo_root) or not p.is_dir():
                 continue
-            if not _is_within(p, module.module_dir) and p not in [d for d, _ in env.search]:
+            # Emit unless the GENERATOR already has it (_GENERATOR_BASE_INC), not unless
+            # WE searched it — see that constant for why the distinction matters.
+            rel = p.relative_to(repo_root).as_posix()
+            # The build-dir SDK includes are the generator's `${BUILD_DIR}/sdk/...`, which
+            # is PER-ARCH. Emitting the observed `build-i386/sdk/...` instead would bake one
+            # arch's generated headers into a 3-arch generator — the cross-arch header leak
+            # AGENTS.md forbids, and it would read as correct because i386 is what we derive
+            # from. (A build-dir path under the MODULE's own dir is different: those are
+            # arch-independent MIDL wire types, and _is_within already keeps them.)
+            if _BUILD_SDK_RE.match(rel):
+                continue
+            if not _is_within(p, module.module_dir) and rel not in _GENERATOR_BASE_INC:
                 entry = f'-I"${{SRC}}/{p.relative_to(repo_root)}"'
                 if entry not in extra_inc:
                     extra_inc.append(entry)
+
+        # Re-bucket by the REAL command's ordering, whatever the entry's source. An -I the
+        # compiler ranks BELOW the standard SDK dirs must stay below them here: it is an
+        # alternate surface for headers the SDK also owns, and hoisting it changes which
+        # definition a bare `#include <x.h>` resolves to. `sdk/include/wine` is the live case --
+        # it comes from the module's own include_directories(), so a db-only rule misses it,
+        # yet CMake still emits it last. samlib: 23 redefinition errors early, 0 late.
+        order = {
+            p.relative_to(repo_root).as_posix(): i
+            for i, p in enumerate(db.include_dirs)
+            if _is_within(p, repo_root)
+        }
+        std_at = order.get("sdk/include")
+        if std_at is not None:
+
+            def _rank(entry: str) -> int | None:
+                inner = entry[3:].rstrip('"')
+                return order.get(inner.removeprefix("${SRC}/")) if "${SRC}/" in inner else None
+
+            demoted = [e for e in extra_inc if (r := _rank(e)) is not None and r > std_at]
+            if demoted:
+                extra_inc[:] = [e for e in extra_inc if e not in demoted]
+                late_inc.extend(e for e in demoted if e not in late_inc)
     else:
         findings.append(
             Finding(
@@ -1937,6 +2174,7 @@ def derive(
         wrapper_inc=wrapper,
         allow_files=allow_files,
         extra_inc=extra_inc,
+        late_inc=late_inc,
         ver_defs=ver_defs,
         allow_reasons=allow_reasons,
         excluded=excluded,
@@ -2008,6 +2246,14 @@ def emit_profile(dp: DerivedProfile) -> str:
             out.append("        ;;")
         out.append("    esac")
     out.append("    EXTRA_INC=( " + " ".join(dp.extra_inc) + " )")
+    if dp.late_inc:
+        out.append(
+            "    # LOWER priority than the standard SDK dirs -- the real compile lists these"
+        )
+        out.append(
+            "    # after them, and hoisting one ahead swaps which header an include resolves to."
+        )
+        out.append("    LATE_INC=( " + " ".join(dp.late_inc) + " )")
     out.append("    VER_DEFS=( " + " ".join(dp.ver_defs) + " )")
     if multi:
         out.append(
@@ -2156,6 +2402,7 @@ def to_json(dp: DerivedProfile) -> dict:
         "excluded": dp.excluded,
         "wrapper_inc": dp.wrapper_inc,
         "extra_inc": dp.extra_inc,
+        "late_inc": dp.late_inc,
         "ver_defs": dp.ver_defs,
         "islands": [{"stem": i.stem, "tus": i.tus, "reason": i.reason} for i in dp.islands],
         "switch_constants": [
@@ -2181,26 +2428,62 @@ def to_json(dp: DerivedProfile) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def scaffold_crate(dp: DerivedProfile, out_dir: Path, force: bool = False) -> list[Path]:
+def scaffold_crate(
+    dp: DerivedProfile,
+    out_dir: Path,
+    force: bool = False,
+    kept: list[Path] | None = None,
+) -> list[Path]:
     """Write the crate skeleton: Cargo.toml, lib.rs, prelude.rs, types.rs (+ island stubs).
 
     Refuses to overwrite an existing file unless *force*: the per-arch island files are
     ``gen_driver_types.sh`` output, and clobbering a real island with a placeholder is
     exactly the silent-degradation this pipeline must never do.
+
+    ``src/types.rs`` and ``src/types_<arch>.rs`` are the exception, because BOTH tools write
+    them and neither is wrong to: whichever ran first owns them. Our copy is a placeholder
+    that a real island strictly dominates, so an existing one is kept and reported via
+    *kept* rather than aborting the scaffold. That keeps the two steps order-insensitive —
+    running gen_driver_types.sh first used to abort the whole scaffold over a dispatch stub
+    whose content is identical either way.
     """
     m = dp.module
     crate = dp.crate_name
     lib = crate.replace("-", "_")
     src = out_dir / "src"
-    src.mkdir(parents=True, exist_ok=True)
-    (src / m.name).mkdir(exist_ok=True)
     written: list[Path] = []
+    # PLAN, then commit. Nothing below touches the disk until every target has been checked,
+    # because a scaffold that aborts halfway leaves files it refuses to overwrite on the retry
+    # — the tool wedging itself against its own partial output, with a message that reads like
+    # the user put them there.
+    planned: list[tuple[Path, str]] = []
+    soft: set[Path] = set()
 
     def write(path: Path, text: str) -> None:
-        if path.exists() and not force:
-            raise ProfileDeriveError(f"refusing to overwrite {path} (pass force=True)")
-        path.write_text(text)
-        written.append(path)
+        planned.append((path, text))
+
+    def write_unless_generated(path: Path, text: str) -> None:
+        """For the files gen_driver_types.sh also owns — keep theirs, never clobber."""
+        soft.add(path)
+        planned.append((path, text))
+
+    def commit() -> None:
+        conflicts = [p for p, _ in planned if p.exists() and p not in soft]
+        if conflicts and not force:
+            listing = "\n  ".join(str(p) for p in conflicts)
+            raise ProfileDeriveError(
+                f"refusing to overwrite {len(conflicts)} existing file(s) "
+                f"(pass force=True):\n  {listing}"
+            )
+        src.mkdir(parents=True, exist_ok=True)
+        (src / m.name).mkdir(exist_ok=True)
+        for path, text in planned:
+            if path in soft and path.exists() and not force:
+                if kept is not None:
+                    kept.append(path)
+                continue
+            path.write_text(text)
+            written.append(path)
 
     deps = (
         'panic-common = { path = "../panic-common", features = ["user"] }\n'
@@ -2320,7 +2603,7 @@ pub fn NT_SUCCESS(s: NTSTATUS) -> bool {{
 """,
     )
 
-    write(
+    write_unless_generated(
         src / "types.rs",
         """//! Module-private struct layouts (exact, bindgen-generated per arch).
 //! Generated by tools/rustconv/gen_driver_types.sh. Do not edit by hand.
@@ -2331,10 +2614,9 @@ pub use types_arch::*;
 """,
     )
     for arch in ARCHES:
-        island = src / f"types_{arch}.rs"
-        if island.exists():
-            continue  # a REAL island — never clobber it with a placeholder
-        island.write_text(
+        # a REAL island must never be clobbered with a placeholder
+        write_unless_generated(
+            src / f"types_{arch}.rs",
             f"""// PLACEHOLDER — the real bindgen island has not been generated yet.
 // An empty island is a CORRECTNESS bug, not a missing convenience: constants absent from an
 // island become silent catch-all match arms (field manual §9.112). So this fails the build
@@ -2343,9 +2625,9 @@ compile_error!(
     "types_{arch}.rs is a placeholder: run tools/rustconv/gen_driver_types.sh {m.name} \\
      (add the derived profile first) to generate the real island."
 );
-"""
+""",
         )
-        written.append(island)
+    commit()
     return written
 
 
@@ -2425,10 +2707,18 @@ def main(argv: list[str] | None = None) -> int:
         print(emit_report(dp))
 
     if args.scaffold_dir is not None:
-        written = scaffold_crate(dp, args.scaffold_dir, force=args.force)
+        kept: list[Path] = []
+        written = scaffold_crate(dp, args.scaffold_dir, force=args.force, kept=kept)
         print(f"\nscaffold: {len(written)} file(s) under {args.scaffold_dir}", file=sys.stderr)
         for p in written:
             print(f"  {p}", file=sys.stderr)
+        if kept:
+            print(
+                f"kept {len(kept)} existing gen_driver_types.sh output(s) — NOT overwritten:",
+                file=sys.stderr,
+            )
+            for p in kept:
+                print(f"  {p}", file=sys.stderr)
 
     return 1 if dp.errors else 0
 

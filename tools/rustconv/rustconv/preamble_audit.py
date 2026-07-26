@@ -41,6 +41,12 @@ from pathlib import Path
 import tree_sitter_c as tsc
 from tree_sitter import Language, Parser
 
+# Same normalizer the function scanner uses, for the same reason: `FAR`/`NEAR` are
+# #defined to nothing, tree-sitter does not know that, and a parameter spelled
+# `CONST CHAR FAR *p` fails the whole enclosing function. Reused rather than
+# reimplemented so both parsers agree on what the C says.
+from .scanner import _blank_memmodel
+
 C_LANG = Language(tsc.language())
 
 #: Kinds whose absence BREAKS things (silently, in the vtbl case). Always reported.
@@ -90,17 +96,36 @@ def _declarator_name(node, src: bytes) -> tuple[str | None, bool]:
     return None, is_fn
 
 
-def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str]]:
-    """(file-scope definitions, tag<->typedef alias map).
+def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
+    """(file-scope definitions, tag<->typedef alias map, unparsed top-level lines).
 
     Parsed from the real AST (not the carved preamble text) so line numbers are
     true and the parse is clean; a top-level declaration is by construction never
     inside a function body, so this is exactly the preamble's semantic content.
+
+    That "by construction" holds only while the parse SUCCEEDS. When tree-sitter
+    fails on a function's parameter list it recovers by hoisting the body's
+    statements to the root, and every local then looks like a file-scope
+    definition — `WSAttemptAutodialAddr(IN CONST SOCKADDR FAR *Name)` reported its
+    locals `Ip`/`NetBios`/`AutodialAddress` as dropped file-scope state. Garbage
+    findings are worse than none: they teach you to skim past the real ones.
+
+    So: blank the memory-model macros first (scanner._blank_memmodel — the same
+    no-op `FAR`/`NEAR` that once dropped `inet_addr` from a translation plan
+    entirely, and which preserves line numbers), then REFUSE to mine any root that
+    still holds a top-level ERROR. Note `root.has_error` is useless as that gate —
+    it is True for nearly every real Windows TU because of macros inside bodies,
+    which do not hoist anything. A top-level ERROR node is the precise signal.
     """
-    text = Path(c_path).read_text(encoding="utf-8", errors="replace")
+    raw = Path(c_path).read_text(encoding="utf-8", errors="replace")
+    text = _blank_memmodel(raw)
     src = text.encode()
     tree = Parser(C_LANG).parse(src)
     root = tree.root_node
+
+    unparsed = [n.start_point[0] + 1 for n in root.named_children if n.type == "ERROR"]
+    if unparsed:
+        return [], {}, unparsed
 
     decls: dict[tuple[str, str], CDecl] = {}
     tags: set[str] = set()  # struct/union/enum tags that got a definition
@@ -223,7 +248,7 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str]]:
         aliases.setdefault(m.group(2), m.group(1))
 
     out = sorted(decls.values(), key=lambda d: (d.line, d.kind, d.name))
-    return out, aliases
+    return out, aliases, []
 
 
 def preamble_decls(c_path: Path) -> list[CDecl]:
@@ -299,9 +324,18 @@ def audit_preamble(
     """
     c_path = Path(c_path)
     haystack = rust_preamble + ("\n" + rust_full if rust_full else "")
-    decls, aliases = _scan(c_path)
+    decls, aliases, unparsed = _scan(c_path)
 
     findings: list[str] = []
+    if unparsed:
+        # Fail loud rather than mine parse debris: say the audit did NOT run.
+        lines = ", ".join(str(n) for n in unparsed[:5])
+        return [
+            f"PREAMBLE AUDIT INCOMPLETE — {c_path.name} does not parse at top level "
+            f"(line(s) {lines}); file-scope checks were SKIPPED, not passed. A dropped "
+            "static or vtable in this file would go unreported. Usually an unknown "
+            "annotation macro in a parameter list; add it to scanner's normalizers."
+        ]
     for d in decls:
         if not d.is_critical and not strict:
             continue
