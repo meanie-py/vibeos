@@ -645,17 +645,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Verified by `thread32.exe`: 9 rungs incl. TLS and guest SEH on the new thread and 4
   concurrent threads. amd64 `0x600d`, all 8 probe guests green.
 
-- **WoW64/FEX: four CONCURRENT guest threads AV on arm64 — OPEN** (2026-07-25, task #73,
-  wow64-plan Phase E15). arm64 passes rungs 1-6 of `thread32.exe` (single guest thread creates,
-  runs, joins, TLS works), then `0xC0000005` on the 4-concurrent-thread rung. All four threads
-  are created and resumed but only two reach the print between `BTCpuThreadInit()` and
-  `BTCpuSimulate()`, with two repeated fault PCs inside libwow64fex
-  (`0x7FFFB43F0A50`, `0x7FFFB43F08AC`) — i.e. FEX's per-thread bring-up under concurrent entry,
-  not stack visibility. amd64's `wow64cpu` is unaffected (`BTCpuThreadInit` is a no-op there).
-  Related gap worth closing on its own merits: we wire only `BTCpuNotifyMapViewOfSection` of
+- **WoW64/FEX: four CONCURRENT guest threads AV on arm64 — FIXED 2026-07-26** (task #73,
+  wow64-plan Phase E16). arm64 `thread32.exe exit = 0x600d`, all nine rungs; the whole arm64
+  WoW64 probe ladder is now 7/7, i.e. parity with amd64. **FEX was never at fault** — three
+  independent bugs, each masking the next:
+  (1) `MiInsertSharedUserPageVad`, which reserves `MM_SHARED_USER_DATA_VA` with a VAD so the
+  allocator knows the page is taken, was `#[cfg(target_arch = "x86_64")]` — amd64 had it, arm64
+  did not, which is exactly why arch-neutral threading code passed on amd64 and died on arm64.
+  The 5th WoW64 TEB landed on 0x7FFE0000; its `StackBase`/`StackLimit` read back as the *clock*,
+  and `MmCreateTeb`'s zeroing wiped KUSER_SHARED_DATA process-wide;
+  (2) `Wow64pVeh`/`Wow64pPrepareForExceptionHook` dereferenced the CPU area with no NULL check,
+  so the handler faulted *inside itself* and buried the real exception — that is where E15's
+  bogus "libwow64fex fault PCs" came from;
+  (3) `NtSetInformationThread(ThreadZeroTlsCell)` zeroed `TEB64->TlsSlots[i]` for every thread,
+  but a 32-bit guest's TLS lives in TEB32 and TEB64 slot 1 is `WOW64_TLS_CPURESERVED` — so a
+  guest `TlsFree(1)` wiped wow64.dll's per-thread guest register file process-wide. Needed **no**
+  marshalling change: same `ULONG` at the same offset in both worlds, only the target structure
+  differs, so no layout-diff tool would flag it.
+  Still owed on its own merits (NOT this bug): we wire only `BTCpuNotifyMapViewOfSection` of
   FEX's memory-notification contract, though it exports `BTCpuNotifyMemoryAlloc`/`Free`/
-  `Protect`/`Dirty`. The probe stays enabled and red — it runs last in the arm64 ladder, so it
-  costs no coverage. **Does not affect the boot: arm64 smoke is `✓ boot`.**
+  `Protect`/`Dirty`.
 
 - **WoW64 probe guests are NOT staged on arm64 by default** (2026-07-25, noted while closing
   #64). `dll/win32/wow64cpu/CMakeLists.txt` (the amd64 livecd path) is entirely

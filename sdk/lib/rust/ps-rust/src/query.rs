@@ -1811,11 +1811,38 @@ pub unsafe extern "system" fn NtSetInformationThread(
                     } else {
                         Process = (*(Thread as *mut _ETHREAD)).ThreadsProcess as PEPROCESS;
 
+                        // A 32-bit guest's TLS cells live in TEB32, not TEB64.
+                        // TEB64's low slots belong to WoW64 itself (slot 1 is
+                        // WOW64_TLS_CPURESERVED, wow64.dll's per-thread guest
+                        // register file), so zeroing TEB64 here let a guest
+                        // TlsFree() wipe that pointer for EVERY thread in the
+                        // process — the guest then took a breakpoint with no CPU
+                        // area and wow64.dll faulted inside its own VEH.
+                        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+                        let IsWow64 = !(*(Process as *mut _EPROCESS)).Wow64Process.is_null();
+                        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+                        let IsWow64 = false;
+
                         ProcThread = PsGetNextProcessThread(Process, core::ptr::null_mut());
                         while !ProcThread.is_null() {
                             if ExAcquireRundownProtection(core::ptr::addr_of_mut!((*(ProcThread as *mut _ETHREAD)).RundownProtect)) != 0 {
                                 Teb = (*(ProcThread as *mut _ETHREAD)).Tcb.Teb;
-                                if !Teb.is_null() {
+                                if !Teb.is_null() && IsWow64 {
+                                    // TEB32 sits at TEB64+0x2000 (MmCreateTeb's
+                                    // combined region); its TlsSlots are ULONG.
+                                    let Teb32 = (Teb as *mut u8).add(0x2000); // nolint: magic-offset (WoW64 combined-region layout, see MmCreateTeb)
+                                    if TlsIndex > (TLS_MINIMUM_AVAILABLE - 1) as ULONG_PTR {
+                                        if TlsIndex < ((TLS_MINIMUM_AVAILABLE + TLS_EXPANSION_SLOTS) - 1) as ULONG_PTR {
+                                            let Exp32 = *(Teb32.add(0xF94) as *mut u32); // nolint: magic-offset (TEB32.TlsExpansionSlots)
+                                            if Exp32 != 0 {
+                                                *((Exp32 as ULONG_PTR as *mut u32)
+                                                    .add((TlsIndex - TLS_MINIMUM_AVAILABLE as ULONG_PTR) as usize)) = 0;
+                                            }
+                                        }
+                                    } else {
+                                        *(Teb32.add(0xE10 + TlsIndex as usize * 4) as *mut u32) = 0; // nolint: magic-offset (TEB32.TlsSlots)
+                                    }
+                                } else if !Teb.is_null() {
                                     if TlsIndex > (TLS_MINIMUM_AVAILABLE - 1) as ULONG_PTR {
                                         if TlsIndex < ((TLS_MINIMUM_AVAILABLE + TLS_EXPANSION_SLOTS) - 1) as ULONG_PTR {
                                             ExpansionSlots = (*Teb).TlsExpansionSlots;
