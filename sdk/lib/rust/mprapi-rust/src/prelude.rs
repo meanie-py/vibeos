@@ -35,3 +35,8 @@ pub fn NT_SUCCESS(s: NTSTATUS) -> bool {
 }
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
+
+// kernel32. Declared, never defined: mprapi links against it via add_importlibs.
+extern "system" {
+    pub fn DisableThreadLibraryCalls(hLibModule: HINSTANCE) -> BOOL;
+}

@@ -375,6 +375,7 @@ pub const DNS_SECTION_DnsSectionAnswer: DNS_SECTION = 1;
 pub const DNS_SECTION_DnsSectionAuthority: DNS_SECTION = 2;
 pub const DNS_SECTION_DnsSectionAdditional: DNS_SECTION = 3;
 pub type DNS_SECTION = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _IP4_ARRAY {
     pub AddrCount: DWORD,
@@ -382,6 +383,7 @@ pub struct _IP4_ARRAY {
 }
 pub type IP4_ARRAY = _IP4_ARRAY;
 pub type PIP4_ARRAY = *mut _IP4_ARRAY;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct IP6_ADDRESS {
     pub IP6Dword: [DWORD; 4usize],
@@ -389,18 +391,20 @@ pub struct IP6_ADDRESS {
 pub type PIP6_ADDRESS = *mut IP6_ADDRESS;
 pub type DNS_IP6_ADDRESS = IP6_ADDRESS;
 pub type PDNS_IP6_ADDRESS = *mut IP6_ADDRESS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DnsAddr {
     pub MaxSa: [CHAR; 32usize],
     pub Data: _DnsAddr__bindgen_ty_1,
 }
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
-pub struct _DnsAddr__bindgen_ty_1 {
-    pub DnsAddrUserDword: __BindgenUnionField<[DWORD; 8usize]>,
-    pub bindgen_union_field: [u8; 32usize],
+pub union _DnsAddr__bindgen_ty_1 {
+    pub DnsAddrUserDword: [DWORD; 8usize],
 }
 pub type DNS_ADDR = _DnsAddr;
 pub type PDNS_ADDR = *mut _DnsAddr;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _DnsAddrArray {
     pub MaxCount: DWORD,
@@ -416,6 +420,7 @@ pub struct _DnsAddrArray {
 }
 pub type DNS_ADDR_ARRAY = _DnsAddrArray;
 pub type PDNS_ADDR_ARRAY = *mut _DnsAddrArray;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _DNS_HEADER {
     pub Xid: WORD,
@@ -816,6 +821,7 @@ impl _DNS_HEADER {
 }
 pub type DNS_HEADER = _DNS_HEADER;
 pub type PDNS_HEADER = *mut _DNS_HEADER;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _DNS_WIRE_QUESTION {
     pub QuestionType: WORD,
@@ -823,6 +829,7 @@ pub struct _DNS_WIRE_QUESTION {
 }
 pub type DNS_WIRE_QUESTION = _DNS_WIRE_QUESTION;
 pub type PDNS_WIRE_QUESTION = *mut _DNS_WIRE_QUESTION;
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct _DNS_WIRE_RECORD {
     pub RecordType: WORD,
@@ -832,6 +839,7 @@ pub struct _DNS_WIRE_RECORD {
 }
 pub type DNS_WIRE_RECORD = _DNS_WIRE_RECORD;
 pub type PDNS_WIRE_RECORD = *mut _DNS_WIRE_RECORD;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DNS_MESSAGE_BUFFER {
     pub MessageHead: DNS_HEADER,
@@ -839,6 +847,7 @@ pub struct _DNS_MESSAGE_BUFFER {
 }
 pub type DNS_MESSAGE_BUFFER = _DNS_MESSAGE_BUFFER;
 pub type PDNS_MESSAGE_BUFFER = *mut _DNS_MESSAGE_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DnsRecordFlags {
     pub _bitfield_align_1: [u32; 0],
@@ -1043,22 +1052,26 @@ impl _DnsRecordFlags {
     }
 }
 pub type DNS_RECORD_FLAGS = _DnsRecordFlags;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_A_DATA {
     pub IpAddress: IP4_ADDRESS,
 }
 pub type PDNS_A_DATA = *mut DNS_A_DATA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_AAAA_DATA {
     pub Ip6Address: DNS_IP6_ADDRESS,
 }
 pub type PDNS_AAAA_DATA = *mut DNS_AAAA_DATA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_ATMA_DATA {
     pub AddressType: BYTE,
     pub Address: [BYTE; 20usize],
 }
 pub type PDNS_ATMA_DATA = *mut DNS_ATMA_DATA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_KEY_DATA {
     pub wFlags: WORD,
@@ -1067,6 +1080,7 @@ pub struct DNS_KEY_DATA {
     pub Key: [BYTE; 1usize],
 }
 pub type PDNS_KEY_DATA = *mut DNS_KEY_DATA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_LOC_DATA {
     pub wVersion: WORD,
@@ -1078,18 +1092,21 @@ pub struct DNS_LOC_DATA {
     pub dwAltitude: DWORD,
 }
 pub type PDNS_LOC_DATA = *mut DNS_LOC_DATA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_MINFO_DATAA {
     pub pNameMailbox: LPSTR,
     pub pNameErrorsMailbox: LPSTR,
 }
 pub type PDNS_MINFO_DATAA = *mut DNS_MINFO_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_MINFO_DATAW {
     pub pNameMailbox: LPWSTR,
     pub pNameErrorsMailbox: LPWSTR,
 }
 pub type PDNS_MINFO_DATAW = *mut DNS_MINFO_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_MX_DATAA {
     pub pNameExchange: LPSTR,
@@ -1097,6 +1114,7 @@ pub struct DNS_MX_DATAA {
     pub Pad: WORD,
 }
 pub type PDNS_MX_DATAA = *mut DNS_MX_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_MX_DATAW {
     pub pNameExchange: LPWSTR,
@@ -1104,12 +1122,14 @@ pub struct DNS_MX_DATAW {
     pub Pad: WORD,
 }
 pub type PDNS_MX_DATAW = *mut DNS_MX_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_NULL_DATA {
     pub dwByteCount: DWORD,
     pub Data: [BYTE; 1usize],
 }
 pub type PDNS_NULL_DATA = *mut DNS_NULL_DATA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_NXT_DATAA {
     pub pNameNext: LPSTR,
@@ -1117,6 +1137,7 @@ pub struct DNS_NXT_DATAA {
     pub wTypes: [WORD; 1usize],
 }
 pub type PDNS_NXT_DATAA = *mut DNS_NXT_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_NXT_DATAW {
     pub pNameNext: LPWSTR,
@@ -1124,16 +1145,19 @@ pub struct DNS_NXT_DATAW {
     pub wTypes: [WORD; 1usize],
 }
 pub type PDNS_NXT_DATAW = *mut DNS_NXT_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_PTR_DATAA {
     pub pNameHost: LPSTR,
 }
 pub type PDNS_PTR_DATAA = *mut DNS_PTR_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_PTR_DATAW {
     pub pNameHost: LPWSTR,
 }
 pub type PDNS_PTR_DATAW = *mut DNS_PTR_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_SIG_DATAA {
     pub pNameSigner: LPSTR,
@@ -1148,6 +1172,7 @@ pub struct DNS_SIG_DATAA {
     pub Signature: [BYTE; 1usize],
 }
 pub type PDNS_SIG_DATAA = *mut DNS_SIG_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_SIG_DATAW {
     pub pNameSigner: LPWSTR,
@@ -1162,6 +1187,7 @@ pub struct DNS_SIG_DATAW {
     pub Signature: [BYTE; 1usize],
 }
 pub type PDNS_SIG_DATAW = *mut DNS_SIG_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_SOA_DATAA {
     pub pNamePrimaryServer: LPSTR,
@@ -1173,6 +1199,7 @@ pub struct DNS_SOA_DATAA {
     pub dwDefaultTtl: DWORD,
 }
 pub type PDNS_SOA_DATAA = *mut DNS_SOA_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_SOA_DATAW {
     pub pNamePrimaryServer: LPWSTR,
@@ -1184,6 +1211,7 @@ pub struct DNS_SOA_DATAW {
     pub dwDefaultTtl: DWORD,
 }
 pub type PDNS_SOA_DATAW = *mut DNS_SOA_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_SRV_DATAA {
     pub pNameTarget: LPSTR,
@@ -1193,6 +1221,7 @@ pub struct DNS_SRV_DATAA {
     pub Pad: WORD,
 }
 pub type PDNS_SRV_DATAA = *mut DNS_SRV_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_SRV_DATAW {
     pub pNameTarget: LPWSTR,
@@ -1202,18 +1231,21 @@ pub struct DNS_SRV_DATAW {
     pub Pad: WORD,
 }
 pub type PDNS_SRV_DATAW = *mut DNS_SRV_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_TXT_DATAA {
     pub dwStringCount: DWORD,
     pub pStringArray: [LPSTR; 1usize],
 }
 pub type PDNS_TXT_DATAA = *mut DNS_TXT_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_TXT_DATAW {
     pub dwStringCount: DWORD,
     pub pStringArray: [LPWSTR; 1usize],
 }
 pub type PDNS_TXT_DATAW = *mut DNS_TXT_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_TKEY_DATAA {
     pub pNameAlgorithm: LPSTR,
@@ -1230,6 +1262,7 @@ pub struct DNS_TKEY_DATAA {
     pub bPacketPointers: BOOL,
 }
 pub type PDNS_TKEY_DATAA = *mut DNS_TKEY_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_TKEY_DATAW {
     pub pNameAlgorithm: LPWSTR,
@@ -1246,6 +1279,7 @@ pub struct DNS_TKEY_DATAW {
     pub bPacketPointers: BOOL,
 }
 pub type PDNS_TKEY_DATAW = *mut DNS_TKEY_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_TSIG_DATAA {
     pub pNameAlgorithm: LPSTR,
@@ -1262,6 +1296,7 @@ pub struct DNS_TSIG_DATAA {
     pub bPacketPointers: BOOL,
 }
 pub type PDNS_TSIG_DATAA = *mut DNS_TSIG_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_TSIG_DATAW {
     pub pNameAlgorithm: LPWSTR,
@@ -1278,6 +1313,7 @@ pub struct DNS_TSIG_DATAW {
     pub bPacketPointers: BOOL,
 }
 pub type PDNS_TSIG_DATAW = *mut DNS_TSIG_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_WINS_DATA {
     pub dwMappingFlag: DWORD,
@@ -1287,6 +1323,7 @@ pub struct DNS_WINS_DATA {
     pub WinsServers: [IP4_ADDRESS; 1usize],
 }
 pub type PDNS_WINS_DATA = *mut DNS_WINS_DATA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_WINSR_DATAA {
     pub dwMappingFlag: DWORD,
@@ -1295,6 +1332,7 @@ pub struct DNS_WINSR_DATAA {
     pub pNameResultDomain: LPSTR,
 }
 pub type PDNS_WINSR_DATAA = *mut DNS_WINSR_DATAA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_WINSR_DATAW {
     pub dwMappingFlag: DWORD,
@@ -1303,6 +1341,7 @@ pub struct DNS_WINSR_DATAW {
     pub pNameResultDomain: LPWSTR,
 }
 pub type PDNS_WINSR_DATAW = *mut DNS_WINSR_DATAW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_WKS_DATA {
     pub IpAddress: IP4_ADDRESS,
@@ -1310,6 +1349,7 @@ pub struct DNS_WKS_DATA {
     pub BitMask: [BYTE; 1usize],
 }
 pub type PDNS_WKS_DATA = *mut DNS_WKS_DATA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_DS_DATA {
     pub wKeyTag: WORD,
@@ -1319,6 +1359,7 @@ pub struct DNS_DS_DATA {
     pub wPad: WORD,
     pub Digest: [BYTE; 1usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_NSEC_DATAW {
     pub pNextDomainName: LPWSTR,
@@ -1326,6 +1367,7 @@ pub struct DNS_NSEC_DATAW {
     pub wPad: WORD,
     pub TypeBitMaps: [BYTE; 1usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_DNSKEY_DATA {
     pub wFlags: WORD,
@@ -1335,12 +1377,14 @@ pub struct DNS_DNSKEY_DATA {
     pub wPad: WORD,
     pub Key: [BYTE; 1usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_OPT_DATA {
     pub wDataLength: WORD,
     pub wPad: WORD,
     pub Data: [BYTE; 1usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct DNS_RRSIG_DATAW {
     pub wTypeCovered: WORD,
@@ -1354,6 +1398,7 @@ pub struct DNS_RRSIG_DATAW {
     pub pNameSigner: LPWSTR,
     pub Signature: [BYTE; 1usize],
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DnsRecordA {
     pub pNext: *mut _DnsRecordA,
@@ -1365,78 +1410,79 @@ pub struct _DnsRecordA {
     pub dwReserved: DWORD,
     pub Data: _DnsRecordA__bindgen_ty_2,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _DnsRecordA__bindgen_ty_1 {
-    pub DW: __BindgenUnionField<DWORD>,
-    pub S: __BindgenUnionField<DNS_RECORD_FLAGS>,
-    pub bindgen_union_field: u32,
+pub union _DnsRecordA__bindgen_ty_1 {
+    pub DW: DWORD,
+    pub S: DNS_RECORD_FLAGS,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _DnsRecordA__bindgen_ty_2 {
-    pub A: __BindgenUnionField<DNS_A_DATA>,
-    pub SOA: __BindgenUnionField<DNS_SOA_DATAA>,
-    pub Soa: __BindgenUnionField<DNS_SOA_DATAA>,
-    pub PTR: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub Ptr: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub NS: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub Ns: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub CNAME: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub Cname: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub MB: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub Mb: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub MD: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub Md: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub MF: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub Mf: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub MG: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub Mg: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub MR: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub Mr: __BindgenUnionField<DNS_PTR_DATAA>,
-    pub MINFO: __BindgenUnionField<DNS_MINFO_DATAA>,
-    pub Minfo: __BindgenUnionField<DNS_MINFO_DATAA>,
-    pub RP: __BindgenUnionField<DNS_MINFO_DATAA>,
-    pub Rp: __BindgenUnionField<DNS_MINFO_DATAA>,
-    pub MX: __BindgenUnionField<DNS_MX_DATAA>,
-    pub Mx: __BindgenUnionField<DNS_MX_DATAA>,
-    pub AFSDB: __BindgenUnionField<DNS_MX_DATAA>,
-    pub Afsdb: __BindgenUnionField<DNS_MX_DATAA>,
-    pub RT: __BindgenUnionField<DNS_MX_DATAA>,
-    pub Rt: __BindgenUnionField<DNS_MX_DATAA>,
-    pub HINFO: __BindgenUnionField<DNS_TXT_DATAA>,
-    pub Hinfo: __BindgenUnionField<DNS_TXT_DATAA>,
-    pub ISDN: __BindgenUnionField<DNS_TXT_DATAA>,
-    pub Isdn: __BindgenUnionField<DNS_TXT_DATAA>,
-    pub TXT: __BindgenUnionField<DNS_TXT_DATAA>,
-    pub Txt: __BindgenUnionField<DNS_TXT_DATAA>,
-    pub X25: __BindgenUnionField<DNS_TXT_DATAA>,
-    pub Null: __BindgenUnionField<DNS_NULL_DATA>,
-    pub WKS: __BindgenUnionField<DNS_WKS_DATA>,
-    pub Wks: __BindgenUnionField<DNS_WKS_DATA>,
-    pub AAAA: __BindgenUnionField<DNS_AAAA_DATA>,
-    pub KEY: __BindgenUnionField<DNS_KEY_DATA>,
-    pub Key: __BindgenUnionField<DNS_KEY_DATA>,
-    pub SIG: __BindgenUnionField<DNS_SIG_DATAA>,
-    pub Sig: __BindgenUnionField<DNS_SIG_DATAA>,
-    pub ATMA: __BindgenUnionField<DNS_ATMA_DATA>,
-    pub Atma: __BindgenUnionField<DNS_ATMA_DATA>,
-    pub NXT: __BindgenUnionField<DNS_NXT_DATAA>,
-    pub Nxt: __BindgenUnionField<DNS_NXT_DATAA>,
-    pub SRV: __BindgenUnionField<DNS_SRV_DATAA>,
-    pub Srv: __BindgenUnionField<DNS_SRV_DATAA>,
-    pub TKEY: __BindgenUnionField<DNS_TKEY_DATAA>,
-    pub Tkey: __BindgenUnionField<DNS_TKEY_DATAA>,
-    pub TSIG: __BindgenUnionField<DNS_TSIG_DATAA>,
-    pub Tsig: __BindgenUnionField<DNS_TSIG_DATAA>,
-    pub WINS: __BindgenUnionField<DNS_WINS_DATA>,
-    pub Wins: __BindgenUnionField<DNS_WINS_DATA>,
-    pub WINSR: __BindgenUnionField<DNS_WINSR_DATAA>,
-    pub WinsR: __BindgenUnionField<DNS_WINSR_DATAA>,
-    pub NBSTAT: __BindgenUnionField<DNS_WINSR_DATAA>,
-    pub Nbstat: __BindgenUnionField<DNS_WINSR_DATAA>,
-    pub bindgen_union_field: [u64; 5usize],
+pub union _DnsRecordA__bindgen_ty_2 {
+    pub A: DNS_A_DATA,
+    pub SOA: DNS_SOA_DATAA,
+    pub Soa: DNS_SOA_DATAA,
+    pub PTR: DNS_PTR_DATAA,
+    pub Ptr: DNS_PTR_DATAA,
+    pub NS: DNS_PTR_DATAA,
+    pub Ns: DNS_PTR_DATAA,
+    pub CNAME: DNS_PTR_DATAA,
+    pub Cname: DNS_PTR_DATAA,
+    pub MB: DNS_PTR_DATAA,
+    pub Mb: DNS_PTR_DATAA,
+    pub MD: DNS_PTR_DATAA,
+    pub Md: DNS_PTR_DATAA,
+    pub MF: DNS_PTR_DATAA,
+    pub Mf: DNS_PTR_DATAA,
+    pub MG: DNS_PTR_DATAA,
+    pub Mg: DNS_PTR_DATAA,
+    pub MR: DNS_PTR_DATAA,
+    pub Mr: DNS_PTR_DATAA,
+    pub MINFO: DNS_MINFO_DATAA,
+    pub Minfo: DNS_MINFO_DATAA,
+    pub RP: DNS_MINFO_DATAA,
+    pub Rp: DNS_MINFO_DATAA,
+    pub MX: DNS_MX_DATAA,
+    pub Mx: DNS_MX_DATAA,
+    pub AFSDB: DNS_MX_DATAA,
+    pub Afsdb: DNS_MX_DATAA,
+    pub RT: DNS_MX_DATAA,
+    pub Rt: DNS_MX_DATAA,
+    pub HINFO: DNS_TXT_DATAA,
+    pub Hinfo: DNS_TXT_DATAA,
+    pub ISDN: DNS_TXT_DATAA,
+    pub Isdn: DNS_TXT_DATAA,
+    pub TXT: DNS_TXT_DATAA,
+    pub Txt: DNS_TXT_DATAA,
+    pub X25: DNS_TXT_DATAA,
+    pub Null: DNS_NULL_DATA,
+    pub WKS: DNS_WKS_DATA,
+    pub Wks: DNS_WKS_DATA,
+    pub AAAA: DNS_AAAA_DATA,
+    pub KEY: DNS_KEY_DATA,
+    pub Key: DNS_KEY_DATA,
+    pub SIG: DNS_SIG_DATAA,
+    pub Sig: DNS_SIG_DATAA,
+    pub ATMA: DNS_ATMA_DATA,
+    pub Atma: DNS_ATMA_DATA,
+    pub NXT: DNS_NXT_DATAA,
+    pub Nxt: DNS_NXT_DATAA,
+    pub SRV: DNS_SRV_DATAA,
+    pub Srv: DNS_SRV_DATAA,
+    pub TKEY: DNS_TKEY_DATAA,
+    pub Tkey: DNS_TKEY_DATAA,
+    pub TSIG: DNS_TSIG_DATAA,
+    pub Tsig: DNS_TSIG_DATAA,
+    pub WINS: DNS_WINS_DATA,
+    pub Wins: DNS_WINS_DATA,
+    pub WINSR: DNS_WINSR_DATAA,
+    pub WinsR: DNS_WINSR_DATAA,
+    pub NBSTAT: DNS_WINSR_DATAA,
+    pub Nbstat: DNS_WINSR_DATAA,
 }
 pub type DNS_RECORDA = _DnsRecordA;
 pub type PDNS_RECORDA = *mut _DnsRecordA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DnsRecordW {
     pub pNext: *mut _DnsRecordW,
@@ -1448,75 +1494,75 @@ pub struct _DnsRecordW {
     pub dwReserved: DWORD,
     pub Data: _DnsRecordW__bindgen_ty_2,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _DnsRecordW__bindgen_ty_1 {
-    pub DW: __BindgenUnionField<DWORD>,
-    pub S: __BindgenUnionField<DNS_RECORD_FLAGS>,
-    pub bindgen_union_field: u32,
+pub union _DnsRecordW__bindgen_ty_1 {
+    pub DW: DWORD,
+    pub S: DNS_RECORD_FLAGS,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _DnsRecordW__bindgen_ty_2 {
-    pub A: __BindgenUnionField<DNS_A_DATA>,
-    pub SOA: __BindgenUnionField<DNS_SOA_DATAW>,
-    pub Soa: __BindgenUnionField<DNS_SOA_DATAW>,
-    pub PTR: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub Ptr: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub NS: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub Ns: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub CNAME: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub Cname: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub MB: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub Mb: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub MD: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub Md: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub MF: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub Mf: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub MG: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub Mg: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub MR: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub Mr: __BindgenUnionField<DNS_PTR_DATAW>,
-    pub MINFO: __BindgenUnionField<DNS_MINFO_DATAW>,
-    pub Minfo: __BindgenUnionField<DNS_MINFO_DATAW>,
-    pub RP: __BindgenUnionField<DNS_MINFO_DATAW>,
-    pub Rp: __BindgenUnionField<DNS_MINFO_DATAW>,
-    pub MX: __BindgenUnionField<DNS_MX_DATAW>,
-    pub Mx: __BindgenUnionField<DNS_MX_DATAW>,
-    pub AFSDB: __BindgenUnionField<DNS_MX_DATAW>,
-    pub Afsdb: __BindgenUnionField<DNS_MX_DATAW>,
-    pub RT: __BindgenUnionField<DNS_MX_DATAW>,
-    pub Rt: __BindgenUnionField<DNS_MX_DATAW>,
-    pub HINFO: __BindgenUnionField<DNS_TXT_DATAW>,
-    pub Hinfo: __BindgenUnionField<DNS_TXT_DATAW>,
-    pub ISDN: __BindgenUnionField<DNS_TXT_DATAW>,
-    pub Isdn: __BindgenUnionField<DNS_TXT_DATAW>,
-    pub TXT: __BindgenUnionField<DNS_TXT_DATAW>,
-    pub Txt: __BindgenUnionField<DNS_TXT_DATAW>,
-    pub X25: __BindgenUnionField<DNS_TXT_DATAW>,
-    pub Null: __BindgenUnionField<DNS_NULL_DATA>,
-    pub WKS: __BindgenUnionField<DNS_WKS_DATA>,
-    pub Wks: __BindgenUnionField<DNS_WKS_DATA>,
-    pub AAAA: __BindgenUnionField<DNS_AAAA_DATA>,
-    pub KEY: __BindgenUnionField<DNS_KEY_DATA>,
-    pub Key: __BindgenUnionField<DNS_KEY_DATA>,
-    pub SIG: __BindgenUnionField<DNS_SIG_DATAW>,
-    pub Sig: __BindgenUnionField<DNS_SIG_DATAW>,
-    pub ATMA: __BindgenUnionField<DNS_ATMA_DATA>,
-    pub Atma: __BindgenUnionField<DNS_ATMA_DATA>,
-    pub NXT: __BindgenUnionField<DNS_NXT_DATAW>,
-    pub Nxt: __BindgenUnionField<DNS_NXT_DATAW>,
-    pub SRV: __BindgenUnionField<DNS_SRV_DATAW>,
-    pub Srv: __BindgenUnionField<DNS_SRV_DATAW>,
-    pub TKEY: __BindgenUnionField<DNS_TKEY_DATAW>,
-    pub Tkey: __BindgenUnionField<DNS_TKEY_DATAW>,
-    pub TSIG: __BindgenUnionField<DNS_TSIG_DATAW>,
-    pub Tsig: __BindgenUnionField<DNS_TSIG_DATAW>,
-    pub WINS: __BindgenUnionField<DNS_WINS_DATA>,
-    pub Wins: __BindgenUnionField<DNS_WINS_DATA>,
-    pub WINSR: __BindgenUnionField<DNS_WINSR_DATAW>,
-    pub WinsR: __BindgenUnionField<DNS_WINSR_DATAW>,
-    pub NBSTAT: __BindgenUnionField<DNS_WINSR_DATAW>,
-    pub Nbstat: __BindgenUnionField<DNS_WINSR_DATAW>,
-    pub bindgen_union_field: [u64; 5usize],
+pub union _DnsRecordW__bindgen_ty_2 {
+    pub A: DNS_A_DATA,
+    pub SOA: DNS_SOA_DATAW,
+    pub Soa: DNS_SOA_DATAW,
+    pub PTR: DNS_PTR_DATAW,
+    pub Ptr: DNS_PTR_DATAW,
+    pub NS: DNS_PTR_DATAW,
+    pub Ns: DNS_PTR_DATAW,
+    pub CNAME: DNS_PTR_DATAW,
+    pub Cname: DNS_PTR_DATAW,
+    pub MB: DNS_PTR_DATAW,
+    pub Mb: DNS_PTR_DATAW,
+    pub MD: DNS_PTR_DATAW,
+    pub Md: DNS_PTR_DATAW,
+    pub MF: DNS_PTR_DATAW,
+    pub Mf: DNS_PTR_DATAW,
+    pub MG: DNS_PTR_DATAW,
+    pub Mg: DNS_PTR_DATAW,
+    pub MR: DNS_PTR_DATAW,
+    pub Mr: DNS_PTR_DATAW,
+    pub MINFO: DNS_MINFO_DATAW,
+    pub Minfo: DNS_MINFO_DATAW,
+    pub RP: DNS_MINFO_DATAW,
+    pub Rp: DNS_MINFO_DATAW,
+    pub MX: DNS_MX_DATAW,
+    pub Mx: DNS_MX_DATAW,
+    pub AFSDB: DNS_MX_DATAW,
+    pub Afsdb: DNS_MX_DATAW,
+    pub RT: DNS_MX_DATAW,
+    pub Rt: DNS_MX_DATAW,
+    pub HINFO: DNS_TXT_DATAW,
+    pub Hinfo: DNS_TXT_DATAW,
+    pub ISDN: DNS_TXT_DATAW,
+    pub Isdn: DNS_TXT_DATAW,
+    pub TXT: DNS_TXT_DATAW,
+    pub Txt: DNS_TXT_DATAW,
+    pub X25: DNS_TXT_DATAW,
+    pub Null: DNS_NULL_DATA,
+    pub WKS: DNS_WKS_DATA,
+    pub Wks: DNS_WKS_DATA,
+    pub AAAA: DNS_AAAA_DATA,
+    pub KEY: DNS_KEY_DATA,
+    pub Key: DNS_KEY_DATA,
+    pub SIG: DNS_SIG_DATAW,
+    pub Sig: DNS_SIG_DATAW,
+    pub ATMA: DNS_ATMA_DATA,
+    pub Atma: DNS_ATMA_DATA,
+    pub NXT: DNS_NXT_DATAW,
+    pub Nxt: DNS_NXT_DATAW,
+    pub SRV: DNS_SRV_DATAW,
+    pub Srv: DNS_SRV_DATAW,
+    pub TKEY: DNS_TKEY_DATAW,
+    pub Tkey: DNS_TKEY_DATAW,
+    pub TSIG: DNS_TSIG_DATAW,
+    pub Tsig: DNS_TSIG_DATAW,
+    pub WINS: DNS_WINS_DATA,
+    pub Wins: DNS_WINS_DATA,
+    pub WINSR: DNS_WINSR_DATAW,
+    pub WinsR: DNS_WINSR_DATAW,
+    pub NBSTAT: DNS_WINSR_DATAW,
+    pub Nbstat: DNS_WINSR_DATAW,
 }
 pub type DNS_RECORDW = _DnsRecordW;
 pub type PDNS_RECORDW = *mut _DnsRecordW;
@@ -1535,6 +1581,7 @@ pub const _NETSETUP_JOIN_STATUS_NetSetupDomainName: _NETSETUP_JOIN_STATUS = 3;
 pub type _NETSETUP_JOIN_STATUS = ::core::ffi::c_uint;
 pub use self::_NETSETUP_JOIN_STATUS as NETSETUP_JOIN_STATUS;
 pub type PNETSETUP_JOIN_STATUS = *mut _NETSETUP_JOIN_STATUS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _PROPSHEETPAGEA {
     pub dwSize: DWORD,
@@ -1545,8 +1592,7 @@ pub struct _PROPSHEETPAGEA {
     pub pszTitle: LPCSTR,
     pub pfnDlgProc: DLGPROC,
     pub lParam: LPARAM,
-    pub pfnCallback: ::core::option::Option<
-        unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEA) -> UINT,
+    pub pfnCallback: ::core::option::Option< unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEA) -> UINT,
     >,
     pub pcRefParent: *mut UINT,
     pub pszHeaderTitle: LPCSTR,
@@ -1554,23 +1600,23 @@ pub struct _PROPSHEETPAGEA {
     pub hActCtx: HANDLE,
     pub __bindgen_anon_3: _PROPSHEETPAGEA__bindgen_ty_3,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETPAGEA__bindgen_ty_1 {
-    pub pszTemplate: __BindgenUnionField<LPCSTR>,
-    pub pResource: __BindgenUnionField<LPCDLGTEMPLATE>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETPAGEA__bindgen_ty_1 {
+    pub pszTemplate: LPCSTR,
+    pub pResource: LPCDLGTEMPLATE,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETPAGEA__bindgen_ty_2 {
-    pub hIcon: __BindgenUnionField<HICON>,
-    pub pszIcon: __BindgenUnionField<LPCSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETPAGEA__bindgen_ty_2 {
+    pub hIcon: HICON,
+    pub pszIcon: LPCSTR,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETPAGEA__bindgen_ty_3 {
-    pub hbmHeader: __BindgenUnionField<HBITMAP>,
-    pub pszbmHeader: __BindgenUnionField<LPCSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETPAGEA__bindgen_ty_3 {
+    pub hbmHeader: HBITMAP,
+    pub pszbmHeader: LPCSTR,
 }
 pub type PROPSHEETPAGEA = _PROPSHEETPAGEA;
 pub type LPPROPSHEETPAGEA = *mut _PROPSHEETPAGEA;
@@ -1578,6 +1624,7 @@ pub type PROPSHEETPAGEA_LATEST = _PROPSHEETPAGEA;
 pub type LPPROPSHEETPAGEA_LATEST = *mut _PROPSHEETPAGEA;
 pub type LPCPROPSHEETPAGEA = *const PROPSHEETPAGEA;
 pub type LPCPROPSHEETPAGEA_LATEST = *const PROPSHEETPAGEA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _PROPSHEETPAGEW {
     pub dwSize: DWORD,
@@ -1588,8 +1635,7 @@ pub struct _PROPSHEETPAGEW {
     pub pszTitle: LPCWSTR,
     pub pfnDlgProc: DLGPROC,
     pub lParam: LPARAM,
-    pub pfnCallback: ::core::option::Option<
-        unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEW) -> UINT,
+    pub pfnCallback: ::core::option::Option< unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEW) -> UINT,
     >,
     pub pcRefParent: *mut UINT,
     pub pszHeaderTitle: LPCWSTR,
@@ -1597,23 +1643,23 @@ pub struct _PROPSHEETPAGEW {
     pub hActCtx: HANDLE,
     pub __bindgen_anon_3: _PROPSHEETPAGEW__bindgen_ty_3,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETPAGEW__bindgen_ty_1 {
-    pub pszTemplate: __BindgenUnionField<LPCWSTR>,
-    pub pResource: __BindgenUnionField<LPCDLGTEMPLATE>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETPAGEW__bindgen_ty_1 {
+    pub pszTemplate: LPCWSTR,
+    pub pResource: LPCDLGTEMPLATE,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETPAGEW__bindgen_ty_2 {
-    pub hIcon: __BindgenUnionField<HICON>,
-    pub pszIcon: __BindgenUnionField<LPCWSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETPAGEW__bindgen_ty_2 {
+    pub hIcon: HICON,
+    pub pszIcon: LPCWSTR,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETPAGEW__bindgen_ty_3 {
-    pub hbmHeader: __BindgenUnionField<HBITMAP>,
-    pub pszbmHeader: __BindgenUnionField<LPCWSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETPAGEW__bindgen_ty_3 {
+    pub hbmHeader: HBITMAP,
+    pub pszbmHeader: LPCWSTR,
 }
 pub type PROPSHEETPAGEW = _PROPSHEETPAGEW;
 pub type LPPROPSHEETPAGEW = *mut _PROPSHEETPAGEW;
@@ -1636,6 +1682,7 @@ pub struct HPROPSHEETPAGE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type HPROPSHEETPAGE = *mut HPROPSHEETPAGE__;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _PROPSHEETHEADERA {
     pub dwSize: DWORD,
@@ -1652,17 +1699,17 @@ pub struct _PROPSHEETHEADERA {
     pub hplWatermark: HPALETTE,
     pub __bindgen_anon_5: _PROPSHEETHEADERA__bindgen_ty_5,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETHEADERA__bindgen_ty_1 {
-    pub hIcon: __BindgenUnionField<HICON>,
-    pub pszIcon: __BindgenUnionField<LPCSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETHEADERA__bindgen_ty_1 {
+    pub hIcon: HICON,
+    pub pszIcon: LPCSTR,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETHEADERA__bindgen_ty_2 {
-    pub nStartPage: __BindgenUnionField<UINT>,
-    pub pStartPage: __BindgenUnionField<LPCSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETHEADERA__bindgen_ty_2 {
+    pub nStartPage: UINT,
+    pub pStartPage: LPCSTR,
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -1670,21 +1717,22 @@ pub union _PROPSHEETHEADERA__bindgen_ty_3 {
     pub ppsp: LPCPROPSHEETPAGEA,
     pub phpage: *mut HPROPSHEETPAGE,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETHEADERA__bindgen_ty_4 {
-    pub hbmWatermark: __BindgenUnionField<HBITMAP>,
-    pub pszbmWatermark: __BindgenUnionField<LPCSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETHEADERA__bindgen_ty_4 {
+    pub hbmWatermark: HBITMAP,
+    pub pszbmWatermark: LPCSTR,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETHEADERA__bindgen_ty_5 {
-    pub hbmHeader: __BindgenUnionField<HBITMAP>,
-    pub pszbmHeader: __BindgenUnionField<LPCSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETHEADERA__bindgen_ty_5 {
+    pub hbmHeader: HBITMAP,
+    pub pszbmHeader: LPCSTR,
 }
 pub type PROPSHEETHEADERA = _PROPSHEETHEADERA;
 pub type LPPROPSHEETHEADERA = *mut _PROPSHEETHEADERA;
 pub type LPCPROPSHEETHEADERA = *const PROPSHEETHEADERA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _PROPSHEETHEADERW {
     pub dwSize: DWORD,
@@ -1701,17 +1749,17 @@ pub struct _PROPSHEETHEADERW {
     pub hplWatermark: HPALETTE,
     pub __bindgen_anon_5: _PROPSHEETHEADERW__bindgen_ty_5,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETHEADERW__bindgen_ty_1 {
-    pub hIcon: __BindgenUnionField<HICON>,
-    pub pszIcon: __BindgenUnionField<LPCWSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETHEADERW__bindgen_ty_1 {
+    pub hIcon: HICON,
+    pub pszIcon: LPCWSTR,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETHEADERW__bindgen_ty_2 {
-    pub nStartPage: __BindgenUnionField<UINT>,
-    pub pStartPage: __BindgenUnionField<LPCWSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETHEADERW__bindgen_ty_2 {
+    pub nStartPage: UINT,
+    pub pStartPage: LPCWSTR,
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -1719,17 +1767,17 @@ pub union _PROPSHEETHEADERW__bindgen_ty_3 {
     pub ppsp: LPCPROPSHEETPAGEW,
     pub phpage: *mut HPROPSHEETPAGE,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETHEADERW__bindgen_ty_4 {
-    pub hbmWatermark: __BindgenUnionField<HBITMAP>,
-    pub pszbmWatermark: __BindgenUnionField<LPCWSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETHEADERW__bindgen_ty_4 {
+    pub hbmWatermark: HBITMAP,
+    pub pszbmWatermark: LPCWSTR,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _PROPSHEETHEADERW__bindgen_ty_5 {
-    pub hbmHeader: __BindgenUnionField<HBITMAP>,
-    pub pszbmHeader: __BindgenUnionField<LPCWSTR>,
-    pub bindgen_union_field: u32,
+pub union _PROPSHEETHEADERW__bindgen_ty_5 {
+    pub hbmHeader: HBITMAP,
+    pub pszbmHeader: LPCWSTR,
 }
 pub type PROPSHEETHEADERW = _PROPSHEETHEADERW;
 pub type LPPROPSHEETHEADERW = *mut _PROPSHEETHEADERW;
@@ -1739,6 +1787,7 @@ pub type LPFNADDPROPSHEETPAGE =
 pub type LPFNADDPROPSHEETPAGES = ::core::option::Option<
     unsafe extern "stdcall" fn(arg1: LPVOID, arg2: LPFNADDPROPSHEETPAGE, arg3: LPARAM) -> BOOL,
 >;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _PSHNOTIFY {
     pub hdr: NMHDR,

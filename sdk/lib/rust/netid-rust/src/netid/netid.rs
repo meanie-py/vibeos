@@ -14,7 +14,7 @@ pub struct _NETIDDATA {
     pub szOldHostName: [u16; MAX_HOSTNAME_LENGTH + 1],
     pub szDomainName: [u16; MAX_DOMAINNAME_LENGTH + 1],
     pub szOldDomainName: [u16; MAX_DOMAINNAME_LENGTH + 1],
-    pub szComputerName: [u16; MAX_COMPUTERNAME_LENGTH + 1],
+    pub szComputerName: [u16; (MAX_COMPUTERNAME_LENGTH + 1) as usize],
     pub bSyncDomainWithMembership: i32,
     pub JoinName: *mut u16,
     pub JoinStatus: u32,
@@ -28,44 +28,61 @@ pub type NETIDDATA = _NETIDDATA;
 pub type PNETIDDATA = *mut _NETIDDATA;
 
 static mut hDllInstance: HINSTANCE = core::ptr::null_mut();
-unsafe extern "C" fn FormatMessageBox(
+/// The body of the C's variadic `FormatMessageBox`, with the `va_list` passed IN.
+///
+/// DEFINING a C-variadic is the one thing stable Rust cannot do (`c_variadic`), so the
+/// variadic entry point — the only place `va_start` may legally appear — lives in
+/// `netid_varargs_shim.c` and immediately hands control back here. All logic stays in Rust;
+/// this is a shim for a language gap, not a translation reverted to C. See
+/// `sdk/lib/rust/varargs-rust` for the pattern.
+///
+/// `ap` is a POINTER to the C frame's `va_list`, never the `va_list` by value: `va_list` is
+/// `char*` on our three Windows targets but an array-of-struct on SysV x86-64, and the
+/// by-pointer form is correct on both. It must not outlive the call from the C entry point.
+/// Nothing here reads an argument off it — the list is forwarded verbatim to FormatMessageW,
+/// exactly as the C does.
+#[no_mangle]
+pub unsafe extern "C" fn netid_FormatMessageBox_body(
     hDlg: HWND,
     uType: u32,
     dwMessage: u32,
-    mut args: ...
+    ap: *mut c_void,
 ) -> i32 {
     let mut szTitle: [u16; 256] = [0; 256];
     let mut szMessage: [u16; 256] = [0; 256];
     let mut szText: [u16; 512] = [0; 512];
-    let mut args: va_list = core::ptr::null_mut();
 
     LoadStringW(
         hDllInstance,
         4,
         szTitle.as_mut_ptr(),
-        ARRAYSIZE(szTitle.len())
+        (ARRAYSIZE!(szTitle)) as i32
     );
 
     LoadStringW(
         hDllInstance,
         dwMessage,
         szMessage.as_mut_ptr(),
-        ARRAYSIZE(szMessage.len())
+        (ARRAYSIZE!(szMessage)) as i32
     );
 
-    va_start(args, dwMessage);
     FormatMessageW(
         FORMAT_MESSAGE_FROM_STRING,
-        szMessage.as_ptr(),
+        (szMessage.as_ptr()).cast(),
         0,
         0,
         szText.as_mut_ptr(),
-        ARRAYSIZE(szText.len()),
-        core::ptr::addr_of_mut!(args)
+        ARRAYSIZE!(szText),
+        ap
     );
-    va_end(args);
 
     MessageBoxW(hDlg, szText.as_ptr(), szTitle.as_ptr(), uType)
+}
+
+extern "C" {
+    /// The variadic entry point in netid_varargs_shim.c. Callers use this exactly as the C
+    /// called the original `FormatMessageBox`.
+    pub fn FormatMessageBox(hDlg: HWND, uType: u32, dwMessage: u32, ...) -> i32;
 }
 unsafe extern "C" fn GetComputerNames(
     pNetIdData: *mut NETIDDATA,
@@ -74,17 +91,17 @@ unsafe extern "C" fn GetComputerNames(
     let mut dwSize: u32;
     let mut dwError: u32;
 
-    dwError = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+    dwError = (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                             b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0T\0c\0p\0I\0p\0\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0".as_ptr() as *const u16,
                             0,
                             KEY_QUERY_VALUE,
-                            &mut KeyHandle);
+                            &mut KeyHandle)) as u32;
     if dwError == ERROR_SUCCESS
     {
         dwSize = core::mem::size_of_val(&(*pNetIdData).szHostName) as u32;
         RegQueryValueExW(KeyHandle,
                          b"N\0V\0 \0H\0o\0s\0t\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
-                         0,
+                         core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szHostName.as_mut_ptr() as LPBYTE,
                          &mut dwSize);
@@ -92,7 +109,7 @@ unsafe extern "C" fn GetComputerNames(
         dwSize = core::mem::size_of_val(&(*pNetIdData).szOldHostName) as u32;
         RegQueryValueExW(KeyHandle,
                          b"H\0o\0s\0t\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
-                         0,
+                         core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szOldHostName.as_mut_ptr() as LPBYTE,
                          &mut dwSize);
@@ -100,7 +117,7 @@ unsafe extern "C" fn GetComputerNames(
         dwSize = core::mem::size_of_val(&(*pNetIdData).szDomainName) as u32;
         RegQueryValueExW(KeyHandle,
                          b"N\0V\0 \0D\0o\0m\0a\0i\0n\0\0\0".as_ptr() as *const u16,
-                         0,
+                         core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szDomainName.as_mut_ptr() as LPBYTE,
                          &mut dwSize);
@@ -108,7 +125,7 @@ unsafe extern "C" fn GetComputerNames(
         dwSize = core::mem::size_of_val(&(*pNetIdData).szOldDomainName) as u32;
         RegQueryValueExW(KeyHandle,
                          b"D\0o\0m\0a\0i\0n\0\0\0".as_ptr() as *const u16,
-                         0,
+                         core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szOldDomainName.as_mut_ptr() as LPBYTE,
                          &mut dwSize);
@@ -116,28 +133,28 @@ unsafe extern "C" fn GetComputerNames(
         dwSize = core::mem::size_of_val(&(*pNetIdData).bSyncDomainWithMembership) as u32;
         if RegQueryValueExW(KeyHandle,
                              b"S\0y\0n\0c\0D\0o\0m\0a\0i\0n\0W\0i\0t\0h\0M\0e\0m\0b\0e\0r\0s\0h\0i\0p\0\0\0".as_ptr() as *const u16,
-                             0,
+                             core::ptr::null_mut(),
                              core::ptr::null_mut(),
                              core::ptr::addr_of_mut!((*pNetIdData).bSyncDomainWithMembership) as LPBYTE,
                              &mut dwSize) != 0
         {
-            (*pNetIdData).bSyncDomainWithMembership = TRUE;
+            (*pNetIdData).bSyncDomainWithMembership = (TRUE) as i32;
         }
 
         RegCloseKey(KeyHandle);
     }
 
-    dwError = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+    dwError = (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                             b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0C\0o\0m\0p\0u\0t\0e\0r\0N\0a\0m\0e\0\\\0C\0o\0m\0p\0u\0t\0e\0r\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
                             0,
                             KEY_QUERY_VALUE,
-                            &mut KeyHandle);
+                            &mut KeyHandle)) as u32;
     if dwError == ERROR_SUCCESS
     {
         dwSize = core::mem::size_of_val(&(*pNetIdData).szComputerName) as u32;
         RegQueryValueExW(KeyHandle,
                          b"C\0o\0m\0p\0u\0t\0e\0r\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
-                         0,
+                         core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szComputerName.as_mut_ptr() as LPBYTE,
                          &mut dwSize);
@@ -151,7 +168,7 @@ unsafe extern "C" fn GetComputerNames(
         (*pNetIdData).JoinStatus = NetSetupUnknownStatus;
     }
 
-    TRUE
+    (TRUE) as i32
 }
 unsafe extern "C" fn IsUserAdmin() -> BOOL {
     let mut bIsAdmin: BOOL = 0;
@@ -174,11 +191,11 @@ unsafe extern "C" fn IsUserAdmin() -> BOOL {
         &mut pAdminsSid,
     ) == 0
     {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     if CheckTokenMembership(core::ptr::null_mut(), pAdminsSid, &mut bIsAdmin) == 0 {
-        bIsAdmin = FALSE;
+        bIsAdmin = (FALSE) as i32;
     }
     FreeSid(pAdminsSid);
 
@@ -191,16 +208,16 @@ unsafe extern "C" fn IsValidDomainName(
     let mut szDomainName: [u16; 256] = [0; 256];
     let dwError: u32;
 
-    if GetDlgItemTextW(hDlg, uId, szDomainName.as_mut_ptr(), ARRAYSIZE(szDomainName.as_ptr())) == 0 {
-        return TRUE;
+    if GetDlgItemTextW(hDlg, (uId) as i32, szDomainName.as_mut_ptr(), (ARRAYSIZE!(szDomainName)) as i32) == 0 {
+        return (TRUE) as u8;
     }
 
     dwError = DnsValidateName_W(szDomainName.as_ptr(), DnsNameDomain);
     if dwError != ERROR_SUCCESS {
         match dwError {
             DNS_ERROR_NON_RFC_NAME => {
-                if FormatMessageBox(hDlg, MB_YESNO | MB_ICONWARNING, 7, szDomainName.as_ptr()) == IDYES {
-                    return TRUE;
+                if FormatMessageBox(hDlg, MB_YESNO | MB_ICONWARNING, 7, szDomainName.as_ptr()) == (IDYES) as i32 {
+                    return (TRUE) as u8;
                 }
             }
 
@@ -219,10 +236,10 @@ unsafe extern "C" fn IsValidDomainName(
             _ => {}
         }
 
-        return FALSE;
+        return (FALSE) as u8;
     }
 
-    return TRUE;
+    return (TRUE) as u8;
 }
 #[cfg(target_arch = "x86")]
 unsafe extern "stdcall" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
@@ -236,32 +253,32 @@ unsafe extern "stdcall" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WP
             pNetIdData = lParam as *mut NETIDDATA;
             if pNetIdData != core::ptr::null_mut()
             {
-                SetWindowLongPtr(hDlg, DWLP_USER, pNetIdData as isize);
+                SetWindowLongPtr(hDlg, DWLP_USER, (pNetIdData as isize) as i32);
 
                 SetDlgItemTextW(hDlg, 1011, (*pNetIdData).szDomainName.as_ptr());
                 SendDlgItemMessage(hDlg, 115, BM_SETCHECK, (*pNetIdData).bSyncDomainWithMembership as WPARAM, 0);
                 SetDlgItemTextW(hDlg, 1013, (*pNetIdData).szComputerName.as_ptr());
-                EnableWindow(GetDlgItem(hDlg, IDOK), FALSE);
+                EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (FALSE) as i32);
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam)
+            match LOWORD!(wParam) as u32
             {
                 115 => {
-                    if HIWORD(wParam) == BN_CLICKED
+                    if HIWORD!(wParam) == (BN_CLICKED) as u16
                     {
-                        EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
-                        (*pNetIdData).bSyncDomainWithMembershipChanged = TRUE;
+                        EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (TRUE) as i32);
+                        (*pNetIdData).bSyncDomainWithMembershipChanged = (TRUE) as i32;
                     }
                 }
 
                 1011 => {
-                    if HIWORD(wParam) == EN_CHANGE
+                    if HIWORD!(wParam) == (EN_CHANGE) as u16
                     {
-                        EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
-                        (*pNetIdData).bDomainNameChanged = TRUE;
+                        EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (TRUE) as i32);
+                        (*pNetIdData).bDomainNameChanged = (TRUE) as i32;
                     }
                 }
 
@@ -269,33 +286,33 @@ unsafe extern "stdcall" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WP
                     if IsValidDomainName(hDlg, 1011) == 0
                     {
                         SetFocus(GetDlgItem(hDlg, 1011));
-                        return FALSE;
+                        return FALSE as INT_PTR;
                     }
 
                     if (*pNetIdData).bDomainNameChanged != 0
                     {
-                        GetDlgItemTextW(hDlg, 1011, (*pNetIdData).szDomainName.as_mut_ptr(), ARRAYSIZE((*pNetIdData).szDomainName.as_ptr()));
+                        GetDlgItemTextW(hDlg, 1011, (*pNetIdData).szDomainName.as_mut_ptr(), (ARRAYSIZE!((*pNetIdData).szDomainName)) as i32);
                     }
 
                     if (*pNetIdData).bSyncDomainWithMembershipChanged != 0
                     {
-                        if SendDlgItemMessage(hDlg, 115, BM_GETCHECK, 0, 0) == BST_CHECKED
+                        if SendDlgItemMessage(hDlg, 115, BM_GETCHECK, 0, 0) == (BST_CHECKED) as i32
                         {
-                            (*pNetIdData).bSyncDomainWithMembership = TRUE;
+                            (*pNetIdData).bSyncDomainWithMembership = (TRUE) as i32;
                         }
                         else
                         {
-                            (*pNetIdData).bSyncDomainWithMembership = FALSE;
+                            (*pNetIdData).bSyncDomainWithMembership = (FALSE) as i32;
                         }
                     }
 
-                    EndDialog(hDlg, TRUE);
+                    EndDialog(hDlg, (TRUE) as i32);
                 }
 
                 IDCANCEL => {
-                    (*pNetIdData).bDomainNameChanged = FALSE;
-                    (*pNetIdData).bSyncDomainWithMembershipChanged = FALSE;
-                    EndDialog(hDlg, FALSE);
+                    (*pNetIdData).bDomainNameChanged = (FALSE) as i32;
+                    (*pNetIdData).bSyncDomainWithMembershipChanged = (FALSE) as i32;
+                    EndDialog(hDlg, (FALSE) as i32);
                 }
 
                 _ => {}
@@ -305,7 +322,7 @@ unsafe extern "stdcall" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WP
         _ => {}
     }
 
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -320,32 +337,32 @@ unsafe extern "C" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, 
             pNetIdData = lParam as *mut NETIDDATA;
             if pNetIdData != core::ptr::null_mut()
             {
-                SetWindowLongPtr(hDlg, DWLP_USER, pNetIdData as isize);
+                SetWindowLongPtr(hDlg, DWLP_USER, (pNetIdData as isize) as i64);
 
                 SetDlgItemTextW(hDlg, 1011, (*pNetIdData).szDomainName.as_ptr());
                 SendDlgItemMessage(hDlg, 115, BM_SETCHECK, (*pNetIdData).bSyncDomainWithMembership as WPARAM, 0);
                 SetDlgItemTextW(hDlg, 1013, (*pNetIdData).szComputerName.as_ptr());
-                EnableWindow(GetDlgItem(hDlg, IDOK), FALSE);
+                EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (FALSE) as i32);
             }
-            return TRUE;
+            return (TRUE) as i64;
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam)
+            match LOWORD!(wParam) as u32
             {
                 115 => {
-                    if HIWORD(wParam) == BN_CLICKED
+                    if HIWORD!(wParam) == (BN_CLICKED) as u16
                     {
-                        EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
-                        (*pNetIdData).bSyncDomainWithMembershipChanged = TRUE;
+                        EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (TRUE) as i32);
+                        (*pNetIdData).bSyncDomainWithMembershipChanged = (TRUE) as i32;
                     }
                 }
 
                 1011 => {
-                    if HIWORD(wParam) == EN_CHANGE
+                    if HIWORD!(wParam) == (EN_CHANGE) as u16
                     {
-                        EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
-                        (*pNetIdData).bDomainNameChanged = TRUE;
+                        EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (TRUE) as i32);
+                        (*pNetIdData).bDomainNameChanged = (TRUE) as i32;
                     }
                 }
 
@@ -353,33 +370,33 @@ unsafe extern "C" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, 
                     if IsValidDomainName(hDlg, 1011) == 0
                     {
                         SetFocus(GetDlgItem(hDlg, 1011));
-                        return FALSE;
+                        return (FALSE) as i64;
                     }
 
                     if (*pNetIdData).bDomainNameChanged != 0
                     {
-                        GetDlgItemTextW(hDlg, 1011, (*pNetIdData).szDomainName.as_mut_ptr(), ARRAYSIZE((*pNetIdData).szDomainName.as_ptr()));
+                        GetDlgItemTextW(hDlg, 1011, (*pNetIdData).szDomainName.as_mut_ptr(), (ARRAYSIZE!((*pNetIdData).szDomainName)) as i32);
                     }
 
                     if (*pNetIdData).bSyncDomainWithMembershipChanged != 0
                     {
-                        if SendDlgItemMessage(hDlg, 115, BM_GETCHECK, 0, 0) == BST_CHECKED
+                        if SendDlgItemMessage(hDlg, 115, BM_GETCHECK, 0, 0) == (BST_CHECKED) as i64
                         {
-                            (*pNetIdData).bSyncDomainWithMembership = TRUE;
+                            (*pNetIdData).bSyncDomainWithMembership = (TRUE) as i32;
                         }
                         else
                         {
-                            (*pNetIdData).bSyncDomainWithMembership = FALSE;
+                            (*pNetIdData).bSyncDomainWithMembership = (FALSE) as i32;
                         }
                     }
 
-                    EndDialog(hDlg, TRUE);
+                    EndDialog(hDlg, (TRUE) as i64);
                 }
 
                 IDCANCEL => {
-                    (*pNetIdData).bDomainNameChanged = FALSE;
-                    (*pNetIdData).bSyncDomainWithMembershipChanged = FALSE;
-                    EndDialog(hDlg, FALSE);
+                    (*pNetIdData).bDomainNameChanged = (FALSE) as i32;
+                    (*pNetIdData).bSyncDomainWithMembershipChanged = (FALSE) as i32;
+                    EndDialog(hDlg, (FALSE) as i64);
                 }
 
                 _ => {}
@@ -389,7 +406,7 @@ unsafe extern "C" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, 
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as i64;
 }
 unsafe extern "C" fn SetRadioBtnState(hDlg: HWND, IsDomain: BOOL) {
     SendDlgItemMessage(hDlg, 1008, BM_SETCHECK, IsDomain as WPARAM, 0);
@@ -404,20 +421,20 @@ unsafe extern "C" fn IsValidComputerName(
     let mut szHostName: [u16; 256] = [0; 256];
     let dwError: u32;
 
-    GetWindowText(GetDlgItem(hDlg, uId), szHostName.as_mut_ptr(), ARRAYSIZE!(szHostName));
+    GetWindowText(GetDlgItem(hDlg, (uId) as i32), szHostName.as_mut_ptr(), (ARRAYSIZE!(szHostName)) as i32);
 
     dwError = DnsValidateName_W(szHostName.as_ptr(), DnsNameHostnameLabel);
     if dwError != ERROR_SUCCESS {
         match dwError {
             DNS_ERROR_NON_RFC_NAME => {
-                if FormatMessageBox(hDlg, MB_YESNO | MB_ICONWARNING, 10, szHostName.as_ptr()) == IDYES {
-                    return TRUE;
+                if FormatMessageBox(hDlg, MB_YESNO | MB_ICONWARNING, 10, szHostName.as_ptr()) == (IDYES) as i32 {
+                    return (TRUE) as i32;
                 }
             }
 
             ERROR_INVALID_NAME => {
                 FormatMessageBox(hDlg, MB_OK | MB_ICONERROR, 11);
-                return FALSE;
+                return (FALSE) as i32;
             }
 
             DNS_ERROR_NUMERIC_NAME => {
@@ -431,10 +448,10 @@ unsafe extern "C" fn IsValidComputerName(
             _ => {}
         }
 
-        return FALSE;
+        return (FALSE) as i32;
     }
 
-    return TRUE;
+    return (TRUE) as i32;
 }
 unsafe extern "C" fn SetFullComputerName(
     hDlg: HWND,
@@ -443,13 +460,16 @@ unsafe extern "C" fn SetFullComputerName(
 ) {
     let mut szFullComputerName: [u16; 512] = [0; 512];
 
+    // C: wsprintf(szFullComputerName, L"%s.%s", ...) — the L is the wide-literal MARKER, not a
+    // character. The translation encoded it as content ("L%s.%s"), which would have prefixed
+    // every full computer name with a stray "L".
     wsprintf(
         szFullComputerName.as_mut_ptr(),
-        b"L\0%\0s\0.\0%\0s\0\0\0".as_ptr() as *const u16,
+        w!("%s.%s"),
         (*pNetIdData).szHostName.as_ptr(),
         (*pNetIdData).szDomainName.as_ptr(),
     );
-    SetDlgItemText(hDlg, uId, szFullComputerName.as_ptr());
+    SetDlgItemText(hDlg, (uId) as i32, szFullComputerName.as_ptr());
 }
 unsafe extern "C" fn UpdateFullComputerName(
     hDlg: HWND,
@@ -459,10 +479,17 @@ unsafe extern "C" fn UpdateFullComputerName(
     let mut szFullComputerName: [u16; 512] = [0; 512];
     let mut szHostName: [u16; 256] = [0; 256];
 
-    GetWindowText(GetDlgItem(hDlg, 1002), szHostName.as_mut_ptr(), ARRAYSIZE(szHostName.as_ptr()));
+    GetWindowText(GetDlgItem(hDlg, 1002), szHostName.as_mut_ptr(), (ARRAYSIZE!(szHostName)) as i32);
 
-    wsprintf(szFullComputerName.as_mut_ptr(), b"L\"%s.%s\"\0".as_ptr(), szHostName.as_ptr(), (*pNetIdData).szDomainName.as_ptr());
-    SetDlgItemText(hDlg, uId, szFullComputerName.as_ptr());
+    // Same C literal as above, mistranslated the other way: raw ASCII bytes of `L"%s.%s"`
+    // handed to a wide-string callee.
+    wsprintf(
+        szFullComputerName.as_mut_ptr(),
+        w!("%s.%s"),
+        szHostName.as_ptr(),
+        (*pNetIdData).szDomainName.as_ptr(),
+    );
+    SetDlgItemText(hDlg, (uId) as i32, szFullComputerName.as_ptr());
 }
 unsafe extern "C" fn UpdateNetbiosName(
     hDlg: HWND,
@@ -472,9 +499,9 @@ unsafe extern "C" fn UpdateNetbiosName(
     let mut szHostName: [u16; 256] = [0; 256];
     let mut dwSize: u32;
 
-    GetWindowText(GetDlgItem(hDlg, 1002), szHostName.as_mut_ptr(), ARRAYSIZE(szHostName.len()));
+    GetWindowText(GetDlgItem(hDlg, 1002), szHostName.as_mut_ptr(), (ARRAYSIZE!(szHostName)) as i32);
 
-    dwSize = ARRAYSIZE((*pNetIdData).szComputerName.len());
+    dwSize = ARRAYSIZE!((*pNetIdData).szComputerName);
     DnsHostnameToComputerNameW(szHostName.as_ptr(),
                            (*pNetIdData).szComputerName.as_mut_ptr(),
                            &mut dwSize);
@@ -483,39 +510,39 @@ unsafe extern "C" fn CheckForChangedNames(
     hwndDlg: HWND,
     pNetIdData: *mut NETIDDATA,
 ) {
-    let mut nShow: i32 = SW_HIDE;
+    let mut nShow: i32 = (SW_HIDE) as i32;
 
     if (_wcsicmp((*pNetIdData).szOldHostName.as_ptr(), (*pNetIdData).szHostName.as_ptr()) != 0) ||
        (_wcsicmp((*pNetIdData).szOldDomainName.as_ptr(), (*pNetIdData).szDomainName.as_ptr()) != 0) {
-        nShow = SW_SHOW;
+        nShow = (SW_SHOW) as i32;
     }
 
-    ShowWindow(GetDlgItem(hwndDlg, IDC_RESTARTICON), nShow);
-    ShowWindow(GetDlgItem(hwndDlg, IDC_RESTARTTEXT), nShow);
+    ShowWindow(GetDlgItem(hwndDlg, (IDC_RESTARTICON) as i32), nShow);
+    ShowWindow(GetDlgItem(hwndDlg, (IDC_RESTARTTEXT) as i32), nShow);
 }
 unsafe extern "C" fn NetworkDlg_OnInitDialog(
     hDlg: HWND,
     pNetIdData: *mut _NETIDDATA,
 ) {
-    let mut MsgText: [u16; MAX_PATH * 2] = [0; MAX_PATH * 2];
+    let mut MsgText: [u16; (MAX_PATH * 2) as usize] = [0; (MAX_PATH * 2) as usize];
 
-    if LoadStringW(hDllInstance, 25, MsgText.as_mut_ptr(), ARRAYSIZE!(MsgText)) != 0 {
+    if LoadStringW(hDllInstance, 25, MsgText.as_mut_ptr(), (ARRAYSIZE!(MsgText)) as i32) != 0 {
         SetDlgItemText(hDlg, 1017, MsgText.as_ptr());
     }
 
-    SendMessage(GetDlgItem(hDlg, 1002), EM_SETLIMITTEXT, MAX_HOSTNAME_LENGTH, 0);
+    SendMessage(GetDlgItem(hDlg, 1002), EM_SETLIMITTEXT, MAX_HOSTNAME_LENGTH as WPARAM, 0);
     SetDlgItemText(hDlg, 1002, (*pNetIdData).szHostName.as_ptr());
     SetFullComputerName(hDlg, 1001, pNetIdData);
 
     match (*pNetIdData).JoinStatus {
         NetSetupDomainName => {
             SetDlgItemText(hDlg, 116, (*pNetIdData).JoinName);
-            SetRadioBtnState(hDlg, TRUE);
+            SetRadioBtnState(hDlg, (TRUE) as i32);
         }
 
         NetSetupWorkgroupName => {
             SetDlgItemText(hDlg, 1007, (*pNetIdData).JoinName);
-            SetRadioBtnState(hDlg, FALSE);
+            SetRadioBtnState(hDlg, (FALSE) as i32);
         }
 
         _ => {}
@@ -525,42 +552,42 @@ unsafe extern "C" fn NetworkDlg_OnOK(
     hDlg: HWND,
     pNetIdData: *mut NETIDDATA,
 ) -> i32 {
-    let mut szMsgText: [u16; MAX_PATH] = [0; MAX_PATH];
-    let mut szMsgTitle: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szMsgText: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szMsgTitle: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut KeyHandle: HKEY = core::ptr::null_mut();
     let mut dwError: u32;
 
     if (*pNetIdData).bHostNameChanged != 0 {
         if IsValidComputerName(hDlg, 1002) == 0 {
             SetFocus(GetDlgItem(hDlg, 1002));
-            return FALSE;
+            return (FALSE) as i32;
         }
 
-        GetWindowText(GetDlgItem(hDlg, 1002), (*pNetIdData).szHostName.as_mut_ptr(), ARRAYSIZE((*pNetIdData).szHostName.as_ptr()));
+        GetWindowText(GetDlgItem(hDlg, 1002), (*pNetIdData).szHostName.as_mut_ptr(), (ARRAYSIZE!((*pNetIdData).szHostName)) as i32);
 
         if SetComputerNameExW(ComputerNamePhysicalDnsHostname, (*pNetIdData).szHostName.as_mut_ptr()) == 0 {
-            LoadStringW(hDllInstance, 4001, szMsgText.as_mut_ptr(), ARRAYSIZE(szMsgText.as_ptr()));
+            LoadStringW(hDllInstance, 4001, szMsgText.as_mut_ptr(), (ARRAYSIZE!(szMsgText)) as i32);
             MessageBoxW(hDlg, szMsgText.as_mut_ptr(), core::ptr::null_mut(), MB_OK | MB_ICONERROR);
-            return FALSE;
+            return (FALSE) as i32;
         }
 
-        (*pNetIdData).bHostNameChanged = FALSE;
+        (*pNetIdData).bHostNameChanged = (FALSE) as i32;
     }
 
     if (*pNetIdData).bDomainNameChanged != 0 {
         if SetComputerNameExW(ComputerNamePhysicalDnsDomain, (*pNetIdData).szDomainName.as_mut_ptr()) == 0 {
-            return FALSE;
+            return (FALSE) as i32;
         }
 
-        (*pNetIdData).bDomainNameChanged = FALSE;
+        (*pNetIdData).bDomainNameChanged = (FALSE) as i32;
     }
 
     if (*pNetIdData).bSyncDomainWithMembershipChanged != 0 {
-        dwError = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+        dwError = (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                                 b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0T\0c\0p\0I\0p\0\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0".as_ptr() as *const u16,
                                 0,
                                 KEY_SET_VALUE,
-                                &mut KeyHandle);
+                                &mut KeyHandle)) as u32;
         if dwError == ERROR_SUCCESS {
             RegSetValueExW(KeyHandle,
                            b"S\0y\0n\0c\0D\0o\0m\0a\0i\0n\0W\0i\0t\0h\0M\0e\0m\0b\0e\0r\0s\0h\0i\0p\0\0\0".as_ptr() as *const u16,
@@ -571,14 +598,14 @@ unsafe extern "C" fn NetworkDlg_OnOK(
             RegCloseKey(KeyHandle);
         }
 
-        (*pNetIdData).bSyncDomainWithMembershipChanged = FALSE;
+        (*pNetIdData).bSyncDomainWithMembershipChanged = (FALSE) as i32;
     }
 
-    LoadStringW(hDllInstance, 4000, szMsgTitle.as_mut_ptr(), ARRAYSIZE(szMsgTitle.as_ptr()));
-    LoadStringW(hDllInstance, 24, szMsgText.as_mut_ptr(), ARRAYSIZE(szMsgText.as_ptr()));
+    LoadStringW(hDllInstance, 4000, szMsgTitle.as_mut_ptr(), (ARRAYSIZE!(szMsgTitle)) as i32);
+    LoadStringW(hDllInstance, 24, szMsgText.as_mut_ptr(), (ARRAYSIZE!(szMsgText)) as i32);
     MessageBoxW(hDlg, szMsgText.as_mut_ptr(), szMsgTitle.as_mut_ptr(), MB_OK | MB_ICONINFORMATION);
 
-    return TRUE;
+    return (TRUE) as i32;
 }
 #[cfg(target_arch = "x86")]
 unsafe extern "stdcall" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
@@ -590,51 +617,51 @@ unsafe extern "stdcall" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPAR
         WM_INITDIALOG => {
             let pNetIdData = lParam as *mut NETIDDATA;
             if !pNetIdData.is_null() {
-                SetWindowLongPtr(hDlg, DWLP_USER, pNetIdData as isize);
+                SetWindowLongPtr(hDlg, DWLP_USER, (pNetIdData as isize) as i32);
                 NetworkDlg_OnInitDialog(hDlg, pNetIdData);
-                EnableWindow(GetDlgItem(hDlg, IDOK), FALSE);
+                EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (FALSE) as i32);
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) as u32 {
                 1002 => {
-                    if HIWORD(wParam) == EN_CHANGE {
+                    if HIWORD!(wParam) == (EN_CHANGE) as u16 {
                         UpdateFullComputerName(hDlg, 1001, pNetIdData);
                         UpdateNetbiosName(hDlg, 1001, pNetIdData);
-                        (*pNetIdData).bHostNameChanged = TRUE;
-                        EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
+                        (*pNetIdData).bHostNameChanged = (TRUE) as i32;
+                        EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (TRUE) as i32);
                     }
                 }
 
                 1008 | 1004 => {
-                    if SendDlgItemMessage(hDlg, 1008, BM_GETCHECK, 0, 0) == BST_CHECKED {
-                        SetRadioBtnState(hDlg, TRUE);
+                    if SendDlgItemMessage(hDlg, 1008, BM_GETCHECK, 0, 0) == (BST_CHECKED) as i32 {
+                        SetRadioBtnState(hDlg, (TRUE) as i32);
                     } else {
-                        SetRadioBtnState(hDlg, FALSE);
+                        SetRadioBtnState(hDlg, (FALSE) as i32);
                     }
                 }
 
                 1003 => {
                     if DialogBoxParam(hDllInstance,
-                                   MAKEINTRESOURCE(IDD_PROPPAGEDNSANDNETBIOS),
+                                   MAKEINTRESOURCE!(IDD_PROPPAGEDNSANDNETBIOS),
                                    hDlg,
-                                   DNSSuffixPropDlgProc,
+                                   Some(DNSSuffixPropDlgProc),
                                    pNetIdData as LPARAM) != 0 {
                         UpdateFullComputerName(hDlg, 1001, pNetIdData);
-                        EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
+                        EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (TRUE) as i32);
                     }
                 }
 
                 IDOK => {
                     if NetworkDlg_OnOK(hDlg, pNetIdData) != 0 {
-                        EndDialog(hDlg, TRUE);
+                        EndDialog(hDlg, (TRUE) as i32);
                     }
                 }
 
                 IDCANCEL => {
-                    EndDialog(hDlg, FALSE);
+                    EndDialog(hDlg, (FALSE) as i32);
                 }
 
                 _ => {}
@@ -644,7 +671,7 @@ unsafe extern "stdcall" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPAR
         _ => {}
     }
 
-    FALSE
+    (FALSE) as i32
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -657,51 +684,51 @@ unsafe extern "C" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lP
         WM_INITDIALOG => {
             let pNetIdData = lParam as *mut NETIDDATA;
             if !pNetIdData.is_null() {
-                SetWindowLongPtr(hDlg, DWLP_USER, pNetIdData as isize);
+                SetWindowLongPtr(hDlg, DWLP_USER, (pNetIdData as isize) as i64);
                 NetworkDlg_OnInitDialog(hDlg, pNetIdData);
-                EnableWindow(GetDlgItem(hDlg, IDOK), FALSE);
+                EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (FALSE) as i32);
             }
-            return TRUE;
+            return (TRUE) as i64;
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) as u32 {
                 1002 => {
-                    if HIWORD(wParam) == EN_CHANGE {
+                    if HIWORD!(wParam) == (EN_CHANGE) as u16 {
                         UpdateFullComputerName(hDlg, 1001, pNetIdData);
                         UpdateNetbiosName(hDlg, 1001, pNetIdData);
-                        (*pNetIdData).bHostNameChanged = TRUE;
-                        EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
+                        (*pNetIdData).bHostNameChanged = (TRUE) as i32;
+                        EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (TRUE) as i32);
                     }
                 }
 
                 1008 | 1004 => {
-                    if SendDlgItemMessage(hDlg, 1008, BM_GETCHECK, 0, 0) == BST_CHECKED {
-                        SetRadioBtnState(hDlg, TRUE);
+                    if SendDlgItemMessage(hDlg, 1008, BM_GETCHECK, 0, 0) == (BST_CHECKED) as i64 {
+                        SetRadioBtnState(hDlg, (TRUE) as i32);
                     } else {
-                        SetRadioBtnState(hDlg, FALSE);
+                        SetRadioBtnState(hDlg, (FALSE) as i32);
                     }
                 }
 
                 1003 => {
                     if DialogBoxParam(hDllInstance,
-                                   MAKEINTRESOURCE(IDD_PROPPAGEDNSANDNETBIOS),
+                                   MAKEINTRESOURCE!(IDD_PROPPAGEDNSANDNETBIOS),
                                    hDlg,
-                                   DNSSuffixPropDlgProc,
+                                   Some(DNSSuffixPropDlgProc),
                                    pNetIdData as LPARAM) != 0 {
                         UpdateFullComputerName(hDlg, 1001, pNetIdData);
-                        EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
+                        EnableWindow(GetDlgItem(hDlg, (IDOK) as i32), (TRUE) as i32);
                     }
                 }
 
                 IDOK => {
                     if NetworkDlg_OnOK(hDlg, pNetIdData) != 0 {
-                        EndDialog(hDlg, TRUE);
+                        EndDialog(hDlg, (TRUE) as i64);
                     }
                 }
 
                 IDCANCEL => {
-                    EndDialog(hDlg, FALSE);
+                    EndDialog(hDlg, (FALSE) as i64);
                 }
 
                 _ => {}
@@ -711,7 +738,7 @@ unsafe extern "C" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lP
         _ => {}
     }
 
-    FALSE
+    (FALSE) as i64
 }
 unsafe extern "C" fn NetIDPage_OnInitDialog(
     hwndDlg: HWND,
@@ -722,41 +749,43 @@ unsafe extern "C" fn NetIDPage_OnInitDialog(
     let mut szBuffer: [u16; 512] = [0; 512];
     let mut lError: i32;
 
-    SendDlgItemMessage(hwndDlg, IDC_COMPDESC, EM_SETLIMITTEXT, MAX_COMPUTERDESCRIPTION_LENGTH, 0);
+    // WPARAM, not a baked u64: this call sits in SHARED code (no cfg gate), so a 64-bit width
+    // here is simply wrong on i386. Name the alias and both widths follow.
+    SendDlgItemMessage(hwndDlg, (IDC_COMPDESC) as i32, EM_SETLIMITTEXT, MAX_COMPUTERDESCRIPTION_LENGTH as WPARAM, 0);
 
     lError = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                            b"SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters\0".as_ptr() as *const u16,
                            0,
                            KEY_QUERY_VALUE,
                            &mut KeyHandle);
-    if lError == ERROR_SUCCESS
+    if lError == (ERROR_SUCCESS) as i32
     {
         lError = RegQueryValueExW(KeyHandle,
                                   b"srvcomment\0".as_ptr() as *const u16,
-                                  0,
+                                  core::ptr::null_mut(),
                                   core::ptr::null_mut(),
                                   ComputerDescription.as_mut_ptr() as LPBYTE,
                                   &mut RegSize);
-        if lError == ERROR_SUCCESS
+        if lError == (ERROR_SUCCESS) as i32
         {
             ComputerDescription[(RegSize / core::mem::size_of::<u16>() as u32) as usize] = UNICODE_NULL;
-            SetDlgItemText(hwndDlg, IDC_COMPDESC, ComputerDescription.as_ptr());
+            SetDlgItemText(hwndDlg, (IDC_COMPDESC) as i32, ComputerDescription.as_ptr());
         }
 
         RegCloseKey(KeyHandle);
     }
 
-    LoadStringW(hDllInstance, if (*pNetIdData).JoinStatus == NetSetupDomainName { 6 } else { 5 }, szBuffer.as_mut_ptr(), ARRAYSIZE(szBuffer.as_ptr()));
-    SetDlgItemText(hwndDlg, IDC_WORKGROUPDOMAIN, szBuffer.as_ptr());
-    SetDlgItemText(hwndDlg, IDC_WORKGROUPDOMAIN_NAME, (*pNetIdData).JoinName);
+    LoadStringW(hDllInstance, if (*pNetIdData).JoinStatus == NetSetupDomainName { 6 } else { 5 }, szBuffer.as_mut_ptr(), (ARRAYSIZE!(szBuffer)) as i32);
+    SetDlgItemText(hwndDlg, (IDC_WORKGROUPDOMAIN) as i32, szBuffer.as_ptr());
+    SetDlgItemText(hwndDlg, (IDC_WORKGROUPDOMAIN_NAME) as i32, (*pNetIdData).JoinName);
 
     if IsUserAdmin() == 0
     {
-        LoadStringW(hDllInstance, 1021, szBuffer.as_mut_ptr(), ARRAYSIZE(szBuffer.as_ptr()));
-        SetDlgItemText(hwndDlg, IDC_MESSAGETEXT, szBuffer.as_ptr());
+        LoadStringW(hDllInstance, 1021, szBuffer.as_mut_ptr(), (ARRAYSIZE!(szBuffer)) as i32);
+        SetDlgItemText(hwndDlg, (IDC_MESSAGETEXT) as i32, szBuffer.as_ptr());
 
-        EnableWindow(GetDlgItem(hwndDlg, IDC_NETWORK_ID), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_NETWORK_PROPERTY), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_NETWORK_ID) as i32), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_NETWORK_PROPERTY) as i32), (FALSE) as i32);
     }
 }
 unsafe extern "C" fn NetIDPage_OnApply(
@@ -772,16 +801,16 @@ unsafe extern "C" fn NetIDPage_OnApply(
                            0,
                            KEY_QUERY_VALUE | KEY_SET_VALUE,
                            &mut KeyHandle);
-    if lError != ERROR_SUCCESS {
+    if lError != (ERROR_SUCCESS) as i32 {
         return lError;
     }
 
     GetDlgItemTextW(hwndDlg,
-                    IDC_COMPDESC,
+                    (IDC_COMPDESC) as i32,
                     NewComputerDescription.as_mut_ptr(),
-                    ARRAYSIZE(NewComputerDescription.as_ptr() as *const _));
+                    (ARRAYSIZE!(NewComputerDescription)) as i32);
     if GetLastError() != ERROR_SUCCESS {
-        lError = GetLastError();
+        lError = (GetLastError()) as i32;
         'done: loop {
             if KeyHandle != core::ptr::null_mut() {
                 RegCloseKey(KeyHandle);
@@ -793,11 +822,11 @@ unsafe extern "C" fn NetIDPage_OnApply(
     dwSize = core::mem::size_of_val(&ComputerDescription) as u32;
     lError = RegQueryValueExW(KeyHandle,
                               b"srvcomment\0".as_ptr() as *const u16,
-                              0,
+                              core::ptr::null_mut(),
                               core::ptr::null_mut(),
                               ComputerDescription.as_mut_ptr() as PBYTE,
                               &mut dwSize);
-    if lError != ERROR_SUCCESS && lError != ERROR_FILE_NOT_FOUND {
+    if lError != (ERROR_SUCCESS) as i32 && lError != (ERROR_FILE_NOT_FOUND) as i32 {
         'done: loop {
             if KeyHandle != core::ptr::null_mut() {
                 RegCloseKey(KeyHandle);
@@ -806,14 +835,14 @@ unsafe extern "C" fn NetIDPage_OnApply(
         }
     }
 
-    lError = ERROR_SUCCESS;
+    lError = (ERROR_SUCCESS) as i32;
     if wcscmp(ComputerDescription.as_ptr(), NewComputerDescription.as_ptr()) != 0 {
         lError = RegSetValueExW(KeyHandle,
                                 b"srvcomment\0".as_ptr() as *const u16,
                                 0,
                                 REG_SZ,
                                 NewComputerDescription.as_ptr() as PBYTE,
-                                (wcslen(NewComputerDescription.as_ptr()) + 1) * core::mem::size_of::<u16>() as u32);
+                                ((wcslen(NewComputerDescription.as_ptr()) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
     }
 
     if KeyHandle != core::ptr::null_mut() {
@@ -838,21 +867,21 @@ unsafe extern "stdcall" fn NetIDPageProc(
             pNetIdData = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<NETIDDATA>(),
+                (core::mem::size_of::<NETIDDATA>()) as u32,
             ) as *mut NETIDDATA;
             if !pNetIdData.is_null() {
-                SetWindowLongPtr(hwndDlg, DWLP_USER, pNetIdData as isize);
+                SetWindowLongPtr(hwndDlg, DWLP_USER, (pNetIdData as isize) as i32);
                 GetComputerNames(pNetIdData);
                 SetFullComputerName(hwndDlg, IDC_COMPUTERNAME, pNetIdData);
                 NetIDPage_OnInitDialog(hwndDlg, pNetIdData);
-                (*pNetIdData).bEnable = TRUE;
+                (*pNetIdData).bEnable = (TRUE) as i32;
                 CheckForChangedNames(hwndDlg, pNetIdData);
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
 
         WM_NOTIFY => {
-            match (*(lParam as LPNMHDR)).code {
+            match (*(lParam as LPNMHDR)).code as i32 {
                 PSN_APPLY => {
                     NetIDPage_OnApply(hwndDlg);
                 }
@@ -861,19 +890,19 @@ unsafe extern "stdcall" fn NetIDPageProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) as u32 {
                 IDC_COMPDESC => {
-                    if HIWORD(wParam) == EN_CHANGE && (*pNetIdData).bEnable == TRUE {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                    if HIWORD!(wParam) == (EN_CHANGE) as u16 && (*pNetIdData).bEnable == (TRUE) as i32 {
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
 
                 IDC_NETWORK_PROPERTY => {
                     if DialogBoxParam(
                         hDllInstance,
-                        MAKEINTRESOURCE(IDD_PROPPAGECOMPNAMECHENGE),
+                        MAKEINTRESOURCE!(IDD_PROPPAGECOMPNAMECHENGE),
                         hwndDlg,
-                        NetworkPropDlgProc,
+                        Some(NetworkPropDlgProc),
                         pNetIdData as LPARAM,
                     ) != 0
                     {
@@ -888,18 +917,18 @@ unsafe extern "stdcall" fn NetIDPageProc(
         WM_DESTROY => {
             if !pNetIdData.is_null() {
                 if !(*pNetIdData).JoinName.is_null() {
-                    NetApiBufferFree((*pNetIdData).JoinName);
+                    NetApiBufferFree(((*pNetIdData).JoinName).cast());
                 }
                 HeapFree(GetProcessHeap(), 0, pNetIdData as LPVOID);
                 pNetIdData = core::ptr::null_mut();
-                SetWindowLongPtr(hwndDlg, DWLP_USER, 0 as isize);
+                SetWindowLongPtr(hwndDlg, DWLP_USER, (0 as isize) as i32);
             }
         }
 
         _ => {}
     }
 
-    FALSE
+    (FALSE) as i32
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -918,21 +947,21 @@ unsafe extern "C" fn NetIDPageProc(
             pNetIdData = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<NETIDDATA>(),
+                (core::mem::size_of::<NETIDDATA>()) as u64,
             ) as *mut NETIDDATA;
             if !pNetIdData.is_null() {
-                SetWindowLongPtr(hwndDlg, DWLP_USER, pNetIdData as isize);
+                SetWindowLongPtr(hwndDlg, DWLP_USER, (pNetIdData as isize) as i64);
                 GetComputerNames(pNetIdData);
                 SetFullComputerName(hwndDlg, IDC_COMPUTERNAME, pNetIdData);
                 NetIDPage_OnInitDialog(hwndDlg, pNetIdData);
-                (*pNetIdData).bEnable = TRUE;
+                (*pNetIdData).bEnable = (TRUE) as i32;
                 CheckForChangedNames(hwndDlg, pNetIdData);
             }
-            return TRUE;
+            return (TRUE) as i64;
         }
 
         WM_NOTIFY => {
-            match (*(lParam as LPNMHDR)).code {
+            match (*(lParam as LPNMHDR)).code as i32 {
                 PSN_APPLY => {
                     NetIDPage_OnApply(hwndDlg);
                 }
@@ -941,19 +970,19 @@ unsafe extern "C" fn NetIDPageProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) as u32 {
                 IDC_COMPDESC => {
-                    if HIWORD(wParam) == EN_CHANGE && (*pNetIdData).bEnable == TRUE {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                    if HIWORD!(wParam) == (EN_CHANGE) as u16 && (*pNetIdData).bEnable == (TRUE) as i32 {
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
 
                 IDC_NETWORK_PROPERTY => {
                     if DialogBoxParam(
                         hDllInstance,
-                        MAKEINTRESOURCE(IDD_PROPPAGECOMPNAMECHENGE),
+                        MAKEINTRESOURCE!(IDD_PROPPAGECOMPNAMECHENGE),
                         hwndDlg,
-                        NetworkPropDlgProc,
+                        Some(NetworkPropDlgProc),
                         pNetIdData as LPARAM,
                     ) != 0
                     {
@@ -968,18 +997,18 @@ unsafe extern "C" fn NetIDPageProc(
         WM_DESTROY => {
             if !pNetIdData.is_null() {
                 if !(*pNetIdData).JoinName.is_null() {
-                    NetApiBufferFree((*pNetIdData).JoinName);
+                    NetApiBufferFree(((*pNetIdData).JoinName).cast());
                 }
                 HeapFree(GetProcessHeap(), 0, pNetIdData as LPVOID);
                 pNetIdData = core::ptr::null_mut();
-                SetWindowLongPtr(hwndDlg, DWLP_USER, 0 as isize);
+                SetWindowLongPtr(hwndDlg, DWLP_USER, (0 as isize) as i64);
             }
         }
 
         _ => {}
     }
 
-    FALSE
+    (FALSE) as i64
 }
 
 #[no_mangle]
@@ -989,7 +1018,7 @@ pub unsafe extern "system" fn CreateNetIDPropertyPage() -> HPROPSHEETPAGE {
     psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as u32;
     psp.dwFlags = PSP_DEFAULT;
     psp.hInstance = hDllInstance;
-    psp.pszTemplate = MAKEINTRESOURCE(IDD_PROPPAGECOMPUTER);
+    psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(IDD_PROPPAGECOMPUTER);
     psp.pfnDlgProc = Some(NetIDPageProc);
 
     CreatePropertySheetPage(&mut psp)
@@ -1009,7 +1038,7 @@ pub unsafe extern "system" fn DllMain(
         _ => {}
     }
 
-    TRUE
+    (TRUE) as i32
 }
 
 
@@ -1074,9 +1103,9 @@ pub unsafe extern "system" fn DllMain(
 //     WCHAR szTitle[256], szMessage[256], szText[512];
 //     va_list args = NULL;
 //
-//     LoadStringW(hDllInstance, 4, szTitle, ARRAYSIZE(szTitle));
+//     LoadStringW(hDllInstance, 4, szTitle, ARRAYSIZE!(szTitle));
 //
-//     LoadStringW(hDllInstance, dwMessage, szMessage, ARRAYSIZE(szMessage));
+//     LoadStringW(hDllInstance, dwMessage, szMessage, ARRAYSIZE!(szMessage));
 //
 //     va_start(args, dwMessage);
 //     FormatMessageW(FORMAT_MESSAGE_FROM_STRING,
@@ -1084,7 +1113,7 @@ pub unsafe extern "system" fn DllMain(
 //                    0,
 //                    0,
 //                    szText,
-//                    ARRAYSIZE(szText),
+//                    ARRAYSIZE!(szText),
 //                    &args);
 //     va_end(args);
 //
@@ -1210,7 +1239,7 @@ pub unsafe extern "system" fn DllMain(
 //     WCHAR szDomainName[256];
 //     DWORD dwError;
 //
-//     if (GetDlgItemTextW(hDlg, uId, szDomainName, ARRAYSIZE(szDomainName)) == 0)
+//     if (GetDlgItemTextW(hDlg, uId, szDomainName, ARRAYSIZE!(szDomainName)) == 0)
 //         return TRUE;
 //
 //     dwError = DnsValidateName_W(szDomainName, DnsNameDomain);
@@ -1266,10 +1295,10 @@ pub unsafe extern "system" fn DllMain(
 //             return TRUE;
 //
 //         case WM_COMMAND:
-//             switch (LOWORD(wParam))
+//             switch (LOWORD!(wParam))
 //             {
 //                 case 115:
-//                     if (HIWORD(wParam) == BN_CLICKED)
+//                     if (HIWORD!(wParam) == BN_CLICKED)
 //                     {
 //                         EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
 //                         pNetIdData->bSyncDomainWithMembershipChanged = TRUE;
@@ -1277,7 +1306,7 @@ pub unsafe extern "system" fn DllMain(
 //                     break;
 //
 //                 case 1011:
-//                     if (HIWORD(wParam) == EN_CHANGE)
+//                     if (HIWORD!(wParam) == EN_CHANGE)
 //                     {
 //                         EnableWindow(GetDlgItem(hDlg, IDOK), TRUE);
 //                         pNetIdData->bDomainNameChanged = TRUE;
@@ -1292,7 +1321,7 @@ pub unsafe extern "system" fn DllMain(
 //                     }
 //
 //                     if (pNetIdData->bDomainNameChanged)
-//                         GetDlgItemTextW(hDlg, 1011, pNetIdData->szDomainName, ARRAYSIZE(pNetIdData->szDomainName));
+//                         GetDlgItemTextW(hDlg, 1011, pNetIdData->szDomainName, ARRAYSIZE!(pNetIdData->szDomainName));
 //
 //                     if (pNetIdData->bSyncDomainWithMembershipChanged)
 //                     {
@@ -1336,7 +1365,7 @@ pub unsafe extern "system" fn DllMain(
 //     WCHAR szHostName[256];
 //     DWORD dwError;
 //
-//     GetWindowText(GetDlgItem(hDlg, uId), szHostName, ARRAYSIZE(szHostName));
+//     GetWindowText(GetDlgItem(hDlg, uId), szHostName, ARRAYSIZE!(szHostName));
 //
 //     dwError = DnsValidateName_W(szHostName, DnsNameHostnameLabel);
 //     if (dwError != ERROR_SUCCESS)
@@ -1390,7 +1419,7 @@ pub unsafe extern "system" fn DllMain(
 //     WCHAR szFullComputerName[512];
 //     WCHAR szHostName[256];
 //
-//     GetWindowText(GetDlgItem(hDlg, 1002), szHostName, ARRAYSIZE(szHostName));
+//     GetWindowText(GetDlgItem(hDlg, 1002), szHostName, ARRAYSIZE!(szHostName));
 //
 //     wsprintf(szFullComputerName, L"%s.%s", szHostName, pNetIdData->szDomainName);
 //     SetDlgItemText(hDlg, uId, szFullComputerName);
@@ -1406,9 +1435,9 @@ pub unsafe extern "system" fn DllMain(
 //     WCHAR szHostName[256];
 //     DWORD dwSize;
 //
-//     GetWindowText(GetDlgItem(hDlg, 1002), szHostName, ARRAYSIZE(szHostName));
+//     GetWindowText(GetDlgItem(hDlg, 1002), szHostName, ARRAYSIZE!(szHostName));
 //
-//     dwSize = ARRAYSIZE(pNetIdData->szComputerName);
+//     dwSize = ARRAYSIZE!(pNetIdData->szComputerName);
 //     DnsHostnameToComputerNameW(szHostName,
 //                                pNetIdData->szComputerName,
 //                                &dwSize);
@@ -1440,10 +1469,10 @@ pub unsafe extern "system" fn DllMain(
 // {
 //     WCHAR MsgText[MAX_PATH * 2];
 //
-//     if (LoadStringW(hDllInstance, 25, MsgText, ARRAYSIZE(MsgText)))
+//     if (LoadStringW(hDllInstance, 25, MsgText, ARRAYSIZE!(MsgText)))
 //         SetDlgItemText(hDlg, 1017, MsgText);
 //
-//     SendMessage(GetDlgItem(hDlg, 1002), EM_SETLIMITTEXT, MAX_HOSTNAME_LENGTH, 0);
+//     SendMessage(GetDlgItem(hDlg, 1002), EM_SETLIMITTEXT, MAX_HOSTNAME_LENGTH as WPARAM, 0);
 //     SetDlgItemText(hDlg, 1002, pNetIdData->szHostName);
 //     SetFullComputerName(hDlg, 1001, pNetIdData);
 //
@@ -1483,11 +1512,11 @@ pub unsafe extern "system" fn DllMain(
 //             return FALSE;
 //         }
 //
-//         GetWindowText(GetDlgItem(hDlg, 1002), pNetIdData->szHostName, ARRAYSIZE(pNetIdData->szHostName));
+//         GetWindowText(GetDlgItem(hDlg, 1002), pNetIdData->szHostName, ARRAYSIZE!(pNetIdData->szHostName));
 //
 //         if (!SetComputerNameExW(ComputerNamePhysicalDnsHostname, pNetIdData->szHostName))
 //         {
-//             LoadStringW(hDllInstance, 4001, szMsgText, ARRAYSIZE(szMsgText));
+//             LoadStringW(hDllInstance, 4001, szMsgText, ARRAYSIZE!(szMsgText));
 //             MessageBoxW(hDlg, szMsgText, NULL, MB_OK | MB_ICONERROR);
 //             return FALSE;
 //         }
@@ -1527,8 +1556,8 @@ pub unsafe extern "system" fn DllMain(
 //         pNetIdData->bSyncDomainWithMembershipChanged = FALSE;
 //     }
 //
-//     LoadStringW(hDllInstance, 4000, szMsgTitle, ARRAYSIZE(szMsgTitle));
-//     LoadStringW(hDllInstance, 24, szMsgText, ARRAYSIZE(szMsgText));
+//     LoadStringW(hDllInstance, 4000, szMsgTitle, ARRAYSIZE!(szMsgTitle));
+//     LoadStringW(hDllInstance, 24, szMsgText, ARRAYSIZE!(szMsgText));
 //     MessageBoxW(hDlg, szMsgText, szMsgTitle, MB_OK | MB_ICONINFORMATION);
 //
 //     return TRUE;
@@ -1555,10 +1584,10 @@ pub unsafe extern "system" fn DllMain(
 //             return TRUE;
 //
 //         case WM_COMMAND:
-//             switch (LOWORD(wParam))
+//             switch (LOWORD!(wParam))
 //             {
 //                 case 1002:
-//                     if (HIWORD(wParam) == EN_CHANGE)
+//                     if (HIWORD!(wParam) == EN_CHANGE)
 //                     {
 //                         UpdateFullComputerName(hDlg, 1001, pNetIdData);
 //                         UpdateNetbiosName(hDlg, 1001, pNetIdData);
@@ -1577,9 +1606,9 @@ pub unsafe extern "system" fn DllMain(
 //
 //                 case 1003:
 //                     if (DialogBoxParam(hDllInstance,
-//                                        MAKEINTRESOURCE(IDD_PROPPAGEDNSANDNETBIOS),
+//                                        MAKEINTRESOURCE!(IDD_PROPPAGEDNSANDNETBIOS),
 //                                        hDlg,
-//                                        DNSSuffixPropDlgProc,
+//                                        Some(DNSSuffixPropDlgProc),
 //                                        (LPARAM)pNetIdData))
 //                     {
 //                         UpdateFullComputerName(hDlg, 1001, pNetIdData);
@@ -1640,14 +1669,14 @@ pub unsafe extern "system" fn DllMain(
 //     }
 //
 //     /* Set the workgroup or domain name */
-//     LoadStringW(hDllInstance, (pNetIdData->JoinStatus == NetSetupDomainName)? 6 : 5, szBuffer, ARRAYSIZE(szBuffer));
+//     LoadStringW(hDllInstance, (pNetIdData->JoinStatus == NetSetupDomainName)? 6 : 5, szBuffer, ARRAYSIZE!(szBuffer));
 //     SetDlgItemText(hwndDlg, IDC_WORKGROUPDOMAIN, szBuffer);
 //     SetDlgItemText(hwndDlg, IDC_WORKGROUPDOMAIN_NAME, pNetIdData->JoinName);
 //
 //     /* Show the administrator note and disable controls when the user is not an administator */
 //     if (!IsUserAdmin())
 //     {
-//         LoadStringW(hDllInstance, 1021, szBuffer, ARRAYSIZE(szBuffer));
+//         LoadStringW(hDllInstance, 1021, szBuffer, ARRAYSIZE!(szBuffer));
 //         SetDlgItemText(hwndDlg, IDC_MESSAGETEXT, szBuffer);
 //
 //         EnableWindow(GetDlgItem(hwndDlg, IDC_NETWORK_ID), FALSE);
@@ -1677,7 +1706,7 @@ pub unsafe extern "system" fn DllMain(
 //     GetDlgItemTextW(hwndDlg,
 //                     IDC_COMPDESC,
 //                     NewComputerDescription,
-//                     ARRAYSIZE(NewComputerDescription));
+//                     ARRAYSIZE!(NewComputerDescription));
 //     if (GetLastError() != ERROR_SUCCESS)
 //     {
 //         lError = GetLastError();
@@ -1747,18 +1776,18 @@ pub unsafe extern "system" fn DllMain(
 //             break;
 //
 //         case WM_COMMAND:
-//             switch (LOWORD(wParam))
+//             switch (LOWORD!(wParam))
 //             {
 //                 case IDC_COMPDESC:
-//                     if (HIWORD(wParam) == EN_CHANGE && pNetIdData->bEnable == TRUE)
-//                         PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+//                     if (HIWORD!(wParam) == EN_CHANGE && pNetIdData->bEnable == TRUE)
+//                         PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 //                     break;
 //
 //                 case IDC_NETWORK_PROPERTY:
 //                     if (DialogBoxParam(hDllInstance,
-//                                        MAKEINTRESOURCE(IDD_PROPPAGECOMPNAMECHENGE),
+//                                        MAKEINTRESOURCE!(IDD_PROPPAGECOMPNAMECHENGE),
 //                                        hwndDlg,
-//                                        NetworkPropDlgProc,
+//                                        Some(NetworkPropDlgProc),
 //                                        (LPARAM)pNetIdData))
 //                     {
 //                         UpdateFullComputerName(hwndDlg, IDC_COMPUTERNAME, pNetIdData);
@@ -1791,7 +1820,7 @@ pub unsafe extern "system" fn DllMain(
 //     psp.dwSize = sizeof(psp);
 //     psp.dwFlags = PSP_DEFAULT;
 //     psp.hInstance = hDllInstance;
-//     psp.pszTemplate = MAKEINTRESOURCE(IDD_PROPPAGECOMPUTER);
+//     psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(IDD_PROPPAGECOMPUTER);
 //     psp.pfnDlgProc = NetIDPageProc;
 //
 //     return CreatePropertySheetPage(&psp);

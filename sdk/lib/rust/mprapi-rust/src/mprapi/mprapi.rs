@@ -13,7 +13,7 @@ pub unsafe extern "system" fn DllMain(
         }
         _ => {}
     }
-    TRUE
+    (TRUE) as i32
 }
 
 #[no_mangle]
@@ -25,7 +25,7 @@ pub unsafe extern "system" fn MprAdminGetErrorString(mprerror: DWORD, localstr: 
 #[no_mangle]
 pub unsafe extern "system" fn MprAdminIsServiceRunning(server: LPWSTR) -> BOOL {
     // FIXME!("(%s): stub!\n", debugstr_w(server));
-    FALSE
+    (FALSE) as i32
 }
 
 
