@@ -17,6 +17,8 @@
 
 typedef LONG NTSTATUS;
 
+#include "wow64_btcpu.h"
+
 ULONG WINAPI DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
 
 /* Sentinel: this name has no hand marshaller yet -> caller fails loud. */
@@ -65,6 +67,14 @@ NTSTATUS WINAPI NtMapViewOfSection(HANDLE Section, HANDLE Process,
                                    PSIZE_T ViewSize, ULONG InheritDisposition,
                                    ULONG AllocationType, ULONG Win32Protect);
 NTSTATUS WINAPI NtUnmapViewOfSection(HANDLE Process, PVOID BaseAddress);
+NTSTATUS WINAPI NtReadVirtualMemory(HANDLE Process, PVOID BaseAddress,
+                                    PVOID Buffer, SIZE_T Size, PSIZE_T Read);
+NTSTATUS WINAPI NtWriteVirtualMemory(HANDLE Process, PVOID BaseAddress,
+                                     PVOID Buffer, SIZE_T Size, PSIZE_T Written);
+NTSTATUS WINAPI NtFlushInstructionCache(HANDLE Process, PVOID BaseAddress,
+                                        SIZE_T Length);
+NTSTATUS WINAPI NtSetInformationProcess(HANDLE Process, ULONG InfoClass,
+                                        PVOID Info, ULONG Len);
 NTSTATUS WINAPI NtOpenFile(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
                            PVOID Iosb, ULONG ShareAccess, ULONG OpenOptions);
 NTSTATUS WINAPI NtCreateFile(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
@@ -349,6 +359,8 @@ typedef struct _WOW64_PROCESS_BASIC_INFORMATION64 {
 #define WOW64_PROCESS_CURRENT ((HANDLE)(LONG_PTR)-1)
 #define ProcessBasicInformation  0
 #define ProcessWow64Information   26
+
+#define WOW64_ProcessExecuteFlags 0x22
 
 static NTSTATUS Wow64Manual_NtQueryInformationProcess(ULONG *a)
 {
@@ -692,7 +704,20 @@ static NTSTATUS Wow64pReadWriteFile(WOW64_RW_FN Fn, ULONG *a, const char *Who)
 
 static NTSTATUS Wow64Manual_NtReadFile(ULONG *a)
 {
-    return Wow64pReadWriteFile(NtReadFile, a, "NtReadFile");
+    /* The kernel writes into the guest's buffer behind the CPU layer's back. If
+     * that buffer is inside a range the layer write-traps for self-modifying
+     * code (a loader reading a section straight into RWX memory does exactly
+     * this), the trap has to come off for the duration — and the code cached
+     * from those pages has to go. Buffer=a[5], Length=a[6]. */
+    PVOID Buffer = (PVOID)(ULONG_PTR)a[5];
+    SIZE_T Length = a[6];
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    NTSTATUS St;
+
+    Wow64NotifyReadFileBefore(File, Buffer, Length);
+    St = Wow64pReadWriteFile(NtReadFile, a, "NtReadFile");
+    Wow64NotifyReadFileAfter(File, Buffer, Length, St);
+    return St;
 }
 
 static NTSTATUS Wow64Manual_NtWriteFile(ULONG *a)
@@ -901,6 +926,7 @@ static NTSTATUS Wow64Manual_NtAllocateVirtualMemory(ULONG *a)
     PVOID Base = Base32 ? (PVOID)(ULONG_PTR)*Base32 : NULL;
     SIZE_T Size = Size32 ? *Size32 : 0;
     NTSTATUS St;
+    BOOLEAN Self;
 
     /* Keep guest allocations addressable from 32-bit: when the guest lets the
      * system choose (Base==0), force the result below 2GB (kernel ZeroBits>32
@@ -908,7 +934,14 @@ static NTSTATUS Wow64Manual_NtAllocateVirtualMemory(ULONG *a)
     if (!Base && ZeroBits == 0)
         ZeroBits = WOW64_ZEROBITS_BELOW_2G;
 
+    /* Announce the new range to the CPU layer. Without this a guest that
+     * generates code into the allocation cannot execute it at all on a JIT
+     * host: FEX only decodes addresses inside the executable set it has been
+     * told about. Before/After must stay paired around this one call. */
+    Self = Wow64IsCurrentProcess(Process);
+    if (Self) Wow64NotifyAllocBefore(Base, Size, Type, Protect);
     St = NtAllocateVirtualMemory(Process, &Base, ZeroBits, &Size, Type, Protect);
+    if (Self) Wow64NotifyAllocAfter(Base, Size, Type, Protect, St);
     if (St >= 0)
     {
         if (Base32) *Base32 = (ULONG)(ULONG_PTR)Base;
@@ -925,7 +958,15 @@ static NTSTATUS Wow64Manual_NtFreeVirtualMemory(ULONG *a)
     ULONG FreeType = a[3];
     PVOID Base = Base32 ? (PVOID)(ULONG_PTR)*Base32 : NULL;
     SIZE_T Size = Size32 ? *Size32 : 0;
-    NTSTATUS St = NtFreeVirtualMemory(Process, &Base, &Size, FreeType);
+    NTSTATUS St;
+    BOOLEAN Self;
+
+    /* A freed range must leave the CPU layer's executable set, or a later
+     * allocation reusing the address executes the OLD translation. */
+    Self = Wow64IsCurrentProcess(Process);
+    if (Self) Wow64NotifyFreeBefore(Base, Size, FreeType);
+    St = NtFreeVirtualMemory(Process, &Base, &Size, FreeType);
+    if (Self) Wow64NotifyFreeAfter(Base, Size, FreeType, St);
     if (St >= 0)
     {
         if (Base32) *Base32 = (ULONG)(ULONG_PTR)Base;
@@ -944,7 +985,16 @@ static NTSTATUS Wow64Manual_NtProtectVirtualMemory(ULONG *a)
     PVOID Base = Base32 ? (PVOID)(ULONG_PTR)*Base32 : NULL;
     SIZE_T Size = Size32 ? *Size32 : 0;
     ULONG Old = 0;
-    NTSTATUS St = NtProtectVirtualMemory(Process, &Base, &Size, NewProtect, &Old);
+    NTSTATUS St;
+    BOOLEAN Self;
+
+    /* The RW -> RWX transition every runtime code generator makes. This is what
+     * puts the range in the CPU layer's executable set and arms its
+     * self-modifying-code tracking. */
+    Self = Wow64IsCurrentProcess(Process);
+    if (Self) Wow64NotifyProtectBefore(Base, Size, NewProtect);
+    St = NtProtectVirtualMemory(Process, &Base, &Size, NewProtect, &Old);
+    if (Self) Wow64NotifyProtectAfter(Base, Size, NewProtect, St);
     if (St >= 0)
     {
         if (Base32) *Base32 = (ULONG)(ULONG_PTR)Base;
@@ -1006,6 +1056,96 @@ static NTSTATUS Wow64Manual_NtMapViewOfSection(ULONG *a)
                  SectionOffset, SectionOffset ? SectionOffset->QuadPart : 0,
                  (PVOID)Size, Inherit, Type, Protect);
     }
+    return St;
+}
+
+/* ---- NtUnmapViewOfSection ------------------------------------------------ *
+ * ABI-flat, but the CPU layer has to drop the image and everything it cached
+ * from it — a later map at the same address would otherwise run the old code. */
+static NTSTATUS Wow64Manual_NtUnmapViewOfSection(ULONG *a)
+{
+    HANDLE Process = (HANDLE)(LONG_PTR)(LONG)a[0];
+    PVOID Base = (PVOID)(ULONG_PTR)a[1];
+    BOOLEAN Self = Wow64IsCurrentProcess(Process);
+    NTSTATUS St;
+
+    if (Self) Wow64NotifyUnmapBefore(Base);
+    St = NtUnmapViewOfSection(Process, Base);
+    if (Self) Wow64NotifyUnmapAfter(Base, St);
+    return St;
+}
+
+/* ---- NtRead/NtWriteVirtualMemory ----------------------------------------- *
+ * Two separate defects the flat thunk had: the trailing *ReturnSize is a
+ * ULONG_PTR, so the host wrote 8 bytes into the guest's 4-byte cell and
+ * clobbered whatever followed it; and a write into the guest's own address
+ * space can land on code the CPU layer has already translated. */
+static NTSTATUS Wow64Manual_NtReadVirtualMemory(ULONG *a)
+{
+    HANDLE Process = (HANDLE)(LONG_PTR)(LONG)a[0];
+    ULONG *Read32 = (ULONG *)(ULONG_PTR)a[4];
+    SIZE_T Read = 0;
+    NTSTATUS St = NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)a[1],
+                                      (PVOID)(ULONG_PTR)a[2], a[3], &Read);
+    if (Read32) *Read32 = (ULONG)Read;
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtWriteVirtualMemory(ULONG *a)
+{
+    HANDLE Process = (HANDLE)(LONG_PTR)(LONG)a[0];
+    PVOID Base = (PVOID)(ULONG_PTR)a[1];
+    SIZE_T Size = a[3];
+    ULONG *Written32 = (ULONG *)(ULONG_PTR)a[4];
+    SIZE_T Written = 0;
+    NTSTATUS St = NtWriteVirtualMemory(Process, Base, (PVOID)(ULONG_PTR)a[2],
+                                       Size, &Written);
+    if (Written32) *Written32 = (ULONG)Written;
+    /* After the fact on purpose: the layer only needs to know the bytes
+     * changed, and Written is the range that actually did. */
+    if (St >= 0 && Wow64IsCurrentProcess(Process))
+        Wow64NotifyMemoryDirty(Base, Written);
+    return St;
+}
+
+/* ---- NtFlushInstructionCache --------------------------------------------- *
+ * On a native host this is close to a no-op; on a JIT host it is the guest
+ * telling us, in the only way the architecture offers, that it just rewrote
+ * code. Well-behaved runtime code generators call it and nothing else. */
+static NTSTATUS Wow64Manual_NtFlushInstructionCache(ULONG *a)
+{
+    HANDLE Process = (HANDLE)(LONG_PTR)(LONG)a[0];
+    PVOID Base = (PVOID)(ULONG_PTR)a[1];
+    SIZE_T Length = a[2];
+
+    if (Wow64IsCurrentProcess(Process))
+        Wow64NotifyFlushInstructionCache(Base, Length);
+    return NtFlushInstructionCache(Process, Base, Length);
+}
+
+/* ---- NtSetInformationProcess(ProcessExecuteFlags) ------------------------ *
+ * DEP has two enforcers here and both have to hear about it: the kernel owns
+ * the host page protections — which on a native compat-mode host ARE the
+ * guest's — and the CPU layer owns whether the emulator will execute a page
+ * the host would. The kernel's verdict is the one the guest gets back; the
+ * layer is told only once the kernel has agreed. */
+static NTSTATUS Wow64Manual_NtSetInformationProcess(ULONG *a)
+{
+    HANDLE Process = (HANDLE)(LONG_PTR)(LONG)a[0];
+    ULONG Class = a[1];
+    PVOID Buf32 = (PVOID)(ULONG_PTR)a[2];
+    ULONG Len32 = a[3];
+    NTSTATUS St;
+
+    if (Class != WOW64_ProcessExecuteFlags)
+        return NtSetInformationProcess(Process, Class, Buf32, Len32);
+
+    if (Len32 != sizeof(ULONG) || !Buf32)
+        return (NTSTATUS)0xC0000004L; /* STATUS_INFO_LENGTH_MISMATCH */
+
+    St = NtSetInformationProcess(Process, Class, Buf32, Len32);
+    if (St >= 0 && Wow64IsCurrentProcess(Process))
+        Wow64SetExecuteFlags(*(ULONG *)Buf32);
     return St;
 }
 
@@ -3910,6 +4050,16 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtProtectVirtualMemory(Arguments);
     if (WOW64_IS("NtMapViewOfSection"))
         return Wow64Manual_NtMapViewOfSection(Arguments);
+    if (WOW64_IS("NtUnmapViewOfSection"))
+        return Wow64Manual_NtUnmapViewOfSection(Arguments);
+    if (WOW64_IS("NtReadVirtualMemory"))
+        return Wow64Manual_NtReadVirtualMemory(Arguments);
+    if (WOW64_IS("NtWriteVirtualMemory"))
+        return Wow64Manual_NtWriteVirtualMemory(Arguments);
+    if (WOW64_IS("NtFlushInstructionCache"))
+        return Wow64Manual_NtFlushInstructionCache(Arguments);
+    if (WOW64_IS("NtSetInformationProcess"))
+        return Wow64Manual_NtSetInformationProcess(Arguments);
     if (WOW64_IS("NtOpenFile"))
         return Wow64Manual_NtOpenFile(Arguments);
     if (WOW64_IS("NtCreateFile"))
