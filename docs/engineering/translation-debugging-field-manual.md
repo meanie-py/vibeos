@@ -2308,6 +2308,35 @@ per-arch bugcheck.
 ### Cohab link-clean ≠ runtime-correct
 A clean cargo + ninja can still bugcheck mid-init. The link is a necessary gate, never a
 sufficient one — which is the whole reason smoke is the north star.
+
+### A cohab shim declared VOID SWALLOWS the real function's return value
+
+**Symptom.** Callers branch on a value the callee never delivered. Nothing warns: the C
+compiles, Rust compiles, the link resolves.
+
+**Cause (fastfat `FatAcquireExclusiveVcb`, all three arches).** `fatprocs.h` defines it as a
+macro over `FatAcquireExclusiveVcb_Real`, which returns `FINISHED` (`typedef BOOLEAN`) —
+"did I get the resource?". `rust_cohab_stub.c` forward-declared `_Real` as **`VOID`** and so
+the wrapper shim was `VOID` too; it called `_Real` and returned nothing. Every Rust caller
+that declared a return type was reading whatever survived in the return register across the
+shim's epilogue — right only by accident of codegen, and wrong the moment the register is
+touched. Live readers were `flush.rs`, `fileinfo.rs` and `volinfo.rs`, i.e. flush,
+set-file-info and volume-info.
+
+**The tell, and it is cheap to look for:** the crate disagreed with ITSELF. One symbol,
+eight `extern` declarations, four different return types (`void` ×4, `BOOLEAN` ×3,
+`NTSTATUS`, `i32`). `grep -rn "fn <Name>" <crate>/src` takes seconds and any disagreement is
+a bug in all but one of the sites. `volinfo`'s `i32` read four bytes of a one-byte return.
+
+**Fix.** Correct the forward declaration FIRST — a wrong prototype for the callee makes
+forwarding impossible in principle, so the shim's signature is a symptom, not the root. Then
+make the shim `return` the value, then normalize every Rust decl to the one true type.
+
+**Generalization.** A cohab shim's signature is part of the ABI contract and nothing checks
+it. When a shim exists only to fill in a macro, its return type must match the macro's
+expansion, not whatever the shim author happened to need that day. `verify_c_signatures`
+covers Rust-vs-C for declared prototypes; a shim that is *itself* mis-prototyped in C is
+outside that net.
 ---
 
 ## Mm, PFN & paging
@@ -3267,6 +3296,39 @@ real net regression fails *some* tests with *varied* timings; starvation errors 
 identically. **Do not `--allow-stale`, do not re-gate** (it will starve again), and above all
 **never broad-kill QEMUs** — use `./vibeos-cli kill`. Starvation must be *visible*: it used to
 read as "my build is slow".
+
+### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
+
+**Symptom.** `test_queue_is_fifo_by_arrival` failed roughly 1 run in 80, only ever under
+parallel load, and passed 80/80 sequentially. The obvious readings — "clock granularity",
+"a racy test" — are both wrong, and either one would have been fixed by quieting the test.
+
+**Cause.** The merge queue orders submissions by a `seq` of `"<time_ns>-<lane>"` and relies on
+lexical order being arrival order. `time.time_ns()` is **CLOCK_REALTIME, which steps.** Under
+WSL2 the guest clock resyncs to the Windows host, and the captured failure shows a lane
+submitted 2.59 **seconds** in the past relative to one already on disk:
+
+```
+lane-a  01785085499633383341   submitted FIRST, larger
+lane-b  01785085497039700594   submitted SECOND, smaller by 2,593,682,747 ns
+```
+
+So the later arrival sorted first. The test was reporting a **live fairness bug in the thing
+that decides whose work lands** — a lane could silently jump the queue.
+
+**Fix.** Lamport-style bump in `queue._next_seq()`: keep wall-clock ns, but never hand out a
+value at or before the queue's current high-water mark. Scan **pending only, not results** — the
+invariant only has to hold among submissions competing for a conductor, and pending-only
+self-heals, whereas including results would pin every future seq to a bad value until the
+history was pruned if the clock ever jumped far *forward*.
+
+**Two generalizations worth more than the bug.** (1) Never derive ordering, elapsed time, or
+timeouts from `time.time()`/`time.time_ns()` — use `time.monotonic()` for durations, and for
+anything persisted across processes make the *stored state* the authority. (2) A 1-in-80
+failure is not a control. Reproduce it under the load that triggers it (8 workers × 25 runs
+here), then pin it with a test that **fakes the trigger deterministically** — the regression
+test steps the clock backwards by the exact observed 2,593,682,747 ns and fails against the
+old allocator with the live signature.
 
 ### Known-benign signals — do not chase these
 - **A screenshot that looks solid black (346-byte PNG) is NOT a boot failure.** More generally,

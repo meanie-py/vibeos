@@ -145,7 +145,11 @@ extern NPAGED_LOOKASIDE_LIST FatEResourceLookasideList;
 
 /* Real functions from Rust (not macros) */
 extern BOOLEAN FatAcquireExclusiveFcb(PIRP_CONTEXT, PFCB);
-extern VOID    FatAcquireExclusiveVcb_Real(PIRP_CONTEXT, PVCB, BOOLEAN);
+/* BOOLEAN, not VOID. fatprocs.h:1455 declares it BOOLEAN and resrcsup.rs returns u8
+ * ("did I get the resource?"). THIS wrong prototype is the root of the discarded
+ * return value below: because the compiler was told _Real returns nothing, the
+ * FatAcquireExclusiveVcb shim could not forward an answer even in principle. */
+extern BOOLEAN FatAcquireExclusiveVcb_Real(PIRP_CONTEXT, PVCB, BOOLEAN);
 extern VOID    FatCompleteRequest_Real(PIRP_CONTEXT, PIRP, NTSTATUS);
 extern VOID    FatDeleteIrpContext_Real(PIRP_CONTEXT);
 
@@ -211,9 +215,22 @@ VOID FatReleaseGlobal(PIRP_CONTEXT IrpContext)
     ExReleaseResourceLite(FATDATA_RESOURCE());
 }
 
-VOID FatAcquireExclusiveVcb(PIRP_CONTEXT IrpContext, PVCB Vcb)
+/* Returns BOOLEAN, and it MUST: fatprocs.h:1461 defines
+ *     #define FatAcquireExclusiveVcb(IC, V)  FatAcquireExclusiveVcb_Real(IC, V, FALSE)
+ * and _Real returns BOOLEAN ("did I get the resource?"). Callers branch on it —
+ * `if (!FatAcquireExclusiveVcb(...)) { post the request and bail }`.
+ *
+ * This shim used to be declared VOID while still calling _Real, so the answer was
+ * DISCARDED. Every Rust caller that declared a return type was reading whatever
+ * happened to survive in the return register across the shim's epilogue: true only
+ * by accident of codegen, and silently wrong the moment that register is touched.
+ * Live readers at the time of the fix: flush.rs:319/347, fileinfo.rs:2798/3068,
+ * volinfo.rs:866 — i.e. flush, set-file-info and volume-info, not obscure paths.
+ * The Rust extern decls disagreed six ways over this one symbol (void, BOOLEAN,
+ * NTSTATUS, i32); they are normalized to BOOLEAN alongside this. */
+BOOLEAN FatAcquireExclusiveVcb(PIRP_CONTEXT IrpContext, PVCB Vcb)
 {
-    FatAcquireExclusiveVcb_Real(IrpContext, Vcb, FALSE);
+    return FatAcquireExclusiveVcb_Real(IrpContext, Vcb, FALSE);
 }
 
 /* FatAcquireExclusiveFcb — acquires the FCB resource exclusively.
@@ -607,19 +624,18 @@ VOID FatUpdateIOCountersPCW(PVCB a, BOOLEAN b, ULONG_PTR c) { (void)a;(void)b;(v
  * 10. BugCheck stubs for FAT functions not yet in Rust
  * ====================================================================== */
 
-NTSTATUS FatIsVolumeMounted(PIRP_CONTEXT a, PIRP b)    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatUnlockVolume / FatUnlockVolumeInternal / FatDirtyVolume / FatIsVolumeMounted /
+ * FatQueryBpb -> now REAL in fastfat-rust fsctrl.rs. Stubs removed so the Rust
+ * #[no_mangle] definitions are the sole symbols — same first-match link rule as the
+ * FatSetEndOfFileInfo note below: this C object links BEFORE libfastfat_rust.a, so a
+ * stub left here would silently SHADOW the real implementation and keep bugchecking.
+ * (FatIsPathnameValid's stub lived further down and is removed there.) */
 NTSTATUS FatIsVolumeDirty(PIRP_CONTEXT a, PIRP b)      { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatLockVolume(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatUnlockVolume(PIRP_CONTEXT a, PIRP b)       { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatLockVolumeInternal(PIRP_CONTEXT a, PVCB b, PVOID c)  { (void)a;(void)b;(void)c; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatUnlockVolumeInternal(PIRP_CONTEXT a, PVCB b, PVOID c){ (void)a;(void)b;(void)c; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatDismountVolume(PIRP_CONTEXT a, PIRP b)     { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatDirtyVolume(PIRP_CONTEXT a, PIRP b)        { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGetStatistics(PIRP_CONTEXT a, PIRP b)      { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGetVolumeBitmap(PIRP_CONTEXT a, PIRP b)    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGetRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatQueryBpb(PIRP_CONTEXT a, PIRP b)           { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 /* FatSetEndOfFileInfo — recovered to Rust (fileinfo.rs, rustconv 2026-07-16). The
  * bugcheck stub is removed so the Rust #[no_mangle] definition is the sole symbol
@@ -638,8 +654,13 @@ NTSTATUS FatPerformVerifyDiskRead(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID 
  * stopped 0x23 0xdead0000 in FatGenerateFileIdFromFcb on any
  * FileInternalInformation query. Rust calls its own helpers now — no symbol. */
 /* FatReadDirent -> rust_cohab_fat.c (real dirsup.c macro) */
-NTSTATUS fat_check_system_security_access(PVOID a0) { (void)a0; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS fat_supersede_or_overwrite_file(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5, PVOID a6, PVOID a7, PVOID a8) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5;(void)a6;(void)a7;(void)a8; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* fat_check_system_security_access / fat_supersede_or_overwrite_file: DELETED, and
+ * they were never reachable. Both functions are already translated in create.rs as
+ * FatCheckSystemSecurityAccess and FatSupersedeOrOverwriteFile (#[no_mangle],
+ * PascalCase); the snake_case names existed only as unused `extern` decls, which was
+ * by itself enough to bring these two bugcheck bodies into the driver. Nothing called
+ * them, so unlike the FSCTL stubs below they could never fire — but they are the
+ * cleanest possible statement of the rule: a stray extern decl MINTS a bugcheck. */
 
 /* FatConstructDot / FatConstructDotDot / FatNotifyReportChange
  * -> rust_cohab_fat.c (real dirsup.c / fatprocs.h macros) */
@@ -655,7 +676,10 @@ ULONG FatIoCallDriverCount = 0;  /* FASTFATDBG counter; real DATA, incremented b
 
 /* FatAreNamesEqual / FatIsNameShortOemValid -> rust_cohab_fat.c (real fatprocs.h macros) */
 /* FatIsNameLongUnicodeValid -> namesup.rs (Rust impl of the fatprocs.h INLINE) */
-BOOLEAN FatIsPathnameValid(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); return FALSE; }
+/* FatIsPathnameValid -> now REAL in fastfat-rust fsctrl.rs. Note the stub's return
+ * type was BOOLEAN while the C function returns NTSTATUS; the Rust extern decl agreed
+ * with the STUB, not with fsctrl.c. It survived only because the function always
+ * returns STATUS_SUCCESS (0), which truncates to FALSE either way. */
 /* FatIsIoRangeValid -> rust_cohab_fat.c (real fatprocs.h static INLINE) */
 
 

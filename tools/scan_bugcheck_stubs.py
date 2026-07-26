@@ -30,6 +30,23 @@ FatGenerateFileIdFromDirentAndOffset, SizeOfPackedEa). Note this is the exact
 inverse of the older `[§9.53]` failure, where a stubbed macro became a silent
 no-op instead of a loud crash — same root, opposite symptom.
 
+THE ORPHAN SUBCLASS (looks identical, needs the opposite fix):
+A declaration is not a call. fastfat carried `extern` decls for
+`fat_check_system_security_access` and `fat_supersede_or_overwrite_file` whose
+functions were ALREADY translated in the same file under their PascalCase names
+(`FatCheckSystemSecurityAccess`, `FatSupersedeOrOverwriteFile`, `#[no_mangle]`).
+Nothing called the snake_case names — but the decls alone were enough to make the
+stub generator mint two bugcheck bodies. These cannot fire, and the fix is to
+delete the decl and the stub, NOT to translate anything. Reporting them the same
+as a live handler is actively harmful: it sent a reader off to re-translate a
+370-line function that was already sitting in the file. Hence [ORPHAN_DECL].
+
+The three classes, and what each one costs you:
+  [MACRO_AS_EXTERN]  always a defect — the symbol can never exist. Implement inline.
+  [BUGCHECK_STUB]    reachable: Rust CALLS it. A live crash on that path. Translate.
+  [ORPHAN_DECL]      declared, never called. Delete the decl + stub; check first
+                     whether it is already translated under another name.
+
 WHY A LINT AND NOT A CHECKLIST:
 The intersection is mechanically computable from files already in the tree, so
 paying a build+boot per entry to rediscover it is pure waste. Findings here are
@@ -38,8 +55,11 @@ reaches is fine until something reaches it. Baseline gates NEW ones.
 
 WHAT IS NOT A FINDING:
   - a stub whose body is a real implementation (returns a value, forwards a call)
-  - a bugcheck stub NO Rust module declares — unreachable from the Rust side, so
+  - a bugcheck stub NO Rust module declares — not linkable from the Rust side, so
     it cannot fire; it stays off the queue until someone wires it up
+  - a call that appears only inside a Rust comment. fastfat keeps the entire
+    original C body commented beside each translation, so counting those would
+    make every dead stub look reachable.
 """
 
 from __future__ import annotations
@@ -113,25 +133,50 @@ def _show(path: Path, base: Path) -> str:
     return str(path.relative_to(base)) if base == REPO else str(path)
 
 
+# A Rust comment. Stripped before counting call sites: fastfat keeps the entire
+# original C body commented out beside each translation, so an un-stripped scan
+# counts those as live calls and every dead stub looks reachable.
+RS_COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+
+
 def rust_declared(
     names: set[str], crate_dir: Path | None, fallback: Path, base: Path
-) -> dict[str, str]:
-    """Map name -> first Rust file declaring `fn <name>(`. Prefer the driver's own
-    crate; fall back to every Rust crate, because these symbols are global and a
-    declaration anywhere is enough to make the stub callable."""
+) -> tuple[dict[str, str], dict[str, int]]:
+    """Map name -> first Rust file declaring `fn <name>(`, and name -> how many times
+    Rust actually CALLS it.
+
+    Declaring and calling are different questions and only the second one means the
+    stub can fire. Counting only declarations over-reports: fastfat carried two
+    `extern` decls (`fat_check_system_security_access`, `fat_supersede_or_overwrite_file`)
+    for functions that were ALREADY translated under their PascalCase names in the same
+    file, with zero call sites. They are unreachable orphans — the honest fix is to
+    delete the decl and the stub, not to translate anything — but a declaration-only
+    scan reports them identically to a live FSCTL handler, which sent a reader
+    (me) off to translate a 370-line function that was already there.
+
+    Prefer the driver's own crate; fall back to every Rust crate, because these symbols
+    are global and a declaration anywhere is enough to make the stub linkable."""
     roots = [crate_dir] if crate_dir and crate_dir.is_dir() else [fallback]
-    pats = {n: re.compile(rf"\bfn\s+{re.escape(n)}\s*\(") for n in names}
+    decl_pats = {n: re.compile(rf"\bfn\s+{re.escape(n)}\s*\(") for n in names}
+    use_pats = {n: re.compile(rf"\b{re.escape(n)}\s*\(") for n in names}
     found: dict[str, str] = {}
+    calls: dict[str, int] = dict.fromkeys(names, 0)
     for root in roots:
         for rs in root.rglob("*.rs"):
             try:
                 text = rs.read_text(errors="replace")
             except OSError:
                 continue
-            for n, p in pats.items():
+            for n, p in decl_pats.items():
                 if n not in found and p.search(text):
                     found[n] = _show(rs, base)
-    return found
+            src = RS_COMMENT_RE.sub(" ", text)
+            for n, p in use_pats.items():
+                for m in p.finditer(src):
+                    # `fn NAME(` is the declaration or the definition, not a call.
+                    if not re.search(r"\bfn\s+$", src[: m.start()]):
+                        calls[n] += 1
+    return found, calls
 
 
 def header_macros(driver_dir: Path, names: set[str]) -> set[str]:
@@ -165,11 +210,11 @@ def main() -> int:
         driver_dir = stub.parent
         rel = _show(stub, root)
         crate = rroot / f"{driver_dir.name}-rust"
-        declared = rust_declared(set(names), crate if crate.is_dir() else None, rroot, root)
+        declared, calls = rust_declared(set(names), crate if crate.is_dir() else None, rroot, root)
         macros = header_macros(driver_dir, set(names))
         for n in names:
             if n not in declared:
-                continue  # unreachable from Rust — not on the queue
+                continue  # not declared in Rust at all — not linkable from there
             if n in macros:
                 findings.append(
                     f"{rel}: [MACRO_AS_EXTERN] {n} is a #define in this driver's headers, "
@@ -177,11 +222,19 @@ def main() -> int:
                     f"so this stub is a guaranteed bugcheck on first call; implement it inline "
                     f"in Rust and delete the stub"
                 )
+            elif calls[n]:
+                findings.append(
+                    f"{rel}: [BUGCHECK_STUB] {n} is untranslated (bugchecks on entry) and Rust "
+                    f"CALLS it at {calls[n]} site(s) (declared in {declared[n]}) — reachable, so "
+                    f"it crashes whenever that path first runs; translate it or prove the path "
+                    f"is dead"
+                )
             else:
                 findings.append(
-                    f"{rel}: [BUGCHECK_STUB] {n} is untranslated (bugchecks on entry) but "
-                    f"declared in {declared[n]} — reachable, so it crashes whenever that path "
-                    f"first runs; translate it or prove the path is dead"
+                    f"{rel}: [ORPHAN_DECL] {n} is declared in {declared[n]} but never called "
+                    f"from Rust, so the stub cannot fire. The decl is what MADE the stub exist; "
+                    f"check whether the function is already translated under another name before "
+                    f"translating anything, then delete the decl and the stub"
                 )
     for f in sorted(findings):
         print(f)

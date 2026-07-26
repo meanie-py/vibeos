@@ -66,7 +66,9 @@ class QueueError(RuntimeError):
 
 @dataclass
 class Submission:
-    seq: str  # "<time_ns>-<lane>" → lexical sort IS arrival order
+    # "<ns>-<lane>" → lexical sort IS arrival order. Allocated by _next_seq(), which
+    # bumps past the queue's high-water mark: the wall clock alone is not monotonic.
+    seq: str
     lane: str  # "<branch>@<worktree>" — a lane is a branch in a worktree
     tip: str  # the commit to land
     worktree: str
@@ -141,6 +143,50 @@ def lane_id(repo: Path) -> str:
     return f"{branch}@{repo.resolve().name}"
 
 
+def _next_seq(repo: Path, lane_tag: str) -> str:
+    """Allocate a seq that sorts strictly AFTER every submission already queued.
+
+    seq is "<ns>-<lane>" and the whole FIFO guarantee rests on lexical order being
+    arrival order. The numeric half is `time.time_ns()`, i.e. CLOCK_REALTIME — and
+    CLOCK_REALTIME is not monotonic. It STEPS.
+
+    Not hypothetical: reproduced on this fleet at ~1.3% under parallel load. A lane
+    submitted 2.59 SECONDS "before" one that was already on disk —
+
+        lane-a  01785085499633383341   submitted first, LARGER
+        lane-b  01785085497039700594   submitted second, SMALLER by 2,593,682,747ns
+
+    — because WSL2 resynced the guest clock to the Windows host between the two
+    calls. The later arrival then sorts first and silently jumps the queue. It also
+    surfaced as a ~1-in-80 failure of test_queue_is_fifo_by_arrival, which is how it
+    was found; treating that as "a flaky test" and quieting it would have left a live
+    fairness bug in the thing that decides whose work lands.
+
+    Fix is a Lamport-style bump: keep wall-clock ns (it is meaningful and readable)
+    but never hand out a value that would sort at or before something already queued.
+    The 20-digit zero-pad makes the numeric prefix dominate the comparison, so
+    max+1 beats every existing entry regardless of lane name.
+
+    Deliberately scanned over PENDING only, not results. Ordering only has to hold
+    among submissions competing for a conductor, and pending-only SELF-HEALS: if the
+    clock ever jumps far forward, the queue drains and the next submission is back on
+    real time. Including results would pin every future seq to the bad value until
+    the history was pruned.
+    """
+    now = time.time_ns()
+    floor = 0
+    try:
+        for p in _pending_dir(repo).iterdir():
+            if p.suffix != ".json":
+                continue
+            head = p.name.split("-", 1)[0]
+            if head.isdigit():
+                floor = max(floor, int(head))
+    except OSError:
+        pass  # no queue dir yet: nothing to sort after
+    return f"{max(now, floor + 1):020d}-{lane_tag}"
+
+
 # ── submit ──────────────────────────────────────────────────────────────────
 
 
@@ -171,7 +217,7 @@ def submit(repo: Path, *, tip: str | None = None, lane: str | None = None) -> Su
                 outcome="superseded",
                 reason=f"this lane submitted {tip[:12]}, which already contains it",
             )
-    seq = f"{time.time_ns():020d}-{lane.replace('/', '_').replace(' ', '_')}"
+    seq = _next_seq(repo, lane.replace("/", "_").replace(" ", "_"))
     sub = Submission(
         seq=seq,
         lane=lane,
