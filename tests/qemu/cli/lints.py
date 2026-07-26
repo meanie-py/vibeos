@@ -380,6 +380,16 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_orphan_modules", [py, str(som)] if som.is_file() else ["MISSING"], "stdout")
     )
+    # Cohab stubs that bugcheck on entry AND are declared by a Rust module — i.e.
+    # unimplemented and reachable, so they crash whenever their path first runs. The
+    # intersection is computable from the tree, and paying a build+boot per entry to
+    # rediscover it is waste: fastfat cost three such cycles in one night. The
+    # MACRO_AS_EXTERN subclass is strictly a translation defect — an `extern fn` naming
+    # a `#define` can never resolve. Stock (18) is the work queue; baseline gates NEW.
+    sbs = repo / "tools" / "scan_bugcheck_stubs.py"
+    specs.append(
+        ("scan_bugcheck_stubs", [py, str(sbs)] if sbs.is_file() else ["MISSING"], "stdout")
+    )
     ssf = repo / "tools" / "scan_silent_failures.py"
     specs.append(
         (
