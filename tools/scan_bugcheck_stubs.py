@@ -53,6 +53,21 @@ paying a build+boot per entry to rediscover it is pure waste. Findings here are
 a WORK QUEUE, not necessarily breakage: a bugcheck stub on a path nothing
 reaches is fine until something reaches it. Baseline gates NEW ones.
 
+KNOWN LIMIT — this scanner only sees the DRIVER's own headers:
+`header_macros()` globs `<driver>/*.h`, so an `extern` declared for a **DDK**
+macro is invisible to it. Example met in the wild: `MmGetSystemAddressForMdlSafe`
+(`sdk/include/xdk/mmfuncs.h:139`) is a macro that tests `MdlFlags` and either
+returns `MappedSystemVa` or calls `MmMapLockedPagesSpecifyCache`; declaring it
+`extern` compiles fine and then fails at link with `undefined symbol`.
+
+That gap is tolerable, and deliberately not closed here, because the two cases
+have opposite failure modes. A DDK macro has no cohab stub to satisfy it, so the
+LINKER catches it immediately and loudly. The case this scanner exists for is the
+one where a stub DOES exist and silently turns the same mistake into a runtime
+bugcheck. If you are about to declare an `extern` for a DDK name, check for an
+existing faithful inline first — `ntkrnl_sys::driver_ddk` and
+`ntkrnl_sys::inline::*` already carry many of them.
+
 WHAT IS NOT A FINDING:
   - a stub whose body is a real implementation (returns a value, forwards a call)
   - a bugcheck stub NO Rust module declares — not linkable from the Rust side, so
