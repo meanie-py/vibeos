@@ -51,6 +51,101 @@ def _safe_filename(name: str) -> str:
 # cache self-heals instead of replaying forever).
 _SEAL_TOKEN_RE = re.compile(r"\b__RUSTCONV_(?:CALL|FACT)_[0-9]{4}__\b")
 
+# The contract text ends in a bare enumeration of the tokens it minted:
+#   "Call tokens (11): __RUSTCONV_CALL_0000__, __RUSTCONV_CALL_0001__, ..."
+# That enumeration is fully DERIVED from (body, seal rules), and the body is already
+# in the cache key — so all it contributes is "the seal rules changed", at the price
+# of voiding every banked entry in the file whenever they do. Fixing one macro
+# exclusion would have re-billed 6,800 lines of accepted, already-unsealed Rust.
+# Normalizing it out leaves the part that is a real capability claim: WHICH envelopes
+# were active, and the provided-RAII API text a pre-capability output could not have
+# used. Seal-set drift is judged separately, and directionally — see `_sealed_ok`.
+_TOKEN_ENUMERATION_RE = re.compile(r"(?m)^((?:Call t|T)okens) \(\d+\): .*$")
+
+# The seal envelopes are DETECTORS, not capabilities: their prose tells a worker how
+# to satisfy a check whose verdict is binary, and a banked entry is by construction
+# one that passed. Its names and values were restored by rustconv at unseal time, not
+# written by the model, so rewording the check cannot change a stored byte — while
+# hashing that prose re-bills the entire repo for an edit as small as telling `goto`
+# bodies that repeating a token is expected. What WAS hidden from the model is
+# carried precisely by `sealed`; that is the part with something to prove.
+_ENVELOPE_BODY_RE = re.compile(r"(?ms)^(## Deterministic (?:fact|call) envelope)\n.*?(?=\n## |\Z)")
+
+
+def _capability(contract: str) -> str:
+    collapsed = _ENVELOPE_BODY_RE.sub(r"\1 <verification prose>", contract or "")
+    return _TOKEN_ENUMERATION_RE.sub(r"\1: <enumeration>", collapsed)
+
+
+# Every contract block is a `## <title>` section. The two seal envelopes are pure
+# verification — they hide names from the model and prove they came back — so an
+# entry banked under them carries no capability debt. Any OTHER section (today the
+# provided-RAII lowering) hands the worker an API it was required to use, and an
+# entry predating it is stale by construction.
+_ENVELOPE_SECTIONS = frozenset({"Deterministic fact envelope", "Deterministic call envelope"})
+
+
+def _capability_titles(contract: str) -> list[str]:
+    """The non-envelope section titles — the parts that grant something."""
+    return sorted(
+        title.strip()
+        for title in re.findall(r"(?m)^## (.+)$", contract or "")
+        if title.strip() not in _ENVELOPE_SECTIONS
+    )
+
+
+def _envelope_only(contract: str) -> bool:
+    return not _capability_titles(contract)
+
+
+def _legacy_contract_ok(stored_hash: str, contract: str) -> bool:
+    """Whether a pre-normalization entry may still be reused.
+
+    Entries banked before the enumeration was normalized out stamped a hash of the
+    FULL contract text, so the new capability hash cannot match and the old text
+    cannot be reconstructed — every one of them would be re-billed the first time a
+    seal rule changed, which is exactly the outcome normalization exists to prevent.
+
+    They are recoverable without weakening the guard, because what the hash was
+    protecting is knowable from the current contract alone: if this run's contract is
+    nothing but seal envelopes, there is no capability the stored output could be
+    missing. A non-empty stored hash additionally proves the entry came from a SEALED
+    run (an unsealed one stamped `_hash("")`), so its names went through the model
+    guarded.
+
+    The converse — a stored entry that DID carry a capability, replayed into an
+    envelope-only run whose output would then reference a type nobody splices — is
+    structurally unreachable: the `--local-raii` preflight refuses to translate a
+    function with a body-local RAII type unless its lowering is supplied, so an
+    envelope-only contract for such a function never gets built at all.
+
+    Applies to any entry without a ``caps`` key, which includes the intermediate
+    stampings this rule went through while it was being worked out.
+    """
+    # Exact agreement with the OLD un-normalized stamping needs no reasoning at all,
+    # and is the common case when nothing about the contract moved — including the
+    # unsealed-run entry whose contract was, and still is, "".
+    if stored_hash == _hash(contract or ""):
+        return True
+    return bool(stored_hash) and stored_hash != _hash("") and _envelope_only(contract)
+
+
+def _sealed_ok(stored: list | None, current: frozenset[str] | None) -> bool:
+    """True when the stored entry was sealed at least as tightly as this run wants.
+
+    Superset, not equality. Sealing hides a name or value from the model and the
+    envelope check proves it came back; the stored Rust was already unsealed with
+    rustconv's own names, so an entry sealed MORE tightly than the current run needs
+    is still sound — every name this run would protect was protected then. The
+    reverse is not: an entry sealed LESS tightly let some name through the model
+    unguarded, which is the whole failure sealing exists to catch, so it misses.
+    """
+    if current is None:
+        return True
+    if stored is None:
+        return True  # pre-superset entry; capability hash already agreed
+    return current <= set(stored)
+
 
 class ResponseCache:
     """One directory per translated file; one .rs per function + a manifest."""
@@ -65,7 +160,13 @@ class ResponseCache:
             except (OSError, ValueError):
                 self._manifest = {}
 
-    def get(self, name: str, body_text: str, contract: str = "") -> str | None:
+    def get(
+        self,
+        name: str,
+        body_text: str,
+        contract: str = "",
+        sealed: frozenset[str] | None = None,
+    ) -> str | None:
         """Cached Rust for ``name`` IFF the C body hash still matches, else None.
 
         An EMPTY (or whitespace-only) cached file is treated as a MISS so that a
@@ -74,16 +175,27 @@ class ResponseCache:
         it instead of silently reusing nothing. See `put`.
 
         ``contract`` is the deterministic-contract text the worker prompt carried
-        (fact/call seals, provided-RAII API). A stored entry whose contract hash
+        (fact/call seals, provided-RAII API). A stored entry whose CAPABILITY hash
         differs is a MISS — a pre-capability output must not replay after the
         sealed contract changed (the CDrvDefExt --local-raii stale-replay bug).
+        The bare token enumeration inside that text is normalized out first and
+        judged as ``sealed`` instead; see `_capability` and `_sealed_ok`.
         Entries written before contract stamping (no "contract" key) still hit,
         so previously banked paid work keeps its value.
         """
         entry = self._manifest.get(name)
         if not entry or entry.get("hash") != _hash(body_text):
             return None
-        if "contract" in entry and entry["contract"] != _hash(contract or ""):
+        # `caps` marks an entry stamped under the settled rule; only those are held to
+        # an exact capability hash. Anything older stamped a different normalization of
+        # a text that cannot be reconstructed, so it is judged by what the CURRENT
+        # contract can prove instead — see `_legacy_contract_ok`.
+        if "caps" in entry:
+            if entry["contract"] != _hash(_capability(contract)):
+                return None
+        elif "contract" in entry and not _legacy_contract_ok(entry["contract"], contract):
+            return None
+        if not _sealed_ok(entry.get("sealed"), sealed):
             return None
         f = self.dir / entry.get("file", "")
         if not f.exists():
@@ -98,7 +210,14 @@ class ResponseCache:
             return None  # poisoned by a pre-fix run: re-translate instead of replaying
         return text
 
-    def put(self, name: str, body_text: str, rust: str, contract: str = "") -> None:
+    def put(
+        self,
+        name: str,
+        body_text: str,
+        rust: str,
+        contract: str = "",
+        sealed: frozenset[str] | None = None,
+    ) -> None:
         """Persist one function's Rust + record its body hash. Atomic-ish.
 
         Refuses to cache EMPTY/whitespace-only output: an empty translation is a
@@ -125,11 +244,38 @@ class ResponseCache:
         self._manifest[name] = {
             "file": fname,
             "hash": _hash(body_text),
-            "contract": _hash(contract or ""),
+            "contract": _hash(_capability(contract)),
+            "caps": _capability_titles(contract),
+            **({"sealed": sorted(sealed)} if sealed is not None else {}),
         }
         tmp = self.manifest_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(self._manifest, indent=1, sort_keys=True))
         tmp.replace(self.manifest_path)
+
+    def put_rejected(self, name: str, rust: str, error: str) -> None:
+        """Keep a REJECTED worker reply for forensics. Never replayed, never assembled.
+
+        A reject is paid artifact too — one API call bought it — and until this
+        existed the tool printed the audit verdict and dropped the evidence on the
+        floor. That is the wrong half to keep: the verdict says "the envelope broke",
+        the reply says HOW, and diagnosing a seal defect without the reply is
+        guesswork. Seven shell32 TUs went unassembled with 226 functions banked and
+        34 rejects unexplainable, which is what this is for.
+
+        Deliberately NOT in the manifest and under a `__rejected__/` subdirectory, so
+        `get` can never return one: a reply that failed the envelope must not become
+        a $0 cache hit later. Overwritten each run; the newest reject is the useful
+        one. Best-effort — a forensic write must never fail a translation run.
+        """
+        try:
+            out = self.dir / "__rejected__"
+            out.mkdir(parents=True, exist_ok=True)
+            (out / (_safe_filename(name) + ".rs")).write_text(
+                f"// REJECTED by the deterministic audit — forensic copy, never assembled.\n"
+                f"// {error}\n\n{rust}"
+            )
+        except OSError:
+            pass
 
     def count(self) -> int:
         return len(self._manifest)

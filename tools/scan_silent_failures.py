@@ -97,11 +97,25 @@ def discover_no_std_crates(ws: Path) -> list[Path]:
 
 
 def iter_rust_files(roots: list[Path]):
+    """Rust sources this lint's finding can actually apply to.
+
+    An `//! ORPHAN-BY-DESIGN:` file is in no `mod` chain, so nothing compiles it and no
+    `.unwrap()` in it can panic at runtime — which is the entire claim this lint makes.
+    Reporting one is not just noise: it puts a parked translation's findings between the
+    reader and the live code, and the lint re-fires the moment the file is wired (wiring
+    means removing the banner). Same banner `scan_orphan_modules` defines, honoured the
+    same way `scan_cc_mismatch` honours it.
+    """
     for root in roots:
         for p in sorted(root.rglob("*.rs")):
             if any(part in EXCLUDE_PARTS for part in p.parts):
                 continue
             if p.name in EXCLUDE_NAMES or p.name.startswith("bindgen_"):
+                continue
+            try:
+                if "ORPHAN-BY-DESIGN:" in p.read_text(errors="replace")[:2048]:
+                    continue
+            except OSError:
                 continue
             yield p
 

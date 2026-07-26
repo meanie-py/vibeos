@@ -130,6 +130,16 @@ def scan(root):
                     data = fh.read()
             except OSError:
                 continue
+            # An `//! ORPHAN-BY-DESIGN:` file is in no `mod` chain, so neither its
+            # declarations nor its definitions can take part in a call — the exemption
+            # this module's docstring already states, now enforced instead of baselined.
+            # It also stops a parked translation from "disagreeing" with the live
+            # declaration it exists to REPLACE: shell32's `SHELL32_CoCreateInitSF` is
+            # C++-OVERLOADED (shfldr.h:137 takes 6 params, :140 takes 5), so a parked
+            # shlfolder.rs defining the 6-param one reads as an arity bug against the
+            # wired 5-param decl, and no amount of signature analysis can tell them apart.
+            if b"ORPHAN-BY-DESIGN:" in data[:2048]:
+                continue
             if b"extern" not in data and b"no_mangle" not in data:
                 continue
             masked = _mask_lexical(data)

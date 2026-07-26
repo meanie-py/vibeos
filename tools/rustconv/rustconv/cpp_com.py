@@ -24,6 +24,8 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .lex_mask import mask_code
+
 if TYPE_CHECKING:
     from .callgraph import FunctionDep
 
@@ -3863,43 +3865,10 @@ def worker_signature(
     return f"pub unsafe fn {name}_body({', '.join(rendered)}) -> {ret}"
 
 
-def _masked_cpp(text: str) -> str:
-    """Blank comments and literals while preserving byte/character offsets."""
-    out = list(text)
-    i = 0
-    while i < len(text):
-        if text.startswith("//", i):
-            end = text.find("\n", i + 2)
-            end = len(text) if end < 0 else end
-            for pos in range(i, end):
-                out[pos] = " "
-            i = end
-        elif text.startswith("/*", i):
-            end = text.find("*/", i + 2)
-            end = len(text) if end < 0 else end + 2
-            for pos in range(i, end):
-                if out[pos] != "\n":
-                    out[pos] = " "
-            i = end
-        elif text[i] in ('"', "'"):
-            quote = text[i]
-            i += 1
-            while i < len(text):
-                if text[i] == "\\":
-                    out[i] = " "
-                    if i + 1 < len(text):
-                        out[i + 1] = " "
-                    i += 2
-                    continue
-                if text[i] == quote:
-                    i += 1
-                    break
-                if out[i] != "\n":
-                    out[i] = " "
-                i += 1
-        else:
-            i += 1
-    return "".join(out)
+# Shared with call_seal/fact_seal. The private copy this replaced was a C lexer
+# applied to Rust in four places (worker-body normalization), where a `'cleanup:`
+# label or a `&'a` lifetime blanked everything to the next apostrophe. See lex_mask.
+_masked_cpp = mask_code
 
 
 def _matching_paren(text: str, opening: int) -> int:
