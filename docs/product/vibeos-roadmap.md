@@ -912,7 +912,42 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   PKTHREAD so the stack fields are reachable), and a soak would otherwise have run for hours
   against a kernel with no probe in it.
 
-  **First measurement — a HEALTHY arm64 UP boot to desktop (59s) fires NOTHING:**
+  **FIRST REPRODUCTION UNDER THE PROBES (2026-07-26), and it points hard at the STACK.**
+  A 4-round `-smp 1` kmtest soak on fixed media reproduced once (rounds 1/3/4 clean or
+  ratchet-noise; ~25%, in line with the prior base rate). Round 2 died at test **69 of 89, on
+  `ZwWaitForMultipleObjects`** — immediately after the `ZwCreateSection` / `ZwMapViewOfSection`
+  canaries, and the same test the earlier `-smp 2` run C failed with `0xC0000005`:
+
+      *** BUGCHECK: 0x00000050 (0xffff8000050f4030, 0x2, 0xffff8000050f3e20, 0x0)
+
+  Read the operands against the raise site (`ARM3/pagfault.rs`, the `P4=0` arm, which fires
+  when `TempPte.soft_protection() == MM_ZERO_ACCESS`): **P3 is `TrapInformation`, a KTRAP_FRAME
+  pointer — not a PC.** A trap frame lives ON the kernel stack, and the faulting address P1 is
+  only **0x210 above it**, across the `...f4000` page boundary. Stacks grow down, so that is a
+  reference to *already-used* stack — the interrupted frame's own data — whose page is no longer
+  present, while the page holding the trap frame (`...f3000`) still is. A kernel stack is
+  contiguous and fully mapped, so **a live kernel stack lost a backing page.** The immediately
+  preceding serial is `PspUserThreadStartup: returning` for a `kmtest_.exe` thread.
+  That is the same shape as the `0x1E` face (a store into the trap frame faulting on a
+  kernel-stack VA), which makes stack-page loss the unifying explanation for both, and it is a
+  near relative of the already-fixed §9.94 reaper bug (a stack freed without the SwapBusy spin).
+  Fact vs inference: the operands and the raise arm are measured; "a live stack lost a page" is
+  the reading of them, and the `[KSTACK]` dump added below is what turns it into a fact.
+
+  **Two probe-coverage lessons from that run, both now fixed.**
+  1. `[KSTACK]` printed nothing, because it lives in `stubs.rs`'s `[KEXC]`
+     kernel-mode-*unhandled-exception* path, which ends in `0x1E`. A `0x50` is raised straight
+     out of `MmArmAccessFault` and never reaches it. The same dump is now called at all four
+     live `PAGE_FAULT_IN_NONPAGED_AREA` sites (`arm64_dump_fault_stack`), so the next
+     reproduction of *either* face reports StackBase/StackLimit.
+  2. `[FREEMAPPED]` printed nothing, and **cannot** see this face by construction:
+     `MmDereferencePage` is the rmap-tracked *user* page path, whereas kernel stacks come from
+     `MmCreateKernelStack` via system PTEs and are released by a different route. Its silence
+     is therefore not evidence about the stack face at all — only about the user-page face. If
+     the `[KSTACK]` dump confirms a stack-page loss, the next tripwire belongs at the kernel
+     stack free site, not at the page free site.
+
+  **Earlier measurement — a HEALTHY arm64 UP boot to desktop (59s) fires NOTHING:**
   `FREEMAPPED 0`, `KSTACK 0`, `PFNMISMATCH 0`, `BUGCHECK 0`. That silence is a result, not a
   non-event: the worry that benign stale rmap heads would make `[FREEMAPPED]` chatty (the
   reason it is a print and not an assert) does **not** materialise on a normal boot, so the
