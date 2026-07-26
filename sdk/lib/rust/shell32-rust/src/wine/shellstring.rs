@@ -75,7 +75,7 @@ extern "system" {
     // ole32
     fn CoTaskMemFree(pv: LPVOID);
     // shlwapi
-    fn SHAnsiToUnicode(pszSrc: LPCSTR, pwszDst: LPWSTR, cwchBuf: INT) -> BOOL;
+    fn SHAnsiToUnicode(pszSrc: LPCSTR, pwszDst: LPWSTR, cwchBuf: INT) -> DWORD;
     fn SHUnicodeToAnsi(pwszSrc: LPCWSTR, pszDst: LPSTR, cchBuf: INT) -> BOOL;
     fn StrPBrkW(psz: LPCWSTR, pszSet: LPCWSTR) -> LPWSTR;
 }

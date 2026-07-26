@@ -488,20 +488,46 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   deliberately carries no line count** so their in-flight edits don't read as NEW findings.
   The 6 baseline entries expire on their own the moment a `lib.rs` lands — delete them then.
   Another lane owns these files; don't edit them from here.
-- **arm64 `BUILD_INCOMPLETE` — OPEN, recurring ~5×/day, halts the merge-queue train**
-  (2026-07-25). `artifact-check` reports a cohab PE older than the staticlib it links, after
-  ninja exited 0: *"libX_rust.a is newer than the built binary; the cohab staticlib changed
-  but X was never relinked"*. **The stale set is DIFFERENT every occurrence** — `kernel32`;
-  `version`; `shell32`+`usbport`; `advapi32`+`kernel32`+`ws2_32`+`mouhid` — and all four of
-  the last set ARE in the ninja target list, so "missing target" is not the explanation. A
-  real missing dependency edge is not random, so the leading hypothesis is
-  `provenance.check_staleness` racing cargo's unconditional staticlib rewrite (cargo re-emits
-  the `.a` and bumps its mtime even when content is unchanged, after ninja has already decided
-  the PE is up to date) — i.e. an oracle false-positive, the same family as field manual
-  §9.81 "the two staleness oracles, both were wrong". Test that first by comparing CONTENT
-  hashes rather than mtimes before touching the build graph. Until it is root-caused,
-  `BUILD_INCOMPLETE` is in `queue.INCONCLUSIVE` so it halts the train rather than rejecting an
-  innocent lane. Artifacts: `/tmp/vibeos-cli/queue-batch-*/2026*-build-arm64/summary.json`.
+- **`BUILD_INCOMPLETE` — OPEN, recurring ~5×/day, halts the merge-queue train; NOT arm64-only
+  and NOT one bug** (2026-07-25; **triaged + instrumented same day**, task #21). `artifact-check`
+  fails after ninja exited 0. Three archived occurrences are **three different oracles**:
+  - `20260725-021909-build-arm64` — *"libkernel32_rust.a is newer than the built binary"*:
+    `cohab_staleness_reasons` check B (artifact mtime vs the **copied** staticlib).
+  - `20260725-022237-build-i386` — *"shell32-rust/…/shldataobject.rs newer than the
+    cargo-linked binary"* ×4, for **lsass/services/smss/userinit**: `cargo_link_staleness_reasons`
+    compares every cargo-linked artifact against a **global newest-workspace-`.rs` watermark**
+    (`_newest_ws_src`). That `.rs` belongs to another lane and to a crate none of those four
+    exes link — so one lane's new file marks another lane's untouched binaries stale.
+  - `20260725-053107-build-arm64` — *"build source changed since build"*: `build_src_hash`
+    differs from a stamp written **milliseconds earlier in the same function**.
+
+  **Hypotheses tested and KILLED — do not re-run:** (a) *git calls hit the 120s timeout under
+  load* — `git diff HEAD` is 10 ms and `git status --porcelain` 60 ms over 37,587 tracked files;
+  (b) *`index.lock` contention fails the git calls* — held the lock and ran all three, every one
+  returned rc=0; (c) the **previously recorded leading hypothesis** (*cargo re-emits the `.a` and
+  bumps its mtime even when content is unchanged*) is aimed at the **wrong file** — check B
+  compares against the **copied** staticlib, which cmake `copy_if_different` only touches when
+  the bytes actually changed.
+
+  **Real defect found and FIXED regardless of trigger:** `provenance._run` swallowed *both*
+  failure modes — it caught `OSError`/`SubprocessError` returning `""` **and never checked
+  `returncode`**. All three git calls behind `git_fingerprint` went through it, as did the
+  `git grep` behind `cargo_module_rels`. So a degraded git call either shifted the fingerprint
+  (false RED = this bug) or emptied the cargo-cell list (false GREEN = the staleness net
+  silently off) — and logged nothing either way, which is why 5 occurrences a day left no
+  evidence. Now raises `ProvenanceError` naming command + rc + stderr; `check_staleness`
+  reports that as *"provenance oracle FAILED (verdict unknown, not stale)"* instead of
+  laundering it into a confident "source changed". `git grep`'s rc=1 "no matches" is declared
+  via `ok_codes`.
+
+  **The next occurrence self-diagnoses.** The stamp now records `head_sha`, so a HEAD move
+  under the build is named as such; the bare "source changed" reason now appends *what*
+  changed, and says **"suspect the oracle, not the tree"** when the fingerprint moved while
+  HEAD held still and nothing is modified. Both mtime verdicts now print the gap: **under ~2 s
+  = same-run ordering (a race, i.e. a false positive), minutes = a genuinely missed rebuild** —
+  the discriminator these messages never carried. Stays in `queue.INCONCLUSIVE` (halts the
+  train rather than rejecting an innocent lane) until an instrumented occurrence names the
+  cause. Artifacts: `/tmp/vibeos-cli/queue-batch-*/2026*-build-*/summary.json`.
 - **Tree-wide bindgen callback-slot normalization — SCOPED, OWED** (task #14). The tool exists
   and is proven end-to-end on buslogic: `tools/rustconv/normalize_island_abi.py` spells callback
   slots `extern "system"` across a crate's three islands, projecting from the i386 island (the
@@ -513,9 +539,38 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   compile instead of leaking 8 bytes per SRB. Remaining exposure is ~500 transmute-shaped
   installs — dxg-rust 92, win32k `ntddraw_dxeng` 42, cdfs `cdinit` 33, winsrv console frontends
   ~90, hal `bussupp`/`dma` 42, cdrom 20, scsiport 15. Full writeup: field manual, "A `transmute`
-  at a callback-install site erases the CALLING CONVENTION". Also owed: `gen_driver_types.sh`
-  should call the pass unconditionally and retire the `CALLBACK_SYSTEM=1` opt-in, whose blanket
-  `s/extern "C" fn/extern "system" fn/` is unsound on i386 (34 genuinely-cdecl slots).
+  at a callback-install site erases the CALLING CONVENTION".
+
+  **Generation is now wired (2026-07-26).** `gen_driver_types.sh` calls the pass
+  unconditionally after all three `run_arch` calls — placement is forced, since i386 is the
+  witness and a per-arch hook cannot see it — scoped by a new `--stem` so a run normalizes only
+  the islands it wrote (netapi32 carries `types`, `types_browser`, `types_rpc`; the old glob
+  would have rewritten all three). `CALLBACK_SYSTEM=1` is documented as superseded but NOT
+  removed: the projection keys on `Option<...>` aliases and struct fields, while the old sed is
+  a blanket rewrite that may be carrying fn-pointer shapes the projection does not match, so
+  dropping it could reintroduce E0308 in the seven crates that opt in. They compose safely (the
+  sed leaves no `stdcall` on i386, so the projection no-ops there). Retiring it means
+  regenerating those seven and fixing the fallout — still owed.
+
+  **The bug yield is measured, and it is small (2026-07-26).** The alarming part of this task
+  was never the 17,612 slots, it was not knowing how many hid a real convention bug. Audited
+  statically — no build needed, which matters because the E0308s were only ever a *detection
+  mechanism* for something checkable directly: **884 transmute-shaped installs plus 129 `cb!`
+  installs across the four crates that still define that macro (usbaudio, ks, usbhub, usbport),
+  yielding exactly ONE real bug.** `ApphelpShimCacheCompareRoutine` (ps-rust) was defined
+  `extern "C"` against four agreeing authorities — `NTAPI` in `ntoskrnl/ps/apphelp.c`, `NTAPI`
+  on `RTL_AVL_COMPARE_ROUTINE` in `ndk/rtltypes.h`, `extern "stdcall"` in bindgen's i386
+  transcript, and the two sibling routines passed to the *same* `RtlInitializeGenericTableAvl`
+  call. On i386 the AVL code expects the callee to pop 12 bytes; ours popped none, once per node
+  visited on every shim-cache lookup. Fixed.
+
+  The other seven candidates were false positives, and both classes are worth knowing because
+  they are what a careless mechanical pass would have corrupted: storahci's `PHW_DPC_ROUTINE`
+  and `PAHCI_COMPLETION_ROUTINE` are **genuinely cdecl** (undecorated in `storport.h` and the
+  driver's private header; bindgen's i386 island independently says `extern "C"`), and ks-rust's
+  four clock routines are a correct per-arch `fastcall`/`C` cfg split of a C `FASTCALL`. Both
+  vindicate the projection's rule that i386-says-`C` stays `C` — and both are exactly what
+  `CALLBACK_SYSTEM`'s blanket sed would have broken.
 - **8 `scan_cc_mismatch` entries in `ntkrnl-sys/src/bindgen_i386.rs` — benign, baselined**
   (`Ke386SanitizeFlags`, `Ke386SanitizeSeg`, `Ke{Query,Register}InterruptHandler`,
   `KiFillTrapFrameDebug`, `KiGetThreadNpxArea`, `KiSetTebBase`, `KiUserTrap`). The island
@@ -544,12 +599,70 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `Response = ResponseNotHandled` then **early-returns** for `ValidResponseOptions >
   OptionCancelTryContinue`, and the kernel accepts that verbatim (`ex-rust/src/harderr.rs:214-229`
   lists `ResponseNotHandled` as valid — faithful to `ntoskrnl/ex/harderr.c:262-276`, so NOT a
-  translation bug). Leading hypothesis: the hard error now REACHES usersrv where it previously
-  took the null-error-port path (`harderr.rs:170-172`, which returns 0) — i.e. a *consequence of
-  the LPC path coming alive*, exposing a real usersrv-vs-NT divergence. The only recent commits
-  touching either file are warning-hygiene sweeps (`2d9a1cca7c3` `&raw`, compile-checked), so the
-  trigger is elsewhere. Repro: `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after
-  the build. i386 never runs this test (74-test list vs amd64's 87).
+  translation bug).
+
+  **TRANSLATION-BUG HYPOTHESIS RULED OUT ON BOTH HALVES, by source comparison (2026-07-25).**
+  Read line-by-line against the C originals:
+  - `winsrv-rust/src/usersrv/harderror.rs:1097-1115` is a faithful translation of
+    `win32ss/user/winsrv/usersrv/harderror.c:1097-1110`: the C *also* sets
+    `Response = ResponseNotHandled` and *also* returns early for
+    `ValidResponseOptions > OptionCancelTryContinue`. Identical behaviour, not a divergence.
+  - The kernel's `ValidResponseOptions` validation (`harderr.c:586` switch /
+    `ex-rust/src/harderr.rs:377` match) sits inside `if (PreviousMode != KernelMode)` in BOTH
+    languages. kmtest is a **driver**, so it is a kernel-mode caller and skips that validation
+    entirely — out-of-range values are passed through to the port BY DESIGN, in C too.
+  - No duplicate-symbol trap: `ntos.cmake:69` has the C `ex/harderr.c` commented out (cohab
+    flipped) and the Rust owns `#[no_mangle] ExpDefaultErrorPort` — exactly one symbol.
+
+  So the **only** code path that yields `ResponseReturnToCaller` (0) is the null-error-port
+  early return at `ex-rust/src/harderr.rs:170-172`, and the six expectations therefore encode
+  *"no error port is connected"*. The failures are the faithful consequence of the LPC error
+  port having come alive — the question is no longer "which translation is wrong" but "should
+  the port be answering these, and what does real NT return when it does". Note the six are the
+  ONLY out-of-range cases outside the `InteractivePart1/2` guards (every case that would pop a
+  message box is gated off on ROS), so they are the only ones whose answer the sweep sees.
+  Next step is unchanged in shape but now confirmatory rather than exploratory: one instrumented
+  boot logging `PortHandle` at `harderr.rs:150` for these six calls. Repro:
+  `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after the build. i386 never runs
+  this test (74-test list vs amd64's 87).
+
+- **WoW64: 32-bit guests could not create THREADS — FIXED on amd64, PARTIAL on arm64,
+  2026-07-25** (task #64, wow64-plan Phase E15). wow64.dll had no per-thread entry at all:
+  `Wow64LdrpInitialize` fused process-init with first-thread-init and kept the per-thread CPU
+  area (the guest register file) in function-local `static`s. The kernel side was already
+  correct per-thread and needed no changes. Four PRE-EXISTING bugs each independently blocked
+  it, all of the "can only exist while the capability is missing" kind:
+  (1) `RtlpThrImageStackReserve` read the WoW64 process's **PE32** image at native width, so
+  `SizeOfStackReserve` came back as `(commit<<32)|reserve` = **16 TB** and every
+  `RtlCreateUserThread` failed `STATUS_INVALID_PARAMETER_4`;
+  (2) `LdrpProcessInitialized` never left 1 because `LdrpInitializeProcess` never returns in a
+  WoW64 process, so every later thread spun forever in the loader's wait — a thread that
+  created and resumed cleanly and then printed nothing;
+  (3) `CreateRemoteThread`'s csrss notify always failed (the guest runs CSR-less by design) and
+  the cleanup path tore down a perfectly good thread;
+  (4) `NtWaitForMultipleObjects` was a flat thunk whose handle ARRAY is 4-byte guest / 8-byte
+  host — a *cold* audit-baseline entry that went live the instant threads existed (279 → 278).
+  Verified by `thread32.exe`: 9 rungs incl. TLS and guest SEH on the new thread and 4
+  concurrent threads. amd64 `0x600d`, all 8 probe guests green.
+
+- **WoW64/FEX: four CONCURRENT guest threads AV on arm64 — OPEN** (2026-07-25, task #73,
+  wow64-plan Phase E15). arm64 passes rungs 1-6 of `thread32.exe` (single guest thread creates,
+  runs, joins, TLS works), then `0xC0000005` on the 4-concurrent-thread rung. All four threads
+  are created and resumed but only two reach the print between `BTCpuThreadInit()` and
+  `BTCpuSimulate()`, with two repeated fault PCs inside libwow64fex
+  (`0x7FFFB43F0A50`, `0x7FFFB43F08AC`) — i.e. FEX's per-thread bring-up under concurrent entry,
+  not stack visibility. amd64's `wow64cpu` is unaffected (`BTCpuThreadInit` is a no-op there).
+  Related gap worth closing on its own merits: we wire only `BTCpuNotifyMapViewOfSection` of
+  FEX's memory-notification contract, though it exports `BTCpuNotifyMemoryAlloc`/`Free`/
+  `Protect`/`Dirty`. The probe stays enabled and red — it runs last in the arm64 ladder, so it
+  costs no coverage. **Does not affect the boot: arm64 smoke is `✓ boot`.**
+
+- **WoW64 probe guests are NOT staged on arm64 by default** (2026-07-25, noted while closing
+  #64). `dll/win32/wow64cpu/CMakeLists.txt` (the amd64 livecd path) is entirely
+  `if(ARCH STREQUAL "amd64")`; arm64 stages from `qemu/mkramdisk.sh` and only under an opt-in
+  `VIBEOS_FEX=1`. So a default `./vibeos-cli build --arch arm64` carries a minimal, possibly
+  weeks-stale syswow64 set and the arm64 gate exercises almost no WoW64. Use
+  `VIBEOS_FEX=1 ./vibeos-cli build --arch arm64` when the WoW64 ladder matters.
 
 - **amd64 WoW64 `g_MsgMemory` SendMessage payload over-read — FIXED 2026-07-24**
   (§9.116 diagnosis, §9.118 fix, task E13). Fixed in the **WoW64 thunk layer**, not win32k:

@@ -116,7 +116,6 @@ FLAT-DIVERGENT: ntdll NtUnloadKey2(TargetKey) WIDENING -> struct _OBJECT_ATTRIBU
 FLAT-DIVERGENT: ntdll NtUnloadKeyEx(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtUnlockVirtualMemory(BaseAddress) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtWaitForDebugEvent(StateChange) SEMANTIC -> struct _DBGUI_WAIT_STATE_CHANGE: union/bitfield with divergent layout
-FLAT-DIVERGENT: ntdll NtWaitForMultipleObjects(Object) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtWriteRequestData(Message) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_DeleteRbrush(pbo) WIDENING -> struct _BRUSHOBJ
 FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_DeleteRbrush(pboB) WIDENING -> struct _BRUSHOBJ

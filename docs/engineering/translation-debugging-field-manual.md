@@ -616,6 +616,42 @@ Three faces, all seen live:
   cross-file ABI disagreement was systemic; the fix was a deterministic ABI overwrite pass, not
   per-site repair. **A redundant `*-sys` crate that re-bindgens types the parent master header
   already pulls** produces mass E0659 ambiguity.
+- **A crate with NO island is invisible to `verify_ffi`.** Its oracle is `ntoskrnl.spec` *and*
+  `bindgen_<arch>.rs`; with no island there is nothing to compare against, so every hand-written
+  extern block passes unchecked and the gate stays green. shell32-rust carried ~2.7K lines of
+  hand-written substrate for this reason and appears in NONE of the 40 crates the
+  clashing-extern passes converged — four real ABI disagreements survived in it until a semantic
+  declaration comparison went looking. "The lint is green" means nothing if the crate is not in
+  the lint's input set; check that before trusting it.
+
+### Adopting an island in a crate that already has hand-written substrate
+Measure first, and expect most of the hand-written surface to be redundant: on shell32,
+**73 of 90** items in `types.rs` and **117 of 156** in `shellcom.rs` were already provided by the
+island or `ntdll-sys` — including a `LARGE_INTEGER` hand-written as `{ QuadPart: i64 }` (a
+cartoon of a union) and the PIDL on-disk layouts, where a wrong offset corrupts data on disk.
+Compare every hand-written name against the island *and* the sibling `-sys` crates before
+deleting; the ones that survive are the ones bindgen structurally cannot emit — pointer-valued
+macros (`NULL`, `INVALID_HANDLE_VALUE`, `HKEY_CLASSES_ROOT`), cast-expression constants
+(`((HRESULT)0x80004005L)`), and function-like macros. Keep those in `<stem>_extra.rs`, which
+`gen_driver_types.sh` re-exports through the generated dispatch so regeneration cannot eat them.
+
+Two traps specific to this move:
+- **The island owns DATA LAYOUTS; com-sys / your vtable module owns COM ABI.** bindgen renders
+  COM interfaces from a C++ header as classes, while the translation calls through the C
+  `lpVtbl` idiom — let the island emit them and every call becomes `E0609: no field lpVtbl`
+  (~73 on shell32). Blocklist the interfaces with `EXTRA_BL_ITEMS` *and* re-export them with
+  `EXTRA_RAW_LINES`: blocklisting removes the definition, not the references, so without the
+  re-export the island fails E0412 on its own output.
+- **A `-x c++` cell emits broken aliases for class-template member typedefs** — bindgen
+  flattens them to non-generic aliases over unbound parameters (`pub type
+  ATL_CComEnum__CComEnumBase = u8<Base, T, Copy>;`). Blocklist by the **C++ qualified name**,
+  not bindgen's flattened Rust spelling. Do not "fix" this by dropping every alias carrying a
+  `<`: on shell32 that rule would have deleted 82 legitimate `Option<fn-ptr>` callbacks.
+
+Also: `profile_derive` mirrors each TU's include prologue verbatim, so a **quoted** include
+copied from a TU in a subdirectory (`#include "CFSFolder.h"` in `folders/CDesktopFolder.cpp`)
+breaks — a quoted include resolves against the *including file's* directory and the generated
+wrapper lives in `/tmp`. Use the path-qualified spelling the module's own `precomp.h` uses.
 
 ### Cross-DLL and shared-section layout
 Cross-DLL reads returning garbage *past* the writer's own init, with a hang ~7 DLLs later in an
@@ -983,8 +1019,27 @@ N+1 as evidence that the fix for bug N was wrong.**
   `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
   **silent** when it feeds an integer.
 - **C post-inc/dec rewritten with the wrong read order** (`x = y--` reading the post value).
+- **A post-decrement INSIDE a loop condition — `while (a && b && len--)`.** The decrement is
+  part of the test, so the loop exits having *already* wrapped `len` to `SIZE_MAX`, and the
+  `if (len && ...)` epilogue that follows fires on that wrapped value. A Rust `while len > 0`
+  with a separate `len -= 1` reads like the same loop and is not: `len` stays 0 and the
+  epilogue never runs. `_mbsnset_l` silently dropped its truncation this way. Whenever a C loop
+  decrements in its condition, check what the code *after* the loop reads.
 - **A C parameter reassignment translated as a block-local `let` SHADOW** — the new value dies
-  at the block end.
+  at the block end. The same bug wearing a loop: **the C walks the PARAMETERS and the code after
+  the loop reads what the walk left behind.** `_mbslwr_s_l`/`_mbsupr_s_l` looped over `let mut
+  s = s` copies scoped inside a branch, so afterwards they tested the *original* `len` (making
+  the buffer-too-small `EINVAL` unreachable) and wrote the terminator at the *original* `s`,
+  i.e. the start of the string. `let mut s = s;` at function scope is the fix; the tell is any
+  statement after the loop that mentions a parameter the loop advanced.
+- **An out-parameter store made CONDITIONAL on success.** C's
+  `Dest->Buffer = alloc(...); if (!Dest->Buffer) return STATUS_NO_MEMORY;` stores the failure
+  into the caller's struct; the natural Rust — `let buf = alloc(); if buf.is_null() { return
+  ... } (*dest).Buffer = buf;` — returns *before* the store. The caller is then left holding
+  its own stale pointer beside the `Length`/`MaximumLength` the function just overwrote: a
+  string that looks live and aims at foreign memory. Eleven `Rtl*String` converters had it.
+  Whenever C assigns through an out-pointer and *then* tests what it assigned, the store is
+  part of the contract — keep the order.
 - **A guard condition swapped for a different nearby variable** — logic inverted per boot mode.
 - **A NULL guard De Morgan'd the wrong way.** `MSVCRT_CHECK_PMT(start && str)` came back as
   `MSVCRT_CHECK_PMT!(start.is_null() || str.is_null())` — the *negation* of the C, so the guard
@@ -1373,6 +1428,49 @@ bugs: **ambient state the reference holds fixed** (locale — grep a flip candid
 `get_locinfo` / `_l`-suffixed helpers / any read of process-global state), and **the reference
 TU is compiled for the HOST**, so target-conditional `#if`s are graded on the wrong arm.
 
+A third: **an out-parameter the harness only PARTIALLY compares.** rtl-difftest asserted
+`(Length, MaximumLength)` on the STRING converters but not `Buffer`, so an eleven-site
+divergence — the alloc-failure path storing nothing where the C stores NULL — was visible in
+exactly the one test that happened to compare all three fields. Ten of eleven sites were graded
+green by a suite that never looked at the field carrying the bug. **Compare the whole
+out-parameter, or write down which field you dropped and why.** Pointer values legitimately
+differ between the two sides, but `is_null()` does not — grade the property, not the address.
+
+And after fixing anything a harness caught, **re-break one site deliberately and confirm the
+suite goes red.** Widening an assertion is itself untested code: it is easy to add a field to a
+tuple that can never disagree, and the result reads exactly like a stronger test.
+
+**An IN-OUT cursor needs its own cell per side, compared by offset — and NULL is not offset 0.**
+`_mbstok_s(str, delim, ctx, …)` and `mbsrtowcs(wcstr, pmbstr, …)` report where they stopped by
+writing a pointer back through a `char **`. Three ways to grade that wrong, in increasing
+subtlety: hand both sides ONE cell (the reference then resumes from wherever the subject left
+off and agrees by construction); compare the two pointers (they address separate copies, so
+they differ on every iteration); or map NULL to offset 0 (`mbsrtowcs` writes NULL to mean
+"consumed to the terminator" and a real position to mean "stopped here" — collapsing them grades
+two different outcomes as one). Offsets into each side's own base, with NULL as its own value.
+Also seed the buffer: a cursor over a mutable buffer means the call operates ON it, whatever
+else the signature looks like — `_mbstok_s`'s `delim` reads as a source string to a
+"has-a-source ⇒ the buffer is a destination" rule, which hands it a blank buffer, and both sides
+then tokenize an empty string and agree about nothing.
+
+**A zero-argument accessor returning a pointer has no input to measure against — grade the
+CONTENTS.** msvcrt's `__p_*` family (`__p__mbctype`, `__p___mb_cur_max`, a dozen more) hands
+back an interior pointer into CRT state, and each side reads its own fixture slot, so the
+addresses differ permanently. Dereference and compare, checking NULL-ness first and separately.
+For a table, get the length from `sizeof` on the struct mirror, never typed out: too small
+silently stops comparing the tail, too large reads past the struct, and **both are invisible in
+the verdict.**
+
+**Padding an input string is not enough — the padding needs a terminator.** msvcrt's MBCS
+walkers step past the NUL on a malformed string: `_mbscmp("ab\x82", "ab\x82")` under cp932 treats
+the trailing lead byte's terminator as its trail byte and advances TWO, resuming past the end.
+The corpus already padded both copies identically so the two sides would read the same bytes
+there — but the padding itself had no terminator, so a walker that consumed it left the
+allocation and read heap. It sat latent for as long as the allocations happened to agree, and
+surfaced as the subject and the reference disagreeing about two IDENTICAL strings, provoked by
+an unrelated pair of cases shifting the heap. Pad, then terminate — with two NULs, so
+termination does not depend on whether the walker's stride is one byte or two.
+
 ### Anything you define so the reference will LINK is part of the oracle `[§9.73]`
 A 20,000-case differential fuzzer said MATCH for four waves while **six shipped msvcrt functions
 were wrong** — because the harness's own convenience stubs for `_tolower_l` &c. graded the Rust
@@ -1384,6 +1482,27 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **A branch reached by NO row is a case that cannot fail, and rows are cheap enough that you
+  will believe you covered it.** msvcrt's `_s` printf shells take their truncation branch only
+  when `ret < 0 || ret == len`, and their ERANGE arm inside it only when `count > sizeOfBuffer`.
+  A 33-row corpus varying the *format* and the *count* — but leaving the buffer generously
+  sized in every row — never entered the branch at all, so the arm that fires the
+  invalid-parameter handler, sets `errno`, and **zeroes the caller's whole buffer** was graded
+  by nothing. Halving its `memset` as a negative control moved zero rows; adding nine rows with
+  a small buffer made the same control fail eight. **The variable that unlocks a branch is not
+  always the one the function is named after** — here it was the buffer size, not the count or
+  the format. Perturb each arm and count the rows that move; an arm no row can reach is the
+  vacuous pass, and green stops anyone looking again.
+- **A hand-typed CONSTANT in the refstub is an oracle that grades against a value Windows never
+  returns.** rtl-difftest's `refstub/rtl.h` carried
+  `#define STATUS_UNMAPPABLE_CHARACTER 0x80000016` — the real value is `0xC0000162`, the same
+  digits transposed. Both are negative, so `NT_SUCCESS` agrees and control flow is identical;
+  only the returned value differs, which is precisely what a differential test compares. It
+  read as a *Rust* bug for as long as nobody checked the reference's own header. Every constant
+  you re-declare so the reference will compile is un-sealed data — the same class as the 61
+  invented kernel stop codes `[§9.113]`, except no shipped-code scanner looks in a test's
+  private header. **Audit the whole block against the SDK, not just the one that got caught**
+  (16 constants, exactly 1 wrong); prefer including the real header over re-typing values.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,
@@ -1394,6 +1513,53 @@ symptom and leaves `pure` in place). **The tripwire matters more than the fix:**
 `ref_integrity.rs` is a test whose subject is *the oracle itself* — for each reference function
 whose C contains a guard, call it in a forked child with the input the guard exists for and
 assert it returns rather than faults.
+
+**The mirror image: the harness's own ENVIRONMENT binds to the subject.** A static definition
+beats the shared libc, and the code under test is full of `#[no_mangle]` CRT names. msvcrt-
+difftest's NLS layer called `iswalpha_l` to build its codepage tables; that resolved to the
+*subject's* Rust export, which called `GetStringTypeW`, which called back into the NLS layer —
+stack overflow on the first case. Anything the harness calls to CONSTRUCT the fixture must
+reach the host libc explicitly (`dlopen("libc.so.6")` + `dlsym`, resolved once and cached), not
+by name. Do not "fix" it by listing today's collisions: that shadow set grows with every file
+you translate, so an enumeration has an expiry date and the next collision presents as a
+mysterious hang, not a link error.
+
+**A name the reference TU never DEFINES is quietly supplied by the host libc.** Renaming covers
+what a TU *defines*; it says nothing about what it *calls*. msvcrt's `wcs.c` calls plain
+`vsnprintf` from five entry points (`vsprintf`, `vsprintf_s`, `sprintf`, `sprintf_s`,
+`_snprintf`) and, at `_MSVCR_VER=0`, never defines it — the real build closes that with
+`stdio.h`'s `#define vsnprintf _vsnprintf`, but the harness's prelude had no such line, so the
+name was in no rename list, left the object undefined, and the linker satisfied it from
+**glibc**. Five reference entry points were grading the host libc while claiming to be msvcrt:
+no `%I64` conversions, `(nil)` for `%p`, two-digit exponents. **Check `nm --undefined-only` on
+every reference object for names your subject also implements** — an undefined symbol in a
+reference TU is a silent host-binding, not a link error. Then keep a canary row in the format
+the two disagree about (`%I64d`, which glibc prints literally) so a regression fails a row
+instead of moving the oracle.
+
+**But fixing it TU-by-TU, not globally: the same redirect can be right in one instantiation and
+fatal in another.** msvcrt-difftest compiles `wcs.c` twice — once under the host's SysV va_list
+(`ref_*`) and once under a flat `char*` `<stdarg.h>` (`pfflat_*`, which is the Windows model).
+`_vsnprintf` forwards `&valist` as a `va_list*`, coherent only where a va_list IS a plain
+pointer: correct for `pfflat_`, and an immediate fault for `ref_`, where `*valist` reinterprets
+the decayed pointer as the register-save-area tag struct. So the redirect belongs in the pfflat
+prelude only — applied to both, it SIGSEGVs somewhere unrelated to printf, because
+`ref_create_mbcinfo` formats its codepage with `sprintf(buf, ".%d", cp)` and every mbcs case
+dies in the fixture. glibc's `vsnprintf` stays the `ref_` TU's formatter deliberately, and
+`".%d"` is a format both agree on exactly.
+
+**The host compiler also REWRITES the reference, which matters for a PERF oracle.** Same rule —
+trust the machine code — with a different consequence. msvcrt's `memset` is a plain loop in
+`string.c`, but cc idiom-recognizes it and emits its own size-dispatched expansion (four
+overlapping 8-byte stores for `n` in 16..32); `ref_memcpy` next to it survives untouched as a
+tailcall to the hand-rolled `msvcrt_ref_memmove`. So one row of a rust-vs-C perf table is racing
+a compiler's best effort and the row beside it is racing a byte loop, from one reference TU
+compiled one way. For a BEHAVIOUR oracle this is harmless (the rewrite is semantics-preserving,
+which is the whole point). For a THROUGHPUT oracle it silently changes what the number means, and
+it is invisible in the C. Disassemble each `ref_*` you bench before you believe its ratio, and
+say in the harness which rows compare against the C-as-written and which against the
+C-as-the-compiler-rewrote-it. `#pragma function(...)` in the ReactOS source does NOT protect you
+— it is MSVC-only and cc ignores it.
 
 ### Exercising a branch is not testing it `[§9.75]`
 A branch is only tested when its two sides can produce **different answers**. Planting a
@@ -1414,6 +1580,51 @@ stubs `get_locinfo()` as a static address. The new instrument counts calls:
 > **A function that walks `n` elements may consult the environment O(1) times, not O(n).**
 
 It found two more instances on its first run.
+
+**And a ratio is only load-robust if the two sides are INTERLEAVED.** "Same process, same
+data, same load" is not enough when each side gets its own consecutive window: `perf` ran
+three rounds of Rust and then three of C, so best-of-3 rejected only spikes shorter than one
+window — while the load a gate generates (three cold cross-builds, four booting QEMUs) stays
+hot for minutes. A spike covering all three Rust rounds and none of the C ones reports a 2×
+regression that does not exist, and it did, on the difftest stage's first automated gate.
+Round-robin the rounds (`rust, c, rust, c, …`) and take each side's best: a spike then lands
+on both sides of the same round, and the best round is the quietest one for both. Warm both
+sides before timing either. Generally: **a timing harness that was only ever run by hand on an
+idle host has never been tested under the conditions a gate creates** — wiring one into CI is
+itself a change to the instrument.
+
+**Interleaving was necessary and NOT sufficient.** The same gate went red again on the next run,
+on a different case, and the rest of the fix is three more things — each of which failed to be
+enough on its own:
+
+- **Round LENGTH beats round count.** Best-of-K only reports the peak if some round dodges every
+  interruption, and at ~18 ms a round essentially never does (the scheduler tick alone is 4 ms),
+  so best-of-3 was reporting the *mean* while claiming the peak. Splitting the SAME total work
+  into 9 short rounds — no extra wall time — moved `strcat/16` from a stable 1.71× to 0.95× and
+  `memset/16` from 1.81× to 1.37×. Those "regressions" were the estimator.
+- **A fixed threshold must clear the instrument's own noise floor, and the only honest floor is a
+  MEASURED one.** At n=16 a call to a CRT primitive costs ~13 cycles end to end, so the reading
+  is mostly code layout: taking the shipping `strcat` and *deleting two null checks* — strictly
+  less work — read **1.65× slower** at n=16 and 1.82× at n=64, but 1.03× at n=4096. A 2.0× bar
+  sits inside that. Bench **identical twins** — the same source through the same compiler,
+  compiled into two symbols at two addresses — at every size, and scale the bar by how far from
+  1.00× they land. The twins must be **same-language**: a Rust-vs-C twin reads 1.28–1.43× at
+  large n, where per-call effects are noise, because that is rustc-vs-cc codegen — the thing the
+  harness *exists to measure*. Folding it into the error bar inflates the bar to ~2.8× everywhere
+  and quietly retires the gate. Keep the twins in separate TUs (gcc's `-fipa-icf` folds identical
+  functions within one TU at `-O2`) and **assert their addresses differ** — a merged pair reads a
+  vacuous, permanent 1.00× while measuring nothing.
+- **A calibrated bar still cannot see a BURST**, because the calibration is one snapshot and the
+  burst is not. At load 21 the bar widened correctly to 2.81× at n=16 and `memset/16` still read
+  3.41×: its Rust rounds had been hit 3.9× while its C rounds took only 1.6×. Nothing measured
+  once distinguishes that from a real regression — so **require the failure to REPRODUCE**. A slow
+  body is slow in every pass; a burst has to hit the same case on the same side N times running.
+  Costs nothing on a green run, since extra passes happen only after something already failed.
+
+Verified in both directions, which is the part worth copying: under synthetic load 31 a flagged
+case cleared on pass 2 and the run passed, and a deliberately-slowed body (four redundant scans
+in `strchr`) failed all three passes at all three sizes. **A gate that has only ever been proven
+to pass is half-tested** — perturb something and watch it fail before you trust it.
 
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
@@ -1445,6 +1656,27 @@ flag). **Validate the harness by BREAKING the scanner** — restoring a pre-fix 
 the harness fail. Two instances of the very class turned up while building it: the harness
 itself was a liar on its first run (the positive assertion accepted *any* non-empty output), and
 two scanners take FILES, not directories, so handed a directory they silently found nothing.
+
+**A shared regex is an API between lanes, and positional groups are how it breaks.** Mainline
+correctly taught `scan_cc_mismatch` to pair decls and defs on the *linker symbol*
+(`#[link_name]` / `#[export_name]`) instead of the Rust identifier, which added one capture
+group to each of two patterns. Every read in the *scanner* was updated; the `--fix` writer,
+added by a different lane, read the same patterns positionally and was not. Two silent failures
+fell out at once: `cfg, cc, name = m.groups()` started raising `ValueError`, and `d.group(1)`
+became the new `link_name` group — `None` for an ordinary decl — so the fixer classified every
+declaration as unnamed, relocated nothing, and exited reporting success. Fix the class, not the
+call sites: **name every group and read only by name**, so an added group cannot renumber a
+consumer you did not know existed.
+
+**A feature whose pattern does not match the tree's actual spelling is dead on arrival**, and
+it is invisible precisely because it reads as implemented. That same `#[link_name]` support
+allowed only whitespace between the attribute and `fn` — but every `#[link_name]` in this tree
+is spelled `#[link_name = "_wcsicmp"] pub fn wcsicmp(…)` (`rtl-actctx/src/shim.rs`,
+`ps-rust/src/kill.rs`). The `link` group was therefore always `None` and the pairing silently
+degraded to the identifier behaviour it was written to replace, tree-wide, with no finding
+count change to notice. When adding a pattern for a shape, grep the tree for that shape and
+assert the pattern matches what you find — a control fixture you wrote yourself only proves the
+regex matches *your idea* of the spelling.
 
 ### "Canonicalising" a mismatch can silence it by editing the EVIDENCE
 A lint that reports `X disagrees with Y` has no opinion about which side is wrong, so a
@@ -2033,6 +2265,16 @@ collapses: of 195 divergent syscalls, **4** were called at all in a full boot, a
 out-scalar-widen findings only **2**. Cold entries still matter for arbitrary apps, but they
 are a tail to work through, not a queue to fear.
 
+**But "cold" is a property of today's capabilities, not of the syscall.** Landing a capability
+re-sorts the list under you: `NtWaitForMultipleObjects` sat in the baseline as a cold
+`SCALAR_WIDEN` entry — its wait ARRAY is 4-byte handles in the guest against the host's 8-byte
+ones — and went live the instant 32-bit guests could create threads, because
+`WaitForMultipleObjects` is how a threaded app joins its workers. It returned
+`STATUS_INVALID_HANDLE` on the first try. Single-object waits pass a handle *by value* and were
+never affected, which is exactly why nothing had noticed. So re-run the live-set intersection
+after every capability lands, and expect the newly-live entries to be the ones that capability
+depends on.
+
 ### When the payload IS the CPU state, the CPU layer is the marshaller — not the kernel
 `NtGetContextThread`/`NtSetContextThread` carry the same un-widenable `_CONTEXT` as
 `NtCreateThread` above, and flat-thunking them is worse than usual in both directions: Get had
@@ -2066,6 +2308,47 @@ Cross-thread stays refused: `BTCpuGet/SetContext` ignore their `Thread` argument
 caller's CPU area, so answering a cross-thread query would return *the wrong thread's registers*
 — confidently. Identify "is this me" by comparing `TebBaseAddress`, not just by spotting the
 `(HANDLE)-2` pseudo-handle.
+
+### In a WoW64 process the IMAGE is a PE32 — native code reading its headers must dispatch on `Magic`
+`PEB->ImageBaseAddress` in a WoW64 process points at the **32-bit** exe, but the ntdll reading it
+is built 64-bit, so `RtlImageNtHeader()` hands back a `PIMAGE_NT_HEADERS` that is the wrong
+layout. The failure is not a wild pointer — the headers are real — it is a *field read at the
+wrong width and offset*, which is far quieter.
+
+`IMAGE_OPTIONAL_HEADER32` packs `SizeOfStackReserve` and `SizeOfStackCommit` as adjacent 4-byte
+fields exactly where the 64-bit layout has one 8-byte `SizeOfStackReserve`. Reading at native
+width therefore returns `(SizeOfStackCommit << 32) | SizeOfStackReserve` — for a stock 1MB/4KB
+i386 image, **16 TB**. `RtlpCreateUserStack` fed that straight to `ZwAllocateVirtualMemory`,
+which rejected it with `STATUS_INVALID_PARAMETER_4`, so **every** `RtlCreateUserThread` in the
+process failed. Only a WoW64 process can reach this, which is why it survived until 32-bit
+guests could create threads at all.
+
+Fix: dispatch on `OptionalHeader.Magic` (`IMAGE_NT_OPTIONAL_HDR32_MAGIC`), never on the build's
+own pointer width. `Magic` is at offset 0 of the optional header in both layouts, so reading it
+first is always safe. **Generalize: in a WoW64 process, treat every PE structure reachable from
+the PEB as foreign-width until you have checked.** The 64-bit loader reading a 32-bit image's
+`IMAGE_TLS_DIRECTORY` `[§9.67]` is the same bug in a different field.
+
+### An init that never returns leaves its caller's completion flag unset — and only thread #2 notices
+`LdrpInitializeProcess` does not return in a WoW64 process: it loads wow64.dll and calls
+`Wow64LdrpInitialize`, which drives the guest and never comes back. So its caller's tail —
+`LdrpInLdrInit = 0` and `_InterlockedIncrement(&LdrpProcessInitialized)` — never runs, and
+`LdrpProcessInitialized` is stuck at **1** for the life of the process.
+
+Nothing notices while the guest is single-threaded. The moment a *second* thread starts, it
+enters `LdrpInitialize`'s
+`while _InterlockedCompareExchange(&LdrpProcessInitialized, 1, 0) == 1` gate — which means "some
+other thread is still initializing the process, wait for it" — and spins on `ZwDelayExecution`
+forever. The symptom is maximally unhelpful: a thread that is created successfully, resumes
+successfully, and then produces **no output at all**, because it never reaches its start routine.
+
+Fix: publish completion *before* the handoff, not after it. That is accurate rather than a
+workaround — process init genuinely is finished at that point (`LdrpRunInitializeRoutines` has
+returned); only the never-returning handoff remains.
+
+**Generalize: any "and then we never return" call must first perform the bookkeeping its caller
+would have done.** Grep the caller's tail before writing one. A flag that is only ever read by a
+code path you cannot yet exercise is the definition of a latent bug.
 
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a

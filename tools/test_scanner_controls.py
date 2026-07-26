@@ -470,7 +470,11 @@ UNCOVERED: dict[str, str] = {
     "verify_tables": "needs generated tables from a build",
     "verify_match_consts": "needs the C header catalog",
     "verify_signatures": "needs build-<arch> generated headers",
-    "scan_cc_mismatch": "needs cross-crate view of the workspace",
+    "scan_cc_mismatch": (
+        "main() scans a fixed workspace root, so the subprocess harness cannot drive it — "
+        "but scan_crate()/fix_crate() take a crate dir, and are covered by direct import at "
+        "the bottom of this file. That gap let a WRITE-CAPABLE --fix ship untested."
+    ),
     "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
     "scan_inline_flag_literals": "needs the sdk/include header catalog to know the right value",
@@ -642,3 +646,101 @@ def test_rootless_crate_accepts_the_same_banner_escape(tmp_path: Path):
         },
     )
     assert "[ROOTLESS]" not in out, out
+
+
+# --------------------------------------------------------------------------------------
+# scan_cc_mismatch — driven by direct import, because main() has no path argument.
+#
+# These exist because of a live near-miss. A mainline lane taught the scanner about
+# #[link_name]/#[export_name] (the right call: the LINKER pairs on the symbol, not on the
+# Rust identifier), which added a capture group to DEF_RE and DECL_FN_RE. Every *scanner*
+# read was updated. The *fixer* read the same regexes positionally and was not:
+#
+#   * `cfg, cc, name = m.groups()` in crate_def_conventions() -> ValueError, --fix dead.
+#   * `d.group(1)` in fix_file() became the #[link_name] group, which is None for an
+#     ordinary decl -> every decl treated as unnamed -> --fix relocates NOTHING and exits
+#     reporting success. A silent no-op is the failure mode this whole file exists to catch.
+#
+# So the load-bearing assertion below is not "the fixer is correct", it is "the fixer is
+# ALIVE": it must actually move a decl it is supposed to move.
+# --------------------------------------------------------------------------------------
+
+
+def _cc_mod():
+    sys.path.insert(0, str(REPO / "tools"))
+    import scan_cc_mismatch
+
+    return scan_cc_mismatch
+
+
+_CC_MISMATCHED = """\
+extern "C" {
+    pub fn BT958HwStartIO(dev: *mut u8) -> u8;
+}
+
+#[no_mangle]
+pub unsafe extern "stdcall" fn BT958HwStartIO(dev: *mut u8) -> u8 { 0 }
+"""
+
+
+def test_cc_mismatch_scanner_fires_on_a_stdcall_def_behind_a_c_decl(tmp_path: Path):
+    """The buslogic shape: decl says cdecl, definition says stdcall. i386 UB-fold risk."""
+    cc = _cc_mod()
+    src = _materialize(tmp_path, {"src/hw.rs": _CC_MISMATCHED}) / "src"
+    hits = cc.scan_crate(str(src))
+    assert any("BT958HwStartIO" in h for h in hits), hits
+
+
+def test_cc_mismatch_fixer_is_alive(tmp_path: Path):
+    """--fix must MOVE the decl. `moved == []` is the silent-no-op regression, not a pass."""
+    cc = _cc_mod()
+    root = _materialize(tmp_path, {"src/hw.rs": _CC_MISMATCHED})
+    src = root / "src"
+    moved, refused = cc.fix_crate(str(src))
+    assert moved, f"--fix relocated nothing; it is a no-op again. refused={refused}"
+    text = (src / "hw.rs").read_text()
+    assert 'extern "stdcall" {' in text, text
+    # ...and the fix must actually settle the lint it was written to settle.
+    assert not cc.scan_crate(str(src)), cc.scan_crate(str(src))
+
+
+def test_cc_mismatch_pairs_on_the_symbol_not_the_rust_identifier(tmp_path: Path):
+    """#[link_name]/#[export_name] retarget the symbol; scanner AND fixer must follow it.
+
+    Both halves matter. `decl_a` must pair with the export it NAMES (a real mismatch that
+    identifier-keying never compares), and must NOT pair with the same-named local
+    definition beside it (a false positive that identifier-keying invents)."""
+    cc = _cc_mod()
+    files = {
+        "src/hw.rs": """\
+extern "C" {
+    #[link_name = "RealTarget"]
+    pub fn decl_a(x: u32) -> u32;
+}
+
+#[export_name = "RealTarget"]
+pub unsafe extern "stdcall" fn some_other_name(x: u32) -> u32 { x }
+
+#[no_mangle]
+pub unsafe extern "C" fn decl_a(x: u32) -> u32 { x }
+"""
+    }
+    src = _materialize(tmp_path, files) / "src"
+    hits = cc.scan_crate(str(src))
+    assert any("RealTarget" in h for h in hits), f"retargeted pair never compared: {hits}"
+    assert not any("decl_a declared" in h for h in hits), f"paired on identifier: {hits}"
+
+
+def test_cc_mismatch_fixer_refuses_to_edit_a_generated_island(tmp_path: Path):
+    """An island decl is bindgen's transcript of the C prototype — EVIDENCE, not opinion.
+
+    Rewriting it is how e33a810c9ad silenced 8 real callback-ABI bugs and read as progress
+    (305 -> 16 findings). The DEFINITION is the suspect side, so --fix must refuse."""
+    cc = _cc_mod()
+    root = _materialize(tmp_path, {"src/types_i386.rs": _CC_MISMATCHED})
+    src = root / "src"
+    before = (src / "types_i386.rs").read_text()
+    moved, refused = cc.fix_crate(str(src))
+    assert not moved, f"--fix edited a generated island: {moved}"
+    assert any("BT958HwStartIO" in r for r in refused), refused
+    assert (src / "types_i386.rs").read_text() == before

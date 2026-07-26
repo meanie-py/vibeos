@@ -60,7 +60,7 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | **240 Rust-defined msvcrt.dll exports on all three arches** (waves 1–14m, 2026-07-14; measured amd64 via `llvm-nm` ∩ COFF export table). Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
+| **CRT** (msvcrt/ucrt body) | **431 of 1,165 non-stub msvcrt.dll exports Rust-backed — 37%** (2026-07-26, re-measured amd64 as `llvm-nm libmsvcrt_crt_cargo.a` ∩ the spec's implementation names; was 240 on 2026-07-14, moved by wave 15's `mbcs.c` and wave 14c's printf shells). Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
@@ -72,8 +72,22 @@ zero warnings on all three arches. The two tracks coexist because the cohab rule
 whatever Rust defines wins by lld first-match and the C copy goes dead, so a partial file is a
 safe state and no CMake edit is needed. The crate gained `src/prelude.rs` (the standard
 `*-rust` import surface — every `extern` transcribed from a named C header, not inferred).
-**Export total not yet re-measured against the DLL** — do that from the export table as waves
-1–13 did, not by adding 175 to 240.
+
+**Wave 14c (2026-07-26) — `wcs.c`'s printf ENTRY POINTS, and the export total re-measured.**
+Wave 14b flipped the printf *engine* and swung file.c's stream family with it, but `wcs.c`'s own
+shells kept calling the C: clang had already IPA-specialized the same-TU engine into them, and
+intra-TU inlining never consults the linker (**symbol replacement flips a TU's callers, not its
+housemates**). The 30 `va_list`-taking entry points are now `msvcrt-crt-rust/src/printf_shells.rs`
+— `_vsnprintf`, `vsprintf`, `_vswprintf`, the `_s` bounded family, the `_p` positional family and
+the `_vsc*` counting sinks — graded by a tenth harness, `printf_shells`, at **1,260 rows** against
+the genuine `wcs.c`. The `...` shells (`sprintf`, `_snprintf`, `_swprintf`, …) still need a
+`va_start` trampoline and are the remaining half of the wave.
+
+**Export total, re-measured against the DLL** (the method waves 1–13 used, not arithmetic on 240):
+**431 of 1,165 non-stub amd64 exports are Rust-backed, 37%** — 400 before wave 14c, +31 from it
+(30 shells; `vsnprintf`/`vswprintf` are spec aliases onto two of them). The remaining C is
+concentrated: `file.c` 5,897 LOC (stdio, Phase D), `concurrency.c` 3,840 (C++), `scanf.c`'s 40
+exports (engine not ported), `math.c` 13 of 144 functions flipped.
 
 **240 Rust-defined `msvcrt.dll` exports on all three arches** as of 2026-07-14 (waves 1–13: 209 hand-flipped wrappers; wave 14m: +45 libm exports assembled from cnt-rust's `cabi/math.rs` via the `cabi-math` feature — engine grading lives in cnt-difftest; wave 14a decided printf is a PORT and wave 14b DELIVERED it: printf.h's engine — 2,312 lines, bignum floats over the shared bnum.rs — graded 142 narrow + 30 wide rows byte-identical vs the genuine pf_printf_a; the DLL's stream-printf family (printf/fprintf/vfprintf) runs the Rust engine now, the sprintf-family shells await wave 14c's varargs trampolines. See the lane plan + field manual §9.83)
 (waves 1–13). Verified by parsing the DLL's export table: every flip lands in the Rust cluster,
@@ -96,7 +110,7 @@ twins), and the **bignum float parser** (`strtod` `_strtod_l` `atof`
 `_atof_l` `_atoflt_l` `_atodbl` `_atodbl_l` `wcstod` `_wcstod_l` `_wtof` `_wtof_l` `_atoldbl`
 `_atoldbl_l` `__STRINGTOLD` `__STRINGTOLD_L`).
 
-**The method is the product.** Nothing flips without a differential proof. Six orthogonal
+**The method is the product.** Nothing flips without a differential proof. Ten orthogonal
 harnesses (`sdk/lib/rust/msvcrt-difftest/`), each negative-controlled:
 
 | harness | asks | blind to |
@@ -107,6 +121,27 @@ harnesses (`sdk/lib/rust/msvcrt-difftest/`), each negative-controlled:
 | `hot_path` | a per-element loop doing per-element **environment lookups**? (counts `get_locinfo()` at n=8 vs n=512 — the cost no *ratio* can see, §9.76) | values, access |
 | `ref_integrity` | **is the oracle itself honest?** (see §9.66 — glibc's attributes had been deleting the reference C's guards; also cross-checks every `msvcrt-sys` layout offset subject-vs-bindgen) | the subject |
 | `link` | do the shipping symbols actually **resolve** to the Rust bodies? | everything else |
+| `mbcs_fixture` | is the **DBCS state** the mbcs cases are graded against actually multi-byte? (asserts non-zero lead/trail bytes per codepage — without it every case takes the single-byte path and the suite grades none of the DBCS logic) | the subject |
+| `mbcs` | **173 of 175** generated cases over `mbcs.c` on **7 codepages** (932/936/949/950/1361 DBCS + 1252/20127 single-byte), enumerating each function's whole input domain rather than sampling | speed, access; `create_mbcinfo` |
+| `mbcs_state` | does the SUBJECT's **`create_mbcinfo`** build the same tables? Its own process, because every `mbcs` case is pinned against a fixture built from the *reference's* copy — so the subject's never runs there and a wrong one passes all 173 | everything the fixture holds still |
+| `printf_shells` | the 30 printf ENTRY POINTS vs the genuine `wcs.c` — **1,260 rows**, four channels each (return · full buffer image incl. a guard prefix · errno · invalid-parameter count). `printf_port` grades the engine and is structurally blind to everything wrapped *around* it: which `options` bits go in, how a `size_t` buffer size truncates into the C's `int len`, which of `ret<0`/`ret==len` decides a `-1`, whether the `-1` path zeroes the buffer or just terminates it | the `...` shells (no `va_start` on stable) |
+
+`mbcs.c` was graded on 2026-07-24 and the first run found **three real bugs** in the shipping
+Rust: `_mbsnset_l` dropped its truncation (C's `while (a && b && len--)` wraps `len` to
+`SIZE_MAX` on exit, and the epilogue reads that), and `_mbslwr_s_l`/`_mbsupr_s_l` walked *copies*
+of their parameters — so the buffer-too-small `EINVAL` was unreachable and the terminator landed
+at the start of the string. Both classes are in the field manual under "Semantic rewrites that
+flip meaning". Coverage then went 160 -> 167 -> **173 of 175** as the generator learned the
+`_s` out-scalars, the restartable `mbstate_t` sweep, the `char **` cursors (`_mbstok_s`,
+`mbsrtowcs`) and the `__p_*` state accessors. `create_mbcinfo` is graded separately by
+`mbcs_state` — and diverged on its first run, which is what a fixture built from one side
+cannot show you. **`_setmbcp` is the last ungraded function**: it installs through
+`MSVCRT_locale->mbcinfo`, which the harness defines as NULL, so grading it means modelling
+`MSVCRT_locale` and the thread-data `locale_flags` on both sides rather than writing a case.
+
+All host harnesses now run under **`vibeos-cli difftest`**, which `gate` invokes and which gates
+the push stamp — see `tests/qemu/cli/README.md`. They were previously reachable only by typing
+`cargo test` in a crate dir, and `rtl-difftest` sat 2/87 red on master as a result.
 
 **What it has refused to flip, and why** — these are the interesting entries:
 - **`strtod`-from-`cnt-rust`** — cnt-rust's float parser is the ReactOS naive accumulator;

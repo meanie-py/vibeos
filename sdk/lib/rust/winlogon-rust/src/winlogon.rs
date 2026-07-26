@@ -1103,6 +1103,78 @@ unsafe fn TryStartWow64Fault() {
     }
 }
 
+/* #64 — thread32.exe: 32-bit guest THREADING. Until the per-thread WoW64 entry
+ * existed, NtCreateThread was a loud refusal (and before that a flat thunk that
+ * returned SUCCESS while the kernel built a thread with a zeroed trap frame —
+ * osk.exe, BUGCHECK 0x1E). This guest creates real threads and checks the
+ * pieces that would each fail silently on their own: the thread parameter, TLS
+ * (proves the guest loader's per-thread init ran), guest SEH on the new thread
+ * (proves TEB32's NtTib stack bounds were set), and four concurrent threads
+ * with distinct stacks (proves the CPU area is per-thread).
+ *
+ * Runs on BOTH arches — the per-thread entry is arch-neutral and arm64 drives
+ * it through FEX's BTCpu contract, which is exactly the path that would
+ * otherwise have no functional coverage. arm64 passes "noseh" because the
+ * hardware-fault redirect into guest SEH is still owed there (pre-existing,
+ * unrelated to threading — the same reason fault32.exe is amd64-only).
+ * Silent no-op unless staged; verdict = [THREAD32] serial lines + exit 0x600D. */
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+unsafe fn TryStartWow64Thread() {
+    if !Wow64SupportStaged() {
+        return; // CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\thread32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    let mut Line: [u16; 19] = wstr_arr!("thread32.exe noseh");
+    #[cfg(target_arch = "x86_64")]
+    let mut Line: [u16; 13] = wstr_arr!("thread32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] thread32.exe (i386 threading guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 90_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] thread32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(thread32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* M12 — THE NORTH STAR: x86 DOOM, under WoW64, on arm64.
  *
  * doomgeneric's Win32/GDI backend built for i386 (tools/doom/build.sh i386) —
@@ -2187,6 +2259,10 @@ pub unsafe extern "system" fn WinMain(
         /* M18: marshaller-verification guest (TBI/IOCP/monitors). */
         TryStartWow64Marshal();
 
+        /* #64: 32-bit guest threading, driven through FEX's BTCpu contract —
+         * the arm64 side of the per-thread WoW64 entry. */
+        TryStartWow64Thread();
+
         /* The testgui pair never exits, so it would sit on top of DOOM's window.
          * When the WoW64 doom is staged, DOOM is the demo — skip them. */
         if !Wow64DoomStaged() {
@@ -2276,6 +2352,9 @@ pub unsafe extern "system" fn WinMain(
         TryStartWow64Marshal();
         /* E5: guest-SEH dispatch verify (fault + raise + ODS consumption). */
         TryStartWow64Fault();
+        /* #64: 32-bit guest threading — create/join, TLS, per-thread SEH,
+         * 4 concurrent threads. */
+        TryStartWow64Thread();
         /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
          * menus, timers, dialog resources. Launched BEFORE doom so doom's
          * window (created last) stays the demo on top. */

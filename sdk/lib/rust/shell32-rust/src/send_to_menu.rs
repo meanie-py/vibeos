@@ -783,7 +783,7 @@ extern "system" {
     fn DestroyIcon(icon: HICON) -> BOOL;
     fn DrawIconEx(dc: HDC, x: INT, y: INT, icon: HICON, width: INT, height: INT, step: UINT, brush: HANDLE, flags: UINT) -> BOOL;
     fn GetMenuItemInfoW(menu: HMENU, item: UINT, by_position: BOOL, info: *mut MENUITEMINFOW) -> BOOL;
-    fn GetSystemMetrics(index: UINT) -> INT;
+    fn GetSystemMetrics(index: INT) -> INT;
     fn SHGetFileInfoW(path: LPCWSTR, attributes: DWORD, info: *mut SHFILEINFOW, bytes: UINT, flags: UINT) -> DWORD_PTR;
     fn StrRetToStrW(value: *mut STRRET, pidl: PCUITEMID_CHILD, out: *mut LPWSTR) -> HRESULT;
     fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
@@ -1421,14 +1421,14 @@ pub unsafe fn CSendToMenu_GetCommandString_body(this: *mut CSendToMenu, idCmd: U
 pub unsafe fn CSendToMenu_HandleMenuMsg_body(this: *mut CSendToMenu, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> HRESULT { S_OK }
 
 pub unsafe fn CSendToMenu_HandleMenuMsg2_body(this: *mut CSendToMenu, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, plResult: *mut LRESULT) -> HRESULT {
-    let cxSmall = GetSystemMetrics(SM_CXSMICON);
-    let cySmall = GetSystemMetrics(SM_CYSMICON);
+    let cxSmall = GetSystemMetrics((SM_CXSMICON) as i32);
+    let cySmall = GetSystemMetrics((SM_CYSMICON) as i32);
 
     match uMsg {
         WM_MEASUREITEM => {
             let lpmis: *mut MEASUREITEMSTRUCT = lParam as *mut MEASUREITEMSTRUCT;
             if !lpmis.is_null() && (*lpmis).CtlType == ODT_MENU {
-                let cxMenuCheck = GetSystemMetrics(SM_CXMENUCHECK);
+                let cxMenuCheck = GetSystemMetrics((SM_CXMENUCHECK) as i32);
                 if (*lpmis).itemWidth < cxMenuCheck as UINT {
                     (*lpmis).itemWidth = cxMenuCheck as UINT as UINT;
                 }

@@ -75,6 +75,14 @@ pub static mut BaseCsrConnectionEstablished: BOOLEAN = FALSE as BOOLEAN;
 static mut BaseStaticServerDataFallback: ::core::mem::MaybeUninit<_BASE_STATIC_SERVER_DATA> =
     ::core::mem::MaybeUninit::uninit();
 
+/// x86/WoW64 only: set when DllMain deliberately continued after
+/// `CsrClientConnectToServer` failed (the leniency below). Anything that would
+/// otherwise talk to CSR must consult this first — the port was never
+/// connected, so `NtRequestWaitReplyPort` on it is rejected by the kernel with
+/// STATUS_INVALID_PARAMETER rather than merely returning an error from csrss.
+#[cfg(target_arch = "x86")]
+pub(crate) static mut BaseWow64NoCsrConnection: bool = false;
+
 /// x86 only: true when this 32-bit kernel32 runs in a WOW64 process (guest
 /// under FEX/wow64). CSR-LPC message thunking isn't built yet, so the guest
 /// gets the same no-CSRSS leniency the arm64 native bring-up uses; native
@@ -239,6 +247,7 @@ pub unsafe extern "system" fn DllMain(
                         DbgPrint(
                             b"WOW64: Continuing without CSRSS connection\n\0".as_ptr() as *const i8,
                         );
+                        BaseWow64NoCsrConnection = true;
                     } else {
                         NtTerminateProcess(NtCurrentProcess(), Status);
                         return FALSE;

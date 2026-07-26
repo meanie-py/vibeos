@@ -11,6 +11,7 @@ use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
 use crate::win32::*;
+use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
 pub const SHV_CHANGE_NOTIFY: u32 = WM_USER + 0x1111;
@@ -221,7 +222,7 @@ unsafe extern "C" fn BrFolder_GetName(
     let mut bSuccess: i32 = FALSE;
     let mut str: STRRET = core::mem::zeroed();
     if FAILED_UNEXPECTEDLY((*lpsf).GetDisplayNameOf(pidlChild, dwFlags, &mut str)) == 0 {
-        bSuccess = StrRetToStrNW(lpFriendlyName, MAX_PATH, &mut str, pidlChild);
+        bSuccess = StrRetToStrNW(lpFriendlyName, (MAX_PATH) as u32, &mut str, pidlChild);
     }
     bSuccess
 }
@@ -277,13 +278,13 @@ unsafe extern "C" fn BrFolder_FindTreeItemOfAbsoluteItem(
     pidl: PCIDLIST_ABSOLUTE,
     mut hItem: HTREEITEM,
 ) -> HTREEITEM {
-    if if(hItem.is_null()) {
+    if hItem.is_null() {
         hItem = TreeView_GetRoot((*info).hwndTreeView);
     }
     while !pidl.is_null() && !hItem.is_null() {
         let pItemData = BrFolder_GetItemData(info, hItem);
         let pidlFull = (*pItemData).pidlFull.as_ptr();
-        if if(ILIsEqual(pidlFull, pidl)) {
+        if ILIsEqual(pidlFull, pidl) {
             return hItem;
         }
         let hChild = TreeView_GetChild((*info).hwndTreeView, hItem);
@@ -291,7 +292,7 @@ unsafe extern "C" fn BrFolder_FindTreeItemOfAbsoluteItem(
         if !hChild.is_null() {
             temp = BrFolder_FindTreeItemOfAbsoluteItem(info, pidl, hChild);
         }
-        if if(!hChild.is_null() && !temp.is_null()) {
+        if !hChild.is_null() && !temp.is_null() {
             return temp;
         }
         hItem = TreeView_GetNextSibling((*info).hwndTreeView, hItem);
@@ -484,12 +485,12 @@ unsafe extern "C" fn BrFolder_CheckValidSelection(info: *mut BrFolder, pItemData
         if ((*lpBrowseInfo).ulFlags & BIF_RETURNONLYFSDIRS) != 0 {
             bEnabled = FALSE;
         }
-        EnableWindow(GetDlgItem((*info).hWnd, IDC_BROWSE_FOR_FOLDER_NEW_FOLDER), FALSE);
+        EnableWindow(GetDlgItem((*info).hWnd, (IDC_BROWSE_FOR_FOLDER_NEW_FOLDER) as i32), FALSE);
     } else {
-        EnableWindow(GetDlgItem((*info).hWnd, IDC_BROWSE_FOR_FOLDER_NEW_FOLDER), TRUE);
+        EnableWindow(GetDlgItem((*info).hWnd, (IDC_BROWSE_FOR_FOLDER_NEW_FOLDER) as i32), TRUE);
     }
 
-    SendMessageW((*info).hWnd, BFFM_ENABLEOK, 0, bEnabled);
+    SendMessageW((*info).hWnd, BFFM_ENABLEOK, 0, (bEnabled) as isize);
 }
 unsafe extern "C" fn BrFolder_Treeview_Delete(
     info: *mut BrFolder,
@@ -564,7 +565,7 @@ unsafe extern "C" fn BrFolder_Treeview_Changed(info: *mut BrFolder, pnmtv: *mut 
         szName.as_mut_ptr(),
     ) != 0
     {
-        SetDlgItemTextW((*info).hWnd, IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT, szName.as_mut_ptr());
+        SetDlgItemTextW((*info).hWnd, (IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT) as i32, szName.as_mut_ptr());
     }
 
     BrFolder_Callback(
@@ -579,7 +580,7 @@ unsafe extern "C" fn BrFolder_Treeview_Changed(info: *mut BrFolder, pnmtv: *mut 
 }
 unsafe extern "C" fn BrFolder_Treeview_Rename(info: *mut BrFolder, pnmtv: *mut NMTVDISPINFOW) -> LRESULT {
     if (*pnmtv).item.pszText.is_null() {
-        return FALSE;
+        return (FALSE) as i64;
     }
 
     let hItem = TreeView_GetSelection((*info).hwndTreeView);
@@ -594,7 +595,7 @@ unsafe extern "C" fn BrFolder_Treeview_Rename(info: *mut BrFolder, pnmtv: *mut N
         &mut newChild,
     );
     if hr < 0 {
-        return FALSE;
+        return (FALSE) as i64;
     }
 
     let mut newFull: LPITEMIDLIST;
@@ -619,7 +620,7 @@ unsafe extern "C" fn BrFolder_Treeview_Rename(info: *mut BrFolder, pnmtv: *mut N
     nmtv.itemNew.mask = TVIF_PARAM;
     nmtv.itemNew.lParam = data as LPARAM;
     BrFolder_Treeview_Changed(info, &mut nmtv);
-    AllowTreeTextChange
+    (AllowTreeTextChange) as i64
 }
 
 unsafe extern "C" fn BrFolder_Rename(info: *mut BrFolder, hItem: HTREEITEM) -> HRESULT {
@@ -648,10 +649,10 @@ unsafe extern "C" fn BrFolder_Delete(info: *mut BrFolder, hItem: HTREEITEM) {
         return;
     }
     let mut fCMIC: u32 = 0;
-    if GetKeyState(VK_SHIFT) < 0 {
+    if GetKeyState((VK_SHIFT) as i32) < 0 {
         fCMIC |= CMIC_MASK_SHIFT_DOWN;
     }
-    if GetKeyState(VK_CONTROL) < 0 {
+    if GetKeyState((VK_CONTROL) as i32) < 0 {
         fCMIC |= CMIC_MASK_CONTROL_DOWN;
     }
     SHInvokeCommandOnContextMenu(
@@ -677,8 +678,8 @@ unsafe extern "C" fn BrFolder_Treeview_Keydown(info: *mut BrFolder, keydown: *mu
         VK_DELETE => {
             BrFolder_Delete(info, hItem);
         }
-        b'R' as _ => {
-            if GetKeyState(VK_CONTROL) < 0 {
+        0x52 /* b'R' */ => {
+            if GetKeyState((VK_CONTROL) as i32) < 0 {
                 BrFolder_Refresh(info);
             }
         }
@@ -708,7 +709,7 @@ unsafe extern "C" fn BrFolder_OnNotify(
             return BrFolder_Treeview_Expand(info, pnmtv);
         }
         TVN_SELCHANGEDA | TVN_SELCHANGEDW => {
-            return BrFolder_Treeview_Changed(info, pnmtv);
+            return (BrFolder_Treeview_Changed(info, pnmtv)) as i64;
         }
         TVN_BEGINLABELEDITA | TVN_BEGINLABELEDITW => {
             let hWndEdit = TreeView_GetEditControl((*lpnmh).hwndFrom);
@@ -716,11 +717,11 @@ unsafe extern "C" fn BrFolder_OnNotify(
             let att = BrFolder_GetItemAttributes(info, tvdi.item.hItem, SFGAO_CANRENAME);
             if att & SFGAO_CANRENAME == 0 {
                 MessageBeep(0xffffffff);
-                return S_FALSE;
+                return (S_FALSE) as i64;
             }
             let mut Name: [u16; MAX_PATH] = [0u16; MAX_PATH];
             if BrFolder_GetName(
-                info,
+                (info).cast(),
                 tvdi.item.hItem,
                 SHGDN_INFOLDER | SHGDN_FOREDITING,
                 Name.as_mut_ptr(),
@@ -728,7 +729,7 @@ unsafe extern "C" fn BrFolder_OnNotify(
             {
                 SetWindowTextW(hWndEdit, Name.as_ptr());
             }
-            return S_OK;
+            return (S_OK) as i64;
         }
         TVN_ENDLABELEDITW => {
             return BrFolder_Treeview_Rename(info, pnmtv as *mut NMTVDISPINFOW);
@@ -768,12 +769,12 @@ unsafe extern "C" fn BrFolder_OnInitDialog(hWnd: HWND, info: *mut BrFolder) -> B
         {
             let mut rcEdit: RECT = core::mem::zeroed();
             let mut rcTreeView: RECT = core::mem::zeroed();
-            GetWindowRect(GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT), &mut rcEdit);
-            GetWindowRect(GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_TREEVIEW), &mut rcTreeView);
+            GetWindowRect(GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT) as i32), &mut rcEdit);
+            GetWindowRect(GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_TREEVIEW) as i32), &mut rcTreeView);
             let cy = rcTreeView.top - rcEdit.top;
-            MapWindowPoints(core::ptr::null_mut(), hWnd, &mut rcTreeView as *mut RECT as *mut POINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+            MapWindowPoints(core::ptr::null_mut(), hWnd, &mut rcTreeView as *mut RECT as *mut POINT, ((core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32) as u32);
             rcTreeView.top -= cy;
-            MoveWindow(GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_TREEVIEW),
+            MoveWindow(GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_TREEVIEW) as i32),
                        rcTreeView.left, rcTreeView.top,
                        rcTreeView.right - rcTreeView.left,
                        rcTreeView.bottom - rcTreeView.top, TRUE);
@@ -789,34 +790,34 @@ unsafe extern "C" fn BrFolder_OnInitDialog(hWnd: HWND, info: *mut BrFolder) -> B
     }
 
     if !(*lpBrowseInfo).lpszTitle.is_null() {
-        SetDlgItemTextW(hWnd, IDC_BROWSE_FOR_FOLDER_TITLE, (*lpBrowseInfo).lpszTitle);
+        SetDlgItemTextW(hWnd, (IDC_BROWSE_FOR_FOLDER_TITLE) as i32, (*lpBrowseInfo).lpszTitle);
     } else {
-        ShowWindow(GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_TITLE), SW_HIDE);
+        ShowWindow(GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_TITLE) as i32), (SW_HIDE) as i32);
     }
 
     if (((*lpBrowseInfo).ulFlags & BIF_STATUSTEXT) == 0) || (((*lpBrowseInfo).ulFlags & BIF_USENEWUI) != 0) {
-        ShowWindow(GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_STATUS), SW_HIDE);
+        ShowWindow(GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_STATUS) as i32), (SW_HIDE) as i32);
     }
 
     if (((*lpBrowseInfo).ulFlags & BIF_NONEWFOLDERBUTTON) != 0) ||
        (((*lpBrowseInfo).ulFlags & BIF_NEWDIALOGSTYLE) == 0)
     {
-        ShowWindow(GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_NEW_FOLDER), SW_HIDE);
+        ShowWindow(GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_NEW_FOLDER) as i32), (SW_HIDE) as i32);
     }
 
     if ((*lpBrowseInfo).ulFlags & BIF_EDITBOX) == 0 {
-        ShowWindow(GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_FOLDER), SW_HIDE);
-        ShowWindow(GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT), SW_HIDE);
+        ShowWindow(GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_FOLDER) as i32), (SW_HIDE) as i32);
+        ShowWindow(GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT) as i32), (SW_HIDE) as i32);
     }
 
-    (*info).hwndTreeView = GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_TREEVIEW);
+    (*info).hwndTreeView = GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_TREEVIEW) as i32);
     if !(*info).hwndTreeView.is_null() {
         BrFolder_InitTreeView(info);
     } else {
         ERR!("treeview control missing!\n");
     }
 
-    SHGetFolderLocation(core::ptr::null_mut(), CSIDL_DESKTOP, core::ptr::null_mut(), 0, pidlDesktop.put());
+    SHGetFolderLocation(core::ptr::null_mut(), (CSIDL_DESKTOP) as i32, core::ptr::null_mut(), 0, pidlDesktop.put());
 
     ntreg.pidl = *pidlDesktop;
     ntreg.fRecursive = TRUE;
@@ -827,7 +828,7 @@ unsafe extern "C" fn BrFolder_OnInitDialog(hWnd: HWND, info: *mut BrFolder) -> B
 
     if (*lpBrowseInfo).pidlRoot.is_null() {
         let csidl = if ((*lpBrowseInfo).ulFlags & BIF_NEWDIALOGSTYLE) != 0 { CSIDL_PERSONAL } else { CSIDL_DRIVES };
-        let pidl = SHCloneSpecialIDList(core::ptr::null_mut(), csidl, TRUE);
+        let pidl = SHCloneSpecialIDList(core::ptr::null_mut(), (csidl) as i32, TRUE);
         if !pidl.is_null() {
             SendMessageW((*info).hWnd, BFFM_SETSELECTION, FALSE, pidl as LPARAM);
             if csidl == CSIDL_DRIVES {
@@ -839,7 +840,7 @@ unsafe extern "C" fn BrFolder_OnInitDialog(hWnd: HWND, info: *mut BrFolder) -> B
 
     BrFolder_Callback((*info).lpBrowseInfo, hWnd, BFFM_INITIALIZED, 0);
 
-    SHAutoComplete(GetDlgItem(hWnd, IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT),
+    SHAutoComplete(GetDlgItem(hWnd, (IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT) as i32),
                    (SHACF_FILESYS_ONLY | SHACF_URLHISTORY | SHACF_FILESYSTEM));
     TRUE
 }
@@ -903,7 +904,7 @@ unsafe extern "C" fn BrFolder_NewFolder(info: *mut BrFolder) -> HRESULT {
     }
 
     let mut len = lstrlenW(path.as_ptr());
-    if len < MAX_PATH && *name.as_ptr().offset(len as isize) == 0x005Cu16 {
+    if len < (MAX_PATH) as i32 && *name.as_ptr().offset(len as isize) == 0x005Cu16 {
         len += 1;
     }
 
@@ -953,7 +954,7 @@ unsafe extern "C" fn BrFolder_NewFolder(info: *mut BrFolder) -> HRESULT {
 }
 unsafe extern "C" fn BrFolder_OnOK(info: *mut BrFolder) {
     let mut szPath: [u16; MAX_PATH] = [0u16; MAX_PATH];
-    GetDlgItemTextW((*info).hWnd, IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT, szPath.as_mut_ptr(), _countof(szPath));
+    GetDlgItemTextW((*info).hWnd, (IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT) as i32, szPath.as_mut_ptr(), _countof(szPath));
     StrTrimW(szPath.as_mut_ptr(), CPP_COM_WSTR_731D7EC48EEF.as_ptr());
 
     if PathIsRelativeW(szPath.as_mut_ptr()) == 0 && PathIsDirectoryW(szPath.as_mut_ptr()) != 0 {
@@ -977,21 +978,21 @@ unsafe extern "C" fn BrFolder_OnOK(info: *mut BrFolder) {
         (*info).pidlRet as *const u16,
         0,
         &raw mut fileInfo,
-        core::mem::size_of::<SHFILEINFOW>(),
+        (core::mem::size_of::<SHFILEINFOW>()) as u32,
         SHGFI_PIDL | SHGFI_DISPLAYNAME,
     ) != 0
     {
-        lstrcpynW((*lpBrowseInfo).pszDisplayName, fileInfo.szDisplayName.as_ptr(), MAX_PATH);
+        lstrcpynW((*lpBrowseInfo).pszDisplayName, fileInfo.szDisplayName.as_ptr(), (MAX_PATH) as i32);
     }
 }
 unsafe extern "C" fn BrFolder_OnCommand(info: *mut BrFolder, id: u32) {
     match id {
         IDOK => {
             BrFolder_OnOK(info);
-            EndDialog((*info).hWnd, IDOK);
+            EndDialog((*info).hWnd, (IDOK) as isize);
         }
         IDCANCEL => {
-            EndDialog((*info).hWnd, IDCANCEL);
+            EndDialog((*info).hWnd, (IDCANCEL) as isize);
         }
         IDC_BROWSE_FOR_FOLDER_NEW_FOLDER => {
             BrFolder_NewFolder(info);
@@ -1008,13 +1009,16 @@ unsafe extern "C" fn GetTreeViewItemContextMenuPos(hWnd: HWND, hItem: HTREEITEM,
     ClientToScreen(hWnd, ppt);
 }
 unsafe extern "C" fn BrFolder_OnContextMenu(info: *mut BrFolder, lParam: LPARAM) {
-    enum { IDC_TOGGLE = 1, ID_FIRSTCMD, ID_LASTCMD = 0xffff }
+    // C anonymous enum: successive values, so ID_FIRSTCMD is IDC_TOGGLE + 1.
+    const IDC_TOGGLE: UINT = 1;
+    const ID_FIRSTCMD: UINT = 2;
+    const ID_LASTCMD: UINT = 0xffff;
     let mut hSelected = TreeView_GetSelection((*info).hwndTreeView);
     let mut ici: CMINVOKECOMMANDINFOEX = core::mem::zeroed();
     ici.cbSize = core::mem::size_of::<CMINVOKECOMMANDINFOEX>() as u32;
     ici.fMask = CMIC_MASK_PTINVOKE;
     ici.hwnd = (*info).hWnd;
-    ici.nShow = SW_SHOW;
+    ici.nShow = (SW_SHOW) as i32;
     ici.ptInvoke.x = GET_X_LPARAM(lParam);
     ici.ptInvoke.y = GET_Y_LPARAM(lParam);
     if lParam as i32 == -1 {
@@ -1054,7 +1058,7 @@ unsafe extern "C" fn BrFolder_OnContextMenu(info: *mut BrFolder, lParam: LPARAM)
         return;
     }
     (*info).pContextMenu = pcm;
-    let cmf = (if GetKeyState(VK_SHIFT) < 0 {
+    let cmf = (if GetKeyState((VK_SHIFT) as i32) < 0 {
         CMF_EXTENDEDVERBS
     } else {
         0
@@ -1074,17 +1078,17 @@ unsafe extern "C" fn BrFolder_OnContextMenu(info: *mut BrFolder, lParam: LPARAM)
     );
 
     let cmd = TrackPopupMenuEx(hMenu, TPM_RETURNCMD, ici.ptInvoke.x, ici.ptInvoke.y, (*info).hWnd, core::ptr::null_mut());
-    ici.lpVerb = MAKEINTRESOURCEA(cmd - ID_FIRSTCMD);
-    if cmd == IDC_TOGGLE {
+    ici.lpVerb = MAKEINTRESOURCEA(cmd - (ID_FIRSTCMD) as i32);
+    if cmd == (IDC_TOGGLE) as i32 {
         TreeView_SelectItem((*info).hwndTreeView, hSelected);
         TreeView_Expand((*info).hwndTreeView, hSelected, TVE_TOGGLE);
     } else if cmd != 0 && GetDfmCmd(pcm, ici.lpVerb) == DFM_CMD_RENAME {
         BrFolder_Rename(info, hSelected);
     } else if cmd != 0 {
-        if GetKeyState(VK_SHIFT) < 0 {
+        if GetKeyState((VK_SHIFT) as i32) < 0 {
             ici.fMask |= CMIC_MASK_SHIFT_DOWN;
         }
-        if GetKeyState(VK_CONTROL) < 0 {
+        if GetKeyState((VK_CONTROL) as i32) < 0 {
             ici.fMask |= CMIC_MASK_CONTROL_DOWN;
         }
         (*pcm).InvokeCommand(&ici as *const CMINVOKECOMMANDINFOEX as *const CMINVOKECOMMANDINFO);
@@ -1300,14 +1304,14 @@ unsafe extern "C" fn BrFolder_OnChangeEx(
         SHCNE_RENAMEFOLDER |
         SHCNE_RENAMEITEM |
         SHCNE_UPDATEITEM => {
-            let UpdateFlags: u32 = if event == SHCNE_UPDATEITEM {
+            let UpdateFlags: u32 = if event == (SHCNE_UPDATEITEM) as i32 {
                 TVIF_IMAGE | TVIF_CHILDREN
             } else {
                 TVIF_TEXT
             };
             let mut hTI = BrFolder_FindTreeItemOfAbsoluteItem((*info), pidl1);
             if !hTI.is_null() {
-                if BrFolder_UpdateItemEx((*info), hTI, pidl2, UpdateFlags) != 0u8 {
+                if BrFolder_UpdateItemEx((*info), hTI, pidl2, UpdateFlags) != (0u8) as i32 {
                     hTI = TreeView_GetParent((*info).hwndTreeView, hTI);
                     if !hTI.is_null() {
                         TreeView_SortChildren((*info).hwndTreeView, hTI, FALSE);
@@ -1352,7 +1356,7 @@ unsafe extern "C" fn BrFolder_OnChange(info: *mut BrFolder, wParam: WPARAM, lPar
         info,
         *ppidl.offset(0),
         *ppidl.offset(1),
-        event & !SHCNE_INTERRUPT,
+        event & (!SHCNE_INTERRUPT) as i32,
     );
 
     SHChangeNotification_Unlock(hLock);
@@ -1365,7 +1369,7 @@ unsafe extern "stdcall" fn BrFolderDlgProc(
     lParam: LPARAM,
 ) -> isize {
     if uMsg == WM_INITDIALOG {
-        return BrFolder_OnInitDialog(hWnd, lParam as *mut BrFolder);
+        return (BrFolder_OnInitDialog(hWnd, lParam as *mut BrFolder)) as isize;
     }
 
     let info = GetWindowLongPtrW(hWnd, DWLP_USER) as *mut BrFolder;
@@ -1385,7 +1389,7 @@ unsafe extern "stdcall" fn BrFolderDlgProc(
         ) == S_OK
         {
             SetWindowLongPtr(hWnd, DWLP_MSGRESULT, result);
-            return TRUE;
+            return (TRUE) as isize;
         }
     }
 
@@ -1394,13 +1398,13 @@ unsafe extern "stdcall" fn BrFolderDlgProc(
             SetWindowLongPtr(
                 hWnd,
                 DWLP_MSGRESULT,
-                BrFolder_OnNotify(
+                (BrFolder_OnNotify(
                     info,
                     wParam as u32,
                     lParam as *mut NMHDR,
-                ),
+                )) as isize,
             );
-            return TRUE;
+            return (TRUE) as isize;
         }
         WM_COMMAND => {
             BrFolder_OnCommand(info, wParam);
@@ -1442,14 +1446,14 @@ unsafe extern "stdcall" fn BrFolderDlgProc(
         }
         BFFM_SETSELECTIONA => {
             if wParam != 0 {
-                return BrFolder_OnSetSelectionA(info, lParam as LPSTR);
+                return (BrFolder_OnSetSelectionA(info, lParam as LPSTR)) as isize;
             } else {
-                return BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST);
+                return (BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST)) as isize;
             }
         }
         BFFM_SETSELECTIONW => {
             if wParam != 0 {
-                return BrFolder_OnSetSelectionW(info, lParam as LPWSTR);
+                return (BrFolder_OnSetSelectionW(info, lParam as LPWSTR)) as isize;
             } else {
                 return BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST);
             }
@@ -1481,7 +1485,7 @@ unsafe extern "C" fn BrFolderDlgProc(
     lParam: LPARAM,
 ) -> isize {
     if uMsg == WM_INITDIALOG {
-        return BrFolder_OnInitDialog(hWnd, lParam as *mut BrFolder);
+        return (BrFolder_OnInitDialog(hWnd, lParam as *mut BrFolder)) as isize;
     }
 
     let info = GetWindowLongPtrW(hWnd, DWLP_USER) as *mut BrFolder;
@@ -1501,7 +1505,7 @@ unsafe extern "C" fn BrFolderDlgProc(
         ) == S_OK
         {
             SetWindowLongPtr(hWnd, DWLP_MSGRESULT, result);
-            return TRUE;
+            return (TRUE) as isize;
         }
     }
 
@@ -1510,16 +1514,16 @@ unsafe extern "C" fn BrFolderDlgProc(
             SetWindowLongPtr(
                 hWnd,
                 DWLP_MSGRESULT,
-                BrFolder_OnNotify(
+                (BrFolder_OnNotify(
                     info,
                     wParam as u32,
                     lParam as *mut NMHDR,
-                ),
+                )) as isize,
             );
-            return TRUE;
+            return (TRUE) as isize;
         }
         WM_COMMAND => {
-            BrFolder_OnCommand(info, wParam);
+            BrFolder_OnCommand(info, (wParam) as u32);
         }
         WM_CONTEXTMENU => {
             if (*info).hwndTreeView == wParam as HWND {
@@ -1545,27 +1549,27 @@ unsafe extern "C" fn BrFolderDlgProc(
             SetDlgItemTextA(hWnd, IDC_BROWSE_FOR_FOLDER_STATUS, lParam as LPSTR);
         }
         BFFM_SETSTATUSTEXTW => {
-            SetDlgItemTextW(hWnd, IDC_BROWSE_FOR_FOLDER_STATUS, lParam as LPWSTR);
+            SetDlgItemTextW(hWnd, (IDC_BROWSE_FOR_FOLDER_STATUS) as i32, lParam as LPWSTR);
         }
         BFFM_ENABLEOK => {
             EnableWindow(
-                GetDlgItem(hWnd, IDOK),
+                GetDlgItem(hWnd, (IDOK) as i32),
                 (lParam != 0) as i32,
             );
         }
         BFFM_SETOKTEXT => {
-            SetDlgItemTextW(hWnd, IDOK, lParam as LPWSTR);
+            SetDlgItemTextW(hWnd, (IDOK) as i32, lParam as LPWSTR);
         }
         BFFM_SETSELECTIONA => {
             if wParam != 0 {
-                return BrFolder_OnSetSelectionA(info, lParam as LPSTR);
+                return (BrFolder_OnSetSelectionA(info, lParam as LPSTR)) as isize;
             } else {
-                return BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST);
+                return (BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST)) as isize;
             }
         }
         BFFM_SETSELECTIONW => {
             if wParam != 0 {
-                return BrFolder_OnSetSelectionW(info, lParam as LPWSTR);
+                return (BrFolder_OnSetSelectionW(info, lParam as LPWSTR)) as isize;
             } else {
                 return BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST);
             }
@@ -1604,7 +1608,7 @@ pub unsafe extern "system" fn SHBrowseForFolderA(lpbi: LPBROWSEINFOA) -> LPITEMI
 
     let mut pszTitle: CComHeapPtr<u16> = core::mem::zeroed();
     if !(*lpbi).lpszTitle.is_null() {
-        __SHCloneStrAtoW(core::ptr::addr_of_mut!(pszTitle), (*lpbi).lpszTitle);
+        __SHCloneStrAtoW((core::ptr::addr_of_mut!(pszTitle)).cast(), (*lpbi).lpszTitle);
     }
     bi.lpszTitle = pszTitle;
 
@@ -1616,7 +1620,7 @@ pub unsafe extern "system" fn SHBrowseForFolderA(lpbi: LPBROWSEINFOA) -> LPITEMI
     let pidl = SHBrowseForFolderW(&mut bi);
 
     if !bi.pszDisplayName.is_null() {
-        SHUnicodeToAnsi(bi.pszDisplayName, (*lpbi).pszDisplayName, MAX_PATH);
+        SHUnicodeToAnsi(bi.pszDisplayName, (*lpbi).pszDisplayName, (MAX_PATH) as i32);
     }
 
     (*lpbi).iImage = bi.iImage;
@@ -1652,7 +1656,7 @@ pub unsafe extern "system" fn SHBrowseForFolderW(lpbi: LPBROWSEINFOW) -> LPITEMI
         &mut info as *mut _ as LPARAM,
     );
 
-    if ret == IDOK
+    if ret == (IDOK) as isize
         && ((*lpbi).ulFlags & BIF_NOTRANSLATETARGETS) == 0
         && RosGetProcessEffectiveVersion() >= _WIN32_WINNT_WINXP
     {
@@ -1663,7 +1667,7 @@ pub unsafe extern "system" fn SHBrowseForFolderW(lpbi: LPBROWSEINFOW) -> LPITEMI
         }
     }
 
-    if ret != IDOK {
+    if ret != (IDOK) as isize {
         ILFree(info.pidlRet);
         return core::ptr::null_mut();
     }
