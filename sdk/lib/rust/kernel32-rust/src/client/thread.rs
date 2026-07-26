@@ -311,6 +311,34 @@ pub unsafe extern "system" fn CreateRemoteThread(
     /* Notify CSR */
     if BaseRunningInServerProcess == 0 {
         Status = BasepNotifyCsrOfThread(hThread, &mut ClientId);
+
+        /* A WoW64 guest runs with NO CSRSS connection at all: the 64-bit
+         * csrss refuses the 32-bit CSR_API_CONNECTINFO until the CSR-LPC-32
+         * thunk layer exists, and DllMain deliberately continues anyway
+         * ("WOW64: Continuing without CSRSS connection"). The notify above
+         * therefore hands NtRequestWaitReplyPort a port that was never
+         * connected, the kernel rejects it with STATUS_INVALID_PARAMETER, and
+         * the cleanup path below tears down a thread that is otherwise
+         * perfectly built — which is why EVERY CreateThread in EVERY 32-bit
+         * guest failed with ERROR_INVALID_PARAMETER (task #64).
+         *
+         * Tolerate it for exactly that case and no other. What is lost is
+         * csrss's bookkeeping entry for the thread, which nothing in a
+         * CSR-less process consults; a guest that ever does get a CSR
+         * connection takes the strict path again. */
+        #[cfg(target_arch = "x86")]
+        if !NT_SUCCESS(Status) && crate::client::dllmain::BaseWow64NoCsrConnection {
+            static mut Reported: bool = false;
+            if !Reported {
+                Reported = true;
+                DbgPrint(
+                    b"WOW64: CreateThread continuing without CSRSS thread notify (0x%lx)\n\0"
+                        .as_ptr() as *const i8,
+                    Status,
+                );
+            }
+            Status = STATUS_SUCCESS;
+        }
     } else {
         if hProcess != NtCurrentProcess() {
             let CsrCreateRemoteThread: PCSR_CREATE_REMOTE_THREAD;

@@ -106,6 +106,20 @@ else
     echo "[!] fault32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD)"
 fi
 
+# thread32.exe — the #64 threading guest: CreateThread/join/exit-code, the
+# thread parameter (CONTEXT32.Ebx), TLS on the new thread (proves the guest
+# loader's per-thread init ran), guest SEH on the new thread (proves TEB32's
+# NtTib stack bounds were set), and 4 concurrent threads with distinct stacks
+# (proves the CPU area is per-thread, not the old process-wide static).
+if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -o "$HARNESS_BUILD/thread32.exe" "$HARNESS_SRC/Thread32.c" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] thread32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD)"
+fi
+
 # marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
 # TBI (verified against the guest's OWN TEB32), IOCP post/get sentinel round-trip
 # (NtRemoveIoCompletion out-slots + IOSB), EnumDisplayMonitors/GetMonitorInfo/
