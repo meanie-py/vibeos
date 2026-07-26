@@ -121,3 +121,22 @@ harness = false
 name = "mbcs_state"
 path = "tests/mbcs_state.rs"
 harness = false
+
+# Wave 16 — the last 50 exports of string.c and wcs.c: the `_l` integer parsers and case
+# folders, `_strdup` / `_atoflt` / `I10_OUTPUT`, the wide integer engines, and the whole
+# wchar->multibyte family. Its own binary because it plants a non-zero `lc_codepage` on
+# BOTH sides (every WideCharToMultiByte arm in that family is unreachable otherwise) and
+# must not leave that state behind for another suite's rows.
+[[test]]
+name = "wave16"
+path = "tests/wave16.rs"
+harness = false
+
+# Wave 17 — the scanf ENGINE. `dll/win32/msvcrt/scanf.h` is a template scanf.c
+# instantiates 16 times; `msvcrt-crt-rust/src/scanf.rs` replaces all 16 with one generic
+# body. Its own binary because it DEFINES the model character source (`fgetc`/`fgetwc`/
+# `_getch` &c.) under the plain libc names, which no other suite may inherit.
+[[test]]
+name = "scanf"
+path = "tests/scanf.rs"
+harness = false

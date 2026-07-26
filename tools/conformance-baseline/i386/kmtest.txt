@@ -5,7 +5,7 @@ ExCallback OK pass=13 fail=0 skip=1 exit=0
 ExDoubleList OK pass=130 fail=16 skip=0 exit=0
 ExFastMutex OK pass=257 fail=0 skip=0 exit=0
 ExHardError OK pass=24 fail=6 skip=0 exit=0
-ExInterlocked OK pass=718 fail=120 skip=0 exit=0
+ExInterlocked OK pass=922 fail=52 skip=0 exit=0
 ExPools OK pass=19 fail=1 skip=0 exit=0
 ExResource OK pass=399 fail=2 skip=0 exit=0
 ExSequencedList OK pass=232 fail=0 skip=0 exit=0
@@ -86,6 +86,6 @@ RtlRegistry OK pass=210 fail=0 skip=0 exit=0
 RtlSplayTree NO-END pass=0 fail=0 skip=0 exit=128
 RtlStack OK pass=39 fail=1 skip=0 exit=0
 RtlStrSafe OK pass=33 fail=0 skip=0 exit=0
-RtlUnicodeString NO-END pass=0 fail=0 skip=0 exit=128
+RtlUnicodeString OK pass=77 fail=0 skip=0 exit=0
 TcpIpTdi OK pass=31 fail=4 skip=0 exit=0
 RtlCaptureContextUM NO-END pass=0 fail=0 skip=0 exit=1 errors=1

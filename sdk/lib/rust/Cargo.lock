@@ -1239,6 +1239,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mprapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "msafd-rust"
 version = "0.1.0"
 dependencies = [
@@ -1312,6 +1320,14 @@ dependencies = [
 
 [[package]]
 name = "netapi32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "netid-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
@@ -1676,6 +1692,38 @@ name = "random"
 version = "0.1.0"
 
 [[package]]
+name = "rasadhlp-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "rasapi32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "rasdlg-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "rasman-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "reactos-link"
 version = "0.1.0"
 dependencies = [
@@ -1927,6 +1975,14 @@ dependencies = [
  "midl-rt",
  "panic-common",
  "reactos-link",
+]
+
+[[package]]
+name = "samlib-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
 ]
 
 [[package]]
@@ -2605,6 +2661,14 @@ dependencies = [
 
 [[package]]
 name = "wlansvc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "wldap32-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",

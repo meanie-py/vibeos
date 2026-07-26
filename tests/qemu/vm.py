@@ -152,9 +152,37 @@ def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
     return out
 
 
+def smp_count() -> int | None:
+    """The vCPU count this run asked for (VIBEOS_QEMU_SMP), or None for a UP boot."""
+    n = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
+    if not n:
+        return None
+    if not n.isdigit() or int(n) < 1:
+        raise ValueError(f"VIBEOS_QEMU_SMP must be a positive integer (got {n!r})")
+    return int(n)
+
+
 def _maybe_smp_iso(iso: Path, work_dir: Path) -> Path:
     """`smp_selected_iso` when this run asked for SMP, else the media untouched."""
-    return smp_selected_iso(iso, work_dir) if os.environ.get("VIBEOS_QEMU_SMP", "").strip() else iso
+    return smp_selected_iso(iso, work_dir) if smp_count() else iso
+
+
+def smp_boot_timeout(base: float, n: int | None) -> float:
+    """Scale a UP-tuned boot_timeout for an `-smp N` boot.
+
+    Under MTTCG every guest vCPU is a host thread doing its own translation and
+    execution, so N vCPUs on an already-contended host stretch the wall clock to
+    any given milestone roughly linearly — and the guest genuinely does more work
+    too (AP bring-up, IPI round-trips, real spinlock contention). arm64's 180s is
+    sized against a ~40s UP boot; at -smp 2 a healthy boot that had reached
+    `explorer.exe created` and was still emitting SCM output tripped it anyway.
+
+    This scales the CLOCK only. The boot marker is unchanged, and
+    `hang_silence_seconds` is deliberately NOT scaled: the silence watchdog is
+    what actually catches a wedge, so a genuine MP hang still fails in ~120s
+    instead of burning the whole stretched budget.
+    """
+    return base if not n or n < 2 else base * n
 
 
 def per_arch_cap(arch: str) -> int:
@@ -916,6 +944,17 @@ class QemuVM:
         gdb_wait: bool = False,
     ) -> None:
         self.config = config
+        # An -smp N boot is slower in wall-clock than the UP boot the timeout was
+        # sized against; scale the clock, never the marker. See smp_boot_timeout().
+        # Always recompute from the stashed UP value, never from the current one:
+        # a caller that reuses one config across boots (a gate retry) would
+        # otherwise multiply again on every VM and drift to an absurd budget.
+        if not hasattr(config, "_up_boot_timeout"):
+            config._up_boot_timeout = config.boot_timeout  # type: ignore[attr-defined]
+        self.config.boot_timeout = smp_boot_timeout(
+            config._up_boot_timeout,  # type: ignore[attr-defined]
+            smp_count(),
+        )
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1048,12 +1087,10 @@ class QemuVM:
         Opt-in only (SMP bring-up — docs/engineering/smp-bringup-quest.md);
         default configs stay UP. All backends exercise real concurrency
         (TCG multi-vCPU is MTTCG — real host threads)."""
-        n = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
-        if not n:
+        n = smp_count()
+        if n is None:
             return []
-        if not n.isdigit() or int(n) < 1:
-            raise ValueError(f"VIBEOS_QEMU_SMP must be a positive integer (got {n!r})")
-        return ["-smp", n]
+        return ["-smp", str(n)]
 
     def _extra_qemu_args(self) -> list[str]:
         """VIBEOS_QEMU_EXTRA_ARGS=<raw qemu args> appends arbitrary devices/options to

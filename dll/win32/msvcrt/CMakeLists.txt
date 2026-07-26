@@ -175,6 +175,21 @@ add_library(msvcrt MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/msvcrt_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/msvcrt.def
     msvcrt.rc
+    # The printf `...` shells, as va_start trampolines over the Rust engine.
+    # In the MODULE and not in msvcrt_static ON PURPOSE: module objects are
+    # resolved before any archive member, so these win first-match over
+    # wcs.o's copies. Inside msvcrt_static the winner would depend on member
+    # order within one archive. See the file's own header for why the shells
+    # cannot be Rust (no va_start on stable) and cannot stay in wcs.c
+    # (clang inlines the C engine into its housemates).
+    rust_varargs_shim.c
+    # The scanf `...` shells, same story and same placement as the printf ones
+    # above: 40 va_start trampolines over the Rust engine in scanf.rs, in the
+    # MODULE so they win first-match over scanf.o's copies. There is a second
+    # reason here — scanf.c's 16 engines are `static`, so a Rust engine cannot
+    # replace them by first-match at all; the only way in is to define the
+    # trampolines somewhere the linker prefers, which is exactly this target.
+    rust_scanf_shim.c
 )
 
 target_compile_definitions(msvcrt PRIVATE _MSVCR_VER=0)

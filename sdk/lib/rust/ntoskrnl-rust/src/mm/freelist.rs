@@ -394,6 +394,55 @@ pub unsafe extern "system" fn MmDereferencePage(pfn: PFN_NUMBER) {
     let rc = (*pfn1).reference_count();
     (*pfn1).set_reference_count(rc - 1);
     if rc - 1 == 0 {
+        // [FREEMAPPED] free-while-mapped tripwire (§9.97 physical-page-reuse).
+        //
+        // A frame whose rmap list is still populated is, by definition, still mapped
+        // into somebody's address space — handing it back to the free list is the
+        // corruption we have been chasing from its victims (a user image whose .text
+        // reads back as garbage, ntdll heap init faulting on a page-aligned address).
+        // This fires AT the free, naming the culprit PFN instead of the victim.
+        //
+        // Placement is load-bearing: it MUST precede `set_awe_allocation(false)` two
+        // lines down, because MmGetRmapListHeadPage returns NULL unless awe_allocation
+        // is set (freelist.rs:333). A tripwire anywhere below reads NULL on every page
+        // and silently proves nothing.
+        //
+        // Loud, deliberately NOT fatal — same call as the [PFNMISMATCH] precedent.
+        // MmAllocPage defensively clears rmap_list_head on ALLOCATION, which is itself
+        // evidence that stale non-NULL heads survive frees today, so an assert here
+        // would fire on benign leftovers as well as on a real free-while-mapped.
+        // Bounded, because an unbounded print at page-free rate would bury the very
+        // serial log it exists to inform; the total still tells us the true frequency.
+        #[cfg(target_arch = "aarch64")]
+        {
+            let head = MmGetRmapListHeadPage(pfn);
+            if !head.is_null() {
+                use core::sync::atomic::{AtomicU32, Ordering};
+                static HITS: AtomicU32 = AtomicU32::new(0);
+                const LOUD: u32 = 32;
+                extern "C" {
+                    fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ULONG_PTR);
+                }
+                let n = HITS.fetch_add(1, Ordering::Relaxed);
+                if n < LOUD {
+                    ARM64_UART_TRACE_HEX(
+                        b"[FREEMAPPED] MmDereferencePage pfn=\0".as_ptr(),
+                        pfn as ULONG_PTR,
+                    );
+                    ARM64_UART_TRACE_HEX(
+                        b"[FREEMAPPED]   rmap_list_head=\0".as_ptr(),
+                        head as ULONG_PTR,
+                    );
+                    ARM64_UART_TRACE_HEX(b"[FREEMAPPED]   hit#=\0".as_ptr(), n as ULONG_PTR + 1);
+                } else if n == LOUD {
+                    ARM64_UART_TRACE_HEX(
+                        b"[FREEMAPPED] further hits suppressed after \0".as_ptr(),
+                        LOUD as ULONG_PTR,
+                    );
+                }
+            }
+        }
+
         if (*pfn1).must_be_cached() {
             MmRemoveLRUUserPage(pfn);
             (*pfn1).set_must_be_cached(false);
@@ -405,6 +454,14 @@ pub unsafe extern "system" fn MmDereferencePage(pfn: PFN_NUMBER) {
 
         MiInsertPageInFreeList(pfn);
     }
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn ARM64_UART_TRACE_HEX_QUIET(prefix: *const u8, val: ULONG_PTR) {
+    extern "C" {
+        fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ULONG_PTR);
+    }
+    ARM64_UART_TRACE_HEX(prefix, val);
 }
 
 #[no_mangle]

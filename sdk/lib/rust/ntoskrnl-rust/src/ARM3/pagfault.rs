@@ -1296,6 +1296,63 @@ unsafe fn MiDispatchFault(
     Status
 }
 
+/// [KSTACK] at a PAGE_FAULT_IN_NONPAGED_AREA — the coverage gap the §9.97 soak found.
+///
+/// The `[KSTACK]` probe added to `ke/arm64/stubs.rs` sits in the `[KEXC]`
+/// kernel-mode-*unhandled-exception* path, which ends in BUGCHECK 0x1E. A 0x50 is
+/// raised straight out of MmArmAccessFault and never reaches it — so the first
+/// reproduction the soak caught (round 2: sweep died at test 69/89 on
+/// `ZwWaitForMultipleObjects`, right after the ZwCreateSection/ZwMapViewOfSection
+/// canaries) printed nothing at all. Same question, second door.
+///
+/// It is worth asking here specifically because of what that bugcheck's operands
+/// already say: `0x50 (0xffff8000050f4030, 2, 0xffff8000050f3e20, 0)`. P3 is
+/// `TrapInformation`, a KTRAP_FRAME — which lives ON the kernel stack — and the
+/// faulting address P1 is only 0x210 ABOVE it, across the ...f4000 page boundary.
+/// Stacks grow down, so that is a reference to ALREADY-USED stack whose page is no
+/// longer present. Printing StackBase/StackLimit turns that inference into a fact:
+/// if P1 falls inside (StackLimit, StackBase] then a live kernel stack lost a
+/// backing page, which is the same corruption as the 0x1E face and NOT generic
+/// page reuse.
+///
+/// Note for whoever reads the silence: `[FREEMAPPED]` watching `MmDereferencePage`
+/// cannot see this. That is the rmap-tracked *user* page path; kernel stacks come
+/// from `MmCreateKernelStack` via system PTEs and are released by a different
+/// route, so a stack page freed while mapped never passes that tripwire.
+#[cfg(target_arch = "aarch64")]
+unsafe fn arm64_dump_fault_stack(Address: PVOID, TrapInformation: PVOID) {
+    extern "C" {
+        fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ULONG_PTR);
+    }
+    let thread = crate::ke::ke_defs::KeGetCurrentThread();
+    // SP first: kstack_verdict.py splits blocks on it.
+    let sp = if TrapInformation.is_null() {
+        0
+    } else {
+        (*(TrapInformation as *const ntkrnl_sys::ddk::_KTRAP_FRAME)).Sp as ULONG_PTR
+    };
+    ARM64_UART_TRACE_HEX(b"[KSTACK] SP=\0".as_ptr(), sp);
+    ARM64_UART_TRACE_HEX(b"[KSTACK] TrapFrame=\0".as_ptr(), TrapInformation as ULONG_PTR);
+    if !thread.is_null() {
+        ARM64_UART_TRACE_HEX(
+            b"[KSTACK] StackBase=\0".as_ptr(),
+            (*thread).StackBase as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[KSTACK] StackLimit=\0".as_ptr(),
+            (*thread).StackLimit as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[KSTACK] InitialStack=\0".as_ptr(),
+            (*thread).InitialStack as ULONG_PTR,
+        );
+    }
+    ARM64_UART_TRACE_HEX(b"[KSTACK] FaultVA=\0".as_ptr(), Address as ULONG_PTR);
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+unsafe fn arm64_dump_fault_stack(_Address: PVOID, _TrapInformation: PVOID) {}
+
 #[no_mangle]
 pub unsafe extern "system" fn MmArmAccessFault(
     FaultCode: ULONG,
@@ -1524,6 +1581,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
         let ppe_valid = 1;
 
         if (pxe_valid == 0) || (ppe_valid == 0) || (((*PointerPde).valid() as usize) == 0) {
+            arm64_dump_fault_stack(Address, TrapInformation);
             KeBugCheckEx(
                 PAGE_FAULT_IN_NONPAGED_AREA,
                 Address as ULONG_PTR,
@@ -1578,6 +1636,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
             if MI_IS_SESSION_PTE(Address as PMMPTE) {
                 Status = MiCheckPdeForSessionSpace(Address);
                 if Status < 0 {
+                    arm64_dump_fault_stack(Address, TrapInformation);
                     KeBugCheckEx(
                         PAGE_FAULT_IN_NONPAGED_AREA,
                         Address as ULONG_PTR,
@@ -1694,6 +1753,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
             ASSERT!((TempPte.transition() as usize) == 0);
 
             if TempPte.soft_protection() == MM_NOACCESS as ULONG {
+                arm64_dump_fault_stack(Address, TrapInformation);
                 KeBugCheckEx(
                     PAGE_FAULT_IN_NONPAGED_AREA,
                     Address as ULONG_PTR,
@@ -1733,6 +1793,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                         }
                     }
                 }
+                arm64_dump_fault_stack(Address, TrapInformation);
                 KeBugCheckEx(
                     PAGE_FAULT_IN_NONPAGED_AREA,
                     Address as ULONG_PTR,

@@ -53,6 +53,11 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 | **oleaut32.dll** (OLE automation) | `oleaut32-rust`: **the entire DLL is Rust — all 14 TUs.** The automation core: BSTR (`oleaut`), VARIANT (`variant`), the VarXxxFromYyy coercion matrix (`vartype`), SAFEARRAY (`safearray`), the typelib reader/writer + ITypeInfo/ITypeLib (`typelib` + submodules), IDispatch (`dispatch`), user-marshal (`usrmarshal`), `hash`. Plus the OLE-control cluster (2026-07-13): `olefont` (IFont/IFontDisp), `olepicture` (IPicture + OleLoadPicture*), `varformat` (the VarFormat engine), `connpt` (connection points), `recinfo` (IRecordInfo), `olepropframe`. The C `SOURCE` list in the CMakeLists is EMPTY. Boots ×3. `export_audit` clean: all 398 spec exports have a `#[no_mangle]` Rust definition with the spec's convention | **done** |
 | **ws2_32.dll** (winsock client) | `ws2_32-rust`: **the entire DLL is Rust — all 34 compiled TUs.** The socket API (`socklife`/`sockctrl`/`send`/`recv`/`select`/`ioctl`/`event`/`qos`/`dupsock`), the transport + namespace catalogs (`dcatalog`/`dcatitem`/`nscatalo`/`nscatent`/`nspinstl`/`spinstal`), the object model (`dprocess`/`dprovide`/`dsocket`/`dthread`/`nsprovid`/`nsquery`), the WSP upcall table (`sputil`), async getXbyY (`async`/`getxbyxx`/`getproto`), name resolution (`rnr`/`qshelpr`/`addrinfo`/`addrconv`/`enumprot`/`rasdial`), and startup/dllmain/wsautil/bhook. The C `SOURCE` list in the CMakeLists is EMPTY. Boots ×3, and `test_usermode_winsock_roundtrip` (the M5 capstone) passes ON the Rust: TCP echo + UDP DNS + a **real HTTP request to the public internet**, all via ws2_32→msafd→AFD→netstack→smoltcp. `verify_lost_exports` + `verify_c_signatures` clean | **done** |
 | **winsock/net satellite DLLs** | Cohab-flipped to Rust alongside ws2_32 (2026-07-17/18): **wshtcpip** (`wshtcpip-rust`, both TUs — the TCP/IP WSH provider), **ws2help** (`ws2help-rust`, dual-role static lib), **mswsock** (`mswsock-rust`), **wshirda** (`wshirda-rust` — the IrDA WSH provider, all-stub), **userenv** (`userenv-rust`). **netapi32** (`netapi32-rust`, **all 21 TUs** — FULL flip completed 2026-07-18; see the MIDL-island note below), **dhcpcsvc** (`dhcpcsvc-rust`, **all 12 TUs** — FULL flip, the DhcpC* API + the BSD/ISC dhclient state machine). **iphlpapi** (`iphlpapi-rust`, **all 11 TUs** — FULL flip 2026-07-18; only the generated `iphlpapi_stubs.c` remains C, and the `iphlpapi_rust_shims.c` out-of-line no-op TRACE/FIXME hazard was deleted with it, field manual §9.111). **Partial flips:** **dnsapi** (`dnsapi-rust`, all 8 TUs — FULL flip, 2026-07-18; the single `dnsrslvr_c.h` MIDL interface + the `adns` staticlib stay C). netapi32's 7 RPC-stub TUs (browser/dssetup/misc/netlogon/schedule/srvsvc/wksta_new) landed 2026-07-18. The long-standing "6 conflicting MIDL interfaces" blocker was MISDIAGNOSED: the conflict was the `<lm.h>` master header vs the WIDL stubs, not the stubs against each other (only browser↔srvsvc genuinely collide, over `_SERVER_INFO_100`) — `netapi32.h` itself pulls only the narrow lmaccess/lmapibuf/lmerr trio and lets each `*_c.h` supply its own wire types. `gen_driver_types.sh` grew `TYPES_STEM` so one crate can carry several bindgen islands; netapi32-rust now has `types` (lm.h, the 14 c2rust modules), `types_rpc` (5 interfaces, 6 modules) and `types_browser`, with a `prelude_common` + per-island prelude split (377 type names overlap, so the islands must never share a glob scope). Field manual §9.108; the integration bugs a green cargo check cannot see are §9.109. | **full** |
+| **network SERVICES** (`base/services/*`) | Cohab-flipped 2026-07-19, ~6.7K LOC, six FULL flips: **dnsrslvr** (`dnsrslvr-rust`), **wkssvc** (`wkssvc-rust`), **browser** (`browser-rust`), **wlansvc** (`wlansvc-rust`), **tcpsvcs** (`tcpsvcs-rust`), **telnetd** (`telnetd-rust`). dnsrslvr/wkssvc close the dnsapi/netapi32 MIDL loops from the row above. Only wkssvc/browser/wlansvc actually RUN at boot (hivesys `Start=2`); tcpsvcs/telnetd are `Start=3`, and **dnsrslvr has no hivesys service entry at all** — it ships to system32 but nothing starts it, so dnsapi's `R_Resolver*` client calls reach no server. That is a pre-existing upstream gap, NOT introduced by the flip. Field manual §9.112 (catch-all bindings recur in usermode services; the upstream cause is an incomplete bindgen island — allowlist the header owning any constant a `switch` dispatches on). | **full** |
+| **network client DLLs** (Tier 3) | Cohab-flipped 2026-07-25, 56 functions for $0.50 through the deterministic-first loop: **wsock32** (`wsock32-rust` — the only compiled C was a `DllMain` returning TRUE, lowered deterministically for $0; the rest of the DLL is `.spec` forwarders `spec2def` turns into thunks), **wlanapi** (`wlanapi-rust`, 28/28 — the CLIENT half of `wlansvc.idl` whose server half is `wlansvc-rust`, closing that loop), **snmpapi** (`snmpapi-rust`, 27/27 — `AsnAny` is a tagged union whose `ASN_*` tags are macro EXPRESSIONS, so island completeness is a correctness property here, §9.112). `wlansvc_c.c` and the generated `*_stubs.c` stay C. Three integration bugs a green `cargo check` cannot see: `midl_user_allocate` is a **preprocessor rename** (`rpcndr.h:94` → `MIDL_user_allocate`, invisible to a source-reading translator, surfaces only as an unresolved symbol at link); a `DWORD`→`SIZE_T` cast that compiled on i386 and failed on amd64/arm64; and bindgen's `__BindgenUnionField` emulation for `AsnAny` (cleared by `bindgen_unions_to_real.py`). | **full** |
+| **network client DLLs** (Tier 3 batch B) | Cohab-flipped 2026-07-25, 81 functions for ~$0.55: **mprapi** (`mprapi-rust`, 3/3 — RAS/router admin, near-all stubs), **netid** (`netid-rust`, 19/19 — the "Computer Name" system-properties page), **samlib** (`samlib-rust`, 58/58 + dllmain — the CLIENT half of `sam.idl`, whose server half is samsrv, closing that loop as wlanapi-rust does for wlansvc.idl). `sam_c.c` (generated MIDL client stubs) stays C; its 68 prototypes are **bindgen-derived** from `sam_c.h`, not hand transcribed. `netid_varargs_shim.c` is NOT a translation left in C — stable Rust cannot DEFINE a C-variadic, so it owns `FormatMessageBox`'s entry point and hands straight back to Rust with a pointer to the `va_list` (see `varargs-rust`). Bugs worth remembering: the dead `RpcExcept` handler shipped as LIVE code in 4 samlib functions, unconditionally clobbering the RPC status — the seal envelope checks token presence and multiplicity, never control-flow POSITION (§9.117); `SamLookupIdsInDomain` lost a level of indirection on `PSID_NAME_USE *Use` and would still have linked; and the `L` prefix of a wide literal was translated as CONTENT three separate ways. | **full** |
+| **RAS client family** (Tier 3 batch C) | Cohab-flipped 2026-07-26, 81 functions for **$0.13**: **rasapi32** (`rasapi32-rust`, 58/58), **rasman** (`rasman-rust`, 7/7), **rasdlg** (`rasdlg-rust`, 9/9), **rasadhlp** (`rasadhlp-rust`, 7/7 across autodial/init/winsock). The cheapest batch yet because **66 of the 81 were lowered deterministically for $0** — Wine `FIXME(); return ERROR_NOT_SUPPORTED;` shims, 53 of them in rasapi32 alone. That is the stub-heavy end of the distribution, not a repo-wide rate (9% repo-wide, ~0% on real driver code); rasadhlp, the only one with real logic, paid for all 7. rasadhlp is the winsock NSP autodial hook — ws2_32 calls `WSAttemptAutodialAddr/Name` on a failed resolution and it IOCTLs `\Device\RasAcd` — so it rides the ws2_32 surface already translated. Its island is the first to use `REAL_UNIONS=1` (AUTODIAL_ADDR/AUTODIAL_CONN are tagged unions over an ANONYMOUS union). Bugs worth remembering: `RTL_CONSTANT_STRING(L"\\Device\\RasAcd")` came back with the `L` dropped — a UNICODE_STRING over ANSI bytes compiles, and only fails when it cannot open the device; and `nsp_dns.h` DEFINES its six service GUIDs in the header, so flipping winsock.c — the only TU that included it — left them undefined at link. | **full** |
+| **wldap32** (Tier 3) | **TRANSLATED, NOT FLIGHTED — the C still builds the DLL.** 162 functions + wldap32.h's 62 `static inline` marshalling helpers, $2.05, committed unflipped under `wldap32-rust/` per the never-delete rule. Reason: in THIS tree wldap32 is a **stub DLL**. 181 `#ifdef HAVE_LDAP` blocks across 19 of its 20 TUs are disabled (wine's config.h `#undef`s it; ReactOS does not vendor OpenLDAP), so every entry point compiles to `return WLDAP32_LDAP_NOT_SUPPORTED;`. The translation bought that disabled arm and emitted it UNCONDITIONALLY, which both changes behaviour and cannot link (OpenLDAP symbols). **Owed:** gate the translated bodies behind `#[cfg(feature = "have_ldap")]` — the same switch the C uses — after which the Rust is strictly better than the C and can flip. Mechanical across 162 functions, so build the tool. `profile_derive` now warns `MOSTLY_DEAD_BODIES` before payment so this cannot recur silently. | **translated, unflipped** |
 | **hal** (x86 + arm64 stub) | 42+ cohab markers; `.S` NT-ABI + setjmp glue *(not re-verified this pass)*. **i386 default flavor is now APIC** (LAPIC/IOAPIC/TPR, lazy-IRQL, RTC clock — i386-apic-hal lane, 2026-07-16); the legacy 8259 PIC HAL is preserved in-tree, gated off, behind `vibeos-cli build --hal-pic` (`VIBEOS_PIC_HAL`). amd64 was already APIC | **~97%** |
 | **rtl** static lib | 80/82 `.c` flipped; `dbgprint_variadic.c` + asm floor | **~100%** |
 | Cohab helper libs (cmlib, rossym, evtlib, inflib, …) | real `.c` flipped for kernel/cross consumers | **~100%** |
@@ -60,7 +65,7 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | **431 of 1,165 non-stub msvcrt.dll exports Rust-backed — 37%** (2026-07-26, re-measured amd64 as `llvm-nm libmsvcrt_crt_cargo.a` ∩ the spec's implementation names; was 240 on 2026-07-14, moved by wave 15's `mbcs.c` and wave 14c's printf shells). Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
+| **CRT** (msvcrt/ucrt body) | **483 of 1,087 non-stub C exports Rust-backed — 44%** (2026-07-26 wave 16 finished `string.c` + `wcs.c`; the denominator here excludes the `?`-mangled C++ surface, which is a separate lane. Was 431 of 1,165 counting C++) (2026-07-26, re-measured amd64 as `llvm-nm libmsvcrt_crt_cargo.a` ∩ the spec's implementation names; was 240 on 2026-07-14, moved by wave 15's `mbcs.c` and wave 14c's printf shells). Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
@@ -88,6 +93,85 @@ the genuine `wcs.c`. The `...` shells (`sprintf`, `_snprintf`, `_swprintf`, …)
 (30 shells; `vsnprintf`/`vswprintf` are spec aliases onto two of them). The remaining C is
 concentrated: `file.c` 5,897 LOC (stdio, Phase D), `concurrency.c` 3,840 (C++), `scanf.c`'s 40
 exports (engine not ported), `math.c` 13 of 144 functions flipped.
+
+**Wave 16 (2026-07-26) — `string.c` and `wcs.c` FINISHED. 483 of 1,087 non-stub C exports
+Rust-backed, 44%** (was 433/39% after wave 14c). Both files now have zero unflipped exports;
+what remains attributed to them is only the printf `...` trampolines, which are C by language
+limit. string.c's last 17 and wcs.c's last 29 (+4 private callees the family needed —
+`_wtoi_l`, `_wcstoul_l`, `wctomb_s`, `_wcstombs_l`, all of which would have left a split family
+had the callers flipped without them).
+
+Thirteen of string.c's seventeen were not new code: the crate already shipped those bodies with
+the locale hardwired to NULL, so the work was threading an explicit `_locale_t` through
+`strtoi64_contract`, `strtoui64_contract`, `strnicmp_core`, `strcase_s_core` and a newly
+extracted `memicmp_core`. `locinfo_of(NULL)` **is** `get_locinfo()`, so every already-graded
+plain form is bit-identical afterwards. Genuinely new: `_strdup`, `_atoflt`, `I10_OUTPUT`.
+wcs.c contributed the wide integer engines and clamps, the case folders, the comparers, and the
+whole wchar→multibyte family including two file-statics that stay private exactly as they are
+file-static in the C.
+
+Deliberately preserved C misbehaviours (this is a differential port — "fixing" one is a
+failure): `_strtoul_l`/`_wcstoul_l` underflow clamping to **1**, `_wtoi64_l`'s missing overflow
+check, and `wcsrtombs_s_l`'s genuine `mbstr[-1]` touch at `conv == size == 0` — that last one
+caught only by the harness's **guard prefix**, since a compare that stops at the NUL cannot see
+a write before the buffer.
+
+**`wctob`'s strict `< 0xff` is NOT one of them, and the distinction is worth keeping.** It looks
+like a preserved quirk and it is unfalsifiable: the only input that could distinguish `<` from
+`<=` is U+00FF, where `<` returns `EOF` (-1) and `<=` returns `(signed char)0xFF` — also -1.
+Relaxing the comparison moves no row and *cannot*. A differential test can pin the row (it is
+exhaustive over all 65,536 values × 5 modes, and a control returning the raw value instead of
+the signed char is caught at once) but it cannot pin that comparison, so nobody should read a
+green `wctob` as evidence about it.
+
+**Grading: 122 rows, 122 MATCH, 0 DIVERGE, 0 UNEXERCISED, ~2.0M cases** (`msvcrt-difftest/tests/wave16.rs`),
+under both the "C" and a real NLS locale. Nine negative controls, eight fired; the ninth is the
+`wctob` non-result above. The `_wctomb_s_l` ERANGE arm's reachability is **measured, not
+assumed** — a probe showed it at **0 of 0 hits** because the harness's `WideCharToMultiByte`
+model truncated where real kernel32 returns 0 + `ERROR_INSUFFICIENT_BUFFER`; the arm was
+ungraded in every mode while every row read MATCH. Model corrected (scoped to single-character
+conversions), arm now 1299/1299, probe kept permanently so a regression names its own cause.
+
+**A real ABI bug in already-landed code fell out of it.** `prelude.rs` declared the nine
+`_isw*_l` predicates taking `wint_t` (`unsigned short`) while this crate DEFINES all nine taking
+`u32` — so every call through the prelude wrote 16 bits into an argument read as 32, upper half
+undefined per the Windows x64 ABI, benign only because rustc happens to zero-extend.
+`scan_extern_arity` cannot see it: the arity matches. Field manual carries the class under
+ABI/FFI — never `extern`-declare a symbol your own crate defines.
+
+**Wave 15 (2026-07-26) — `scanf.c`: 16 template instantiations collapse to ONE Rust engine.**
+`scanf.h` (743 lines) is `#include`d sixteen times under WIDE_SCANF/SECURE/STRING/STRING_LEN/
+CONSOLE, generating ~9,600 lines of C; `msvcrt-crt-rust/src/scanf.rs` (1,514 lines) is one engine
+generic over `W: Width`, `S: Source` and `const SECURE: bool`, calling the crate's existing Rust
+`fpnum_parse`/`fpnum_double` so `%f` is correctly rounded and shares the bignum with strtod and
+printf. The 40 `...` shells are C trampolines in `rust_scanf_shim.c` — and here the MODULE
+placement is REQUIRED, not merely preferable: scanf.c's 16 engines are `static`, so there is no
+symbol for a Rust engine to win by first-match.
+
+Graded by `tests/scanf.rs` — **36 rows, 439,100 cases, 0 DIVERGE, 0 UNEXERCISED**, nine controls,
+nine fired. It found a **real shipping bug**: the port snapshotted the float parser's cursor once,
+where scanf.h re-assigns `ctx.file = file` AFTER the whitespace skip, so `swscanf(L" 1.50",
+L"%g", &f)` returned **11.5** and a stale cursor could turn a valid parse into an EOF return.
+Invisible on 8 of the 16 instantiations (FILE/CONSOLE contexts carry a `FILE*` or a ZST, which a
+cursor skip cannot move), so nothing else — cargo check, the DLL link, the 3-arch build, the
+parity scanner — could see it.
+
+**Wave 14c part 2 (2026-07-26) — the 30 `...` shells, in `dll/win32/msvcrt/rust_varargs_shim.c`.**
+Stable Rust cannot DEFINE a C-variadic, so these stay C permanently as three-line `va_start`
+trampolines over the Rust engine — but that is now the *whole* of msvcrt's C printf: every byte
+that actually formats anything is Rust. Their own TU (in wcs.c clang re-inlines the C engine into
+them and undoes the flip) and compiled into the msvcrt **MODULE**, not `msvcrt_static`, so module
+objects beat archive members at first-match. Verified on the built DLL: export `_snprintf` → the
+shim's block → `callq _vsnprintf` → the Rust archive; wcs.o's copies sit dead. **The export total
+does not move — 431 — and that is honest**: these 30 are C. What moved is which engine 30 exports
+*execute*. Graded by `tools/scan_varargs_shim_parity.py` (in `vibeos-cli check`, baseline empty)
+rather than a difftest, because a differential is *impossible* here: neither instantiation can run
+a variadic shell on a SysV host (field manual §9.66). Four negative controls fire; it caught the
+shim defining `_sprintf_p`/`_scwprintf_p`, which are `#if _MSVCR_VER>=80` and exist at no vintage
+this DLL builds. **Next**: the ~225 host-gradeable exports (`scanf.c` 39 — 820 LOC, zero Win32,
+16 template instantiations collapsing to one generic Rust engine; then `time.c` 60, `wcs.c` 32,
+`math.c` 30), then `file.c`'s **170** — 26% of all remaining exports, gated on a Win32-shim
+difftest substrate that does not exist yet.
 
 **240 Rust-defined `msvcrt.dll` exports on all three arches** as of 2026-07-14 (waves 1–13: 209 hand-flipped wrappers; wave 14m: +45 libm exports assembled from cnt-rust's `cabi/math.rs` via the `cabi-math` feature — engine grading lives in cnt-difftest; wave 14a decided printf is a PORT and wave 14b DELIVERED it: printf.h's engine — 2,312 lines, bignum floats over the shared bnum.rs — graded 142 narrow + 30 wide rows byte-identical vs the genuine pf_printf_a; the DLL's stream-printf family (printf/fprintf/vfprintf) runs the Rust engine now, the sprintf-family shells await wave 14c's varargs trampolines. See the lane plan + field manual §9.83)
 (waves 1–13). Verified by parsing the DLL's export table: every flip lands in the Rust cluster,
