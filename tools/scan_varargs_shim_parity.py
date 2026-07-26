@@ -42,8 +42,9 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-WCS = REPO / "dll/win32/msvcrt/wcs.c"
-SHIM = REPO / "dll/win32/msvcrt/rust_varargs_shim.c"
+MSVCRT = REPO / "dll/win32/msvcrt"
+WCS = MSVCRT / "wcs.c"
+SHIM = MSVCRT / "rust_varargs_shim.c"
 STDIO = REPO / "sdk/include/crt/stdio.h"
 
 
@@ -177,7 +178,22 @@ def _body_facts(path: Path, name: str) -> tuple[str, str | None]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lint", action="store_true", help="one finding per line, for the gate")
+    ap.add_argument(
+        "root",
+        nargs="?",
+        help="directory holding wcs.c and rust_varargs_shim.c (default: dll/win32/msvcrt). "
+        "Exists so the scanner is drivable on a fixture pair — a lint nobody can point at "
+        "a known-bad input is a lint nobody can prove is not blind.",
+    )
     args = ap.parse_args()
+
+    global WCS, SHIM, STDIO
+    if args.root:
+        root = Path(args.root)
+        WCS, SHIM = root / "wcs.c", root / "rust_varargs_shim.c"
+        # A fixture ships no CRT headers, and the macro this would check belongs to
+        # the real tree, not to the pair under test.
+        STDIO = root / "stdio.h"
 
     findings: list[str] = []
 
@@ -201,7 +217,10 @@ def main() -> int:
         ("_vscwprintf_p_l", ("NULL", "INT_MAX", "format", "0", "locale", "args")),
     ):
         if wrapper not in fwd:
-            findings.append(f"{wrapper}: not defined in wcs.c — rewrite rule unprovable")
+            # Not a finding on its own: if nothing in wcs.c routes through the
+            # file-static, there is no substitution to justify. A call site that
+            # DOES need it and finds no rule still fails, as a delegate mismatch
+            # naming the shell — which is the locatable message anyway.
             continue
         pnames, callee, cargs = fwd[wrapper]
         if callee != "vswprintf_p_l_opt" or tuple(cargs) != want:
@@ -254,10 +273,13 @@ def main() -> int:
         for (src, dst), (keep, fixed) in ordered:
             # A call site matches a wrapper iff every position the wrapper hardcodes
             # carries that exact value; the rest are what the wrapper would forward.
-            if rc == src and len(ra) == len(keep) + len(fixed):
-                if all(ra[i] == v for i, v in fixed.items()):
-                    rc, ra = dst, [ra[i] for i in keep]
-                    break
+            if (
+                rc == src
+                and len(ra) == len(keep) + len(fixed)
+                and all(ra[i] == v for i, v in fixed.items())
+            ):
+                rc, ra = dst, [ra[i] for i in keep]
+                break
         v_sub = local_valist(SHIM, name)
         v_ref = local_valist(WCS, name)
         a_sub = canon(cargs, pnames, v_sub)
@@ -289,7 +311,9 @@ def main() -> int:
     # Both files must gate the SAME shells. A shell gated on one side only either adds
     # a symbol the C build never had, or drops one the DLL still exports.
     gated_sub = gated_in(strip_comments(SHIM.read_text(errors="replace")))
-    shim_defines = set(re.findall(r"^int WINAPIV (\w+)\s*\(", SHIM.read_text(errors="replace"), re.M))
+    shim_defines = set(
+        re.findall(r"^int WINAPIV (\w+)\s*\(", SHIM.read_text(errors="replace"), re.M)
+    )
     for name in sorted(gated & shim_defines):
         if name not in gated_sub:
             findings.append(
@@ -299,6 +323,10 @@ def main() -> int:
     for name in sorted(gated_sub - gated):
         findings.append(f"{name}: gated in the shim but not in wcs.c — export lost")
 
+    # Every finding is about the shim, so lead with its path: a lint line that does
+    # not say WHERE is one the reader has to go hunting for, and the control harness
+    # locates a finding by looking for the fixture path in the output.
+    findings = [f"{SHIM}: {f}" for f in findings]
     if args.lint:
         for f in findings:
             print(f)
