@@ -6,6 +6,7 @@
 use win32k_sys::win32k::*;
 
 use core::ffi::c_void;
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     fn ERR(fmt: *const i8, ...);
@@ -884,7 +885,12 @@ pub unsafe extern "system" fn DbgDrvIcmSetDeviceGammaRamp(
     let ppdev: PPDEVOBJ = DbgLookupDHPDEV(dhpdev);
 
     if ppdev.is_null() {
-        core::panic!("ASSERT failed");
+        RtlAssert(
+            b"ppdev != NULL\0".as_ptr() as *mut core::ffi::c_void,
+            b"drvdbg.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
 
     ((*(*ppdev).pldev).pfn.IcmSetDeviceGammaRamp)(dhpdev, iFormat, lpRamp)
