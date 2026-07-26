@@ -570,12 +570,32 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `Response = ResponseNotHandled` then **early-returns** for `ValidResponseOptions >
   OptionCancelTryContinue`, and the kernel accepts that verbatim (`ex-rust/src/harderr.rs:214-229`
   lists `ResponseNotHandled` as valid — faithful to `ntoskrnl/ex/harderr.c:262-276`, so NOT a
-  translation bug). Leading hypothesis: the hard error now REACHES usersrv where it previously
-  took the null-error-port path (`harderr.rs:170-172`, which returns 0) — i.e. a *consequence of
-  the LPC path coming alive*, exposing a real usersrv-vs-NT divergence. The only recent commits
-  touching either file are warning-hygiene sweeps (`2d9a1cca7c3` `&raw`, compile-checked), so the
-  trigger is elsewhere. Repro: `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after
-  the build. i386 never runs this test (74-test list vs amd64's 87).
+  translation bug).
+
+  **TRANSLATION-BUG HYPOTHESIS RULED OUT ON BOTH HALVES, by source comparison (2026-07-25).**
+  Read line-by-line against the C originals:
+  - `winsrv-rust/src/usersrv/harderror.rs:1097-1115` is a faithful translation of
+    `win32ss/user/winsrv/usersrv/harderror.c:1097-1110`: the C *also* sets
+    `Response = ResponseNotHandled` and *also* returns early for
+    `ValidResponseOptions > OptionCancelTryContinue`. Identical behaviour, not a divergence.
+  - The kernel's `ValidResponseOptions` validation (`harderr.c:586` switch /
+    `ex-rust/src/harderr.rs:377` match) sits inside `if (PreviousMode != KernelMode)` in BOTH
+    languages. kmtest is a **driver**, so it is a kernel-mode caller and skips that validation
+    entirely — out-of-range values are passed through to the port BY DESIGN, in C too.
+  - No duplicate-symbol trap: `ntos.cmake:69` has the C `ex/harderr.c` commented out (cohab
+    flipped) and the Rust owns `#[no_mangle] ExpDefaultErrorPort` — exactly one symbol.
+
+  So the **only** code path that yields `ResponseReturnToCaller` (0) is the null-error-port
+  early return at `ex-rust/src/harderr.rs:170-172`, and the six expectations therefore encode
+  *"no error port is connected"*. The failures are the faithful consequence of the LPC error
+  port having come alive — the question is no longer "which translation is wrong" but "should
+  the port be answering these, and what does real NT return when it does". Note the six are the
+  ONLY out-of-range cases outside the `InteractivePart1/2` guards (every case that would pop a
+  message box is gated off on ROS), so they are the only ones whose answer the sweep sees.
+  Next step is unchanged in shape but now confirmatory rather than exploratory: one instrumented
+  boot logging `PortHandle` at `harderr.rs:150` for these six calls. Repro:
+  `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after the build. i386 never runs
+  this test (74-test list vs amd64's 87).
 
 - **WoW64: 32-bit guests could not create THREADS — FIXED on amd64, PARTIAL on arm64,
   2026-07-25** (task #64, wow64-plan Phase E15). wow64.dll had no per-thread entry at all:
