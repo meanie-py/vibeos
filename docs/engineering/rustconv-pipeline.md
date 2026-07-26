@@ -125,6 +125,17 @@ by shape for triage. Three properties worth knowing:
   proposals, because an `as u32` inferred from i386 is wrong on amd64/arm64 wherever the real
   parameter is `SIZE_T`/`ULONG_PTR`. The `flex_array_index` authority reads
   `types_<arch>.rs` — `types.rs` is only a `#[cfg]` dispatch stub.
+- **It will not cast a `match` PATTERN** (`_in_match_pattern`). Rust forbids expressions in
+  patterns, so `(RPC_S_INVALID_BINDING) as i32 =>` is `expected a pattern, found an expression`
+  — and rustc reports a mistyped arm exactly like any other integer mismatch, so the rule aimed
+  straight at `match`-on-status-code, which is where narrow-vs-wide mismatches actually surface.
+  Two lanes hit it in one week: wlanapi's `WlanRpcStatusToWinError` lost all 5 arms, msvcrt's
+  `_setmbcp_l` lost its dispatch (bindgen split a four-macro `#define` family into `u32`/`i32` on
+  sign). The correct repair is to **widen the scrutinee** (`match Status as u32`) or fix the type
+  where the constant is DECLARED — never at the arm — which also keeps the arms auditable as
+  names under the catch-all-binding rule (field manual §9.112). Detection is not line-local: a
+  wrapped or-pattern puts the `=>` on a later line, and `foo(A, b)` vs `(A, 0) => v` are
+  indistinguishable at the comma until you step out of the enclosing bracket group.
 
 ## `--target`: proven from the tree, or refused (2026-07-24)
 

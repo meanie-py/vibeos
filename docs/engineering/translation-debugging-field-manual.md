@@ -831,7 +831,7 @@ would have fired for whoever followed the documented loop:
 `-E -dM` and takes every `#define NAME(`, unioned over built arches, and HARD FAILS with
 `./vibeos-cli build --arch i386` when no compile command exists — "seal everything anyway" is the
 degradation it exists to end. `_EXCLUDED` survives only as a floor for `sizeof` (a keyword, not a
-macro). Four more causes surfaced once the macro noise cleared, and the split matters because two
+macro). Five more causes surfaced once the macro noise cleared, and the split matters because most
 of them were **ours**, not the model's:
 
 - **A C lexer was masking Rust output.** `_code_mask`/`_masked_cpp` existed in three byte-identical
@@ -858,6 +858,20 @@ of them were **ours**, not the model's:
   C++ named cast, `const_cast<LPWSTR>(strchrW(...))` (`dde_connect`). Both now skipped — the same
   judgement the scanner already made for a C-style `(TYPE *)value` cast, and the same judgement
   `seal_calls` already made about the callee name in that identical `extern` construct.
+- **Compiled is not executed** (found on plain C, Tier 3 — `rustconv/dead_regions.py`). The seal
+  walks raw C, so it also seals tokens in code the compiler emits but the build never enters, and
+  then DEMANDS them of a translation that is right to omit them. Two flavours, one class:
+  `#if`-disabled arms (snmpapi's `DllMain` — `DLL_WINE_PREATTACH` lives inside
+  `#ifndef __REACTOS__`), and **`RpcExcept`/`_SEH2_EXCEPT` bodies under `-D_USE_DUMMY_PSEH=1`**,
+  where `_SEH2_EXCEPT(x)` expands to `if (_SEH2_Volatile0 || (0 && (x)))` and `sdk/lib/pseh/dummy.c`
+  defines `int _SEH2_Volatile0 = 0;` and never assigns it. Nine wlanapi RPC clients referenced
+  `WlanRpcStatusToWinError`/`RpcExceptionCode` nowhere else and were rejected as damaged; 10 of 56
+  functions in the batch, all correct. Dead-region tokens are now **permitted, not demanded**, and
+  every accepted omission is PRINTED (`omitted in non-executed code: TOKEN=SPELLING`) — a
+  relaxation nobody can see is how a real deletion slips through later. The `invented` check is
+  untouched, so a value that never appeared in the C still fails inside a dead arm. Diagnosis rule
+  worth reusing: *before concluding the model deleted your error handling, check whether the C's
+  own handler is reachable in THIS build's flags* — read `compile_commands.json`, not the source.
 
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
