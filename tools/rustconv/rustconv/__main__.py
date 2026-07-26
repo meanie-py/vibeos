@@ -3306,7 +3306,23 @@ def cmd_translate(args):
         # in the ole32 run, which is a COM object with no methods at all. Slot order
         # comes from the bindgen'd struct; an arity mismatch raises rather than
         # zipping a table into the wrong methods.
-        vtbls = find_vtbl_tables(c_file)
+        # The module's OWN island is the best field-order source after com-sys: bindgen has
+        # already expanded `DECLARE_INTERFACE_(INetCfgBindingInterface, IUnknown)` into an
+        # exact `INetCfgBindingInterfaceVtbl` struct, which a C-header regex cannot do
+        # reliably. Without it netcfgx died with `VtblResolveError: cannot resolve field
+        # order` on interfaces that were sitting in its own types_<arch>.rs: they are
+        # ReactOS-private (sdk/include/psdk/netcfgx.h), so neither com-sys nor the C file's
+        # SIBLING headers — the previous default — have them.
+        # Pass c_headers explicitly too: find_vtbl_tables only applies its sibling-header
+        # default when BOTH are None, so supplying just rust_sources would silently drop
+        # the fallback every existing caller depends on.
+        _island_dir = rustconv_target.output_crate / "src"
+        _islands = sorted(_island_dir.glob("types*.rs")) if _island_dir.is_dir() else []
+        vtbls = find_vtbl_tables(
+            c_file,
+            rust_sources=_islands,
+            c_headers=sorted(c_file.parent.glob("*.h")),
+        )
         new_vtbls = [t for t in vtbls if not re.search(rf"\b{re.escape(t.name)}\s*:", stitched)]
         if new_vtbls:
             body = "\n\n".join(t.render(c_name=c_file.name) for t in new_vtbls)
