@@ -1799,7 +1799,12 @@ pub unsafe extern "system" fn PciGetDeviceCapabilities(
     if KeGetCurrentIrql() > APC_LEVEL {
         // In ReactOS this would DbgPrint and ASSERT(FALSE).
         // Preserve the intent with a panic.
-        panic!("Pageable code called at IRQL > APC_LEVEL");
+        RtlAssert(
+            b"FALSE\0".as_ptr() as *mut core::ffi::c_void,
+            b"utils.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"Pageable code called at IRQL > APC_LEVEL\0".as_ptr() as *mut i8,
+        );
     }
 
     // Zero out capabilities and set initial values

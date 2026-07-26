@@ -77,6 +77,7 @@ const SCSI_REQUEST_BLOCK_SIZE: usize = core::mem::size_of::<SCSI_REQUEST_BLOCK>(
 const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000148u32 as i32;
 use core::ffi::c_void;
 use core::mem::offset_of;
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
@@ -3554,7 +3555,12 @@ pub unsafe extern "system" fn RequestHandleScsiPassThrough(
     {
         let irql = KeGetCurrentIrql();
         if irql as u32 > APC_LEVEL as u32 {
-            panic!("IRQL too high for paged code in RequestHandleScsiPassThrough");
+            RtlAssert(
+                b"KeGetCurrentIrql() <= APC_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+                b"ioctl.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                b"PAGED_CODE: RequestHandleScsiPassThrough\0".as_ptr() as *mut i8,
+            );
         }
     }
 
@@ -6381,7 +6387,12 @@ pub unsafe extern "C" fn DeviceHandleReadQChannel(
 
     // PAGED_CODE ();
     if KeGetCurrentIrql() > APC_LEVEL {
-        panic!("PAGED_CODE violation: IRQL {} > APC_LEVEL", KeGetCurrentIrql());
+        RtlAssert(
+            b"KeGetCurrentIrql() <= APC_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+            b"ioctl.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"PAGED_CODE\0".as_ptr() as *mut i8,
+        );
     }
 
     *DataLength = 0;
@@ -6465,7 +6476,12 @@ pub unsafe extern "C" fn DeviceHandleResumeAudio(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     if ntkrnl_sys::ke::KeGetCurrentIrql() > ntkrnl_sys::base::APC_LEVEL {
-        panic!("PAGED_CODE violation: IRQL > APC_LEVEL");
+        RtlAssert(
+            b"KeGetCurrentIrql() <= APC_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+            b"ioctl.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"PAGED_CODE\0".as_ptr() as *mut i8,
+        );
     }
     let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
     *DataLength = 0;

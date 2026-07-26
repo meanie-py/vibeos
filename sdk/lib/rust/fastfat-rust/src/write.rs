@@ -23,6 +23,7 @@ use crate::types::{DEFERRED_FLUSH_CONTEXT};
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "system" {
+    fn RtlAssert( FailedAssertion: *const u8, FileName: *const u8, LineNumber: u32, Message: *const u8, );
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...) -> i32; } extern "system" {
     fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, FcbOrDcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
@@ -113,7 +114,12 @@ pub unsafe extern "system" fn FatDeferredFlush(Parameter: *mut core::ffi::c_void
 
     // NT_ASSERT(FcbOrDcb != NULL)
     if FcbOrDcb.is_null() {
-        panic!("FcbOrDcb != NULL");
+        RtlAssert(
+            b"FcbOrDcb != NULL\0".as_ptr(),
+            b"write.rs\0".as_ptr(),
+            line!(),
+            core::ptr::null(),
+        );
     }
 
     IoSetTopLevelIrp(FSRTL_FSP_TOP_LEVEL_IRP);

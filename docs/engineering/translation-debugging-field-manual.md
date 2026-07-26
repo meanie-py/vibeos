@@ -1260,9 +1260,24 @@ sweep.**
   the real bug is open**, because they are currently the only way to tell which assert fired. Note
   the same file *preserved* its two genuine bugchecks, so "the translator mangles all bugchecks"
   would have been the wrong generalisation too.
+- **Too strong AND silent — `panic!`, the worst of the three** (2026-07-26). A Rust `panic!` in
+  kernel mode reaches a `#[panic_handler]` that prints `PANIC:<file>:<line>` to debugcon and then
+  **loops forever**. So it is strictly worse than the `KeBugCheckEx` variant above — a bugcheck at
+  least names itself and leaves a dump — and worse than retail C, which compiles the assert to
+  nothing. The failure presentation is a dead VM with no crash, which reads as a hang bug in
+  whatever ran last, not as an assert. 19 exported kernel functions had it across cdrom,
+  classpnp, fastfat and pcix, including three `PAGED_CODE()` expansions that had faithfully
+  reproduced the `KdPrint` and then rendered the trailing `ASSERT(FALSE)` as a hang. Two carried
+  comments admitting the shortcut ("Preserve the intent with a panic"). **Fix: call `RtlAssert`**
+  — it is what the C's `ASSERT` calls under `-DBG=1`, it prints loudly, and it RETURNS, so
+  execution continues exactly as C does. The in-tree idiom already existed in
+  `classpnp/lock.rs`, `pcix/device.rs` and `fastfat/create.rs`; prefer `line!()` over a
+  hand-copied constant. Note this is *not* the "do NOT silence it" case: RtlAssert keeps the
+  check loud, it only stops it being fatal.
 - Gate: `tools/scan_assert_to_ub.py`, empty baseline. **The gate that should have caught the
   third one reported a clean zero** — see the oracle section; a lint that under-matches is
-  indistinguishable from a lint that passes.
+  indistinguishable from a lint that passes. It still under-matches: it looks for
+  `unreachable_unchecked` and bugchecks, so the 19 `panic!` sites above were invisible to it.
 - **A C debug macro that does NOT block, translated as `loop {}`**, hangs the boot. Read what
   the macro expands to.
 - **`DPRINT` is NDEBUG-dead in C**; translated as a live `DbgPrint` it is a boot slowdown that

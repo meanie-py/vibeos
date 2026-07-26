@@ -56,6 +56,7 @@ use crate::glue::{_CLASS_FUNCTION_SUPPORT_STATE_NotSupported, _CLASS_FUNCTION_SU
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{STORAGE_DEVICE_LAYOUT_SIGNATURE, STORAGE_DEVICE_UNIQUE_IDENTIFIER, _DUID_MATCH_STATUS_DuidExactMatch as DuidExactMatch, _STORAGE_DEVICE_UNIQUE_IDENTIFIER, _DUID_MATCH_STATUS_DuidSubIdMatch as DuidSubIdMatch, _DUID_MATCH_STATUS_DuidNoMatch as DuidNoMatch, _DUID_MATCH_STATUS_DuidErrorGeneral as DuidErrorGeneral, _DUID_MATCH_STATUS_DuidErrorMissingDuid as DuidErrorMissingDuid, _DUID_MATCH_STATUS_DuidErrorVersionMismatch as DuidErrorVersionMismatch, _DUID_MATCH_STATUS_DuidErrorInvalidDuid as DuidErrorInvalidDuid, _DUID_MATCH_STATUS_DuidErrorInvalidDeviceIdDescSize as DuidErrorInvalidDeviceIdDescSize, _DUID_MATCH_STATUS_DuidErrorInvalidDeviceDescSize as DuidErrorInvalidDeviceDescSize, _DUID_MATCH_STATUS_DuidErrorInvalidLayoutSigSize as DuidErrorInvalidLayoutSigSize, _DUID_MATCH_STATUS_DuidErrorInvalidLayoutSigVersion as DuidErrorInvalidLayoutSigVersion, DUID_MATCH_STATUS, PFIXED_SENSE_DATA, PDESCRIPTOR_SENSE_DATA, _CDB__GET_LBA_STATUS};
 use ntkrnl_sys::ddk::{_STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetBinary as StorageIdCodeSetBinary, _STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetAscii as StorageIdCodeSetAscii, _STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetUtf8 as StorageIdCodeSetUtf8, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeScsiNameString as StorageIdTypeScsiNameString, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeFCPHName as StorageIdTypeFCPHName, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeEUI64 as StorageIdTypeEUI64, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeVendorId as StorageIdTypeVendorId, _STORAGE_ASSOCIATION_TYPE_StorageIdAssocPort as StorageIdAssocPort};
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     
@@ -1237,7 +1238,12 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
     'write_cache_exit: loop {
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
             if !(KeGetCurrentIrql() < DISPATCH_LEVEL) {
-                panic!("NT_ASSERT failed");
+                RtlAssert(
+                    b"KeGetCurrentIrql() < DISPATCH_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+                    b"utils.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             status = STATUS_INVALID_LEVEL;
             break 'write_cache_exit;

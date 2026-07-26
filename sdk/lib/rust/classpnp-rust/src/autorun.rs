@@ -192,6 +192,7 @@ pub static mut StoragePredictFailureEventGuid: GUID = _GUID {
 // ClasspScreenOff: single no_mangle definition lives in globals.rs — a local twin
 // here split-brained against power.rs's writes (screen-off never seen). Import it.
 use crate::types::ClasspScreenOff;
+use ntkrnl_sys::ddk::RtlAssert;
 
 pub static mut BreakOnMcnDisable: ULONG = FALSE as ULONG;
 
@@ -1412,7 +1413,12 @@ pub unsafe extern "C" fn ClasspInitializePolling(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8 as PCSTR,
             KeGetCurrentIrql() as i32,
         );
-        core::panic!("Pageable code called above APC_LEVEL");
+        RtlAssert(
+            b"FALSE\0".as_ptr() as *mut core::ffi::c_void,
+            b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"Pageable code called at IRQL > APC_LEVEL\0".as_ptr() as *mut i8,
+        );
     }
 
     if !(*FdoExtension).MediaChangeDetectionInfo.is_null() {
@@ -1505,16 +1511,36 @@ pub unsafe extern "C" fn ClasspInitializePolling(
                 (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject as *mut c_void,
             );
             if (*info).Gesn.Supported == 0 {
-                core::panic!("assert: info->Gesn.Supported");
+                RtlAssert(
+                    b"info->Gesn.Supported\0".as_ptr() as *mut core::ffi::c_void,
+                    b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             if (*info).Gesn.Buffer.is_null() {
-                core::panic!("assert: info->Gesn.Buffer != NULL");
+                RtlAssert(
+                    b"info->Gesn.Buffer != NULL\0".as_ptr() as *mut core::ffi::c_void,
+                    b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             if (*info).Gesn.BufferSize == 0 {
-                core::panic!("assert: info->Gesn.BufferSize != 0");
+                RtlAssert(
+                    b"info->Gesn.BufferSize != 0\0".as_ptr() as *mut core::ffi::c_void,
+                    b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             if (*info).Gesn.EventMask == 0 {
-                core::panic!("assert: info->Gesn.EventMask != 0");
+                RtlAssert(
+                    b"info->Gesn.EventMask != 0\0".as_ptr() as *mut core::ffi::c_void,
+                    b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             GesnSupported = 1u8;
         } else {
@@ -1529,16 +1555,36 @@ pub unsafe extern "C" fn ClasspInitializePolling(
 
     if GesnSupported == 0 {
         if (*info).Gesn.Supported != 0 {
-            core::panic!("assert: info->Gesn.Supported == 0");
+            RtlAssert(
+                b"info->Gesn.Supported == 0\0".as_ptr() as *mut core::ffi::c_void,
+                b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if !(*info).Gesn.Buffer.is_null() {
-            core::panic!("assert: info->Gesn.Buffer == NULL");
+            RtlAssert(
+                b"info->Gesn.Buffer == NULL\0".as_ptr() as *mut core::ffi::c_void,
+                b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if (*info).Gesn.BufferSize != 0 {
-            core::panic!("assert: info->Gesn.BufferSize == 0");
+            RtlAssert(
+                b"info->Gesn.BufferSize == 0\0".as_ptr() as *mut core::ffi::c_void,
+                b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if (*info).Gesn.EventMask != 0 {
-            core::panic!("assert: info->Gesn.EventMask == 0");
+            RtlAssert(
+                b"info->Gesn.EventMask == 0\0".as_ptr() as *mut core::ffi::c_void,
+                b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         (*info).Gesn.Supported = 0u8;
     }
