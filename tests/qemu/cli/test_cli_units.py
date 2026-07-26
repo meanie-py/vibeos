@@ -4575,3 +4575,72 @@ def test_ninja_did_work_does_not_count_the_glob_recheck_pseudo_edge():
         )
         == 1
     )
+
+
+# --- probe presence in the MEDIA (the 9-hour blind soak, 2026-07-26) --------
+
+
+def _fake_media(tmp_path, rel: str, body: bytes):
+    p = tmp_path / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(body)
+    return p
+
+
+def test_probe_present_in_media_reports_nothing_missing(tmp_path):
+    from tests.qemu.cli import provenance
+
+    _fake_media(
+        tmp_path, "build-i386/livecd.iso", b"\x00" * 100 + b"[MMGUARD] hi\x00" + b"\xff" * 50
+    )
+    assert provenance.probes_missing_from_media(tmp_path, "i386", ["[MMGUARD]"]) == []
+
+
+def test_probe_absent_from_media_is_reported_with_the_mtime_and_the_stakes(tmp_path):
+    """The exact 2026-07-26 failure: the literal is in the module but not the
+    image, and the old check looked at the module."""
+    from tests.qemu.cli import provenance
+
+    _fake_media(tmp_path, "build-i386/livecd.iso", b"a boot image with no probe in it")
+    reasons = provenance.probes_missing_from_media(tmp_path, "i386", ["[KSTACK]"])
+    assert len(reasons) == 1
+    assert "[KSTACK]" in reasons[0]
+    assert "0 times" in reasons[0]
+    # It must say WHY this matters, not just that a count was zero.
+    assert "silence would prove nothing" in reasons[0]
+
+
+def test_arm64_checks_the_ramdisk_too_not_just_the_outer_image(tmp_path):
+    """arm64's kernel lives in ramdisk.img; checking only boot.img would repeat
+    the same right-check-wrong-artifact mistake one level down."""
+    from tests.qemu.cli import provenance
+
+    _fake_media(tmp_path, "qemu/boot.img", b"[MMGUARD] present here")
+    _fake_media(tmp_path, "qemu/ramdisk.img", b"but absent in the ramdisk")
+    reasons = provenance.probes_missing_from_media(tmp_path, "arm64", ["[MMGUARD]"])
+    assert len(reasons) == 1
+    assert "ramdisk.img" in reasons[0]
+
+
+def test_probe_straddling_a_read_boundary_is_still_found(tmp_path):
+    """Streaming with no overlap would miss a literal split across chunks."""
+    from tests.qemu.cli import provenance
+
+    chunk = 8 << 20
+    body = b"\x00" * (chunk - 4) + b"[MMGUARD]" + b"\x00" * 16
+    _fake_media(tmp_path, "build-i386/livecd.iso", body)
+    assert provenance.probes_missing_from_media(tmp_path, "i386", ["[MMGUARD]"]) == []
+
+
+def test_missing_media_file_is_named_rather_than_silently_passing(tmp_path):
+    from tests.qemu.cli import provenance
+
+    reasons = provenance.probes_missing_from_media(tmp_path, "i386", ["[MMGUARD]"])
+    assert reasons and "does not exist" in reasons[0]
+
+
+def test_no_literals_requested_is_a_no_op_not_a_failure(tmp_path):
+    from tests.qemu.cli import provenance
+
+    assert provenance.probes_missing_from_media(tmp_path, "i386", []) == []
+    assert provenance.probes_missing_from_media(tmp_path, "i386", ["  "]) == []
