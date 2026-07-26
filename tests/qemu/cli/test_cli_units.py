@@ -868,8 +868,11 @@ def test_triage_post_boot_check():
 
 
 def test_run_summary_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
-    # re-import to pick up env? ARTIFACT_ROOT is module-level; build dir explicitly.
+    # setenv would do NOTHING here — artifacts.ARTIFACT_ROOT is resolved at import
+    # time, so this Run used to land in the live artifact tree and, under the
+    # gate's check-tooling stage, planted a fake FAIL/BUGCHECK summary.json that
+    # was twice mistaken for a real verdict. conftest's autouse
+    # _artifact_root_is_never_the_real_one now pins the root for every test.
     run = Run("smoke", "i386", ts=1700000000)
     run.add(Stage("staleness", status="ok"))
     run.add(Stage("boot", status="fail", detail="BUGCHECK", salient=["BugCheck 0x7E"]))
