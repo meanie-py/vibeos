@@ -921,6 +921,25 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   PKTHREAD so the stack fields are reachable), and a soak would otherwise have run for hours
   against a kernel with no probe in it.
 
+  **THE HEADLINE FROM 9 INSTRUMENTED SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
+  on fixed media, `-smp 1`, same binary within each run:
+
+  | face | n | signature |
+  |---|---|---|
+  | clean / ratchet-noise | 6 | `sweep=done`, 85–86 ok of 89, ~75–130s |
+  | **A — memory/stack** | 1 | `BUGCHECK 0x50`, died 69/89 on `ZwWaitForMultipleObjects`, 77s |
+  | **B — sweep no-launch** | 1 | desktop reached, `launched=0`, 87min, **no** `CENSUS STUCK` |
+  | **C — lost gate wakeup** | 1 | `CENSUS STUCK … GateWait … sig=0`, 79/89, 12 bad, 78min |
+
+  ~33% of rounds fail, spread over **three mechanisms that are demonstrably different** (B vs C
+  disproven below; A is a bugcheck while B and C never crash at all). **This reframes the flip
+  blocker:** "fix the arm64 flake" is not one fix, and a conformance baseline cannot be seeded
+  until each face is either fixed or the sweep is made robust to it. It also explains why the
+  historical notes read inconsistently — `ZwWaitForMultipleObjects NO-END`, `0xC0000005`,
+  `0x1E`, `0x50`, hangs — they were sightings of different bugs filed under one heading.
+  Each face's evidence is below; the per-round data is in the soak ledgers, and the two
+  reproducing serials are kept out of `/tmp` rotation.
+
   **FIRST REPRODUCTION UNDER THE PROBES (2026-07-26), and it points hard at the STACK.**
   A 4-round `-smp 1` kmtest soak on fixed media reproduced once (rounds 1/3/4 clean or
   ratchet-noise; ~25%, in line with the prior base rate). Round 2 died at test **69 of 89, on
