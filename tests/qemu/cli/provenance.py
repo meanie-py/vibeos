@@ -20,18 +20,52 @@ from . import archcfg
 STAMP_NAME = ".vibeos-build-stamp.json"
 
 
-def _run(cmd: list[str], cwd: Path) -> str:
+class ProvenanceError(RuntimeError):
+    """A command this oracle's verdict depends on did not run successfully.
+
+    Raised instead of degrading, because a staleness oracle that answers from
+    PARTIAL output is worse than one that refuses to answer: both directions are
+    live. This helper used to `return ""` on any exception AND ignore the exit
+    code entirely, so a degraded `git` call either shifted the fingerprint (false
+    RED — the BUILD_INCOMPLETE that halts the merge train, with no evidence left
+    behind to diagnose it) or emptied `cargo_module_rels` (false GREEN — the
+    cargo-link staleness net silently switched off). Neither logged anything."""
+
+
+def _run(cmd: list[str], cwd: Path, *, ok_codes: tuple[int, ...] = (0,)) -> str:
+    """Run `cmd`, or raise ProvenanceError naming the command, rc and stderr.
+
+    `ok_codes` widens the accepted set for commands whose non-zero exit is
+    meaningful rather than a failure — `git grep` exits 1 for "no matches",
+    which is a legitimate empty result, not a broken oracle."""
     try:
-        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=120).stdout
-    except (OSError, subprocess.SubprocessError):
-        return ""
+        cp = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise ProvenanceError(f"{' '.join(cmd)} (cwd={cwd}): {type(e).__name__}: {e}") from e
+    if cp.returncode not in ok_codes:
+        err = (cp.stderr or "").strip().splitlines()
+        raise ProvenanceError(
+            f"{' '.join(cmd)} (cwd={cwd}) exited {cp.returncode}: "
+            + (err[0][:200] if err else "<no stderr>")
+        )
+    return cp.stdout
+
+
+def git_head(repo: Path) -> str:
+    """The HEAD sha. Recorded in the stamp ALONGSIDE the fingerprint so that a
+    later mismatch can say WHICH input moved: a HEAD change (a merge/fetch landed
+    under the build) reads completely differently from a working-tree change, and
+    the fingerprint alone conflates them into one useless "source changed"."""
+    return _run(["git", "rev-parse", "HEAD"], repo).strip()
 
 
 def git_fingerprint(repo: Path, paths: list[str] | None = None) -> str:
     """Content-true fingerprint of the (optionally path-scoped) source state:
-    HEAD + working-tree diff + untracked. Immune to mtime churn from git ops."""
+    HEAD + working-tree diff + untracked. Immune to mtime churn from git ops.
+
+    Raises ProvenanceError if any of its three git calls fails — see _run."""
     scope = paths or []
-    head = _run(["git", "rev-parse", "HEAD"], repo).strip()
+    head = git_head(repo)
     diff = _run(["git", "diff", "HEAD", "--", *scope], repo)
     untracked = _run(["git", "status", "--porcelain", "--", *scope], repo)
     h = hashlib.sha256()
@@ -346,9 +380,34 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
             reasons.append(
                 f"{rel}: stale — {copied.name} is newer than the built binary; the "
                 f"cohab staticlib changed but {Path(rel).name} was never relinked "
-                f"(not in ninja_targets?)"
+                f"(not in ninja_targets?)" + _lag(artifact, copied)
             )
     return reasons
+
+
+def _lag(older: Path, newer: Path) -> str:
+    """ " (input Ns newer)" — the discriminator between the two ways an
+    artifact-older-than-input verdict happens, and the one fact these messages
+    never carried.
+
+    A gap under a second or so means the two writes belong to the SAME ninja run
+    and merely landed in the wrong order (the link consumed the right bytes; the
+    input was rewritten just after) — an ordering race, i.e. a false positive.
+    A gap of minutes or hours means the input really did change in an earlier
+    run and nothing relinked — a missing dependency edge, i.e. a true positive.
+    Both currently print the identical sentence, which is why 5 occurrences a day
+    could not be triaged."""
+    try:
+        d = newer.stat().st_mtime - older.stat().st_mtime
+    except OSError:
+        return ""
+    if d < 2.0:
+        return (
+            f" [input {d * 1000:.0f}ms newer — SAME-RUN ORDERING, suspect a race not a stale edge]"
+        )
+    if d < 120.0:
+        return f" [input {d:.1f}s newer]"
+    return f" [input {d / 60:.0f}min newer — a genuinely missed rebuild]"
 
 
 def _crate_staticlibs(repo: Path, build_dir: Path, crate: Path) -> tuple[Path | None, Path | None]:
@@ -393,9 +452,14 @@ def cargo_module_rels(repo: Path) -> list[str]:
     into the build dir — true for the two .cmake-included call sites too
     (rosload.cmake/uefi.cmake live in their includer's dir). Call sites whose
     output is a `${var}` (bootvid) are skipped — unresolvable statically."""
+    # ok_codes includes 1: `git grep` exits 1 for "no matches", which is a real
+    # empty result rather than a broken oracle. Every OTHER non-zero rc now
+    # raises instead of yielding [] — an empty list here silently disables the
+    # whole cargo-link staleness net, which is the false-GREEN direction.
     files = _run(
         ["git", "grep", "-lE", r"add_cargo_(module|kernel_dll)\(", "--", "*.txt", "*.cmake"],
         repo,
+        ok_codes=(0, 1),
     ).splitlines()
     rels = []
     for rel_file in files:
@@ -495,9 +559,17 @@ def cargo_link_staleness_reasons(repo: Path, arch: str) -> list[str]:
         if not artifact.is_file():
             continue
         if artifact.stat().st_mtime < newest:
+            lag = newest - artifact.stat().st_mtime
+            note = (
+                " [SAME-RUN ORDERING, suspect a race not a stale edge]"
+                if lag < 2.0
+                else f" [{lag / 60:.0f}min newer — a genuinely missed rebuild]"
+                if lag >= 120.0
+                else f" [{lag:.1f}s newer]"
+            )
             reasons.append(
                 f"{rel}: stale — {newest_rel} newer than the cargo-linked binary "
-                f"(cargo link not re-run; run `build`)"
+                f"(cargo link not re-run; run `build`)" + note
             )
     return reasons
 
@@ -517,6 +589,12 @@ class Stamp:
     # therefore means "this stamp cannot answer the question", NOT "nothing changed" —
     # check_staleness must say so out loud rather than let it read as clean.
     build_src_hash: str = ""
+    # The HEAD sha at stamp time. Recorded so a later fingerprint mismatch can name
+    # WHICH input moved instead of reporting an undiagnosable "source changed":
+    # a HEAD move (a merge landed under the build) and a working-tree edit are very
+    # different failures, and the fingerprint alone cannot tell them apart. Empty on
+    # stamps written before this field existed.
+    head_sha: str = ""
 
     def write(self, build_dir: Path) -> Path:
         path = build_dir / STAMP_NAME
@@ -617,12 +695,54 @@ def make_stamp(repo: Path, arch: str, cold: bool, ts: int) -> Stamp:
         git_fingerprint=git_fingerprint(repo),
         rust_src_hash=rust_src_hash(repo),
         build_src_hash=build_src_hash(repo),
+        head_sha=git_head(repo),
         boot_media=cfg.boot_media_rel,
         boot_media_sha=_sha256_file(media),
         cold=cold,
         contributing=contributing_hashes(repo, arch),
         rust_targets=targets,
     )
+
+
+def _src_delta(repo: Path, stamp: Stamp) -> str:
+    """WHAT changed, appended to the bare "build source changed" reason.
+
+    That reason is the single least actionable line this oracle emits: it fires
+    milliseconds after make_stamp computed the very same hash, and then says
+    nothing about which of the three fingerprint inputs (HEAD, tracked diff,
+    untracked set) moved. It has halted the merge train with no evidence left to
+    diagnose it. Best-effort by construction — a diagnostic that raises while
+    explaining a failure would be worse than the failure."""
+    try:
+        now_head = git_head(repo)
+        if stamp.head_sha and now_head != stamp.head_sha:
+            return (
+                f" — HEAD MOVED UNDER THE BUILD: {stamp.head_sha[:12]} -> {now_head[:12]} "
+                "(a merge/fetch landed mid-build; this is not a stale artifact)"
+            )
+        names = _run(
+            ["git", "diff", "--name-only", "HEAD", "--", ".", *NON_BUILD_PATHSPEC], repo
+        ).split()
+        dirty = [
+            ln[3:]
+            for ln in _run(
+                ["git", "status", "--porcelain", "--", ".", *NON_BUILD_PATHSPEC], repo
+            ).splitlines()
+        ]
+        changed = sorted(set(names) | set(dirty))
+        if not changed:
+            return (
+                " — but NOTHING is currently modified vs HEAD, and HEAD did not move. "
+                "The fingerprint moved without a source change: suspect the oracle, "
+                "not the tree (see ProvenanceError / _run)"
+            )
+        return (
+            f" — {len(changed)} path(s): "
+            + ", ".join(changed[:6])
+            + (" …" if len(changed) > 6 else "")
+        )
+    except (ProvenanceError, OSError) as e:
+        return f" — (could not explain: {e})"
 
 
 @dataclass
@@ -660,6 +780,22 @@ class Staleness:
 
 
 def check_staleness(repo: Path, arch: str) -> Staleness:
+    """Fresh/stale verdict for the built media. Never raises: a ProvenanceError
+    is reported as its OWN failure ("the oracle could not answer") rather than
+    escaping as a traceback or — the old behaviour — being laundered into a
+    confident but wrong "source changed since build"."""
+    try:
+        return _check_staleness(repo, arch)
+    except ProvenanceError as e:
+        return Staleness(
+            fresh=False,
+            reasons=[f"provenance oracle FAILED (verdict unknown, not stale): {e}"],
+            warm=False,
+            media_missing=False,
+        )
+
+
+def _check_staleness(repo: Path, arch: str) -> Staleness:
     cfg = archcfg.arch_build(arch)
     build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     media = repo / cfg.boot_media_rel
@@ -705,7 +841,9 @@ def check_staleness(repo: Path, arch: str) -> Staleness:
             "run `build` to re-stamp"
         )
     elif build_src_hash(repo) != stamp.build_src_hash:
-        reasons.append("build source changed since build (C/asm/cmake/spec/rc)")
+        reasons.append(
+            "build source changed since build (C/asm/cmake/spec/rc)" + _src_delta(repo, stamp)
+        )
     # arm64 re-stage trap: a contributing binary newer than boot.img.
     if cfg.needs_mkramdisk:
         media_mtime = media.stat().st_mtime
