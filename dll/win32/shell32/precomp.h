@@ -172,7 +172,7 @@ PropSheetPageLifetimeCallback(HWND hWnd, UINT uMsg, PROPSHEETPAGEW *pPSP)
 
 EXTERN_C HRESULT WINAPI
 SHMultiFileProperties(IDataObject *pDataObject, DWORD dwFlags);
-HRESULT
+EXTERN_C HRESULT
 SHELL32_ShowPropertiesDialog(IDataObject *pdtobj);
 HRESULT
 SHELL32_ShowFilesystemItemPropertiesDialogAsync(IDataObject *pDO);
@@ -207,7 +207,7 @@ DCMA_InsertMenuItems(
     _In_opt_ UINT fCmf,
     _In_opt_ IUnknown *pUnkSite);
 
-HRESULT
+EXTERN_C HRESULT
 SHELL32_DefaultContextMenuCallBack(IShellFolder *psf, IDataObject *pdo, UINT msg);
 PCSTR
 MapFcidmCmdToVerb(_In_ UINT_PTR CmdId);

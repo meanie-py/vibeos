@@ -947,7 +947,7 @@ extern "C" HRESULT WINAPI Shell32RustCoCreateInitSF(
     LPCITEMIDLIST pidlRoot, const GUID *clsid, INT csidl,
     REFIID riid, LPVOID *ppvOut)
 {
-    return SHELL32_CoCreateInitSF(pidlRoot, clsid, csidl, riid, ppvOut);
+    return SHELL32_CoCreateInitSFWithCsidl(pidlRoot, clsid, csidl, riid, ppvOut);
 }
 
 extern "C" INT WINAPI Shell32RustMapContextMenuVerbToCmdId(

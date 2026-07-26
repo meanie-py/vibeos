@@ -1,9 +1,6 @@
-//! ORPHAN-BY-DESIGN: translated shell32 TU, parked pending substrate closure.
-//! Unblocked by the 2026-07-25 seal fixes (macro authority, Rust-label masking,
-//! goto replication, prototype/named-cast types); still needs SDK externs, Win32
-//! constants and resource IDs resolved before it compiles. Wiring it in this state
-//! would break the build for every lane rather than expose a regression.
-//! This is a PAID artifact — do not delete it to tidy up.
+//! `shlfolder.cpp`, translated and LIVE — `shlfolder.cpp` is commented out of the shell32
+//! CMakeLists. See `shell32/mod.rs` for the EXTERN_C surface this flip needed and for why the
+//! `SHELL32_CoCreateInitSF` overload pair had to become two distinct names.
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_32491EF24F87: [WCHAR; 6] = [0x0044, 0x0072, 0x0069, 0x0076, 0x0065, 0x0000];
 pub static CPP_COM_WSTR_3A7BCE312332: [WCHAR; 10] = [0x0044, 0x0069, 0x0072, 0x0065, 0x0063, 0x0074, 0x006F, 0x0072, 0x0079, 0x0000];
@@ -462,7 +459,11 @@ pub unsafe extern "C" fn SHELL32_CoCreateInitSF(
     result
 }
 
-unsafe fn SHELL32_CoCreateInitSF_2(
+/// C++ declared this as a second OVERLOAD of `SHELL32_CoCreateInitSF`. `EXTERN_C` maps one name
+/// to one symbol and so cannot carry an overload set, so shfldr.h renames this form to
+/// `SHELL32_CoCreateInitSFWithCsidl` and its six C++ call sites follow.
+#[no_mangle]
+pub unsafe extern "C" fn SHELL32_CoCreateInitSFWithCsidl(
     pidlRoot: LPCITEMIDLIST,
     clsid: *const GUID,
     csidl: i32,

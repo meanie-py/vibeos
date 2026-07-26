@@ -279,7 +279,7 @@ HRESULT SHELL32_CoCreateInitSF (LPCITEMIDLIST pidlRoot, PERSIST_FOLDER_TARGET_IN
     return pShellFolder->QueryInterface(riid, ppvOut);
 }
 
-HRESULT SHELL32_CoCreateInitSF (LPCITEMIDLIST pidlRoot, const GUID* clsid,
+HRESULT SHELL32_CoCreateInitSFWithCsidl (LPCITEMIDLIST pidlRoot, const GUID* clsid,
                                 int csidl, REFIID riid, LPVOID *ppvOut)
 {
     /* fill the PERSIST_FOLDER_TARGET_INFO */

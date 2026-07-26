@@ -91,7 +91,7 @@ list(APPEND SOURCE
     # shldataobject.cpp — replaced by Rust (shell32-rust/src/shell32/shldataobject.rs); cohab via libshell32_rust.a
     shlexec.cpp
     shlfileop.cpp
-    shlfolder.cpp
+    # shlfolder.cpp — replaced by Rust (shell32-rust/src/shell32/shlfolder.rs); cohab via libshell32_rust.a
     CFileSysBindData.cpp
     CDefView.cpp
     CDefViewUtil.cpp

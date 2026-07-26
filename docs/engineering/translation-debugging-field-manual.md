@@ -773,7 +773,38 @@ function was declared in a `.h`/`.cpp` without `extern "C"`, so every C++ caller
 namespace scope, since a linkage specification is illegal inside a function body.
 **`llvm-nm --defined-only` on the TU's `.obj` tells you which exports need it BEFORE you flip**:
 an unmangled `_Name@N` is already `extern "C"`, a `__Z23Name...` is not. shldataobject.cpp had
-five of each, and the mangled four had live callers in three other TUs.
+five of each, and the mangled four had live callers in three other TUs. Intersect that set
+against every *other* object's UNDEFINED symbols before counting the work — shlfolder.cpp
+defines 83 mangled symbols but only 19 have a live caller; the rest are COMDAT template and
+inline emissions each TU already makes for itself.
+
+**`EXTERN_C` cannot carry an OVERLOAD SET — one name, one symbol.** Symptom: a TU is otherwise
+ready to flip but exports two functions of the same name. Fix: rename one on both sides. Make
+the choice by call-site count, not by which "feels primary": shlfolder's
+`SHELL32_CoCreateInitSF(pidlRoot, clsid, csidl, riid, ppvOut)` became
+`SHELL32_CoCreateInitSFWithCsidl`, and being module-private (declared only in `shfldr.h`) that
+cost six call sites and nothing outside the DLL. **C++ reference parameters are NOT part of this
+problem** — `extern "C"` changes linkage and mangling, not the type system, so
+`EXTERN_C HRESULT F(REFIID riid)` is legal and yields an unmangled symbol. Believing otherwise
+deferred this flip once; a 5-line compile test settles it in a minute.
+
+**Count the RUST callers of a C++ overload too, not just the C++ ones.** Symptom: an overload
+rename passes `grep` over `*.cpp` and still breaks. Cause: already-translated siblings call the
+overload through a generated `Shell32Rust*` trampoline (rustconv emits one precisely because
+Rust cannot name a C++ overload), and they declare it `extern "system"` because the trampoline
+is `WINAPI` while the renamed function is cdecl. Fix: leave the trampoline — repointing five
+declarations at the now-nameable Rust symbol is an ABI change for no functional gain — but fix
+the emitter, which otherwise generates C++ calling a name that no longer exists.
+
+**`scan_extern_arity` resolves `#[link_name]`/`#[export_name]`, not the Rust identifier.** A
+declaration that redirects is a claim about a *different* symbol, so comparing it against a
+definition that merely shares its Rust name is wrong: the five folder classes above declare a
+5-param `SHELL32_CoCreateInitSF` linked to `Shell32RustCoCreateInitSF`, and keying on the
+identifier reported all five as arity bugs against the real 6-param definition the moment
+shlfolder.rs went live. The scanner had been quiet only because the parked file carried an
+`ORPHAN-BY-DESIGN:` banner — which is the general shape of the trap: **an exemption that hides
+a class of finding stops hiding it exactly when you flip, so read what a banner was suppressing
+before you delete it.**
 
 **A C++ header inline is in NO translation unit, so no translated TU carries it.** Symptom: a
 freshly translated file has a cluster of unresolved names that are demonstrably not in its
