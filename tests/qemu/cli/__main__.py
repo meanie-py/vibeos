@@ -14,6 +14,7 @@ from pathlib import Path
 from . import build as build_mod
 from . import cargoswap, debugcmd, hostlock, tooling
 from . import conformance as conformance_mod
+from . import difftest as difftest_mod
 from . import farm as farm_mod
 from . import gate as gate_mod
 from . import gdbengine as gdb_mod
@@ -435,6 +436,17 @@ def build_parser() -> argparse.ArgumentParser:
     ct.add_argument("--no-types", action="store_true", help="skip pyright")
     ct.add_argument("--no-tests", action="store_true", help="skip pytest")
     ct.set_defaults(fn=tooling.check_tooling)
+
+    dt = sub.add_parser(
+        "difftest",
+        help="host differential harnesses: shipping Rust vs the genuine C it replaced",
+    )
+    dt.add_argument(
+        "--only",
+        metavar="NAME[,NAME]",
+        help="restrict to named *-difftest crates (default: every workspace member)",
+    )
+    dt.set_defaults(fn=difftest_mod.difftest)
 
     pr = sub.add_parser(
         "prune", help="reclaim disk: GC idle worktrees' build+target dirs (dry-run by default)"

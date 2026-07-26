@@ -13,12 +13,15 @@ import pytest
 from rustconv.difftest_gen import (
     BUF_OUT,
     CHAR,
-    UCHAR,
+    INT_OUT,
     LOCALE,
+    MBSTATE,
     SIZE,
+    SIZE_OUT,
     STR_IN,
     TIER_NLS,
     TIER_PURE,
+    UCHAR,
     VOID,
     WSTR_IN,
     base_kinds,
@@ -157,7 +160,8 @@ def test_an_arch_conditional_body_is_refused(tmp_path):
     the arm being graded."""
     plan = _plan(
         tmp_path,
-        "int f(unsigned int c) {\n#if defined(_WIN64)\n  return 1;\n#else\n  return 2;\n#endif\n}\n",
+        "int f(unsigned int c) {\n"
+        "#if defined(_WIN64)\n  return 1;\n#else\n  return 2;\n#endif\n}\n",
     )
     assert [r.reason for r in plan.refusals] == ["arch-conditional body"]
 
@@ -200,8 +204,11 @@ def test_a_nested_if_does_not_end_the_version_region(tmp_path):
 
 
 def test_an_unsupported_parameter_is_refused_with_its_spelling(tmp_path):
-    plan = _plan(tmp_path, "int f(mbstate_t *s) { return 0; }\n")
-    assert plan.refusals and "mbstate_t" in plan.refusals[0].detail
+    """A refusal must name the type, so the next person knows what to hand-write.
+    `const char **` is the pointer-to-pointer cursor family (`mbsrtowcs`, `_mbstok_s`):
+    each side needs a cell pointing into its OWN buffer, compared by offset."""
+    plan = _plan(tmp_path, "int f(const char **s) { return 0; }\n")
+    assert plan.refusals and "char *" in plan.refusals[0].detail
 
 
 def test_a_static_function_is_neither_covered_nor_refused(tmp_path):
@@ -406,3 +413,106 @@ def test_two_independent_strings_are_left_alone(tmp_path):
     )
     body = emit_case(_case(plan, "f"))
     assert "offsets()" not in body
+
+
+# --- written-through result scalars (the `_s` family) ----------------------
+
+
+def test_a_written_through_scalar_is_a_supplied_kind():
+    """`_mbccpy_s(dst, n, &copied, src)` returns only an errno_t; `copied` IS the answer."""
+    assert classify_type("int *") == INT_OUT
+    assert classify_type("size_t *") == SIZE_OUT
+
+
+def test_a_CONST_scalar_pointer_stays_a_refusal():
+    """`const int *` is an INPUT array, not a result cell. Guessing which one a signature
+    means is how a harness supplies a 1-element array to a function that wanted 40."""
+    assert classify_type("const int *").startswith("?:")
+
+
+def test_an_out_scalar_is_COMPARED_not_just_supplied(tmp_path):
+    """Supplying the cell and never reading it back is the vacuous pass this kind exists to
+    avoid: two EINVALs compare equal while the counts written disagree."""
+    plan = _plan(
+        tmp_path, "int f(const unsigned char *s, int *copied) { *copied = 1; return 0; }\n"
+    )
+    body = emit_case(_case(plan, "f"))
+    assert "copied_s != copied_r" in body, "the written value must be compared"
+    assert "f(s_s.as_ptr(), &mut copied_s)" in body
+    assert "ref_f(s_r.as_ptr(), &mut copied_r)" in body
+
+
+def test_an_out_scalar_is_seeded_with_a_SENTINEL_not_zero(tmp_path):
+    """Zero-initialising makes "did not write" and "wrote 0" indistinguishable — both sides
+    would agree on a value neither produced."""
+    plan = _plan(tmp_path, "int f(const unsigned char *s, size_t *n) { *n = 1; return 0; }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "0x5A5A_5A5A_5A5A_5A5Ausize" in body
+    assert "= (0, 0)" not in body
+
+
+def test_each_side_gets_its_OWN_out_scalar(tmp_path):
+    """One shared cell would let a function that writes through it feed the reference the
+    subject's answer — the two-slot discipline the locale fixture already uses."""
+    plan = _plan(tmp_path, "int f(int *n) { *n = 1; return 0; }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "(mut n_s, mut n_r)" in body
+    assert "&mut n_s" in body and "&mut n_r" in body
+
+
+def test_an_out_scalar_cell_is_declared_INSIDE_the_loop(tmp_path):
+    """Hoisted out, a skipped write inherits the previous iteration's value — which is
+    exactly the bug (a missing write) the cell exists to detect."""
+    plan = _plan(
+        tmp_path,
+        "int f(const unsigned char *s, int *n) { *n = 1; return 0; }\n",
+    )
+    body = emit_case(_case(plan, "f"))
+    lines = body.splitlines()
+    decl = next(i for i, ln in enumerate(lines) if "mut n_s" in ln)
+    loop = next(i for i, ln in enumerate(lines) if "corpus.pairs()" in ln)
+    assert decl > loop, "the cell must be declared inside the corpus loop, not above it"
+
+
+def test_an_out_scalar_gets_the_right_extern_type(tmp_path):
+    plan = _plan(tmp_path, "int f(int *a, size_t *b) { *a = 1; *b = 2; return 0; }\n")
+    src = emit(plan, "m.c", total=1)
+    assert "a: *mut i32" in src and "b: *mut usize" in src
+
+
+# --- restartable-conversion state + wint_t ---------------------------------
+
+
+def test_mbstate_is_its_OWN_kind_not_an_int_out():
+    """msvcrt types `mbstate_t` as `int`. Resolving that typedef first would classify it
+    INT_OUT and seed it with the not-written SENTINEL — handing the conversion a garbage
+    partial-character input state and grading whatever fell out."""
+    assert classify_type("mbstate_t *") == MBSTATE
+    assert classify_type("mbstate_t *") != INT_OUT
+
+
+def test_mbstate_sweeps_real_initial_states_not_just_zero(tmp_path):
+    """Zero is "at a character boundary". Seeding only zero leaves the resume-a-partial-
+    character path — the half of a restartable conversion that HAS state to get wrong —
+    completely unreached, while the row still reports green."""
+    plan = _plan(tmp_path, "size_t f(const char *s, size_t n, mbstate_t *st) { return n; }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "for st0 in MBSTATES {" in body
+    assert "(mut st_s, mut st_r): (i32, i32) = (st0, st0)" in body
+
+
+def test_mbstate_is_compared_AFTER_the_call(tmp_path):
+    """It is an in-out: the state left behind is the whole point of a restartable
+    conversion, so supplying it without reading it back grades nothing."""
+    plan = _plan(tmp_path, "size_t f(const char *s, size_t n, mbstate_t *st) { return n; }\n")
+    body = emit_case(_case(plan, "f"))
+    assert "st_s != st_r" in body
+
+
+def test_a_wint_t_return_is_16_bit(tmp_path):
+    """MSVC's wint_t is 16-bit (WEOF == 0xFFFF); glibc's is 32-bit. The refstub pins the
+    MSVC spelling, so a u32 extern would make the two sides disagree about how much of the
+    register is the answer — the UCHAR lesson again."""
+    plan = _plan(tmp_path, "wint_t f(int c) { return (wint_t)c; }\n")
+    src = emit(plan, "m.c", total=1)
+    assert "-> u16" in src

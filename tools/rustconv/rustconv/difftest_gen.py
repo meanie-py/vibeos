@@ -78,6 +78,24 @@ BUF_OUT = "BUF_OUT"  # `unsigned char *` / `char *` — written through
 WSTR_IN = "WSTR_IN"
 WBUF_OUT = "WBUF_OUT"
 VOID = "VOID"  # C `(void)`, which the scanner reports as one parameter
+#: A scalar written THROUGH a pointer: `int *` / `size_t *`, non-const. The whole `_s`
+#: family reports its result this way — `_mbccpy_s(dst, n, &copied, src)` returns only an
+#: errno_t, and *`copied`* is the answer. Grading the return alone would compare two
+#: `EINVAL`s and call it parity while the byte counts disagreed, which is why these were
+#: worth a kind rather than a refusal: the `_s` variants carry the richest error contracts
+#: in the CRT (EINVAL vs ERANGE vs success-with-truncation) and each contract is only
+#: observable in the out-scalar.
+INT_OUT = "INT_OUT"  # `int *`, `unsigned *`, `long *` — written through
+SIZE_OUT = "SIZE_OUT"  # `size_t *` — written through
+#: A `wint_t` return. MSVC's is 16-bit (so `WEOF == 0xFFFF`) where glibc's is 32-bit;
+#: the refstub pins the MSVC spelling, so the extern must say `u16` or the two sides
+#: disagree about how much of the register is the answer — the UCHAR lesson again.
+WINT = "WINT"
+#: `mbstate_t *` — the restartable conversions' partial-character state. IN-OUT, which is
+#: why it cannot reuse INT_OUT even though msvcrt types it `int`: a sentinel seed would
+#: feed the conversion a garbage *input* state. It is seeded from a swept set of real
+#: initial states and compared afterwards.
+MBSTATE = "MBSTATE"
 
 _INT_SCALARS = {"int", "unsigned int", "unsigned", "long", "unsigned long"}
 _SIZE_SCALARS = {"size_t", "unsigned __int64", "__int64"}
@@ -85,9 +103,11 @@ _NARROW_CHAR = {"unsigned char", "char"}
 _WIDE_CHAR = {"wchar_t", "unsigned short"}
 
 #: Kinds a generated case knows how to SUPPLY. A parameter outside this set is a refusal.
-SUPPLIABLE = frozenset({CHAR, UCHAR, SIZE, LOCALE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT})
+SUPPLIABLE = frozenset(
+    {CHAR, UCHAR, SIZE, LOCALE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT, INT_OUT, SIZE_OUT, MBSTATE}
+)
 #: Kinds a generated case knows how to COMPARE as a return value.
-COMPARABLE = frozenset({CHAR, UCHAR, SIZE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT, VOID})
+COMPARABLE = frozenset({CHAR, UCHAR, SIZE, STR_IN, BUF_OUT, WSTR_IN, WBUF_OUT, VOID, WINT})
 
 #: `#if` guards that make the host reference a different function from the target's.
 #: The reference TU is compiled for the host (x86_64 linux), so a `_WIN64` arm is graded on
@@ -181,6 +201,8 @@ def classify_type(c_type: str) -> str:
     if stars == 0:
         if base == "void":
             return VOID
+        if base == "wint_t":
+            return WINT
         if base in _SIZE_SCALARS:
             return SIZE
         if base == "_locale_t":
@@ -194,6 +216,20 @@ def classify_type(c_type: str) -> str:
         return STR_IN if is_const else BUF_OUT
     if stars == 1 and base in _WIDE_CHAR | {"wchar_t"}:
         return WSTR_IN if is_const else WBUF_OUT
+    if stars == 1 and base == "mbstate_t":
+        # BEFORE the _INT_SCALARS arm below would ever see it. msvcrt types mbstate_t as
+        # `int`, so resolving the typedef first would classify it INT_OUT and seed it with
+        # the not-written sentinel — handing the conversion a garbage partial-character
+        # state and grading whatever fell out.
+        return MBSTATE
+    if stars == 1 and not is_const and base in _SIZE_SCALARS:
+        return SIZE_OUT
+    if stars == 1 and not is_const and base in _INT_SCALARS:
+        # `const int *` deliberately falls through to a refusal: an INPUT array of ints is
+        # a different thing from a written-through result cell, and guessing which one a
+        # signature means is how a harness ends up supplying a 1-element array to a
+        # function that wanted 40.
+        return INT_OUT
     if stars == 1 and base == "_locale_t":
         # `_locale_t` is ALREADY a pointer; a starred one is a genuine `_locale_t *`.
         return f"?:{text}"
@@ -260,6 +296,14 @@ class Case:
     @property
     def out_buffers(self) -> tuple[int, ...]:
         return tuple(i for i, k in enumerate(self.param_kinds) if k in (BUF_OUT, WBUF_OUT))
+
+    @property
+    def out_scalars(self) -> tuple[int, ...]:
+        """Written-through cells to compare after the call. For the `_s` family these carry
+        the ANSWER — grading only the returned errno_t would call two `EINVAL`s parity while
+        the counts they wrote disagreed. `mbstate_t` is here too: it is an in-out, and the
+        state left behind is the whole point of a restartable conversion."""
+        return tuple(i for i, k in enumerate(self.param_kinds) if k in (INT_OUT, SIZE_OUT, MBSTATE))
 
 
 @dataclass
@@ -415,6 +459,10 @@ _RUST_TY = {
     BUF_OUT: "*mut u8",
     WSTR_IN: "*const u16",
     WBUF_OUT: "*mut u16",
+    INT_OUT: "*mut i32",
+    SIZE_OUT: "*mut usize",
+    MBSTATE: "*mut i32",
+    WINT: "u16",
     VOID: "()",
 }
 
@@ -432,7 +480,7 @@ _PROLOGUE = """//! GENERATED by `rustconv difftest-gen` from `{c_path}` — do n
 //! hand-written case, not one that is known good.
 #![allow(non_snake_case)]
 
-use crate::fixture::{{Corpus, Guarded, CODEPAGES, LOCALES, MbcsFixture}};
+use crate::fixture::{{Corpus, Guarded, CODEPAGES, LOCALES, MBSTATES, MbcsFixture}};
 
 extern "C" {{
 """
@@ -614,6 +662,31 @@ def _bind(name: str, kind: str, exhaustive: bool, seeded: bool = False) -> _Bind
         # wchar-sized write and overrun it by 2x.
         acc = "wptr" if kind == WBUF_OUT else "ptr"
         return _Bind(None, f"{name}_s.{acc}()", f"{name}_r.{acc}()", "", setup=setup)
+    if kind in (INT_OUT, SIZE_OUT):
+        # Seeded with a SENTINEL, not zero. A function that fails to write its out-scalar
+        # and one that writes 0 are different behaviours, and zero-initialising makes them
+        # indistinguishable — both sides would "agree" on a value neither produced. The
+        # sentinel is odd and huge so it cannot be a plausible count or errno.
+        ty = "usize" if kind == SIZE_OUT else "i32"
+        sen = "0x5A5A_5A5A_5A5A_5A5Ausize" if kind == SIZE_OUT else "0x5A5A_5A5Ai32"
+        # Declared per-iteration inside the innermost loop for the same reason the out
+        # buffers are: a cell hoisted out keeps the previous iteration's value, so a
+        # skipped write silently inherits an answer that happens to be right.
+        setup = f"let (mut {name}_s, mut {name}_r): ({ty}, {ty}) = ({sen}, {sen});"
+        return _Bind(None, f"&mut {name}_s", f"&mut {name}_r", "", setup=setup)
+    if kind == MBSTATE:
+        # SWEPT, not just zeroed. Zero is the initial conversion state, and seeding only
+        # zero leaves the entire resume-a-partial-character path unreachable — which is the
+        # half of a restartable conversion that has any state to get wrong. MBSTATES also
+        # carries a lead byte, so `mbrtowc` is actually asked to finish a character.
+        # Each side gets its own cell: the call writes back through it.
+        return _Bind(
+            f"for {name}0 in MBSTATES {{",
+            f"&mut {name}_s",
+            f"&mut {name}_r",
+            f"{name}={{{name}0:#x}}",
+            setup=f"let (mut {name}_s, mut {name}_r): (i32, i32) = ({name}0, {name}0);",
+        )
     raise ValueError(f"no binding for kind {kind}")  # pragma: no cover - planner refuses first
 
 
@@ -740,6 +813,11 @@ def emit_case(case: Case) -> str:
         # is used only on failure.
         out.append(f"{pad}if !Guarded::same(&{n}_s, &{n}_r) {{")
         out.append(f'{pad}    panic!("{case.name}: {n} differs — {ctx}");')
+        out.append(pad + "}")
+    for i in case.out_scalars:
+        n = case.param_names[i]
+        out.append(f"{pad}if {n}_s != {n}_r {{")
+        out.append(f'{pad}    panic!("{case.name}: {n} = {{{n}_s}} vs ref {{{n}_r}} — {ctx}");')
         out.append(pad + "}")
     for _ in loops:
         depth -= 1

@@ -983,8 +983,27 @@ N+1 as evidence that the fix for bug N was wrong.**
   `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
   **silent** when it feeds an integer.
 - **C post-inc/dec rewritten with the wrong read order** (`x = y--` reading the post value).
+- **A post-decrement INSIDE a loop condition — `while (a && b && len--)`.** The decrement is
+  part of the test, so the loop exits having *already* wrapped `len` to `SIZE_MAX`, and the
+  `if (len && ...)` epilogue that follows fires on that wrapped value. A Rust `while len > 0`
+  with a separate `len -= 1` reads like the same loop and is not: `len` stays 0 and the
+  epilogue never runs. `_mbsnset_l` silently dropped its truncation this way. Whenever a C loop
+  decrements in its condition, check what the code *after* the loop reads.
 - **A C parameter reassignment translated as a block-local `let` SHADOW** — the new value dies
-  at the block end.
+  at the block end. The same bug wearing a loop: **the C walks the PARAMETERS and the code after
+  the loop reads what the walk left behind.** `_mbslwr_s_l`/`_mbsupr_s_l` looped over `let mut
+  s = s` copies scoped inside a branch, so afterwards they tested the *original* `len` (making
+  the buffer-too-small `EINVAL` unreachable) and wrote the terminator at the *original* `s`,
+  i.e. the start of the string. `let mut s = s;` at function scope is the fix; the tell is any
+  statement after the loop that mentions a parameter the loop advanced.
+- **An out-parameter store made CONDITIONAL on success.** C's
+  `Dest->Buffer = alloc(...); if (!Dest->Buffer) return STATUS_NO_MEMORY;` stores the failure
+  into the caller's struct; the natural Rust — `let buf = alloc(); if buf.is_null() { return
+  ... } (*dest).Buffer = buf;` — returns *before* the store. The caller is then left holding
+  its own stale pointer beside the `Length`/`MaximumLength` the function just overwrote: a
+  string that looks live and aims at foreign memory. Eleven `Rtl*String` converters had it.
+  Whenever C assigns through an out-pointer and *then* tests what it assigned, the store is
+  part of the contract — keep the order.
 - **A guard condition swapped for a different nearby variable** — logic inverted per boot mode.
 - **A NULL guard De Morgan'd the wrong way.** `MSVCRT_CHECK_PMT(start && str)` came back as
   `MSVCRT_CHECK_PMT!(start.is_null() || str.is_null())` — the *negation* of the C, so the guard
@@ -1373,6 +1392,18 @@ bugs: **ambient state the reference holds fixed** (locale — grep a flip candid
 `get_locinfo` / `_l`-suffixed helpers / any read of process-global state), and **the reference
 TU is compiled for the HOST**, so target-conditional `#if`s are graded on the wrong arm.
 
+A third: **an out-parameter the harness only PARTIALLY compares.** rtl-difftest asserted
+`(Length, MaximumLength)` on the STRING converters but not `Buffer`, so an eleven-site
+divergence — the alloc-failure path storing nothing where the C stores NULL — was visible in
+exactly the one test that happened to compare all three fields. Ten of eleven sites were graded
+green by a suite that never looked at the field carrying the bug. **Compare the whole
+out-parameter, or write down which field you dropped and why.** Pointer values legitimately
+differ between the two sides, but `is_null()` does not — grade the property, not the address.
+
+And after fixing anything a harness caught, **re-break one site deliberately and confirm the
+suite goes red.** Widening an assertion is itself untested code: it is easy to add a field to a
+tuple that can never disagree, and the result reads exactly like a stronger test.
+
 ### Anything you define so the reference will LINK is part of the oracle `[§9.73]`
 A 20,000-case differential fuzzer said MATCH for four waves while **six shipped msvcrt functions
 were wrong** — because the harness's own convenience stubs for `_tolower_l` &c. graded the Rust
@@ -1384,6 +1415,16 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **A hand-typed CONSTANT in the refstub is an oracle that grades against a value Windows never
+  returns.** rtl-difftest's `refstub/rtl.h` carried
+  `#define STATUS_UNMAPPABLE_CHARACTER 0x80000016` — the real value is `0xC0000162`, the same
+  digits transposed. Both are negative, so `NT_SUCCESS` agrees and control flow is identical;
+  only the returned value differs, which is precisely what a differential test compares. It
+  read as a *Rust* bug for as long as nobody checked the reference's own header. Every constant
+  you re-declare so the reference will compile is un-sealed data — the same class as the 61
+  invented kernel stop codes `[§9.113]`, except no shipped-code scanner looks in a test's
+  private header. **Audit the whole block against the SDK, not just the one that got caught**
+  (16 constants, exactly 1 wrong); prefer including the real header over re-typing values.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,
@@ -1394,6 +1435,29 @@ symptom and leaves `pure` in place). **The tripwire matters more than the fix:**
 `ref_integrity.rs` is a test whose subject is *the oracle itself* — for each reference function
 whose C contains a guard, call it in a forked child with the input the guard exists for and
 assert it returns rather than faults.
+
+**The mirror image: the harness's own ENVIRONMENT binds to the subject.** A static definition
+beats the shared libc, and the code under test is full of `#[no_mangle]` CRT names. msvcrt-
+difftest's NLS layer called `iswalpha_l` to build its codepage tables; that resolved to the
+*subject's* Rust export, which called `GetStringTypeW`, which called back into the NLS layer —
+stack overflow on the first case. Anything the harness calls to CONSTRUCT the fixture must
+reach the host libc explicitly (`dlopen("libc.so.6")` + `dlsym`, resolved once and cached), not
+by name. Do not "fix" it by listing today's collisions: that shadow set grows with every file
+you translate, so an enumeration has an expiry date and the next collision presents as a
+mysterious hang, not a link error.
+
+**The host compiler also REWRITES the reference, which matters for a PERF oracle.** Same rule —
+trust the machine code — with a different consequence. msvcrt's `memset` is a plain loop in
+`string.c`, but cc idiom-recognizes it and emits its own size-dispatched expansion (four
+overlapping 8-byte stores for `n` in 16..32); `ref_memcpy` next to it survives untouched as a
+tailcall to the hand-rolled `msvcrt_ref_memmove`. So one row of a rust-vs-C perf table is racing
+a compiler's best effort and the row beside it is racing a byte loop, from one reference TU
+compiled one way. For a BEHAVIOUR oracle this is harmless (the rewrite is semantics-preserving,
+which is the whole point). For a THROUGHPUT oracle it silently changes what the number means, and
+it is invisible in the C. Disassemble each `ref_*` you bench before you believe its ratio, and
+say in the harness which rows compare against the C-as-written and which against the
+C-as-the-compiler-rewrote-it. `#pragma function(...)` in the ReactOS source does NOT protect you
+— it is MSVC-only and cc ignores it.
 
 ### Exercising a branch is not testing it `[§9.75]`
 A branch is only tested when its two sides can produce **different answers**. Planting a
@@ -1414,6 +1478,51 @@ stubs `get_locinfo()` as a static address. The new instrument counts calls:
 > **A function that walks `n` elements may consult the environment O(1) times, not O(n).**
 
 It found two more instances on its first run.
+
+**And a ratio is only load-robust if the two sides are INTERLEAVED.** "Same process, same
+data, same load" is not enough when each side gets its own consecutive window: `perf` ran
+three rounds of Rust and then three of C, so best-of-3 rejected only spikes shorter than one
+window — while the load a gate generates (three cold cross-builds, four booting QEMUs) stays
+hot for minutes. A spike covering all three Rust rounds and none of the C ones reports a 2×
+regression that does not exist, and it did, on the difftest stage's first automated gate.
+Round-robin the rounds (`rust, c, rust, c, …`) and take each side's best: a spike then lands
+on both sides of the same round, and the best round is the quietest one for both. Warm both
+sides before timing either. Generally: **a timing harness that was only ever run by hand on an
+idle host has never been tested under the conditions a gate creates** — wiring one into CI is
+itself a change to the instrument.
+
+**Interleaving was necessary and NOT sufficient.** The same gate went red again on the next run,
+on a different case, and the rest of the fix is three more things — each of which failed to be
+enough on its own:
+
+- **Round LENGTH beats round count.** Best-of-K only reports the peak if some round dodges every
+  interruption, and at ~18 ms a round essentially never does (the scheduler tick alone is 4 ms),
+  so best-of-3 was reporting the *mean* while claiming the peak. Splitting the SAME total work
+  into 9 short rounds — no extra wall time — moved `strcat/16` from a stable 1.71× to 0.95× and
+  `memset/16` from 1.81× to 1.37×. Those "regressions" were the estimator.
+- **A fixed threshold must clear the instrument's own noise floor, and the only honest floor is a
+  MEASURED one.** At n=16 a call to a CRT primitive costs ~13 cycles end to end, so the reading
+  is mostly code layout: taking the shipping `strcat` and *deleting two null checks* — strictly
+  less work — read **1.65× slower** at n=16 and 1.82× at n=64, but 1.03× at n=4096. A 2.0× bar
+  sits inside that. Bench **identical twins** — the same source through the same compiler,
+  compiled into two symbols at two addresses — at every size, and scale the bar by how far from
+  1.00× they land. The twins must be **same-language**: a Rust-vs-C twin reads 1.28–1.43× at
+  large n, where per-call effects are noise, because that is rustc-vs-cc codegen — the thing the
+  harness *exists to measure*. Folding it into the error bar inflates the bar to ~2.8× everywhere
+  and quietly retires the gate. Keep the twins in separate TUs (gcc's `-fipa-icf` folds identical
+  functions within one TU at `-O2`) and **assert their addresses differ** — a merged pair reads a
+  vacuous, permanent 1.00× while measuring nothing.
+- **A calibrated bar still cannot see a BURST**, because the calibration is one snapshot and the
+  burst is not. At load 21 the bar widened correctly to 2.81× at n=16 and `memset/16` still read
+  3.41×: its Rust rounds had been hit 3.9× while its C rounds took only 1.6×. Nothing measured
+  once distinguishes that from a real regression — so **require the failure to REPRODUCE**. A slow
+  body is slow in every pass; a burst has to hit the same case on the same side N times running.
+  Costs nothing on a green run, since extra passes happen only after something already failed.
+
+Verified in both directions, which is the part worth copying: under synthetic load 31 a flagged
+case cleared on pass 2 and the run passed, and a deliberately-slowed body (four redundant scans
+in `strchr`) failed all three passes at all three sizes. **A gate that has only ever been proven
+to pass is half-tested** — perturb something and watch it fail before you trust it.
 
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered

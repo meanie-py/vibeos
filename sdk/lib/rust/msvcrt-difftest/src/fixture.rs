@@ -32,6 +32,17 @@ extern "C" {
 /// it — see nlsimpl.c).
 pub static CODEPAGES: &[u32] = &[932, 936, 949, 950, 1361, 1252, 20127];
 
+/// Initial `mbstate_t` values every restartable-conversion case sweeps.
+///
+/// msvcrt types `mbstate_t` as a plain `int` holding the pending LEAD BYTE, so 0 means
+/// "at a character boundary" and any other value means "resume this partial character".
+/// Sweeping only 0 would leave the resume path — the half of `mbrtowc`/`mbrlen` that has
+/// any state to get wrong — completely unreached, while the suite still reported a green
+/// per-function row. 0x81 and 0xE0 are lead bytes in every DBCS codepage here; 0xFF is
+/// not a lead byte in any of them, so it also grades the "stale state that cannot be
+/// completed" path both sides must reject the same way.
+pub static MBSTATES: [i32; 4] = [0, 0x81, 0xE0, 0xFF];
+
 /// Installs a codepage's `threadmbcinfo` on BOTH sides and, on the way out, checks
 /// neither side scribbled on it.
 ///

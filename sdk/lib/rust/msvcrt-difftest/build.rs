@@ -1088,6 +1088,40 @@ fn main() {
         .file(manifest.join("nlsimpl.c"));
     nls_build.cargo_metadata(false);
 
+    // ── the perf harness's null hypothesis ───────────────────────────────
+    //
+    // Loop bodies with exact twins in tests/perf.rs, so that harness can measure
+    // its OWN resolution instead of assuming it (see perfctl.c). Its own TU with
+    // no refstub/msvcrt.h: these are self-contained loops that must not pick up
+    // the rename prelude or the msvcrt_ref_* import namespace.
+    //
+    // `-fno-builtin` is the whole point, not hygiene: without it cc recognizes the
+    // copy and scan loops and substitutes glibc's vectorized routine, and the
+    // control would then describe the front-end behaviour of hand-written AVX2
+    // rather than of the byte loops the suite benches. Counterpart of
+    // `#![no_builtins]` on the crate under test.
+    //
+    // Compiled TWICE into `*_a` / `*_b` symbol sets. Same source, same compiler,
+    // same flags — identical code at two addresses, whose measured ratio must be
+    // 1.00x. SEPARATE cc::Build instances with separate out_dirs so they land in
+    // distinct TUs: gcc's -fipa-icf folds identical functions within a TU at -O2,
+    // and a folded pair would make the control vacuously perfect forever.
+    let perfctl_twin = |twin: &str| {
+        let mut b = cc::Build::new();
+        b.warnings(false)
+            .flag("-Werror=implicit-function-declaration")
+            .flag("-Werror=implicit-int")
+            .flag("-fno-builtin")
+            .define("PERF_CTL_TWIN", twin)
+            .opt_level(2)
+            .out_dir(out.join(format!("perfctl-{twin}")))
+            .file(manifest.join("perfctl.c"));
+        b.cargo_metadata(false);
+        b
+    };
+    let perfctl_a = perfctl_twin("a");
+    let perfctl_b = perfctl_twin("b");
+
     // ── the printf PROBE unit: ReactOS `printf/streamout.c` as `so_*` ────
     //
     // NOT an oracle and NOT under test — a THIRD party, for one question:
@@ -1246,6 +1280,8 @@ fn main() {
     objects.extend(refimpl_build.compile_intermediates());
     objects.extend(subject_build.compile_intermediates());
     objects.extend(nls_build.compile_intermediates());
+    objects.extend(perfctl_a.compile_intermediates());
+    objects.extend(perfctl_b.compile_intermediates());
     objects.extend(so_build.compile_intermediates());
     objects.extend(pfflat_build.compile_intermediates());
 
@@ -1283,6 +1319,7 @@ fn main() {
     println!("cargo:rerun-if-changed={}", manifest.join("subjectimpl.c").display());
     println!("cargo:rerun-if-changed={}", manifest.join("nlsimpl.c").display());
     println!("cargo:rerun-if-changed={}", manifest.join("nlsimpl.h").display());
+    println!("cargo:rerun-if-changed={}", manifest.join("perfctl.c").display());
     println!("cargo:rerun-if-changed={}", mbcs_c.display());
     println!("cargo:rerun-if-changed={}", refstub.display());
     println!("cargo:rerun-if-changed={}", refstub_printf.display());

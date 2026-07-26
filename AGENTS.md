@@ -267,6 +267,7 @@ guide: `tests/qemu/cli/README.md`.
 ./vibeos-cli smoke  --arch i386             # THE verdict — refuses stale media
 ./vibeos-cli check                          # source lints, 0 NEW vs tools/lint-baseline/
 ./vibeos-cli check-tooling                  # ruff+pyright+pytest for OUR python
+./vibeos-cli difftest                       # host harnesses: shipping Rust vs the genuine C
 ./vibeos-cli gate                           # build serial -> smoke all arches parallel -> retry known flakes
 ./vibeos-cli land                           # THE way to land: submit to the merge queue (train it if free)
 ./vibeos-cli land-status --mine             # conductor + queue + MY verdict (landed / rejected + artifact)
