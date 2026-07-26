@@ -222,6 +222,16 @@ SIGN_ONLY_ROOTS = frozenset(
 #: invalidates the fixture for every case that follows it in the same process.
 STATE_MUTATORS = frozenset({"create_mbcinfo", "free_mbcinfo", "_lock", "_unlock", "malloc", "free"})
 
+#: Refused here, but graded SOMEWHERE — so the refusal list points at it instead of telling
+#: the next reader to write a case that already exists.
+#:
+#: `create_mbcinfo` earns its own binary rather than a note. It builds the very fixture the
+#: generated cases are pinned against, and `mbcs_fixture_install` builds that fixture from
+#: the REFERENCE's copy for BOTH sides — so no generated case can ever run the subject's,
+#: and a wrong one would pass all 173 of them. Its own process, so calling it cannot
+#: disturb the fixture the other binary depends on. It found a divergence on its first run.
+GRADED_ELSEWHERE = {"create_mbcinfo": "tests/mbcs_state.rs, in its own process"}
+
 TIER_PURE = "pure"  # host-only: reads the pinned fixture, calls nothing else
 TIER_NLS = "nls-replay"  # needs the recorded Win32 NLS answers
 
@@ -452,7 +462,9 @@ def plan_file(scan: ScanResult, module: str) -> Plan:
             # far worse than not grading it, because the corruption reports as a DIVERGENCE
             # in an innocent function. `_setmbcp` is the one that matters; grade it on its
             # own, in its own process, by hand.
-            plan.refusals.append(Refusal(fn.name, "mutates the pinned MBCS state"))
+            plan.refusals.append(
+                Refusal(fn.name, "mutates the pinned MBCS state", GRADED_ELSEWHERE.get(fn.name, ""))
+            )
             continue
 
         kinds = [classify_type(t) for t, _ in fn.params]

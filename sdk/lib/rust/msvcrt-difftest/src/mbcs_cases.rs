@@ -3376,7 +3376,7 @@ pub fn case_mbsrtowcs_s() {
 }
 
 // ===== REFUSED — each needs a hand-written case ==========================
-//   create_mbcinfo: mutates the pinned MBCS state
+//   create_mbcinfo: mutates the pinned MBCS state (tests/mbcs_state.rs, in its own process)
 //   _setmbcp: mutates the pinned MBCS state
 
 // ===== runner ==========================================================
