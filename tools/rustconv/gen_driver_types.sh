@@ -31,6 +31,13 @@ NTDLL_SYS="${SRC}/sdk/lib/rust/ntdll-sys/src"
 # DRIVER_INC  : extra -I for the driver's own dir
 # VER_DEFS    : version macros matching the driver's CMakeLists.txt
 EXTRA_INC=()
+# LATE_INC: -I dirs that must rank BELOW the standard SDK dirs, because they carry an
+# alternate surface for headers the SDK also owns. sdk/include/wine is the case that forced
+# this: its winioctl.h defines _FILE_FS_*_INFORMATION, which ndk/iotypes.h then redefines, so
+# resolving <winioctl.h> to the wine copy is 23 redefinition errors — and, worse, would build
+# the island against a DIFFERENT struct layout than the .c if it ever did compile. The real
+# CMake command lists these last; EXTRA_INC is emitted FIRST, so they cannot go there.
+LATE_INC=()
 # LANG_ARGS: extra clang language flags. Default empty = C. C-in-.cpp drivers whose
 # HEADERS use C++ (default args, bool, anon unions — e.g. uniata) set `-x c++` so the
 # parse succeeds; bindgen still emits the plain structs.
@@ -1213,8 +1220,12 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]sam_c\.h'
                   --allowlist-file '.*[/\\]winnls\.h'
                   --allowlist-file '.*samlib[/\\].*\.h' )
-    EXTRA_INC=( -I"${SRC}/dll/win32/samlib" -I"${SRC}/build-i386/dll/win32/samlib"
-                -I"${SRC}/sdk/include/reactos/idl" -I"${SRC}/sdk/include/wine" )
+    EXTRA_INC=( -I"${SRC}/dll/win32/samlib" -I"${SRC}/build-i386/dll/win32/samlib" )
+    # BELOW the standard SDK dirs, exactly where the real CMake command puts them. Hoisting
+    # sdk/include/wine ahead of them resolves <winioctl.h> to the wine copy, whose
+    # _FILE_FS_*_INFORMATION then collide with ndk/iotypes.h — 23 errors, and a silently
+    # different struct layout than the .c if it had compiled.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/idl" -I"${SRC}/sdk/include/wine" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502
                -D_WIN32_IE=0x603 -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1
                -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D__USE_CRTIMP
@@ -1508,7 +1519,7 @@ run_arch() {
     -I"${SRC}/sdk/include/vcruntime" -I"${BUILD_DIR}/sdk/include" -I"${BUILD_DIR}/sdk/include/psdk" \
     -I"${BUILD_DIR}/sdk/include/ddk" -I"${BUILD_DIR}/sdk/include/reactos" \
     -I"${BUILD_DIR}/sdk/include/reactos/mc" -I"${SRC}/sdk/include/dxsdk" \
-    -I"${SRC}/sdk/lib/pseh/include" \
+    -I"${SRC}/sdk/lib/pseh/include" "${LATE_INC[@]}" \
     -isystem "${SRC}/sdk/include/crt" -isystem "${TOOLCHAIN}/lib/clang/19/include" \
     --target="${TARGET}"
 

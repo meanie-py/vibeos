@@ -424,6 +424,12 @@ class DerivedProfile:
     allow_files: list[str]
     extra_inc: list[str]
     ver_defs: list[str]
+    # Include dirs the REAL compile lists AFTER the standard SDK dirs. They must stay after
+    # them in the island build too: `sdk/include/wine` carries an alternate surface for
+    # headers the PSDK also owns (winioctl.h defines _FILE_FS_*_INFORMATION, which
+    # ndk/iotypes.h then redefines), so hoisting it early silently swaps which definition the
+    # island is built against. samlib: 23 redefinition errors when early, 0 when late.
+    late_inc: list[str] = field(default_factory=list)
     allow_reasons: dict[str, str] = field(default_factory=dict)
     excluded: dict[str, str] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
@@ -1863,6 +1869,7 @@ def derive(
         p = d if d.is_absolute() else repo_root / d
         if p.is_dir() and _is_within(p, repo_root):
             extra_inc.append(f'-I"${{SRC}}/{p.relative_to(repo_root)}"')
+    late_inc: list[str] = []
     for d in extra_inc_dirs:
         p = (d if d.is_absolute() else repo_root / d).resolve()
         entry = (
@@ -1909,6 +1916,29 @@ def derive(
                 entry = f'-I"${{SRC}}/{p.relative_to(repo_root)}"'
                 if entry not in extra_inc:
                     extra_inc.append(entry)
+
+        # Re-bucket by the REAL command's ordering, whatever the entry's source. An -I the
+        # compiler ranks BELOW the standard SDK dirs must stay below them here: it is an
+        # alternate surface for headers the SDK also owns, and hoisting it changes which
+        # definition a bare `#include <x.h>` resolves to. `sdk/include/wine` is the live case --
+        # it comes from the module's own include_directories(), so a db-only rule misses it,
+        # yet CMake still emits it last. samlib: 23 redefinition errors early, 0 late.
+        order = {
+            p.relative_to(repo_root).as_posix(): i
+            for i, p in enumerate(db.include_dirs)
+            if _is_within(p, repo_root)
+        }
+        std_at = order.get("sdk/include")
+        if std_at is not None:
+
+            def _rank(entry: str) -> int | None:
+                inner = entry[3:].rstrip('"')
+                return order.get(inner.removeprefix("${SRC}/")) if "${SRC}/" in inner else None
+
+            demoted = [e for e in extra_inc if (r := _rank(e)) is not None and r > std_at]
+            if demoted:
+                extra_inc[:] = [e for e in extra_inc if e not in demoted]
+                late_inc.extend(e for e in demoted if e not in late_inc)
     else:
         findings.append(
             Finding(
@@ -1937,6 +1967,7 @@ def derive(
         wrapper_inc=wrapper,
         allow_files=allow_files,
         extra_inc=extra_inc,
+        late_inc=late_inc,
         ver_defs=ver_defs,
         allow_reasons=allow_reasons,
         excluded=excluded,
@@ -2008,6 +2039,14 @@ def emit_profile(dp: DerivedProfile) -> str:
             out.append("        ;;")
         out.append("    esac")
     out.append("    EXTRA_INC=( " + " ".join(dp.extra_inc) + " )")
+    if dp.late_inc:
+        out.append(
+            "    # LOWER priority than the standard SDK dirs -- the real compile lists these"
+        )
+        out.append(
+            "    # after them, and hoisting one ahead swaps which header an include resolves to."
+        )
+        out.append("    LATE_INC=( " + " ".join(dp.late_inc) + " )")
     out.append("    VER_DEFS=( " + " ".join(dp.ver_defs) + " )")
     if multi:
         out.append(
@@ -2156,6 +2195,7 @@ def to_json(dp: DerivedProfile) -> dict:
         "excluded": dp.excluded,
         "wrapper_inc": dp.wrapper_inc,
         "extra_inc": dp.extra_inc,
+        "late_inc": dp.late_inc,
         "ver_defs": dp.ver_defs,
         "islands": [{"stem": i.stem, "tus": i.tus, "reason": i.reason} for i in dp.islands],
         "switch_constants": [
