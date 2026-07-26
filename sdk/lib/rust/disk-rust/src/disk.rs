@@ -10099,9 +10099,15 @@ pub unsafe extern "C" fn DiskIoctlGetCacheInformation(
                 ((*fdoExtension).DeviceFlags as u16 & !0x1u16) as USHORT;
         }
 
+        // ADJUST_FUA_FLAG (classpnp.h): DEV_WRITE_CACHE && !DEV_POWER_PROTECTED &&
+        // !CLASS_SPECIAL_FUA_NOT_SUPPORTED. The two negated guards were `!(x & FLAG) != 0`,
+        // which is Rust's BITWISE not — never zero for a flag test, so both were always
+        // true and the whole condition collapsed to DEV_WRITE_CACHE alone. That forced FUA
+        // on power-protected devices and on devices that had explicitly reported it
+        // unsupported. C's `!` is logical; the faithful spelling is `== 0`.
         if ((*fdoExtension).DeviceFlags as i32 & 0x1i32) != 0
-            && !((*fdoExtension).DeviceFlags as i32 & 0x10i32) != 0
-            && !((*fdoExtension).ScanForSpecialFlags as u32 & 0x80u32) != 0
+            && ((*fdoExtension).DeviceFlags as i32 & 0x10i32) == 0
+            && ((*fdoExtension).ScanForSpecialFlags as u32 & 0x80u32) == 0
         {
             (*fdoExtension).CdbForceUnitAccess = 1u8; // TRUE
         } else {

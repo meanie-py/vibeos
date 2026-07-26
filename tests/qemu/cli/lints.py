@@ -451,6 +451,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # C's `!x` is LOGICAL not; Rust's `!x` on an integer is BITWISE. So a translated
+    # `!(flags & FLAG)` becomes `!(flags & FLAG) != 0`, which is true for every value a
+    # flag test can produce — a CONSTANT condition that types fine, compiles clean and
+    # trips no rustc lint. Eight sites on 2026-07-26, and only three were assertions:
+    # the rest were live branches, including classpnp's ADJUST_FUA_FLAG collapsing to
+    # its first term (forcing FUA onto devices that had reported it unsupported) and an
+    # always-true arm that disabled win32k's CJK line-break rule. Nothing but reading
+    # the C finds these, which is exactly why it is a gate. Baseline is EMPTY.
+    sbn = repo / "tools" / "scan_bitwise_not_bool.py"
+    specs.append(
+        (
+            "scan_bitwise_not_bool",
+            [py, str(sbn), "--lint"] if sbn.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # One constant name, two values, both ours (§9.113b). The ORACLE-FREE half of
     # the invented-constant hunt: verify_constants needs the right C header in its
     # catalog, and the 18 findings of 2026-07-24 hid precisely because theirs

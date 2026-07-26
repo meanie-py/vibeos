@@ -129,6 +129,33 @@ pub unsafe extern "system" fn Boom() {
 }
 """
 
+_BITWISE_NOT_BAD = """\
+pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
+    // C: DEV_WRITE_CACHE && !DEV_POWER_PROTECTED && !CLASS_SPECIAL_FUA_NOT_SUPPORTED.
+    // Both negated guards are BITWISE not -> constant true -> both guards dead.
+    (flags & 0x1) != 0 && !(flags & 0x10) != 0 && !(special & 0x80) != 0
+}
+"""
+
+# The GOOD fixture carries the fix AND both idioms the scanner must never flag. Without
+# them a scanner that simply matched every `!` would still pass its negative control.
+_BITWISE_NOT_GOOD = """\
+pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
+    (flags & 0x1) != 0 && (flags & 0x10) == 0 && (special & 0x80) == 0
+}
+pub fn unknown_flag_test(opts: u32) -> bool {
+    // `x & !MASK` — genuinely bitwise, genuinely wanted: "any bit outside MASK?"
+    (opts & !(0x1u32 | 0x2u32)) != 0
+}
+pub fn layout_check() {
+    // A MACRO bang, not the not-operator.
+    assert!(core::mem::offset_of!(SomeStruct, first_field) == 0);
+}
+pub fn deliberate(x: u32) -> bool {
+    !x != 0 // nolint: bitwise-not-bool (complement really is wanted)
+}
+"""
+
 _ASSERT_UB_BAD = """\
 pub unsafe fn paged_thing() {
     // PAGED_CODE() — a DBG-only diagnostic, lowered to UB (§9.120).
@@ -491,6 +518,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _ASSERT_UB_BAD},
         good={"good.rs": _ASSERT_UB_GOOD},
+    ),
+    Control(
+        name="scan_bitwise_not_bool",
+        script="tools/scan_bitwise_not_bool.py",
+        argv=["--lint"],
+        bad={"bad.rs": _BITWISE_NOT_BAD},
+        good={"good.rs": _BITWISE_NOT_GOOD},
     ),
     Control(
         name="scan_magic_offsets",
