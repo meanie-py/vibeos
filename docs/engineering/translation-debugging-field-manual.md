@@ -2552,6 +2552,16 @@ i386 hunts. Do **not** switch the smoke backend to native KVM to "repro faster" 
 per-arch accelerator cap, so a parallel repro just queues.
 
 ### Symbolication
+- **The kernel now PRINTS its own runtime base — stop deriving it.** Every boot emits
+  `[KRNLBASE] ntoskrnl runtime base=0x...` from `MiInitializeLoadedModuleList`
+  (`ARM3/sysldr.rs`, right after `PsNtosImageBase` is taken from the loader block). Feed it
+  straight to `qemu/addr2sym.sh <arch> --kernel-base 0x<that value> <addr>`, which does the
+  `- 0x400000` itself so nobody has to remember the direction. This makes the whole *retained*
+  crash corpus symbolicable offline with no VM — previously a saved arm64 bugcheck was a bare
+  hex address unless a live VM was still around for `inspect.sh` to query. Measured stable
+  across boots on arm64 (`0xFFFFF80042190000` twice), so a base recorded once stays good for
+  that build. The derive-from-`module+offset`-pairs method below is now the *fallback*, for
+  logs predating this line.
 - **i386 Rust-in-ntoskrnl carries a `+0x291000` shift** `[§9.2]`. C: `file_VA = runtime - 0x7fe00000`.
   Rust: additionally `- 0x291000`. One-shot for both:
   `qemu/addr2sym.sh i386 --reloc 0x80091000 <addr>`.

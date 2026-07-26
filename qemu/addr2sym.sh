@@ -29,7 +29,21 @@ if [ "${1:-}" = "--reloc" ]; then
     [ -n "$RELOC" ] || die "--reloc requires an address argument"
 fi
 
-[ "$#" -ge 1 ] || die "usage: addr2sym.sh <arch> [--reloc <hex>] <addr> [<addr>...]"
+# --kernel-base <hex>: the value printed by the kernel's own
+# "[KRNLBASE] ntoskrnl runtime base=<hex>" serial line. Pass it verbatim; we do
+# the `- 0x400000` here so nobody has to remember which direction it goes. Doing
+# that subtraction by hand is exactly the kind of remembered recipe that produces
+# a confidently wrong base, and a wrong base relocates the hunt (field manual
+# §9.124) instead of failing loudly.
+if [ "${1:-}" = "--kernel-base" ]; then
+    KBASE="${2:-}"
+    shift 2
+    [ -n "$KBASE" ] || die "--kernel-base requires an address argument"
+    [ "$RELOC" = "0" ] || die "pass --reloc OR --kernel-base, not both"
+    RELOC=$(python3 -c "import sys; print(format(int(sys.argv[1],16) - 0x400000, 'x'))" "$KBASE")
+fi
+
+[ "$#" -ge 1 ] || die "usage: addr2sym.sh <arch> [--reloc <hex> | --kernel-base <hex>] <addr> [<addr>...]"
 
 INDEX="$QEMU_DIR/symbols-$ARCH.tsv"
 [ -f "$INDEX" ] || die "missing $INDEX — run build-index.sh $ARCH first"
