@@ -737,6 +737,36 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   FEX's memory-notification contract, though it exports `BTCpuNotifyMemoryAlloc`/`Free`/
   `Protect`/`Dirty`. **→ closed by #74 below, and it was a missing capability, not tidy-up.**
 
+- **WoW64: 19 syscalls wrote FOUR BYTES PAST a 32-bit guest's variable — FIXED 2026-07-26**
+  (wow64-plan Phase E19). Each takes a guest pointer to a cell the kernel fills with a
+  *pointer-sized* value (`HANDLE`, base address, region size). Flat-thunked, the guest's
+  4-byte cell went straight to a host kernel that stores 8, so every **successful** call
+  scribbled the next four bytes of guest memory — the adjacent local, or the next struct
+  field. `NtOpenProcessToken` was among them, so every `OpenProcessToken()` from a 32-bit
+  guest did it. Invisible because the call succeeds and returns the right value in the right
+  place; only the collateral write is wrong, so damage surfaces later and elsewhere (same
+  signature as the calc heap corruption and the `IO_STATUS_BLOCK` overflow). Found by mining
+  the `marshalgen audit` baseline rather than by reading code — a flat thunk over a divergent
+  payload *is* the absence of code. Tell that it must come from the tool: `NtOpenProcessTokenEx`
+  was already marshalled while plain `NtOpenProcessToken` beside it was not. Baseline 278 →
+  **246** (+0 added). Proof: `marshal32.exe`'s new out-cell rung (canary after the handle
+  cell, call required to succeed, canary `volatile` so the compiler cannot fold the check
+  away), green on both arches. **Still open:** the array-payload group (AWE, `NtGetWriteWatch`,
+  `NtCompactKeys`, `NtRaiseHardError`) — their kernel side returns `STATUS_NOT_IMPLEMENTED`
+  today, so nothing corrupts and no marshaller can be tested; and the five `SEMANTIC` cases
+  (`PORT_MESSAGE`, `TOKEN_GROUPS`), which belong with the CSR-LPC-32 layer.
+
+- **`selfmod32.exe` was RED on amd64 since E17 and the gate could not see it — FIXED
+  2026-07-26** (wow64-plan Phase E19). Its rung-5 fixture writes a scratch file under
+  `%WINDIR%`: a writable ramdisk on arm64, a **read-only CD** on the amd64 livecd, so it
+  exited `0xBAD9`. E17 verified it on arm64 and staged it for amd64 without watching it run
+  there. The durable point is about the harness: **the probe ladder runs AFTER the desktop
+  marker, and the ordinary smoke stops at that marker**, so any late-rung, single-arch
+  failure is invisible to `gate`. Seeing it needs
+  `smoke --arch <a> --until "<guest>.exe exit"`. Rung 5 now skips loudly with the errno on a
+  read-only volume (file32's existing precedent) and rungs 6-7 still run; arm64 keeps full
+  rung-5 coverage. Both ladders now 9/9.
+
 - **WoW64/FEX: a 32-bit guest could not execute code it generated at runtime — FIXED
   2026-07-26** (task #74, wow64-plan Phase E17). wow64.dll wired one of the CPU layer's eight
   memory notifications. FEX's decoder **refuses to translate any guest address outside the

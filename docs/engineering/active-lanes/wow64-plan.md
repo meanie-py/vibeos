@@ -140,7 +140,7 @@ Every service lands in one of four tiers:
 flat thunk over a divergent payload compiles, links, and silently truncates.
 `marshalgen audit` derives from checked-in sources which services provably
 diverge 32↔64 and **hard-fails the build** if a flat thunk covers one that is not
-in `tools/lint-baseline/marshalgen_audit.txt` (278 entries, being burned down).
+in `tools/lint-baseline/marshalgen_audit.txt` (246 entries, being burned down).
 It also hard-fails on a stale built table, so the audit cannot be quietly
 outrun.
 
@@ -253,8 +253,13 @@ cannot reach. Nearly every marshalling bug from E6 onward was found by one.
 - **Registry redirection** (`Wow6432Node`, `KEY_WOW64_32KEY/64KEY`) — task #66.
   Not merely missing: a 32-bit guest currently reads and writes the *native*
   hive, so it is a silent correctness bug, not a stubbed feature.
-- **The 278 audit-baseline entries** — services whose payloads provably diverge
-  but that still flat-thunk. Each is a latent version of bugs already paid for.
+- **The 246 remaining audit-baseline entries** — services whose payloads provably
+  diverge but that still flat-thunk. Each is a latent version of bugs already
+  paid for. E19 closed the pointer-width **out-cell** slice of these (the ones
+  that were actively corrupting guest memory); what is left is dominated by
+  win32k's kernel-graphics-driver surface (`SURFOBJ`/`BRUSHOBJ`/`XLATEOBJ`,
+  ~81 entries, unreachable from a user-mode guest), `PORT_MESSAGE` (the LPC
+  server side, which belongs with the CSR-32 layer), and `TOKEN_GROUPS`.
 - **IOCTL embedded-pointer buffers** (task #42) and **guest `int3` dispatch**.
 
 ## Things that turned out to matter more than expected
@@ -2566,3 +2571,74 @@ untouched: the whole redirect is `#ifdef _M_ARM64`, and amd64 keeps catching
 the real compat-mode fault in `Wow64pPrepareForExceptionHook`. Running the same
 guest on both arches is worth it precisely because the arrival paths share
 nothing.
+
+**Phase E19 — the out-cell class: 19 syscalls were writing four bytes past the
+guest's variable (2026-07-26).** The first real burn-down of the E10 audit
+baseline, and it turned out not to be tidy-up: these were **live guest memory
+corruption**.
+
+Each of the 19 takes a guest pointer to a cell the kernel fills with a
+POINTER-SIZED value — a `HANDLE`, a base address, a region size. Flat-thunked,
+the guest's 4-byte cell went straight to a host kernel that stores 8, so every
+*successful* call scribbled over the next four bytes of guest memory: the
+adjacent local, or the next field of the struct. `NtOpenProcessToken` was on the
+list, which means every `OpenProcessToken()` from a 32-bit guest did it.
+
+*Why it survived this long is the interesting part.* The call succeeds. The
+value the guest asked for arrives correctly, in the right place. Only the
+collateral write is wrong, so the damage surfaces later and somewhere else —
+the same signature as E7's calc heap corruption and the `IO_STATUS_BLOCK`
+overflow M10 fixed. Reading the thunk table teaches you nothing, because a flat
+thunk *is* the absence of code. The audit gate exists exactly for defects that
+have no textual presence, and this is the first time it was mined rather than
+merely kept green.
+
+The clincher for "don't fix these from memory": `NtOpenProcessTokenEx` and
+`NtOpenThreadTokenEx` were already marshalled while the plain
+`NtOpenProcessToken`/`NtOpenThreadToken` sitting next to them in the same table
+were not. Someone fixed the variant they were looking at. The list has to come
+from the tool.
+
+*Scope, and what was deliberately left.* Fixed: the 19 whose divergence is
+purely out-cells (plus, where present, an `OBJECT_ATTRIBUTES` the existing
+helper already handles) — the token opens, `NtDuplicateObject`/`Token`, the
+job/timer/event-pair/debug-object/port creates, `NtCreateProcess`(`Ex`),
+`NtCreateProfile`, and the `Lock`/`Unlock`/`Flush`VirtualMemory in/out trio.
+**Not** fixed here, and named rather than quietly skipped: the AWE family
+(`NtAllocateUserPhysicalPages` and friends) plus `NtGetWriteWatch`,
+`NtCompactKeys` and `NtRaiseHardError`, whose payloads are *arrays* of
+pointer-width elements needing a bounded scratch — and whose kernel side
+currently returns `STATUS_NOT_IMPLEMENTED`, so there is nothing to corrupt
+today and no way to test a marshaller for them. Also left: the five with genuine
+`SEMANTIC` divergence (`PORT_MESSAGE`, `TOKEN_GROUPS`), which belong with the
+CSR-LPC-32 layer. Baseline 278 → **246**, re-blessed with **+0 added**.
+
+*A latent bug found en route:* `Wow64pMarshalOa` dereferenced the guest's
+OBJECT_ATTRIBUTES pointer unconditionally. Several of the new callers take it
+`_In_opt_`, and a guest is free to pass NULL where it is mandatory too — that
+would have faulted inside wow64.dll. It now returns an empty OA for the
+mandatory case, and a new `Wow64pMarshalOaOpt` passes a real NULL through for
+the optional one (a pointer to a zeroed OA is not the same thing to the object
+manager as no OA at all).
+
+*Verification:* `marshal32.exe` gained an out-cell rung — a canary parked
+immediately after each handle cell, with the call required to SUCCEED, because a
+failing syscall writes nothing and would pass the check while completely
+unmarshalled. The canary is `volatile` for a specific reason: we only hand the
+callee `&cell.Handle`, so a conforming compiler may assume the rest of the
+struct is untouched and fold the comparison away — deleting the bug from the
+test but not from the OS. Green on both arches.
+
+**Also fixed, and it is a lesson about the harness rather than the OS:**
+`selfmod32.exe` was failing `0xBAD9` on amd64 — and had been since E17 landed.
+Its rung-5 fixture writes a scratch file under `%WINDIR%`, which is a writable
+ramdisk on arm64 and a **read-only CD** on the amd64 livecd. E17 verified it on
+arm64 and staged it for amd64 without ever watching it there, because **the
+ladder runs after the desktop marker and the ordinary smoke stops at that
+marker**. An amd64-only failure in a late rung is invisible to the gate; it took
+`smoke --arch amd64 --until "selfmod32.exe exit"` to see it. Rung 5 now skips
+loudly with the errno on a read-only volume (the file is the rung's *fixture*,
+not its subject — file32 already established this precedent for its own write
+rungs) and rungs 6-7 still run. arm64 keeps full coverage of rung 5, so nothing
+was traded away. Both arches now report the whole ladder green: **9/9 on amd64
+and 9/9 on arm64.**

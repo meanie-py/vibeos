@@ -209,7 +209,24 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE)
     {
-        Report("[selfmod32] FAIL: could not create the scratch file\n");
+        DWORD err = GetLastError();
+        if (err == 19 /* ERROR_WRITE_PROTECT */ || err == 5 /* ERROR_ACCESS_DENIED */)
+        {
+            /* %WINDIR% is a writable ramdisk on arm64 but a read-only CD on the
+             * amd64 livecd. The scratch file is this rung's FIXTURE, not its
+             * subject — what is under test is whether a KERNEL write into live
+             * code invalidates the CPU layer's translation. So skip loudly on a
+             * read-only volume and let rungs 6-7 (which need no file) still run,
+             * exactly as file32 does for its own write rungs.
+             *
+             * This is why the rung was green when E17 landed and red here: the
+             * ladder only runs past the desktop marker under `smoke --until`,
+             * so an amd64-only failure in a late rung stays invisible to the
+             * ordinary gate. */
+            ReportHex("[selfmod32] rung5 SKIPPED (read-only volume), err =", err);
+            goto rung6;
+        }
+        ReportHex("[selfmod32] FAIL: could not create the scratch file, err =", err);
         ExitProcess(SM_FAIL_FILE);
     }
     EmitConst(filebuf, 0x55555555);
@@ -241,6 +258,7 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     }
     Report("[selfmod32] rung5 PASS: NtReadFile into code memory publishes it\n");
 
+rung6:
     /* -- Rung 6: WriteProcessMemory onto our own code ----------------------
      * The debugger/hot-patch path, and the one that exercises three
      * notifications at once: kernel32 wraps the write in

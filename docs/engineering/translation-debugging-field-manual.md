@@ -2526,6 +2526,43 @@ whole class collapsed to the one case that is *supposed* to happen.
 
 Every entry here is one shape: **a size, offset or index that differs between guest and host.**
 
+### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
+**Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing
+call anywhere near. The syscall that did it **succeeded** and returned the right value in the
+right place.
+**Cause.** The syscall takes a caller pointer to a cell the kernel fills with something
+pointer-sized — `PHANDLE`, `PVOID *BaseAddress`, `PSIZE_T`. A flat thunk passes the guest's
+4-byte cell straight through (a 32-bit guest pointer *is* a valid 64-bit pointer, so nothing
+complains) and the kernel's 8-byte store runs four bytes past it. Same family as the
+`IO_STATUS_BLOCK` 8-vs-16 overflow, and just as quiet: only the collateral write is wrong, so
+the damage surfaces later and somewhere else.
+**Fix.** Take the result in a host-side cell and narrow it into the guest's:
+`HANDLE h = NULL; St = Nt...(&h, ...); if (St >= 0) *(ULONG *)guestCell = (ULONG)(ULONG_PTR)h;`
+**Find them with the tool, not by reading.** A flat thunk over a divergent payload is the
+*absence* of code, so review cannot see it — `marshalgen audit` derives the list from clang's
+own 32/64 record layouts. The proof that memory is not enough: `NtOpenProcessTokenEx` and
+`NtOpenThreadTokenEx` had been marshalled for months while the plain `NtOpenProcessToken` and
+`NtOpenThreadToken` sitting beside them in the same table had not — someone fixed the variant
+they happened to be looking at.
+**Testing one:** park a canary immediately after the cell, and require the call to SUCCEED — a
+failing syscall writes nothing and passes the check while completely unmarshalled. Make the
+canary `volatile`: you only hand the callee `&cell.Handle`, so a conforming compiler may assume
+the rest of the struct is untouched and fold the comparison away, deleting the bug from the test
+but not from the OS.
+
+### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
+**Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
+**Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the
+ordinary smoke's success condition IS that marker — so it stops watching before the ladder runs.
+A late-rung, single-arch failure is structurally invisible to `vibeos-cli gate`.
+**Fix.** Run the ladder explicitly: `./vibeos-cli smoke --arch <a> --until "<guest>.exe exit"`,
+on **both** arches, whenever a guest changes. Concrete instance: `selfmod32`'s rung-5 fixture
+writes under `%WINDIR%` — a writable ramdisk on arm64, a read-only CD on the amd64 livecd — so
+it exited `0xBAD9` there from the day it landed.
+**Also the general rule for fixtures:** when the environment cannot support a rung's *fixture*
+(not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
+than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.
+
 ### A stock binary flushes out what a hand-written guest never can `[§9.67]`
 Every guest through M10 was written by us — a hidden bias, because a guest you author can only
 exercise what you thought of, and it silently *avoids* what you got wrong. One stock binary found
