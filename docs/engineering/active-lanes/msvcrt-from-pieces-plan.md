@@ -1248,3 +1248,67 @@ invalid-parameter count.
    variable that unlocks a branch is not always the one the function is named after.
 
 **Measured after:** 431 of 1,165 non-stub amd64 exports Rust-backed (37%), up from 400.
+
+## Wave 14c part 2 (2026-07-26) — the 30 variadic shells, and an oracle that was impossible
+
+Part 1 flipped the 30 `va_list` entry points and left the `...` ones owed. They are now
+`dll/win32/msvcrt/rust_varargs_shim.c`: three-line `va_start` trampolines over the Rust
+engine, transcribed from wcs.c. Stable Rust cannot DEFINE a C-variadic (`c_variadic` is
+nightly), so this much stays C permanently — but it is the whole of what stays C. **Every
+printf byte that actually formats anything is Rust now.**
+
+**Two placement decisions, both load-bearing.** The shim is its own TU because left in wcs.c
+clang keeps IPA-specializing wcs.c's C engine into these bodies and the flip is silently
+undone — the same housemate rule that made part 1 necessary. And it is compiled into the
+**msvcrt MODULE target, not msvcrt_static**: module objects resolve before any archive
+member, so these definitions win first-match over wcs.o's copies. Inside msvcrt_static the
+winner would depend on member order within one archive.
+
+**Verified end to end on the built DLL, not inferred:** export `_snprintf` → RVA 0x1680 (the
+shim's block) → `callq` RVA 0x22570 = `_vsnprintf` → `T _vsnprintf` in
+`libmsvcrt_crt_cargo.a`. Same for `_swprintf`→`_vsnwprintf`, `_scprintf`→`_vscprintf`.
+wcs.o's copies sit dead at 0x9a2b0. wcs.c has no internal callers of its own shells, so every
+caller is cross-TU and routes through the shim.
+
+**The export count does not move, and that is honest** — 433/1087, unchanged. These 30 are C.
+What changed is which engine 30 exports *execute*, which is the thing the count was always a
+proxy for.
+
+**Grading: the differential is impossible, and the attempt is the lesson.** Field manual §9.66
+now carries it in full. Neither difftest instantiation can execute a variadic shell on this
+host — `pfflat_`'s flat `<stdarg.h>` makes `va_start` read `&format + 8` (right on i386 and
+Windows, false on x86-64 where the args are in registers), and `ref_`'s correct `va_start`
+then dies on the `va_arg(*valist, T)` idiom that only type-checks where a va_list IS a
+pointer. I built the harness before working that out and it SIGSEGV'd; the right move was to
+delete it rather than keep something that appeared to grade these. The reachable property is
+transcription fidelity, so `tools/scan_varargs_shim_parity.py` checks it at the source and
+**derives its rewrite rules from wcs.c's own forwarders instead of trusting my reading** —
+the shim can't call the file-static `vswprintf_p_l_opt`, so it names the exported wrappers,
+and the scanner reads those wrappers to confirm the substitution is still an identity. Four
+negative controls (swapped `INT_MAX`/`count`, wrong delegate, an ungated shell, a deleted
+shell) all fire. It caught one real defect before landing: the shim defined `_sprintf_p` and
+`_scwprintf_p`, which live behind `#if _MSVCR_VER>=80` and exist at no vintage this DLL
+builds — two symbols the C build never had, in no `.spec`. Both now carry wcs.c's own gate.
+
+### Next: the host-gradeable tier, then file.c
+
+Re-measured per file (nm over the linked Rust archive ∩ the spec, amd64): 433 of 1,087
+non-stub C exports Rust-backed, 654 left, and they split cleanly.
+
+**Host-gradeable, no OS state (~225):** `scanf.c` 39, `wcs.c` 32, `time.c` 60, `math.c` 30,
+`errno.c` ~15, `string.c` 17. The difftest oracle already grades this shape. Doing this tier
+takes coverage to roughly 60% with infrastructure that exists.
+
+**OS-coupled (~345):** `file.c` **170** — 26% of everything remaining, in one file — plus
+`dir.c` 49, `process.c` 43, `console.c` 20, `heap.c` 21, `locale.c` 20. These need a Win32
+shim substrate in the difftest that does not exist yet. That substrate is the long pole and
+deserves to be built deliberately, not discovered halfway through file.c.
+
+**`scanf.c` is the obvious next wave**: 39 exports in 820 LOC, the densest ratio left, and
+**zero Win32 calls**. It is a template — `scanf.h` (743 lines) `#include`d 16 times under
+combinations of `WIDE_SCANF`/`SECURE`/`STRING`/`STRING_LEN`/`CONSOLE` — so one Rust engine
+generic over (width, secure, source-kind) replaces ~9,600 lines of generated C. The FILE and
+CONSOLE variants differ only in their getc/ungetc callbacks (`fgetc`/`ungetc`/`_getch`), all
+of which stay C and are callable by extern. cnt-rust already has a difftest-graded scanf
+engine (`cnt_vsscanf` & co. over `cabi/scanf_trampoline.c`) to check the shape against — and
+its trampoline file is the same pattern this wave just established for printf.
