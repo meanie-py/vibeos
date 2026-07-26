@@ -1369,6 +1369,12 @@ already consumed, and nothing relinks them, because the main pass is over. Measu
 `mkramdisk` then stages that stale kernel — the arm64 false-green shape this whole section
 exists for. Shipping both flavors under distinct names (entry above) fixed the *identity*
 problem and left this *ordering* one behind it.
+**Why every sighting is arm64:** `ninja_targets_optional` is non-empty for exactly one arch
+(`archcfg.py:205` — `arm64input`, `arm64vid`, `ntkrnlmp`, `halmp`, `kmtest_all`); i386 and amd64
+inherit the `()` default and so never run a second pass at all. If you see this on x86, the
+cause is something else. `kmtest_all` is the widest of the five and reaches cohab crates far
+outside the kernel, which is how `ws2_32.dll` and `fastfat.sys` — targets nobody had touched —
+came to be named in a BUILD_INCOMPLETE.
 **Fix:** a `ninja-reaffirm` pass over the same target list after the optional passes and
 **before** any staging step. No-op normally (~1s), a real relink when a cohab lib moved; it
 reports `relinked N` so a cell that re-emits on *every* build stays visible rather than being
