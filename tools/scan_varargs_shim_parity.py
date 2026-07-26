@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""`rust_varargs_shim.c` must stay a faithful transcription of `wcs.c`'s shells.
+"""The hand-transcribed `va_start` trampolines must stay faithful to the C they copy.
+
+Two pairs today: `rust_varargs_shim.c` vs `wcs.c` (printf) and `rust_scanf_shim.c`
+vs `scanf.c` (scanf). Both exist for the same reason and carry the same risk.
 
 msvcrt's printf family is Rust except the `...` entry points, which cannot be:
 stable Rust has no `va_start`. They live in `dll/win32/msvcrt/rust_varargs_shim.c`
@@ -46,6 +49,18 @@ MSVCRT = REPO / "dll/win32/msvcrt"
 WCS = MSVCRT / "wcs.c"
 SHIM = MSVCRT / "rust_varargs_shim.c"
 STDIO = REPO / "sdk/include/crt/stdio.h"
+
+#: Every (genuine C, hand-transcribed trampoline TU) pair in msvcrt. Both exist for
+#: the same reason — stable Rust cannot `va_start`, so the `...` entry points stay C —
+#: and both carry the same risk, 30-40 near-identical three-line bodies where a wrong
+#: delegate or a swapped argument compiles, links and boots. scanf's pair has a second
+#: reason to exist that printf's does not: scanf.c's 16 engines are `static`, so a Rust
+#: engine cannot replace them by first-match at all and the trampolines MUST live in a
+#: TU the linker prefers.
+PAIRS = [
+    (WCS, SHIM),
+    (MSVCRT / "scanf.c", MSVCRT / "rust_scanf_shim.c"),
+]
 
 
 def strip_comments(text: str) -> str:
@@ -187,20 +202,45 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    global WCS, SHIM, STDIO
+    global STDIO
+    pairs = PAIRS
     if args.root:
         root = Path(args.root)
-        WCS, SHIM = root / "wcs.c", root / "rust_varargs_shim.c"
-        # A fixture ships no CRT headers, and the macro this would check belongs to
-        # the real tree, not to the pair under test.
         STDIO = root / "stdio.h"
+        # A fixture supplies whichever pair it is exercising; skip the ones it omits
+        # rather than reporting them missing.
+        pairs = [(root / r.name, root / m.name) for r, m in PAIRS]
+        pairs = [(r, m) for r, m in pairs if r.is_file() and m.is_file()]
+        if not pairs:
+            print(f"{root}: no (reference, shim) pair found")
+            return 2
 
+    findings: list[str] = []
+    checked = 0
+    for ref_c, shim_c in pairs:
+        findings += check_pair(ref_c, shim_c)
+        checked += len(shells(shim_c, "WINAPIV"))
+
+    # Every finding is about a shim, so lead with its path: a lint line that does not
+    # say WHERE is one the reader has to go hunting for, and the control harness locates
+    # a finding by looking for the fixture path in the output.
+    if args.lint:
+        for f in findings:
+            print(f)
+    else:
+        for f in findings:
+            print(f"DRIFT {f}")
+        print(f"{checked} shells checked across {len(pairs)} pair(s), {len(findings)} finding(s)")
+    return 1 if findings else 0
+
+
+def check_pair(WCS: Path, SHIM: Path) -> list[str]:
+    """Compare one transcribed trampoline TU against the C it was copied from."""
     findings: list[str] = []
 
     for p in (WCS, SHIM):
         if not p.is_file():
-            print(f"{p}: missing")
-            return 2
+            return [f"{p}: missing"]
 
     ref = shells(WCS, "WINAPIV")
     sub = shells(SHIM, "WINAPIV")
@@ -225,7 +265,7 @@ def main() -> int:
         pnames, callee, cargs = fwd[wrapper]
         if callee != "vswprintf_p_l_opt" or tuple(cargs) != want:
             findings.append(
-                f"{wrapper}: wcs.c no longer forwards to vswprintf_p_l_opt{want} "
+                f"{wrapper}: {WCS.name} no longer forwards to vswprintf_p_l_opt{want} "
                 f"(now {callee}({', '.join(cargs)})) — the shim's substitution is no "
                 f"longer an identity"
             )
@@ -243,7 +283,13 @@ def main() -> int:
         rewrites[("vswprintf_p_l_opt", wrapper)] = (keep, fixed)
 
     # `vsnprintf` is stdio.h's macro for `_vsnprintf`; the shim spells the target out.
-    if STDIO.is_file() and "#define vsnprintf _vsnprintf" not in STDIO.read_text(errors="replace"):
+    # Only wcs.c relies on that identity — scanf.c never writes the bare name.
+    needs_vsnprintf = any(c == "vsnprintf" for _, c, _ in ref.values())
+    if (
+        needs_vsnprintf
+        and STDIO.is_file()
+        and "#define vsnprintf _vsnprintf" not in STDIO.read_text(errors="replace")
+    ):
         findings.append(
             "sdk/include/crt/stdio.h no longer defines vsnprintf -> _vsnprintf; "
             "the shim calls _vsnprintf directly where wcs.c writes vsnprintf"
@@ -251,13 +297,13 @@ def main() -> int:
 
     for name, (pnames, callee, cargs) in sorted(sub.items()):
         if name not in ref:
-            findings.append(f"{name}: defined in the shim but not in wcs.c")
+            findings.append(f"{name}: defined in the shim but not in {WCS.name}")
             continue
         rnames, rcallee, rargs = ref[name]
         if pnames != rnames:
             findings.append(
                 f"{name}: parameter names differ — shim({', '.join(pnames)}) vs "
-                f"wcs.c({', '.join(rnames)})"
+                f"{WCS.name}({', '.join(rnames)})"
             )
             continue
         rc, ra = rcallee, list(rargs)
@@ -287,15 +333,15 @@ def main() -> int:
         anchor_sub, anchor_ref = va_start_anchor(SHIM, name), va_start_anchor(WCS, name)
         if anchor_sub != anchor_ref:
             findings.append(
-                f"{name}: va_start anchored on {anchor_sub}, wcs.c anchors on {anchor_ref} "
+                f"{name}: va_start anchored on {anchor_sub}, {WCS.name} anchors on {anchor_ref} "
                 f"— every variadic argument shifts by one slot"
             )
         if rc != callee:
-            findings.append(f"{name}: delegates to {callee}, wcs.c delegates to {rc}")
+            findings.append(f"{name}: delegates to {callee}, {WCS.name} delegates to {rc}")
         elif a_sub != a_ref:
             findings.append(
                 f"{name}: argument drift — shim {callee}({', '.join(a_sub)}) vs "
-                f"wcs.c {rc}({', '.join(a_ref)})"
+                f"{WCS.name} {rc}({', '.join(a_ref)})"
             )
 
     # The shim must not silently LOSE a shell either: every wcs.c WINAPIV shell that
@@ -305,7 +351,8 @@ def main() -> int:
     for name in sorted(ref):
         if name not in sub:
             findings.append(
-                f"{name}: in wcs.c but MISSING from the shim — its export stays on the C engine"
+                f"{name}: in {WCS.name} but MISSING from the shim — "
+                f"its export stays on the C engine"
             )
 
     # Both files must gate the SAME shells. A shell gated on one side only either adds
@@ -317,24 +364,15 @@ def main() -> int:
     for name in sorted(gated & shim_defines):
         if name not in gated_sub:
             findings.append(
-                f"{name}: _MSVCR_VER-gated in wcs.c but UNGATED in the shim — "
+                f"{name}: _MSVCR_VER-gated in {WCS.name} but UNGATED in the shim — "
                 f"adds a symbol this vintage does not have"
             )
     for name in sorted(gated_sub - gated):
-        findings.append(f"{name}: gated in the shim but not in wcs.c — export lost")
+        findings.append(f"{name}: gated in the shim but not in {WCS.name} — export lost")
 
-    # Every finding is about the shim, so lead with its path: a lint line that does
-    # not say WHERE is one the reader has to go hunting for, and the control harness
-    # locates a finding by looking for the fixture path in the output.
-    findings = [f"{SHIM}: {f}" for f in findings]
-    if args.lint:
-        for f in findings:
-            print(f)
-    else:
-        for f in findings:
-            print(f"DRIFT {f}")
-        print(f"{len(sub)} shells checked, {len(findings)} finding(s)")
-    return 1 if findings else 0
+    # Lead every finding with the shim's path — main() prints them unchanged, and the
+    # control harness locates a finding by looking for the fixture path in the output.
+    return [f"{SHIM}: {f}" for f in findings]
 
 
 def gated_in(text: str) -> set[str]:

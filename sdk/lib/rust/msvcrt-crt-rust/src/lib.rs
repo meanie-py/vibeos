@@ -4394,3 +4394,12 @@ mod msvcrt;
 
 // Wave 16 — string.c's remaining `_l` exports (plus `_strdup`, `_atoflt`, `I10_OUTPUT`).
 pub mod string_l;
+
+// Wave 16 — the scanf ENGINE. `dll/win32/msvcrt/scanf.h` is a template `#include`d 16
+// times from scanf.c under every WIDE_SCANF/SECURE/STRING/STRING_LEN/CONSOLE
+// combination; this is one generic engine over those same three axes, plus the 16
+// `v*scanf*_l` entry points the C keeps `static` and the four `__stdio_common_*` doors.
+// `%f` goes through wave 13's `fpnum_parse`/`fpnum_double`, the same bignum `strtod`
+// uses. The 40 `...` entry points cannot be Rust (no `va_start` on stable) and live in
+// `dll/win32/msvcrt/rust_scanf_shim.c`. `pub` for the difftest.
+pub mod scanf;
