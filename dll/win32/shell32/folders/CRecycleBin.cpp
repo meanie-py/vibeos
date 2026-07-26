@@ -1119,9 +1119,13 @@ HRESULT WINAPI CRecycleBin::GetCommandString(UINT_PTR idCommand, UINT uFlags, UI
  * RecycleBin IShellPropSheetExt interface
  */
 
+// EXTERN_C, and at file scope because a linkage specification cannot appear inside a function
+// body: the definition is Rust now (shell32-rust/src/dialogs/recycler_prop.rs), which emits the
+// plain symbol, so the C++ caller must not go looking for a mangled one.
+EXTERN_C HRESULT RecycleBin_AddPropSheetPages(LPFNSVADDPROPSHEETPAGE pfnAddPage, LPARAM lParam);
+
 HRESULT WINAPI CRecycleBin::AddPages(LPFNSVADDPROPSHEETPAGE pfnAddPage, LPARAM lParam)
 {
-    extern HRESULT RecycleBin_AddPropSheetPages(LPFNSVADDPROPSHEETPAGE pfnAddPage, LPARAM lParam);
     return RecycleBin_AddPropSheetPages(pfnAddPage, lParam);
 }
 

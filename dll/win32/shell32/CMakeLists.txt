@@ -36,8 +36,8 @@ list(APPEND SOURCE
     dialogs/filetypes.cpp
     dialogs/folder_options.cpp
     dialogs/item_prop.cpp
-    dialogs/general.cpp
-    dialogs/recycler_prop.cpp
+    # dialogs/general.cpp — replaced by Rust (shell32-rust/src/dialogs/general.rs); cohab via libshell32_rust.a
+    # dialogs/recycler_prop.cpp — replaced by Rust (shell32-rust/src/dialogs/recycler_prop.rs); cohab via libshell32_rust.a
     # dialogs/view.cpp — replaced by Rust (shell32-rust/src/dialogs/view.rs); cohab via libshell32_rust.a
     # CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
     # are Rust-owned (shell32-rust/src/drop_target_helper.rs).

@@ -274,14 +274,22 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   objects, shared shellmenu/shelldesktop objects, procedural helpers, and monoliths such as
   `CDefView.cpp`, `shlexec.cpp`, and `shlfileop.cpp`. The exhaustive zero-C++ plan and ledger are
   in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
-  **Free-function TUs: 7 translated and PARKED, not wired** (2026-07-25) —
-  `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache,shlfolder,stubs,
-  shldataobject}.rs`, 21,626 lines, each carrying an `//! ORPHAN-BY-DESIGN:` banner. Five of them
-  had been blocked behind seal defects that made the envelope unsatisfiable — a rejected worker
-  assembles *no* output, so 5 rejects were withholding ~19.8K lines of already-paid Rust; see the
-  field manual's `[§9.127]` RESOLVED note. They still need substrate closure (SDK externs, Win32
-  constants, resource IDs) before they compile, so the C++ tail count above is unchanged: nothing
-  is cohab-flipped yet. Paid artifacts — do not delete to tidy up.
+  **Free-function TUs — the island-first recipe is proven; 2 wired, 7 still parked** (2026-07-26).
+  `dialogs/general.cpp` and `dialogs/recycler_prop.cpp` are cohab-flipped and green on all three
+  arches: they are the first shell32 TUs to take their substrate from the **bindgen island**
+  (`crate::prelude`, which globs `crate::island`) rather than the hand-written
+  `types.rs`/`win32.rs`. That is the whole unlock — measured on these two files, globbing the
+  island *instead of* the hand-written substrate dropped unresolved names from **228 to 77**,
+  and the rest was a per-TU tail (bitfield accessors, C-uninitialised locals, variadic promotion,
+  nominal alias splits) rather than a substrate wall. Recipe and every trap: prelude.rs's module
+  header plus the field manual's "Adopting an island in a crate that already has hand-written
+  substrate".
+  Still parked: `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache,
+  shlfolder,stubs,shldataobject}.rs`, 21,626 lines, each carrying an `//! ORPHAN-BY-DESIGN:`
+  banner. Five of them had been blocked behind seal defects that made the envelope unsatisfiable
+  — a rejected worker assembles *no* output, so 5 rejects were withholding ~19.8K lines of
+  already-paid Rust; see the field manual's `[§9.127]` RESOLVED note. They are next, and now have
+  a proven path. Paid artifacts — do not delete to tidy up.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

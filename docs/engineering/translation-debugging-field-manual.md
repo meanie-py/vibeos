@@ -653,6 +653,58 @@ copied from a TU in a subdirectory (`#include "CFSFolder.h"` in `folders/CDeskto
 breaks — a quoted include resolves against the *including file's* directory and the generated
 wrapper lives in `/tmp`. Use the path-qualified spelling the module's own `precomp.h` uses.
 
+**Glob the island INSTEAD of the hand-written substrate, never alongside it.** Symptom: adding
+`use crate::island::*;` to a TU that already globs `crate::types::*` / `crate::win32::*` turns
+every name both of them define into `E0659: ... is ambiguous` — on shell32's first two Wave-5
+leaves, 296 occurrences across 54 names, where either glob *alone* produced none. Cause: two
+glob imports of one name are ambiguous at the use site, and the two substrates overlap heavily
+by construction. Fix: a `prelude.rs` that globs the island and re-exports the residue one name
+at a time (an explicit import beats a glob, so it cannot go ambiguous). Measured on those
+leaves, island-first took unresolved names from **228 to 77**, and the survivors were a clean,
+nameable set: A/W-mapping and accessor macros, and the module's own internal helpers.
+
+**Same width is not the same type: the nominal-alias split.** Symptom: after adopting an island
+the call sites fail `expected i32, found isize` (or `expected shellord::SHELLSTATE, found
+types_arch::SHELLSTATE`), and `crate-repair` withholds the repair with `target_divergent`,
+correctly refusing to bake a per-arch width. Cause: two aliases for the same C type reached the
+TU from different authorities — `shellcom::LPARAM` is `isize` via a hand-written
+`LONG_PTR = isize`, the island's is `i32` on i386 via `LONG_PTR = c_long`. Identical bytes,
+identical meaning, different Rust types, so all 3,406 island declarations reject the value. Fix:
+scalars come from ONE authority, the island. Corollary for anything imported from a hand-written
+sibling module: **bring the types in its signature from the same place, or bring neither** — and
+when the two conflict (you want the island's struct for its bitfield accessors, but a sibling's
+`fn` is typed against its own copy), declare the `#[no_mangle]` export in the prelude against
+island types instead of importing the Rust `fn`. That is what the C does: include the header,
+call the symbol. Verify layout equivalence field-by-field first; don't assume it.
+
+**A UNICODE module inherits ANSI `TCHAR` from `ntdll-sys`.** Symptom: `LPTSTR` resolves to
+`*mut i8` and every wide-string assignment fails on mutability or pointee. Cause: `ntdll-sys` is
+generated *without* `UNICODE`, so it defines `TCHAR = c_char` / `LPTSTR = LPSTR`, and an island
+whose preamble globs `ntdll_sys::nt::*` carries those into every consumer — even a module built
+`set_module_type(... UNICODE)`. This is latent, not loud: a `TCHAR` buffer sized from the leaked
+alias is **half** the bytes it should be. Fix: define the whole family (`TCHAR`, `LPTSTR`,
+`PTSTR`, `LPCTSTR`, `PCTSTR`) explicitly in the module's prelude, where it beats the glob. Same
+class: bindgen types `TRUE`/`FALSE` as `u32` because the `#define`s are bare `1`/`0`; pin them
+to `BOOL` the same way.
+
+**One dialog proc, not one per arch.** Symptom: a translated TU carries `#[cfg]`-duplicated
+copies of a whole window/dialog procedure — `extern "stdcall"` for i386, `extern "system"`
+elsewhere — and the copies drift apart under separate repair passes (recycler_prop.cpp's two had
+already diverged into `as WPARAM` versus a baked `as u64`). Cause: bindgen writes the literal
+convention it saw, so a callback typedef is `stdcall` on i386 and `C` on 64-bit, and a procedure
+can only be written to match one spelling. Fix: alias the callback type yourself as
+`extern "system"` on every arch — it *is* stdcall on i386-windows and the C convention on
+64-bit — then one copy of the procedure is correct everywhere. Same reasoning as
+`normalize_island_abi.py`, which does this for a generated island's own callback slots; the
+hand-written alias is for types that arrive from a sibling `-sys` crate instead.
+
+**Flipping a C++ TU: mark its exports `EXTERN_C` in the header.** Symptom: the cohab flip links
+with `undefined: SomeFunction` even though the Rust `#[no_mangle]` symbol exists. Cause: the
+function was declared in a `.h`/`.cpp` without `extern "C"`, so every C++ caller references a
+*mangled* name that nothing now defines. Fix: put `EXTERN_C` on the declaration (this is what
+`dialogs/view.cpp`'s `PostCabinetMessage` got in `precomp.h` when it was flipped) — and at
+namespace scope, since a linkage specification is illegal inside a function body.
+
 ### Cross-DLL and shared-section layout
 Cross-DLL reads returning garbage *past* the writer's own init, with a hang ~7 DLLs later in an
 unrelated consumer, is a broken `#[repr(C)]` mirror of a shared struct: scrambled field order,

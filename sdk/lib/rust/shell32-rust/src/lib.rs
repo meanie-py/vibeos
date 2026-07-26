@@ -109,6 +109,10 @@ pub mod win32;
 // here plus ntdll-sys, versus 2,768 lines of hand-written substrate today.
 pub mod island;
 
+// Island-first substrate for translated TUs. See prelude.rs for why it REPLACES the
+// types/win32 globs rather than joining them.
+pub mod prelude;
+
 // Wave 4 free-function TUs: whole plain-C++ translation units with no COM class of their
 // own, translated with --free-functions once that path learned the C++ language layer.
 //
@@ -120,12 +124,21 @@ pub mod folders;
 pub mod propsheet;
 pub mod systray;
 
-// Wave 5 free-function TUs from the shell32 root: STILL PARKED, substrate closure in
-// progress. Constants, 148 promoted Win32 imports and the numeric-cast tail are done;
-// wiring them today leaves ~1,010 errors — 167 callables with no declaration anywhere
-// (shell32-internal helpers and C macros, which need judgment, not bulk generation),
-// 60 SDK record layouts, and the method/field tail. Wiring before those land would break
-// the build for every lane. Do NOT delete these files — they are paid artifacts.
+// Wave 5, first two leaves — LANDED, and the proof that the island-first recipe closes this
+// class. Both glob `crate::prelude` (the island) INSTEAD of `types`/`win32`; see prelude.rs.
+#[path = "dialogs/general.rs"]
+pub mod dialogs_general;
+#[path = "dialogs/recycler_prop.rs"]
+pub mod dialogs_recycler_prop;
+
+// The rest of Wave 5 (the shell32/ directory: brfolder, iconcache, shldataobject, shlexec,
+// shlfileop, shlfolder, stubs — ~21K lines) is STILL PARKED, but no longer for the reason
+// recorded here before. The old note blamed "167 callables with no declaration anywhere";
+// measured against the island that number is wrong — 85 of the first 181 resolve straight from
+// headers, and on these two leaves the unresolved-name count fell 228 -> 77 the moment the
+// island replaced the hand-written globs. What is left is the per-TU tail the two leaves just
+// walked: bitfield accessors, C-uninitialised locals, variadic promotion, and the nominal type
+// splits prelude.rs documents. Do NOT delete these files — they are paid artifacts.
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
