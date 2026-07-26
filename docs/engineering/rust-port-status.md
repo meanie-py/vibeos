@@ -239,6 +239,14 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   objects, shared shellmenu/shelldesktop objects, procedural helpers, and monoliths such as
   `CDefView.cpp`, `shlexec.cpp`, and `shlfileop.cpp`. The exhaustive zero-C++ plan and ledger are
   in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
+  **Free-function TUs: 7 translated and PARKED, not wired** (2026-07-25) —
+  `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache,shlfolder,stubs,
+  shldataobject}.rs`, 21,626 lines, each carrying an `//! ORPHAN-BY-DESIGN:` banner. Five of them
+  had been blocked behind seal defects that made the envelope unsatisfiable — a rejected worker
+  assembles *no* output, so 5 rejects were withholding ~19.8K lines of already-paid Rust; see the
+  field manual's `[§9.127]` RESOLVED note. They still need substrate closure (SDK externs, Win32
+  constants, resource IDs) before they compile, so the C++ tail count above is unchanged: nothing
+  is cohab-flipped yet. Paid artifacts — do not delete to tidy up.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions
