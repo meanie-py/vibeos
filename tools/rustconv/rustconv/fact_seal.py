@@ -38,6 +38,7 @@ import re
 from dataclasses import dataclass
 
 from .ddk_enum_constants import DDK_ENUM_CONSTANTS
+from .dead_regions import dead_region_spans, in_dead_region
 
 
 class FactSealError(RuntimeError):
@@ -49,6 +50,10 @@ class SealedFact:
     placeholder: str
     original: str
     kind: str
+    # This occurrence sits in code the build never executes (a `#if`-disabled arm, or a
+    # DUMMY_PSEH except-block). Defaults False so an older pickled/cached fact stays
+    # required. See dead_regions.py for why these must not be DEMANDED of the model.
+    dead: bool = False
 
 
 @dataclass(frozen=True)
@@ -243,12 +248,15 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     # No token can match both patterns (the generated set excludes ALL_CAPS names),
     # but sorting also makes numbering stable.
     spans.sort()
+    dead_spans = dead_region_spans(text, masked)
     facts: list[SealedFact] = []
     result = text
     for index, (start, end, kind) in reversed(list(enumerate(spans))):
         placeholder = f"__RUSTCONV_FACT_{index:04d}__"
         original = text[start:end]
-        facts.append(SealedFact(placeholder, original, kind))
+        facts.append(
+            SealedFact(placeholder, original, kind, in_dead_region(dead_spans, start, end))
+        )
         result = result[:start] + placeholder + result[end:]
     facts.reverse()
     return SealedSource(result, tuple(facts))
@@ -300,8 +308,15 @@ def drop_token_use_items(rust: str) -> str:
     return _USE_OF_TOKEN_RE.sub("", rust)
 
 
-def unseal_facts(rust: str, sealed: SealedSource) -> str:
-    """Verify the closed token set and restore exact original spellings."""
+def unseal_facts(
+    rust: str, sealed: SealedSource, *, dead_omissions: list[str] | None = None
+) -> str:
+    """Verify the closed token set and restore exact original spellings.
+
+    `dead_omissions`, when given, collects `TOKEN=SPELLING` for each sealed value the
+    model omitted that lives only in non-executed code -- accepted, but reported, so a
+    relaxed guarantee is never silent.
+    """
     rust = drop_token_use_items(rust)
     expected = {fact.placeholder for fact in sealed.facts}
     present = _PLACEHOLDER_RE.findall(rust)
@@ -336,7 +351,19 @@ def unseal_facts(rust: str, sealed: SealedSource) -> str:
             rust = rust[:start] + placeholder + rust[end:]
         present = _PLACEHOLDER_RE.findall(rust)
 
-    missing = sorted(expected - set(present))
+    # A token whose only occurrence is in code the build never executes is PERMITTED,
+    # not demanded: the model is right to omit it, and rejecting a correct translation
+    # costs a paid retry that will be rejected identically (dead_regions.py).
+    optional = {fact.placeholder for fact in sealed.facts if fact.dead}
+    missing_all = expected - set(present)
+    omitted_dead = sorted(missing_all & optional)
+    missing = sorted(missing_all - optional)
+    if omitted_dead and dead_omissions is not None:
+        dead_omissions.extend(
+            f"{fact.placeholder}={fact.original}"
+            for fact in sealed.facts
+            if fact.placeholder in set(omitted_dead)
+        )
     findings = []
     if missing:
         findings.append("missing: " + ", ".join(missing))

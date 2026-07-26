@@ -452,6 +452,74 @@ def _next_code_byte(masked: bytes, pos: int) -> bytes:
     return masked[pos : pos + 1]
 
 
+def _in_match_pattern(masked: bytes, end: int) -> bool:
+    """True when the span ending at ``end`` sits in match-arm PATTERN position.
+
+    Rust forbids expressions in patterns, so wrapping such a span in `(x) as u32` turns a
+    compiling match into `error: expected a pattern, found an expression` -- and it fires on
+    exactly the constants that most want repairing, because a `match` on a C status code is
+    where narrow-vs-wide integer mismatches surface. wlanapi's `WlanRpcStatusToWinError`
+    lost all 5 of its arms this way. The correct repair there is to widen the SCRUTINEE and
+    leave the patterns as names, which also keeps them auditable under the catch-all-binding
+    rule (field manual §9.112) -- so declining here is not a lost fix, it is the right shape.
+
+    Scans forward for `=>` before any of `; { } ,`. The scrutinee itself stops at `{` and is
+    therefore NOT reported -- casting it is legal and often the fix.
+
+    A span inside brackets is resolved by stepping out of them first: `foo(A, b);` and
+    `(A, 0) => v` are indistinguishable at the comma, and only differ in what follows the
+    closing paren. `<`/`>` are deliberately NOT treated as brackets -- they are comparison
+    operators far more often than generic delimiters in this position.
+    """
+    pos = _after_enclosing_group(masked, end)
+    depth = 0
+    while pos < len(masked):
+        char = masked[pos : pos + 1]
+        if char in (b"(", b"["):
+            depth += 1
+        elif char in (b")", b"]"):
+            depth -= 1  # may go negative: we left a group that opened before the span
+        elif depth <= 0:
+            if char == b"=" and masked[pos + 1 : pos + 2] == b">":
+                return True
+            if char in (b";", b"{", b"}", b","):
+                return False
+        pos += 1
+    return False
+
+
+def _after_enclosing_group(masked: bytes, end: int) -> int:
+    """Byte just past the innermost bracket group that encloses ``end``, else ``end``."""
+    depth = 0
+    pos = end - 1
+    while pos >= 0:
+        char = masked[pos : pos + 1]
+        if char in (b")", b"]"):
+            depth += 1
+        elif char in (b"(", b"["):
+            if depth == 0:
+                closer = _matching_closer(masked, pos)
+                return end if closer is None else closer + 1
+            depth -= 1
+        elif char in (b";", b"{", b"}") and depth == 0:
+            break
+        pos -= 1
+    return end
+
+
+def _matching_closer(masked: bytes, opening: int) -> int | None:
+    depth = 0
+    for pos in range(opening, len(masked)):
+        char = masked[pos : pos + 1]
+        if char in (b"(", b"["):
+            depth += 1
+        elif char in (b")", b"]"):
+            depth -= 1
+            if depth == 0:
+                return pos
+    return None
+
+
 # NOTE: no `^` — `Pattern.match(data, pos)` already anchors at pos, whereas `^` would demand the
 # start of the string/line and silently never fire mid-expression.
 _ASSIGN_AHEAD = re.compile(rb"\s*(?:[-+*/%^&|]|<<|>>)?=(?!=)")
@@ -709,6 +777,10 @@ def _numeric_cast_rule(
             # Guard: a span followed by `(` is a CALLEE name (the primary span of the
             # "arguments to this function are incorrect" shape), not a value to cast.
             decline("callee_span", data[start:end].decode("utf-8", "replace"))
+            continue
+        if _in_match_pattern(masked, end):
+            # Guard: a cast is an expression, and Rust forbids expressions in patterns.
+            decline("match_pattern_span", data[start:end].decode("utf-8", "replace"))
             continue
         text = data[start:end].decode("utf-8", "replace")
         if not _balanced(masked[start:end]):

@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .dead_regions import dead_region_spans, in_dead_region
+
 
 class CallSealError(RuntimeError):
     pass
@@ -14,6 +16,10 @@ class CallSealError(RuntimeError):
 class SealedCall:
     placeholder: str
     original: str
+    # This call site sits in code the build never executes -- overwhelmingly a
+    # DUMMY_PSEH `RpcExcept` handler. Defaults False so anything not proven dead stays
+    # required. See dead_regions.py.
+    dead: bool = False
 
 
 @dataclass(frozen=True)
@@ -181,11 +187,12 @@ def seal_calls(text: str, required_calls: set[str]) -> SealedCalls:
             continue
         spans.append((match.start(1), match.end(1), name))
 
+    dead_spans = dead_region_spans(text, masked)
     result = text
     calls = []
     for index, (start, end, original) in reversed(list(enumerate(spans))):
         placeholder = f"__RUSTCONV_CALL_{index:04d}__"
-        calls.append(SealedCall(placeholder, original))
+        calls.append(SealedCall(placeholder, original, in_dead_region(dead_spans, start, end)))
         result = result[:start] + placeholder + result[end:]
     calls.reverse()
     return SealedCalls(result, tuple(calls))
@@ -205,7 +212,12 @@ def call_contract(sealed: SealedCalls) -> str:
     )
 
 
-def unseal_calls(rust: str, sealed: SealedCalls) -> str:
+def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | None = None) -> str:
+    """Verify the closed call set and restore the callee names.
+
+    `dead_omissions`, when given, collects `TOKEN=CALLEE` for each sealed call the model
+    omitted that lives only in non-executed code -- accepted, but reported.
+    """
     rust = scrub_comment_token_echoes(rust)
     expected = {call.placeholder for call in sealed.calls}
     masked = _code_mask(rust)
@@ -344,7 +356,18 @@ def unseal_calls(rust: str, sealed: SealedCalls) -> str:
     for a, b in extern_declaration_spans(rust):
         exec_mask[a:b] = " " * (b - a)
     executable = _PLACEHOLDER_RE.findall("".join(exec_mask))
-    missing = sorted(expected - set(executable))
+    # Call sites the build never enters are PERMITTED to be absent, not demanded --
+    # see dead_regions.py. Every other check below still applies to them.
+    optional = {call.placeholder for call in sealed.calls if call.dead}
+    missing_all = expected - set(executable)
+    omitted_dead = missing_all & optional
+    if omitted_dead and dead_omissions is not None:
+        dead_omissions.extend(
+            f"{call.placeholder}={call.original}"
+            for call in sealed.calls
+            if call.placeholder in omitted_dead
+        )
+    missing = sorted(missing_all - optional)
     duplicates = sorted(
         token
         for token in expected
