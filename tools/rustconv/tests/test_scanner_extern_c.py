@@ -12,7 +12,7 @@ from pathlib import Path
 
 from rustconv.scanner import scan_file
 
-STUB = 'EXTERN_C {ty}*\nWINAPI\n{fn}(HWND hwnd)\n{{\n    return NULL;\n}}\n'
+STUB = "EXTERN_C {ty}*\nWINAPI\n{fn}(HWND hwnd)\n{{\n    return NULL;\n}}\n"
 
 
 def _names(tmp_path: Path, src: str, suffix: str = ".cpp") -> set[str]:
@@ -45,18 +45,32 @@ def test_extern_c_real_shell32_stub_shapes(tmp_path):
 def test_extern_c_is_expanded_not_deleted(tmp_path):
     """Deleting the macro looks equivalent and is not.
 
-    Without a linkage specifier `FILEDESCRIPTOR* WINAPI Bar(...)` parses as an
-    ambiguous declaration: ZERO function_definition nodes AND an EMPTY
-    `unextracted` list — a silent drop. Pin that the expansion path is taken, by
-    proving the no-macro form is genuinely the broken one.
+    This test used to assert the OPPOSITE of the first case below: that
+    `FILEDESCRIPTOR* WINAPI Bar(...)` was a silent drop (zero
+    function_definition nodes AND an empty `unextracted`), which proved the
+    expansion path had to be taken. It was a deliberate canary — "if tree-sitter
+    learns this shape, _expand_extern_c may be simplifiable".
+
+    It has now fired, for a reason on our side rather than tree-sitter's:
+    `_normalize_callbacks` drops a convention keyword sitting after a pointer
+    return type, and that rule was extended to cover the aliases it had been
+    leaving verbatim (CDECL/WINAPI/NTAPI/...). Stripping `WINAPI` is what makes
+    this shape parse now — see test_scanner_cc_after_ptr.
+
+    `_expand_extern_c` is still required, for a reason that was never about this
+    shape: EXTERN_C is a LINKAGE specifier (`extern "C"` in C++), so deleting it
+    changes name mangling rather than just parsing, and the macro token itself is
+    still unknown to tree-sitter — which is what the length-cliff tests above
+    cover.
     """
     p = tmp_path / "nomacro.cpp"
     p.write_text("FILEDESCRIPTOR*\nWINAPI\nBar(HWND hwnd)\n{\n    return NULL;\n}\n")
     result = scan_file(p)
-    assert not result.functions and not result.unextracted, (
-        "if tree-sitter learns this shape, _expand_extern_c may be simplifiable — "
-        "until then the macro must be EXPANDED, never blanked"
+    assert {f.name for f in result.functions} == {"Bar"}, (
+        "the after-pointer convention strip should make this shape parse; if it "
+        "does not, _normalize_callbacks' alternation has regressed"
     )
+    # The macro path must keep working — that is the invariant this file exists for.
     assert "Bar" in _names(tmp_path, STUB.format(ty="FILEDESCRIPTOR", fn="Bar"))
 
 
