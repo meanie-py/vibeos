@@ -15,9 +15,11 @@ use core::ffi::c_void;
 
 use crate::island::{
     GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, RegisterClipboardFormatW, BOOL,
-    CIDA, CLIPFORMAT, FORMATETC, GHND, HRESULT, LPCITEMIDLIST, LPITEMIDLIST, PCUIDLIST_ABSOLUTE,
-    PCUIDLIST_RELATIVE, POINT, SIZE_T, STGMEDIUM, UINT,
+    CIDA, CLIPFORMAT, DWORD, FORMATETC, GHND, GUID, HRESULT, LONG, LPCITEMIDLIST, LPITEMIDLIST,
+    PCUIDLIST_ABSOLUTE, PCUIDLIST_RELATIVE, POINT, SAFEARRAY, SHDESCRIPTIONID, SIZE_T, STGMEDIUM,
+    UINT, ULONG, VARIANT, VARTYPE,
 };
+use crate::V_VT;
 use crate::prelude::{
     CopyMemory, ILFindLastID, SHFree, DVASPECT_CONTENT, E_OUTOFMEMORY, E_UNEXPECTED, S_OK,
     TRUE, TYMED_HGLOBAL, TYMED_NULL,
@@ -256,4 +258,68 @@ impl Drop for CCidaChildArrayHelper {
         unsafe { SHFree(self.m_array as *mut _) };
         self.m_array = core::ptr::null_mut();
     }
+}
+
+// -------------------------------------------------------------------------------------------
+// `dll/win32/shell32/wine/shell32_main.h` — the property-system inlines.
+//
+// Same class as everything above (a `static inline` in a header reaches no translation unit),
+// but these had been getting away with it: shlfolder.cpp inlined them into ITSELF and exported
+// `SHELL_Create*_RustBridge` wrappers, so translated Rust reached them through a C++ hop.
+// Flipping shlfolder.cpp took that only definition with it, and the i386 link failed on
+// `_SHELL_CreateVariantBuffer@8` / `_SHELL_CreateSHDESCRIPTIONID@12`. Ported here instead of
+// re-homing the wrappers in another `.cpp`, so the next flip cannot repeat it.
+//
+// `#[no_mangle] extern "system"` to match the WINAPI symbols the existing declarations in
+// `win32.rs` and the translated folder classes already reference. There is no collision with
+// the C++: `static inline` at namespace scope has INTERNAL linkage, so each C++ TU's copy is
+// file-local.
+
+/// wtypes.h `VARENUM` — the two the property-system helpers use.
+pub const VT_UI1: VARTYPE = 17;
+pub const VT_ARRAY: VARTYPE = 0x2000;
+
+extern "system" {
+    fn SafeArrayCreateVector(vt: VARTYPE, lLbound: LONG, cElements: ULONG) -> *mut SAFEARRAY;
+}
+
+/// `V_ARRAY(pVar)`, over com-sys's anonymous-union chain (`V_VT` is `.n1.n2.vt`, one level up).
+#[inline]
+unsafe fn v_array(pVar: *mut VARIANT) -> *mut *mut SAFEARRAY {
+    core::ptr::addr_of_mut!((*pVar).n1.n2.n3.parray)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHELL_CreateVariantBufferEx(
+    pVar: *mut VARIANT,
+    cb: UINT,
+    vt: VARTYPE,
+) -> HRESULT {
+    let pSA = SafeArrayCreateVector(vt, 0, cb);
+    if !pSA.is_null() {
+        V_VT!(pVar) = VT_ARRAY | vt;
+        *v_array(pVar) = pSA;
+        return S_OK;
+    }
+    E_OUTOFMEMORY
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHELL_CreateVariantBuffer(pVar: *mut VARIANT, cb: UINT) -> HRESULT {
+    SHELL_CreateVariantBufferEx(pVar, cb, VT_UI1)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHELL_CreateSHDESCRIPTIONID(
+    pVar: *mut VARIANT,
+    Id: DWORD,
+    pCLSID: *const GUID,
+) -> HRESULT {
+    let hr = SHELL_CreateVariantBuffer(pVar, core::mem::size_of::<SHDESCRIPTIONID>() as UINT);
+    if hr >= 0 {
+        let pDID = (**v_array(pVar)).pvData as *mut SHDESCRIPTIONID;
+        (*pDID).dwDescriptionId = Id;
+        (*pDID).clsid = *pCLSID.cast();
+    }
+    hr
 }

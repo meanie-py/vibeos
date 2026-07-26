@@ -815,6 +815,20 @@ translates only the `.cpp`. Fix: port the header once into its own module
 (`shell32-rust/src/shellutils.rs`) rather than per-TU — these are shared by at least four TUs.
 Check for this before assuming a name is a translation defect: `grep -l` the name across
 `sdk/include` and the module's own headers first.
+**A header inline can be hiding behind a `.cpp` that INLINES IT AND EXPORTS A WRAPPER**, which
+looks like an ordinary definition right up until you flip that `.cpp`. shlfolder.cpp did this
+for `wine/shell32_main.h`'s `SHELL_CreateVariantBuffer` / `SHELL_CreateSHDESCRIPTIONID`: it
+carried `SHELL_Create*_RustBridge` wrappers, so translated Rust reached the inlines through a
+C++ hop and nothing looked unresolved — then the flip took the only definition with it and i386
+failed on `_SHELL_CreateVariantBuffer@8`. Port the inline rather than re-homing the wrapper in
+another `.cpp`, or the next flip repeats it. `static inline` at namespace scope has INTERNAL
+linkage, so a Rust `#[no_mangle]` of the same name cannot collide with the C++ TUs' own copies.
+
+**`extern "C"` is LINKAGE; `WINAPI` is the CALLING CONVENTION — a `_RustBridge` needs both read
+separately.** Symptom: i386 link fails on `_Name` while `llvm-nm` shows `_Name@12` defined.
+Cause: the C++ is `extern "C" INT WINAPI Name(...)`, and the Rust declaration went into an
+`extern "C"` block because the C++ said `extern "C"`. It is stdcall, so it belongs in
+`extern "system"`. amd64 and arm64 link fine either way, which is why this reaches i386 alone.
 
 **Porting ATL's smart pointers: `Drop` IS the translation's missing destructor.** Symptom: a
 translated C++ TU declares `CComPtr<IShellFolder> p;` and never releases it — the translation
