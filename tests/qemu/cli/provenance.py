@@ -877,3 +877,85 @@ def _check_staleness(repo: Path, arch: str) -> Staleness:
             fresh=True, reasons=["clean-diff (non-build change)"], warm=warm, media_missing=False
         )
     return Staleness(fresh=False, reasons=reasons, warm=warm, media_missing=False)
+
+
+# --- probe presence in the MEDIA -------------------------------------------
+#
+# `strings build-<arch>/ntoskrnl/ntoskrnl.exe | grep -c '<literal>'` (field
+# manual §9.87) answers a DIFFERENT question from "is my probe in the image
+# qemu is about to open". On 2026-07-26 a 12-round arm64 soak ran for ~9 hours
+# against media frozen four hours before the two probes it existed to exercise
+# were written: the binary check passed, the media carried zero of either
+# literal, and every probe-derived conclusion was vacuous. A rule with no
+# command behind it is a rule that gets broken, so this is the command.
+#
+# `arm64` deliberately checks BOTH boot.img and ramdisk.img: the kernel lives in
+# the ramdisk, and checking only the outer image would reproduce the same
+# right-check-wrong-artifact mistake one level down.
+
+#: Extra media that must ALSO carry the literal, beyond `boot_media_rel`.
+_EXTRA_MEDIA: dict[str, tuple[str, ...]] = {"arm64": ("qemu/ramdisk.img",)}
+
+
+def media_paths(repo: Path, arch: str) -> list[Path]:
+    """Every image a boot of `arch` actually reads, newest-build first."""
+    cfg = archcfg.arch_build(arch)
+    rels = [cfg.boot_media_rel, *_EXTRA_MEDIA.get(archcfg.base_arch(arch), ())]
+    return [repo / r for r in rels if r]
+
+
+def _count_in_file(path: Path, needles: list[bytes]) -> dict[bytes, int]:
+    """Count each needle in `path`, streaming with an overlap so a literal
+    straddling a chunk boundary is still found."""
+    found = {n: 0 for n in needles}
+    overlap = max((len(n) for n in needles), default=1) - 1
+    try:
+        with path.open("rb") as fh:
+            tail = b""
+            while True:
+                chunk = fh.read(8 << 20)
+                if not chunk:
+                    break
+                buf = tail + chunk
+                for n in needles:
+                    found[n] += buf.count(n)
+                tail = buf[-overlap:] if overlap else b""
+    except OSError:
+        return found
+    return found
+
+
+def probes_missing_from_media(repo: Path, arch: str, literals: list[str]) -> list[str]:
+    """Reasons why `literals` are NOT all present in every boot image.
+
+    Empty list == every literal is in every image, i.e. the experiment you
+    think you are running is the one that will run.
+    """
+    reasons: list[str] = []
+    # .strip(), not truthiness: a whitespace-only literal would otherwise become
+    # a live needle and fail the run on a "probe" that names nothing.
+    needles = [s.encode() for s in literals if s.strip()]
+    if not needles:
+        return reasons
+    for media in media_paths(repo, arch):
+        if not media.is_file():
+            reasons.append(f"{media} does not exist — build {arch} before requiring a probe")
+            continue
+        counts = _count_in_file(media, needles)
+        for n in needles:
+            if counts[n] == 0:
+                reasons.append(
+                    f"{n.decode()!r} appears 0 times in {media.name} "
+                    f"(built {_mtime_str(media)}) — the probe is NOT in the media this boot "
+                    f"would open, so its silence would prove nothing"
+                )
+    return reasons
+
+
+def _mtime_str(p: Path) -> str:
+    import datetime
+
+    try:
+        return datetime.datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    except OSError:
+        return "?"

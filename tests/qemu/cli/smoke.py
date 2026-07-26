@@ -547,6 +547,31 @@ def smoke(args, repo: Path) -> int:
     else:
         run.add(Stage("staleness", status="ok", detail="current"))
 
+    # --- probe preflight (hard boundary) ---
+    # An instrumented run whose probe is not in the media is worse than no run:
+    # it spends the boots AND reads as evidence of absence. Fail before booting.
+    require = [s for s in (getattr(args, "require_probe", None) or []) if s.strip()]
+    if require:
+        missing = provenance.probes_missing_from_media(repo, arch, require)
+        if missing:
+            run.classification = "PROBE_NOT_IN_MEDIA"
+            run.add(
+                Stage(
+                    "probe-check",
+                    status="fail",
+                    detail=f"{len(missing)} of {len(require)} probe(s) absent",
+                    salient=[*missing, "rebuild so the probe reaches the media, then re-run"],
+                )
+            )
+            return run.finalize(repo)
+        run.add(
+            Stage(
+                "probe-check",
+                status="ok",
+                detail=f"{len(require)} probe(s) present in every boot image",
+            )
+        )
+
     total = max(1, int(getattr(args, "repeat", 1) or 1))
     until = getattr(args, "until", None) or ""
     fail_on = getattr(args, "fail_on", None)

@@ -962,6 +962,35 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   free-while-mapped. Same call as the `[PFNMISMATCH]` precedent — made loud, deliberately not
   fatal.
 
+  **It is not one suppressed detector — it is TWELVE, and eleven were still silent
+  (2026-07-26).** The `[PFNMISMATCH]` note above treats `MiDeletePte`'s back-pointer check as
+  *the* detector arm64 turned off. Enumerating the MM page-lifecycle paths mechanically says
+  otherwise: **12 sites** hard-fail on x86 with `KeBugCheck(MEMORY_MANAGEMENT)` and have an
+  arm64 arm that recovers silently instead (7 of them a bare `return STATUS_UNSUCCESSFUL`) —
+  `mm/rmap.rs` ×3, `mm/pagefile.rs` ×6, `mm/balance.rs`, `ARM3/virtual.rs` ×2. So arm64 is not
+  looking in twelve of the places x86 looks, all inside the subsystem this bug lives in, which
+  is the structural reason the corruption only ever surfaces as a distant victim.
+
+  All eleven remaining are now armed with `mm_guard_trip!` (`lib.rs`) — bounded prints, every
+  recovery kept, `[MMGUARD] <site> hit#=N` plus operands. **Silence from an armed site is a
+  result**: it eliminates that site. The one to read first is
+  **`rmap.MmDeleteRmap mapping-not-in-list`**: it means `MmDeleteRmap` walked the entire rmap
+  list and did not find the `(Process, Address)` mapping it was told to delete, i.e. the
+  caller believes the page is mapped there and the PFN database disagrees — *the* precondition
+  for freeing a still-mapped frame, arrived at from the rmap side instead of the PFN side.
+
+  **Also settled, and it redirects face C:** `ex-rust/src/pushlock.rs` was audited line-for-line
+  against the original C (the file embeds it as comments) and is a **faithful translation** —
+  `ExfWakePushLock`, `ExfReleasePushLock`, `ExfReleasePushLockExclusive` and the exclusive
+  acquire all match, including an inherited upstream livelock (a failed CAS never refreshes
+  `OldValue`) that does not fit face C anyway, since face C's thread is *parked*, not spinning.
+  Two apparent bugs were checked and are not bugs: `debug_assert!(!x != 0)` is a bitwise-not
+  that makes the assert always true (real, cosmetic, release-inert), and the spin loop's
+  `EX_PUSH_LOCK_WAITING` where the C says `EX_PUSH_LOCK_FLAGS_WAIT` — **different names, both
+  equal 2**. With the algorithm exonerated, HOLDER-STUCK points at a wait block made
+  unreachable by memory corruption, which is where face A already pointed. Do not re-audit the
+  pushlock; go to the `[MMGUARD]` output.
+
   **BOTH PROBES ARE NOW IMPLEMENTED AND IN THE SHIPPED KERNEL (2026-07-26).**
   - `[FREEMAPPED]` — `mm/freelist.rs` `MmDereferencePage`, at the TOP of the `rc - 1 == 0`
     branch exactly as pinned above, bounded at 32 prints plus a running total so it cannot

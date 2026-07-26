@@ -5,6 +5,18 @@ use core::ffi::c_void;
 // No file-scope declarations to translate from the C preamble
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_compareA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    attr: PCHAR,
+    value: PCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_compareA(
     ld: *mut WLDAP32_LDAP,
     dn: PCHAR,
@@ -16,10 +28,10 @@ pub unsafe extern "C" fn ldap_compareA(
     let mut attrW: PWCHAR = core::ptr::null_mut();
     let mut valueW: PWCHAR = core::ptr::null_mut();
 
-    ret = !0u;
+    ret = !0u32;
 
     if ld.is_null() || attr.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     'exit: {
@@ -53,6 +65,18 @@ pub unsafe extern "C" fn ldap_compareA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_compareW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    attr: PWCHAR,
+    value: PWCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_compareW(
     ld: *mut WLDAP32_LDAP,
     dn: PWCHAR,
@@ -69,10 +93,10 @@ pub unsafe extern "C" fn ldap_compareW(
     };
     let mut msg: i32 = 0;
 
-    ret = !0u;
+    ret = !0u32;
 
     if ld.is_null() || attr.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     'exit: loop {
@@ -115,7 +139,7 @@ pub unsafe extern "C" fn ldap_compareW(
         if ret == LDAP_SUCCESS {
             ret = msg as ULONG;
         } else {
-            ret = !0u;
+            ret = !0u32;
         }
 
         break 'exit;
@@ -128,6 +152,22 @@ pub unsafe extern "C" fn ldap_compareW(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_compare_extA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    attr: PCHAR,
+    value: PCHAR,
+    data: *mut WLDAP32_berval,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_compare_extA(
     ld: *mut WLDAP32_LDAP,
@@ -206,6 +246,22 @@ pub unsafe extern "C" fn ldap_compare_extA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_compare_extW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    attr: PWCHAR,
+    value: PWCHAR,
+    data: *mut WLDAP32_berval,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_compare_extW(
     ld: *mut WLDAP32_LDAP,
@@ -300,6 +356,21 @@ pub unsafe extern "C" fn ldap_compare_extW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_compare_ext_sA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    attr: PCHAR,
+    value: PCHAR,
+    data: *mut WLDAP32_berval,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_compare_ext_sA(
     ld: *mut WLDAP32_LDAP,
     dn: PCHAR,
@@ -367,6 +438,21 @@ pub unsafe extern "C" fn ldap_compare_ext_sA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_compare_ext_sW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    attr: PWCHAR,
+    value: PWCHAR,
+    data: *mut WLDAP32_berval,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_compare_ext_sW(
     ld: *mut WLDAP32_LDAP,
@@ -457,6 +543,18 @@ pub unsafe extern "C" fn ldap_compare_ext_sW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_compare_sA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    attr: PCHAR,
+    value: PCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_compare_sA(
     ld: *mut WLDAP32_LDAP,
     dn: PCHAR,
@@ -505,6 +603,18 @@ pub unsafe extern "C" fn ldap_compare_sA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_compare_sW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    attr: PWCHAR,
+    value: PWCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_compare_sW(
     ld: *mut WLDAP32_LDAP,
@@ -626,8 +736,8 @@ pub unsafe extern "C" fn ldap_compare_sW(
 //
 //     ret = ~0u;
 //
-//     TRACE( "(%p, %s, %s, %s)\n", ld, debugstr_a(dn), debugstr_a(attr),
-//            debugstr_a(value) );
+//     TRACE( "(%p, %s, %s, %s)\n", ld, debugstr_a!(dn), debugstr_a!(attr),
+//            debugstr_a!(value) );
 //
 //     if (!ld || !attr) return ~0u;
 //
@@ -680,8 +790,8 @@ pub unsafe extern "C" fn ldap_compare_sW(
 //
 //     ret = ~0u;
 //
-//     TRACE( "(%p, %s, %s, %s)\n", ld, debugstr_w(dn), debugstr_w(attr),
-//            debugstr_w(value) );
+//     TRACE( "(%p, %s, %s, %s)\n", ld, debugstr_w!(dn), debugstr_w!(attr),
+//            debugstr_w!(value) );
 //
 //     if (!ld || !attr) return ~0u;
 //
@@ -733,8 +843,8 @@ pub unsafe extern "C" fn ldap_compare_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s, %p, %p, %p, %p)\n", ld, debugstr_a(dn),
-//            debugstr_a(attr), debugstr_a(value), data, serverctrls,
+//     TRACE( "(%p, %s, %s, %s, %p, %p, %p, %p)\n", ld, debugstr_a!(dn),
+//            debugstr_a!(attr), debugstr_a!(value), data, serverctrls,
 //            clientctrls, message );
 //
 //     if (!ld || !message) return WLDAP32_LDAP_PARAM_ERROR;
@@ -810,8 +920,8 @@ pub unsafe extern "C" fn ldap_compare_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s, %p, %p, %p, %p)\n", ld, debugstr_w(dn),
-//            debugstr_w(attr), debugstr_w(value), data, serverctrls,
+//     TRACE( "(%p, %s, %s, %s, %p, %p, %p, %p)\n", ld, debugstr_w!(dn),
+//            debugstr_w!(attr), debugstr_w!(value), data, serverctrls,
 //            clientctrls, message );
 //
 //     if (!ld || !message) return WLDAP32_LDAP_PARAM_ERROR;
@@ -872,8 +982,8 @@ pub unsafe extern "C" fn ldap_compare_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s, %p, %p, %p)\n", ld, debugstr_a(dn),
-//            debugstr_a(attr), debugstr_a(value), data, serverctrls,
+//     TRACE( "(%p, %s, %s, %s, %p, %p, %p)\n", ld, debugstr_a!(dn),
+//            debugstr_a!(attr), debugstr_a!(value), data, serverctrls,
 //            clientctrls );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
@@ -947,8 +1057,8 @@ pub unsafe extern "C" fn ldap_compare_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s, %p, %p, %p)\n", ld, debugstr_w(dn),
-//            debugstr_w(attr), debugstr_w(value), data, serverctrls,
+//     TRACE( "(%p, %s, %s, %s, %p, %p, %p)\n", ld, debugstr_w!(dn),
+//            debugstr_w!(attr), debugstr_w!(value), data, serverctrls,
 //            clientctrls );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
@@ -1007,8 +1117,8 @@ pub unsafe extern "C" fn ldap_compare_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s)\n", ld, debugstr_a(dn), debugstr_a(attr),
-//            debugstr_a(value) );
+//     TRACE( "(%p, %s, %s, %s)\n", ld, debugstr_a!(dn), debugstr_a!(attr),
+//            debugstr_a!(value) );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
 //
@@ -1060,8 +1170,8 @@ pub unsafe extern "C" fn ldap_compare_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s)\n", ld, debugstr_w(dn), debugstr_w(attr),
-//            debugstr_w(value) );
+//     TRACE( "(%p, %s, %s, %s)\n", ld, debugstr_w!(dn), debugstr_w!(attr),
+//            debugstr_w!(value) );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
 //

@@ -10,6 +10,30 @@ name = "wldap32_rust"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 
+[features]
+# The C's `#ifdef HAVE_LDAP`, carried across verbatim. wine's config.h says
+# `/* #undef HAVE_LDAP */`, so this build compiles the NOT_SUPPORTED arm of every
+# entry point and never links a libldap -- exactly what the shipped C does. The
+# translated marshalling stays on disk behind this switch, ready for the day a real
+# LDAP backend is wired up. Flip it and you must also supply the `ldap_*`/`ber_*`
+# externs. Derived, not hand-maintained: `python -m rustconv.cfg_gate`.
+have_ldap = []
+# wldap32 branches on EIGHT config probes, not one: config.h `#undef`s each of these
+# independently (autoconf tests for the individual libldap entry points). Each keeps its
+# own feature so the Rust can be switched exactly as finely as the C was.
+have_ldap_count_references = []
+have_ldap_first_reference = []
+have_ldap_h = []
+have_ldap_next_reference = []
+have_ldap_parse_reference = []
+have_ldap_parse_sort_control = []
+# reached via `#elif defined(...)`, which the #ifdef scan does not see
+have_ldap_parse_sortresponse_control = []
+have_ldap_parse_vlvresponse_control = []
+have_ldap_parse_vlv_control = []
+
 [dependencies]
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
+# ber_printf/ber_scanf are C-variadic; see src/wldap32/ber.rs.
+varargs-rust = { path = "../varargs-rust" }
