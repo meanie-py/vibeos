@@ -1197,3 +1197,54 @@ reproducibly, so the file cannot stitch. The failure is loud and correct, but it
 "reasoning consumed the 65536-token budget" — which cannot be true at 1885 tokens with a normal
 stop. Likely shape: a preamble that is *only* extern function declarations gives the model
 nothing it judges translatable. Any msvcrt import-lib shim file will hit it.
+
+## Wave 14c (2026-07-26) — the printf ENTRY POINTS. 30 shells, 1,260 graded rows, and an oracle that had been grading glibc.
+
+Wave 14b left this owed and named the reason: flipping the engine's six symbols swung
+**file.c's** stream family (`vfprintf_helper` → `callq pf_printf_a`, verified by disassembly)
+but not **wcs.c's own** shells, because clang had already IPA-specialized the same-TU engine
+into them as `pf_printf_a.specialized.N` and intra-TU inlining never consults the linker.
+**Symbol replacement flips a TU's callers, not its housemates.** The only way in is to define
+the shells.
+
+**Done: the 30 `va_list`-taking entry points** (`msvcrt-crt-rust/src/printf_shells.rs`), a
+transcription of wcs.c at `_MSVCR_VER=0` — the plain sinks, the `_s` bounded family, the `_p`
+positional family, the `_vsc*` counting sinks, narrow and wide. No `c_variadic` is involved and
+none is needed: a fixed-arity function that *receives* an already-started cursor is ordinary
+stable Rust, and on all three Windows targets a `va_list` is a plain `char*`. Each shell keeps
+its own `let mut ap = valist` before handing `&mut ap` down, mirroring the C's private parameter
+copy.
+
+**Still owed: the ~26 `...` shells** (`sprintf`, `_snprintf`, `_swprintf`, `_scprintf`, …).
+Stable Rust cannot `va_start`, so these are three-line C trampolines over the
+`varargs-rust` pattern — and they must live in **their own TU** (`rust_varargs_shim.c`), not in
+wcs.c, for the same housemate reason above.
+
+**Grading — `tests/printf_shells.rs`, 1,260 rows, four channels.** `printf_port` grades the
+ENGINE and is structurally blind to everything wrapped around it: which `options` bits go in,
+whether the trailing NUL is appended through the callback or forced, how a `size_t` buffer size
+truncates into the C's `int len` (and sign-extends back into `ctx.len`), which of `ret < 0` /
+`ret == len` decides a `-1`, whether the `-1` path zeroes the caller's buffer or terminates it.
+A shell that got every one of those wrong would pass `printf_port` perfectly. Rows compare
+return value, the **full buffer image including a guard prefix** (`vsnprintf_s_l_opt` genuinely
+writes `str[-1]` when `len == 0`, and both sides must), errno against a sentinel seed, and the
+invalid-parameter count.
+
+**Two things the harness taught, both worth more than the flip:**
+
+1. **The reference had an undefined `vsnprintf` that the linker satisfied from glibc.** wcs.c
+   calls plain `vsnprintf` from five entry points and at `_MSVCR_VER=0` never defines it; the
+   real build closes that with `stdio.h`'s `#define vsnprintf _vsnprintf`, the harness prelude
+   did not. So `pfflat_sprintf`, `pfflat_vsprintf`, `pfflat__snprintf` & co. were grading the
+   **host libc** — no `%I64`, `(nil)` for `%p`, two-digit exponents. Fixed as a pfflat-only
+   stage 4, with `%I64d` canary rows so a regression fails loudly. **pfflat-only is
+   load-bearing:** `_vsnprintf` forwards `&valist` as a `va_list*`, correct under the flat
+   `char*` va_list that instantiation compiles with and an instant fault under `ref_`'s SysV
+   register-save-area — applying it to both SIGSEGVs in `ref_create_mbcinfo`'s
+   `sprintf(".%d")`, killing every mbcs case. glibc stays the `ref_` TU's formatter on purpose.
+2. **The ERANGE arm was vacuous.** 33 rows varying format and count, none varying the buffer
+   size, never entered `ret < 0 || ret == len` at all — halving the arm's `memset` as a negative
+   control moved zero rows. Nine small-buffer rows later the same control fails eight. The
+   variable that unlocks a branch is not always the one the function is named after.
+
+**Measured after:** 431 of 1,165 non-stub amd64 exports Rust-backed (37%), up from 400.

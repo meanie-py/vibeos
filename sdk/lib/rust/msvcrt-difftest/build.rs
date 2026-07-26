@@ -1242,6 +1242,47 @@ fn main() {
         prelude2.contains("#define _vsnprintf pfflat__vsnprintf"),
         "pfflat prelude transform failed — probe entry would collide with ref_*"
     );
+
+    // ═══ pfflat stage 4: `vsnprintf` is msvcrt's OWN engine, not the host libc. ═══
+    //
+    // wcs.c CALLS plain `vsnprintf` (from vsprintf, vsprintf_s, sprintf, sprintf_s,
+    // _snprintf) and under _MSVCR_VER=0 never DEFINES it, so the name is in no rename
+    // list and the call leaves the TU undefined for the linker to satisfy from
+    // **glibc**. The real build has no such gap: sdk/include/crt/stdio.h:719-720 is
+    // `#ifndef vsnprintf / #define vsnprintf _vsnprintf`, so msvcrt's own engine is
+    // what those five call. Without this, `pfflat_sprintf` & co. grade the host libc —
+    // no %I64 conversions, `(nil)` for %p, 2-digit exponents — while claiming to be the
+    // genuine msvcrt (§9.66, the reference that is not the code under test).
+    //
+    // **pfflat ONLY. The ref_ instantiation must keep glibc's, and that is not an
+    // oversight.** `_vsnprintf` forwards `&valist` as a `va_list*`, an idiom coherent
+    // only where a va_list IS a plain pointer. That is true on all three Windows
+    // targets and true of this instantiation, which is compiled against the flat
+    // `<stdarg.h>` in refstub_printf/ — but false of ref_, compiled under the host's
+    // SysV register-save-area va_list, where `*valist` reinterprets the decayed pointer
+    // as the tag struct and faults. Applying this to ref_ too SIGSEGVs immediately and
+    // not in the printf tests: `ref_create_mbcinfo` (mbcs.c:266) formats its codepage
+    // with `sprintf(buf, ".%d", cp)`, so EVERY mbcs case dies in the fixture. glibc's
+    // vsnprintf is the only working narrow formatter available to that TU, and `".%d"`
+    // is a format the two agree on exactly, so it stays.
+    //
+    // Rescan does the rest: `vsnprintf` -> `_vsnprintf` -> the transformed stage-1
+    // rename -> `pfflat__vsnprintf`, so this one line needs no plumbing of its own.
+    //
+    // tests/printf_shells.rs keeps a %I64d canary on every row routed through this
+    // chain — glibc prints `I64d` literally, so a regression is a loud row mismatch
+    // rather than a quietly wrong oracle.
+    let stage4 = "\n#undef vsnprintf\n#define vsnprintf _vsnprintf\n";
+    let endif = "\n#endif /* MSVCRT_PFFLAT_PRELUDE_H */\n";
+    assert!(
+        prelude2.ends_with(endif),
+        "pfflat prelude does not end with its include guard — cannot append stage 4"
+    );
+    prelude2 = format!("{}{stage4}{endif}", &prelude2[..prelude2.len() - endif.len()]);
+    assert!(
+        !prelude.contains("#define vsnprintf"),
+        "stage 4 leaked into the ref_ prelude — that faults ref_create_mbcinfo"
+    );
     let prelude2_h = out.join("pfflat_prelude.h");
     fs::write(&prelude2_h, &prelude2).unwrap();
 
