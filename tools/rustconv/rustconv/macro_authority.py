@@ -72,6 +72,42 @@ def _compile_entry(repo_root: Path, arch: str, source: Path) -> list[str] | None
     return None
 
 
+def _includer_entry(repo_root: Path, arch: str, header: Path) -> list[str] | None:
+    """A compiled TU in the header's own directory that `#include`s it.
+
+    A HEADER has no compile command of its own, but its macro environment is by
+    definition whatever its includers see — so borrowing an includer's flags is exact,
+    not a guess. This is what makes a `static inline` helper header translatable at all:
+    wldap32.h is 62 marshalling helpers that every TU inlines a private copy of, so no
+    .c defines them and the translated modules call 300-odd functions that would
+    otherwise have no Rust definition anywhere.
+
+    Restricted to the header's own directory: a module-private header is included by its
+    own TUs, and matching tree-wide would pick an arbitrary module's flags.
+    """
+    db_path = repo_root / f"build-{arch}" / "compile_commands.json"
+    if not db_path.is_file():
+        return None
+    try:
+        db = json.loads(db_path.read_text())
+    except (OSError, ValueError) as error:
+        raise MacroAuthorityError(f"unreadable {db_path}: {error}") from error
+    pattern = re.compile(r'^\s*#\s*include\s+[<"]' + re.escape(header.name) + r'[>"]', re.M)
+    for entry in sorted(db, key=lambda e: e.get("file", "")):
+        recorded = entry.get("file", "").replace(CANONICAL_BUILD_ROOT, str(repo_root))
+        tu = Path(recorded)
+        if tu.parent != header.parent or tu.suffix not in (".c", ".cpp"):
+            continue
+        try:
+            if not pattern.search(tu.read_text(encoding="utf-8", errors="replace")):
+                continue
+        except OSError:
+            continue
+        argv = shlex.split(entry.get("command") or " ".join(entry.get("arguments", [])))
+        return [a.replace(CANONICAL_BUILD_ROOT, str(repo_root)) for a in argv]
+    return None
+
+
 def _preprocess_defines(argv: list[str]) -> str:
     stripped: list[str] = []
     skip = False
@@ -105,16 +141,25 @@ def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
     """
     names: set[str] = set()
     found: list[str] = []
+    is_header = source.suffix in (".h", ".hpp")
     for arch in _ARCHES:
         argv = _compile_entry(repo_root, arch, source)
+        if argv is None and is_header:
+            # See _includer_entry: a header's macro set is its includers' macro set.
+            argv = _includer_entry(repo_root, arch, source)
         if argv is None:
             continue
         names |= set(_DEFINE_FN_LIKE.findall(_preprocess_defines(argv)))
         found.append(arch)
     if not found:
+        via = (
+            " and no compiled TU in its own directory #includes it"
+            if is_header
+            else ""
+        )
         raise MacroAuthorityError(
             f"no compile command for {source} in any build-<arch>/compile_commands.json "
-            f"under {repo_root}. The call seal needs the real function-like macro set; "
+            f"under {repo_root}{via}. The call seal needs the real function-like macro set; "
             f"without it every macro occurrence becomes an unsatisfiable envelope and "
             f"the TU assembles nothing.\n"
             f"fix: ./vibeos-cli build --arch i386"
