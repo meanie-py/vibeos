@@ -1,115 +1,36 @@
 use crate::prelude::*;
+use varargs_rust::VaArgs;
 use core::ffi::c_void;
+// ber.c is the add_pch SKIP source: it compiles against <winldap.h>, not
+// "winldap_private.h", and the two declare BerElement/berval INCOMPATIBLY (§9.108).
+// So the ber types come from THIS TU's own island and must SHADOW the prelude's glob --
+// a named import wins over a glob, which is the only reason both can coexist in scope.
+// lib.rs already documents this contract; the translation just never honoured it, and
+// `BerElement` resolved to nothing at all.
+use crate::types_1::{berval, BerElement, BERVAL, PBERVAL};
 
 // ---- file-scope preamble (translated) ----
 pub const LBER_ERROR: u32 = !0u32;
+// Stable Rust cannot DEFINE a C-variadic fn nor do va_arg (`c_variadic`,
+// rust-lang/rust#44930). The exported `WLDAP32_ber_printf`/`_scanf` are therefore
+// 3-line va_start trampolines in dll/win32/wldap32/rust_varargs_shim.c that hand the
+// va_list straight back here as `*mut c_void`; the entire format walk stays in Rust.
+// Nightly is NOT an option -- `#![feature]`/RUSTC_BOOTSTRAP are hard-gated.
 #[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_printf(
+pub unsafe extern "C" fn WLDAP32_ber_printf_v(
     berelement: *mut BerElement,
     fmt: PCHAR,
-    mut args: ...
+    ap: *mut c_void,
 ) -> INT {
 
-#[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_bvecfree(berval: *mut PBERVAL) {
-    #[cfg(have_ldap)]
+#[cfg(feature = "have_ldap")]
     {
-        ber_bvecfree(berval);
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_bvfree(berval: *mut BERVAL) {
-    #[cfg(HAVE_LDAP)]
-    {
-        ber_bvfree(berval);
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_first_element(
-    berelement: *mut BerElement,
-    len: *mut ULONG,
-    opaque: *mut *mut CHAR,
-) -> ULONG {
-    #[cfg(feature = "HAVE_LDAP")]
-    {
-        return ber_first_element(berelement, len, opaque);
-    }
-    #[cfg(not(feature = "HAVE_LDAP"))]
-    {
-        return LBER_ERROR;
-    }
-}
-#[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_flatten(berelement: *mut BerElement, berval: *mut PBERVAL) -> INT {
-    #[cfg(HAVE_LDAP)]
-    {
-        return ber_flatten(berelement, berval);
-    }
-    #[cfg(not(HAVE_LDAP))]
-    {
-        return LBER_ERROR;
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_free(berelement: *mut BerElement, buf: INT) {
-    #[cfg(feature = "HAVE_LDAP")]
-    {
-        ber_free(berelement, buf);
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_next_element(
-    berelement: *mut BerElement,
-    len: *mut ULONG,
-    opaque: *mut CHAR,
-) -> ULONG {
-    #[cfg(feature = "HAVE_LDAP")]
-    {
-        return ber_next_element(berelement, len, opaque);
-    }
-    #[cfg(not(feature = "HAVE_LDAP"))]
-    {
-        return LBER_ERROR;
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_peek_tag(berelement: *mut BerElement, len: *mut ULONG) -> ULONG {
-    #[cfg(feature = "HAVE_LDAP")]
-    {
-        return ber_peek_tag(berelement, len);
-    }
-    #[cfg(not(feature = "HAVE_LDAP"))]
-    {
-        return LBER_ERROR;
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_skip_tag(berelement: *mut BerElement, len: *mut ULONG) -> ULONG {
-    #[cfg(feature = "HAVE_LDAP")]
-    {
-        return ber_skip_tag(berelement, len);
-    }
-    #[cfg(not(feature = "HAVE_LDAP"))]
-    {
-        return LBER_ERROR;
-    }
-}
-
-#[cfg(feature = "HAVE_LDAP")]
-    {
-        let mut list: __ms_va_list = core::mem::zeroed();
+        let mut list = VaArgs::from_ptr(ap);
         let mut ret: c_int = 0;
         let mut new_fmt: [c_char; 2] = [0; 2];
         let mut fmt_ptr = fmt;
 
         new_fmt[1] = 0;
-        __ms_va_start(core::ptr::addr_of_mut!(list), fmt);
 
         while *fmt_ptr != 0 {
             new_fmt[0] = *fmt_ptr;
@@ -117,28 +38,28 @@ pub unsafe extern "C" fn WLDAP32_ber_skip_tag(berelement: *mut BerElement, len: 
 
             match new_fmt[0] as u8 {
                 b'b' | b'e' | b'i' => {
-                    let i: c_int = va_arg(list, c_int);
+                    let i: c_int = list.arg::<c_int>();
                     ret = ber_printf(berelement, new_fmt.as_ptr(), i);
                 }
                 b'o' | b's' => {
-                    let str: *mut c_char = va_arg(list, *mut c_char);
+                    let str: *mut c_char = list.arg::<*mut c_char>();
                     ret = ber_printf(berelement, new_fmt.as_ptr(), str);
                 }
                 b't' => {
-                    let tag: c_uint = va_arg(list, c_uint);
+                    let tag: c_uint = list.arg::<c_uint>();
                     ret = ber_printf(berelement, new_fmt.as_ptr(), tag);
                 }
                 b'v' => {
-                    let array: *mut *mut c_char = va_arg(list, *mut *mut c_char);
+                    let array: *mut *mut c_char = list.arg::<*mut *mut c_char>();
                     ret = ber_printf(berelement, new_fmt.as_ptr(), array);
                 }
                 b'V' => {
-                    let array: *mut *mut berval = va_arg(list, *mut *mut berval);
+                    let array: *mut *mut berval = list.arg::<*mut *mut berval>();
                     ret = ber_printf(berelement, new_fmt.as_ptr(), array);
                 }
                 b'X' => {
-                    let str: *mut c_char = va_arg(list, *mut c_char);
-                    let len: c_int = va_arg(list, c_int);
+                    let str: *mut c_char = list.arg::<*mut c_char>();
+                    let len: c_int = list.arg::<c_int>();
                     new_fmt[0] = b'B' as c_char;
                     ret = ber_printf(berelement, new_fmt.as_ptr(), str, len);
                 }
@@ -156,70 +77,204 @@ pub unsafe extern "C" fn WLDAP32_ber_skip_tag(berelement: *mut BerElement, len: 
             }
         }
 
-        __ms_va_end(core::ptr::addr_of_mut!(list));
         ret
     }
-    #[cfg(not(feature = "HAVE_LDAP"))]
+    #[cfg(not(feature = "have_ldap"))]
     {
-        LBER_ERROR
+        (LBER_ERROR) as i32
+    }
+}
+
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ber_bvecfree(berval: *mut PBERVAL) {}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ber_bvecfree(berval: *mut PBERVAL) {}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_bvecfree(berval: *mut PBERVAL) {
+    #[cfg(feature = "have_ldap")]
+    {
+        ber_bvecfree(berval);
+    }
+}
+
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ber_bvfree(berval: *mut BERVAL) {}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ber_bvfree(berval: *mut BERVAL) {}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_bvfree(berval: *mut BERVAL) {
+    #[cfg(feature = "have_ldap")]
+    {
+        ber_bvfree(berval);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_first_element(
+    berelement: *mut BerElement,
+    len: *mut ULONG,
+    opaque: *mut *mut CHAR,
+) -> ULONG {
+    #[cfg(feature = "have_ldap")]
+    {
+        return ber_first_element(berelement, len, opaque);
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return LBER_ERROR;
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn WLDAP32_ber_scanf(berelement: *mut BerElement, fmt: PCHAR, mut args: ...) -> INT {
-    let mut list: __ms_va_list = core::mem::zeroed();
-    let mut ret: c_int = 0;
-    let mut new_fmt: [c_char; 2] = [0; 2];
-
-    new_fmt[1] = 0;
-    __ms_va_start(&mut list as *mut _ as *mut c_void, &fmt as *const _ as *const c_void);
-    let mut fmt_ptr = fmt;
-    while *fmt_ptr != 0 {
-        new_fmt[0] = *fmt_ptr;
-        fmt_ptr = fmt_ptr.offset(1);
-        match new_fmt[0] as u8 {
-            b'a' => {
-                let ptr: *mut *mut c_char = va_arg(list, core::mem::size_of::<*mut *mut c_char>());
-                ret = ber_scanf(berelement, new_fmt.as_ptr(), ptr);
-            }
-            b'b' | b'e' | b'i' => {
-                let i: *mut c_int = va_arg(list, core::mem::size_of::<*mut c_int>());
-                ret = ber_scanf(berelement, new_fmt.as_ptr(), i);
-            }
-            b't' => {
-                let tag: *mut c_uint = va_arg(list, core::mem::size_of::<*mut c_uint>());
-                ret = ber_scanf(berelement, new_fmt.as_ptr(), tag);
-            }
-            b'v' => {
-                let array: *mut *mut *mut c_char = va_arg(list, core::mem::size_of::<*mut *mut *mut c_char>());
-                ret = ber_scanf(berelement, new_fmt.as_ptr(), array);
-            }
-            b'B' => {
-                let str_: *mut *mut c_char = va_arg(list, core::mem::size_of::<*mut *mut c_char>());
-                let len: *mut c_int = va_arg(list, core::mem::size_of::<*mut c_int>());
-                ret = ber_scanf(berelement, new_fmt.as_ptr(), str_, len);
-            }
-            b'O' => {
-                let ptr: *mut *mut berval = va_arg(list, core::mem::size_of::<*mut *mut berval>());
-                ret = ber_scanf(berelement, new_fmt.as_ptr(), ptr);
-            }
-            b'V' => {
-                let array: *mut *mut *mut berval = va_arg(list, core::mem::size_of::<*mut *mut *mut berval>());
-                ret = ber_scanf(berelement, new_fmt.as_ptr(), array);
-            }
-            b'n' | b'x' | b'{' | b'}' | b'[' | b']' => {
-                ret = ber_scanf(berelement, new_fmt.as_ptr());
-            }
-            _ => {
-                FIXME!(b"Unknown format '%c'\n\0".as_ptr() as PCHAR, new_fmt[0]);
-                ret = -1;
-            }
-        }
-        if ret == -1 {
-            break;
-        }
+pub unsafe extern "C" fn WLDAP32_ber_flatten(berelement: *mut BerElement, berval: *mut PBERVAL) -> INT {
+    #[cfg(feature = "have_ldap")]
+    {
+        return ber_flatten(berelement, berval);
     }
-    __ms_va_end(list);
-    ret
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return (LBER_ERROR) as i32;
+    }
+}
+
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ber_free(berelement: *mut BerElement, buf: INT) {}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ber_free(berelement: *mut BerElement, buf: INT) {}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_free(berelement: *mut BerElement, buf: INT) {
+    #[cfg(feature = "have_ldap")]
+    {
+        ber_free(berelement, buf);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_next_element(
+    berelement: *mut BerElement,
+    len: *mut ULONG,
+    opaque: *mut CHAR,
+) -> ULONG {
+    #[cfg(feature = "have_ldap")]
+    {
+        return ber_next_element(berelement, len, opaque);
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return LBER_ERROR;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_peek_tag(berelement: *mut BerElement, len: *mut ULONG) -> ULONG {
+    #[cfg(feature = "have_ldap")]
+    {
+        return ber_peek_tag(berelement, len);
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return LBER_ERROR;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_skip_tag(berelement: *mut BerElement, len: *mut ULONG) -> ULONG {
+    #[cfg(feature = "have_ldap")]
+    {
+        return ber_skip_tag(berelement, len);
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return LBER_ERROR;
+    }
+}
+
+// Stable Rust cannot DEFINE a C-variadic fn nor do va_arg (`c_variadic`,
+// rust-lang/rust#44930). The exported `WLDAP32_ber_printf`/`_scanf` are therefore
+// 3-line va_start trampolines in dll/win32/wldap32/rust_varargs_shim.c that hand the
+// va_list straight back here as `*mut c_void`; the entire format walk stays in Rust.
+// Nightly is NOT an option -- `#![feature]`/RUSTC_BOOTSTRAP are hard-gated.
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_scanf_v(berelement: *mut BerElement, fmt: PCHAR, ap: *mut c_void) -> INT {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut list = VaArgs::from_ptr(ap);
+        let mut ret: c_int = 0;
+        let mut new_fmt: [c_char; 2] = [0; 2];
+
+        new_fmt[1] = 0;
+        let mut fmt_ptr = fmt;
+        while *fmt_ptr != 0 {
+            new_fmt[0] = *fmt_ptr;
+            fmt_ptr = fmt_ptr.offset(1);
+            match new_fmt[0] as u8 {
+                b'a' => {
+                    let ptr: *mut *mut c_char = list.arg::<*mut *mut c_char>();
+                    ret = ber_scanf(berelement, new_fmt.as_ptr(), ptr);
+                }
+                b'b' | b'e' | b'i' => {
+                    let i: *mut c_int = list.arg::<*mut c_int>();
+                    ret = ber_scanf(berelement, new_fmt.as_ptr(), i);
+                }
+                b't' => {
+                    let tag: *mut c_uint = list.arg::<*mut c_uint>();
+                    ret = ber_scanf(berelement, new_fmt.as_ptr(), tag);
+                }
+                b'v' => {
+                    let array: *mut *mut *mut c_char = list.arg::<*mut *mut *mut c_char>();
+                    ret = ber_scanf(berelement, new_fmt.as_ptr(), array);
+                }
+                b'B' => {
+                    let str_: *mut *mut c_char = list.arg::<*mut *mut c_char>();
+                    let len: *mut c_int = list.arg::<*mut c_int>();
+                    ret = ber_scanf(berelement, new_fmt.as_ptr(), str_, len);
+                }
+                b'O' => {
+                    let ptr: *mut *mut berval = list.arg::<*mut *mut berval>();
+                    ret = ber_scanf(berelement, new_fmt.as_ptr(), ptr);
+                }
+                b'V' => {
+                    let array: *mut *mut *mut berval = list.arg::<*mut *mut *mut berval>();
+                    ret = ber_scanf(berelement, new_fmt.as_ptr(), array);
+                }
+                b'n' | b'x' | b'{' | b'}' | b'[' | b']' => {
+                    ret = ber_scanf(berelement, new_fmt.as_ptr());
+                }
+                _ => {
+                    FIXME!(b"Unknown format '%c'\n\0".as_ptr() as PCHAR, new_fmt[0]);
+                    ret = -1;
+                }
+            }
+            if ret == -1 {
+                break;
+            }
+        }
+        ret
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        LBER_ERROR as INT
+    }
 }
 
 
@@ -559,8 +614,7 @@ pub unsafe extern "C" fn WLDAP32_ber_scanf(berelement: *mut BerElement, fmt: PCH
 //     char new_fmt[2];
 //
 //     new_fmt[1] = 0;
-//     __ms_va_start( list, fmt );
-//     while (*fmt)
+////     while (*fmt)
 //     {
 //         new_fmt[0] = *fmt++;
 //         switch(new_fmt[0])
@@ -620,8 +674,7 @@ pub unsafe extern "C" fn WLDAP32_ber_scanf(berelement: *mut BerElement, fmt: PCH
 //         }
 //         if (ret == -1) break;
 //     }
-//     __ms_va_end( list );
-//     return ret;
+////     return ret;
 // #else
 //     return LBER_ERROR;
 // #endif
@@ -654,8 +707,7 @@ pub unsafe extern "C" fn WLDAP32_ber_scanf(berelement: *mut BerElement, fmt: PCH
 //     char new_fmt[2];
 //
 //     new_fmt[1] = 0;
-//     __ms_va_start( list, fmt );
-//     while (*fmt)
+////     while (*fmt)
 //     {
 //         new_fmt[0] = *fmt++;
 //         switch(new_fmt[0])
@@ -720,8 +772,7 @@ pub unsafe extern "C" fn WLDAP32_ber_scanf(berelement: *mut BerElement, fmt: PCH
 //         }
 //         if (ret == -1) break;
 //     }
-//     __ms_va_end( list );
-//     return ret;
+////     return ret;
 // #else
 //     return LBER_ERROR;
 // #endif

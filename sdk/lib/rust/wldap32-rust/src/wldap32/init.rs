@@ -14,6 +14,7 @@ pub static defaulthost: [u16; 10] = [
     b't' as u16,
     0,
 ];
+#[cfg(feature = "have_ldap")]
 unsafe extern "C" fn has_ldap_scheme(url: *mut i8) -> u8 {
     if _strnicmp(url, b"ldap://\0".as_ptr() as *const i8, 7) == 0 {
         return 1u8;
@@ -29,6 +30,7 @@ unsafe extern "C" fn has_ldap_scheme(url: *mut i8) -> u8 {
     }
     0u8
 }
+#[cfg(feature = "have_ldap")]
 unsafe extern "C" fn join_hostnames(
     scheme: *const i8,
     hostnames: *mut *mut i8,
@@ -99,6 +101,7 @@ unsafe extern "C" fn join_hostnames(
     }
     res
 }
+#[cfg(feature = "have_ldap")]
 unsafe extern "C" fn urlify_hostnames(
     scheme: *const i8,
     hostnames: *mut i8,
@@ -117,6 +120,7 @@ unsafe extern "C" fn urlify_hostnames(
     strarrayfreeU(strarray);
     return url;
 }
+#[cfg(feature = "have_ldap")]
 unsafe extern "C" fn create_context(url: *const i8) -> *mut LDAP {
     let mut ld: *mut LDAP = core::ptr::null_mut();
     let mut version: i32 = LDAP_VERSION3;
@@ -139,6 +143,19 @@ pub unsafe extern "C" fn ldap_connect(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_start_tls_sA(
+    ld: *mut WLDAP32_LDAP,
+    retval: PULONG,
+    result: *mut *mut WLDAP32_LDAPMessage,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_start_tls_sA(
     ld: *mut WLDAP32_LDAP,
     retval: PULONG,
@@ -154,7 +171,7 @@ pub unsafe extern "C" fn ldap_start_tls_sA(
     ret = WLDAP32_LDAP_NO_MEMORY;
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     'exit: loop {
@@ -182,6 +199,19 @@ pub unsafe extern "C" fn ldap_start_tls_sA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_start_tls_sW(
+    ld: *mut WLDAP32_LDAP,
+    retval: PULONG,
+    result: *mut *mut WLDAP32_LDAPMessage,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_start_tls_sW(
     ld: *mut WLDAP32_LDAP,
     retval: PULONG,
@@ -196,7 +226,7 @@ pub unsafe extern "C" fn ldap_start_tls_sW(
     ret = WLDAP32_LDAP_NO_MEMORY;
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     if !serverctrls.is_null() {
@@ -236,7 +266,7 @@ pub unsafe extern "C" fn ldap_startup(
 #[no_mangle]
 pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
     // TRACE!( "(%p)\n", ld );
-    TRUE
+    (TRUE) as u8
 }
 
 
@@ -472,7 +502,7 @@ pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
 //     WLDAP32_LDAP *ld = NULL;
 //     WCHAR *hostnameW = NULL;
 //
-//     TRACE( "(%s, %d)\n", debugstr_a(hostname), portnumber );
+//     TRACE( "(%s, %d)\n", debugstr_a!(hostname), portnumber );
 //
 //     if (hostname) {
 //         hostnameW = strAtoW( hostname );
@@ -517,7 +547,7 @@ pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
 //     LDAP *ld = NULL;
 //     char *hostnameU = NULL, *url = NULL;
 //
-//     TRACE( "(%s, %d)\n", debugstr_w(hostname), portnumber );
+//     TRACE( "(%s, %d)\n", debugstr_w!(hostname), portnumber );
 //
 //     if (hostname) {
 //         hostnameU = strWtoU( hostname );
@@ -580,7 +610,7 @@ pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
 //     WLDAP32_LDAP *ld = NULL;
 //     WCHAR *hostnameW = NULL;
 //
-//     TRACE( "(%s, %d)\n", debugstr_a(hostname), portnumber );
+//     TRACE( "(%s, %d)\n", debugstr_a!(hostname), portnumber );
 //
 //     if (hostname) {
 //         hostnameW = strAtoW( hostname );
@@ -626,7 +656,7 @@ pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
 //     LDAP *ld = NULL;
 //     char *hostnameU = NULL, *url = NULL;
 //
-//     TRACE( "(%s, %d)\n", debugstr_w(hostname), portnumber );
+//     TRACE( "(%s, %d)\n", debugstr_w!(hostname), portnumber );
 //
 //     if (hostname) {
 //         hostnameU = strWtoU( hostname );
@@ -663,7 +693,7 @@ pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
 //     WLDAP32_LDAP *ld = NULL;
 //     WCHAR *hostnameW = NULL;
 //
-//     TRACE( "(%s, %d)\n", debugstr_a(hostname), portnumber );
+//     TRACE( "(%s, %d)\n", debugstr_a!(hostname), portnumber );
 //
 //     if (hostname) {
 //         hostnameW = strAtoW( hostname );
@@ -708,7 +738,7 @@ pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
 //     LDAP *ld = NULL;
 //     char *hostnameU = NULL, *url = NULL;
 //
-//     TRACE( "(%s, %d)\n", debugstr_w(hostname), portnumber );
+//     TRACE( "(%s, %d)\n", debugstr_w!(hostname), portnumber );
 //
 //     if (hostname) {
 //         hostnameU = strWtoU( hostname );
@@ -745,7 +775,7 @@ pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
 //     WLDAP32_LDAP *ld;
 //     WCHAR *hostnameW = NULL;
 //
-//     TRACE( "(%s, %d, 0x%08x)\n", debugstr_a(hostname), portnumber, secure );
+//     TRACE( "(%s, %d, 0x%08x)\n", debugstr_a!(hostname), portnumber, secure );
 //
 //     if (hostname) {
 //         hostnameW = strAtoW( hostname );
@@ -791,7 +821,7 @@ pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
 //     WLDAP32_LDAP *ld = NULL;
 //     char *hostnameU = NULL, *url = NULL;
 //
-//     TRACE( "(%s, %d, 0x%08x)\n", debugstr_w(hostname), portnumber, secure );
+//     TRACE( "(%s, %d, 0x%08x)\n", debugstr_w!(hostname), portnumber, secure );
 //
 //     if (hostname) {
 //         hostnameU = strWtoU( hostname );

@@ -7,6 +7,17 @@ use core::ffi::c_void;
 // which do not generate Rust declarations.
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_get_optionA(
+    ld: *mut WLDAP32_LDAP,
+    option: i32,
+    value: *mut core::ffi::c_void,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_get_optionA(
     ld: *mut WLDAP32_LDAP,
     option: i32,
@@ -133,6 +144,17 @@ pub unsafe extern "C" fn ldap_get_optionA(
     }
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_get_optionW(
+    ld: *mut WLDAP32_LDAP,
+    option: i32,
+    value: *mut core::ffi::c_void,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_get_optionW(
     ld: *mut WLDAP32_LDAP,
@@ -273,6 +295,13 @@ pub unsafe extern "C" fn ldap_get_optionW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_set_optionA(ld: *mut WLDAP32_LDAP, option: i32, value: *mut core::ffi::c_void) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_set_optionA(ld: *mut WLDAP32_LDAP, option: i32, value: *mut core::ffi::c_void) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;
 
@@ -317,6 +346,13 @@ pub unsafe extern "C" fn ldap_set_optionA(ld: *mut WLDAP32_LDAP, option: i32, va
     }
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_set_optionW(ld: *mut WLDAP32_LDAP, option: i32, value: *mut core::ffi::c_void) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_set_optionW(ld: *mut WLDAP32_LDAP, option: i32, value: *mut core::ffi::c_void) -> ULONG {
     let mut ret: ULONG = WLDAP32_LDAP_NOT_SUPPORTED;

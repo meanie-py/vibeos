@@ -7,6 +7,22 @@ use core::ffi::c_void;
 // which do not produce Rust declarations.
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_rename_extA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    newrdn: PCHAR,
+    newparent: PCHAR,
+    delete: INT,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_rename_extA(
     ld: *mut WLDAP32_LDAP,
     dn: PCHAR,
@@ -85,6 +101,22 @@ pub unsafe extern "C" fn ldap_rename_extA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_rename_extW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    newrdn: PWCHAR,
+    newparent: PWCHAR,
+    delete: INT,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+    message: *mut ULONG,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_rename_extW(
     ld: *mut WLDAP32_LDAP,
@@ -165,6 +197,21 @@ pub unsafe extern "C" fn ldap_rename_extW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_rename_ext_sA(
+    ld: *mut WLDAP32_LDAP,
+    dn: PCHAR,
+    newrdn: PCHAR,
+    newparent: PCHAR,
+    delete: INT,
+    serverctrls: *mut PLDAPControlA,
+    clientctrls: *mut PLDAPControlA,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_rename_ext_sA(
     ld: *mut WLDAP32_LDAP,
     dn: PCHAR,
@@ -231,6 +278,21 @@ pub unsafe extern "C" fn ldap_rename_ext_sA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_rename_ext_sW(
+    ld: *mut WLDAP32_LDAP,
+    dn: PWCHAR,
+    newrdn: PWCHAR,
+    newparent: PWCHAR,
+    delete: INT,
+    serverctrls: *mut PLDAPControlW,
+    clientctrls: *mut PLDAPControlW,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_rename_ext_sW(
     ld: *mut WLDAP32_LDAP,
@@ -367,8 +429,8 @@ pub unsafe extern "C" fn ldap_rename_ext_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s, 0x%02x, %p, %p, %p)\n", ld, debugstr_a(dn),
-//            debugstr_a(newrdn), debugstr_a(newparent), delete,
+//     TRACE( "(%p, %s, %s, %s, 0x%02x, %p, %p, %p)\n", ld, debugstr_a!(dn),
+//            debugstr_a!(newrdn), debugstr_a!(newparent), delete,
 //            serverctrls, clientctrls, message );
 //
 //     if (!ld || !message) return WLDAP32_LDAP_PARAM_ERROR;
@@ -443,8 +505,8 @@ pub unsafe extern "C" fn ldap_rename_ext_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s, 0x%02x, %p, %p, %p)\n", ld, debugstr_w(dn),
-//            debugstr_w(newrdn), debugstr_w(newparent), delete,
+//     TRACE( "(%p, %s, %s, %s, 0x%02x, %p, %p, %p)\n", ld, debugstr_w!(dn),
+//            debugstr_w!(newrdn), debugstr_w!(newparent), delete,
 //            serverctrls, clientctrls, message );
 //
 //     if (!ld || !message) return WLDAP32_LDAP_PARAM_ERROR;
@@ -500,8 +562,8 @@ pub unsafe extern "C" fn ldap_rename_ext_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s, 0x%02x, %p, %p)\n", ld, debugstr_a(dn),
-//            debugstr_a(newrdn), debugstr_a(newparent), delete,
+//     TRACE( "(%p, %s, %s, %s, 0x%02x, %p, %p)\n", ld, debugstr_a!(dn),
+//            debugstr_a!(newrdn), debugstr_a!(newparent), delete,
 //            serverctrls, clientctrls );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;
@@ -569,8 +631,8 @@ pub unsafe extern "C" fn ldap_rename_ext_sW(
 //
 //     ret = WLDAP32_LDAP_NO_MEMORY;
 //
-//     TRACE( "(%p, %s, %s, %s, 0x%02x, %p, %p)\n", ld, debugstr_w(dn),
-//            debugstr_w(newrdn), debugstr_w(newparent), delete,
+//     TRACE( "(%p, %s, %s, %s, 0x%02x, %p, %p)\n", ld, debugstr_w!(dn),
+//            debugstr_w!(newrdn), debugstr_w!(newparent), delete,
 //            serverctrls, clientctrls );
 //
 //     if (!ld) return WLDAP32_LDAP_PARAM_ERROR;

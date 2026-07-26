@@ -5,6 +5,19 @@ use core::ffi::c_void;
 // No file-scope declarations to translate from the preamble
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_parse_extended_resultA(
+    ld: *mut WLDAP32_LDAP,
+    result: *mut WLDAP32_LDAPMessage,
+    oid: *mut PCHAR,
+    data: *mut *mut WLDAP32_berval,
+    free: BOOLEAN,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_parse_extended_resultA(
     ld: *mut WLDAP32_LDAP,
     result: *mut WLDAP32_LDAPMessage,
@@ -35,6 +48,19 @@ pub unsafe extern "C" fn ldap_parse_extended_resultA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_parse_extended_resultW(
+    ld: *mut WLDAP32_LDAP,
+    result: *mut WLDAP32_LDAPMessage,
+    oid: *mut PWCHAR,
+    data: *mut *mut WLDAP32_berval,
+    free: BOOLEAN,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_parse_extended_resultW(
     ld: *mut WLDAP32_LDAP,
@@ -75,6 +101,17 @@ pub unsafe extern "C" fn ldap_parse_extended_resultW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_parse_referenceA(
+    ld: *mut WLDAP32_LDAP,
+    message: *mut WLDAP32_LDAPMessage,
+    referrals: *mut *mut PCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_parse_referenceA(
     ld: *mut WLDAP32_LDAP,
     message: *mut WLDAP32_LDAPMessage,
@@ -84,7 +121,7 @@ pub unsafe extern "C" fn ldap_parse_referenceA(
     let mut referralsW: *mut PWCHAR = core::ptr::null_mut();
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     ret = ldap_parse_referenceW(ld, message, &mut referralsW);
@@ -96,6 +133,17 @@ pub unsafe extern "C" fn ldap_parse_referenceA(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap_parse_reference"))]
+pub unsafe extern "C" fn ldap_parse_referenceW(
+    ld: *mut WLDAP32_LDAP,
+    message: *mut WLDAP32_LDAPMessage,
+    referrals: *mut *mut PWCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap_parse_reference")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_parse_referenceW(
     ld: *mut WLDAP32_LDAP,
     message: *mut WLDAP32_LDAPMessage,
@@ -105,7 +153,7 @@ pub unsafe extern "C" fn ldap_parse_referenceW(
     let mut referralsU: *mut *mut i8 = core::ptr::null_mut();
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     ret = map_error(ldap_parse_reference(
@@ -122,6 +170,22 @@ pub unsafe extern "C" fn ldap_parse_referenceW(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_parse_resultA(
+    ld: *mut WLDAP32_LDAP,
+    result: *mut WLDAP32_LDAPMessage,
+    retcode: *mut ULONG,
+    matched: *mut PCHAR,
+    error: *mut PCHAR,
+    referrals: *mut *mut PCHAR,
+    serverctrls: *mut *mut PLDAPControlA,
+    free: BOOLEAN,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_parse_resultA(
     ld: *mut WLDAP32_LDAP,
@@ -176,6 +240,22 @@ pub unsafe extern "C" fn ldap_parse_resultA(
     ret
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_parse_resultW(
+    ld: *mut WLDAP32_LDAP,
+    result: *mut WLDAP32_LDAPMessage,
+    retcode: *mut ULONG,
+    matched: *mut PWCHAR,
+    error: *mut PWCHAR,
+    referrals: *mut *mut PWCHAR,
+    serverctrls: *mut *mut PLDAPControlW,
+    free: BOOLEAN,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_parse_resultW(
     ld: *mut WLDAP32_LDAP,
@@ -232,6 +312,18 @@ pub unsafe extern "C" fn ldap_parse_resultW(
 }
 
 #[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_parse_sort_controlA(
+    ld: *mut WLDAP32_LDAP,
+    control: *mut PLDAPControlA,
+    result: *mut ULONG,
+    attr: *mut PCHAR,
+) -> ULONG {
+    WLDAP32_LDAP_NOT_SUPPORTED
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
 pub unsafe extern "C" fn ldap_parse_sort_controlA(
     ld: *mut WLDAP32_LDAP,
     control: *mut PLDAPControlA,
@@ -262,6 +354,24 @@ pub unsafe extern "C" fn ldap_parse_sort_controlA(
     ret
 }
 
+// Two nested guards: the whole body is `#ifdef HAVE_LDAP`, and INSIDE it the C picks
+// between `HAVE_LDAP_PARSE_SORT_CONTROL` and `HAVE_LDAP_PARSE_SORTRESPONSE_CONTROL`
+// with an `#elif`. The translation rendered the SORTRESPONSE arm, so that arm carries
+// its own feature -- with HAVE_LDAP on but neither probe, the C marshals the controls,
+// frees them and returns NOT_SUPPORTED, which is exactly what is left here. cfg_gate
+// refuses nested regions rather than guess which arm shipped.
+#[cfg(not(feature = "have_ldap"))]
+#[no_mangle]
+pub unsafe extern "C" fn ldap_parse_sort_controlW(
+    ld: *mut WLDAP32_LDAP,
+    control: *mut PLDAPControlW,
+    result: *mut ULONG,
+    attr: *mut PWCHAR,
+) -> ULONG {
+    map_error(WLDAP32_LDAP_NOT_SUPPORTED as i32)
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_parse_sort_controlW(
     ld: *mut WLDAP32_LDAP,
@@ -273,9 +383,6 @@ pub unsafe extern "C" fn ldap_parse_sort_controlW(
 
     let mut attrU: *mut i8 = core::ptr::null_mut();
     let mut controlU: *mut *mut LDAPControl = core::ptr::null_mut();
-    let mut res: ber_int_t = 0;
-    let mut sortcontrol: *mut LDAPControl = core::ptr::null_mut();
-    let mut i: u32 = 0;
 
     if ld.is_null() {
         return WLDAP32_LDAP_PARAM_ERROR;
@@ -289,23 +396,28 @@ pub unsafe extern "C" fn ldap_parse_sort_controlW(
         return WLDAP32_LDAP_NO_MEMORY;
     }
 
-    i = 0;
-    while !(*controlU.offset(i as isize)).is_null() {
-        if strcmp(LDAP_SERVER_RESP_SORT_OID, (**controlU.offset(i as isize)).ldctl_oid) == 0 {
-            sortcontrol = *controlU.offset(i as isize);
+    #[cfg(feature = "have_ldap_parse_sortresponse_control")]
+    {
+        let mut res: ber_int_t = 0;
+        let mut sortcontrol: *mut LDAPControl = core::ptr::null_mut();
+        let mut i: u32 = 0;
+        while !(*controlU.offset(i as isize)).is_null() {
+            if strcmp(LDAP_SERVER_RESP_SORT_OID, (**controlU.offset(i as isize)).ldctl_oid) == 0 {
+                sortcontrol = *controlU.offset(i as isize);
+            }
+            i += 1;
         }
-        i += 1;
-    }
 
-    if sortcontrol.is_null() {
-        controlarrayfreeU(controlU);
-        return WLDAP32_LDAP_CONTROL_NOT_FOUND;
-    }
+        if sortcontrol.is_null() {
+            controlarrayfreeU(controlU);
+            return WLDAP32_LDAP_CONTROL_NOT_FOUND;
+        }
 
-    ret = ldap_parse_sortresponse_control(ld, sortcontrol, &mut res, &mut attrU);
-    if ret == 0 {
-        *result = res as ULONG;
-        *attr = strUtoW(attrU);
+        ret = ldap_parse_sortresponse_control(ld, sortcontrol, &mut res, &mut attrU);
+        if ret == 0 {
+            *result = res as ULONG;
+            *attr = strUtoW(attrU);
+        }
     }
 
     controlarrayfreeU(controlU);
@@ -313,6 +425,20 @@ pub unsafe extern "C" fn ldap_parse_sort_controlW(
     map_error(ret)
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_parse_vlv_controlA(
+    ld: *mut WLDAP32_LDAP,
+    control: *mut PLDAPControlA,
+    targetpos: PULONG,
+    listcount: PULONG,
+    context: *mut *mut WLDAP32_berval,
+    errcode: PINT,
+) -> INT {
+    (WLDAP32_LDAP_NOT_SUPPORTED) as i32
+}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_parse_vlv_controlA(
     ld: *mut WLDAP32_LDAP,
@@ -327,7 +453,7 @@ pub unsafe extern "C" fn ldap_parse_vlv_controlA(
     let mut controlW: *mut *mut LDAPControlW = core::ptr::null_mut();
 
     if ld.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     if !control.is_null() {
@@ -344,6 +470,13 @@ pub unsafe extern "C" fn ldap_parse_vlv_controlA(
     ret
 }
 
+// Two nested guards: the whole body is `#ifdef HAVE_LDAP`, and INSIDE it the C picks
+// between `HAVE_LDAP_PARSE_SORT_CONTROL` and `HAVE_LDAP_PARSE_SORTRESPONSE_CONTROL`
+// with an `#elif`. The translation rendered the SORTRESPONSE arm, so that arm carries
+// its own feature -- with HAVE_LDAP on but neither probe, the C marshals the controls,
+// frees them and returns NOT_SUPPORTED, which is exactly what is left here. cfg_gate
+// refuses nested regions rather than guess which arm shipped.
+#[cfg(not(feature = "have_ldap"))]
 #[no_mangle]
 pub unsafe extern "C" fn ldap_parse_vlv_controlW(
     ld: *mut WLDAP32_LDAP,
@@ -353,15 +486,24 @@ pub unsafe extern "C" fn ldap_parse_vlv_controlW(
     context: *mut *mut WLDAP32_berval,
     errcode: PINT,
 ) -> INT {
-    let mut ret: core::ffi::c_int = WLDAP32_LDAP_NOT_SUPPORTED;
+    map_error((WLDAP32_LDAP_NOT_SUPPORTED) as i32) as INT
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+pub unsafe extern "C" fn ldap_parse_vlv_controlW(
+    ld: *mut WLDAP32_LDAP,
+    control: *mut PLDAPControlW,
+    targetpos: PULONG,
+    listcount: PULONG,
+    context: *mut *mut WLDAP32_berval,
+    errcode: PINT,
+) -> INT {
+    let mut ret: core::ffi::c_int = (WLDAP32_LDAP_NOT_SUPPORTED) as i32;
     let mut controlU: *mut *mut LDAPControl = core::ptr::null_mut();
-    let mut pos: ber_int_t = 0;
-    let mut count: ber_int_t = 0;
-    let mut vlvcontrol: *mut LDAPControl = core::ptr::null_mut();
-    let mut i: core::ffi::c_uint = 0;
 
     if ld.is_null() || control.is_null() {
-        return !0u;
+        return !0u32;
     }
 
     controlU = controlarrayWtoU(control);
@@ -369,31 +511,37 @@ pub unsafe extern "C" fn ldap_parse_vlv_controlW(
         return WLDAP32_LDAP_NO_MEMORY;
     }
 
-    i = 0;
-    while !(*controlU.offset(i as isize)).is_null() {
-        if strcmp(LDAP_CONTROL_VLVRESPONSE, (**controlU.offset(i as isize)).ldctl_oid) == 0 {
-            vlvcontrol = *controlU.offset(i as isize);
+    #[cfg(feature = "have_ldap_parse_vlvresponse_control")]
+    {
+        let mut pos: ber_int_t = 0;
+        let mut count: ber_int_t = 0;
+        let mut vlvcontrol: *mut LDAPControl = core::ptr::null_mut();
+        let mut i: core::ffi::c_uint = 0;
+        while !(*controlU.offset(i as isize)).is_null() {
+            if strcmp(LDAP_CONTROL_VLVRESPONSE, (**controlU.offset(i as isize)).ldctl_oid) == 0 {
+                vlvcontrol = *controlU.offset(i as isize);
+            }
+            i += 1;
         }
-        i += 1;
-    }
 
-    if vlvcontrol.is_null() {
-        controlarrayfreeU(controlU);
-        return WLDAP32_LDAP_CONTROL_NOT_FOUND;
-    }
+        if vlvcontrol.is_null() {
+            controlarrayfreeU(controlU);
+            return WLDAP32_LDAP_CONTROL_NOT_FOUND;
+        }
 
-    ret = ldap_parse_vlvresponse_control(
-        ld,
-        vlvcontrol,
-        &mut pos,
-        &mut count,
-        context as *mut *mut berval,
-        errcode,
-    );
+        ret = ldap_parse_vlvresponse_control(
+            ld,
+            vlvcontrol,
+            &mut pos,
+            &mut count,
+            context as *mut *mut berval,
+            errcode,
+        );
 
-    if ret == 0 {
-        *targetpos = pos as ULONG;
-        *listcount = count as ULONG;
+        if ret == 0 {
+            *targetpos = pos as ULONG;
+            *listcount = count as ULONG;
+        }
     }
 
     controlarrayfreeU(controlU);

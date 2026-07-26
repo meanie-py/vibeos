@@ -30,10 +30,10 @@ pub unsafe extern "C" fn strdupW(src: LPCWSTR) -> LPWSTR {
 pub unsafe extern "C" fn strAtoW(str: LPCSTR) -> LPWSTR {
     let mut ret: LPWSTR = core::ptr::null_mut();
     if !str.is_null() {
-        let len: DWORD = MultiByteToWideChar(CP_ACP, 0, str, -1, core::ptr::null_mut(), 0);
-        ret = heap_alloc(len * core::mem::size_of::<u16>() as u32);
+        let len: DWORD = (MultiByteToWideChar(CP_ACP, 0, str, -1, core::ptr::null_mut(), 0)) as u32;
+        ret = (heap_alloc((len * core::mem::size_of::<u16>() as u32) as usize)).cast();
         if !ret.is_null() {
-            MultiByteToWideChar(CP_ACP, 0, str, -1, ret, len);
+            MultiByteToWideChar(CP_ACP, 0, str, -1, ret, (len) as i32);
         }
     }
     ret
@@ -41,10 +41,10 @@ pub unsafe extern "C" fn strAtoW(str: LPCSTR) -> LPWSTR {
 pub unsafe extern "C" fn strWtoA(str: LPCWSTR) -> LPSTR {
     let mut ret: LPSTR = core::ptr::null_mut();
     if !str.is_null() {
-        let len: DWORD = WideCharToMultiByte(CP_ACP, 0, str, -1, core::ptr::null_mut(), 0, core::ptr::null_mut(), core::ptr::null_mut());
-        ret = heap_alloc(len);
+        let len: DWORD = (WideCharToMultiByte(CP_ACP, 0, str, -1, core::ptr::null_mut(), 0, core::ptr::null_mut(), core::ptr::null_mut())) as u32;
+        ret = (heap_alloc((len) as usize)).cast();
         if !ret.is_null() {
-            WideCharToMultiByte(CP_ACP, 0, str, -1, ret, len, core::ptr::null_mut(), core::ptr::null_mut());
+            WideCharToMultiByte(CP_ACP, 0, str, -1, ret, (len) as i32, core::ptr::null_mut(), core::ptr::null_mut());
         }
     }
     ret
@@ -52,7 +52,7 @@ pub unsafe extern "C" fn strWtoA(str: LPCWSTR) -> LPSTR {
 pub unsafe extern "C" fn strWtoU(str: LPCWSTR) -> LPSTR {
     let mut ret: LPSTR = core::ptr::null_mut();
     if !str.is_null() {
-        let len: DWORD = WideCharToMultiByte(
+        let len: DWORD = (WideCharToMultiByte(
             CP_UTF8,
             0,
             str,
@@ -61,8 +61,8 @@ pub unsafe extern "C" fn strWtoU(str: LPCWSTR) -> LPSTR {
             0,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-        );
-        ret = heap_alloc(len);
+        )) as u32;
+        ret = (heap_alloc((len) as usize)).cast();
         if !ret.is_null() {
             WideCharToMultiByte(
                 CP_UTF8,
@@ -70,7 +70,7 @@ pub unsafe extern "C" fn strWtoU(str: LPCWSTR) -> LPSTR {
                 str,
                 -1,
                 ret,
-                len,
+                (len) as i32,
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
             );
@@ -81,25 +81,25 @@ pub unsafe extern "C" fn strWtoU(str: LPCWSTR) -> LPSTR {
 pub unsafe extern "C" fn strUtoW(str_: *mut i8) -> LPWSTR {
     let mut ret: LPWSTR = core::ptr::null_mut();
     if !str_.is_null() {
-        let len: u32 = MultiByteToWideChar(CP_UTF8, 0, str_, -1, core::ptr::null_mut(), 0);
+        let len: u32 = (MultiByteToWideChar(CP_UTF8, 0, str_, -1, core::ptr::null_mut(), 0)) as u32;
         ret = heap_alloc((len as usize) * core::mem::size_of::<u16>()) as LPWSTR;
         if !ret.is_null() {
-            MultiByteToWideChar(CP_UTF8, 0, str_, -1, ret, len);
+            MultiByteToWideChar(CP_UTF8, 0, str_, -1, ret, (len) as i32);
         }
     }
     ret
 }
 
 pub unsafe extern "C" fn strfreeA(str: LPSTR) {
-    heap_free(str);
+    heap_free((str).cast());
 }
 
 pub unsafe extern "C" fn strfreeW(str: LPWSTR) {
-    heap_free(str);
+    heap_free((str).cast());
 }
 
 pub unsafe extern "C" fn strfreeU(str: *mut i8) {
-    heap_free(str);
+    heap_free((str).cast());
 }
 pub unsafe extern "C" fn strarraylenA(strarray: *mut LPSTR) -> DWORD {
     let mut p = strarray;
@@ -108,7 +108,7 @@ pub unsafe extern "C" fn strarraylenA(strarray: *mut LPSTR) -> DWORD {
     }
     p.offset_from(strarray) as DWORD
 }
-pub unsafe extern "C" fn strarraylenW(strarray: LPWSTR) -> DWORD {
+pub unsafe extern "C" fn strarraylenW(strarray: *mut LPWSTR) -> DWORD {
     let mut p = strarray;
     while !(*p).is_null() {
         p = p.offset(1);
@@ -128,7 +128,7 @@ pub unsafe extern "C" fn strarrayAtoW(strarray: *mut LPSTR) -> *mut LPWSTR {
 
     if !strarray.is_null() {
         size = (core::mem::size_of::<*mut u16>() as DWORD) * (strarraylenA(strarray) + 1);
-        strarrayW = heap_alloc(size);
+        strarrayW = (heap_alloc((size) as usize)).cast();
         if !strarrayW.is_null() {
             let mut p: *mut LPSTR = strarray;
             let mut q: *mut LPWSTR = strarrayW;
@@ -149,8 +149,8 @@ pub unsafe extern "C" fn strarrayWtoA(strarray: *mut LPWSTR) -> *mut LPSTR {
 
     if !strarray.is_null() {
         size = (core::mem::size_of::<LPSTR>() as DWORD)
-            .wrapping_mul(strarraylenW(strarray).wrapping_add(1));
-        strarrayA = heap_alloc(size);
+            .wrapping_mul(strarraylenW((strarray).cast()).wrapping_add(1));
+        strarrayA = (heap_alloc((size) as usize)).cast();
         if !strarrayA.is_null() {
             let mut p: *mut LPWSTR = strarray;
             let mut q: *mut LPSTR = strarrayA;
@@ -170,8 +170,8 @@ pub unsafe extern "C" fn strarrayWtoU(strarray: *mut LPWSTR) -> *mut LPSTR {
     let mut size: DWORD;
 
     if !strarray.is_null() {
-        size = (core::mem::size_of::<*mut CHAR>() as DWORD) * (strarraylenW(strarray) + 1);
-        strarrayU = heap_alloc(size);
+        size = (core::mem::size_of::<*mut CHAR>() as DWORD) * (strarraylenW((strarray).cast()) + 1);
+        strarrayU = (heap_alloc((size) as usize)).cast();
         if !strarrayU.is_null() {
             let mut p: *mut LPWSTR = strarray;
             let mut q: *mut LPSTR = strarrayU;
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn strarrayfreeW(strarray: *mut LPWSTR) {
             p = p.offset(1);
             strfreeW(current);
         }
-        heap_free(strarray);
+        heap_free((strarray).cast());
     }
 }
 pub unsafe extern "C" fn strarrayfreeU(strarray: *mut *mut i8) {
@@ -239,6 +239,7 @@ pub unsafe extern "C" fn strarrayfreeU(strarray: *mut *mut i8) {
         heap_free(strarray as *mut _);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn bvdup(bv: *mut berval) -> *mut berval {
     let size: DWORD = (core::mem::size_of::<berval>() as DWORD)
         .wrapping_add((*bv).bv_len);
@@ -256,6 +257,7 @@ pub unsafe extern "C" fn bvdup(bv: *mut berval) -> *mut berval {
     }
     berval
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn bvarraylen(bv: *mut *mut berval) -> DWORD {
     let mut p = bv;
     while !(*p).is_null() {
@@ -263,6 +265,7 @@ pub unsafe extern "C" fn bvarraylen(bv: *mut *mut berval) -> DWORD {
     }
     p.offset_from(bv) as DWORD
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn bvarraydup(bv: *mut *mut berval) -> *mut *mut berval {
     let mut berval: *mut *mut berval = core::ptr::null_mut();
     let mut size: DWORD;
@@ -284,6 +287,7 @@ pub unsafe extern "C" fn bvarraydup(bv: *mut *mut berval) -> *mut *mut berval {
     }
     berval
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn bvarrayfree(mut bv: *mut *mut berval) {
     let mut p: *mut *mut berval = bv;
     while !(*p).is_null() {
@@ -293,6 +297,7 @@ pub unsafe extern "C" fn bvarrayfree(mut bv: *mut *mut berval) {
     }
     heap_free(bv);
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modAtoW(mod_: *mut LDAPModA) -> *mut LDAPModW {
     let modW: *mut LDAPModW;
 
@@ -309,6 +314,7 @@ pub unsafe extern "C" fn modAtoW(mod_: *mut LDAPModA) -> *mut LDAPModW {
     }
     modW
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modWtoU(mod_: *mut LDAPModW) -> *mut LDAPMod {
     let modU: *mut LDAPMod;
 
@@ -325,6 +331,7 @@ pub unsafe extern "C" fn modWtoU(mod_: *mut LDAPModW) -> *mut LDAPMod {
     }
     modU
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modfreeW(mod_: *mut LDAPModW) {
     if (*mod_).mod_op & LDAP_MOD_BVALUES != 0 {
         bvarrayfree((*mod_).mod_vals.modv_bvals);
@@ -333,6 +340,7 @@ pub unsafe extern "C" fn modfreeW(mod_: *mut LDAPModW) {
     }
     heap_free(mod_ as *mut core::ffi::c_void);
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modfreeU(mut mod_: *mut LDAPMod) {
     if (*mod_).mod_op & LDAP_MOD_BVALUES != 0 {
         bvarrayfree((*mod_).mod_vals.modv_bvals);
@@ -341,6 +349,7 @@ pub unsafe extern "C" fn modfreeU(mut mod_: *mut LDAPMod) {
     }
     heap_free(mod_ as *mut core::ffi::c_void);
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modarraylenA(modarray: *mut *mut LDAPModA) -> DWORD {
     let mut p = modarray;
     while !(*p).is_null() {
@@ -348,6 +357,7 @@ pub unsafe extern "C" fn modarraylenA(modarray: *mut *mut LDAPModA) -> DWORD {
     }
     p.offset_from(modarray) as DWORD
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modarraylenW(modarray: *mut *mut LDAPModW) -> DWORD {
     let mut p = modarray;
     while !(*p).is_null() {
@@ -355,6 +365,7 @@ pub unsafe extern "C" fn modarraylenW(modarray: *mut *mut LDAPModW) -> DWORD {
     }
     p.offset_from(modarray) as DWORD
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modarrayAtoW(modarray: *mut *mut LDAPModA) -> *mut *mut LDAPModW {
     let mut modarrayW: *mut *mut LDAPModW = core::ptr::null_mut();
     let mut size: DWORD;
@@ -376,6 +387,7 @@ pub unsafe extern "C" fn modarrayAtoW(modarray: *mut *mut LDAPModA) -> *mut *mut
     }
     modarrayW
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modarrayWtoU(modarray: *mut *mut LDAPModW) -> *mut *mut LDAPMod {
     let mut modarrayU: *mut *mut LDAPMod = core::ptr::null_mut();
     let mut size: DWORD;
@@ -397,6 +409,7 @@ pub unsafe extern "C" fn modarrayWtoU(modarray: *mut *mut LDAPModW) -> *mut *mut
     }
     modarrayU
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modarrayfreeW(modarray: *mut *mut LDAPModW) {
     if !modarray.is_null() {
         let mut p = modarray;
@@ -408,6 +421,7 @@ pub unsafe extern "C" fn modarrayfreeW(modarray: *mut *mut LDAPModW) {
         heap_free(modarray as *mut core::ffi::c_void);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn modarrayfreeU(mut modarray: *mut *mut LDAPMod) {
     if !modarray.is_null() {
         let mut p: *mut *mut LDAPMod = modarray;
@@ -419,6 +433,7 @@ pub unsafe extern "C" fn modarrayfreeU(mut modarray: *mut *mut LDAPMod) {
         heap_free(modarray);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlAtoW(control: *mut LDAPControlA) -> *mut LDAPControlW {
     let mut controlW: *mut LDAPControlW;
     let len: DWORD = (*control).ldctl_value.bv_len;
@@ -445,6 +460,7 @@ pub unsafe extern "C" fn controlAtoW(control: *mut LDAPControlA) -> *mut LDAPCon
 
     controlW
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlWtoA(control: *mut LDAPControlW) -> *mut LDAPControlA {
     let controlA: *mut LDAPControlA;
     let len: DWORD = (*control).ldctl_value.bv_len;
@@ -471,6 +487,7 @@ pub unsafe extern "C" fn controlWtoA(control: *mut LDAPControlW) -> *mut LDAPCon
 
     controlA
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlWtoU(control: *mut LDAPControlW) -> *mut LDAPControl {
     let mut controlU: *mut LDAPControl;
     let len: DWORD = (*control).ldctl_value.bv_len;
@@ -497,6 +514,7 @@ pub unsafe extern "C" fn controlWtoU(control: *mut LDAPControlW) -> *mut LDAPCon
 
     controlU
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlUtoW(control: *mut LDAPControl) -> *mut LDAPControlW {
     let mut controlW: *mut LDAPControlW;
     let len: DWORD = (*control).ldctl_value.bv_len;
@@ -523,6 +541,7 @@ pub unsafe extern "C" fn controlUtoW(control: *mut LDAPControl) -> *mut LDAPCont
 
     controlW
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlfreeA(control: *mut LDAPControlA) {
     if !control.is_null() {
         strfreeA((*control).ldctl_oid);
@@ -530,6 +549,7 @@ pub unsafe extern "C" fn controlfreeA(control: *mut LDAPControlA) {
         heap_free(control as *mut core::ffi::c_void);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlfreeW(control: *mut LDAPControlW) {
     if !control.is_null() {
         strfreeW((*control).ldctl_oid);
@@ -537,6 +557,7 @@ pub unsafe extern "C" fn controlfreeW(control: *mut LDAPControlW) {
         heap_free(control as *mut core::ffi::c_void);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlfreeU(control: *mut LDAPControl) {
     if !control.is_null() {
         strfreeU((*control).ldctl_oid);
@@ -544,6 +565,7 @@ pub unsafe extern "C" fn controlfreeU(control: *mut LDAPControl) {
         heap_free(control as *mut _);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarraylenA(controlarray: *mut *mut LDAPControlA) -> DWORD {
     let mut p = controlarray;
     while !(*p).is_null() {
@@ -551,6 +573,7 @@ pub unsafe extern "C" fn controlarraylenA(controlarray: *mut *mut LDAPControlA) 
     }
     p.offset_from(controlarray) as DWORD
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarraylenW(controlarray: *mut *mut LDAPControlW) -> DWORD {
     let mut p = controlarray;
     while !(*p).is_null() {
@@ -558,6 +581,7 @@ pub unsafe extern "C" fn controlarraylenW(controlarray: *mut *mut LDAPControlW) 
     }
     p.offset_from(controlarray) as DWORD
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarraylenU(controlarray: *mut *mut LDAPControl) -> DWORD {
     let mut p = controlarray;
     while !(*p).is_null() {
@@ -565,6 +589,7 @@ pub unsafe extern "C" fn controlarraylenU(controlarray: *mut *mut LDAPControl) -
     }
     p.offset_from(controlarray) as DWORD
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarrayAtoW(controlarray: *mut *mut LDAPControlA) -> *mut *mut LDAPControlW {
     let mut controlarrayW: *mut *mut LDAPControlW = core::ptr::null_mut();
     let mut size: DWORD;
@@ -586,6 +611,7 @@ pub unsafe extern "C" fn controlarrayAtoW(controlarray: *mut *mut LDAPControlA) 
     }
     controlarrayW
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarrayWtoA(controlarray: *mut *mut LDAPControlW) -> *mut *mut LDAPControlA {
     let mut controlarrayA: *mut *mut LDAPControlA = core::ptr::null_mut();
     let mut size: DWORD;
@@ -607,6 +633,7 @@ pub unsafe extern "C" fn controlarrayWtoA(controlarray: *mut *mut LDAPControlW) 
     }
     controlarrayA
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarrayWtoU(controlarray: *mut *mut LDAPControlW) -> *mut *mut LDAPControl {
     let mut controlarrayU: *mut *mut LDAPControl = core::ptr::null_mut();
     let mut size: DWORD;
@@ -629,6 +656,7 @@ pub unsafe extern "C" fn controlarrayWtoU(controlarray: *mut *mut LDAPControlW) 
     }
     controlarrayU
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarrayUtoW(controlarray: *mut *mut LDAPControl) -> *mut *mut LDAPControlW {
     let mut controlarrayW: *mut *mut LDAPControlW = core::ptr::null_mut();
     let mut size: DWORD;
@@ -650,6 +678,7 @@ pub unsafe extern "C" fn controlarrayUtoW(controlarray: *mut *mut LDAPControl) -
     }
     controlarrayW
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarrayfreeA(controlarray: *mut *mut LDAPControlA) {
     if !controlarray.is_null() {
         let mut p = controlarray;
@@ -661,6 +690,7 @@ pub unsafe extern "C" fn controlarrayfreeA(controlarray: *mut *mut LDAPControlA)
         heap_free(controlarray as *mut core::ffi::c_void);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarrayfreeW(controlarray: *mut *mut LDAPControlW) {
     if !controlarray.is_null() {
         let mut p = controlarray;
@@ -671,6 +701,7 @@ pub unsafe extern "C" fn controlarrayfreeW(controlarray: *mut *mut LDAPControlW)
         heap_free(controlarray);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn controlarrayfreeU(controlarray: *mut *mut LDAPControl) {
     if !controlarray.is_null() {
         let mut p = controlarray;
@@ -681,6 +712,7 @@ pub unsafe extern "C" fn controlarrayfreeU(controlarray: *mut *mut LDAPControl) 
         heap_free(controlarray as *mut core::ffi::c_void);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyAtoW(sortkey: *mut LDAPSortKeyA) -> *mut LDAPSortKeyW {
     let sortkeyW: *mut LDAPSortKeyW;
 
@@ -692,6 +724,7 @@ pub unsafe extern "C" fn sortkeyAtoW(sortkey: *mut LDAPSortKeyA) -> *mut LDAPSor
     }
     sortkeyW
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyWtoA(sortkey: *mut LDAPSortKeyW) -> *mut LDAPSortKeyA {
     let sortkeyA: *mut LDAPSortKeyA;
 
@@ -703,6 +736,7 @@ pub unsafe extern "C" fn sortkeyWtoA(sortkey: *mut LDAPSortKeyW) -> *mut LDAPSor
     }
     sortkeyA
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyWtoU(sortkey: *mut LDAPSortKeyW) -> *mut LDAPSortKey {
     let sortkeyU: *mut LDAPSortKey;
 
@@ -714,6 +748,7 @@ pub unsafe extern "C" fn sortkeyWtoU(sortkey: *mut LDAPSortKeyW) -> *mut LDAPSor
     }
     sortkeyU
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyfreeA(sortkey: *mut LDAPSortKeyA) {
     if !sortkey.is_null() {
         strfreeA((*sortkey).sk_attrtype);
@@ -721,6 +756,7 @@ pub unsafe extern "C" fn sortkeyfreeA(sortkey: *mut LDAPSortKeyA) {
         heap_free(sortkey as *mut core::ffi::c_void);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyfreeW(sortkey: *mut LDAPSortKeyW) {
     if !sortkey.is_null() {
         strfreeW((*sortkey).sk_attrtype);
@@ -728,6 +764,7 @@ pub unsafe extern "C" fn sortkeyfreeW(sortkey: *mut LDAPSortKeyW) {
         heap_free(sortkey as *mut core::ffi::c_void);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyfreeU(sortkey: *mut LDAPSortKey) {
     if !sortkey.is_null() {
         strfreeU((*sortkey).attributeType);
@@ -735,6 +772,7 @@ pub unsafe extern "C" fn sortkeyfreeU(sortkey: *mut LDAPSortKey) {
         heap_free(sortkey);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyarraylenA(sortkeyarray: *mut *mut LDAPSortKeyA) -> DWORD {
     let mut p = sortkeyarray;
     while !(*p).is_null() {
@@ -742,6 +780,7 @@ pub unsafe extern "C" fn sortkeyarraylenA(sortkeyarray: *mut *mut LDAPSortKeyA) 
     }
     p.offset_from(sortkeyarray) as DWORD
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyarraylenW(sortkeyarray: *mut *mut LDAPSortKeyW) -> DWORD {
     let mut p = sortkeyarray;
     while !(*p).is_null() {
@@ -749,6 +788,7 @@ pub unsafe extern "C" fn sortkeyarraylenW(sortkeyarray: *mut *mut LDAPSortKeyW) 
     }
     p.offset_from(sortkeyarray) as DWORD
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyarrayAtoW(sortkeyarray: *mut *mut LDAPSortKeyA) -> *mut *mut LDAPSortKeyW {
     let mut sortkeyarrayW: *mut *mut LDAPSortKeyW = core::ptr::null_mut();
     let mut size: DWORD;
@@ -770,6 +810,7 @@ pub unsafe extern "C" fn sortkeyarrayAtoW(sortkeyarray: *mut *mut LDAPSortKeyA) 
     }
     sortkeyarrayW
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyarrayWtoU(sortkeyarray: *mut *mut LDAPSortKeyW) -> *mut *mut LDAPSortKey {
     let mut sortkeyarrayU: *mut *mut LDAPSortKey = core::ptr::null_mut();
     let mut size: DWORD;
@@ -792,6 +833,7 @@ pub unsafe extern "C" fn sortkeyarrayWtoU(sortkeyarray: *mut *mut LDAPSortKeyW) 
     }
     sortkeyarrayU
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyarrayfreeW(sortkeyarray: *mut *mut LDAPSortKeyW) {
     if !sortkeyarray.is_null() {
         let mut p = sortkeyarray;
@@ -802,6 +844,7 @@ pub unsafe extern "C" fn sortkeyarrayfreeW(sortkeyarray: *mut *mut LDAPSortKeyW)
         heap_free(sortkeyarray);
     }
 }
+#[cfg(feature = "have_ldap")]
 pub unsafe extern "C" fn sortkeyarrayfreeU(sortkeyarray: *mut *mut LDAPSortKey) {
     if !sortkeyarray.is_null() {
         let mut p = sortkeyarray;
