@@ -7,7 +7,9 @@ use core::ffi::c_void;
 // and inline code blocks, but no typedef structs, #define constants,
 // enums, or static tables that require translation.
 #[no_mangle]
-pub unsafe extern "system" fn MIDL_user_allocate(len: usize) -> *mut core::ffi::c_void {
+// C: `void __RPC_FAR * __RPC_USER midl_user_allocate(SIZE_T len)`. SIZE_T, not usize — they
+// happen to coincide on all three targets, but naming the alias is what keeps it true.
+pub unsafe extern "system" fn MIDL_user_allocate(len: SIZE_T) -> *mut core::ffi::c_void {
     HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len)
 }
 #[no_mangle]
@@ -25,11 +27,11 @@ pub unsafe extern "system" fn PSAMPR_SERVER_NAME_bind(pszSystemName: PSAMPR_SERV
         let nLength: i32 = wcslen(pszSystemName) as i32;
         let mut nNameLength: i32 = nLength;
 
-        if nLength >= 1 && *pszSystemName.offset(0 as isize) == L'\\' as u16 {
+        if nLength >= 1 && *pszSystemName.offset(0 as isize) == '\\' as u16 {
             nNameLength -= 1;
         }
 
-        if nLength >= 2 && *pszSystemName.offset(1 as isize) == L'\\' as u16 {
+        if nLength >= 2 && *pszSystemName.offset(1 as isize) == '\\' as u16 {
             nNameLength -= 1;
         }
 
@@ -42,9 +44,9 @@ pub unsafe extern "system" fn PSAMPR_SERVER_NAME_bind(pszSystemName: PSAMPR_SERV
 
     status = RpcStringBindingComposeW(
         core::ptr::null_mut(),
-        w!("ncacn_np").as_ptr() as *mut u16,
+        w!("ncacn_np") as *mut u16,
         pszSystemName,
-        w!("\\pipe\\samr").as_ptr() as *mut u16,
+        w!("\\pipe\\samr") as *mut u16,
         core::ptr::null_mut(),
         &mut pszStringBinding
     );
@@ -107,9 +109,9 @@ pub unsafe extern "C" fn SampCheckPassword(
     }
 
     if (DomainPasswordInformation.PasswordProperties & DOMAIN_PASSWORD_COMPLEX) != 0 {
-        CharTypeBuffer = MIDL_user_allocate(
+        CharTypeBuffer = MIDL_user_allocate((
             PasswordLength as usize * core::mem::size_of::<WORD>()
-        ) as LPWORD;
+        ) as SIZE_T) as LPWORD;
         if CharTypeBuffer.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -123,25 +125,25 @@ pub unsafe extern "C" fn SampCheckPassword(
 
         i = 0;
         while i < PasswordLength {
-            if (*CharTypeBuffer.add(i as usize) & C1_UPPER) != 0 {
+            if ((*CharTypeBuffer.add((i) as usize) as u32) & C1_UPPER) != 0 {
                 Upper = 1;
             }
 
-            if (*CharTypeBuffer.add(i as usize) & C1_LOWER) != 0 {
+            if ((*CharTypeBuffer.add((i) as usize) as u32) & C1_LOWER) != 0 {
                 Lower = 1;
             }
 
-            if (*CharTypeBuffer.add(i as usize) & C1_DIGIT) != 0 {
+            if ((*CharTypeBuffer.add((i) as usize) as u32) & C1_DIGIT) != 0 {
                 Digit = 1;
             }
 
-            if (*CharTypeBuffer.add(i as usize) & C1_PUNCT) != 0 {
+            if ((*CharTypeBuffer.add((i) as usize) as u32) & C1_PUNCT) != 0 {
                 Punct = 1;
             }
 
-            if ((*CharTypeBuffer.add(i as usize) & C1_ALPHA) != 0)
-                && ((*CharTypeBuffer.add(i as usize) & C1_UPPER) == 0)
-                && ((*CharTypeBuffer.add(i as usize) & C1_LOWER) == 0)
+            if (((*CharTypeBuffer.add((i) as usize) as u32) & C1_ALPHA) != 0)
+                && (((*CharTypeBuffer.add((i) as usize) as u32) & C1_UPPER) == 0)
+                && (((*CharTypeBuffer.add((i) as usize) as u32) & C1_LOWER) == 0)
             {
                 Alpha = 1;
             }
@@ -219,8 +221,8 @@ pub unsafe extern "system" fn SamChangePasswordUser(
     let mut NewLmPassword: LM_OWF_PASSWORD = core::mem::zeroed();
     let mut LmPwdString: OEM_STRING = core::mem::zeroed();
     let mut LmPwdBuffer: [i8; 15] = [0; 15];
-    let mut OldLmPasswordPresent: BOOLEAN = FALSE;
-    let mut NewLmPasswordPresent: BOOLEAN = FALSE;
+    let mut OldLmPasswordPresent: BOOLEAN = (FALSE) as u8;
+    let mut NewLmPasswordPresent: BOOLEAN = (FALSE) as u8;
     let mut Status: NTSTATUS;
 
     let mut OldLmEncryptedWithNewLm: ENCRYPTED_LM_OWF_PASSWORD = core::mem::zeroed();
@@ -249,12 +251,12 @@ pub unsafe extern "system" fn SamChangePasswordUser(
     LmPwdString.Length = 15;
     LmPwdString.MaximumLength = 15;
     LmPwdString.Buffer = LmPwdBuffer.as_mut_ptr();
-    ZeroMemory(LmPwdString.Buffer as *mut core::ffi::c_void, LmPwdString.MaximumLength as usize);
+    ZeroMemory!(LmPwdString.Buffer as *mut core::ffi::c_void, LmPwdString.MaximumLength as usize);
 
     Status = RtlUpcaseUnicodeStringToOemString(
         &mut LmPwdString,
         OldPassword,
-        FALSE,
+        (FALSE) as u8,
     );
     if NT_SUCCESS(Status) {
         Status = SystemFunction006(
@@ -262,19 +264,19 @@ pub unsafe extern "system" fn SamChangePasswordUser(
             &mut OldLmPassword as *mut _ as LPSTR,
         );
         if NT_SUCCESS(Status) {
-            OldLmPasswordPresent = TRUE;
+            OldLmPasswordPresent = (TRUE) as u8;
         }
     }
 
     LmPwdString.Length = 15;
     LmPwdString.MaximumLength = 15;
     LmPwdString.Buffer = LmPwdBuffer.as_mut_ptr();
-    ZeroMemory(LmPwdString.Buffer as *mut core::ffi::c_void, LmPwdString.MaximumLength as usize);
+    ZeroMemory!(LmPwdString.Buffer as *mut core::ffi::c_void, LmPwdString.MaximumLength as usize);
 
     Status = RtlUpcaseUnicodeStringToOemString(
         &mut LmPwdString,
         NewPassword,
-        FALSE,
+        (FALSE) as u8,
     );
     if NT_SUCCESS(Status) {
         Status = SystemFunction006(
@@ -282,7 +284,7 @@ pub unsafe extern "system" fn SamChangePasswordUser(
             &mut NewLmPassword as *mut _ as LPSTR,
         );
         if NT_SUCCESS(Status) {
-            NewLmPasswordPresent = TRUE;
+            NewLmPasswordPresent = (TRUE) as u8;
         }
     }
 
@@ -332,15 +334,19 @@ pub unsafe extern "system" fn SamChangePasswordUser(
         (OldLmPasswordPresent != 0 && NewLmPasswordPresent != 0) as u8,
         pOldLmEncryptedWithNewLm,
         pNewLmEncryptedWithOldLm,
-        TRUE,
+        (TRUE) as u8,
         &mut OldNtEncryptedWithNewNt,
         &mut NewNtEncryptedWithOldNt,
-        FALSE,
+        (FALSE) as u8,
         core::ptr::null_mut(),
-        FALSE,
+        (FALSE) as u8,
         core::ptr::null_mut(),
     );
-    Status = I_RpcMapWin32Status(RpcExceptionCode());
+    // C: this is the body of RpcExcept(EXCEPTION_EXECUTE_HANDLER). We build with
+    // -D_USE_DUMMY_PSEH=1, so it is compiled but NEVER entered. The translation
+    // emitted it as straight-line code, which unconditionally clobbered the real
+    // RPC status with the mapped exception code. Dropped, exactly as the other 36
+    // Sam* wrappers in this TU correctly dropped theirs.
 
     Status
 }
@@ -817,7 +823,11 @@ pub unsafe extern "system" fn SamGetMembersInAlias(
         *MemberIds = SidArray.Sids as *mut PSID;
     }
 
-    Status = I_RpcMapWin32Status(RpcExceptionCode());
+    // C: this is the body of RpcExcept(EXCEPTION_EXECUTE_HANDLER). We build with
+    // -D_USE_DUMMY_PSEH=1, so it is compiled but NEVER entered. The translation
+    // emitted it as straight-line code, which unconditionally clobbered the real
+    // RPC status with the mapped exception code. Dropped, exactly as the other 36
+    // Sam* wrappers in this TU correctly dropped theirs.
 
     Status
 }
@@ -879,7 +889,11 @@ pub unsafe extern "system" fn SamLookupIdsInDomain(
     Count: ULONG,
     RelativeIds: PULONG,
     Names: *mut PUNICODE_STRING,
-    Use: PSID_NAME_USE,
+    // C: `OUT PSID_NAME_USE *Use OPTIONAL` — a pointer TO a PSID_NAME_USE. The translation
+    // dropped one level of indirection here (SamLookupNamesInDomain, the sibling with the
+    // same parameter, got it right). It would still have linked: the argument is one pointer
+    // either way, so the ABI matches and only the `*Use = ...` stores go to the wrong place.
+    Use: *mut PSID_NAME_USE,
 ) -> NTSTATUS {
     let mut NamesBuffer = SAMPR_RETURNED_USTRING_ARRAY {
         Count: 0,
@@ -907,7 +921,7 @@ pub unsafe extern "system" fn SamLookupIdsInDomain(
     );
 
     if NT_SUCCESS(Status) {
-        *Names = MIDL_user_allocate(Count as usize * core::mem::size_of::<RPC_UNICODE_STRING>()) as *mut RPC_UNICODE_STRING;
+        *Names = (MIDL_user_allocate((Count as usize * core::mem::size_of::<RPC_UNICODE_STRING>()) as SIZE_T) as *mut RPC_UNICODE_STRING).cast();
         if (*Names).is_null() {
             Status = STATUS_INSUFFICIENT_RESOURCES;
             'done: loop {
@@ -945,7 +959,7 @@ pub unsafe extern "system" fn SamLookupIdsInDomain(
 
         i = 0;
         while i < Count {
-            (*(*Names).add(i as usize)).Buffer = MIDL_user_allocate((*NamesBuffer.Element.add(i as usize)).MaximumLength as usize) as LPWSTR;
+            (*(*Names).add(i as usize)).Buffer = MIDL_user_allocate(((*NamesBuffer.Element.add(i as usize)).MaximumLength as usize) as SIZE_T) as LPWSTR;
             if (*(*Names).add(i as usize)).Buffer.is_null() {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 'done: loop {
@@ -996,7 +1010,7 @@ pub unsafe extern "system" fn SamLookupIdsInDomain(
         }
 
         if !Use.is_null() {
-            *Use = MIDL_user_allocate(Count as usize * core::mem::size_of::<SID_NAME_USE>()) as PSID_NAME_USE;
+            *Use = MIDL_user_allocate((Count as usize * core::mem::size_of::<SID_NAME_USE>()) as SIZE_T) as PSID_NAME_USE;
             if (*Use).is_null() {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 'done: loop {
@@ -1103,11 +1117,11 @@ pub unsafe extern "system" fn SamLookupNamesInDomain(
     );
 
     if NT_SUCCESS(Status) {
-        *RelativeIds = MIDL_user_allocate(Count as usize * core::mem::size_of::<ULONG>()) as PULONG;
+        *RelativeIds = MIDL_user_allocate((Count as usize * core::mem::size_of::<ULONG>()) as SIZE_T) as PULONG;
         if (*RelativeIds).is_null() {
             Status = STATUS_INSUFFICIENT_RESOURCES;
         } else {
-            *Use = MIDL_user_allocate(Count as usize * core::mem::size_of::<SID_NAME_USE>()) as PSID_NAME_USE;
+            *Use = MIDL_user_allocate((Count as usize * core::mem::size_of::<SID_NAME_USE>()) as SIZE_T) as PSID_NAME_USE;
             if (*Use).is_null() {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
             } else {
@@ -1370,7 +1384,7 @@ pub unsafe extern "system" fn SamQuerySecurityObject(
     );
 
     if !SamSecurityDescriptor.is_null() {
-        *SecurityDescriptor = (*SamSecurityDescriptor).SecurityDescriptor;
+        *SecurityDescriptor = ((*SamSecurityDescriptor).SecurityDescriptor).cast();
 
         MIDL_user_free(SamSecurityDescriptor as *mut core::ffi::c_void);
     }
@@ -1385,7 +1399,7 @@ pub unsafe extern "system" fn SamRemoveMemberFromAlias(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrRemoveMemberFromAlias(AliasHandle as SAMPR_HANDLE, MemberId);
+    Status = SamrRemoveMemberFromAlias(AliasHandle as SAMPR_HANDLE, (MemberId).cast());
 
     Status
 }
@@ -1397,7 +1411,7 @@ pub unsafe extern "system" fn SamRemoveMemberFromForeignDomain(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrRemoveMemberFromForeignDomain(DomainHandle as SAMPR_HANDLE, MemberId);
+    Status = SamrRemoveMemberFromForeignDomain(DomainHandle as SAMPR_HANDLE, (MemberId).cast());
 
     Status
 }
@@ -1456,7 +1470,7 @@ pub unsafe extern "system" fn SamSetInformationAlias(
     Status = SamrSetInformationAlias(
         AliasHandle as SAMPR_HANDLE,
         AliasInformationClass,
-        Buffer,
+        (Buffer).cast(),
     );
 
     Status
@@ -1473,7 +1487,7 @@ pub unsafe extern "system" fn SamSetInformationDomain(
     Status = SamrSetInformationDomain(
         DomainHandle as SAMPR_HANDLE,
         DomainInformationClass,
-        Buffer,
+        (Buffer).cast(),
     );
 
     Status
@@ -1490,7 +1504,7 @@ pub unsafe extern "system" fn SamSetInformationGroup(
     Status = SamrSetInformationGroup(
         GroupHandle as SAMPR_HANDLE,
         GroupInformationClass,
-        Buffer,
+        (Buffer).cast(),
     );
 
     Status
@@ -1527,18 +1541,18 @@ pub unsafe extern "system" fn SamSetInformationUser(
             return Status;
         }
 
-        Internal1Buffer.NtPasswordPresent = TRUE;
-        Internal1Buffer.LmPasswordPresent = FALSE;
+        Internal1Buffer.NtPasswordPresent = (TRUE) as u8;
+        Internal1Buffer.LmPasswordPresent = (FALSE) as u8;
 
         LmPwdString.Length = 15;
         LmPwdString.MaximumLength = 15;
         LmPwdString.Buffer = LmPwdBuffer.as_mut_ptr();
-        ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+        ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength);
 
         Status = RtlUpcaseUnicodeStringToOemString(
             core::ptr::addr_of_mut!(LmPwdString),
             core::ptr::addr_of_mut!((*PasswordBuffer).Password) as PUNICODE_STRING,
-            FALSE,
+            (FALSE) as u8,
         );
         if NT_SUCCESS(Status) {
             Status = SystemFunction006(
@@ -1546,7 +1560,7 @@ pub unsafe extern "system" fn SamSetInformationUser(
                 core::ptr::addr_of_mut!(Internal1Buffer.EncryptedLmOwfPassword) as LPSTR,
             );
             if NT_SUCCESS(Status) {
-                Internal1Buffer.LmPasswordPresent = TRUE;
+                Internal1Buffer.LmPasswordPresent = (TRUE) as u8;
             }
         }
 
@@ -1555,16 +1569,20 @@ pub unsafe extern "system" fn SamSetInformationUser(
         Status = SamrSetInformationUser(
             UserHandle as SAMPR_HANDLE,
             UserInternal1Information,
-            core::ptr::addr_of_mut!(Internal1Buffer) as PVOID,
+            (core::ptr::addr_of_mut!(Internal1Buffer) as PVOID).cast(),
         );
-        Status = I_RpcMapWin32Status(RpcExceptionCode());
+        // C: this is the body of RpcExcept(EXCEPTION_EXECUTE_HANDLER). We build with
+        // -D_USE_DUMMY_PSEH=1, so it is compiled but NEVER entered. The translation
+        // emitted it as straight-line code, which unconditionally clobbered the real
+        // RPC status with the mapped exception code. Dropped, exactly as the other 36
+        // Sam* wrappers in this TU correctly dropped theirs.
 
         if !NT_SUCCESS(Status) {
         }
 
         return Status;
     } else if UserInformationClass == UserAllInformation {
-        RtlCopyMemory(
+        RtlCopyMemory!(
             core::ptr::addr_of_mut!(InternalAllBuffer) as *mut core::ffi::c_void,
             Buffer,
             core::mem::size_of::<USER_ALL_INFORMATION>(),
@@ -1605,8 +1623,8 @@ pub unsafe extern "system" fn SamSetInformationUser(
                         return Status;
                     }
 
-                    InternalAllBuffer.NtPasswordPresent = TRUE;
-                    InternalAllBuffer.LmPasswordPresent = FALSE;
+                    InternalAllBuffer.NtPasswordPresent = (TRUE) as u8;
+                    InternalAllBuffer.LmPasswordPresent = (FALSE) as u8;
 
                     InternalAllBuffer.NtPassword.Length = core::mem::size_of::<ENCRYPTED_NT_OWF_PASSWORD>() as u16;
                     InternalAllBuffer.NtPassword.MaximumLength = core::mem::size_of::<ENCRYPTED_NT_OWF_PASSWORD>() as u16;
@@ -1615,12 +1633,12 @@ pub unsafe extern "system" fn SamSetInformationUser(
                     LmPwdString.Length = 15;
                     LmPwdString.MaximumLength = 15;
                     LmPwdString.Buffer = LmPwdBuffer.as_mut_ptr();
-                    ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+                    ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength);
 
                     Status = RtlUpcaseUnicodeStringToOemString(
                         core::ptr::addr_of_mut!(LmPwdString),
                         core::ptr::addr_of_mut!(InternalAllBuffer.NtPassword) as PUNICODE_STRING,
-                        FALSE,
+                        (FALSE) as u8,
                     );
                     if NT_SUCCESS(Status) {
                         Status = SystemFunction006(
@@ -1629,7 +1647,7 @@ pub unsafe extern "system" fn SamSetInformationUser(
                         );
                         if NT_SUCCESS(Status) {
                             InternalAllBuffer.WhichFields |= USER_ALL_LMPASSWORDPRESENT;
-                            InternalAllBuffer.LmPasswordPresent = TRUE;
+                            InternalAllBuffer.LmPasswordPresent = (TRUE) as u8;
 
                             InternalAllBuffer.LmPassword.Length = core::mem::size_of::<ENCRYPTED_LM_OWF_PASSWORD>() as u16;
                             InternalAllBuffer.LmPassword.MaximumLength = core::mem::size_of::<ENCRYPTED_LM_OWF_PASSWORD>() as u16;
@@ -1643,9 +1661,13 @@ pub unsafe extern "system" fn SamSetInformationUser(
         Status = SamrSetInformationUser(
             UserHandle as SAMPR_HANDLE,
             UserAllInformation,
-            core::ptr::addr_of_mut!(InternalAllBuffer) as PVOID,
+            (core::ptr::addr_of_mut!(InternalAllBuffer) as PVOID).cast(),
         );
-        Status = I_RpcMapWin32Status(RpcExceptionCode());
+        // C: this is the body of RpcExcept(EXCEPTION_EXECUTE_HANDLER). We build with
+        // -D_USE_DUMMY_PSEH=1, so it is compiled but NEVER entered. The translation
+        // emitted it as straight-line code, which unconditionally clobbered the real
+        // RPC status with the mapped exception code. Dropped, exactly as the other 36
+        // Sam* wrappers in this TU correctly dropped theirs.
 
         if !NT_SUCCESS(Status) {
         }
@@ -1690,7 +1712,7 @@ pub unsafe extern "system" fn SamSetSecurityObject(
     }
 
     DescriptorToPass.Length = Length;
-    DescriptorToPass.SecurityDescriptor = MIDL_user_allocate(Length);
+    DescriptorToPass.SecurityDescriptor = (MIDL_user_allocate(((Length) as usize) as SIZE_T)).cast();
     if DescriptorToPass.SecurityDescriptor.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -1702,7 +1724,7 @@ pub unsafe extern "system" fn SamSetSecurityObject(
     );
     if !NT_SUCCESS(Status) {
         if !DescriptorToPass.SecurityDescriptor.is_null() {
-            MIDL_user_free(DescriptorToPass.SecurityDescriptor);
+            MIDL_user_free((DescriptorToPass.SecurityDescriptor).cast());
         }
         return Status;
     }
@@ -1714,7 +1736,7 @@ pub unsafe extern "system" fn SamSetSecurityObject(
     );
 
     if !DescriptorToPass.SecurityDescriptor.is_null() {
-        MIDL_user_free(DescriptorToPass.SecurityDescriptor);
+        MIDL_user_free((DescriptorToPass.SecurityDescriptor).cast());
     }
 
     Status
@@ -1833,10 +1855,10 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //         int nLength = wcslen(pszSystemName);
 //         int nNameLength = nLength;
 //
-//         if (nLength >= 1 && pszSystemName[0] == L'\\')
+//         if (nLength >= 1 && pszSystemName[0] == '\\')
 //             nNameLength--;
 //
-//         if (nLength >= 2 && pszSystemName[1] == L'\\')
+//         if (nLength >= 2 && pszSystemName[1] == '\\')
 //             nNameLength--;
 //
 //         if (((nLength - nNameLength != 0) &&
@@ -1926,7 +1948,7 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //     /* Check the password complexity */
 //     if (DomainPasswordInformation.PasswordProperties & DOMAIN_PASSWORD_COMPLEX)
 //     {
-//         CharTypeBuffer = MIDL_user_allocate(PasswordLength * sizeof(WORD));
+//         CharTypeBuffer = MIDL_user_allocate((PasswordLength * sizeof(WORD)) as SIZE_T);
 //         if (CharTypeBuffer == NULL)
 //             return STATUS_INSUFFICIENT_RESOURCES;
 //
@@ -2110,7 +2132,7 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //     LmPwdString.Length = 15;
 //     LmPwdString.MaximumLength = 15;
 //     LmPwdString.Buffer = LmPwdBuffer;
-//     ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+//     ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength);
 //
 //     Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
 //                                                OldPassword,
@@ -2130,7 +2152,7 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //     LmPwdString.Length = 15;
 //     LmPwdString.MaximumLength = 15;
 //     LmPwdString.Buffer = LmPwdBuffer;
-//     ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+//     ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength);
 //
 //     Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
 //                                                NewPassword,
@@ -2280,11 +2302,11 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //     if (ServerName != NULL && ServerName->Length > 0 && ServerName->Buffer != NULL)
 //     {
 //         /* Create a zero-terminated server name */
-//         pServerName = MIDL_user_allocate(ServerName->Length + sizeof(WCHAR));
+//         pServerName = MIDL_user_allocate((ServerName->Length + sizeof(WCHAR)) as SIZE_T);
 //         if (pServerName == NULL)
 //             return STATUS_INSUFFICIENT_RESOURCES;
 //
-//         CopyMemory(pServerName, ServerName->Buffer, ServerName->Length);
+//         CopyMemory!(pServerName, ServerName->Buffer, ServerName->Length);
 //         pServerName[ServerName->Length / sizeof(WCHAR)] = UNICODE_NULL;
 //     }
 //
@@ -3038,7 +3060,7 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //
 //     if (NT_SUCCESS(Status))
 //     {
-//         *Names = MIDL_user_allocate(Count * sizeof(RPC_UNICODE_STRING));
+//         *Names = MIDL_user_allocate((Count * sizeof(RPC_UNICODE_STRING)) as SIZE_T);
 //         if (*Names == NULL)
 //         {
 //             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3047,7 +3069,7 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //
 //         for (i = 0; i < Count; i++)
 //         {
-//             (*Names)[i].Buffer = MIDL_user_allocate(NamesBuffer.Element[i].MaximumLength);
+//             (*Names)[i].Buffer = MIDL_user_allocate((NamesBuffer.Element[i].MaximumLength) as SIZE_T);
 //             if ((*Names)[i].Buffer == NULL)
 //             {
 //                 Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3060,21 +3082,21 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //             (*Names)[i].Length = NamesBuffer.Element[i].Length;
 //             (*Names)[i].MaximumLength = NamesBuffer.Element[i].MaximumLength;
 //
-//             RtlCopyMemory((*Names)[i].Buffer,
+//             RtlCopyMemory!((*Names)[i].Buffer,
 //                           NamesBuffer.Element[i].Buffer,
 //                           NamesBuffer.Element[i].Length);
 //         }
 //
 //         if (Use != NULL)
 //         {
-//             *Use = MIDL_user_allocate(Count * sizeof(SID_NAME_USE));
+//             *Use = MIDL_user_allocate((Count * sizeof(SID_NAME_USE)) as SIZE_T);
 //             if (*Use == NULL)
 //             {
 //                 Status = STATUS_INSUFFICIENT_RESOURCES;
 //                 goto done;
 //             }
 //
-//             RtlCopyMemory(*Use,
+//             RtlCopyMemory!(*Use,
 //                           UseBuffer.Element,
 //                           Count * sizeof(SID_NAME_USE));
 //         }
@@ -3150,25 +3172,25 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //
 //     if (NT_SUCCESS(Status))
 //     {
-//         *RelativeIds = MIDL_user_allocate(Count * sizeof(ULONG));
+//         *RelativeIds = MIDL_user_allocate((Count * sizeof(ULONG)) as SIZE_T);
 //         if (*RelativeIds == NULL)
 //         {
 //             Status = STATUS_INSUFFICIENT_RESOURCES;
 //             goto done;
 //         }
 //
-//         *Use = MIDL_user_allocate(Count * sizeof(SID_NAME_USE));
+//         *Use = MIDL_user_allocate((Count * sizeof(SID_NAME_USE)) as SIZE_T);
 //         if (*Use == NULL)
 //         {
 //             Status = STATUS_INSUFFICIENT_RESOURCES;
 //             goto done;
 //         }
 //
-//         RtlCopyMemory(*RelativeIds,
+//         RtlCopyMemory!(*RelativeIds,
 //                       RidBuffer.Element,
 //                       Count * sizeof(ULONG));
 //
-//         RtlCopyMemory(*Use,
+//         RtlCopyMemory!(*Use,
 //                       UseBuffer.Element,
 //                       Count * sizeof(SID_NAME_USE));
 //     }
@@ -3789,7 +3811,7 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //         LmPwdString.Length = 15;
 //         LmPwdString.MaximumLength = 15;
 //         LmPwdString.Buffer = LmPwdBuffer;
-//         ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+//         ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength);
 //
 //         Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
 //                                                    (PUNICODE_STRING)&PasswordBuffer->Password,
@@ -3826,7 +3848,7 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //     }
 //     else if (UserInformationClass == UserAllInformation)
 //     {
-//         RtlCopyMemory(&InternalAllBuffer,
+//         RtlCopyMemory!(&InternalAllBuffer,
 //                       Buffer,
 //                       sizeof(USER_ALL_INFORMATION));
 //
@@ -3890,7 +3912,7 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //                     LmPwdString.Length = 15;
 //                     LmPwdString.MaximumLength = 15;
 //                     LmPwdString.Buffer = LmPwdBuffer;
-//                     ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+//                     ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength);
 //
 //                     Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
 //                                                                (PUNICODE_STRING)&InternalAllBuffer.NtPassword,
@@ -4001,7 +4023,7 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
 //
 //     /* Allocate a buffer for the security descriptor */
 //     DescriptorToPass.Length = Length;
-//     DescriptorToPass.SecurityDescriptor = MIDL_user_allocate(Length);
+//     DescriptorToPass.SecurityDescriptor = MIDL_user_allocate((Length) as SIZE_T);
 //     if (DescriptorToPass.SecurityDescriptor == NULL)
 //         return STATUS_INSUFFICIENT_RESOURCES;
 //
@@ -4108,7 +4130,7 @@ pub unsafe extern "system" fn SamConnect(
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        CopyMemory(
+        CopyMemory!(
             pServerName as *mut core::ffi::c_void,
             (*ServerName).Buffer as *const core::ffi::c_void,
             (*ServerName).Length as SIZE_T,

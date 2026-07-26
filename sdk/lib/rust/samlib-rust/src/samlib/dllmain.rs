@@ -7,7 +7,7 @@ pub unsafe extern "system" fn DllMain(
     dwReason: DWORD,
     lpReserved: LPVOID,
 ) -> BOOL {
-    TRUE
+    (TRUE) as i32
 }
 
 

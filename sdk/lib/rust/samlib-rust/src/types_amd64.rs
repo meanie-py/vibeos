@@ -782,6 +782,7 @@ pub const SYSGEOTYPE_GEO_DIALINGCODE: SYSGEOTYPE = 14;
 pub const SYSGEOTYPE_GEO_CURRENCYCODE: SYSGEOTYPE = 15;
 pub const SYSGEOTYPE_GEO_CURRENCYSYMBOL: SYSGEOTYPE = 16;
 pub type SYSGEOTYPE = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _cpinfo {
     pub MaxCharSize: UINT,
@@ -790,6 +791,7 @@ pub struct _cpinfo {
 }
 pub type CPINFO = _cpinfo;
 pub type LPCPINFO = *mut _cpinfo;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _cpinfoexA {
     pub MaxCharSize: UINT,
@@ -801,6 +803,7 @@ pub struct _cpinfoexA {
 }
 pub type CPINFOEXA = _cpinfoexA;
 pub type LPCPINFOEXA = *mut _cpinfoexA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _cpinfoexW {
     pub MaxCharSize: UINT,
@@ -812,6 +815,7 @@ pub struct _cpinfoexW {
 }
 pub type CPINFOEXW = _cpinfoexW;
 pub type LPCPINFOEXW = *mut _cpinfoexW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _currencyfmtA {
     pub NumDigits: UINT,
@@ -825,6 +829,7 @@ pub struct _currencyfmtA {
 }
 pub type CURRENCYFMTA = _currencyfmtA;
 pub type LPCURRENCYFMTA = *mut _currencyfmtA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _currencyfmtW {
     pub NumDigits: UINT,
@@ -838,6 +843,7 @@ pub struct _currencyfmtW {
 }
 pub type CURRENCYFMTW = _currencyfmtW;
 pub type LPCURRENCYFMTW = *mut _currencyfmtW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _nlsversioninfo {
     pub dwNLSVersionInfoSize: DWORD,
@@ -846,6 +852,7 @@ pub struct _nlsversioninfo {
 }
 pub type NLSVERSIONINFO = _nlsversioninfo;
 pub type LPNLSVERSIONINFO = *mut _nlsversioninfo;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _nlsversioninfoex {
     pub dwNLSVersionInfoSize: DWORD,
@@ -856,6 +863,7 @@ pub struct _nlsversioninfoex {
 }
 pub type NLSVERSIONINFOEX = _nlsversioninfoex;
 pub type LPNLSVERSIONINFOEX = *mut _nlsversioninfoex;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _numberfmtA {
     pub NumDigits: UINT,
@@ -867,6 +875,7 @@ pub struct _numberfmtA {
 }
 pub type NUMBERFMTA = _numberfmtA;
 pub type LPNUMBERFMTA = *mut _numberfmtA;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _numberfmtW {
     pub NumDigits: UINT,
@@ -885,6 +894,7 @@ pub const _NORM_FORM_NormalizationKC: _NORM_FORM = 5;
 pub const _NORM_FORM_NormalizationKD: _NORM_FORM = 6;
 pub type _NORM_FORM = ::core::ffi::c_uint;
 pub use self::_NORM_FORM as NORM_FORM;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _FILEMUIINFO {
     pub dwSize: DWORD,
@@ -913,6 +923,7 @@ pub type SAM_HANDLE = PVOID;
 pub type PSAM_HANDLE = *mut PVOID;
 pub type SAM_ENUMERATE_HANDLE = ULONG;
 pub type PSAM_ENUMERATE_HANDLE = *mut ULONG;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAM_RID_ENUMERATION {
     pub RelativeId: ULONG,
@@ -920,6 +931,7 @@ pub struct _SAM_RID_ENUMERATION {
 }
 pub type SAM_RID_ENUMERATION = _SAM_RID_ENUMERATION;
 pub type PSAM_RID_ENUMERATION = *mut _SAM_RID_ENUMERATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAM_SID_ENUMERATION {
     pub Sid: PSID,
@@ -933,6 +945,7 @@ pub const _ALIAS_INFORMATION_CLASS_AliasAdminCommentInformation: _ALIAS_INFORMAT
 pub type _ALIAS_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_ALIAS_INFORMATION_CLASS as ALIAS_INFORMATION_CLASS;
 pub type PALIAS_INFORMATION_CLASS = *mut _ALIAS_INFORMATION_CLASS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _ALIAS_GENERAL_INFORMATION {
     pub Name: UNICODE_STRING,
@@ -941,12 +954,14 @@ pub struct _ALIAS_GENERAL_INFORMATION {
 }
 pub type ALIAS_GENERAL_INFORMATION = _ALIAS_GENERAL_INFORMATION;
 pub type PALIAS_GENERAL_INFORMATION = *mut _ALIAS_GENERAL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _ALIAS_NAME_INFORMATION {
     pub Name: UNICODE_STRING,
 }
 pub type ALIAS_NAME_INFORMATION = _ALIAS_NAME_INFORMATION;
 pub type PALIAS_NAME_INFORMATION = *mut _ALIAS_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _ALIAS_ADM_COMMENT_INFORMATION {
     pub AdminComment: UNICODE_STRING,
@@ -962,6 +977,7 @@ pub const _DOMAIN_DISPLAY_INFORMATION_DomainDisplayServer: _DOMAIN_DISPLAY_INFOR
 pub type _DOMAIN_DISPLAY_INFORMATION = ::core::ffi::c_uint;
 pub use self::_DOMAIN_DISPLAY_INFORMATION as DOMAIN_DISPLAY_INFORMATION;
 pub type PDOMAIN_DISPLAY_INFORMATION = *mut _DOMAIN_DISPLAY_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_DISPLAY_USER {
     pub Index: ULONG,
@@ -973,6 +989,7 @@ pub struct _DOMAIN_DISPLAY_USER {
 }
 pub type DOMAIN_DISPLAY_USER = _DOMAIN_DISPLAY_USER;
 pub type PDOMAIN_DISPLAY_USER = *mut _DOMAIN_DISPLAY_USER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_DISPLAY_MACHINE {
     pub Index: ULONG,
@@ -983,6 +1000,7 @@ pub struct _DOMAIN_DISPLAY_MACHINE {
 }
 pub type DOMAIN_DISPLAY_MACHINE = _DOMAIN_DISPLAY_MACHINE;
 pub type PDOMAIN_DISPLAY_MACHINE = *mut _DOMAIN_DISPLAY_MACHINE;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_DISPLAY_GROUP {
     pub Index: ULONG,
@@ -1018,6 +1036,7 @@ pub const _DOMAIN_SERVER_ROLE_DomainServerRolePrimary: _DOMAIN_SERVER_ROLE = 3;
 pub type _DOMAIN_SERVER_ROLE = ::core::ffi::c_uint;
 pub use self::_DOMAIN_SERVER_ROLE as DOMAIN_SERVER_ROLE;
 pub type PDOMAIN_SERVER_ROLE = *mut _DOMAIN_SERVER_ROLE;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_PASSWORD_INFORMATION {
     pub MinPasswordLength: USHORT,
@@ -1028,6 +1047,7 @@ pub struct _DOMAIN_PASSWORD_INFORMATION {
 }
 pub type DOMAIN_PASSWORD_INFORMATION = _DOMAIN_PASSWORD_INFORMATION;
 pub type PDOMAIN_PASSWORD_INFORMATION = *mut _DOMAIN_PASSWORD_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _DOMAIN_GENERAL_INFORMATION {
     pub ForceLogoff: LARGE_INTEGER,
@@ -1044,24 +1064,28 @@ pub struct _DOMAIN_GENERAL_INFORMATION {
 }
 pub type DOMAIN_GENERAL_INFORMATION = _DOMAIN_GENERAL_INFORMATION;
 pub type PDOMAIN_GENERAL_INFORMATION = *mut _DOMAIN_GENERAL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_LOGOFF_INFORMATION {
     pub ForceLogoff: LARGE_INTEGER,
 }
 pub type DOMAIN_LOGOFF_INFORMATION = _DOMAIN_LOGOFF_INFORMATION;
 pub type PDOMAIN_LOGOFF_INFORMATION = *mut _DOMAIN_LOGOFF_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_OEM_INFORMATION {
     pub OemInformation: UNICODE_STRING,
 }
 pub type DOMAIN_OEM_INFORMATION = _DOMAIN_OEM_INFORMATION;
 pub type PDOMAIN_OEM_INFORMATION = *mut _DOMAIN_OEM_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_NAME_INFORMATION {
     pub DomainName: UNICODE_STRING,
 }
 pub type DOMAIN_NAME_INFORMATION = _DOMAIN_NAME_INFORMATION;
 pub type PDOMAIN_NAME_INFORMATION = *mut _DOMAIN_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_REPLICATION_INFORMATION {
     pub ReplicaSourceNodeName: UNICODE_STRING,
@@ -1075,6 +1099,7 @@ pub struct _DOMAIN_SERVER_ROLE_INFORMATION {
 }
 pub type DOMAIN_SERVER_ROLE_INFORMATION = _DOMAIN_SERVER_ROLE_INFORMATION;
 pub type PDOMAIN_SERVER_ROLE_INFORMATION = *mut _DOMAIN_SERVER_ROLE_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_MODIFIED_INFORMATION {
     pub DomainModifiedCount: LARGE_INTEGER,
@@ -1089,11 +1114,13 @@ pub struct _DOMAIN_STATE_INFORMATION {
 }
 pub type DOMAIN_STATE_INFORMATION = _DOMAIN_STATE_INFORMATION;
 pub type PDOMAIN_STATE_INFORMATION = *mut _DOMAIN_STATE_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_UAS_INFORMATION {
     pub UasCompatibilityRequired: BOOLEAN,
 }
 pub type DOMAIN_UAS_INFORMATION = _DOMAIN_UAS_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _DOMAIN_GENERAL_INFORMATION2 {
     pub I1: DOMAIN_GENERAL_INFORMATION,
@@ -1103,6 +1130,7 @@ pub struct _DOMAIN_GENERAL_INFORMATION2 {
 }
 pub type DOMAIN_GENERAL_INFORMATION2 = _DOMAIN_GENERAL_INFORMATION2;
 pub type PDOMAIN_GENERAL_INFORMATION2 = *mut _DOMAIN_GENERAL_INFORMATION2;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_LOCKOUT_INFORMATION {
     pub LockoutDuration: LARGE_INTEGER,
@@ -1111,6 +1139,7 @@ pub struct _DOMAIN_LOCKOUT_INFORMATION {
 }
 pub type DOMAIN_LOCKOUT_INFORMATION = _DOMAIN_LOCKOUT_INFORMATION;
 pub type PDOMAIN_LOCKOUT_INFORMATION = *mut _DOMAIN_LOCKOUT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _DOMAIN_MODIFIED_INFORMATION2 {
     pub DomainModifiedCount: LARGE_INTEGER,
@@ -1126,6 +1155,7 @@ pub const _GROUP_INFORMATION_CLASS_GroupAdminCommentInformation: _GROUP_INFORMAT
 pub const _GROUP_INFORMATION_CLASS_GroupReplicationInformation: _GROUP_INFORMATION_CLASS = 5;
 pub type _GROUP_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_GROUP_INFORMATION_CLASS as GROUP_INFORMATION_CLASS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _GROUP_GENERAL_INFORMATION {
     pub Name: UNICODE_STRING,
@@ -1135,23 +1165,27 @@ pub struct _GROUP_GENERAL_INFORMATION {
 }
 pub type GROUP_GENERAL_INFORMATION = _GROUP_GENERAL_INFORMATION;
 pub type PGROUP_GENERAL_INFORMATION = *mut _GROUP_GENERAL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _GROUP_NAME_INFORMATION {
     pub Name: UNICODE_STRING,
 }
 pub type GROUP_NAME_INFORMATION = _GROUP_NAME_INFORMATION;
 pub type PGROUP_NAME_INFORMATION = *mut _GROUP_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _GROUP_ATTRIBUTE_INFORMATION {
     pub Attributes: ULONG,
 }
 pub type GROUP_ATTRIBUTE_INFORMATION = _GROUP_ATTRIBUTE_INFORMATION;
 pub type PGROUP_ATTRIBUTE_INFORMATION = *mut _GROUP_ATTRIBUTE_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct GROUP_ADM_COMMENT_INFORMATION {
     pub AdminComment: UNICODE_STRING,
 }
 pub type PGROUP_ADM_COMMENT_INFORMATION = *mut GROUP_ADM_COMMENT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _GROUP_MEMBERSHIP {
     pub RelativeId: ULONG,
@@ -1159,6 +1193,7 @@ pub struct _GROUP_MEMBERSHIP {
 }
 pub type GROUP_MEMBERSHIP = _GROUP_MEMBERSHIP;
 pub type PGROUP_MEMBERSHIP = *mut _GROUP_MEMBERSHIP;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _LOGON_HOURS {
     pub UnitsPerWeek: USHORT,
@@ -1166,6 +1201,7 @@ pub struct _LOGON_HOURS {
 }
 pub type LOGON_HOURS = _LOGON_HOURS;
 pub type PLOGON_HOURS = *mut _LOGON_HOURS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SR_SECURITY_DESCRIPTOR {
     pub Length: ULONG,
@@ -1205,6 +1241,7 @@ pub const _USER_INFORMATION_CLASS_UserLogonUIInformation: _USER_INFORMATION_CLAS
 pub type _USER_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_USER_INFORMATION_CLASS as USER_INFORMATION_CLASS;
 pub type PUSER_INFORMATION_CLASS = *mut _USER_INFORMATION_CLASS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_GENERAL_INFORMATION {
     pub UserName: UNICODE_STRING,
@@ -1215,6 +1252,7 @@ pub struct _USER_GENERAL_INFORMATION {
 }
 pub type USER_GENERAL_INFORMATION = _USER_GENERAL_INFORMATION;
 pub type PUSER_GENERAL_INFORMATION = *mut _USER_GENERAL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_PREFERENCES_INFORMATION {
     pub UserComment: UNICODE_STRING,
@@ -1224,6 +1262,7 @@ pub struct _USER_PREFERENCES_INFORMATION {
 }
 pub type USER_PREFERENCES_INFORMATION = _USER_PREFERENCES_INFORMATION;
 pub type PUSER_PREFERENCES_INFORMATION = *mut _USER_PREFERENCES_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _USER_LOGON_INFORMATION {
     pub UserName: UNICODE_STRING,
@@ -1247,12 +1286,14 @@ pub struct _USER_LOGON_INFORMATION {
 }
 pub type USER_LOGON_INFORMATION = _USER_LOGON_INFORMATION;
 pub type PUSER_LOGON_INFORMATION = *mut _USER_LOGON_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_LOGON_HOURS_INFORMATION {
     pub LogonHours: LOGON_HOURS,
 }
 pub type USER_LOGON_HOURS_INFORMATION = _USER_LOGON_HOURS_INFORMATION;
 pub type PUSER_LOGON_HOURS_INFORMATION = *mut _USER_LOGON_HOURS_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _USER_ACCOUNT_INFORMATION {
     pub UserName: UNICODE_STRING,
@@ -1276,6 +1317,7 @@ pub struct _USER_ACCOUNT_INFORMATION {
 }
 pub type USER_ACCOUNT_INFORMATION = _USER_ACCOUNT_INFORMATION;
 pub type PUSER_ACCOUNT_INFORMATION = *mut _USER_ACCOUNT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_NAME_INFORMATION {
     pub UserName: UNICODE_STRING,
@@ -1283,24 +1325,28 @@ pub struct _USER_NAME_INFORMATION {
 }
 pub type USER_NAME_INFORMATION = _USER_NAME_INFORMATION;
 pub type PUSER_NAME_INFORMATION = *mut _USER_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_ACCOUNT_NAME_INFORMATION {
     pub UserName: UNICODE_STRING,
 }
 pub type USER_ACCOUNT_NAME_INFORMATION = _USER_ACCOUNT_NAME_INFORMATION;
 pub type PUSER_ACCOUNT_NAME_INFORMATION = *mut _USER_ACCOUNT_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_FULL_NAME_INFORMATION {
     pub FullName: UNICODE_STRING,
 }
 pub type USER_FULL_NAME_INFORMATION = _USER_FULL_NAME_INFORMATION;
 pub type PUSER_FULL_NAME_INFORMATION = *mut _USER_FULL_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_PRIMARY_GROUP_INFORMATION {
     pub PrimaryGroupId: ULONG,
 }
 pub type USER_PRIMARY_GROUP_INFORMATION = _USER_PRIMARY_GROUP_INFORMATION;
 pub type PUSER_PRIMARY_GROUP_INFORMATION = *mut _USER_PRIMARY_GROUP_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_HOME_INFORMATION {
     pub HomeDirectory: UNICODE_STRING,
@@ -1308,30 +1354,35 @@ pub struct _USER_HOME_INFORMATION {
 }
 pub type USER_HOME_INFORMATION = _USER_HOME_INFORMATION;
 pub type PUSER_HOME_INFORMATION = *mut _USER_HOME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_SCRIPT_INFORMATION {
     pub ScriptPath: UNICODE_STRING,
 }
 pub type USER_SCRIPT_INFORMATION = _USER_SCRIPT_INFORMATION;
 pub type PUSER_SCRIPT_INFORMATION = *mut _USER_SCRIPT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_PROFILE_INFORMATION {
     pub ProfilePath: UNICODE_STRING,
 }
 pub type USER_PROFILE_INFORMATION = _USER_PROFILE_INFORMATION;
 pub type PUSER_PROFILE_INFORMATION = *mut _USER_PROFILE_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_ADMIN_COMMENT_INFORMATION {
     pub AdminComment: UNICODE_STRING,
 }
 pub type USER_ADMIN_COMMENT_INFORMATION = _USER_ADMIN_COMMENT_INFORMATION;
 pub type PUSER_ADMIN_COMMENT_INFORMATION = *mut _USER_ADMIN_COMMENT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_WORKSTATIONS_INFORMATION {
     pub WorkStations: UNICODE_STRING,
 }
 pub type USER_WORKSTATIONS_INFORMATION = _USER_WORKSTATIONS_INFORMATION;
 pub type PUSER_WORKSTATIONS_INFORMATION = *mut _USER_WORKSTATIONS_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_SET_PASSWORD_INFORMATION {
     pub Password: UNICODE_STRING,
@@ -1339,24 +1390,28 @@ pub struct _USER_SET_PASSWORD_INFORMATION {
 }
 pub type USER_SET_PASSWORD_INFORMATION = _USER_SET_PASSWORD_INFORMATION;
 pub type PUSER_SET_PASSWORD_INFORMATION = *mut _USER_SET_PASSWORD_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_CONTROL_INFORMATION {
     pub UserAccountControl: ULONG,
 }
 pub type USER_CONTROL_INFORMATION = _USER_CONTROL_INFORMATION;
 pub type PUSER_CONTROL_INFORMATION = *mut _USER_CONTROL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_EXPIRES_INFORMATION {
     pub AccountExpires: LARGE_INTEGER,
 }
 pub type USER_EXPIRES_INFORMATION = _USER_EXPIRES_INFORMATION;
 pub type PUSER_EXPIRES_INFORMATION = *mut _USER_EXPIRES_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_PARAMETERS_INFORMATION {
     pub Parameters: UNICODE_STRING,
 }
 pub type USER_PARAMETERS_INFORMATION = _USER_PARAMETERS_INFORMATION;
 pub type PUSER_PARAMETERS_INFORMATION = *mut _USER_PARAMETERS_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _USER_ALL_INFORMATION {
     pub LastLogon: LARGE_INTEGER,
@@ -1395,6 +1450,7 @@ pub struct _USER_ALL_INFORMATION {
 }
 pub type USER_ALL_INFORMATION = _USER_ALL_INFORMATION;
 pub type PUSER_ALL_INFORMATION = *mut _USER_ALL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_PWD_CHANGE_FAILURE_INFORMATION {
     pub ExtendedFailureReason: ULONG,
@@ -1414,6 +1470,7 @@ pub struct _RPC_VERSION {
     pub MinorVersion: ::core::ffi::c_ushort,
 }
 pub type RPC_VERSION = _RPC_VERSION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _RPC_SYNTAX_IDENTIFIER {
     pub SyntaxGUID: GUID,
@@ -1421,6 +1478,7 @@ pub struct _RPC_SYNTAX_IDENTIFIER {
 }
 pub type RPC_SYNTAX_IDENTIFIER = _RPC_SYNTAX_IDENTIFIER;
 pub type PRPC_SYNTAX_IDENTIFIER = *mut _RPC_SYNTAX_IDENTIFIER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _RPC_MESSAGE {
     pub Handle: RPC_BINDING_HANDLE,
@@ -1438,6 +1496,7 @@ pub struct _RPC_MESSAGE {
 pub type PRPC_MESSAGE = *mut _RPC_MESSAGE;
 pub type RPC_DISPATCH_FUNCTION =
     ::core::option::Option<unsafe extern "C" fn(Message: PRPC_MESSAGE)>;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct RPC_DISPATCH_TABLE {
     pub DispatchTableCount: ::core::ffi::c_uint,
@@ -1474,6 +1533,7 @@ pub type RPC_BUFPTR = *mut ::core::ffi::c_uchar;
 pub type RPC_LENGTH = ULONG;
 pub type EXPR_EVAL = ::core::option::Option<unsafe extern "C" fn(arg1: *mut _MIDL_STUB_MESSAGE)>;
 pub type PFORMAT_STRING = *const ::core::ffi::c_uchar;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ARRAY_INFO {
     pub Dimension: LONG,
@@ -1484,6 +1544,7 @@ pub struct ARRAY_INFO {
     pub ActualCountArray: *mut ULONG,
 }
 pub type PARRAY_INFO = *mut ARRAY_INFO;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct CS_STUB_INFO {
     pub WireCodeset: ULONG,
@@ -1514,6 +1575,7 @@ pub struct _NDR_CORRELATION_INFO {
     _unused: [u8; 0],
 }
 pub type PNDR_CORRELATION_INFO = *mut _NDR_CORRELATION_INFO;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MIDL_STUB_MESSAGE {
     pub RpcMsg: PRPC_MESSAGE,
@@ -1538,8 +1600,7 @@ pub struct _MIDL_STUB_MESSAGE {
     pub MaxCount: ULONG_PTR,
     pub Offset: ULONG,
     pub ActualCount: ULONG,
-    pub pfnAllocate:
-        ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
+    pub pfnAllocate: ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
     pub pfnFree: ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>,
     pub StackTop: *mut ::core::ffi::c_uchar,
     pub pPresentedType: *mut ::core::ffi::c_uchar,
@@ -2228,6 +2289,7 @@ pub const USER_MARSHAL_CB_TYPE_USER_MARSHAL_CB_MARSHALL: USER_MARSHAL_CB_TYPE = 
 pub const USER_MARSHAL_CB_TYPE_USER_MARSHAL_CB_UNMARSHALL: USER_MARSHAL_CB_TYPE = 2;
 pub const USER_MARSHAL_CB_TYPE_USER_MARSHAL_CB_FREE: USER_MARSHAL_CB_TYPE = 3;
 pub type USER_MARSHAL_CB_TYPE = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_MARSHAL_CB {
     pub Flags: ULONG,
@@ -2242,8 +2304,7 @@ pub type USER_MARSHAL_CB = _USER_MARSHAL_CB;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _MALLOC_FREE_STRUCT {
-    pub pfnAllocate:
-        ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
+    pub pfnAllocate: ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
     pub pfnFree: ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>,
 }
 pub type MALLOC_FREE_STRUCT = _MALLOC_FREE_STRUCT;
@@ -2335,11 +2396,11 @@ pub struct _NDR_EXPR_DESC {
     pub pFormatExpr: PFORMAT_STRING,
 }
 pub type NDR_EXPR_DESC = _NDR_EXPR_DESC;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MIDL_STUB_DESC {
     pub RpcInterfaceInformation: *mut ::core::ffi::c_void,
-    pub pfnAllocate:
-        ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
+    pub pfnAllocate: ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
     pub pfnFree: ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>,
     pub IMPLICIT_HANDLE_INFO: _MIDL_STUB_DESC__bindgen_ty_1,
     pub apfnNdrRundownRoutines: *const NDR_RUNDOWN,
@@ -2375,6 +2436,7 @@ pub struct _MIDL_FORMAT_STRING {
     pub Format: __IncompleteArrayField<::core::ffi::c_uchar>,
 }
 pub type MIDL_FORMAT_STRING = _MIDL_FORMAT_STRING;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MIDL_METHOD_PROPERTY {
     pub Id: ULONG,
@@ -2382,6 +2444,7 @@ pub struct _MIDL_METHOD_PROPERTY {
 }
 pub type MIDL_METHOD_PROPERTY = _MIDL_METHOD_PROPERTY;
 pub type PMIDL_METHOD_PROPERTY = *mut _MIDL_METHOD_PROPERTY;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MIDL_METHOD_PROPERTY_MAP {
     pub Count: ULONG,
@@ -2396,6 +2459,7 @@ pub struct _MIDL_INTERFACE_METHOD_PROPERTIES {
     pub MethodProperties: *const *const MIDL_METHOD_PROPERTY_MAP,
 }
 pub type MIDL_INTERFACE_METHOD_PROPERTIES = _MIDL_INTERFACE_METHOD_PROPERTIES;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MIDL_SYNTAX_INFO {
     pub TransferSyntax: RPC_SYNTAX_IDENTIFIER,
@@ -2411,6 +2475,7 @@ pub type MIDL_SYNTAX_INFO = _MIDL_SYNTAX_INFO;
 pub type PMIDL_SYNTAX_INFO = *mut _MIDL_SYNTAX_INFO;
 pub type STUB_THUNK = ::core::option::Option<unsafe extern "C" fn(arg1: PMIDL_STUB_MESSAGE)>;
 pub type SERVER_ROUTINE = ::core::option::Option<unsafe extern "C" fn() -> LONG>;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MIDL_SERVER_INFO_ {
     pub pStubDesc: PMIDL_STUB_DESC,
@@ -2424,6 +2489,7 @@ pub struct _MIDL_SERVER_INFO_ {
 }
 pub type MIDL_SERVER_INFO = _MIDL_SERVER_INFO_;
 pub type PMIDL_SERVER_INFO = *mut _MIDL_SERVER_INFO_;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MIDL_STUBLESS_PROXY_INFO {
     pub pStubDesc: PMIDL_STUB_DESC,
@@ -2435,11 +2501,11 @@ pub struct _MIDL_STUBLESS_PROXY_INFO {
 }
 pub type MIDL_STUBLESS_PROXY_INFO = _MIDL_STUBLESS_PROXY_INFO;
 pub type PMIDL_STUBLESS_PROXY_INFO = *mut _MIDL_STUBLESS_PROXY_INFO;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _CLIENT_CALL_RETURN {
-    pub Pointer: __BindgenUnionField<*mut ::core::ffi::c_void>,
-    pub Simple: __BindgenUnionField<LONG_PTR>,
-    pub bindgen_union_field: u64,
+pub union _CLIENT_CALL_RETURN {
+    pub Pointer: *mut ::core::ffi::c_void,
+    pub Simple: LONG_PTR,
 }
 pub type CLIENT_CALL_RETURN = _CLIENT_CALL_RETURN;
 pub const STUB_PHASE_STUB_UNMARSHAL: STUB_PHASE = 0;
@@ -2456,6 +2522,7 @@ pub type PROXY_PHASE = ::core::ffi::c_uint;
 pub const XLAT_SIDE_XLAT_SERVER: XLAT_SIDE = 1;
 pub const XLAT_SIDE_XLAT_CLIENT: XLAT_SIDE = 2;
 pub type XLAT_SIDE = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _FULL_PTR_TO_REFID_ELEMENT {
     pub Next: *mut _FULL_PTR_TO_REFID_ELEMENT,
@@ -2465,6 +2532,7 @@ pub struct _FULL_PTR_TO_REFID_ELEMENT {
 }
 pub type FULL_PTR_TO_REFID_ELEMENT = _FULL_PTR_TO_REFID_ELEMENT;
 pub type PFULL_PTR_TO_REFID_ELEMENT = *mut _FULL_PTR_TO_REFID_ELEMENT;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _FULL_PTR_XLAT_TABLES {
     pub RefIdToPointer: _FULL_PTR_XLAT_TABLES__bindgen_ty_1,
@@ -2472,12 +2540,14 @@ pub struct _FULL_PTR_XLAT_TABLES {
     pub NextRefId: ULONG,
     pub XlatSide: XLAT_SIDE,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _FULL_PTR_XLAT_TABLES__bindgen_ty_1 {
     pub XlatTable: *mut *mut ::core::ffi::c_void,
     pub StateTable: *mut ::core::ffi::c_uchar,
     pub NumberOfEntries: ULONG,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _FULL_PTR_XLAT_TABLES__bindgen_ty_2 {
     pub XlatTable: *mut PFULL_PTR_TO_REFID_ELEMENT,
@@ -2492,6 +2562,7 @@ pub struct IRpcStubBuffer {
     _unused: [u8; 0],
 }
 pub type NDR_CCONTEXT = *mut ::core::ffi::c_void;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SCONTEXT_QUEUE {
     pub NumberOfObjects: ULONG,
@@ -2499,26 +2570,27 @@ pub struct _SCONTEXT_QUEUE {
 }
 pub type SCONTEXT_QUEUE = _SCONTEXT_QUEUE;
 pub type PSCONTEXT_QUEUE = *mut _SCONTEXT_QUEUE;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _NDR_USER_MARSHAL_INFO_LEVEL1 {
     pub Buffer: *mut ::core::ffi::c_void,
     pub BufferSize: ULONG,
-    pub pfnAllocate:
-        ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
+    pub pfnAllocate: ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
     pub pfnFree: ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>,
     pub pRpcChannelBuffer: *mut IRpcChannelBuffer,
     pub Reserved: [ULONG_PTR; 5usize],
 }
 pub type NDR_USER_MARSHAL_INFO_LEVEL1 = _NDR_USER_MARSHAL_INFO_LEVEL1;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _NDR_USER_MARSHAL_INFO {
     pub InformationLevel: ULONG,
     pub __bindgen_anon_1: _NDR_USER_MARSHAL_INFO__bindgen_ty_1,
 }
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _NDR_USER_MARSHAL_INFO__bindgen_ty_1 {
-    pub Level1: __BindgenUnionField<NDR_USER_MARSHAL_INFO_LEVEL1>,
-    pub bindgen_union_field: [u64; 10usize],
+pub union _NDR_USER_MARSHAL_INFO__bindgen_ty_1 {
+    pub Level1: NDR_USER_MARSHAL_INFO_LEVEL1,
 }
 pub type NDR_USER_MARSHAL_INFO = _NDR_USER_MARSHAL_INFO;
 pub type QWORD = UINT64;
@@ -2531,6 +2603,7 @@ pub type PPCONTEXT_HANDLE = *mut PCONTEXT_HANDLE;
 pub type LMCSTR = *const wchar_t;
 pub type LMSTR = *mut WCHAR;
 pub type BSTR = *mut WCHAR;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _RPC_UNICODE_STRING {
     pub Length: USHORT,
@@ -2539,6 +2612,7 @@ pub struct _RPC_UNICODE_STRING {
 }
 pub type RPC_UNICODE_STRING = _RPC_UNICODE_STRING;
 pub type PRPC_UNICODE_STRING = *mut _RPC_UNICODE_STRING;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _RPC_SID {
     pub Revision: UCHAR,
@@ -2557,6 +2631,7 @@ pub struct _RPC_STRING {
 }
 pub type RPC_STRING = _RPC_STRING;
 pub type PRPC_STRING = *mut _RPC_STRING;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _OLD_LARGE_INTEGER {
     pub LowPart: ULONG,
@@ -2579,6 +2654,7 @@ pub type ENCRYPTED_LM_OWF_PASSWORD = _ENCRYPTED_LM_OWF_PASSWORD;
 pub type PENCRYPTED_LM_OWF_PASSWORD = *mut _ENCRYPTED_LM_OWF_PASSWORD;
 pub type ENCRYPTED_NT_OWF_PASSWORD = _ENCRYPTED_LM_OWF_PASSWORD;
 pub type PENCRYPTED_NT_OWF_PASSWORD = *mut _ENCRYPTED_LM_OWF_PASSWORD;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_ULONG_ARRAY {
     pub Count: ULONG,
@@ -2593,6 +2669,7 @@ pub struct _SAMPR_SID_INFORMATION {
 }
 pub type SAMPR_SID_INFORMATION = _SAMPR_SID_INFORMATION;
 pub type PSAMPR_SID_INFORMATION = *mut _SAMPR_SID_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_PSID_ARRAY {
     pub Count: ULONG,
@@ -2600,6 +2677,7 @@ pub struct _SAMPR_PSID_ARRAY {
 }
 pub type SAMPR_PSID_ARRAY = _SAMPR_PSID_ARRAY;
 pub type PSAMPR_PSID_ARRAY = *mut _SAMPR_PSID_ARRAY;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_PSID_ARRAY_OUT {
     pub Count: ULONG,
@@ -2607,6 +2685,7 @@ pub struct _SAMPR_PSID_ARRAY_OUT {
 }
 pub type SAMPR_PSID_ARRAY_OUT = _SAMPR_PSID_ARRAY_OUT;
 pub type PSAMPR_PSID_ARRAY_OUT = *mut _SAMPR_PSID_ARRAY_OUT;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_RETURNED_USTRING_ARRAY {
     pub Count: ULONG,
@@ -2622,6 +2701,7 @@ pub struct RPC_SHORT_BLOB {
     pub Buffer: *mut ::core::ffi::c_ushort,
 }
 pub type PRPC_SHORT_BLOB = *mut RPC_SHORT_BLOB;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_RID_ENUMERATION {
     pub RelativeId: ULONG,
@@ -2629,6 +2709,7 @@ pub struct _SAMPR_RID_ENUMERATION {
 }
 pub type SAMPR_RID_ENUMERATION = _SAMPR_RID_ENUMERATION;
 pub type PSAMPR_RID_ENUMERATION = *mut _SAMPR_RID_ENUMERATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_ENUMERATION_BUFFER {
     pub EntriesRead: ULONG,
@@ -2636,6 +2717,7 @@ pub struct _SAMPR_ENUMERATION_BUFFER {
 }
 pub type SAMPR_ENUMERATION_BUFFER = _SAMPR_ENUMERATION_BUFFER;
 pub type PSAMPR_ENUMERATION_BUFFER = *mut _SAMPR_ENUMERATION_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_SR_SECURITY_DESCRIPTOR {
     pub Length: ULONG,
@@ -2643,6 +2725,7 @@ pub struct _SAMPR_SR_SECURITY_DESCRIPTOR {
 }
 pub type SAMPR_SR_SECURITY_DESCRIPTOR = _SAMPR_SR_SECURITY_DESCRIPTOR;
 pub type PSAMPR_SR_SECURITY_DESCRIPTOR = *mut _SAMPR_SR_SECURITY_DESCRIPTOR;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_GET_GROUPS_BUFFER {
     pub MembershipCount: ULONG,
@@ -2650,6 +2733,7 @@ pub struct _SAMPR_GET_GROUPS_BUFFER {
 }
 pub type SAMPR_GET_GROUPS_BUFFER = _SAMPR_GET_GROUPS_BUFFER;
 pub type PSAMPR_GET_GROUPS_BUFFER = *mut _SAMPR_GET_GROUPS_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_GET_MEMBERS_BUFFER {
     pub MemberCount: ULONG,
@@ -2658,6 +2742,7 @@ pub struct _SAMPR_GET_MEMBERS_BUFFER {
 }
 pub type SAMPR_GET_MEMBERS_BUFFER = _SAMPR_GET_MEMBERS_BUFFER;
 pub type PSAMPR_GET_MEMBERS_BUFFER = *mut _SAMPR_GET_MEMBERS_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_REVISION_INFO_V1 {
     pub Revision: ULONG,
@@ -2665,13 +2750,14 @@ pub struct _SAMPR_REVISION_INFO_V1 {
 }
 pub type SAMPR_REVISION_INFO_V1 = _SAMPR_REVISION_INFO_V1;
 pub type PSAMPR_REVISION_INFO_V1 = *mut _SAMPR_REVISION_INFO_V1;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct __WIDL_sam_generated_name_00000000 {
-    pub V1: __BindgenUnionField<SAMPR_REVISION_INFO_V1>,
-    pub bindgen_union_field: [u32; 2usize],
+pub union __WIDL_sam_generated_name_00000000 {
+    pub V1: SAMPR_REVISION_INFO_V1,
 }
 pub type SAMPR_REVISION_INFO = __WIDL_sam_generated_name_00000000;
 pub type PSAMPR_REVISION_INFO = *mut __WIDL_sam_generated_name_00000000;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _USER_DOMAIN_PASSWORD_INFORMATION {
     pub MinPasswordLength: ::core::ffi::c_ushort,
@@ -2679,6 +2765,7 @@ pub struct _USER_DOMAIN_PASSWORD_INFORMATION {
 }
 pub type USER_DOMAIN_PASSWORD_INFORMATION = _USER_DOMAIN_PASSWORD_INFORMATION;
 pub type PUSER_DOMAIN_PASSWORD_INFORMATION = *mut _USER_DOMAIN_PASSWORD_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _SAMPR_DOMAIN_GENERAL_INFORMATION {
     pub ForceLogoff: OLD_LARGE_INTEGER,
@@ -2695,6 +2782,7 @@ pub struct _SAMPR_DOMAIN_GENERAL_INFORMATION {
 }
 pub type SAMPR_DOMAIN_GENERAL_INFORMATION = _SAMPR_DOMAIN_GENERAL_INFORMATION;
 pub type PSAMPR_DOMAIN_GENERAL_INFORMATION = *mut _SAMPR_DOMAIN_GENERAL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C, packed(4))]
 pub struct _SAMPR_DOMAIN_GENERAL_INFORMATION2 {
     pub I1: SAMPR_DOMAIN_GENERAL_INFORMATION,
@@ -2704,23 +2792,27 @@ pub struct _SAMPR_DOMAIN_GENERAL_INFORMATION2 {
 }
 pub type SAMPR_DOMAIN_GENERAL_INFORMATION2 = _SAMPR_DOMAIN_GENERAL_INFORMATION2;
 pub type PSAMPR_DOMAIN_GENERAL_INFORMATION2 = *mut _SAMPR_DOMAIN_GENERAL_INFORMATION2;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_OEM_INFORMATION {
     pub OemInformation: RPC_UNICODE_STRING,
 }
 pub type SAMPR_DOMAIN_OEM_INFORMATION = _SAMPR_DOMAIN_OEM_INFORMATION;
 pub type PSAMPR_DOMAIN_OEM_INFORMATION = *mut _SAMPR_DOMAIN_OEM_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_NAME_INFORMATION {
     pub DomainName: RPC_UNICODE_STRING,
 }
 pub type SAMPR_DOMAIN_NAME_INFORMATION = _SAMPR_DOMAIN_NAME_INFORMATION;
 pub type PSAMPR_DOMAIN_NAME_INFORMATION = *mut _SAMPR_DOMAIN_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct SAMPR_DOMAIN_REPLICATION_INFORMATION {
     pub ReplicaSourceNodeName: RPC_UNICODE_STRING,
 }
 pub type PSAMPR_DOMAIN_REPLICATION_INFORMATION = *mut SAMPR_DOMAIN_REPLICATION_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_LOCKOUT_INFORMATION {
     pub LockoutDuration: LARGE_INTEGER,
@@ -2729,24 +2821,25 @@ pub struct _SAMPR_DOMAIN_LOCKOUT_INFORMATION {
 }
 pub type SAMPR_DOMAIN_LOCKOUT_INFORMATION = _SAMPR_DOMAIN_LOCKOUT_INFORMATION;
 pub type PSAMPR_DOMAIN_LOCKOUT_INFORMATION = *mut _SAMPR_DOMAIN_LOCKOUT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _SAMPR_DOMAIN_INFO_BUFFER {
-    pub Password: __BindgenUnionField<DOMAIN_PASSWORD_INFORMATION>,
-    pub General: __BindgenUnionField<SAMPR_DOMAIN_GENERAL_INFORMATION>,
-    pub Logoff: __BindgenUnionField<DOMAIN_LOGOFF_INFORMATION>,
-    pub Oem: __BindgenUnionField<SAMPR_DOMAIN_OEM_INFORMATION>,
-    pub Name: __BindgenUnionField<SAMPR_DOMAIN_NAME_INFORMATION>,
-    pub Role: __BindgenUnionField<DOMAIN_SERVER_ROLE_INFORMATION>,
-    pub Replication: __BindgenUnionField<SAMPR_DOMAIN_REPLICATION_INFORMATION>,
-    pub Modified: __BindgenUnionField<DOMAIN_MODIFIED_INFORMATION>,
-    pub State: __BindgenUnionField<DOMAIN_STATE_INFORMATION>,
-    pub General2: __BindgenUnionField<SAMPR_DOMAIN_GENERAL_INFORMATION2>,
-    pub Lockout: __BindgenUnionField<SAMPR_DOMAIN_LOCKOUT_INFORMATION>,
-    pub Modified2: __BindgenUnionField<DOMAIN_MODIFIED_INFORMATION2>,
-    pub bindgen_union_field: [u64; 14usize],
+pub union _SAMPR_DOMAIN_INFO_BUFFER {
+    pub Password: DOMAIN_PASSWORD_INFORMATION,
+    pub General: SAMPR_DOMAIN_GENERAL_INFORMATION,
+    pub Logoff: DOMAIN_LOGOFF_INFORMATION,
+    pub Oem: SAMPR_DOMAIN_OEM_INFORMATION,
+    pub Name: SAMPR_DOMAIN_NAME_INFORMATION,
+    pub Role: DOMAIN_SERVER_ROLE_INFORMATION,
+    pub Replication: SAMPR_DOMAIN_REPLICATION_INFORMATION,
+    pub Modified: DOMAIN_MODIFIED_INFORMATION,
+    pub State: DOMAIN_STATE_INFORMATION,
+    pub General2: SAMPR_DOMAIN_GENERAL_INFORMATION2,
+    pub Lockout: SAMPR_DOMAIN_LOCKOUT_INFORMATION,
+    pub Modified2: DOMAIN_MODIFIED_INFORMATION2,
 }
 pub type SAMPR_DOMAIN_INFO_BUFFER = _SAMPR_DOMAIN_INFO_BUFFER;
 pub type PSAMPR_DOMAIN_INFO_BUFFER = *mut _SAMPR_DOMAIN_INFO_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_USER {
     pub Index: ULONG,
@@ -2758,6 +2851,7 @@ pub struct _SAMPR_DOMAIN_DISPLAY_USER {
 }
 pub type SAMPR_DOMAIN_DISPLAY_USER = _SAMPR_DOMAIN_DISPLAY_USER;
 pub type PSAMPR_DOMAIN_DISPLAY_USER = *mut _SAMPR_DOMAIN_DISPLAY_USER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_MACHINE {
     pub Index: ULONG,
@@ -2768,6 +2862,7 @@ pub struct _SAMPR_DOMAIN_DISPLAY_MACHINE {
 }
 pub type SAMPR_DOMAIN_DISPLAY_MACHINE = _SAMPR_DOMAIN_DISPLAY_MACHINE;
 pub type PSAMPR_DOMAIN_DISPLAY_MACHINE = *mut _SAMPR_DOMAIN_DISPLAY_MACHINE;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_GROUP {
     pub Index: ULONG,
@@ -2778,6 +2873,7 @@ pub struct _SAMPR_DOMAIN_DISPLAY_GROUP {
 }
 pub type SAMPR_DOMAIN_DISPLAY_GROUP = _SAMPR_DOMAIN_DISPLAY_GROUP;
 pub type PSAMPR_DOMAIN_DISPLAY_GROUP = *mut _SAMPR_DOMAIN_DISPLAY_GROUP;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_OEM_USER {
     pub Index: ULONG,
@@ -2785,6 +2881,7 @@ pub struct _SAMPR_DOMAIN_DISPLAY_OEM_USER {
 }
 pub type SAMPR_DOMAIN_DISPLAY_OEM_USER = _SAMPR_DOMAIN_DISPLAY_OEM_USER;
 pub type PSAMPR_DOMAIN_DISPLAY_OEM_USER = *mut _SAMPR_DOMAIN_DISPLAY_OEM_USER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_OEM_GROUP {
     pub Index: ULONG,
@@ -2792,6 +2889,7 @@ pub struct _SAMPR_DOMAIN_DISPLAY_OEM_GROUP {
 }
 pub type SAMPR_DOMAIN_DISPLAY_OEM_GROUP = _SAMPR_DOMAIN_DISPLAY_OEM_GROUP;
 pub type PSAMPR_DOMAIN_DISPLAY_OEM_GROUP = *mut _SAMPR_DOMAIN_DISPLAY_OEM_GROUP;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_USER_BUFFER {
     pub EntriesRead: ULONG,
@@ -2799,6 +2897,7 @@ pub struct _SAMPR_DOMAIN_DISPLAY_USER_BUFFER {
 }
 pub type SAMPR_DOMAIN_DISPLAY_USER_BUFFER = _SAMPR_DOMAIN_DISPLAY_USER_BUFFER;
 pub type PSAMPR_DOMAIN_DISPLAY_USER_BUFFER = *mut _SAMPR_DOMAIN_DISPLAY_USER_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_MACHINE_BUFFER {
     pub EntriesRead: ULONG,
@@ -2806,6 +2905,7 @@ pub struct _SAMPR_DOMAIN_DISPLAY_MACHINE_BUFFER {
 }
 pub type SAMPR_DOMAIN_DISPLAY_MACHINE_BUFFER = _SAMPR_DOMAIN_DISPLAY_MACHINE_BUFFER;
 pub type PSAMPR_DOMAIN_DISPLAY_MACHINE_BUFFER = *mut _SAMPR_DOMAIN_DISPLAY_MACHINE_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_GROUP_BUFFER {
     pub EntriesRead: ULONG,
@@ -2813,6 +2913,7 @@ pub struct _SAMPR_DOMAIN_DISPLAY_GROUP_BUFFER {
 }
 pub type SAMPR_DOMAIN_DISPLAY_GROUP_BUFFER = _SAMPR_DOMAIN_DISPLAY_GROUP_BUFFER;
 pub type PSAMPR_DOMAIN_DISPLAY_GROUP_BUFFER = *mut _SAMPR_DOMAIN_DISPLAY_GROUP_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_OEM_USER_BUFFER {
     pub EntriesRead: ULONG,
@@ -2820,6 +2921,7 @@ pub struct _SAMPR_DOMAIN_DISPLAY_OEM_USER_BUFFER {
 }
 pub type SAMPR_DOMAIN_DISPLAY_OEM_USER_BUFFER = _SAMPR_DOMAIN_DISPLAY_OEM_USER_BUFFER;
 pub type PSAMPR_DOMAIN_DISPLAY_OEM_USER_BUFFER = *mut _SAMPR_DOMAIN_DISPLAY_OEM_USER_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_DOMAIN_DISPLAY_OEM_GROUP_BUFFER {
     pub EntriesRead: ULONG,
@@ -2827,23 +2929,25 @@ pub struct _SAMPR_DOMAIN_DISPLAY_OEM_GROUP_BUFFER {
 }
 pub type SAMPR_DOMAIN_DISPLAY_OEM_GROUP_BUFFER = _SAMPR_DOMAIN_DISPLAY_OEM_GROUP_BUFFER;
 pub type PSAMPR_DOMAIN_DISPLAY_OEM_GROUP_BUFFER = *mut _SAMPR_DOMAIN_DISPLAY_OEM_GROUP_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _SAMPR_DISPLAY_INFO_BUFFER {
-    pub UserInformation: __BindgenUnionField<SAMPR_DOMAIN_DISPLAY_USER_BUFFER>,
-    pub MachineInformation: __BindgenUnionField<SAMPR_DOMAIN_DISPLAY_MACHINE_BUFFER>,
-    pub GroupInformation: __BindgenUnionField<SAMPR_DOMAIN_DISPLAY_GROUP_BUFFER>,
-    pub OemUserInformation: __BindgenUnionField<SAMPR_DOMAIN_DISPLAY_OEM_USER_BUFFER>,
-    pub OemGroupInformation: __BindgenUnionField<SAMPR_DOMAIN_DISPLAY_OEM_GROUP_BUFFER>,
-    pub bindgen_union_field: [u64; 2usize],
+pub union _SAMPR_DISPLAY_INFO_BUFFER {
+    pub UserInformation: SAMPR_DOMAIN_DISPLAY_USER_BUFFER,
+    pub MachineInformation: SAMPR_DOMAIN_DISPLAY_MACHINE_BUFFER,
+    pub GroupInformation: SAMPR_DOMAIN_DISPLAY_GROUP_BUFFER,
+    pub OemUserInformation: SAMPR_DOMAIN_DISPLAY_OEM_USER_BUFFER,
+    pub OemGroupInformation: SAMPR_DOMAIN_DISPLAY_OEM_GROUP_BUFFER,
 }
 pub type SAMPR_DISPLAY_INFO_BUFFER = _SAMPR_DISPLAY_INFO_BUFFER;
 pub type PSAMPR_DISPLAY_INFO_BUFFER = *mut _SAMPR_DISPLAY_INFO_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_GROUP_ATTRIBUTE_INFORMATION {
     pub Attributes: ULONG,
 }
 pub type SAMPR_GROUP_ATTRIBUTE_INFORMATION = _SAMPR_GROUP_ATTRIBUTE_INFORMATION;
 pub type PSAMPR_GROUP_ATTRIBUTE_INFORMATION = *mut _SAMPR_GROUP_ATTRIBUTE_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_GROUP_GENERAL_INFORMATION {
     pub Name: RPC_UNICODE_STRING,
@@ -2853,29 +2957,32 @@ pub struct _SAMPR_GROUP_GENERAL_INFORMATION {
 }
 pub type SAMPR_GROUP_GENERAL_INFORMATION = _SAMPR_GROUP_GENERAL_INFORMATION;
 pub type PSAMPR_GROUP_GENERAL_INFORMATION = *mut _SAMPR_GROUP_GENERAL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_GROUP_NAME_INFORMATION {
     pub Name: RPC_UNICODE_STRING,
 }
 pub type SAMPR_GROUP_NAME_INFORMATION = _SAMPR_GROUP_NAME_INFORMATION;
 pub type PSAMPR_GROUP_NAME_INFORMATION = *mut _SAMPR_GROUP_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_GROUP_ADM_COMMENT_INFORMATION {
     pub AdminComment: RPC_UNICODE_STRING,
 }
 pub type SAMPR_GROUP_ADM_COMMENT_INFORMATION = _SAMPR_GROUP_ADM_COMMENT_INFORMATION;
 pub type PSAMPR_GROUP_ADM_COMMENT_INFORMATION = *mut _SAMPR_GROUP_ADM_COMMENT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _SAMPR_GROUP_INFO_BUFFER {
-    pub General: __BindgenUnionField<SAMPR_GROUP_GENERAL_INFORMATION>,
-    pub Name: __BindgenUnionField<SAMPR_GROUP_NAME_INFORMATION>,
-    pub Attribute: __BindgenUnionField<SAMPR_GROUP_ATTRIBUTE_INFORMATION>,
-    pub AdminComment: __BindgenUnionField<SAMPR_GROUP_ADM_COMMENT_INFORMATION>,
-    pub DoNotUse: __BindgenUnionField<SAMPR_GROUP_GENERAL_INFORMATION>,
-    pub bindgen_union_field: [u64; 5usize],
+pub union _SAMPR_GROUP_INFO_BUFFER {
+    pub General: SAMPR_GROUP_GENERAL_INFORMATION,
+    pub Name: SAMPR_GROUP_NAME_INFORMATION,
+    pub Attribute: SAMPR_GROUP_ATTRIBUTE_INFORMATION,
+    pub AdminComment: SAMPR_GROUP_ADM_COMMENT_INFORMATION,
+    pub DoNotUse: SAMPR_GROUP_GENERAL_INFORMATION,
 }
 pub type SAMPR_GROUP_INFO_BUFFER = _SAMPR_GROUP_INFO_BUFFER;
 pub type PSAMPR_GROUP_INFO_BUFFER = *mut _SAMPR_GROUP_INFO_BUFFER;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_ALIAS_GENERAL_INFORMATION {
     pub Name: RPC_UNICODE_STRING,
@@ -2884,24 +2991,26 @@ pub struct _SAMPR_ALIAS_GENERAL_INFORMATION {
 }
 pub type SAMPR_ALIAS_GENERAL_INFORMATION = _SAMPR_ALIAS_GENERAL_INFORMATION;
 pub type PSAMPR_ALIAS_GENERAL_INFORMATION = *mut _SAMPR_ALIAS_GENERAL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_ALIAS_NAME_INFORMATION {
     pub Name: RPC_UNICODE_STRING,
 }
 pub type SAMPR_ALIAS_NAME_INFORMATION = _SAMPR_ALIAS_NAME_INFORMATION;
 pub type PSAMPR_ALIAS_NAME_INFORMATION = *mut _SAMPR_ALIAS_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_ALIAS_ADM_COMMENT_INFORMATION {
     pub AdminComment: RPC_UNICODE_STRING,
 }
 pub type SAMPR_ALIAS_ADM_COMMENT_INFORMATION = _SAMPR_ALIAS_ADM_COMMENT_INFORMATION;
 pub type PSAMPR_ALIAS_ADM_COMMENT_INFORMATION = *mut _SAMPR_ALIAS_ADM_COMMENT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _SAMPR_ALIAS_INFO_BUFFER {
-    pub General: __BindgenUnionField<SAMPR_ALIAS_GENERAL_INFORMATION>,
-    pub Name: __BindgenUnionField<SAMPR_ALIAS_NAME_INFORMATION>,
-    pub AdminComment: __BindgenUnionField<SAMPR_ALIAS_ADM_COMMENT_INFORMATION>,
-    pub bindgen_union_field: [u64; 5usize],
+pub union _SAMPR_ALIAS_INFO_BUFFER {
+    pub General: SAMPR_ALIAS_GENERAL_INFORMATION,
+    pub Name: SAMPR_ALIAS_NAME_INFORMATION,
+    pub AdminComment: SAMPR_ALIAS_ADM_COMMENT_INFORMATION,
 }
 pub type SAMPR_ALIAS_INFO_BUFFER = _SAMPR_ALIAS_INFO_BUFFER;
 pub type PSAMPR_ALIAS_INFO_BUFFER = *mut _SAMPR_ALIAS_INFO_BUFFER;
@@ -2927,6 +3036,7 @@ pub struct _SAMPR_LOGON_HOURS {
 }
 pub type SAMPR_LOGON_HOURS = _SAMPR_LOGON_HOURS;
 pub type PSAMPR_LOGON_HOURS = *mut _SAMPR_LOGON_HOURS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_ALL_INFORMATION {
     pub LastLogon: OLD_LARGE_INTEGER,
@@ -2965,6 +3075,7 @@ pub struct _SAMPR_USER_ALL_INFORMATION {
 }
 pub type SAMPR_USER_ALL_INFORMATION = _SAMPR_USER_ALL_INFORMATION;
 pub type PSAMPR_USER_ALL_INFORMATION = *mut _SAMPR_USER_ALL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_GENERAL_INFORMATION {
     pub UserName: RPC_UNICODE_STRING,
@@ -2975,6 +3086,7 @@ pub struct _SAMPR_USER_GENERAL_INFORMATION {
 }
 pub type SAMPR_USER_GENERAL_INFORMATION = _SAMPR_USER_GENERAL_INFORMATION;
 pub type PSAMPR_USER_GENERAL_INFORMATION = *mut _SAMPR_USER_GENERAL_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_PREFERENCES_INFORMATION {
     pub UserComment: RPC_UNICODE_STRING,
@@ -2984,12 +3096,14 @@ pub struct _SAMPR_USER_PREFERENCES_INFORMATION {
 }
 pub type SAMPR_USER_PREFERENCES_INFORMATION = _SAMPR_USER_PREFERENCES_INFORMATION;
 pub type PSAMPR_USER_PREFERENCES_INFORMATION = *mut _SAMPR_USER_PREFERENCES_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_PARAMETERS_INFORMATION {
     pub Parameters: RPC_UNICODE_STRING,
 }
 pub type SAMPR_USER_PARAMETERS_INFORMATION = _SAMPR_USER_PARAMETERS_INFORMATION;
 pub type PSAMPR_USER_PARAMETERS_INFORMATION = *mut _SAMPR_USER_PARAMETERS_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_LOGON_INFORMATION {
     pub UserName: RPC_UNICODE_STRING,
@@ -3013,6 +3127,7 @@ pub struct _SAMPR_USER_LOGON_INFORMATION {
 }
 pub type SAMPR_USER_LOGON_INFORMATION = _SAMPR_USER_LOGON_INFORMATION;
 pub type PSAMPR_USER_LOGON_INFORMATION = *mut _SAMPR_USER_LOGON_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_ACCOUNT_INFORMATION {
     pub UserName: RPC_UNICODE_STRING,
@@ -3036,18 +3151,21 @@ pub struct _SAMPR_USER_ACCOUNT_INFORMATION {
 }
 pub type SAMPR_USER_ACCOUNT_INFORMATION = _SAMPR_USER_ACCOUNT_INFORMATION;
 pub type PSAMPR_USER_ACCOUNT_INFORMATION = *mut _SAMPR_USER_ACCOUNT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_A_NAME_INFORMATION {
     pub UserName: RPC_UNICODE_STRING,
 }
 pub type SAMPR_USER_A_NAME_INFORMATION = _SAMPR_USER_A_NAME_INFORMATION;
 pub type PSAMPR_USER_A_NAME_INFORMATION = *mut _SAMPR_USER_A_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_F_NAME_INFORMATION {
     pub FullName: RPC_UNICODE_STRING,
 }
 pub type SAMPR_USER_F_NAME_INFORMATION = _SAMPR_USER_F_NAME_INFORMATION;
 pub type PSAMPR_USER_F_NAME_INFORMATION = *mut _SAMPR_USER_F_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_NAME_INFORMATION {
     pub UserName: RPC_UNICODE_STRING,
@@ -3055,6 +3173,7 @@ pub struct _SAMPR_USER_NAME_INFORMATION {
 }
 pub type SAMPR_USER_NAME_INFORMATION = _SAMPR_USER_NAME_INFORMATION;
 pub type PSAMPR_USER_NAME_INFORMATION = *mut _SAMPR_USER_NAME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_HOME_INFORMATION {
     pub HomeDirectory: RPC_UNICODE_STRING,
@@ -3062,30 +3181,35 @@ pub struct _SAMPR_USER_HOME_INFORMATION {
 }
 pub type SAMPR_USER_HOME_INFORMATION = _SAMPR_USER_HOME_INFORMATION;
 pub type PSAMPR_USER_HOME_INFORMATION = *mut _SAMPR_USER_HOME_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_SCRIPT_INFORMATION {
     pub ScriptPath: RPC_UNICODE_STRING,
 }
 pub type SAMPR_USER_SCRIPT_INFORMATION = _SAMPR_USER_SCRIPT_INFORMATION;
 pub type PSAMPR_USER_SCRIPT_INFORMATION = *mut _SAMPR_USER_SCRIPT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_PROFILE_INFORMATION {
     pub ProfilePath: RPC_UNICODE_STRING,
 }
 pub type SAMPR_USER_PROFILE_INFORMATION = _SAMPR_USER_PROFILE_INFORMATION;
 pub type PSAMPR_USER_PROFILE_INFORMATION = *mut _SAMPR_USER_PROFILE_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_ADMIN_COMMENT_INFORMATION {
     pub AdminComment: RPC_UNICODE_STRING,
 }
 pub type SAMPR_USER_ADMIN_COMMENT_INFORMATION = _SAMPR_USER_ADMIN_COMMENT_INFORMATION;
 pub type PSAMPR_USER_ADMIN_COMMENT_INFORMATION = *mut _SAMPR_USER_ADMIN_COMMENT_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_WORKSTATIONS_INFORMATION {
     pub WorkStations: RPC_UNICODE_STRING,
 }
 pub type SAMPR_USER_WORKSTATIONS_INFORMATION = _SAMPR_USER_WORKSTATIONS_INFORMATION;
 pub type PSAMPR_USER_WORKSTATIONS_INFORMATION = *mut _SAMPR_USER_WORKSTATIONS_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_SET_PASSWORD_INFORMATION {
     pub Password: RPC_UNICODE_STRING,
@@ -3100,6 +3224,7 @@ pub struct _SAMPR_USER_LOGON_HOURS_INFORMATION {
 }
 pub type SAMPR_USER_LOGON_HOURS_INFORMATION = _SAMPR_USER_LOGON_HOURS_INFORMATION;
 pub type PSAMPR_USER_LOGON_HOURS_INFORMATION = *mut _SAMPR_USER_LOGON_HOURS_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_INTERNAL1_INFORMATION {
     pub EncryptedNtOwfPassword: ENCRYPTED_NT_OWF_PASSWORD,
@@ -3110,6 +3235,7 @@ pub struct _SAMPR_USER_INTERNAL1_INFORMATION {
 }
 pub type SAMPR_USER_INTERNAL1_INFORMATION = _SAMPR_USER_INTERNAL1_INFORMATION;
 pub type PSAMPR_USER_INTERNAL1_INFORMATION = *mut _SAMPR_USER_INTERNAL1_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_INTERNAL2_INFORMATION {
     pub Flags: ULONG,
@@ -3120,6 +3246,7 @@ pub struct _SAMPR_USER_INTERNAL2_INFORMATION {
 }
 pub type SAMPR_USER_INTERNAL2_INFORMATION = _SAMPR_USER_INTERNAL2_INFORMATION;
 pub type PSAMPR_USER_INTERNAL2_INFORMATION = *mut _SAMPR_USER_INTERNAL2_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_INTERNAL4_INFORMATION {
     pub I1: SAMPR_USER_ALL_INFORMATION,
@@ -3127,6 +3254,7 @@ pub struct _SAMPR_USER_INTERNAL4_INFORMATION {
 }
 pub type SAMPR_USER_INTERNAL4_INFORMATION = _SAMPR_USER_INTERNAL4_INFORMATION;
 pub type PSAMPR_USER_INTERNAL4_INFORMATION = *mut _SAMPR_USER_INTERNAL4_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_INTERNAL4_INFORMATION_NEW {
     pub I1: SAMPR_USER_ALL_INFORMATION,
@@ -3134,6 +3262,7 @@ pub struct _SAMPR_USER_INTERNAL4_INFORMATION_NEW {
 }
 pub type SAMPR_USER_INTERNAL4_INFORMATION_NEW = _SAMPR_USER_INTERNAL4_INFORMATION_NEW;
 pub type PSAMPR_USER_INTERNAL4_INFORMATION_NEW = *mut _SAMPR_USER_INTERNAL4_INFORMATION_NEW;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_INTERNAL5_INFORMATION {
     pub UserPassword: SAMPR_ENCRYPTED_USER_PASSWORD,
@@ -3141,6 +3270,7 @@ pub struct _SAMPR_USER_INTERNAL5_INFORMATION {
 }
 pub type SAMPR_USER_INTERNAL5_INFORMATION = _SAMPR_USER_INTERNAL5_INFORMATION;
 pub type PSAMPR_USER_INTERNAL5_INFORMATION = *mut _SAMPR_USER_INTERNAL5_INFORMATION;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAMPR_USER_INTERNAL5_INFORMATION_NEW {
     pub UserPassword: SAMPR_ENCRYPTED_USER_PASSWORD_NEW,
@@ -3148,34 +3278,34 @@ pub struct _SAMPR_USER_INTERNAL5_INFORMATION_NEW {
 }
 pub type SAMPR_USER_INTERNAL5_INFORMATION_NEW = _SAMPR_USER_INTERNAL5_INFORMATION_NEW;
 pub type PSAMPR_USER_INTERNAL5_INFORMATION_NEW = *mut _SAMPR_USER_INTERNAL5_INFORMATION_NEW;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _SAMPR_USER_INFO_BUFFER {
-    pub General: __BindgenUnionField<SAMPR_USER_GENERAL_INFORMATION>,
-    pub Preferences: __BindgenUnionField<SAMPR_USER_PREFERENCES_INFORMATION>,
-    pub Logon: __BindgenUnionField<SAMPR_USER_LOGON_INFORMATION>,
-    pub LogonHours: __BindgenUnionField<SAMPR_USER_LOGON_HOURS_INFORMATION>,
-    pub Account: __BindgenUnionField<SAMPR_USER_ACCOUNT_INFORMATION>,
-    pub Name: __BindgenUnionField<SAMPR_USER_NAME_INFORMATION>,
-    pub AccountName: __BindgenUnionField<SAMPR_USER_A_NAME_INFORMATION>,
-    pub FullName: __BindgenUnionField<SAMPR_USER_F_NAME_INFORMATION>,
-    pub PrimaryGroup: __BindgenUnionField<USER_PRIMARY_GROUP_INFORMATION>,
-    pub Home: __BindgenUnionField<SAMPR_USER_HOME_INFORMATION>,
-    pub Script: __BindgenUnionField<SAMPR_USER_SCRIPT_INFORMATION>,
-    pub Profile: __BindgenUnionField<SAMPR_USER_PROFILE_INFORMATION>,
-    pub AdminComment: __BindgenUnionField<SAMPR_USER_ADMIN_COMMENT_INFORMATION>,
-    pub WorkStations: __BindgenUnionField<SAMPR_USER_WORKSTATIONS_INFORMATION>,
-    pub SetPassword: __BindgenUnionField<SAMPR_USER_SET_PASSWORD_INFORMATION>,
-    pub Control: __BindgenUnionField<USER_CONTROL_INFORMATION>,
-    pub Expires: __BindgenUnionField<USER_EXPIRES_INFORMATION>,
-    pub Internal1: __BindgenUnionField<SAMPR_USER_INTERNAL1_INFORMATION>,
-    pub Internal2: __BindgenUnionField<SAMPR_USER_INTERNAL2_INFORMATION>,
-    pub Parameters: __BindgenUnionField<SAMPR_USER_PARAMETERS_INFORMATION>,
-    pub All: __BindgenUnionField<SAMPR_USER_ALL_INFORMATION>,
-    pub Internal4: __BindgenUnionField<SAMPR_USER_INTERNAL4_INFORMATION>,
-    pub Internal5: __BindgenUnionField<SAMPR_USER_INTERNAL5_INFORMATION>,
-    pub Internal4New: __BindgenUnionField<SAMPR_USER_INTERNAL4_INFORMATION_NEW>,
-    pub Internal5New: __BindgenUnionField<SAMPR_USER_INTERNAL5_INFORMATION_NEW>,
-    pub bindgen_union_field: [u64; 107usize],
+pub union _SAMPR_USER_INFO_BUFFER {
+    pub General: SAMPR_USER_GENERAL_INFORMATION,
+    pub Preferences: SAMPR_USER_PREFERENCES_INFORMATION,
+    pub Logon: SAMPR_USER_LOGON_INFORMATION,
+    pub LogonHours: SAMPR_USER_LOGON_HOURS_INFORMATION,
+    pub Account: SAMPR_USER_ACCOUNT_INFORMATION,
+    pub Name: SAMPR_USER_NAME_INFORMATION,
+    pub AccountName: SAMPR_USER_A_NAME_INFORMATION,
+    pub FullName: SAMPR_USER_F_NAME_INFORMATION,
+    pub PrimaryGroup: USER_PRIMARY_GROUP_INFORMATION,
+    pub Home: SAMPR_USER_HOME_INFORMATION,
+    pub Script: SAMPR_USER_SCRIPT_INFORMATION,
+    pub Profile: SAMPR_USER_PROFILE_INFORMATION,
+    pub AdminComment: SAMPR_USER_ADMIN_COMMENT_INFORMATION,
+    pub WorkStations: SAMPR_USER_WORKSTATIONS_INFORMATION,
+    pub SetPassword: SAMPR_USER_SET_PASSWORD_INFORMATION,
+    pub Control: USER_CONTROL_INFORMATION,
+    pub Expires: USER_EXPIRES_INFORMATION,
+    pub Internal1: SAMPR_USER_INTERNAL1_INFORMATION,
+    pub Internal2: SAMPR_USER_INTERNAL2_INFORMATION,
+    pub Parameters: SAMPR_USER_PARAMETERS_INFORMATION,
+    pub All: SAMPR_USER_ALL_INFORMATION,
+    pub Internal4: SAMPR_USER_INTERNAL4_INFORMATION,
+    pub Internal5: SAMPR_USER_INTERNAL5_INFORMATION,
+    pub Internal4New: SAMPR_USER_INTERNAL4_INFORMATION_NEW,
+    pub Internal5New: SAMPR_USER_INTERNAL5_INFORMATION_NEW,
 }
 pub type SAMPR_USER_INFO_BUFFER = _SAMPR_USER_INFO_BUFFER;
 pub type PSAMPR_USER_INFO_BUFFER = *mut _SAMPR_USER_INFO_BUFFER;
@@ -3187,6 +3317,7 @@ pub const _PASSWORD_POLICY_VALIDATION_TYPE_SamValidatePasswordReset:
     _PASSWORD_POLICY_VALIDATION_TYPE = 3;
 pub type _PASSWORD_POLICY_VALIDATION_TYPE = ::core::ffi::c_uint;
 pub use self::_PASSWORD_POLICY_VALIDATION_TYPE as PASSWORD_POLICY_VALIDATION_TYPE;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAM_VALIDATE_PASSWORD_HASH {
     pub Length: ULONG,
@@ -3194,6 +3325,7 @@ pub struct _SAM_VALIDATE_PASSWORD_HASH {
 }
 pub type SAM_VALIDATE_PASSWORD_HASH = _SAM_VALIDATE_PASSWORD_HASH;
 pub type PSAM_VALIDATE_PASSWORD_HASH = *mut _SAM_VALIDATE_PASSWORD_HASH;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAM_VALIDATE_PERSISTED_FIELDS {
     pub PresentFields: ULONG,
@@ -3230,6 +3362,7 @@ pub const _SAM_VALIDATE_VALIDATION_STATUS_SamValidatePasswordFilterError:
 pub type _SAM_VALIDATE_VALIDATION_STATUS = ::core::ffi::c_uint;
 pub use self::_SAM_VALIDATE_VALIDATION_STATUS as SAM_VALIDATE_VALIDATION_STATUS;
 pub type PSAM_VALIDATE_VALIDATION_STATUS = *mut _SAM_VALIDATE_VALIDATION_STATUS;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAM_VALIDATE_STANDARD_OUTPUT_ARG {
     pub ChangedPersistedFields: SAM_VALIDATE_PERSISTED_FIELDS,
@@ -3237,6 +3370,7 @@ pub struct _SAM_VALIDATE_STANDARD_OUTPUT_ARG {
 }
 pub type SAM_VALIDATE_STANDARD_OUTPUT_ARG = _SAM_VALIDATE_STANDARD_OUTPUT_ARG;
 pub type PSAM_VALIDATE_STANDARD_OUTPUT_ARG = *mut _SAM_VALIDATE_STANDARD_OUTPUT_ARG;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAM_VALIDATE_AUTHENTICATION_INPUT_ARG {
     pub InputPersistedFields: SAM_VALIDATE_PERSISTED_FIELDS,
@@ -3244,6 +3378,7 @@ pub struct _SAM_VALIDATE_AUTHENTICATION_INPUT_ARG {
 }
 pub type SAM_VALIDATE_AUTHENTICATION_INPUT_ARG = _SAM_VALIDATE_AUTHENTICATION_INPUT_ARG;
 pub type PSAM_VALIDATE_AUTHENTICATION_INPUT_ARG = *mut _SAM_VALIDATE_AUTHENTICATION_INPUT_ARG;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAM_VALIDATE_PASSWORD_CHANGE_INPUT_ARG {
     pub InputPersistedFields: SAM_VALIDATE_PERSISTED_FIELDS,
@@ -3254,6 +3389,7 @@ pub struct _SAM_VALIDATE_PASSWORD_CHANGE_INPUT_ARG {
 }
 pub type SAM_VALIDATE_PASSWORD_CHANGE_INPUT_ARG = _SAM_VALIDATE_PASSWORD_CHANGE_INPUT_ARG;
 pub type PSAM_VALIDATE_PASSWORD_CHANGE_INPUT_ARG = *mut _SAM_VALIDATE_PASSWORD_CHANGE_INPUT_ARG;
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _SAM_VALIDATE_PASSWORD_RESET_INPUT_ARG {
     pub InputPersistedFields: SAM_VALIDATE_PERSISTED_FIELDS,
@@ -3265,21 +3401,21 @@ pub struct _SAM_VALIDATE_PASSWORD_RESET_INPUT_ARG {
 }
 pub type SAM_VALIDATE_PASSWORD_RESET_INPUT_ARG = _SAM_VALIDATE_PASSWORD_RESET_INPUT_ARG;
 pub type PSAM_VALIDATE_PASSWORD_RESET_INPUT_ARG = *mut _SAM_VALIDATE_PASSWORD_RESET_INPUT_ARG;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _SAM_VALIDATE_INPUT_ARG {
-    pub ValidateAuthenticationInput: __BindgenUnionField<SAM_VALIDATE_AUTHENTICATION_INPUT_ARG>,
-    pub ValidatePasswordChangeInput: __BindgenUnionField<SAM_VALIDATE_PASSWORD_CHANGE_INPUT_ARG>,
-    pub ValidatePasswordResetInput: __BindgenUnionField<SAM_VALIDATE_PASSWORD_RESET_INPUT_ARG>,
-    pub bindgen_union_field: [u64; 13usize],
+pub union _SAM_VALIDATE_INPUT_ARG {
+    pub ValidateAuthenticationInput: SAM_VALIDATE_AUTHENTICATION_INPUT_ARG,
+    pub ValidatePasswordChangeInput: SAM_VALIDATE_PASSWORD_CHANGE_INPUT_ARG,
+    pub ValidatePasswordResetInput: SAM_VALIDATE_PASSWORD_RESET_INPUT_ARG,
 }
 pub type SAM_VALIDATE_INPUT_ARG = _SAM_VALIDATE_INPUT_ARG;
 pub type PSAM_VALIDATE_INPUT_ARG = *mut _SAM_VALIDATE_INPUT_ARG;
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct _SAM_VALIDATE_OUTPUT_ARG {
-    pub ValidateAuthenticationOutput: __BindgenUnionField<SAM_VALIDATE_STANDARD_OUTPUT_ARG>,
-    pub ValidatePasswordChangeOutput: __BindgenUnionField<SAM_VALIDATE_STANDARD_OUTPUT_ARG>,
-    pub ValidatePasswordResetOutput: __BindgenUnionField<SAM_VALIDATE_STANDARD_OUTPUT_ARG>,
-    pub bindgen_union_field: [u64; 7usize],
+pub union _SAM_VALIDATE_OUTPUT_ARG {
+    pub ValidateAuthenticationOutput: SAM_VALIDATE_STANDARD_OUTPUT_ARG,
+    pub ValidatePasswordChangeOutput: SAM_VALIDATE_STANDARD_OUTPUT_ARG,
+    pub ValidatePasswordResetOutput: SAM_VALIDATE_STANDARD_OUTPUT_ARG,
 }
 pub type SAM_VALIDATE_OUTPUT_ARG = _SAM_VALIDATE_OUTPUT_ARG;
 pub type PSAM_VALIDATE_OUTPUT_ARG = *mut _SAM_VALIDATE_OUTPUT_ARG;
