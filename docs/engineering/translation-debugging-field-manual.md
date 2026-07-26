@@ -1576,6 +1576,30 @@ before it.** The same file had all three variants that break the naive pattern �
 inside a comment, `L'` inside a narrow string, and the `case 'L':` — so treat one occurrence as
 proof the others are present too.
 
+### A symbolicator resolves against SOME binary — make sure it is the one that booted
+**Symptom:** a bugcheck PC resolves to a function that makes no sense at the crash site, or to a
+constant (`KTRAP_FRAME_LENGTH+13864` — an ABSOLUTE symbol 13KB away), or the tool declines
+entirely. **Two independent causes, and both lie quietly** because *some* symbol always sorts
+below any address:
+
+1. **Wrong binary.** `ntkrnlmp.exe` is a SEPARATE image from `ntoskrnl.exe` with its own layout
+   (9847 vs 9771 symbols on arm64), and every `--smp N` boot runs it — so an index built only
+   from the UP kernel misnames MP crashes. Build a per-flavor index and pick by what freeldr
+   announced (`[FLDR] load …\ntkrnlmp.exe`). A missing MP index must be a HARD ERROR, never a
+   fallback to the UP one: a wrong symbol is worse than no symbol because it reads like a right
+   one.
+2. **Wrong relocation.** The index holds file VAs (`RVA + PE ImageBase`, `0x400000` here), so a
+   runtime PC needs `runtime_base - ImageBase` subtracted, not `runtime_base`. Getting this
+   wrong pushes every lookup below the first real function.
+
+**Don't guess the base at all when the banner already resolved it.** The bugcheck prints
+`***   P2 = ntoskrnl.exe+0x3788` — that offset IS the RVA, so the index address is just
+`RVA + ImageBase`: no runtime base, no per-arch reloc table, immune to where the image landed.
+vibeos had hardcoded relocs for i386 only and a comment claiming arm64/amd64's base "cannot be
+recovered from a saved log" — it was on the next line. Until that was used, every arm64 bugcheck
+declined, and the one that mattered needed hand-computing to reach
+`KiSynchronousExceptionEntry+4`.
+
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the
 tree is clean" or "I did not look." **This is not a fail-loud problem** — the scanner ran fine.
