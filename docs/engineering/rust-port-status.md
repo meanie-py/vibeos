@@ -60,7 +60,7 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | **431 of 1,165 non-stub msvcrt.dll exports Rust-backed — 37%** (2026-07-26, re-measured amd64 as `llvm-nm libmsvcrt_crt_cargo.a` ∩ the spec's implementation names; was 240 on 2026-07-14, moved by wave 15's `mbcs.c` and wave 14c's printf shells). Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
+| **CRT** (msvcrt/ucrt body) | **483 of 1,087 non-stub C exports Rust-backed — 44%** (2026-07-26 wave 16 finished `string.c` + `wcs.c`; the denominator here excludes the `?`-mangled C++ surface, which is a separate lane. Was 431 of 1,165 counting C++) (2026-07-26, re-measured amd64 as `llvm-nm libmsvcrt_crt_cargo.a` ∩ the spec's implementation names; was 240 on 2026-07-14, moved by wave 15's `mbcs.c` and wave 14c's printf shells). Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
@@ -88,6 +88,68 @@ the genuine `wcs.c`. The `...` shells (`sprintf`, `_snprintf`, `_swprintf`, …)
 (30 shells; `vsnprintf`/`vswprintf` are spec aliases onto two of them). The remaining C is
 concentrated: `file.c` 5,897 LOC (stdio, Phase D), `concurrency.c` 3,840 (C++), `scanf.c`'s 40
 exports (engine not ported), `math.c` 13 of 144 functions flipped.
+
+**Wave 16 (2026-07-26) — `string.c` and `wcs.c` FINISHED. 483 of 1,087 non-stub C exports
+Rust-backed, 44%** (was 433/39% after wave 14c). Both files now have zero unflipped exports;
+what remains attributed to them is only the printf `...` trampolines, which are C by language
+limit. string.c's last 17 and wcs.c's last 29 (+4 private callees the family needed —
+`_wtoi_l`, `_wcstoul_l`, `wctomb_s`, `_wcstombs_l`, all of which would have left a split family
+had the callers flipped without them).
+
+Thirteen of string.c's seventeen were not new code: the crate already shipped those bodies with
+the locale hardwired to NULL, so the work was threading an explicit `_locale_t` through
+`strtoi64_contract`, `strtoui64_contract`, `strnicmp_core`, `strcase_s_core` and a newly
+extracted `memicmp_core`. `locinfo_of(NULL)` **is** `get_locinfo()`, so every already-graded
+plain form is bit-identical afterwards. Genuinely new: `_strdup`, `_atoflt`, `I10_OUTPUT`.
+wcs.c contributed the wide integer engines and clamps, the case folders, the comparers, and the
+whole wchar→multibyte family including two file-statics that stay private exactly as they are
+file-static in the C.
+
+Deliberately preserved C misbehaviours (this is a differential port — "fixing" one is a
+failure): `_strtoul_l`/`_wcstoul_l` underflow clamping to **1**, `_wtoi64_l`'s missing overflow
+check, and `wcsrtombs_s_l`'s genuine `mbstr[-1]` touch at `conv == size == 0` — that last one
+caught only by the harness's **guard prefix**, since a compare that stops at the NUL cannot see
+a write before the buffer.
+
+**`wctob`'s strict `< 0xff` is NOT one of them, and the distinction is worth keeping.** It looks
+like a preserved quirk and it is unfalsifiable: the only input that could distinguish `<` from
+`<=` is U+00FF, where `<` returns `EOF` (-1) and `<=` returns `(signed char)0xFF` — also -1.
+Relaxing the comparison moves no row and *cannot*. A differential test can pin the row (it is
+exhaustive over all 65,536 values × 5 modes, and a control returning the raw value instead of
+the signed char is caught at once) but it cannot pin that comparison, so nobody should read a
+green `wctob` as evidence about it.
+
+**Grading: 122 rows, 122 MATCH, 0 DIVERGE, 0 UNEXERCISED, ~2.0M cases** (`msvcrt-difftest/tests/wave16.rs`),
+under both the "C" and a real NLS locale. Nine negative controls, eight fired; the ninth is the
+`wctob` non-result above. The `_wctomb_s_l` ERANGE arm's reachability is **measured, not
+assumed** — a probe showed it at **0 of 0 hits** because the harness's `WideCharToMultiByte`
+model truncated where real kernel32 returns 0 + `ERROR_INSUFFICIENT_BUFFER`; the arm was
+ungraded in every mode while every row read MATCH. Model corrected (scoped to single-character
+conversions), arm now 1299/1299, probe kept permanently so a regression names its own cause.
+
+**A real ABI bug in already-landed code fell out of it.** `prelude.rs` declared the nine
+`_isw*_l` predicates taking `wint_t` (`unsigned short`) while this crate DEFINES all nine taking
+`u32` — so every call through the prelude wrote 16 bits into an argument read as 32, upper half
+undefined per the Windows x64 ABI, benign only because rustc happens to zero-extend.
+`scan_extern_arity` cannot see it: the arity matches. Field manual carries the class under
+ABI/FFI — never `extern`-declare a symbol your own crate defines.
+
+**Wave 15 (2026-07-26) — `scanf.c`: 16 template instantiations collapse to ONE Rust engine.**
+`scanf.h` (743 lines) is `#include`d sixteen times under WIDE_SCANF/SECURE/STRING/STRING_LEN/
+CONSOLE, generating ~9,600 lines of C; `msvcrt-crt-rust/src/scanf.rs` (1,514 lines) is one engine
+generic over `W: Width`, `S: Source` and `const SECURE: bool`, calling the crate's existing Rust
+`fpnum_parse`/`fpnum_double` so `%f` is correctly rounded and shares the bignum with strtod and
+printf. The 40 `...` shells are C trampolines in `rust_scanf_shim.c` — and here the MODULE
+placement is REQUIRED, not merely preferable: scanf.c's 16 engines are `static`, so there is no
+symbol for a Rust engine to win by first-match.
+
+Graded by `tests/scanf.rs` — **36 rows, 439,100 cases, 0 DIVERGE, 0 UNEXERCISED**, nine controls,
+nine fired. It found a **real shipping bug**: the port snapshotted the float parser's cursor once,
+where scanf.h re-assigns `ctx.file = file` AFTER the whitespace skip, so `swscanf(L" 1.50",
+L"%g", &f)` returned **11.5** and a stale cursor could turn a valid parse into an EOF return.
+Invisible on 8 of the 16 instantiations (FILE/CONSOLE contexts carry a `FILE*` or a ZST, which a
+cursor skip cannot move), so nothing else — cargo check, the DLL link, the 3-arch build, the
+parity scanner — could see it.
 
 **Wave 14c part 2 (2026-07-26) — the 30 `...` shells, in `dll/win32/msvcrt/rust_varargs_shim.c`.**
 Stable Rust cannot DEFINE a C-variadic, so these stay C permanently as three-line `va_start`

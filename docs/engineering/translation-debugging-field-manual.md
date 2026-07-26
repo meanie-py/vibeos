@@ -208,6 +208,41 @@ Same family, three positions, all silent on the arch where the widths happen to 
   narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
   and pointer typedefs.
 
+### An `extern` declaration for a symbol YOUR OWN CRATE defines
+The worst version of a width mismatch, because both halves are yours and neither compiler nor
+gate can see it. `msvcrt-crt-rust/prelude.rs` declared the nine `_isw*_l` predicates as
+`fn(c: wint_t, l: _locale_t)`, and `wint_t` is `unsigned short` — but the crate **defines** all
+nine itself (the `isw!` macro), taking `u32`, because that is what `_iswctype_l` takes. Every
+call routed through the prelude therefore wrote 16 bits into an argument the callee read as 32,
+with the upper half undefined per the Windows x64 ABI. It survived only because rustc happens to
+zero-extend; nothing guarantees it, and no tool was watching. `scan_extern_arity` is structurally
+blind here — **the arity matches**; only the width is wrong, and that bucket was triaged as
+"mostly benign return-register width" (below), which is true for *returns* and false for
+arguments.
+
+Two tells that this had already been noticed and worked around rather than fixed, both worth
+recognising as a signature: `fpnum.rs` carried a private `_iswspace_l_shim(wc: u32, …)` whose
+only job was to call `crate::_iswspace_l` directly, and one `mbcs.rs` call site had an explicit
+`as u16` cast — a *truncation written to satisfy a declaration that was itself wrong*. When you
+find a local shim or a narrowing cast whose only purpose is to make a call typecheck, suspect the
+declaration, not the call.
+
+**Rule: never `extern`-declare a symbol your own crate defines — call it through `crate::`.** The
+declaration adds nothing (the definition is in scope) and silently opts out of the type checking
+that would otherwise be free. Where a prelude must declare it anyway (a shared block others
+import), the declaration has to be checked against the definition by hand, because rustc treats
+them as unrelated items.
+
+**Sibling failure: an `extern` naming a symbol THIS TREE does not export.** `cargo check` and
+`cargo build` both pass — an extern declaration is a promise to the linker, and the crate link
+never tests it — so the first thing that fails is the DLL link, an hour later. scanf's console
+source declared `__acrt_iob_func`, correctly citing `corecrt_wstdio.h` where `stdin` is
+`(__acrt_iob_func(0))`. But that is the UCRT header; this tree's `sdk/include/crt/stdio.h:92,98`
+says `#define _iob __iob_func()` / `#define stdin (&_iob[0])`, and msvcrt.spec exports
+`__iob_func`, not the UCRT spelling. **Cite the header this tree compiles, not the one the API is
+documented in, and confirm the name is in the `.spec`** — a one-grep check that costs seconds
+against a link failure that costs a full build.
+
 ### Argument COUNT mismatches — the one clashing-extern bucket that is a real bug
 Same family as the widths above, one position further out: the decl and the definition
 disagree on how many parameters there are. `clashing_extern_declarations` carries ~1,458
@@ -1461,6 +1496,29 @@ Before believing a verdict, enumerate what the harness holds fixed. Two blind sp
 bugs: **ambient state the reference holds fixed** (locale — grep a flip candidate for
 `get_locinfo` / `_l`-suffixed helpers / any read of process-global state), and **the reference
 TU is compiled for the HOST**, so target-conditional `#if`s are graded on the wrong arm.
+
+**A stub that is merely INACCURATE can make a whole arm unreachable, and every row still says
+MATCH.** Wave 16 had to grade `_wctomb_s_l`'s insufficient-buffer path, whose entire trigger is
+`WideCharToMultiByte(...) == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER`. The harness's
+model of `WideCharToMultiByte` *truncated* where real kernel32 writes nothing, returns 0 and
+sets the error — so a single-character conversion could never return 0, and the arm was graded
+by nothing. A reachability probe measured it at **0 hits of 0** across 3 codepages × 9,363
+characters × 4 sizes, while every row over that family read MATCH. Note the shape: this is not a
+missing stub (which fails loudly at link) nor a wrong *value* (which a row would catch) — it is
+a stub whose ERROR MODEL differs from the real API, which is invisible precisely because the
+error is what never happens. **When a branch exists to handle a failure, instrument how often
+your harness actually produces that failure, and keep the probe.** Ours is permanent, so a
+future regression goes red and names its own cause.
+
+**And the converse: a preserved C quirk may be UNFALSIFIABLE, in which case a green row is not
+evidence you preserved it.** `wctob`'s `wchar < 0xff` looks like exactly the kind of
+off-by-one worth transcribing carefully, and the only input that could distinguish `<` from
+`<=` is U+00FF — where `<` returns `EOF` (-1) and `<=` returns `(signed char)0xFF`, also -1.
+Relaxing the comparison moves no row and *cannot*. The row is still worth having (it is
+exhaustive, and a control that returns the raw value instead of the signed char fails at once),
+but the commit message that credited it with pinning the comparison was wrong. **Run the
+perturbation before claiming a quirk is pinned**; "I transcribed it faithfully" and "a test would
+catch me if I hadn't" are different claims, and only the second needs a control to back it.
 
 A third: **an out-parameter the harness only PARTIALLY compares.** rtl-difftest asserted
 `(Length, MaximumLength)` on the STRING converters but not `Buffer`, so an eleven-site

@@ -183,6 +183,13 @@ add_library(msvcrt MODULE
     # cannot be Rust (no va_start on stable) and cannot stay in wcs.c
     # (clang inlines the C engine into its housemates).
     rust_varargs_shim.c
+    # The scanf `...` shells, same story and same placement as the printf ones
+    # above: 40 va_start trampolines over the Rust engine in scanf.rs, in the
+    # MODULE so they win first-match over scanf.o's copies. There is a second
+    # reason here — scanf.c's 16 engines are `static`, so a Rust engine cannot
+    # replace them by first-match at all; the only way in is to define the
+    # trampolines somewhere the linker prefers, which is exactly this target.
+    rust_scanf_shim.c
 )
 
 target_compile_definitions(msvcrt PRIVATE _MSVCR_VER=0)
