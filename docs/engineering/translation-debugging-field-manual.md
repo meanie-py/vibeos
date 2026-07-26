@@ -1274,10 +1274,38 @@ sweep.**
   `classpnp/lock.rs`, `pcix/device.rs` and `fastfat/create.rs`; prefer `line!()` over a
   hand-copied constant. Note this is *not* the "do NOT silence it" case: RtlAssert keeps the
   check loud, it only stops it being fatal.
+- **The tree holds three inconsistent populations of the same C macro**, measured 2026-07-26
+  across the 119 kernel-mode crates:
+  - **1962 `debug_assert!` — dead** (§9.135 above).
+  - **31 `panic!`/`unreachable!` — hang.** Fixed to `RtlAssert`; gated now.
+  - **73 hard `assert!` — hang, and still there.** These are *not* the layout checks: of 682
+    `assert!` in kernel crates, **599 are `size_of`/`offset_of`/`align_of`** structural
+    verification (compile-time-foldable, benign, and a good pattern — don't touch them) and 10
+    more are `const _: () = assert!(…)`. The remaining 73 are translated C asserts, and they
+    read exactly like it: `assert!(status >= 0, "NT_ASSERT")`,
+    `assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL)` (a `PAGED_CODE`),
+    `assert!(false, "Supported case should be handled earlier")` (an `ASSERT(FALSE)`), and a
+    run in `classpnp/power.rs` carrying the C expression verbatim as the panic message.
+  So whether a given C `ASSERT` currently does nothing, or hangs the box, depends on which
+  translation pass happened to touch it. That is the finding — not any individual site.
+- **`RtlAssert` is what unblocks the §9.135 flip.** That entry parks the 1962-site `debug_assert!`
+  problem on "1962 assertions going live at once needs a triage pass across all three arches",
+  and the reason that triage is scary is that a live `debug_assert!` *hangs*. A shared
+  `macro_rules! ASSERT { ($e:expr) => { if !$e { RtlAssert(stringify!($e), file!(), line!(), …) } } }`
+  removes the scary part: every assertion becomes loud and none becomes fatal, which is exactly
+  what the C does under `-DDBG=1`. `stringify!` also gives a better assertion string than the
+  hand-written ones (the 31 fixed sites had messages like "NT_ASSERT failed", which names
+  nothing). Two crates already define a local `macro_rules! ASSERT`, but both expand to
+  `debug_assert!` — i.e. they picked the dead direction. **Owed:** put the macro somewhere all
+  116 `ntkrnl-sys` dependants can reach, migrate the 73 + 1962, then measure per arch. Note
+  `RtlAssert` resolves in both kernel and bootloader links (ntoskrnl exports it; freeldr defines
+  its own), so the macro is viable in dual-built crates like cmlib.
 - Gate: `tools/scan_assert_to_ub.py`, empty baseline. **The gate that should have caught the
   third one reported a clean zero** — see the oracle section; a lint that under-matches is
-  indistinguishable from a lint that passes. It still under-matches: it looks for
-  `unreachable_unchecked` and bugchecks, so the 19 `panic!` sites above were invisible to it.
+  indistinguishable from a lint that passes. It looked only for `unreachable_unchecked`, so all
+  31 `panic!` sites were invisible; it now covers those. It deliberately does **not** yet flag
+  the 73 `assert!` sites: gating them before the macro exists would mean 73 baseline entries
+  suppressing a class we intend to fix, and a baseline that large reads as permission.
 - **A C debug macro that does NOT block, translated as `loop {}`**, hangs the boot. Read what
   the macro expands to.
 - **`DPRINT` is NDEBUG-dead in C**; translated as a live `DbgPrint` it is a boot slowdown that
