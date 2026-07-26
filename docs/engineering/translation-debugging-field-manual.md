@@ -1352,6 +1352,34 @@ for the second copy:** put the shared recipe in ONE place (here a `hal-link` cra
 `build.rs` call) — two hand-maintained link recipes for binaries that must be identical apart
 from one feature is the same single-copy-divergence class as a constant defined per-arch.
 
+### A second ninja pass re-emits a shared cargo cell, stranding the first pass's binaries
+**Symptom:** `BUILD_INCOMPLETE` from `artifact-check`, intermittently, naming binaries nobody
+touched — `ws2_32.dll`, `fastfat.sys`, `ntoskrnl.exe` — as older than the cohab staticlib they
+link. Halted the merge train for ~an hour across four lanes.
+**Cause:** `build.py` runs each `ninja_targets_optional` entry as its OWN `ninja <target>`
+invocation, *after* the main pass. But an optional target shares cargo cells with the main
+graph: `ntkrnlmp` and `ntoskrnl` both build `-p kernel-rust` into one `CARGO_TARGET_DIR` and one
+copied `libkernel_rust.a`. So the optional pass re-emits an archive the main pass's binaries
+already consumed, and nothing relinks them, because the main pass is over. Measured on amd64:
+
+    libkernel_rust.a   02:08:11   <- re-emitted by `ninja ntkrnlmp`
+    ntkrnlmp.exe       02:08:23   <- linked against the new bytes
+    ntoskrnl.exe       00:27:35   <- 1h40m older than the archive it links
+
+`mkramdisk` then stages that stale kernel — the arm64 false-green shape this whole section
+exists for. Shipping both flavors under distinct names (entry above) fixed the *identity*
+problem and left this *ordering* one behind it.
+**Fix:** a `ninja-reaffirm` pass over the same target list after the optional passes and
+**before** any staging step. No-op normally (~1s), a real relink when a cohab lib moved; it
+reports `relinked N` so a cell that re-emits on *every* build stays visible rather than being
+silently absorbed.
+**The triage hint was actively misleading, which is why it sat.** `provenance._lag` printed
+"SAME-RUN ORDERING, suspect a race not a stale edge" for any sub-2s gap. But the copy is
+`cmake -E copy_if_different`, so a fresh mtime means the **bytes really changed** — which a
+finished link cannot have seen. A sub-second gap here is the *opposite* of benign. **General
+rule: before calling an oracle's complaint a false positive, check what the write actually
+guarantees** — `copy` and `copy_if_different` differ precisely on whether mtime implies change.
+
 ### Other staleness shapes
 - **Multi-copy staleness** `[§9.6]` — `rtl`/`heap` links into **both** `librtl.a` (ntoskrnl) and a
   separate ntdll copy. An edit that "doesn't take" is a stale archive. `ar` never prunes, so
