@@ -657,6 +657,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   not survival), with **amd64 as the control**: `wow64cpu` exports none of these, so the same
   guest must pass there with 0/8 wired.
 
+- **WoW64/FEX: a guest hardware fault never reached the guest's own SEH on arm64 — FIXED
+  2026-07-26** (task #77, wow64-plan Phase E18). The last arm64 ladder gap: `fault32.exe` was
+  amd64-only and `thread32.exe` rung 7 ran behind an explicit `noseh` skip, both now dropped.
+  On arm64 a guest fault is a **host** fault inside FEX's JIT; when
+  `BTCpuResetToConsistentState` cannot handle it, it hands the fault back in guest terms
+  (registers reconstructed into the CPU area, `EXCEPTION_RECORD` rewritten with
+  `ExceptionAddress` = guest `Eip`, host `CONTEXT` replaced with the pre-JIT-entry one) and
+  returns — leaving wow64.dll to dispatch. `Wow64pRedirectGuestFault` builds the i386
+  `KiUserExceptionDispatcher` frame on the guest stack (E5's builder, verbatim), points the
+  guest context at it, and returns `EXCEPTION_CONTINUE_EXECUTION`, which resumes inside
+  `BTCpuSimulate` and re-enters the guest at its own dispatcher. Before it, the fault had
+  nowhere to go and the simulate loop re-faulted forever. Breakpoints deliberately keep the
+  pre-E18 behaviour — the discriminator matches `int 2d` DebugService, not a real `int3`.
+  **The arm64 WoW64 ladder is now 9/9** (hello32/win32/file32/async32/marshal32/fault32/
+  thread32/selfmod32 `0x600D`, gui32 `0x600E`).
+
 - **WoW64 probe guests are NOT staged on arm64 by default** (2026-07-25, noted while closing
   #64). `dll/win32/wow64cpu/CMakeLists.txt` (the amd64 livecd path) is entirely
   `if(ARCH STREQUAL "amd64")`; arm64 stages from `qemu/mkramdisk.sh` and only under an opt-in
