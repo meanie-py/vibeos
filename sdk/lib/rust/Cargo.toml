@@ -63,6 +63,11 @@ members = [
     "wsock32-rust",
     "wlanapi-rust",
     "snmpapi-rust",
+    # Tier-3 batch B. samlib is the CLIENT half of sam.idl (server: samsrv), the same
+    # client/server pairing wlanapi-rust has with wlansvc-rust above.
+    "mprapi-rust",
+    "netid-rust",
+    "samlib-rust",
     "access",
     "avltable",
     "bitmap",

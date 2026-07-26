@@ -1224,6 +1224,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mprapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "msafd-rust"
 version = "0.1.0"
 dependencies = [
@@ -1297,6 +1305,14 @@ dependencies = [
 
 [[package]]
 name = "netapi32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "netid-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
@@ -1912,6 +1928,14 @@ dependencies = [
  "midl-rt",
  "panic-common",
  "reactos-link",
+]
+
+[[package]]
+name = "samlib-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
 ]
 
 [[package]]
