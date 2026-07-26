@@ -1,16 +1,289 @@
 # WOW64 on vibeos — running x86 binaries on arm64 (FEX) and x64 (native)
 
-Status: **Phase B COMPLETE on-box** (2026-07-09): wow64probe drives the real
-`libwow64fex.dll` through the whole BTCpu contract on vibeos arm64 — a 32-bit
-x86 guest blob JITs, calls through the BOP bridge, and its syscall marshals
-into OUR wow64.dll's `Wow64SystemServiceEx` and back:
-`[FEX-WOW64B] guest syscall round-trip PASS`, exit 0x600D. The overcommit
-AV was serviced live by `BTCpuResetToConsistentState`+`NtContinue` mid-run.
-(Phase A, 2026-07-09 earlier: dll loads, 146 ntdll imports resolve, synch
-family + `wow64shim.rs` + `dll/win32/wow64` skeleton.) Next: Phase C.
-Owner: fex-arm lane.
-Predecessor: `fex-bringup-plan.md` (rungs 0–3 complete; rung-4 *mechanism*
-proven in-harness — this doc IS the real rung 4+ execution plan).
+**Status (2026-07-26): the capability arc is complete on both hosts.** Stock,
+unmodified i386 PEs run on arm64 (JIT-emulated, via the vendored FEX CPU layer)
+and on amd64 (natively, in x86-64 compatibility mode). They load through the
+genuine Windows loader, draw through native win32k, create threads, take
+hardware faults into their own SEH, and generate and execute code at runtime.
+
+- **Probe ladder — 9 guests, green on both arches** (`tools/fex/hello-compute/`):
+  hello32, gui32, win32, file32, async32, marshal32, thread32, fault32,
+  selfmod32.
+- **Stock i386 applets on the desktop:** winmine, calc, notepad, sol, charmap,
+  mspaint, regedit, winver, taskmgr, wordpad, clipbrd, eventvwr, magnify, osk,
+  spider — plus x86 DOOM, rendering and playable.
+
+What remains is depth, not capability: guest *processes*, registry redirection,
+and the marshalgen audit backlog. See **What is deliberately not built**.
+
+Owner: `wow64-amd64` lane.
+Predecessor: `fex-bringup-plan.md` (rungs 0–3; this doc was its rung 4+).
+
+## Ground rules
+
+- FEX vendor tree stays unmodified (`external/fex/CLAUDE.md` forbids AI-authored
+  contributions upstream; we consume its binary contract only).
+- wow64.dll / wow64cpu.dll / ntdll changes are vibeos code.
+- Every phase lands behind the existing gates: all three arches stay green; x86
+  arches stay untouched by arch-gated exports (§9.43 ordinal discipline).
+
+---
+
+# The as-built design
+
+*This section describes the system as it exists. The chronological phase log
+below it records how it got here, and is kept because nearly every entry carries
+a bug and its root cause.*
+
+## The layer split, and the decision that shaped everything else
+
+We adopted the Win10+ BTCpu three-layer model because FEX's WOW64 module already
+implements the bottom layer's exact contract. As built:
+
+| Layer | What it is here |
+|---|---|
+| **1. Kernel + 64-bit loader** | PEB32/TEB32 beside the 64-bit ones, i386 image admission, `<2GB` guest allocations, i386 ntdll mapping, the handoff to layer 2. Deliberately small: a handful of Rust files, most of them touched in one or two places. |
+| **2. `wow64.dll` — ours** | The whole 32↔64 boundary: syscall thunk tables, marshallers, the callback direction, CPU-area management, exception routing, filesystem redirection. ~330KB of C across 7 TUs, and **exactly three exports**. |
+| **3. CPU layer** | `libwow64fex.dll` on arm64 (vendored FEX, binary contract only). `wow64cpu.dll` on amd64 (ours — heaven's-gate mode switch, no emulation; the silicon runs the 32-bit instructions). |
+
+**The decision that paid for itself: layer 2 knows nothing about the host arch,
+layer 3 is the only thing that does.** The 32→64 widening problem is a property
+of the *guest*, not of the host — a `UNICODE_STRING32` is the same shape whether
+the thing that will consume it is a JIT or a CPU in compat mode. So when amd64
+came along, the entire marshalling investment transferred untouched: E0 ungated
+the shared layer, E1 wrote a CPU layer, and E3 had `hello32.exe` passing. Every
+marshalling bug found on one arch was already fixed on the other.
+
+The three exports are the whole interface the CPU layer sees
+(`dll/win32/wow64/wow64.spec`): `Wow64SystemServiceEx`,
+`Wow64ProcessPendingCrossProcessItems`, `Wow64LdrpInitialize`. Keeping that
+surface tiny is what made the second CPU layer cheap: E0 (un-gate) landed
+2026-07-17 and E3 (`hello32.exe` passing on amd64) landed 2026-07-18 — the whole
+port from "arm64 only" to "a real i386 PE runs on amd64" took two days, because
+everything above layer 3 was already arch-neutral and already debugged.
+
+## The bootstrap chain
+
+1. **Kernel admits the image.** `SharedUserData->ImageNumberLow = I386` on the
+   64-bit host clears kernel32's `CreateProcessInternalW` range gate. Sections
+   and `PspCreateProcess` needed no machine gate — they were already permissive.
+2. **Kernel builds the 32-bit process view.** `MmCreatePeb` detects
+   `FileHeader.Machine == 0x14c` and creates a PEB32 below 2GB mirrored from
+   PEB64, with `EPROCESS.Wow64Process = PEB32` (the 5.2 shape our
+   `ProcessWow64Information` handler already returned). Each thread gets one
+   combined below-2GB region: TEB64 at +0, TEB32 at +0x2000, plus the raw Win10
+   `WowTebOffset` slots at TEB+0x180c / TEB32+0xfdc that FEX's `GetWowTEB`
+   hardcodes.
+3. **The 64-bit loader diverts.** `LdrpInitializeProcess` queries
+   `ProcessWow64Information`, skips the i386 image's import walk / TLS / kernel32
+   entirely, and — critically, **after** `LdrpRunInitializeRoutines`, not before —
+   hands the thread to `wow64!Wow64LdrpInitialize`, which never returns. (Before
+   meant loading a CPU layer that imports kernel32 re-entrantly under the loader
+   lock, which hung.)
+4. **`Wow64LdrpInitialize` brings up the guest world**, in an order where two
+   steps are load-bearing:
+   - map `syswow64\ntdll.dll` as `SEC_IMAGE`, publish
+     `LdrSystemDllInitBlock.ntdll_handle`, install `WOW64INFO` in TLS slot 10;
+   - **allocate every guest page** (exit stub, guest stack) — *before*
+     `BTCpuProcessInit`, because that is when the CPU layer sweeps the address
+     space to discover what is executable;
+   - load the CPU layer, `BTCpuProcessInit`, then **publish the memory
+     notification contract** — *after*, because a notification delivered before
+     ProcessInit has no address-space model to land in;
+   - `BTCpuThreadInit`, build the guest CONTEXT at ntdll32's entry, enter
+     `BTCpuSimulate`, which never returns by design.
+5. **The guest's own `LdrInitializeThunk` runs**, under emulation, and does all
+   the real loader work — imports, relocations, TLS, DllMain. We do not
+   reimplement the 32-bit loader; we make the real one able to run.
+
+## Syscall dispatch: two tables, four tiers
+
+The guest's i386 ntdll stubs dispatch through a **`Wow64Transition` data slot**
+(Win10 parity). Statically it points at `SharedUserData->SystemCall`, so native
+i386 boots are completely unaffected; wow64.dll rewrites it to the CPU layer's
+BOP bridge. gdi32/user32 embed their *own* copy of the stubs, so every mapped
+image that exports `Wow64Transition` gets patched as it maps.
+
+Guest EAX selects the table. ntdll services carry their raw service number;
+win32k services carry the `0x1000` tag bit, and `(n & 0xF000) == 0x1000` routes
+to the win32k table (ntdll's max is ~0x127, so there is no overlap).
+
+Both tables are **generated at build time** by `tools/wow64gen/wow64gen.py`,
+indexed by real service number — ntdll from `sysfuncs.h` order, win32k from
+`w32ksvc32.h` — with the `.spec` contributing argument types only:
+
+| Table | Auto | Manual |
+|---|---|---|
+| ntdll (`ntdll.spec` × `sysfuncs.h`) | 218 | 78 |
+| win32k (`win32u.spec` × `w32ksvc32.h`) | 624 | 113 |
+
+Every service lands in one of four tiers:
+
+1. **Flat auto-thunk** — zero-extend the guest's 32-bit argument dwords and call
+   the real 64-bit `Nt*`. Sound because a 32-bit guest pointer *is* a valid
+   64-bit pointer (guest VA < 4GB). This covers most of win32k, whose args are
+   largely pointer-free `RECT`/`POINT`/`COLORREF`.
+2. **Generated deep marshaller** (`wow64_automarshal.c`) — field-by-field in/out
+   copies emitted by `marshalgen`, from **clang record-layout diffs** taken at
+   `-target i686-w64-mingw32` and `aarch64-w64-mingw32` through the real header
+   stack. Layout truth comes from the compiler, never from a human reading a
+   struct.
+3. **Hand marshaller** (`wow64_manual.c`, 101 functions in ~186KB) — the shapes no layout
+   diff can express: embedded pointers, count-aware arrays, filesystem
+   redirection, the `CSR_API_CONNECTINFO` width thunk, and rules like
+   "`NtContinue` must hand the guest CONTEXT32 to the CPU layer and never to the
+   host kernel."
+4. **Loud unimplemented** — `WOW64_NEEDS_MANUAL` / `WOW64_MANUAL_UNIMPL`. A gap
+   announces itself instead of returning a plausible wrong answer.
+
+**The audit gate (E10) exists because tier 1 is invisible when it is wrong.** A
+flat thunk over a divergent payload compiles, links, and silently truncates.
+`marshalgen audit` derives from checked-in sources which services provably
+diverge 32↔64 and **hard-fails the build** if a flat thunk covers one that is not
+in `tools/lint-baseline/marshalgen_audit.txt` (278 entries, being burned down).
+It also hard-fails on a stale built table, so the audit cannot be quietly
+outrun.
+
+## The callback direction (64→32)
+
+win32k calls back into user mode via `KeUserModeCallback`, which on a WoW64
+process targets a **64-bit** dispatcher. So `wow64_callback.c` marshals the
+payload *down* into guest memory, enters the guest through the CPU layer, and
+copies the OUT payload back *up* on `NtCallbackReturn`. Twenty entries in
+`Wow64pUserCallbackTable`; the payload structs are generated the same way as the
+syscall marshallers (`wow64_cb_automarshal.c`). This is what makes window
+procedures — and therefore every real GUI applet — work.
+
+## The CPU layer's view of the address space
+
+On a JIT host this is a **capability, not a cache hint**. FEX's decoder refuses
+to translate any guest range it has not been told is executable
+(`CheckRangeExecutable` → `HitNonExecutableRange`), and its executable set is
+populated only by notifications plus that one sweep at `BTCpuProcessInit`. Until
+E17, everything a guest allocated *after* startup was un-executable — no ATL/MFC
+thunks, no VB6/Delphi trampolines, no packers, no JIT.
+
+`wow64_btcpu.h` wires all eight entry points (alloc / protect / free / dirty /
+map / unmap / read-file / execute-flags). Two rules the header states because
+getting them wrong is silent:
+
+- **`Before`/`After` is a lock/unlock pair, not a status report.** `After=FALSE`
+  takes the CPU layer's `ThreadCreationMutex`; `After=TRUE` releases it. An
+  unmatched *Before* deadlocks the entire guest process.
+- Notifications are **current-process only**, and a NULL entry point is a
+  legitimate silent no-op (amd64's `wow64cpu` exports none of these — it has
+  nothing to invalidate, which makes it a perfect control for the arm64 work).
+
+## Exceptions, which arrive completely differently per arch
+
+The guest-visible result is identical; the two paths share only the frame
+builder.
+
+- **amd64:** a guest fault is a genuine compat-mode trap, caught in
+  `Wow64pPrepareForExceptionHook`.
+- **arm64:** a guest fault is a *host* arm64 fault inside FEX's JIT.
+  `BTCpuResetToConsistentState` gets first refusal, and when it can service the
+  fault itself (self-modifying code, overcommit, unaligned atomic, suspend) it
+  `NtContinue`s and never returns. When it declines, it hands the fault over *in
+  guest terms* — guest registers reconstructed into the CPU area, the
+  `EXCEPTION_RECORD` rewritten to describe the guest fault — and
+  `Wow64pRedirectGuestFault` takes it from there.
+- **Shared:** `Wow64pBuildGuestExceptionFrame` builds the i386
+  `KiUserExceptionDispatcher` frame (a `WOW64_EXCEPTION_RECORD32` + CONTEXT32
+  pair) on the *guest* stack, so the guest's own `fs:[0]` chain runs.
+
+Two details that decide whether the arm64 half works at all: the handed-over
+fault is told apart from a genuine host fault by
+`ExceptionAddress < 2GB && ExceptionAddress == CpuArea->Eip` (FEX always rewrites
+it to the guest `Eip` before declining), and **breakpoints are deliberately
+excluded** — that same test matches a DebugService `int 2d` (reported at the
+already-advanced `Eip`) and *misses* a real `int3` (reported at `Eip - 1`), i.e.
+exactly backwards. Guest `int3` dispatch is its own change.
+
+## Threads, redirection, and the kernel's share
+
+**Threads.** Each guest thread gets its own CPU area and WoW64 entry path.
+`ThreadZeroTlsCell` has to reach TEB32, not TEB64 — a 32-bit guest reads its TLS
+through the 32-bit TEB, so writing the 64-bit one zeroes a cell nobody reads.
+
+**Filesystem redirection** happens inside the file marshallers, exactly where
+real WOW64 does it: `\system32\` → `\syswow64\`, same length, rewritten into host
+scratch. The guest also opens `\KnownDlls32` rather than `\KnownDlls`, because
+the latter holds **host-arch** sections — a guest mapping an arm64 kernel32 gets
+`ILLEGAL_DLL_RELOCATION`, which is a spectacular way to learn this.
+
+**Registry redirection does not exist** (see below).
+
+**The kernel's share is small on purpose** — `ARM3/procsup.rs` (PEB32/TEB32),
+`ke/amd64/except.rs` and `ke/amd64/thrdini.rs` (compat-mode entry/exit), plus
+scattered enablers: 64-bit `ZeroBits`-is-a-mask semantics in `ARM3/virtual.rs`
+and `ARM3/section.rs`, and on arm64 delivering DFSC 0x21 as
+`STATUS_DATATYPE_MISALIGNMENT` so FEX's own unaligned-access backpatcher can see
+it. Everything else stays in user mode where it can be debugged without a
+BUGCHECK.
+
+## How it is tested
+
+Each ladder guest is a small i386 PE spawned by winlogon
+(`TryStartWow64*`), staged under `VIBEOS_FEX=1` on arm64 and from
+`wow64cpu/CMakeLists.txt` on amd64, and each reports a machine-checkable verdict:
+**`0x600D` = PASS** (`0x600E` for gui32), with a distinct `0xBADx`/`0xBAFx` per
+failing rung so a red boot names the rung without a debugger.
+
+Two properties make the ladder worth more than its size suggests:
+
+- **Guests check values, not survival.** Most of these failures are silently
+  wrong rather than fatal — a truncated pointer, a stale code page, a callback
+  payload read at the wrong offset. A guest that only proves it did not crash
+  proves almost nothing.
+- **The same guest runs on both arches.** Since the arrival paths share nothing
+  below layer 2, a guest passing on both is real evidence, and a guest passing on
+  one is an immediate bisect.
+
+Stock applets are the other half of the story: they are written by people who
+never heard of this port, so they exercise surface our own guests structurally
+cannot reach. Nearly every marshalling bug from E6 onward was found by one.
+
+## What is deliberately not built
+
+- **Guest processes.** A 32-bit guest can create threads but not processes;
+  `CreateProcess` from a guest and cross-process `CreateRemoteThread` both need
+  the CSR-LPC-32 layer. This is the largest remaining hole — it is what
+  installers and any app that shells out will hit.
+- **Registry redirection** (`Wow6432Node`, `KEY_WOW64_32KEY/64KEY`) — task #66.
+  Not merely missing: a 32-bit guest currently reads and writes the *native*
+  hive, so it is a silent correctness bug, not a stubbed feature.
+- **The 278 audit-baseline entries** — services whose payloads provably diverge
+  but that still flat-thunk. Each is a latent version of bugs already paid for.
+- **IOCTL embedded-pointer buffers** (task #42) and **guest `int3` dispatch**.
+
+## Things that turned out to matter more than expected
+
+1. **Fail loud beat fail safe, every single time.** The expensive bugs were all
+   quiet ones: imports poison-snapped to `0xffbadd11` instead of failing the
+   load; flat thunks truncating without a word; a `switch` over constants missing
+   from a bindgen island collapsing into a catch-all. Each fix was cheap; each
+   *diagnosis* was not.
+2. **The generator outranks the marshaller.** Hand-writing ~100 marshallers was
+   affordable only because 842 services auto-thunked, and the audit gate is worth
+   more than any individual marshaller because it finds the ones nobody thought
+   to write.
+3. **Layout truth belongs to the compiler.** Every struct-width bug we shipped
+   came from a human reading a header; none came from a clang record-layout diff.
+4. **Keeping the CPU-layer interface at three exports** is what made the second
+   host arch cheap, and it was not obvious at the time that it would be.
+
+---
+
+# Historical record — the phase log
+
+*Everything below is the chronological bring-up record, kept as written at the
+time. It is not a plan any more: every phase here is complete unless it says
+otherwise. Read it for the bugs — most entries carry a symptom, a root cause, and
+the reasoning that got from one to the other, and several record a hypothesis
+that turned out to be wrong (which is the part worth having). The as-built
+picture is above; durable, reusable lessons are cross-referenced into
+`translation-debugging-field-manual.md`.*
 
 ## The model (Win10+ BTCpu architecture)
 
@@ -28,8 +301,11 @@ implements the bottom layer's exact contract:
 3. **CPU layer**: `libwow64fex.dll` on arm64 (FEX, vendored, DONE — exports
    the 23 `BTCpu*` entry points); a to-be-written classic `wow64cpu.dll` on
    amd64 (far-jmp 0x33 mode switch, no emulation needed).
+   *(As built: `wow64cpu.dll` landed in E1 — `dll/win32/wow64cpu/`.)*
 
 ### The measured contract (2026-07-09, llvm-objdump on libwow64fex.dll)
+
+*Historical. Every gap in the table below was closed in Phase A.*
 
 wow64fex imports from **wow64.dll** ONLY `Wow64SystemServiceEx` and
 `Wow64ProcessPendingCrossProcessItems`. From **ntdll.dll** it imports 146
@@ -49,6 +325,20 @@ Everything else (all the Nt* file/section/thread calls, Rtl heap/unwind/
 exports from our arm64 ntdll.
 
 ## Phases
+
+*Index of the log, so a 2000-line record stays navigable. All complete.*
+
+| Arc | What it covers |
+|---|---|
+| **A–B** | arm64 ntdll surface; wow64.dll skeleton driven out-of-band by `wow64probe` |
+| **C (M1–M4)** | the real process bootstrap: PEB32/TEB32, loader divert, ntdll32 under FEX, first win32k syscall |
+| **D** | `wow64gen` — the thunk-table generator |
+| **M5–M10** | win32k client connect, wide GDI handle entries, DC_ATTR, windows + callbacks, the USER shared-struct view, file I/O |
+| **M11–M14** | the first *stock* i386 binary, then x86 DOOM rendering and playable |
+| **M15–M18** | callback OUT-payloads, async IOSB completion, desktop-heap WND reads, and `marshalgen` — bulk marshaller generation from clang layout diffs |
+| **E0–E4** | the amd64 port: shared layer un-gated, `wow64cpu.dll`, compat-mode kernel support, hello32 + gui32 passing |
+| **E5–E13** | depth on both arches: guest SEH, the stock-applet robustness ladder, heap corruption, the `marshalgen audit` build gate, the `NtUserMessageCall` boundary |
+| **E14–E18** | guest threads, arm64 thread parity, the memory-notification contract (guests can generate code), arm64 guest-fault → guest SEH |
 
 **Phase A — ntdll surface (arm64). COMPLETE (2026-07-09).** Landed the table
 above; `LoadLibraryW("libwow64fex.dll")` succeeds on-box and `BTCpuGetBopCode`
@@ -137,7 +427,8 @@ interface under test); winlogon spawns it after fexprobe when staged
 (`TryStartWow64Probe`); verdict = serial `[FEX-WOW64B]` lines + exit code
 0x600D.
 
-**Phase C — real WoW64 process bootstrap (the OS work).**
+**Phase C — real WoW64 process bootstrap (the OS work). COMPLETE (M1–M4,
+2026-07-09 → 2026-07-11).**
 
 *Milestone 1 — PASS on-box (2026-07-09): `CreateProcessW("hello32.exe")` (a real
 i386 PE) on arm64 runs the whole bootstrap chain and reports
@@ -1291,14 +1582,6 @@ lied the same way.
 audit the whole boundary not just the reported arg, reuse the generator's table,
 verify widths with the layout engine) and **§9.118a** (a triage tool that lies
 costs more than no tool — validate it against a case whose answer you know).
-
-## Ground rules
-- FEX vendor tree stays unmodified (external/fex/CLAUDE.md forbids AI-authored
-  contributions upstream; we consume its binary contract only).
-- wow64.dll/wow64cpu.dll/ntdll changes are vibeos code: Rust-preferred where
-  practical (wow64.dll is a clean greenfield candidate).
-- Every phase lands behind the existing gates: arm64 boots must stay green;
-  x86 arches untouched by arch-gated exports (§9.43 ordinal discipline).
 
 ## M11: the first STOCK binary — `testgui.exe` (i386, unmodified) under WoW64
 
