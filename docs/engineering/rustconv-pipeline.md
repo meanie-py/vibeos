@@ -136,6 +136,17 @@ by shape for triage. Three properties worth knowing:
   names under the catch-all-binding rule (field manual §9.112). Detection is not line-local: a
   wrapped or-pattern puts the `=>` on a later line, and `foo(A, b)` vs `(A, 0) => v` are
   indistinguishable at the comma until you step out of the enclosing bracket group.
+- **It cannot repair a `#[cfg]`-dual'd body — KNOWN GAP.** `abi_enforce` renders an internal
+  `system` fn as an x86 `stdcall` copy plus a non-x86 `C` copy (rustc will not unify
+  `extern "system"` with `extern "stdcall"` at the *type* level on i686, so a `system` fn
+  cannot sit in a `stdcall` vtbl/callback slot — the dual is correct and must not be collapsed
+  to `extern "system"`). But each copy compiles on exactly ONE target, so the cross-target
+  agreement rule can never be satisfied and every cast in it is withheld forever. Inside an
+  arch-gated branch, baking that arch's width is correct *by construction* — that is the
+  premise the rule is missing. netid hit this on 38 casts across its three dialog procs, and
+  the two copies had already DIVERGED (the non-x86 one carrying `(TRUE) as i64` from an
+  earlier pass while the x86 one was untouched), which is the shape to watch for: an
+  error count that differs wildly per arch on the *same* function.
 
 ## `--target`: proven from the tree, or refused (2026-07-24)
 

@@ -574,6 +574,17 @@ Three faces, all seen live:
   check the debugcon capture for `PANIC:` before suspecting a lock.**
 
 ### Wide/narrow literal sizing
+- **The `L` prefix is a width MARKER, not a character** — and the translation puts it in the
+  string. Three distinct manifestations in one batch (Tier 3), from the same C construct:
+  `L"%s.%s"` came back once UTF-16-encoded *including the L* (`b"L\0%\0s\0…"` — every full
+  computer name would have carried a stray leading "L"), once as raw ASCII bytes of the whole
+  spelling `L"%s.%s"` handed to a wide-string callee, and once as `L'\\'`, a wide CHARACTER
+  literal left verbatim (that one at least fails to parse: `prefix \`L\` is unknown`). Only the
+  third is caught by the compiler. **`scan_wide_literals.py` is blind to all of this**: it
+  diffs a `[u16; N]` array against the `// L"..."` intent comment above it, and assembled
+  translation output carries neither the array form nor the comment, so it reports a confident
+  `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
+  the crate's `w!()` macro.
 - **A hand-encoded `[u16; N]` one element short** silently drops the LAST character to make
   room for the NUL. `SERVICES_KEY [u16; 33]` spelled `…\Service` (no `s`), so `RCreateServiceW`
   opened a nonexistent parent key — invisible to boot, found only by a conformance sweep. The
@@ -872,6 +883,17 @@ of them were **ours**, not the model's:
   untouched, so a value that never appeared in the C still fails inside a dead arm. Diagnosis rule
   worth reusing: *before concluding the model deleted your error handling, check whether the C's
   own handler is reachable in THIS build's flags* — read `compile_commands.json`, not the source.
+
+  **The mirror-image failure, and the envelope's blind spot.** The same dead handler can come
+  back as LIVE code, and the audit will PASS it. samlib shipped four of
+  `Status = I_RpcMapWin32Status(RpcExceptionCode());` emitted as straight-line code right after
+  the RPC call instead of inside `RpcExcept` — so it unconditionally overwrote the real status
+  with a mapped exception code, and two of the four then branch on `if !NT_SUCCESS(Status)`.
+  Both tokens are present, each exactly once, so the envelope is satisfied: **it verifies
+  presence and multiplicity, never control-flow POSITION.** (The identical shape in `SamConnect`
+  was caught only because its token count happened to come out wrong.) So a dead-region omission
+  is now checked, but a dead-region *relocation* is not — when reviewing a sealed RPC wrapper,
+  read where the handler landed, not just whether it is gone.
 
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
