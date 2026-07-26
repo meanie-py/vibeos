@@ -4489,6 +4489,36 @@ def test_ninja_did_work_counts_edges_not_just_dirtiness():
     assert build_mod._ninja_did_work("note: see [1/3] in the log\n") == 0
 
 
+def test_link_classifier_does_not_mistake_duplicate_symbol_WARNINGS_for_the_failure():
+    """This tree links with --allow-multiple-definition, so ld.lld emits
+    `warning: duplicate symbol` on every build. The classifier matched bare
+    "duplicate symbol"/"ld.lld:" before the rustc branch, so a compile error that
+    merely CO-OCCURRED with those warnings was reported as LINK_FAIL with three
+    warnings as its salient — and the real cause (error[E0308] in census.rs)
+    appeared nowhere in the summary. Verbatim shapes from that build."""
+    warns_plus_rustc = (
+        "ld.lld: warning: duplicate symbol: __udivti3\n"
+        "ld.lld: warning: duplicate symbol: __umodti3\n"
+        "error[E0308]: mismatched types\n"
+        "error: could not compile `ntoskrnl-rust` (lib) due to 2 previous errors\n"
+    )
+    cls, salient = build_mod._classify_build_failure(warns_plus_rustc, "")
+    assert cls == "CARGO_CHECK_FAIL"
+    assert any("E0308" in s for s in salient), salient
+
+    # a REAL undefined symbol still classifies as a link failure
+    real_undef = (
+        "ld.lld: warning: duplicate symbol: __udivti3\n"
+        "ld.lld: error: undefined symbol: MmArmAccessFault\n"
+    )
+    assert build_mod._classify_build_failure(real_undef, "")[0] == "LINK_FAIL"
+    # and so does a genuine duplicate-symbol ERROR
+    assert (
+        build_mod._classify_build_failure("ld.lld: error: duplicate symbol: foo", "")[0]
+        == "LINK_FAIL"
+    )
+
+
 def test_ninja_did_work_does_not_count_the_glob_recheck_pseudo_edge():
     """VERBATIM output from a real no-op re-affirm that still reported
     "relinked 1 target(s)". `[0/n]` is the CONFIGURE_DEPENDS glob re-check, a
