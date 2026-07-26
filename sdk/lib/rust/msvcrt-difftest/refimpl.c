@@ -462,23 +462,20 @@ DWORD WINAPI GetLastError(void)
     return ref_last_error;
 }
 
-/* ...and the SAME last-error under its plain name, for the subject.
+/* ...and the SAME storage under the plain name, for the SUBJECT.
  *
- * The refstub namespaces `GetLastError` (refstub/msvcrt.h) so the reference can
- * never reach into the code under test, which is right for almost everything.
- * It is wrong here, and the asymmetry is the reason: `WideCharToMultiByte` a few
- * hundred lines below is NOT namespaced — both sides call the one converter —
- * and it reports failure by writing `ref_last_error`. Give the subject its own
- * private last-error and it would call the shared converter, have it set
- * ERROR_INSUFFICIENT_BUFFER, then read a different variable and see 0.
+ * refstub/msvcrt.h:224 namespaces `GetLastError` so the reference can never reach into
+ * the code under test — correct everywhere else, wrong here. `WideCharToMultiByte` is
+ * deliberately NOT namespaced (kernel32 is shared environment, not code under test), so
+ * ONE converter serves both sides and it reports failure by writing `ref_last_error`. A
+ * private subject-side last-error would read 0 exactly where that shared converter had
+ * just set ERROR_INSUFFICIENT_BUFFER, and `_wctomb_s_l`'s insufficient-buffer arm is
+ * precisely that writer/reader pair. One writer, one reader — which is also what the real
+ * DLL has, last-error being a single TEB slot.
  *
- * Wave 16 made that reachable: `_wctomb_s_l` is Rust now, and its whole
- * insufficient-buffer path is `WideCharToMultiByte(...) == 0 && GetLastError()
- * == ERROR_INSUFFICIENT_BUFFER`. One writer, one reader — which is also what the
- * DLL has, where last-error is one slot in the TEB.
- *
- * `#undef` rather than a second variable: the definition above already emitted
- * `msvcrt_ref_GetLastError`, so this adds the plain alias beside it. */
+ * wave 16's `_wctomb_s_l` (msvcrt-crt-rust/src/wcs_rest.rs) is the first flipped code to
+ * import it; before that nothing subject-side referenced it and the asymmetry was
+ * invisible. */
 #undef GetLastError
 DWORD WINAPI GetLastError(void)
 {
@@ -545,24 +542,19 @@ unsigned int __cdecl _get_output_format(void)
  * would have gone on folding every byte 1:1 onto U+0000..U+00FF while mbcs.c did real
  * DBCS decoding, with the two disagreeing inside one process. */
 
-/* `_wctomb_l` USED to be forwarded from here to the genuine `ref__wctomb_l`,
- * because the subject (the Rust printf engine, wave 14b) imported the plain
- * symbol and nothing on the subject side defined it — the same shape it had in
- * msvcrt.dll, where the C converter still owned it.  Wave 16 translated it, so
- * the subject now DEFINES `_wctomb_l` and the forwarder became a duplicate
- * symbol; the link error is how that transition announces itself, which is the
- * behaviour we want from this file.
+/* `_wctomb_l` USED to be forwarded from here to `ref__wctomb_l` — wave 14b, when the
+ * Rust printf engine imported a plain `_wctomb_l` that nothing on the subject side
+ * defined, and the C converter still owned that symbol inside msvcrt.dll.
  *
- * The forwarder is deliberately NOT replaced with a namespaced stub.  Its whole
- * purpose was to make both sides run ONE converter so the printf rows graded the
- * ENGINE and not the conversion; now that the subject has its own, the printf
- * wide rows legitimately grade engine AND conversion together, and
- * `_wctomb_l`/`_wctomb_s_l` are graded head-to-head against `ref_*` in their own
- * right.  If the Rust converter ever diverges, BOTH suites should notice — that
- * is more coverage than the forwarder allowed, not less.
+ * Wave 16 FLIPPED `_wctomb_l` (msvcrt-crt-rust/src/wcs_rest.rs), so this forwarder became
+ * a `duplicate symbol: _wctomb_l` that took EVERY test in this crate down — classify,
+ * printf_shells, perf, all of them.  It is the same transition `_mbtowc_l` made just
+ * above, and it fails the same loud way if only half of it is done.
  *
- * (Contrast `_mbtowc_l` above, which wcs.c does NOT define and which therefore
- * still needs its namespaced stub.) */
+ * Deleting it is also the correct grading change, not just the linkable one: the subject
+ * now runs the SHIPPING Rust converter (which is what msvcrt.dll will run) while the
+ * reference runs the genuine `ref__wctomb_l`.  The printf rows stop being handed a shared
+ * converter — the §9.73 shape — and start grading it. */
 
 /* ------------------------------------------------------------------ *
  * MSVC intrinsic.  `_BitScanReverse(&i, mask)` → index of the highest set
@@ -756,7 +748,36 @@ int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int s
     if (nls_is_dbcs_codepage(page))
     {
         int used_i = 0;
-        int r = nls_wide_to_mb(page, src, n, dst, dstlen, defchar, &used_i);
+        int r;
+
+        /* Real kernel32 NEVER truncates: when the conversion does not fit it writes
+         * nothing, returns 0 and sets ERROR_INSUFFICIENT_BUFFER.  The model used to
+         * return the truncated count instead, and that one difference made a whole arm of
+         * msvcrt unreachable — `_wctomb_s_l`'s
+         *
+         *     if (!mblen && GetLastError() == ERROR_INSUFFICIENT_BUFFER) ... ERANGE
+         *
+         * needs a ZERO return for a single-character conversion, which a truncating model
+         * can never produce.  wave 16's reachability probe measured it: 0 hits across
+         * 3 codepages x 9363 characters x 4 sizes.  A branch a harness cannot reach is a
+         * branch it is not grading, however green the row looks.
+         *
+         * Scoped to the single-character conversions (`n == 1`) that this affects, so the
+         * multi-character passes create_mbcinfo makes keep their existing behaviour, and
+         * measured into a real buffer rather than a NULL one (the `cd == -1` fallback
+         * inside nls_wide_to_mb writes unconditionally when dstlen is 0). */
+        if (dstlen > 0 && n == 1)
+        {
+            char probe[8];
+            int need = nls_wide_to_mb(page, src, n, probe, (int)sizeof(probe), defchar, NULL);
+            if (need > dstlen)
+            {
+                ref_last_error = ERROR_INSUFFICIENT_BUFFER;
+                return 0;
+            }
+        }
+
+        r = nls_wide_to_mb(page, src, n, dst, dstlen, defchar, &used_i);
         if (used) *used = used_i ? TRUE : FALSE;
         return r;
     }

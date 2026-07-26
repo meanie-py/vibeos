@@ -107,8 +107,25 @@ file-static in the C.
 
 Deliberately preserved C misbehaviours (this is a differential port — "fixing" one is a
 failure): `_strtoul_l`/`_wcstoul_l` underflow clamping to **1**, `_wtoi64_l`'s missing overflow
-check, `wctob`'s strict `< 0xff` so U+00FF reports EOF, and `wcsrtombs_s_l`'s genuine
-`mbstr[-1]` touch at `conv == size == 0`.
+check, and `wcsrtombs_s_l`'s genuine `mbstr[-1]` touch at `conv == size == 0` — that last one
+caught only by the harness's **guard prefix**, since a compare that stops at the NUL cannot see
+a write before the buffer.
+
+**`wctob`'s strict `< 0xff` is NOT one of them, and the distinction is worth keeping.** It looks
+like a preserved quirk and it is unfalsifiable: the only input that could distinguish `<` from
+`<=` is U+00FF, where `<` returns `EOF` (-1) and `<=` returns `(signed char)0xFF` — also -1.
+Relaxing the comparison moves no row and *cannot*. A differential test can pin the row (it is
+exhaustive over all 65,536 values × 5 modes, and a control returning the raw value instead of
+the signed char is caught at once) but it cannot pin that comparison, so nobody should read a
+green `wctob` as evidence about it.
+
+**Grading: 122 rows, 122 MATCH, 0 DIVERGE, 0 UNEXERCISED, ~2.0M cases** (`msvcrt-difftest/tests/wave16.rs`),
+under both the "C" and a real NLS locale. Nine negative controls, eight fired; the ninth is the
+`wctob` non-result above. The `_wctomb_s_l` ERANGE arm's reachability is **measured, not
+assumed** — a probe showed it at **0 of 0 hits** because the harness's `WideCharToMultiByte`
+model truncated where real kernel32 returns 0 + `ERROR_INSUFFICIENT_BUFFER`; the arm was
+ungraded in every mode while every row read MATCH. Model corrected (scoped to single-character
+conversions), arm now 1299/1299, probe kept permanently so a regression names its own cause.
 
 **A real ABI bug in already-landed code fell out of it.** `prelude.rs` declared the nine
 `_isw*_l` predicates taking `wint_t` (`unsigned short`) while this crate DEFINES all nine taking

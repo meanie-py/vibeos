@@ -1453,6 +1453,29 @@ bugs: **ambient state the reference holds fixed** (locale — grep a flip candid
 `get_locinfo` / `_l`-suffixed helpers / any read of process-global state), and **the reference
 TU is compiled for the HOST**, so target-conditional `#if`s are graded on the wrong arm.
 
+**A stub that is merely INACCURATE can make a whole arm unreachable, and every row still says
+MATCH.** Wave 16 had to grade `_wctomb_s_l`'s insufficient-buffer path, whose entire trigger is
+`WideCharToMultiByte(...) == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER`. The harness's
+model of `WideCharToMultiByte` *truncated* where real kernel32 writes nothing, returns 0 and
+sets the error — so a single-character conversion could never return 0, and the arm was graded
+by nothing. A reachability probe measured it at **0 hits of 0** across 3 codepages × 9,363
+characters × 4 sizes, while every row over that family read MATCH. Note the shape: this is not a
+missing stub (which fails loudly at link) nor a wrong *value* (which a row would catch) — it is
+a stub whose ERROR MODEL differs from the real API, which is invisible precisely because the
+error is what never happens. **When a branch exists to handle a failure, instrument how often
+your harness actually produces that failure, and keep the probe.** Ours is permanent, so a
+future regression goes red and names its own cause.
+
+**And the converse: a preserved C quirk may be UNFALSIFIABLE, in which case a green row is not
+evidence you preserved it.** `wctob`'s `wchar < 0xff` looks like exactly the kind of
+off-by-one worth transcribing carefully, and the only input that could distinguish `<` from
+`<=` is U+00FF — where `<` returns `EOF` (-1) and `<=` returns `(signed char)0xFF`, also -1.
+Relaxing the comparison moves no row and *cannot*. The row is still worth having (it is
+exhaustive, and a control that returns the raw value instead of the signed char fails at once),
+but the commit message that credited it with pinning the comparison was wrong. **Run the
+perturbation before claiming a quirk is pinned**; "I transcribed it faithfully" and "a test would
+catch me if I hadn't" are different claims, and only the second needs a control to back it.
+
 A third: **an out-parameter the harness only PARTIALLY compares.** rtl-difftest asserted
 `(Length, MaximumLength)` on the STRING converters but not `Buffer`, so an eleven-site
 divergence — the alloc-failure path storing nothing where the C stores NULL — was visible in
