@@ -820,7 +820,7 @@ extern "system" {
     fn RegisterShellHookWindow(h: HWND) -> BOOL;
     fn RemovePropW(h: HWND, name: LPCWSTR) -> HANDLE;
     fn RevokeDragDrop(h: HWND) -> HRESULT;
-    fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: c_int) -> LPWSTR;
+    fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: c_int) -> DWORD;
     fn SHCLSIDFromStringW(s: LPCWSTR, clsid: *mut CLSID) -> HRESULT;
     fn SHDeleteKeyW(key: HKEY, sub: LPCWSTR) -> DWORD;
     fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, path: LPWSTR) -> BOOL;

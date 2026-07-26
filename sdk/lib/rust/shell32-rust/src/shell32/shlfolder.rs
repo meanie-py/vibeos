@@ -173,9 +173,9 @@ pub unsafe extern "C" fn SHELL_IncludeItemInFolderEnum(
             != (SHCONTF_FOLDERS | SHCONTF_NONFOLDERS)
         {
             return if (Flags & SHCONTF_FOLDERS) != 0 {
-                ((query & SFGAO_FOLDER) != 0) as u8
+                (((query & SFGAO_FOLDER) != 0) as u8) as i32
             } else {
-                ((query & SFGAO_FOLDER) == 0) as u8
+                (((query & SFGAO_FOLDER) == 0) as u8) as i32
             };
         }
     }
@@ -184,17 +184,17 @@ pub unsafe extern "C" fn SHELL_IncludeItemInFolderEnum(
 unsafe extern "C" fn MapSCIDToShell32FsColumn(pscid: *const SHCOLUMNID, vt: &mut VARTYPE) -> HRESULT {
     if (*pscid).fmtid == FMTID_Storage {
         match (*pscid).pid {
-            PID_STG_NAME => { *vt = VT_BSTR; return SHFSF_COL_NAME; }
-            PID_STG_SIZE => { *vt = VT_UI8; return SHFSF_COL_SIZE; }
-            PID_STG_STORAGETYPE => { *vt = VT_BSTR; return SHFSF_COL_TYPE; }
-            PID_STG_ATTRIBUTES => { *vt = VT_BSTR; return SHFSF_COL_FATTS; }
-            PID_STG_WRITETIME => { *vt = VT_DATE; return SHFSF_COL_MDATE; }
+            PID_STG_NAME => { *vt = (VT_BSTR) as u16; return (SHFSF_COL_NAME) as i32; }
+            PID_STG_SIZE => { *vt = (VT_UI8) as u16; return (SHFSF_COL_SIZE) as i32; }
+            PID_STG_STORAGETYPE => { *vt = (VT_BSTR) as u16; return (SHFSF_COL_TYPE) as i32; }
+            PID_STG_ATTRIBUTES => { *vt = (VT_BSTR) as u16; return (SHFSF_COL_FATTS) as i32; }
+            PID_STG_WRITETIME => { *vt = (VT_DATE) as u16; return (SHFSF_COL_MDATE) as i32; }
             _ => {}
         }
     }
     if (*pscid).fmtid == FMTID_SummaryInformation && (*pscid).pid == PIDSI_COMMENTS {
-        *vt = VT_BSTR;
-        return SHFSF_COL_COMMENT;
+        *vt = (VT_BSTR) as u16;
+        return (SHFSF_COL_COMMENT) as i32;
     }
     return E_INVALIDARG;
 }
@@ -252,20 +252,20 @@ pub unsafe extern "C" fn SHELL_GetDetailsOfColumnAsVariant(
         return hr;
     }
     let mut vt = vt;
-    if vt == VT_EMPTY {
+    if vt == (VT_EMPTY) as u16 {
         let mut state: SHCOLSTATEF = 0;
         if ((*pSF).GetDefaultColumnState(Column, &mut state)) < 0 {
             state = SHCOLSTATE_TYPE_STR;
         }
         if (state & SHCOLSTATE_TYPEMASK) == SHCOLSTATE_TYPE_INT {
-            vt = VT_I8;
+            vt = (VT_I8) as u16;
         } else if (state & SHCOLSTATE_TYPEMASK) == SHCOLSTATE_TYPE_DATE {
-            vt = VT_DATE;
+            vt = (VT_DATE) as u16;
         } else {
-            vt = VT_BSTR;
+            vt = (VT_BSTR) as u16;
         }
     }
-    if vt != VT_BSTR {
+    if vt != (VT_BSTR) as u16 {
         VariantChangeType(pVar, pVar, 0, vt);
     }
     hr
@@ -278,7 +278,7 @@ pub unsafe extern "C" fn SH32_GetDetailsOfPKeyAsVariant(
     pVar: *mut VARIANT,
     UseFsColMap: BOOL,
 ) -> HRESULT {
-    let mut vt: VARTYPE = VT_EMPTY;
+    let mut vt: VARTYPE = (VT_EMPTY) as u16;
     let hr: HRESULT = if UseFsColMap != 0 {
         MapSCIDToShell32FsColumn(pscid, &mut vt)
     } else {
@@ -583,14 +583,14 @@ pub unsafe extern "system" fn SHELL32_CompareDetails(
     let mut sd: SHELLDETAILS = core::mem::zeroed();
     let mut wszItem1: [u16; MAX_PATH] = [0u16; MAX_PATH];
     let mut wszItem2: [u16; MAX_PATH] = [0u16; MAX_PATH];
-    let col: UINT = LOWORD(lParam);
+    let col: UINT = (LOWORD((lParam) as u32)) as u32;
 
     let hres = (*isf).GetDetailsOf(pidl1 as _, col, &mut sd);
     if hres < 0 {
         return MAKE_COMPARE_HRESULT(1);
     }
 
-    let hres = StrRetToBufW(&mut sd.str, pidl1, wszItem1.as_mut_ptr(), MAX_PATH);
+    let hres = StrRetToBufW(&mut sd.str, pidl1, wszItem1.as_mut_ptr(), (MAX_PATH) as u32);
     if hres < 0 {
         return MAKE_COMPARE_HRESULT(1);
     }
@@ -600,7 +600,7 @@ pub unsafe extern "system" fn SHELL32_CompareDetails(
         return MAKE_COMPARE_HRESULT(1);
     }
 
-    let hres = StrRetToBufW(&mut sd.str, pidl2, wszItem2.as_mut_ptr(), MAX_PATH);
+    let hres = StrRetToBufW(&mut sd.str, pidl2, wszItem2.as_mut_ptr(), (MAX_PATH) as u32);
     if hres < 0 {
         return MAKE_COMPARE_HRESULT(1);
     }
@@ -681,7 +681,7 @@ pub unsafe extern "C" fn AddFSClassKeysToArray(
                 core::ptr::null_mut(),
                 RRF_RT_REG_SZ,
                 core::ptr::null_mut(),
-                wszClass.as_mut_ptr(),
+                (wszClass.as_mut_ptr()).cast(),
                 &mut dwSize,
             ) != ERROR_SUCCESS
                 || *wszClass.as_ptr() == 0u16
@@ -706,7 +706,7 @@ pub unsafe extern "C" fn AddFSClassKeysToArray(
                 CPP_COM_WSTR_714C3CA85096.as_ptr(),
                 RRF_RT_REG_SZ,
                 core::ptr::null_mut(),
-                wszClass.as_mut_ptr(),
+                (wszClass.as_mut_ptr()).cast(),
                 &mut dwSize,
             ) == ERROR_SUCCESS
             {
@@ -788,7 +788,7 @@ pub unsafe extern "system" fn SHOpenFolderAndSelectItems(
     let pidlItem: PCIDLIST_ABSOLUTE;
     if cidl != 0 {
         if ILIsSingle(apidl.add(0)) == 0 {
-            pidlItem = apidl.add(0);
+            pidlItem = (apidl.add(0)).cast();
         } else {
             let mut hr: HRESULT;
             let mut tmp: PCIDLIST_ABSOLUTE = core::ptr::null_mut();
@@ -796,7 +796,7 @@ pub unsafe extern "system" fn SHOpenFolderAndSelectItems(
             if FAILED_UNEXPECTEDLY(hr) {
                 return hr;
             }
-            freeItem.Attach(tmp as *mut PIDLIST_ABSOLUTE);
+            freeItem.Attach((tmp as *mut PIDLIST_ABSOLUTE).cast());
             pidlItem = tmp;
         }
     } else {
@@ -827,7 +827,7 @@ pub unsafe extern "system" fn SHOpenFolderAndSelectItems(
     wcscat(wszParams.as_mut_ptr(), wszBuf.as_ptr());
 
     let mut sei: SHELLEXECUTEINFOW = core::mem::zeroed();
-    memset(core::ptr::addr_of_mut!(sei), 0, core::mem::size_of::<SHELLEXECUTEINFOW>() as u32);
+    memset((core::ptr::addr_of_mut!(sei)).cast(), 0, (core::mem::size_of::<SHELLEXECUTEINFOW>() as u32) as usize);
     sei.cbSize = core::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
     sei.fMask = SEE_MASK_WAITFORINPUTIDLE;
     sei.lpFile = CPP_COM_WSTR_AB68B18B313D.as_ptr() as *mut u16;
@@ -946,7 +946,7 @@ pub unsafe extern "system" fn Shell_NextElement_RustBridge(
     cchOut: INT,
     bValidate: BOOL,
 ) -> HRESULT {
-    Shell_NextElement(ppch, pszOut, cchOut, bValidate)
+    Shell_NextElement(ppch, pszOut, cchOut, (bValidate) as u8)
 }
 
 #[no_mangle]
