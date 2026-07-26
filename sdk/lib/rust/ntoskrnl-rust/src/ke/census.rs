@@ -202,6 +202,54 @@ unsafe fn report(eproc: *mut _EPROCESS, kthread: *mut _KTHREAD, object: usize) {
             // holder, not just its victims. `gm?` marks the heuristic: a bare
             // KeWaitForGate user makes these fields garbage — sanity-gated on
             // the owner looking like an aligned kernel pointer.
+            // PUSHLOCK attribution — the one the arm64 §9.97 soak actually needed.
+            //
+            // The only KeWaitForGate callers in the tree are ke/wait.rs and
+            // ex-rust/pushlock.rs, so a >10s GateWait is in practice a pushlock
+            // wait, and `HOLDER-STUCK(no signal ever)` means a pushlock holder
+            // never released. WHICH lock was the missing fact: pushlock.rs
+            // deliberately keys its synctrace on the PUSHLOCK address ("the wake
+            // gate is a per-wait stack object — useless as a key"), while this
+            // report prints only that stack-allocated gate. The identity was
+            // recorded and never surfaced.
+            //
+            // Recoverable in one read: EX_PUSH_LOCK_WAIT_BLOCK's first field is
+            // the union holding WakeGate, so the gate address IS the wait-block
+            // address, and .PushLock is a field of it. Same sanity gate as the
+            // gm? heuristic below — a bare KeWaitForGate user makes this garbage.
+            // Deliberately NOT x86_64-gated: the gm? block below is, which is why
+            // arm64 — the arch with the bug — has had no holder attribution at all.
+            if (*kthread).WaitReason as u32 == 28
+            /* _KWAIT_REASON_WrPushLock */
+            {
+                use ntkrnl_sys::ddk::_EX_PUSH_LOCK_WAIT_BLOCK;
+                let wb = (object - offset_of!(_EX_PUSH_LOCK_WAIT_BLOCK, __bindgen_anon_1))
+                    as *const _EX_PUSH_LOCK_WAIT_BLOCK;
+                let pl = core::ptr::read_volatile(core::ptr::addr_of!((*wb).PushLock)) as usize;
+                if pl >= 0xFFFF_8000_0000_0000 && (pl & 7) == 0 {
+                    // dbg_print! evaluates to u32, so each arm must be a
+                    // statement block or the match takes its value.
+                    match synctrace_lookup(pl) {
+                        Some((p_parked, p_sat, p_sig, _, p_last)) => {
+                            crate::dbg_print!(
+                                b"[CENSUS]   pushlock=%p parked=%u sat=%u sig=%u last_sig_thr=%p\n\0",
+                                pl as *const (),
+                                p_parked,
+                                p_sat,
+                                p_sig,
+                                p_last as *const (),
+                            );
+                        }
+                        None => {
+                            crate::dbg_print!(
+                                b"[CENSUS]   pushlock=%p (no synctrace entry)\n\0",
+                                pl as *const (),
+                            );
+                        }
+                    }
+                }
+            }
+
             #[cfg(all(feature = "smp", target_arch = "x86_64"))]
             {
                 use ntkrnl_sys::ddk::_KGUARDED_MUTEX;
