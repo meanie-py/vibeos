@@ -1613,9 +1613,12 @@ pub unsafe extern "C" fn ToggleUpDown(hwndDlg: HWND, hDlgCtrl: HWND, UpButton: u
     }
 }
 #[no_mangle]
+// C: `VOID MoveItem(HWND hDlgCtrl, INT pos)` — INT, not INT_PTR. Identical on i386,
+// 32 vs 64 bits on amd64/arm64, so this is the width class that compiles everywhere
+// and passes garbage in the high half on exactly two of three arches.
 pub unsafe extern "C" fn MoveItem(
     hDlgCtrl: HWND,
-    pos: INT_PTR) {
+    pos: INT) {
     let mut szBuffer: [u16; 100] = [0; 100];
     let lResult: LRESULT;
 
@@ -1627,8 +1630,8 @@ pub unsafe extern "C" fn MoveItem(
             if SendMessageW(hDlgCtrl, LB_GETTEXT, lResult as WPARAM, szBuffer.as_mut_ptr() as LPARAM) != LB_ERR
             {
                 SendMessageW(hDlgCtrl, LB_DELETESTRING, lResult as WPARAM, 0);
-                SendMessageW(hDlgCtrl, LB_INSERTSTRING, (lResult + pos) as WPARAM, szBuffer.as_ptr() as LPARAM);
-                SendMessageW(hDlgCtrl, LB_SETCURSEL, (lResult + pos) as WPARAM, 0);
+                SendMessageW(hDlgCtrl, LB_INSERTSTRING, (lResult + pos as LRESULT) as WPARAM, szBuffer.as_ptr() as LPARAM);
+                SendMessageW(hDlgCtrl, LB_SETCURSEL, (lResult + pos as LRESULT) as WPARAM, 0);
             }
         }
     }
