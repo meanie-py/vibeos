@@ -33,9 +33,9 @@
 //! * `case 'z'` (scanf.h:290-292, `_MSVCR_VER == 0 || >= 140`) — **IS** compiled.
 //! * `h_prefix == 2 -> _SET_NUMBER_(char)` (scanf.h:382-384, `>= 140`) — is **NOT**,
 //!   so `%hhd` stores a full `int`.
-//! * the EOF-and-nothing-read early return inside `widecharstring:` (scanf.h:521-527,
+//! * the EOF_SENTINEL-and-nothing-read early return inside `widecharstring:` (scanf.h:521-527,
 //!   `>= 80`) — is **NOT**. So `charstring:` returns `_EOF_RET` when it reads nothing at
-//!   EOF and `widecharstring:` returns 0 fields instead. **That asymmetry is
+//!   EOF_SENTINEL and `widecharstring:` returns 0 fields instead. **That asymmetry is
 //!   load-bearing and deliberate here** — see `Dest`/`EOF_AT_EMPTY`.
 //!
 //! # Zero gotos, because the C's eight are all forward dispatch
@@ -192,7 +192,7 @@ pub trait Width {
 
     /// The engine is the native width — selects the `%s`/`%S`/`%c`/`%C` cross table.
     const WIDE: bool;
-    /// `_EOF_RET`. `EOF` narrow, `(short)WEOF` wide — **both are `-1`**, but they are
+    /// `_EOF_RET`. `EOF_SENTINEL` narrow, `(short)WEOF` wide — **both are `-1`**, but they are
     /// spelled separately because they are separate macros in the C.
     const EOF_RET: i32;
     /// `_BITMAPSIZE_` — 256 narrow, `256*256` wide.
@@ -227,7 +227,7 @@ impl Width for Narrow {
     type Ch = i8;
     type Bitmap = [u64; 4]; // 256 bits
     const WIDE: bool = false;
-    const EOF_RET: i32 = -1; // EOF
+    const EOF_RET: i32 = -1; // EOF_SENTINEL
     const BITMAP_BITS: u32 = 256;
 
     fn zero_bitmap() -> [u64; 4] {
@@ -284,20 +284,31 @@ impl Width for Wide {
 /// with `!SECURE && !STRING_LEN && (!CONSOLE || !WIDE_SCANF)`: `file_`, `filew_`,
 /// `str_`, `wstr_`, `console_`. SECURE reuses the non-secure one, `STRING_LEN` reuses
 /// `str_`/`wstr_`, and — this one bites — **the wide CONSOLE engine reuses the NARROW
-/// `console_` one**, so its ctx `_EOF_` is `EOF` (-1) while the engine's is `WEOF`.
+/// `console_` one**, so its ctx `_EOF_` is `EOF_SENTINEL` (-1) while the engine's is `WEOF`.
 trait RawGet: Copy {
     /// `_EOF_` as it was defined when this ctx's `strtod_scanf_get` was compiled.
-    const EOF: i32;
+    /// scanf.h's `_EOF_`, which is deliberately NOT one value: `EOF` for a narrow FILE
+    /// source, `WEOF` for a wide one, and **0** for the STRING sources, which redefine it
+    /// so a NUL terminates the input. Differing per impl is the entire point of putting it
+    /// on the trait.
+    ///
+    /// Every impl carries `// nolint: const-contradiction`. That scanner flags one NAME
+    /// holding two VALUES — exactly right for free constants, exactly wrong for a trait
+    /// associated constant, and it has no notion of `impl` blocks so it cannot tell them
+    /// apart. Suppressed per site rather than baselined, so the reason sits next to the
+    /// code instead of in a flat list that cannot hold one.
+    /// See `Source::EOF_SENTINEL` above for why this varies and is nolint'd.
+    const EOF_SENTINEL: i32;
     /// # Safety
     /// The cursor must be valid; a string cursor must be NUL-terminated.
     unsafe fn get(&mut self) -> i32;
 }
 
-/// `file_` (`fgetc`, `_EOF_ == EOF`).
+/// `file_` (`fgetc`, `_EOF_ == EOF_SENTINEL`).
 #[derive(Clone, Copy)]
 struct RawFileA(*mut FILE);
 impl RawGet for RawFileA {
-    const EOF: i32 = -1;
+    const EOF_SENTINEL: i32 = -1;  // nolint: const-contradiction
     unsafe fn get(&mut self) -> i32 {
         fgetc(self.0)
     }
@@ -307,7 +318,7 @@ impl RawGet for RawFileA {
 #[derive(Clone, Copy)]
 struct RawFileW(*mut FILE);
 impl RawGet for RawFileW {
-    const EOF: i32 = 0xFFFF;
+    const EOF_SENTINEL: i32 = 0xFFFF;  // nolint: const-contradiction
     unsafe fn get(&mut self) -> i32 {
         fgetwc(self.0) as i32
     }
@@ -322,7 +333,7 @@ impl RawGet for RawFileW {
 #[derive(Clone, Copy)]
 struct RawStrA(*const i8);
 impl RawGet for RawStrA {
-    const EOF: i32 = 0;
+    const EOF_SENTINEL: i32 = 0;  // nolint: const-contradiction
     unsafe fn get(&mut self) -> i32 {
         let c = *self.0 as i32;
         self.0 = self.0.add(1);
@@ -334,7 +345,7 @@ impl RawGet for RawStrA {
 #[derive(Clone, Copy)]
 struct RawStrW(*const u16);
 impl RawGet for RawStrW {
-    const EOF: i32 = 0;
+    const EOF_SENTINEL: i32 = 0;  // nolint: const-contradiction
     unsafe fn get(&mut self) -> i32 {
         let c = *self.0 as i32;
         self.0 = self.0.add(1);
@@ -342,11 +353,11 @@ impl RawGet for RawStrW {
     }
 }
 
-/// `console_` (`_getch()`, `_EOF_ == EOF`) — used by BOTH console engines.
+/// `console_` (`_getch()`, `_EOF_ == EOF_SENTINEL`) — used by BOTH console engines.
 #[derive(Clone, Copy)]
 struct RawCon;
 impl RawGet for RawCon {
-    const EOF: i32 = -1;
+    const EOF_SENTINEL: i32 = -1;  // nolint: const-contradiction
     unsafe fn get(&mut self) -> i32 {
         _getch()
     }
@@ -369,16 +380,16 @@ struct FpCtx<R: RawGet> {
 /// `strtod_scanf_get` / `strtod_scanf_unget` (scanf.h:165-195), verbatim.
 impl<R: RawGet> CharSrc for FpCtx<R> {
     unsafe fn get(&mut self) -> u16 {
-        self.cur = R::EOF;
+        self.cur = R::EOF_SENTINEL;
         if self.length == 0 {
             return 0xFFFF; // WEOF — note this is WEOF, not the ctx's _EOF_
         }
-        if self.unget != R::EOF {
+        if self.unget != R::EOF_SENTINEL {
             self.cur = self.unget;
-            self.unget = R::EOF;
+            self.unget = R::EOF_SENTINEL;
         } else {
             self.cur = self.raw.get();
-            if self.cur == R::EOF {
+            if self.cur == R::EOF_SENTINEL {
                 return 0xFFFF;
             }
         }
@@ -397,7 +408,7 @@ impl<R: RawGet> CharSrc for FpCtx<R> {
             self.length += 1;
         }
         self.read -= 1;
-        if self.unget != R::EOF || self.cur == R::EOF {
+        if self.unget != R::EOF_SENTINEL || self.cur == R::EOF_SENTINEL {
             self.err = true;
             return;
         }
@@ -424,7 +435,7 @@ trait Source {
     /// `CONSOLE` does not, so the wide console engine keeps `WEOF` even though
     /// `_getch()` reports end-of-input as -1. That mismatch is msvcrt's, and it is
     /// preserved: `nch == _EOF_` is simply never true there.
-    const EOF: i32;
+    const EOF_SENTINEL: i32;
 
     /// # Safety
     /// FFI.
@@ -485,7 +496,7 @@ macro_rules! file_source {
             type W = $w;
             type Raw = $raw;
             type Guard = FileGuard;
-            const EOF: i32 = $eof;
+            const EOF_SENTINEL: i32 = $eof;  // nolint: const-contradiction
             unsafe fn lock(&mut self) -> FileGuard {
                 _lock_file(self.file);
                 FileGuard(self.file)
@@ -543,7 +554,7 @@ macro_rules! console_source {
             type W = $w;
             type Raw = RawCon;
             type Guard = ConsoleGuard;
-            const EOF: i32 = $eof;
+            const EOF_SENTINEL: i32 = $eof;  // nolint: const-contradiction
             unsafe fn lock(&mut self) -> ConsoleGuard {
                 _lock_file(__iob_func());
                 ConsoleGuard
@@ -576,7 +587,7 @@ macro_rules! console_source {
 
 console_source!(SrcConA, Narrow, -1);
 // NOT a typo, and NOT `-1`: CONSOLE does not `#undef _EOF_`, so the wide console engine
-// tests `nch == WEOF` against a `_getch()` that reports EOF as -1. msvcrt's bug, kept.
+// tests `nch == WEOF` against a `_getch()` that reports EOF_SENTINEL as -1. msvcrt's bug, kept.
 console_source!(SrcConW, Wide, 0xFFFF);
 
 macro_rules! string_source {
@@ -589,7 +600,7 @@ macro_rules! string_source {
             type W = $w;
             type Raw = $raw;
             type Guard = NoGuard;
-            const EOF: i32 = 0; // `#undef _EOF_` / `#define _EOF_ 0`
+            const EOF_SENTINEL: i32 = 0; // `#undef _EOF_` / `#define _EOF_ 0`  // nolint: const-contradiction
             unsafe fn lock(&mut self) -> NoGuard {
                 NoGuard
             }
@@ -639,7 +650,7 @@ macro_rules! string_len_source {
             type W = $w;
             type Raw = $raw;
             type Guard = NoGuard;
-            const EOF: i32 = 0;
+            const EOF_SENTINEL: i32 = 0;  // nolint: const-contradiction
             unsafe fn lock(&mut self) -> NoGuard {
                 NoGuard
             }
@@ -775,7 +786,7 @@ enum Arm {
 ///
 /// The two blocks are the same text apart from the element type and the
 /// `#if _MSVCR_VER >= 80` early return, which this CRT does **not** compile — hence the
-/// const parameter rather than one shared body. `%s` into a `wchar_t*` at EOF with
+/// const parameter rather than one shared body. `%s` into a `wchar_t*` at EOF_SENTINEL with
 /// nothing read therefore returns 0 where the `char*` form returns `_EOF_RET`.
 #[allow(clippy::too_many_arguments)]
 unsafe fn string_arm<W, S, T, const SECURE: bool, const EOF_AT_EMPTY: bool>(
@@ -805,11 +816,11 @@ where
     };
 
     // skip initial whitespace
-    while *nch != S::EOF && W::is_space(*nch) {
+    while *nch != S::EOF_SENTINEL && W::is_space(*nch) {
         *nch = src.getc();
     }
     // read until whitespace
-    while *width != 0 && *nch != S::EOF && !W::is_space(*nch) {
+    while *width != 0 && *nch != S::EOF_SENTINEL && !W::is_space(*nch) {
         if !suppress {
             *sptr = T::from_nch(*nch);
             sptr = sptr.add(1);
@@ -829,7 +840,7 @@ where
             *width -= 1;
         }
     }
-    if EOF_AT_EMPTY && *nch == S::EOF && rd == 0 && *st == 0 {
+    if EOF_AT_EMPTY && *nch == S::EOF_SENTINEL && rd == 0 && *st == 0 {
         return Arm::RetEof;
     }
     if *st != 0 && !suppress {
@@ -873,7 +884,7 @@ where
     if *width == -1 {
         *width = 1;
     }
-    while *width != 0 && *nch != S::EOF {
+    while *width != 0 && *nch != S::EOF_SENTINEL {
         if !suppress {
             if size != 0 {
                 size -= 1;
@@ -923,7 +934,7 @@ where
     let _guard = src.lock();
 
     nch = src.getc();
-    if nch == S::EOF {
+    if nch == S::EOF_SENTINEL {
         return W::EOF_RET;
     }
 
@@ -933,7 +944,7 @@ where
     while W::fmt(*format) != 0 {
         if W::is_space(W::fmt(*format)) {
             // A whitespace character in the format matches any run, including none.
-            while nch != S::EOF && W::is_space(nch) {
+            while nch != S::EOF_SENTINEL && W::is_space(nch) {
                 nch = src.getc();
             }
         } else if W::fmt(*format) == b'%' as i32 {
@@ -1053,7 +1064,7 @@ where
                     let mut negative = false;
                     let mut seendigit = false;
 
-                    while nch != S::EOF && W::is_space(nch) {
+                    while nch != S::EOF_SENTINEL && W::is_space(nch) {
                         nch = src.getc();
                     }
                     if nch == b'-' as i32 || nch == b'+' as i32 {
@@ -1103,7 +1114,7 @@ where
                         }
                         seendigit = true;
                     }
-                    while width != 0 && nch != S::EOF && W::char2digit(nch, base) != -1 {
+                    while width != 0 && nch != S::EOF_SENTINEL && W::char2digit(nch, base) != -1 {
                         cur = cur
                             .wrapping_mul(base as u64)
                             .wrapping_add(W::char2digit(nch, base) as u64);
@@ -1150,10 +1161,10 @@ where
                     // `int negative = 0;` — declared, never assigned in this arm, so
                     // `negative ? -cur : cur` is always `cur`. Dead in the C; dropped.
 
-                    while nch != S::EOF && W::is_space(nch) {
+                    while nch != S::EOF_SENTINEL && W::is_space(nch) {
                         nch = src.getc();
                     }
-                    if nch == S::EOF {
+                    if nch == S::EOF_SENTINEL {
                         break 'arm;
                     }
                     ctx.unget = nch;
@@ -1309,7 +1320,7 @@ where
                     }
 
                     // read until char is not suitable
-                    while width != 0 && nch != S::EOF {
+                    while width != 0 && nch != S::EOF_SENTINEL {
                         let hit = if !invert {
                             bit_is_set(mask, bits, nch as u32)
                         } else {
@@ -1346,7 +1357,7 @@ where
                     // "if a percent sign is followed by a character that has no meaning
                     // as a format-control character, that character and the following
                     // characters are treated as an ordinary sequence of characters".
-                    while nch != S::EOF && W::is_space(nch) {
+                    while nch != S::EOF_SENTINEL && W::is_space(nch) {
                         nch = src.getc();
                     }
                     if W::narrow(nch) == W::fmt(*format) {
@@ -1373,7 +1384,7 @@ where
         format = format.add(1);
     }
 
-    if nch != S::EOF {
+    if nch != S::EOF_SENTINEL {
         src.ungetc(nch);
     }
     // TRACE("returning %d\n", rd) — dropped.

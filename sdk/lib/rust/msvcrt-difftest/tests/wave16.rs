@@ -1032,7 +1032,7 @@ const EOF_C: c_int = -1;
 
 const BASES: [c_int; 9] = [0, 2, 8, 10, 16, 36, /* invalid: */ 1, 37, -1];
 const PARSE_ITERS: usize = 20_000;
-const ITERS: usize = 12_000;
+const CASE_ITERS: usize = 12_000;
 
 /// Tag an integer-parser outcome from the REFERENCE's effects.
 fn parse_tags(fx: &Effects) -> Vec<&'static str> {
@@ -1220,7 +1220,7 @@ macro_rules! narrow_case_rows {
         grade(
             concat!("_strnicmp_l", $suffix),
             &["clean", "front-door", "zero-count"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let (a, b) = (gen_str(r, 20), gen_str(r, 20));
                 let n = match r.below(8) {
@@ -1243,7 +1243,7 @@ macro_rules! narrow_case_rows {
                 (Obs::new(g), Obs::new(w), format!("n={n} {} vs {}", show(&a, na), show(&b, nb)), tags)
             },
         );
-        grade(concat!("_stricmp_l", $suffix), &["clean", "front-door"], ITERS, |r| {
+        grade(concat!("_stricmp_l", $suffix), &["clean", "front-door"], CASE_ITERS, |r| {
             let (a, b) = (gen_str(r, 20), gen_str(r, 20));
             let na = r.below(16) == 0;
             let nb = r.below(16) == 0;
@@ -1262,7 +1262,7 @@ macro_rules! narrow_case_rows {
         grade(
             concat!("_memicmp_l", $suffix),
             &["clean", "front-door", "zero-len", "EILSEQ"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let a = gen_str(r, 24);
                 let mut b = if r.below(3) == 0 { a.clone() } else { gen_str(r, 24) };
@@ -1295,7 +1295,7 @@ macro_rules! narrow_case_rows {
         grade(
             concat!("_strlwr_s_l", $suffix),
             &["ok", "EINVAL", "no-handler"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let s = gen_str(r, 24);
                 let len = match r.below(6) {
@@ -1321,7 +1321,7 @@ macro_rules! narrow_case_rows {
         grade(
             concat!("_strupr_s_l", $suffix),
             &["ok", "EINVAL", "no-handler"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let s = gen_str(r, 24);
                 let len = match r.below(6) {
@@ -1344,7 +1344,7 @@ macro_rules! narrow_case_rows {
                 )
             },
         );
-        grade(concat!("_strlwr_l", $suffix), &["ok"], ITERS, |r| {
+        grade(concat!("_strlwr_l", $suffix), &["ok"], CASE_ITERS, |r| {
             let s = gen_str(r, 30);
             let (mut d1, mut d2) = (Buf::seeded(&s, 40), Buf::seeded(&s, 40));
             let (p1, p2) = (d1.p(), d2.p());
@@ -1352,7 +1352,7 @@ macro_rules! narrow_case_rows {
             let w = Effects::reference(|| unsafe { (ref__strlwr_l(p2, core::ptr::null_mut()) == p2) as i64 });
             (Obs::with(g, d1.img()), Obs::with(w, d2.img()), format!("{s:?}"), vec!["ok"])
         });
-        grade(concat!("_strupr_l", $suffix), &["ok"], ITERS, |r| {
+        grade(concat!("_strupr_l", $suffix), &["ok"], CASE_ITERS, |r| {
             let s = gen_str(r, 30);
             let (mut d1, mut d2) = (Buf::seeded(&s, 40), Buf::seeded(&s, 40));
             let (p1, p2) = (d1.p(), d2.p());
@@ -1567,7 +1567,7 @@ macro_rules! wide_case_rows {
         grade(
             concat!("_wcsupr_s_l", $suffix),
             &["ok", "EINVAL", "no-handler"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let s = gen_wstr(r, 24);
                 let n = match r.below(6) {
@@ -1593,7 +1593,7 @@ macro_rules! wide_case_rows {
         grade(
             concat!("_wcslwr_s_l", $suffix),
             &["ok", "EINVAL", "no-handler"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let s = gen_wstr(r, 24);
                 let n = match r.below(6) {
@@ -1616,7 +1616,7 @@ macro_rules! wide_case_rows {
                 )
             },
         );
-        grade(concat!("_wcsupr_l", $suffix), &["ok"], ITERS, |r| {
+        grade(concat!("_wcsupr_l", $suffix), &["ok"], CASE_ITERS, |r| {
             let s = gen_wstr(r, 30);
             let (mut d1, mut d2) = (WBuf::seeded(&s, 40), WBuf::seeded(&s, 40));
             let (p1, p2) = (d1.p(), d2.p());
@@ -1624,7 +1624,7 @@ macro_rules! wide_case_rows {
             let w = Effects::reference(|| unsafe { (ref__wcsupr_l(p2, core::ptr::null_mut()) == p2) as i64 });
             (Obs::with(g, d1.img()), Obs::with(w, d2.img()), format!("slen={}", s.len() - 1), vec!["ok"])
         });
-        grade(concat!("_wcslwr_l", $suffix), &["ok"], ITERS, |r| {
+        grade(concat!("_wcslwr_l", $suffix), &["ok"], CASE_ITERS, |r| {
             let s = gen_wstr(r, 30);
             let (mut d1, mut d2) = (WBuf::seeded(&s, 40), WBuf::seeded(&s, 40));
             let (p1, p2) = (d1.p(), d2.p());
@@ -1634,7 +1634,7 @@ macro_rules! wide_case_rows {
         });
         // Returns the RAW wchar_t difference, not a clamp — and `_wcsicmp_l` has NO
         // zero-count early-out, unlike `_wcsnicmp_l`.
-        grade(concat!("_wcsicmp_l", $suffix), &["clean", "front-door"], ITERS, |r| {
+        grade(concat!("_wcsicmp_l", $suffix), &["clean", "front-door"], CASE_ITERS, |r| {
             let a = gen_wstr(r, 20);
             let b = if r.below(3) == 0 { a.clone() } else { gen_wstr(r, 20) };
             let na = r.below(16) == 0;
@@ -1651,7 +1651,7 @@ macro_rules! wide_case_rows {
         grade(
             concat!("_wcsnicmp_l", $suffix),
             &["clean", "front-door", "zero-count"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let a = gen_wstr(r, 20);
                 let b = if r.below(3) == 0 { a.clone() } else { gen_wstr(r, 20) };
@@ -1760,7 +1760,7 @@ macro_rules! wmb_rows {
         grade(
             concat!("_wctomb_s_l", $suffix),
             $req_s,
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let wch = gen_wchar(r);
                 let null_mb = r.below(12) == 0;
@@ -1789,7 +1789,7 @@ macro_rules! wmb_rows {
                 )
             },
         );
-        grade(concat!("wctomb_s", $suffix), $req_s, ITERS, |r| {
+        grade(concat!("wctomb_s", $suffix), $req_s, CASE_ITERS, |r| {
             let wch = gen_wchar(r);
             let null_mb = r.below(12) == 0;
             let size = gen_size(r, null_mb);
@@ -1807,7 +1807,7 @@ macro_rules! wmb_rows {
         });
         // `_wctomb_l` is the ReactOS arm: it sizes the destination from `mb_cur_max` and
         // maps any non-zero status to -1, where Wine's passes MB_LEN_MAX and ignores it.
-        grade(concat!("_wctomb_l", $suffix), $req_p, ITERS, |r| {
+        grade(concat!("_wctomb_l", $suffix), $req_p, CASE_ITERS, |r| {
             let wch = gen_wchar(r);
             let null_dst = r.below(12) == 0;
             let (mut d1, mut d2) = (Buf::new(24), Buf::new(24));
@@ -1823,7 +1823,7 @@ macro_rules! wmb_rows {
                 tags,
             )
         });
-        grade(concat!("wctomb", $suffix), $req_p, ITERS, |r| {
+        grade(concat!("wctomb", $suffix), $req_p, CASE_ITERS, |r| {
             let wch = gen_wchar(r);
             let null_dst = r.below(12) == 0;
             let (mut d1, mut d2) = (Buf::new(24), Buf::new(24));
@@ -1836,7 +1836,7 @@ macro_rules! wmb_rows {
         });
         // `wcrtomb` widens `wctomb`'s `int` into a `size_t`, so its failure is
         // (size_t)-1 and NOT 0xFFFFFFFF on a 64-bit target. The mbstate is zeroed first.
-        grade(concat!("wcrtomb", $suffix), $req_p, ITERS, |r| {
+        grade(concat!("wcrtomb", $suffix), $req_p, CASE_ITERS, |r| {
             let wch = gen_wchar(r);
             let pass_state = r.below(2) == 0;
             let (mut d1, mut d2) = (Buf::new(24), Buf::new(24));
@@ -1858,7 +1858,7 @@ macro_rules! wmb_rows {
             }
             (Obs::with(g, gi), Obs::with(w, wi), format!("wch=U+{wch:04X} state={pass_state}"), tags)
         });
-        grade(concat!("wcrtomb_s", $suffix), $req_s, ITERS, |r| {
+        grade(concat!("wcrtomb_s", $suffix), $req_s, CASE_ITERS, |r| {
             let wch = gen_wchar(r);
             // `mbchar` is never NULL here, so `gen_size` withholds the sizes that would
             // make msvcrt memset gigabytes into it.
@@ -1891,7 +1891,7 @@ macro_rules! wmb_rows {
         });
         // `wcsrtombs` advances the caller's source pointer — NULL when it consumed the
         // terminator, `+i` when it ran out of room — so the pointer is part of the answer.
-        grade(concat!("wcsrtombs", $suffix), &["ok", "EILSEQ", "nodst"], ITERS, |r| {
+        grade(concat!("wcsrtombs", $suffix), &["ok", "EILSEQ", "nodst"], CASE_ITERS, |r| {
             let s = gen_conv_wstr(r);
             let count = r.below(s.len() + 6);
             let null_dst = r.below(6) == 0;
@@ -1931,7 +1931,7 @@ macro_rules! wmb_rows {
         grade(
             concat!("wcstombs_s", $suffix),
             &["ok", "EINVAL", "ERANGE", "STRUNCATE", "handler", "oob-1"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let s = gen_conv_wstr(r);
                 let (size, count) = gen_size_count(r, s.len());
@@ -1978,7 +1978,7 @@ macro_rules! wmb_rows {
         grade(
             concat!("_wcstombs_s_l", $suffix),
             &["ok", "EINVAL", "ERANGE", "STRUNCATE", "handler", "oob-1"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let s = gen_conv_wstr(r);
                 let (size, count) = gen_size_count(r, s.len());
@@ -2017,7 +2017,7 @@ macro_rules! wmb_rows {
         grade(
             concat!("wcsrtombs_s", $suffix),
             &["ok", "EINVAL", "ERANGE", "STRUNCATE", "handler", "oob-1", "sizing", "null-srcval"],
-            ITERS,
+            CASE_ITERS,
             |r| {
                 let s = gen_conv_wstr(r);
                 let (size, count) = gen_size_count(r, s.len());
@@ -2172,7 +2172,7 @@ unsafe fn blind_rows() {
     // `_strdup` — NULL in, NULL out, no errno, no handler; otherwise a heap copy. Both
     // sides call the host malloc, so the POINTERS differ by construction: what is compared
     // is the bytes it copied and whether it returned NULL at all.
-    grade("_strdup", &["ok", "null"], ITERS, |r| {
+    grade("_strdup", &["ok", "null"], CASE_ITERS, |r| {
         let s = gen_str(r, 40);
         let null = r.below(12) == 0;
         let p = if null { core::ptr::null() } else { s.as_ptr() };
@@ -2201,7 +2201,7 @@ unsafe fn blind_rows() {
     // `_atoflt` — the classification is taken off the NARROWED float, not the double, so
     // `1e-40` is an `_UNDERFLOW` even though the double holds it fine. All three returns
     // are required outcomes.
-    grade("_atoflt", &["ok", "OVERFLOW", "UNDERFLOW"], ITERS, |r| {
+    grade("_atoflt", &["ok", "OVERFLOW", "UNDERFLOW"], CASE_ITERS, |r| {
         let mut s = gen_float_str(r);
         let mut s2 = s.clone();
         let (mut v1, mut v2) = (CrtFloat { f: f32::from_bits(0x5A5A_5A5A) }, CrtFloat { f: f32::from_bits(0x5A5A_5A5A) });
@@ -2230,7 +2230,7 @@ unsafe fn blind_rows() {
     // not define `sprintf`. This row measures that difference directly, on exactly the
     // call I10_OUTPUT makes, so the next row can be honest about what it grades.
     let mut substrate_bad = 0u64;
-    grade("sprintf %.*le [SUBSTRATE]", &["finite", "nonfinite"], ITERS, |r| {
+    grade("sprintf %.*le [SUBSTRATE]", &["finite", "nonfinite"], CASE_ITERS, |r| {
         let ld = gen_ld80(r);
         let d = ld80_as_f64(&ld).abs();
         let prec = r.below(21) as c_int;
@@ -2263,7 +2263,7 @@ unsafe fn blind_rows() {
     // exit before `sprintf` on the `1#INF`/`1#QNAN`/`1#SNAN` path, which is required.
     let mut i10_skipped_inf = 0u64;
     let mut i10_skipped_smash = 0u64;
-    grade("I10_OUTPUT", &["nonfinite", "finite", "flag1"], ITERS, |r| {
+    grade("I10_OUTPUT", &["nonfinite", "finite", "flag1"], CASE_ITERS, |r| {
         let (ld, prec, flag) = loop {
             let ld = gen_ld80(r);
             let prec = match r.below(6) {
@@ -2311,7 +2311,7 @@ unsafe fn blind_rows() {
     // which is a WRITE AT dst[len + n], one past the n it was given, whenever the source
     // did not run out first. That extra byte is only visible in a whole-buffer compare,
     // and the returned pointer is the ORIGINAL dst.
-    grade("wcsncat", &["ok", "full"], ITERS, |r| {
+    grade("wcsncat", &["ok", "full"], CASE_ITERS, |r| {
         let a = gen_wstr(r, 10);
         let s = gen_wstr(r, 10);
         let n = r.below(14);
@@ -2393,7 +2393,7 @@ unsafe fn blind_rows() {
     if substrate_bad > 0 {
         println!(
             "  [substrate] glibc's sprintf and msvcrt's disagreed on {substrate_bad} of the \
-             {ITERS} `%.*le` probes — see the `sprintf %.*le [SUBSTRATE]` row."
+             {CASE_ITERS} `%.*le` probes — see the `sprintf %.*le [SUBSTRATE]` row."
         );
     }
     let (zero_ret, with_err) = probe_insufficient_buffer();
