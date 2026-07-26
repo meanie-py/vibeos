@@ -372,3 +372,148 @@ extern "C" {
         ...
     ) -> ::core::ffi::c_int;
 }
+
+// ===========================================================================================
+// Wave-5 batch additions (the `shell32/` free-function TUs).
+//
+// Everything below follows the two rules in the module header: types come from the island, and
+// a shell32-owned export is DECLARED against island types rather than imported from the Rust
+// module that happens to define it.
+// ===========================================================================================
+
+// The C scalar spellings. bindgen writes `::core::ffi::c_int` in its own signatures but the
+// translation writes the bare name, and `core::ffi` is not in a `no_std` prelude.
+pub use ::core::ffi::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ulong, c_ushort, c_void};
+
+/// shell32_main.h:31 `#define ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))`.
+#[macro_export]
+macro_rules! ARRAY_SIZE {
+    ($a:expr) => {
+        (($a).len()) as u32
+    };
+}
+/// shellutils.h:88 `#define FAILED_UNEXPECTEDLY(hr) FAILED(hr)` in a non-debug build — the
+/// debug spelling only adds a trace, so the VALUE is `FAILED`.
+#[macro_export]
+macro_rules! FAILED_UNEXPECTEDLY {
+    ($hr:expr) => {
+        (($hr) as $crate::island::HRESULT) < 0
+    };
+}
+/// shellutils.h:678 `#define MAKE_COMPARE_HRESULT(x) ((x)>0 ? S_GREATERTHAN : ((x)<0 ? S_LESSTHAN : S_EQUAL))`.
+#[macro_export]
+macro_rules! MAKE_COMPARE_HRESULT {
+    ($x:expr) => {
+        if ($x) > 0 {
+            $crate::prelude::S_GREATERTHAN
+        } else if ($x) < 0 {
+            $crate::prelude::S_LESSTHAN
+        } else {
+            $crate::prelude::S_EQUAL
+        }
+    };
+}
+/// shlfileop.cpp:28-30 — file-attribute predicates, kept as macros because C used them on
+/// anything integral.
+#[macro_export]
+macro_rules! IsAttrib {
+    ($x:expr, $y:expr) => {
+        ($crate::prelude::INVALID_FILE_ATTRIBUTES != ($x)) && (($x) & ($y)) != 0
+    };
+}
+#[macro_export]
+macro_rules! IsAttribFile {
+    ($x:expr) => {
+        (($x) & $crate::island::FILE_ATTRIBUTE_DIRECTORY) == 0
+    };
+}
+#[macro_export]
+macro_rules! IsAttribDir {
+    ($x:expr) => {
+        $crate::IsAttrib!($x, $crate::island::FILE_ATTRIBUTE_DIRECTORY)
+    };
+}
+pub use crate::{ARRAY_SIZE, FAILED_UNEXPECTEDLY, IsAttrib, IsAttribDir, IsAttribFile, MAKE_COMPARE_HRESULT};
+
+/// shellutils.h:675-677. `S_LESSTHAN` really is `0xffff`: `IShellFolder::CompareIDs` returns the
+/// result in the LOW SHORT of the HRESULT, and `0xffff` is `-1` read as a `short`.
+pub const S_LESSTHAN: crate::island::HRESULT = 0xffff;
+pub const S_EQUAL: crate::island::HRESULT = 0;
+pub const S_GREATERTHAN: crate::island::HRESULT = 1;
+
+/// fileapi.h `#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)` — a CAST macro, so bindgen has
+/// nothing to bind and the island cannot carry it.
+pub const INVALID_FILE_ATTRIBUTES: crate::island::DWORD = 0xFFFF_FFFF;
+
+/// windowsx.h / winuser.h byte and word extraction.
+#[inline]
+pub const fn LOBYTE(v: crate::island::DWORD) -> crate::island::BYTE {
+    (v & 0xff) as crate::island::BYTE
+}
+#[inline]
+pub const fn HIBYTE(v: crate::island::DWORD) -> crate::island::BYTE {
+    ((v >> 8) & 0xff) as crate::island::BYTE
+}
+
+/// shellutils.h:474-475 `static inline bool StrIsNullOrEmpty(LPCWSTR str)`.
+#[inline]
+pub unsafe fn StrIsNullOrEmpty(str_: crate::island::LPCWSTR) -> bool {
+    str_.is_null() || *str_ == 0
+}
+
+/// commctrl.h `TreeView_*` — `SNDMSG` wrappers, so they are messages, not entry points.
+#[inline]
+pub unsafe fn TreeView_GetSelection(hwnd: crate::island::HWND) -> crate::island::HTREEITEM {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_GETNEXTITEM,
+        crate::island::TVGN_CARET as crate::island::WPARAM,
+        0,
+    ) as crate::island::HTREEITEM
+}
+#[inline]
+pub unsafe fn TreeView_GetChild(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::HTREEITEM {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_GETNEXTITEM,
+        crate::island::TVGN_CHILD as crate::island::WPARAM,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::HTREEITEM
+}
+#[inline]
+pub unsafe fn TreeView_Expand(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+    code: crate::island::UINT,
+) -> crate::island::BOOL {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_EXPAND,
+        code as crate::island::WPARAM,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::BOOL
+}
+
+// shell32's OWN exports. Declared, not imported, for the reason given above the
+// SHGetSetSettings block: the Rust modules that define them are typed against
+// `crate::types`, and mixing those aliases with the island's splits every call site.
+extern "system" {
+    /// shlobj.h — the PIDL allocator family, implemented in `wine/pidl.rs`.
+    pub fn ILFree(pidl: crate::island::LPITEMIDLIST);
+    pub fn ILClone(pidl: crate::island::LPCITEMIDLIST) -> crate::island::LPITEMIDLIST;
+    pub fn ILCombine(
+        p1: crate::island::LPCITEMIDLIST,
+        p2: crate::island::LPCITEMIDLIST,
+    ) -> crate::island::LPITEMIDLIST;
+    pub fn ILGetNext(pidl: crate::island::LPCITEMIDLIST) -> crate::island::LPITEMIDLIST;
+    pub fn ILFindLastID(pidl: crate::island::LPCITEMIDLIST) -> crate::island::LPITEMIDLIST;
+    pub fn ILIsEqual(
+        p1: crate::island::LPCITEMIDLIST,
+        p2: crate::island::LPCITEMIDLIST,
+    ) -> crate::island::BOOL;
+    /// shlobj.h `void WINAPI SHFree(LPVOID)` — implemented in `wine/shellole.rs`.
+    pub fn SHFree(pv: crate::island::LPVOID);
+}

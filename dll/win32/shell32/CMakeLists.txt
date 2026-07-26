@@ -97,7 +97,7 @@ list(APPEND SOURCE
     CDefViewUtil.cpp
     CDefViewDual.cpp
     CDefViewBckgrndMenu.cpp
-    stubs.cpp
+    # stubs.cpp — replaced by Rust (shell32-rust/src/shell32/stubs.rs); cohab via libshell32_rust.a
     # systray.cpp — replaced by Rust (shell32-rust/src/systray.rs); cohab via libshell32_rust.a
     # CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
     CDefaultContextMenu.cpp

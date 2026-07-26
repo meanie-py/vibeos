@@ -11,9 +11,7 @@ pub static CPP_COM_WSTR_50CEA9783DF2: [WCHAR; 36] = [0x0043, 0x006F, 0x006E, 0x0
 pub static CPP_COM_WSTR_88409267423F: [WCHAR; 16] = [0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0020, 0x0049, 0x0063, 0x006F, 0x006E, 0x0020, 0x0053, 0x0069, 0x007A, 0x0065, 0x0000];
 
 use core::ffi::c_void;
-use crate::shellcom::*;
-use crate::types::*;
-use crate::win32::*;
+use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
@@ -74,7 +72,7 @@ unsafe extern "C" fn SIC_GetMetricsValue(pszValueName: PCWSTR, nDefaultValue: i3
     if error != 0 {
         return nDefaultValue;
     }
-    let idx = _countof(szValue) - 1;
+    let idx = _countof!(szValue) - 1;
     szValue[idx] = UNICODE_NULL; // Avoid buffer overrun
     _wtoi(szValue.as_ptr() as PCWSTR)
 }

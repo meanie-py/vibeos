@@ -118,9 +118,7 @@ impl Drop for CDataObjectHIDA {
 }
 
 use core::ffi::c_void;
-use crate::shellcom::*;
-use crate::types::*;
-use crate::win32::*;
+use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
@@ -134,10 +132,10 @@ pub unsafe extern "C" fn SHELL_GetDefaultFolderEnumSHCONTF() -> SHCONTF {
     let mut flags: SHCONTF = SHCONTF_FOLDERS | SHCONTF_NONFOLDERS;
     let mut ss: SHELLSTATE = core::mem::zeroed();
     SHGetSetSettings(core::ptr::addr_of_mut!(ss), SSF_SHOWALLOBJECTS | SSF_SHOWSUPERHIDDEN, FALSE);
-    if ss.fShowAllObjects != 0 {
+    if ss.fShowAllObjects() != 0 {
         flags |= SHCONTF_INCLUDEHIDDEN;
     }
-    if ss.fShowSuperHidden != 0 {
+    if ss.fShowSuperHidden() != 0 {
         flags |= SHCONTF_INCLUDESUPERHIDDEN;
     }
     flags
@@ -502,7 +500,7 @@ pub unsafe extern "C" fn SHELL32_BindToSF(
     );
     ILFree(pidlChild);
 
-    if FAILED_UNEXPECTEDLY(hr) != 0 {
+    if FAILED_UNEXPECTEDLY!(hr) != 0 {
         return hr;
     }
 
@@ -553,7 +551,7 @@ pub unsafe extern "C" fn SHELL32_CompareChildren(psf: *mut IShellFolder2, lParam
     let isEmpty1 = _ILIsDesktop(nextpidl1);
     let isEmpty2 = _ILIsDesktop(nextpidl2);
     if isEmpty1 || isEmpty2 {
-        return MAKE_COMPARE_HRESULT((isEmpty2 as i32) - (isEmpty1 as i32));
+        return MAKE_COMPARE_HRESULT!((isEmpty2 as i32) - (isEmpty1 as i32));
     }
 
     let firstpidl = ILCloneFirst(pidl1);
@@ -565,7 +563,7 @@ pub unsafe extern "C" fn SHELL32_CompareChildren(psf: *mut IShellFolder2, lParam
     let hr = (*psf).BindToObject(firstpidl, 0, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(psf2).cast());
     ILFree(firstpidl);
     if hr < 0 {
-        return MAKE_COMPARE_HRESULT(0);
+        return MAKE_COMPARE_HRESULT!(0);
     }
 
     let result = (*psf2).CompareIDs(lParam, nextpidl1, nextpidl2);
@@ -587,22 +585,22 @@ pub unsafe extern "system" fn SHELL32_CompareDetails(
 
     let hres = (*isf).GetDetailsOf(pidl1 as _, col, &mut sd);
     if hres < 0 {
-        return MAKE_COMPARE_HRESULT(1);
+        return MAKE_COMPARE_HRESULT!(1);
     }
 
     let hres = StrRetToBufW(&mut sd.str, pidl1, wszItem1.as_mut_ptr(), (MAX_PATH) as u32);
     if hres < 0 {
-        return MAKE_COMPARE_HRESULT(1);
+        return MAKE_COMPARE_HRESULT!(1);
     }
 
     let hres = (*isf).GetDetailsOf(pidl2 as _, col, &mut sd);
     if hres < 0 {
-        return MAKE_COMPARE_HRESULT(1);
+        return MAKE_COMPARE_HRESULT!(1);
     }
 
     let hres = StrRetToBufW(&mut sd.str, pidl2, wszItem2.as_mut_ptr(), (MAX_PATH) as u32);
     if hres < 0 {
-        return MAKE_COMPARE_HRESULT(1);
+        return MAKE_COMPARE_HRESULT!(1);
     }
 
     let ret = CompareUiStrings(wszItem1.as_ptr(), wszItem2.as_ptr(), lParam);
@@ -610,7 +608,7 @@ pub unsafe extern "system" fn SHELL32_CompareDetails(
         return SHELL32_CompareChildren(isf, lParam, pidl1, pidl2);
     }
 
-    MAKE_COMPARE_HRESULT(ret)
+    MAKE_COMPARE_HRESULT!(ret)
 }
 #[no_mangle]
 pub unsafe extern "C" fn CloseRegKeyArray(array: *mut HKEY, cKeys: u32) {
@@ -668,7 +666,7 @@ pub unsafe extern "C" fn AddFSClassKeysToArray(
         if !pFileData.is_null() {
             name = (*pFileData).wszName;
         } else {
-            _ILSimpleGetTextW(pidl, buf.as_mut_ptr(), _countof(&buf));
+            _ILSimpleGetTextW(pidl, buf.as_mut_ptr(), _countof!(&buf));
             name = buf.as_mut_ptr();
         }
         let extension = PathFindExtension(name);
@@ -693,7 +691,7 @@ pub unsafe extern "C" fn AddFSClassKeysToArray(
                 }
             }
 
-            let sfa_len = 23 + _countof(&wszClass);
+            let sfa_len = 23 + _countof!(&wszClass);
             let mut wszSFA_vec: Vec<u16> = Vec::with_capacity(sfa_len as usize);
             let wszSFA = wszSFA_vec.as_mut_ptr();
             swprintf(wszSFA, CPP_COM_WSTR_F38FD69158A5.as_ptr(), extension);
@@ -744,7 +742,7 @@ pub unsafe extern "C" fn SH_GetApidlFromDataObject(
 ) -> HRESULT {
     let mut cida = CDataObjectHIDA::new(pDataObject);
 
-    if FAILED_UNEXPECTEDLY(cida.hr()) {
+    if FAILED_UNEXPECTEDLY!(cida.hr()) {
         return cida.hr();
     }
 
@@ -793,7 +791,7 @@ pub unsafe extern "system" fn SHOpenFolderAndSelectItems(
             let mut hr: HRESULT;
             let mut tmp: PCIDLIST_ABSOLUTE = core::ptr::null_mut();
             hr = SHILCombine(pidlFolder, apidl.add(0), core::ptr::addr_of_mut!(tmp));
-            if FAILED_UNEXPECTEDLY(hr) {
+            if FAILED_UNEXPECTEDLY!(hr) {
                 return hr;
             }
             freeItem.Attach((tmp as *mut PIDLIST_ABSOLUTE).cast());
@@ -805,20 +803,20 @@ pub unsafe extern "system" fn SHOpenFolderAndSelectItems(
 
     let mut psfDesktop: CComPtr<IShellFolder> = CComPtr::<IShellFolder>::new();
     let hr: HRESULT = SHGetDesktopFolder(core::ptr::addr_of_mut!(psfDesktop));
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         return hr;
     }
 
     let mut strret: STRRET = core::mem::zeroed();
     // IShellFolder::GetDisplayNameOf takes a REFIID and a pointer to STRRET.
     let hr = (*psfDesktop.as_raw()).GetDisplayNameOf(pidlItem, SHGDN_FORPARSING, core::ptr::addr_of_mut!(strret));
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         return hr;
     }
 
     let mut wszBuf: [u16; MAX_PATH] = [0u16; MAX_PATH];
     let hr = StrRetToBufW(core::ptr::addr_of!(strret), pidlItem, wszBuf.as_mut_ptr(), wszBuf.len() as u32);
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         return hr;
     }
 

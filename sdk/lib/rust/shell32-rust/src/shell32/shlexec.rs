@@ -46,9 +46,7 @@ pub static CPP_COM_WSTR_F99F36C2F40B: [WCHAR; 9] = [0x0070, 0x0072, 0x006F, 0x00
 pub static CPP_COM_WSTR_FC9A94A80631: [WCHAR; 13] = [0x005C, 0x0061, 0x0070, 0x0070, 0x006C, 0x0069, 0x0063, 0x0061, 0x0074, 0x0069, 0x006F, 0x006E, 0x0000];
 
 use core::ffi::c_void;
-use crate::shellcom::*;
-use crate::types::*;
-use crate::win32::*;
+use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
@@ -108,7 +106,7 @@ unsafe extern "C" fn SHELL_InRunDllProcess() -> i32 {
     s_bInDllProcess = if GetModuleFileNameW(
         core::ptr::null_mut(),
         szModule.as_mut_ptr(),
-        _countof(szModule.len()),
+        _countof!(szModule),
     ) != 0
         && StrStrIW(PathFindFileNameW(szModule.as_ptr()), CPP_COM_WSTR_B74AC138CDFD.as_ptr())
             != core::ptr::null_mut()
@@ -487,7 +485,7 @@ unsafe extern "C" fn SHELL_ArgifyW(
                             CPP_COM_WSTR_16420528D4CF.as_ptr(),
                             pv,
                         ) as DWORD;
-                        if chars >= ARRAY_SIZE(buf.as_mut_ptr() as *const u16) {
+                        if chars >= ARRAY_SIZE!(buf) {
                             ERR!(b"pidl format buffer too small!\n".as_ptr() as *const u8);
                         }
                         used += chars;
@@ -605,14 +603,14 @@ unsafe extern "stdcall" fn RunAsDlgProc(
                 hwnd,
                 IDC_RUNAS_NAME,
                 EM_LIMITTEXT,
-                (_countof((*pData).NameBuffer) - 1) as _,
+                (_countof!((*pData).NameBuffer) - 1) as _,
                 0,
             );
             SendDlgItemMessageW(
                 hwnd,
                 IDC_RUNAS_PWD,
                 EM_LIMITTEXT,
-                (_countof((*pData).Password) - 1) as _,
+                (_countof!((*pData).Password) - 1) as _,
                 0,
             );
             SendDlgItemMessageW(
@@ -624,25 +622,25 @@ unsafe extern "stdcall" fn RunAsDlgProc(
             );
             let hCtl = GetDlgItem(hwnd, IDC_RUNAS_CURRENT);
             let mut fmtbuf: [u16; 200 as usize] = [0u16; 200 as usize];
-            let mut buf: [u16; (_countof(fmtbuf) + _countof((*pData).NameBuffer)) as usize] =
-                [0u16; (_countof(fmtbuf) + _countof((*pData).NameBuffer)) as usize];
-            let mut cch: DWORD = _countof((*pData).NameBuffer);
+            let mut buf: [u16; (_countof!(fmtbuf) + _countof!((*pData).NameBuffer)) as usize] =
+                [0u16; (_countof!(fmtbuf) + _countof!((*pData).NameBuffer)) as usize];
+            let mut cch: DWORD = _countof!((*pData).NameBuffer);
             if GetUserNameW((*pData).NameBuffer.as_mut_ptr(), &mut cch) != 0 {
                 SendMessageW(
                     hCtl,
                     WM_GETTEXT,
-                    _countof(fmtbuf) as _,
+                    _countof!(fmtbuf) as _,
                     fmtbuf.as_mut_ptr() as LPARAM,
                 );
                 StringCchPrintfW(
                     fmtbuf.as_mut_ptr(),
-                    _countof(fmtbuf) as _,
+                    _countof!(fmtbuf) as _,
                     buf.as_mut_ptr(),
                     CPP_COM_WSTR_6E8A9C6CE19B.as_ptr(),
                 );
                 StringCchPrintfW(
                     buf.as_mut_ptr(),
-                    _countof(buf) as _,
+                    _countof!(buf) as _,
                     fmtbuf.as_mut_ptr(),
                     (*pData).NameBuffer.as_mut_ptr(),
                 );
@@ -679,14 +677,14 @@ unsafe extern "stdcall" fn RunAsDlgProc(
                         hwnd,
                         IDC_RUNAS_NAME,
                         WM_GETTEXT,
-                        _countof((*pData).NameBuffer) as _,
+                        _countof!((*pData).NameBuffer) as _,
                         (*pData).NameBuffer.as_mut_ptr() as LPARAM,
                     );
                     SendDlgItemMessageW(
                         hwnd,
                         IDC_RUNAS_PWD,
                         WM_GETTEXT,
-                        _countof((*pData).Password) as _,
+                        _countof!((*pData).Password) as _,
                         (*pData).Password.as_mut_ptr() as LPARAM,
                     );
                     (*pData).Name = (*pData).NameBuffer.as_mut_ptr();
@@ -1224,7 +1222,7 @@ unsafe extern "C" fn SHELL_FindExecutableByVerb(
         hkey_class,
         lp_verb,
         verb.as_mut_ptr(),
-        ARRAY_SIZE(verb.as_ptr()),
+        ARRAY_SIZE!(verb),
     ) == 0
     {
         return SE_ERR_NOASSOC;
@@ -1295,7 +1293,7 @@ unsafe extern "C" fn SHELL_FindExecutable(
         return 33;
     }
 
-    GetCurrentDirectoryW(ARRAY_SIZE(curdir.as_mut_ptr()), curdir.as_mut_ptr());
+    GetCurrentDirectoryW(ARRAY_SIZE!(curdir), curdir.as_mut_ptr());
 
     if !lpPath.is_null() && *lpPath != 0u16 {
         search_paths[0] = lpPath;
@@ -1346,7 +1344,7 @@ unsafe extern "C" fn SHELL_FindExecutable(
             CPP_COM_WSTR_F99F36C2F40B.as_ptr(),
             CPP_COM_WSTR_7DA531BC3C5E.as_ptr(),
             wBuffer.as_mut_ptr(),
-            ARRAY_SIZE(wBuffer.as_ptr()),
+            ARRAY_SIZE!(wBuffer),
         ) > 0
         {
             CharLowerW(wBuffer.as_mut_ptr());
@@ -1379,7 +1377,7 @@ unsafe extern "C" fn SHELL_FindExecutable(
         ) == ERROR_SUCCESS
         {
             classnamelen /= core::mem::size_of::<u16>() as i32;
-            if classnamelen == ARRAY_SIZE(classname.as_ptr()) as i32 {
+            if classnamelen == ARRAY_SIZE!(classname) as i32 {
                 classnamelen -= 1;
             }
             classname[classnamelen as usize] = 0u16;
@@ -1434,7 +1432,7 @@ unsafe extern "C" fn SHELL_FindExecutable(
             extension,
             CPP_COM_WSTR_96A296D224F2.as_ptr(),
             command.as_mut_ptr(),
-            ARRAY_SIZE(command.as_ptr()),
+            ARRAY_SIZE!(command),
         ) > 0
         {
             if wcslen(command.as_ptr()) != 0 {
@@ -1520,11 +1518,11 @@ unsafe extern "C" fn dde_connect(
     let mut ret: u32 = SE_ERR_NOASSOC;
     let unicode: u8 = if (GetVersion() & 0x80000000) == 0 { 1 } else { 0 };
 
-    if strlenW(key) + 1 > ARRAY_SIZE(regkey.as_ptr() as *const _) {
+    if strlenW(key) + 1 > ARRAY_SIZE!(regkey) {
         return 2;
     }
     wcscpy(regkey.as_mut_ptr(), key);
-    endkeyLen = ARRAY_SIZE(regkey.as_ptr() as *const _) - endkey_offset;
+    endkeyLen = ARRAY_SIZE!(regkey) - endkey_offset;
     if strlenW(CPP_COM_WSTR_FC9A94A80631.as_ptr()) + 1 > endkeyLen {
         return 2;
     }
@@ -1537,7 +1535,7 @@ unsafe extern "C" fn dde_connect(
         let mut ret_search: u32 = 0;
 
         if *start == '"' as u16 {
-            if strlenW(start.add(1)) + 1 > ARRAY_SIZE(command.as_ptr() as *const _) {
+            if strlenW(start.add(1)) + 1 > ARRAY_SIZE!(command) {
                 return 2;
             }
             wcscpy(command.as_mut_ptr(), start.add(1));
@@ -1545,7 +1543,7 @@ unsafe extern "C" fn dde_connect(
             if !ptr.is_null() {
                 *ptr = 0;
             }
-            ret_search = SearchPathW(core::ptr::null_mut(), command.as_ptr(), CPP_COM_WSTR_7ABCE230ED71.as_ptr(), ARRAY_SIZE(fullpath.as_ptr() as *const _) as u32, fullpath.as_mut_ptr(), &mut ptr);
+            ret_search = SearchPathW(core::ptr::null_mut(), command.as_ptr(), CPP_COM_WSTR_7ABCE230ED71.as_ptr(), ARRAY_SIZE!(fullpath) as u32, fullpath.as_mut_ptr(), &mut ptr);
         } else {
             let mut p: PCWSTR = start;
             loop {
@@ -1556,21 +1554,21 @@ unsafe extern "C" fn dde_connect(
                 let idx = space.offset_from(start) as usize;
                 memcpy(command.as_mut_ptr() as *mut _, start as *const _, idx * core::mem::size_of::<u16>());
                 command[idx] = 0;
-                ret_search = SearchPathW(core::ptr::null_mut(), command.as_ptr(), CPP_COM_WSTR_7ABCE230ED71.as_ptr(), ARRAY_SIZE(fullpath.as_ptr() as *const _) as u32, fullpath.as_mut_ptr(), &mut ptr);
+                ret_search = SearchPathW(core::ptr::null_mut(), command.as_ptr(), CPP_COM_WSTR_7ABCE230ED71.as_ptr(), ARRAY_SIZE!(fullpath) as u32, fullpath.as_mut_ptr(), &mut ptr);
                 if ret_search != 0 {
                     break;
                 }
                 p = space.add(1);
             }
             if ret_search == 0 {
-                ret_search = SearchPathW(core::ptr::null_mut(), start, CPP_COM_WSTR_7ABCE230ED71.as_ptr(), ARRAY_SIZE(fullpath.as_ptr() as *const _) as u32, fullpath.as_mut_ptr(), &mut ptr);
+                ret_search = SearchPathW(core::ptr::null_mut(), start, CPP_COM_WSTR_7ABCE230ED71.as_ptr(), ARRAY_SIZE!(fullpath) as u32, fullpath.as_mut_ptr(), &mut ptr);
             }
         }
 
         if ret_search == 0 {
             return ERROR_ACCESS_DENIED;
         }
-        if strlenW(ptr) + 1 > ARRAY_SIZE(app.as_ptr() as *const _) {
+        if strlenW(ptr) + 1 > ARRAY_SIZE!(app) {
             return 2;
         }
         wcscpy(app.as_mut_ptr(), ptr);
@@ -1581,7 +1579,7 @@ unsafe extern "C" fn dde_connect(
         }
 
         ptr = strrchrW(app.as_ptr(), '.' as u16) as PWSTR;
-        assert(!ptr.is_null());
+        assert!(!ptr.is_null());
         *ptr = 0;
     }
 
@@ -1637,8 +1635,8 @@ unsafe extern "C" fn dde_connect(
         }
     }
 
-    SHELL_ArgifyW(static_res.as_mut_ptr(), ARRAY_SIZE(static_res.as_ptr() as *const _) as u32, exec, lpFile, pidl, szCommandline, &mut resultLen, core::ptr::null_mut());
-    if resultLen > ARRAY_SIZE(static_res.as_ptr() as *const _) as u32 {
+    SHELL_ArgifyW(static_res.as_mut_ptr(), ARRAY_SIZE!(static_res) as u32, exec, lpFile, pidl, szCommandline, &mut resultLen, core::ptr::null_mut());
+    if resultLen > ARRAY_SIZE!(static_res) as u32 {
         dynamic_res.Allocate(resultLen);
         res = dynamic_res.m_pData;
         SHELL_ArgifyW(dynamic_res.m_pData, resultLen, exec, lpFile, pidl, szCommandline, core::ptr::null_mut(), core::ptr::null_mut());
@@ -1691,13 +1689,13 @@ unsafe extern "C" fn execute_from_key(
 
     if RegQueryValueW(HKEY_CLASSES_ROOT, key, cmd.as_mut_ptr(), &mut cmdlen as *mut DWORD as *mut i32) == ERROR_SUCCESS {
         cmdlen /= 2;
-        if cmdlen >= ARRAY_SIZE(cmd.as_ptr()) {
-            cmdlen = ARRAY_SIZE(cmd.as_ptr()) - 1;
+        if cmdlen >= ARRAY_SIZE!(cmd) {
+            cmdlen = ARRAY_SIZE!(cmd) - 1;
         }
         cmd[cmdlen as usize] = 0;
         SHELL_ArgifyW(
             param.as_mut_ptr(),
-            ARRAY_SIZE(param.as_mut_ptr()),
+            ARRAY_SIZE!(param),
             cmd.as_ptr(),
             lpFile,
             (*psei).lpIDList as LPITEMIDLIST,
@@ -1709,14 +1707,14 @@ unsafe extern "C" fn execute_from_key(
                 core::ptr::null()
             },
         );
-        if resultLen > ARRAY_SIZE(param.as_mut_ptr()) {
+        if resultLen > ARRAY_SIZE!(param) {
             DbgPrint(b"Argify buffer not large enough, truncating\n\0".as_ptr() as PCSTR);
         }
     }
 
     let tmp: LPWSTR =
         strstrW(key, CPP_COM_WSTR_0C71B3CB5580.as_ptr()) as LPWSTR;
-    assert(tmp);
+    assert!(tmp);
     wcscpy(tmp, CPP_COM_WSTR_C9E3E098911A.as_ptr());
 
     if RegQueryValueW(
@@ -2014,7 +2012,7 @@ unsafe extern "C" fn shellex_load_object_and_run(
     let mut hr: HRESULT;
 
     hr = CoInitialize(core::ptr::null_mut());
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         return hr;
     }
 
@@ -2025,20 +2023,20 @@ unsafe extern "C" fn shellex_load_object_and_run(
         &IID_IShellExtInit as *const GUID,
         &mut obj as *mut *mut IShellExtInit as *mut *mut c_void,
     );
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         CoUninitialize();
         return hr;
     }
 
     hr = shellex_get_dataobj(sei, &mut dataobj);
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         (*obj).Release();
         CoUninitialize();
         return hr;
     }
 
     hr = (*obj).Initialize(core::ptr::null_mut(), dataobj, hkey);
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         (*dataobj).Release();
         (*obj).Release();
         CoUninitialize();
@@ -2049,7 +2047,7 @@ unsafe extern "C" fn shellex_load_object_and_run(
         &IID_IObjectWithSite as *const GUID,
         &mut ows as *mut *mut IObjectWithSite as *mut *mut c_void,
     );
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         (*dataobj).Release();
         (*obj).Release();
         CoUninitialize();
@@ -2078,13 +2076,13 @@ unsafe extern "C" fn shellex_get_contextmenu(sei: *mut SHELLEXECUTEINFOW, cm: *m
         let mut hr: HRESULT = SHParseDisplayName((*sei).lpFile, core::ptr::null_mut(), &mut allocatedPidl, SFGAO_STORAGECAPMASK, &mut sfga);
         if hr < 0 {
             let mut Buffer: [u16; MAX_PATH] = [0; MAX_PATH];
-            let retval: u32 = SHELL_FindExecutable((*sei).lpDirectory, (*sei).lpFile, (*sei).lpVerb, Buffer.as_mut_ptr(), _countof(Buffer.as_ptr()), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), (*sei).lpParameters);
+            let retval: u32 = SHELL_FindExecutable((*sei).lpDirectory, (*sei).lpFile, (*sei).lpVerb, Buffer.as_mut_ptr(), _countof!(Buffer), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), (*sei).lpParameters);
             if retval <= 32 {
                 return HRESULT_FROM_WIN32((retval) as i32);
             }
 
             hr = SHParseDisplayName(Buffer.as_ptr(), core::ptr::null_mut(), &mut allocatedPidl, SFGAO_STORAGECAPMASK, &mut sfga);
-            if FAILED_UNEXPECTEDLY(hr) {
+            if FAILED_UNEXPECTEDLY!(hr) {
                 return hr;
             }
         }
@@ -2114,13 +2112,13 @@ unsafe extern "C" fn shellex_get_contextmenu(sei: *mut SHELLEXECUTEINFOW, cm: *m
 unsafe extern "C" fn ShellExecute_ContextMenuVerb(sei: *mut SHELLEXECUTEINFOW) -> HRESULT {
     let coInit = CCoInit::new();
 
-    if FAILED_UNEXPECTEDLY(coInit.hr) {
+    if FAILED_UNEXPECTEDLY!(coInit.hr) {
         return coInit.hr;
     }
 
     let mut cm: *mut IContextMenu = core::ptr::null_mut();
     let mut hr = shellex_get_contextmenu(sei, &mut cm);
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         return hr;
     }
 
@@ -2155,7 +2153,7 @@ unsafe extern "C" fn ShellExecute_ContextMenuVerb(sei: *mut SHELLEXECUTEINFOW) -
     let idLast = 0x7fff;
     let hMenu = CreatePopupMenu();
     hr = (*cm).QueryContextMenu(hMenu, 0, idFirst, idLast, if fDefault != 0 { CMF_DEFAULTONLY } else { 0 });
-    if !FAILED_UNEXPECTEDLY(hr) {
+    if !FAILED_UNEXPECTEDLY!(hr) {
         if fDefault != 0 {
             let mut uDefault = GetMenuDefaultItem(hMenu, (FALSE) as u32, 0);
             uDefault = if uDefault != -1 { uDefault - (idFirst as i32) as u32 } else { 0 };
@@ -2164,7 +2162,7 @@ unsafe extern "C" fn ShellExecute_ContextMenuVerb(sei: *mut SHELLEXECUTEINFOW) -
         }
 
         hr = (*cm).InvokeCommand(&ici as *const CMINVOKECOMMANDINFOEX as *const CMINVOKECOMMANDINFO);
-        if !FAILED_UNEXPECTEDLY(hr) {
+        if !FAILED_UNEXPECTEDLY!(hr) {
             hr = S_OK;
         }
     }
@@ -2195,7 +2193,7 @@ unsafe extern "C" fn ShellExecute_FromContextMenuHandlers(sei: *mut SHELLEXECUTE
     if r == ERROR_SUCCESS {
         i = 0;
         while (1 as i32) != 0 {
-            r = RegEnumKeyW(hkeycm, i, szguid.as_mut_ptr(), ARRAY_SIZE(szguid));
+            r = RegEnumKeyW(hkeycm, i, szguid.as_mut_ptr(), ARRAY_SIZE!(szguid));
             i += 1;
             if r != ERROR_SUCCESS {
                 break;
@@ -2243,7 +2241,7 @@ unsafe extern "C" fn SHELL_execute_class(
         wcmd[0 as usize] = 0u16;
         done = SHELL_ArgifyW(
             wcmd.as_mut_ptr(),
-            ARRAY_SIZE(wcmd.as_mut_ptr()),
+            ARRAY_SIZE!(wcmd),
             execCmd.as_mut_ptr(),
             wszApplicationName,
             (*psei).lpIDList as LPITEMIDLIST,
@@ -2253,7 +2251,7 @@ unsafe extern "C" fn SHELL_execute_class(
         );
         if done == 0 && *wszApplicationName.add(0 as usize) != 0 {
         }
-        if resultLen > ARRAY_SIZE(wcmd.as_mut_ptr()) {
+        if resultLen > ARRAY_SIZE!(wcmd) {
             DbgPrint(b"Argify buffer not large enough... truncating\n\0".as_ptr());
         }
         return execfunc(
@@ -2302,7 +2300,7 @@ unsafe extern "C" fn SHELL_translate_idlist(
     if SHELL_GetPathFromIDListForExecuteW(
         sei.lpIDList as *const ITEMIDLIST,
         buffer.as_mut_ptr(),
-        ARRAY_SIZE(buffer.as_mut_ptr()),
+        ARRAY_SIZE!(buffer),
     ) >= 0
     {
         if buffer[0] == ':' as u16 && buffer[1] == ':' as u16 {
@@ -2331,7 +2329,7 @@ unsafe extern "C" fn SHELL_translate_idlist(
             let mut target: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
             let _target_len = max(
                 MAX_PATH,
-                _countof(buffer.as_mut_ptr()),
+                _countof!(buffer),
             );
             let attribs: u32;
             let resultLen: u32 = 0;
@@ -2388,13 +2386,13 @@ unsafe extern "C" fn SHELL_InvokePidl(
     let mut psfFolder: *mut IShellFolder = core::ptr::null_mut();
     let mut pidlLast: LPCITEMIDLIST = core::ptr::null_mut();
     let hr = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(psfFolder).cast(), &mut pidlLast);
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         return FALSE;
     }
 
     let mut pCM: *mut IContextMenu = core::ptr::null_mut();
     let hr = (*psfFolder).GetUIObjectOf(core::ptr::null_mut(), 1, &pidlLast, IID_NULL_PPV_ARG(IContextMenu, &mut pCM));
-    if FAILED_UNEXPECTEDLY(hr) {
+    if FAILED_UNEXPECTEDLY!(hr) {
         (*psfFolder).Release();
         return FALSE;
     }
@@ -2406,15 +2404,15 @@ unsafe extern "C" fn SHELL_InvokePidl(
     ici.hwnd = (*sei).hwnd;
     let mut szVerb: [i8; (VERBKEY_CCHMAX) as usize] = [0; (VERBKEY_CCHMAX) as usize];
     if !(*sei).lpVerb.is_null() && *(*sei).lpVerb.offset(0 as isize) != 0 {
-        WideCharToMultiByte(CP_ACP, 0, (*sei).lpVerb, -1, szVerb.as_mut_ptr() as *mut i8, _countof(szVerb.as_ptr()), core::ptr::null_mut(), core::ptr::null_mut());
-        szVerb[_countof(szVerb.as_ptr()) - 1] = ANSI_NULL;
+        WideCharToMultiByte(CP_ACP, 0, (*sei).lpVerb, -1, szVerb.as_mut_ptr() as *mut i8, _countof!(szVerb), core::ptr::null_mut(), core::ptr::null_mut());
+        szVerb[_countof!(szVerb) - 1] = ANSI_NULL;
         ici.lpVerb = szVerb.as_ptr();
     } else {
         let hMenu = CreatePopupMenu();
         let idCmdFirst: i32 = 1;
         let idCmdLast: i32 = 0x7FFF;
         let hr = (*pCM).QueryContextMenu(hMenu, 0, idCmdFirst as u32, idCmdLast as u32, CMF_DEFAULTONLY);
-        if FAILED_UNEXPECTEDLY(hr) {
+        if FAILED_UNEXPECTEDLY!(hr) {
             DestroyMenu(hMenu);
             (*pCM).Release();
             (*psfFolder).Release();
@@ -2431,7 +2429,7 @@ unsafe extern "C" fn SHELL_InvokePidl(
     }
     let hr = (*pCM).InvokeCommand(&ici);
 
-    let result = if FAILED_UNEXPECTEDLY(hr) { 0u8 } else { 1u8 };
+    let result = if FAILED_UNEXPECTEDLY!(hr) { 0u8 } else { 1u8 };
     (*pCM).Release();
     (*psfFolder).Release();
     result
@@ -2555,7 +2553,7 @@ unsafe extern "C" fn do_error_dialog(retval: usize, hwnd: isize, filename: *cons
             shell32_hInstance,
             IDS_SHLEXEC_NOASSOC,
             msg.as_mut_ptr(),
-            ARRAY_SIZE(msg.as_ptr()),
+            ARRAY_SIZE!(msg),
         );
     } else {
         FormatMessageW(
@@ -2564,7 +2562,7 @@ unsafe extern "C" fn do_error_dialog(retval: usize, hwnd: isize, filename: *cons
             error_code,
             LANG_USER_DEFAULT,
             msg.as_mut_ptr(),
-            ARRAY_SIZE(msg.as_ptr()),
+            ARRAY_SIZE!(msg),
             msgArguments.as_mut_ptr().cast::<core::ffi::c_void>(),
         );
     }
@@ -3410,12 +3408,12 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
     if PathIsURLW(lpCommand) != 0
         || UrlIsW(lpCommand, URLIS_APPLIABLE) != 0
     {
-        StringCchCopyW(szFile.as_mut_ptr(), _countof(&szFile), lpCommand);
+        StringCchCopyW(szFile.as_mut_ptr(), _countof!(&szFile), lpCommand);
         pchParams = core::ptr::null();
     } else {
         let mut apPathList = [core::ptr::null::<u16>(); 2];
 
-        pchParams = SplitParams(lpCommand, szFile.as_mut_ptr(), _countof(&szFile));
+        pchParams = SplitParams(lpCommand, szFile.as_mut_ptr(), _countof!(&szFile));
         if szFile[0] != UNICODE_NULL
             && szFile[1] == 0x003Au16
             && szFile[2] == UNICODE_NULL
@@ -3424,17 +3422,17 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
         }
 
         let mut szCurDir = [0u16; MAX_PATH];
-        GetCurrentDirectoryW(_countof(&szCurDir), szCurDir.as_mut_ptr());
+        GetCurrentDirectoryW(_countof!(&szCurDir), szCurDir.as_mut_ptr());
         if !pwszStartDir.is_null() {
             SetCurrentDirectoryW(pwszStartDir);
         }
 
         if (PathIsRelativeW(szFile.as_ptr()) != 0
-            && GetFullPathNameW(szFile.as_ptr(), _countof(&szFile2), szFile2.as_mut_ptr(), core::ptr::null()) != 0
+            && GetFullPathNameW(szFile.as_ptr(), _countof!(&szFile2), szFile2.as_mut_ptr(), core::ptr::null()) != 0
             && PathFileExistsW(szFile2.as_ptr()) != 0)
-            || SearchPathW(core::ptr::null(), szFile.as_ptr(), core::ptr::null(), _countof(&szFile2), szFile2.as_mut_ptr(), core::ptr::null()) != 0
+            || SearchPathW(core::ptr::null(), szFile.as_ptr(), core::ptr::null(), _countof!(&szFile2), szFile2.as_mut_ptr(), core::ptr::null()) != 0
         {
-            StringCchCopyW(szFile.as_mut_ptr(), _countof(&szFile), szFile2.as_ptr());
+            StringCchCopyW(szFile.as_mut_ptr(), _countof!(&szFile), szFile2.as_ptr());
         }
 
         apPathList[0] = pwszStartDir;
@@ -3448,8 +3446,8 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
                 if (dwSeclFlags & SECL_NO_UI) == 0 {
                     let mut szText = [0u16; 128 + MAX_PATH];
                     let mut szFormat = [0u16; 128];
-                    LoadStringW(shell32_hInstance, IDS_FILE_NOT_FOUND, szFormat.as_mut_ptr(), _countof(&szFormat));
-                    StringCchPrintfW(szText.as_mut_ptr(), _countof(&szText), szFormat.as_ptr(), szFile.as_ptr());
+                    LoadStringW(shell32_hInstance, IDS_FILE_NOT_FOUND, szFormat.as_mut_ptr(), _countof!(&szFormat));
+                    StringCchPrintfW(szText.as_mut_ptr(), _countof!(&szText), szFormat.as_ptr(), szFile.as_ptr());
                     MessageBoxW(hwnd, szText.as_ptr(), core::ptr::null(), MB_ICONERROR);
                 }
                 return CO_E_APPNOTFOUND;
@@ -3461,8 +3459,8 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
                 if (dwSeclFlags & SECL_NO_UI) == 0 {
                     let mut szText = [0u16; 128 + MAX_PATH];
                     let mut szFormat = [0u16; 128];
-                    LoadStringW(shell32_hInstance, IDS_FILE_NOT_FOUND, szFormat.as_mut_ptr(), _countof(&szFormat));
-                    StringCchPrintfW(szText.as_mut_ptr(), _countof(&szText), szFormat.as_ptr(), szFile.as_ptr());
+                    LoadStringW(shell32_hInstance, IDS_FILE_NOT_FOUND, szFormat.as_mut_ptr(), _countof!(&szFormat));
+                    StringCchPrintfW(szText.as_mut_ptr(), _countof!(&szText), szFormat.as_ptr(), szFile.as_ptr());
                     MessageBoxW(hwnd, szText.as_ptr(), core::ptr::null(), MB_ICONERROR);
                 }
                 return HRESULT_FROM_WIN32((ERROR_FILE_NOT_FOUND) as i32);

@@ -131,14 +131,11 @@ pub mod dialogs_general;
 #[path = "dialogs/recycler_prop.rs"]
 pub mod dialogs_recycler_prop;
 
-// The rest of Wave 5 (the shell32/ directory: brfolder, iconcache, shldataobject, shlexec,
-// shlfileop, shlfolder, stubs — ~21K lines) is STILL PARKED, but no longer for the reason
-// recorded here before. The old note blamed "167 callables with no declaration anywhere";
-// measured against the island that number is wrong — 85 of the first 181 resolve straight from
-// headers, and on these two leaves the unresolved-name count fell 228 -> 77 the moment the
-// island replaced the hand-written globs. What is left is the per-TU tail the two leaves just
-// walked: bitfield accessors, C-uninitialised locals, variadic promotion, and the nominal type
-// splits prelude.rs documents. Do NOT delete these files — they are paid artifacts.
+// Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
+pub mod shell32;
+// `stubs` is wired; the other six are parked on the C++ substrate, and shell32/mod.rs records
+// each one's remaining error count so the next lane can pick the cheapest. Do NOT delete the
+// parked files — they are paid artifacts.
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

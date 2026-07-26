@@ -101,9 +101,7 @@ impl Drop for CDataObjectHIDA {
 }
 
 use core::ffi::c_void;
-use crate::shellcom::*;
-use crate::types::*;
-use crate::win32::*;
+use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
@@ -153,8 +151,8 @@ pub unsafe extern "system" fn SHGetAttributesFromDataObject(
             let hida = CDataObjectHIDA::new(pDataObject);
             let mut spFolder: *mut IShellFolder = core::ptr::null_mut();
 
-            if !FAILED_UNEXPECTEDLY(hr = hida.hr()) &&
-               !FAILED_UNEXPECTEDLY(hr = _BindToObject(HIDA_GetPIDLFolder(hida.as_ptr()), &mut spFolder))
+            if !FAILED_UNEXPECTEDLY!(hr = hida.hr()) &&
+               !FAILED_UNEXPECTEDLY!(hr = _BindToObject(HIDA_GetPIDLFolder(hida.as_ptr()), &mut spFolder))
             {
                 let mut apidl = CSimpleArray::<PCUIDLIST_RELATIVE>::new();
                 let mut n: UINT = 0;
@@ -170,13 +168,13 @@ pub unsafe extern "system" fn SHGetAttributesFromDataObject(
                     apidl.GetData(),
                     &mut rgfInOut,
                 );
-                if !FAILED_UNEXPECTEDLY(hr) {
+                if !FAILED_UNEXPECTEDLY!(hr) {
                     data.dwMask = dwQueryAttributes;
                     data.dwAttributes = rgfInOut & dwQueryAttributes;
                     data.cItems = apidl.GetSize();
 
                     let hr2 = DataObject_SetData(pDataObject, g_DataObjectAttributes, &data as *const _ as *const c_void, core::mem::size_of::<DataObjectAttributes>());
-                    FAILED_UNEXPECTEDLY(hr2);
+                    FAILED_UNEXPECTEDLY!(hr2);
                 }
             }
 

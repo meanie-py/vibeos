@@ -16,9 +16,7 @@ pub static CPP_COM_WSTR_C245AFF91259: [WCHAR; 2] = [0x002E, 0x0000];
 pub static CPP_COM_WSTR_E8A4B2EE7EDE: [WCHAR; 2] = [0x002A, 0x0000];
 
 use core::ffi::c_void;
-use crate::shellcom::*;
-use crate::types::*;
-use crate::win32::*;
+use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
@@ -116,7 +114,7 @@ unsafe extern "C" fn HandleDesktopIniOp(Path: PCWSTR) {
         return;
     }
     let mut Dir: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
-    if FAILED_UNEXPECTEDLY(StringCchCopyW(Dir.as_mut_ptr(), _countof(&Dir), Path)) {
+    if FAILED_UNEXPECTEDLY!(StringCchCopyW(Dir.as_mut_ptr(), _countof!(&Dir), Path)) {
         return;
     }
     PathRemoveFileSpecW(Dir.as_mut_ptr());
@@ -385,7 +383,7 @@ unsafe extern "C" fn SHELL_ConfirmDialogW(
     let hIcon: HICON;
     let mut ret: i32;
 
-    assert((nKindOfDialog >= 0 && nKindOfDialog < 32) as BOOL);
+    assert!((nKindOfDialog >= 0 && nKindOfDialog < 32) as BOOL);
 
     if !op.is_null() && ((*op).dwYesToAllMask & (1 << nKindOfDialog)) != 0 {
         return TRUE;
@@ -625,7 +623,7 @@ unsafe extern "C" fn SHNotifyRemoveDirectoryW(path: PCWSTR) -> u32 {
     let mut ret: i32 = RemoveDirectoryW(path);
     if ret == 0 {
         let dwAttr = GetFileAttributesW(path);
-        if IsAttrib(dwAttr, FILE_ATTRIBUTE_READONLY) != 0 {
+        if IsAttrib!(dwAttr, FILE_ATTRIBUTE_READONLY) != 0 {
             if SetFileAttributesW(path, dwAttr & !FILE_ATTRIBUTE_READONLY) != 0 {
                 ret = RemoveDirectoryW(path);
             }
@@ -773,7 +771,7 @@ unsafe extern "C" fn SHNotifyDeleteFileW(op: *mut FILE_OPERATION, path: PCWSTR) 
 
     let mut wfd: WIN32_FIND_DATAW = core::mem::zeroed();
     let hfile: HANDLE = unsafe { FindFirstFileW(path, &mut wfd) };
-    if hfile != INVALID_HANDLE_VALUE && unsafe { IsAttribFile(wfd.dwFileAttributes) } != 0 {
+    if hfile != INVALID_HANDLE_VALUE && unsafe { IsAttribFile!(wfd.dwFileAttributes) } != 0 {
         filesize = ((wfd.nFileSizeHigh as i64) << 32) | (wfd.nFileSizeLow as i64);
     }
     let attrib: u32 = if hfile != INVALID_HANDLE_VALUE { wfd.dwFileAttributes } else { 0 };
@@ -786,7 +784,7 @@ unsafe extern "C" fn SHNotifyDeleteFileW(op: *mut FILE_OPERATION, path: PCWSTR) 
     ret = unsafe { DeleteFileW(path) };
     if ret == 0 {
         let dwattr = unsafe { GetFileAttributesW(path) };
-        if unsafe { IsAttrib(dwattr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) } != 0 {
+        if unsafe { IsAttrib!(dwattr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) } != 0 {
             if unsafe { SetFileAttributesW(path, dwattr & !(FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM)) } != 0 {
                 ret = unsafe { DeleteFileW(path) };
             }
@@ -881,7 +879,7 @@ unsafe extern "C" fn SHNotifyMoveFileW(op: *mut FILE_OPERATION, src: PCWSTR, des
         let mut dw_attr: u32 = SHFindAttrW(dest, (FALSE) as u8);
         if dw_attr == INVALID_FILE_ATTRIBUTES {
             dw_attr = GetFileAttributesW(src);
-            if IsAttrib(dw_attr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) != 0 {
+            if IsAttrib!(dw_attr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) != 0 {
                 if SetFileAttributesW(src, dw_attr & !(FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM)) != 0 {
                     ret = MoveFileW(src, dest);
                     last_error = GetLastError();
@@ -950,7 +948,7 @@ unsafe extern "C" fn SHNotifyCopyFileW(op: *mut FILE_OPERATION, src: PCWSTR, des
         return ERROR_CANCELLED;
     }
 
-    if IsAttrib(attribs, FILE_ATTRIBUTE_READONLY) != 0 {
+    if IsAttrib!(attribs, FILE_ATTRIBUTE_READONLY) != 0 {
         SetFileAttributesW(dest, attribs & !FILE_ATTRIBUTE_READONLY);
     }
 
@@ -1069,7 +1067,7 @@ unsafe extern "C" fn SHFindAttrW(pName: PCWSTR, fileOnly: u8) -> u32 {
 
     if hFind != INVALID_HANDLE_VALUE {
         loop {
-            if b_FileMask && IsAttribDir(wfd.dwFileAttributes) {
+            if b_FileMask && IsAttribDir!(wfd.dwFileAttributes) {
                 // continue
             } else {
                 dwAttr = wfd.dwFileAttributes;
@@ -1362,7 +1360,7 @@ unsafe extern "C" fn parse_wildcard_files(flList: *mut FILE_LIST, szFile: PCWSTR
             (*file).bFromWildcard = TRUE;
             (*file).attributes = wfd.dwFileAttributes;
 
-            if IsAttribDir((*file).attributes) != 0 {
+            if IsAttribDir!((*file).attributes) != 0 {
                 (*flList).bAnyDirectories = TRUE;
             }
 
@@ -1426,7 +1424,7 @@ unsafe extern "C" fn parse_file_list(flList: *mut FILE_LIST, szFiles: PCWSTR) ->
                 (*flList).bAnyDontExist = TRUE;
             }
 
-            if IsAttribDir((*file).attributes) != 0 {
+            if IsAttribDir!((*file).attributes) != 0 {
                 (*flList).bAnyDirectories = TRUE;
             }
         }
@@ -1560,7 +1558,7 @@ unsafe extern "C" fn copy_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_EN
         SHNotifyCreateDirectoryW((*feTo).szFullPath, core::ptr::null_mut());
     }
 
-    if IsAttribFile((*feFrom).attributes) != 0 {
+    if IsAttribFile!((*feFrom).attributes) != 0 {
         let mut szDestPath = [0u16; MAX_PATH];
         PathCombineW(szDestPath.as_mut_ptr(), (*feTo).szFullPath, (*feFrom).szFilename);
         copy_file_to_file(op, (*feFrom).szFullPath, szDestPath.as_ptr());
@@ -1619,7 +1617,7 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
         }
 
         if unsafe { (*flFrom).dwNumFiles != (*flTo).dwNumFiles } {
-            if unsafe { (*flFrom).dwNumFiles != 1 && !IsAttribDir((*fileDest).attributes) } {
+            if unsafe { (*flFrom).dwNumFiles != 1 && !IsAttribDir!((*fileDest).attributes) } {
                 return (ERROR_CANCELLED) as i32;
             }
 
@@ -1636,23 +1634,23 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
             unsafe {
                 (*flTo).dwNumFiles = 1;
             }
-        } else if unsafe { IsAttribDir((*fileDest).attributes) != 0 } {
+        } else if unsafe { IsAttribDir!((*fileDest).attributes) != 0 } {
             i = 1;
             while i < unsafe { (*flTo).dwNumFiles } {
-                if unsafe { !IsAttribDir((*(*flTo).feFiles.add(i as usize)).attributes) ||
-                      !IsAttribDir((*(*flFrom).feFiles.add(i as usize)).attributes) } {
+                if unsafe { !IsAttribDir!((*(*flTo).feFiles.add(i as usize)).attributes) ||
+                      !IsAttribDir!((*(*flFrom).feFiles.add(i as usize)).attributes) } {
                     return (ERROR_CANCELLED) as i32;
                 }
                 i += 1;
             }
         }
     } else if unsafe { (*flFrom).dwNumFiles != 1 } {
-        if unsafe { (*flTo).dwNumFiles != 1 && !IsAttribDir((*fileDest).attributes) } {
+        if unsafe { (*flTo).dwNumFiles != 1 && !IsAttribDir!((*fileDest).attributes) } {
             return (ERROR_CANCELLED) as i32;
         }
 
         if unsafe { PathFileExistsW((*fileDest).szFullPath) != 0 &&
-              IsAttribFile((*fileDest).attributes) != 0 } {
+              IsAttribFile!((*fileDest).attributes) != 0 } {
             return (ERROR_CANCELLED) as i32;
         }
 
@@ -1670,7 +1668,7 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
             fileDest = unsafe { (*flTo).feFiles.add(i as usize) as *const FILE_ENTRY };
         }
 
-        if unsafe { IsAttribDir((*entryToCopy).attributes) != 0 &&
+        if unsafe { IsAttribDir!((*entryToCopy).attributes) != 0 &&
               !lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szDirectory) } {
             return ERROR_SUCCESS;
         }
@@ -1680,7 +1678,7 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
         }
 
         if unsafe { !lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szFullPath) } {
-            if unsafe { IsAttribFile((*entryToCopy).attributes) != 0 } {
+            if unsafe { IsAttribFile!((*entryToCopy).attributes) != 0 } {
                 return ERROR_NO_MORE_SEARCH_HANDLES;
             } else {
                 return ERROR_SUCCESS;
@@ -1688,11 +1686,11 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
         }
 
         if (unsafe { (*flFrom).dwNumFiles > 1 && (*flTo).dwNumFiles == 1 }) ||
-            unsafe { IsAttribDir((*fileDest).attributes) != 0 } {
+            unsafe { IsAttribDir!((*fileDest).attributes) != 0 } {
             unsafe {
                 copy_to_dir(op, entryToCopy, fileDest);
             }
-        } else if unsafe { IsAttribDir((*entryToCopy).attributes) != 0 } {
+        } else if unsafe { IsAttribDir!((*entryToCopy).attributes) != 0 } {
             unsafe {
                 copy_dir_to_dir(op, entryToCopy, (*fileDest).szFullPath);
             }
@@ -1742,7 +1740,7 @@ unsafe extern "C" fn confirm_delete_list(
         );
     } else {
         let fileEntry: *const FILE_ENTRY = (*flFrom).feFiles;
-        if IsAttribFile((*fileEntry).attributes) != 0 {
+        if IsAttribFile!((*fileEntry).attributes) != 0 {
             return SHELL_ConfirmDialogW(
                 hWnd,
                 if fTrash != 0 { (ASK_TRASH_FILE) as i32 } else { (ASK_DELETE_FILE) as i32 },
@@ -1773,7 +1771,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
         && TRASH_CanTrashFile((*first_fe).szFullPath) != 0;
 
     let mut confirm = ((*(*op).req).fFlags & (FOF_NOCONFIRMATION) as u16) == 0;
-    if bTrash != 0 && SHELL_GetSetting(SSF_NOCONFIRMRECYCLE, fNoConfirmRecycle) != 0 {
+    if bTrash != 0 && SHELL_GetSetting!(SSF_NOCONFIRMRECYCLE, fNoConfirmRecycle) != 0 {
         confirm = FALSE;
     }
     if confirm != 0 || (bTrash == 0 && ((*(*op).req).fFlags & (FOF_WANTNUKEWARNING) as u16) != 0) {
@@ -1793,7 +1791,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
     for i in 0..(*flFrom).dwNumFiles {
         bPathExists = TRUE;
         let file_entry = (*flFrom).feFiles.offset(i as isize);
-        if IsAttribFile((*file_entry).attributes) == 0
+        if IsAttribFile!((*file_entry).attributes) == 0
             && ((*(*op).req).fFlags & (FOF_FILESONLY) as u16) != 0
             && (*file_entry).bFromWildcard != 0
         {
@@ -1802,7 +1800,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
 
         if bTrash != 0 {
             if TRASH_TrashFile((*file_entry).szFullPath) != 0 {
-                let event = if IsAttribFile((*file_entry).attributes) != 0 {
+                let event = if IsAttribFile!((*file_entry).attributes) != 0 {
                     SHCNE_DELETE
                 } else {
                     SHCNE_RMDIR
@@ -1835,7 +1833,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
             }
         }
 
-        if IsAttribFile((*file_entry).attributes) != 0 {
+        if IsAttribFile!((*file_entry).attributes) != 0 {
             let res = SHNotifyDeleteFileW(op, (*file_entry).szFullPath);
             bPathExists = (ERROR_SUCCESS == (res) as i32);
         } else {
@@ -1929,7 +1927,7 @@ unsafe extern "C" fn move_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_EN
     let mut szDestPath: [u16; MAX_PATH] = [0u16; MAX_PATH];
     PathCombineW(szDestPath.as_mut_ptr(), (*feTo).szFullPath, (*feFrom).szFilename);
 
-    if IsAttribFile((*feFrom).attributes) != 0 {
+    if IsAttribFile!((*feFrom).attributes) != 0 {
         move_file_to_file(op, (*feFrom).szFullPath, szDestPath.as_ptr());
     } else if !((((*(*op).req).fFlags & (FOF_FILESONLY) as u16) != 0) && ((*feFrom).bFromWildcard != 0)) {
         move_dir_to_dir(op, feFrom, szDestPath.as_ptr());
@@ -2002,10 +2000,10 @@ unsafe extern "C" fn move_files(
         }
 
         if ((*flFrom).dwNumFiles > 1 && (*flTo).dwNumFiles == 1)
-            || IsAttribDir((*fileDest).attributes) != 0
+            || IsAttribDir!((*fileDest).attributes) != 0
         {
             move_to_dir(op, entryToMove, fileDest);
-        } else if IsAttribDir((*entryToMove).attributes) != 0 {
+        } else if IsAttribDir!((*entryToMove).attributes) != 0 {
             move_dir_to_dir(op, entryToMove, (*fileDest).szFullPath);
         } else {
             if move_file_to_file(
@@ -2068,7 +2066,7 @@ unsafe extern "C" fn rename_files(
         op,
         (*feFrom).szFullPath,
         (*feTo).szFullPath,
-        IsAttribDir((*feFrom).attributes),
+        IsAttribDir!((*feFrom).attributes),
     ) as HRESULT
 }
 unsafe extern "C" fn check_flags(fFlags: FILEOP_FLAGS) {
@@ -2110,7 +2108,7 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
             feFrom = &(*flFrom).feFiles[i as usize];
             StringCbCopyW(szFrom.as_mut_ptr(), core::mem::size_of_val(&szFrom), (*feFrom).szFullPath);
             StringCbCopyW(szTo.as_mut_ptr(), core::mem::size_of_val(&szTo), (*feTo).szFullPath);
-            if IsAttribDir((*feTo).attributes) {
+            if IsAttribDir!((*feTo).attributes) {
                 PathAppendW(szTo.as_mut_ptr(), (*feFrom).szFilename);
             }
 
@@ -2119,7 +2117,7 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
                 if CanShowFileOpErrorUI(*lpFileOp) {
                     if wFunc == FO_MOVE {
                         strTitle.LoadStringW(IDS_MOVEERRORTITLE);
-                        if IsAttribDir((*feFrom).attributes) {
+                        if IsAttribDir!((*feFrom).attributes) {
                             strText.Format(IDS_MOVEERRORSAMEFOLDER, GET_FILENAME(feFrom));
                         } else {
                             strText.Format(IDS_MOVEERRORSAME, GET_FILENAME(feFrom));
@@ -2136,7 +2134,7 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
                 return DE_OPCANCELLED;
             }
 
-            if IsAttribDir((*feFrom).attributes) {
+            if IsAttribDir!((*feFrom).attributes) {
                 let cchFrom = PathAddBackslashW(szFrom.as_mut_ptr()).offset_from(szFrom.as_ptr()) as usize;
                 let cchTo = PathAddBackslashW(szTo.as_mut_ptr()).offset_from(szTo.as_ptr()) as usize;
                 if cchFrom < cchTo {
@@ -2613,7 +2611,7 @@ pub unsafe extern "C" fn SHELL_SingleFileOperation(
 
     if fos.hNameMappings != core::ptr::null_mut() {
         if hr >= 0 && !ppNewName.is_null() {
-            assert(
+            assert!(
                 DSA_GetItemCount(fos.hNameMappings as HDSA) == 1 as i32,
             );
             let pMap = DSA_GetItemPtr(fos.hNameMappings as HDSA, 0)
@@ -2658,7 +2656,7 @@ pub unsafe extern "system" fn _FileOpCountManager(op: *mut FILE_OPERATION, from:
         _FileOpCount(
             op,
             the_file_name.as_mut_ptr(),
-            IsAttribDir((*entry_to_count).attributes),
+            IsAttribDir!((*entry_to_count).attributes),
             core::ptr::addr_of_mut!(ticks),
         );
 
