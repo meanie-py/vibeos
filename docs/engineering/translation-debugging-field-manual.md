@@ -2807,10 +2807,17 @@ but not from the OS.
 **Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the
 ordinary smoke's success condition IS that marker — so it stops watching before the ladder runs.
 A late-rung, single-arch failure is structurally invisible to `vibeos-cli gate`.
-**Fix.** Run the ladder explicitly: `./vibeos-cli smoke --arch <a> --until "<guest>.exe exit"`,
-on **both** arches, whenever a guest changes. Concrete instance: `selfmod32`'s rung-5 fixture
+**Fix.** `./vibeos-cli smoke --arch <a> --ladder`, on **both** 64-bit arches, whenever a guest,
+`wow64.dll` or a marshaller changes. It drains serial past the marker until all nine guests
+report and fails the boot on a wrong or missing verdict; arm64 needs media built with
+`VIBEOS_FEX=1`, and a boot with nothing staged says so instead of reading as a regression.
+Table + rationale in `tests/qemu/cli/ladder.py`. Concrete instance: `selfmod32`'s rung-5 fixture
 writes under `%WINDIR%` — a writable ramdisk on arm64, a read-only CD on the amd64 livecd — so
-it exited `0xBAD9` there from the day it landed.
+it exited `0xBAD9` there from the day it landed, through every green gate.
+*(The flag exists because the hand-rolled `--until "<guest>.exe exit"` recipe is exactly the
+"remembering a recipe" smell AGENTS.md names as a bug report against the tool — and the same
+blind spot had already been written down once, in the roadmap's `_MmCopyFromCaller` entry, and
+still cost a day.)*
 **Also the general rule for fixtures:** when the environment cannot support a rung's *fixture*
 (not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
 than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.

@@ -894,3 +894,47 @@ def test_cc_mismatch_fixer_refuses_to_edit_a_generated_island(tmp_path: Path):
     assert not moved, f"--fix edited a generated island: {moved}"
     assert any("BT958HwStartIO" in r for r in refused), refused
     assert (src / "types_i386.rs").read_text() == before
+
+
+# --- scan_bugcheck_stubs: nested checkouts are ANOTHER lane's tree ----------
+
+
+def test_bugcheck_stubs_skips_a_nested_git_checkout(tmp_path: Path):
+    """The scanner globs `**/rust_cohab_stub.c`, so without pruning it reads any
+    worktree nested under the repo (agents create them at
+    `.claude/worktrees/<lane>`) and reports that lane's stubs, at that lane's
+    commit, as findings here.
+
+    Real incident 2026-07-26: a `.claude/worktrees/fex-m4` checkout added 18
+    phantom fastfat findings to an unrelated lane's `check`, failing the gate on
+    all three arches with duplicates of already-baselined findings. That is the
+    READ side of the fleet-isolation law -- a verdict that depends on which
+    nested checkouts happen to exist on this machine is not a gate.
+    """
+    root = _materialize(
+        tmp_path,
+        {
+            "drivers/foo/rust_cohab_stub.c": _STUBS_BAD_C,
+            "drivers/foo/foo.h": _STUBS_HEADER,
+            "sdk/lib/rust/foo-rust/src/lib.rs": _STUBS_BAD_RS,
+        },
+    )
+    cmd = [sys.executable, str(REPO / "tools/scan_bugcheck_stubs.py"), str(root)]
+    before = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
+    assert before.strip(), "fixture must produce findings, else this proves nothing"
+
+    # Same content again, but inside a nested checkout: must add NOTHING.
+    nested = root / ".claude" / "worktrees" / "sibling"
+    for rel in (
+        "drivers/foo/rust_cohab_stub.c",
+        "drivers/foo/foo.h",
+        "sdk/lib/rust/foo-rust/src/lib.rs",
+    ):
+        dst = nested / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text((root / rel).read_text())
+    (nested / ".git").write_text("gitdir: /elsewhere/.git/worktrees/sibling\n")
+
+    after = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
+    assert after == before, f"nested checkout leaked findings:\n{after}"
+    assert ".claude" not in after

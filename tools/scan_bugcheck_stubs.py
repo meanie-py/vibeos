@@ -208,6 +208,29 @@ def header_macros(driver_dir: Path, names: set[str]) -> set[str]:
     return out
 
 
+def in_nested_checkout(path: Path, root: Path) -> bool:
+    """True if `path` lives inside a git checkout nested under `root` — another
+    lane's worktree (agents create them at `.claude/worktrees/<lane>`), or a
+    stray nested clone.
+
+    This scanner is repo-wide by construction: it globs for `rust_cohab_stub.c`
+    ANYWHERE under the root, so without pruning it reads a sibling lane's tree,
+    at a different commit, and reports its stubs as findings here. That is the
+    READ side of the fleet-isolation law in AGENTS.md — a verdict that depends
+    on which nested checkouts happen to exist on this machine is not a gate.
+    (Observed: a `.claude/worktrees/fex-m4` checkout added 18 phantom fastfat
+    findings to an unrelated lane's `check`, all of them duplicates of the main
+    tree's already-baselined ones.)"""
+    p = path.parent
+    while p != root:
+        if (p / ".git").exists():
+            return True
+        if p.parent == p:  # walked out of the tree without meeting root
+            return False
+        p = p.parent
+    return False
+
+
 def main() -> int:
     # Optional scan root, so the control fixtures in tools/test_scanner_controls.py
     # can point this at a throwaway tree instead of the whole repo.
@@ -215,6 +238,8 @@ def main() -> int:
     rroot = rust_root(root)
     findings: list[str] = []
     for stub in sorted(root.glob("**/rust_cohab_stub.c")):
+        if in_nested_checkout(stub, root):
+            continue
         try:
             text = stub.read_text(errors="replace")
         except OSError:

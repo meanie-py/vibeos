@@ -1,0 +1,130 @@
+"""WoW64 probe-ladder verdict check (`smoke --ladder`).
+
+WHY THIS EXISTS. The ladder guests are spawned by winlogon *after* explorer,
+and the smoke's success condition IS the desktop marker — so the ordinary
+`smoke`/`gate` stops watching before a single guest has run. A ladder guest can
+therefore be RED on one arch indefinitely and every gate stays green. That is
+not hypothetical: it happened twice.
+
+  * 2026-07-25 (roadmap, the `_MmCopyFromCaller` entry) noted in passing that
+    "the smoke gate stays GREEN through this: the boot marker fires long before
+    the ladder runs".
+  * 2026-07-26 (E19) found `selfmod32.exe` had been exiting 0xBAD9 on amd64
+    since the day E17 landed it — its rung-5 fixture writes under %WINDIR%,
+    which is a writable ramdisk on arm64 and a read-only CD on the amd64
+    livecd. Nobody saw it because seeing it required knowing to type
+    `smoke --arch amd64 --until "selfmod32.exe exit"`.
+
+Per AGENTS.md, a rule with no command behind it is a rule you will break, so
+"remember to run --until on both arches after touching a guest" becomes this
+flag instead.
+
+SHAPE. This is a bounded EXTRA watch after the normal boot marker, not a change
+to the boot path: with `--ladder` off, nothing here runs and the boot is
+byte-for-byte what it was. The guests self-verify (each checks values, not
+survival) and report a machine-readable verdict, so all this has to do is
+collect them and insist every one is present and passing.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+
+# guest -> the exit code that means PASS. gui32 reports 0x600e (it is the
+# GDI/draw rung and has its own verdict code); everything else uses 0x600d.
+# These 9 are the arches' SHARED ladder — the parity claim is that the same
+# guest passes on a JIT host and on a native compat-mode host, whose arrival
+# paths share nothing below wow64.dll. arm64-only extras (fexprobe,
+# wow64probe) are reported when seen but are not required, so this table stays
+# the definition of parity rather than of "whatever arm64 happens to stage".
+LADDER: dict[str, int] = {
+    "hello32": 0x600D,
+    "gui32": 0x600E,
+    "win32": 0x600D,
+    "file32": 0x600D,
+    "async32": 0x600D,
+    "marshal32": 0x600D,
+    "thread32": 0x600D,
+    "fault32": 0x600D,
+    "selfmod32": 0x600D,
+}
+
+# [WINLOGON] selfmod32.exe exit = 0x600d (0x600D = PASS)
+_VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+)")
+
+# How long to keep draining serial after the desktop marker for the ladder to
+# finish. The guests run in sequence with per-guest winlogon watch windows
+# (8-10s each for the stock applets), so this is generous on purpose: a
+# too-short window would turn a slow host into a fake ladder failure, which is
+# the exact class of false signal this file exists to remove.
+LADDER_TIMEOUT_SECONDS = 420.0
+
+
+def markers() -> list[str]:
+    """Serial substrings that must all appear before the ladder is complete."""
+    return [f"{g}.exe exit = " for g in LADDER]
+
+
+def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS) -> str:
+    """Drain serial until every ladder guest has reported, or `seconds` elapse.
+
+    Returns the drained text (the caller appends it to the boot serial, so a
+    BUGCHECK during the ladder still lands in full.log)."""
+    need = markers()
+    buf = ""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        buf += vm.serial.read_available(timeout=0.5) or ""
+        if all(m in buf for m in need):
+            break
+    return buf
+
+
+def verdicts(text: str) -> dict[str, int]:
+    """Last reported exit code per guest (a guest is launched once, but take the
+    last match so a re-run in a longer boot cannot be masked by an earlier one)."""
+    out: dict[str, int] = {}
+    for name, code in _VERDICT.findall(text):
+        out[name] = int(code, 16)
+    return out
+
+
+def check(text: str) -> dict | None:
+    """None if every ladder guest reported PASS; else a failure dict with the
+    same {classification, salient} shape the smoke triage stages use."""
+    seen = verdicts(text)
+    missing = [g for g in LADDER if g not in seen]
+    wrong = [(g, seen[g], want) for g, want in LADDER.items() if g in seen and seen[g] != want]
+
+    if not missing and not wrong:
+        return None
+
+    salient: list[str] = []
+    if len(missing) == len(LADDER):
+        # Nothing ran at all — almost always staging, not a regression. Say so
+        # with the recipe rather than letting it read as "the ladder broke".
+        return {
+            "classification": "LADDER_NOT_STAGED",
+            "salient": [
+                "no ladder guest reported a verdict — the media has no WoW64 guests staged",
+                "arm64 stages them only under VIBEOS_FEX=1: "
+                "`VIBEOS_FEX=1 ./vibeos-cli build --arch arm64`",
+                "amd64 stages from dll/win32/wow64cpu/CMakeLists.txt; "
+                "guests build via tools/fex/build-hello-compute.sh",
+            ],
+        }
+    for g, got, want in wrong:
+        salient.append(f"{g}.exe exit = 0x{got:04x} (want 0x{want:04x}) — see [{g}] serial lines")
+    for g in missing:
+        salient.append(f"{g}.exe never reported a verdict (crashed, hung, or not staged)")
+    return {"classification": "LADDER_FAIL", "salient": salient}
+
+
+def summary(text: str) -> str:
+    """One-line roll-up for the stage detail."""
+    seen = verdicts(text)
+    ok = sum(1 for g, want in LADDER.items() if seen.get(g) == want)
+    extra = [g for g in seen if g not in LADDER]
+    tail = f" (+{len(extra)} non-parity: {', '.join(sorted(extra))})" if extra else ""
+    return f"{ok}/{len(LADDER)} guests PASS{tail}"
