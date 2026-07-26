@@ -1391,6 +1391,44 @@ case "$DRIVER" in
   # Then dispatch them from the crate: one `mod <stem>;` per island, and each
   # translated module imports from the island its own C include set belongs to
   # (names legitimately overlap between islands — never glob both into scope).
+  netcfgx)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-07-26 from dll/win32/netcfgx/CMakeLists.txt
+    # (11 compiled TU(s), 169 headers in the include closure, 32 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    # Network configuration DLL (dll/win32/netcfgx) — the TCP/IP property sheets and the
+    # netcfg component model. Derived clean: single legal include set, and all 32 switch
+    # constants resolve through the island (no §9.112 exposure at derive time).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/netcfgx"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <olectl.h>\n#include <strsafe.h>\n#include <rpc.h>\n#include <winnls.h>\n#include <winsock.h>\n#include <iphlpapi.h>\n#include <dhcpcsdk.h>\n#include <dhcpcapi.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]devguid\.h'
+                  --allowlist-file '.*[/\\]dhcpcapi\.h'
+                  --allowlist-file '.*[/\\]dhcpcsdk\.h'
+                  --allowlist-file '.*[/\\]iphlpapi\.h'
+                  --allowlist-file '.*[/\\]netcfgn\.h'
+                  --allowlist-file '.*[/\\]netcfgx\.h'
+                  --allowlist-file '.*[/\\]netcfgx_undoc\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]olectl\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]rpc\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winsock\.h'
+                  --allowlist-file '.*[/\\]winsvc\.h'
+                  --allowlist-file '.*netcfgx[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/netcfgx" -I"${SRC}/build-i386/dll/win32/netcfgx" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   shell32)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/shell32/CMakeLists.txt
     # (43 compiled TUs, 299 headers in the include closure, 280 switch constants), then adjusted

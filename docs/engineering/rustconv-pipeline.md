@@ -65,6 +65,24 @@ hand-authored allowlist. Key behaviours:
   group, each with its own wrapper — a union wrapper would rebuild the wall.
 - Validated by rediscovering the committed `afd` and `disk` profiles and by independently
   finding wldap32's real 2-island split.
+- **The emitted `-I` set is what `gen_driver_types.sh` LACKS, not what we searched.** The two
+  are separate constants (`_SDK_SEARCH` vs `_GENERATOR_BASE_INC`) because they genuinely
+  differ — `sdk/include/wine` and `sdk/include/winrt` are ours only. Keep the latter in sync
+  with the bindgen invocation. Dirs are bucketed EARLY (`EXTRA_INC`) or LATE (`LATE_INC`) by
+  the real command's own ordering, since an alternate surface hoisted above the SDK changes
+  which header a bare `#include <x.h>` resolves to: wldap32 needs wine EARLY (it owns the only
+  `config.h`), samlib needs it LATE (its `winioctl.h` collides with `ndk/iotypes.h`). Observed
+  `build-<arch>/sdk/...` dirs are dropped entirely — the generator passes those per-arch as
+  `${BUILD_DIR}`, and echoing one back would bake i386's generated headers into all three.
+- **Prologue guards are evaluated where they are decidable.** Wine's `config.h` is an
+  authoritative build-configuration oracle (autoconf's `/* #undef HAVE_LDAP_H */` asserts this
+  build), so a guarded include under one of its ~330 undefs is dropped rather than mirrored.
+  Previously the `#ifdef` was discarded and the `#include` kept, promoting it to unconditional
+  — wldap32 then asked for OpenLDAP's `<ldap.h>`, which this tree does not vendor.
+  Undecidable guards still keep both arms and emit `CONDITIONAL_PROLOGUE`.
+- **`add_pch()`'s SKIP argument is honoured.** Those TUs do not compile with the PCH, and are
+  skipped precisely because it conflicts with their own headers — wldap32's `ber.c` is both
+  the PCH-skipped TU and the reason the module needs two islands.
 - `--emit profile` prints a paste-ready `gen_driver_types.sh` arm; `--scaffold-dir` writes the
   crate skeleton. ERROR findings are blocking; exit code is 1 when any fires.
 - **A module whose `.c` live in a sibling static-lib target needs `--target`.** msvcrt is the

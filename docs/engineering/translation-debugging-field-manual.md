@@ -1422,6 +1422,12 @@ from one feature is the same single-copy-divergence class as a constant defined 
 - **Smoke "green ×3" lies when conftest nukes only `rust-kernel-target`** (there are five).
 - **New trace points produce nothing in serial** → stale `livecd.iso`.
 - **Smoke red right after a merge/handoff is usually a stale worktree, not a regression.**
+- **Don't run `rustconv translate` while a build is running in the same worktree.** The
+  staleness oracle compares every workspace `.rs` mtime against the cargo-linked binaries, so
+  a translation that lands `wldap32-rust/src/.../bind.rs` mid-build fails `artifact-check`
+  ("13min newer — a genuinely missed rebuild") on four unrelated exes. The oracle is right and
+  should not be loosened — it cannot know the new crate is not in the build graph yet — but it
+  costs you the whole build. Sequence the two, or translate in a different worktree.
 - **A reconstructed `build-arm64` dir → perpetual CMake reconfigure → permanent false
   `STALE_MEDIA`** `[§9.6e]`. Not a code signal. `mkramdisk.sh --refresh` also assumes a prior
   full build populated the media tree.
