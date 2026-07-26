@@ -2693,6 +2693,26 @@ canary `volatile`: you only hand the callee `&cell.Handle`, so a conforming comp
 the rest of the struct is untouched and fold the comparison away, deleting the bug from the test
 but not from the OS.
 
+### A bare `PUNICODE_STRING` argument makes the kernel read the string pointer from PAST the struct
+**Symptom.** A 32-bit guest calls something that takes a `PUNICODE_STRING` and the box
+**BUGCHECKs 0x1E**, with a `[PROBE-AV-R]` line just before it naming an address that is not
+anything the guest passed.
+**Cause.** `UNICODE_STRING` is 8 bytes in the guest (`{USHORT Length; USHORT MaximumLength;
+ULONG Buffer}`) and 16 on the host (`{USHORT Length; USHORT MaximumLength; ULONG pad;
+ULONGLONG Buffer}`) — `Buffer` at offset 4 vs offset 8. A flat thunk therefore reads the
+pointer from *past the end* of the guest's object. Not a truncation: the value is assembled
+from whatever two words followed the struct. `Length`/`MaximumLength` share offsets, so they
+arrive intact and the operands look plausible — read `Len=` in the probe line, it will be the
+CORRECT byte count for the string the guest meant.
+**Fix.** Marshal it: copy Length/MaximumLength, zero the pad, widen Buffer.
+**Reachability is not exotic.** `NtSetValueKey` was flat while `NtQueryValueKey` beside it was
+marshalled, so registry *reads* worked and every `RegSetValueEx` from a 32-bit guest bugchecked
+the machine — a local DoS from any 32-bit app. Same "somebody fixed the variant they were
+looking at" shape as the out-cell entry above; both lists have to come from `marshalgen audit`.
+**Testing one:** round-trip it — set, read back BY THE SAME NAME, delete, confirm gone. A wrong
+`Buffer` cannot survive that. Checking only that the call returned success passes on a broken
+build right up until the box dies.
+
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
 **Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the

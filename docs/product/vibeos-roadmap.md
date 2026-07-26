@@ -737,6 +737,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   FEX's memory-notification contract, though it exports `BTCpuNotifyMemoryAlloc`/`Free`/
   `Protect`/`Dirty`. **→ closed by #74 below, and it was a missing capability, not tidy-up.**
 
+- **WoW64: every `RegSetValueEx` from a 32-bit guest BUGCHECKed the box — FIXED 2026-07-26**
+  (wow64-plan Phase E20). A **local denial of service from any 32-bit app**, not a correctness
+  wart. `UNICODE_STRING` is 8 bytes in the guest and 16 on the host (`Buffer` at offset 4 vs
+  8), so a flat-thunked `PUNICODE_STRING` made the kernel read the string pointer from *past
+  the end* of the guest's struct — a wholly unrelated address assembled from the two words
+  that followed. `Length`/`MaximumLength` share offsets and arrived intact, which is what made
+  it look plausible. `NtSetValueKey` was flat while `NtQueryValueKey` one line away was already
+  marshalled: registry **reads worked and writes killed the machine**. Serial signature:
+  `[PROBE-AV-R] ABOVE-USERPROBE Addr=0040400000580056 Len=38` → `RtlRaiseStatus(0xC0000005)`
+  → `BUGCHECK 0x1E` (`Len=38` = 19 WCHARs = the exact name the guest passed, so only `Buffer`
+  was wrong). Fixed across all 27 ntdll services whose only divergence is a bare
+  `PUNICODE_STRING`/`OBJECT_ATTRIBUTES`. Baseline 246 → **209** (+0 added); ntdll table now
+  172 auto / 124 manual. Proof obtained in the right order: the `marshal32` rung was written
+  and run against **unfixed** media first (it bugchecked), then against the fix (it passes), so
+  the test is known to be able to see the bug rather than merely being green.
+
 - **WoW64: 19 syscalls wrote FOUR BYTES PAST a 32-bit guest's variable — FIXED 2026-07-26**
   (wow64-plan Phase E19). Each takes a guest pointer to a cell the kernel fills with a
   *pointer-sized* value (`HANDLE`, base address, region size). Flat-thunked, the guest's

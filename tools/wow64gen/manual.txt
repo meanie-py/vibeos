@@ -141,3 +141,41 @@ NtCreateProfile
 NtLockVirtualMemory
 NtUnlockVirtualMemory
 NtFlushVirtualMemory
+
+# --- E20: bare PUNICODE_STRING / POBJECT_ATTRIBUTES arguments. UNICODE_STRING
+#     is 8 bytes in the guest and 16 on the host, so Buffer sits at offset 4
+#     there and offset 8 here: a flat thunk made the kernel read the string
+#     POINTER FROM PAST THE END of the guest's struct. Not a truncation -- a
+#     wholly unrelated address, while Length/MaximumLength (same offsets) came
+#     through intact and made it look plausible.
+#     NtSetValueKey is the one that mattered: it BUGCHECKed the box (0x1E,
+#     ProbeForRead on the garbage pointer), so every RegSetValueEx from a
+#     32-bit guest was a local DoS. NtQueryValueKey was ALREADY marshalled --
+#     reads worked, writes killed the machine. ---
+NtSetValueKey
+NtDeleteValueKey
+NtRenameKey
+NtDeleteFile
+NtDisplayString
+NtLoadDriver
+NtUnloadDriver
+NtQuerySystemEnvironmentValue
+NtSetSystemEnvironmentValue
+NtQuerySystemEnvironmentValueEx
+NtSetSystemEnvironmentValueEx
+NtCreatePagingFile
+NtLoadKey
+NtLoadKey2
+NtLoadKeyEx
+NtReplaceKey
+NtUnloadKey
+NtUnloadKey2
+NtUnloadKeyEx
+NtQueryOpenSubKeys
+NtQueryOpenSubKeysEx
+NtAccessCheckAndAuditAlarm
+NtOpenObjectAuditAlarm
+NtCloseObjectAuditAlarm
+NtDeleteObjectAuditAlarm
+NtPrivilegeObjectAuditAlarm
+NtPrivilegedServiceAuditAlarm
