@@ -122,8 +122,14 @@ extern "system" {
     fn FsRtlOplockBreakH(Oplock: *mut OPLOCK, Irp: *mut IRP, Flags: ULONG, Context: *mut c_void, CompletionRoutine: *mut c_void, PostIrpRoutine: *mut c_void) -> NTSTATUS;
     fn IoRemoveShareAccess(FileObject: *mut FILE_OBJECT, ShareAccess: *mut SHARE_ACCESS);
     fn FatIsFastIoPossible(Fcb: *mut FCB) -> u8;
-    fn fat_check_system_security_access(IrpContext: *mut IRP_CONTEXT) -> i32;
-    fn fat_supersede_or_overwrite_file(IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut FCB, AllocationSize: u32, EaBuffer: *mut FILE_FULL_EA_INFORMATION, EaLength: u32, FileAttributes: u16, CreateDisposition: u32, NoEaKnowledge: u8) -> _IO_STATUS_BLOCK;
+    // `fat_check_system_security_access` and `fat_supersede_or_overwrite_file` were
+    // declared here as snake_case externs while BOTH functions are already translated
+    // in this very file — FatSupersedeOrOverwriteFile and FatCheckSystemSecurityAccess,
+    // #[no_mangle], PascalCase. Nothing ever called the snake_case names, but the decls
+    // were enough for the cohab stub generator to manufacture KeBugCheckEx bodies for
+    // them in rust_cohab_stub.c. Deleted both, and the stubs with them: an unused extern
+    // decl is not free, it MINTS a bugcheck. scan_bugcheck_stubs now separates this case
+    // ([ORPHAN_DECL], declared but never called) from a genuinely reachable stub.
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn FatDecodeFileObject( FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
     fn FatEnsureStringBufferEnough(String: *mut core::ffi::c_void, Length: u16);

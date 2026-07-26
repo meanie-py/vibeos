@@ -102,12 +102,25 @@ ULONG FooSizeOf(PVOID a, PVOID b) { (void)a;(void)b; STUB_BUGCHECK(); return 0; 
 
 /* Bugcheck stub that NO Rust module declares — unreachable, so not a finding. */
 NTSTATUS FooNeverCalled(PVOID a) { (void)a; STUB_BUGCHECK(); return 0; }
+
+/* Declared by Rust but never CALLED: the decl is what made this stub exist, and the
+   real function is already translated as FooOrphanReal. ORPHAN_DECL, not a crash. */
+NTSTATUS foo_orphan(PVOID a) { (void)a; STUB_BUGCHECK(); return 0; }
 """
 _STUBS_BAD_RS = """\
 extern "system" {
     fn FooDismount(a: *mut u8) -> i32;
     fn FooSizeOf(a: *mut u8, b: *mut u32);
     fn FooBugCheck(a: usize, b: usize, c: usize);
+    fn foo_orphan(a: *mut u8) -> i32;
+}
+
+// FooDismount is genuinely reachable: something calls it. This is the case that
+// separates a live crash from a dead declaration.
+pub unsafe fn caller(a: *mut u8) -> i32 {
+    // A commented-out call must NOT count as a call site — fastfat keeps the whole
+    // original C body commented beside each translation:  foo_orphan(a);
+    FooDismount(a)
 }
 """
 _STUBS_GOOD_C = """\
