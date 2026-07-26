@@ -1455,20 +1455,96 @@ every 64-bit return. It also emits the list of symbols the `#define <n> ref_<n>`
 The second leaked **10 of 189 symbols** before it was handled. Both take an asm label on the
 declaration instead, which renames the symbol at the object level where no `#undef` reaches.
 
-### Status and what remains
+### Riding the union prelude — the bug that would not have been found by testing
 
-`file.c` compiles to a **118 KB reference object, 0 errors, 189 of 189 symbols renamed,
-0 leaks**, with the harness's `-Werror=implicit-function-declaration` tripwire armed.
-`./vibeos-cli difftest` and all 15 tooling checks pass.
+The first working compile left **23 of file.c's imports bound to glibc**, because the file
+prelude did not include the union `ref_prelude.h`. Four of them decide behaviour:
+`mbtowc`, `mbstowcs`, `wctomb`, `isleadbyte` would have converted through the **host
+locale** instead of msvcrt's `mbcinfo`. Nothing about that is loud — it links, it runs,
+and it makes the oracle wrong in precisely the cases an MBCS difftest exists to check
+(§9.66). The other nineteen are `memcpy`/`strlen`/`pf_printf_a`-class.
 
-The link surface is **50 imports**, enumerated and stable:
+The fix is structural: the prelude is now **five stages** around the union include —
 
-* **39 Win32/NT** needing POSIX-backed shims in `refimpl.c` — dominated by `CreateFileW`,
-  `ReadFile`, `WriteFile`, `SetFilePointer`, `CloseHandle`, `GetFileType`,
-  `GetFileAttributesW`, plus the critical-section and interlocked families.
-* **11 msvcrt-internal** from sibling TUs (`msvcrt_set_errno`, `_wgetenv`, `wstrdupa_utf8`, …).
+| stage | what | why it must be there |
+|---|---|---|
+| 0 | `msvcrt_file_pre.h` | claims glibc's FILE/fpos_t guards; only works *before* any host header |
+| 1 | hide file.c's shells | glibc macro-ises `getc`/`putc`/`feof` and would attach to the name file.c defines |
+| 2 | `ref_prelude.h` | the sibling renames — this is the stage that closes the 23 |
+| 3 | `msvcrt_file_prelude.h` | types, layout guardian, constants; needs stage 2's Windows types |
+| 4–5 | real renames + `msvcrt_file_protos.h` | after the wall, so each prototype is renamed with its definition |
 
-Owed with the shim: wiring build.rs (rename wall + the skiplist), and a drift gate for the
-three generated headers. The gate wants an **input-hash** check rather than `--check` in
-`vibeos-cli check` — re-deriving needs `build-amd64` and the cross-toolchain, which a
-source-lint pass cannot assume, so a naive wiring would fire spuriously.
+`stdin`/`stdout`/`stderr` are the same class and were the same silent bug: with msvcrt's
+headers suppressed they resolved to glibc's `extern FILE *stdin`, a `struct _IO_FILE *`
+punned as an `_iobuf *`. The real build spells them `(MSVCRT__iob+(idx))` — msvcrt.h:332,
+inside the `_MSVCR_VER < 140` arm — which is why the genuine `file.c.obj` has **no
+undefined `iob` reference at all**. That pairing is reproduced verbatim. It also cannot
+live in stage 0: glibc writes `extern FILE *stdin;` *before* `#define stdin stdin`, so an
+early macro turns its own declaration into a syntax error.
+
+### errno is not errno
+
+`msvcrt_set_errno` is errno.c's Win32→CRT mapper and file.c calls it from ~60 places, so
+it *is* the errno behaviour a row grades. Transcribing it exposed a trap worth recording:
+**msvcrt and glibc disagree on two of the values file.c can produce** — `EDEADLK` is 36 vs
+35, `ENOTEMPTY` is 41 vs 39. A reference compiled against glibc's `<errno.h>` returns the
+wrong errno from `ERROR_POSSIBLE_DEADLOCK` and `ERROR_DIR_NOT_EMPTY` while every other
+errno row keeps passing.
+
+So the generator grew a `DISPLACE` set: those names are `#undef`'d and redefined from
+msvcrt's own headers. `fileimpl.c` then has the mirror-image problem — it reads `errno` as
+set by the *host's* `open`/`read`/`write` — and captures the host numbering into a
+`HOST_*` enum before the displacement lands.
+
+### Status
+
+**Done and wired.** `file.c` is reference TU #6: it compiles to a 119 KB object with 189 of
+189 symbols renamed and 0 leaks, links against `fileimpl.c` (the POSIX-backed Win32 layer,
+~40 entry points), and `tests/file_substrate.rs` proves it *runs* — buffered round-trip
+verified through `std::fs` rather than through itself, seek/tell, the fd layer, and error
+propagation from POSIX errno through the shim to msvcrt's errno. The archive carries 699
+`ref_*` symbols, up from ~510. `./vibeos-cli difftest` green.
+
+Two knobs exist because the honest answer depends on the environment rather than on POSIX,
+and hardcoding either would make a real branch unreachable: `ref_set_console_fd` (file.c's
+`_write` splits into a `WriteConsoleW` path and a `WriteFile` path) and
+`ref_set_startup_handles` (`msvcrt_init_io`'s inherited-fd-table arm).
+
+Writing the reachability test for the first one cost two failures and taught two facts that
+would otherwise have been discovered by a confusing difftest much later. **The console arm
+has two gates upstream of the knob, and both are latched or short-circuited before it is
+consulted:**
+
+* `_isatty` does *not* call `GetFileType` — it reads `wxflag & WX_TTY`, cached by
+  `_wsopen_dispatch` at **open** time (file.c:2551, :862). Marking an fd afterwards cannot
+  make an ordinary file a console, and making `GetFileType` lie for a marked fd does not
+  fix it either — the flag was already latched. The test drives `/dev/null`, a real chardev.
+* `_write`'s **binary** path calls `WriteFile` and *returns* before the `_isatty` check ever
+  runs (file.c:3584). The console arm exists only in text mode.
+
+Hence `ref_console_write_count()`: reachability is *measured*, because both arms end in
+`write(fd, …)` and the effect alone cannot distinguish them.
+
+The third failure was the most useful. The knob was first keyed on an `int fd` — and
+**`_open` returns an MSVCRT fd (an index into file.c's `__pioinfo`), while the shim layer
+speaks POSIX fds.** Two unrelated numbering spaces that coincide often enough for a test
+keyed on the wrong one to *pass*, then fail once the process has a different number of
+files open. It is now keyed on the `HANDLE`, which is what `VerifyConsoleIoHandle` is
+actually handed; callers get theirs from `_get_osfhandle`. Any future test or shim that
+takes "an fd" must say which kind.
+
+`ref_set_startup_handles` has no equivalent test — `msvcrt_init_io` runs once per process,
+so exercising it needs a subprocess. Stated rather than glossed.
+
+**Owed:**
+
+* **A Rust port of file.c** — the substrate's whole point. 163 exports.
+* **errno.c as reference TU #7.** It would delete `fileimpl.c`'s transcription of
+  `msvcrt_set_errno` outright and grade 18 more exports; its imports are already nearly all
+  satisfied. Deferred only because it also owns `_errno`/`_invalid_parameter`, which
+  `refimpl.c` supplies as *environment* with a test-visible call counter — swapping those
+  is a change to every existing test's plumbing, not a change to file.c.
+* **A drift gate for the three generated headers.** Wants an **input-hash** check rather
+  than `--check` in `vibeos-cli check`: re-deriving needs `build-amd64` and the
+  cross-toolchain, which a source-lint pass cannot assume, so a naive wiring fires
+  spuriously.
