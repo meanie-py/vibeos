@@ -63,6 +63,94 @@ def test_git_fingerprint_immune_to_mtime(tiny_repo: Path):
     assert provenance.git_fingerprint(tiny_repo) == fp1, "mtime churn must not change fingerprint"
 
 
+def test_run_raises_loudly_instead_of_returning_empty(tiny_repo: Path):
+    """The BUILD_INCOMPLETE train-halter class: _run used to swallow BOTH a
+    non-zero exit and any exception, returning "". That silently shifted the
+    fingerprint (false RED) or emptied cargo_module_rels (false GREEN), and left
+    no evidence either way. Any failure must now name the command, rc and stderr."""
+    with pytest.raises(provenance.ProvenanceError) as ei:
+        provenance._run(["git", "rev-parse", "--verify", "no-such-ref-xyz"], tiny_repo)
+    msg = str(ei.value)
+    assert "exited" in msg and "rev-parse" in msg, msg
+
+
+def test_run_tolerates_declared_nonzero_codes(tiny_repo: Path):
+    """`git grep` exits 1 for "no matches" — a real empty result, not a broken
+    oracle. Without ok_codes the loud version would reject every clean repo."""
+    assert provenance._run(["git", "grep", "-l", "zzz-absent"], tiny_repo, ok_codes=(0, 1)) == ""
+    with pytest.raises(provenance.ProvenanceError):
+        provenance._run(["git", "grep", "-l", "zzz-absent"], tiny_repo)
+
+
+def test_check_staleness_reports_oracle_failure_rather_than_raising(tmp_path: Path, monkeypatch):
+    """A broken oracle must be reported AS a broken oracle — not laundered into a
+    confident "source changed since build", and not escaping as a traceback."""
+    bd = tmp_path / "build-amd64"
+    bd.mkdir()
+    media = bd / "livecd.iso"
+    media.write_bytes(b"iso")
+    provenance.Stamp(
+        arch="amd64",
+        ts=1,
+        git_fingerprint="gf",
+        rust_src_hash="rs",
+        boot_media="build-amd64/livecd.iso",
+        boot_media_sha=provenance._sha256_file(media),
+        cold=True,
+    ).write(bd)
+    monkeypatch.setattr(
+        provenance,
+        "git_fingerprint",
+        lambda *a, **k: (_ for _ in ()).throw(provenance.ProvenanceError("git exploded")),
+    )
+    st = provenance.check_staleness(tmp_path, "amd64")
+    assert not st.fresh
+    assert any("provenance oracle FAILED" in r and "git exploded" in r for r in st.reasons), (
+        st.reasons
+    )
+
+
+def test_src_delta_names_a_head_move(tiny_repo: Path):
+    """ "build source changed" fires milliseconds after the same hash was stamped
+    and never said WHICH input moved. A merge landing under the build is the
+    interesting case and now says so by name."""
+    old_head = provenance.git_head(tiny_repo)
+    stamp = provenance.Stamp(
+        arch="amd64",
+        ts=1,
+        git_fingerprint="gf",
+        rust_src_hash="rs",
+        boot_media="x",
+        boot_media_sha="",
+        cold=True,
+        head_sha=old_head,
+    )
+    (tiny_repo / "b.txt").write_text("second\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "second")
+    delta = provenance._src_delta(tiny_repo, stamp)
+    assert "HEAD MOVED UNDER THE BUILD" in delta, delta
+    assert old_head[:12] in delta, delta
+
+
+def test_src_delta_flags_a_phantom_change(tiny_repo: Path):
+    """Fingerprint moved, HEAD did not, and nothing is modified => the ORACLE is
+    the suspect, not the tree. Saying that out loud is the whole point: this is
+    the shape that halted the merge train with no evidence."""
+    stamp = provenance.Stamp(
+        arch="amd64",
+        ts=1,
+        git_fingerprint="gf",
+        rust_src_hash="rs",
+        boot_media="x",
+        boot_media_sha="",
+        cold=True,
+        head_sha=provenance.git_head(tiny_repo),
+    )
+    delta = provenance._src_delta(tiny_repo, stamp)
+    assert "suspect the oracle" in delta, delta
+
+
 def test_path_scoped_fingerprint(tiny_repo: Path):
     (tiny_repo / "src").mkdir()
     (tiny_repo / "src" / "x.rs").write_text("fn main(){}\n")
