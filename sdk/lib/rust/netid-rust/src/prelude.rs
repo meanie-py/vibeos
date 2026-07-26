@@ -81,6 +81,8 @@ pub type LPPROPSHEETPAGE = LPPROPSHEETPAGEW;
 // Alias, never re-declare: a literal here could drift from the island's value silently.
 pub const NetSetupUnknownStatus: _NETSETUP_JOIN_STATUS = _NETSETUP_JOIN_STATUS_NetSetupUnknownStatus;
 pub const NetSetupDomainName: _NETSETUP_JOIN_STATUS = _NETSETUP_JOIN_STATUS_NetSetupDomainName;
+pub const NetSetupWorkgroupName: _NETSETUP_JOIN_STATUS =
+    _NETSETUP_JOIN_STATUS_NetSetupWorkgroupName;
 pub const DnsNameDomain: _DNS_NAME_FORMAT = _DNS_NAME_FORMAT_DnsNameDomain;
 pub const DnsNameHostnameLabel: _DNS_NAME_FORMAT = _DNS_NAME_FORMAT_DnsNameHostnameLabel;
 

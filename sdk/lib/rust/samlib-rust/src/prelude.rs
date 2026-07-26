@@ -44,6 +44,12 @@ pub const STATUS_PASSWORD_RESTRICTION: NTSTATUS = 0xC000006Cu32 as NTSTATUS;
 
 // bindgen prefixes C enum members with their enum's tag. Alias, never re-declare, so these
 // cannot drift from the island's values.
+pub const DomainDisplayUser: _DOMAIN_DISPLAY_INFORMATION = _DOMAIN_DISPLAY_INFORMATION_DomainDisplayUser;
+pub const DomainDisplayMachine: _DOMAIN_DISPLAY_INFORMATION = _DOMAIN_DISPLAY_INFORMATION_DomainDisplayMachine;
+pub const DomainDisplayGroup: _DOMAIN_DISPLAY_INFORMATION = _DOMAIN_DISPLAY_INFORMATION_DomainDisplayGroup;
+pub const DomainDisplayOemUser: _DOMAIN_DISPLAY_INFORMATION = _DOMAIN_DISPLAY_INFORMATION_DomainDisplayOemUser;
+pub const DomainDisplayOemGroup: _DOMAIN_DISPLAY_INFORMATION = _DOMAIN_DISPLAY_INFORMATION_DomainDisplayOemGroup;
+pub const DomainDisplayServer: _DOMAIN_DISPLAY_INFORMATION = _DOMAIN_DISPLAY_INFORMATION_DomainDisplayServer;
 pub const UserAllInformation: USER_INFORMATION_CLASS =
     _USER_INFORMATION_CLASS_UserAllInformation;
 pub const UserInternal1Information: USER_INFORMATION_CLASS =
