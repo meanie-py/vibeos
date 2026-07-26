@@ -113,3 +113,31 @@ NtReadVirtualMemory
 NtWriteVirtualMemory
 NtFlushInstructionCache
 NtSetInformationProcess
+
+# --- E19: the out-cell class. Each of these takes a guest pointer to a cell
+#     the kernel fills with a POINTER-SIZED value (HANDLE, base address,
+#     region size). Flat-thunked, the kernel's 8-byte store ran four bytes
+#     past the 4-byte cell the guest declared — a successful call that
+#     silently corrupts whatever the guest put next to the variable.
+#     Sourced from `marshalgen audit`, not from memory: note that
+#     NtOpenProcessTokenEx/NtOpenThreadTokenEx above were already marshalled
+#     while the plain variants right here were not. ---
+NtOpenProcessToken
+NtOpenThreadToken
+NtDuplicateObject
+NtDuplicateToken
+NtCreateEventPair
+NtOpenEventPair
+NtCreateJobObject
+NtOpenJobObject
+NtOpenTimer
+NtCreateTimer
+NtCreateDebugObject
+NtCreatePort
+NtCreateWaitablePort
+NtCreateProcess
+NtCreateProcessEx
+NtCreateProfile
+NtLockVirtualMemory
+NtUnlockVirtualMemory
+NtFlushVirtualMemory

@@ -58,6 +58,53 @@ NTSTATUS WINAPI NtAllocateVirtualMemory(HANDLE Process, PVOID *BaseAddress,
                                         ULONG AllocationType, ULONG Protect);
 NTSTATUS WINAPI NtFreeVirtualMemory(HANDLE Process, PVOID *BaseAddress,
                                     PSIZE_T RegionSize, ULONG FreeType);
+
+/* The out-cell family (see "a 4-byte guest cell, an 8-byte kernel write"
+ * below). OBJECT_ATTRIBUTES stays PVOID here for the same reason as the
+ * declarations above: this TU deliberately does not pull in the NDK. */
+NTSTATUS WINAPI NtOpenProcessToken(HANDLE Process, ACCESS_MASK Access,
+                                   PHANDLE TokenHandle);
+NTSTATUS WINAPI NtOpenThreadToken(HANDLE Thread, ACCESS_MASK Access,
+                                  BOOLEAN OpenAsSelf, PHANDLE TokenHandle);
+NTSTATUS WINAPI NtDuplicateObject(HANDLE SourceProcess, HANDLE SourceHandle,
+                                  HANDLE TargetProcess, PHANDLE TargetHandle,
+                                  ACCESS_MASK Access, ULONG Attributes,
+                                  ULONG Options);
+NTSTATUS WINAPI NtDuplicateToken(HANDLE ExistingToken, ACCESS_MASK Access,
+                                 PVOID ObjectAttributes, BOOLEAN EffectiveOnly,
+                                 ULONG TokenType, PHANDLE NewTokenHandle);
+NTSTATUS WINAPI NtCreateEventPair(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
+NTSTATUS WINAPI NtOpenEventPair(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
+NTSTATUS WINAPI NtCreateJobObject(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
+NTSTATUS WINAPI NtOpenJobObject(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
+NTSTATUS WINAPI NtOpenTimer(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
+NTSTATUS WINAPI NtCreateTimer(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                              ULONG TimerType);
+NTSTATUS WINAPI NtCreateDebugObject(PHANDLE Handle, ACCESS_MASK Access,
+                                    PVOID Oa, ULONG Flags);
+NTSTATUS WINAPI NtCreatePort(PHANDLE Handle, PVOID Oa, ULONG MaxConnectInfo,
+                             ULONG MaxMessage, ULONG MaxPoolUsage);
+NTSTATUS WINAPI NtCreateWaitablePort(PHANDLE Handle, PVOID Oa,
+                                     ULONG MaxConnectInfo, ULONG MaxMessage,
+                                     ULONG MaxPoolUsage);
+NTSTATUS WINAPI NtCreateProcess(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                                HANDLE Parent, BOOLEAN InheritHandles,
+                                HANDLE Section, HANDLE DebugPort,
+                                HANDLE ExceptionPort);
+NTSTATUS WINAPI NtCreateProcessEx(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                                  HANDLE Parent, ULONG Flags, HANDLE Section,
+                                  HANDLE DebugPort, HANDLE ExceptionPort,
+                                  BOOLEAN InJob);
+NTSTATUS WINAPI NtCreateProfile(PHANDLE Handle, HANDLE Process, PVOID ImageBase,
+                                SIZE_T ImageSize, ULONG Granularity,
+                                PVOID Buffer, ULONG ProfilingSize,
+                                ULONG Source, ULONG_PTR Affinity);
+NTSTATUS WINAPI NtLockVirtualMemory(HANDLE Process, PVOID *BaseAddress,
+                                    PSIZE_T NumberOfBytes, ULONG MapType);
+NTSTATUS WINAPI NtUnlockVirtualMemory(HANDLE Process, PVOID *BaseAddress,
+                                      PSIZE_T NumberOfBytes, ULONG MapType);
+NTSTATUS WINAPI NtFlushVirtualMemory(HANDLE Process, PVOID *BaseAddress,
+                                     PSIZE_T RegionSize, PVOID IoStatus);
 NTSTATUS WINAPI NtProtectVirtualMemory(HANDLE Process, PVOID *BaseAddress,
                                        PSIZE_T RegionSize, ULONG NewProtect,
                                        PULONG OldProtect);
@@ -241,6 +288,22 @@ static void Wow64pMarshalOa(WOW64_OBJECT_ATTRIBUTES64_M *Oa64,
     WOW64_OBJECT_ATTRIBUTES32_M *Oa32 = (WOW64_OBJECT_ATTRIBUTES32_M *)(ULONG_PTR)Oa32Ptr;
     Oa64->Length = sizeof(*Oa64);
     Oa64->__pad0 = 0;
+    if (!Oa32)
+    {
+        /* A guest may legally pass NULL where the parameter is _In_opt_, and an
+         * ill-behaved one may pass it where it is not. Hand the kernel a valid
+         * empty OA rather than dereferencing zero inside the thunk: a bad guest
+         * argument must come back as a status code, not as a fault in wow64.dll.
+         * Callers whose parameter is genuinely optional use the Opt form below,
+         * which passes a real NULL through. */
+        Oa64->RootDirectory = 0;
+        Oa64->Attributes = 0;
+        Oa64->__pad1 = 0;
+        Oa64->SecurityDescriptor = 0;
+        Oa64->SecurityQualityOfService = 0;
+        Oa64->ObjectName = 0;
+        return;
+    }
     Oa64->RootDirectory = (LONG_PTR)(LONG)Oa32->RootDirectory; /* handle: sign-ext */
     Oa64->Attributes = Oa32->Attributes;
     Oa64->__pad1 = 0;
@@ -525,6 +588,206 @@ static NTSTATUS Wow64pOpenByOa(WOW64_OPEN_FN Fn, ULONG *a)
     return St;
 }
 
+/* ---- the out-cell class: a 4-byte guest cell, an 8-byte kernel write ----- *
+ *
+ * These syscalls hand the kernel a guest pointer to somewhere it stores a
+ * POINTER-SIZED result — a HANDLE, a base address, a region size. A flat thunk
+ * passes the guest's cell straight through (a 32-bit guest pointer is a valid
+ * 64-bit pointer, so nothing complains), and the kernel's 8-byte store then
+ * runs FOUR BYTES PAST the variable the guest declared. On a `HANDLE h;` local
+ * that is the next slot on the guest stack; in a struct it is the next field.
+ *
+ * It is invisible for the same reason the IO_STATUS_BLOCK overflow was: the
+ * call SUCCEEDS, and the value the guest asked for arrives correctly in the
+ * low half. Only the collateral write is wrong, so the damage surfaces later
+ * and somewhere else. `marshalgen audit` is what found these — the whole point
+ * of that gate is that a flat thunk over a divergent payload cannot be seen by
+ * reading the code.
+ *
+ * Note NtOpenProcessTokenEx and NtOpenThreadTokenEx were already marshalled
+ * while the plain variants below were not: this class is easy to close for the
+ * call you happen to be looking at and easy to miss everywhere else, which is
+ * exactly why the fix is driven off the audit list rather than off memory.
+ *
+ * Each marshaller is the same three lines — take the result in a host cell,
+ * narrow it into the guest's. Only the argument slot varies, so they stay
+ * trivial and separate instead of being folded into one clever dispatcher. */
+
+static void Wow64pPutHandle(ULONG Cell32, HANDLE Value)
+{
+    ULONG *Cell = (ULONG *)(ULONG_PTR)Cell32;
+    if (Cell)
+        *Cell = (ULONG)(ULONG_PTR)Value;
+}
+
+/* OBJECT_ATTRIBUTES is _In_opt_ on several of the creates below (NtCreateTimer,
+ * NtDuplicateToken, NtCreateProcessEx...). Marshal it only when the guest
+ * actually passed one and give the host a real NULL otherwise — a pointer to a
+ * zeroed OA is not the same thing to the object manager as no OA at all. */
+static PVOID Wow64pMarshalOaOpt(WOW64_OBJECT_ATTRIBUTES64_M *Oa64,
+                                WOW64_UNICODE_STRING64_M *Uname64,
+                                ULONG Oa32Ptr)
+{
+    if (!Oa32Ptr)
+        return NULL;
+    Wow64pMarshalOa(Oa64, Uname64, Oa32Ptr);
+    return Oa64;
+}
+
+/* --- out-cell only, no OBJECT_ATTRIBUTES --------------------------------- */
+
+static NTSTATUS Wow64Manual_NtOpenProcessToken(ULONG *a)
+{
+    HANDLE Token = NULL;
+    NTSTATUS St = NtOpenProcessToken((HANDLE)(LONG_PTR)(LONG)a[0], a[1], &Token);
+    if (St >= 0)
+        Wow64pPutHandle(a[2], Token);
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtOpenThreadToken(ULONG *a)
+{
+    HANDLE Token = NULL;
+    NTSTATUS St = NtOpenThreadToken((HANDLE)(LONG_PTR)(LONG)a[0], a[1],
+                                    (BOOLEAN)a[2], &Token);
+    if (St >= 0)
+        Wow64pPutHandle(a[3], Token);
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtDuplicateObject(ULONG *a)
+{
+    HANDLE Target = NULL;
+    /* TargetHandle is _Out_opt_ — a DUPLICATE_CLOSE_SOURCE-only call passes
+     * NULL, and that NULL has to reach the kernel as NULL. */
+    NTSTATUS St = NtDuplicateObject((HANDLE)(LONG_PTR)(LONG)a[0],
+                                    (HANDLE)(LONG_PTR)(LONG)a[1],
+                                    (HANDLE)(LONG_PTR)(LONG)a[2],
+                                    a[3] ? &Target : NULL,
+                                    a[4], a[5], a[6]);
+    if (St >= 0)
+        Wow64pPutHandle(a[3], Target);
+    return St;
+}
+
+/* --- out-cell + OBJECT_ATTRIBUTES ---------------------------------------- */
+
+/* (PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, ULONG) — NtCreateTimer's
+ * TIMER_TYPE and NtCreateDebugObject's Flags are both plain 32-bit enums. */
+typedef NTSTATUS (WINAPI *WOW64_OPEN_FN_U32)(PHANDLE, ACCESS_MASK, PVOID, ULONG);
+
+static NTSTATUS Wow64pOpenByOaU32(WOW64_OPEN_FN_U32 Fn, ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    HANDLE Handle = NULL;
+    NTSTATUS St = Fn(&Handle, a[1],
+                     Wow64pMarshalOaOpt(&Oa64, &Uname64, a[2]), a[3]);
+    if (St >= 0)
+        Wow64pPutHandle(a[0], Handle);
+    return St;
+}
+
+/* (PHANDLE, POBJECT_ATTRIBUTES, ULONG, ULONG, ULONG) — the LPC port creates.
+ * Note the OA is at slot 1 here, not 2: there is no ACCESS_MASK. */
+typedef NTSTATUS (WINAPI *WOW64_PORT_FN)(PHANDLE, PVOID, ULONG, ULONG, ULONG);
+
+static NTSTATUS Wow64pCreatePort(WOW64_PORT_FN Fn, ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    HANDLE Handle = NULL;
+    NTSTATUS St = Fn(&Handle, Wow64pMarshalOaOpt(&Oa64, &Uname64, a[1]),
+                     a[2], a[3], a[4]);
+    if (St >= 0)
+        Wow64pPutHandle(a[0], Handle);
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtDuplicateToken(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    HANDLE NewToken = NULL;
+    NTSTATUS St = NtDuplicateToken((HANDLE)(LONG_PTR)(LONG)a[0], a[1],
+                                   Wow64pMarshalOaOpt(&Oa64, &Uname64, a[2]),
+                                   (BOOLEAN)a[3], a[4], &NewToken);
+    if (St >= 0)
+        Wow64pPutHandle(a[5], NewToken);
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtCreateProcess(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    HANDLE Process = NULL;
+    NTSTATUS St = NtCreateProcess(&Process, a[1],
+                                  Wow64pMarshalOaOpt(&Oa64, &Uname64, a[2]),
+                                  (HANDLE)(LONG_PTR)(LONG)a[3], (BOOLEAN)a[4],
+                                  (HANDLE)(LONG_PTR)(LONG)a[5],
+                                  (HANDLE)(LONG_PTR)(LONG)a[6],
+                                  (HANDLE)(LONG_PTR)(LONG)a[7]);
+    if (St >= 0)
+        Wow64pPutHandle(a[0], Process);
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtCreateProcessEx(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    HANDLE Process = NULL;
+    NTSTATUS St = NtCreateProcessEx(&Process, a[1],
+                                    Wow64pMarshalOaOpt(&Oa64, &Uname64, a[2]),
+                                    (HANDLE)(LONG_PTR)(LONG)a[3], a[4],
+                                    (HANDLE)(LONG_PTR)(LONG)a[5],
+                                    (HANDLE)(LONG_PTR)(LONG)a[6],
+                                    (HANDLE)(LONG_PTR)(LONG)a[7],
+                                    (BOOLEAN)a[8]);
+    if (St >= 0)
+        Wow64pPutHandle(a[0], Process);
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtCreateProfile(ULONG *a)
+{
+    HANDLE Profile = NULL;
+    NTSTATUS St = NtCreateProfile(&Profile, (HANDLE)(LONG_PTR)(LONG)a[1],
+                                  (PVOID)(ULONG_PTR)a[2], (SIZE_T)a[3], a[4],
+                                  (PVOID)(ULONG_PTR)a[5], a[6], a[7],
+                                  (ULONG_PTR)a[8]);
+    if (St >= 0)
+        Wow64pPutHandle(a[0], Profile);
+    return St;
+}
+
+/* --- in/out BaseAddress + RegionSize (the Allocate/Free shape) ------------ */
+
+typedef NTSTATUS (WINAPI *WOW64_VMLOCK_FN)(HANDLE, PVOID *, PSIZE_T, ULONG);
+
+static NTSTATUS Wow64pLockUnlockVm(WOW64_VMLOCK_FN Fn, ULONG *a)
+{
+    ULONG *Base32 = (ULONG *)(ULONG_PTR)a[1];
+    ULONG *Size32 = (ULONG *)(ULONG_PTR)a[2];
+    PVOID Base = Base32 ? (PVOID)(ULONG_PTR)*Base32 : NULL;
+    SIZE_T Size = Size32 ? *Size32 : 0;
+    NTSTATUS St = Fn((HANDLE)(LONG_PTR)(LONG)a[0], &Base, &Size, a[3]);
+
+    /* Both cells are IN/OUT: the kernel rounds the request out to page
+     * boundaries and hands the rounded pair back. Mirror on success only,
+     * matching the Allocate/Free marshallers above. */
+    if (St >= 0)
+    {
+        if (Base32) *Base32 = (ULONG)(ULONG_PTR)Base;
+        if (Size32) *Size32 = (ULONG)Size;
+    }
+    return St;
+}
+
+/* NtFlushVirtualMemory also takes an IO_STATUS_BLOCK, so it lives just after
+ * that helper below rather than here with the rest of its family. */
+
 /* ---- file syscalls (OBJECT_ATTRIBUTES + IO_STATUS_BLOCK) ----------------- *
  * IO_STATUS_BLOCK32 is 8 bytes ({ULONG Status; ULONG Information}); the host
  * writes 16 ({union; ULONG_PTR}). Use a host-side IOSB and copy the two fields
@@ -584,6 +847,32 @@ static void Wow64pCopyIosbDown(WOW64_IO_STATUS_BLOCK64_M *I64, ULONG Iosb32Ptr)
     if (!I32) return;
     I32->Status = (ULONG)I64->Status;
     I32->Information = (ULONG)I64->Information;
+}
+
+/* The third member of the Lock/Unlock in/out family (see the out-cell section
+ * above); it is here because it needs the IOSB helper. */
+static NTSTATUS Wow64Manual_NtFlushVirtualMemory(ULONG *a)
+{
+    ULONG *Base32 = (ULONG *)(ULONG_PTR)a[1];
+    ULONG *Size32 = (ULONG *)(ULONG_PTR)a[2];
+    PVOID Base = Base32 ? (PVOID)(ULONG_PTR)*Base32 : NULL;
+    SIZE_T Size = Size32 ? *Size32 : 0;
+    WOW64_IO_STATUS_BLOCK64_M Iosb;
+    NTSTATUS St;
+
+    Iosb.Status = 0;
+    Iosb.Information = 0;
+    /* Synchronous by contract, so a host IOSB on this frame is safe — unlike
+     * the file family, this one can never come back STATUS_PENDING holding a
+     * pointer into a frame that is about to die (field manual §9.36). */
+    St = NtFlushVirtualMemory((HANDLE)(LONG_PTR)(LONG)a[0], &Base, &Size, &Iosb);
+    Wow64pCopyIosbDown(&Iosb, a[3]);
+    if (St >= 0)
+    {
+        if (Base32) *Base32 = (ULONG)(ULONG_PTR)Base;
+        if (Size32) *Size32 = (ULONG)Size;
+    }
+    return St;
 }
 
 /* ---- the IOSB-returning file family ------------------------------------- *
@@ -4040,6 +4329,47 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64pOpenByOa(NtOpenSymbolicLinkObject, Arguments);
     if (WOW64_IS("NtOpenSection"))
         return Wow64pOpenByOa(NtOpenSection, Arguments);
+
+    /* The out-cell class — every one of these used to hand the kernel a 4-byte
+     * guest cell for a pointer-sized store. Driven off `marshalgen audit`. */
+    if (WOW64_IS("NtOpenProcessToken"))
+        return Wow64Manual_NtOpenProcessToken(Arguments);
+    if (WOW64_IS("NtOpenThreadToken"))
+        return Wow64Manual_NtOpenThreadToken(Arguments);
+    if (WOW64_IS("NtDuplicateObject"))
+        return Wow64Manual_NtDuplicateObject(Arguments);
+    if (WOW64_IS("NtDuplicateToken"))
+        return Wow64Manual_NtDuplicateToken(Arguments);
+    if (WOW64_IS("NtCreateEventPair"))
+        return Wow64pOpenByOa(NtCreateEventPair, Arguments);
+    if (WOW64_IS("NtOpenEventPair"))
+        return Wow64pOpenByOa(NtOpenEventPair, Arguments);
+    if (WOW64_IS("NtCreateJobObject"))
+        return Wow64pOpenByOa(NtCreateJobObject, Arguments);
+    if (WOW64_IS("NtOpenJobObject"))
+        return Wow64pOpenByOa(NtOpenJobObject, Arguments);
+    if (WOW64_IS("NtOpenTimer"))
+        return Wow64pOpenByOa(NtOpenTimer, Arguments);
+    if (WOW64_IS("NtCreateTimer"))
+        return Wow64pOpenByOaU32(NtCreateTimer, Arguments);
+    if (WOW64_IS("NtCreateDebugObject"))
+        return Wow64pOpenByOaU32(NtCreateDebugObject, Arguments);
+    if (WOW64_IS("NtCreatePort"))
+        return Wow64pCreatePort(NtCreatePort, Arguments);
+    if (WOW64_IS("NtCreateWaitablePort"))
+        return Wow64pCreatePort(NtCreateWaitablePort, Arguments);
+    if (WOW64_IS("NtCreateProcess"))
+        return Wow64Manual_NtCreateProcess(Arguments);
+    if (WOW64_IS("NtCreateProcessEx"))
+        return Wow64Manual_NtCreateProcessEx(Arguments);
+    if (WOW64_IS("NtCreateProfile"))
+        return Wow64Manual_NtCreateProfile(Arguments);
+    if (WOW64_IS("NtLockVirtualMemory"))
+        return Wow64pLockUnlockVm(NtLockVirtualMemory, Arguments);
+    if (WOW64_IS("NtUnlockVirtualMemory"))
+        return Wow64pLockUnlockVm(NtUnlockVirtualMemory, Arguments);
+    if (WOW64_IS("NtFlushVirtualMemory"))
+        return Wow64Manual_NtFlushVirtualMemory(Arguments);
     if (WOW64_IS("NtQuerySymbolicLinkObject"))
         return Wow64Manual_NtQuerySymbolicLinkObject(Arguments);
     if (WOW64_IS("NtAllocateVirtualMemory"))
