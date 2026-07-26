@@ -4370,3 +4370,68 @@ def test_faulting_module_offset_takes_the_LAST_bugcheck():
     on, not the first the log happens to mention."""
     serial = "***   P2 = ntoskrnl.exe+0x1111\n***   P2 = ntoskrnl.exe+0x2222\n"
     assert triage.faulting_module_offset(serial) == ("ntoskrnl.exe", 0x2222)
+
+
+# --- the gate must never reject a lane without saying why -------------------
+
+
+def test_smoke_stage_that_dies_before_a_verdict_keeps_its_evidence(tmp_path, monkeypatch):
+    """A smoke that aborts before writing summary.json used to be recorded as a
+    bare `smoke:arm64 FAIL` with an empty salient, an empty run dir, and the
+    child's console thrown away -- which is exactly how a lane got rejected with
+    nothing to read. Name the condition, keep the output, carry the exit code."""
+
+    class _Proc:
+        returncode = 3
+        stdout = "staleness: refusing to boot\n"
+        stderr = "fatal: media older than the tree\n"
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    root = tmp_path / "smoke-arm64-a1"
+    r = gate_mod._smoke_once(tmp_path, "arm64", root, [])
+
+    assert r["ok"] is False
+    assert r["classification"] == "SMOKE_NO_SUMMARY"
+    assert r["exit"] == 3
+    # the console survives on disk AND the last line is quoted in the salient
+    assert (root / "smoke-console.log").read_text().count("staleness") == 1
+    assert "media older than the tree" in r["salient"]
+    assert "exited 3" in r["salient"]
+
+
+def test_smoke_stage_with_a_real_verdict_is_untouched(tmp_path, monkeypatch):
+    """The no-summary path must not swallow ordinary failures: a smoke that DID
+    render a verdict keeps that verdict and its own classification."""
+
+    class _Proc:
+        returncode = 1
+        stdout = "boot failed\n"
+        stderr = ""
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    root = tmp_path / "smoke-amd64-a1"
+    (root / "20260101-000000-smoke-amd64").mkdir(parents=True)
+    (root / "20260101-000000-smoke-amd64" / "summary.json").write_text(
+        json.dumps({"verdict": "FAIL", "classification": "BUGCHECK", "stages": []})
+    )
+    r = gate_mod._smoke_once(tmp_path, "amd64", root, [])
+    assert r["classification"] == "BUGCHECK"
+    assert r["exit"] == 1
+
+
+# --- an optional ninja pass can invalidate the main pass's output -----------
+
+
+def test_ninja_did_work_counts_edges_not_just_dirtiness():
+    """`relinked N` is the interesting number: a re-affirm that keeps relinking
+    the same cell every build is a wiring bug, not a hiccup it absorbed."""
+    assert build_mod._ninja_did_work("ninja: no work to do.\n") == 0
+    assert (
+        build_mod._ninja_did_work(
+            "[1/3] Building kernel-rust\n[2/3] Linking ntoskrnl.exe\n[3/3] done\n"
+        )
+        == 3
+    )
+    # progress lines only count at the start of a line -- a compiler diagnostic
+    # that happens to quote one must not inflate the count
+    assert build_mod._ninja_did_work("note: see [1/3] in the log\n") == 0

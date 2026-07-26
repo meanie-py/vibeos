@@ -111,7 +111,40 @@ def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
     t0 = time.monotonic()
     proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
     dt = time.monotonic() - t0
+    # ALWAYS persist the child's console. When smoke dies before it can write a
+    # summary.json, this is the ONLY record of why -- and it used to be dropped on
+    # the floor, which let the gate reject a lane on `smoke:arm64 FAIL` with an
+    # empty salient and an empty run dir. Nothing to read, nobody to blame.
+    console = (proc.stdout or "") + (("\n--- stderr ---\n" + proc.stderr) if proc.stderr else "")
+    try:
+        (root / "smoke-console.log").write_text(console)
+    except OSError:
+        pass
     summary = _read_summary(root)
+    if not summary:
+        # No summary.json at all: the boot never got far enough to have a verdict.
+        # That is NOT the same as "the OS failed to boot", so don't launder it into
+        # a plain FAIL -- name it, and carry the exit code plus the child's last
+        # words so the failure is attributable to a lane or to the harness.
+        return {
+            "arch": arch,
+            "verdict": "FAIL",
+            "classification": "SMOKE_NO_SUMMARY",
+            "ok": False,
+            # Retryable: an abort this early is usually the host, not the OS. A
+            # DETERMINISTIC cause still fails the retry and ends red, so this can
+            # never manufacture a green -- and a recovery is reported as
+            # "first pass was SMOKE_NO_SUMMARY", so the harness bug stays visible.
+            "retryable": True,
+            "exit": proc.returncode,
+            "seconds": dt,
+            "run_dir": str(root),
+            "salient": (
+                f"smoke --arch {arch} exited {proc.returncode} after {dt:.1f}s without writing "
+                f"a summary.json — it died before the boot could return a verdict. "
+                f"Last output: {_last_words(console)}  (full: {root / 'smoke-console.log'})"
+            ),
+        }
     verdict = summary.get("verdict", "FAIL" if proc.returncode else "OK")
     classification = summary.get("classification", "") or ("" if proc.returncode == 0 else "FAIL")
     return {
@@ -123,12 +156,21 @@ def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
         "hang_kind": summary.get("hang_kind"),
         "wedge_confirmed": bool(summary.get("wedge_confirmed")),
         "census_stuck": summary.get("census_stuck", 0),
+        "exit": proc.returncode,
         "seconds": dt,
         "run_dir": summary.get("_dir", str(root)),
         "flake_rate": summary.get("flake_rate"),
         "screenshot": summary.get("screenshot"),
         "salient": _first_salient(summary),
     }
+
+
+def _last_words(console: str, limit: int = 240) -> str:
+    """The last non-empty console line, for a one-line 'why did it die' salient."""
+    for line in reversed(console.splitlines()):
+        if line.strip():
+            return line.strip()[:limit]
+    return "(no output at all)"
 
 
 def _read_summary(root: Path) -> dict:
@@ -770,6 +812,7 @@ def gate(args, repo: Path) -> int:
         run.add(
             Stage(
                 f"smoke:{arch}",
+                exit=r.get("exit", 0),
                 seconds=r["seconds"],
                 status=status,
                 detail=detail,
