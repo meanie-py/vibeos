@@ -479,6 +479,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **`gate` races `marshalgen_audit` against a half-built `build-amd64` → spurious LINT_FAIL.**
+  Seen 2026-07-26 (`/tmp/vibeos-cli/20260726-021528-gate-*`): every build green, all four
+  smokes green, and `lint:i386` FAILED with *"the BUILT thunk table disagrees with the
+  checked-in sources … is STALE"*. It was not stale — `lint:i386` starts the moment
+  **build:i386** lands (gate.py pipelines per-arch lanes on purpose), and `marshalgen_audit`
+  reads `build-amd64`, whose build finished 19 minutes later. Re-running `check --arch i386`
+  afterwards: OK, 31/31, *"built table agrees"*. So the lint is right to hard-fail on a stale
+  artifact — the bug is that a lint reading ANOTHER arch's build dir is scheduled off THIS
+  arch's build. Costs a full 35-minute gate each time it hits, and the merge-queue conductor
+  runs the same suite. Fix is a scheduling one (run cross-arch lints after all builds, or gate
+  `marshalgen_audit` to the arch whose build dir it reads — wow64 is amd64-only, so the second
+  is also semantically right). Owner: whoever holds `tools/wow64gen/` + `tests/qemu/cli/`.
+
 - **`mscms-rust` — being integrated on the `integration` lane, NOT a bug.** Surfaced
   2026-07-25 when `scan_orphan_modules` learned to see ROOTLESS crates: 6 files / 4,782 lines
   with no `Cargo.toml` and no `lib.rs`, which every source gate had been skipping silently
