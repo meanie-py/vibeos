@@ -226,7 +226,10 @@ unsafe fn report(eproc: *mut _EPROCESS, kthread: *mut _KTHREAD, object: usize) {
                 let wb = (object - offset_of!(_EX_PUSH_LOCK_WAIT_BLOCK, __bindgen_anon_1))
                     as *const _EX_PUSH_LOCK_WAIT_BLOCK;
                 let pl = core::ptr::read_volatile(core::ptr::addr_of!((*wb).PushLock)) as usize;
-                if pl >= 0xFFFF_8000_0000_0000 && (pl & 7) == 0 {
+                // Use plausible(), not a hand-rolled range: a 64-bit literal does
+                // not fit i386's usize (CARGO_CHECK_FAIL), and a pushlock is
+                // pointer-aligned — 4 bytes there, not 8.
+                if plausible(pl, core::mem::size_of::<usize>()) {
                     // dbg_print! evaluates to u32, so each arm must be a
                     // statement block or the match takes its value.
                     match synctrace_lookup(pl) {

@@ -919,9 +919,21 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   not compile at all (`E0659` — `stubs.rs` glob-imports both `crate::ke::ke_defs` and
   `ntkrnl_sys::mm`, and both export a `KeGetCurrentThread`; take ke_defs', which returns
   PKTHREAD so the stack fields are reachable), and a soak would otherwise have run for hours
-  against a kernel with no probe in it.
+  against a kernel with no probe in it. **And then one did anyway** — the check was pointed at
+  the built module while the soak booted a frozen `.iso` cut four hours earlier (see the
+  retraction below). Checking the binary is necessary and not sufficient; check the media.
 
-  **THE HEADLINE FROM 9 INSTRUMENTED SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
+  > **RETRACTION (2026-07-26): the soak below was NOT instrumented — the probes were never in
+  > the media.** The image was frozen at 22:42 for run-to-run comparability; `[FREEMAPPED]` and
+  > `[KSTACK]` landed at 02:43, four hours later. `strings livecd-smp.iso | grep -c FREEMAPPED`
+  > = **0**, same for `KSTACK`. The §9.87 check was run against
+  > `build-arm64/ntoskrnl/ntoskrnl.exe` — the wrong artifact. What SURVIVES: the face taxonomy,
+  > the frequencies, and the `0x50` operand reading, all of which come from bugcheck operands and
+  > the census, and both of those *were* in that media. What is VACUOUS: every claim below
+  > phrased as "under the probes", and any reading of the tripwires' silence — nothing was
+  > listening. Re-run on freshly-cut media before treating a probe's silence as a result.
+
+  **THE HEADLINE FROM 9 SOAK ROUNDS (2026-07-26): this is NOT one bug.** Two soaks
   on fixed media, `-smp 1`, same binary within each run:
 
   | face | n | signature |
@@ -941,7 +953,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Each face's evidence is below; the per-round data is in the soak ledgers, and the two
   reproducing serials are kept out of `/tmp` rotation.
 
-  **FIRST REPRODUCTION UNDER THE PROBES (2026-07-26), and it points hard at the STACK.**
+  **FIRST REPRODUCTION (2026-07-26) — no probe fired (see the retraction: none were in the
+  media), but the OPERANDS alone point hard at the STACK.**
   A 4-round `-smp 1` kmtest soak on fixed media reproduced once (rounds 1/3/4 clean or
   ratchet-noise; ~25%, in line with the prior base rate). Round 2 died at test **69 of 89, on
   `ZwWaitForMultipleObjects`** — immediately after the `ZwCreateSection` / `ZwMapViewOfSection`

@@ -1379,6 +1379,18 @@ an `error[E0412]: cannot find ULONG`, but the `ninja` invocation was piped
   read the per-crate `Compiling <crate>` lines.
 - **After a probe that MUST appear on serial, verify the literal is in the binary before
   booting:** `strings <module> | grep -c '<my unique literal>'`. Zero = stop and fix the build.
+- **Verify it in the MEDIA YOU BOOT, not the module you built.** `strings build-<arch>/ntoskrnl/
+  ntoskrnl.exe` answers a different question than `strings <the .iso qemu opens>`, and only the
+  second one is the experiment. This cost a 12-round, ~9-hour arm64 soak on 2026-07-26: the media
+  was deliberately frozen for run-to-run comparability at 22:42, the two probes it was built to
+  exercise landed at 02:43, and every round then booted a kernel with **zero** `FREEMAPPED` and
+  **zero** `KSTACK` literals. The binary check passed; it was checking the wrong artifact. The
+  soak's face taxonomy survived (bugcheck operands and the census were in that media) but every
+  probe-derived conclusion was vacuous — and "the tripwire never fired" reads as evidence of
+  absence when it is really absence of the tripwire (§9.122).
+- **Freezing media and adding instrumentation are in direct tension** — a fixed image is what
+  makes rounds comparable, and it is also what silently locks out the probe you add at hour 3.
+  If you freeze, re-verify the frozen artifact after every probe commit, or re-cut the image.
 - **"Other edits in the crate shipped" does not prove YOUR file did** — cargo is per-file
   incremental and one file's error doesn't fail the archive.
 
