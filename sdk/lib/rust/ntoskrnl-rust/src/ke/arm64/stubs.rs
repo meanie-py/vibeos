@@ -1033,6 +1033,56 @@ pub unsafe extern "system" fn KiDispatchException(
             let mpidr: u64;
             core::arch::asm!("mrs {}, mpidr_el1", out(reg) mpidr, options(nomem, nostack));
             ARM64_UART_TRACE_HEX(b"[KEXC] MPIDR=\0".as_ptr() as PCSTR, mpidr as ULONG_PTR);
+
+            // [KSTACK] the §9.97 distinguishing test: was the faulting SP even inside
+            // a thread stack?
+            //
+            // The first symbolicated kernel-side instance of this bug was 0x1E at
+            // KiSynchronousExceptionEntry+4 — `stp x0, x1, [sp, #TfX0]`, the FIRST
+            // store into the freshly-subtracted trap frame — faulting on a kernel-stack
+            // VA. Three outcomes, and they point at three different bugs, so print the
+            // bounds rather than guessing:
+            //   * SP inside (StackLimit, StackBase]  -> the stack is FINE and the page
+            //     under it went away: the page-reuse face (task #19), not exhaustion.
+            //   * SP just BELOW StackLimit           -> genuine overflow; only then is
+            //     kiinit.rs:63's half-size KERNEL_STACK_SIZE (0x6000 vs xdk's 0xC000)
+            //     worth a rebuild sweep, and only for a fault on CPU0's boot/idle stack
+            //     (per-thread stacks come from ARM3/helpers.rs:400 and ARE 0xC000).
+            //   * SP in NEITHER range                -> we are on some other stack
+            //     entirely (idle/P0/DPC), which is its own answer.
+            // FaultPTE is the clincher for the first case: a not-present PTE under a
+            // live stack VA is the free-while-mapped signature the [FREEMAPPED] probe
+            // catches from the other side.
+            // Fully qualified: stubs.rs glob-imports both crate::ke::ke_defs and
+            // ntkrnl_sys::mm, and BOTH export a KeGetCurrentThread (E0659). Take
+            // ke_defs' — it returns PKTHREAD, so the stack fields are reachable;
+            // ntkrnl_sys::mm's returns a bare PVOID.
+            let thread = crate::ke::ke_defs::KeGetCurrentThread();
+            ARM64_UART_TRACE_HEX(b"[KSTACK] SP=\0".as_ptr() as PCSTR, (*TrapFrame).Sp as ULONG_PTR);
+            if !thread.is_null() {
+                ARM64_UART_TRACE_HEX(
+                    b"[KSTACK] StackBase=\0".as_ptr() as PCSTR,
+                    (*thread).StackBase as ULONG_PTR,
+                );
+                ARM64_UART_TRACE_HEX(
+                    b"[KSTACK] StackLimit=\0".as_ptr() as PCSTR,
+                    (*thread).StackLimit as ULONG_PTR,
+                );
+                ARM64_UART_TRACE_HEX(
+                    b"[KSTACK] InitialStack=\0".as_ptr() as PCSTR,
+                    (*thread).InitialStack as ULONG_PTR,
+                );
+            }
+            if (*ExceptionRecord).NumberParameters >= 2 {
+                ARM64_UART_TRACE_HEX(
+                    b"[KSTACK] FaultVA=\0".as_ptr() as PCSTR,
+                    (*ExceptionRecord).ExceptionInformation[1] as ULONG_PTR,
+                );
+                Arm64DumpPte(
+                    b"[KSTACK] FaultPTE=\0".as_ptr() as PCSTR,
+                    (*ExceptionRecord).ExceptionInformation[1] as PVOID,
+                );
+            }
         }
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,

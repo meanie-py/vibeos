@@ -167,12 +167,21 @@ def _smp_check(text: str, arch: str) -> dict | None:
 
     booted = _booted_kernel(text)
     if booted and booted != "ntkrnlmp.exe":
+        # x86 no longer has a "forgot --smp-kernel" failure mode: the ISO always
+        # carries both pairs and vm.smp_selected_iso repoints DefaultOS= in a copy
+        # of the media (raising, never falling back, if it can't). So a UP kernel
+        # here means the patched ini did not reach freeldr, not a build mistake.
+        fix = (
+            f"fix: ./vibeos-cli build --arch {arch} --smp-kernel"
+            if arch.startswith("arm64")
+            else "the ISO's DefaultOS= was patched to LiveCD_SMP but freeldr "
+            "booted the UP entry anyway — check the [LiveCD_SMP] Options line"
+        )
         return {
             "classification": "UP_KERNEL_ON_SMP_RUN",
             "salient": [
-                f"--smp {n} booted {booted}, not ntkrnlmp.exe — media was built "
-                "without --smp-kernel",
-                f"fix: ./vibeos-cli build --arch {arch} --smp-kernel",
+                f"--smp {n} booted {booted}, not ntkrnlmp.exe",
+                fix,
             ],
         }
     hal = _booted_hal(text)

@@ -1387,6 +1387,40 @@ for the second copy:** put the shared recipe in ONE place (here a `hal-link` cra
 `build.rs` call) — two hand-maintained link recipes for binaries that must be identical apart
 from one feature is the same single-copy-divergence class as a constant defined per-arch.
 
+### A second ninja pass re-emits a shared cargo cell, stranding the first pass's binaries
+**Symptom:** `BUILD_INCOMPLETE` from `artifact-check`, intermittently, naming binaries nobody
+touched — `ws2_32.dll`, `fastfat.sys`, `ntoskrnl.exe` — as older than the cohab staticlib they
+link. Halted the merge train for ~an hour across four lanes.
+**Cause:** `build.py` runs each `ninja_targets_optional` entry as its OWN `ninja <target>`
+invocation, *after* the main pass. But an optional target shares cargo cells with the main
+graph: `ntkrnlmp` and `ntoskrnl` both build `-p kernel-rust` into one `CARGO_TARGET_DIR` and one
+copied `libkernel_rust.a`. So the optional pass re-emits an archive the main pass's binaries
+already consumed, and nothing relinks them, because the main pass is over. Measured on amd64:
+
+    libkernel_rust.a   02:08:11   <- re-emitted by `ninja ntkrnlmp`
+    ntkrnlmp.exe       02:08:23   <- linked against the new bytes
+    ntoskrnl.exe       00:27:35   <- 1h40m older than the archive it links
+
+`mkramdisk` then stages that stale kernel — the arm64 false-green shape this whole section
+exists for. Shipping both flavors under distinct names (entry above) fixed the *identity*
+problem and left this *ordering* one behind it.
+**Why every sighting is arm64:** `ninja_targets_optional` is non-empty for exactly one arch
+(`archcfg.py:205` — `arm64input`, `arm64vid`, `ntkrnlmp`, `halmp`, `kmtest_all`); i386 and amd64
+inherit the `()` default and so never run a second pass at all. If you see this on x86, the
+cause is something else. `kmtest_all` is the widest of the five and reaches cohab crates far
+outside the kernel, which is how `ws2_32.dll` and `fastfat.sys` — targets nobody had touched —
+came to be named in a BUILD_INCOMPLETE.
+**Fix:** a `ninja-reaffirm` pass over the same target list after the optional passes and
+**before** any staging step. No-op normally (~1s), a real relink when a cohab lib moved; it
+reports `relinked N` so a cell that re-emits on *every* build stays visible rather than being
+silently absorbed.
+**The triage hint was actively misleading, which is why it sat.** `provenance._lag` printed
+"SAME-RUN ORDERING, suspect a race not a stale edge" for any sub-2s gap. But the copy is
+`cmake -E copy_if_different`, so a fresh mtime means the **bytes really changed** — which a
+finished link cannot have seen. A sub-second gap here is the *opposite* of benign. **General
+rule: before calling an oracle's complaint a false positive, check what the write actually
+guarantees** — `copy` and `copy_if_different` differ precisely on whether mtime implies change.
+
 ### Other staleness shapes
 - **Multi-copy staleness** `[§9.6]` — `rtl`/`heap` links into **both** `librtl.a` (ntoskrnl) and a
   separate ntdll copy. An edit that "doesn't take" is a stale archive. `ar` never prunes, so
@@ -1528,6 +1562,48 @@ allocation and read heap. It sat latent for as long as the allocations happened 
 surfaced as the subject and the reference disagreeing about two IDENTICAL strings, provoked by
 an unrelated pair of cases shifting the heap. Pad, then terminate — with two NULs, so
 termination does not depend on whether the walker's stride is one byte or two.
+
+### A verdict that blocks other people must carry its evidence
+Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks
+*can anyone check what it saw?* One night's merge-train stall produced five instances, so treat
+it as a class rather than five bugs.
+
+**Symptom:** a gate/land stage goes red with a one-line verdict and there is nothing to read —
+an empty run dir, an empty `salient`, a bare `exit 1`, or a number that is simply wrong.
+
+**Cause, in the five shapes seen:**
+1. **Captured and discarded.** `_smoke_once` ran the child with `capture_output=True` and kept
+   only `summary.json`. When the child died *before* writing one, the console — the only record
+   of why — was dropped. A lane was rejected on `smoke:arm64 FAIL` recorded as *exit 0, 1.6s,
+   empty run dir*, for a boot that takes ~40s. Nothing to read, nobody to blame.
+2. **A summary scraped by a marker search that misses.** `_tooling_once` looked for `FAIL`/`✗`
+   in stdout; ruff and pyright print neither, and tracebacks go to stderr. TOOLING_FAIL blocked
+   four lanes reading only "python tooling findings (exit 1)".
+3. **Someone else's artifact in your evidence directory.** A unit test's `Run()` landed in the
+   LIVE artifact tree, because `artifacts.ARTIFACT_ROOT` is resolved at *import* time and the
+   test's `monkeypatch.setenv` therefore did nothing. Under the gate's `check-tooling` stage
+   that planted a synthetic `verdict FAIL / classification BUGCHECK / duration_ms 0` where a
+   `find` turns it up first. It was read as the real verdict twice, once in a status report.
+4. **A shared artifact root with no owner field.** `VIBEOS_ARTIFACT_ROOT` defaults to
+   `/tmp/vibeos-cli` for *every* worktree, so `ls -dt /tmp/vibeos-cli/*-build-arm64 | head -1`
+   returns whichever lane started last. Another lane's green build was reported as this one's.
+5. **A counter that cannot say zero.** `_ninja_did_work` matched `^\[\d+/\d+\]`, which also
+   matches ninja's `[0/2] Re-checking globbed directories...` status pseudo-edge — so a pass
+   whose output was literally `ninja: no work to do.` reported "relinked 1 target(s)". Always
+   ≥1 breaks the signal in the direction that HIDES the condition it was written to expose.
+
+**Fix:** persist the child's console *unconditionally*, next to the verdict, before deciding
+anything (`smoke-console.log`, `check-tooling-console.log`, `difftest-console.log`). Give
+"the child produced no verdict at all" its own classification (`SMOKE_NO_SUMMARY`) instead of
+laundering it into a plain FAIL. Carry the real exit code into the `Stage`. Record the
+`worktree` in every `summary.json`. And when a marker scan finds nothing, fall back to the
+child's last non-empty line rather than printing a bare exit code.
+
+**Rules of thumb.** A stage powerful enough to redden the whole train has no business
+reporting without evidence. Test artifacts must never be able to reach a live artifact root —
+pin it in an autouse fixture so no individual test can get it wrong. And when a status line
+disagrees with the raw log, believe the log: every one of these was caught by reading the
+output the summary was derived from.
 
 ### Anything you define so the reference will LINK is part of the oracle `[§9.73]`
 A 20,000-case differential fuzzer said MATCH for four waves while **six shipped msvcrt functions
@@ -1728,6 +1804,30 @@ one thing a regex structurally cannot find, because a token's start is defined b
 before it.** The same file had all three variants that break the naive pattern — a wide literal
 inside a comment, `L'` inside a narrow string, and the `case 'L':` — so treat one occurrence as
 proof the others are present too.
+
+### A symbolicator resolves against SOME binary — make sure it is the one that booted
+**Symptom:** a bugcheck PC resolves to a function that makes no sense at the crash site, or to a
+constant (`KTRAP_FRAME_LENGTH+13864` — an ABSOLUTE symbol 13KB away), or the tool declines
+entirely. **Two independent causes, and both lie quietly** because *some* symbol always sorts
+below any address:
+
+1. **Wrong binary.** `ntkrnlmp.exe` is a SEPARATE image from `ntoskrnl.exe` with its own layout
+   (9847 vs 9771 symbols on arm64), and every `--smp N` boot runs it — so an index built only
+   from the UP kernel misnames MP crashes. Build a per-flavor index and pick by what freeldr
+   announced (`[FLDR] load …\ntkrnlmp.exe`). A missing MP index must be a HARD ERROR, never a
+   fallback to the UP one: a wrong symbol is worse than no symbol because it reads like a right
+   one.
+2. **Wrong relocation.** The index holds file VAs (`RVA + PE ImageBase`, `0x400000` here), so a
+   runtime PC needs `runtime_base - ImageBase` subtracted, not `runtime_base`. Getting this
+   wrong pushes every lookup below the first real function.
+
+**Don't guess the base at all when the banner already resolved it.** The bugcheck prints
+`***   P2 = ntoskrnl.exe+0x3788` — that offset IS the RVA, so the index address is just
+`RVA + ImageBase`: no runtime base, no per-arch reloc table, immune to where the image landed.
+vibeos had hardcoded relocs for i386 only and a comment claiming arm64/amd64's base "cannot be
+recovered from a saved log" — it was on the next line. Until that was used, every arm64 bugcheck
+declined, and the one that mattered needed hand-computing to reach
+`KiSynchronousExceptionEntry+4`.
 
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the
@@ -2060,6 +2160,21 @@ a diagnosis.**
 
 netstack's TDI transport relied on it for its queue → the `-smp 2` "TDI dgram upcall TIMED OUT"
 NET_FLAKE. Fix: a real `KSPIN_LOCK` via `SpinLockGuard`. Second instance in the same commit.
+
+### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
+**Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
+log shows the boot still *talking* — arm64 `-smp 2` conformance reached
+`[WINLOGON] explorer.exe created (PID 216)` and was mid-SCM-startup when the 180s budget expired.
+**Cause:** the per-arch `boot_timeout` is sized against the *UP* boot (arm64: ~40s observed →
+180s budget). Under MTTCG every vCPU is its own host thread doing its own translation, and the
+guest genuinely does more work (AP bring-up, IPI round-trips, real spinlock contention), so
+wall-clock to any milestone grows roughly linearly in N — on an already-contended fleet host,
+more. **Fix:** `vm.smp_boot_timeout()` scales `boot_timeout` by N. Scale the CLOCK only —
+`hang_silence_seconds` is deliberately NOT scaled, because the silence watchdog is what actually
+catches a wedge, so a genuine MP hang still fails in ~120s instead of burning the stretched
+budget. Do not "fix" this by lowering the boot marker; the marker is what proves the desktop
+came up. Recompute the scale from a stashed UP value, not from the current one, or a config
+reused across a retry loop multiplies each time.
 
 ### Dropped `#ifdef CONFIG_SMP` blocks are TIME BOMBS, not dead code `[§9.95]`
 `KiRetireDpcList`'s SMP-only deferred-ready drain was dropped in translation, so **an idle CPU

@@ -614,17 +614,65 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   - No duplicate-symbol trap: `ntos.cmake:69` has the C `ex/harderr.c` commented out (cohab
     flipped) and the Rust owns `#[no_mangle] ExpDefaultErrorPort` — exactly one symbol.
 
-  So the **only** code path that yields `ResponseReturnToCaller` (0) is the null-error-port
-  early return at `ex-rust/src/harderr.rs:170-172`, and the six expectations therefore encode
-  *"no error port is connected"*. The failures are the faithful consequence of the LPC error
-  port having come alive — the question is no longer "which translation is wrong" but "should
-  the port be answering these, and what does real NT return when it does". Note the six are the
-  ONLY out-of-range cases outside the `InteractivePart1/2` guards (every case that would pop a
-  message box is gated off on ROS), so they are the only ones whose answer the sweep sees.
-  Next step is unchanged in shape but now confirmatory rather than exploratory: one instrumented
-  boot logging `PortHandle` at `harderr.rs:150` for these six calls. Repro:
-  `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after the build. i386 never runs
-  this test (74-test list vs amd64's 87).
+  **THIRD HALF ALSO RULED OUT, and the "only one path yields 0" claim above was wrong
+  (2026-07-26).** The `PortHandle` computation itself (`ex-rust/src/harderr.rs:145-167`) is
+  byte-faithful to `ntoskrnl/ex/harderr.c:155-181` — same `DefaultHardErrorProcessing &
+  SEM_FAILCRITICALERRORS || ErrorStatus & HARDERROR_OVERRIDE_ERRORMODE` gate, same
+  ExceptionPort→ExpDefaultErrorPort fallback, same two `PortHandle = NULL` overrides. All three
+  halves of the translation are now checked; none diverges.
+
+  There are in fact **four** paths that write `ResponseReturnToCaller`, not one. **Cite the
+  RUST line numbers when instrumenting** — `ntos.cmake:69` has `ex/harderr.c` commented out
+  (noted above), so the C file is inert dead source and a probe added to it fires never. Earlier
+  revisions of this entry listed only `harderr.c:210/:280/:284`, which is exactly the trap
+  AGENTS.md warns about. Live sites, all in `sdk/lib/rust/ex-rust/src/harderr.rs`:
+  1. `:171` — `PortHandle == NULL` — early return, no LPC at all.
+  2. `:231` — `LpcRequestWaitReplyPort` **fails** — kernel writes 0, returns the failure status.
+  3. `:226` — LPC succeeds but the reply's `Response` is **not one of the 11 accepted values**,
+     so the kernel clamps it to 0 — i.e. the server never wrote `Response`.
+  4. `:185` — `Process == ExpDefaultErrorPortProcess && ErrorStatus < 0`, which routes to
+     `ExpSystemErrorHandler` and then answers 0. Not previously listed here; unlikely for a
+     kmtest driver (the default error port process is csrss) but it is a real fourth writer, so
+     an instrumented boot must distinguish it rather than assume three-way.
+
+  **The failure COUNT discriminates.** `CheckHardError` asserts twice per case
+  (`ok_eq_hex(Status, STATUS_SUCCESS)` *and* `ok_eq_ulong(Response, ...)`), and we see exactly
+  **6 failures across 6 cases** — one assertion each. So `Status` is `STATUS_SUCCESS` and path 2
+  is ruled out *today*; the 2026-07-17 baseline passed BOTH assertions, so path 2 is ruled out
+  *then* as well. **A broken LPC was never the explanation in either direction.** The baseline's
+  clean pass was path 1 or path 3, both of which mean the port round-trip was not delivering a
+  valid server answer. Today winsrv writes `ResponseNotHandled` (1), which *is* in the accept
+  list, so the kernel passes it through unclamped.
+
+  **This reframes the entry: the six failures are the OS getting MORE correct, and #18 is NOT a
+  flip blocker.** Current behaviour is exactly what both the C and the Rust winsrv specify. The
+  residual divergence is upstream ReactOS vs Windows — the test is calibrated on Windows, whose
+  csrss answers `ResponseReturnToCaller` for out-of-range `ValidResponseOptions` where ROS's
+  `UserServerHardError` answers `ResponseNotHandled` — and it only became observable once our
+  dispatch started delivering the reply. Trigger commit still unnamed; the 2026-07-17 winsrv
+  harderror commit (`b8185deb011`) is mechanical `mut`/unused-import noise and is NOT it, and
+  the 2026-07-16 LPC reply-lifetime fix (`ce89f8d6af1`) predates the clean baseline. The
+  remaining suspects are the 07-18 calling-convention canon passes (`e33a810c9ad`,
+  `992af657162` — 360 decl fixes + 38 shim-def bugs across 40 crates), which is precisely the
+  change class that would repair a server reply that previously never landed.
+
+  **The BASELINES have already absorbed this on two arches, and amd64's is the odd one out.**
+  As of 2026-07-26 the UP baselines read: i386 `pass=24 fail=6`, arm64 `pass=24 fail=6`, amd64
+  `pass=30 fail=0`. The i386 and arm64 rows are freshly measured and accepted; amd64's is the
+  **untouched 2026-07-17 row** — `afc4aff8277` was an additive hand-edit (`amd64 | 1 +`, adding
+  only `NtCreateSection`), not a `--write-baseline` regeneration, so nothing re-measured
+  ExHardError there. (Do not read the file mtimes as evidence of a re-seed; they are checkout
+  timestamps. Read the diff.) Consequence: **amd64 will keep reporting a phantom ExHardError
+  regression until its UP baseline is re-seeded to 24/6** — the measured amd64 value has been
+  24/6 since 2026-07-24. Also note `i386 never runs this test` elsewhere in this entry is now
+  stale: the native-SEH quarantine clearance (i386 76 → 89) added it.
+
+  One instrumented boot still settles path 1 vs path 3 definitively — log `PortHandle`, the
+  `Status` from `LpcRequestWaitReplyPort`, and `Message.Response` immediately after the send.
+  Note the six are the ONLY out-of-range cases outside the `InteractivePart1/2` guards (every
+  case that would pop a message box is gated off on ROS), so they are the only ones whose answer
+  the sweep sees. Repro: `./vibeos-cli conformance --arch amd64` (no `--smp`) — 110s after the
+  build. i386 never runs this test (74-test list vs amd64's 87).
 
 - **WoW64: 32-bit guests could not create THREADS — FIXED on amd64, PARTIAL on arm64,
   2026-07-25** (task #64, wow64-plan Phase E15). wow64.dll had no per-thread entry at all:
@@ -845,6 +893,121 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   result: it eliminates MiDeletePte as the reuse path. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
+
+  **Tripwire site pinned down (2026-07-26), with the ordering trap that would have made it
+  always-NULL.** The free site is `mm/freelist.rs:391 MmDereferencePage` — the
+  `if rc - 1 == 0` branch, which ends in `MiInsertPageInFreeList(pfn)`. The check must go at the
+  **TOP of that branch**: `MmGetRmapListHeadPage` returns NULL unless `awe_allocation()` is set
+  (`freelist.rs:333`), and the branch clears `awe_allocation` two lines before the free — so a
+  tripwire placed anywhere after that reads NULL on every page and silently proves nothing.
+  Make it a LOUD PRINT, not an assert: `MmAllocPage` (`freelist.rs:428`) defensively clears
+  `rmap_list_head` on *allocation*, which is itself evidence that stale non-NULL heads survive
+  frees today, so a fatal assert would fire on benign leftovers as well as real
+  free-while-mapped. Same call as the `[PFNMISMATCH]` precedent — made loud, deliberately not
+  fatal.
+
+  **BOTH PROBES ARE NOW IMPLEMENTED AND IN THE SHIPPED KERNEL (2026-07-26).**
+  - `[FREEMAPPED]` — `mm/freelist.rs` `MmDereferencePage`, at the TOP of the `rc - 1 == 0`
+    branch exactly as pinned above, bounded at 32 prints plus a running total so it cannot
+    bury the serial log it exists to inform.
+  - `[KSTACK]` — `ke/arm64/stubs.rs`, inside the existing `[KEXC]` kernel-mode-unhandled block,
+    so it costs nothing until the boot is already dying. Prints `SP`, `StackBase`, `StackLimit`,
+    `InitialStack`, `FaultVA` and `Arm64DumpPte(FaultVA)` — the three-way discriminator below.
+
+  Both were confirmed present with `strings ntoskrnl.exe | grep -c` **before** any boot
+  (field manual §9.87). That check earned itself immediately: the first `[KSTACK]` attempt did
+  not compile at all (`E0659` — `stubs.rs` glob-imports both `crate::ke::ke_defs` and
+  `ntkrnl_sys::mm`, and both export a `KeGetCurrentThread`; take ke_defs', which returns
+  PKTHREAD so the stack fields are reachable), and a soak would otherwise have run for hours
+  against a kernel with no probe in it.
+
+  **FIRST REPRODUCTION UNDER THE PROBES (2026-07-26), and it points hard at the STACK.**
+  A 4-round `-smp 1` kmtest soak on fixed media reproduced once (rounds 1/3/4 clean or
+  ratchet-noise; ~25%, in line with the prior base rate). Round 2 died at test **69 of 89, on
+  `ZwWaitForMultipleObjects`** — immediately after the `ZwCreateSection` / `ZwMapViewOfSection`
+  canaries, and the same test the earlier `-smp 2` run C failed with `0xC0000005`:
+
+      *** BUGCHECK: 0x00000050 (0xffff8000050f4030, 0x2, 0xffff8000050f3e20, 0x0)
+
+  Read the operands against the raise site (`ARM3/pagfault.rs`, the `P4=0` arm, which fires
+  when `TempPte.soft_protection() == MM_ZERO_ACCESS`): **P3 is `TrapInformation`, a KTRAP_FRAME
+  pointer — not a PC.** A trap frame lives ON the kernel stack, and the faulting address P1 is
+  only **0x210 above it**, across the `...f4000` page boundary. Stacks grow down, so that is a
+  reference to *already-used* stack — the interrupted frame's own data — whose page is no longer
+  present, while the page holding the trap frame (`...f3000`) still is. A kernel stack is
+  contiguous and fully mapped, so **a live kernel stack lost a backing page.** The immediately
+  preceding serial is `PspUserThreadStartup: returning` for a `kmtest_.exe` thread.
+  That is the same shape as the `0x1E` face (a store into the trap frame faulting on a
+  kernel-stack VA), which makes stack-page loss the unifying explanation for both, and it is a
+  near relative of the already-fixed §9.94 reaper bug (a stack freed without the SwapBusy spin).
+  Fact vs inference: the operands and the raise arm are measured; "a live stack lost a page" is
+  the reading of them, and the `[KSTACK]` dump added below is what turns it into a fact.
+
+  **Reading the `[KSTACK]` numbers: implausible bounds may mean a MIS-MAPPED structure, not a
+  corrupt stack.** The wow64-amd64 lane hit exactly that failure mode the same night
+  (`335f2009cd6`): a WoW64 thread's TEB landed on top of `KUSER_SHARED_DATA`, so
+  `Teb.StackBase = 0x000000000FD4BC00` / `Teb.StackLimit = 0x90A70AA000000000` read back as
+  *the clock* — `InterruptTime.LowPart` and `High2Time | SystemTime.LowPart << 32`. Not corrupt
+  bounds; the wrong page. That was a user TEB and `[KSTACK]` reads the kernel `KTHREAD`, so it
+  is not the same bug — but the lesson transfers: if `StackBase`/`StackLimit` come back as
+  nonsense, first ask whether the structure we are reading is where we think it is, and only
+  then conclude the stack is damaged. Sanity check they bracket `InitialStack` and are
+  `KERNEL_STACK_SIZE` (0xC000 on arm64) apart before drawing any conclusion from them.
+
+  **Two probe-coverage lessons from that run, both now fixed.**
+  1. `[KSTACK]` printed nothing, because it lives in `stubs.rs`'s `[KEXC]`
+     kernel-mode-*unhandled-exception* path, which ends in `0x1E`. A `0x50` is raised straight
+     out of `MmArmAccessFault` and never reaches it. The same dump is now called at all four
+     live `PAGE_FAULT_IN_NONPAGED_AREA` sites (`arm64_dump_fault_stack`), so the next
+     reproduction of *either* face reports StackBase/StackLimit.
+  2. `[FREEMAPPED]` printed nothing, and **cannot** see this face by construction:
+     `MmDereferencePage` is the rmap-tracked *user* page path, whereas kernel stacks come from
+     `MmCreateKernelStack` via system PTEs and are released by a different route. Its silence
+     is therefore not evidence about the stack face at all — only about the user-page face. If
+     the `[KSTACK]` dump confirms a stack-page loss, the next tripwire belongs at the kernel
+     stack free site, not at the page free site.
+
+  **Earlier measurement — a HEALTHY arm64 UP boot to desktop (59s) fires NOTHING:**
+  `FREEMAPPED 0`, `KSTACK 0`, `PFNMISMATCH 0`, `BUGCHECK 0`. That silence is a result, not a
+  non-event: the worry that benign stale rmap heads would make `[FREEMAPPED]` chatty (the
+  reason it is a print and not an assert) does **not** materialise on a normal boot, so the
+  probe is precise and any future hit is signal rather than noise. It also means a clean boot
+  cannot be used as evidence the probe works — only a run that reproduces the bug can.
+
+  **First symbolicated kernel-side instance (2026-07-26) — and it points at the STACK, not at
+  the page-reuse face.** `-smp 1` run F: `BUGCHECK 0x1E (0xC0000005, 0xfffff80042193788,
+  0xffff8000048e8e50, 0)`, `P2 = ntoskrnl.exe+0x3788` = **`KiSynchronousExceptionEntry+4`**
+  (`ntoskrnl/ke/arm64/trap.S:371`). `+0` is `sub sp, sp, #KTRAP_FRAME_LENGTH`; **`+4` is
+  `stp x0, x1, [sp, #TfX0]` — the FIRST store into the freshly-allocated trap frame** — and P3,
+  the faulting address, is `0xffff8000048e8e50`, a kernel-stack VA. So a synchronous exception
+  arrived and the handler prolog could not write the stack underneath it.
+
+  A stack-exhaustion suspect exists but is **NARROWER than it first looks — check the scope
+  before chasing it.** `ke/arm64/kiinit.rs:63` has a file-local `KERNEL_STACK_SIZE = 0x6000`
+  against `xdk/arm64/ke.h:49`'s `0xC000`, and the quest doc flags it. But it governs ONLY the
+  two static P0 arrays it is declared next to — `KiP0BootStackData` and
+  `KiP0DoubleFaultStackData`. **Per-thread kernel stacks are NOT half-size:**
+  `ARM3/helpers.rs:400` defines arm64 `KERNEL_STACK_SIZE = 0xC000` and that is what
+  `MmCreateKernelStack` (`ARM3/procsup.rs:200`) allocates from. So a kmtest thread taking an
+  exception is on a correct 48KB stack, and the half-size const can only be implicated for a
+  fault taken while running on **CPU0's boot/idle stack** — possible for an interrupt-time
+  exception, but not the default explanation.
+
+  Distinguishing test, in order: log `StackBase`/`StackLimit` of the current thread against P3
+  at the 0x1E — that says in one boot whether the faulting SP was even inside a thread stack, an
+  idle/P0 stack, or neither (the last would point back at the page-reuse face rather than
+  exhaustion). Only if it lands in the P0 range is rebuilding with `0xC000` worth a sweep. Note
+  this is a DIFFERENT face from the proven user-mode page-reuse corruption above
+  (`0xC000001D` garbage `.text`, `0xC0000005` in ntdll heap init) — do not assume one fix
+  closes both.
+
+  **This is now the arm64 blocker for the MP-default flip** (2026-07-26): not because MP is
+  implicated — it is not — but because a ratchet floor cannot be seeded from a
+  non-deterministic sweep. Measured this session on arm64, all on the SAME media: `-smp 2` run
+  A clean (86 ok / 3 bad), `-smp 2` run C `ZwWaitForMultipleObjects` NO-END `exit=0xC0000005`,
+  `-smp 1` run B BUGCHECK `0x1E` at `FileAttributes` (71 in), `-smp 1` run D clean to the end
+  (89 launched). Both CPU counts, different victims each time — the registered signature, not
+  an SMP defect.
   **2026-07-25 — the `[PFNMISMATCH]` probe was RUN, and its silence is now a measured result.**
   A quarantine probe booted the arm64 candidates one list at a time (`tools/conformance_probe.py`).
   THREE of this family crashed with a recorded verdict, and the detector fired **zero** times

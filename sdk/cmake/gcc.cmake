@@ -740,10 +740,20 @@ function(add_cargo_module _target _crate _output)
     # regenerated blob ships a STALE binary with zero signal (cost an amd64
     # SMP debug cycle 2026-07-10: a fixed trampoline never relinked hal.dll,
     # same masking class as the kernel-asm staleness two comments up).
+    # NOTE: Cargo.lock too — it is not matched by *.toml, but it PINS every
+    # resolved dependency version, so it is as much a link input as any .rs. A
+    # `cargo update` (or a hand-edit) that moves a pinned version changes what
+    # gets linked while every globbed source stays byte-identical; cargo would
+    # notice on its next run, but ninja never re-invokes cargo, so the module
+    # ships a binary built against the OLD pin with zero signal. Exactly the
+    # masking class as the .S/.c/.spec gaps below, one layer further out.
     get_property(_ws_srcs GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS)
     if(NOT _ws_srcs)
         file(GLOB_RECURSE _ws_srcs CONFIGURE_DEPENDS ${_ws}/*.rs ${_ws}/*.toml ${_ws}/*.bin)
         list(FILTER _ws_srcs EXCLUDE REGEX "/target/")
+        if(EXISTS ${_ws}/Cargo.lock)
+            list(APPEND _ws_srcs ${_ws}/Cargo.lock)
+        endif()
         set_property(GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS "${_ws_srcs}")
     endif()
     list(APPEND _srcs ${_ws_srcs})
