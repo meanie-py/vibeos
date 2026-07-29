@@ -544,12 +544,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     single occurrence, not yet a claim.
   Deterministic-vs-flaky is only separable because rounds are repeated on one frozen media and
   recorded per-round; a single sweep reports all five of these identically.
-- **arm64 sweeps only COMPLETE half the time, and the failures concentrate on ONE test — NEW,
-  OPEN** (2026-07-29, from the 85 banked arm64 smp1 rounds in `~/vibeos-flake-farm/conformance.jsonl`).
-  Only 42/85 rounds finish. The distribution is not diffuse:
-  - **20 rounds stop at exactly `launched=71` = `ZwWaitForMultipleObjects`** (confirmed by
-    `ZwWaitForMultipleObjects CRASH` as the last line of the results file). Another 4 stop at
-    75 (`HidPDescription`), 2 at 73 (`FileAttributes`), 1 each at 80 (`PoIrp`) and 90.
+- **arm64 sweep failures — SUPERSEDED by the `MmDeleteRmap` root cause below; kept only for the
+  corpus statistics.** (2026-07-29, from the 85 banked arm64 smp1 rounds in
+  `~/vibeos-flake-farm/conformance.jsonl`.) **The concentration on
+  `ZwWaitForMultipleObjects` is NOT the bug**: `747d5a28559` moved that test from position 71 to
+  position 2, it ran clean there, and a round still died right after `ZwMapViewOfSection` — so
+  the victim is incidental and section teardown is the trigger. Anything below that reads as
+  "the failures concentrate on one test" is an artifact of position, not a lead. Only 42/85
+  rounds finish. The distribution:
+  - 20 rounds stop at `launched=71`, 4 at 75, 2 at 73, 1 each at 80 and 90 — i.e. clustered at
+    whatever test happens to follow the section work, which is the point above.
   - **13 rounds have `launched=0`** — the sweep never started at all. A separate face; do not
     pool it with the crashers.
   - Bugchecks across the cluster: `0x1E` ×10, `0x1A` ×8, `0x50`, `0xE3`.

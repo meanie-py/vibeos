@@ -269,10 +269,16 @@ pub unsafe fn name_ptr() -> *const u16 {
 }
 """
 
+# The inline comments are load-bearing. tree-sitter makes a comment a CHILD of
+# the argument list, so counting it as an argument shifts every positional index
+# — the level check reads the comment (not DISPATCH_LEVEL) and the last-arg
+# OldIrql lookup lands one slot early. Here that makes the scanner BLIND, so the
+# positive control is the only thing that can catch it (an FP fixture cannot).
+# Sibling incident, same root, opposite direction: scan_ob_refcount's fastfat FP.
 _IRQL_BAD = """\
 pub unsafe fn leaky(cond: bool) -> u32 {
     let mut old: u8 = 0;
-    KeRaiseIrql(DISPATCH_LEVEL, &mut old);
+    KeRaiseIrql(/* NewIrql */ DISPATCH_LEVEL, &mut old /* OldIrql */);
     if cond {
         return 1;  // early return LEAKS the raise
     }
@@ -287,6 +293,70 @@ pub unsafe fn balanced(cond: bool) -> u32 {
     let rc = if cond { 1 } else { 0 };
     KeLowerIrql(old);
     rc
+}
+"""
+
+# scan_extern_decl_drift. The BAD tree is fastfat's FatGetNextMcbEntry shape: a
+# decl and a def of the SAME symbol that disagree on the width behind a pointer.
+# The GOOD tree pins the four shapes that made the tool report 2,682 findings
+# before it reported 10 — every one a defect in the ORACLE, not in the tree:
+# an alias spelled differently per island, a path-qualified alias, a use-rename,
+# and a #[link_name] decl that names a different symbol entirely.
+_DECL_DRIFT_BAD_A = """\
+pub type PIRP_CONTEXT = *mut IRP_CONTEXT;
+extern "system" {
+    // One `*` too many: volinfo declared cachesup's FatUnpinRepinnedBcbs this way,
+    // so the callee read a pointer-to-pointer as the struct itself.
+    fn FatUnpinRepinnedBcbs(IrpContext: *mut PIRP_CONTEXT);
+}
+pub unsafe fn caller(mut ctx: PIRP_CONTEXT) {
+    FatUnpinRepinnedBcbs(&mut ctx);
+}
+"""
+_DECL_DRIFT_BAD_B = """\
+#[no_mangle]
+pub unsafe extern "system" fn FatUnpinRepinnedBcbs(_IrpContext: *mut IRP_CONTEXT) {}
+"""
+_DECL_DRIFT_GOOD_A = """\
+pub type VBO = u32;
+pub type PKSPIN_LOCK = *mut u64;
+use ntkrnl_sys::ddk::PKSPIN_LOCK as DdkPKSPIN_LOCK;
+extern "system" {
+    // Agrees with the def: same depth, spelled through an alias.
+    fn FatGetNextMcbEntry(Vcb: *mut VCB, Vbo: *mut VBO) -> u8;
+    // A use-rename is an alias too.
+    fn ExfInsert(Lock: DdkPKSPIN_LOCK) -> u8;
+    // A path-qualified alias is the same alias.
+    fn MmDeleteVirtualMapping(Process: ntkrnl_sys::ddk::PEPROCESS) -> u8;
+    // #[link_name] declares SOMETHING ELSE — never pair it with this def by ident.
+    #[link_name = "Shell32RustCoCreateInitSF"]
+    fn SHELL32_CoCreateInitSF(a: u32, b: u32) -> u32;
+}
+pub unsafe fn caller(v: *mut VCB, l: DdkPKSPIN_LOCK, p: ntkrnl_sys::ddk::PEPROCESS) {
+    let mut vbo: VBO = 0;
+    FatGetNextMcbEntry(v, &mut vbo);
+    ExfInsert(l);
+    MmDeleteVirtualMapping(p);
+    SHELL32_CoCreateInitSF(1, 2);
+}
+"""
+_DECL_DRIFT_GOOD_B = """\
+#[no_mangle]
+pub unsafe extern "system" fn FatGetNextMcbEntry(_Vcb: *mut VCB, Vbo: *mut VBO) -> u8 {
+    *Vbo = 0;
+    1
+}
+#[no_mangle]
+pub unsafe extern "system" fn ExfInsert(_Lock: PKSPIN_LOCK) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn MmDeleteVirtualMapping(_Process: PEPROCESS) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn SHELL32_CoCreateInitSF(_a: u32, _b: u32, _c: u32) -> u32 {
+    0
 }
 """
 
@@ -306,6 +376,32 @@ pub unsafe fn balanced(cond: bool) -> u32 {
     let rc = if cond { 1 } else { 0 };
     ObDereferenceObject(obj);
     rc
+}
+
+// fastfat's FatMarkHandle, 2026-07-29. The out-param of ObReferenceObjectByHandle
+// is at a FIXED index, and tree-sitter puts an inline comment in the argument
+// list — so `/* UserMode */` shifted the index by one and the scanner tracked
+// the comment's own text, reporting a leak of a variable named `UserMode` on
+// two paths that both dereference correctly.
+pub unsafe fn balanced_with_inline_comment(h: HANDLE, cond: bool) -> u32 {
+    let mut fo: *mut FILE_OBJECT = null_mut();
+    let status = ObReferenceObjectByHandle(
+        h,
+        0,
+        IoFileObjectType as *mut _,
+        1, /* UserMode */
+        &mut fo as *mut *mut FILE_OBJECT as *mut PVOID,
+        null_mut(),
+    );
+    if !NT_SUCCESS(status) {
+        return 1;
+    }
+    if cond {
+        ObDereferenceObject(fo as *mut _);
+        return 2;
+    }
+    ObDereferenceObject(fo as *mut _);
+    0
 }
 """
 
@@ -606,6 +702,13 @@ CONTROLS: list[Control] = [
         slow=True,
         bad={"bad.rs": _IRQL_BAD},
         good={"good.rs": _IRQL_GOOD},
+    ),
+    Control(
+        name="scan_extern_decl_drift",
+        script="tools/scan_extern_decl_drift.py",
+        argv=["--lint"],
+        bad={"src/a.rs": _DECL_DRIFT_BAD_A, "src/b.rs": _DECL_DRIFT_BAD_B},
+        good={"src/a.rs": _DECL_DRIFT_GOOD_A, "src/b.rs": _DECL_DRIFT_GOOD_B},
     ),
     Control(
         name="scan_ob_refcount",

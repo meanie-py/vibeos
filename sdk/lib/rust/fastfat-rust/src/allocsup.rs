@@ -63,7 +63,10 @@ extern "system" {
     fn FatGetIndexFromLbo(Vcb: PVCB, Lbo: i64) -> u32;
     fn UInt32x32To64(a: u32, b: u32) -> u64;
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
-    fn FatGetNextMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, McbIndex: u32, Vbo: *mut u64, Lbo: *mut u64, ByteCount: *mut u32) -> u8;
+    // Vbo is `OUT PVBO` — ULONG32, four bytes. This decl said *mut u64 and its
+    // locals were widened to match it, which is how a decl that contradicts the
+    // header survives: rustc only ever compares a caller against the DECL.
+    fn FatGetNextMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, McbIndex: u32, Vbo: *mut u32, Lbo: *mut u64, ByteCount: *mut u32) -> u8;
     fn FatBuildZeroMdl(IrpContext: *mut IRP_CONTEXT, ByteCount: u32) -> *mut MDL;
     fn KeClearEvent(Event: *mut KEVENT);
     fn RtlCheckBit(BitMap: *const RTL_BITMAP, Bit: u32) -> u8;
@@ -1749,7 +1752,7 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
     ZeroOnDeallocate: u8,
 ) {
     let mut Lbo: u64 = 0;
-    let mut Vbo: u64 = 0;
+    let mut Vbo: u32 = 0; // VBO (ULONG32) — only ever an out-param of FatGetNextMcbEntry
     let mut RunsInMcb: u32 = 0;
     let mut ByteCount: u32 = 0;
     let mut ClusterCount: u32 = 0;
@@ -2078,7 +2081,7 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
         // (variable declarations would go here, followed by the rollback logic)
         // We include a minimal representation:
         let mut LocalLbo: u64 = 0;
-        let mut LocalVbo: u64 = 0;
+        let mut LocalVbo: u32 = 0; // VBO (ULONG32)
         let mut Index: u32 = 0;
         let mut Clusters: u32 = 0;
         let mut FatIndex: u32 = 0;
