@@ -551,11 +551,14 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
 }
 
 #[no_mangle]
+//  The C takes `PIRP_CONTEXT` and `PDCB` — one level of indirection each, not two.
+//  The body was written half to each signature (`(**dcb).Vcb` but `(*dcb).cast()`),
+//  which is what a spurious extra `*` looks like once it propagates.
 pub unsafe extern "system" fn FatIsCurrentOperationSynchedForDcbTeardown(
-    irp_context: *mut PIRP_CONTEXT,
-    dcb: *mut PDCB,
+    irp_context: PIRP_CONTEXT,
+    dcb: PDCB,
 ) -> i32 {
-    let irp = (**irp_context).OriginatingIrp;
+    let irp = (*irp_context).OriginatingIrp;
     let stack = IoGetCurrentIrpStackLocation(irp);
     let mut vcb: *mut VCB = core::ptr::null_mut();
     let mut fcb: *mut FCB = core::ptr::null_mut();
@@ -575,10 +578,10 @@ pub unsafe extern "system" fn FatIsCurrentOperationSynchedForDcbTeardown(
 
     // With the Vcb held, the close path is blocked out.
     if ExIsResourceAcquiredSharedLite(
-        core::ptr::addr_of!((*(**dcb).Vcb).Resource)
+        core::ptr::addr_of!((*(*dcb).Vcb).Resource)
     ) != 0
         || ExIsResourceAcquiredExclusiveLite(
-            core::ptr::addr_of!((*(**dcb).Vcb).Resource)
+            core::ptr::addr_of!((*(*dcb).Vcb).Resource)
         ) != 0
     {
         return 1;
@@ -586,7 +589,7 @@ pub unsafe extern "system" fn FatIsCurrentOperationSynchedForDcbTeardown(
 
     // Accept this assertion at face value.  It comes from GetDirentForFcbOrDcb,
     // and is reliable.
-    if FlagOn(((**irp_context).Flags as u8) as u32, IRP_CONTEXT_FLAG_PARENT_BY_CHILD as u32) != 0 {
+    if FlagOn(((*irp_context).Flags as u8) as u32, IRP_CONTEXT_FLAG_PARENT_BY_CHILD as u32) != 0 {
         return 1;
     }
 
@@ -613,7 +616,7 @@ pub unsafe extern "system" fn FatIsCurrentOperationSynchedForDcbTeardown(
         FatDecodeFileObject(to_check[index as usize], &mut vcb, &mut fcb, &mut ccb);
 
         while !fcb.is_null() {
-            if fcb == (*dcb).cast() {
+            if fcb == dcb.cast() {
                 return 1;
             }
             fcb = (*fcb).ParentDcb;

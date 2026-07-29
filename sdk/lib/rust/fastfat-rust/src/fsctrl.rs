@@ -455,11 +455,16 @@ pub unsafe extern "system" fn FatLookupLastMcbEntry(
     Results
 }
 #[no_mangle]
+//  `OUT PVBO Vbo` is a pointer to a VBO — ULONG32, FOUR bytes (fat.h). Storing a
+//  u64 through it overruns the caller's local by 4 bytes; deviosup's NextVbo is
+//  exactly such a 4-byte local. The C also truncates BEFORE the shift
+//  (`*Vbo = ((VBO) LiVbo) << MCB_SCALE_LOG2`), so a wider store is not even the
+//  same value. Take the width from the header, never from the callers.
 pub unsafe extern "system" fn FatGetNextMcbEntry(
     Vcb: *mut VCB,
     Mcb: *mut LARGE_MCB,
     RunIndex: u32,
-    Vbo: *mut u64,
+    Vbo: *mut VBO,
     Lbo: *mut u64,
     ByteCount: *mut u32,
 ) -> u8 {
@@ -472,7 +477,7 @@ pub unsafe extern "system" fn FatGetNextMcbEntry(
 
     if Results != 0 {
         let log: u32 = ((*Vcb).AllocationSupport.LogOfBytesPerSector) as u32;
-        *Vbo = (LiVbo as u64) << log;
+        *Vbo = (LiVbo as VBO) << log;
         if (LiLbo as u32) != u32::MAX {
             *Lbo = (LiLbo as u64) << log;
         } else {
@@ -1434,7 +1439,7 @@ pub unsafe extern "system" fn FatMoveFile(
 
             // Main processing loop
             while ByteCount != 0 {
-                let mut TempVbo: u64 = 0;
+                let mut TempVbo: VBO = 0;
                 let mut TempLbo: LBO = 0;
                 let mut TempByteCount: u32 = 0;
 
@@ -1884,7 +1889,7 @@ pub unsafe extern "system" fn FatComputeMoveFileSplicePoints(
     const FAT_CLUSTER_LAST: ULONG = 0x0FFFFFFF;
     const STATUS_FILE_CORRUPT_ERROR: NTSTATUS = 0xC0000102_u32 as i32;
 
-    let mut SourceVbo: u64 = 0;
+    let mut SourceVbo: VBO = 0;
     let mut SourceLbo: LBO = 0;
     let mut SourceIndex: ULONG = 0;
     let mut SourceBytesInRun: ULONG = 0;
@@ -1931,7 +1936,7 @@ pub unsafe extern "system" fn FatComputeMoveFileSplicePoints(
                 &mut SourceBytesInRun,
             );
         } else {
-            SourceVbo = FileOffset as u64;
+            SourceVbo = FileOffset;
             SourceLbo += 1;
             SourceBytesInRun -= 1;
         }
@@ -1962,7 +1967,7 @@ pub unsafe extern "system" fn FatComputeMoveFileSplicePoints(
             NT_ASSERT(Result as u32);
         }
 
-        NT_ASSERT(((SourceVbo as u32) == SourceMcbVbo + FileOffset) as u32);
+        NT_ASSERT((SourceVbo == SourceMcbVbo + FileOffset) as u32);
 
         SourceMcbBytesInRun = if SourceBytesInRun < SourceBytesRemaining {
             SourceBytesInRun
