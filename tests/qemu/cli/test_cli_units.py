@@ -2921,6 +2921,7 @@ def _drive_soak(monkeypatch, launched_per_round, repeat=20):
     class A:
         arch = "arm64"
         no_build = False
+        repeat = 0
 
     a = A()
     a.repeat = repeat

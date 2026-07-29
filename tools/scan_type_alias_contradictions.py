@@ -70,9 +70,7 @@ NOLINT_RE = re.compile(r"//\s*nolint(?::\s*type-alias-contradiction\b|\s*$|:?\s*
 
 # [pub[(…)]] type NAME = RHS;   — no generics, no `where`; those are not the
 # C-typedef shapes this is about.
-TYPE_RE = re.compile(
-    r"^\s*(?:pub\s*(?:\([^)]*\)\s*)?)?type\s+([A-Za-z_]\w*)\s*=\s*([^;]+);"
-)
+TYPE_RE = re.compile(r"^\s*(?:pub\s*(?:\([^)]*\)\s*)?)?type\s+([A-Za-z_]\w*)\s*=\s*([^;]+);")
 
 ARCH_RE = re.compile(r"(?:^|[/_])(arm64|aarch64|amd64|x86_64|i386|x86)(?:[/_.]|$)")
 
@@ -88,22 +86,63 @@ PTR_WIDTH = {"i386": 4, "amd64": 8, "arm64": 8}
 # translated code overwhelmingly writes ULONG/LONGLONG/LARGE_INTEGER, and those
 # are precisely where an invented alias goes wrong.
 BASE_WIDTH = {
-    "u8": 1, "i8": 1, "bool": 1,
-    "u16": 2, "i16": 2,
-    "u32": 4, "i32": 4, "f32": 4, "char": 4,
-    "u64": 8, "i64": 8, "f64": 8,
-    "u128": 16, "i128": 16,
+    "u8": 1,
+    "i8": 1,
+    "bool": 1,
+    "u16": 2,
+    "i16": 2,
+    "u32": 4,
+    "i32": 4,
+    "f32": 4,
+    "char": 4,
+    "u64": 8,
+    "i64": 8,
+    "f64": 8,
+    "u128": 16,
+    "i128": 16,
     # Windows / DDK spellings
-    "UCHAR": 1, "CHAR": 1, "BYTE": 1, "BOOLEAN": 1, "CCHAR": 1,
-    "USHORT": 2, "SHORT": 2, "WORD": 2, "WCHAR": 2, "LANGID": 2,
-    "ULONG": 4, "LONG": 4, "DWORD": 4, "ULONG32": 4, "LONG32": 4,
-    "UINT": 4, "INT": 4, "NTSTATUS": 4, "HRESULT": 4, "BOOL": 4,
-    "ULONGLONG": 8, "LONGLONG": 8, "ULONG64": 8, "LONG64": 8,
-    "DWORDLONG": 8, "LARGE_INTEGER": 8, "ULARGE_INTEGER": 8, "DWORD64": 8,
+    "UCHAR": 1,
+    "CHAR": 1,
+    "BYTE": 1,
+    "BOOLEAN": 1,
+    "CCHAR": 1,
+    "USHORT": 2,
+    "SHORT": 2,
+    "WORD": 2,
+    "WCHAR": 2,
+    "LANGID": 2,
+    "ULONG": 4,
+    "LONG": 4,
+    "DWORD": 4,
+    "ULONG32": 4,
+    "LONG32": 4,
+    "UINT": 4,
+    "INT": 4,
+    "NTSTATUS": 4,
+    "HRESULT": 4,
+    "BOOL": 4,
+    "ULONGLONG": 8,
+    "LONGLONG": 8,
+    "ULONG64": 8,
+    "LONG64": 8,
+    "DWORDLONG": 8,
+    "LARGE_INTEGER": 8,
+    "ULARGE_INTEGER": 8,
+    "DWORD64": 8,
 }
 PTR_NAMES = {
-    "usize", "isize", "ULONG_PTR", "LONG_PTR", "DWORD_PTR", "SIZE_T", "SSIZE_T",
-    "UINT_PTR", "INT_PTR", "PVOID", "HANDLE", "KAFFINITY",
+    "usize",
+    "isize",
+    "ULONG_PTR",
+    "LONG_PTR",
+    "DWORD_PTR",
+    "SIZE_T",
+    "SSIZE_T",
+    "UINT_PTR",
+    "INT_PTR",
+    "PVOID",
+    "HANDLE",
+    "KAFFINITY",
 }
 
 
