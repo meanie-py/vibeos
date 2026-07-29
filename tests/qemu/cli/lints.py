@@ -648,6 +648,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # An `extern` DECL that contradicts the `#[no_mangle]` DEF of the same symbol.
+    # rustc checks a call against the decl and never against the def — they meet
+    # only in the linker, which compares nothing but the name — so this class is
+    # invisible to every compiler in the pipeline, and to verify_signatures /
+    # verify_c_signatures too (both need a C prototype, which a fully-translated
+    # module no longer has). It found fastfat's FatGetNextMcbEntry storing 8 bytes
+    # through a 4-byte out-param and freeldr's TuiDisplayMenu being called with 11
+    # arguments for 10 parameters.
+    sdd = repo / "tools" / "scan_extern_decl_drift.py"
+    specs.append(
+        (
+            "scan_extern_decl_drift",
+            [py, str(sdd), "--lint"] if sdd.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # NOTE: scan_bind_all_matches (bind-all match-arm detector) is intentionally
     # NOT wired here yet. It runs `cargo check` in a SEPARATE cold target dir
     # (to avoid force-warn polluting the shared cache), which cold-triggers

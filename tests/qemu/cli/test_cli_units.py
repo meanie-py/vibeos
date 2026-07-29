@@ -2913,9 +2913,26 @@ def test_worktree_provisioning_preflight(tmp_path):
     # anyone to copy them from a sibling worktree is the fleet-isolation trap.
     assert "build.sh arm64" in blob
     assert "cp " not in blob.split("QEMU_EFI.fd")[0]
-    # The real checkout is provisioned, so the preflight must stay silent —
-    # otherwise it would refuse every ordinary run.
-    assert conformance_mod._worktree_provisioning_gaps(_conf_repo_root(), "arm64") == []
+    # A PROVISIONED tree must stay silent, or the preflight would refuse every
+    # ordinary run. Build that tree here rather than asserting against the
+    # ambient checkout: the merge queue gates in a FRESH worktree, which
+    # legitimately lacks the gitignored payload exes, so pointing this at
+    # _conf_repo_root() made the assertion a property of whoever ran it — it
+    # passed locally and rejected the lane in the integration tree.
+    ok = tmp_path / "provisioned"
+    (ok / ".build-tools" / "llvm-mingw").mkdir(parents=True)
+    (ok / "tools" / "payloads" / conformance_mod.SUITE).mkdir(parents=True)
+    (
+        ok
+        / "tools"
+        / "payloads"
+        / conformance_mod.SUITE
+        / f"{conformance_mod.SUITE}-sweep-arm64.exe"
+    ).write_bytes(b"")
+    (ok / "qemu").mkdir(parents=True)
+    (ok / "qemu" / "QEMU_EFI.fd").write_bytes(b"")
+    (ok / "qemu" / "efivars.fd").write_bytes(b"")
+    assert conformance_mod._worktree_provisioning_gaps(ok, "arm64") == []
 
 
 def _drive_soak(monkeypatch, launched_per_round, repeat=20):

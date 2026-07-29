@@ -2354,6 +2354,27 @@ still holds a top-level ERROR**, reporting "not audited" instead of guessing. No
 is useless as that gate: it is true for nearly every real Windows TU because of macros inside
 bodies, which hoist nothing. A **top-level ERROR node** is the precise signal.
 
+**Nothing in the pipeline compares an `extern` DECL against the `#[no_mangle]` DEF of the same
+symbol.** rustc checks a call against the declaration in scope; the definition lives in another
+module and the two meet only in the linker, which compares nothing but the name. Both files
+compile, both are internally consistent, and the caller hands over a different object than the
+callee reads. `verify_signatures` and `verify_c_signatures` cannot help — both need a C
+prototype, so a fully-translated module has no oracle at all. Three live instances: fastfat's
+`FatUnpinRepinnedBcbs` (volinfo declared `*mut PIRP_CONTEXT` against cachesup's
+`*mut IRP_CONTEXT`, so the callee read a pointer-to-pointer as the struct), fastfat's
+`FatGetNextMcbEntry` (`*mut u64` for `OUT PVBO`, an 8-byte store into deviosup's 4-byte local
+on every non-cached FAT read/write), and freeldr's `TuiDisplayMenu` (an 11th parameter the
+definition and `tui.h` do not have, shifting every argument from `MenuItemList` on by one slot).
+`scan_extern_decl_drift.py` gates the class. **Building it took five rounds and the count went
+2682 → 113 → 39 → 10 → 8, every reduction a defect in the ORACLE rather than a suppressed
+finding** — and that ratio is the lesson: an alias spelled differently across bindgen islands is
+not ambiguous unless its resolved DEPTH differs; a path-qualified alias must reduce to its last
+segment; a `use X as Y` rename is an alias; `#[link_name = "X"] fn Y()` declares X, so pairing
+by Rust identifier compares unrelated functions; and only a decl that is CALLED governs an ABI
+(ntoskrnl's SSDT declares every syscall `fn(_: usize, ..)` to count stack slots, and those
+decls are correct on purpose). When a new scanner's first run produces thousands of findings,
+the prior should be that the scanner is wrong, not the tree.
+
 **A COMMENT is a child of the argument list, so positional argument indexing is off by one
 wherever anyone writes one.** `scan_ob_refcount` locates `ObReferenceObjectByHandle`'s object
 by fixed index 4 and `scan_irql_balance` locates `KeRaiseIrql`'s `OldIrql` as the last
