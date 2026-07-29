@@ -52,7 +52,11 @@ type USAGE_PAGE = USHORT;
 type LPCSTR = *const i8;
 type PCSTR = *const i8;
 type HIDP_REPORT_DESCRIPTOR = PUCHAR;
-type BOOL = u8;
+// Win32 BOOL is `int` (4 bytes), and api.rs:383 DEFINES HidParser_UsesReportId
+// as `-> u32`. Declaring it u8 here made the decl and the definition disagree at
+// 6 live call sites; it only ever behaved because the returned values are 0/1,
+// so the low byte happened to be the whole answer.
+type BOOL = i32;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -284,7 +288,7 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
         );
         let input_len_coll_ptr = core::ptr::addr_of_mut!((*coll_desc).InputLength);
         *input_len_coll_ptr = (*input_len_coll_ptr as i32
-            + if uses_input_coll == FALSE { 1 } else { 0 }) as USHORT;
+            + if uses_input_coll == 0 { 1 } else { 0 }) as USHORT;
 
         let uses_output_coll = HidParser_UsesReportId(
             (*coll_desc).PreparsedData as PVOID,
@@ -292,7 +296,7 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
         );
         let output_len_coll_ptr = core::ptr::addr_of_mut!((*coll_desc).OutputLength);
         *output_len_coll_ptr = (*output_len_coll_ptr as i32
-            + if uses_output_coll == FALSE { 1 } else { 0 }) as USHORT;
+            + if uses_output_coll == 0 { 1 } else { 0 }) as USHORT;
 
         let uses_feature_coll = HidParser_UsesReportId(
             (*coll_desc).PreparsedData as PVOID,
@@ -300,7 +304,7 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
         );
         let feature_len_coll_ptr = core::ptr::addr_of_mut!((*coll_desc).FeatureLength);
         *feature_len_coll_ptr = (*feature_len_coll_ptr as i32
-            + if uses_feature_coll == FALSE { 1 } else { 0 }) as USHORT;
+            + if uses_feature_coll == 0 { 1 } else { 0 }) as USHORT;
 
         Index = Index.wrapping_add(1);
     }
