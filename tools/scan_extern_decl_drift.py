@@ -127,27 +127,76 @@ _MAX_ALIAS_HOPS = 12
 # scan_type_alias_contradictions.py, deliberately duplicated rather than imported:
 # that tool resolves per-arch bindgen islands and this one merges them.
 BASE_WIDTH = {
-    "u8": 1, "i8": 1, "bool": 1, "u16": 2, "i16": 2,
-    "u32": 4, "i32": 4, "f32": 4, "char": 4,
-    "u64": 8, "i64": 8, "f64": 8, "u128": 16, "i128": 16,
-    "c_char": 1, "c_uchar": 1, "c_schar": 1,
-    "c_short": 2, "c_ushort": 2, "c_int": 4, "c_uint": 4,
-    "c_long": 4, "c_ulong": 4, "c_longlong": 8, "c_ulonglong": 8,
+    "u8": 1,
+    "i8": 1,
+    "bool": 1,
+    "u16": 2,
+    "i16": 2,
+    "u32": 4,
+    "i32": 4,
+    "f32": 4,
+    "char": 4,
+    "u64": 8,
+    "i64": 8,
+    "f64": 8,
+    "u128": 16,
+    "i128": 16,
+    "c_char": 1,
+    "c_uchar": 1,
+    "c_schar": 1,
+    "c_short": 2,
+    "c_ushort": 2,
+    "c_int": 4,
+    "c_uint": 4,
+    "c_long": 4,
+    "c_ulong": 4,
+    "c_longlong": 8,
+    "c_ulonglong": 8,
     # Windows / DDK spellings
-    "UCHAR": 1, "CHAR": 1, "BYTE": 1, "BOOLEAN": 1, "CCHAR": 1,
-    "USHORT": 2, "SHORT": 2, "WORD": 2, "WCHAR": 2, "LANGID": 2,
-    "ULONG": 4, "LONG": 4, "DWORD": 4, "ULONG32": 4, "LONG32": 4,
-    "UINT": 4, "INT": 4, "NTSTATUS": 4, "HRESULT": 4, "BOOL": 4,
-    "ULONGLONG": 8, "LONGLONG": 8, "ULONG64": 8, "LONG64": 8,
-    "DWORDLONG": 8, "DWORD64": 8, "LARGE_INTEGER": 8, "ULARGE_INTEGER": 8,
+    "UCHAR": 1,
+    "CHAR": 1,
+    "BYTE": 1,
+    "BOOLEAN": 1,
+    "CCHAR": 1,
+    "USHORT": 2,
+    "SHORT": 2,
+    "WORD": 2,
+    "WCHAR": 2,
+    "LANGID": 2,
+    "ULONG": 4,
+    "LONG": 4,
+    "DWORD": 4,
+    "ULONG32": 4,
+    "LONG32": 4,
+    "UINT": 4,
+    "INT": 4,
+    "NTSTATUS": 4,
+    "HRESULT": 4,
+    "BOOL": 4,
+    "ULONGLONG": 8,
+    "LONGLONG": 8,
+    "ULONG64": 8,
+    "LONG64": 8,
+    "DWORDLONG": 8,
+    "DWORD64": 8,
+    "LARGE_INTEGER": 8,
+    "ULARGE_INTEGER": 8,
 }
 # Pointer-width. Not an integer, because it IS 4 on i386 and 8 on amd64/arm64 —
 # so `ULONG` against `ULONG_PTR` is a real bug on two of our three arches and
 # correct on the third. Reported, with the arch dependence named in the message.
 PTR = "ptr"
 PTR_NAMES = {
-    "usize", "isize", "ULONG_PTR", "LONG_PTR", "DWORD_PTR", "SIZE_T",
-    "SSIZE_T", "UINT_PTR", "INT_PTR", "KAFFINITY",
+    "usize",
+    "isize",
+    "ULONG_PTR",
+    "LONG_PTR",
+    "DWORD_PTR",
+    "SIZE_T",
+    "SSIZE_T",
+    "UINT_PTR",
+    "INT_PTR",
+    "KAFFINITY",
 }
 
 
@@ -208,12 +257,7 @@ def _strip_ptrs(t: str) -> tuple[int, str]:
 
 def _terminal(t: str, types: Types) -> bool:
     """True when `t` is a name whose depth-0-ness we actually KNOW."""
-    return (
-        t in types.aggregates
-        or t in BASE_WIDTH
-        or t in PTR_NAMES
-        or t in _TERMINAL_EXTRA
-    )
+    return t in types.aggregates or t in BASE_WIDTH or t in PTR_NAMES or t in _TERMINAL_EXTRA
 
 
 def resolve(t: str, types: Types, stack: tuple = ()) -> tuple[int | None, int | str | None]:
@@ -374,8 +418,9 @@ def sweep(root_dir: Path, crate_dirs: list[Path]):
         defs, decls, called = per[crate] if crate is not None else (None, None, None)
         lines = src.decode(errors="replace").splitlines() if crate is not None else []
 
-        def walk(n, in_foreign=False, src=src, rf=rf, lines=lines,
-                 defs=defs, decls=decls, called=called):
+        def walk(
+            n, in_foreign=False, src=src, rf=rf, lines=lines, defs=defs, decls=decls, called=called
+        ):
             if defs is not None:
                 if n.type == "call_expression":
                     fn = n.child_by_field_name("function")
@@ -387,9 +432,7 @@ def sweep(root_dir: Path, crate_dirs: list[Path]):
                         ln = n.start_point[0]
                         if not (ln < len(lines) and _nolint(lines[ln])):
                             ident = _txt(nm, src)
-                            decls[_symbol(n, src, ident)].append(
-                                (rf, ln + 1, _sig(n, src), ident)
-                            )
+                            decls[_symbol(n, src, ident)].append((rf, ln + 1, _sig(n, src), ident))
                 if n.type == "function_item":
                     prev, attrs = n.prev_sibling, []
                     while prev is not None and prev.type == "attribute_item":
