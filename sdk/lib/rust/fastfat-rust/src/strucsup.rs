@@ -92,7 +92,9 @@ extern "system" {
     static mut FatFsdEntryCount: u32;
     fn ExLocalTimeToSystemTime(LocalTime: *const LARGE_INTEGER, SystemTime: *mut LARGE_INTEGER);
     fn FsRtlUninitializeOplock(Oplock: *mut OPLOCK);
-    fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Index: u32, Lbo: u32, Size: u32, );
+    // See the note in fileinfo.rs: `Lbo` is LBO = LONGLONG, widened in the
+    // fsctrl.rs definition; this decl was left at u32.
+    fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Vbo: u32, Lbo: i64, SectorCount: u32, ) -> i32;
     fn FatRootDirectorySize(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatRootDirectoryLbo(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatLookupFileAllocationSize( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, );
@@ -814,7 +816,7 @@ pub unsafe extern "system" fn FatCreateRootDcb(
                 Vcb,
                 core::ptr::addr_of_mut!((*Dcb).Mcb),
                 0,
-                FatRootDirectoryLbo(core::ptr::addr_of!((*Vcb).Bpb)),
+                FatRootDirectoryLbo(core::ptr::addr_of!((*Vcb).Bpb)) as i64,
                 FatRootDirectorySize(core::ptr::addr_of!((*Vcb).Bpb)),
             );
         }

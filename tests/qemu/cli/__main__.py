@@ -299,6 +299,16 @@ def build_parser() -> argparse.ArgumentParser:
         "where a missing probe wastes the whole run AND reads as a null result. "
         "See smoke --require-probe",
     )
+    f.add_argument(
+        "--smp",
+        type=int,
+        default=0,
+        help="soak with N vCPUs (VIBEOS_QEMU_SMP), same knob as `smoke --smp`. "
+        "N>1 needs SMP-capable media (ntkrnlmp); every boot still runs smoke's "
+        "_smp_check, so a soak that quietly booted the UP kernel FAILS rather "
+        "than banking hours of false green. Without this the SMP lane could not "
+        "use the farm corpus at all and had to hand-loop smoke",
+    )
     f.add_argument("--allow-stale", action="store_true")
     f.set_defaults(fn=farm_mod.farm)
 
@@ -432,6 +442,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=6000,
         help="serial-drain budget in seconds (default 6000; the sweep's launch_drain_secs is 5400)",
+    )
+    cf.add_argument(
+        "--repeat",
+        type=int,
+        default=0,
+        help="run the sweep N times (soak). Rounds after the first force "
+        "--no-build so every round sweeps the SAME media, and each appends a "
+        "record to ~/vibeos-flake-farm/conformance.jsonl carrying its face "
+        "SHAPE (bugcheck / no-launch / stall / clean), sha, smp and tripwire. "
+        "`farm` only boots to desktop and so cannot see any sweep-shaped "
+        "failure; pair this with a SHORT --timeout, since a stalled round that "
+        "drains the full default budget costs ~40x a clean one and is what "
+        "limited the previous soak to 9 rounds",
     )
     cf.set_defaults(fn=conformance_mod.conformance)
 

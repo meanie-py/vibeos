@@ -649,12 +649,10 @@ pub unsafe extern "system" fn KiInitializeKernel(
 
     KiSaveProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
 
-    #[cfg(debug_assertions)]
-    {
-        if Number == 0 {
-            KiReportCpuFeatures();
-        }
-    }
+    // NOT TRANSLATED — see the identical note in ke/amd64/kiinit.rs.
+    // ke/i386/cpu.rs:2417 carries only the signature as a comment.
+    // #[cfg(debug_assertions)]
+    // if Number == 0 { KiReportCpuFeatures(); }
 
     KiGetCacheInformation();
 

@@ -104,6 +104,40 @@ def _run_dir(arch: str) -> Path:
     return d
 
 
+# Durable soak ledger, alongside the flake farm's corpus so one triage pass can
+# read both. /tmp/vibeos-cli run dirs rotate and a sweep truncates the previous
+# same-arch serial log, so a multi-hour soak that keeps its findings only there
+# loses them. The 2026-07-26 arm64 soak had to be partly RETRACTED because
+# nobody could reconstruct, after the fact, which media each round ran on —
+# hence `sha`/`dirty`/`smp`/`tripwire` in every record, not just the verdict.
+FARM_DIR = Path.home() / "vibeos-flake-farm"
+LEDGER = FARM_DIR / "conformance.jsonl"
+_ROUNDS: list[dict] = []
+
+
+def _head_sha(repo: Path) -> str:
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return r.stdout.strip() if r.returncode == 0 else "?"
+    except Exception:
+        return "?"
+
+
+def _append_round(rec: dict) -> None:
+    _ROUNDS.append(rec)
+    try:
+        FARM_DIR.mkdir(parents=True, exist_ok=True)
+        with LEDGER.open("a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except Exception as e:  # a soak must never die on its own bookkeeping
+        print(f"[conformance] ledger append failed: {e}", file=sys.stderr)
+
+
 def _rostests_enabled(repo: Path, base_arch: str) -> bool | None:
     """True if the build dir will compile kmtests. modules/CMakeLists.txt gates
     them on `ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS`, and the fleet default
@@ -123,6 +157,46 @@ def _rostests_enabled(repo: Path, base_arch: str) -> bool | None:
 
 
 def conformance(args, repo: Path) -> int:
+    """`--repeat N` soak wrapper around one sweep.
+
+    The arm64 flip blocker's five faces are all SWEEP faces — a bugcheck partway
+    through, a sweep that launches nothing, a sweep that stalls — so `farm`,
+    which only boots to desktop, cannot see any of them, and the soak that found
+    them was hand-looped. Rounds after the first force `--no-build`: the media is
+    fixed for the run, which is what makes rounds comparable.
+    """
+    repeat = int(getattr(args, "repeat", 0) or 0)
+    if repeat <= 1:
+        return _conformance_once(args, repo)
+
+    worst = 0
+    for i in range(repeat):
+        if i:
+            args.no_build = True
+        print(f"\n=== conformance round {i + 1}/{repeat} ({args.arch}) ===", flush=True)
+        try:
+            rc = _conformance_once(args, repo)
+        except KeyboardInterrupt:
+            print(f"[conformance] interrupted after {i} round(s)", file=sys.stderr)
+            break
+        except Exception as e:  # one bad round must not end the soak
+            print(f"[conformance] round {i + 1} raised {e!r} — continuing", file=sys.stderr)
+            continue
+        worst = max(worst, rc)
+
+    # Roll-up. Deliberately counts the SHAPES that distinguish the faces
+    # (bugcheck / launched=0 / stalled / clean) rather than just pass-fail: a
+    # bare failure count is what made nine rounds read as one bug.
+    print(f"\n=== soak roll-up: {len(_ROUNDS)} round(s) -> {LEDGER} ===")
+    shapes: dict[str, int] = {}
+    for r in _ROUNDS:
+        shapes[r["shape"]] = shapes.get(r["shape"], 0) + 1
+    for k, v in sorted(shapes.items(), key=lambda kv: -kv[1]):
+        print(f"  {v:>3}  {k}")
+    return worst
+
+
+def _conformance_once(args, repo: Path) -> int:
     raw = args.arch
     base = raw.split("-")[0]  # i386 / amd64 / arm64 (baseline dir + build --arch)
     pytest_arch = _PYTEST_ARCH.get(raw, raw)  # amd64 -> amd64-uefi; passthrough if suffixed
@@ -365,6 +439,53 @@ def conformance(args, repo: Path) -> int:
         "serial_log_live": str(log_path),  # truncated by the next same-arch sweep
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+
+    # --- 6b. durable soak ledger ---------------------------------------------
+    # `shape` is the face discriminator, computed from the fields that actually
+    # separate them. Note launched==0 vs a stall vs a bugcheck all render the
+    # same in a pass/fail view, which is precisely how five distinct bugs spent
+    # months filed under one heading.
+    serial_text = ""
+    try:
+        serial_text = Path(summary["serial_log"]).read_text(errors="replace")
+    except Exception:
+        pass
+    if bugcheck:
+        shape = f"A:bugcheck {bugcheck}"
+    elif not results:
+        shape = "B:no-launch"
+    elif not done_line:
+        shape = "stalled/DID-NOT-FINISH"
+    elif regressions:
+        shape = "clean-but-ratchet-regression"
+    else:
+        shape = "clean"
+    try:
+        from . import triage as _triage
+
+        ev = _triage.wedge_evidence(serial_text)
+    except Exception:
+        ev = {"census_stuck": 0, "lockdep": 0, "cswitch": 0, "lines": []}
+    rec = dict(summary)
+    rec.update(
+        {
+            "ts": time.strftime("%Y%m%d-%H%M%S"),
+            "shape": shape,
+            "sha": _head_sha(repo),
+            "tripwire": os.environ.get("VIBEOS_TRIPWIRE", ""),
+            "run_dir": str(run_dir),
+            "census_stuck": ev["census_stuck"],
+            "lockdep_hits": ev["lockdep"],
+            "cswitch_hits": ev["cswitch"],
+            "census_lines": ev["lines"],
+            # The widened census prints a wait-reason histogram when the parked
+            # profile shifts; its presence is what turns face D from invisible
+            # into named, so record whether it fired at all.
+            "wait_profile": "[CENSUS] wait profile:" in serial_text,
+            "rust_panics": serial_text.count("*** RUST PANIC"),
+        }
+    )
+    _append_round(rec)
 
     # --- 7. report + exit code -----------------------------------------------
     verdict = "done" if done_line else "DID NOT FINISH"

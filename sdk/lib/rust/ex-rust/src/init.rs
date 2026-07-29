@@ -1115,12 +1115,25 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
     ExpInitializeHandleTables();
 
+    // On checked builds, allocate the system-call count table (ex/init.c's
+    // `#if DBG` block).
+    //
+    // This assigns ONLY `.Count`. Two `[0] = core::mem::zeroed()` lines used to
+    // stand here — invented by the translation, present in neither the C nor
+    // any Windows source — and they wiped `.Base`, `.Limit` and `.Number`, i.e.
+    // the syscall dispatch table itself, which `ke/krnlinit.c:104-108` fills in
+    // earlier. Every system call after Phase 0 would have dispatched through a
+    // zeroed descriptor.
+    //
+    // It never fired because the whole block is `cfg(debug_assertions)`, which
+    // the release profile never sets, so it had never been compiled OR run. It
+    // became reachable the moment ex-rust's assertions were armed. A cfg'd-out
+    // branch is not tested code — it is code with no evidence either way, and
+    // this one was wrong.
     #[cfg(debug_assertions)]
     {
         let service_count = ExAllocatePoolWithTag(NonPagedPool, KiServiceLimit as usize * 4, 0x6C6C6143);
-        (*core::ptr::addr_of_mut!(KeServiceDescriptorTable))[0] = core::mem::zeroed();
         (*core::ptr::addr_of_mut!(KeServiceDescriptorTable))[0].Count = service_count as *mut ULONG;
-        (*core::ptr::addr_of_mut!(KeServiceDescriptorTableShadow))[0] = core::mem::zeroed();
         (*core::ptr::addr_of_mut!(KeServiceDescriptorTableShadow))[0].Count = service_count as *mut ULONG;
         if !service_count.is_null() {
             core::ptr::write_bytes(service_count, 0, KiServiceLimit as usize * 4);

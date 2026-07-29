@@ -437,6 +437,16 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
 
     new_entry = ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList)) as PMM_RMAP_ENTRY;
     if new_entry.is_null() {
+        // The C `KeBugCheck(MEMORY_MANAGEMENT)`s here (mm/rmap.c). Returning
+        // instead means the caller believes the mapping was recorded when it was
+        // not — and a lost reverse mapping is exactly the precondition for
+        // freeing a frame that is still mapped. Report it before continuing so
+        // the silence is not the only evidence.
+        mm_guard_trip!(
+            "rmap.MmInsertRmap lookaside-alloc FAILED (rmap NOT inserted)", 8,
+            "Page" => Page, "Process" => Process as ULONG_PTR,
+            "Address" => Address as ULONG_PTR,
+        );
         return; // defensive: skip instead of bugcheck
     }
     (*new_entry).Address = Address;
@@ -445,6 +455,20 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
     if !RMAP_IS_SEGMENT(Address) {
         let actual_pfn = MmGetPfnForProcess(Process, Address);
         if actual_pfn != Page as _ {
+            // The C DPRINT1s ("Insert rmap ... which doesn't match physical
+            // address ...") and then `KeBugCheck(MEMORY_MANAGEMENT)`. This
+            // translation returns instead, so the rmap is silently NOT inserted
+            // and the caller is told nothing. That is the leading candidate for
+            // the arm64 `MmDeleteRmap mapping-not-in-list` seen once per run:
+            // nothing was ever put in the list to delete. Report both PFNs so
+            // the next boot says which side is wrong, instead of only proving
+            // that something is.
+            mm_guard_trip!(
+                "rmap.MmInsertRmap PFN MISMATCH (rmap NOT inserted)", 8,
+                "Page" => Page, "actual_pfn" => actual_pfn as ULONG_PTR,
+                "Process" => Process as ULONG_PTR,
+                "Address" => Address as ULONG_PTR,
+            );
             ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), new_entry as PVOID);
             return; // defensive: skip instead of bugcheck
         }
