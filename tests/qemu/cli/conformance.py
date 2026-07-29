@@ -455,7 +455,18 @@ def _conformance_once(args, repo: Path) -> int:
         "suite": SUITE,
         "arch": base,
         "pytest_arch": pytest_arch,
-        "smp": smp or 1,
+        # `smp or 1` used to live here, and it made the ledger LIE about which
+        # kernel ran: no --smp boots the UP kernel (ntoskrnl) while `--smp 1`
+        # boots the MP kernel on one CPU (ntkrnlmp, PSCI AP bring-up on arm64) —
+        # two different binaries doing different work — and both were recorded as
+        # smp=1. That collapse cost a whole A/B: 44 UP-kernel rounds at 100% clean
+        # were compared against 85 banked MP-at-1-CPU rounds at 49%, and the
+        # difference read as a fix when it was a kernel swap. Record 0 for "not
+        # specified" and carry the kernel explicitly, so the distinction survives
+        # into the shared corpus instead of having to be recovered by grepping
+        # serial logs for an `ntkrnlmp.exe` load line.
+        "smp": smp,
+        "mp_kernel": bool(smp),
         "launched": len(results),
         "ok": ok,
         "bad": bad,
