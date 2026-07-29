@@ -17,7 +17,21 @@
 //! line, not a hang. During the target scenario (a wedge) nothing is exiting,
 //! so the list-race window is moot.
 //!
-//! Silent when healthy: no output unless a stuck thread is found.
+//! **Coverage was widened past `GateWait` (2026-07-28).** The arm64 blocker's
+//! "face D" is a stalled test sweep — 180s timeouts throughout — during which
+//! this watchdog printed exactly one line: its own startup banner. That was
+//! read as *nothing is stuck*, when the only honest reading was *nothing is
+//! stuck **in a gate wait***, which is all the scan ever looked at. So face C
+//! (holder-stuck, reported) and face D (invisible) were being told apart by the
+//! ABSENCE of a line — a discriminator resting entirely on this file's blind
+//! spot. It now tracks every parked thread with its `State`/`WaitReason`,
+//! names the ones on kernel-internal locks, and prints a wait-reason histogram
+//! when the parked profile shifts.
+//!
+//! Silent when healthy: gate waits and kernel-lock waits report only when stuck
+//! across two scans, and the histogram prints only when the parked-wait profile
+//! *changes* — a healthy system parks a large but stable population of server
+//! and worker threads forever, and that steady state is silence.
 
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
@@ -38,28 +52,67 @@ use ntkrnl_sys::ddk::{
 
 const THREAD_ALL_ACCESS: u32 = 0x001F_FFFF; // STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0xFFFF
 
-use super::ke_defs::kt_State;
+use super::ke_defs::{kt_State, kt_WaitTime};
 use super::synctrace::{synctrace_dropped, synctrace_lookup};
 
 /// KTHREAD_STATE::GateWait (see ke/gate.rs).
 const GateWait: u8 = 8;
+/// KTHREAD_STATE::Waiting — every non-gate wait. Face D is somewhere in here.
+const Waiting: u8 = 5;
 
 const SCAN_PERIOD_100NS: i64 = -10 * 10_000_000; // relative 10s
 const MAX_PROCESSES: usize = 512;
 const MAX_THREADS_PER_PROCESS: usize = 2048;
-/// Sightings carried between scans. 128 covers the observed wedges (dozens of
-/// parked threads); overflow is counted and reported, never silent.
-const MAX_SIGHTINGS: usize = 128;
+/// Sightings carried between scans. Was 128 while only GateWait threads were
+/// tracked; a booted desktop plus an 89-test sweep parks a few hundred threads
+/// in ordinary waits, so the wide census needs the headroom. Overflow is
+/// counted and reported, never silent.
+const MAX_SIGHTINGS: usize = 512;
+/// `MaximumWaitReason`. Anything at or above this is a torn read, not a reason.
+const MAX_WAIT_REASON: usize = 37;
+/// Per-thread lines emitted per scan for the wide (non-gate) class. The
+/// histogram carries the totals, so this only has to name a few examples.
+const MAX_WIDE_LINES: u32 = 8;
+/// Lifetime cap on histogram prints — a stall lasting hours must not bury the
+/// serial log the histogram exists to inform.
+const MAX_HIST_PRINTS: u32 = 200;
+/// Minimum scans between histogram prints (×10s cadence).
+const HIST_MIN_SCAN_GAP: u32 = 3;
 
 #[derive(Clone, Copy, PartialEq)]
 struct Sighting {
     thread: usize,
     object: usize,
+    state: u8,
+    reason: u8,
+    /// `KTHREAD.WaitTime` — the tick the wait began. This is what makes the
+    /// key mean "still in the SAME wait" rather than "waiting again": a thread
+    /// that wakes, works, and re-waits on the same object is indistinguishable
+    /// from a wedged one by (thread, object) alone, and would otherwise be
+    /// reported as stuck forever.
+    wait_time: u32,
+}
+
+impl Sighting {
+    const EMPTY: Sighting =
+        Sighting { thread: 0, object: 0, state: 0, reason: 0, wait_time: 0 };
 }
 
 /// Single-writer state (only the census thread touches these).
-static mut PREV: [Sighting; MAX_SIGHTINGS] = [Sighting { thread: 0, object: 0 }; MAX_SIGHTINGS];
+///
+/// Both buffers are `static`, not locals: at 512 sightings the pair is ~16 KB,
+/// and the census runs on an ordinary system-thread stack.
+static mut PREV: [Sighting; MAX_SIGHTINGS] = [Sighting::EMPTY; MAX_SIGHTINGS];
 static mut PREV_COUNT: usize = 0;
+static mut NEXT: [Sighting; MAX_SIGHTINGS] = [Sighting::EMPTY; MAX_SIGHTINGS];
+static mut NEXT_COUNT: usize = 0;
+/// Last printed wait-reason histogram, and the scan it was printed on. The
+/// census stays SILENT while this profile holds steady and speaks when it
+/// shifts — so a healthy boot prints nothing, and threads piling into one
+/// reason (face D's signature) prints once as they pile in.
+static mut LAST_HIST: [u16; MAX_WAIT_REASON] = [0; MAX_WAIT_REASON];
+static mut LAST_HIST_SCAN: u32 = 0;
+static HIST_PRINTS: AtomicU32 = AtomicU32::new(0);
 static SIGHTING_OVERFLOW: AtomicU32 = AtomicU32::new(0);
 /// Exported heartbeat for GDB/debug-block: scans completed since boot.
 #[no_mangle]
@@ -81,6 +134,93 @@ fn plausible(p: usize, align: usize) -> bool {
     }
 }
 
+/// `KWAIT_REASON` names, indexed by the enum value. Printing `reason=28` and
+/// making the reader go find the enum is how face D stayed unnamed this long.
+static REASON_NAMES: [&[u8]; MAX_WAIT_REASON] = [
+    b"Executive\0",
+    b"FreePage\0",
+    b"PageIn\0",
+    b"PoolAllocation\0",
+    b"DelayExecution\0",
+    b"Suspended\0",
+    b"UserRequest\0",
+    b"WrExecutive\0",
+    b"WrFreePage\0",
+    b"WrPageIn\0",
+    b"WrPoolAllocation\0",
+    b"WrDelayExecution\0",
+    b"WrSuspended\0",
+    b"WrUserRequest\0",
+    b"WrEventPair\0",
+    b"WrQueue\0",
+    b"WrLpcReceive\0",
+    b"WrLpcReply\0",
+    b"WrVirtualMemory\0",
+    b"WrPageOut\0",
+    b"WrRendezvous\0",
+    b"WrKeyedEvent\0",
+    b"WrTerminated\0",
+    b"WrProcessInSwap\0",
+    b"WrCpuRateControl\0",
+    b"WrCalloutStack\0",
+    b"WrKernel\0",
+    b"WrResource\0",
+    b"WrPushLock\0",
+    b"WrMutex\0",
+    b"WrQuantumEnd\0",
+    b"WrDispatchInt\0",
+    b"WrPreempted\0",
+    b"WrYieldExecution\0",
+    b"WrFastMutex\0",
+    b"WrGuardedMutex\0",
+    b"WrRundown\0",
+];
+
+#[inline]
+fn reason_name(r: u8) -> *const u8 {
+    let i = r as usize;
+    if i < MAX_WAIT_REASON { REASON_NAMES[i].as_ptr() } else { b"?\0".as_ptr() }
+}
+
+/// Wait reasons that should never last 20 seconds.
+///
+/// These are kernel-internal lock/resource waits — microseconds to
+/// milliseconds in a healthy system, so a thread still parked on one across
+/// two scans is a wedge by definition. Everything NOT on this list (WrQueue
+/// worker pools, WrLpcReceive server threads, UserRequest message loops,
+/// DelayExecution sleeps) parks indefinitely by design and would be pure noise
+/// as a per-thread report — those are counted in the histogram instead, where
+/// a *shift* in the profile is the signal rather than the parking itself.
+///
+/// `Executive`(0) and `WrExecutive`(7) are deliberately NOT here, though they
+/// look like they belong. They are NT's *generic* wait reason — the default for
+/// `KeWaitForSingleObject` — so ordinary System and service threads park on
+/// them forever by design. Including them was measured on the first soak and
+/// produced 100% false positives: every one of 126 `[CENSUS] STUCK` lines in an
+/// otherwise-clean amd64 round was `reason=Executive`, from `System` and
+/// `lsass.exe`. They belong in the histogram, which is exactly where a large
+/// stable population of generic waiters is informative rather than alarming.
+#[inline]
+fn is_kernel_lock_wait(r: u8) -> bool {
+    matches!(
+        r,
+        2   // PageIn
+        | 3 // PoolAllocation
+        | 9 // WrPageIn
+        | 10 // WrPoolAllocation
+        | 18 // WrVirtualMemory
+        | 20 // WrRendezvous
+        | 21 // WrKeyedEvent
+        | 25 // WrCalloutStack
+        | 26 // WrKernel
+        | 27 // WrResource
+        | 28 // WrPushLock
+        | 29 // WrMutex
+        | 34 // WrFastMutex
+        | 35 // WrGuardedMutex
+    )
+}
+
 /// One full process/thread scan. Returns the new sighting set in `next`,
 /// prints a report line for every second-consecutive sighting.
 unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
@@ -88,6 +228,10 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
     let mut plink = (*head).Flink;
     let mut nprocs = 0usize;
     let mut reported = 0u32;
+    // Wide (non-gate) census state for this scan.
+    let mut hist = [0u16; MAX_WAIT_REASON];
+    let mut wide_reported = 0u32;
+    let mut wide_lines = 0u32;
 
     while plausible(plink as usize, core::mem::size_of::<usize>())
         && plink != head
@@ -109,11 +253,26 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
             let kthread =
                 ((tlink as usize) - offset_of!(_KTHREAD, ThreadListEntry)) as *mut _KTHREAD;
 
-            if *kt_State(kthread) == GateWait {
-                let object = (*kthread).__bindgen_anon_2.GateObject as usize;
-                let s = Sighting { thread: kthread as usize, object };
+            let state = *kt_State(kthread);
+            if state == GateWait || state == Waiting {
+                // A gate wait keys on its GateObject, as it always has. A plain
+                // wait has no single object to key on, so WaitTime carries the
+                // identity of the wait instead.
+                let object = if state == GateWait {
+                    (*kthread).__bindgen_anon_2.GateObject as usize
+                } else {
+                    0
+                };
+                let reason = (*kthread).WaitReason as u8;
+                let s = Sighting {
+                    thread: kthread as usize,
+                    object,
+                    state,
+                    reason,
+                    wait_time: *kt_WaitTime(kthread),
+                };
 
-                // Second consecutive sighting on the same object => stuck.
+                // Second consecutive sighting => same wait, still parked.
                 let mut stuck = false;
                 for i in 0..PREV_COUNT {
                     if PREV[i] == s {
@@ -122,8 +281,23 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
                     }
                 }
                 if stuck {
-                    report(eproc, kthread, object);
-                    reported += 1;
+                    if state == GateWait {
+                        report(eproc, kthread, object);
+                        reported += 1;
+                    } else {
+                        // Histogram every repeat; name only the kernel-lock
+                        // ones, and only a few per scan.
+                        if (reason as usize) < MAX_WAIT_REASON {
+                            hist[reason as usize] = hist[reason as usize].saturating_add(1);
+                        }
+                        if is_kernel_lock_wait(reason) {
+                            wide_reported += 1;
+                            if wide_lines < MAX_WIDE_LINES {
+                                wide_lines += 1;
+                                report_wide(eproc, kthread, state, reason, s.wait_time);
+                            }
+                        }
+                    }
                 }
                 if *next_count < MAX_SIGHTINGS {
                     next[*next_count] = s;
@@ -139,14 +313,60 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
         plink = (*plink).Flink;
     }
 
-    if reported != 0 {
+    let scan_no = VIBEOS_CENSUS_SCANS.load(Relaxed);
+
+    if reported != 0 || wide_reported != 0 {
         crate::dbg_print!(
-            b"[CENSUS] %u thread(s) GateWait >10s (scan #%u, synctrace dropped=%u, sighting overflow=%u)\n\0",
+            b"[CENSUS] %u GateWait + %u kernel-lock thread(s) stuck >10s (scan #%u, synctrace dropped=%u, sighting overflow=%u)\n\0",
             reported,
-            VIBEOS_CENSUS_SCANS.load(Relaxed),
+            wide_reported,
+            scan_no,
             synctrace_dropped(),
             SIGHTING_OVERFLOW.load(Relaxed),
         );
+    }
+
+    // The face-D net. Face D is a stalled sweep with ZERO census output, which
+    // told us only that nothing was in a GATE wait — the watchdog's own banner
+    // said "gate waits". So the discriminator against face C was the ABSENCE of
+    // a line, i.e. not-looking dressed up as looked-and-clean (§9.122).
+    //
+    // Print the whole parked-wait profile, but only when it SHIFTS: a healthy
+    // system parks a stable population of server/worker threads forever, so a
+    // steady profile is silence and threads piling into one reason is a line.
+    let mut total = 0u32;
+    let mut shifted = false;
+    for i in 0..MAX_WAIT_REASON {
+        total += hist[i] as u32;
+        let (a, b) = (hist[i], LAST_HIST[i]);
+        let delta = if a > b { a - b } else { b - a };
+        // A new reason appearing at all is a shift; otherwise it takes a real
+        // pile-up, so ordinary churn does not chatter.
+        if delta >= 4 || (a != 0 && b == 0) {
+            shifted = true;
+        }
+    }
+    if (reported != 0 || wide_reported != 0 || (shifted && total >= 4))
+        && scan_no.wrapping_sub(LAST_HIST_SCAN) >= HIST_MIN_SCAN_GAP
+        && HIST_PRINTS.load(Relaxed) < MAX_HIST_PRINTS
+    {
+        crate::dbg_print!(
+            b"[CENSUS] wait profile: %u thread(s) parked >20s (scan #%u)\n\0",
+            total,
+            scan_no,
+        );
+        for i in 0..MAX_WAIT_REASON {
+            if hist[i] != 0 {
+                crate::dbg_print!(
+                    b"[CENSUS]   %s=%u\n\0",
+                    reason_name(i as u8),
+                    hist[i] as u32,
+                );
+            }
+        }
+        LAST_HIST = hist;
+        LAST_HIST_SCAN = scan_no;
+        HIST_PRINTS.fetch_add(1, Relaxed);
     }
 
     // lockdep §4: surface any recorded self-deadlock, whether or not the census
@@ -284,6 +504,38 @@ unsafe fn report(eproc: *mut _EPROCESS, kthread: *mut _KTHREAD, object: usize) {
     }
 }
 
+/// One stuck-thread line for the wide (non-gate) class.
+///
+/// Deliberately thinner than `report()`: there is no synctrace entry to look up
+/// for an arbitrary wait, so this names WHO and WHAT-KIND. That is the fact
+/// face D was missing — "77 tests timed out and the census saw nothing" becomes
+/// "these threads are parked on WrFastMutex".
+unsafe fn report_wide(
+    eproc: *mut _EPROCESS,
+    kthread: *mut _KTHREAD,
+    state: u8,
+    reason: u8,
+    wait_time: u32,
+) {
+    let mut img = [0u8; 17];
+    let src = core::ptr::addr_of!((*eproc).ImageFileName) as *const u8;
+    core::ptr::copy_nonoverlapping(src, img.as_mut_ptr(), 16);
+    let tid = (*(kthread as *mut _ETHREAD)).Cid.UniqueThread as usize;
+    let pid = (*eproc).UniqueProcessId as usize;
+
+    crate::dbg_print!(
+        b"[CENSUS] STUCK %s pid=%u tid=%u thr=%p state=%u reason=%s(%u) waittick=%u\n\0",
+        img.as_ptr(),
+        pid as u32,
+        tid as u32,
+        kthread,
+        state as u32,
+        reason_name(reason),
+        reason as u32,
+        wait_time,
+    );
+}
+
 unsafe extern "system" fn CensusThread(_ctx: PVOID) {
     let mut interval: LARGE_INTEGER = core::mem::zeroed();
     interval.QuadPart = SCAN_PERIOD_100NS;
@@ -291,11 +543,12 @@ unsafe extern "system" fn CensusThread(_ctx: PVOID) {
     loop {
         KeDelayExecutionThread(0, 0, core::ptr::addr_of_mut!(interval) as *mut _);
 
-        let mut next = [Sighting { thread: 0, object: 0 }; MAX_SIGHTINGS];
-        let mut next_count = 0usize;
-        scan(&mut next, &mut next_count);
-        PREV = next;
-        PREV_COUNT = next_count;
+        // NEXT/PREV are statics, not locals: 512 sightings is ~16 KB per
+        // buffer and this runs on an ordinary system-thread stack.
+        NEXT_COUNT = 0;
+        scan(&mut *core::ptr::addr_of_mut!(NEXT), &mut *core::ptr::addr_of_mut!(NEXT_COUNT));
+        PREV = NEXT;
+        PREV_COUNT = NEXT_COUNT;
         VIBEOS_CENSUS_SCANS.fetch_add(1, Relaxed);
     }
 }
@@ -336,5 +589,10 @@ pub unsafe extern "system" fn KiStartSyncCensus() {
         return;
     }
     ZwClose(handle);
-    crate::dbg_print!(b"[CENSUS] sync watchdog up (10s cadence, gate waits)\n\0");
+    // The banner states the COVERAGE, and it is load-bearing: face D was read
+    // as "nothing is stuck" when the honest reading of the old banner was
+    // "nothing is stuck IN A GATE WAIT". Keep it truthful as coverage changes.
+    crate::dbg_print!(
+        b"[CENSUS] sync watchdog up (10s cadence, gate waits + all parked waits w/ reason)\n\0"
+    );
 }

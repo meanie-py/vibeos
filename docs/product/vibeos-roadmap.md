@@ -492,6 +492,59 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `marshalgen_audit` to the arch whose build dir it reads — wow64 is amd64-only, so the second
   is also semantically right). Owner: whoever holds `tools/wow64gen/` + `tests/qemu/cli/`.
 
+- **x86 `-smp 2` MP conformance deltas, separated into deterministic vs flaky — NEW, OPEN**
+  (2026-07-29, 37 i386 + 16 amd64 recorded rounds against the `kmtest-smp2` baselines). These
+  are MP-vs-MP-baseline regressions, i.e. the MP kernel got *worse* than its own recorded
+  floor, so they gate the flip independently of the arm64 blocker.
+  - **i386, deterministic (37/37 rounds — reproducible without a soak):**
+    `FsRtlLegal` pass 2504→2496 / fail 24→32 (8 subtests flipped), and
+    `ZwAllocateVirtualMemory` pass 843→839 (4 subtests). A 100%-reproducible regression is
+    debuggable in one boot; start here, not with the flakes.
+  - **Cross-arch flake — `IoDeviceObject` pass 185→184, fail 4→5**, on **both** x86 arches:
+    i386 18/37 (~49%), amd64 5/16 (~31%). Same test, same delta, two arches ⇒ a genuine MP
+    race in that path rather than an arch quirk.
+  - amd64 also showed `MmMdl: OK -> NO-END` once in 16 (a hang, not a fail) — worth watching,
+    single occurrence, not yet a claim.
+  Deterministic-vs-flaky is only separable because rounds are repeated on one frozen media and
+  recorded per-round; a single sweep reports all five of these identically.
+- **arm64 UP:=smp1 collapse FAILS on `KeEvent`, deterministically — NEW, OPEN** (2026-07-29,
+  first three rounds of the instrumented soak). The MP kernel at one CPU is *not* equivalent
+  to the UP kernel on arm64, and the flip is gated on exactly that equivalence:
+  - `KeEvent: pass 42733 -> 42601 (dropped)` — **132 fewer passes, in every round so far**
+    (3/3). Deterministic, so it is a real MP-vs-UP semantic difference, not the flake.
+  - `ExPools: pass 14 -> 13, fail 4 -> 5` — present in rounds 1 and 3, absent in round 2, so
+    this one IS flaky, at one test.
+  Note the sweep launched **91** tests against an 89-test baseline, so the baseline also wants
+  re-seeding once the deltas are understood. Separating "deterministic" from "flaky" here is
+  only possible because rounds are repeated on one frozen media and recorded — see
+  `conformance --repeat` and `~/vibeos-flake-farm/conformance.jsonl`. **Next:** diff the
+  per-subtest KeEvent results between the UP baseline and an `--smp 1` round to name which 132
+  cases changed; `KeEvent` at 42733 cases is dominated by a few big loops, so the drop is
+  likely one loop terminating early rather than 132 unrelated failures.
+- **i386 does not LINK on the merged tree — three fastfat ABI breaks, TRAIN BLOCKER, 2 of 3
+  OPEN** (2026-07-28). `ld.lld: undefined symbol: _FatAddMcbEntry@20`, `_FatStringTo8dot3@12`,
+  `_FatBreakOnInterestingIoCompletion`. Present in every i386 build tonight including the
+  first, and the defining commits (`2cd4e781d1c` and the fastfat batch) are from
+  **origin/master**, so it arrived with the merge, not from the smp lane. *Not* verified
+  against master standalone — that check is owed.
+  **The generalisable part:** i386's stdcall name decoration bakes the argument-list size into
+  the symbol (`@N`), so it is a **free ABI checker that the 64-bit arches do not have**.
+  amd64/arm64 link all three of these GREEN while passing a wrong argument layout. When an
+  i386-only `undefined symbol: _Foo@N` appears, the bug is nearly always a real cross-arch ABI
+  mismatch, not an i386 quirk — read the `@N` delta as the byte-count delta it is.
+  - `FatAddMcbEntry` — `fsctrl.rs` widened `Lbo` u32→i64 (LBO is LONGLONG; "for Fat32, LBO is
+    >32 bits", fat.h:34) and fixed `allocsup.rs`, but `fileinfo.rs:147` and `strucsup.rs:95`
+    kept `i32`/`u32` ⇒ callers want `@20`, definition exports `@24`. **FIXED** (both decls +
+    the call-site casts).
+  - `FatStringTo8dot3` — `fileinfo.rs:100` declares `OemName: *mut OEM_STRING` where
+    `namesup.rs:96` defines it **by value** (4+4+4=12 vs 4+8+4=16), and the third parameter
+    disagrees as well: `*mut OEM_STRING` vs the definition's `*mut [u8; 11]` (an 8.3 name
+    buffer, `&Dirent->FileName` in the C). That is a translation question, not a decl typo.
+    **OPEN.**
+  - `FatBreakOnInterestingIoCompletion` (and its `…ExceptionStatus`/`…IrpCompletion` siblings)
+    — `fatdata.rs` defines them under `#[cfg(debug_assertions)]` **and without `#[no_mangle]`**,
+    so they export no C symbol under any configuration, while `deviosup.rs:76/:1811` declares
+    and reads one unconditionally. **OPEN.**
 - **`NtWriteVirtualMemory` reports `STATUS_SUCCESS` + a full byte count while writing NOTHING —
   OPEN** (2026-07-26, task #76, found by E17's `selfmod32.exe` rung 7). `MiDoPoolCopy`
   (`ARM3/virtual.rs`) translated the C's `_SEH2_TRY/_SEH2_EXCEPT` as straight-line code:
@@ -898,6 +951,59 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Fix is `debug-assertions = true` **plus an explicit `overflow-checks = false`** (it defaults
   to follow debug-assertions, and kernel-wide overflow panics are a separate, riskier change C
   never had) — but MEASURE FIRST: 1962 assertions going live at once needs a triage batch.
+
+  **MEASURED 2026-07-28, and "measure first" was right for a reason nobody had named.**
+  The count that matters is not the assertions. `debug_assert!(x)` expands to
+  `if cfg!(debug_assertions) { assert!(x) }` — the `cfg!` **macro** — so its expression is
+  type-checked on every build already, and turning the flag on cannot break it. The risk is
+  entirely in the **attribute** form: enabling the flag compiles, for the first time in the
+  life of this tree, **108 `#[cfg(debug_assertions)]` blocks** — and deletes **14
+  `#[cfg(not(debug_assertions))]` blocks**, which is how a `not()`-only stub definition turns
+  into an undefined symbol. Those 108 regions have never had a type check, a borrow check, a
+  lint, or an execution. Three were broken on the first attempt:
+  - `freeldr-rust/src/heap.rs` — `FrLdrHeapCleanupAll`'s statistics block deref'd the `PVOID`
+    heap handle with no `as PHEAP`: **14 x E0609**. FIXED.
+  - `ex-rust/src/init.rs` — `KeServiceDescriptorTable[0] = core::mem::zeroed()` (and the same
+    for the shadow table), **invented by the translation**: `ntoskrnl/ex/init.c:1415` assigns
+    only `.Count`, and `ke/krnlinit.c:104-108` fills `Base`/`Limit`/`Number` earlier. It
+    compiles clean and would have wiped **the syscall dispatch table** at Phase 0, every
+    system call after that dispatching through a zeroed descriptor. FIXED. This is the one to
+    remember: not a compile error — a boot-fatal runtime bug sitting in the kernel's
+    most-read init file, invisible because the compiler had never been asked to look.
+  - `ke/{amd64,i386}/kiinit.rs` — called `KiReportCpuFeatures`, which is **not translated**
+    (`ke/*/cpu.rs` carries only its signature as a comment) and whose C is cohab-dead, so the
+    symbol exists in no artifact: `LINK_FAIL` on both x86 arches. Call sites disabled with a
+    note; translating it is owed.
+
+  **And there is a SECOND half, which is why this is still not enabled.** On pinned stable,
+  `debug-assertions` does not only enable `debug_assert!` — it also enables rustc's **UB
+  checks**, which share the same cfg (splitting them needs nightly `-Zub-checks`). Scoped to
+  four kernel-core crates and booted, they found real **alignment UB in 2 of the 2 crates
+  exercised, one per arch, on the first boot of each**:
+  - amd64 — `hal-rust/src/x86/halacpi.rs:864`, an 8-byte read of an ACPI structure that is
+    only 4-byte aligned (`misaligned pointer dereference: address must be a multiple of 0x8
+    but is 0xfffff8000010232c`). **FIXED** with `addr_of!` + `read_unaligned`, which is the
+    correct way to read a field out of a packed firmware structure, and is right regardless
+    of whether the checks are on.
+  - arm64 — `ntoskrnl-rust/src/ke/time.rs:56`, `write_volatile` of a `u64` through a
+    `*mut KSYSTEM_TIME`. `KSYSTEM_TIME` is `{ULONG, LONG, LONG}` — 4-aligned, and
+    `SystemTime` sits at offset **0x14** of `KUSER_SHARED_DATA`, so the pointer genuinely is
+    not 8-aligned. **NOT fixed, deliberately:** the misalignment also means that store was
+    never atomic, so the torn-read guard the surrounding comment documents (`High1Time` /
+    `LowPart` / `High2Time` ordering) does not actually hold on 64-bit. Repairing it means
+    reworking the KSYSTEM_TIME write protocol against the C, not silencing a checker.
+
+  **So: staged, commented-out, NOT enabled.** Two of two crates tried had a UB site, on top of
+  the 108 never-compiled blocks — that is a migration, and it must go one crate at a time with
+  a boot per crate, not a flag flip. **Owed:** `ke/time.rs`'s KSYSTEM_TIME protocol; the other
+  79 blocks (se-rust 11, win32k dclife 8, cc-rust view 7, fastfat 12, cdrom 9, config-rust 6,
+  classpnp 6, the freeldr tail, …); translating `KiReportCpuFeatures`.
+
+  Two behaviour changes ride along with the four armed crates and are expected, not bugs:
+  `ex-rust`'s `NtBuildNumber` gains the `0xC0000000` checked-build bits (which makes it AGREE
+  with the `PRCB_BUILD_DEBUG` the kernel already published unconditionally on all three
+  arches), and `ke/spinlock.rs` starts stamping the owning thread into the lock word under
+  DBG. Watch the conformance ratchet for kmtest tests that branch on checked-build.
 - **`NtCreateThread` flat thunk returns SUCCESS with a zeroed thread context — REFUSED LOUDLY
   2026-07-25** (task #64, §9.134). Five divergent params incl. a `CONTEXT` whose field lists
   don't correspond across widths. Now returns `STATUS_NOT_IMPLEMENTED` instead of a silently
@@ -1171,6 +1277,183 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   Fact vs inference: the operands and the raise arm are measured; "a live stack lost a page" is
   the reading of them, and the `[KSTACK]` dump added below is what turns it into a fact.
 
+  **FACE A REPRODUCED ON PROBE-BEARING MEDIA (2026-07-29) — and `[KSTACK]` REFUTES the
+  "live stack lost a page" reading.** Round 4 of the instrumented soak, ~15 minutes in,
+  `-smp 1`, died at test **71** (the earlier reproduction died at 69 — same neighbourhood):
+
+      [MMGUARD] rmap.MmDeleteRmap mapping-not-in-list hit#=0x1
+      [MMGUARD]   Page=0x50  Process=0xFFFFFA000639AC20
+      [MMGUARD]   Address=0x50000  listhead=0x0
+      [PS] PspExitThread entered
+      [KSTACK] SP=0xFFFF8000048C8FA0        TrapFrame=0xFFFF8000048C8E40
+      [KSTACK] StackBase=0xFFFF8000048EF000 StackLimit=0xFFFF8000048DD000
+      [KSTACK] InitialStack=0xFFFF8000048EEE00
+      [KSTACK] FaultVA=0xFFFF8000048C9050
+      *** BUGCHECK: 0x50 (0xffff8000048c9050, 0x2, 0xffff8000048c8e40, 0x0)
+
+  **Apply this entry's own sanity check first:** `StackLimit < InitialStack < StackBase`
+  holds, and `StackBase - StackLimit = 0x12000`, the forced large stack. So the bounds are
+  self-consistent and this is **NOT** the mis-mapped-structure failure mode — the `KTHREAD` is
+  being read correctly, and the numbers can be trusted.
+
+  **Given that, the finding is that `SP` is 0x14060 (~80 KB) BELOW `StackLimit`.** `TrapFrame`
+  and `FaultVA` are down there too, and `FaultVA` is again exactly **0x210 above the trap
+  frame**, matching the earlier reproduction. The thread is not executing on the stack its own
+  `KTHREAD` describes.
+  - That **refutes "a live kernel stack lost a backing page"**: the stack it names is intact
+    and correctly described; execution is happening ~80 KB outside it.
+  - It is also not a plain overflow — running off the bottom faults at the guard page
+    immediately below `StackLimit`, not 80 KB further down.
+  - The reading it *does* fit: the thread is running on a **stale kernel stack** — a
+    previously-allocated, since-freed one (kernel stacks come from adjacent system PTEs, so a
+    prior stack plausibly lived at `0x…48C8000`). That puts it back in the §9.94 family (a
+    stack freed while still in use) rather than the paging family, and the two lines
+    immediately before it — a first-ever `MmDeleteRmap mapping-not-in-list` with a **NULL
+    listhead**, then `PspExitThread` — are both on the thread-teardown path.
+
+  **Fact vs inference, kept separate:** the register/bounds values, their mutual consistency,
+  the 0x210 offset, and the MMGUARD hit are *measured*. "Running on a stale stack" is the
+  reading of them, and "the MMGUARD rmap hit is causally upstream of the 0x50" is **not
+  established** — it fired 68 serial lines earlier, with `PspExitThread` in between, and one
+  co-occurrence is not a link. **Next:** dump `Arm64DumpPte(FaultVA)` (already in `[KSTACK]`'s
+  repertoire) and, more decisively, record the thread's stack at *switch* time — if SP belongs
+  to a stack that `MmDeleteKernelStack` already released, the reaper/SwapBusy path is the
+  target, not paging.
+
+  > ## ROOT CAUSE CANDIDATE FOUND (2026-07-29): `MmDeleteRmap` loses the mapping, on EVERY run
+  >
+  > **The arm64 blocker's crash face is not a flake. The corruption is deterministic; only its
+  > CONSEQUENCE is probabilistic.** Across 20 instrumented `-smp 1` rounds:
+  >
+  > | rounds | `MmDeleteRmap mapping-not-in-list` |
+  > |---|---|
+  > | 14 that ran the sweep and finished **clean** | **1 each** |
+  > | 2 that stalled | **1 each** |
+  > | 3 that BUGCHECKed (`0x50`, `0x1A`, `0x1E`) | **1 each** |
+  > | 3 `B:no-launch` (never ran a test) | **0** |
+  >
+  > It fires **once per run, every run that maps a section** — and never when no test ran,
+  > which is exactly the control. The operands are identical every time, across two different
+  > media builds and three different stop codes:
+  >
+  >     [MMGUARD] rmap.MmDeleteRmap mapping-not-in-list hit#=0x1
+  >     [MMGUARD]   Page=0x50   Process=0xFFFFFA000639AC20
+  >     [MMGUARD]   Address=0x50000   listhead=0x0
+  >
+  > `listhead=0` — the PFN's rmap list is **empty** when the unmap tries to remove its entry.
+  > So either the rmap was never inserted, or it was already removed. Downstream, a frame whose
+  > reverse mapping was lost is a frame that can be freed and re-handed-out while still mapped,
+  > which is precisely the "distant innocent victim" shape this whole entry has been chasing.
+  >
+  > **Why it looked like a flake:** the bookkeeping breaks on every run; whether the damaged
+  > frame gets *reused* before the sweep ends is the coin flip. That single fact reconciles
+  > face A's three different stop codes, the stalls, and the clean rounds — one cause, symptom
+  > selected by timing.
+  >
+  > **This gives a DETERMINISTIC ORACLE, which changes the economics completely.** A candidate
+  > fix no longer needs a soak: boot once, and ask whether `[MMGUARD] MmDeleteRmap
+  > mapping-not-in-list` still appears. Seconds, not hours.
+  >
+  > **Note the probe that caught this** is one of the eleven arm64 MM invariant suppressions
+  > armed on 2026-07-26 — it had never run on probe-bearing media until tonight.
+  >
+  > ### Hunt log — two hypotheses raised and KILLED by instrumenting instead of guessing
+  >
+  > **1. "`MmInsertRmap`'s silent returns skip the insert" — REFUTED.** `MmInsertRmap` has two
+  > early returns commented *"defensive: skip instead of bugcheck"* where the C
+  > (`mm/rmap.c`) calls `KeBugCheck(MEMORY_MANAGEMENT)`: on lookaside-allocation failure, and
+  > on `MmGetPfnForProcess(Process, Address) != Page`. That is a textbook silent-degrade and
+  > was the obvious suspect. Both were instrumented with `mm_guard_trip!` and **neither fires**
+  > in a round where `MmDeleteRmap mapping-not-in-list` does. The insert path is not being
+  > skipped. (The two silent returns are still wrong and should be restored to loud failures,
+  > but they are not this bug.)
+  >
+  > **2. "The `MmFreeSectionPage` callback's parameters are swapped" — REFUTED.** The Rust
+  > signature `(Context, MemoryArea, Address, Page, SwapEntry, Dirty)` matches
+  > `ntoskrnl/mm/section.c:3533` argument for argument.
+  >
+  > ### The live lead: `Page` looks like it was derived from the VIRTUAL address
+  >
+  > The operands are `Address=0x50000`, `Page=0x50` — and **`0x50000 >> PAGE_SHIFT == 0x50`
+  > exactly**, in every occurrence, across media builds. That is the signature of a physical
+  > frame number computed from a *virtual* address. It would explain `listhead=0` perfectly:
+  > nothing was ever inserted under that fabricated PFN, because the insert used the real one.
+  > **Caveat, not yet excluded:** VA `0x50000` could legitimately be identity-mapped to PFN
+  > `0x50`, which would make the relation a coincidence. Check that before building on it.
+  >
+  > **UPDATE — the `Page` fabrication theory is DEAD, and with it my own lead.**
+  > `MmDeleteVirtualMapping` (`arm64/page.rs`) derives the out-param honestly:
+  > `*Page = OldPte.page_frame_number()`, straight from the PTE it just exchanged out. So
+  > `Page=0x50` is the **real** frame, VA `0x50000` → PFN `0x50` is simply an identity mapping,
+  > and `Page == Address >> PAGE_SHIFT` was the coincidence the caveat warned about. Do not
+  > spend time re-deriving this.
+  >
+  > **So the trail is now narrow and the question is sharp: was `MmInsertRmap` ever CALLED for
+  > this page?** Four candidates eliminated by evidence, not opinion:
+  > 1. `MmInsertRmap`'s two silent early-returns — probed, neither fires.
+  > 2. `MmFreeSectionPage`'s callback signature — matches the C argument for argument.
+  > 3. `MmFreeMemoryArea`'s page walk — zero-inits `Page` per iteration, fills it as an
+  >    out-param from the unmap, never from the VA.
+  > 4. `MmDeleteVirtualMapping`'s PFN derivation — reads the PTE (above).
+  >
+  > What is left is the **map** side, not the unmap side: find who should call `MmInsertRmap`
+  > when a section view is mapped at a user VA, and prove it runs for this page. A missing or
+  > mis-keyed insert (wrong `Process`, or an `Address` that was not `PAGE_ROUND_DOWN`ed the
+  > same way on both sides — note `MmInsertRmap` rounds and `MmDeleteRmap` does **not**) fits
+  > every observation including `listhead=0`. Probe `MmInsertRmap`'s SUCCESS path for this VA
+  > and compare the key against what the delete looks up; the one-boot MMGUARD oracle makes
+  > that a single cheap experiment.
+  >
+  > *(historical, superseded by the above)* **Next hop — the walk is EXONERATED.** `Page` reaches
+  > `MmFreeSectionPage` as a parameter from `MmFreeMemoryArea`'s page walk (`mm/marea.rs`), and
+  > that walk is correct: it zero-initialises `Page` per iteration and fills it as an **out
+  > parameter** of `MmDeleteVirtualMapping` (or `MmDeletePhysicalMapping`), i.e. from the PTE,
+  > never from the virtual address. So if `Page` really is `VA >> PAGE_SHIFT`, the fabrication
+  > happens *inside* `MmDeleteVirtualMapping` — that is the next function to read, and the
+  > alternative (the VA is genuinely identity-mapped and the relation is coincidence) has to be
+  > excluded there too. The one-boot MMGUARD oracle makes each attempt cheap.
+  >
+  > Two things noticed in `marea.rs` while reading it, neither the bug but both worth an issue:
+  > the callback parameter is *named* `_KWAIT_REASON_FreePage` (a bindgen constant name leaked
+  > into a parameter name by the translator), and the phys-vs-virt unmap branch is selected by
+  > `FreePage.is_none()`, with the function pointers laundered through `usize` + transmute to
+  > stop LLVM folding them — check that indirection still matches the C's intent.
+
+  **THE TRIGGER IS LOCALISED (2026-07-29, 21 rounds in 44 min): the process teardown between
+  `ZwMapViewOfSection` and `ZwWaitForMultipleObjects`.** Three failing arm64 rounds, three
+  *different* symptoms, all at the identical point:
+
+  | round | symptom | elapsed |
+  |---|---|---|
+  | 4 | `BUGCHECK 0x50` | 71.6s |
+  | 8 | stall, `DID-NOT-FINISH` | 866.8s |
+  | 15 | `BUGCHECK 0x1A` (MEMORY_MANAGEMENT) | 76.2s |
+
+  Every one ends with `Finished test ZwMapViewOfSection` and **`ZwWaitForMultipleObjects`
+  never starts**. In a clean round the order is 68 `ZwCreateSection` → 69 `ZwMapViewOfSection`
+  → 70 `ZwWaitForMultipleObjects`. The sweep runs **one `kmtest_.exe` process per test**, so
+  the failure window is the *gap between two tests*: the teardown of the process that just
+  mapped sections, or the creation of the next one. That is precisely where the `[KSTACK]`
+  round's other evidence sits — `[PS] PspExitThread entered`, and an `MmDeleteRmap`
+  mapping-not-in-list for a **user** VA (`Address=0x50000`), which is what unmapping a view at
+  process exit does.
+
+  **This unifies face A with the stall**: same trigger point, symptom varying with timing
+  (fault vs. wedge). It also matches the earlier reproduction, which the notes recorded as
+  "died on `ZwWaitForMultipleObjects`, immediately after the `ZwCreateSection` /
+  `ZwMapViewOfSection` canaries" — the same gap, described from the other side.
+
+  **REORDER EXPERIMENT RUN, and the victim is incidental.** `ZwWaitForMultipleObjects` was
+  moved from position 71 to position 2 (all 91 tests kept, so round time stayed ~63s). It then
+  ran at position 2 **without incident**, and a round still died — `BUGCHECK 0x1E`
+  (`P1=0xC000001D`, STATUS_ILLEGAL_INSTRUCTION) — with the serial's last event again
+  `Finished test ZwMapViewOfSection` and the *new* next test (`RtlCaptureContextKM`) never
+  starting. So the crash follows **`ZwMapViewOfSection`**, not the test that happens to be
+  behind it: the victim is whatever runs next, which is why the stop code moves around.
+  (A prior attempt to cut the list to 3 tests was abandoned — truncating it breaks the sweep's
+  completion detection, so each round drained to the full timeout at 576s versus 63s for the
+  whole 91-test list. Reordering, not truncating, is the right lever here.)
+
   **A FOURTH face — HOLDER-STUCK, and the kernel's own classifier names it.**
   Soak run 2 round 4: `launched=79 ok=66 bad=12`, **no bugcheck**, 4674s (round 3 swept the same
   media in 75s — 62× faster). The sweep degraded into repeated per-test `TIMEOUT … (180s) -
@@ -1205,9 +1488,52 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   **Do not read C's absence as health here:** a silent census means "not a gate wait", not
   "nothing is stuck". That is the same not-looking-vs-looked-and-clean ambiguity §9.122 is about,
   and it currently splits one symptom (a stalled sweep) across two very different diagnoses.
-  **Owed:** widen the census to report ANY thread stuck >N seconds with its `State` and
-  `WaitReason`, not only `GateWait`. Until then C and D can only be told apart by the presence
-  or absence of a STUCK line, which is a weak discriminator resting on the watchdog's coverage.
+  ~~**Owed:** widen the census to report ANY thread stuck >N seconds with its `State` and
+  `WaitReason`, not only `GateWait`.~~ **DONE 2026-07-29** (`ke/census.rs`). The scan now keys
+  on `(thread, object, State, WaitReason, WaitTime)` for every parked thread, not just
+  `GateWait`:
+  - `WaitTime` is in the key deliberately. It is written only at state transitions (the
+    `KiSetWaitTime` inlines on park, `thrdschd.rs:479` on going Ready), never periodically, so
+    it stays constant while a thread is genuinely parked — and it stops a thread that wakes and
+    re-waits on the same object from reading as continuously stuck, which `(thread, object)`
+    alone could not distinguish.
+  - Threads on **kernel-internal lock/resource** wait reasons (`WrPushLock`, `WrFastMutex`,
+    `WrGuardedMutex`, `WrResource`, `WrKeyedEvent`, `WrMutex`, `PageIn`, `PoolAllocation`, …)
+    get a named per-thread `[CENSUS] STUCK … reason=WrFastMutex(34)` line, capped at 8/scan.
+    NT's *generic* reasons (`Executive`, `WrQueue`, `WrLpcReceive`, `UserRequest`, …) are
+    deliberately excluded from per-thread reporting — server and worker threads park on those
+    forever by design and would drown the log.
+  - Everything parked lands in a **wait-reason histogram** that prints only when the profile
+    *shifts* (a bucket moving by ≥4, or a reason appearing at all), so a healthy system is
+    silent and threads piling into one reason — face D's signature — prints once as they pile
+    in. Capped at 200 prints/boot.
+  - The startup banner now states the coverage (`gate waits + all parked waits w/ reason`),
+    because the old banner's honest reading was *"nothing is stuck **in a gate wait**"* and it
+    was being read as "nothing is stuck". That string doubles as a `--require-probe` literal so
+    a silent census can never again be confused with an absent one.
+  Verified live on a green 47s arm64 boot: banner present, `[EXP]`×6 + `[PHASE1]`×26, and zero
+  STUCK/histogram output — silent when healthy, which is the design.
+
+  **The histogram works, and here is the healthy baseline it produces** (amd64 `-smp 2`,
+  clean round, kmtest sweep running):
+
+      [CENSUS] wait profile: 65 thread(s) parked >20s (scan #3)
+      [CENSUS]   Executive=7   UserRequest=43   WrQueue=8   WrLpcReceive=7
+
+  That is precisely the picture face D never had: 65 parked threads, all in the benign
+  population (message loops, worker pools, LPC servers). A stall to compare against this now
+  has something to be different *from* — which is the whole point, since face D's evidence was
+  previously the absence of output.
+
+  **KNOWN FALSE POSITIVE in the first soak's data (2026-07-29).** The initial
+  `is_kernel_lock_wait` set wrongly included NT's *generic* reasons `Executive`(0) and
+  `WrExecutive`(7). Those are the default `KeWaitForSingleObject` reason, so `System` and
+  `lsass.exe` service threads that park indefinitely by design report as STUCK — the very
+  soak rounds show `[CENSUS] STUCK System pid=4 … reason=Executive(0)` ~4×/round. They are
+  harmless and exactly identifiable, but **`census_stuck` in `conformance.jsonl` over-counts
+  for that soak: filter `reason=Executive` before reading it as a wedge signal.** The two
+  reasons are removed from per-thread reporting (they stay in the histogram, which is where a
+  population of generic waiters belongs); the soak was deliberately NOT restarted for it.
 
   **Face C's next step is a two-line diagnostic, and it is already half-instrumented.** The only
   callers of `KeWaitForGate` in the tree are `ke/wait.rs:328` and **`ex-rust/src/pushlock.rs:487`
@@ -1236,6 +1562,20 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   **B is NOT C — tested, not assumed.** The obvious unifying story ("the launcher itself parked
   on a gate, hence `launched=0`") is **wrong**: the no-launch round has **zero** `CENSUS STUCK`
   lines, while the stalled round has them throughout. Two distinct faces.
+
+  **FACE B IS NOT ARM64, AND NOT A KERNEL BUG — it is a harness/launcher race (2026-07-29).**
+  The entry below asked for evidence before folding B in with the crash faces. Here it is,
+  and it points the other way — *out* of the arm64 blocker entirely:
+  - It reproduced **on amd64** (`-smp 2`, round 12, `launched=0`, 711s). Face B is therefore
+    not arch-specific and cannot be part of an arm64-only blocker.
+  - The two arm64 occurrences took **179.2s each — identical to the tenth of a second**. That
+    is a fixed timeout expiring (the sweep's 180s launch budget), not a hang with random
+    duration. A kernel wedge does not reproduce its wall-clock twice.
+  - Both arm64 occurrences carry `census_stuck=0`: nothing parked, consistent with "the
+    launcher never got going" rather than "the system is stuck".
+  So B should be tracked as a **sweep-harness defect** (the launcher failing to start
+  `kmtest_.exe` and timing out), not as a face of the kernel blocker. It still costs a soak
+  round each time, so it is worth fixing, but it does not gate the MP flip.
 
   **A THIRD observable face — "sweep no-launch" (1 occurrence, cause unknown).** Soak run 2
   round 2: the guest **booted to desktop** (3 shell markers on serial) and then launched

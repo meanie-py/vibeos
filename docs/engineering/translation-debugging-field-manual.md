@@ -120,6 +120,31 @@ invisible to spec/bindgen cross-checks, and if it is declared only once (wrongly
 "appears under both ABIs" scan misses it too. The scan that catches these is **decl-ABI vs
 def-ABI per symbol, over the crate's own symbols.**
 
+### Same convention, different `@N`: stdcall decoration is a free ABI *width* checker
+
+Not every `undefined _Foo@N` is a convention mismatch. When BOTH sides are `extern "system"`
+and the numbers merely differ, `@N` is the **byte count of the argument list**, so the delta
+is telling you an argument's *width* disagrees — and that is a bug the 64-bit arches cannot
+see, because they have no decoration to disagree about. amd64/arm64 link it green and pass a
+wrong layout.
+
+Read the delta arithmetically before you touch anything. i386: every arg rounds to 4, and a
+64-bit scalar or a by-value struct takes its real size.
+
+    ld.lld: undefined symbol: _FatAddMcbEntry@20     # caller: 5 args x 4 = 20
+    definition exports                @24            # 4+4+4+8+4 -> one arg is 8 bytes, not 4
+
+That was exactly it: `fsctrl.rs` widened `Lbo` from `u32` to `i64` (LBO is LONGLONG — "for
+Fat32, LBO is >32 bits", fat.h:34) and fixed one of the three `extern` decls. The other two
+kept `i32`/`u32`. A sibling break in the same driver had the *other* shape —
+`_FatStringTo8dot3@12` vs a definition at `@16`, because a caller declared an `OEM_STRING`
+parameter as `*mut OEM_STRING` (4) where the definition takes it **by value** (8).
+
+So: an i386-only `undefined _Foo@N` after someone widens a type is a **real cross-arch ABI
+bug that i386 caught for you**, not an i386 quirk to work around. Fix every decl to match the
+definition, and fix the call-site casts with them — a widened parameter usually needs the
+argument expression widened too, or you have only moved the truncation.
+
 ### Wrong-direction fix: aligning the DEF to a lying header `[§9.107]`
 Resolving a `scan_ir_mismatch` "def X vs decl system" by changing the **definition** to cdecl
 is backwards when the header simply omits `NTAPI`. i386-only BUGCHECK 0x1E follows, and the
@@ -1826,6 +1851,57 @@ forensics (`GetPageEntry`, `IoPageRead`, every step of `MmInitializeProcessAddre
 failure reports**, plus any *rate-limited anomaly* probe (`MiGrabDataSection`'s
 `INCREATE/INDELETE` spin fires 1:1000 and only when wedged — exactly the hang diagnostic you
 want); leave unconditional hot-path tracing dropped.
+
+### A `cfg(debug_assertions)` block is not code that works — it is code with no evidence either way
+
+Same family as the entry above: source that is present in the tree and absent from the artifact.
+There the diagnostic was thrown away at run time; here it was never compiled at all.
+
+**Symptom.** Turning on `debug-assertions` for the first time does not merely start firing
+assertions. It *compiles*, for the first time in the life of the tree, every
+`#[cfg(debug_assertions)]` block in the crate — **108 of them** here — and *deletes* the 14
+`#[cfg(not(debug_assertions))]` blocks, which is how a `not()`-only stub definition becomes an
+undefined symbol. Three of the first blocks compiled were broken:
+
+| where | defect | presented as |
+|---|---|---|
+| `freeldr-rust/src/heap.rs` | heap-statistics block deref'd the `PVOID` handle with no `as PHEAP` | 14 × `E0609: no field … on type c_void` |
+| `ex-rust/src/init.rs` | `KeServiceDescriptorTable[0] = core::mem::zeroed()`, **invented by the translation** | nothing — it compiles |
+| `ke/{amd64,i386}/kiinit.rs` | called `KiReportCpuFeatures`, never translated, C cohab-dead | `ld.lld: undefined symbol` |
+
+The middle one is the lesson. `ntoskrnl/ex/init.c:1415` assigns only `.Count`; the Rust zeroed
+the whole descriptor, discarding `Base`/`Limit`/`Number` — **the syscall dispatch table** — which
+`ke/krnlinit.c:104-108` fills in earlier. It compiles clean, and it would have killed the box at
+the first system call after Phase 0. It sat in the kernel's most-read init file, invisible,
+because the compiler had never been asked to look and no boot had ever run it.
+
+**Cause.** `cfg` is not `if`. Code behind a `cfg` that is never set is not dead-but-correct code;
+it is unverified text — no type check, no borrow check, no lint, no execution. Translated
+`#if DBG` blocks land in exactly this state, because cargo's release profile leaves
+`debug_assertions` off while the C they came from is built `-DDBG=1` and runs them for real. The
+C half of a cohab kernel checks its invariants; the Rust half's debug code quietly rots.
+
+**Fix.**
+- Treat "enable `debug-assertions`" as a **migration, not a flag flip**, and scope it.
+  `[profile.release.package.<crate>]` overrides arm the crates a hunt needs (kernel core: 181
+  assertions, 29 blocks) without also inheriting the loader/FS/driver backlog.
+- Set `overflow-checks = false` **explicitly** in every override — it defaults to *following*
+  `debug-assertions`, and kernel-wide overflow panics are a far larger semantic change than
+  assertions, one the C never had (C wraps).
+- Before believing a `cfg`-gated block, check every symbol it calls actually **exists**. An
+  `extern` declaration in the same file is not evidence, and a `// fn Foo(...)` comment header in
+  the translated module means the function was skipped entirely.
+- Audit `#[cfg(not(debug_assertions))]` in the same pass — those are the arms that vanish.
+
+**What is NOT a hazard:** `debug_assert!(expr)` itself. It expands to
+`if cfg!(debug_assertions) { assert!(expr) }` — the `cfg!` *macro*, not the attribute — so its
+expression is type-checked on every build regardless. Only the attribute form hides code from the
+compiler. That asymmetry is why the assertion count (2,120) and the never-compiled-block count
+(108) are unrelated numbers, and why only the second is a migration risk.
+
+**Wider rule:** any `cfg` never enabled in a shipping configuration is an unverified region, and
+how many you have is a measurable debt. The same argument covers any feature flag CI never
+builds. A `cfg` you never compile is a `cfg` you cannot claim works.
 
 ### The governing rule: a harness only falsifies what it varies
 > **A harness proves parity only across the axes it actually VARIES. Every axis it holds
