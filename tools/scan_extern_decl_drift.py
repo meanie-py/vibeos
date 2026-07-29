@@ -293,6 +293,7 @@ def scan(root_dir: Path, crate_dirs: list[Path]) -> list[tuple[Path, int, str]]:
 
 
 def main() -> int:
+    lint = "--lint" in sys.argv[1:]
     args = [a for a in sys.argv[1:] if a != "--lint"]
     if args:
         root = Path(args[0]).resolve()
@@ -308,7 +309,12 @@ def main() -> int:
         except ValueError:
             shown = f
         print(f"{shown}:{line}: {msg}")
-    print(f"\n{len(findings)} extern-decl drift finding(s)")
+    # A TALLY is presentation, not a finding. Under --lint the gate diffs stdout
+    # against the baseline line by line, so a count that moves reads as "1 new"
+    # and turns the gate red with nothing wrong — which is exactly what this line
+    # did on its first run. Every sibling scanner suppresses it the same way.
+    if not lint:
+        print(f"\n{len(findings)} extern-decl drift finding(s)")
     return 1 if findings else 0
 
 
