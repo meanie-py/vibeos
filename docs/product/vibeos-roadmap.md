@@ -512,12 +512,27 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     amd64 UP records 184/5 against amd64 smp2's 185/4. Measured: 52/100 i386 rounds and 24/52
     amd64 rounds land on 184/5. One test, one assertion, both x86 arches ⇒ one genuine race.
     **Re-seeding any of these baselines just re-samples the coin** — name the assertion first.
-  - **`ZwAllocateVirtualMemory` 843 → 839 — the only GENUINE one.** Both i386 baselines agree
-    on 843/2, and `b957fb2229d` (2026-07-26) added that row to the smp2 file from a real smp2
-    measurement, so 843 was measured under MP eight days before 839 was. Note the SHAPE: pass
-    drops by 4 while fail stays at 2, i.e. 4 assertions stop EXECUTING rather than starting to
-    fail — the same shape as the arm64 `KeEvent` 132-pass drop below. A loop terminating early,
-    not four broken assertions.
+  - **`ZwAllocateVirtualMemory` 843 → 839 — a real UP-vs-MP DIFFERENCE, not a regression, and
+    its baseline is a 1-in-101 sample.** Correlating pass count against `smp` over every banked
+    i386 run dir: **smp1 scores 843 in 4/4 runs; smp2 scores 839 in 100 runs and 843 in exactly
+    one.** That one is `20260726-005733-conformance-i386` — the same day `b957fb2229d` re-seeded
+    the i386 baselines. So the smp2 baseline captured the rare outcome and the MP kernel has
+    been losing these 4 assertions all along; nothing got worse over time. (An earlier revision
+    of this entry called it "the only genuine one" and framed it as a regression since
+    2026-07-26. That was wrong, and it was wrong because the first comparison used one smp1 run
+    against one smp2 run — **always correlate against `smp` before calling an i386 delta a
+    regression.**) The SHAPE is still the interesting part: pass drops by 4 while fail stays at
+    2, so 4 assertions stop EXECUTING rather than start failing — same shape as the arm64
+    `KeEvent` 132-pass drop below. A loop terminating early, not four broken assertions.
+
+  **The meta-finding, and it is the actionable one: every row in these baselines is a SINGLE
+  SAMPLE of a nondeterministic quantity, and the ratchet treats it as a floor.** All three
+  entries above reduce to that. `FsRtlLegal`'s smp2 row, both `IoDeviceObject` rows and
+  `ZwAllocateVirtualMemory`'s smp2 row were each seeded from one boot of a test that does not
+  return the same number every boot — twice from the lucky side, once from the unlucky one.
+  `--write-baseline` cannot see this because it runs the sweep once. Until a baseline can be
+  seeded from N rounds and record a *distribution* (or the underlying nondeterminism is fixed),
+  re-seeding is not a fix for any of these — it just re-rolls the dice.
   - amd64 also showed `MmMdl: OK -> NO-END` once in 16 (a hang, not a fail) — worth watching,
     single occurrence, not yet a claim.
   Deterministic-vs-flaky is only separable because rounds are repeated on one frozen media and
