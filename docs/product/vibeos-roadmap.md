@@ -496,17 +496,49 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   (2026-07-29, 37 i386 + 16 amd64 recorded rounds against the `kmtest-smp2` baselines). These
   are MP-vs-MP-baseline regressions, i.e. the MP kernel got *worse* than its own recorded
   floor, so they gate the flip independently of the arm64 blocker.
-  - **i386, deterministic (37/37 rounds — reproducible without a soak):**
-    `FsRtlLegal` pass 2504→2496 / fail 24→32 (8 subtests flipped), and
-    `ZwAllocateVirtualMemory` pass 843→839 (4 subtests). A 100%-reproducible regression is
-    debuggable in one boot; start here, not with the flakes.
-  - **Cross-arch flake — `IoDeviceObject` pass 185→184, fail 4→5**, on **both** x86 arches:
-    i386 18/37 (~49%), amd64 5/16 (~31%). Same test, same delta, two arches ⇒ a genuine MP
-    race in that path rather than an arch quirk.
+  **SPLIT 2026-07-29 by baseline archaeology (no host time needed).** These were recorded as
+  one class of "MP regression". They are three different things, and only one is real:
+  - **`FsRtlLegal` 2504/24 → 2496/32 — PHANTOM, the i386 smp2 baseline is the outlier.**
+    That row is the ONLY place in the entire tree claiming 2504/24. i386 UP says 2496/32,
+    amd64 UP says 2496/32, amd64 smp2 says 2496/32, and 100/100 measured rounds say 2496/32.
+    It was seeded 2026-07-18 (`049840353ee`) on a tree whose i386 UP baseline ALREADY read
+    2496/32 — so i386 MP scored 8 better than i386 UP that day and no longer does, and today's
+    value agrees with every other configuration. Not a flip blocker. Name the 8 assertions
+    before deciding which side is correct; do not re-seed blind.
+  - **`IoDeviceObject` 185/4 vs 184/5 — a ~50/50 FLAKE, not a regression** (closes the old
+    "blessed with no rationale" framing, task #48). The baselines disagree only because each
+    is a single sample of one flaky assertion: at `049840353ee` the i386 smp2 baseline was
+    seeded reading 185/4 while the i386 UP baseline on the SAME TREE read 184/5, and today
+    amd64 UP records 184/5 against amd64 smp2's 185/4. Measured: 52/100 i386 rounds and 24/52
+    amd64 rounds land on 184/5. One test, one assertion, both x86 arches ⇒ one genuine race.
+    **Re-seeding any of these baselines just re-samples the coin** — name the assertion first.
+  - **`ZwAllocateVirtualMemory` 843 → 839 — the only GENUINE one.** Both i386 baselines agree
+    on 843/2, and `b957fb2229d` (2026-07-26) added that row to the smp2 file from a real smp2
+    measurement, so 843 was measured under MP eight days before 839 was. Note the SHAPE: pass
+    drops by 4 while fail stays at 2, i.e. 4 assertions stop EXECUTING rather than starting to
+    fail — the same shape as the arm64 `KeEvent` 132-pass drop below. A loop terminating early,
+    not four broken assertions.
   - amd64 also showed `MmMdl: OK -> NO-END` once in 16 (a hang, not a fail) — worth watching,
     single occurrence, not yet a claim.
   Deterministic-vs-flaky is only separable because rounds are repeated on one frozen media and
   recorded per-round; a single sweep reports all five of these identically.
+- **arm64 sweeps only COMPLETE half the time, and the failures concentrate on ONE test — NEW,
+  OPEN** (2026-07-29, from the 85 banked arm64 smp1 rounds in `~/vibeos-flake-farm/conformance.jsonl`).
+  Only 42/85 rounds finish. The distribution is not diffuse:
+  - **20 rounds stop at exactly `launched=71` = `ZwWaitForMultipleObjects`** (confirmed by
+    `ZwWaitForMultipleObjects CRASH` as the last line of the results file). Another 4 stop at
+    75 (`HidPDescription`), 2 at 73 (`FileAttributes`), 1 each at 80 (`PoIrp`) and 90.
+  - **13 rounds have `launched=0`** — the sweep never started at all. A separate face; do not
+    pool it with the crashers.
+  - Bugchecks across the cluster: `0x1E` ×10, `0x1A` ×8, `0x50`, `0xE3`.
+  - The `0x1A` face is `MmCreateVirtualMapping`'s double-map probe (`[PAGE] BUG: old PTE was
+    non-zero!`). That probe printed one string and died, so all 8 taught us nothing; as of
+    2026-07-29 it prints the VA, old/new PTE, old/new PFN with a SAME=YES/NO discriminator,
+    process and thread, and dumps that VA's own map/unmap ledger from the flight recorder
+    (whole-ring tail dumps are useless here — on the motivating crash the last 32 of 643,270
+    events were 100% working-set lock churn).
+  This is the §9.98 physical-page-reuse cluster, **OWNED BY the smp-bringup lane** (task #19/#23)
+  — the instrumentation and the corpus are the contribution from here, not a fix.
 - **arm64 UP:=smp1 collapse FAILS on `KeEvent`, deterministically — NEW, OPEN** (2026-07-29,
   first three rounds of the instrumented soak). The MP kernel at one CPU is *not* equivalent
   to the UP kernel on arm64, and the flip is gated on exactly that equivalence:

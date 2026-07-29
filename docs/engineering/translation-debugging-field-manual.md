@@ -588,6 +588,48 @@ size-verified. Real damage:
   extension layout; **a dropped `FIELD_OFFSET(T, Array[N])` subscript scaling** under-allocates
   the heap block.
 
+### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
+The entry above is about shadow *structs*; this is the same disease one level down, and it is
+cheaper to hit because a one-line `type X = ...;` does not look like a mirror at all.
+
+**Symptom.** A green build on every arch, and a caller's stack local adjacent to an out-param
+gets clobbered. No compiler, and no signature verifier, says anything.
+
+**Cause.** Two files spell one C typedef differently and only the *resolved width* differs.
+fastfat's `VBO` (`fat.h:38` = `ULONG32`, four bytes): the generated `types_<arch>.rs` islands
+had it right, `dirsup.rs` said `type VBO = LARGE_INTEGER` and `dirctrl.rs` said `type VBO =
+u64`. So `FatLocateDirent`, whose C prototype is `OUT PVBO ByteOffset`, stored
+`(*ByteOffset).QuadPart` — an **eight-byte write through a pointer the interface says points
+at four**. `create.rs`, `namesup.rs` and `fileinfo.rs` each backed that out-param with a `u32`
+local, so every call lost 4 bytes of the caller's frame; `create.rs` is the file-OPEN path, and
+arm64 boots FAT as its live system volume.
+
+**Why it survived.** The two WRONG aliases agreed with each other — both 8 — so the definition
+and its in-file callers were mutually consistent and only the honest callers were exposed.
+`dirsup.rs` even carried a hand-rolled narrowing shim (`*ByteOffset = ByteOffsetLi.QuadPart as
+u32`) at one site: someone met the mismatch, worked around it locally, and left the interface
+wrong. **A local workaround for a width mismatch is a bug report against the type, not a fix.**
+
+**Why no existing gate saw it.** Every single-arch build is green because each file is
+internally consistent, and rustc has no reason to care what another file calls the same name.
+`verify_c_signatures` compares the Rust decl against the C prototype — but both sides said
+`PVBO` / `*mut VBO`, so the *names* agreed and only the resolutions differed. Only a whole-tree
+read can catch this.
+
+**Fix.** `tools/scan_type_alias_contradictions.py` now does that read, and the same-shaped
+`scan_const_contradictions` is its sibling for values. Resolve against the C typedef, then
+delete the private copies in favour of the generated island. Beyond VBO its first run found
+`BOOLEAN = i32` in two fastfat files (DDK `BOOLEAN` is `unsigned char`) and `BOOL = u8` in
+hidparser against `i32` in 22 others, the live one declaring `HidParser_UsesReportId -> BOOL`
+for a function defined `-> u32` — benign only because the values are 0/1, so the low byte
+happened to be the whole answer.
+
+**The false positives are most of the work, and skipping them is what makes it trustworthy:**
+`#[cfg]`-gated pairs (freeldr's `UINTN` is `u64`/`u32` by pointer width, only one compiled),
+ASSOCIATED types (`impl Width for Narrow { type Ch = i8 }` vs `... for Wide { type Ch = u16 }`
+is msvcrt's narrow/wide scanf — differing per impl is the *point*), and an unresolvable RHS,
+which is skipped rather than guessed at. Those three took the tree from 102 findings to 78.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386
