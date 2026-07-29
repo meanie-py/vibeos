@@ -269,10 +269,16 @@ pub unsafe fn name_ptr() -> *const u16 {
 }
 """
 
+# The inline comments are load-bearing. tree-sitter makes a comment a CHILD of
+# the argument list, so counting it as an argument shifts every positional index
+# — the level check reads the comment (not DISPATCH_LEVEL) and the last-arg
+# OldIrql lookup lands one slot early. Here that makes the scanner BLIND, so the
+# positive control is the only thing that can catch it (an FP fixture cannot).
+# Sibling incident, same root, opposite direction: scan_ob_refcount's fastfat FP.
 _IRQL_BAD = """\
 pub unsafe fn leaky(cond: bool) -> u32 {
     let mut old: u8 = 0;
-    KeRaiseIrql(DISPATCH_LEVEL, &mut old);
+    KeRaiseIrql(/* NewIrql */ DISPATCH_LEVEL, &mut old /* OldIrql */);
     if cond {
         return 1;  // early return LEAKS the raise
     }
@@ -306,6 +312,32 @@ pub unsafe fn balanced(cond: bool) -> u32 {
     let rc = if cond { 1 } else { 0 };
     ObDereferenceObject(obj);
     rc
+}
+
+// fastfat's FatMarkHandle, 2026-07-29. The out-param of ObReferenceObjectByHandle
+// is at a FIXED index, and tree-sitter puts an inline comment in the argument
+// list — so `/* UserMode */` shifted the index by one and the scanner tracked
+// the comment's own text, reporting a leak of a variable named `UserMode` on
+// two paths that both dereference correctly.
+pub unsafe fn balanced_with_inline_comment(h: HANDLE, cond: bool) -> u32 {
+    let mut fo: *mut FILE_OBJECT = null_mut();
+    let status = ObReferenceObjectByHandle(
+        h,
+        0,
+        IoFileObjectType as *mut _,
+        1, /* UserMode */
+        &mut fo as *mut *mut FILE_OBJECT as *mut PVOID,
+        null_mut(),
+    );
+    if !NT_SUCCESS(status) {
+        return 1;
+    }
+    if cond {
+        ObDereferenceObject(fo as *mut _);
+        return 2;
+    }
+    ObDereferenceObject(fo as *mut _);
+    0
 }
 """
 

@@ -160,11 +160,17 @@ def _call_name(node, src: bytes):
     return None
 
 
+# Not arguments: punctuation, and COMMENTS — tree-sitter makes an inline
+# `f(a, 1, /* UserMode */ &mut Obj)` comment a child of the argument list, so
+# counting it shifts every positional (or last-arg) index by one.
+_NOT_AN_ARG = ("(", ")", ",", "line_comment", "block_comment", "comment")
+
+
 def _arg_idents(args_node, src: bytes, idx: int):
     """Idents appearing in argument `idx` (0-based) of a call's arguments node."""
     if args_node is None:
         return set()
-    real = [c for c in args_node.children if c.type not in ("(", ")", ",")]
+    real = [c for c in args_node.children if c.type not in _NOT_AN_ARG]
     if idx >= len(real):
         return set()
     text = src[real[idx].start_byte : real[idx].end_byte].decode(errors="replace")
@@ -244,7 +250,7 @@ def _summarize_function(name, params, body, src: bytes):
             cname, args = call
             s.calls.add(cname)
             if cname in RAISE_OUTPARAM:
-                real = [c for c in (args.children if args else []) if c.type not in ("(", ")", ",")]
+                real = [c for c in (args.children if args else []) if c.type not in _NOT_AN_ARG]
                 acquire = True
                 if cname in RAISE_LEVELED and real:
                     lvl = src[real[0].start_byte : real[0].end_byte].decode(errors="replace")
@@ -434,7 +440,7 @@ def _scan_function(body, src: bytes, lines, summaries=None):
             name, args = call
             if name in RAISE_OUTPARAM:
                 # OldIrql is the LAST arg, an `&mut var`.
-                real = [c for c in (args.children if args else []) if c.type not in ("(", ")", ",")]
+                real = [c for c in (args.children if args else []) if c.type not in _NOT_AN_ARG]
                 acquire = True
                 if name in RAISE_LEVELED and real:
                     lvl = src[real[0].start_byte : real[0].end_byte].decode(errors="replace")
@@ -488,7 +494,7 @@ def _scan_function(body, src: bytes, lines, summaries=None):
             # continuation captures a local minted from per-CPU state — stale
             # after the switch resumes (elsewhere / after preemption).
             if name in _CPS_WAITS and args is not None and not suppressed(node):
-                real = [c for c in args.children if c.type not in ("(", ")", ",")]
+                real = [c for c in args.children if c.type not in _NOT_AN_ARG]
                 if real and real[-1].type == "closure_expression":
                     k = real[-1]
                     k_txt = src[k.start_byte : k.end_byte].decode(errors="replace")

@@ -2354,6 +2354,19 @@ still holds a top-level ERROR**, reporting "not audited" instead of guessing. No
 is useless as that gate: it is true for nearly every real Windows TU because of macros inside
 bodies, which hoist nothing. A **top-level ERROR node** is the precise signal.
 
+**A COMMENT is a child of the argument list, so positional argument indexing is off by one
+wherever anyone writes one.** `scan_ob_refcount` locates `ObReferenceObjectByHandle`'s object
+by fixed index 4 and `scan_irql_balance` locates `KeRaiseIrql`'s `OldIrql` as the last
+argument; both built their argument list by dropping only `(`, `)` and `,` from the
+tree-sitter `arguments` node. fastfat's `ObReferenceObjectByHandle(h, 0, ty, 1, /* UserMode */
+&mut fo, …)` therefore tracked the *comment's own text* as the object and reported a leak of a
+variable named `UserMode` on two paths that both dereference correctly. The same shift is
+silent in the other direction: a comment in `KeRaiseIrql(/* NewIrql */ DISPATCH_LEVEL, …)`
+makes the level read as a non-constant, the acquire is not recorded, and the scanner goes
+**blind** with no finding to notice. Filter `line_comment`/`block_comment`/`comment` alongside
+the punctuation, and note which direction each scanner fails in when you write the control —
+an FP fixture cannot catch blindness, only the positive control can.
+
 **A shared regex is an API between lanes, and positional groups are how it breaks.** Mainline
 correctly taught `scan_cc_mismatch` to pair decls and defs on the *linker symbol*
 (`#[link_name]` / `#[export_name]`) instead of the Rust identifier, which added one capture
