@@ -553,6 +553,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   - **13 rounds have `launched=0`** — the sweep never started at all. A separate face; do not
     pool it with the crashers.
   - Bugchecks across the cluster: `0x1E` ×10, `0x1A` ×8, `0x50`, `0xE3`.
+  - **The faulting PCs say these are DETERMINISTIC fault sites, not memory corruption.**
+    Reading P1/P2 off all 20 banked crash serials, with `[KRNLBASE] ntoskrnl runtime
+    base=0xFFFFF80042190000` from the same logs:
+    - `0x1E` / P1=`0xC0000005` (ACCESS_VIOLATION) at `ntoskrnl+0x84df8` (twice, byte-identical),
+      `+0xc2b60`, `+0x7da74`, `+0x89184` — legitimate in-ntoskrnl addresses, and repeats.
+    - `0x1E` / P1=`0xC000001D` (ILLEGAL_INSTRUCTION) at `0xd4dfd99b5dde7df2` — twice, the SAME
+      non-canonical value, which reads as a specific poison pattern rather than arbitrary
+      stack damage; plus three more at `0xffff8000043xxxxx`.
+    - `0x1A` ×8 with all four parameters ZERO — that is the double-map probe, which passed no
+      parameters before 2026-07-29.
+    Repeated identical PCs are the point: random stack corruption does not land on the same
+    address twice. **Do not chase this as a smashed return address** (I did, briefly, off a
+    single `0xd4dfd99b...` sample before checking the rest — `0xfffff800…` is a perfectly
+    normal kernel VA here and a naive "is this a kernel address" test mislabels it).
+    **Symbolicate against the SMP LANE's build, not yours** — those offsets come from that
+    lane's tree at its own commit, and `qemu/addr2sym.sh` against a different build answers
+    confidently and wrongly (it returned `KTRAP_FRAME_LENGTH+543896`, the task #32 shape).
   - The `0x1A` face is `MmCreateVirtualMapping`'s double-map probe (`[PAGE] BUG: old PTE was
     non-zero!`). That probe printed one string and died, so all 8 taught us nothing; as of
     2026-07-29 it prints the VA, old/new PTE, old/new PFN with a SAME=YES/NO discriminator,
