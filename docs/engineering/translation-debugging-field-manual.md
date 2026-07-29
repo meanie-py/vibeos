@@ -2020,6 +2020,32 @@ surfaced as the subject and the reference disagreeing about two IDENTICAL string
 an unrelated pair of cases shifting the heap. Pad, then terminate — with two NULs, so
 termination does not depend on whether the walker's stride is one byte or two.
 
+### A shared ledger that collapses two configurations makes the A/B invisible
+The corollary of the governing rule above: a harness only falsifies what it varies, **and you
+can only tell what it varied from what it RECORDED**.
+
+**Symptom.** Two sets of rounds in one corpus, wildly different failure rates, every recorded
+field identical. The difference reads as a fix.
+
+**Cause.** `conformance`'s ledger wrote `"smp": smp or 1`. Passing no `--smp` boots the UP
+kernel (`ntoskrnl`); passing `--smp 1` boots the MP kernel on one CPU (`ntkrnlmp`, plus PSCI AP
+bring-up and its own `--smp-kernel` media on arm64). Two different binaries doing different
+work — and `or 1` wrote **1** for both. 2026-07-29: 44 arm64 rounds at 100% clean were compared
+against 85 banked rounds at 49% clean and the gap was attributed to a fastfat fix. It was the
+kernel swap. Nothing in the corpus could contradict it; the confound was only recoverable by
+grepping serial logs for an `ntkrnlmp.exe` load line, which is exactly the "remembering a
+recipe" smell that means a field is missing.
+
+**Fix.** Record the distinguishing variable, not a normalised stand-in — `smp` truthfully
+(0 = unspecified) plus an explicit `mp_kernel`. **A default that maps "unset" onto a real
+setting's value is not a convenience, it is a lost degree of freedom**, and in a corpus other
+lanes compute statistics from it silently corrupts their conclusions too, not just yours.
+
+**Generalises to:** any run-ledger field with an `or <default>`. Ask what two distinct
+configurations could produce the same stored row, and whether either is one you would ever want
+to compare against the other. Same family as the worktree ambiguity in the same corpus, where
+three trees' rounds are separable only by string-matching `run_dir`.
+
 ### A verdict that blocks other people must carry its evidence
 Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks
 *can anyone check what it saw?* One night's merge-train stall produced five instances, so treat
