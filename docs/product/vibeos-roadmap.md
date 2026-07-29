@@ -498,13 +498,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   floor, so they gate the flip independently of the arm64 blocker.
   **SPLIT 2026-07-29 by baseline archaeology (no host time needed).** These were recorded as
   one class of "MP regression". They are three different things, and only one is real:
-  - **`FsRtlLegal` 2504/24 → 2496/32 — PHANTOM, the i386 smp2 baseline is the outlier.**
-    That row is the ONLY place in the entire tree claiming 2504/24. i386 UP says 2496/32,
-    amd64 UP says 2496/32, amd64 smp2 says 2496/32, and 100/100 measured rounds say 2496/32.
-    It was seeded 2026-07-18 (`049840353ee`) on a tree whose i386 UP baseline ALREADY read
-    2496/32 — so i386 MP scored 8 better than i386 UP that day and no longer does, and today's
-    value agrees with every other configuration. Not a flip blocker. Name the 8 assertions
-    before deciding which side is correct; do not re-seed blind.
+  - **`FsRtlLegal` 2504/24 → 2496/32 — a RARE FLAKE (~2%), and the baseline caught it.**
+    Counting every banked i386 run dir: 2504/24 occurs in **1 of 7 smp1 runs and 1 of 101 smp2
+    runs**; 2496/32 is everything else. So it is not topology-correlated and not a regression —
+    it is an ~2% outcome that a single seeding boot happened to hit. Consistent with 2504/24
+    appearing nowhere else in the tree (i386 UP, amd64 UP and amd64 smp2 all say 2496/32).
+    Not a flip blocker. Name the 8 assertions before deciding which side is *correct*; do not
+    re-seed blind.
   - **`IoDeviceObject` 185/4 vs 184/5 — a ~50/50 FLAKE, not a regression** (closes the old
     "blessed with no rationale" framing, task #48). The baselines disagree only because each
     is a single sample of one flaky assertion: at `049840353ee` the i386 smp2 baseline was
@@ -524,6 +524,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     regression.**) The SHAPE is still the interesting part: pass drops by 4 while fail stays at
     2, so 4 assertions stop EXECUTING rather than start failing — same shape as the arm64
     `KeEvent` 132-pass drop below. A loop terminating early, not four broken assertions.
+
+  **ONE BOOT SEEDED TWO OF THESE ROWS.** `20260726-005733-conformance-i386` is the only smp2
+  run in the whole corpus that produced the rare side of `FsRtlLegal` (2504) *and* the rare
+  side of `ZwAllocateVirtualMemory` (843), and it is the run behind `b957fb2229d`'s re-seed on
+  2026-07-26. Two rows, one lucky boot, and both have read as regressions in every sweep since.
+  (The two rare outcomes co-occur — `FsRtlLegal`=2504 never appears without `ZwAlloc`=843 — so
+  whatever varies boot-to-boot moves both, which is itself a lead worth pulling.)
 
   **The meta-finding, and it is the actionable one: every row in these baselines is a SINGLE
   SAMPLE of a nondeterministic quantity, and the ratchet treats it as a floor.** All three
