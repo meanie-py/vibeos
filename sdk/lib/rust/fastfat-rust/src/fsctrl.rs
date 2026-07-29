@@ -151,7 +151,6 @@ extern "system" {
     fn FatFspClose(Vcb: *mut VCB);
     fn FatGetVolumeBitmap(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatGetRetrievalPointers(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatMarkHandle(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn RtlOemStringToCountedUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const OEM_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
 }
 
@@ -3271,6 +3270,179 @@ pub unsafe extern "system" fn FatQueryBpb(IrpContext: PIRP_CONTEXT, Irp: PIRP) -
 
     DebugTrace(-1, Dbg, b"FatQueryBpb -> %08lx\n\0".as_ptr() as *const i8);
     STATUS_SUCCESS
+}
+
+/// FSCTL_MARK_HANDLE — attach special properties to a user handle (fsctrl.c:7311).
+///
+/// Was a `STUB_BUGCHECK()` in rust_cohab_stub.c and reachable straight from the
+/// dispatch table, so any caller of this FSCTL stopped the box.
+///
+/// Note the C only ever supports MARK_HANDLE_PROTECT_CLUSTERS; the USN_SOURCE_*
+/// bits are accepted and then ignored, deliberately, "to preserve compatibility"
+/// with callers that set them. Keep that — rejecting them would be a behaviour
+/// change dressed as a tidy-up.
+#[no_mangle]
+pub unsafe extern "system" fn FatMarkHandle(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+    const MARK_HANDLE_PROTECT_CLUSTERS: u32 = 0x00000001; // ntifs.h
+    const USN_SOURCE_DATA_MANAGEMENT: u32 = 0x00000001;
+    const USN_SOURCE_AUXILIARY_DATA: u32 = 0x00000002;
+    const USN_SOURCE_REPLICATION_MANAGEMENT: u32 = 0x00000004;
+    const IRP_MN_KERNEL_CALL: u8 = 0x04; // ntifs.h:4421
+    const FCB_STATE_DENY_DEFRAG: u32 = 0x00004000; // fatstruc.h:1217
+    const CCB_FLAG_DENY_DEFRAG: u32 = 0x00080000; // fatstruc.h:1352
+
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Vcb: *mut VCB = null_mut();
+    let mut Fcb: *mut FCB = null_mut();
+    let mut Ccb: *mut CCB = null_mut();
+    let mut DasdFcb: *mut FCB = null_mut();
+    let mut DasdCcb: *mut CCB = null_mut();
+    let mut DasdFileObject: *mut FILE_OBJECT = null_mut();
+    let mut ReleaseFcb: bool = false;
+
+    // PAGED_CODE();
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    DebugTrace(1, Dbg, b"FatMarkHandle...\n\0".as_ptr() as *const i8);
+
+    //  Always make this a synchronous IRP.
+    SetFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
+
+    let mut TypeOfOpen = FatDecodeFileObject((*IrpSp).FileObject, &mut Vcb, &mut Fcb, &mut Ccb);
+
+    //  Files and directories only.
+    if TypeOfOpen != UserFileOpen && TypeOfOpen != UserDirectoryOpen {
+        FatCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    //  Win32/64 thunking. Gated exactly as FatMoveFile's is: the C guards it with
+    //  `#if defined(_WIN64) && defined(BUILD_WOW64_ENABLED)`, and on i386
+    //  PMARK_HANDLE_INFO32 is only a placeholder (ddk_shims.rs:228).
+    let mut LocalMarkHandleInfo: MARK_HANDLE_INFO = core::mem::zeroed();
+    let mut thunked = false;
+    #[cfg(all(target_pointer_width = "64", feature = "wow64"))]
+    {
+        if IoIs32bitProcess(Irp) != 0 {
+            if ((*IrpSp).Parameters.FileSystemControl.InputBufferLength as usize)
+                < core::mem::size_of::<ntkrnl_sys::ddk::MARK_HANDLE_INFO32>()
+            {
+                FatCompleteRequest(IrpContext, Irp, STATUS_BUFFER_TOO_SMALL);
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+            let MarkHandle32 = (*Irp).AssociatedIrp.SystemBuffer as PMARK_HANDLE_INFO32;
+            LocalMarkHandleInfo.HandleInfo = (*MarkHandle32).HandleInfo;
+            LocalMarkHandleInfo.UsnSourceInfo = (*MarkHandle32).UsnSourceInfo;
+            //  The C sign-extends through LONG before widening — a 32-bit guest
+            //  handle is signed there.
+            LocalMarkHandleInfo.VolumeHandle =
+                ((*MarkHandle32).VolumeHandle as i32) as isize as HANDLE;
+            thunked = true;
+        }
+    }
+
+    let HandleInfo: PMARK_HANDLE_INFO = if thunked {
+        &raw mut LocalMarkHandleInfo
+    } else {
+        if ((*IrpSp).Parameters.FileSystemControl.InputBufferLength as usize)
+            < core::mem::size_of::<MARK_HANDLE_INFO>()
+        {
+            FatCompleteRequest(IrpContext, Irp, STATUS_BUFFER_TOO_SMALL);
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        (*Irp).AssociatedIrp.SystemBuffer as PMARK_HANDLE_INFO
+    };
+
+    //  Only legal bits may be set. (The middle `FlagOn(..., 0)` term is the C's
+    //  own vestigial no-op — it can never be true — and is kept for shape.)
+    if FlagOn((*HandleInfo).HandleInfo, !MARK_HANDLE_PROTECT_CLUSTERS) != 0
+        || FlagOn(
+            (*HandleInfo).UsnSourceInfo,
+            !(USN_SOURCE_DATA_MANAGEMENT
+                | USN_SOURCE_AUXILIARY_DATA
+                | USN_SOURCE_REPLICATION_MANAGEMENT),
+        ) != 0
+    {
+        FatCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    //  The caller needs a valid volume handle, the manage-volume privilege, or
+    //  kernel mode. (The kernel-mode check is only sound because the rdr does not
+    //  support this FSCTL — the C says so and it is still true here.)
+    if (*Irp).RequestorMode != 0 /* KernelMode == 0 */
+        && (*IrpSp).MinorFunction != IRP_MN_KERNEL_CALL
+        && FlagOn((*Ccb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS) == 0
+        && (FlagOn((*HandleInfo).HandleInfo, MARK_HANDLE_PROTECT_CLUSTERS) != 0
+            || (*HandleInfo).UsnSourceInfo != 0)
+    {
+        if (*HandleInfo).VolumeHandle.is_null() {
+            FatCompleteRequest(IrpContext, Irp, STATUS_ACCESS_DENIED);
+            return STATUS_ACCESS_DENIED;
+        }
+
+        Status = ObReferenceObjectByHandle(
+            (*HandleInfo).VolumeHandle,
+            0,
+            IoFileObjectType as *mut _,
+            1, /* UserMode */
+            &mut DasdFileObject as *mut *mut FILE_OBJECT as *mut PVOID,
+            null_mut(),
+        );
+
+        if !NT_SUCCESS(Status) {
+            FatCompleteRequest(IrpContext, Irp, Status);
+            return Status;
+        }
+
+        //  Must be the same volume as the handle this FSCTL came in on.
+        if (*DasdFileObject).Vpb != (*Vcb).Vpb {
+            ObDereferenceObject(DasdFileObject as *mut _);
+            FatCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        //  Decode it and verify it really is a volume handle. Dismounts are not
+        //  raised on here on purpose; the check below covers that anyway.
+        TypeOfOpen = FatDecodeFileObject(DasdFileObject, &mut Vcb, &mut DasdFcb, &mut DasdCcb);
+        let _ = TypeOfOpen;
+
+        ObDereferenceObject(DasdFileObject as *mut _);
+
+        if DasdCcb.is_null() || FlagOn((*DasdCcb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS) == 0 {
+            FatCompleteRequest(IrpContext, Irp, STATUS_ACCESS_DENIED);
+            return STATUS_ACCESS_DENIED;
+        }
+    }
+
+    // _SEH2_TRY
+    'try_outer: {
+        FatAcquireExclusiveFcb(IrpContext, Fcb);
+        ReleaseFcb = true;
+
+        FatVerifyFcb(IrpContext, Fcb);
+
+        if ((*HandleInfo).HandleInfo & MARK_HANDLE_PROTECT_CLUSTERS) != 0 {
+            if ((*Fcb).FcbState & FCB_STATE_DENY_DEFRAG) != 0 {
+                //  Already set — try_return( Status = STATUS_ACCESS_DENIED )
+                Status = STATUS_ACCESS_DENIED;
+                break 'try_outer;
+            }
+
+            (*Ccb).Flags |= CCB_FLAG_DENY_DEFRAG;
+            (*Fcb).FcbState |= FCB_STATE_DENY_DEFRAG;
+        }
+        // try_exit: NOTHING
+    }
+    // _SEH2_FINALLY — the NORMAL-path half must run; only an abnormal-termination
+    // -guarded block would be dead under DUMMY_PSEH, and this one is not guarded.
+    if ReleaseFcb {
+        FatReleaseFcb(IrpContext, Fcb);
+    }
+
+    FatCompleteRequest(IrpContext, Irp, Status);
+    DebugTrace(-1, Dbg, b"FatMarkHandle -> %08lx\n\0".as_ptr() as *const i8);
+    Status
 }
 
 // ============================================================================
