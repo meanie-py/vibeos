@@ -38,7 +38,7 @@ extern "C" {
     fn CopyUchar2(dest: *mut u16, src: *const u16);
 }
 extern "C" {
-    fn CopyUchar4(dest: *mut u32, src: *const u32);
+    fn CopyUchar4(dest: *mut u32, src: *const u8);
 }
 extern "C" {
     fn WordAlign(Value: u32) -> u32;
@@ -396,7 +396,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryFromRawPathEntry(
 
     CopyUchar4(
         core::ptr::addr_of_mut!((*PathEntry).DiskOffset),
-        CdRawPathLoc(IrpContext, RawPathEntry),
+        CdRawPathLoc(IrpContext, RawPathEntry).cast(),
     );
     (*PathEntry).DiskOffset += CdRawPathXar(IrpContext, RawPathEntry);
 
