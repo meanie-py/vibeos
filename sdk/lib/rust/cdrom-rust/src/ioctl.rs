@@ -213,7 +213,7 @@ unsafe extern "C" {
     fn ScratchBuffer_SetupSrb(device_extension: *mut CDROM_DEVICE_EXTENSION, request: *mut core::ffi::c_void, transfer_byte_count: u32, use_scratch: u8);
 }
 unsafe extern "C" {
-    fn ScratchBuffer_SendSrb(device_extension: *mut CDROM_DEVICE_EXTENSION, wait: u8, unused: *mut core::ffi::c_void) -> i32;
+    fn ScratchBuffer_SendSrb(device_extension: *mut CDROM_DEVICE_EXTENSION, wait: u8, SrbHistoryItem: *mut *mut SRB_HISTORY_ITEM) -> i32;
 }
 unsafe extern "C" {
     fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, b1: u8, b2: u8);
@@ -6049,7 +6049,7 @@ pub unsafe extern "C" fn RequestHandleAreVolumesReady(
 pub unsafe extern "system" fn RequestHandleVolumeOnline(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: *mut core::ffi::c_void,
-    RequestParameters: *mut core::ffi::c_void,
+    RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;

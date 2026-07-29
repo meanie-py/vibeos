@@ -74,7 +74,7 @@ extern "C" {
     fn strlen(s: PCSTR) -> usize;
     fn FrLdrHeapAlloc(size: usize, tag: u32) -> *mut core::ffi::c_void;
     fn FrLdrHeapFree(ptr: *mut core::ffi::c_void, tag: u32);
-    fn NtLdrGetOptionExN(options: PCSTR, option: PCSTR, length: u32, value: *mut PCSTR) -> u8;
+    fn NtLdrGetOptionExN(options: PCSTR, option: PCSTR, length: u32, OptionLength: *mut ULONG) -> u8;
     fn RTL_NUMBER_OF(arr: *const core::ffi::c_void) -> usize;
     fn AllocateAndInitLPB(version: u32, LoaderBlock: *mut PLOADER_PARAMETER_BLOCK);
     fn ERR(fmt: *const i8, ...);

@@ -257,7 +257,7 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 // caller/callee disagreement; scan_extern_arity.py flagged it.
 #[no_mangle] pub unsafe extern "C" fn DbgGetSenseCodeStr(_srb: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DbgGetAdditionalSenseCodeStr(_srb: PVOID) -> *const i8 { EMPTY }
-#[no_mangle] pub unsafe extern "C" fn DbgGetSrbStatusStr(_s: u8) -> *const i8 { EMPTY }
+#[no_mangle] pub unsafe extern "C" fn DbgGetSrbStatusStr(_s: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DBGGETSCSIOPSTR(_s: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DBGGETSENSECODESTR(_s: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DBGGETADSENSECODESTR(_s: PVOID) -> *const i8 { EMPTY }
