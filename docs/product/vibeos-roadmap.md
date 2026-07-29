@@ -496,17 +496,88 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   (2026-07-29, 37 i386 + 16 amd64 recorded rounds against the `kmtest-smp2` baselines). These
   are MP-vs-MP-baseline regressions, i.e. the MP kernel got *worse* than its own recorded
   floor, so they gate the flip independently of the arm64 blocker.
-  - **i386, deterministic (37/37 rounds — reproducible without a soak):**
-    `FsRtlLegal` pass 2504→2496 / fail 24→32 (8 subtests flipped), and
-    `ZwAllocateVirtualMemory` pass 843→839 (4 subtests). A 100%-reproducible regression is
-    debuggable in one boot; start here, not with the flakes.
-  - **Cross-arch flake — `IoDeviceObject` pass 185→184, fail 4→5**, on **both** x86 arches:
-    i386 18/37 (~49%), amd64 5/16 (~31%). Same test, same delta, two arches ⇒ a genuine MP
-    race in that path rather than an arch quirk.
+  **SPLIT 2026-07-29 by baseline archaeology (no host time needed).** These were recorded as
+  one class of "MP regression". They are three different things, and only one is real:
+  - **`FsRtlLegal` 2504/24 → 2496/32 — a RARE FLAKE (~2%), and the baseline caught it.**
+    Counting every banked i386 run dir: 2504/24 occurs in **1 of 7 smp1 runs and 1 of 101 smp2
+    runs**; 2496/32 is everything else. So it is not topology-correlated and not a regression —
+    it is an ~2% outcome that a single seeding boot happened to hit. Consistent with 2504/24
+    appearing nowhere else in the tree (i386 UP, amd64 UP and amd64 smp2 all say 2496/32).
+    Not a flip blocker. Name the 8 assertions before deciding which side is *correct*; do not
+    re-seed blind.
+  - **`IoDeviceObject` 185/4 vs 184/5 — a ~50/50 FLAKE, not a regression** (closes the old
+    "blessed with no rationale" framing, task #48). The baselines disagree only because each
+    is a single sample of one flaky assertion: at `049840353ee` the i386 smp2 baseline was
+    seeded reading 185/4 while the i386 UP baseline on the SAME TREE read 184/5, and today
+    amd64 UP records 184/5 against amd64 smp2's 185/4. Measured: 52/100 i386 rounds and 24/52
+    amd64 rounds land on 184/5. One test, one assertion, both x86 arches ⇒ one genuine race.
+    **Re-seeding any of these baselines just re-samples the coin** — name the assertion first.
+  - **`ZwAllocateVirtualMemory` 843 → 839 — a real UP-vs-MP DIFFERENCE, not a regression, and
+    its baseline is a 1-in-101 sample.** Correlating pass count against `smp` over every banked
+    i386 run dir: **smp1 scores 843 in 4/4 runs; smp2 scores 839 in 100 runs and 843 in exactly
+    one.** That one is `20260726-005733-conformance-i386` — the same day `b957fb2229d` re-seeded
+    the i386 baselines. So the smp2 baseline captured the rare outcome and the MP kernel has
+    been losing these 4 assertions all along; nothing got worse over time. (An earlier revision
+    of this entry called it "the only genuine one" and framed it as a regression since
+    2026-07-26. That was wrong, and it was wrong because the first comparison used one smp1 run
+    against one smp2 run — **always correlate against `smp` before calling an i386 delta a
+    regression.**) The SHAPE is still the interesting part: pass drops by 4 while fail stays at
+    2, so 4 assertions stop EXECUTING rather than start failing — same shape as the arm64
+    `KeEvent` 132-pass drop below. A loop terminating early, not four broken assertions.
+
+  **ONE BOOT SEEDED TWO OF THESE ROWS.** `20260726-005733-conformance-i386` is the only smp2
+  run in the whole corpus that produced the rare side of `FsRtlLegal` (2504) *and* the rare
+  side of `ZwAllocateVirtualMemory` (843), and it is the run behind `b957fb2229d`'s re-seed on
+  2026-07-26. Two rows, one lucky boot, and both have read as regressions in every sweep since.
+  (The two rare outcomes co-occur — `FsRtlLegal`=2504 never appears without `ZwAlloc`=843 — so
+  whatever varies boot-to-boot moves both, which is itself a lead worth pulling.)
+
+  **The meta-finding, and it is the actionable one: every row in these baselines is a SINGLE
+  SAMPLE of a nondeterministic quantity, and the ratchet treats it as a floor.** All three
+  entries above reduce to that. `FsRtlLegal`'s smp2 row, both `IoDeviceObject` rows and
+  `ZwAllocateVirtualMemory`'s smp2 row were each seeded from one boot of a test that does not
+  return the same number every boot — twice from the lucky side, once from the unlucky one.
+  `--write-baseline` cannot see this because it runs the sweep once. Until a baseline can be
+  seeded from N rounds and record a *distribution* (or the underlying nondeterminism is fixed),
+  re-seeding is not a fix for any of these — it just re-rolls the dice.
   - amd64 also showed `MmMdl: OK -> NO-END` once in 16 (a hang, not a fail) — worth watching,
     single occurrence, not yet a claim.
   Deterministic-vs-flaky is only separable because rounds are repeated on one frozen media and
   recorded per-round; a single sweep reports all five of these identically.
+- **arm64 sweeps only COMPLETE half the time, and the failures concentrate on ONE test — NEW,
+  OPEN** (2026-07-29, from the 85 banked arm64 smp1 rounds in `~/vibeos-flake-farm/conformance.jsonl`).
+  Only 42/85 rounds finish. The distribution is not diffuse:
+  - **20 rounds stop at exactly `launched=71` = `ZwWaitForMultipleObjects`** (confirmed by
+    `ZwWaitForMultipleObjects CRASH` as the last line of the results file). Another 4 stop at
+    75 (`HidPDescription`), 2 at 73 (`FileAttributes`), 1 each at 80 (`PoIrp`) and 90.
+  - **13 rounds have `launched=0`** — the sweep never started at all. A separate face; do not
+    pool it with the crashers.
+  - Bugchecks across the cluster: `0x1E` ×10, `0x1A` ×8, `0x50`, `0xE3`.
+  - **The faulting PCs say these are DETERMINISTIC fault sites, not memory corruption.**
+    Reading P1/P2 off all 20 banked crash serials, with `[KRNLBASE] ntoskrnl runtime
+    base=0xFFFFF80042190000` from the same logs:
+    - `0x1E` / P1=`0xC0000005` (ACCESS_VIOLATION) at `ntoskrnl+0x84df8` (twice, byte-identical),
+      `+0xc2b60`, `+0x7da74`, `+0x89184` — legitimate in-ntoskrnl addresses, and repeats.
+    - `0x1E` / P1=`0xC000001D` (ILLEGAL_INSTRUCTION) at `0xd4dfd99b5dde7df2` — twice, the SAME
+      non-canonical value, which reads as a specific poison pattern rather than arbitrary
+      stack damage; plus three more at `0xffff8000043xxxxx`.
+    - `0x1A` ×8 with all four parameters ZERO — that is the double-map probe, which passed no
+      parameters before 2026-07-29.
+    Repeated identical PCs are the point: random stack corruption does not land on the same
+    address twice. **Do not chase this as a smashed return address** (I did, briefly, off a
+    single `0xd4dfd99b...` sample before checking the rest — `0xfffff800…` is a perfectly
+    normal kernel VA here and a naive "is this a kernel address" test mislabels it).
+    **Symbolicate against the SMP LANE's build, not yours** — those offsets come from that
+    lane's tree at its own commit, and `qemu/addr2sym.sh` against a different build answers
+    confidently and wrongly (it returned `KTRAP_FRAME_LENGTH+543896`, the task #32 shape).
+  - The `0x1A` face is `MmCreateVirtualMapping`'s double-map probe (`[PAGE] BUG: old PTE was
+    non-zero!`). That probe printed one string and died, so all 8 taught us nothing; as of
+    2026-07-29 it prints the VA, old/new PTE, old/new PFN with a SAME=YES/NO discriminator,
+    process and thread, and dumps that VA's own map/unmap ledger from the flight recorder
+    (whole-ring tail dumps are useless here — on the motivating crash the last 32 of 643,270
+    events were 100% working-set lock churn).
+  This is the §9.98 physical-page-reuse cluster, **OWNED BY the smp-bringup lane** (task #19/#23)
+  — the instrumentation and the corpus are the contribution from here, not a fix.
 - **arm64 UP:=smp1 collapse FAILS on `KeEvent`, deterministically — NEW, OPEN** (2026-07-29,
   first three rounds of the instrumented soak). The MP kernel at one CPU is *not* equivalent
   to the UP kernel on arm64, and the flip is gated on exactly that equivalence:

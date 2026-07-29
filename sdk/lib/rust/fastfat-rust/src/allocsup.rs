@@ -3002,7 +3002,6 @@ pub unsafe extern "system" fn FatExamineFatEntries(
     // Known extern functions from ntkrnl_sys
 
     // Types and constants
-    type BOOLEAN = i32;
     type FAT_ENTRY = u32;
     const FAT_CLUSTER_AVAILABLE: u32 = 0;
     const FAT32_ENTRY_MASK: u32 = 0x0FFFFFFF;

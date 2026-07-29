@@ -170,6 +170,17 @@ def conformance(args, repo: Path) -> int:
         return _conformance_once(args, repo)
 
     worst = 0
+    # A soak whose media cannot launch anything produces no information, only
+    # noise — and it appends that noise to the SHARED ledger every other lane
+    # computes its statistics from. An unprovisioned worktree (no build-<arch>,
+    # or a build that failed) banked 38 `launched=0` rounds in about a minute
+    # before anyone noticed, and they are indistinguishable in the ledger from
+    # the genuine no-launch face the smp corpus records 13 of.
+    #
+    # So: bail after CONSECUTIVE no-launch rounds, not the first. One is a real
+    # observed face and must still be recorded; three in a row is broken media.
+    NOLAUNCH_ABORT = 3
+    consecutive_nolaunch = 0
     for i in range(repeat):
         if i:
             args.no_build = True
@@ -183,6 +194,27 @@ def conformance(args, repo: Path) -> int:
             print(f"[conformance] round {i + 1} raised {e!r} — continuing", file=sys.stderr)
             continue
         worst = max(worst, rc)
+
+        if _ROUNDS and _ROUNDS[-1].get("launched") == 0:
+            consecutive_nolaunch += 1
+            if consecutive_nolaunch >= NOLAUNCH_ABORT:
+                print(
+                    f"\n[conformance] ABORTING the soak: {consecutive_nolaunch} consecutive "
+                    f"rounds launched ZERO tests.\n"
+                    f"  The media is not runnable, so every further round would append noise "
+                    f"to {LEDGER}\n"
+                    f"  rather than measure anything. This is nearly always an unprovisioned "
+                    f"tree:\n"
+                    f"    fix: ./vibeos-cli build --arch {args.arch}   (and check it SUCCEEDS)\n"
+                    f"  A worktree also needs .build-tools/llvm-mingw and, on arm64, the "
+                    f"gitignored\n"
+                    f"  qemu/QEMU_EFI.fd + qemu/efivars.fd copied from the main checkout.",
+                    file=sys.stderr,
+                )
+                worst = max(worst, 1)
+                break
+        else:
+            consecutive_nolaunch = 0
 
     # Roll-up. Deliberately counts the SHAPES that distinguish the faces
     # (bugcheck / launched=0 / stalled / clean) rather than just pass-fail: a
@@ -423,7 +455,18 @@ def _conformance_once(args, repo: Path) -> int:
         "suite": SUITE,
         "arch": base,
         "pytest_arch": pytest_arch,
-        "smp": smp or 1,
+        # `smp or 1` used to live here, and it made the ledger LIE about which
+        # kernel ran: no --smp boots the UP kernel (ntoskrnl) while `--smp 1`
+        # boots the MP kernel on one CPU (ntkrnlmp, PSCI AP bring-up on arm64) —
+        # two different binaries doing different work — and both were recorded as
+        # smp=1. That collapse cost a whole A/B: 44 UP-kernel rounds at 100% clean
+        # were compared against 85 banked MP-at-1-CPU rounds at 49%, and the
+        # difference read as a fix when it was a kernel swap. Record 0 for "not
+        # specified" and carry the kernel explicitly, so the distinction survives
+        # into the shared corpus instead of having to be recovered by grepping
+        # serial logs for an `ntkrnlmp.exe` load line.
+        "smp": smp,
+        "mp_kernel": bool(smp),
         "launched": len(results),
         "ok": ok,
         "bad": bad,

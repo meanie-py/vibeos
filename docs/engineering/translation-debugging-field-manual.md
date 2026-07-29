@@ -588,6 +588,48 @@ size-verified. Real damage:
   extension layout; **a dropped `FIELD_OFFSET(T, Array[N])` subscript scaling** under-allocates
   the heap block.
 
+### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
+The entry above is about shadow *structs*; this is the same disease one level down, and it is
+cheaper to hit because a one-line `type X = ...;` does not look like a mirror at all.
+
+**Symptom.** A green build on every arch, and a caller's stack local adjacent to an out-param
+gets clobbered. No compiler, and no signature verifier, says anything.
+
+**Cause.** Two files spell one C typedef differently and only the *resolved width* differs.
+fastfat's `VBO` (`fat.h:38` = `ULONG32`, four bytes): the generated `types_<arch>.rs` islands
+had it right, `dirsup.rs` said `type VBO = LARGE_INTEGER` and `dirctrl.rs` said `type VBO =
+u64`. So `FatLocateDirent`, whose C prototype is `OUT PVBO ByteOffset`, stored
+`(*ByteOffset).QuadPart` — an **eight-byte write through a pointer the interface says points
+at four**. `create.rs`, `namesup.rs` and `fileinfo.rs` each backed that out-param with a `u32`
+local, so every call lost 4 bytes of the caller's frame; `create.rs` is the file-OPEN path, and
+arm64 boots FAT as its live system volume.
+
+**Why it survived.** The two WRONG aliases agreed with each other — both 8 — so the definition
+and its in-file callers were mutually consistent and only the honest callers were exposed.
+`dirsup.rs` even carried a hand-rolled narrowing shim (`*ByteOffset = ByteOffsetLi.QuadPart as
+u32`) at one site: someone met the mismatch, worked around it locally, and left the interface
+wrong. **A local workaround for a width mismatch is a bug report against the type, not a fix.**
+
+**Why no existing gate saw it.** Every single-arch build is green because each file is
+internally consistent, and rustc has no reason to care what another file calls the same name.
+`verify_c_signatures` compares the Rust decl against the C prototype — but both sides said
+`PVBO` / `*mut VBO`, so the *names* agreed and only the resolutions differed. Only a whole-tree
+read can catch this.
+
+**Fix.** `tools/scan_type_alias_contradictions.py` now does that read, and the same-shaped
+`scan_const_contradictions` is its sibling for values. Resolve against the C typedef, then
+delete the private copies in favour of the generated island. Beyond VBO its first run found
+`BOOLEAN = i32` in two fastfat files (DDK `BOOLEAN` is `unsigned char`) and `BOOL = u8` in
+hidparser against `i32` in 22 others, the live one declaring `HidParser_UsesReportId -> BOOL`
+for a function defined `-> u32` — benign only because the values are 0/1, so the low byte
+happened to be the whole answer.
+
+**The false positives are most of the work, and skipping them is what makes it trustworthy:**
+`#[cfg]`-gated pairs (freeldr's `UINTN` is `u64`/`u32` by pointer width, only one compiled),
+ASSOCIATED types (`impl Width for Narrow { type Ch = i8 }` vs `... for Wide { type Ch = u16 }`
+is msvcrt's narrow/wide scanf — differing per impl is the *point*), and an unresolvable RHS,
+which is skipped rather than guessed at. Those three took the tree from 102 findings to 78.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386
@@ -1977,6 +2019,32 @@ allocation and read heap. It sat latent for as long as the allocations happened 
 surfaced as the subject and the reference disagreeing about two IDENTICAL strings, provoked by
 an unrelated pair of cases shifting the heap. Pad, then terminate — with two NULs, so
 termination does not depend on whether the walker's stride is one byte or two.
+
+### A shared ledger that collapses two configurations makes the A/B invisible
+The corollary of the governing rule above: a harness only falsifies what it varies, **and you
+can only tell what it varied from what it RECORDED**.
+
+**Symptom.** Two sets of rounds in one corpus, wildly different failure rates, every recorded
+field identical. The difference reads as a fix.
+
+**Cause.** `conformance`'s ledger wrote `"smp": smp or 1`. Passing no `--smp` boots the UP
+kernel (`ntoskrnl`); passing `--smp 1` boots the MP kernel on one CPU (`ntkrnlmp`, plus PSCI AP
+bring-up and its own `--smp-kernel` media on arm64). Two different binaries doing different
+work — and `or 1` wrote **1** for both. 2026-07-29: 44 arm64 rounds at 100% clean were compared
+against 85 banked rounds at 49% clean and the gap was attributed to a fastfat fix. It was the
+kernel swap. Nothing in the corpus could contradict it; the confound was only recoverable by
+grepping serial logs for an `ntkrnlmp.exe` load line, which is exactly the "remembering a
+recipe" smell that means a field is missing.
+
+**Fix.** Record the distinguishing variable, not a normalised stand-in — `smp` truthfully
+(0 = unspecified) plus an explicit `mp_kernel`. **A default that maps "unset" onto a real
+setting's value is not a convenience, it is a lost degree of freedom**, and in a corpus other
+lanes compute statistics from it silently corrupts their conclusions too, not just yours.
+
+**Generalises to:** any run-ledger field with an `or <default>`. Ask what two distinct
+configurations could produce the same stored row, and whether either is one you would ever want
+to compare against the other. Same family as the worktree ambiguity in the same corpus, where
+three trees' rounds are separable only by string-matching `run_dir`.
 
 ### A verdict that blocks other people must carry its evidence
 Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks

@@ -2902,6 +2902,49 @@ def test_conformance_arch_normalization():
     assert m.get("amd64-uefi", "amd64-uefi") == "amd64-uefi"  # suffixed passes through
 
 
+def _drive_soak(monkeypatch, launched_per_round, repeat=20):
+    """Run conformance()'s repeat loop with a stubbed sweep, returning how many
+    rounds it actually ran. `launched_per_round` supplies each round's launched
+    count (last value repeats)."""
+    calls = {"n": 0}
+    monkeypatch.setattr(conformance_mod, "_ROUNDS", [], raising=False)
+
+    def fake_once(args, repo):
+        i = calls["n"]
+        calls["n"] += 1
+        n = launched_per_round[min(i, len(launched_per_round) - 1)]
+        conformance_mod._ROUNDS.append({"shape": "x", "launched": n})
+        return 0 if n else 1
+
+    monkeypatch.setattr(conformance_mod, "_conformance_once", fake_once)
+
+    class A:
+        arch = "arm64"
+        no_build = False
+        repeat = 0
+
+    a = A()
+    a.repeat = repeat
+    conformance_mod.conformance(a, Path("/nonexistent"))
+    return calls["n"]
+
+
+def test_soak_aborts_when_the_media_launches_NOTHING(monkeypatch):
+    # An unprovisioned worktree banked 38 launched=0 rounds into the SHARED
+    # ledger in about a minute. Every further round is noise in someone else's
+    # denominator, so the loop must stop rather than run its full repeat count.
+    ran = _drive_soak(monkeypatch, [0], repeat=20)
+    assert ran == 3, f"expected abort after 3 consecutive no-launch rounds, ran {ran}"
+
+
+def test_soak_does_NOT_abort_on_isolated_no_launch_rounds(monkeypatch):
+    # launched=0 is also a GENUINE face — the smp corpus records 13 of them — so
+    # a lone one must still be recorded and the soak must continue. Only a
+    # consecutive run means the media itself is broken.
+    ran = _drive_soak(monkeypatch, [0, 91, 0, 91, 0, 91, 91, 91], repeat=8)
+    assert ran == 8, f"isolated no-launch rounds must not end the soak, ran {ran}"
+
+
 def test_conformance_parser_detects_crash_regression(tmp_path):
     parser = conformance_mod._load_parser(_conf_repo_root())
     log = (

@@ -468,7 +468,38 @@ _SHIM_BAD = _SHIM_GOOD.replace("_vsnprintf_s_l(str, len, count,", "_vsnprintf_s_
 # `_vsnprintf`, and that is only an identity while stdio.h says so.
 _SHIM_STDIO = "#define vsnprintf _vsnprintf\n"
 
+# scan_type_alias_contradictions. Modelled on fastfat's VBO (task #46): the
+# generated islands said ULONG32 (4) while dirsup.rs said LARGE_INTEGER (8), so an
+# 8-byte store went through a 4-byte out-param on every file open. Both fixtures
+# also carry the two FALSE-POSITIVE shapes, because those are what decide whether
+# anyone trusts the lint: a `#[cfg]`-gated pointer-width pair (only one is ever
+# compiled) and an associated type in two impls (differing per impl is the POINT).
+# Both must stay silent in the BAD fixture too — a scanner that flags them would
+# bury its one real finding in noise.
+_ALIAS_FP = """\
+#[cfg(target_pointer_width = "64")]
+pub type UINTN = u64;
+#[cfg(target_pointer_width = "32")]
+pub type UINTN = u32;
+
+trait Width { type Ch; }
+impl Width for Narrow { type Ch = i8; }
+impl Width for Wide { type Ch = u16; }
+"""
+
+_ALIAS_BAD_A = "pub type VBO = ULONG32;\n" + _ALIAS_FP
+_ALIAS_BAD_B = "type VBO = LARGE_INTEGER;\n"
+_ALIAS_GOOD_A = "pub type VBO = ULONG32;\n" + _ALIAS_FP
+_ALIAS_GOOD_B = "use crate::types::VBO;\n"
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_type_alias_contradictions",
+        script="tools/scan_type_alias_contradictions.py",
+        argv=["--lint"],
+        bad={"types_i386.rs": _ALIAS_BAD_A, "dirsup.rs": _ALIAS_BAD_B},
+        good={"types_i386.rs": _ALIAS_GOOD_A, "dirsup.rs": _ALIAS_GOOD_B},
+    ),
     Control(
         name="scan_varargs_shim_parity",
         script="tools/scan_varargs_shim_parity.py",

@@ -478,6 +478,25 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The type-level sibling of the above, and the reason it exists is that a width
+    # disagreement does not merely compare wrong, it CORRUPTS MEMORY. fastfat's VBO
+    # (task #46) was `ULONG32` in the generated islands, `LARGE_INTEGER` in dirsup.rs
+    # and `u64` in dirctrl.rs, so FatLocateDirent stored 8 bytes through an out-param
+    # three callers backed with a `u32` stack local — 4 bytes of the caller's frame,
+    # on every file open, on the arch that boots FAT. Nothing else was positioned to
+    # see it: every single-arch build is green because each file is internally
+    # consistent, and verify_c_signatures compared `PVBO` against `*mut VBO` and found
+    # the NAMES agreeing. Only a whole-tree read catches it. Resolves aliases to a
+    # width and reports only two KNOWN widths in one arch bucket; unresolvable RHS and
+    # `#[cfg]`-gated pairs are skipped rather than guessed at (§9.113b's lesson).
+    stac = repo / "tools" / "scan_type_alias_contradictions.py"
+    specs.append(
+        (
+            "scan_type_alias_contradictions",
+            [py, str(stac), "--lint"] if stac.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # msvcrt's printf `...` entry points are the one part of the family that cannot be
     # Rust (stable has no va_start), so they are a hand transcription of wcs.c's shells
     # in their own TU — their own TU because left in wcs.c clang keeps inlining wcs.c's
