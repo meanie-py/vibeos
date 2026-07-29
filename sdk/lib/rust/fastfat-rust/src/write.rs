@@ -188,7 +188,8 @@ const PagedPool: POOL_TYPE = 1; // placeholder
 
 type NTSTATUS = i32;
 type PVOID = *mut c_void;
-type VBO = u32;
+// Right width, but still a shadow of crate::types::VBO — see dirsup.rs.
+use crate::types::VBO;
 type LBO = u64;
 type ULONG = u32;
 type ULONGLONG = u64;

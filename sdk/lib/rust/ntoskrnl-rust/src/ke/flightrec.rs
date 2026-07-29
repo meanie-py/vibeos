@@ -45,6 +45,14 @@ pub const OP_LOCKDEP_SELFDEADLOCK: u32 = 32;
 // Lockdep (§4) Phase B ABBA: the lock pair was taken in both orders. Logged on
 // the lock being acquired; data = its mode. Details in VIBEOS_LOCKDEP.violations.
 pub const OP_LOCKDEP_ABBA: u32 = 33;
+// Page table map/unmap (arm64/page.rs). `object` is the PAGE-ALIGNED VA, not a
+// dispatcher object, so `flightrec_dump_object(va)` reads out that one VA's
+// map/unmap history — which is exactly what the "old PTE was non-zero!" double-map
+// bugcheck needs and what a whole-ring tail dump cannot give: on a real crash the
+// last 32 events were 100% working-set lock churn (643K events banked, ring is 16K).
+// data = the PFN, truncated to the ring's 24 data bits.
+pub const OP_PAGE_MAP: u32 = 48;
+pub const OP_PAGE_UNMAP: u32 = 49;
 
 /// Link-time tap for crates below ntoskrnl-rust in the dep graph (ntkrnl-sys
 /// inlines can't `use` this crate — the dependency points the other way).
@@ -117,6 +125,8 @@ pub fn flightrec_op_name(op: u32) -> *const u8 {
         OP_WS_UNLOCK_EXCL => b"ws-unlock-excl\0".as_ptr(),
         OP_LOCKDEP_SELFDEADLOCK => b"lockdep-selfdeadlock\0".as_ptr(),
         OP_LOCKDEP_ABBA => b"lockdep-abba\0".as_ptr(),
+        OP_PAGE_MAP => b"page-map\0".as_ptr(),
+        OP_PAGE_UNMAP => b"page-unmap\0".as_ptr(),
         _ => b"?\0".as_ptr(),
     }
 }
