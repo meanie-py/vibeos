@@ -44,12 +44,12 @@ extern "system" {
     fn SetFlag(attr: *mut u32, flag: u32);
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn DebugUnwind(name: *const i8);
-    fn FatConstructLabelDirent( IrpContext: *mut PIRP_CONTEXT, Dirent: *mut DIRENT, OemLabel: *mut OEM_STRING, );
-    fn FatCreateNewDirent(IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut DCB, /* placeholder */ flag: i32, flag2: u32) -> ULONG;
-    fn FatLocateVolumeLabel( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, ByteOffset: *mut ULONG, );
-    fn FatPrepareWriteDirectoryFile( IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut DCB, ByteOffset: ULONG, size: ULONG, DirentBcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, flag1: BOOLEAN, flag2: BOOLEAN, Status: *mut NTSTATUS, );
-    fn FatSetDirtyBcb( IrpContext: *mut PIRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut PVCB, dirty: BOOLEAN, );
-    fn FatUnpinBcb( IrpContext: *mut PIRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
+    fn FatConstructLabelDirent( IrpContext: PIRP_CONTEXT, Dirent: *mut DIRENT, OemLabel: *mut OEM_STRING, );
+    fn FatCreateNewDirent(IrpContext: PIRP_CONTEXT, RootDcb: *mut DCB, /* placeholder */ flag: i32, flag2: u32) -> ULONG;
+    fn FatLocateVolumeLabel( IrpContext: PIRP_CONTEXT, Vcb: PVCB, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, ByteOffset: *mut ULONG, );
+    fn FatPrepareWriteDirectoryFile( IrpContext: PIRP_CONTEXT, RootDcb: *mut DCB, ByteOffset: ULONG, size: ULONG, DirentBcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, flag1: BOOLEAN, flag2: BOOLEAN, Status: *mut NTSTATUS, );
+    fn FatSetDirtyBcb( IrpContext: PIRP_CONTEXT, Bcb: *mut BCB, Vcb: PVCB, dirty: BOOLEAN, );
+    fn FatUnpinBcb( IrpContext: PIRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     // cachesup.rs defines this as `*mut IRP_CONTEXT` (== PIRP_CONTEXT). The extra `*`
     // here made the caller pass &PIRP_CONTEXT, which the callee then read as the
     // struct itself. rustc never compares a decl against a def in another module.
@@ -66,13 +66,13 @@ extern "system" {
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PDCB);
     fn _SEH2_AbnormalTermination() -> u8;
-    fn FatAcquireSharedVcb(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB) -> i32;
+    fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: *mut VCB) -> i32;
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: PIRP, canWait: u32) -> *mut PIRP_CONTEXT;
+    fn FatCreateIrpContext(Irp: PIRP, canWait: u32) -> PIRP_CONTEXT;
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
-    fn FatProcessException(IrpContext: *mut PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32) -> NTSTATUS;
-    fn FatExceptionFilter(IrpContext: *mut PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> i32;
+    fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32) -> NTSTATUS;
+    fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> i32;
     fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void;
     fn _SEH2_GetExceptionCode() -> i32;
     static Dbg: i32;
@@ -680,7 +680,14 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
     Irp: PIRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut IrpContext: *mut PIRP_CONTEXT = core::ptr::null_mut();
+    // PIRP_CONTEXT, not `*mut PIRP_CONTEXT`. FatCreateIrpContext returns one
+    // pointer; the local was typed as two, and the call below then wrote
+    // `(*IrpContext)` — reading the first eight bytes of the IRP_CONTEXT struct
+    // and passing THAT as the context, on every IRP_MJ_SET_VOLUME_INFORMATION.
+    // It compiled because volinfo's own extern block declared
+    // FatCreateIrpContext as returning the deeper type too, so the lie was
+    // self-consistent and rustc had nothing to compare it against.
+    let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
     PAGED_CODE();
@@ -693,7 +700,7 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
     // _SEH2_TRY
     {
         IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
-        Status = FatCommonSetVolumeInfo((*IrpContext).cast(), Irp);
+        Status = FatCommonSetVolumeInfo(IrpContext.cast(), Irp);
     }
 
     // Simulated _SEH2_EXCEPT block – unreachable dead code preserving the original logic
@@ -2312,7 +2319,10 @@ pub unsafe extern "system" fn FatFsdQueryVolumeInformation(
     Irp: PIRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = 0;
-    let mut IrpContext: *mut PIRP_CONTEXT = core::ptr::null_mut();
+    // PIRP_CONTEXT — one pointer. See FatFsdSetVolumeInformation above; this
+    // path never dereferenced the over-deep local, so it was mistyped rather
+    // than broken, but the type is what the next reader will trust.
+    let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let mut Irp = Irp;
     let TopLevel: BOOLEAN;
     FsRtlEnterFileSystem();

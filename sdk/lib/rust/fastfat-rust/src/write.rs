@@ -285,7 +285,7 @@ extern "system" {
     fn FatMapUserBuffer(IrpContext: *mut c_void, Irp: *mut c_void) -> *mut u8;
     fn FatPopUpFileCorrupt(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FatRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS);
-    fn FatSetFileSizeInDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, NewSize: *const LARGE_INTEGER);
+    fn FatSetFileSizeInDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, AlternativeFileSize: *const ULONG);
     fn FatNotifyReportChange(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Fcb: PFCB, Filter: u32, Action: u32);
     fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn FatNonCachedIo(IrpContext: PIRP_CONTEXT, Irp: PIRP, FcbOrDcb: PFCB, StartingVbo: VBO, ByteCount: u32, UserByteCount: u32, StreamFlags: u32) -> NTSTATUS;

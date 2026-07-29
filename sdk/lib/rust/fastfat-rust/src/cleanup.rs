@@ -66,7 +66,7 @@ extern "system" {
     fn FatTunnelFcbOrDcb(FcbOrDcb: *mut c_void, Ccb: PCCB);
     fn FatNotifyReportChange(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Fcb: PFCB, Filter: u32, Action: u32);
     fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
-    fn FatSetFileSizeInDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, NewSize: *const LARGE_INTEGER);
+    fn FatSetFileSizeInDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, AlternativeFileSize: *const ULONG);
     fn FatZeroData(IrpContext: PIRP_CONTEXT, Vcb: PVCB, FileObject: PFILE_OBJECT, Offset: i32, Length: i32) -> u8;
     fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn CcFlushCache(SectionObjectPointers: *mut c_void, FileOffset: *const LARGE_INTEGER, Length: u32, IoStatus: *mut c_void);

@@ -107,7 +107,7 @@ extern "system" {
     // VOID upstream and in namesup.rs — the answer comes back through CreateLfn.
     fn FatEvaluateNameCase( IrpContext: *mut IRP_CONTEXT, Name: *const _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FAT_LFN_DIRENTS_NEEDED(Name: *const _UNICODE_STRING) -> u32;
-    fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Ccb: *mut CCB, WildCards: u32, Flags: *mut u32, TargetDirent: *mut *mut DIRENT, TargetDirentBcb: *mut *mut PBCB, TargetDirentOffset: *mut u32, SecondDirent: *mut *mut DIRENT, TargetLfn: *mut _UNICODE_STRING, TargetOrigLfn: *mut _UNICODE_STRING, );
+    fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Ccb: *mut CCB, WildCards: u32, Flags: *mut u32, TargetDirent: *mut *mut DIRENT, TargetDirentBcb: *mut *mut PBCB, TargetDirentOffset: *mut u32, FileNameOpenedDos: *mut BOOLEAN, TargetLfn: *mut _UNICODE_STRING, TargetOrigLfn: *mut _UNICODE_STRING, );
     static TAG_FILENAME_BUFFER: u32;
     static TAG_DIRENT: u32;
     static CCB_FLAG_SKIP_SHORT_NAME_COMPARE: u32;
