@@ -245,6 +245,14 @@ def resolve(t: str, types: Types, stack: tuple = ()) -> tuple[int | None, int | 
     hit = types.cache.get(t)
     if hit is not None:
         return (None, None) if hit == _CYCLE else (None if hit[0] is None else d + hit[0], hit[1])
+    if t in types.aggregates and t in types.aliases:
+        # The alias map is workspace-global, but `use X as Y` is scoped to ONE
+        # module. ramdisk's `use PDEVICE_OBJECT as _PDEVOBJ` redefined the name
+        # of a win32k-sys bindgen STRUCT, so win32k's PPDEVOBJ resolved one
+        # level too deep and both MouseSafetyOnDraw* were reported as drift
+        # against the type they already agree with. A name that is both an
+        # aggregate and an alias is ambiguous here: SKIP, never guess.
+        return None, None
     rhs = types.aliases.get(t)
     if not rhs:
         # An identifier that is neither an alias nor a struct/enum/union we have
