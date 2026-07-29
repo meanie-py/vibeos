@@ -138,6 +138,54 @@ def _append_round(rec: dict) -> None:
         print(f"[conformance] ledger append failed: {e}", file=sys.stderr)
 
 
+def _worktree_provisioning_gaps(repo: Path, base_arch: str) -> list[str]:
+    """The gitignored things a fresh worktree lacks, each with its fix command.
+
+    `git worktree add` brings tracked files only, so a new tree is missing the
+    pinned toolchain symlink and the prebuilt payload binaries — and both fail
+    several layers down from their cause, naming neither the file nor the remedy.
+    Returns a list of human-readable gaps; empty means provisioned.
+    """
+    gaps: list[str] = []
+
+    # 1. Toolchain. Sharing this one ACROSS worktrees is explicitly sanctioned —
+    #    it is content-addressed and commit-independent, unlike generated
+    #    headers — and build.sh below needs it, so report it first.
+    tc = repo / ".build-tools" / "llvm-mingw"
+    if not tc.exists() and not list(repo.parent.glob("llvm-mingw-*")):
+        gaps.append(
+            f"missing {tc} (pinned clang) -> CMAKE_CONFIGURE_FAIL "
+            f"'no llvm-mingw toolchain found'\n"
+            f"    fix: mkdir -p {tc.parent} && "
+            f"ln -s <path-to>/llvm-mingw-*-ubuntu-*-x86_64 {tc}"
+        )
+
+    # 2. Payload binaries — .gitignore'd beside their own source
+    #    (tools/payloads/kmtest/.gitignore: kmtest-sweep-*.exe), so a fresh tree
+    #    has sweep.c and the test lists but not the exes. BUILD them; do NOT
+    #    copy from a sibling worktree. They are generated per-commit artifacts,
+    #    and resolving those across trees is the fleet-isolation trap that had
+    #    verify_signatures grading one tree's Rust against another's headers.
+    sweep = repo / "tools" / "payloads" / SUITE / f"{SUITE}-sweep-{base_arch}.exe"
+    if not sweep.exists():
+        gaps.append(
+            f"missing {sweep} -> mkramdisk fails with \"payload '{SUITE}': src missing\"\n"
+            f"    fix: bash tools/payloads/{SUITE}/build.sh {base_arch}"
+        )
+
+    # 3. arm64 boot assets. These are opaque firmware blobs, not built from our
+    #    source, so copying IS the fix here (AGENTS.md says so explicitly).
+    if base_arch == "arm64":
+        for asset in ("QEMU_EFI.fd", "efivars.fd"):
+            p = repo / "qemu" / asset
+            if not p.exists():
+                gaps.append(
+                    f"missing {p} (gitignored firmware blob)\n"
+                    f"    fix: cp <main-checkout>/qemu/{asset} {p}"
+                )
+    return gaps
+
+
 def _rostests_enabled(repo: Path, base_arch: str) -> bool | None:
     """True if the build dir will compile kmtests. modules/CMakeLists.txt gates
     them on `ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS`, and the fleet default
@@ -262,6 +310,21 @@ def _conformance_once(args, repo: Path) -> int:
 
     # --- 1. build (default on) with the kmtest payload -----------------------
     if not args.no_build:
+        unprovisioned = _worktree_provisioning_gaps(repo, base)
+        if unprovisioned:
+            # Same rule as the ENABLE_ROSTESTS check below, extended to the two
+            # gitignored things a FRESH WORKTREE silently lacks. Both cost a full
+            # build cycle each on 2026-07-29 because they surface far from their
+            # cause: the toolchain as CMAKE_CONFIGURE_FAIL, and the payload as
+            # `mkramdisk(ramdisk re-stage) -> payload 'kmtest': src missing`.
+            # Neither names the fix; a preflight can.
+            print(
+                "[conformance] this worktree is not provisioned to build a payload:\n"
+                + "".join(f"  - {g}\n" for g in unprovisioned)
+                + "  (all are gitignored, so `git worktree add` cannot bring them.)",
+                file=sys.stderr,
+            )
+            return 2
         rost = _rostests_enabled(repo, base)
         if rost is False:
             # Fail loud, no silent degradation: a payload build without the test

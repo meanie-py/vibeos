@@ -2902,6 +2902,22 @@ def test_conformance_arch_normalization():
     assert m.get("amd64-uefi", "amd64-uefi") == "amd64-uefi"  # suffixed passes through
 
 
+def test_worktree_provisioning_preflight(tmp_path):
+    gaps = conformance_mod._worktree_provisioning_gaps(tmp_path, "arm64")
+    blob = "\n".join(gaps)
+    # An empty tree lacks all three, and each finding must carry its own fix.
+    assert "llvm-mingw" in blob and "kmtest-sweep-arm64.exe" in blob
+    assert "QEMU_EFI.fd" in blob and "efivars.fd" in blob
+    assert blob.count("fix:") == len(gaps)
+    # Payload binaries are per-commit generated artifacts: BUILD them. Telling
+    # anyone to copy them from a sibling worktree is the fleet-isolation trap.
+    assert "build.sh arm64" in blob
+    assert "cp " not in blob.split("QEMU_EFI.fd")[0]
+    # The real checkout is provisioned, so the preflight must stay silent —
+    # otherwise it would refuse every ordinary run.
+    assert conformance_mod._worktree_provisioning_gaps(_conf_repo_root(), "arm64") == []
+
+
 def _drive_soak(monkeypatch, launched_per_round, repeat=20):
     """Run conformance()'s repeat loop with a stubbed sweep, returning how many
     rounds it actually ran. `launched_per_round` supplies each round's launched
