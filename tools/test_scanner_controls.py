@@ -296,30 +296,63 @@ pub unsafe fn balanced(cond: bool) -> u32 {
 }
 """
 
-# scan_extern_decl_drift. The BAD tree is fastfat's FatGetNextMcbEntry shape: a
-# decl and a def of the SAME symbol that disagree on the width behind a pointer.
-# The GOOD tree pins the four shapes that made the tool report 2,682 findings
-# before it reported 10 — every one a defect in the ORACLE, not in the tree:
+# scan_extern_decl_drift. BAD carries both halves of what the tool compares:
+# DEPTH (a `*` the def does not have) and WIDTH (the same indirection depth, a
+# wider pointee). The width case IS fastfat's FatGetNextMcbEntry — an 8-byte
+# store through a 4-byte out-param, which the depth-only tool could not see.
+#
+# The GOOD tree pins every shape that made this tool cry wolf. The first four
+# took it from 2,682 findings to 10; adding width resolution added four more,
+# and each of those is a rule whose removal would bury the real findings again:
 # an alias spelled differently per island, a path-qualified alias, a use-rename,
-# and a #[link_name] decl that names a different symbol entirely.
+# a #[link_name] decl naming a different symbol, `Option<Callback>` against the
+# callback, a pointer passed as a pointer-width integer, a by-value parameter
+# the callee reads NARROWER than it is passed, and a `type X = path::X`
+# re-export — which normalises to `X -> X`, a cycle, and silently made
+# `*mut c_void` and therefore PVOID undecidable everywhere.
 _DECL_DRIFT_BAD_A = """\
 pub type PIRP_CONTEXT = *mut IRP_CONTEXT;
+pub type VBO = u32;
 extern "system" {
     // One `*` too many: volinfo declared cachesup's FatUnpinRepinnedBcbs this way,
     // so the callee read a pointer-to-pointer as the struct itself.
     fn FatUnpinRepinnedBcbs(IrpContext: *mut PIRP_CONTEXT);
+    // Same depth, WIDER pointee: the callee stores 8 bytes into the caller's
+    // 4-byte VBO. Nothing about either signature looks wrong.
+    fn FatGetNextMcbEntry(Vcb: *mut VCB, Vbo: *mut u64) -> u8;
+    // By value, the callee reads 64 bits where 32 were passed — the top half is
+    // whatever was in the register.
+    fn MmAllocateMemoryWithType(Size: u32) -> *mut u8;
 }
-pub unsafe fn caller(mut ctx: PIRP_CONTEXT) {
+pub unsafe fn caller(mut ctx: PIRP_CONTEXT, v: *mut VCB) {
+    let mut vbo: u64 = 0;
     FatUnpinRepinnedBcbs(&mut ctx);
+    FatGetNextMcbEntry(v, &mut vbo);
+    MmAllocateMemoryWithType(4);
 }
 """
 _DECL_DRIFT_BAD_B = """\
+pub type VBO = u32;
 #[no_mangle]
 pub unsafe extern "system" fn FatUnpinRepinnedBcbs(_IrpContext: *mut IRP_CONTEXT) {}
+#[no_mangle]
+pub unsafe extern "system" fn FatGetNextMcbEntry(_Vcb: *mut VCB, Vbo: *mut VBO) -> u8 {
+    *Vbo = 0;
+    1
+}
+#[no_mangle]
+pub unsafe extern "system" fn MmAllocateMemoryWithType(_Size: usize) -> *mut u8 {
+    core::ptr::null_mut()
+}
 """
 _DECL_DRIFT_GOOD_A = """\
 pub type VBO = u32;
 pub type PKSPIN_LOCK = *mut u64;
+pub type c_void = core::ffi::c_void;
+pub type PVOID = *mut c_void;
+pub type HWND = PVOID;
+pub type DLGPROC = Option<unsafe extern "system" fn(a: u32) -> u32>;
+pub type DRAWSTATEPROC = Option<unsafe extern "system" fn(b: u32) -> u32>;
 use ntkrnl_sys::ddk::PKSPIN_LOCK as DdkPKSPIN_LOCK;
 extern "system" {
     // Agrees with the def: same depth, spelled through an alias.
@@ -331,6 +364,17 @@ extern "system" {
     // #[link_name] declares SOMETHING ELSE — never pair it with this def by ident.
     #[link_name = "Shell32RustCoCreateInitSF"]
     fn SHELL32_CoCreateInitSF(a: u32, b: u32) -> u32;
+    // `Option<DLGPROC>` and `DLGPROC` are one pointer either way.
+    fn DialogBoxIndirectParamA(Proc: Option<DLGPROC>) -> isize;
+    // A handle passed as a pointer-width integer: same register, same bits.
+    fn co_UserSetCapture(Wnd: isize) -> u8;
+    // A callback parameter declared as a bare pointer: the typedef IS a pointer.
+    fn DrawStateW(Cb: *mut c_void) -> u8;
+    // The callee reads a subset of the bits the caller definitely set.
+    fn FatDeleteDirent(Flag: BOOL) -> u8;
+    // `*mut c_void` against PVOID — only resolvable if the c_void re-export
+    // above is NOT recorded as an alias of itself.
+    fn ExFreePool(P: *mut c_void);
 }
 pub unsafe fn caller(v: *mut VCB, l: DdkPKSPIN_LOCK, p: ntkrnl_sys::ddk::PEPROCESS) {
     let mut vbo: VBO = 0;
@@ -338,9 +382,18 @@ pub unsafe fn caller(v: *mut VCB, l: DdkPKSPIN_LOCK, p: ntkrnl_sys::ddk::PEPROCE
     ExfInsert(l);
     MmDeleteVirtualMapping(p);
     SHELL32_CoCreateInitSF(1, 2);
+    DialogBoxIndirectParamA(None);
+    co_UserSetCapture(0);
+    DrawStateW(core::ptr::null_mut());
+    FatDeleteDirent(0);
+    ExFreePool(core::ptr::null_mut());
 }
 """
 _DECL_DRIFT_GOOD_B = """\
+pub type PVOID = *mut core::ffi::c_void;
+pub type HWND = PVOID;
+pub type DLGPROC = Option<unsafe extern "system" fn(a: u32) -> u32>;
+pub type DRAWSTATEPROC = Option<unsafe extern "system" fn(b: u32) -> u32>;
 #[no_mangle]
 pub unsafe extern "system" fn FatGetNextMcbEntry(_Vcb: *mut VCB, Vbo: *mut VBO) -> u8 {
     *Vbo = 0;
@@ -358,6 +411,24 @@ pub unsafe extern "system" fn MmDeleteVirtualMapping(_Process: PEPROCESS) -> u8 
 pub unsafe extern "system" fn SHELL32_CoCreateInitSF(_a: u32, _b: u32, _c: u32) -> u32 {
     0
 }
+#[no_mangle]
+pub unsafe extern "system" fn DialogBoxIndirectParamA(_Proc: DLGPROC) -> isize {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn co_UserSetCapture(_Wnd: HWND) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn DrawStateW(_Cb: DRAWSTATEPROC) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn FatDeleteDirent(_Flag: BOOLEAN) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn ExFreePool(_P: PVOID) {}
 """
 
 _OBREF_BAD = """\
@@ -1072,3 +1143,43 @@ def test_bugcheck_stubs_skips_a_nested_git_checkout(tmp_path: Path):
     after = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
     assert after == before, f"nested checkout leaked findings:\n{after}"
     assert ".claude" not in after
+
+
+# --- scan_extern_decl_drift: a re-export is not an alias of itself -----------
+
+
+def test_decl_drift_sees_through_a_c_void_re_export(tmp_path: Path):
+    """`pub type c_void = core::ffi::c_void;` must not read as the cycle `c_void -> c_void`.
+
+    This one cannot be caught by the negative control, because its failure mode
+    is SILENCE: a cycle resolves to "undecidable", the tool skips the parameter,
+    and the report is clean for the wrong reason. It cost real coverage — every
+    type spelled through PVOID, which in this tree is most of them.
+
+    So assert the finding is actually PRODUCED. The drift below is only visible
+    if `*mut c_void` resolves: decl `*mut PVOID` is two levels, def `PVOID` is
+    one, and PVOID is `*mut c_void`.
+    """
+    root = _materialize(
+        tmp_path,
+        {
+            "src/a.rs": (
+                "pub type c_void = core::ffi::c_void;\n"
+                "pub type PVOID = *mut c_void;\n"
+                'extern "system" {\n'
+                "    fn ExFreePool(P: *mut PVOID);\n"
+                "}\n"
+                "pub unsafe fn caller(p: *mut PVOID) { ExFreePool(p); }\n"
+            ),
+            "src/b.rs": (
+                "pub type PVOID = *mut core::ffi::c_void;\n"
+                "#[no_mangle]\n"
+                'pub unsafe extern "system" fn ExFreePool(_P: PVOID) {}\n'
+            ),
+        },
+    )
+    cmd = [sys.executable, str(REPO / "tools/scan_extern_decl_drift.py"), str(root)]
+    out = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
+    assert "ExFreePool" in out, (
+        "the c_void re-export made PVOID undecidable — coverage lost silently\n" + out
+    )

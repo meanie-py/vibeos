@@ -2375,6 +2375,29 @@ by Rust identifier compares unrelated functions; and only a decl that is CALLED 
 decls are correct on purpose). When a new scanner's first run produces thousands of findings,
 the prior should be that the scanner is wrong, not the tree.
 
+**Depth was only half of it: the tool then had to learn WIDTH, and that took three more oracle
+bugs.** Comparing indirection depth catches a missing `*`; it cannot see `*mut u64` against
+`*mut VBO`, which is one pointer on both sides and is the `FatGetNextMcbEntry` bug the tool was
+built for. Resolving the base type's width behind the pointer took the count 8 → 138 → 97, and
+the three reductions were all oracle defects again: an identifier that is neither an alias nor
+an aggregate we have SEEN is **unknown, not depth 0** (generated bindgen islands live in
+`build-<arch>/`, outside the sweep, which made mscms' `PPROFILEHEADER` a false positive); a
+**function pointer is one indirection** however spelled, and `Option<T>` is `T`, or every
+callback declared `*mut c_void` reads as drift against the typedef naming that same pointer;
+and a pointer spelled as a pointer-**width integer** (`isize`, `ULONG_PTR`) is the same
+register holding the same address, though `u32` against `HWND` is not and must still report.
+Report by-value **widening** only — a callee reading *fewer* bits than the caller passed is
+well-defined on all three ABIs and is how `BOOL` against `BOOLEAN` is spelled tree-wide.
+
+**A `type X = path::X` re-export normalises to the cycle `X -> X`, and a cycle resolves to
+"undecidable".** One `pub type c_void = core::ffi::c_void;` in `ntoskrnl-rust` made `*mut
+c_void` unresolvable, and with it `PVOID` and the ~60 types spelled through it — most of the
+tree. **Failure mode: silence.** No error, no finding, a clean report for the wrong reason, and
+no negative control can catch it because nothing is flagged. The control has to be a *positive*
+one asserting a specific finding that is only reachable if the alias resolves. Drop an alias
+whose RHS normalises to its own name. The same pass needs memoising: resolution fans out over
+every RHS a name is given anywhere, and unmemoised it went from 0.2s to not terminating.
+
 **A COMMENT is a child of the argument list, so positional argument indexing is off by one
 wherever anyone writes one.** `scan_ob_refcount` locates `ObReferenceObjectByHandle`'s object
 by fixed index 4 and `scan_irql_balance` locates `KeRaiseIrql`'s `OldIrql` as the last
@@ -3025,6 +3048,29 @@ whole class collapsed to the one case that is *supposed* to happen.
 ## WoW64 / FEX: 32↔64 divergences
 
 Every entry here is one shape: **a size, offset or index that differs between guest and host.**
+
+### `&mut (x as T)` borrows a TEMPORARY, so the OUT parameter is written and dropped
+**Symptom.** An out-parameter is always its initial value at the caller, and every branch that
+depends on it takes the wrong arm. No crash, no warning, and the callee is provably correct —
+put a probe in it and you watch it write the right answer.
+**Cause.** In Rust `&mut (expr)` where `expr` is not a *place* — a cast, an arithmetic
+expression — materialises a temporary and lends out *its* address. The callee's store lands in
+the temporary, which dies at the end of the statement. rustc says nothing: taking `&mut` of a
+temporary is legal and ordinary. It shows up in translated output because C's `&x` is
+spelled `&mut x` here and a type mismatch invites someone to "fix" it by casting *inside* the
+borrow instead of casting the pointer.
+**Fix.** Give the local the callee's type and borrow it directly — `let mut flag: BOOLEAN = 0;
+f(&mut flag)` — or take the address and cast the *pointer*:
+`core::ptr::addr_of_mut!(x).cast()`. Never cast inside the `&mut`.
+Live instances, all found while chasing decl/def drift and none of them visible to any lint we
+had: fastfat `FatCommonCreate` passed `&mut (OplockPostIrp as u8)` to two callees that set it
+to say "I posted the IRP, stop here", so the create path always saw FALSE and ran on; the same
+function did it with `FileNameOpenedDos`, which six downstream calls use to decide DOS-name
+semantics; atapi's `AtapiHexToString(&mut (ptr as PCHAR))` threw away the buffer advance the
+callee writes back (inert only because both pointers are re-read from the array afterwards);
+and iomgr dropped `MiResolveImageReferences`' `LoadedImports`. `grep -rn "&mut ([A-Za-z_][A-Za-z0-9_.]* as "`
+found all four across the workspace and is worth re-running — the shape is rare enough to
+eyeball and dangerous enough to be worth a scanner.
 
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing
