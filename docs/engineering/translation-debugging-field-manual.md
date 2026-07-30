@@ -975,6 +975,16 @@ self-consistent**. One 2026-07-04 sweep found 41:
   the wrong type wakes ONE waiter instead of ALL: a lost-wakeup landmine.
 - The LPC message-type window shifted (live validation on the csrss CreateProcess reply path);
   `MEMORY_PRIORITY_FOREGROUND` writer(0)/reader(2) disagreement killed the foreground boost.
+- **A guess can also come from the WRONG ARCH's `#ifdef`.** ex-rust re-declared
+  `INTERLOCKED_RESULT` as a sign in `{-1, 0, 1}`. `exfuncs.h` does define a tidy `0/1/2` — but
+  under `#ifndef _M_IX86`; on x86, `xdk/x86/ke.h` overrides it with the encoding the assembly
+  original returned verbatim, the EFLAGS SIGN/ZERO pair (`RESULT_NEGATIVE` 0x8000,
+  `RESULT_ZERO` 0x4000, `RESULT_POSITIVE` 0). Reading the generic arm of a header you are
+  compiling out of looks exactly like reading the header. Note the failure mode is worse than
+  "wrong number": `ResultPositive`(1) and `ResultZero`(0) had swapped roles, so a caller
+  testing `!= ResultZero` — which is every in-tree caller — read *positive* as *zero*. bindgen
+  had the right values in `bindgen_i386.rs` the whole time; the fix pins the local constants to
+  them with a `const _: () = { assert!(...) }`.
 
 **Anything `verify_constants --enums` resolves to exactly ONE header value is a strong real-bug
 signal** (the ambiguity rule already drops multi-enum names). Two deliberate blind spots to
@@ -1441,6 +1451,21 @@ N+1 as evidence that the fix for bug N was wrong.**
 - **A ported tree/list rebalance with an untested special case** (predecessor = direct child)
   self-corrupts its links; found only by a random model test.
 - **A lock/RAII-pair epilogue dropped when a macro was inlined.**
+- **A C macro's EARLY-OUT guard dropped when the macro became a helper fn.** `fsrtlfuncs.h`'s
+  `FsRtlTestAnsiCharacter` opens with `(SCHAR)(C) < 0 ? DEFAULT_RET : ...` — a high byte is DBCS
+  and never reaches the table. All three Rust wrappers (`LegalFat`, `LegalHpfs`, `Wild`) kept
+  only the table lookup and indexed `LEGAL_ANSI_CHARACTER_ARRAY_DATA`, a `[u8; 128]`, with the
+  raw byte: **up to 128 bytes of out-of-bounds read past a static**, answering from whatever
+  the linker put next in `.rodata`. Note the shape — the guard is not a "check", it is the
+  BOUND, so dropping it converts a total function into UB whose answer changes with the link
+  layout. `FsRtlIsLeadDbcsCharacter` lost its `< 0x80 ? FALSE` the same way. When a
+  `FORCEINLINE`/macro becomes a `fn`, its leading ternaries are part of the contract.
+- **An EXTRA store the C does not have** is as wrong as a missing one, and much quieter.
+  `_KeAcquireGuardedMutex` wrote both halves of the `ApcDisable` union; `ke_x.h` writes only
+  `SpecialApcDisable` (`KernelApcDisable` belongs to `KFAST_MUTEX`). A field that is written
+  and never read is invisible to the compiler, the linker, and every in-tree caller — the only
+  witness was a conformance test that pre-fills the object with `0x55` and asserts the field is
+  untouched. When translating, diff the SET of fields assigned, not just the values.
 - **`addr_of!(field)` where C passes the pointer field's VALUE** — the buffer becomes struct
   innards (win32k clip-region 0x50).
 - **A plain Rust-ABI `unsafe fn` address handed to the kernel** (timer/dispatch callback).
@@ -2582,6 +2607,17 @@ language rules) over loosening what it reports.
 - **A triage tool that lies costs more than no tool** `[§9.118a]` — the `[RAISE]` helper
   reported a STACK address as the raise site, because its "kernel-text-looking" window also
   contains kernel stacks.
+- **A harness stub that returns a CONSTANT reports on the harness, not the OS.**
+  `KmtAreInterruptsEnabled()` (kmt_test_kernel.h) reads EFLAGS.IF under
+  `#if _M_IX86 || _M_AMD64` and falls through to a bare `return FALSE` for every other arch.
+  On arm64 that was ~95 assertion failures per sweep — ExSingleList 39, KeSpinLock 36,
+  ExDoubleList 20 — none of which any kernel change could ever have cleared. Worse, the
+  ratchet had *baselined* them, so they were recorded as expected OS debt. In the results
+  file a stub is indistinguishable from a real measurement of a broken kernel. **Symptom:**
+  one assertion failing identically on every arch that shares an `#else`, inside tests that
+  otherwise pass. **Fix:** implement it (arm64: read DAIF bit 7), or make the stub `skip()`
+  so it cannot masquerade as a measurement. Its `#pragma message` warning had been firing
+  on every arm64 build the whole time.
 
 ### Lints as permanent gates
 `tools/` carries the deterministic detectors; all are wired into `vibeos-cli check` at **0 NEW
@@ -2819,6 +2855,14 @@ a diagnosis.**
 netstack's TDI transport relied on it for its queue → the `-smp 2` "TDI dgram upcall TIMED OUT"
 NET_FLAKE. Fix: a real `KSPIN_LOCK` via `SpinLockGuard`. Second instance in the same commit.
 
+Third instance, and the purest form of it: **arm64's `KeSynchronizeExecution` raised IRQL and
+called the routine, and never touched `Interrupt->ActualLock`** — while i386
+(`ke/i386/irqobj.rs`) and amd64 (`ke/amd64/interrupt.c`) both acquire it. That is the one
+function in the DDK whose entire contract *is* mutual exclusion against a driver's ISR, so on
+the SMP kernel it delivered exactly nothing; on UP the IRQL raise happened to be enough, which
+is why it survived. When a per-arch port of a synchronisation primitive is shorter than its
+siblings, the missing lines are the primitive.
+
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
 log shows the boot still *talking* — arm64 `-smp 2` conformance reached
@@ -2998,6 +3042,20 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 whole class collapsed to the one case that is *supposed* to happen.
 
 ### arm64 bring-up bugs worth recognising again
+- **Every arm64 syscall ran with interrupts MASKED, end to end.** Taking any exception sets
+  PSTATE.DAIF to all-masked in hardware; nothing in `KiEL0SynchronousEntry` (trap.S) undid it,
+  so kernel-mode interrupt latency was bounded by the longest system call and every blocking
+  syscall parked a DAIF-masked context on the swap chain. This was landmine #2 of the
+  (archived) arm64-interrupts quest and had been known-and-deferred since 2026-07-05. Fix:
+  `UNMASK_IRQ_FROM_SPSR` — re-enable **iff the interrupted context had them enabled**, reading
+  the saved SPSR bit 7, which is exactly the rule x86 uses; a fault taken inside an IRQ handler
+  or inside `KiTrapReturn`'s masked ELR/SPSR banking window therefore stays masked. It does not
+  weaken IRQL: on this port IRQL is GIC-priority-backed (`GICC_PMR`) and no GIC line lives in
+  the PASSIVE..DISPATCH band, so unmasking can only admit lines whose DIRQL genuinely exceeds
+  the current IRQL. EL1 synchronous entry is still masked — a separate change.
+  **Recognition rule: on a port where IRQL is priority-masked rather than DAIF-masked, DAIF
+  belongs to exception entry/exit windows and nothing else. If a trap handler never touches it,
+  it is running masked.**
 - **PSTATE.DAIF is NOT per-thread state** `[§9.19]` — `KiSwapContext` doesn't save/restore it, so
   a context switch **leaked exception-entry DAIF into a new thread** → boot wedges with the
   serial completely silent. A masked-swap tripwire in `KiSwapContextResume` remains in tree.
