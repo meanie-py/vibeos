@@ -13,6 +13,41 @@ Kii386SpinOnSpinLock(PKSPIN_LOCK SpinLock, ULONG Flags);
 #endif
 
 //
+// A checked build does TWO separate things to a spinlock, and this port needs
+// them separated.
+//
+//   KI_TRACK_SPINLOCK_OWNER  — stamp `KeGetCurrentThread() | 1` into the lock
+//     while it is held, and clear it on release. This is OBSERVABLE BEHAVIOUR:
+//     `KeTestSpinLock` reads it, and every DDK caller that inspects a held lock
+//     depends on it. Upstream gates this on plain `#if DBG`.
+//
+//   KI_VALIDATE_SPINLOCK_OWNER — the two KeBugCheckEx calls that turn a
+//     mismatched acquire/release pair into SPIN_LOCK_ALREADY_OWNED /
+//     SPIN_LOCK_NOT_OWNED.
+//
+// This tree narrowed BOTH to `DBG && !_USE_DUMMY_PSEH && !_USE_PSEH_CLANG`
+// (5c8505479a3, then 15434cd8dea) as an i386 boot bring-up workaround, because
+// the *bugchecks* were firing on inconsistent C-vs-Rust funnels. Suppressing
+// the store as well was collateral: it left a build that reports
+// KmtIsCheckedBuild = TRUE while behaving like a free build, so a held lock read
+// as free. Restore the store; keep the bugchecks off until the mismatched pairs
+// are found. The Rust half of the funnel (ntkrnl-sys inline/ke.rs KxAcquire/
+// KxReleaseSpinLock) mirrors this split under `feature = "dbg"` — the two MUST
+// agree, or a lock stamped by one side is never cleared by the other.
+//
+#if DBG
+#define KI_TRACK_SPINLOCK_OWNER 1
+#else
+#define KI_TRACK_SPINLOCK_OWNER 0
+#endif
+
+#if DBG && !defined(_USE_DUMMY_PSEH) && !defined(_USE_PSEH_CLANG)
+#define KI_VALIDATE_SPINLOCK_OWNER 1
+#else
+#define KI_VALIDATE_SPINLOCK_OWNER 0
+#endif
+
+//
 // Spinlock Acquisition at IRQL >= DISPATCH_LEVEL
 //
 _Acquires_nonreentrant_lock_(SpinLock)
@@ -26,7 +61,7 @@ KxAcquireSpinLock(
 #endif
     PKSPIN_LOCK SpinLock)
 {
-#if DBG && !defined(_USE_DUMMY_PSEH) && !defined(_USE_PSEH_CLANG)
+#if KI_VALIDATE_SPINLOCK_OWNER
     /* Make sure that we don't own the lock already */
     if (((KSPIN_LOCK)KeGetCurrentThread() | 1) == *SpinLock)
     {
@@ -57,7 +92,7 @@ KxAcquireSpinLock(
        memory accesses across the borders of spinlocks */
     KeMemoryBarrierWithoutFence();
 
-#if DBG && !defined(_USE_DUMMY_PSEH) && !defined(_USE_PSEH_CLANG)
+#if KI_TRACK_SPINLOCK_OWNER
     /* On debug builds, we OR in the KTHREAD */
     *SpinLock = (KSPIN_LOCK)KeGetCurrentThread() | 1;
 #endif
@@ -77,7 +112,7 @@ KxReleaseSpinLock(
 #endif
     PKSPIN_LOCK SpinLock)
 {
-#if DBG && !defined(_USE_DUMMY_PSEH) && !defined(_USE_PSEH_CLANG)
+#if KI_VALIDATE_SPINLOCK_OWNER
     /* Make sure that the threads match */
     if (((KSPIN_LOCK)KeGetCurrentThread() | 1) != *SpinLock)
     {
@@ -86,7 +121,7 @@ KxReleaseSpinLock(
     }
 #endif
 
-#if defined(CONFIG_SMP) || (DBG && !defined(_USE_DUMMY_PSEH) && !defined(_USE_PSEH_CLANG))
+#if defined(CONFIG_SMP) || KI_TRACK_SPINLOCK_OWNER
     /* Clear the lock  */
 #ifdef _WIN64
     InterlockedAnd64((PLONG64)SpinLock, 0);
