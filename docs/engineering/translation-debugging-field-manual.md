@@ -3764,6 +3764,22 @@ identically. **Do not `--allow-stale`, do not re-gate** (it will starve again), 
 **never broad-kill QEMUs** — use `./vibeos-cli kill`. Starvation must be *visible*: it used to
 read as "my build is slow".
 
+**Partial contention wears a different costume: ONE test, and the giveaway is the wall clock.**
+`test_tdi_selftest_roundtrip` timed out on `[NETSTACK] TDI self-test: RECEIVE OK` while the other
+14 passed — which reads exactly like a real regression in the MDL data path, and it failed all
+three gate attempts. Compare the **durations**, not the pass/fail: the failing runs took ~186 s
+where a passing one takes ~44 s. A logic bug does not make the suite four times slower; a loaded
+host does. The confirming control is free and already on disk — the conductor gates the base
+alone after a lone rejection, and that base run showed the *same* test failing its first attempt
+at ~187 s and passing the next two at ~44 s. **Same test, same assertion, on master.**
+
+Two things follow. First, the gate's retries fire back to back, so all three land inside the same
+contention window and a retry policy cannot rescue you from it — a `NET_FLAKE` verdict after N
+attempts is not evidence the failure is real. Second, and this is the one that cost the batch:
+**do not run `check`, `check-tooling`, `difftest`, or a build locally while your own lane is
+gating.** `./vibeos-cli host-status` before submitting, then leave the host alone. The lane whose
+gate you are starving is your own.
+
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 
 **Symptom.** `test_queue_is_fifo_by_arrival` failed roughly 1 run in 80, only ever under
