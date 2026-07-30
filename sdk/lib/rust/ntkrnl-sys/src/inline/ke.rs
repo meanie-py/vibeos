@@ -2453,11 +2453,14 @@ pub unsafe fn _KeAcquireGuardedMutexSited(guarded_mutex: ddk::PKGUARDED_MUTEX, s
         KiAcquireGuardedMutex(guarded_mutex);
     }
     (*guarded_mutex).Owner = current_thread();
-    let thread = current_thread();
-    (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.KernelApcDisable =
-        *kthread_kernel_apc_disable(thread);
+    /* SpecialApcDisable ONLY (ke_x.h:1626). KernelApcDisable belongs to
+     * KFAST_MUTEX, not KGUARDED_MUTEX: a guarded region disables special APCs,
+     * and the field is where KeReleaseGuardedMutex's ASSERT reads the depth
+     * back from. Writing it here made KeGuardedMutex report 87 assertion
+     * failures per arch — the test pre-fills the mutex with 0x55 and checks
+     * that this field is never touched. */
     (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable =
-        *kthread_special_apc_disable_ptr(thread);
+        *kthread_special_apc_disable_ptr(current_thread());
     super::ex::lockdep_acquire(guarded_mutex as _, 3, site); // held now — gmutex
 }
 
@@ -2507,16 +2510,15 @@ pub unsafe fn _KeTryToAcquireGuardedMutexSited(
     ) != 0
     {
         (*guarded_mutex).Owner = current_thread();
-        let thread = current_thread();
-        (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.KernelApcDisable =
-            *kthread_kernel_apc_disable(thread);
+        /* SpecialApcDisable ONLY — see _KeAcquireGuardedMutexSited (ke_x.h:1694). */
         (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable =
-            *kthread_special_apc_disable_ptr(thread);
+            *kthread_special_apc_disable_ptr(current_thread());
         // held now — but via TRY: held-set only, no order edges (can't park).
         super::ex::lockdep_acquire_try(guarded_mutex as _, 3, site);
         1 // TRUE
     } else {
         KeLeaveGuardedRegion();
+        core::hint::spin_loop(); // C: YieldProcessor() (ke_x.h:1686)
         0 // FALSE
     }
 }
