@@ -63,7 +63,7 @@ fn the_codepage_converter_is_safe_to_call_from_two_threads() {
     assert!(!expected.is_empty(), "the fixture converted to nothing");
 
     const THREADS: usize = 8;
-    const ITERS: usize = 2000;
+    const CONVERSIONS_PER_THREAD: usize = 2000;
 
     let gate = Arc::new(Barrier::new(THREADS));
     let expected = Arc::new(expected);
@@ -76,7 +76,7 @@ fn the_codepage_converter_is_safe_to_call_from_two_threads() {
             // Released together, so the conversions overlap instead of politely
             // queueing behind thread startup.
             gate.wait();
-            for i in 0..ITERS {
+            for i in 0..CONVERSIONS_PER_THREAD {
                 let got = convert(SRC);
                 assert_eq!(
                     got, *expected,
