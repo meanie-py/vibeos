@@ -23,12 +23,28 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 #[cfg(target_arch = "x86")]
 type INTERLOCKED_RESULT = LONG;
 
+// x86's INTERLOCKED_RESULT is NOT a sign in {-1, 0, 1}. xdk/x86/ke.h keeps the
+// encoding the assembly original returned verbatim — the EFLAGS SIGN/ZERO pair:
+// RESULT_NEGATIVE = EFLAG_SIGN = 0x8000, RESULT_ZERO = EFLAG_ZERO = 0x4000,
+// RESULT_POSITIVE = 0. The tidy 0/1/2 in exfuncs.h sits under `#ifndef _M_IX86`
+// and does not apply here. Nothing in the pipeline catches a wrong value: the
+// compiler sees an opaque LONG, and in-tree callers only ever test it against
+// ResultZero, so the first witness was ExInterlocked's 26 assertions.
 #[cfg(target_arch = "x86")]
-const ResultNegative: INTERLOCKED_RESULT = -1;
+const ResultNegative: INTERLOCKED_RESULT = 0x8000;
 #[cfg(target_arch = "x86")]
-const ResultZero: INTERLOCKED_RESULT = 0;
+const ResultZero: INTERLOCKED_RESULT = 0x4000;
 #[cfg(target_arch = "x86")]
-const ResultPositive: INTERLOCKED_RESULT = 1;
+const ResultPositive: INTERLOCKED_RESULT = 0;
+
+// Pin them to the header the bindings were generated from, so a future header
+// change is a build error rather than another silent wrong answer.
+#[cfg(target_arch = "x86")]
+const _: () = {
+    assert!(ResultNegative as u32 == ntkrnl_sys::ddk::_INTERLOCKED_RESULT_ResultNegative);
+    assert!(ResultZero as u32 == ntkrnl_sys::ddk::_INTERLOCKED_RESULT_ResultZero);
+    assert!(ResultPositive as u32 == ntkrnl_sys::ddk::_INTERLOCKED_RESULT_ResultPositive);
+};
 
 /// Inline replacement for the C macro PushEntryList.
 #[inline(always)]

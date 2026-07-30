@@ -6,7 +6,7 @@ use core::ffi::c_void;
 extern "C" {
     fn strcspn(s: PCSTR, reject: PCSTR) -> usize;
     fn strspn(s: PCSTR, accept: PCSTR) -> usize;
-    fn RtlStringCbCatA(pszDest: PSTR, cbDest: u32, pszSrc: PCSTR) -> i32;
+    fn RtlStringCbCatA(pszDest: PSTR, cbDest: usize, pszSrc: PCSTR) -> i32;
     fn strlen(s: PCSTR) -> usize;
     fn strncpy(dest: PSTR, src: PCSTR, n: usize) -> PSTR;
     fn _strnicmp(s1: PCSTR, s2: PCSTR, n: usize) -> i32;
@@ -156,10 +156,10 @@ pub unsafe extern "C" fn NtLdrAddOptions(
             (*NewOptions != b' ' as i8) &&
             (*NewOptions != b'\t' as i8)
         {
-            RtlStringCbCatA(LoadOptions, BufferSize * core::mem::size_of::<i8>() as u32, b" \0".as_ptr() as PCSTR);
+            RtlStringCbCatA(LoadOptions, BufferSize as usize * core::mem::size_of::<i8>(), b" \0".as_ptr() as PCSTR);
         }
 
-        RtlStringCbCatA(LoadOptions, BufferSize * core::mem::size_of::<i8>() as u32, NewOptions);
+        RtlStringCbCatA(LoadOptions, BufferSize as usize * core::mem::size_of::<i8>(), NewOptions);
     } else {
         NewOptsLength = strlen(NewOptions) as u32;
         NewOptsLength = core::cmp::min(NewOptsLength, BufferSize - 1);

@@ -82,7 +82,7 @@ extern "system" {
     fn FatDeleteDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Lfn: *mut _UNICODE_STRING, Flag: BOOLEAN, );
     fn FatSelectNames( IrpContext: *mut IRP_CONTEXT, TargetDcb: *mut DCB, ShortName: *mut OEM_STRING, LongName: *const _UNICODE_STRING, FinalShortName: *mut OEM_STRING, TunneledShortName: *const _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FatPrepareWriteDirectoryFile( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Offset: u32, Length: u32, Bcb: *mut *mut PBCB, Dirent: *mut *mut DIRENT, WriteThrough: BOOLEAN, Wait: BOOLEAN, IoStatus: *mut NTSTATUS, ) -> NTSTATUS;
-    fn FatConstructDirent( IrpContext: *mut IRP_CONTEXT, ShortDirent: *mut DIRENT, OemName: *const OEM_STRING, AllLowerComponent: BOOLEAN, AllLowerExtension: BOOLEAN, LongName: *const _UNICODE_STRING, Attributes: u8, Flag: BOOLEAN, CreationTime: *const LARGE_INTEGER, );
+    fn FatConstructDirent( IrpContext: *mut IRP_CONTEXT, ShortDirent: *mut DIRENT, OemName: *const OEM_STRING, AllLowerComponent: BOOLEAN, AllLowerExtension: BOOLEAN, LongName: *const _UNICODE_STRING, Attributes: u16, Flag: BOOLEAN, CreationTime: *const LARGE_INTEGER, );
     fn FatSetFullNameInFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Name: *const _UNICODE_STRING, );
     fn FatConstructNamesInFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Dirent: *const DIRENT, LongName: *const _UNICODE_STRING, );
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -107,7 +107,7 @@ extern "system" {
     // VOID upstream and in namesup.rs — the answer comes back through CreateLfn.
     fn FatEvaluateNameCase( IrpContext: *mut IRP_CONTEXT, Name: *const _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FAT_LFN_DIRENTS_NEEDED(Name: *const _UNICODE_STRING) -> u32;
-    fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Ccb: *mut CCB, WildCards: u32, Flags: *mut u32, TargetDirent: *mut *mut DIRENT, TargetDirentBcb: *mut *mut PBCB, TargetDirentOffset: *mut u32, SecondDirent: *mut *mut DIRENT, TargetLfn: *mut _UNICODE_STRING, TargetOrigLfn: *mut _UNICODE_STRING, );
+    fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Ccb: *mut CCB, WildCards: u32, Flags: *mut u32, TargetDirent: *mut *mut DIRENT, TargetDirentBcb: *mut *mut PBCB, TargetDirentOffset: *mut u32, FileNameOpenedDos: *mut BOOLEAN, TargetLfn: *mut _UNICODE_STRING, TargetOrigLfn: *mut _UNICODE_STRING, );
     static TAG_FILENAME_BUFFER: u32;
     static TAG_DIRENT: u32;
     static CCB_FLAG_SKIP_SHORT_NAME_COMPARE: u32;
@@ -2231,7 +2231,7 @@ pub unsafe extern "system" fn FatSetRenameInfo(
                 AllLowerComponent,
                 AllLowerExtension,
                 if CreateLfn != 0 { &NewNameCopy as *const UNICODE_STRING as *const _UNICODE_STRING } else { core::ptr::null() },
-                dirent_attributes,
+                dirent_attributes as u16,
                 0,
                 if HaveTunneledInformation != 0 {
                     &TunneledCreationTime

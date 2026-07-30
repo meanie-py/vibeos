@@ -1,7 +1,0 @@
-sdk/lib/rust/classpnp-rust/src/debug.rs:56: DbgGetSrbStatusStr: param 0 decl `PSTORAGE_REQUEST_BLOCK_HEADER` (*1) vs def `u8` (*0) (ddk_shims.rs)
-sdk/lib/rust/fastfat-rust/src/create.rs:136: FatFindFcb: param 1 decl `*mut u8` (*1) vs def `*mut PRTL_SPLAY_LINKS` (*2) (splaysup.rs)
-sdk/lib/rust/fastfat-rust/src/fileinfo.rs:66: FatUnpinEaRange: param 1 decl `*mut EA_RANGE` (*1) vs def `*mut PEA_RANGE` (*2) (easup.rs)
-sdk/lib/rust/fastfat-rust/src/fileinfo.rs:110: FatLocateDirent: param 8 decl `*mut *mut DIRENT` (*2) vs def `PBOOLEAN` (*1) (dirsup.rs)
-sdk/lib/rust/freeldr-rust/src/setupldr.rs:77: NtLdrGetOptionExN: param 3 decl `*mut PCSTR` (*2) vs def `*mut u32` (*1) (ntldropts.rs)
-sdk/lib/rust/hidparser-rust/src/hidp.rs:50: HidParser_GetCollectionDescription: param 0 decl `*mut HIDP_REPORT_DESCRIPTOR` (*2) vs def `PHIDP_REPORT_DESCRIPTOR` (*1) (hidparser.rs)
-sdk/lib/rust/mscms-rust/src/mscms/profile.rs:19: set_profile_header: param 1 decl `PPROFILEHEADER` (*0) vs def `*const PROFILEHEADER` (*1) (icc.rs)

@@ -788,7 +788,7 @@ unsafe extern "system" fn LdrProcessDriverModule(
     let mut Status: NTSTATUS = 0;
     let mut BaseName: _UNICODE_STRING = unsafe { core::mem::zeroed() };
     let mut BaseDirectory: _UNICODE_STRING;
-    let LoadedImports: PVOID = MM_SYSLDR_NO_IMPORTS as PVOID;
+    let mut LoadedImports: PVOID = MM_SYSLDR_NO_IMPORTS as PVOID;
     let mut MissingApiName: PCHAR;
     let mut MissingDriverName: PWCHAR = core::ptr::null_mut();
     let DriverBase = (*LdrEntry).DllBase;
@@ -826,7 +826,7 @@ unsafe extern "system" fn LdrProcessDriverModule(
         core::ptr::null_mut(),
         &mut MissingApiName as *mut PCHAR,
         &mut MissingDriverName as *mut PWCHAR,
-        &mut (LoadedImports as PVOID) as *mut PVOID,
+        &mut LoadedImports as *mut PVOID,
     );
 
     ExFreePoolWithTag(Buffer as PVOID, TAG_LDR_WSTR);

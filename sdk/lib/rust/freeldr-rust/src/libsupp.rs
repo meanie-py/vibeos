@@ -18,7 +18,7 @@ pub static mut MmHighestUserAddress: PVOID = 0x0000_07FF_FFFE_FFFF as PVOID;
 pub static mut MmHighestUserAddress: PVOID = 0x0000_7FFF_FFFF_F000 as PVOID;
 
 extern "C" {
-    fn FrLdrHeapAlloc(Bytes: ULONG, Tag: ULONG) -> PVOID;
+    fn FrLdrHeapAlloc(Bytes: SIZE_T, Tag: ULONG) -> PVOID;
     // FrLdrHeapFree must be cdecl — heap.rs:498 defines it as
     // `pub unsafe extern "C" fn FrLdrHeapFree(...)`. Declaring it
     // `extern "system"` here matched no real symbol AND produced an
@@ -55,7 +55,7 @@ pub unsafe extern "system" fn RtlpAllocateMemory(
     Bytes: SIZE_T,
     Tag: ULONG,
 ) -> PVOID {
-    FrLdrHeapAlloc(Bytes as ULONG, Tag)
+    FrLdrHeapAlloc(Bytes, Tag)
 }
 
 // rtlp.h:102 `VOID NTAPI RtlpFreeMemory(PVOID Mem, ULONG Tag);`

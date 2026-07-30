@@ -198,11 +198,11 @@ use core::ffi::c_void;
     }
     0
 }
-#[no_mangle] pub unsafe extern "C" fn ScsiValidateBlockCommandSenseDescriptor(d: PVOID, len: u32) -> u8 { 0 }
-#[no_mangle] pub unsafe extern "C" fn ScsiValidateInformationSenseDescriptor(d: PVOID, len: u32) -> u8 { 0 }
-#[no_mangle] pub unsafe extern "C" fn ScsiConvertToFixedSenseFormat(buf: PVOID, len: u32, out: PVOID, outlen: u32) -> u8 { 0 }
-#[no_mangle] pub unsafe extern "system" fn ScsiGetSenseKeyAndCodes(buf: PVOID, len: u32, opts: u32, key: *mut u8, asc: *mut u8, ascq: *mut u8) -> u8 {
-    if buf.is_null() { return 0; }
+#[no_mangle] pub unsafe extern "C" fn ScsiValidateBlockCommandSenseDescriptor(d: PVOID, len: UCHAR) -> u8 { 0 }
+#[no_mangle] pub unsafe extern "C" fn ScsiValidateInformationSenseDescriptor(d: PVOID, len: UCHAR) -> u8 { 0 }
+#[no_mangle] pub unsafe extern "C" fn ScsiConvertToFixedSenseFormat(buf: PVOID, len: UCHAR, out: PVOID, outlen: UCHAR) -> u8 { 0 }
+#[no_mangle] pub unsafe extern "system" fn ScsiGetSenseKeyAndCodes(buf: PVOID, len: UCHAR, opts: ULONG, key: *mut u8, asc: *mut u8, ascq: *mut u8) -> u8 {
+    if buf.is_null() || len == 0 { return 0; }
     let b = buf as *const u8; let fmt = (*b) & 0x7f;
     if fmt == 0x70 || fmt == 0x71 {
         if !key.is_null() { *key = (*b.add(2)) & 0x0f; }
@@ -257,7 +257,7 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 // caller/callee disagreement; scan_extern_arity.py flagged it.
 #[no_mangle] pub unsafe extern "C" fn DbgGetSenseCodeStr(_srb: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DbgGetAdditionalSenseCodeStr(_srb: PVOID) -> *const i8 { EMPTY }
-#[no_mangle] pub unsafe extern "C" fn DbgGetSrbStatusStr(_s: u8) -> *const i8 { EMPTY }
+#[no_mangle] pub unsafe extern "C" fn DbgGetSrbStatusStr(_s: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DBGGETSCSIOPSTR(_s: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DBGGETSENSECODESTR(_s: PVOID) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DBGGETADSENSECODESTR(_s: PVOID) -> *const i8 { EMPTY }

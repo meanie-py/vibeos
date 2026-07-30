@@ -125,7 +125,7 @@ unsafe fn IoGetRemainingStackSize() -> ULONG_PTR {
 // APIENTRY (stdcall on i386) / cdecl else.
 extern "system" {
     fn co_HOOK_CallHooks(HookId: i32, Code: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
     fn EngGetTickCount() -> ULONGLONG;
 }
 // VerifyWnd — real FASTCALL export (window.rs). i386 fastcall, cdecl else.
@@ -275,7 +275,7 @@ extern "C" {
 
 // STDCALL (APIENTRY) win32k internal helpers.
 extern "system" {
-    fn SafeProbeForWrite( Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG, ) -> NTSTATUS;
+    fn SafeProbeForWrite( Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG, ) -> NTSTATUS;
     fn MsqPeekMessage(
         pti: PTHREADINFO,
         Remove: BOOLEAN,
@@ -3112,7 +3112,7 @@ pub unsafe extern "C" fn NtUserGetMessage(
     if Ret != 0 {
         Status = SafeProbeForWrite(
             pMsg as *mut core::ffi::c_void,
-            core::mem::size_of::<MSG>() as ULONG,
+            core::mem::size_of::<MSG>() as _,
             1,
         );
         if !NT_SUCCESS(Status) {
@@ -3323,7 +3323,7 @@ pub unsafe extern "C" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRESULT {
     let mut Res: LRESULT = 0;
     let mut SafeMsg: MSG = core::mem::zeroed();
 
-    let __SehStatus = SafeProbeForRead(UnsafeMsgInfo as *mut core::ffi::c_void, core::mem::size_of::<MSG>() as u32, 1);
+    let __SehStatus = SafeProbeForRead(UnsafeMsgInfo as *mut core::ffi::c_void, core::mem::size_of::<MSG>() as _, 1);
     if !NT_SUCCESS(__SehStatus) {
         SetLastNtError(__SehStatus);
         return 0;
@@ -3375,7 +3375,7 @@ pub unsafe extern "C" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) -> BO
     let pWnd: PWND;
 
     {
-        let __SehStatus = SafeProbeForRead(lpMsg as *mut core::ffi::c_void, core::mem::size_of::<MSG>() as ULONG, 1);
+        let __SehStatus = SafeProbeForRead(lpMsg as *mut core::ffi::c_void, core::mem::size_of::<MSG>() as _, 1);
         if !NT_SUCCESS(__SehStatus) {
             SetLastNtError(__SehStatus);
             return 0;

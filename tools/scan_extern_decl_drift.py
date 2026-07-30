@@ -33,25 +33,27 @@ Neither verify_signatures nor verify_c_signatures covers it: both compare Rust
 against a C prototype, so a symbol with no C prototype left — which is every
 fully-translated module — has no oracle at all.
 
-WHAT IT DOES NOT CATCH (yet)
-----------------------------
-A WIDTH difference at the SAME indirection depth. `*mut u64` against `*mut VBO`
-(ULONG32) is one level of pointer on both sides, so the fastfat
-FatGetNextMcbEntry bug that motivated this tool would NOT be reported by it —
-that one was found while fixing compile errors, and is fixed. Adding width
-resolution (the BASE_WIDTH table in scan_type_alias_contradictions.py is the
-machinery) is owed, and is the more valuable half: a silent 4-vs-8 store is
-harder to spot by eye than a missing `*`.
-
 WHAT IT COMPARES, AND WHY ONLY THAT
 -----------------------------------
-ARITY, and pointer INDIRECTION DEPTH per parameter. Not type names: `PEPROCESS`,
-`ntkrnl_sys::ddk::PEPROCESS` and `*mut _EPROCESS` are the same thing and
-enumerating that equivalence is a rabbit hole. Depth is the property that
-actually breaks at runtime, and it is decidable.
+ARITY, pointer INDIRECTION DEPTH per parameter, and the WIDTH of the base type
+underneath. Not type names: `PEPROCESS`, `ntkrnl_sys::ddk::PEPROCESS` and
+`*mut _EPROCESS` are the same thing and enumerating that equivalence is a
+rabbit hole. Depth and width are what actually break at runtime, and both are
+decidable from the alias graph.
 
-Getting there took four rounds, each a defect in THIS tool that manufactured
-noise rather than finding bugs — the count went 2682 -> 113 -> 39 -> 10:
+Depth catches a missing `*`. Width catches the 4-vs-8 store you cannot see by
+eye — `*mut u64` against `*mut VBO` is one pointer on both sides, and that IS
+the FatGetNextMcbEntry bug that motivated this tool.
+
+By-value NARROWING is deliberately not reported. A callee reading fewer bits
+than the caller passed is well-defined on all three of our ABIs — the argument
+occupies a whole register and the callee reads a subset of bits somebody set —
+and it is how `BOOL` against `BOOLEAN` is spelled tree-wide. The reported
+direction is the callee consuming bits nobody wrote.
+
+Getting here took EIGHT rounds, every one a defect in THIS tool that
+manufactured noise or lost coverage rather than finding bugs. The count went
+2682 -> 113 -> 39 -> 10, and then, once width landed, 138 -> 97:
 
   * An alias spelled differently across bindgen islands (`*mut BOOLEAN` vs
     `*mut c_uchar`) is NOT ambiguous — only a disagreement in resolved DEPTH is.
@@ -67,6 +69,18 @@ noise rather than finding bugs — the count went 2682 -> 113 -> 39 -> 10:
     declares every syscall `fn(_: usize, ..)` to count stack slots, and
     kernel32's thread-start thunks are invoked by the kernel, not through the
     decl.
+  * An identifier that is neither an alias nor an aggregate we have SEEN is
+    UNKNOWN, not depth 0. Generated bindgen islands live in build-<arch>/ and
+    are outside this sweep.
+  * `pub type c_void = core::ffi::c_void;` is a re-export; normalised it reads
+    `c_void -> c_void`, a cycle, which resolves to undecidable — silently
+    taking PVOID and most of the tree's types with it. Failure mode: silence.
+  * A function pointer is ONE indirection however it is spelled, and
+    `Option<T>` is T. Otherwise every callback declared `*mut c_void` reads as
+    drift against the typedef naming that very pointer.
+  * A pointer spelled as a pointer-WIDTH integer (`isize`, `ULONG_PTR`) is the
+    same register holding the same address. `u32` against `HWND` is not, and
+    still reports.
 
 `&mut T` counts as one level of indirection: it is a pointer at the ABI.
 
@@ -86,6 +100,7 @@ from __future__ import annotations
 import re
 import sys
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -101,7 +116,103 @@ _IDENT_ONLY = re.compile(r"[A-Za-z_]\w*")
 _LINKNAME = re.compile(r'(?:link_name|export_name)\s*=\s*"([^"]+)"')
 _PATH_QUAL = re.compile(r"\b(?:[A-Za-z_]\w*::)+([A-Za-z_]\w*)")
 _PTR_HEAD = re.compile(r"^(?:\*\s*(?:mut|const)|&\s*(?:mut\s+)?)\s*(.*)$", re.S)
+_FN_PTR = re.compile(r"\bfn\s*\(")
+_OPTION = re.compile(r"^(?:::)?(?:core::)?(?:option::)?Option\s*<(.*)>$", re.S)
 _MAX_ALIAS_HOPS = 12
+
+# Widths, for the SECOND half of the comparison: a `*mut u64` and a `*mut ULONG32`
+# are both one pointer, and the callee still stores four bytes past the caller's
+# object. Depth catches a missing `*`; width catches the silent 4-vs-8 store,
+# which is the one you cannot see by eye. Shared spellings with
+# scan_type_alias_contradictions.py, deliberately duplicated rather than imported:
+# that tool resolves per-arch bindgen islands and this one merges them.
+BASE_WIDTH = {
+    "u8": 1,
+    "i8": 1,
+    "bool": 1,
+    "u16": 2,
+    "i16": 2,
+    "u32": 4,
+    "i32": 4,
+    "f32": 4,
+    "char": 4,
+    "u64": 8,
+    "i64": 8,
+    "f64": 8,
+    "u128": 16,
+    "i128": 16,
+    "c_char": 1,
+    "c_uchar": 1,
+    "c_schar": 1,
+    "c_short": 2,
+    "c_ushort": 2,
+    "c_int": 4,
+    "c_uint": 4,
+    "c_long": 4,
+    "c_ulong": 4,
+    "c_longlong": 8,
+    "c_ulonglong": 8,
+    # Windows / DDK spellings
+    "UCHAR": 1,
+    "CHAR": 1,
+    "BYTE": 1,
+    "BOOLEAN": 1,
+    "CCHAR": 1,
+    "USHORT": 2,
+    "SHORT": 2,
+    "WORD": 2,
+    "WCHAR": 2,
+    "LANGID": 2,
+    "ULONG": 4,
+    "LONG": 4,
+    "DWORD": 4,
+    "ULONG32": 4,
+    "LONG32": 4,
+    "UINT": 4,
+    "INT": 4,
+    "NTSTATUS": 4,
+    "HRESULT": 4,
+    "BOOL": 4,
+    "ULONGLONG": 8,
+    "LONGLONG": 8,
+    "ULONG64": 8,
+    "LONG64": 8,
+    "DWORDLONG": 8,
+    "DWORD64": 8,
+    "LARGE_INTEGER": 8,
+    "ULARGE_INTEGER": 8,
+}
+# Pointer-width. Not an integer, because it IS 4 on i386 and 8 on amd64/arm64 —
+# so `ULONG` against `ULONG_PTR` is a real bug on two of our three arches and
+# correct on the third. Reported, with the arch dependence named in the message.
+PTR = "ptr"
+PTR_NAMES = {
+    "usize",
+    "isize",
+    "ULONG_PTR",
+    "LONG_PTR",
+    "DWORD_PTR",
+    "SIZE_T",
+    "SSIZE_T",
+    "UINT_PTR",
+    "INT_PTR",
+    "KAFFINITY",
+}
+
+
+# Terminal spellings that are neither an aggregate we parse nor a width we know.
+_TERMINAL_EXTRA = {"c_void", "void"}
+_CYCLE = object()  # memo marker: this name is being resolved further up the stack
+
+
+@dataclass(frozen=True)
+class Types:
+    aliases: dict[str, set[str]]
+    aggregates: frozenset[str]
+    # resolve() fans out over every RHS a name is ever given, and names like
+    # PVOID have dozens across the bindgen islands, so the unmemoised walk is
+    # exponential in chain length — the sweep went from 0.2s to not finishing.
+    cache: dict = field(default_factory=dict)
 
 
 def _txt(n, src: bytes) -> str:
@@ -120,32 +231,131 @@ def norm(t: str) -> str:
     return _PATH_QUAL.sub(r"\1", t)
 
 
-def depth_of(t: str, aliases: dict[str, set[str]], stack: tuple = ()) -> int | None:
-    """Pointer depth after resolving alias chains; None when undecidable."""
+def _strip_ptrs(t: str) -> tuple[int, str]:
+    """(levels of indirection stripped, the base spelling underneath)
+
+    `Option<T>` unwraps to T. A nullable callback is spelled `Option<DLGPROC>`
+    on one side and `DLGPROC` on the other all over this tree, and both are one
+    pointer — the niche optimisation is exactly why the Option is free. Leaving
+    the wrapper on made the two sides differ by a level and reported every
+    property-sheet and menu-filter callback as drift.
+    """
     t = t.strip()
     d = 0
     while True:
         m = _PTR_HEAD.match(t)
-        if not m:
-            break
-        d += 1
-        t = m.group(1).strip()
+        if m:
+            d += 1
+            t = m.group(1).strip()
+            continue
+        m = _OPTION.match(t)
+        if m:
+            t = m.group(1).strip()
+            continue
+        return d, t
+
+
+def _terminal(t: str, types: Types) -> bool:
+    """True when `t` is a name whose depth-0-ness we actually KNOW."""
+    return t in types.aggregates or t in BASE_WIDTH or t in PTR_NAMES or t in _TERMINAL_EXTRA
+
+
+def resolve(t: str, types: Types, stack: tuple = ()) -> tuple[int | None, int | str | None]:
+    """(pointer depth, byte width of the base) with alias chains chased.
+
+    The two halves are decided INDEPENDENTLY, and either may come back None.
+    Coupling them costs real findings: `PCSTR` is `*const i8` in one bindgen
+    island and `*const CHAR` in another, which is one answer about depth and two
+    about spelling — demanding the base agree before trusting the depth silently
+    dropped NtLdrGetOptionExN, FatLocateDirent and HidParser_GetCollectionDescription,
+    all three of them genuine. None means undecidable, and undecidable means
+    SKIP: an answer we had to guess at is worse than no answer, because it
+    becomes a finding somebody has to triage.
+    """
+    d, t = _strip_ptrs(t)
     if not _IDENT_ONLY.fullmatch(t):
-        return d  # array / fn-pointer / primitive: the depth we counted is it
+        # A function pointer IS one level of indirection, however it is spelled
+        # (`fn(..)`, `Option<unsafe extern "C" fn(..)>`). Counting it as depth 0
+        # reported every callback parameter declared `*mut c_void` — DLGPROC,
+        # DRAWSTATEPROC, PFNFDINOTIFY, PDLL_INIT_ROUTINE — as drift against the
+        # typedef that names the very same pointer.
+        return (d + 1, PTR) if _FN_PTR.search(t) else (d, None)
+    if t in BASE_WIDTH:
+        return d, BASE_WIDTH[t]
+    if t in PTR_NAMES:
+        return d, PTR
     if t in stack or len(stack) > _MAX_ALIAS_HOPS:
-        return None
-    rhs = aliases.get(t)
+        return None, None
+    hit = types.cache.get(t)
+    if hit is not None:
+        return (None, None) if hit == _CYCLE else (None if hit[0] is None else d + hit[0], hit[1])
+    if t in types.aggregates and t in types.aliases:
+        # The alias map is workspace-global, but `use X as Y` is scoped to ONE
+        # module. ramdisk's `use PDEVICE_OBJECT as _PDEVOBJ` redefined the name
+        # of a win32k-sys bindgen STRUCT, so win32k's PPDEVOBJ resolved one
+        # level too deep and both MouseSafetyOnDraw* were reported as drift
+        # against the type they already agree with. A name that is both an
+        # aggregate and an alias is ambiguous here: SKIP, never guess.
+        return None, None
+    rhs = types.aliases.get(t)
     if not rhs:
-        return d
-    depths = set()
+        # An identifier that is neither an alias nor a struct/enum/union we have
+        # SEEN is not depth 0 — it is UNKNOWN. Generated bindgen islands live in
+        # build-<arch>/ and are outside this sweep, so mscms' `PPROFILEHEADER`
+        # (== PROFILEHEADER*) read as a bare struct and its use was reported as
+        # drift against the very type it names. Guessing depth 0 for an
+        # unresolvable name manufactures a finding per use; skipping it loses
+        # only what we could not have decided anyway.
+        return (d if _terminal(t, types) else None), None
+    types.cache[t] = _CYCLE
+    depths, widths = set(), set()
     for r in rhs:
-        sub = depth_of(r, aliases, (*stack, t))
-        if sub is None:
-            return None
-        depths.add(sub)
-    if len(depths) != 1:
-        return None  # the same name means different depths somewhere: SKIP, never guess
-    return d + depths.pop()
+        sd, sw = resolve(r, types, (*stack, t))
+        depths.add(sd)
+        widths.add(sw)
+    own = (
+        depths.pop() if len(depths) == 1 else None,
+        widths.pop() if len(widths) == 1 else None,
+    )
+    types.cache[t] = own
+    return (None if own[0] is None else d + own[0], own[1])
+
+
+def _bytes(w: int | str) -> int:
+    """PTR as its widest, which is the arch where a mismatch against it bites."""
+    return 8 if w == PTR else w
+
+
+def _ptr_as_integer(cd: int, cw, dd: int, dw) -> bool:
+    """One side spells a pointer as a pointer-width INTEGER: same ABI, not drift.
+
+    `co_UserSetCapture(hwnd: isize)` against a definition taking `HWND` is one
+    register holding one address either way. Passing handles as `isize` /
+    `ULONG_PTR` is idiomatic across this tree, and reporting it drowns the
+    version that does break — `co_IntGetPeekMessage` declaring an `HWND`
+    parameter `u32`, which discards the top half of a handle on both 64-bit
+    arches. That one survives this rule, because `u32` is not pointer-width.
+    """
+    shallow_w = cw if cd < dd else dw
+    return abs(cd - dd) == 1 and shallow_w == PTR
+
+
+def _reads_undefined(decl_w: int | str, def_w: int | str) -> bool:
+    """True when the definition consumes more bits than the declaration passes."""
+    return _bytes(def_w) > _bytes(decl_w)
+
+
+def depth_of(t: str, types: Types) -> int | None:
+    return resolve(t, types)[0]
+
+
+def width_of(t: str, types: Types) -> int | str | None:
+    """Byte width of the base type under any pointers; PTR when pointer-sized.
+
+    None when undecidable — an aggregate (we compare depth, never layout), an
+    unresolved name, or a name meaning two widths in different islands.
+    """
+    return resolve(t, types)[1]
 
 
 def _symbol(n, src: bytes, ident: str) -> str:
@@ -182,20 +392,69 @@ def _sig(n, src: bytes) -> tuple[list[str], bool]:
     return params, variadic
 
 
-def alias_map(root_dir: Path) -> dict[str, set[str]]:
-    """name -> every RHS it is given anywhere under root_dir."""
+def _owning_crate(rf: Path, crates: frozenset[Path]) -> Path | None:
+    for p in rf.parents:
+        if p in crates:
+            return p
+    return None
+
+
+def sweep(root_dir: Path, crate_dirs: list[Path]):
+    """One parse per file, feeding BOTH the type map and the per-crate index.
+
+    Parsing the workspace for aliases and then re-parsing each crate for
+    decls/defs doubled a 75-second lint. Every fact here comes from the same
+    AST walk.
+    """
     seen: dict[str, set[str]] = defaultdict(set)
+    aggregates: set[str] = set()
+    crates = frozenset(crate_dirs)
+    per: dict[Path, tuple] = {c: ({}, defaultdict(list), defaultdict(set)) for c in crate_dirs}
     for rf in sorted(root_dir.rglob("*.rs")):
         if "/target/" in str(rf):
             continue
         src = rf.read_bytes()
+        crate = _owning_crate(rf, crates)
+        defs, decls, called = per[crate] if crate is not None else (None, None, None)
+        lines = src.decode(errors="replace").splitlines() if crate is not None else []
 
-        def walk(n, src=src):
+        def walk(
+            n, in_foreign=False, src=src, rf=rf, lines=lines, defs=defs, decls=decls, called=called
+        ):
+            if defs is not None:
+                if n.type == "call_expression":
+                    fn = n.child_by_field_name("function")
+                    if fn is not None and fn.type == "identifier":
+                        called[rf].add(_txt(fn, src))
+                if n.type == "function_signature_item" and in_foreign:
+                    nm = n.child_by_field_name("name")
+                    if nm is not None:
+                        ln = n.start_point[0]
+                        if not (ln < len(lines) and _nolint(lines[ln])):
+                            ident = _txt(nm, src)
+                            decls[_symbol(n, src, ident)].append((rf, ln + 1, _sig(n, src), ident))
+                if n.type == "function_item":
+                    prev, attrs = n.prev_sibling, []
+                    while prev is not None and prev.type == "attribute_item":
+                        attrs.append(_txt(prev, src))
+                        prev = prev.prev_sibling
+                    if any("no_mangle" in a or "export_name" in a for a in attrs):
+                        nm = n.child_by_field_name("name")
+                        if nm is not None:
+                            defs[_symbol(n, src, _txt(nm, src))] = (rf, _sig(n, src))
             if n.type == "type_item":
                 nm = n.child_by_field_name("name")
                 ty = n.child_by_field_name("type")
                 if nm is not None and ty is not None:
-                    seen[_txt(nm, src)].add(norm(_txt(ty, src)))
+                    name, rhs = _txt(nm, src), norm(_txt(ty, src))
+                    # `pub type c_void = core::ffi::c_void;` is a RE-EXPORT, and
+                    # norm() strips the path, so it lands here as `c_void ->
+                    # c_void`. Recorded as an alias it is a cycle, and a cycle
+                    # resolves to None — which silently made `*mut c_void`
+                    # undecidable, and with it PVOID and every one of the ~60
+                    # types spelled through it. Coverage vanishes with no error.
+                    if rhs != name:
+                        seen[name].add(rhs)
             # `use ntkrnl_sys::ddk::PKSPIN_LOCK as DdkPKSPIN_LOCK;` is an alias too.
             # Missing it left the rename unresolvable at depth 0 and reported every
             # use of it as drift against the very type it renames.
@@ -203,62 +462,22 @@ def alias_map(root_dir: Path) -> dict[str, set[str]]:
                 path, alias = n.child_by_field_name("path"), n.child_by_field_name("alias")
                 if path is not None and alias is not None:
                     seen[_txt(alias, src)].add(norm(_txt(path, src)))
-            for c in n.children:
-                walk(c)
-
-        walk(_PARSER.parse(src).root_node)
-    return seen
-
-
-def collect(src_dir: Path):
-    """(defs, decls, called-idents-per-file) for one crate."""
-    defs: dict[str, tuple] = {}
-    decls: dict[str, list] = defaultdict(list)
-    called: dict[Path, set[str]] = defaultdict(set)
-    for rf in sorted(src_dir.rglob("*.rs")):
-        src = rf.read_bytes()
-        lines = src.decode(errors="replace").splitlines()
-        root = _PARSER.parse(src).root_node
-
-        def note_calls(n, src=src, rf=rf):
-            if n.type == "call_expression":
-                fn = n.child_by_field_name("function")
-                if fn is not None and fn.type == "identifier":
-                    called[rf].add(_txt(fn, src))
-            for c in n.children:
-                note_calls(c)
-
-        note_calls(root)
-
-        def walk(n, in_foreign=False, src=src, rf=rf, lines=lines):
-            if n.type == "function_signature_item" and in_foreign:
+            if n.type in ("struct_item", "enum_item", "union_item"):
                 nm = n.child_by_field_name("name")
                 if nm is not None:
-                    ln = n.start_point[0]
-                    if not (ln < len(lines) and _nolint(lines[ln])):
-                        ident = _txt(nm, src)
-                        decls[_symbol(n, src, ident)].append((rf, ln + 1, _sig(n, src), ident))
-            if n.type == "function_item":
-                prev, attrs = n.prev_sibling, []
-                while prev is not None and prev.type == "attribute_item":
-                    attrs.append(_txt(prev, src))
-                    prev = prev.prev_sibling
-                if any("no_mangle" in a or "export_name" in a for a in attrs):
-                    nm = n.child_by_field_name("name")
-                    if nm is not None:
-                        defs[_symbol(n, src, _txt(nm, src))] = (rf, _sig(n, src))
+                    aggregates.add(_txt(nm, src))
             for c in n.children:
                 walk(c, in_foreign or n.type == "foreign_mod_item")
 
-        walk(root)
-    return defs, decls, called
+        walk(_PARSER.parse(src).root_node)
+    return Types(aliases=seen, aggregates=frozenset(aggregates)), per
 
 
 def scan(root_dir: Path, crate_dirs: list[Path]) -> list[tuple[Path, int, str]]:
-    aliases = alias_map(root_dir)
+    types, per = sweep(root_dir, crate_dirs)
     findings: list[tuple[Path, int, str]] = []
     for src_dir in crate_dirs:
-        defs, decls, called = collect(src_dir)
+        defs, decls, called = per[src_dir]
         for sym, (dfile, (dparams, dvar)) in defs.items():
             for cfile, cline, (cparams, cvar), ident in decls.get(sym, []):
                 if cvar or dvar:
@@ -278,15 +497,42 @@ def scan(root_dir: Path, crate_dirs: list[Path]) -> list[tuple[Path, int, str]]:
                     )
                     continue
                 for i, (ct, dt) in enumerate(zip(cparams, dparams, strict=True)):
-                    cd, dd = depth_of(ct, aliases), depth_of(dt, aliases)
-                    if cd is None or dd is None or cd == dd:
+                    (cd, cw), (dd, dw) = resolve(ct, types), resolve(dt, types)
+                    if cd is None or dd is None:
+                        continue
+                    if cd != dd and _ptr_as_integer(cd, cw, dd, dw):
+                        continue
+                    if cd != dd:
+                        findings.append(
+                            (
+                                cfile,
+                                cline,
+                                f"{sym}: param {i} decl `{ct}` (*{cd}) vs def `{dt}` "
+                                f"(*{dd}) ({dfile.name})",
+                            )
+                        )
+                        continue
+                    # Same depth, different width: the store that overruns the
+                    # caller's object without any type looking wrong.
+                    if cw is None or dw is None or cw == dw:
+                        continue
+                    if not cd and not _reads_undefined(cw, dw):
+                        # A BY-VALUE parameter the definition reads NARROWER than
+                        # the declaration passes is well-defined on all three of
+                        # our ABIs: the argument occupies a whole register and the
+                        # callee reads a subset of bits the caller definitely set.
+                        # That is how `BOOL` against `BOOLEAN` is spelled across
+                        # the tree, and reporting it buries the direction that
+                        # actually breaks — the callee reading bits nobody wrote.
                         continue
                     findings.append(
                         (
                             cfile,
                             cline,
-                            f"{sym}: param {i} decl `{ct}` (*{cd}) vs def `{dt}` "
-                            f"(*{dd}) ({dfile.name})",
+                            f"{sym}: param {i} WIDTH decl `{ct}` ({cw}) vs def `{dt}` "
+                            f"({dw}) {'pointee' if cd else 'value'}"
+                            f"{' [pointer-sized: i386 differs]' if PTR in (cw, dw) else ''} "
+                            f"({dfile.name})",
                         )
                     )
     return sorted(findings, key=lambda f: (str(f[0]), f[1], f[2]))

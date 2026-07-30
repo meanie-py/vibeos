@@ -23,25 +23,42 @@ extern "system" {
 
 #[inline(always)]
 unsafe fn FsRtlIsLeadDbcsCharacter(c: u8) -> bool {
-    NlsMbOemCodePageTag != 0 && *NlsOemLeadByteInfo.add(c as usize) != 0
+    // fsrtlfuncs.h:1637 opens with `(UCHAR)(DBCS_CHAR) < 0x80 ? FALSE : ...`.
+    // The lead-byte table is only meaningful above 0x7F, and skipping the guard
+    // let an ASCII byte be classified as a lead byte if the table happened to
+    // carry anything below 0x80.
+    c >= 0x80 && NlsMbOemCodePageTag != 0 && *NlsOemLeadByteInfo.add(c as usize) != 0
+}
+
+/// `FsRtlTestAnsiCharacter` (fsrtlfuncs.h:1632).
+///
+/// The `(SCHAR)(C) < 0` short-circuit is the whole point of this helper, and it
+/// was missing from all three wrappers below: LEGAL_ANSI_CHARACTER_ARRAY has
+/// **128** entries, so indexing it with a byte >= 0x80 read up to 128 bytes past
+/// the end of a static — real out-of-bounds UB, not merely a wrong answer. The C
+/// never gets there: a high byte is DBCS and returns `default_ret` unexamined.
+#[inline(always)]
+unsafe fn FsRtlTestAnsiCharacter(c: u8, default_ret: bool, wild_ok: bool, flags_mask: u8) -> bool {
+    if c >= 0x80 {
+        return default_ret;
+    }
+    let flags = *super::fsrtlpc::LEGAL_ANSI_CHARACTER_ARRAY_DATA.as_ptr().add(c as usize);
+    (flags & flags_mask != 0) || (wild_ok && (flags & FSRTL_WILD_CHARACTER != 0))
 }
 
 #[inline(always)]
 unsafe fn FsRtlIsAnsiCharacterLegalFat(c: u8, wild_ok: bool) -> bool {
-    let flags = *super::fsrtlpc::LEGAL_ANSI_CHARACTER_ARRAY_DATA.as_ptr().add(c as usize);
-    (flags & FSRTL_FAT_LEGAL != 0) || (wild_ok && (flags & FSRTL_WILD_CHARACTER != 0))
+    FsRtlTestAnsiCharacter(c, true, wild_ok, FSRTL_FAT_LEGAL)
 }
 
 #[inline(always)]
 unsafe fn FsRtlIsAnsiCharacterWild(c: u8) -> bool {
-    let flags = *super::fsrtlpc::LEGAL_ANSI_CHARACTER_ARRAY_DATA.as_ptr().add(c as usize);
-    flags & FSRTL_WILD_CHARACTER != 0
+    FsRtlTestAnsiCharacter(c, false, false, FSRTL_WILD_CHARACTER)
 }
 
 #[inline(always)]
 unsafe fn FsRtlIsAnsiCharacterLegalHpfs(c: u8, wild_ok: bool) -> bool {
-    let flags = *super::fsrtlpc::LEGAL_ANSI_CHARACTER_ARRAY_DATA.as_ptr().add(c as usize);
-    (flags & FSRTL_HPFS_LEGAL != 0) || (wild_ok && (flags & FSRTL_WILD_CHARACTER != 0))
+    FsRtlTestAnsiCharacter(c, true, wild_ok, FSRTL_HPFS_LEGAL)
 }
 
 #[inline(always)]

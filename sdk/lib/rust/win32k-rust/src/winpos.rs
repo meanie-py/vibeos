@@ -49,7 +49,7 @@ unsafe fn head_pti<T>(obj: *const T) -> PTHREADINFO {
 // RECTL_bIntersectRect / SafeProbeForRead / VerifyWnd / UpdateShellHook /
 // VIS_ComputeVisibleRegion — win32k internal exports (cdecl, fastcall on i386).
 extern "system" {
-    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: u32, Alignment: u32) -> i32;
+    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: u32) -> i32;
 }
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
@@ -160,7 +160,7 @@ extern "C" {
     fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 extern "system" {
-    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: u32, Alignment: u32) -> i32;
+    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: u32) -> i32;
 }
 
 // ── header-inline / macro helpers (no exported symbol; reimplemented locally) ──
@@ -3890,14 +3890,14 @@ pub unsafe extern "C" fn NtUserGetInternalWindowPos(
         if !rectWnd.is_null() {
             Status = SafeProbeForWrite(
                 rectWnd as *mut core::ffi::c_void,
-                core::mem::size_of::<RECT>() as u32,
+                core::mem::size_of::<RECT>() as _,
                 1,
             );
         }
         if NT_SUCCESS(Status) && !ptIcon.is_null() {
             Status = SafeProbeForWrite(
                 ptIcon as *mut core::ffi::c_void,
-                core::mem::size_of::<POINT>() as u32,
+                core::mem::size_of::<POINT>() as _,
                 1,
             );
         }

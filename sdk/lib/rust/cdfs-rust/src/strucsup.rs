@@ -1167,7 +1167,7 @@ pub unsafe extern "C" fn CdDeleteCcb(IrpContext: *mut IRP_CONTEXT, mut Ccb: *mut
 #[no_mangle]
 pub unsafe extern "C" fn CdCleanupIrpContext(
     mut IrpContext: *mut IRP_CONTEXT,
-    Post: i32,
+    Post: BOOLEAN,
 ) {
     // PAGED_CODE();
     if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_MORE_PROCESSING) == 0 {

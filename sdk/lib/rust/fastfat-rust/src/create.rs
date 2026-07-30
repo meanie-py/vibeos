@@ -1,4 +1,5 @@
 use ntkrnl_sys::globals::*;
+use ntkrnl_sys::ddk::PRTL_SPLAY_LINKS;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -42,7 +43,7 @@ extern "system" {
     fn PAGED_CODE();
     fn NodeType(ptr: *const core::ffi::c_void) -> u32;
     fn FlagOn(Value: u32, Flags: u32) -> i32; // returns BOOL (0 = FALSE, non-zero = TRUE) fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
-    fn FatSelectNames( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, OemName: *mut OEM_STRING, UnicodeName: *mut _UNICODE_STRING, ShortName: *mut OEM_STRING, TunneledShortName: *mut _UNICODE_STRING, AllLowerComponent: *mut i32, AllLowerExtension: *mut i32, CreateLfn: *mut i32, );
+    fn FatSelectNames( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, OemName: *mut OEM_STRING, UnicodeName: *mut _UNICODE_STRING, ShortName: *mut OEM_STRING, TunneledShortName: *mut _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FatCreateNewDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, DirentsNeeded: u32, BypassHint: i32, ) -> u32;
     fn FatPrepareWriteDirectoryFile(IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, Wait: u8, Flush: u8, Status: *mut NTSTATUS);
     fn FatConstructDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, Name: *mut OEM_STRING, AllLowerComponent: u8, AllLowerExtension: u8, Lfn: *mut _UNICODE_STRING, Attributes: u16, SetCreationTime: u8, CreationTime: *mut LARGE_INTEGER);
@@ -133,7 +134,7 @@ extern "system" {
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn FatDecodeFileObject( FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
     fn FatEnsureStringBufferEnough(String: *mut core::ffi::c_void, Length: u16);
-    fn FatFindFcb( IrpContext: *mut IRP_CONTEXT, Node: *mut u8, Name: *mut STRING, FileNameOpenedDos: *mut BOOLEAN, ) -> *mut FCB;
+    fn FatFindFcb( IrpContext: *mut IRP_CONTEXT, RootNode: *mut PRTL_SPLAY_LINKS, Name: *mut STRING, FileNameOpenedDos: *mut BOOLEAN, ) -> *mut FCB;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatFspClose(Vcb: *mut VCB);
     fn FatIsNameLongUnicodeValid( IrpContext: *mut IRP_CONTEXT, Name: *mut _UNICODE_STRING, a: BOOLEAN, b: BOOLEAN, c: BOOLEAN, ) -> BOOLEAN;
@@ -539,8 +540,12 @@ pub unsafe extern "system" fn FatCommonCreate(
     let mut Fcb: *mut FCB = core::ptr::null_mut();
     let mut FinalDcb: *mut DCB = core::ptr::null_mut();
     let mut PostIrp = false;
-    let mut OplockPostIrp = false;
-    let mut FileNameOpenedDos = false;
+    // BOOLEAN, not bool — an OUT parameter has to be addressable as the u8
+    // the callee writes. `&mut (OplockPostIrp as u8)` addressed a TEMPORARY.
+    let mut OplockPostIrp: BOOLEAN = 0;
+    // BOOLEAN, not bool: this is an OUT parameter of FatFindFcb and
+    // FatLocateDirent, and it has to be addressable as the u8 they write.
+    let mut FileNameOpenedDos: BOOLEAN = 0;
     let mut TrailingBackslash = false;
     let mut FirstLoop = true;
     let mut MatchFlags: u32 = 0;
@@ -695,7 +700,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 let mut Status = RtlUpcaseUnicodeStringToCountedOemString(&mut OemFinalName, &FinalName as *const _ as *mut _, 0);
                 if NT_SUCCESS(Status) != 0 {
                     let dcb_ref = (*Fcb).Specific.Dcb.as_mut();
-                    NextFcb = FatFindFcb(IrpContext, core::ptr::addr_of_mut!(dcb_ref.RootOemNode) as *mut u8, &OemFinalName as *const _ as *mut STRING, &mut (FileNameOpenedDos as u8));
+                    NextFcb = FatFindFcb(IrpContext, core::ptr::addr_of_mut!(dcb_ref.RootOemNode).cast(), &OemFinalName as *const _ as *mut STRING, &mut FileNameOpenedDos);
                 } else {
                     NextFcb = core::ptr::null_mut();
                     OemFinalName.Length = 0;
@@ -712,7 +717,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                     Status = RtlUpcaseUnicodeString(&mut UpcasedFinalName, &UpcasedFinalName as *const _ as *mut _, 0);
                     NT_ASSERT((NT_SUCCESS(Status) != 0) as i32);
                     let dcb_ref2 = (*Fcb).Specific.Dcb.as_mut();
-                    NextFcb = FatFindFcb(IrpContext, core::ptr::addr_of_mut!(dcb_ref2.RootUnicodeNode) as *mut u8, &UpcasedFinalName as *const _ as *mut STRING, &mut (FileNameOpenedDos as u8));
+                    NextFcb = FatFindFcb(IrpContext, core::ptr::addr_of_mut!(dcb_ref2.RootUnicodeNode).cast(), &UpcasedFinalName as *const _ as *mut STRING, &mut FileNameOpenedDos);
                 }
 
                 if !NextFcb.is_null() {
@@ -774,7 +779,7 @@ pub unsafe extern "system" fn FatCommonCreate(
         if RemainingPart.Length == 0 {
             if OpenTargetDirectory {
                 CollectCreateHitStatistics(Vcb);
-                Iosb = FatOpenTargetDirectory(IrpContext, FileObject, (*Fcb).ParentDcb, DesiredAccess, ShareAccess, 1, FileNameOpenedDos as u8);
+                Iosb = FatOpenTargetDirectory(IrpContext, FileObject, (*Fcb).ParentDcb, DesiredAccess, ShareAccess, 1, FileNameOpenedDos);
                 (*Irp).IoStatus.Information = Iosb.Information;
                 break 'main_try;
             }
@@ -789,7 +794,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 CollectCreateHitStatistics(Vcb);
                 Iosb = FatOpenExistingDcb(IrpContext, IrpSp, FileObject, Vcb, Fcb as *mut DCB, DesiredAccess, ShareAccess,
                                          CreateDisposition, NoEaKnowledge as u8, DeleteOnClose as u8, OpenRequiringOplock as u8,
-                                         FileNameOpenedDos as u8, &mut (OplockPostIrp as u8));
+                                         FileNameOpenedDos, &mut OplockPostIrp);
                 if Iosb.__bindgen_anon_1.Status != STATUS_PENDING {
                     (*Irp).IoStatus.Information = Iosb.Information;
                 } else {
@@ -813,7 +818,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 CollectCreateHitStatistics(Vcb);
                 Iosb = FatOpenExistingFcb(IrpContext, IrpSp, FileObject, Vcb, Fcb, DesiredAccess, ShareAccess,
                                           AllocationSize, EaBuffer, EaLength, FileAttributes, CreateDisposition,
-                                          NoEaKnowledge as u8, DeleteOnClose as u8, OpenRequiringOplock as u8, FileNameOpenedDos as u8, &mut (OplockPostIrp as u8));
+                                          NoEaKnowledge as u8, DeleteOnClose as u8, OpenRequiringOplock as u8, FileNameOpenedDos, &mut OplockPostIrp);
                 if Iosb.__bindgen_anon_1.Status != STATUS_PENDING {
                     if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 && !NoIntermediateBuffering {
                         (*FileObject).Flags |= FO_CACHE_SUPPORTED;
@@ -905,7 +910,7 @@ pub unsafe extern "system" fn FatCommonCreate(
             DirentByteOffset = 0;
             FatLocateDirent(IrpContext, ParentDcb, &mut LocalCcb, 0, &mut MatchFlags,
                             &mut Dirent, &mut DirentBcb, &mut DirentByteOffset,
-                            &mut FileNameOpenedDos as *mut _ as *mut u8, &mut Lfn, &mut OrigLfn);
+                            &mut FileNameOpenedDos, &mut Lfn, &mut OrigLfn);
 
             FinalDcb = ParentDcb;
 
@@ -933,7 +938,7 @@ pub unsafe extern "system" fn FatCommonCreate(
 
         if OpenTargetDirectory {
             Iosb = FatOpenTargetDirectory(IrpContext, FileObject, ParentDcb, DesiredAccess, ShareAccess,
-                                         if Dirent.is_null() { 0u8 } else { 1u8 }, FileNameOpenedDos as u8);
+                                         if Dirent.is_null() { 0u8 } else { 1u8 }, FileNameOpenedDos);
             (*Irp).IoStatus.Information = Iosb.Information;
             break 'main_try;
         }
@@ -950,7 +955,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 DebugTrace(0, 0, b"Open existing directory\n\0".as_ptr() as *const i8);
                 Iosb = FatOpenExistingDirectory(IrpContext, IrpSp, FileObject, Vcb, &mut Fcb, ParentDcb, Dirent,
                                                LfnByteOffset, DirentByteOffset, &mut Lfn, DesiredAccess, ShareAccess,
-                                               CreateDisposition, NoEaKnowledge as u8, DeleteOnClose as u8, FileNameOpenedDos as u8,
+                                               CreateDisposition, NoEaKnowledge as u8, DeleteOnClose as u8, FileNameOpenedDos,
                                                OpenRequiringOplock as u8);
                 (*Irp).IoStatus.Information = Iosb.Information;
                 break 'main_try;
@@ -1111,7 +1116,7 @@ pub unsafe extern "system" fn FatCommonCreate(
         // ----- second _SEH2_TRY / _SEH2_FINALLY (FatCompleteRequest wrapper) — create.c:2112-2279 -----
         //  try-body: post the IRP if required, else unpin repinned Bcbs.
         if PostIrp {
-            if !OplockPostIrp {
+            if OplockPostIrp == 0 {
                 Iosb.__bindgen_anon_1.Status = FatFsdPostRequest(IrpContext, Irp);
             }
         } else {
@@ -2687,9 +2692,9 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
 
     let mut EaHandle: USHORT = 0;
 
-    let mut AllLowerComponent: i32 = 0;
-    let mut AllLowerExtension: i32 = 0;
-    let mut CreateLfn: i32 = 0;
+    let mut AllLowerComponent: BOOLEAN = 0;
+    let mut AllLowerExtension: BOOLEAN = 0;
+    let mut CreateLfn: BOOLEAN = 0;
 
     let mut BytesInFirstPage: ULONG = 0;
     let mut DirentsInFirstPage: ULONG = 0;
@@ -3101,9 +3106,9 @@ pub unsafe extern "system" fn FatCreateNewFile(
     let mut ShortDirent: *mut DIRENT = core::ptr::null_mut();
     let mut ShortDirentByteOffset: u32 = 0;
     let mut EaHandle: u16 = 0;
-    let mut AllLowerComponent: i32 = 0;
-    let mut AllLowerExtension: i32 = 0;
-    let mut CreateLfn: i32 = 0;
+    let mut AllLowerComponent: BOOLEAN = 0;
+    let mut AllLowerExtension: BOOLEAN = 0;
+    let mut CreateLfn: BOOLEAN = 0;
     let mut BytesInFirstPage: u32 = 0;
     let mut DirentsInFirstPage: u32 = 0;
     let mut FirstPageDirent: *mut DIRENT = core::ptr::null_mut();

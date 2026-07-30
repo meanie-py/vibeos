@@ -65,7 +65,7 @@ extern "system" {
         dst: *mut i8,
         dstlen: i32,
         defchar: *const i8,
-        used: *mut u8,
+        used: LPBOOL,
     ) -> i32;
 }
 

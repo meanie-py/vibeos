@@ -424,7 +424,7 @@ pub unsafe extern "system" fn FatDeleteDirent(
     IrpContext: PIRP_CONTEXT,
     FcbOrDcb: *mut FCB,
     DeleteContext: *mut DELETE_CONTEXT,
-    DeleteEa: i32,
+    DeleteEa: BOOLEAN,
 ) {
     let mut Bcb: *mut BCB = core::ptr::null_mut();
     let mut Dirent: *mut DIRENT = core::ptr::null_mut();
@@ -1090,7 +1090,7 @@ pub unsafe extern "system" fn FatLocateVolumeLabel(
 pub unsafe extern "system" fn FatGetDirentFromFcbOrDcb(
     IrpContext: *mut IRP_CONTEXT,
     FcbOrDcb: *mut FCB,
-    ReturnOnFailure: i32,
+    ReturnOnFailure: BOOLEAN,
     Dirent: *mut *mut DIRENT,
     Bcb: *mut *mut BCB,
 ) -> () {
@@ -1478,7 +1478,7 @@ pub unsafe extern "system" fn FatSetFileSizeInDirent(
     FatGetDirentFromFcbOrDcb(
         IrpContext,
         Fcb,
-        (0u8) as i32,
+        0u8,
         &mut Dirent as *mut *mut DIRENT,
         &mut DirentBcb as *mut *mut BCB,
     );

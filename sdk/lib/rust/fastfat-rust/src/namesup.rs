@@ -148,7 +148,7 @@ pub unsafe extern "system" fn FatStringTo8dot3(
 pub unsafe extern "system" fn Fat8dot3ToString(
     IrpContext: *mut IRP_CONTEXT,
     Dirent: *mut DIRENT,
-    RestoreCase: i32,
+    RestoreCase: BOOLEAN,
     OutputString: *mut OEM_STRING,
 ) {
     unsafe {

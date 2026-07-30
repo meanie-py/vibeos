@@ -55,6 +55,12 @@ extern "C" {
     /// The reference's OWN errno — refimpl.c's storage, deliberately separate
     /// from the subject's so the two sides can disagree.
     fn ref_errno_get() -> i32;
+
+    /// NOT namespaced, deliberately: kernel32 is shared environment, not code
+    /// under test (refimpl.c says so at the last-error slot). Read here only to
+    /// widen a failure message — file.c's own errno mapping is what the
+    /// assertions grade.
+    fn GetLastError() -> u32;
     fn ref_errno_set(v: i32);
 
     /// The console knob and its reachability counter (fileimpl.c). The knob
@@ -94,6 +100,41 @@ fn tmp_path(tag: &str) -> (CString, std::path::PathBuf) {
     let p = std::env::temp_dir().join(format!("msvcrt-ref-{}-{}", std::process::id(), tag));
     let _ = std::fs::remove_file(&p);
     (CString::new(p.to_str().unwrap()).unwrap(), p)
+}
+
+/// What the reference ACTUALLY created, for a failure that says a file is
+/// missing.
+///
+/// "the file is not there" has two very different causes and the assertion
+/// alone cannot tell them apart: the reference never created it, or it created
+/// it under a mangled name. The second is invisible from inside the reference —
+/// `_open(O_CREAT)` on a garbled path succeeds, and reading back through the
+/// same garbled path round-trips perfectly — so only a listing from outside can
+/// distinguish them. A 2026-07-29 merge-queue rejection was diagnosable down to
+/// "one of those two" and no further, which is what this exists to prevent.
+fn siblings_of(path: &std::path::Path) -> String {
+    let (Some(dir), Some(stem)) = (path.parent(), path.file_name()) else {
+        return "<no parent directory>".into();
+    };
+    let stem = stem.to_string_lossy();
+    // The pid keeps this to THIS process's files however busy /tmp is.
+    let prefix: String = stem.chars().take(stem.len().min(24)).collect();
+    match std::fs::read_dir(dir) {
+        Err(e) => format!("<{dir:?} unreadable: {e}>"),
+        Ok(rd) => {
+            let mut hits: Vec<String> = rd
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.starts_with(&prefix))
+                .collect();
+            hits.sort();
+            if hits.is_empty() {
+                format!("nothing in {dir:?} starts with {prefix:?}")
+            } else {
+                format!("{dir:?} holds {hits:?}")
+            }
+        }
+    }
 }
 
 #[test]
@@ -188,7 +229,14 @@ fn the_fd_layer_works_and_reports_length() {
         assert_eq!(ref__close(fd), 0);
     }
 
-    assert_eq!(std::fs::read(&path).unwrap(), body);
+    match std::fs::read(&path) {
+        Ok(on_disk) => assert_eq!(on_disk, body),
+        Err(e) => panic!(
+            "the fd layer reported success but {} is not readable ({e}) — {}",
+            path.display(),
+            siblings_of(&path)
+        ),
+    }
     unsafe { assert_eq!(ref_remove(c_path.as_ptr() as *const u8), 0) };
     assert!(!path.exists(), "ref_remove did not unlink the file");
 }
@@ -263,7 +311,23 @@ fn the_console_write_path_is_reachable() {
         // WriteFile and RETURNS before the `_isatty` check ever runs
         // (file.c:3584), so the console arm does not exist for a binary fd.
         let fd = ref__open(dev_null.as_ptr() as *const u8, O_WRONLY | O_TEXT);
-        assert!(fd >= 0, "ref__open(/dev/null) failed, errno={}", ref_errno_get());
+        // Both slots, plus the host's own answer. errno alone cannot say whether
+        // the shim really failed or whether `_open` bailed BEFORE reaching it and
+        // left a previous call's value standing — file.c's `wstrdupa_utf8`
+        // failure arm returns -1 without touching errno, so a stale ENOENT from
+        // the test that deliberately opens a missing path reads identically.
+        assert!(
+            fd >= 0,
+            "ref__open(/dev/null) failed: errno={}, GetLastError={:#x}, and the host \
+             opens it {}",
+            ref_errno_get(),
+            GetLastError(),
+            if std::fs::OpenOptions::new().write(true).open("/dev/null").is_ok() {
+                "fine"
+            } else {
+                "no better — /dev/null is genuinely unavailable here"
+            }
+        );
 
         // Baseline: a chardev that is NOT marked stays on the WriteFile arm, so
         // the counter also proves the knob is what decides — not the chardev-ness.

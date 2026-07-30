@@ -11,7 +11,7 @@ extern "C" {
     fn IntLoadSystenIcons(hcur: HICON, id: DWORD);
 }
 extern "system" {
-    fn SafeProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
 }
 
 // UserEnterCo()/UserLeaveCo() are ntuser.h macros for UserEnterExclusive()/
@@ -433,7 +433,7 @@ pub unsafe extern "C" fn co_IntClientLoadLibrary(
         return 0;
     }
 
-    Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<HMODULE>() as ULONG, 1);
+    Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<HMODULE>() as _, 1);
     if !NT_SUCCESS(Status) {
         bResult = 0;
     } else {
@@ -816,7 +816,7 @@ pub unsafe extern "C" fn co_IntLoadSysMenuTemplate() -> HMENU {
     );
 
     if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<LRESULT>() as ULONG, 1);
+        Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<LRESULT>() as _, 1);
         if !NT_SUCCESS(Status) {
             Result = 0;
         } else {
@@ -2349,7 +2349,7 @@ pub unsafe extern "system" fn co_ClientImmLoadLayout(
         return 0;
     }
 
-    Status = SafeProbeForRead(ResultPointer as *mut _, ResultLength as ULONG, 1);
+    Status = SafeProbeForRead(ResultPointer as *mut _, ResultLength as _, 1);
     if !NT_SUCCESS(Status) {
         ret = 0;
     } else {

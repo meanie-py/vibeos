@@ -661,8 +661,8 @@ pub unsafe extern "system" fn FindBrokenController(
             // Translate hex ids to strings.
             vendorStrPtr = vendorString.as_mut_ptr();
             deviceStrPtr = deviceString.as_mut_ptr();
-            AtapiHexToString((*pciData).VendorID as ULONG, &mut (vendorStrPtr as PCHAR));
-            AtapiHexToString((*pciData).DeviceID as ULONG, &mut (deviceStrPtr as PCHAR));
+            AtapiHexToString((*pciData).VendorID as ULONG, core::ptr::addr_of_mut!(vendorStrPtr).cast());
+            AtapiHexToString((*pciData).DeviceID as ULONG, core::ptr::addr_of_mut!(deviceStrPtr).cast());
 
             // Compare strings.
             if AtapiStringCmp(vendorString.as_mut_ptr() as PCHAR, VendorID as PCHAR, VendorIDLength)
@@ -759,8 +759,8 @@ pub unsafe extern "system" fn AtapiFindNativeModeController(
         // Translate hex ids to strings.
         vendorStrPtr = vendorString.as_mut_ptr();
         deviceStrPtr = deviceString.as_mut_ptr();
-        AtapiHexToString((*pciHdr).VendorID as ULONG, &mut (vendorStrPtr as PCHAR));
-        AtapiHexToString((*pciHdr).DeviceID as ULONG, &mut (deviceStrPtr as PCHAR));
+        AtapiHexToString((*pciHdr).VendorID as ULONG, core::ptr::addr_of_mut!(vendorStrPtr).cast());
+        AtapiHexToString((*pciHdr).DeviceID as ULONG, core::ptr::addr_of_mut!(deviceStrPtr).cast());
 
         // Compare strings.
         if AtapiStringCmp(

@@ -1868,14 +1868,14 @@ pub unsafe extern "system" fn SetSystemMenu(hwnd: HWND, hMenu: HMENU) -> BOOL {
 #[no_mangle]
 pub unsafe extern "system" fn TrackPopupMenu(
     Menu: HMENU,
-    Flags: UINT_PTR,
+    Flags: UINT,
     x: ::core::ffi::c_int,
     y: ::core::ffi::c_int,
     Reserved: ::core::ffi::c_int,
     Wnd: HWND,
     Rect: *const RECT,
 ) -> ::core::ffi::c_int {
-    NtUserTrackPopupMenuEx(Menu, Flags as u32, x, y, Wnd, core::ptr::null_mut())
+    NtUserTrackPopupMenuEx(Menu, Flags, x, y, Wnd, core::ptr::null_mut())
 }
 
 #[no_mangle]

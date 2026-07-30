@@ -272,8 +272,8 @@ unsafe fn DesktopHeapAddressToUser(lpMem: PVOID) -> PVOID {
 }
 // NTAPI (`_Name@N` stdcall on i386) real exports.
 extern "system" {
-    fn SafeProbeForRead(addr: *mut c_void, len: ULONG, align: ULONG) -> NTSTATUS;
-    fn SafeProbeForWrite(addr: *mut c_void, len: ULONG, align: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
 }
 // FASTCALL (`@Name@N` on i386 / cdecl elsewhere) real exports.
 #[cfg(target_arch = "x86")]
@@ -3814,7 +3814,7 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
     {
         let __SehStatus = SafeProbeForRead(
             plstrUnsafe as PVOID,
-            core::mem::size_of::<LARGE_STRING>() as ULONG,
+            core::mem::size_of::<LARGE_STRING>() as _,
             core::mem::size_of::<ULONG>() as ULONG,
         );
         if !NT_SUCCESS(__SehStatus) {
@@ -3833,7 +3833,7 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
         {
             let __SehStatus = SafeProbeForRead(
                 lstrTemp.Buffer as PVOID,
-                lstrTemp.Length,
+                lstrTemp.Length as _,
                 core::mem::size_of::<WCHAR>() as ULONG,
             );
             if !NT_SUCCESS(__SehStatus) {

@@ -10,8 +10,8 @@ use core::ffi::c_void;
 
 // SafeProbeForRead/Write are NTAPI (stdcall i386, `_Safe...@12`).
 extern "system" {
-    fn SafeProbeForRead(addr: *mut c_void, len: ULONG, align: ULONG) -> NTSTATUS;
-    fn SafeProbeForWrite(addr: *mut c_void, len: ULONG, align: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
 }
 // FASTCALL win32k exports.
 #[cfg(target_arch = "x86")]
@@ -658,7 +658,7 @@ pub unsafe extern "C" fn NtUserTranslateAccelerator(
         {
             let __SehStatus = SafeProbeForRead(
                 pUnsafeMessage as *mut core::ffi::c_void,
-                core::mem::size_of::<MSG>() as ULONG,
+                core::mem::size_of::<MSG>() as _,
                 4,
             );
             if !NT_SUCCESS(__SehStatus) {
