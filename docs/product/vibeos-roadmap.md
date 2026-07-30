@@ -521,8 +521,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     is a single sample of one flaky assertion: at `049840353ee` the i386 smp2 baseline was
     seeded reading 185/4 while the i386 UP baseline on the SAME TREE read 184/5, and today
     amd64 UP records 184/5 against amd64 smp2's 185/4. Measured: 52/100 i386 rounds and 24/52
-    amd64 rounds land on 184/5. One test, one assertion, both x86 arches ⇒ one genuine race.
-    **Re-seeding any of these baselines just re-samples the coin** — name the assertion first.
+    amd64 rounds land on 184/5. **Re-seeding any of these baselines just re-samples the coin**
+    — name the assertion first.
+    **UPDATED 2026-07-30 — it is NOT x86-only, and on arm64 it is not one assertion.**
+    Tallying every banked run dir per arch:
+    - i386 — 184/5 ×75, 185/4 ×68 (two outcomes, ~52/48)
+    - amd64 — 184/5 ×40, 185/4 ×28 (two outcomes, ~59/41)
+    - arm64 — 180/9 ×19, **181/8 ×66**, 182/7 ×26, 183/6 ×2 (**four** outcomes)
+    Two values on x86 is consistent with one racing assertion; a four-wide spread on arm64 is
+    not — that is ~3 independent flaky assertions, or one race with a variable victim count.
+    So the old "one test, one assertion, both x86 arches ⇒ one genuine race" reading was an
+    artifact of only ever having looked at x86. The arm64 baseline does at least sit on the
+    mode (181/8). Naming the assertions is still the prerequisite for any re-seed.
+  - **`ExPools` on arm64 — an arm64-ONLY flake, ~29%, NEW 2026-07-30.** Surfaced by a 10-round
+    3-arch soak on `dd3411c76d45` (arm64 round 3 reported `ExPools: pass 14 -> 13`), then
+    quantified against the banked corpus: arm64 reads 14/4 in 105 runs and 13/5 in 42
+    (~71/29), while **i386 is 19/1 in 144 of 144 runs and amd64 17/1 in 68 of 68** — both
+    perfectly deterministic. One flaky assertion, one arch. Unlike the rows above this is not
+    just a baseline-sampling artifact: a pool test that is stable on two arches and not on the
+    third is an arm64 lead. The baseline holds the lucky side (14/4), so it reads as a
+    regression ~29% of the time.
   - **`ZwAllocateVirtualMemory` 843 → 839 — a real UP-vs-MP DIFFERENCE, not a regression, and
     its baseline is a 1-in-101 sample.** Correlating pass count against `smp` over every banked
     i386 run dir: **smp1 scores 843 in 4/4 runs; smp2 scores 839 in 100 runs and 843 in exactly
