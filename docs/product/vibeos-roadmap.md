@@ -498,13 +498,24 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   floor, so they gate the flip independently of the arm64 blocker.
   **SPLIT 2026-07-29 by baseline archaeology (no host time needed).** These were recorded as
   one class of "MP regression". They are three different things, and only one is real:
-  - **`FsRtlLegal` 2504/24 → 2496/32 — a RARE FLAKE (~2%), and the baseline caught it.**
-    Counting every banked i386 run dir: 2504/24 occurs in **1 of 7 smp1 runs and 1 of 101 smp2
-    runs**; 2496/32 is everything else. So it is not topology-correlated and not a regression —
-    it is an ~2% outcome that a single seeding boot happened to hit. Consistent with 2504/24
-    appearing nowhere else in the tree (i386 UP, amd64 UP and amd64 smp2 all say 2496/32).
-    Not a flip blocker. Name the 8 assertions before deciding which side is *correct*; do not
-    re-seed blind.
+  - **`FsRtlLegal` 2504/24 → 2496/32 — CLOSED 2026-07-30. It was never a flake: it was
+    out-of-bounds READ UB, deterministic per BUILD.** `fsrtl-rust`'s three DBCS legality
+    helpers dropped the `(SCHAR)(C) < 0 ? DEFAULT_RET` short-circuit that opens the
+    `FsRtlTestAnsiCharacter` macro (fsrtlfuncs.h:1632) and indexed
+    `LEGAL_ANSI_CHARACTER_ARRAY_DATA` — a `[u8; 128]` — with the raw byte, so every character
+    ≥ 0x80 answered from up to 128 bytes past the end of a static. The 32 failing assertions
+    are exactly the names `"\x80"` and `"\xff"` × 8 flag combinations × {Fat, Hpfs}; the 24
+    variant is the same set with one of those four groups happening to read a byte with the
+    right bit set. Fixed → **arm64 measured 2496/32 → 2528/0**, a pure conversion of failures
+    into passes. The earlier archaeology was sound about the *numbers* and wrong about the
+    *cause*: counting run dirs cannot distinguish "rare per boot" from "fixed per build" when
+    the corpus is dominated by one build. **Recognition rule: before calling a two-valued
+    conformance row a flake, check whether the two values partition by BUILD rather than by
+    boot — UB whose answer comes from the link layout looks exactly like a rare coin.**
+    This also re-frames the co-occurrence lead below: at least the `FsRtlLegal` half of it does
+    not vary boot-to-boot at all, so "whatever varies boot-to-boot moves both" is the wrong
+    question for that half. Whether `ZwAllocateVirtualMemory`'s 843 is the same shape is
+    untested and still owed.
   - **`IoDeviceObject` 185/4 vs 184/5 — a ~50/50 FLAKE, not a regression** (closes the old
     "blessed with no rationale" framing, task #48). The baselines disagree only because each
     is a single sample of one flaky assertion: at `049840353ee` the i386 smp2 baseline was
