@@ -144,7 +144,7 @@ extern "C" {
     fn TRACE(fmt: *const i8, ...);
     fn FsGetFirstNameFromPath(Path: PCHAR, FileName: PCSTR);
     fn FsGetNumPathParts(Path: PCSTR) -> ULONG;
-    fn RtlEqualMemory(Source1: PVOID, Source2: PVOID, Length: ULONG) -> BOOLEAN;
+    fn RtlEqualMemory(Source1: PVOID, Source2: PVOID, Length: usize) -> BOOLEAN;
     fn strlen(s: PCSTR) -> ULONG;
 }
 
@@ -294,7 +294,7 @@ unsafe fn IsoLookupFile(mut FileName: PCSTR, DeviceId: ULONG, IsoFileInfo: PISO_
     DirectoryPathLength = FileNameStr.offset_from(FileName) as ULONG;
 
     DoFullLookup = if (DirectoryPathLength != (*Volume).DirectoryPathLength) || 
-                      RtlEqualMemory(FileName as PVOID, (*Volume).DirectoryPath.as_ptr() as PVOID, DirectoryPathLength) == 0 {
+                      RtlEqualMemory(FileName as PVOID, (*Volume).DirectoryPath.as_ptr() as PVOID, DirectoryPathLength as usize) == 0 {
         1u8
     } else {
         0u8
@@ -597,7 +597,7 @@ pub unsafe extern "C" fn IsoMount(DeviceId: u32) -> *const DEVVTBL {
         return core::ptr::null();
     }
 
-    if !((*Pvd).VdType == 1 && RtlEqualMemory((*Pvd).StandardId.as_ptr() as *mut core::ffi::c_void, b"CD001\0".as_ptr() as *mut core::ffi::c_void, 5u32) != 0 && (*Pvd).VdVersion == 1) {
+    if !((*Pvd).VdType == 1 && RtlEqualMemory((*Pvd).StandardId.as_ptr() as *mut core::ffi::c_void, b"CD001\0".as_ptr() as *mut core::ffi::c_void, 5usize) != 0 && (*Pvd).VdVersion == 1) {
         WARN(b"Unrecognized CD-ROM format\n\0".as_ptr() as *const i8);
         return core::ptr::null();
     }

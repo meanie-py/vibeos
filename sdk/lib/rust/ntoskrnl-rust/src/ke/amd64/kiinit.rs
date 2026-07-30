@@ -34,7 +34,7 @@ use super::cpu::{KeI386CpuType, KeI386CpuStep};
 use super::stubs::KeXStateLength;
 
 extern "system" {
-    fn KiInitializeXStateConfiguration(Cpu: u8);
+    fn KiInitializeXStateConfiguration(Cpu: ULONG);
     fn KiSwitchToBootStack(InitialStack: u64) -> !;
     fn KdInitSystem(Phase: u32, LoaderBlock: PLOADER_PARAMETER_BLOCK) -> u8;
     fn KdPollBreakIn() -> u8;
@@ -783,7 +783,7 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
         KiInitializeKernelMachineDependent(core::ptr::addr_of_mut!((*Pcr).Prcb), LoaderBlock);
     }
 
-    KiInitializeXStateConfiguration(Cpu as u8);
+    KiInitializeXStateConfiguration(Cpu as ULONG);
 
     InitialStack = ALIGN_DOWN_BY(((*LoaderBlock).KernelStack - KeXStateLength as u64) as usize, 64) as u64;
 

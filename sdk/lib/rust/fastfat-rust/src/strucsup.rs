@@ -894,8 +894,8 @@ pub unsafe extern "system" fn FatCreateFcb(
     Dirent: *mut DIRENT,
     Lfn: *mut _UNICODE_STRING,
     OrigLfn: *mut _UNICODE_STRING,
-    IsPagingFile: i32, // BOOLEAN
-    SingleResource: i32, // BOOLEAN
+    IsPagingFile: BOOLEAN,
+    SingleResource: BOOLEAN,
 ) -> *mut FCB {
     // Forward declarations for unknown symbols
 

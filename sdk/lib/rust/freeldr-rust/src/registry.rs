@@ -122,7 +122,7 @@ extern "C" {
     fn ArcRead(FileId: u32, Buffer: *mut core::ffi::c_void, Length: u32, Count: *mut u32) -> ARC_STATUS;
     fn ArcSeek(FileId: u32, Position: *mut LARGE_INTEGER, SeekMode: u32) -> ARC_STATUS;
     fn ERR(fmt: *const i8, ...);
-    fn MmAllocateMemoryWithType(MemorySize: u32, MemoryType: u32) -> *mut core::ffi::c_void;
+    fn MmAllocateMemoryWithType(MemorySize: usize, MemoryType: u32) -> *mut core::ffi::c_void;
     fn PaToVa(Pa: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn RtlStringCbCatA(pszDest: *mut u8, cbDest: usize, pszSrc: PCSTR) -> i32;
     fn TRACE(fmt: *const i8, ...);
@@ -297,7 +297,7 @@ unsafe fn RegLoadHiveLog(
     }
 
     LogDataPhysical = MmAllocateMemoryWithType(
-        MM_SIZE_TO_PAGES(LogFileSize + 4096u32 - 1) << 12,
+        (MM_SIZE_TO_PAGES(LogFileSize + 4096u32 - 1) << 12) as usize,
         LoaderRegistryData,
     );
     if LogDataPhysical.is_null() {

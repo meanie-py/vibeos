@@ -53,10 +53,10 @@ extern "C" {
     fn CdUpcaseName( IrpContext: *mut IRP_CONTEXT, InputName: *mut CD_NAME, OutputName: *mut CD_NAME, );
 }
 extern "C" {
-    fn NT_ASSERT(cond: bool);
+    fn NT_ASSERT(cond: BOOLEAN);
 }
 extern "C" {
-    fn __analysis_assert(cond: bool);
+    fn __analysis_assert(cond: BOOLEAN);
 }
 extern "C" {
     // Defined `-> u32` (cdmacros.rs). Declaring it `-> i64` here makes i386 read EDX:EAX
@@ -426,7 +426,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
     // Check for self entry (length 1 and first byte zero)
     if (*PathEntry).DirName.read() == 0 && (*PathEntry).DirNameLen == 1 {
         // Ensure no allocated buffer
-        NT_ASSERT(((*PathEntry).Flags & PATH_ENTRY_FLAG_ALLOC_BUFFER) == 0);
+        NT_ASSERT((((*PathEntry).Flags & PATH_ENTRY_FLAG_ALLOC_BUFFER) == 0) as BOOLEAN);
 
         (*PathEntry).CdDirName.FileName = CdUnicodeDirectoryNames[0];
         (*PathEntry).CdDirName.VersionString.Length = 0;
@@ -479,8 +479,8 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
             (*PathEntry).DirName as *const i8,
             (*PathEntry).DirNameLen,
         );
-        NT_ASSERT(Status == 0); // STATUS_SUCCESS
-        __analysis_assert(Status == 0);
+        NT_ASSERT((Status == 0) as BOOLEAN); // STATUS_SUCCESS
+        __analysis_assert((Status == 0) as BOOLEAN);
         (*PathEntry).CdDirName.FileName.Length = Length as u16;
     } else {
         CdConvertBigToLittleEndian(

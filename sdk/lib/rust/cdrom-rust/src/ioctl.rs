@@ -130,7 +130,7 @@ unsafe extern "C" {
     fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn RequestCompletion( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, info: ULONG, );
+    fn RequestCompletion( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, info: ULONG_PTR, );
 }
 unsafe extern "C" {
     fn UNREFERENCED_PARAMETER(param: usize);
@@ -864,7 +864,7 @@ pub unsafe extern "system" fn RequestHandleUnknownIoctl(
                 deviceExtension,
                 Request,
                 status,
-                WdfRequestGetInformation(Request) as u32,
+                (WdfRequestGetInformation(Request) as u32) as usize,
             );
         }
     } else {
@@ -873,7 +873,7 @@ pub unsafe extern "system" fn RequestHandleUnknownIoctl(
             deviceExtension,
             Request,
             status,
-            WdfRequestGetInformation(Request) as u32,
+            (WdfRequestGetInformation(Request) as u32) as usize,
         );
     }
 
@@ -2385,7 +2385,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessQueryLockState(
         deviceExtension,
         Request,
         status,
-        core::mem::size_of::<CDROM_EXCLUSIVE_LOCK_STATE>() as u32,
+        (core::mem::size_of::<CDROM_EXCLUSIVE_LOCK_STATE>() as u32) as usize,
     );
 
     status
@@ -2847,7 +2847,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyDeviceUniqueId(
         }
     }
 
-    RequestCompletion(deviceExtension, Request, status, outLength as u32);
+    RequestCompletion(deviceExtension, Request, status, (outLength as u32) as usize);
 
     status
 }
@@ -2922,7 +2922,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
             information = core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as u32;
             status = 0; // STATUS_SUCCESS
 
-            RequestCompletion(deviceExtension, Request, status, information);
+            RequestCompletion(deviceExtension, Request, status, (information) as usize);
             return status;
         }
     }
@@ -3140,7 +3140,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
     if !srb.is_null() { ExFreePool(srb as *mut core::ffi::c_void); }
     if !modeData.is_null() { ExFreePool(modeData as *mut core::ffi::c_void); }
 
-    RequestCompletion(deviceExtension, Request, status, information);
+    RequestCompletion(deviceExtension, Request, status, (information) as usize);
 
     return status;
 }
@@ -3601,7 +3601,7 @@ pub unsafe extern "system" fn RequestHandleScsiPassThrough(
         device_extension,
         Request,
         status,
-        WdfRequestGetInformation(Request) as u32,
+        (WdfRequestGetInformation(Request) as u32) as usize,
     );
 
     status
@@ -6040,7 +6040,7 @@ pub unsafe extern "C" fn RequestHandleAreVolumesReady(
     }
 
     if completeRequest != 0 {
-        RequestCompletion(DeviceExtension, Request, status, 0u32);
+        RequestCompletion(DeviceExtension, Request, status, (0u32) as usize);
     }
 
     status
