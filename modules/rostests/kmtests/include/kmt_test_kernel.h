@@ -60,6 +60,20 @@ BOOLEAN KmtAreInterruptsEnabled(VOID)
 {
 #if defined(_M_IX86) || defined(_M_AMD64)
     return (__readeflags() & EFLAGS_INTERRUPT_MASK) != 0;
+#elif defined(_M_ARM64)
+    /* AArch64 has no EFLAGS; PSTATE.DAIF holds the masks and bit 7 (I) is the
+     * IRQ mask, so "enabled" is its inverse. DAIF is readable at EL1, where all
+     * kernel-mode test code runs.
+     *
+     * Note this is the CPU-level mask only, exactly like the x86 branch reading
+     * EFLAGS.IF. On this port IRQL is GIC-priority-backed (GICC_PMR) and does
+     * NOT touch DAIF, so a raised IRQL alone must not make this return FALSE —
+     * if it does, something masked interrupts behind IRQL's back. */
+    {
+        ULONG64 Daif;
+        __asm__ __volatile__("mrs %0, daif" : "=r"(Daif));
+        return (Daif & (1ULL << 7)) == 0;
+    }
 #else
 #pragma message(__FILE__ ": warning : 'KmtAreInterruptsEnabled()' is UNIMPLEMENTED for this architecture")
     // HACK: trivial stub. Used by ok_bool_true(KmtAreInterruptsEnabled(), ...).
