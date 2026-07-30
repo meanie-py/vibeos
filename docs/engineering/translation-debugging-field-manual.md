@@ -2618,6 +2618,24 @@ language rules) over loosening what it reports.
   otherwise pass. **Fix:** implement it (arm64: read DAIF bit 7), or make the stub `skip()`
   so it cannot masquerade as a measurement. Its `#pragma message` warning had been firing
   on every arm64 build the whole time.
+- **Half-disabling a debug facility leaves its two halves disagreeing — and the disagreement
+  outlives the reason.** A checked build does two separable things to a spinlock: it STAMPS
+  `KeGetCurrentThread() | 1` into the lock while held (observable behaviour — `KeTestSpinLock`
+  reads it, and IoInterrupt asserts on it), and it BUGCHECKS on a mismatched acquire/release
+  pair. This tree narrowed *both* to `DBG && !_USE_DUMMY_PSEH && !_USE_PSEH_CLANG` to stop the
+  bugchecks during i386 bring-up (5c8505479a3, 15434cd8dea). Two consequences, neither
+  intended:
+  1. the build reports `KmtIsCheckedBuild = TRUE` while a held lock reads free, so every
+     assertion that inspects one fails on a premise the kernel no longer honours;
+  2. `KeTryToAcquireSpinLockAtDpcLevel` (ke/spinlock.c) stamps under **plain `#if DBG`** — it
+     was never part of the narrowing — so it stamps a lock that `KxReleaseSpinLock` then never
+     clears. `KdbpAcquireLock` (kd/kdio.c) spins on `while (!KeTestSpinLock(SpinLock))` before
+     try-acquiring, so its *second* acquire of the same lock hangs forever. Dormant only
+     because KDBG is off by default.
+  **Rule: when you gate off a debug check to unblock a boot, gate off the CHECK, not the state
+  it checks.** Give the two halves separate macros (here `KI_VALIDATE_SPINLOCK_OWNER` vs
+  `KI_TRACK_SPINLOCK_OWNER`) so the next person can tell which one they are turning off, and
+  so a partial disable cannot silently desynchronise two funnels that must agree.
 
 ### Lints as permanent gates
 `tools/` carries the deterministic detectors; all are wired into `vibeos-cli check` at **0 NEW
