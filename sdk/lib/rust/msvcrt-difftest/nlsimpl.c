@@ -83,8 +83,27 @@ static int cp_index(unsigned int cp)
 /* Windows wchar_t is 16-bit, so the wide side is always UTF-16LE. */
 #define WIDE_ENC "UTF-16LE"
 
-static iconv_t to_wide_cache[CP_COUNT];
-static iconv_t to_mb_cache[CP_COUNT];
+/* PER THREAD, and that is not a micro-optimization.
+ *
+ * An iconv_t is not a handle to a pure function; it OWNS the conversion state,
+ * which `iconv()` advances and `iconv(cd, NULL, NULL, NULL, NULL)` resets.  Two
+ * threads sharing one descriptor is undefined behaviour, and glibc's failure
+ * mode is the worst available shape: a SHORT or GARBLED result with a success
+ * return, so the caller converts a string to the wrong string and carries on.
+ *
+ * cargo runs #[test]s on parallel threads, so a process-global cache here was
+ * live UB whenever two of them converted at once.  Measured before this change,
+ * 8 threads over one CP932 fixture disagreed with the single-threaded answer
+ * within the first handful of iterations — including empty results and
+ * uninitialized scratch bytes.  tests/nls_thread_safety.rs is that measurement,
+ * kept so the property cannot silently regress.
+ *
+ * The descriptors are deliberately never closed: they are per-thread now, so a
+ * worker thread's caches die with it, and a test process's lifetime is one run.
+ * Closing them would need a destructor whose only job is to satisfy a leak
+ * checker that is not watching. */
+static __thread iconv_t to_wide_cache[CP_COUNT];
+static __thread iconv_t to_mb_cache[CP_COUNT];
 
 static iconv_t cp_to_wide(unsigned int cp)
 {

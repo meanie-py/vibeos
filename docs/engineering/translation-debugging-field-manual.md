@@ -3797,6 +3797,35 @@ here), then pin it with a test that **fakes the trigger deterministically** — 
 test steps the clock backwards by the exact observed 2,593,682,747 ns and fails against the
 old allocator with the live signature.
 
+### A cached handle in a reference shim is per-PROCESS, but the tests run per-THREAD
+
+**Symptom.** Difftest rows that pass alone and disagree in a full run, with no error return
+anywhere — the conversion simply produced different bytes.
+
+**Cause.** `msvcrt-difftest/nlsimpl.c` cached one `iconv_t` per codepage in a `static` array and
+handed the same descriptor to every caller. An `iconv_t` is not a handle to a pure function: it
+*owns* the conversion state, `iconv()` advances it, and `iconv(cd, NULL, NULL, NULL, NULL)`
+resets it. cargo runs `#[test]`s on parallel threads, so two of them converting at once was live
+UB. glibc's failure mode is the worst available shape — a **short or garbled result with a
+success return** — so the caller converts a string to the wrong string and proceeds. Measured:
+8 threads over one CP932 fixture disagreed with the single-threaded answer within a handful of
+iterations, returning empty results and uninitialized scratch bytes.
+
+**Fix.** `static __thread` on both caches. The descriptors are then per-thread and need no
+locking; leaving them unclosed is deliberate, since a worker thread's caches die with it.
+`tests/nls_thread_safety.rs` pins it, and only bites because it converts through a **multi-byte**
+codepage — the ASCII fast path opens no descriptor at all, so a fixture built from ASCII
+exercises none of this and passes forever.
+
+**Generalization.** Any `static` cache in a reference shim is shared by every test thread. The
+ones that hurt are those holding a handle with *internal state* (iconv descriptors, `strtok`
+positions, locale objects, RNG seeds), because sharing them corrupts results rather than
+crashing. Grep a new reference TU for `static` before trusting a green suite; process-global is
+the wrong scope by default, and the real DLL's equivalent is usually a **TEB slot** — per-thread
+by construction. The same file's last-error slot is a single `static DWORD` for exactly that
+reason and is documented as modelling "a single TEB slot"; it is one writer / one reader by
+design, so it is correct only as long as no two threads race a failure through it.
+
 ### Known-benign signals — do not chase these
 - **A screenshot that looks solid black (346-byte PNG) is NOT a boot failure.** More generally,
   the screenshot is captured **at** the marker, before the taskbar finishes rendering, so a green
