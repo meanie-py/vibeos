@@ -35,7 +35,22 @@ pub mod iconcache;
 // foundation. Counts measured with all six wired, after the substrate landed:
 //
 //     shlexec.rs   349     shlfileop.rs  227     iconcache.rs    0 <- flipped
-//     brfolder.rs  244     shlfolder.rs    0 <- flipped     shldataobject 0 <- flipped
+//     brfolder.rs   86     shlfolder.rs    0 <- flipped     shldataobject 0 <- flipped
+//
+// brfolder went 244 -> 86 on 2026-07-31: every SUBSTRATE gap it had is now closed and landed
+// (14 more TreeView_* wrappers and `TV_ITEM` in the prelude, `crate::layout` for the whole of
+// `ui/layout.h`, `SHELL_IsContextMenuMsg` / `SHILClone` / `RosGetProcessEffectiveVersion` in
+// `shellutils`, `Deref`+`Get`+`GetAddressOf`+`put` on the ATL pointers, and real signatures
+// for `IShellFolderVtbl::SetNameOf` and `IEnumIDListVtbl::{Skip,Reset}` plus an
+// `lpVtbl`-shaped `IContextMenu` in `shellcom`). What is LEFT is only this file's own numeric
+// and pointer casts — no shared substrate, so it blocks nothing else. `rustconv crate-repair`
+// declines the remainder by design (78 are `match`-pattern casts), so they are a hand pass.
+//
+// WARNING for whoever runs `crate-repair` on this crate: it deterministically rewrites the
+// SHARED `_countof!` macro from `u32` to `i32` to satisfy one call site here, then adds
+// compensating casts in three ALREADY-LANDED files. C's `sizeof(a)/sizeof(*a)` is unsigned;
+// revert all four and fix the local site instead. Reverting costs ZERO errors, which is the
+// proof it was pure blast radius.
 //
 // Read those against the pre-substrate numbers (shldataobject 22, iconcache 68, shlfolder 75,
 // shlfileop 227, brfolder 235, shlexec 415) and note that brfolder went UP, 235 -> 244: making
@@ -54,6 +69,6 @@ pub mod iconcache;
 //
 // Each carries an `//! ORPHAN-BY-DESIGN:` banner. PAID artifacts — do not delete them to tidy up.
 //
-// pub mod brfolder;
+// pub mod brfolder;   <- 86 errors, this file's own casts only
 // pub mod shlexec;
 // pub mod shlfileop;

@@ -9,6 +9,7 @@ pub static CPP_COM_WSTR_731D7EC48EEF: [WCHAR; 3] = [0x0020, 0x0009, 0x0000];
 
 use core::ffi::c_void;
 use crate::prelude::*;
+use crate::shellcom::{IContextMenu, IContextMenuVtbl};
 use crate::shell32::sdk_consts::*;
 
 // ---- file-scope preamble (translated) ----
@@ -35,14 +36,21 @@ pub struct BrItemData {
     pub pidlFull: CComHeapPtr<ITEMIDLIST_ABSOLUTE>,
 }
 
-pub static g_layout_info: [LAYOUT_INFO; 7] = [
-    LAYOUT_INFO { id: IDC_BROWSE_FOR_FOLDER_TITLE, flags: BF_TOP | BF_LEFT | BF_RIGHT },
-    LAYOUT_INFO { id: IDC_BROWSE_FOR_FOLDER_STATUS, flags: BF_TOP | BF_LEFT | BF_RIGHT },
-    LAYOUT_INFO { id: IDC_BROWSE_FOR_FOLDER_TREEVIEW, flags: BF_TOP | BF_BOTTOM | BF_LEFT | BF_RIGHT },
-    LAYOUT_INFO { id: IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT, flags: BF_TOP | BF_LEFT | BF_RIGHT },
-    LAYOUT_INFO { id: IDC_BROWSE_FOR_FOLDER_NEW_FOLDER, flags: BF_BOTTOM | BF_LEFT },
-    LAYOUT_INFO { id: IDOK, flags: BF_BOTTOM | BF_RIGHT },
-    LAYOUT_INFO { id: IDCANCEL, flags: BF_BOTTOM | BF_RIGHT },
+pub static mut g_layout_info: [LAYOUT_INFO; 7] = [
+    LAYOUT_INFO { m_nCtrlID: IDC_BROWSE_FOR_FOLDER_TITLE, m_uEdges: BF_TOP | BF_LEFT | BF_RIGHT, m_hwndCtrl: core::ptr::null_mut(),
+        m_margin1: SIZE { cx: 0, cy: 0 }, m_margin2: SIZE { cx: 0, cy: 0 } },
+    LAYOUT_INFO { m_nCtrlID: IDC_BROWSE_FOR_FOLDER_STATUS, m_uEdges: BF_TOP | BF_LEFT | BF_RIGHT, m_hwndCtrl: core::ptr::null_mut(),
+        m_margin1: SIZE { cx: 0, cy: 0 }, m_margin2: SIZE { cx: 0, cy: 0 } },
+    LAYOUT_INFO { m_nCtrlID: IDC_BROWSE_FOR_FOLDER_TREEVIEW, m_uEdges: BF_TOP | BF_BOTTOM | BF_LEFT | BF_RIGHT, m_hwndCtrl: core::ptr::null_mut(),
+        m_margin1: SIZE { cx: 0, cy: 0 }, m_margin2: SIZE { cx: 0, cy: 0 } },
+    LAYOUT_INFO { m_nCtrlID: IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT, m_uEdges: BF_TOP | BF_LEFT | BF_RIGHT, m_hwndCtrl: core::ptr::null_mut(),
+        m_margin1: SIZE { cx: 0, cy: 0 }, m_margin2: SIZE { cx: 0, cy: 0 } },
+    LAYOUT_INFO { m_nCtrlID: IDC_BROWSE_FOR_FOLDER_NEW_FOLDER, m_uEdges: BF_BOTTOM | BF_LEFT, m_hwndCtrl: core::ptr::null_mut(),
+        m_margin1: SIZE { cx: 0, cy: 0 }, m_margin2: SIZE { cx: 0, cy: 0 } },
+    LAYOUT_INFO { m_nCtrlID: IDOK, m_uEdges: BF_BOTTOM | BF_RIGHT, m_hwndCtrl: core::ptr::null_mut(),
+        m_margin1: SIZE { cx: 0, cy: 0 }, m_margin2: SIZE { cx: 0, cy: 0 } },
+    LAYOUT_INFO { m_nCtrlID: IDCANCEL, m_uEdges: BF_BOTTOM | BF_RIGHT, m_hwndCtrl: core::ptr::null_mut(),
+        m_margin1: SIZE { cx: 0, cy: 0 }, m_margin2: SIZE { cx: 0, cy: 0 } },
 ];
 
 pub const SUPPORTED_FLAGS: u32 = BIF_STATUSTEXT | BIF_BROWSEFORCOMPUTER | BIF_RETURNFSANCESTORS |
@@ -89,9 +97,11 @@ unsafe extern "C" fn BrFolder_GetItemAttributes(info: *mut BrFolder, hItem: HTRE
     let item = BrFolder_GetItemData(info, hItem);
     let mut Att = Query;
     let hr = if !item.is_null() {
-        ((*item).lpsfParent).GetAttributesOf(
+        let sf = (*item).lpsfParent.Get();
+        ((*(*sf).lpVtbl).GetAttributesOf)(
+            sf,
             1,
-            core::ptr::addr_of!((*item).pidlChild),
+            (core::ptr::addr_of!((*item).pidlChild)).cast(),
             &mut Att,
         )
     } else {
@@ -115,7 +125,7 @@ unsafe extern "C" fn BrFolder_GetChildrenEnum(
     let mut pEnumIL: *mut IEnumIDList = core::ptr::null_mut();
     let pidlRef: PCUITEMID_CHILD = (*pItemData).pidlChild;
     let mut attrs: u32 = SFGAO_HASSUBFOLDER | SFGAO_FOLDER;
-    let lpsf: *mut IShellFolder = (*pItemData).lpsfParent;
+    let lpsf: *mut IShellFolder = (*pItemData).lpsfParent.Get();
     let mut hr: i32 = ((*(*lpsf).lpVtbl).GetAttributesOf)(lpsf, 1, &pidlRef, &mut attrs);
     if FAILED_UNEXPECTEDLY!(hr) != 0 || (attrs & SFGAO_FOLDER) == 0 {
         return E_FAIL;
@@ -125,7 +135,7 @@ unsafe extern "C" fn BrFolder_GetChildrenEnum(
     if _ILIsDesktop((*pItemData).pidlFull.m_pData) != 0 {
         hr = SHGetDesktopFolder(&mut psfChild);
     } else {
-        hr = ((*(*lpsf).lpVtbl).BindToObject)(lpsf, pidlRef, core::ptr::null_mut(), &IShellFolder::uuidof(), &mut psfChild as *mut *mut IShellFolder as *mut *mut core::ffi::c_void);
+        hr = ((*(*lpsf).lpVtbl).BindToObject)(lpsf, (pidlRef).cast(), core::ptr::null_mut(), core::ptr::addr_of!(IID_IShellFolder).cast(), &mut psfChild as *mut *mut IShellFolder as *mut *mut core::ffi::c_void);
     }
     if FAILED_UNEXPECTEDLY!(hr) != 0 {
         if !psfChild.is_null() {
@@ -135,7 +145,7 @@ unsafe extern "C" fn BrFolder_GetChildrenEnum(
     }
 
     let flags: u32 = BrowseFlagsToSHCONTF((*(*info).lpBrowseInfo).ulFlags);
-    hr = ((*(*psfChild).lpVtbl).EnumObjects)(psfChild, (*info).hWnd, flags, &mut pEnumIL);
+    hr = ((*(*psfChild).lpVtbl).EnumObjects)(psfChild, ((*info).hWnd).cast(), flags, &mut pEnumIL);
     if hr == S_OK {
         if !pEnumIL.is_null() && (((*(*pEnumIL).lpVtbl).Skip)(pEnumIL, 1) != S_OK || ((*(*pEnumIL).lpVtbl).Reset)(pEnumIL) < 0) {
             ((*(*pEnumIL).lpVtbl).Release)(pEnumIL);
@@ -173,7 +183,7 @@ unsafe extern "C" fn BrFolder_InitTreeView(info: *mut BrFolder) {
     }
 
     let pidlRoot: PCIDLIST_ABSOLUTE = (*(*info).lpBrowseInfo).pidlRoot;
-    let mut pidlParent = CComHeapPtr::<ITEMIDLIST_ABSOLUTE>::new(ILClone(pidlRoot));
+    let mut pidlParent = CComHeapPtr::<ITEMIDLIST_ABSOLUTE>::from_raw(ILClone(pidlRoot).cast());
     ILRemoveLastID(pidlParent.m_pData);
     let pidlChild: PCIDLIST_RELATIVE = ILFindLastID(pidlRoot);
 
@@ -193,7 +203,7 @@ unsafe extern "C" fn BrFolder_GetIconPair(
 ) -> HRESULT {
     let mut open: i32 = -( 1 as i32 );
     let normal = SHMapPIDLToSystemImageListIndex(
-        ((*item).lpsfParent),
+        ((*item).lpsfParent.Get()),
         (*item).pidlChild,
         &mut open,
     );
@@ -204,7 +214,7 @@ unsafe extern "C" fn BrFolder_GetIconPair(
     }
     let index = Shell_GetCachedImageIndexW(
         swShell32Name,
-        IDI_SHELL_FOLDER - 1,
+        (IDI_SHELL_FOLDER - 1) as i32,
         0,
     );
     (*tvi).iImage = index;
@@ -307,7 +317,7 @@ unsafe extern "C" fn BrFolder_UpdateItemEx(
     let mut item = TVITEMW {
         mask: TVIF_HANDLE | flags,
         hItem,
-        ..Default::default()
+        ..core::mem::zeroed()
     };
     let data = BrFolder_GetItemData(info, hItem);
     if data.is_null() {
@@ -320,8 +330,8 @@ unsafe extern "C" fn BrFolder_UpdateItemEx(
             return FALSE;
         }
         let pidlFull_mut = pidlFull_clone as PIDLIST_ABSOLUTE;
-        (*data).pidlFull.free();
-        (*data).pidlFull.attach(pidlFull_mut);
+        (*data).pidlFull.Free();
+        (*data).pidlFull.Attach(pidlFull_mut);
         (*data).pidlChild = ILFindLastID((*data).pidlFull.as_ptr());
     }
 
@@ -329,7 +339,7 @@ unsafe extern "C" fn BrFolder_UpdateItemEx(
     if (flags & TVIF_TEXT) != 0 {
         item.pszText = name.as_mut_ptr();
         if BrFolder_GetName(
-            (*data).lpsfParent,
+            (*data).lpsfParent.Get(),
             (*data).pidlChild,
             SHGDN_TREE,
             name.as_mut_ptr(),
@@ -347,12 +357,14 @@ unsafe extern "C" fn BrFolder_UpdateItemEx(
     item.cChildren = 0;
     let mut pEnum: CComPtr<IEnumIDList> = CComPtr::new();
     if (flags & TVIF_CHILDREN) != 0
-        && BrFolder_GetChildrenEnum(info, data, &mut pEnum) == S_OK
+        && BrFolder_GetChildrenEnum(info, data, pEnum.GetAddressOf()) == S_OK
     {
         let mut pidlTemp: CComHeapPtr<ITEMIDLIST_RELATIVE> = CComHeapPtr::new();
-        if pEnum.Next(
+        let pe = pEnum.Get();
+        if ((*(*pe).lpVtbl).Next)(
+            pe,
             1,
-            &mut pidlTemp as *mut _ as *mut *mut ITEMIDLIST_RELATIVE,
+            (&mut pidlTemp as *mut _ as *mut *mut ITEMIDLIST_RELATIVE).cast(),
             core::ptr::null_mut(),
         ) == S_OK
         {
@@ -383,7 +395,17 @@ unsafe extern "C" fn BrFolder_InsertItem(
         return core::ptr::null_mut();
     }
 
-    let pItemData: *mut BrItemData = BrItemData();
+    // C++ `new BrItemData()` value-initialises: the PODs zero and the two smart pointers
+    // default-construct to null. `atl.rs` documents both as zeroable and transparent, so a
+    // zeroed block IS that object.
+    let pItemData: *mut BrItemData = HeapAlloc(
+        GetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        core::mem::size_of::<BrItemData>() as SIZE_T,
+    ) as *mut BrItemData;
+    if pItemData.is_null() {
+        return core::ptr::null_mut();
+    }
     let mut item: TVITEMW = unsafe { core::mem::zeroed() };
     item.mask = TVIF_TEXT | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM | TVIF_CHILDREN;
     item.pszText = szName.as_mut_ptr();
@@ -396,9 +418,9 @@ unsafe extern "C" fn BrFolder_InsertItem(
         ILClone(pidlChild)
     };
 
-    (*pItemData).lpsfParent = lpsf;
+    (*pItemData).lpsfParent = CComPtr { p: lpsf };
     ((*pItemData).pidlFull).Attach(pidlFull);
-    (*pItemData).pidlChild = ILFindLastID((*pItemData).pidlFull);
+    (*pItemData).pidlChild = ILFindLastID((*pItemData).pidlFull.as_ptr());
     BrFolder_GetIconPair(*pItemData, item);
 
     if BrFolder_GetChildrenEnum(info, pItemData, core::ptr::null_mut()) == S_OK {
@@ -407,7 +429,8 @@ unsafe extern "C" fn BrFolder_InsertItem(
 
     let mut tvins: TVINSERTSTRUCTW = unsafe { core::mem::zeroed() };
     tvins.hParent = hParent;
-    tvins.item = item;
+    // bindgen renders the TVINSERTSTRUCT tail as an anonymous UNION of itemex/item.
+    *tvins.__bindgen_anon_1.item.as_mut() = item;
     TreeView_InsertItem((*info).hwndTreeView, &raw const tvins)
 }
 unsafe extern "C" fn BrFolder_Expand(
@@ -418,7 +441,7 @@ unsafe extern "C" fn BrFolder_Expand(
 ) {
     let pItemData = BrFolder_GetItemData(info, hParent);
     let mut pEnum: CComPtr<IEnumIDList> = core::mem::zeroed();
-    let hr: HRESULT = BrFolder_GetChildrenEnum(info, pItemData, &mut pEnum);
+    let hr: HRESULT = BrFolder_GetChildrenEnum(info, pItemData, pEnum.GetAddressOf());
     if hr < 0 {
         return;
     }
@@ -432,13 +455,14 @@ unsafe extern "C" fn BrFolder_Expand(
     let mut pidlTemp: CComHeapPtr<ITEMIDLIST_RELATIVE> = core::mem::zeroed();
     let mut ulFetched: ULONG = 0;
     while S_OK
-        == (*(pEnum)).Next(
+        == ((*(*pEnum).lpVtbl).Next)(
+            pEnum,
             1,
             (&mut pidlTemp) as *mut _,
             &mut ulFetched,
         )
     {
-        BrFolder_InsertItem(info, lpsf, pidlTemp, pidlFull, hParent);
+        BrFolder_InsertItem(info, lpsf, pidlTemp.as_ptr(), pidlFull, hParent);
         pidlTemp.Free();
     }
 
@@ -449,7 +473,7 @@ unsafe extern "C" fn BrFolder_Expand(
     ));
 }
 unsafe extern "C" fn PIDLIsType(pidl: LPCITEMIDLIST, type_: PIDLTYPE) -> BOOL {
-    let data = _ILGetDataPointer(pidl) as *mut _PIDLDATA;
+    let data = _ILGetDataPointer((pidl).cast()) as *mut PIDLDATA;
     if data.is_null() {
         return FALSE;
     }
@@ -465,20 +489,22 @@ unsafe extern "C" fn BrFolder_CheckValidSelection(info: *mut BrFolder, pItemData
     let hr: HRESULT;
 
     let mut bEnabled = TRUE;
-    if ((*lpBrowseInfo).ulFlags & BIF_BROWSEFORCOMPUTER) != 0 && !PIDLIsType(pidlChild, PT_COMP) {
+    if ((*lpBrowseInfo).ulFlags & BIF_BROWSEFORCOMPUTER) != 0 && !PIDLIsType(pidlChild, (PT_COMP) as u8) {
         bEnabled = FALSE;
     }
 
     if ((*lpBrowseInfo).ulFlags & BIF_RETURNFSANCESTORS) != 0 {
         dwAttributes = SFGAO_FILESYSANCESTOR | SFGAO_FILESYSTEM;
-        hr = (*(*pItemData).lpsfParent).GetAttributesOf(1, core::ptr::addr_of!(pidlChild) as *const PCUITEMID_CHILD, &mut dwAttributes as *mut u32);
+        let sf = (*pItemData).lpsfParent.Get();
+        hr = ((*(*sf).lpVtbl).GetAttributesOf)(sf, 1, core::ptr::addr_of!(pidlChild).cast(), &mut dwAttributes as *mut u32);
         if hr < 0 || (dwAttributes & (SFGAO_FILESYSANCESTOR | SFGAO_FILESYSTEM)) == 0 {
             bEnabled = FALSE;
         }
     }
 
     dwAttributes = SFGAO_FOLDER | SFGAO_FILESYSTEM;
-    hr = (*(*pItemData).lpsfParent).GetAttributesOf(1, core::ptr::addr_of!(pidlChild) as *const PCUITEMID_CHILD, &mut dwAttributes as *mut u32);
+    let sf = (*pItemData).lpsfParent.Get();
+    hr = ((*(*sf).lpVtbl).GetAttributesOf)(sf, 1, core::ptr::addr_of!(pidlChild).cast(), &mut dwAttributes as *mut u32);
     if FAILED_UNEXPECTEDLY!(hr) || ((dwAttributes & (SFGAO_FOLDER | SFGAO_FILESYSTEM)) != (SFGAO_FOLDER | SFGAO_FILESYSTEM)) {
         if ((*lpBrowseInfo).ulFlags & BIF_RETURNONLYFSDIRS) != 0 {
             bEnabled = FALSE;
@@ -497,12 +523,12 @@ unsafe extern "C" fn BrFolder_Treeview_Delete(
     let pItemData = (*pnmtv).itemOld.lParam as *mut BrItemData;
     if !pItemData.is_null() {
         // Destructor for CComPtr<IShellFolder> lpsfParent – call Release
-        let lpsf = (*pItemData).lpsfParent;
+        let lpsf = (*pItemData).lpsfParent.Get();
         if !lpsf.is_null() {
-            ((*lpsf).lpVtbl).Release(lpsf);
+            ((*(*lpsf).lpVtbl).Release)(lpsf);
         }
         // Destructor for CComHeapPtr<ITEMIDLIST_ABSOLUTE> pidlFull – free the PIDL
-        let pidl = (*pItemData).pidlFull;
+        let pidl = (*pItemData).pidlFull.as_ptr();
         if !pidl.is_null() {
             ILFree(pidl as PIDLIST_ABSOLUTE);
         }
@@ -521,14 +547,16 @@ unsafe extern "C" fn BrFolder_Treeview_Expand(info: *mut BrFolder, pnmtv: *mut N
     let mut hr = S_OK;
     let mut lpsf2: *mut IShellFolder = core::ptr::null_mut();
     if _ILIsEmpty((*pItemData).pidlChild) == 0 {
-        hr = (*(*pItemData).lpsfParent).BindToObject(
+        let sfp = (*pItemData).lpsfParent.Get();
+        hr = ((*(*sfp).lpVtbl).BindToObject)(
+            sfp,
             (*pItemData).pidlChild,
             core::ptr::null_mut(),
             &IID_IShellFolder,
             &mut lpsf2 as *mut *mut IShellFolder as *mut *mut core::ffi::c_void,
         );
     } else {
-        lpsf2 = (*pItemData).lpsfParent;
+        lpsf2 = (*pItemData).lpsfParent.Get();
         if !lpsf2.is_null() {
             ((*(*lpsf2).lpVtbl).AddRef)(lpsf2);
         }
@@ -536,10 +564,10 @@ unsafe extern "C" fn BrFolder_Treeview_Expand(info: *mut BrFolder, pnmtv: *mut N
 
     let hItem = (*pnmtv).itemNew.hItem;
     if FAILED_UNEXPECTEDLY!(hr) == 0 {
-        BrFolder_Expand(info, lpsf2, (*pItemData).pidlFull, hItem);
+        BrFolder_Expand(info, lpsf2, (*pItemData).pidlFull.as_ptr(), hItem);
     }
 
-    if _ILIsMyComputer((*pItemData).pidlChild) == 0 {
+    if _ILIsMyComputer(((*pItemData).pidlChild).cast()) == 0 {
         TreeView_SortChildren((*info).hwndTreeView, hItem, FALSE);
     }
 
@@ -553,11 +581,11 @@ unsafe extern "C" fn BrFolder_Treeview_Changed(info: *mut BrFolder, pnmtv: *mut 
     let pItemData = (*pnmtv).itemNew.lParam as *mut BrItemData;
 
     ILFree((*info).pidlRet);
-    (*info).pidlRet = ILClone((*pItemData).pidlFull);
+    (*info).pidlRet = ILClone((*pItemData).pidlFull.as_ptr());
 
-    let mut szName: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut szName: [u16; (MAX_PATH) as usize] = [0u16; (MAX_PATH) as usize];
     if BrFolder_GetName(
-        (*pItemData).lpsfParent,
+        (*pItemData).lpsfParent.Get(),
         (*pItemData).pidlChild,
         SHGDN_NORMAL | SHGDN_INFOLDER,
         szName.as_mut_ptr(),
@@ -597,14 +625,14 @@ unsafe extern "C" fn BrFolder_Treeview_Rename(info: *mut BrFolder, pnmtv: *mut N
     }
 
     let mut newFull: LPITEMIDLIST;
-    let hr = SHILClone((*data).pidlFull, &mut newFull);
+    let hr = SHILClone((*data).pidlFull.as_ptr(), &mut newFull);
     if hr >= 0 {
         ILRemoveLastID(newFull);
         let hr = SHILAppend(newChild, &mut newFull);
         if hr >= 0 {
             (*data).pidlFull.Free();
             (*data).pidlFull.Attach(newFull);
-            (*data).pidlChild = ILFindLastID((*data).pidlFull);
+            (*data).pidlChild = ILFindLastID((*data).pidlFull.as_ptr());
         }
         newChild = core::ptr::null_mut();
     }
@@ -632,17 +660,19 @@ unsafe extern "C" fn BrFolder_Delete(info: *mut BrFolder, hItem: HTREEITEM) {
         return;
     }
     let mut pCM: *mut IContextMenu = core::ptr::null_mut();
-    let (iid, ppv) = IID_NULL_PPV_ARG(IContextMenu, &mut pCM);
-    let hr = ((*data).lpsfParent).GetUIObjectOf(
-        (*info).hWnd,
+    let sf = (*data).lpsfParent.Get();
+    let hr = ((*(*sf).lpVtbl).GetUIObjectOf)(
+        sf,
+        ((*info).hWnd).cast(),
         1,
         &raw const (*data).pidlChild as *const _,
-        iid,
-        ppv,
+        core::ptr::addr_of!(IID_IContextMenu).cast(),
+        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(pCM).cast(),
     );
     if hr < 0 {
         if !pCM.is_null() {
-            (*pCM).Release();
+            ((*(*pCM).lpVtbl).Release)(pCM);
         }
         return;
     }
@@ -661,7 +691,7 @@ unsafe extern "C" fn BrFolder_Delete(info: *mut BrFolder, hItem: HTREEITEM) {
         b"delete\0".as_ptr() as *const i8,
     );
     if !pCM.is_null() {
-        (*pCM).Release();
+        ((*(*pCM).lpVtbl).Release)(pCM);
     }
 }
 unsafe extern "C" fn BrFolder_Treeview_Keydown(info: *mut BrFolder, keydown: *mut NMTVKEYDOWN) -> LRESULT {
@@ -695,7 +725,7 @@ unsafe extern "C" fn BrFolder_OnNotify(
 ) -> LRESULT {
     let pnmtv: *mut NMTREEVIEWW = lpnmh as *mut NMTREEVIEWW;
 
-    if (*pnmtv).hdr.idFrom != IDC_BROWSE_FOR_FOLDER_TREEVIEW {
+    if (*pnmtv).hdr.idFrom != (IDC_BROWSE_FOR_FOLDER_TREEVIEW) as u64 {
         return 0;
     }
 
@@ -717,7 +747,7 @@ unsafe extern "C" fn BrFolder_OnNotify(
                 MessageBeep(0xffffffff);
                 return (S_FALSE) as i64;
             }
-            let mut Name: [u16; MAX_PATH] = [0u16; MAX_PATH];
+            let mut Name: [u16; (MAX_PATH) as usize] = [0u16; (MAX_PATH) as usize];
             if BrFolder_GetName(
                 (info).cast(),
                 tvdi.item.hItem,
@@ -779,7 +809,7 @@ unsafe extern "C" fn BrFolder_OnInitDialog(hWnd: HWND, info: *mut BrFolder) -> B
         }
 
         if ((*lpBrowseInfo).ulFlags & BIF_NEWDIALOGSTYLE) != 0 {
-            (*info).layout = LayoutInit(hWnd, g_layout_info.as_ptr(), _countof!(g_layout_info));
+            (*info).layout = LayoutInit(hWnd, g_layout_info.as_ptr(), (_countof!(g_layout_info)) as i32);
         }
 
         GetWindowRect(hWnd, &mut rcWnd);
@@ -820,8 +850,8 @@ unsafe extern "C" fn BrFolder_OnInitDialog(hWnd: HWND, info: *mut BrFolder) -> B
     ntreg.pidl = *pidlDesktop;
     ntreg.fRecursive = TRUE;
     (*info).hChangeNotify = SHChangeNotifyRegister(hWnd,
-                                                 SHCNRF_ShellLevel | SHCNRF_NewDelivery,
-                                                 SHCNE_ALLEVENTS,
+                                                 (SHCNRF_ShellLevel | SHCNRF_NewDelivery) as i32,
+                                                 (SHCNE_ALLEVENTS) as i32,
                                                  SHV_CHANGE_NOTIFY, 1, &mut ntreg);
 
     if (*lpBrowseInfo).pidlRoot.is_null() {
@@ -846,8 +876,8 @@ unsafe extern "C" fn BrFolder_NewFolder(info: *mut BrFolder) -> HRESULT {
     let mut desktop: CComPtr<IShellFolder> = CComPtr::new();
     let mut cur: CComPtr<IShellFolder> = CComPtr::new();
     let mut wszNewFolder: [u16; 25] = [0; 25];
-    let mut path: [u16; MAX_PATH] = [0; MAX_PATH];
-    let mut name: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut path: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut name: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
     let mut hr = SHGetDesktopFolder(desktop.GetAddressOf());
     if FAILED_UNEXPECTEDLY!(hr) {
@@ -855,10 +885,13 @@ unsafe extern "C" fn BrFolder_NewFolder(info: *mut BrFolder) -> HRESULT {
     }
 
     if !(*info).pidlRet.is_null() {
-        hr = desktop.BindToObject(
+        let dsk = desktop.Get();
+        hr = ((*(*dsk).lpVtbl).BindToObject)(
+            dsk,
             (*info).pidlRet,
             core::ptr::null_mut(),
-            core::ptr::addr_of!(IID_IShellFolder), (cur.GetAddressOf()).cast(),
+            core::ptr::addr_of!(IID_IShellFolder).cast(),
+            (cur.GetAddressOf()).cast(),
         );
         if FAILED_UNEXPECTEDLY!(hr) {
             return hr;
@@ -869,7 +902,7 @@ unsafe extern "C" fn BrFolder_NewFolder(info: *mut BrFolder) -> HRESULT {
         cur.Attach(desktop.Detach());
         hr = SHGetFolderPathW(
             core::ptr::null_mut(),
-            CSIDL_DESKTOPDIRECTORY,
+            (CSIDL_DESKTOPDIRECTORY) as i32,
             core::ptr::null_mut(),
             SHGFP_TYPE_CURRENT,
             path.as_mut_ptr(),
@@ -885,7 +918,7 @@ unsafe extern "C" fn BrFolder_NewFolder(info: *mut BrFolder) -> HRESULT {
         shell32_hInstance,
         IDS_NEWFOLDER,
         wszNewFolder.as_mut_ptr(),
-        _countof!(wszNewFolder),
+        (_countof!(wszNewFolder)) as i32,
     ) == 0
     {
         return hr;
@@ -934,12 +967,14 @@ unsafe extern "C" fn BrFolder_NewFolder(info: *mut BrFolder) -> HRESULT {
     }
 
     let mut pidlNew: CComHeapPtr<ITEMIDLIST_RELATIVE> = CComHeapPtr::new();
-    hr = cur.ParseDisplayName(
+    let curp = cur.Get();
+    hr = ((*(*curp).lpVtbl).ParseDisplayName)(
+        curp,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         name.as_mut_ptr().offset(len as isize),
         core::ptr::null_mut(),
-        pidlNew.GetAddressOf(),
+        (pidlNew.GetAddressOf()).cast(),
         core::ptr::null_mut(),
     );
     if FAILED_UNEXPECTEDLY!(hr) {
@@ -951,8 +986,8 @@ unsafe extern "C" fn BrFolder_NewFolder(info: *mut BrFolder) -> HRESULT {
     BrFolder_Rename(info, hAdded)
 }
 unsafe extern "C" fn BrFolder_OnOK(info: *mut BrFolder) {
-    let mut szPath: [u16; MAX_PATH] = [0u16; MAX_PATH];
-    GetDlgItemTextW((*info).hWnd, (IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT) as i32, szPath.as_mut_ptr(), _countof!(szPath));
+    let mut szPath: [u16; (MAX_PATH) as usize] = [0u16; (MAX_PATH) as usize];
+    GetDlgItemTextW((*info).hWnd, (IDC_BROWSE_FOR_FOLDER_FOLDER_TEXT) as i32, szPath.as_mut_ptr(), (_countof!(szPath)) as i32);
     StrTrimW(szPath.as_mut_ptr(), CPP_COM_WSTR_731D7EC48EEF.as_ptr());
 
     if PathIsRelativeW(szPath.as_mut_ptr()) == 0 && PathIsDirectoryW(szPath.as_mut_ptr()) != 0 {
@@ -962,7 +997,7 @@ unsafe extern "C" fn BrFolder_OnOK(info: *mut BrFolder) {
     }
 
     if (*info).pidlRet.is_null() {
-        (*info).pidlRet = _ILCreateDesktop();
+        (*info).pidlRet = (_ILCreateDesktop()).cast();
     }
 
     let lpBrowseInfo = (*info).lpBrowseInfo;
@@ -980,7 +1015,7 @@ unsafe extern "C" fn BrFolder_OnOK(info: *mut BrFolder) {
         SHGFI_PIDL | SHGFI_DISPLAYNAME,
     ) != 0
     {
-        lstrcpynW((*lpBrowseInfo).pszDisplayName, fileInfo.szDisplayName.as_ptr(), (MAX_PATH) as i32);
+        crate::island::lstrcpynW((*lpBrowseInfo).pszDisplayName, fileInfo.szDisplayName.as_ptr(), (MAX_PATH) as i32);
     }
 }
 unsafe extern "C" fn BrFolder_OnCommand(info: *mut BrFolder, id: u32) {
@@ -1039,11 +1074,13 @@ unsafe extern "C" fn BrFolder_OnContextMenu(info: *mut BrFolder, lParam: LPARAM)
     TreeView_GetItem((*info).hwndTreeView, &mut tvi);
 
     let mut pcm: *mut IContextMenu = core::ptr::null_mut();
-    let hr = (*(*item).lpsfParent).GetUIObjectOf(
+    let isf = (*item).lpsfParent.Get();
+    let hr = ((*(*isf).lpVtbl).GetUIObjectOf)(
+        isf,
         (*info).hWnd,
         1,
         &(*item).pidlChild,
-        &IID_IContextMenu,
+        core::ptr::addr_of!(IID_IContextMenu).cast(),
         core::ptr::null_mut(),
         &mut pcm as *mut *mut IContextMenu as *mut *mut core::ffi::c_void,
     );
@@ -1076,11 +1113,11 @@ unsafe extern "C" fn BrFolder_OnContextMenu(info: *mut BrFolder, lParam: LPARAM)
     );
 
     let cmd = TrackPopupMenuEx(hMenu, TPM_RETURNCMD, ici.ptInvoke.x, ici.ptInvoke.y, (*info).hWnd, core::ptr::null_mut());
-    ici.lpVerb = MAKEINTRESOURCEA(cmd - (ID_FIRSTCMD) as i32);
+    ici.lpVerb = MAKEINTRESOURCEA((cmd - (ID_FIRSTCMD) as i32) as u32);
     if cmd == (IDC_TOGGLE) as i32 {
         TreeView_SelectItem((*info).hwndTreeView, hSelected);
         TreeView_Expand((*info).hwndTreeView, hSelected, TVE_TOGGLE);
-    } else if cmd != 0 && GetDfmCmd(pcm, ici.lpVerb) == DFM_CMD_RENAME {
+    } else if cmd != 0 && GetDfmCmd((pcm).cast(), ici.lpVerb) == DFM_CMD_RENAME {
         BrFolder_Rename(info, hSelected);
     } else if cmd != 0 {
         if GetKeyState((VK_SHIFT) as i32) < 0 {
@@ -1226,7 +1263,7 @@ unsafe extern "C" fn BrFolder_RefreshRecurse(
 ) {
     let mut pEnum: CComPtr<IEnumIDList> = CComPtr::null();
     let pItemData = BrFolder_GetItemData(info, hTarget);
-    let hrEnum = BrFolder_GetChildrenEnum(info, pItemData, &mut pEnum);
+    let hrEnum = BrFolder_GetChildrenEnum(info, pItemData, pEnum.GetAddressOf());
 
     if hrEnum >= 0 {
         let mut pidlTemp: CComHeapPtr<ITEMIDLIST_RELATIVE> = CComHeapPtr::null();
@@ -1240,7 +1277,7 @@ unsafe extern "C" fn BrFolder_RefreshRecurse(
             if !BrFolder_TreeItemHasThisChild(info, hTarget, pidlTemp) {
                 BrFolder_InsertItem(
                     info,
-                    (*pItemData).lpsfParent,
+                    (*pItemData).lpsfParent.Get(),
                     pidlTemp,
                     (*pItemData).pidlFull,
                     hTarget,
@@ -1255,7 +1292,7 @@ unsafe extern "C" fn BrFolder_RefreshRecurse(
     hItem = TreeView_GetChild((*info).hwndTreeView, hTarget);
     while hItem != 0 {
         hNextItem = TreeView_GetNextSibling((*info).hwndTreeView, hItem);
-        if hrEnum < 0 || BrFolder_IsTreeItemInEnum(info, hItem, pEnum) == 0 {
+        if hrEnum < 0 || BrFolder_IsTreeItemInEnum(info, hItem, pEnum.Get()) == 0 {
             TreeView_DeleteItem((*info).hwndTreeView, hItem);
             hNextItem = TreeView_GetChild((*info).hwndTreeView, hTarget);
             hItem = hNextItem;
@@ -1422,7 +1459,7 @@ unsafe extern "stdcall" fn BrFolderDlgProc(
                 LayoutUpdate(
                     hWnd,
                     (*info).layout,
-                    g_layout_info.as_ptr(),
+                    (g_layout_info.as_ptr()).cast(),
                     _countof!(g_layout_info),
                 );
             }
@@ -1453,14 +1490,14 @@ unsafe extern "stdcall" fn BrFolderDlgProc(
             if wParam != 0 {
                 return (BrFolder_OnSetSelectionW(info, lParam as LPWSTR)) as isize;
             } else {
-                return BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST);
+                return (BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST)) as isize;
             }
         }
         BFFM_SETEXPANDED => {
             if wParam != 0 {
-                return BrFolder_OnSetExpanded(info, core::ptr::null_mut(), lParam as LPWSTR);
+                return (BrFolder_OnSetExpanded(info, core::ptr::null_mut(), lParam as LPWSTR)) as isize;
             } else {
-                return BrFolder_OnSetExpanded(info, lParam as LPITEMIDLIST, core::ptr::null_mut());
+                return (BrFolder_OnSetExpanded(info, lParam as LPITEMIDLIST, core::ptr::null_mut())) as isize;
             }
         }
         SHV_CHANGE_NOTIFY => {
@@ -1502,7 +1539,7 @@ unsafe extern "C" fn BrFolderDlgProc(
             TRUE,
         ) == S_OK
         {
-            SetWindowLongPtr(hWnd, DWLP_MSGRESULT, result);
+            SetWindowLongPtr(hWnd, (DWLP_MSGRESULT) as i32, (result) as i64);
             return (TRUE) as isize;
         }
     }
@@ -1511,12 +1548,12 @@ unsafe extern "C" fn BrFolderDlgProc(
         WM_NOTIFY => {
             SetWindowLongPtr(
                 hWnd,
-                DWLP_MSGRESULT,
-                (BrFolder_OnNotify(
+                (DWLP_MSGRESULT) as i32,
+                ((BrFolder_OnNotify(
                     info,
                     wParam as u32,
                     lParam as *mut NMHDR,
-                )) as isize,
+                )) as isize) as i64,
             );
             return (TRUE) as isize;
         }
@@ -1538,13 +1575,13 @@ unsafe extern "C" fn BrFolderDlgProc(
                 LayoutUpdate(
                     hWnd,
                     (*info).layout,
-                    g_layout_info.as_ptr(),
+                    (g_layout_info.as_ptr()).cast(),
                     _countof(g_layout_info),
                 );
             }
         }
         BFFM_SETSTATUSTEXTA => {
-            SetDlgItemTextA(hWnd, IDC_BROWSE_FOR_FOLDER_STATUS, lParam as LPSTR);
+            SetDlgItemTextA(hWnd, (IDC_BROWSE_FOR_FOLDER_STATUS) as i32, lParam as LPSTR);
         }
         BFFM_SETSTATUSTEXTW => {
             SetDlgItemTextW(hWnd, (IDC_BROWSE_FOR_FOLDER_STATUS) as i32, lParam as LPWSTR);
@@ -1569,14 +1606,14 @@ unsafe extern "C" fn BrFolderDlgProc(
             if wParam != 0 {
                 return (BrFolder_OnSetSelectionW(info, lParam as LPWSTR)) as isize;
             } else {
-                return BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST);
+                return (BrFolder_OnSetSelectionPidl(info, lParam as LPITEMIDLIST)) as isize;
             }
         }
         BFFM_SETEXPANDED => {
             if wParam != 0 {
-                return BrFolder_OnSetExpanded(info, core::ptr::null_mut(), lParam as LPWSTR);
+                return (BrFolder_OnSetExpanded(info, core::ptr::null_mut(), lParam as LPWSTR)) as isize;
             } else {
-                return BrFolder_OnSetExpanded(info, lParam as LPITEMIDLIST, core::ptr::null_mut());
+                return (BrFolder_OnSetExpanded(info, lParam as LPITEMIDLIST, core::ptr::null_mut())) as isize;
             }
         }
         SHV_CHANGE_NOTIFY => {
@@ -1593,11 +1630,11 @@ unsafe extern "C" fn BrFolderDlgProc(
 
 #[no_mangle]
 pub unsafe extern "system" fn SHBrowseForFolderA(lpbi: LPBROWSEINFOA) -> LPITEMIDLIST {
-    let mut bi: _BROWSEINFOW = core::mem::zeroed();
+    let mut bi: BROWSEINFOW = core::mem::zeroed();
     bi.hwndOwner = (*lpbi).hwndOwner;
     bi.pidlRoot = (*lpbi).pidlRoot;
 
-    let mut szName: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut szName: [u16; (MAX_PATH) as usize] = [0u16; (MAX_PATH) as usize];
     bi.pszDisplayName = if !(*lpbi).pszDisplayName.is_null() {
         szName.as_mut_ptr()
     } else {

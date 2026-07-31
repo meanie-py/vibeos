@@ -222,6 +222,28 @@ impl<T, A: CAllocator> CHeapPtr<T, A> {
     pub fn as_ptr(&self) -> *mut T {
         self.m_pData
     }
+
+    /// `CHeapPtrBase::operator&()` — `T**` for an out-parameter. Same debug-only ATL assert as
+    /// `CComPtr::GetAddressOf`, and the same reason it is not a panic here.
+    pub fn put(&mut self) -> *mut *mut T {
+        core::ptr::addr_of_mut!(self.m_pData)
+    }
+
+    /// The translation emits all three spellings of ATL's two accessors; these are `as_ptr`
+    /// and `put` under the names `CComPtr` uses, so a call site reads the same either way.
+    pub fn Get(&self) -> *mut T {
+        self.m_pData
+    }
+    pub fn GetAddressOf(&mut self) -> *mut *mut T {
+        core::ptr::addr_of_mut!(self.m_pData)
+    }
+}
+
+impl<T, A: CAllocator> core::ops::Deref for CHeapPtr<T, A> {
+    type Target = *mut T;
+    fn deref(&self) -> &*mut T {
+        &self.m_pData
+    }
 }
 
 impl<T, A: CAllocator> Default for CHeapPtr<T, A> {
@@ -303,6 +325,30 @@ impl<T> CComPtr<T> {
     /// The raw interface pointer, ownership retained — ATL's `operator T*`.
     pub fn as_ptr(&self) -> *mut T {
         self.p
+    }
+
+    /// ATL's `operator T*` under its explicit name; the translation emits both spellings.
+    pub fn Get(&self) -> *mut T {
+        self.p
+    }
+
+    /// ATL's `operator&()` — `T**` for an out-parameter. ATL asserts the pointer is empty
+    /// first (writing through it would leak the old reference); the assert is a debug-only
+    /// check in C++ and is not reproduced as a panic in a shipping DLL.
+    pub fn GetAddressOf(&mut self) -> *mut *mut T {
+        core::ptr::addr_of_mut!(self.p)
+    }
+}
+
+/// ATL's `operator->`. This yields the INTERFACE, not a method: the crate uses the C `lpVtbl`
+/// shape, so a call still goes through the vtable — `((*(*p).lpVtbl).Method)(p, ..)`. A
+/// translated `p.Method(..)` is therefore a call-site defect to rewrite, not a missing impl,
+/// and giving `CComPtr` a `Deref` here is what makes that distinction a compile error rather
+/// than a silent resolution to something else.
+impl<T> core::ops::Deref for CComPtr<T> {
+    type Target = *mut T;
+    fn deref(&self) -> &*mut T {
+        &self.p
     }
 }
 
