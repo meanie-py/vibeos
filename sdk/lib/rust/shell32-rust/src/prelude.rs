@@ -89,7 +89,10 @@ pub use crate::shellutils::{
 // would re-open exactly the nominal split the module header warns about.
 pub use crate::win32::{CopyMemory, HIWORD, LOWORD, ZeroMemory};
 // Crate-root `#[macro_export]` macros — text substitution, so no types to split on.
-pub use crate::{FIELD_OFFSET, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR, V_VT, _countof};
+pub use crate::{
+    FIELD_OFFSET, ImageList_AddIcon, MAKELONG, MAKEROP4, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR,
+    V_VT, _countof,
+};
 
 // shell32-internal helpers that already have a Rust home. These are shell32's own EXPORTS —
 // the island correctly omits them, because `BLOCKLIST_FUNCS_FROM_CRATE` drops every function
@@ -427,6 +430,30 @@ macro_rules! ARRAY_SIZE {
 macro_rules! FAILED_UNEXPECTEDLY {
     ($hr:expr) => {
         (($hr) as $crate::island::HRESULT) < 0
+    };
+}
+/// minwindef.h:188 `#define MAKELONG(wLow, wHigh) ((LONG)(((WORD)((DWORD_PTR)(wLow) & 0xffff)) |
+/// (((DWORD)((WORD)((DWORD_PTR)(wHigh) & 0xffff))) << 16)))`. The `& 0xffff` truncations are
+/// load-bearing: C narrows each half to a WORD before combining, so a caller passing a value
+/// wider than 16 bits must lose the high bits rather than corrupt the other half.
+#[macro_export]
+macro_rules! MAKELONG {
+    ($wLow:expr, $wHigh:expr $(,)?) => {
+        (((($wLow) as u32) & 0xffff) | (((($wHigh) as u32) & 0xffff) << 16)) as i32
+    };
+}
+/// wingdi.h:3392 `#define MAKEROP4(f,b) (DWORD)((((b)<<8)&0xFF000000)|(f))`.
+#[macro_export]
+macro_rules! MAKEROP4 {
+    ($f:expr, $b:expr $(,)?) => {
+        (((((($b) as u32) << 8) & 0xFF000000) | (($f) as u32)) as u32)
+    };
+}
+/// commctrl.h:415 `#define ImageList_AddIcon(himl,hicon) ImageList_ReplaceIcon(himl,-1,hicon)`.
+#[macro_export]
+macro_rules! ImageList_AddIcon {
+    ($himl:expr, $hicon:expr $(,)?) => {
+        $crate::island::ImageList_ReplaceIcon($himl, -1, $hicon)
     };
 }
 /// shellutils.h:678 `#define MAKE_COMPARE_HRESULT(x) ((x)>0 ? S_GREATERTHAN : ((x)<0 ? S_LESSTHAN : S_EQUAL))`.

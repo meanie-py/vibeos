@@ -23,13 +23,18 @@ pub mod shldataobject;
 /// linkage, not the type system, and a reference is a pointer at the ABI.
 pub mod shlfolder;
 
+/// `iconcache.cpp`, flipped. No `EXTERN_C` work was needed: its four shell32-internal exports
+/// (`SIC_Initialize`, `SIC_Destroy`, `SIC_GetIconIndex`, `PidlToSicIndex`) are declared in
+/// `wine/shell32_main.h`, which already wraps the whole header in `extern "C"` for C++.
+pub mod iconcache;
+
 // ---------------------------------------------------------------------------------------------
 // STILL PARKED. The C++ SUBSTRATE that blocked them is now largely built: `crate::atl` supplies
 // CComPtr/CHeapPtr/CComHeapPtr/CSimpleArray and `crate::shellutils` the shellutils.h/utils.h
 // header inlines, so what is left per file is ordinary integration work rather than a missing
 // foundation. Counts measured with all six wired, after the substrate landed:
 //
-//     shlexec.rs   349     shlfileop.rs  227     iconcache.rs   59
+//     shlexec.rs   349     shlfileop.rs  227     iconcache.rs    0 <- flipped
 //     brfolder.rs  244     shlfolder.rs    0 <- flipped     shldataobject 0 <- flipped
 //
 // Read those against the pre-substrate numbers (shldataobject 22, iconcache 68, shlfolder 75,
@@ -39,11 +44,6 @@ pub mod shlfolder;
 //
 // What each still needs, in cheapest-first order:
 //
-//   * iconcache (59) — cast and signature integration plus a handful of one-offs: a function-
-//     local `static int s_imgListIdx` the translation dropped, the nested-anon-union
-//     `RTL_CRITICAL_SECTION_DEBUG` initialiser, `IID_NULL_PPV_ARG` (a macro that expands to
-//     THREE arguments, so its call sites have to be rewritten rather than macro-ised), and
-//     `MAKEROP4`/`ImageList_AddIcon` for the prelude.
 //   * brfolder (244) — cast/signature integration at volume, plus TreeView_* macro residue.
 //   * shlfileop / shlexec (227 / 349) — both additionally want `CStringW`, which `atl.rs`
 //     deliberately does NOT yet provide. Its measured surface is new()/Left/GetLength/IsEmpty/
@@ -55,6 +55,5 @@ pub mod shlfolder;
 // Each carries an `//! ORPHAN-BY-DESIGN:` banner. PAID artifacts — do not delete them to tidy up.
 //
 // pub mod brfolder;
-// pub mod iconcache;
 // pub mod shlexec;
 // pub mod shlfileop;
