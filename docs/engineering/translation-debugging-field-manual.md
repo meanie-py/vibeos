@@ -3889,6 +3889,24 @@ attempts is not evidence the failure is real. Second, and this is the one that c
 gating.** `./vibeos-cli host-status` before submitting, then leave the host alone. The lane whose
 gate you are starving is your own.
 
+**A red base is an alibi only for the failures it EXPLAINS — compare the STAGES, not the
+verdicts.** 2026-07-31: the queue sat undrained for 19 hours behind
+`TRAIN HALTED — origin/master itself fails the gate (NET_FLAKE) ... No submission was rejected`.
+That reads like the base check working, and it was half working. The batch had failed
+`LINT_FAIL` while the base-alone control failed `NET_FLAKE` — two independent classes, and a
+starved net suite says nothing about whether a lane added lint findings. The conductor collapsed
+each gate to one `classification`, so "base red" became a blanket alibi and three real
+`verify_signatures` regressions (`KiThreadStartup`, `NtSetLdtEntries`, `ObpSetHandleAttributes`)
+went unattributed while every innocent lane queued behind them. The evidence was already on disk:
+both `summary.json`s carry per-stage results, and the base **passed all three `lint:*` stages**.
+`queue.py` now keeps that map (`GateVerdict.stages`) and rejects a lone submission for the
+DETERMINISTIC stages the base ran and passed, while still halting the train — nothing can land on
+a red base, but a doomed lane no longer blocks the queue with its defect unreported. Two guards
+matter as much as the rule: a stage the base did not RUN proves nothing (an early-halting base
+gate must not convict by omission), and smoke stages are excluded because they are exactly the
+timing-sensitive ones this section is about. Generalise it: **when a control experiment fails,
+check that it failed the same WAY before you let it absolve anything.**
+
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 
 **Symptom.** `test_queue_is_fifo_by_arrival` failed roughly 1 run in 80, only ever under
