@@ -60,7 +60,20 @@ STDIO = REPO / "sdk/include/crt/stdio.h"
 PAIRS = [
     (WCS, SHIM),
     (MSVCRT / "scanf.c", MSVCRT / "rust_scanf_shim.c"),
+    # file.c's 20: the 16 fprintf/printf/fwprintf/wprintf shells, plus the four
+    # _open/_sopen ones whose `...` carries an optional pmode rather than a format.
+    # Those four are the reason VA_MACROS exists below — their first call-shaped
+    # token is `va_arg`, not the delegate.
+    (MSVCRT / "file.c", MSVCRT / "rust_file_varargs_shim.c"),
 ]
+
+#: `va_arg` is call-shaped and appears BEFORE the real delegate in the four
+#: `_open`-family bodies (`pmode = va_arg(ap, int);` precedes `return _sopen(...)`).
+#: Taking it as the delegate would still compare equal — the shim is a verbatim copy —
+#: but it would compare the wrong thing, leaving the `_sopen`/`_wsopen_dispatch` call
+#: and its argument order unchecked. That is the exact drift this scanner exists to
+#: catch, so skip the stdarg macros and keep looking.
+VA_MACROS = {"va_arg", "va_start", "va_end", "va_copy"}
 
 
 def strip_comments(text: str) -> str:
@@ -140,7 +153,15 @@ def shells(path: Path, keyword: str) -> dict[str, tuple[list[str], str, list[str
                 pnames.append(w[-1])
         brace = text.index("{", i)
         body, _ = body_of(text, brace)
-        cm = CALL_RE.search(body)
+        # Skip the stdarg macros: they are call-shaped but they are not the delegate.
+        pos = 0
+        while True:
+            cm = CALL_RE.search(body, pos)
+            if not cm:
+                break
+            if cm.group(1) not in VA_MACROS:
+                break
+            pos = cm.end(1)
         if not cm:
             continue
         c_open = body.index("(", cm.start(1))

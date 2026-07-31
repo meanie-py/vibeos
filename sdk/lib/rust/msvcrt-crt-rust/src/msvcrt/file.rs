@@ -18,6 +18,39 @@ use crate::prelude::*;
 use msvcrt_sys::*;
 use core::ffi::c_void;
 
+// ---------------------------------------------------------------------------
+// file.c's 20 VARIADIC entry points are deliberately NOT here.
+//
+// Stable Rust cannot DEFINE a C-variadic function (`c_variadic` is nightly and
+// this crate is pinned stable), so they live in
+// `dll/win32/msvcrt/rust_file_varargs_shim.c` as three-line `va_start`
+// trampolines — the same arrangement wcs.c and scanf.c already use.
+//
+// Nothing else moved back to C. Each trampoline only starts the cursor and
+// hands it to its `va_list` twin below, all of which are Rust:
+//   fprintf -> vfprintf, printf_s -> vprintf_s, _fprintf_p -> _vfprintf_p_l, ...
+//   _sopen  -> _sopen_dispatch, _wsopen -> _wsopen_dispatch  (both Rust, below)
+//   _open   -> _sopen, _wopen -> _wsopen                     (both in the shim)
+//
+// tools/scan_varargs_shim_parity.py diffs that TU against file.c so the
+// transcription cannot drift.
+//
+// Three of them are called from Rust below (`_creat`/`_wcreat` -> `_open`/`_wopen`,
+// `_wfsopen` -> `_wsopen`), so they are declared here. DECLARING a C-variadic is
+// ordinary stable Rust — only DEFINING one needs `c_variadic` — and the declaration
+// must stay variadic because the call sites genuinely differ in arity: `_open` is
+// called with both 2 and 3 arguments, matching the C, where the third is consumed
+// only when `_O_CREAT` is set. Giving these a fixed arity to "simplify" would put a
+// pmode slot on the stack that the callee does not read on the non-CREAT path.
+// `_sopen` is deliberately absent: nothing in this file calls it.
+// ---------------------------------------------------------------------------
+extern "C" {
+    pub fn _open(path: *const i8, flags: i32, ...) -> i32;
+    pub fn _wopen(path: *const wchar_t, flags: i32, ...) -> i32;
+    pub fn _wsopen(path: *const wchar_t, oflags: i32, shflags: i32, ...) -> i32;
+}
+
+
 // ---- file-scope preamble (translated) ----
 pub const ALL_S_IREAD: u32 = (_S_IREAD | (_S_IREAD >> 3) | (_S_IREAD >> 6));
 pub const ALL_S_IWRITE: u32 = (_S_IWRITE | (_S_IWRITE >> 3) | (_S_IWRITE >> 6));
@@ -2368,26 +2401,6 @@ pub unsafe extern "C" fn _wsopen_s(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _wsopen(path: *const wchar_t, oflags: i32, shflags: i32, mut args: ...) -> i32 {
-    let pmode: i32;
-    let mut fd: i32 = 0;
-
-    if (oflags & (_O_CREAT) as i32) != 0 {
-        let mut ap: va_list = core::mem::zeroed();
-        va_start(core::ptr::addr_of_mut!(ap), shflags);
-        pmode = va_arg(core::ptr::addr_of_mut!(ap), core::mem::size_of::<i32>());
-        va_end(core::ptr::addr_of_mut!(ap));
-    } else {
-        pmode = 0;
-    }
-
-    if _wsopen_dispatch(path, oflags, shflags, pmode, core::ptr::addr_of_mut!(fd), 0) != 0 {
-        -1
-    } else {
-        fd
-    }
-}
-#[no_mangle]
 pub unsafe extern "C" fn _sopen_dispatch(
     path: *const i8,
     oflags: i32,
@@ -2426,55 +2439,8 @@ pub unsafe extern "C" fn _sopen_s(
     _sopen_dispatch(path, oflags, shflags, pmode, fd, 1)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _sopen(path: *const i8, oflags: i32, shflags: i32, mut args: ...) -> i32 {
-    let pmode: i32;
-    let mut fd: i32 = 0;
 
-    if (oflags & (_O_CREAT) as i32) != 0 {
-        let mut ap: 0;
 
-        va_start(ap, shflags);
-        pmode = va_arg(ap, i32);
-        va_end(ap);
-    } else {
-        pmode = 0;
-    }
-
-    if _sopen_dispatch(path, oflags, shflags, pmode, &mut fd as *mut i32, 1) != 0 {
-        -1
-    } else {
-        fd
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn _open(path: *const i8, flags: i32, mut args: ...) -> i32 {
-    let mut ap = args;
-
-    if (flags & (_O_CREAT) as i32) != 0 {
-        let pmode: i32;
-        va_start(ap, flags);
-        pmode = va_arg(ap, i32);
-        va_end(ap);
-        return _sopen(path, flags, (_SH_DENYNO) as i32, pmode);
-    } else {
-        return _sopen(path, flags, (_SH_DENYNO) as i32);
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn _wopen(path: *const wchar_t, flags: i32, mut args: ...) -> i32 {
-    if flags & (_O_CREAT) as i32 != 0 {
-        let pmode: i32;
-        va_start(args, flags);
-        pmode = va_arg(args, i32);
-        va_end(args);
-        return _wsopen(path, flags, (_SH_DENYNO) as i32, pmode);
-    } else {
-        return _wsopen(path, flags, (_SH_DENYNO) as i32);
-    }
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn _creat(path: *const i8, pmode: i32) -> i32 {
@@ -4847,7 +4813,7 @@ unsafe extern "C" fn puts_clbk_file_w(file: *mut core::ffi::c_void, len: i32, st
     return len;
 }
 unsafe extern "C" fn vfprintf_helper(options: u32, file: *mut FILE, format: *const i8,
-        locale: _locale_t, mut valist: *mut __va_list_tag) -> i32 {
+        locale: _locale_t, mut valist: va_list) -> i32 {
     let mut args_ctx: [printf_arg; (_ARGMAX + 1) as usize] = core::mem::zeroed();
     let tmp_buf: u8;
     let ret: i32;
@@ -4883,7 +4849,7 @@ unsafe extern "C" fn vfwprintf_helper(
     file: *mut FILE,
     format: *const wchar_t,
     locale: _locale_t,
-    mut valist: *mut __va_list_tag,
+    mut valist: va_list,
 ) -> i32 {
     let mut args_ctx: [printf_arg; (_ARGMAX + 1) as usize] =
         core::mem::zeroed();
@@ -4953,7 +4919,7 @@ pub unsafe extern "C" fn _vfprintf_s_l(
     file: *mut FILE,
     format: *const i8,
     locale: _locale_t,
-    valist: *mut __va_list_tag) -> i32 {
+    valist: va_list) -> i32 {
     vfprintf_helper(MSVCRT_PRINTF_INVOKE_INVALID_PARAM_HANDLER, file, format, locale, valist)
 }
 
@@ -4962,12 +4928,12 @@ pub unsafe extern "C" fn _vfwprintf_s_l(
     file: *mut FILE,
     format: *const wchar_t,
     locale: _locale_t,
-    valist: *mut __va_list_tag,
+    valist: va_list,
 ) -> i32 {
     vfwprintf_helper(MSVCRT_PRINTF_INVOKE_INVALID_PARAM_HANDLER, file, format, locale, valist)
 }
 #[no_mangle]
-pub unsafe extern "C" fn vfprintf(FILE: *mut FILE, format: *const i8, mut valist: *mut __va_list_tag) -> i32 {
+pub unsafe extern "C" fn vfprintf(FILE: *mut FILE, format: *const i8, mut valist: va_list) -> i32 {
     return vfprintf_helper(0, FILE, format, core::ptr::null_mut(), valist);
 }
 
@@ -4984,7 +4950,7 @@ pub unsafe extern "C" fn vfprintf_s(
 pub unsafe extern "C" fn vfwprintf(
     file: *mut FILE,
     format: *const wchar_t,
-    mut valist: *mut __va_list_tag,
+    mut valist: va_list,
 ) -> i32 {
     vfwprintf_helper(0, file, format, core::ptr::null_mut(), valist)
 }
@@ -5003,7 +4969,7 @@ pub unsafe extern "C" fn _vfprintf_l(
     file: *mut FILE,
     format: *const i8,
     locale: _locale_t,
-    valist: *mut __va_list_tag) -> i32 {
+    valist: va_list) -> i32 {
     vfprintf_helper(0, file, format, locale, valist)
 }
 
@@ -5022,7 +4988,7 @@ pub unsafe extern "C" fn _vfprintf_p_l(
     file: *mut FILE,
     format: *const i8,
     locale: _locale_t,
-    valist: *mut __va_list_tag) -> i32 {
+    valist: va_list) -> i32 {
     vfprintf_helper(
         MSVCRT_PRINTF_POSITIONAL_PARAMS | MSVCRT_PRINTF_INVOKE_INVALID_PARAM_HANDLER,
         file,
@@ -5067,7 +5033,7 @@ pub unsafe extern "C" fn _vfwprintf_p(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vprintf(format: *const i8, valist: *mut __va_list_tag) -> i32 {
+pub unsafe extern "C" fn vprintf(format: *const i8, valist: va_list) -> i32 {
     vfprintf(stdout, format, valist)
 }
 
@@ -5079,7 +5045,7 @@ pub unsafe extern "C" fn vprintf_s(format: *const i8, valist: va_list) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn vwprintf(
     format: *const wchar_t,
-    mut valist: *mut __va_list_tag,
+    mut valist: va_list,
 ) -> i32 {
     vfwprintf(stdout, format, valist)
 }
@@ -5092,176 +5058,19 @@ pub unsafe extern "C" fn vwprintf_s(
     vfwprintf_s(MSVCRT__iob.as_mut_ptr().offset(1), format, valist)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn fprintf(file: *mut FILE, format: *const i8, mut args: ...) -> i32 {
-    let mut valist: *mut __va_list_tag = core::ptr::null_mut();
-    let res: i32;
-    va_start(valist, format);
-    res = vfprintf(file, format, valist);
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn fprintf_s(file: *mut FILE, format: *const i8, mut args: ...) -> i32 {
-    let mut valist: va_list = core::mem::zeroed();
-    let res: i32;
-    va_start(valist, format);
-    res = vfprintf_s(file, format, valist);
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn _fprintf_l(
-    file: *mut FILE,
-    format: *const i8,
-    locale: *mut _locale_t,
-    mut args: ...
-) -> i32 {
-    let mut valist: __va_list_tag = core::mem::zeroed();
-    let res: i32;
-    va_start(&mut valist as *mut _ as *mut core::ffi::c_void, locale);
-    res = _vfprintf_l(file, format, (locale).cast(), &mut valist);
-    va_end(&mut valist as *mut _ as *mut core::ffi::c_void);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn _fprintf_p(file: *mut FILE, format: *const i8, mut args: ...) -> i32 {
-    let mut valist: __va_list_tag = core::mem::zeroed();
-    let res: i32;
-    va_start(&mut valist as *mut _ as *mut core::ffi::c_void, format);
-    res = _vfprintf_p_l(file, format, core::ptr::null_mut(), &mut valist as *mut __va_list_tag);
-    va_end(&mut valist as *mut _ as *mut core::ffi::c_void);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn _fprintf_p_l(
-    file: *mut FILE,
-    format: *const i8,
-    locale: *mut _locale_t,
-    mut args: ...
-) -> i32 {
-    let mut valist: __va_list_tag = core::mem::zeroed();
-    let res: i32;
-    va_start(&mut valist, args);
-    res = _vfprintf_p_l(file, format, (locale).cast(), &mut valist);
-    va_end(&mut valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn _fprintf_s_l(
-    file: *mut FILE,
-    format: *const i8,
-    locale: *mut _locale_t,
-    ...
-) -> i32 {
-    let mut valist: *mut __va_list_tag = core::ptr::null_mut();
-    let res: i32;
-    va_start(valist, locale);
-    res = _vfprintf_s_l(file, format, (locale).cast(), valist);
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn fwprintf(
-    file: *mut FILE,
-    format: *const wchar_t,
-    mut args: ...
-) -> i32 {
-    let mut valist: va_list = core::mem::zeroed();
-    let res: i32;
-    va_start(valist, format);
-    res = vfwprintf(file, format, valist);
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn fwprintf_s(file: *mut FILE, format: *const wchar_t, mut args: ...) -> i32 {
-    let mut valist = args.as_va_list();
-    va_start(valist, format);
-    let res = vfwprintf_s(file, format, valist);
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn _fwprintf_l(
-    file: *mut FILE,
-    format: *const wchar_t,
-    locale: _locale_t,
-    ...
-) -> i32 {
-    let mut valist = core::mem::MaybeUninit::uninit();
-    va_start(valist.as_mut_ptr(), locale);
-    let valist = valist.assume_init();
-    let res = _vfwprintf_l(file, format, locale, valist);
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn _fwprintf_p(file: *mut FILE, format: *const wchar_t, mut args: ...) -> i32 {
-    let mut valist = args.as_va_list();
-    va_start(valist, format);
-    let res = _vfwprintf_p_l(file, format, core::ptr::null_mut(), valist);
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn _fwprintf_p_l(
-    file: *mut FILE,
-    format: *const wchar_t,
-    locale: _locale_t,
-    mut args: ...
-) -> i32 {
-    let mut valist = args.as_va_list();
-    va_start(valist, locale);
-    let res = _vfwprintf_p_l(file, format, locale, valist);
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn _fwprintf_s_l(
-    file: *mut FILE,
-    format: *const wchar_t,
-    locale: _locale_t,
-    mut args: ...
-) -> i32 {
-    let mut valist: *mut __va_list_tag = core::ptr::null_mut();
-    let res: i32;
-    va_start(valist, locale);
-    res = _vfwprintf_s_l(file, format, locale, valist);
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn printf(format: *const i8, mut args: ...) -> i32 {
-    let mut valist: *mut __va_list_tag = core::ptr::null_mut();
-    let res: i32;
-    va_start(valist, format);
-    res = vfprintf(stdout, format, valist);
-    va_end(valist);
-    return res;
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn printf_s(format: *const i8, mut args: ...) -> i32 {
-    let mut valist: va_list = core::mem::zeroed();
-    let res: i32;
-    va_start(valist, format);
-    res = vprintf_s(format, valist);
-    va_end(valist);
-    res
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn ungetc(c: i32, file: *mut FILE) -> i32 {
@@ -5370,23 +5179,7 @@ pub unsafe extern "C" fn _ungetwc_nolock(wc: wint_t, file: *mut FILE) -> wint_t 
     return mwc;
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn wprintf(format: *const wchar_t, mut args: ...) -> i32 {
-    let mut valist: core::ffi::VaList = va_start(args.as_va_list());
-    let res = vwprintf(format, valist.as_va_list());
-    va_end(valist);
-    res
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn wprintf_s(format: *const wchar_t, mut args: ...) -> i32 {
-    let mut valist: va_list = core::mem::zeroed();
-    let res: i32;
-    va_start(valist, format);
-    res = vwprintf_s(format, valist);
-    va_end(valist);
-    res
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn _getmaxstdio() -> i32 {

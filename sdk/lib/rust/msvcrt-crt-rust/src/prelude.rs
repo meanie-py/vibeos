@@ -423,3 +423,19 @@ pub unsafe fn astrdupw_utf8(wstr: *const wchar_t) -> *mut c_char {
     );
     str_
 }
+
+/// A `va_list` cursor, BY VALUE.
+///
+/// On all three of our Windows targets a `va_list` is a plain `char*` walking the flat
+/// argument-slot area, which is exactly why a fixed-arity function that *receives* an
+/// already-started cursor is ordinary stable Rust and needs no `c_variadic`. This is the
+/// same type `printf_shells.rs` uses; see its module header for the full reasoning,
+/// including why each shell takes its own `let mut ap = valist` copy before handing
+/// `&mut ap` down (the C parameter IS a private copy, so a callee advancing the cursor
+/// must not disturb its caller's).
+///
+/// NOT `*mut __va_list_tag`. That spelling is the SysV/Linux model, where a `va_list` is
+/// `__va_list_tag[1]` and an extra indirection deep; c2rust emits it because it anchors on
+/// the host. It is wrong for our targets and the type does not exist in the island — the
+/// translation of file.c arrived with both spellings mixed, and they are normalised here.
+pub type va_list = *mut u8;

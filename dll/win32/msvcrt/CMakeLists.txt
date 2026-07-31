@@ -190,6 +190,14 @@ add_library(msvcrt MODULE
     # replace them by first-match at all; the only way in is to define the
     # trampolines somewhere the linker prefers, which is exactly this target.
     rust_scanf_shim.c
+    # file.c's 20 `...` entry points — the 16 fprintf/printf/fwprintf/wprintf
+    # shells plus the four _open/_sopen ones, whose `...` carries an optional
+    # pmode rather than a format. Same reason and same placement as the two
+    # above: no va_start on stable, and left in file.c they would keep calling
+    # file.c's own C bodies. Their delegates are all external (the `v*` twins
+    # and `_sopen_dispatch`/`_wsopen_dispatch` are Rust in file.rs, and unlike
+    # scanf.c's engines they are not `static`), so first-match reaches Rust.
+    rust_file_varargs_shim.c
 )
 
 target_compile_definitions(msvcrt PRIVATE _MSVCR_VER=0)
