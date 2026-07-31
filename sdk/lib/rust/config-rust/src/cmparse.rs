@@ -1017,6 +1017,30 @@ pub unsafe extern "system" fn CmpCreateLinkNode(
             (*KeyNode).MaxClassLen = (*Context).Class.Length as u32;
         }
 
+        /* Assign the descriptor the caller supplied (CmpInitializeHiveList passes
+         * CmpHiveRootSecurityDescriptor). Only CmpDoCreateChild used to do this, so every
+         * key reached by LINKING a hive -- SAM, SECURITY, SOFTWARE, SYSTEM, .DEFAULT --
+         * got no descriptor at all and fell back to granting World everything.
+         *
+         * This is the kernel's DEFAULT for a hive root. On Windows a hive that carries its
+         * own `sk` cell overrides it; we do not read `sk` cells yet, so the hives whose real
+         * ACLs setup writes (SOFTWARE/SYSTEM/.DEFAULT) still get the default rather than
+         * their own. Owner, group and SACL are correct either way. */
+        let mut NewDescriptor: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
+        let SecStatus = SeAssignSecurity(
+            core::ptr::null_mut(),
+            (*AccessState).SecurityDescriptor,
+            core::ptr::addr_of_mut!(NewDescriptor),
+            1u8,
+            core::ptr::addr_of_mut!((*AccessState).SubjectSecurityContext),
+            core::ptr::addr_of_mut!((*CmpKeyObjectType).TypeInfo.GenericMapping),
+            0,
+        );
+        if NT_SUCCESS(SecStatus) {
+            CmpAssignSecurityDescriptor((*KeyBody).KeyControlBlock, NewDescriptor);
+            SeDeassignSecurity(core::ptr::addr_of_mut!(NewDescriptor));
+        }
+
         HvReleaseCell(Hive, Cell);
     } else {
         HvReleaseCell(Hive, LinkCell);
