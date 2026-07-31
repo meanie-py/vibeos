@@ -3742,6 +3742,7 @@ pub type __msvcrt_long = i32;
 pub type __msvcrt_ulong = u32;
 pub type __time32_t = __msvcrt_long;
 pub type __time64_t = ::core::ffi::c_longlong;
+pub type time_t = __time32_t;
 pub type wchar_t = ::core::ffi::c_ushort;
 pub type wint_t = ::core::ffi::c_ushort;
 pub type errno_t = ::core::ffi::c_int;
@@ -3865,6 +3866,21 @@ pub type _ino_t = ::core::ffi::c_ushort;
 pub type _off_t = ::core::ffi::c_int;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct _stat {
+    pub st_dev: _dev_t,
+    pub st_ino: _ino_t,
+    pub st_mode: ::core::ffi::c_ushort,
+    pub st_nlink: ::core::ffi::c_short,
+    pub st_uid: ::core::ffi::c_short,
+    pub st_gid: ::core::ffi::c_short,
+    pub st_rdev: _dev_t,
+    pub st_size: _off_t,
+    pub st_atime: time_t,
+    pub st_mtime: time_t,
+    pub st_ctime: time_t,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct _stat32 {
     pub st_dev: _dev_t,
     pub st_ino: _ino_t,
@@ -3907,6 +3923,21 @@ pub struct _stat64i32 {
     pub st_atime: __time64_t,
     pub st_mtime: __time64_t,
     pub st_ctime: __time64_t,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _stati64 {
+    pub st_dev: _dev_t,
+    pub st_ino: _ino_t,
+    pub st_mode: ::core::ffi::c_ushort,
+    pub st_nlink: ::core::ffi::c_short,
+    pub st_uid: ::core::ffi::c_short,
+    pub st_gid: ::core::ffi::c_short,
+    pub st_rdev: _dev_t,
+    pub st_size: ::core::ffi::c_longlong,
+    pub st_atime: time_t,
+    pub st_mtime: time_t,
+    pub st_ctime: time_t,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

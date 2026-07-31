@@ -119,6 +119,12 @@ ALLOWLIST_TYPES = [
     # but not the alias, and every signature in file.c spells it `FILE`.
     # `ioinfo` is deliberately absent: it is TU-local to file.c, so the
     # translation carries it and the island must not.
+    # `struct _stat` / `struct _stati64` are DISTINCT structs (sys/stat.h:40,113), not
+    # aliases of the 32/64 variants below — file.c's _fstat/_stat convert into them.
+    # Rust keeps types and fns in separate namespaces, so these coexist with the
+    # `fn _stat` file.rs exports. Derived, because the caller reads this layout.
+    "_stat",
+    "_stati64",
     "_stat32",
     "_stat32i64",
     "_stat64",

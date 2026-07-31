@@ -23,5 +23,5 @@
 //
 // It must go in as ONE flip, never partially: file.c's entry points share one fd table
 // and one FILE ring, so a C `fopen` beside a Rust `fclose` is split state.
-// pub mod file;
+pub mod file;
 pub mod mbcs;
