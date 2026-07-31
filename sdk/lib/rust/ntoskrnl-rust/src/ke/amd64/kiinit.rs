@@ -34,7 +34,7 @@ use super::cpu::{KeI386CpuType, KeI386CpuStep};
 use super::stubs::KeXStateLength;
 
 extern "system" {
-    fn KiInitializeXStateConfiguration(Cpu: u8);
+    fn KiInitializeXStateConfiguration(Cpu: ULONG);
     fn KiSwitchToBootStack(InitialStack: u64) -> !;
     fn KdInitSystem(Phase: u32, LoaderBlock: PLOADER_PARAMETER_BLOCK) -> u8;
     fn KdPollBreakIn() -> u8;
@@ -663,10 +663,18 @@ pub unsafe extern "system" fn KiInitializeKernelMachineDependent(
         }
     }
 
-    #[cfg(debug_assertions)]
-    {
-        KiReportCpuFeatures(Prcb);
-    }
+    // KiReportCpuFeatures (ke/amd64/cpu.c:354) is NOT TRANSLATED — ke/amd64/cpu.rs
+    // carries only its signature as a comment, and the C is cohab-dead, so the
+    // symbol exists in no artifact. The call survived because it sits behind
+    // `cfg(debug_assertions)`, which the release profile never set: an undefined
+    // symbol that nothing ever tried to link. Arming ex/ntoskrnl assertions made
+    // it a hard LINK_FAIL on both x86 arches.
+    //
+    // Left disabled rather than stubbed: a body invented here would report CPU
+    // features we never decoded. Translating it is owed work, tracked in the
+    // roadmap with the other never-compiled `cfg(debug_assertions)` blocks.
+    // #[cfg(debug_assertions)]
+    // KiReportCpuFeatures(Prcb);
 }
 
 static mut LdrCoreEntries: [LDR_DATA_TABLE_ENTRY; 3] = unsafe { core::mem::zeroed() };
@@ -775,7 +783,7 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
         KiInitializeKernelMachineDependent(core::ptr::addr_of_mut!((*Pcr).Prcb), LoaderBlock);
     }
 
-    KiInitializeXStateConfiguration(Cpu as u8);
+    KiInitializeXStateConfiguration(Cpu as ULONG);
 
     InitialStack = ALIGN_DOWN_BY(((*LoaderBlock).KernelStack - KeXStateLength as u64) as usize, 64) as u64;
 

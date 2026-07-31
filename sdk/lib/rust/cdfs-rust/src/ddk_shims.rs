@@ -408,7 +408,7 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
 #[no_mangle] pub extern "C" fn PAGED_CODE() {}
 
 // wdm.h NT_ASSERT(exp) — retail no-op (the grind passes the predicate as i32).
-#[no_mangle] pub extern "C" fn NT_ASSERT(_Condition: i32) {}
+#[no_mangle] pub extern "C" fn NT_ASSERT(_Condition: BOOLEAN) {}
 
 // cdfs debug ASSERT macros — retail no-ops.
 #[no_mangle] pub extern "C" fn ASSERT_OPTIONAL_IRP(_Irp: PIRP) {}

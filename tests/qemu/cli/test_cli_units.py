@@ -2902,6 +2902,82 @@ def test_conformance_arch_normalization():
     assert m.get("amd64-uefi", "amd64-uefi") == "amd64-uefi"  # suffixed passes through
 
 
+def test_worktree_provisioning_preflight(tmp_path):
+    gaps = conformance_mod._worktree_provisioning_gaps(tmp_path, "arm64")
+    blob = "\n".join(gaps)
+    # An empty tree lacks all three, and each finding must carry its own fix.
+    assert "llvm-mingw" in blob and "kmtest-sweep-arm64.exe" in blob
+    assert "QEMU_EFI.fd" in blob and "efivars.fd" in blob
+    assert blob.count("fix:") == len(gaps)
+    # Payload binaries are per-commit generated artifacts: BUILD them. Telling
+    # anyone to copy them from a sibling worktree is the fleet-isolation trap.
+    assert "build.sh arm64" in blob
+    assert "cp " not in blob.split("QEMU_EFI.fd")[0]
+    # A PROVISIONED tree must stay silent, or the preflight would refuse every
+    # ordinary run. Build that tree here rather than asserting against the
+    # ambient checkout: the merge queue gates in a FRESH worktree, which
+    # legitimately lacks the gitignored payload exes, so pointing this at
+    # _conf_repo_root() made the assertion a property of whoever ran it — it
+    # passed locally and rejected the lane in the integration tree.
+    ok = tmp_path / "provisioned"
+    (ok / ".build-tools" / "llvm-mingw").mkdir(parents=True)
+    (ok / "tools" / "payloads" / conformance_mod.SUITE).mkdir(parents=True)
+    (
+        ok
+        / "tools"
+        / "payloads"
+        / conformance_mod.SUITE
+        / f"{conformance_mod.SUITE}-sweep-arm64.exe"
+    ).write_bytes(b"")
+    (ok / "qemu").mkdir(parents=True)
+    (ok / "qemu" / "QEMU_EFI.fd").write_bytes(b"")
+    (ok / "qemu" / "efivars.fd").write_bytes(b"")
+    assert conformance_mod._worktree_provisioning_gaps(ok, "arm64") == []
+
+
+def _drive_soak(monkeypatch, launched_per_round, repeat=20):
+    """Run conformance()'s repeat loop with a stubbed sweep, returning how many
+    rounds it actually ran. `launched_per_round` supplies each round's launched
+    count (last value repeats)."""
+    calls = {"n": 0}
+    monkeypatch.setattr(conformance_mod, "_ROUNDS", [], raising=False)
+
+    def fake_once(args, repo):
+        i = calls["n"]
+        calls["n"] += 1
+        n = launched_per_round[min(i, len(launched_per_round) - 1)]
+        conformance_mod._ROUNDS.append({"shape": "x", "launched": n})
+        return 0 if n else 1
+
+    monkeypatch.setattr(conformance_mod, "_conformance_once", fake_once)
+
+    class A:
+        arch = "arm64"
+        no_build = False
+        repeat = 0
+
+    a = A()
+    a.repeat = repeat
+    conformance_mod.conformance(a, Path("/nonexistent"))
+    return calls["n"]
+
+
+def test_soak_aborts_when_the_media_launches_NOTHING(monkeypatch):
+    # An unprovisioned worktree banked 38 launched=0 rounds into the SHARED
+    # ledger in about a minute. Every further round is noise in someone else's
+    # denominator, so the loop must stop rather than run its full repeat count.
+    ran = _drive_soak(monkeypatch, [0], repeat=20)
+    assert ran == 3, f"expected abort after 3 consecutive no-launch rounds, ran {ran}"
+
+
+def test_soak_does_NOT_abort_on_isolated_no_launch_rounds(monkeypatch):
+    # launched=0 is also a GENUINE face — the smp corpus records 13 of them — so
+    # a lone one must still be recorded and the soak must continue. Only a
+    # consecutive run means the media itself is broken.
+    ran = _drive_soak(monkeypatch, [0, 91, 0, 91, 0, 91, 91, 91], repeat=8)
+    assert ran == 8, f"isolated no-launch rounds must not end the soak, ran {ran}"
+
+
 def test_conformance_parser_detects_crash_regression(tmp_path):
     parser = conformance_mod._load_parser(_conf_repo_root())
     log = (

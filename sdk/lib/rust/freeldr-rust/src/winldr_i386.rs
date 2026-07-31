@@ -50,8 +50,8 @@ extern "C" {
     fn MachVideoGetFontsFromFirmware(fonts: *mut u32);
     fn MachGetExtendedBIOSData(area: *mut u32, size: *mut u32);
     fn WARN(fmt: *const i8, ...);
-    fn MmAllocateMemoryWithType(size: u32, memory_type: u32) -> *mut core::ffi::c_void;
-    fn MmSetMemoryType(BaseAddress: *mut core::ffi::c_void, Size: u32, MemoryType: u32);
+    fn MmAllocateMemoryWithType(size: usize, memory_type: u32) -> *mut core::ffi::c_void;
+    fn MmSetMemoryType(BaseAddress: *mut core::ffi::c_void, Size: SIZE_T, MemoryType: u32);
     fn MmGetTotalPagesInLookupTable() -> PFN_NUMBER;
     fn UiMessageBox(message: *const i8);
     fn BugCheck(message: *const i8);
@@ -76,12 +76,12 @@ unsafe fn MempAllocatePageTables() -> u8 {
 
     TotalSize = (1 + 1 + NumPageTables * 2) * ((MM_PAGE_SIZE) as u32);
 
-    Buffer = MmAllocateMemoryWithType(TotalSize, LoaderMemoryData) as *mut u8;
+    Buffer = MmAllocateMemoryWithType(TotalSize as usize, LoaderMemoryData) as *mut u8;
 
     PhysicalPageTablesBuffer = Buffer.add((TotalSize - NumPageTables * ((MM_PAGE_SIZE) as u32)) as usize);
     MmSetMemoryType(
         PhysicalPageTablesBuffer as *mut core::ffi::c_void,
-        NumPageTables * ((MM_PAGE_SIZE) as u32),
+        (NumPageTables * ((MM_PAGE_SIZE) as u32)) as SIZE_T,
         LoaderFirmwareTemporary,
     );
 
@@ -275,7 +275,7 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
     (*LoaderBlock).u.I386.CommonDataArea = core::ptr::null_mut();
     (*LoaderBlock).u.I386.MachineType = 0;
 
-    Pcr = MmAllocateMemoryWithType(((2 * MM_PAGE_SIZE) as u32), LoaderStartupPcrPage) as usize;
+    Pcr = MmAllocateMemoryWithType((2 * MM_PAGE_SIZE) as usize, LoaderStartupPcrPage) as usize;
     PcrBasePage = ((Pcr >> MM_PAGE_SHIFT) as u32);
     if Pcr == 0 {
         UiMessageBox(b"Could not allocate PCR.\0".as_ptr() as *const i8);
@@ -284,7 +284,7 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
 
     TssSize = (core::mem::size_of::<KTSS>() as u32 + ((MM_PAGE_SIZE) as u32)) & ((!(MM_PAGE_SIZE - 1)) as u32);
 
-    Tss = MmAllocateMemoryWithType(TssSize, LoaderMemoryData) as usize;
+    Tss = MmAllocateMemoryWithType(TssSize as usize, LoaderMemoryData) as usize;
     TssBasePage = ((Tss >> MM_PAGE_SHIFT) as u32);
     if Tss == 0 {
         UiMessageBox(b"Could not allocate TSS.\0".as_ptr() as *const i8);
@@ -293,7 +293,7 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
 
     BlockSize = NUM_GDT * core::mem::size_of::<KGDTENTRY>() as u32 + NUM_IDT * core::mem::size_of::<KIDTENTRY>() as u32;
     NumPages = (BlockSize + ((MM_PAGE_SIZE) as u32) - 1) >> MM_PAGE_SHIFT;
-    GdtIdt = MmAllocateMemoryWithType(NumPages * ((MM_PAGE_SIZE) as u32), LoaderMemoryData) as PVOID;
+    GdtIdt = MmAllocateMemoryWithType((NumPages * ((MM_PAGE_SIZE) as u32)) as usize, LoaderMemoryData) as PVOID;
     if GdtIdt.is_null() {
         UiMessageBox(b"Could not allocate pages for GDT+IDT!\0".as_ptr() as *const i8);
         return;

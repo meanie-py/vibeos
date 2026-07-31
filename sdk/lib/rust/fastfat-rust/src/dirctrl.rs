@@ -111,7 +111,10 @@ const STATUS_SUCCESS: NTSTATUS = 0;
 const NOTHING: NTSTATUS = 0;
 
 type NTSTATUS = i32;
-type VBO = u64;
+// fat.h:38: `typedef ULONG32 VBO` — 4 bytes, not 8. The local u64 alias here
+// happened to match dirsup's equally-wrong LARGE_INTEGER, so the two bugs hid
+// each other; both now defer to the one authoritative definition.
+use crate::types::VBO;
 type PIRP_CONTEXT = *mut core::ffi::c_void;
 type PVCB = *mut core::ffi::c_void;
 type PDCB = *mut core::ffi::c_void;
@@ -375,7 +378,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
             CurrentVbo = 0;
             (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OffsetToStartSearchFrom = 0;
         } else {
-            CurrentVbo = (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OffsetToStartSearchFrom as u64;
+            CurrentVbo = (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OffsetToStartSearchFrom;
         }
 
         if InitialQuery != 0 || (RestartScan != 0 && !UniArgFileName.is_null() && (*UniArgFileName).Length != 0) {

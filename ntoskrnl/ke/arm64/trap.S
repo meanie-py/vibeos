@@ -82,6 +82,36 @@
 .endm
 
 /*
+ * UNMASK_IRQ_FROM_SPSR — restore the interrupted context's IRQ mask.
+ *
+ * Taking ANY exception sets PSTATE.DAIF to all-masked in hardware, so without
+ * this a synchronous exception handler runs with IRQs off from entry to ERET.
+ * For SVC that means the ENTIRE system call is uninterruptible: interrupt
+ * latency is bounded by the longest syscall, and every syscall that blocks
+ * parks a DAIF-masked context on the swap chain.
+ *
+ * The rule is the same one x86 uses: re-enable iff the interrupted context had
+ * interrupts enabled — SPSR.I (bit 7) is the saved mask. A fault taken inside
+ * an IRQ handler, or inside KiTrapReturn's deliberately-masked ELR/SPSR banking
+ * window, therefore stays masked.
+ *
+ * This does NOT weaken IRQL. IRQL on arm64 is GIC-priority-backed (GICC_PMR,
+ * hal-rust arm64/clock.rs): no GIC line lives in the PASSIVE..DISPATCH band, so
+ * unmasking here can only admit lines whose DIRQL is genuinely above the
+ * current IRQL — which is exactly what NT allows. DAIF is the CPU-wide "no
+ * interrupts at all" hammer and belongs only to exception entry/exit windows.
+ *
+ * Requires x0 = KTRAP_FRAME pointer. Clobbers w2 (caller-saved, already in the
+ * frame, and not an argument to the two-argument handler).
+ */
+.macro UNMASK_IRQ_FROM_SPSR
+    ldr w2, [x0, #TfSpsr]
+    tbnz w2, #7, 1f
+    msr daifclr, #2
+1:
+.endm
+
+/*
  * TRAP_PROLOG - Save register state into a KTRAP_FRAME on the stack.
  *
  * On entry: running at EL1, using SP_EL1.
@@ -389,6 +419,10 @@ KiSErrorEntry:
 KiEL0SynchronousEntry:
     TRAP_PROLOG_EL0
     EXFRAME_SAVE
+    /* Syscalls and user faults arrive from EL0, i.e. from PASSIVE_LEVEL with
+     * interrupts on, so this always unmasks. KiTrapReturn re-masks before it
+     * touches ELR/SPSR. */
+    UNMASK_IRQ_FROM_SPSR
     bl KiSynchronousExceptionHandler
     EXFRAME_RESTORE
     b KiTrapReturn

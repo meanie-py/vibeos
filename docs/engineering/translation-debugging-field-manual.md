@@ -120,6 +120,31 @@ invisible to spec/bindgen cross-checks, and if it is declared only once (wrongly
 "appears under both ABIs" scan misses it too. The scan that catches these is **decl-ABI vs
 def-ABI per symbol, over the crate's own symbols.**
 
+### Same convention, different `@N`: stdcall decoration is a free ABI *width* checker
+
+Not every `undefined _Foo@N` is a convention mismatch. When BOTH sides are `extern "system"`
+and the numbers merely differ, `@N` is the **byte count of the argument list**, so the delta
+is telling you an argument's *width* disagrees — and that is a bug the 64-bit arches cannot
+see, because they have no decoration to disagree about. amd64/arm64 link it green and pass a
+wrong layout.
+
+Read the delta arithmetically before you touch anything. i386: every arg rounds to 4, and a
+64-bit scalar or a by-value struct takes its real size.
+
+    ld.lld: undefined symbol: _FatAddMcbEntry@20     # caller: 5 args x 4 = 20
+    definition exports                @24            # 4+4+4+8+4 -> one arg is 8 bytes, not 4
+
+That was exactly it: `fsctrl.rs` widened `Lbo` from `u32` to `i64` (LBO is LONGLONG — "for
+Fat32, LBO is >32 bits", fat.h:34) and fixed one of the three `extern` decls. The other two
+kept `i32`/`u32`. A sibling break in the same driver had the *other* shape —
+`_FatStringTo8dot3@12` vs a definition at `@16`, because a caller declared an `OEM_STRING`
+parameter as `*mut OEM_STRING` (4) where the definition takes it **by value** (8).
+
+So: an i386-only `undefined _Foo@N` after someone widens a type is a **real cross-arch ABI
+bug that i386 caught for you**, not an i386 quirk to work around. Fix every decl to match the
+definition, and fix the call-site casts with them — a widened parameter usually needs the
+argument expression widened too, or you have only moved the truncation.
+
 ### Wrong-direction fix: aligning the DEF to a lying header `[§9.107]`
 Resolving a `scan_ir_mismatch` "def X vs decl system" by changing the **definition** to cdecl
 is backwards when the header simply omits `NTAPI`. i386-only BUGCHECK 0x1E follows, and the
@@ -563,6 +588,48 @@ size-verified. Real damage:
   extension layout; **a dropped `FIELD_OFFSET(T, Array[N])` subscript scaling** under-allocates
   the heap block.
 
+### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
+The entry above is about shadow *structs*; this is the same disease one level down, and it is
+cheaper to hit because a one-line `type X = ...;` does not look like a mirror at all.
+
+**Symptom.** A green build on every arch, and a caller's stack local adjacent to an out-param
+gets clobbered. No compiler, and no signature verifier, says anything.
+
+**Cause.** Two files spell one C typedef differently and only the *resolved width* differs.
+fastfat's `VBO` (`fat.h:38` = `ULONG32`, four bytes): the generated `types_<arch>.rs` islands
+had it right, `dirsup.rs` said `type VBO = LARGE_INTEGER` and `dirctrl.rs` said `type VBO =
+u64`. So `FatLocateDirent`, whose C prototype is `OUT PVBO ByteOffset`, stored
+`(*ByteOffset).QuadPart` — an **eight-byte write through a pointer the interface says points
+at four**. `create.rs`, `namesup.rs` and `fileinfo.rs` each backed that out-param with a `u32`
+local, so every call lost 4 bytes of the caller's frame; `create.rs` is the file-OPEN path, and
+arm64 boots FAT as its live system volume.
+
+**Why it survived.** The two WRONG aliases agreed with each other — both 8 — so the definition
+and its in-file callers were mutually consistent and only the honest callers were exposed.
+`dirsup.rs` even carried a hand-rolled narrowing shim (`*ByteOffset = ByteOffsetLi.QuadPart as
+u32`) at one site: someone met the mismatch, worked around it locally, and left the interface
+wrong. **A local workaround for a width mismatch is a bug report against the type, not a fix.**
+
+**Why no existing gate saw it.** Every single-arch build is green because each file is
+internally consistent, and rustc has no reason to care what another file calls the same name.
+`verify_c_signatures` compares the Rust decl against the C prototype — but both sides said
+`PVBO` / `*mut VBO`, so the *names* agreed and only the resolutions differed. Only a whole-tree
+read can catch this.
+
+**Fix.** `tools/scan_type_alias_contradictions.py` now does that read, and the same-shaped
+`scan_const_contradictions` is its sibling for values. Resolve against the C typedef, then
+delete the private copies in favour of the generated island. Beyond VBO its first run found
+`BOOLEAN = i32` in two fastfat files (DDK `BOOLEAN` is `unsigned char`) and `BOOL = u8` in
+hidparser against `i32` in 22 others, the live one declaring `HidParser_UsesReportId -> BOOL`
+for a function defined `-> u32` — benign only because the values are 0/1, so the low byte
+happened to be the whole answer.
+
+**The false positives are most of the work, and skipping them is what makes it trustworthy:**
+`#[cfg]`-gated pairs (freeldr's `UINTN` is `u64`/`u32` by pointer width, only one compiled),
+ASSOCIATED types (`impl Width for Narrow { type Ch = i8 }` vs `... for Wide { type Ch = u16 }`
+is msvcrt's narrow/wide scanf — differing per impl is the *point*), and an unresolvable RHS,
+which is skipped rather than guessed at. Those three took the tree from 102 findings to 78.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386
@@ -773,7 +840,38 @@ function was declared in a `.h`/`.cpp` without `extern "C"`, so every C++ caller
 namespace scope, since a linkage specification is illegal inside a function body.
 **`llvm-nm --defined-only` on the TU's `.obj` tells you which exports need it BEFORE you flip**:
 an unmangled `_Name@N` is already `extern "C"`, a `__Z23Name...` is not. shldataobject.cpp had
-five of each, and the mangled four had live callers in three other TUs.
+five of each, and the mangled four had live callers in three other TUs. Intersect that set
+against every *other* object's UNDEFINED symbols before counting the work — shlfolder.cpp
+defines 83 mangled symbols but only 19 have a live caller; the rest are COMDAT template and
+inline emissions each TU already makes for itself.
+
+**`EXTERN_C` cannot carry an OVERLOAD SET — one name, one symbol.** Symptom: a TU is otherwise
+ready to flip but exports two functions of the same name. Fix: rename one on both sides. Make
+the choice by call-site count, not by which "feels primary": shlfolder's
+`SHELL32_CoCreateInitSF(pidlRoot, clsid, csidl, riid, ppvOut)` became
+`SHELL32_CoCreateInitSFWithCsidl`, and being module-private (declared only in `shfldr.h`) that
+cost six call sites and nothing outside the DLL. **C++ reference parameters are NOT part of this
+problem** — `extern "C"` changes linkage and mangling, not the type system, so
+`EXTERN_C HRESULT F(REFIID riid)` is legal and yields an unmangled symbol. Believing otherwise
+deferred this flip once; a 5-line compile test settles it in a minute.
+
+**Count the RUST callers of a C++ overload too, not just the C++ ones.** Symptom: an overload
+rename passes `grep` over `*.cpp` and still breaks. Cause: already-translated siblings call the
+overload through a generated `Shell32Rust*` trampoline (rustconv emits one precisely because
+Rust cannot name a C++ overload), and they declare it `extern "system"` because the trampoline
+is `WINAPI` while the renamed function is cdecl. Fix: leave the trampoline — repointing five
+declarations at the now-nameable Rust symbol is an ABI change for no functional gain — but fix
+the emitter, which otherwise generates C++ calling a name that no longer exists.
+
+**`scan_extern_arity` resolves `#[link_name]`/`#[export_name]`, not the Rust identifier.** A
+declaration that redirects is a claim about a *different* symbol, so comparing it against a
+definition that merely shares its Rust name is wrong: the five folder classes above declare a
+5-param `SHELL32_CoCreateInitSF` linked to `Shell32RustCoCreateInitSF`, and keying on the
+identifier reported all five as arity bugs against the real 6-param definition the moment
+shlfolder.rs went live. The scanner had been quiet only because the parked file carried an
+`ORPHAN-BY-DESIGN:` banner — which is the general shape of the trap: **an exemption that hides
+a class of finding stops hiding it exactly when you flip, so read what a banner was suppressing
+before you delete it.**
 
 **A C++ header inline is in NO translation unit, so no translated TU carries it.** Symptom: a
 freshly translated file has a cluster of unresolved names that are demonstrably not in its
@@ -784,6 +882,20 @@ translates only the `.cpp`. Fix: port the header once into its own module
 (`shell32-rust/src/shellutils.rs`) rather than per-TU — these are shared by at least four TUs.
 Check for this before assuming a name is a translation defect: `grep -l` the name across
 `sdk/include` and the module's own headers first.
+**A header inline can be hiding behind a `.cpp` that INLINES IT AND EXPORTS A WRAPPER**, which
+looks like an ordinary definition right up until you flip that `.cpp`. shlfolder.cpp did this
+for `wine/shell32_main.h`'s `SHELL_CreateVariantBuffer` / `SHELL_CreateSHDESCRIPTIONID`: it
+carried `SHELL_Create*_RustBridge` wrappers, so translated Rust reached the inlines through a
+C++ hop and nothing looked unresolved — then the flip took the only definition with it and i386
+failed on `_SHELL_CreateVariantBuffer@8`. Port the inline rather than re-homing the wrapper in
+another `.cpp`, or the next flip repeats it. `static inline` at namespace scope has INTERNAL
+linkage, so a Rust `#[no_mangle]` of the same name cannot collide with the C++ TUs' own copies.
+
+**`extern "C"` is LINKAGE; `WINAPI` is the CALLING CONVENTION — a `_RustBridge` needs both read
+separately.** Symptom: i386 link fails on `_Name` while `llvm-nm` shows `_Name@12` defined.
+Cause: the C++ is `extern "C" INT WINAPI Name(...)`, and the Rust declaration went into an
+`extern "C"` block because the C++ said `extern "C"`. It is stdcall, so it belongs in
+`extern "system"`. amd64 and arm64 link fine either way, which is why this reaches i386 alone.
 
 **Porting ATL's smart pointers: `Drop` IS the translation's missing destructor.** Symptom: a
 translated C++ TU declares `CComPtr<IShellFolder> p;` and never releases it — the translation
@@ -863,6 +975,16 @@ self-consistent**. One 2026-07-04 sweep found 41:
   the wrong type wakes ONE waiter instead of ALL: a lost-wakeup landmine.
 - The LPC message-type window shifted (live validation on the csrss CreateProcess reply path);
   `MEMORY_PRIORITY_FOREGROUND` writer(0)/reader(2) disagreement killed the foreground boost.
+- **A guess can also come from the WRONG ARCH's `#ifdef`.** ex-rust re-declared
+  `INTERLOCKED_RESULT` as a sign in `{-1, 0, 1}`. `exfuncs.h` does define a tidy `0/1/2` — but
+  under `#ifndef _M_IX86`; on x86, `xdk/x86/ke.h` overrides it with the encoding the assembly
+  original returned verbatim, the EFLAGS SIGN/ZERO pair (`RESULT_NEGATIVE` 0x8000,
+  `RESULT_ZERO` 0x4000, `RESULT_POSITIVE` 0). Reading the generic arm of a header you are
+  compiling out of looks exactly like reading the header. Note the failure mode is worse than
+  "wrong number": `ResultPositive`(1) and `ResultZero`(0) had swapped roles, so a caller
+  testing `!= ResultZero` — which is every in-tree caller — read *positive* as *zero*. bindgen
+  had the right values in `bindgen_i386.rs` the whole time; the fix pins the local constants to
+  them with a `const _: () = { assert!(...) }`.
 
 **Anything `verify_constants --enums` resolves to exactly ONE header value is a strong real-bug
 signal** (the ambiguity rule already drops multi-enum names). Two deliberate blind spots to
@@ -1329,6 +1451,21 @@ N+1 as evidence that the fix for bug N was wrong.**
 - **A ported tree/list rebalance with an untested special case** (predecessor = direct child)
   self-corrupts its links; found only by a random model test.
 - **A lock/RAII-pair epilogue dropped when a macro was inlined.**
+- **A C macro's EARLY-OUT guard dropped when the macro became a helper fn.** `fsrtlfuncs.h`'s
+  `FsRtlTestAnsiCharacter` opens with `(SCHAR)(C) < 0 ? DEFAULT_RET : ...` — a high byte is DBCS
+  and never reaches the table. All three Rust wrappers (`LegalFat`, `LegalHpfs`, `Wild`) kept
+  only the table lookup and indexed `LEGAL_ANSI_CHARACTER_ARRAY_DATA`, a `[u8; 128]`, with the
+  raw byte: **up to 128 bytes of out-of-bounds read past a static**, answering from whatever
+  the linker put next in `.rodata`. Note the shape — the guard is not a "check", it is the
+  BOUND, so dropping it converts a total function into UB whose answer changes with the link
+  layout. `FsRtlIsLeadDbcsCharacter` lost its `< 0x80 ? FALSE` the same way. When a
+  `FORCEINLINE`/macro becomes a `fn`, its leading ternaries are part of the contract.
+- **An EXTRA store the C does not have** is as wrong as a missing one, and much quieter.
+  `_KeAcquireGuardedMutex` wrote both halves of the `ApcDisable` union; `ke_x.h` writes only
+  `SpecialApcDisable` (`KernelApcDisable` belongs to `KFAST_MUTEX`). A field that is written
+  and never read is invisible to the compiler, the linker, and every in-tree caller — the only
+  witness was a conformance test that pre-fills the object with `0x55` and asserts the field is
+  untouched. When translating, diff the SET of fields assigned, not just the values.
 - **`addr_of!(field)` where C passes the pointer field's VALUE** — the buffer becomes struct
   innards (win32k clip-region 0x50).
 - **A plain Rust-ABI `unsafe fn` address handed to the kernel** (timer/dispatch callback).
@@ -1757,6 +1894,82 @@ the fix and **2** after. Two consequences worth generalizing:
   `smoke --require-probe`. Pass the string by pointer (`ARM64_UART_TRACE`), the form proven to
   reach the serial.
 
+**The worse sibling: the translation drops the trace ladder outright.** A no-op shim at least
+leaves the call sites visible. `ntoskrnl/ex/init.c` carries **54** live `ARM64_UART_TRACE` calls —
+a full `[EXP]`/`[PHASE1]` milestone ladder through `ExpInitializeExecutive` and
+`Phase1InitializationDiscard` — and its cohab-live `ex-rust/src/init.rs` carried **zero**. Every
+one was dropped, so arm64 had no Phase-1 visibility at all, in precisely the phase where it
+flakes; the boot log's silence read as "nothing to see." Debug output is not decoration and it is
+not covered by a signature check, a `cargo check`, or a green smoke — nothing downstream of the
+translation notices its absence.
+
+*Audit it mechanically, per cohab-flipped pair*, since eyeballing a 4,000-line file will not find
+an absence:
+```
+c=$(grep -c '^[^/]*ARM64_UART_TRACE' <file>.c)
+r=$(grep -c '^[^/]*\(ARM64_UART_TRACE\|uart_trace\|io_trace\)' <file>.rs)
+```
+Run tree-wide, the ratio is the finding: most flipped files preserve or exceed their ladder
+(`ke/arm64/stubs.c` 3→46, `ps/thread.c` 17→39), so a **0** or a large shortfall stands out at a
+glance. Judge each shortfall by *what kind* of trace was lost, though — restoring is not always
+right. `mm/section.c` (32→0) and `ARM3/procsup.c` (33→10) lost per-page and per-process hot-path
+forensics (`GetPageEntry`, `IoPageRead`, every step of `MmInitializeProcessAddressSpace`); bulk
+-restoring those would drown the serial and slow every boot. Restore **milestone ladders and
+failure reports**, plus any *rate-limited anomaly* probe (`MiGrabDataSection`'s
+`INCREATE/INDELETE` spin fires 1:1000 and only when wedged — exactly the hang diagnostic you
+want); leave unconditional hot-path tracing dropped.
+
+### A `cfg(debug_assertions)` block is not code that works — it is code with no evidence either way
+
+Same family as the entry above: source that is present in the tree and absent from the artifact.
+There the diagnostic was thrown away at run time; here it was never compiled at all.
+
+**Symptom.** Turning on `debug-assertions` for the first time does not merely start firing
+assertions. It *compiles*, for the first time in the life of the tree, every
+`#[cfg(debug_assertions)]` block in the crate — **108 of them** here — and *deletes* the 14
+`#[cfg(not(debug_assertions))]` blocks, which is how a `not()`-only stub definition becomes an
+undefined symbol. Three of the first blocks compiled were broken:
+
+| where | defect | presented as |
+|---|---|---|
+| `freeldr-rust/src/heap.rs` | heap-statistics block deref'd the `PVOID` handle with no `as PHEAP` | 14 × `E0609: no field … on type c_void` |
+| `ex-rust/src/init.rs` | `KeServiceDescriptorTable[0] = core::mem::zeroed()`, **invented by the translation** | nothing — it compiles |
+| `ke/{amd64,i386}/kiinit.rs` | called `KiReportCpuFeatures`, never translated, C cohab-dead | `ld.lld: undefined symbol` |
+
+The middle one is the lesson. `ntoskrnl/ex/init.c:1415` assigns only `.Count`; the Rust zeroed
+the whole descriptor, discarding `Base`/`Limit`/`Number` — **the syscall dispatch table** — which
+`ke/krnlinit.c:104-108` fills in earlier. It compiles clean, and it would have killed the box at
+the first system call after Phase 0. It sat in the kernel's most-read init file, invisible,
+because the compiler had never been asked to look and no boot had ever run it.
+
+**Cause.** `cfg` is not `if`. Code behind a `cfg` that is never set is not dead-but-correct code;
+it is unverified text — no type check, no borrow check, no lint, no execution. Translated
+`#if DBG` blocks land in exactly this state, because cargo's release profile leaves
+`debug_assertions` off while the C they came from is built `-DDBG=1` and runs them for real. The
+C half of a cohab kernel checks its invariants; the Rust half's debug code quietly rots.
+
+**Fix.**
+- Treat "enable `debug-assertions`" as a **migration, not a flag flip**, and scope it.
+  `[profile.release.package.<crate>]` overrides arm the crates a hunt needs (kernel core: 181
+  assertions, 29 blocks) without also inheriting the loader/FS/driver backlog.
+- Set `overflow-checks = false` **explicitly** in every override — it defaults to *following*
+  `debug-assertions`, and kernel-wide overflow panics are a far larger semantic change than
+  assertions, one the C never had (C wraps).
+- Before believing a `cfg`-gated block, check every symbol it calls actually **exists**. An
+  `extern` declaration in the same file is not evidence, and a `// fn Foo(...)` comment header in
+  the translated module means the function was skipped entirely.
+- Audit `#[cfg(not(debug_assertions))]` in the same pass — those are the arms that vanish.
+
+**What is NOT a hazard:** `debug_assert!(expr)` itself. It expands to
+`if cfg!(debug_assertions) { assert!(expr) }` — the `cfg!` *macro*, not the attribute — so its
+expression is type-checked on every build regardless. Only the attribute form hides code from the
+compiler. That asymmetry is why the assertion count (2,120) and the never-compiled-block count
+(108) are unrelated numbers, and why only the second is a migration risk.
+
+**Wider rule:** any `cfg` never enabled in a shipping configuration is an unverified region, and
+how many you have is a measurable debt. The same argument covers any feature flag CI never
+builds. A `cfg` you never compile is a `cfg` you cannot claim works.
+
 ### The governing rule: a harness only falsifies what it varies
 > **A harness proves parity only across the axes it actually VARIES. Every axis it holds
 > CONSTANT is a silent assumption baked into every MATCH it prints.** `[§9.60]`
@@ -1831,6 +2044,32 @@ allocation and read heap. It sat latent for as long as the allocations happened 
 surfaced as the subject and the reference disagreeing about two IDENTICAL strings, provoked by
 an unrelated pair of cases shifting the heap. Pad, then terminate — with two NULs, so
 termination does not depend on whether the walker's stride is one byte or two.
+
+### A shared ledger that collapses two configurations makes the A/B invisible
+The corollary of the governing rule above: a harness only falsifies what it varies, **and you
+can only tell what it varied from what it RECORDED**.
+
+**Symptom.** Two sets of rounds in one corpus, wildly different failure rates, every recorded
+field identical. The difference reads as a fix.
+
+**Cause.** `conformance`'s ledger wrote `"smp": smp or 1`. Passing no `--smp` boots the UP
+kernel (`ntoskrnl`); passing `--smp 1` boots the MP kernel on one CPU (`ntkrnlmp`, plus PSCI AP
+bring-up and its own `--smp-kernel` media on arm64). Two different binaries doing different
+work — and `or 1` wrote **1** for both. 2026-07-29: 44 arm64 rounds at 100% clean were compared
+against 85 banked rounds at 49% clean and the gap was attributed to a fastfat fix. It was the
+kernel swap. Nothing in the corpus could contradict it; the confound was only recoverable by
+grepping serial logs for an `ntkrnlmp.exe` load line, which is exactly the "remembering a
+recipe" smell that means a field is missing.
+
+**Fix.** Record the distinguishing variable, not a normalised stand-in — `smp` truthfully
+(0 = unspecified) plus an explicit `mp_kernel`. **A default that maps "unset" onto a real
+setting's value is not a convenience, it is a lost degree of freedom**, and in a corpus other
+lanes compute statistics from it silently corrupts their conclusions too, not just yours.
+
+**Generalises to:** any run-ledger field with an `or <default>`. Ask what two distinct
+configurations could produce the same stored row, and whether either is one you would ever want
+to compare against the other. Same family as the worktree ambiguity in the same corpus, where
+three trees' rounds are separable only by string-matching `run_dir`.
 
 ### A verdict that blocks other people must carry its evidence
 Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks
@@ -2140,6 +2379,63 @@ still holds a top-level ERROR**, reporting "not audited" instead of guessing. No
 is useless as that gate: it is true for nearly every real Windows TU because of macros inside
 bodies, which hoist nothing. A **top-level ERROR node** is the precise signal.
 
+**Nothing in the pipeline compares an `extern` DECL against the `#[no_mangle]` DEF of the same
+symbol.** rustc checks a call against the declaration in scope; the definition lives in another
+module and the two meet only in the linker, which compares nothing but the name. Both files
+compile, both are internally consistent, and the caller hands over a different object than the
+callee reads. `verify_signatures` and `verify_c_signatures` cannot help — both need a C
+prototype, so a fully-translated module has no oracle at all. Three live instances: fastfat's
+`FatUnpinRepinnedBcbs` (volinfo declared `*mut PIRP_CONTEXT` against cachesup's
+`*mut IRP_CONTEXT`, so the callee read a pointer-to-pointer as the struct), fastfat's
+`FatGetNextMcbEntry` (`*mut u64` for `OUT PVBO`, an 8-byte store into deviosup's 4-byte local
+on every non-cached FAT read/write), and freeldr's `TuiDisplayMenu` (an 11th parameter the
+definition and `tui.h` do not have, shifting every argument from `MenuItemList` on by one slot).
+`scan_extern_decl_drift.py` gates the class. **Building it took five rounds and the count went
+2682 → 113 → 39 → 10 → 8, every reduction a defect in the ORACLE rather than a suppressed
+finding** — and that ratio is the lesson: an alias spelled differently across bindgen islands is
+not ambiguous unless its resolved DEPTH differs; a path-qualified alias must reduce to its last
+segment; a `use X as Y` rename is an alias; `#[link_name = "X"] fn Y()` declares X, so pairing
+by Rust identifier compares unrelated functions; and only a decl that is CALLED governs an ABI
+(ntoskrnl's SSDT declares every syscall `fn(_: usize, ..)` to count stack slots, and those
+decls are correct on purpose). When a new scanner's first run produces thousands of findings,
+the prior should be that the scanner is wrong, not the tree.
+
+**Depth was only half of it: the tool then had to learn WIDTH, and that took three more oracle
+bugs.** Comparing indirection depth catches a missing `*`; it cannot see `*mut u64` against
+`*mut VBO`, which is one pointer on both sides and is the `FatGetNextMcbEntry` bug the tool was
+built for. Resolving the base type's width behind the pointer took the count 8 → 138 → 97, and
+the three reductions were all oracle defects again: an identifier that is neither an alias nor
+an aggregate we have SEEN is **unknown, not depth 0** (generated bindgen islands live in
+`build-<arch>/`, outside the sweep, which made mscms' `PPROFILEHEADER` a false positive); a
+**function pointer is one indirection** however spelled, and `Option<T>` is `T`, or every
+callback declared `*mut c_void` reads as drift against the typedef naming that same pointer;
+and a pointer spelled as a pointer-**width integer** (`isize`, `ULONG_PTR`) is the same
+register holding the same address, though `u32` against `HWND` is not and must still report.
+Report by-value **widening** only — a callee reading *fewer* bits than the caller passed is
+well-defined on all three ABIs and is how `BOOL` against `BOOLEAN` is spelled tree-wide.
+
+**A `type X = path::X` re-export normalises to the cycle `X -> X`, and a cycle resolves to
+"undecidable".** One `pub type c_void = core::ffi::c_void;` in `ntoskrnl-rust` made `*mut
+c_void` unresolvable, and with it `PVOID` and the ~60 types spelled through it — most of the
+tree. **Failure mode: silence.** No error, no finding, a clean report for the wrong reason, and
+no negative control can catch it because nothing is flagged. The control has to be a *positive*
+one asserting a specific finding that is only reachable if the alias resolves. Drop an alias
+whose RHS normalises to its own name. The same pass needs memoising: resolution fans out over
+every RHS a name is given anywhere, and unmemoised it went from 0.2s to not terminating.
+
+**A COMMENT is a child of the argument list, so positional argument indexing is off by one
+wherever anyone writes one.** `scan_ob_refcount` locates `ObReferenceObjectByHandle`'s object
+by fixed index 4 and `scan_irql_balance` locates `KeRaiseIrql`'s `OldIrql` as the last
+argument; both built their argument list by dropping only `(`, `)` and `,` from the
+tree-sitter `arguments` node. fastfat's `ObReferenceObjectByHandle(h, 0, ty, 1, /* UserMode */
+&mut fo, …)` therefore tracked the *comment's own text* as the object and reported a leak of a
+variable named `UserMode` on two paths that both dereference correctly. The same shift is
+silent in the other direction: a comment in `KeRaiseIrql(/* NewIrql */ DISPATCH_LEVEL, …)`
+makes the level read as a non-constant, the acquire is not recorded, and the scanner goes
+**blind** with no finding to notice. Filter `line_comment`/`block_comment`/`comment` alongside
+the punctuation, and note which direction each scanner fails in when you write the control —
+an FP fixture cannot catch blindness, only the positive control can.
+
 **A shared regex is an API between lanes, and positional groups are how it breaks.** Mainline
 correctly taught `scan_cc_mismatch` to pair decls and defs on the *linker symbol*
 (`#[link_name]` / `#[export_name]`) instead of the Rust identifier, which added one capture
@@ -2311,6 +2607,35 @@ language rules) over loosening what it reports.
 - **A triage tool that lies costs more than no tool** `[§9.118a]` — the `[RAISE]` helper
   reported a STACK address as the raise site, because its "kernel-text-looking" window also
   contains kernel stacks.
+- **A harness stub that returns a CONSTANT reports on the harness, not the OS.**
+  `KmtAreInterruptsEnabled()` (kmt_test_kernel.h) reads EFLAGS.IF under
+  `#if _M_IX86 || _M_AMD64` and falls through to a bare `return FALSE` for every other arch.
+  On arm64 that was ~95 assertion failures per sweep — ExSingleList 39, KeSpinLock 36,
+  ExDoubleList 20 — none of which any kernel change could ever have cleared. Worse, the
+  ratchet had *baselined* them, so they were recorded as expected OS debt. In the results
+  file a stub is indistinguishable from a real measurement of a broken kernel. **Symptom:**
+  one assertion failing identically on every arch that shares an `#else`, inside tests that
+  otherwise pass. **Fix:** implement it (arm64: read DAIF bit 7), or make the stub `skip()`
+  so it cannot masquerade as a measurement. Its `#pragma message` warning had been firing
+  on every arm64 build the whole time.
+- **Half-disabling a debug facility leaves its two halves disagreeing — and the disagreement
+  outlives the reason.** A checked build does two separable things to a spinlock: it STAMPS
+  `KeGetCurrentThread() | 1` into the lock while held (observable behaviour — `KeTestSpinLock`
+  reads it, and IoInterrupt asserts on it), and it BUGCHECKS on a mismatched acquire/release
+  pair. This tree narrowed *both* to `DBG && !_USE_DUMMY_PSEH && !_USE_PSEH_CLANG` to stop the
+  bugchecks during i386 bring-up (5c8505479a3, 15434cd8dea). Two consequences, neither
+  intended:
+  1. the build reports `KmtIsCheckedBuild = TRUE` while a held lock reads free, so every
+     assertion that inspects one fails on a premise the kernel no longer honours;
+  2. `KeTryToAcquireSpinLockAtDpcLevel` (ke/spinlock.c) stamps under **plain `#if DBG`** — it
+     was never part of the narrowing — so it stamps a lock that `KxReleaseSpinLock` then never
+     clears. `KdbpAcquireLock` (kd/kdio.c) spins on `while (!KeTestSpinLock(SpinLock))` before
+     try-acquiring, so its *second* acquire of the same lock hangs forever. Dormant only
+     because KDBG is off by default.
+  **Rule: when you gate off a debug check to unblock a boot, gate off the CHECK, not the state
+  it checks.** Give the two halves separate macros (here `KI_VALIDATE_SPINLOCK_OWNER` vs
+  `KI_TRACK_SPINLOCK_OWNER`) so the next person can tell which one they are turning off, and
+  so a partial disable cannot silently desynchronise two funnels that must agree.
 
 ### Lints as permanent gates
 `tools/` carries the deterministic detectors; all are wired into `vibeos-cli check` at **0 NEW
@@ -2548,6 +2873,14 @@ a diagnosis.**
 netstack's TDI transport relied on it for its queue → the `-smp 2` "TDI dgram upcall TIMED OUT"
 NET_FLAKE. Fix: a real `KSPIN_LOCK` via `SpinLockGuard`. Second instance in the same commit.
 
+Third instance, and the purest form of it: **arm64's `KeSynchronizeExecution` raised IRQL and
+called the routine, and never touched `Interrupt->ActualLock`** — while i386
+(`ke/i386/irqobj.rs`) and amd64 (`ke/amd64/interrupt.c`) both acquire it. That is the one
+function in the DDK whose entire contract *is* mutual exclusion against a driver's ISR, so on
+the SMP kernel it delivered exactly nothing; on UP the IRQL raise happened to be enough, which
+is why it survived. When a per-arch port of a synchronisation primitive is shorter than its
+siblings, the missing lines are the primitive.
+
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
 log shows the boot still *talking* — arm64 `-smp 2` conformance reached
@@ -2727,6 +3060,20 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 whole class collapsed to the one case that is *supposed* to happen.
 
 ### arm64 bring-up bugs worth recognising again
+- **Every arm64 syscall ran with interrupts MASKED, end to end.** Taking any exception sets
+  PSTATE.DAIF to all-masked in hardware; nothing in `KiEL0SynchronousEntry` (trap.S) undid it,
+  so kernel-mode interrupt latency was bounded by the longest system call and every blocking
+  syscall parked a DAIF-masked context on the swap chain. This was landmine #2 of the
+  (archived) arm64-interrupts quest and had been known-and-deferred since 2026-07-05. Fix:
+  `UNMASK_IRQ_FROM_SPSR` — re-enable **iff the interrupted context had them enabled**, reading
+  the saved SPSR bit 7, which is exactly the rule x86 uses; a fault taken inside an IRQ handler
+  or inside `KiTrapReturn`'s masked ELR/SPSR banking window therefore stays masked. It does not
+  weaken IRQL: on this port IRQL is GIC-priority-backed (`GICC_PMR`) and no GIC line lives in
+  the PASSIVE..DISPATCH band, so unmasking can only admit lines whose DIRQL genuinely exceeds
+  the current IRQL. EL1 synchronous entry is still masked — a separate change.
+  **Recognition rule: on a port where IRQL is priority-masked rather than DAIF-masked, DAIF
+  belongs to exception entry/exit windows and nothing else. If a trap handler never touches it,
+  it is running masked.**
 - **PSTATE.DAIF is NOT per-thread state** `[§9.19]` — `KiSwapContext` doesn't save/restore it, so
   a context switch **leaked exception-entry DAIF into a new thread** → boot wedges with the
   serial completely silent. A masked-swap tripwire in `KiSwapContextResume` remains in tree.
@@ -2778,6 +3125,29 @@ whole class collapsed to the one case that is *supposed* to happen.
 
 Every entry here is one shape: **a size, offset or index that differs between guest and host.**
 
+### `&mut (x as T)` borrows a TEMPORARY, so the OUT parameter is written and dropped
+**Symptom.** An out-parameter is always its initial value at the caller, and every branch that
+depends on it takes the wrong arm. No crash, no warning, and the callee is provably correct —
+put a probe in it and you watch it write the right answer.
+**Cause.** In Rust `&mut (expr)` where `expr` is not a *place* — a cast, an arithmetic
+expression — materialises a temporary and lends out *its* address. The callee's store lands in
+the temporary, which dies at the end of the statement. rustc says nothing: taking `&mut` of a
+temporary is legal and ordinary. It shows up in translated output because C's `&x` is
+spelled `&mut x` here and a type mismatch invites someone to "fix" it by casting *inside* the
+borrow instead of casting the pointer.
+**Fix.** Give the local the callee's type and borrow it directly — `let mut flag: BOOLEAN = 0;
+f(&mut flag)` — or take the address and cast the *pointer*:
+`core::ptr::addr_of_mut!(x).cast()`. Never cast inside the `&mut`.
+Live instances, all found while chasing decl/def drift and none of them visible to any lint we
+had: fastfat `FatCommonCreate` passed `&mut (OplockPostIrp as u8)` to two callees that set it
+to say "I posted the IRP, stop here", so the create path always saw FALSE and ran on; the same
+function did it with `FileNameOpenedDos`, which six downstream calls use to decide DOS-name
+semantics; atapi's `AtapiHexToString(&mut (ptr as PCHAR))` threw away the buffer advance the
+callee writes back (inert only because both pointers are re-read from the array afterwards);
+and iomgr dropped `MiResolveImageReferences`' `LoadedImports`. `grep -rn "&mut ([A-Za-z_][A-Za-z0-9_.]* as "`
+found all four across the workspace and is worth re-running — the shape is rare enough to
+eyeball and dangerous enough to be worth a scanner.
+
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing
 call anywhere near. The syscall that did it **succeeded** and returned the right value in the
@@ -2801,6 +3171,26 @@ failing syscall writes nothing and passes the check while completely unmarshalle
 canary `volatile`: you only hand the callee `&cell.Handle`, so a conforming compiler may assume
 the rest of the struct is untouched and fold the comparison away, deleting the bug from the test
 but not from the OS.
+
+### A bare `PUNICODE_STRING` argument makes the kernel read the string pointer from PAST the struct
+**Symptom.** A 32-bit guest calls something that takes a `PUNICODE_STRING` and the box
+**BUGCHECKs 0x1E**, with a `[PROBE-AV-R]` line just before it naming an address that is not
+anything the guest passed.
+**Cause.** `UNICODE_STRING` is 8 bytes in the guest (`{USHORT Length; USHORT MaximumLength;
+ULONG Buffer}`) and 16 on the host (`{USHORT Length; USHORT MaximumLength; ULONG pad;
+ULONGLONG Buffer}`) — `Buffer` at offset 4 vs offset 8. A flat thunk therefore reads the
+pointer from *past the end* of the guest's object. Not a truncation: the value is assembled
+from whatever two words followed the struct. `Length`/`MaximumLength` share offsets, so they
+arrive intact and the operands look plausible — read `Len=` in the probe line, it will be the
+CORRECT byte count for the string the guest meant.
+**Fix.** Marshal it: copy Length/MaximumLength, zero the pad, widen Buffer.
+**Reachability is not exotic.** `NtSetValueKey` was flat while `NtQueryValueKey` beside it was
+marshalled, so registry *reads* worked and every `RegSetValueEx` from a 32-bit guest bugchecked
+the machine — a local DoS from any 32-bit app. Same "somebody fixed the variant they were
+looking at" shape as the out-cell entry above; both lists have to come from `marshalgen audit`.
+**Testing one:** round-trip it — set, read back BY THE SAME NAME, delete, confirm gone. A wrong
+`Buffer` cannot survive that. Checking only that the call returned success passes on a broken
+build right up until the box dies.
 
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
@@ -3450,6 +3840,22 @@ identically. **Do not `--allow-stale`, do not re-gate** (it will starve again), 
 **never broad-kill QEMUs** — use `./vibeos-cli kill`. Starvation must be *visible*: it used to
 read as "my build is slow".
 
+**Partial contention wears a different costume: ONE test, and the giveaway is the wall clock.**
+`test_tdi_selftest_roundtrip` timed out on `[NETSTACK] TDI self-test: RECEIVE OK` while the other
+14 passed — which reads exactly like a real regression in the MDL data path, and it failed all
+three gate attempts. Compare the **durations**, not the pass/fail: the failing runs took ~186 s
+where a passing one takes ~44 s. A logic bug does not make the suite four times slower; a loaded
+host does. The confirming control is free and already on disk — the conductor gates the base
+alone after a lone rejection, and that base run showed the *same* test failing its first attempt
+at ~187 s and passing the next two at ~44 s. **Same test, same assertion, on master.**
+
+Two things follow. First, the gate's retries fire back to back, so all three land inside the same
+contention window and a retry policy cannot rescue you from it — a `NET_FLAKE` verdict after N
+attempts is not evidence the failure is real. Second, and this is the one that cost the batch:
+**do not run `check`, `check-tooling`, `difftest`, or a build locally while your own lane is
+gating.** `./vibeos-cli host-status` before submitting, then leave the host alone. The lane whose
+gate you are starving is your own.
+
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 
 **Symptom.** `test_queue_is_fifo_by_arrival` failed roughly 1 run in 80, only ever under
@@ -3482,6 +3888,35 @@ failure is not a control. Reproduce it under the load that triggers it (8 worker
 here), then pin it with a test that **fakes the trigger deterministically** — the regression
 test steps the clock backwards by the exact observed 2,593,682,747 ns and fails against the
 old allocator with the live signature.
+
+### A cached handle in a reference shim is per-PROCESS, but the tests run per-THREAD
+
+**Symptom.** Difftest rows that pass alone and disagree in a full run, with no error return
+anywhere — the conversion simply produced different bytes.
+
+**Cause.** `msvcrt-difftest/nlsimpl.c` cached one `iconv_t` per codepage in a `static` array and
+handed the same descriptor to every caller. An `iconv_t` is not a handle to a pure function: it
+*owns* the conversion state, `iconv()` advances it, and `iconv(cd, NULL, NULL, NULL, NULL)`
+resets it. cargo runs `#[test]`s on parallel threads, so two of them converting at once was live
+UB. glibc's failure mode is the worst available shape — a **short or garbled result with a
+success return** — so the caller converts a string to the wrong string and proceeds. Measured:
+8 threads over one CP932 fixture disagreed with the single-threaded answer within a handful of
+iterations, returning empty results and uninitialized scratch bytes.
+
+**Fix.** `static __thread` on both caches. The descriptors are then per-thread and need no
+locking; leaving them unclosed is deliberate, since a worker thread's caches die with it.
+`tests/nls_thread_safety.rs` pins it, and only bites because it converts through a **multi-byte**
+codepage — the ASCII fast path opens no descriptor at all, so a fixture built from ASCII
+exercises none of this and passes forever.
+
+**Generalization.** Any `static` cache in a reference shim is shared by every test thread. The
+ones that hurt are those holding a handle with *internal state* (iconv descriptors, `strtok`
+positions, locale objects, RNG seeds), because sharing them corrupts results rather than
+crashing. Grep a new reference TU for `static` before trusting a green suite; process-global is
+the wrong scope by default, and the real DLL's equivalent is usually a **TEB slot** — per-thread
+by construction. The same file's last-error slot is a single `static DWORD` for exactly that
+reason and is documented as modelling "a single TEB slot"; it is one writer / one reader by
+design, so it is correct only as long as no two threads race a failure through it.
 
 ### Known-benign signals — do not chase these
 - **A screenshot that looks solid black (346-byte PNG) is NOT a boot failure.** More generally,

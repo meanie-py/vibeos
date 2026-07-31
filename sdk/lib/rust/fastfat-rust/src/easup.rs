@@ -48,7 +48,7 @@ extern "system" {
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatAllocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Hint: u32, AllocationSize: *mut u32, IsDirectory: u8, Mcb: *mut LARGE_MCB, );
-    fn FatConstructDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, FileName: *mut OEM_STRING, IsDirectory: u8, IsExtended: u8, Lbo: *mut LARGE_INTEGER, Attributes: u16, Initialize: u8, EaHandle: *mut u16);
+    fn FatConstructDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, FileName: *mut OEM_STRING, IsDirectory: u8, IsExtended: u8, Lbo: *mut LARGE_INTEGER, Attributes: u16, Initialize: u8, SetCreationTime: *const LARGE_INTEGER);
     fn FatCreateNewDirent(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, DirentIndex: u32, IsExtended: u32) -> u32;
     fn FatDeallocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, IsDirectory: u8, );
     fn FatDeleteDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, EaHandle: *mut u16, DeleteFile: u32);
@@ -235,8 +235,7 @@ pub unsafe extern "system" fn FatGetEaLength(
         // Unpin the EaDirent and the EaSetHeader if pinned.
         FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(EaBcb) as *mut *mut core::ffi::c_void);
 
-        let mut eap: *mut EA_RANGE = &raw mut EaSetRange;
-        FatUnpinEaRange(IrpContext, &raw mut eap);
+        FatUnpinEaRange(IrpContext, &raw mut EaSetRange);
 
         // Release the Fcb for the Ea file if locked.
         if LockedEaFcb != 0 {
@@ -347,8 +346,7 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
         // finally block
         DebugUnwind(b"FatGetNeedEaCount\0".as_ptr() as usize);
         FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(EaBcb) as *mut *mut core::ffi::c_void);
-        let mut ea_range_ptr: *mut EA_RANGE = &mut EaSetRange as *mut EA_RANGE;
-        FatUnpinEaRange(IrpContext as *mut IRP_CONTEXT, &mut ea_range_ptr as *mut PEA_RANGE);
+        FatUnpinEaRange(IrpContext as *mut IRP_CONTEXT, &mut EaSetRange as PEA_RANGE);
         if LockedEaFcb != 0 {
             FatReleaseFcb(IrpContext as *mut IRP_CONTEXT, (*Vcb).EaFcb);
         }
@@ -454,7 +452,7 @@ pub unsafe extern "system" fn FatCreateEa(
                 let mut ea_offset: ULONG = 0;
                 let mut ea_name_copy = ea_name;
                 if FatLocateEaByName(
-                    irp_context as *mut PIRP_CONTEXT,
+                    irp_context,
                     core::ptr::addr_of_mut!((*(*ea_set_header_ptr)).PackedEas) as *mut PACKED_EA,
                     packed_eas_length,
                     &mut ea_name_copy as *mut OEM_STRING,
@@ -2272,7 +2270,7 @@ pub unsafe extern "system" fn FatLocateNextEa(
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatLocateEaByName(
-    IrpContext: *mut PIRP_CONTEXT,
+    IrpContext: PIRP_CONTEXT,
     FirstPackedEa: *mut PACKED_EA,
     PackedEasLength: u32,
     EaName: *mut OEM_STRING,
@@ -2531,20 +2529,28 @@ pub unsafe extern "system" fn FatMarkEaRangeDirty(
     }
 }
 #[no_mangle]
+// `IN OUT PEA_RANGE EaRange` — ONE pointer to the struct, exactly like
+// FatMarkEaRangeDirty right above. This took `*mut PEA_RANGE` and double-
+// dereferenced, so all but two of its twenty call sites — which hand over a
+// `*mut EA_RANGE` to a stack local, some via a `.cast()` that made the
+// mismatch invisible — had their struct's first eight bytes read as a pointer
+// and then dereferenced. rustc cannot see it: fileinfo.rs declares this
+// function correctly and is compiled against that declaration, never against
+// the definition here.
 pub unsafe extern "system" fn FatUnpinEaRange(
     IrpContext: *mut IRP_CONTEXT,
-    EaRange: *mut PEA_RANGE,
+    EaRange: PEA_RANGE,
 ) {
     let _ = IrpContext;
 
-    if (**EaRange).AuxilaryBuffer == 1 {
-        ExFreePool((**EaRange).Data as *mut core::ffi::c_void);
-        (**EaRange).AuxilaryBuffer = 0;
+    if (*EaRange).AuxilaryBuffer == 1 {
+        ExFreePool((*EaRange).Data as *mut core::ffi::c_void);
+        (*EaRange).AuxilaryBuffer = 0;
     }
 
-    if !(**EaRange).BcbChain.is_null() {
-        let mut BcbCount = (**EaRange).BcbChainLength;
-        let mut NextBcb = (**EaRange).BcbChain;
+    if !(*EaRange).BcbChain.is_null() {
+        let mut BcbCount = (*EaRange).BcbChainLength;
+        let mut NextBcb = (*EaRange).BcbChain;
 
         while {
             let count = BcbCount;
@@ -2558,11 +2564,11 @@ pub unsafe extern "system" fn FatUnpinEaRange(
             NextBcb = NextBcb.add(1);
         }
 
-        if (**EaRange).BcbChain != (**EaRange).BcbArray.as_mut_ptr() {
-            ExFreePool((**EaRange).BcbChain as *mut core::ffi::c_void);
+        if (*EaRange).BcbChain != (*EaRange).BcbArray.as_mut_ptr() {
+            ExFreePool((*EaRange).BcbChain as *mut core::ffi::c_void);
         }
 
-        (**EaRange).BcbChain = core::ptr::null_mut();
+        (*EaRange).BcbChain = core::ptr::null_mut();
     }
 }
 

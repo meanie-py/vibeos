@@ -860,8 +860,22 @@ pub unsafe extern "system" fn HalpAcpiFindRsdtPhase0(
     ResourceList = (*ComponentEntry).ConfigurationData as PCM_PARTIAL_RESOURCE_LIST;
     NodeData = ResourceList.add(1) as PACPI_BIOS_MULTI_NODE;
 
+    // `NodeData` lands immediately after a CM_PARTIAL_RESOURCE_LIST inside the
+    // loader's configuration data, so it is only 4-byte aligned in practice,
+    // while ACPI_BIOS_MULTI_NODE wants 8 (it leads with a PHYSICAL_ADDRESS).
+    // A plain `(*NodeData).Count` dereferences the struct pointer and therefore
+    // asserts the STRUCT's alignment, not the field's — which is UB here, and
+    // rustc's misaligned-pointer check (emitted only under debug-assertions)
+    // caught it the first time this crate was built with them on:
+    //   "misaligned pointer dereference: address must be a multiple of 0x8 but
+    //    is 0xfffff8000010232c"
+    // It happens to work on x86, which is why it survived; it is still UB, and
+    // `addr_of!` + `read_unaligned` is the correct way to read a field out of a
+    // packed/underaligned firmware structure. The byte-wise copy below is
+    // alignment-1 and was always fine.
+    let node_count = core::ptr::read_unaligned(core::ptr::addr_of!((*NodeData).Count));
     NodeLength = core::mem::size_of::<ACPI_BIOS_MULTI_NODE>()
-        + ((*NodeData).Count as usize - 1) * core::mem::size_of::<ACPI_E820_ENTRY>();
+        + (node_count as usize - 1) * core::mem::size_of::<ACPI_E820_ENTRY>();
 
     PageCount = bytes_to_pages(NodeLength as u64);
 

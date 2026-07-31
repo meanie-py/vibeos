@@ -43,7 +43,7 @@ extern "C" {
     fn _snwprintf(buffer: *mut u16, count: usize, format: *const u16, ...) -> i32;
 }
 extern "system" {
-    fn co_IntGetPeekMessage( pMsg: *mut MSG, hWnd: u32, MsgFilterMin: u32, MsgFilterMax: u32, RemoveMsg: u32, bGMSG: u8, ) -> i32;
+    fn co_IntGetPeekMessage( pMsg: *mut MSG, hWnd: HWND, MsgFilterMin: UINT, MsgFilterMax: UINT, RemoveMsg: UINT, bGMSG: BOOL, ) -> BOOL;
 }
 
 // Cross-file win32k functions that are NTAPI FASTCALL on i386 (`@name@N`,
@@ -2176,7 +2176,7 @@ pub unsafe extern "system" fn DesktopThreadMain() {
     DbgPrint(b"[DESKTHREAD] pump entered\n\0".as_ptr() as *const core::ffi::c_char);
     let mut _dbg_seen: u32 = 0;
     loop {
-        let Ret = co_IntGetPeekMessage(&mut Msg, 0, 0, 0, PM_REMOVE, 1u8);
+        let Ret = co_IntGetPeekMessage(&mut Msg, core::ptr::null_mut(), 0, 0, PM_REMOVE, 1);
         if Ret != 0 {
             // Diagnostic (arm64 black-desktop hunt): first messages the
             // desktop thread ever dequeues — silence here means the pump is

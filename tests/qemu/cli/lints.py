@@ -478,6 +478,25 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The type-level sibling of the above, and the reason it exists is that a width
+    # disagreement does not merely compare wrong, it CORRUPTS MEMORY. fastfat's VBO
+    # (task #46) was `ULONG32` in the generated islands, `LARGE_INTEGER` in dirsup.rs
+    # and `u64` in dirctrl.rs, so FatLocateDirent stored 8 bytes through an out-param
+    # three callers backed with a `u32` stack local — 4 bytes of the caller's frame,
+    # on every file open, on the arch that boots FAT. Nothing else was positioned to
+    # see it: every single-arch build is green because each file is internally
+    # consistent, and verify_c_signatures compared `PVBO` against `*mut VBO` and found
+    # the NAMES agreeing. Only a whole-tree read catches it. Resolves aliases to a
+    # width and reports only two KNOWN widths in one arch bucket; unresolvable RHS and
+    # `#[cfg]`-gated pairs are skipped rather than guessed at (§9.113b's lesson).
+    stac = repo / "tools" / "scan_type_alias_contradictions.py"
+    specs.append(
+        (
+            "scan_type_alias_contradictions",
+            [py, str(stac), "--lint"] if stac.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # msvcrt's printf `...` entry points are the one part of the family that cannot be
     # Rust (stable has no va_start), so they are a hand transcription of wcs.c's shells
     # in their own TU — their own TU because left in wcs.c clang keeps inlining wcs.c's
@@ -626,6 +645,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_ob_refcount",
             [py, str(sob), "--lint"] if sob.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # An `extern` DECL that contradicts the `#[no_mangle]` DEF of the same symbol.
+    # rustc checks a call against the decl and never against the def — they meet
+    # only in the linker, which compares nothing but the name — so this class is
+    # invisible to every compiler in the pipeline, and to verify_signatures /
+    # verify_c_signatures too (both need a C prototype, which a fully-translated
+    # module no longer has). It found fastfat's FatGetNextMcbEntry storing 8 bytes
+    # through a 4-byte out-param and freeldr's TuiDisplayMenu being called with 11
+    # arguments for 10 parameters.
+    sdd = repo / "tools" / "scan_extern_decl_drift.py"
+    specs.append(
+        (
+            "scan_extern_decl_drift",
+            [py, str(sdd), "--lint"] if sdd.is_file() else ["MISSING"],
             "stdout",
         )
     )

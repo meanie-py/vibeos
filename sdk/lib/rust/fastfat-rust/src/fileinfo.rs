@@ -82,7 +82,7 @@ extern "system" {
     fn FatDeleteDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Lfn: *mut _UNICODE_STRING, Flag: BOOLEAN, );
     fn FatSelectNames( IrpContext: *mut IRP_CONTEXT, TargetDcb: *mut DCB, ShortName: *mut OEM_STRING, LongName: *const _UNICODE_STRING, FinalShortName: *mut OEM_STRING, TunneledShortName: *const _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FatPrepareWriteDirectoryFile( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Offset: u32, Length: u32, Bcb: *mut *mut PBCB, Dirent: *mut *mut DIRENT, WriteThrough: BOOLEAN, Wait: BOOLEAN, IoStatus: *mut NTSTATUS, ) -> NTSTATUS;
-    fn FatConstructDirent( IrpContext: *mut IRP_CONTEXT, ShortDirent: *mut DIRENT, OemName: *const OEM_STRING, AllLowerComponent: BOOLEAN, AllLowerExtension: BOOLEAN, LongName: *const _UNICODE_STRING, Attributes: u8, Flag: BOOLEAN, CreationTime: *const LARGE_INTEGER, );
+    fn FatConstructDirent( IrpContext: *mut IRP_CONTEXT, ShortDirent: *mut DIRENT, OemName: *const OEM_STRING, AllLowerComponent: BOOLEAN, AllLowerExtension: BOOLEAN, LongName: *const _UNICODE_STRING, Attributes: u16, Flag: BOOLEAN, CreationTime: *const LARGE_INTEGER, );
     fn FatSetFullNameInFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Name: *const _UNICODE_STRING, );
     fn FatConstructNamesInFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Dirent: *const DIRENT, LongName: *const _UNICODE_STRING, );
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -97,11 +97,17 @@ extern "system" {
     fn FatGetNextFcbBottomUp( IrpContext: *mut IRP_CONTEXT, CurrentFcb: *mut FCB, RootFcb: *mut FCB, ) -> *mut FCB;
     fn FatIsFat32(Vcb: *mut VCB) -> BOOLEAN;
     fn FatDirectoryKey(Dcb: *mut DCB) -> u64;
-    fn FatStringTo8dot3( IrpContext: *mut IRP_CONTEXT, OemName: *mut OEM_STRING, QueryTemplate: *mut OEM_STRING, );
+    // Matches namesup.rs:96 and the C (fileinfo.c:3295):
+    //   FatStringTo8dot3( IrpContext, NewOemName, &LocalCcb.OemQueryTemplate.Constant )
+    // The OEM_STRING goes by VALUE, and the output is the 11-byte 8.3 constant,
+    // not an OEM_STRING. Declaring the input by pointer made this @12 against a
+    // definition exporting @16 — an i386 link error, and on amd64/arm64 a silent
+    // pointer-where-a-struct-belongs.
+    fn FatStringTo8dot3( IrpContext: *mut IRP_CONTEXT, InputString: OEM_STRING, Output8dot3: *mut [u8; 11], );
     // VOID upstream and in namesup.rs — the answer comes back through CreateLfn.
     fn FatEvaluateNameCase( IrpContext: *mut IRP_CONTEXT, Name: *const _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FAT_LFN_DIRENTS_NEEDED(Name: *const _UNICODE_STRING) -> u32;
-    fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Ccb: *mut CCB, WildCards: u32, Flags: *mut u32, TargetDirent: *mut *mut DIRENT, TargetDirentBcb: *mut *mut PBCB, TargetDirentOffset: *mut u32, SecondDirent: *mut *mut DIRENT, TargetLfn: *mut _UNICODE_STRING, TargetOrigLfn: *mut _UNICODE_STRING, );
+    fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Ccb: *mut CCB, WildCards: u32, Flags: *mut u32, TargetDirent: *mut *mut DIRENT, TargetDirentBcb: *mut *mut PBCB, TargetDirentOffset: *mut u32, FileNameOpenedDos: *mut BOOLEAN, TargetLfn: *mut _UNICODE_STRING, TargetOrigLfn: *mut _UNICODE_STRING, );
     static TAG_FILENAME_BUFFER: u32;
     static TAG_DIRENT: u32;
     static CCB_FLAG_SKIP_SHORT_NAME_COMPARE: u32;
@@ -144,7 +150,12 @@ extern "system" {
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatBytesPerFat(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u32, BytesToRead: u32, BcbPtr: *mut PBCB, Buffer: *mut *mut u8, ); // VBO = u32 (was u64: i386 stdcall stack imbalance)
-    fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbn: i32, Lbn: i32, SectorCount: u32, );
+    // Matches the definition in fsctrl.rs: `Lbo` is LBO = LONGLONG (fat.h:34,
+    // "for Fat32, LBO is >32 bits"). This decl still said i32 after that widening,
+    // which on i386 is a LINK error (stdcall bakes the arg size into the name:
+    // wanted _FatAddMcbEntry@20, definition exports @24) and on amd64/arm64 is
+    // WORSE — it links clean and silently passes the wrong argument layout.
+    fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: i64, SectorCount: u32, ) -> i32;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn FatIsDirectoryEmpty(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
@@ -1061,8 +1072,8 @@ pub unsafe extern "system" fn FatSetDispositionInfo(
             FatAddMcbEntry(
                 Vcb,
                 core::ptr::addr_of_mut!((*Vcb).DirtyFatMcb),
-                FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb)) as i32,
-                FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb)) as i32,
+                FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb)) as u32,
+                FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb)) as i64,
                 ((*Vcb).Bpb.BytesPerSector) as u32,
             );
 
@@ -1991,8 +2002,11 @@ pub unsafe extern "system" fn FatSetRenameInfo(
         if CaseOnlyRename == 0 {
             if NewOemName.Length != 0 {
                 let ccb_inner = core::ptr::addr_of_mut!(LocalCcb.__bindgen_anon_1) as *mut _CCB__bindgen_ty_1__bindgen_ty_1;
-                let oem_qt_ptr = core::ptr::addr_of_mut!((*ccb_inner).OemQueryTemplate.bindgen_union_field) as *mut OEM_STRING;
-                FatStringTo8dot3(IrpContext, &raw mut NewOemName as *mut OEM_STRING, oem_qt_ptr);
+                // bindgen renders OemQueryTemplate as a union, so
+                // `.bindgen_union_field` is the same ADDRESS as the C's
+                // `.Constant`; only the type needed correcting.
+                let oem_qt_ptr = core::ptr::addr_of_mut!((*ccb_inner).OemQueryTemplate.bindgen_union_field) as *mut [u8; 11];
+                FatStringTo8dot3(IrpContext, NewOemName, oem_qt_ptr);
             } else {
                 LocalCcb.Flags |= CCB_FLAG_SKIP_SHORT_NAME_COMPARE; // SetFlag
             }
@@ -2217,7 +2231,7 @@ pub unsafe extern "system" fn FatSetRenameInfo(
                 AllLowerComponent,
                 AllLowerExtension,
                 if CreateLfn != 0 { &NewNameCopy as *const UNICODE_STRING as *const _UNICODE_STRING } else { core::ptr::null() },
-                dirent_attributes,
+                dirent_attributes as u16,
                 0,
                 if HaveTunneledInformation != 0 {
                     &TunneledCreationTime

@@ -99,7 +99,7 @@ unsafe fn int_as_hookproc(p: DWORD_PTR) -> HOOKPROC {
 
 // co_IntShellHookNotify — cdecl (`_co_IntShellHookNotify`).
 extern "C" {
-    fn co_IntShellHookNotify(Message: core::ffi::c_int, wParam: WPARAM, lParam: isize);
+    fn co_IntShellHookNotify(Message: WPARAM, wParam: WPARAM, lParam: LPARAM);
 }
 
 // FASTCALL (`@Name@N`) on i386, cdecl elsewhere. (winpos.c/foldesk.c/painting.c/menu/object.h)
@@ -168,7 +168,7 @@ extern "fastcall" {
     fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG_PTR);
     fn MsqSetMessageExtraInfo(lData: LPARAM) -> LPARAM;
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: ULONG, hWnd: HWND) -> HWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: u32);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
     fn SetLastNtError(Status: NTSTATUS);
     fn UserDereferenceObject(obj: PVOID) -> BOOL;
 }
@@ -177,7 +177,7 @@ extern "C" {
     fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG_PTR);
     fn MsqSetMessageExtraInfo(lData: LPARAM) -> LPARAM;
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: ULONG, hWnd: HWND) -> HWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: u32);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
     fn SetLastNtError(Status: NTSTATUS);
     fn UserDereferenceObject(obj: PVOID) -> BOOL;
 }

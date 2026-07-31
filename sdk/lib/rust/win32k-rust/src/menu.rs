@@ -190,7 +190,7 @@ extern "C" {
     fn ValidateHwndNoErr(hWnd: HWND) -> PWND;
 }
 extern "system" {
-    fn SafeProbeForRead( Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG, ) -> NTSTATUS;
+    fn SafeProbeForRead( Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG, ) -> NTSTATUS;
     fn SafeProbeForWrite( Address: *mut core::ffi::c_void, Length: usize, Alignment: u32, ) -> NTSTATUS;
     // UserReferenceObject / UserDereferenceObject — fastcall on i386 actually; but
     // UserRefObjectCo (object.h inline) is reimplemented locally below.
@@ -7488,7 +7488,7 @@ pub unsafe extern "C" fn NtUserGetMenuBarInfo(
 
         Status = SafeProbeForRead(
             pmbi as *mut core::ffi::c_void,
-            core::mem::size_of::<MENUBARINFO>() as ULONG,
+            core::mem::size_of::<MENUBARINFO>() as _,
             1,
         );
         if !NT_SUCCESS(Status) {
@@ -7964,7 +7964,7 @@ pub unsafe extern "C" fn NtUserDrawMenuBarTemp(
 
         Status = SafeProbeForRead(
             pRect as *mut core::ffi::c_void,
-            core::mem::size_of::<RECT>() as ULONG,
+            core::mem::size_of::<RECT>() as _,
             core::mem::size_of::<ULONG>() as ULONG,
         );
         if NT_SUCCESS(Status) {
@@ -8696,7 +8696,7 @@ pub unsafe extern "C" fn NtUserTrackPopupMenuEx(
             if !lptpm.is_null() {
                 let __SehStatus = SafeProbeForRead(
                     lptpm as *mut core::ffi::c_void,
-                    core::mem::size_of::<TPMPARAMS>() as ULONG,
+                    core::mem::size_of::<TPMPARAMS>() as _,
                     core::mem::size_of::<u32>() as ULONG,
                 );
                 if !NT_SUCCESS(__SehStatus) {

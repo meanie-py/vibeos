@@ -29,8 +29,8 @@ const GDITAG_TEMP: u32 = u32::from_le_bytes(*b"Gtmp");
 fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
 // SafeProbeFor{Read,Write} are NTAPI (stdcall on i386); extern "C" mis-decorates.
 extern "system" {
-    fn SafeProbeForRead(Address: *const core::ffi::c_void, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
-    fn SafeProbeForWrite(Ptr: *mut core::ffi::c_void, Length: u32, Alignment: u32) -> i32;
+    fn SafeProbeForRead(Address: *const core::ffi::c_void, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(Ptr: *mut core::ffi::c_void, Length: SIZE_T, Alignment: u32) -> i32;
 }
 // XFORMOBJ_* are FORCEINLINE macros → EXFORMOBJ_* real symbols (xformobj.h /
 // xformobj.rs). vInit just sets pmx (no symbol — local inline, region.rs idiom);
@@ -571,9 +571,9 @@ pub unsafe extern "C" fn NtGdiTransformPoints(
     }
 
     'leave: {
-        Status = SafeProbeForWrite(UnsafePtOut as *mut _, Size, 1);
+        Status = SafeProbeForWrite(UnsafePtOut as *mut _, Size as _, 1);
         if NT_SUCCESS(Status) {
-            Status = SafeProbeForRead(UnsafePtsIn as *mut _, Size, 1);
+            Status = SafeProbeForRead(UnsafePtsIn as *mut _, Size as _, 1);
         }
         if !NT_SUCCESS(Status) {
             break 'leave;
@@ -762,7 +762,7 @@ pub unsafe extern "C" fn NtGdiModifyWorldTransform(
     if !pxformUnsafe.is_null() {
         let Status = SafeProbeForRead(
             pxformUnsafe as *const core::ffi::c_void,
-            core::mem::size_of::<XFORML>() as u32,
+            core::mem::size_of::<XFORML>() as _,
             1,
         );
         if !NT_SUCCESS(Status) {
@@ -850,7 +850,7 @@ pub unsafe extern "C" fn NtGdiOffsetViewportOrgEx(
     pdcattr = (*dc).pdcattr;
 
     if !UnsafePoint.is_null() {
-        Status = SafeProbeForWrite(UnsafePoint as *mut _, core::mem::size_of::<POINT>() as u32, 1);
+        Status = SafeProbeForWrite(UnsafePoint as *mut _, core::mem::size_of::<POINT>() as _, 1);
         if NT_SUCCESS(Status) {
             (*UnsafePoint).x = (*pdcattr).ptlViewportOrg.x;
             (*UnsafePoint).y = (*pdcattr).ptlViewportOrg.y;
@@ -939,7 +939,7 @@ pub unsafe extern "C" fn NtGdiOffsetWindowOrgEx(
     if !Point.is_null() {
         let Status: i32 = SafeProbeForWrite(
             Point as *mut core::ffi::c_void,
-            core::mem::size_of::<POINT>() as u32,
+            core::mem::size_of::<POINT>() as _,
             1,
         );
         if NT_SUCCESS(Status) {
@@ -1094,7 +1094,7 @@ pub unsafe extern "C" fn NtGdiScaleViewportExtEx(
     if !pSize.is_null() {
         Status = SafeProbeForWrite(
             pSize as *mut core::ffi::c_void,
-            core::mem::size_of::<SIZE>() as u32,
+            core::mem::size_of::<SIZE>() as _,
             1,
         );
         if !NT_SUCCESS(Status) {
@@ -1210,7 +1210,7 @@ pub unsafe extern "C" fn NtGdiScaleWindowExtEx(
 
         // SafeProbeForWrite is unavailable; treat as success path (DUMMY/elided).
         // Original: Status = SafeProbeForWrite(pSize, sizeof(SIZE), 1);
-        let Status = SafeProbeForWrite(pSize as *mut core::ffi::c_void, core::mem::size_of::<SIZE>() as u32, 1);
+        let Status = SafeProbeForWrite(pSize as *mut core::ffi::c_void, core::mem::size_of::<SIZE>() as _, 1);
         if NT_SUCCESS(Status) {
             X = (*pdcattr).szlWindowExt.cx;
             if ((*pdcattr).dwLayout & LAYOUT_RTL) != 0 {
@@ -1521,7 +1521,7 @@ pub unsafe extern "C" fn NtGdiSetViewportOrgEx(
 
         Status = SafeProbeForWrite(
             Point as *mut core::ffi::c_void,
-            core::mem::size_of::<POINT>() as u32,
+            core::mem::size_of::<POINT>() as _,
             1,
         );
         if NT_SUCCESS(Status) {
@@ -1606,7 +1606,7 @@ pub unsafe extern "C" fn NtGdiSetWindowOrgEx(
     if !Point.is_null() {
         let Status: i32 = SafeProbeForWrite(
             Point as *mut core::ffi::c_void,
-            core::mem::size_of::<POINT>() as u32,
+            core::mem::size_of::<POINT>() as _,
             1,
         );
         if NT_SUCCESS(Status) {
@@ -2237,7 +2237,7 @@ pub unsafe extern "C" fn NtGdiGetDCPoint(
 
     Ret = GreGetDCPoint(hDC, iPoint, &mut SafePoint);
     if Ret != 0 {
-        Status = SafeProbeForWrite(Point as *mut _, core::mem::size_of::<POINT>() as u32, 1);
+        Status = SafeProbeForWrite(Point as *mut _, core::mem::size_of::<POINT>() as _, 1);
         if !NT_SUCCESS(Status) {
             Ret = 0;
         } else {

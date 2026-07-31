@@ -64,7 +64,7 @@ extern "system" {
     fn NT_ASSERT( condition: i32, );
     static WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
-    fn DeviceGetParameter( DeviceExtension: *mut core::ffi::c_void, SubKeyName: *const i8, ValueName: *const i8, Value: *mut u32, ) -> ();
+    fn DeviceGetParameter( DeviceExtension: *mut core::ffi::c_void, SubKeyName: *mut u16, ValueName: *mut u16, Value: *mut u32, ) -> ();
     fn TEST_FLAG(Flags: u32, Flag: u32) -> u32;
     fn DeviceSetParameter(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const u16, ValueName: *const u16, Value: u32) -> u32;
     fn DevicePickDvdRegion(Device: WDFDEVICE);
@@ -229,6 +229,18 @@ const DvdGetRpcKey: u32 = 8; // _DVD_KEY_TYPE_DvdGetRpcKey
 const DVD_RPC_KEY_LENGTH: u32 =
     (core::mem::size_of::<DVD_RPC_KEY>() + core::mem::size_of::<DVD_COPY_PROTECT_KEY>()) as u32;
 
+/// classp.h spells these registry names as WIDE literals
+/// (`#define CLASSP_REG_SUBKEY_NAME (L"Classpnp")`), but the type substrate
+/// carries them as ASCII byte strings, and DeviceGetParameter reads UTF-16.
+/// The declaration used to say `*const i8`, so the call sites cast the byte
+/// string to match it and the callee read "Classpnp\0" as the wide string
+/// 0x6C43 0x7373... — a subkey that does not exist. Every parameter fetched
+/// through it silently kept its default. One call site in this file already
+/// widened correctly (DeviceInitializeHotplugInfo); these three did not.
+fn widen<const N: usize>(b: &[u8; N]) -> [u16; N] {
+    core::array::from_fn(|i| b[i] as u16)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn DeviceClaimRelease(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
@@ -380,10 +392,12 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
         // require this number to be at least CLASS_PERF_RESTORE_MINIMUM
         let mut t: u32 = CLASS_PERF_RESTORE_MINIMUM;
 
+        let sub = widen(CLASSP_REG_SUBKEY_NAME);
+        let val = widen(CLASSP_REG_PERF_RESTORE_VALUE_NAME);
         DeviceGetParameter(
             deviceExtension as *mut core::ffi::c_void,
-            CLASSP_REG_SUBKEY_NAME.as_ptr() as *const i8,
-            CLASSP_REG_PERF_RESTORE_VALUE_NAME.as_ptr() as *const i8,
+            sub.as_ptr().cast_mut(),
+            val.as_ptr().cast_mut(),
             &mut t,
         );
         if t >= CLASS_PERF_RESTORE_MINIMUM {
@@ -1170,10 +1184,12 @@ pub unsafe extern "C" fn DeviceInitializeHotplugInfo(
                 || (deviceRemovalPolicy == RemovalPolicyExpectSurpriseRemoval)
             {
                 let mut userRemovalPolicy: DEVICE_REMOVAL_POLICY = 0;
+                let sub = widen(CLASSP_REG_SUBKEY_NAME);
+                let val = widen(CLASSP_REG_REMOVAL_POLICY_VALUE_NAME);
                 DeviceGetParameter(
                     DeviceExtension as *mut core::ffi::c_void,
-                    CLASSP_REG_SUBKEY_NAME.as_ptr() as *const i8,
-                    CLASSP_REG_REMOVAL_POLICY_VALUE_NAME.as_ptr() as *const i8,
+                    sub.as_ptr().cast_mut(),
+                    val.as_ptr().cast_mut(),
                     &raw mut userRemovalPolicy as *mut DEVICE_REMOVAL_POLICY as *mut u32,
                 );
 
@@ -1191,10 +1207,12 @@ pub unsafe extern "C" fn DeviceInitializeHotplugInfo(
             }
 
             writeCacheOverride = 0; // FALSE
+            let sub = widen(CLASSP_REG_SUBKEY_NAME);
+            let val = widen(CLASSP_REG_WRITE_CACHE_VALUE_NAME);
             DeviceGetParameter(
                 DeviceExtension as *mut core::ffi::c_void,
-                CLASSP_REG_SUBKEY_NAME.as_ptr() as *const i8,
-                CLASSP_REG_WRITE_CACHE_VALUE_NAME.as_ptr() as *const i8,
+                sub.as_ptr().cast_mut(),
+                val.as_ptr().cast_mut(),
                 &raw mut writeCacheOverride,
             );
 

@@ -15,7 +15,11 @@ extern "C" {
     fn TuiDrawCenteredText( Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG, TextString: PCSTR, Attr: UCHAR, );
     fn TuiPrintf(MessageText: PCSTR);
     fn MiniTuiDrawMenu(MenuInfo: PUI_MENU_INFO);
-    fn TuiDisplayMenu( MenuHeader: PCSTR, MenuFooter: PCSTR, ShowBootOptions: u8, MenuItemList: *const PCSTR, MenuItemCount: u32, DefaultMenuItem: u32, MenuTimeOut: i32, SelectedMenuItem: *mut u32, CanEscape: u8, KeyPressFilter: Option<UiMenuKeyPressFilterCallback>, Context: *mut core::ffi::c_void, ) -> u8;
+    // TEN parameters. tui.h and tuimenu.rs both say so; the extra ShowBootOptions
+    // that used to sit at index 2 is UiDisplayMenu's, not TuiDisplayMenu's, and
+    // forwarding it shifted every argument from MenuItemList on by one slot —
+    // the callee read a u8 as its MenuItemList pointer.
+    fn TuiDisplayMenu( MenuHeader: PCSTR, MenuFooter: PCSTR, MenuItemList: *const PCSTR, MenuItemCount: u32, DefaultMenuItem: u32, MenuTimeOut: i32, SelectedMenuItem: *mut u32, CanEscape: u8, KeyPressFilter: Option<UiMenuKeyPressFilterCallback>, Context: *mut core::ffi::c_void, ) -> u8;
     fn MachVideoSetDisplayMode(mode: *mut core::ffi::c_void, text: BOOLEAN);
     fn MachVideoGetDisplaySize(width: *mut ULONG, height: *mut ULONG, depth: *mut ULONG);
     fn UiGetScreenHeight() -> ULONG;
@@ -147,10 +151,10 @@ pub unsafe extern "C" fn UiDisplayMenu(
     Context: *mut core::ffi::c_void,
 ) -> u8 {
 
+    let _ = ShowBootOptions; // TuiDisplayMenu does not take it (see the decl above)
     TuiDisplayMenu(
         MenuHeader,
         MenuFooter,
-        ShowBootOptions,
         MenuItemList,
         MenuItemCount,
         DefaultMenuItem,

@@ -469,8 +469,16 @@ pub(crate) unsafe fn cswdep_spin_release(_lock: *mut ULONG_PTR) {}
 /// KxAcquireSpinLock — UP kernel: compiler barrier only. SMP kernel
 /// (feature = "smp"): the spinlock.h CONFIG_SMP body — try-acquire via
 /// InterlockedBitTestAndSet(bit 0), on contention spin-read until free.
-/// DBG owner tracking disabled: inconsistent paths between C shims and Rust inline
-/// cause false SPIN_LOCK_NOT_OWNED on i386. To be investigated separately.
+///
+/// Under `feature = "dbg"` it also stamps the owner, mirroring
+/// `KI_TRACK_SPINLOCK_OWNER` in ntoskrnl/include/internal/spinlock.h. That
+/// stamp is OBSERVABLE BEHAVIOUR, not a diagnostic: `KeTestSpinLock` reads it,
+/// and so does every DDK caller that inspects a held lock. The C and Rust
+/// halves of this funnel MUST agree — a lock stamped by one and not cleared by
+/// the other stays dirty forever. The two `KeBugCheckEx` validations that
+/// upstream pairs with the stamp stay OFF on both sides (`KI_VALIDATE_...`);
+/// they are what broke i386 boot when this was first enabled, and finding the
+/// mismatched acquire/release pairs is separate work.
 #[inline]
 pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     cswdep_spin_acquire(spin_lock);
@@ -484,15 +492,20 @@ pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     // Compiler barrier (KeMemoryBarrierWithoutFence); under smp the
     // interlocked op above is the hardware fence.
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    #[cfg(feature = "dbg")]
+    {
+        *spin_lock = current_thread() as ULONG_PTR | 1;
+    }
 }
 
 /// KxReleaseSpinLock — UP kernel: compiler barrier only. SMP kernel:
 /// spinlock.h's `InterlockedAnd(64)(SpinLock, 0)` — full-barrier atomic clear.
-/// DBG owner tracking disabled (see KxAcquireSpinLock comment).
+/// Under `feature = "dbg"` the clear also happens on UP, because that is where
+/// the owner stamp is undone (see KxAcquireSpinLock).
 #[inline]
 pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
     cswdep_spin_release(spin_lock);
-    #[cfg(feature = "smp")]
+    #[cfg(any(feature = "smp", feature = "dbg"))]
     {
         core::sync::atomic::AtomicUsize::from_ptr(spin_lock as *mut usize)
             .swap(0, core::sync::atomic::Ordering::SeqCst);
@@ -2453,11 +2466,14 @@ pub unsafe fn _KeAcquireGuardedMutexSited(guarded_mutex: ddk::PKGUARDED_MUTEX, s
         KiAcquireGuardedMutex(guarded_mutex);
     }
     (*guarded_mutex).Owner = current_thread();
-    let thread = current_thread();
-    (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.KernelApcDisable =
-        *kthread_kernel_apc_disable(thread);
+    /* SpecialApcDisable ONLY (ke_x.h:1626). KernelApcDisable belongs to
+     * KFAST_MUTEX, not KGUARDED_MUTEX: a guarded region disables special APCs,
+     * and the field is where KeReleaseGuardedMutex's ASSERT reads the depth
+     * back from. Writing it here made KeGuardedMutex report 87 assertion
+     * failures per arch — the test pre-fills the mutex with 0x55 and checks
+     * that this field is never touched. */
     (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable =
-        *kthread_special_apc_disable_ptr(thread);
+        *kthread_special_apc_disable_ptr(current_thread());
     super::ex::lockdep_acquire(guarded_mutex as _, 3, site); // held now — gmutex
 }
 
@@ -2507,16 +2523,15 @@ pub unsafe fn _KeTryToAcquireGuardedMutexSited(
     ) != 0
     {
         (*guarded_mutex).Owner = current_thread();
-        let thread = current_thread();
-        (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.KernelApcDisable =
-            *kthread_kernel_apc_disable(thread);
+        /* SpecialApcDisable ONLY — see _KeAcquireGuardedMutexSited (ke_x.h:1694). */
         (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable =
-            *kthread_special_apc_disable_ptr(thread);
+            *kthread_special_apc_disable_ptr(current_thread());
         // held now — but via TRY: held-set only, no order edges (can't park).
         super::ex::lockdep_acquire_try(guarded_mutex as _, 3, site);
         1 // TRUE
     } else {
         KeLeaveGuardedRegion();
+        core::hint::spin_loop(); // C: YieldProcessor() (ke_x.h:1686)
         0 // FALSE
     }
 }

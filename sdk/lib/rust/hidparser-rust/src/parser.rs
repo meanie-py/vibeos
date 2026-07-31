@@ -21,7 +21,6 @@ use hid_sys::{
 
 // Local consts/types — not in substrate
 #[allow(non_camel_case_types)]
-type BOOL = u8;
 type C2RustUnnamed = SHORT_ITEM;
 type C2RustUnnamed_1 = LONG_ITEM;
 type C2RustUnnamed_2 = MAIN_ITEM_DATA;

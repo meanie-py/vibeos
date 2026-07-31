@@ -78,7 +78,7 @@ extern "system" {
 extern "C" {
     fn PiQueueDeviceAction( DeviceObject: PDEVICE_OBJECT, Action: ULONG, Request: PVOID, Context: PVOID, );
     fn PiPerformSyncDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG) -> NTSTATUS;
-    fn IopSynchronousCall( DeviceObject: PDEVICE_OBJECT, IoStackLocation: PIO_STACK_LOCATION, Information: PVOID, ) -> NTSTATUS;
+    fn IopSynchronousCall( DeviceObject: PDEVICE_OBJECT, IoStackLocation: PIO_STACK_LOCATION, Information: *mut PVOID, ) -> NTSTATUS;
 }
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
@@ -762,7 +762,7 @@ pub unsafe extern "system" fn IopInitiatePnpIrp(
     (*IoStatusBlock).__bindgen_anon_1.Status = IopSynchronousCall(
         DeviceObject,
         &mut IoStackLocation,
-        core::ptr::addr_of_mut!((*IoStatusBlock).Information) as PVOID,
+        core::ptr::addr_of_mut!((*IoStatusBlock).Information).cast(),
     );
     (*IoStatusBlock).__bindgen_anon_1.Status
 }

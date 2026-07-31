@@ -15,6 +15,14 @@ pub mod stubs;
 /// first — see the comment there.
 pub mod shldataobject;
 
+/// `shlfolder.cpp`, flipped. 19 of its exports had live C++ callers and needed `EXTERN_C` on
+/// their declarations (shfldr.h, plus two in precomp.h). One of the 19 was an OVERLOAD PAIR of
+/// `SHELL32_CoCreateInitSF`, which `EXTERN_C` cannot express — one name, one symbol — so the
+/// csidl-taking form is now `SHELL32_CoCreateInitSFWithCsidl` on both sides. The C++ `const
+/// GUID&` / `REFIID` reference parameters here are NOT an obstacle to `EXTERN_C`: it changes
+/// linkage, not the type system, and a reference is a pointer at the ABI.
+pub mod shlfolder;
+
 // ---------------------------------------------------------------------------------------------
 // STILL PARKED. The C++ SUBSTRATE that blocked them is now largely built: `crate::atl` supplies
 // CComPtr/CHeapPtr/CComHeapPtr/CSimpleArray and `crate::shellutils` the shellutils.h/utils.h
@@ -22,24 +30,12 @@ pub mod shldataobject;
 // foundation. Counts measured with all six wired, after the substrate landed:
 //
 //     shlexec.rs   349     shlfileop.rs  227     iconcache.rs   59
-//     brfolder.rs  244     shlfolder.rs    0     shldataobject   0  <- flipped
+//     brfolder.rs  244     shlfolder.rs    0 <- flipped     shldataobject 0 <- flipped
 //
 // Read those against the pre-substrate numbers (shldataobject 22, iconcache 68, shlfolder 75,
 // shlfileop 227, brfolder 235, shlexec 415) and note that brfolder went UP, 235 -> 244: making
 // the ATL types resolve does not only remove errors, it also un-masks the ones that were hiding
 // behind an unresolved name. A rising count on a file is progress, not regression.
-//
-// SHLFOLDER COMPILES CLEAN on all three arches and is still parked, which is a DIFFERENT
-// blocker from the rest — read this before trying to flip it. `shlfolder.cpp` exports two
-// OVERLOADS of `SHELL32_CoCreateInitSF` (a 7-parameter and a 5-parameter form; see
-// `llvm-nm --defined-only` on the .obj), and several of its exports take C++ `const GUID&`
-// reference parameters. `EXTERN_C` cannot express an overload SET — one name, one symbol — and
-// the translation produced a single `SHELL32_CoCreateInitSF`, so the other overload's callers
-// would lose their definition. Meanwhile the Rust module's `#[no_mangle]` exports (SHCreateLinks,
-// SHELL32_CompareDetails, every `*_RustBridge`) collide with the .cpp's identical unmangled
-// symbols, so it cannot be left wired while the .cpp compiles either. The resolution is a HYBRID
-// cohab — retain the overload pair (and the reference-taking helpers) in C++, flip the rest —
-// which is a deliberate split, not a mechanical edit, and is owed rather than done.
 //
 // What each still needs, in cheapest-first order:
 //
@@ -62,4 +58,3 @@ pub mod shldataobject;
 // pub mod iconcache;
 // pub mod shlexec;
 // pub mod shlfileop;
-// pub mod shlfolder;

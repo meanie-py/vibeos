@@ -622,16 +622,17 @@ extern "system" {
         punk: *mut crate::shellcom::IUnknown,
         ppidl: *mut crate::island::LPITEMIDLIST,
     ) -> crate::island::HRESULT;
-    /// win32.rs helpers, declared here for the same crate::types-vs-island reason as ILFree.
-    pub fn SHELL_CreateSHDESCRIPTIONID(
-        pVar: *mut crate::island::VARIANT,
-        Id: crate::island::DWORD,
-        pCLSID: *const crate::island::GUID,
-    ) -> crate::island::HRESULT;
-    pub fn SHELL_CreateVariantBuffer(
-        pVar: *mut crate::island::VARIANT,
-        cb: crate::island::UINT,
-    ) -> crate::island::HRESULT;
+    /// `CFSFolder::CompareUiStrings` is a C++ STATIC MEMBER, so it has no callable name from
+    /// Rust; CFSFolder.cpp exports this bridge for exactly that reason, and `recycle_bin.rs`
+    /// already goes through it. It is `extern "C" INT WINAPI` — the `extern "C"` is linkage,
+    /// the WINAPI is the CALLING CONVENTION, so this belongs in the `extern "system"` block.
+    /// Declaring it `extern "C"` cost an i386 link failure on `_CFSFolder_..._RustBridge`
+    /// against the defined `_CFSFolder_..._RustBridge@12`.
+    pub fn CFSFolder_CompareUiStrings_RustBridge(
+        a: crate::island::LPCWSTR,
+        b: crate::island::LPCWSTR,
+        lParam: crate::island::LPARAM,
+    ) -> ::core::ffi::c_int;
 }
 
 extern "C" {
@@ -641,15 +642,11 @@ extern "C" {
         hOwner: crate::island::HWND,
         pDO: *mut crate::shellcom::IDataObject,
     ) -> crate::island::HRESULT;
-    /// `CFSFolder::CompareUiStrings` is a C++ STATIC MEMBER, so it has no callable name from
-    /// Rust; CFSFolder.cpp exports this extern "C" bridge for exactly that reason, and
-    /// `recycle_bin.rs` already goes through it.
-    pub fn CFSFolder_CompareUiStrings_RustBridge(
-        a: crate::island::LPCWSTR,
-        b: crate::island::LPCWSTR,
-        lParam: crate::island::LPARAM,
-    ) -> ::core::ffi::c_int;
 }
+
+/// `wine/shell32_main.h` property-system inlines — see `crate::shellutils` for why these are
+/// Rust now rather than declared.
+pub use crate::shellutils::{SHELL_CreateSHDESCRIPTIONID, SHELL_CreateVariantBuffer};
 
 /// shtypes.idl — STRRET carries an ANSI string inline in `cStr`.
 pub const STRRET_CSTR: crate::island::UINT = 2;

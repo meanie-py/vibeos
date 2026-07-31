@@ -635,7 +635,10 @@ VOID FatUpdateIOCountersPCW(PVCB a, BOOLEAN b, ULONG_PTR c) { (void)a;(void)b;(v
 NTSTATUS FatGetVolumeBitmap(PIRP_CONTEXT a, PIRP b)    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatGetRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatMarkHandle — now REAL in fastfat-rust fsctrl.rs (task #50). Stub removed so
+ * the Rust #[no_mangle] definition is the sole symbol: this C object links BEFORE
+ * libfastfat_rust.a and lld --allow-multiple-definition is FIRST-match, so leaving
+ * the stub here would silently shadow the translation and keep the bugcheck. */
 /* FatSetEndOfFileInfo — recovered to Rust (fileinfo.rs, rustconv 2026-07-16). The
  * bugcheck stub is removed so the Rust #[no_mangle] definition is the sole symbol
  * (lld --allow-multiple-definition is first-match, and this C obj links BEFORE

@@ -326,6 +326,53 @@ opt-level = 1
 lto = false
 codegen-units = 256
 debug = 1
+# The C we translated from runs its ASSERTs: CMakeLists.txt sets -DDBG=1, so
+# every `ASSERT` in the C originals calls RtlAssert. The Rust `debug_assert!`
+# those became is gated on cfg(debug_assertions), which cargo's release profile
+# leaves OFF — so 2,120 translated invariant checks compiled to nothing, and the
+# Rust half of the kernel has been running with its assertions silently disabled
+# while the C half checks them. That is the mirror of the bug where C assert
+# macros got lowered to something STRONGER than the original (UB, an invented
+# BUGCHECK); here they were lowered to nothing at all. Proof it mattered:
+# ke/amd64/usercall.rs asserts `(SegCs & MODE_MASK) != 0`, and a boot printed
+# `[KI-APC] ... SegCs=0x0` — a forbidden value walked straight past a check that
+# was not there.
+#
+# SCOPED TO THE KERNEL CORE (2026-07-28), not workspace-wide. Turning it on for
+# the whole workspace does not just enable assertions — it compiles 108
+# `#[cfg(debug_assertions)]` blocks that have NEVER been type-checked in the
+# life of this tree, and the first one tried (freeldr-rust heap statistics) was
+# broken: 14 x E0609, a PVOID handle deref'd without the `as PHEAP` cast. Those
+# blocks are a real backlog, but they are a separate project from arming the
+# assertions, and pretending otherwise blocks the latter on the former.
+#
+# So: arm the crates the kernel bug-hunt actually lives in (KE/MM/OB/PS/EX/HAL)
+# — 181 of the assertions for 29 of the never-compiled blocks — and leave the
+# loader/filesystem/driver tail tracked as owed work. See the roadmap entry.
+# STAGED, NOT YET ENABLED — and the reason is the second half of the finding.
+#
+# On pinned stable, `debug-assertions` does not only enable `debug_assert!`. It
+# also enables rustc's **UB checks** (they share the cfg; splitting them needs
+# nightly `-Zub-checks`). Those found real alignment UB in the first two crates
+# tried, one per arch, on the first boot of each:
+#   - amd64, hal-rust/src/x86/halacpi.rs:864 — an 8-byte read of an ACPI
+#     structure that is only 4-byte aligned. FIXED here (addr_of! +
+#     read_unaligned) since it is correct regardless.
+#   - arm64, ntoskrnl-rust/src/ke/time.rs:56 — `write_volatile` of a u64
+#     through a `*mut KSYSTEM_TIME`, which is 4-aligned (SystemTime lives at
+#     offset 0x14 of KUSER_SHARED_DATA). NOT fixed: the misalignment also means
+#     that store was never atomic, so the torn-read guard the code documents
+#     does not actually hold, and repairing it means reworking the KSYSTEM_TIME
+#     write protocol against the C rather than silencing a checker.
+#
+# So this is a MIGRATION, not a flag flip — two of two crates tested had a UB
+# site, on top of the 108 never-compiled `#[cfg(debug_assertions)]` blocks.
+# Enable it one crate at a time, with a boot per crate. Full accounting, and the
+# three already-fixed never-compiled blocks, are in the roadmap entry.
+#
+# [profile.release.package.ntoskrnl-rust]
+# debug-assertions = true
+# overflow-checks = false   # NB: defaults to FOLLOWING debug-assertions; must be explicit
 
 # msvcrt.dll's CRT body is the ONE place in this workspace where throughput is a
 # correctness-adjacent contract: `memset`/`memcpy`/`memcmp`/`strlen` are served to

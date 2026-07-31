@@ -37,7 +37,7 @@ extern "C" {
     fn TRACE(fmt: *const i8, ...);
     fn ERR(fmt: *const i8, ...);
     fn FrLdrHeapCleanupAll();
-    fn MmSetMemoryType(BaseAddress: *mut core::ffi::c_void, SizeInPages: u32, MemoryType: u32);
+    fn MmSetMemoryType(BaseAddress: *mut core::ffi::c_void, SizeInPages: SIZE_T, MemoryType: u32);
     fn MmAllocateMemoryWithType(MemorySize: usize, MemoryType: u32) -> *mut core::ffi::c_void;
     fn MmGetMemoryMap(NoEntries: *mut PFN_NUMBER) -> *mut PAGE_LOOKUP_TABLE_ITEM;
     fn UiMessageBox(Text: *const i8);
@@ -187,7 +187,7 @@ pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_
     FrLdrHeapCleanupAll();
 
     if TotalNLSSize > 0 && !NlsDataBase.is_null() {
-        MmSetMemoryType(NlsDataBase, TotalNLSSize * MM_PAGE_SIZE, LoaderNlsData);
+        MmSetMemoryType(NlsDataBase, (TotalNLSSize * MM_PAGE_SIZE) as SIZE_T, LoaderNlsData);
     }
 
     Mad = MmAllocateMemoryWithType(

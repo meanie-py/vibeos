@@ -47,7 +47,7 @@ extern "system" {
     fn HidParser_GetScaledUsageValue( preparsedData: *mut core::ffi::c_void, reportType: HIDP_REPORT_TYPE, usagePage: USAGE, linkCollection: USHORT, usage: USAGE, usageValue: *mut i32, report: *mut i8, reportLength: ULONG, ) -> NTSTATUS;
     fn HidParser_GetUsageValue( PreparsedData: PVOID, ReportType: HIDP_REPORT_TYPE, UsagePage: USAGE, LinkCollection: USHORT, Usage: USAGE, UsageValue: PULONG, Report: PCHAR, ReportLength: ULONG, ) -> NTSTATUS;
     fn HidParser_TranslateUsageAndPagesToI8042ScanCodes( ChangedUsageList: *mut USAGE_AND_PAGE, UsageListLength: u32, KeyAction: HIDP_KEYBOARD_DIRECTION, ModifierState: *mut HIDP_KEYBOARD_MODIFIER_STATE, InsertCodesProcedure: PHIDP_INSERT_SCANCODES, InsertCodesContext: *mut core::ffi::c_void, ) -> NTSTATUS;
-    fn HidParser_GetCollectionDescription( ReportDesc: *mut HIDP_REPORT_DESCRIPTOR, DescLength: u32, PoolType: POOL_TYPE, DeviceDescription: *mut HIDP_DEVICE_DESC, ) -> NTSTATUS;
+    fn HidParser_GetCollectionDescription( ReportDesc: HIDP_REPORT_DESCRIPTOR, DescLength: u32, PoolType: POOL_TYPE, DeviceDescription: *mut HIDP_DEVICE_DESC, ) -> NTSTATUS;
 }
 extern "C" {
     fn DebugFunction(format: *const i8, ...);
@@ -77,8 +77,12 @@ pub unsafe extern "C" fn TranslateStatusForUpperLayer(Status: NTSTATUS) -> NTSTA
 }
 
 #[no_mangle]
+// hidpi.h: `IN PHIDP_REPORT_DESCRIPTOR ReportDesc`, and that typedef is
+// `PUCHAR` — already a pointer. This EXPORT took it one level deeper, and so
+// did its call into HidParser_GetCollectionDescription, so the chain stayed
+// self-consistent while every external caller passes the shallower thing.
 pub unsafe extern "system" fn HidP_GetCollectionDescription(
-    ReportDesc: *mut HIDP_REPORT_DESCRIPTOR,
+    ReportDesc: HIDP_REPORT_DESCRIPTOR,
     DescLength: u32,
     PoolType: POOL_TYPE,
     DeviceDescription: *mut HIDP_DEVICE_DESC,

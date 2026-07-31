@@ -377,10 +377,20 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   inlines, which live in no TU and so reach no translated file). Both are written against
   *measured* usage in the emitted Rust; `atl.rs`'s header records the three invariants the call
   sites depend on. Neither is shell32-specific in spirit — any ATL-using C++ module wants them.
-  Still parked: `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache,
-  shlfolder}.rs`, each carrying an `//! ORPHAN-BY-DESIGN:` banner. Post-substrate error counts
+  `shlfolder.cpp` is flipped too (2026-07-26). It needed the widest `EXTERN_C` surface of any
+  shell32 TU so far — 19 of its 83 mangled definitions have live callers (the other ~64 are
+  COMDAT template/inline emissions each TU makes for itself), 18 declared in `shfldr.h` and 2 in
+  `precomp.h`. One of the 19 was an OVERLOAD PAIR of `SHELL32_CoCreateInitSF`, which `EXTERN_C`
+  cannot express, so the csidl-taking form is now `SHELL32_CoCreateInitSFWithCsidl` on both
+  sides; its C++ `REFIID`/`const GUID&` parameters were never an obstacle (`extern "C"` changes
+  linkage, not the type system). The `Shell32RustCoCreateInitSF` trampoline that five already
+  translated folder classes call stays — it is `WINAPI` where the renamed function is cdecl, so
+  repointing it is an ABI change for no gain — but `cpp_com.py` and `scan_extern_arity` both
+  needed fixing alongside; see the field manual's `EXTERN_C` entries.
+  Still parked: `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache}.rs`,
+  each carrying an `//! ORPHAN-BY-DESIGN:` banner. Post-substrate error counts
   and what each still needs are in that directory's `mod.rs`; the short version is that
-  iconcache/shlfolder/brfolder are cast-and-signature integration with no new substrate, while
+  iconcache/brfolder are cast-and-signature integration with no new substrate, while
   shlfileop/shlexec additionally want a `CStringW` whose `Format` is printf-variadic and so
   needs a `rust_varargs_shim.c` trampoline. Paid artifacts — do not delete to tidy up.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).

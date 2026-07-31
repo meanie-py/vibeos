@@ -155,6 +155,10 @@ def _farm_arch(
             "sha": sha,
             "dirty": dirty,
             "tripwire": tripwire,
+            # Self-describing corpus: an MP failure record is not comparable to a
+            # UP one, and reading that off the surrounding shell history later is
+            # exactly the sort of provenance gap that produces a retraction.
+            "smp": int(os.environ.get("VIBEOS_QEMU_SMP", 0) or 0),
             "ok": r.get("ok", False),
             "outcome": r.get("outcome", ""),
             "classification": r.get("classification", ""),
@@ -195,6 +199,14 @@ def farm(args, repo: Path) -> int:
     if tripwire:
         os.environ["VIBEOS_TRIPWIRE"] = tripwire
 
+    # Same env knob smoke/conformance use; every boot goes through smoke's
+    # `_one_boot`, so `_smp_check` proves per boot that the MP kernel actually
+    # ran. That guard is why this can be a bare env var: a soak that silently
+    # booted the UP kernel would otherwise bank hours of meaningless green.
+    smp = int(getattr(args, "smp", 0) or 0)
+    if smp:
+        os.environ["VIBEOS_QEMU_SMP"] = str(smp)
+
     # Farming stale media produces garbage data — same hard boundary as smoke.
     for arch in arches:
         st = provenance.check_staleness(repo, archcfg.base_arch(arch))
@@ -220,6 +232,7 @@ def farm(args, repo: Path) -> int:
     print(
         f"[farm] arches={','.join(arches)} sha={sha}{' DIRTY' if dirty else ''}"
         + (f" tripwire={tripwire!r}" if tripwire else "")
+        + (f" -smp {smp}" if smp else "")
         + (f" budget={minutes:.0f}min" if minutes else f" budget={max_boots} boots/arch")
         + f" -> {CORPUS}"
     )

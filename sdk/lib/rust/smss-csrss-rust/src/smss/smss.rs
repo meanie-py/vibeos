@@ -64,7 +64,7 @@ extern "system" {
     ) -> NTSTATUS;
     fn SmConnectToSm(
         SbApiPortName: PUNICODE_STRING,
-        SbApiPort: PHANDLE,
+        SbApiPort: HANDLE,
         ImageType: ULONG,
         SmApiPort: PHANDLE,
     ) -> NTSTATUS;

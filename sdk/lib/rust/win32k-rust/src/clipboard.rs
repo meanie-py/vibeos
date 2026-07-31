@@ -31,8 +31,8 @@ unsafe fn UserHMGetHandle<T>(obj: *mut T) -> HWND {
 
 // SafeProbeForRead/Write — NTAPI (stdcall on i386 → extern "system"), per nm `_SafeProbeForRead@12`.
 extern "system" {
-    fn SafeProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
-    fn SafeProbeForWrite(Address: PVOID, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
 }
 
 // fastcall (`@Name@N` in nm) — extern "fastcall" on i386, cdecl elsewhere.
@@ -2296,11 +2296,11 @@ pub unsafe extern "C" fn NtUserCreateLocalMemHandle(
         /* Copy data to usermode */
         Status = SafeProbeForWrite(
             pcbData as PVOID,
-            core::mem::size_of::<DWORD>() as ULONG,
+            core::mem::size_of::<DWORD>() as _,
             1,
         );
         if NT_SUCCESS(Status) {
-            Status = SafeProbeForWrite(pData, cbData, 1);
+            Status = SafeProbeForWrite(pData, cbData as _, 1);
         }
         if NT_SUCCESS(Status) {
             if !pcbData.is_null() {

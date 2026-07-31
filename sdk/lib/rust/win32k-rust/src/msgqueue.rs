@@ -36,8 +36,8 @@ macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 // --- NTAPI/stdcall (`_Name@N`) eng exports. extern "system" = stdcall i386. ---
 extern "system" {
     fn EngGetTickCount() -> ULONGLONG;
-    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
-    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
 }
 
 // EngGetTickCount32() = (ULONG)EngGetTickCount() (eng.h FORCEINLINE; no symbol).
@@ -3611,7 +3611,7 @@ pub unsafe extern "C" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWORD {
     pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
     MessageQueue = (*pti).MessageQueue;
 
-    Status = SafeProbeForWrite(lpKeyState as *mut core::ffi::c_void, (256 * core::mem::size_of::<u8>()) as ULONG, 1);
+    Status = SafeProbeForWrite(lpKeyState as *mut core::ffi::c_void, (256 * core::mem::size_of::<u8>()) as _, 1);
     if !NT_SUCCESS(Status) {
         SetLastNtError(Status);
         ret = 0;
@@ -3683,7 +3683,7 @@ pub unsafe extern "C" fn NtUserSetKeyboardState(pKeyState: LPBYTE) -> BOOL {
     pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
     MessageQueue = (*pti).MessageQueue;
 
-    Status = SafeProbeForRead(pKeyState as *mut core::ffi::c_void, (256 * core::mem::size_of::<u8>()) as ULONG, 1);
+    Status = SafeProbeForRead(pKeyState as *mut core::ffi::c_void, (256 * core::mem::size_of::<u8>()) as _, 1);
     if !NT_SUCCESS(Status) {
         SetLastNtError(Status);
         bRet = 0;

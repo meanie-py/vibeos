@@ -58,6 +58,24 @@ RE_DEF = re.compile(
     rb"#\[no_mangle\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?"
     rb'(?:extern\s+"[A-Za-z-]+"\s+)?fn\s+(\w+)\s*\('
 )
+# What a declaration/definition actually LINKS to, when it is not the Rust identifier.
+# Matched against raw bytes, not `masked` — _mask_lexical blanks string literals, so the
+# symbol is only readable in the original. Anchored at the end of the text preceding `fn`.
+RE_LINK_NAME = re.compile(rb'#\s*\[\s*link_name\s*=\s*"([^"]+)"\s*\]\s*(?:pub\s+)?(?:unsafe\s+)?$')
+RE_EXPORT_NAME = re.compile(rb'#\s*\[\s*export_name\s*=\s*"([^"]+)"\s*\]')
+
+
+def _symbol(region: bytes, rust_name: bytes, attr_re) -> str:
+    """The symbol a decl/def resolves to: an explicit link_name/export_name, else the name.
+
+    Comparing a declaration against a definition that happens to share its RUST identifier is
+    wrong whenever the declaration redirects: shell32's five folder classes declare a 5-param
+    `SHELL32_CoCreateInitSF` carrying `#[link_name = "Shell32RustCoCreateInitSF"]`, which is a
+    WINAPI C++ trampoline — not the 6-param `SHELL32_CoCreateInitSF` that shlfolder.rs defines.
+    Keying on the identifier reported all five as arity bugs.
+    """
+    m = attr_re.search(region)
+    return (m.group(1) if m else rust_name).decode()
 
 
 def nargs(masked_params: str) -> int:
@@ -134,10 +152,7 @@ def scan(root):
             # declarations nor its definitions can take part in a call — the exemption
             # this module's docstring already states, now enforced instead of baselined.
             # It also stops a parked translation from "disagreeing" with the live
-            # declaration it exists to REPLACE: shell32's `SHELL32_CoCreateInitSF` is
-            # C++-OVERLOADED (shfldr.h:137 takes 6 params, :140 takes 5), so a parked
-            # shlfolder.rs defining the 6-param one reads as an arity bug against the
-            # wired 5-param decl, and no amount of signature analysis can tell them apart.
+            # declaration it exists to REPLACE.
             if b"ORPHAN-BY-DESIGN:" in data[:2048]:
                 continue
             if b"extern" not in data and b"no_mangle" not in data:
@@ -148,23 +163,27 @@ def scan(root):
                 end = _match_forward(masked, bm.end() - 1)
                 if end is None:
                     continue
+                prev = bm.end()
                 for dm in RE_DECL.finditer(masked, bm.end(), end):
                     sig = _params(data, masked, dm.end() - 1)
                     if sig:
-                        entry["decls"].setdefault(dm.group(1).decode(), []).append((path, sig))
+                        sym = _symbol(data[prev : dm.start()], dm.group(1), RE_LINK_NAME)
+                        entry["decls"].setdefault(sym, []).append((path, dm.group(1).decode(), sig))
+                    prev = dm.end()
             for fm in RE_DEF.finditer(data):
                 sig = _params(data, masked, fm.end() - 1)
                 if sig:
-                    entry["defs"][fm.group(1).decode()] = (path, sig)
+                    sym = _symbol(data[fm.start() : fm.end()], fm.group(1), RE_EXPORT_NAME)
+                    entry["defs"][sym] = (path, sig)
 
     findings = []
     for crate, e in crates.items():
         live = crate_live_files(crate)
-        for name, sites in sorted(e["decls"].items()):
-            if name not in e["defs"]:
+        for sym, sites in sorted(e["decls"].items()):
+            if sym not in e["defs"]:
                 continue
-            dpath, dsig = e["defs"][name]
-            for path, sig in sites:
+            dpath, dsig = e["defs"][sym]
+            for path, name, sig in sites:
                 if "..." in sig[0] or "..." in dsig[0]:
                     continue
                 # A decl in an unreachable file cannot make a wrong call.

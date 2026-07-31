@@ -1454,7 +1454,7 @@ pub unsafe extern "C" fn _SEH2_TRY() {}
 // specstrings __analysis_assert(expr): wanted symbol ___analysis_assert@4
 // (i386 `_` decoration + C name `__analysis_assert`). stdcall, 1 arg, no-op.
 #[no_mangle]
-pub unsafe extern "C" fn __analysis_assert(_Expr: u32) {}
+pub unsafe extern "C" fn __analysis_assert(_Expr: BOOLEAN) {}
 
 // cddata.h: #define ASSERT_FCB(F) NT_ASSERT(...)  — assert-only no-op. stdcall (@4).
 #[no_mangle]

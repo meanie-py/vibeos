@@ -326,9 +326,10 @@ extern "C" {
 /// the dispatcher — then lower back to the entry IRQL.
 ///
 /// We deliberately do NOT toggle PSTATE.DAIF (unlike amd64's sti/cli around the
-/// call): on this port the whole SVC runs with IRQs masked, `KiTrapReturn` owns
-/// the ELR/SPSR per-exception banking window, and the APC's user stack is the
-/// thread's own resident stack (KiInitializeUserApc pre-faults it anyway).
+/// call): `KiTrapReturn` owns the ELR/SPSR per-exception banking window, and the
+/// APC's user stack is the thread's own resident stack (KiInitializeUserApc
+/// pre-faults it anyway). Since `UNMASK_IRQ_FROM_SPSR` (trap.S) the SVC body
+/// runs with IRQs ON, which is the amd64 state at this point too.
 /// IRQL here is a GIC-PMR / PCR concern, not a DAIF one — `KfRaiseIrql` is the
 /// correct, DAIF-neutral gate. This is SVC (synchronous, thread-body) context,
 /// the canonical safe point for user-APC delivery — NOT the IRQ-exception

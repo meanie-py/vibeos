@@ -187,7 +187,11 @@ extern "system" {
 }
 extern "C" {
     fn ExceptionRecord32To64(ex32: *mut PVOID, ex64: *mut EXCEPTION_RECORD64);
-    fn KeGetTrapFrameInterruptState(trap_frame: *mut PVOID) -> BOOLEAN;
+    // ke.h takes the trap frame by ONE pointer (a macro on arm64, FORCEINLINE
+    // elsewhere). This file declared it, KdpQueryPerformanceCounter and
+    // KdEnterDebugger all one level too deep, consistently — which is why it
+    // compiled and why nothing but a decl-vs-def comparison could see it.
+    fn KeGetTrapFrameInterruptState(trap_frame: PVOID) -> BOOLEAN;
 }
 unsafe extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
@@ -1693,7 +1697,11 @@ pub unsafe extern "system" fn KdpTimeSlipWork(_context: PVOID) {
     );
 }
 
-unsafe fn KdpQueryPerformanceCounter(trap_frame: *mut PVOID) -> LARGE_INTEGER {
+// kdapi.c: `KdpQueryPerformanceCounter(IN PKTRAP_FRAME TrapFrame)` — one
+// pointer. Declared `*mut PVOID` here, matching KdEnterDebugger's equally
+// over-deep parameter, which is how the two stayed consistent with each other
+// and wrong against the three declarations of KdEnterDebugger elsewhere.
+unsafe fn KdpQueryPerformanceCounter(trap_frame: PVOID) -> LARGE_INTEGER {
     let null = core::mem::zeroed::<LARGE_INTEGER>();
 
     if KeGetTrapFrameInterruptState(trap_frame) == 0 {
@@ -1704,7 +1712,7 @@ unsafe fn KdpQueryPerformanceCounter(trap_frame: *mut PVOID) -> LARGE_INTEGER {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdEnterDebugger(trap_frame: *mut PVOID, exception_frame: *mut PVOID) -> BOOLEAN {
+pub unsafe extern "system" fn KdEnterDebugger(trap_frame: PVOID, exception_frame: PVOID) -> BOOLEAN {
     let trap_frame = opaque_ptr(trap_frame);
     let exception_frame = opaque_ptr(exception_frame);
     let enable;
