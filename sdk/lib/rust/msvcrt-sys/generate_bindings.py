@@ -139,6 +139,36 @@ ALLOWLIST_TYPES = [
     "LONG",
     "ULONG",
     "WCHAR",
+    # Two ENUMS, listed for their VARIANTS rather than their layout: file.c passes
+    # `FileBasicInformation`/`FileStandardInformation` to NtQueryInformationFile and
+    # `GetFileExInfoStandard` to GetFileAttributesExW. An enum variant is not a `var`,
+    # so allowlisting the constant name does nothing -- the TYPE has to come in for the
+    # variants to exist at all. Left out, each becomes an undefined name (loud) or, if
+    # someone "fixes" it with a literal, a silently wrong information class.
+    "_FILE_INFORMATION_CLASS",
+    "_GET_FILEEX_INFO_LEVELS",
+    # The TYPEDEF NAMES for the structs above. Allowlisting the struct tag emits the
+    # `struct _SECURITY_ATTRIBUTES` but NOT the `typedef ... SECURITY_ATTRIBUTES` that
+    # every caller actually spells, so without these the tag is present and the name the
+    # code uses is still undefined. Cheap to add and impossible to get subtly wrong --
+    # bindgen writes `pub type X = _X;` from the header's own typedef.
+    "CRITICAL_SECTION",
+    "RTL_CRITICAL_SECTION",
+    "RTL_CRITICAL_SECTION_DEBUG",
+    "SECURITY_ATTRIBUTES",
+    "FILE_BASIC_INFORMATION",
+    "FILE_STANDARD_INFORMATION",
+    "WIN32_FILE_ATTRIBUTE_DATA",
+    "STARTUPINFOA",
+    "IO_STATUS_BLOCK",
+    "LARGE_INTEGER",
+    "FILETIME",
+    "PCHAR",
+    "fpos_t",
+    # msvcrt's own: the printf argument union and file.c's text/binary mode enum.
+    "_printf_arg",
+    "printf_arg",
+    "textmode",
 ]
 
 # The fields we actually touch, and therefore the fields we GUARD.
@@ -193,9 +223,18 @@ WRAPPER_SRC = """\
 #include <sys/locking.h>
 #include <sys/stat.h>
 #include <sys/utime.h>
+#include <direct.h>  /* _getdrive */
+#include <time.h>    /* _time64  */
+#include <wctype.h>  /* iswalpha */
 #include "wincon.h"
 #include "winbase.h"
 #include "winternl.h"
+/* file.c's lock numbering. `_STREAM_LOCKS` (28) and `_IOB_ENTRIES` (20) live here, and
+   mtdll.h is the header file.c itself takes them from. Deriving rather than copying
+   matters more than usual for `_IOB_ENTRIES`: it is 20 in crt/stdio.h and mtdll.h but
+   3 in ucrt/stdio.h, so a transcribed constant is right only until someone reads the
+   other header -- the same silent divergence `_IOMYBUF` is the worked example of. */
+#include "mtdll.h"
 """
 
 
@@ -268,6 +307,22 @@ FIXED_WIDTH_PINS = {
     "LONG": ("i32", "Win32 LONG is 32-bit (LLP64)"),
 }
 
+# NOT PINNABLE HERE: `size_t`. Worth recording, because it looks like it belongs above
+# and an entry for it is a silent no-op.
+#
+# bindgen maps size_t to `usize` by default, but only the COMPILER's size_t.
+# vcruntime.h:110 does `#undef size_t` and declares its own `typedef unsigned int` /
+# `unsigned __int64`, which bindgen canonicalises straight to a per-arch primitive and
+# then drops -- grep the generated island and `size_t` appears ZERO times, so there is
+# no `pub type size_t = ...` line for pin_fixed_width() to rewrite and allowlisting the
+# name does not resurrect one. The visible symptom is `calloc(c_uint, c_uint)` on i386
+# and `calloc(c_ulonglong, c_ulonglong)` on amd64.
+#
+# Consequence for callers: a size argument cannot be spelled with one fixed width. Cast
+# with `as _` at the call site and let inference take the callee's parameter type per
+# arch -- which is what `crate-repair` means by "hand-write the semantic alias, do not
+# bake either width" when it reports `truncating_numeric_cast/target_divergent`.
+
 
 def pin_fixed_width(src: str) -> str:
     """Rewrite host-dependent Rust aliases for types that are fixed-width in Win32.
@@ -301,8 +356,9 @@ def pin_fixed_width(src: str) -> str:
         pat = re.compile(rf"^pub type {re.escape(name)} = ::core::ffi::c_[a-z]+;$", re.MULTILINE)
         src, n = pat.subn(
             f"// PINNED by generate_bindings.py: {why}.\n"
-            f"// bindgen spells this `c_ulong`/`c_long`, which is 64-bit on the linux host\n"
-            f"// that builds msvcrt-difftest -- see pin_fixed_width().\n"
+            f"// bindgen's own spelling is HOST-dependent here, and msvcrt-sys is also\n"
+            f"// compiled for the linux host that builds msvcrt-difftest -- see\n"
+            f"// pin_fixed_width().\n"
             f"pub type {name} = {rust_ty};",
             src,
         )
@@ -321,8 +377,45 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "--no-doc-comments",
         # Keep the surface tight: we want the STATE structs, not all of win32.
         *sum((["--allowlist-type", t] for t in ALLOWLIST_TYPES), []),
+        # Macros whose body is a CAST are invisible to bindgen's normal constant path:
+        # `#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)` and the `STD_*_HANDLE` family are
+        # parsed as expressions it will not evaluate, so they silently do not appear.
+        # The fallback asks clang for the value instead of guessing it here -- same
+        # derived-not-transcribed rule as the offsets below, and the reason `_IOMYBUF`
+        # is the worked example: a hand-written `-1` is right until the day it is not.
+        "--clang-macro-fallback",
         "--allowlist-function",
-        "(get_locinfo|get_mbcinfo|msvcrt_get_thread_data)",
+        # The CRT state accessors, plus the Win32/NT surface file.c calls straight
+        # through to. Named explicitly rather than by prefix: the point of this island
+        # is a TIGHT surface, and a signature that arrives by accident is one nobody
+        # checked. Getting one wrong is not a build error -- it links and corrupts --
+        # which is exactly why these are DERIVED from the real headers and never
+        # hand-written as `extern` blocks in the consuming crate.
+        "(get_locinfo|get_mbcinfo|msvcrt_get_thread_data"
+        # winbase.h / fileapi.h: the file API
+        "|CreateFileW|ReadFile|WriteFile|CloseHandle|DeleteFileW|MoveFileExW"
+        "|SetFilePointer|SetFilePointerEx|SetEndOfFile|FlushFileBuffers"
+        "|GetFileType|GetFileSizeEx|GetFileAttributesA|GetFileAttributesW"
+        "|GetFileAttributesExW|SetFileAttributesW|SetFileTime|GetTempFileNameW"
+        "|LockFile|UnlockFile|CreatePipe|DuplicateHandle"
+        # handles, process, console
+        "|GetStdHandle|SetStdHandle|GetCurrentProcess|GetCurrentProcessId"
+        "|GetStartupInfoA|WriteConsoleW|VerifyConsoleIoHandle|Sleep"
+        # synchronisation
+        "|InitializeCriticalSection|InitializeCriticalSectionEx|DeleteCriticalSection"
+        "|EnterCriticalSection|LeaveCriticalSection|TryEnterCriticalSection"
+        "|InterlockedCompareExchange|InterlockedCompareExchangePointer"
+        # winternl.h / ntdll: the two NT calls file.c makes directly
+        "|NtQueryInformationFile|RtlTimeToSecondsSince1970"
+        # CRT siblings file.c calls that are still C. The ones already Rust in
+        # msvcrt-crt-rust are IMPORTED there instead, so rustc checks them against their
+        # definition; these have no Rust definition to check against, which is exactly
+        # why their signatures come from the headers rather than from a hand-written
+        # `extern` block. `_time64` and `_getdrive` are the reason time.h and direct.h
+        # joined the wrapper above.
+        "|calloc|iswalpha|_wcsdup|_wgetenv|_time64|_getdrive|_get_fmode"
+        "|msvcrt_wstrdupa|__doserrno"
+        ")",
         # Constants the translations reference by NAME. A constant missing from the island
         # does not fail loudly -- it becomes a catch-all `match` arm or an invented literal
         # (field manual 9.112/9.113), which is why these are allowlisted rather than left
@@ -356,6 +449,10 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|STD_[A-Z]+_HANDLE|MAX_PATH|MOVEFILE_[A-Z_]+|DUPLICATE_[A-Z_]+"
         "|ERROR_[A-Z0-9_]+|NO_ERROR"
         "|RTL_CRITICAL_SECTION_FLAG_[A-Z_]+"
+        # mtdll.h's lock numbering (`_IOB_ENTRIES` is above, with the errno block).
+        # setypes.h's DELETE is the access right file.c asks for when opening a file it
+        # intends to unlink; windef.h's TRUE/FALSE are BOOL, not Rust bools.
+        "|_STREAM_LOCKS|_TOTAL_LOCKS|_LAST_STREAM_LOCK|DELETE|TRUE|FALSE"
         ")",
         "--",
         "-ferror-limit=0",

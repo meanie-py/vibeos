@@ -15,8 +15,36 @@
 //! Wiring point: `pub mod file;` in this directory's `mod.rs`.
 
 use crate::prelude::*;
-use msvcrt_sys::*;
 use core::ffi::c_void;
+
+// NOT `use msvcrt_sys::*;` as well. prelude.rs already re-exports the whole island
+// (`pub use msvcrt_sys::*`), so a second glob here imports every name TWICE from two
+// different roots and every use of an overlapping one is E0659 "ambiguous".
+//
+// It also loses on the names that overlap deliberately: the prelude re-types a few
+// island constants to the shape their uses need — `FALSE` as `u8` because the uses are
+// BOOL-shaped, `WEOF` as `wint_t` — and an explicit item beats a glob, so INSIDE the
+// prelude its versions win. Re-globbing the island here puts them back on equal footing
+// and throws the choice away. One door.
+
+// The printf engine, already Rust. file.c's `v*` bodies drive it directly — the same
+// set printf_shells.rs imports. `ARGMAX` is printf.rs's name for the C's `_ARGMAX`
+// (corecrt.h:277, value 100); it is aliased rather than redefined so there is exactly
+// one definition of that bound in the crate.
+use crate::printf::{
+    arg_clbk_positional, arg_clbk_valist, create_positional_ctx_a, create_positional_ctx_w,
+    pf_printf_a, pf_printf_w, ARGMAX as _ARGMAX, MSVCRT_PRINTF_INVOKE_INVALID_PARAM_HANDLER,
+    MSVCRT_PRINTF_POSITIONAL_PARAMS,
+};
+
+// CRT siblings that are ALREADY Rust in this crate. IMPORTED, not re-declared `extern`:
+// both would link (they are `#[no_mangle]`), but only the import makes rustc check the
+// signature against the definition. An `extern` block here would be an unchecked
+// restatement — the same hazard the msvcrt-sys island exists to remove for Win32.
+use crate::string_l::_strdup;
+use crate::wcs_rest::wctomb;
+use crate::{_wcsnicmp, memcmp, towlower, towupper, wcschr, wcslen, wcsncmp};
+use super::mbcs::{mbstowcs, mbtowc};
 
 // ---------------------------------------------------------------------------
 // file.c's 20 VARIADIC entry points are deliberately NOT here.
@@ -44,6 +72,57 @@ use core::ffi::c_void;
 // pmode slot on the stack that the callee does not read on the non-CREAT path.
 // `_sopen` is deliberately absent: nothing in this file calls it.
 // ---------------------------------------------------------------------------
+// file.c's three function-like macros. They stay MACROS, not fns: an out-of-line
+// no-op is the optimization barrier that uncloaks latent ABI mismatches, and for
+// ARRAY_SIZE a fn cannot take the array by value without copying it.
+//
+//   file.c:306  #define LOCK_FILES()   do { EnterCriticalSection(&MSVCRT_file_cs); } while (0)
+//   file.c:307  #define UNLOCK_FILES() do { LeaveCriticalSection(&MSVCRT_file_cs); } while (0)
+//   winnt_old.h:4762  #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+macro_rules! LOCK_FILES {
+    () => {
+        EnterCriticalSection(core::ptr::addr_of_mut!(MSVCRT_file_cs))
+    };
+}
+macro_rules! UNLOCK_FILES {
+    () => {
+        LeaveCriticalSection(core::ptr::addr_of_mut!(MSVCRT_file_cs))
+    };
+}
+/// `sizeof(x)/sizeof(x[0])` — the element COUNT, which on a Rust array is `.len()`.
+/// Taken by `addr_of!` so this never moves or copies the (large, static) array.
+macro_rules! ARRAY_SIZE {
+    ($a:expr) => {
+        ((*core::ptr::addr_of!($a)).len()) as u32
+    };
+}
+
+// The three standard streams. msvcrt.h:332 makes these POINTER ARITHMETIC over its own
+// `MSVCRT__iob`, not calls:
+//
+//   #define __acrt_iob_func(idx) (MSVCRT__iob+(idx))
+//
+// which is why they are macros here too rather than `extern` fns — there is no
+// `__acrt_iob_func` symbol to import at this `_MSVCR_VER`, and an `extern` declaration
+// would be an undefined reference at link. Note this is msvcrt's OWN table: the CRT
+// header's `stdin (&_iob[0])` names a different array, and binding to that one would
+// hand callers a FILE the rest of this file never locks or flushes.
+macro_rules! stdin {
+    () => {
+        MSVCRT__iob.as_mut_ptr().add(0)
+    };
+}
+macro_rules! stdout {
+    () => {
+        MSVCRT__iob.as_mut_ptr().add(1)
+    };
+}
+macro_rules! stderr {
+    () => {
+        MSVCRT__iob.as_mut_ptr().add(2)
+    };
+}
+
 extern "C" {
     pub fn _open(path: *const i8, flags: i32, ...) -> i32;
     pub fn _wopen(path: *const wchar_t, flags: i32, ...) -> i32;
@@ -72,6 +151,13 @@ pub static mut utf8_bom: [u8; 3] = [0xef, 0xbb, 0xbf];
 pub static mut utf16_bom: [u8; 2] = [0xff, 0xfe];
 
 pub const MSVCRT_INTERNAL_BUFSIZ: usize = 4096;
+
+/// `file.c:94` — `enum textmode`. TU-LOCAL to file.c, so it cannot come from the
+/// msvcrt-sys island for the same reason `ioinfo` does not: the island is built from
+/// the module's HEADERS, and neither of these is in one. Spelled `i32` to match the
+/// variants the translation already emitted below; it never crosses an ABI boundary
+/// (file.c's accessors are `static inline`), so only self-consistency matters here.
+pub type textmode = i32;
 
 pub const TEXTMODE_ANSI: i32 = 0;
 pub const TEXTMODE_UTF8: i32 = 1;
@@ -132,7 +218,7 @@ pub struct file_crit {
 }
 
 #[no_mangle]
-pub static mut MSVCRT__iob: [FILE; _IOB_ENTRIES] = [FILE {
+pub static mut MSVCRT__iob: [FILE; (_IOB_ENTRIES) as usize] = [FILE {
     _ptr: core::ptr::null_mut(),
     _cnt: 0,
     _base: core::ptr::null_mut(),
@@ -141,7 +227,7 @@ pub static mut MSVCRT__iob: [FILE; _IOB_ENTRIES] = [FILE {
     _charbuf: 0,
     _bufsiz: 0,
     _tmpfname: core::ptr::null_mut(),
-}; _IOB_ENTRIES];
+}; (_IOB_ENTRIES) as usize];
 
 pub static mut MSVCRT_fstream: [*mut file_crit; MSVCRT_MAX_FILES / MSVCRT_FD_BLOCK_SIZE] = [core::ptr::null_mut(); MSVCRT_MAX_FILES / MSVCRT_FD_BLOCK_SIZE];
 
@@ -217,7 +303,7 @@ unsafe extern "C" fn iob_get_file(i: i32) -> *mut FILE {
     MSVCRT__iob.as_mut_ptr().offset(i as isize)
 }
 unsafe extern "C" fn file_get_cs(f: *mut FILE) -> *mut CRITICAL_SECTION {
-    if f < iob_get_file(0) || f >= iob_get_file(_IOB_ENTRIES) {
+    if f < iob_get_file(0) || f >= iob_get_file((_IOB_ENTRIES) as i32) {
         return core::ptr::addr_of_mut!(((*(f as *mut file_crit)).crit));
     }
     core::ptr::null_mut()
@@ -307,12 +393,12 @@ unsafe extern "C" fn get_ioinfo_nolock(fd: i32) -> *mut ioinfo {
 }
 unsafe extern "C" fn init_ioinfo_cs(info: *mut ioinfo) {
     if ioinfo_is_crit_init(info) == 0 {
-        LOCK_FILES();
+        LOCK_FILES!();
         if ioinfo_is_crit_init(info) == 0 {
             InitializeCriticalSection(core::ptr::addr_of_mut!((*info).crit));
             ioinfo_set_crit_init(info);
         }
-        UNLOCK_FILES();
+        UNLOCK_FILES!();
     }
 }
 unsafe extern "C" fn get_ioinfo(fd: i32) -> *mut ioinfo {
@@ -361,7 +447,7 @@ unsafe extern "C" fn alloc_pioinfo_block(fd: i32) -> u8 {
         }
         free(block as *mut core::ffi::c_void);
     }
-    TRUE
+    (TRUE) as u8
 }
 unsafe extern "C" fn get_ioinfo_alloc_fd(fd: i32) -> *mut ioinfo {
     let ret: *mut ioinfo = get_ioinfo(fd);
@@ -417,15 +503,15 @@ unsafe extern "C" fn msvcrt_get_file(i: i32) -> *mut FILE {
         return core::ptr::null_mut();
     }
 
-    if i < _IOB_ENTRIES {
+    if i < (_IOB_ENTRIES) as i32 {
         return iob_get_file(i);
     }
 
     ret = MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize];
     if ret.is_null() {
         MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize] = calloc(
-            MSVCRT_FD_BLOCK_SIZE,
-            core::mem::size_of::<file_crit>(),
+            MSVCRT_FD_BLOCK_SIZE as _,
+            core::mem::size_of::<file_crit>() as _,
         ) as *mut file_crit;
         if MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize].is_null() {
             *_errno() = (ENOMEM) as i32;
@@ -554,7 +640,7 @@ pub unsafe extern "C" fn msvcrt_create_io_inherit_block(size: *mut u16, block: *
     last_fd += 1;
 
     *size = (core::mem::size_of::<u32>() + (core::mem::size_of::<i8>() + core::mem::size_of::<HANDLE>()) * last_fd as usize) as u16;
-    *block = calloc(1, (*size) as usize) as *mut u8;
+    *block = calloc(1, (*size) as usize as _) as *mut u8;
     if (*block).is_null() {
         *size = 0;
         return FALSE;
@@ -577,7 +663,7 @@ pub unsafe extern "C" fn msvcrt_create_io_inherit_block(size: *mut u16, block: *
         handle_ptr = handle_ptr.add(1);
         fd += 1;
     }
-    TRUE
+    (TRUE) as u8
 }
 #[no_mangle]
 pub unsafe extern "C" fn msvcrt_init_io() {
@@ -721,7 +807,7 @@ unsafe extern "C" fn msvcrt_alloc_buffer(file: *mut FILE) -> i32 {
         return (FALSE) as i32;
     }
 
-    (*file)._base = calloc(1, MSVCRT_INTERNAL_BUFSIZ) as *mut i8;
+    (*file)._base = calloc(1, MSVCRT_INTERNAL_BUFSIZ as _) as *mut i8;
     if !(*file)._base.is_null() {
         (*file)._bufsiz = (MSVCRT_INTERNAL_BUFSIZ) as i32;
         (*file)._flag |= (_IOMYBUF) as i32;
@@ -732,7 +818,7 @@ unsafe extern "C" fn msvcrt_alloc_buffer(file: *mut FILE) -> i32 {
     }
     (*file)._ptr = (*file)._base;
     (*file)._cnt = 0;
-    TRUE
+    (TRUE) as i32
 }
 unsafe extern "C" fn add_std_buffer(file: *mut FILE) -> u8 {
     static mut buffers: [[i8; (BUFSIZ) as usize]; 2] = [[0; (BUFSIZ) as usize]; 2];
@@ -755,7 +841,7 @@ unsafe extern "C" fn add_std_buffer(file: *mut FILE) -> u8 {
     (*file)._bufsiz = (BUFSIZ) as i32;
     (*file)._cnt = (BUFSIZ) as i32;
     (*file)._flag |= (MSVCRT__USERBUF) as i32;
-    TRUE
+    (TRUE) as u8
 }
 unsafe extern "C" fn remove_std_buffer(file: *mut FILE) {
     msvcrt_flush_buffer(file);
@@ -778,9 +864,9 @@ unsafe extern "C" fn msvcrt_int_to_base32(num: i32, str: PCHAR) -> i32 {
     *p = 0;
     p = p.offset(-1);
     while p >= str {
-        *p = ((num & 31) + b'0' as i32) as u8;
-        if *p > b'9' {
-            *p = (*p as i32 + (b'a' as i32 - b'0' as i32 - 10)) as u8;
+        *p = (((num & 31) + b'0' as i32) as u8) as i8;
+        if *p > (b'9') as i8 {
+            *p = ((*p as i32 + (b'a' as i32 - b'0' as i32 - 10)) as u8) as i8;
         }
         let num_mut = &mut num as *mut i32;
         *num_mut >>= 5;
@@ -966,7 +1052,7 @@ unsafe extern "C" fn msvcrt_flush_all_buffers(mask: i32) -> i32 {
     let mut num_flushed: i32 = 0;
     let mut file: *mut FILE;
 
-    LOCK_FILES();
+    LOCK_FILES!();
     let mut i: i32 = 0;
     while i < MSVCRT_stream_idx {
         file = msvcrt_get_file(i);
@@ -979,7 +1065,7 @@ unsafe extern "C" fn msvcrt_flush_all_buffers(mask: i32) -> i32 {
         }
         i += 1;
     }
-    UNLOCK_FILES();
+    UNLOCK_FILES!();
 
     num_flushed
 }
@@ -1077,7 +1163,7 @@ pub unsafe extern "C" fn _dup2(od: i32, nd: i32) -> i32 {
             GetCurrentProcess(),
             &mut handle,
             0,
-            TRUE,
+            (TRUE) as i32,
             DUPLICATE_SAME_ACCESS,
         ) != 0
         {
@@ -1132,7 +1218,7 @@ pub unsafe extern "C" fn _eof(fd: i32) -> i32 {
 
     if ((*info).wxflag & WX_ATEOF) != 0 {
         release_ioinfo(info);
-        return TRUE;
+        return (TRUE) as i32;
     }
 
     hcurpos = 0;
@@ -1152,17 +1238,17 @@ pub unsafe extern "C" fn _eof(fd: i32) -> i32 {
 
     if curpos == endpos && hcurpos == hendpos {
         release_ioinfo(info);
-        return TRUE;
+        return (TRUE) as i32;
     }
 
     SetFilePointer(
         (*info).handle,
-        curpos,
+        (curpos) as i32,
         &mut hcurpos,
         FILE_BEGIN
     );
     release_ioinfo(info);
-    return FALSE;
+    return (FALSE) as i32;
 }
 
 #[no_mangle]
@@ -1170,7 +1256,7 @@ pub unsafe extern "C" fn _fcloseall() -> i32 {
     let mut num_closed: i32 = 0;
     let mut file: *mut FILE;
 
-    LOCK_FILES();
+    LOCK_FILES!();
     for i in 3..MSVCRT_stream_idx {
         file = msvcrt_get_file(i);
 
@@ -1178,7 +1264,7 @@ pub unsafe extern "C" fn _fcloseall() -> i32 {
             num_closed += 1;
         }
     }
-    UNLOCK_FILES();
+    UNLOCK_FILES!();
 
     num_closed
 }
@@ -1191,7 +1277,7 @@ pub unsafe extern "C" fn msvcrt_free_io() {
     _fcloseall();
 
     i = 0;
-    while i < ARRAY_SIZE(MSVCRT___pioinfo) {
+    while i < ARRAY_SIZE!(MSVCRT___pioinfo) {
         if MSVCRT___pioinfo[i as usize].is_null() {
             i = i.wrapping_add(1);
             continue;
@@ -1221,7 +1307,7 @@ pub unsafe extern "C" fn msvcrt_free_io() {
     }
 
     i = 0;
-    while i < ARRAY_SIZE(MSVCRT_fstream) {
+    while i < ARRAY_SIZE!(MSVCRT_fstream) {
         free(MSVCRT_fstream[i as usize] as *mut _);
         i = i.wrapping_add(1);
     }
@@ -1249,7 +1335,7 @@ pub unsafe extern "C" fn _lseeki64(fd: i32, offset: __int64, whence: i32) -> __i
         (*info).handle,
         *(*(&mut ofs as *mut LARGE_INTEGER as *mut DWORD)),
         ((&mut ofs as *mut LARGE_INTEGER as *mut DWORD).offset(1)) as *mut LONG,
-        whence
+        (whence) as u32
     );
     if *(*(&mut ofs as *mut LARGE_INTEGER as *mut DWORD)) != INVALID_SET_FILE_POINTER ||
        GetLastError() == ERROR_SUCCESS {
@@ -1271,7 +1357,7 @@ pub unsafe extern "C" fn _lseek(fd: i32, offset: __msvcrt_long, whence: i32) -> 
 pub unsafe extern "C" fn _lock_file(file: *mut FILE) {
     let cs: *mut CRITICAL_SECTION = file_get_cs(file);
     if cs.is_null() {
-        _lock(_STREAM_LOCKS + (file.offset_from(iob_get_file(0)) as i32));
+        _lock((_STREAM_LOCKS + ((file.offset_from(iob_get_file(0)) as i32)) as u32) as i32);
     } else {
         EnterCriticalSection(cs);
     }
@@ -1281,7 +1367,7 @@ pub unsafe extern "C" fn _lock_file(file: *mut FILE) {
 pub unsafe extern "C" fn _unlock_file(file: *mut FILE) {
     let cs: *mut CRITICAL_SECTION = file_get_cs(file);
     if cs.is_null() {
-        _unlock(_STREAM_LOCKS + (file.offset_from(iob_get_file(0)) as i32));
+        _unlock((_STREAM_LOCKS + ((file.offset_from(iob_get_file(0)) as i32)) as u32) as i32);
     } else {
         LeaveCriticalSection(cs);
     }
@@ -1316,16 +1402,16 @@ pub unsafe extern "C" fn _locking(fd: i32, mode: i32, nbytes: __msvcrt_long) -> 
         ret = 1;
         while nretry > 0 {
             nretry -= 1;
-            ret = LockFile((*info).handle, cur_locn, 0L, nbytes, 0L);
+            ret = LockFile((*info).handle, cur_locn, 0L, (nbytes) as u32, 0L);
             if ret != 0 {
                 break;
             }
             Sleep(1);
         }
     } else if mode == (_LK_UNLCK) as i32 {
-        ret = UnlockFile((*info).handle, cur_locn, 0L, nbytes, 0L);
+        ret = UnlockFile((*info).handle, cur_locn, 0L, (nbytes) as u32, 0L);
     } else {
-        ret = LockFile((*info).handle, cur_locn, 0L, nbytes, 0L);
+        ret = LockFile((*info).handle, cur_locn, 0L, (nbytes) as u32, 0L);
     }
 
     release_ioinfo(info);
@@ -1613,7 +1699,7 @@ pub unsafe extern "C" fn _wfdopen(fd: i32, mode: *const wchar_t) -> *mut FILE {
         return core::ptr::null_mut();
     }
 
-    LOCK_FILES();
+    LOCK_FILES!();
     file = msvcrt_alloc_fp();
     if file.is_null() {
         file = core::ptr::null_mut();
@@ -1623,7 +1709,7 @@ pub unsafe extern "C" fn _wfdopen(fd: i32, mode: *const wchar_t) -> *mut FILE {
     } else {
         TRACE!(b":fd (%d) mode (%s) FILE* (%p)\n\0".as_ptr() as *const i8, fd, debugstr_w(mode), file);
     }
-    UNLOCK_FILES();
+    UNLOCK_FILES!();
 
     file
 }
@@ -1865,7 +1951,7 @@ pub unsafe extern "C" fn _mktemp_s(pattern: *mut u8, size: usize) -> i32 {
         return *_errno();
     }
 
-    wlen = wcslen(pathW);
+    wlen = (wcslen(pathW)) as u32;
     *pathW.offset((wlen - 6) as isize) = 'a' as wchar_t;
     while *pathW.offset((wlen - 6) as isize) <= 'z' as wchar_t {
         if GetFileAttributesW(pathW) == INVALID_FILE_ATTRIBUTES {
@@ -1911,7 +1997,7 @@ pub unsafe extern "C" fn _mktemp(pattern: *mut i8) -> *mut i8 {
     }
 
     pattern_ptr = pattern_ptr.offset(-1);
-    id = GetCurrentProcessId();
+    id = (GetCurrentProcessId()) as i32;
     numX = 6;
 
     while numX > 0 {
@@ -2026,7 +2112,7 @@ pub unsafe extern "C" fn _wmktemp(pattern: *mut wchar_t) -> *mut wchar_t {
         return core::ptr::null_mut();
     }
     pattern = pattern.offset(-1);
-    id = GetCurrentProcessId();
+    id = (GetCurrentProcessId()) as i32;
     numX = 6;
     while numX != 0 {
         numX -= 1;
@@ -2360,7 +2446,7 @@ pub unsafe extern "C" fn _wsopen_dispatch(
                 oflags |= (_O_U16TEXT) as i32;
             }
         } else if (access & GENERIC_READ) != 0 {
-            oflags = check_bom(hand, oflags, TRUE);
+            oflags = check_bom(hand, oflags, (TRUE) as i32);
         }
     }
 
@@ -2377,7 +2463,7 @@ pub unsafe extern "C" fn _wsopen_dispatch(
     }
 
     if (oflags & (_O_WTEXT) as i32) != 0 {
-        ioinfo_set_unicode(get_ioinfo_nolock(*fd), TRUE);
+        ioinfo_set_unicode(get_ioinfo_nolock(*fd), (TRUE) as i32);
     }
 
     if (oflags & (_O_U16TEXT) as i32) != 0 {
@@ -2489,7 +2575,7 @@ pub unsafe extern "C" fn _rmtmp() -> i32 {
     let mut i: i32;
     let mut file: *mut FILE;
 
-    LOCK_FILES();
+    LOCK_FILES!();
     i = 3;
     while i < MSVCRT_stream_idx {
         file = msvcrt_get_file(i);
@@ -2500,7 +2586,7 @@ pub unsafe extern "C" fn _rmtmp() -> i32 {
         }
         i += 1;
     }
-    UNLOCK_FILES();
+    UNLOCK_FILES!();
 
     if num_removed != 0 {
         TRACE!(b":removed (%d) temp files\n\0".as_ptr() as PCHAR, num_removed);
@@ -3003,7 +3089,7 @@ pub unsafe extern "C" fn _wstat64(path: *const wchar_t, buf: *mut _stat64) -> i3
     let mut mode: u16 = (ALL_S_IREAD) as u16;
     let mut plen: i32;
 
-    plen = wcslen(path);
+    plen = (wcslen(path)) as i32;
     while plen != 0 && *path.offset((plen - 1) as isize) == ' ' as wchar_t {
         plen -= 1;
     }
@@ -3507,7 +3593,7 @@ pub unsafe extern "C" fn _fgetc_nolock(file: *mut FILE) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _fgetchar() -> i32 {
-    fgetc(stdin)
+    fgetc(stdin!())
 }
 
 #[no_mangle]
@@ -3573,13 +3659,13 @@ pub unsafe extern "C" fn _fgetwc_nolock(file: *mut FILE) -> wint_t {
             p = p.offset(1);
         }
     } else {
-        let mut mbs: [u8; MB_LEN_MAX] = [0; MB_LEN_MAX];
+        let mut mbs: [u8; (MB_LEN_MAX) as usize] = [0; (MB_LEN_MAX) as usize];
         let mut len: i32 = 0;
 
         ch = _fgetc_nolock(file);
         if ch != EOF {
             mbs[0] = ch as u8;
-            if isleadbyte(mbs[0]) != 0 {
+            if isleadbyte((mbs[0]) as i32) != 0 {
                 ch = _fgetc_nolock(file);
                 if ch != EOF {
                     mbs[1] = ch as u8;
@@ -3590,7 +3676,7 @@ pub unsafe extern "C" fn _fgetwc_nolock(file: *mut FILE) -> wint_t {
             }
         }
 
-        if len == 0 || mbtowc(core::ptr::addr_of_mut!(ret), mbs.as_ptr() as *const i8, len) == -1 {
+        if len == 0 || mbtowc(core::ptr::addr_of_mut!(ret), mbs.as_ptr() as *const i8, (len) as usize) == -1 {
             ret = WEOF;
         }
     }
@@ -3629,7 +3715,7 @@ pub unsafe extern "C" fn getwc(file: *mut FILE) -> wint_t {
 
 #[no_mangle]
 pub unsafe extern "C" fn _fgetwchar() -> wint_t {
-    fgetwc(stdin)
+    fgetwc(stdin!())
 }
 
 #[no_mangle]
@@ -3816,7 +3902,7 @@ pub unsafe extern "C" fn _fputwc_nolock(wc: wint_t, file: *mut FILE) -> wint_t {
     fdinfo = get_ioinfo_nolock((*file)._file);
 
     if ((*fdinfo).wxflag & WX_TEXT) != 0 && ioinfo_get_textmode(fdinfo) == TEXTMODE_ANSI {
-        let mut buf: [i8; MB_LEN_MAX] = [0; MB_LEN_MAX];
+        let mut buf: [i8; (MB_LEN_MAX) as usize] = [0; (MB_LEN_MAX) as usize];
         let char_len: i32;
 
         char_len = wctomb(buf.as_mut_ptr(), mwc);
@@ -3836,7 +3922,7 @@ pub unsafe extern "C" fn _fputwc_nolock(wc: wint_t, file: *mut FILE) -> wint_t {
 
 #[no_mangle]
 pub unsafe extern "C" fn _fputwchar(wc: wint_t) -> wint_t {
-    fputwc(wc, stdout)
+    fputwc(wc, stdout!())
 }
 
 #[no_mangle]
@@ -3850,7 +3936,7 @@ pub unsafe extern "C" fn _wfsopen(path: *const wchar_t, mode: *const wchar_t, sh
         return core::ptr::null_mut();
     }
 
-    LOCK_FILES();
+    LOCK_FILES!();
     fd = _wsopen(path, open_flags, share, _S_IREAD | _S_IWRITE);
     if fd < 0 {
         file = core::ptr::null_mut();
@@ -3867,7 +3953,7 @@ pub unsafe extern "C" fn _wfsopen(path: *const wchar_t, mode: *const wchar_t, sh
     if fd >= 0 && file.is_null() {
         _close(fd);
     }
-    UNLOCK_FILES();
+    UNLOCK_FILES!();
     file
 }
 
@@ -4116,7 +4202,7 @@ pub unsafe extern "C" fn _wfreopen(path: *const wchar_t, mode: *const wchar_t, f
     let mut fd: i32;
     let mut result_file: *mut FILE = file;
 
-    LOCK_FILES();
+    LOCK_FILES!();
     if !file.is_null() {
         fclose(file);
         if msvcrt_get_flags(mode, &mut open_flags, &mut stream_flags) == -1 {
@@ -4131,7 +4217,7 @@ pub unsafe extern "C" fn _wfreopen(path: *const wchar_t, mode: *const wchar_t, f
             }
         }
     }
-    UNLOCK_FILES();
+    UNLOCK_FILES!();
     result_file
 }
 
@@ -4220,7 +4306,7 @@ pub unsafe extern "C" fn freopen_s(
 
 #[no_mangle]
 pub unsafe extern "C" fn fsetpos(FILE: *mut FILE, pos: *mut fpos_t) -> i32 {
-    return _fseeki64(FILE, *pos, SEEK_SET);
+    return _fseeki64(FILE, *pos, (SEEK_SET) as i32);
 }
 
 #[no_mangle]
@@ -4386,17 +4472,17 @@ pub unsafe extern "C" fn gets_s(buf: *mut i8, len: usize) -> *mut i8 {
     if MSVCRT_CHECK_PMT!(buf != core::ptr::null_mut()) == 0 { return core::ptr::null_mut(); }
     if MSVCRT_CHECK_PMT!(len != 0) == 0 { return core::ptr::null_mut(); }
 
-    _lock_file(stdin);
-    cc = _fgetc_nolock(stdin);
+    _lock_file(stdin!());
+    cc = _fgetc_nolock(stdin!());
     while len != 0 && cc != EOF && cc != '\n' as i32 {
         if cc != '\r' as i32 {
             *buf = cc as i8;
             buf = buf.offset(1);
             len -= 1;
         }
-        cc = _fgetc_nolock(stdin);
+        cc = _fgetc_nolock(stdin!());
     }
-    _unlock_file(stdin);
+    _unlock_file(stdin!());
 
     if len == 0 {
         *buf_start = 0;
@@ -4423,16 +4509,16 @@ pub unsafe extern "C" fn _getws(buf: *mut wchar_t) -> *mut wchar_t {
     let ws: *mut wchar_t = buf;
     let mut buf = buf;
 
-    _lock_file(stdin);
-    cc = _fgetwc_nolock(stdin);
+    _lock_file(stdin!());
+    cc = _fgetwc_nolock(stdin!());
     while cc != WEOF && cc != ('\n' as i32) as u16 {
         if cc != ('\r' as i32) as u16 {
             *buf = cc as wchar_t;
             buf = buf.offset(1);
         }
-        cc = _fgetwc_nolock(stdin);
+        cc = _fgetwc_nolock(stdin!());
     }
-    _unlock_file(stdin);
+    _unlock_file(stdin!());
 
     if cc == WEOF && ws == buf {
         return core::ptr::null_mut();
@@ -4449,7 +4535,7 @@ pub unsafe extern "C" fn putc(c: i32, file: *mut FILE) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn putchar(c: i32) -> i32 {
-    fputc(c, stdout)
+    fputc(c, stdout!())
 }
 
 #[no_mangle]
@@ -4476,12 +4562,12 @@ pub unsafe extern "C" fn puts(s: *const i8) -> i32 {
 pub unsafe extern "C" fn _putws(s: *const wchar_t) -> i32 {
     let mut ret: i32;
 
-    _lock_file(stdout);
-    ret = fputws(s, stdout);
+    _lock_file(stdout!());
+    ret = fputws(s, stdout!());
     if ret >= 0 {
-        ret = (_fputwc_nolock('\n' as wint_t, stdout)) as i32;
+        ret = (_fputwc_nolock('\n' as wint_t, stdout!())) as i32;
     }
-    _unlock_file(stdout);
+    _unlock_file(stdout!());
     if ret >= 0 { 0 } else { (WEOF) as i32 }
 }
 
@@ -4680,7 +4766,7 @@ unsafe extern "C" fn wtmpnam_helper(s: *mut wchar_t, size: usize, tmpnam_unique:
     *p = 's' as wchar_t;
     p = p.offset(1);
     let mut size = size - 2;
-    digits = msvcrt_int_to_base32_w(GetCurrentProcessId(), tmpstr.as_mut_ptr());
+    digits = msvcrt_int_to_base32_w((GetCurrentProcessId()) as i32, tmpstr.as_mut_ptr());
     if (digits + 1) as usize > size {
         *s = 0;
         *_errno() = (ERANGE) as i32;
@@ -4753,7 +4839,7 @@ pub unsafe extern "C" fn tmpfile() -> *mut FILE {
     let mut fd: i32;
     let mut file: *mut FILE = core::ptr::null_mut();
 
-    LOCK_FILES();
+    LOCK_FILES!();
     fd = _open(filename, (_O_CREAT | _O_BINARY | _O_RDWR | _O_TEMPORARY) as i32,
             _S_IREAD | _S_IWRITE);
     if fd != -1 && { file = msvcrt_alloc_fp(); !file.is_null() }
@@ -4772,7 +4858,7 @@ pub unsafe extern "C" fn tmpfile() -> *mut FILE {
         _close(fd);
     }
     free((filename).cast());
-    UNLOCK_FILES();
+    UNLOCK_FILES!();
     file
 }
 
@@ -4870,7 +4956,7 @@ unsafe extern "C" fn vfwprintf_helper(
             0,
             core::mem::size_of_val(&args_ctx),
         );
-        ret = create_positional_ctx_w(args_ctx.as_mut_ptr(), format, valist);
+        ret = create_positional_ctx_w((args_ctx.as_mut_ptr()).cast(), format, valist);
         if ret < 0 {
             _invalid_parameter(
                 core::ptr::null(),
@@ -5034,12 +5120,12 @@ pub unsafe extern "C" fn _vfwprintf_p(
 
 #[no_mangle]
 pub unsafe extern "C" fn vprintf(format: *const i8, valist: va_list) -> i32 {
-    vfprintf(stdout, format, valist)
+    vfprintf(stdout!(), format, valist)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn vprintf_s(format: *const i8, valist: va_list) -> i32 {
-    vfprintf_s(stdout, format, valist)
+    vfprintf_s(stdout!(), format, valist)
 }
 
 #[no_mangle]
@@ -5047,7 +5133,7 @@ pub unsafe extern "C" fn vwprintf(
     format: *const wchar_t,
     mut valist: va_list,
 ) -> i32 {
-    vfwprintf(stdout, format, valist)
+    vfwprintf(stdout!(), format, valist)
 }
 
 #[no_mangle]
