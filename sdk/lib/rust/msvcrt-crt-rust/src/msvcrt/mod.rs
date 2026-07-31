@@ -10,9 +10,11 @@
 //! simply stays C, which is why a partial file is a safe state.
 
 // file.c is TRANSLATED (189/189 exports, tools/rustconv/.responses/…-file.c) but NOT
-// yet wired in: it needs an msvcrt-sys island carrying FILE/ioinfo/_O_*/_IO*, which the
-// current island — scoped to thread_data_t + threadlocinfo — does not have. Enabling it
-// today is 1,363 cargo errors, i.e. a broken build for every lane.
+// yet wired in. The msvcrt-sys island has since been extended to the stream layer and
+// crate-repair has run across all three arches, taking this from 1,363 cargo errors to
+// ~484 — still a broken build for every lane. The remaining bulk is the C-variadic
+// printf/scanf shells, which need the wave-14c C trampoline (pinned stable: no
+// `#![feature(c_variadic)]`). file.rs carries the full ORPHAN-BY-DESIGN banner.
 //
 // This is the netcfgx precedent (translated, committed, deliberately not a member until
 // it compiles), NOT the anti-pattern AGENTS.md forbids: nothing here is being hidden to

@@ -1,3 +1,19 @@
+//! ORPHAN-BY-DESIGN: TEMPORARY — unlike the other declared orphans in this tree,
+//! this file is not dead upstream and is meant to be wired. `dll/win32/msvcrt/file.c`
+//! is fully translated here (189/189 exports) but does not compile yet: ~484 cargo
+//! errors remain, dominated by the C-variadic printf/scanf shells, which need the
+//! wave-14c C trampoline rather than a nightly feature (this crate is pinned stable).
+//!
+//! It is committed unwired rather than withheld, per the netcfgx precedent. This is
+//! NOT the anti-pattern AGENTS.md forbids: no regression is being hidden and no C is
+//! being kept alive in preference to working Rust — the C file.c is still the only
+//! implementation, and still correct.
+//!
+//! The flip must be ATOMIC. file.c's entry points share one fd table and one FILE
+//! ring, so a C `fopen` beside a Rust `fclose` is split state, not a partial port.
+//!
+//! Wiring point: `pub mod file;` in this directory's `mod.rs`.
+
 use crate::prelude::*;
 use msvcrt_sys::*;
 use core::ffi::c_void;
