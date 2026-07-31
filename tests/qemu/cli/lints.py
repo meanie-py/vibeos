@@ -64,7 +64,23 @@ _SUMMARY_LINE = re.compile(
     r"|^\s*-> .*: *\d+$"  # verify_tables tallies
     r"|^\s*matched to a C array\s*: *\d+$"
     r"|^\s*Found \d+ unprotected"  # lint_kernel header tally
-    r"|^\s*Total: \d+ violations)"  # lint_kernel footer tally (mixed-case)
+    r"|^\s*Total: \d+ violations"  # lint_kernel footer tally (mixed-case)
+    # verify_signatures' two header tallies and its whole '── coverage ──' block.
+    # These move by ONE whenever a commit adds a single #[no_mangle] fn, which is
+    # the most ordinary thing a translation lane does: adding CmpFreeKcbCachedSecurity
+    # bumped 'exported Rust fns', 'exported fns checked' and 'no C proto (internal)'
+    # by one each and bounced the batch as LINT_FAIL "3 new" (2026-07-31). The
+    # per-site [HIGH]/[MEDIUM] blocks below them are the real findings and are
+    # untouched by this. Enumerated rather than a generic '<label>: <number>' rule
+    # because _SUMMARY_LINE applies to EVERY tool, and a rule broad enough to catch
+    # any tally is broad enough to silently swallow some other scanner's finding.
+    r"|^\s*C prototypes: \d+"
+    r"|^\s*exported Rust fns: \d+"
+    r"|^\s*exported fns checked\s*: *\d+$"
+    r"|^\s*matched to a C proto\s*: *\d+$"
+    r"|^\s*no C proto \(internal\)\s*: *\d+$"
+    r"|^\s*signature OK\s*: *\d+$"
+    r"|^\s*mismatches\s*: *\d+)"
 )
 
 

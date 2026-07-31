@@ -3682,6 +3682,52 @@ def test_lint_baseline_ignores_drift_in_a_trailing_parenthesized_location():
     assert lints._new_findings(reclassified, base) != []
 
 
+def test_lint_baseline_ignores_verify_signatures_coverage_tallies():
+    """verify_signatures prints two header tallies and a '── coverage ──' block of counters.
+    They were baselined as if they were findings, so adding ONE #[no_mangle] fn moved
+    'exported Rust fns', 'exported fns checked' and 'no C proto (internal)' by one each and
+    the merge queue rejected the batch as LINT_FAIL "3 new" (2026-07-31) — for a commit whose
+    only sin was exporting a new function, which is what a translation lane does all day."""
+
+    def keys(text: str) -> set[str]:
+        return {lints._finding_key(ln) for ln in lints._finding_lines(text)}
+
+    before = """\
+  C prototypes: 5034 FunctionDecls, 4536 typedefs
+  exported Rust fns: 3359 (deduped twins)
+
+── coverage ──
+  exported fns checked : 3359
+  matched to a C proto : 2238
+  no C proto (internal): 1121
+  signature OK         : 2229
+  mismatches           : 9  (3 shown, 6 LOW-suppressed)
+"""
+    after = before.replace("3359", "3360").replace("1121", "1122")
+    assert lints._new_findings(keys(after), keys(before)) == []
+    # Every COUNT-BEARING line must be filtered, not merely the three that moved — the
+    # others (matched to a C proto, signature OK, mismatches) drift the moment anyone
+    # fixes or adds a signature, and would bounce that lane instead. The static
+    # '── coverage ──' banner may stay: it carries no number, so it never drifts.
+    assert keys(before) == {"── coverage ──"}
+
+
+def test_lint_baseline_still_flags_a_real_verify_signatures_mismatch():
+    """The other half: the tally filter must not swallow the per-site blocks underneath it.
+    A filter broad enough to catch any '<label>: <number>' would have — which is why
+    _SUMMARY_LINE enumerates verify_signatures' labels instead of generalising."""
+    finding = """\
+[HIGH] KiThreadStartup  (sdk/lib/rust/x/thrdini.rs:98)
+    rust: fn KiThreadStartup() -> ()
+    C   : void KiThreadStartup(PKSYSTEM_ROUTINE, PKSTART_ROUTINE, PVOID, BOOLEAN, KTRAP_FRAME)
+      - ARITY: rust 0 params vs C 5
+      - param#2 u32 vs ULONG_PTR(unsigned long long): width 4 vs 8 [MEDIUM]
+"""
+    kept = {lints._finding_key(ln) for ln in lints._finding_lines(finding)}
+    assert len(kept) == 5, kept
+    assert lints._new_findings(kept, set()) != []
+
+
 def test_every_baseline_line_is_immune_to_line_drift():
     """The GUARD over the three fixes above. Each was found the same way — a lane's unrelated
     edit shifted a line, the gate went red, and someone had to re-bless a baseline (which
