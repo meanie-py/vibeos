@@ -1204,7 +1204,11 @@ pub unsafe extern "system" fn SHCreateDirectoryExW(
             && !hWnd.is_null()
             && (ERROR_CANCELLED != (ret) as u32 && ERROR_ALREADY_EXISTS != (ret) as u32)
         {
-            ShellMessageBoxW(
+            // precomp.h:63 is `#define ShellMessageBoxW ShellMessageBoxWrapW`, so the C call
+            // here never reached shlwapi's ShellMessageBoxW at all. Calling the island's
+            // ShellMessageBoxW instead links against a symbol shell32 does not import
+            // (i386 reports it as `_ShellMessageBoxW`, cdecl-decorated and absent).
+            ShellMessageBoxWrapW(
                 shell32_hInstance,
                 hWnd,
                 MAKEINTRESOURCEW(IDS_CREATEFOLDER_DENIED),

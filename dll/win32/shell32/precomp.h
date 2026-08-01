@@ -363,7 +363,10 @@ typedef enum _FILEOPCALLBACKEVENT {
 } FILEOPCALLBACKEVENT;
 typedef HRESULT (CALLBACK *FILEOPCALLBACK)(FILEOPCALLBACKEVENT Event, LPCWSTR Source, LPCWSTR Destination,
                                            UINT Attributes, HRESULT hr, void *CallerData);
-int SHELL32_FileOperation(LPSHFILEOPSTRUCTW lpFileOp, FILEOPCALLBACK Callback, void *CallerData);
-HRESULT SHELL_SingleFileOperation(HWND hWnd, UINT Op, PCWSTR Src, PCWSTR Dest, UINT Flags, PWSTR *ppNewName);
+/* EXTERN_C: these two now live in Rust (shell32-rust/src/shell32/shlfileop.rs), whose
+ * #[no_mangle] emits the plain name. Without this the C++ callers would still look for the
+ * mangled one. */
+EXTERN_C int SHELL32_FileOperation(LPSHFILEOPSTRUCTW lpFileOp, FILEOPCALLBACK Callback, void *CallerData);
+EXTERN_C HRESULT SHELL_SingleFileOperation(HWND hWnd, UINT Op, PCWSTR Src, PCWSTR Dest, UINT Flags, PWSTR *ppNewName);
 
 #endif /* _PRECOMP_H__ */
