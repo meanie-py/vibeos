@@ -747,6 +747,24 @@ int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int s
 {
     int i, n = ref_nls_wlen(src, srclen);
 
+    /* srclen == -1 means "NUL-terminated", and real kernel32 then CONVERTS AND COUNTS
+     * the terminator.  ref_nls_wlen excludes it — correct for CompareStringW and
+     * LCMapStringW, which take a length and not a buffer size — so add it back here.
+     *
+     * Leaving it off made every measure-then-malloc-then-convert caller allocate one
+     * byte short and emit an UNTERMINATED string, which is the shape of the whole
+     * pattern: msvcrt.h's astrdupw_utf8, fileimpl.c's path_from_wide, locale.c's
+     * lconv fields, process.c's argv flattening.  path_from_wide is where it showed:
+     * `_open` created its file under the requested name plus whatever byte followed
+     * the block, and then round-tripped through the SAME garbled name perfectly, so
+     * only file_substrate.rs's read-back-through-the-host could see it.
+     *
+     * Nothing differential could have caught this either — WideCharToMultiByte is
+     * SHARED environment, so both sides truncated identically and every row still
+     * reported MATCH (§9.73).  Note MultiByteToWideChar in nlsimpl.c has always had
+     * the matching `strlen(src) + 1`; this was the asymmetry. */
+    if (srclen < 0) n++;
+
     (void)flags;
     if (used) *used = FALSE;
 
@@ -791,18 +809,70 @@ int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int s
         return r;
     }
 
-    if (!dstlen) return n;
-    if (dstlen < n) { ref_last_error = ERROR_INSUFFICIENT_BUFFER; return 0; }
+    /* CP_UTF8 has no default character to fall back on, so kernel32 does not substitute
+     * one — it REFUSES an unpaired surrogate, returning 0 with ERROR_NO_UNICODE_TRANSLATION.
+     * (Every other codepage here maps the unrepresentable to defchar and reports *used.)
+     *
+     * That distinction is the whole EILSEQ signal for a UTF-8 caller, because wcs.c:641
+     * hands `WideCharToMultiByte` a NULL lpUsedDefaultChar for exactly this codepage:
+     *
+     *     pused_default = (locinfo->lc_codepage != CP_UTF8 ? &used_default : NULL);
+     *
+     * so `wcsrtombs_l` under UTF-8 can only learn of a bad character from a ZERO return.
+     * With the model substituting '?' and returning n, that arm was unreachable and
+     * wave16's `wcsrtombs [CP_UTF8]` row was entering it only through the empty-string
+     * miscount fixed above — which is what its reachability guard caught.
+     *
+     * NOTE what this does NOT fix: the 1:1 loop below still renders U+0100..U+FFFF as a
+     * single '?' byte rather than a real UTF-8 sequence. Both sides share it, so no row
+     * can diverge on it; it costs realism, not correctness, and the surrogate arm is what
+     * the graded branches actually need. */
+    if (page == CP_UTF8)
+    {
+        for (i = 0; i < n; i++)
+        {
+            /* UNPAIRED only — a well-formed high/low pair is a legal code point and
+             * converts.  Rejecting every surrogate would make the row fail on valid
+             * astral input, which is a different bug wearing the same green tick. */
+            if (src[i] >= 0xD800 && src[i] <= 0xDBFF)
+            {
+                if (i + 1 < n && src[i + 1] >= 0xDC00 && src[i + 1] <= 0xDFFF) { i++; continue; }
+            }
+            else if (src[i] < 0xDC00 || src[i] > 0xDFFF)
+                continue;
+            ref_last_error = ERROR_NO_UNICODE_TRANSLATION;
+            return 0;
+        }
+    }
+
+    if (dstlen && dstlen < n) { ref_last_error = ERROR_INSUFFICIENT_BUFFER; return 0; }
     for (i = 0; i < n; i++)
     {
         /* C locale: U+0000..U+00FF map 1:1; anything else is unrepresentable. */
+        char c;
         if (src[i] < 256)
-            dst[i] = (char)src[i];
+            c = (char)src[i];
         else
         {
-            dst[i] = defchar ? *defchar : '?';
+            c = defchar ? *defchar : '?';
             if (used) *used = TRUE;
         }
+        /* The loop RUNS on a measure-only call (dstlen == 0) and only the STORE is
+         * skipped.  Returning early instead — which is what this did — reports the
+         * size without ever setting *used, and `used` is the entire EILSEQ signal for
+         * the size-query callers: wcs.c:646 asks
+         *
+         *     tmp = WideCharToMultiByte(cp, WC_NO_BEST_FIT_CHARS, *wcstr, -1,
+         *                               NULL, 0, NULL, pused_default);
+         *     if (!tmp || (pused_default && *pused_default)) { errno = EILSEQ; ... }
+         *
+         * so with *used never written the arm could only be entered by `!tmp` — which,
+         * before the `srclen < 0` fix above, an EMPTY string produced.  wave16's
+         * `wcsrtombs [CP_UTF8]` row was reaching EILSEQ that way and its reachability
+         * guard rightly went UNEXERCISED the moment the count was corrected: it had been
+         * grading a spurious failure on `L""` rather than a real unconvertible character.
+         * Real kernel32 converts internally on a size query and reports the flag. */
+        if (dstlen) dst[i] = c;
     }
     return n;
 }

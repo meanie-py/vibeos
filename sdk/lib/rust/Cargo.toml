@@ -93,6 +93,7 @@ members = [
     "msvcrt-crt-rust",
     "msvcrt-crt-cargo",
     "msvcrt-difftest",
+    "msvcrt-scanf-difftest",
     "compress",
     "crc32",
     "encode",

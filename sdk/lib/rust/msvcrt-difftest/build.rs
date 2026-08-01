@@ -1,26 +1,30 @@
-//! Compile the *real* msvcrt string reference (`dll/win32/msvcrt/string.c`)
-//! for the host, with every one of its 106 public symbols renamed to
-//! `ref_<name>`, so the differential tests can call the genuine C msvcrt
-//! and cnt-rust's `#[no_mangle]` shims in one process and assert parity.
-//!
-//! Nothing is transcribed: `string.c` is handed to `cc` *as the
-//! translation unit*, exactly as it sits in the tree.  Two mechanisms make
-//! that work on linux-x86_64:
-//!
-//!  1. A generated `-include ref_prelude.h` that (a) renames the 106
-//!     public symbols with `#define <name> ref_<name>`, and (b) pulls
-//!     `refstub/msvcrt.h`, which reuses the REAL header's include guard
-//!     (`__WINE_MSVCRT_H`) so string.c's own `#include "msvcrt.h"` — which
-//!     resolves to the real same-dir header and would drag in the whole
-//!     NT/PSDK chain — expands to nothing.  See refstub/msvcrt.h.
-//!
-//!  2. `refstub/` on the include path, catching the three quoted includes
-//!     that have no same-dir file: `winnls.h`, `wine/asm.h`, `wine/debug.h`.
-//!     `bnum.h` is deliberately NOT stubbed — it is real logic (the base-10
-//!     bignum behind strtod) and resolves to the genuine same-dir header.
-//!
-//! `refimpl.c` (compiled WITHOUT the rename prelude) supplies the externals
-//! the host libc doesn't have.
+// Plain `//` and not `//!`, because ../msvcrt-scanf-difftest/build.rs is a one-line
+// `include!` of this file and an inner doc comment is only legal at the true start of
+// a module — inside an expansion it is a hard error.
+//
+// Compile the *real* msvcrt string reference (`dll/win32/msvcrt/string.c`)
+// for the host, with every one of its 106 public symbols renamed to
+// `ref_<name>`, so the differential tests can call the genuine C msvcrt
+// and cnt-rust's `#[no_mangle]` shims in one process and assert parity.
+//
+// Nothing is transcribed: `string.c` is handed to `cc` *as the
+// translation unit*, exactly as it sits in the tree.  Two mechanisms make
+// that work on linux-x86_64:
+//
+//  1. A generated `-include ref_prelude.h` that (a) renames the 106
+//     public symbols with `#define <name> ref_<name>`, and (b) pulls
+//     `refstub/msvcrt.h`, which reuses the REAL header's include guard
+//     (`__WINE_MSVCRT_H`) so string.c's own `#include "msvcrt.h"` — which
+//     resolves to the real same-dir header and would drag in the whole
+//     NT/PSDK chain — expands to nothing.  See refstub/msvcrt.h.
+//
+//  2. `refstub/` on the include path, catching the three quoted includes
+//     that have no same-dir file: `winnls.h`, `wine/asm.h`, `wine/debug.h`.
+//     `bnum.h` is deliberately NOT stubbed — it is real logic (the base-10
+//     bignum behind strtod) and resolves to the genuine same-dir header.
+//
+// `refimpl.c` (compiled WITHOUT the rename prelude) supplies the externals
+// the host libc doesn't have.
 
 use std::env;
 use std::fs;
@@ -597,9 +601,8 @@ fn defined_symbols(src: &str) -> Vec<String> {
     out
 }
 
-/// Does the TU actually DEFINE `name` (`... name ( ... ) {`), as opposed to only
-/// carrying its banner above an `#if`-disabled body?
-/// The externally-visible function symbols of a BUILT object, sorted.
+/// The externally-visible symbols of a BUILT object whose nm type letter is in
+/// `kinds`, sorted.  `"T"` is code; `"D"`/`"B"` are initialised/zero data.
 ///
 /// Used for file.c instead of a source scrape.  A scrape has to model the C —
 /// the `#if _MSVCR_VER` arms, the 19 `#undef`s, the static/exported split — and
@@ -607,10 +610,19 @@ fn defined_symbols(src: &str) -> Vec<String> {
 /// object is the authority on what the compiler actually emitted, so it cannot
 /// disagree with the build the way a regex can.
 ///
+/// DATA matters as much as code here, and asking only for `"T"` is how three
+/// symbols escaped: file.c defines `MSVCRT___pioinfo` (the fd table),
+/// `MSVCRT__iob` (the first three FILEs) and `MSVCRT___badioinfo`, and the
+/// subject defines all three too.  Un-renamed they do not merely collide at the
+/// link — if one side's copy won, the two implementations would share ONE fd
+/// table and the harness would be grading an implementation against itself.
+/// Lowercase letters (`d`/`b`/`t`) are file-static and cannot collide; `.refptr.*`
+/// are linker thunks for symbols file.c only REFERENCES, so both are excluded.
+///
 /// THIS worktree's build dir only.  Resolving a sibling's would name symbols
 /// from another lane's commit — the fleet-isolation-applies-to-reads law, and
 /// the `verify_signatures` incident that established it.
-fn object_text_symbols(repo: &std::path::Path, obj: &PathBuf) -> Vec<String> {
+fn object_symbols(repo: &std::path::Path, obj: &PathBuf, kinds: &[&str]) -> Vec<String> {
     let nm = repo.join(".build-tools/llvm-mingw/bin/llvm-nm");
     assert!(
         obj.is_file(),
@@ -626,7 +638,8 @@ fn object_text_symbols(repo: &std::path::Path, obj: &PathBuf) -> Vec<String> {
         .lines()
         .filter_map(|ln| {
             let p: Vec<&str> = ln.split_whitespace().collect();
-            (p.len() == 3 && p[1] == "T").then(|| p[2].split('@').next().unwrap().to_string())
+            (p.len() == 3 && kinds.contains(&p[1]) && !p[2].starts_with('.'))
+                .then(|| p[2].split('@').next().unwrap().to_string())
         })
         .collect();
     syms.sort();
@@ -634,6 +647,8 @@ fn object_text_symbols(repo: &std::path::Path, obj: &PathBuf) -> Vec<String> {
     syms
 }
 
+/// Does the TU actually DEFINE `name` (`... name ( ... ) {`), as opposed to only
+/// carrying its banner above an `#if`-disabled body?
 fn defines_symbol(src: &str, name: &str) -> bool {
     let mut from = 0;
     while let Some(i) = src[from..].find(name) {
@@ -673,11 +688,39 @@ fn defines_symbol(src: &str, name: &str) -> bool {
 }
 
 fn main() {
-    let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    // sdk/lib/rust/msvcrt-difftest → repo root is 4 up.
-    let repo = manifest.ancestors().nth(4).unwrap().to_path_buf();
+    let this_crate = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    // sdk/lib/rust/<crate> → repo root is 4 up.
+    let repo = this_crate.ancestors().nth(4).unwrap().to_path_buf();
+
+    // The reference-building machinery is SHARED, so it is rooted at msvcrt-difftest
+    // rather than at whichever crate is compiling.  msvcrt-scanf-difftest is the second
+    // consumer: its build.rs is a one-line `include!` of this file, because the two
+    // crates need the identical set of reference TUs and differ ONLY in which features
+    // of msvcrt-crt-rust they pull.  That difference is the whole reason they are
+    // separate crates — cargo unifies features per crate per build, so a suite that
+    // needs `stdio` OFF and a suite that needs it ON cannot share one cargo invocation.
+    // See msvcrt-scanf-difftest/Cargo.toml.
+    //
+    // Everything derived from `out` (OUT_DIR) stays per-crate, so the two get their own
+    // generated headers and their own reference objects; only the SOURCES are shared.
+    let manifest = repo.join("sdk/lib/rust/msvcrt-difftest");
     let refstub = manifest.join("refstub");
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    // Does THIS crate's msvcrt-crt-rust carry the `stdio` feature — i.e. is file.rs in
+    // the link?  Keyed on the package name because the feature belongs to the
+    // DEPENDENCY, and cargo exposes only a crate's OWN features to its build script.
+    // The consequence is the varargs-shim TU below: its bodies call `_sopen_dispatch`,
+    // which only file.rs defines, so compiling it into a crate without stdio would be
+    // an undefined symbol rather than a saving.
+    let subject_stdio = match env::var("CARGO_PKG_NAME").unwrap().as_str() {
+        "msvcrt-difftest" => true,
+        "msvcrt-scanf-difftest" => false,
+        other => panic!(
+            "{other} include!s msvcrt-difftest/build.rs but is not in its stdio table — \
+             add it, and say whether it takes msvcrt-crt-rust with the `stdio` feature"
+        ),
+    };
 
     let msvcrt_dir = repo.join("dll/win32/msvcrt");
     let string_c = msvcrt_dir.join("string.c");
@@ -1276,12 +1319,34 @@ fn main() {
     // and its static/exported split make the source ambiguous, and the object is the
     // authority on what actually got emitted.
     let file_obj = repo.join("build-amd64/dll/win32/msvcrt/CMakeFiles/msvcrt_static.dir/file.c.obj");
-    let file_symbols: Vec<String> = object_text_symbols(&repo, &file_obj);
+    let file_symbols: Vec<String> = object_symbols(&repo, &file_obj, &["T"]);
     assert!(
         file_symbols.len() > 150,
         "file.c object scrape found only {} symbols — a short list would leave the rest \
          un-renamed and colliding with the subject",
         file_symbols.len()
+    );
+
+    // The STATE, renamed on the same principle as the code.  These three are the whole
+    // externally-visible data surface of file.c: `MSVCRT___pioinfo` (the fd table),
+    // `MSVCRT__iob` (the first three FILEs) and `MSVCRT___badioinfo` (the sentinel every
+    // bad fd resolves to).  The subject defines all three as well, so leaving them plain
+    // is not just a duplicate-symbol link error — whichever copy won, BOTH scanf engines
+    // and BOTH file layers would then share ONE fd table, and a differential harness
+    // comparing an implementation against itself reports MATCH for free.
+    //
+    // They are renamed EARLY (below, before stage 0) rather than in the stage-1/stage-4
+    // pair the functions use, and that ordering is the point: msvcrt_file_prelude.h
+    // declares `extern FILE MSVCRT__iob[];` at stage 3 and builds `__acrt_iob_func` on it.
+    // Renaming first carries that declaration along, so it still describes the definition
+    // file.c emits.  Renaming after would leave the declaration naming a symbol nothing
+    // defines and the definition undeclared.  Nothing in glibc is spelled `MSVCRT_*`, so
+    // the stage-1 hide the functions need does not apply.
+    let file_data: Vec<String> = object_symbols(&repo, &file_obj, &["D", "B"]);
+    assert!(
+        !file_data.is_empty(),
+        "file.c object scrape found no exported data — it defines at least MSVCRT___pioinfo, \
+         and an empty list would silently drop the fd-table rename"
     );
 
     // The names the `#define` wall must NOT touch, generated alongside the prototypes.
@@ -1317,7 +1382,12 @@ fn main() {
             .copied()
             .chain(scanf_symbols.iter().map(String::as_str))
             .collect();
-        let clash: Vec<&&String> = file_wall.iter().filter(|s| taken.contains(s.as_str())).collect();
+        let clash: Vec<&str> = file_wall
+            .iter()
+            .map(|s| s.as_str())
+            .chain(file_data.iter().map(String::as_str))
+            .filter(|s| taken.contains(s))
+            .collect();
         assert!(
             clash.is_empty(),
             "file.c and another reference TU both define {clash:?} — one of them must \
@@ -1329,7 +1399,18 @@ fn main() {
         "/* GENERATED by msvcrt-difftest/build.rs — do not edit.\n\
          * Force-included at the top of the file.c reference TU ONLY. */\n\
          #ifndef MSVCRT_REF_FILE_PRELUDE_H\n#define MSVCRT_REF_FILE_PRELUDE_H\n\n\
-         /* ═══ stage 0: msvcrt's FILE and fpos_t, before ANY host header. ══════════ */\n\
+         /* ═══ stage -1: file.c's exported STATE. ═════════════════════════════════\n\
+          * Before everything, so that msvcrt_file_prelude.h's own\n\
+          * `extern FILE MSVCRT__iob[];` and the `__acrt_iob_func` it builds on that\n\
+          * array are carried along and still describe the definition file.c emits.\n\
+          * No glibc name is spelled MSVCRT_*, so the stage-1 hide below does not\n\
+          * apply and a single rename is enough. */\n",
+    );
+    for sym in &file_data {
+        fp.push_str(&format!("#define {sym} ref_{sym}\n"));
+    }
+    fp.push_str(
+        "\n/* ═══ stage 0: msvcrt's FILE and fpos_t, before ANY host header. ══════════ */\n\
          #include <msvcrt_file_pre.h>\n\n\
          /* ═══ stage 1: hide file.c's own shells from glibc. ═══════════════════════\n\
           * Same reason as the scanf TU: glibc macro-ises several of these (getc, putc,\n\
@@ -1754,6 +1835,102 @@ fn main() {
         .cargo_metadata(false)
         .file(manifest.join("fileimpl.c"));
 
+    // ── the SUBJECT's C-variadic entry points ───────────────────────────────────
+    //
+    // The one piece of the shipping msvcrt that is neither Rust nor reference C.
+    // file.rs declares `_open`/`_wopen`/`_wsopen` and defines none of them — they are
+    // C variadics, which pinned-stable Rust cannot express — and `_wfsopen` calls
+    // `_wsopen`, so every fopen row runs through this TU.  See
+    // refstub/msvcrt_subject_shim.h for why the REAL shim is compiled rather than a
+    // host copy of its four bodies.
+    //
+    // Sixteen of its twenty symbols are renamed away, and that is not tidiness.  The
+    // printf shells FORWARD a va_list into file.rs's `_vfprintf_l` &c., and those Rust
+    // bodies walk a `*mut u8` over 8-byte slots — the Windows-x64 va_list.  The host's
+    // SysV va_list is a register-save-area struct; the two cannot consume the same
+    // buffer (the same wall printf_probe hit, which is why the reference TUs get
+    // refstub_printf/<stdarg.h>).  The open family is safe because it FORWARDS NOTHING:
+    // it reads its own `pmode` with the host's stdarg and calls `_sopen_dispatch` with
+    // concrete arguments.  So the four that are ABI-correct here stay live and the
+    // sixteen that are not are emitted under dead names, where a stray call becomes a
+    // link error instead of a silently mis-read argument.  Leaving them plain would
+    // also displace glibc's `printf` for every C file in the harness.
+    //
+    // The keep-list is spelled as what to KEEP, and the split is driven by the BUILT
+    // OBJECT: a shell added to the shim later is renamed away by default rather than
+    // quietly becoming the harness's `printf`.
+    //
+    // Only for a crate that links file.rs; see `subject_stdio`.
+    const SHIM_ABI_SAFE: &[&str] = &["_open", "_wopen", "_sopen", "_wsopen"];
+    let shim_c = msvcrt_dir.join("rust_file_varargs_shim.c");
+    let shim_obj =
+        repo.join("build-amd64/dll/win32/msvcrt/CMakeFiles/msvcrt.dir/rust_file_varargs_shim.c.obj");
+    let shim_symbols: Vec<String> = object_symbols(&repo, &shim_obj, &["T"]);
+    for keep in SHIM_ABI_SAFE {
+        assert!(
+            shim_symbols.iter().any(|s| s == keep),
+            "rust_file_varargs_shim.c no longer defines `{keep}` — the subject's open \
+             family moved, and this keep-list is now grading nothing"
+        );
+    }
+    let retired: Vec<&String> =
+        shim_symbols.iter().filter(|s| !SHIM_ABI_SAFE.contains(&s.as_str())).collect();
+    let mut sp = String::from(
+        "/* GENERATED by msvcrt-difftest/build.rs — do not edit.\n\
+         * Force-included at the top of the SUBJECT's varargs-shim TU ONLY. */\n\
+         #ifndef MSVCRT_SUBJECT_SHIM_PRELUDE_H\n#define MSVCRT_SUBJECT_SHIM_PRELUDE_H\n\n\
+         /* ═══ stage 0: msvcrt's FILE and the decorations, before ANY host header. ═ */\n\
+         #include <msvcrt_subject_shim_pre.h>\n\n\
+         /* ═══ stage 1: hide the shells from glibc. ═══════════════════════════════\n\
+          * The same two-stage wall the file.c reference TU uses, and for a sharper\n\
+          * reason than tidiness.  glibc declares `fwprintf` over its own `__FILE`\n\
+          * (`struct _IO_FILE`) — a type msvcrt_file_pre.h does NOT displace, because\n\
+          * `__FILE` carries a separate guard from `FILE`.  A one-stage rename would\n\
+          * rewrite that declaration too, and the shim's definition would then collide\n\
+          * with it as a conflicting type.  So hide the name for the duration of the\n\
+          * host headers, and rename it for real once they are past. */\n",
+    );
+    for sym in &retired {
+        sp.push_str(&format!("#define {sym} msvcrt_subject_glibc_{sym}\n"));
+    }
+    sp.push_str(
+        "\n/* ═══ stage 2: the host headers the shim would otherwise reach first. ════\n\
+         * Pulled here so stage 3 can land AFTER them; the shim's own #includes then\n\
+         * find every guard already claimed and expand to nothing. */\n\
+         #include <stdarg.h>\n\
+         #include <stdio.h>\n\
+         #include <wchar.h>\n\
+         #include <fcntl.h>\n\n\
+         /* ═══ stage 3: retire the va_list-forwarding shells. ═════════════════════ */\n",
+    );
+    for sym in &retired {
+        sp.push_str(&format!("#undef {sym}\n#define {sym} msvcrt_subject_unused_{sym}\n"));
+    }
+    sp.push_str(
+        "\n/* ═══ stage 4: the subject's stdout, on the subject's own FILE array. ════ */\n\
+         #include <msvcrt_subject_shim.h>\n\n\
+         #endif /* MSVCRT_SUBJECT_SHIM_PRELUDE_H */\n",
+    );
+    let shim_prelude_h = out.join("subject_shim_prelude.h");
+    fs::write(&shim_prelude_h, &sp).unwrap();
+
+    let mut shim_build = cc::Build::new();
+    shim_build
+        .out_dir(out.join("shim"))
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        .warnings(false)
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .flag("-include")
+        .flag(shim_prelude_h.to_str().unwrap())
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&shim_c);
+
     // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all the objects.
     let mut objects: Vec<PathBuf> = Vec::new();
     refimpl_build.cargo_metadata(false);
@@ -1771,6 +1948,9 @@ fn main() {
     objects.extend(scanf_build.compile_intermediates());
     objects.extend(file_build.compile_intermediates());
     objects.extend(fileimpl_build.compile_intermediates());
+    if subject_stdio {
+        objects.extend(shim_build.compile_intermediates());
+    }
 
     let archive = out.join("libmsvcrt_ref.a");
     let _ = fs::remove_file(&archive);

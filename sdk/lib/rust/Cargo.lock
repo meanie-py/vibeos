@@ -1299,6 +1299,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "msvcrt-scanf-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "libc",
+ "msvcrt-crt-rust",
+ "msvcrt-sys",
+]
+
+[[package]]
 name = "msvcrt-sys"
 version = "0.1.0"
 

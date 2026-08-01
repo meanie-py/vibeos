@@ -44,6 +44,60 @@ int *_errno(void)
 int  subj_errno_get(void)      { return subj_errno_value; }
 void subj_errno_set(int value) { subj_errno_value = value; }
 
+/* The OTHER errno.  file.rs's `_wsopen_dispatch` clears it on the success path and
+ * msvcrt_set_errno writes it on every failure, so a file row that only watched
+ * `errno` would miss half the contract.  Reference-side, fileimpl.c owns the
+ * matching `msvcrt_ref___doserrno`; separate storage here for the reason the banner
+ * above gives about errno generally.
+ *
+ * `unsigned long` rather than msvcrt's `__msvcrt_ulong`, which is a 32-bit spelling
+ * this TU has no header for — and 64-bit here would let a write past bit 31 go
+ * unnoticed.  See the subj_doserrno_* accessors' width, which must match. */
+static __thread unsigned int subj_doserrno_value;
+
+unsigned int *__doserrno(void)
+{
+    return &subj_doserrno_value;
+}
+
+unsigned int subj_doserrno_get(void)           { return subj_doserrno_value; }
+void         subj_doserrno_set(unsigned int v) { subj_doserrno_value = v; }
+
+/* ------------------------------------------------------------------ *
+ * _wcsdup — NOT under test here, and on the path anyway.
+ *
+ * file.rs's `tmpnam_helper` calls it.  wcs.c still owns it in the shipping DLL
+ * (msvcrt-crt-rust does not export it), so the subject has no Rust copy to link
+ * against, and the reference's is renamed `ref__wcsdup` and must stay unreachable
+ * from this side.  Follows dll/win32/msvcrt/wcs.c:81-91, including the
+ * NULL-in/NULL-out arm — the same debt shape as fileimpl.c's msvcrt_set_errno,
+ * and it retires the same way, by making wcs.c's owner a reference TU whose
+ * subject half is Rust.
+ *
+ * `unsigned short`, NOT the host's `wchar_t`, and NOT glibc's `wcslen`: msvcrt's
+ * wchar_t is 16 bits and this TU has no header that says so.  Reaching for the
+ * host's would count 32-bit units over a UTF-16 buffer — a length wrong by ~2x
+ * and a malloc to match, on a string the caller then reads to its real NUL.
+ * That is why the loop is spelled out rather than delegated.
+ * ------------------------------------------------------------------ */
+#include <stdlib.h>
+#include <string.h>
+
+unsigned short *_wcsdup(const unsigned short *str)
+{
+    unsigned short *ret = NULL;
+    if (str)
+    {
+        size_t len = 0;
+        size_t size;
+        while (str[len]) len++;
+        size = (len + 1) * sizeof(unsigned short);
+        ret = malloc(size);
+        if (ret) memcpy(ret, str, size);
+    }
+    return ret;
+}
+
 /* ------------------------------------------------------------------ *
  * The invalid-parameter handler.
  *
