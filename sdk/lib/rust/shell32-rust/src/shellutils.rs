@@ -13,7 +13,11 @@
 
 use core::ffi::c_void;
 
+use core::ffi::c_char;
+
 use crate::island::{
+    lstrcpyW, lstrlenW, WideCharToMultiByte, CP_ACP, SEE_CMIC_COMMON_FLAGS, SEE_MASK_CLASSKEY,
+    SEE_MASK_CLASSNAME, SEE_MASK_HASLINKNAME, SEE_MASK_HASTITLE,
     GetVersion, GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock,
     RegisterClipboardFormatW, BOOL,
     CIDA, CLIPFORMAT, DWORD, FORMATETC, GHND, GUID, HRESULT, LONG, LPCITEMIDLIST, LPITEMIDLIST,
@@ -436,4 +440,36 @@ impl Drop for COleInit {
             unsafe { OleUninitialize() };
         }
     }
+}
+
+/// `shellutils.h:689` — narrows a `SEE_MASK_*` set to the `CMIC_MASK_*` bits an
+/// `IContextMenu::InvokeCommand` accepts. A header inline, so it reaches no TU.
+#[inline]
+pub fn SeeFlagsToCmicFlags(mut flags: UINT) -> UINT {
+    if (flags & (SEE_MASK_CLASSNAME | SEE_MASK_CLASSKEY)) == SEE_MASK_CLASSNAME {
+        flags &= !(SEE_MASK_HASLINKNAME | SEE_MASK_HASTITLE);
+    }
+    flags & SEE_CMIC_COMMON_FLAGS
+}
+
+// ── wine/shell32_main.h inlines ──────────────────────────────────────────────────────────
+// `static __inline` in a Wine header: in no TU, so rustconv never sees a body. Both allocate
+// with SHAlloc (the COM task allocator), and the caller frees with SHFree.
+
+/// `wine/shell32_main.h:210` — SHAlloc a CP_ACP copy of a wide string into `*target`.
+#[inline]
+pub unsafe fn __SHCloneStrWtoA(target: *mut *mut c_char, source: *const u16) {
+    let len = WideCharToMultiByte(CP_ACP, 0, source, -1, core::ptr::null_mut(), 0,
+                                  core::ptr::null(), core::ptr::null_mut());
+    *target = SHAlloc(len as SIZE_T) as *mut c_char;
+    WideCharToMultiByte(CP_ACP, 0, source, -1, *target, len,
+                        core::ptr::null(), core::ptr::null_mut());
+}
+
+/// `wine/shell32_main.h:217` — SHAlloc a copy of a wide string into `*target`.
+#[inline]
+pub unsafe fn __SHCloneStrW(target: *mut *mut u16, source: *const u16) {
+    let cch = lstrlenW(source) + 1;
+    *target = SHAlloc(cch as SIZE_T * core::mem::size_of::<u16>() as SIZE_T) as *mut u16;
+    lstrcpyW(*target, source);
 }

@@ -71,6 +71,7 @@ pub use crate::shellcom::{
 // Drop-as-destructor).
 pub use crate::atl::{
     CComAllocator, CComHeapPtr, CComPtr, CCRTAllocator, CHeapPtr, CLocalAllocator, CSimpleArray,
+    CStringW,
 };
 
 // shellutils.h / utils.h header inlines. The explicit `use` deliberately shadows the island
@@ -776,7 +777,8 @@ extern "C" {
 // so they live in no TU — see those modules' headers.
 pub use crate::layout::{LayoutDestroy, LayoutEnableResize, LayoutInit, LayoutShowGrip, LayoutUpdate};
 pub use crate::shellutils::{
-    RosGetProcessCompatVersion, RosGetProcessEffectiveVersion, SHELL_IsContextMenuMsg, SHILClone,
+    RosGetProcessCompatVersion, RosGetProcessEffectiveVersion, SeeFlagsToCmicFlags,
+    SHELL_IsContextMenuMsg, SHILClone, __SHCloneStrW, __SHCloneStrWtoA,
 };
 
 // shell32's OWN exports. Declared, not imported, for the reason given above the
@@ -1164,3 +1166,124 @@ extern "C" {
 /// wine's shell32 string shims are `#define`s onto the CRT wide entry points.
 pub use crate::island::{wcschr as strchrW, wcscmp as strcmpW, wcslen as strlenW};
 pub use wcscat as strcatW;
+
+// ── shlexec.cpp residue ────────────────────────────────────────────────────────────────────
+// Declared here against the ISLAND rather than imported from `win32.rs`, for the reason given
+// above the "shell32's OWN exports" block: those are typed against `crate::types`, and mixing
+// the two alias families splits every call site.
+
+extern "system" {
+    /// shlwapi ordinal 51. Resolves + qualifies a path in place.
+    pub fn PathResolveW(
+        path: crate::island::LPWSTR,
+        dirs: *mut crate::island::LPCWSTR,
+        flags: crate::island::DWORD,
+    ) -> crate::island::BOOL;
+    /// shlwapi `SHRegQueryValueExW` — defined in-crate (`wine/shellreg.rs`).
+    pub fn SHRegQueryValueExW(
+        hkey: crate::island::HKEY,
+        pszValue: crate::island::LPCWSTR,
+        pdwReserved: crate::island::LPDWORD,
+        pdwType: crate::island::LPDWORD,
+        pvData: crate::island::LPVOID,
+        pcbData: crate::island::LPDWORD,
+    ) -> crate::island::LONG;
+    pub fn SHBindToParent(
+        pidl: crate::island::PCIDLIST_ABSOLUTE,
+        riid: REFIID,
+        ppv: *mut *mut core::ffi::c_void,
+        ppidlLast: *mut crate::island::PCUITEMID_CHILD,
+    ) -> crate::island::HRESULT;
+    pub fn SHExtCoCreateInstance(
+        aclsid: crate::island::LPCWSTR,
+        clsid: *const crate::island::CLSID,
+        pUnkOuter: *mut core::ffi::c_void,
+        riid: REFIID,
+        ppv: *mut crate::island::LPVOID,
+    ) -> crate::island::HRESULT;
+}
+
+extern "C" {
+    /// `COpenWithMenu.cpp:32` `EXTERN_C BOOL PathIsExeW(LPCWSTR)` — EXTERN_C is LINKAGE; there
+    /// is no WINAPI here, so the convention is cdecl. `scan_cc_mismatch` caught this declared
+    /// as `extern "system"`, which on i386 is a stack-imbalance waiting to happen.
+    pub fn PathIsExeW(path: crate::island::LPCWSTR) -> crate::island::BOOL;
+    /// `wine/shell32_main.h:70` — no WINAPI, and that header wraps itself in `extern "C"`.
+    pub fn HCR_GetExecuteCommandW(
+        hkeyClass: crate::island::HKEY,
+        szClass: crate::island::LPCWSTR,
+        szVerb: crate::island::LPCWSTR,
+        szDest: crate::island::LPWSTR,
+        len: crate::island::DWORD,
+    ) -> crate::island::BOOL;
+    /// `precomp.h:294` — plain `HRESULT SHCoInitializeAnyApartment(VOID)`, no WINAPI.
+    pub fn SHCoInitializeAnyApartment() -> crate::island::HRESULT;
+    /// `precomp.h:296` — plain `HRESULT SHGetNameAndFlagsW(...)`, no WINAPI.
+    pub fn SHGetNameAndFlagsW(
+        pidl: crate::island::LPCITEMIDLIST,
+        dwFlags: crate::island::DWORD,
+        pszText: crate::island::LPWSTR,
+        cchBuf: crate::island::UINT,
+        pdwAttributes: *mut crate::island::DWORD,
+    ) -> crate::island::HRESULT;
+}
+
+// `wine/unicode.h`'s A/W-generic aliases. Text substitution in C, so they are `#[inline]`
+// forwarders here rather than a second extern for the same CRT symbol.
+/// `#define strcpyW(d,s) wcscpy((d),(s))`
+#[inline]
+pub unsafe fn strcpyW(d: crate::island::LPWSTR, s: crate::island::LPCWSTR) -> crate::island::LPWSTR {
+    crate::island::wcscpy(d, s)
+}
+/// `#define strstrW(d,s) wcsstr((d),(s))`
+#[inline]
+pub unsafe fn strstrW(d: crate::island::LPCWSTR, s: crate::island::LPCWSTR) -> crate::island::LPWSTR {
+    crate::island::wcsstr(d, s)
+}
+/// `#define strrchrW(s,c) wcsrchr((s),(c))`
+#[inline]
+pub unsafe fn strrchrW(s: crate::island::LPCWSTR, c: crate::island::WCHAR) -> crate::island::LPWSTR {
+    crate::island::wcsrchr(s, c)
+}
+/// `#define strncmpiW(s1,s2,n) _wcsnicmp((s1),(s2),(n))`
+#[inline]
+pub unsafe fn strncmpiW(
+    s1: crate::island::LPCWSTR,
+    s2: crate::island::LPCWSTR,
+    n: usize,
+) -> crate::island::INT {
+    crate::island::_wcsnicmp(s1, s2, n)
+}
+/// `#define isspaceW(n) iswspace((n))`
+#[inline]
+pub unsafe fn isspaceW(c: crate::island::WCHAR) -> crate::island::INT {
+    crate::island::iswspace(c as crate::island::INT)
+}
+
+extern "C" {
+    /// `strsafe.h` — the bounded `swprintf`. Variadic: Rust can CALL a C variadic on stable
+    /// (only DEFINING one needs `rust_varargs_shim.c`), so this needs no trampoline.
+    pub fn StringCchPrintfW(
+        pszDest: crate::island::LPWSTR,
+        cchDest: usize,
+        pszFormat: crate::island::LPCWSTR,
+        ...
+    ) -> crate::island::HRESULT;
+}
+
+/// `basetsd.h` `#define UlongToHandle(h) ((HANDLE)(ULONG_PTR)(h))`.
+#[inline]
+pub fn UlongToHandle(h: crate::island::ULONG) -> crate::island::HANDLE {
+    h as usize as crate::island::HANDLE
+}
+
+/// `winnt.h` `SecureZeroMemory` — a zeroing the optimiser may not elide. `write_volatile`
+/// is the Rust spelling of that guarantee; a plain `write_bytes` is exactly what the C
+/// intrinsic exists to prevent.
+#[inline]
+pub unsafe fn SecureZeroMemory(ptr: *mut core::ffi::c_void, cnt: usize) {
+    let p = ptr as *mut u8;
+    for i in 0..cnt {
+        core::ptr::write_volatile(p.add(i), 0);
+    }
+}
