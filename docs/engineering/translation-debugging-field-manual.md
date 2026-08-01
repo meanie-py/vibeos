@@ -1930,6 +1930,33 @@ Two consequences, escalating:
 - **A green cargo build does not imply boot-tested.** Only a clean boot of the actually-rebuilt
   `.sys` does.
 
+### A file MISSING from the arm64 ramdisk is fabricated by the kernel, not reported
+**Symptom.** A cross-arch conformance sweep showed `\REGISTRY\MACHINE\SAM` reporting the
+*expected* 4-ACE ACL on arm64 and a "wrong" 5-ACE one on both x86 arches. arm64 looked like
+the correct side, so the investigation started by hunting an x86 kernel bug.
+
+**Cause.** `qemu/mkramdisk.sh` hand-lists the files it stages and had drifted from the livecd:
+it copied three of the five hives `mkhive` emits (`system`, `default`, `software`), omitting
+`sam` and `security`. The livecd's `add_cd_file` list (`sdk/cmake/CMakeMacros.cmake`) carries
+all five. Nothing anywhere reported the gap — `CmpLoadHiveThread` cannot open the file, sets
+`Allocate`, and `CmpLinkHiveToMaster` **fabricates an empty volatile hive** whose root key gets
+`CmpHiveRootSecurityDescriptor()`. The key then exists, opens with SUCCESS, and answers queries.
+arm64 had been booting with an empty SAM the whole time, samsrv re-creating the domain
+structure into volatile state every boot.
+
+**Why it inverted the diagnosis.** The fabricated descriptor is *character-for-character* what
+the test expects, because both come from the same function. So the arch with the missing data
+scored BETTER than the arch reading the real hive. **A test result that looks more correct on
+one arch is evidence about that arch's INPUTS before it is evidence about its code.**
+
+**Fix.** Stage all five; list them in `REQUIRED_FILES` so a missing one hard-fails instead of
+being fabricated. Confirmed by prediction: arm64 `CmSecurity` moved 663/74 → **659/87**, exactly
+i386 and amd64, with only the known-flaky `IoDeviceObject` assertion moving besides.
+
+**Generalize.** Two hand-maintained media lists that must agree, with no mechanism forcing it,
+drift silently — and the *kernel's* graceful degradation is what hides it. When one arch's
+result differs, diff the media before diffing the code.
+
 ### The two staleness oracles, both were wrong `[§9.81]`
 - **(a) `cohab_staleness_reasons` false-REDs on a codegen-neutral edit** `[§9.81a]` — the rule
   `artifact.mtime >= newest .rs mtime` is a proxy, and a comment-only edit trips it. **A false
