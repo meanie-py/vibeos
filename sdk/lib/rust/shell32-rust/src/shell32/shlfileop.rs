@@ -53,6 +53,107 @@ pub struct FILE_ENTRY {
     pub bExists: i32,
 }
 
+/// `IProgressDialog` — shlobj.h:983. The bindgen islands render it OPAQUE
+/// (`IProgressDialog__bindgen_vtable(c_void)`), because it is a C++ pure-virtual class, so
+/// there are no method bindings to call and the translation's `p.SetTitle(..)` method syntax
+/// resolves to nothing. Spell the vtable out and dispatch through it, as the landed COM call
+/// sites do. A file-local item SHADOWS the prelude's glob, which is how `recycle_bin` and
+/// friends carry their own interface structs without colliding.
+///
+/// **The field ORDER is the ABI.** It follows shlobj.h exactly — IUnknown's three first, then
+/// the eleven IProgressDialog methods. Reordering silently calls the wrong slot.
+#[repr(C)]
+pub struct IProgressDialogVtbl {
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IProgressDialog, *const GUID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IProgressDialog) -> ULONG,
+    pub Release: unsafe extern "system" fn(*mut IProgressDialog) -> ULONG,
+    pub StartProgressDialog: unsafe extern "system" fn(
+        *mut IProgressDialog,
+        HWND,
+        *mut c_void,
+        DWORD,
+        *const c_void,
+    ) -> HRESULT,
+    pub StopProgressDialog: unsafe extern "system" fn(*mut IProgressDialog) -> HRESULT,
+    pub SetTitle: unsafe extern "system" fn(*mut IProgressDialog, LPCWSTR) -> HRESULT,
+    pub SetAnimation:
+        unsafe extern "system" fn(*mut IProgressDialog, HINSTANCE, UINT) -> HRESULT,
+    pub HasUserCancelled: unsafe extern "system" fn(*mut IProgressDialog) -> BOOL,
+    pub SetProgress: unsafe extern "system" fn(*mut IProgressDialog, DWORD, DWORD) -> HRESULT,
+    pub SetProgress64:
+        unsafe extern "system" fn(*mut IProgressDialog, ULONGLONG, ULONGLONG) -> HRESULT,
+    pub SetLine: unsafe extern "system" fn(
+        *mut IProgressDialog,
+        DWORD,
+        LPCWSTR,
+        BOOL,
+        *const c_void,
+    ) -> HRESULT,
+    pub SetCancelMsg:
+        unsafe extern "system" fn(*mut IProgressDialog, LPCWSTR, *const c_void) -> HRESULT,
+    pub Timer: unsafe extern "system" fn(*mut IProgressDialog, DWORD, *const c_void) -> HRESULT,
+}
+
+#[repr(C)]
+pub struct IProgressDialog {
+    pub lpVtbl: *const IProgressDialogVtbl,
+}
+
+/// `#define IsDotDir(x) ((x[0]=='.') && ((x[1]==0) || ((x[1]=='.') && (x[2]==0))))`
+/// — shlfileop.cpp:32, file-local. Every call site already passes a `*const u16` and compares
+/// the result against 0, so this stays an inline fn returning BOOL rather than a macro.
+#[inline]
+unsafe fn IsDotDir(x: *const u16) -> BOOL {
+    (*x == b'.' as u16 && (*x.add(1) == 0 || (*x.add(1) == b'.' as u16 && *x.add(2) == 0))) as BOOL
+}
+
+extern "C" {
+    /// `folders/CRecycleBin.h` — plain C++ free functions with no `WINAPI`, so they are
+    /// __cdecl and belong in an `extern "C"` block, NOT `extern "system"`. The header now
+    /// declares them `EXTERN_C` so the C++ definition agrees on the unmangled name.
+    /// (`extern "C"` is LINKAGE, `WINAPI` is CALLING CONVENTION; i386 is the only arch that
+    /// catches getting the second one wrong.)
+    fn TRASH_CanTrashFile(wszPath: LPCWSTR) -> BOOL;
+    fn TRASH_TrashFile(wszPath: LPCWSTR) -> BOOL;
+}
+
+/// `ntbasedef.h:939 #define MAKELANGID(p, s) ((((USHORT)(s)) << 10) | (USHORT)(p))`.
+/// Each half is narrowed to USHORT BEFORE the shift, as the macro does.
+#[inline]
+fn MAKELANGID(p: USHORT, s: USHORT) -> DWORD {
+    (((s as DWORD) << 10) | (p as DWORD)) as DWORD
+}
+
+/// `commctrl.h:4831 #define DSA_GetItemCount(hdsa) (*(int *) (hdsa))` — a MACRO reading the
+/// count out of the DSA header, NOT a comctl32 export. Declaring it `extern` would compile
+/// and then fail to link against a symbol that does not exist.
+#[inline]
+unsafe fn DSA_GetItemCount(hdsa: HDSA) -> INT {
+    *(hdsa as *const INT)
+}
+
+/// `strsafe.h` — the byte-counted `StringCchCopyW`. An inline in the header, so there is no
+/// import to bind; `dialogs/filedefext.rs` carries the same shim.
+#[inline]
+unsafe fn StringCbCopyW(dst: LPWSTR, bytes: usize, src: LPCWSTR) -> HRESULT {
+    StringCchCopyW(dst, bytes / core::mem::size_of::<WCHAR>(), src)
+}
+
+/// `#define GET_FILENAME(fe) ((fe)->szFilename[0] ? (fe)->szFilename : (fe)->szFullPath)`
+/// — shlfileop.cpp:1995, file-local. A `macro_rules!`, not a fn: an out-of-line no-op or
+/// wrapper for a C macro is the optimization barrier that uncloaks latent ABI mismatches.
+macro_rules! GET_FILENAME {
+    ($fe:expr) => {{
+        let fe = $fe;
+        if *(*fe).szFilename != 0 {
+            (*fe).szFilename
+        } else {
+            (*fe).szFullPath
+        }
+    }};
+}
+
 #[repr(C)]
 pub struct FILE_LIST {
     pub feFiles: *mut FILE_ENTRY,
@@ -566,7 +667,7 @@ pub unsafe extern "C" fn SHELL_DeleteDirectoryW(
                 }
 
                 if !(*op).progress.is_null() {
-                    (*op).bCancelled |= (*(*op).progress).HasUserCancelled();
+                    (*op).bCancelled |= ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
                 }
             }
 
@@ -623,7 +724,7 @@ unsafe extern "C" fn SHNotifyRemoveDirectoryW(path: PCWSTR) -> u32 {
     let mut ret: i32 = RemoveDirectoryW(path);
     if ret == 0 {
         let dwAttr = GetFileAttributesW(path);
-        if IsAttrib!(dwAttr, FILE_ATTRIBUTE_READONLY) != 0 {
+        if IsAttrib!(dwAttr, FILE_ATTRIBUTE_READONLY) {
             if SetFileAttributesW(path, dwAttr & !FILE_ATTRIBUTE_READONLY) != 0 {
                 ret = RemoveDirectoryW(path);
             }
@@ -670,9 +771,9 @@ unsafe extern "C" fn _SetOperationTitle(op: *mut FILE_OPERATION) {
 
     LoadStringW(shell32_hInstance, IDS_FILEOOP_PREFLIGHT, szPreflight.as_mut_ptr(), (core::mem::size_of_val(&szPreflight) / 2) as i32);
 
-    (*progress).SetTitle(szTitle.as_ptr());
-    (*progress).SetLine(1, szPreflight.as_ptr(), 0i32, core::ptr::null_mut());
-    (*progress).SetAnimation(shell32_hInstance, animation_id);
+    ((*(*progress).lpVtbl).SetTitle)(progress, szTitle.as_ptr());
+    ((*(*progress).lpVtbl).SetLine)(progress, 1, szPreflight.as_ptr(), 0, core::ptr::null());
+    ((*(*progress).lpVtbl).SetAnimation)(progress, shell32_hInstance, animation_id);
 }
 unsafe extern "C" fn _SetOperationTexts(op: *mut FILE_OPERATION, src: PCWSTR, dest: PCWSTR) {
     if (*op).progress.is_null() || src.is_null() {
@@ -735,8 +836,8 @@ unsafe extern "C" fn _SetOperationTexts(op: *mut FILE_OPERATION, src: PCWSTR, de
     );
 
     let progress = (*op).progress;
-    (*(progress)).SetLine(1, fileSpecS, 0u8, core::ptr::null_mut());
-    (*(progress)).SetLine(2, szFinalString.as_mut_ptr(), 0u8, core::ptr::null_mut());
+    ((*(*progress).lpVtbl).SetLine)(progress, 1, fileSpecS, 0, core::ptr::null());
+    ((*(*progress).lpVtbl).SetLine)(progress, 2, szFinalString.as_mut_ptr(), 0, core::ptr::null());
 }
 #[no_mangle]
 pub unsafe extern "system" fn SHCopyProgressRoutine(
@@ -755,11 +856,12 @@ pub unsafe extern "system" fn SHCopyProgressRoutine(
         if dwCallbackReason & CALLBACK_STREAM_SWITCH != 0 {
             (*op).completedSize.QuadPart += (TotalFileSize) as u64;
         }
-        (*((*op).progress)).SetProgress64(
+        ((*(*(*op).progress).lpVtbl).SetProgress64)(
+            (*op).progress,
             ((*op).completedSize.QuadPart - (TotalFileSize) as u64 + (TotalBytesTransferred) as u64) as u64,
             ((*op).totalSize.QuadPart) as u64,
         );
-        (*op).bCancelled = (*((*op).progress)).HasUserCancelled() as i32;
+        (*op).bCancelled = ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
     }
     0
 }
@@ -825,9 +927,12 @@ pub unsafe extern "system" fn Win32DeleteFileW(path: PCWSTR) -> u32 {
     (SHNotifyDeleteFileW(core::ptr::null_mut(), path) == (ERROR_SUCCESS) as u32) as u32
 }
 unsafe extern "C" fn CheckForError(op: *mut FILE_OPERATION, error: u32, src: PCWSTR) -> u32 {
-    let strTitle: CStringW;
-    let strMask: CStringW;
-    let strText: CStringW;
+    // `CStringW strTitle;` etc. — a C++ RAII local. The translation lowers it to an
+    // UNINITIALISED binding, which runs neither the constructor nor the destructor; spell
+    // the default ctor out so the Drop impl also runs. (`strMask` is declared and never
+    // used in the C++ too, so it is dropped here rather than carried as a dead binding.)
+    let mut strTitle = CStringW::new();
+    let mut strText = CStringW::new();
     let lpMsgBuffer: PWSTR;
 
     if error == (ERROR_SUCCESS) as u32 || CanShowFileOpErrorUI((*op).req) == 0 {
@@ -846,13 +951,13 @@ unsafe extern "C" fn CheckForError(op: *mut FILE_OPERATION, error: u32, src: PCW
         core::ptr::null_mut(),
     );
 
-    strText.Format(
+    strText.FormatResStr2(
         if (*(*op).req).wFunc == FO_COPY { IDS_COPYERROR } else { IDS_MOVEERROR },
         PathFindFileNameW(src),
         lpMsgBuffer,
     );
 
-    MessageBoxW((*op).hWndOwner, strText, strTitle, MB_ICONERROR);
+    MessageBoxW((*op).hWndOwner, strText.as_ptr(), strTitle.as_ptr(), MB_ICONERROR);
     LocalFree((lpMsgBuffer).cast());
 
     (*op).bHasDisplayedError += 1;
@@ -879,7 +984,7 @@ unsafe extern "C" fn SHNotifyMoveFileW(op: *mut FILE_OPERATION, src: PCWSTR, des
         let mut dw_attr: u32 = SHFindAttrW(dest, (FALSE) as u8);
         if dw_attr == INVALID_FILE_ATTRIBUTES {
             dw_attr = GetFileAttributesW(src);
-            if IsAttrib!(dw_attr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) != 0 {
+            if IsAttrib!(dw_attr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) {
                 if SetFileAttributesW(src, dw_attr & !(FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM)) != 0 {
                     ret = MoveFileW(src, dest);
                     last_error = GetLastError();
@@ -948,7 +1053,7 @@ unsafe extern "C" fn SHNotifyCopyFileW(op: *mut FILE_OPERATION, src: PCWSTR, des
         return ERROR_CANCELLED;
     }
 
-    if IsAttrib!(attribs, FILE_ATTRIBUTE_READONLY) != 0 {
+    if IsAttrib!(attribs, FILE_ATTRIBUTE_READONLY) {
         SetFileAttributesW(dest, attribs & !FILE_ATTRIBUTE_READONLY);
     }
 
@@ -1354,13 +1459,13 @@ unsafe extern "C" fn parse_wildcard_files(flList: *mut FILE_LIST, szFile: PCWSTR
             }
 
             szFullPath = wildcard_to_file(szFile, wfd.cFileName.as_ptr());
-            file = &mut (*flList).feFiles.offset(*pdwListIndex as isize);
+            file = (*flList).feFiles.offset(*pdwListIndex as isize);
             *pdwListIndex = (*pdwListIndex).wrapping_add(1);
             add_file_to_entry(file, szFullPath);
             (*file).bFromWildcard = TRUE;
             (*file).attributes = wfd.dwFileAttributes;
 
-            if IsAttribDir!((*file).attributes) != 0 {
+            if IsAttribDir!((*file).attributes) {
                 (*flList).bAnyDirectories = TRUE;
             }
 
@@ -1415,7 +1520,7 @@ unsafe extern "C" fn parse_file_list(flList: *mut FILE_LIST, szFiles: PCWSTR) ->
             (*flList).bAnyFromWildcard = TRUE;
             i = i.wrapping_sub(1);
         } else {
-            let file = &mut (*flList).feFiles.offset(i as isize);
+            let file = (*flList).feFiles.offset(i as isize);
             add_file_to_entry(file, szCurFile.as_ptr());
             (*file).attributes = GetFileAttributesW((*file).szFullPath);
             (*file).bExists = ((*file).attributes != INVALID_FILE_ATTRIBUTES) as i32;
@@ -1424,7 +1529,7 @@ unsafe extern "C" fn parse_file_list(flList: *mut FILE_LIST, szFiles: PCWSTR) ->
                 (*flList).bAnyDontExist = TRUE;
             }
 
-            if IsAttribDir!((*file).attributes) != 0 {
+            if IsAttribDir!((*file).attributes) {
                 (*flList).bAnyDirectories = TRUE;
             }
         }
@@ -1466,21 +1571,28 @@ unsafe extern "C" fn destroy_file_list(flList: *mut FILE_LIST) {
         ((*flList).feFiles).cast()
     );
 }
-unsafe extern "C" fn try_find_new_name(szDestPath: *const u16) -> CStringW {
-    let mut mask = CStringW::new(szDestPath);
-    let ext = CStringW::new(PathFindExtensionW(szDestPath));
+/// `static` in the C++ and returns a `CStringW` by value, so it stays a plain `unsafe fn`:
+/// giving it `extern "C"` would put a non-FFI-safe return type on a C ABI for no caller.
+unsafe fn try_find_new_name(szDestPath: *const u16) -> CStringW {
+    let mut mask = CStringW::from_ptr(szDestPath);
+    let ext = CStringW::from_ptr(PathFindExtensionW(szDestPath));
     if !ext.IsEmpty() {
         mask = mask.Left(mask.GetLength() - ext.GetLength());
     }
-    mask += CPP_COM_WSTR_926483D22C70.as_ptr() + ext;
+    // `mask += L" (%d)" + ext` — ATL's `operator+(PCXSTR, const CStringT&)` builds the
+    // concatenation first; appending the two pieces in order gives the same string.
+    mask.Append(CPP_COM_WSTR_926483D22C70.as_ptr());
+    mask.Append(ext.as_ptr());
     let mut newName = CStringW::new();
     for i in 1 .. NEW_FILENAME_ON_COPY_TRIES {
-        newName.Format(mask, i);
-        if !PathFileExistsW(newName) {
+        newName.FormatInt(mask.as_ptr(), i);
+        // `!PathFileExistsW(...)` — the C++ negates a BOOL. Rust `!` on an i32 is bitwise
+        // NOT, so this MUST be an explicit `== 0` or every path reads as "does not exist".
+        if PathFileExistsW(newName.as_ptr()) == 0 {
             return newName;
         }
     }
-    return CStringW();
+    return CStringW::new();
 }
 unsafe extern "C" fn copy_dir_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_ENTRY, szDestPath: PCWSTR) {
     let mut szFrom: [u16; MAX_PATH] = [0u16; MAX_PATH];
@@ -1558,7 +1670,7 @@ unsafe extern "C" fn copy_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_EN
         SHNotifyCreateDirectoryW((*feTo).szFullPath, core::ptr::null_mut());
     }
 
-    if IsAttribFile!((*feFrom).attributes) != 0 {
+    if IsAttribFile!((*feFrom).attributes) {
         let mut szDestPath = [0u16; MAX_PATH];
         PathCombineW(szDestPath.as_mut_ptr(), (*feTo).szFullPath, (*feFrom).szFilename);
         copy_file_to_file(op, (*feFrom).szFullPath, szDestPath.as_ptr());
@@ -1634,7 +1746,7 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
             unsafe {
                 (*flTo).dwNumFiles = 1;
             }
-        } else if unsafe { IsAttribDir!((*fileDest).attributes) != 0 } {
+        } else if unsafe { IsAttribDir!((*fileDest).attributes) } {
             i = 1;
             while i < unsafe { (*flTo).dwNumFiles } {
                 if unsafe { !IsAttribDir!((*(*flTo).feFiles.add(i as usize)).attributes) ||
@@ -1650,12 +1762,12 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
         }
 
         if unsafe { PathFileExistsW((*fileDest).szFullPath) != 0 &&
-              IsAttribFile!((*fileDest).attributes) != 0 } {
+              IsAttribFile!((*fileDest).attributes) } {
             return (ERROR_CANCELLED) as i32;
         }
 
         if unsafe { (*flTo).dwNumFiles == 1 && (*fileDest).bFromRelative != 0 &&
-              !PathFileExistsW((*fileDest).szFullPath) } {
+              PathFileExistsW((*fileDest).szFullPath) == 0 } {
             return ERROR_CANCELLED;
         }
     }
@@ -1668,8 +1780,8 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
             fileDest = unsafe { (*flTo).feFiles.add(i as usize) as *const FILE_ENTRY };
         }
 
-        if unsafe { IsAttribDir!((*entryToCopy).attributes) != 0 &&
-              !lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szDirectory) } {
+        if unsafe { IsAttribDir!((*entryToCopy).attributes) &&
+              lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szDirectory) == 0 } {
             return ERROR_SUCCESS;
         }
 
@@ -1677,8 +1789,8 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
             create_dest_dirs((*fileDest).szDirectory);
         }
 
-        if unsafe { !lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szFullPath) } {
-            if unsafe { IsAttribFile!((*entryToCopy).attributes) != 0 } {
+        if unsafe { lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szFullPath) == 0 } {
+            if unsafe { IsAttribFile!((*entryToCopy).attributes) } {
                 return ERROR_NO_MORE_SEARCH_HANDLES;
             } else {
                 return ERROR_SUCCESS;
@@ -1686,16 +1798,16 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
         }
 
         if (unsafe { (*flFrom).dwNumFiles > 1 && (*flTo).dwNumFiles == 1 }) ||
-            unsafe { IsAttribDir!((*fileDest).attributes) != 0 } {
+            unsafe { IsAttribDir!((*fileDest).attributes) } {
             unsafe {
                 copy_to_dir(op, entryToCopy, fileDest);
             }
-        } else if unsafe { IsAttribDir!((*entryToCopy).attributes) != 0 } {
+        } else if unsafe { IsAttribDir!((*entryToCopy).attributes) } {
             unsafe {
                 copy_dir_to_dir(op, entryToCopy, (*fileDest).szFullPath);
             }
         } else {
-            if unsafe { !copy_file_to_file(op, (*entryToCopy).szFullPath, (*fileDest).szFullPath) } {
+            if unsafe { copy_file_to_file(op, (*entryToCopy).szFullPath, (*fileDest).szFullPath) == 0 } {
                 unsafe {
                     (*(*op).req).fAnyOperationsAborted = TRUE;
                 }
@@ -1705,7 +1817,7 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
 
         unsafe {
             if !(*op).progress.is_null() {
-                (*op).bCancelled |= (*(*op).progress).HasUserCancelled();
+                (*op).bCancelled |= ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
             }
         }
 
@@ -1740,7 +1852,7 @@ unsafe extern "C" fn confirm_delete_list(
         );
     } else {
         let fileEntry: *const FILE_ENTRY = (*flFrom).feFiles;
-        if IsAttribFile!((*fileEntry).attributes) != 0 {
+        if IsAttribFile!((*fileEntry).attributes) {
             return SHELL_ConfirmDialogW(
                 hWnd,
                 if fTrash != 0 { (ASK_TRASH_FILE) as i32 } else { (ASK_DELETE_FILE) as i32 },
@@ -1792,7 +1904,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
         bPathExists = TRUE;
         let file_entry = (*flFrom).feFiles.offset(i as isize);
         if IsAttribFile!((*file_entry).attributes) == 0
-            && ((*(*op).req).fFlags & (FOF_FILESONLY) as u16) != 0
+            && ((*(*op).req).fFlags & (FOF_FILESONLY) as u16)
             && (*file_entry).bFromWildcard != 0
         {
             continue;
@@ -1800,7 +1912,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
 
         if bTrash != 0 {
             if TRASH_TrashFile((*file_entry).szFullPath) != 0 {
-                let event = if IsAttribFile!((*file_entry).attributes) != 0 {
+                let event = if IsAttribFile!((*file_entry).attributes) {
                     SHCNE_DELETE
                 } else {
                     SHCNE_RMDIR
@@ -1833,7 +1945,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
             }
         }
 
-        if IsAttribFile!((*file_entry).attributes) != 0 {
+        if IsAttribFile!((*file_entry).attributes) {
             let res = SHNotifyDeleteFileW(op, (*file_entry).szFullPath);
             bPathExists = (ERROR_SUCCESS == (res) as i32);
         } else {
@@ -1850,7 +1962,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
         }
 
         if !(*op).progress.is_null() {
-            (*op).bCancelled |= ((*op).progress).HasUserCancelled() as BOOL;
+            (*op).bCancelled |= ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
         }
         if (*op).bCancelled != 0 {
             return (ERROR_CANCELLED) as i32;
@@ -1927,7 +2039,7 @@ unsafe extern "C" fn move_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_EN
     let mut szDestPath: [u16; MAX_PATH] = [0u16; MAX_PATH];
     PathCombineW(szDestPath.as_mut_ptr(), (*feTo).szFullPath, (*feFrom).szFilename);
 
-    if IsAttribFile!((*feFrom).attributes) != 0 {
+    if IsAttribFile!((*feFrom).attributes) {
         move_file_to_file(op, (*feFrom).szFullPath, szDestPath.as_ptr());
     } else if !((((*(*op).req).fFlags & (FOF_FILESONLY) as u16) != 0) && ((*feFrom).bFromWildcard != 0)) {
         move_dir_to_dir(op, feFrom, szDestPath.as_ptr());
@@ -2000,10 +2112,10 @@ unsafe extern "C" fn move_files(
         }
 
         if ((*flFrom).dwNumFiles > 1 && (*flTo).dwNumFiles == 1)
-            || IsAttribDir!((*fileDest).attributes) != 0
+            || IsAttribDir!((*fileDest).attributes)
         {
             move_to_dir(op, entryToMove, fileDest);
-        } else if IsAttribDir!((*entryToMove).attributes) != 0 {
+        } else if IsAttribDir!((*entryToMove).attributes) {
             move_dir_to_dir(op, entryToMove, (*fileDest).szFullPath);
         } else {
             if move_file_to_file(
@@ -2018,8 +2130,8 @@ unsafe extern "C" fn move_files(
         }
 
         if !(*op).progress.is_null() {
-            let progress = &*(*op).progress;
-            (*op).bCancelled |= progress.HasUserCancelled();
+            let progress = (*op).progress;
+            (*op).bCancelled |= ((*(*progress).lpVtbl).HasUserCancelled)(progress);
         }
         if (*op).bCancelled != 0 {
             return ERROR_CANCELLED;
@@ -2087,8 +2199,9 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
     let dwNumDest: DWORD;
     let mut szFrom: [WCHAR; MAX_PATH] = [0; MAX_PATH];
     let mut szTo: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut strTitle: CStringW;
-    let mut strText: CStringW;
+    // C++ RAII locals — see CheckForError: an uninitialised binding runs no ctor and no dtor.
+    let mut strTitle = CStringW::new();
+    let mut strText = CStringW::new();
     let feFrom: *const FILE_ENTRY;
     let feTo: *const FILE_ENTRY;
     let lpFileOp = (&*op.req);
@@ -2102,10 +2215,10 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
 
     k = 0;
     while k < dwNumDest {
-        feTo = &(*flTo).feFiles[k as usize];
+        feTo = (*flTo).feFiles.add(k as usize);
         i = 0;
         while i < (*flFrom).dwNumFiles {
-            feFrom = &(*flFrom).feFiles[i as usize];
+            feFrom = (*flFrom).feFiles.add(i as usize);
             StringCbCopyW(szFrom.as_mut_ptr(), core::mem::size_of_val(&szFrom), (*feFrom).szFullPath);
             StringCbCopyW(szTo.as_mut_ptr(), core::mem::size_of_val(&szTo), (*feTo).szFullPath);
             if IsAttribDir!((*feTo).attributes) {
@@ -2114,17 +2227,17 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
 
             if lstrcmpiW(szFrom.as_ptr(), szTo.as_ptr()) == 0 &&
                 (wFunc == FO_MOVE || !((*lpFileOp).fFlags & (FOF_RENAMEONCOLLISION) as u16)) {
-                if CanShowFileOpErrorUI(*lpFileOp) {
+                if CanShowFileOpErrorUI(lpFileOp) != 0 {
                     if wFunc == FO_MOVE {
                         strTitle.LoadStringW(IDS_MOVEERRORTITLE);
                         if IsAttribDir!((*feFrom).attributes) {
-                            strText.Format(IDS_MOVEERRORSAMEFOLDER, GET_FILENAME(feFrom));
+                            strText.FormatResStr(IDS_MOVEERRORSAMEFOLDER, GET_FILENAME!(feFrom));
                         } else {
-                            strText.Format(IDS_MOVEERRORSAME, GET_FILENAME(feFrom));
+                            strText.FormatResStr(IDS_MOVEERRORSAME, GET_FILENAME!(feFrom));
                         }
                     } else {
                         strTitle.LoadStringW(IDS_COPYERRORTITLE);
-                        strText.Format(IDS_COPYERRORSAME, GET_FILENAME(feFrom));
+                        strText.FormatResStr(IDS_COPYERRORSAME, GET_FILENAME!(feFrom));
                         return (ERROR_SUCCESS) as u32;
                     }
                     MessageBoxW((*op).hWndOwner, strText.as_ptr(), strTitle.as_ptr(), MB_ICONERROR);
@@ -2144,13 +2257,13 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
                     szTo[cchFrom] = ch;
 
                     if compare == 0 {
-                        if CanShowFileOpErrorUI(*lpFileOp) {
+                        if CanShowFileOpErrorUI(lpFileOp) != 0 {
                             if wFunc == FO_MOVE {
                                 strTitle.LoadStringW(IDS_MOVEERRORTITLE);
-                                strText.Format(IDS_MOVEERRORSUBFOLDER, GET_FILENAME(feFrom));
+                                strText.FormatResStr(IDS_MOVEERRORSUBFOLDER, GET_FILENAME!(feFrom));
                             } else {
                                 strTitle.LoadStringW(IDS_COPYERRORTITLE);
-                                strText.Format(IDS_COPYERRORSUBFOLDER, GET_FILENAME(feFrom));
+                                strText.FormatResStr(IDS_COPYERRORSUBFOLDER, GET_FILENAME!(feFrom));
                             }
                             MessageBoxW((*op).hWndOwner, strText.as_ptr(), strTitle.as_ptr(), MB_ICONERROR);
                             (*op).bHasDisplayedError += 1;
@@ -2213,8 +2326,8 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
         core::mem::size_of::<FILE_OPERATION>(),
     );
     op.req = lpFileOp;
-    op.totalSize.QuadPart = 0ull;
-    op.completedSize.QuadPart = 0ull;
+    op.totalSize.QuadPart = 0u64;
+    op.completedSize.QuadPart = 0u64;
     op.bManyItems = if flFrom.dwNumFiles > 1 { 1 } else { 0 };
     op.Callback = Callback;
     op.CallerCallbackData = CallerData;
@@ -2272,7 +2385,7 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
             return ret;
         }
 
-        (*op.progress).StartProgressDialog(op.hWndOwner, core::ptr::null_mut(), PROGDLG_NORMAL & PROGDLG_AUTOTIME, core::ptr::null_mut());
+        ((*(*op.progress).lpVtbl).StartProgressDialog)(op.progress, op.hWndOwner, core::ptr::null_mut(), PROGDLG_NORMAL & PROGDLG_AUTOTIME, core::ptr::null());
         _SetOperationTitle(&mut op);
         _FileOpCountManager(&mut op, &flFrom);
     }
@@ -2298,8 +2411,8 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
     }
 
     if !op.progress.is_null() {
-        (*op.progress).StopProgressDialog();
-        (*op.progress).Release();
+        ((*(*op.progress).lpVtbl).StopProgressDialog)(op.progress);
+        ((*(*op.progress).lpVtbl).Release)(op.progress);
     }
 
     destroy_file_list(&mut flFrom);
@@ -2701,7 +2814,7 @@ unsafe extern "C" fn _FileOpCount(op: *mut FILE_OPERATION, pwszBuf: *mut u16, bF
 
         if GetTickCount().wrapping_sub(*ticks) > (500 as u32) {
             if !(*op).progress.is_null() {
-                (*op).bCancelled = (*(*op).progress).HasUserCancelled();
+                (*op).bCancelled = ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
             }
             if (*op).bCancelled != 0 {
                 break;
