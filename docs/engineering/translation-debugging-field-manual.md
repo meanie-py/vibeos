@@ -758,6 +758,33 @@ Three faces, all seen live:
   declaration comparison went looking. "The lint is green" means nothing if the crate is not in
   the lint's input set; check that before trusting it.
 
+### A struct field nobody READS is a field nobody INITIALISES
+
+**Symptom.** You implement a dormant feature by storing state in a struct field that already
+exists and is the semantically right home for it. The field is a plain pointer, the struct is
+the real bindgen type, no layout changes — and the kernel takes a `0xc0000005` on the first
+dereference, at a wild address, far from your code.
+
+**Cause.** "Nothing uses this field" is the evidence you check, and it is the wrong question.
+The right one is "what writes it?" — and the answer is nothing, *because* nothing read it.
+`CM_KEY_CONTROL_BLOCK.CachedSecurity` was free real estate for the CM security work, but
+`CmpAllocateKeyControlBlock` (`config-rust/src/cmalloc.rs`) hands KCBs back off a recycle
+free list, or carves them from a fresh page it never zeroes, and `CmpCreateKeyControlBlock`
+initialises only the six fields it actually cares about. So the field held either stale bytes
+from a previous key or raw page garbage. The first key whose garbage was non-NULL bugchecked
+the boot, during PnP driver matching — nowhere near the security code.
+
+**Fix.** Initialise it explicitly at construction, next to the other initialisers, and say in
+the comment *why* (the allocator recycles and does not zero) — not just that it is NULL.
+Clearing it on the teardown path is not enough: object-cache allocators have abort paths that
+return an object to the free list without running cleanup, and a fresh page was never clean to
+begin with.
+
+**Generalises to** any pooled/recycled object: CM KCBs, lookaside-backed structures, and the
+same shape recorded for arm64's uninitialised PFN `CacheAttribute` further down. Before
+reviving a dormant field, grep for what *writes* it, not what reads it. If the answer is
+nothing, you own its initialisation.
+
 ### Adopting an island in a crate that already has hand-written substrate
 Measure first, and expect most of the hand-written surface to be redundant: on shell32,
 **73 of 90** items in `types.rs` and **117 of 156** in `shellcom.rs` were already provided by the
@@ -992,6 +1019,22 @@ just a label.
 - **Two self-incriminating comment shapes to grep for:** a comment naming the right symbol next
   to a numeric literal, and a "value assumed / approximate" note.
 - **After fixing a class of bad data, re-audit everything derived FROM it.**
+- **The invented value is usually a NEIGHBOUR from the same family, which is why review misses
+  it.** `CmpHiveRootSecurityDescriptor` lowered `SECURITY_RESTRICTED_CODE_RID` (12) to a literal
+  `33` — that is `SECURITY_WRITE_RESTRICTED_CODE_RID`, so the registry hive-root DACL granted
+  `KEY_READ` to `S-1-5-33` instead of `S-1-5-12` for years. Every *other* literal in the same
+  function (`ACL_REVISION` 2, `KEY_ALL_ACCESS` 0xF003F, `KEY_READ` 0x20019,
+  `CONTAINER_INHERIT_ACE` 2, `FIELD_OFFSET(ACCESS_ALLOWED_ACE, SidStart)` 8) audited **correct**
+  — one wrong value in six, and no way to tell which by reading. Only a conformance test that
+  knew the right answer caught it. Re-name the whole family when you fix one, so the compiler
+  and `verify_constants` can see them: a bare literal is checkable only by someone who already
+  suspects it.
+- **A constant that lives in only SOME arches' islands cannot simply be imported.**
+  `KEY_ALL_ACCESS` is in `hal_bindgen_i386/amd64` and **not** `hal_bindgen_arm64`, so `use`-ing
+  it breaks the arm64 build. Declare it locally *and pin it* —
+  `#[cfg(any(target_arch = "x86", target_arch = "x86_64"))] const _: () = assert!(LOCAL == island);`
+  — which keeps the hand-typed value honest wherever an oracle exists instead of trading one
+  unchecked literal for another.
 
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and

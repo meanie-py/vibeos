@@ -499,6 +499,9 @@ pub unsafe extern "system" fn CmpCleanUpKcbCacheWithLock(
 
     CmpCleanUpKcbValueCache(Kcb);
 
+    /* The KCB owns the last reference to its cached security descriptor. */
+    crate::cmse::CmpFreeKcbCachedSecurity(Kcb);
+
     CmpDereferenceNameControlBlockWithLock((*Kcb).NameBlock);
 
     if ((*Kcb).__bindgen_anon_1.ExtFlags() & CM_KCB_SUBKEY_HINT) != 0 {
@@ -711,6 +714,10 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
     (*Kcb).Signature = 0x6B636D2bu32;
     (*Kcb).__bindgen_anon_1.set_Delete(0);
     (*Kcb).RefCount = 1;
+    /* CmpAllocateKeyControlBlock hands back RECYCLED KCBs off a free list, and fresh
+     * pages it never zeroes, so every field this function does not set holds garbage.
+     * CachedSecurity must start NULL or the security method dereferences it. */
+    (*Kcb).CachedSecurity = core::ptr::null_mut();
     (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyHive = Hive;
     (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell = Index;
     (*Kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey = ConvKey;

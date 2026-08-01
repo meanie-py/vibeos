@@ -7,12 +7,15 @@ use ntkrnl_sys::macros::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::inline::se::SeLengthSid;
 use ntkrnl_sys::ddk::{
-    ACE, ACL, CmpAcquireKcbLockExclusive, CmpLockRegistry, CmpReleaseKcbLock, CmpUnlockRegistry,
-    PACE_HEADER, PACL, PCM_KEY_BODY, PCM_KEY_CONTROL_BLOCK, PGENERIC_MAPPING,
+    ACE, ACL, CM_KEY_SECURITY_CACHE, CmpAcquireKcbLockExclusive, CmpLockRegistry,
+    CmpReleaseKcbLock, CmpUnlockRegistry, PACE_HEADER, PACL, PCM_KEY_BODY,
+    PCM_KEY_CONTROL_BLOCK, PCM_KEY_SECURITY_CACHE, PGENERIC_MAPPING,
     PISECURITY_DESCRIPTOR, PISECURITY_DESCRIPTOR_RELATIVE, PSECURITY_DESCRIPTOR,
-    PSECURITY_INFORMATION, PSID, RtlAddAccessAllowedAce, RtlCreateAcl, RtlCreateSecurityDescriptor,
+    PSECURITY_INFORMATION, PSID, RtlAbsoluteToSelfRelativeSD, RtlAddAccessAllowedAce,
+    RtlCreateAcl, RtlCreateSecurityDescriptor,
     RtlCreateSecurityDescriptorRelative, RtlGetAce, RtlInitializeSid, RtlLengthRequiredSid,
-    RtlLengthSid, RtlSetDaclSecurityDescriptor, RtlSubAuthoritySid, _SECURITY_DESCRIPTOR,
+    RtlLengthSecurityDescriptor, RtlLengthSid, RtlSetDaclSecurityDescriptor, RtlSubAuthoritySid,
+    SeQuerySecurityDescriptorInfo, SeSetSecurityDescriptorInfo, _SECURITY_DESCRIPTOR,
     _SECURITY_DESCRIPTOR_RELATIVE, SECURITY_DESCRIPTOR_CONTROL, SECURITY_INFORMATION,
     SECURITY_OPERATION_CODE, SID_IDENTIFIER_AUTHORITY,
     _SECURITY_OPERATION_CODE_AssignSecurityDescriptor,
@@ -27,6 +30,119 @@ const SECURITY_SYSTEM: u32 = 0x29;
 
 extern "C" {
     fn CmpAcquireKcbLockShared(Kcb: PCM_KEY_CONTROL_BLOCK);
+}
+
+/// Pool tag ("CmSc") for a KCB's cached security descriptor.
+const TAG_CM_SECURITY_CACHE: u32 = 0x6353_6D43;
+
+/// Pool tag ("dSeS", ntoskrnl/include/internal/tag.h) that the Se layer allocates
+/// replacement descriptors with. Freeing one under any other tag is a bugcheck.
+const TAG_SD: u32 = 0x6453_6553;
+
+/// KEY_ALL_ACCESS. Declared locally because the bindgen islands carry it only for
+/// i386/amd64 (`hal_bindgen_*`) and not arm64, so importing it would break the arm64
+/// build. Pinned to the island below wherever the island has it, so a hand-typed value
+/// can never drift -- this file already shipped one wrong hand-typed SID RID.
+const KEY_ALL_ACCESS: ULONG = 0x000F_003F;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+const _: () = assert!(KEY_ALL_ACCESS == ntkrnl_sys::hal_ddk::KEY_ALL_ACCESS as ULONG);
+
+/// A cell index that names no cell. Cached descriptors are not yet backed by a hive
+/// `sk` cell, so every block we build carries this.
+const HCELL_NIL: u32 = 0xFFFF_FFFF;
+
+/// CM_KEY_SECURITY_CACHE ends in a variable-length SECURITY_DESCRIPTOR_RELATIVE, so a
+/// block is allocated as header + descriptor bytes and the descriptor starts here.
+/// Using the struct's own size instead would truncate every descriptor to the size of
+/// an empty one.
+const CM_SECURITY_CACHE_HEADER: usize = core::mem::offset_of!(CM_KEY_SECURITY_CACHE, Descriptor);
+
+/// The descriptor cached on `Kcb`, or NULL if the key has none.
+unsafe fn CmpGetCachedSecurity(Kcb: PCM_KEY_CONTROL_BLOCK) -> PSECURITY_DESCRIPTOR {
+    if Kcb.is_null() {
+        return core::ptr::null_mut();
+    }
+    let Cached = (*Kcb).CachedSecurity;
+    if Cached.is_null() {
+        return core::ptr::null_mut();
+    }
+    core::ptr::addr_of_mut!((*Cached).Descriptor) as PSECURITY_DESCRIPTOR
+}
+
+/// Release the descriptor cached on a KCB, if any.
+///
+/// Exported: the KCB teardown path in cmkcbncb owns the last reference to the block.
+#[no_mangle]
+pub unsafe extern "system" fn CmpFreeKcbCachedSecurity(Kcb: PCM_KEY_CONTROL_BLOCK) {
+    if Kcb.is_null() {
+        return;
+    }
+    let Cached = (*Kcb).CachedSecurity;
+    if !Cached.is_null() {
+        (*Kcb).CachedSecurity = core::ptr::null_mut();
+        ExFreePoolWithTag(Cached as *mut core::ffi::c_void, TAG_CM_SECURITY_CACHE);
+    }
+}
+
+/// Attach a private self-relative copy of `SecurityDescriptor` to `Kcb`, replacing
+/// whatever was cached there before.
+///
+/// The descriptor is copied, never aliased: the object manager frees its own copy as
+/// soon as the security method returns, and an ABSOLUTE descriptor additionally holds
+/// pointers to SIDs and ACLs in separate allocations the caller owns. Converting to
+/// self-relative flattens all of that into one block we control.
+unsafe fn CmpStoreCachedSecurity(
+    Kcb: PCM_KEY_CONTROL_BLOCK,
+    SecurityDescriptor: PSECURITY_DESCRIPTOR,
+) -> NTSTATUS {
+    if Kcb.is_null() || SecurityDescriptor.is_null() {
+        return STATUS_SUCCESS;
+    }
+
+    // Reports the size the SELF-RELATIVE form needs, for either input form. For an
+    // absolute descriptor it counts the (larger) absolute header, so this can
+    // over-estimate; the conversion writes the length actually used back.
+    let mut Length: ULONG = RtlLengthSecurityDescriptor(SecurityDescriptor);
+    if Length == 0 {
+        return STATUS_INVALID_SECURITY_DESCR;
+    }
+
+    let Block = ExAllocatePoolWithTag(
+        PagedPool,
+        CM_SECURITY_CACHE_HEADER + Length as usize,
+        TAG_CM_SECURITY_CACHE,
+    ) as PCM_KEY_SECURITY_CACHE;
+    if Block.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    let Target = core::ptr::addr_of_mut!((*Block).Descriptor) as PSECURITY_DESCRIPTOR;
+    let Control = (*(SecurityDescriptor as PISECURITY_DESCRIPTOR)).Control;
+    let Status = if (Control & SE_SELF_RELATIVE) != 0 {
+        RtlCopyMemory(
+            Target as *mut core::ffi::c_void,
+            SecurityDescriptor as *const core::ffi::c_void,
+            Length as usize,
+        );
+        STATUS_SUCCESS
+    } else {
+        RtlAbsoluteToSelfRelativeSD(SecurityDescriptor, Target, &mut Length)
+    };
+
+    if !NT_SUCCESS(Status) {
+        ExFreePoolWithTag(Block as *mut core::ffi::c_void, TAG_CM_SECURITY_CACHE);
+        return Status;
+    }
+
+    (*Block).Cell = HCELL_NIL;
+    (*Block).ConvKey = (*Kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey;
+    (*Block).DescriptorLength = Length;
+    InitializeListHead(&mut (*Block).List);
+
+    CmpFreeKcbCachedSecurity(Kcb);
+    (*Kcb).CachedSecurity = Block;
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
@@ -67,11 +183,14 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 2, 0, 0);
     }
 
-    *RtlSubAuthoritySid(Sid[0], 0) = 0;
-    *RtlSubAuthoritySid(Sid[1], 0) = 33;
-    *RtlSubAuthoritySid(Sid[2], 0) = 18;
-    *RtlSubAuthoritySid(Sid[3], 0) = 32;
-    *RtlSubAuthoritySid(Sid[3], 1) = 544;
+    /* Named, not numeric: the translation had lowered SECURITY_RESTRICTED_CODE_RID to a
+     * literal 33 (that is SECURITY_WRITE_RESTRICTED_CODE_RID) instead of 12, so the hive
+     * root DACL granted KEY_READ to S-1-5-33 rather than S-1-5-12. */
+    *RtlSubAuthoritySid(Sid[0], 0) = SECURITY_WORLD_RID;
+    *RtlSubAuthoritySid(Sid[1], 0) = SECURITY_RESTRICTED_CODE_RID;
+    *RtlSubAuthoritySid(Sid[2], 0) = SECURITY_LOCAL_SYSTEM_RID;
+    *RtlSubAuthoritySid(Sid[3], 0) = SECURITY_BUILTIN_DOMAIN_RID;
+    *RtlSubAuthoritySid(Sid[3], 1) = DOMAIN_ALIAS_RID_ADMINS;
 
     AclLength = core::mem::size_of::<ACL>() as ULONG;
     i = 0;
@@ -87,27 +206,27 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 3, 0, 0);
     }
 
-    Status = RtlCreateAcl(Acl, AclLength, 2);
+    Status = RtlCreateAcl(Acl, AclLength, ACL_REVISION);
     if !NT_SUCCESS(Status) {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 4, Status as ULONG_PTR, 0);
     }
 
-    Status = RtlAddAccessAllowedAce(Acl, 2, 0xF003F, Sid[2]);
-    Status |= RtlAddAccessAllowedAce(Acl, 2, 0xF003F, Sid[3]);
-    Status |= RtlAddAccessAllowedAce(Acl, 2, 0x20019, Sid[0]);
-    Status |= RtlAddAccessAllowedAce(Acl, 2, 0x20019, Sid[1]);
+    Status = RtlAddAccessAllowedAce(Acl, ACL_REVISION, KEY_ALL_ACCESS, Sid[2]);
+    Status |= RtlAddAccessAllowedAce(Acl, ACL_REVISION, KEY_ALL_ACCESS, Sid[3]);
+    Status |= RtlAddAccessAllowedAce(Acl, ACL_REVISION, KEY_READ, Sid[0]);
+    Status |= RtlAddAccessAllowedAce(Acl, ACL_REVISION, KEY_READ, Sid[1]);
     if !NT_SUCCESS(Status) {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 5, Status as ULONG_PTR, 0);
     }
 
     Status = RtlGetAce(Acl, 0, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
-    (*AceHeader).AceFlags |= 2;
+    (*AceHeader).AceFlags |= CONTAINER_INHERIT_ACE;
     Status = RtlGetAce(Acl, 1, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
-    (*AceHeader).AceFlags |= 2;
+    (*AceHeader).AceFlags |= CONTAINER_INHERIT_ACE;
     Status = RtlGetAce(Acl, 2, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
-    (*AceHeader).AceFlags |= 2;
+    (*AceHeader).AceFlags |= CONTAINER_INHERIT_ACE;
     Status = RtlGetAce(Acl, 3, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
-    (*AceHeader).AceFlags |= 2;
+    (*AceHeader).AceFlags |= CONTAINER_INHERIT_ACE;
 
     SecurityDescriptor = ExAllocatePoolWithTag(
         PagedPool,
@@ -151,6 +270,37 @@ pub unsafe extern "system" fn CmpQuerySecurityDescriptor(
     let Kcb = opaque_ptr(Kcb);
     let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let BufferLength = opaque_ptr(BufferLength);
+
+    if SecurityInformation == 0 {
+        return STATUS_ACCESS_DENIED;
+    }
+
+    let mut ObjectSd = CmpGetCachedSecurity(Kcb);
+    if !ObjectSd.is_null() {
+        let mut SecInfo: SECURITY_INFORMATION = SecurityInformation;
+        return SeQuerySecurityDescriptorInfo(
+            &mut SecInfo,
+            SecurityDescriptor,
+            BufferLength,
+            &mut ObjectSd,
+        );
+    }
+
+    CmpQueryDefaultSecurityDescriptor(SecurityInformation, SecurityDescriptor, BufferLength)
+}
+
+/// Fallback for a key that carries no descriptor: grant World everything.
+///
+/// This is upstream ReactOS's original whole-CM behaviour, now narrowed to keys we have
+/// not assigned. It is reached by keys materialised from a hive FILE, whose real ACLs
+/// live in the hive's `sk` cells -- nothing in the tree writes or reads CM_KEY_NODE.Security
+/// yet, so there is nothing to serve. Those keys read as world-writable, which is wrong and
+/// tracked; do not mistake this for a designed default.
+unsafe fn CmpQueryDefaultSecurityDescriptor(
+    SecurityInformation: SECURITY_INFORMATION,
+    SecurityDescriptor: PSECURITY_DESCRIPTOR,
+    BufferLength: *mut u32,
+) -> i32 {
     let mut RelSd: PISECURITY_DESCRIPTOR_RELATIVE;
     let mut SidSize: u32;
     let mut AclSize: u32 = 0;
@@ -245,6 +395,15 @@ pub unsafe extern "system" fn CmpQuerySecurityDescriptor(
     Status
 }
 
+/// Replace the key's descriptor with the caller's, component by component.
+///
+/// Was a bare `return STATUS_SUCCESS` that discarded the caller's descriptor. Now that
+/// Query serves real data, leaving it a no-op would report the OLD descriptor back after
+/// a successful set.
+///
+/// SeSetSecurityDescriptorInfoEx allocates a fresh TAG_SD block and overwrites the
+/// pointer WITHOUT freeing what was there (ntoskrnl/se/sd.c:962,1005), so we keep
+/// ownership of the block we passed in and must free the one it hands back.
 #[no_mangle]
 pub unsafe extern "system" fn CmpSetSecurityDescriptor(
     Kcb: PCM_KEY_CONTROL_BLOCK,
@@ -257,9 +416,38 @@ pub unsafe extern "system" fn CmpSetSecurityDescriptor(
     let SecurityInformation = opaque_ptr(SecurityInformation);
     let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let GenericMapping = opaque_ptr(GenericMapping);
-    STATUS_SUCCESS
+
+    let Original = CmpGetCachedSecurity(Kcb);
+    let mut ObjectSd = Original;
+    let Status = SeSetSecurityDescriptorInfo(
+        core::ptr::null_mut(),
+        SecurityInformation,
+        SecurityDescriptor,
+        &mut ObjectSd,
+        PoolType,
+        GenericMapping,
+    );
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+
+    // Nothing was substituted, so the cached block still holds the live descriptor.
+    // Guards against ever freeing an interior pointer into our own allocation.
+    if ObjectSd == Original {
+        return STATUS_SUCCESS;
+    }
+
+    let Status = CmpStoreCachedSecurity(Kcb, ObjectSd);
+    ExFreePoolWithTag(ObjectSd as *mut core::ffi::c_void, TAG_SD);
+    Status
 }
 
+/// Take ownership of the descriptor the object manager assigned to a newly created key.
+///
+/// Until this stored the descriptor, every key the kernel created -- including the
+/// registry roots, which cmsysini builds a correct 4-ACE DACL for via
+/// CmpHiveRootSecurityDescriptor() -- had that descriptor dropped on the floor here, and
+/// every query then reported the World fallback below.
 #[no_mangle]
 pub unsafe extern "C" fn CmpAssignSecurityDescriptor(
     Kcb: PCM_KEY_CONTROL_BLOCK,
@@ -267,7 +455,7 @@ pub unsafe extern "C" fn CmpAssignSecurityDescriptor(
 ) -> NTSTATUS {
     let Kcb = opaque_ptr(Kcb);
     let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
-    STATUS_SUCCESS
+    CmpStoreCachedSecurity(Kcb, SecurityDescriptor)
 }
 
 #[no_mangle]
