@@ -553,6 +553,223 @@ pub unsafe fn TreeView_Expand(
     ) as crate::island::BOOL
 }
 
+/// commctrl.h:3455. The five `TreeView_Get*` below are all this macro with a fixed `code`.
+#[inline]
+pub unsafe fn TreeView_GetNextItem(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+    code: crate::island::UINT,
+) -> crate::island::HTREEITEM {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_GETNEXTITEM,
+        code as crate::island::WPARAM,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::HTREEITEM
+}
+#[inline]
+pub unsafe fn TreeView_GetRoot(hwnd: crate::island::HWND) -> crate::island::HTREEITEM {
+    TreeView_GetNextItem(hwnd, core::ptr::null_mut(), crate::island::TVGN_ROOT)
+}
+#[inline]
+pub unsafe fn TreeView_GetNextSibling(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::HTREEITEM {
+    TreeView_GetNextItem(hwnd, hitem, crate::island::TVGN_NEXT)
+}
+#[inline]
+pub unsafe fn TreeView_GetParent(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::HTREEITEM {
+    TreeView_GetNextItem(hwnd, hitem, crate::island::TVGN_PARENT)
+}
+
+// `TVM_GETITEM`/`TVM_SETITEM`/`TVM_INSERTITEM` are the A/W-mapped spellings; the DLL builds
+// UNICODE, so they are the `*W` messages. These take the item pointer generically for the same
+// reason `ZeroMemory` does — the message is type-agnostic and the call sites pass `TVITEMW`,
+// `TVITEMEXW` and `TV_ITEM` alike, which is exactly what the C macro's cast erased.
+#[inline]
+pub unsafe fn TreeView_GetItem<T>(hwnd: crate::island::HWND, pitem: *mut T) -> crate::island::BOOL {
+    crate::island::SendMessageW(hwnd, crate::island::TVM_GETITEMW, 0, pitem as crate::island::LPARAM)
+        as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_SetItem<T>(
+    hwnd: crate::island::HWND,
+    pitem: *const T,
+) -> crate::island::BOOL {
+    crate::island::SendMessageW(hwnd, crate::island::TVM_SETITEMW, 0, pitem as crate::island::LPARAM)
+        as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_InsertItem<T>(
+    hwnd: crate::island::HWND,
+    lpis: *const T,
+) -> crate::island::HTREEITEM {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_INSERTITEMW,
+        0,
+        lpis as crate::island::LPARAM,
+    ) as crate::island::HTREEITEM
+}
+#[inline]
+pub unsafe fn TreeView_DeleteItem(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::BOOL {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_DELETEITEM,
+        0,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::BOOL
+}
+/// commctrl.h:3486 `TreeView_SelectItem` = `TreeView_Select(.., TVGN_CARET)`.
+#[inline]
+pub unsafe fn TreeView_SelectItem(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::BOOL {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_SELECTITEM,
+        crate::island::TVGN_CARET as crate::island::WPARAM,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_SortChildren(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+    recurse: crate::island::BOOL,
+) -> crate::island::BOOL {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_SORTCHILDREN,
+        recurse as crate::island::WPARAM,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_HitTest<T>(
+    hwnd: crate::island::HWND,
+    lpht: *mut T,
+) -> crate::island::HTREEITEM {
+    crate::island::SendMessageW(hwnd, crate::island::TVM_HITTEST, 0, lpht as crate::island::LPARAM)
+        as crate::island::HTREEITEM
+}
+/// commctrl.h:3434. Note the comma operator in the C macro: the caller's `RECT` doubles as the
+/// IN parameter, so the item handle is written OVER its first bytes before the message goes out.
+/// Dropping that store leaves the control reading a garbage handle.
+#[inline]
+pub unsafe fn TreeView_GetItemRect(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+    prc: *mut crate::island::RECT,
+    code: crate::island::BOOL,
+) -> crate::island::BOOL {
+    *(prc as *mut crate::island::HTREEITEM) = hitem;
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_GETITEMRECT,
+        code as crate::island::WPARAM,
+        prc as crate::island::LPARAM,
+    ) as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_GetEditControl(hwnd: crate::island::HWND) -> crate::island::HWND {
+    crate::island::SendMessageW(hwnd, crate::island::TVM_GETEDITCONTROL, 0, 0)
+        as crate::island::HWND
+}
+#[inline]
+pub unsafe fn TreeView_EditLabel(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::HWND {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_EDITLABELW,
+        0,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::HWND
+}
+#[inline]
+pub unsafe fn TreeView_SetImageList(
+    hwnd: crate::island::HWND,
+    himl: crate::island::HIMAGELIST,
+    iImage: crate::island::INT,
+) -> crate::island::HIMAGELIST {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_SETIMAGELIST,
+        iImage as crate::island::WPARAM,
+        himl as crate::island::LPARAM,
+    ) as crate::island::HIMAGELIST
+}
+
+/// commctrl.h `TV_ITEM` is the pre-Win32 spelling of `TVITEMW` in a UNICODE build.
+pub type TV_ITEM = crate::island::TVITEMW;
+
+/// `MAKEINTRESOURCEA` — the same cast as `MAKEINTRESOURCEW` above, narrow side.
+#[inline]
+pub fn MAKEINTRESOURCEA(i: crate::island::UINT) -> crate::island::LPSTR {
+    i as usize as crate::island::LPSTR
+}
+
+/// winuser.h `DWLP_USER = DWLP_DLGPROC + sizeof(DLGPROC)`, i.e. two pointers past the start of
+/// the dialog's extra bytes — so it is POINTER-WIDTH dependent, not a fixed 8.
+pub const DWLP_USER: crate::island::INT = (2 * core::mem::size_of::<usize>()) as crate::island::INT;
+
+/// windowsx.h — the signed halves of a packed mouse-position LPARAM.
+#[inline]
+pub fn GET_X_LPARAM(lp: crate::island::LPARAM) -> crate::island::INT {
+    (lp & 0xFFFF) as i16 as crate::island::INT
+}
+#[inline]
+pub fn GET_Y_LPARAM(lp: crate::island::LPARAM) -> crate::island::INT {
+    ((lp >> 16) & 0xFFFF) as i16 as crate::island::INT
+}
+
+/// shobjidl.h `SHGDN_NORMAL` — the island's include closure does not reach it.
+pub use crate::shellcom::SHGDN_NORMAL;
+
+// The shell32-private PIDL helpers that live in `wine/pidl.rs` and `shell_link.rs`. Imported
+// rather than re-declared: those modules are `extern "C"` and already typed compatibly here.
+pub use crate::shell_link::__SHCloneStrAtoW;
+pub use crate::wine::pidl::{_ILCreateDesktop, _ILGetDataPointer, _ILIsMyComputer};
+
+extern "system" {
+    /// `wine/shell32_main.h:190` — shell32's own menu-item helper.
+    pub fn _InsertMenuItemW(
+        hmenu: crate::island::HMENU,
+        indexMenu: crate::island::UINT,
+        fByPosition: crate::island::BOOL,
+        wID: crate::island::UINT,
+        fType: crate::island::UINT,
+        dwTypeData: crate::island::LPCWSTR,
+        fState: crate::island::UINT,
+    ) -> crate::island::BOOL;
+    pub fn SHILAppend(
+        pidl: crate::island::LPITEMIDLIST,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+    ) -> crate::island::HRESULT;
+}
+
+extern "C" {
+    /// msvcrt.
+    pub fn free(block: *mut core::ffi::c_void);
+}
+
+// `ui/layout.h` and the remaining `shellutils.h` / `compat_undoc.h` inlines. All header inlines,
+// so they live in no TU — see those modules' headers.
+pub use crate::layout::{LayoutDestroy, LayoutEnableResize, LayoutInit, LayoutShowGrip, LayoutUpdate};
+pub use crate::shellutils::{
+    RosGetProcessCompatVersion, RosGetProcessEffectiveVersion, SHELL_IsContextMenuMsg, SHILClone,
+};
+
 // shell32's OWN exports. Declared, not imported, for the reason given above the
 // SHGetSetSettings block: the Rust modules that define them are typed against
 // `crate::types`, and mixing those aliases with the island's splits every call site.
@@ -574,7 +791,99 @@ extern "system" {
     pub fn SHFree(pv: crate::island::LPVOID);
     /// pidl.h — first-item clone, `#[no_mangle] extern "system"` in `wine/pidl.rs`.
     pub fn ILCloneFirst(pidl: crate::island::LPCITEMIDLIST) -> crate::island::LPITEMIDLIST;
+    pub fn ILRemoveLastID(pidl: crate::island::LPITEMIDLIST) -> crate::island::BOOL;
+    pub fn ILCreateFromPathW(path: crate::island::LPCWSTR) -> crate::island::LPITEMIDLIST;
+    /// shlobj.h SDK imports the island's include closure does not reach.
+    pub fn SHParseDisplayName(
+        pszName: crate::island::PCWSTR,
+        pbc: *mut core::ffi::c_void,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+        sfgaoIn: crate::island::SFGAOF,
+        psfgaoOut: *mut crate::island::SFGAOF,
+    ) -> crate::island::HRESULT;
+    pub fn SHGetFolderPathW(
+        hwnd: crate::island::HWND,
+        csidl: crate::island::INT,
+        hToken: crate::island::HANDLE,
+        dwFlags: crate::island::DWORD,
+        pszPath: crate::island::LPWSTR,
+    ) -> crate::island::HRESULT;
+    pub fn SHGetFolderLocation(
+        hwnd: crate::island::HWND,
+        csidl: crate::island::INT,
+        hToken: crate::island::HANDLE,
+        dwReserved: crate::island::DWORD,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+    ) -> crate::island::HRESULT;
+    pub fn SHGetPathFromIDListW(
+        pidl: crate::island::LPCITEMIDLIST,
+        pszPath: crate::island::LPWSTR,
+    ) -> crate::island::BOOL;
+    pub fn SHGetFileInfoW(
+        pszPath: crate::island::LPCWSTR,
+        dwFileAttributes: crate::island::DWORD,
+        psfi: *mut crate::island::SHFILEINFOW,
+        cbFileInfo: crate::island::UINT,
+        uFlags: crate::island::UINT,
+    ) -> crate::island::DWORD_PTR;
+    pub fn SHCloneSpecialIDList(
+        hwnd: crate::island::HWND,
+        csidl: crate::island::INT,
+        bCreate: crate::island::BOOL,
+    ) -> crate::island::LPITEMIDLIST;
+    pub fn StrRetToStrNW(
+        dest: crate::island::LPWSTR,
+        len: crate::island::DWORD,
+        pstr: *mut crate::island::STRRET,
+        pidl: crate::island::LPCITEMIDLIST,
+    ) -> crate::island::HRESULT;
+    pub fn PathYetAnotherMakeUniqueName(
+        pszUniqueName: crate::island::LPWSTR,
+        pszPath: crate::island::LPCWSTR,
+        pszShort: crate::island::LPCWSTR,
+        pszFileSpec: crate::island::LPCWSTR,
+    ) -> crate::island::BOOL;
+    /// `shellutils.h:290-291` — real functions, not inlines, defined in `utils.cpp`.
+    pub fn SHGetAttributes(
+        psf: *mut crate::shellcom::IShellFolder,
+        pidl: crate::island::LPCITEMIDLIST,
+        dwAttributes: crate::island::DWORD,
+    ) -> crate::island::DWORD;
+    pub fn SHELL_GetIDListTarget(
+        pidl: crate::island::LPCITEMIDLIST,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+    ) -> crate::island::HRESULT;
+    /// `shellutils.h:217` — maps a verb string to its DFM_CMD_*.
+    pub fn GetDfmCmd(
+        pCM: *mut core::ffi::c_void,
+        verba: crate::island::LPCSTR,
+    ) -> crate::island::UINT;
+    pub fn SetWindowLongPtrW(
+        hWnd: crate::island::HWND,
+        nIndex: crate::island::INT,
+        dwNewLong: crate::island::LONG_PTR,
+    ) -> crate::island::LONG_PTR;
+    pub fn GetWindowLongPtrW(
+        hWnd: crate::island::HWND,
+        nIndex: crate::island::INT,
+    ) -> crate::island::LONG_PTR;
 }
+
+// The icon cache, flipped in `shell32::iconcache` — imported rather than re-declared, because
+// that module is already written against the island (it is a `shell32/` TU like this one).
+pub use crate::shell32::iconcache::{
+    SHMapPIDLToSystemImageListIndex, Shell_GetCachedImageIndexW, Shell_GetImageLists,
+};
+
+/// commctrl.h:3373 `#define TVI_ROOT ((HTREEITEM)(ULONG_PTR)-0x10000)`.
+pub const TVI_ROOT: crate::island::HTREEITEM = -0x10000isize as crate::island::HTREEITEM;
+/// winuser.h:695/697 — `MAKEINTRESOURCE`d cursor ids.
+pub const IDC_ARROW: crate::island::LPCWSTR = 32512isize as crate::island::LPCWSTR;
+pub const IDC_WAIT: crate::island::LPCWSTR = 32514isize as crate::island::LPCWSTR;
+/// shtypes.h — the PIDL type-safety family the island erases to one pointer type.
+pub type PCIDLIST_RELATIVE = crate::island::LPCITEMIDLIST;
+/// commctrl.h — the A/W mapping, UNICODE side.
+pub type NMTVDISPINFO = crate::island::NMTVDISPINFOW;
 
 // The shell32-private `_IL*` family. Same reasoning as the block above — these ARE defined in
 // this crate (`wine/pidl.rs`), but against `crate::types` aliases, so they are declared rather

@@ -18,11 +18,12 @@ use crate::island::{
     RegisterClipboardFormatW, BOOL,
     CIDA, CLIPFORMAT, DWORD, FORMATETC, GHND, GUID, HRESULT, LONG, LPCITEMIDLIST, LPITEMIDLIST,
     PCUIDLIST_ABSOLUTE, PCUIDLIST_RELATIVE, POINT, SAFEARRAY, SHDESCRIPTIONID, SIZE_T, STGMEDIUM,
-    UINT, ULONG, VARIANT, VARTYPE,
+    UINT, ULONG, VARIANT, VARTYPE, WM_DRAWITEM, WM_INITMENUPOPUP, WM_MEASUREITEM,
+    WM_MENUCHAR, WM_MENUSELECT,
 };
 use crate::V_VT;
 use crate::prelude::{
-    CopyMemory, ILFindLastID, SHFree, DVASPECT_CONTENT, E_OUTOFMEMORY, E_UNEXPECTED, S_OK,
+    CopyMemory, ILClone, ILFindLastID, SHFree, DVASPECT_CONTENT, E_OUTOFMEMORY, E_UNEXPECTED, S_OK,
     TRUE, TYMED_HGLOBAL, TYMED_NULL,
 };
 use crate::shellcom::IDataObject;
@@ -333,4 +334,69 @@ pub unsafe extern "system" fn SHELL_CreateSHDESCRIPTIONID(
 pub unsafe fn SHELL_OsIsUnicode() -> BOOL {
     // if high-bit of version is 0, we are emulating NT
     (GetVersion() & 0x80000000 == 0) as BOOL
+}
+
+/// `shellutils.h:697` — `static inline BOOL SHELL_IsContextMenuMsg(UINT uMsg)`. Header inline,
+/// so not `#[no_mangle]`; see `SHELL_OsIsUnicode` above.
+#[inline]
+pub fn SHELL_IsContextMenuMsg(uMsg: UINT) -> BOOL {
+    (uMsg == WM_MEASUREITEM
+        || uMsg == WM_DRAWITEM
+        || uMsg == WM_INITMENUPOPUP
+        || uMsg == WM_MENUSELECT
+        || uMsg == WM_MENUCHAR) as BOOL
+}
+
+/// `shellutils.h:462` — `template<class P, class R> static HRESULT SHILClone(P, R*)`. A C++
+/// TEMPLATE is in no translation unit for the same reason an inline is not, and its two type
+/// parameters exist only to launder PIDL type-safety: every instantiation erases to the same
+/// pointer, so one monomorphic port covers them all.
+#[inline]
+pub unsafe fn SHILClone(pidl: LPCITEMIDLIST, ppOut: *mut LPITEMIDLIST) -> HRESULT {
+    let r = ILClone(pidl);
+    *ppOut = r;
+    if r.is_null() { E_OUTOFMEMORY } else { S_OK }
+}
+
+/// `compat_undoc.h:5` — the shim block the loader hangs off the PEB.
+#[repr(C)]
+struct ReactOS_ShimData {
+    dwReserved1: [DWORD; 130],
+    dwSize: DWORD,
+    dwMagic: DWORD,
+    dwReserved2: [DWORD; 242],
+    dwRosProcessCompatVersion: DWORD,
+}
+
+const REACTOS_SHIMDATA_MAGIC: DWORD = 0xAC0D_EDAB;
+const REACTOS_COMPATVERSION_UNINITIALIZED: DWORD = 0xffff_fffe;
+
+/// `compat_undoc.h:22` — `static inline DWORD RosGetProcessCompatVersion(VOID)`. Its cache is a
+/// FUNCTION-LOCAL static with a constant initialiser, i.e. a hidden global with no guard
+/// variable, so a module `static mut` is exactly equivalent.
+static mut g_CompatVersion: DWORD = REACTOS_COMPATVERSION_UNINITIALIZED;
+
+#[inline]
+pub unsafe fn RosGetProcessCompatVersion() -> DWORD {
+    if g_CompatVersion == REACTOS_COMPATVERSION_UNINITIALIZED {
+        let pShimData = (*ntdll_sys::nt::NtCurrentPeb()).pShimData as *const ReactOS_ShimData;
+        if !pShimData.is_null()
+            && (*pShimData).dwMagic == REACTOS_SHIMDATA_MAGIC
+            && (*pShimData).dwSize as usize == core::mem::size_of::<ReactOS_ShimData>()
+        {
+            g_CompatVersion = (*pShimData).dwRosProcessCompatVersion;
+        }
+    }
+    if g_CompatVersion < REACTOS_COMPATVERSION_UNINITIALIZED { g_CompatVersion } else { 0 }
+}
+
+/// `compat_undoc.h:39` — the shimmed version if one is set, else the PEB's OS version.
+#[inline]
+pub unsafe fn RosGetProcessEffectiveVersion() -> UINT {
+    let shimVer = RosGetProcessCompatVersion();
+    if shimVer != 0 {
+        return shimVer;
+    }
+    let peb = ntdll_sys::nt::NtCurrentPeb();
+    (((*peb).OSMajorVersion << 8) | (*peb).OSMinorVersion) as UINT
 }

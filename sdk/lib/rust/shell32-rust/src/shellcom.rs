@@ -424,9 +424,40 @@ pub struct IShellFolderVtbl {
     ) -> HRESULT,
     pub GetDisplayNameOf:
         unsafe extern "system" fn(*mut IShellFolder, LPCITEMIDLIST, DWORD, *mut STRRET) -> HRESULT,
-    pub SetNameOf: usize,
+    pub SetNameOf: unsafe extern "system" fn(
+        *mut IShellFolder,
+        HWND,
+        PCUITEMID_CHILD,
+        LPCWSTR,
+        SHGDNF,
+        *mut PITEMID_CHILD,
+    ) -> HRESULT,
 }
 pub type LPSHELLFOLDER = *mut IShellFolder;
+
+/// `IContextMenu` in the crate's `lpVtbl` shape. The island renders it as a bindgen C++ class
+/// with an opaque `vtable_`, which no translated call site can go through; only the slots with
+/// callers here are typed, the rest stay `usize` placeholders at their correct offsets.
+#[repr(C)]
+pub struct IContextMenu {
+    pub lpVtbl: *mut IContextMenuVtbl,
+}
+#[repr(C)]
+pub struct IContextMenuVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IContextMenu) -> ULONG,
+    pub QueryContextMenu: unsafe extern "system" fn(
+        *mut IContextMenu,
+        HMENU,
+        UINT,
+        UINT,
+        UINT,
+        UINT,
+    ) -> HRESULT,
+    pub InvokeCommand: unsafe extern "system" fn(*mut IContextMenu, *mut c_void) -> HRESULT,
+    pub GetCommandString: usize,
+}
 
 #[repr(C)]
 pub struct IShellFolder2 {
@@ -487,8 +518,8 @@ pub struct IEnumIDListVtbl {
     pub Release: unsafe extern "system" fn(*mut IEnumIDList) -> ULONG,
     pub Next:
         unsafe extern "system" fn(*mut IEnumIDList, ULONG, *mut LPITEMIDLIST, *mut ULONG) -> HRESULT,
-    pub Skip: usize,
-    pub Reset: usize,
+    pub Skip: unsafe extern "system" fn(*mut IEnumIDList, ULONG) -> HRESULT,
+    pub Reset: unsafe extern "system" fn(*mut IEnumIDList) -> HRESULT,
     pub Clone: usize,
 }
 
