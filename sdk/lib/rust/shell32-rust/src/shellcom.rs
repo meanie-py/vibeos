@@ -375,6 +375,11 @@ pub struct IUnknownVtbl {
     pub Release: unsafe extern "system" fn(*mut IUnknown) -> ULONG,
 }
 
+// NOT here: `IShellExtInit`. Five already-landed files (new_menu, dialogs/drvdefext,
+// recycle_bin, shell_link, propsheet) carry their own file-local copy — see this module's
+// header on Wave 0-3 keeping theirs — so adding a sixth to this glob-imported module makes
+// the name E0659-ambiguous in every one of them. Retrofitting all five is a deliberate
+// change, not a side effect of translating one more TU; a new TU declares its own copy.
 #[repr(C)]
 pub struct IShellFolder {
     pub lpVtbl: *mut IShellFolderVtbl,

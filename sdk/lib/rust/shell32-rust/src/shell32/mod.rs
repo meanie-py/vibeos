@@ -34,8 +34,21 @@ pub mod iconcache;
 // header inlines, so what is left per file is ordinary integration work rather than a missing
 // foundation. Counts measured with all six wired, after the substrate landed:
 //
-//     shlexec.rs   349     shlfileop.rs  227     iconcache.rs    0 <- flipped
+//     shlexec.rs   162     shlfileop.rs  227     iconcache.rs    0 <- flipped
 //     brfolder.rs    0 <- flipped     shlfolder.rs    0 <- flipped     shldataobject 0 <- flipped
+//
+// shlexec went 349 -> 162 on 2026-07-31, and its recorded blocker was WRONG: it has ZERO
+// `CStringW::Format` calls, so it never needed the printf-variadic decision at all (that is
+// shlfileop's, 7 sites). What it needed was the plain string type — `crate::atl::CStringW`,
+// LocalAlloc-backed, ported operation-by-operation from `sdk/lib/atl/cstringt.h` — plus the
+// `shlexec.cpp` name residue, all of it now landed and shared: the wine/unicode.h A/W aliases
+// (`strcpyW`/`strstrW`/`strrchrW`/`strncmpiW`/`isspaceW`), the CRT wide fns and
+// `HKEY_LOCAL_MACHINE` in `island_extra`, `SeeFlagsToCmicFlags` + `__SHCloneStrW{,toA}` in
+// `shellutils` (all three are HEADER inlines, so they reach no TU), a dozen shlwapi/shell32
+// externs in the prelude, and an `lpVtbl`-shaped `IShellExtInit` in `shellcom`.
+// What is LEFT is this file's own tail: ~103 numeric/pointer casts, 5 `Option<fn>` call sites
+// needing `.unwrap()`, 4 non-constant-in-constant, and a handful of `&ref`->raw conversions.
+// No shared substrate remains, so it blocks nothing else.
 //
 // brfolder went 244 -> 86 on 2026-07-31: every SUBSTRATE gap it had is now closed and landed
 // (14 more TreeView_* wrappers and `TV_ITEM` in the prelude, `crate::layout` for the whole of
@@ -46,11 +59,17 @@ pub mod iconcache;
 // and pointer casts — no shared substrate, so it blocks nothing else. `rustconv crate-repair`
 // declines the remainder by design (78 are `match`-pattern casts), so they are a hand pass.
 //
-// WARNING for whoever runs `crate-repair` on this crate: it deterministically rewrites the
-// SHARED `_countof!` macro from `u32` to `i32` to satisfy one call site here, then adds
-// compensating casts in three ALREADY-LANDED files. C's `sizeof(a)/sizeof(*a)` is unsigned;
-// revert all four and fix the local site instead. Reverting costs ZERO errors, which is the
-// proof it was pure blast radius.
+// WARNING for whoever runs `crate-repair` on this crate: **it edits shared MACRO DEFINITIONS
+// to satisfy errors reported at their EXPANSION sites, once per call site.** Seen twice, on two
+// different macros:
+//   * `_countof!` — rewritten `u32` -> `i32` plus compensating casts in three ALREADY-LANDED
+//     files. C's `sizeof(a)/sizeof(*a)` is unsigned.
+//   * `ARRAY_SIZE!` — stacked into
+//     `(((((((($a).len()) as u32) as usize) as u32) as usize) as u32) as usize) as u32`
+//     while repairing shlexec (2026-07-31).
+// Revert the macro every time and cast at the call site instead. The test that it was pure
+// blast radius: re-run `cargo check` after reverting — the error count does not move (it did
+// not, on either occasion).
 //
 // Read those against the pre-substrate numbers (shldataobject 22, iconcache 68, shlfolder 75,
 // shlfileop 227, brfolder 235, shlexec 415) and note that brfolder went UP, 235 -> 244: making
