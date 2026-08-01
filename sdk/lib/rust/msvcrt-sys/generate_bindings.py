@@ -108,6 +108,73 @@ ALLOWLIST_TYPES = [
     "CPINFO",
     "BYTE",
     "LPCSTR",
+    # ── file.c (the stream layer) ────────────────────────────────────────
+    # FILE's layout IS part of the contract: file.c reads and writes _ptr/_cnt/
+    # _base/_flag/_file/_charbuf/_bufsiz/_tmpfname directly, and msvcrt.h's
+    # `_MSVCR_VER >= 140` block orders those fields DIFFERENTLY from the header the
+    # build reaches. Deriving it is the only safe option; the difftest's own
+    # layout guardian caught a hand-transcription of exactly this.
+    "_iobuf",
+    "FILE",  # the typedef NAME; allowlisting only the `_iobuf` tag emits the struct
+    # but not the alias, and every signature in file.c spells it `FILE`.
+    # `ioinfo` is deliberately absent: it is TU-local to file.c, so the
+    # translation carries it and the island must not.
+    # `struct _stat` / `struct _stati64` are DISTINCT structs (sys/stat.h:40,113), not
+    # aliases of the 32/64 variants below — file.c's _fstat/_stat convert into them.
+    # Rust keeps types and fns in separate namespaces, so these coexist with the
+    # `fn _stat` file.rs exports. Derived, because the caller reads this layout.
+    "_stat",
+    "_stati64",
+    "_stat32",
+    "_stat32i64",
+    "_stat64",
+    "_stat64i32",
+    "__utimbuf32",
+    "__utimbuf64",
+    "_RTL_CRITICAL_SECTION",
+    "_LARGE_INTEGER",
+    "_FILETIME",
+    "_SECURITY_ATTRIBUTES",
+    "_WIN32_FILE_ATTRIBUTE_DATA",
+    "_STARTUPINFOA",
+    "_IO_STATUS_BLOCK",
+    "_FILE_BASIC_INFORMATION",
+    "_FILE_STANDARD_INFORMATION",
+    "HANDLE",
+    "DWORD",
+    "LONG",
+    "ULONG",
+    "WCHAR",
+    # Two ENUMS, listed for their VARIANTS rather than their layout: file.c passes
+    # `FileBasicInformation`/`FileStandardInformation` to NtQueryInformationFile and
+    # `GetFileExInfoStandard` to GetFileAttributesExW. An enum variant is not a `var`,
+    # so allowlisting the constant name does nothing -- the TYPE has to come in for the
+    # variants to exist at all. Left out, each becomes an undefined name (loud) or, if
+    # someone "fixes" it with a literal, a silently wrong information class.
+    "_FILE_INFORMATION_CLASS",
+    "_GET_FILEEX_INFO_LEVELS",
+    # The TYPEDEF NAMES for the structs above. Allowlisting the struct tag emits the
+    # `struct _SECURITY_ATTRIBUTES` but NOT the `typedef ... SECURITY_ATTRIBUTES` that
+    # every caller actually spells, so without these the tag is present and the name the
+    # code uses is still undefined. Cheap to add and impossible to get subtly wrong --
+    # bindgen writes `pub type X = _X;` from the header's own typedef.
+    "CRITICAL_SECTION",
+    "RTL_CRITICAL_SECTION",
+    "RTL_CRITICAL_SECTION_DEBUG",
+    "SECURITY_ATTRIBUTES",
+    "FILE_BASIC_INFORMATION",
+    "FILE_STANDARD_INFORMATION",
+    "WIN32_FILE_ATTRIBUTE_DATA",
+    "STARTUPINFOA",
+    "IO_STATUS_BLOCK",
+    "LARGE_INTEGER",
+    "FILETIME",
+    "PCHAR",
+    "fpos_t",
+    # msvcrt's own: the printf argument union and file.c's text/binary mode enum.
+    "_printf_arg",
+    "printf_arg",
+    "textmode",
 ]
 
 # The fields we actually touch, and therefore the fields we GUARD.
@@ -148,6 +215,32 @@ WRAPPER_SRC = """\
 #include <mbstring.h>
 #include "msvcrt.h"
 #include "winnls.h"
+/* file.c's own prologue. Derived, not guessed: `profile_derive dll/win32/msvcrt
+   --target msvcrt_static --usermode` mirrors each TU's REAL include closure, and
+   §9.108 says that if the .c compiles, that exact sequence is bindgen-able. The
+   stream layer needs FILE and ioinfo plus the whole open-flag, stream-flag and
+   stat-mode vocabulary, none of which the locale-scoped island above reaches.
+   (Spelling those families with globs here would end this comment early -- the
+   token is an asterisk followed by a slash.) */
+#include <fcntl.h>
+#include <io.h>
+#include <share.h>
+#include <stdio.h>
+#include <sys/locking.h>
+#include <sys/stat.h>
+#include <sys/utime.h>
+#include <direct.h>  /* _getdrive */
+#include <time.h>    /* _time64  */
+#include <wctype.h>  /* iswalpha */
+#include "wincon.h"
+#include "winbase.h"
+#include "winternl.h"
+/* file.c's lock numbering. `_STREAM_LOCKS` (28) and `_IOB_ENTRIES` (20) live here, and
+   mtdll.h is the header file.c itself takes them from. Deriving rather than copying
+   matters more than usual for `_IOB_ENTRIES`: it is 20 in crt/stdio.h and mtdll.h but
+   3 in ucrt/stdio.h, so a transcribed constant is right only until someone reads the
+   other header -- the same silent divergence `_IOMYBUF` is the worked example of. */
+#include "mtdll.h"
 """
 
 
@@ -204,8 +297,11 @@ def probe_cc(arch: str) -> str:
 # Windows types that are FIXED-WIDTH by the Windows ABI but which bindgen spells with a
 # HOST-dependent Rust alias. See pin_fixed_width() for why this is load-bearing.
 FIXED_WIDTH_PINS = {
-    "__msvcrt_ulong": ("u32", "corecrt.h: 32-bit on BOTH branches -- `unsigned int` under "
-                              "__LP64__, `unsigned long` (LLP64 => 32-bit) on Windows"),
+    "__msvcrt_ulong": (
+        "u32",
+        "corecrt.h: 32-bit on BOTH branches -- `unsigned int` under "
+        "__LP64__, `unsigned long` (LLP64 => 32-bit) on Windows",
+    ),
     "__msvcrt_long": ("i32", "corecrt.h: the signed twin, same reasoning"),
     "ULONG": ("u32", "Win32 ULONG is 32-bit (LLP64)"),
     "DWORD": ("u32", "Win32 DWORD is 32-bit (LLP64)"),
@@ -216,6 +312,22 @@ FIXED_WIDTH_PINS = {
     # would have read the same wrong bytes and agreed.
     "LONG": ("i32", "Win32 LONG is 32-bit (LLP64)"),
 }
+
+# NOT PINNABLE HERE: `size_t`. Worth recording, because it looks like it belongs above
+# and an entry for it is a silent no-op.
+#
+# bindgen maps size_t to `usize` by default, but only the COMPILER's size_t.
+# vcruntime.h:110 does `#undef size_t` and declares its own `typedef unsigned int` /
+# `unsigned __int64`, which bindgen canonicalises straight to a per-arch primitive and
+# then drops -- grep the generated island and `size_t` appears ZERO times, so there is
+# no `pub type size_t = ...` line for pin_fixed_width() to rewrite and allowlisting the
+# name does not resurrect one. The visible symptom is `calloc(c_uint, c_uint)` on i386
+# and `calloc(c_ulonglong, c_ulonglong)` on amd64.
+#
+# Consequence for callers: a size argument cannot be spelled with one fixed width. Cast
+# with `as _` at the call site and let inference take the callee's parameter type per
+# arch -- which is what `crate-repair` means by "hand-write the semantic alias, do not
+# bake either width" when it reports `truncating_numeric_cast/target_divergent`.
 
 
 def pin_fixed_width(src: str) -> str:
@@ -247,13 +359,12 @@ def pin_fixed_width(src: str) -> str:
     the type the C actually guarantees, spelled in a way that survives the host.
     """
     for name, (rust_ty, why) in FIXED_WIDTH_PINS.items():
-        pat = re.compile(
-            rf"^pub type {re.escape(name)} = ::core::ffi::c_[a-z]+;$", re.MULTILINE
-        )
+        pat = re.compile(rf"^pub type {re.escape(name)} = ::core::ffi::c_[a-z]+;$", re.MULTILINE)
         src, n = pat.subn(
             f"// PINNED by generate_bindings.py: {why}.\n"
-            f"// bindgen spells this `c_ulong`/`c_long`, which is 64-bit on the linux host\n"
-            f"// that builds msvcrt-difftest -- see pin_fixed_width().\n"
+            f"// bindgen's own spelling is HOST-dependent here, and msvcrt-sys is also\n"
+            f"// compiled for the linux host that builds msvcrt-difftest -- see\n"
+            f"// pin_fixed_width().\n"
             f"pub type {name} = {rust_ty};",
             src,
         )
@@ -272,7 +383,51 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "--no-doc-comments",
         # Keep the surface tight: we want the STATE structs, not all of win32.
         *sum((["--allowlist-type", t] for t in ALLOWLIST_TYPES), []),
-        "--allowlist-function", "(get_locinfo|get_mbcinfo|msvcrt_get_thread_data)",
+        # Macros whose body is a CAST are invisible to bindgen's normal constant path:
+        # `#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)` and the `STD_*_HANDLE` family are
+        # parsed as expressions it will not evaluate, so they silently do not appear.
+        # The fallback asks clang for the value instead of guessing it here -- same
+        # derived-not-transcribed rule as the offsets below, and the reason `_IOMYBUF`
+        # is the worked example: a hand-written `-1` is right until the day it is not.
+        "--clang-macro-fallback",
+        "--allowlist-function",
+        # The CRT state accessors, plus the Win32/NT surface file.c calls straight
+        # through to. Named explicitly rather than by prefix: the point of this island
+        # is a TIGHT surface, and a signature that arrives by accident is one nobody
+        # checked. Getting one wrong is not a build error -- it links and corrupts --
+        # which is exactly why these are DERIVED from the real headers and never
+        # hand-written as `extern` blocks in the consuming crate.
+        "(get_locinfo|get_mbcinfo|msvcrt_get_thread_data"
+        # winbase.h / fileapi.h: the file API
+        "|CreateFileW|ReadFile|WriteFile|CloseHandle|DeleteFileW|MoveFileExW"
+        "|SetFilePointer|SetFilePointerEx|SetEndOfFile|FlushFileBuffers"
+        "|GetFileType|GetFileSizeEx|GetFileAttributesA|GetFileAttributesW"
+        "|GetFileAttributesExW|SetFileAttributesW|SetFileTime|GetTempFileNameW"
+        "|LockFile|UnlockFile|CreatePipe|DuplicateHandle"
+        # handles, process, console
+        # GetLastError is here rather than hand-written in the consuming crate because
+        # it was hand-written once and got the convention wrong: `extern "C"` for a
+        # WINAPI function links clean on amd64/arm64 and fails only on i386, as
+        # `_GetLastError` with no `@0`. Derived from winbase.h it is `extern "stdcall"`
+        # on i386 and `extern "C"` elsewhere, with no judgement call left to make.
+        "|GetLastError"
+        "|GetStdHandle|SetStdHandle|GetCurrentProcess|GetCurrentProcessId"
+        "|GetStartupInfoA|WriteConsoleW|VerifyConsoleIoHandle|Sleep"
+        # synchronisation
+        "|InitializeCriticalSection|InitializeCriticalSectionEx|DeleteCriticalSection"
+        "|EnterCriticalSection|LeaveCriticalSection|TryEnterCriticalSection"
+        "|InterlockedCompareExchange|InterlockedCompareExchangePointer"
+        # winternl.h / ntdll: the two NT calls file.c makes directly
+        "|NtQueryInformationFile|RtlTimeToSecondsSince1970"
+        # CRT siblings file.c calls that are still C. The ones already Rust in
+        # msvcrt-crt-rust are IMPORTED there instead, so rustc checks them against their
+        # definition; these have no Rust definition to check against, which is exactly
+        # why their signatures come from the headers rather than from a hand-written
+        # `extern` block. `_time64` and `_getdrive` are the reason time.h and direct.h
+        # joined the wrapper above.
+        "|calloc|iswalpha|_wcsdup|_wgetenv|_time64|_getdrive|_get_fmode"
+        "|msvcrt_wstrdupa|__doserrno"
+        ")",
         # Constants the translations reference by NAME. A constant missing from the island
         # does not fail loudly -- it becomes a catch-all `match` arm or an invented literal
         # (field manual 9.112/9.113), which is why these are allowlisted rather than left
@@ -286,8 +441,30 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # errno.h / limits.h / stdio.h / wchar.h
         "|EINVAL|ERANGE|EILSEQ|EOF|WEOF|INT_MAX|STRUNCATE|_TRUNCATE|_NLSCMPERROR"
         # winnls.h: the NLS calls the CRT delegates collation and case mapping to
-        "|CP_ACP|CP_UTF8|CSTR_EQUAL|NORM_IGNORECASE|MB_ERR_INVALID_CHARS"
+        "|CP_ACP|CP_UTF8|CSTR_EQUAL|NORM_IGNORECASE|MB_[A-Z_]+"
         "|LCMAP_[A-Z]+|LOCALE_[A-Z_]+|C1_[A-Z]+|C3_[A-Z]+|CT_CTYPE[0-9]"
+        # ── file.c ──────────────────────────────────────────────────────────
+        # fcntl.h / share.h / sys/locking.h / sys/stat.h / stdio.h. `_IOMYBUF` is
+        # the worked example of why these are DERIVED and not transcribed: it is
+        # 0x0040 in msvcrt.h's _MSVCR_VER>=140 block and 0x0008 in the header the
+        # build actually reaches, and getting it wrong is silent.
+        "|_O_[A-Z0-9_]+|_SH_[A-Z]+|_LK_[A-Z]+|_S_I[A-Z]+"
+        "|_IOREAD|_IOWRT|_IOEOF|_IOERR|_IOMYBUF|_IORW|_IOSTRG|_IOFBF|_IOLBF|_IONBF"
+        "|BUFSIZ|_IOB_ENTRIES|FILENAME_MAX|TMP_MAX|TMP_MAX_S|L_tmpnam|L_tmpnam_s"
+        "|SEEK_SET|SEEK_CUR|SEEK_END|_NSTREAM_"
+        "|EBADF|EMFILE|ENOENT|EACCES|EEXIST|ENOSPC|EDEADLOCK|ENOMEM|EIO|EPERM"
+        # winbase.h / winnt.h: the Win32 file API file.c calls straight through to.
+        "|INVALID_HANDLE_VALUE|INVALID_FILE_ATTRIBUTES|INVALID_SET_FILE_POINTER"
+        "|GENERIC_READ|GENERIC_WRITE|CREATE_[A-Z]+|OPEN_[A-Z]+|TRUNCATE_EXISTING"
+        "|FILE_SHARE_[A-Z]+|FILE_ATTRIBUTE_[A-Z]+|FILE_FLAG_[A-Z_]+|FILE_TYPE_[A-Z]+"
+        "|FILE_BEGIN|FILE_CURRENT|FILE_END|FILE_[A-Z_]*INFORMATION"
+        "|STD_[A-Z]+_HANDLE|MAX_PATH|MOVEFILE_[A-Z_]+|DUPLICATE_[A-Z_]+"
+        "|ERROR_[A-Z0-9_]+|NO_ERROR"
+        "|RTL_CRITICAL_SECTION_FLAG_[A-Z_]+"
+        # mtdll.h's lock numbering (`_IOB_ENTRIES` is above, with the errno block).
+        # setypes.h's DELETE is the access right file.c asks for when opening a file it
+        # intends to unlink; windef.h's TRUE/FALSE are BOOL, not Rust bools.
+        "|_STREAM_LOCKS|_TOTAL_LOCKS|_LAST_STREAM_LOCK|DELETE|TRUE|FALSE"
         ")",
         "--",
         "-ferror-limit=0",
@@ -314,9 +491,7 @@ def c_offsets(arch: str) -> dict[tuple[str, str], int]:
     for i, (tag, field) in enumerate(GUARDED):
         # Emit each offset as the size of a distinctively-named array type: the value
         # survives into the LLVM IR / asm without needing to link or run anything.
-        lines.append(
-            f"char __vibeos_off_{i}[offsetof(struct {tag}, {field}) + 1];"
-        )
+        lines.append(f"char __vibeos_off_{i}[offsetof(struct {tag}, {field}) + 1];")
     src = "\n".join(lines) + "\n"
 
     with tempfile.TemporaryDirectory() as td:
@@ -324,11 +499,18 @@ def c_offsets(arch: str) -> dict[tuple[str, str], int]:
         c.write_text(src)
         res = subprocess.run(
             [
-                probe_cc(arch), "-S", "-emit-llvm", "-o", "-", str(c),
-                "-ferror-limit=0", "-Wno-everything",
+                probe_cc(arch),
+                "-S",
+                "-emit-llvm",
+                "-o",
+                "-",
+                str(c),
+                "-ferror-limit=0",
+                "-Wno-everything",
                 *probe_flags(arch),
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if res.returncode != 0:
             sys.exit(f"FATAL: offset probe failed for {arch}:\n{res.stderr[-4000:]}")
@@ -419,11 +601,15 @@ def c_guardian(per_arch: dict[str, dict[tuple[str, str], int]]) -> str:
         "/* C11 _Static_assert; clang has it in all modes we build. */",
         "#define VIBEOS_ASSERT_OFF(tag, field, off) \\",
         "    _Static_assert(offsetof(struct tag, field) == (off), \\",
-        '        \"msvcrt-sys layout drift: \" #tag \".\" #field \" moved -- rerun \" \\',
-        '        \"sdk/lib/rust/msvcrt-sys/generate_bindings.py\")',
+        '        "msvcrt-sys layout drift: " #tag "." #field " moved -- rerun " \\',
+        '        "sdk/lib/rust/msvcrt-sys/generate_bindings.py")',
         "",
     ]
-    guards = {"i386": "defined(_M_IX86)", "amd64": "defined(_M_AMD64)", "arm64": "defined(_M_ARM64)"}
+    guards = {
+        "i386": "defined(_M_IX86)",
+        "amd64": "defined(_M_AMD64)",
+        "arm64": "defined(_M_ARM64)",
+    }
     for arch, offs in per_arch.items():
         out.append(f"#if {guards[arch]}")
         for (tag, field), off in offs.items():
@@ -497,15 +683,16 @@ def main() -> int:
             bindings = BINDGEN_HEADER.replace("{arch}", arch) + run_bindgen(arch, wrapper)
             offs = c_offsets(arch)
             per_arch[arch] = offs
-            print(f"  {len(offs)} guarded offsets, e.g. "
-                  f"threadlocinfo.pcumap @ {offs[('threadlocaleinfostruct','pcumap')]}")
+            print(
+                f"  {len(offs)} guarded offsets, e.g. "
+                f"threadlocinfo.pcumap @ {offs[('threadlocaleinfostruct', 'pcumap')]}"
+            )
             pending.append((SRC_DIR / f"bindgen_{arch}.rs", bindings))
             pending.append((SRC_DIR / f"layout_{arch}.rs", rust_layout(arch, offs)))
 
         pending.append((REPO / "dll/win32/msvcrt/rust_layout_assert.c", c_guardian(per_arch)))
 
-    stale = [p for p, content in pending
-             if not p.exists() or p.read_text() != content]
+    stale = [p for p, content in pending if not p.exists() or p.read_text() != content]
     if args.check:
         if stale:
             print("\nSTALE (regenerate with generate_bindings.py):", file=sys.stderr)

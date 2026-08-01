@@ -49,6 +49,8 @@ pub mod atl;
 
 // The C++ header inlines from shellutils.h / utils.h. They live in HEADERS, so no translated
 // TU carries their bodies, yet several TUs call them.
+/// `ui/layout.h`'s resizable-dialog inlines — see that module's header for why they are here.
+pub mod layout;
 pub mod shellutils;
 
 // Wave 4: canonical shared shell/COM types (PIDL on-disk format, STRRET, GUID family, COM

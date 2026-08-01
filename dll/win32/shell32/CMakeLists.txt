@@ -18,7 +18,7 @@ if(DBG)
 endif()
 
 list(APPEND SOURCE
-    brfolder.cpp
+    # brfolder.cpp — replaced by Rust (shell32-rust/src/shell32/brfolder.rs); cohab via libshell32_rust.a
     # CActiveDesktop.cpp — replaced by Rust (shell32-rust/src/active_desktop.rs).
     CActiveDesktop.h
     CIDLDataObj.cpp
@@ -44,7 +44,7 @@ list(APPEND SOURCE
     CEnumIDListBase.cpp
     CExtractIcon.cpp
     # folders.cpp — replaced by Rust (shell32-rust/src/folders.rs); cohab via libshell32_rust.a
-    iconcache.cpp
+    # iconcache.cpp — replaced by Rust (shell32-rust/src/shell32/iconcache.rs); cohab via libshell32_rust.a
     # propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches
     #   CStubWindow32 via CStubWindow32_*_RustBridge in utils.cpp
     shell32.cpp

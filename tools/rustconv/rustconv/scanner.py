@@ -157,7 +157,21 @@ RE_UNPARSEABLE_CC = re.compile(r"\b(?:" + _CC_ALT + r")\b")
 # for every one of these shapes (it is documented lossy on own-line macros), and the
 # authoritative convention is re-derived from the RAW C text by abi_enforce._derive_convention,
 # which never sees this rewrite.
-RE_CC_AFTER_PTR = re.compile(r"(\*\s*)\b(?:" + _CC_ALT + r")\b")
+#
+# The alternation here is EVERY convention keyword, including the _BENIGN_VERBATIM ones
+# that rule 2 deliberately leaves alone. That exemption exists because those aliases
+# recover cleanly ELSEWHERE and existing scans match them as written — but "elsewhere" is
+# the whole of its justification, and this position is the exception the block above
+# documents: unparseable "in any spelling", no function_definition node at all. Nothing
+# can depend on seeing a token in a function the scanner never produced.
+#
+# Leaving CDECL out of this cost msvcrt 15 functions. `FILE * CDECL fopen(...)` is Wine's
+# dominant spelling, so file.c's fopen/freopen/tmpfile/_fdopen/__iob_func and ten more were
+# absent from the translation plan — silently, because a dropped function looks exactly
+# like a function that was never there. That is worse than a partial file: file.c's
+# entry points share one fd table, so a C `fopen` beside a Rust `fclose` is split state.
+_CC_ALT_ANY = "|".join(re.escape(k) for k in sorted(KW_TO_CONV, key=len, reverse=True))
+RE_CC_AFTER_PTR = re.compile(r"(\*\s*)\b(?:" + _CC_ALT_ANY + r")\b")
 
 
 def _normalize_callbacks(text: str) -> str:

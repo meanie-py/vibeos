@@ -268,6 +268,23 @@ says `#define _iob __iob_func()` / `#define stdin (&_iob[0])`, and msvcrt.spec e
 documented in, and confirm the name is in the `.spec`** — a one-grep check that costs seconds
 against a link failure that costs a full build.
 
+**Sibling failure: an `extern "C"` block holding a WINAPI import — i386-only, and it looks
+fine on two arches out of three.** `WINAPI` is `__stdcall` on i386 and cdecl everywhere else,
+which is *exactly* what `extern "system"` means; `extern "C"` is therefore right on amd64/arm64
+and wrong only on i386, where the reference decorates as `_GetLastError` instead of
+`_GetLastError@0` and nothing defines it. msvcrt's file.c port hit this on 39 call sites through
+one hand-written block in `prelude.rs` — three lines below a comment naming this the project's
+#1 historical i386 crash cause, and in a crate whose `msvcrt-sys` allowlist comment already said
+these signatures are "DERIVED from the real headers and never hand-written as `extern` blocks in
+the consuming crate." **Symptom:** i386 `undefined symbol: _<Name>` with no `@N`, while the other
+two arches link clean. **Cause:** a hand-written `extern "C"` for a `WINAPI`/`NTAPI` function.
+**Fix:** put it in the bindgen island instead of a hand-written block — bindgen reads the header's
+convention and emits `extern "stdcall"` on i386, `extern "C"` elsewhere, so the arch split stops
+being a judgement call. If a hand-written block is unavoidable, it must be `extern "system"`,
+never `extern "C"`. Audit is one pass: any `extern "C"` block naming a Win32/NT function.
+Note this fails LOUDLY at link, unlike the two siblings above — an i386-only *build* break is the
+good outcome here; the same mistake on a function pointer or callback would have run.
+
 ### Argument COUNT mismatches — the one clashing-extern bucket that is a real bug
 Same family as the widths above, one position further out: the decl and the definition
 disagree on how many parameters there are. `clashing_extern_declarations` carries ~1,458
@@ -485,6 +502,33 @@ was ntoskrnl-only, so a whole driver fleet carried live bombs. The five shapes:
 `cdrom.sys` carried **100** ud2 sites, all on paths boot never hits — which is exactly why
 master was green.
 
+**Not every unexpected `ud2` is this class — `scan_ud2` reports all of them under it. Read the
+instruction BEFORE the trap first; it names the cause in one look.**
+
+| Preceding instruction | Cause | Fix |
+|---|---|---|
+| `call …panic_bounds_check` | array index the optimiser can't prove in range (see the indexing-panic entry) | pointer arithmetic at the unprovable site only |
+| `call` to an ordinary function, no panic symbol | LLVM folded a UB path to `unreachable` after inlining | below |
+| none of the above | a genuine CC/sig-mismatch fold — the five shapes above | fix the ABI disagreement |
+
+The middle row is the subtle one, and msvcrt's file.c hit **both** it and the bounds-check row in
+the same build. Shape: a callee that can return NULL, inlined into a caller that dereferences the
+result unchecked. LLVM sees NULL reach a deref, concludes UB, and emits `unreachable` — which
+lands as `call <whatever ran last>` then `ud2`, *one per calling function*, so the trap appears
+in callers that contain no such code. `msvcrt_get_file` returns NULL on `calloc` failure and
+`_fcloseall`/`_rmtmp`/`msvcrt_flush_all_buffers` all do `file->_flag` straight away — **which is
+precisely what the C does.** The tell that you are in this row rather than the CC row is that
+the ud2 count tracks the number of *callers*, and the C source has the same missing check.
+
+**Fix by restoring the C's codegen shape — `#[inline(never)]` on the callee — not by adding the
+null check.** Adding it is a behaviour change on the path the C would fault on, i.e. a
+divergence in a differential port; out-of-line, the caller gets an opaque pointer, emits the
+ordinary load, and faults exactly where C faults. Confirm the latent path is unreachable anyway
+before you accept it (in msvcrt's case every caller walks `3..MSVCRT_stream_idx`, and those slots
+are allocated at stream-creation time, so the `calloc` arm is never reached with such an index) —
+and if it *is* reachable, you have found a real bug in the C and should say so rather than
+silence the trap.
+
 ### Making a no-op opaque UNCLOAKS everything hiding behind the fold
 A C debug macro that expands to nothing, translated as a no-op **`fn`**, is trivially inlinable
 — LLVM folds it away *with every argument expression*, and with them any relocation reachable
@@ -669,6 +713,22 @@ Three faces, all seen live:
   `netapi32` `MIB_IPADDRTABLE.table`. Deterministic on the flipping tree but the gate
   classifies it `NET_FLAKE`; the differential tell is that **only** the flipping worktree fails
   net. The inconsistency is intra-file — sibling functions already used pointer arithmetic.
+- **A CORRECTLY-sized array whose guard is a runtime variable — caught at build time by
+  `scan_ud2`, not at runtime.** Same panic, different reason: nothing is over-allocated and no
+  index is ever out of range, but the *guard* the C relies on is a `static mut` the optimiser
+  cannot use, so the bounds check survives and its panic arm ends in `ud2`. msvcrt's
+  `msvcrt_get_file` guards `i >= MSVCRT_max_streams` before `MSVCRT_fstream[i/BLOCK]`;
+  `MSVCRT_max_streams` is settable at runtime (`_setmaxstdio`, which does cap it at
+  `MSVCRT_MAX_FILES`), so the invariant holds but only globally. Four exports inherited the trap
+  by inlining — `_fcloseall`, `_fflush_nolock`, `_rmtmp`, `msvcrt_free_io` — the last of which is
+  on the process-exit path of every program linking the DLL. **The tell is the disassembly:
+  `call panic_bounds_check` immediately before the `ud2`**, which distinguishes it from the
+  §9.99 CC/sig-mismatch fold that `scan_ud2` reports it under. The sibling that does NOT need
+  fixing is the diagnostic: `get_ioinfo_nolock` indexes an identically-shaped array and emits no
+  check, because it guards against the *constant* `MSVCRT_MAX_FILES`. **Provability, not safety,
+  is what differs — so fix only the sites whose guard is a variable**, with the same pointer
+  arithmetic (`addr_of_mut!(FOO).cast::<Elem>().add(i)` — the `.cast()` is what stops the stride
+  being the whole array).
 - **SILENT thread hang, message on debugcon not serial:** `IoCheckEaBufferValidity` panicked;
   the kernel panic handler writes `PANIC:<file>:<line>` to **debugcon port 0xe9**, then
   `loop {}`. QEMU's timer still preempts the spinning thread, so the box stays alive and it
@@ -803,6 +863,31 @@ Two traps specific to this move:
   (~73 on shell32). Blocklist the interfaces with `EXTRA_BL_ITEMS` *and* re-export them with
   `EXTRA_RAW_LINES`: blocklisting removes the definition, not the references, so without the
   re-export the island fails E0412 on its own output.
+- **A duplicate layout in your vtable module is a real cost, but check WHO ELSE COMPILES THAT
+  FILE before collapsing it.** shell32's `shellcom.rs` hand-writes `SHITEMID`/`ITEMIDLIST`
+  beside the island's `_ITEMIDLIST`; two structurally identical `#[repr(C, packed)]`
+  declarations are still two different Rust types, so every PIDL crossing from an island extern
+  into a shellcom vtable signature fails `expected *const shellcom::ITEMIDLIST, found *const
+  _ITEMIDLIST`. The one-line `pub use crate::island::{ITEMIDLIST, SHITEMID};` looks free — it
+  cost zero errors in `shell32-rust` — and it is **wrong**: `shellcom.rs` is `#[path]`-included
+  into `menuband-rust` (`lib.rs:38`) *specifically* so that crate gets a layout-identical copy
+  without depending on the shell32-rust staticlib, and it has no island. `E0432: could not find
+  island in the crate root`, surfaced only by the arm64 leg of a full gate, ~15 minutes after a
+  clean three-arch `cargo check -p shell32-rust`.
+  **Before deleting or re-pointing anything in a shared substrate file, `grep -rn "<file>.rs"
+  --include=*.rs` for `#[path]` includes.** A path-included module has a second dependency
+  surface that its own crate's `cargo check` cannot see, and `-p <crate>` is not the whole story
+  — the gate builds every crate. Keep the duplicate, note *why* it is duplicated at the
+  declaration, and `.cast()` at the crossings (5 sites in `brfolder`).
+  The same measure-first rule applies for its own sake: shellcom's `STRRET` stays hand-written
+  because the island's is a bindgen anon-union (`__bindgen_anon_1` + `__BindgenUnionField`) and
+  collapsing to it would rewrite `.u.pOleStr` across four landed files.
+- **`<stem>_extra.rs` is residue, not a spare copy — delete an entry the day bindgen learns to
+  emit it.** `island_extra.rs` kept a hand-written `lstrcpynW` after all three arch islands
+  began binding it (identically, `stdcall` vs the residue's `system`). A duplicate in the
+  extra file does NOT shadow the generated one — `island.rs` globs both, so *every* use goes
+  `E0659: ambiguous`, including a fully-qualified `crate::island::lstrcpynW`. The tell is an
+  ambiguity error naming `types_arch` and `types_extra` as the two candidates.
 - **A `-x c++` cell emits broken aliases for class-template member typedefs** — bindgen
   flattens them to non-generic aliases over unbound parameters (`pub type
   ATL_CComEnum__CComEnumBase = u8<Base, T, Copy>;`). Blocklist by the **C++ qualified name**,
@@ -871,6 +956,17 @@ five of each, and the mangled four had live callers in three other TUs. Intersec
 against every *other* object's UNDEFINED symbols before counting the work — shlfolder.cpp
 defines 83 mangled symbols but only 19 have a live caller; the rest are COMDAT template and
 inline emissions each TU already makes for itself.
+**A declaration can live in a `.cpp`, not only a header** — so grepping headers under-counts the
+work. `brfolder.cpp` declares `INT WINAPI Shell_GetCachedImageIndexW(...)` at its own file
+scope rather than including one, and that lone bare declaration was the only thing left holding
+a mangled reference after iconcache.cpp flipped. Conversely, check whether the header you *do*
+find already wraps itself: `wine/shell32_main.h` opens with `#ifdef __cplusplus extern "C" {`,
+so all four of iconcache's shell32-internal exports needed no edit at all.
+**Exported DATA needs `#[no_mangle]` as much as exported functions do.** A flipped TU's
+`pub static mut` is Rust-private without it, and the link fails with
+`_ShellLargeIconSize: i386 cdecl — missing symbol`, which reads like an ABI problem and is not
+one. `extern INT ShellLargeIconSize;` in a header is the tell: anything the header publishes is
+part of the flip surface.
 
 **`EXTERN_C` cannot carry an OVERLOAD SET — one name, one symbol.** Symptom: a TU is otherwise
 ready to flip but exports two functions of the same name. Fix: rename one on both sides. Make
@@ -917,6 +1013,28 @@ C++ hop and nothing looked unresolved — then the flip took the only definition
 failed on `_SHELL_CreateVariantBuffer@8`. Port the inline rather than re-homing the wrapper in
 another `.cpp`, or the next flip repeats it. `static inline` at namespace scope has INTERNAL
 linkage, so a Rust `#[no_mangle]` of the same name cannot collide with the C++ TUs' own copies.
+And when you port one, do **not** `#[no_mangle]` it unless a caller genuinely needs the symbol:
+`SHELL_OsIsUnicode` is internal-linkage in every C TU that uses it, so exporting the Rust copy
+would invent a symbol the C side never had.
+
+**A function-local `static` with a constant initialiser is a hidden GLOBAL, and the translation
+drops it.** Symptom: a freshly translated TU references a name that exists nowhere in its
+output — iconcache.rs used `s_imgListIdx` in three places and defined it in none. Cause: C++
+lowers `static int s_imgListIdx = -1;` inside a function to a global with no guard variable
+(the guard appears only for a *dynamic* initialiser), and the translator kept the uses but not
+the storage. Fix: a module-level `static mut`, which is exactly equivalent — module-private, so
+widening the NAME's scope cannot collide with anything.
+
+**A bindgen anonymous UNION cannot be initialised through the island when C picks a POINTER
+arm.** Symptom: the translated static names fields (`Flags`, `CreatorBackTraceIndexHigh`,
+`SpareWORD`) that the island's struct does not have, because bindgen collapses the union into
+one opaque `__bindgen_anon_1`. Reaching for the right arm does not rescue it either: C's
+initialiser here is `{ (DWORD_PTR)(__FILE__ ": SHELL32_SicCS") }`, i.e. the `ULONG_PTR
+WineDebugString` member holding a *pointer*, and const-eval refuses to cast a pointer to an
+integer. Fix: mirror the struct locally with that one arm typed as the pointer it actually
+holds — same size and alignment, so the layout ntdll walks is unchanged. `ole32-rust`'s
+`ring::ifs` established this for `RTL_CRITICAL_SECTION_DEBUG`; iconcache.rs is the second user.
+Zeroing the union instead would compile and silently drop the debug string.
 
 **`extern "C"` is LINKAGE; `WINAPI` is the CALLING CONVENTION — a `_RustBridge` needs both read
 separately.** Symptom: i386 link fails on `_Name` while `llvm-nm` shows `_Name@12` defined.
@@ -1470,6 +1588,20 @@ N+1 as evidence that the fix for bug N was wrong.**
   string that looks live and aims at foreign memory. Eleven `Rtl*String` converters had it.
   Whenever C assigns through an out-pointer and *then* tests what it assigned, the store is
   part of the contract — keep the order.
+- **`if (CAS(...))` compared against the WRONG operand — an atomic publish that frees what it
+  just published.** C tests the compare-exchange result for truthiness: the call returns the
+  PREVIOUS value, so non-NULL means *another thread got there first and my block is the loser*.
+  msvcrt's `alloc_pioinfo_block` is the canonical shape —
+  `if (InterlockedCompareExchangePointer(&pioinfo[i], block, NULL)) { …; free(block); }`. The
+  translation rendered the condition as `!= block`, which reads plausibly ("did my value land?")
+  and is exactly backwards: **the winning path returns NULL**, `NULL != block` is true, and every
+  *successful* allocation frees the block it had just published into the global table. Every fd
+  block became a dangling pointer, critical sections included, and the boot wedged inside
+  `LdrLoadDll` at the first msvcrt load. **Rule: the result of a CAS is the OLD value — compare
+  it against the COMPARAND (or test it for NULL), never against the exchange operand.** The
+  inversion is invisible single-threaded, and `cargo check` cannot see it: both spellings are
+  well-typed pointer comparisons. Check every translated CAS against its C by asking which arm
+  is the *loser's*.
 - **A guard condition swapped for a different nearby variable** — logic inverted per boot mode.
 - **A NULL guard De Morgan'd the wrong way.** `MSVCRT_CHECK_PMT(start && str)` came back as
   `MSVCRT_CHECK_PMT!(start.is_null() || str.is_null())` — the *negation* of the C, so the guard
@@ -1515,6 +1647,40 @@ N+1 as evidence that the fix for bug N was wrong.**
 - **A hand-rolled `va_arg` walking `&last_fixed_param`** is amd64-only garbage.
 - **Kernel Rust emitting x87 (`fild`/`fistp`) for 64-bit atomics** → an imprecise 0xc0000092
   BSOD blamed on an innocent function.
+
+### C++ constructs Rust cannot spell — overloads, default args, and RAII locals
+Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ features with no
+Rust equivalent. Two are loud, one is silent, and the silent one is the reason to check for all
+three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
+
+- **Overloads collapse to whichever one the model translated.** C++ had two
+  `BrFolder_GetName`s — `(IShellFolder*, PCIDL, ...)` and `(BrFolder*, HTREEITEM, ...)`, the
+  second delegating to the first. Rust has no overloading, so only one survived, and the call
+  sites for the *other* one were left pointing at it — with a `.cast()` politely inserted on the
+  first argument, which is exactly what makes it look deliberate. Loud (`E0308`/`E0061`), but
+  read the C before "fixing" the call: the answer is to write the missing overload under a new
+  name, not to bend the arguments until they typecheck.
+- **A default argument is not carried to the call site.** `BrFolder_FindTreeItemOfAbsoluteItem(
+  BrFolder&, PCIDLIST_ABSOLUTE, HTREEITEM hItem = NULL)` called with two arguments in C++ needs
+  three in Rust. Loud (`E0061`), trivial to fix, easy to mis-fix by deleting the parameter.
+- **An RAII local becomes an UNINITIALISED binding, and runs NEITHER half. This one is silent.**
+  `COleInit OleInit;` — a `CCoInitBase<OleInitialize, OleUninitialize>` from `shellutils.h` —
+  came out as `let _ole_init: COleInit;`. That compiles: an unused, uninitialised Rust binding
+  is legal, is never constructed, and is **never dropped**. So `SHBrowseForFolderW` ran its
+  whole dialog with no `OleInitialize` and no `OleUninitialize`, against a C comment that says
+  in so many words "we do it anyway in case the caller forgot".
+
+  Two things conspire here. The guard is a class *template* in a header, so like any header
+  inline it lives in no TU and rustconv never sees a body — but unlike an inline it leaves no
+  unresolved name to trip over either, because bindgen renders it as an opaque
+  `pub type COleInit = u8;`. A declaration against that alias is well-formed. Nothing anywhere
+  in the pipeline is red.
+
+  **Grep every flipped `.cpp` for a bare `let <name>: <CppType>;` with no initialiser.** If the
+  C++ type has a constructor or destructor, that line is a dropped side effect. Port the guard
+  for real (`struct` + `impl Drop`) and construct it — `COleInit::new()` in
+  `shell32-rust/src/shellutils.rs` is the worked example, including the `prelude` re-export that
+  shadows the island's `u8` alias so the name still resolves to the real thing.
 
 ### Element count vs byte count — the recurring arithmetic bug
 - **`write_bytes(ptr, v, size_of::<T>())`**: the count is in **ELEMENTS**, so a typed pointer
@@ -3898,6 +4064,51 @@ attempts is not evidence the failure is real. Second, and this is the one that c
 **do not run `check`, `check-tooling`, `difftest`, or a build locally while your own lane is
 gating.** `./vibeos-cli host-status` before submitting, then leave the host alone. The lane whose
 gate you are starving is your own.
+
+**The third costume is the HOST's own network, and ruling out contention does not rule it in.**
+2026-07-31: `test_dns_resolve`, `test_tdi_datagram_roundtrip` and `test_usermode_winsock_roundtrip`
+failed 3/3 attempts on an idle host, on unmodified `master`, at normal boot durations. That is
+exactly the evidence the paragraph above says means *real regression* — contention was genuinely
+excluded — and the conclusion was still wrong: the developer's **VPN** was up, and disabling it
+turned the suite green with no code change. Do not stop at "not contention"; the host is a third
+suspect, and one the guest cannot see.
+
+**Read the PASS/FAIL SET, not the timings — it names the culprit directly.** Our slirp
+mini-internet has two kinds of endpoint, and the failures partitioned perfectly along that line:
+
+- **Fails:** every test that reaches **`10.0.2.3:53`**, slirp's DNS forwarder, which proxies to
+  *the host's resolver* — `test_dns_resolve` (kernel A record), `test_tdi_datagram_roundtrip`
+  (TDI_SEND_DATAGRAM of a real DNS query), `test_usermode_winsock_roundtrip` (nettest's UDP leg
+  is also a DNS query — `nettest.c`, `DNS_IP`/`DNS_PORT`).
+- **Passes:** everything that stays inside the machine — the guestfwd `-cmd:cat` echo at
+  `10.0.2.100:9999` and the hostfwd loopback ports. `test_tdi_selftest_roundtrip`, the registered
+  flake and the one you would expect to break first, passed.
+
+A kernel-side TCP/UDP/MDL regression does not respect that boundary; a rewritten host resolver
+does, precisely. So: **if every failure needs the host's DNS and every in-guest endpoint is
+green, suspect the host's network configuration — VPN, split DNS, a corporate resolver — before
+you suspect the OS.** The DNS dependency is documented in `test_dns_resolve`'s own docstring
+("slirp forwards 10.0.2.3 to the host's DNS"); it is the only external dependency in the suite,
+which is what makes the partition so clean. Cost of missing it: a 19-hour halted merge train and
+a regression handed to the wrong lane.
+
+**A red base is an alibi only for the failures it EXPLAINS — compare the STAGES, not the
+verdicts.** 2026-07-31: the queue sat undrained for 19 hours behind
+`TRAIN HALTED — origin/master itself fails the gate (NET_FLAKE) ... No submission was rejected`.
+That reads like the base check working, and it was half working. The batch had failed
+`LINT_FAIL` while the base-alone control failed `NET_FLAKE` — two independent classes, and a
+starved net suite says nothing about whether a lane added lint findings. The conductor collapsed
+each gate to one `classification`, so "base red" became a blanket alibi and three real
+`verify_signatures` regressions (`KiThreadStartup`, `NtSetLdtEntries`, `ObpSetHandleAttributes`)
+went unattributed while every innocent lane queued behind them. The evidence was already on disk:
+both `summary.json`s carry per-stage results, and the base **passed all three `lint:*` stages**.
+`queue.py` now keeps that map (`GateVerdict.stages`) and rejects a lone submission for the
+DETERMINISTIC stages the base ran and passed, while still halting the train — nothing can land on
+a red base, but a doomed lane no longer blocks the queue with its defect unreported. Two guards
+matter as much as the rule: a stage the base did not RUN proves nothing (an early-halting base
+gate must not convict by omission), and smoke stages are excluded because they are exactly the
+timing-sensitive ones this section is about. Generalise it: **when a control experiment fails,
+check that it failed the same WAY before you let it absolve anything.**
 
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 

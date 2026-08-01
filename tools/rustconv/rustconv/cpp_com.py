@@ -5447,11 +5447,18 @@ def discover_widl_header(
             f"DECLARE_INTERFACE_({interface},",
             f"DECLARE_INTERFACE_ ({interface},",
         )
-        roots = [
+        # WIDL-generated roots first, then the checked-in ones. The generated roots exist only
+        # after a build of THIS worktree — never resolve them from a sibling, which would check
+        # this tree's Rust against another lane's headers at another commit (AGENTS.md
+        # "Fleet isolation applies to READS too").
+        generated_roots = [
             repo_root / f"build-{arch}" / "sdk" / "include" / "psdk",
             repo_root / f"build-{arch}-cross" / "sdk" / "include" / "psdk",
             # reactos-private IDLs (e.g. shobjidl_undoc.idl) generate here.
             repo_root / f"build-{arch}" / "sdk" / "include" / "reactos",
+        ]
+        roots = [
+            *generated_roots,
             repo_root / "sdk" / "include" / "psdk",
             repo_root / "sdk" / "include" / "reactos",
         ]
@@ -5469,6 +5476,16 @@ def discover_widl_header(
             raise CppComError(
                 f"{interface}: flattened vtable is ambiguous across generated headers: "
                 + ", ".join(str(path) for path in hits)
+            )
+        # Most interfaces are declared ONLY in a WIDL-generated header, so an unprovisioned
+        # worktree fails here for a reason that has nothing to do with the caller's change.
+        # Say which of the two it is: a missing build dir names its own fix, and a genuinely
+        # undeclared interface stays a hard error rather than an inferred slot order.
+        if not any(root.is_dir() for root in generated_roots):
+            raise CppComError(
+                f"{interface}: no generated SDK headers for {arch} — this worktree has no "
+                f"build-{arch}, and the checked-in headers do not declare it. "
+                f"fix: ./vibeos-cli build --arch {arch}"
             )
         raise CppComError(
             f"{interface}: no flattened vtable definition found in compiler-facing SDK headers "

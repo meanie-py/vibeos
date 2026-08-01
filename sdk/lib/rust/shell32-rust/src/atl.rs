@@ -222,6 +222,28 @@ impl<T, A: CAllocator> CHeapPtr<T, A> {
     pub fn as_ptr(&self) -> *mut T {
         self.m_pData
     }
+
+    /// `CHeapPtrBase::operator&()` — `T**` for an out-parameter. Same debug-only ATL assert as
+    /// `CComPtr::GetAddressOf`, and the same reason it is not a panic here.
+    pub fn put(&mut self) -> *mut *mut T {
+        core::ptr::addr_of_mut!(self.m_pData)
+    }
+
+    /// The translation emits all three spellings of ATL's two accessors; these are `as_ptr`
+    /// and `put` under the names `CComPtr` uses, so a call site reads the same either way.
+    pub fn Get(&self) -> *mut T {
+        self.m_pData
+    }
+    pub fn GetAddressOf(&mut self) -> *mut *mut T {
+        core::ptr::addr_of_mut!(self.m_pData)
+    }
+}
+
+impl<T, A: CAllocator> core::ops::Deref for CHeapPtr<T, A> {
+    type Target = *mut T;
+    fn deref(&self) -> &*mut T {
+        &self.m_pData
+    }
 }
 
 impl<T, A: CAllocator> Default for CHeapPtr<T, A> {
@@ -303,6 +325,30 @@ impl<T> CComPtr<T> {
     /// The raw interface pointer, ownership retained — ATL's `operator T*`.
     pub fn as_ptr(&self) -> *mut T {
         self.p
+    }
+
+    /// ATL's `operator T*` under its explicit name; the translation emits both spellings.
+    pub fn Get(&self) -> *mut T {
+        self.p
+    }
+
+    /// ATL's `operator&()` — `T**` for an out-parameter. ATL asserts the pointer is empty
+    /// first (writing through it would leak the old reference); the assert is a debug-only
+    /// check in C++ and is not reproduced as a panic in a shipping DLL.
+    pub fn GetAddressOf(&mut self) -> *mut *mut T {
+        core::ptr::addr_of_mut!(self.p)
+    }
+}
+
+/// ATL's `operator->`. This yields the INTERFACE, not a method: the crate uses the C `lpVtbl`
+/// shape, so a call still goes through the vtable — `((*(*p).lpVtbl).Method)(p, ..)`. A
+/// translated `p.Method(..)` is therefore a call-site defect to rewrite, not a missing impl,
+/// and giving `CComPtr` a `Deref` here is what makes that distinction a compile error rather
+/// than a silent resolution to something else.
+impl<T> core::ops::Deref for CComPtr<T> {
+    type Target = *mut T;
+    fn deref(&self) -> &*mut T {
+        &self.p
     }
 }
 
@@ -416,4 +462,215 @@ pub unsafe fn wide_len(p: *const WCHAR) -> usize {
         n += 1;
     }
     n
+}
+
+// -------------------------------------------------------------------------------------------
+// CStringW — `CStringT<WCHAR, StrTraitATL<WCHAR, ChTraitsCRT<WCHAR>>>` (atlstr.h:130)
+// -------------------------------------------------------------------------------------------
+//
+// SCOPE, and why this is not ATL's string. Every `CStringW` in the translated shell32 TUs is a
+// FUNCTION LOCAL of a `static` C++ function — `shlfileop.cpp`'s `try_find_new_name` returns one
+// by value, and `shlexec.cpp`'s `PathProcessCommandW` builds one — so no instance ever crosses
+// back into C++, and nothing depends on ATL's layout: no `CStringData` header, no refcount, no
+// shared-empty-string singleton, no `IAtlStringMgr`. Reproducing those would be work with no
+// observable effect. What IS observable is the operation semantics, and those are ported one at
+// a time from `sdk/lib/atl/cstringt.h` with the line noted.
+//
+// Storage is `CLocalAllocator` (LocalAlloc/LocalReAlloc/LocalFree) rather than the CRT malloc
+// ATL's `CWin32Heap` uses, because this crate is `#![no_std]` with no allocator and LocalAlloc
+// is already the module's own allocation policy for owned buffers.
+//
+// INVARIANT: `m_pszData` is either null (empty) or a NUL-terminated buffer of `m_nAlloc`
+// WCHARs holding `m_nLength` characters. `GetString`/`as_ptr` never returns null — ATL's
+// `PCXSTR` conversion yields `L""` for an empty string, and call sites pass it straight to
+// `PathFileExistsW`/`StringCchCopyW`, which would fault on null.
+pub struct CStringW {
+    m_pszData: *mut WCHAR,
+    m_nLength: i32,
+    m_nAlloc: i32,
+}
+
+/// The `L""` every empty `CStringW` hands out, so `as_ptr()` is never null.
+static EMPTY_WSTR: [WCHAR; 1] = [0];
+
+impl CStringW {
+    /// `CStringT()` — the default constructor.
+    pub const fn new() -> Self {
+        Self { m_pszData: core::ptr::null_mut(), m_nLength: 0, m_nAlloc: 0 }
+    }
+
+    /// `CStringT(PCXSTR pszSrc)` — cstringt.h:463. A null source yields the empty string,
+    /// matching ATL's `StringLength(NULL) == 0`.
+    pub unsafe fn from_ptr(pszSrc: *const WCHAR) -> Self {
+        let mut s = Self::new();
+        s.SetString(pszSrc, wide_len(pszSrc) as i32);
+        s
+    }
+
+    /// `operator PCXSTR()` / `GetString()` — cstringt.h. NEVER null; see the invariant above.
+    pub fn as_ptr(&self) -> *const WCHAR {
+        if self.m_pszData.is_null() {
+            EMPTY_WSTR.as_ptr()
+        } else {
+            self.m_pszData
+        }
+    }
+
+    /// `GetString()` under ATL's own name, for call sites translated from `.GetString()`.
+    pub fn GetString(&self) -> *const WCHAR {
+        self.as_ptr()
+    }
+
+    /// `GetLength()` — in CHARACTERS, not bytes.
+    pub fn GetLength(&self) -> i32 {
+        self.m_nLength
+    }
+
+    /// `IsEmpty()`.
+    pub fn IsEmpty(&self) -> bool {
+        self.m_nLength == 0
+    }
+
+    /// Grow the buffer to hold at least `nChars` characters plus the terminator. Never
+    /// shrinks: `GetBuffer`/`ReleaseBuffer` hand out a raw pointer that must stay valid.
+    unsafe fn Reserve(&mut self, nChars: i32) {
+        if nChars < self.m_nAlloc {
+            return;
+        }
+        let need = nChars + 1;
+        let p = <CLocalAllocator as CAllocator>::Reallocate(
+            self.m_pszData as *mut c_void,
+            need as usize * core::mem::size_of::<WCHAR>(),
+        ) as *mut WCHAR;
+        if p.is_null() {
+            return;
+        }
+        self.m_pszData = p;
+        self.m_nAlloc = need;
+        *self.m_pszData.add(self.m_nLength as usize) = 0;
+    }
+
+    /// `SetString(PCXSTR pszSrc, int nLength)` — cstringt.h. Copies `nLength` characters and
+    /// terminates; the source need not be NUL-terminated at that point (`shlexec` calls this
+    /// with a length measured to an embedded quote).
+    pub unsafe fn SetString(&mut self, pszSrc: *const WCHAR, nLength: i32) {
+        if pszSrc.is_null() || nLength <= 0 {
+            self.m_nLength = 0;
+            if !self.m_pszData.is_null() {
+                *self.m_pszData = 0;
+            }
+            return;
+        }
+        self.Reserve(nLength);
+        if self.m_pszData.is_null() {
+            return;
+        }
+        core::ptr::copy_nonoverlapping(pszSrc, self.m_pszData, nLength as usize);
+        *self.m_pszData.add(nLength as usize) = 0;
+        self.m_nLength = nLength;
+    }
+
+    /// `GetBuffer(int nMinBufferLength)` — cstringt.h. Returns a writable buffer of at least
+    /// that many characters. Must be paired with `ReleaseBuffer`.
+    pub unsafe fn GetBuffer(&mut self, nMinBufferLength: i32) -> *mut WCHAR {
+        self.Reserve(nMinBufferLength);
+        self.m_pszData
+    }
+
+    /// `ReleaseBuffer(int nNewLength = -1)` — cstringt.h. -1 means "measure to the NUL",
+    /// which is what every shell32 call site relies on after writing through `GetBuffer`.
+    pub unsafe fn ReleaseBuffer(&mut self) {
+        if self.m_pszData.is_null() {
+            self.m_nLength = 0;
+            return;
+        }
+        self.m_nLength = wide_len(self.m_pszData) as i32;
+    }
+
+    /// `Left(int nCount)` — cstringt.h:776. ATL clamps: negative yields empty, over-long
+    /// yields the whole string.
+    pub unsafe fn Left(&self, nCount: i32) -> Self {
+        let n = if nCount < 0 {
+            0
+        } else if nCount > self.m_nLength {
+            self.m_nLength
+        } else {
+            nCount
+        };
+        let mut s = Self::new();
+        s.SetString(self.as_ptr(), n);
+        s
+    }
+
+    /// `operator+=(XCHAR ch)` — cstringt.h. Appends the character **even when it is NUL**,
+    /// growing the length by one; `shlexec`'s `PathProcessCommandW` relies on exactly that
+    /// (its C++ carries a "Remove excessive '\0'" comment at the matching ReleaseBuffer).
+    pub unsafe fn AppendChar(&mut self, ch: WCHAR) {
+        let newLen = self.m_nLength + 1;
+        self.Reserve(newLen);
+        if self.m_pszData.is_null() {
+            return;
+        }
+        *self.m_pszData.add(self.m_nLength as usize) = ch;
+        *self.m_pszData.add(newLen as usize) = 0;
+        self.m_nLength = newLen;
+    }
+
+    /// `operator[](int iChar)` — cstringt.h. ATL indexes the buffer directly and asserts
+    /// `iChar <= GetLength()`; `PathProcessCommandW` reads at an index that can sit past the
+    /// current length but inside a `GetBuffer(MAX_PATH)` allocation, so read the allocation
+    /// and yield NUL beyond it rather than running off the end.
+    pub unsafe fn GetAt(&self, iChar: i32) -> WCHAR {
+        if self.m_pszData.is_null() || iChar < 0 || iChar >= self.m_nAlloc {
+            return 0;
+        }
+        *self.m_pszData.add(iChar as usize)
+    }
+
+    /// `operator+=(PCXSTR)` — cstringt.h. Appending to self is not a case the call sites
+    /// produce, and the realloc would invalidate `pszSrc`, so it is not supported.
+    pub unsafe fn Append(&mut self, pszSrc: *const WCHAR) {
+        let add = wide_len(pszSrc) as i32;
+        if add == 0 {
+            return;
+        }
+        let newLen = self.m_nLength + add;
+        self.Reserve(newLen);
+        if self.m_pszData.is_null() {
+            return;
+        }
+        core::ptr::copy_nonoverlapping(
+            pszSrc,
+            self.m_pszData.add(self.m_nLength as usize),
+            add as usize,
+        );
+        *self.m_pszData.add(newLen as usize) = 0;
+        self.m_nLength = newLen;
+    }
+}
+
+impl Default for CStringW {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clone for CStringW {
+    fn clone(&self) -> Self {
+        unsafe {
+            let mut s = Self::new();
+            s.SetString(self.as_ptr(), self.m_nLength);
+            s
+        }
+    }
+}
+
+impl Drop for CStringW {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.m_pszData.is_null() {
+                <CLocalAllocator as CAllocator>::Free(self.m_pszData as *mut c_void);
+            }
+        }
+    }
 }

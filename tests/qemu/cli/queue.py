@@ -46,8 +46,11 @@ import os
 import shutil
 import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
+from typing import NamedTuple
 
 from . import cachecfg, hostlock
 
@@ -416,9 +419,38 @@ def build_batch(repo: Path, wt: Path, subs: list[Submission], log) -> BatchResul
     return res
 
 
-def gate_batch(wt: Path, log, *, retries: int = 2) -> tuple[bool, str, str, str]:
-    """Run the FULL gate in the integration tree. Returns (ok, classification, artifact,
-    salient). This is the only place a batch is judged — no batch is ever presumed green.
+_NO_STAGES: Mapping[str, str] = MappingProxyType({})
+
+
+class GateVerdict(NamedTuple):
+    """One gate run's judgement.
+
+    `stages` (name -> "ok"/"fail"/"warn") is the part that matters beyond the headline: a
+    single `classification` collapses a whole gate to one word, and that word is the loudest
+    failure, not the only one. Keeping the per-stage map is what lets a red-base drain tell
+    "framed" apart from "guilty of something else" — see `BaseCheck.own_faults`."""
+
+    ok: bool
+    classification: str
+    artifact: str
+    salient: str
+    stages: Mapping[str, str] = _NO_STAGES
+
+
+# Stages whose verdict a busy host cannot change. Builds, lints, the Python tooling gate and
+# difftest are deterministic functions of the tree: they read source and either find a thing or
+# do not. Smoke stages are deliberately NOT here — they are timing-sensitive, and mistaking
+# contention for a regression is the whole reason the base check exists (field manual §9.84).
+DETERMINISTIC_STAGES = ("build:", "lint:", "tooling", "difftest")
+
+
+def _is_deterministic(stage: str) -> bool:
+    return stage.startswith(DETERMINISTIC_STAGES)
+
+
+def gate_batch(wt: Path, log, *, retries: int = 2) -> GateVerdict:
+    """Run the FULL gate in the integration tree. This is the only place a batch is judged —
+    no batch is ever presumed green.
 
     The gate gets its OWN artifact root. It used to inherit the shared /tmp/vibeos-cli and
     the batch's artifact was then found by diffing that directory before/after — which
@@ -459,20 +491,23 @@ def gate_batch(wt: Path, log, *, retries: int = 2) -> tuple[bool, str, str, str]
     fresh = sorted(root.glob("*-gate-*"))
     artifact = str(fresh[-1]) if fresh else ""
     classification, salient = "", ""
+    stages: dict[str, str] = {}
     if artifact:
         try:
             s = json.loads((Path(artifact) / "summary.json").read_text())
             classification = s.get("classification", "")
             for st in s.get("stages", []):
-                if st.get("status") == "fail":
-                    salient = f"{st['name']}: {st.get('detail', '')}"
-                    break
+                name, status = st.get("name"), st.get("status")
+                if name:
+                    stages[name] = status or ""
+                if status == "fail" and not salient:
+                    salient = f"{name}: {st.get('detail', '')}"
         except (OSError, ValueError):
             pass
     ok = cp.returncode == 0
     why = "" if ok else f" ({classification or cp.returncode})"
     log(f"queue: gate {'GREEN' if ok else 'RED'}{why}")
-    return ok, classification, artifact, salient
+    return GateVerdict(ok, classification, artifact, salient, MappingProxyType(stages))
 
 
 class NoVerdict(QueueError):
@@ -528,6 +563,7 @@ class BaseCheck:
         self.artifact = ""
         self.classification = ""
         self.salient = ""
+        self.stages: Mapping[str, str] = _NO_STAGES
         self.landed: list[str] = []  # lanes landed EARLIER in this same drain
 
     def is_green(self, repo: Path, wt: Path, log, *, retries: int) -> bool:
@@ -537,14 +573,37 @@ class BaseCheck:
         git(wt, "fetch", "origin")
         git(wt, "reset", "--hard", "origin/master")
         git(wt, "clean", "-fdq")
-        ok, cls, art, sal = gate_batch(wt, log, retries=retries)
-        self.verdict, self.classification, self.artifact, self.salient = ok, cls, art, sal
+        v = gate_batch(wt, log, retries=retries)
+        self.verdict, self.classification = v.ok, v.classification
+        self.artifact, self.salient, self.stages = v.artifact, v.salient, v.stages
         log(
             "queue: BASE is GREEN — the submission really is the culprit"
-            if ok
-            else f"queue: BASE ITSELF IS RED ({cls}) — mainline is broken; no lane is at fault"
+            if v.ok
+            else f"queue: BASE ITSELF IS RED ({v.classification}) — mainline is broken"
         )
-        return ok
+        return v.ok
+
+    def own_faults(self, stages: Mapping[str, str]) -> list[str]:
+        """The DETERMINISTIC stages this submission fails that the base RAN AND PASSED.
+
+        WHY (2026-07-31, a train wedged for 19 hours): "the base is red" was treated as a
+        blanket alibi, but a red base only excuses the failures it can actually explain. The
+        batch here failed `lint:{i386,amd64,arm64}` while the base-alone control failed only
+        `smoke:net` — a contention flake (§9.84) that says exactly nothing about whether a
+        lane added new lint findings. So three real `verify_signatures` regressions sat
+        unattributed while every other lane queued behind them, and the evidence to attribute
+        them was already on disk in both summaries.
+
+        Two guards keep this from re-inventing the bug it replaces. A stage the base did NOT
+        RUN proves nothing — an early-halting base gate must not convict a lane by omission —
+        so only `"ok"` counts, never a missing key. And only deterministic stages are eligible:
+        blaming a lane for a smoke stage that merely happened to pass on the base at a
+        different moment is precisely the false conviction the base check exists to prevent."""
+        return sorted(
+            name
+            for name, status in stages.items()
+            if status == "fail" and _is_deterministic(name) and self.stages.get(name) == "ok"
+        )
 
 
 def land_subset(
@@ -577,7 +636,9 @@ def land_subset(
     subs = res.merged
     if not subs:
         return
-    ok, classification, artifact, salient = gate_batch(wt, log, retries=retries)
+    verdict = gate_batch(wt, log, retries=retries)
+    ok, classification = verdict.ok, verdict.classification
+    artifact, salient = verdict.artifact, verdict.salient
     if ok:
         # We hold the land lock for the whole drain, and every landing path takes it, so
         # master cannot have moved under us — assert it rather than assume it.
@@ -612,10 +673,40 @@ def land_subset(
         # Skipping this check is how the first real batch rejected a docs-only change for a
         # build failure that was already on mainline.
         if not base.is_green(repo, wt, log, retries=retries):
+            # A red base is an alibi only for the failures it explains. If this submission
+            # also fails a DETERMINISTIC stage that the base itself passed, that part is its
+            # own, and saying so is what stops a doomed lane from blocking the queue forever
+            # while its real defect goes unreported.
+            own = base.own_faults(verdict.stages)
+            if own:
+                log(
+                    f"queue: REJECTED {sub.lane} {sub.tip[:12]} — "
+                    f"{', '.join(own)} (the base PASSES these)"
+                )
+                resolve(
+                    repo,
+                    sub,
+                    outcome="rejected",
+                    reason=(
+                        f"{', '.join(own)} fail here and PASS on origin/master alone, so they "
+                        f"are this lane's: {salient or 'see the artifact'}. (The base is "
+                        f"separately red — {base.classification or 'red'} — which is not "
+                        f"yours and is why nothing landed this drain.) "
+                        f"Artifact: {artifact or '(none)'}"
+                    ),
+                    classification=classification or "GATE_RED",
+                    artifact=artifact,
+                )
             raise BaseRed(
                 f"origin/master itself fails the gate ({base.classification or 'red'}) — "
-                f"{base.salient or 'see the artifact'}. No submission was rejected (they are "
-                f"not at fault) and the train is halted: nothing can land on a red base. "
+                f"{base.salient or 'see the artifact'}. "
+                + (
+                    f"{sub.lane} was rejected for {', '.join(own)}, which the base passes; "
+                    "no other submission was judged. "
+                    if own
+                    else "No submission was rejected (they are not at fault) "
+                )
+                + f"The train is halted: nothing can land on a red base. "
                 f"Artifact: {base.artifact or '(none)'}"
             )
         log(f"queue: REJECTED {sub.lane} {sub.tip[:12]} — {classification or 'gate red'}")

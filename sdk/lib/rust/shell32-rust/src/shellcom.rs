@@ -88,6 +88,13 @@ pub type REFCLSID = *const CLSID;
 pub type REFFMTID = *const FMTID;
 
 // ── PIDL on-disk format (shtypes.h + pidl.h, pshpack1 — ALL packed) ──────────────────────
+// These DUPLICATE the island's `_SHITEMID`/`_ITEMIDLIST`, and that is deliberate — do not
+// "collapse" them to `pub use crate::island::{...}`. This file is `#[path]`-included into
+// menuband-rust (lib.rs:38), which has no island module, precisely so that crate gets a
+// layout-identical copy without depending on the shell32-rust staticlib. A `crate::island`
+// reference here compiles in shell32-rust and breaks menuband-rust with E0432, which only
+// the arm64 gate surfaced. The cost is that PIDLs crossing an island extern into one of the
+// vtable signatures below need a `.cast()`; pay it at the call site.
 /// SHITEMID (shtypes.h): { WORD cb; BYTE abID[1]; }
 #[repr(C, packed)]
 pub struct SHITEMID {
@@ -368,6 +375,11 @@ pub struct IUnknownVtbl {
     pub Release: unsafe extern "system" fn(*mut IUnknown) -> ULONG,
 }
 
+// NOT here: `IShellExtInit`. Five already-landed files (new_menu, dialogs/drvdefext,
+// recycle_bin, shell_link, propsheet) carry their own file-local copy — see this module's
+// header on Wave 0-3 keeping theirs — so adding a sixth to this glob-imported module makes
+// the name E0659-ambiguous in every one of them. Retrofitting all five is a deliberate
+// change, not a side effect of translating one more TU; a new TU declares its own copy.
 #[repr(C)]
 pub struct IShellFolder {
     pub lpVtbl: *mut IShellFolderVtbl,
@@ -424,9 +436,40 @@ pub struct IShellFolderVtbl {
     ) -> HRESULT,
     pub GetDisplayNameOf:
         unsafe extern "system" fn(*mut IShellFolder, LPCITEMIDLIST, DWORD, *mut STRRET) -> HRESULT,
-    pub SetNameOf: usize,
+    pub SetNameOf: unsafe extern "system" fn(
+        *mut IShellFolder,
+        HWND,
+        PCUITEMID_CHILD,
+        LPCWSTR,
+        SHGDNF,
+        *mut PITEMID_CHILD,
+    ) -> HRESULT,
 }
 pub type LPSHELLFOLDER = *mut IShellFolder;
+
+/// `IContextMenu` in the crate's `lpVtbl` shape. The island renders it as a bindgen C++ class
+/// with an opaque `vtable_`, which no translated call site can go through; only the slots with
+/// callers here are typed, the rest stay `usize` placeholders at their correct offsets.
+#[repr(C)]
+pub struct IContextMenu {
+    pub lpVtbl: *mut IContextMenuVtbl,
+}
+#[repr(C)]
+pub struct IContextMenuVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IContextMenu) -> ULONG,
+    pub QueryContextMenu: unsafe extern "system" fn(
+        *mut IContextMenu,
+        HMENU,
+        UINT,
+        UINT,
+        UINT,
+        UINT,
+    ) -> HRESULT,
+    pub InvokeCommand: unsafe extern "system" fn(*mut IContextMenu, *mut c_void) -> HRESULT,
+    pub GetCommandString: usize,
+}
 
 #[repr(C)]
 pub struct IShellFolder2 {
@@ -487,8 +530,8 @@ pub struct IEnumIDListVtbl {
     pub Release: unsafe extern "system" fn(*mut IEnumIDList) -> ULONG,
     pub Next:
         unsafe extern "system" fn(*mut IEnumIDList, ULONG, *mut LPITEMIDLIST, *mut ULONG) -> HRESULT,
-    pub Skip: usize,
-    pub Reset: usize,
+    pub Skip: unsafe extern "system" fn(*mut IEnumIDList, ULONG) -> HRESULT,
+    pub Reset: unsafe extern "system" fn(*mut IEnumIDList) -> HRESULT,
     pub Clone: usize,
 }
 

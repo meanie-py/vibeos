@@ -13,15 +13,21 @@
 
 use core::ffi::c_void;
 
+use core::ffi::c_char;
+
 use crate::island::{
-    GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, RegisterClipboardFormatW, BOOL,
+    lstrcpyW, lstrlenW, WideCharToMultiByte, CP_ACP, SEE_CMIC_COMMON_FLAGS, SEE_MASK_CLASSKEY,
+    SEE_MASK_CLASSNAME, SEE_MASK_HASLINKNAME, SEE_MASK_HASTITLE,
+    GetVersion, GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock,
+    RegisterClipboardFormatW, BOOL,
     CIDA, CLIPFORMAT, DWORD, FORMATETC, GHND, GUID, HRESULT, LONG, LPCITEMIDLIST, LPITEMIDLIST,
     PCUIDLIST_ABSOLUTE, PCUIDLIST_RELATIVE, POINT, SAFEARRAY, SHDESCRIPTIONID, SIZE_T, STGMEDIUM,
-    UINT, ULONG, VARIANT, VARTYPE,
+    UINT, ULONG, VARIANT, VARTYPE, WM_DRAWITEM, WM_INITMENUPOPUP, WM_MEASUREITEM,
+    WM_MENUCHAR, WM_MENUSELECT,
 };
 use crate::V_VT;
 use crate::prelude::{
-    CopyMemory, ILFindLastID, SHFree, DVASPECT_CONTENT, E_OUTOFMEMORY, E_UNEXPECTED, S_OK,
+    CopyMemory, ILClone, ILFindLastID, SHFree, DVASPECT_CONTENT, E_OUTOFMEMORY, E_UNEXPECTED, S_OK,
     TRUE, TYMED_HGLOBAL, TYMED_NULL,
 };
 use crate::shellcom::IDataObject;
@@ -322,4 +328,148 @@ pub unsafe extern "system" fn SHELL_CreateSHDESCRIPTIONID(
         (*pDID).clsid = *pCLSID.cast();
     }
     hr
+}
+
+/// `wine/shell32_main.h:193` — `static __inline BOOL SHELL_OsIsUnicode(void)`. A header inline
+/// has INTERNAL linkage, so every C TU that uses it holds its own copy and there is no symbol
+/// to import: a Rust caller needs the body ported, and must NOT `#[no_mangle]` it (nothing
+/// links to this name, and exporting it would invent a symbol the C side never had).
+#[inline]
+pub unsafe fn SHELL_OsIsUnicode() -> BOOL {
+    // if high-bit of version is 0, we are emulating NT
+    (GetVersion() & 0x80000000 == 0) as BOOL
+}
+
+/// `shellutils.h:697` — `static inline BOOL SHELL_IsContextMenuMsg(UINT uMsg)`. Header inline,
+/// so not `#[no_mangle]`; see `SHELL_OsIsUnicode` above.
+#[inline]
+pub fn SHELL_IsContextMenuMsg(uMsg: UINT) -> BOOL {
+    (uMsg == WM_MEASUREITEM
+        || uMsg == WM_DRAWITEM
+        || uMsg == WM_INITMENUPOPUP
+        || uMsg == WM_MENUSELECT
+        || uMsg == WM_MENUCHAR) as BOOL
+}
+
+/// `shellutils.h:462` — `template<class P, class R> static HRESULT SHILClone(P, R*)`. A C++
+/// TEMPLATE is in no translation unit for the same reason an inline is not, and its two type
+/// parameters exist only to launder PIDL type-safety: every instantiation erases to the same
+/// pointer, so one monomorphic port covers them all.
+#[inline]
+pub unsafe fn SHILClone(pidl: LPCITEMIDLIST, ppOut: *mut LPITEMIDLIST) -> HRESULT {
+    let r = ILClone(pidl);
+    *ppOut = r;
+    if r.is_null() { E_OUTOFMEMORY } else { S_OK }
+}
+
+/// `compat_undoc.h:5` — the shim block the loader hangs off the PEB.
+#[repr(C)]
+struct ReactOS_ShimData {
+    dwReserved1: [DWORD; 130],
+    dwSize: DWORD,
+    dwMagic: DWORD,
+    dwReserved2: [DWORD; 242],
+    dwRosProcessCompatVersion: DWORD,
+}
+
+const REACTOS_SHIMDATA_MAGIC: DWORD = 0xAC0D_EDAB;
+const REACTOS_COMPATVERSION_UNINITIALIZED: DWORD = 0xffff_fffe;
+
+/// `compat_undoc.h:22` — `static inline DWORD RosGetProcessCompatVersion(VOID)`. Its cache is a
+/// FUNCTION-LOCAL static with a constant initialiser, i.e. a hidden global with no guard
+/// variable, so a module `static mut` is exactly equivalent.
+static mut g_CompatVersion: DWORD = REACTOS_COMPATVERSION_UNINITIALIZED;
+
+#[inline]
+pub unsafe fn RosGetProcessCompatVersion() -> DWORD {
+    if g_CompatVersion == REACTOS_COMPATVERSION_UNINITIALIZED {
+        let pShimData = (*ntdll_sys::nt::NtCurrentPeb()).pShimData as *const ReactOS_ShimData;
+        if !pShimData.is_null()
+            && (*pShimData).dwMagic == REACTOS_SHIMDATA_MAGIC
+            && (*pShimData).dwSize as usize == core::mem::size_of::<ReactOS_ShimData>()
+        {
+            g_CompatVersion = (*pShimData).dwRosProcessCompatVersion;
+        }
+    }
+    if g_CompatVersion < REACTOS_COMPATVERSION_UNINITIALIZED { g_CompatVersion } else { 0 }
+}
+
+/// `compat_undoc.h:39` — the shimmed version if one is set, else the PEB's OS version.
+#[inline]
+pub unsafe fn RosGetProcessEffectiveVersion() -> UINT {
+    let shimVer = RosGetProcessCompatVersion();
+    if shimVer != 0 {
+        return shimVer;
+    }
+    let peb = ntdll_sys::nt::NtCurrentPeb();
+    (((*peb).OSMajorVersion << 8) | (*peb).OSMinorVersion) as UINT
+}
+
+// ── CCoInitBase (shellutils.h:611) ───────────────────────────────────────────────────────
+// A C++ RAII *template*, so like the inlines above it exists in no TU and rustconv never sees
+// a body — but unlike them it has no name to leave unresolved either: bindgen renders it as
+// the opaque `pub type COleInit = u8;`, against which the natural translation of
+// `COleInit OleInit;` is `let _ole_init: COleInit;`. That compiles, and runs NEITHER half of
+// the RAII pair — no OleInitialize on the way in, no OleUninitialize on the way out. An
+// uninitialised Rust binding is never dropped. Port the guard for real and let Drop do it.
+//
+// `prelude` re-exports this name explicitly so it shadows the island's `u8` alias, the same
+// way `CCidaChildArrayHelper` is handled.
+unsafe extern "system" {
+    fn OleInitialize(pvReserved: *mut c_void) -> HRESULT;
+    fn OleUninitialize();
+}
+
+/// `CCoInitBase<OleInitialize, OleUninitialize>` — ctor initialises OLE, dtor uninitialises it
+/// iff the init succeeded. Construct it with `COleInit::new()`; binding it to `_` would drop it
+/// immediately, so keep a named binding for the scope you want COM alive in.
+pub struct COleInit {
+    pub hr: HRESULT,
+}
+
+impl COleInit {
+    #[inline]
+    pub unsafe fn new() -> Self {
+        Self { hr: OleInitialize(core::ptr::null_mut()) }
+    }
+}
+
+impl Drop for COleInit {
+    fn drop(&mut self) {
+        if self.hr >= 0 {
+            unsafe { OleUninitialize() };
+        }
+    }
+}
+
+/// `shellutils.h:689` — narrows a `SEE_MASK_*` set to the `CMIC_MASK_*` bits an
+/// `IContextMenu::InvokeCommand` accepts. A header inline, so it reaches no TU.
+#[inline]
+pub fn SeeFlagsToCmicFlags(mut flags: UINT) -> UINT {
+    if (flags & (SEE_MASK_CLASSNAME | SEE_MASK_CLASSKEY)) == SEE_MASK_CLASSNAME {
+        flags &= !(SEE_MASK_HASLINKNAME | SEE_MASK_HASTITLE);
+    }
+    flags & SEE_CMIC_COMMON_FLAGS
+}
+
+// ── wine/shell32_main.h inlines ──────────────────────────────────────────────────────────
+// `static __inline` in a Wine header: in no TU, so rustconv never sees a body. Both allocate
+// with SHAlloc (the COM task allocator), and the caller frees with SHFree.
+
+/// `wine/shell32_main.h:210` — SHAlloc a CP_ACP copy of a wide string into `*target`.
+#[inline]
+pub unsafe fn __SHCloneStrWtoA(target: *mut *mut c_char, source: *const u16) {
+    let len = WideCharToMultiByte(CP_ACP, 0, source, -1, core::ptr::null_mut(), 0,
+                                  core::ptr::null(), core::ptr::null_mut());
+    *target = SHAlloc(len as SIZE_T) as *mut c_char;
+    WideCharToMultiByte(CP_ACP, 0, source, -1, *target, len,
+                        core::ptr::null(), core::ptr::null_mut());
+}
+
+/// `wine/shell32_main.h:217` — SHAlloc a copy of a wide string into `*target`.
+#[inline]
+pub unsafe fn __SHCloneStrW(target: *mut *mut u16, source: *const u16) {
+    let cch = lstrlenW(source) + 1;
+    *target = SHAlloc(cch as SIZE_T * core::mem::size_of::<u16>() as SIZE_T) as *mut u16;
+    lstrcpyW(*target, source);
 }
