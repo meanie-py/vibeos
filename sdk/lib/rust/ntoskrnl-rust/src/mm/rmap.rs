@@ -83,9 +83,12 @@ extern "C" {
 static MM_WAIT_ENTRY: ULONG_PTR = 0x7FFFFFFFFFFFFC00;
 #[cfg(target_pointer_width = "32")]
 static MM_WAIT_ENTRY: ULONG_PTR = 0x7ffffc00;
-static RMAP_SEGMENT_MASK: ULONG_PTR = 0xFFFFFF00;
+// `~((ULONG_PTR)0xff)` — pointer-width, not the 32-bit-truncated 0xFFFFFF00 that
+// used to sit here. The one use below (`& !RMAP_SEGMENT_MASK`) survived the
+// truncation only because its result is cast to ULONG.
+static RMAP_SEGMENT_MASK: ULONG_PTR = !0xffusize;
 static MEMORY_AREA_SECTION_VIEW: ULONG = 1;
-static MM_SEGMENT_INDELETE: ULONG = 1;
+static MM_SEGMENT_INDELETE: ULONG = 4; // mm.h:242 — was 1 (PHYSICALMEMORY's bit)
 static MC_USER: ULONG = 0;
 
 static mut RmapLookasideList: NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };

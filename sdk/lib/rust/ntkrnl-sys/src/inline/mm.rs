@@ -885,11 +885,11 @@ pub unsafe fn MiReleaseExpansionLock(old_irql: KIRQL) {
 /// Check: ((ULONG_PTR)(x) & RMAP_SEGMENT_MASK) == RMAP_SEGMENT_MASK
 #[inline]
 pub unsafe fn RMAP_IS_SEGMENT(address: PVOID) -> BOOLEAN {
-    // RMAP_SEGMENT_MASK = ~0xFF on i386, ~0xFFF on 64-bit (bitwise NOT)
-    #[cfg(target_pointer_width = "32")]
+    // ~0xFF on EVERY arch — the low 8 bits carry the segment page index, so the
+    // mask is not pointer-width dependent. The old 64-bit `!0xFFF` happened to
+    // accept the same inputs (a constructed segment address has bits 8..63 set,
+    // so bits 12..63 are set too) but encodes the wrong invariant.
     const RMAP_SEGMENT_MASK: usize = !0xFF;
-    #[cfg(target_pointer_width = "64")]
-    const RMAP_SEGMENT_MASK: usize = !0xFFF;
 
     if ((address as usize) & RMAP_SEGMENT_MASK) == RMAP_SEGMENT_MASK {
         1
