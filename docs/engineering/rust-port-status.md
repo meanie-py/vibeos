@@ -387,10 +387,21 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   translated folder classes call stays — it is `WINAPI` where the renamed function is cdecl, so
   repointing it is an ABI change for no gain — but `cpp_com.py` and `scan_extern_arity` both
   needed fixing alongside; see the field manual's `EXTERN_C` entries.
-  Still parked: `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder,iconcache}.rs`,
+  `iconcache.cpp` is flipped (2026-07-31), and it is the cheap counter-example to shlfolder: its
+  four shell32-internal exports needed **no** `EXTERN_C` at all, because `wine/shell32_main.h`
+  already wraps itself in `extern "C"` for C++. What it needed instead was three things the
+  island cannot supply — the function-local `static int s_imgListIdx` (C++ gives it a hidden
+  global; the translation kept the uses and dropped the storage), a local mirror of
+  `RTL_CRITICAL_SECTION_DEBUG` whose trailing union is pinned to the `WineDebugString` pointer
+  arm, and `SHELL_OsIsUnicode`, a header inline ported into `shellutils.rs`. `MAKELONG`,
+  `MAKEROP4` and `ImageList_AddIcon` joined the prelude. Two link failures closed it: three
+  globals `wine/shell32_main.h` publishes needed `#[no_mangle]`, and `brfolder.cpp` declares
+  `Shell_GetCachedImageIndexW` bare at its own file scope — a declaration outside any header,
+  which a header-only grep misses.
+  Still parked: `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder}.rs`,
   each carrying an `//! ORPHAN-BY-DESIGN:` banner. Post-substrate error counts
   and what each still needs are in that directory's `mod.rs`; the short version is that
-  iconcache/brfolder are cast-and-signature integration with no new substrate, while
+  brfolder is cast-and-signature integration with no new substrate, while
   shlfileop/shlexec additionally want a `CStringW` whose `Format` is printf-variadic and so
   needs a `rust_varargs_shim.c` trampoline. Paid artifacts — do not delete to tidy up.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).

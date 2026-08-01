@@ -844,6 +844,17 @@ five of each, and the mangled four had live callers in three other TUs. Intersec
 against every *other* object's UNDEFINED symbols before counting the work — shlfolder.cpp
 defines 83 mangled symbols but only 19 have a live caller; the rest are COMDAT template and
 inline emissions each TU already makes for itself.
+**A declaration can live in a `.cpp`, not only a header** — so grepping headers under-counts the
+work. `brfolder.cpp` declares `INT WINAPI Shell_GetCachedImageIndexW(...)` at its own file
+scope rather than including one, and that lone bare declaration was the only thing left holding
+a mangled reference after iconcache.cpp flipped. Conversely, check whether the header you *do*
+find already wraps itself: `wine/shell32_main.h` opens with `#ifdef __cplusplus extern "C" {`,
+so all four of iconcache's shell32-internal exports needed no edit at all.
+**Exported DATA needs `#[no_mangle]` as much as exported functions do.** A flipped TU's
+`pub static mut` is Rust-private without it, and the link fails with
+`_ShellLargeIconSize: i386 cdecl — missing symbol`, which reads like an ABI problem and is not
+one. `extern INT ShellLargeIconSize;` in a header is the tell: anything the header publishes is
+part of the flip surface.
 
 **`EXTERN_C` cannot carry an OVERLOAD SET — one name, one symbol.** Symptom: a TU is otherwise
 ready to flip but exports two functions of the same name. Fix: rename one on both sides. Make
@@ -890,6 +901,28 @@ C++ hop and nothing looked unresolved — then the flip took the only definition
 failed on `_SHELL_CreateVariantBuffer@8`. Port the inline rather than re-homing the wrapper in
 another `.cpp`, or the next flip repeats it. `static inline` at namespace scope has INTERNAL
 linkage, so a Rust `#[no_mangle]` of the same name cannot collide with the C++ TUs' own copies.
+And when you port one, do **not** `#[no_mangle]` it unless a caller genuinely needs the symbol:
+`SHELL_OsIsUnicode` is internal-linkage in every C TU that uses it, so exporting the Rust copy
+would invent a symbol the C side never had.
+
+**A function-local `static` with a constant initialiser is a hidden GLOBAL, and the translation
+drops it.** Symptom: a freshly translated TU references a name that exists nowhere in its
+output — iconcache.rs used `s_imgListIdx` in three places and defined it in none. Cause: C++
+lowers `static int s_imgListIdx = -1;` inside a function to a global with no guard variable
+(the guard appears only for a *dynamic* initialiser), and the translator kept the uses but not
+the storage. Fix: a module-level `static mut`, which is exactly equivalent — module-private, so
+widening the NAME's scope cannot collide with anything.
+
+**A bindgen anonymous UNION cannot be initialised through the island when C picks a POINTER
+arm.** Symptom: the translated static names fields (`Flags`, `CreatorBackTraceIndexHigh`,
+`SpareWORD`) that the island's struct does not have, because bindgen collapses the union into
+one opaque `__bindgen_anon_1`. Reaching for the right arm does not rescue it either: C's
+initialiser here is `{ (DWORD_PTR)(__FILE__ ": SHELL32_SicCS") }`, i.e. the `ULONG_PTR
+WineDebugString` member holding a *pointer*, and const-eval refuses to cast a pointer to an
+integer. Fix: mirror the struct locally with that one arm typed as the pointer it actually
+holds — same size and alignment, so the layout ntdll walks is unchanged. `ole32-rust`'s
+`ring::ifs` established this for `RTL_CRITICAL_SECTION_DEBUG`; iconcache.rs is the second user.
+Zeroing the union instead would compile and silently drop the debug string.
 
 **`extern "C"` is LINKAGE; `WINAPI` is the CALLING CONVENTION — a `_RustBridge` needs both read
 separately.** Symptom: i386 link fails on `_Name` while `llvm-nm` shows `_Name@12` defined.
@@ -3855,6 +3888,24 @@ attempts is not evidence the failure is real. Second, and this is the one that c
 **do not run `check`, `check-tooling`, `difftest`, or a build locally while your own lane is
 gating.** `./vibeos-cli host-status` before submitting, then leave the host alone. The lane whose
 gate you are starving is your own.
+
+**A red base is an alibi only for the failures it EXPLAINS — compare the STAGES, not the
+verdicts.** 2026-07-31: the queue sat undrained for 19 hours behind
+`TRAIN HALTED — origin/master itself fails the gate (NET_FLAKE) ... No submission was rejected`.
+That reads like the base check working, and it was half working. The batch had failed
+`LINT_FAIL` while the base-alone control failed `NET_FLAKE` — two independent classes, and a
+starved net suite says nothing about whether a lane added lint findings. The conductor collapsed
+each gate to one `classification`, so "base red" became a blanket alibi and three real
+`verify_signatures` regressions (`KiThreadStartup`, `NtSetLdtEntries`, `ObpSetHandleAttributes`)
+went unattributed while every innocent lane queued behind them. The evidence was already on disk:
+both `summary.json`s carry per-stage results, and the base **passed all three `lint:*` stages**.
+`queue.py` now keeps that map (`GateVerdict.stages`) and rejects a lone submission for the
+DETERMINISTIC stages the base ran and passed, while still halting the train — nothing can land on
+a red base, but a doomed lane no longer blocks the queue with its defect unreported. Two guards
+matter as much as the rule: a stage the base did not RUN proves nothing (an early-halting base
+gate must not convict by omission), and smoke stages are excluded because they are exactly the
+timing-sensitive ones this section is about. Generalise it: **when a control experiment fails,
+check that it failed the same WAY before you let it absolve anything.**
 
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 

@@ -1,9 +1,12 @@
-//! ORPHAN-BY-DESIGN: translated shell32 TU, parked pending substrate closure.
-//! Unblocked by the 2026-07-25 seal fixes (macro authority, Rust-label masking,
-//! goto replication, prototype/named-cast types); still needs SDK externs, Win32
-//! constants and resource IDs resolved before it compiles. Wiring it in this state
-//! would break the build for every lane rather than expose a regression.
-//! This is a PAID artifact — do not delete it to tidy up.
+//! `iconcache.cpp`, flipped. The shell icon cache: a DPA of `SIC_ENTRY` keyed by (source file,
+//! source index, shortcut flag) and backed by the two system image lists.
+//!
+//! Three things needed substrate the island alone does not carry. The function-local
+//! `static int s_imgListIdx` becomes a module `static mut` (see its comment). The
+//! `RTL_CRITICAL_SECTION_DEBUG` tail UNION needed a local mirror, because the arm C
+//! initialises holds a POINTER and the island models the union opaquely. And
+//! `SHELL_OsIsUnicode` is a header inline — internal linkage, no symbol to import — so it is
+//! ported in `crate::shellutils` alongside the other `wine/shell32_main.h` inlines.
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_2C74F66573C9: [WCHAR; 22] = [0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0020, 0x0053, 0x006D, 0x0061, 0x006C, 0x006C, 0x0020, 0x0049, 0x0063, 0x006F, 0x006E, 0x0020, 0x0053, 0x0069, 0x007A, 0x0065, 0x0000];
 pub static CPP_COM_WSTR_47678CDC8AAF: [WCHAR; 15] = [0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0020, 0x0049, 0x0063, 0x006F, 0x006E, 0x0020, 0x0042, 0x0050, 0x0050, 0x0000];
@@ -13,6 +16,15 @@ pub static CPP_COM_WSTR_88409267423F: [WCHAR; 16] = [0x0053, 0x0068, 0x0065, 0x0
 use core::ffi::c_void;
 use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
+use crate::shellutils::SHELL_OsIsUnicode;
+use crate::wine::classes::HLM_GetIconW;
+use crate::wine::shell32_main::{ExtractIconW, IExtractIconW, SHELL_IsShortcut};
+// `shlexec.cpp` is still C, so `FindExecutableW` has no Rust definition yet. Taken from
+// `win32.rs` rather than re-declared here: a second declaration against ISLAND types would be
+// the same ABI under different Rust names, which rustc reports as a signature redeclaration
+// and `scan_extern_decl_drift` would then have two decls to reconcile. Nothing in this call
+// needs the island spelling — the pointers coerce and the result is only width-compared.
+use crate::win32::FindExecutableW;
 
 // ---- file-scope preamble (translated) ----
 pub const INVALID_INDEX: i32 = -1;
@@ -31,12 +43,18 @@ pub type LPSIC_ENTRY = *mut SIC_ENTRY;
 pub static mut sic_hdpa: HDPA = 0 as HDPA;
 pub static mut ShellSmallIconList: HIMAGELIST = 0 as HIMAGELIST;
 pub static mut ShellBigIconList: HIMAGELIST = 0 as HIMAGELIST;
+// `wine/shell32_main.h:61-63` publishes these three to the rest of shell32, so the Rust
+// definitions must carry the C names. The other file-scope globals here are referenced by no
+// other TU, so they stay Rust-private.
+#[no_mangle]
 pub static mut ShellSmallIconSize: INT = 0;
+#[no_mangle]
 pub static mut ShellLargeIconSize: INT = 0;
+#[no_mangle]
 pub static mut ShellIconBPP: INT = 0;
 
 pub static mut SHELL32_SicCS: CRITICAL_SECTION = CRITICAL_SECTION {
-    DebugInfo: unsafe { core::ptr::addr_of_mut!(critsect_debug) },
+    DebugInfo: core::ptr::addr_of_mut!(critsect_debug).cast(),
     LockCount: -1,
     RecursionCount: 0,
     OwningThread: 0 as HANDLE,
@@ -44,20 +62,43 @@ pub static mut SHELL32_SicCS: CRITICAL_SECTION = CRITICAL_SECTION {
     SpinCount: 0,
 };
 
-pub static mut critsect_debug: CRITICAL_SECTION_DEBUG = CRITICAL_SECTION_DEBUG {
+/// NDK `RTL_CRITICAL_SECTION_DEBUG` (sdk/include/ndk/rtltypes.h:1424) with its trailing union
+/// pinned to the arm iconcache.cpp actually initialises: `{ (DWORD_PTR)(__FILE__ ":
+/// SHELL32_SicCS") }` is the `ULONG_PTR WineDebugString` member. The island models that union
+/// as an opaque `__bindgen_anon_1`, and const-eval refuses to cast a pointer to an integer, so
+/// the arm is typed as the pointer it holds. ULONG_PTR-sized either way, so the layout ntdll
+/// walks is unchanged. Same idiom as `ole32-rust`'s `ring::ifs`.
+#[repr(C)]
+pub struct CRITSECT_DEBUG_WINEARM {
+    pub Type: WORD,
+    pub CreatorBackTraceIndex: WORD,
+    pub CriticalSection: *mut CRITICAL_SECTION,
+    pub ProcessLocksList: _LIST_ENTRY,
+    pub EntryCount: DWORD,
+    pub ContentionCount: DWORD,
+    pub WineDebugString: *const c_char,
+}
+
+static SIC_CS_NAME: &[u8] = b"iconcache.cpp: SHELL32_SicCS\0";
+
+pub static mut critsect_debug: CRITSECT_DEBUG_WINEARM = CRITSECT_DEBUG_WINEARM {
     Type: 0,
     CreatorBackTraceIndex: 0,
-    CriticalSection: unsafe { core::ptr::addr_of_mut!(SHELL32_SicCS) },
+    CriticalSection: core::ptr::addr_of_mut!(SHELL32_SicCS),
     ProcessLocksList: _LIST_ENTRY {
         Flink: unsafe { core::ptr::addr_of_mut!(critsect_debug.ProcessLocksList) },
         Blink: unsafe { core::ptr::addr_of_mut!(critsect_debug.ProcessLocksList) },
     },
     EntryCount: 0,
     ContentionCount: 0,
-    Flags: 0,
-    CreatorBackTraceIndexHigh: 0,
-    SpareWORD: 0,
+    WineDebugString: SIC_CS_NAME.as_ptr() as *const c_char,
 };
+
+/// `SIC_OverlayShortcutImage`'s function-local `static int s_imgListIdx = -1`
+/// (iconcache.cpp:134). A function-local static with a CONSTANT initialiser gets no guard
+/// variable in C++ — it is a hidden global — so a module `static mut` is exactly equivalent.
+/// It stays module-private, so widening the NAME's scope cannot collide with anything.
+static mut s_imgListIdx: c_int = -1;
 unsafe extern "C" fn SIC_GetMetricsValue(pszValueName: PCWSTR, nDefaultValue: i32) -> i32 {
     let mut szValue: [u16; 64] = [0u16; 64];
     let mut cbValue: u32 = core::mem::size_of_val(&szValue) as u32;
@@ -72,7 +113,7 @@ unsafe extern "C" fn SIC_GetMetricsValue(pszValueName: PCWSTR, nDefaultValue: i3
     if error != 0 {
         return nDefaultValue;
     }
-    let idx = _countof!(szValue) - 1;
+    let idx = (_countof!(szValue) - 1) as usize;
     szValue[idx] = UNICODE_NULL; // Avoid buffer overrun
     _wtoi(szValue.as_ptr() as PCWSTR)
 }
@@ -345,7 +386,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
                                    ShortcutBitmapInfo.bmWidth, ShortcutBitmapInfo.bmHeight,
                                    ShortcutDC, 0, 0,
                                    ShortcutIconInfo.hbmMask, 0, 0,
-                                   MAKEROP4(0xAA0000, SRCCOPY)) == 0 {
+                                   MAKEROP4!(0xAA0000, SRCCOPY)) == 0 {
             break 'fail;
         }
 
@@ -354,7 +395,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
         SelectObject(ShortcutDC, (OldShortcutBitmap).cast());
         DeleteDC(ShortcutDC);
 
-        TargetIcon = CreateIconIndirect(&TargetIconInfo);
+        TargetIcon = CreateIconIndirect(core::ptr::addr_of_mut!(TargetIconInfo));
 
         DeleteObject((TargetIconInfo.hbmColor).cast());
         DeleteObject((TargetIconInfo.hbmMask).cast());
@@ -433,7 +474,7 @@ unsafe extern "C" fn SIC_IconAppend(
         sic_hdpa,
         lpsice as *mut core::ffi::c_void,
         0,
-        SIC_CompareEntries,
+        Some(SIC_CompareEntries),
         0,
         DPAS_SORTED | DPAS_INSERTAFTER,
     );
@@ -444,8 +485,8 @@ unsafe extern "C" fn SIC_IconAppend(
             break 'leave;
         }
     } else {
-        index = ImageList_AddIcon(ShellSmallIconList, hSmallIcon);
-        index1 = ImageList_AddIcon(ShellBigIconList, hBigIcon);
+        index = ImageList_AddIcon!(ShellSmallIconList, hSmallIcon);
+        index1 = ImageList_AddIcon!(ShellBigIconList, hBigIcon);
 
         if (index == -1) || (index1 == -1) {
             if index != -1 {
@@ -479,9 +520,9 @@ unsafe extern "C" fn SIC_IconAppend(
     LeaveCriticalSection(core::ptr::addr_of_mut!(SHELL32_SicCS));
     ret
 }
-unsafe extern "C" fn SIC_LoadIcon(sSourceFile: *const u16, dwSourceIndex: i32, dwFlags: u32) -> i32 {
-    let mut hiconLarge: isize = core::ptr::null_mut();
-    let mut hiconSmall: isize = core::ptr::null_mut();
+unsafe extern "C" fn SIC_LoadIcon(sSourceFile: *const u16, dwSourceIndex: i32, mut dwFlags: u32) -> i32 {
+    let mut hiconLarge: HICON = core::ptr::null_mut();
+    let mut hiconSmall: HICON = core::ptr::null_mut();
     let ret: i32;
 
     PrivateExtractIconsW(
@@ -546,7 +587,7 @@ pub unsafe extern "C" fn SIC_GetIconIndex(
     dwFlags: u32,
 ) -> i32 {
     unsafe {
-        let mut sice: SIC_ENTRY;
+        let mut sice: SIC_ENTRY = core::mem::zeroed();
         let mut ret: i32;
         let mut index: i32 = INVALID_INDEX;
         let mut path: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
@@ -572,7 +613,7 @@ pub unsafe extern "C" fn SIC_GetIconIndex(
                 sic_hdpa,
                 &mut sice as *mut SIC_ENTRY as *mut core::ffi::c_void,
                 0,
-                SIC_CompareEntries as unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void, LPARAM) -> i32,
+                Some(SIC_CompareEntries),
                 0,
                 DPAS_SORTED,
             );
@@ -581,7 +622,7 @@ pub unsafe extern "C" fn SIC_GetIconIndex(
         if index == INVALID_INDEX {
             ret = SIC_LoadIcon(sSourceFile, dwSourceIndex, dwFlags);
         } else {
-            ret = ((*(DPA_GetPtr(sic_hdpa, (index) as i64) as *mut SIC_ENTRY)).dwListIndex) as i32;
+            ret = ((*(DPA_GetPtr(sic_hdpa, (index) as INT_PTR) as *mut SIC_ENTRY)).dwListIndex) as i32;
         }
 
         LeaveCriticalSection(core::ptr::addr_of_mut!(SHELL32_SicCS));
@@ -647,9 +688,9 @@ pub unsafe extern "C" fn SIC_Initialize() -> i32 {
                 if hLg.is_null() {
                     result = result;
                 } else {
-                    if SIC_IconAppend(swShell32Name, (IDI_SHELL_DOCUMENT - 1) as i32, hSm, hLg, 0) == INVALID_INDEX {
+                    if SIC_IconAppend(core::ptr::addr_of!(swShell32Name).cast(), (IDI_SHELL_DOCUMENT - 1) as i32, hSm, hLg, 0) == INVALID_INDEX {
                         result = result;
-                    } else if SIC_IconAppend(swShell32Name, (-IDI_SHELL_DOCUMENT) as i32, hSm, hLg, 0) == INVALID_INDEX {
+                    } else if SIC_IconAppend(core::ptr::addr_of!(swShell32Name).cast(), -(IDI_SHELL_DOCUMENT as i32), hSm, hLg, 0) == INVALID_INDEX {
                         result = result;
                     } else {
                         result = TRUE;
@@ -686,8 +727,8 @@ pub unsafe extern "C" fn SIC_Initialize() -> i32 {
 #[cfg(target_arch = "x86")]
 unsafe extern "stdcall" fn sic_free(ptr: *mut core::ffi::c_void, lparam: *mut core::ffi::c_void) -> core::ffi::c_int {
     let _ = lparam;
-    let p = ptr as *mut _SIC_ENTRY;
-    HeapFree(GetProcessHeap(), 0, (*p).sSourceFile);
+    let p = ptr as *mut SIC_ENTRY;
+    HeapFree(GetProcessHeap(), 0, (*p).sSourceFile.cast());
     SHFree(ptr);
     return TRUE;
 }
@@ -695,8 +736,8 @@ unsafe extern "stdcall" fn sic_free(ptr: *mut core::ffi::c_void, lparam: *mut co
 #[cfg(not(target_arch = "x86"))]
 unsafe extern "C" fn sic_free(ptr: *mut core::ffi::c_void, lparam: *mut core::ffi::c_void) -> core::ffi::c_int {
     let _ = lparam;
-    let p = ptr as *mut _SIC_ENTRY;
-    HeapFree(GetProcessHeap(), 0, (*p).sSourceFile);
+    let p = ptr as *mut SIC_ENTRY;
+    HeapFree(GetProcessHeap(), 0, (*p).sSourceFile.cast());
     SHFree(ptr);
     return TRUE;
 }
@@ -706,22 +747,22 @@ pub unsafe extern "C" fn SIC_Destroy() {
         EnterCriticalSection(core::ptr::addr_of_mut!(SHELL32_SicCS));
         let hdpa = sic_hdpa;
         if !hdpa.is_null() {
-            DPA_DestroyCallback(hdpa, sic_free, core::ptr::null_mut());
+            DPA_DestroyCallback(hdpa, Some(sic_free), core::ptr::null_mut());
         }
         sic_hdpa = core::ptr::null_mut();
         ImageList_Destroy(ShellSmallIconList);
-        ShellSmallIconList = 0;
+        ShellSmallIconList = core::ptr::null_mut();
         ImageList_Destroy(ShellBigIconList);
-        ShellBigIconList = 0;
+        ShellBigIconList = core::ptr::null_mut();
         LeaveCriticalSection(core::ptr::addr_of_mut!(SHELL32_SicCS));
     }
 }
 unsafe extern "C" fn SIC_LoadOverlayIcon(icon_idx: i32) -> i32 {
     let mut buffer: [u16; 1024] = [0u16; 1024];
-    let iconPath: *const u16;
+    let mut iconPath: *const u16;
     let mut iconIdx: i32;
 
-    iconPath = swShell32Name;
+    iconPath = core::ptr::addr_of!(swShell32Name).cast();
     iconIdx = icon_idx;
 
     if HLM_GetIconW(
@@ -736,15 +777,15 @@ unsafe extern "C" fn SIC_LoadOverlayIcon(icon_idx: i32) -> i32 {
         // empty
     }
 
-    if sic_hdpa == 0 {
+    if sic_hdpa.is_null() {
         SIC_Initialize();
     }
 
     SIC_LoadIcon(iconPath, iconIdx, 0)
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn Shell_GetImageLists(lpBigList: *mut HIMAGELIST, lpSmallList: *mut HIMAGELIST) -> BOOL {
-    if sic_hdpa == 0 {
+#[no_mangle]
+pub unsafe extern "system" fn Shell_GetImageLists(lpBigList: *mut HIMAGELIST, lpSmallList: *mut HIMAGELIST) -> BOOL {
+    if sic_hdpa.is_null() {
         SIC_Initialize();
     }
     if !lpBigList.is_null() {
@@ -774,15 +815,20 @@ pub unsafe extern "C" fn PidlToSicIndex(
         SIC_Initialize();
     }
 
-    let hr: i32 = (*(*sh).GetUIObjectOf)(
+    // `IID_NULL_PPV_ARG(IExtractIconW, &ei)` expands to THREE arguments — `IID_IExtractIconW,
+    // NULL, (void**)&ei` — so it cannot be wrapped as a macro over the call; they are spelled out.
+    let hr: i32 = ((*(*sh).lpVtbl).GetUIObjectOf)(
         sh,
-        0,
+        core::ptr::null_mut(),
         1,
-        &pidl,
-        IID_NULL_PPV_ARG(IExtractIconW, &mut ei),
+        core::ptr::addr_of!(pidl).cast(),
+        core::ptr::addr_of!(IID_IExtractIconW).cast(),
+        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(ei).cast(),
     );
     if hr >= 0 {
-        let hr2 = (*ei).GetIconLocation(
+        let hr2 = ((*(*ei).lpVtbl).GetIconLocation)(
+            ei,
             uFlags & !GIL_FORSHORTCUT,
             szIconFile.as_mut_ptr(),
             MAX_PATH,
@@ -801,7 +847,7 @@ pub unsafe extern "C" fn PidlToSicIndex(
         } else {
             if INVALID_INDEX == iShortcutDefaultIndex {
                 iShortcutDefaultIndex = SIC_LoadIcon(
-                    swShell32Name,
+                    core::ptr::addr_of!(swShell32Name).cast(),
                     0,
                     GIL_FORSHORTCUT,
                 );
@@ -815,7 +861,7 @@ pub unsafe extern "C" fn PidlToSicIndex(
     }
 
     if !ei.is_null() {
-        (*ei).Release();
+        ((*(*ei).lpVtbl).Release)(ei);
     }
 
     ret
@@ -830,7 +876,7 @@ pub unsafe extern "system" fn SHMapPIDLToSystemImageListIndex(
     let mut Index: i32 = 0;
     let mut uGilFlags: u32 = 0;
 
-    if SHELL_IsShortcut(pidl) != 0 {
+    if SHELL_IsShortcut(pidl.cast()) != 0 {
         uGilFlags |= GIL_FORSHORTCUT;
     }
 
@@ -1067,16 +1113,16 @@ pub unsafe extern "system" fn ExtractAssociatedIconW(hInst: HINSTANCE, lpIconPat
         lpi_icon = &mut w_dummy_icon as *mut u16;
     }
 
-    h_icon = ExtractIconW(hInst, lpIconPath, (*lpi_icon) as u32);
+    h_icon = ExtractIconW(hInst.cast(), lpIconPath, (*lpi_icon) as u32).cast();
 
     if (h_icon as usize) < (2 as usize) {
         if (h_icon as usize) == (1 as usize) {
             let mut temp_path: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
-            let u_ret: HINSTANCE = FindExecutableW(lpIconPath, core::ptr::null_mut(), temp_path.as_mut_ptr());
+            let u_ret = FindExecutableW(lpIconPath, core::ptr::null_mut(), temp_path.as_mut_ptr());
 
             if (u_ret as usize) > (32 as usize) && temp_path[0 as usize] != 0 {
                 wcscpy(lpIconPath, temp_path.as_ptr());
-                h_icon = ExtractIconW(hInst, lpIconPath, (*lpi_icon) as u32);
+                h_icon = ExtractIconW(hInst.cast(), lpIconPath, (*lpi_icon) as u32).cast();
                 if (h_icon as usize) > (2 as usize) {
                     return h_icon;
                 }
@@ -1105,7 +1151,7 @@ pub unsafe extern "system" fn ExtractAssociatedIconExW(
     lpiIconId: LPWORD,
 ) -> HICON {
     // FIXME("%p %s %p %p): stub\n", hInst, debugstr_w(lpIconPath), lpiIconIdx, lpiIconId);
-    0
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -1153,10 +1199,10 @@ pub unsafe extern "system" fn SHDefExtractIconW(
     let mut hIcons: [HICON; 2] = core::mem::zeroed();
 
     let nIconSize = if nIconSize == 0 {
-        MAKELONG(
+        MAKELONG!(
             GetSystemMetrics((SM_CXICON) as i32),
             GetSystemMetrics((SM_CXSMICON) as i32),
-        )
+        ) as u32
     } else {
         nIconSize
     };
@@ -1164,8 +1210,8 @@ pub unsafe extern "system" fn SHDefExtractIconW(
     let ret = PrivateExtractIconsW(
         pszIconFile,
         iIndex,
-        nIconSize,
-        nIconSize,
+        nIconSize as c_int,
+        nIconSize as c_int,
         hIcons.as_mut_ptr(),
         core::ptr::null_mut(),
         2,

@@ -14,7 +14,8 @@
 use core::ffi::c_void;
 
 use crate::island::{
-    GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, RegisterClipboardFormatW, BOOL,
+    GetVersion, GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock,
+    RegisterClipboardFormatW, BOOL,
     CIDA, CLIPFORMAT, DWORD, FORMATETC, GHND, GUID, HRESULT, LONG, LPCITEMIDLIST, LPITEMIDLIST,
     PCUIDLIST_ABSOLUTE, PCUIDLIST_RELATIVE, POINT, SAFEARRAY, SHDESCRIPTIONID, SIZE_T, STGMEDIUM,
     UINT, ULONG, VARIANT, VARTYPE,
@@ -322,4 +323,14 @@ pub unsafe extern "system" fn SHELL_CreateSHDESCRIPTIONID(
         (*pDID).clsid = *pCLSID.cast();
     }
     hr
+}
+
+/// `wine/shell32_main.h:193` — `static __inline BOOL SHELL_OsIsUnicode(void)`. A header inline
+/// has INTERNAL linkage, so every C TU that uses it holds its own copy and there is no symbol
+/// to import: a Rust caller needs the body ported, and must NOT `#[no_mangle]` it (nothing
+/// links to this name, and exporting it would invent a symbol the C side never had).
+#[inline]
+pub unsafe fn SHELL_OsIsUnicode() -> BOOL {
+    // if high-bit of version is 0, we are emulating NT
+    (GetVersion() & 0x80000000 == 0) as BOOL
 }
