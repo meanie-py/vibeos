@@ -5066,3 +5066,44 @@ def test_no_literals_requested_is_a_no_op_not_a_failure(tmp_path):
 
     assert provenance.probes_missing_from_media(tmp_path, "i386", []) == []
     assert provenance.probes_missing_from_media(tmp_path, "i386", ["  "]) == []
+
+
+def test_rglob_stable_survives_a_directory_vanishing_mid_walk(tmp_path, monkeypatch):
+    """A parallel gate's `--clean` build deletes a sibling arch's cargo target dir while
+    another arch's smoke is walking it. pathlib raises FileNotFoundError from inside the
+    generator; the walk must be redone, not abandoned half-finished."""
+    from tests.qemu.cli import provenance
+
+    (tmp_path / "aarch64-pc-windows-gnullvm").mkdir()
+    (tmp_path / "aarch64-pc-windows-gnullvm" / "libfoo_rust.a").write_text("x")
+
+    real_rglob = Path.rglob
+    calls = {"n": 0}
+
+    def flaky(self, pattern):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # First walk races the concurrent build and dies part-way through.
+            yield from ()
+            raise FileNotFoundError(2, "No such file or directory", str(tmp_path / "i686-kernel"))
+        yield from real_rglob(self, pattern)
+
+    monkeypatch.setattr(Path, "rglob", flaky)
+    found = provenance.rglob_stable(tmp_path, "libfoo_rust.a")
+
+    assert calls["n"] == 2, "the racing walk must be redone, not swallowed"
+    assert [p.name for p in found] == ["libfoo_rust.a"]
+
+
+def test_rglob_stable_reraises_when_the_tree_is_genuinely_broken(tmp_path, monkeypatch):
+    """Retries are for a transient race. A directory that is ALWAYS unreadable is a real
+    fault, and returning a silently-short list would read as a staleness verdict."""
+    from tests.qemu.cli import provenance
+
+    def always_fails(self, pattern):
+        yield from ()
+        raise PermissionError(13, "Permission denied", str(tmp_path))
+
+    monkeypatch.setattr(Path, "rglob", always_fails)
+    with pytest.raises(OSError):
+        provenance.rglob_stable(tmp_path, "libfoo_rust.a")
