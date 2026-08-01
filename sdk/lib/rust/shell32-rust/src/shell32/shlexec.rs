@@ -3683,7 +3683,7 @@ pub unsafe extern "C" fn PathProcessCommandW(
         return -1;
     }
 
-    let mut szPath: CStringW;
+    let mut szPath = CStringW::new();
     let mut pchArg: PCWSTR = core::ptr::null();
 
     if *pszSrc == 0x0022u16 {
@@ -3694,10 +3694,10 @@ pub unsafe extern "C" fn PathProcessCommandW(
             szPath.SetString(pszSrc, len);
             pchArg = pch.add(1);
         } else {
-            szPath = pszSrc;
+            szPath = CStringW::from_ptr(pszSrc);
         }
 
-        if (dwFlags & PPCF_FORCEQUALIFY) != 0 || PathIsRelativeW(szPath) != 0 {
+        if (dwFlags & PPCF_FORCEQUALIFY) != 0 || PathIsRelativeW(szPath.as_ptr()) != 0 {
             let ret = PathResolveW(
                 szPath.GetBuffer(MAX_PATH),
                 core::ptr::null_mut(),
@@ -3716,7 +3716,7 @@ pub unsafe extern "C" fn PathProcessCommandW(
         let mut ich = 0;
 
         loop {
-            szPath += *pszSrc.add(ich as usize);
+            szPath.AppendChar(*pszSrc.add(ich as usize));
 
             if *pszSrc.add(ich as usize) != 0 && *pszSrc.add(ich as usize) != 0x0020u16 {
                 ich += 1;
@@ -3733,10 +3733,10 @@ pub unsafe extern "C" fn PathProcessCommandW(
                 ) == 0
             {
                 szPath.ReleaseBuffer();
-                szPath += *pszSrc.add(ich as usize);
+                szPath.AppendChar(*pszSrc.add(ich as usize));
             } else {
                 szPath.ReleaseBuffer();
-                let attrs = GetFileAttributesW(szPath);
+                let attrs = GetFileAttributesW(szPath.as_ptr());
                 if attrs != INVALID_FILE_ATTRIBUTES
                     && (attrs & FILE_ATTRIBUTE_DIRECTORY == 0
                         || (dwFlags & PPCF_NODIRECTORIES) == 0)
@@ -3751,11 +3751,11 @@ pub unsafe extern "C" fn PathProcessCommandW(
                     cchPath = ich;
                     break;
                 } else if !resolveRelative {
-                    szPath += *pszSrc.add(ich as usize);
+                    szPath.AppendChar(*pszSrc.add(ich as usize));
                 }
             }
 
-            if szPath[ich as usize] == 0 {
+            if szPath.GetAt(ich) == 0 {
                 szPath.ReleaseBuffer();
                 break;
             }
@@ -3774,16 +3774,19 @@ pub unsafe extern "C" fn PathProcessCommandW(
     }
 
     let needsQuoting = (dwFlags & PPCF_ADDQUOTES) != 0
-        && !wcschr(szPath, 0x0020u16).is_null();
+        && !wcschr(szPath.as_ptr(), 0x0020u16).is_null();
 
     let mut result: CStringW = if needsQuoting {
-        CPP_COM_WSTR_1B9334FEECE6.as_ptr() + szPath + CPP_COM_WSTR_1B9334FEECE6.as_ptr()
+        let mut q = CStringW::from_ptr(CPP_COM_WSTR_1B9334FEECE6.as_ptr());
+        q.Append(szPath.as_ptr());
+        q.Append(CPP_COM_WSTR_1B9334FEECE6.as_ptr());
+        q
     } else {
         szPath
     };
 
     if !pchArg.is_null() && (dwFlags & PPCF_ADDARGUMENTS) != 0 {
-        result += pchArg;
+        result.Append(pchArg);
     }
 
     let requiredSize = result.GetLength() + 1;
@@ -3793,7 +3796,7 @@ pub unsafe extern "C" fn PathProcessCommandW(
     }
 
     if requiredSize > cchDest
-        || StringCchCopyW(pszDest, cchDest, result) != S_OK
+        || StringCchCopyW(pszDest, cchDest, result.as_ptr()) != S_OK
     {
         return -1;
     }
