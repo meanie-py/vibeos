@@ -83,6 +83,8 @@ REQUIRED_FILES=(
     "$BUILD_DIR/drivers/base/bootvid/bootvid.dll"
     "$BUILD_DIR/dll/ntdll/ntdll.dll"
     "$BUILD_DIR/boot/bootdata/system"
+    "$BUILD_DIR/boot/bootdata/sam"
+    "$BUILD_DIR/boot/bootdata/security"
     "$BUILD_DIR/drivers/storage/class/ramdisk/ramdisk.sys"
     "$BUILD_DIR/drivers/filesystems/fastfat/fastfat.sys"
     "$BUILD_DIR/base/system/smss/smss.exe"
@@ -287,9 +289,19 @@ RMC "$BUILD_DIR/hal/halarm64/hal.dll"                          ::/reactos/system
 RMC "$BUILD_DIR/drivers/base/kdrosdbg/kdcom.dll"               ::/reactos/system32/kdcom.dll
 RMC "$BUILD_DIR/drivers/base/bootvid/bootvid.dll"              ::/reactos/system32/bootvid.dll
 RMC "$BUILD_DIR/dll/ntdll/ntdll.dll"                           ::/reactos/system32/ntdll.dll
+# All FIVE hives mkhive emits, matching the livecd's add_cd_file list
+# (sdk/cmake/CMakeMacros.cmake). sam and security were missing here for a long
+# time and the failure is SILENT: CmpLoadHiveThread can't open the file, sets
+# Allocate, and CmpLinkHiveToMaster fabricates an empty volatile hive whose root
+# key gets CmpHiveRootSecurityDescriptor(). So \REGISTRY\MACHINE\SAM existed and
+# opened fine on arm64 while holding no accounts at all -- and it read as
+# *more* correct than x86 in CmSecurity, because the fabricated descriptor is
+# exactly what that test expects. Staging drift here does not announce itself.
 RMC "$BUILD_DIR/boot/bootdata/system"                          ::/reactos/system32/config/system
 RMC "$BUILD_DIR/boot/bootdata/default"                         ::/reactos/system32/config/default
 RMC "$BUILD_DIR/boot/bootdata/software"                        ::/reactos/system32/config/software
+RMC "$BUILD_DIR/boot/bootdata/sam"                             ::/reactos/system32/config/sam
+RMC "$BUILD_DIR/boot/bootdata/security"                        ::/reactos/system32/config/security
 RMC "$BUILD_DIR/drivers/storage/class/ramdisk/ramdisk.sys"     ::/reactos/system32/drivers/ramdisk.sys
 RMC "$BUILD_DIR/drivers/filesystems/fastfat/fastfat.sys"       ::/reactos/system32/drivers/fastfat.sys
 RMC "$BUILD_DIR/drivers/network/netstack/netstack.sys"         ::/reactos/system32/drivers/netstack.sys
