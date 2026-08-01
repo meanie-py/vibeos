@@ -88,17 +88,12 @@ pub type REFCLSID = *const CLSID;
 pub type REFFMTID = *const FMTID;
 
 // ── PIDL on-disk format (shtypes.h + pidl.h, pshpack1 — ALL packed) ──────────────────────
-/// SHITEMID (shtypes.h): { WORD cb; BYTE abID[1]; }
-#[repr(C, packed)]
-pub struct SHITEMID {
-    pub cb: WORD,
-    pub abID: [BYTE; 1],
-}
-/// ITEMIDLIST (shtypes.h): { SHITEMID mkid; }
-#[repr(C, packed)]
-pub struct ITEMIDLIST {
-    pub mkid: SHITEMID,
-}
+// DATA LAYOUTS BELONG TO THE ISLAND; shellcom owns only vtable ABI. Re-export, never
+// redeclare: two structurally identical `struct ITEMIDLIST` declarations are still two
+// DIFFERENT Rust types, so every PIDL crossing between an island extern and a shellcom
+// vtable would need a cast — and a cast is exactly where a real layout drift stops being
+// caught. This split cost ~8 errors in brfolder alone before it was collapsed here.
+pub use crate::island::{ITEMIDLIST, SHITEMID};
 pub type LPITEMIDLIST = *mut ITEMIDLIST;
 pub type LPCITEMIDLIST = *const ITEMIDLIST;
 pub type PIDLIST_ABSOLUTE = LPITEMIDLIST;

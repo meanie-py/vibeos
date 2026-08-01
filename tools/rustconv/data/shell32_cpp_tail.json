@@ -41,7 +41,6 @@
     ],
     "monolith": [
       "dll/win32/shell32/dialogs/dialogs.cpp",
-      "dll/win32/shell32/brfolder.cpp",
       "dll/win32/shell32/dialogs/filetypes.cpp",
       "dll/win32/shell32/utils.cpp",
       "dll/win32/shell32/shlexec.cpp",
@@ -69,12 +68,13 @@
       "dll/win32/shell32/CShellLink.cpp"
     ],
     "free_function_tu": [
-      "dll/win32/shell32/iconcache.cpp",
+      "dll/win32/shell32/brfolder.cpp",
       "dll/win32/shell32/debughlp.cpp",
       "dll/win32/shell32/dialogs/general.cpp",
       "dll/win32/shell32/dialogs/recycler_prop.cpp",
       "dll/win32/shell32/dialogs/view.cpp",
       "dll/win32/shell32/folders.cpp",
+      "dll/win32/shell32/iconcache.cpp",
       "dll/win32/shell32/propsheet.cpp",
       "dll/win32/shell32/shldataobject.cpp",
       "dll/win32/shell32/shlfolder.cpp",
