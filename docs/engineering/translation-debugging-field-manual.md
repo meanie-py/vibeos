@@ -145,6 +145,16 @@ bug that i386 caught for you**, not an i386 quirk to work around. Fix every decl
 definition, and fix the call-site casts with them — a widened parameter usually needs the
 argument expression widened too, or you have only moved the truncation.
 
+**The NO-`@N` variant: an `undefined _Foo` with no suffix at all is a Win32 API you declared
+`extern "C"`.** WINAPI is stdcall, so on i386 the convention IS the symbol name —
+`_SetErrorMode@4` vs `_SetErrorMode` — while on amd64/arm64 the two conventions coincide and
+the same declaration links green. errno.rs declared `SetErrorMode`/`lstrcpyW`/`lstrcatW`
+`extern "C"` and got exactly that: three undefined symbols, i386 only. **`cargo check` cannot
+see this class at all** — it type-checks, it does not link a DLL — so a lane whose gates are
+`check` + `check-tooling` + `difftest` will hand a green tree to the merge queue and be
+bounced LINK_FAIL. When a wave adds any `extern` block, run `vibeos-cli build --arch i386`
+before `land`; i386 is the arch that decorates, so it is the one that finds it.
+
 ### Wrong-direction fix: aligning the DEF to a lying header `[§9.107]`
 Resolving a `scan_ir_mismatch` "def X vs decl system" by changing the **definition** to cdecl
 is backwards when the header simply omits `NTAPI`. i386-only BUGCHECK 0x1E follows, and the

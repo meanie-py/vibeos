@@ -127,12 +127,20 @@ macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 pub type _invalid_parameter_handler =
     Option<unsafe extern "C" fn(*const u16, *const u16, *const u16, c_uint, usize)>;
 
-extern "C" {
-    /// kernel32. `_seterrormode` is a straight forwarder to it.
+/// The three kernel32 entry points errno.c reaches. `system`, never `C`: they are WINAPI
+/// (stdcall), and on i386 that is not a style preference but the SYMBOL NAME —
+/// `_SetErrorMode@4` vs `_SetErrorMode`. Declared `C` here they linked fine on amd64 and
+/// arm64, where the two conventions coincide, and failed the i386 DLL link with three
+/// undefined symbols. `cargo check` cannot see it: nothing links there.
+extern "system" {
+    /// `_seterrormode` is a straight forwarder to it.
     fn SetErrorMode(uMode: c_uint) -> c_uint;
-    /// kernel32's W string helpers, as `__wcserror_s` uses them.
+    /// The W string helpers `__wcserror_s` builds its message with.
     fn lstrcpyW(dst: *mut u16, src: *const u16) -> *mut u16;
     fn lstrcatW(dst: *mut u16, src: *const u16) -> *mut u16;
+}
+
+extern "C" {
     /// Defined in THIS crate (`cnt-rust`'s cabi and `lib.rs` respectively), but reached
     /// here through the linker rather than a `use`: both are `#[no_mangle]`, so the symbol
     /// is the interface, and importing the Rust item would bypass the very export under
