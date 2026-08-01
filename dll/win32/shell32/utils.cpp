@@ -2282,6 +2282,20 @@ SHILAppend_RustBridge(LPITEMIDLIST pidl, LPITEMIDLIST *ppidl)
     return SHILAppend(pidl, ppidl);
 }
 
+/* SHGetAttributes / GetDfmCmd are shell32-internal (precomp.h:290, :217) with C++ linkage and
+ * no WINAPI, and they take C++ interface types. WINAPI shims, same as the neighbours. */
+extern "C" DWORD WINAPI
+SHGetAttributes_RustBridge(IShellFolder *psf, LPCITEMIDLIST pidl, DWORD dwAttributes)
+{
+    return SHGetAttributes(psf, pidl, dwAttributes);
+}
+
+extern "C" UINT WINAPI
+GetDfmCmd_RustBridge(IContextMenu *pCM, LPCSTR verba)
+{
+    return GetDfmCmd(pCM, verba);
+}
+
 /* PathIsDosDevice is a shell32-internal (precomp.h:312), C++ linkage; WINAPI shim. */
 extern "C" BOOL WINAPI
 PathIsDosDevice_RustBridge(LPCWSTR pszName)

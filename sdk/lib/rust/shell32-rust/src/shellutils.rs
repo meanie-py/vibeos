@@ -400,3 +400,40 @@ pub unsafe fn RosGetProcessEffectiveVersion() -> UINT {
     let peb = ntdll_sys::nt::NtCurrentPeb();
     (((*peb).OSMajorVersion << 8) | (*peb).OSMinorVersion) as UINT
 }
+
+// ── CCoInitBase (shellutils.h:611) ───────────────────────────────────────────────────────
+// A C++ RAII *template*, so like the inlines above it exists in no TU and rustconv never sees
+// a body — but unlike them it has no name to leave unresolved either: bindgen renders it as
+// the opaque `pub type COleInit = u8;`, against which the natural translation of
+// `COleInit OleInit;` is `let _ole_init: COleInit;`. That compiles, and runs NEITHER half of
+// the RAII pair — no OleInitialize on the way in, no OleUninitialize on the way out. An
+// uninitialised Rust binding is never dropped. Port the guard for real and let Drop do it.
+//
+// `prelude` re-exports this name explicitly so it shadows the island's `u8` alias, the same
+// way `CCidaChildArrayHelper` is handled.
+unsafe extern "system" {
+    fn OleInitialize(pvReserved: *mut c_void) -> HRESULT;
+    fn OleUninitialize();
+}
+
+/// `CCoInitBase<OleInitialize, OleUninitialize>` — ctor initialises OLE, dtor uninitialises it
+/// iff the init succeeded. Construct it with `COleInit::new()`; binding it to `_` would drop it
+/// immediately, so keep a named binding for the scope you want COM alive in.
+pub struct COleInit {
+    pub hr: HRESULT,
+}
+
+impl COleInit {
+    #[inline]
+    pub unsafe fn new() -> Self {
+        Self { hr: OleInitialize(core::ptr::null_mut()) }
+    }
+}
+
+impl Drop for COleInit {
+    fn drop(&mut self) {
+        if self.hr >= 0 {
+            unsafe { OleUninitialize() };
+        }
+    }
+}

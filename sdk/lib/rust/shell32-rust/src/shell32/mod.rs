@@ -35,7 +35,7 @@ pub mod iconcache;
 // foundation. Counts measured with all six wired, after the substrate landed:
 //
 //     shlexec.rs   349     shlfileop.rs  227     iconcache.rs    0 <- flipped
-//     brfolder.rs   86     shlfolder.rs    0 <- flipped     shldataobject 0 <- flipped
+//     brfolder.rs    0 <- flipped     shlfolder.rs    0 <- flipped     shldataobject 0 <- flipped
 //
 // brfolder went 244 -> 86 on 2026-07-31: every SUBSTRATE gap it had is now closed and landed
 // (14 more TreeView_* wrappers and `TV_ITEM` in the prelude, `crate::layout` for the whole of
@@ -59,7 +59,6 @@ pub mod iconcache;
 //
 // What each still needs, in cheapest-first order:
 //
-//   * brfolder (244) — cast/signature integration at volume, plus TreeView_* macro residue.
 //   * shlfileop / shlexec (227 / 349) — both additionally want `CStringW`, which `atl.rs`
 //     deliberately does NOT yet provide. Its measured surface is new()/Left/GetLength/IsEmpty/
 //     SetString/GetBuffer/ReleaseBuffer/as_ptr/`+=` plus 14 `Format` calls. `Format` is
@@ -69,6 +68,11 @@ pub mod iconcache;
 //
 // Each carries an `//! ORPHAN-BY-DESIGN:` banner. PAID artifacts — do not delete them to tidy up.
 //
-// pub mod brfolder;   <- 86 errors, this file's own casts only
+/// brfolder.cpp — the SHBrowseForFolder dialog. FLIPPED 2026-07-31: 86 -> 0. The residue was
+/// this file's own casts plus four defects a green C build hides: amd64 widths baked into
+/// `LRESULT`/`UINT_PTR`/`SIZE_T` casts, a C++ `!` turned into Rust's BITWISE not, one of two
+/// `BrFolder_GetName` OVERLOADS dropped, and a `COleInit` RAII local left uninitialised so
+/// neither OleInitialize nor OleUninitialize ran.
+pub mod brfolder;
 // pub mod shlexec;
 // pub mod shlfileop;

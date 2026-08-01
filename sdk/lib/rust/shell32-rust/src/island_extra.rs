@@ -59,9 +59,12 @@ pub fn HRESULT_FROM_WIN32(x: LONG) -> HRESULT {
     }
 }
 
-extern "system" {
-    pub fn lstrcpynW(dst: LPWSTR, src: LPCWSTR, capacity: INT) -> LPWSTR;
-}
+// `lstrcpynW` USED to be declared here. It is not residue any more: all three arch islands now
+// bind it from the real header (`unsafe extern "stdcall"`, identical to the `extern "system"`
+// this block had), and two glob-visible declarations of one name make every unqualified use an
+// E0659 ambiguity — even `crate::island::lstrcpynW`, because both globs land in `island`.
+// Anything hand-written here that bindgen later learns to emit must be deleted, not kept "just
+// in case": the duplicate does not shadow, it collides.
 
 extern "C" {
     pub fn wcscpy(dst: LPWSTR, src: LPCWSTR) -> LPWSTR;

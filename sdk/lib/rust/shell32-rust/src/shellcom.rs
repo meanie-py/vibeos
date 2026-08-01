@@ -88,6 +88,13 @@ pub type REFCLSID = *const CLSID;
 pub type REFFMTID = *const FMTID;
 
 // ── PIDL on-disk format (shtypes.h + pidl.h, pshpack1 — ALL packed) ──────────────────────
+// These DUPLICATE the island's `_SHITEMID`/`_ITEMIDLIST`, and that is deliberate — do not
+// "collapse" them to `pub use crate::island::{...}`. This file is `#[path]`-included into
+// menuband-rust (lib.rs:38), which has no island module, precisely so that crate gets a
+// layout-identical copy without depending on the shell32-rust staticlib. A `crate::island`
+// reference here compiles in shell32-rust and breaks menuband-rust with E0432, which only
+// the arm64 gate surfaced. The cost is that PIDLs crossing an island extern into one of the
+// vtable signatures below need a `.cast()`; pay it at the call site.
 /// SHITEMID (shtypes.h): { WORD cb; BYTE abID[1]; }
 #[repr(C, packed)]
 pub struct SHITEMID {

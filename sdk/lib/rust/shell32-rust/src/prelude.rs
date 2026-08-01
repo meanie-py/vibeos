@@ -77,7 +77,7 @@ pub use crate::atl::{
 // glob for `CCidaChildArrayHelper`: bindgen renders the C++ class as a bare layout with no
 // constructor, and the translated call sites need the real one.
 pub use crate::shellutils::{
-    hida_clipformat, CCidaChildArrayHelper, DataObject_GetData, DataObject_GetOffset,
+    hida_clipformat, CCidaChildArrayHelper, COleInit, DataObject_GetData, DataObject_GetOffset,
     DataObject_SetData, DataObject_SetOffset, DestroyCIDA, HIDA_GetPIDLFolder, HIDA_GetPIDLItem,
     ILIsSingle, ReleaseStgMedium, SHAlloc,
 };
@@ -752,6 +752,8 @@ extern "system" {
         dwTypeData: crate::island::LPCWSTR,
         fState: crate::island::UINT,
     ) -> crate::island::BOOL;
+    /// C++ linkage in `utils.cpp`; reached through the WINAPI shim like its neighbours.
+    #[link_name = "SHILAppend_RustBridge"]
     pub fn SHILAppend(
         pidl: crate::island::LPITEMIDLIST,
         ppidl: *mut crate::island::LPITEMIDLIST,
@@ -761,6 +763,13 @@ extern "system" {
 extern "C" {
     /// msvcrt.
     pub fn free(block: *mut core::ffi::c_void);
+    /// `precomp.h:291`, defined in `utils.cpp`. Plain __cdecl — NOT WINAPI — so it belongs in
+    /// the `extern "C"` block; `extern "system"` mangles it to `_SHELL_GetIDListTarget@8` on
+    /// i386, which is the only arch that catches the mismatch.
+    pub fn SHELL_GetIDListTarget(
+        pidl: crate::island::LPCITEMIDLIST,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+    ) -> crate::island::HRESULT;
 }
 
 // `ui/layout.h` and the remaining `shellutils.h` / `compat_undoc.h` inlines. All header inlines,
@@ -843,30 +852,60 @@ extern "system" {
         pszShort: crate::island::LPCWSTR,
         pszFileSpec: crate::island::LPCWSTR,
     ) -> crate::island::BOOL;
-    /// `shellutils.h:290-291` — real functions, not inlines, defined in `utils.cpp`.
+    /// `precomp.h:290` — a real function, not an inline, defined in `utils.cpp` with C++
+    /// linkage and no WINAPI, so it is reached through a shim rather than declared directly.
+    #[link_name = "SHGetAttributes_RustBridge"]
     pub fn SHGetAttributes(
         psf: *mut crate::shellcom::IShellFolder,
         pidl: crate::island::LPCITEMIDLIST,
         dwAttributes: crate::island::DWORD,
     ) -> crate::island::DWORD;
-    pub fn SHELL_GetIDListTarget(
-        pidl: crate::island::LPCITEMIDLIST,
-        ppidl: *mut crate::island::LPITEMIDLIST,
-    ) -> crate::island::HRESULT;
-    /// `shellutils.h:217` — maps a verb string to its DFM_CMD_*.
+    /// `precomp.h:217` — maps a verb string to its DFM_CMD_*. C++ linkage; shimmed.
+    #[link_name = "GetDfmCmd_RustBridge"]
     pub fn GetDfmCmd(
         pCM: *mut core::ffi::c_void,
         verba: crate::island::LPCSTR,
     ) -> crate::island::UINT;
-    pub fn SetWindowLongPtrW(
-        hWnd: crate::island::HWND,
-        nIndex: crate::island::INT,
-        dwNewLong: crate::island::LONG_PTR,
-    ) -> crate::island::LONG_PTR;
-    pub fn GetWindowLongPtrW(
-        hWnd: crate::island::HWND,
-        nIndex: crate::island::INT,
-    ) -> crate::island::LONG_PTR;
+}
+
+/// `SetWindowLongPtrW` is a winuser.h MACRO for `SetWindowLongW` on 32-bit — there is no export
+/// of that name to link against, which is why the i386 island does not carry one. Same split as
+/// `SetWindowLongPtr` above; kept under the `W` name because that is what the translated call
+/// sites in `brfolder`, `layout` and `shlfileop` emit.
+#[cfg(target_pointer_width = "32")]
+#[inline]
+pub unsafe fn SetWindowLongPtrW(
+    hWnd: crate::island::HWND,
+    nIndex: crate::island::INT,
+    dwNewLong: crate::island::LONG_PTR,
+) -> crate::island::LONG_PTR {
+    crate::island::SetWindowLongW(hWnd, nIndex, dwNewLong as crate::island::LONG)
+        as crate::island::LONG_PTR
+}
+#[cfg(target_pointer_width = "64")]
+#[inline]
+pub unsafe fn SetWindowLongPtrW(
+    hWnd: crate::island::HWND,
+    nIndex: crate::island::INT,
+    dwNewLong: crate::island::LONG_PTR,
+) -> crate::island::LONG_PTR {
+    crate::island::SetWindowLongPtrW(hWnd, nIndex, dwNewLong)
+}
+#[cfg(target_pointer_width = "32")]
+#[inline]
+pub unsafe fn GetWindowLongPtrW(
+    hWnd: crate::island::HWND,
+    nIndex: crate::island::INT,
+) -> crate::island::LONG_PTR {
+    crate::island::GetWindowLongW(hWnd, nIndex) as crate::island::LONG_PTR
+}
+#[cfg(target_pointer_width = "64")]
+#[inline]
+pub unsafe fn GetWindowLongPtrW(
+    hWnd: crate::island::HWND,
+    nIndex: crate::island::INT,
+) -> crate::island::LONG_PTR {
+    crate::island::GetWindowLongPtrW(hWnd, nIndex)
 }
 
 // The icon cache, flipped in `shell32::iconcache` — imported rather than re-declared, because

@@ -519,11 +519,28 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   globals `wine/shell32_main.h` publishes needed `#[no_mangle]`, and `brfolder.cpp` declares
   `Shell_GetCachedImageIndexW` bare at its own file scope — a declaration outside any header,
   which a header-only grep misses.
-  Still parked: `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop,brfolder}.rs`,
+  `brfolder.cpp` is flipped (2026-07-31), 86 errors → 0. One root was shared substrate and pays off
+  beyond this file: the prelude declared `SetWindowLongPtrW`/`GetWindowLongPtrW` as
+  raw externs when on i386 winuser.h makes them macros for the non-`Ptr` entry points, so they
+  are now cfg-split wrappers that `layout.rs` and `shlfileop.rs` inherit. A second candidate
+  root was REJECTED and is worth knowing about: `shellcom.rs` duplicates the island's
+  `ITEMIDLIST`/`SHITEMID`, and collapsing that to a re-export passes `cargo check -p
+  shell32-rust` on all three arches while breaking `menuband-rust`, which `#[path]`-includes
+  the file and has no island. The duplication is deliberate; the crossings `.cast()` instead.
+  The rest were defects
+  a green C++ build cannot show: amd64 widths baked into `LRESULT`/`UINT_PTR`/`SIZE_T` casts
+  (i386-only failures), `isize` where i386 wants `INT_PTR`/`LPARAM` (same width, different Rust
+  type), one of two `BrFolder_GetName` **overloads** dropped, a C++ **default argument** lost at
+  its call site, C's `!` on a BOOL translated as Rust's **bitwise** NOT, and a `COleInit` RAII
+  local left as an uninitialised binding so neither `OleInitialize` nor `OleUninitialize` ran —
+  silent, and the reason the C++-construct checklist is now in the field manual. Link closure
+  needed `EXTERN_C` on `SHELL_GetIDListTarget` (declared in `precomp.h`, `__cdecl` — so the Rust
+  side is `extern "C"`, not `extern "system"`) and `_RustBridge` shims for `SHGetAttributes` and
+  `GetDfmCmd`, matching the ones `utils.cpp` already had.
+  Still parked: `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop}.rs`,
   each carrying an `//! ORPHAN-BY-DESIGN:` banner. Post-substrate error counts
   and what each still needs are in that directory's `mod.rs`; the short version is that
-  brfolder is cast-and-signature integration with no new substrate, while
-  shlfileop/shlexec additionally want a `CStringW` whose `Format` is printf-variadic and so
+  shlfileop/shlexec want a `CStringW` whose `Format` is printf-variadic and so
   needs a `rust_varargs_shim.c` trampoline. Paid artifacts — do not delete to tidy up.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 

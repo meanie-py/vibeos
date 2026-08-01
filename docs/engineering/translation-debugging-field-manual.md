@@ -863,6 +863,31 @@ Two traps specific to this move:
   (~73 on shell32). Blocklist the interfaces with `EXTRA_BL_ITEMS` *and* re-export them with
   `EXTRA_RAW_LINES`: blocklisting removes the definition, not the references, so without the
   re-export the island fails E0412 on its own output.
+- **A duplicate layout in your vtable module is a real cost, but check WHO ELSE COMPILES THAT
+  FILE before collapsing it.** shell32's `shellcom.rs` hand-writes `SHITEMID`/`ITEMIDLIST`
+  beside the island's `_ITEMIDLIST`; two structurally identical `#[repr(C, packed)]`
+  declarations are still two different Rust types, so every PIDL crossing from an island extern
+  into a shellcom vtable signature fails `expected *const shellcom::ITEMIDLIST, found *const
+  _ITEMIDLIST`. The one-line `pub use crate::island::{ITEMIDLIST, SHITEMID};` looks free — it
+  cost zero errors in `shell32-rust` — and it is **wrong**: `shellcom.rs` is `#[path]`-included
+  into `menuband-rust` (`lib.rs:38`) *specifically* so that crate gets a layout-identical copy
+  without depending on the shell32-rust staticlib, and it has no island. `E0432: could not find
+  island in the crate root`, surfaced only by the arm64 leg of a full gate, ~15 minutes after a
+  clean three-arch `cargo check -p shell32-rust`.
+  **Before deleting or re-pointing anything in a shared substrate file, `grep -rn "<file>.rs"
+  --include=*.rs` for `#[path]` includes.** A path-included module has a second dependency
+  surface that its own crate's `cargo check` cannot see, and `-p <crate>` is not the whole story
+  — the gate builds every crate. Keep the duplicate, note *why* it is duplicated at the
+  declaration, and `.cast()` at the crossings (5 sites in `brfolder`).
+  The same measure-first rule applies for its own sake: shellcom's `STRRET` stays hand-written
+  because the island's is a bindgen anon-union (`__bindgen_anon_1` + `__BindgenUnionField`) and
+  collapsing to it would rewrite `.u.pOleStr` across four landed files.
+- **`<stem>_extra.rs` is residue, not a spare copy — delete an entry the day bindgen learns to
+  emit it.** `island_extra.rs` kept a hand-written `lstrcpynW` after all three arch islands
+  began binding it (identically, `stdcall` vs the residue's `system`). A duplicate in the
+  extra file does NOT shadow the generated one — `island.rs` globs both, so *every* use goes
+  `E0659: ambiguous`, including a fully-qualified `crate::island::lstrcpynW`. The tell is an
+  ambiguity error naming `types_arch` and `types_extra` as the two candidates.
 - **A `-x c++` cell emits broken aliases for class-template member typedefs** — bindgen
   flattens them to non-generic aliases over unbound parameters (`pub type
   ATL_CComEnum__CComEnumBase = u8<Base, T, Copy>;`). Blocklist by the **C++ qualified name**,
@@ -1622,6 +1647,40 @@ N+1 as evidence that the fix for bug N was wrong.**
 - **A hand-rolled `va_arg` walking `&last_fixed_param`** is amd64-only garbage.
 - **Kernel Rust emitting x87 (`fild`/`fistp`) for 64-bit atomics** → an imprecise 0xc0000092
   BSOD blamed on an innocent function.
+
+### C++ constructs Rust cannot spell — overloads, default args, and RAII locals
+Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ features with no
+Rust equivalent. Two are loud, one is silent, and the silent one is the reason to check for all
+three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
+
+- **Overloads collapse to whichever one the model translated.** C++ had two
+  `BrFolder_GetName`s — `(IShellFolder*, PCIDL, ...)` and `(BrFolder*, HTREEITEM, ...)`, the
+  second delegating to the first. Rust has no overloading, so only one survived, and the call
+  sites for the *other* one were left pointing at it — with a `.cast()` politely inserted on the
+  first argument, which is exactly what makes it look deliberate. Loud (`E0308`/`E0061`), but
+  read the C before "fixing" the call: the answer is to write the missing overload under a new
+  name, not to bend the arguments until they typecheck.
+- **A default argument is not carried to the call site.** `BrFolder_FindTreeItemOfAbsoluteItem(
+  BrFolder&, PCIDLIST_ABSOLUTE, HTREEITEM hItem = NULL)` called with two arguments in C++ needs
+  three in Rust. Loud (`E0061`), trivial to fix, easy to mis-fix by deleting the parameter.
+- **An RAII local becomes an UNINITIALISED binding, and runs NEITHER half. This one is silent.**
+  `COleInit OleInit;` — a `CCoInitBase<OleInitialize, OleUninitialize>` from `shellutils.h` —
+  came out as `let _ole_init: COleInit;`. That compiles: an unused, uninitialised Rust binding
+  is legal, is never constructed, and is **never dropped**. So `SHBrowseForFolderW` ran its
+  whole dialog with no `OleInitialize` and no `OleUninitialize`, against a C comment that says
+  in so many words "we do it anyway in case the caller forgot".
+
+  Two things conspire here. The guard is a class *template* in a header, so like any header
+  inline it lives in no TU and rustconv never sees a body — but unlike an inline it leaves no
+  unresolved name to trip over either, because bindgen renders it as an opaque
+  `pub type COleInit = u8;`. A declaration against that alias is well-formed. Nothing anywhere
+  in the pipeline is red.
+
+  **Grep every flipped `.cpp` for a bare `let <name>: <CppType>;` with no initialiser.** If the
+  C++ type has a constructor or destructor, that line is a dropped side effect. Port the guard
+  for real (`struct` + `impl Drop`) and construct it — `COleInit::new()` in
+  `shell32-rust/src/shellutils.rs` is the worked example, including the `prelude` re-export that
+  shadows the island's `u8` alias so the name still resolves to the real thing.
 
 ### Element count vs byte count — the recurring arithmetic bug
 - **`write_bytes(ptr, v, size_of::<T>())`**: the count is in **ELEMENTS**, so a typed pointer

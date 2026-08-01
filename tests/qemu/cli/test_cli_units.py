@@ -645,6 +645,47 @@ def test_triage_bugcheck_and_known_flake():
     assert r2["classification"] == "BUGCHECK" and r2["bugcheck"] == "0x7E"
 
 
+_E3_SERIAL = (
+    "[EXPLORER] _tWinMain entered\nshell ready\n"
+    "*** BUGCHECK: 0x000000E3 (0xfffffa0006344870, 0xfffffa00061fcc00, "
+    "0x0000000000000000, 0x0000000000000003)\n"
+)
+
+
+def test_triage_known_flake_after_boot_marker_is_still_a_known_flake():
+    """A documented flake does not stop being one by firing after the marker.
+
+    post_boot_check() used to hardcode known_flake=None, so the SAME arm64 ERESOURCE
+    0xE3 was auto-retried before the marker and rejected a green-gated batch out of
+    the merge queue after it. Both paths must agree.
+    """
+    post = triage.post_boot_check(_E3_SERIAL)
+    assert post is not None
+    assert post["classification"] == "KNOWN_FLAKE"
+    assert post["known_flake"] == "arm64_eresource_notowned_0xe3"
+
+    pre = triage.classify(_E3_SERIAL, reached=False, fail_marker=None, debugcon=None)
+    assert pre["classification"] == post["classification"]
+    assert pre["known_flake"] == post["known_flake"]
+
+
+def test_triage_unsignatured_bugcheck_after_marker_still_blocks():
+    """The other half: a post-marker crash with no signature must NOT be excused."""
+    serial = "[EXPLORER] _tWinMain entered\n*** BUGCHECK: 0x0000007E (0x1, 0x2, 0x3, 0x4)\n"
+    r = triage.post_boot_check(serial)
+    assert r is not None
+    assert r["classification"] == "BUGCHECK"
+    assert r["known_flake"] is None
+
+
+def test_triage_flake_note_is_optional():
+    """`note` is optional metadata; a matching entry without one must not KeyError."""
+    entry = {"name": "t", "when": "bugcheck", "code": "0x1", "any": []}
+    assert triage._flake_note(entry) == []
+    assert triage._flake_note(None) == []
+    assert triage._flake_note({**entry, "note": "hi"}) == ["hi"]
+
+
 def test_triage_hang_surfaces_tails():
     r = triage.classify(
         "line1\nline2\nstuck...\n", reached=False, fail_marker=None, debugcon="A\nB\nC\n"

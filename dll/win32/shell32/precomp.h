@@ -288,7 +288,9 @@ SHELL_DisplayNameOf(
 
 DWORD
 SHGetAttributes(_In_ IShellFolder *psf, _In_ LPCITEMIDLIST pidl, _In_ DWORD dwAttributes);
-HRESULT SHELL_GetIDListTarget(_In_ LPCITEMIDLIST pidl, _Out_ PIDLIST_ABSOLUTE *ppidl);
+/* EXTERN_C: called from Rust (shell32-rust/src/shell32/brfolder.rs). Plain __cdecl — no
+   WINAPI — so the Rust side must declare it `extern "C"`, not `extern "system"`. */
+EXTERN_C HRESULT SHELL_GetIDListTarget(_In_ LPCITEMIDLIST pidl, _Out_ PIDLIST_ABSOLUTE *ppidl);
 HRESULT SHCoInitializeAnyApartment(VOID);
 
 HRESULT

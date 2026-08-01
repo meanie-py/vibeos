@@ -112,8 +112,22 @@ KNOWN_FLAKES = [
         "when": "bugcheck",
         "code": "0x000000E3",
         "any": ["0x0000000000000000, 0x0000000000000003)"],
+        "note": "known arm64 ERESOURCE release-not-owned flake (roadmap; retry)",
     },
 ]
+
+
+def _flake_note(flake: dict | None) -> list[str]:
+    """The flake's human note, as a (possibly empty) salient-line list.
+
+    `note` is optional metadata: indexing it directly turned an entry that merely
+    omitted it into a KeyError that took down the whole triage, on the one path that
+    DOES consult the flake list. Read it defensively.
+    """
+    if not flake:
+        return []
+    note = flake.get("note")
+    return [note] if note else []
 
 
 def _match_known_flake(serial: str, code: str | None, when: str) -> dict | None:
@@ -183,7 +197,18 @@ def post_boot_check(serial: str, debugcon_raw: str | None = None) -> dict | None
         line = next((ln.strip() for ln in serial.splitlines() if "BugCheck" in ln), "")
         if line:
             salient.append(line[:140])
-        return {"classification": "BUGCHECK", "salient": salient, "known_flake": None, **fields}
+        # A documented flake does not stop being one because it fired a few hundred
+        # milliseconds later. This arm used to hardcode known_flake=None, so the
+        # identical crash was retried when it landed before the marker and REJECTED
+        # the lane when it landed after it — which is how a known arm64 ERESOURCE
+        # 0xE3 bounced a green-gated batch out of the merge queue.
+        flake = _match_known_flake(serial, code, "bugcheck")
+        return {
+            "classification": "KNOWN_FLAKE" if flake else "BUGCHECK",
+            "salient": salient + _flake_note(flake),
+            "known_flake": flake["name"] if flake else None,
+            **fields,
+        }
     return None
 
 
@@ -228,7 +253,7 @@ def classify(
         flake = _match_known_flake(serial, code, "bugcheck")
         return {
             "classification": "KNOWN_FLAKE" if flake else "BUGCHECK",
-            "salient": salient + ([flake["note"]] if flake else []),
+            "salient": salient + _flake_note(flake),
             "known_flake": flake["name"] if flake else None,
             **fields,
         }
@@ -265,7 +290,7 @@ def classify(
         flake = _match_known_flake(serial, None, "hang")
         return {
             "classification": "KNOWN_FLAKE" if flake else "HANG_TIMEOUT",
-            "salient": salient + ([flake["note"]] if flake else []),
+            "salient": salient + _flake_note(flake),
             "known_flake": flake["name"] if flake else None,
             **fields,
         }
