@@ -24,6 +24,16 @@ to the boot path: with `--ladder` off, nothing here runs and the boot is
 byte-for-byte what it was. The guests self-verify (each checks values, not
 survival) and report a machine-readable verdict, so all this has to do is
 collect them and insist every one is present and passing.
+
+WHAT THIS DOES **NOT** COVER, stated so the flag is not read as more than it is.
+winlogon runs the nine self-verifying guests FIRST and then a longer robustness
+ladder — winmine, doom, and ~15 stock i386 applets. The watch below stops the
+moment the ninth guest reports, so none of that is checked here. That is
+deliberate rather than an oversight: those launches are "silent no-op unless
+staged" and their pass criterion is "still running after 8-10s", which is not a
+machine-checkable verdict in the sense this file means. Covering them properly
+needs them to grow real verdicts first. Until then, a green `--ladder` says the
+nine guests passed, not that the stock applets did.
 """
 
 from __future__ import annotations

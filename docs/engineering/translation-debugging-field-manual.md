@@ -1219,6 +1219,26 @@ literal is the flag-cousin of the magic struct offset — treat it as wrong unti
 The constants were always available via the bindgen glob; the literals were pure debris.
 **Corollary: when a pipeline has N derived stages, probe the LAST consumer, not the producers.**
 
+**The same class one bit narrower — a PARTIAL mask.** `NtOpenKey` masked `& !0x0100u32` where
+the C masks `~KEY_WOW64_RES` (**0x0300**): right family, half the width, and the named constant
+was already defined in that same file and used correctly by `NtCreateKey` sixty lines above.
+`KEY_WOW64_32KEY` therefore survived into `ObCheckObjectAccess`, which no key's DACL grants, so
+`RegOpenKeyEx(.., KEY_WOW64_32KEY)` returned `STATUS_ACCESS_DENIED` while the identical
+`RegCreateKeyEx` succeeded — and it hit native 64-bit callers (rapps, `reg /reg:32`, apphelp),
+not just WoW64 guests. **An asymmetry between two syscalls that share a contract is the tell:**
+neither call looks wrong on its own, so test the pair, not the function.
+- **A translated file carries its own oracle.** These files keep the original C as trailing
+  comments, so a commented `X &= ~NAME` with no live `!NAME` in the same file detects this whole
+  class — no header catalog, no C build. It re-found the bug above without being told, and also
+  turned up `ProbeAndCaptureObjectAttributes` masking `0x12F2` where the C says
+  `~OBJ_VALID_KERNEL_ATTRIBUTES` (0x107F2), and i386 `KeFlushCurrentTb` having dropped its
+  `KF_GLOBAL_PAGE` branch outright — a plain CR3 reload does **not** flush global TLB entries,
+  and `patpge.rs` does enable PGE. That last one had no symptom anyone was chasing.
+- **Calibrate the pattern or drown:** the live spelling is usually `&= !(NAME as UINT)`, so
+  accepting only `!NAME` reports ~4x noise (109 raw hits vs 27).
+- **Check the sibling arch before calling it drift** — amd64's `KeFlushCurrentTb` C really is
+  CR3-only, so only i386 had a branch to lose.
+
 ### Flavor-variant constants are their own drop-class `[§9.97]`
 `SYNCH_LEVEL` differs between UP and MP builds, and the translation froze the UP value in
 **five independent sites** → `-smp 2` `KeIrql` kmtest failures. Single source of truth per

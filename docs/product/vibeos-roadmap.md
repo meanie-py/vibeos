@@ -479,6 +479,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **FIXED (E21, 2026-08-01): `NtOpenKey` denied every `KEY_WOW64_32KEY` open.** The Rust port
+  masked a bare `0x0100` where the C masks `KEY_WOW64_RES` (0x0300), so the 32KEY bit reached
+  `ObCheckObjectAccess` and came back `STATUS_ACCESS_DENIED` — while the identical
+  `RegCreateKeyEx`, which masks correctly, succeeded. Hit **native 64-bit** callers too (rapps,
+  `reg /reg:32`, apphelp), not only WoW64 guests. Proven by positive control: unfixed media
+  reported `wow64flags: KEY_WOW64_32KEY refused, status = 0xc0000022`; fixed media 9/9 ladder.
+  The same commit fixed two more in that file: `NtOpenKey` stored `*KeyHandle = NULL` **before**
+  any probe and only ever checked alignment, never the user/kernel boundary (kernel-mode write
+  to a caller-supplied address — the #67/#68 class), and `ProbeAndCaptureObjectAttributes`
+  open-coded `0x12F2` for `~OBJ_VALID_KERNEL_ATTRIBUTES` (0x107F2), rejecting `OBJ_OPENLINK` /
+  `OBJ_FORCE_ACCESS_CHECK` (latent — every `NtLoadKey*` caller passes `OBJ_CASE_INSENSITIVE`
+  alone). Regression-guarded by marshal32 rung `CheckRegistryWow64Flags` (0xBAE7–0xBAEA), so
+  `smoke --ladder` now catches it. **This is NOT registry redirection** — Wow6432Node is still
+  entirely absent (task #66). Stripping the flags in the kernel is the correct interim
+  behaviour and is what the C intends: both registry views stay identical.
+- **FIXED (2026-08-01): i386 `KeFlushCurrentTb` under-flushed the TLB.** It dropped the C's
+  `KF_GLOBAL_PAGE` branch, so the CR4.PGE toggle never ran and global TLB entries survived
+  every flush — and `patpge.rs` does enable PGE. Found by the commented-C mask oracle with no
+  symptom to go on; amd64's C genuinely is CR3-only, so only the i386 copy had drifted.
 - **`msvcrt-difftest`'s `the_fd_layer_works_and_reports_length` is FLAKY under cargo's
   parallel test threads → spurious DIFFTEST_FAIL that convicts an innocent lane — NEW, OPEN**
   (2026-08-01). A shell32-com batch whose only delta was a **parked** `shlexec.rs` plus
