@@ -52,7 +52,28 @@ use crate::shell32::sdk_consts::*;
 use crate::prelude::INVALID_FILE_ATTRIBUTES;
 // The island renders these as bindgen C++ classes (`vtable_`), which have no callable
 // members; the translated call sites go through the C `lpVtbl`. Explicit beats glob.
-use crate::shellcom::{IContextMenu, IShellExtInit, IUnknown};
+use crate::shellcom::{IContextMenu, IUnknown};
+
+// Deterministic from shobjidl.h. Declared file-locally like the five other TUs that use it —
+// see the note in `shellcom.rs` on why it does NOT live there.
+#[repr(C)]
+pub struct IShellExtInit {
+    pub lpVtbl: *const IShellExtInitVtbl,
+}
+#[repr(C)]
+pub struct IShellExtInitVtbl {
+    pub QueryInterface: unsafe extern "system" fn(
+        This: *mut IShellExtInit, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void,
+    ) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(This: *mut IShellExtInit) -> ULONG,
+    pub Release: unsafe extern "system" fn(This: *mut IShellExtInit) -> ULONG,
+    pub Initialize: unsafe extern "system" fn(
+        This: *mut IShellExtInit,
+        pidlFolder: PCIDLIST_ABSOLUTE,
+        pdtobj: *mut core::ffi::c_void,
+        hkeyProgID: HKEY,
+    ) -> HRESULT,
+}
 
 // ---- file-scope preamble (translated) ----
 pub const SEE_MASK_CLASSALL: u32 = SEE_MASK_CLASSNAME | SEE_MASK_CLASSKEY;
@@ -80,7 +101,7 @@ unsafe extern "C" fn Win32ErrFromHInst(hInst: HINSTANCE) -> i32 {
     if (hInst as usize) > 32 {
         return (ERROR_SUCCESS) as i32;
     }
-    match hInst as usize {
+    match hInst as usize as u32 {
         SE_ERR_FNF
         | SE_ERR_PNF
         | SE_ERR_ACCESSDENIED
@@ -145,7 +166,7 @@ unsafe extern "C" fn InvokeOpenWith(hWndOwner: HWND, sei: &mut SHELLEXECUTEINFOW
     if (hr) >= 0 {
         42
     } else {
-        (SE_ERR_NOASSOC) as usize
+        (SE_ERR_NOASSOC) as UINT_PTR
     }
 }
 unsafe extern "C" fn InvokeShellExecuteHook(pszClsid: PCWSTR, pSEI: LPSHELLEXECUTEINFOW) -> HRESULT {
@@ -606,14 +627,14 @@ unsafe extern "stdcall" fn RunAsDlgProc(
             SetWindowLongPtrW(hwnd, DWLP_USER, pData as LPARAM);
             SendDlgItemMessageW(
                 hwnd,
-                IDC_RUNAS_NAME,
+                IDC_RUNAS_NAME as i32,
                 EM_LIMITTEXT,
                 (_countof!((*pData).NameBuffer) - 1) as _,
                 0,
             );
             SendDlgItemMessageW(
                 hwnd,
-                IDC_RUNAS_PWD,
+                IDC_RUNAS_PWD as i32,
                 EM_LIMITTEXT,
                 (_countof!((*pData).Password) - 1) as _,
                 0,
@@ -625,10 +646,11 @@ unsafe extern "stdcall" fn RunAsDlgProc(
                 0,
                 0,
             );
-            let hCtl = GetDlgItem(hwnd, IDC_RUNAS_CURRENT);
+            let hCtl = GetDlgItem(hwnd, IDC_RUNAS_CURRENT as i32);
             let mut fmtbuf: [u16; 200 as usize] = [0u16; 200 as usize];
-            let mut buf: [u16; (_countof!(fmtbuf) + _countof!((*pData).NameBuffer)) as usize] =
-                [0u16; (_countof!(fmtbuf) + _countof!((*pData).NameBuffer)) as usize];
+            const FMTBUF_CCH: usize = 200; // WCHAR fmtbuf[200]
+            const BUF_CCH: usize = FMTBUF_CCH + MAX_PATH as usize; // + _countof(NameBuffer)
+            let mut buf: [u16; BUF_CCH] = [0u16; BUF_CCH];
             let mut cch: DWORD = _countof!((*pData).NameBuffer);
             if GetUserNameW((*pData).NameBuffer.as_mut_ptr(), &mut cch) != 0 {
                 SendMessageW(
@@ -657,7 +679,7 @@ unsafe extern "stdcall" fn RunAsDlgProc(
                 );
                 SendDlgItemMessageW(
                     hwnd,
-                    IDC_RUNAS_NAME,
+                    IDC_RUNAS_NAME as i32,
                     CB_ADDSTRING,
                     0,
                     (*pData).NameBuffer.as_mut_ptr() as LPARAM,
@@ -665,7 +687,7 @@ unsafe extern "stdcall" fn RunAsDlgProc(
             }
             SendDlgItemMessageW(
                 hwnd,
-                IDC_RUNAS_NAME,
+                IDC_RUNAS_NAME as i32,
                 CB_SETCURSEL,
                 0,
                 0,
@@ -675,19 +697,19 @@ unsafe extern "stdcall" fn RunAsDlgProc(
         WM_COMMAND => {
             match LOWORD(wParam) {
                 IDCANCEL => {
-                    EndDialog(hwnd, (IDCANCEL) as isize);
+                    EndDialog(hwnd, (IDCANCEL) as INT_PTR);
                 }
                 IDOK => {
                     SendDlgItemMessageW(
                         hwnd,
-                        IDC_RUNAS_NAME,
+                        IDC_RUNAS_NAME as i32,
                         WM_GETTEXT,
                         _countof!((*pData).NameBuffer) as _,
                         (*pData).NameBuffer.as_mut_ptr() as LPARAM,
                     );
                     SendDlgItemMessageW(
                         hwnd,
-                        IDC_RUNAS_PWD,
+                        IDC_RUNAS_PWD as i32,
                         WM_GETTEXT,
                         _countof!((*pData).Password) as _,
                         (*pData).Password.as_mut_ptr() as LPARAM,
@@ -705,11 +727,11 @@ unsafe extern "stdcall" fn RunAsDlgProc(
                     } else {
                         LOGON_WITH_PROFILE
                     };
-                    (*pData).Safer = IsDlgButtonChecked(hwnd, IDC_RUNAS_SAFER);
-                    if IsDlgButtonChecked(hwnd, IDC_RUNAS_OTHER) == 0 {
+                    (*pData).Safer = IsDlgButtonChecked(hwnd, IDC_RUNAS_SAFER as i32);
+                    if IsDlgButtonChecked(hwnd, IDC_RUNAS_OTHER as i32) == 0 {
                         (*pData).Name = core::ptr::null_mut();
                     }
-                    EndDialog(hwnd, (IDOK) as isize);
+                    EndDialog(hwnd, (IDOK) as INT_PTR);
                 }
                 IDC_RUNAS_BROWSE => {
                     return (SHELL_ErrorBox(hwnd, ERROR_NOT_SUPPORTED)) as isize;
@@ -873,7 +895,7 @@ unsafe extern "C" fn PromptAndRunProcessAs(
             RunAsDlgProc,
             core::ptr::addr_of_mut!(data) as LPARAM,
         );
-        if dlgret == (IDOK) as isize && !data.Name.is_null() {
+        if dlgret == (IDOK) as INT_PTR && !data.Name.is_null() {
             if CreateProcessWithLogonW(
                 data.Name,
                 data.Domain,
@@ -905,7 +927,7 @@ unsafe extern "C" fn PromptAndRunProcessAs(
                 }
                 _ => {}
             }
-        } else if dlgret == (IDOK) as isize {
+        } else if dlgret == (IDOK) as INT_PTR {
             if CreateProcessW(
                 core::ptr::null_mut(),
                 Cmd,
@@ -923,7 +945,7 @@ unsafe extern "C" fn PromptAndRunProcessAs(
             } else {
                 error = GetLastError();
             }
-        } else if dlgret == (IDCANCEL) as isize {
+        } else if dlgret == (IDCANCEL) as INT_PTR {
             SetLastError(ERROR_CANCELLED);
             (*pPI).hProcess = core::ptr::null_mut();
             return S_FALSE;
@@ -1527,7 +1549,7 @@ unsafe extern "C" fn dde_connect(
         return 2;
     }
     wcscpy(regkey.as_mut_ptr(), key);
-    endkeyLen = (ARRAY_SIZE!(regkey) - ((((endkey_offset) as u32) as usize) as u32) as usize) as usize;
+    endkeyLen = (ARRAY_SIZE!(regkey) - (((((endkey_offset) as u32) as usize) as u32) as usize) as u32) as usize;
     if strlenW(CPP_COM_WSTR_FC9A94A80631.as_ptr()) + 1 > endkeyLen {
         return 2;
     }
@@ -1613,7 +1635,7 @@ unsafe extern "C" fn dde_connect(
     hConv = DdeConnect(ddeInst, hszApp, hszTopic, core::ptr::null_mut());
     exec = ddeexec;
     if hConv.is_null() {
-        ret = execfunc(start, env, TRUE, psei, psei_out);
+        ret = ((execfunc.unwrap())(start, env, TRUE, psei, psei_out)) as u32;
         if ret <= 32 {
             DdeUninitialize(ddeInst);
             return ret;
@@ -1745,7 +1767,7 @@ unsafe extern "C" fn execute_from_key(
             psei_out,
         )) as usize;
     } else if param[0] != 0 {
-        retval = execfunc(param.as_mut_ptr(), env, FALSE, psei, psei_out);
+        retval = (execfunc.unwrap())(param.as_mut_ptr(), env, FALSE, psei, psei_out);
     } else {
         DbgPrint(
             b"Nothing appropriate found for %s\n\0".as_ptr() as *const i8,
@@ -2063,7 +2085,7 @@ unsafe extern "C" fn shellex_load_object_and_run(
         return hr;
     }
 
-    (*ows).SetSite(core::ptr::null_mut());
+    ((*(*ows).lpVtbl).SetSite)(ows, core::ptr::null_mut());
 
     hr = shellex_run_context_menu_default(obj, sei);
 
@@ -2263,7 +2285,7 @@ unsafe extern "C" fn SHELL_execute_class(
         if resultLen > ARRAY_SIZE!(wcmd) {
             DbgPrint((b"Argify buffer not large enough... truncating\n\0".as_ptr()).cast());
         }
-        return execfunc(
+        return (execfunc.unwrap())(
             wcmd.as_mut_ptr(),
             core::ptr::null_mut(),
             FALSE,
@@ -2482,7 +2504,7 @@ unsafe extern "C" fn SHELL_quote_and_execute(
             psei_out,
         );
     } else {
-        retval = execfunc(ququoted_cmd, env, FALSE, psei, psei_out);
+        retval = (execfunc.unwrap())(ququoted_cmd, env, FALSE, psei, psei_out);
     }
 
     LocalFree(ququoted_cmd as *mut core::ffi::c_void);
@@ -2806,12 +2828,12 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
         let hr: i32 = SHParseDisplayName(
             sei_tmp.lpFile,
             core::ptr::null_mut(),
-            core::ptr::addr_of_mut!(pidlParsed.p) as *mut LPITEMIDLIST,
+            core::ptr::addr_of_mut!(pidlParsed.m_pData) as *mut LPITEMIDLIST,
             0,
             core::ptr::null_mut(),
         );
         if hr >= 0 &&
-           SHELL_InvokePidl(core::ptr::addr_of_mut!(sei_tmp), pidlParsed.p) != 0
+           SHELL_InvokePidl(core::ptr::addr_of_mut!(sei_tmp), pidlParsed.m_pData) != 0
         {
             sei_tmp.hInstApp = (UlongToHandle(42)).cast();
             return TRUE;
@@ -2943,7 +2965,7 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
             strcatW(wcmd, wszParameters);
         }
 
-        retval = execfunc(
+        retval = (execfunc.unwrap())(
             wcmd,
             core::ptr::null_mut(),
             FALSE,
@@ -3708,7 +3730,7 @@ pub unsafe extern "C" fn PathProcessCommandW(
 
         if (dwFlags & PPCF_FORCEQUALIFY) != 0 || PathIsRelativeW(szPath.as_ptr()) != 0 {
             let ret = PathResolveW(
-                szPath.GetBuffer(MAX_PATH),
+                szPath.GetBuffer((MAX_PATH) as i32),
                 core::ptr::null_mut(),
                 PRF_TRYPROGRAMEXTENSIONS,
             );
@@ -3736,7 +3758,7 @@ pub unsafe extern "C" fn PathProcessCommandW(
 
             if resolveRelative
                 && PathResolveW(
-                    szPath.GetBuffer(MAX_PATH),
+                    szPath.GetBuffer((MAX_PATH) as i32),
                     core::ptr::null_mut(),
                     PRF_TRYPROGRAMEXTENSIONS,
                 ) == 0
