@@ -1,0 +1,54 @@
+# msvcrt-scanf-difftest — the scanf engine's differential harness.
+#
+# A sibling of ../msvcrt-difftest, sharing its build.rs verbatim (see build.rs
+# here: one line). The reference TUs, the rename walls and the refstub are all the
+# same; the crates differ in exactly ONE thing, and it is the reason they are two
+# crates instead of two `[[test]]` stanzas:
+#
+#   msvcrt-difftest      takes msvcrt-crt-rust WITH   the `stdio` feature
+#   msvcrt-scanf-difftest       "        "     WITHOUT it
+#
+# Cargo unifies features per crate per BUILD, not per test binary, so a suite that
+# needs file.rs linked and a suite that needs it absent cannot share one cargo
+# invocation. tests/difftest.py already runs one invocation per crate for exactly
+# this reason (cnt-difftest's `cabi`), so a second msvcrt crate costs nothing new.
+#
+# WHY scanf is the one that needs file.rs ABSENT. tests/scanf.rs does not stub the
+# character source, it MODELS it: `fgetc`/`fgetwc`/`ungetc`/`ungetwc`/`_lock_file`/
+# `_unlock_file`/`__iob_func` are defined there over a string-backed stream, exported
+# both plain (what msvcrt-crt-rust's scanf.rs imports) and as `msvcrt_ref_*` (what the
+# reference's calls are renamed to). One implementation, two names — so neither side
+# can bind to the other's, and a bug in the model makes both sides wrong the SAME way
+# instead of manufacturing a divergence. file.rs defines those same seven names.
+#
+# The obvious-looking alternative — point scanf's FILE rows at a real file now that
+# file.rs links on the host — was considered and rejected. `model_get(wide)` yields RAW
+# UTF-16 code units; a real `fgetwc` converts through the stream's encoding mode. Every
+# wide row's corpus would change meaning, `stream_image`'s exact `_UNGETC_` oracle would
+# be replaced by something weaker, and scanf's verdict would acquire a dependency on
+# file.c's correctness. Keeping the model and separating the LINK costs one Cargo.toml.
+[package]
+name = "msvcrt-scanf-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# `default-features = false` drops `stdio` — see above. This is the ONE line that
+# distinguishes this crate from msvcrt-difftest.
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust", default-features = false }
+msvcrt-sys = { path = "../msvcrt-sys" }
+libc = "0.2"
+
+[build-dependencies]
+cc = "1"
+
+# Wave 17 — the scanf ENGINE. `dll/win32/msvcrt/scanf.h` is a template scanf.c
+# instantiates 16 times; `msvcrt-crt-rust/src/scanf.rs` replaces all 16 with one generic
+# body. `harness = false` for the reason cnt-difftest documents: cnt-rust exports a
+# `#[no_mangle] getenv` that shadows glibc's, libtest reads RUST_TEST_THREADS through
+# it, gets NULL, and misbehaves.
+[[test]]
+name = "scanf"
+path = "tests/scanf.rs"
+harness = false

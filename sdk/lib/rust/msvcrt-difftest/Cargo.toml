@@ -23,13 +23,11 @@ publish = false
 # would switch ON cnt-rust's `cabi` feature for msvcrt-crt-rust's copy too,
 # whose 208 #[no_mangle] shims would then collide with the wrappers.
 #
-# `default-features = false` drops ONE feature, `stdio` (file.c's 189 exports). Not a
-# proxy-grading compromise like the one above: nothing here grades file.rs yet, and
-# tests/scanf.rs DEFINES `fgetc`/`fgetwc`/`ungetc`/`ungetwc`/`_lock_file`/`_unlock_file`/
-# `__iob_func` as its character-source model, which collides with the real bodies. The
-# model has to win for the scanf engine to be drivable at all. See msvcrt-crt-rust's
-# Cargo.toml for what is owed to turn it back on.
-msvcrt-crt-rust = { path = "../msvcrt-crt-rust", default-features = false }
+# DEFAULT features, so `stdio` is on and file.rs (file.c's 189 exports) is in the link —
+# which is what lets this crate grade it. The one suite needing file.rs ABSENT, the scanf
+# engine's, lives in the sibling ../msvcrt-scanf-difftest; its Cargo.toml carries the
+# reason and the alternative that was weighed and rejected.
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
 msvcrt-sys = { path = "../msvcrt-sys" }
 # guard-page probe (tests/oob_guard.rs): mmap/mprotect/fork.
 libc = "0.2"
@@ -137,13 +135,4 @@ harness = false
 [[test]]
 name = "wave16"
 path = "tests/wave16.rs"
-harness = false
-
-# Wave 17 — the scanf ENGINE. `dll/win32/msvcrt/scanf.h` is a template scanf.c
-# instantiates 16 times; `msvcrt-crt-rust/src/scanf.rs` replaces all 16 with one generic
-# body. Its own binary because it DEFINES the model character source (`fgetc`/`fgetwc`/
-# `_getch` &c.) under the plain libc names, which no other suite may inherit.
-[[test]]
-name = "scanf"
-path = "tests/scanf.rs"
 harness = false
