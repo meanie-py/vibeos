@@ -32,6 +32,11 @@
 #define WC_NO_BEST_FIT_CHARS 0x0400
 #define MB_ERR_INVALID_CHARS 0x0008
 #define ERROR_INSUFFICIENT_BUFFER 122
+/* What kernel32 returns from WideCharToMultiByte(CP_UTF8, ...) on an unpaired
+ * surrogate — UTF-8 has no default character to substitute, so it refuses rather
+ * than best-fitting.  It is the only EILSEQ signal a UTF-8 caller of wcsrtombs_l
+ * can see; see the arm in refimpl.c. */
+#define ERROR_NO_UNICODE_TRANSLATION 1113
 
 /* Character-type bits.  mbcs.c reads exactly three: create_mbcinfo switches on
  * C1_UPPER/C1_LOWER to fill mbctype's _SBUP/_SBLOW and mbcasemap, and
