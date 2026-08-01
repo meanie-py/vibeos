@@ -121,6 +121,21 @@ CONSTANTS: dict[str, list[str]] = {
         "_IOSTRG",
         "_IOWRT",
     ],
+    # setvbuf modes, and the one that is not merely a mode: at _MSVCR_VER < 140 —
+    # the arm this DLL builds — msvcrt.h spells `MSVCRT__NOBUF` as `_IONBF`, so
+    # this value IS the "stream is unbuffered" flag bit that file.c tests in
+    # _fwrite_nolock, _flsbuf, _filbuf and fflush.  msvcrt's _IONBF is 0x0004;
+    # glibc's is 2 — which is _IOWRT.  A reference TU that took glibc's therefore
+    # read EVERY write-mode stream as unbuffered, wrote a byte at a time straight
+    # to the fd, and never allocated a buffer at all: the subject buffered, the
+    # reference did not, and the two file positions came out 9 apart with
+    # identical bytes on disk.  Derived and displaced for exactly the reason the
+    # errno block below is.
+    "setvbuf modes — _IONBF doubles as MSVCRT__NOBUF at _MSVCR_VER < 140": [
+        "_IOFBF",
+        "_IOLBF",
+        "_IONBF",
+    ],
     "stdio / io.h": [
         "TMP_MAX_S",
         "STDIN_FILENO",
@@ -266,6 +281,12 @@ CONSTANTS: dict[str, list[str]] = {
 # every other errno row kept passing — the §9.66 shape exactly.  Deriving them
 # from msvcrt's own headers and displacing glibc's is what makes that impossible.
 DISPLACE = {
+    # glibc numbers these 0/1/2 and msvcrt 0x0000/0x0040/0x0004. The clash that
+    # matters is _IONBF: msvcrt.h aliases MSVCRT__NOBUF to it below _MSVCR_VER 140,
+    # and glibc's 2 collides bit-for-bit with _IOWRT.
+    "_IOFBF",
+    "_IOLBF",
+    "_IONBF",
     "E2BIG",
     "EACCES",
     "EAGAIN",

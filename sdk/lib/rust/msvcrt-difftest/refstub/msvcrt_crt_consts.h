@@ -58,6 +58,14 @@
 #define _IOSTRG  0x00000040
 #define _IOWRT   2
 
+/* setvbuf modes — _IONBF doubles as MSVCRT__NOBUF at _MSVCR_VER < 140 */
+#undef  _IOFBF
+#define _IOFBF 0
+#undef  _IOLBF
+#define _IOLBF 0x00000040
+#undef  _IONBF
+#define _IONBF 4
+
 /* stdio / io.h */
 #define TMP_MAX_S     0x7FFFFFFF
 #define STDIN_FILENO  0

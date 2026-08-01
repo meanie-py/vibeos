@@ -185,6 +185,14 @@ typedef long            LONG_PTR;
 #define memmove                 msvcrt_ref_memmove
 #define _errno                  msvcrt_ref__errno
 #define _invalid_parameter      msvcrt_ref__invalid_parameter
+/* errno.c's Win32 -> errno store.  file.c calls it 54 times and so does file.rs, and it
+ * writes through `_errno()` — so a SINGLE definition would resolve that call to whichever
+ * side got the plain name and hand both sides one errno.  It did: the subject's failures
+ * set the reference's slot.  Namespaced here so the reference's TUs and fileimpl.c's
+ * definition meet at msvcrt_ref_msvcrt_set_errno, leaving the plain name for
+ * subjectimpl.c.  The MAPPING TABLE stays shared and un-namespaced
+ * (msvcrt_difftest_win32_to_errno) — one transcription, two stores. */
+#define msvcrt_set_errno        msvcrt_ref_msvcrt_set_errno
 /* _isspace_l / _tolower_l / _toupper_l USED to be here — they were things the reference
  * IMPORTED, satisfied by refimpl.c's hand-written ASCII stubs.  As of wave 10 ctype.c is
  * a reference TU and DEFINES them, so they are reference EXPORTS: the generated prelude
