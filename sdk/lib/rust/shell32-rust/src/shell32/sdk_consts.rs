@@ -49,12 +49,26 @@ pub const FOCE_PREDELETEITEM: DWORD = 6;
 pub const FOCE_PREMOVEITEM: DWORD = 2;
 pub const FOCE_PRERENAMEITEM: DWORD = 8;
 pub const FOCE_STARTOPERATIONS: DWORD = 0;
-pub const INVALID_FILE_ATTRIBUTES: DWORD = 0xFFFFFFFF;
+// INVALID_FILE_ATTRIBUTES lives in `prelude.rs` (bindgen cannot emit a cast macro, so the
+// prelude hand-writes it). It USED to be here as well, with the identical value — which is
+// exactly the E0659 this module's header warns about: every file globbing both modules saw an
+// ambiguous name. It was inert only because the sole users were parked.
 pub const LANG_USER_DEFAULT: DWORD = 0x400;
 pub const OAIF_ALLOW_REGISTRATION: DWORD = 1;
 pub const OAIF_EXEC: DWORD = 4;
 pub const OAIF_REGISTER_EXT: DWORD = 2;
 pub const PIDSI_COMMENTS: DWORD = 6;
+// ntquery.h `PID_STG_*`. These were MISSING, and their absence was not inert: `shlfolder`'s
+// `MapSCIDToShell32FsColumn` matches on them, so each unresolved name became a catch-all
+// BINDING and the first arm swallowed every column — Size/Type/Attributes/Modified all
+// answered `SHFSF_COL_NAME`. Shipped that way ([§9.112]). Resolved by `rustconv.sdk_facts`
+// against `CRecycleBin.cpp` (shlfolder.cpp is flipped, so it has no compile command left to
+// probe) and cross-checked against the values `cfs_folder` carries for its own copy.
+pub const PID_STG_STORAGETYPE: DWORD = 4;
+pub const PID_STG_NAME: DWORD = 0xA;
+pub const PID_STG_SIZE: DWORD = 0xC;
+pub const PID_STG_ATTRIBUTES: DWORD = 0xD;
+pub const PID_STG_WRITETIME: DWORD = 0xE;
 pub const SHCOLSTATE_TYPEMASK: DWORD = 0xF;
 pub const SHCOLSTATE_TYPE_DATE: DWORD = 3;
 pub const SHCOLSTATE_TYPE_INT: DWORD = 2;
