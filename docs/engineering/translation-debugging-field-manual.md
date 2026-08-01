@@ -3889,6 +3889,33 @@ attempts is not evidence the failure is real. Second, and this is the one that c
 gating.** `./vibeos-cli host-status` before submitting, then leave the host alone. The lane whose
 gate you are starving is your own.
 
+**The third costume is the HOST's own network, and ruling out contention does not rule it in.**
+2026-07-31: `test_dns_resolve`, `test_tdi_datagram_roundtrip` and `test_usermode_winsock_roundtrip`
+failed 3/3 attempts on an idle host, on unmodified `master`, at normal boot durations. That is
+exactly the evidence the paragraph above says means *real regression* — contention was genuinely
+excluded — and the conclusion was still wrong: the developer's **VPN** was up, and disabling it
+turned the suite green with no code change. Do not stop at "not contention"; the host is a third
+suspect, and one the guest cannot see.
+
+**Read the PASS/FAIL SET, not the timings — it names the culprit directly.** Our slirp
+mini-internet has two kinds of endpoint, and the failures partitioned perfectly along that line:
+
+- **Fails:** every test that reaches **`10.0.2.3:53`**, slirp's DNS forwarder, which proxies to
+  *the host's resolver* — `test_dns_resolve` (kernel A record), `test_tdi_datagram_roundtrip`
+  (TDI_SEND_DATAGRAM of a real DNS query), `test_usermode_winsock_roundtrip` (nettest's UDP leg
+  is also a DNS query — `nettest.c`, `DNS_IP`/`DNS_PORT`).
+- **Passes:** everything that stays inside the machine — the guestfwd `-cmd:cat` echo at
+  `10.0.2.100:9999` and the hostfwd loopback ports. `test_tdi_selftest_roundtrip`, the registered
+  flake and the one you would expect to break first, passed.
+
+A kernel-side TCP/UDP/MDL regression does not respect that boundary; a rewritten host resolver
+does, precisely. So: **if every failure needs the host's DNS and every in-guest endpoint is
+green, suspect the host's network configuration — VPN, split DNS, a corporate resolver — before
+you suspect the OS.** The DNS dependency is documented in `test_dns_resolve`'s own docstring
+("slirp forwards 10.0.2.3 to the host's DNS"); it is the only external dependency in the suite,
+which is what makes the partition so clean. Cost of missing it: a 19-hour halted merge train and
+a regression handed to the wrong lane.
+
 **A red base is an alibi only for the failures it EXPLAINS — compare the STAGES, not the
 verdicts.** 2026-07-31: the queue sat undrained for 19 hours behind
 `TRAIN HALTED — origin/master itself fails the gate (NET_FLAKE) ... No submission was rejected`.
