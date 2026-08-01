@@ -34,10 +34,10 @@ pub mod iconcache;
 // header inlines, so what is left per file is ordinary integration work rather than a missing
 // foundation. Counts measured with all six wired, after the substrate landed:
 //
-//     shlexec.rs   102     shlfileop.rs  227     iconcache.rs    0 <- flipped
+//     shlexec.rs    94     shlfileop.rs  227     iconcache.rs    0 <- flipped
 //     brfolder.rs    0 <- flipped     shlfolder.rs    0 <- flipped     shldataobject 0 <- flipped
 //
-// shlexec went 349 -> 102 on 2026-07-31/08-01, and its recorded blocker was WRONG: it has ZERO
+// shlexec went 349 -> 94 on 2026-07-31/08-01, and its recorded blocker was WRONG: it has ZERO
 // `CStringW::Format` calls, so it never needed the printf-variadic decision at all (that is
 // shlfileop's, 7 sites). What it needed was the plain string type — `crate::atl::CStringW`,
 // LocalAlloc-backed, ported operation-by-operation from `sdk/lib/atl/cstringt.h` — plus the
@@ -46,7 +46,7 @@ pub mod iconcache;
 // `HKEY_LOCAL_MACHINE` in `island_extra`, `SeeFlagsToCmicFlags` + `__SHCloneStrW{,toA}` in
 // `shellutils` (all three are HEADER inlines, so they reach no TU), a dozen shlwapi/shell32
 // externs in the prelude, and an `lpVtbl`-shaped `IShellExtInit` in `shellcom`.
-// What is LEFT is this file's own tail, ~102 errors: mostly pointer/handle conversions
+// What is LEFT is this file's own tail, ~94 errors: mostly pointer/handle conversions
 // (`int`->`*mut`, `&ref`->raw) that a bulk numeric pass must NOT touch, plus the arch-DIVERGENT
 // numeric sites. On those last ones do what `crate-repair` says and name the semantic alias
 // (SIZE_T / UINT_PTR / INT_PTR / LONG_PTR): `as usize` is u32 on i386 and u64 elsewhere, so

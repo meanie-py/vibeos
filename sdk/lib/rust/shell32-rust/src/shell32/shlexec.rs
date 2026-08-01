@@ -998,7 +998,7 @@ unsafe extern "C" fn SHELL_ExecuteW(
 
     ZeroMemory(
         &mut startup as *mut _ as *mut core::ffi::c_void,
-        core::mem::size_of_val(&STARTUPINFOW),
+        core::mem::size_of::<STARTUPINFOW>(),
     );
     startup.cb = core::mem::size_of_val(&STARTUPINFOW) as u32;
     startup.dwFlags = STARTF_USESHOWWINDOW;
@@ -1025,7 +1025,7 @@ unsafe extern "C" fn SHELL_ExecuteW(
     }
 
     if ((*psei).fMask & SEE_MASK_ICON) != 0 {
-        startup.hStdOutput = (*psei).hIcon;
+        startup.hStdOutput = *(*psei).__bindgen_anon_1.hIcon.as_ref();
         startup.dwFlags |= STARTF_SHELLPRIVATE;
     } else if (((*psei).fMask & SEE_MASK_HMONITOR) != 0) || !(*psei).hwnd.is_null() {
         if ((*psei).fMask & SEE_MASK_HMONITOR) != 0 {
@@ -2128,7 +2128,7 @@ unsafe extern "C" fn shellex_get_contextmenu(sei: *mut SHELLEXECUTEINFOW, cm: *m
         return hr;
     }
 
-    let result = ((*shf).lpVtbl.as_ref().unwrap().GetUIObjectOf.unwrap())(shf, core::ptr::null_mut(), 1, &pidllast, IID_NULL_PPV_ARG(IContextMenu, cm));
+    let result = ((*shf).lpVtbl.as_ref().unwrap().GetUIObjectOf.unwrap())(shf, core::ptr::null_mut(), 1, &pidllast, core::ptr::addr_of!(IID_IContextMenu).cast(), core::ptr::null_mut(), core::ptr::addr_of_mut!(cm).cast());
 
     if !shf.is_null() {
         ((*shf).lpVtbl.as_ref().unwrap().Release.unwrap())(shf);
@@ -2175,7 +2175,7 @@ unsafe extern "C" fn ShellExecute_ContextMenuVerb(sei: *mut SHELLEXECUTEINFOW) -
     ici.lpDirectory = dir;
     ici.lpDirectoryW = (*sei).lpDirectory;
     ici.dwHotKey = (*sei).dwHotKey;
-    ici.hIcon = (*sei).hIcon;
+    ici.hIcon = *(*sei).__bindgen_anon_1.hIcon.as_ref();
     if (ici.fMask & (CMIC_MASK_HASLINKNAME | CMIC_MASK_HASTITLE)) != 0 {
         ici.lpTitleW = (*sei).lpClass;
     }
@@ -2329,7 +2329,7 @@ unsafe extern "C" fn SHELL_translate_idlist(
     let mut appKnownSingular: u8 = (FALSE) as u8;
 
     if SHELL_GetPathFromIDListForExecuteW(
-        sei.lpIDList as *const ITEMIDLIST,
+        (*sei).lpIDList as *const ITEMIDLIST,
         buffer.as_mut_ptr(),
         (ARRAY_SIZE!(buffer)) as u32,
     ) >= 0
@@ -2422,7 +2422,7 @@ unsafe extern "C" fn SHELL_InvokePidl(
     }
 
     let mut pCM: *mut IContextMenu = core::ptr::null_mut();
-    let hr = ((*(*psfFolder).lpVtbl).GetUIObjectOf)(psfFolder, core::ptr::null_mut(), 1, &pidlLast, IID_NULL_PPV_ARG(IContextMenu, &mut pCM));
+    let hr = ((*(*psfFolder).lpVtbl).GetUIObjectOf)(psfFolder, core::ptr::null_mut(), 1, &pidlLast, core::ptr::addr_of!(IID_IContextMenu).cast(), core::ptr::null_mut(), core::ptr::addr_of_mut!(pCM).cast());
     if FAILED_UNEXPECTEDLY!(hr) {
         ((*(*psfFolder).lpVtbl).Release)(psfFolder);
         return FALSE;
