@@ -249,7 +249,7 @@ unsafe extern "C" fn BrFolder_GetName(
 ) -> i32 {
     let mut bSuccess: i32 = FALSE;
     let mut str: STRRET = core::mem::zeroed();
-    if !FAILED_UNEXPECTEDLY!(((*(*lpsf).lpVtbl).GetDisplayNameOf)(lpsf, pidlChild, dwFlags, core::ptr::addr_of_mut!(str).cast())) {
+    if !FAILED_UNEXPECTEDLY!(((*(*lpsf).lpVtbl).GetDisplayNameOf)(lpsf, pidlChild.cast(), dwFlags, core::ptr::addr_of_mut!(str).cast())) {
         bSuccess = StrRetToStrNW(lpFriendlyName, (MAX_PATH) as u32, &mut str, pidlChild);
     }
     bSuccess
@@ -570,7 +570,7 @@ unsafe extern "C" fn BrFolder_Treeview_Expand(info: *mut BrFolder, pnmtv: *mut N
         let sfp = (*pItemData).lpsfParent.Get();
         hr = ((*(*sfp).lpVtbl).BindToObject)(
             sfp,
-            (*pItemData).pidlChild,
+            (*pItemData).pidlChild.cast(),
             core::ptr::null_mut(),
             core::ptr::addr_of!(IID_IShellFolder).cast(),
             &mut lpsf2 as *mut *mut IShellFolder as *mut *mut core::ffi::c_void,
@@ -635,10 +635,10 @@ unsafe extern "C" fn BrFolder_Treeview_Rename(info: *mut BrFolder, pnmtv: *mut N
     let mut newChild: PITEMID_CHILD = core::ptr::null_mut();
     let hr = ((*(*(*data).lpsfParent.p).lpVtbl).SetNameOf)((*data).lpsfParent.p,
         (*info).hWnd.cast(),
-        (*data).pidlChild,
+        (*data).pidlChild.cast(),
         (*pnmtv).item.pszText,
         SHGDN_NORMAL | SHGDN_INFOLDER,
-        &mut newChild,
+        core::ptr::addr_of_mut!(newChild).cast(),
     );
     if hr < 0 {
         return (FALSE) as LRESULT;
@@ -913,7 +913,7 @@ unsafe extern "C" fn BrFolder_NewFolder(info: *mut BrFolder) -> HRESULT {
         let dsk = desktop.Get();
         hr = ((*(*dsk).lpVtbl).BindToObject)(
             dsk,
-            (*info).pidlRet,
+            (*info).pidlRet.cast(),
             core::ptr::null_mut(),
             core::ptr::addr_of!(IID_IShellFolder).cast(),
             (cur.GetAddressOf()).cast(),
@@ -1104,7 +1104,7 @@ unsafe extern "C" fn BrFolder_OnContextMenu(info: *mut BrFolder, lParam: LPARAM)
         isf,
         (*info).hWnd.cast(),
         1,
-        &(*item).pidlChild,
+        core::ptr::addr_of!((*item).pidlChild).cast(),
         core::ptr::addr_of!(IID_IContextMenu).cast(),
         core::ptr::null_mut(),
         &mut pcm as *mut *mut IContextMenu as *mut *mut core::ffi::c_void,

@@ -398,12 +398,15 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   globals `wine/shell32_main.h` publishes needed `#[no_mangle]`, and `brfolder.cpp` declares
   `Shell_GetCachedImageIndexW` bare at its own file scope — a declaration outside any header,
   which a header-only grep misses.
-  `brfolder.cpp` is flipped (2026-07-31), 86 errors → 0. Two roots were shared substrate and
-  paid off beyond this file: `shellcom.rs` had hand-declared `ITEMIDLIST`/`SHITEMID` beside the
-  island's (structurally identical, still a different Rust type — collapsed to a re-export for
-  zero errors elsewhere), and the prelude declared `SetWindowLongPtrW`/`GetWindowLongPtrW` as
+  `brfolder.cpp` is flipped (2026-07-31), 86 errors → 0. One root was shared substrate and pays off
+  beyond this file: the prelude declared `SetWindowLongPtrW`/`GetWindowLongPtrW` as
   raw externs when on i386 winuser.h makes them macros for the non-`Ptr` entry points, so they
-  are now cfg-split wrappers that `layout.rs` and `shlfileop.rs` inherit. The rest were defects
+  are now cfg-split wrappers that `layout.rs` and `shlfileop.rs` inherit. A second candidate
+  root was REJECTED and is worth knowing about: `shellcom.rs` duplicates the island's
+  `ITEMIDLIST`/`SHITEMID`, and collapsing that to a re-export passes `cargo check -p
+  shell32-rust` on all three arches while breaking `menuband-rust`, which `#[path]`-includes
+  the file and has no island. The duplication is deliberate; the crossings `.cast()` instead.
+  The rest were defects
   a green C++ build cannot show: amd64 widths baked into `LRESULT`/`UINT_PTR`/`SIZE_T` casts
   (i386-only failures), `isize` where i386 wants `INT_PTR`/`LPARAM` (same width, different Rust
   type), one of two `BrFolder_GetName` **overloads** dropped, a C++ **default argument** lost at

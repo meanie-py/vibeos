@@ -803,17 +803,25 @@ Two traps specific to this move:
   (~73 on shell32). Blocklist the interfaces with `EXTRA_BL_ITEMS` *and* re-export them with
   `EXTRA_RAW_LINES`: blocklisting removes the definition, not the references, so without the
   re-export the island fails E0412 on its own output.
-- **The DATA-LAYOUT half of that same rule: your vtable module must not RE-DECLARE a layout the
-  island already emits.** shell32's `shellcom.rs` hand-wrote `SHITEMID`/`ITEMIDLIST` beside the
-  island's `_ITEMIDLIST`, and two structurally identical `#[repr(C, packed)]` declarations are
-  still two different Rust types — so every PIDL crossing from an island extern into a shellcom
-  vtable signature failed `expected *const shellcom::ITEMIDLIST, found *const _ITEMIDLIST`
-  (~8 in `brfolder` alone, and it would recur in every remaining TU). Fix is one line —
-  `pub use crate::island::{ITEMIDLIST, SHITEMID};` — and it cost **zero** errors elsewhere.
-  Measure before assuming the same for every duplicate, though: shellcom's `STRRET` deliberately
-  stays hand-written, because the island's is a bindgen anon-union (`__bindgen_anon_1` +
-  `__BindgenUnionField`) and collapsing to it would rewrite `.u.pOleStr` across four landed
-  files. **Collapse where it is free; cast where collapsing would churn landed code.**
+- **A duplicate layout in your vtable module is a real cost, but check WHO ELSE COMPILES THAT
+  FILE before collapsing it.** shell32's `shellcom.rs` hand-writes `SHITEMID`/`ITEMIDLIST`
+  beside the island's `_ITEMIDLIST`; two structurally identical `#[repr(C, packed)]`
+  declarations are still two different Rust types, so every PIDL crossing from an island extern
+  into a shellcom vtable signature fails `expected *const shellcom::ITEMIDLIST, found *const
+  _ITEMIDLIST`. The one-line `pub use crate::island::{ITEMIDLIST, SHITEMID};` looks free — it
+  cost zero errors in `shell32-rust` — and it is **wrong**: `shellcom.rs` is `#[path]`-included
+  into `menuband-rust` (`lib.rs:38`) *specifically* so that crate gets a layout-identical copy
+  without depending on the shell32-rust staticlib, and it has no island. `E0432: could not find
+  island in the crate root`, surfaced only by the arm64 leg of a full gate, ~15 minutes after a
+  clean three-arch `cargo check -p shell32-rust`.
+  **Before deleting or re-pointing anything in a shared substrate file, `grep -rn "<file>.rs"
+  --include=*.rs` for `#[path]` includes.** A path-included module has a second dependency
+  surface that its own crate's `cargo check` cannot see, and `-p <crate>` is not the whole story
+  — the gate builds every crate. Keep the duplicate, note *why* it is duplicated at the
+  declaration, and `.cast()` at the crossings (5 sites in `brfolder`).
+  The same measure-first rule applies for its own sake: shellcom's `STRRET` stays hand-written
+  because the island's is a bindgen anon-union (`__bindgen_anon_1` + `__BindgenUnionField`) and
+  collapsing to it would rewrite `.u.pOleStr` across four landed files.
 - **`<stem>_extra.rs` is residue, not a spare copy — delete an entry the day bindgen learns to
   emit it.** `island_extra.rs` kept a hand-written `lstrcpynW` after all three arch islands
   began binding it (identically, `stdcall` vs the residue's `system`). A duplicate in the
