@@ -4305,32 +4305,41 @@ pub unsafe extern "C" fn _fread_nolock(
     }
 
     while rcnt > 0 {
-        let i: i32;
+        // `i` is REASSIGNED by the clamp below, not shadowed by a second binding, and
+        // that is the whole contract of this loop: whatever `i` ends up holding is what
+        // the tail credits to `pread`, subtracts from `rcnt`, and advances `ptr` by.
+        //
+        // The first translation of this made the clamp a separate `actual_i` used only
+        // inside the memcpy block, so a buffered read of fewer bytes than the buffer
+        // reported the whole BUFFER FILL as bytes delivered: `fread(p, 1, 1, f)` on a
+        // six-byte file returned 6, moved the caller's pointer six bytes past one byte of
+        // data, and underflowed `rcnt`. It survived the boot only because the callers on
+        // that path ask for at least a buffer's worth and never take this branch.
+        let mut i: i32;
         if (*file)._cnt == 0
             && rcnt < (*file)._bufsiz as usize
             && ((*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32) != 0
         {
             i = _read((*file)._file, (*file)._base as *mut core::ffi::c_void, (*file)._bufsiz as u32);
             (*file)._ptr = (*file)._base;
-            let actual_i = if i != -1 {
+            if i != -1 {
                 (*file)._cnt = i;
+                // The C is `if (i > rcnt) i = rcnt;` with `i` an int against a size_t, so
+                // the comparison is unsigned — which is why it has to stay inside the
+                // `i != -1` arm, where `i` cannot be negative.
                 if i as usize > rcnt {
-                    rcnt as i32
-                } else {
-                    i
+                    i = rcnt as i32;
                 }
-            } else {
-                i
-            };
+            }
 
-            if actual_i > 0 && actual_i < (*file)._cnt {
+            if i > 0 && i < (*file)._cnt {
                 (*get_ioinfo_nolock((*file)._file)).wxflag &= !WX_ATEOF;
                 (*file)._flag &= (!_IOEOF) as i32;
             }
-            if actual_i > 0 {
-                memcpy(ptr, (*file)._ptr as *const core::ffi::c_void, actual_i as usize);
-                (*file)._cnt -= actual_i;
-                (*file)._ptr = (*file)._ptr.add(actual_i as usize);
+            if i > 0 {
+                memcpy(ptr, (*file)._ptr as *const core::ffi::c_void, i as usize);
+                (*file)._cnt -= i;
+                (*file)._ptr = (*file)._ptr.add(i as usize);
             }
         } else if rcnt > (INT_MAX) as usize {
             i = _read((*file)._file, ptr, INT_MAX);

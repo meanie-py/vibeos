@@ -63,6 +63,25 @@ unsigned int *__doserrno(void)
 unsigned int subj_doserrno_get(void)           { return subj_doserrno_value; }
 void         subj_doserrno_set(unsigned int v) { subj_doserrno_value = v; }
 
+/* errno.c's Win32 -> errno store, SUBJECT side.
+ *
+ * file.rs calls this 54 times — it is how essentially every failure in the stream layer
+ * reaches errno — and until this existed there was one plain definition, fileimpl.c's,
+ * whose body writes through the `_errno()` that refstub/msvcrt.h renames into the
+ * reference namespace.  So the subject's failures set the REFERENCE's errno: unobservable
+ * here, and actively corrupting the slot the next reference call would be graded on.
+ *
+ * The mapping table stays fileimpl.c's single transcription; only the two stores are
+ * per-side.  See the note there for why sharing the table is a documented limit and how
+ * it retires (errno.c as a reference TU). */
+extern int msvcrt_difftest_win32_to_errno(int err);
+
+void msvcrt_set_errno(int err)
+{
+    subj_doserrno_value = (unsigned int)err;
+    subj_errno_value = msvcrt_difftest_win32_to_errno(err);
+}
+
 /* ------------------------------------------------------------------ *
  * _wcsdup — NOT under test here, and on the path anyway.
  *

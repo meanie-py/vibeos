@@ -2254,6 +2254,38 @@ surfaced as the subject and the reference disagreeing about two IDENTICAL string
 an unrelated pair of cases shifting the heap. Pad, then terminate — with two NULs, so
 termination does not depend on whether the walker's stride is one byte or two.
 
+**A HOST HEADER can redefine a reference constant into different BEHAVIOUR, and only a
+harness that watches internal state will see it.** At `_MSVCR_VER < 140` — the arm this DLL
+builds — `msvcrt.h` spells `MSVCRT__NOBUF` as `_IONBF`, so that macro is not a `setvbuf` mode,
+it is the "stream is unbuffered" flag bit that `_fwrite_nolock`, `_flsbuf`, `_filbuf` and
+`fflush` all branch on. msvcrt's `_IONBF` is `0x0004`; **glibc's is `2`, which is `_IOWRT`.** The
+reference TU took glibc's, so it read every write-mode stream as already unbuffered: it never
+allocated a buffer, wrote a byte at a time straight to the fd, and left `_base` NULL. Every
+`fwrite` row still returned the same count and left identical bytes on disk — the two sides'
+file POSITIONS came out nine apart, and nothing but the FILE's internals could tell you why. Two
+lessons. First, a reference TU compiled for the host inherits the host's macros for every name
+it does not explicitly displace, and the dangerous ones are the values that are *plausible on
+both sides* (`_IOFBF` is 0 in both, which is what makes 1-vs-0x40 and 2-vs-4 look like noise).
+Derive them with the pinned cross-compiler and `#undef` before `#define`, the way the errno
+block already does. Second, **grade the buffering, not just the answer**: put the FILE's
+`_flag`, `_cnt`, `_bufsiz` and `_ptr - _base` in the compared image. Buffering is a behaviour
+with no other window — buffered and write-through return the same value and produce the same
+file.
+
+**Once the SUBJECT defines libc names, the harness's shared ENVIRONMENT starts calling into the
+code under test.** msvcrt-difftest's `fileimpl.c` is the POSIX-backed Win32 layer *underneath*
+the stream layer, compiled without the rename prelude so its calls land on plain names — and a
+strong definition beats libc at link time. It carried a comment saying `strlen` was "the only
+name in this file's import set that collides with the subject's exports — checked, not assumed",
+which was true right up until file.rs entered the link. Then `MoveFileExW`'s `rename()` became
+msvcrt's `rename` → `_wrename` → `MoveFileExW`: unbounded recursion, stack overflow before the
+first row ran. The general shape is worse than the crash, because a collision that does NOT
+recurse is silent — the reference's environment simply runs the subject's code and every row
+agrees. Two fixes, and take both: call the same operation under a name msvcrt does not export
+(`renameat`, `dprintf`), and make the rule a command — intersect the environment object's
+undefined symbols with the ported file's export list at build time. A rule with no check behind
+it is a rule that was true when it was written.
+
 ### A shared ledger that collapses two configurations makes the A/B invisible
 The corollary of the governing rule above: a harness only falsifies what it varies, **and you
 can only tell what it varied from what it RECORDED**.

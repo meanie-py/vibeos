@@ -127,6 +127,16 @@ name = "mbcs_state"
 path = "tests/mbcs_state.rs"
 harness = false
 
+# Wave 18a — file.c's stream layer. Its own binary because it is the only suite that
+# drives the CRT's fd table and FILE ring through hundreds of open/close cycles, and both
+# sides' tables have to start empty and stay in lockstep for the fd numbers to be
+# comparable at all. `harness = false` gives it one thread, which is what makes that
+# lockstep hold; the same getenv reason as the rest applies too.
+[[test]]
+name = "file"
+path = "tests/file.rs"
+harness = false
+
 # Wave 16 — the last 50 exports of string.c and wcs.c: the `_l` integer parsers and case
 # folders, `_strdup` / `_atoflt` / `I10_OUTPUT`, the wide integer engines, and the whole
 # wchar->multibyte family. Its own binary because it plants a non-zero `lc_codepage` on
