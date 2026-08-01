@@ -1443,6 +1443,44 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   to a stack that `MmDeleteKernelStack` already released, the reaper/SwapBusy path is the
   target, not paging.
 
+  > ## CLOSED (2026-08-01): stale FreeLDR identity PTEs in recycled user page tables
+  >
+  > **Root cause.** FreeLDR's identity-mapped page-table *pages* get recycled as user-space page
+  > tables while still holding FreeLDR's own entries (VA==PA, global, EL1-only), and on ARM64
+  > TTBR0 **is** the user half. A freshly reserved user range therefore sits on valid-looking
+  > descriptors, so (a) the fault that should demand-page it never fires, and (b) teardown
+  > decodes the stale descriptor into a PFN that names no frame — VA `0x50000` → pte `0x50703`
+  > → PFN `0x50`, far below QEMU virt's `0x40000000` DRAM base. `MmDeleteRmap` then reports
+  > mapping-not-in-list, and `MmReleasePageMemoryConsumer(MC_USER, 0x50)` hands the allocator a
+  > frame that was **never allocated** — the deterministic corruption behind all four stop codes.
+  >
+  > Why arm64 only: amd64 carries the equivalent guard in `ARM3/sysldr.rs`
+  > (`#[cfg(target_arch = "x86_64")]`), whose comment describes this exact failure mode. 148 x86
+  > sweep rounds could not reproduce it.
+  >
+  > **Fix.** `MiPurgeStaleUserPtes` (`arm64/page.rs`), called from `MmCreateMemoryArea` — the one
+  > choke point every user VA reservation passes through, so VirtualAlloc and section views are
+  > covered together instead of path by path. Skips 2MB at a time when the PDE is absent, so the
+  > common case is not O(pages). Also restored the ARM64 block of `NtAllocateVirtualMemory` that
+  > the port had skipped behind an expired premise (field manual, "A deferral note outlives the
+  > premise that justified it") — correct on its own merits, though it does **not** cover the
+  > section-view path that this bug took.
+  >
+  > **Evidence.** `[MMGUARD] rmap.MmDeleteRmap mapping-not-in-list` fired once per run on every
+  > run across 3+ media builds; after the fix, **0 hits**, and `ZwMapViewOfSection` went
+  > **pass=121 fail=13 → pass=123 fail=11**. The extra passes are the independent corroboration:
+  > silencing a guard cannot make test assertions succeed. Ratchet holds, sweep 91/88 in 67s (no
+  > boot slowdown from the purge).
+  >
+  > **What cracked it** (method worth reusing): the raw descriptor. `Page` alone was ambiguous
+  > for days, and two intermediate readings were wrong — `balance.rs`'s `RMAP_IS_SEGMENT` bug was
+  > real but not this, and `valid()` is only bit 0 so it cannot distinguish a hardware descriptor
+  > from a software PTE. Logging `OldPte.Long` into the always-on flight recorder, keyed by VA,
+  > settled it in one boot. A probe gated on `pfn < MmLowestPhysicalPage` fired zero times and was
+  > **uninterpretable** — never use a probe whose silence has a hidden precondition.
+  >
+  > <details><summary>Original 2026-07-29 characterization (kept — the reasoning that got here)</summary>
+  >
   > ## ROOT CAUSE CANDIDATE FOUND (2026-07-29): `MmDeleteRmap` loses the mapping, on EVERY run
   >
   > **The arm64 blocker's crash face is not a flake. The corruption is deterministic; only its
@@ -1541,6 +1579,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   > into a parameter name by the translator), and the phys-vs-virt unmap branch is selected by
   > `FreePage.is_none()`, with the function pointers laundered through `usize` + transmute to
   > stop LLVM folding them — check that indirection still matches the C's intent.
+  >
+  > </details>
 
   **THE TRIGGER IS LOCALISED (2026-07-29, 21 rounds in 44 min): the process teardown between
   `ZwMapViewOfSection` and `ZwWaitForMultipleObjects`.** Three failing arm64 rounds, three

@@ -2382,11 +2382,65 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
             return Status;
         }
 
-        // NOTE: C version had an ARM64-only block here that cleared stale
-        // FreeLDR identity-mapping PTEs over the new range. Skipped in this
-        // Rust port — arm64 boot currently fails before user-mode allocation,
-        // so this path isn't exercised. Restore from virtual.c:4819-4869 once
-        // arm64 boot is fixed past CmCheckRegistry.
+        // ARM64: clear stale bootloader identity-mapping PTEs over the newly
+        // committed user range (ntoskrnl/mm/ARM3/virtual.c:4819-4869). FreeLDR
+        // leaves TTBR0 identity entries behind — VA==PA, global, EL1-only — and
+        // TTBR0 *is* the user half on ARM64, so they survive into user address
+        // space. They are VALID descriptors, so two things go wrong: the fault
+        // that should demand-page the new allocation never fires, and teardown
+        // later reads the identity PTE and decodes a PFN that names no frame
+        // (VA 0x50000 -> pte 0x50703 -> PFN 0x50, far below the 0x40000000 DRAM
+        // base). MmDeleteRmap then reports mapping-not-in-list and
+        // MmReleasePageMemoryConsumer hands the allocator a frame that was
+        // never allocated.
+        //
+        // This block was dropped in translation behind "arm64 boot currently
+        // fails before user-mode allocation, so this path isn't exercised".
+        // That stopped being true once arm64 booted to desktop; the note
+        // outlived its premise and the gap became a live memory corruptor.
+        // amd64 has the equivalent guard in ARM3/sysldr.rs, which is why this
+        // reproduced on arm64 only.
+        #[cfg(target_arch = "aarch64")]
+        {
+            if (AllocationType & MEM_COMMIT) != 0
+                && StartingAddress < MmSystemRangeStart as ULONG_PTR
+            {
+                // ARM64 descriptor bits[1:0]: 0b11 = valid table/page entry,
+                // 0b01 = valid 2MB BLOCK. HARDWARE_PTE calls bit 1 NotLargePage
+                // (sdk/include/ndk/arm64/mmtypes.h) — there is no shared
+                // accessor because bit 1 is `Write` on x86.
+                const NOT_LARGE_PAGE: ULONG_PTR = 1 << 1;
+                let mut need_flush = false;
+                let mut Va = StartingAddress;
+
+                while Va < StartingAddress + PRegionSize {
+                    let PointerPxe = MiAddressToPxe(Va as PVOID);
+                    let PointerPpe = MiAddressToPpe(Va as PVOID);
+                    let PointerPde = MiAddressToPde(Va as PVOID);
+
+                    if (*PointerPxe).valid() && (*PointerPpe).valid() && (*PointerPde).valid() {
+                        if ((*PointerPde).Long & NOT_LARGE_PAGE) == 0 {
+                            // Block descriptor: drop it and skip its whole 2MB.
+                            (*PointerPde).Long = 0;
+                            need_flush = true;
+                            Va |= 0x1FFFFF;
+                        } else {
+                            let PointerPte = MiAddressToPte(Va as PVOID);
+                            if (*PointerPte).valid() {
+                                (*PointerPte).Long = 0;
+                                need_flush = true;
+                            }
+                        }
+                    }
+
+                    Va += PAGE_SIZE as ULONG_PTR;
+                }
+
+                if need_flush {
+                    KeFlushEntireTb(1, 1);
+                }
+            }
+        }
 
         /* Detach from target if needed and return success */
         if Attached != 0 {

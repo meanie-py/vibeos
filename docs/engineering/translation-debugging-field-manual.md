@@ -1427,6 +1427,31 @@ all three bugs above.
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A deferral note outlives the premise that justified it
+`ARM3/virtual.rs` skipped an ARM64-only block of `NtAllocateVirtualMemory` and said so:
+*"Skipped in this Rust port — arm64 boot currently fails before user-mode allocation, so this
+path isn't exercised. Restore from virtual.c:4819-4869 once arm64 boot is fixed past
+CmCheckRegistry."* Honest, correct when written, and self-invalidating: arm64 has booted to a
+desktop for months, so the "isn't exercised" clause stopped being true and the note quietly
+became a live memory corruptor.
+
+What it was guarding matters. FreeLDR's identity-mapped page-table **pages** get recycled as
+user-space page tables while still holding FreeLDR's entries (VA==PA, global, EL1-only), and on
+ARM64 TTBR0 *is* the user half. A fresh user reservation therefore lands on valid-looking
+descriptors: the fault that should demand-page it never fires, and teardown decodes the stale
+descriptor into a PFN naming no frame (VA `0x50000` → pte `0x50703` → PFN `0x50`, far below
+QEMU virt's `0x40000000` DRAM base). `MmDeleteRmap` then reports mapping-not-in-list and
+`MmReleasePageMemoryConsumer` hands the allocator a frame that was never allocated — one
+deterministic corruption presenting as four different stop codes plus clean runs, depending on
+what later reused the frame. amd64 has the equivalent guard in `ARM3/sysldr.rs`, which is
+exactly why 148 x86 sweep rounds never reproduced it.
+
+**A deferral whose condition is a moving fact needs an executable trigger, not a sentence.** A
+comment cannot notice that its premise expired. Either wire the condition to something that
+fails loudly when it flips, or do the work. The tell when hunting: a note that names both the
+restoration source and a precondition — check the precondition *first*, because if it has
+already been met the note is describing a bug, not a plan.
+
 ### Whole functions vanish
 - **A parse failure in the SCANNER deletes a function from the plan, and every downstream check
   passes** `[§9.78]`. `#define CONST const` (winnt.h) is unknown to tree-sitter-c, so ws2_32

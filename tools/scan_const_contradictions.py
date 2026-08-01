@@ -101,6 +101,7 @@ def render_value(val: int) -> str:
     """Canonical display: `!0xFF` for NOT values, `0xFF` otherwise."""
     return f"!0x{~val:X}" if val < 0 else f"0x{val:X}"
 
+
 ARCH_RE = re.compile(r"(?:^|[/_])(arm64|aarch64|amd64|x86_64|i386|x86)(?:[/_.]|$)")
 
 
