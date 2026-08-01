@@ -1054,6 +1054,129 @@ def _resolve_known_preproc(text: str, defines: dict[str, str] | None = None) -> 
     return "\n".join(out)
 
 
+# `#define NAME(a, b) ...` — name, parameter list, first body line. Function-like only:
+# the `(` must touch the name, which is what the C preprocessor itself requires.
+FN_MACRO_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\(([^)]*)\)(.*)$", re.M)
+
+
+def macro_body(src_text: str, start: int) -> str:
+    """The full replacement list at *start*, following backslash line-continuations."""
+    body: list[str] = []
+    for line in src_text[start:].splitlines():
+        if line.endswith("\\"):
+            body.append(line[:-1])
+            continue
+        body.append(line)
+        break
+    return "\n".join(body)
+
+
+def split_macro_args(src_text: str, open_paren_end: int) -> list[str] | None:
+    """Split a macro invocation's arguments at top-level commas.
+
+    *open_paren_end* is the index just past the ``(``. Returns None if the parentheses
+    never balance, so a false ``NAME(`` match inside a string or comment drops out rather
+    than being treated as an invocation.
+    """
+    depth = 1
+    arg = ""
+    args: list[str] = []
+    for ch in src_text[open_paren_end:]:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                args.append(arg)
+                return args
+        if depth == 1 and ch == ",":
+            args.append(arg)
+            arg = ""
+            continue
+        arg += ch
+    return None
+
+
+def _expand_case_macros(text: str) -> str:
+    """Expand TU-local function-like macros that GENERATE a ``case`` label.
+
+    tree-sitter cannot parse ``ERR_CASE(ERROR_ACCESS_DENIED)`` sitting where a case label
+    belongs — a bare ``IDENT(ARG)`` with no semicolon is not a statement — and the damage is
+    not local: on msvcrt's errno.c it produced ONE ``ERROR`` node spanning lines 132-451,
+    swallowing ``msvcrt_set_errno`` and ``_errno`` whole while the walk recovered the
+    survivors. Nothing landed in ``unextracted``, so the catalog came back looking healthy:
+    16 paid functions, the two most important ones missing, and ``ERR_CASE`` — a macro —
+    promoted to a billable function.
+
+    Expanding is also the better prompt. The model sees real ``case`` labels, which is what
+    ``--seal-facts`` needs to protect the constants, and there is no Rust rendering of the
+    C macro worth preserving anyway.
+
+    Deliberately narrow: only macros defined in THIS text whose replacement list contains a
+    ``case`` token. Runs after :func:`_resolve_known_preproc`, so macros in a dead ``#if``
+    arm are already gone and are never expanded.
+    """
+    defs: list[tuple[int, int, str, list[str], str]] = []
+    for m in FN_MACRO_RE.finditer(text):
+        body = macro_body(text, m.start(3))
+        if not re.search(r"\bcase\b", body):
+            continue
+        params = [p.strip() for p in m.group(2).split(",") if p.strip()]
+        if not params:
+            continue
+        end = m.start(3) + len(body)
+        # One logical line: a replacement list's backslash-continuations are formatting, and
+        # collapsing them is what lets an expansion be substituted without moving any line.
+        defs.append((m.start(), end, m.group(1), params, " ".join(body.split())))
+    if not defs:
+        return text  # byte-identical for every TU without one, which is most of them
+
+    names = sorted({d[2] for d in defs}, key=len, reverse=True)
+    call_re = re.compile(rf"\b(?:{'|'.join(re.escape(n) for n in names)})[ \t]*\(")
+    def_at = {d[0]: d for d in defs}
+    # Left to right, tracking which definition is in force. A name can be REDEFINED with a
+    # different body — dinput's effect_linuxinput.c defines `FE(x)` once as `type = #x` and
+    # again as `wave = #x` — so a name->body map would expand the first group with the
+    # second body. Position is what disambiguates, so this walks rather than substitutes.
+    live: dict[str, tuple[list[str], str]] = {}
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        if i in def_at:
+            _, end, name, params, body = def_at[i]
+            live[name] = (params, body)
+            # Drop the directive (meaningless once expanded) but keep its NEWLINES. Every
+            # normalizer in this pipeline preserves the line count, and preamble_audit
+            # reports the LINE of an unparsed region — a pass that moves lines makes that
+            # number point at innocent code.
+            out.append("\n" * text.count("\n", i, end))
+            i = end
+            continue
+        call = call_re.search(text, i)
+        if call is None:
+            out.append(text[i:])
+            break
+        nxt_def = min((s for s in def_at if s > i), default=len(text))
+        if call.start() >= nxt_def:
+            out.append(text[i:nxt_def])
+            i = nxt_def
+            continue
+        name = text[call.start() : call.end() - 1].strip().rstrip("(").strip()
+        args = split_macro_args(text, call.end())
+        if args is None or name not in live:
+            out.append(text[i : call.end()])
+            i = call.end()
+            continue
+        params, body = live[name]
+        rep = body
+        for k, p in enumerate(params):
+            rep = re.sub(rf"\b{re.escape(p)}\b", (args[k].strip() if k < len(args) else ""), rep)
+        out.append(text[i : call.start()])
+        out.append(rep)
+        i = call.end() + sum(len(a) for a in args) + len(args)  # args + commas + `)`
+    return "".join(out)
+
+
 def extract_preamble(scan: "ScanResult") -> str:
     """File-scope C that `translate` (function-by-function) otherwise drops.
 
@@ -1282,7 +1405,9 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
             _expand_extern_c(
                 _strip_sal(
                     _expand_csr_api(
-                        _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                        _expand_case_macros(
+                            _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                        )
                     )
                 ),
                 is_cpp,

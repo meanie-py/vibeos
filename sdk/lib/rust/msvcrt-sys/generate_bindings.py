@@ -452,7 +452,19 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|_IOREAD|_IOWRT|_IOEOF|_IOERR|_IOMYBUF|_IORW|_IOSTRG|_IOFBF|_IOLBF|_IONBF"
         "|BUFSIZ|_IOB_ENTRIES|FILENAME_MAX|TMP_MAX|TMP_MAX_S|L_tmpnam|L_tmpnam_s"
         "|SEEK_SET|SEEK_CUR|SEEK_END|_NSTREAM_"
-        "|EBADF|EMFILE|ENOENT|EACCES|EEXIST|ENOSPC|EDEADLOCK|ENOMEM|EIO|EPERM"
+        # ── errno.c ─────────────────────────────────────────────────────────
+        # errno.h's COMPLETE non-POSIX set, deliberately, not the subset a given wave
+        # happens to name. This list grew on demand until file.c's wave, at which point
+        # 9 of `msvcrt_set_errno`'s 18 targets were absent -- and a missing one does not
+        # fail to compile, it invites an invented literal (§9.113). The trap is specific:
+        # EDEADLK is 36 here and 35 in glibc, ENOTEMPTY 41 here and 39 there, so a guess
+        # taken from host knowledge is plausible AND wrong. The POSIX block behind
+        # `#ifndef _CRT_NO_POSIX_ERROR_CODES` is correctly absent -- msvcrt defines that
+        # macro, and the flags come from the build's own compile_commands.json.
+        "|EPERM|ENOENT|ESRCH|EINTR|EIO|ENXIO|E2BIG|ENOEXEC|EBADF|ECHILD|EAGAIN"
+        "|ENOMEM|EACCES|EFAULT|EBUSY|EEXIST|EXDEV|ENODEV|ENOTDIR|EISDIR|ENFILE"
+        "|EMFILE|ENOTTY|EFBIG|ENOSPC|ESPIPE|EROFS|EMLINK|EPIPE|EDOM|EDEADLK"
+        "|ENAMETOOLONG|ENOLCK|ENOSYS|ENOTEMPTY|EDEADLOCK"
         # winbase.h / winnt.h: the Win32 file API file.c calls straight through to.
         "|INVALID_HANDLE_VALUE|INVALID_FILE_ATTRIBUTES|INVALID_SET_FILE_POINTER"
         "|GENERIC_READ|GENERIC_WRITE|CREATE_[A-Z]+|OPEN_[A-Z]+|TRUNCATE_EXISTING"

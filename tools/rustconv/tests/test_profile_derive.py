@@ -323,6 +323,81 @@ def test_case_label_in_a_dead_reactos_branch_is_not_audited(tmp_path):
     assert "WIDGET_MODE_FAST" in {c.ident for c in consts}
 
 
+def test_case_labels_hidden_behind_a_function_like_macro_are_audited(tmp_path):
+    """msvcrt's errno.c: all 39 arms are `ERR_CASE(x)` / `ERR_MAPS(x, y)`, no literal `case`.
+
+    The AST walk sees unexpanded source, so before this these audited as ZERO constants —
+    a clean bill of health for a file with 39 unaudited arms, which is precisely the silent
+    miss the tree-sitter-only rule was chosen to avoid.
+    """
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\n'
+        "void s(int e){ int *p; switch (e) {\n"
+        "#define ERR_CASE(oserr) case oserr:\n"
+        "#define ERR_MAPS(oserr, crterr) case oserr: *p = crterr; break\n"
+        "    ERR_CASE(ERROR_ACCESS_DENIED)\n"
+        "    ERR_MAPS(ERROR_LOCK_VIOLATION, WIDGET_EACCES);\n"
+        "    default: break;\n} }\n",
+    )
+    idents = {c.ident for c in find_switch_constants([_mod(tmp_path) / "helper.c"], root)}
+    assert "ERROR_ACCESS_DENIED" in idents
+    assert "ERROR_LOCK_VIOLATION" in idents
+    # the SECOND parameter of ERR_MAPS is the assigned value, not an arm
+    assert "WIDGET_EACCES" not in idents
+    # and the macro's own parameter names are not constants
+    assert "oserr" not in idents
+    assert "crterr" not in idents
+
+
+def test_case_macro_with_a_parenthesised_argument_is_audited(tmp_path):
+    """secur32's `_x(x) case (x): ...` and dnsapi's `X(x) case (x): return #x;`."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\n'
+        "const char *n(int t){ switch (t) {\n"
+        '#define X(x)    case (x): return #x;\n'
+        "    X(WIDGET_TYPE_A)\n"
+        "    X(WIDGET_TYPE_B)\n"
+        "} return 0; }\n",
+    )
+    idents = {c.ident for c in find_switch_constants([_mod(tmp_path) / "helper.c"], root)}
+    assert {"WIDGET_TYPE_A", "WIDGET_TYPE_B"} <= idents
+    assert "x" not in idents
+
+
+def test_multiline_case_macro_is_audited(tmp_path):
+    """gdi32's `META_UNIMP(x)` spreads its body over backslash-continued lines."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\n'
+        "void p(int r){ switch (r) {\n"
+        "#define META_UNIMP(x) case x: \\\n"
+        'FIXME("record type "#x" not implemented.\\n"); \\\n'
+        "break;\n"
+        "    META_UNIMP(META_DRAWTEXT)\n"
+        "} }\n",
+    )
+    idents = {c.ident for c in find_switch_constants([_mod(tmp_path) / "helper.c"], root)}
+    assert "META_DRAWTEXT" in idents
+
+
+def test_function_like_macro_without_a_case_body_contributes_nothing(tmp_path):
+    """Only macros that actually GENERATE an arm count — not every function-like macro."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\n'
+        "#define MAX(a, b) ((a) > (b) ? (a) : (b))\n"
+        "int h(int r){ return MAX(WIDGET_LIMIT, r); }\n",
+    )
+    idents = {c.ident for c in find_switch_constants([_mod(tmp_path) / "helper.c"], root)}
+    assert "WIDGET_LIMIT" not in idents
+
+
 def test_reachable_const_owner_is_force_added_to_the_allowlist(tmp_path):
     """The §9.112 prophylactic: allowlist the header owning any switch constant."""
     root = _basic_module(tmp_path)

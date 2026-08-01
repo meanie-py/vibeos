@@ -45,7 +45,7 @@ from tree_sitter import Language, Parser
 # #defined to nothing, tree-sitter does not know that, and a parameter spelled
 # `CONST CHAR FAR *p` fails the whole enclosing function. Reused rather than
 # reimplemented so both parsers agree on what the C says.
-from .scanner import _blank_memmodel, _normalize_callbacks
+from .scanner import _blank_memmodel, _expand_case_macros, _normalize_callbacks
 
 C_LANG = Language(tsc.language())
 
@@ -125,7 +125,12 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
     # audit returned INCOMPLETE for every msvcrt file and the file-scope checks it
     # exists for never ran. The function catalog normalizes both; so must this, or
     # the two disagree about what the file even contains.
-    text = _normalize_callbacks(_blank_memmodel(raw))
+    # Three normalizers now, same reason and same guarantee (none changes the line count).
+    # `_expand_case_macros` is the one this comment's warning was written for: it went into
+    # the function catalog first, and until it landed here too the two disagreed about
+    # errno.c — the catalog saw 18 functions while this audit still called line 132 a
+    # top-level ERROR and skipped every file-scope check it exists to perform.
+    text = _normalize_callbacks(_blank_memmodel(_expand_case_macros(raw)))
     src = text.encode()
     tree = Parser(C_LANG).parse(src)
     root = tree.root_node

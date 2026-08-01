@@ -1239,6 +1239,23 @@ Note constants that live only in a *secondary* `-sys` island need an explicit `u
 (rtl8139's `CmResourceTypePort` is in `hal_bindgen_*.rs`) — allowlisting the header does
 nothing.
 
+**The audit was itself blind to a `case` label a MACRO generates**, which is the failure mode
+it exists to catch, arriving through its own front door. `find_switch_constants` walks the
+*unexpanded* AST for `case_statement` nodes, so msvcrt's `errno.c` — whose 42 arms are all
+`ERR_CASE(x)` / `ERR_MAPS(x, y)` — audited as **zero switch constants and a clean bill**. It now
+resolves such macros by substituting each parameter with a sentinel and re-parsing the body, so
+only a parameter that genuinely lands in a case-label *value* counts (`ERR_MAPS`'s second
+argument is the assigned value, not an arm; and the `#define`'s own span must be skipped or the
+parameter NAME is reported as a 43rd constant). 77 → 120 constants on msvcrt. **When an audit
+reports zero for a file you know dispatches, suspect the audit before believing the file** —
+`grep -c 'case '` against the finding count is a five-second control.
+
+**A partial allowlist is the same bug, one layer down.** msvcrt-sys carried 13 of errno.h's 39
+codes because the list had grown per-wave on demand — and 9 of `msvcrt_set_errno`'s 18 targets
+were missing, including `EDEADLK` (36 in msvcrt, **35 in glibc**) and `ENOTEMPTY` (41 vs 39).
+Nothing would have failed to compile; the model would have supplied a plausible host value.
+**Allowlist a header's whole family, not the names this wave happens to reference.**
+
 **The oracle history here is instructive and worth not repeating** `[§9.112a, §9.112b]`:
 1. The checker reported ✓ 0 while **273 live catch-alls sat in the tree** — two scope defects:
    it scanned `ntoskrnl-rust/src` only (a hardcoded default), and it resolved constants
@@ -1456,6 +1473,25 @@ Measured: blanking recovered 1 of 3 bodies and reported 0 unextracted; expanding
 with a 500-file differential showing 499 identical, 1 gained, 0 lost. Same family as the `CONST`
 and `FAR`/`NEAR` normalisers. **When a scanner gap looks length- or name-dependent, suspect error
 recovery and fix the INPUT, not the recovery.**
+
+**Variant: a macro that generates the `case` LABEL, which also puts a macro on the invoice.**
+Wine writes switch arms as `ERR_CASE(ERROR_ACCESS_DENIED)` / `X(x) case (x): return #x;` — 31 TUs
+here do it. A bare `IDENT(ARG)` where a case label belongs is not a statement, and the blast radius
+is not the arm: on msvcrt's `errno.c` tree-sitter emitted **one `ERROR` node spanning lines
+132–451**, swallowing `msvcrt_set_errno` and `_errno` whole while the walk recovered the survivors
+from the wreckage. `unextracted` stayed **empty**, so the catalog looked healthy — and `translate`
+planned to bill for 16 functions, missing the two that matter most and *including `ERR_CASE`,
+which is a preprocessor directive*. Blanking the `#define` is again not enough (the invocations
+still do not parse); `_expand_case_macros` expands them to real `case` labels before the parse.
+Two traps if you touch it: recovery is **erratic, not monotonic** — two consecutive `ERR_CASE`
+lose the function while one, or four, or a semicolon-terminated `ERR_MAPS` among them, recover, so
+a fixture that "looks worse" can test nothing — and a name can be **redefined** with a different
+body in one TU (dinput's `FE(x)` is `type = #x` then `wave = #x`), so expansion must track the
+definition in force by POSITION, not keep a name→body map.
+
+The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
+at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
+cannot be invented — which is the whole defence, given `EDEADLK` is 36 in msvcrt and 35 in glibc.
 
 ### Bodies that are present but hollow
 - **Stubbed/degraded bodies** — constant-return or pass-through. **A variadic function degraded

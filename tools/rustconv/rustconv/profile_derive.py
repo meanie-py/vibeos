@@ -1309,8 +1309,92 @@ def find_switch_constants(tus: list[Path], repo_root: Path) -> list[SwitchConst]
                 if v.type == "identifier":
                     text = src[v.start_byte : v.end_byte].decode("utf-8", "replace")
                     found.append(SwitchConst(text, key, v.start_point[0] + 1))
+        found.extend(_macro_switch_constants(src, key, parser))
     # stable, de-duplicated by (ident, tu, line)
     return sorted(set(found), key=lambda s: (s.tu, s.line, s.ident))
+
+
+def _macro_switch_constants(src: bytes, key: str, parser) -> list[SwitchConst]:
+    """`case` labels that only exist AFTER a TU-local function-like macro expands.
+
+    The plain AST walk above sees the *unexpanded* source, so a TU whose arms are written
+    ``ERR_CASE(ERROR_ACCESS_DENIED)`` has no ``case_statement`` node at all and audits as
+    clean — silently, which is the one failure mode this whole check exists to prevent.
+    msvcrt's errno.c hides all 39 of its arms that way.
+
+    Resolution is still tree-sitter, never a regex over ``case``: each parameter is replaced
+    by a unique sentinel, the body is parsed as a real switch, and a parameter counts only if
+    its sentinel lands in a ``case`` label *value*. So ``ERR_MAPS(oserr, crterr)`` contributes
+    ``oserr`` and not ``crterr`` — the latter is the assigned value, not an arm.
+    """
+    # Local, like the C_LANG import in the caller: scanner.py pulls in tree_sitter_c at
+    # module scope, and profile_derive keeps that a soft dependency so a missing parser
+    # surfaces as ProfileDeriveError rather than a bare ImportError at import time.
+    from .scanner import FN_MACRO_RE, macro_body, split_macro_args
+
+    src_text = src.decode("utf-8", "replace")
+    # name -> parameter indices that reach a `case` label
+    case_params: dict[str, list[int]] = {}
+    # `#define ERR_CASE(oserr)` is itself a textual `ERR_CASE(` match, and its argument is
+    # the PARAMETER NAME. Skipping the definition's own span is what keeps `oserr` from
+    # being reported as a 43rd switch constant that no arm ever names.
+    def_spans: dict[str, list[tuple[int, int]]] = {}
+    for m in FN_MACRO_RE.finditer(src_text):
+        name, params_src = m.group(1), m.group(2)
+        def_spans.setdefault(name, []).append((m.start(), m.end()))
+        body = macro_body(src_text, m.start(3))
+        if not re.search(r"\bcase\b", body):
+            continue
+        params = [p.strip() for p in params_src.split(",") if p.strip()]
+        if not params:
+            continue
+        sentinels = {f"__rcv_case_param_{i}__": i for i in range(len(params))}
+        probe = body
+        for i, p in enumerate(params):
+            probe = re.sub(rf"\b{re.escape(p)}\b", f"__rcv_case_param_{i}__", probe)
+        # A replacement list is a fragment; give it a switch to live in so `case` parses.
+        probe_bytes = f"void __rcv_probe(void){{switch(0){{{probe}\n}}}}".encode()
+        tree = parser.parse(probe_bytes)
+        hits: set[int] = set()
+        stack = [tree.root_node]
+        while stack:
+            node = stack.pop()
+            stack.extend(node.children)
+            if node.type != "case_statement":
+                continue
+            value = node.child_by_field_name("value")
+            if value is None:
+                continue
+            inner = [value]
+            while inner:
+                v = inner.pop()
+                inner.extend(v.children)
+                if v.type == "identifier":
+                    text = probe_bytes[v.start_byte : v.end_byte].decode("utf-8", "replace")
+                    if text in sentinels:
+                        hits.add(sentinels[text])
+        if hits:
+            case_params[name] = sorted(hits)
+    if not case_params:
+        return []
+
+    found: list[SwitchConst] = []
+    for name, idxs in case_params.items():
+        for call in re.finditer(rf"\b{re.escape(name)}[ \t]*\(", src_text):
+            if any(lo <= call.start() < hi for lo, hi in def_spans.get(name, ())):
+                continue  # the `#define` line itself
+            args = split_macro_args(src_text, call.end())
+            if args is None:
+                continue  # unbalanced (truncated file / inside a string) — not an arm
+            line = src_text.count("\n", 0, call.start()) + 1
+            for i in idxs:
+                if i >= len(args):
+                    continue
+                # The argument may be `(x)` or a cast; take every identifier in it, the
+                # same rule the AST walk uses for a literal `case` value.
+                for ident in re.findall(r"[A-Za-z_]\w*", args[i]):
+                    found.append(SwitchConst(ident, key, line))
+    return found
 
 
 def _in_dead_preproc_branch(node, src: bytes) -> bool:
