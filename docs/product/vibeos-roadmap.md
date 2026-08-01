@@ -494,6 +494,19 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   and `msvcrt_wstrdupa` both `malloc`, `_sopen_dispatch` frees its `wstrdupa_utf8`, and
   nlsimpl's iconv descriptor caches are `__thread`. The remaining suspect is stale heap bytes
   in a freshly-`malloc`'d wide-path buffer that a short conversion failed to terminate.
+  **ROOT CAUSE, and the crate already documents its own fix.** Eleven `[[test]]` targets in
+  `msvcrt-difftest/Cargo.toml` carry `harness = false`, for the reason stated there: the crate
+  exports a `#[no_mangle] getenv` that shadows glibc's, so *"libtest reads RUST_TEST_THREADS
+  through it, gets NULL, and misbehaves. A plain single-threaded `fn main()` runner never calls
+  getenv and never spawns threads."* `tests/file_substrate.rs` has **no `[[test]]` entry at
+  all** — it is the one test target still on the default libtest harness, so it is the only one
+  spawning threads, and its three file tests then race on process-global CRT state. That is why
+  `fd` and `seek` collide and nothing else in the crate does.
+  Fix is the one the file's own author already prescribes: give `file_substrate` a `[[test]]`
+  entry with `harness = false` and a single-threaded `fn main()` runner, like its ten siblings.
+  Do NOT "fix" it by renaming the tags to equal length — that hides the mangle instead of
+  removing the race, and equally do NOT exempt difftest from the queue's deterministic-stage
+  conviction, which would let real rust-vs-C divergences through.
   Cost: a full ~25-minute gate plus a ~25-minute control gate per hit, and it blocks the
   merge queue for every other lane while it runs. Owner: `msvcrt-homebrew` lane
   (`sdk/lib/rust/msvcrt-difftest/`).
