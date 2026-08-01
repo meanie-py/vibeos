@@ -90,7 +90,7 @@ list(APPEND SOURCE
     droptargets/CRecyclerDropTarget.cpp
     # shldataobject.cpp — replaced by Rust (shell32-rust/src/shell32/shldataobject.rs); cohab via libshell32_rust.a
     shlexec.cpp
-    shlfileop.cpp
+    # shlfileop.cpp — replaced by Rust (shell32-rust/src/shell32/shlfileop.rs); cohab via libshell32_rust.a
     # shlfolder.cpp — replaced by Rust (shell32-rust/src/shell32/shlfolder.rs); cohab via libshell32_rust.a
     CFileSysBindData.cpp
     CDefView.cpp

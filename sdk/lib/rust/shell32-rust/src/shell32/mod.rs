@@ -120,4 +120,4 @@ pub mod iconcache;
 /// neither OleInitialize nor OleUninitialize ran.
 pub mod brfolder;
 // pub mod shlexec;
-// pub mod shlfileop;
+pub mod shlfileop;
