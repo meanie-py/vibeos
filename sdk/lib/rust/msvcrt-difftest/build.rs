@@ -1931,6 +1931,54 @@ fn main() {
         .cargo_metadata(false)
         .file(&shim_c);
 
+    // ── fileimpl.c may not call into the code under test ────────────────────────────
+    //
+    // fileimpl.c is the reference's ENVIRONMENT. It is compiled without the rename
+    // prelude, so every libc call it makes lands on a plain name — and the crate under
+    // test ships `#[no_mangle]` definitions of ordinary libc names, where a strong
+    // definition beats libc. Any name it imports that file.c also exports is therefore a
+    // call INTO the subject, from the layer that is supposed to be underneath it.
+    //
+    // It was "checked, not assumed" in a comment, and the comment was right until file.rs
+    // entered the link: `MoveFileExW`'s `rename()` became msvcrt's `rename` -> `_wrename`
+    // -> `MoveFileExW`, unbounded recursion, stack overflow before the first row ran. A
+    // rule with no command behind it is a rule you will break, so here is the command.
+    //
+    // Undefined symbols only: a name fileimpl.c DEFINES (its own Win32 surface) is not an
+    // escape into anything.
+    if subject_stdio {
+        let obj = fileimpl_build
+            .compile_intermediates()
+            .into_iter()
+            .next()
+            .expect("fileimpl.c produced no object");
+        let nm = repo.join(".build-tools/llvm-mingw/bin/llvm-nm");
+        let out = std::process::Command::new(&nm)
+            .arg("--undefined-only")
+            .arg(&obj)
+            .output()
+            .unwrap_or_else(|e| panic!("failed to run {}: {e}", nm.display()));
+        let exported: std::collections::HashSet<&str> = file_symbols
+            .iter()
+            .map(String::as_str)
+            .chain(file_data.iter().map(String::as_str))
+            .collect();
+        let escapes: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|ln| ln.split_whitespace().last())
+            .filter(|s| exported.contains(*s))
+            .map(str::to_string)
+            .collect();
+        assert!(
+            escapes.is_empty(),
+            "fileimpl.c imports {escapes:?}, which file.c also EXPORTS — so with file.rs \
+             in the link those calls bind to the SUBJECT and the reference's environment \
+             runs through the code under test.\nfix: call the same operation under a name \
+             msvcrt does not have (rename -> renameat, fprintf -> dprintf), or hand-roll \
+             it like ref_strlen_local."
+        );
+    }
+
     // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all the objects.
     let mut objects: Vec<PathBuf> = Vec::new();
     refimpl_build.cargo_metadata(false);

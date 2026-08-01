@@ -94,6 +94,45 @@ the genuine `wcs.c`. The `...` shells (`sprintf`, `_snprintf`, `_swprintf`, …)
 concentrated: `file.c` 5,897 LOC (stdio, Phase D), `concurrency.c` 3,840 (C++), `scanf.c`'s 40
 exports (engine not ported), `math.c` 13 of 144 functions flipped.
 
+**Wave 18a (2026-08-01) — file.c GRADED. `msvcrt-difftest/tests/file.rs`, 32 rows,
+7,040 cases, 0 DIVERGE / 0 UNEXERCISED.** Wave 17 shipped file.c's 189 exports with no host
+oracle at all: the flip was gated by a link, `scan_ud2` and three boots, none of which can see a
+return value that is right by one or a byte written to the wrong offset. This is that
+instrument, and it covers the fd layer (`_open`/`_read`/`_write`/`_lseek`/`_lseeki64`/`_eof`/
+`_filelength`/`_filelengthi64`/`_dup`/`_commit`/`_chsize`/`_setmode`/`_isatty`/`_close`), the
+stream spine (`fopen`/`fopen_s`/`fclose`/`fread`/`fwrite`/`fgetc`/`fputc`/`fgets`/`fputs`/
+`ungetc`/`fseek`+`ftell`/`rewind`/`feof`+`clearerr`/`fflush`) and the path layer (`remove`/
+`_unlink`/`rename`/`_access`). The rest of the 189 are owed.
+
+Each row runs over TWO real files, one per side, and the compared image is the scalars (return,
+errno, **doserrno**, invalid-parameter count) + the CRT's own state (position, EOF/error flags,
+fd number, and the FILE's `_flag`/`_cnt`/`_bufsiz`/`_ptr - _base`) + **the file on disk, read
+back through `std::fs`** rather than through the implementation that wrote it. Four substrate
+changes were needed before any of that could mean anything, all of them in the same shape — a
+shared thing that quietly joined the two sides:
+
+* the fd table, `_iob` and `__badioinfo` were un-renamed (both implementations shared ONE table);
+* `msvcrt_set_errno` had one definition writing through the reference's `_errno()`, so the
+  subject's failures were invisible *and* clobbered the slot the next reference call was graded
+  on — the store is per-side now, the mapping table still one transcription (retires with
+  errno.c as a reference TU);
+* `fileimpl.c` called POSIX `rename`, which became msvcrt's once file.rs was in the link →
+  unbounded recursion. Now `renameat`/`dprintf`, and build.rs intersects that object's undefined
+  symbols with file.c's exports so the next one fails at build time;
+* `_IONBF`: at `_MSVCR_VER < 140` msvcrt.h aliases `MSVCRT__NOBUF` to it, and the reference was
+  taking **glibc's `2`** — bit-identical to `_IOWRT` — so it treated every write stream as
+  unbuffered. Derived and displaced now. Field manual has both this and the `rename` class.
+
+**One genuine shipping bug found and fixed** (`file.rs` `_fread_nolock`): the C clamps `i` with
+`if (i > rcnt) i = rcnt;` and that clamped `i` is what the loop tail credits to `pread`,
+subtracts from `rcnt` and advances `ptr` by. The translation put the clamp in a separate
+`actual_i` used only for the memcpy, so a buffered read smaller than the buffer reported the
+whole BUFFER FILL as bytes delivered — `fread(p, 1, 1, f)` on a six-byte file returned 6, moved
+the caller's pointer six bytes past one byte of data, and underflowed `rcnt`. It survived the
+boot because the callers on that path ask for at least a buffer's worth and never take the
+branch. Two more rows (`fseek+ftell`, `feof+clearerr`) were downstream of it and went green with
+the fix.
+
 **Wave 17 (2026-07-31) — `file.c`, the whole stdio layer. 189/189 exports, 5,897 LOC**, the
 single largest remaining C file in msvcrt and 26% of what was left. `msvcrt-crt-rust/src/msvcrt/
 file.rs` defines 173 `#[no_mangle]` bodies; the other 16 are the variadic entry points below.

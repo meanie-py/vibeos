@@ -82,11 +82,31 @@ void msvcrt_ref_set_last_error(DWORD err);
 #define __doserrno msvcrt_ref___doserrno
 __msvcrt_ulong * CDECL __doserrno(void);
 
-/* Hand-rolled, for the reason refimpl.c's header states: the crate under test
- * ships `#[no_mangle] strlen`, and a static definition beats libc at link time,
- * so a casual `strlen()` here would route the reference's ENVIRONMENT through
- * the code under test.  `strlen` is the only name in this file's import set
- * that collides with the subject's exports — checked, not assumed. */
+/* ── THE COLLISION RULE FOR THIS FILE ────────────────────────────────────
+ *
+ * This is the reference's ENVIRONMENT — the layer below the stream layer — and it must
+ * never call into the code under test.  But the crate under test ships `#[no_mangle]`
+ * definitions of ordinary libc names, and a strong definition beats libc at link time, so
+ * any libc call from here whose name msvcrt also exports silently becomes a call INTO the
+ * subject.
+ *
+ * "`strlen` is the only one" was true while file.rs was not in the link.  It stopped being
+ * true the moment it was: `MoveFileExW`'s `rename()` became msvcrt's `rename`, which calls
+ * `_wrename`, which calls `MoveFileExW` — unbounded recursion, and a stack overflow before
+ * the first row ran.  So the rule is now CHECKED BY THE BUILD: build.rs intersects this
+ * object's undefined symbols with file.c's export list and refuses the build on a hit.
+ * The two escapes below exist because that check has no fix to offer, only a name:
+ *
+ *   rename  -> renameat(AT_FDCWD, ...)   same operation, name msvcrt does not have
+ *   fprintf -> dprintf(2, ...)                          "
+ *
+ * Declared here rather than by including <stdio.h>, which this file deliberately does not
+ * pull (it is the layer below FILE, and claiming glibc's stdio guards is file.c's TU's
+ * job). */
+extern int renameat(int fromfd, const char *from, int tofd, const char *to);
+extern int dprintf(int fd, const char *fmt, ...);
+
+/* Hand-rolled for the reason above — the subject ships `#[no_mangle] strlen`. */
 static size_t ref_strlen_local(const char *s)
 {
     const char *p = s;
@@ -799,7 +819,13 @@ BOOL WINAPI MoveFileExW(const wchar_t *from, const wchar_t *to, DWORD flags)
      * file.c's _wrename relies on the failure. */
     if (access(b, F_OK) == 0) { free(a); free(b); SET_ERR(ERROR_ALREADY_EXISTS); return FALSE; }
 
-    ok = rename(a, b) == 0;
+    /* renameat, NOT rename — see the collision note at the top of this file.  msvcrt
+     * exports a `rename`, file.rs defines it, and a strong definition beats libc, so a
+     * plain `rename()` here becomes MoveFileExW -> msvcrt rename -> _wrename ->
+     * MoveFileExW: unbounded recursion, and it is the reference's environment calling
+     * into the code under test.  `renameat` is the same POSIX operation under a name
+     * msvcrt does not have. */
+    ok = renameat(AT_FDCWD, a, AT_FDCWD, b) == 0;
     free(a); free(b);
     if (!ok) return fail_errno();
     SET_ERR(ERROR_SUCCESS);
@@ -1049,7 +1075,10 @@ static pthread_mutex_t *ref_lock_slot(int locknum)
     {
         /* Loud on purpose.  Skipping the lock would leave the reference running
          * unsynchronised and look like it worked. */
-        fprintf(stderr, "fileimpl: _lock(%d) out of range [0,%d) — mtdll.h moved\n",
+        /* dprintf, not fprintf: msvcrt exports `fprintf` too (the varargs shim), and a
+         * diagnostic that routes through the code under test is the one call that must
+         * not.  See the collision note at the top of this file. */
+        dprintf(2, "fileimpl: _lock(%d) out of range [0,%d) — mtdll.h moved\n",
                 locknum, REF_TOTAL_LOCKS);
         abort();
     }
@@ -1088,17 +1117,31 @@ wchar_t *msvcrt_wstrdupa(const char *str)
  * ENVIRONMENT with a test-visible call counter — swapping those is a change to
  * every existing test's plumbing, not a change to file.c.
  */
-void msvcrt_set_errno(int err)
+/* The Win32 -> errno MAPPING, split out from the two stores it used to do.
+ *
+ * Both sides need `msvcrt_set_errno`: file.c calls it 54 times and so does file.rs.
+ * When there was one definition it wrote through `_errno()` — which refstub/msvcrt.h
+ * renames to `msvcrt_ref__errno` for every TU that includes it, this one included — so
+ * the SUBJECT's failures set the REFERENCE's errno.  That is not just an unobservable
+ * subject errno; it means a subject call CORRUPTS the slot the next reference call is
+ * graded on.
+ *
+ * So the DESTINATION is per-side (msvcrt_set_errno below is renamed into the reference
+ * namespace by refstub/msvcrt.h; subjectimpl.c defines the plain one) while the TABLE
+ * stays a single transcription, un-namespaced, called by both.
+ *
+ * That the table itself is shared is a known limit, not a design goal: neither side's
+ * mapping is graded, which is the §9.73 trap in miniature.  It closes the way the banner
+ * above already says — errno.c as a reference TU, at which point the reference gets the
+ * genuine mapper and the subject gets Rust.  Until then, sharing the table while
+ * separating the stores is what makes file.c's OWN errno decisions gradeable: which code
+ * it passes in, and when. */
+int msvcrt_difftest_win32_to_errno(int err)
 {
-    int *errno_ptr = _errno();
-    __msvcrt_ulong *doserrno = __doserrno();
-
-    *doserrno = err;
-
     switch (err)
     {
 #define ERR_CASE(oserr) case oserr:
-#define ERR_MAPS(oserr, crterr) case oserr: *errno_ptr = crterr; break
+#define ERR_MAPS(oserr, crterr) case oserr: return crterr
     ERR_CASE(ERROR_ACCESS_DENIED)
     ERR_CASE(ERROR_NETWORK_ACCESS_DENIED)
     ERR_CASE(ERROR_CANNOT_MAKE)
@@ -1144,8 +1187,17 @@ void msvcrt_set_errno(int err)
 #undef ERR_CASE
 #undef ERR_MAPS
     default:
-        *errno_ptr = EINVAL;
+        return EINVAL;
     }
+}
+
+/* The REFERENCE's store.  refstub/msvcrt.h renames this definition — and every
+ * reference TU's calls to it — into msvcrt_ref_msvcrt_set_errno; the plain name is
+ * subjectimpl.c's, over the subject's own two slots. */
+void msvcrt_set_errno(int err)
+{
+    *__doserrno() = err;
+    *_errno() = msvcrt_difftest_win32_to_errno(err);
 }
 
 /* ── the errno values the substrate test asserts ─────────────────────────
