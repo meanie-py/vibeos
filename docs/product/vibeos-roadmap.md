@@ -494,6 +494,24 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   and `msvcrt_wstrdupa` both `malloc`, `_sopen_dispatch` frees its `wstrdupa_utf8`, and
   nlsimpl's iconv descriptor caches are `__thread`. The remaining suspect is stale heap bytes
   in a freshly-`malloc`'d wide-path buffer that a short conversion failed to terminate.
+  **ROOT CAUSE, and the crate already documents its own fix.** Every `[[test]]` target in
+  `msvcrt-difftest/Cargo.toml` carries `harness = false`, for the reason stated there: the crate
+  exports a `#[no_mangle] getenv` that shadows glibc's, so *"libtest reads RUST_TEST_THREADS
+  through it, gets NULL, and misbehaves. A plain single-threaded `fn main()` runner never calls
+  getenv and never spawns threads."* `tests/file_substrate.rs` has **no `[[test]]` entry at
+  all**, so it is cargo-AUTO-DISCOVERED and runs on the default libtest harness — which spawns
+  threads — and its five tests then race on process-global CRT state. Four of them drive real
+  files, which is why `fd` and `seek` collide.
+  (Three other targets are auto-discovered the same way — `nls_thread_safety`, `printf_port`,
+  `printf_probe` — so "the only threaded binary" is NOT the discriminator, and an earlier
+  revision of this entry saying so was wrong. The discriminator is that `file_substrate` is the
+  only auto-discovered one whose tests touch the fd table at all; the other three make no file
+  or `_open` call, and `nls_thread_safety` threads DELIBERATELY as its whole subject.)
+  Fix is the one the file's own author already prescribes: give `file_substrate` a `[[test]]`
+  entry with `harness = false` and a single-threaded `fn main()` runner, like its ten siblings.
+  Do NOT "fix" it by renaming the tags to equal length — that hides the mangle instead of
+  removing the race, and equally do NOT exempt difftest from the queue's deterministic-stage
+  conviction, which would let real rust-vs-C divergences through.
   Cost: a full ~25-minute gate plus a ~25-minute control gate per hit, and it blocks the
   merge queue for every other lane while it runs. Owner: `msvcrt-homebrew` lane
   (`sdk/lib/rust/msvcrt-difftest/`).
