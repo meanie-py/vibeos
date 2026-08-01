@@ -136,102 +136,154 @@ static UCHAR BcdSecurity[] =
 
 static UCHAR SoftwareSecurity[] =
 {
+    // WS03 hive-root descriptor for SOFTWARE -- the SYSTEM pair form plus
+    // write access for Power Users and Terminal Server users.
+
     // SECURITY_DESCRIPTOR_RELATIVE
     0x01,                   // Revision
     0x00,                   // Sbz1
-    0x04, 0x94,             // Control: SE_SELF_RELATIVE        (0x8000) |
-                            //          SE_DACL_PROTECTED       (0x1000) |
-                            //          SE_DACL_AUTO_INHERITED  (0x0400) |
-                            //          SE_DACL_PRESENT         (0x0004)
-    0xA0, 0x00, 0x00, 0x00, // Owner
-    0xB0, 0x00, 0x00, 0x00, // Group
+    0x04, 0x94,             // Control: SE_SELF_RELATIVE       (0x8000) |
+                            //          SE_DACL_PROTECTED      (0x1000) |
+                            //          SE_DACL_AUTO_INHERITED (0x0400) |
+                            //          SE_DACL_PRESENT        (0x0004)
+    0x28, 0x01, 0x00, 0x00, // Owner
+    0x38, 0x01, 0x00, 0x00, // Group
     0x00, 0x00, 0x00, 0x00, // Sacl (None)
     0x14, 0x00, 0x00, 0x00, // Dacl
 
     // DACL
     0x02,       // AclRevision
     0x00,       // Sbz1
-    0x8C, 0x00, // AclSize
-    0x06, 0x00, // AceCount
+    0x14, 0x01, // AclSize
+    0x0C, 0x00, // AceCount
     0x00, 0x00, // Sbz2
 
     // (1st ACE)
     0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
+    0x00,                   // AceFlags: 0
     0x18, 0x00,             // AceSize
-    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: "Full Control" (0x000F003F)
+    0x19, 0x00, 0x02, 0x00, // ACCESS_MASK: KEY_READ (0x00020019)
+    // (SidStart: S-1-5-32-545 "Users")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x21, 0x02, 0x00, 0x00,
+
+    // (2nd ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
+    0x18, 0x00,             // AceSize
+    0x00, 0x00, 0x00, 0x80, // ACCESS_MASK: GENERIC_READ (0x80000000)
+    // (SidStart: S-1-5-32-545 "Users")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x21, 0x02, 0x00, 0x00,
+
+    // (3rd ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x00,                   // AceFlags: 0
+    0x18, 0x00,             // AceSize
+    0x1F, 0x00, 0x03, 0x00, // ACCESS_MASK: KEY_READ | KEY_WRITE | DELETE (0x0003001F)
+    // (SidStart: S-1-5-32-547 "Power Users")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x23, 0x02, 0x00, 0x00,
+
+    // (4th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
+    0x18, 0x00,             // AceSize
+    0x00, 0x00, 0x01, 0xC0, // ACCESS_MASK: GENERIC_READ | GENERIC_WRITE | DELETE (0xC0010000)
+    // (SidStart: S-1-5-32-547 "Power Users")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x23, 0x02, 0x00, 0x00,
+
+    // (5th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x00,                   // AceFlags: 0
+    0x18, 0x00,             // AceSize
+    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: KEY_ALL_ACCESS (0x000F003F)
     // (SidStart: S-1-5-32-544 "Administrators")
     0x01, 0x02, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x05,
     0x20, 0x00, 0x00, 0x00,
     0x20, 0x02, 0x00, 0x00,
 
-    // (2nd ACE)
+    // (6th ACE)
     0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
     0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
-    0x14, 0x00,             // AceSize
-    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: "Full Control" (0x000F003F)
-    // (SidStart: S-1-3-0 "Creator Owner")
-    0x01, 0x01, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x03,
-    0x00, 0x00, 0x00, 0x00,
+    0x18, 0x00,             // AceSize
+    0x00, 0x00, 0x00, 0x10, // ACCESS_MASK: GENERIC_ALL (0x10000000)
+    // (SidStart: S-1-5-32-544 "Administrators")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x20, 0x02, 0x00, 0x00,
 
-    // (3rd ACE)
+    // (7th ACE)
     0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
+    0x00,                   // AceFlags: 0
     0x14, 0x00,             // AceSize
-    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: "Full Control" (0x000F003F)
+    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: KEY_ALL_ACCESS (0x000F003F)
     // (SidStart: S-1-5-18 "Local System")
     0x01, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x05,
     0x12, 0x00, 0x00, 0x00,
 
-    // (4th ACE)
+    // (8th ACE)
     0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
     0x14, 0x00,             // AceSize
-    0x1F, 0x00, 0x03, 0x00, // ACCESS_MASK: "Read Control"      (0x00020000) |
-                            //              "Delete"            (0x00010000) |
-                            //              "Notify"            (0x00000010) |
-                            //              "Enumerate Subkeys" (0x00000008) |
-                            //              "Create Subkey"     (0x00000004) |
-                            //              "Set Value"         (0x00000002) |
-                            //              "Query Value"       (0x00000001)
-    // (SidStart: S-1-5-13 "Terminal Server Users")
+    0x00, 0x00, 0x00, 0x10, // ACCESS_MASK: GENERIC_ALL (0x10000000)
+    // (SidStart: S-1-5-18 "Local System")
+    0x01, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x12, 0x00, 0x00, 0x00,
+
+    // (9th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x00,                   // AceFlags: 0
+    0x18, 0x00,             // AceSize
+    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: KEY_ALL_ACCESS (0x000F003F)
+    // (SidStart: S-1-5-32-544 "Administrators")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x20, 0x02, 0x00, 0x00,
+
+    // (10th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
+    0x14, 0x00,             // AceSize
+    0x00, 0x00, 0x00, 0x10, // ACCESS_MASK: GENERIC_ALL (0x10000000)
+    // (SidStart: S-1-3-0 "Creator Owner")
+    0x01, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x03,
+    0x00, 0x00, 0x00, 0x00,
+
+    // (11th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x00,                   // AceFlags: 0
+    0x14, 0x00,             // AceSize
+    0x1F, 0x00, 0x03, 0x00, // ACCESS_MASK: KEY_READ | KEY_WRITE | DELETE (0x0003001F)
+    // (SidStart: S-1-5-13 "Terminal Server User")
     0x01, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x05,
     0x0D, 0x00, 0x00, 0x00,
 
-    // (5th ACE)
+    // (12th ACE)
     0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
-    0x18, 0x00,             // AceSize
-    0x19, 0x00, 0x02, 0x00, // ACCESS_MASK: "Read Control"      (0x00020000) |
-                            //              "Notify"            (0x00000010) |
-                            //              "Enumerate Subkeys" (0x00000008) |
-                            //              "Query Value"       (0x00000001)
-    // (SidStart: S-1-5-32-545 "Users")
-    0x01, 0x02, 0x00, 0x00,
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
+    0x14, 0x00,             // AceSize
+    0x00, 0x00, 0x01, 0xC0, // ACCESS_MASK: GENERIC_READ | GENERIC_WRITE | DELETE (0xC0010000)
+    // (SidStart: S-1-5-13 "Terminal Server User")
+    0x01, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x05,
-    0x20, 0x00, 0x00, 0x00,
-    0x21, 0x02, 0x00, 0x00,
-
-    // (6th ACE)
-    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
-    0x18, 0x00,             // AceSize
-    0x1F, 0x00, 0x03, 0x00, // ACCESS_MASK: "Read Control"      (0x00020000) |
-                            //              "Delete"            (0x00010000) |
-                            //              "Notify"            (0x00000010) |
-                            //              "Enumerate Subkeys" (0x00000008) |
-                            //              "Create Subkey"     (0x00000004) |
-                            //              "Set Value"         (0x00000002) |
-                            //              "Query Value"       (0x00000001)
-    // (SidStart: S-1-5-32-547 "Power Users")
-    0x01, 0x02, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x05,
-    0x20, 0x00, 0x00, 0x00,
-    0x23, 0x02, 0x00, 0x00,
+    0x0D, 0x00, 0x00, 0x00,
 
     // Owner SID (S-1-5-32-544 "Administrators")
     0x01, 0x02, 0x00, 0x00,
@@ -239,96 +291,144 @@ static UCHAR SoftwareSecurity[] =
     0x20, 0x00, 0x00, 0x00,
     0x20, 0x02, 0x00, 0x00,
 
-    // Group SID (S-1-5-21-domain-513 "Domain Users")
-    0x01, 0x05, 0x00, 0x00,
+    // Group SID (S-1-5-18 "Local System")
+    0x01, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x05,
-    0x15, 0x00, 0x00, 0x00,
-    0xAC, 0xD0, 0x49, 0xCB,
-    0xE6, 0x52, 0x47, 0x9C,
-    0xE4, 0x31, 0xDB, 0x5C,
-    0x01, 0x02, 0x00, 0x00
+    0x12, 0x00, 0x00, 0x00
 };
 
-// Same security for SYSTEM, SAM and .DEFAULT
 static UCHAR SystemSecurity[] =
 {
+    // WS03 hive-root descriptor for SYSTEM and USER\.DEFAULT. Each principal
+    // gets a PAIR: an effective ACE with KEY_* rights on this key, plus an
+    // INHERIT_ONLY | CONTAINER_INHERIT twin carrying the GENERIC_* form that
+    // subkeys map down. Dropping the twins is what made subkey rights drift.
+
     // SECURITY_DESCRIPTOR_RELATIVE
     0x01,                   // Revision
     0x00,                   // Sbz1
-    0x04, 0x94,             // Control: SE_SELF_RELATIVE        (0x8000) |
-                            //          SE_DACL_PROTECTED       (0x1000) |
-                            //          SE_DACL_AUTO_INHERITED  (0x0400) |
-                            //          SE_DACL_PRESENT         (0x0004)
-    0x8C, 0x00, 0x00, 0x00, // Owner
-    0x9C, 0x00, 0x00, 0x00, // Group
+    0x04, 0x94,             // Control: SE_SELF_RELATIVE       (0x8000) |
+                            //          SE_DACL_PROTECTED      (0x1000) |
+                            //          SE_DACL_AUTO_INHERITED (0x0400) |
+                            //          SE_DACL_PRESENT        (0x0004)
+    0x00, 0x01, 0x00, 0x00, // Owner
+    0x10, 0x01, 0x00, 0x00, // Group
     0x00, 0x00, 0x00, 0x00, // Sacl (None)
     0x14, 0x00, 0x00, 0x00, // Dacl
 
     // DACL
     0x02,       // AclRevision
     0x00,       // Sbz1
-    0x78, 0x00, // AclSize
-    0x05, 0x00, // AceCount
+    0xEC, 0x00, // AclSize
+    0x0A, 0x00, // AceCount
     0x00, 0x00, // Sbz2
 
     // (1st ACE)
     0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
+    0x00,                   // AceFlags: 0
     0x18, 0x00,             // AceSize
-    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: "Full Control" (0x000F003F)
-    // (SidStart: S-1-5-32-544 "Administrators")
-    0x01, 0x02, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x05,
-    0x20, 0x00, 0x00, 0x00,
-    0x20, 0x02, 0x00, 0x00,
-
-    // (2nd ACE)
-    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
-    0x14, 0x00,             // AceSize
-    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: "Full Control" (0x000F003F)
-    // (SidStart: S-1-3-0 "Creator Owner")
-    0x01, 0x01, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x03,
-    0x00, 0x00, 0x00, 0x00,
-
-    // (3rd ACE)
-    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
-    0x14, 0x00,             // AceSize
-    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: "Full Control" (0x000F003F)
-    // (SidStart: S-1-5-18 "Local System")
-    0x01, 0x01, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x05,
-    0x12, 0x00, 0x00, 0x00,
-
-    // (4th ACE)
-    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
-    0x18, 0x00,             // AceSize
-    0x19, 0x00, 0x02, 0x00, // ACCESS_MASK: "Read Control"      (0x00020000) |
-                            //              "Notify"            (0x00000010) |
-                            //              "Enumerate Subkeys" (0x00000008) |
-                            //              "Query Value"       (0x00000001)
+    0x19, 0x00, 0x02, 0x00, // ACCESS_MASK: KEY_READ (0x00020019)
     // (SidStart: S-1-5-32-545 "Users")
     0x01, 0x02, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x05,
     0x20, 0x00, 0x00, 0x00,
     0x21, 0x02, 0x00, 0x00,
 
-    // (5th ACE)
+    // (2nd ACE)
     0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
-    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
     0x18, 0x00,             // AceSize
-    0x19, 0x00, 0x02, 0x00, // ACCESS_MASK: "Read Control"      (0x00020000) |
-                            //              "Notify"            (0x00000010) |
-                            //              "Enumerate Subkeys" (0x00000008) |
-                            //              "Query Value"       (0x00000001)
+    0x00, 0x00, 0x00, 0x80, // ACCESS_MASK: GENERIC_READ (0x80000000)
+    // (SidStart: S-1-5-32-545 "Users")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x21, 0x02, 0x00, 0x00,
+
+    // (3rd ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x00,                   // AceFlags: 0
+    0x18, 0x00,             // AceSize
+    0x19, 0x00, 0x02, 0x00, // ACCESS_MASK: KEY_READ (0x00020019)
     // (SidStart: S-1-5-32-547 "Power Users")
     0x01, 0x02, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x05,
     0x20, 0x00, 0x00, 0x00,
     0x23, 0x02, 0x00, 0x00,
+
+    // (4th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
+    0x18, 0x00,             // AceSize
+    0x00, 0x00, 0x00, 0x80, // ACCESS_MASK: GENERIC_READ (0x80000000)
+    // (SidStart: S-1-5-32-547 "Power Users")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x23, 0x02, 0x00, 0x00,
+
+    // (5th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x00,                   // AceFlags: 0
+    0x18, 0x00,             // AceSize
+    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: KEY_ALL_ACCESS (0x000F003F)
+    // (SidStart: S-1-5-32-544 "Administrators")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x20, 0x02, 0x00, 0x00,
+
+    // (6th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
+    0x18, 0x00,             // AceSize
+    0x00, 0x00, 0x00, 0x10, // ACCESS_MASK: GENERIC_ALL (0x10000000)
+    // (SidStart: S-1-5-32-544 "Administrators")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x20, 0x02, 0x00, 0x00,
+
+    // (7th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x00,                   // AceFlags: 0
+    0x14, 0x00,             // AceSize
+    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: KEY_ALL_ACCESS (0x000F003F)
+    // (SidStart: S-1-5-18 "Local System")
+    0x01, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x12, 0x00, 0x00, 0x00,
+
+    // (8th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
+    0x14, 0x00,             // AceSize
+    0x00, 0x00, 0x00, 0x10, // ACCESS_MASK: GENERIC_ALL (0x10000000)
+    // (SidStart: S-1-5-18 "Local System")
+    0x01, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x12, 0x00, 0x00, 0x00,
+
+    // (9th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x00,                   // AceFlags: 0
+    0x18, 0x00,             // AceSize
+    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: KEY_ALL_ACCESS (0x000F003F)
+    // (SidStart: S-1-5-32-544 "Administrators")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x20, 0x02, 0x00, 0x00,
+
+    // (10th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x0A,                   // AceFlags: INHERIT_ONLY_ACE | CONTAINER_INHERIT_ACE
+    0x14, 0x00,             // AceSize
+    0x00, 0x00, 0x00, 0x10, // ACCESS_MASK: GENERIC_ALL (0x10000000)
+    // (SidStart: S-1-3-0 "Creator Owner")
+    0x01, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x03,
+    0x00, 0x00, 0x00, 0x00,
 
     // Owner SID (S-1-5-32-544 "Administrators")
     0x01, 0x02, 0x00, 0x00,
@@ -336,14 +436,87 @@ static UCHAR SystemSecurity[] =
     0x20, 0x00, 0x00, 0x00,
     0x20, 0x02, 0x00, 0x00,
 
-    // Group SID (S-1-5-21-domain-513 "Domain Users")
-    0x01, 0x05, 0x00, 0x00,
+    // Group SID (S-1-5-18 "Local System")
+    0x01, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x05,
-    0x15, 0x00, 0x00, 0x00,
-    0xAC, 0xD0, 0x49, 0xCB,
-    0xE6, 0x52, 0x47, 0x9C,
-    0xE4, 0x31, 0xDB, 0x5C,
-    0x01, 0x02, 0x00, 0x00
+    0x12, 0x00, 0x00, 0x00
+};
+
+static UCHAR SamSecurity[] =
+{
+    // Hive-root descriptor for SAM, matching what the kernel's own
+    // CmpHiveRootSecurityDescriptor() builds for a master/link key.
+
+    // SECURITY_DESCRIPTOR_RELATIVE
+    0x01,                   // Revision
+    0x00,                   // Sbz1
+    0x04, 0x94,             // Control: SE_SELF_RELATIVE       (0x8000) |
+                            //          SE_DACL_PROTECTED      (0x1000) |
+                            //          SE_DACL_AUTO_INHERITED (0x0400) |
+                            //          SE_DACL_PRESENT        (0x0004)
+    0x70, 0x00, 0x00, 0x00, // Owner
+    0x80, 0x00, 0x00, 0x00, // Group
+    0x00, 0x00, 0x00, 0x00, // Sacl (None)
+    0x14, 0x00, 0x00, 0x00, // Dacl
+
+    // DACL
+    0x02,       // AclRevision
+    0x00,       // Sbz1
+    0x5C, 0x00, // AclSize
+    0x04, 0x00, // AceCount
+    0x00, 0x00, // Sbz2
+
+    // (1st ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
+    0x14, 0x00,             // AceSize
+    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: KEY_ALL_ACCESS (0x000F003F)
+    // (SidStart: S-1-5-18 "Local System")
+    0x01, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x12, 0x00, 0x00, 0x00,
+
+    // (2nd ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
+    0x18, 0x00,             // AceSize
+    0x3F, 0x00, 0x0F, 0x00, // ACCESS_MASK: KEY_ALL_ACCESS (0x000F003F)
+    // (SidStart: S-1-5-32-544 "Administrators")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x20, 0x02, 0x00, 0x00,
+
+    // (3rd ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
+    0x14, 0x00,             // AceSize
+    0x19, 0x00, 0x02, 0x00, // ACCESS_MASK: KEY_READ (0x00020019)
+    // (SidStart: S-1-1-0 "Everyone")
+    0x01, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00,
+
+    // (4th ACE)
+    0x00,                   // AceType : ACCESS_ALLOWED_ACE_TYPE
+    0x02,                   // AceFlags: CONTAINER_INHERIT_ACE
+    0x14, 0x00,             // AceSize
+    0x19, 0x00, 0x02, 0x00, // ACCESS_MASK: KEY_READ (0x00020019)
+    // (SidStart: S-1-5-12 "Restricted Code")
+    0x01, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x0C, 0x00, 0x00, 0x00,
+
+    // Owner SID (S-1-5-32-544 "Administrators")
+    0x01, 0x02, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x20, 0x00, 0x00, 0x00,
+    0x20, 0x02, 0x00, 0x00,
+
+    // Group SID (S-1-5-18 "Local System")
+    0x01, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+    0x12, 0x00, 0x00, 0x00
 };
 
 /* GLOBALS ******************************************************************/
@@ -358,7 +531,7 @@ HIVE_LIST_ENTRY RegistryHives[/*MAX_NUMBER_OF_REGISTRY_HIVES*/] =
     { "SYSTEM"  , L"Registry\\Machine\\SYSTEM"     , &SystemHive  , SystemSecurity  , sizeof(SystemSecurity)   },
     { "SOFTWARE", L"Registry\\Machine\\SOFTWARE"   , &SoftwareHive, SoftwareSecurity, sizeof(SoftwareSecurity) },
     { "DEFAULT" , L"Registry\\User\\.DEFAULT"      , &DefaultHive , SystemSecurity  , sizeof(SystemSecurity)   },
-    { "SAM"     , L"Registry\\Machine\\SAM"        , &SamHive     , SystemSecurity  , sizeof(SystemSecurity)   },
+    { "SAM"     , L"Registry\\Machine\\SAM"        , &SamHive     , SamSecurity     , sizeof(SamSecurity)      },
     { "SECURITY", L"Registry\\Machine\\SECURITY"   , &SecurityHive, NULL            , 0                        },
     { "BCD"     , L"Registry\\Machine\\BCD00000000", &BcdHive     , BcdSecurity     , sizeof(BcdSecurity)      },
 };
