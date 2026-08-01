@@ -22,8 +22,11 @@
 #ifndef _SHFLDR_RECYCLEBIN_H_
 #define _SHFLDR_RECYCLEBIN_H_
 
-BOOL TRASH_CanTrashFile(LPCWSTR wszPath);
-BOOL TRASH_TrashFile(LPCWSTR wszPath);
+/* EXTERN_C so the Rust shlfileop can name these: without it C++ mangles them and the
+ * translated caller has no symbol to link. The definitions in CRecycleBin.cpp see this
+ * same declaration, so both sides agree on the linkage. */
+EXTERN_C BOOL TRASH_CanTrashFile(LPCWSTR wszPath);
+EXTERN_C BOOL TRASH_TrashFile(LPCWSTR wszPath);
 HRESULT CRecyclerDropTarget_CreateInstance(REFIID riid, LPVOID * ppvOut);
 
 class CRecycleBin :

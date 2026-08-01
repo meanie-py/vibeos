@@ -50,7 +50,7 @@ use core::marker::PhantomData;
 
 use crate::island::{
     CoTaskMemAlloc, CoTaskMemFree, CoTaskMemRealloc, LocalAlloc, LocalFree, LocalReAlloc, BOOL,
-    HLOCAL, SIZE_T, WCHAR,
+    HLOCAL, INT, SIZE_T, UINT, WCHAR,
 };
 use crate::shellcom::IUnknown;
 
@@ -647,6 +647,108 @@ impl CStringW {
         *self.m_pszData.add(newLen as usize) = 0;
         self.m_nLength = newLen;
     }
+
+    /// `CStringT::LoadString(UINT nID)` — cstringt.h. Loads from **shell32's own** resources,
+    /// not the process image: `GetModuleHandleW(NULL)` would read explorer's string table.
+    /// ATL returns FALSE and leaves the string untouched when the ID is absent.
+    pub unsafe fn LoadStringW(&mut self, nID: UINT) -> BOOL {
+        let mut stack: [WCHAR; 512] = [0; 512];
+        let n = crate::win32::LoadStringW(
+            crate::win32::shell32_hInstance,
+            nID,
+            stack.as_mut_ptr(),
+            stack.len() as INT,
+        );
+        if n <= 0 {
+            return 0;
+        }
+        self.SetString(stack.as_ptr(), n);
+        1
+    }
+
+    /// `CStringT(UINT nID)`-shaped helper for the `Format(UINT nFormatID, ...)` overload,
+    /// which loads the format string from resources before formatting.
+    pub unsafe fn from_resource(nID: UINT) -> Self {
+        let mut s = Self::new();
+        s.LoadStringW(nID);
+        s
+    }
+
+    /// Front half of every `Format`: take the width `_scwprintf` computed and hand back a
+    /// buffer sized to hold exactly that plus the terminator, or null if there is nothing to
+    /// print. ATL grows dynamically, so a fixed cap would silently truncate.
+    ///
+    /// Split in two around the caller's `swprintf` rather than taking a closure: a closure
+    /// body is its own body, so whether it inherits an `unsafe fn`'s implicit unsafe block is
+    /// a rule not worth depending on. The pair also keeps the sizing call and the printing
+    /// call reading the SAME already-evaluated locals, which is the point of these being
+    /// concrete arities instead of one variadic `macro_rules!` — a macro would re-expand each
+    /// argument expression at both sites and evaluate the caller's side effects twice.
+    unsafe fn format_begin(&mut self, need: INT) -> *mut WCHAR {
+        if need < 0 {
+            self.SetString(EMPTY_WSTR.as_ptr(), 0);
+            return core::ptr::null_mut();
+        }
+        self.GetBuffer(need)
+    }
+
+    /// `Format(PCXSTR pszFormat, <one %s>)`.
+    pub unsafe fn FormatStr(&mut self, pszFormat: *const WCHAR, a: *const WCHAR) {
+        let need = _scwprintf(pszFormat, a);
+        let buf = self.format_begin(need);
+        if buf.is_null() {
+            return;
+        }
+        crate::prelude::swprintf(buf, pszFormat, a);
+        self.ReleaseBuffer();
+    }
+
+    /// `Format(PCXSTR pszFormat, <two %s>)`.
+    pub unsafe fn FormatStr2(
+        &mut self,
+        pszFormat: *const WCHAR,
+        a: *const WCHAR,
+        b: *const WCHAR,
+    ) {
+        let need = _scwprintf(pszFormat, a, b);
+        let buf = self.format_begin(need);
+        if buf.is_null() {
+            return;
+        }
+        crate::prelude::swprintf(buf, pszFormat, a, b);
+        self.ReleaseBuffer();
+    }
+
+    /// `Format(UINT nFormatID, <one %s>)` — the resource-ID overload, which loads the format
+    /// string from shell32's string table first. A missing ID formats an empty pattern, which
+    /// is what ATL does too (`Format` on an empty string yields an empty string).
+    pub unsafe fn FormatResStr(&mut self, nFormatID: UINT, a: *const WCHAR) {
+        let f = Self::from_resource(nFormatID);
+        self.FormatStr(f.as_ptr(), a);
+    }
+
+    /// `Format(UINT nFormatID, <two %s>)`.
+    pub unsafe fn FormatResStr2(&mut self, nFormatID: UINT, a: *const WCHAR, b: *const WCHAR) {
+        let f = Self::from_resource(nFormatID);
+        self.FormatStr2(f.as_ptr(), a, b);
+    }
+
+    /// `Format(PCXSTR pszFormat, <one %d>)`.
+    pub unsafe fn FormatInt(&mut self, pszFormat: *const WCHAR, a: INT) {
+        let need = _scwprintf(pszFormat, a);
+        let buf = self.format_begin(need);
+        if buf.is_null() {
+            return;
+        }
+        crate::prelude::swprintf(buf, pszFormat, a);
+        self.ReleaseBuffer();
+    }
+}
+
+extern "C" {
+    /// msvcrt `@ varargs _scwprintf(wstr)` — the character count a `swprintf` of the same
+    /// arguments would produce, excluding the terminator. Negative on a bad format.
+    fn _scwprintf(format: *const WCHAR, ...) -> INT;
 }
 
 impl Default for CStringW {

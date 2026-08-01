@@ -479,6 +479,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **`msvcrt-difftest`'s `the_fd_layer_works_and_reports_length` is FLAKY under cargo's
+  parallel test threads → spurious DIFFTEST_FAIL that convicts an innocent lane — NEW, OPEN**
+  (2026-08-01). A shell32-com batch whose only delta was a **parked** `shlexec.rs` plus
+  comments was rejected `DIFFTEST_FAIL`; the queue's own base-alone control run then came back
+  `✓ msvcrt-difftest` on the same base. Same code, one red, one green — so it is a flake, and
+  difftest is treated as a DETERMINISTIC stage, which is exactly why it convicts the lane
+  rather than being retried like a smoke.
+  The failure is a **mangled filename**, not a missing one: the test asks for
+  `/tmp/msvcrt-ref-<pid>-fd` and `siblings_of` reports `/tmp` holds `msvcrt-ref-<pid>-fdek`.
+  `fd` is written over the tail of the concurrently-running `seek` test's path (`…-seek` is
+  exactly two chars longer) without re-terminating, so the mangle is offset-aligned — shared
+  or stale buffer, not a random corruption. Ruled OUT so nobody re-walks them: `path_from_wide`
+  and `msvcrt_wstrdupa` both `malloc`, `_sopen_dispatch` frees its `wstrdupa_utf8`, and
+  nlsimpl's iconv descriptor caches are `__thread`. The remaining suspect is stale heap bytes
+  in a freshly-`malloc`'d wide-path buffer that a short conversion failed to terminate.
+  Cost: a full ~25-minute gate plus a ~25-minute control gate per hit, and it blocks the
+  merge queue for every other lane while it runs. Owner: `msvcrt-homebrew` lane
+  (`sdk/lib/rust/msvcrt-difftest/`).
+
 - **`gate` races `marshalgen_audit` against a half-built `build-amd64` → spurious LINT_FAIL.**
   Seen 2026-07-26 (`/tmp/vibeos-cli/20260726-021528-gate-*`): every build green, all four
   smokes green, and `lint:i386` FAILED with *"the BUILT thunk table disagrees with the

@@ -88,6 +88,33 @@ def _sha256_file(p: Path) -> str:
     return h.hexdigest()
 
 
+#: How many times a racing walk is redone before we call it a real fault.
+_RGLOB_RETRIES = 5
+
+
+def rglob_stable(root: Path, pattern: str) -> list[Path]:
+    """`root.rglob(pattern)`, redone when a CONCURRENT build mutates the tree mid-walk.
+
+    A parallel `gate` builds all three arches inside ONE worktree against ONE shared cargo
+    target dir, so an arm64 smoke's staleness check walks `sdk/lib/rust/target/` at the very
+    moment the i386 `--clean` build is deleting `i686-kernel/` out of it. pathlib's generator
+    turns the vanished directory into a FileNotFoundError and dies mid-iteration, which took
+    out a whole gate's arm64 smoke and bounced the batch.
+
+    Redo the walk rather than swallow the error and return what we had: a silently short list
+    reads as "this crate has no staticlib", which is a staleness verdict, not a missing one.
+    The walk is cheap and the race window is milliseconds; if it still races
+    `_RGLOB_RETRIES` times the tree is genuinely broken and the OSError should surface.
+    """
+    for attempt in range(_RGLOB_RETRIES):
+        try:
+            return list(root.rglob(pattern))
+        except OSError:
+            if attempt == _RGLOB_RETRIES - 1:
+                raise
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def discover_rust_targets(build_dir: Path) -> list[Path]:
     """Every cargo target dir under build-<arch>/ — ntoskrnl, hal, hal-mini,
     freeldr, rtl, win32k, per-DLL (build-*/dll/**), etc. Dynamic so new crates
@@ -96,7 +123,7 @@ def discover_rust_targets(build_dir: Path) -> list[Path]:
         return []
     found = set()
     for pat in ("rust-*-target", "rust-target"):
-        for p in build_dir.rglob(pat):
+        for p in rglob_stable(build_dir, pat):
             if p.is_dir():
                 found.add(p)
     return sorted(found)
@@ -107,7 +134,7 @@ def discover_rust_archives(build_dir: Path) -> list[Path]:
     consumers; a stale one is a classic false-green (rtl-priv/win32k/ntdll)."""
     if not build_dir.is_dir():
         return []
-    return sorted(build_dir.rglob("lib*_rust.a"))
+    return sorted(rglob_stable(build_dir, "lib*_rust.a"))
 
 
 # arch -> the cargo workspace target stem (add_cargo_module's custom-target json
@@ -430,10 +457,10 @@ def _crate_staticlibs(repo: Path, build_dir: Path, crate: Path) -> tuple[Path | 
     custom command) or the shared `sdk/lib/rust/target/<stem>/` (add_cargo_module);
     the copy sits in the module's build dir. Returns None for either if absent."""
     lib = "lib" + crate.name.replace("-", "_") + ".a"
-    cands = list(build_dir.rglob(lib))
+    cands = rglob_stable(build_dir, lib)
     ws = repo / "sdk" / "lib" / "rust" / "target"
     if ws.is_dir():
-        cands += list(ws.rglob(lib))
+        cands += rglob_stable(ws, lib)
 
     def _in_cargo_target(p: Path) -> bool:
         return any(part == "target" or part.endswith("-target") for part in p.parts)
@@ -498,7 +525,7 @@ def _newest_ws_src(repo: Path) -> tuple[float, str]:
     ws = repo / "sdk" / "lib" / "rust"
     newest, newest_rel = 0.0, ""
     for pat in ("*.rs", "*.toml"):
-        for p in ws.rglob(pat):
+        for p in rglob_stable(ws, pat):
             parts = p.relative_to(ws).parts
             if parts and parts[0] == "target":
                 continue

@@ -4110,6 +4110,28 @@ gate must not convict by omission), and smoke stages are excluded because they a
 timing-sensitive ones this section is about. Generalise it: **when a control experiment fails,
 check that it failed the same WAY before you let it absolve anything.**
 
+### A smoke that dies with a Python traceback naming ANOTHER arch's directory
+
+**Symptom.** A gate's arm64 smoke produces no boot at all — just a `FileNotFoundError` out of
+`provenance.check_staleness` → `_crate_staticlibs` → `Path.rglob`, naming
+`sdk/lib/rust/target/i686-kernel`. An **arm64** smoke, killed by an **i386** path, before QEMU
+ever starts. The other two arches pass, so it reads like an arm64-only defect and is not one.
+
+**Cause.** A parallel `gate` builds all three arches in ONE worktree against ONE shared cargo
+target dir. The i386 `--clean` build deletes `target/i686-kernel/` at the same moment the arm64
+staleness check is walking `target/` looking for staticlibs. `Path.rglob` is a generator over
+`scandir`, and a directory that vanishes mid-walk raises instead of being skipped — so the
+exception escapes into the smoke and takes the run with it. Any unsynchronised walk of a tree a
+sibling arch is building is exposed; it is not specific to this one caller.
+
+**Fix.** `provenance.rglob_stable()` redoes the whole walk (bounded retries, then re-raises).
+Note what it deliberately does NOT do: catch the error and return the partial list. pathlib's
+generator is dead after it throws, so "what we had" is a silently short list — and for this
+caller a short list means "this crate has no staticlib", which is a *staleness verdict*, not a
+missing answer. **A degraded oracle is worse than one that refuses to answer**, the same rule
+`ProvenanceError` exists for. Generalise: when a walk and a build share a tree, the walk must
+be idempotent-under-mutation or scoped so it never sees the other arch at all.
+
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 
 **Symptom.** `test_queue_is_fifo_by_arrival` failed roughly 1 run in 80, only ever under
