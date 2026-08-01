@@ -45,7 +45,7 @@ from tree_sitter import Language, Parser
 # #defined to nothing, tree-sitter does not know that, and a parameter spelled
 # `CONST CHAR FAR *p` fails the whole enclosing function. Reused rather than
 # reimplemented so both parsers agree on what the C says.
-from .scanner import _blank_memmodel
+from .scanner import _blank_memmodel, _normalize_callbacks
 
 C_LANG = Language(tsc.language())
 
@@ -118,7 +118,14 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
     which do not hoist anything. A top-level ERROR node is the precise signal.
     """
     raw = Path(c_path).read_text(encoding="utf-8", errors="replace")
-    text = _blank_memmodel(raw)
+    # Both normalizers, for the same reason and with the same guarantee: they make
+    # shapes tree-sitter cannot parse parse, and neither changes the line count.
+    # Blanking only the memory-model macros left `FILE * CDECL fopen(...)` — a
+    # convention keyword after a pointer return type — as a top-level ERROR, so this
+    # audit returned INCOMPLETE for every msvcrt file and the file-scope checks it
+    # exists for never ran. The function catalog normalizes both; so must this, or
+    # the two disagree about what the file even contains.
+    text = _normalize_callbacks(_blank_memmodel(raw))
     src = text.encode()
     tree = Parser(C_LANG).parse(src)
     root = tree.root_node

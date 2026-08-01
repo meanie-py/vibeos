@@ -94,6 +94,127 @@ the genuine `wcs.c`. The `...` shells (`sprintf`, `_snprintf`, `_swprintf`, …)
 concentrated: `file.c` 5,897 LOC (stdio, Phase D), `concurrency.c` 3,840 (C++), `scanf.c`'s 40
 exports (engine not ported), `math.c` 13 of 144 functions flipped.
 
+**Wave 17 (2026-07-31) — `file.c`, the whole stdio layer. 189/189 exports, 5,897 LOC**, the
+single largest remaining C file in msvcrt and 26% of what was left. `msvcrt-crt-rust/src/msvcrt/
+file.rs` defines 173 `#[no_mangle]` bodies; the other 16 are the variadic entry points below.
+
+**The flip is `pub mod file;` and nothing else** — worth stating because it misled me. msvcrt's
+cohab is by LINK ORDER, not by commenting the `.c` out of CMake the way the driver flips do:
+`libmsvcrt_crt_cargo.a` is linked ahead of `msvcrt_static`, so lld first-match takes the Rust
+symbol and file.c's copy goes dead in place under `--allow-multiple-definition`. file.c is still
+compiled and still listed in `dll/win32/msvcrt/CMakeLists.txt`; it is simply no longer reachable.
+No CMake edit was owed for the flip and none was made.
+
+It had to go in **atomically**, and did. The general cohab property that makes a partial file
+safe — a function the Rust does not define just stays C — is *false for this file*: its entry
+points share one fd table and one FILE ring, so a C `fopen` beside a Rust `fclose` would be split
+state rather than a partial port.
+
+The 20 `...` entry points are `dll/win32/msvcrt/rust_file_varargs_shim.c` — 16 printf shells plus
+`_open`/`_wopen`/`_sopen`/`_wsopen`, whose `...` carries an optional `pmode` rather than a format.
+Same language limit and same placement as wcs.c's and scanf.c's (no `va_start` on stable; in the
+MODULE, not `msvcrt_static`, so they win first-match; in their own TU because **symbol replacement
+flips a TU's callers, not its housemates**). `tools/scan_varargs_shim_parity.py` now diffs all
+three pairs — 90 shells, 0 findings — and covering file.c is what exposed that the scanner had
+been walking past a leading `va_arg` to find the delegate, which it now skips explicitly.
+
+**An i386-only ABI bug, caught by the first link and worth the class it belongs to.** The port
+called `GetLastError` 39 times through a hand-written `extern "C"` block in `prelude.rs`.
+`GetLastError` is WINAPI — stdcall on i386, cdecl elsewhere — so that block is correct on
+amd64/arm64 and emits `_GetLastError` with no `@0` on i386, where nothing defines it. It sat
+three lines under a comment saying that getting this convention wrong is the project's #1
+historical i386 crash cause, and directly contradicted the `msvcrt-sys` allowlist comment that
+these signatures are "DERIVED from the real headers and never hand-written as `extern` blocks in
+the consuming crate." Fixed where it belonged: `GetLastError` joined the island allowlist, so
+bindgen emits `extern "stdcall"` on i386 and `extern "C"` on the other two, from winbase.h, with
+no judgement call left to make. This is the sibling of wave 16's `_isw*_l` finding — that one was
+*never `extern`-declare a symbol your own crate defines*; this one is *never `extern`-declare a
+WINAPI import by hand*. Both are invisible to `scan_extern_arity`, since the arity matches.
+An audit of every other `extern "C"` block in the crate found no second instance.
+
+**Then four `ud2` traps, which the first *successful* link surfaced.** `scan_ud2` flagged
+`_fcloseall`, `_fflush_nolock`, `_rmtmp` and `msvcrt_free_io` in msvcrt.dll. It files unexpected
+driver `ud2` under §9.99 (the CC/sig-mismatch fold), but the disassembly said otherwise — `call
+panic_bounds_check` immediately before the trap, so this was the *array-index panic* class. One
+root, inherited by the other three through inlining: `msvcrt_get_file` guards
+`i >= MSVCRT_max_streams` before indexing `MSVCRT_fstream[i/BLOCK]`, and `MSVCRT_max_streams` is
+a runtime `static mut`, so the bound is unprovable and the check survives. The index is in fact
+always in range — `_setmaxstdio` refuses any `newmax > MSVCRT_MAX_FILES` — but that invariant is
+global and nothing local can see it. Fixed with pointer arithmetic matching the C, behind one
+documented helper. The control that made the diagnosis cheap: `get_ioinfo_nolock` indexes an
+identically-shaped array and emitted no check at all, because *its* guard is the constant
+`MSVCRT_MAX_FILES` — so the difference is provability, not safety, and only the variable-guarded
+site needed touching. `msvcrt_free_io` mattered most: it runs at process exit for everything that
+links this DLL.
+
+That cleared `msvcrt_free_io` and left three, on a **second and different** shape — the
+disassembly had changed to `call __errno` then `ud2`, with no panic symbol. `msvcrt_get_file`
+returns NULL on `calloc` failure, and `_fcloseall`, `_rmtmp` and `msvcrt_flush_all_buffers` all
+dereference the result immediately without checking, which is exactly what file.c does. Inlined,
+LLVM sees NULL reach a deref, folds the path to `unreachable`, and emits one trap per caller.
+The fix is `#[inline(never)]` on the callee, **not** a null check: adding the check would be a
+behaviour change on the path the C faults on, i.e. a divergence in a differential port, while out
+of line the caller emits the ordinary load and faults exactly where C faults. The path is
+unreachable regardless — those callers walk `3..MSVCRT_stream_idx` and such slots are allocated
+at stream-creation time, so the `calloc` arm never runs with those indices. Both shapes, and the
+one-look disassembly tell that separates them from the genuine §9.99 CC/sig fold that `scan_ud2`
+reports them all under, are now a table in the field manual.
+
+**And then the one that actually broke the OS: an inverted compare-exchange.**
+`alloc_pioinfo_block` publishes a newly-allocated fd block into `MSVCRT___pioinfo` with a CAS,
+and the C frees the block only when it *loses* the race —
+`if (InterlockedCompareExchangePointer(&pioinfo[i], block, NULL)) { …; free(block); }`, because
+the CAS returns the PREVIOUS value and non-NULL means someone else published first. The
+translation rendered the condition as `!= block`, which reads plausibly and is backwards: the
+winning path returns NULL, so **every successful allocation freed the block it had just
+published**. Every fd block was a dangling pointer, critical sections and all, and i386 wedged
+inside `LdrLoadDll` — deterministically, 3 boots for 3 — at the first msvcrt load of the boot.
+
+Two things about how it was found are worth keeping. The search space collapsed on one
+observation: **basesrv and csrsrv do not import msvcrt and winsrv does** (via shell32/ole32), so
+the wedge was the first msvcrt initialization in the whole boot and the frame was `DllMain` →
+`msvcrt_init_io` → the two functions under it. And the bug is invisible to everything upstream of
+the boot — single-threaded it never manifests, and `cargo check` cannot see it because both
+spellings are well-typed pointer comparisons. Cleared along the way, so nobody re-walks them:
+`_lock_file`/`_unlock_file` pairing, `init_ioinfo_cs`, the `_STREAM_LOCKS`/`_IOB_ENTRIES`
+constants (28/20/47/48 per `mtdll.h` — ucrt's `_IOB_ENTRIES 3` is not on msvcrt's include path),
+every `_MSVCR_VER` gated helper arm, and the `_iob` type arm. All faithful.
+
+Substrate closure ran to 0 errors on all three arches before any of this: the island grew from 3
+functions to 50 and 3,032 constants to 3,790. Bugs the closure surfaced that would have compiled
+and booted while being wrong are in the field manual — the `tmpnam_helper` counter (the C calls it
+with two different ones, and a shadowing fix silently redirected `tmpnam_s` to the wrong one), the
+`_stat` time width (`time_t` is 32-bit on our i386 and 64-bit elsewhere; i386 alone reported zero
+errors with the wrong cast baked in), `Interlocked*` having no symbol to import at all in usermode,
+and a `LARGE_INTEGER.HighPart` reached by pointer arithmetic rather than by its union field.
+
+**Not yet graded, and the substrate is FURTHER ALONG than task #20 recorded.** msvcrt-difftest
+already compiles the genuine file.c as a full reference TU — rename wall, an asm-label escape
+list for the 19 `#undef`s that would otherwise silently delete a `#define` rename, and generated
+prototypes (it has to: file.c owns 23 symbols the other reference TUs call, four of which would
+bind to GLIBC and convert through the HOST locale — a wrong oracle that links, runs and says
+nothing). What is missing is grading ROWS, not the substrate. The boot is the only oracle file.c
+has today, which is exactly how the inverted CAS above reached a wedged OS.
+
+**Two things are owed before those rows can exist**, both discovered when the flip bounced out of
+the merge queue as `DIFFTEST_FAIL` — which was not a divergence at all but ten duplicate symbols
+at link:
+
+1. **`tests/scanf.rs` owns the plain stdio names.** It DEFINES `fgetc`/`fgetwc`/`ungetc`/
+   `ungetwc`/`_lock_file`/`_unlock_file`/`__iob_func`, and those are not link-satisfying stubs —
+   each calls `model_get`, so they *are* the harness's character source, injected through the
+   plain `extern "C" { fn fgetc(...); }` seam in the shipping `scanf.rs`. Once file.rs defines
+   them too, both land in one test binary. Interim: msvcrt-difftest takes msvcrt-crt-rust with
+   `default-features = false`, dropping the new `stdio` feature (file.rs) for the HOST build
+   only — all three arches keep it, and `libmsvcrt_crt_cargo.a` was checked with `llvm-nm` to
+   confirm `__fcloseall`/`__rmtmp`/`_msvcrt_init_io`/`__lseeki64` are still in the shipping
+   archive. Removing this interim means giving scanf's FILE rows real FILE-backed stdio.
+2. **The reference rename wall covers FUNCTIONS only.** `object_text_symbols` filters `llvm-nm`
+   to `p[1] == "T"`, so file.c's file-scope DATA — `MSVCRT___pioinfo`, `MSVCRT__iob`,
+   `MSVCRT___badioinfo` — was never renamed into `ref_*`/`msvcrt_ref_*` and collides with the
+   subject's copies the moment file.rs is linked for the host. Latent until now because nothing
+   else defined them. Widening the wall to data symbols is a prerequisite for (1), not optional.
+
 **Wave 16 (2026-07-26) — `string.c` and `wcs.c` FINISHED. 483 of 1,087 non-stub C exports
 Rust-backed, 44%** (was 433/39% after wave 14c). Both files now have zero unflipped exports;
 what remains attributed to them is only the printf `...` trampolines, which are C by language

@@ -39,6 +39,32 @@ edition = "2021"
 # structurally forced (crate-type is not feature-conditional).
 path = "src/lib.rs"
 
+[features]
+default = ["stdio"]
+
+# file.c's stdio layer (`src/msvcrt/file.rs`, 189 exports). ON for every build that
+# produces msvcrt.dll — all three arches — and OFF for exactly one consumer, the host
+# harness `msvcrt-difftest`.
+#
+# WHY: `msvcrt-difftest/tests/scanf.rs` DEFINES `fgetc`/`fgetwc`/`ungetc`/`ungetwc`/
+# `_lock_file`/`_unlock_file`/`__iob_func` under their plain names — that is not a stub to
+# satisfy a link, it is the harness's CHARACTER SOURCE (each one calls `model_get`), and it
+# is how the scanf engine gets driven deterministically without real files. The engine
+# reaches it through a plain `extern "C" { fn fgetc(...); }` in scanf.rs, which is the
+# injection seam. Once file.rs also defines those symbols, both land in one test binary and
+# the link fails on seven duplicates. The test's model has to win, so the subject's copy
+# must not be there.
+#
+# This costs no coverage TODAY: nothing on the host grades file.rs yet — there are no
+# file.c rows — so its presence in the difftest link was collision surface with no oracle
+# value. It is not the `pub mod X;`-commented-out anti-pattern: the OS build and all three
+# smokes keep the full stdio layer, and this feature cannot turn it off there.
+#
+# OWED, and it is the blocker for grading file.c: replace scanf.rs's model with real
+# FILE-backed stdio, then turn this back on for the harness. Tracked with the file.c
+# grading work in docs/engineering/rust-port-status.md (wave 17).
+stdio = []
+
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }
 msvcrt-sys = { path = "../msvcrt-sys" }

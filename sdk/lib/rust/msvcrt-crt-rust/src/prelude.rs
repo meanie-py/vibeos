@@ -319,3 +319,126 @@ pub unsafe fn InterlockedIncrement(addend: *mut c_int) -> c_int {
     use core::sync::atomic::{AtomicI32, Ordering};
     (*(addend as *const AtomicI32)).fetch_add(1, Ordering::SeqCst) + 1
 }
+
+// ══ file.c — the stream layer ══════════════════════════════════════════════════════════════
+//
+// Everything below is transcribed from a header in file.c's own include closure, per this
+// file's rule. The bulk of the vocabulary (FILE, _O_*, _IO*, _S_I*, the Win32 file API and
+// ERROR_* families) is DERIVED by bindgen in msvcrt-sys and deliberately absent here.
+
+/// MSVC's fixed-width 64-bit type (`vcruntime.h`). Not `long long`-by-arch: it is 64 bits on
+/// every target, which is why the C spells the `_*i64` entry points with it.
+pub type __int64 = i64;
+
+// ── msvcrt.h's internal `FILE._flag` bits ─────────────────────────────────────────────────
+// These are macros, so bindgen has no symbol to snapshot.
+//
+// `MSVCRT__NOBUF` is version-gated and the two arms DISAGREE: `0x0400` under
+// `_MSVCR_VER >= 140`, `_IONBF` (0x0004) under the `#else` this build takes (msvcrt.h:47/51).
+// Spelled in terms of the island's `_IONBF` rather than as a literal, so it cannot drift from
+// the header the way a transcribed `0x0400` silently would — the same trap `_IOMYBUF` sets
+// (0x40 vs 0x08), which is why neither is written as a number here.
+pub const MSVCRT__NOBUF: u32 = _IONBF;
+/// `msvcrt.h:336` — outside the version gate.
+pub const MSVCRT__USERBUF: u32 = 0x0100;
+/// `msvcrt.h:337` — outside the version gate.
+pub const MSVCRT__IOCOMMIT: u32 = 0x4000;
+
+/// `msvcrt.h:327` — `#define MSVCRT_NO_CONSOLE_FD (-2)`.
+pub const MSVCRT_NO_CONSOLE_FD: c_int = -2;
+/// `msvcrt.h:328` — `#define MSVCRT_NO_CONSOLE ((HANDLE)MSVCRT_NO_CONSOLE_FD)`.
+pub const MSVCRT_NO_CONSOLE: HANDLE = MSVCRT_NO_CONSOLE_FD as isize as HANDLE;
+
+/// `winbase.h:294` — `#define INVALID_HANDLE_VALUE (HANDLE)(-1)`. A pointer cast, so bindgen
+/// emits no var for it; file.c compares fd-table handles against it constantly.
+pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
+
+// `GetLastError` is NOT declared here. It is WINAPI, so a hand-written `extern "C"` block
+// links on amd64/arm64 and fails only on i386 — which is exactly what it did. It comes from
+// the msvcrt-sys island now, where the convention is derived from winbase.h instead of
+// asserted here. Re-glob'd via `pub use msvcrt_sys::*` above.
+extern "C" {
+    /// `msvcrt.h:237` — `void msvcrt_set_errno(int);`. Lives in errno.c, which is still C.
+    /// Genuinely cdecl — a CRT-internal helper, not a WINAPI import — so this block is right.
+    pub fn msvcrt_set_errno(err: c_int);
+}
+
+// ── msvcrt.h's UTF-8 <-> wide helpers ─────────────────────────────────────────────────────
+//
+// `static inline` in msvcrt.h (lines 422-464), so there is NO symbol to import — an `extern`
+// here would be an undefined reference at link, the mistake this file's header warns about
+// for `InterlockedIncrement`. Carried as Rust fns instead, transcribed from that header with
+// the `_MSVCR_VER >= 140` arm collapsed:
+//
+//   * `get_aw_cp()` is a CONSTANT `CP_ACP` at _MSVCR_VER=0 — it consults the locale only in
+//     the >=140 arm, which this build does not compile. Writing what the NAME suggests (a
+//     locale-sensitive codepage) would be wrong in the quiet direction.
+//   * the narrow->wide direction passes `MB_PRECOMPOSED`, not 0.
+#[inline]
+fn get_aw_cp() -> UINT {
+    CP_ACP
+}
+
+/// `msvcrt.h:440` — `static inline wchar_t* wstrdupa_utf8(const char *str)`.
+#[inline]
+pub unsafe fn wstrdupa_utf8(str_: *const c_char) -> *mut wchar_t {
+    let len = MultiByteToWideChar(get_aw_cp(), MB_PRECOMPOSED, str_, -1, core::ptr::null_mut(), 0);
+    if len == 0 {
+        return core::ptr::null_mut();
+    }
+    let wstr = malloc(len as size_t * core::mem::size_of::<wchar_t>()) as *mut wchar_t;
+    if wstr.is_null() {
+        return core::ptr::null_mut();
+    }
+    MultiByteToWideChar(get_aw_cp(), MB_PRECOMPOSED, str_, -1, wstr, len);
+    wstr
+}
+
+/// `msvcrt.h:452` — `static inline char* astrdupw_utf8(const wchar_t *wstr)`.
+#[inline]
+pub unsafe fn astrdupw_utf8(wstr: *const wchar_t) -> *mut c_char {
+    let len = WideCharToMultiByte(
+        get_aw_cp(),
+        0,
+        wstr,
+        -1,
+        core::ptr::null_mut(),
+        0,
+        core::ptr::null(),
+        core::ptr::null_mut(),
+    );
+    if len == 0 {
+        return core::ptr::null_mut();
+    }
+    let str_ = malloc(len as size_t) as *mut c_char;
+    if str_.is_null() {
+        return core::ptr::null_mut();
+    }
+    WideCharToMultiByte(
+        get_aw_cp(),
+        0,
+        wstr,
+        -1,
+        str_,
+        len,
+        core::ptr::null(),
+        core::ptr::null_mut(),
+    );
+    str_
+}
+
+/// A `va_list` cursor, BY VALUE.
+///
+/// On all three of our Windows targets a `va_list` is a plain `char*` walking the flat
+/// argument-slot area, which is exactly why a fixed-arity function that *receives* an
+/// already-started cursor is ordinary stable Rust and needs no `c_variadic`. This is the
+/// same type `printf_shells.rs` uses; see its module header for the full reasoning,
+/// including why each shell takes its own `let mut ap = valist` copy before handing
+/// `&mut ap` down (the C parameter IS a private copy, so a callee advancing the cursor
+/// must not disturb its caller's).
+///
+/// NOT `*mut __va_list_tag`. That spelling is the SysV/Linux model, where a `va_list` is
+/// `__va_list_tag[1]` and an extra indirection deep; c2rust emits it because it anchors on
+/// the host. It is wrong for our targets and the type does not exist in the island — the
+/// translation of file.c arrived with both spellings mixed, and they are normalised here.
+pub type va_list = *mut u8;

@@ -251,13 +251,24 @@ def call_contract(sealed: SealedCalls) -> str:
     else:
         rule = (
             "Preserve EACH token exactly once as the called function/method identifier in "
-            "executable Rust. Do not duplicate one."
+            "executable Rust. Do not duplicate one. Never invent a token number that is not "
+            "listed below; the list is complete."
         )
     return (
         "\n## Deterministic call envelope\n"
         "Each identifier below is one opaque runtime callee occurrence owned by rustconv. "
         f"{rule} Do not rename, define, merge, move into a comment, or omit one; rustconv "
         "restores the callee names after your response.\n"
+        # The list is complete for calls the sealer can SEE, and it cannot see through a
+        # function-like macro: `MSVCRT_CHECK_PMT(x)` expands to a call to
+        # _invalid_parameter, and gets no token. A model that assumes every call it emits
+        # needs one then numbers that macro `..._0000__` and shifts every real call by
+        # one, so the last token has nowhere to go and it invents the next index. That is
+        # not a translation error -- the Rust is usually right -- but the audit rejects
+        # it, and one rejected worker assembles no file for the whole TU. Say so, rather
+        # than let the model deduce it.
+        "A call that appears only inside a function-like macro has NO token: translate it "
+        "as an ordinary named call and do not consume or invent a token for it.\n"
         f"Call tokens ({len(sealed.calls)}): {tokens}\n"
     )
 
