@@ -83,9 +83,12 @@ extern "C" {
 static MM_WAIT_ENTRY: ULONG_PTR = 0x7FFFFFFFFFFFFC00;
 #[cfg(target_pointer_width = "32")]
 static MM_WAIT_ENTRY: ULONG_PTR = 0x7ffffc00;
-static RMAP_SEGMENT_MASK: ULONG_PTR = 0xFFFFFF00;
+// `~((ULONG_PTR)0xff)` — pointer-width, not the 32-bit-truncated 0xFFFFFF00 that
+// used to sit here. The one use below (`& !RMAP_SEGMENT_MASK`) survived the
+// truncation only because its result is cast to ULONG.
+static RMAP_SEGMENT_MASK: ULONG_PTR = !0xffusize;
 static MEMORY_AREA_SECTION_VIEW: ULONG = 1;
-static MM_SEGMENT_INDELETE: ULONG = 1;
+static MM_SEGMENT_INDELETE: ULONG = 4; // mm.h:242 — was 1 (PHYSICALMEMORY's bit)
 static MC_USER: ULONG = 0;
 
 static mut RmapLookasideList: NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
@@ -568,6 +571,24 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
     #[cfg(target_arch = "aarch64")]
     {
         MiReleasePfnLock(OldIrql);
+        // "Not in the list" cannot distinguish "never inserted" from "inserted
+        // and since removed", and it says nothing about where the caller's PFN
+        // came from. The flight recorder already carries OP_PAGE_MAP/
+        // OP_PAGE_UNMAP keyed by page-aligned VA with the PFN as payload, so the
+        // per-VA ledger answers both. Dumped AFTER the PFN lock is dropped —
+        // this is serial I/O and must not run at PFN-lock IRQL — and bounded,
+        // because the recorder is a ring and an unbounded dump on a hot path
+        // would evict the very history it is trying to show.
+        {
+            use core::sync::atomic::{AtomicU32, Ordering};
+            static DUMPED: AtomicU32 = AtomicU32::new(0);
+            if DUMPED.fetch_add(1, Ordering::Relaxed) < 2 {
+                crate::ke::flightrec::flightrec_dump_object(
+                    (Address as usize) & !((PAGE_SIZE as usize) - 1),
+                    24,
+                );
+            }
+        }
         return;
     }
     #[cfg(not(target_arch = "aarch64"))]

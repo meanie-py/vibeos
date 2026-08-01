@@ -429,8 +429,22 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
         MmInsertMemoryArea(AddressSpace, MemoryArea, Protect);
     }
     
+    // ARM64: a freshly reserved USER range must not inherit page-table content.
+    // Recycled FreeLDR page-table pages leave valid-looking descriptors behind;
+    // see MiPurgeStaleUserPtes for the full mechanism and what it costs when it
+    // is missing. Both branches above have set Starting/EndingVpn by here, so
+    // this is the one place that covers VirtualAlloc and section views alike.
+    #[cfg(target_arch = "aarch64")]
+    {
+        if !MmGetAddressSpaceOwner(AddressSpace).is_null() {
+            let start = ((*MemoryArea).VadNode.StartingVpn as ULONG_PTR) << PAGE_SHIFT;
+            let end = (((*MemoryArea).VadNode.EndingVpn as ULONG_PTR) + 1) << PAGE_SHIFT;
+            crate::arm64::page::MiPurgeStaleUserPtes(start, end);
+        }
+    }
+
     core::ptr::write_volatile(Result, MemoryArea);
-    
+
     STATUS_SUCCESS
 }
 

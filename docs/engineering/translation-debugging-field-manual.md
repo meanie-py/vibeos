@@ -1209,6 +1209,17 @@ against each other, not just against C.
 values are present, both are plausible, both appear in the header. Only the *pairing* is wrong.
 Diff the whole family in one read.
 
+**The same blindness scales past arches: one C macro can acquire N private Rust copies.**
+`RMAP_SEGMENT_MASK` (`~((ULONG_PTR)0xff)`, arch-invariant) had **six** — `mm/macros.rs` and
+`mm/section_table.rs` correct; `inline/mm.rs` pointer-width-dependent (`!0xFFF` on 64-bit);
+`ntkrnl-sys/src/mm.rs` `!1usize` with a matching `& 1` predicate; `mm/rmap.rs` the 32-bit-
+truncated `0xFFFFFF00`. Two of the wrong three were *harmless* — `!0xFFF` accepts exactly the
+same inputs a constructed segment address can take, and rmap.rs's truncation was laundered by an
+`as ULONG` cast — which is why they survived: **a wrong copy that happens to be unreachable-wrong
+keeps the population alive until one copy is reached.** Constructing with one copy and testing
+with another is the failure. When a macro is defined more than once in our tree, the count itself
+is the finding; grep the name before trusting any single definition.
+
 ### A hand-typed bit-flag literal that names the wrong member `[§9.86]`
 `DC_vPrepareDCsForBlit` tested `fs & 0x04` (**DC_CANCELED**) where the C tests
 **DC_DIRTY_RAO (0x10)** — so every GDI blit drew through a stale clip, and an app caching
@@ -1463,6 +1474,31 @@ all three bugs above.
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A deferral note outlives the premise that justified it
+`ARM3/virtual.rs` skipped an ARM64-only block of `NtAllocateVirtualMemory` and said so:
+*"Skipped in this Rust port — arm64 boot currently fails before user-mode allocation, so this
+path isn't exercised. Restore from virtual.c:4819-4869 once arm64 boot is fixed past
+CmCheckRegistry."* Honest, correct when written, and self-invalidating: arm64 has booted to a
+desktop for months, so the "isn't exercised" clause stopped being true and the note quietly
+became a live memory corruptor.
+
+What it was guarding matters. FreeLDR's identity-mapped page-table **pages** get recycled as
+user-space page tables while still holding FreeLDR's entries (VA==PA, global, EL1-only), and on
+ARM64 TTBR0 *is* the user half. A fresh user reservation therefore lands on valid-looking
+descriptors: the fault that should demand-page it never fires, and teardown decodes the stale
+descriptor into a PFN naming no frame (VA `0x50000` → pte `0x50703` → PFN `0x50`, far below
+QEMU virt's `0x40000000` DRAM base). `MmDeleteRmap` then reports mapping-not-in-list and
+`MmReleasePageMemoryConsumer` hands the allocator a frame that was never allocated — one
+deterministic corruption presenting as four different stop codes plus clean runs, depending on
+what later reused the frame. amd64 has the equivalent guard in `ARM3/sysldr.rs`, which is
+exactly why 148 x86 sweep rounds never reproduced it.
+
+**A deferral whose condition is a moving fact needs an executable trigger, not a sentence.** A
+comment cannot notice that its premise expired. Either wire the condition to something that
+fails loudly when it flips, or do the work. The tell when hunting: a note that names both the
+restoration source and a precondition — check the precondition *first*, because if it has
+already been met the note is describing a bug, not a plan.
+
 ### Whole functions vanish
 - **A parse failure in the SCANNER deletes a function from the plan, and every downstream check
   passes** `[§9.78]`. `#define CONST const` (winnt.h) is unknown to tree-sitter-c, so ws2_32
@@ -1713,6 +1749,18 @@ N+1 as evidence that the fix for bug N was wrong.**
 - **A hand-rolled `va_arg` walking `&last_fixed_param`** is amd64-only garbage.
 - **Kernel Rust emitting x87 (`fild`/`fistp`) for 64-bit atomics** → an imprecise 0xc0000092
   BSOD blamed on an innocent function.
+- **A predicate macro INLINED as a different predicate.** `balance.rs` rendered
+  `RMAP_IS_SEGMENT(Entry->Address)` — C's `((x) & ~0xff) == ~0xff` — as `Address & 1`. A segment
+  rmap address is `RMAP_SEGMENT_MASK | page_index`, so `& 1` asks "is the page index odd?": it
+  skipped half the segment entries and let the other half through as if they were process
+  mappings. `Entry->Process` on a segment entry is a `PCACHE_SECTION_PAGE_TABLE`, so the
+  balancer's page-out walk handed a page table to `ObReferenceObject`,
+  `ExAcquireRundownProtection`, and `KeStackAttachProcess`, then ran `MiAddressToPte` on the
+  `0xFFFF…FF00` pseudo-address and cleared an accessed bit through it. Both operands are
+  plausible bit tests on the same field, so nothing downstream can tell them apart. **When a
+  macro is inlined rather than called, the inlining is a translation of its BODY — diff the
+  body, not the name.** The general tell: an inlined predicate that is *simpler* than the C
+  macro it replaces.
 
 ### C++ constructs Rust cannot spell — overloads, default args, and RAII locals
 Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ features with no
