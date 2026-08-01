@@ -9,7 +9,8 @@ use ntkrnl_sys::inline::se::SeLengthSid;
 use ntkrnl_sys::ddk::{
     ACE, ACL, CM_KEY_SECURITY_CACHE, CmpAcquireKcbLockExclusive, CmpLockRegistry,
     CmpReleaseKcbLock, CmpUnlockRegistry, PACE_HEADER, PACL, PCM_KEY_BODY,
-    PCM_KEY_CONTROL_BLOCK, PCM_KEY_SECURITY_CACHE, PGENERIC_MAPPING,
+    HCELL_INDEX, PCM_KEY_CONTROL_BLOCK, PCM_KEY_NODE, PCM_KEY_SECURITY,
+    PCM_KEY_SECURITY_CACHE, PGENERIC_MAPPING, PHHIVE,
     PISECURITY_DESCRIPTOR, PISECURITY_DESCRIPTOR_RELATIVE, PSECURITY_DESCRIPTOR,
     PSECURITY_INFORMATION, PSID, RtlAbsoluteToSelfRelativeSD, RtlAddAccessAllowedAce,
     RtlCreateAcl, RtlCreateSecurityDescriptor,
@@ -49,8 +50,19 @@ const KEY_ALL_ACCESS: ULONG = 0x000F_003F;
 const _: () = assert!(KEY_ALL_ACCESS == ntkrnl_sys::hal_ddk::KEY_ALL_ACCESS as ULONG);
 
 /// A cell index that names no cell. Cached descriptors are not yet backed by a hive
-/// `sk` cell, so every block we build carries this.
+/// `sk` cell of their own, so every block we build carries this.
 const HCELL_NIL: u32 = 0xFFFF_FFFF;
+
+/// "sk" / "nk" — the signatures a CM_KEY_SECURITY and a CM_KEY_NODE cell carry
+/// (cmlib's cmdata.h). Declared here rather than imported because cmlib-rust keeps
+/// its copies `pub(crate)`.
+const CM_KEY_SECURITY_SIGNATURE: u16 = 0x6B73;
+const CM_KEY_NODE_SIGNATURE: u16 = 0x6B6E;
+
+extern "C" {
+    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
+    fn HvReleaseCell(Hive: PHHIVE, Cell: HCELL_INDEX);
+}
 
 /// CM_KEY_SECURITY_CACHE ends in a variable-length SECURITY_DESCRIPTOR_RELATIVE, so a
 /// block is allocated as header + descriptor bytes and the descriptor starts here.
@@ -143,6 +155,116 @@ unsafe fn CmpStoreCachedSecurity(
     CmpFreeKcbCachedSecurity(Kcb);
     (*Kcb).CachedSecurity = Block;
     STATUS_SUCCESS
+}
+
+/// Cache `Length` bytes of an already-self-relative descriptor verbatim.
+///
+/// The caller supplies the length from a trusted source instead of having it measured,
+/// so nothing here parses the descriptor. That is the point: this serves hive bytes,
+/// which may be corrupt, and a measuring pass would have to walk the SIDs and ACLs it
+/// is not yet entitled to trust.
+unsafe fn CmpStoreCachedSecurityOfLength(
+    Kcb: PCM_KEY_CONTROL_BLOCK,
+    SecurityDescriptor: PSECURITY_DESCRIPTOR,
+    Length: ULONG,
+) -> NTSTATUS {
+    if Kcb.is_null() || SecurityDescriptor.is_null() {
+        return STATUS_INVALID_SECURITY_DESCR;
+    }
+    // Too short to even hold the fixed header, so the offsets inside it cannot be read.
+    if (Length as usize) < core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() {
+        return STATUS_INVALID_SECURITY_DESCR;
+    }
+
+    let Block = ExAllocatePoolWithTag(
+        PagedPool,
+        CM_SECURITY_CACHE_HEADER + Length as usize,
+        TAG_CM_SECURITY_CACHE,
+    ) as PCM_KEY_SECURITY_CACHE;
+    if Block.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(
+        core::ptr::addr_of_mut!((*Block).Descriptor) as *mut core::ffi::c_void,
+        SecurityDescriptor as *const core::ffi::c_void,
+        Length as usize,
+    );
+
+    (*Block).Cell = HCELL_NIL;
+    (*Block).ConvKey = (*Kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey;
+    (*Block).DescriptorLength = Length;
+    InitializeListHead(&mut (*Block).List);
+
+    CmpFreeKcbCachedSecurity(Kcb);
+    (*Kcb).CachedSecurity = Block;
+    STATUS_SUCCESS
+}
+
+/// Populate the KCB's cache from the key's on-disk `sk` cell, and return the cached
+/// descriptor (NULL if the key has none).
+///
+/// Every key in a hive FILE carries its real ACL in a CM_KEY_SECURITY cell named by
+/// `CM_KEY_NODE.Security`; mkhive writes one on each hive root and points every child at
+/// it (sdk/tools/mkhive/cmi.c). Until this existed nothing in the kernel ever READ that
+/// field, so those keys fell through to the grant-World-everything default below —
+/// SAM, SECURITY, SOFTWARE and SYSTEM included.
+///
+/// The descriptor is COPIED into the KCB cache rather than returned as a pointer into
+/// the hive: a cell pointer is only valid between HvGetCell and HvReleaseCell, and the
+/// caller (SeQuerySecurityDescriptorInfo, and the Set path underneath it) outlives that
+/// window. Copying also means the rest of this file needs no cell-lifetime awareness —
+/// there is exactly one representation of "this key's descriptor", the cached one.
+pub(crate) unsafe fn CmpCacheSecurityFromHive(Kcb: PCM_KEY_CONTROL_BLOCK) -> PSECURITY_DESCRIPTOR {
+    if Kcb.is_null() {
+        return core::ptr::null_mut();
+    }
+    let Hive = (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyHive;
+    let Cell = (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell;
+    if Hive.is_null() || Cell == HCELL_NIL {
+        return core::ptr::null_mut();
+    }
+
+    // A cell index is just an offset into the hive, so EVERY cell this walk touches has
+    // its signature checked before its contents are believed. Skipping the CM_KEY_NODE
+    // check cost a boot: a KCB whose KeyCell did not name a key node yielded a garbage
+    // Security index, and the descriptor built from it faulted inside RtlLengthSid
+    // (BUGCHECK 0x1E at ntoskrnl+0x6E7C5).
+    let Node = HvGetCell(Hive, Cell) as PCM_KEY_NODE;
+    if Node.is_null() {
+        return core::ptr::null_mut();
+    }
+    let SecurityCell = if (*Node).Signature == CM_KEY_NODE_SIGNATURE {
+        (*Node).Security
+    } else {
+        HCELL_NIL
+    };
+    HvReleaseCell(Hive, Cell);
+    if SecurityCell == HCELL_NIL {
+        return core::ptr::null_mut();
+    }
+
+    let Sk = HvGetCell(Hive, SecurityCell) as PCM_KEY_SECURITY;
+    if Sk.is_null() {
+        return core::ptr::null_mut();
+    }
+    // `&&` short-circuits, so a bad signature never reaches the copy. The cell's own
+    // DescriptorLength is the authority on size -- do NOT measure this descriptor with
+    // RtlLengthSecurityDescriptor, which WALKS it (owner SID, group SID, both ACLs) and
+    // so faults on exactly the malformed input this guard exists to reject. Length first,
+    // parse never: the bytes are copied verbatim and only the Se layer interprets them.
+    let Cached = (*Sk).Signature == CM_KEY_SECURITY_SIGNATURE
+        && NT_SUCCESS(CmpStoreCachedSecurityOfLength(
+            Kcb,
+            core::ptr::addr_of_mut!((*Sk).Descriptor) as PSECURITY_DESCRIPTOR,
+            (*Sk).DescriptorLength,
+        ));
+    HvReleaseCell(Hive, SecurityCell);
+
+    if !Cached {
+        return core::ptr::null_mut();
+    }
+    CmpGetCachedSecurity(Kcb)
 }
 
 #[no_mangle]
@@ -275,7 +397,13 @@ pub unsafe extern "system" fn CmpQuerySecurityDescriptor(
         return STATUS_ACCESS_DENIED;
     }
 
+    // Assigned descriptor first, then the key's own `sk` cell. A descriptor assigned in
+    // this boot is the newer truth: CmpSetSecurityDescriptor caches without yet writing
+    // the cell back, so preferring the hive here would serve a stale ACL.
     let mut ObjectSd = CmpGetCachedSecurity(Kcb);
+    if ObjectSd.is_null() {
+        ObjectSd = CmpCacheSecurityFromHive(Kcb);
+    }
     if !ObjectSd.is_null() {
         let mut SecInfo: SECURITY_INFORMATION = SecurityInformation;
         return SeQuerySecurityDescriptorInfo(
@@ -289,13 +417,16 @@ pub unsafe extern "system" fn CmpQuerySecurityDescriptor(
     CmpQueryDefaultSecurityDescriptor(SecurityInformation, SecurityDescriptor, BufferLength)
 }
 
-/// Fallback for a key that carries no descriptor: grant World everything.
+/// Fallback for a key that carries no descriptor at all: grant World everything.
 ///
-/// This is upstream ReactOS's original whole-CM behaviour, now narrowed to keys we have
-/// not assigned. It is reached by keys materialised from a hive FILE, whose real ACLs
-/// live in the hive's `sk` cells -- nothing in the tree writes or reads CM_KEY_NODE.Security
-/// yet, so there is nothing to serve. Those keys read as world-writable, which is wrong and
-/// tracked; do not mistake this for a designed default.
+/// This is upstream ReactOS's original whole-CM behaviour, now narrowed twice — first to
+/// keys we have not assigned, then to keys whose hive holds no `sk` cell for them either.
+/// What still lands here is a VOLATILE key created without an explicit descriptor, since
+/// a volatile hive has no cells on disk to inherit from.
+///
+/// It remains wrong (world-writable is not a safe default) and is only tolerable because
+/// the keys that reach it are the ones with no ACL to honour. Do not mistake it for a
+/// designed default.
 unsafe fn CmpQueryDefaultSecurityDescriptor(
     SecurityInformation: SECURITY_INFORMATION,
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
@@ -417,7 +548,14 @@ pub unsafe extern "system" fn CmpSetSecurityDescriptor(
     let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let GenericMapping = opaque_ptr(GenericMapping);
 
-    let Original = CmpGetCachedSecurity(Kcb);
+    // Same order as the query path, and for the same reason: a partial set (say, DACL
+    // only) merges INTO the current descriptor, so the key's real on-disk ACL has to be
+    // the base. Editing the World fallback instead would silently discard the owner,
+    // group and every ACE the hive shipped.
+    let mut Original = CmpGetCachedSecurity(Kcb);
+    if Original.is_null() {
+        Original = CmpCacheSecurityFromHive(Kcb);
+    }
     let mut ObjectSd = Original;
     let Status = SeSetSecurityDescriptorInfo(
         core::ptr::null_mut(),

@@ -1022,23 +1022,34 @@ pub unsafe extern "system" fn CmpCreateLinkNode(
          * key reached by LINKING a hive -- SAM, SECURITY, SOFTWARE, SYSTEM, .DEFAULT --
          * got no descriptor at all and fell back to granting World everything.
          *
-         * This is the kernel's DEFAULT for a hive root. On Windows a hive that carries its
-         * own `sk` cell overrides it; we do not read `sk` cells yet, so the hives whose real
-         * ACLs setup writes (SOFTWARE/SYSTEM/.DEFAULT) still get the default rather than
-         * their own. Owner, group and SACL are correct either way. */
-        let mut NewDescriptor: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
-        let SecStatus = SeAssignSecurity(
-            core::ptr::null_mut(),
-            (*AccessState).SecurityDescriptor,
-            core::ptr::addr_of_mut!(NewDescriptor),
-            1u8,
-            core::ptr::addr_of_mut!((*AccessState).SubjectSecurityContext),
-            core::ptr::addr_of_mut!((*CmpKeyObjectType).TypeInfo.GenericMapping),
-            0,
-        );
-        if NT_SUCCESS(SecStatus) {
-            CmpAssignSecurityDescriptor((*KeyBody).KeyControlBlock, NewDescriptor);
-            SeDeassignSecurity(core::ptr::addr_of_mut!(NewDescriptor));
+         * ONLY when the hive carries none of its own. This is the kernel's DEFAULT, and a
+         * key that already has an `sk` cell outranks it: those bytes are the ACL the hive
+         * actually shipped, and mkhive writes one on every hive root. Assigning
+         * unconditionally silently overwrote them -- the sk-cell read in cmse could never
+         * fire, because the KCB cache was already populated by the time anyone queried, so
+         * SOFTWARE/SYSTEM/.DEFAULT reported the generic default rather than their real
+         * ACLs and the numbers did not move at all.
+         *
+         * Ask the READER, do not re-derive the test here. `KeyNode` above is the LINK cell
+         * in the MASTER hive; the KCB for the linked key names the CHILD hive's root cell,
+         * which is where the `sk` lives. Testing KeyNode->Security looked right, compiled,
+         * booted, and changed nothing -- two hive-cell walks that are almost the same is
+         * exactly the shape that hides a bug. One walk, one owner. */
+        if crate::cmse::CmpCacheSecurityFromHive((*KeyBody).KeyControlBlock).is_null() {
+            let mut NewDescriptor: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
+            let SecStatus = SeAssignSecurity(
+                core::ptr::null_mut(),
+                (*AccessState).SecurityDescriptor,
+                core::ptr::addr_of_mut!(NewDescriptor),
+                1u8,
+                core::ptr::addr_of_mut!((*AccessState).SubjectSecurityContext),
+                core::ptr::addr_of_mut!((*CmpKeyObjectType).TypeInfo.GenericMapping),
+                0,
+            );
+            if NT_SUCCESS(SecStatus) {
+                CmpAssignSecurityDescriptor((*KeyBody).KeyControlBlock, NewDescriptor);
+                SeDeassignSecurity(core::ptr::addr_of_mut!(NewDescriptor));
+            }
         }
 
         HvReleaseCell(Hive, Cell);
