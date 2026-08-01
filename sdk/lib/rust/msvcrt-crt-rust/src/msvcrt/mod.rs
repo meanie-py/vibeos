@@ -9,19 +9,12 @@
 //! in `msvcrt_static` by lld first-match. A function this module does NOT define
 //! simply stays C, which is why a partial file is a safe state.
 
-// file.c is TRANSLATED (189/189 exports, tools/rustconv/.responses/…-file.c) but NOT
-// yet wired in. The msvcrt-sys island has since been extended to the stream layer and
-// crate-repair has run across all three arches, taking this from 1,363 cargo errors to
-// ~484 — still a broken build for every lane. The remaining bulk is the C-variadic
-// printf/scanf shells, which need the wave-14c C trampoline (pinned stable: no
-// `#![feature(c_variadic)]`). file.rs carries the full ORPHAN-BY-DESIGN banner.
-//
-// This is the netcfgx precedent (translated, committed, deliberately not a member until
-// it compiles), NOT the anti-pattern AGENTS.md forbids: nothing here is being hidden to
-// dodge a regression, and no C is being kept alive in preference to working Rust. The C
-// file.c is still the only implementation and still correct.
-//
-// It must go in as ONE flip, never partially: file.c's entry points share one fd table
-// and one FILE ring, so a C `fopen` beside a Rust `fclose` is split state.
+// file.c: 189/189 exports, LIVE. This `mod` line is the flip itself — the Rust archive
+// links ahead of msvcrt_static, so first-match hands every symbol here to Rust and the C
+// bodies go dead in place. It went in as ONE change, never partially, because file.c's
+// entry points share one fd table and one FILE ring; the general "an undefined function
+// just stays C" property of cohab is unsafe for this particular file. The 20 C-variadic
+// entry points are in dll/win32/msvcrt/rust_file_varargs_shim.c as va_start trampolines
+// (pinned stable: no `#![feature(c_variadic)]`), and delegate straight back here.
 pub mod file;
 pub mod mbcs;

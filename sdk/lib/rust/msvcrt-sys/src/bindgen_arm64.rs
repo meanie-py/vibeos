@@ -4308,6 +4308,9 @@ unsafe extern "C" {
     pub fn GetFileType(arg1: HANDLE) -> DWORD;
 }
 unsafe extern "C" {
+    pub fn GetLastError() -> DWORD;
+}
+unsafe extern "C" {
     pub fn GetStartupInfoA(arg1: LPSTARTUPINFOA);
 }
 unsafe extern "C" {

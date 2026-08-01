@@ -4276,6 +4276,9 @@ unsafe extern "stdcall" {
     pub fn GetFileType(arg1: HANDLE) -> DWORD;
 }
 unsafe extern "stdcall" {
+    pub fn GetLastError() -> DWORD;
+}
+unsafe extern "stdcall" {
     pub fn GetStartupInfoA(arg1: LPSTARTUPINFOA);
 }
 unsafe extern "stdcall" {

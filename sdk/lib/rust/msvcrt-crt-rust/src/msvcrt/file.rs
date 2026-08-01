@@ -1,18 +1,21 @@
-//! ORPHAN-BY-DESIGN: TEMPORARY — unlike the other declared orphans in this tree,
-//! this file is not dead upstream and is meant to be wired. `dll/win32/msvcrt/file.c`
-//! is fully translated here (189/189 exports) but does not compile yet: ~484 cargo
-//! errors remain, dominated by the C-variadic printf/scanf shells, which need the
-//! wave-14c C trampoline rather than a nightly feature (this crate is pinned stable).
+//! `dll/win32/msvcrt/file.c`, translated whole — 189/189 exports, of which the 173
+//! `#[no_mangle]` bodies here are the live implementation in msvcrt.dll.
 //!
-//! It is committed unwired rather than withheld, per the netcfgx precedent. This is
-//! NOT the anti-pattern AGENTS.md forbids: no regression is being hidden and no C is
-//! being kept alive in preference to working Rust — the C file.c is still the only
-//! implementation, and still correct.
+//! WIRING THIS MODULE IS THE FLIP. msvcrt's cohab is by LINK ORDER, not by removing
+//! the `.c` from CMake: `libmsvcrt_crt_cargo.a` is linked ahead of `msvcrt_static`
+//! (see that CMakeLists), so lld first-match takes every symbol defined here and
+//! file.c's copies go dead in place under `--allow-multiple-definition`. There is no
+//! second step to perform, and no CMake edit owed — `pub mod file;` in this
+//! directory's `mod.rs` is the whole of it.
 //!
-//! The flip must be ATOMIC. file.c's entry points share one fd table and one FILE
-//! ring, so a C `fopen` beside a Rust `fclose` is split state, not a partial port.
+//! Which is why it had to go in ATOMICALLY, and did. file.c's entry points share one
+//! fd table and one FILE ring, so translating half of them would have left a C
+//! `fopen` beside a Rust `fclose` — split state, not a partial port. The usual
+//! "a function this module does not define simply stays C" safety of cohab does not
+//! apply to this file.
 //!
-//! Wiring point: `pub mod file;` in this directory's `mod.rs`.
+//! The 20 variadic entry points are the one genuine exception, and they are not a
+//! split: see the block below.
 
 use crate::prelude::*;
 use core::ffi::c_void;
@@ -540,11 +543,21 @@ unsafe extern "C" fn alloc_pioinfo_block(fd: i32) -> u8 {
         }
         i = i + 1;
     }
-    if InterlockedCompareExchangePointer(
+    // The C is `if (InterlockedCompareExchangePointer(&pioinfo[..], block, NULL))` — the CAS
+    // returns the PREVIOUS value, so a non-NULL result means another thread published its
+    // block first and OURS is the loser that must be freed. A NULL result means we won and
+    // the table now owns `block`.
+    //
+    // Do not "improve" this to a comparison against `block`. That inverts it: the winning
+    // path returns NULL, `NULL != block` is true, and the block that was just published into
+    // MSVCRT___pioinfo gets freed out from under the table on EVERY successful allocation —
+    // every fd block a dangling pointer, critical sections and all. It boots as far as the
+    // first msvcrt load and wedges there.
+    if !InterlockedCompareExchangePointer(
         core::ptr::addr_of_mut!(MSVCRT___pioinfo[(fd / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize]) as *mut *mut core::ffi::c_void,
         block as *mut core::ffi::c_void,
         core::ptr::null_mut()
-    ) != block as *mut core::ffi::c_void
+    ).is_null()
     {
         if ioinfo_is_crit_init(block.offset(0 as isize)) != 0 {
             i = 0;
@@ -604,6 +617,48 @@ unsafe extern "C" fn release_ioinfo(info: *mut ioinfo) {
         LeaveCriticalSection(core::ptr::addr_of_mut!((*info).crit));
     }
 }
+/// `&MSVCRT_fstream[idx]`, indexed the way the C indexes it: WITHOUT a bounds check.
+///
+/// Not an optimisation — a correctness requirement. `msvcrt_get_file`'s guard is
+/// `i >= MSVCRT_max_streams`, and `MSVCRT_max_streams` is a runtime `static mut`, so LLVM
+/// cannot prove the index in range and a plain `[idx]` compiles to a bounds check whose
+/// panic arm terminates in `ud2`. Four exports inherited that trap through inlining
+/// (`_fcloseall`, `_fflush_nolock`, `_rmtmp`, `msvcrt_free_io`) and `scan_ud2` fails the
+/// build on it, correctly: a `ud2` reachable from `msvcrt_free_io` is on the process-exit
+/// path of every program that links this DLL.
+///
+/// The index really is always in range, by an invariant no local analysis can see:
+/// `_setmaxstdio` refuses any `newmax > MSVCRT_MAX_FILES`, so `i < MSVCRT_max_streams`
+/// implies `i / MSVCRT_FD_BLOCK_SIZE < MSVCRT_MAX_FILES / MSVCRT_FD_BLOCK_SIZE`, which is
+/// exactly this array's length.
+///
+/// Contrast `get_ioinfo_nolock`, which indexes the same-shaped `MSVCRT___pioinfo` and needs
+/// none of this: it guards against the *constant* `MSVCRT_MAX_FILES`, so the bound is
+/// provable and rustc elides the check on its own. The difference between the two is
+/// provability, not safety — which is why only one of them needed touching.
+#[inline]
+unsafe fn fstream_slot(i: i32) -> *mut *mut file_crit {
+    core::ptr::addr_of_mut!(MSVCRT_fstream)
+        .cast::<*mut file_crit>()
+        .add((i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize)
+}
+
+/// `#[inline(never)]` is load-bearing, and is the second half of the `ud2` fix above.
+///
+/// This function can return NULL (the `calloc` failure path below), and its callers deref the
+/// result without checking — `_fcloseall` does `file->_flag`, `_rmtmp` does `file->_tmpfname`,
+/// `msvcrt_flush_all_buffers` the same. **That is exactly what the C does**; see file.c. When
+/// LLVM inlines this into those loops it can see the NULL reaching a dereference, concludes the
+/// path is UB, and folds it to `unreachable` — which lands as `call __errno` immediately
+/// followed by `ud2`, one per caller. Out of line, the caller gets an opaque pointer and emits
+/// the ordinary load, so the behaviour is the C's to the instruction: a fault, not a trap.
+///
+/// This hides nothing. The NULL path is unreachable for every one of those callers anyway —
+/// they walk `3..MSVCRT_stream_idx`, and a slot below `MSVCRT_stream_idx` was allocated when its
+/// stream was created, so `calloc` is never reached with such an `i`. The latent
+/// deref-without-check is the C's, is preserved rather than "fixed", and would fault identically
+/// in both languages if it ever did happen.
+#[inline(never)]
 unsafe extern "C" fn msvcrt_get_file(i: i32) -> *mut FILE {
     let mut ret: *mut file_crit;
 
@@ -615,19 +670,18 @@ unsafe extern "C" fn msvcrt_get_file(i: i32) -> *mut FILE {
         return iob_get_file(i);
     }
 
-    ret = MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize];
+    ret = *fstream_slot(i);
     if ret.is_null() {
-        MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize] = calloc(
+        *fstream_slot(i) = calloc(
             MSVCRT_FD_BLOCK_SIZE as _,
             core::mem::size_of::<file_crit>() as _,
         ) as *mut file_crit;
-        if MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize].is_null() {
+        if (*fstream_slot(i)).is_null() {
             *_errno() = (ENOMEM) as i32;
             return core::ptr::null_mut();
         }
 
-        ret = MSVCRT_fstream[(i / (MSVCRT_FD_BLOCK_SIZE) as i32) as usize]
-            .offset((i % (MSVCRT_FD_BLOCK_SIZE) as i32) as isize);
+        ret = (*fstream_slot(i)).offset((i % (MSVCRT_FD_BLOCK_SIZE) as i32) as isize);
     } else {
         ret = ret.offset((i % (MSVCRT_FD_BLOCK_SIZE) as i32) as isize);
     }

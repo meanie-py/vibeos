@@ -353,10 +353,13 @@ pub const MSVCRT_NO_CONSOLE: HANDLE = MSVCRT_NO_CONSOLE_FD as isize as HANDLE;
 /// emits no var for it; file.c compares fd-table handles against it constantly.
 pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
+// `GetLastError` is NOT declared here. It is WINAPI, so a hand-written `extern "C"` block
+// links on amd64/arm64 and fails only on i386 — which is exactly what it did. It comes from
+// the msvcrt-sys island now, where the convention is derived from winbase.h instead of
+// asserted here. Re-glob'd via `pub use msvcrt_sys::*` above.
 extern "C" {
-    /// `winbase.h:1948` — `DWORD WINAPI GetLastError(void);`
-    pub fn GetLastError() -> DWORD;
     /// `msvcrt.h:237` — `void msvcrt_set_errno(int);`. Lives in errno.c, which is still C.
+    /// Genuinely cdecl — a CRT-internal helper, not a WINAPI import — so this block is right.
     pub fn msvcrt_set_errno(err: c_int);
 }
 

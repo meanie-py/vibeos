@@ -405,6 +405,12 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|GetFileAttributesExW|SetFileAttributesW|SetFileTime|GetTempFileNameW"
         "|LockFile|UnlockFile|CreatePipe|DuplicateHandle"
         # handles, process, console
+        # GetLastError is here rather than hand-written in the consuming crate because
+        # it was hand-written once and got the convention wrong: `extern "C"` for a
+        # WINAPI function links clean on amd64/arm64 and fails only on i386, as
+        # `_GetLastError` with no `@0`. Derived from winbase.h it is `extern "stdcall"`
+        # on i386 and `extern "C"` elsewhere, with no judgement call left to make.
+        "|GetLastError"
         "|GetStdHandle|SetStdHandle|GetCurrentProcess|GetCurrentProcessId"
         "|GetStartupInfoA|WriteConsoleW|VerifyConsoleIoHandle|Sleep"
         # synchronisation

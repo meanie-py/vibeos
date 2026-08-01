@@ -268,6 +268,23 @@ says `#define _iob __iob_func()` / `#define stdin (&_iob[0])`, and msvcrt.spec e
 documented in, and confirm the name is in the `.spec`** — a one-grep check that costs seconds
 against a link failure that costs a full build.
 
+**Sibling failure: an `extern "C"` block holding a WINAPI import — i386-only, and it looks
+fine on two arches out of three.** `WINAPI` is `__stdcall` on i386 and cdecl everywhere else,
+which is *exactly* what `extern "system"` means; `extern "C"` is therefore right on amd64/arm64
+and wrong only on i386, where the reference decorates as `_GetLastError` instead of
+`_GetLastError@0` and nothing defines it. msvcrt's file.c port hit this on 39 call sites through
+one hand-written block in `prelude.rs` — three lines below a comment naming this the project's
+#1 historical i386 crash cause, and in a crate whose `msvcrt-sys` allowlist comment already said
+these signatures are "DERIVED from the real headers and never hand-written as `extern` blocks in
+the consuming crate." **Symptom:** i386 `undefined symbol: _<Name>` with no `@N`, while the other
+two arches link clean. **Cause:** a hand-written `extern "C"` for a `WINAPI`/`NTAPI` function.
+**Fix:** put it in the bindgen island instead of a hand-written block — bindgen reads the header's
+convention and emits `extern "stdcall"` on i386, `extern "C"` elsewhere, so the arch split stops
+being a judgement call. If a hand-written block is unavoidable, it must be `extern "system"`,
+never `extern "C"`. Audit is one pass: any `extern "C"` block naming a Win32/NT function.
+Note this fails LOUDLY at link, unlike the two siblings above — an i386-only *build* break is the
+good outcome here; the same mistake on a function pointer or callback would have run.
+
 ### Argument COUNT mismatches — the one clashing-extern bucket that is a real bug
 Same family as the widths above, one position further out: the decl and the definition
 disagree on how many parameters there are. `clashing_extern_declarations` carries ~1,458
@@ -485,6 +502,33 @@ was ntoskrnl-only, so a whole driver fleet carried live bombs. The five shapes:
 `cdrom.sys` carried **100** ud2 sites, all on paths boot never hits — which is exactly why
 master was green.
 
+**Not every unexpected `ud2` is this class — `scan_ud2` reports all of them under it. Read the
+instruction BEFORE the trap first; it names the cause in one look.**
+
+| Preceding instruction | Cause | Fix |
+|---|---|---|
+| `call …panic_bounds_check` | array index the optimiser can't prove in range (see the indexing-panic entry) | pointer arithmetic at the unprovable site only |
+| `call` to an ordinary function, no panic symbol | LLVM folded a UB path to `unreachable` after inlining | below |
+| none of the above | a genuine CC/sig-mismatch fold — the five shapes above | fix the ABI disagreement |
+
+The middle row is the subtle one, and msvcrt's file.c hit **both** it and the bounds-check row in
+the same build. Shape: a callee that can return NULL, inlined into a caller that dereferences the
+result unchecked. LLVM sees NULL reach a deref, concludes UB, and emits `unreachable` — which
+lands as `call <whatever ran last>` then `ud2`, *one per calling function*, so the trap appears
+in callers that contain no such code. `msvcrt_get_file` returns NULL on `calloc` failure and
+`_fcloseall`/`_rmtmp`/`msvcrt_flush_all_buffers` all do `file->_flag` straight away — **which is
+precisely what the C does.** The tell that you are in this row rather than the CC row is that
+the ud2 count tracks the number of *callers*, and the C source has the same missing check.
+
+**Fix by restoring the C's codegen shape — `#[inline(never)]` on the callee — not by adding the
+null check.** Adding it is a behaviour change on the path the C would fault on, i.e. a
+divergence in a differential port; out-of-line, the caller gets an opaque pointer, emits the
+ordinary load, and faults exactly where C faults. Confirm the latent path is unreachable anyway
+before you accept it (in msvcrt's case every caller walks `3..MSVCRT_stream_idx`, and those slots
+are allocated at stream-creation time, so the `calloc` arm is never reached with such an index) —
+and if it *is* reachable, you have found a real bug in the C and should say so rather than
+silence the trap.
+
 ### Making a no-op opaque UNCLOAKS everything hiding behind the fold
 A C debug macro that expands to nothing, translated as a no-op **`fn`**, is trivially inlinable
 — LLVM folds it away *with every argument expression*, and with them any relocation reachable
@@ -669,6 +713,22 @@ Three faces, all seen live:
   `netapi32` `MIB_IPADDRTABLE.table`. Deterministic on the flipping tree but the gate
   classifies it `NET_FLAKE`; the differential tell is that **only** the flipping worktree fails
   net. The inconsistency is intra-file — sibling functions already used pointer arithmetic.
+- **A CORRECTLY-sized array whose guard is a runtime variable — caught at build time by
+  `scan_ud2`, not at runtime.** Same panic, different reason: nothing is over-allocated and no
+  index is ever out of range, but the *guard* the C relies on is a `static mut` the optimiser
+  cannot use, so the bounds check survives and its panic arm ends in `ud2`. msvcrt's
+  `msvcrt_get_file` guards `i >= MSVCRT_max_streams` before `MSVCRT_fstream[i/BLOCK]`;
+  `MSVCRT_max_streams` is settable at runtime (`_setmaxstdio`, which does cap it at
+  `MSVCRT_MAX_FILES`), so the invariant holds but only globally. Four exports inherited the trap
+  by inlining — `_fcloseall`, `_fflush_nolock`, `_rmtmp`, `msvcrt_free_io` — the last of which is
+  on the process-exit path of every program linking the DLL. **The tell is the disassembly:
+  `call panic_bounds_check` immediately before the `ud2`**, which distinguishes it from the
+  §9.99 CC/sig-mismatch fold that `scan_ud2` reports it under. The sibling that does NOT need
+  fixing is the diagnostic: `get_ioinfo_nolock` indexes an identically-shaped array and emits no
+  check, because it guards against the *constant* `MSVCRT_MAX_FILES`. **Provability, not safety,
+  is what differs — so fix only the sites whose guard is a variable**, with the same pointer
+  arithmetic (`addr_of_mut!(FOO).cast::<Elem>().add(i)` — the `.cast()` is what stops the stride
+  being the whole array).
 - **SILENT thread hang, message on debugcon not serial:** `IoCheckEaBufferValidity` panicked;
   the kernel panic handler writes `PANIC:<file>:<line>` to **debugcon port 0xe9**, then
   `loop {}`. QEMU's timer still preempts the spinning thread, so the box stays alive and it
@@ -1427,6 +1487,20 @@ N+1 as evidence that the fix for bug N was wrong.**
   string that looks live and aims at foreign memory. Eleven `Rtl*String` converters had it.
   Whenever C assigns through an out-pointer and *then* tests what it assigned, the store is
   part of the contract — keep the order.
+- **`if (CAS(...))` compared against the WRONG operand — an atomic publish that frees what it
+  just published.** C tests the compare-exchange result for truthiness: the call returns the
+  PREVIOUS value, so non-NULL means *another thread got there first and my block is the loser*.
+  msvcrt's `alloc_pioinfo_block` is the canonical shape —
+  `if (InterlockedCompareExchangePointer(&pioinfo[i], block, NULL)) { …; free(block); }`. The
+  translation rendered the condition as `!= block`, which reads plausibly ("did my value land?")
+  and is exactly backwards: **the winning path returns NULL**, `NULL != block` is true, and every
+  *successful* allocation frees the block it had just published into the global table. Every fd
+  block became a dangling pointer, critical sections included, and the boot wedged inside
+  `LdrLoadDll` at the first msvcrt load. **Rule: the result of a CAS is the OLD value — compare
+  it against the COMPARAND (or test it for NULL), never against the exchange operand.** The
+  inversion is invisible single-threaded, and `cargo check` cannot see it: both spellings are
+  well-typed pointer comparisons. Check every translated CAS against its C by asking which arm
+  is the *loser's*.
 - **A guard condition swapped for a different nearby variable** — logic inverted per boot mode.
 - **A NULL guard De Morgan'd the wrong way.** `MSVCRT_CHECK_PMT(start && str)` came back as
   `MSVCRT_CHECK_PMT!(start.is_null() || str.is_null())` — the *negation* of the C, so the guard
