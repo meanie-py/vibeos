@@ -188,10 +188,32 @@ with two different ones, and a shadowing fix silently redirected `tmpnam_s` to t
 errors with the wrong cast baked in), `Interlocked*` having no symbol to import at all in usermode,
 and a `LARGE_INTEGER.HighPart` reached by pointer arithmetic rather than by its union field.
 
-**Not yet graded.** file.c is the first msvcrt wave to flip without a difftest, because the
-Win32-shim substrate that would let one run on a SysV host still does not exist (task #20's
-finding). The boot is the only oracle it currently has, which is a real gap and is why the entry
-says so here rather than in a commit message.
+**Not yet graded, and the substrate is FURTHER ALONG than task #20 recorded.** msvcrt-difftest
+already compiles the genuine file.c as a full reference TU — rename wall, an asm-label escape
+list for the 19 `#undef`s that would otherwise silently delete a `#define` rename, and generated
+prototypes (it has to: file.c owns 23 symbols the other reference TUs call, four of which would
+bind to GLIBC and convert through the HOST locale — a wrong oracle that links, runs and says
+nothing). What is missing is grading ROWS, not the substrate. The boot is the only oracle file.c
+has today, which is exactly how the inverted CAS above reached a wedged OS.
+
+**Two things are owed before those rows can exist**, both discovered when the flip bounced out of
+the merge queue as `DIFFTEST_FAIL` — which was not a divergence at all but ten duplicate symbols
+at link:
+
+1. **`tests/scanf.rs` owns the plain stdio names.** It DEFINES `fgetc`/`fgetwc`/`ungetc`/
+   `ungetwc`/`_lock_file`/`_unlock_file`/`__iob_func`, and those are not link-satisfying stubs —
+   each calls `model_get`, so they *are* the harness's character source, injected through the
+   plain `extern "C" { fn fgetc(...); }` seam in the shipping `scanf.rs`. Once file.rs defines
+   them too, both land in one test binary. Interim: msvcrt-difftest takes msvcrt-crt-rust with
+   `default-features = false`, dropping the new `stdio` feature (file.rs) for the HOST build
+   only — all three arches keep it, and `libmsvcrt_crt_cargo.a` was checked with `llvm-nm` to
+   confirm `__fcloseall`/`__rmtmp`/`_msvcrt_init_io`/`__lseeki64` are still in the shipping
+   archive. Removing this interim means giving scanf's FILE rows real FILE-backed stdio.
+2. **The reference rename wall covers FUNCTIONS only.** `object_text_symbols` filters `llvm-nm`
+   to `p[1] == "T"`, so file.c's file-scope DATA — `MSVCRT___pioinfo`, `MSVCRT__iob`,
+   `MSVCRT___badioinfo` — was never renamed into `ref_*`/`msvcrt_ref_*` and collides with the
+   subject's copies the moment file.rs is linked for the host. Latent until now because nothing
+   else defined them. Widening the wall to data symbols is a prerequisite for (1), not optional.
 
 **Wave 16 (2026-07-26) — `string.c` and `wcs.c` FINISHED. 483 of 1,087 non-stub C exports
 Rust-backed, 44%** (was 433/39% after wave 14c). Both files now have zero unflipped exports;
