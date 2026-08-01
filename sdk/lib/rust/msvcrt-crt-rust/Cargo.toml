@@ -40,7 +40,28 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-default = ["stdio"]
+default = ["stdio", "invalid-parameter"]
+
+# errno.c's `_invalid_parameter` (`src/msvcrt/errno.rs`). ON for every build that produces
+# msvcrt.dll — all three arches — and OFF for exactly one consumer, the host harness.
+#
+# WHY, and it is the same shape as `stdio` below: `msvcrt-difftest/subjectimpl.c` DEFINES
+# `_invalid_parameter` under its plain name, and that is not a stub to satisfy a link — it
+# is the harness's CALL COUNTER. `subj_invalid_pmt_count()` feeds the `pmt` field of the
+# `Effects` tuple that classify.rs, printf_shells.rs and file.rs all compare, across 42
+# assertion sites; "did the invalid-parameter path fire at all?" is part of the `_s`
+# contract and is otherwise unobservable.
+#
+# It costs no coverage TODAY. At `_MSVCR_VER=0` — this DLL's setting —
+# `_set_invalid_parameter_handler` is inside the `#if _MSVCR_VER >= 80` block and is NOT
+# compiled, so the handler slot can never be written and `_invalid_parameter` is
+# unconditionally a no-op. The Rust body and the harness's body are therefore identical in
+# effect, and excluding it from the host link hides no behaviour.
+#
+# OWED: grading it needs the counter to stop owning the symbol — install it as a HANDLER
+# through the real dispatch instead, which also grades the dispatch. That is the only part
+# of errno.c's 18 exports the harness cannot currently see.
+invalid-parameter = []
 
 # file.c's stdio layer (`src/msvcrt/file.rs`, 189 exports). ON for every build that
 # produces msvcrt.dll — all three arches — and OFF for exactly one consumer, the host

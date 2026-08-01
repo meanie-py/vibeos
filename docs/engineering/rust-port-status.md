@@ -94,6 +94,59 @@ the genuine `wcs.c`. The `...` shells (`sprintf`, `_snprintf`, `_swprintf`, …)
 concentrated: `file.c` 5,897 LOC (stdio, Phase D), `concurrency.c` 3,840 (C++), `scanf.c`'s 40
 exports (engine not ported), `math.c` 13 of 144 functions flipped.
 
+**Wave 18c (2026-08-01) — `errno.c`, and the two tool bugs it surfaced. 18/18 exports,
+$0.14.** `msvcrt-crt-rust/src/msvcrt/errno.rs` — the file that owns `msvcrt_set_errno`, the
+Win32-error → errno mapping `file.c` reaches from ~60 call sites. `_MSVCR_VER` is 0 here, so
+the `>= 80` / `>= 140` blocks never compile and 18 is the whole file.
+
+**It could not have been bought correctly the day before.** Two silent tool defects sat
+directly on the path, both found by the mandated pre-payment loop and both fixed first:
+
+* **`profile_derive` audited ZERO of errno.c's 42 `case` labels** and reported a clean bill.
+  Its scan walks the unexpanded AST for `case_statement` nodes, and every arm here is
+  `ERR_CASE(x)` / `ERR_MAPS(x, y)` — a function-like macro. That is the §9.112 catch-all
+  detector missing its own case, and it is 31 TUs repo-wide, not one. 77 → 120 constants on
+  msvcrt after the fix.
+* **The scanner silently dropped `msvcrt_set_errno` and `_errno` from the paid catalog and
+  put `ERR_CASE` — a preprocessor directive — IN it.** A bare `IDENT(ARG)` where a case
+  label belongs is unparseable, and tree-sitter's recovery swallowed lines 132–451 into one
+  `ERROR` node. `unextracted` was empty, so the plan looked healthy at 16 functions.
+  `_expand_case_macros` now expands such macros before the parse; `preamble_audit` gained
+  the same pass, having drifted from the catalog exactly as its own comment warned.
+
+**And a third, one layer down: msvcrt-sys carried 13 of errno.h's 39 codes.** The list had
+grown per-wave on demand, so 9 of `msvcrt_set_errno`'s 18 targets were absent — including
+`EDEADLK` (36 in msvcrt, **35 in glibc**) and `ENOTEMPTY` (41 vs 39). Nothing would have
+failed to compile; the model would have supplied a plausible host value. The allowlist now
+carries errno.h's whole non-POSIX family.
+
+With all three fixed, sealing did what it exists for: `msvcrt_set_errno`'s 60 constants went
+to the model as `__RUSTCONV_FACT_00NN__` and came back as 42 correctly-grouped arms, with no
+`unreachable_patterns` warning on any arch.
+
+**The error-string table is GENERATED, not translated** —
+`tools/gen_msvcrt_errlist.py`. Two of the 40 strings came back sized to the text with **no
+NUL** (`str_ENOTTY`, `str_ENOSYS`), which `strerror`'s `strcpy` and `perror`'s `strlen` read
+off the end of; eleven more were padded with surplus NULs. C sizes a `char[]` from a literal
+to include the terminator and a Rust byte-array literal does not — and `--seal-facts`
+protects CONSTANTS, so a string literal is outside it. Pure data should not be a claim.
+
+**Grading status, stated precisely.** The subject's errno storage moved out of
+`subjectimpl.c`'s two file-static `__thread` variables into `msvcrt_get_thread_data()`'s
+`thread_errno`/`thread_doserrno`, where the Rust reads it — so file.c's 32 existing rows now
+exercise the REAL mapping on the subject side while the reference still uses `fileimpl.c`'s
+transcription. **That half-closes the shared-substrate blindness those rows had**: the
+mapping is differential for the first time. It is not yet CLOSED — the reference's copy is
+still hand-written, and errno.c's own 18 exports have no rows. Both need errno.c as
+reference TU #7.
+
+`_invalid_parameter` is live in msvcrt.dll on all three arches and excluded from the host
+link by the `invalid-parameter` feature, the same shape and the same reason as `stdio`:
+`subjectimpl.c` defines the plain name as the harness's CALL COUNTER, which 42 assertion
+sites read as `Effects.pmt`. At `_MSVCR_VER=0` the handler slot can never be written
+(`_set_invalid_parameter_handler` is in the uncompiled `>= 80` block), so the Rust body and
+the harness's are identical in effect and nothing is hidden.
+
 **Wave 18a (2026-08-01) — file.c GRADED. `msvcrt-difftest/tests/file.rs`, 32 rows,
 7,040 cases, 0 DIVERGE / 0 UNEXERCISED.** Wave 17 shipped file.c's 189 exports with no host
 oracle at all: the flip was gated by a link, `scan_ud2` and three boots, none of which can see a

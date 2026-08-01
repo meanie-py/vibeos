@@ -1576,14 +1576,26 @@ const STRUNCATE: i32 = 80;
 /// `((size_t)-1)` — the caller's "truncate rather than fail" sentinel.
 const TRUNCATE: usize = usize::MAX;
 
+// `_errno` and `_invalid_parameter` used to be declared `extern "C"` here, back when
+// errno.c was still C. This crate DEFINES both now (msvcrt/errno.rs), and an `extern`
+// declaration for a symbol your own crate defines is its own bug class: it links, so
+// nothing complains, while the declaration and the definition are free to disagree about
+// the signature. Import the items instead — then rustc checks them.
+//
+// `_errno` is msvcrt's per-thread errno slot; inside msvcrt.dll and inside the harness it
+// is the same Rust body, reading `msvcrt_get_thread_data()`. `_invalid_parameter`'s default
+// behaviour is "no handler installed → return", but an app CAN install one that aborts, so
+// the call itself is part of the contract and must actually happen.
+use crate::msvcrt::errno::_errno;
+
+/// `_invalid_parameter` follows its feature: this crate's body when it is on (every build
+/// that produces msvcrt.dll), and an import when it is off — the host harness DEFINES the
+/// plain name as its call counter. Either way the call itself must happen, because it is
+/// the observable the `_s` contract's `pmt` effect is measured from.
+#[cfg(feature = "invalid-parameter")]
+use crate::msvcrt::errno::_invalid_parameter;
+#[cfg(not(feature = "invalid-parameter"))]
 extern "C" {
-    /// msvcrt's own per-thread errno slot. Inside msvcrt.dll this is the real C
-    /// one; in the harness it is `subjectimpl.c`'s (deliberately separate from
-    /// the reference's, so each side's errno can be asserted independently).
-    fn _errno() -> *mut i32;
-    /// msvcrt's invalid-parameter handler. Default behaviour is "no handler
-    /// installed → return", but an app CAN install one that aborts, so the call
-    /// itself is part of the contract and must actually happen.
     fn _invalid_parameter(
         expr: *const u16,
         func: *const u16,

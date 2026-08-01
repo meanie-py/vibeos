@@ -27,7 +27,7 @@ publish = false
 # which is what lets this crate grade it. The one suite needing file.rs ABSENT, the scanf
 # engine's, lives in the sibling ../msvcrt-scanf-difftest; its Cargo.toml carries the
 # reason and the alternative that was weighed and rejected.
-msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust", default-features = false, features = ["stdio"] }
 msvcrt-sys = { path = "../msvcrt-sys" }
 # guard-page probe (tests/oob_guard.rs): mmap/mprotect/fork.
 libc = "0.2"
