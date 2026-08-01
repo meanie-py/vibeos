@@ -695,7 +695,7 @@ unsafe extern "stdcall" fn RunAsDlgProc(
             return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD(wParam) as u32 {
                 IDCANCEL => {
                     EndDialog(hwnd, (IDCANCEL) as INT_PTR);
                 }
@@ -825,7 +825,7 @@ unsafe extern "C" fn RunAsDlgProc(
             return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            match LOWORD((wParam) as u32) {
+            match LOWORD((wParam) as u32) as u32 {
                 IDCANCEL => {
                     EndDialog(hwnd, ((IDCANCEL) as isize) as i64);
                 }
@@ -1144,7 +1144,7 @@ unsafe extern "C" fn SHELL_BuildEnvW(path: PCWSTR) -> PWSTR {
     }
     total += 1;
 
-    if !new_env.Allocate(total as usize) {
+    if new_env.Allocate(total as usize) == 0 {
         FreeEnvironmentStringsW(strings);
         return core::ptr::null_mut();
     }
@@ -1300,7 +1300,7 @@ unsafe extern "C" fn SHELL_FindExecutable(
     let mut attribs: u32;
     let mut curdir: [u16; (MAX_PATH) as usize] = [0u16; (MAX_PATH) as usize];
     let mut search_paths: [PCWSTR; 3] = [core::ptr::null(); 3];
-    search_paths[0] = 0;
+    search_paths[0] = core::ptr::null();
 
     if lpResult.is_null() {
         return ERROR_INVALID_PARAMETER;
@@ -1708,7 +1708,7 @@ unsafe extern "C" fn execute_from_key(
     let mut ddeexec = [0u16; 256];
     let mut cmdlen: DWORD = core::mem::size_of_val(&cmd) as u32;
     let mut ddeexeclen: DWORD = core::mem::size_of_val(&ddeexec) as u32;
-    let mut retval: UINT_PTR = (SE_ERR_NOASSOC) as usize;
+    let mut retval: UINT_PTR = (SE_ERR_NOASSOC) as UINT_PTR;
     let mut resultLen: DWORD = 0;
 
     cmd[0] = 0;
@@ -1973,7 +1973,7 @@ unsafe extern "C" fn shellex_run_context_menu_default(
 
     r = ((*(*cm).lpVtbl).QueryContextMenu)(
         cm,
-        hmenu,
+        hmenu.cast(),
         0,
         0x20,
         0x7fff,
@@ -2047,10 +2047,10 @@ unsafe extern "C" fn shellex_load_object_and_run(
     }
 
     hr = CoCreateInstance(
-        guid as *const GUID,
+        (guid as *const GUID).cast(),
         core::ptr::null_mut(),
         CLSCTX_INPROC_SERVER,
-        core::ptr::addr_of!(IID_IShellExtInit) as *const GUID,
+        core::ptr::addr_of!(IID_IShellExtInit).cast(),
         &mut obj as *mut *mut IShellExtInit as *mut *mut c_void,
     );
     if FAILED_UNEXPECTEDLY!(hr) {
@@ -2208,7 +2208,7 @@ unsafe extern "C" fn ShellExecute_ContextMenuVerb(sei: *mut SHELLEXECUTEINFOW) -
     hr
 }
 unsafe extern "C" fn ShellExecute_FromContextMenuHandlers(sei: *mut SHELLEXECUTEINFOW) -> i32 {
-    let hkeycm: HKEY = 0;
+    let hkeycm: HKEY = core::ptr::null_mut();
     let mut szguid: [u16; 39] = [0u16; 39];
     let mut hr: i32;
     let mut guid: GUID;
@@ -2370,7 +2370,7 @@ unsafe extern "C" fn SHELL_translate_idlist(
             if attribs != INVALID_FILE_ATTRIBUTES
                 && (attribs & FILE_ATTRIBUTE_DIRECTORY) != 0
                 && HCR_GetExecuteCommandW(
-                    0,
+                    core::ptr::null_mut(),
                     CPP_COM_WSTR_EB4CE2024A43.as_ptr(),
                     sei.lpVerb,
                     buffer.as_mut_ptr(),
@@ -2483,7 +2483,7 @@ unsafe extern "C" fn SHELL_quote_and_execute(
     if *wszParameters.offset(0 as isize) != 0 {
         len += (1 + lstrlenW(wszParameters)) as u32;
     }
-    ququoted_cmd = LocalAlloc(LMEM_FIXED, len as usize * core::mem::size_of::<u16>()) as *mut u16;
+    ququoted_cmd = LocalAlloc(LMEM_FIXED, (len as usize * core::mem::size_of::<u16>()) as SIZE_T) as *mut u16;
     strcpyW(ququoted_cmd, CPP_COM_WSTR_1B9334FEECE6.as_ptr());
     strcatW(ququoted_cmd, wcmd);
     strcatW(ququoted_cmd, CPP_COM_WSTR_1B9334FEECE6.as_ptr());
@@ -2540,7 +2540,7 @@ unsafe extern "C" fn SHELL_execute_url(
         len += (lstrlenW(CPP_COM_WSTR_82DB442E7A60.as_ptr())) as u32;
     }
 
-    lpstrProtocol = LocalAlloc(0x40, (len as usize) * 2) as *mut u16;
+    lpstrProtocol = LocalAlloc(0x40, ((len as usize) * 2) as SIZE_T) as *mut u16;
     memcpy(
         lpstrProtocol as *mut core::ffi::c_void,
         lpFile as *const core::ffi::c_void,
@@ -2572,7 +2572,7 @@ unsafe extern "C" fn SHELL_execute_url(
     LocalFree(lpstrProtocol as *mut _);
     retval
 }
-unsafe extern "C" fn do_error_dialog(retval: usize, hwnd: isize, filename: *const u16) {
+unsafe extern "C" fn do_error_dialog(retval: usize, hwnd: HWND, filename: *const u16) {
     let mut msg: [u16; 2048] = [0u16; 2048];
     let mut msgArguments: [usize; 3] = [0usize; 3];
     msgArguments[0] = filename as usize;
@@ -2611,7 +2611,7 @@ unsafe extern "C" fn expand_environment(str: PCWSTR) -> PWSTR {
     if len == 0 {
         return core::ptr::null_mut();
     }
-    buf = LocalAlloc(0, (len as usize).wrapping_mul(core::mem::size_of::<u16>())) as PWSTR;
+    buf = LocalAlloc(0, ((len as usize).wrapping_mul(core::mem::size_of::<u16>())) as SIZE_T) as PWSTR;
     if buf.is_null() {
         return core::ptr::null_mut();
     }
@@ -3095,11 +3095,11 @@ pub unsafe extern "system" fn ShellExecuteA(
     sei.lpParameters = lpParameters;
     sei.lpDirectory = lpDirectory;
     sei.nShow = iShowCmd;
-    sei.lpIDList = 0;
+    sei.lpIDList = core::ptr::null_mut();
     sei.lpClass = 0;
-    sei.hkeyClass = 0;
+    sei.hkeyClass = core::ptr::null_mut();
     sei.dwHotKey = 0;
-    sei.hProcess = 0;
+    sei.hProcess = core::ptr::null_mut();
 
     let compat = SHGetAppCompatFlags(SHACF_WIN95SHLEXEC);
     if (compat & SHACF_WIN95SHLEXEC) == 0 {
@@ -3246,11 +3246,11 @@ pub unsafe extern "system" fn ShellExecuteW(
     sei.lpParameters = lpParameters;
     sei.lpDirectory = lpDirectory;
     sei.nShow = (nShowCmd as u32) as i32;
-    sei.lpIDList = 0;
+    sei.lpIDList = core::ptr::null_mut();
     sei.lpClass = 0;
-    sei.hkeyClass = 0;
+    sei.hkeyClass = core::ptr::null_mut();
     sei.dwHotKey = 0;
-    sei.hProcess = 0;
+    sei.hProcess = core::ptr::null_mut();
 
     if (SHGetAppCompatFlags(SHACF_WIN95SHLEXEC) & SHACF_WIN95SHLEXEC) == 0 {
         sei.fMask |= SEE_MASK_NOASYNC;
@@ -3367,7 +3367,7 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
         }
     } else {
         pch = psz;
-        while *pch != 0 && !iswspace((*pch) as i32) && ich + 1 < cchArg0 {
+        while *pch != 0 && iswspace((*pch) as i32) == 0 && ich + 1 < cchArg0 {
             *pszArg0.add(ich) = *pch;
             ich += 1;
             pch = pch.add(1);
