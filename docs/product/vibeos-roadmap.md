@@ -490,18 +490,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   and `NtUserSendInput`, whose size is an argument rather than a field, is hand-written.
   Audit baseline 209 → 203. Field manual: "A struct that carries its own `sizeof` is rejected
   before a single field is read".
-- **OPEN (task #82): every error code win32k sets is invisible to a 32-bit guest.**
-  `win32k-rust/src/error.rs:38` — `EngSetLastError` writes `NtCurrentTeb()->LastErrorValue`,
-  which in kernel mode is the **64-bit** TEB, while a 32-bit guest reads `TEB32` at
-  `WowTebOffset`. win32k reports failure by setting last-error and returning FALSE, so a
-  32-bit app gets the FALSE and never the reason; apps that branch on the code
-  (`ERROR_CLASS_ALREADY_EXISTS`, `ERROR_NO_MORE_ITEMS` in an enumeration loop) misbehave.
-  `EngGetLastError` has the mirror problem. The whole USER/GDI surface; ntdll is unaffected
-  (NTSTATUS returns, converted by the guest's own ntdll32). Found by E22's unfixed-media
-  control run, which printed `TrackMouseEvent(TME_QUERY) failed, err = 0x00000000` on the
-  exact path where win32k had just set `ERROR_INVALID_PARAMETER`. Fix belongs in wow64.dll's
-  win32k dispatch (copy down after the call) but needs a decision on success-path semantics,
-  so it is NOT bundled into E22.
+- **FIXED (E23, 2026-08-02, task #82): every error code win32k set was invisible to a 32-bit
+  guest.** `win32k-rust/src/error.rs` — `EngSetLastError` writes
+  `NtCurrentTeb()->LastErrorValue`, which in kernel mode is the **64-bit** TEB, while a 32-bit
+  guest reads `TEB32` at `WowTebOffset`. win32k reports failure by setting last-error and
+  returning FALSE, so a 32-bit app got the FALSE and never the reason; anything branching on
+  the code (`ERROR_CLASS_ALREADY_EXISTS`, `ERROR_NO_MORE_ITEMS` to end an enumeration loop)
+  misbehaved. The whole USER/GDI surface; ntdll was never affected (NTSTATUS returns,
+  converted by the guest's own ntdll32). wow64.dll now mirrors last-error at the layer
+  boundaries — **into the kernel copies up, into the guest copies down** — at four sites
+  (`wow64_win32k.c` syscall entry/exit, `wow64_callback.c` callback entry/return), so TEB32
+  and TEB64 behave as the single variable a native 64-bit process has. The callback pair is
+  not optional: it closes a hole the syscall pair creates, where a guest window proc's own
+  syscall would overwrite the `ERROR_TIMEOUT` that `co_IntSendMessageTimeout` sets and
+  `BroadcastSystemMessage` reads back. Found by E22's unfixed-media control run
+  (`err = 0x00000000` where win32k had just set `ERROR_INVALID_PARAMETER`); `marshal32` rung 8
+  now drives one API two ways so a *code* has to travel, not merely appear. Field manual:
+  "The kernel sets last-error in the 64-bit TEB and the 32-bit guest reads TEB32".
 - **OPEN: `NtUserGetMouseMovePointsEx` never fills its output buffer** (`win32k-rust/src/
   ntmouse.rs`, `GMMP_USE_DISPLAY_POINTS`) — it probes `lpptOut` and returns `nBufPoints`
   without writing a single point, so `GetMouseMovePointsEx` hands every caller an

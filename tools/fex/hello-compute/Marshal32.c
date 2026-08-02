@@ -41,6 +41,13 @@
  *      not describe its own struct), and a canary parked immediately after
  *      the struct SURVIVES (the kernel's larger write landed in the bounce
  *      buffer, not on the guest's stack).
+ *   8. The win32k LAST-ERROR channel: win32k's EngSetLastError writes the
+ *      *64-bit* TEB and a 32-bit guest reads TEB32, so every error code the
+ *      whole USER/GDI surface produced used to be invisible here. Drives one
+ *      call (TrackMouseEvent) three ways so a code has to travel rather than
+ *      merely appear: bad size -> ERROR_INVALID_PARAMETER, bad flag -> a
+ *      DIFFERENT code, and a SUCCEEDING call must leave the guest's own
+ *      last-error alone.
  *
  * Verdict contract: exit 0x600D on PASS; distinct 0xBADx names the failing
  * rung so serial alone triages ([WINLOGON] marshal32.exe exit = 0x...).
@@ -85,6 +92,11 @@
 #define M32_FAIL_GTI_SIZE     0xBAF2 /* ...cbSize came back host-sized */
 #define M32_FAIL_GTI_CANARY   0xBAF3 /* ...72-byte write overran the 48-byte struct */
 #define M32_FAIL_SENDINPUT    0xBAF4 /* SendInput rejected the guest's cbSize */
+#define M32_FAIL_LERR_CALL    0xBAF5 /* a call that must be REJECTED succeeded */
+#define M32_FAIL_LERR_PARAM   0xBAF6 /* bad cbSize: not ERROR_INVALID_PARAMETER */
+#define M32_FAIL_LERR_FLAGS   0xBAF7 /* bad flag bit: not ERROR_INVALID_FLAGS */
+#define M32_FAIL_LERR_QUERY   0xBAF8 /* the succeeding control call failed */
+#define M32_FAIL_LERR_CLOBBER 0xBAF9 /* ...and ate the guest's own last-error */
 #define M32_PASS              0x600D
 
 static void Report(const char *msg)
@@ -707,6 +719,103 @@ static int CheckSelfDescribingSizes(void)
     return 0;
 }
 
+/* --- check 8: the win32k LAST-ERROR channel ------------------------------- *
+ * win32k reports failure by setting last-error and returning FALSE, and it
+ * sets it with EngSetLastError -> NtCurrentTeb()->LastErrorValue, which in
+ * kernel mode is the thread's 64-BIT TEB. GetLastError() here reads TEB32.
+ * Every error code the USER/GDI surface produced therefore landed in a TEB no
+ * 32-bit process ever reads: the app got the FALSE and never the reason.
+ *
+ * TrackMouseEvent is the probe because user32.spec forwards it STRAIGHT to
+ * NtUserTrackMouseEvent with no client-side validation at all, so every code
+ * asserted below can only have come from the kernel. It is driven three ways:
+ *
+ *   (a) a cbSize the kernel rejects -> ERROR_INVALID_PARAMETER. The E22 size
+ *       rewrite is value-guarded (it rewrites only the exact 32-bit sizeof),
+ *       so a cbSize of 1 passes through untouched and really does reach the
+ *       kernel's version check.
+ *   (b) a legal cbSize with an illegal FLAG bit -> ERROR_INVALID_FLAGS, from
+ *       a different branch of the same function. Two distinct codes out of
+ *       one call is what makes this "the code travelled" rather than "an
+ *       error appeared" — a bridge that hardcoded, guessed, or merely zeroed
+ *       would satisfy one of these and not both.
+ *   (c) a call that SUCCEEDS must leave the guest's own last-error alone.
+ *       win32k does not touch last-error on the TME_QUERY success path, so a
+ *       sentinel set here must survive the syscall. This is the assertion
+ *       that rejects the naive bridge — an unconditional copy-down of the
+ *       64-bit TEB would hand the guest whatever some earlier syscall left
+ *       there, turning a fix for failures into a corruption of successes.
+ *
+ * Only (a) and (b) can see the original bug; on unfixed media both report the
+ * sentinel, which is the bug printing its own name. (c) passes before and
+ * after — it is a guard on the fix, not a detector of the bug. */
+
+#define M32_LERR_SENTINEL 0x5A5A0082u
+#define M32_TME_BOGUS_FLAG 0x00000004u /* not TME_{CANCEL,QUERY,NONCLIENT,LEAVE,HOVER} */
+
+static int CheckWin32kLastError(void)
+{
+    TRACKMOUSEEVENT tme;
+    DWORD err;
+
+    /* (a) a size the kernel's version check rejects. */
+    tme.cbSize = 1;
+    tme.dwFlags = M32_TME_QUERY;
+    tme.hwndTrack = NULL;
+    tme.dwHoverTime = 0;
+    SetLastError(M32_LERR_SENTINEL);
+    if (TrackMouseEvent(&tme))
+    {
+        Report("[marshal32] lasterr: TrackMouseEvent ACCEPTED cbSize 1 — rung is invalid\n");
+        return M32_FAIL_LERR_CALL;
+    }
+    err = GetLastError();
+    if (err != ERROR_INVALID_PARAMETER)
+    {
+        ReportHex("[marshal32] lasterr: bad cbSize should be 0x57, guest sees", err);
+        return M32_FAIL_LERR_PARAM;
+    }
+
+    /* (b) the same call, a different kernel branch, a different code. */
+    tme.cbSize = sizeof(TRACKMOUSEEVENT);
+    tme.dwFlags = M32_TME_QUERY | M32_TME_BOGUS_FLAG;
+    SetLastError(M32_LERR_SENTINEL);
+    if (TrackMouseEvent(&tme))
+    {
+        Report("[marshal32] lasterr: TrackMouseEvent ACCEPTED a bogus flag — rung is invalid\n");
+        return M32_FAIL_LERR_CALL;
+    }
+    err = GetLastError();
+    if (err != ERROR_INVALID_FLAGS)
+    {
+        ReportHex("[marshal32] lasterr: bad flag should be 0x3EC, guest sees", err);
+        return M32_FAIL_LERR_FLAGS;
+    }
+
+    /* (c) a success must not disturb what the guest itself last set. */
+    tme.cbSize = sizeof(TRACKMOUSEEVENT);
+    tme.dwFlags = M32_TME_QUERY;
+    tme.hwndTrack = NULL;
+    tme.dwHoverTime = 0;
+    SetLastError(M32_LERR_SENTINEL);
+    if (!TrackMouseEvent(&tme))
+    {
+        ReportHex("[marshal32] lasterr: the control TME_QUERY failed, err =", GetLastError());
+        return M32_FAIL_LERR_QUERY;
+    }
+    err = GetLastError();
+    if (err != M32_LERR_SENTINEL)
+    {
+        ReportHex("[marshal32] lasterr: a SUCCEEDING win32k call overwrote last-error with",
+                  err);
+        return M32_FAIL_LERR_CLOBBER;
+    }
+
+    Report("[marshal32] win32k last-error reaches the guest "
+           "(invalid-param, invalid-flags, preserved across success)\n");
+    return 0;
+}
+
 int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 {
     int rc;
@@ -734,8 +843,11 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     rc = CheckSelfDescribingSizes();
     if (rc) ExitProcess(rc);
 
+    rc = CheckWin32kLastError();
+    if (rc) ExitProcess(rc);
+
     Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells + reg-names "
-           "+ wow64-flags + cbSize all verified\n");
+           "+ wow64-flags + cbSize + last-error all verified\n");
     ExitProcess(M32_PASS);
     return 0;
 }

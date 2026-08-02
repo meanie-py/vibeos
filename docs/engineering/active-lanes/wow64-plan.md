@@ -2832,3 +2832,89 @@ canary parked immediately after the struct must **survive** — which is what
 separates "fixed the size check" from "fixed the size check and let the kernel
 write 72 bytes onto the guest's 48-byte stack slot". A naive rewrite with no
 bounce buffer passes the first and fails the third.
+
+---
+
+**Phase E23 — the kernel's error codes never reached the guest (2026-08-02,
+task #82).** Found by E22's *control* run, not by the fix: the unfixed-media
+boot printed
+
+```
+[marshal32] cbSize: TrackMouseEvent(TME_QUERY) failed, err = 0x00000000
+```
+
+on a path where win32k had just executed `EngSetLastError(ERROR_INVALID_PARAMETER)`.
+The zero is the whole bug.
+
+`EngSetLastError` writes `NtCurrentTeb()->LastErrorValue`, and in kernel mode
+that is the thread's **64-bit** TEB. A 32-bit guest's `GetLastError()` reads
+`TEB32->LastErrorValue` — a different structure at `WowTebOffset`. So every
+code the entire USER/GDI surface produced landed in a TEB no 32-bit process
+ever reads. Apps got the `FALSE` and never the reason: no
+`ERROR_CLASS_ALREADY_EXISTS`, no `ERROR_ALREADY_EXISTS`, no
+`ERROR_NO_MORE_ITEMS` to end an enumeration loop, no
+`ERROR_INVALID_WINDOW_HANDLE`. The ntdll surface was never affected — those
+syscalls return an NTSTATUS and the guest's own ntdll32 converts it into its
+own TEB32.
+
+*The fix is one rule at four sites.* **Crossing into the kernel copies the
+guest's last-error UP; crossing into the guest copies it DOWN.** That makes
+TEB32 and TEB64 behave as the single variable a native 64-bit process has,
+which is the only definition of "correct" here that does not require deciding
+case-by-case whose value wins.
+
+| site | direction | file |
+|---|---|---|
+| win32k syscall entry | TEB32 → TEB64 | `wow64_win32k.c` `Wow64DispatchWin32kService` |
+| win32k syscall exit | TEB64 → TEB32, *if changed* | ″ |
+| kernel→guest callback entry | TEB64 → TEB32 | `wow64_callback.c` `Wow64pEnterGuestCallback` |
+| callback return (longjmp landing) | TEB32 → TEB64 | ″ `Wow64pUserCallbackCommon` |
+
+*Why the copy-UP, when the bug is only about codes coming down.* win32k's own
+save-and-restore idiom — `Error = EngGetLastError(); …; EngSetLastError(Error);`
+in `window.rs` and `menu.rs` — exists to leave the **caller's** last-error
+untouched. Without the copy-up it faithfully preserves a stale value from some
+earlier syscall instead of the caller's, so the idiom does the opposite of what
+its author intended for every WoW64 caller.
+
+*Why the callback pair exists at all — it is a hole the syscall pair CREATES.*
+Once syscall entry copies up, a guest window proc that makes any win32k
+syscall overwrites `TEB64->LastErrorValue` in the middle of the outer call.
+That is not hypothetical: `co_IntSendMessageTimeout` sets `ERROR_TIMEOUT`
+(`message.rs:2225`) and four `BroadcastSystemMessage` sites read it back with
+`EngGetLastError()` *after* the send — and `co_` is precisely the prefix for
+functions that leave the critical section and call back into user mode. Mirror
+at the callback boundary too and the value the kernel reads back is always the
+one the kernel last wrote, exactly as on a native host.
+
+*Why "if changed" on the way out but unconditional on the way in.* With both
+boundaries in place an unconditional copy-down is provably a no-op when win32k
+did not write — the value going down is the value that came up. The change
+test is kept anyway as cheap insurance against a boundary not enumerated here
+(guest exception dispatch re-enters guest code without passing through the
+callback path), where an unconditional copy-down would clobber a value the
+guest set and the kernel never saw. One compare.
+
+*Rung design: two different codes out of ONE api.* `marshal32`'s check drives
+`TrackMouseEvent` three ways — a rejected `cbSize` must answer
+`ERROR_INVALID_PARAMETER`, a rejected flag bit must answer
+`ERROR_INVALID_FLAGS`, and a call that SUCCEEDS must leave the guest's own
+sentinel alone. One expected code proves much less than it looks: a bridge that
+hardcoded, guessed, or merely zeroed would satisfy it. Two codes out of two
+branches of the same kernel function is what makes the claim "the code
+travelled". `TrackMouseEvent` is the probe because `user32.spec` forwards it
+STRAIGHT to `NtUserTrackMouseEvent` with no client-side validation, so no
+asserted code can have come from user mode; and because E22's size rewrite is
+value-guarded, a `cbSize` of 1 passes through untouched and genuinely reaches
+the kernel's version check. The third assertion is the one that rejects the
+naive bridge: an unconditional copy-down with no copy-up hands the guest
+whatever an earlier syscall left in the 64-bit TEB, turning a fix for failing
+calls into a corruption of succeeding ones.
+
+*The meta-lesson, and it is the reason this was filed separately instead of
+being folded into E22.* E22's `SendInput` check originally excused a failure
+unless `GetLastError()` was `ERROR_INVALID_PARAMETER` — a discriminator that
+**could never fire**, because the code it tested for could not reach the guest.
+An assertion that cannot fail is worse than no assertion. Any guest-side test
+that branches on a code the kernel sets is dead on arrival until this bridge
+exists; prove the code arrives before trusting the branch.
