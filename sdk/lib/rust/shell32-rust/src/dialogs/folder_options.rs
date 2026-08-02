@@ -262,9 +262,14 @@ unsafe extern "system" fn ShowFolderOptionsDialogThreadProc(param: *mut c_void) 
 /// "fixing" that by passing TRUE would have sent both rundll32 entry points down the async
 /// path, which the comment in the C says is exactly wrong.
 ///
-/// Not `#[no_mangle]`: the C has no `EXTERN_C`, so the symbol is C++-mangled and nothing
-/// outside this translation unit calls it.
-unsafe fn ShowFolderOptionsDialog(Page: UINT, Async: BOOL) {
+/// IT DOES HAVE AN OUTSIDE CALLER, and finding it was a link failure: `CDesktopBrowser.cpp:527`
+/// declares it BARE AT FILE SCOPE — not in any header — and calls it from `OnShowOptionsDlg`.
+/// A header-only search does not see that, and neither does a `grep | head`. The C++-mangled,
+/// stdcall-decorated name it wanted (`__Z23ShowFolderOptionsDialogji@8`) is not something Rust
+/// can emit, so that declaration is `EXTERN_C` now and this is a plain `extern "system"` export.
+/// Same shape as `Shell_GetCachedImageIndexW` in the iconcache flip.
+#[no_mangle]
+pub unsafe extern "system" fn ShowFolderOptionsDialog(Page: UINT, Async: BOOL) {
     let hWnd: HWND = FindWindowW(GLOBAL_FOLDER_OPTIONS_CLASS_NAME.as_ptr(), core::ptr::null());
     if !hWnd.is_null() {
         let hPop: HWND = GetLastActivePopup(hWnd);
