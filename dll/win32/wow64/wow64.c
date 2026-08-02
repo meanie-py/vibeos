@@ -490,7 +490,7 @@ static VOID (WINAPI *Wow64pBTCpuThreadInit)(VOID);
  * ProcessEnvironmentBlock is at +0x60 and PEB64.ProcessHeap at +0x30 on both
  * 64-bit targets; this DLL deliberately imports ntdll only, so there is no
  * RtlGetProcessHeap to call. */
-static PVOID Wow64pProcessHeap(VOID)
+PVOID Wow64pProcessHeap(VOID)
 {
     PBYTE Peb = *(PBYTE *)((PBYTE)NtCurrentTeb() + 0x60);
     return Peb ? *(PVOID *)(Peb + 0x30) : NULL;
