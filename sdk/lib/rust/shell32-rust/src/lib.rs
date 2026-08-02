@@ -51,6 +51,9 @@ pub mod atl;
 // TU carries their bodies, yet several TUs call them.
 /// `ui/layout.h`'s resizable-dialog inlines — see that module's header for why they are here.
 pub mod layout;
+/// `shfldr.h`'s header-inline `CRegKeyHandleArray` — one definition, because two
+/// independently re-derived copies both lost its destructor. See the module header.
+pub mod shfldr;
 pub mod shellutils;
 
 // Wave 4: canonical shared shell/COM types (PIDL on-disk format, STRRET, GUID family, COM
@@ -150,6 +153,11 @@ pub mod dialogs_drive;
 // implementation would split the already-open lookup rather than replace it.
 #[path = "dialogs/folder_options.rs"]
 pub mod dialogs_folder_options;
+// The filesystem property-sheet entry points. `ShellPropSheetDialog` is a C++ `struct` used as
+// a namespace — no vtable, no activation — so its four statics are hand-written free functions
+// here; see the module header.
+#[path = "dialogs/item_prop.rs"]
+pub mod dialogs_item_prop;
 
 // Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
 pub mod shell32;

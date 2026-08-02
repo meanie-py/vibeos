@@ -3011,36 +3011,10 @@ pub struct SFVM_CUSTOMVIEWINFO_DATA {
     pub clrTextBack: COLORREF,
 }
 
-// ── CRegKeyHandleArray (shfldr.h:191) — { HKEY hKeys[16]; UINT cKeys; } ──
-#[repr(C)]
-pub struct CRegKeyHandleArray {
-    pub hKeys: [HKEY; 16],
-    pub cKeys: UINT,
-}
-impl CRegKeyHandleArray {
-    #[inline] fn len(&self) -> usize { self.cKeys as usize }
-    #[inline] fn as_ptr(&self) -> *const HKEY { self.hKeys.as_ptr() }
-}
-impl Default for CRegKeyHandleArray {
-    #[inline] fn default() -> Self { unsafe { core::mem::zeroed() } }
-}
-extern "C" {
-    /// `shfldr.h:184` `EXTERN_C void CloseRegKeyArray(HKEY*, UINT)` — implemented in
-    /// `shell32/shlfolder.rs`. DECLARED, not imported: that module is written against the
-    /// island's `HKEY` while this one uses `crate::types`, and two aliases of the same width
-    /// are still two different Rust types.
-    fn CloseRegKeyArray(array: *mut HKEY, cKeys: UINT);
-}
-/// The C++ struct's DESTRUCTOR (`shfldr.h:198`), which the translation dropped along with the
-/// rest of the class. `AddClassKeyToArray` OPENS each key, so without this every
-/// `IContextMenu` creation leaked up to 16 HKEYs — once per right-click. Drop order matches
-/// C++: `keys` is declared before the `DEFCONTEXTMENU` that borrows it, so it is released
-/// after `SHCreateDefaultContextMenu` returns, exactly as the C++ scope exit did.
-impl Drop for CRegKeyHandleArray {
-    fn drop(&mut self) {
-        unsafe { CloseRegKeyArray(self.hKeys.as_mut_ptr(), self.cKeys) }
-    }
-}
+// ── CRegKeyHandleArray (shfldr.h:191) — one definition, in crate::shfldr ──
+// Was re-derived here; `desktop_folder.rs` re-derived it too, and both copies had lost the
+// destructor. See `crate::shfldr` for why a Drop gets one home and an extern decl does not.
+use crate::shfldr::CRegKeyHandleArray;
 
 // ── VARIANT accessors (oleauto.h V_* macros) ──
 #[inline] unsafe fn V_VT(pv: *mut VARIANT) -> *mut VARTYPE { core::ptr::addr_of_mut!((*pv).vt) }
@@ -3165,8 +3139,6 @@ extern "system" {
     fn SH32_GetDetailsOfPKeyAsVariant(psf: *mut IShellFolder2, pidl: PCUITEMID_CHILD, pscid: *const SHCOLUMNID, pVar: *mut VARIANT, UseFsColMap: BOOL) -> HRESULT;
     #[link_name = "SHELL_CreateVariantBuffer_RustBridge"]
     fn SHELL_CreateVariantBuffer(pVar: *mut VARIANT, cb: UINT) -> HRESULT;
-    #[link_name = "SHELL_ShowItemIDListProperties_RustBridge"]
-    fn SHELL_ShowItemIDListProperties(pidl: LPCITEMIDLIST) -> HRESULT;
     #[link_name = "SHELL_SingleFileOperation_RustBridge"]
     fn SHELL_SingleFileOperation(hWnd: HWND, Op: UINT, Src: LPCWSTR, Dest: LPCWSTR, Flags: UINT, ppNewName: *mut PWSTR) -> HRESULT;
     #[link_name = "SHILAppend_RustBridge"]
@@ -3185,6 +3157,10 @@ extern "system" {
 
 // ── shell32-internal C helpers (cdecl) ──
 extern "C" {
+    /// `precomp.h:184` `EXTERN_C HRESULT SHELL_ShowItemIDListProperties(LPCITEMIDLIST)` —
+    /// implemented in `dialogs/item_prop.rs`. Called directly: the `_RustBridge` shim it used
+    /// to go through existed only to escape C++ mangling, and item_prop.cpp is no longer built.
+    fn SHELL_ShowItemIDListProperties(pidl: LPCITEMIDLIST) -> HRESULT;
     fn _ILIsFolder(pidl: LPCITEMIDLIST) -> BOOL;
     fn _ILIsValue(pidl: LPCITEMIDLIST) -> BOOL;
     fn _ILIsDrive(pidl: LPCITEMIDLIST) -> BOOL;

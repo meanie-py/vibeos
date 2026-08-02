@@ -650,8 +650,8 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   `.cpp` files (60,258 physical lines), including retained companions/bridges, private dynamic
   objects, shared shellmenu/shelldesktop objects, procedural helpers, and the remaining
   monoliths — `CDefView.cpp`, `dialogs.cpp`, `filetypes.cpp`, `utils.cpp`, `shell32.cpp`.
-  (`shlexec.cpp` and `shlfileop.cpp` left that list on 2026-08-01 and `dialogs/drive.cpp` on
-  2026-08-02; the tail is now 45 `.cpp` / 40,798 lines, tracked by
+  (`shlexec.cpp` and `shlfileop.cpp` left that list on 2026-08-01, and `dialogs/drive.cpp`,
+  `dialogs/folder_options.cpp` and `dialogs/item_prop.cpp` on 2026-08-02; the tail is tracked by
   `rustconv shell32-tail-inventory`.) The exhaustive zero-C++ plan and
   ledger are in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
   **Free-function TUs — the island-first recipe is proven; 2 wired, 7 still parked** (2026-07-26).
@@ -737,6 +737,21 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   `SHCreateThread` thread proc lost its `CALLBACK`/stdcall. Regenerating the island also
   normalized 236 fn-pointer slots to `extern "system"`, which let four `#[cfg]`-duplicated
   stdcall/C callback twins in `iconcache`/`shlexec`/`shlfileop` collapse to one body each.
+  `dialogs/item_prop.cpp` is flipped (2026-08-02) — the filesystem property-sheet entry points,
+  and the first **split-path** TU: nine free functions bought through `--free-functions`, and
+  four hand-written. Its `ShellPropSheetDialog` is a C++ `struct` used as a NAMESPACE (only
+  statics, no vtable, no `BEGIN_COM_MAP`, no `OBJECT_ENTRY`), so `--cpp-com` refuses it on the
+  deterministic preflight while `--free-functions` skips its methods as "class methods" — a
+  shape neither mode owns, and one that `--free-functions` drops SILENTLY. `--local-raii` does
+  reach the free-function path, which is what kept `CDataObjectHIDA`'s drop semantics out of the
+  model's hands. The flip also retired the last `SHELL_ShowItemIDListProperties_RustBridge`
+  trampoline: that shim existed only to escape C++ mangling, so `EXTERN_C` on the four
+  `precomp.h` declarations replaced it with a direct call.
+  Alongside it, `CRegKeyHandleArray` moved to a single definition in `shell32-rust/src/shfldr.rs`.
+  It had been re-derived independently in `cfs_folder.rs` and `desktop_folder.rs` and BOTH copies
+  had lost the destructor (the HKEY leak fixed on 2026-08-02); `item_prop` would have been the
+  third. The rule that fell out: a re-declared `extern` fn is cheap to repeat and this crate does
+  it 530 times, but a `Drop` gets exactly one home — a missing one is a leak no build can see.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

@@ -1803,6 +1803,35 @@ The two fixes compose, and the order matters: expanding is what lets `--seal-fac
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
 cannot be invented — which is the whole defence, given `EDEADLK` is 36 in msvcrt and 35 in glibc.
 
+### A C++ `struct` used as a NAMESPACE falls between both C++ modes, and one skips it silently
+**Symptom.** `rustconv translate --free-functions <tu>.cpp` reports its plan cheerfully and buys
+every free function, having printed one line you will scroll past:
+
+    [free-functions] skipping 4 class method(s) — these need --cpp-com --class: X_A, X_B, X_C, X_D
+
+The assembled module then calls `X().B(...)` — C++ syntax, no such Rust — so it does not compile,
+which is the lucky outcome. The unlucky one is a TU where the skipped methods happen not to be
+referenced from the free functions.
+
+**Cause.** shell32's `item_prop.cpp` declares `struct ShellPropSheetDialog` whose members are all
+`static`: it is a NAMESPACE, not a class. No vtable, no state, no `BEGIN_COM_MAP`, no
+`OBJECT_ENTRY`. `--cpp-com` refuses it correctly on the deterministic preflight —
+
+    no BEGIN_COM_MAP entries found / aggregation policy is unsupported / no OBJECT_ENTRY activation
+
+— and `--free-functions` classifies the same members as "class methods" and drops them. Neither
+mode owns the shape, and only one of the two says so loudly. The word `struct` in the source is
+what misleads: it does **not** imply the COM path.
+
+**Fix.** Buy the free functions, hand-write the statics as free functions, and name them the way
+rustconv's skip line already named them (`Struct_Method`) so the two halves line up. Do the same
+audit before scoping any C++ TU: `grep -c 'BEGIN_COM_MAP'` is the real discriminator, not `struct`.
+
+**`--local-raii` DOES reach `--free-functions`**, despite its `--help` saying "shell32 COM mode".
+Confirm with `--dry-run --prompt --fn <name>`: the lowering appears in the prompt followed by a
+mandatory usage mapping. That is what keeps a file-local RAII guard's drop semantics out of the
+model's hands — worth checking, because the guards are exactly what a C++ translation loses.
+
 ### Bodies that are present but hollow
 - **Stubbed/degraded bodies** — constant-return or pass-through. **A variadic function degraded
   to a non-formatting stub.** **`RTL_CONSTANT_STRING` global UNICODE_STRINGs stubbed to
@@ -2065,6 +2094,26 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   for real (`struct` + `impl Drop`) and construct it — `COleInit::new()` in
   `shell32-rust/src/shellutils.rs` is the worked example, including the `prelude` re-export that
   shadows the island's `u8` alias so the name still resolves to the real thing.
+
+  **A ported guard gets exactly ONE definition — unlike an `extern` declaration.** Re-declaring
+  an `extern` fn per module is normal FFI practice and shell32-rust does it 530 times over; a
+  re-derived RAII guard is not the same thing, because the failure mode is a leak no compiler,
+  linter or smoke test can see. Measured: `CRegKeyHandleArray` (shfldr.h) was re-derived
+  independently in `cfs_folder.rs` and `desktop_folder.rs` and **both copies had lost the
+  destructor** — the same defect twice, leaking up to 16 HKEYs per right-click, and the tell was
+  that two translations of two different TUs made the identical omission. A third TU wanting it
+  is the moment to consolidate, not to copy again. It now lives in `shell32-rust/src/shfldr.rs`.
+  Watch the TYPE WORLD when you consolidate: a crate with both a hand-written substrate and a
+  bindgen island has two `HKEY`s of the same width and different identity, so the shared module
+  must name which one it is in, and a consumer in the other world needs an explicit `use` (which
+  shadows a glob) rather than a silent coercion.
+
+  **Two different conversion operators can fire on ONE object in ONE call.** C++'s
+  `InitFunc(InitString, pDO, keys, keys)` passes `HKEY*` then `UINT*` from the same
+  `CRegKeyHandleArray`, and `SHOpenPropSheetW(.., keys, keys, ..)` passes `HKEY*` then `UINT`.
+  Translated, the repeated argument reads as a copy-paste and invites writing one expression
+  twice; it must become `keys.hKeys.as_mut_ptr()` and `&mut keys.cKeys`. Grep any flipped C++
+  for a call passing the same identifier twice adjacently and check the C++ signature.
 
 ### Element count vs byte count — the recurring arithmetic bug
 - **`write_bytes(ptr, v, size_of::<T>())`**: the count is in **ELEMENTS**, so a typed pointer
