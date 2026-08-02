@@ -147,6 +147,38 @@ sites read as `Effects.pmt`. At `_MSVCR_VER=0` the handler slot can never be wri
 (`_set_invalid_parameter_handler` is in the uncompiled `>= 80` block), so the Rust body and
 the harness's are identical in effect and nothing is hidden.
 
+**Wave 18c part 2 (2026-08-02) — the temp-name family, and THREE more shipping bugs. 93
+rows, 19,960 cases, 0 DIVERGE / 0 UNEXERCISED.** file.c's graded spec exports **104 → 116 of
+146**. The twelve exports split on whether their names are comparable at all, and the split
+is the design: `tmpnam` and `_mktemp` build from `GetCurrentProcessId()` plus a per-side
+static counter and PROBE for a free name without creating one, so the two sides must produce
+identical strings and the rows compare them byte for byte; `tmpfile`, `tmpfile_s`, `_tempnam`
+and `_wtempnam` reach `GetTempFileNameW`, whose shim is `mkstemp` — random suffix, reserved
+by creation — so they cannot receive the same name even in principle, and those rows compare
+the class of answer, the errno, a write/read round trip, and (for `_tempnam`) that the `TMP`
+override beats the `dir` argument.
+
+**Three bugs, none of them a compile error, two of them sitting beside a CORRECT translation
+of the same C statement:**
+* **Five `L"..."` literals were byte strings cast to `*const wchar_t`** — `b"TMP\0"` is four
+  bytes, which as `wchar_t` reads `0x4D54, 0x0050, <rodata>`. `_wtempnam`'s TMP override
+  never fired (so `tmpfile()` failed on every call, using the literal `","`), and
+  `msvcrt_get_flags`' four `ccs=` comparison strings were all garbled — closing the entire
+  `_wfopen(path, L"rt,ccs=UTF-8")` Unicode-mode door with EINVAL. Now a `wlit!` that encodes
+  at compile time and COMPUTES the length. kernel32-rust already carried comments warning
+  about this shape.
+* **`msvcrt_int_to_base32_w` never shifted** — `let num = num_local;` is a fresh binding
+  scoped to the loop body, so every base-32 digit came from the same value (`\s1lu6v.`
+  became `\svvvvv.`). The narrow twin, thirty lines up, gets the same C right.
+* **`tmpnam_helper`/`wtmpnam_helper` compared a `size_t` as a truncated `i32`** — the C
+  promotes to unsigned; `tmpnam` passes `(size_t)-1`, whose low 32 bits are −3, so the guard
+  fired always and `tmpnam` returned NULL/ERANGE on every call. The second bounds check in
+  the same function was already correct.
+
+Also closed a shim-fidelity gap the first bug exposed: `WideCharToMultiByte` dereferenced a
+NULL source where real kernel32 returns 0 with ERROR_INVALID_PARAMETER, turning msvcrt's
+graceful failure into a SIGSEGV that reads like a translation crash and is not one.
+
 **Wave 18c part 1 (2026-08-02) — timestamps and the process-global stream ops. 89 rows,
 19,080 cases, 0 DIVERGE / 0 UNEXERCISED.** file.c's graded spec exports **93 → 104 of 146**.
 The utime family is six exports over one body (`_futime64` does the work; the path and `*32`

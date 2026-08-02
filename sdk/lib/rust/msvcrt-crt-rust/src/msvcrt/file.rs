@@ -47,6 +47,40 @@ use crate::printf::{
 use crate::string_l::_strdup;
 use crate::wcs_rest::wctomb;
 use crate::{_wcsnicmp, memcmp, towlower, towupper, wcschr, wcslen, wcsncmp};
+
+/// A `L"..."` wide-string constant, encoded at compile time.
+///
+/// The five call sites below used to spell these as `b"ccs\0".as_ptr() as *const wchar_t`
+/// — a byte string reinterpreted as UTF-16. `b"TMP\0"` is the four BYTES `54 4D 50 00`,
+/// which read as `wchar_t` is `0x4D54, 0x0050, <whatever follows in rodata>`: not "TMP",
+/// not NUL-terminated, and never equal to anything it was compared against. It compiles
+/// because the cast is legal and rustc has no idea what the bytes were supposed to mean.
+///
+/// The length is COMPUTED, never written down, which is the other half of the same class:
+/// a hand-counted `[u16; N]` that is one short silently truncates the string (the
+/// `SERVICES_KEY` incident, `tools/scan_wide_literals.py`).
+macro_rules! wlit {
+    ($name:ident, $b:literal) => {
+        static $name: [wchar_t; { $b.len() + 1 }] = {
+            let s: &[u8] = $b;
+            let mut a = [0u16; { $b.len() + 1 }];
+            let mut i = 0;
+            while i < s.len() {
+                a[i] = s[i] as u16;
+                i += 1;
+            }
+            a
+        };
+    };
+}
+
+// The `ccs=` encoding suffix `msvcrt_get_flags` parses out of a WIDE mode string, and the
+// environment variable `_wtempnam` consults. Every one of these was garbled.
+wlit!(W_CCS, b"ccs");
+wlit!(W_UTF8, b"utf-8");
+wlit!(W_UTF16LE, b"utf-16le");
+wlit!(W_UNICODE, b"unicode");
+wlit!(W_TMP, b"TMP");
 use super::mbcs::{mbstowcs, mbtowc};
 
 // ---------------------------------------------------------------------------
@@ -1037,7 +1071,7 @@ unsafe extern "C" fn msvcrt_int_to_base32(mut num: i32, str: PCHAR) -> i32 {
 
     digits
 }
-unsafe extern "C" fn msvcrt_int_to_base32_w(num: i32, str: *mut wchar_t) -> i32 {
+unsafe extern "C" fn msvcrt_int_to_base32_w(mut num: i32, str: *mut wchar_t) -> i32 {
     let mut p: *mut wchar_t;
     let mut n = num;
     let mut digits = 0;
@@ -1054,10 +1088,15 @@ unsafe extern "C" fn msvcrt_int_to_base32_w(num: i32, str: *mut wchar_t) -> i32 
         if *p > '9' as wchar_t {
             *p = (*p as i32 + ('a' as i32 - '0' as i32 - 10)) as wchar_t;
         }
-        let num_shifted = num >> 5;
-        let num_local = num_shifted;
+        // `num >>= 5`, and it has to MUTATE. This was `let num = num_local;`, which is a
+        // fresh binding scoped to the loop body — it shadows for one iteration and dies,
+        // leaving the outer `num` unshifted, so every base-32 digit came out of the same
+        // value. `\s1lu6v.` became `\svvvvv.`, and the per-process uniqueness the encoder
+        // exists for went with it. The narrow twin thirty lines up got the same C
+        // statement right (via addr_of_mut!), which is the tell: one file, one statement,
+        // two translations, one of them silent.
+        num >>= 5;
         p = p.offset(-1);
-        let num = num_local;
     }
 
     digits
@@ -1800,7 +1839,7 @@ unsafe extern "C" fn msvcrt_get_flags(mode: *const wchar_t, open_flags: *mut i32
         while *mode == WC_SPACE {
             mode = mode.offset(1);
         }
-        if MSVCRT_CHECK_PMT!(wcsncmp(b"ccs\0".as_ptr() as *const wchar_t, mode, 3) == 0) == 0 {
+        if MSVCRT_CHECK_PMT!(wcsncmp(W_CCS.as_ptr(), mode, 3) == 0) == 0 {
             return -1;
         }
         mode = mode.offset(3);
@@ -1815,13 +1854,13 @@ unsafe extern "C" fn msvcrt_get_flags(mode: *const wchar_t, open_flags: *mut i32
             mode = mode.offset(1);
         }
 
-        if _wcsnicmp(b"utf-8\0".as_ptr() as *const wchar_t, mode, 5) == 0 {
+        if _wcsnicmp(W_UTF8.as_ptr(), mode, 5) == 0 {
             *open_flags |= (_O_U8TEXT) as i32;
             mode = mode.offset(5);
-        } else if _wcsnicmp(b"utf-16le\0".as_ptr() as *const wchar_t, mode, 8) == 0 {
+        } else if _wcsnicmp(W_UTF16LE.as_ptr(), mode, 8) == 0 {
             *open_flags |= (_O_U16TEXT) as i32;
             mode = mode.offset(8);
-        } else if _wcsnicmp(b"unicode\0".as_ptr() as *const wchar_t, mode, 7) == 0 {
+        } else if _wcsnicmp(W_UNICODE.as_ptr(), mode, 7) == 0 {
             *open_flags |= (_O_WTEXT) as i32;
             mode = mode.offset(7);
         } else {
@@ -3385,7 +3424,7 @@ pub unsafe extern "C" fn _tempnam(dir: *const i8, prefix: *const i8) -> *mut i8 
 #[no_mangle]
 pub unsafe extern "C" fn _wtempnam(dir: *const wchar_t, prefix: *const wchar_t) -> *mut wchar_t {
     let mut tmpbuf: [wchar_t; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
-    let tmp_dir = _wgetenv(b"TMP\0".as_ptr() as *const wchar_t);
+    let tmp_dir = _wgetenv(W_TMP.as_ptr());
     let dir = if !tmp_dir.is_null() { tmp_dir } else { dir };
 
     if GetTempFileNameW(dir, prefix, 0, tmpbuf.as_mut_ptr()) != 0 {
@@ -4864,7 +4903,12 @@ unsafe extern "C" fn tmpnam_helper(s: PCHAR, size: usize, unique_counter: *mut L
     p = p.offset(1);
     let mut size = size - 2;
     digits = msvcrt_int_to_base32(GetCurrentProcessId() as i32, tmpstr.as_mut_ptr());
-    if digits + 1 > size as i32 {
+    // `(digits + 1) as usize > size`, NOT `digits + 1 > size as i32`. The C compares an
+    // `int` against a `size_t`, which the usual arithmetic conversions make an UNSIGNED
+    // comparison; casting the other way truncates AND re-signs it. `tmpnam` passes
+    // `(size_t)-1`, whose low 32 bits are -3 as an i32 — so this guard fired on every
+    // call and `tmpnam` returned NULL with ERANGE, always, in the shipping DLL.
+    if (digits + 1) as usize > size {
         *s = 0;
         *_errno() = (ERANGE) as i32;
         return (ERANGE) as i32;
@@ -4887,7 +4931,8 @@ unsafe extern "C" fn tmpnam_helper(s: PCHAR, size: usize, unique_counter: *mut L
         }
 
         digits = msvcrt_int_to_base32(digits, tmpstr.as_mut_ptr());
-        if digits + 1 > size as i32 {
+        // Same unsigned-comparison rule as tmpnam_helper above; `_wtmpnam` passes (size_t)-1.
+    if (digits + 1) as usize > size {
             *s = 0;
             *_errno() = (ERANGE) as i32;
             return (ERANGE) as i32;

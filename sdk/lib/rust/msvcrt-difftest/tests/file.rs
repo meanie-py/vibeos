@@ -387,6 +387,33 @@ extern "C" {
     fn ref__fcloseall() -> c_int;
     fn ref__rmtmp() -> c_int;
     fn ref__setmaxstdio(newmax: c_int) -> c_int;
+
+    // ── the temp-name family ──────────────────────────────────────────────────────────
+    fn tmpnam(s: *mut u8) -> *mut u8;
+    fn tmpnam_s(s: *mut u8, size: usize) -> c_int;
+    fn _wtmpnam(s: *mut u16) -> *mut u16;
+    fn _wtmpnam_s(s: *mut u16, size: usize) -> c_int;
+    fn _mktemp(pattern: *mut u8) -> *mut u8;
+    fn _mktemp_s(pattern: *mut u8, size: usize) -> c_int;
+    fn _wmktemp(pattern: *mut u16) -> *mut u16;
+    fn _wmktemp_s(pattern: *mut u16, size: usize) -> c_int;
+    fn tmpfile() -> FILEP;
+    fn tmpfile_s(f: *mut FILEP) -> c_int;
+    fn _tempnam(dir: *const u8, prefix: *const u8) -> *mut u8;
+    fn _wtempnam(dir: *const u16, prefix: *const u16) -> *mut u16;
+
+    fn ref_tmpnam(s: *mut u8) -> *mut u8;
+    fn ref_tmpnam_s(s: *mut u8, size: usize) -> c_int;
+    fn ref__wtmpnam(s: *mut u16) -> *mut u16;
+    fn ref__wtmpnam_s(s: *mut u16, size: usize) -> c_int;
+    fn ref__mktemp(pattern: *mut u8) -> *mut u8;
+    fn ref__mktemp_s(pattern: *mut u8, size: usize) -> c_int;
+    fn ref__wmktemp(pattern: *mut u16) -> *mut u16;
+    fn ref__wmktemp_s(pattern: *mut u16, size: usize) -> c_int;
+    fn ref_tmpfile() -> FILEP;
+    fn ref_tmpfile_s(f: *mut FILEP) -> c_int;
+    fn ref__tempnam(dir: *const u8, prefix: *const u8) -> *mut u8;
+    fn ref__wtempnam(dir: *const u16, prefix: *const u16) -> *mut u16;
     fn ref__getmaxstdio() -> c_int;
 
     /// The `dwShareMode` the last `CreateFileW` was asked for (fileimpl.c).
@@ -1005,6 +1032,21 @@ impl Buf {
 
 fn main() {
     unsafe {
+        // Windows always has TMP set; this host does not, and the difference is not
+        // cosmetic. `tmpfile()` calls `_tempnam(",", "t")`, which falls back to the literal
+        // directory "," when TMP is absent — `GetTempFileNameW` then fails, `_wtempnam`
+        // returns NULL, and `_tempnam` hands that straight to `astrdupw_utf8`. msvcrt's own
+        // C does the same, with no guard between them:
+        //
+        //     retW = _wtempnam(dirW, prefixW);
+        //     ret = astrdupw_utf8(retW);            /* <- retW may be NULL */
+        //
+        // So an unset TMP crashes BOTH implementations identically. That is an upstream
+        // hazard, not a translation defect, and the row that would "expose" it is really
+        // just modelling an environment Windows never presents. Setting it here is the
+        // harness supplying the environment, in the same spirit as ref_set_console_fd.
+        std::env::set_var("TMP", std::env::temp_dir());
+
         ref_msvcrt_init_io();
         msvcrt_init_io();
         assert_shims_live();
@@ -1135,6 +1177,7 @@ unsafe fn run() {
     // ── wave 18c ──────────────────────────────────────────────────────────────────────
     utime_rows();
     global_stream_rows();
+    tempname_rows();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -4551,6 +4594,335 @@ unsafe fn global_stream_rows() {
             Obs::with(n, ni),
             format!("newmax={newmax} before={before_s}/{before_r}"),
             tags,
+        )
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18c part 2 — the temp-name family
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// Twelve exports that split cleanly in two, and the split is the whole design of this
+// section rather than a caveat bolted onto it.
+//
+// EIGHT ARE FULLY DETERMINISTIC and are compared BYTE FOR BYTE. `tmpnam` and `_mktemp`
+// build their candidate from `GetCurrentProcessId()` and a counter that is a file-static in
+// each side's own TU, then PROBE for a free name with `GetFileAttributes*` without ever
+// creating one. Two implementations starting from the same counter, over the same
+// filesystem, that take nothing from it, must produce the identical string — so anything
+// less than an exact comparison here would be throwing away the strongest evidence the
+// suite can get about a name-building function.
+//
+// FOUR CANNOT BE, and it is worth being precise about why, because "compare less" is
+// exactly the move that turns a row into decoration. `tmpfile`, `tmpfile_s`, `_tempnam` and
+// `_wtempnam` all reach `GetTempFileNameW`, whose shim is `mkstemp` — a RANDOM suffix, and
+// one that reserves the name by creating it. The two sides therefore get different names by
+// construction, and no amount of care in the row changes that. What those rows compare is
+// the class of answer (produced a name / failed), the errno, that the name lands under the
+// directory that was asked for, and — for `tmpfile` — that the stream is actually usable by
+// writing and reading it back. They do NOT claim the names match, and they say so.
+
+/// A `_mktemp` pattern lives in the temp directory so the row is not writing into the
+/// source tree, and ends in the six `X`s the contract requires.
+fn mktemp_pattern(tag: &str) -> Vec<u8> {
+    let p = std::env::temp_dir().join(format!("msvcrt-mkt-{}-{}-XXXXXX", std::process::id(), tag));
+    let mut v = p.to_str().unwrap().as_bytes().to_vec();
+    v.push(0);
+    v
+}
+
+/// The NUL-terminated C string at `p`, or None. Used to compare a returned name.
+unsafe fn cstr(p: *const u8) -> Option<Vec<u8>> {
+    if p.is_null() {
+        return None;
+    }
+    let mut out = Vec::new();
+    let mut i = 0;
+    while *p.add(i) != 0 && i < 512 {
+        out.push(*p.add(i));
+        i += 1;
+    }
+    Some(out)
+}
+
+unsafe fn wcstr(p: *const u16) -> Option<Vec<u16>> {
+    if p.is_null() {
+        return None;
+    }
+    let mut out = Vec::new();
+    let mut i = 0;
+    while *p.add(i) != 0 && i < 512 {
+        out.push(*p.add(i));
+        i += 1;
+    }
+    Some(out)
+}
+
+fn push_name(img: &mut Vec<u8>, name: Option<Vec<u8>>) {
+    match name {
+        None => img.push(0xDE),
+        Some(b) => {
+            img.push(0xFA);
+            img.extend_from_slice(&b);
+        }
+    }
+}
+
+unsafe fn tempname_rows() {
+    // `tmpnam` / `tmpnam_s` / `_wtmpnam` / `_wtmpnam_s` — deterministic, compared exactly.
+    //
+    // The counter is per-side and ADVANCES on every call, so the two sides must be driven
+    // exactly the same number of times. That is why all four variants are one row rather
+    // than four: a row that called `tmpnam` 220 times while another called `_wtmpnam` 220
+    // times would leave the two counters in different places and every later comparison
+    // would be off by a name.
+    grade("tmpnam family", &["narrow", "wide", "secure", "erange"], ROW_ITERS, |r| {
+        let which = r.below(4);
+        let small = r.below(6) == 0;
+        let size = if small { 2 } else { 64 };
+        let (mut sb, mut rb) = (Buf::new(64), Buf::new(64));
+        let (mut swb, mut rwb) = (WBuf::new(64), WBuf::new(64));
+        let (sp, rp) = (sb.p(), rb.p());
+        let (swp, rwp) = (swb.p(), rwb.p());
+        let (mut sname, mut rname) = (None, None);
+        let (mut swname, mut rwname) = (None, None);
+
+        let g = Effects::subject(|| match which {
+            0 => {
+                sname = cstr(tmpnam(sp));
+                0
+            }
+            1 => tmpnam_s(sp, size) as i64,
+            2 => {
+                swname = wcstr(_wtmpnam(swp));
+                0
+            }
+            _ => _wtmpnam_s(swp, size) as i64,
+        });
+        let n = Effects::reference(|| match which {
+            0 => {
+                rname = cstr(ref_tmpnam(rp));
+                0
+            }
+            1 => ref_tmpnam_s(rp, size) as i64,
+            2 => {
+                rwname = wcstr(ref__wtmpnam(rwp));
+                0
+            }
+            _ => ref__wtmpnam_s(rwp, size) as i64,
+        });
+        let (mut gi, mut ni) = (sb.img(), rb.img());
+        gi.extend(swb.img());
+        ni.extend(rwb.img());
+        push_name(&mut gi, sname);
+        push_name(&mut ni, rname);
+        push_name(&mut gi, swname.map(|v| v.iter().flat_map(|c| c.to_le_bytes()).collect()));
+        push_name(&mut ni, rwname.map(|v| v.iter().flat_map(|c| c.to_le_bytes()).collect()));
+        let tags = vec![
+            match which {
+                0 => "narrow",
+                1 => "secure",
+                2 => "wide",
+                _ => "secure",
+            },
+            if small && (which == 1 || which == 3) { "erange" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("which={which} size={size}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `_mktemp` / `_mktemp_s` / `_wmktemp` / `_wmktemp_s` — deterministic, compared
+    // exactly. Unlike the tmpnam family these take no counter, so each call is independent;
+    // what they DO consume is the filesystem, by probing 'a'..'z' for a free name. Neither
+    // side creates anything, so both scans stop at the same letter.
+    grade("_mktemp family", &["narrow", "wide", "secure", "einval"], ROW_ITERS, |r| {
+        let which = r.below(4);
+        // A pattern with too few Xs must be REFUSED, and that guard exists only on the
+        // `_s` variants — the bare ones would happily index off the front.
+        let broken = r.below(5) == 0;
+        let mut pat = mktemp_pattern("a");
+        if broken {
+            let len = pat.len();
+            pat[len - 3] = b'Q';
+        }
+        let wpat: Vec<u16> = pat.iter().map(|&b| b as u16).collect();
+        let (mut sp_, mut rp_) = (pat.clone(), pat.clone());
+        let (mut swp_, mut rwp_) = (wpat.clone(), wpat.clone());
+        let size = sp_.len();
+
+        let g = Effects::subject(|| match which {
+            0 => !_mktemp(sp_.as_mut_ptr()).is_null() as i64,
+            1 => _mktemp_s(sp_.as_mut_ptr(), size) as i64,
+            2 => !_wmktemp(swp_.as_mut_ptr()).is_null() as i64,
+            _ => _wmktemp_s(swp_.as_mut_ptr(), size) as i64,
+        });
+        let n = Effects::reference(|| match which {
+            0 => !ref__mktemp(rp_.as_mut_ptr()).is_null() as i64,
+            1 => ref__mktemp_s(rp_.as_mut_ptr(), size) as i64,
+            2 => !ref__wmktemp(rwp_.as_mut_ptr()).is_null() as i64,
+            _ => ref__wmktemp_s(rwp_.as_mut_ptr(), size) as i64,
+        });
+        // The pattern is mutated IN PLACE, so the buffer itself is the answer.
+        let mut gi = sp_.clone();
+        let mut ni = rp_.clone();
+        gi.extend(swp_.iter().flat_map(|c| c.to_le_bytes()));
+        ni.extend(rwp_.iter().flat_map(|c| c.to_le_bytes()));
+        let tags = vec![
+            match which {
+                0 => "narrow",
+                1 => "secure",
+                2 => "wide",
+                _ => "secure",
+            },
+            if broken && (which == 1 || which == 3) { "einval" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("which={which} broken={broken}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `tmpfile` / `tmpfile_s` — the NAME is not comparable and the row does not pretend
+    // otherwise. `GetTempFileNameW`'s shim is `mkstemp`, which picks a random suffix AND
+    // reserves it by creating the file, so the second caller cannot receive the first
+    // caller's name even in principle. What IS compared: whether a stream came back, its
+    // errno, its buffering state, and — the part that would catch a stream that is a
+    // handle to nothing — a write and read back through it.
+    grade("tmpfile+tmpfile_s", &["ok", "secure", "nullout"], ROW_ITERS, |r| {
+        let secure = r.below(2) == 0;
+        let nullout = secure && r.below(6) == 0;
+        let payload = r.bytes_from(1, 24);
+
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let sp = if nullout { core::ptr::null_mut() } else { &mut sf as *mut FILEP };
+        let rp = if nullout { core::ptr::null_mut() } else { &mut rf as *mut FILEP };
+        let g = Effects::subject(|| {
+            if secure {
+                tmpfile_s(sp) as i64
+            } else {
+                sf = tmpfile();
+                !sf.is_null() as i64
+            }
+        });
+        let n = Effects::reference(|| {
+            if secure {
+                ref_tmpfile_s(rp) as i64
+            } else {
+                rf = ref_tmpfile();
+                !rf.is_null() as i64
+            }
+        });
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        // Prove the stream is real: write, rewind, read it back.
+        for (f, img, is_subject) in
+            [(sf, &mut gi, true), (rf, &mut ni, false)]
+        {
+            if f.is_null() {
+                continue;
+            }
+            let mut back = Buf::new(payload.len());
+            let bp = back.p();
+            if is_subject {
+                fwrite(payload.as_ptr() as *const c_void, 1, payload.len(), f);
+                rewind(f);
+                fread(bp as *mut c_void, 1, payload.len(), f);
+            } else {
+                ref_fwrite(payload.as_ptr() as *const c_void, 1, payload.len(), f);
+                ref_rewind(f);
+                ref_fread(bp as *mut c_void, 1, payload.len(), f);
+            }
+            img.extend(back.img());
+        }
+        if !sf.is_null() {
+            fclose(sf);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        }
+        let tags = vec![if nullout {
+            "nullout"
+        } else if secure {
+            "secure"
+        } else {
+            "ok"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("secure={secure} nullout={nullout} len={}", payload.len()),
+            tags,
+        )
+    });
+
+    // `_tempnam` / `_wtempnam` — same non-comparable name, same reason. These read `TMP`
+    // from the environment (through fileimpl.c's `_wgetenv`, which reads the real one), so
+    // the row SETS it and then checks that the returned name actually lands under it. That
+    // is the part worth grading: the directory argument is overridden by `TMP` whenever
+    // `TMP` is set, and a translation that dropped the override would still return a
+    // perfectly good name somewhere else.
+    grade("_tempnam+_wtempnam", &["narrow", "wide", "tmp-honoured"], ROW_ITERS, |r| {
+        let wide = r.below(2) == 0;
+        let tmp = std::env::temp_dir();
+        std::env::set_var("TMP", &tmp);
+        let dir = CString::new("/nonexistent-dir-the-TMP-override-must-beat").unwrap();
+        let prefix = CString::new("vb").unwrap();
+        let wdir: Vec<u16> = wpath(&dir);
+        let wprefix: Vec<u16> = wpath(&prefix);
+
+        let (mut sname, mut rname): (Option<Vec<u8>>, Option<Vec<u8>>) = (None, None);
+        let g = Effects::subject(|| {
+            let p: Option<Vec<u8>> = if wide {
+                let w = _wtempnam(wdir.as_ptr(), wprefix.as_ptr());
+                wcstr(w).map(|v| v.iter().map(|&c| c as u8).collect())
+            } else {
+                cstr(_tempnam(dir.as_ptr() as *const u8, prefix.as_ptr() as *const u8))
+            };
+            sname = p;
+            sname.is_some() as i64
+        });
+        let n = Effects::reference(|| {
+            let p: Option<Vec<u8>> = if wide {
+                let w = ref__wtempnam(wdir.as_ptr(), wprefix.as_ptr());
+                wcstr(w).map(|v| v.iter().map(|&c| c as u8).collect())
+            } else {
+                cstr(ref__tempnam(dir.as_ptr() as *const u8, prefix.as_ptr() as *const u8))
+            };
+            rname = p;
+            rname.is_some() as i64
+        });
+        // NOT the name — the SHAPE of the name. Both must be under TMP and carry the
+        // prefix; the random suffix mkstemp chose is not a difference between the two
+        // implementations and comparing it would fail every single case.
+        let want = tmp.to_str().unwrap().as_bytes().to_vec();
+        let shape = |nm: &Option<Vec<u8>>| -> Vec<u8> {
+            match nm {
+                None => vec![0xDE],
+                Some(b) => vec![
+                    0xFA,
+                    b.starts_with(&want) as u8,
+                    b.windows(2).any(|w| w == b"vb") as u8,
+                ],
+            }
+        };
+        let (gi, ni) = (shape(&sname), shape(&rname));
+        let honoured = rname.as_ref().is_some_and(|b| b.starts_with(&want));
+        let tags = vec![
+            if wide { "wide" } else { "narrow" },
+            if honoured { "tmp-honoured" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("wide={wide}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
         )
     });
 }

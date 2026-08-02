@@ -778,7 +778,23 @@ BOOL WINAPI GetStringTypeW(DWORD type, const wchar_t *src, int count, WORD *char
 int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int srclen,
                                char *dst, int dstlen, const char *defchar, BOOL *used)
 {
-    int i, n = ref_nls_wlen(src, srclen);
+    int i, n;
+
+    /* Real kernel32 REJECTS a NULL source with ERROR_INVALID_PARAMETER and returns 0.
+     * This shim used to dereference it, which turned a graceful failure into a SIGSEGV —
+     * and not hypothetically: `_tempnam` hands `astrdupw_utf8` whatever `_wtempnam`
+     * returned, with no guard between them (msvcrt's own C does the same), so a failed
+     * `GetTempFileNameW` arrives here as NULL. On Windows that path returns NULL to the
+     * caller; here it killed the process, which reads as a translation crash and is not
+     * one. Same rule as fileimpl.c's header states: model the API's ERROR behaviour, not
+     * just its success path. */
+    if (!src)
+    {
+        msvcrt_ref_set_last_error(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
+    n = ref_nls_wlen(src, srclen);
 
     /* srclen == -1 means "NUL-terminated", and real kernel32 then CONVERTS AND COUNTS
      * the terminator.  ref_nls_wlen excludes it — correct for CompareStringW and
