@@ -1748,3 +1748,42 @@ per-offset `startswith` comprehension that walked all 294 MB in Python with `byt
 
 Not changed, deliberately: `DefaultOS=` still selects UP on every arch. The flip waits on the
 remaining MP defects (the rare `--smp 1` wedge and the `0xE3`), not on media plumbing.
+
+### The tail of it: `conformance` was still paying for the old asymmetry (2026-08-02)
+
+`conformance.py` kept its own copy of the retired rule — `needs_smp_media_build = smp and base
+== "arm64"`, justified by a comment saying arm64's `boot.img` "does not carry halmp.dll /
+ntkrnlmp.exe at all". True when written, false since mkramdisk started staging both pairs. The
+cost was not just a redundant media re-roll to change one byte: it meant the `--smp 1` and
+`--smp 2` sweeps **of the same commit** needed two different builds, because one wanted MP-
+default media and the other did not. Removed — one build now serves both, which is what makes
+taking a collapse measurement and an MP baseline in the same session affordable.
+
+Generalizable: when a capability stops being special, grep for callers still branching on the
+special case. The branch does not fail — it just quietly keeps charging the old price.
+
+## The UP floor moved under the collapse criterion (2026-08-02)
+
+Merging `origin/master` brought in the ratchet lane's `bfda94a3ce1`, which removed **765
+baselined failures** from the UP `kmtest.txt` floor on all three arches — `CmSecurity`
+900/2 → 1048/1 everywhere, i386 `IoInterrupt` 1839/306 → 2145/0, `KeGuardedMutex` 1566/87 →
+1653/0, `FsRtlLegal` 2496/32 → 2528/0.
+
+**That is the oracle the UP:=smp1 collapse is measured against.** `--smp 1` ratchets the MP
+kernel on one CPU against `kmtest.txt`, and a ratchet only asserts *no worse than baseline*, so
+every collapse result this lane has banked — including "holds 19/19" — was graded against a
+floor carrying that slack. Any residual MP-at-1-CPU divergence sitting inside those 765 rows
+was invisible by construction.
+
+The collapse is a `DefaultOS`-flip gate, so it is being re-taken against the tightened floor.
+If the MP kernel at one CPU really is UP, it reproduces the tightened numbers and the collapse
+still holds; this is a sharper test, not a redo. Worth stating as a rule: **when a baseline is
+re-seeded, every criterion defined as "ratchets against that baseline" needs re-taking, even
+though nothing in the criterion's own code changed.**
+
+The two MP baselines are stale for the same reason and are being re-seeded alongside:
+`i386/kmtest-smp2.txt` and `amd64/kmtest-smp2.txt` are both from 07-26 and predate
+`cfdff72b41d` (07-30, spinlock owner STAMP restored). They also *lack* `IoFilesystem` and
+`NpfsFileInfo` entirely (91 rows against UP's 93), and bank `CmSecurity` at pass=300 fail=89
+where the sweep now launches 1049 assertions — the smp2 sample was taken when the sweep died
+early. arm64's smp2 baseline was already re-seeded on 08-01 and is fine.
