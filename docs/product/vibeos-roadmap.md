@@ -479,6 +479,36 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **FIXED (E22, 2026-08-01): every 32-bit process silently lost the `cbSize`-validated USER32
+  APIs.** `TrackMouseEvent` (so no 32-bit app ever received `WM_MOUSELEAVE`/`WM_MOUSEHOVER`),
+  `GetCursorInfo`, `GetGUIThreadInfo`, `GetComboBoxInfo`, `GetMenuInfo` and `SendInput` (all
+  synthesized input) returned `FALSE`/`ERROR_INVALID_PARAMETER` under WoW64 and nowhere else.
+  Each struct states its own `sizeof` and win32k version-checks it against the **host** size,
+  so the call was refused before the payload was read — a *field-perfect* marshaller does not
+  help, which is why five of the six were waiting on a generator that copied `cbSize`
+  verbatim. `marshalgen` now emits a value-guarded size rewrite (`WowAmSizeIn`/`WowAmSizeOut`)
+  and `NtUserSendInput`, whose size is an argument rather than a field, is hand-written.
+  Audit baseline 209 → 203. Field manual: "A struct that carries its own `sizeof` is rejected
+  before a single field is read".
+- **OPEN (task #82): every error code win32k sets is invisible to a 32-bit guest.**
+  `win32k-rust/src/error.rs:38` — `EngSetLastError` writes `NtCurrentTeb()->LastErrorValue`,
+  which in kernel mode is the **64-bit** TEB, while a 32-bit guest reads `TEB32` at
+  `WowTebOffset`. win32k reports failure by setting last-error and returning FALSE, so a
+  32-bit app gets the FALSE and never the reason; apps that branch on the code
+  (`ERROR_CLASS_ALREADY_EXISTS`, `ERROR_NO_MORE_ITEMS` in an enumeration loop) misbehave.
+  `EngGetLastError` has the mirror problem. The whole USER/GDI surface; ntdll is unaffected
+  (NTSTATUS returns, converted by the guest's own ntdll32). Found by E22's unfixed-media
+  control run, which printed `TrackMouseEvent(TME_QUERY) failed, err = 0x00000000` on the
+  exact path where win32k had just set `ERROR_INVALID_PARAMETER`. Fix belongs in wow64.dll's
+  win32k dispatch (copy down after the call) but needs a decision on success-path semantics,
+  so it is NOT bundled into E22.
+- **OPEN: `NtUserGetMouseMovePointsEx` never fills its output buffer** (`win32k-rust/src/
+  ntmouse.rs`, `GMMP_USE_DISPLAY_POINTS`) — it probes `lpptOut` and returns `nBufPoints`
+  without writing a single point, so `GetMouseMovePointsEx` hands every caller an
+  uninitialized array. Pre-existing and **not** WoW64-specific; found while scoping E22, which
+  deliberately left the call unmarshalled rather than convert an honest failure into a
+  success with garbage. It stays on the marshalgen-audit baseline until the kernel side is
+  real (2 entries).
 - **FIXED (2026-08-01): the registry's `HIVE_*` flag family was open-coded and half wrong.**
   `scan_mask_drift`'s first sweep found eight bare literals across five config-rust files, four
   of them with the wrong value. `CmLoadKey` set `0x4` and `CmUnloadKey` set `0x40` for

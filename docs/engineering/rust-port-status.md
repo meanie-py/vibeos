@@ -147,6 +147,54 @@ sites read as `Effects.pmt`. At `_MSVCR_VER=0` the handler slot can never be wri
 (`_set_invalid_parameter_handler` is in the uncompiled `>= 80` block), so the Rust body and
 the harness's are identical in effect and nothing is hidden.
 
+**Wave 18c part 1 (2026-08-02) — timestamps and the process-global stream ops. 89 rows,
+19,080 cases, 0 DIVERGE / 0 UNEXERCISED.** file.c's graded spec exports **93 → 104 of 146**.
+The utime family is six exports over one body (`_futime64` does the work; the path and `*32`
+variants delegate), so the axis that matters is the VALUE — whether a time survives
+`time_to_filetime`, the 100ns-since-1601 conversion, `SetFileTime` and the read back through
+`_stat64` unchanged. Graded across the epoch, 1, and `INT32_MAX`. **No NULL-`t` case**:
+`_futime64` stamps `_time64(NULL)` for it, so the two sides read their own wall clocks and
+straddle a second boundary at random — a flake, not a test. `_flushall` and `_fcloseall`
+return COUNTS, which makes them the only rows that assert the two FILE rings have stayed in
+step; `_setmaxstdio` restores what it found, because every later row's `msvcrt_get_file`
+reads it. The 42 still ungraded are the std-stream aliases, the `v*printf` shells, the
+temp-name family, and `_lock_file`/`_unlock_file`/`__iob_func`.
+
+**Wave 18b (2026-08-01) — the wide door, stat, and the rest of the plumbing. 83 rows,
+17,760 cases, 0 DIVERGE / 0 UNEXERCISED, both profiles.** file.c's graded spec exports went
+**36 → 93 of 146** (the commit message says 40 → 95; that count matched export names
+anywhere in the test file, including the section banners that merely NAME what a family
+covers. Measured against comment-stripped code it is 36 → 93). 18a took the narrow fd and stream layers and nothing else, which left the
+entire UTF-16 surface ungraded — and that is backwards from how it reads: msvcrt IMPLEMENTS the
+wide call and reaches Win32's `*W` directly, while the narrow entry points convert and delegate.
+The wide side is where the bodies are. Added: the wide path (`_wfopen`/`_s`, `_wfsopen`,
+`_wfreopen`/`_s`, `_wsopen_s`, `_wcreat`, `_wfdopen`, `_wremove`, `_wunlink`, `_wrename`,
+`_waccess`/`_s`, `_wchmod`), the narrow openers 18a missed (`_fsopen`, `freopen`/`_s`,
+`_sopen_s`, `_creat`, `_chmod`, `_access_s`, `_fdopen`), the nine-export **stat family**, the
+64-bit positioning twins, descriptor plumbing (`_dup2`, `_pipe`, the fd↔HANDLE pair, `_locking`,
+`_umask`, `_chsize_s`), the wide stream characters, and `setvbuf`/`setbuf`/`_filbuf`/`_flsbuf`/
+`getc`/`putc`/`_getw`/`_putw`/`clearerr_s`.
+
+**One genuine shipping bug**: `_fstat*` reported `st_mode` `0o776`. `file.c` computes
+`_S_IFREG | 0444` and the translation carried the literal across verbatim — C reads a leading
+zero as octal, Rust as part of a **decimal** literal, with no warning because `0444` is a valid
+way to write 444. All three arches, six exports. A repo-wide sweep for the class found zero
+other instances.
+
+**And the harness's most important tripwire was off.** `cc::Build::warnings(false)` emits `-w`,
+which DISARMS `-Werror=` diagnostics outright — in either order, and even with the warning
+re-enabled afterwards. build.rs carried a comment saying "NO `-w` here, on purpose" directly
+below the call that was emitting one, on ten builders. With it armed the reference TUs had **57
+implicitly-declared functions**, typed `int(...)`, truncating every returned pointer to 32 bits;
+it survived only because `fd_to_handle` hands back small integers. `msvcrt_wstrdupa` returns a
+real malloc pointer and SIGSEGV'd the first row to reach it. `refstub/msvcrt_shim_decls.h` now
+declares that surface and fileimpl.c includes it, so a drifting shim is a compile error.
+`BUFSIZ` joined the DISPLACE set beside `_IONBF` (msvcrt 512, glibc 8192 — `setbuf` passes it
+straight to `setvbuf`). Two shim inputs that were silently DISCARDED — `dwFlagsAndAttributes`
+and `dwShareMode` — are modelled and recorded respectively; see the field manual's §9.73 entry
+for that class. The 51 exports still ungraded (std-stream aliases, the `v*printf` family,
+temp names, process-global stream ops, utime) are wave 18c.
+
 **Wave 18a (2026-08-01) — file.c GRADED. `msvcrt-difftest/tests/file.rs`, 32 rows,
 7,040 cases, 0 DIVERGE / 0 UNEXERCISED.** Wave 17 shipped file.c's 189 exports with no host
 oracle at all: the flip was gated by a link, `scan_ud2` and three boots, none of which can see a

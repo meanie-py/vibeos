@@ -1401,6 +1401,30 @@ disabled for that hive forever.
   statement per call site. The scanner compares *values* and reports a target the live code
   never masks at all; it does not count.
 
+### A C OCTAL literal becomes a Rust DECIMAL one, silently
+`file.c` computes `buf->st_mode = _S_IFREG | 0444;` and `|= 0222`. Both literals survived
+translation unchanged — and Rust has no C-style octal, so a leading zero is just a leading
+zero. `0444` means four hundred and forty-four. msvcrt.dll shipped `st_mode` `0o776` where
+msvcrt reports `0o666` — the execute bits set on every regular file, on all three arches,
+through six `_fstat*` exports.
+
+**Nothing in the toolchain has an opinion about this.** It compiles, it links, the value is
+plausible, and the literal is *three characters* from correct while looking more right in its
+C form than its Rust one. It is not the LLM inventing a value (§9.113) — the value was
+transcribed perfectly; the BASE changed underneath it. Sealing does not help either: the token
+came across intact.
+
+Only a differential test caught it, which is the problem — msvcrt, cnt and rtl are the only
+translated modules with a harness, the other ~40 crates have no oracle at all, and every C
+source we translate is full of octal mode bits, ioctl numbers and terminal flags.
+**Fix: `tools/scan_octal_literals.py`** (empty baseline, gate-wired). It reports a bare
+`0[0-7]+` in numeric position *only where the two readings disagree* — `07` is seven either
+way, and a lint that flags it gets tuned out. Two false-positive classes it must handle, both
+of which it shipped first and then failed on: float exponents (`6.93e-01` — 78 findings in
+cnt-rust's math tables alone) and Rust's use of the char-literal quote for LIFETIMES, which
+makes `&'static` open a string that a regex-pass stripper closes on the next tick in the file.
+The scanner tokenizes left to right for that reason.
+
 ### Flavor-variant constants are their own drop-class `[§9.97]`
 `SYNCH_LEVEL` differs between UP and MP builds, and the translation froze the UP value in
 **five independent sites** → `-smp 2` `KeIrql` kmtest failures. Single source of truth per
@@ -2736,6 +2760,20 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   invented kernel stop codes `[§9.113]`, except no shipped-code scanner looks in a test's
   private header. **Audit the whole block against the SDK, not just the one that got caught**
   (16 constants, exactly 1 wrong); prefer including the real header over re-typing values.
+- **A shim that DISCARDS an input argument makes that argument ungradeable, and every row
+  over it is vacuous.** msvcrt-difftest's `CreateFileW` had `(void)share;` and ignored
+  `dwFlagsAndAttributes`. Both are inputs Win32 acts on and POSIX has no equivalent for, so
+  dropping them looked reasonable — except that mapping `_SH_DENY*` onto `dwShareMode` is the
+  *entire* reason `_fsopen`/`_wfsopen`/`_sopen_s`/`_wsopen_s` exist as separate exports, and
+  `FILE_ATTRIBUTE_READONLY` is the *only* observable consequence of `_umask`. Delete either
+  mapping and every row still opens the file, returns the same descriptor, and leaves the same
+  bytes on disk. Two fixes, and which one applies differs: where the host CAN model the
+  effect, model it (`FILE_ATTRIBUTE_READONLY` on create → `fchmod`); where it genuinely
+  cannot, **record the argument and export a getter**, so the row compares what each side
+  ASKED FOR and the mapping stops being invisible. The recording is one definition serving
+  both sides, so read it immediately after each side's call, never once at the end. Same
+  family as the `_wctomb_s_l` stub above, reached from the opposite direction: not an error
+  that never happens, an argument that never matters.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,
@@ -3830,6 +3868,45 @@ looking at" shape as the out-cell entry above; both lists have to come from `mar
 **Testing one:** round-trip it — set, read back BY THE SAME NAME, delete, confirm gone. A wrong
 `Buffer` cannot survive that. Checking only that the call returned success passes on a broken
 build right up until the box dies.
+
+### A struct that carries its own `sizeof` is rejected before a single field is read
+**Symptom.** A whole family of Win32 APIs returns `FALSE` with `ERROR_INVALID_PARAMETER` for
+every 32-bit process and only for 32-bit processes. Nothing crashes, nothing is logged, and the
+marshaller for the struct is provably correct field for field.
+**Cause.** The struct's leading `cbSize`/`lStructSize` is the caller stating its own `sizeof`,
+and the callee version-checks it against the **host** `sizeof`. The guest wrote a number that
+is only true on the guest, so the call is refused before the payload is looked at. A
+field-perfect marshaller copies that number faithfully and is therefore still broken — this is
+the one field where a verbatim copy of a same-width, same-offset field is *wrong*.
+**Fix.** Rewrite the size on the way in and restore it on the way out, and do it **guarded on
+the value**: only when it is exactly the 32-bit `sizeof`. A struct with several legal sizes
+(`MONITORINFO` vs `MONITORINFOEXW`) must still reach the kernel with the size the caller chose,
+and garbage must still be rejected as garbage. The restore matters as much as the rewrite: the
+callee restamps the field with the host size, and handing that back leaves the caller holding a
+number that does not describe its own struct.
+**You need the bounce buffer too, and the size fix hides that you don't.** Once the size check
+passes, the callee writes the HOST-sized struct — `GUITHREADINFO` is 48 in the guest and 72 on
+the host, so "fixing" the size alone converts a silent no-op into 24 bytes of caller-stack
+corruption. Test with a canary immediately after the struct; a rewrite with no bounce passes a
+success check and fails the canary.
+**The size can also be an ARGUMENT** (`NtUserSendInput`'s third parameter, `sizeof(INPUT)`),
+which no struct-layout diff can associate with the pointer it describes — those stay
+hand-written. Live instances on vibeos: `TrackMouseEvent` (16→24, so no 32-bit app ever
+received `WM_MOUSELEAVE`), `GetCursorInfo` (20→24), `GetGUIThreadInfo` (48→72),
+`GetComboBoxInfo` (52→64), `GetMenuInfo` (28→40), `SendInput` (28→40).
+**Before you believe a WIDENING verdict, check what the callee does with the pointer.**
+`NtUserThunkedMenuInfo` declares `LPCMENUINFO` and diffs as a clean 28→40 widening, but
+win32k casts it to `PROSMENUINFO` and reads *`cbSize` bytes* — anything in
+`[sizeof(MENUINFO), sizeof(ROSMENUINFO)]`. The payload is a **caller-declared variable
+size**, so a generated marshaller hands over a 40-byte bounce and lets the kernel read past
+the end of it: a bug the marshaller INTRODUCES, where the flat thunk it replaced at least
+passed a real, correctly-sized caller pointer. Marshal only the size class you can name and
+pass the rest through. A prototype is a claim about the declared type, not about what the
+callee reads.
+**Third time for the same meta-bug.** The hand-written `NtUserThunkedMenuItemInfo` thunk set
+`M64.cbSize = sizeof(M64)` from day one; the generator that produced the other five did not.
+Same shape as `NtOpenProcessToken` vs its `Ex` sibling and `NtSetValueKey` vs `NtQueryValueKey`
+— whichever variant a human read is right. Fix the tool, not the instance.
 
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.

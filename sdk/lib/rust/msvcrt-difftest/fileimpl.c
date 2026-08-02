@@ -67,6 +67,19 @@ enum {
 #include <time.h>
 #include <unistd.h>
 
+/* The declarations the reference TUs see for the shims defined below.
+ *
+ * Included HERE, in the file that DEFINES them, so the two can never drift: a
+ * shim whose definition stops matching what file.c calls is now a compile error
+ * instead of an ABI mismatch surfacing as a wrong answer in an unrelated row.
+ * That drift was not hypothetical — until this header existed the reference TU
+ * had no declaration for ANY of these and typed all 53 `int(...)`, truncating
+ * every returned pointer to 32 bits. See the header for the full story. */
+#include <msvcrt_shim_decls.h>
+/* The two NLS entry points this file CALLS (path_from_wide, GetTempFileNameW).
+ * They were implicit here too — the same tripwire was off for every TU. */
+#include <winnls.h>
+
 /* refimpl.c owns the single last-error slot both sides read (see the long note
  * beside its GetLastError).  One writer, one reader — as in the real DLL, where
  * last-error is one TEB slot. */
@@ -490,6 +503,24 @@ BOOL WINAPI CloseHandle(HANDLE h)
     return TRUE;
 }
 
+/* The last dwShareMode CreateFileW was asked for.
+ *
+ * Windows share modes have no POSIX equivalent, so this shim cannot ACT on the
+ * argument — and that would normally make it invisible.  But mapping _SH_DENYRW
+ * / _SH_DENYWR / _SH_DENYRD / _SH_DENYNO onto dwShareMode is the ENTIRE reason
+ * _fsopen, _wfsopen, _sopen_s and _wsopen_s exist as separate exports: strip the
+ * mapping out and every one of them still opens the file, still returns the same
+ * descriptor, and still leaves the same bytes on disk.  Recording the argument
+ * makes the mapping itself the observation, which is the most this substrate can
+ * honestly say about it — the row grades that both sides ASK for the same thing,
+ * not that anything enforces it. */
+static DWORD ref_last_share_mode;
+
+DWORD ref_get_last_share_mode(void)
+{
+    return ref_last_share_mode;
+}
+
 HANDLE WINAPI CreateFileW(const wchar_t *name, DWORD access, DWORD share,
                           SECURITY_ATTRIBUTES *sa, DWORD disposition,
                           DWORD flags, HANDLE template_file)
@@ -499,7 +530,8 @@ HANDLE WINAPI CreateFileW(const wchar_t *name, DWORD access, DWORD share,
     struct stat st;
     int existed;
 
-    (void)share; (void)template_file;
+    ref_last_share_mode = share;
+    (void)template_file;
     if (!path) return INVALID_HANDLE_VALUE;
 
     if ((access & GENERIC_READ) && (access & GENERIC_WRITE)) oflags = O_RDWR;
@@ -542,6 +574,25 @@ HANDLE WINAPI CreateFileW(const wchar_t *name, DWORD access, DWORD share,
         free(path);
         SET_ERR(ERROR_TOO_MANY_OPEN_FILES);
         return INVALID_HANDLE_VALUE;
+    }
+
+    /* Win32 applies dwFlagsAndAttributes ONLY when the call actually creates the
+     * file, and FILE_ATTRIBUTE_READONLY is the one bit POSIX can express — the
+     * same bit, and the same treatment, as SetFileAttributesW below.
+     *
+     * This is not decoration.  _wsopen_dispatch computes it as
+     * `!(pmode & ~MSVCRT_umask & _S_IWRITE)`, so it is the ONLY observable
+     * consequence of `_umask`: without it the umask is a variable that is
+     * written, read back, and never acted on, and a difftest row over it would
+     * report MATCH having proved nothing (the §9.66 shape this file's header
+     * rule exists to prevent). */
+    if (!existed && (flags & FILE_ATTRIBUTE_READONLY) &&
+        (disposition == CREATE_NEW || disposition == CREATE_ALWAYS ||
+         disposition == OPEN_ALWAYS))
+    {
+        struct stat cst;
+        if (fstat(fd, &cst) == 0)
+            (void)fchmod(fd, cst.st_mode & ~(mode_t)(S_IWUSR | S_IWGRP | S_IWOTH));
     }
 
     if (flags & FILE_FLAG_DELETE_ON_CLOSE)

@@ -161,3 +161,22 @@ NtUserMessageCall
 # is ordering, not a guarantee. wow64_manual.c returns SUCCESS without calling
 # the kernel, which is exactly what the early-out already produced.
 NtUserInitializeClientPfnArrays
+
+# NtUserSendInput — E22, the size-as-an-ARGUMENT member of the cbSize class.
+# marshalgen's WowAmSizeIn/Out rewrites a leading `cbSize` FIELD; SendInput
+# states its element size in arg 2, which no struct diff can associate with
+# arg 1, so this one is hand-written. INPUT is 28 bytes in the guest and 40 on
+# the host (the union is 4-aligned vs 8-aligned, and each arm's dwExtraInfo
+# widens), and win32k rejects `cbSize != sizeof(INPUT)` outright — so every
+# SendInput from every 32-bit process silently did nothing.
+NtUserSendInput
+
+# NtUserThunkedMenuInfo — E22, and a trap worth stating: the PROTOTYPE says
+# LPCMENUINFO but win32k casts it to PROSMENUINFO and reads `cbSize` bytes out
+# of the caller, accepting anything in [sizeof(MENUINFO), sizeof(ROSMENUINFO)].
+# So the payload is a CALLER-DECLARED VARIABLE SIZE, and a generated marshaller
+# sized from the MENUINFO layout diff would have the kernel read past the end
+# of its own 40-byte bounce buffer for any caller that declared more. Only the
+# MENUINFO size class is marshalled here; anything larger goes to the kernel on
+# the guest's own pointer, exactly as before, and the kernel decides.
+NtUserThunkedMenuInfo

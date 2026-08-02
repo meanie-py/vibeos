@@ -693,9 +693,19 @@ NTDLL_TU = (
 )
 
 
-def load_needs_manual(gen_c: Path) -> list[str]:
-    txt = gen_c.read_text()
-    return re.findall(r"/\* (\w+): WOW64_NEEDS_MANUAL", txt)
+def needs_manual_from_sources(arch: str, table: str = "win32k") -> list[str]:
+    """Syscalls wow64gen stubs as WOW64_NEEDS_MANUAL, from CHECKED-IN SOURCES.
+
+    This used to scrape the BUILT `*_thunks.gen.c`, which made codegen a
+    function of build state: adding a name to a manual list and regenerating
+    without rebuilding first was a silent no-op, and the workflow that actually
+    happens (edit list -> regenerate -> build) had the two steps in the order
+    that cannot work. Same argument as compute_thunk_table(), and the artifact
+    is not consulted here at all — `gen` legitimately runs BEFORE the build
+    that produces it, so a staleness crosscheck would fire on the correct
+    sequence.
+    """
+    return [n for n, live in compute_thunk_table(AUDIT_TABLES[table], arch).items() if not live]
 
 
 # ---------------------------------------------------------------------------
@@ -1128,6 +1138,16 @@ def _esize(ctype: str, db: dict[str, Record], ptr_width: int) -> int | None:
     return None
 
 
+# Names of a leading SELF-DESCRIBING SIZE field: the struct states its own
+# sizeof so the callee can version-check it. Under WoW64 that check is made
+# against the HOST sizeof, so a field-perfect marshaller still gets the call
+# rejected — see _gen_struct_marshaller. Restricted to this list (and to a
+# 4-byte field at offset 0) rather than "anything that looks like a size",
+# because rewriting a field that is NOT the struct size is a data corruption,
+# whereas missing one is only the status quo.
+_SIZE_FIELD_NAMES = frozenset({"cbSize", "lStructSize", "dwSize", "Size", "Length"})
+
+
 def _gen_struct_marshaller(
     rec32: Record, rec64: Record, db32, db64, emitted: dict[str, tuple[int, int]], out: list[str]
 ) -> bool:
@@ -1157,6 +1177,21 @@ def _gen_struct_marshaller(
             s32, s64 = e32, e64
         cmt = f" /* {a.name} */"
         if s32 == s64:
+            # A leading self-describing size is the one field a verbatim copy
+            # gets WRONG even though its offset and width match on both sides:
+            # the guest wrote ITS sizeof, and the callee compares against the
+            # HOST's. win32k rejects the whole call on the mismatch
+            # (NtUserTrackMouseEvent / GetCursorInfo / GetGUIThreadInfo /
+            # GetComboBoxInfo all bail ERROR_INVALID_PARAMETER), so copying it
+            # faithfully is exactly how a "correct" marshaller stays broken.
+            if i == 0 and a.offset == 0 and s32 == 4 and a.name in _SIZE_FIELD_NAMES:
+                body_in.append(
+                    f"    WowAmSizeIn(d + {o64}, s + {o32}, {rec32.size}, {rec64.size});{cmt}"
+                )
+                body_out.append(
+                    f"    WowAmSizeOut(d + {o32}, s + {o64}, {rec32.size}, {rec64.size});{cmt}"
+                )
+                continue
             body_in.append(f"    WowAmCpy(d + {o64}, s + {o32}, {s32});{cmt}")
             body_out.append(f"    WowAmCpy(d + {o32}, s + {o64}, {s32});{cmt}")
             continue
@@ -1245,6 +1280,33 @@ static void WowAmSx(unsigned char *d, const unsigned char *s)
 static void WowAmNx(unsigned char *d, const unsigned char *s)
 {
     WowAmCpy(d, s, 4);
+}
+
+/* A leading self-describing size ("cbSize"): the guest states ITS sizeof and
+ * the callee compares against the HOST's, so a verbatim copy fails the very
+ * version check the field exists for. Rewrite it — but ONLY when it is
+ * exactly the 32-bit sizeof, so a struct with more than one legal size
+ * (MONITORINFO vs MONITORINFOEXW) still reaches the kernel with the size the
+ * guest actually chose, and a garbage value still gets rejected as garbage. */
+static void WowAmSizeIn(unsigned char *d, const unsigned char *s,
+                        ULONG g32, ULONG h64)
+{
+    ULONG v;
+    WowAmCpy((unsigned char *)&v, s, 4);
+    if (v == g32) v = h64;
+    WowAmCpy(d, (const unsigned char *)&v, 4);
+}
+
+/* ...and undo it on the way back: the kernel restamps cbSize with the host
+ * sizeof, which would leave the guest holding a size that does not describe
+ * its own struct. */
+static void WowAmSizeOut(unsigned char *d, const unsigned char *s,
+                         ULONG g32, ULONG h64)
+{
+    ULONG v;
+    WowAmCpy((unsigned char *)&v, s, 4);
+    if (v == h64) v = g32;
+    WowAmCpy(d, (const unsigned char *)&v, 4);
 }
 
 static int WowAmStrEq(const char *a, const char *b)
@@ -1564,7 +1626,7 @@ def cmd_gen(args) -> int:
                 db.setdefault(k, v)
     proto_text = "\n".join((REPO / h).read_text() for h in args.headers.split(","))
     protos = extract_prototypes(proto_text, r"Nt\w+")
-    manual = load_needs_manual(Path(args.gen_c))
+    manual = needs_manual_from_sources("arm64" if b64.name.endswith("arm64") else "amd64")
     linkable = set(
         re.findall(r"(?m)^@ stdcall (?:-arch=\S+ )?(\w+)\(", (REPO / args.export_spec).read_text())
     )
@@ -1705,8 +1767,8 @@ def cmd_report(args) -> int:
     protos = extract_prototypes(proto_text, r"Nt\w+")
     print(f"   {len(protos)} prototypes", file=sys.stderr)
 
-    manual = load_needs_manual(Path(args.gen_c))
-    print(f"   {len(manual)} NEEDS_MANUAL stubs in {args.gen_c}", file=sys.stderr)
+    manual = needs_manual_from_sources("arm64" if b64.name.endswith("arm64") else "amd64")
+    print(f"   {len(manual)} NEEDS_MANUAL stubs (from the checked-in lists)", file=sys.stderr)
 
     buckets: dict[str, list[str]] = {
         k: [] for k in ("FLAT-OK", "SCALAR_WIDEN", "WIDENING", "SEMANTIC", "NO-PROTO")
@@ -1751,7 +1813,6 @@ def main() -> int:
     rp.add_argument("--build-dir", default="build-arm64")
     rp.add_argument("--build-dir32", default="build-i386")
     rp.add_argument("--tu-suffix", default="user32_stubs.c")
-    rp.add_argument("--gen-c", default="build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c")
     rp.add_argument(
         "--headers",
         default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,win32ss/include/ntgdibad.h",
@@ -1769,7 +1830,6 @@ def main() -> int:
     gp = sub.add_parser("gen")
     gp.add_argument("--build-dir", default="build-arm64")
     gp.add_argument("--build-dir32", default="build-i386")
-    gp.add_argument("--gen-c", default="build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c")
     gp.add_argument(
         "--headers",
         default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,win32ss/include/ntgdibad.h",

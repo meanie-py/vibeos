@@ -32,6 +32,13 @@
 /* ── 2. the constants, every value computed by the cross-compiler ─────── */
 #include <msvcrt_crt_consts.h>
 
+/* The two conversion entry points the inlines below call.  Nothing declared
+ * them before, so they were implicit `int()` — see msvcrt_shim_decls.h for the
+ * class and why -Werror=implicit-function-declaration never said so.  They live
+ * in winnls.h rather than in that header because winnls.h is where their
+ * siblings already are, and one declaration site per function is the point. */
+#include <winnls.h>
+
 /* ── 3. msvcrt internals the real msvcrt.h supplies at _MSVCR_VER=0 ─────
  * These live in the part of dll/win32/msvcrt/msvcrt.h that refstub/msvcrt.h
  * suppressed, so they are restored here rather than left to C's
