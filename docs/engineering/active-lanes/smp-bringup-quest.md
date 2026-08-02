@@ -1661,3 +1661,47 @@ media, not CPU count, not the page-reuse bug. Next step is a repro loop that kee
 per round (`--repeat` overwrites `qemu/arm64_smoke_live.log`): the wedge is silent, so the
 discriminator is *where* lsass stops, which needs lsass-side markers or a debugger attach at
 the pipe connect, compared against a UP round's lsass trace that completes.
+
+## The wedge is RARE, not endemic — 20-round soak, instruments armed (2026-08-02)
+
+The paragraph above ends on "next step is a repro loop." That loop ran, on a build carrying
+both new instruments, and it **did not reproduce the wedge at all**.
+
+| arm64 `--smp 1`, 20 rounds | result |
+|---|---|
+| clean sweeps | **19** — byte-identical every time: `launched=91 ok=88 bad=3`, 71–90 s |
+| silent no-launch wedges | **0** |
+| `A:bugcheck 0x000000E3` | 1 (task #43 — a *different*, loud failure at 52 s) |
+
+Combined with the earlier post-fix rounds that is **1 wedge in 23, ~4%**. The "~30%" that
+opened this hunt was measured on the pre-page-reuse-fix corpus and is retracted; even the
+"1 of 3" that motivated the soak now reads as small-n bad luck. It remains a `DefaultOS`
+blocker — a 4% silent freeze is not shippable — but it is a rare-flake hunt now, not a
+repro-on-demand one. Use `farm`, not a hand-rolled loop, and stop theorizing until one lands.
+
+**The collapse criterion held across all 19 rounds**, which is the stronger result. The only
+ratchet deltas were the two already explained, and no third ever appeared:
+
+    IoInterrupt 1093/2 -> 937/158   test-branch artifact of the restored owner stamp, not a defect
+    KeEvent     42733  -> 42601     documented MP-skip
+
+Nineteen consecutive identical sweeps is also the best evidence yet that the page-reuse fix
+bought real determinism.
+
+**Two instruments are now armed, so the next occurrence cannot be silent** — which is the
+actual deliverable here, since the bug is too rare to corner by staring at it:
+
+- `hang-cpustate.txt` (`34b44687a974`) — on *any* boot timeout the harness asks QEMU where every
+  vCPU is parked and symbolicates it, before the kill. Wired into `wait_for_boot`, so the
+  conformance sweep gets it too, not just smoke. Both backends previously ran `-monitor none`;
+  we had never once asked a wedged box where it stopped.
+- `SPIN_LOCK_ALREADY_OWNED` in `KxAcquireSpinLock` (`e4a0cc63c17`) — an MP self-deadlock
+  bugchecks instead of spinning forever at `DISPATCH_LEVEL` with the clock stopped. It did
+  **not** fire in 20 rounds. That is a weak negative for the spinlock hypothesis and nothing
+  more: with zero recurrences of the wedge itself, the instrument was never given the chance.
+
+Also settled here: the wedge is **not** a regression of the §9.89 SamSs handshake bug
+(`74c08f68e68`). Same last serial line, but that one prints `connect result=1053` when its 30 s
+elapses and the box keeps running. Ours prints no `result=` at all and every subsystem stops
+within a few lines of each other — the 30 s `PipeTimeout` never expiring is what indicts the
+clock rather than the service.
