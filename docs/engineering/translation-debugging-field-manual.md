@@ -3018,6 +3018,25 @@ language rules) over loosening what it reports.
   it checks.** Give the two halves separate macros (here `KI_VALIDATE_SPINLOCK_OWNER` vs
   `KI_TRACK_SPINLOCK_OWNER`) so the next person can tell which one they are turning off, and
   so a partial disable cannot silently desynchronise two funnels that must agree.
+  **Sequel (2026-08-01): restoring the stamp exposed a MISSING COMBINATION in the test.**
+  `IoInterrupt`'s `CheckSpinLock` branches `if (KmtIsMultiProcessorBuild) … else if
+  (KmtIsCheckedBuild) …`, so the MP branch — which demands `*Lock == 1` **exactly** — is
+  reached first and the checked branch is unreachable on an MP kernel. But
+  `KI_TRACK_SPINLOCK_OWNER` is gated on plain `#if DBG`, independent of `CONFIG_SMP`, so a
+  checked MP kernel stamps `thread|1` and cannot pass. Upstream ReactOS's own DBG+SMP build
+  fails it identically. **Symptom shape worth recognising: a test whose expectation is selected
+  by build flavour can be missing a COMBINATION of flavours, and then a kernel that behaves
+  identically under both flavours "regresses" purely by crossing the branch boundary.** Before
+  filing an MP regression, check whether the UP and MP kernels actually wrote different values
+  — here they wrote the same one.
+- **A baseline seeded before a behavioural fix invents a cross-arch pattern that does not
+  exist.** Same incident: today's post-stamp arm64 numbers compared against x86 baselines
+  seeded four days *before* the stamp landed (`cfdff72b41d`) read as "x86 MP passes, arm64 MP
+  fails" — an arch difference, and a tempting one, since arm64 is where MP is least mature. It
+  was purely the seed dates; the per-arch behaviour is identical. **A baseline is a measurement
+  with a timestamp, not a constant.** When a delta looks arch-specific, diff the baselines'
+  commit dates against the fix's date before theorising, and re-seed every arch that predates
+  it — a stale ratchet floor will swing in BOTH directions with no source change behind either.
 
 ### Lints as permanent gates
 `tools/` carries the deterministic detectors; all are wired into `vibeos-cli check` at **0 NEW
