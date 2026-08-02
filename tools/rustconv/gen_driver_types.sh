@@ -1556,6 +1556,26 @@ case "$DRIVER" in
                   # which no other allowlisted header declares.
                   --allowlist-file '.*[/\\]winuser\.h'
                   --allowlist-file '.*[/\\]winbase\.h'
+                  # Same "base platform" reasoning, for the two headers the DISK IOCTL path
+                  # needs. ioapiset.h (via winbase.h:21) owns DeviceIoControl, which no other
+                  # allowlisted header declares. winioctl.h (via ndk/umtypes.h:49, which
+                  # precomp.h reaches through ndk/rtlfuncs.h) owns GET_LENGTH_INFORMATION,
+                  # DISK_GEOMETRY, PARTITION_INFORMATION{,_EX} and the PARTITION_STYLE_* enum.
+                  # Without it dialogs/drive.cpp's translation has no layout at all for the
+                  # buffers it hands DeviceIoControl — the §9.112 shape, one step upstream.
+                  #
+                  # What actually lands from winioctl.h is only the FILE_DEVICE_* / METHOD_* /
+                  # FILE_*_ACCESS constants: ntdll-sys already owns every disk STRUCT and is
+                  # blocklisted here so they keep one identity. The IOCTL_DISK_* codes land
+                  # NOWHERE — they are CTL_CODE(...) function-like macros, so bindgen emits
+                  # nothing and shell32-rust's prelude.rs computes them from the parts above.
+                  #
+                  # SCOPED TO psdk/ on purpose, unlike its neighbours: sdk/include/wine carries
+                  # a SECOND winioctl.h, and an unscoped '.*[/\\]winioctl\.h' would emit from
+                  # whichever the -I order resolved. See the LATE_INC note at the top of this
+                  # file for what that alternate surface does to _FILE_FS_*_INFORMATION.
+                  --allowlist-file '.*[/\\]ioapiset\.h'
+                  --allowlist-file '.*[/\\]psdk[/\\]winioctl\.h'
                   --allowlist-file '.*shell32[/\\].*\.h' )
     # The derived profile also proposed -I"${SRC}/build-i386/dll/win32/shell32". Dropped: that
     # directory carries no headers, and baking ONE arch's build dir into a 3-arch generator is

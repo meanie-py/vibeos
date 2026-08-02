@@ -570,8 +570,9 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   `.cpp` files (60,258 physical lines), including retained companions/bridges, private dynamic
   objects, shared shellmenu/shelldesktop objects, procedural helpers, and the remaining
   monoliths — `CDefView.cpp`, `dialogs.cpp`, `filetypes.cpp`, `utils.cpp`, `shell32.cpp`.
-  (`shlexec.cpp` and `shlfileop.cpp` left that list on 2026-08-01; the tail is now 46 `.cpp` /
-  41,584 lines, tracked by `rustconv shell32-tail-inventory`.) The exhaustive zero-C++ plan and
+  (`shlexec.cpp` and `shlfileop.cpp` left that list on 2026-08-01 and `dialogs/drive.cpp` on
+  2026-08-02; the tail is now 45 `.cpp` / 40,798 lines, tracked by
+  `rustconv shell32-tail-inventory`.) The exhaustive zero-C++ plan and
   ledger are in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
   **Free-function TUs — the island-first recipe is proven; 2 wired, 7 still parked** (2026-07-26).
   `dialogs/general.cpp` and `dialogs/recycler_prop.cpp` are cohab-flipped and green on all three
@@ -643,6 +644,19 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   typedef given a calling convention the C never had. Every one compiled clean in C and
   shipped. Field manual: "Semantic rewrites that flip meaning", "Element count vs byte count",
   "A file-local fn-pointer TYPEDEF given a convention the C never had", "Phantom symbols".
+  `dialogs/drive.cpp` is flipped (2026-08-02) — the format-drive dialog, 786 lines, and the TU
+  that made the **island grow a disk IOCTL surface**. `ioapiset.h` and `psdk/winioctl.h` were
+  missing from the shell32 allowlist in `gen_driver_types.sh`, so `DeviceIoControl` and every
+  `GET_LENGTH_INFORMATION` / `DISK_GEOMETRY` / `PARTITION_INFORMATION{,_EX}` /
+  `PARTITION_STYLE_*` a translation needs resolved to nothing. Adding the two headers is the
+  fix; the four `IOCTL_DISK_*` codes still have to be COMPUTED in the prelude, because
+  `CTL_CODE` is a function-like macro bindgen cannot emit. Two shipped-class defects the paid
+  bodies carried: the `FormatExCB` callback matched on the BARE C enumerators (`PROGRESS`,
+  `DONE`, …) where the island spells them `CALLBACKCOMMAND_*` — §9.112, and the ordinals are
+  not what the C order suggests (`DONE` is 11, `DONEWITHSTRUCTURE` is 1) — and the
+  `SHCreateThread` thread proc lost its `CALLBACK`/stdcall. Regenerating the island also
+  normalized 236 fn-pointer slots to `extern "system"`, which let four `#[cfg]`-duplicated
+  stdcall/C callback twins in `iconcache`/`shlexec`/`shlfileop` collapse to one body each.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

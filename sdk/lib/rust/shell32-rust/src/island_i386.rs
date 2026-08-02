@@ -7937,6 +7937,158 @@ pub const EVCF_DONTSHOWIFZERO: u32 = 16;
 pub const EVCF_SETTINGSMODE: u32 = 32;
 pub const EVCF_OUTOFDISKSPACE: u32 = 64;
 pub const EVCCBF_LASTNOTIFICATION: u32 = 1;
+pub const FILE_DEVICE_BEEP: u32 = 1;
+pub const FILE_DEVICE_CD_ROM: u32 = 2;
+pub const FILE_DEVICE_CD_ROM_FILE_SYSTEM: u32 = 3;
+pub const FILE_DEVICE_CONTROLLER: u32 = 4;
+pub const FILE_DEVICE_DATALINK: u32 = 5;
+pub const FILE_DEVICE_DFS: u32 = 6;
+pub const FILE_DEVICE_DISK: u32 = 7;
+pub const FILE_DEVICE_DISK_FILE_SYSTEM: u32 = 8;
+pub const FILE_DEVICE_FILE_SYSTEM: u32 = 9;
+pub const FILE_DEVICE_INPORT_PORT: u32 = 10;
+pub const FILE_DEVICE_KEYBOARD: u32 = 11;
+pub const FILE_DEVICE_MAILSLOT: u32 = 12;
+pub const FILE_DEVICE_MIDI_IN: u32 = 13;
+pub const FILE_DEVICE_MIDI_OUT: u32 = 14;
+pub const FILE_DEVICE_MOUSE: u32 = 15;
+pub const FILE_DEVICE_MULTI_UNC_PROVIDER: u32 = 16;
+pub const FILE_DEVICE_NAMED_PIPE: u32 = 17;
+pub const FILE_DEVICE_NETWORK: u32 = 18;
+pub const FILE_DEVICE_NETWORK_BROWSER: u32 = 19;
+pub const FILE_DEVICE_NETWORK_FILE_SYSTEM: u32 = 20;
+pub const FILE_DEVICE_NULL: u32 = 21;
+pub const FILE_DEVICE_PARALLEL_PORT: u32 = 22;
+pub const FILE_DEVICE_PHYSICAL_NETCARD: u32 = 23;
+pub const FILE_DEVICE_PRINTER: u32 = 24;
+pub const FILE_DEVICE_SCANNER: u32 = 25;
+pub const FILE_DEVICE_SERIAL_MOUSE_PORT: u32 = 26;
+pub const FILE_DEVICE_SERIAL_PORT: u32 = 27;
+pub const FILE_DEVICE_SCREEN: u32 = 28;
+pub const FILE_DEVICE_SOUND: u32 = 29;
+pub const FILE_DEVICE_STREAMS: u32 = 30;
+pub const FILE_DEVICE_TAPE: u32 = 31;
+pub const FILE_DEVICE_TAPE_FILE_SYSTEM: u32 = 32;
+pub const FILE_DEVICE_TRANSPORT: u32 = 33;
+pub const FILE_DEVICE_UNKNOWN: u32 = 34;
+pub const FILE_DEVICE_VIDEO: u32 = 35;
+pub const FILE_DEVICE_VIRTUAL_DISK: u32 = 36;
+pub const FILE_DEVICE_WAVE_IN: u32 = 37;
+pub const FILE_DEVICE_WAVE_OUT: u32 = 38;
+pub const FILE_DEVICE_8042_PORT: u32 = 39;
+pub const FILE_DEVICE_NETWORK_REDIRECTOR: u32 = 40;
+pub const FILE_DEVICE_BATTERY: u32 = 41;
+pub const FILE_DEVICE_BUS_EXTENDER: u32 = 42;
+pub const FILE_DEVICE_MODEM: u32 = 43;
+pub const FILE_DEVICE_VDM: u32 = 44;
+pub const FILE_DEVICE_MASS_STORAGE: u32 = 45;
+pub const FILE_DEVICE_SMB: u32 = 46;
+pub const FILE_DEVICE_KS: u32 = 47;
+pub const FILE_DEVICE_CHANGER: u32 = 48;
+pub const FILE_DEVICE_SMARTCARD: u32 = 49;
+pub const FILE_DEVICE_ACPI: u32 = 50;
+pub const FILE_DEVICE_DVD: u32 = 51;
+pub const FILE_DEVICE_FULLSCREEN_VIDEO: u32 = 52;
+pub const FILE_DEVICE_DFS_FILE_SYSTEM: u32 = 53;
+pub const FILE_DEVICE_DFS_VOLUME: u32 = 54;
+pub const FILE_DEVICE_SERENUM: u32 = 55;
+pub const FILE_DEVICE_TERMSRV: u32 = 56;
+pub const FILE_DEVICE_KSEC: u32 = 57;
+pub const FILE_DEVICE_FIPS: u32 = 58;
+pub const FILE_DEVICE_INFINIBAND: u32 = 59;
+pub const FILE_DEVICE_VMBUS: u32 = 62;
+pub const FILE_DEVICE_CRYPT_PROVIDER: u32 = 63;
+pub const FILE_DEVICE_WPD: u32 = 64;
+pub const FILE_DEVICE_BLUETOOTH: u32 = 65;
+pub const FILE_DEVICE_MT_COMPOSITE: u32 = 66;
+pub const FILE_DEVICE_MT_TRANSPORT: u32 = 67;
+pub const FILE_DEVICE_BIOMETRIC: u32 = 68;
+pub const FILE_DEVICE_PMI: u32 = 69;
+pub const FILE_DEVICE_EHSTOR: u32 = 70;
+pub const FILE_DEVICE_DEVAPI: u32 = 71;
+pub const FILE_DEVICE_GPIO: u32 = 72;
+pub const FILE_DEVICE_USBEX: u32 = 73;
+pub const FILE_DEVICE_CONSOLE: u32 = 80;
+pub const FILE_DEVICE_NFP: u32 = 81;
+pub const FILE_DEVICE_SYSENV: u32 = 82;
+pub const FILE_DEVICE_VIRTUAL_BLOCK: u32 = 83;
+pub const FILE_DEVICE_POINT_OF_SERVICE: u32 = 84;
+pub const FILE_DEVICE_STORAGE_REPLICATION: u32 = 85;
+pub const FILE_DEVICE_TRUST_ENV: u32 = 86;
+pub const FILE_DEVICE_UCM: u32 = 87;
+pub const FILE_DEVICE_UCMTCPCI: u32 = 88;
+pub const FILE_DEVICE_PERSISTENT_MEMORY: u32 = 89;
+pub const FILE_DEVICE_NVDIMM: u32 = 90;
+pub const FILE_DEVICE_HOLOGRAPHIC: u32 = 91;
+pub const FILE_DEVICE_SDFXHCI: u32 = 92;
+pub const FILE_DEVICE_UCMUCSI: u32 = 93;
+pub const FILE_ANY_ACCESS: u32 = 0;
+pub const FILE_SPECIAL_ACCESS: u32 = 0;
+pub const FILE_READ_ACCESS: u32 = 1;
+pub const FILE_WRITE_ACCESS: u32 = 2;
+pub const METHOD_BUFFERED: u32 = 0;
+pub const METHOD_IN_DIRECT: u32 = 1;
+pub const METHOD_OUT_DIRECT: u32 = 2;
+pub const METHOD_NEITHER: u32 = 3;
+pub const IOCTL_STORAGE_BASE: u32 = 45;
+pub const IOCTL_DISK_BASE: u32 = 7;
+pub const PARTITION_ENTRY_UNUSED: u32 = 0;
+pub const PARTITION_FAT_12: u32 = 1;
+pub const PARTITION_XENIX_1: u32 = 2;
+pub const PARTITION_XENIX_2: u32 = 3;
+pub const PARTITION_FAT_16: u32 = 4;
+pub const PARTITION_EXTENDED: u32 = 5;
+pub const PARTITION_HUGE: u32 = 6;
+pub const PARTITION_IFS: u32 = 7;
+pub const PARTITION_OS2BOOTMGR: u32 = 10;
+pub const PARTITION_FAT32: u32 = 11;
+pub const PARTITION_FAT32_XINT13: u32 = 12;
+pub const PARTITION_XINT13: u32 = 14;
+pub const PARTITION_XINT13_EXTENDED: u32 = 15;
+pub const PARTITION_MSFT_RECOVERY: u32 = 39;
+pub const PARTITION_MAIN_OS: u32 = 40;
+pub const PARTIITON_OS_DATA: u32 = 41;
+pub const PARTITION_PRE_INSTALLED: u32 = 42;
+pub const PARTITION_BSP: u32 = 43;
+pub const PARTITION_DPP: u32 = 44;
+pub const PARTITION_WINDOWS_SYSTEM: u32 = 45;
+pub const PARTITION_PREP: u32 = 65;
+pub const PARTITION_LDM: u32 = 66;
+pub const PARTITION_DM: u32 = 84;
+pub const PARTITION_EZDRIVE: u32 = 85;
+pub const PARTITION_UNIX: u32 = 99;
+pub const PARTITION_SPACES_DATA: u32 = 215;
+pub const PARTITION_SPACES: u32 = 231;
+pub const PARTITION_GPT: u32 = 238;
+pub const PARTITION_SYSTEM: u32 = 239;
+pub const VALID_NTFT: u32 = 192;
+pub const PARTITION_NTFT: u32 = 128;
+pub const PARTITION_OLD_LINUX: u32 = 67;
+pub const PARTITION_LINUX: u32 = 131;
+pub const PARTITION_ISO9660: u32 = 150;
+pub const PARTITION_FREEBSD: u32 = 165;
+pub const PARTITION_OPENBSD: u32 = 166;
+pub const PARTITION_NETBSD: u32 = 169;
+pub const GPT_ATTRIBUTE_PLATFORM_REQUIRED: u32 = 1;
+pub const GPT_BASIC_DATA_ATTRIBUTE_READ_ONLY: u64 = 1152921504606846976;
+pub const GPT_BASIC_DATA_ATTRIBUTE_SHADOW_COPY: u64 = 2305843009213693952;
+pub const GPT_BASIC_DATA_ATTRIBUTE_HIDDEN: u64 = 4611686018427387904;
+pub const GPT_BASIC_DATA_ATTRIBUTE_NO_DRIVE_LETTER: i64 = -9223372036854775808;
+pub const DISK_LOGGING_START: u32 = 0;
+pub const DISK_LOGGING_STOP: u32 = 1;
+pub const DISK_LOGGING_DUMP: u32 = 2;
+pub const DISK_BINNING: u32 = 3;
+pub const HIST_NO_OF_BUCKETS: u32 = 24;
+pub const SERIAL_LSRMST_ESCAPE: u32 = 0;
+pub const SERIAL_LSRMST_LSR_DATA: u32 = 1;
+pub const SERIAL_LSRMST_LSR_NODATA: u32 = 2;
+pub const SERIAL_LSRMST_MST: u32 = 3;
+pub const VOLUME_IS_DIRTY: u32 = 1;
+pub const VOLUME_UPGRADE_SCHEDULED: u32 = 2;
+pub const VOLUME_SESSION_OPEN: u32 = 4;
+pub const FILESYSTEM_STATISTICS_TYPE_NTFS: u32 = 1;
+pub const FILESYSTEM_STATISTICS_TYPE_FAT: u32 = 2;
+pub const FILESYSTEM_STATISTICS_TYPE_EXFAT: u32 = 3;
 pub const MEMORYSTICK_FORMAT_CAPABLE: u32 = 16;
 pub const MEMORYSTICK_SUPPORTS_PROGRESS_BAR: u32 = 32;
 pub const DEVICE_HOTPLUG: u32 = 64;
@@ -10503,6 +10655,79 @@ pub const SV_MINPAGEDPOOLCHUNKSIZE_INFOLEVEL: u32 = 1583;
 pub const SV_MAXPAGEDPOOLCHUNKSIZE_INFOLEVEL: u32 = 1584;
 pub const SV_SENDSFROMPREFERREDPROCESSOR_INFOLEVEL: u32 = 1585;
 pub const SV_MAXTHREADSPERQUEUE_INFOLEVEL: u32 = 1586;
+unsafe extern "stdcall" {
+    pub fn CancelIo(hFile: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CreateIoCompletionPort(
+        FileHandle: HANDLE,
+        ExistingCompletionPort: HANDLE,
+        CompletionKey: ULONG_PTR,
+        NumberOfConcurrentThreads: DWORD,
+    ) -> HANDLE;
+}
+unsafe extern "stdcall" {
+    pub fn DeviceIoControl(
+        hDevice: HANDLE,
+        dwIoControlCode: DWORD,
+        lpInBuffer: LPVOID,
+        nInBufferSize: DWORD,
+        lpOutBuffer: LPVOID,
+        nOutBufferSize: DWORD,
+        lpBytesReturned: LPDWORD,
+        lpOverlapped: LPOVERLAPPED,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn GetOverlappedResult(
+        hFile: HANDLE,
+        lpOverlapped: LPOVERLAPPED,
+        lpNumberOfBytesTransferred: LPDWORD,
+        bWait: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn GetOverlappedResultEx(
+        hFile: HANDLE,
+        lpOverlapped: LPOVERLAPPED,
+        lpNumberOfBytesTransferred: LPDWORD,
+        dwMilliseconds: DWORD,
+        bAlertable: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn GetQueuedCompletionStatus(
+        CompletionPort: HANDLE,
+        lpNumberOfBytesTransferred: LPDWORD,
+        lpCompletionKey: PULONG_PTR,
+        lpOverlapped: *mut LPOVERLAPPED,
+        dwMilliseconds: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn PostQueuedCompletionStatus(
+        CompletionPort: HANDLE,
+        dwNumberOfBytesTransferred: DWORD,
+        dwCompletionKey: ULONG_PTR,
+        lpOverlapped: LPOVERLAPPED,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn GetQueuedCompletionStatusEx(
+        CompletionPort: HANDLE,
+        lpCompletionPortEntries: LPOVERLAPPED_ENTRY,
+        ulCount: ULONG,
+        ulNumEntriesRemoved: PULONG,
+        dwMilliseconds: DWORD,
+        fAlertable: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CancelIoEx(hFile: HANDLE, lpOverlapped: LPOVERLAPPED) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CancelSynchronousIo(hThread: HANDLE) -> BOOL;
+}
 pub const _FILE_ID_TYPE_FileIdType: _FILE_ID_TYPE = 0;
 pub const _FILE_ID_TYPE_ObjectIdType: _FILE_ID_TYPE = 1;
 pub const _FILE_ID_TYPE_ExtendedFileIdType: _FILE_ID_TYPE = 2;
@@ -10656,7 +10881,7 @@ pub type PSRWLOCK = *mut RTL_SRWLOCK;
 pub type CONDITION_VARIABLE = RTL_CONDITION_VARIABLE;
 pub type PCONDITION_VARIABLE = *mut RTL_CONDITION_VARIABLE;
 pub type APPLICATION_RECOVERY_CALLBACK =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> DWORD>;
 unsafe extern "stdcall" {
     pub fn WinMain(
         arg1: HINSTANCE,
@@ -19509,7 +19734,7 @@ pub type ENUMTEXTMETRICW = _ENUMTEXTMETRICW;
 pub type PENUMTEXTMETRICW = *mut _ENUMTEXTMETRICW;
 pub type LPENUMTEXTMETRICW = *mut _ENUMTEXTMETRICW;
 pub type OLDFONTENUMPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *const LOGFONTA,
         arg2: *const TEXTMETRICA,
         arg3: DWORD,
@@ -19517,7 +19742,7 @@ pub type OLDFONTENUMPROCA = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type OLDFONTENUMPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *const LOGFONTW,
         arg2: *const TEXTMETRICW,
         arg3: DWORD,
@@ -19528,13 +19753,13 @@ pub type FONTENUMPROCA = OLDFONTENUMPROCA;
 pub type FONTENUMPROCW = OLDFONTENUMPROCW;
 pub type FONTENUMPROC = FONTENUMPROCW;
 pub type GOBJENUMPROC =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPVOID, arg2: LPARAM) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPVOID, arg2: LPARAM) -> INT>;
 pub type LINEDDAPROC =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: INT, arg2: INT, arg3: LPARAM)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: INT, arg2: INT, arg3: LPARAM)>;
 pub type ABORTPROC =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL>;
 pub type MFENUMPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         hdc: HDC,
         lpht: *mut HANDLETABLE,
         lpMR: *mut METARECORD,
@@ -19543,7 +19768,7 @@ pub type MFENUMPROC = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type ENHMFENUMPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         hdc: HDC,
         lpht: *mut HANDLETABLE,
         lpmr: *const ENHMETARECORD,
@@ -19552,7 +19777,7 @@ pub type ENHMFENUMPROC = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPFNDEVMODE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HWND,
         arg2: HMODULE,
         arg3: LPDEVMODEA,
@@ -19564,7 +19789,7 @@ pub type LPFNDEVMODE = ::core::option::Option<
     ) -> UINT,
 >;
 pub type LPFNDEVCAPS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: LPSTR,
         arg2: LPSTR,
         arg3: UINT,
@@ -21548,7 +21773,7 @@ pub type DISPLAY_DEVICE = DISPLAY_DEVICEW;
 pub type PDISPLAY_DEVICE = *mut DISPLAY_DEVICEW;
 pub type LPDISPLAY_DEVICE = *mut DISPLAY_DEVICEW;
 pub type __CDHOOKPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> UINT_PTR,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> UINT_PTR,
 >;
 pub type LPCCHOOKPROC = __CDHOOKPROC;
 pub type LPCFHOOKPROC = __CDHOOKPROC;
@@ -21854,7 +22079,7 @@ pub struct _PROPSHEETPAGEA {
     pub pfnDlgProc: DLGPROC,
     pub lParam: LPARAM,
     pub pfnCallback: ::core::option::Option<
-        unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEA) -> UINT,
+        unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEA) -> UINT,
     >,
     pub pcRefParent: *mut UINT,
     pub pszHeaderTitle: LPCSTR,
@@ -21897,7 +22122,7 @@ pub struct _PROPSHEETPAGEW {
     pub pfnDlgProc: DLGPROC,
     pub lParam: LPARAM,
     pub pfnCallback: ::core::option::Option<
-        unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEW) -> UINT,
+        unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEW) -> UINT,
     >,
     pub pcRefParent: *mut UINT,
     pub pszHeaderTitle: LPCWSTR,
@@ -21930,13 +22155,13 @@ pub type LPPROPSHEETPAGEW_LATEST = *mut _PROPSHEETPAGEW;
 pub type LPCPROPSHEETPAGEW = *const PROPSHEETPAGEW;
 pub type LPCPROPSHEETPAGEW_LATEST = *const PROPSHEETPAGEW;
 pub type LPFNPSPCALLBACKA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: LPPROPSHEETPAGEA) -> UINT,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: LPPROPSHEETPAGEA) -> UINT,
 >;
 pub type LPFNPSPCALLBACKW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: LPPROPSHEETPAGEW) -> UINT,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: LPPROPSHEETPAGEW) -> UINT,
 >;
 pub type PFNPROPSHEETCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: LPARAM) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: LPARAM) -> ::core::ffi::c_int,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -22043,9 +22268,9 @@ pub type PROPSHEETHEADERW = _PROPSHEETHEADERW;
 pub type LPPROPSHEETHEADERW = *mut _PROPSHEETHEADERW;
 pub type LPCPROPSHEETHEADERW = *const PROPSHEETHEADERW;
 pub type LPFNADDPROPSHEETPAGE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: HPROPSHEETPAGE, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HPROPSHEETPAGE, arg2: LPARAM) -> BOOL>;
 pub type LPFNADDPROPSHEETPAGES = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPVOID, arg2: LPFNADDPROPSHEETPAGE, arg3: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: LPVOID, arg2: LPFNADDPROPSHEETPAGE, arg3: LPARAM) -> BOOL,
 >;
 #[repr(C)]
 pub struct _PSHNOTIFY {
@@ -22232,7 +22457,7 @@ pub struct HDDEDATA__ {
 }
 pub type HDDEDATA = *mut HDDEDATA__;
 pub type PFNCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: UINT,
         arg2: UINT,
         arg3: HCONV,
@@ -23416,7 +23641,7 @@ pub struct _DllVersionInfo {
 }
 pub type DLLVERSIONINFO = _DllVersionInfo;
 pub type DLLGETVERSIONPROC =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut DLLVERSIONINFO) -> HRESULT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut DLLVERSIONINFO) -> HRESULT>;
 #[repr(C)]
 pub struct _DLLVERSIONINFO2 {
     pub info1: DLLVERSIONINFO,
@@ -25483,7 +25708,7 @@ unsafe extern "stdcall" {
     ) -> BOOL;
 }
 pub type INTERNET_STATUS_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HINTERNET,
         arg2: DWORD_PTR,
         arg3: DWORD,
@@ -25966,10 +26191,10 @@ unsafe extern "stdcall" {
     ) -> HINTERNET;
 }
 pub type GOPHER_ATTRIBUTE_ENUMERATORA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPGOPHER_ATTRIBUTE_TYPEA, arg2: DWORD) -> BOOL,
+    unsafe extern "system" fn(arg1: LPGOPHER_ATTRIBUTE_TYPEA, arg2: DWORD) -> BOOL,
 >;
 pub type GOPHER_ATTRIBUTE_ENUMERATORW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPGOPHER_ATTRIBUTE_TYPEW, arg2: DWORD) -> BOOL,
+    unsafe extern "system" fn(arg1: LPGOPHER_ATTRIBUTE_TYPEW, arg2: DWORD) -> BOOL,
 >;
 pub type GOPHER_ATTRIBUTE_ENUMERATOR = GOPHER_ATTRIBUTE_ENUMERATORW;
 unsafe extern "stdcall" {
@@ -26218,7 +26443,7 @@ unsafe extern "C" {
     pub fn InternetAuthNotifyCallback(arg1: DWORD_PTR, arg2: DWORD, arg3: LPVOID) -> DWORD;
 }
 pub type PFN_AUTH_NOTIFY = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: DWORD_PTR, arg2: DWORD, arg3: LPVOID) -> DWORD,
+    unsafe extern "system" fn(arg1: DWORD_PTR, arg2: DWORD, arg3: LPVOID) -> DWORD,
 >;
 #[repr(C)]
 pub struct INTERNET_AUTH_NOTIFY_DATA {
@@ -26679,7 +26904,7 @@ unsafe extern "stdcall" {
     pub fn InternetGetConnectedState(arg1: LPDWORD, arg2: DWORD) -> BOOL;
 }
 pub type PFN_DIAL_HANDLER = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: LPCSTR, arg3: DWORD, arg4: LPDWORD) -> DWORD,
+    unsafe extern "system" fn(arg1: HWND, arg2: LPCSTR, arg3: DWORD, arg4: LPDWORD) -> DWORD,
 >;
 unsafe extern "stdcall" {
     pub fn InternetSetDialStateA(arg1: LPCSTR, arg2: DWORD, arg3: DWORD) -> BOOL;
@@ -26706,25 +26931,25 @@ unsafe extern "stdcall" {
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct AutoProxyHelperVtbl {
-    pub IsResolvable: ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>,
+    pub IsResolvable: ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>,
     pub GetIPAddress:
-        ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LPDWORD) -> DWORD>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LPDWORD) -> DWORD>,
     pub ResolveHostName: ::core::option::Option<
-        unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LPSTR, arg3: LPDWORD) -> DWORD,
+        unsafe extern "system" fn(arg1: LPSTR, arg2: LPSTR, arg3: LPDWORD) -> DWORD,
     >,
     pub IsInNet: ::core::option::Option<
-        unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LPSTR, arg3: LPSTR) -> BOOL,
+        unsafe extern "system" fn(arg1: LPSTR, arg2: LPSTR, arg3: LPSTR) -> BOOL,
     >,
-    pub IsResolvableEx: ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>,
+    pub IsResolvableEx: ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>,
     pub GetIPAddressEx:
-        ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LPDWORD) -> DWORD>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LPDWORD) -> DWORD>,
     pub ResolveHostNameEx: ::core::option::Option<
-        unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LPSTR, arg3: LPDWORD) -> DWORD,
+        unsafe extern "system" fn(arg1: LPSTR, arg2: LPSTR, arg3: LPDWORD) -> DWORD,
     >,
     pub IsInNetEx:
-        ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LPSTR) -> BOOL>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LPSTR) -> BOOL>,
     pub SortIpList: ::core::option::Option<
-        unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LPSTR, arg3: LPDWORD) -> DWORD,
+        unsafe extern "system" fn(arg1: LPSTR, arg2: LPSTR, arg3: LPDWORD) -> DWORD,
     >,
 }
 #[repr(C)]
@@ -27841,7 +28066,7 @@ pub struct tagLVCOLUMNW {
 pub type LVCOLUMNW = tagLVCOLUMNW;
 pub type LPLVCOLUMNW = *mut tagLVCOLUMNW;
 pub type PFNLVCOMPARE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPARAM, arg2: LPARAM, arg3: LPARAM) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(arg1: LPARAM, arg2: LPARAM, arg3: LPARAM) -> ::core::ffi::c_int,
 >;
 #[repr(C)]
 pub struct tagLVBKIMAGEA {
@@ -27898,7 +28123,7 @@ pub struct tagLVGROUPMETRICS {
 pub type LVGROUPMETRICS = tagLVGROUPMETRICS;
 pub type PLVGROUPMETRICS = *mut tagLVGROUPMETRICS;
 pub type PFNLVGROUPCOMPARE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: ::core::ffi::c_int,
         arg2: ::core::ffi::c_int,
         arg3: *mut ::core::ffi::c_void,
@@ -28195,7 +28420,7 @@ pub struct tagTVHITTESTINFO {
 pub type TVHITTESTINFO = tagTVHITTESTINFO;
 pub type LPTVHITTESTINFO = *mut tagTVHITTESTINFO;
 pub type PFNTVCOMPARE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         lParam1: LPARAM,
         lParam2: LPARAM,
         lParamSort: LPARAM,
@@ -28642,13 +28867,13 @@ pub struct _DSA {
 }
 pub type HDSA = *mut _DSA;
 pub type PFNDPAENUMCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         p: *mut ::core::ffi::c_void,
         pData: *mut ::core::ffi::c_void,
     ) -> ::core::ffi::c_int,
 >;
 pub type PFNDSAENUMCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         p: *mut ::core::ffi::c_void,
         pData: *mut ::core::ffi::c_void,
     ) -> ::core::ffi::c_int,
@@ -28711,7 +28936,7 @@ unsafe extern "stdcall" {
     );
 }
 pub type PFNDPACOMPARE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         p1: *mut ::core::ffi::c_void,
         p2: *mut ::core::ffi::c_void,
         lParam: LPARAM,
@@ -28744,14 +28969,14 @@ pub struct _DPASTREAMINFO {
 }
 pub type DPASTREAMINFO = _DPASTREAMINFO;
 pub type PFNDPASTREAM = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut DPASTREAMINFO,
         arg2: *mut IStream,
         arg3: *mut ::core::ffi::c_void,
     ) -> HRESULT,
 >;
 pub type PFNDPAMERGE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: UINT,
         arg2: *mut ::core::ffi::c_void,
         arg3: *mut ::core::ffi::c_void,
@@ -28759,7 +28984,7 @@ pub type PFNDPAMERGE = ::core::option::Option<
     ) -> *mut ::core::ffi::c_void,
 >;
 pub type PFNDPAMERGECONST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: UINT,
         arg2: *const ::core::ffi::c_void,
         arg3: *const ::core::ffi::c_void,
@@ -28862,7 +29087,7 @@ unsafe extern "stdcall" {
     pub fn UninitializeFlatSB(arg1: HWND) -> HRESULT;
 }
 pub type SUBCLASSPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         hWnd: HWND,
         uMsg: UINT,
         wParam: WPARAM,
@@ -28985,7 +29210,7 @@ pub struct _TASKDIALOG_BUTTON {
 }
 pub type TASKDIALOG_BUTTON = _TASKDIALOG_BUTTON;
 pub type PFTASKDIALOGCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HWND,
         arg2: UINT,
         arg3: WPARAM,
@@ -32060,7 +32285,7 @@ pub struct IActiveDesktop {
     pub vtable_: *const IActiveDesktop__bindgen_vtable,
 }
 pub type BFFCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: LPARAM, arg4: LPARAM) -> INT,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: LPARAM, arg4: LPARAM) -> INT,
 >;
 #[repr(C)]
 pub struct tagBROWSEINFOA {
@@ -32091,7 +32316,7 @@ pub type BROWSEINFOW = tagBROWSEINFOW;
 pub type PBROWSEINFOW = *mut tagBROWSEINFOW;
 pub type LPBROWSEINFOW = *mut tagBROWSEINFOW;
 pub type LPFNVIEWCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         dwUser: *mut IShellView,
         pshf: *mut IShellFolder,
         hWnd: HWND,
@@ -34591,7 +34816,7 @@ unsafe extern "stdcall" {
     ) -> HRESULT;
 }
 pub type LPFNDFMCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut IShellFolder,
         arg2: HWND,
         arg3: *mut IDataObject,
@@ -34660,7 +34885,7 @@ pub struct IDockingWindowSite {
     pub vtable_: *const IDockingWindowSite__bindgen_vtable,
 }
 pub type PFNASYNCICONTASKBALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         pidl: LPCITEMIDLIST,
         pvData: LPVOID,
         pvHint: LPVOID,
@@ -34712,6 +34937,12 @@ unsafe extern "C" {
 #[repr(C)]
 pub struct IEmptyVolumeCache2 {
     pub _base: IEmptyVolumeCache,
+}
+unsafe extern "C" {
+    pub static GUID_DEVINTERFACE_COMPORT: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_DEVINTERFACE_SERENUM_BUS_ENUMERATOR: GUID;
 }
 #[repr(C)]
 pub struct TEXTOUTPUT {
@@ -34771,7 +35002,7 @@ pub const CALLBACKCOMMAND_STRUCTUREPROGRESS: CALLBACKCOMMAND = 15;
 pub const CALLBACKCOMMAND_CLUSTERSIZETOOSMALL: CALLBACKCOMMAND = 16;
 pub type CALLBACKCOMMAND = ::core::ffi::c_uint;
 pub type PFMIFSCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Command: CALLBACKCOMMAND,
         SubAction: ULONG,
         ActionInfo: PVOID,
@@ -34877,7 +35108,7 @@ unsafe extern "stdcall" {
     pub fn SetLabel(DriveRoot: PWCHAR, Label: PWCHAR) -> BOOL;
 }
 pub type PULIB_CHKDSK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriveRoot: PUNICODE_STRING,
         Callback: PFMIFSCALLBACK,
         FixErrors: BOOLEAN,
@@ -34892,7 +35123,7 @@ pub type PULIB_CHKDSK = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PULIB_FORMAT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriveRoot: PUNICODE_STRING,
         Callback: PFMIFSCALLBACK,
         QuickFormat: BOOLEAN,
@@ -34910,23 +35141,23 @@ pub type GEOID = DWORD;
 pub type GEOTYPE = DWORD;
 pub type GEOCLASS = DWORD;
 pub type CALINFO_ENUMPROCEXEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: CALID, arg3: LPWSTR, arg4: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID, arg3: LPWSTR, arg4: LPARAM) -> BOOL,
 >;
 pub type DATEFMT_ENUMPROCEXEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: CALID, arg3: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID, arg3: LPARAM) -> BOOL,
 >;
 pub type TIMEFMT_ENUMPROCEX =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LPARAM) -> BOOL>;
 pub type CALINFO_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type CALINFO_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
 pub type CALINFO_ENUMPROCEXA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
 pub type CALINFO_ENUMPROCEXW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
 pub type LANGUAGEGROUP_ENUMPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: LGRPID,
         arg2: LPSTR,
         arg3: LPSTR,
@@ -34935,7 +35166,7 @@ pub type LANGUAGEGROUP_ENUMPROCA = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type LANGUAGEGROUP_ENUMPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: LGRPID,
         arg2: LPWSTR,
         arg3: LPWSTR,
@@ -34944,38 +35175,38 @@ pub type LANGUAGEGROUP_ENUMPROCW = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type LANGGROUPLOCALE_ENUMPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LGRPID, arg2: LCID, arg3: LPSTR, arg4: LONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: LGRPID, arg2: LCID, arg3: LPSTR, arg4: LONG_PTR) -> BOOL,
 >;
 pub type LANGGROUPLOCALE_ENUMPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LGRPID, arg2: LCID, arg3: LPWSTR, arg4: LONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: LGRPID, arg2: LCID, arg3: LPWSTR, arg4: LONG_PTR) -> BOOL,
 >;
 pub type UILANGUAGE_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: LONG_PTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LONG_PTR) -> BOOL>;
 pub type UILANGUAGE_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LONG_PTR) -> BOOL>;
-pub type LOCALE_ENUMPROCA = ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LONG_PTR) -> BOOL>;
+pub type LOCALE_ENUMPROCA = ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type LOCALE_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
 pub type LOCALE_ENUMPROCEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: DWORD, arg3: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: DWORD, arg3: LPARAM) -> BOOL,
 >;
 pub type CODEPAGE_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type CODEPAGE_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
 pub type DATEFMT_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type DATEFMT_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
 pub type DATEFMT_ENUMPROCEXA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
 pub type DATEFMT_ENUMPROCEXW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
 pub type TIMEFMT_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type TIMEFMT_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
-pub type GEO_ENUMPROC = ::core::option::Option<unsafe extern "stdcall" fn(arg1: GEOID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
+pub type GEO_ENUMPROC = ::core::option::Option<unsafe extern "system" fn(arg1: GEOID) -> BOOL>;
 pub const NLS_FUNCTION_COMPARE_STRING: NLS_FUNCTION = 1;
 pub type NLS_FUNCTION = ::core::ffi::c_uint;
 pub const SYSGEOCLASS_GEOCLASS_ALL: SYSGEOCLASS = 0;
@@ -35886,16 +36117,16 @@ pub type ATL__ATL_CATMAPFUNC =
 pub struct ATL__ATL_OBJMAP_ENTRY30 {
     pub pclsid: *const CLSID,
     pub pfnUpdateRegistry:
-        ::core::option::Option<unsafe extern "stdcall" fn(bRegister: BOOL) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(bRegister: BOOL) -> HRESULT>,
     pub pfnGetClassObject: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             arg1: *mut ::core::ffi::c_void,
             arg2: *const IID,
             arg3: *mut LPVOID,
         ) -> HRESULT,
     >,
     pub pfnCreateInstance: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             arg1: *mut ::core::ffi::c_void,
             arg2: *const IID,
             arg3: *mut LPVOID,
@@ -35903,14 +36134,14 @@ pub struct ATL__ATL_OBJMAP_ENTRY30 {
     >,
     pub pCF: *mut IUnknown,
     pub dwRegister: DWORD,
-    pub pfnGetObjectDescription: ::core::option::Option<unsafe extern "stdcall" fn() -> LPCTSTR>,
+    pub pfnGetObjectDescription: ::core::option::Option<unsafe extern "system" fn() -> LPCTSTR>,
     pub pfnGetCategoryMap: ATL__ATL_CATMAPFUNC,
-    pub pfnObjectMain: ::core::option::Option<unsafe extern "stdcall" fn(bStarting: bool)>,
+    pub pfnObjectMain: ::core::option::Option<unsafe extern "system" fn(bStarting: bool)>,
 }
 pub type ATL__ATL_OBJMAP_ENTRY = ATL__ATL_OBJMAP_ENTRY30;
 #[repr(C)]
 pub struct ATL__ATL_TERMFUNC_ELEM {
-    pub pFunc: ::core::option::Option<unsafe extern "stdcall" fn(arg1: DWORD_PTR)>,
+    pub pFunc: ::core::option::Option<unsafe extern "system" fn(arg1: DWORD_PTR)>,
     pub dw: DWORD_PTR,
     pub pNext: *mut ATL__ATL_TERMFUNC_ELEM,
 }
@@ -35927,7 +36158,7 @@ pub struct ATL__ATL_INTMAP_ENTRY {
     pub piid: *const IID,
     pub dw: DWORD_PTR,
     pub pFunc: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             arg1: *mut ::core::ffi::c_void,
             arg2: *const IID,
             arg3: *mut LPVOID,
@@ -36139,7 +36370,7 @@ pub struct ATL_CComClassFactory {
     pub vtable_: *const ATL_CComClassFactory__bindgen_vtable,
     pub _base_1: ATL_CComObjectRootEx,
     pub m_pfnCreateInstance: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             arg1: *mut ::core::ffi::c_void,
             arg2: *const IID,
             arg3: *mut LPVOID,
@@ -36656,7 +36887,7 @@ pub type _POWER_DATA_ACCESSOR = ::core::ffi::c_uint;
 pub use self::_POWER_DATA_ACCESSOR as POWER_DATA_ACCESSOR;
 pub type PPOWER_DATA_ACCESSOR = *mut _POWER_DATA_ACCESSOR;
 pub type PWRSCHEMESENUMPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: UINT,
         arg2: DWORD,
         arg3: LPWSTR,
@@ -36893,19 +37124,19 @@ pub struct _NETINFOSTRUCT {
 pub type NETINFOSTRUCT = _NETINFOSTRUCT;
 pub type LPNETINFOSTRUCT = *mut _NETINFOSTRUCT;
 pub type PFNGETPROFILEPATHA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPCSTR, arg2: LPSTR, arg3: UINT) -> UINT,
+    unsafe extern "system" fn(arg1: LPCSTR, arg2: LPSTR, arg3: UINT) -> UINT,
 >;
 pub type PFNGETPROFILEPATHW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPCWSTR, arg2: LPWSTR, arg3: UINT) -> UINT,
+    unsafe extern "system" fn(arg1: LPCWSTR, arg2: LPWSTR, arg3: UINT) -> UINT,
 >;
 pub type PFNRECONCILEPROFILEA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPCSTR, arg2: LPCSTR, arg3: DWORD) -> UINT,
+    unsafe extern "system" fn(arg1: LPCSTR, arg2: LPCSTR, arg3: DWORD) -> UINT,
 >;
 pub type PFNRECONCILEPROFILEW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> UINT,
+    unsafe extern "system" fn(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> UINT,
 >;
 pub type PFNPROCESSPOLICIESA = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HWND,
         arg2: LPCSTR,
         arg3: LPCSTR,
@@ -36914,7 +37145,7 @@ pub type PFNPROCESSPOLICIESA = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type PFNPROCESSPOLICIESW = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HWND,
         arg2: LPCWSTR,
         arg3: LPCWSTR,
@@ -37188,7 +37419,7 @@ pub struct tagPASSWORD_CACHE_ENTRY {
 }
 pub type PASSWORD_CACHE_ENTRY = tagPASSWORD_CACHE_ENTRY;
 pub type ENUMPASSWORDPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut PASSWORD_CACHE_ENTRY, arg2: DWORD) -> BOOL,
+    unsafe extern "system" fn(arg1: *mut PASSWORD_CACHE_ENTRY, arg2: DWORD) -> BOOL,
 >;
 unsafe extern "stdcall" {
     pub fn WNetCachePassword(
@@ -37259,11 +37490,11 @@ pub type DSKTLSYSTEMTIME = _DSKTLSYSTEMTIME;
 pub type PDSKTLSYSTEMTIME = *mut _DSKTLSYSTEMTIME;
 pub type LPDSKTLSYSTEMTIME = *mut _DSKTLSYSTEMTIME;
 pub type MRUCMPPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPCSTR, arg2: LPCSTR) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPCSTR, arg2: LPCSTR) -> INT>;
 pub type MRUCMPPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPCWSTR, arg2: LPCWSTR) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPCWSTR, arg2: LPCWSTR) -> INT>;
 pub type MRUBINARYCMPPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPCVOID, arg2: LPCVOID, arg3: DWORD) -> INT,
+    unsafe extern "system" fn(arg1: LPCVOID, arg2: LPCVOID, arg3: DWORD) -> INT,
 >;
 #[repr(C)]
 pub struct _MRUINFOA {
@@ -37340,11 +37571,11 @@ unsafe extern "stdcall" {
     pub fn FreeMRUList(arg1: HANDLE);
 }
 pub type FN_CreateMRUListA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *const MRUINFOA) -> HANDLE>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const MRUINFOA) -> HANDLE>;
 pub type FN_CreateMRUListW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *const MRUINFOW) -> HANDLE>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const MRUINFOW) -> HANDLE>;
 pub type FN_CreateMRUListLazyA = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *const MRUINFOA,
         arg2: DWORD,
         arg3: DWORD,
@@ -37352,7 +37583,7 @@ pub type FN_CreateMRUListLazyA = ::core::option::Option<
     ) -> HANDLE,
 >;
 pub type FN_CreateMRUListLazyW = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *const MRUINFOW,
         arg2: DWORD,
         arg3: DWORD,
@@ -37360,30 +37591,30 @@ pub type FN_CreateMRUListLazyW = ::core::option::Option<
     ) -> HANDLE,
 >;
 pub type FN_AddMRUStringA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: HANDLE, arg2: LPCSTR) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: LPCSTR) -> INT>;
 pub type FN_AddMRUStringW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: HANDLE, arg2: LPCWSTR) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: LPCWSTR) -> INT>;
 pub type FN_AddMRUData = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HANDLE, arg2: LPCVOID, arg3: DWORD) -> INT,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: LPCVOID, arg3: DWORD) -> INT,
 >;
 pub type FN_EnumMRUListA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HANDLE, arg2: INT, arg3: LPVOID, arg4: DWORD) -> INT,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: INT, arg3: LPVOID, arg4: DWORD) -> INT,
 >;
 pub type FN_EnumMRUListW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HANDLE, arg2: INT, arg3: LPVOID, arg4: DWORD) -> INT,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: INT, arg3: LPVOID, arg4: DWORD) -> INT,
 >;
 pub type FN_FindMRUData = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HANDLE, arg2: LPCVOID, arg3: DWORD, arg4: LPINT) -> INT,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: LPCVOID, arg3: DWORD, arg4: LPINT) -> INT,
 >;
 pub type FN_FindMRUStringA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HANDLE, arg2: LPCSTR, arg3: LPINT) -> INT,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: LPCSTR, arg3: LPINT) -> INT,
 >;
 pub type FN_FindMRUStringW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HANDLE, arg2: LPCWSTR, arg3: LPINT) -> INT,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: LPCWSTR, arg3: LPINT) -> INT,
 >;
 pub type FN_DelMRUString =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: HANDLE, arg2: INT) -> BOOL>;
-pub type FN_FreeMRUList = ::core::option::Option<unsafe extern "stdcall" fn(arg1: HANDLE) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: INT) -> BOOL>;
+pub type FN_FreeMRUList = ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE) -> INT>;
 unsafe extern "stdcall" {
     pub fn ImageList_GetFlags(himl: HIMAGELIST) -> DWORD;
 }
@@ -38574,7 +38805,7 @@ pub struct tagSLOTITEMDATA {
 pub type SLOTITEMDATA = tagSLOTITEMDATA;
 pub type PSLOTITEMDATA = *mut tagSLOTITEMDATA;
 pub type SLOTCOMPARE = ::core::option::Option<
-    unsafe extern "stdcall" fn(pvData1: LPCVOID, pvData2: LPCVOID, cbData: UINT) -> INT,
+    unsafe extern "system" fn(pvData1: LPCVOID, pvData2: LPCVOID, cbData: UINT) -> INT,
 >;
 #[repr(C)]
 pub struct SHELLSTATE2 {
@@ -39423,7 +39654,7 @@ unsafe extern "stdcall" {
     ) -> BOOL;
 }
 pub type LPFNFMCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(pidlFolder: LPCITEMIDLIST, pidlFile: LPCITEMIDLIST),
+    unsafe extern "system" fn(pidlFolder: LPCITEMIDLIST, pidlFile: LPCITEMIDLIST),
 >;
 unsafe extern "stdcall" {
     pub fn FileMenu_DeleteMenuItemByFirstID(hMenu: HMENU, uID: UINT) -> BOOL;
@@ -39552,7 +39783,7 @@ unsafe extern "stdcall" {
     pub fn ShellExec_RunDLL(hwnd: HWND, hInstance: HINSTANCE, pszCmdLine: PCSTR, nCmdShow: INT);
 }
 pub type LPFNCDCOCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         pUnkOuter: LPUNKNOWN,
         riidObject: *const IID,
         ppvObject: *mut LPVOID,
@@ -39615,7 +39846,7 @@ unsafe extern "stdcall" {
     pub fn SHGetUserSessionId(hToken: HANDLE) -> DWORD;
 }
 pub type PRIVILEGED_FUNCTION =
-    ::core::option::Option<unsafe extern "stdcall" fn(lParam: LPARAM) -> HRESULT>;
+    ::core::option::Option<unsafe extern "system" fn(lParam: LPARAM) -> HRESULT>;
 unsafe extern "stdcall" {
     pub fn SHInvokePrivilegedFunctionW(
         pszName: LPCWSTR,
@@ -40168,7 +40399,7 @@ unsafe extern "C" {
     pub fn GetRecycleBinPathFromDriveNumber(Drive: UINT, Path: LPWSTR) -> HRESULT;
 }
 pub type PENUMERATE_RECYCLEBIN_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(Context: PVOID, hDeletedFile: HDELFILE) -> BOOL,
+    unsafe extern "system" fn(Context: PVOID, hDeletedFile: HDELFILE) -> BOOL,
 >;
 unsafe extern "stdcall" {
     pub fn CloseRecycleBinHandle(hDeletedFile: HDELFILE) -> BOOL;
@@ -40493,7 +40724,7 @@ unsafe extern "stdcall" {
     pub fn DoUnregisterServer() -> HRESULT;
 }
 pub type APPLET_PROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: LPARAM, arg4: LPARAM) -> LONG,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: LPARAM, arg4: LPARAM) -> LONG,
 >;
 #[repr(C, packed)]
 pub struct tagCPLINFO {
@@ -40916,6 +41147,12 @@ pub struct CAdminToolsFolder {
     pub m_pidlInner: LPITEMIDLIST,
 }
 pub type CAdminToolsFolder__CreatorClass = ATL_CComCreator2;
+unsafe extern "C" {
+    pub fn TRASH_CanTrashFile(wszPath: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TRASH_TrashFile(wszPath: LPCWSTR) -> BOOL;
+}
 #[repr(C)]
 pub struct CRecycleBin {
     pub _base: u8,
@@ -41299,7 +41536,7 @@ pub type HPAINTBUFFER = HANDLE;
 pub type HTHEME = HANDLE;
 pub type HANIMATIONBUFFER = HANDLE;
 pub type DTT_CALLBACK_PROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HDC,
         arg2: LPWSTR,
         arg3: ::core::ffi::c_int,
@@ -41951,6 +42188,12 @@ unsafe extern "C" {
 unsafe extern "stdcall" {
     pub fn SHMultiFileProperties(pDataObject: *mut IDataObject, dwFlags: DWORD) -> HRESULT;
 }
+unsafe extern "C" {
+    pub fn SHELL32_ShowFilesystemItemsPropertiesDialogAsync(
+        hOwner: HWND,
+        pDO: *mut IDataObject,
+    ) -> HRESULT;
+}
 pub type HDCMA = HDSA;
 #[repr(C)]
 pub struct _DCMENTRY {
@@ -41983,6 +42226,21 @@ unsafe extern "C" {
     ) -> HRESULT;
 }
 unsafe extern "C" {
+    pub fn SHELL_GetIDListTarget(pidl: LPCITEMIDLIST, ppidl: *mut PIDLIST_ABSOLUTE) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn SHCoInitializeAnyApartment() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn SHGetNameAndFlagsW(
+        pidl: LPCITEMIDLIST,
+        dwFlags: DWORD,
+        pszText: LPWSTR,
+        cchBuf: UINT,
+        pdwAttributes: *mut DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
     pub fn BindCtx_GetUIWindow(pBindCtx: *mut IBindCtx) -> HWND;
 }
 unsafe extern "C" {
@@ -41992,6 +42250,9 @@ unsafe extern "C" {
         punk: *mut IUnknown,
         ppbc: *mut LPBC,
     ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn PathIsValidElement(pszPath: LPCWSTR) -> BOOL;
 }
 unsafe extern "C" {
     pub fn IUnknown_InitializeCommand(
@@ -42035,7 +42296,7 @@ pub const _FILEOPCALLBACKEVENT_FOCE_POSTNEWITEM: _FILEOPCALLBACKEVENT = 11;
 pub type _FILEOPCALLBACKEVENT = ::core::ffi::c_uint;
 pub use self::_FILEOPCALLBACKEVENT as FILEOPCALLBACKEVENT;
 pub type FILEOPCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Event: FILEOPCALLBACKEVENT,
         Source: LPCWSTR,
         Destination: LPCWSTR,

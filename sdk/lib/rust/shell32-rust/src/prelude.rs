@@ -1264,7 +1264,9 @@ extern "C" {
     /// `strsafe.h:515` — the bounded `swprintf`. Rust can CALL a C variadic on stable, but
     /// there is nothing here to call: `STRSAFEAPI` is `static __inline`, so this is a PHANTOM
     /// SYMBOL with no export, and the `extern` decl this used to be linked nowhere. It now
-    /// binds to the forwarding trampoline in `dll/win32/shell32/rust_varargs_shim.c` (PART 3),
+    /// binds to the forwarding trampoline in `dll/win32/shell32/rust_strsafe_shim.c` — its own
+    /// TU, NOT an append to `rust_varargs_shim.c`, which deliberately includes no Windows
+    /// headers so it can hand-declare the variadic it defines —
     /// which calls the header's own `StringCchVPrintfW` and so keeps strsafe's truncation
     /// contract rather than reimplementing it.
     #[link_name = "StringCchPrintfW_RustBridge"]
@@ -1275,6 +1277,100 @@ extern "C" {
         ...
     ) -> crate::island::HRESULT;
 }
+
+// ── dialogs/drive.cpp residue ──────────────────────────────────────────────────────────────
+
+/// `strsafe.h` `StringCchCatW` — an INLINE, so there is no symbol to import. Appends `src` to
+/// whatever `dst` already holds, never writing past `cchDest` chars and always NUL-terminating;
+/// `STRSAFE_E_INSUFFICIENT_BUFFER` on truncation. That truncation contract is the whole reason
+/// a caller reaches for strsafe instead of `wcscat`, so it is preserved rather than approximated.
+pub unsafe fn StringCchCatW(
+    dst: crate::island::LPWSTR,
+    cchDest: usize,
+    src: crate::island::LPCWSTR,
+) -> crate::island::HRESULT {
+    const STRSAFE_E_INVALID_PARAMETER: crate::island::HRESULT = 0x8007_0057u32 as _;
+    const STRSAFE_E_INSUFFICIENT_BUFFER: crate::island::HRESULT = 0x8007_007Au32 as _;
+    if dst.is_null() || cchDest == 0 {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    // Find the existing terminator; an unterminated destination is a caller error, and strsafe
+    // reports it rather than walking off the end.
+    let mut i = 0usize;
+    while i < cchDest && *dst.add(i) != 0 {
+        i += 1;
+    }
+    if i == cchDest {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    let mut j = 0usize;
+    if !src.is_null() {
+        while i + 1 < cchDest && *src.add(j) != 0 {
+            *dst.add(i) = *src.add(j);
+            i += 1;
+            j += 1;
+        }
+    }
+    *dst.add(i) = 0;
+    if !src.is_null() && *src.add(j) != 0 {
+        return STRSAFE_E_INSUFFICIENT_BUFFER;
+    }
+    S_OK
+}
+
+/// `strsafe.h` `StringCbCatW` — the same call with the destination size in BYTES. The `/ 2` is
+/// the whole difference and the whole hazard: passing a byte count to the `Cch` form would let
+/// the append run twice as far as the buffer.
+#[inline]
+pub unsafe fn StringCbCatW(
+    dst: crate::island::LPWSTR,
+    cbDest: usize,
+    src: crate::island::LPCWSTR,
+) -> crate::island::HRESULT {
+    StringCchCatW(dst, cbDest / core::mem::size_of::<crate::island::WCHAR>(), src)
+}
+
+/// `winioctl.h:143` `#define CTL_CODE(t,f,m,a) (((t)<<16)|((a)<<14)|((f)<<2)|(m))`.
+///
+/// A function-like macro, so bindgen emits nothing for it OR for the ~200 `IOCTL_*` codes
+/// defined through it — the island carries `FILE_DEVICE_*`, `METHOD_*` and `FILE_*_ACCESS` (it
+/// allowlists winioctl.h) but not a single assembled code. Computing them here from those parts
+/// keeps them derived from the header rather than transcribed as magic numbers.
+#[inline]
+pub const fn CTL_CODE(
+    DeviceType: crate::island::DWORD,
+    Function: crate::island::DWORD,
+    Method: crate::island::DWORD,
+    Access: crate::island::DWORD,
+) -> crate::island::DWORD {
+    (DeviceType << 16) | (Access << 14) | (Function << 2) | Method
+}
+
+/// `winioctl.h:180-202` — the four disk codes `dialogs/drive.rs` issues.
+pub const IOCTL_DISK_GET_DRIVE_GEOMETRY: crate::island::DWORD = CTL_CODE(
+    crate::island::FILE_DEVICE_DISK,
+    0,
+    crate::island::METHOD_BUFFERED,
+    crate::island::FILE_ANY_ACCESS,
+);
+pub const IOCTL_DISK_GET_PARTITION_INFO: crate::island::DWORD = CTL_CODE(
+    crate::island::FILE_DEVICE_DISK,
+    1,
+    crate::island::METHOD_BUFFERED,
+    crate::island::FILE_READ_ACCESS,
+);
+pub const IOCTL_DISK_GET_PARTITION_INFO_EX: crate::island::DWORD = CTL_CODE(
+    crate::island::FILE_DEVICE_DISK,
+    0x12,
+    crate::island::METHOD_BUFFERED,
+    crate::island::FILE_ANY_ACCESS,
+);
+pub const IOCTL_DISK_GET_LENGTH_INFO: crate::island::DWORD = CTL_CODE(
+    crate::island::FILE_DEVICE_DISK,
+    0x17,
+    crate::island::METHOD_BUFFERED,
+    crate::island::FILE_READ_ACCESS,
+);
 
 /// `basetsd.h` `#define UlongToHandle(h) ((HANDLE)(ULONG_PTR)(h))`.
 #[inline]
